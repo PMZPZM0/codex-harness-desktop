@@ -10,8 +10,12 @@ const heroChannel = document.getElementById("hero-channel");
 const heroSize = document.getElementById("hero-size");
 const heroTime = document.getElementById("hero-time");
 
+// 版本列表折叠：默认只显示最近 PAGE_SIZE 条，其余收进「显示更多」。
+// 避免历史发布一多页面被拖得很长。
+const PAGE_SIZE = 5;
 let allReleases = [];
 let activeChannel = "stable";
+let expanded = false;
 
 function toast(msg, kind = "") {
   const el = document.createElement("div");
@@ -45,7 +49,8 @@ function render() {
       </div>`;
     return;
   }
-  grid.innerHTML = list
+  const visible = expanded ? list : list.slice(0, PAGE_SIZE);
+  grid.innerHTML = visible
     .map((r) => `
       <div class="card">
         <div class="head">
@@ -66,6 +71,19 @@ function render() {
       </div>
     `)
     .join("");
+
+  // 折叠：剩余版本收进「显示更多 / 收起」按钮
+  if (list.length > PAGE_SIZE) {
+    const more = document.createElement("button");
+    more.className = "btn btn-ghost load-more";
+    more.style.gridColumn = "1 / -1";
+    more.textContent = expanded ? `收起旧版本（共 ${list.length} 条）↑` : `显示更多（还有 ${list.length - PAGE_SIZE} 条旧版本）↓`;
+    more.addEventListener("click", () => {
+      expanded = !expanded;
+      render();
+    });
+    grid.appendChild(more);
+  }
 
   grid.querySelectorAll("button[data-copy]").forEach((btn) => {
     btn.addEventListener("click", () => {
