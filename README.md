@@ -109,6 +109,16 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac zip --arm64   # 或
 - Windows 10 1809+ / macOS 12+（Intel 或 Apple Silicon）
 - 需要能访问所配置的模型 API 端点
 
+## 💬 反馈与交流
+
+遇到 Bug 或有好想法，欢迎通过以下渠道告诉我们：
+
+| 渠道 | 地址 | 说明 |
+|---|---|---|
+| 🐛 GitHub Issues | [提交 Bug / 建议](../../issues) | 带结构化表单，方便快速定位 |
+| 💬 官网反馈页 | [www.jvszzp.ltd/feedback.html](https://www.jvszzp.ltd/feedback.html) | 支持截图上传，无需 GitHub 账号 |
+| 📦 下载与更新 | [www.jvszzp.ltd](https://www.jvszzp.ltd) | 最新版本与更新日志 |
+
 ## ⚠️ 免责声明
 
 本项目是对 OpenAI Codex CLI 的独立桌面封装，与 OpenAI 官方无隶属关系。使用本项目产生的 API 调用费用由用户自行承担。请遵守所在地区法律法规及 OpenAI 使用条款。
