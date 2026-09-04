@@ -75,6 +75,8 @@ a:hover { color: #b794f6; }
 }
 .nav .nav-links a:hover { background: var(--panel); color: var(--text); }
 .nav .nav-links a.active { background: var(--accent-soft); color: var(--text); }
+.nav .nav-links a.sponsor { color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+.nav .nav-links a.sponsor:hover { background: var(--accent-soft); color: var(--accent); }
 .nav .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .nav .pill {
   display: inline-flex; align-items: center; gap: 6px;
@@ -338,6 +340,65 @@ table.admin .actions { display: flex; gap: 6px; }
 }
 .section-head h2 { margin: 0; font-size: 18px; font-weight: 600; }
 .section-head .hint { color: var(--text-mute); font-size: 12px; }
+
+/* ===== 功能介绍卡片 ===== */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+}
+.feature-card {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 18px 16px;
+  transition: transform 140ms, border-color 140ms, background 140ms;
+}
+.feature-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--accent);
+  background: var(--panel-2);
+}
+.feature-icon {
+  font-size: 22px;
+  width: 42px; height: 42px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent-soft);
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+.feature-card h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+.feature-card p { margin: 0; font-size: 12px; color: var(--text-mute); line-height: 1.5; }
+
+/* ===== 赞助商卡片 ===== */
+.sponsor-card {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.16), rgba(99, 102, 241, 0.1));
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  border-radius: var(--radius);
+  padding: 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.sponsor-card-main { display: flex; align-items: center; gap: 16px; }
+.sponsor-icon {
+  font-size: 28px;
+  width: 54px; height: 54px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent-soft);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 16px;
+}
+.sponsor-info { flex: 1; }
+.sponsor-info h3 { margin: 0 0 6px; font-size: 16px; font-weight: 700; }
+.sponsor-info p { margin: 0 0 12px; font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+.sponsor-info .btn { display: inline-flex; }
+.sponsor-card-note {
+  font-size: 12px;
+  color: var(--text-mute);
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
 
 /* ===== 状态徽章 ===== */
 .badge {
