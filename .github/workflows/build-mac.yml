@@ -15,7 +15,7 @@ jobs:
         include:
           - os: macos-14 # Apple Silicon
             mac_target: arm64
-          - os: macos-13 # Intel
+          - os: macos-15-intel # Intel（macos-13 队列常年拥堵）
             mac_target: x64
     runs-on: ${{ matrix.os }}
     steps:
