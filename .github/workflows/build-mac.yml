@@ -1,0 +1,47 @@
+name: Build macOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（留空则用 package.json 里的版本）"
+        required: false
+        default: ""
+
+jobs:
+  build-mac:
+    strategy:
+      matrix:
+        include:
+          - os: macos-14 # Apple Silicon
+            mac_target: arm64
+          - os: macos-13 # Intel
+            mac_target: x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build renderer & main
+        run: npm run build
+
+      - name: Pack macOS zip (${{ matrix.mac_target }})
+        run: npx electron-builder --mac zip --${{ matrix.mac_target }}
+        env:
+          # 未配置签名证书时跳过 codesign（本地自用包）
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-${{ matrix.mac_target }}
+          path: release/*.zip
+          if-no-files-found: error
