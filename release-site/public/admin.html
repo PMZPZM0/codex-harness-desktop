@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Codex Harness · 发布管理</title>
+<link rel="stylesheet" href="/assets/styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%238b5cf6'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='18' font-weight='700' text-anchor='middle' fill='white'%3E%3C%2Ftext%3E%3C/svg%3E" />
+</head>
+<body>
+<nav class="nav">
+  <div class="brand">
+    <div class="logo">⌬</div>
+    <span>Codex Harness</span>
+  </div>
+  <div class="nav-links">
+    <a href="/">下载</a>
+    <a href="/feedback.html">反馈</a>
+    <a href="/admin.html" class="active">管理</a>
+  </div>
+  <div class="right">
+    <span id="admin-badge"></span>
+  </div>
+</nav>
+
+<main>
+  <!-- 登录视图 -->
+  <div id="login-view" class="login-card">
+    <h2>管理员登录</h2>
+    <p>使用发布后账号登录以管理版本与反馈。</p>
+    <div class="field">
+      <label class="label">账号</label>
+      <input class="input" id="login-user" placeholder="admin" autocomplete="username" />
+    </div>
+    <div class="field">
+      <label class="label">密码</label>
+      <input class="input" id="login-pass" type="password" autocomplete="current-password" />
+    </div>
+    <button class="btn btn-primary" id="btn-login" style="width:100%">登录</button>
+    <p style="margin-top:14px; font-size:12px;">提示：密码写在服务端 <code style="font-family:var(--mono)">.env</code> 的 <code style="font-family:var(--mono)">ADMIN_PASSWORD</code>。</p>
+  </div>
+
+  <!-- 管理视图 -->
+  <div id="admin-view" style="display:none;">
+    <!-- 功能 tab -->
+    <div class="admin-tabs">
+      <button class="admin-tab active" data-view="releases">📦 发布管理</button>
+      <button class="admin-tab" data-view="feedback">💬 反馈中心 <span class="tab-badge" id="fb-badge" style="display:none;"></span></button>
+    </div>
+
+    <!-- ========== Tab 1：发布管理 ========== -->
+    <div id="view-releases">
+      <!-- 上传区 -->
+      <section class="section-head">
+        <h2>发布新版本</h2>
+        <span class="hint">支持 .exe / .dmg / .AppImage / .zip 等任意类型，单文件最大 500 MB</span>
+      </section>
+
+      <div class="dropzone" id="dropzone">
+        <div>📦 拖拽安装包到此处，或点击选择文件</div>
+        <div class="hint">文件名会作为下载时的默认名，建议保留原始命名</div>
+        <div class="picked" id="picked" style="display:none;"></div>
+        <input type="file" id="file-input" style="display:none;" />
+      </div>
+
+      <form id="upload-form" style="margin-top: 18px;">
+        <div class="row">
+          <div class="field">
+            <label class="label">版本号 *</label>
+            <input class="input" id="up-version" placeholder="1.0.0" required />
+          </div>
+          <div class="field">
+            <label class="label">Channel</label>
+            <select class="select" id="up-channel">
+              <option value="stable">stable（推荐给所有用户）</option>
+              <option value="beta">beta（公开测试）</option>
+              <option value="canary">canary（内测）</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label class="label">更新日志（支持换行，纯文本）</label>
+          <textarea class="textarea" id="up-changelog" placeholder="- 修复 xxx&#10;- 优化 yyy"></textarea>
+        </div>
+        <div class="field" style="display:flex; align-items:center; gap:10px;">
+          <input type="checkbox" id="up-mandatory" style="accent-color: var(--accent);" />
+          <label for="up-mandatory" style="font-size:13px; color:var(--text-dim);">标记为强制更新</label>
+        </div>
+        <button class="btn btn-primary" id="btn-upload" type="submit" style="width:100%;">上传并发布</button>
+      </form>
+
+      <!-- 列表 -->
+      <section class="section-head">
+        <h2>已发布版本</h2>
+        <span class="hint" id="list-count">—</span>
+      </section>
+
+      <div class="table-wrap">
+        <table class="admin">
+          <thead>
+            <tr>
+              <th>版本</th>
+              <th>Channel</th>
+              <th>文件名</th>
+              <th>大小</th>
+              <th>SHA-256 (前 12 位)</th>
+              <th>上传时间</th>
+              <th>强制</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="list-body">
+            <tr><td colspan="8" style="text-align:center; padding:30px; color:var(--text-mute);">加载中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="section-head">
+        <h2>API 调用样例</h2>
+        <span class="hint">给桌面端集成参考</span>
+      </section>
+      <div class="table-wrap" style="padding: 14px;">
+        <pre style="margin:0; font-family: var(--mono); font-size: 12px; color: var(--text-dim); white-space: pre-wrap;">
+# 桌面端启动时调用
+GET /api/latest?channel=stable&current=&lt;当前版本&gt;
+
+# 返回
+{
+  "hasUpdate": true,
+  "version": "1.2.0",
+  "size": 90123456,
+  "sha256": "abc123…",
+  "changelog": "...",
+  "mandatory": false,
+  "downloadUrl": "/api/releases/42/download"
+}
+
+# 下载安装包
+GET /api/releases/42/download</pre>
+      </div>
+    </div>
+
+    <!-- ========== Tab 2：反馈中心 ========== -->
+    <div id="view-feedback" style="display:none;">
+      <section class="section-head">
+        <h2>用户反馈</h2>
+        <span class="hint">来自网站反馈页的用户提交，点击任意一条查看详情 / 处理 / 回复</span>
+      </section>
+
+      <!-- 统计卡（点击即筛选） -->
+      <div class="stat-cards" id="stat-cards">
+        <div class="stat-card active" data-s="all"><div class="num" id="st-all">0</div><div class="lbl">全部反馈</div></div>
+        <div class="stat-card st-pending" data-s="pending"><div class="num" id="st-pending">0</div><div class="lbl">待处理</div></div>
+        <div class="stat-card st-in_progress" data-s="in_progress"><div class="num" id="st-in_progress">0</div><div class="lbl">处理中</div></div>
+        <div class="stat-card st-resolved" data-s="resolved"><div class="num" id="st-resolved">0</div><div class="lbl">已解决</div></div>
+        <div class="stat-card st-today" data-s="today"><div class="num" id="st-today">0</div><div class="lbl">今日新增</div></div>
+      </div>
+
+      <!-- 工具栏 -->
+      <div class="fb-admin-bar">
+        <select class="select fb-type-filter" id="fb-type-filter" style="max-width:180px;">
+          <option value="">全部类型</option>
+          <option value="bug">🐞 问题反馈</option>
+          <option value="suggestion">💡 功能建议</option>
+          <option value="question">❓ 使用咨询</option>
+          <option value="other">💬 其他</option>
+        </select>
+        <input class="input" id="fb-q" placeholder="搜索标题 / 内容 / 联系方式 / 版本…" style="max-width:320px;" />
+        <button class="btn" id="btn-fb-search">搜索</button>
+        <button class="btn btn-ghost" id="btn-fb-refresh">刷新</button>
+        <span class="hint" style="margin-left:auto;" id="fb-list-count">—</span>
+      </div>
+
+      <div id="fb-list" class="fb-admin-list">
+        <div class="empty"><h3>加载中…</h3></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="toast-host"></div>
+
+<!-- 反馈详情抽屉 -->
+<div class="drawer-mask" id="drawer-mask" style="display:none;"></div>
+<aside class="drawer" id="drawer" style="display:none;">
+  <div class="drawer-head">
+    <div class="drawer-title" id="dr-title"></div>
+    <button class="btn btn-ghost" id="dr-close">✕</button>
+  </div>
+  <div class="drawer-body" id="dr-body"></div>
+</aside>
+
+<!-- 管理端大图查看 -->
+<div class="lightbox" id="lb" style="display:none;">
+  <button class="lb-close" id="lb-close">✕</button>
+  <img id="lb-img" alt="截图" />
+  <div class="lb-caption" id="lb-caption"></div>
+</div>
+
+<script src="/assets/admin.js"></script>
+<script src="/assets/admin-feedback.js"></script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+dist-electron/
+release/
+release-*/
+*.tsbuildinfo
+
+# 会话数据导出备份（引擎原档 jsonl/整包，含本机对话内容，不纳入 git）
+thread-backup-*/
+.release-site-work/
+
+# 日志
+*.log
+electron-log.txt
+
+# 编辑器 / 系统
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# 本地环境变量
+.env
+.env.local
+.env.*.local
+
+# 测试运行时产物（验证脚本每次运行会重新生成带编号的目录）
+.verify-*/
+.test-data/
+.test-tmp/
+terminal-dump.txt
+
+# 工具数据
+.workbuddy/
+
+# 并行构建流程的临时产物
+dist-new/
+
+# 大体积二进制运行时（不纳入 git，首次启动由 install-runtimes.cjs 按需下载）
+resources/tools/
+
+# 调试/一次性产物（本机排查用，不属于源码）
+diag-*.mjs
+diag-*.py
+find-cmds*.cjs
+extract-commands.cjs
+a1.txt
+s-*.png
+crash-*.log
+app-std*.log
+output/
+tmp/
+scripts/diag-*
+scripts/_patch_*
+scripts/_verify-fix.js
+scripts/tmp-*
+scripts/shot-readme.mjs
+archive/
+
+# 一次性临时脚本（含本机绝对路径，不纳入 git）
+scripts/tmp-fix-shortcut.cjs
+cdp-check.mjs

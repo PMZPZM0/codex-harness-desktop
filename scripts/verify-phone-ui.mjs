@@ -1,0 +1,25 @@
+const t = await fetch("http://127.0.0.1:9223/json").then((r) => r.json());
+const p = t.find((x) => x.title === "Codex Harness Desktop");
+const ws = new WebSocket(p.webSocketDebuggerUrl);
+let n = 0;
+const pend = new Map();
+ws.onmessage = ({ data }) => { const m = JSON.parse(data); const r = pend.get(m.id); if (r) { pend.delete(m.id); r(m); } };
+await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+const send = (method, params = {}) => new Promise((res) => { const id = ++n; pend.set(id, res); ws.send(JSON.stringify({ id, method, params })); });
+const ev = async (e) => {
+  const m = await send("Runtime.evaluate", { expression: e, awaitPromise: true, returnByValue: true });
+  return m.result.result.value;
+};
+const bind = await ev(`window.codex.botBindQrcode("ui-check", "UI检查")`);
+const url = String(bind.url);
+const base = url.slice(0, url.indexOf("/r/"));
+const page = await fetch(base + "/r/" + bind.code, { signal: AbortSignal.timeout(20000) });
+const html = await page.text();
+console.log("会话按钮:", html.includes("btn-threads") ? "有" : "无");
+console.log("会话列表:", html.includes("thread-list") ? "有" : "无");
+console.log("列表 RPC:", html.includes("list-threads") ? "有" : "无");
+console.log("切换会话逻辑:", html.includes("currentThreadId = t.id") ? "有" : "无");
+console.log("轮询同步:", html.includes("pollLoop") ? "有" : "无");
+console.log("HTTP RPC:", html.includes("/api/rpc") ? "有" : "无");
+ws.close();
+process.exit(0);

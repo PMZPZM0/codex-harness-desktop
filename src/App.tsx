@@ -1,0 +1,11201 @@
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { createPortal } from "react-dom";
+import "@xterm/xterm/css/xterm.css";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { codeFontStack, codeFonts, codePreviewSnippet, codeThemeStyle, codeThemes } from "./lib/code-themes";
+import { codeFontSize, useCodeSettings } from "./lib/code-settings";
+import { DEFAULT_EFFORT, pickDefaultEffort, CUSTOM_MODEL_EFFORTS, normalizeEffort, ALL_EFFORTS } from "./lib/effort";
+import { resolveSkillVisual, type SkillVisual } from "./lib/skill-icon";
+import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "./lib/entity-avatar";
+import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens, insertImageToken, removeImageToken } from "./lib/prompt-images";
+import {
+  AlertTriangle,
+  Archive,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpRight,
+  Bot,
+  Brain,
+  QrCode,
+  Star,
+  Check,
+  ChevronDown,
+  CircleGauge,
+  Clock3,
+  CircleStop,
+  Cloud,
+  CloudOff,
+  Code2,
+  Copy,
+  Eye,
+  EyeOff,
+  Edit3,
+  FileCode2,
+  FileText,
+  FolderOpen,
+  FolderTree,
+  ImagePlus,
+  Image,
+  GitBranch,
+  Globe2,
+  Hash,
+  Info,
+  KeyRound,
+  LayoutGrid,
+  Link2,
+  ListFilter,
+  Maximize2,
+  Menu,
+  MessageSquare,
+  MessageSquarePlus,
+  Monitor,
+  Moon,
+  MoreHorizontal,
+  Plus,
+  Quote,
+  Paperclip,
+  PanelRightClose,
+  PanelRightOpen,
+  PenLine,
+  Play,
+  PowerOff,
+  RefreshCw,
+  ArrowLeft,
+  ArrowRight,
+  Download,
+  Upload,
+  Search,
+  Send,
+  Settings2,
+  Shield,
+  SlidersHorizontal,
+  Smartphone,
+  ShieldCheck,
+  Sparkles,
+  Store,
+  TerminalSquare,
+  Target,
+  Trash2,
+  Type,
+  Sun,
+  User,
+  Wrench,
+  Wifi,
+  X,
+  ChevronUp,
+  FileUp,
+  Minimize2,
+  Zap,
+  BookOpen,
+  BookmarkPlus,
+  Home,
+  CircleCheck,
+  ZoomIn,
+  ZoomOut,
+  Keyboard,
+  Server,
+  WifiOff,
+  UserRound,
+  Rocket,
+  BookMarked,
+  Users,
+  ListChecks,
+  GitPullRequest,
+  ShieldAlert,
+  RotateCcw,
+  Briefcase,
+  Tag,
+  Workflow,
+  LogOut,
+  ChevronRight,
+  ChevronLeft,
+  ExternalLink,
+  Pin,
+} from "lucide-react";
+import { useMemory, type MemoryGatewayState, type MemoryGroup, type MemoryPriority, type MemoryRecord, groupMemoriesByThread } from "./hooks/useMemory";
+import UsagePanel from "./components/UsagePanel";
+import { BatchActions, CheckCard, SearchField, SegmentedTabs, SelectAllToggle, ToggleSwitch } from "./components/SettingsWidgets";
+import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "./components/CardShell";
+
+const PPTokenEndpoints = [
+  { id: "pptoken", name: "PPtoken", label: "API 端点默认", url: "https://api.pptoken.cc/v1" },
+  { id: "pptoken-cn", name: "PPtoken 大陆线路", label: "OpenAI 模型 · 大陆优化线路", url: "https://cn.pptoken.cc/v1" },
+  { id: "pptoken-us", name: "PPtoken 北美线路", label: "北美线路 · 需要代理", url: "https://us.pptoken.cc/v1" },
+  { id: "pptoken-claude", name: "PPtoken Claude", label: "Claude 模型 · 专用地址", url: "https://api.pptoken.cc" },
+];
+
+function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string }) => Promise<boolean> }) {
+  const [mode, setMode] = useState<"custom" | "pptoken">("pptoken");
+  const [username, setUsername] = useState(() => localStorage.getItem("username") || "");
+  const [apiBase, setApiBase] = useState("https://api.pptoken.cc/v1");
+  const [apiKey, setApiKey] = useState("");
+  const [endpoint, setEndpoint] = useState(0);
+  const [endpointOpen, setEndpointOpen] = useState(false);
+  const endpointRef = useRef<HTMLDivElement>(null);
+  const apiBaseRef = useRef<HTMLInputElement>(null);
+  const apiKeyRef = useRef<HTMLInputElement>(null);
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [showPw, setShowPw] = useState(false);
+
+  useEffect(() => {
+    if (!endpointOpen) return;
+    const onDown = (event: MouseEvent) => { if (!endpointRef.current?.contains(event.target as Node)) setEndpointOpen(false); };
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setEndpointOpen(false); };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+  }, [endpointOpen]);
+
+  const doLogin = async (provider: string, name: string, baseUrl: string, key: string) => {
+    setBusy(true); setStatus("");
+    try {
+      const ok = await onLogin({ provider, name, baseUrl, apiKey: key, model: "", username: username.trim() || undefined });
+      if (ok) return;
+      setStatus("探测未返回可用模型，请检查密钥与地址");
+    } catch (error: any) { setStatus("登录失败：" + error.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="login-screen">
+      <div className="login-card">
+        <div className="login-brand"><div className="brand-mark login-logo"><b className="brand-ch">CH</b></div><div><strong>Codex Harness</strong><span>Desktop</span></div></div>
+        <h1>欢迎使用 Codex Harness</h1>
+        <p className="login-sub">配置 API 即可开始；暂不登录可直接体验主界面</p>
+
+        <div className="login-tabs">
+          <button type="button" className={mode === "pptoken" ? "active" : ""} onClick={() => { setMode("pptoken"); setEndpointOpen(false); queueMicrotask(() => apiKeyRef.current?.focus()); }}><Rocket size={14} />PPtoken 推荐</button>
+          <button type="button" className={mode === "custom" ? "active" : ""} onClick={() => { setMode("custom"); setEndpointOpen(false); queueMicrotask(() => { apiBaseRef.current?.focus(); apiBaseRef.current?.select(); }); }}><Settings2 size={14} />自定义 API</button>
+        </div>
+
+        <div className="login-fields">
+          <label className="se-field"><span>用户名（选填）</span>
+            <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="怎么称呼你？登录后显示在界面左上角" />
+          </label>
+
+          {mode === "pptoken" ? (
+            <label className="se-field"><span>API 端点</span>
+              <div className={`login-endpoint-select ${endpointOpen ? "open" : ""}`} ref={endpointRef}>
+                <button type="button" className="login-endpoint-trigger" onClick={() => setEndpointOpen((open) => !open)} aria-expanded={endpointOpen}>
+                  <span><b>{PPTokenEndpoints[endpoint].label}</b><small>{PPTokenEndpoints[endpoint].url}</small></span><ChevronDown size={15} />
+                </button>
+                {endpointOpen && <div className="login-endpoint-menu" role="listbox">{PPTokenEndpoints.map((option, index) => <button type="button" role="option" aria-selected={index === endpoint} className={index === endpoint ? "active" : ""} key={option.id} onClick={() => { setEndpoint(index); setApiBase(option.url); setEndpointOpen(false); }}><span><b>{option.label}</b><small>{option.url}</small></span>{index === endpoint && <Check size={14} />}</button>)}</div>}
+              </div>
+            </label>
+          ) : (
+            <label className="se-field"><span>API 地址</span>
+              <input ref={apiBaseRef} autoFocus value={apiBase} onChange={(e) => setApiBase(e.target.value)} placeholder="https://api.example.com/v1" />
+            </label>
+          )}
+
+          <label className="se-field"><span>API 密钥</span>
+            <div className="pw-wrap"><input ref={apiKeyRef} type={showPw ? "text" : "password"} value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." /><button type="button" className="pw-toggle" onClick={() => setShowPw(!showPw)}>{showPw ? "隐藏" : "显示"}</button></div>
+          </label>
+        </div>
+
+        {status && <div className="login-status">{status}</div>}
+
+        <button className="primary-setting login-btn" disabled={!apiBase.trim() || !apiKey.trim() || busy} onClick={() => { const selected = PPTokenEndpoints[endpoint]; void doLogin(mode === "pptoken" ? selected.id : `custom-login-${Date.now()}`, mode === "pptoken" ? selected.name : "自定义 API", apiBase.trim().replace(/\/$/, ""), apiKey.trim()); }}>
+          {busy ? <><Spinner />正在探测模型…</> : <><KeyRound size={15} />探测并登录</>}
+        </button>
+        <button className="ghost login-skip" onClick={onSkip}><WifiOff size={14} />暂时不登录，直接进入</button>
+        <div className="login-foot">探测成功后会自动导入模型并完成配置</div>
+      </div>
+    </div>
+  );
+}
+import { CodeAppearanceSection } from "./components/CodeAppearance";
+import { UserCenterSection } from "./components/UserCenter";
+import { BuiltinPluginsSection } from "./components/BuiltinPlugins";
+import { PersonalizationPage } from "./components/PersonalizationPage";
+import { GlobalSearchView } from "./components/IndexLibrary";
+import type { SearchPreviewTarget } from "./components/IndexLibrary";
+import ArchivePage from "./components/ArchivePage";
+import { contentOffsetTop, jumpToBottom } from "./components/scroll-utils";
+import { FlowDiagram } from "./components/FlowDiagram";
+import { currentStreak, dayKey, formatTokens, lastDays, readUsageStats, recordTurnUsage, resetUsageStats, totalTokens } from "./lib/usage-stats";
+import { useScheduler, emptyScheduleDraft } from "./hooks/useScheduler";
+import { useChannelBot, type ChannelDraft } from "./hooks/useChannelBot";
+import { useModelProviders } from "./hooks/useModelProviders";
+import { useFilePreview } from "./hooks/useFilePreview";
+import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "./lib/turn-fold";
+import { WidgetCard } from "./components/GenerativeWidget";
+import { hasWidgetFence, extractStreamingWidget, type ShowWidgetData } from "./lib/generative-widget";
+import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "./lib/user-refs";
+import { installFocusReturn } from "./lib/focus-return";
+import {
+  ponytailSubSkills, planAction, applyAction, isEmptyAction, describePartial, guardOffOwner,
+  findCapabilitySkill, syncedSnapshot, samePluginId,
+  PONYTAIL_PLUGIN_ID, NUPHUS_MCP_ID, DESKTOP_SKILL_ID, BROWSER_SKILL_ID, GROUP_LABELS,
+  type CapabilityGroupId, type SubToggleSnapshot, type GroupIpc, type MemberKey,
+} from "./lib/capability-groups";
+
+
+type Model = {
+  id: string;
+  model: string;
+  displayName: string;
+  description: string;
+  supportedReasoningEfforts: { reasoningEffort: string; description: string }[];
+  defaultReasoningEffort: string;
+  supportsPersonality: boolean;
+  isDefault: boolean;
+  /** 多供应商支持：该模型所属供应商 id / 名称 / 是否当前生效 */
+  provider?: string;
+  providerName?: string;
+  isActive?: boolean;
+};
+type ThreadItem = { id: string; type: string; [key: string]: any };
+type Turn = { id: string; status: string; items: ThreadItem[]; error?: { message?: string } | null; durationMs?: number | null; startedAt?: number | null; completedAt?: number | null; usage?: any };
+type Thread = { id: string; preview: string; name?: string | null; cwd: string; updatedAt: number; status: any; turns: Turn[] };
+type PendingRequest = { id: string | number; method: string; params: any };
+type SystemEvent = { id: string; title: string; text: string; tone?: "info" | "warning" | "error" | "success"; hookKey?: string; at?: number; kind?: "compact" };
+// —— 导入会话记录的待发送存储：threadId -> 外部 .md 对话记录 ——
+// 与 expert-pending-roles 同一思路：导入后立刻新建命名空会话并跳转到对话框，记录不立即发送，
+// 等用户发出该会话第一条消息时才随消息附上（界面折叠成「导入的会话记录」可展开卡）。
+// localStorage 持久化保证空会话闲置到应用重启后仍能识别。
+const PENDING_IMPORT_STORE_KEY = "import-pending-conversations";
+function readPendingImportStore(): Record<string, PendingImportPayload> {
+  try { return JSON.parse(localStorage.getItem(PENDING_IMPORT_STORE_KEY) || "{}") as Record<string, PendingImportPayload>; }
+  catch { return {}; }
+}
+function fmtImportTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch { return iso; }
+}
+/** 导入记录卡上的备注行（发送包装与未发送预览共用同一文案，保证前后一致） */
+function fmtImportNote(p: PendingImportPayload): string {
+  return `来源文件：${p.fileName} ｜ 原会话：${p.title || "未命名"} ｜ ${p.turns ? `${p.turns} 条消息` : "消息轮次未知"} ｜ 导入于 ${fmtImportTime(p.at)}`;
+}
+type QueueItem = { id: string; input: any[]; clientUserMessageId: string };
+type useRefObject = { current: HTMLElement | null };
+type TreeEntry = { fileName: string; isDirectory: boolean; isFile: boolean };
+type SkillInstallState = { skill: MarketSkillEntry; current: number; failed?: string; engineRegistered?: boolean; engineCheckMessage?: string };
+
+/** 通知分级：按文案判定语气——失败/错误红、成功/已完成绿、其余中性。
+ * 覆盖全部 setNotice 调用点，无需逐个改调用方 */
+/** 机器人渠道绑定卡：
+ * 微信 → 腾讯官方 iLink bot 协议（真微信机器人：get_bot_qrcode 出微信可扫的码 → confirmed 拿 token → 微信里直接聊）
+ * 其他渠道 → 控制端绑定码（手机扫码确认后作为该机器人的控制端） */
+function BotBindCard({ bot, onBound }: { bot: { id: string; name: string; channel: string }; onBound: (deviceName: string) => void }) {
+  const [phase, setPhase] = useState<"idle" | "waiting" | "bound" | "expired">("idle");
+  const [qr, setQr] = useState("");
+  const [code, setCode] = useState("");
+  const [wxStatus, setWxStatus] = useState("");
+  const isWeixin = bot.channel === "wechat";
+  const timerRef = useRef(0);
+
+  useEffect(() => () => window.clearInterval(timerRef.current), []);
+
+  // 微信 iLink 登录轮询
+  async function startWeixinLogin() {
+    try {
+      const result = await window.codex.weixinStartLogin();
+      if (!result?.qrcodeImg) { setWxStatus("获取微信二维码失败，请重试"); return; }
+      // 主进程已把 iLink 的二维码内容归一化成 data URL 图片或 SVG，直接注入
+      setQr(result.qrcodeImg);
+      setPhase("waiting");
+      setWxStatus("等待扫码… 请用手机微信扫一扫");
+      window.clearInterval(timerRef.current);
+      timerRef.current = window.setInterval(async () => {
+        const status = await window.codex.weixinPollLogin();
+        if (status?.status === "scaned") setWxStatus("已扫码，正在验证…（如微信提示验证码，输入后继续）");
+        else if (status?.verifyCodeRequired) setWxStatus("请在手机微信输入提示的数字验证码");
+        else if (status?.status === "expired") { window.clearInterval(timerRef.current); setPhase("expired"); setWxStatus("二维码已过期"); }
+        else if (status?.connected) { window.clearInterval(timerRef.current); setPhase("bound"); setWxStatus(""); onBound("微信"); }
+      }, 1500);
+    } catch (error: any) {
+      setWxStatus("获取二维码失败：" + (error?.message ?? "请检查网络后重试"));
+    }
+  }
+
+  // 控制端绑定码轮询（非微信渠道）
+  async function startBind() {
+    try {
+      const result = await window.codex.botBindQrcode(bot.id, bot.name);
+      if (!result?.qr) { setWxStatus("获取绑定码失败，请重试"); return; }
+      setQr(result.qr);
+      setCode(result.code);
+      setPhase("waiting");
+      window.clearInterval(timerRef.current);
+      timerRef.current = window.setInterval(async () => {
+        const status = await window.codex.botBindStatus(result.code);
+        if (status === "confirmed") {
+          const consumed = await window.codex.botBindConsume(result.code);
+          window.clearInterval(timerRef.current);
+          setPhase("bound");
+          onBound(consumed?.deviceName ?? "手机");
+        } else if (status === "expired") {
+          window.clearInterval(timerRef.current);
+          setPhase((current) => current === "waiting" ? "expired" : current);
+        }
+      }, 1200);
+    } catch (error: any) {
+      setWxStatus("获取绑定码失败：" + (error?.message ?? "请检查网络后重试"));
+    }
+  }
+
+  const start = isWeixin ? startWeixinLogin : startBind;
+
+  return (
+    <div className="bot-bind-wrap">
+      <div className="bot-detail-row bot-bind-card">
+        <div><strong>{isWeixin ? "连接微信" : "关联机器人"}</strong><small>{isWeixin ? "用手机微信扫码登录，登录后直接在微信里和机器人聊天，回复实时回推。" : "扫码后自动保存凭据。手机扫一扫，打开链接并确认登录，这台手机即成为该机器人的控制端。"}</small></div>
+        {phase !== "bound" && <button className="bot-scan-btn" onClick={() => void start()}><QrCode size={14} />扫码</button>}
+      </div>
+      {phase !== "idle" && phase !== "bound" && (
+        <div className="bot-bind-panel">
+          {isImageSource(qr)
+            ? <div className="remote-qr-box"><img src={qr} alt="微信登录二维码" style={{ display: "block", width: "100%" }} /></div>
+            : <div className="remote-qr-box" dangerouslySetInnerHTML={{ __html: qr }} />}
+          <div className="bot-bind-state">
+            {phase === "waiting" && <>
+              <span className="bot-bind-state-title"><span className="bind-spinner" />{isWeixin ? "等待微信扫码" : "等待扫码"}</span>
+              {isWeixin
+                ? <>
+                  <span>打开手机微信「扫一扫」扫描左侧二维码</span>
+                  {wxStatus && <span>{wxStatus}</span>}
+                </>
+                : <>
+                  <span>用手机相机或微信「扫一扫」扫描左侧二维码</span>
+                  <span>打开链接后点「确认登录」，该手机即成为此机器人的控制端</span>
+                </>}
+            </>}
+            {phase === "expired" && <>
+              <span className="bot-bind-state-title">二维码已过期</span>
+              <button className="remote-mini-btn" onClick={() => void start()}><RefreshCw size={12} />重新扫码</button>
+            </>}
+          </div>
+        </div>
+      )}
+      {phase === "bound" && (
+        <div className="bot-bind-panel">
+          <div className="bot-bind-state">
+            <span className="bot-bind-state-title"><span className="bind-ok">✓</span>{isWeixin ? "微信已连接" : "绑定成功"}</span>
+            <span>{isWeixin ? "现在直接在微信里给这个账号发消息即可对话，回复会实时回推到微信。" : "手机已确认登录，可远程控制该机器人。"}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 二维码是否为图片源（data URL / http URL / 裸 base64 图片），否则视为 SVG 字符串 */
+function isImageSource(value: string): boolean {
+  if (value.startsWith("data:") || value.startsWith("http")) return true;
+  return value.length > 100 && /^[A-Za-z0-9+/=\s]+$/.test(value.slice(0, 64));
+}
+
+/** 插件展示名：优先用市场声明的 displayName，其次回落到 id/name */
+function pluginDisplayName(plugin: any): string {
+  return String(plugin?.interface?.displayName || plugin?.name || plugin?.id || "未命名插件");
+}
+function pluginDescription(plugin: any): string {
+  return String(plugin?.interface?.shortDescription || plugin?.interface?.longDescription || plugin?.description || "这个插件没有提供描述。");
+}
+
+/** Hook 注入徽标：footer 末尾的小钩子图标，hover 展开本次注入的 hook 列表 */
+function HookBadge({ hooks }: { hooks: { name: string; done: boolean }[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="hook-badge-wrap" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <span className={`hook-badge ${hooks.every((h) => h.done) ? "done" : "running"}`} title="本回合注入的 Hook"><Wrench size={12} />{hooks.length}</span>
+      {open && (
+        <span className="hook-badge-pop">
+          {hooks.map((hook) => <span className="hook-badge-row" key={hook.name}><span className={`hook-dot ${hook.done ? "ok" : ""}`} />{hook.name}</span>)}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function noticeTone(text: string): "success" | "error" | "warning" | "info" {
+  if (/失败|错误|无效|无法|不存在|请先|剪贴板中没有|不能为空/i.test(text)) return "error";
+  if (/已复制|已保存|已安装|已卸载|已切换|已生效|成功|已发送|已提供|已开启|已关闭|已更新|已重命名|已创建|已启动/i.test(text)) return "success";
+  if (/警告|注意|即将|可能|建议|重试|部分/.test(text)) return "warning";
+  return "info";
+}
+
+/** 内置命令目录（复刻 WorkBuddy/CodeBuddy 命令体系）：name / 描述 / 参数提示 / 分类。
+ * 仅收录本项目引擎已具备真实能力的命令，全部有 runSlashCommand 实现。 */
+type BuiltinCommandDef = { name: string; description: string; hint?: string; category: string };
+const builtinCommandCatalog: BuiltinCommandDef[] = [
+  // 会话管理
+  { name: "new", description: "开启全新对话", category: "会话管理" },
+  { name: "resume", description: "打开历史任务", category: "会话管理" },
+  { name: "rename", description: "重命名当前任务", hint: "<新名称>", category: "会话管理" },
+  { name: "fork", description: "从当前任务分叉出新分支", hint: "[分支名]", category: "会话管理" },
+  { name: "archive", description: "归档当前任务，列表不再展示", category: "会话管理" },
+  { name: "delete", description: "永久删除当前任务（不可恢复）", category: "会话管理" },
+  { name: "undo", description: "撤销上一轮对话", category: "会话管理" },
+  // 上下文与状态
+  { name: "compact", description: "压缩当前上下文，总结较早对话释放空间", category: "上下文与状态" },
+  { name: "clear", description: "清空上下文，开启新对话（旧会话保留在历史里）", category: "上下文与状态" },
+  { name: "status", description: "显示任务状态、模型、思考强度与上下文用量", category: "上下文与状态" },
+  { name: "context", description: "计算并展示当前上下文占用", category: "上下文与状态" },
+  { name: "pwd", description: "显示当前工作目录", category: "上下文与状态" },
+  { name: "cd", description: "更换当前工作目录", hint: "[目录]", category: "上下文与状态" },
+  { name: "queue", description: "查看待处理的消息队列", category: "上下文与状态" },
+  { name: "memory", description: "打开记忆管理，查看或新增记忆", category: "上下文与状态" },
+  { name: "goal", description: "查看或设置长期目标", hint: "[条件 | clear]", category: "上下文与状态" },
+  // 模型与权限
+  { name: "model", description: "模型与思考设置", category: "模型与权限" },
+  { name: "effort", description: "切换真实思考强度", hint: "[低|中|高|最高]", category: "模型与权限" },
+  { name: "personality", description: "切换回复风格", hint: "[务实|友好|默认]", category: "模型与权限" },
+  { name: "permissions", description: "运行权限设置", category: "模型与权限" },
+  { name: "sandbox", description: "切换沙箱执行范围", hint: "[只读|工作区可写|完全访问]", category: "模型与权限" },
+  { name: "approval", description: "切换命令审批策略", hint: "[按需|从不]", category: "模型与权限" },
+  // 审查与代码
+  { name: "review", description: "审查当前代码改动", hint: "[自定义指令]", category: "审查与代码" },
+  { name: "diff", description: "打开本轮文件改动", category: "审查与代码" },
+  { name: "copy", description: "复制上一条回复到剪贴板", category: "审查与代码" },
+  // 信息查询
+  { name: "help", description: "查看全部可用命令及用法", category: "信息查询" },
+  { name: "skills", description: "列出可用 Skills", category: "信息查询" },
+  { name: "mcp", description: "列出 MCP 服务及运行状态", category: "信息查询" },
+  { name: "plugins", description: "列出已安装插件", category: "信息查询" },
+  { name: "apps", description: "列出已安装 Apps", category: "信息查询" },
+  // 运行控制
+  { name: "stop", description: "停止当前生成", category: "运行控制" },
+];
+/** 兼容旧引用的二元组（name, description） */
+const slashCommands = builtinCommandCatalog.map(({ name, description }) => [name, description] as const);
+
+const effortLabels: Record<string, string> = {
+  none: "关闭",
+  minimal: "极少",
+  low: "低",
+  medium: "中",
+  high: "高",
+  xhigh: "最高",
+  ultra: "最高",
+};
+
+/** 行业分类 ID → 中文名（与专家团编辑器一致） */
+const EXPERT_CATEGORY_LABELS: Record<string, string> = {
+  "01-ProductDesign": "产品设计", "02-Engineering": "技术工程", "03-GameSpatial": "游戏空间",
+  "04-DataAI": "数据智能", "05-MarketingGrowth": "营销增长", "06-ContentCreative": "内容创作",
+  "07-SalesCommerce": "销售商务", "08-FinanceInvestment": "金融投资", "09-OperationsHR": "运营人力",
+  "10-ProjectQuality": "项目质量", "11-SecurityCompliance": "法务安全", "12-IndustryConsultant": "行业顾问",
+};
+function categoryLabel(id: string) { return EXPERT_CATEGORY_LABELS[id] ?? (id || "未分类"); }
+
+function expertRoleLabel(member: ExpertTeamMember, isLead = false) {
+  return member.profession.zh?.trim() || (isLead ? "主理人" : "团队成员");
+}
+
+const MEMORY_CATEGORIES = [
+  { name: "用户偏好", icon: User, hint: "用户风格、口味、习惯、长期偏好" },
+  { name: "项目背景", icon: BookOpen, hint: "项目定位、模块、关键约束" },
+  { name: "工作流/SOP", icon: ListFilter, hint: "固定的流程、约定、复盘准则" },
+  { name: "任务经验", icon: Brain, hint: "踩过的坑、有效解法、可复用经验" },
+  { name: "临时上下文", icon: Clock3, hint: "临时记录,任务结束后清理" },
+] as const;
+
+/** 把启用的子智能体登记成 Codex 可直接调用的 dynamicTool。 */
+function subAgentTools(agents: SubAgentEntry[]) {
+  const enabled = agents.filter((agent) => agent.enabled);
+  if (!enabled.length) return [];
+  return [{
+    type: "function",
+    name: "subagent_invoke",
+    description: `调用用户配置的子智能体完成一个独立子任务并返回结构化结果。可用子智能体：${enabled.map((agent) => `${agent.name}（${agent.description || "无描述"}）`).join("；")}。子智能体在独立会话中运行，会继承主对话的模型与权限设置。`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "要调用的子智能体名称，必须是上面列出的名称之一", enum: enabled.map((agent) => agent.name) },
+        query: { type: "string", description: "交给子智能体的完整任务描述，信息要足够独立执行" },
+      },
+      required: ["name", "query"],
+    },
+  }];
+}
+
+const idleTemplates = [
+  { name: "Git 周会摘要", desc: "汇总本周 Git 活动，生成周五会话摘要：列出重要提交、已合并 PR 及主要变更，并保持简洁。", prompt: "汇总本周 Git 活动，生成周五会话摘要：列出重要提交、已合并 PR 及主要变更，并保持简洁。" },
+  { name: "CI 失败与不稳定测试报告", desc: "扫描最近的 CI 运行，列出失败和不稳定测试及其可能原因，并按影响范围给出修复建议。", prompt: "扫描最近的 CI 运行，列出失败和不稳定测试及其可能原因，并按影响范围给出修复建议。" },
+  { name: "文档同步检查", desc: "基于当前代码实现和最近提交，检查仓库中的 README、docs、配置说明与使用示例是否过时或与实现不一致。仅修改文档。", prompt: "基于当前代码实现和最近提交，检查仓库中的 README、docs、配置说明与使用示例是否过时或与实现不一致。仅修改文档。" },
+];
+const cronTemplates = [
+  { name: "晨会动态", desc: "汇总上一个工作日以来的提交、模块变化、CI 状态和待跟进事项，最终生成不超过 6 条的晨会口述摘要。只读分析。", time: "每工作日 09:00", intervalMinutes: 1440, icon: "◎" },
+  { name: "风险扫描", desc: "检查最近 24 小时的代码变更，识别运行错误、数据丢失、权限绕过、资源泄露及跨端兼容等高置信风险，并附代码和修复建议。", time: "每天 10:00", intervalMinutes: 1440, icon: "⚠" },
+  { name: "发布简报", desc: "整理本周合并的 PR 和 commit，按功能、修复、体验及工程改进分类，同时生成团队版和面向用户的精简发布说明。", time: "每周五 16:00", intervalMinutes: 10080, icon: "📝" },
+  { name: "文档同步检查", desc: "对照最近 7 天的代码、配置、接口与文档变更，识别已改变公开行为但文档尚未同步的高置信差异，并附文件路径和修复建议。", time: "每周三 15:00", intervalMinutes: 10080, icon: "📄" },
+];
+type SettingsPage = "user" | "general" | "devtools" | "appearance" | "personalization" | "model" | "browser" | "computer" | "memory" | "agents" | "teams" | "plugins" | "mcp" | "ssh" | "skills" | "commands" | "hooks" | "usage" | "channel" | "schedule" | "rpa" | "archive" | "backup" | "automation" | "agentteam";
+// 导航分组：常用项置顶（技能/插件紧挨），自动化三合一、智能体+专家团合并为二级页。
+// "browser"/"computer"/"rpa"/"agents"/"teams" 保留在类型里（历史跳转兼容），但不再出现在导航。
+const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
+  { group: "账户", items: [["user", "用户中心", UserRound], ["model", "模型", Bot]] },
+  { group: "常用", items: [["general", "控制台", Settings2], ["appearance", "外观", Sun], ["personalization", "个性化", Sparkles], ["skills", "技能", Zap], ["plugins", "插件", Store], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare]] },
+  { group: "自动化与能力", items: [["automation", "自动化", Workflow], ["mcp", "MCP", Wifi], ["schedule", "定时任务", Clock3], ["hooks", "钩子", Wrench], ["ssh", "SSH 服务器", Server]] },
+  { group: "智能体", items: [["agentteam", "智能体团队", Users]] },
+  { group: "数据与统计", items: [["usage", "使用统计", CircleGauge], ["backup", "会话备份", Download], ["archive", "归档管理", Archive]] },
+  { group: "开发工具", items: [["devtools", "开发工具", TerminalSquare]] },
+];
+
+/** 能力总闸各子项在提示文案里的展示名（describePartial / 部分启用提示用）。 */
+const MEMBER_LABELS: Partial<Record<MemberKey, string>> = {
+  ponytail: "ponytail 注入开关",
+  ponytailPlugin: "ponytail 插件",
+  ponytailSkills: "ponytail 子技能",
+  desktop: "桌面自动化总闸",
+  nuphusMcp: "nuphus MCP",
+  desktopSkill: `${DESKTOP_SKILL_ID} 技能`,
+  browser: "浏览器自动化总闸",
+  browserSkill: `${BROWSER_SKILL_ID} 技能`,
+};
+
+/** 快捷键一览：settings 快捷键弹窗用。keys 是展示用组合，实际绑定在全局 keydown 处理器。 */
+const SHORTCUT_GROUPS: { group: string; shortcuts: { keys: string[]; desc: string }[] }[] = [
+  {
+    group: "对话",
+    shortcuts: [
+      { keys: ["Ctrl+Enter", "Enter"], desc: "发送消息" },
+      { keys: ["Shift+Enter"], desc: "插入换行" },
+      { keys: ["Ctrl+Shift+F"], desc: "搜索当前对话内容" },
+      { keys: ["Ctrl+L"], desc: "聚焦输入框" },
+      { keys: ["Ctrl+Shift+/"], desc: "聚焦输入框（输入命令）" },
+    ],
+  },
+  {
+    group: "新建与会话",
+    shortcuts: [
+      { keys: ["Ctrl+N", "Ctrl+Shift+N"], desc: "新建对话" },
+      { keys: ["Ctrl+K", "Ctrl+P", "Ctrl+Shift+P"], desc: "打开命令面板" },
+      { keys: ["Ctrl+O"], desc: "更换工作区目录" },
+    ],
+  },
+  {
+    group: "界面",
+    shortcuts: [
+      { keys: ["Ctrl+B"], desc: "打开 / 关闭右侧上下文面板" },
+      { keys: ["Ctrl+J"], desc: "打开终端面板" },
+      { keys: [","], desc: "打开设置（Ctrl + 逗号）" },
+      { keys: ["Ctrl+Shift+S"], desc: "打开设置 · 控制台" },
+      { keys: ["Esc"], desc: "关闭当前弹窗 / 面板" },
+    ],
+  },
+  {
+    group: "其它",
+    shortcuts: [
+      { keys: ["Ctrl+Shift+/"], desc: "输入斜杠命令" },
+      { keys: ["Ctrl+Z / Ctrl+Y"], desc: "撤销 / 重做（编辑框内）" },
+    ],
+  },
+];
+
+function imageUrl(path: string) {
+  return `harness-image://local?path=${encodeURIComponent(path)}`;
+}
+
+function timeAgo(timestamp: number) {
+  const seconds = Math.max(0, Date.now() / 1000 - timestamp);
+  if (seconds < 60) return "刚刚";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前`;
+  return new Date(timestamp * 1000).toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
+}
+
+/** 会话列表按本地日历日分组（WorkBuddy conversation-section 风格） */
+/** 按「具体日期」对对话分组（今天 / 昨天用口语，其余用具体月日），每组一个可折叠 section */
+function groupThreadsByTime(threads: Thread[]): { key: string; label: string; items: Thread[] }[] {
+  const groups = new Map<string, { key: string; label: string; items: Thread[] }>();
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
+  const dayMs = 86400;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  for (const t of threads) {
+    const ts = t.updatedAt;
+    // 分组键必须用「本地日历日零点」时间戳，不能用 floor(ts/86400)（按 UTC 日切分）——
+    // UTC+8 下今天 0~8 点的会话会落进上一个 UTC 日，被拆成另一组但标签同为「今天」→ 重复分组。
+    const d = new Date(ts * 1000);
+    const key = String(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 1000);
+    let label: string;
+    if (ts >= startOfToday) label = "今天";
+    else if (ts >= startOfToday - dayMs) label = "昨天";
+    else {
+      const d = new Date(ts * 1000);
+      const nowD = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const diffDays = Math.round((nowD.getTime() / 1000 - ts) / dayMs);
+      if (diffDays < 7) {
+        const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+        label = weekdays[d.getDay()];
+      } else {
+        label = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      }
+    }
+    let group = groups.get(key);
+    if (!group) { group = { key: `day-${key}`, label, items: [] }; groups.set(key, group); }
+    group.items.push(t);
+  }
+  return [...groups.values()].sort((a, b) => Number(b.key.replace("day-", "")) - Number(a.key.replace("day-", "")));
+}
+
+/** 首页内置快捷站点（无收藏时兜底展示，品牌色字母块） */
+const QUICK_SITES: { name: string; url: string; color: string }[] = [
+  { name: "GitHub", url: "https://github.com", color: "#181717" },
+  { name: "OpenAI", url: "https://openai.com", color: "#10a37f" },
+  { name: "Google", url: "https://www.google.com", color: "#4285f4" },
+  { name: "哔哩哔哩", url: "https://www.bilibili.com", color: "#fb7299" },
+  { name: "知乎", url: "https://www.zhihu.com", color: "#0084ff" },
+  { name: "百度", url: "https://www.baidu.com", color: "#2932e1" },
+];
+
+/** 按时段返回问候语 */
+function greetingForHour(hour: number): string {
+  if (hour < 5) return "夜深了";
+  if (hour < 9) return "早上好";
+  if (hour < 12) return "上午好";
+  if (hour < 14) return "中午好";
+  if (hour < 18) return "下午好";
+  if (hour < 22) return "晚上好";
+  return "夜深了";
+}
+
+/** 收集对话消息文本供内容搜索（user/agent 正文、推理、工具 content/title） */
+function collectMessageTexts(thread: Thread | null): { turnId: string; itemId: string; type: string; text: string }[] {
+  if (!thread) return [];
+  const out: { turnId: string; itemId: string; type: string; text: string }[] = [];
+  for (const turn of thread.turns ?? []) {
+    for (const item of turn.items ?? []) {
+      let text = "";
+      if (item.type === "userMessage" || item.type === "agentMessage") text = typeof item.text === "string" ? item.text : "";
+      else if (item.type === "reasoning") text = typeof item.text === "string" ? item.text : "";
+      else if (typeof item.content === "string") text = item.content;
+      else if (typeof item.title === "string") text = item.title;
+      else if (typeof item.summary === "string") text = item.summary;
+      if (text.trim()) out.push({ turnId: turn.id, itemId: item.id, type: item.type, text });
+    }
+  }
+  return out;
+}
+
+/** 在滚动容器里定位匹配消息元素（优先精确 item，退化同 turn 首条） */
+function locateMatchEl(scroller: HTMLElement, m: { turnId: string; itemId: string }): HTMLElement | null {
+  const all = Array.from(scroller.querySelectorAll<HTMLElement>("[data-turn-id]"));
+  const exact = all.find((n) => n.dataset.turnId === m.turnId && n.dataset.itemId === m.itemId);
+  if (exact) return exact;
+  return all.find((n) => n.dataset.turnId === m.turnId) ?? null;
+}
+
+function uniqueModelCount(models: { id: string }[] | undefined) {
+  if (!models?.length) return 0;
+  const seen = new Set<string>();
+  for (const m of models) if (m?.id) seen.add(m.id);
+  return seen.size;
+}
+
+function ago(ts: number) {
+  const seconds = Math.max(0, Math.floor(Date.now() / 1000 - ts / 1000));
+  if (seconds < 60) return "刚刚";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
+  return `${Math.floor(seconds / 3600)} 小时前`;
+}
+
+const RRULE_DAY_NAMES: Record<string, string> = { MO: "一", TU: "二", WE: "三", TH: "四", FR: "五", SA: "六", SU: "日" };
+
+function clampRruleNum(value: string | undefined, min: number, max: number, fallback: number) {
+  const parsed = Number.parseInt(value || "", 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
+// 对齐 WorkBuddy 的 rrule 描述：每N小时 / 每天HH:MM / 每周X、Y / 每两周 / 每月X日 / 每年M月D日
+function describeRrule(rrule: string) {
+  const map = new Map<string, string>();
+  for (const pair of (rrule || "").split(";")) {
+    const [key, value] = pair.split("=");
+    if (key && value) map.set(key.trim().toUpperCase(), value.trim().toUpperCase());
+  }
+  const freq = map.get("FREQ") || "DAILY";
+  const interval = clampRruleNum(map.get("INTERVAL"), 1, 999, 1);
+  const hour = String(clampRruleNum(map.get("BYHOUR"), 0, 23, 9)).padStart(2, "0");
+  const minute = String(clampRruleNum(map.get("BYMINUTE"), 0, 59, 0)).padStart(2, "0");
+  const time = `${hour}:${minute}`;
+  if (freq === "HOURLY") return interval <= 1 ? "每小时" : `每 ${interval} 小时`;
+  if (freq === "DAILY") return `每天 ${time}`;
+  if (freq === "WEEKLY") {
+    const days = (map.get("BYDAY") ?? "").split(",").map((day) => RRULE_DAY_NAMES[day.trim().toUpperCase()] ?? day.trim()).filter(Boolean);
+    if (days.length === 7) return interval > 1 ? `每 ${interval} 周 · 每天 ${time}` : `每天 ${time}`;
+    const head = interval > 1 ? `每 ${interval} 周` : "每周";
+    return days.length ? `${head} ${days.join("、")} ${time}` : `${head} ${time}`;
+  }
+  if (freq === "MONTHLY") return `每月 ${clampRruleNum(map.get("BYMONTHDAY"), 1, 31, 1)} 日 ${time}`;
+  if (freq === "YEARLY") return `每年 ${clampRruleNum(map.get("BYMONTH"), 1, 12, 1)} 月 ${clampRruleNum(map.get("BYMONTHDAY"), 1, 31, 1)} 日 ${time}`;
+  return freq.toLowerCase();
+}
+
+function describeSchedule(task: { kind?: string; timeOfDay?: string; weekdays?: number[]; intervalMinutes: number; rrule?: string; scheduleType?: string; scheduledAt?: string; monthDay?: number; month?: number }) {
+  if (task.rrule) return describeRrule(task.rrule);
+  if (task.scheduleType === "once" || task.kind === "once") {
+    const at = task.scheduledAt;
+    return at ? `一次性 ${at.replace("T", " ").slice(5, 16)}` : "一次性";
+  }
+  const time = task.timeOfDay ?? "09:00";
+  if (task.kind === "daily") return "每天 " + time;
+  if (task.kind === "weekly") return "每周" + (task.weekdays ?? [1]).map((day) => "日一二三四五六"[day]).join("、") + " " + time;
+  if (task.kind === "monthly") return `每月 ${task.monthDay ?? 1} 日 ${time}`;
+  if (task.kind === "yearly") return `每年 ${task.month ?? 1} 月 ${task.monthDay ?? 1} 日 ${time}`;
+  if (task.intervalMinutes % 60 === 0) return task.intervalMinutes === 60 ? "每小时" : `每 ${task.intervalMinutes / 60} 小时`;
+  return `每 ${task.intervalMinutes} 分钟`;
+}
+
+type ToolStatusEntry = { id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string };
+
+// 自动化工具状态卡：nuphus-mcp / playwright-cli / cloakbrowser。
+function ToolCard({ tool }: { tool: ToolStatusEntry }) {
+  const Icon = tool.id === "nuphus-mcp" ? Monitor : tool.id === "cloakbrowser" ? ShieldCheck : Globe2;
+  const state = !tool.installed ? "missing" : !tool.binaryReady ? "partial" : "ready";
+  const stateLabel = state === "ready" ? "就绪" : state === "partial" ? "待下载内核" : "未安装";
+  return (
+    <div className={`tool-card ${state}`}>
+      <span className="tool-card-icon"><Icon size={16} /></span>
+      <div className="tool-card-main">
+        <div className="tool-card-head">
+          <strong>{tool.name}</strong>
+          {tool.version && <code className="tool-card-version">v{tool.version}</code>}
+          <span className={`tool-card-state ${state}`}>{stateLabel}</span>
+        </div>
+        <p>{tool.detail}</p>
+        <code className="tool-card-command">{tool.command}</code>
+      </div>
+    </div>
+  );
+}
+
+function basename(value: string) {
+  return value.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || value;
+}
+
+function modelName(value: string) {
+  return value.startsWith("custom:") ? value.split(":").slice(2).join(":") : value;
+}
+
+/** 机器人渠道中文名（bot-detail 已连接卡等处展示用） */
+function botChannelName(channel: string) {
+  return channel === "wechat" ? "微信" : channel === "feishu" ? "飞书" : channel === "lark" ? "Lark" : channel === "telegram" ? "Telegram" : channel === "dingtalk" ? "钉钉" : channel === "discord" ? "Discord" : channel === "wecom" ? "企业微信" : channel === "qq" ? "QQ 机器人" : channel === "slack" ? "Slack" : channel === "whatsapp" ? "WhatsApp" : "";
+}
+
+/** 机器人是否在线：微信/Telegram 看通道实时心跳，其余渠道看启用开关 */
+function botOnlineOf(bot: { channel: string; enabled: boolean }, channelOnline: { weixin: boolean; telegram: boolean }) {
+  if (bot.channel === "wechat") return channelOnline.weixin;
+  if (bot.channel === "telegram") return channelOnline.telegram;
+  return bot.enabled;
+}
+
+function formatDuration(value: unknown) {
+  // 与 usage-stats 版本并存：接受 unknown 并返回空串语义，避免历史调用点行为变化
+  const milliseconds = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return "";
+  return localFormatDurationMs(milliseconds);
+}
+
+function localFormatDurationMs(milliseconds: number) {
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return "";
+  if (milliseconds < 1000) return `${Math.max(1, Math.round(milliseconds))} 毫秒`;
+  const seconds = Math.floor(milliseconds / 1000);
+  if (seconds < 60) return `${(milliseconds / 1000).toFixed(milliseconds >= 10_000 ? 0 : 1)} 秒`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${remainder}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m ${remainder}s`;
+}
+
+function itemStatusLabel(status: unknown) {
+  if (status === "inProgress" || status === "running") return "处理中";
+  if (status === "failed" || status === "error") return "失败";
+  if (status === "declined") return "已拒绝";
+  if (status === "interrupted") return "已中断";
+  return "已处理";
+}
+
+function durationLabel(status: unknown, durationMs: unknown) {
+  const duration = formatDuration(durationMs);
+  return duration ? `${itemStatusLabel(status)} · ${duration}` : itemStatusLabel(status);
+}
+
+const workItemTypes = new Set(["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch", "collabAgentToolCall", "subAgentActivity", "imageGeneration"]);
+
+function isTaskTurn(turn: Turn) {
+  return turn.items.some((item) => workItemTypes.has(item.type));
+}
+
+function diffStats(diff: string) {
+  return diff.split("\n").reduce((stats, line) => {
+    if (line.startsWith("+") && !line.startsWith("+++")) stats.added += 1;
+    if (line.startsWith("-") && !line.startsWith("---")) stats.deleted += 1;
+    return stats;
+  }, { added: 0, deleted: 0 });
+}
+
+function isActivityItem(item: ThreadItem) {
+  return item.type !== "userMessage" && item.type !== "agentMessage" && item.type !== "reasoning";
+}
+
+function formatTimestamp(value: unknown) {
+  const timestamp = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp * 1000).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
+}
+
+function itemText(item: ThreadItem) {
+  if (item.type === "agentMessage") return item.text ?? "";
+  if (item.type === "userMessage") return (item.content ?? []).filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n");
+  return "";
+}
+
+function inputText(input: any[]) {
+  return input.filter((part) => part.type === "text").map((part) => part.text).join("\n") || `${input.filter((part) => part.type === "localImage").length} 个图片附件`;
+}
+
+const imageExts = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico"]);
+function isImagePath(path: string) {
+  const lower = path.toLowerCase();
+  return imageExts.has(lower.slice(lower.lastIndexOf(".")));
+}
+
+/** 看着像文件路径：要么含盘符/分隔符，要么以 .<1-5 字符后缀 结尾 */
+function looksLikeFilePath(candidate: string): boolean {
+  const trimmed = candidate.replace(/^[`"'\s]+|[`"'\s]+$/g, "");
+  if (!trimmed || trimmed.length > 4096) return false;
+  // Windows 盘符单独走规则；非盘符路径禁掉明显非法字符
+  const hasDrive = /^[A-Za-z]:[\\/]/.test(trimmed);
+  if (!hasDrive && /[<>:"|?*\u0000-\u001f]/.test(trimmed)) return false;
+  // 版本号 / 纯数字 token（2.55.0、v24.19.0、11.17.0、384.4）不是文件
+  if (/^[vV]?\d[\d.,]*\d$/.test(trimmed)) return false;
+  // 中文描述末尾的小数（累计升值超0.4、增长3.5）不是“.4/.5 文件”。
+  if (/\.\d{1,5}$/.test(trimmed)) return false;
+  if (hasDrive) return /\.[A-Za-z0-9]{1,5}$/.test(trimmed);
+  if (trimmed.startsWith("~/") || trimmed.startsWith("./") || trimmed.startsWith("../")) return true;
+  if (/[\\/]/.test(trimmed) && /\.[A-Za-z0-9]{1,5}$/.test(trimmed)) return true;
+  // 裸路径：单词或连续中文，不带空格、不带引号
+  if (/\s/.test(trimmed)) return false;
+  if (/^[A-Za-z0-9_.\u4e00-\u9fa5-]+\.[A-Za-z0-9]{1,5}$/.test(trimmed)) return true;
+  return false;
+}
+
+/** 从 assistant markdown 中抽出可疑文件路径（围栏代码块外；同路径去重） */
+function extractFilePathsFromMarkdown(text: string): { path: string; prefix: string }[] {
+  const seen = new Set<string>();
+  const out: { path: string; prefix: string }[] = [];
+  const push = (raw: string, prefix: string) => {
+    const trimmed = raw.replace(/^[`"'\s]+|[`"'\s]+$/g, "").replace(/[\\/]+$/, "");
+    if (!looksLikeFilePath(trimmed)) return;
+    if (seen.has(trimmed)) return;
+    seen.add(trimmed);
+    out.push({ path: trimmed, prefix });
+  };
+  const parts = text.split(/```/);
+  for (let i = 0; i < parts.length; i += 2) {
+    const part = parts[i];
+    if (part == null) break;
+    for (const line of part.split(/\r?\n/)) {
+      // 1) 路径 / Path / 文件 / 位置 关键字前缀（行级，整行就是「keyword: path」）
+      const kw = line.match(/^[ \t]*(?:路径|Path|路径名|文件|位置|File|path)[:：][ \t]*(.+?)[ \t]*$/i);
+      if (kw) {
+        push(kw[1], kw[1].replace(/\s+/g, " ").trim());
+        continue;
+      }
+      // 2) 反引号包裹：本行所有反引号块都收；整行就是单个反引号路径时才把整行也算上
+      const bt = line.match(/`([^`\n]+)`/g);
+      if (bt) {
+        for (const piece of bt) push(piece.slice(1, -1), piece);
+        const trimmedLine = line.trim();
+        if (trimmedLine.startsWith("`") && trimmedLine.endsWith("`") && bt.length === 1) {
+          push(trimmedLine.slice(1, -1), trimmedLine);
+        }
+        continue;
+      }
+      // 3) 全行就是 Windows 绝对路径（含盘符）；Chinese 字符非 word-boundary，直接定位
+      const abs = line.match(/([A-Za-z]:[\\/][^\s<>:"|?*\n]+\.[A-Za-z0-9]{1,5})/);
+      if (abs) {
+        push(abs[1], abs[1]);
+        continue;
+      }
+      // 4) 任意裸文件路径（含扩展名的 token），可在一行里出现多次
+      const bareMatches = line.match(/([^\s<>:"|?*()<>\[\]{}]+\.[A-Za-z0-9]{1,5})/g);
+      if (bareMatches) {
+        for (const m of bareMatches) push(m, m);
+      }
+    }
+  }
+  return out;
+}
+
+function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile?: (path: string) => void }) {
+  const matches = useMemo(() => extractFilePathsFromMarkdown(text), [text]);
+  const [resolvedPaths, setResolvedPaths] = useState<Record<string, string>>({});
+  // 探测两步走（全程只 stat，不扫磁盘）：① 按解析路径直查；② 裸文件名查会话路径台账
+  // （工具调用等消息项里出现过的真实路径）。都找不到才灰显，点击只弹提示、不再炸读取错误。
+  useEffect(() => {
+    let cancelled = false;
+    setResolvedPaths({});
+    for (const m of matches) {
+      const abs = resolveFilePath?.(m.path) ?? m.path;
+      window.codex.fileExists(abs)
+        .then(async (r) => {
+          if (cancelled) return;
+          if (r?.exists) {
+            setResolvedPaths((prev) => ({ ...prev, [m.path]: abs }));
+            return;
+          }
+          const known = lookupKnownFile?.(m.path) ?? null;
+          if (cancelled) return;
+          if (!known) return;
+          try {
+            const check = await window.codex.fileExists(known);
+            if (cancelled) return;
+            if (check?.exists) setResolvedPaths((prev) => ({ ...prev, [m.path]: known }));
+          } catch { /* 无真实文件就不渲染卡片 */ }
+        })
+        .catch(() => { /* 探测失败不渲染，避免制造点不开的假卡片 */ });
+    }
+    return () => { cancelled = true; };
+  }, [matches]);
+  const confirmed = matches.filter((match) => Boolean(resolvedPaths[match.path]));
+  if (confirmed.length === 0) return null;
+  return (
+    <div className="inline-file-cards" aria-label="涉及到的文件">
+      {confirmed.map((m, index) => {
+        const name = basename(m.path) || m.path;
+        const openPath = resolvedPaths[m.path];
+        return (
+          <button
+            type="button"
+            className="inline-file-card"
+            key={`${m.path}-${index}`}
+            title={isImagePath(openPath) ? `点击预览：${openPath}` : `点击打开：${openPath}`}
+            onClick={() => {
+              if (isImagePath(openPath)) openImageLightbox?.(openPath, name);
+              else onOpenFile?.(openPath);
+            }}
+          >
+            {isImagePath(m.path) ? (
+              <span className="inline-file-thumb">
+                <img src={imageUrl(resolveFilePath?.(openPath) ?? openPath)} alt="" loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none"; }} />
+              </span>
+            ) : <FileText size={14} />}
+            <span className="inline-file-name">{name}</span>
+            {openPath !== name && <span className="inline-file-path">{openPath}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** 用户消息引用行：文件卡片 / 技能胶囊 / 上下文引用卡 */
+function UserRefsRow({ refs, onOpenFile, onQuote }: { refs: ParsedUserRefs; onOpenFile?: (path: string) => void; onQuote?: (text: string) => void }) {
+  const { files, skills, contexts } = refs;
+  if (!files.length && !skills.length && !contexts.length) return null;
+  return (
+    <div className="msg-refs">
+      {files.map((path, index) => {
+        const name = basename(path) || path;
+        if (isImagePath(path)) {
+          const src = path.startsWith("http") ? path : imageUrl(path);
+          return (
+            <button type="button" className="ref-file-card ref-image-card" title={name} onClick={() => openImageLightbox?.(path, name)} key={index}>
+              <span className="ref-image-thumb">
+                <img src={src} alt={name} loading="lazy" />
+                <span className="ref-image-preview"><img src={src} alt={name} /></span>
+              </span>
+            </button>
+          );
+        }
+        return (
+          <button type="button" className="ref-file-card" title={name} onClick={() => onOpenFile?.(path)} key={index}>
+            <FileText size={14} />
+            <span className="ref-file-name">{name}</span>
+          </button>
+        );
+      })}
+      {skills.map((skill, index) => (
+        <span className="ref-skill-chip" title={skill.description || skill.name} key={index}><Zap size={12} /><span>{skill.name}</span></span>
+      ))}
+      {contexts.map((ctx, index) => (
+        <button type="button" className="ref-context-card" title="点击引用" onClick={() => onQuote?.(`${ctx.role}：${ctx.text}`)} key={index}>
+          <Quote size={13} />
+          <span className="ref-context-role">{ctx.role}</span>
+          <span className="ref-context-text">{ctx.text}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** 排队消息列表：位于输入框上方，长条布局，新消息往上叠加（最新的在最顶部、紧贴输入框） */
+function QueuedMessageList({ entries, onOpenFile, onQuote, onDelete, onStart, onSave, onReorder, dragIndex, setDragIndex }: {
+  entries: QueueItem[];
+  onOpenFile: (path: string) => void;
+  onQuote: (text: string) => void;
+  onDelete: (id: string) => void;
+  onStart: (id?: string) => void;
+  onSave: (entry: QueueItem, text: string) => void;
+  onReorder: (from: number, to: number) => void;
+  dragIndex: number | null;
+  setDragIndex: (index: number | null) => void;
+}) {
+  if (!entries.length) return null;
+  // 新消息往上叠加：渲染倒序（数组末尾的最新消息显示在最顶部）。拖拽 index 是显示序，需镜像回原数组序。
+  const reversed = [...entries].reverse();
+  const n = entries.length;
+  const mapIndex = (displayIndex: number) => n - 1 - displayIndex;
+  return (
+    <div className="queued-messages">
+      {reversed.map((entry, displayIndex) => <QueuedMessageItem key={entry.id} entry={entry} index={displayIndex} total={entries.length} onOpenFile={onOpenFile} onQuote={onQuote} onDelete={onDelete} onStart={onStart} onSave={onSave} onReorder={(from, to) => onReorder(mapIndex(from), mapIndex(to))} dragIndex={dragIndex} setDragIndex={setDragIndex} />)}
+    </div>
+  );
+}
+
+function QueuedMessageItem({ entry, index, total, onOpenFile, onQuote, onDelete, onStart, onSave, onReorder, dragIndex, setDragIndex }: {
+  entry: QueueItem; index: number; total: number;
+  onOpenFile: (path: string) => void; onQuote: (text: string) => void;
+  onDelete: (id: string) => void; onStart: (id?: string) => void; onSave: (entry: QueueItem, text: string) => void;
+  onReorder: (from: number, to: number) => void; dragIndex: number | null; setDragIndex: (index: number | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(() => inputText(entry.input));
+  const rawText = inputText(entry.input);
+  const refs = useMemo<ParsedUserRefs>(() => parseUserRefs(rawText), [rawText]);
+  const images = (entry.input ?? []).filter((part: any) => part.type === "localImage");
+  const saving = () => { setEditing(false); onSave(entry, draft); };
+  if (editing) {
+    return (
+      <div className="queued-message queued-message-editing" data-queued-id={entry.id}>
+        <textarea value={draft} autoFocus onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") setEditing(false); else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) saving(); }} placeholder="编辑排队消息内容" />
+        <div className="queued-edit-actions">
+          <button className="ghost" onClick={() => setEditing(false)}>取消</button>
+          <button disabled={!draft.trim() && !images.length} onClick={saving}>保存</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div
+      className={`queued-message ${dragIndex === index ? "dragging" : ""}`}
+      data-queued-id={entry.id}
+      draggable
+      onDragStart={() => setDragIndex(index)}
+      onDragOver={(event) => { event.preventDefault(); if (dragIndex != null && dragIndex !== index) { onReorder(dragIndex, index); setDragIndex(index); } }}
+      onDragEnd={() => setDragIndex(null)}
+      title={total > 1 ? "拖动可调整排队顺序" : undefined}
+    >
+      <div className="queued-main">
+        <span className="queued-badge"><Clock3 size={11} />排队中{total > 1 ? ` ${index + 1}/${total}` : ""}</span>
+        <UserRefsRow refs={refs} onOpenFile={onOpenFile} onQuote={onQuote} />
+        {refs.threadReferences.map((reference) => <ImportedRecordCard key={reference.id} note={reference.note} content={reference.content} kind="thread" />)}
+        {refs.cleanText && <span className="queued-text">{refs.cleanText}</span>}
+        {images.map((part: any, idx: number) => <span className="queued-image-chip" key={idx}><Image size={13} />{part.path}</span>)}
+      </div>
+      <div className="queued-actions">
+        <button className="queued-action" title="立即注入思路（不打断当前任务）" onClick={() => onStart(entry.id)}><ArrowUp size={13} />立即</button>
+        <button className="queued-action" title="编辑排队消息" onClick={() => { setDraft(inputText(entry.input)); setEditing(true); }}><PenLine size={13} />编辑</button>
+        <button className="queued-action danger" title="删除排队消息" onClick={() => onDelete(entry.id)}><Trash2 size={13} />删除</button>
+      </div>
+    </div>
+  );
+}
+
+const reasoningStart = new Map<string, number>();
+const reasoningDuration = new Map<string, number>();
+// 某些中转不转发 agentMessage delta，只在 completed 时一次性交付全文。
+// 记录这种"从短文本突然跳到全文"的 item，渲染层用快速增量揭示兜底。
+const bufferedAgentRevealStarts = new Map<string, string>();
+// reasoning 同理：完成快照一次性交付思考全文时，渐进揭示避免"瞬间冒出来"
+const bufferedReasoningRevealStarts = new Map<string, string>();
+// 命令/动态工具/文件编辑内容在 completed 快照里整包交付时，也从旧内容继续追字。
+const bufferedToolRevealStarts = new Map<string, string>();
+
+/** reasoning 的展示文本：summary + content 数组（兼容字符串与对象两种形态）拼成一段 */
+function reasoningTextOf(item: ThreadItem): string {
+  const norm = (arr: unknown): string[] => (Array.isArray(arr) ? arr : []).map((entry) => {
+    if (typeof entry === "string") return entry.trim();
+    if (entry && typeof entry === "object") {
+      const t = (entry as any).text ?? (entry as any).content;
+      if (typeof t === "string") return t.trim();
+    }
+    return "";
+  }).filter(Boolean);
+  return [...norm(item.summary), ...norm(item.content)].join("\n\n");
+}
+
+// 流式 delta 事件（高频，需要合帧）；item/completed 等结构性事件走即时路径
+const deltaMethods = new Set(["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded", "item/reasoning/textDelta", "item/commandExecution/outputDelta"]);
+const isDeltaMethod = (method: string) => deltaMethods.has(method);
+
+function loadThreadPermissions(id: string): { sandbox?: string; approval?: string } {
+  try { return JSON.parse(localStorage.getItem("thread-permissions-" + id) ?? "{}"); } catch { return {}; }
+}
+function saveThreadPermissions(id: string, sandbox: string, approval: string) {
+  localStorage.setItem("thread-permissions-" + id, JSON.stringify({ sandbox, approval }));
+}
+
+function loadThreadModel(id: string): string {
+  try { return localStorage.getItem("thread-model-" + id) ?? ""; } catch { return ""; }
+}
+
+function saveThreadModel(id: string, modelId: string) {
+  if (!id || !modelId) return;
+  try { localStorage.setItem("thread-model-" + id, modelId); } catch { /* ignore */ }
+}
+
+/** 每会话独立的思考等级：切会话互不串扰（对齐 thread-model 的按会话存储模式）。 */
+function loadThreadEffort(id: string): string {
+  try { return localStorage.getItem("thread-effort-" + id) ?? ""; } catch { return ""; }
+}
+
+function saveThreadEffort(id: string, effort: string) {
+  if (!id || !effort) return;
+  try { localStorage.setItem("thread-effort-" + id, effort); } catch { /* ignore */ }
+}
+
+function sandboxPolicy(mode: string, cwd: string) {
+  if (mode === "danger-full-access") return { type: "dangerFullAccess" };
+  if (mode === "read-only") return { type: "readOnly", networkAccess: false };
+  // 默认自主模式：仅在当前项目根目录可写，允许常规构建/测试/依赖查询联网。
+  // 工作区外访问仍由 Codex 沙箱与审批策略保护。
+  return { type: "workspaceWrite", writableRoots: cwd ? [cwd] : [], networkAccess: true, excludeTmpdirEnvVar: false, excludeSlashTmp: false };
+}
+
+function sandboxMode(policy: any): "danger-full-access" | "read-only" | "workspace-write" | null {
+  if (!policy?.type) return null;
+  if (policy.type === "dangerFullAccess") return "danger-full-access";
+  if (policy.type === "readOnly") return "read-only";
+  if (policy.type === "workspaceWrite") return "workspace-write";
+  return null;
+}
+
+function mergeItem(thread: Thread | null, turnId: string, item: ThreadItem) {
+  if (!thread) return thread;
+  return {
+    ...thread,
+    turns: thread.turns.map((turn) =>
+      turn.id !== turnId
+        ? turn
+        : { ...turn, items: turn.items.some((entry) => entry.id === item.id) ? turn.items.map((entry) => (entry.id === item.id ? stableItem(entry, item) : entry)) : [...turn.items, item] },
+    ),
+  };
+}
+
+// 缓存 thread 与 resume 结果是否有实质内容变化：turns 数 / 最后一条 turn / updatedAt 任一不同即变化。
+// 秒开路径据此决定是否替换渲染（无变化不替换，避免闪烁）。
+function threadContentChanged(a: Thread | null, b: Thread | null): boolean {
+  if (!a || !b) return true;
+  if (a.turns.length !== b.turns.length) return true;
+  const lastA = a.turns[a.turns.length - 1]?.id;
+  const lastB = b.turns[b.turns.length - 1]?.id;
+  if (lastA !== lastB) return true;
+  return a.updatedAt !== b.updatedAt;
+}
+
+function mergeTurn(thread: Thread | null, nextTurn: Turn) {
+  if (!thread) return thread;
+  const current = thread.turns.find((turn) => turn.id === nextTurn.id);
+  const items = current ? [...current.items] : [];
+  for (const item of nextTurn.items) {
+    const index = items.findIndex((entry) => entry.id === item.id);
+    if (index === -1) { items.push(item); continue; }
+    // 引用保持：内容没变的 item 沿用旧引用，memo 才能跳过未变化消息；
+    // turn/completed 整回合替换时不再引发全树重渲染（闪烁根源）
+    items[index] = stableItem(items[index], item);
+  }
+  // 保留回合级 usage（引擎在 turn/completed 时附带，旧消息也能展示 token / 缓存）
+  const turn = current ? { ...current, ...nextTurn, items, usage: nextTurn.usage ?? current.usage } : nextTurn;
+  return { ...thread, turns: current ? thread.turns.map((entry) => entry.id === turn.id ? turn : entry) : [...thread.turns, turn] };
+}
+
+function markBufferedAgentReveal(thread: Thread | null, turnId: string, item: ThreadItem) {
+  // reasoning 完成快照一次性交付思考全文：同样标记起点，渲染层渐进揭示
+  if (item.type === "reasoning") {
+    const nextText = reasoningTextOf(item);
+    if (nextText.length < 40) return;
+    const current = thread?.turns.find((turn) => turn.id === turnId)?.items.find((entry) => entry.id === item.id);
+    const currentText = reasoningTextOf(current as ThreadItem);
+    const jump = nextText.length - currentText.length;
+    if (jump >= 40 && nextText.startsWith(currentText)) bufferedReasoningRevealStarts.set(item.id, currentText);
+    return;
+  }
+  if (item.type === "commandExecution") {
+    const nextText = truncateTailLines(String(item.aggregatedOutput ?? "").trim(), 500).text;
+    if (nextText.length < 48) return;
+    const current = thread?.turns.find((turn) => turn.id === turnId)?.items.find((entry) => entry.id === item.id);
+    const currentText = truncateTailLines(String(current?.aggregatedOutput ?? "").trim(), 500).text;
+    if (nextText.length - currentText.length >= 48) bufferedToolRevealStarts.set(String(item.id), nextText.startsWith(currentText) ? currentText : "");
+    return;
+  }
+  if (item.type === "mcpToolCall" || item.type === "dynamicToolCall") {
+    const payload = (entry: ThreadItem | undefined) => String(entry?.progress || JSON.stringify(entry?.result ?? entry?.arguments ?? entry?.contentItems, null, 2) || "");
+    const nextText = payload(item);
+    if (nextText.length < 48) return;
+    const current = thread?.turns.find((turn) => turn.id === turnId)?.items.find((entry) => entry.id === item.id);
+    const currentText = payload(current);
+    if (nextText.length - currentText.length >= 48) bufferedToolRevealStarts.set(`${item.id}-payload`, nextText.startsWith(currentText) ? currentText : "");
+    return;
+  }
+  if (item.type === "fileChange") {
+    const current = thread?.turns.find((turn) => turn.id === turnId)?.items.find((entry) => entry.id === item.id);
+    for (const [index, change] of (item.changes ?? []).entries()) {
+      const nextText = String(change?.diff ?? "");
+      const currentText = String(current?.changes?.[index]?.diff ?? "");
+      if (nextText.length >= 48 && nextText.length - currentText.length >= 48) {
+        bufferedToolRevealStarts.set(`${item.id}-diff-${index}`, nextText.startsWith(currentText) ? currentText : "");
+      }
+    }
+    return;
+  }
+  if (item.type !== "agentMessage") return;
+  const nextText = String(item.text ?? "");
+  if (nextText.length < 40) return;
+  const current = thread?.turns.find((turn) => turn.id === turnId)?.items.find((entry) => entry.id === item.id);
+  const currentText = String(current?.text ?? "");
+  const jump = nextText.length - currentText.length;
+  if (jump >= 40 && nextText.startsWith(currentText)) bufferedAgentRevealStarts.set(item.id, currentText);
+}
+
+function markBufferedTurnReveal(thread: Thread | null, turn: Turn) {
+  for (const item of turn.items ?? []) markBufferedAgentReveal(thread, turn.id, item);
+}
+
+/** 服务端快照 vs 本地流式状态：所有字段深比较等值则保留旧引用（memo 命中） */
+function stableItem(existing: ThreadItem, next: ThreadItem): ThreadItem {
+  // 服务端快照缺 summary/content/text（reasoning/agentMessage 完成事件经常只回 id+status），
+  // 直接用 next 会把本地流式积累的内容清空——思考卡“完成后消失”的根源。缺字段时本地优先。
+  // 另：服务端完成快照的 summary/content 是对象数组 [{type:"summary_text",text}]，本地流式存的是
+  // 字符串数组 ["..."]，结构不同不该覆盖本地（否则思考内容会变成 "[object Object]"）。
+  const sparse = (next.type === "reasoning" || next.type === "agentMessage") && next.summary == null && next.content == null && next.text == null;
+  const serverObjectArray = (next.type === "reasoning") && Array.isArray(next.summary) && next.summary.some((entry: any) => entry && typeof entry === "object");
+  if (sparse || serverObjectArray) return { ...next, summary: existing.summary ?? next.summary, content: existing.content ?? next.content, text: existing.text ?? next.text };
+  // turn/started、item/completed、turn/completed 都可能返回同 ID 但 content 为空的 userMessage。
+  // 空快照只能更新状态，绝不能抹掉已经落地的用户正文。
+  if (next.type === "userMessage" && itemText(existing).trim() && !itemText(next).trim()) {
+    return { ...next, content: existing.content };
+  }
+  const keys = new Set([...Object.keys(existing), ...Object.keys(next)]);
+  for (const key of keys) {
+    if (JSON.stringify((existing as any)[key]) !== JSON.stringify((next as any)[key])) return next;
+  }
+  return existing;
+}
+
+/** turn/start 的同步响应有时包含空 userMessage；用本次真实 input 补齐后再进入本地状态。 */
+function hydrateTurnUserMessage(turn: Turn, input: any[]): Turn {
+  let hydrated = false;
+  const items = turn.items.map((item) => {
+    if (item.type !== "userMessage" || itemText(item).trim()) return item;
+    hydrated = true;
+    return { ...item, content: input };
+  });
+  return hydrated ? { ...turn, items } : turn;
+}
+
+function appendDelta(thread: Thread | null, turnId: string, itemId: string, type: string, field: string, delta: string) {
+  if (!thread) return thread;
+  const turn = thread.turns.find((entry) => entry.id === turnId);
+  const current = turn?.items.find((entry) => entry.id === itemId) ?? { id: itemId, type };
+  return mergeItem(thread, turnId, { ...current, [field]: `${current[field] ?? ""}${delta}` });
+}
+
+function appendIndexedDelta(thread: Thread | null, turnId: string, itemId: string, field: "summary" | "content", index: number, delta: string) {
+  if (!thread) return thread;
+  const turn = thread.turns.find((entry) => entry.id === turnId);
+  const current = turn?.items.find((entry) => entry.id === itemId) ?? { id: itemId, type: "reasoning", summary: [], content: [] };
+  const parts = [...(current[field] ?? [])];
+  parts[index] = `${parts[index] ?? ""}${delta}`;
+  return mergeItem(thread, turnId, { ...current, [field]: parts });
+}
+
+const threadStreamMethods = new Set([
+  "turn/started", "turn/completed", "item/started", "item/completed",
+  "item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded", "item/reasoning/textDelta",
+  "item/commandExecution/outputDelta", "item/plan/delta", "turn/plan/updated",
+  "item/fileChange/patchUpdated", "item/mcpToolCall/progress", "item/commandExecution/terminalInteraction",
+  "thread/name/updated", "thread/status/changed",
+]);
+
+function applyThreadEvent(thread: Thread | null, method: string, params: any): Thread | null {
+  switch (method) {
+    case "turn/started":
+      return mergeTurn(thread, params.turn);
+    case "turn/completed":
+      markBufferedTurnReveal(thread, params.turn);
+      return mergeTurn(thread, params.turn);
+    case "item/started":
+      return mergeItem(thread, params.turnId, params.item);
+    case "item/completed":
+      markBufferedAgentReveal(thread, params.turnId, params.item);
+      return mergeItem(thread, params.turnId, params.item);
+    case "item/agentMessage/delta":
+      return appendDelta(thread, params.turnId, params.itemId, "agentMessage", "text", params.delta);
+    case "item/reasoning/summaryTextDelta":
+      return appendIndexedDelta(thread, params.turnId, params.itemId, "summary", params.summaryIndex ?? 0, params.delta ?? params.text ?? "");
+    case "item/reasoning/summaryPartAdded":
+      return appendIndexedDelta(thread, params.turnId, params.itemId, "summary", params.summaryIndex ?? params.index ?? 0, params.part?.text ?? params.text ?? params.delta ?? "");
+    case "item/reasoning/textDelta":
+      return appendIndexedDelta(thread, params.turnId, params.itemId, "content", params.contentIndex ?? 0, params.delta ?? params.text ?? "");
+    case "item/commandExecution/outputDelta":
+      return appendDelta(thread, params.turnId, params.itemId, "commandExecution", "aggregatedOutput", params.delta);
+    case "item/plan/delta":
+      return appendDelta(thread, params.turnId, params.itemId, "plan", "text", params.delta);
+    case "turn/plan/updated": {
+      const text = `${params.explanation ? `${params.explanation}\n\n` : ""}${(params.plan ?? []).map((step: any) => `- [${step.status === "completed" ? "x" : " "}] ${step.step}`).join("\n")}`;
+      return mergeItem(thread, params.turnId, { id: `plan-${params.turnId}`, type: "plan", text });
+    }
+    case "item/fileChange/patchUpdated": {
+      const turn = thread?.turns.find((entry) => entry.id === params.turnId);
+      const item = turn?.items.find((entry) => entry.id === params.itemId) ?? { id: params.itemId, type: "fileChange", status: "inProgress" };
+      return mergeItem(thread, params.turnId, { ...item, changes: params.changes });
+    }
+    case "item/mcpToolCall/progress":
+      return appendDelta(thread, params.turnId, params.itemId, "mcpToolCall", "progress", `${params.message}\n`);
+    case "item/commandExecution/terminalInteraction":
+      return appendDelta(thread, params.turnId, params.itemId, "commandExecution", "terminalInput", params.stdin);
+    case "thread/name/updated":
+      return thread ? { ...thread, name: params.threadName ?? null } : thread;
+    case "thread/status/changed":
+      return thread && thread.id === params.threadId ? { ...thread, status: params.status } : thread;
+    default:
+      return thread;
+  }
+}
+
+/** WorkBuddy 式内联图片 chip：解析 prompt 里的 [图片:path] 占位符，渲染成可悬停/可删除的胶囊。
+ *  hover → 浮动预览（预加载完成才显示，避免闪烁）；hover 时图标位变 X（visibility 交换）；
+ *  点击 → 全屏 lightbox。纯展示组件，删除/预览通过回调上抛。 */
+/** 对话中的文件引用面板（WorkBuddy 式）：候选文件列表由调用方收集传入，
+ *  这里负责搜索框、过滤与空态展示。点选后回调 onPick 加入 files 附件。 */
+function ThreadFilePicker({ query, onQuery, candidates, onPick, onClose }: { query: string; onQuery: (value: string) => void; candidates: { path: string; source: string }[]; onPick: (path: string) => void; onClose: () => void }) {
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const seen = new Set<string>();
+    return candidates.filter((entry) => {
+      if (seen.has(entry.path)) return false;
+      seen.add(entry.path);
+      return !q || entry.path.toLowerCase().includes(q) || basename(entry.path).toLowerCase().includes(q);
+    }).slice(0, 30);
+  }, [candidates, query]);
+  return (
+    <>
+      <div className="submenu-search"><Search size={13} /><input autoFocus value={query} onChange={(event) => onQuery(event.target.value)} placeholder="搜索对话中的文件" onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } }} /></div>
+      <div className="submenu-list">
+        {filtered.map((entry) => (
+          <button type="button" key={entry.path} title={entry.path} onClick={() => onPick(entry.path)}>
+            {isImagePath(entry.path) ? <Image size={14} /> : <FileCode2 size={14} />}
+            <span className="thread-file-name">{basename(entry.path)}</span>
+            <small>{entry.source}</small>
+          </button>
+        ))}
+        {!filtered.length && <p className="submenu-empty">{query.trim() ? "没有匹配的文件" : "当前会话还没有出现过文件"}</p>}
+      </div>
+    </>
+  );
+}
+
+function ComposerInlineImages({ prompt, onRemove, onPreview }: { prompt: string; onRemove: (path: string) => void; onPreview: (path: string) => void }) {
+  const [hovered, setHovered] = useState<string | null>(null);
+  const segments = useMemo(() => splitPromptSegments(prompt).filter((seg) => seg.kind === "image"), [prompt]);
+  if (!segments.length) return null;
+  return (
+    <div className="composer-inline-images" aria-label="输入框内联图片">
+      {segments.map((seg) => {
+        if (seg.kind !== "image") return null;
+        const path = seg.path;
+        const name = basename(path);
+        const isHovered = hovered === path;
+        return (
+          <span
+            className={`composer-image-chip ${isHovered ? "hovered" : ""}`}
+            key={path}
+            onMouseEnter={() => setHovered(path)}
+            onMouseLeave={() => setHovered((current) => current === path ? null : current)}
+            onClick={(event) => { event.preventDefault(); event.stopPropagation(); onPreview(path); }}
+            role="button"
+            tabIndex={0}
+            aria-label={`图片 ${name}`}
+            onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onPreview(path); } }}
+          >
+            {isHovered && <ComposerImageTooltip path={path} alt={name} />}
+            <span className="composer-image-chip-icon"><Image size={12} /></span>
+            <span className="composer-image-chip-name">{name}</span>
+            <button
+              type="button"
+              className="composer-image-chip-close"
+              aria-label={`移除 ${name}`}
+              title="移除图片"
+              onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+              onClick={(event) => { event.preventDefault(); event.stopPropagation(); onRemove(path); }}
+            ><X size={10} /></button>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+/** 悬停预览卡：先在屏外预加载图片，加载完成才显示浮层（WorkBuddy deferred preview 同款思路）。 */
+function ComposerImageTooltip({ path, alt }: { path: string; alt: string }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const img = new window.Image();
+    img.onload = () => setReady(true);
+    img.src = imageUrl(path);
+    return () => { img.onload = null; };
+  }, [path]);
+  if (!ready) return null;
+  return (
+    <span className="composer-image-tooltip" role="presentation">
+      <img src={imageUrl(path)} alt={alt} />
+    </span>
+  );
+}
+
+function ComposerMenu({ icon, label, options, value, onChange, disabled, title, width, tone, toneOf }: { icon: any; label: string; options: { value: string; title: string; desc?: string }[]; value: string; onChange: (value: string) => void; disabled?: boolean; title?: string; width?: number; tone?: "danger"; toneOf?: (option: { value: string; title: string; desc?: string }) => string | undefined }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) setOpen(false); };
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+  }, [open]);
+  const current = options.find((option) => option.value === value);
+  const Icon = icon;
+  return (
+    <div className={`composer-menu ${open ? "open" : ""}`} ref={wrapRef}>
+      <button type="button" className={`composer-setting ${tone === "danger" ? "danger" : ""}`} disabled={disabled} title={title ?? label} onClick={() => setOpen((currentOpen) => !currentOpen)}>
+        <Icon size={14} />
+        <span>{current?.title ?? label}</span>
+        <ChevronDown size={12} className={`menu-caret ${open ? "up" : ""}`} />
+      </button>
+      {open && (
+        <div className="composer-menu-pop" role="listbox" aria-label={label} style={width ? { width } : undefined}>
+          {options.map((option) => {
+            const itemTone = toneOf?.(option);
+            return (
+              <button type="button" role="option" aria-selected={option.value === value} key={option.value} className={option.value === value ? "active" : ""} onClick={() => { onChange(option.value); setOpen(false); }}>
+                <span className={`menu-item-icon${itemTone ? ` tone-dot tone-${itemTone}` : ""}`}>{option.value === value ? <CircleCheck size={15} /> : null}</span>
+                <span className="menu-item-text"><strong>{option.title}</strong>{option.desc && option.desc !== option.title ? <small>{option.desc}</small> : null}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const approvalMenuOptions = (fullAccess: boolean) => fullAccess ? [
+  { value: "on-request", title: "变更前确认", desc: "改文件前先问我。" },
+  { value: "untrusted", title: "自动编辑", desc: "自动编辑文件。" },
+  { value: "never", title: "完全访问", desc: "减少确认次数。" },
+] : [
+  { value: "on-request", title: "变更前确认", desc: "改文件前先问我。" },
+  { value: "untrusted", title: "自动编辑", desc: "自动编辑文件。" },
+  { value: "never", title: "完全访问", desc: "减少确认次数。" },
+];
+
+const skillHubCategories = ["总排行", "近期最热", "最新上传", "AI 增强", "开发", "办公", "效率", "设计", "内容创作", "专业技能"];
+const cocoLoopCategoryMap: Record<string, string> = { "总排行": "overall", "近期最热": "trending", "最新上传": "latest", "AI 增强": "ai_enhancement", "开发": "development", "办公": "office", "效率": "efficiency", "设计": "design", "内容创作": "content_creation", "专业技能": "professional" };
+
+/** 思考档位菜单全集（minimal~ultra）。菜单按所选模型声明的能力过滤，
+ *  只显示该模型真正支持的档位——GPT 系可声明更多，普通模型只有三档。 */
+const effortMenuOptions = ALL_EFFORTS.map((value) => ({
+  value,
+  title: effortLabels[value] ?? value,
+  desc: { minimal: "最快响应，几乎不思考。", low: "轻量思考。", medium: "平衡速度与质量。", high: "更严谨，适合复杂任务。", xhigh: "深度思考，速度稍慢。", ultra: "全量深度思考，最慢。" }[value] ?? "",
+}));
+
+/** WorkBuddy 风格的上下文压缩状态卡：压缩中显示 spinner + 状态徽章，完成后显示对勾 */
+function CompactEventCard({ event }: { event: SystemEvent }) {
+  const isRunning = event.title === "正在压缩上下文";
+  const failed = event.tone === "error";
+  return (
+    <div className={`system-event compact-card ${isRunning ? "running" : failed ? "failed" : "done"}`}>
+      <span className="compact-icon">{isRunning ? <Spinner /> : failed ? <X size={18} /> : <CircleCheck size={18} />}</span>
+      <div className="compact-body">
+        <div className="compact-title-row">
+          <strong>{event.title}</strong>
+          <span className="compact-badge">{isRunning ? "压缩中" : failed ? "失败" : "完成"}</span>
+        </div>
+        <p>{event.text}</p>
+      </div>
+    </div>
+  );
+}
+
+/** 高度动画折叠原语（对齐 WorkBuddy cr-collapse：0.28s 高度 + 内容 opacity/位移过渡）
+ * bare=true 时只输出 content/inner 两层，由外层容器提供 wb-fold 状态类（避免嵌套叠加过渡时长） */
+function Fold({ open, bare, children }: { open: boolean; bare?: boolean; children: React.ReactNode }) {
+  const body = <div className="wb-fold-content"><div className="wb-fold-inner">{children}</div></div>;
+  return bare ? body : <div className={`wb-fold ${open ? "open" : "collapsed"}`}>{body}</div>;
+}
+
+/** 工具/命令/编辑卡片：受控展开。展开状态走公共壳 useCardOpen：
+ * autoOpen 由调用方给出「运行中 且 有内容」（编辑卡运行中展示 diff，完成自动折叠过渡）；
+ * 命令/工具不自动展开（头部即全部信息），用户手动展开后尊重其选择 */
+function ActionCard({ icon, verb, info, status, statusText, autoOpen, defaultExpanded, children }: {
+  icon: React.ReactNode;
+  verb: React.ReactNode;
+  info?: React.ReactNode;
+  status: ActionStatus;
+  statusText?: React.ReactNode;
+  autoOpen?: boolean;
+  defaultExpanded?: boolean;
+  children?: React.ReactNode;
+}) {
+  const { open, toggle } = useCardOpen(Boolean(defaultExpanded || autoOpen));
+  return (
+    <div className={`action-card ${status} ${open ? "open" : "closed"}`}>
+      <button type="button" className="action-head" onClick={toggle}>
+        <span className="action-icon">{icon}</span>
+        <span className="action-verb">{verb}</span>
+        {info != null && <span className="action-info">{info}</span>}
+        <span className="action-status">
+          <CardStatusIcon status={status} />
+          {statusText != null && <span className="action-status-text">{statusText}</span>}
+        </span>
+        <ChevronDown size={13} className="action-chevron" />
+      </button>
+      {children != null && <Fold open={open}><div className="action-content">{children}</div></Fold>}
+    </div>
+  );
+}
+
+/** 尾部截断：超过 max 行只保留最后 max 行（对齐 WorkBuddy truncateByLines tail），返回省略行数 */
+function truncateTailLines(text: string, max = 500): { text: string; omittedLines: number } {
+  const lines = text.split("\n");
+  if (lines.length <= max) return { text, omittedLines: 0 };
+  return { text: lines.slice(lines.length - max).join("\n"), omittedLines: lines.length - max };
+}
+
+function commandCodeLanguage(command: string): { language: string; label: string } {
+  if (/\b(?:powershell|pwsh)(?:\.exe)?\b/i.test(command)) return { language: "powershell", label: "PowerShell" };
+  if (/^\s*(?:cmd(?:\.exe)?\s+\/c|call\s+)/i.test(command)) return { language: "batch", label: "Command Prompt" };
+  return { language: "bash", label: "Shell" };
+}
+
+function payloadLanguage(text: string): string {
+  const value = text.trim();
+  if ((value.startsWith("{") && value.endsWith("}")) || (value.startsWith("[") && value.endsWith("]"))) return "json";
+  return "text";
+}
+
+const ToolCodeBlock = memo(function ToolCodeBlock({ language, text, revealing, className, maxHeight = 260 }: {
+  language: string;
+  text: string;
+  revealing?: boolean;
+  className?: string;
+  maxHeight?: number;
+}) {
+  const settings = useCodeSettings();
+  return (
+    <div className={`tool-code-block ${className ?? ""} ${revealing ? "packet-revealing" : ""}`.trim()}>
+      <SyntaxHighlighter
+        language={language}
+        style={codeThemeStyle(settings.theme)}
+        PreTag="pre"
+        CodeTag="code"
+        className="tool-code-pre code-highlight"
+        showLineNumbers={settings.lineNumbers}
+        wrapLongLines={settings.wrap}
+        customStyle={{
+          fontSize: codeFontSize(settings.fontScale),
+          fontFamily: codeFontStack(settings.font),
+          lineHeight: 1.55,
+          maxHeight,
+          margin: 0,
+        }}
+      >{text || " "}</SyntaxHighlighter>
+      {revealing ? <span className="packet-stream-cursor tool-code-cursor" aria-hidden /> : null}
+    </div>
+  );
+});
+
+/** 命令执行卡片（1:1 复刻 WorkBuddy ExecuteCommandCompactRenderer）：
+ * 收起态单行 [终端图标][动词][命令文本][状态][箭头]，运行中命令文本走「流光扫过」动画；
+ * 展开态 bash 卡片：bash 标题 + 命令原文 + 尾部截断输出（mono），空输出成功态显示「运行成功 ✓」。 */
+function CommandExecutionCard({ item, waitingForApproval, turnActive }: { item: ThreadItem; waitingForApproval?: boolean; turnActive?: boolean }) {
+  const running = item.status === "inProgress" || item.status === "running";
+  const failed = !running && item.exitCode != null && item.exitCode !== 0;
+  const command = String(item.command ?? "").trim();
+  const output = String(item.aggregatedOutput ?? "").trim();
+  const terminalInput = String(item.terminalInput ?? "").trim();
+  // 命令输出默认收起。运行过程优先展示模型的文字说明和思考，代码/终端输出由用户按需展开；
+  // 否则长输出会占满视口，让用户误以为运行时“只有代码、没有文字过程”。
+  const { open, toggle } = useCardOpen(false);
+  const { text: tailOutput, omittedLines } = useMemo(() => truncateTailLines(output, 500), [output]);
+  const { displayed: displayedOutput, revealing: outputRevealing } = usePacketRevealText(String(item.id), tailOutput, Boolean(turnActive), bufferedToolRevealStarts, 48);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  // 流式输出时贴底滚动（对齐 ReasoningCard 的 rAF 合帧方案）
+  useEffect(() => {
+    if (!running && !outputRevealing) return;
+    const el = contentRef.current;
+    if (!el) return;
+    const raf = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+    return () => cancelAnimationFrame(raf);
+  }, [displayedOutput, running, outputRevealing]);
+  const verb = waitingForApproval && running ? "等待批准" : running ? "正在运行" : failed ? "运行失败" : "已运行";
+  const status: ActionStatus = running ? (waitingForApproval ? "pending" : "running") : failed ? "error" : "done";
+  const emptySuccess = !running && !failed && output === "";
+  const shell = commandCodeLanguage(command);
+  const codeText = [
+    command,
+    terminalInput ? `$ ${terminalInput}` : "",
+    displayedOutput || (running ? "等待输出…" : ""),
+  ].filter(Boolean).join("\n\n");
+  return (
+    <div className={`cmd-card ${status} ${open ? "open" : "closed"}`}>
+      <button type="button" className="cmd-head" onClick={toggle}>
+        <span className="cmd-icon"><TerminalSquare size={14} /></span>
+        <span className="cmd-verb">{verb}</span>
+        <span className={`cmd-command ${running ? "loading" : ""}`}>{command || "命令"}</span>
+        <span className="cmd-status">
+          <CardStatusIcon status={status} />
+          {!running && <span className="cmd-duration">{durationLabel(item.status, item.durationMs)}</span>}
+        </span>
+        <ChevronDown size={13} className="cmd-chevron" />
+      </button>
+      <Fold open={open}>
+        <div className="cmd-content" ref={contentRef}>
+          {waitingForApproval && running && <div className="cmd-approval"><ShieldCheck size={13} />需要批准才能继续</div>}
+          <div className="cmd-title">{shell.label}</div>
+          <div className="cmd-output">
+            {emptySuccess ? (
+              <span className="cmd-output-success"><CircleCheck size={14} />运行成功</span>
+            ) : (
+              <>
+                {omittedLines > 0 && <span className="cmd-output-truncated">⋯ 已省略前 {omittedLines} 行</span>}
+                <ToolCodeBlock language={shell.language} text={codeText} revealing={outputRevealing} className="cmd-code-block" maxHeight={230} />
+              </>
+            )}
+          </div>
+          {failed && <div className="cmd-exit">退出码 {item.exitCode}</div>}
+        </div>
+      </Fold>
+    </div>
+  );
+}
+
+function LinkCard({ href }: { href: string }) {
+  let host = href;
+  try { host = new URL(href).host || href; } catch { /* keep raw href */ }
+  return (
+    <span className="link-card" role="group" aria-label={`链接卡片 ${host}`}>
+      <span className="link-card-icon"><Globe2 size={17} /></span>
+      <span className="link-card-body"><strong>{host}</strong><small>网站</small></span>
+      <button className="link-card-open" title={`在浏览器中打开 ${href}`} onClick={() => void window.codex.openExternal(href)}>打开</button>
+    </span>
+  );
+}
+
+// 插件表与组件表必须提在模块级：写在 JSX 内联会每次渲染产生新数组/新对象，
+// ReactMarkdown 会认为组件类型变了，把整棵 Markdown 子树卸载重建 —— 这正是
+// 流式出字时代码块/图片每帧闪烁的根因。提为常量后只做文本节点 diff。
+const MD_REMARK_PLUGINS = [remarkGfm, remarkBreaks];
+
+/** 代码块：必须是模块级稳定组件。主题/字体由代码设置驱动，组件内部自己订阅 store，
+ * 这样切换主题只重渲染代码块本身，不会让 Markdown 整棵树重建（流式出字时也在复用节点）。 */
+const MdCode = memo(function MdCode({ className, children, ...props }: any) {
+  const settings = useCodeSettings();
+  if (!className) return <code {...props}>{children}</code>;
+  return (
+    <SyntaxHighlighter
+      language={className.replace("language-", "")}
+      style={codeThemeStyle(settings.theme)}
+      PreTag="div"
+      className="code-highlight"
+      showLineNumbers={settings.lineNumbers}
+      wrapLongLines={settings.wrap}
+      customStyle={{ fontSize: codeFontSize(settings.fontScale), fontFamily: codeFontStack(settings.font), margin: 0 }}
+    >{String(children).replace(/\n$/, "")}</SyntaxHighlighter>
+  );
+});
+
+/** 文件预览只读代码视图：与对话代码块同源渲染（主题/字体/字号/行号/换行全复用 code-settings），
+ *  修复「文件预览里代码高亮不生效」——之前是裸 <code> 标签，无语法解析。 */
+const FilePreviewCode = memo(function FilePreviewCode({ language, content, truncated }: { language: string; content: string; truncated?: boolean }) {
+  const settings = useCodeSettings();
+  const normalized = String(language ?? "").replace(/^\./, "").toLowerCase();
+  return (
+    <SyntaxHighlighter
+      language={normalized}
+      style={codeThemeStyle(settings.theme)}
+      PreTag="pre"
+      CodeTag="code"
+      className="file-preview-code code-highlight"
+      showLineNumbers={settings.lineNumbers}
+      wrapLongLines={settings.wrap}
+      customStyle={{ fontSize: codeFontSize(settings.fontScale), fontFamily: codeFontStack(settings.font), margin: 0 }}
+    >{content.replace(/\n$/, "")}{truncated ? "\n…（文件过大，仅展示前 200K 字符）" : ""}</SyntaxHighlighter>
+  );
+});
+
+const MD_COMPONENTS: Components = {
+  p: ({ children }) => {
+    const list = Array.isArray(children) ? children : [children];
+    // remark-breaks 对只含空白/换行的段落也会生成 <p>；它不是正文，不能给
+    // 后面的命令卡或工具折叠组制造一整行空白。
+    if (list.every((child) => child == null || (typeof child === "string" && child.trim() === ""))) return null;
+    const only = list.length === 1 ? list[0] : null;
+    const href = only?.props?.href;
+    if (typeof href === "string" && /^https?:\/\//i.test(href) && String(only.props.children ?? "").replace(/\/+$/, "") === href.replace(/\/+$/, "")) {
+      return <LinkCard href={href} />;
+    }
+    return <p>{children}</p>;
+  },
+  a: ({ href, children }) => (
+    <a href={href} onClick={(event) => { event.preventDefault(); if (href) void window.codex.openExternal(href); }}>
+      {children}
+    </a>
+  ),
+  img: ({ src, alt }) => (
+    <img className="message-image" src={src} alt={alt ?? ""} onClick={() => src && openImageLightbox?.(src, alt ?? "")} />
+  ),
+  code: MdCode,
+};
+
+/** 把 markdown 切成块：只在「围栏代码块之外」的空行处切分。
+ *  流式出字时只有最后一块在增长，前面各块内容不变 —— 配合 MdBlock 的 memo（字符串按值比较），
+ *  已完成的块不会重新走 remark 解析。整篇重解析的 O(全文) 降到 O(最后一块)，
+ *  这是长回复越往后越卡的主因。 */
+function splitMarkdown(text: string): string[] {
+  const lines = text.split("\n");
+  const blocks: string[] = [];
+  let buf: string[] = [];
+  let fence: string | null = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    const marker = /^(`{3,}|~{3,})/.exec(trimmed);
+    if (marker) {
+      const ch = marker[1][0];
+      // 围栏内不切分：否则 ``` 开合被拆到两个块里，代码块会渲染成乱码
+      if (!fence) fence = ch;
+      else if (ch === fence) fence = null;
+    }
+    const nextIsContent = i + 1 < lines.length && lines[i + 1].trim() !== "";
+    if (!fence && trimmed === "" && nextIsContent) {
+      if (buf.length) { blocks.push(buf.join("\n")); buf = []; }
+      continue;
+    }
+    buf.push(line);
+  }
+  if (buf.length) blocks.push(buf.join("\n"));
+  return blocks;
+}
+
+/** 单块渲染：props 是字符串，memo 按值比较 —— 内容不变就完全跳过解析与 diff */
+const MdBlock = memo(function MdBlock({ text }: { text: string }) {
+  return <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>{text}</ReactMarkdown>;
+});
+
+const Markdown = memo(function Markdown({ children }: { children: string }) {
+  // 若正文含可视化 fence（```show_widget / ```widget 等），混合渲染普通 markdown 块 + widget 卡片。
+  // 流式阶段未闭合的 fence 用 loading 占位卡（streaming），闭合后替换为真实 iframe。
+  const { blocks, widgets } = useMemo<{ blocks: string[]; widgets: Array<{ key: number; data: ShowWidgetData; streaming: boolean }> }>(() => {
+    if (!hasWidgetFence(children)) return { blocks: splitMarkdown(children), widgets: [] };
+    const result = extractStreamingWidget(children);
+    const bs: string[] = [];
+    const ws: Array<{ key: number; data: ShowWidgetData; streaming: boolean }> = [];
+    result.segments.forEach((seg, i) => {
+      if (seg.type === "text") bs.push(seg.content);
+      else ws.push({ key: i, data: seg.data, streaming: false });
+    });
+    if (result.streamingWidget) ws.push({ key: -1, data: result.streamingWidget, streaming: true });
+    return { blocks: bs, widgets: ws };
+  }, [children]);
+  // 流式出字是纯追加，前面的块只会变多不会重排，用 index 作 key 稳定且足够
+  const rendered = blocks.map((text, index) => <MdBlock text={text} key={`b${index}`} />);
+  // widget 卡片按流序与文本块交错插入（text/widget 由 segments 顺序保证）
+  const dark = isWidgetDark();
+  const ordered: React.ReactNode[] = [];
+  const textCount = blocks.length;
+  for (let i = 0; i < Math.max(textCount, widgets.length); i++) {
+    if (i < textCount) ordered.push(rendered[i]);
+    if (i < widgets.length) {
+      const seg = widgets[i];
+      ordered.push(<WidgetCard key={`w${seg.key}`} data={seg.data} dark={dark} streaming={seg.streaming} />);
+    }
+  }
+  return <>{ordered}</>;
+});
+
+// 模块级组件（WidgetCard / widget iframe）读取当前主题，由 App 主体随 theme 变化更新。
+let widgetDark = false;
+function isWidgetDark(): boolean { return widgetDark; }
+
+let openImageLightbox: ((path: string, alt: string) => void) | null = null;
+// 渲染层可注册的「相对/裸路径 → 绝对路径」解析器（由 App 主体把 workspace 拼进去），
+// 供 InlineFileCards 缩略图等模块级组件使用，避免层层传 prop。
+let resolveFilePath: ((path: string) => string) | null = null;
+// 会话路径台账：从工具调用等消息项里收集出现过的绝对路径（basename → 绝对路径），
+// 供 InlineFileCards 把裸文件名直接解析到真实目录——纯内存查找，不扫磁盘
+let lookupKnownFile: ((name: string) => string | null) | null = null;
+// 模块级「未找到文件」友好提示器（App 注册 showToast），灰卡点击不再走 fs:read 炸错误 toast
+let notifyFileMissing: ((message: string) => void) | null = null;
+
+/** 递归收集对象里所有字符串中的 Windows 绝对路径，登记 basename → 绝对路径（后出现的覆盖先前的） */
+function collectKnownPaths(source: unknown, map: Map<string, string>, depth = 0): void {
+  if (!source || depth > 8) return;
+  if (Array.isArray(source)) { for (const value of source) collectKnownPaths(value, map, depth + 1); return; }
+  if (typeof source === "object") { for (const value of Object.values(source as Record<string, unknown>)) collectKnownPaths(value, map, depth + 1); return; }
+  if (typeof source !== "string") return;
+  for (const match of source.matchAll(/([A-Za-z]:[\\/][^\s<>:"|?*]+\.[A-Za-z0-9]{1,5})/g)) {
+    const abs = match[1];
+    const base = abs.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+    if (base) map.set(base, abs);
+  }
+}
+
+function ImagePreview({ path, alt, onCopy }: { path: string; alt: string; onCopy?: () => void }) {
+  return <img className="message-image" src={path.startsWith("http") ? path : imageUrl(path)} alt={alt} onClick={() => openImageLightbox?.(path, alt)} onContextMenu={(event) => { if (!onCopy) return; event.preventDefault(); onCopy(); }} />;
+}
+
+function ImageLightbox({ path, alt, onClose, onCopy }: { path: string; alt: string; onClose: () => void; onCopy?: () => void }) {
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ x: number; y: number; baseX: number; baseY: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const clampZoom = (value: number) => Math.min(6, Math.max(1, value));
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const endDrag = () => { dragRef.current = null; setDragging(false); };
+  return (
+    <div className="lightbox" onClick={onClose} role="dialog" aria-label={alt}>
+      <div className="lightbox-toolbar" onClick={(event) => event.stopPropagation()}>
+        <button title="缩小" onClick={() => setZoom((current) => clampZoom(current - 0.25))}><ZoomOut size={15} /></button>
+        <button className="lightbox-zoom" title="点击重置" onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }); }}>{Math.round(zoom * 100)}%</button>
+        <button title="放大" onClick={() => setZoom((current) => clampZoom(current + 0.25))}><ZoomIn size={15} /></button>
+        {onCopy && <button title="复制图片" onClick={onCopy}><Copy size={15} /></button>}
+        <button title="关闭 (Esc)" onClick={onClose}><X size={15} /></button>
+      </div>
+      <div
+        className={`lightbox-body${dragging ? " dragging" : ""}`}
+        onClick={(event) => { if (event.target === event.currentTarget) onClose(); else event.stopPropagation(); }}
+        onDoubleClick={() => { setZoom((current) => (current > 1 ? 1 : 2.5)); setOffset({ x: 0, y: 0 }); }}
+        onMouseDown={(event) => { if (zoom <= 1) return; event.preventDefault(); dragRef.current = { x: event.clientX, y: event.clientY, baseX: offset.x, baseY: offset.y }; setDragging(true); }}
+        onMouseMove={(event) => { const drag = dragRef.current; if (drag) setOffset({ x: drag.baseX + (event.clientX - drag.x), y: drag.baseY + (event.clientY - drag.y) }); }}
+        onMouseUp={endDrag}
+        onMouseLeave={endDrag}
+        onWheel={(event) => setZoom((current) => clampZoom(current * (event.deltaY < 0 ? 1.15 : 0.87)))}
+      >
+        <img src={path.startsWith("http") ? path : imageUrl(path)} alt={alt} draggable={false} style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }} />
+      </div>
+    </div>
+  );
+}
+
+function StatusDot({ status }: { status: string }) {
+  return <span className={`status-dot ${status}`} title={status === "ready" ? "Codex 已连接" : status === "error" ? "Codex 连接失败" : "Codex 正在启动"} />;
+}
+
+function CompletedChanges({ turn }: { turn: Turn }) {
+  const changes = turn.items.flatMap((item) => item.type === "fileChange" ? (item.changes ?? []) : []);
+  if (!changes.length) return null;
+  const byPath = new Map<string, { path: string; added: number; deleted: number }>();
+  for (const change of changes) {
+    const path = change.path ?? change.filePath ?? "未知文件";
+    const stats = diffStats(change.diff ?? "");
+    const current = byPath.get(path) ?? { path, added: 0, deleted: 0 };
+    byPath.set(path, { path, added: current.added + stats.added, deleted: current.deleted + stats.deleted });
+  }
+  const files = [...byPath.values()];
+  const totals = files.reduce((sum, file) => ({ added: sum.added + file.added, deleted: sum.deleted + file.deleted }), { added: 0, deleted: 0 });
+  return (
+    <details className="completed-changes" open>
+      <summary><FileCode2 size={15} /><strong>已编辑 {files.length} 个文件</strong><span className="diff-add">+{totals.added}</span><span className="diff-delete">-{totals.deleted}</span><ChevronDown size={14} /></summary>
+      <div>{files.map((file) => <div className="completed-file" key={file.path}><code>{file.path}</code><span><b>+{file.added}</b> <i>-{file.deleted}</i></span></div>)}</div>
+    </details>
+  );
+}
+
+type FoldHandlers = {
+  onCopy: (text: string) => void;
+  onQuote: (text: string) => void;
+  onImageCopy: (path: string) => void;
+  onFork: (turnId: string) => void;
+  onEdit: (turnId: string, item: ThreadItem) => void;
+  onOpenFile: (path: string) => void;
+  onOpenThread?: (id: string) => void;
+};
+
+/** 过程折叠组（对齐 WorkBuddy cr-collapse summary/completed/process 三种皮肤）
+ * autoFold：组内首个单元完成后由「内联渲染」切换为折叠组时，先挂载为展开再于下一帧收起，
+ * 让 CSS 高度过渡真正跑起来（否则组件以 collapsed 直接挂载，没有过渡、视觉上硬切一下） */
+function FoldGroup({ title, leadGroup, variant, running, defaultOpen = false, autoFold, failedCount, children }: {
+  title: string;
+  leadGroup?: string | null;
+  variant: "summary" | "completed" | "process";
+  running?: boolean;
+  defaultOpen?: boolean;
+  autoFold?: boolean;
+  failedCount?: number;
+  children: React.ReactNode;
+}) {
+  const [manualOpen, setManualOpen] = useState<boolean | null>(null);
+  const [mountOpen] = useState(() => Boolean(autoFold));
+  // 挂载帧保持展开，下一帧再收起 → 浏览器能捕捉到 1fr→0fr 的高度变化，高度过渡才跑得起来。
+  // 依赖数组必须用 mountOpen 而不能用「已执行过」的 ref 去挡，StrictMode 下 effect 双调用会
+  // 先取消 rAF 再被 ref 挡掉第二次调度，结果永远收不起来。
+  useEffect(() => {
+    if (!mountOpen) return;
+    const raf = requestAnimationFrame(() => setManualOpen(false));
+    return () => cancelAnimationFrame(raf);
+  }, [mountOpen]);
+  const open = manualOpen ?? (mountOpen || defaultOpen);
+  const group = leadGroup ?? "other";
+  const LeadIcon = group === "command" ? TerminalSquare
+    : group === "modify" ? FileCode2
+    : group === "research" || group === "search" ? Search
+    : group === "collab" ? Bot
+    : group === "reasoning" ? Brain
+    : Wrench;
+  return (
+    <div className={`wb-fold ${open ? "open" : "collapsed"} wb-fold--${variant} ${running ? "running" : ""}`}>
+      <button type="button" className="wb-fold-header" title={open ? "点击收起" : "点击展开过程"} onClick={() => setManualOpen(!open)}>
+        <ChevronDown size={12} className="wb-fold-caret" />
+        {variant === "summary" && <span className="wb-fold-lead"><LeadIcon size={13} /></span>}
+        {variant === "completed" && <span className={`wb-fold-dot ${failedCount ? "error" : ""}`} aria-hidden />}
+        <span className={`wb-fold-title ${running ? "shimmer-text" : ""}`}>{title}</span>
+        {failedCount ? <span className="wb-fold-failed">{failedCount} 项失败</span> : null}
+      </button>
+      <Fold open={open} bare><div className="wb-fold-body">{children}</div></Fold>
+    </div>
+  );
+}
+
+/** 运行中计时只使用本地秒表，不读取引擎时间戳，避免秒/毫秒单位混淆。 */
+function RunningProcessTime() {
+  const startedRef = useRef(Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const totalSeconds = Math.max(0, Math.floor((now - startedRef.current) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return <div className="running-process-time">正在处理 {minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`}</div>;
+}
+
+/** 连续同类工具限流：默认只展示最新三条，旧条目留在原位置并可展开。 */
+function CappedToolRun({ label, units, renderUnit, limit = 3 }: {
+  label: string;
+  units: FoldUnit[];
+  renderUnit: (unit: FoldUnit) => React.ReactNode;
+  limit?: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hiddenCount = Math.max(0, units.length - limit);
+  if (!hiddenCount) return <>{units.map(renderUnit)}</>;
+  const hidden = units.slice(0, hiddenCount);
+  const latest = units.slice(hiddenCount);
+  return (
+    <div className={`capped-tool-run ${expanded ? "expanded" : "collapsed"}`}>
+      <button type="button" className="capped-tool-toggle" onClick={() => setExpanded((value) => !value)} title={expanded ? `收起较早的${label}` : `展开较早的${label}`}>
+        <ChevronDown size={12} />
+        <span>{expanded ? `收起较早的 ${hiddenCount} 条${label}` : `已收起 ${hiddenCount} 条${label}`}</span>
+        {!expanded && <small>最新 {limit} 条</small>}
+      </button>
+      <Fold open={expanded}><div className="capped-tool-hidden">{hidden.map(renderUnit)}</div></Fold>
+      <div className="capped-tool-latest">{latest.map(renderUnit)}</div>
+    </div>
+  );
+}
+
+function CappedToolSequence({ units, renderUnit }: {
+  units: FoldUnit[];
+  renderUnit: (unit: FoldUnit) => React.ReactNode;
+}) {
+  const runs = useMemo(() => buildOrderedToolRuns(units), [units]);
+  return <>{runs.map((run) => run.kind === "unit"
+    ? <Fragment key={run.key}>{renderUnit(run.units[0])}</Fragment>
+    : <CappedToolRun key={run.key} label={run.label} units={run.units} renderUnit={renderUnit} />)}</>;
+}
+
+/** 消息折叠状态机（对齐 WorkBuddy assistant-fold/fold.ts）：
+ * 流式与完成态共用 buildSegments 分段，输出【同构扁平 keyed children】（fold-首单元id / item id），
+ * 完成瞬间结构对得上 → 不重挂、动画不重播。
+ * 流式：连续 ≥2 个可折叠单元 → 未到正文前收「lead 组 + 最新一条内联」；到正文后整段收意图摘要组（小折叠）；
+ * 完成：首段工具组换「已完成 · 用时 X」皮肤；其余工具段用意图摘要标题（收起态，可展开看过程）；
+ *       正文（含中间解说）与深度思考卡、plan/图片卡按流序内联常显——思考卡全程保持同一 DOM 节点，
+ *       live→done 的自动收起动画才能播出来（否则回合结束被吸进折叠组卸载重挂，表现就是「闪一下就没了」）。 */
+function TurnFoldStream({ items, turn, running, fallbackWindow, waitingForApproval, handlers, finalAgentId, usage, tokenUsage }: {
+  items: ThreadItem[];
+  turn: Turn;
+  running: boolean;
+  fallbackWindow?: number;
+  waitingForApproval?: boolean;
+  handlers: FoldHandlers;
+  finalAgentId?: string;
+  usage?: any;
+  tokenUsage?: any;
+}) {
+  const units = useMemo(() => items
+    .filter((item) => !(item.type === "agentMessage" && !String(item.text ?? "").trim()))
+    .map((item) => ({ item, kind: classifyUnit(item) })),
+  [items]);
+  const segments = useMemo(() => buildSegments(units, !running), [units, running]);
+
+  const renderItem = (unit: FoldUnit, hideFooter?: boolean, reasoningActive?: boolean) => (
+    <MemoItemView
+      item={unit.item}
+      turn={turn}
+      turnActive={unit.item.type === "reasoning" ? Boolean(reasoningActive) : running}
+      usage={unit.item.id === finalAgentId ? usage : null}
+      tokenUsage={unit.item.id === finalAgentId ? tokenUsage : null}
+      fallbackWindow={fallbackWindow}
+      hideFooter={unit.item.type === "agentMessage" ? hideFooter || undefined : undefined}
+      waitingForApproval={waitingForApproval}
+      onCopy={handlers.onCopy}
+      onQuote={handlers.onQuote}
+      onImageCopy={handlers.onImageCopy}
+      onFork={unit.item.type === "agentMessage" && unit.item.id === finalAgentId && !hideFooter ? () => handlers.onFork(turn.id) : undefined}
+      onOpenFile={handlers.onOpenFile}
+      onOpenThread={handlers.onOpenThread}
+      key={unit.item.id}
+    />
+  );
+
+  const failedCountOf = (group: FoldUnit[]) => group.filter((u) => foldItemStatus(u.item) === "failed" || (u.item.type === "commandExecution" && !running && u.item.exitCode)).length;
+
+  if (running) {
+    // 运行态严格保留引擎事件流中的每一个稳定节点。正文、工具和多段深度思考
+    // 按原始顺序逐项存在；各卡片自行完成 live→done 与自动收起，不能把历史步骤
+    // 合并成一个摘要，否则下一阶段到来时前一阶段会在视觉上消失。
+    const lastReasoningIndex = units.reduce((last, unit, index) => unit.item.type === "reasoning" ? index : last, -1);
+    const indexByUnit = new Map(units.map((unit, index) => [unit, index] as const));
+    return <CappedToolSequence units={units} renderUnit={(unit) => {
+      const index = indexByUnit.get(unit) ?? -1;
+      // 上游有时不在 reasoning item 上回传 completed/status，只能用事件顺序兜底：
+      // 后面已经出现工具或正文时，前一块思考必然已经结束；只有最后一个无完成标记
+      // 的 reasoning 才是当前正在直播的思考。
+      const reasoningActive = unit.item.type === "reasoning"
+        && (unit.item.status === "inProgress" || unit.item.status === "running"
+          || (!unit.item.status && !unit.item.durationMs && !reasoningDuration.has(String(unit.item.id)) && index === lastReasoningIndex))
+        && !units.slice(index + 1).some((next) => next.item.type !== "reasoning");
+      return renderItem(unit, unit.item.type === "agentMessage" ? true : undefined, reasoningActive);
+    }} />;
+  }
+
+  // ── 完成态：与流式态同构的分段折叠 ──
+  // 复用 segments（回合结束后所有 foldable 段 shouldFold=true），输出与流式态相同的扁平
+  // 结构、相同的 key（fold-首单元id / item id）→ 完成瞬间不重挂、动画不重播。
+  // 与流式态的差异仅两点：
+  //   1. 首个正文之前的工具段保留「已完成 · 用时 X」皮肤作为任务回合收尾标记；其余工具段
+  //      用意图摘要标题（computeFoldSummary，如「已搜索：…」）——旧消息展开后正文之间也有
+  //      运行状态展示，不再是一坨无结构的正文堆（旧版把正文+工具全塞进一个巨型已完成组）；
+  //   2. 不播 autoFold：历史加载保持收起；刚完成的组在流式期已收起，无需重播。
+  const duration = turn.durationMs ? formatDuration(turn.durationMs) : null;
+  const completedTitle = turn.error ? "处理出错" : duration ? `耗时 ${duration}` : "已处理";
+  // 完成事件并不总会给 agentMessage 带稳定 id（部分上游只在流式事件里有 id，
+  // 最终快照会缺失或更换）。不能因此退回旧分段展示，否则思考和中间正文会全部
+  // 暴露在“耗时”折叠外。优先匹配明确 id，匹配不到就以最后一条有正文的消息为总结。
+  let finalUnitIndex = -1;
+  if (finalAgentId) {
+    for (let index = units.length - 1; index >= 0; index--) {
+      if (units[index].item.id === finalAgentId && units[index].item.type === "agentMessage") {
+        finalUnitIndex = index;
+        break;
+      }
+    }
+  }
+  if (finalUnitIndex < 0) {
+    for (let index = units.length - 1; index >= 0; index--) {
+      const item = units[index].item;
+      if (item.type === "agentMessage" && Boolean(String(item.text ?? "").trim())) {
+        finalUnitIndex = index;
+        break;
+      }
+    }
+  }
+  const finalUnit = finalUnitIndex >= 0 ? units[finalUnitIndex] : undefined;
+  const completedProcess = finalUnit ? units.filter((_, index) => index !== finalUnitIndex) : [];
+  // 历史会话常只保留 reasoning + 中间 agentMessage，工具 item 可能没有进入快照。
+  // 不能继续只按连续工具段折叠：最后一条正文是结果，其前面的全部内容都是过程。
+  if (finalUnit && completedProcess.length > 0) {
+    return <>
+      <FoldGroup
+        key={`fold-completed-${turn.id}`}
+        variant="completed"
+        title={completedTitle}
+        leadGroup={topToolGroup(completedProcess)}
+        failedCount={failedCountOf(completedProcess) || undefined}
+      >
+        <CappedToolSequence units={completedProcess} renderUnit={(unit) => renderItem(unit, unit.item.type === "agentMessage" ? true : undefined)} />
+      </FoldGroup>
+      {renderItem(finalUnit, true)}
+    </>;
+  }
+  const out: React.ReactNode[] = [];
+  let bodySeen = false;
+  for (const seg of segments) {
+    if (seg.kind === "foldable") {
+      const lead = !bodySeen;
+      out.push(
+        <FoldGroup
+          key={`fold-${seg.units[0].item.id}`}
+          variant={lead ? "completed" : "summary"}
+          title={lead ? completedTitle : computeFoldSummary(seg.units, false, waitingForApproval)}
+          leadGroup={topToolGroup(seg.units)}
+          failedCount={failedCountOf(seg.units) || undefined}
+        >
+          <CappedToolSequence units={seg.units} renderUnit={(unit) => renderItem(unit, unit.item.type === "agentMessage" ? true : undefined)} />
+        </FoldGroup>,
+      );
+      continue;
+    }
+    for (const u of seg.units) {
+      if (u.kind === "body") bodySeen = true;
+      // 与流式态同构：finalAgent 的 footer 永远不在 inner 渲染，由 TurnView 外层 MessageFooter 统一渲染。
+      out.push(renderItem(u, u.item.type === "agentMessage" ? true : undefined));
+    }
+  }
+  return <>{out}</>;
+}
+
+function ContextRing({ tokenUsage, fallbackWindow }: { tokenUsage?: any; fallbackWindow?: number }) {
+  const contextWindow = tokenUsage?.modelContextWindow ?? tokenUsage?.model_context_window ?? fallbackWindow;
+  const currentUsage = usageBucket(tokenUsage, "last") ?? usageBucket(tokenUsage, "total");
+  const used = currentUsage?.totalTokens ?? currentUsage?.total_tokens;
+  if (!contextWindow) return null;
+  // 有 contextWindow 但还没用量时仍显示图标占位（0%），让"上下文进度"始终可见
+  const percent = used != null ? Math.min(100, Math.max(0, (used / contextWindow) * 100)) : 0;
+  const label = used != null ? `${Math.round(percent)}%` : "—";
+  const title = used != null ? `上下文 ${Math.round(percent)}% · ${Number(used).toLocaleString()} / ${Number(contextWindow).toLocaleString()} Token` : `上下文窗口 ${Number(contextWindow).toLocaleString()} Token · 用量未同步`;
+  return <span className="context-ring" role="progressbar" aria-label="上下文用量" aria-valuenow={Math.round(percent)} aria-valuemin={0} aria-valuemax={100} title={title}><CircleGauge size={13} /><small>{label}</small></span>;
+}
+
+function usageBucket(tokenUsage: any, scope: "last" | "total") {
+  if (!tokenUsage) return null;
+  const camel = scope === "last" ? "lastTokenUsage" : "totalTokenUsage";
+  const snake = scope === "last" ? "last_token_usage" : "total_token_usage";
+  return tokenUsage?.[scope] ?? tokenUsage?.[camel] ?? tokenUsage?.[snake] ?? tokenUsage?.info?.[snake] ?? null;
+}
+
+function usageNumber(usage: any, ...keys: string[]): number {
+  for (const key of keys) {
+    const value = Number(usage?.[key]);
+    if (Number.isFinite(value) && value >= 0) return value;
+  }
+  return 0;
+}
+
+function usageInputTokens(usage: any): number {
+  return usageNumber(usage, "inputTokens", "input_tokens", "promptTokens", "prompt_tokens");
+}
+
+function usageCachedTokens(usage: any): number {
+  const direct = usageNumber(usage, "cachedInputTokens", "cached_input_tokens", "cacheReadInputTokens", "cache_read_input_tokens");
+  if (direct > 0) return direct;
+  return usageNumber(
+    usage?.inputTokensDetails ?? usage?.input_tokens_details ?? usage?.promptTokensDetails ?? usage?.prompt_tokens_details,
+    "cachedTokens",
+    "cached_tokens",
+  );
+}
+
+function usageCacheRate(usage: any): number | null {
+  const input = usageInputTokens(usage);
+  if (input <= 0) return null;
+  const cached = Math.min(input, usageCachedTokens(usage));
+  return Math.round((cached / input) * 1000) / 10;
+}
+
+type UsageCounterSnapshot = { input: number; cached: number; output: number; total: number };
+function usageCounterSnapshot(usage: any): UsageCounterSnapshot {
+  return {
+    input: usageInputTokens(usage),
+    cached: usageCachedTokens(usage),
+    output: usageNumber(usage, "outputTokens", "output_tokens", "completionTokens", "completion_tokens"),
+    total: usageNumber(usage, "totalTokens", "total_tokens"),
+  };
+}
+
+function ContextUsageBadge({ tokenUsage, fallbackWindow }: { tokenUsage?: any; fallbackWindow?: number }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) setOpen(false); };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+  const contextWindow = tokenUsage?.modelContextWindow ?? tokenUsage?.model_context_window ?? fallbackWindow;
+  const lastUsage = usageBucket(tokenUsage, "last");
+  const totalUsage = usageBucket(tokenUsage, "total");
+  const currentUsage = lastUsage ?? totalUsage;
+  const cacheUsage = tokenUsage?.derivedLast ?? currentUsage;
+  const used = currentUsage?.totalTokens ?? currentUsage?.total_tokens;
+  if (!contextWindow) return null;
+  const percent = used != null ? Math.min(100, Math.max(0, (used / contextWindow) * 100)) : 0;
+  const input = usageInputTokens(cacheUsage);
+  const cached = Math.min(input, usageCachedTokens(cacheUsage));
+  const turnCacheRate = usageCacheRate(cacheUsage);
+  const averageCacheRate = totalUsage ? usageCacheRate(totalUsage) : null;
+  const summaryCacheRate = averageCacheRate ?? turnCacheRate;
+  const ctx = (value: any) => value != null ? Math.round((Number(value) / contextWindow) * 1000) / 10 : null;
+  const details = [
+    { label: "消息", value: ctx(currentUsage?.messageTokens ?? currentUsage?.message_tokens) },
+    { label: "MCP 工具", value: ctx(currentUsage?.mcpToolTokens ?? currentUsage?.mcp_tool_tokens) },
+    { label: "系统工具", value: ctx(currentUsage?.systemToolTokens ?? currentUsage?.system_tool_tokens) },
+    { label: "技能", value: ctx(currentUsage?.skillTokens ?? currentUsage?.skill_tokens) },
+    { label: "系统提示词", value: ctx(currentUsage?.systemPromptTokens ?? currentUsage?.system_prompt_tokens) },
+    { label: "其他", value: ctx(currentUsage?.otherTokens ?? currentUsage?.other_tokens) },
+  ].filter((entry) => entry.value != null) as { label: string; value: number }[];
+  const rows = details.length ? details : [{ label: "已用", value: Math.round(percent * 10) / 10 }];
+  return (
+    <div className="ctx-badge" ref={wrapRef}>
+      <button type="button" className="ctx-badge-btn" title={used != null ? `上下文 ${Math.round(percent)}%` : `上下文窗口 ${contextWindow.toLocaleString()} Token · 用量待同步`} aria-label="上下文容量" onClick={() => setOpen((currentOpen) => !currentOpen)} onMouseEnter={() => setOpen(true)}>
+        <ContextRing tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} />
+      </button>
+      {open && (
+        <div className="ctx-pop" role="dialog" aria-label="上下文容量明细" onMouseLeave={() => setOpen(false)}>
+          <div className="ctx-pop-head">
+            <strong>上下文容量</strong>
+            <span>{used != null ? (used / 10000).toLocaleString(undefined, { maximumFractionDigits: 1 }) : "0.0"}万/{(contextWindow / 10000).toLocaleString()}万（{used != null ? Math.round(percent * 10) / 10 : "—"}%{summaryCacheRate != null ? ` · 累计 ${summaryCacheRate}% 缓存` : ""}）</span>
+          </div>
+          <div className="ctx-pop-bar"><i style={{ width: `${Math.max(2, percent)}%` }} /></div>
+          <div className="ctx-pop-rows">
+            {rows.map((entry) => (
+              <div className="ctx-pop-row" key={entry.label}>
+                <span className="ctx-pop-dot" />
+                <span className="ctx-pop-label">{entry.label}</span>
+                <span className="ctx-pop-value">{entry.value}%</span>
+              </div>
+            ))}
+          </div>
+          {turnCacheRate != null && <div className="ctx-pop-cache"><span>本轮缓存命中率</span><b>{turnCacheRate}%</b></div>}
+          {averageCacheRate != null && <div className="ctx-pop-cache"><span>会话累计命中率</span><b>{averageCacheRate}%</b></div>}
+          {input > 0 && <div className="ctx-pop-cache ctx-pop-cache-detail"><span>缓存输入</span><b>{cached.toLocaleString()} / {input.toLocaleString()}</b></div>}
+          {turnCacheRate != null && turnCacheRate < 20 && input >= 8192 && <p className="ctx-pop-cache-note">本轮缓存较低，通常是首次请求、恢复旧会话、上下文压缩、切换模型/供应商，或上游未复用相同提示词前缀导致。</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MessageFooter({ item, turn, usage, tokenUsage, fallbackWindow, onCopy, onQuote, onFork, onEdit, extraIcon }: { item: ThreadItem; turn?: Turn; usage?: any; tokenUsage?: any; fallbackWindow?: number; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onEdit?: () => void; extraIcon?: any }) {
+  const rawText = itemText(item);
+  const isAgent = item.type === "agentMessage";
+  // 用户消息对外文本：团队/成员会话首条的 SYSTEM TASK 段会被折叠，引用与复制只暴露用户原文
+  const text = isAgent ? rawText : (rawText.trim() ? userDisplayText(rawText) : "");
+  // 兼容引擎上报字段：inputTokens / input_tokens / promptTokens / prompt_tokens 等
+  const num = (value: any) => { const n = Number(value); return Number.isFinite(n) ? n : 0; };
+  // 优先用回合级 usage；缺失时回落到 session 级 tokenUsage.last（最新一回合的用量）
+  const u = usage ?? tokenUsage?.derivedLast ?? usageBucket(tokenUsage, "last") ?? usageBucket(tokenUsage, "total") ?? tokenUsage ?? null;
+  const input = usageInputTokens(u);
+  const output = usageNumber(u, "outputTokens", "output_tokens", "completionTokens", "completion_tokens");
+  const cached = Math.min(input, usageCachedTokens(u));
+  const total = num(u?.totalTokens ?? u?.total_tokens);
+  const cacheRate = input > 0 ? Math.round((cached / input) * 100) : null;
+  const showTokenInfo = isAgent && (input > 0 || output > 0 || total > 0);
+  return (
+    <div className="message-footer">
+      {/* 用户消息：引用 → 编辑 → 复制（hover 项在前，常驻项在后） */}
+      {!isAgent && text && <button className="message-action message-action-extra" title="引用" onClick={() => onQuote(text)}><Quote size={12} /></button>}
+      {!isAgent && onEdit && <button className="message-action message-action-extra" title="编辑并重新发送" onClick={onEdit}><PenLine size={12} /></button>}
+      {/* 复制：agent/用户消息都常驻，纯图标 */}
+      {text && <button className="message-action message-action-default" title="复制消息" onClick={() => onCopy(text)}><Copy size={12} /></button>}
+      {/* agent 常驻：分支 → 时间（上下文进度图标只在输入框下方的 ContextUsageBadge 展示） */}
+      {isAgent && onFork && <button className="message-action message-action-default" title="从此处分支" onClick={onFork}><GitBranch size={12} />分支</button>}
+      {isAgent && turn?.startedAt && <span><Clock3 size={12} />{formatTimestamp(turn.completedAt ?? turn.startedAt)}</span>}
+      {/* agent hover：输入/输出 Token + 缓存命中率 + 引用 */}
+      {isAgent && showTokenInfo && <span className="message-action-extra">{input.toLocaleString()} 入 / {output.toLocaleString()} 出{total > 0 ? ` · ${total.toLocaleString()} 总` : ""}</span>}
+      {isAgent && cacheRate != null && <span className="message-action-extra">· {cacheRate}% 缓存</span>}
+      {isAgent && text && <button className="message-action message-action-extra" title="引用" onClick={() => onQuote(text)}><Quote size={12} /></button>}
+      {extraIcon}
+    </div>
+  );
+}
+
+function UserMessageEditor({ initial, onCancel, onSubmit }: { initial: string; onCancel: () => void; onSubmit: (text: string) => void }) {
+  const [draft, setDraft] = useState(initial);
+  return (
+    <div className="edit-message">
+      <textarea value={draft} autoFocus onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") onCancel(); else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) onSubmit(draft); }} placeholder="编辑消息内容" />
+      <div className="edit-actions">
+        <span>Ctrl+Enter 发送 · Esc 取消</span>
+        <button className="ghost" onClick={onCancel}>取消</button>
+        <button disabled={!draft.trim()} onClick={() => onSubmit(draft)}>保存并重新发送</button>
+      </div>
+    </div>
+  );
+}
+
+/** 导入的会话记录卡：随首条消息附上的外部对话记录折叠成一行备注，点开看全文。
+ *  pending 模式 = 尚未发送的预览（新会话第一条消息发出前展示在消息区顶部）；
+ *  已发送的消息卡由 UserMessageView 按 refs.imported 渲染（pending=false）。 */
+function ImportedRecordCard({ note, content, pending, onDiscard, kind = "imported", sourceId, onOpenSource }: { note: string; content: string; pending?: boolean; onDiscard?: () => void; kind?: "imported" | "thread"; sourceId?: string; onOpenSource?: (id: string) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const charCount = content.length;
+  const threadReference = kind === "thread";
+  const canOpenSource = Boolean(threadReference && sourceId && onOpenSource);
+  return (
+    <div className={`import-record-card${pending ? " pending" : ""}${threadReference ? " thread-reference" : ""}`}>
+      <button type="button" className="import-record-head" aria-expanded={expanded} onClick={() => setExpanded((cur) => !cur)}>
+        <span className="import-record-tag">{threadReference ? <Link2 size={11} /> : <FileUp size={11} />}{threadReference ? "引用的会话记录" : pending ? "导入的会话记录（待发送）" : "导入的会话记录"}</span>
+        <span className="import-record-note">{note}</span>
+        <span className="import-record-actions">
+          {canOpenSource && (
+            <span
+              role="button"
+              tabIndex={0}
+              className="import-record-open"
+              title="打开源会话"
+              onClick={(event) => { event.stopPropagation(); onOpenSource?.(sourceId!); }}
+              onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); onOpenSource?.(sourceId!); } }}
+            >打开源会话</span>
+          )}
+          {pending && onDiscard && (
+            <span
+              role="button"
+              tabIndex={0}
+              className="import-record-discard"
+              title="放弃导入（不会影响其他会话）"
+              onClick={(event) => { event.stopPropagation(); onDiscard(); }}
+              onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); onDiscard(); } }}
+            >移除</span>
+          )}
+          <span className="import-record-toggle">{expanded ? "收起" : `展开全文 · ${charCount > 999 ? `${(charCount / 1000).toFixed(1)}k` : charCount} 字`}<ChevronUp size={12} className={expanded ? "" : "flip-down"} /></span>
+        </span>
+      </button>
+      {expanded && <div className="import-record-body"><pre>{content}</pre></div>}
+      {pending && !expanded && <div className="import-record-hint">还没发送：直接输入问题并发送，这条记录会随你的第一条消息一起交给 AI；可先展开检查内容。</div>}
+    </div>
+  );
+}
+
+/** 空会话（导入后、尚未发送）的消息区顶部预览：只挂载一次即读回记录全文，避免大文本参与流式渲染 */
+function PendingImportSlot({ threadId, onDiscard }: { threadId: string; onDiscard: () => void }) {
+  const [payload] = useState<PendingImportPayload | null>(() => readPendingImportStore()[threadId] ?? null);
+  if (!payload) return null;
+  return (
+    <div className="import-preview-slot">
+      <ImportedRecordCard note={fmtImportNote(payload)} content={payload.text} pending onDiscard={onDiscard} />
+    </div>
+  );
+}
+
+function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote, onImageCopy, onEditSubmit, onOpenFile, onOpenThread }: { item: ThreadItem; turn?: Turn; fallbackWindow?: number; pending?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  // hooks 必须在 early return 之前按固定顺序调用，否则编辑时 hook 数量变化会触发 React error #300
+  const rawText = itemText(item);
+  const refs = useMemo<ParsedUserRefs>(() => parseUserRefs(rawText), [rawText]);
+  const images = (item.content ?? []).filter((part: any) => part.type === "localImage");
+  if (editing) {
+    const originalText = itemText(item);
+    const originalRefs = parseUserRefs(originalText);
+    const originalImages = (item.content ?? []).filter((part: any) => part.type === "localImage");
+    return (
+      <UserMessageEditor
+        initial={userDisplayText(originalText)}
+        onCancel={() => setEditing(false)}
+        onSubmit={(text) => {
+          setEditing(false);
+          // 保存时把引用段按发送格式重建，避免编辑导致文件/技能/上下文引用丢失
+          const filePrefix = originalRefs.files.length ? `\n\n[附件文件]\n${originalRefs.files.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
+          const skillPrefix = originalRefs.skills.length ? `\n\n[本轮已引用技能]\n${originalRefs.skills.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
+          const contextPrefix = originalRefs.contexts.length ? `\n\n[用户指定的对话上下文]\n${originalRefs.contexts.map((ctx, index) => `(${index + 1}) ${ctx.role}：${ctx.text}`).join("\n\n")}\n[上下文结束]\n` : "";
+          const threadReferencePrefix = originalRefs.threadReferences.map(formatThreadReferenceBlock).join("\n\n");
+          onEditSubmit?.({ ...item, content: [{ type: "text", text: `${text}${contextPrefix}${skillPrefix}${filePrefix}${threadReferencePrefix ? `\n\n${threadReferencePrefix}` : ""}` }, ...originalImages] });
+        }}
+      />
+    );
+  }
+  const refsImagePaths = new Set(refs.files.filter(isImagePath));
+  const extraImages = images.filter((part: any) => !refsImagePaths.has(part.path));
+  return (
+    <div className={`message user-message${pending ? " pending" : ""}`} data-ruler-mark="user" data-turn-id={turn?.id} data-item-id={item.id}>
+      <div className="avatar"><User size={15} /></div>
+      <div className="message-body">
+        <UserRefsRow refs={refs} onOpenFile={onOpenFile} onQuote={onQuote} />
+        {refs.imported ? <ImportedRecordCard note={refs.imported.note} content={refs.imported.content} /> : null}
+        {refs.threadReferences.map((reference) => <ImportedRecordCard key={reference.id} note={reference.note} content={reference.content} kind="thread" sourceId={reference.id} onOpenSource={onOpenThread} />)}
+        {refs.teamTask ? (
+          <div className="user-message-team-task" title="已作为团队/成员会话发起需求提交">
+            <div className="user-message-team-task-tag">
+              <Sparkles size={11} />
+              <span>{refs.teamTask.kind === "team" ? "团队会话 · 需求已发起" : "成员会话 · 需求已发起"}</span>
+            </div>
+            <div className="user-message-team-task-body">{refs.teamTask.requirement}</div>
+          </div>
+        ) : refs.cleanText ? (
+          <p className="user-message-text">{refs.cleanText}</p>
+        ) : null}
+        {extraImages.length > 0 && (
+          <div className="user-message-thumbs">
+            {extraImages.map((part: any, index: number) => (
+              <button type="button" className="user-message-thumb" onClick={() => openImageLightbox?.(part.path, basename(part.path) || part.path)} key={index}>
+                <img src={part.path.startsWith("http") ? part.path : imageUrl(part.path)} alt="" loading="lazy" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="user-message-footer">
+        <MessageFooter item={item} turn={turn} fallbackWindow={fallbackWindow} onCopy={onCopy} onQuote={onQuote} onEdit={() => setEditing(true)} />
+      </div>
+    </div>
+  );
+}
+
+type RulerMark = { id: string; turnId: string; itemId: string; type: "user" | "agent"; label: string };
+
+/** 刻度数 = 有内容的消息数（一条消息一个刻度），窗口固定 50 条，随滚动位置滑动 */
+const RULER_MAX = 50;
+
+function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[]; onJump: (id: string) => void; scrollRef: useRefObject; containerRef: useRefObject }) {
+  const [tip, setTip] = useState<{ text: string; top: number } | null>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [currentItemId, setCurrentItemId] = useState<string | null>(null);
+  const [scrollable, setScrollable] = useState(false);
+  const [containerNarrow, setContainerNarrow] = useState(false);
+  // 容器宽度不足时（如右侧面板打开后 timeline-wrap 被压窄）自动隐藏刻度尺，避免侵入消息内容
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const check = () => {
+      // 720px 是消息区可接受的最小宽度：低于此值时刻度尺会让 agent 气泡可读性变差
+      setContainerNarrow(container.clientWidth < 720);
+    };
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [containerRef]);
+  const allMarks = useMemo<RulerMark[]>(() => {
+    const result: RulerMark[] = [];
+    for (const turn of turns) {
+      for (const item of turn.items) {
+        // 刻度只对应用户消息，agent 消息不参与
+        if (item.type !== "userMessage") continue;
+        if (!itemText(item).trim()) continue;
+        // 团队/成员会话首条 SYSTEM TASK 段不展示给用户（与气泡/复制/编辑一致）
+        const label = userDisplayText(itemText(item));
+        result.push({ id: `${turn.id}-${item.id}`, turnId: turn.id, itemId: item.id, type: "user", label: label || "（仅系统任务段）" });
+      }
+    }
+    return result;
+  }, [turns]);
+
+  const currentIndex = useMemo(() => {
+    if (!currentItemId) return allMarks.length - 1;
+    const idx = allMarks.findIndex((m) => m.itemId === currentItemId);
+    return idx < 0 ? allMarks.length - 1 : idx;
+  }, [allMarks, currentItemId]);
+
+  // 刻度尺独立滚轮：悬停刻度尺时滚轮滑动选区的窗口起点（不滚对话内容）；
+  // 滚动对话内容或跳转时偏移自动归零，回到跟随模式
+  const [windowOffset, setWindowOffset] = useState(0);
+  useEffect(() => { setWindowOffset(0); }, [currentIndex, allMarks.length]);
+
+  // 可视容量：轨道高度能容纳多少刻度就显示多少（动态测量）；
+  // 超出的用独立滚轮滑窗口。没有"最多 N 条"的硬规则。
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const [visibleCount, setVisibleCount] = useState(0);
+  useEffect(() => {
+    if (!scrollable) return;
+    const measure = () => {
+      const track = trackRef.current;
+      if (!track) return;
+      // 单刻度占位 = 线高 2px + 上下 padding 8px + gap 4px（与 CSS 保持一致）
+      const slot = 14;
+      setVisibleCount(Math.max(4, Math.floor(track.clientHeight / slot) - 1));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (trackRef.current) observer.observe(trackRef.current);
+    return () => observer.disconnect();
+  }, [scrollable]);
+
+  const windowSize = visibleCount > 0 ? visibleCount : RULER_MAX;
+  const marks = useMemo(() => {
+    if (allMarks.length <= windowSize) return allMarks;
+    let start = Math.max(0, Math.min(currentIndex + windowOffset, allMarks.length - windowSize));
+    let end = start + windowSize;
+    if (end > allMarks.length) {
+      end = allMarks.length;
+      start = end - windowSize;
+    }
+    return allMarks.slice(start, end);
+  }, [allMarks, currentIndex, windowOffset, windowSize]);
+
+  const latestId = allMarks.length ? allMarks[allMarks.length - 1].id : null;
+
+  // 滚动联动：视口上沿 30% 处落在哪条消息上，就高亮对应刻度
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const update = () => {
+      // 内容不满一屏（如单条消息）时没有滚动意义，刻度尺随之隐藏
+      setScrollable(scroller.scrollHeight - scroller.clientHeight > 80);
+      // 只扫描用户消息（刻度只对应用户消息），视口上沿 30% 处落在哪条用户消息上就高亮对应刻度
+      const elements = Array.from(scroller.querySelectorAll<HTMLElement>('[data-ruler-mark="user"]'));
+      if (!elements.length) { setCurrentItemId(null); return; }
+      const probe = scroller.scrollTop + scroller.clientHeight * 0.3;
+      let current: string | null = null;
+      for (const el of elements) {
+        if (el.offsetTop <= probe) current = el.dataset.itemId ?? current;
+        else break;
+      }
+      setCurrentItemId(current);
+    };
+    update();
+    // rAF 节流：scroll/resize 高频触发，直接跑 update 会读 offsetTop/scrollTop 强制同步布局
+    let raf = 0;
+    const schedule = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => { raf = 0; update(); });
+    };
+    const observer = new ResizeObserver(schedule);
+    observer.observe(scroller);
+    scroller.addEventListener("scroll", schedule, { passive: true });
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      observer.disconnect();
+      scroller.removeEventListener("scroll", schedule);
+    };
+    // 依赖里绝不能放 turns：流式出字每帧都换引用，会重建监听器 + ResizeObserver，
+    // 并每帧强制同步布局 —— 这是长回复越往后越卡的主要来源之一。
+    // 元素在 update 内部实时查询 DOM，只需在刻度数量变化时重建监听。
+  }, [scrollRef, allMarks.length]);
+  // 少于两条消息、内容不满一屏、或容器太窄（右侧面板打开压窄 timeline）时自动隐藏刻度尺
+  if (allMarks.length < 2 || !scrollable || containerNarrow) return null;
+  return (
+    <div className="message-ruler" role="navigation" aria-label="消息定位">
+      <div
+        className="ruler-track"
+        ref={(node) => {
+          trackRef.current = node;
+          // 独立滚轮：悬停刻度尺时滚轮只滑刻度选区（原生非 passive 监听才能 preventDefault），
+          // 不滚动对话内容
+          if (!node || node.dataset.wheelBound) return;
+          node.dataset.wheelBound = "1";
+          node.addEventListener("wheel", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (allMarks.length <= windowSize) return;
+            const direction = event.deltaY > 0 ? 1 : -1;
+            const maxOffset = allMarks.length - windowSize - currentIndex;
+            setWindowOffset((current) => Math.max(-currentIndex, Math.min(maxOffset, current + direction * 4)));
+          }, { passive: false });
+        }}
+        onMouseLeave={() => { setHoverIndex(null); setTip(null); }}
+      >
+        {marks.map((mark, index) => {
+          // 波浪效果：hover 刻度最长，上下邻刻度按距离衰减（1.4x、0.9x、0.7x），
+          // 且向对话框一侧（右侧）伸长；配合错峰 transition 产生丝滑波浪
+          const dist = hoverIndex == null ? 99 : Math.abs(index - hoverIndex);
+          const wave = dist === 0 ? " wave-0" : dist === 1 ? " wave-1" : dist === 2 ? " wave-2" : "";
+          return (
+            <button
+              key={mark.id}
+              className={`ruler-tick ${mark.type} ${mark.id === latestId ? "latest" : ""} ${mark.itemId === currentItemId ? "current" : ""}${wave}`}
+              onMouseEnter={(event) => { setHoverIndex(index); setTip({ text: mark.label, top: event.currentTarget.offsetTop + event.currentTarget.offsetHeight / 2 }); }}
+              onMouseLeave={() => setTip(null)}
+              onClick={() => onJump(mark.turnId)}
+              aria-label={mark.label}
+            />
+          );
+        })}
+        {tip && <div className="ruler-tip" style={{ top: tip.top }}>{tip.text}</div>}
+      </div>
+    </div>
+  );
+}
+
+/** 刻度尺跳转：与 App 状态无关，提到模块级保证引用恒定（memo 才拦得住打字时的重渲染） */
+function jumpToTurn(id: string) {
+  document.getElementById(`turn-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/** 刻度尺只反映用户消息：agent 出字时 turns 每帧换引用，若照单全收，
+ *  刻度尺会每帧重渲染（遍历全部消息），白吃掉一帧预算。
+ *  改成比较用户消息指纹——纯字符串拼接，远便宜于重渲染整棵刻度尺。 */
+function userMarksKey(turns: Turn[]) {
+  let key = "";
+  for (const turn of turns) {
+    for (const item of turn.items) {
+      if (item.type !== "userMessage") continue;
+      const text = String(itemText(item) ?? "").trim();
+      if (text) key += `${turn.id}|${item.id}|${text.length}|${text.slice(0, 32)};`;
+    }
+  }
+  return key;
+}
+const MemoMessageRuler = memo(MessageRuler, (prev, next) =>
+  prev.scrollRef === next.scrollRef
+  && prev.onJump === next.onJump
+  && (prev.turns === next.turns || userMarksKey(prev.turns) === userMarksKey(next.turns)),
+);
+
+/**
+ * 大包文本快速揭示（WorkBuddy 式连续出字）。
+ *  active=true（流式运行中）：内容只要在追加就持续逐字揭示——不要求大跳才追，
+ *    小增量也平滑续写，形成「文字持续流出的打字机感」。
+ *  active=false（历史加载/已完成）：直接展示全文，不重播动画。
+ *  markerStore 用于完成事件一次性交付正文的场景（快进到标记点再续追）。
+ *  速率按剩余量自适应：尾段逐字精雕（打字感），长文自动提速不拖沓。
+ */
+function revealStepFor(remaining: number) {
+  // 超大输出（命令日志等可能几万字符）：≤1.5s 追完，不拖沓
+  if (remaining > 3600) return Math.max(32, Math.ceil(remaining / 90));
+  if (remaining > 1200) return 10;   // 长文：快速追（约 625 字符/秒）
+  if (remaining > 300) return 4;     // 中段：平稳流出（约 250 字符/秒）
+  return 2;                          // 尾段：精细逐字（约 125 字符/秒，打字感）
+}
+function usePacketRevealText(
+  key: string,
+  text: string,
+  active: boolean,
+  markerStore?: Map<string, string>,
+  threshold = 24,
+) {
+  const initial = (() => {
+    const marked = markerStore?.get(key);
+    if (marked != null && text.startsWith(marked)) return marked;
+    if (active && text.length >= threshold) return text.slice(0, Math.min(10, text.length));
+    return text;
+  })();
+  const [displayed, setDisplayed] = useState(initial);
+  const [revealing, setRevealing] = useState(initial.length < text.length);
+  const displayedRef = useRef(displayed);
+  const revealingRef = useRef(revealing);
+  useEffect(() => { displayedRef.current = displayed; }, [displayed]);
+  useEffect(() => { revealingRef.current = revealing; }, [revealing]);
+  useEffect(() => {
+    const marked = markerStore?.get(key);
+    let start = displayedRef.current;
+    if (marked != null && text.startsWith(marked) && start.length < marked.length) {
+      start = marked;
+      displayedRef.current = start;
+      setDisplayed(start);
+    }
+    if (!text.startsWith(start)) {
+      displayedRef.current = text;
+      setDisplayed(text);
+      setRevealing(false);
+      markerStore?.delete(key);
+      return;
+    }
+    const remaining = text.length - start.length;
+    if (remaining <= 0) {
+      setRevealing(false);
+      markerStore?.delete(key);
+      return;
+    }
+    // active（流式运行中）：内容在增长就平滑续字，不要求大跳才追——小增量也逐字流出。
+    // 非 active 或一次性整包交付（marker）也追，避免整段瞬间出现；纯历史不做动画。
+    const shouldReveal = revealingRef.current || active || marked != null;
+    if (!shouldReveal) {
+      displayedRef.current = text;
+      setDisplayed(text);
+      setRevealing(false);
+      return;
+    }
+    setRevealing(true);
+    // 速率按剩余量自适应：尾段逐字精雕（打字感），长文自动提速不拖沓。
+    const step = Math.max(1, Math.min(revealStepFor(remaining), Math.ceil(remaining / 3)));
+    let end = start.length;
+    const timer = window.setInterval(() => {
+      end = Math.min(text.length, end + step);
+      const next = text.slice(0, end);
+      displayedRef.current = next;
+      setDisplayed(next);
+      window.dispatchEvent(new Event("codex:packet-reveal"));
+      if (end >= text.length) {
+        window.clearInterval(timer);
+        markerStore?.delete(key);
+        setRevealing(false);
+      }
+    }, 16);
+    return () => window.clearInterval(timer);
+  }, [active, key, markerStore, text, threshold]);
+  return { displayed, revealing };
+}
+
+/** 深度思考卡片：live→done 保持同一 DOM 节点（换 key 会整块重建、视觉闪烁）；
+ * 展开态受控：思考中默认展开，用户手动收起后尊重其选择 */
+function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: boolean }) {
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // 思考卡一旦「现场出现过」（本会话流式期间渲染过），完成后永不整体消失：
+  // 部分模型/中转不回 reasoning 摘要 delta，text 一直为空——旧行为在回合结束时
+  // `!text && !running` 直接 return null，表现就是「深度思考板块自动消失了」。
+  const seenLiveRef = useRef(false);
+  const text = reasoningTextOf(item);
+  const durationMs = item.durationMs ?? reasoningDuration.get(String(item.id));
+  // 必须看当前 reasoning item 自己的状态，不能只看整轮 turnActive：后续工具仍在
+  // 执行时，前一块已 completed 的思考也会带着 turnActive=true，旧逻辑因此永远不收起。
+  const itemRunning = item.status === "inProgress" || item.status === "running";
+  const running = Boolean(turnActive) && (itemRunning || (!item.status && !durationMs));
+  // 深度思考可能由上游整包交付。首次挂载就是大段正文时先露出短前缀，随后快速追字；
+  // 历史会话（turnActive=false 且没有 buffered 标记）保持直接展示，不重播动画。
+  const initialReveal = useMemo(() => {
+    const marked = bufferedReasoningRevealStarts.get(String(item.id));
+    if (marked != null && text.startsWith(marked)) return marked;
+    if (turnActive && text.length >= 24) return text.slice(0, Math.min(10, text.length));
+    return text;
+  }, [item.id]);
+  const [displayed, setDisplayed] = useState(initialReveal);
+  const [revealing, setRevealing] = useState(() => initialReveal.length < text.length);
+  const displayedRef = useRef(displayed);
+  useEffect(() => { displayedRef.current = displayed; }, [displayed]);
+  useEffect(() => {
+    const markedStart = bufferedReasoningRevealStarts.get(String(item.id));
+    let start = displayedRef.current;
+    if (markedStart != null && text.startsWith(markedStart) && start.length < markedStart.length) {
+      start = markedStart;
+      displayedRef.current = start;
+      setDisplayed(start);
+    }
+    // 内容发生修订、缩短或不再是原文本的追加时不能追字，直接同步，避免错字残留。
+    if (!text.startsWith(start)) {
+      displayedRef.current = text;
+      setDisplayed(text);
+      setRevealing(false);
+      bufferedReasoningRevealStarts.delete(String(item.id));
+      return;
+    }
+    const remaining = text.length - start.length;
+    if (remaining <= 0) {
+      setRevealing(false);
+      bufferedReasoningRevealStarts.delete(String(item.id));
+      return;
+    }
+    // active（思考运行中）：内容只要在追加就平滑续字——小增量也逐字流出，
+    // 形成与正文一致的 WorkBuddy 式连续出字节奏；完成态/整包交付也追完不瞬现。
+    const shouldReveal = revealing || running || markedStart != null;
+    if (!shouldReveal) {
+      displayedRef.current = text;
+      setDisplayed(text);
+      setRevealing(false);
+      return;
+    }
+    setRevealing(true);
+    // 与正文共用同一自适应速率（尾段逐字精雕，长文自动提速）。
+    const step = Math.max(1, Math.min(revealStepFor(remaining), Math.ceil(remaining / 3)));
+    let end = start.length;
+    const timer = window.setInterval(() => {
+      end = Math.min(text.length, end + step);
+      const next = text.slice(0, end);
+      displayedRef.current = next;
+      setDisplayed(next);
+      window.dispatchEvent(new Event("codex:packet-reveal"));
+      if (end >= text.length) {
+        window.clearInterval(timer);
+        bufferedReasoningRevealStarts.delete(String(item.id));
+        setRevealing(false);
+      }
+    }, 16);
+    return () => window.clearInterval(timer);
+  }, [item.id, text, revealing, running]);
+  // 自动延迟可见与用户手动展开必须分开：自动行为不能写进 manualOpen，
+  // 否则会被误认为“用户主动展开”，导致第一块思考永久保持打开。
+  const [autoHoldOpen, setAutoHoldOpen] = useState(false);
+  const { open, toggle, manualOpen } = useCardOpen(Boolean(running) || revealing || autoHoldOpen);
+  // 思考可能极快（几十 ms 就完成），或被中转一次性缓冲到完成态；若完成即折叠，用户根本来不及看到内容。
+  // 记录首次出现内容的时间，完成时若未达到最小可见时长，临时保持展开凑满时长后再折叠。
+  const runningSinceRef = useRef<number | null>(null);
+  const foldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useLayoutEffect(() => {
+    if (running) {
+      if (runningSinceRef.current == null) runningSinceRef.current = Date.now();
+      setAutoHoldOpen(false);
+      return;
+    }
+    // running=false：仅处理「本会话流式期间运行过」的完成；历史加载的完成态不折叠
+    if (runningSinceRef.current == null || manualOpen !== null) return;
+    // 渐进揭示还没放完就等它放完再决定折叠
+    if (revealing) return;
+    const elapsed = Date.now() - runningSinceRef.current;
+    runningSinceRef.current = null;
+    // 给用户留出纠错窗口：思考完成后至少可见 4 秒，再自动折叠。
+    const MIN_VISIBLE_MS = 4000;
+    const delay = Math.max(0, MIN_VISIBLE_MS - elapsed);
+    if (delay <= 0) { setAutoHoldOpen(false); return; }
+    // 太快：仅用独立自动状态保持展开，绝不污染用户手动选择。
+    setAutoHoldOpen(true);
+    if (foldTimerRef.current) clearTimeout(foldTimerRef.current);
+    foldTimerRef.current = setTimeout(() => setAutoHoldOpen(false), delay);
+  }, [displayed, running, revealing, manualOpen]);
+  // 卸载时清理折叠定时器
+  useEffect(() => () => { if (foldTimerRef.current) clearTimeout(foldTimerRef.current); }, []);
+  // 回合运行期间只要该 reasoning item 已进入事件流，就先保留它的标题节点；
+  // 某些中转会先发 completed/started，再稍后补正文 delta，不能把后续思考误当空占位丢掉。
+  useEffect(() => { if (running || turnActive) seenLiveRef.current = true; }, [running, turnActive]);
+  // 思考进行中：新内容到达时自动贴底滚动。
+  // 用 rAF 合并：一帧内可能来好几个 delta，直接滚会读 scrollHeight 触发多次强制同步布局。
+  useEffect(() => {
+    if (!running || manualOpen === false) return;
+    const el = bodyRef.current;
+    if (!el) return;
+    const raf = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+    return () => cancelAnimationFrame(raf);
+  }, [displayed, running, manualOpen]);
+  // 没现场出现过且无内容的（历史加载的空占位）才不渲染；现场出现过的保留标题行常驻
+  if (!text && !running && !seenLiveRef.current && !turnActive) return null;
+  const head = running
+    ? <span className="reasoning-head shimmer-text"><Brain size={13} className="reasoning-pulse" />深度思考中</span>
+    : <span className="reasoning-head"><Brain size={13} />已深度思考{durationMs ? `（用时 ${formatDuration(durationMs)}）` : ""}</span>;
+  return (
+    <div className={`reasoning-card ${running ? "live" : "done"} ${open ? "open" : "collapsed"}`}>
+      <button type="button" className="reasoning-head-btn" onClick={toggle}>
+        {head}<ChevronDown size={13} className="reasoning-caret" />
+      </button>
+      {displayed && <Fold open={open}><div className="reasoning-body-wrap"><div className="reasoning-body" ref={bodyRef}>{displayed}{revealing ? <span className="reasoning-stream-cursor" aria-hidden /> : null}</div></div></Fold>}
+    </div>
+  );
+}
+
+function ProgressiveAgentBody({ itemId, text, active, footer, onOpenFile }: { itemId: string; text: string; active?: boolean; footer?: React.ReactNode; onOpenFile?: (path: string) => void }) {
+  const { displayed, revealing } = usePacketRevealText(itemId, text, Boolean(active), bufferedAgentRevealStarts, 24);
+  return <div className={`message-body markdown ${revealing ? "packet-revealing" : ""}`}><Markdown>{displayed}</Markdown>{revealing ? <span className="packet-stream-cursor" aria-hidden /> : null}{!revealing ? <InlineFileCards text={text} onOpenFile={onOpenFile} /> : null}{!revealing ? footer : null}</div>;
+}
+
+function ProgressiveToolPayload({ itemId, text, active, className, language }: { itemId: string; text: string; active?: boolean; className?: string; language?: string }) {
+  const { displayed, revealing } = usePacketRevealText(itemId, text, Boolean(active), bufferedToolRevealStarts, 48);
+  return <ToolCodeBlock language={language ?? payloadLanguage(text)} text={displayed} revealing={revealing} className={className} />;
+}
+
+function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWindow, hideFooter, waitingForApproval, onCopy, onQuote, onFork, onImageCopy, onEditSubmit, onOpenFile, onOpenThread, pending }: { item: ThreadItem; turn?: Turn; turnActive?: boolean; usage?: any; tokenUsage?: any; fallbackWindow?: number; hideFooter?: boolean; waitingForApproval?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void; pending?: boolean }) {
+  if (item.type === "userMessage") {
+    return <UserMessageView item={item} turn={turn} pending={pending} onCopy={onCopy} onQuote={onQuote} onImageCopy={onImageCopy} onEditSubmit={onEditSubmit} onOpenFile={onOpenFile} onOpenThread={onOpenThread} />;
+  }
+  if (item.type === "agentMessage") {
+    // 流式过程中会产生空的 agentMessage 片段，不渲染，避免空 div 把内容撑出滚动条
+    if (!String(item.text ?? "").trim()) return null;
+    // 模型在转入命令/工具调用前常会留下尾部换行；remark-breaks 会把它们
+    // 变成一个没有文字的段落，段落行高正是正文与下一张工具卡之间的异常空隙。
+    const assistantText = String(item.text ?? "").replace(/\s+$/u, "");
+    return (
+      <div className="message assistant-message" data-ruler-mark="agent" data-turn-id={turn?.id} data-item-id={item.id}>
+        <div className="avatar agent"><Bot size={16} /></div>
+        {/* 流式与完成态同一条 Markdown 渲染路径（raf 合帧保证流畅；remark-breaks 保真单换行），
+            完成瞬间不再切换渲染方式，消除“回复完闪一下变样” */}
+        <ProgressiveAgentBody
+          itemId={item.id}
+          text={assistantText}
+          active={turnActive}
+          onOpenFile={onOpenFile}
+          footer={!hideFooter ? <MessageFooter item={item} turn={turn} usage={usage} tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} onCopy={onCopy} onQuote={onQuote} onFork={onFork} /> : undefined}
+        />
+      </div>
+    );
+  }
+  if (item.type === "reasoning") {
+    return <ReasoningCard item={item} turnActive={turnActive} />;
+  }
+  if (item.type === "commandExecution") {
+    return <CommandExecutionCard item={item} waitingForApproval={waitingForApproval} turnActive={turnActive} />;
+  }
+  if (item.type === "fileChange") {
+    const changes = item.changes ?? [];
+    const stats = changes.reduce((sum: { added: number; deleted: number }, change: any) => { const next = diffStats(change.diff ?? ""); return { added: sum.added + next.added, deleted: sum.deleted + next.deleted }; }, { added: 0, deleted: 0 });
+    const editing = item.status === "inProgress" || item.status === "running";
+    const status: ActionStatus = editing ? "running" : "done";
+    const fileNames = changes.map((change: any) => basename(change.path ?? change.filePath ?? "文件")).join("、") || "文件";
+    return (
+      <ActionCard icon={<FileCode2 size={13} />} verb={editing ? "正在编辑" : "已编辑"} info={fileNames ? <code>{fileNames}</code> : undefined} status={status} statusText={<><b>+{stats.added}</b> <i>-{stats.deleted}</i></>}>
+        {changes.length > 0 && changes.map((change: any, idx: number) => (
+          <div key={idx} className="action-diff">
+            <strong>{change.path ?? change.filePath ?? "文件"}</strong>
+            <ProgressiveToolPayload itemId={`${item.id}-diff-${idx}`} text={String(change.diff ?? "")} active={turnActive} language="diff" />
+          </div>
+        ))}
+      </ActionCard>
+    );
+  }
+  if (item.type === "mcpToolCall" || item.type === "dynamicToolCall") {
+    const title = item.type === "mcpToolCall" ? `${item.server} / ${item.tool}` : item.tool;
+    const running = item.status === "inProgress" || item.status === "running";
+    const failed = item.status === "failed" || item.status === "error";
+    const status: ActionStatus = running ? "running" : failed ? "error" : "done";
+    const label = itemStatusLabel(item.status);
+    const verb = running ? "正在调用" : label;
+    // 团队成员调度卡：点亮该成员的渐变头像替代通用扳手图标（查模块级注册表，见 entity-avatar.ts）
+    const invokedMember = item.tool === "team_member_invoke"
+      ? resolveTeamMember(String(turn?.id ?? ""), String((item.arguments as any)?.memberId ?? ""))
+      : null;
+    return (
+      <ActionCard
+        icon={invokedMember
+          ? <span className={`tool-member-avatar ${running ? "running" : ""}`} style={{ background: AVATAR_GRADIENTS[avatarToneOf(invokedMember.id || invokedMember.name)] }} aria-hidden="true">{invokedMember.label.slice(0, 1)}</span>
+          : <Wrench size={13} />}
+        verb={invokedMember ? (running ? `正在咨询 ${invokedMember.label}` : `咨询 ${invokedMember.label}`) : verb}
+        info={title ? <code>{title}</code> : undefined} status={status} statusText={running ? undefined : formatDuration(item.durationMs) || label}>
+        <ProgressiveToolPayload itemId={`${item.id}-payload`} text={String(item.progress || JSON.stringify(item.result ?? item.arguments ?? item.contentItems, null, 2) || "")} active={turnActive} />
+      </ActionCard>
+    );
+  }
+  if (item.type === "plan") {
+    return (
+      <ActionCard icon={<BookOpen size={13} />} verb="计划" status="done" defaultExpanded>
+        <div className="action-plan"><Markdown>{item.text ?? ""}</Markdown></div>
+      </ActionCard>
+    );
+  }
+  if (item.type === "webSearch") {
+    return (
+      <ActionCard icon={<Search size={13} />} verb="网页搜索" info={item.query ? <code>{item.query}</code> : undefined} status="done" statusText={item.status ?? "完成"} />
+    );
+  }
+  if (item.type === "collabAgentToolCall" || item.type === "subAgentActivity") {
+    const title = item.type === "collabAgentToolCall" ? item.tool : item.kind;
+    return (
+      <ActionCard icon={<Bot size={13} />} verb={item.type === "collabAgentToolCall" ? "协作代理" : "子代理"} info={title ? <code>{title}</code> : undefined} status="done" statusText={item.status ?? item.agentPath ?? ""} />
+    );
+  }
+  if (item.type === "imageView") return <div className="message tool-image"><div className="avatar agent"><ImagePlus size={15} /></div><div className="message-body"><ImagePreview path={item.path} alt="Codex 查看图片" onCopy={() => onImageCopy?.(item.path)} /></div></div>;
+  if (item.type === "imageGeneration") return <div className="message tool-image"><div className="avatar agent"><ImagePlus size={15} /></div><div className="message-body">{item.savedPath || item.result ? <ImagePreview path={item.savedPath || item.result} alt="生成图片" onCopy={() => onImageCopy?.(item.savedPath || item.result)} /> : <p>{item.failure?.message ?? item.status}</p>}</div></div>;
+  if (item.type === "sleep") {
+    return <ActionCard icon={<Clock3 size={13} />} verb="等待" status={item.status === "inProgress" ? "running" : "done"} statusText={item.status ?? "进行中"} />;
+  }
+  if (item.type === "enteredReviewMode" || item.type === "exitedReviewMode") {
+    return <ActionCard icon={<Search size={13} />} verb={item.type === "enteredReviewMode" ? "开始代码审查" : "完成代码审查"} info={item.review ? <code>{item.review}</code> : undefined} status="done" />;
+  }
+  if (item.type === "hookPrompt" || item.type === "contextCompaction") {
+    return <ActionCard icon={<Wrench size={13} />} verb={item.type === "contextCompaction" ? "上下文压缩" : "Hook"} status="done" statusText="完成" />;
+  }
+  return (
+    <ActionCard icon={<Wrench size={13} />} verb={item.type} status="done">
+      <pre>{JSON.stringify(item, null, 2)}</pre>
+    </ActionCard>
+  );
+}
+
+/** memo 版消息项：流式期间父级每帧重渲染，已完成的消息项（item 引用不变）直接跳过，
+ * 只有正在出字的那条（text 变化）会重渲染，滚动和已渲染内容保持静止不闪 */
+const MemoItemView = memo(ItemView, (prev, next) =>
+  prev.item === next.item
+  && prev.turnActive === next.turnActive
+  && prev.usage === next.usage
+  && prev.tokenUsage === next.tokenUsage
+  && prev.waitingForApproval === next.waitingForApproval
+  && prev.hideFooter === next.hideFooter
+  && prev.fallbackWindow === next.fallbackWindow,
+);
+
+function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn }: { turn: Turn; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean }) {
+  const completedTask = turn.status === "completed" && isTaskTurn(turn);
+  // 回合已结束（含 completed/interrupted/failed）——普通聊天回合没有文件改动（不满足 isTaskTurn），
+  // 但只要回合已收尾就该展示自己的操作栏（复制/分支/统计），避免被 task 限定卡掉。
+  // 复用 isTurnRunning 覆盖 status === "running" 别名（部分引擎/历史数据会出现）。
+  const turnFinished = !isTurnRunning(turn);
+  const running = isTurnRunning(turn);
+  const userItems = turn.items.filter((item) => item.type === "userMessage");
+  // 回合已结束但个别工具/命令的 item/completed 事件丢失（状态仍 inProgress）→
+  // 渲染层兜底落成完成态，避免「任务都完成了还卡在正在运行」。仅回合结束时兜底，
+  // 正常流式期间（running）保持引擎原始状态不动。
+  const responseItems = useMemo(() => {
+    const items = turn.items.filter((item) => item.type !== "userMessage");
+    if (running) return items;
+    let stale = false;
+    const fixed = items.map((item) => {
+      if (item.status === "inProgress" || item.status === "running") { stale = true; return { ...item, status: "completed" }; }
+      return item;
+    });
+    return stale ? fixed : items;
+  }, [turn.items, running]);
+  // 最终答复 = 最后一条有正文的 agentMessage
+  const finalAgent = [...responseItems].reverse().find((item) => item.type === "agentMessage" && String(item.text ?? "").trim()) ?? null;
+  const hasContent = responseItems.some((item) => item.type !== "agentMessage" || Boolean(String(item.text ?? "").trim()));
+  // 可见内容：空的 agentMessage / 空 reasoning 占位不算。引擎建好 item 到首 token 之间有几十~几百毫秒，
+  // 这段空窗必须有「思考中/生成中」占位顶着，否则就是白屏一下再突然整段冒出来（观感=卡+闪）。
+  const hasVisible = responseItems.some((item) =>
+    item.type === "agentMessage" ? Boolean(String(item.text ?? "").trim())
+      : item.type === "reasoning" ? Boolean([...(item.summary ?? []), ...(item.content ?? [])].join("").trim())
+        : true,
+  );
+  const stoppedWithoutReply = Boolean(interruptedAt && userItems.length > 0 && !hasContent);
+  const statusLabel = running
+    ? (turn.items.some((item) => item.type === "reasoning" && (item.status === "inProgress" || item.status === "running" || (!item.status && !item.durationMs))) ? "思考中" : "生成中")
+    : turn.error ? "出错"
+    : turn.durationMs ? `已用 ${formatDuration(turn.durationMs)}` : "已完成";
+  const hookBadge = hooks && hooks.length > 0 ? <HookBadge hooks={hooks} /> : undefined;
+  return (
+    <div className={`turn-group ${running ? "running" : turn.error ? "error" : "completed"}`} id={`turn-${turn.id}`}>
+      {userItems.map((item) => <MemoUserMessageView item={item} turn={turn} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} key={item.id} />)}
+      <div className="turn-card">
+        {running && !hasVisible && <header className="turn-card-header">
+          <span className="turn-card-dot" aria-hidden />
+          <span className="turn-card-status shimmer-text">{statusLabel}</span>
+        </header>}
+        <div className="turn-card-body">
+          <div className="codex-turn">
+          {stoppedWithoutReply && <div className="interrupted-turn"><CircleStop size={15} /><div><strong>你在 {elapsedSeconds ?? 0} 秒后停止了</strong><span>Codex 尚未开始回复，因此没有生成内容。</span></div></div>}
+          {running && isTaskTurn(turn) && <RunningProcessTime />}
+          {/* inner 永远不渲染 finalAgent 的 footer（避免 running 时每个新 body 短暂成为 finalAgent 挂按钮 + 避免与外层 2129 行双排）。外层 turnFinished 决定最终是否独占渲染一份。CompletedChanges 仍需 completedTask（聊天回合没文件改动可显）。 */}
+          <TurnFoldStream items={responseItems} turn={turn} running={running} fallbackWindow={fallbackWindow} waitingForApproval={waitingForApproval} handlers={handlers} finalAgentId={finalAgent?.id} usage={usage} tokenUsage={tokenUsage} />
+          {completedTask && <CompletedChanges turn={turn} />}
+          {turnFinished && finalAgent && <MessageFooter item={finalAgent} turn={turn} usage={usage} tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onFork={() => handlers.onFork(turn.id)} extraIcon={hookBadge} />}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** memo 回合视图：输入框打字等 App 级状态变化不再穿透到消息列表（闪烁根源之一）；
+ * turn 对象引用在 stableItem/mergeTurn 下只有真正变化的回合会更新 */
+const MemoTurnView = memo(TurnView, (prev, next) =>
+  prev.turn === next.turn
+  && prev.usage === next.usage
+  && prev.tokenUsage === next.tokenUsage
+  && prev.fallbackWindow === next.fallbackWindow
+  && prev.isLastTurn === next.isLastTurn
+  && prev.waitingForApproval === next.waitingForApproval
+  && prev.interruptedAt === next.interruptedAt
+  && prev.elapsedSeconds === next.elapsedSeconds
+  && prev.handlers === next.handlers
+  && prev.hooks === next.hooks,
+);
+
+/** memo 用户消息：只有消息内容/回合变化才重渲染 */
+const MemoUserMessageView = memo(UserMessageView, (prev, next) =>
+  prev.item === next.item
+  && prev.turn === next.turn
+  && prev.fallbackWindow === next.fallbackWindow,
+);
+
+function TerminalPanel({ id, workspace, active }: { id: string; workspace: string; active: boolean }) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const fitRef = useRef<any>(null);
+  const [failed, setFailed] = useState(false);
+  const [started, setStarted] = useState(false);
+  useEffect(() => {
+    let disposed = false;
+    let disposeTerm: (() => void) | null = null;
+    void (async () => {
+      try {
+        const [{ Terminal }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")]);
+        if (disposed || !hostRef.current) return;
+        const term = new Terminal({ fontSize: 12, cursorBlink: true, theme: { background: "#161615", foreground: "#e8e8e5", selectionBackground: "#45454188" } });
+        const fit = new FitAddon();
+        term.loadAddon(fit);
+        term.open(hostRef.current);
+        try { fit.fit(); } catch { /* host not laid out yet */ }
+        fitRef.current = fit;
+        const offData = window.codex.onTerminalData((terminalId, data) => { if (terminalId === id) term.write(data); });
+        term.onData((data) => void window.codex.terminalInput(id, data));
+        term.onResize(({ cols, rows }) => void window.codex.terminalResize(id, cols, rows));
+        const onWindowResize = () => { try { fit.fit(); } catch { /* hidden */ } };
+        window.addEventListener("resize", onWindowResize);
+        disposeTerm = () => { offData(); window.removeEventListener("resize", onWindowResize); term.dispose(); };
+        setStarted(true);
+      } catch {
+        setFailed(true);
+      }
+    })();
+    return () => { disposed = true; disposeTerm?.(); };
+  }, [id]);
+  useEffect(() => {
+    if (!started) return;
+    void window.codex.restartTerminal(id, workspace || undefined);
+  }, [started, id, workspace]);
+  useEffect(() => {
+    if (!active) return;
+    const timer = setTimeout(() => { try { fitRef.current?.fit(); } catch { /* hidden */ } }, 60);
+    return () => clearTimeout(timer);
+  }, [active]);
+  return (
+    <section className="terminal-section">
+      <div className="terminal-host" ref={hostRef} />
+      {failed && <div className="panel-loading">终端组件加载失败</div>}
+    </section>
+  );
+}
+
+
+/**
+ * SSH 内置终端：xterm + ssh2 shell 会话。
+ * 会话 id 由主进程分配，数据通过 ssh:data 推送、退出通过 ssh:exit；卸载时必须关闭会话，
+ * 否则主进程会残留 ssh2 连接（要等应用退出才被统一清理）。
+ */
+function SshTerminalModal({ server, onClose }: { server: SshServer; onClose: () => void }) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const sessionRef = useRef<string | null>(null);
+  const fitRef = useRef<any>(null);
+  const [status, setStatus] = useState<"connecting" | "online" | "closed" | "error">("connecting");
+  const [message, setMessage] = useState("");
+
+  // Esc 关闭：xterm 会吞掉按键，所以在 window 上监听
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanup: (() => void) | null = null;
+    void (async () => {
+      try {
+        const [{ Terminal }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")]);
+        if (disposed || !hostRef.current) return;
+        const term = new Terminal({
+          fontSize: 12.5,
+          cursorBlink: true,
+          convertEol: true,
+          scrollback: 5000,
+          theme: { background: "#141414", foreground: "#e8e8e5", cursor: "#7cabf8", selectionBackground: "#3a3a3888" },
+        });
+        const fit = new FitAddon();
+        term.loadAddon(fit);
+        term.open(hostRef.current);
+        try { fit.fit(); } catch { /* 容器还没布局完 */ }
+        fitRef.current = fit;
+
+        const offData = window.codex.onSshData((payload) => term.write(payload.data ?? ""));
+        const offExit = window.codex.onSshExit(() => {
+          if (disposed) return;
+          setStatus("closed");
+          term.write("\r\n\x1b[90m[会话已断开，按 Esc 或点关闭退出]\x1b[0m\r\n");
+        });
+        const dataSubscription = term.onData((data) => { if (sessionRef.current) void window.codex.sshSessionWrite(sessionRef.current, data); });
+        const resizeSubscription = term.onResize(({ cols, rows }) => { if (sessionRef.current) void window.codex.sshSessionResize(sessionRef.current, cols, rows); });
+        const onWindowResize = () => { try { fitRef.current?.fit(); } catch { /* ignore */ } };
+        window.addEventListener("resize", onWindowResize);
+        cleanup = () => {
+          offData();
+          offExit();
+          dataSubscription.dispose();
+          resizeSubscription.dispose();
+          window.removeEventListener("resize", onWindowResize);
+          if (sessionRef.current) void window.codex.sshSessionClose(sessionRef.current);
+          term.dispose();
+        };
+
+        const opened = await window.codex.sshSessionOpen(server, term.cols || 100, term.rows || 30);
+        if (disposed) return;
+        if ("error" in opened) {
+          setStatus("error");
+          setMessage(opened.error);
+          term.write(`\x1b[31m连接失败：${opened.error}\x1b[0m\r\n`);
+          return;
+        }
+        sessionRef.current = opened.sessionId;
+        setStatus("online");
+        term.focus();
+        try { fit.fit(); } catch { /* ignore */ }
+      } catch {
+        if (!disposed) { setStatus("error"); setMessage("终端组件加载失败"); }
+      }
+    })();
+    return () => { disposed = true; cleanup?.(); };
+  }, [server.id]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => { try { fitRef.current?.fit(); } catch { /* ignore */ } }, 80);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <div className="modal-backdrop ssh-terminal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="ssh-terminal-modal" role="dialog" aria-modal="true" aria-label={`${server.name} 终端`}>
+        <header>
+          <div className="ssh-terminal-title">
+            <span className={`ssh-status-dot ${status === "online" ? "ok" : status === "error" ? "fail" : "testing"}`} />
+            <strong>{server.name}</strong>
+            <code>{server.username}@{server.host}{server.port !== 22 ? `:${server.port}` : ""}</code>
+            {server.jumpHost?.host ? <span className="ssh-tag">跳板：{server.jumpHost.host}</span> : null}
+          </div>
+          <div className="ssh-terminal-state">
+            {status === "connecting" && <><Spinner /><span>正在建立 SSH 会话…</span></>}
+            {status === "online" && <span className="ssh-terminal-online">已连接</span>}
+            {status === "closed" && <span>会话已断开</span>}
+            {status === "error" && <span className="ssh-terminal-error">{message || "连接失败"}</span>}
+            <button className="icon-button" title="关闭终端（Esc）" onClick={onClose}><X size={16} /></button>
+          </div>
+        </header>
+        <div className="ssh-terminal-host" ref={hostRef} />
+        <footer>
+          <span>会话仅限本机使用；关闭终端即断开 SSH 连接。</span>
+          <button className="secondary-setting" onClick={onClose}>关闭</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+/** 远程命令执行：一次性 exec，展示 stdout/stderr/退出码/耗时 */
+function SshExecModal({ server, onClose }: { server: SshServer; onClose: () => void }) {
+  const [command, setCommand] = useState("");
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<SshExecResult | null>(null);
+  const run = async () => {
+    if (!command.trim() || running) return;
+    setRunning(true);
+    setResult(null);
+    try {
+      setResult(await window.codex.execSshCommand(server, command));
+    } catch (error: any) {
+      setResult({ ok: false, error: error.message });
+    } finally { setRunning(false); }
+  };
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="connector-setup-modal ssh-exec-modal" role="dialog" aria-modal="true" aria-label={`在 ${server.name} 上运行命令`}>
+        <header>
+          <div className="connector-setup-title">
+            <span><TerminalSquare size={17} /></span>
+            <div><strong>在「{server.name}」上运行命令</strong><p>{server.username}@{server.host}{server.port !== 22 ? `:${server.port}` : ""} · 一次性执行，超时 30 秒</p></div>
+          </div>
+          <button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button>
+        </header>
+        <div className="connector-form">
+          <label><span>命令 <small>Ctrl+Enter 运行</small></span>
+            <textarea rows={3} value={command} spellCheck={false} placeholder="例如：uname -a && df -h" onChange={(event) => setCommand(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void run(); } }} />
+          </label>
+          {result && <div className={`ssh-exec-result ${result.ok ? "ok" : "fail"}`}>
+            <div className="ssh-exec-meta">
+              <span>退出码 {result.code ?? "-"}</span><span>耗时 {result.latencyMs ?? "-"}ms</span>
+              {result.error ? <span className="ssh-exec-error">{result.error}</span> : null}
+            </div>
+            {result.stdout ? <pre>{result.stdout}</pre> : null}
+            {result.stderr ? <pre className="ssh-exec-stderr">{result.stderr}</pre> : null}
+          </div>}
+        </div>
+        <footer>
+          <button className="secondary-setting" onClick={onClose}>关闭</button>
+          <button className="primary-setting" disabled={!command.trim() || running} onClick={() => void run()}>{running ? <Spinner /> : <Play size={14} />}运行</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+const reviewScopes: [ReviewScope, string][] = [["unstaged", "未暂存"], ["staged", "已暂存"], ["head", "全部分支更改"], ["last", "上一轮更改"]];
+type ReviewScope = "unstaged" | "staged" | "head" | "last";
+
+function ReviewPanel({ workspace, lastDiff, disabled, busy, report, onReview }: { workspace: string; lastDiff: string; disabled: boolean; busy: boolean; report: string; onReview: (instructions: string) => void }) {
+  const [scope, setScope] = useState<ReviewScope>("unstaged");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [output, setOutput] = useState("");
+  const [gitMissing, setGitMissing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [custom, setCustom] = useState("");
+  const refresh = async () => {
+    if (scope === "last") { setOutput(lastDiff); setGitMissing(false); return; }
+    if (!workspace) { setGitMissing(true); setOutput(""); return; }
+    setLoading(true);
+    try {
+      const result = await window.codex.gitDiff(workspace, scope);
+      setGitMissing(false);
+      setOutput(result.output ?? "");
+    } catch {
+      setGitMissing(true);
+      setOutput("");
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { void refresh(); }, [scope, workspace]);
+  const files = useMemo(() => {
+    if (!output) return [] as { path: string; added: number; deleted: number }[];
+    const list: { path: string; added: number; deleted: number }[] = [];
+    let current: { path: string; added: number; deleted: number } | null = null;
+    for (const line of output.split("\n")) {
+      const match = line.match(/^diff --git a\/(.+?) b\//);
+      if (match) { current = { path: match[1], added: 0, deleted: 0 }; list.push(current); continue; }
+      if (!current) continue;
+      if (line.startsWith("+") && !line.startsWith("+++")) current.added += 1;
+      else if (line.startsWith("-") && !line.startsWith("---")) current.deleted += 1;
+    }
+    return list;
+  }, [output]);
+  const scopeLabel = reviewScopes.find(([value]) => value === scope)?.[1] ?? "未暂存";
+  return (
+    <section className="review-panel git-review">
+      <div className="review-bar">
+        <div className="scope-wrap">
+          <button className="scope-btn" onClick={() => setMenuOpen((current) => !current)}>{scopeLabel}<ChevronDown size={13} /></button>
+          {menuOpen && <div className="scope-menu">
+            {reviewScopes.map(([value, label]) => <button key={value} onClick={() => { setScope(value); setMenuOpen(false); }}>{label}{scope === value && <Check size={13} />}</button>)}
+          </div>}
+        </div>
+        <button className="review-refresh" title="刷新" onClick={() => void refresh()}>{loading ? <Spinner /> : <RefreshCw size={14} />}<span>刷新</span></button>
+      </div>
+      {gitMissing ? <div className="git-missing"><FileCode2 size={36} /><strong>当前环境没有可用的 Git</strong><p>请先安装 Git，或确认当前运行环境里可以执行 git 命令。</p></div>
+        : files.length ? <div className="diff-file-list">{files.map((file) => <div key={file.path}><code title={file.path}>{basename(file.path)}</code><span><b>+{file.added}</b> <i>-{file.deleted}</i></span></div>)}</div>
+        : <div className="git-empty"><p className="muted">当前范围没有文件改动</p></div>}
+      <details className="ai-review">
+        <summary><Search size={13} />AI 审查（review/start）<ChevronDown size={13} /></summary>
+        <div className="ai-review-body">
+          <button className="primary-setting" disabled={disabled || busy} onClick={() => onReview("")}><Search size={14} />{busy ? "审查中…" : "审查未提交改动"}</button>
+          <div className="review-custom">
+            <textarea value={custom} rows={2} placeholder="或输入自定义审查说明，例如：重点检查鉴权逻辑" onChange={(event) => setCustom(event.target.value)} />
+            <button className="secondary-setting" disabled={disabled || busy || !custom.trim()} onClick={() => { const value = custom.trim(); setCustom(""); onReview(value); }}>按说明审查</button>
+          </div>
+          {report && <div className="review-report"><Markdown>{report}</Markdown></div>}
+        </div>
+      </details>
+    </section>
+  );
+}
+
+function RequestCard({ request, onDone }: { request: PendingRequest; onDone: () => void }) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [replyError, setReplyError] = useState("");
+  const params = request.params ?? {};
+  const questions = params.questions ?? [];
+  const legacyApproval = request.method === "execCommandApproval" || request.method === "applyPatchApproval";
+  const commandLike = legacyApproval || request.method === "item/commandExecution/requestApproval" || request.method === "item/fileChange/requestApproval";
+  const available = params.availableDecisions ?? [];
+  const allowOnce = legacyApproval ? "approved" : "accept";
+  const allowSession = legacyApproval ? "approved_for_session" : "acceptForSession";
+  const decline = legacyApproval ? { denied: { rejection: "User denied request" } } : "decline";
+
+  async function reply(result: unknown) {
+    setSubmitting(true);
+    setReplyError("");
+    try {
+      await window.codex.respond(request.id, result);
+      onDone();
+    } catch (error: any) {
+      setReplyError(error.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (request.method === "item/tool/requestUserInput") {
+    return (
+      <section className="approval-card">
+        <header><MessageSquarePlus size={16} /><strong>Codex 需要你的输入</strong></header>
+        {questions.map((question: any) => (
+          <label className="question" key={question.id}>
+            <span>{question.header || question.question}</span>
+            {question.header && <small>{question.question}</small>}
+            {question.options ? (
+              <select value={answers[question.id] ?? ""} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })}>
+                <option value="">请选择</option>
+                {question.options.map((option: any) => <option key={option.label} value={option.label}>{option.label} - {option.description}</option>)}
+              </select>
+            ) : (
+              <input type={question.isSecret ? "password" : "text"} value={answers[question.id] ?? ""} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })} />
+            )}
+          </label>
+        ))}
+        <footer><button className="primary" disabled={submitting} onClick={() => void reply({ answers: Object.fromEntries(questions.map((q: any) => [q.id, { answers: [answers[q.id] ?? ""] }])) })}><Check size={15} />提交</button></footer>
+      </section>
+    );
+  }
+
+  if (request.method === "mcpServer/elicitation/request") {
+    const properties = params.requestedSchema?.properties ?? {};
+    const content = Object.fromEntries(Object.keys(properties).map((key) => [key, answers[key] ?? ""]));
+    return (
+      <section className="approval-card">
+        <header><Wrench size={16} /><strong>{params.serverName} 请求确认</strong></header>
+        <p>{params.message}</p>
+        {params.mode === "url" && <button onClick={() => void window.codex.openExternal(params.url)}>在浏览器中打开</button>}
+        {params.mode !== "url" && Object.entries(properties).map(([key, schema]: [string, any]) => <label className="question" key={key}><span>{schema.title ?? key}</span>{schema.description && <small>{schema.description}</small>}{schema.enum ? <select value={answers[key] ?? ""} onChange={(event) => setAnswers({ ...answers, [key]: event.target.value })}><option value="">请选择</option>{schema.enum.map((value: string) => <option value={value} key={value}>{value}</option>)}</select> : <input type={schema.type === "number" || schema.type === "integer" ? "number" : "text"} value={answers[key] ?? ""} onChange={(event) => setAnswers({ ...answers, [key]: event.target.value })} />}</label>)}
+        {replyError && <p className="request-error">{replyError}</p>}
+        <footer><button disabled={submitting} onClick={() => void reply({ action: "decline", content: null, _meta: params._meta ?? null })}>拒绝</button><button className="primary" disabled={submitting} onClick={() => void reply({ action: "accept", content: params.mode === "url" ? null : content, _meta: params._meta ?? null })}><Check size={14} />确认</button></footer>
+      </section>
+    );
+  }
+
+  return (
+    <section className="approval-card">
+      <header><ShieldCheck size={16} /><strong>{request.method.includes("fileChange") ? "批准文件改动" : request.method.includes("permissions") ? "批准额外权限" : "批准命令执行"}</strong></header>
+      {params.reason && <p>{params.reason}</p>}
+      {params.command && <pre>{params.command}</pre>}
+      {params.cwd && <div className="tool-meta">{params.cwd}</div>}
+      {replyError && <p className="request-error">{replyError}</p>}
+      <footer>
+        <button disabled={submitting} onClick={() => void reply(commandLike ? { decision: decline } : { permissions: {}, scope: "turn" })}>拒绝</button>
+        <button className="primary" disabled={submitting} onClick={() => void reply(commandLike ? { decision: allowOnce } : { permissions: Object.fromEntries(Object.entries(params.permissions ?? {}).filter(([, value]) => value != null)), scope: "turn" })}><Play size={14} />本次允许</button>
+        {commandLike && (!available.length || available.includes(allowSession)) && <button disabled={submitting} onClick={() => void reply({ decision: allowSession })}>本会话允许</button>}
+      </footer>
+    </section>
+  );
+}
+
+function ConnectorSetupModal({ draft, secret, saving, onDraftChange, onSecretChange, onClose, onSave }: { draft: ConnectorDraft; secret: string; saving: boolean; onDraftChange: (draft: ConnectorDraft) => void; onSecretChange: (value: string) => void; onClose: () => void; onSave: (draft: ConnectorDraft) => void }) {
+  const valid = Boolean(draft.name.trim() && (draft.transport === "stdio" ? draft.command?.trim() : draft.url?.trim()));
+  const changeTransport = (transport: ConnectorDraft["transport"]) => onDraftChange({ ...draft, transport });
+  const save = () => onSave({ ...draft, secrets: secret.trim() ? { MCP_TOKEN: secret.trim() } : {} });
+  return <div className="modal-backdrop connector-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="connector-setup-modal" role="dialog" aria-modal="true" aria-label="添加 MCP 连接器">
+    <header><div className="connector-setup-title"><span><Link2 size={17} /></span><div><strong>添加 MCP 连接器</strong><p>填写服务提供方给出的连接信息，保存后会自动重启引擎并校验状态。</p></div></div><button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button></header>
+    <div className="connector-setup-steps"><span className="active">1 选择方式</span><i /><span>2 填写连接</span><i /><span>3 保存并验证</span></div>
+    <div className="connector-transport-cards"><button type="button" className={draft.transport === "stdio" ? "active" : ""} onClick={() => changeTransport("stdio")}><TerminalSquare size={18} /><b>本地命令</b><small>适用于 npm、uvx、Docker 或已安装的 MCP 服务。</small></button><button type="button" className={draft.transport === "streamable_http" ? "active" : ""} onClick={() => changeTransport("streamable_http")}><Globe2 size={18} /><b>远程 HTTP</b><small>适用于服务商提供的 HTTPS MCP 地址和令牌。</small></button></div>
+    <div className="connector-form"><label><span>连接器名称 <em>必填</em></span><input autoFocus value={draft.name} onChange={(event) => onDraftChange({ ...draft, name: event.target.value })} placeholder="例如：GitHub MCP" /></label>{draft.transport === "stdio" ? <><label><span>启动命令 <em>必填</em></span><input value={draft.command ?? ""} onChange={(event) => onDraftChange({ ...draft, command: event.target.value })} placeholder="例如：npx" /></label><label><span>命令参数 <small>可选，按空格分隔</small></span><input value={(draft.args ?? []).join(" ")} onChange={(event) => onDraftChange({ ...draft, args: event.target.value.trim() ? event.target.value.trim().split(/\s+/) : [] })} placeholder="例如：-y @modelcontextprotocol/server-github" /></label><div className="connector-example"><Info size={14} /><span>示例：<code>npx -y @modelcontextprotocol/server-github</code></span></div></> : <><label><span>MCP 服务地址 <em>必填</em></span><input value={draft.url ?? ""} onChange={(event) => onDraftChange({ ...draft, url: event.target.value })} placeholder="https://service.example.com/mcp" /></label><div className="connector-example"><Info size={14} /><span>请粘贴服务方提供的完整 HTTPS MCP 地址，不是官网主页。</span></div></>}<label><span>访问令牌 <small>可选，系统会加密保存</small></span><input value={secret} type="password" onChange={(event) => onSecretChange(event.target.value)} placeholder="没有令牌可先留空" /></label></div>
+    <footer><button className="secondary-setting" onClick={onClose}>取消</button><button className="primary-setting" disabled={!valid || saving} onClick={save}>{saving ? <Spinner /> : <Check size={15} />}保存并验证</button></footer>
+  </section></div>;
+}
+
+function ConnectorTemplateModal({ template, values, saving, oauth, onChange, onClose, onSave, onOAuth }: { template: ConnectorTemplate; values: Record<string, string>; saving: boolean; oauth: ConnectorOAuthEvent | null; onChange: (values: Record<string, string>) => void; onClose: () => void; onSave: () => void; onOAuth: () => void }) {
+  const invalid = template.fields.filter((field) => !field.optional && !values[field.key]?.trim());
+  const oauthBusy = oauth?.phase === "waiting";
+  return <div className="modal-backdrop connector-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !oauthBusy) onClose(); }}><section className="connector-setup-modal" role="dialog" aria-modal="true" aria-label={`配置 ${template.name}`}>
+    <header><div className="connector-setup-title"><span><Link2 size={17} /></span><div><strong>配置 {template.name}</strong><p>{template.summary}</p></div></div><button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button></header>
+    <div className="connector-template-vendor"><Zap size={13} /><span>{template.vendor}</span><small>{template.transport === "stdio" ? "本地命令 · stdio" : "远程服务 · HTTP MCP"}</small></div>
+    <div className="connector-form">{template.fields.map((field, index) => <label key={field.key}><span>{field.label}{field.optional ? <small> 可选</small> : <em> 必填</em>}</span><input autoFocus={index === 0} value={values[field.key] ?? ""} type={field.secret ? "password" : "text"} onChange={(event) => onChange({ ...values, [field.key]: event.target.value })} placeholder={field.placeholder} />{field.hint && <small className="field-hint">{field.hint}</small>}</label>)}
+      {template.oauth && <div className="connector-oauth-zone"><div className="connector-oauth-head"><KeyRound size={14} /><strong>OAuth 授权</strong><small>跳转官方授权页，授权完成即连接</small></div>{template.oauthNote && <p className="field-hint">{template.oauthNote}</p>}
+        {oauth?.phase === "waiting" && <div className="oauth-status waiting"><Spinner /><span>{oauth.message}</span>{oauth.authorizeUrl && <a className="oauth-open-link" href={oauth.authorizeUrl} target="_blank" rel="noreferrer">没自动打开？点此打开授权页</a>}</div>}
+        {oauth?.phase === "authorized" && <div className="oauth-status ok"><CircleCheck size={15} /><span>{oauth.message}</span></div>}
+        {oauth?.phase === "failed" && <div className="oauth-status fail"><AlertTriangle size={15} /><span>{oauth.message}</span></div>}
+      </div>}
+      <div className="connector-example"><Info size={14} /><span>{template.transport === "stdio" ? "填写后写入本机 Codex 配置（命令行参数或环境变量），密钥仅保存在本机。" : "密钥走系统加密存储，经 Authorization 头注入远程 MCP。"} <a href={template.helpUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>如何获取凭据 ↗</a></span></div></div>
+    <footer><button className="secondary-setting" onClick={onClose}>取消</button><button className="secondary-setting" disabled={invalid.length > 0 || saving || oauthBusy} onClick={onSave}>{saving ? <Spinner /> : <Check size={15} />}保存并验证</button>{template.oauth && <button className="primary-setting" disabled={invalid.length > 0 || saving || oauthBusy} onClick={onOAuth}>{oauthBusy ? <Spinner /> : <KeyRound size={15} />}{oauth?.phase === "authorized" ? "重新授权" : "授权连接"}</button>}</footer>
+  </section></div>;
+}
+
+/** 技能头像：市场 emoji 优先，空缺时按关键词/分类映射 lucide 图标，配色随分类。 */
+function SkillAvatar({ skill, size = 15 }: { skill: { name: string; description?: string; category?: string; icon?: string }; size?: number }) {
+  const visual: SkillVisual = resolveSkillVisual(skill);
+  return <span className={`skill-avatar ${visual.iconClass}`}>{visual.emoji || (visual.Icon ? <visual.Icon size={size} /> : null)}</span>;
+}
+
+function SkillInstallModal({ state, onClose, onUse }: { state: SkillInstallState; onClose: () => void; onUse: () => void }) {
+  const steps = ["下载技能包", "检查文件结构", "安全检查", "写入技能目录", "登记市场来源", "重启 Codex 引擎", "确认引擎发现"];
+  const done = state.current >= steps.length;
+  return <div className="modal-backdrop skill-install-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && (done || state.failed)) onClose(); }}><section className="skill-install-modal" role="dialog" aria-modal="true" aria-label="安装技能">
+    <header><div><SkillAvatar skill={state.skill} size={17} /><div><strong>正在安装 {state.skill.name}</strong><p>{state.failed ? "安装没有完成，文件不会作为可用技能显示。" : done ? "安装流程已结束。请查看引擎发现状态。" : "请保持此窗口打开，安装会自动继续。"}</p></div></div>{(done || state.failed) && <button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button>}</header>
+    <ol className="skill-install-steps">{steps.map((label, index) => { const step = index + 1; const status = state.failed && step === state.current ? "failed" : step < state.current || (done && step <= state.current) ? "done" : step === state.current && !done ? "doing" : "todo"; return <li className={status} key={label}><span>{status === "done" ? <Check size={13} /> : status === "doing" ? <Spinner /> : status === "failed" ? <X size={13} /> : step}</span><div><b>{label}</b><small>{status === "done" ? "已完成" : status === "doing" ? "处理中…" : status === "failed" ? state.failed : "等待中"}</small></div></li>; })}</ol>
+    {done && <div className={`skill-engine-result ${state.engineRegistered ? "ok" : "pending"}`}><CircleCheck size={17} /><div><strong>{state.engineRegistered ? "Codex 已发现此技能" : "技能已安装，等待引擎下一轮扫描"}</strong><p>{state.engineCheckMessage ?? "已写入技能目录。"}</p></div></div>}
+    {state.failed && <div className="skill-engine-result failed"><AlertTriangle size={17} /><div><strong>安装失败</strong><p>{state.failed}</p></div></div>}
+    {(done || state.failed) && <footer><button className="secondary-setting" onClick={onClose}>关闭</button>{done && <button className="primary-setting" onClick={onUse}><Quote size={14} />在对话中使用</button>}</footer>}
+  </section></div>;
+}
+
+const PRIORITY_LABELS: Record<MemoryPriority, { label: string; hint: string; accent: string }> = {
+  P0: { label: "P0 · 核心", hint: "置顶 + 长期保留，召回时永远优先", accent: "var(--green)" },
+  P1: { label: "P1 · 重要", hint: "项目背景 / 工作流 SOP，长期可复用", accent: "var(--blue, #4a90e2)" },
+  P2: { label: "P2 · 一般", hint: "任务经验与事实，按工作区可复用", accent: "var(--amber, #d99000)" },
+  P3: { label: "P3 · 临时", hint: "临时上下文，自动衰减 / 可清理", accent: "var(--muted)" },
+};
+
+/** 相对时间显示：2 分钟内=刚刚；24 小时内=N 小时前；30 天内=N 天前；更早=短日期 */
+function formatRelativeTime(ts: number, now: number = Date.now()): string {
+  const diff = Math.max(0, now - ts);
+  if (diff < 2 * 60_000) return "刚刚";
+  if (diff < 60 * 60_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 24 * 60 * 60_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  if (diff < 30 * 24 * 60 * 60_000) return `${Math.floor(diff / 86_400_000)} 天前`;
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function MemoryFunnel({ groups, onPreview, onTogglePin, onDeleteOne, onDeleteGroup, onOpenThread }: {
+  groups: MemoryGroup[];
+  onPreview: (entry: MemoryRecord) => void;
+  onTogglePin: (id: string) => void;
+  onDeleteOne: (id: string) => void;
+  onDeleteGroup: (group: MemoryGroup) => void;
+  onOpenThread: (threadId: string) => void;
+}) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // 层级别折叠：P0 默认展开（核心一眼可见），P1/P2/P3 默认整层收起
+  const [collapsedLayers, setCollapsedLayers] = useState<Record<string, boolean>>({ P1: true, P2: true, P3: true });
+  const buckets = useMemo(() => {
+    const map: Record<MemoryPriority, MemoryGroup[]> = { P0: [], P1: [], P2: [], P3: [] };
+    for (const g of groups) map[g.priority].push(g);
+    return map;
+  }, [groups]);
+  const totalItems = useMemo(() => groups.reduce((sum, g) => sum + g.items.length, 0), [groups]);
+  const totalPinned = useMemo(() => groups.reduce((sum, g) => sum + g.items.filter((it) => (it as any).pinned).length, 0), [groups]);
+
+  const toggle = (key: string) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
+  const toggleLayer = (p: MemoryPriority) => setCollapsedLayers((prev) => ({ ...prev, [p]: !prev[p] }));
+
+  if (!groups.length) {
+    return <div className="memory-funnel-empty"><p>暂无记忆。开启自动捕获后，新会话的关键内容会按 P 级沉淀到这里；或者上方手动保存一条。</p></div>;
+  }
+
+  const order: MemoryPriority[] = ["P0", "P1", "P2", "P3"];
+  return (
+    <div className="memory-funnel">
+      <div className="memory-funnel-summary">
+        <strong>{totalItems}</strong> 条记忆 · <strong>{groups.length}</strong> 个会话 · <strong>{totalPinned}</strong> 个置顶
+      </div>
+      {order.map((p) => {
+        const list = buckets[p];
+        if (!list.length) return null;
+        const meta = PRIORITY_LABELS[p];
+        const count = list.reduce((sum, g) => sum + g.items.length, 0);
+        const layerCollapsed = !!collapsedLayers[p];
+        return (
+          <section key={p} className={`memory-funnel-layer memory-funnel-${p} ${layerCollapsed ? "collapsed" : ""}`}>
+            <header className="memory-funnel-layer-head" style={{ borderLeftColor: meta.accent }} onClick={() => toggleLayer(p)} role="button" aria-expanded={!layerCollapsed} title={layerCollapsed ? "展开该层级" : "折叠该层级"}>
+              <div className="memory-funnel-layer-title"><span className="memory-funnel-layer-tag" style={{ background: meta.accent }}>{meta.label}</span><span className="memory-funnel-layer-hint">{meta.hint}</span></div>
+              <div className="memory-funnel-layer-count">{list.length} 个会话 · {count} 条
+                <button className={`memory-group-chevron ${layerCollapsed ? "" : "open"}`} title={layerCollapsed ? "展开" : "收起"}>{layerCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}</button>
+              </div>
+            </header>
+            {!layerCollapsed && (
+            <div className="memory-funnel-groups">
+              {list.map((group) => {
+                const isOpen = !!expanded[group.key];
+                return (
+                  <article key={group.key} className={`memory-group ${isOpen ? "open" : ""}`}>
+                    <header className="memory-group-head" onClick={() => toggle(group.key)}>
+                      <div className="memory-group-title">
+                        {group.threadId
+                          ? <button className="memory-group-open-thread" title="打开会话" onClick={(event) => { event.stopPropagation(); onOpenThread(group.threadId!); }}><MessageSquare size={12} /></button>
+                          : <span className="memory-group-manual" title="手动保存"><Edit3 size={12} /></span>}
+                        <span className="memory-group-name">{group.threadTitle}</span>
+                      </div>
+                      <div className="memory-group-meta">
+                        {group.categories.map((cat) => <span key={cat} className="memory-category-pill">{cat}</span>)}
+                        <span className="memory-group-time" title={new Date(group.latestAt).toLocaleString()}>{formatRelativeTime(group.latestAt)}</span>
+                        <span className="memory-group-count">{group.items.length} 条</span>
+                        <button className="icon-button" title="删除整个会话记忆" onClick={(event) => { event.stopPropagation(); onDeleteGroup(group); }}><Trash2 size={12} /></button>
+                        <button className={`memory-group-chevron ${isOpen ? "open" : ""}`} title={isOpen ? "收起" : "展开"}>{isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
+                      </div>
+                    </header>
+                    {isOpen && (
+                      <div className="memory-group-items">
+                        {group.items.map((entry) => (
+                          <article className={`memory-card ${(entry as any).pinned ? "pinned" : ""}`} key={entry.id} onClick={() => onPreview(entry)} title="点击查看全文">
+                            <div className="memory-card-head">
+                              <span className="memory-category-pill">{entry.category}</span>
+                              {(entry as any).pinned && <span className="memory-pin-badge" title="核心记忆，不被自动清理">★ 核心</span>}
+                              {(entry as any).workspace && <span className="memory-ws-badge" title="项目记忆">{(entry as any).workspace.split(/[\\/]/).pop()}</span>}
+                              <span className="memory-card-time" title={new Date(entry.updatedAt).toLocaleString()}>{formatRelativeTime(entry.updatedAt)}</span>
+                              {entry.sourceThreadId && <button className="icon-button" title="打开源会话" onClick={(event) => { event.stopPropagation(); onOpenThread(entry.sourceThreadId!); }}><MessageSquare size={12} /></button>}
+                              <button className={`icon-button ${(entry as any).pinned ? "pin-on" : ""}`} title={(entry as any).pinned ? "取消置顶" : "置顶为核心记忆"} onClick={(event) => { event.stopPropagation(); onTogglePin(entry.id); }}><Star size={12} /></button>
+                              <button className="icon-button" title="删除" onClick={(event) => { event.stopPropagation(); onDeleteOne(entry.id); }}><Trash2 size={12} /></button>
+                            </div>
+                            <p className="memory-card-preview">{entry.content}</p>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+            )}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function MemoryLayersEditor({ snapshot, scope, draft, dirty, distilling, hasWorkspace, onScope, onDraft, onSave, onDistill }: {
+  snapshot: MemoryLayersSnapshot | null;
+  scope: "user" | "project";
+  draft: string;
+  dirty: boolean;
+  distilling: boolean;
+  hasWorkspace: boolean;
+  onScope: (scope: "user" | "project") => void;
+  onDraft: (value: string) => void;
+  onSave: () => void;
+  onDistill: () => void;
+}) {
+  if (!snapshot) return <div className="memory-layers"><p className="memory-layers-loading">正在读取记忆分层…</p></div>;
+  const over = snapshot.budget.over;
+  const pending = snapshot.pendingDistill.dates.length;
+  return (
+    <div className="memory-layers">
+      <div className="memory-layers-head">
+        <div className="memory-layers-title">
+          <span className="memory-layers-icon"><BookOpen size={15} /></span>
+          <div>
+            <strong>常驻记忆</strong>
+            <span>每轮对话自动前置。用户档案跨项目生效，项目记忆跟随当前工作区。</span>
+          </div>
+        </div>
+        <div className={`memory-budget ${over ? "over" : ""}`} title="超过预算会在注入时截断并提示蒸馏">
+          <span>用户 {snapshot.budget.user}/1500</span>
+          <span>项目 {snapshot.budget.project}/3000</span>
+          {over && <span className="memory-budget-warn">超预算</span>}
+        </div>
+      </div>
+
+      <div className="memory-layer-tabs" role="tablist" aria-label="记忆分层">
+        <button role="tab" aria-selected={scope === "user"} className={`memory-layer-tab ${scope === "user" ? "active" : ""}`} onClick={() => onScope("user")}>用户档案</button>
+        <button role="tab" aria-selected={scope === "project"} className={`memory-layer-tab ${scope === "project" ? "active" : ""}`} disabled={!hasWorkspace} title={hasWorkspace ? "跟随当前工作区" : "先选择一个工作区"} onClick={() => onScope("project")}>项目记忆</button>
+        <span className="memory-layer-path" title={scope === "user" ? snapshot.paths.user : snapshot.paths.project}>{scope === "user" ? snapshot.paths.user : (snapshot.paths.project || "未选择工作区")}</span>
+      </div>
+
+      <textarea
+        className="memory-layer-editor"
+        rows={9}
+        value={draft}
+        onChange={(event) => onDraft(event.target.value)}
+        placeholder={scope === "user"
+          ? "跨所有项目生效的规则与偏好。一行一条，只写不看会再踩的：\n- 回答用中文，先给结论再给依据\n- 不要主动提交 git，未经确认不 push"
+          : "这个项目的长期约束与踩过的坑。一行一条：\n- 改完源码必须 npm run build，否则「没生效」多半是没构建\n- Windows 沙箱下 exec_command 全被拦，改用 npm pre/post 钩子"}
+      />
+
+      <div className="memory-layer-actions">
+        <button className="primary-setting" disabled={!dirty} onClick={onSave}><Check size={14} />保存{scope === "user" ? "用户档案" : "项目记忆"}</button>
+        <button className="secondary-setting" disabled={distilling || !hasWorkspace || !pending} title={!hasWorkspace ? "先选择一个工作区" : pending ? `有 ${pending} 天日志满 30 天，可蒸馏进项目记忆` : "暂无满 30 天的日志"} onClick={onDistill}>
+          {distilling ? <Spinner /> : <Sparkles size={14} />}蒸馏日志{pending ? `（${pending} 天）` : ""}
+        </button>
+        {dirty && <span className="memory-layer-dirty">有未保存的修改</span>}
+        {snapshot.lastDistillAt && <span className="memory-layer-hint">上次蒸馏 {new Date(snapshot.lastDistillAt).toLocaleString()}</span>}
+      </div>
+
+      {!!snapshot.logs.length && (
+        <div className="memory-layer-logs">
+          <span className="memory-layer-logs-label">近期日志</span>
+          {snapshot.logs.map((entry) => <span key={entry.date} className="memory-layer-log-chip" title={`${entry.chars} 字`}>{entry.date} · {entry.chars} 字</span>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MemoryConfigModal({ gateway, setGateway, action, onClose, onTest, onSave }: {
+  gateway: MemoryGatewayState;
+  setGateway: (g: MemoryGatewayState) => void;
+  action: "save" | "test" | null;
+  onClose: () => void;
+  onTest: () => void;
+  onSave: () => void;
+}) {
+  const valid = Boolean(gateway.endpoint.trim());
+  return createPortal(
+    <div className="modal-backdrop memory-config-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="connector-setup-modal memory-config-modal" role="dialog" aria-modal="true" aria-label="云端记忆配置">
+        <header>
+          <div className="connector-setup-title">
+            <span><Cloud size={17} /></span>
+            <div><strong>云端记忆配置</strong><p>配置 TencentDB Gateway 后，启用云端记忆时 Codex 会优先从云端召回与保存。</p></div>
+          </div>
+          <button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button>
+        </header>
+        <div className="connector-form">
+          <label><span>TencentDB Gateway 地址 <em>必填</em></span><input autoFocus value={gateway.endpoint} onChange={(event) => setGateway({ ...gateway, endpoint: event.target.value })} placeholder="http://127.0.0.1:8420" /></label>
+          <div className="settings-grid three memory-config-row"><label><span>Session Key</span><input value={gateway.sessionKey} onChange={(event) => setGateway({ ...gateway, sessionKey: event.target.value })} placeholder="codex-harness" /></label><label><span>User ID</span><input value={gateway.userId} onChange={(event) => setGateway({ ...gateway, userId: event.target.value })} /></label><label><span>API Key <small>加密保存</small></span><input type="password" value={gateway.apiKey} onChange={(event) => setGateway({ ...gateway, apiKey: event.target.value })} placeholder={gateway.hasApiKey ? "已安全保存，留空不修改" : "可选"} /></label></div>
+          <div className="connector-example"><Info size={14} /><span>默认 Endpoint <code>http://127.0.0.1:8420</code>；开启云端后会自动写回 Codex 引擎的 <code>memory_recall / memory_save</code> 工具。</span></div>
+        </div>
+        <footer>
+          <button className="secondary-setting" onClick={onClose}>取消</button>
+          <button className="secondary-setting" disabled={!valid || action !== null} onClick={onTest}>{action === "test" ? <Spinner /> : <Wifi size={14} />}测试连接</button>
+          <button className="primary-setting" disabled={action !== null} onClick={onSave}>{action === "save" ? <Spinner /> : <Check size={15} />}保存并启用云端</button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+function SubAgentEditorModal({ draft, onChange, onClose, onSave }: { draft: SubAgentEntry; onChange: (draft: SubAgentEntry) => void; onClose: () => void; onSave: (draft: SubAgentEntry) => void }) {
+  const valid = Boolean(draft.name.trim() && draft.systemPrompt.trim());
+  return createPortal(
+    <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="connector-setup-modal subagent-editor-modal" role="dialog" aria-modal="true" aria-label="编辑子智能体">
+        <header>
+          <div className="connector-setup-title">
+            <span><Bot size={17} /></span>
+            <div><strong>{draft.id ? `编辑「${draft.name}」` : "新建子智能体"}</strong><p>子智能体会跟随主对话的模型/沙箱/审批配置；保存后会被 Codex 通过 dynamicTools 调用。</p></div>
+          </div>
+          <button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button>
+        </header>
+        <div className="connector-form">
+          <label><span>名称 <em>必填</em></span><input autoFocus value={draft.name} onChange={(event) => onChange({ ...draft, name: event.target.value })} placeholder="例如：代码审查员 / Bug Hunter / 测试工程师" /></label>
+          <label><span>简介 <small>一句话说明它负责什么</small></span><input value={draft.description} onChange={(event) => onChange({ ...draft, description: event.target.value })} placeholder="例如：专门审查 PR 改动并列出潜在问题" /></label>
+          <label><span>系统提示词 <em>必填</em></span><textarea rows={6} value={draft.systemPrompt} onChange={(event) => onChange({ ...draft, systemPrompt: event.target.value })} placeholder="例如：你是一名资深前端审查员，专注 React 性能、可访问性与安全问题。请基于用户给定的代码或需求给出结构化结论。" /></label>
+          <div className="settings-grid three subagent-config-grid">
+            <label><span>推理强度</span><select value={draft.effort} onChange={(event) => onChange({ ...draft, effort: event.target.value })}>{ALL_EFFORTS.map((level) => <option key={level} value={level}>{effortLabels[level] ?? level}</option>)}</select></label>
+            <label><span>模型</span>
+              <label className="subagent-toggle"><input type="checkbox" checked={draft.inheritModel} onChange={(event) => onChange({ ...draft, inheritModel: event.target.checked, model: event.target.checked ? undefined : draft.model })} />跟随主对话</label>
+              {!draft.inheritModel && <input value={draft.model ?? ""} onChange={(event) => onChange({ ...draft, model: event.target.value })} placeholder="例如：claude-sonnet-4" />}
+            </label>
+            <label><span>沙箱</span>
+              <label className="subagent-toggle"><input type="checkbox" checked={draft.inheritSandbox} onChange={(event) => onChange({ ...draft, inheritSandbox: event.target.checked, sandbox: event.target.checked ? undefined : draft.sandbox })} />跟随主对话</label>
+              {!draft.inheritSandbox && <select value={draft.sandbox ?? "workspace-write"} onChange={(event) => onChange({ ...draft, sandbox: event.target.value as any })}><option value="read-only">只读</option><option value="workspace-write">工作区写入</option><option value="danger-full-access">完全访问</option></select>}
+            </label>
+          </div>
+          <div className="settings-grid three subagent-config-grid">
+            <label><span>审批策略</span>
+              <label className="subagent-toggle"><input type="checkbox" checked={draft.inheritApproval} onChange={(event) => onChange({ ...draft, inheritApproval: event.target.checked, approvalPolicy: event.target.checked ? undefined : draft.approvalPolicy })} />跟随主对话</label>
+              {!draft.inheritApproval && <select value={draft.approvalPolicy ?? "on-request"} onChange={(event) => onChange({ ...draft, approvalPolicy: event.target.value as any })}><option value="never">从不</option><option value="on-request">按需</option><option value="on-failure">失败时</option><option value="untrusted">不可信</option></select>}
+            </label>
+            <label><span>状态</span>
+              <label className="subagent-toggle"><input type="checkbox" checked={draft.enabled} onChange={(event) => onChange({ ...draft, enabled: event.target.checked })} />已启用</label>
+            </label>
+            <label><span>工具名</span>
+              <div className="subagent-tool-name"><code>subagent_invoke</code></div>
+            </label>
+          </div>
+          <div className="connector-example"><Info size={14} /><span>Codex 调用时会附带 <code>name</code> 与 <code>query</code>；主会话配置变更后，子智能体会自动跟随。</span></div>
+        </div>
+        <footer>
+          <button className="secondary-setting" onClick={onClose}>取消</button>
+          <button className="primary-setting" disabled={!valid} onClick={() => onSave(draft)}><Check size={15} />保存</button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+function ExpertTeamEditorModal({ draft, onChange, onClose, onSave }: { draft: ExpertTeamConfig; onChange: (draft: ExpertTeamConfig) => void; onClose: () => void; onSave: (draft: ExpertTeamConfig) => void }) {
+  const valid = Boolean(draft.displayName.zh.trim() && draft.lead.name.trim() && draft.lead.systemPrompt.trim());
+  const setLead = (patch: Partial<ExpertTeamMember>) => onChange({ ...draft, lead: { ...draft.lead, ...patch } });
+  const setMember = (index: number, patch: Partial<ExpertTeamMember>) => onChange({ ...draft, members: draft.members.map((m, i) => i === index ? { ...m, ...patch } : m) });
+  const setTag = (index: number, value: string) => onChange({ ...draft, tags: draft.tags.map((t, i) => i === index ? { ...t, zh: value, en: value } : t) });
+  const setPrompt = (index: number, value: string) => onChange({ ...draft, quickPrompts: draft.quickPrompts.map((p, i) => i === index ? { ...p, zh: value, en: value } : p) });
+  const categoryOptions = [
+    ["01-ProductDesign", "产品设计"], ["02-Engineering", "技术工程"], ["03-GameSpatial", "游戏空间"],
+    ["04-DataAI", "数据智能"], ["05-MarketingGrowth", "营销增长"], ["06-ContentCreative", "内容创作"],
+    ["07-SalesCommerce", "销售商务"], ["08-FinanceInvestment", "金融投资"], ["09-OperationsHR", "运营人力"],
+    ["10-ProjectQuality", "项目质量"], ["11-SecurityCompliance", "法务安全"], ["12-IndustryConsultant", "行业顾问"],
+  ];
+  return createPortal(
+    <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="connector-setup-modal expert-team-editor-modal" role="dialog" aria-modal="true" aria-label="编辑专家团">
+        <header>
+          <div className="connector-setup-title">
+            <span><Users size={17} /></span>
+            <div><strong>{draft.teamId ? `编辑「${draft.displayName.zh}」` : "新建专家团"}</strong><p>复刻 WorkBuddy 专家团：主理人编排，成员独立产出，按 SOP 分阶段协作。</p></div>
+          </div>
+          <button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button>
+        </header>
+        <div className="connector-form">
+          <div className="settings-grid two expert-team-grid">
+            <label><span>团队名称（中文） <em>必填</em></span><input autoFocus value={draft.displayName.zh} onChange={(event) => { const zh = event.target.value; onChange({ ...draft, displayName: { ...draft.displayName, zh }, profession: { ...draft.profession, zh } }); }} placeholder="例如：软件开发专家团" /></label>
+            <label><span>团队名称（英文）</span><input value={draft.displayName.en} onChange={(event) => { const en = event.target.value; onChange({ ...draft, displayName: { ...draft.displayName, en }, profession: { ...draft.profession, en } }); }} placeholder="例如：Software Dev Team" /></label>
+          </div>
+          <div className="settings-grid three expert-team-grid">
+            <label><span>行业分类</span><select value={draft.category} onChange={(event) => onChange({ ...draft, category: event.target.value })}>{categoryOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+            <label><span>启用状态</span>
+              <label className="subagent-toggle"><input type="checkbox" checked={draft.enabled} onChange={(event) => onChange({ ...draft, enabled: event.target.checked })} />已启用</label>
+            </label>
+            <label><span>团队 ID <small>kebab-case，留空自动生成</small></span><input value={draft.teamId} onChange={(event) => onChange({ ...draft, teamId: event.target.value })} placeholder="例如：software-dev-team" /></label>
+          </div>
+          <label><span>展示描述 <small>中文 40-50 字</small></span><textarea rows={2} value={draft.description.zh} onChange={(event) => onChange({ ...draft, description: { ...draft.description, zh: event.target.value } })} placeholder="例如：由产品、架构、开发、测试四人协同，从需求澄清到交付验收全流程把关。" /></label>
+          <div className="settings-grid three expert-team-grid">
+            {[0, 1, 2].map((index) => <label key={index}><span>标签 {index + 1}</span><input value={draft.tags[index]?.zh ?? ""} onChange={(event) => setTag(index, event.target.value)} placeholder="例如：需求梳理" /></label>)}
+          </div>
+          <div className="settings-grid three expert-team-grid">
+            {[0, 1, 2].map((index) => <label key={index}><span>推荐提示词 {index + 1}</span><input value={draft.quickPrompts[index]?.zh ?? ""} onChange={(event) => setPrompt(index, event.target.value)} placeholder="例如：请带领团队完成我的任务" /></label>)}
+          </div>
+          <div className="expert-team-section">
+             <div className="expert-team-section-title"><strong>主理人 <small>负责编排调度，不显示个人姓名</small></strong></div>
+            <div className="settings-grid three expert-team-grid">
+               <label><span>内部角色标识</span><input value={draft.lead.name} onChange={(event) => setLead({ name: event.target.value })} placeholder="例如：delivery-lead" /></label>
+              <label><span>职业头衔</span><input value={draft.lead.profession.zh} onChange={(event) => setLead({ profession: { ...draft.lead.profession, zh: event.target.value } })} placeholder="例如：交付总监" /></label>
+              <label><span>成员 ID <small>kebab-case</small></span><input value={draft.lead.id} onChange={(event) => setLead({ id: event.target.value })} placeholder="例如：software-dev-team-lead" /></label>
+            </div>
+            <label><span>一句话职责</span><input value={draft.lead.description} onChange={(event) => setLead({ description: event.target.value })} placeholder="例如：编排调度整个团队，把控交付节奏与质量" /></label>
+            <label><span>主理人系统提示词 <em>必填</em></span><textarea rows={5} value={draft.lead.systemPrompt} onChange={(event) => setLead({ systemPrompt: event.target.value })} placeholder={"例如：你是团队主理人，负责编排调度成员…\n协作铁律：由你亲自编排、成员独立产出、信息经你中转、采信成员结论。"} /></label>
+          </div>
+          <div className="expert-team-section">
+            <div className="expert-team-section-title"><strong>团队成员 <small>{draft.members.length} 人 · 每个成员独立会话产出</small></strong>
+              <button className="secondary-setting" onClick={() => onChange({ ...draft, members: [...draft.members, { id: "", name: "", profession: { zh: "", en: "" }, description: "", systemPrompt: "" }] })}><Plus size={12} />添加成员</button>
+            </div>
+            {draft.members.map((member, index) => (
+              <div className="expert-team-member" key={index}>
+                 <div className="expert-team-member-head"><strong>成员 {index + 1} · {member.profession.zh || "未命名角色"}</strong>
+                  <button className="icon-button" title="删除成员" onClick={() => onChange({ ...draft, members: draft.members.filter((_, i) => i !== index) })}><Trash2 size={13} /></button>
+                </div>
+                <div className="settings-grid three expert-team-grid">
+                   <label><span>内部角色标识</span><input value={member.name} onChange={(event) => setMember(index, { name: event.target.value })} placeholder="例如：engineer" /></label>
+                  <label><span>职业头衔</span><input value={member.profession.zh} onChange={(event) => setMember(index, { profession: { ...member.profession, zh: event.target.value } })} placeholder="例如：开发工程师" /></label>
+                  <label><span>成员 ID <small>kebab-case</small></span><input value={member.id} onChange={(event) => setMember(index, { id: event.target.value })} placeholder="例如：engineer" /></label>
+                </div>
+                <label><span>一句话职责</span><input value={member.description} onChange={(event) => setMember(index, { description: event.target.value })} placeholder="例如：代码实现" /></label>
+                <label><span>系统提示词 <em>必填</em></span><textarea rows={4} value={member.systemPrompt} onChange={(event) => setMember(index, { systemPrompt: event.target.value })} placeholder={"例如：你是团队成员，负责…\n完成后通过 SendMessage 将完整结果回传给主理人。"} /></label>
+              </div>
+            ))}
+            {!draft.members.length && <div className="expert-team-member-empty">还没有成员，点击「添加成员」创建第一个。</div>}
+          </div>
+          <label><span>标准工作流程（SOP）</span><textarea rows={6} value={draft.sop} onChange={(event) => onChange({ ...draft, sop: event.target.value })} placeholder={"例如：\n### Phase 1（并行）：…\n### Phase 2（串行）：…\n### Phase N：主理人汇总输出"} /></label>
+          <div className="connector-example"><Info size={14} /><span>发起团队会话后，主理人（lead）会在独立会话中通过 <code>team_member_invoke(memberId, query)</code> 调度成员，按 SOP 分阶段协作，最终汇总交付。</span></div>
+        </div>
+        <footer>
+          <button className="secondary-setting" onClick={onClose}>取消</button>
+          <button className="primary-setting" disabled={!valid} onClick={() => onSave(draft)}><Check size={15} />保存专家团</button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+type CommandEditorDraft = { mode: "new" | "edit"; name: string; source: CommandSource; description: string; argumentHint: string; allowedTools: string; model: string; body: string; prevFilePath?: string };
+
+function CommandEditorModal({ draft, saving, onChange, onClose, onSave }: {
+  draft: CommandEditorDraft;
+  saving: boolean;
+  onChange: (draft: CommandEditorDraft) => void;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const valid = Boolean(draft.name.trim() && draft.body.trim());
+  return createPortal(
+    <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
+      <section className="connector-setup-modal command-editor-modal" role="dialog" aria-modal="true" aria-label={draft.mode === "edit" ? "编辑命令" : "新建命令"}>
+        <header>
+          <div className="connector-setup-title">
+            <span><TerminalSquare size={17} /></span>
+            <div><strong>{draft.mode === "edit" ? `编辑 /${draft.name}` : "新建自定义命令"}</strong><p>保存为 commands/*.md 文件，输入框里敲 <code>/{draft.name || "命令名"}</code> 即可触发。</p></div>
+          </div>
+          <button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button>
+        </header>
+        <div className="connector-form">
+          <div className="settings-grid two command-editor-grid">
+            <label><span>命令名 <em>必填</em> <small>不含斜杠</small></span><input autoFocus value={draft.name} onChange={(event) => onChange({ ...draft, name: event.target.value })} placeholder="例如：git:commit（冒号分层，如 frontend:build）" /></label>
+            <label><span>存放位置</span>
+              <select value={draft.source} onChange={(event) => onChange({ ...draft, source: event.target.value as CommandSource })}>
+                <option value="project">项目级（当前工作区 .codex/commands/）</option>
+                <option value="global">个人全局（$CODEX_HOME/commands/）</option>
+              </select>
+            </label>
+          </div>
+          <label><span>描述 <small>在命令列表与补全提示中展示</small></span><input value={draft.description} onChange={(event) => onChange({ ...draft, description: event.target.value })} placeholder="例如：创建 git 提交（自动收集状态与变更）" /></label>
+          <div className="settings-grid three command-editor-grid">
+            <label><span>参数提示</span><input value={draft.argumentHint} onChange={(event) => onChange({ ...draft, argumentHint: event.target.value })} placeholder="例如：[message] 或 [pr-number]" /></label>
+            <label><span>允许工具</span><input value={draft.allowedTools} onChange={(event) => onChange({ ...draft, allowedTools: event.target.value })} placeholder="例如：Bash(git:*), Read" /></label>
+            <label><span>指定模型</span><input value={draft.model} onChange={(event) => onChange({ ...draft, model: event.target.value })} placeholder="例如：gemini-3.1-pro" /></label>
+          </div>
+          <label><span>命令内容 <em>必填</em></span>
+            <textarea rows={9} value={draft.body} onChange={(event) => onChange({ ...draft, body: event.target.value })} placeholder={"例如：\n请为我运行 `npm run test -- $1` 并总结结果。未提供测试文件则运行全部测试。"} />
+          </label>
+          <div className="connector-example"><Info size={14} /><span>模板语法：<code>$1</code>…<code>$9</code> 位置参数、<code>$ARGUMENTS</code> 全部参数；<code>@src/utils/helpers.js</code> 注入文件内容；行首 <code>!`git status`</code> 执行 shell 命令并把输出作为上下文。</span></div>
+        </div>
+        <footer>
+          <button className="secondary-setting" onClick={onClose}>取消</button>
+          <button className="primary-setting" disabled={!valid || saving} onClick={onSave}>{saving ? <Spinner /> : <Check size={15} />}保存命令</button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+/** 全局搜索命中预览弹窗：会话全文由主进程读 rollout 提供；记忆/任务/技能就地展示全文与详情。
+ * 只读预览——不影响当前会话；底部按钮跳转到真正管理该内容的位置。 */
+function SearchPreviewModal({ target, onClose, onOpenThread, onOpenSettings, onCopyThreadId }: {
+  target: SearchPreviewTarget;
+  onClose: () => void;
+  onOpenThread: (id: string) => void;
+  onOpenSettings: (page: string) => void;
+  onCopyThreadId?: (id: string) => void;
+}) {
+  const [loading, setLoading] = useState(target.kind === "thread");
+  const [preview, setPreview] = useState<{ name: string; updatedAt: number; cwd: string; archived: boolean; messages: { role: "user" | "assistant"; text: string }[]; truncated: number; truncatedMessages: number } | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (target.kind !== "thread") { setLoading(false); return; }
+    let live = true;
+    setLoading(true);
+    setFailed(false);
+    window.codex.previewConversation(target.id)
+      .then((data) => { if (live) { setPreview(data); if (!data) setFailed(true); } })
+      .catch(() => { if (live) setFailed(true); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [target]);
+
+  const headIcon = target.kind === "thread" ? <MessageSquare size={15} /> : target.kind === "memory" ? <Archive size={15} /> : target.kind === "task" ? <Clock3 size={15} /> : <Zap size={15} />;
+  const headLabel = target.kind === "thread" ? "会话全文" : target.kind === "memory" ? "记忆全文" : target.kind === "task" ? "定时任务" : "技能详情";
+  let titleText = target.kind === "thread" ? target.title : target.kind === "memory" ? (target.content.split("\n")[0].trim().slice(0, 80) || "(空记忆)") : target.name;
+  return (
+    <div className="modal-backdrop agent-ask-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="search-preview-modal" role="dialog" aria-modal="true" aria-label={headLabel}>
+        <header>
+          <span className={`search-preview-kind search-preview-kind-${target.kind}`}>{headIcon}{headLabel}</span>
+          <strong className="search-preview-title" title={titleText}>{titleText}</strong>
+          {target.kind === "thread" && onCopyThreadId && (
+            <button className="icon-button" title="复制会话 ID（粘贴到其他会话发送即可引用这条会话）" onClick={() => onCopyThreadId(target.id)}><Copy size={16} /></button>
+          )}
+          <button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button>
+        </header>
+        <div className="search-preview-body">
+          {target.kind === "thread" && (loading ? (
+            <div className="search-preview-loading"><Spinner />正在读取会话原档…</div>
+          ) : failed || !preview ? (
+            <div className="index-empty">
+              <MessageSquare size={22} />
+              <strong>未能读取该会话</strong>
+              <p>本机没有找到该会话的 rollout 原档，点击下方「打开会话」可直接查看（会跳转到对话界面）。</p>
+            </div>
+          ) : (
+            <>
+              <p className="search-preview-meta">
+                {preview.name} · {preview.messages.length} 条消息 · {preview.archived ? "已归档 · " : ""}{preview.updatedAt ? new Date(preview.updatedAt).toLocaleString("zh-CN", { hour12: false }) : ""}
+              </p>
+              {preview.messages.length === 0 ? (
+                <div className="index-empty"><MessageSquare size={22} /><strong>这个会话还没有可见消息</strong><p>可能是刚创建、尚未对话的空会话。</p></div>
+              ) : (
+                <div className="search-preview-conversation">
+                  {preview.messages.map((message, index) => (
+                    <div className={`search-preview-msg ${message.role === "user" ? "user" : "assistant"}`} key={index}>
+                      <span className="search-preview-role">{message.role === "user" ? "User" : "Assistant"}</span>
+                      <div className="search-preview-text">{message.text}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {(preview.truncatedMessages > 0 || preview.truncated > 0) && (
+                <p className="search-preview-truncated">会话较长，预览已截断：{preview.truncatedMessages > 0 ? `${preview.truncatedMessages} 条消息未显示 · ` : ""}{preview.truncated > 0 ? `${preview.truncated} 条超长消息被裁剪` : ""}。要看完整内容请打开会话。</p>
+              )}
+            </>
+          ))}
+          {target.kind === "memory" && (
+            <>
+              <p className="search-preview-meta">{target.category || "未分类"} · {target.sourceThreadId ? `来自会话 ${target.sourceThreadId.slice(0, 8)}` : "手动保存"}</p>
+              <div className="search-preview-raw">{target.content}</div>
+            </>
+          )}
+          {target.kind === "task" && (
+            <div className="search-preview-task">
+              <div className="search-preview-raw">{target.prompt}</div>
+              <dl>
+                {target.schedule ? <div><dt>执行计划</dt><dd>{target.schedule}</dd></div> : null}
+                <div><dt>状态</dt><dd>{target.enabled === false ? "已停用" : "已启用"}</dd></div>
+              </dl>
+            </div>
+          )}
+          {target.kind === "skill" && (
+            <div className="search-preview-raw">{target.description || "（该技能没有附加说明，可在技能页查看详情）"}</div>
+          )}
+        </div>
+        <footer>
+          <span className="search-preview-foot-note">{target.kind === "thread" ? "只读预览 · 不影响当前对话" : ""}</span>
+          <div>
+            {target.kind === "thread" && <button className="primary-setting" onClick={() => { onOpenThread(target.id); }}><MessageSquare size={14} />打开会话继续</button>}
+            {target.kind === "task" && <button className="primary-setting" onClick={() => { onOpenSettings("schedule"); }}><Clock3 size={14} />去自动化管理</button>}
+            {target.kind === "skill" && <button className="primary-setting" onClick={() => { onOpenSettings("skills"); }}><Zap size={14} />去技能管理</button>}
+          </div>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+export default function App() {
+  const [serverStatus, setServerStatus] = useState("starting");
+  // null=首次使用/明确退出，true=跳过登录，false=已成功登录。
+  // 旧逻辑把 false 也解释成“显示登录页”，导致每次重启都要重新输入已安全保存的 API Key。
+  const [showLogin, setShowLogin] = useState(() => {
+    const state = localStorage.getItem("login-skipped");
+    return state == null || state === "logout";
+  });
+  // 账号切换只改变认证/模型配置，保留当前打开的本地会话；登录完成后自动恢复。
+  const accountSwitchThreadRef = useRef<string | null>(null);
+  const [modelId, setModelId] = useState(() => localStorage.getItem("default-model") ?? "");
+  // 历史遗留兜底：旧版本可能存过 minimal/xhigh/ultra，读取时归一化到引擎真实支持的档位
+  const [effort, setEffort] = useState(() => normalizeEffort(localStorage.getItem("default-effort")) || DEFAULT_EFFORT);
+  const [threads, setThreads] = useState<Thread[]>([]);
+  const [thread, setThread] = useState<Thread | null>(null);
+  const threadRef = useRef<Thread | null>(null);
+  // 心跳监控联动：记录「引擎无响应→自动重启」标记，ready 时自动恢复当前线程；
+  // 以及发送/运行态的快照 ref，供 status:error 分支复位（避免闭包读到旧 state）。
+  const engineRestartedRef = useRef(false);
+  const sendingRef = useRef(false);
+  const activeTurnIdRef = useRef<string | null>(null);
+  const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
+  // 多会话运行状态必须按 threadId 隔离。单个 runningThreadId 会让 A 完成时清掉
+  // 正在运行的 B，也会让切换到 B 后仍沿用 A 的停止按钮/排队逻辑。
+  const [runningThreadIds, setRunningThreadIds] = useState<Set<string>>(() => new Set());
+  const runningThreadIdsRef = useRef<Set<string>>(new Set());
+  const runningTurnIdsRef = useRef<Map<string, string>>(new Map());
+  const runningStartedAtRef = useRef<Map<string, number>>(new Map());
+  const markThreadRunning = useCallback((threadId: string, turnId?: string, startedAt = Date.now()) => {
+    if (!threadId) return;
+    const next = new Set(runningThreadIdsRef.current);
+    next.add(threadId);
+    runningThreadIdsRef.current = next;
+    setRunningThreadIds(next);
+    if (turnId) runningTurnIdsRef.current.set(threadId, turnId);
+    if (!runningStartedAtRef.current.has(threadId)) runningStartedAtRef.current.set(threadId, startedAt);
+  }, []);
+  const markThreadStopped = useCallback((threadId?: string) => {
+    if (!threadId) return;
+    const next = new Set(runningThreadIdsRef.current);
+    next.delete(threadId);
+    runningThreadIdsRef.current = next;
+    setRunningThreadIds(next);
+    runningTurnIdsRef.current.delete(threadId);
+    runningStartedAtRef.current.delete(threadId);
+  }, []);
+  const clearRunningThreads = useCallback(() => {
+    runningThreadIdsRef.current = new Set();
+    runningTurnIdsRef.current.clear();
+    runningStartedAtRef.current.clear();
+    setRunningThreadIds(new Set());
+  }, []);
+  const [workspace, setWorkspace] = useState(localStorage.getItem("workspace") ?? "");
+  const [prompt, setPrompt] = useState("");
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  // WorkBuddy 式附件菜单子面板：本地文件/引用对话文件/专家（技能、连接器已有独立面板）
+  const [attachSubmenu, setAttachSubmenu] = useState<"none" | "files" | "thread-files" | "experts" | "skills" | "connectors">("none");
+  const [threadFileQuery, setThreadFileQuery] = useState("");
+  const [expertQuery, setExpertQuery] = useState("");
+  // 子面板自适应方向（水平+垂直）：主菜单（宽 218px）右缘放不下 250px 子面板时向左翻转；
+  // 主菜单下方放不下子面板高度时向上翻转（避免被窗口底边截断）
+  const quickMenuRef = useRef<HTMLDivElement>(null);
+  const quickMenuPanelRef = useRef<HTMLDivElement>(null);
+  const [quickMenuFlipUp, setQuickMenuFlipUp] = useState(false);
+  const [submenuFlip, setSubmenuFlip] = useState(false);
+  const [submenuTop, setSubmenuTop] = useState(0);
+  const [quickMenuViewport, setQuickMenuViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  useEffect(() => {
+    if (!attachmentMenuOpen) return;
+    const update = () => setQuickMenuViewport({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [attachmentMenuOpen]);
+  useEffect(() => {
+    if (!attachmentMenuOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && quickMenuRef.current?.contains(target)) return;
+      if (submenuHoverTimer.current) window.clearTimeout(submenuHoverTimer.current);
+      if (submenuCloseTimer.current) window.clearTimeout(submenuCloseTimer.current);
+      setAttachSubmenu("none");
+      setAttachmentMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside, true);
+    return () => document.removeEventListener("pointerdown", closeOutside, true);
+  }, [attachmentMenuOpen]);
+  useLayoutEffect(() => {
+    if (!attachmentMenuOpen) { setQuickMenuFlipUp(false); setSubmenuFlip(false); setSubmenuTop(0); return; }
+    const buttonRect = quickMenuRef.current?.getBoundingClientRect();
+    if (!buttonRect) return;
+    const menuHeight = quickMenuPanelRef.current?.offsetHeight || 190;
+    const flipMain = window.innerHeight - buttonRect.bottom < menuHeight + 8 && buttonRect.top > window.innerHeight - buttonRect.bottom;
+    setQuickMenuFlipUp(flipMain);
+    if (attachSubmenu === "none") { setSubmenuFlip(false); setSubmenuTop(0); return; }
+    const menu = quickMenuPanelRef.current;
+    const panel = menu?.querySelector(`[data-submenu-panel="${attachSubmenu}"]`) as HTMLElement | null;
+    const item = menu?.querySelector('[data-submenu-open="true"]') as HTMLElement | null;
+    if (!menu || !item) return;
+    const menuRect = menu.getBoundingClientRect();
+    const itemRect = item.getBoundingClientRect();
+    const panelWidth = panel?.offsetWidth || 250;
+    const panelHeight = panel?.offsetHeight || (attachSubmenu === "files" ? 46 : 320);
+    setSubmenuFlip(menuRect.right + 6 + panelWidth > window.innerWidth - 8 && menuRect.left >= panelWidth + 14);
+    const desiredTop = itemRect.top - menuRect.top;
+    const minTop = 8 - menuRect.top;
+    const maxTop = window.innerHeight - 8 - menuRect.top - panelHeight;
+    setSubmenuTop(Math.round(Math.max(minTop, Math.min(desiredTop, maxTop))));
+  }, [attachmentMenuOpen, attachSubmenu, quickMenuFlipUp, quickMenuViewport]);
+  // WorkBuddy 同款 hover 交互：悬停菜单项 80ms 展开二级，移开 150ms 收起（悬浮在二级上不收）
+  const submenuHoverTimer = useRef<number | null>(null);
+  const submenuCloseTimer = useRef<number | null>(null);
+  const scheduleSubmenu = (target: "files" | "thread-files" | "experts" | "skills" | "connectors") => {
+    if (submenuCloseTimer.current) { window.clearTimeout(submenuCloseTimer.current); submenuCloseTimer.current = null; }
+    if (submenuHoverTimer.current) window.clearTimeout(submenuHoverTimer.current);
+    submenuHoverTimer.current = window.setTimeout(() => setAttachSubmenu(target), 80);
+  };
+  const scheduleSubmenuClose = () => {
+    if (submenuHoverTimer.current) { window.clearTimeout(submenuHoverTimer.current); submenuHoverTimer.current = null; }
+    if (submenuCloseTimer.current) window.clearTimeout(submenuCloseTimer.current);
+    submenuCloseTimer.current = window.setTimeout(() => setAttachSubmenu("none"), 150);
+  };
+  // 悬停到二级面板上时取消关闭（WorkBuddy keep-open）
+  useEffect(() => {
+    if (!attachmentMenuOpen || attachSubmenu === "none") return;
+    const pop = quickMenuPanelRef.current;
+    if (!pop) return;
+    const onEnter = () => { if (submenuCloseTimer.current) { window.clearTimeout(submenuCloseTimer.current); submenuCloseTimer.current = null; } };
+    const panel = pop.querySelector(`[data-submenu-panel="${attachSubmenu}"]`);
+    panel?.addEventListener("mouseenter", onEnter);
+    return () => panel?.removeEventListener("mouseenter", onEnter);
+  }, [attachmentMenuOpen, attachSubmenu]);
+  // +号按钮点击转动动画：每次点击重新触发（key 递增重建节点）
+  const [plusSpinTick, setPlusSpinTick] = useState(0);
+  // 输入框提示词增强（WorkBuddy enhance 按钮复刻）：enhancing = 请求中可取消；backup = 增强成功后的原文（点按钮还原）
+  const [enhanceBusy, setEnhanceBusy] = useState(false);
+  const enhanceBackupRef = useRef<string | null>(null);
+  const [hasEnhanceBackup, setHasEnhanceBackup] = useState(false);
+  const [files, setFiles] = useState<string[]>([]);
+  const [skillMenuOpen, setSkillMenuOpen] = useState(false);
+  const [skillQuery, setSkillQuery] = useState("");
+  const [selectedSkills, setSelectedSkills] = useState<{ name: string; description: string }[]>([]);
+  const [localSkills, setLocalSkills] = useState<LocalSkillEntry[]>([]);
+  const [marketSkills, setMarketSkills] = useState<MarketSkillEntry[]>([]);
+  const [marketLoading, setMarketLoading] = useState(false);
+  const [marketTotal, setMarketTotal] = useState(0);
+  const [marketPage, setMarketPage] = useState(1);
+  const [marketPageSize] = useState(18);
+  const [installingMarketSkill, setInstallingMarketSkill] = useState<string | null>(null);
+  const [skillInstall, setSkillInstall] = useState<SkillInstallState | null>(null);
+  const [connectorMenuOpen, setConnectorMenuOpen] = useState(false);
+  const [connectors, setConnectors] = useState<ConnectorEntry[]>([]);
+  const [connectorDraft, setConnectorDraft] = useState<ConnectorDraft>({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} });
+  const [connectorEditorOpen, setConnectorEditorOpen] = useState(false);
+  const [connectorSaving, setConnectorSaving] = useState(false);
+  const [connectorSecret, setConnectorSecret] = useState("");
+  const [connectorTemplates, setConnectorTemplates] = useState<ConnectorTemplate[]>([]);
+  const [connectorTemplateModal, setConnectorTemplateModal] = useState<ConnectorTemplate | null>(null);
+  const [connectorOAuth, setConnectorOAuth] = useState<ConnectorOAuthEvent | null>(null);
+  const [connectorTemplateValues, setConnectorTemplateValues] = useState<Record<string, string>>({});
+  const [connectorTemplateSaving, setConnectorTemplateSaving] = useState(false);
+  const [memoryConfigOpen, setMemoryConfigOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [contextQuery, setContextQuery] = useState("");
+  const [contextItems, setContextItems] = useState<{ id: string; role: "用户" | "Codex"; text: string }[]>([]);
+  // 输入框上方的引用条：点击消息「引用」后在此展示，发送时以块引用前缀拼进消息文本
+  const [quoteItem, setQuoteItem] = useState<{ id: string; text: string } | null>(null);
+  const [images, setImages] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const sendInFlightRef = useRef(false);
+  const compactPendingRef = useRef(new Set<string>());
+  const [interrupting, setInterrupting] = useState(false);
+  const [optimisticInput, setOptimisticInput] = useState<ThreadItem | null>(null);
+  const optimisticTurnIdRef = useRef<string | null>(null);
+  const optimisticBaselineRef = useRef<{ threadId: string | null; turnIds: Set<string> }>({ threadId: null, turnIds: new Set() });
+  // 只有目标回合里出现了非空 userMessage，才说明临时气泡已经被真实消息接管。
+  // “新增了一个 turn”不够，因为 turn/started 的 userMessage 经常只有 id、content 为空。
+  // 心跳监控联动：sending/activeTurnId 的快照 ref（status:error 复位时用最新值）
+  useEffect(() => { sendingRef.current = sending; }, [sending]);
+  useEffect(() => { activeTurnIdRef.current = activeTurnId; }, [activeTurnId]);
+  const optimisticConfirmed = useMemo(() => {
+    if (!optimisticInput) return false;
+    const target = optimisticTurnIdRef.current ? thread?.turns.find((turn) => turn.id === optimisticTurnIdRef.current) : null;
+    if (target?.items.some((item) => item.type === "userMessage" && userMessageMatchesInput(item, optimisticInput.content ?? []))) return true;
+    // 兜底：事件可能先于 turn/start 响应到达。只检查本次发送后新增的回合，
+    // 并按用户可见正文匹配，避免隐藏的记忆/技能/引用段导致真实消息与乐观消息无法去重。
+    const baseline = optimisticBaselineRef.current;
+    return Boolean(thread?.turns.some((turn) => {
+      if (baseline.threadId === thread.id && baseline.turnIds.has(turn.id)) return false;
+      return turn.items.some((item) => item.type === "userMessage" && userMessageMatchesInput(item, optimisticInput.content ?? []));
+    }));
+  }, [optimisticInput, thread]);
+  useEffect(() => {
+    if (!optimisticInput || !optimisticConfirmed) return;
+    optimisticTurnIdRef.current = null;
+    setOptimisticInput(null);
+  }, [optimisticConfirmed, optimisticInput]);
+  const [openingThread, setOpeningThread] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingRequest[]>([]);
+  const [diff, setDiff] = useState("");
+  const [tokenUsage, setTokenUsage] = useState<any>(null);
+  const tokenUsageRef = useRef<any>(null);
+  // 部分 0.0.1 兼容上游会把 last 的缓存量按增量上报、输入量却按当前总量上报，
+  // 导致任务越长命中率越低。用 total 的连续快照做同口径差值，作为本轮展示兜底。
+  const tokenUsageTotalsRef = useRef(new Map<string, UsageCounterSnapshot>());
+  const derivedTokenUsageRef = useRef(new Map<string, any>());
+  const normalizeTokenUsage = useCallback((raw: any, threadId?: string) => {
+    if (!raw || !threadId) return raw;
+    const totalUsage = usageBucket(raw, "total");
+    if (!totalUsage) return raw;
+    const current = usageCounterSnapshot(totalUsage);
+    const previous = tokenUsageTotalsRef.current.get(threadId);
+    tokenUsageTotalsRef.current.set(threadId, current);
+    if (previous && (current.input < previous.input || current.cached < previous.cached)) {
+      derivedTokenUsageRef.current.delete(threadId);
+      return raw;
+    }
+    if (previous && current.input >= previous.input && current.cached >= previous.cached) {
+      const inputTokens = current.input - previous.input;
+      const cachedInputTokens = Math.min(inputTokens, current.cached - previous.cached);
+      if (inputTokens > 0) {
+        const derivedLast = {
+          inputTokens,
+          cachedInputTokens,
+          outputTokens: Math.max(0, current.output - previous.output),
+          totalTokens: Math.max(0, current.total - previous.total),
+        };
+        derivedTokenUsageRef.current.set(threadId, derivedLast);
+        return { ...raw, derivedLast };
+      }
+    }
+    const derivedLast = derivedTokenUsageRef.current.get(threadId);
+    return derivedLast ? { ...raw, derivedLast } : raw;
+  }, []);
+  // 回合开始时间（turnId -> 时间戳），用于统计「最长聊天时长」
+  const turnStartedAtRef = useRef(new Map<string, number>());
+  // 当前生效的模型名（统计按模型用量时避免闭包拿到旧值）
+  const activeModelRef = useRef("");
+  const [usageStats, setUsageStats] = useState(() => readUsageStats());
+  // 流式 delta 合帧缓冲：同一帧的多条 delta 一次 setThread
+  const streamRafRef = useRef(0);
+  const pendingDeltaRef = useRef<{ method: string; params: any }[]>([]);
+  // 上次 delta 落盘时刻：用于判断「新一轮出字」，首字立即渲染不等 rAF
+  const lastFlushAtRef = useRef(0);
+  const [rightOpen, setRightOpen] = useState(() => localStorage.getItem("right-panel-open") === "true");  // 启动默认展开：迁移旧的折叠偏好，桌面端始终先给完整导航；用户仍可手动收起。
+  // 联网搜索开关：写 userData/app-settings.json，重写 config.toml 的 [tools] web_search
+  const [webSearch, setWebSearch] = useState(true);
+  const [desktopAuto, setDesktopAuto] = useState(true);
+  const [browserAuto, setBrowserAuto] = useState(true);
+  const [engineWatchdog, setEngineWatchdog] = useState(true);
+  const [autoCompactRatio, setAutoCompactRatio] = useState(0.8);
+
+  // SSH 服务器连接管理：设置页「SSH 服务器」分区，列表持久化在 userData/ssh-servers.json
+  const [sshServers, setSshServers] = useState<SshServer[]>([]);
+  const [sshLoaded, setSshLoaded] = useState(false);
+  const [sshBusyId, setSshBusyId] = useState<string | null>(null);
+  const [sshTestingId, setSshTestingId] = useState<string | null>(null);
+  const [sshDraft, setSshDraft] = useState<SshServer | null>(null);
+  const [sshSaving, setSshSaving] = useState(false);
+  // 列表筛选：关键字搜索 + 状态分段 + 勾选批量操作
+  const [sshQuery, setSshQuery] = useState("");
+  const [sshFilter, setSshFilter] = useState<"all" | "on" | "off" | "star">("all");
+  const [sshChecked, setSshChecked] = useState<string[]>([]);
+  const [sshBatchBusy, setSshBatchBusy] = useState(false);
+  // 内置终端会话与一次性命令执行
+  const [sshTerminal, setSshTerminal] = useState<SshServer | null>(null);
+  const [sshExecTarget, setSshExecTarget] = useState<SshServer | null>(null);
+  // 编辑器内「测试连接」的结果：草稿未保存也能测，结果只在弹窗内展示
+  const [sshEditorTest, setSshEditorTest] = useState<{ ok: boolean; message: string } | null>(null);
+  useEffect(() => { void window.codex.readAppSettings().then((settings) => { setWebSearch(settings.webSearch !== false); setDesktopAuto(settings.desktopAutomation !== false); setBrowserAuto(settings.browserAutomation !== false); setEngineWatchdog(settings.engineWatchdog !== false); setAutoCompactRatio(typeof settings.autoCompactRatio === "number" ? settings.autoCompactRatio : 0.8); }).catch(() => undefined); }, []);
+  const toggleWebSearch = () => {
+    const next = !webSearch;
+    setWebSearch(next);
+    setNotice(next ? "联网搜索已开启（web_search=true）" : "联网搜索已关闭（web_search=false）");
+    void window.codex.saveAppSettings({ webSearch: next }).catch(() => setWebSearch(!next));
+  };
+  // 桌面/浏览器自动化是能力总闸：开关直接决定引擎能不能用，同时联动 nuphus MCP 与配套技能。
+  // 具体实现在 applyGroup（见「能力总闸联动」块），这里只做转发，保证常规页是唯一入口。
+  const toggleDesktopAuto = (next: boolean) => { void applyGroup("desktop-automation", next); };
+  const toggleBrowserAuto = (next: boolean) => { void applyGroup("browser-automation", next); };
+  const toggleEngineWatchdog = (next: boolean) => {
+    setEngineWatchdog(next);
+    setNotice(next ? "心跳监控已开启（引擎异常会自动重启）" : "心跳监控已关闭（引擎异常需手动重启应用）");
+    void window.codex.saveAppSettings({ engineWatchdog: next }).catch(() => setEngineWatchdog(!next));
+  };
+
+  // —— SSH 服务器连接管理 ——
+  const emptySshJump = (): SshJumpHost => ({ host: "", port: 22, username: "", authType: "password", password: "", privateKey: "", keyPath: "", passphrase: "" });
+  const emptySshDraft = (): SshServer => ({
+    id: "", name: "", host: "", port: 22, username: "root", authType: "password", password: "", privateKey: "", keyPath: "",
+    passphrase: "", enabled: true, createdAt: "", group: "", tags: [], notes: "", favorite: false, startupCommand: "",
+    remotePath: "", keepaliveInterval: 30, connectTimeout: 10, termType: "xterm-256color", jumpHost: null,
+  });
+  const sshDraftIssues = (draft: SshServer) => {
+    const issues: string[] = [];
+    if (!draft.name.trim()) issues.push("连接名称未填写");
+    if (!draft.host.trim()) issues.push("主机地址未填写");
+    if (!draft.username.trim()) issues.push("用户名未填写");
+    if (draft.port && (draft.port < 1 || draft.port > 65535)) issues.push("端口需在 1-65535 之间");
+    if (draft.authType === "key" && !draft.privateKey?.trim() && !draft.keyPath?.trim()) issues.push("私钥认证需要私钥内容或私钥文件路径");
+    if (draft.jumpHost?.host?.trim() && !draft.jumpHost.username?.trim()) issues.push("跳板机用户名未填写");
+    return issues;
+  };
+  const sshDraftValid = (draft: SshServer) => sshDraftIssues(draft).length === 0;
+  /** 列表过滤：关键字（名称/主机/用户名/标签/分组/备注）+ 状态分段 */
+  const sshVisible = useMemo(() => {
+    const keyword = sshQuery.trim().toLowerCase();
+    return sshServers.filter((server) => {
+      if (sshFilter === "on" && !server.enabled) return false;
+      if (sshFilter === "off" && server.enabled) return false;
+      if (sshFilter === "star" && !server.favorite) return false;
+      if (!keyword) return true;
+      return [server.name, server.host, server.username, server.group ?? "", server.notes ?? "", (server.tags ?? []).join(" ")]
+        .join(" ").toLowerCase().includes(keyword);
+    });
+  }, [sshServers, sshQuery, sshFilter]);
+  const sshCheckedSet = useMemo(() => new Set(sshChecked), [sshChecked]);
+  const sshToggleChecked = (id: string) => setSshChecked((current) => (current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]));
+
+  async function saveSshEntry() {
+    if (!sshDraft || !sshDraftValid(sshDraft)) return;
+    setSshSaving(true);
+    try {
+      const servers = await window.codex.saveSshServer({
+        ...sshDraft,
+        tags: (sshDraft.tags ?? []).map((tag) => tag.trim()).filter(Boolean),
+        jumpHost: sshDraft.jumpHost?.host?.trim() ? sshDraft.jumpHost : null,
+      });
+      setSshServers(servers);
+      setSshDraft(null);
+      setNotice(`SSH 服务器「${sshDraft.name}」已保存`);
+    } catch (error: any) { setNotice(`保存 SSH 服务器失败：${error.message}`); }
+    finally { setSshSaving(false); }
+  }
+
+  /** 编辑器内测试：直接拿草稿去连，不落盘，方便边填边验证 */
+  async function testSshDraft() {
+    if (!sshDraft || !sshDraftValid(sshDraft)) return;
+    setSshTestingId("draft");
+    setSshEditorTest(null);
+    try {
+      const result = await window.codex.testSshServer(sshDraft);
+      setSshEditorTest({
+        ok: result.ok,
+        message: result.ok
+          ? `连接成功（${result.latencyMs ?? "?"}ms）${result.serverInfo?.os ? ` · ${result.serverInfo.os}` : ""}${result.serverInfo?.hostname ? ` · ${result.serverInfo.hostname}` : ""}`
+          : `连接失败：${result.error ?? "未知错误"}`,
+      });
+    } catch (error: any) {
+      setSshEditorTest({ ok: false, message: `测试失败：${error.message}` });
+    } finally { setSshTestingId(null); }
+  }
+
+  async function toggleSshEntry(server: SshServer, next: boolean) {
+    setSshBusyId(server.id);
+    try {
+      const servers = await window.codex.setSshServersEnabled([server.id], next);
+      setSshServers(servers);
+      setNotice(`SSH 服务器「${server.name}」已${next ? "启用" : "停用"}`);
+    } catch (error: any) { setNotice(`切换 SSH 服务器状态失败：${error.message}`); }
+    finally { setSshBusyId(null); }
+  }
+
+  /** 批量启停：勾选集为空时直接返回，避免空请求 */
+  async function toggleSshBatch(next: boolean) {
+    if (!sshChecked.length) return;
+    setSshBatchBusy(true);
+    try {
+      setSshServers(await window.codex.setSshServersEnabled(sshChecked, next));
+      setNotice(`已${next ? "启用" : "停用"} ${sshChecked.length} 台 SSH 服务器`);
+      setSshChecked([]);
+    } catch (error: any) { setNotice(`批量${next ? "启用" : "停用"}失败：${error.message}`); }
+    finally { setSshBatchBusy(false); }
+  }
+
+  /** 连接测试：成功后回写延迟/指纹/远端系统信息，失败回写错误原因，卡片常驻显示 */
+  async function testSshEntry(server: SshServer, silent = false) {
+    setSshTestingId(server.id);
+    try {
+      const result = await window.codex.testSshServer(server);
+      const servers = await window.codex.saveSshServer({
+        ...server,
+        lastTestAt: new Date().toISOString(),
+        lastTestOk: result.ok,
+        lastTestError: result.ok ? "" : (result.error ?? "未知错误"),
+        lastTestLatencyMs: result.latencyMs,
+        lastFingerprint: result.fingerprint,
+        lastServerInfo: result.serverInfo,
+        lastConnectedAt: result.ok ? new Date().toISOString() : server.lastConnectedAt,
+      });
+      setSshServers(servers);
+      if (!silent) {
+        if (result.ok) setNotice(`SSH 服务器「${server.name}」连接成功（${result.latencyMs ?? "?"}ms）`);
+        else setNotice(`SSH 服务器「${server.name}」连接失败：${result.error ?? "未知错误"}`);
+      }
+      return result;
+    } catch (error: any) {
+      if (!silent) setNotice(`测试 SSH 连接失败：${error.message}`);
+      return { ok: false as const, error: error.message };
+    } finally { setSshTestingId(null); }
+  }
+
+  async function testSshBatch() {
+    if (!sshChecked.length) return;
+    setSshBatchBusy(true);
+    const targets = sshServers.filter((server) => sshChecked.includes(server.id));
+    let passed = 0;
+    for (const server of targets) {
+      const result = await testSshEntry(server, true);
+      if (result.ok) passed += 1;
+    }
+    setNotice(`批量测试完成：${passed}/${targets.length} 台连通`);
+    setSshBatchBusy(false);
+  }
+
+  async function removeSshEntries(ids: string[]) {
+    if (!ids.length) return;
+    setSshBatchBusy(true);
+    try {
+      setSshServers(await window.codex.deleteSshServers(ids));
+      setSshChecked((current) => current.filter((id) => !ids.includes(id)));
+      setNotice(ids.length > 1 ? `已删除 ${ids.length} 台 SSH 服务器` : `SSH 服务器已删除`);
+    } catch (error: any) { setNotice(`删除 SSH 服务器失败：${error.message}`); }
+    finally { setSshBatchBusy(false); }
+  }
+
+  /** 复制连接：以「副本」形式新建，凭据一并复制，方便改几个字段就能连第二台机器 */
+  async function duplicateSshEntry(server: SshServer) {
+    try {
+      const servers = await window.codex.saveSshServer({
+        ...server,
+        id: "",
+        name: `${server.name} 副本`,
+        createdAt: "",
+        lastTestAt: undefined,
+        lastTestOk: undefined,
+        lastTestError: "",
+        lastFingerprint: undefined,
+        lastServerInfo: undefined,
+        lastConnectedAt: undefined,
+      });
+      setSshServers(servers);
+      setNotice(`已复制为「${server.name} 副本」`);
+    } catch (error: any) { setNotice(`复制 SSH 连接失败：${error.message}`); }
+  }
+
+  async function toggleSshFavorite(server: SshServer) {
+    try {
+      setSshServers(await window.codex.saveSshServer({ ...server, favorite: !server.favorite }));
+    } catch (error: any) { setNotice(`收藏失败：${error.message}`); }
+  }
+
+  /** 导出：默认剔除密码/私钥，需要迁移机器时可勾选「包含凭据」 */
+  async function exportSshEntries(includeSecrets: boolean) {
+    const targets = sshChecked.length ? sshServers.filter((server) => sshChecked.includes(server.id)) : sshServers;
+    if (!targets.length) { setNotice("没有可导出的 SSH 连接"); return; }
+    const path = await window.codex.exportSshServers(targets, includeSecrets);
+    if (path) setNotice(`已导出 ${targets.length} 台 SSH 服务器到 ${path}`);
+  }
+
+  async function importSshEntries() {
+    setSshBatchBusy(true);
+    try {
+      const servers = await window.codex.importSshServers();
+      if (!servers) { setSshBatchBusy(false); return; }
+      setSshServers(servers);
+      setNotice(`SSH 连接导入完成，当前共 ${servers.length} 台`);
+    } catch (error: any) { setNotice(`导入失败：${error.message}`); }
+    finally { setSshBatchBusy(false); }
+  }
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (!localStorage.getItem("sidebar-default-expanded-v1")) {
+      localStorage.setItem("sidebar-default-expanded-v1", "true");
+      localStorage.setItem("sidebar-collapsed", "false");
+      return false;
+    }
+    return localStorage.getItem("sidebar-collapsed") === "true";
+  });
+
+  const [rightTab, setRightTab] = useState<string>(() => "");
+  const [sideChooser, setSideChooser] = useState(false);
+  const [openTabs, setOpenTabs] = useState<{ key: string; name: string }[]>([]);
+  const [recentlyClosed, setRecentlyClosed] = useState<{ key: string; name: string; at: number }[]>([]);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [switcherQuery, setSwitcherQuery] = useState("");
+  const [goalsExpanded, setGoalsExpanded] = useState(false);
+  // 收纳到右侧边（仅持久化用户点击行为；hover 由 CSS 处理，无需 React hover state）
+  const [goalsDocked, setGoalsDocked] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState("");
+  const [paletteTab, setPaletteTab] = useState<"all" | "ops" | "tasks" | "files">("all");
+  const [keepAwake, setKeepAwake] = useState(() => localStorage.getItem("keep-awake") === "true");
+  const [ctxMenuOpen, setCtxMenuOpen] = useState(false);
+  const [skillHubCategory, setSkillHubCategory] = useState("总排行");
+  const [skillHubSearch, setSkillHubSearch] = useState("");
+  const [skillsManageOnly, setSkillsManageOnly] = useState(false);
+  const [connectorSearch, setConnectorSearch] = useState("");
+  const [connectorsManageOnly, setConnectorsManageOnly] = useState(false);
+  // 连接器卡片：勾选集合 + 单卡开关 / 批量启停的忙碌态
+  const [connectorChecked, setConnectorChecked] = useState<string[]>([]);
+  const [connectorStatusBusy, setConnectorStatusBusy] = useState<string | null>(null);
+  const [connectorBatchBusy, setConnectorBatchBusy] = useState<"enable" | "disable" | null>(null);
+  // app-server MCP 状态卡：引擎直管服务器的启停覆盖表 + 勾选/忙碌态。
+  // 覆盖表只记录被显式改过的项，没记过的一律视为启用。
+  const [mcpOverrides, setMcpOverrides] = useState<Record<string, boolean>>({});
+  // 各 MCP 服务器的按工具权限档位（deny/ask/allow），复刻 WorkBuddy 工具级权限模型
+  const [mcpToolPermissions, setMcpToolPermissions] = useState<Record<string, Record<string, "deny" | "ask" | "allow">>>({});
+  const [mcpServerChecked, setMcpServerChecked] = useState<string[]>([]);
+  const [mcpServerStatusBusy, setMcpServerStatusBusy] = useState<string | null>(null);
+  const [mcpServerBatchBusy, setMcpServerBatchBusy] = useState<"enable" | "disable" | null>(null);
+  const [mcpServerSearch, setMcpServerSearch] = useState("");
+  const [subAgents, setSubAgents] = useState<SubAgentEntry[]>([]);
+  const [subAgentDraft, setSubAgentDraft] = useState<SubAgentEntry | null>(null);
+  const [subAgentEditorOpen, setSubAgentEditorOpen] = useState(false);
+  const [subAgentRunning, setSubAgentRunning] = useState<string | null>(null);
+  // RPA：正在执行的配方 id + agent 向用户的提问卡（resolve 回调挂在 state 里，按钮点击后放行 tool call）
+  // agent_ask 不再全局弹窗：挂在所属会话上，贴输入框上方展示；用户不在该会话时只发通知，切回再显示
+  const [rpaRunning, setRpaRunning] = useState<string | null>(null);
+  const [agentAsk, setAgentAsk] = useState<{ threadId: string; question: string; options: string[]; recommended: string | null; allowFree: boolean; resolve: (answer: string) => void } | null>(null);
+  const [rpaRecipes, setRpaRecipes] = useState<any[]>([]);
+  const [taskList, setTaskList] = useState<any[]>([]);
+  // 应用内输入/确认弹窗：避免 Electron 原生 prompt 不可用，以及系统 confirm 抢走窗口焦点。
+  const [appPrompt, setAppPrompt] = useState<{ title: string; value: string; multiline?: boolean; resolve: (text: string | null) => void } | null>(null);
+  const appPromptInputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const [appConfirm, setAppConfirm] = useState<{ title: string; text: string; confirmLabel: string; resolve: (confirmed: boolean) => void } | null>(null);
+  // 记忆卡片全文预览：卡片本身只显示 3 行截断，点开看完整内容
+  const [memoryPreview, setMemoryPreview] = useState<any>(null);
+  // 全局搜索命中预览（记忆中心→全局搜索）：会话全文由主进程读 rollout 原档提供
+  const [searchPreview, setSearchPreview] = useState<SearchPreviewTarget | null>(null);
+  // 记忆中心大弹窗：设置页「记忆」只做总览，条目浏览/常驻记忆编辑/存储切换都在这里完成
+  const [memoryCenterOpen, setMemoryCenterOpen] = useState(false);
+  const [memoryCenterTab, setMemoryCenterTab] = useState<"library" | "search" | "layers" | "storage">("library");
+  function openAppPrompt(title: string, defaultValue = "", multiline = false): Promise<string | null> {
+    return new Promise((resolve) => setAppPrompt({ title, value: defaultValue, multiline, resolve }));
+  }
+  function openAppConfirm(title: string, text: string, confirmLabel = "确定"): Promise<boolean> {
+    return new Promise((resolve) => setAppConfirm({ title, text, confirmLabel, resolve }));
+  }
+  useLayoutEffect(() => {
+    if (!appPrompt) return;
+    const focusPrompt = () => {
+      const input = appPromptInputRef.current;
+      if (!input) return;
+      input.focus({ preventScroll: true });
+      input.select();
+    };
+    focusPrompt();
+    const frame = requestAnimationFrame(() => {
+      if (document.activeElement !== appPromptInputRef.current) focusPrompt();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [appPrompt]);
+  // 专家团（Team 型专家）：团队列表 + 编辑 + 成员调度状态
+  const [expertTeams, setExpertTeams] = useState<ExpertTeamConfig[]>([]);
+  const [expertTeamDraft, setExpertTeamDraft] = useState<ExpertTeamConfig | null>(null);
+  const [expertTeamEditorOpen, setExpertTeamEditorOpen] = useState(false);
+  const [expertTeamRunning, setExpertTeamRunning] = useState<string | null>(null);
+  const [expertTeamMemberRunning, setExpertTeamMemberRunning] = useState<{ teamId: string; memberName: string } | null>(null);
+  // 每张专家团卡片独立选择的项目地址（teamId -> cwd）；未选择时用全局 workspace
+  const [teamCwdMap, setTeamCwdMap] = useState<Record<string, string>>({});  // 成员直达会话进行中标记（key = teamId:memberId），用于成员 chip 的 loading 态
+  const [expertTeamMemberDirect, setExpertTeamMemberDirect] = useState<string | null>(null);
+  // threadId -> teamId 映射：tool call 事件只带 threadId，据此解析当前团队
+  const teamThreadMapRef = useRef<Map<string, string>>(new Map());
+  // 团队父会话自己的运行配置。后台会话调度成员时不能读取当前屏幕上的 workspace/model，
+  // 否则切到另一个会话后会把新会话配置错误套给旧团队。
+  const teamThreadConfigRef = useRef<Map<string, { teamId: string; cwd: string; model: string; effort?: string; sandbox: string; approvalPolicy: string }>>(new Map());
+  // 把「threadId → 团队成员解析」注册进模块级注册表，聊天区深处的 ItemView 渲染
+  // team_member_invoke 工具卡时能查到成员头像（不逐层传 props，见 entity-avatar.ts 注释）
+  useEffect(() => {
+    for (const [threadId, teamId] of teamThreadMapRef.current) {
+      const team = expertTeams.find((entry) => entry.teamId === teamId);
+      if (!team) continue;
+      registerThreadTeam(threadId, (memberId) => {
+        const member = [team.lead, ...team.members].find((entry) => entry.id === memberId);
+        if (!member) return null;
+        const isLead = member.id === team.lead.id;
+        return { id: member.id, name: member.name, label: expertRoleLabel(member, isLead), isLead };
+      });
+    }
+    return () => { for (const threadId of teamThreadMapRef.current.keys()) unregisterThreadTeam(threadId); };
+  }, [expertTeams]);
+  // defer 预建的空会话：threadId -> 首条待注入角色。用户在该空会话发出第一条消息时，
+  // 发送管线自动包装成 SYSTEM TASK（渲染折叠为「需求已发起」），包装后即清除本映射。
+  const pendingExpertRoleRef = useRef<Map<string, ExpertPendingRole>>(new Map());
+  // 角色映射同时落 localStorage：空会话可能闲置到应用重启后用户才发首条消息，
+  // 重启后 ref 已空，send() 会从 localStorage 兜底取回角色包装。key = localStorage 键。
+  const EXPERT_ROLE_STORE_KEY = "expert-pending-roles";
+  const rememberExpertRole = (threadId: string, role: ExpertPendingRole) => {
+    pendingExpertRoleRef.current.set(threadId, role);
+    try {
+      const next = { ...(JSON.parse(localStorage.getItem(EXPERT_ROLE_STORE_KEY) || "{}") as Record<string, ExpertPendingRole>), [threadId]: role };
+      localStorage.setItem(EXPERT_ROLE_STORE_KEY, JSON.stringify(next));
+    } catch { /* 存储失败仅影响重启后的首条包装，不阻塞 */ }
+  };
+  const forgetExpertRole = (threadId: string) => {
+    pendingExpertRoleRef.current.delete(threadId);
+    try {
+      const store = JSON.parse(localStorage.getItem(EXPERT_ROLE_STORE_KEY) || "{}") as Record<string, ExpertPendingRole>;
+      if (store[threadId]) { delete store[threadId]; localStorage.setItem(EXPERT_ROLE_STORE_KEY, JSON.stringify(store)); }
+    } catch { /* ignore */ }
+  };
+  const readStoredExpertRole = (threadId: string): ExpertPendingRole | undefined => {
+    if (pendingExpertRoleRef.current.has(threadId)) return pendingExpertRoleRef.current.get(threadId);
+    try { return (JSON.parse(localStorage.getItem(EXPERT_ROLE_STORE_KEY) || "{}") as Record<string, ExpertPendingRole>)[threadId]; }
+    catch { return undefined; }
+  };
+  // 导入记录新建的空会话：threadId -> 待附外部对话记录。首条消息发送时随消息附上（见 send），
+  // 成功后清除。pendingImportThreads 只存「有记录的线程 id」做响应式判断（渲染用），
+  // 记录全文在 localStorage（key = PENDING_IMPORT_STORE_KEY），避免把大文本塞进 state 造成流式渲染卡顿。
+  const [pendingImportThreads, setPendingImportThreads] = useState<Record<string, true>>(() => {
+    const store = readPendingImportStore();
+    return Object.keys(store).reduce<Record<string, true>>((acc, id) => { acc[id] = true; return acc; }, {});
+  });
+  const rememberPendingImport = (threadId: string, payload: PendingImportPayload) => {
+    try {
+      const next = { ...readPendingImportStore(), [threadId]: payload };
+      localStorage.setItem(PENDING_IMPORT_STORE_KEY, JSON.stringify(next));
+    } catch { /* 存储失败仅影响重启后恢复，不阻塞 */ }
+    setPendingImportThreads((current) => ({ ...current, [threadId]: true }));
+  };
+  const forgetPendingImport = (threadId: string) => {
+    try {
+      const store = readPendingImportStore();
+      if (store[threadId]) { delete store[threadId]; localStorage.setItem(PENDING_IMPORT_STORE_KEY, JSON.stringify(store)); }
+    } catch { /* ignore */ }
+    setPendingImportThreads((current) => {
+      if (!current[threadId]) return current;
+      const next = { ...current };
+      delete next[threadId];
+      return next;
+    });
+  };
+  const readStoredPendingImport = (threadId: string): PendingImportPayload | undefined => {
+    try { return readPendingImportStore()[threadId]; } catch { return undefined; }
+  };
+  const [panelWidth, setPanelWidth] = useState(() => Math.min(560, Math.max(240, Number(localStorage.getItem("panel-width")) || 308)));
+  const dragWidthRef = useRef(panelWidth);
+  function startPanelDrag(event: ReactMouseEvent) {
+    event.preventDefault();
+    const move = (e: MouseEvent) => {
+      const width = Math.min(560, Math.max(240, window.innerWidth - e.clientX));
+      dragWidthRef.current = width;
+      setPanelWidth(width);
+    };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      localStorage.setItem("panel-width", String(dragWidthRef.current));
+      document.body.style.cursor = "";
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    document.body.style.cursor = "col-resize";
+  }
+  const [planSteps, setPlanSteps] = useState<{ step: string; status: string }[]>([]);
+  const [goalText, setGoalText] = useState("");
+  const [goalsOpen, setGoalsOpen] = useState(true);
+  const [doneExpanded, setDoneExpanded] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewReport, setReviewReport] = useState("");
+  const reviewTurnRef = useRef<string | null>(null);
+  const [treePath, setTreePath] = useState("");
+  const [treeEntries, setTreeEntries] = useState<TreeEntry[]>([]);
+  const [treeLoading, setTreeLoading] = useState(false);
+  const [browserHome, setBrowserHome] = useState(() => localStorage.getItem("browser-home") ?? "https://github.com/openai/codex");
+  const [browserUrl, setBrowserUrl] = useState("");
+  const [browserDraft, setBrowserDraft] = useState("");
+  // 浏览器面板默认就是 CloakBrowser 指纹模式：不再提供切换 UI；保留字段以兼容既有渲染分支
+  const [browserMode] = useState<"cloak" | "internal">("cloak");
+  const [cloakPage, setCloakPage] = useState("");
+  const [cloakStatus, setCloakStatus] = useState("");
+  // 浏览器收藏夹 + 历史（localStorage 持久化）
+  const [browserBookmarks, setBrowserBookmarks] = useState<{ url: string; title: string }[]>(() => { try { return JSON.parse(localStorage.getItem("browser-bookmarks") ?? "[]"); } catch { return []; } });
+  const [browserHistory, setBrowserHistory] = useState<{ url: string; title: string; at: number }[]>(() => { try { return JSON.parse(localStorage.getItem("browser-history") ?? "[]"); } catch { return []; } });
+  const [browserDrawer, setBrowserDrawer] = useState<"" | "bookmarks" | "history">("");
+  const [browserMenuOpen, setBrowserMenuOpen] = useState(false);
+  const [backupBusy, setBackupBusy] = useState<"" | "export" | "import" | "export-md" | "import-md">("");
+  // cloak 首页快捷站点：收藏夹优先（≤6），不足补内置常用站点
+  const homeSites = useMemo(() => {
+    const list: { name: string; url: string; color?: string }[] = browserBookmarks.slice(0, 6).map((b) => ({ name: b.title || b.url, url: b.url }));
+    for (const s of QUICK_SITES) {
+      if (list.length >= 6) break;
+      if (!list.some((x) => x.url === s.url)) list.push({ name: s.name, url: s.url, color: s.color });
+    }
+    return list;
+  }, [browserBookmarks]);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [queueDragIndex, setQueueDragIndex] = useState<number | null>(null);
+  const [mobileNav, setMobileNav] = useState(false);
+  const [sidebarFlyout, setSidebarFlyout] = useState(false);
+  const [threadRowMenu, setThreadRowMenu] = useState<{ id: string; top: number; right: number } | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("sidebar-sections-collapsed") || "[]") as string[]); } catch { return new Set<string>(); }
+  });
+  const toggleSection = useCallback((key: string) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      try { localStorage.setItem("sidebar-sections-collapsed", JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  const renderThreadRow = (entry: Thread) => {
+    const running = runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running";
+    return (
+    <div className={`thread-row ${thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${threadRowMenu?.id === entry.id ? "menu-open" : ""}`} key={entry.id}>
+      <button title={runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : "双击修改任务名称"} onClick={() => void openThread(entry.id)}>
+        <span onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void renameThread(entry.id, next); }); }}>{cleanThreadDisplayTitle(entry.name, { preview: entry.preview })}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
+      </button>
+      <div className="thread-actions">
+        <button className={`thread-pin-button ${pinnedThreads.includes(entry.id) ? "pinned" : ""}`} title={pinnedThreads.includes(entry.id) ? "取消置顶" : "置顶会话"} onClick={(event) => { event.stopPropagation(); togglePinThread(entry.id); }}><Pin size={13} /></button>
+        <button className="thread-archive-button" title="归档会话" onClick={(event) => { event.stopPropagation(); void archiveThread(entry.id); }}><Archive size={13} /></button>
+        <button className="thread-more-button" title="会话操作" aria-expanded={threadRowMenu?.id === entry.id} onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); const menuHeight = 250; setThreadRowMenu((current) => current?.id === entry.id ? null : { id: entry.id, top: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - menuHeight - 8)), right: Math.max(8, window.innerWidth - rect.right) }); }}><MoreHorizontal size={14} /></button>
+        {openingThread === entry.id ? <Spinner /> : running ? <span className="thread-running-indicator" title="任务运行中"><i /><i /><i /></span> : null}
+        {threadRowMenu?.id === entry.id && createPortal(<>
+          <button className="thread-row-menu-backdrop" aria-label="关闭会话菜单" onClick={() => setThreadRowMenu(null)} />
+          <div className="thread-row-menu" role="menu" style={{ top: threadRowMenu.top, right: threadRowMenu.right }}>
+            <button onClick={() => { setThreadRowMenu(null); void exportThreadsMarkdown([entry.id]); }}><FileText size={13} /><span>导出会话</span><small>.md</small></button>
+            <button onClick={() => { setThreadRowMenu(null); void exportThreadsBackup([entry.id]); }}><Download size={13} /><span>完整备份</span><small>.json</small></button>
+            <button onClick={() => { setThreadRowMenu(null); void openAppPrompt("重命名任务", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void renameThread(entry.id, next); }); }}><PenLine size={13} /><span>重命名</span></button>
+            <button onClick={() => { setThreadRowMenu(null); void forkThreadFromSidebar(entry); }}><GitBranch size={13} /><span>分支</span></button>
+            <button onClick={() => { setThreadRowMenu(null); void copyThreadReferenceId(entry); }}><Copy size={13} /><span>复制会话 ID</span></button>
+            <button className="danger" onClick={() => { setThreadRowMenu(null); void deleteThread(entry.id); }}><Trash2 size={13} /><span>删除</span></button>
+          </div>
+        </>, document.body)}
+      </div>
+    </div>
+  );
+  };
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < 900);
+  useEffect(() => {
+    const onResize = () => setNarrow(window.innerWidth < 900);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  // 完全自主模式：所有新任务默认拥有完整本机访问与无需审批的执行权限。
+  // 使用版本化迁移，覆盖此前 workspace-write 的历史偏好。
+  const [approvalPolicy, setApprovalPolicy] = useState(() => {
+    if (!localStorage.getItem("full-autonomy-default-v1")) {
+      localStorage.setItem("full-autonomy-default-v1", "true");
+      localStorage.setItem("default-sandbox", "danger-full-access");
+      localStorage.setItem("default-approval", "never");
+    }
+    return "never";
+  });
+  const [sandbox, setSandbox] = useState(() => {
+    const saved = localStorage.getItem("default-sandbox");
+    if (!localStorage.getItem("full-autonomy-default-v1")) {
+      localStorage.setItem("full-autonomy-default-v1", "true");
+      localStorage.setItem("default-sandbox", "danger-full-access");
+      localStorage.setItem("default-approval", "never");
+      return "danger-full-access";
+    }
+    return saved === "read-only" || saved === "workspace-write" || saved === "danger-full-access" ? saved : "danger-full-access";
+  });
+  const [personality, setPersonality] = useState(() => localStorage.getItem("default-personality") ?? "pragmatic");
+  const [notice, setNotice] = useState("");
+  // 信息面板弹窗：/queue /skills /mcp 等查询命令的输出改为居中弹窗展示（不再插入消息流灰色横幅）
+  const [infoModal, setInfoModal] = useState<{ title: string; body: string } | null>(null);
+  // 项目树高亮：openFile 后标出当前打开的文件，让用户看到「点了哪个」
+  const [highlightedFilePath, setHighlightedFilePath] = useState<string | null>(null);
+  // 高亮变化时：项目树里对应条目滚到视口内（用 data-tree-path 精确锁定）
+  useEffect(() => {
+    if (!highlightedFilePath) return;
+    const target = highlightedFilePath.replace(/\\/g, "/");
+    const escape = (s: string) => s.replace(/"/g, '\\"');
+    const candidates = [
+      `[data-tree-path="${escape(target)}"]`,
+      `[data-tree-path$="/${escape(basename(highlightedFilePath))}"]`,
+    ];
+    const el = candidates.map((sel) => document.querySelector(sel)).find((node): node is HTMLElement => Boolean(node));
+    if (el) {
+      el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+    }
+  }, [highlightedFilePath, treeEntries, treePath]);
+  // 通知自动消失：内容变化重置计时，2.6s 后自动清除（关闭按钮仍可立即关）
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(""), 2600);
+    return () => clearTimeout(timer);
+  }, [notice]);
+  useEffect(() => { void Promise.all([window.codex.listLocalSkills(), window.codex.listConnectors(), window.codex.listSubAgents(), window.codex.listConnectorTemplates(), window.codex.listExpertTeams()]).then(([skills, connectorList, agentList, templateList, teamList]) => { setLocalSkills(skills); setConnectors(connectorList); setSubAgents(agentList); setConnectorTemplates(templateList); setExpertTeams(teamList); }).catch(() => undefined); }, []);
+  // RPA 配方与任务清单：进入应用拉一次，设置页/清单面板共享这份数据
+  useEffect(() => {
+    void window.codex.listRpaRecipes().then(setRpaRecipes).catch(() => undefined);
+    void window.codex.listTasks().then(setTaskList).catch(() => undefined);
+  }, []);
+  useEffect(() => window.codex.onConnectorOAuth((event) => {
+    setConnectorOAuth(event);
+    if (event.phase === "authorized") {
+      setConnectorTemplateModal(null);
+      setConnectorTemplateValues({});
+      setNotice(event.message);
+      void window.codex.listConnectors().then(setConnectors).catch(() => undefined);
+    }
+  }), []);
+  useEffect(() => { if (!skillsManageOnly) void refreshMarketSkills(); }, [skillHubCategory, skillHubSearch, skillsManageOnly, marketPage]);
+  const buildStamp = "20260831-1830";
+  const [lightbox, setLightbox] = useState<{ path: string; alt: string } | null>(null);
+  const [systemEvents, setSystemEvents] = useState<SystemEvent[]>([]);
+  // 本回合 hook 注入徽标（静默）：完成回复时展示在 footer 末尾
+  const [hookPulse, setHookPulse] = useState<{ count: number; hooks: { name: string; done: boolean }[]; at: number }>({ count: 0, hooks: [], at: 0 });
+  // 写代码模式（ponytail）开关状态：默认开启，与「常规」页的总闸联动
+  const [ponytailOn, setPonytailOn] = useState(true);
+  // 各渠道真实连接状态（微信/Telegram 网关是否在线）
+  const [channelOnline, setChannelOnline] = useState<{ weixin: boolean; telegram: boolean }>({ weixin: false, telegram: false });
+  useEffect(() => { void window.codex.channelsStatus?.().then(setChannelOnline).catch(() => undefined); }, []);
+  // 刚切换会话：首跳用瞬时滚动（auto），之后的流式跟随仍用平滑
+  const switchJumpRef = useRef(false);
+  // 会话消息缓存（复刻 WorkBuddy 切换体验）：打开过的会话缓存 thread，切回时秒开渲染，
+  // 后台 thread/resume 刷新；有实质变化才替换，避免无感闪烁。
+  const threadCacheRef = useRef(new Map<string, Thread>());
+  // 无缓存切换时的恢复遮罩：盖住旧内容直到新会话渲染完成（不再让旧内容残留+跳顶）；
+  // 缓存秒开也走遮罩——给"刚切过去就在最新消息位置"的视觉过渡，避免内容直接落底的突兀
+  const [switchingThreadId, setSwitchingThreadId] = useState<string | null>(null);
+  // 切换序号：快速连点时只让最新一次 resume 落地（旧响应丢弃，防止内容串台）
+  const switchSeqRef = useRef(0);
+  // fade-out 动画控制：jumpToBottom settled 后等一帧再让遮罩淡出，避免内容继续增高
+  // 时遮罩提前消失导致"切过去在中间"；markSettled 每次触发都重置 timer，保证只有最后
+  // 一次稳定后才真正卸载
+  const [switchingFading, setSwitchingFading] = useState(false);
+  const fadeOutTimerRef = useRef<number | null>(null);
+  useEffect(() => { void window.codex.ponytailModeGet?.().then((mode) => setPonytailOn(mode !== "off")).catch(() => undefined); }, []);
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") ?? "light");
+  // 账户菜单（点左下角头像/名字弹出）：界面语言 / 界面主题 / 界面缩放 / 使用统计 / 用户中心 / 退出登录
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [accountMenuSub, setAccountMenuSub] = useState<"lang" | "theme" | "zoom" | "update" | null>(null);
+  // 自更新：网页源（发布站）/ GitHub Releases 双源可切换，源选择持久化 localStorage
+  const [updateSource, setUpdateSourceState] = useState<"web" | "github">(() => (localStorage.getItem("update-source") === "github" ? "github" : "web"));
+  const setUpdateSource = (source: "web" | "github") => {
+    setUpdateSourceState(source);
+    localStorage.setItem("update-source", source);
+  };
+  const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string; reason?: string } | null>(null);
+  const [updateCurrentVersion, setUpdateCurrentVersion] = useState<string>("");
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateError, setUpdateError] = useState<string>("");
+  const [updateDownloading, setUpdateDownloading] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState(0);
+  // 启动静默检查发现新版本 → 弹出的通知卡片（用户关掉后本次会话不再弹）
+  const [updateNotice, setUpdateNotice] = useState<{ version?: string; changelog?: string; size?: number; mandatory?: boolean } | null>(null);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    const onDown = (event: globalThis.MouseEvent) => { if (!accountMenuRef.current?.contains(event.target as Node)) setAccountMenuOpen(false); };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [accountMenuOpen]);
+  // 启动时静默检查一次：有新版本就弹通知卡片；无更新或出错一律不打扰
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await window.codex.updateCheck?.({ source: updateSource });
+        if (cancelled || !r?.ok) return;
+        setUpdateInfo(r.info ?? null);
+        setUpdateCurrentVersion(r.currentVersion ?? "");
+        if (r.info?.hasUpdate) {
+          setUpdateNotice({ version: r.info.version, changelog: r.info.changelog, size: r.info.size, mandatory: r.info.mandatory });
+        }
+      } catch (err) {
+        // 静默：网络不通、发布站不可达都不打扰用户
+        console.warn("[update] startup check failed:", err);
+      }
+    })();
+    return () => { cancelled = true; };
+    // 仅启动时跑一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // 下载进度：主进程通过 updates:download-progress 推送
+  useEffect(() => {
+    const off = window.codex.updateOnProgress?.((percent: number) => setUpdateProgress(percent));
+    return () => { off?.(); };
+  }, []);
+  const runUpdateCheck = async () => {
+    setUpdateChecking(true);
+    setUpdateError("");
+    try {
+      const r = await window.codex.updateCheck?.({ source: updateSource });
+      if (!r) throw new Error("IPC 不可用");
+      if (!r.ok) throw new Error(r.error || "检查失败");
+      setUpdateInfo(r.info ?? null);
+      setUpdateCurrentVersion(r.currentVersion ?? "");
+    } catch (err: any) {
+      setUpdateError(err?.message || String(err));
+    } finally {
+      setUpdateChecking(false);
+    }
+  };
+  /** 下载安装包 → 自动打开安装程序；唤起失败则退化为打开所在文件夹 */
+  const runUpdateDownload = async () => {
+    if (!updateInfo?.downloadUrl) return;
+    setUpdateDownloading(true);
+    setUpdateProgress(0);
+    setUpdateError("");
+    try {
+      const r = await window.codex.updateDownload?.({
+        downloadUrl: updateInfo.downloadUrl,
+        filename: updateInfo.filename || "codex-harness-update.bin",
+      });
+      if (!r?.ok) throw new Error(r?.error || "下载失败");
+      const started = await window.codex.updateInstall?.(r.path!);
+      if (!started?.ok) {
+        void window.codex.updateReveal?.(r.path!);
+        showToast?.(`已下载 v${updateInfo.version}，请手动安装`, "");
+      } else {
+        setUpdateNotice(null);
+        showToast?.(`正在打开 v${updateInfo.version} 安装程序`, "");
+      }
+    } catch (err: any) {
+      setUpdateError(err?.message || String(err));
+    } finally {
+      setUpdateDownloading(false);
+      setUpdateProgress(0);
+    }
+  };
+  // 打开网站反馈页：带上当前版本与系统信息（管理员可据此复现）；URL 跟随用户配置的更新服务器
+  const openFeedbackPage = () => {
+    const ua = navigator.userAgent;
+    const os = /Windows NT 10/.test(ua) ? "Windows 10/11"
+      : /Windows/.test(ua) ? "Windows"
+      : /Mac OS X/.test(ua) ? "macOS"
+      : /Linux/.test(ua) ? "Linux"
+      : navigator.platform || "";
+    const qs = new URLSearchParams();
+    if (updateCurrentVersion) qs.set("v", updateCurrentVersion);
+    if (os) qs.set("os", os);
+    // 发布中心地址固定（与更新源同一站点），用户无需配置
+    const base = "https://www.jvszzp.ltd";
+    const url = `${base}/feedback.html${qs.toString() ? `?${qs.toString()}` : ""}`;
+    setAccountMenuOpen(false);
+    void window.codex.openExternal(url);
+  };
+  const [uiLang, setUiLang] = useState(() => localStorage.getItem("ui-lang") ?? "zh");
+  const [uiZoom, setUiZoom] = useState(() => Number(localStorage.getItem("ui-zoom") ?? "1"));
+  useEffect(() => { document.documentElement.dataset.uiLang = uiLang; localStorage.setItem("ui-lang", uiLang); }, [uiLang]);
+  useEffect(() => { (document.body.style as any).zoom = String(uiZoom); localStorage.setItem("ui-zoom", String(uiZoom)); }, [uiZoom]);
+  // 让模块级 widget 卡片跟随主题（widget iframe 背景/文字色）
+  useEffect(() => { widgetDark = theme === "dark"; return () => { widgetDark = false; }; }, [theme]);
+  const [uiFont, setUiFont] = useState(() => localStorage.getItem("ui-font") ?? "default");
+  useEffect(() => {
+    document.documentElement.dataset.uiFont = uiFont;
+  }, [uiFont]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsPage, setSettingsPage] = useState<SettingsPage>("general");
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [toolsStatus, setToolsStatus] = useState<{ id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>([]);
+  const refreshToolsStatus = () => { window.codex.toolStatus().then(setToolsStatus).catch(() => setToolsStatus([])); };
+  const [devRuntimes, setDevRuntimes] = useState<DevRuntimeEntry[]>([]);
+  const [runtimeInstalling, setRuntimeInstalling] = useState<string | null>(null);
+  const [runtimeProgress, setRuntimeProgress] = useState<Record<string, string>>({});
+  const refreshDevRuntimes = () => { window.codex.listRuntimes().then(setDevRuntimes).catch(() => setDevRuntimes([])); };
+  useEffect(() => window.codex.onRuntimeProgress((event) => {
+    setRuntimeProgress((current) => ({ ...current, [event.id]: event.message.split(/\r?\n/).at(-1) || event.message }));
+    if (event.done) { setRuntimeInstalling(null); refreshDevRuntimes(); }
+  }), []);
+  async function installDevRuntime(id: string) {
+    setRuntimeInstalling(id);
+    setRuntimeProgress((current) => ({ ...current, [id]: "准备下载…" }));
+    try {
+      const result = await window.codex.installRuntime(id);
+      setDevRuntimes(result.runtimes);
+      setNotice("开发工具安装成功，Codex 引擎已刷新");
+    } catch (error: any) {
+      setNotice(`开发工具安装失败：${error.message}`);
+    } finally { setRuntimeInstalling(null); }
+  }
+  useEffect(() => { if (settingsOpen) refreshToolsStatus(); }, [settingsOpen]);
+  useEffect(() => { if (settingsOpen && settingsPage === "devtools") refreshDevRuntimes(); }, [settingsOpen, settingsPage]);
+  // 进入「SSH 服务器」分区时拉取一次服务器列表
+  useEffect(() => {
+    if (settingsOpen && settingsPage === "ssh" && !sshLoaded) {
+      void window.codex.listSshServers().then((servers) => { setSshServers(servers); setSshLoaded(true); }).catch(() => setSshLoaded(true));
+    }
+  }, [settingsOpen, settingsPage, sshLoaded]);
+  const [settingsResources, setSettingsResources] = useState<{ skills: any[]; hooks: any[]; plugins: any[]; apps: any[]; mcp: any[] }>({ skills: [], hooks: [], plugins: [], apps: [], mcp: [] });
+  const installedTotalCount = useMemo(() => {
+    const localNames = new Set(localSkills.map((entry) => entry.name.toLowerCase()));
+    const localByPath = new Set(localSkills.map((entry) => entry.path));
+    const builtin = settingsResources.skills.filter((entry: any) => !localByPath.has(entry.path) && !localNames.has((entry.name ?? "").toLowerCase()));
+    return builtin.length + localSkills.length;
+  }, [localSkills, settingsResources.skills]);
+  const [resourceLoading, setResourceLoading] = useState(false);
+  const [resourceError, setResourceError] = useState("");
+  const [pluginSearch, setPluginSearch] = useState("");
+  const [pluginInstalledOnly, setPluginInstalledOnly] = useState(false);
+  const [pluginBusy, setPluginBusy] = useState<string | null>(null);
+  const [pluginBatchBusy, setPluginBatchBusy] = useState<"enable" | "disable" | null>(null);
+  const [skillBatchBusy, setSkillBatchBusy] = useState<"enable" | "disable" | null>(null);
+  // 勾选集合：批量操作只作用于勾选的条目，而不是「当前筛选出的全部」
+  const [pluginChecked, setPluginChecked] = useState<string[]>([]);
+  const [skillChecked, setSkillChecked] = useState<string[]>([]);
+  const [skillManageSearch, setSkillManageSearch] = useState("");
+  // —— 命令页（复刻 WorkBuddy 命令界面）：内置 + 自定义 + 技能 ——
+  const [customCommands, setCustomCommands] = useState<CustomCommandEntry[]>([]);
+  const [commandSearch, setCommandSearch] = useState("");
+  const [commandFilter, setCommandFilter] = useState<"all" | "custom" | "builtin" | "skill">("all");
+  const [commandBusy, setCommandBusy] = useState(false);
+  const [commandEditor, setCommandEditor] = useState<{ mode: "new" | "edit"; name: string; source: CommandSource; description: string; argumentHint: string; allowedTools: string; model: string; body: string; prevFilePath?: string } | null>(null);
+  const [commandDelete, setCommandDelete] = useState<CustomCommandEntry | null>(null);
+  const [commandBusyKey, setCommandBusyKey] = useState<string | null>(null);
+  const refreshCommands = useCallback(async () => {
+    setCommandBusy(true);
+    try { setCustomCommands(await window.codex.listCommands({ cwd: workspace ?? undefined })); }
+    catch (error: any) { setNotice(`命令列表加载失败：${error.message}`); }
+    finally { setCommandBusy(false); }
+  }, [workspace, setNotice]);
+  useEffect(() => { if (settingsOpen) void refreshCommands(); }, [settingsOpen, workspace, refreshCommands]);
+  // 保存命令（新建或更新）后刷新列表
+  async function persistCommand() {
+    if (!commandEditor) return;
+    const draft = commandEditor;
+    const name = draft.name.trim();
+    if (!name) { setNotice("命令名不能为空"); return; }
+    if (commandBusyKey) return;
+    setCommandBusyKey("save");
+    try {
+      await window.codex.saveCommand({
+        name,
+        source: draft.source,
+        description: draft.description,
+        argumentHint: draft.argumentHint,
+        allowedTools: draft.allowedTools,
+        model: draft.model,
+        body: draft.body,
+        prevFilePath: draft.mode === "edit" ? draft.prevFilePath : undefined,
+        cwd: workspace ?? undefined,
+      });
+      setCommandEditor(null);
+      setNotice(draft.mode === "edit" ? `命令 /${name} 已更新` : `命令 /${name} 已创建`);
+      await refreshCommands();
+    } catch (error: any) {
+      setNotice(error.message);
+    } finally {
+      setCommandBusyKey(null);
+    }
+  }
+  async function confirmDeleteCommand() {
+    if (!commandDelete) return;
+    setCommandBusyKey("delete");
+    try {
+      await window.codex.deleteCommand(commandDelete.filePath);
+      setCommandDelete(null);
+      setNotice(`命令 /${commandDelete.name} 已删除`);
+      await refreshCommands();
+    } catch (error: any) {
+      setNotice(`删除失败：${error.message}`);
+    } finally {
+      setCommandBusyKey(null);
+    }
+  }
+  /** 从输入框使用命令：内置 / 自定义都填 /name 进入输入框；技能则直接引用 */
+  function useCommand(name: string, kind: "builtin" | "custom" | "skill", skill?: any) {
+    if (kind === "skill" && skill) {
+      setSelectedSkills((current) => current.some((entry: any) => entry.name === skill.name) ? current : [...current, skill]);
+      setSettingsOpen(false);
+      setNotice(`已引用技能：${skill.name}`);
+      return;
+    }
+    setPrompt(`/${name} `);
+    setSettingsOpen(false);
+  }
+  const [hookTrusting, setHookTrusting] = useState(false);
+  const [hookBusy, setHookBusy] = useState<string | null>(null);
+  const [linkedBusy, setLinkedBusy] = useState<string | null>(null);
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
+  const [username, setUsername] = useState(() => localStorage.getItem("username") || "Codex 用户");
+  const [userAvatar, setUserAvatar] = useState<{ type: string; value: string } | null>(() => { try { const p = JSON.parse(localStorage.getItem("user-profile") || "{}"); return p.avatarType && p.avatar ? { type: p.avatarType, value: p.avatar } : null; } catch { return null; } });
+  // 用户名权威源是个性化 nickname（存 userData/personalization.json，重启不丢）：
+  // 启动时异步回读并覆盖 localStorage 缓存（localStorage 在应用退出瞬间可能没 flush，导致"重启恢复默认"）。
+  useEffect(() => {
+    void window.codex.readPersonalization().then((cfg) => {
+      if (cfg?.nickname) { setUsername(cfg.nickname); localStorage.setItem("username", cfg.nickname); }
+    }).catch(() => undefined);
+  }, []);
+  // 左下角账户名：点击进入行内编辑，Enter/失焦保存、Esc 取消
+  const [accountEditing, setAccountEditing] = useState(false);
+  const [accountDraft, setAccountDraft] = useState("");
+  const accountNameRef = useRef<HTMLInputElement>(null);
+  const saveAccountName = () => {
+    const next = accountDraft.trim();
+    if (next && next !== username) {
+      setUsername(next);
+      localStorage.setItem("username", next); // 缓存，供下次启动秒显
+      // 联动引擎：昵称写进 AGENTS.md（Codex 每个请求动态加载），下次对话引擎就知道怎么称呼用户
+      void window.codex.setNickname(next).then(() => setNotice(`已更新称呼「${next}」，Codex 下次对话会这样称呼你`)).catch((error: any) => setNotice(`称呼已更新，但同步到引擎失败：${error?.message ?? error}`));
+    }
+    setAccountEditing(false);
+  };
+  const startAccountEdit = () => { setAccountDraft(username); setAccountEditing(true); };
+  // 欢迎语：按时段 + 用户名组合，副语随机挑一条；useMemo 保证打字等重渲染不会让问候语跳变
+  const [greeting, greetSub] = useMemo(() => {
+    const hour = new Date().getHours();
+    const period = hour < 6 ? "night" : hour < 11 ? "morning" : hour < 13 ? "noon" : hour < 18 ? "afternoon" : "evening";
+    // 主问候保持纯渐变文字（不带 emoji）：emoji 在 background-clip:text 的 -webkit-text-fill-color:transparent 下
+    // 会随文字一起变透明、渲染成黑色方块。emoji 视觉集中放在副语和建议卡里也够了
+    const hello: Record<string, string> = { night: "夜深了", morning: "早上好", noon: "中午好", afternoon: "下午好", evening: "晚上好" };
+    const pools: Record<string, string[]> = {
+      night: ["🌙 这个点还醒着，是遇到棘手的问题了吗？说来听听，我陪你收尾。", "💡 凌晨的灵感最值钱——想清楚了就丢给我，剩下的体力活我来。", "🛏️ 夜深了，麻烦交给我，你负责早点休息。"],
+      morning: ["🌅 新的一天，从一句提问开始。想先推进哪件事？", "☕ 咖啡备好了吗？把今天的第一个任务丢过来吧。", "🚀 清晨头脑最清醒，正适合啃硬骨头。想从哪儿开始？"],
+      noon: ["🍚 忙了一上午，先吃口饭也没关系——下午的任务可以先交给我。", "😴 午安！趁午休整理一下思路，下午开工就省力了。", "🔥 中午好，要不要趁热把上午没解决的问题清一清？"],
+      afternoon: ["😌 下午好！困意上头的时刻，最适合把重复劳动交出去。", "📋 午后的活儿看着多？拆开一件一件来，细节我来盯。", "🍰 下午茶时间，顺便聊点正事？琐碎的活儿尽管丢给我。"],
+      evening: ["🌇 今天辛苦了，剩下的收尾让我来分担。", "🌃 夜幕降临，正适合安安静静解决一两个悬而未决的问题。", "✨ 晚上好，复盘、总结还是继续推进？交给我就行。"],
+    };
+    const pool = pools[period];
+    // 默认昵称（Codex 用户）不硬拼逗号，显得更自然；自定义昵称才带称呼
+    const named = username !== "Codex 用户" ? `${hello[period]}，${username}` : hello[period];
+    return [named, pool[Math.floor(Math.random() * pool.length)]] as const;
+  }, [username]);
+  const [mobileRemoteOpen, setMobileRemoteOpen] = useState(false);
+  const [botManagerOpen, setBotManagerOpen] = useState(false);
+  const [bots, setBots] = useState<{ id: string; name: string; channel: string; enabled: boolean }[]>(() => { try { return JSON.parse(localStorage.getItem("bots") ?? "[]"); } catch { return []; } });
+  const [activeBotId, setActiveBotId] = useState<string | null>(null);
+  const [botChannelPick, setBotChannelPick] = useState<string | null>(null);
+  // 已连接机器人默认不展示渠道选择网格，点「更换渠道」才进入重配模式
+  const [botReconfigure, setBotReconfigure] = useState(false);
+  const [botQr, setBotQr] = useState("");
+  const [remoteUrl, setRemoteUrl] = useState("");
+  const [remoteDevices, setRemoteDevices] = useState<any[]>([]);
+  const [remoteStatus, setRemoteStatus] = useState("idle");
+  void remoteStatus; /* WIP: 用户远控状态尚未接线，先占位防 noUnusedLocals */
+  const [remoteCmd, setRemoteCmd] = useState("");
+  const [remoteLog, setRemoteLog] = useState<string[]>([]);
+  void remoteDevices; void remoteCmd; void remoteLog; void setRemoteCmd; void setRemoteLog; /* WIP: 用户远控面板尚未接线，先占位防 noUnusedLocals */
+  const [remoteQr, setRemoteQr] = useState("");
+  const [userDataPath, setUserDataPath] = useState("");
+  const [taskMenuOpen, setTaskMenuOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [inlineRename, setInlineRename] = useState(false);
+  const inlineRenameRef = useRef<HTMLInputElement>(null);
+  const [interruptedTurns, setInterruptedTurns] = useState<Record<string, number>>({});
+  const [stoppedElapsed, setStoppedElapsed] = useState<Record<string, number>>({});
+  const closeTaskMenu = () => setTaskMenuOpen(false);
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
+  // 流式跟随：用户滚到底时为 true（持续自动跟 agent 最新内容），向上滚看历史时为 false
+  const stickToBottomRef = useRef(true);
+  // 钉住模式（WorkBuddy「发新消息钉在视口固定位置」）：发送时置位，乐观消息渲染后
+  // 定位到视口顶部固定偏移；流式期间不跟随底部，直到用户手动滚动解除。
+  const pinNewTurnRef = useRef(false);
+  const [workStartedAt, setWorkStartedAt] = useState<number | null>(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const timelineWrapRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // WorkBuddy 式钉住：发完消息把最新用户消息定位到视口顶部固定偏移（header 下方留白）。
+  // 用 contentOffsetTop（两次 rect 求差）定位，与任何中间定位祖先无关（memory 记过的坑）。
+  // 目标优先最后一个 `[data-ruler-mark="user"]`（已落地回合消息），其次乐观消息（data-queued-id）。
+  const pinNewTurnToTop = useCallback(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return false;
+    const pins = scroller.querySelectorAll<HTMLElement>('[data-ruler-mark="user"]');
+    let target: HTMLElement | null = pins.length ? pins[pins.length - 1] : null;
+    if (!target) {
+      const queued = scroller.querySelectorAll<HTMLElement>('[data-queued-id]');
+      if (queued.length) target = queued[queued.length - 1];
+    }
+    if (!target) return false;
+    const top = contentOffsetTop(target, scroller);
+    // 让消息顶对齐到 timeline 视口顶（header 下方）：contentOffsetTop 已含 timeline padding-top。
+    // 留 2px 呼吸，不额外偏移，消息正好出现在视口上方固定位置。
+    scroller.style.scrollBehavior = "auto";
+    scroller.scrollTop = Math.max(0, top - 2);
+    scroller.style.scrollBehavior = "";
+    return true;
+  }, []);
+
+  // 发送状态和服务端回合可能在不同渲染帧落地：先显示乐观消息，随后再被真实 userMessage 替换。
+  // 在布局阶段补几帧定位，确保两种落地顺序都能把最新消息固定在视口顶部，而不是偶尔停在底部。
+  useLayoutEffect(() => {
+    if (!pinNewTurnRef.current) return;
+    let cancelled = false;
+    let attempts = 0;
+    let frame = 0;
+    const retry = () => {
+      if (cancelled || !pinNewTurnRef.current) return;
+      if (pinNewTurnToTop() || attempts >= 8) return;
+      attempts += 1;
+      frame = requestAnimationFrame(retry);
+    };
+    frame = requestAnimationFrame(retry);
+    return () => {
+      cancelled = true;
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [optimisticInput?.id, thread?.id, thread?.turns.length, pinNewTurnToTop]);
+  const composerInputRef = useRef<HTMLTextAreaElement>(null);
+
+  // 覆盖层焦点归还：设置页/删除确认框等遮罩关闭后，浏览器把焦点丢给 body，
+  // 输入框随之失焦（表现为删除完回到对话框打字没反应）。统一在遮罩关闭时把焦点
+  // 还给打开前的元素，卸载掉了就还给输入框；原生 confirm/alert 同样兜住。
+  useEffect(() => {
+    return installFocusReturn({
+      doc: document,
+      win: window as unknown as Record<string, unknown>,
+      schedule: (callback) => requestAnimationFrame(() => callback()),
+      getFallback: () => composerInputRef.current,
+    });
+  }, []);
+
+  // 消息操作回调走 ref 转发：身份永远稳定，memo 化的回合视图不会因回调重建而失效，
+  // 同时内部始终读取最新闭包（thread/sending 等状态不会过期）
+  const messageHandlersRef = useRef<FoldHandlers | null>(null);
+  messageHandlersRef.current = {
+    onCopy: (text) => void copyMessage(text),
+    onQuote: (text) => quoteMessage(text),
+    onImageCopy: (path) => void copyImage(path),
+    onFork: (turnId) => void forkFromTurn(turnId),
+    onEdit: (turnId, item) => void editResend(turnId, item),
+    onOpenFile: (path) => void openFile(path),
+    onOpenThread: (id) => void openThread(id),
+  };
+  const messageHandlers = useMemo<FoldHandlers>(() => ({
+    onCopy: (text) => messageHandlersRef.current?.onCopy(text),
+    onQuote: (text) => messageHandlersRef.current?.onQuote(text),
+    onImageCopy: (path) => messageHandlersRef.current?.onImageCopy(path),
+    onFork: (turnId) => messageHandlersRef.current?.onFork(turnId),
+    onEdit: (turnId, item) => messageHandlersRef.current?.onEdit(turnId, item),
+    onOpenFile: (path) => messageHandlersRef.current?.onOpenFile(path),
+    onOpenThread: (id) => messageHandlersRef.current?.onOpenThread?.(id),
+  }), []);
+
+  const {
+    memoryEnabled, memories, setMemories, memoryCategory, setMemoryCategory,
+    memoryDraft, setMemoryDraft, memoryStatus, setMemoryStatus,
+    memoryGateway, setMemoryGateway, memoryGatewayAction,
+    memoryMode, updateMemoryMode, workspaceMemoryEnabled, updateWorkspaceMemory,
+    saveMemoryRecord, deleteMemoryRecord, deleteMemoryGroup, resetMemory,
+    testMemoryGateway, saveMemoryGateway, setMemoryEnabled,
+  } = useMemory({ threadId: thread?.id, activeTurnId });
+
+  // 记忆按会话（threadId）聚合 + P 级漏斗分层。
+  // threads 来自 refreshThreads（侧边栏同一份数据），手动保存的（无 sourceThreadId）独立成组。
+  const memoryTitleById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of threads) {
+      const name = (t.name ?? "").trim() || `会话 ${t.id.slice(0, 8)}`;
+      map.set(t.id, name);
+    }
+    return (id: string) => map.get(id);
+  }, [threads]);
+  const memoryGroups = useMemo(() => groupMemoriesByThread(memories, memoryTitleById), [memories, memoryTitleById]);
+  // 按当前选中的分类筛选（漏斗内仍展示，但只显示该分类下的组）
+  const memoryGroupsFiltered = useMemo(
+    () => memoryCategory ? memoryGroups.filter((g) => g.items.some((it) => it.category === memoryCategory)) : memoryGroups,
+    [memoryGroups, memoryCategory],
+  );
+
+  // ── 记忆分层：L0 用户档案 / L1 项目记忆 / L2 每日日志 ──
+  // 这三层是「常驻注入」的，和上面 memory.json 的碎片检索池（L3，按需召回）互不替代。
+  const [memoryLayers, setMemoryLayers] = useState<MemoryLayersSnapshot | null>(null);
+  const [memoryLayerScope, setMemoryLayerScope] = useState<"user" | "project">("user");
+  const [memoryLayerDraft, setMemoryLayerDraft] = useState("");
+  const [memoryDistilling, setMemoryDistilling] = useState(false);
+
+  const applyMemoryLayers = useCallback((snapshot: MemoryLayersSnapshot, scope: "user" | "project") => {
+    setMemoryLayers(snapshot);
+    setMemoryLayerDraft(scope === "user" ? snapshot.user : snapshot.project);
+  }, []);
+  // 打开记忆设置页或切换工作区时拉一次快照；切 tab 也要重载，否则会拿另一个作用域的内容覆盖草稿
+  useEffect(() => {
+    if (settingsPage !== "memory") return;
+    void window.codex.readMemoryLayers(workspace || undefined)
+      .then((snapshot) => applyMemoryLayers(snapshot, memoryLayerScope))
+      .catch(() => undefined);
+  }, [settingsPage, workspace, memoryLayerScope, applyMemoryLayers]);
+
+  const memoryLayerDirty = useMemo(
+    () => (memoryLayers ? memoryLayerDraft !== (memoryLayerScope === "user" ? memoryLayers.user : memoryLayers.project) : false),
+    [memoryLayerDraft, memoryLayers, memoryLayerScope],
+  );
+
+  async function saveMemoryLayer() {
+    const scope = memoryLayerScope;
+    if (scope === "project" && !workspace) { setMemoryStatus("尚未选择工作区，无法保存项目记忆"); return; }
+    try {
+      applyMemoryLayers(await window.codex.writeMemoryLayer({ scope, content: memoryLayerDraft, workspace: workspace || undefined }), scope);
+      setMemoryStatus(scope === "user" ? "用户档案已保存 · 下一条消息起生效" : "项目记忆已保存 · 下一条消息起生效");
+    } catch (error: any) { setMemoryStatus(error.message); }
+  }
+
+  async function runMemoryDistill() {
+    if (!workspace) { setMemoryStatus("尚未选择工作区，无法蒸馏项目记忆"); return; }
+    setMemoryDistilling(true);
+    try {
+      const result = await window.codex.distillMemory(workspace);
+      applyMemoryLayers(await window.codex.readMemoryLayers(workspace), memoryLayerScope);
+      setMemoryStatus(`蒸馏完成：${result.dates.length} 天日志已提炼进项目记忆（${result.added} 字）`);
+    } catch (error: any) { setMemoryStatus(error.message); }
+    finally { setMemoryDistilling(false); }
+  }
+
+  async function togglePinned(id: string) {
+    const entry = memories.find((item) => item.id === id);
+    if (!entry) return;
+    try {
+      const saved = await window.codex.saveMemory({ id, category: entry.category, content: entry.content, sourceThreadId: entry.sourceThreadId, pinned: !(entry as any).pinned, workspace: (entry as any).workspace });
+      setMemories((current) => current.map((item) => item.id === id ? saved : item));
+      setMemoryStatus(saved.pinned ? "已置顶为核心记忆" : "已取消置顶");
+    } catch (error: any) { setMemoryStatus(error.message); }
+  }
+
+  const {
+    scheduledTasks, setScheduledTasks, scheduleDraft, setScheduleDraft,
+    autoFormVisible, setAutoFormVisible, scheduleStatus,
+    saveSchedule, toggleSchedule, deleteSchedule, runSchedule,
+    editSchedule,
+  } = useScheduler();
+
+  const {
+    channelBot, setChannelBot, channelDraft, setChannelDraft,
+    channelAction, channelStatus, setChannelStatus,
+    saveChannelBot, testChannelBot, chooseChannelWorkspace,
+  } = useChannelBot();
+
+  const {
+    customModel, setCustomModel, customDraft, setCustomDraft, providersList, currentProvider,
+    editingProvider, setEditingProvider, savingSettings, providerModels, modelSourceProvider,
+    probingProvider, providerStatus, switchingModel, saveCustomModel, probeProvider,
+    selectProvider, removeProvider, setProviderModel, removeProviderModel,
+    upsertProviderModel, setProviderEnabled, probeOneModel, adoptSavedProvider,
+  } = useModelProviders({
+    onAutoSelect: (modelId, effort) => {
+      setModelId((current) => current || modelId);
+      setEffort((current) => current || effort || DEFAULT_EFFORT);
+    },
+    onSelect: (modelId, effort) => {
+      setModelId(modelId);
+      localStorage.setItem("default-model", modelId);
+      if (effort) setEffort(effort);
+    },
+    onNotice: setNotice,
+    onProbeSuccess: (title, detail) => showToast(title, detail),
+  });
+  // 兼容旧版本：本机已有安全保存的 API Key，但还没有登录状态标记时，自动进入主界面。
+  // 明确点过“退出登录”会写 logout，不走这里。
+  useEffect(() => {
+    if (!customModel?.hasKey) return;
+    const state = localStorage.getItem("login-skipped");
+    if (state == null) {
+      localStorage.setItem("login-skipped", "false");
+      setShowLogin(false);
+    }
+  }, [customModel?.hasKey]);
+
+  const {
+    filePreview, setFilePreview, fileEditing, setFileEditing,
+    fileDraft, setFileDraft, savingFile, openFile: rawOpenFile, saveFilePreview,
+  } = useFilePreview({ workspace, onNotice: setNotice });
+  // 包装一层：用户每次点文件卡都顺手把项目树高亮打到对应条目上；
+  // 若路径是相对/裸文件名，则尝试拼 workspace 变成绝对路径再读（引擎解析相对路径基准是 cwd，裸文件名会读不到）
+  const openFile = useCallback((path: string) => {
+    let resolved = path;
+    const looksRelative = !/^[A-Za-z]:[\\/]/.test(path) && !path.startsWith("/") && !path.startsWith("~/");
+    if (looksRelative && workspace) {
+      const sep = workspace.includes("\\") ? "\\" : "/";
+      resolved = `${workspace.replace(/[\\/]+$/, "")}${sep}${path.replace(/^[\\/]+/, "")}`;
+    }
+    setHighlightedFilePath(resolved);
+    // 联动：自动切到项目树面板，并把树导航到文件所在目录（目录级高亮跟随文件条目）
+    const dir = resolved.replace(/[\\/][^\\/]+$/, "");
+    if (dir && treePath !== dir) void loadTree(dir);
+    setRightTab("tree");
+    setRightOpen(true);
+    setSideChooser(false);
+    return rawOpenFile(resolved);
+  }, [rawOpenFile, workspace, treePath]);
+
+  // 该模型声明支持的思考档位：优先读模型条目 efforts，缺省用 CUSTOM_MODEL_EFFORTS。
+  // 与主进程 buildModelCatalog 同源（那边 filter 白名单也是这几个档位），保证 UI 选项 = 引擎真实支持。
+  const customModelEfforts = useMemo(() => {
+    const declared = (customModel?.models ?? []).find((m) => m.id === customModel?.model)?.efforts ?? [];
+    const allowed = ALL_EFFORTS as readonly string[];
+    const cleaned = declared.filter((effort): effort is string => allowed.includes(effort));
+    return cleaned.length ? cleaned : [...CUSTOM_MODEL_EFFORTS];
+  }, [customModel?.model, customModel?.models]);
+  const customModelOption: Model | null = customModel ? {
+    id: `custom:${customModel.provider}:${customModel.model}`,
+    model: customModel.model,
+    displayName: `${customModel.name} · ${customModel.model}`,
+    description: customModel.baseUrl,
+    supportedReasoningEfforts: customModelEfforts.map((reasoningEffort) => ({ reasoningEffort, description: effortLabels[reasoningEffort] ?? reasoningEffort })),
+    defaultReasoningEffort: DEFAULT_EFFORT,
+    supportsPersonality: true,
+    isDefault: false,
+  } : null;
+  const allModels = useMemo(() => {
+    // 下拉框展示「所有启用供应商」的模型（不再只显示当前生效供应商）：
+    // - 生效供应商的模型排最前（保留用户已配置顺序）
+    // - 其他启用供应商的模型跟在后面，用「供应商名 · 模型」区分
+    // - 每个模型 id 形如 `custom:<provider>:<model>`，跨供应商切换走 chooseModel
+    const out: Model[] = [];
+    const seen = new Set<string>();
+    const effortsOf = (providerModels: ProviderModelConfig[] | undefined, modelId: string): { reasoningEffort: string; description: string }[] => {
+      const declared = (providerModels ?? []).find((m) => m.id === modelId)?.efforts ?? [];
+      const allowed = ALL_EFFORTS as readonly string[];
+      const cleaned = declared.filter((effort): effort is string => allowed.includes(effort));
+      const list = cleaned.length ? cleaned : [...CUSTOM_MODEL_EFFORTS];
+      return list.map((reasoningEffort) => ({ reasoningEffort, description: effortLabels[reasoningEffort] ?? reasoningEffort }));
+    };
+    const pushModels = (provider: string, providerName: string, providerModels: ProviderModelConfig[] | undefined, modelIds: (string | undefined)[], isActive: boolean) => {
+      for (const model of modelIds) {
+        if (!model || seen.has(model)) continue;
+        seen.add(model);
+        out.push({
+          ...(customModelOption ?? { id: "", displayName: "", description: "", supportsPersonality: true, isDefault: false }),
+          id: `custom:${provider}:${model}`,
+          model,
+          provider,
+          providerName,
+          isActive,
+          displayName: isActive ? model : `${providerName} · ${model}`,
+          description: providerName + (isActive ? "" : "（非当前供应商）"),
+          supportedReasoningEfforts: effortsOf(providerModels, model),
+          defaultReasoningEffort: customModelOption?.defaultReasoningEffort ?? DEFAULT_EFFORT,
+        });
+      }
+    };
+    // 当前生效供应商：models 列表 + 生效 model（排最前）
+    const activeProvider = customModel?.provider;
+    const activeModels = [...new Set([...(customModel?.models ?? []).filter((m) => m.enabled !== false).map((m) => m.id), customModel?.model].filter(Boolean))] as string[];
+    if (activeModels.length) pushModels(activeProvider ?? "custom", customModel?.name ?? "自定义供应商", customModel?.models, activeModels, true);
+    // 其他启用供应商：providersList 里 enabled !== false 且 provider !== 当前
+    for (const p of providersList) {
+      if (p.provider === activeProvider) continue;
+      if (p.enabled === false) continue;
+      const models = [...new Set([...(p.models ?? []).filter((m) => m.enabled !== false).map((m) => m.id), p.model].filter(Boolean))] as string[];
+      if (models.length) pushModels(p.provider, p.name, p.models, models, false);
+    }
+    // 没有已配置模型时回退到探测到的模型列表
+    if (!out.length && providerModels?.length) {
+      for (const model of [...new Set(providerModels)].slice(0, 20)) pushModels(customModel?.provider ?? "custom", customModel?.name ?? "自定义供应商", undefined, [model], true);
+    }
+    return out;
+  }, [providerModels, customModel, customModelOption, providersList]);
+  // 模型兜底：当前选择不在可用列表里时（如曾选中探测出来的无效模型），自动回落到
+  // 已配置的默认模型，避免 turn/start 带上无效模型导致引擎不回复。
+  useEffect(() => {
+    if (!customModel?.model) return;
+    if (allModels.some((entry) => entry.id === modelId || entry.model === modelId)) return;
+    const fallback = `custom:${customModel.provider}:${customModel.model}`;
+    setModelId(fallback);
+    if (threadRef.current?.id) saveThreadModel(threadRef.current.id, fallback);
+    else localStorage.setItem("default-model", fallback);
+  }, [customModel, allModels, modelId]);
+  // 供应商下已配置的模型清单：已保存的 models + 输入框里尚未保存的那个
+  // probe 拉到的可用模型只属于探测时的那家供应商，换供应商后不再用于补全
+  const modelSuggestions = modelSourceProvider === customDraft.provider ? (providerModels ?? []) : [];
+  // —— 模型设置页（图一/图二排版）状态 ——
+  const [modelEditor, setModelEditor] = useState<{ mode: "add" | "edit"; originalId: string | null; draft: { id: string; contextWindow: string; maxOutputTokens: string; inputTypes: ("text" | "image" | "video")[]; outputTypes: ("text" | "image" | "video")[]; efforts: string[] } } | null>(null);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const openModelEditor = (m?: { id: string; contextWindow?: number; maxOutputTokens?: number; inputTypes?: ("text" | "image" | "video")[]; outputTypes?: ("text" | "image" | "video")[]; efforts?: string[] }) => setModelEditor({
+    mode: m ? "edit" : "add",
+    originalId: m?.id ?? null,
+    draft: {
+      id: m?.id ?? "",
+      contextWindow: String(m?.contextWindow ?? (Number(customDraft.contextWindow) || 128000)),
+      maxOutputTokens: m?.maxOutputTokens ? String(m.maxOutputTokens) : "",
+      inputTypes: m?.inputTypes ?? ["text"],
+      outputTypes: m?.outputTypes ?? ["text"],
+      efforts: m?.efforts?.length ? m.efforts : [...CUSTOM_MODEL_EFFORTS],
+    },
+  });
+  const saveModelEditor = async () => {
+    if (!modelEditor) return;
+    const id = modelEditor.draft.id.trim();
+    if (!id) { setNotice("模型 ID 不能为空"); return; }
+    if (modelEditor.mode === "edit" && modelEditor.originalId && modelEditor.originalId !== id) await removeProviderModel(customDraft.provider, modelEditor.originalId);
+    if (editingProvider) {
+      await upsertProviderModel(editingProvider, {
+        id,
+        contextWindow: Number(modelEditor.draft.contextWindow) || undefined,
+        maxOutputTokens: Number(modelEditor.draft.maxOutputTokens) || undefined,
+        inputTypes: modelEditor.draft.inputTypes,
+        outputTypes: modelEditor.draft.outputTypes,
+        efforts: modelEditor.draft.efforts.length ? modelEditor.draft.efforts : undefined,
+      });
+      setModelEditor(null);
+      return;
+    }
+    // 新供应商还没保存：先挂进本地草稿，随「保存」一起持久化
+    const model: ProviderModelConfig = {
+      id,
+      enabled: true,
+      contextWindow: Number(modelEditor.draft.contextWindow) || undefined,
+      maxOutputTokens: Number(modelEditor.draft.maxOutputTokens) || undefined,
+      inputTypes: modelEditor.draft.inputTypes,
+      outputTypes: modelEditor.draft.outputTypes,
+      efforts: modelEditor.draft.efforts.length ? modelEditor.draft.efforts : undefined,
+    };
+    setCustomDraft((current) => {
+      const models = (current.models ?? []).filter((m) => m.id !== modelEditor.originalId);
+      return { ...current, models: [...models, model] };
+    });
+    setModelEditor(null);
+  };
+  const selectedModel = allModels.find((entry) => entry.id === modelId || entry.model === modelId);
+  const usingCustomModel = Boolean(customModel && modelId);
+  const providerConfig = useMemo(() => usingCustomModel && customModel ? {
+    modelProvider: customModel.provider,
+    config: {
+      model_provider: customModel.provider,
+      model_providers: {
+        [customModel.provider]: {
+          name: customModel.name,
+          base_url: customModel.baseUrl,
+          env_key: "CODEX_HARNESS_API_KEY",
+          wire_api: "responses",
+          requires_openai_auth: false,
+        },
+      },
+    },
+  } : {}, [usingCustomModel, customModel]);
+  const listThreads = useMemo(() => projectFilter ? threads.filter((entry) => entry.cwd === projectFilter) : threads, [threads, projectFilter]);
+  const projectGroups = useMemo(() => {
+    const map = new Map<string, Thread[]>();
+    for (const entry of threads) map.set(entry.cwd, [...(map.get(entry.cwd) ?? []), entry]);
+    return [...map.entries()].sort((a, b) => Math.max(...b[1].map((entry) => entry.updatedAt)) - Math.max(...a[1].map((entry) => entry.updatedAt)));
+  }, [threads]);
+  // 侧边栏视图模式：分组（按时间） vs 项目（按 cwd）；与 WorkBuddy 项目列表对齐
+  const [viewTab, setViewTab] = useState<"groups" | "projects">(() => (localStorage.getItem("sidebar-view-tab-v1") === "projects" ? "projects" : "groups"));
+  useEffect(() => { try { localStorage.setItem("sidebar-view-tab-v1", viewTab); } catch { /* ignore */ } }, [viewTab]);
+  // 项目展开状态：每个 cwd 独立控制；Set 表示已展开
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("sidebar-projects-expanded-v1") || "[]") as string[]); } catch { return new Set<string>(); }
+  });
+  const toggleProjectExpanded = useCallback((cwd: string) => {
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(cwd)) next.delete(cwd); else next.add(cwd);
+      try { localStorage.setItem("sidebar-projects-expanded-v1", JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  const allProjectsCollapsed = projectGroups.length > 0 && projectGroups.every(([cwd]) => !expandedProjects.has(cwd));
+  const toggleAllProjects = useCallback(() => {
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      const expand = projectGroups.every(([cwd]) => !next.has(cwd));
+      for (const [cwd] of projectGroups) {
+        if (expand) next.add(cwd);
+        else next.delete(cwd);
+      }
+      try { localStorage.setItem("sidebar-projects-expanded-v1", JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  }, [projectGroups]);
+  // 筛选条件（侧边栏视图用）：时间/状态
+  const [filter, setFilter] = useState<{ time?: "today" | "week" | "month" | "all"; status?: "running" | "ready" | "all" }>(() => ({ time: "all", status: "all" }));
+  const [filterOpen, setFilterOpen] = useState(false);
+  // 项目右键菜单
+  const [projectMenu, setProjectMenu] = useState<string | null>(null);
+  // 会话置顶：纯前端偏好（引擎无 pin API），用 localStorage 存 id 列表。
+  // 置顶的会话在侧栏固定排在最前（置顶组内仍按时间倒序），unpin 后回到原时间序。
+  const [pinnedThreads, setPinnedThreads] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem("pinned-threads") ?? "[]") as string[]; } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("pinned-threads", JSON.stringify(pinnedThreads)); } catch { /* ignore */ }
+  }, [pinnedThreads]);
+  function togglePinThread(id: string) {
+    setPinnedThreads((current) => current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]);
+  }
+  // 侧边栏视图共用：按筛选条件过滤后的 thread 列表（项目 tab 直接用这个，分组 tab 也用它分时间）
+  const filteredThreads = useMemo(() => {
+    const now = Date.now() / 1000;
+    let result = listThreads;
+    if (filter.time && filter.time !== "all") {
+      const window = filter.time === "today" ? 86400 : filter.time === "week" ? 7 * 86400 : 30 * 86400;
+      result = result.filter((entry) => now - entry.updatedAt <= window);
+    }
+    if (filter.status && filter.status !== "all") {
+      const wantRunning = filter.status === "running";
+      result = result.filter((entry) => {
+        const running = entry.status === "inProgress" || entry.status === "running";
+        return wantRunning ? running : !running;
+      });
+    }
+    return result;
+  }, [listThreads, filter]);
+  const groupedThreads = useMemo(() => {
+    const groups = groupThreadsByTime(filteredThreads);
+    const pinned = filteredThreads.filter((entry) => pinnedThreads.includes(entry.id));
+    if (!pinned.length) return groups;
+    // 置顶组固定排最前：仅保留还在「未归档+筛选」里的置顶项，组内按时间倒序
+    return [{ key: "pinned", label: "置顶", items: pinned.sort((a, b) => b.updatedAt - a.updatedAt) }, ...groups.filter((g) => g.key !== "pinned")];
+  }, [filteredThreads, pinnedThreads]);
+  const allGroupsCollapsed = groupedThreads.length > 0 && groupedThreads.every((group) => collapsedSections.has(group.key));
+  const toggleAllGroups = useCallback(() => {
+    setCollapsedSections((previous) => {
+      const next = new Set(previous);
+      const collapse = !groupedThreads.every((group) => next.has(group.key));
+      for (const group of groupedThreads) {
+        if (collapse) next.add(group.key);
+        else next.delete(group.key);
+      }
+      try { localStorage.setItem("sidebar-sections-collapsed", JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  }, [groupedThreads]);
+  const sidebarAllCollapsed = viewTab === "groups" ? allGroupsCollapsed : allProjectsCollapsed;
+  const toggleAllSidebarSections = viewTab === "groups" ? toggleAllGroups : toggleAllProjects;
+  // 当前 tab 可见 thread 的 id 集合（供「清空当前 tab」使用）
+  const currentTabIds = useMemo(() => filteredThreads.map((entry) => entry.id), [filteredThreads]);
+  async function purgeCurrentTab() {
+    if (!currentTabIds.length) { setNotice("当前视图下没有可清空的任务"); return; }
+    await bulkDeleteThreads(currentTabIds);
+  }
+  const commandMatches = useMemo(() => {
+    if (!prompt.startsWith("/") || prompt.includes(" ")) return [];
+    const query = prompt.slice(1).toLowerCase();
+    return slashCommands.filter(([name, description]) => name.includes(query) || description.includes(query)).slice(0, 9);
+  }, [prompt]);
+  const availableContextItems = useMemo(() => {
+    if (!thread) return [];
+    const query = contextQuery.trim().toLowerCase();
+    const entries = thread.turns.flatMap((turn) => turn.items
+      .filter((item) => item.type === "userMessage" || item.type === "agentMessage")
+      .map((item) => ({ id: item.id, role: item.type === "userMessage" ? "用户" as const : "Codex" as const, text: (item.type === "userMessage" ? userDisplayText(itemText(item)) : itemText(item).trim()) }))
+      .filter((item) => item.text));
+    return entries.filter((item) => !contextItems.some((selected) => selected.id === item.id))
+      .filter((item) => !query || item.text.toLowerCase().includes(query))
+      .slice(-16).reverse();
+  }, [thread, contextItems, contextQuery]);
+
+  // 「引用对话中的文件」候选：当前会话所有消息里出现过的文件/图片路径（附件段、localImage、文本中的绝对路径）
+  const threadFileCandidates = useMemo(() => {
+    if (!thread) return [];
+    const found: { path: string; source: string }[] = [];
+    const push = (path: string, source: string) => {
+      const trimmed = path.trim();
+      if (!trimmed || /^[a-z]+:\/\//i.test(trimmed) && !/^[a-zA-Z]:\\/.test(trimmed)) return; // 跳过 http(s)/data URL，保留盘符路径
+      if (!/[\\/]/.test(trimmed) && !isImagePath(trimmed)) return; // 无路径分隔符的非图片（误抓词）跳过
+      found.push({ path: trimmed, source });
+    };
+    for (const turn of thread.turns) {
+      for (const item of turn.items) {
+        if (item.type === "localImage") push(item.path, "图片附件");
+        if (item.type === "userMessage") {
+          const text = itemText(item);
+          for (const m of text.matchAll(/(?:\[附件文件\][\s\S]*?\[附件结束\])|(?:[A-Za-z]:\\[^\s"'\u3001\u3002，。；）]+)|(?:\/(?:Users|home|mnt|opt|var|tmp)\/[^\s"'\u3001\u3002，。；）]+)/g)) {
+            const seg = m[0];
+            if (seg.startsWith("[附件文件]")) {
+              for (const line of seg.split("\n")) {
+                const p = line.replace(/^-\s*/, "").trim();
+                if (p && !p.startsWith("[")) push(p, "附件");
+              }
+            } else push(seg, "消息中提及");
+          }
+          for (const part of (item.content ?? []) as any[]) {
+            if (part?.type === "localImage" && part.path) push(part.path, "图片附件");
+          }
+        }
+      }
+    }
+    return found.reverse(); // 最新的在前
+  }, [thread]);
+
+  function addSystemEvent(title: string, text: string, tone: SystemEvent["tone"] = "info", kind?: SystemEvent["kind"]) {
+    setSystemEvents((current) => [...current, { id: crypto.randomUUID(), title, text, tone, kind }]);
+  }
+
+  function setCompactEventState(state: "running" | "success" | "error", detail?: string) {
+    const content = state === "running"
+      ? { title: "正在压缩上下文", text: "Codex 正在总结较早的对话内容。", tone: "info" as const }
+      : state === "success"
+        ? { title: "上下文已压缩", text: "较早对话已总结为摘要并释放空间；多次压缩可能丢失细节，建议适时开新任务。", tone: "success" as const }
+        : { title: "上下文压缩失败", text: detail || "压缩没有完成，请稍后重试。", tone: "error" as const };
+    setSystemEvents((current) => {
+      const existing = current.find((entry) => entry.kind === "compact");
+      const next: SystemEvent = { id: existing?.id ?? crypto.randomUUID(), ...content, kind: "compact" };
+      return [...current.filter((entry) => entry.kind !== "compact"), next];
+    });
+  }
+
+  /** 一次性状态通知：使用现有 toast，不写入对话历史。 */
+  function showToast(title: string, text?: unknown) {
+    const detail = String(text ?? "").replace(/\s+/g, " ").trim();
+    setNotice(detail ? `${title}：${detail.slice(0, 220)}` : title);
+  }
+
+  /** /context 与 /status 共用：估算当前线程上下文占用（本地用法统计 + 回合 usage） */
+  function contextUsageText() {
+    const windowTokens = Number(customModel?.contextWindow) || 0;
+    const agentItems = thread?.turns.flatMap((turn) => turn.items).filter((item) => item.type === "agentMessage") ?? [];
+    const userItems = thread?.turns.flatMap((turn) => turn.items).filter((item) => item.type === "userMessage") ?? [];
+    const agentChars = agentItems.reduce((sum, item) => sum + (itemText(item) ?? "").length, 0);
+    const userChars = userItems.reduce((sum, item) => sum + (itemText(item) ?? "").length, 0);
+    const estimated = Math.round((agentChars + userChars) / 3.2); // 中文按 ~3.2 字符/token 估算
+    const latestTurn = thread?.turns.at(-1);
+    const reported = typeof latestTurn?.usage?.contextTokens === "number" ? latestTurn.usage.contextTokens : typeof latestTurn?.usage?.input_tokens === "number" ? latestTurn.usage.input_tokens : null;
+    const total = Math.max(estimated, reported ?? 0);
+    const pct = windowTokens ? Math.min(100, Math.round((total / windowTokens) * 100)) : null;
+    const stats = readUsageStats();
+    const line = windowTokens ? `窗口上限：${formatTokens(windowTokens)} tokens` : "窗口上限：未知";
+    const used = `估算占用：${formatTokens(total)} tokens${pct != null ? `（${pct}%）` : ""}`;
+    const life = `本地累计：${formatTokens(stats.inputTokens + stats.outputTokens)} tokens · ${stats.turns} 回合`;
+    const turn = `当前线程：${thread?.turns.length ?? 0} 回合 · ${agentItems.length} 条回复 · 约 ${formatTokens(estimated)} tokens`;
+    const tip = pct != null && pct > 80 ? "⚠️ 上下文接近上限，建议 /compact 压缩或 /new 开新任务。" : "建议上下文占用超过 80% 时执行 /compact 或开启新任务。";
+    return [line, used, life, turn, tip].join("\n");
+  }
+
+  // Hook 注入反馈：静默记录到回合徽标（不产生系统卡），最新回复 footer 末尾展示小钩子图标
+  function addHookEvent(running: boolean, hookName: string) {
+    setHookPulse((current) => ({
+      count: running ? current.count + 1 : current.count,
+      hooks: current.hooks.some((entry) => entry.name === hookName)
+        ? current.hooks.map((entry) => entry.name === hookName ? { name: hookName, done: !running } : entry)
+        : [...current.hooks, { name: hookName, done: !running }],
+      at: Date.now(),
+    }));
+  }
+
+  useEffect(() => { threadRef.current = thread; }, [thread]);
+  // 自定义命令展开后的待发送文本：runSlashCommand 命中 .md 模板后放入，send() 直接消费
+  const pendingCommandTextRef = useRef<string | null>(null);
+  // 回到底部按钮：内容可滚动且当前视口距底部超过一屏的 25% 时出现
+  // 缓存 update，供「内容变化」时直接调用而不必重建监听器
+  const updateBottomStateRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const update = () => {
+      const dist = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      setAwayFromBottom(dist > scroller.clientHeight * 0.25);
+      // 迟滞：距底 ≤4px 重新开启跟随；>25% 视口才关闭。中间地带保持原状，
+      // 避免流式内容增高时 stick 反复翻转（此前 smooth 滚动动画的中间滚动事件
+      // 会误关跟随，导致"消息发了不显示、停止后才出现"）。
+      if (dist <= 4) stickToBottomRef.current = true;
+      else if (dist > scroller.clientHeight * 0.25) stickToBottomRef.current = false;
+    };
+    // 任何方向滚轮 = 用户主动浏览，立即解除钉住模式（WorkBuddy：消息只在发送瞬间钉住，之后自由滚动）。
+    // 向上滚额外停止底部跟随（不等 25% 阈值，防止跟流式滚动打架）。
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) stickToBottomRef.current = false;
+      pinNewTurnRef.current = false;
+    };
+    updateBottomStateRef.current = update;
+    // rAF 节流：scroll 事件密集时 update 会读 scrollHeight/scrollTop 强制同步布局
+    let raf = 0;
+    const schedule = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; update(); }); };
+    update();
+    // 绑定只跟会话走：若依赖 thread，流式出字每帧都会销毁重建 ResizeObserver + 监听器，
+    // 长回复下纯粹是白烧帧预算。内容变化走下方独立的 effect 调用 update。
+    const observer = new ResizeObserver(schedule);
+    observer.observe(scroller);
+    scroller.addEventListener("scroll", schedule, { passive: true });
+    scroller.addEventListener("wheel", onWheel, { passive: true });
+    const onPacketReveal = () => requestAnimationFrame(() => {
+      update();
+      if (stickToBottomRef.current && !pinNewTurnRef.current) scroller.scrollTo({ top: scroller.scrollHeight, behavior: "auto" });
+    });
+    window.addEventListener("codex:packet-reveal", onPacketReveal);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      observer.disconnect();
+      scroller.removeEventListener("scroll", schedule);
+      scroller.removeEventListener("wheel", onWheel);
+      window.removeEventListener("codex:packet-reveal", onPacketReveal);
+    };
+  }, [thread?.id, scrollRef]);
+  // 流式出字时 scrollHeight 在涨，但既不触发 resize 也不触发 scroll，
+  // 必须主动刷一次，否则「回到底部」按钮的出现时机是错的。
+  useEffect(() => { updateBottomStateRef.current(); }, [thread]);
+  // 流式跟随：thread 变化（agent 追加/更新 item）时，若用户仍在底部则滚到底。
+  // 必须用 behavior:"auto"：CSS 里 .timeline 是 scroll-behavior:smooth，
+  // 直接赋 scrollTop 会走平滑动画，动画中途的滚动事件会误判"用户离开底部"。
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // 刚切换会话：瞬时定位到最新消息并开启跟随（用户预期：切过去就在最新消息）。
+    // 必须瞬时：.timeline 的 CSS scroll-behavior:smooth 会让 scrollTo 走平滑动画，
+    // 表现为"从上往下滚动"，且动画目标基于发起时的 scrollHeight，内容随后增高会停在半路。
+    // 这里消费后立即重置，之后的流式更新走常规 stick 跟随（smooth 跟手）。
+    if (switchJumpRef.current) {
+      switchJumpRef.current = false;
+      stickToBottomRef.current = true;
+      jumpToBottom(el);
+      return;
+    }
+    if (!stickToBottomRef.current) return;
+    // 钉住模式（发消息钉在顶部）期间不跟随底部：正文在下面长，用户消息保持原位
+    if (pinNewTurnRef.current) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
+  }, [thread]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+  useEffect(() => {
+    localStorage.setItem("right-panel-open", String(rightOpen));
+  }, [rightOpen]);
+  const [chatSearchOpen, setChatSearchOpen] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState("");
+  const [chatSearchIndex, setChatSearchIndex] = useState(0);
+  const [chatSearchHistoryOpen, setChatSearchHistoryOpen] = useState(false);
+  const [chatSearchHistory, setChatSearchHistory] = useState<string[]>(() => {
+    try { const raw = localStorage.getItem("chat-search-history"); return raw ? (JSON.parse(raw) as string[]) : []; } catch { return []; }
+  });
+  const chatSearchRef = useRef<HTMLInputElement>(null);
+  const chatSearchHistoryRef = useRef<HTMLDivElement>(null);
+  const chatSearchResults = useMemo(() => {
+    if (!chatSearchOpen || !chatSearchQuery.trim()) return [] as { turnId: string; itemId: string; type: string; text: string }[];
+    const q = chatSearchQuery.trim().toLowerCase();
+    return collectMessageTexts(thread).filter((m) => m.text.toLowerCase().includes(q));
+  }, [chatSearchOpen, chatSearchQuery, thread]);
+  // 搜索结果消息高亮打标（DOM 级，随结果/当前项变化重打）
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    if (scroller) scroller.querySelectorAll<HTMLElement>(".msg-search-hit, .msg-search-hit-current").forEach((n) => n.classList.remove("msg-search-hit", "msg-search-hit-current"));
+    if (!scroller || !chatSearchOpen || !chatSearchResults.length) return;
+    if (chatSearchIndex >= chatSearchResults.length) setChatSearchIndex(0);
+    chatSearchResults.forEach((m, i) => {
+      const el = locateMatchEl(scroller, m);
+      if (!el) return;
+      if (i === chatSearchIndex) { el.classList.add("msg-search-hit", "msg-search-hit-current"); }
+      else { el.classList.add("msg-search-hit"); }
+    });
+  }, [chatSearchOpen, chatSearchResults, chatSearchIndex, thread]);
+  const chatSearchGo = useCallback((dir: 1 | -1) => {
+    const scroller = scrollRef.current;
+    if (!scroller || !chatSearchResults.length) return;
+    const next = (chatSearchIndex + dir + chatSearchResults.length) % chatSearchResults.length;
+    setChatSearchIndex(next);
+    locateMatchEl(scroller, chatSearchResults[next])?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [chatSearchResults, chatSearchIndex]);
+  const pushChatSearchHistory = useCallback((query: string) => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    setChatSearchHistory((prev) => {
+      const next = [trimmed, ...prev.filter((entry) => entry !== trimmed)].slice(0, 10);
+      try { localStorage.setItem("chat-search-history", JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  const removeChatSearchHistory = useCallback((entry: string) => {
+    setChatSearchHistory((prev) => {
+      const next = prev.filter((item) => item !== entry);
+      try { localStorage.setItem("chat-search-history", JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  const clearChatSearchHistory = useCallback(() => {
+    setChatSearchHistory([]);
+    try { localStorage.removeItem("chat-search-history"); } catch { /* ignore */ }
+  }, []);
+  useEffect(() => { void window.codex.getUsername().then(setUsername).catch(() => undefined); }, []);
+  useEffect(() => {
+    openImageLightbox = (path: string, alt: string) => setLightbox({ path, alt });
+    return () => { openImageLightbox = null; };
+  }, []);
+  useEffect(() => {
+    // 让模块级组件（InlineFileCards 缩略图等）能解析相对/裸路径 → 绝对路径
+    resolveFilePath = (path: string) => {
+      if (/^[A-Za-z]:[\\/]/.test(path) || path.startsWith("/") || path.startsWith("~/") || path.startsWith("http")) return path;
+      if (!workspace) return path;
+      const sep = workspace.includes("\\") ? "\\" : "/";
+      return `${workspace.replace(/[\\/]+$/, "")}${sep}${path.replace(/^[\\/]+/, "")}`;
+    };
+    return () => { resolveFilePath = null; };
+  }, [workspace]);
+  // 会话路径台账缓存：thread 引用不变就复用，变化才重建（裸文件名 → 会话中出现过的绝对路径）
+  const knownFilesRef = useRef<{ src: typeof thread | null; map: Map<string, string> }>({ src: null, map: new Map() });
+  useEffect(() => {
+    lookupKnownFile = (name: string) => {
+      const key = name.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+      if (!key) return null;
+      if (knownFilesRef.current.src !== thread) {
+        const map = new Map<string, string>();
+        collectKnownPaths(thread, map);
+        knownFilesRef.current = { src: thread, map };
+      }
+      return knownFilesRef.current.map.get(key) ?? null;
+    };
+    notifyFileMissing = (message: string) => showToast("未找到文件", message);
+    return () => { lookupKnownFile = null; notifyFileMissing = null; };
+  });
+  useEffect(() => { void window.codex.getUserData().then(setUserDataPath).catch(() => undefined); }, []);
+  useEffect(() => { if (activeBotId && botChannelPick) void window.codex.remoteQrcode(activeBotId).then((svg) => setBotQr(svg)).catch(() => undefined); else setBotQr(""); }, [activeBotId, botChannelPick]);
+  useEffect(() => { if (localStorage.getItem("keep-awake") === "true") void window.codex.setAwake(true); }, []);
+  useEffect(() => {
+    // 手机设备上线：自动新建一个会话窗（新任务）
+    const offDevice = window.codex.onRemoteDevice((device) => {
+      startNewThread();
+      setRemoteDevices((current) => current.some((d) => d.id === device.id) ? current : [...current, { id: device.id, name: device.name, connectedAt: Date.now() }]);
+      showToast("远程设备已连接", `${device.name} 已接入`);
+    });
+    // 手机指令：写入输入框并自动发送到当前会话（斜杠指令直接执行）
+    const offCommand = window.codex.onRemoteCommand(({ command }) => {
+      const text = String(command ?? "").trim();
+      if (!text) return;
+      if (text.startsWith("/")) { void runSlashCommand(text); return; }
+      setPrompt(text);
+      setTimeout(() => { (document.querySelector("form.composer") as HTMLFormElement | null)?.requestSubmit(); }, 120);
+    });
+    return () => { offDevice(); offCommand(); };
+  }, []);
+  useEffect(() => {
+    if (showLogin) return;
+    function onKey(event: globalThis.KeyboardEvent) {
+      if (!event.ctrlKey || event.altKey || event.metaKey) return;
+      const key = event.key.toLowerCase();
+      if (event.shiftKey) {
+        if (key === "f") { event.preventDefault(); setChatSearchOpen(true); queueMicrotask(() => chatSearchRef.current?.focus()); }
+        else if (key === "n") { event.preventDefault(); startNewThread(); }
+        else if (key === "p") { event.preventDefault(); setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }
+        else if (key === "s") { event.preventDefault(); setSettingsPage("general"); setSettingsOpen(true); }
+        else if (key === "/") { event.preventDefault(); composerInputRef.current?.focus(); }
+        return;
+      }
+      if (key === "n") { event.preventDefault(); startNewThread(); }
+      else if (key === "k") { event.preventDefault(); setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }
+      else if (key === "o") { event.preventDefault(); void chooseWorkspace(); }
+      else if (key === "b") { event.preventDefault(); setRightOpen((current) => !current); }
+      else if (key === "j") { event.preventDefault(); setRightOpen(true); openPanelTab("terminal", workspace ? basename(workspace) : "终端"); }
+      else if (key === ",") { event.preventDefault(); setSettingsPage("general"); setSettingsOpen(true); }
+      else if (key === "l") { event.preventDefault(); composerInputRef.current?.focus(); }
+      else if (key === "p") { event.preventDefault(); setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showLogin]);
+  // 全局 ESC：从最上层弹窗开始关闭；焦点在输入控件里时先退出焦点，再按同一栈关弹窗
+  // （否则问答卡/输入弹窗聚焦时按 ESC 会被这里吞掉，转而关掉底下的设置弹窗）。
+  useEffect(() => {
+    if (showLogin) return;
+    function onKey(event: globalThis.KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName ?? "";
+      if (target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(tag))) {
+        if (target instanceof HTMLInputElement && target.type !== "checkbox" && target.type !== "radio" && target.type !== "button") target.blur();
+      }
+      const closers: Array<() => boolean> = [
+        () => { if (skillInstall && (skillInstall.failed || skillInstall.current >= 7)) { setSkillInstall(null); return true; } return false; },
+        () => { if (agentAsk) { agentAsk.resolve(""); setAgentAsk(null); return true; } return false; },
+        () => { if (appConfirm) { appConfirm.resolve(false); setAppConfirm(null); return true; } return false; },
+        () => { if (appPrompt) { appPrompt.resolve(null); setAppPrompt(null); return true; } return false; },
+        () => { if (searchPreview) { setSearchPreview(null); return true; } return false; },
+        () => { if (memoryPreview) { setMemoryPreview(null); return true; } return false; },
+        () => { if (filePreview) { setFilePreview(null); return true; } return false; },
+        () => { if (lightbox) { setLightbox(null); return true; } return false; },
+        () => { if (modelEditor) { setModelEditor(null); return true; } return false; },
+        () => { if (connectorEditorOpen) { setConnectorEditorOpen(false); return true; } return false; },
+        () => { if (connectorTemplateModal) { setConnectorTemplateModal(null); return true; } return false; },
+        () => { if (commandEditor) { setCommandEditor(null); return true; } return false; },
+        () => { if (subAgentEditorOpen) { setSubAgentEditorOpen(false); return true; } return false; },
+        () => { if (expertTeamEditorOpen) { setExpertTeamEditorOpen(false); return true; } return false; },
+        () => { if (goalsOpen) { setGoalsOpen(false); return true; } return false; },
+        () => { if (memoryConfigOpen) { setMemoryConfigOpen(false); return true; } return false; },
+        () => { if (memoryCenterOpen) { setMemoryCenterOpen(false); return true; } return false; },
+        () => { if (infoModal) { setInfoModal(null); return true; } return false; },
+        () => { if (filterOpen) { setFilterOpen(false); return true; } return false; },
+        () => { if (autoFormVisible) { setAutoFormVisible(false); return true; } return false; },
+        () => { if (reviewReport) { setReviewReport(""); return true; } return false; },
+        () => { if (settingsOpen) { setSettingsOpen(false); return true; } return false; },
+        () => { if (shortcutsOpen) { setShortcutsOpen(false); return true; } return false; },
+        () => { if (paletteOpen) { setPaletteOpen(false); return true; } return false; },
+        () => { if (skillMenuOpen) { setSkillMenuOpen(false); return true; } return false; },
+        () => { if (connectorMenuOpen) { setConnectorMenuOpen(false); return true; } return false; },
+        () => { if (attachmentMenuOpen) { setAttachmentMenuOpen(false); return true; } return false; },
+        () => { if (contextOpen) { setContextOpen(false); return true; } return false; },
+        () => { if (switcherOpen) { setSwitcherOpen(false); return true; } return false; },
+        () => { if (sideChooser) { setSideChooser(false); return true; } return false; },
+        () => { if (mobileNav) { setMobileNav(false); return true; } return false; },
+        () => { if (chatSearchOpen) { setChatSearchOpen(false); return true; } return false; },
+        () => { if (browserMenuOpen) { setBrowserMenuOpen(false); return true; } return false; },
+        () => { if (sidebarFlyout) { setSidebarFlyout(false); return true; } return false; },
+        () => { if (taskMenuOpen) { setTaskMenuOpen(false); return true; } return false; },
+        () => { if (botManagerOpen) { setBotManagerOpen(false); return true; } return false; },
+        () => { if (mobileRemoteOpen) { setMobileRemoteOpen(false); return true; } return false; },
+        () => { if (ctxMenuOpen) { setCtxMenuOpen(false); return true; } return false; },
+        () => { if (accountMenuOpen) { setAccountMenuOpen(false); return true; } return false; },
+      ];
+      for (const close of closers) if (close()) { event.preventDefault(); return; }
+      if (rightOpen) { setRightOpen(false); event.preventDefault(); return; }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showLogin, skillInstall, agentAsk, appConfirm, appPrompt, memoryPreview, searchPreview, filePreview, lightbox, modelEditor, connectorEditorOpen, connectorTemplateModal, commandEditor, subAgentEditorOpen, expertTeamEditorOpen, goalsOpen, memoryCenterOpen, memoryConfigOpen, infoModal, filterOpen, reviewReport, settingsOpen, shortcutsOpen, paletteOpen, skillMenuOpen, connectorMenuOpen, attachmentMenuOpen, contextOpen, switcherOpen, sideChooser, mobileNav, sidebarFlyout, autoFormVisible, taskMenuOpen, botManagerOpen, mobileRemoteOpen, ctxMenuOpen, accountMenuOpen, rightOpen]);
+  useEffect(() => {
+    if (workStartedAt == null) return;
+    const timer = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [workStartedAt]);
+
+  async function refreshThreads() {
+    // 主侧栏只展示未归档会话；归档记录由「设置 → 归档管理」单独查看、恢复或删除。
+    const result = await window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc", archived: false });
+    setThreads(result.data ?? []);
+  }
+
+  async function refreshQueue(threadId: string) {
+    try {
+      const result = await window.codex.request("thread/queue/list", { threadId, limit: 100 });
+      if (threadRef.current?.id === threadId) setQueue(result.data ?? []);
+    } catch (error: any) {
+      if (threadRef.current?.id === threadId) setNotice(`读取消息队列失败：${error.message}`);
+    }
+  }
+
+  async function loadTree(path: string) {
+    if (!path) return;
+    setTreeLoading(true);
+    try {
+      const result = await window.codex.request("fs/readDirectory", { path });
+      setTreePath(path);
+      setTreeEntries((result.entries ?? []).sort((a: TreeEntry, b: TreeEntry) => Number(b.isDirectory) - Number(a.isDirectory) || a.fileName.localeCompare(b.fileName)));
+    } catch (error: any) {
+      setNotice(`读取项目树失败：${error.message}`);
+    } finally {
+      setTreeLoading(false);
+    }
+  }
+  function describeCloakEvent(event: { event?: string; message?: string; url?: string; title?: string }) {
+    switch (event.event) {
+      case "boot": return "助手进程已启动，等待首次打开";
+      case "launching": return "指纹浏览器启动中…（首次会下载/加载内核，稍慢）";
+      case "ready": return "CloakBrowser 已就绪";
+      case "opened": return `已打开：${event.title ? `${event.title} — ` : ""}${event.url ?? ""}`;
+      case "nav-error": return `页面导航失败：${event.message}`;
+      case "error": return `错误：${event.message}`;
+      case "closed": return "指纹浏览器窗口已关闭";
+      case "exit": return "助手进程已退出";
+      default: return "";
+    }
+  }
+
+  async function openInCloak(url: string) {
+    setCloakPage(url);
+    setCloakStatus("正在提交给 CloakBrowser…");
+    try {
+      const result = await window.codex.openInCloakBrowser(url);
+      if (!result.ok) {
+        setNotice(`CloakBrowser 打开失败：${result.detail}（可切换回内置视图）`);
+        setCloakStatus(`提交失败：${result.detail}`);
+        return;
+      }
+      setCloakStatus("已提交，等待窗口响应…");
+    } catch (error: any) {
+      setNotice(`CloakBrowser 打开失败：${error.message}`);
+      setCloakStatus(`提交失败：${error.message}`);
+      return;
+    }
+    window.setTimeout(() => {
+      void window.codex.cloakBrowserStatus().then((status) => {
+        const text = describeCloakEvent(status);
+        if (text) setCloakStatus(text);
+      });
+    }, 5000);
+  }
+
+  function openBrowser() {
+    const raw = browserDraft.trim();
+    if (!raw) return;
+    // 地址栏通行做法：裸域名自动补 https://，含空格/明显不是网址的输入走搜索引擎
+    const searchEngine = localStorage.getItem("browser-search-engine") || "https://www.bing.com/search?q=";
+    const looksLikeUrl = /^https?:\/\//i.test(raw)
+      ? true
+      : !/\s/.test(raw) && (/^localhost(:\d+)?(\/\S*)?$/i.test(raw) || /^[a-z0-9][a-z0-9.-]*(\.[a-z]{2,})(:\d+)?(\/\S*)?$/i.test(raw) || /^\d{1,3}(\.\d{1,3}){3}(:\d+)?(\/\S*)?$/.test(raw));
+    let target: string;
+    if (/^https?:\/\//i.test(raw)) {
+      try {
+        const parsed = new URL(raw);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") { setNotice("仅支持 HTTP(S) 地址"); return; }
+        target = parsed.toString();
+      } catch (error: any) {
+        setNotice(`浏览器地址无效：${error.message}`);
+        return;
+      }
+    } else if (looksLikeUrl) {
+      target = new URL(`https://${raw}`).toString();
+    } else {
+      // 搜索词：交给默认搜索引擎（可见视图直接导航；指纹窗口同样打开搜索结果页）
+      target = searchEngine + encodeURIComponent(raw);
+    }
+    if (browserMode === "cloak") void openInCloak(target);
+    else setBrowserUrl(target);
+    // 记录历史（去重置顶，最多 60 条）
+    setBrowserHistory((current) => {
+      const next = [{ url: target, title: (() => { try { return new URL(target).hostname; } catch { return target; } })(), at: Date.now() }, ...current.filter((entry) => entry.url !== target)].slice(0, 60);
+      localStorage.setItem("browser-history", JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function toggleBookmark() {
+    const url = browserDraft.trim();
+    if (!url) return;
+    setBrowserBookmarks((current) => {
+      const exists = current.some((entry) => entry.url === url);
+      const next = exists ? current.filter((entry) => entry.url !== url) : [{ url, title: (() => { try { return new URL(url).hostname; } catch { return url; } })() }, ...current].slice(0, 30);
+      localStorage.setItem("browser-bookmarks", JSON.stringify(next));
+      return next;
+    });
+  }
+
+  async function deleteQueued(id: string) {
+    if (!thread) return;
+    try {
+      await window.codex.request("thread/queue/delete", { threadId: thread.id, queuedSubmissionId: id });
+      setQueue((current) => current.filter((entry) => entry.id !== id));
+    } catch (error: any) {
+      setNotice(`删除排队消息失败：${error.message}`);
+    }
+  }
+
+  async function reorderQueued(from: number, to: number) {
+    if (!thread || from === to || to < 0 || to >= queue.length) return;
+    const next = [...queue];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setQueue(next);
+    try {
+      await window.codex.request("thread/queue/reorder", { threadId: thread.id, queuedSubmissionIds: next.map((entry) => entry.id) });
+    } catch (error: any) {
+      setNotice(`调整队列顺序失败：${error.message}`);
+      void refreshQueue(thread.id);
+    }
+  }
+
+  function editQueued(entry: QueueItem) {
+    setPrompt(inputText(entry.input));
+    void deleteQueued(entry.id);
+  }
+
+  async function saveQueued(entry: QueueItem, text: string) {
+    if (!thread) return;
+    const images = (entry.input ?? []).filter((part: any) => part.type === "localImage");
+    const nextText = text.trim();
+    try {
+      await deleteQueued(entry.id);
+      const input = [
+        ...(nextText || images.length ? [{ type: "text", text: nextText, text_elements: [] }] : []),
+        ...images,
+      ];
+      if (input.length) await window.codex.request("thread/queue/add", { threadId: thread.id, input, clientUserMessageId: crypto.randomUUID() });
+      void refreshQueue(thread.id);
+    } catch (error: any) {
+      setNotice(`保存排队消息失败：${error.message}`);
+    }
+  }
+
+  async function startQueued(id?: string) {
+    if (!thread) return;
+    const entry = id ? queue.find((q) => q.id === id) : undefined;
+    // 「立即」= 提供思路：有活跃回合时用 turn/steer 把这条消息追加到当前回合（不打断，让任务继续跑）；
+    // 空闲时才把它启动成一个新回合。turn/steer 不触发 turn/started，只是给正在跑的回合补一段用户输入。
+    if (activeTurnId && entry) {
+      try {
+        await window.codex.request("turn/steer", {
+          threadId: thread.id,
+          expectedTurnId: activeTurnId,
+          input: entry.input,
+          ...(entry.clientUserMessageId ? { clientUserMessageId: entry.clientUserMessageId } : {}),
+        });
+        await deleteQueued(entry.id);
+        void refreshQueue(thread.id);
+        showToast("发送成功", "排队消息已提供给当前任务");
+      } catch (error: any) {
+        showToast("发送失败", error.message);
+      }
+      return;
+    }
+    try {
+      await window.codex.request("thread/queue/start", { threadId: thread.id, ...(id ? { queuedSubmissionId: id } : {}) });
+      void refreshQueue(thread.id);
+      showToast("发送成功", "排队消息已开始执行");
+    } catch (error: any) {
+      showToast("发送失败", error.message);
+    }
+  }
+
+  async function refreshSettingsResources() {
+    setResourceLoading(true);
+    setResourceError("");
+    const cwd = workspace ? [workspace] : [];
+    const failures: string[] = [];
+    // 每项独立容错：某个接口不被当前 Codex 版本支持时，不能拖垮整批数据
+    const safe = async (label: string, run: () => Promise<any>, fallback: any) => {
+      try { return await run(); } catch (error: any) { failures.push(`${label}（${error.message}）`); return fallback; }
+    };
+    const [skillsResult, hooksResult, pluginsResult, appsResult, memoryResult, taskResult, mcpResult] = await Promise.all([
+      safe("技能", () => window.codex.request("skills/list", { cwds: cwd, forceReload: false }), { data: [] }),
+      safe("钩子", () => window.codex.request("hooks/list", { cwds: cwd }), { data: [] }),
+      // 不要用 forceRefetch：它会去远端重新拉取 marketplace（Codex 自带 git 不走系统代理，会卡到超时）；
+      // 实测本地 config.toml 的改动在普通列表里就能立刻反映。
+      safe("插件", () => window.codex.request("plugin/list", { cwds: cwd, forceRefetch: false }), { marketplaces: [] }),
+      safe("子智能体", () => window.codex.request("app/list", { limit: 100, forceRefetch: false }), { data: [] }),
+      safe("记忆", () => window.codex.listMemory(), []),
+      safe("定时任务", () => window.codex.listScheduledTasks(), []),
+      safe("MCP", () => window.codex.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly" }), { data: [] }),
+    ]);
+    setSettingsResources({
+      skills: (skillsResult.data ?? []).flatMap((entry: any) => entry.skills ?? []),
+      // hooks/list 的 data 是按 cwd 分组的数组（[{ cwd, hooks: [...] }]），必须摊平，
+      // 否则渲染层拿到的是分组对象，页面上只会渲染出空白卡片（ponytail 的钩子就是这样“消失”的）。
+      hooks: (hooksResult.data ?? []).flatMap((entry: any) => entry.hooks ?? []),
+      plugins: (pluginsResult.marketplaces ?? []).flatMap((marketplace: any) => (marketplace.plugins ?? []).map((plugin: any) => ({ ...plugin, marketplaceName: marketplace.name, marketplacePath: marketplace.path }))),
+      apps: appsResult.data ?? [],
+      mcp: mcpResult.data ?? [],
+    });
+    setMemories(memoryResult ?? []);
+    setScheduledTasks(taskResult ?? []);
+    // 引擎直管 MCP 的启停覆盖表，跟着每次刷新一起回读，保证卡片开关显示的是真实状态
+    setMcpOverrides(await window.codex.readMcpServerOverrides().catch(() => ({}) as Record<string, boolean>));
+    // 各 MCP 服务器的按工具权限档位，同样每次刷新回读
+    setMcpToolPermissions(await window.codex.readMcpToolPermissions().catch(() => ({})));
+    setResourceError(failures.length ? `以下数据读取失败：${failures.join("、")}` : "");
+    setResourceLoading(false);
+  }
+
+  async function trustAllHooks() {
+    setHookTrusting(true);
+    try {
+      const result = await window.codex.trustHooks(workspace ? [workspace] : []);
+      if (result.failures?.length) setNotice(`部分钩子信任失败：${result.failures.join("；")}`);
+      else setNotice(result.trusted ? `已信任 ${result.trusted} 个钩子，下一轮任务开始执行` : `${result.total} 个钩子都已处于信任状态`);
+      await refreshSettingsResources();
+    } catch (error: any) { setNotice(`信任钩子失败：${error.message}`); }
+    finally { setHookTrusting(false); }
+  }
+
+  /** 单条钩子启停：只改这一条，不动插件本体 */
+  async function setHookEnabled(hook: any, enabled: boolean) {
+    const key = String(hook.key ?? "");
+    if (!key) return;
+    setHookBusy(key);
+    try {
+      const result = await window.codex.setHookEnabled({ hookKeys: [key], enabled });
+      if (result.failures?.length) throw new Error(result.failures.join("；"));
+      await refreshSettingsResources();
+      setNotice(`钩子「${hook.eventName ?? key}」已${enabled ? "启用" : "停用"}`);
+    } catch (error: any) { setNotice(`钩子${enabled ? "启用" : "停用"}失败：${error.message}`); }
+    finally { setHookBusy(null); }
+  }
+
+  /**
+   * 联动开关：把插件、它提供的全部钩子、它提供的全部技能一次性对齐。
+   * 停用时三者一起停；启用时三者一起起，避免出现「插件开着但钩子是灰的」这种自相矛盾的状态。
+   */
+  async function setLinkedEnabled(pluginId: string, enabled: boolean, label: string) {
+    setLinkedBusy(pluginId);
+    try {
+      const result = await window.codex.setPluginLinkedEnabled({ pluginId, enabled });
+      await Promise.all([refreshSettingsResources(), window.codex.listLocalSkills().then(setLocalSkills)]);
+      if (result.failures?.length) setNotice(`${label}：部分联动失败 —— ${result.failures.join("；")}`);
+      else setNotice(`已${enabled ? "启用" : "停用"}「${label}」，并同步其钩子与关联技能`);
+    } catch (error: any) { setNotice(`联动${enabled ? "启用" : "停用"}失败：${error.message}`); }
+    finally { setLinkedBusy(null); }
+  }
+
+  async function changePlugin(plugin: any) {
+    const key = String(plugin.name ?? plugin.id ?? "");
+    setPluginBusy(key);
+    try {
+      if (plugin.installed && plugin.id) {
+        await window.codex.request("plugin/uninstall", { pluginId: plugin.id });
+      } else {
+        await window.codex.request("plugin/install", { pluginName: plugin.name, ...(plugin.marketplacePath ? { marketplacePath: plugin.marketplacePath } : { remoteMarketplaceName: plugin.marketplaceName }), installAttemptId: crypto.randomUUID() });
+      }
+      await refreshSettingsResources();
+      setNotice(`插件「${plugin.name}」${plugin.installed ? "已卸载" : "已安装"}`);
+    } catch (error: any) { setNotice(`插件操作失败：${error.message}`); }
+    finally { setPluginBusy(null); }
+  }
+
+  /** 插件启停：写入 config.toml 的 [plugins."<id>"] enabled，Codex 下一轮扫描起不再加载被停用的插件 */
+  async function setPluginEnabled(plugin: any, enabled: boolean) {
+    const id = String(plugin.id ?? plugin.name ?? "");
+    if (!id) return;
+    if (guardGroupOff({ kind: "plugin", id }, `插件「${pluginDisplayName(plugin)}」`, enabled)) return;
+    setPluginBusy(id);
+    try {
+      const result = await window.codex.setPluginEnabled({ pluginIds: [id], enabled });
+      if (result.failures?.length) throw new Error(result.failures.join("；"));
+      await refreshSettingsResources();
+      setNotice(`插件「${pluginDisplayName(plugin)}」已${enabled ? "启用" : "停用"}`);
+    } catch (error: any) { setNotice(`插件${enabled ? "启用" : "停用"}失败：${error.message}`); }
+    finally { setPluginBusy(null); }
+  }
+
+  // —— 能力总闸联动：写代码模式 / 桌面自动化 / 浏览器自动化 —— //
+  // 派生快照：主开关状态完全由子项状态实时计算（不存 useState），杜绝主/子状态漂移
+  const ponytailPluginEntry = useMemo(
+    () => (settingsResources.plugins as any[]).find((plugin) => plugin.installed && samePluginId(plugin.id, PONYTAIL_PLUGIN_ID)),
+    [settingsResources.plugins],
+  );
+  const ponytailPluginOn = ponytailPluginEntry?.enabled !== false;
+  const ponytailSkillsSnap = useMemo(() => ponytailSubSkills(localSkills as any[]), [localSkills]);
+  const desktopSkillSnap = useMemo(() => findCapabilitySkill(localSkills as any[], DESKTOP_SKILL_ID), [localSkills]);
+  const browserSkillSnap = useMemo(() => findCapabilitySkill(localSkills as any[], BROWSER_SKILL_ID), [localSkills]);
+  const nuphusMcpOn = mcpOverrides[NUPHUS_MCP_ID] !== false; // 覆盖表没记录 = 默认启用
+  const capabilitySnapshot: SubToggleSnapshot = useMemo(() => ({
+    ponytailOn,
+    ponytailPluginOn,
+    ponytailSkills: ponytailSkillsSnap,
+    desktopAuto,
+    browserAuto,
+    nuphusMcpOn,
+    desktopSkill: desktopSkillSnap,
+    browserSkill: browserSkillSnap,
+  }), [ponytailOn, ponytailPluginOn, ponytailSkillsSnap, desktopAuto, browserAuto, nuphusMcpOn, desktopSkillSnap, browserSkillSnap]);
+  const [groupBusy, setGroupBusy] = useState<CapabilityGroupId | null>(null);
+  /** 联动层 IPC 实现（抽出来给「启动自愈」复用）。 */
+  const groupIpc: GroupIpc = {
+    ponytailModeSet: (mode) => window.codex.ponytailModeSet(mode) as Promise<unknown>,
+    setPluginLinkedEnabled: (id, enabled) => window.codex.setPluginLinkedEnabled({ pluginId: id, enabled }),
+    saveAppSettings: (patch) => window.codex.saveAppSettings(patch as any),
+    setMcpServersEnabled: (ids, enabled) => window.codex.setMcpServersEnabled(ids, enabled),
+    setSkillEnabled: (input) => window.codex.setEnabledSkill(input),
+  };
+
+  /**
+   * 能力总闸联动入口：「常规」页三个开关共用。一次性把该组的所有子项对齐到 target：
+   * - writing-code：ponytail 注入开关 + ponytail 插件（含钩子与 6 个子技能）
+   * - desktop-automation：app-settings 总闸 + nuphus MCP 启停 + desktop-automation 技能
+   * - browser-automation：app-settings 总闸 + browser-automation 技能
+   * 失败项聚合返回 toast；silent=true 时完全不提示（启动自愈用）。
+   */
+  async function applyGroup(groupId: CapabilityGroupId, target: boolean, silent = false) {
+    setGroupBusy(groupId);
+    try {
+      const plan = planAction(capabilitySnapshot, groupId, target);
+      if (isEmptyAction(plan)) return;
+      const result = await applyAction(plan, groupIpc);
+      if (groupId === "writing-code") setPonytailOn(target);
+      else if (groupId === "desktop-automation") setDesktopAuto(target);
+      else setBrowserAuto(target);
+      await Promise.all([
+        refreshSettingsResources(),
+        window.codex.listLocalSkills().then(setLocalSkills),
+        window.codex.readMcpServerOverrides().then(setMcpOverrides).catch(() => undefined),
+      ]);
+      if (silent) return;
+      const label = GROUP_LABELS[groupId];
+      if (result.failures.length) {
+        setNotice(`${label}部分联动失败：${result.failures.join("；")}`);
+        return;
+      }
+      const parts: string[] = [];
+      if (result.applied.ponytailMode) parts.push("注入开关");
+      if (result.applied.ponytailLinked) parts.push("ponytail 插件与子技能");
+      if (result.applied.nuphus) parts.push("nuphus MCP");
+      if (result.applied.desktopSkill) parts.push(`${DESKTOP_SKILL_ID} 技能`);
+      if (result.applied.browserSkill) parts.push(`${BROWSER_SKILL_ID} 技能`);
+      // 联动后再复算一次：还有没带起来的子项（例如技能目录被改名）就点名提示
+      const hint = describePartial(syncedSnapshot(capabilitySnapshot, groupId, target), groupId, MEMBER_LABELS);
+      if (hint) setNotice(`${label}已${target ? "开启" : "关闭"}，但 ${hint.pendingLabels.join("、")} 未同步，请到对应页确认`);
+      else setNotice(`${label}已${target ? "开启" : "关闭"}${parts.length ? `（已同步 ${parts.join("、")}）` : ""}`);
+    } catch (error: any) {
+      if (!silent) setNotice(`${GROUP_LABELS[groupId]}联动失败：${error?.message ?? String(error)}`);
+    } finally { setGroupBusy(null); }
+  }
+
+  // 启动自愈：总闸开着但配套 MCP / 技能是关的（旧版默认值或历史手工关停），一次性补齐，
+  // 保证「常规页开着 == 引擎真能用」。每次启动只跑一次，且不弹提示。
+  const bootHealRef = useRef(false);
+  useEffect(() => {
+    if (bootHealRef.current) return;
+    bootHealRef.current = true;
+    void (async () => {
+      try {
+        const [skills, overrides, settings, pluginMode, pluginResult] = await Promise.all([
+          window.codex.listLocalSkills(),
+          window.codex.readMcpServerOverrides().catch(() => ({}) as Record<string, boolean>),
+          window.codex.readAppSettings().catch(() => ({}) as Record<string, unknown>),
+          // 写代码模式真实落盘状态：~/.config/ponytail/config.json:defaultMode。
+          // 不能拿 ponytailOn 的 useState 默认值当真——那只是 UI 初始值，不是落盘状态。
+          (window.codex.ponytailModeGet?.() ?? Promise.resolve("full")).catch(() => "full"),
+          window.codex.request("plugin/list", { cwds: workspace ? [workspace] : [], forceRefetch: false }).catch(() => ({ marketplaces: [] })),
+        ]);
+        const ponytailPluginEntry = ((pluginResult.marketplaces ?? []) as any[])
+          .flatMap((marketplace: any) => marketplace.plugins ?? [])
+          .find((plugin: any) => plugin.installed && samePluginId(plugin.id, PONYTAIL_PLUGIN_ID));
+        const snapshot: SubToggleSnapshot = {
+          ponytailOn: pluginMode !== "off",
+          ponytailPluginOn: ponytailPluginEntry?.enabled !== false,
+          ponytailSkills: ponytailSubSkills(skills as any[]),
+          desktopAuto: settings.desktopAutomation !== false,
+          browserAuto: settings.browserAutomation !== false,
+          nuphusMcpOn: overrides[NUPHUS_MCP_ID] !== false,
+          desktopSkill: findCapabilitySkill(skills, DESKTOP_SKILL_ID),
+          browserSkill: findCapabilitySkill(skills, BROWSER_SKILL_ID),
+        };
+        let healed = false;
+        for (const groupId of ["writing-code", "desktop-automation", "browser-automation"] as CapabilityGroupId[]) {
+          const plan = planAction(snapshot, groupId, true);
+          if (isEmptyAction(plan)) continue;
+          await applyAction(plan, groupIpc);
+          healed = true;
+        }
+        if (!healed) return;
+        setPonytailOn(await window.codex.ponytailModeGet?.().catch(() => "full") !== "off");
+        setMcpOverrides(await window.codex.readMcpServerOverrides().catch(() => ({}) as Record<string, boolean>));
+        setLocalSkills(await window.codex.listLocalSkills());
+        await refreshSettingsResources();
+      } catch { /* 自愈失败不阻塞启动 */ }
+    })();
+  }, []);
+
+  /**
+   * 其他 tab（技能 / MCP / 插件 / 钩子）里点击关闭受总闸托管子项的拦截器：
+   * 返回 true 表示已拦截（提示去常规页关总闸），false 表示放行。
+   */
+  function guardGroupOff(
+    member: Parameters<typeof guardOffOwner>[1],
+    label: string,
+    next: boolean,
+  ): boolean {
+    if (next) return false; // 开启总是允许（不会破坏联动）
+    const owner = guardOffOwner(capabilitySnapshot, member);
+    if (!owner) return false;
+    setNotice(`「${label}」由「${GROUP_LABELS[owner]}」开关控制，请在「控制台」页关闭${GROUP_LABELS[owner]}（否则会被总闸重新拉起）`);
+    return true;
+  }
+
+  /** 常规页总闸行的「部分启用」提示：列出还没跟着开关走的子项，点开关可一次性对齐。 */
+  const capabilityHint = (groupId: CapabilityGroupId): string | null => {
+    const hint = describePartial(capabilitySnapshot, groupId, MEMBER_LABELS);
+    return hint ? `部分启用（${hint.onCount}/${hint.totalCount}）：${hint.pendingLabels.join("、")} 未同步，点右侧开关可一次性对齐` : null;
+  };
+
+  async function batchSetPluginEnabled(plugins: any[], enabled: boolean) {
+    const ids = plugins.map((plugin) => String(plugin.id ?? "")).filter(Boolean);
+    if (!ids.length) { setNotice(enabled ? "没有可启用的插件" : "没有可停用的插件"); return; }
+    setPluginBatchBusy(enabled ? "enable" : "disable");
+    try {
+      const result = await window.codex.setPluginEnabled({ pluginIds: ids, enabled });
+      setPluginChecked([]);
+      await refreshSettingsResources();
+      if (result.failures?.length) setNotice(`${result.changed} 个插件已${enabled ? "启用" : "停用"}，${result.failures.length} 个失败：${result.failures.join("；")}`);
+      else setNotice(`已${enabled ? "启用" : "停用"} ${result.changed} 个插件`);
+    } catch (error: any) { setNotice(`批量${enabled ? "启用" : "停用"}失败：${error.message}`); }
+    finally { setPluginBatchBusy(null); }
+  }
+
+  /** 技能批量启停：只作用于可移除的本机技能，内置技能由引擎提供、不参与 */
+  async function batchSetSkillEnabled(folders: string[], enabled: boolean) {
+    if (!folders.length) { setNotice(enabled ? "没有可启用的技能" : "没有可停用的技能"); return; }
+    // 批量停用同样要过滤掉受总闸托管的技能，否则会被总闸拉回，批量结果看着成功实际没生效
+    const targets = folders.filter((folder) => !guardGroupOff({ kind: "skill", folder }, `技能「${folder}」`, enabled));
+    if (!targets.length) return;
+    setSkillBatchBusy(enabled ? "enable" : "disable");
+    try {
+      const result = await window.codex.setEnabledSkillBatch({ folders: targets, enabled });
+      setSkillChecked([]);
+      setLocalSkills(await window.codex.listLocalSkills());
+      await refreshSettingsResources();
+      if (result.failures?.length) setNotice(`${result.changed} 个技能已${enabled ? "启用" : "停用"}，${result.failures.length} 个失败：${result.failures.join("；")}`);
+      else setNotice(`已${enabled ? "启用" : "停用"} ${result.changed} 个技能`);
+    } catch (error: any) { setNotice(`批量${enabled ? "启用" : "停用"}失败：${error.message}`); }
+    finally { setSkillBatchBusy(null); }
+  }
+
+  useEffect(() => {
+    const off = window.codex.onEvent((event) => {
+      if (event.kind === "status") {
+        setServerStatus(event.status ?? "error");
+        // 保存模型、切换或删除当前供应商都会主动重启引擎。主动重启只有
+        // starting→ready，不会先发 error；同样要进入恢复分支，否则侧栏会暂时像是
+        // “会话全没了”，直到下次手动刷新应用。
+        if (event.status === "starting") engineRestartedRef.current = true;
+        // 引擎无响应/被心跳监控重启：清掉本地运行态，提示用户（thread 仍留在磁盘，
+        // 引擎 ready 后自动 resume 当前线程即可恢复，不丢消息）。
+        if (event.status === "error") {
+          if (event.message && event.message.includes("重启")) {
+            showToast("引擎已自动重启", event.message);
+            engineRestartedRef.current = true;
+          }
+          if (sendingRef.current || activeTurnIdRef.current) {
+            setSending(false);
+            setActiveTurnId(null);
+            clearRunningThreads();
+            setWorkStartedAt(null);
+          }
+        }
+        // 引擎重启完成（ready）：自动刷新线程列表，并 resume 之前打开的线程恢复内容。
+        if (event.status === "ready" && engineRestartedRef.current) {
+          engineRestartedRef.current = false;
+          const tid = threadRef.current?.id;
+          void refreshThreads();
+          if (tid) {
+            window.codex.request("thread/resume", { threadId: tid, excludeTurns: false }).then((result) => {
+              if (result?.thread && threadRef.current?.id === tid) {
+                threadRef.current = result.thread;
+                threadCacheRef.current.set(tid, result.thread);
+                setThread(result.thread);
+              }
+            }).catch(() => undefined);
+          }
+        }
+        return;
+      }
+      if (event.kind === "request" && event.id !== undefined && event.method) {
+        if (event.method === "currentTime/read") {
+          void window.codex.respond(event.id, { currentTimeAt: Math.floor(Date.now() / 1000) });
+          return;
+        }
+        if (event.method === "item/tool/call") {
+          void (async () => {
+            try {
+              const args = typeof event.params?.arguments === "string" ? JSON.parse(event.params.arguments) : event.params?.arguments ?? {};
+              if (event.params?.tool === "memory_recall") {
+                const result = await window.codex.recallMemory(String(args.query ?? ""), workspace);
+                await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: result.context || "没有找到相关记忆" }], success: true });
+              } else if (event.params?.tool === "memory_save") {
+                const cat = String(args.category ?? "临时上下文");
+                const result = await window.codex.saveMemory({ category: cat, content: args.content ?? "", sourceThreadId: event.params?.threadId, workspace, pinned: cat === "项目背景" || cat === "工作流/SOP" });
+                showToast("已记住", `${cat}：${String(args.content ?? "").slice(0, 60)}（记忆中心可查看 / 跳回本会话）`);
+                await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `记忆已保存：${result.id}` }], success: true });
+              } else if (event.params?.tool === "subagent_invoke") {
+                setSubAgentRunning(String(args.name ?? ""));
+                try {
+                  const result = await window.codex.invokeSubAgent({
+                    name: String(args.name ?? ""),
+                    query: String(args.query ?? ""),
+                    cwd: workspace || undefined,
+                    model: selectedModel?.model ?? modelName(modelId),
+                    effort: effort || undefined,
+                    sandbox,
+                    approvalPolicy,
+                  });
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `[子智能体 ${result.name} 的执行结果]\n${result.output}` }], success: true });
+                } finally {
+                  setSubAgentRunning(null);
+                }
+              } else if (event.params?.tool === "team_member_invoke") {
+                await invokeTeamMember(args, String(event.params?.threadId ?? ""), event.id!);
+              } else if (event.params?.tool === "generate_image") {
+                const cfg: any = await window.codex.readBuiltinPlugins().catch(() => null);
+                const c = cfg?.image;
+                if (!c?.baseUrl || !c?.apiKey || !c?.model) {
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: "生图插件未配置：请到 设置 → 插件 → 内置插件 填写 API 地址、密钥和模型。" }], success: false });
+                } else {
+                  try {
+                    const result = await window.codex.generateImage({ baseUrl: c.baseUrl, apiKey: c.apiKey, model: c.model, prompt: String(args.prompt ?? "") });
+                    await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: result.url ? "图片已生成：" + result.url : "生图未返回图片地址" }], success: Boolean(result.url) });
+                  } catch (error: any) {
+                    await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: "生图失败：" + error.message }], success: false });
+                  }
+                }
+              } else if (event.params?.tool === "describe_image") {
+                const cfg: any = await window.codex.readBuiltinPlugins().catch(() => null);
+                const c = cfg?.vision;
+                if (!c?.baseUrl || !c?.apiKey || !c?.model) {
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: "视觉辅助插件未配置：请到 设置 → 插件 → 内置插件 填写视觉模型 API 地址、密钥和模型。" }], success: false });
+                } else {
+                  try {
+                    const result = await window.codex.describeImage({ baseUrl: c.baseUrl, apiKey: c.apiKey, model: c.model, imageUrl: String(args.imageUrl ?? ""), prompt: args.prompt ? String(args.prompt) : undefined });
+                    await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: "[视觉辅助模型识别结果]\n" + (result.text || "（视觉模型未返回描述）") }], success: Boolean(result.text) });
+                  } catch (error: any) {
+                    await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: "识图失败：" + error.message }], success: false });
+                  }
+                }
+              } else if (event.params?.tool === "rpa_save") {
+                const result = await window.codex.saveRpaRecipe({ name: String(args.name ?? ""), desc: String(args.desc ?? ""), kind: String(args.kind ?? "browser"), steps: (Array.isArray(args.steps) ? args.steps : [String(args.steps ?? "")]).map(String), target: args.target ? String(args.target) : undefined, workspace: workspace || undefined });
+                showToast("RPA 配方已保存", `「${result.name}」共 ${result.steps.length} 步，可在 设置 → RPA 自动化 里管理`);
+                await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `RPA 配方「${result.name}」已保存（${result.steps.length} 步，${result.kind}）。下次说"运行 ${result.name}"即可复用。` }], success: true });
+              } else if (event.params?.tool === "rpa_run") {
+                if (!args.name) {
+                  const list = await window.codex.listRpaRecipes();
+                  const text = list.length ? list.map((r: any) => `- ${r.name}（${r.kind === "browser" ? "浏览器" : r.kind === "desktop" ? "桌面" : "混合"}，${r.steps.length} 步${r.lastStatus ? `，上次：${r.lastStatus === "ok" ? "成功" : `失败：${r.lastError ?? ""}`}` : ""}）：${r.desc ?? ""}`).join("\n") : "还没有保存任何 RPA 配方。";
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `[RPA 配方清单]\n${text}` }], success: true });
+                } else {
+                  const list = await window.codex.listRpaRecipes();
+                  const recipe = list.find((r: any) => r.name === String(args.name)) ?? list.find((r: any) => String(args.name).includes(r.name));
+                  if (!recipe) {
+                    await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `没有找到名为「${args.name}」的配方。可用：${list.map((r: any) => r.name).join("、") || "（空）"}` }], success: false });
+                  } else {
+                    setRpaRunning(recipe.id);
+                    try {
+                      const stepsText = recipe.steps.map((s: string, i: number) => `${i + 1}. ${s}`).join("\n");
+                      await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `[RPA 配方「${recipe.name}」开始执行，共 ${recipe.steps.length} 步]\n${stepsText}\n请严格按以上步骤逐步执行自动化操作${recipe.target ? `（目标：${recipe.target}）` : ""}，完成后报告每步结果。` }], success: true });
+                      window.codex.recordRpaRun({ id: recipe.id, ok: true }).catch(() => undefined);
+                    } catch (error: any) {
+                      window.codex.recordRpaRun({ id: recipe.id, ok: false, error: error.message }).catch(() => undefined);
+                      throw error;
+                    } finally {
+                      setRpaRunning(null);
+                    }
+                  }
+                }
+              } else if (event.params?.tool === "task_add") {
+                const task = await window.codex.addTask({ text: String(args.text ?? ""), priority: String(args.priority ?? "medium") });
+                showToast("已加入任务清单", task.text);
+                await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `已加入任务清单：${task.text}（优先级：${task.priority}）` }], success: true });
+              } else if (event.params?.tool === "task_update") {
+                if (!args.id && args.status === undefined && args.text === undefined && !args.done) {
+                  const tasks = await window.codex.listTasks();
+                  const text = tasks.length ? tasks.map((t: any) => `- [${t.status === "done" ? "x" : " "}] ${t.text}（${t.priority}${t.status === "doing" ? "，进行中" : t.status === "done" ? "，已完成" : ""}）id:${t.id}`).join("\n") : "任务清单为空。";
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `[任务清单]\n${text}` }], success: true });
+                } else if (args.done) {
+                  await window.codex.deleteTask(String(args.id));
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: "任务已删除。" }], success: true });
+                } else {
+                  const patch: any = {};
+                  if (args.status) patch.status = String(args.status);
+                  if (args.text) patch.text = String(args.text);
+                  if (args.priority) patch.priority = String(args.priority);
+                  const task = await window.codex.updateTask({ id: String(args.id), patch });
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `任务已更新：${task.text} → ${task.status}` }], success: true });
+                }
+              } else if (event.params?.tool === "agent_ask") {
+                const question = String(args.question ?? "请选择：");
+                const options: string[] = Array.isArray(args.options) ? args.options.map(String) : [];
+                const askThreadId = String(event.params?.threadId ?? threadRef.current?.id ?? "");
+                const isCurrentThread = askThreadId && askThreadId === threadRef.current?.id;
+                // 不再跨会话弹窗：当前会话内贴输入框上方展示；用户在别的会话时先通知，切回会话再看到卡片
+                if (!isCurrentThread) {
+                  showToast("Agent 有问题等你回答", `${question.slice(0, 60)}${question.length > 60 ? "…" : ""}（会话：${threads.find((entry) => entry.id === askThreadId)?.name ?? "后台任务"}）`);
+                }
+                const answer = await new Promise<string>((resolve) => setAgentAsk({ threadId: askThreadId, question, options, recommended: options[0] ?? null, allowFree: args.allowFree !== false, resolve }));
+                // ESC 关闭问答卡时 answer 为空串：明确告知引擎用户跳过了选择，避免它等一个不存在的选项
+                await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: answer ? `[用户选择] ${answer}` : "[用户取消了选择] 请继续其它工作，或稍后换一种方式再问。" }], success: true });
+              } else {
+                await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `Dynamic tool ${event.params?.tool ?? "unknown"} is not registered by this harness.` }], success: false });
+              }
+            } catch (error: any) {
+              await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `${event.params?.tool === "subagent_invoke" ? "子智能体调用失败" : "记忆工具失败"}：${error.message}` }], success: false });
+            }
+          })();
+          return;
+        }
+        setPending((current) => current.some((entry) => entry.id === event.id) ? current : [...current, { id: event.id!, method: event.method!, params: event.params }]);
+        return;
+      }
+      if (event.kind !== "notification") return;
+      const params = event.params ?? {};
+      // ── 跨会话生命周期事件：即使属于后台会话也要先处理，用于维护运行指示器 ──
+      // 侧边栏转圈必须跟着「真正在运行的会话」，不能因为切到别的会话就跟着跑过去。
+      // 这些事件不能被下面的 threadId 过滤挡掉，否则切走后后台会话的
+      // turn/started · turn/completed 收不到 → activeTurnId 残留、侧边栏状态不更新。
+      if (params.threadId) {
+        const method0 = event.method ?? "";
+        if (method0 === "turn/started") {
+          markThreadRunning(params.threadId, params.turn?.id ?? params.turnId);
+        } else if (method0 === "turn/completed") {
+          markThreadStopped(params.threadId);
+        } else if (method0 === "thread/status/changed") {
+          // 侧边栏每个会话的运行状态：即使不是当前会话也要更新，保证切走后转圈还在原会话
+          setThreads((current) => current.map((entry) => entry.id === params.threadId ? { ...entry, status: params.status } : entry));
+          // 状态明确非运行（completed 等）时兜底熄灭转圈，防 turn/completed 事件丢失导致卡转
+          if (params.status !== "inProgress" && params.status !== "running") {
+            markThreadStopped(params.threadId);
+          } else {
+            markThreadRunning(params.threadId);
+          }
+        }
+      }
+      if (params.threadId && params.threadId !== threadRef.current?.id) return;
+      const method = event.method ?? "";
+      // 新一轮助手内容开始后，从“把用户消息钉在顶部”切回跟随最新内容。
+      // 工具输出默认收起，因此视口会优先跟随正文/思考，而不是被大段代码占满。
+      if ((method === "item/started" && params.item?.type !== "userMessage") || isDeltaMethod(method)) {
+        pinNewTurnRef.current = false;
+        stickToBottomRef.current = true;
+      }
+      if (threadStreamMethods.has(method)) {
+        // delta 批量落盘：把累积到这一帧的 delta 一次性 apply 成新 thread 引用（只触发一次重渲染）
+        const flushDeltas = () => {
+          const batch = pendingDeltaRef.current;
+          pendingDeltaRef.current = [];
+          if (streamRafRef.current) { cancelAnimationFrame(streamRafRef.current); streamRafRef.current = 0; }
+          lastFlushAtRef.current = performance.now();
+          lastStreamTsRef.current = Date.now();
+          if (!batch.length) return;
+          let current = threadRef.current;
+          for (const { method: m, params: p } of batch) current = applyThreadEvent(current, m, p);
+          if (current !== threadRef.current) {
+            threadRef.current = current;
+            setThread(current);
+            if (current?.id) threadCacheRef.current.set(current.id, current);
+          }
+        };
+        // delta 合帧：同一帧内的多条流式事件合并成一次 setThread，
+        // 渲染节奏稳定在 60fps，不随引擎/中转出字的一波一波节奏跳变
+        const apply = () => {
+          // 结构性事件（item/completed 等）必须排在已缓冲的 delta 之后：
+          // 否则会「先落完成态、后补字」，表现为完成后正文被覆盖或整段丢失。
+          if (pendingDeltaRef.current.length) flushDeltas();
+          lastStreamTsRef.current = Date.now();
+          const next = applyThreadEvent(threadRef.current, method, params);
+          if (next !== threadRef.current) {
+            threadRef.current = next;
+            setThread(next);
+            if (next?.id) threadCacheRef.current.set(next.id, next);
+          }
+        };
+        if (isDeltaMethod(method)) {
+          pendingDeltaRef.current.push({ method, params });
+          // 新一轮出字（距上次落盘已超过一帧）立即应用，不等 rAF：
+          // 首 token / 停顿后的第一个字必须立刻可见，否则肉眼就是「慢半拍 + 憋一段才冒出来」。
+          // 之后同帧内持续到来的 delta 才走 rAF 合帧，避免每字一次全树重渲染。
+          if (performance.now() - lastFlushAtRef.current > 24) flushDeltas();
+          else if (!streamRafRef.current) streamRafRef.current = requestAnimationFrame(flushDeltas);
+          return;
+        }
+        apply();
+      }
+      if (reviewTurnRef.current && params.turnId === reviewTurnRef.current) {
+        if (method === "item/agentMessage/delta") setReviewReport((current) => current + (params.delta ?? ""));
+        else if (method === "item/completed" && params.item?.type === "agentMessage") setReviewReport(params.item.text ?? "");
+        else if (method === "turn/completed") {
+          setReviewBusy(false);
+          reviewTurnRef.current = null;
+        }
+      }
+      if (method === "item/started" && params.item?.type === "reasoning") {
+        reasoningStart.set(String(params.item.id ?? params.itemId ?? ""), Date.now());
+      } else if (method === "item/completed" && params.item?.type === "reasoning") {
+        const key = String(params.item.id ?? params.itemId ?? "");
+        const start = reasoningStart.get(key);
+        if (start) reasoningDuration.set(key, Date.now() - start);
+      }
+      if (method === "item/started" && params.item?.type === "contextCompaction") {
+        compactPendingRef.current.add(String(params.threadId ?? threadRef.current?.id ?? ""));
+        setCompactEventState("running");
+      } else if (method === "item/completed" && params.item?.type === "contextCompaction") {
+        compactPendingRef.current.delete(String(params.threadId ?? threadRef.current?.id ?? ""));
+        setCompactEventState("success");
+      }
+      if (method === "turn/plan/updated") {
+        setPlanSteps((params.plan ?? []).map((step: any) => ({ step: step.step ?? "", status: step.status ?? "pending" })));
+      } else if (method === "thread/goal/updated" || method === "thread/goal/set") {
+        if (params.goal?.objective) setGoalText(params.goal.objective);
+      } else if (method === "turn/completed") {
+        // 用本回合新增量累加（旧实现取的是 max，累计 Token 一直是错的）；拿不到增量时按上下文总量兜底
+        try {
+          const total = usageBucket(tokenUsageRef.current, "total") ?? usageBucket(tokenUsageRef.current, "last");
+          const last = usageBucket(tokenUsageRef.current, "last");
+          const turnId = String(params?.turn?.id ?? "");
+          const startedAt = turnId ? turnStartedAtRef.current.get(turnId) : undefined;
+          if (turnId) turnStartedAtRef.current.delete(turnId);
+          setUsageStats(recordTurnUsage({
+            inputTokens: last?.input_tokens ?? last?.inputTokens ?? total?.input_tokens ?? total?.inputTokens ?? 0,
+            outputTokens: last?.output_tokens ?? last?.outputTokens ?? total?.output_tokens ?? total?.outputTokens ?? 0,
+            contextTokens: total?.total_tokens ?? total?.totalTokens ?? 0,
+            durationMs: startedAt ? Date.now() - startedAt : undefined,
+            model: activeModelRef.current || undefined,
+          }));
+        } catch { /* 统计失败不影响主流程 */ }
+      }
+      if (method === "turn/started") {
+        setSending(true);
+        setActiveTurnId(params.turn.id);
+        const startedAt = runningStartedAtRef.current.get(params.threadId) ?? Date.now();
+        setWorkStartedAt(startedAt);
+        turnStartedAtRef.current.set(params.turn.id, Date.now());
+        // 不在这里清乐观消息：turn/started 里的 userMessage 可能 content 为空，
+        // 清了会导致「乐观气泡没了、服务端消息又没内容」的空窗，消息就「消失」了。
+        // 清除完全交给渲染端 optimisticConfirmed 去重（thread.turns 出现同文本 userMessage 才隐藏）。
+        // 这里绝不能主动清乐观消息：清早了而服务端 item 又因事件时序没合并进 turns，用户消息就「消失」了。
+      } else if (method === "turn/completed") {
+        setSending(false);
+        setInterrupting(false);
+        setActiveTurnId(null);
+        markThreadStopped(params.threadId);
+        setWorkStartedAt(null);
+        // 只有服务端回合里的 userMessage 文本和乐观消息匹配才清；
+        // 否则保留——清早了而服务端消息又没渲染出来，用户消息就"消失"了
+        if (optimisticInput && (params.turn?.items ?? []).some((entry: ThreadItem) => entry.type === "userMessage" && userMessageMatchesInput(entry, optimisticInput.content ?? []))) setOptimisticInput(null);
+        if (params.turn.error?.message) showToast("任务失败", params.turn.error.message);
+        // 运行结束通知：窗口最小化/失焦时弹系统通知，点击通知聚焦回窗口
+        try {
+          const isCurrent = params.threadId === threadRef.current?.id;
+          const blurred = document.visibilityState !== "visible" || !document.hasFocus();
+          if (blurred || !isCurrent) {
+            const name = cleanThreadDisplayTitle(threads.find((entry) => entry.id === params.threadId)?.name, { preview: threads.find((entry) => entry.id === params.threadId)?.preview }) || firstUserTextInTurn(params.turn).slice(0, 30) || "任务";
+            void window.codex.showNotification(params.turn.error?.message ? "任务失败" : "任务完成", `${name.slice(0, 40)} ${params.turn.error?.message ? "运行失败" : "已运行完成"}`);
+          }
+        } catch { /* 通知失败不影响主流程 */ }
+        void window.codex.request("thread/queue/list", { threadId: params.threadId, limit: 1 }).then((result) => result.data?.[0] && window.codex.request("thread/queue/start", { threadId: params.threadId, queuedSubmissionId: result.data[0].id })).catch((error) => showToast("队列启动失败", error.message));
+        void refreshThreads();
+      } else if (method === "item/started" || method === "item/completed") {
+        // 不在这里清空 optimisticInput：清除时机交给渲染端的文本去重，
+        // 否则 item/started 与 setThread 的批处理时序差异会让用户消息瞬间消失。
+      } else if (method === "hook/started" || method === "hook/completed") {
+        addHookEvent(method === "hook/started", String(params.run?.name ?? params.run?.id ?? "Hook"));
+      } else if (event.method === "item/autoApprovalReview/started") {
+        showToast("正在审查命令权限", "Codex 正在进行自动安全审查");
+      } else if (event.method === "item/autoApprovalReview/completed") {
+        showToast("命令权限审查完成", params.decisionSource ?? "完成");
+      } else if (event.method === "autoApprovalReview/strictReviewRequired") {
+        showToast("需要严格审批", "后续命令将逐项请求确认");
+      } else if (event.method === "turn/diff/updated") {
+        setDiff(params.diff ?? "");
+      } else if (event.method === "thread/tokenUsage/updated") {
+        const normalizedUsage = normalizeTokenUsage(params.tokenUsage, String(params.threadId ?? threadRef.current?.id ?? ""));
+        tokenUsageRef.current = normalizedUsage;
+        setTokenUsage(normalizedUsage);
+      } else if (event.method === "error") {
+        setSending(false);
+        setInterrupting(false);
+        markThreadStopped(params.threadId);
+        if (compactPendingRef.current.delete(String(params.threadId ?? threadRef.current?.id ?? ""))) {
+          setCompactEventState("error", params.error?.message ?? params.message);
+        }
+        setNotice(params.error?.message ?? params.message ?? "Codex 请求失败");
+      } else if (event.method === "serverRequest/resolved") {
+        setPending((current) => current.filter((entry) => entry.id !== params.requestId));
+      } else if (method === "thread/name/updated") {
+        const nextName = params.threadName ?? null;
+        setThreads((current) => current.map((entry) => entry.id === params.threadId ? { ...entry, name: nextName } : entry));
+        const cached = threadCacheRef.current.get(params.threadId);
+        if (cached) threadCacheRef.current.set(params.threadId, { ...cached, name: nextName });
+        setThread((current) => {
+          if (!current || current.id !== params.threadId) return current;
+          const next = { ...current, name: nextName };
+          threadRef.current = next;
+          return next;
+        });
+      } else if (method === "thread/status/changed") {
+        setThreads((current) => current.map((entry) => entry.id === params.threadId ? { ...entry, status: params.status } : entry));
+      } else if (event.method === "thread/settings/updated") {
+        setWorkspace(params.threadSettings.cwd);
+        const mode = sandboxMode(params.threadSettings.sandboxPolicy);
+        const policy = typeof params.threadSettings.approvalPolicy === "string" ? params.threadSettings.approvalPolicy : approvalPolicy;
+        // 用户选择的权限必须原样生效：低权限只让需授权的操作走审批卡，
+        // 不减少引擎可用能力，也不被前端自动回写成完全访问。
+        // 引擎可能推不带 sandboxPolicy/approvalPolicy 的事件——此时保持用户当前权限，绝不降级覆盖。
+        // 若本地已存有该会话的权限（用户明确选过），以本地为准，避免引擎回推的默认值覆盖选择。
+        const threadId = params.threadId as string | undefined;
+        const savedPerms = threadId ? loadThreadPermissions(threadId) : null;
+        const localSandbox = savedPerms && (savedPerms.sandbox === "danger-full-access" || savedPerms.sandbox === "read-only" || savedPerms.sandbox === "workspace-write") ? savedPerms.sandbox : null;
+        const localApproval = savedPerms && (savedPerms.approval === "never" || savedPerms.approval === "on-request" || savedPerms.approval === "untrusted") ? savedPerms.approval : null;
+        const effectiveSandbox = localSandbox ?? mode;
+        const effectiveApproval = localApproval ?? policy;
+        if (effectiveSandbox && threadId) saveThreadPermissions(threadId, effectiveSandbox, effectiveApproval);
+        if (effectiveSandbox) setSandbox(effectiveSandbox);
+        setApprovalPolicy(effectiveApproval);
+        // 思考等级同理：引擎回推的可能是创建时的旧值，本地有每会话记录时以本地为准
+        {
+          const localEffort = threadId ? loadThreadEffort(threadId) : "";
+          setEffort(normalizeEffort(localEffort || params.threadSettings.effort) || "");
+        }
+        setPersonality(params.threadSettings.personality ?? "none");
+      } else if (event.method === "thread/queue/changed") {
+        void refreshQueue(params.threadId);
+      } else if (event.method === "thread/archived" || event.method === "thread/deleted") {
+        setThreads((current) => current.filter((entry) => entry.id !== params.threadId));
+        threadCacheRef.current.delete(params.threadId);
+        if (threadRef.current?.id === params.threadId) {
+          // 引擎侧归档/删除当前会话同样走完整复位（漏 sending 会让发送按钮卡成「停止」）
+          startNewThread();
+        }
+      } else if (event.method === "model/verification") {
+        const verificationText = (params.verifications ?? []).map((entry: any) => entry.message ?? JSON.stringify(entry)).join("\n") || "完成";
+        // 模型元数据回退属已知无害噪音（自定义模型名不在引擎内置表），不弹「模型校验」卡
+        if (/unknown model|fallback (model )?metadata|model metadata.*not found/i.test(verificationText)) return;
+        showToast("模型校验", verificationText);
+      } else if (event.method === "model/safetyBuffering/updated" && params.showBufferingUi) {
+        showToast("模型安全缓冲", params.reasons?.join("；") || "正在检查模型输出");
+      } else if (event.method === "thread/compacted") {
+        compactPendingRef.current.delete(String(params.threadId ?? threadRef.current?.id ?? ""));
+        setCompactEventState("success");
+      } else if (event.method === "model/rerouted") {
+        showToast("模型已切换", `${params.fromModel} → ${params.toModel}`);
+      } else if (["warning", "guardianWarning", "deprecationNotice", "configWarning"].includes(event.method ?? "")) {
+        const text = String(params.message ?? params.details ?? "");
+        // 已知无害的技术性提示不弹卡（模型元数据回退、压缩英文提示）：
+        // - "Unknown model X is used. This will use fallback model metadata."
+        //   "Model metadata for X not found. Defaulting to fallback metadata..."
+        //   自定义模型名不在引擎内置元数据表时触发，属正常噪音（上下文窗口已在
+        //   custom-model.json 里配置，引擎会用用户给的 contextWindow，不影响使用）。
+        // - "Heads up: Long threads…"（压缩英文提示）已在上方「上下文已压缩」卡片中翻译。
+        if (/unknown model|fallback (model )?metadata|model metadata.*not found/i.test(text)) return;
+        if (!/long threads|multiple compactions/i.test(text)) showToast(event.method === "configWarning" ? params.summary ?? "配置警告" : "Codex 提示", text || JSON.stringify(params));
+      }
+    });
+    const offChannel = window.codex.onChannelBotEvent((event) => {
+      setChannelBot((current) => current ? { ...current, ...event.status, logs: [...(current.logs ?? []), { at: event.at, level: event.level, message: event.message }].slice(-20) } : current);
+      if (event.level === "error") setChannelStatus(event.message);
+      // 网关状态变化（微信/Telegram 连接成功）时刷新圆点
+      if (/微信|Telegram/.test(event.message)) void window.codex.channelsStatus?.().then(setChannelOnline).catch(() => undefined);
+    });
+    const offHarness = window.codex.onHarnessEvent((event) => {
+      if (event.type === "scheduler") showToast("定时任务", event.message);
+      if (event.type === "memory") showToast("记忆", event.message);
+      if (event.type === "skill-install") {
+        const positions: Record<string, number> = { download: 1, extract: 2, audit: 3, install: 4, register: 5, engine: 6, verify: 6, complete: 7, pending: 7 };
+        setSkillInstall((current) => {
+          if (!current || current.skill.id !== event.skillId) return current;
+          return { ...current, current: Math.max(current.current, positions[event.stage] ?? current.current), engineRegistered: event.stage === "complete" ? true : current.engineRegistered, engineCheckMessage: ["complete", "pending"].includes(event.stage) ? event.message : current.engineCheckMessage };
+        });
+      }
+    });
+
+    void window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc", archived: false })
+      .then((threadResult) => {
+        setThreads(threadResult.data ?? []);
+        setServerStatus("ready");
+      })
+      .catch(() => setServerStatus("error"))
+      .finally(() => setLoading(false));
+    return () => { off(); offChannel(); offHarness(); };
+  }, []);
+
+  useEffect(() => { if (!loading) void refreshThreads(); }, [loading]);
+
+  useEffect(() => {
+    if (settingsOpen) void refreshSettingsResources();
+  }, [settingsOpen, workspace]);
+
+  useEffect(() => {
+    if (!thread) return;
+    void window.codex.request("thread/memoryMode/set", { threadId: thread.id, mode: memoryEnabled ? "enabled" : "disabled" }).catch(() => undefined);
+  }, [thread?.id]);
+
+  useEffect(() => {
+    if (rightTab === "tree" && workspace) void loadTree(workspace);
+  }, [rightTab, workspace]);
+
+  useEffect(() => {
+    if (thread) void refreshQueue(thread.id);
+    else setQueue([]);
+  }, [thread?.id]);
+
+  // 流式断流心跳监控：回合进行中但 >90s 没有任何流式事件 → 多半是 turn/completed 丢了
+  // （引擎重启/流断掉），向引擎 resume 校对；只有服务端明确已结束而本地还在跑时才落地，
+  // 解开「任务早就写完却永远正在运行 + 过程卡片刷屏」的死局。正常流式不受影响。
+  const lastStreamTsRef = useRef(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const current = threadRef.current;
+      const lastTurn = current?.turns[current.turns.length - 1];
+      if (!current || !lastTurn || !isTurnRunning(lastTurn)) return;
+      if (Date.now() - lastStreamTsRef.current < 90_000) return;
+      lastStreamTsRef.current = Date.now(); // 防抖：resume 失败也不要每 30s 连环打
+      void window.codex.request("thread/resume", { threadId: current.id, excludeTurns: false }).then((result) => {
+        if (!result?.thread) return;
+        const serverLast = result.thread.turns[result.thread.turns.length - 1];
+        const localLast = threadRef.current?.turns[threadRef.current.turns.length - 1];
+        if (!serverLast || !localLast || serverLast.id !== localLast.id) return;
+        if (isTurnRunning(localLast) && !isTurnRunning(serverLast)) {
+          const merged = mergeTurn(threadRef.current, serverLast);
+          if (merged && merged !== threadRef.current) {
+            threadRef.current = merged;
+            threadCacheRef.current.set(merged.id, merged);
+            setThread(merged);
+          }
+        }
+      }).catch(() => undefined);
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // （已删除重复的 smooth 跟随 effect：sticky layout effect 已在 [thread] 变化时
+  // 用 behavior:auto 同步跳底，smooth 版本会在长会话切换时产生数秒的滚动动画。）
+
+  function savedEffortFor(model: string | undefined) {
+    if (!model) return "";
+    try { return (JSON.parse(localStorage.getItem("model-efforts") ?? "{}") as Record<string, string>)[model] ?? ""; } catch { return ""; }
+  }
+
+  function rememberEffortFor(model: string | undefined, value: string) {
+    if (!model || !value) return;
+    try {
+      const map = JSON.parse(localStorage.getItem("model-efforts") ?? "{}") as Record<string, string>;
+      map[model] = value;
+      localStorage.setItem("model-efforts", JSON.stringify(map));
+    } catch { /* 忽略 */ }
+  }
+
+  async function chooseModel(value: string) {
+    const prevLabel = modelName(modelId) || modelId;
+    // value 形如 `custom:<provider>:<model>`
+    const match = value.match(/^custom:([^:]+):(.+)$/);
+    const provider = match?.[1];
+    const model = match?.[2] ?? value;
+    const next = allModels.find((entry) => entry.id === value || entry.model === value);
+    const nextLabel = next?.model ?? modelName(value);
+    const currentThreadId = threadRef.current?.id;
+    const saveSelection = (nextId: string) => {
+      setModelId(nextId);
+      if (currentThreadId) saveThreadModel(currentThreadId, nextId);
+      else localStorage.setItem("default-model", nextId);
+    };
+    // 跨供应商意味着切换全局 API Key，当前实现必须重启 app-server。存在任何运行任务时
+    // 禁止执行，避免为了当前下拉框把其他会话强制停止。
+    if (provider && customModel && provider !== customModel.provider && runningThreadIdsRef.current.size > 0) {
+      showToast("暂时不能切换供应商", "还有任务正在运行；可切换同一供应商内的模型，跨供应商请等任务完成后操作");
+      return;
+    }
+    // 用户主动切模型时给一条会话内提醒（与引擎 sideband 的模型切换事件互为补充）
+    if (nextLabel && prevLabel && nextLabel !== prevLabel) showToast("模型已切换", `${prevLabel} → ${nextLabel}`);
+    // 切模型的 effort 选择：该模型记过档位用之；否则当前会话已有档位保持不变（会话内不突袭改档）；
+    // 都没有才落到模型默认档
+    const threadEffort = currentThreadId ? loadThreadEffort(currentThreadId) : "";
+    const nextEffort = savedEffortFor(next?.model) || threadEffort || pickDefaultEffort(next?.supportedReasoningEfforts, next?.defaultReasoningEffort);
+    setEffort(nextEffort);
+    if (nextEffort) {
+      localStorage.setItem("default-effort", nextEffort);
+      if (currentThreadId) saveThreadEffort(currentThreadId, nextEffort);
+    }
+    saveSelection(value);
+
+    // 跨供应商切换：没有运行任务时一次性切换供应商+模型（会重启引擎）。
+    if (provider && customModel && provider !== customModel.provider) {
+      try {
+        const updated = await window.codex.setProviderModel({ provider, model });
+        setCustomModel(updated);
+        const selectedId = `custom:${updated.provider}:${model}`;
+        saveSelection(selectedId);
+        await updateThreadSettings({ model, model_provider: updated.provider, effort: nextEffort || null });
+        setNotice(`已切换到 ${updated.name} · ${model}`);
+        return;
+      } catch (error: any) {
+        setNotice(error.message);
+        return;
+      }
+    }
+    // 同供应商模型已在 catalog 中，直接更新当前会话即可。这里绝不能调用
+    // setProviderModel：它会重写全局配置并重启引擎，导致其他运行会话被终止。
+    if (provider && customModel && provider === customModel.provider) {
+      try {
+        await updateThreadSettings({ model, model_provider: provider, effort: nextEffort || null });
+        setNotice(`${threadRef.current ? "当前会话" : "新会话默认"}已选择：${customModel.name} · ${model}`);
+        return;
+      } catch (error: any) {
+        setNotice(error.message);
+        return;
+      }
+    }
+    // 无 provider 前缀（内置模型）：只更新线程设置
+    void updateThreadSettings({ model: model ?? value, effort: nextEffort || null });
+  }
+
+  async function updateThreadSettings(values: Record<string, unknown>) {
+    if (!thread) return;
+    // codex app-server 偶尔会重启（切换供应商/启用禁用），重启后内存里没有旧任务，
+    // 直接 thread/settings/update 会报 "thread not found"。自动 re-resume 一次再重试。
+    const call = () => window.codex.request("thread/settings/update", { threadId: thread.id, ...values });
+    const resume = () => window.codex.request("thread/resume", { threadId: thread.id, excludeTurns: false });
+    try {
+      await call();
+    } catch (error: any) {
+      const message = String(error?.message ?? "");
+      if (message.includes("thread not found")) {
+        try {
+          const result = await resume();
+          if (result?.thread) {
+            const loaded = normalizeLoadedThread(result.thread);
+            threadRef.current = loaded;
+            setThread(loaded);
+          }
+          await call();
+        } catch (retryError: any) {
+          setNotice(retryError?.message ?? message);
+        }
+      } else {
+        setNotice(message);
+      }
+    }
+  }
+
+  function changeApproval(value: string) {
+    setApprovalPolicy(value);
+    localStorage.setItem("default-approval", value);
+    if (threadRef.current) saveThreadPermissions(threadRef.current.id, sandbox, value);
+    void updateThreadSettings({ approvalPolicy: value });
+  }
+
+  function changeSandbox(value: string) {
+    // 切换执行范围不会废弃 Codex 的工具或推理能力；只改变命令/文件操作是否需要审批。
+    // 从完全访问降级时默认启用按需审批，确保它仍会请求授权并继续执行。
+    const nextApproval = value === "danger-full-access" ? "never" : approvalPolicy === "never" ? "on-request" : approvalPolicy;
+    setSandbox(value);
+    setApprovalPolicy(nextApproval);
+    if (threadRef.current) saveThreadPermissions(threadRef.current.id, value, nextApproval);
+    localStorage.setItem("default-sandbox", value);
+    localStorage.setItem("default-approval", nextApproval);
+    void updateThreadSettings({ approvalPolicy: nextApproval, sandboxPolicy: sandboxPolicy(value, workspace) });
+  }
+
+  function changeEffort(value: string) {
+    setEffort(value);
+    localStorage.setItem("default-effort", value);
+    rememberEffortFor(selectedModel?.model ?? modelName(modelId), value);
+    // 思考等级按会话独立：当前有会话就记到会话上（切回来自动恢复），无会话才只是全局默认
+    if (threadRef.current?.id) saveThreadEffort(threadRef.current.id, value);
+    void updateThreadSettings({ effort: value });
+  }
+
+  function changePersonality(value: string) {
+    setPersonality(value);
+    localStorage.setItem("default-personality", value);
+    void updateThreadSettings({ personality: value === "none" ? null : value });
+  }
+
+  async function copyMessage(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setNotice("消息已复制");
+    } catch (error: any) {
+      setNotice(`复制失败：${error.message}`);
+    }
+  }
+
+  async function copyThreadReferenceId(target: { id: string }) {
+    try {
+      await navigator.clipboard.writeText(`会话 ID：${target.id}`);
+      showToast("会话 ID 已复制", "粘贴到其他会话并发送，即可读取这条会话的对话记录");
+    } catch (error: any) {
+      setNotice(`复制会话 ID 失败：${error.message}`);
+    }
+  }
+
+  async function loadThreadReference(id: string): Promise<ThreadReferencePayload | null> {
+    // 新版桌面端优先从 rollout 原档只读，不触发会话切换；旧版本回退到 app-server resume。
+    const previewConversation = (window.codex as any).previewConversation;
+    if (typeof previewConversation === "function") {
+      try {
+        const preview = await previewConversation(id);
+        if (preview?.messages?.length) {
+          return buildThreadReferencePayload(id, preview.name, preview.messages);
+        }
+      } catch { /* 继续使用引擎回退 */ }
+    }
+    const result = await window.codex.request("thread/resume", { threadId: id, excludeTurns: false });
+    if (!result?.thread) return null;
+    const source = normalizeLoadedThread(result.thread as Thread);
+    const messages: { role: "user" | "assistant"; text: string }[] = [];
+    for (const sourceTurn of source.turns ?? []) {
+      for (const item of sourceTurn.items ?? []) {
+        if (item.type === "userMessage") {
+          const text = userDisplayText(itemText(item));
+          if (text) messages.push({ role: "user", text });
+        } else if (item.type === "agentMessage") {
+          const text = itemText(item).trim();
+          if (text) messages.push({ role: "assistant", text });
+        }
+      }
+    }
+    return buildThreadReferencePayload(id, source.name || source.preview || "未命名会话", messages);
+  }
+
+  async function resolveThreadReferences(text: string, currentThreadId?: string): Promise<{ text: string; blocks: string; referenced: boolean }> {
+    const ids = extractThreadReferenceIds(text);
+    if (!ids.length) return { text, blocks: "", referenced: false };
+    const references: ThreadReferencePayload[] = [];
+    const failures: string[] = [];
+    for (const id of ids) {
+      if (id === currentThreadId?.toLowerCase()) {
+        failures.push(`${id.slice(0, 8)}（不能引用当前会话自身）`);
+        continue;
+      }
+      try {
+        const reference = await loadThreadReference(id);
+        if (reference) references.push(reference);
+        else failures.push(`${id.slice(0, 8)}（没有可读取的消息）`);
+      } catch {
+        failures.push(`${id.slice(0, 8)}（未找到或无法读取）`);
+      }
+    }
+    if (!references.length) throw new Error(`会话引用失败：${failures.join("；")}`);
+    if (failures.length) showToast("部分会话引用失败", failures.join("；"));
+    return {
+      text: stripThreadReferenceIds(text),
+      blocks: references.map(formatThreadReferenceBlock).join("\n\n"),
+      referenced: true,
+    };
+  }
+
+  async function editResend(turnId: string, item: ThreadItem) {
+    if (!thread) return;
+    if (sending || activeTurnId) { setNotice("请先停止当前任务，再编辑重发"); return; }
+    if (!customModel || !selectedModel) { setNotice("请先配置并启用自定义模型"); setSettingsOpen(true); return; }
+    const text = (item.content ?? []).filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n");
+    if (!text.trim()) { setNotice("该消息没有可编辑的文本"); return; }
+    try {
+      const forked = await window.codex.request("thread/fork", { threadId: thread.id, beforeTurnId: turnId, excludeTurns: false });
+      if (!forked.thread) { setNotice("创建编辑分支失败"); return; }
+      threadRef.current = forked.thread;
+      setThread(forked.thread);
+      setModelId(`custom:${customModel?.provider ?? "custom"}:${forked.model ?? selectedModel?.model ?? customModel?.model ?? ""}`);
+      const input = [
+        { type: "text", text, text_elements: [] },
+        ...(item.content ?? []).filter((part: any) => part.type === "localImage"),
+      ];
+      setSending(true);
+      setWorkStartedAt(Date.now());
+      optimisticTurnIdRef.current = null;
+      optimisticBaselineRef.current = { threadId: forked.thread.id, turnIds: new Set((forked.thread.turns ?? []).map((entry: Turn) => entry.id)) };
+      setOptimisticInput({ id: `local-${Date.now()}`, type: "userMessage", content: input });
+      // WorkBuddy 式钉住：发完消息定位到视口顶部固定位置，不滚到底；流式期间不跟随直到用户手动滚动
+      // 双帧 rAF：等乐观消息 DOM 渲染就绪后再定位（React 批处理更新通常在下一帧才落 DOM）
+      stickToBottomRef.current = false;
+      pinNewTurnRef.current = true;
+      activeModelRef.current = selectedModel?.model ?? modelName(modelId);
+      const result = await window.codex.request("turn/start", {
+        threadId: forked.thread.id,
+        input,
+        model: selectedModel?.model ?? modelName(modelId),
+        effort: effort || null,
+        personality: selectedModel?.supportsPersonality ? personality : null,
+      });
+      if (result.turn?.id) {
+        const hydratedTurn = hydrateTurnUserMessage(result.turn, input);
+        optimisticTurnIdRef.current = hydratedTurn.id;
+        setActiveTurnId(hydratedTurn.id);
+        markThreadRunning(forked.thread.id, hydratedTurn.id);
+        saveThreadModel(forked.thread.id, modelId);
+        setThread((current) => { const next = mergeTurn(current, hydratedTurn); threadRef.current = next; return next; });
+        if (hydratedTurn.items.some((entry) => entry.type === "userMessage" && userMessageMatchesInput(entry, input))) setOptimisticInput(null);
+      }
+      void refreshThreads();
+      showToast("已编辑重发", "已创建分支并重新发送");
+    } catch (error: any) {
+      setSending(false);
+      setWorkStartedAt(null);
+      setOptimisticInput(null);
+      setNotice(`编辑重发失败：${error.message}`);
+    }
+  }
+
+  async function copyImage(path: string) {
+    try {
+      const response = await fetch(path.startsWith("http") ? path : imageUrl(path));
+      const blob = await response.blob();
+      await navigator.clipboard.write([new ClipboardItem({ [blob.type || "image/png"]: blob })]);
+      setNotice("图片已复制");
+    } catch (error: any) { setNotice(`复制图片失败：${error.message}`); }
+  }
+
+  function quoteMessage(text: string) {
+    const clean = text.trim();
+    if (!clean) return;
+    // 引用条模式：不把引用塞进输入框，而是在输入框上方显示可取消的引用条，发送时再拼块引用
+    setQuoteItem({ id: `quote-${Date.now()}`, text: clean });
+    requestAnimationFrame(() => composerInputRef.current?.focus());
+  }
+
+  function cancelQuote() {
+    setQuoteItem(null);
+  }
+
+  function addContextItem(item: { id: string; role: "用户" | "Codex"; text: string }) {
+    setContextItems((current) => [...current, item]);
+    setPrompt((current) => current.replace(/@[^\s]*$/, ""));
+    setContextQuery("");
+    setContextOpen(false);
+  }
+
+  function removeContextItem(id: string) {
+    setContextItems((current) => current.filter((item) => item.id !== id));
+  }
+
+  function onPromptChange(value: string) {
+    setPrompt(value);
+    const at = value.lastIndexOf("@");
+    const afterAt = at >= 0 ? value.slice(at + 1) : "";
+    if (at >= 0 && !/\s/.test(afterAt)) {
+      setContextQuery(afterAt);
+      setContextOpen(true);
+    } else {
+      setContextOpen(false);
+    }
+  }
+
+  async function forkFromTurn(turnId: string) {
+    if (!thread) return;
+    try {
+      const result = await window.codex.request("thread/fork", { threadId: thread.id, turnId, excludeTurns: false });
+      if (result.thread) {
+        threadRef.current = result.thread;
+        setThread(result.thread);
+        setModelId(`custom:${customModel?.provider ?? "custom"}:${result.model ?? selectedModel?.model ?? customModel?.model ?? ""}`);
+        await refreshThreads();
+        showToast("任务已分支", "已从选定消息创建新的任务分支");
+      }
+    } catch (error: any) {
+      setNotice(`创建分支失败：${error.message}`);
+    }
+  }
+
+  /** 会话备份导出：threadIds 缺省/空数组 = 全部会话；单条走任务菜单「导出备份」 */
+  async function exportThreadsBackup(threadIds?: string[]) {
+    setBackupBusy("export");
+    try {
+      const res = await window.codex.exportThreadsBackup(threadIds && threadIds.length ? threadIds : undefined);
+      if (res?.path) setNotice(`已导出 ${res.count} 个会话备份 → ${res.path}`);
+    } catch (error: any) { setNotice("导出失败：" + error.message); }
+    finally { setBackupBusy(""); }
+  }
+  /** 会话备份导入：rollout 写回 codex-home 后刷新列表，让会话立即出现在侧边栏 */
+  async function importThreadsBackup() {
+    setBackupBusy("import");
+    try {
+      const res = await window.codex.importThreadsBackup();
+      if (!res) return; // 用户取消
+      await refreshThreads();
+      setNotice(res.imported
+        ? `已导入 ${res.imported} 个会话${res.skipped ? `，跳过 ${res.skipped} 个已存在` : ""}`
+        : `没有可导入的新会话${res.skipped ? `（${res.skipped} 个已存在被跳过，不覆盖）` : ""}`);
+    } catch (error: any) { setNotice("导入失败：" + error.message); }
+    finally { setBackupBusy(""); }
+  }
+
+  /** 会话记录导出为通用 Markdown（对齐官方 Codex /export：User/Assistant 交替、无系统注入，主流 AI 可直接带入） */
+  async function exportThreadsMarkdown(threadIds?: string[]) {
+    setBackupBusy("export-md");
+    try {
+      const res = await window.codex.exportThreadsMarkdown(threadIds && threadIds.length ? threadIds : undefined);
+      if (res?.path) setNotice(`已导出 ${res.count} 个会话（${res.totalMessages} 条消息）为 Markdown → ${res.path}`);
+    } catch (error: any) { setNotice("导出失败：" + error.message); }
+    finally { setBackupBusy(""); }
+  }
+
+  /** 侧栏指定会话分支：不依赖当前打开的 thread，成功后直接进入新分支。 */
+  async function forkThreadFromSidebar(entry: Thread) {
+    if (runningThreadIdsRef.current.has(entry.id)) { setNotice("任务运行中，请完成或停止后再分支"); return; }
+    try {
+      const result = await window.codex.request("thread/fork", { threadId: entry.id, excludeTurns: false });
+      if (!result?.thread) throw new Error("引擎未返回新分支");
+      const sourceModel = loadThreadModel(entry.id);
+      if (sourceModel) saveThreadModel(result.thread.id, sourceModel);
+      await refreshThreads();
+      await openThread(result.thread.id, result.thread);
+      showToast("已创建会话分支", cleanThreadDisplayTitle(entry.name, { preview: entry.preview }));
+    } catch (error: any) {
+      setNotice(`创建分支失败：${error.message}`);
+    }
+  }
+
+  /** 导入外部对话记录（主流 AI / 官方 Codex 导出的 .md/.txt 记录）：
+   *  主进程选文件→解析→自动新建「导入：原会话名」命名会话并打开到对话框（不自动跑）；
+   *  记录暂存为待发送（localStorage），用户发出首条消息时自动整段附上，界面折叠成可展开卡。 */
+  async function importConversationMarkdown() {
+    setBackupBusy("import-md");
+    try {
+      const res = await window.codex.importConversationMarkdown({
+        cwd: workspace || undefined,
+        model: selectedModel?.model ?? modelName(modelId),
+        effort: effort || undefined,
+        sandbox,
+        approvalPolicy,
+        personality: selectedModel?.supportsPersonality ? personality : null,
+      });
+      if (!res) return; // 用户取消
+      rememberPendingImport(res.thread.id, res.imported);
+      setSettingsOpen(false);
+      await openThread(res.thread.id, res.thread);
+      // 新建线程是主进程 thread/start 直接建的，openThread 只切视图不更新左侧列表，
+      // 必须显式刷新一次，让「导入：xxx」立即出现在左侧
+      void refreshThreads();
+      requestAnimationFrame(() => composerInputRef.current?.focus());
+      setNotice(`已导入「${res.imported.title || res.imported.fileName}」并新建会话：直接输入即可继续，记录会在首条消息时自动附上`);
+    } catch (error: any) { setNotice("导入失败：" + error.message); }
+    finally { setBackupBusy(""); }
+  }
+
+  function startNewThread() {
+    setChatSearchOpen(false);
+    const savedSandbox = localStorage.getItem("default-sandbox") ?? "danger-full-access";
+    threadRef.current = null;
+    setThread(null);
+    // 重置滚动：上个会话若滚在中间，欢迎页会被顶出视口（顶部只露半截建议 chips 幻影）
+    requestAnimationFrame(() => { const el = scrollRef.current; if (el) el.scrollTop = 0; });
+    setPrompt("");
+    setImages([]);
+    setModelId(localStorage.getItem("default-model") ?? modelId);
+    setEffort(localStorage.getItem("default-effort") ?? effort);
+    setSandbox(savedSandbox);
+    setApprovalPolicy(localStorage.getItem("default-approval") ?? (savedSandbox === "danger-full-access" ? "never" : "on-request"));
+    setPersonality(localStorage.getItem("default-personality") ?? "pragmatic");
+    setDiff("");
+    setSystemEvents([]);
+    setOptimisticInput(null);
+    setSending(false);
+    setActiveTurnId(null);
+    setInterrupting(false);
+    setWorkStartedAt(null);
+    closeTaskMenu();
+    setMobileNav(false);
+    setReviewBusy(false);
+    setReviewReport("");
+    reviewTurnRef.current = null;
+    setPlanSteps([]);
+    setGoalText("");
+    // 立即与引擎同步一次列表：让左侧会话列表反映最新状态（含刚发起的专家团会话等）
+    void refreshThreads();
+  }
+
+  async function runSlashCommand(value: string) {
+    const [rawName, ...rest] = value.slice(1).trim().split(/\s+/);
+    const name = rawName.toLowerCase();
+    const argument = rest.join(" ").trim();
+    if (!slashCommands.some(([command]) => command === name)) {
+      // 自定义命令：命中 $CODEX_HOME/commands 或 .codex/commands 下的 .md 模板，
+      // 展开参数/文件引用后作为普通消息发送（复刻 WorkBuddy 自定义命令语义）。
+      try {
+        const customList = await window.codex.listCommands({ cwd: workspace ?? undefined });
+        const custom = customList.find((entry) => entry.name.toLowerCase() === name);
+        if (!custom) return false;
+        if (custom.argumentHint && !argument) {
+          setPrompt(`/${name} `);
+          showToast("命令需要参数", `/${name} ${custom.argumentHint}${custom.description ? ` — ${custom.description}` : ""}`);
+          return true;
+        }
+        if (sending) { showToast("任务仍在运行", `请先使用 /stop，再执行 /${name}`); return true; }
+        const { text } = await window.codex.expandCommand({ filePath: custom.filePath, argument, cwd: workspace ?? undefined });
+        pendingCommandTextRef.current = text;
+        setPrompt("");
+        await send();
+        return true;
+      } catch (error: any) {
+        showToast(`/${name} 执行失败`, error.message);
+        return true;
+      }
+    }
+    setPrompt("");
+    try {
+      if (name === "model" || name === "permissions") setSettingsOpen(true);
+      else if (name === "new") startNewThread();
+      else if (name === "resume") { setMobileNav(true); showToast("历史任务", "从左侧任务列表选择要恢复的会话"); }
+      else if (name === "cd") await chooseWorkspace();
+      else if (name === "pwd") setInfoModal({ title: "当前工作目录", body: workspace || "尚未选择工作区" });
+      else if (name === "diff") { setRightOpen(true); showToast("文件改动", "已在右侧面板展示本轮 diff"); }
+      else if (name === "status") setInfoModal({ title: "任务状态", body: `模型：${customModel?.model ?? "未配置"}\n思考：${effortLabels[effort] ?? effort}\n风格：${personality === "pragmatic" ? "务实" : personality === "friendly" ? "友好" : "默认"}\n线程：${thread?.status?.type ?? "未开始"}\n回合：${thread?.turns.at(-1)?.status ?? "无"}\n工作区：${workspace || "未选择"}` });
+      else if (name === "help") setInfoModal({ title: "可用命令", body: builtinCommandCatalog.map((cmd) => `/${cmd.name}${cmd.hint ? " " + cmd.hint : ""} — ${cmd.description}`).join("\n") });
+      else if (name === "context") setInfoModal({ title: "上下文占用", body: contextUsageText() });
+      else if (name === "clear") {
+        await clearCurrentConversation();
+      }
+      else if (name === "copy") { const last = thread?.turns.flatMap((turn) => turn.items).filter((item) => item.type === "agentMessage").at(-1); await copyMessage(itemText(last ?? ({} as ThreadItem))); }
+      else if (name === "memory") { setSettingsOpen(true); setSettingsPage("memory"); }
+      else if (name === "effort") {
+        if (!argument) showToast("用法", "/effort 低|中|高|最高");
+        else {
+          const alias: Record<string, string> = { 低: "low", 中: "medium", 高: "high", low: "low", medium: "medium", high: "high" };
+          const target = alias[argument];
+          if (!target) showToast("不支持的思考强度", "可选：低 / 中 / 高 / 最高");
+          else { changeEffort(target); showToast("思考强度已更新", effortLabels[target] ?? target); }
+        }
+      } else if (name === "personality") {
+        const alias: Record<string, string> = { 务实: "pragmatic", 友好: "friendly", 默认: "none" };
+        const target = alias[argument];
+        if (!target) showToast("用法", "/personality 务实|友好|默认");
+        else { changePersonality(target); showToast("回复风格已更新", argument); }
+      } else if (name === "sandbox") {
+        const alias: Record<string, string> = { 只读: "read-only", 工作区可写: "workspace-write", 完全访问: "danger-full-access", "read-only": "read-only", "workspace-write": "workspace-write", "danger-full-access": "danger-full-access" };
+        const target = alias[argument];
+        if (!target) showToast("用法", "/sandbox 只读|工作区可写|完全访问");
+        else { changeSandbox(target); showToast("沙箱已切换", argument); }
+      } else if (name === "approval") {
+        const alias: Record<string, string> = { 按需: "on-request", 从不: "never", "on-request": "on-request", never: "never" };
+        const target = alias[argument];
+        if (!target) showToast("用法", "/approval 按需|从不");
+        else { changeApproval(target); showToast("审批策略已更新", argument); }
+      } else if (name === "stop") await interrupt();
+      else {
+        if (!thread) { showToast("无法执行", `/${name} 需要先开始一个任务`); return true; }
+        if (name === "archive") await archiveThread(thread.id);
+        else if (name === "delete") {
+          if (window.confirm("永久删除当前任务？此操作无法撤销。")) {
+            await window.codex.request("thread/delete", { threadId: thread.id });
+            setThreads((current) => current.filter((entry) => entry.id !== thread.id));
+            setThread(null);
+          }
+        } else if (name === "rename") {
+          if (!argument) showToast("用法", "/rename 新名称");
+          else await renameThread(thread.id, argument);
+        } else if (name === "fork") {
+          const result = await window.codex.request("thread/fork", { threadId: thread.id, excludeTurns: false });
+          setThread(result.thread);
+          setModelId(`custom:${customModel?.provider}:${customModel?.model}`);
+          await refreshThreads();
+          showToast("任务已分叉", "接下来的对话会写入新的任务分支");
+        } else if (name === "compact") {
+          compactPendingRef.current.add(thread.id);
+          setCompactEventState("running");
+          try {
+            await window.codex.request("thread/compact/start", { threadId: thread.id });
+          } catch (error: any) {
+            compactPendingRef.current.delete(thread.id);
+            setCompactEventState("error", error.message);
+            throw error;
+          }
+        } else if (name === "review") {
+          const target = argument ? { type: "custom", instructions: argument } : { type: "uncommittedChanges" };
+          const result = await window.codex.request("review/start", { threadId: thread.id, target, delivery: "inline" });
+          setActiveTurnId(result.turn.id);
+          markThreadRunning(thread.id, result.turn.id);
+        } else if (name === "goal") {
+          if (argument) {
+            await window.codex.request("thread/goal/set", { threadId: thread.id, objective: argument });
+            showToast("长期目标已更新", argument);
+          } else {
+            const result = await window.codex.request("thread/goal/get", { threadId: thread.id });
+            setInfoModal({ title: "长期目标", body: result.goal?.objective ?? "尚未设置长期目标" });
+          }
+        } else if (name === "undo") {
+          const result = await window.codex.request("thread/rollback", { threadId: thread.id, numTurns: 1 });
+          threadRef.current = result.thread;
+          setThread(result.thread);
+          showToast("已撤销上一轮", "仅回退对话历史，不会撤销工作区文件改动");
+        } else if (name === "queue") {
+          const result = await window.codex.request("thread/queue/list", { threadId: thread.id, limit: 100 });
+          setInfoModal({ title: "消息队列", body: result.data?.length ? result.data.map((entry: any, index: number) => `${index + 1}. ${entry.input?.find((part: any) => part.type === "text")?.text ?? "附件消息"}`).join("\n") : "队列为空" });
+        } else if (name === "skills") {
+          const result = await window.codex.request("skills/list", { cwds: workspace ? [workspace] : [], forceReload: false });
+          const skills = (result.data ?? []).flatMap((entry: any) => entry.skills ?? []);
+          setInfoModal({ title: "Skills", body: skills.length ? skills.map((skill: any) => `${skill.enabled ? "●" : "○"} ${skill.name} - ${skill.description}`).join("\n") : "没有发现可用 Skill" });
+        } else if (name === "mcp") {
+          const result = await window.codex.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly", threadId: thread.id });
+          setInfoModal({ title: "MCP 服务", body: result.data?.length ? result.data.map((server: any) => `${server.name} - ${server.runtimeStatus?.type ?? server.runtimeStatus ?? server.authStatus}`).join("\n") : "没有配置 MCP 服务" });
+        } else if (name === "plugins") {
+          const result = await window.codex.request("plugin/list", { cwds: workspace ? [workspace] : [], forceRefetch: false });
+          const plugins = (result.marketplaces ?? []).flatMap((marketplace: any) => marketplace.plugins ?? []);
+          setInfoModal({ title: "插件", body: plugins.length ? plugins.map((plugin: any) => `${plugin.installed ? "●" : "○"} ${plugin.name}`).join("\n") : "没有发现插件" });
+        } else if (name === "apps") {
+          const result = await window.codex.request("app/list", { limit: 100, threadId: thread.id, forceRefetch: false });
+          setInfoModal({ title: "Apps", body: result.data?.length ? result.data.map((app: any) => `${app.isEnabled ? "●" : "○"} ${app.name}`).join("\n") : "没有可用 App" });
+        }
+      }
+    } catch (error: any) {
+      showToast(`/${name} 执行失败`, error.message);
+    }
+    return true;
+  }
+
+    function startReview(instructions: string) {
+    if (!thread) { setNotice("先开始一个任务再运行审查"); return; }
+    setReviewBusy(true);
+    setReviewReport("");
+    void window.codex.request("review/start", {
+      threadId: thread.id,
+      target: instructions.trim() ? { type: "custom", instructions: instructions.trim() } : { type: "uncommittedChanges" },
+      delivery: "inline",
+    }).then((result: any) => {
+      reviewTurnRef.current = result?.turn?.id ?? null;
+      if (!reviewTurnRef.current) { setReviewBusy(false); setNotice("审查未返回回合"); }
+    }).catch((error: any) => {
+      setReviewBusy(false);
+      setNotice(`审查启动失败：${error.message}`);
+    });
+  }
+
+  async function chooseWorkspace() {
+    const value = await window.codex.chooseDirectory();
+    if (!value) return;
+    setWorkspace(value);
+    localStorage.setItem("workspace", value);
+    if (thread) {
+      const settings = sandbox === "workspace-write" ? { cwd: value, sandboxPolicy: sandboxPolicy(sandbox, value) } : { cwd: value };
+      await updateThreadSettings(settings);
+    }
+  }
+
+  async function chooseImages() {
+    const value = await window.codex.chooseImages();
+    if (value?.length) insertComposerImages(value);
+  }
+
+  async function chooseFiles() {
+    const value = await window.codex.chooseFiles();
+    setFiles((current) => [...current, ...value]);
+  }
+
+  async function refreshMarketSkills(category = skillHubCategory, query = skillHubSearch, page = marketPage) {
+    setMarketLoading(true);
+    try {
+      const result = await window.codex.listMarketSkills({ category: cocoLoopCategoryMap[category] ?? "overall", page, pageSize: marketPageSize, query });
+      setMarketSkills(result.items);
+      setMarketTotal(result.total);
+      setMarketPage(result.page);
+    } catch (error: any) { setNotice(`技能市场读取失败：${error.message}`); }
+    finally { setMarketLoading(false); }
+  }
+
+  async function installMarketSkill(skill: MarketSkillEntry) {
+    setInstallingMarketSkill(skill.id);
+    setSkillInstall({ skill, current: 0 });
+    try {
+      const installed = await window.codex.installMarketSkill(skill);
+      const next = await window.codex.listLocalSkills();
+      setLocalSkills(next);
+      await refreshSettingsResources();
+      setSkillInstall({ skill, current: 7, engineRegistered: installed.engineRegistered, engineCheckMessage: installed.engineCheckMessage });
+      setNotice(installed.engineRegistered ? `已安装并由 Codex 发现：${installed.name}` : `技能已安装：${installed.name}`);
+    } catch (error: any) {
+      setSkillInstall((current) => current ? { ...current, failed: error.message } : null);
+      setNotice(`安装技能失败：${error.message}`);
+    } finally { setInstallingMarketSkill(null); }
+  }
+
+  async function toggleSkillEnabled(entry: LocalSkillEntry) {
+    if (!entry.folder) return;
+    const enabled = entry.enabled !== false;
+    const nextEnabled = !enabled;
+    // 受总闸托管的技能（ponytail-* / desktop-automation / browser-automation）关闭时拦截，
+    // 统一从「常规」页总闸走，避免子项被总闸拉回导致状态漂移
+    if (guardGroupOff({ kind: "skill", folder: entry.folder, name: entry.name, pluginId: (entry as any).pluginId }, `技能「${entry.name}」`, nextEnabled)) return;
+    try {
+      await window.codex.setEnabledSkill({ folder: entry.folder, enabled: nextEnabled });
+      setLocalSkills(await window.codex.listLocalSkills());
+      await refreshSettingsResources();
+      setNotice(nextEnabled ? `技能已启用：${entry.name}` : `技能已停用：${entry.name}`);
+    } catch (error: any) { setNotice(`切换技能状态失败：${error.message}`); }
+  }
+
+  async function saveConnector(draft: ConnectorDraft = connectorDraft) {
+    setConnectorSaving(true);
+    try {
+      await window.codex.saveConnector(draft);
+      setConnectors(await window.codex.listConnectors());
+      await refreshSettingsResources();
+      setConnectorEditorOpen(false);
+      setConnectorDraft({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} });
+      setNotice("连接器已保存，引擎已重启并正在验证 MCP 状态");
+    } catch (error: any) { setNotice(`保存连接器失败：${error.message}`); }
+    finally { setConnectorSaving(false); }
+  }
+
+  async function startConnectorOAuth() {
+    const template = connectorTemplateModal;
+    if (!template) return;
+    setConnectorOAuth({ templateId: template.id, phase: "waiting", message: "正在启动授权…" });
+    try {
+      const result = await window.codex.startConnectorOAuth({ templateId: template.id, values: connectorTemplateValues });
+      if (!result.ok) setConnectorOAuth({ templateId: template.id, phase: "failed", message: result.message ?? "授权启动失败" });
+    } catch (error: any) {
+      setConnectorOAuth({ templateId: template.id, phase: "failed", message: error?.message ?? String(error) });
+    }
+  }
+
+  async function saveConnectorFromTemplate(template: ConnectorTemplate) {
+    const values = connectorTemplateValues;
+    const draft: ConnectorDraft = { id: template.id, name: template.name, transport: template.transport };
+    const fill = (text: string) => text.replace(/\{(\w+)\}/g, (_, key: string) => (values[key] ?? "").trim() || `{${key}}`);
+    if (template.transport === "stdio") {
+      draft.command = template.command;
+      draft.args = (template.args ?? []).map(fill);
+      draft.env = { ...template.env };
+      for (const field of template.fields) if (field.envVar && values[field.key]?.trim()) draft.env[field.envVar] = values[field.key].trim();
+    } else {
+      draft.url = fill(template.url ?? "");
+      const envHttpHeaders: Record<string, string> = {};
+      const secrets: Record<string, string> = {};
+      for (const [header, envName] of Object.entries(template.envHttpHeaders ?? {})) {
+        envHttpHeaders[header] = envName;
+        const tokenField = template.fields.find((field) => field.tokenFor === envName);
+        if (tokenField && values[tokenField.key]?.trim()) secrets[envName] = values[tokenField.key].trim();
+      }
+      if (Object.keys(envHttpHeaders).length) draft.envHttpHeaders = envHttpHeaders;
+      if (Object.keys(secrets).length) draft.secrets = secrets;
+    }
+    setConnectorTemplateSaving(true);
+    try {
+      await window.codex.saveConnector(draft);
+      setConnectors(await window.codex.listConnectors());
+      await refreshSettingsResources();
+      setConnectorTemplateModal(null);
+      setConnectorTemplateValues({});
+      setNotice(`${template.name} 连接器已保存，引擎已重启并正在验证 MCP 状态`);
+    } catch (error: any) { setNotice(`保存 ${template.name} 连接器失败：${error.message}`); }
+    finally { setConnectorTemplateSaving(false); }
+  }
+
+  async function removeConnector(id: string) {
+    try {
+      await window.codex.removeConnector(id);
+      setConnectors(await window.codex.listConnectors());
+      setConnectorChecked((current) => current.filter((entry) => entry !== id));
+      await refreshSettingsResources();
+      setNotice("连接器已移除，MCP 配置已更新");
+    } catch (error: any) { setNotice(`移除连接器失败：${error.message}`); }
+  }
+
+  // 单卡开关：停用后该 MCP 整段从引擎 config.toml 移除，启用时写回，配置与密钥始终保留
+  async function setConnectorEnabled(connector: ConnectorEntry, enabled: boolean) {
+    setConnectorStatusBusy(connector.id);
+    try {
+      await window.codex.setConnectorsEnabled([connector.id], enabled);
+      setConnectors(await window.codex.listConnectors());
+      await refreshSettingsResources();
+      setNotice(`${connector.name} 已${enabled ? "启用" : "停用"}，引擎已重启`);
+    } catch (error: any) { setNotice(`切换连接器状态失败：${error.message}`); }
+    finally { setConnectorStatusBusy(null); }
+  }
+
+  async function batchSetConnectorsEnabled(ids: string[], enabled: boolean) {
+    if (!ids.length) return;
+    setConnectorBatchBusy(enabled ? "enable" : "disable");
+    try {
+      await window.codex.setConnectorsEnabled(ids, enabled);
+      setConnectors(await window.codex.listConnectors());
+      setConnectorChecked([]);
+      await refreshSettingsResources();
+      setNotice(`已批量${enabled ? "启用" : "停用"} ${ids.length} 个连接器，引擎已重启`);
+    } catch (error: any) { setNotice(`批量操作失败：${error.message}`); }
+    finally { setConnectorBatchBusy(null); }
+  }
+
+  /**
+   * app-server MCP 状态卡的启停。走 mcp-servers:set-enabled 统一入口：
+   * 名字能匹配到连接器的改 connectors.json，其余（内置 nuphus 等）改覆盖表，
+   * 两种情况都由主进程重写 config.toml 并重启引擎。
+   */
+  async function setMcpServerEnabled(name: string, enabled: boolean) {
+    // 受总闸托管的 MCP（nuphus）关闭时拦截，统一从「常规」页桌面自动化开关走
+    if (guardGroupOff({ kind: "mcp", name }, `MCP「${name}」`, enabled)) return;
+    setMcpServerStatusBusy(name);
+    try {
+      await window.codex.setMcpServersEnabled([name], enabled);
+      setMcpOverrides(await window.codex.readMcpServerOverrides());
+      if (connectors.some((connector) => connector.id === name)) setConnectors(await window.codex.listConnectors());
+      await refreshSettingsResources();
+      setNotice(`${name} 已${enabled ? "启用" : "停用"}，引擎已重启`);
+    } catch (error: any) { setNotice(`切换 MCP 状态失败：${error.message}`); }
+    finally { setMcpServerStatusBusy(null); }
+  }
+
+  async function batchSetMcpServersEnabled(ids: string[], enabled: boolean) {
+    const targets = ids.filter((id) => !guardGroupOff({ kind: "mcp", name: id }, `MCP「${id}」`, enabled));
+    if (!targets.length) return;
+    setMcpServerBatchBusy(enabled ? "enable" : "disable");
+    try {
+      await window.codex.setMcpServersEnabled(targets, enabled);
+      setMcpOverrides(await window.codex.readMcpServerOverrides());
+      setConnectors(await window.codex.listConnectors());
+      setMcpServerChecked([]);
+      await refreshSettingsResources();
+      setNotice(`已批量${enabled ? "启用" : "停用"} ${targets.length} 个 MCP 服务，引擎已重启`);
+    } catch (error: any) { setNotice(`批量操作失败：${error.message}`); }
+    finally { setMcpServerBatchBusy(null); }
+  }
+
+  /**
+   * 给某个 MCP 服务器的某个工具设置权限档位（deny 拒绝 / ask 询问 / allow 放行）。
+   * mode 传 null 清除该规则。走 mcp-servers:set-tool-permission，主进程重写
+   * config.toml 的 [permissions.*] 段并重启引擎（复刻 WorkBuddy 工具级权限模型）。
+   */
+  async function setMcpToolPermission(server: string, tool: string, mode: "deny" | "ask" | "allow" | null) {
+    setMcpServerStatusBusy(server);
+    try {
+      const result = await window.codex.setMcpToolPermission(server, tool, mode);
+      if (result?.reason === "unknown-server") { setNotice(`「${server}」尚未被引擎识别，无法配置工具权限`); return; }
+      setMcpToolPermissions(await window.codex.readMcpToolPermissions());
+      await refreshSettingsResources();
+      setNotice(mode ? `「${server}.${tool}」已设为「${mode === "deny" ? "拒绝" : mode === "ask" ? "询问" : "放行"}」，引擎已重启` : `已清除「${server}.${tool}」的权限规则`);
+    } catch (error: any) { setNotice(`设置工具权限失败：${error.message}`); }
+    finally { setMcpServerStatusBusy(null); }
+  }
+
+  async function refreshSubAgents() {
+    try { setSubAgents(await window.codex.listSubAgents()); }
+    catch (error: any) { setNotice(`读取子智能体失败：${error.message}`); }
+  }
+
+  async function saveSubAgent(draft: SubAgentEntry) {
+    try {
+      await window.codex.saveSubAgent(draft);
+      await refreshSubAgents();
+      setSubAgentEditorOpen(false);
+      setSubAgentDraft(null);
+      setNotice(draft.id ? "子智能体已更新" : `子智能体「${draft.name}」已创建，Codex 可以调用它干活了`);
+    } catch (error: any) { setNotice(`保存子智能体失败：${error.message}`); }
+  }
+
+  async function toggleSubAgentEnabled(agent: SubAgentEntry) {
+    try {
+      await window.codex.saveSubAgent({ ...agent, enabled: !agent.enabled });
+      await refreshSubAgents();
+      setNotice(`子智能体「${agent.name}」已${agent.enabled ? "停用" : "启用"}`);
+    } catch (error: any) { setNotice(`切换失败：${error.message}`); }
+  }
+
+  async function deleteSubAgent(id: string) {
+    try {
+      await window.codex.removeSubAgent(id);
+      await refreshSubAgents();
+      setNotice("子智能体已删除");
+    } catch (error: any) { setNotice(`删除失败：${error.message}`); }
+  }
+
+  function openNewSubAgent() {
+    setSubAgentDraft({ id: "", name: "", description: "", systemPrompt: "请按你的角色完成任务并返回结构化结果。", effort: "high", inheritModel: true, inheritSandbox: true, inheritApproval: true, enabled: true, createdAt: "", updatedAt: "" });
+    setSubAgentEditorOpen(true);
+  }
+  function openEditSubAgent(agent: SubAgentEntry) {
+    setSubAgentDraft({ ...agent });
+    setSubAgentEditorOpen(true);
+  }
+
+  // —— 专家团（Team 型专家）操作 ——
+  async function refreshExpertTeams() {
+    try { setExpertTeams(await window.codex.listExpertTeams()); }
+    catch (error: any) { setNotice(`读取专家团失败：${error.message}`); }
+  }
+  async function saveExpertTeam(draft: ExpertTeamConfig) {
+    try {
+      await window.codex.saveExpertTeam(draft);
+      await refreshExpertTeams();
+      setExpertTeamEditorOpen(false);
+      setExpertTeamDraft(null);
+      setNotice(draft.teamId ? `专家团「${draft.displayName.zh}」已更新` : `专家团「${draft.displayName.zh}」已创建`);
+    } catch (error: any) { setNotice(`保存专家团失败：${error.message}`); }
+  }
+  async function toggleExpertTeamEnabled(team: ExpertTeamConfig) {
+    try {
+      await window.codex.saveExpertTeam({ ...team, enabled: !team.enabled });
+      await refreshExpertTeams();
+      setNotice(`专家团「${team.displayName.zh}」已${team.enabled ? "停用" : "启用"}`);
+    } catch (error: any) { setNotice(`切换失败：${error.message}`); }
+  }
+  async function deleteExpertTeam(teamId: string) {
+    try {
+      await window.codex.removeExpertTeam(teamId);
+      await refreshExpertTeams();
+      setNotice("专家团已删除");
+    } catch (error: any) { setNotice(`删除失败：${error.message}`); }
+  }
+  async function resetExpertTeams() {
+    try {
+      const teams = await window.codex.resetExpertTeams();
+      setExpertTeams(teams);
+      setNotice("已恢复内置示例专家团");
+    } catch (error: any) { setNotice(`恢复失败：${error.message}`); }
+  }
+  function openNewExpertTeam() {
+    const now = new Date().toISOString();
+    setExpertTeamDraft({
+      teamId: "", displayName: { zh: "", en: "" }, profession: { zh: "", en: "" },
+      description: { zh: "", en: "" }, category: "12-IndustryConsultant",
+      tags: [{ zh: "", en: "" }, { zh: "", en: "" }, { zh: "", en: "" }],
+      quickPrompts: [{ zh: "", en: "" }, { zh: "", en: "" }, { zh: "", en: "" }],
+      lead: { id: "", name: "", profession: { zh: "", en: "" }, description: "", systemPrompt: "" },
+      members: [], sop: "", enabled: true, createdAt: now, updatedAt: now,
+    });
+    setExpertTeamEditorOpen(true);
+  }
+  function openEditExpertTeam(team: ExpertTeamConfig) {
+    setExpertTeamDraft(JSON.parse(JSON.stringify(team)));
+    setExpertTeamEditorOpen(true);
+  }
+  /** 发起团队会话：一键建线程（带 team_member_invoke 工具）+ 注入团队系统提示发首条任务 */
+  /** 为某张专家团卡片单独选择项目地址（发起会话时作为该团队的工作目录） */
+  async function chooseTeamCwd(teamId: string) {
+    const value = await window.codex.chooseDirectory();
+    if (!value) return;
+    setTeamCwdMap((current) => ({ ...current, [teamId]: value }));
+    setNotice("已为该专家团指定项目地址");
+  }
+  /** 清空某张专家团卡片的项目地址（回退到全局工作区） */
+  function clearTeamCwd(teamId: string) {
+    setTeamCwdMap((current) => {
+      const next = { ...current };
+      delete next[teamId];
+      return next;
+    });
+  }
+  /** 成员直达会话：点击专家/成员 chip → 立刻新建以「团队名 · 成员名」命名的空会话并跳转，
+   *  不弹任务描述弹窗。用户输入的第一条消息由发送管线自动包装成 SYSTEM TASK 注入成员角色。 */
+  async function startMemberDirectSession(team: ExpertTeamConfig, member: ExpertTeamMember) {
+    if (!customModel || !selectedModel) { setNotice("请先配置并启用自定义模型"); setSettingsOpen(true); return; }
+    const teamCwd = teamCwdMap[team.teamId] ?? workspace;
+    if (!teamCwd) { await chooseWorkspace(); return; }
+    const directKey = `${team.teamId}:${member.id}`;
+    setExpertTeamMemberDirect(directKey);
+    try {
+      const result = await window.codex.startTeamMemberSession({
+        teamId: team.teamId,
+        memberId: member.id,
+        cwd: teamCwd,
+        model: selectedModel?.model ?? modelName(modelId),
+        effort: effort || undefined,
+        sandbox,
+        approvalPolicy,
+        personality: selectedModel?.supportsPersonality ? personality : null,
+        defer: true,
+      });
+      teamThreadMapRef.current.set(result.thread.id, team.teamId);
+      if (result.role) rememberExpertRole(result.thread.id, result.role);
+      setSettingsOpen(false);
+      await openThread(result.thread.id, result.thread);
+      // 空线程是主进程 thread/start 直接建的，openThread 只切视图不更新左侧列表，
+      // 必须显式刷新一次列表，让新会话立即出现在左侧
+      void refreshThreads();
+      requestAnimationFrame(() => composerInputRef.current?.focus());
+      setNotice(`已进入「${result.thread?.name ?? expertRoleLabel(member)}」会话：直接输入内容即可向该角色提问`);
+    } catch (error: any) { setNotice(`发起成员会话失败：${error.message}`); }
+    finally { setExpertTeamMemberDirect(null); }
+  }
+  /** 发起专家团会话：点击「发起会话」→ 立刻新建以团队名命名的空会话并跳转（不弹任务弹窗、不自动跑）；
+   *  task 非空（推荐提示词按钮）时预填进输入框，用户可改可发。首条消息由发送管线包装成 SYSTEM TASK。 */
+  async function startTeamSession(team: ExpertTeamConfig, task: string) {
+    if (!customModel || !selectedModel) { setNotice("请先配置并启用自定义模型"); setSettingsOpen(true); return; }
+    const teamCwd = teamCwdMap[team.teamId] ?? workspace;
+    if (!teamCwd) { await chooseWorkspace(); return; }
+    setExpertTeamRunning(team.teamId);
+    try {
+      const result = await window.codex.startTeamSession({
+        teamId: team.teamId,
+        cwd: teamCwd,
+        model: selectedModel?.model ?? modelName(modelId),
+        effort: effort || undefined,
+        sandbox,
+        approvalPolicy,
+        personality: selectedModel?.supportsPersonality ? personality : null,
+        defer: true,
+      });
+      teamThreadMapRef.current.set(result.thread.id, team.teamId);
+      teamThreadConfigRef.current.set(result.thread.id, {
+        teamId: team.teamId,
+        cwd: teamCwd,
+        model: selectedModel?.model ?? modelName(modelId),
+        effort: effort || undefined,
+        sandbox,
+        approvalPolicy,
+      });
+      if (result.role) rememberExpertRole(result.thread.id, result.role);
+      setSettingsOpen(false);
+      await openThread(result.thread.id, result.thread);
+      // 新线程是主进程 thread/start 直接建的，openThread 只切视图不更新左侧列表，
+      // 必须显式刷新一次列表，让新会话立即出现在左侧
+      void refreshThreads();
+      const suggested = (task ?? "").trim();
+      setPrompt(suggested);
+      requestAnimationFrame(() => composerInputRef.current?.focus());
+      setNotice(`已进入「${result.thread?.name ?? team.displayName.zh}」会话：输入你的需求即可让团队开工`);
+    } catch (error: any) { setNotice(`发起专家团会话失败：${error.message}`); }
+    finally { setExpertTeamRunning(null); }
+  }
+  /** 在团队会话中调度一个成员（team_member_invoke 工具回调） */
+  async function invokeTeamMember(toolArgs: any, threadId: string, respondEventId: number | string) {
+    const parentConfig = teamThreadConfigRef.current.get(threadId);
+    const teamId = parentConfig?.teamId || teamThreadMapRef.current.get(threadId) || "";
+    setExpertTeamMemberRunning({ teamId, memberName: String(toolArgs.memberId ?? "") });
+    try {
+      const result = await window.codex.invokeTeamMember({
+        teamId,
+        memberId: String(toolArgs.memberId ?? ""),
+        query: String(toolArgs.query ?? ""),
+        cwd: parentConfig?.cwd || workspace || undefined,
+        model: parentConfig?.model || selectedModel?.model || modelName(modelId),
+        effort: parentConfig?.effort || effort || undefined,
+        sandbox: parentConfig?.sandbox || sandbox,
+        approvalPolicy: parentConfig?.approvalPolicy || approvalPolicy,
+      });
+      await window.codex.respond(respondEventId, { contentItems: [{ type: "inputText", text: `[专家团成员 ${result.profession || result.name} 的执行结果]\n${result.output}` }], success: true });
+    } catch (error: any) {
+      await window.codex.respond(respondEventId, { contentItems: [{ type: "inputText", text: `[成员调度失败]\n${error.message}` }], success: false });
+    } finally {
+      setExpertTeamMemberRunning(null);
+    }
+  }
+
+  async function importSkill() {
+    try {
+      const result = await window.codex.importSkill();
+      if (!result) return;
+      const next = await window.codex.listLocalSkills();
+      setLocalSkills(next);
+      await refreshSettingsResources();
+      setNotice(`技能已导入：${result.name}`);
+    } catch (error: any) { setNotice(`导入技能失败：${error.message}`); }
+  }
+
+  async function removeLocalSkill(name: string) {
+    try {
+      await window.codex.removeLocalSkill(name);
+      setLocalSkills(await window.codex.listLocalSkills());
+      await refreshSettingsResources();
+      setNotice(`技能已卸载：${name}`);
+    } catch (error: any) { setNotice(`卸载技能失败：${error.message}`); }
+  }
+
+  async function pasteImage() {
+    const value = await window.codex.readClipboardImage();
+    if (value) insertComposerImages([value]);
+    else setNotice("剪贴板中没有图片");
+  }
+
+  /** 触发提示词增强：原文备份 → 调主进程 LLM 润色 → 替换输入框文本。
+   *  增强后按钮进入撤销模式（再点还原原文）；用户改动文本即清除备份（WorkBuddy 同款）。 */
+  async function runPromptEnhance() {
+    // 撤销模式：还原备份原文
+    if (!enhanceBusy && hasEnhanceBackup && enhanceBackupRef.current != null) {
+      setPrompt(enhanceBackupRef.current);
+      enhanceBackupRef.current = null;
+      setHasEnhanceBackup(false);
+      return;
+    }
+    const raw = stripImageTokens(prompt).trim();
+    if (!raw || enhanceBusy) return;
+    setEnhanceBusy(true);
+    try {
+      const result = await window.codex.enhancePrompt(raw);
+      if (!result.ok || !result.text) {
+        setNotice(result.error || "增强失败，请重试");
+        return;
+      }
+      enhanceBackupRef.current = prompt;
+      setHasEnhanceBackup(true);
+      setPrompt((current) => {
+        // 保留占位符位置：文本段被替换，占位符原样保留（split 后只替换 text 段）
+        const segments = splitPromptSegments(current);
+        const enhanced = splitPromptSegments(result.text ?? "").filter((seg) => seg.kind === "text").map((seg) => (seg as any).text).join("\n");
+        return segments.map((seg) => seg.kind === "text" ? (seg.text.trim() ? enhanced : "") : imageToken((seg as any).path)).filter(Boolean).join(" ");
+      });
+      setNotice("提示词已增强，再次点击可还原原文");
+    } catch (error: any) {
+      setNotice(`增强失败：${error.message ?? error}`);
+    } finally {
+      setEnhanceBusy(false);
+    }
+  }
+
+  // 用户修改文本后备份失效（WorkBuddy：内容发散即清 backup，防止误还原覆盖用户输入）
+  useEffect(() => {
+    if (hasEnhanceBackup && prompt !== enhanceBackupRef.current && !promptIncludesBackup(prompt, enhanceBackupRef.current ?? "")) {
+      enhanceBackupRef.current = null;
+      setHasEnhanceBackup(false);
+    }
+  }, [prompt, hasEnhanceBackup]);
+
+  /** 备份有效性判定：prompt 剥离占位符后仍包含备份原文的前 60 字（占位符增删不算发散）。 */
+  function promptIncludesBackup(current: string, backup: string) {
+    const core = stripImageTokens(backup);
+    if (!core) return true;
+    return stripImageTokens(current).includes(core.slice(0, Math.min(core.length, 60)));
+  }
+
+  /** 把图片以占位符形式插入输入框光标处（WorkBuddy 式内联：粘贴在哪就出现在哪）。
+   *  同时保留 images 数组（发送管线数据源），占位符负责展示与位置语义。 */
+  function insertComposerImages(paths: string[]) {
+    if (!paths.length) return;
+    const el = composerInputRef.current;
+    setImages((current) => [...current, ...paths.filter((path) => !current.includes(path))]);
+    if (!el) {
+      setPrompt((current) => `${current}${current && !current.endsWith("\n") ? "\n" : ""}${paths.map((path) => imageToken(path)).join(" ")}`);
+      return;
+    }
+    setPrompt((current) => {
+      const start = el.selectionStart ?? current.length;
+      const end = el.selectionEnd ?? start;
+      let next = { text: current, caret: current.length };
+      for (const path of paths) {
+        const applied = insertImageToken(next.text, next.caret, next.caret, path);
+        next = applied;
+      }
+      // insertImageToken 基于原始 start/end；多图时基于上次 caret 顺序追加
+      requestAnimationFrame(() => { el.focus(); el.setSelectionRange(next.caret, next.caret); });
+      return next.text;
+    });
+  }
+
+  async function openThread(id: string, freshThread?: Thread | null) {
+    setChatSearchOpen(false);
+    // 快速连点防竞态：只有最新一次切换的 resume 响应才允许落地渲染
+    const seq = ++switchSeqRef.current;
+    setOpeningThread(id);
+    const storedModel = loadThreadModel(id);
+    if (storedModel) setModelId(storedModel);
+    // 切会话一律显示遮罩（缓存秒开也走）：给"刚切过去就在最新消息位置"的视觉过渡，
+    // 避免内容直接落底的突兀；遮罩由 markSettled 在内容稳定后 ~180ms 自动淡出
+    setSwitchingThreadId(id);
+    setMobileNav(false);
+    setDiff("");
+    setSystemEvents([]);
+    setOptimisticInput(null);
+    const knownRunning = runningThreadIdsRef.current.has(id);
+    setSending(knownRunning);
+    setActiveTurnId(knownRunning ? (runningTurnIdsRef.current.get(id) ?? null) : null);
+    setWorkStartedAt(knownRunning ? (runningStartedAtRef.current.get(id) ?? Date.now()) : null);
+    setInterrupting(false);
+    // 切会话后滚动位置属于旧会话，不能带过来；等新内容渲染后直接跳到最新消息。
+    switchJumpRef.current = true;
+    closeTaskMenu();
+    setReviewBusy(false);
+    setReviewReport("");
+    reviewTurnRef.current = null;
+    setPlanSteps([]);
+    setGoalText("");
+    // jumpToBottom settled 回调：内容渲染稳定（scrollHeight 连续两帧不变）后才让遮罩
+    // 淡出；多次调用重置 timer，保证只有"所有路径的 jumpToBottom 都稳定"后才真正卸载，
+    // 避免切到长会话时遮罩提前消失、内容继续增高导致"切过去在中间"。
+    const markSettled = () => {
+      if (seq !== switchSeqRef.current) return;
+      if (fadeOutTimerRef.current != null) window.clearTimeout(fadeOutTimerRef.current);
+      setSwitchingFading(true);
+      fadeOutTimerRef.current = window.setTimeout(() => {
+        if (seq !== switchSeqRef.current) return;
+        setSwitchingThreadId((current) => (current === id ? null : current));
+        setSwitchingFading(false);
+        fadeOutTimerRef.current = null;
+      }, 180);
+    };
+    // 新建线程（主进程已 thread/start + turn/start）：本地直接落地，不走 resume——
+    // 刚建的线程还没有 rollout，thread/resume 必报 "no rollout found"，会让界面掉回欢迎页。
+    if (freshThread) {
+      if (seq !== switchSeqRef.current) return;
+      threadRef.current = freshThread;
+      threadCacheRef.current.set(id, freshThread);
+      setThread(freshThread);
+      const initialModel = storedModel || modelId || localStorage.getItem("default-model") || "";
+      if (initialModel) {
+        setModelId(initialModel);
+        saveThreadModel(id, initialModel);
+      }
+      switchJumpRef.current = true;
+      // 线程已按当前用户偏好建好（调用方传入 sandbox/approvalPolicy），直接固化本地权限记录
+      setSandbox(sandbox);
+      setApprovalPolicy(approvalPolicy);
+      saveThreadPermissions(id, sandbox, approvalPolicy);
+      const runningTurn = (freshThread.turns ?? []).find((turn: Turn) => turn.status === "inProgress" || turn.status === "running");
+      setActiveTurnId(runningTurn?.id ?? null);
+      setSending(Boolean(runningTurn));
+      setWorkStartedAt(runningTurn ? (runningStartedAtRef.current.get(id) ?? Date.now()) : null);
+      if (runningTurn) markThreadRunning(id, runningTurn.id);
+      else markThreadStopped(id);
+      // 工作区与线程一致（团队卡片可指定独立项目地址）
+      if (freshThread.cwd) setWorkspace(freshThread.cwd);
+      // 内容渲染完成后瞬时定位到最新消息（两帧重试；带 settled 回调确保遮罩等渲染稳定）
+      requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled)));
+      setOpeningThread(null);
+      markSettled();
+      return;
+    }
+    // 缓存秒开：打开过的会话立即渲染缓存内容（最新消息已在屏），resume 在后台刷新
+    const cached = threadCacheRef.current.get(id);
+    if (cached) {
+      // 已知仍在后台运行的会话不能做“历史残留运行态归一化”，否则切回来会先
+      // 被误改成 completed，随后 resume 又改回 running，造成状态机闪烁甚至错乱。
+      const normalizedCache = runningThreadIdsRef.current.has(id) ? cached : normalizeLoadedThread(cached);
+      if (normalizedCache !== cached) threadCacheRef.current.set(id, normalizedCache);
+      threadRef.current = normalizedCache;
+      setThread(normalizedCache);
+      const cachedRunningTurn = normalizedCache.turns.find((turn: Turn) => isTurnRunning(turn));
+      setActiveTurnId(cachedRunningTurn?.id ?? null);
+      setSending(Boolean(cachedRunningTurn));
+      setWorkStartedAt(cachedRunningTurn ? (runningStartedAtRef.current.get(id) ?? Date.now()) : null);
+      if (cachedRunningTurn) markThreadRunning(id, cachedRunningTurn.id);
+      // layout effect 会消费 switchJumpRef 瞬时滚到底；这里再兜底一次（带 settled 回调），
+      // 防 markdown/图片在首帧后增高导致没贴底
+      requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled));
+    }
+    try {
+      const result = await window.codex.request("thread/resume", { threadId: id, excludeTurns: false });
+      if (seq !== switchSeqRef.current) return; // 已切到别的会话，丢弃本次结果
+      // 残留运行态归一化（详见 normalizeLoadedThread）：旧会话丢过 turn/completed 的
+      // 回合不能带着 inProgress 进渲染，否则永远走流式分支、展示回退到旧效果。
+      const loaded = runningThreadIdsRef.current.has(id) ? result.thread : normalizeLoadedThread(result.thread);
+      threadRef.current = loaded;
+      threadCacheRef.current.set(id, loaded);
+      // 秒开后 resume 无实质变化时不替换（避免闪烁）；有变化（后台继续跑/消息补齐）才更新
+      const changed = !cached || threadContentChanged(cached, loaded);
+      if (changed) {
+        // 内容补齐会再次渲染：重设 switchJump，让这次渲染也瞬时定位（否则 smooth 动画
+        // 又会从中间滑到底部，且动画目标基于渲染瞬间的 scrollHeight，易停在半路）
+        switchJumpRef.current = true;
+      }
+      // 历史内容即使没有数据变化，也重新提交一次，让旧会话应用当前折叠标题与样式。
+      setThread(loaded);
+      // 内容渲染完成后再次瞬时定位到最新消息（两帧重试，等 React 提交 DOM；带 settled
+      // 回调——markSettled 会重置 fade-out timer，确保遮罩等到所有路径都跳完才淡出）
+      requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled)));
+      const resultProvider = String(result.modelProvider ?? result.model_provider ?? customModel?.provider ?? "custom");
+      const resultModel = String(result.model ?? "").trim();
+      const restoredModel = storedModel || (resultModel ? `custom:${resultProvider}:${resultModel}` : modelId || localStorage.getItem("default-model") || "");
+      if (restoredModel) {
+        setModelId(restoredModel);
+        saveThreadModel(id, restoredModel);
+      }
+      if (result.reasoningEffort) setEffort(result.reasoningEffort);
+      // 思考等级恢复优先级：本地每会话记录（用户在这个会话明确选过）> resume 回带值。
+      // 引擎 resume 返回的是会话创建时的 effort，通常更旧；本地记录才是用户最新的选择。
+      {
+        const localEffort = loadThreadEffort(id);
+        if (localEffort) setEffort(localEffort);
+        else if (!result.reasoningEffort) setEffort(normalizeEffort(localStorage.getItem("default-effort")) || "");
+        saveThreadEffort(id, localEffort || result.reasoningEffort || effort || "");
+      }
+      setWorkspace(result.cwd);
+      // 权限恢复优先级：本地每任务记录（用户在这个会话明确选过）> 全局默认 > resume 响应。
+      // 引擎 resume 返回的是会话创建时的值，通常是旧默认，不能覆盖用户当前的全局选择。
+      const resumedSandbox = sandboxMode(result.sandboxPolicy ?? result.sandbox ?? (result.thread as any)?.sandboxPolicy);
+      const resumedApproval = typeof result.approvalPolicy === "string" ? result.approvalPolicy : undefined;
+      const localPerms = loadThreadPermissions(id);
+      const validSandbox = (value?: string) => value === "danger-full-access" || value === "read-only" || value === "workspace-write" ? value : null;
+      const validApproval = (value?: string) => value === "never" || value === "on-request" || value === "untrusted" ? value : null;
+      const savedDefault = validSandbox(localStorage.getItem("default-sandbox") ?? undefined) ?? "danger-full-access";
+      const savedDefaultApproval = validApproval(localStorage.getItem("default-approval") ?? undefined) ?? "never";
+      const nextSandbox = validSandbox(localPerms.sandbox) ?? savedDefault ?? resumedSandbox;
+      const nextApproval = validApproval(localPerms.approval) ?? savedDefaultApproval ?? resumedApproval;
+      setSandbox(nextSandbox);
+      setApprovalPolicy(nextApproval);
+      saveThreadPermissions(id, nextSandbox, nextApproval);
+      void window.codex.request("thread/settings/update", { threadId: id, approvalPolicy: nextApproval, sandboxPolicy: sandboxPolicy(nextSandbox, result.cwd ?? workspace) }).catch(() => undefined);
+      const resumedRunningTurn = loaded.turns.find((turn: Turn) => isTurnRunning(turn));
+      setActiveTurnId(resumedRunningTurn?.id ?? null);
+      setSending(Boolean(resumedRunningTurn));
+      setWorkStartedAt(resumedRunningTurn ? (runningStartedAtRef.current.get(id) ?? Date.now()) : null);
+      // 切回一个「引擎仍在后台运行」的会话时，点亮它的侧边栏转圈（跟当前选中解耦）。
+      if (resumedRunningTurn) markThreadRunning(id, resumedRunningTurn.id);
+      else markThreadStopped(id);
+    } catch (error: any) {
+      if (seq === switchSeqRef.current) {
+        // 空会话（专家/团队 defer 预建、尚无 rollout）在引擎侧没有可 resume 的记录：
+        // 用本地列表条目兜底渲染成空会话（欢迎页），用户可继续输入首条消息——角色提示由
+        // localStorage 的 pending role 恢复，首条发送仍会包装成 SYSTEM TASK。
+        if (/no rollout found|not found|no such thread|unloaded/i.test(String(error?.message))) {
+          const entry = threads.find((t) => t.id === id);
+          if (entry) {
+            const local: Thread = { id: entry.id, name: entry.name ?? null, preview: "", cwd: entry.cwd, updatedAt: entry.updatedAt, status: null, turns: [] };
+            threadRef.current = local;
+            threadCacheRef.current.set(id, local);
+            setThread(local);
+            setSending(false);
+            setActiveTurnId(null);
+            setWorkStartedAt(null);
+            markThreadStopped(id);
+            requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled)));
+            return;
+          }
+        }
+        setNotice(error.message);
+      }
+    } finally {
+      if (seq === switchSeqRef.current) {
+        setOpeningThread(null);
+        // 兜底淡出遮罩：成功路径里 markSettled 已经被多次调用（cached 秒开 / resume 后），
+        // 这里再调一次保证错误路径（resume 抛错/seq 已切走）也能让遮罩淡出；fade-out
+        // timer 重置机制保证多次调用安全，最终只有最后一次稳定后才真正卸载。
+        markSettled();
+      }
+    }
+  }
+
+  async function archiveThread(id: string) {
+    await window.codex.request("thread/archive", { threadId: id });
+    setThreads((current) => current.filter((entry) => entry.id !== id));
+    threadCacheRef.current.delete(id);
+    if (threadRef.current?.id === id) {
+      // 归档当前会话 = 回到全新会话：必须走 startNewThread 完整复位。
+      // 之前手工清了一堆状态但漏了 sending/interrupting——会话在运行中被归档后
+      // sending 卡 true，发送按钮永远是「停止」，输入框发不出消息。
+      startNewThread();
+      requestAnimationFrame(() => composerInputRef.current?.focus());
+    }
+  }
+
+  async function renameThread(id: string, value: string) {
+    const name = value.trim();
+    if (!name) return;
+    const applyName = (entry: Thread) => entry.id === id ? { ...entry, name } : entry;
+    setThreads((current) => current.map(applyName));
+    const cached = threadCacheRef.current.get(id);
+    if (cached) threadCacheRef.current.set(id, applyName(cached));
+    if (threadRef.current?.id === id) {
+      const next = applyName(threadRef.current);
+      threadRef.current = next;
+      setThread(next);
+    }
+    try {
+      await window.codex.request("thread/name/set", { threadId: id, name });
+      void refreshThreads();
+    } catch (error: any) {
+      await refreshThreads().catch(() => undefined);
+      setNotice(`重命名失败：${error.message}`);
+    }
+  }
+
+  async function clearCurrentConversation() {
+    const id = threadRef.current?.id;
+    if (!id) return;
+    try {
+      await window.codex.request("thread/delete", { threadId: id });
+      threadCacheRef.current.delete(id);
+      setThreads((current) => current.filter((entry) => entry.id !== id));
+      startNewThread();
+      await refreshThreads();
+      requestAnimationFrame(() => composerInputRef.current?.focus());
+      showToast("对话记录已清空", "当前会话已永久删除，可以直接开始新对话");
+    } catch (error: any) {
+      showToast("清空对话失败", error.message);
+    }
+  }
+
+  async function unarchiveThread(id: string) {
+    await window.codex.request("thread/unarchive", { threadId: id });
+    setThreads((current) => current.filter((entry) => entry.id !== id));
+  }
+
+  async function deleteThread(id: string) {
+    if (!await openAppConfirm("删除会话", "当前会话及其中的消息、工具记录将被永久删除，此操作无法撤销。", "永久删除")) return;
+    setOpeningThread(id);
+    try {
+      await window.codex.request("thread/delete", { threadId: id });
+      threadCacheRef.current.delete(id);
+      setThreads((current) => current.filter((entry) => entry.id !== id));
+      if (threadRef.current?.id === id) {
+        threadRef.current = null;
+        setThread(null);
+        setOptimisticInput(null);
+        setActiveTurnId(null);
+        markThreadStopped(id);
+        setWorkStartedAt(null);
+        setSystemEvents([]);
+        setPlanSteps([]);
+        setGoalText("");
+      }
+    } catch (error: any) {
+      setNotice(`删除任务失败：${error.message}`);
+    } finally {
+      setOpeningThread(null);
+    }
+  }
+
+  async function bulkDeleteThreads(ids: string[]) {
+    if (!ids.length) return;
+    if (!window.confirm(`确认永久删除 ${ids.length} 条任务？此操作无法撤销。`)) return;
+    for (const id of ids) {
+      try {
+        await window.codex.request("thread/delete", { threadId: id });
+        threadCacheRef.current.delete(id);
+      } catch (error: any) {
+        setNotice(`删除任务失败：${error.message ?? error}`);
+      }
+    }
+    setThreads((current) => {
+      const next = current.filter((entry) => !ids.includes(entry.id));
+      return next;
+    });
+    if (threadRef.current && ids.includes(threadRef.current.id)) {
+      threadRef.current = null;
+      setThread(null);
+      setOptimisticInput(null);
+      setActiveTurnId(null);
+      for (const id of ids) markThreadStopped(id);
+      setWorkStartedAt(null);
+      setSystemEvents([]);
+      setPlanSteps([]);
+      setGoalText("");
+    }
+  }
+
+  async function deleteThreadsByCwd(cwd: string) {
+    const ids = threads.filter((entry) => entry.cwd === cwd).map((entry) => entry.id);
+    if (!ids.length) { setNotice("该项目下已无对话"); return; }
+    if (!window.confirm(`确认永久删除项目「${basename(cwd)}」下的 ${ids.length} 条任务？此操作无法撤销。`)) return;
+    for (const id of ids) {
+      try {
+        await window.codex.request("thread/delete", { threadId: id });
+        threadCacheRef.current.delete(id);
+      } catch (error: any) {
+        setNotice(`删除任务失败：${error.message ?? error}`);
+      }
+    }
+    setThreads((current) => current.filter((entry) => entry.cwd !== cwd));
+    if (threadRef.current && threadRef.current.cwd === cwd) {
+      threadRef.current = null;
+      setThread(null);
+      setOptimisticInput(null);
+      setActiveTurnId(null);
+      for (const id of ids) markThreadStopped(id);
+      setWorkStartedAt(null);
+      setSystemEvents([]);
+      setPlanSteps([]);
+      setGoalText("");
+    }
+    if (projectFilter === cwd) setProjectFilter(null);
+  }
+
+  async function createEmptyThread(): Promise<Thread | null> {
+    const builtinCfg = await window.codex.readBuiltinPlugins().catch(() => null);
+    const dynamicTools = [
+      ...(builtinCfg?.image?.enabled !== false && builtinCfg?.image?.baseUrl ? [{
+        type: "function",
+        name: "generate_image",
+        description: "生成一张图片并返回可访问的图片地址。用于用户要求画图、配图、示意图等场景。",
+        inputSchema: { type: "object", properties: { prompt: { type: "string", description: "图片内容的详细描述（含风格、主体、构图）" } }, required: ["prompt"] },
+      }] : []),
+      ...(builtinCfg?.vision?.enabled !== false && builtinCfg?.vision?.baseUrl ? [{
+        type: "function",
+        name: "describe_image",
+        description: "当你看不清或无法解析用户提供的图片内容时，调用此工具让视觉模型描述图片并把结果作为依据继续回答。",
+        inputSchema: { type: "object", properties: { imageUrl: { type: "string", description: "图片地址或 data URL" }, prompt: { type: "string", description: "你想让视觉模型关注的问题，可省略" } }, required: ["imageUrl"] },
+      }] : []),
+      ...(memoryEnabled ? [
+        { type: "function", name: "memory_recall", description: "按当前任务查询相关的分类记忆。", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
+        { type: "function", name: "memory_save", description: "保存可复用的项目事实，必须选择分类。", inputSchema: { type: "object", properties: { category: { type: "string", enum: ["用户偏好", "项目背景", "工作流/SOP", "任务经验", "临时上下文"] }, content: { type: "string" } }, required: ["category", "content"] } },
+      ] : []),
+      ...subAgentTools(subAgents),
+      // RPA 配方与任务清单：让 agent 能存配方/跑配方/维护清单/向用户提问
+      { type: "function", name: "rpa_save", description: "把刚跑通的一条自动化流程保存为 RPA 配方，下次可直接复用执行。steps 按顺序写清每一步（网址/点击/输入/桌面操作等），kind 选 browser（浏览器）/desktop（桌面）/mixed。", inputSchema: { type: "object", properties: { name: { type: "string", description: "配方名称，如「每天导出日报」" }, desc: { type: "string", description: "一句话说明用途" }, kind: { type: "string", enum: ["browser", "desktop", "mixed"] }, steps: { type: "array", items: { type: "string" }, description: "按顺序的执行步骤" }, target: { type: "string", description: "起始网址或目标程序，可省略" } }, required: ["name", "steps", "kind"] } },
+      { type: "function", name: "rpa_run", description: "列出已保存的 RPA 配方（不传 name），或按名称执行某条配方。执行时按 steps 逐步复现自动化流程。", inputSchema: { type: "object", properties: { name: { type: "string", description: "要执行的配方名称；省略则返回全部配方清单" } } } },
+      { type: "function", name: "task_add", description: "把一条任务加入用户的任务清单。", inputSchema: { type: "object", properties: { text: { type: "string" }, priority: { type: "string", enum: ["low", "medium", "high"] } }, required: ["text"] } },
+      { type: "function", name: "task_update", description: "更新任务清单：列出全部任务（不传任何参数）、改状态或删除。status 只有 todo/doing/done。", inputSchema: { type: "object", properties: { id: { type: "string" }, status: { type: "string", enum: ["todo", "doing", "done"] }, text: { type: "string" }, priority: { type: "string", enum: ["low", "medium", "high"] }, done: { type: "boolean", description: "删除任务" } } } },
+      { type: "function", name: "agent_ask", description: "在对话里向用户展示一组选项并等待选择（提问时必须给出选项）。options 里第一项会作为推荐项高亮，也可以留空让用户自由输入。", inputSchema: { type: "object", properties: { question: { type: "string", description: "要问用户的问题" }, options: { type: "array", items: { type: "string" }, description: "2-4 个候选选项，第一项为推荐" }, allowFree: { type: "boolean", description: "是否允许自由输入，默认允许" } }, required: ["question", "options"] } },
+    ];
+    const memoryTools = dynamicTools.length ? { dynamicTools } : {};
+    const started = await window.codex.request("thread/start", {
+      model: selectedModel?.model ?? modelName(modelId),
+      cwd: workspace,
+      approvalPolicy,
+      sandbox,
+      sandboxPolicy: sandboxPolicy(sandbox, workspace),
+      personality: selectedModel?.supportsPersonality ? personality : null,
+      ...providerConfig,
+      ...memoryTools,
+    });
+    const active = started.thread as Thread;
+    threadRef.current = active;
+    setThread(active);
+    if (started?.thread?.id) saveThreadPermissions(started.thread.id, sandbox, approvalPolicy);
+    return active;
+  }
+
+  async function send(event?: FormEvent) {
+    event?.preventDefault();
+    // 自定义命令展开文本优先消费（跳过 / 前缀解析，避免展开结果被二次当命令处理）
+    const pendingText = pendingCommandTextRef.current;
+    if (pendingText != null) pendingCommandTextRef.current = null;
+    const value = (pendingText ?? prompt).trim();
+    if (pendingText == null && value.startsWith("/") && images.length === 0) {
+      const command = value.slice(1).split(/\s+/, 1)[0].toLowerCase();
+      if (thread && runningThreadIdsRef.current.has(thread.id) && !["stop", "status", "diff", "pwd", "model", "permissions", "help", "context", "clear", "copy", "memory", "effort", "personality", "sandbox", "approval", "skills", "mcp", "plugins", "apps", "queue"].includes(command)) {
+        showToast("任务仍在运行", `请先使用 /stop，再执行 /${command}`);
+        return;
+      }
+      if (await runSlashCommand(value)) return;
+    }
+    if (!value && images.length === 0 && files.length === 0) return;
+    if (sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
+    try {
+    if (!customModel || !selectedModel) {
+      setNotice("请先配置并启用自定义模型");
+      setSettingsOpen(true);
+      return;
+    }
+    // 打开一个使用其他供应商的历史会话时，仅恢复下拉框选择，不立刻重启引擎。
+    // 真正发送前再切换供应商；若有任何任务运行则拒绝，绝不能为了切模型停止后台会话。
+    if (selectedModel.provider && selectedModel.provider !== customModel.provider) {
+      if (runningThreadIdsRef.current.size > 0) {
+        showToast("暂时不能发送", "该会话使用另一家模型供应商，当前还有任务运行；请等待任务完成或改选当前供应商的模型");
+        return;
+      }
+      try {
+        const updated = await window.codex.setProviderModel({ provider: selectedModel.provider, model: selectedModel.model });
+        setCustomModel(updated);
+      } catch (error: any) {
+        setNotice(`切换模型供应商失败：${error.message}`);
+        return;
+      }
+    }
+    if (!workspace) {
+      await chooseWorkspace();
+      return;
+    }
+    let messageText = value;
+    let threadReferenceBlocks = "";
+    // 内联图片：占位符从文本剥离，图片按占位符出现顺序发送；不在占位符里的遗留附件照旧追加
+    const inlineImagePaths = promptImagePaths(messageText);
+    if (inlineImagePaths.length) messageText = stripImageTokens(messageText);
+    try {
+      const resolved = await resolveThreadReferences(value, thread?.id);
+      messageText = resolved.text;
+      threadReferenceBlocks = resolved.blocks;
+    } catch (error: any) {
+      setNotice(error.message);
+      return;
+    }
+    const threadReferenceSuffix = threadReferenceBlocks ? `\n\n${threadReferenceBlocks}` : "";
+    if (thread && runningThreadIdsRef.current.has(thread.id)) {
+      // 排队消息与正常发送一样带上引用段（引用/文件/技能/上下文），渲染时解析成卡片
+      const quotePrefix = quoteItem ? `> ${quoteItem.text.split("\n").join("\n> ")}\n\n` : "";
+      const contextPrefix = contextItems.length ? `\n\n[用户指定的对话上下文]\n${contextItems.map((item, index) => `(${index + 1}) ${item.role}：${item.text}`).join("\n\n")}\n[上下文结束]\n` : "";
+      const skillPrefix = selectedSkills.length ? `\n\n[本轮已引用技能]\n${selectedSkills.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
+      const filePrefix = files.length ? `\n\n[附件文件]\n${files.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
+      const input = [
+        ...((messageText || threadReferenceBlocks || files.length || selectedSkills.length || contextItems.length || quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
+        ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
+        ...images.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
+      ];
+      try {
+        await window.codex.request("thread/queue/add", { threadId: thread.id, input, clientUserMessageId: crypto.randomUUID() });
+        setPrompt("");
+        setQuoteItem(null);
+        setContextItems([]);
+        setSelectedSkills([]);
+        setFiles([]);
+        setImages([]);
+        void refreshQueue(thread.id);
+      } catch (error: any) {
+        setNotice(error.message);
+      }
+      return;
+    }
+    setSending(true);
+    // 立即点亮侧边栏转圈（turn/start 返回前也转）：复用当前会话时立刻标记运行中；
+    // 新建会话（thread 为 null）时等 turn/start 返回后再登记。
+    if (thread) markThreadRunning(thread.id);
+    setNotice("");
+    setWorkStartedAt(Date.now());
+    let memoryPrefix = "";
+    if (memoryEnabled && messageText) {
+      // 常驻层无条件前置：L0 用户档案 + L1 项目记忆 + L2 近 3 天日志。
+      // L3 碎片池仍按当前输入按需召回，两者互不替代——只做召回的话，
+      // 模型永远看不到「这个项目不能做什么」这类不出现在本轮提问里的约束。
+      try {
+        const standing = await window.codex.readMemoryContext(workspace || undefined);
+        if (standing.text) memoryPrefix += standing.text;
+      } catch (error: any) { setMemoryStatus(`常驻记忆读取失败：${error.message}`); }
+      try {
+        const recalled = await window.codex.recallMemory(messageText, workspace || undefined);
+        if (recalled.context) memoryPrefix += `\n\n[Harness 相关记忆，仅供参考]\n${recalled.context}\n[记忆结束]\n`;
+      } catch (error: any) { setMemoryStatus(`记忆召回失败：${error.message}`); }
+    }
+    const quotePrefix = quoteItem ? `> ${quoteItem.text.split("\n").join("\n> ")}\n\n` : "";
+    const contextPrefix = contextItems.length ? `\n\n[用户指定的对话上下文]\n${contextItems.map((item, index) => `(${index + 1}) ${item.role}：${item.text}`).join("\n\n")}\n[上下文结束]\n` : "";
+    const skillPrefix = selectedSkills.length ? `\n\n[本轮已引用技能]\n${selectedSkills.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
+    const filePrefix = files.length ? `\n\n[附件文件]\n${files.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
+    const input = [
+      ...((messageText || threadReferenceBlocks || files.length || quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${memoryPrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
+      ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
+      ...images.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
+    ];
+    // 专家/团队成员 defer 空会话的首条消息：发送前把用户文本包装成 SYSTEM TASK 段注入角色
+    // 系统提示（渲染端按既有约定折叠为「需求已发起」卡片，气泡/引用/复制只暴露用户原文）。
+    // 仅在「当前线程还没有任何回合」时生效——包装过一次后线程已非空，后续轮次走普通消息。
+    const expertRole = thread && !(thread.turns ?? []).length ? readStoredExpertRole(thread.id) : undefined;
+    // 导入会话记录新建的空会话：首条消息同样在「线程无回合」时把外部记录整段附在消息前
+    // （渲染端折叠成可展开的「导入的会话记录」卡），发出后标记即清除。与专家角色互斥。
+    const pendingImport = thread && !(thread.turns ?? []).length && !expertRole ? readStoredPendingImport(thread.id) : undefined;
+    let sendInput = input;
+    if (expertRole) {
+      const userText = input.filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n").trim();
+      if (userText) {
+        const kindLabel = expertRole.kind === "team" ? "团队会话" : "成员会话";
+        const text = `${expertRole.prefix}[SYSTEM TASK · ${kindLabel}]\n=== 用户需求 ===\n${userText}\n=== END ===\n\n${expertRole.instruction}`;
+        sendInput = [{ type: "text", text, text_elements: [] }, ...inlineImagePaths.map((path) => ({ type: "localImage", path })), ...images.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path }))];
+      }
+    } else if (pendingImport) {
+      const userText = input.filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n").trim();
+      if (userText) {
+        // 块语义自明（[导入的会话记录]），不再拼多余自然语言指令——那会泄漏进 cleanText/气泡/标题
+        const text = `[导入的会话记录]\n${fmtImportNote(pendingImport)}\n=== 记录内容 ===\n${pendingImport.text}\n=== 记录结束 ===\n\n${userText}`;
+        sendInput = [{ type: "text", text, text_elements: [] }, ...inlineImagePaths.map((path) => ({ type: "localImage", path })), ...images.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path }))];
+      }
+    }
+    optimisticTurnIdRef.current = null;
+    optimisticBaselineRef.current = { threadId: thread?.id ?? null, turnIds: new Set((thread?.turns ?? []).map((entry) => entry.id)) };
+    setOptimisticInput({ id: `local-${Date.now()}`, type: "userMessage", content: sendInput });
+    // WorkBuddy 式钉住：发完消息定位到视口顶部固定位置，不滚到底；流式期间不跟随直到用户手动滚动
+    // 双帧 rAF：等乐观消息 DOM 渲染就绪后再定位（React 批处理更新通常在下一帧才落 DOM）
+    stickToBottomRef.current = false;
+    pinNewTurnRef.current = true;
+    let createdThreadId: string | null = null;
+    try {
+      const startTurn = async (target: Thread) => window.codex.request("turn/start", {
+        threadId: target.id,
+        input: sendInput,
+        model: selectedModel?.model ?? modelName(modelId),
+        effort: effort || null,
+        personality: selectedModel?.supportsPersonality ? personality : null,
+      });
+      let active = thread;
+      if (!active) {
+        active = await createEmptyThread();
+        if (!active) throw new Error("创建新会话失败");
+        createdThreadId = active.id;
+      }
+      setPrompt("");
+      setQuoteItem(null);
+      setContextItems([]);
+      setImages([]);
+      activeModelRef.current = selectedModel?.model ?? modelName(modelId);
+      let result: any;
+      try {
+        result = await startTurn(active);
+      } catch (error: any) {
+        const unavailable = /not found|no such thread|unloaded/i.test(String(error?.message));
+        if (!unavailable) throw error;
+
+        // 刚由 thread/start 创建的空线程可能还没被 turn/start 立即看见。
+        // 原地短暂重试，绝不再创建第二条空线程。
+        if (createdThreadId === active.id) {
+          await new Promise((resolve) => window.setTimeout(resolve, 120));
+          result = await startTurn(active);
+        } else {
+          // app-server 重启后只会卸载内存中的 thread，磁盘会话仍然有效。
+          // 必须先 resume 原会话；只有 resume 也明确返回不存在时才创建新会话。
+          let recovered: Thread | null = null;
+          try {
+            const resumed = await window.codex.request("thread/resume", { threadId: active.id, excludeTurns: false });
+            if (resumed?.thread) recovered = normalizeLoadedThread(resumed.thread);
+          } catch (resumeError: any) {
+            if (!/not found|no such thread/i.test(String(resumeError?.message))) throw resumeError;
+          }
+
+          if (recovered) {
+            active = recovered;
+            threadRef.current = recovered;
+            threadCacheRef.current.set(recovered.id, recovered);
+            setThread(recovered);
+            result = await startTurn(active);
+            showToast("会话已恢复", "已在原会话中继续发送");
+          } else {
+            threadCacheRef.current.delete(active.id);
+            active = await createEmptyThread();
+            if (!active) throw error;
+            createdThreadId = active.id;
+            showToast("会话已重建", "原会话确实不存在，已新建会话并重新发送");
+            result = await startTurn(active);
+          }
+        }
+      }
+      createdThreadId = null;
+      if (result.turn?.id) {
+        const hydratedTurn = hydrateTurnUserMessage(result.turn, sendInput);
+        optimisticTurnIdRef.current = hydratedTurn.id;
+        setActiveTurnId(hydratedTurn.id);
+        markThreadRunning(active.id, hydratedTurn.id);
+        saveThreadModel(active.id, modelId);
+        setThread((current) => {
+          const next = mergeTurn(current, hydratedTurn);
+          threadRef.current = next;
+          return next;
+        });
+        if (hydratedTurn.items.some((entry) => entry.type === "userMessage" && userMessageMatchesInput(entry, sendInput))) setOptimisticInput(null);
+      }
+      if (expertRole) forgetExpertRole(active.id);
+      // 首条已发出：无论包装是否带上了记录（如只发图没文字），该线程已非空、记录永远附不上了，
+      // 清除待发送标记（含 localStorage），避免残留卡在重启后误显示。
+      if (readStoredPendingImport(active.id)) forgetPendingImport(active.id);
+      void refreshThreads();
+    } catch (error: any) {
+      // 彻底失败也必须复位运行态，否则停止按钮一直转、composer 一直锁
+      if (createdThreadId && !runningThreadIdsRef.current.has(createdThreadId)) {
+        const orphanId = createdThreadId;
+        await window.codex.request("thread/delete", { threadId: orphanId }).catch(() => undefined);
+        threadCacheRef.current.delete(orphanId);
+        setThreads((current) => current.filter((entry) => entry.id !== orphanId));
+        if (threadRef.current?.id === orphanId) {
+          threadRef.current = null;
+          setThread(null);
+        }
+      }
+      setSending(false);
+      setActiveTurnId(null);
+      markThreadStopped(threadRef.current?.id);
+      setInterrupting(false);
+      setWorkStartedAt(null);
+      setNotice(error.message);
+    }
+    } finally {
+      sendInFlightRef.current = false;
+    }
+  }
+
+  async function handleLogin(info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string }): Promise<boolean> {
+    try {
+      const preservedThreadId = accountSwitchThreadRef.current;
+      // 用户名同步（昵称走 personalization，引擎下次对话就用这个称呼）
+      if (info.username) {
+        localStorage.setItem("username", info.username);
+        setUsername(info.username);
+        void window.codex.setNickname(info.username).catch(() => undefined);
+      }
+      // 1) 探测该端点模型
+      const probe = await window.codex.probeCustomModel({ provider: info.provider, baseUrl: info.baseUrl, apiKey: info.apiKey, wireApi: "responses" });
+      const models = probe?.models ?? [];
+      if (!models.length) return false;
+      // 2) 默认第一个模型生效，其余全部勾选；上下文默认 256k；思考默认高
+      const defaultModel = info.model || models.find((id: string) => !/image|embedding|moderation|audio|tts|whisper|auto-review/i.test(id)) || models[0];
+      const allModels = models.map((id: string) => ({ id, contextWindow: 256000 }));
+      const saved = await window.codex.saveCustomModel({
+        provider: info.provider,
+        name: info.name,
+        model: defaultModel,
+        baseUrl: info.baseUrl,
+        contextWindow: 256000,
+        wireApi: "responses",
+        apiKey: info.apiKey,
+        models: allModels,
+        enabled: true,
+      });
+      // 3) 选中生效 + 设置思考
+      const id = `custom:${saved.provider}:${saved.model}`;
+      setModelId(id);
+      localStorage.setItem("default-model", id);
+      setEffort("high");
+      localStorage.setItem("default-effort", "high");
+      adoptSavedProvider(saved, models);
+      // 4) 进主界面
+      localStorage.setItem("login-skipped", "false");
+      setShowLogin(false);
+      showToast("登录成功", `已创建 ${info.name}，导入 ${models.length} 个模型，默认生效 ${defaultModel}`);
+      // 登录/切换账号后只刷新列表，不创建新会话、不清空本地历史；优先恢复切换前打开的线程。
+      await refreshThreads().catch(() => undefined);
+      if (preservedThreadId) await openThread(preservedThreadId);
+      accountSwitchThreadRef.current = null;
+      return true;
+    } catch (error: any) {
+      setNotice("登录失败：" + error.message);
+      return false;
+    }
+  }
+
+  async function handleSkip() {
+    localStorage.setItem("login-skipped", "true");
+    setShowLogin(false);
+  }
+
+  function handleLogout() {
+    if (!window.confirm("退出登录？将回到登录界面，本机模型/会话配置保留。")) return;
+    accountSwitchThreadRef.current = threadRef.current?.id ?? null;
+    localStorage.setItem("login-skipped", "logout");
+    // 明确保留 thread、threads、threadCacheRef 和 codex-home/sessions，不因切换账号丢失历史。
+    setShowLogin(true);
+  }
+
+  async function interrupt() {
+    if (!thread) return;
+    const turnId = activeTurnId ?? runningTurnIdsRef.current.get(thread.id);
+    if (!turnId) return;
+    setInterrupting(true);
+    try {
+      await window.codex.request("turn/interrupt", { threadId: thread.id, turnId });
+      setInterruptedTurns((current) => ({ ...current, [turnId]: Date.now() }));
+      // 在清 workStartedAt 之前算已工作秒数：渲染「你在 X 秒后停止了」需要
+      const elapsed = workStartedAt != null ? Math.max(1, Math.round((Date.now() - workStartedAt) / 1000)) : 1;
+      setStoppedElapsed((current) => ({ ...current, [turnId]: elapsed }));
+      setSending(false);
+      setInterrupting(false);
+      markThreadStopped(thread.id);
+      setWorkStartedAt(null);
+      // 保留乐观消息（避免"停止后消息消失"）：从服务端重新拉回合恢复已生成内容
+      const resumed = await window.codex.request("thread/resume", { threadId: thread.id, excludeTurns: false }).catch(() => null);
+      if (resumed?.thread) {
+        threadRef.current = resumed.thread;
+        setThread(resumed.thread);
+        if (optimisticInput && resumed.thread.turns.some((entry: Turn) => entry.items.some((item) => item.type === "userMessage" && userMessageMatchesInput(item, optimisticInput.content ?? [])))) setOptimisticInput(null);
+      }
+      void refreshThreads();
+    } catch (error: any) {
+      setInterrupting(false);
+      // 线程已失效（thread not found）：没有可中断的回合，直接复位运行态
+      if (/not found|no such thread|unloaded/i.test(String(error?.message))) {
+        setSending(false);
+        setActiveTurnId(null);
+        markThreadStopped(thread.id);
+        setWorkStartedAt(null);
+        setNotice("原会话已失效，已停止。重新发送会自动重建会话。");
+      } else setNotice(error.message);
+    }
+  }
+
+  function onComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void send();
+    }
+  }
+
+  function closePanelTab(key: string) {
+    setOpenTabs((current) => {
+      const closed = current.find((tab) => tab.key === key);
+      if (closed) setRecentlyClosed((list) => [{ key: closed.key, name: closed.name, at: Date.now() }, ...list.filter((entry) => entry.name !== closed.name)].slice(0, 6));
+      const next = current.filter((tab) => tab.key !== key);
+      if (rightTab === key) setRightTab(next[0] ? next[0].key : "");
+      return next;
+    });
+  }
+
+  function openPanelTab(key: string, name: string) {
+    setOpenTabs((current) => current.some((tab) => tab.key === key) ? current : [...current, { key, name }]);
+    setRightTab(key);
+    setRecentlyClosed((list) => list.filter((entry) => entry.name !== name));
+    setSwitcherOpen(false);
+    setSideChooser(false);
+  }
+
+  const allItems = thread?.turns.flatMap((turn) => turn.items) ?? [];
+  const isEmpty = !thread && !allItems.length;
+  // 欢迎页（空会话）自动聚焦输入框：docked-center 的 absolute 定位 + 过渡动画期间命中区域会
+  // 短暂偏移，用户点好几次才聚焦。进入欢迎页直接聚焦，从根上绕开「点不进去」。
+  useEffect(() => {
+    if (!showLogin && isEmpty) {
+      const raf = requestAnimationFrame(() => composerInputRef.current?.focus());
+      return () => cancelAnimationFrame(raf);
+    }
+  }, [isEmpty, showLogin]);
+  // 无缓存切换会话期间（thread 尚未恢复），顶部标题先用列表里的名称，避免闪「新任务」
+  const switchingMeta = switchingThreadId ? threads.find((entry) => entry.id === switchingThreadId) : null;
+
+  const paletteSections = (() => {
+    const q = paletteQuery.toLowerCase();
+    const match = (label: string) => label.toLowerCase().includes(q);
+    const ops = [
+      { group: "建议", label: "新任务", shortcut: "Ctrl+N", icon: MessageSquarePlus, run: () => startNewThread() },
+      { group: "建议", label: "打开工作区", shortcut: "Ctrl+O", icon: FolderOpen, run: () => void chooseWorkspace() },
+      { group: "建议", label: "设置", icon: Settings2, run: () => { setSettingsPage("general"); setSettingsOpen(true); } },
+      { group: "面板", label: "切换侧边栏", shortcut: "Ctrl+B", icon: PanelRightOpen, run: () => setRightOpen((current) => !current) },
+      { group: "面板", label: "切换终端", shortcut: "Ctrl+J", icon: TerminalSquare, run: () => openPanelTab("terminal", workspace ? basename(workspace) : "终端") },
+      { group: "面板", label: "切换预览", icon: Globe2, run: () => openPanelTab("browser", "浏览器") },
+      { group: "面板", label: "打开变更视图", icon: GitBranch, run: () => openPanelTab("review", "变更") },
+      { group: "面板", label: "添加项目树标签", icon: FolderTree, run: () => openPanelTab("tree", "项目树") },
+      { group: "配置", label: "自动化", icon: Clock3, run: () => { setSettingsPage("schedule"); setSettingsOpen(true); } },
+      { group: "配置", label: "模型设置", icon: Bot, run: () => { setSettingsPage("model"); setSettingsOpen(true); } },
+      { group: "配置", label: "插件", icon: Store, run: () => { setSettingsPage("plugins"); setSettingsOpen(true); } },
+      { group: "配置", label: "记忆", icon: Archive, run: () => { setSettingsPage("memory"); setSettingsOpen(true); } },
+    ].filter((row) => match(row.label));
+    const tasks = threads.filter((entry) => (entry.name ?? "").toLowerCase().includes(q) || (entry.preview ?? "").toLowerCase().includes(q)).map((entry) => ({ group: "任务", label: cleanThreadDisplayTitle(entry.name, { preview: entry.preview }), icon: MessageSquare, run: () => void openThread(entry.id) }));
+    const files = treeEntries.filter((entry) => !entry.isDirectory && entry.fileName.toLowerCase().includes(q)).map((entry) => ({ group: "文件", label: entry.fileName, icon: FileCode2, run: () => void openFile(`${treePath || workspace}${treePath || workspace ? (treePath.includes("\\") ? "\\" : "/") : ""}${entry.fileName}`) }));
+    const sections: { group: string; rows: any[] }[] = [];
+    if (paletteTab === "all" || paletteTab === "ops") for (const group of ["建议", "面板", "配置"]) {
+      const rows = ops.filter((row) => row.group === group);
+      if (rows.length) sections.push({ group, rows });
+    }
+    if ((paletteTab === "all" || paletteTab === "tasks") && tasks.length) sections.push({ group: "任务", rows: tasks });
+    if ((paletteTab === "all" || paletteTab === "files") && files.length) sections.push({ group: "文件", rows: files });
+    return sections;
+  })();
+  const fileTruncated = filePreview?.kind === "text" && filePreview.content.length >= 200_000;
+  const usage = tokenUsage?.total ?? tokenUsage?.last ?? tokenUsage;
+  const lastUsage = tokenUsage?.last ?? usage;
+  const completedTurns = thread?.turns.filter((turn) => turn.status !== "inProgress") ?? [];
+  const latestCompletedTurn = completedTurns.at(-1);
+  const stats = usageStats;
+  const activeFlags: string[] = thread?.status?.activeFlags ?? [];
+  const waitingForApproval = activeFlags.includes("waitingOnApproval") || pending.some((request) => request.method.toLowerCase().includes("approval"));
+  const waitingForInput = activeFlags.includes("waitingOnUserInput");
+  // 当前会话只读取自己的运行状态；其他后台任务继续在侧栏独立显示，不影响本会话按钮。
+  const activeThreadRunning = Boolean(thread && (runningThreadIds.has(thread.id) || thread.turns.some((turn) => isTurnRunning(turn))));
+  // 团队会话里正在被调度的成员（主理人通过 team_member_invoke 分发子任务时点亮其头像）
+  const activeThreadMemberRunning = expertTeamMemberRunning && thread && expertTeamMemberRunning.teamId === (teamThreadMapRef.current.get(thread.id) || teamThreadConfigRef.current.get(thread.id)?.teamId) ? expertTeamMemberRunning : null;
+  const activeMemberTeam = activeThreadMemberRunning ? expertTeams.find((team) => team.teamId === activeThreadMemberRunning.teamId) ?? null : null;
+  const activeMember = activeMemberTeam && activeThreadMemberRunning ? [activeMemberTeam.lead, ...activeMemberTeam.members].find((member) => member.id === activeThreadMemberRunning.memberName) ?? null : null;
+  const activityLabel = interrupting ? "正在停止" : waitingForApproval ? "等待你的确认" : waitingForInput ? "等待你的输入" : activeMember ? `专家「${activeMember.profession.zh || activeMember.name}」执行中` : subAgentRunning ? `子智能体「${subAgentRunning}」执行中` : activeThreadRunning ? (workStartedAt != null ? `已工作 ${Math.max(1, Math.round((nowTick - workStartedAt) / 1000))} 秒` : "Codex 正在处理") : "";
+  const saveInlineRename = () => {
+    const next = renameDraft.trim();
+    if (next && thread) void renameThread(thread.id, next);
+    setInlineRename(false);
+  };
+
+  if (showLogin) {
+    return (
+      <LoginScreen onSkip={() => void handleSkip()} onLogin={(info) => handleLogin(info)} />
+    );
+  }
+
+  return (
+    <div
+      className={`app-shell ${rightOpen ? "with-context" : ""} ${sidebarCollapsed ? "side-collapsed" : ""} ${narrow ? "narrow" : ""}`}
+      // 右侧上下文面板仅在用户显式开启后参与网格；收起左栏时不能塞入一个 0px 首列，
+      // 否则 CSS Grid 会保留隐式轨道，把 workspace 挤到最右侧。
+      style={rightOpen ? { gridTemplateColumns: sidebarCollapsed ? `minmax(0, 1fr) 6px ${panelWidth}px` : `256px minmax(0, 1fr) 6px ${panelWidth}px` } : undefined}
+    >
+      {sidebarCollapsed && <div className="sidebar-hotzone" aria-hidden onMouseEnter={() => setSidebarFlyout(true)} />}
+      <aside className={`sidebar ${mobileNav ? "mobile-open" : ""} ${sidebarFlyout ? "flyout-open" : ""}`} onMouseEnter={() => sidebarCollapsed && setSidebarFlyout(true)} onMouseLeave={() => sidebarCollapsed && setSidebarFlyout(false)}>
+        <div className="brand-row">
+          <button className={`brand-mark sidebar-toggle ${sidebarCollapsed ? "is-collapsed" : "is-expanded"}`} aria-label={narrow ? "Codex Harness" : sidebarCollapsed ? "展开侧栏" : "收起侧栏"} title={narrow ? "Codex Harness" : sidebarCollapsed ? "展开侧栏" : "收起侧栏"} onClick={() => { if (narrow) return; const next = !sidebarCollapsed; setSidebarCollapsed(next); localStorage.setItem("sidebar-collapsed", String(next)); }}>
+            <span className="ch-logo" aria-hidden="true"><i>C</i><i>H</i></span>
+            <span className="sidebar-toggle-arrow"><ArrowLeft size={13} strokeWidth={2.4} /></span>
+          </button>
+          {!sidebarCollapsed && <div><strong>Codex Harness</strong><span>Desktop</span></div>}
+        </div>
+        <div className="sidebar-tabs" role="tablist" aria-label="导航">
+          <button className="sidebar-tab" onClick={() => { startNewThread(); }}><MessageSquarePlus size={15} /><span>新建任务</span><kbd>Ctrl N</kbd></button>
+          <button className="sidebar-tab" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}><Clock3 size={15} /><span>自动化</span></button>
+          <button className="sidebar-tab" onClick={() => { setSettingsPage("skills"); setSettingsOpen(true); setMobileNav(false); }}><Zap size={15} /><span>技能中心</span></button>
+          <button className="sidebar-tab" onClick={() => { setSettingsPage("plugins"); setSettingsOpen(true); setMobileNav(false); }}><Store size={15} /><span>插件市场</span></button>
+          <button className="sidebar-tab" onClick={() => { setSettingsPage("teams"); setSettingsOpen(true); setMobileNav(false); }}><Users size={15} /><span>专家团</span></button>
+          <button className="sidebar-tab" onClick={() => { setSettingsPage("backup"); setSettingsOpen(true); setMobileNav(false); }}><Download size={15} /><span>会话备份</span></button>
+        </div>
+        <button className="search-box" title="搜索任务与操作（Ctrl+K）" onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={15} /><span>搜索任务</span><kbd>Ctrl K</kbd></button>
+        {projectFilter && <button className="filter-chip" title="清除项目筛选" onClick={() => setProjectFilter(null)}><FolderOpen size={12} />{basename(projectFilter)}<X size={12} /></button>}
+        <div className="view-tabs" role="tablist" aria-label="视图">
+          <button className={`view-tab ${viewTab === "groups" ? "active" : ""}`} onClick={() => setViewTab("groups")} title="按时间分组"><Hash size={14} /><span>分组</span></button>
+          <button className={`view-tab ${viewTab === "projects" ? "active" : ""}`} onClick={() => setViewTab("projects")} title="按项目分组"><FolderOpen size={14} /><span>项目</span></button>
+          <div className="view-toolbar">
+            <button className="view-toolbar-btn" title={sidebarAllCollapsed ? "全部展开" : "全部折叠"} onClick={toggleAllSidebarSections} disabled={viewTab === "groups" ? !groupedThreads.length : !projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
+            <button className={`view-toolbar-btn ${filterOpen ? "active" : ""}`} title="筛选条件" onClick={() => setFilterOpen((current) => !current)}><SlidersHorizontal size={14} /></button>
+            <button className="view-toolbar-btn danger" title="清空当前视图" disabled={!currentTabIds.length} onClick={() => void purgeCurrentTab()}><Trash2 size={14} /></button>
+          </div>
+        </div>
+        {filterOpen && <div className="filter-popover" onMouseLeave={() => setFilterOpen(false)}>
+          <div className="filter-row">
+            <span className="filter-label">时间</span>
+            <div className="filter-options">
+              {([["all", "全部"], ["today", "今天"], ["week", "本周"], ["month", "本月"]] as const).map(([value, label]) => (
+                <button key={value} className={`filter-chip-btn ${filter.time === value ? "active" : ""}`} onClick={() => setFilter((current) => ({ ...current, time: value }))}>{label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="filter-row">
+            <span className="filter-label">状态</span>
+            <div className="filter-options">
+              {([["all", "全部"], ["running", "运行中"], ["ready", "已就绪"]] as const).map(([value, label]) => (
+                <button key={value} className={`filter-chip-btn ${filter.status === value ? "active" : ""}`} onClick={() => setFilter((current) => ({ ...current, status: value }))}>{label}</button>
+              ))}
+            </div>
+          </div>
+        </div>}
+        <div className="thread-list">
+          {loading ? Array.from({ length: 5 }).map((_, index) => <div className="thread-skeleton shimmer" key={index} />) : viewTab === "projects" ? (
+            <div className="project-list">
+              {projectGroups.length ? projectGroups.map(([cwd, items]) => {
+                const expanded = expandedProjects.has(cwd);
+                return (
+                  <div key={cwd} className={`project-item ${expanded ? "expanded" : "collapsed"} ${projectMenu === cwd ? "menu-open" : ""}`}>
+                    <div className="project-item-head" onMouseLeave={() => setProjectMenu((current) => current === cwd ? null : current)}>
+                      <button className="project-item-toggle" title={expanded ? "折叠项目" : "展开项目"} onClick={() => toggleProjectExpanded(cwd)}>
+                        <ChevronDown size={12} className={`project-item-chevron ${expanded ? "open" : ""}`} />
+                        <FolderOpen size={13} />
+                        <strong>{basename(cwd)}</strong>
+                        <em>{items.length}</em>
+                      </button>
+                      <button className="project-item-menu-btn" title="项目操作" aria-expanded={projectMenu === cwd} onClick={(event) => { event.stopPropagation(); setProjectMenu(projectMenu === cwd ? null : cwd); }}><MoreHorizontal size={14} /></button>
+                      {projectMenu === cwd && <div className="project-menu">
+                        <button onClick={() => { setProjectMenu(null); setProjectFilter(cwd); setMobileNav(false); }}><FolderOpen size={14} />只看该项目</button>
+                        <button className="danger" onClick={() => { setProjectMenu(null); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />移除（删除全部对话）</button>
+                      </div>}
+                    </div>
+                    {expanded && <div className="project-item-body">{[...items].sort((a, b) => Number(pinnedThreads.includes(b.id)) - Number(pinnedThreads.includes(a.id)) || b.updatedAt - a.updatedAt).map(renderThreadRow)}</div>}
+                  </div>
+                );
+              }) : <div className="empty-list">暂无项目</div>}
+            </div>
+          ) : filteredThreads.length ? (
+            <>
+              {groupedThreads.map((g) => (
+                <section className="conv-section" key={g.key}>
+                  <button className="conv-section-label" title="折叠/展开分组" onClick={() => toggleSection(g.key)}>
+                    <ChevronDown size={12} className={`conv-section-chevron ${collapsedSections.has(g.key) ? "" : "open"}`} />
+                    <span>{g.label}</span><em>{g.items.length}</em>
+                  </button>
+                  {!collapsedSections.has(g.key) && <div className="conv-section-body">{g.items.map(renderThreadRow)}</div>}
+                </section>
+              ))}
+            </>
+          ) : <div className="empty-list">{threads.length ? "当前筛选下暂无任务" : "暂无任务"}</div>}
+        </div>
+        <div className="account-row">
+          <button className="account-avatar" title="账户菜单" onClick={() => { setAccountMenuSub(null); setAccountMenuOpen(!accountMenuOpen); }}>{userAvatar?.type === "image" && userAvatar.value ? <img src={userAvatar.value} alt="头像" /> : userAvatar?.type === "emoji" && userAvatar.value ? <span className="account-avatar-emoji">{userAvatar.value}</span> : <span className="account-avatar-letter">{username.trim().charAt(0).toUpperCase() || "?"}</span>}</button>
+          {accountEditing ? (
+            <input ref={accountNameRef} className="account-name-input" aria-label="修改名称" maxLength={24} autoFocus onFocus={(event) => event.currentTarget.select()} value={accountDraft} onChange={(event) => setAccountDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); saveAccountName(); } if (event.key === "Escape") { event.preventDefault(); setAccountEditing(false); } }} onBlur={saveAccountName} />
+          ) : (
+            <button className="account-name" title="账户菜单" onClick={() => { setAccountMenuSub(null); setAccountMenuOpen(!accountMenuOpen); }}>{username}</button>
+          )}
+          {accountMenuOpen && (
+            <div className="account-menu" role="menu" ref={accountMenuRef}>
+              {accountMenuSub === null && <>
+                <button className="account-menu-item" onClick={() => setAccountMenuSub("lang")}><Globe2 size={15} /><span>界面语言</span><ChevronRight size={14} className="account-menu-arrow" /></button>
+                <button className="account-menu-item" onClick={() => setAccountMenuSub("theme")}><Sun size={15} /><span>界面主题</span><ChevronRight size={14} className="account-menu-arrow" /></button>
+                <button className="account-menu-item" onClick={() => setAccountMenuSub("zoom")}><ZoomIn size={15} /><span>界面缩放</span><ChevronRight size={14} className="account-menu-arrow" /></button>
+                <button className="account-menu-item" onClick={() => setAccountMenuSub("update")}>
+                  <RefreshCw size={15} />
+                  <span>检查更新</span>
+                  {updateInfo?.hasUpdate ? <span className="account-menu-dot" title={`v${updateInfo.version} 可用`} /> : null}
+                  <ChevronRight size={14} className="account-menu-arrow" />
+                </button>
+                <div className="account-menu-sep" />
+                <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setSettingsPage("usage"); setSettingsOpen(true); }}><CircleGauge size={15} /><span>使用统计</span></button>
+                <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setSettingsPage("user"); setSettingsOpen(true); setMobileNav(false); }}><UserRound size={15} /><span>用户中心</span></button>
+                <div className="account-menu-sep" />
+                <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); handleLogout(); }}><LogOut size={15} /><span>退出登录</span></button>
+              </>}
+              {accountMenuSub === "lang" && <>
+                <button className="account-menu-item account-menu-back" onClick={() => setAccountMenuSub(null)}><ChevronLeft size={14} /><span>界面语言</span></button>
+                <button className={`account-menu-item ${uiLang === "zh" ? "current" : ""}`} onClick={() => { setUiLang("zh"); setAccountMenuSub(null); }}><span>简体中文</span>{uiLang === "zh" && <Check size={14} />}</button>
+                <button className={`account-menu-item ${uiLang === "en" ? "current" : ""}`} onClick={() => { setUiLang("en"); setAccountMenuSub(null); showToast("英文界面即将上线", "当前版本先提供简体中文"); }}><span>English</span>{uiLang === "en" && <Check size={14} />}</button>
+              </>}
+              {accountMenuSub === "theme" && <>
+                <button className="account-menu-item account-menu-back" onClick={() => setAccountMenuSub(null)}><ChevronLeft size={14} /><span>界面主题</span></button>
+                <button className={`account-menu-item ${theme === "light" ? "current" : ""}`} onClick={() => setTheme("light")}><span>浅色</span>{theme === "light" && <Check size={14} />}</button>
+                <button className={`account-menu-item ${theme === "dark" ? "current" : ""}`} onClick={() => setTheme("dark")}><span>深色</span>{theme === "dark" && <Check size={14} />}</button>
+              </>}
+              {accountMenuSub === "zoom" && <>
+                <button className="account-menu-item account-menu-back" onClick={() => setAccountMenuSub(null)}><ChevronLeft size={14} /><span>界面缩放</span></button>
+                {[0.8, 0.9, 1, 1.1, 1.25].map((factor) => (
+                  <button key={factor} className={`account-menu-item ${uiZoom === factor ? "current" : ""}`} onClick={() => { setUiZoom(factor); setAccountMenuSub(null); }}>
+                    <span>{Math.round(factor * 100)}%</span>{uiZoom === factor && <Check size={14} />}
+                  </button>
+                ))}
+              </>}
+              {accountMenuSub === "update" && <>
+                <button className="account-menu-item account-menu-back" onClick={() => setAccountMenuSub(null)}><ChevronLeft size={14} /><span>检查更新</span></button>
+                <div className="account-menu-section">
+                  <div className="account-menu-row"><span className="account-menu-label">当前版本</span><span className="account-menu-value mono">v{updateCurrentVersion || "—"}</span></div>
+                  <div className="account-menu-row"><span className="account-menu-label">更新地址</span><span className="account-menu-value">{updateSource === "github" ? "GitHub Releases" : "官方发布站"}</span></div>
+                  <div className="account-menu-toggle-row">
+                    <button type="button" className={`account-menu-toggle ${updateSource === "web" ? "active" : ""}`} title="自建发布站（国内下载较快）" onClick={() => { setUpdateSource("web"); setUpdateInfo(null); }}>网页</button>
+                    <button type="button" className={`account-menu-toggle ${updateSource === "github" ? "active" : ""}`} title="GitHub Releases（开源仓库）" onClick={() => { setUpdateSource("github"); setUpdateInfo(null); }}>GitHub</button>
+                  </div>
+                </div>
+                <button className="account-menu-item" onClick={() => void runUpdateCheck()} disabled={updateChecking}>
+                  <RefreshCw size={15} className={updateChecking ? "spin" : ""} />
+                  <span>{updateChecking ? "检查中…" : "检查更新"}</span>
+                </button>
+                {updateError ? <div className="account-menu-error">{updateError}</div> : null}
+                {updateInfo && !updateInfo.hasUpdate ? (
+                  <div className="account-menu-success">
+                    <CircleCheck size={14} /><span>已是最新版本</span>
+                  </div>
+                ) : null}
+                {updateInfo?.hasUpdate ? <>
+                  <div className="account-menu-sep" />
+                  <div className="account-menu-section">
+                    <div className="account-menu-row"><span className="account-menu-label">新版本</span><span className="account-menu-value mono">v{updateInfo.version}</span></div>
+                    {updateInfo.size ? <div className="account-menu-row"><span className="account-menu-label">大小</span><span className="account-menu-value">{((updateInfo.size / 1024 / 1024) || 0).toFixed(1)} MB</span></div> : null}
+                  </div>
+                  {updateInfo.changelog ? <div className="account-menu-changelog">{updateInfo.changelog}</div> : null}
+                  <button className="account-menu-item primary" onClick={() => void runUpdateDownload()} disabled={updateDownloading}>
+                    <Download size={15} className={updateDownloading ? "pulse" : ""} />
+                    <span>{updateDownloading ? (updateProgress > 0 ? `下载中 ${Math.round(updateProgress * 100)}%` : "下载中…") : "立即更新"}</span>
+                  </button>
+                </> : null}
+                <div className="account-menu-sep" />
+                <button className="account-menu-item" title="打开发布中心反馈页（自动携带版本与系统信息）" onClick={openFeedbackPage}><MessageSquare size={15} /><span>遇到问题？去反馈</span><ExternalLink size={13} className="account-menu-arrow" /></button>
+              </>}
+            </div>
+          )}
+          <button className="account-icon" title="移动端远程控制" onClick={() => { setMobileRemoteOpen(true); void window.codex.remoteStart().then((r) => setRemoteUrl(r.url)).catch(() => undefined); void window.codex.remoteStatus().then((s) => { setRemoteStatus(s.status); setRemoteDevices(s.devices); setRemoteUrl(s.url); }).catch(() => undefined); void window.codex.remoteQrcode().then((svg) => setRemoteQr(svg)).catch(() => undefined); }}><Smartphone size={15} /></button>
+          <button className="sidebar-settings" title="设置" onClick={() => { setSettingsPage("appearance"); setSettingsOpen(true); setMobileNav(false); }}><Settings2 size={16} /></button>
+        </div>
+      </aside>
+
+      <main className="workspace">
+        <header className="topbar">
+          {sidebarCollapsed && !narrow && <button className="icon-button sidebar-reveal" title="展开侧边栏" onClick={() => { setSidebarCollapsed(false); setSidebarFlyout(false); localStorage.setItem("sidebar-collapsed", "false"); }}><Menu size={18} /></button>}
+          <button className="icon-button mobile-menu" title="打开导航" onClick={() => setMobileNav(!mobileNav)}><Menu size={18} /></button>
+          <div className={`task-title ${activeThreadRunning ? "running" : "ready"}`}>
+            {inlineRename ? <input ref={inlineRenameRef} value={renameDraft} aria-label="任务名称" onChange={(event) => setRenameDraft(event.target.value)} onBlur={saveInlineRename} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); saveInlineRename(); } if (event.key === "Escape") { event.preventDefault(); setInlineRename(false); } }} /> : <strong title="双击修改任务名称" onDoubleClick={() => { if (!thread) return; setRenameDraft(cleanThreadDisplayTitle(thread.name, { preview: thread.preview })); setInlineRename(true); queueMicrotask(() => { inlineRenameRef.current?.focus(); inlineRenameRef.current?.select(); }); }}>{cleanThreadDisplayTitle(thread?.name, { preview: thread?.preview, fallback: cleanThreadDisplayTitle(switchingMeta?.name, { preview: switchingMeta?.preview, fallback: "新任务" }) })}</strong>}
+            <span>{workspace || "尚未选择工作区"}</span>
+            {subAgentRunning && <span className="subagent-badge" title={`子智能体「${subAgentRunning}」执行中`}><Bot size={13} className="subagent-pulse" /><em>{subAgentRunning}</em><i>执行中</i></span>}
+          </div>
+          <span className="build-stamp" title={`界面构建 ${buildStamp}`}>#{buildStamp.slice(-4)}</span>
+          <div className="chat-search-wrap">
+            <button className="icon-button" title="搜索对话内容（Ctrl+Shift+F）" onClick={() => { setChatSearchOpen((v) => !v); queueMicrotask(() => { if (!chatSearchOpen) chatSearchRef.current?.focus(); }); }}><Search size={16} /></button>
+            {chatSearchOpen && <div className="chat-search-panel" ref={chatSearchHistoryRef}>
+              <Search size={13} />
+              <input
+                ref={chatSearchRef}
+                value={chatSearchQuery}
+                placeholder="搜索对话内容…"
+                onFocus={() => setChatSearchHistoryOpen(true)}
+                onBlur={() => { setTimeout(() => setChatSearchHistoryOpen(false), 150); }}
+                onChange={(event) => { setChatSearchQuery(event.target.value); setChatSearchIndex(0); }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    pushChatSearchHistory(chatSearchQuery);
+                    chatSearchGo(event.shiftKey ? -1 : 1);
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setChatSearchOpen(false);
+                  }
+                }}
+              />
+              <span className="chat-search-count">{chatSearchResults.length ? `${chatSearchIndex + 1}/${chatSearchResults.length}` : "0/0"}</span>
+              <button className="icon-button" title="上一个（Shift+Enter）" onClick={() => { pushChatSearchHistory(chatSearchQuery); chatSearchGo(-1); }} disabled={!chatSearchResults.length}><ArrowUp size={13} /></button>
+              <button className="icon-button" title="下一个（Enter）" onClick={() => { pushChatSearchHistory(chatSearchQuery); chatSearchGo(1); }} disabled={!chatSearchResults.length}><ArrowDown size={13} /></button>
+              <button className="icon-button" title="关闭（Esc）" onClick={() => setChatSearchOpen(false)}><X size={13} /></button>
+              {chatSearchHistoryOpen && !chatSearchQuery.trim() && chatSearchHistory.length > 0 && (
+                <div className="chat-search-history">
+                  <div className="chat-search-history-head"><span>搜索历史</span><button onMouseDown={(event) => { event.preventDefault(); clearChatSearchHistory(); }}>清空</button></div>
+                  {chatSearchHistory.map((entry) => (
+                    <div key={entry} className="chat-search-history-item">
+                      <button className="chat-search-history-text" onMouseDown={(event) => { event.preventDefault(); setChatSearchQuery(entry); setChatSearchIndex(0); pushChatSearchHistory(entry); queueMicrotask(() => chatSearchRef.current?.focus()); }}><Clock3 size={12} /><span>{entry}</span></button>
+                      <button className="chat-search-history-delete" title="删除" onMouseDown={(event) => { event.preventDefault(); removeChatSearchHistory(entry); }}><X size={12} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>}
+          </div>
+          <div className="task-menu-wrap">
+            <button className="icon-button" title="当前任务操作" onClick={() => setTaskMenuOpen((current) => !current)}><MoreHorizontal size={18} /></button>
+            {taskMenuOpen && <>
+              <div className="menu-backdrop" onClick={closeTaskMenu} />
+              <div className="task-menu" role="menu">
+                <div className="task-menu-sections">
+                  <div className="task-menu-section">
+                    <span className="task-menu-label">当前任务</span>
+                      <button disabled={!thread} onClick={() => { closeTaskMenu(); void runSlashCommand("/compact"); }}><Minimize2 size={14} /><span>压缩上下文</span></button>
+                      <button disabled={!thread} onClick={() => { closeTaskMenu(); void runSlashCommand("/review"); }}><Search size={14} /><span>审查代码改动</span></button>
+                      <button disabled={!thread} onClick={() => { closeTaskMenu(); void runSlashCommand("/undo"); }}><RotateCcw size={14} /><span>撤销上一轮</span></button>
+                  </div>
+                  <div className="task-menu-section">
+                    <span className="task-menu-label">工作区</span>
+                    <button onClick={() => { closeTaskMenu(); setRightOpen(true); setSideChooser(false); setRightTab("tree"); }}><FolderTree size={14} /><span>浏览项目文件</span></button>
+                    <button disabled={!thread} onClick={() => { closeTaskMenu(); void runSlashCommand("/queue"); }}><ListChecks size={14} /><span>消息队列</span></button>
+                  </div>
+                </div>
+              </div>
+            </>}
+          </div>
+          <div className="ctx-picker">
+            <button className="icon-button ctx-picker-btn" title="工作区上下文" onClick={() => setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
+            {ctxMenuOpen && <>
+              <div className="menu-backdrop" onClick={() => setCtxMenuOpen(false)} />
+              <div className="task-menu ctx-menu">
+                <button onClick={() => { setCtxMenuOpen(false); void chooseWorkspace(); }}><FolderOpen size={14} />{workspace ? "选择其他目录…" : "选择工作区目录"}</button>
+                {workspace && <button onClick={() => setCtxMenuOpen(false)}><FolderOpen size={14} /><span className="ctx-current-name">资源管理器 · {basename(workspace)}</span><Check size={14} className="ctx-check" /></button>}
+              </div>
+            </>}
+          </div>
+          <button className="icon-button" title={rightOpen ? "关闭上下文面板" : "打开上下文面板"} onClick={() => setRightOpen(!rightOpen)}>{rightOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}</button>
+        </header>
+
+
+        <div className="timeline-wrap" ref={timelineWrapRef}>
+          {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurn} />}
+          <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef}>
+          {isEmpty ? (
+            <div className="welcome-state">
+              <div className="welcome-mark"><Code2 strokeWidth={0.5} size={96} /></div>
+              <h1 className="welcome-greet">{greeting}</h1>
+              <p className="welcome-sub">{greetSub}</p>
+            </div>
+          ) : null}
+          {/* 导入会话记录后、尚未发送首条消息：记录预览卡常驻消息区顶部；发送后转为消息内的导入卡 */}
+          {thread && (thread.turns ?? []).length === 0 && pendingImportThreads[thread.id] ? <PendingImportSlot key={thread.id} threadId={thread.id} onDiscard={() => forgetPendingImport(thread.id)} /> : null}
+          {thread?.turns.map((turn) => <MemoTurnView turn={turn} isLastTurn={turn.id === thread.turns[thread.turns.length - 1]?.id} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={tokenUsage} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />)}
+          {optimisticInput && !optimisticConfirmed && <ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} />}
+          {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
+          {systemEvents.map((event) => event.kind === "compact" ? <CompactEventCard event={event} key={event.id} /> : <div className={`system-event ${event.tone ?? "info"}`} key={event.id}><strong>{event.tone === "success" ? <CircleCheck size={13} className="system-event-icon" /> : null}{event.title}</strong><Markdown>{event.text}</Markdown></div>)}
+          {pending.filter((request) => !request.params?.threadId || request.params.threadId === thread?.id).map((request) => <RequestCard request={request} key={request.id} onDone={() => setPending((current) => current.filter((entry) => entry.id !== request.id))} />)}
+          {activityLabel && <div className={`working-indicator ${waitingForApproval || waitingForInput ? "paused" : ""}`}>
+            {activeMember
+              ? <span className="expert-working-avatar" style={{ background: AVATAR_GRADIENTS[avatarToneOf(activeMember.id || activeMember.name)] }} aria-hidden="true">{expertRoleLabel(activeMember, activeMember.id === activeMemberTeam?.lead.id).slice(0, 1)}</span>
+              : waitingForApproval ? <ShieldCheck size={15} />
+              : waitingForInput ? <MessageSquarePlus size={15} />
+              : subAgentRunning ? <Bot className="process-running-icon subagent-pulse" size={15} />
+              : <Bot className="process-running-icon" size={15} />}
+            <span>{activityLabel}</span>
+          </div>}
+          {/* 底部留白只按回合状态：活跃回合给 compact 跟随留白；空闲态一律不留空白。
+              乐观气泡不再触发大缓冲（它会在服务端消息确认后消失，大缓冲会残留成空白）。 */}
+          {(activeTurnId || sending || (optimisticInput && !optimisticConfirmed)) ? <div className="timeline-bottom-spacer compact" aria-hidden />
+            : null}
+        </div>
+          {switchingThreadId && (
+            <div className={`thread-switch-overlay ${switchingFading ? "fading" : ""}`} role="status"><Spinner /><span>正在恢复会话…</span></div>
+          )}
+          {awayFromBottom && (
+            <button
+              className="jump-bottom"
+              title="回到底部"
+              onClick={() => { pinNewTurnRef.current = false; const el = scrollRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }); }}
+            ><ArrowDown size={16} /></button>
+          )}
+        </div>
+
+        {goalsOpen && thread && (goalText || planSteps.length > 0) && (
+          <>
+            <div className={`goals-pop ${goalsDocked ? "docked" : ""}`}>
+              <button className="goals-summary" onClick={() => setGoalsExpanded((current) => !current)}>
+                <Target size={14} />
+                <strong>目标与进程</strong>
+                {goalText && <span className="goals-goal-text">{goalText}</span>}
+                <span className="goals-count">{planSteps.filter((s) => s.status === "completed").length}/{planSteps.length}</span>
+                <ChevronDown size={13} className={goalsExpanded ? "open" : ""} />
+              </button>
+              {goalsExpanded && <div className="goals-body">
+                <div className="goal-line">{goalText || "尚未设置目标"}</div>
+                {planSteps.length > 0 && <FlowDiagram steps={planSteps} />}
+                {planSteps.length > 0 && <div className="plan-steps-body">
+                  {planSteps.filter((s) => s.status !== "completed").map((step, index) => <div key={index} className={`plan-step ${step.status === "inProgress" ? "doing" : ""}`}><span className="plan-dot" />{step.step}</div>)}
+                  {planSteps.some((s) => s.status === "completed") && (
+                    <details className="plan-done" open={doneExpanded} onToggle={(event) => setDoneExpanded(event.currentTarget.open)}>
+                      <summary>已完成 {planSteps.filter((s) => s.status === "completed").length} 项<ChevronDown size={12} /></summary>
+                      {planSteps.filter((s) => s.status === "completed").map((step, index) => <div key={index} className="plan-step done"><Check size={12} className="plan-check" />{step.step}</div>)}
+                    </details>
+                  )}
+                </div>}
+                <div className="goals-edit">
+                  <button className="secondary-setting" onClick={() => { void openAppPrompt("设置长期目标", goalText || "", true).then((text) => { if (text != null) { setGoalText(text); if (thread) void window.codex.request("thread/goal/set", { threadId: thread.id, objective: text }); } }); }}><PenLine size={13} />{goalText ? "编辑目标" : "设置目标"}</button>
+                  <button className="icon-button" title={goalsDocked ? "展开面板" : "收纳面板"} onClick={() => setGoalsDocked((current) => !current)}>{goalsDocked ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />}</button>
+                  <button className="icon-button" title="隐藏" onClick={() => setGoalsOpen(false)}><X size={14} /></button>
+                </div>
+              </div>}
+            </div>
+            {/* 收纳后露出的窄标签：点击展开面板 */}
+            <button className={`goals-handle ${goalsDocked ? "visible" : ""}`} title="展开目标面板" onClick={() => setGoalsDocked(false)}>
+              <Target size={14} />
+              <span>目标</span>
+              <span className="goals-handle-count">{planSteps.filter((s) => s.status === "completed").length}/{planSteps.length}</span>
+            </button>
+          </>
+        )}
+
+        <div className={`composer-wrap ${isEmpty ? "docked-center" : ""}`}>
+          {/* Agent 提问卡：贴输入框上方、与输入框同宽；只属于发起它的会话，不跨会话弹窗 */}
+          {agentAsk && agentAsk.threadId === thread?.id && (
+            <div className="agent-ask-inline" role="dialog" aria-label="Agent 提问">
+              <header><Sparkles size={15} /><strong>Agent 想问你</strong></header>
+              <p className="agent-ask-question">{agentAsk.question}</p>
+              <div className="agent-ask-options">
+                {agentAsk.options.map((option, index) => (
+                  <button key={index} className={option === agentAsk.recommended ? "agent-ask-option recommended" : "agent-ask-option"} onClick={() => { agentAsk.resolve(option); setAgentAsk(null); }}>
+                    {option === agentAsk.recommended && <span className="agent-ask-badge">推荐</span>}
+                    {option}
+                  </button>
+                ))}
+              </div>
+              {agentAsk.allowFree && (
+                <form className="agent-ask-free" onSubmit={(e) => { e.preventDefault(); const input = (e.currentTarget.elements.namedItem("freeText") as HTMLInputElement); if (input.value.trim()) { agentAsk.resolve(input.value.trim()); setAgentAsk(null); } }}>
+                  <input name="freeText" placeholder="或者输入你的想法…" />
+                  <button type="submit" className="primary-setting"><Check size={14} />回复</button>
+                </form>
+              )}
+            </div>
+          )}
+          {notice && createPortal(
+            (() => {
+              const tone = noticeTone(notice);
+              const NoticeIcon = tone === "success" ? <CircleCheck size={16} /> : tone === "error" ? <X size={16} /> : tone === "warning" ? <AlertTriangle size={16} /> : <Info size={16} />;
+              return (
+                <div className={`notice notice-toast notice--${tone}`} role="status">
+                  <span className="notice-icon">{NoticeIcon}</span>
+                  <span className="notice-text">{notice}</span>
+                  <button title="关闭" onClick={() => setNotice("")}><X size={13} /></button>
+                </div>
+              );
+            })(),
+            document.body,
+          )}
+          {/* 启动静默检查发现新版本 → 通知卡片（非阻塞，可稍后/关闭） */}
+          {updateNotice && createPortal(
+            <div className="update-card" role="status" aria-label="发现新版本">
+              <div className="update-card-head">
+                <span className="update-card-icon"><Download size={16} /></span>
+                <div className="update-card-title">
+                  <strong>发现新版本 v{updateNotice.version}</strong>
+                  <span className="update-card-sub">{updateNotice.mandatory ? "建议尽快更新" : "有新版本可用"}</span>
+                </div>
+                <button title="关闭" onClick={() => setUpdateNotice(null)}><X size={13} /></button>
+              </div>
+              {updateNotice.changelog ? <div className="update-card-body">{updateNotice.changelog}</div> : null}
+              <div className="update-card-actions">
+                <button onClick={() => setUpdateNotice(null)}>稍后</button>
+                <button className="primary" onClick={() => void runUpdateDownload()} disabled={updateDownloading}>
+                  {updateDownloading ? (updateProgress > 0 ? `下载中 ${Math.round(updateProgress * 100)}%` : "下载中…") : "立即更新"}
+                </button>
+              </div>
+            </div>,
+            document.body,
+          )}
+          {infoModal && createPortal(
+            <div className="info-modal-mask" onClick={() => setInfoModal(null)}>
+              <div className="info-modal" role="dialog" aria-label={infoModal.title} onClick={(event) => event.stopPropagation()}>
+                <header><Info size={15} className="info-modal-icon" /><strong>{infoModal.title}</strong><button title="关闭" onClick={() => setInfoModal(null)}><X size={14} /></button></header>
+                <pre>{infoModal.body}</pre>
+              </div>
+            </div>,
+            document.body,
+          )}
+          {thread && <QueuedMessageList entries={queue} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />}
+          {/* 图片以内联 chip 展示（composer-input-shell 内），此处只保留文件附件条 */}
+          {files.length > 0 && <div className="attachment-strip">{files.map((path) => <div className="file-attachment" key={path}><FileCode2 size={18} /><span>{basename(path)}</span><button title="移除" onClick={() => setFiles(files.filter((entry) => entry !== path))}><X size={13} /></button></div>)}</div>}
+          {commandMatches.length > 0 && <div className="command-palette" role="listbox" aria-label="Codex 指令">{commandMatches.map(([name, description]) => <button type="button" role="option" key={name} onClick={() => { if (["rename", "review", "goal", "effort", "personality", "sandbox", "approval", "fork"].includes(name)) setPrompt(`/${name} `); else void runSlashCommand(`/${name}`); }}><code>/{name}</code><span>{description}</span></button>)}</div>}
+          {contextOpen && <div className="context-picker" role="listbox" aria-label="引用本次对话上下文">
+            <div className="context-picker-head"><span>引用本次对话</span><small>选择后会随本条消息发送</small></div>
+            {availableContextItems.length ? availableContextItems.map((item) => <button type="button" role="option" key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => addContextItem(item)}><b>{item.role}</b><span>{item.text}</span></button>) : <p>没有匹配的历史消息</p>}
+          </div>}
+          <form className="composer" onSubmit={send}>
+            {quoteItem && <div className="quote-bar">
+              <Quote size={13} className="quote-bar-icon" />
+              <span className="quote-bar-label">引用</span>
+              <em className="quote-bar-text" title={quoteItem.text}>{quoteItem.text}</em>
+              <button type="button" title="取消引用" onClick={cancelQuote}><X size={13} /></button>
+            </div>}
+            {(contextItems.length > 0 || selectedSkills.length > 0) && <div className="context-chip-row" aria-label="已引用上下文与技能">{contextItems.map((item) => <span className="context-chip" key={item.id}><Quote size={12} /><b>{item.role}</b><em>{item.text}</em><button type="button" title="移除引用" onClick={() => removeContextItem(item.id)}><X size={12} /></button></span>)}{selectedSkills.map((skill) => <span className="context-chip skill-chip" key={skill.name}><Zap size={12} /><b>技能</b><em>{skill.name}</em><button type="button" title="移除技能" onClick={() => setSelectedSkills((current) => current.filter((entry) => entry.name !== skill.name))}><X size={12} /></button></span>)}</div>}
+            <div className="composer-input-shell">
+              <ComposerInlineImages prompt={prompt} onRemove={(path) => {
+                // 从文本中删除该占位符（按编码后的 token 精确匹配，见 prompt-images.ts）+ 从 images 数组移除
+                setPrompt((current) => removeImageToken(current, path));
+                setImages((current) => current.filter((entry) => entry !== path));
+              }} onPreview={(path) => setLightbox({ path, alt: "待发送图片" })} />
+              <textarea ref={composerInputRef} value={prompt} onChange={(event) => onPromptChange(event.target.value)} onKeyDown={(event) => { if (contextOpen && event.key === "Enter" && availableContextItems[0]) { event.preventDefault(); addContextItem(availableContextItems[0]); return; } if (event.key === "Escape" && contextOpen) { event.preventDefault(); setContextOpen(false); return; } onComposerKeyDown(event); }} onBlur={() => setTimeout(() => setContextOpen(false), 120)} onPaste={(event) => { if ([...event.clipboardData.files].some((file) => file.type.startsWith("image/"))) setTimeout(() => void pasteImage(), 0); }} placeholder="向 Codex 提问，使用 @ 添加上下文，使用 / 选择命令或能力" rows={1} />
+            </div>
+            <div className="composer-actions">
+              <div className="composer-left">
+                <div className="composer-quick-menu" ref={quickMenuRef}>
+                  <button
+                    type="button"
+                    className="icon-button plus-spin-button"
+                    title="添加文件、技能或连接器"
+                    aria-expanded={attachmentMenuOpen}
+                    onClick={() => {
+                      setPlusSpinTick((tick) => tick + 1);
+                      setAttachmentMenuOpen((current) => {
+                        if (current) setAttachSubmenu("none");
+                        return !current;
+                      });
+                      setSkillMenuOpen(false);
+                      setConnectorMenuOpen(false);
+                    }}
+                  ><Plus key={plusSpinTick} size={19} className="plus-spin" /></button>
+                  {attachmentMenuOpen && <div ref={quickMenuPanelRef} className={`composer-quick-pop ${quickMenuFlipUp ? "flip-main-up" : ""}`}>
+                    <button type="button" data-submenu-open={attachSubmenu === "files" || undefined} onMouseEnter={() => scheduleSubmenu("files")} onMouseLeave={scheduleSubmenuClose} onClick={() => setAttachSubmenu((current) => current === "files" ? "none" : "files")}><Plus size={16} /><span>添加文件</span><ChevronDown size={14} className="submenu-chevron" /></button>
+                    <button type="button" data-submenu-open={attachSubmenu === "thread-files" || undefined} onMouseEnter={() => scheduleSubmenu("thread-files")} onMouseLeave={scheduleSubmenuClose} onClick={() => { setAttachSubmenu((current) => current === "thread-files" ? "none" : "thread-files"); setThreadFileQuery(""); }}><Quote size={16} /><span>引用对话中的文件</span><ChevronDown size={14} className="submenu-chevron" /></button>
+                    <button type="button" data-submenu-open={attachSubmenu === "experts" || undefined} onMouseEnter={() => scheduleSubmenu("experts")} onMouseLeave={scheduleSubmenuClose} onClick={() => { setAttachSubmenu((current) => current === "experts" ? "none" : "experts"); setExpertQuery(""); }}><Users size={16} /><span>专家</span><ChevronDown size={14} className="submenu-chevron" /></button>
+                    <button type="button" data-submenu-open={attachSubmenu === "skills" || undefined} onMouseEnter={() => scheduleSubmenu("skills")} onMouseLeave={scheduleSubmenuClose} onClick={() => { setAttachSubmenu((current) => current === "skills" ? "none" : "skills"); setSkillQuery(""); }}><Zap size={16} /><span>技能</span><ChevronDown size={14} className="submenu-chevron" /></button>
+                    <button type="button" data-submenu-open={attachSubmenu === "connectors" || undefined} onMouseEnter={() => scheduleSubmenu("connectors")} onMouseLeave={scheduleSubmenuClose} onClick={() => { setAttachSubmenu((current) => current === "connectors" ? "none" : "connectors"); setConnectorSearch(""); }}><Link2 size={16} /><span>连接器</span><ChevronDown size={14} className="submenu-chevron" /></button>
+
+                {/* 添加文件子菜单：暂只保留本地文件（云端入口待定，不留占位） */}
+                {attachSubmenu === "files" && <div className={`composer-quick-pop submenu-pop files-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="files" style={{ "--submenu-top": `${submenuTop}px` } as React.CSSProperties}>
+                  <button type="button" onClick={() => { setAttachmentMenuOpen(false); setAttachSubmenu("none"); void chooseFiles(); }}><FileUp size={15} /><span>本地文件</span></button>
+                </div>}
+                {/* 引用对话中的文件：带搜索框的子面板（过滤当前会话消息里出现过的文件路径） */}
+                {attachSubmenu === "thread-files" && <div className={`composer-quick-pop submenu-pop thread-files-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="thread-files" style={{ "--submenu-top": `${submenuTop}px` } as React.CSSProperties}>
+                  <ThreadFilePicker
+                    query={threadFileQuery}
+                    onQuery={setThreadFileQuery}
+                    candidates={threadFileCandidates}
+                    onPick={(path) => { setFiles((current) => current.includes(path) ? current : [...current, path]); setAttachmentMenuOpen(false); setAttachSubmenu("none"); setNotice(`已引用文件：${basename(path)}`); }}
+                    onClose={() => { setAttachmentMenuOpen(false); setAttachSubmenu("none"); }}
+                  />
+                </div>}
+                {/* 专家子面板：搜索 + 专家团成员列表 + 召唤更多（进专家团设置页） */}
+                {attachSubmenu === "experts" && <div className={`composer-quick-pop submenu-pop experts-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="experts" style={{ "--submenu-top": `${submenuTop}px` } as React.CSSProperties}>
+                  <div className="submenu-search"><Search size={13} /><input autoFocus value={expertQuery} onChange={(event) => setExpertQuery(event.target.value)} placeholder="搜索专家" /></div>
+                  <div className="submenu-list">
+                    {expertTeams.filter((team) => team.enabled).flatMap((team) => [team.lead, ...team.members].filter((member) => !expertQuery.trim() || expertRoleLabel(member, member.id === team.lead.id).includes(expertQuery.trim())).map((member) => (
+                      <button type="button" key={`${team.teamId}:${member.id}`} onClick={() => { setAttachmentMenuOpen(false); setAttachSubmenu("none"); void startMemberDirectSession(team, member); }}>
+                        <span className={`expert-menu-avatar${member.id === team.lead.id ? " is-lead" : ""}`} style={member.id === team.lead.id ? undefined : { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] }}>{expertRoleLabel(member, member.id === team.lead.id).slice(0, 1)}</span>
+                        <span className="expert-menu-name">{expertRoleLabel(member, member.id === team.lead.id)}</span>
+                        <small>{team.profession.zh || team.displayName.zh}</small>
+                      </button>
+                    )))}
+                    {!expertTeams.some((team) => team.enabled) && <p className="submenu-empty">还没有启用的专家团</p>}
+                  </div>
+                  <button type="button" className="submenu-manage" onClick={() => { setAttachmentMenuOpen(false); setAttachSubmenu("none"); setSettingsPage("teams"); setSettingsOpen(true); }}><ArrowUpRight size={14} /><span>召唤更多专家</span></button>
+                </div>}
+                {/* 技能子面板：搜索 + 已安装技能列表 + 管理入口（贴一级菜单，同专家面板形态） */}
+                {attachSubmenu === "skills" && <div className={`composer-quick-pop submenu-pop skills-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="skills" style={{ "--submenu-top": `${submenuTop}px` } as React.CSSProperties}>
+                  <div className="submenu-search"><Search size={13} /><input autoFocus value={skillQuery} onChange={(event) => setSkillQuery(event.target.value)} placeholder="搜索已安装技能" /></div>
+                  <div className="submenu-list">
+                    {[...localSkills, ...settingsResources.skills.map((skill: any) => ({ name: skill.name, path: skill.path, description: skill.description ?? "" }))].filter((skill, index, all) => all.findIndex((entry) => entry.name.toLowerCase() === skill.name.toLowerCase() || (entry.path && entry.path === skill.path)) === index).filter((skill) => skill.name.toLowerCase().includes(skillQuery.toLowerCase()) || skill.description.toLowerCase().includes(skillQuery.toLowerCase())).slice(0, 8).map((skill) => <button type="button" key={skill.name} onClick={() => { setSelectedSkills((current) => current.some((entry) => entry.name === skill.name) ? current : [...current, skill]); setAttachmentMenuOpen(false); setAttachSubmenu("none"); }}><Zap size={15} /><span className="expert-menu-name">{skill.name}</span><small>{skill.description || "已安装技能"}</small></button>)}
+                    {!skillQuery.trim() && ![...localSkills, ...settingsResources.skills].length && <p className="submenu-empty">还没有安装技能</p>}
+                  </div>
+                  <button type="button" className="submenu-manage" onClick={() => { setAttachmentMenuOpen(false); setAttachSubmenu("none"); setSettingsPage("skills"); setSettingsOpen(true); }}><ArrowUpRight size={14} /><span>管理技能中心</span></button>
+                </div>}
+                {/* 连接器子面板：搜索 + 已配置连接器列表 + 管理入口 */}
+                {attachSubmenu === "connectors" && <div className={`composer-quick-pop submenu-pop connectors-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="connectors" style={{ "--submenu-top": `${submenuTop}px` } as React.CSSProperties}>
+                  <div className="submenu-search"><Search size={13} /><input autoFocus value={connectorSearch} onChange={(event) => setConnectorSearch(event.target.value)} placeholder="搜索已配置连接器" /></div>
+                  <div className="submenu-list">
+                    {connectors.filter((connector) => connector.name.includes(connectorSearch) || connector.id.includes(connectorSearch)).slice(0, 8).map((connector) => <button type="button" key={connector.id} onClick={() => { setPrompt((current) => `${current}${current ? "\n" : ""}[本轮可使用连接器：${connector.name}]`); setAttachmentMenuOpen(false); setAttachSubmenu("none"); }}><Link2 size={15} /><span className="expert-menu-name">{connector.name}</span><small>{connector.transport === "stdio" ? connector.command : connector.url}</small></button>)}
+                    {!connectors.length && <p className="submenu-empty">尚未配置真实 MCP 连接器</p>}
+                  </div>
+                  <button type="button" className="submenu-manage" onClick={() => { setAttachmentMenuOpen(false); setAttachSubmenu("none"); setSettingsPage("mcp"); setSettingsOpen(true); }}><ArrowUpRight size={14} /><span>管理连接器</span></button>
+                </div>}
+                  </div>}
+                </div>
+                <ComposerMenu icon={ShieldCheck} label="权限" title="权限模式" tone={sandbox === "danger-full-access" ? "danger" : undefined} value={sandbox === "danger-full-access" ? "never" : approvalPolicy} options={approvalMenuOptions(sandbox === "danger-full-access")} onChange={(value) => value === "never" ? changeSandbox("danger-full-access") : (sandbox === "danger-full-access" && changeApproval(value), changeApproval(value))} />
+                <button type="button" className={`composer-tool ${webSearch ? "on" : "off"}`} title={webSearch ? "联网搜索已开启，点击关闭" : "联网搜索已关闭，点击开启"} aria-pressed={webSearch} onClick={toggleWebSearch}><Search size={17} /><span className="composer-tool-label">联网</span></button>
+              </div>
+              <div className="composer-right">
+                <div className="model-controls composer-model-controls">
+                  <ContextUsageBadge tokenUsage={tokenUsage} fallbackWindow={customModel?.models?.find((m) => m.id === customModel?.model)?.contextWindow ?? customModel?.contextWindow} />
+                  <ComposerMenu icon={Bot} label="模型" title="模型" disabled={!customModel} width={300} value={modelId} options={allModels.map((model) => ({
+                    value: model.id,
+                    title: model.model,
+                    // 当前供应商不需要重复说明；跨供应商模型只补充供应商名称用于区分。
+                    desc: model.isActive ? "" : model.providerName,
+                  }))} toneOf={(option) => avatarToneOf(option.desc || option.title)} onChange={chooseModel} />
+                  <ComposerMenu icon={Zap} label="思考" title="真实思考强度" disabled={!customModel} value={effort} options={effortMenuOptions.filter((option) => !selectedModel || selectedModel.supportedReasoningEfforts.some((entry) => entry.reasoningEffort === option.value))} onChange={changeEffort} />
+                </div>
+                {(prompt.trim() || hasEnhanceBackup) && !activeThreadRunning && (
+                  <button
+                    type="button"
+                    className={`enhance-button ${enhanceBusy ? "loading" : ""} ${hasEnhanceBackup && !enhanceBusy ? "revert" : ""}`}
+                    title={enhanceBusy ? "增强中，点击取消" : hasEnhanceBackup ? "还原为原文" : "AI 优化提示词"}
+                    aria-label={enhanceBusy ? "增强中，点击取消" : hasEnhanceBackup ? "还原为原文" : "AI 优化提示词"}
+                    disabled={enhanceBusy ? false : !prompt.trim()}
+                    onClick={() => {
+                      if (enhanceBusy) { setEnhanceBusy(false); setNotice("已取消增强"); return; }
+                      void runPromptEnhance();
+                    }}
+                  >
+                    {enhanceBusy ? <Spinner /> : hasEnhanceBackup ? <RotateCcw size={16} /> : <Sparkles size={16} />}
+                  </button>
+                )}
+                {activeThreadRunning ? (
+                  <button type="button" className="stop-button" title="停止" disabled={interrupting} onClick={() => void interrupt()}>
+                    {interrupting ? <Spinner /> : <CircleStop size={18} />}
+                  </button>
+                ) : (
+                  <button type="submit" className="send-button" title="发送" disabled={!prompt.trim() && !quoteItem && !images.length && !files.length}><Send size={18} /></button>
+                )}
+              </div>
+            </div>
+          </form>
+          {isEmpty && (
+            <div className="suggest-row">
+              {[["📊", "周报总结", "汇总本周的提交与改动，生成一份周报总结"], ["🐞", "报错修复", "定位并修复项目里最近的报错，并补充回归测试"], ["🎞️", "PPT 制作", "根据 README 制作一份项目介绍 PPT"], ["⏰", "闲时任务", "规划一个闲时后台自动化任务"]].map(([emoji, label, prompt]: any) => (
+                <button key={label} onClick={() => { if (label === "闲时任务") { setSettingsPage("schedule"); setSettingsOpen(true); } else setPrompt(prompt); }}><span className="suggest-emoji">{emoji}</span>{label}</button>
+              ))}
+            </div>
+          )}
+        </div>
+      </main>
+
+      {rightOpen && <div className="panel-divider" onMouseDown={startPanelDrag} />}
+
+      {rightOpen && <aside className="context-panel">
+        <div className="panel-tabstrip">
+          <div className="switcher-wrap">
+            <button className="tabstrip-btn" title="切换标签页" onClick={() => { setSwitcherOpen((current) => !current); setSwitcherQuery(""); }}><ChevronDown size={14} /></button>
+            {switcherOpen && <div className="tab-switcher">
+              <input autoFocus value={switcherQuery} onChange={(event) => setSwitcherQuery(event.target.value)} placeholder="搜索标签页..." />
+              <div className="switcher-section">打开的标签页</div>
+              {openTabs.filter((tab) => tab.name.includes(switcherQuery)).map((tab) => (
+                <button key={tab.key} className="switcher-row" onClick={() => { setRightTab(tab.key); setSwitcherOpen(false); }}>
+                {tab.key === "terminal" ? <TerminalSquare size={13} /> : tab.key === "review" ? <GitBranch size={13} /> : tab.key === "browser" ? <Globe2 size={13} /> : <FolderTree size={13} />}
+                  <span className="switcher-name">{tab.name}</span>
+                  <small>{ago(Date.now())}</small>
+                  <X size={12} className="tab-close" onClick={(event) => { event.stopPropagation(); closePanelTab(tab.key); }} />
+                </button>
+              ))}
+              {!openTabs.length && <div className="switcher-empty">没有打开的标签页</div>}
+              <div className="switcher-section">最近关闭的标签页</div>
+              {recentlyClosed.filter((tab) => tab.name.includes(switcherQuery)).map((tab) => (
+                <button key={`${tab.key}-${tab.at}`} className="switcher-row" onClick={() => openPanelTab(tab.key, tab.name)}>
+                  {tab.key === "terminal" ? <TerminalSquare size={13} /> : tab.key === "review" ? <GitBranch size={13} /> : tab.key === "browser" ? <Globe2 size={13} /> : <FolderTree size={13} />}
+                  <span className="switcher-name">{tab.name}</span>
+                  <small>{ago(tab.at)}</small>
+                </button>
+              ))}
+              {!recentlyClosed.length && <div className="switcher-empty">暂无最近关闭</div>}
+            </div>}
+          </div>
+          <div className="tabstrip-tabs">
+            {openTabs.map((tab) => (
+              <button key={tab.key} className={`panel-tab ${rightTab === tab.key ? "active" : ""}`} onClick={() => { setRightTab(tab.key); setSwitcherOpen(false); }}>
+                  {tab.key === "terminal" ? <TerminalSquare size={12} /> : tab.key === "review" ? <GitBranch size={12} /> : tab.key === "browser" ? <Globe2 size={12} /> : <FolderTree size={12} />}
+                <span>{tab.name}</span>
+                <X size={12} className="tab-close" onClick={(event) => { event.stopPropagation(); closePanelTab(tab.key); }} />
+              </button>
+            ))}
+          </div>
+          <button className="tabstrip-btn" title="打开标签页" onClick={() => setSideChooser(true)}><Plus size={14} /></button>
+        </div>
+        {(sideChooser || openTabs.length === 0) && <div className="tab-chooser">
+          <h2>打开标签页</h2>
+          <p>选择要在侧边面板中打开的标签。</p>
+          <button onClick={() => openPanelTab("review", "变更")}><GitBranch size={15} />变更</button>
+          <button onClick={() => openPanelTab("terminal", workspace ? basename(workspace) : "终端")}><TerminalSquare size={15} />终端</button>
+          <button onClick={() => openPanelTab("browser", "浏览器")}><Globe2 size={15} />浏览器</button>
+          <button onClick={() => openPanelTab("tree", "项目树")}><FolderTree size={15} />项目树</button>
+        </div>}
+        <div className={`panel-page ${rightTab === "review" && !sideChooser ? "" : "hidden"}`}>
+          <ReviewPanel workspace={workspace} lastDiff={diff} disabled={!thread} busy={reviewBusy} report={reviewReport} onReview={startReview} />
+        </div>
+        <div className={`panel-page ${rightTab === "tree" && !sideChooser ? "" : "hidden"}`}>
+        <section className="tree-section">
+          <div className="panel-section-heading"><h2>项目树</h2><div className="panel-section-actions"><button className="icon-button" title="查看项目变更" onClick={() => openPanelTab("review", "变更")}><GitBranch size={14} /></button><button className="icon-button" title="刷新项目树" onClick={() => void loadTree(treePath || workspace)}>{treeLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+          <div className="tree-location" title={treePath || workspace}>{treePath || workspace || "未选择工作区"}</div>
+          {treeLoading ? <div className="panel-loading"><Spinner />读取中</div> : (() => {
+            const sep = treePath.includes("\\") ? "\\" : "/";
+            const base = treePath.replace(/[\\/]+$/, "");
+            const normSep = (s: string) => s.replace(/\\/g, "/").toLowerCase();
+            const target = highlightedFilePath ? normSep(highlightedFilePath) : null;
+            return <div className="tree-list">{treeEntries.map((entry) => {
+              const full = `${base}${sep}${entry.fileName}`;
+              const selected = target != null && (target === normSep(full) || target.endsWith(`/${entry.fileName.toLowerCase()}`));
+              return (
+                <button
+                  key={entry.fileName}
+                  data-tree-path={full}
+                  className={`tree-entry ${selected ? "tree-entry--selected" : ""}`}
+                  onClick={() => entry.isDirectory ? void loadTree(full) : void openFile(full)}
+                >
+                  <span>{entry.isDirectory ? <FolderOpen size={14} /> : isImagePath(full) ? <Image size={14} /> : <FileCode2 size={14} />}</span>
+                  <span>{entry.fileName}</span>
+                </button>
+              );
+            })}</div>;
+          })()}
+        </section>
+        </div>
+        <div className={`panel-page ${rightTab === "browser" && !sideChooser ? "" : "hidden"}`}>
+          <section className="browser-section">
+            <div className="browser-address-bar">
+              <button className="icon-button" title="后退" onClick={() => { try { (iframeRef.current?.contentWindow as Window | null)?.history?.back(); } catch { /* cross-origin */ } }}><ArrowLeft size={14} /></button>
+              <button className="icon-button" title="前进" onClick={() => { try { (iframeRef.current?.contentWindow as Window | null)?.history?.forward(); } catch { /* cross-origin */ } }}><ArrowRight size={14} /></button>
+              <button className="icon-button" title="刷新" onClick={openBrowser}><RefreshCw size={14} /></button>
+              {browserMode !== "cloak" && <input value={browserDraft} onChange={(event) => setBrowserDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") openBrowser(); }} placeholder="输入 URL 回车" />}
+              {/* 指纹模式是 CloakBrowser 的默认形态，不提供切换回内置视图的按钮 */}
+              <button className="icon-button" title={browserBookmarks.some((entry) => entry.url === browserDraft.trim()) ? "取消收藏" : "收藏此页"} onClick={toggleBookmark}><Star size={14} /></button>
+              <div className="browser-menu-wrap">
+                <button className={`icon-button ${browserMenuOpen ? "active-tool" : ""}`} title="更多" onClick={() => { setBrowserMenuOpen((v) => !v); if (!browserMenuOpen && browserDrawer) setBrowserDrawer(""); }}><MoreHorizontal size={14} /></button>
+                {browserMenuOpen && <>
+                  <div className="menu-backdrop" onClick={() => setBrowserMenuOpen(false)} />
+                  <div className="browser-menu" role="menu">
+                    <button role="menuitem" onClick={() => { setBrowserMenuOpen(false); setBrowserDrawer(browserDrawer === "bookmarks" ? "" : "bookmarks"); }}><Star size={13} /><span>收藏夹</span><em>{browserBookmarks.length}</em></button>
+                    <button role="menuitem" onClick={() => { setBrowserMenuOpen(false); setBrowserDrawer(browserDrawer === "history" ? "" : "history"); }}><Clock3 size={13} /><span>历史记录</span><em>{browserHistory.length}</em></button>
+                    <button role="menuitem" onClick={() => { setBrowserMenuOpen(false); setBrowserDraft(browserHome); openBrowser(); }}><Home size={13} /><span>打开首页</span></button>
+                    <button role="menuitem" disabled={!browserDraft.trim()} onClick={() => { setBrowserMenuOpen(false); const url = browserDraft.trim(); localStorage.setItem("browser-home", url); setBrowserHome(url); setNotice("已设为默认起始页"); }}><BookmarkPlus size={13} /><span>设为默认起始页</span></button>
+                    <button role="menuitem" disabled={!browserUrl} onClick={() => { setBrowserMenuOpen(false); if (browserUrl) void window.codex.openExternal(browserUrl); }}><Monitor size={13} /><span>在默认浏览器打开</span></button>
+                  </div>
+                </>}
+              </div>
+            </div>
+            {browserMode === "cloak" ? (
+              <div className="browser-home cloak-mode">
+                <div className="home-glow" aria-hidden />
+                <div className="home-badge"><ShieldCheck size={30} /></div>
+                <div className="home-greet">{greetingForHour(new Date().getHours())}{username ? "，" + username : ""}</div>
+                <div className="home-date">{new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" })}</div>
+                <form className="home-input" onSubmit={(event) => { event.preventDefault(); openBrowser(); }}>
+                  <Search size={14} />
+                  <input autoFocus value={browserDraft} onChange={(event) => setBrowserDraft(event.target.value)} placeholder="输入网址，回车用指纹浏览器打开" />
+                  <button type="submit" title="打开" disabled={!browserDraft.trim()}><ArrowRight size={14} /></button>
+                </form>
+                {homeSites.length > 0 && (
+                  <div className="home-sites">
+                    {homeSites.map((site) => (
+                      <button key={site.url} className="home-site" title={site.url} onClick={() => { setBrowserDraft(site.url); setTimeout(() => openBrowser(), 30); }}>
+                        <span className="home-site-icon" style={site.color ? { background: site.color } : undefined}>{site.name.charAt(0).toUpperCase()}</span>
+                        <small>{site.name}</small>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {cloakPage && <p className="cloak-status">正在指纹窗口中打开：<br /><span className="cloak-url">{cloakPage}</span></p>}
+                {cloakStatus && <p className="cloak-status">{cloakStatus}</p>}
+                <small className="home-hint">反检测 Chromium · humanize 拟人操作 · 独立窗口展示</small>
+              </div>
+            ) : (<>
+              {browserDrawer !== "" && (
+                <div className="browser-drawer">
+                  <div className="browser-drawer-head"><strong>{browserDrawer === "bookmarks" ? "收藏夹" : "历史记录"}</strong><button className="icon-button" title="关闭" onClick={() => setBrowserDrawer("")}><X size={13} /></button></div>
+                  <div className="browser-drawer-list">
+                    {(browserDrawer === "bookmarks" ? browserBookmarks : browserHistory).map((entry) => (
+                      <button key={entry.url} className="browser-drawer-row" onClick={() => { setBrowserDraft(entry.url); setBrowserDrawer(""); setTimeout(() => { void (async () => { await Promise.resolve(); openBrowser(); })(); }, 30); }}>
+                        <b>{entry.title}</b><small>{entry.url.slice(0, 60)}</small>
+                      </button>
+                    ))}
+                    {(browserDrawer === "bookmarks" ? browserBookmarks : browserHistory).length === 0 && <p className="muted">暂无记录</p>}
+                  </div>
+                </div>
+              )}
+              {browserUrl ? <iframe ref={iframeRef} className="browser-frame" title="内置浏览器" src={browserUrl} /> : <div className="browser-empty"><Globe2 size={46} /><strong>浏览器</strong><p>CloakBrowser 指纹浏览器 · 输入 URL 打开网页，或从收藏/历史选择。</p></div>}
+            </>)}
+          </section>
+        </div>
+        <div className={`panel-page ${rightTab === "terminal" && !sideChooser ? "" : "hidden"}`}>
+          {rightTab === "terminal" && !sideChooser && <TerminalPanel id="panel-terminal" workspace={workspace} active />}
+        </div>
+      </aside>}
+
+      {paletteOpen && <div className="palette-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPaletteOpen(false); }}>
+        <div className="palette">
+          <div className="palette-input"><Search size={14} /><input autoFocus value={paletteQuery} onChange={(event) => setPaletteQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") setPaletteOpen(false); if (event.key === "Enter") (document.querySelector(".palette-row") as HTMLElement | null)?.click(); }} placeholder="搜索操作、任务或文件" /></div>
+          <div className="palette-tabs">
+            {[["all", "全部", LayoutGrid], ["ops", "操作", Wrench], ["tasks", "任务", MessageSquare], ["files", "文件", FolderOpen]].map(([key, label, Icon]: any) => <button key={key} className={paletteTab === key ? "active" : ""} onClick={() => setPaletteTab(key)}><Icon size={12} />{label}</button>)}
+          </div>
+          {paletteSections.map((section) => <div key={section.group}>
+            <div className="palette-section">{section.group}</div>
+            {section.rows.map((row: any) => { const Icon = row.icon; return (
+              <button className="palette-row" key={row.label} onClick={() => { setPaletteOpen(false); row.run(); }}>
+                <Icon size={14} />
+                <span className="palette-label">{row.label}</span>
+                {row.shortcut && <kbd>{row.shortcut}</kbd>}
+              </button>
+            ); })}
+          </div>)}
+          {!paletteSections.length && <div className="switcher-empty">没有匹配的结果</div>}
+        </div>
+      </div>}
+      {mobileRemoteOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setMobileRemoteOpen(false); }}>
+        <div className="remote-panel2" role="dialog" aria-label="移动端远程控制">
+          <header><div className="remote-head-left"><Smartphone size={19} /><div><strong>移动端远程控制</strong><small>扫码或在手机上打开链接，即可远程控制当前工作区。</small></div></div><button className="icon-button" title="关闭" onClick={() => setMobileRemoteOpen(false)}><X size={17} /></button></header>
+          <div className="remote-columns">
+            <div className="remote-col">
+              <div className="remote-col-title"><Smartphone size={15} /><strong>手机扫码连接</strong></div>
+              <p className="remote-col-desc">用手机<b>相机</b>扫一扫（微信扫码会识别成文本，请选「打开链接」）。{remoteUrl?.startsWith("https") ? "手机无需与电脑同一 Wi-Fi。" : "手机需与电脑同一 Wi-Fi。"}</p>
+              <div className="remote-conn-card">
+                <div className="remote-conn-left"><div className="remote-conn-title"><strong>等待手机连接</strong><span className="remote-ready"><span className="remote-ready-dot" />已就绪</span></div><small>用手机扫码，或在手机上打开链接。</small></div>
+                <button className="remote-stop-btn" title="停止服务" onClick={async () => { await window.codex.remoteStop(); setMobileRemoteOpen(false); }}><Link2 size={13} />停止</button>
+              </div>
+              <div className="remote-scan-row"><span>无法扫码？可以在手机上打开链接。</span>
+                <button className="remote-mini-btn" title="刷新二维码" onClick={() => void window.codex.remoteQrcode().then((svg) => setRemoteQr(svg))}><RefreshCw size={13} />刷新二维码</button>
+                <button className="remote-mini-btn" title="复制链接" onClick={() => { if (remoteUrl) void navigator.clipboard.writeText(remoteUrl); }}><Copy size={13} />复制链接</button>
+              </div>
+              {remoteUrl ? (
+                <div className="remote-qr-box" dangerouslySetInnerHTML={{ __html: remoteQr }} />
+              ) : (
+                <div className="remote-qr-box" style={{ placeContent: "center", textAlign: "center", color: "var(--muted)", fontSize: "13px", lineHeight: 1.6 }}>
+                  <div>公网隧道暂不可用</div>
+                  <div style={{ fontSize: "11.5px", marginTop: "6px" }}>请确保电脑能访问外网，或改用同一 Wi-Fi 下直接访问局域网地址。</div>
+                </div>
+              )}
+            </div>
+            <div className="remote-col">
+              <div className="remote-col-title"><Link2 size={15} /><strong>使用 Bot Channel</strong></div>
+              <p className="remote-col-desc">连接聊天 Bot，适合更长时间的移动端访问。</p>
+              {[["微信", "", "从微信会话打开这个工作区。"], ["飞书", "中国", "从飞书打开这个工作区。"], ["Lark", "全球", "从 Lark 打开这个工作区。"], ["Telegram", "", "从 Telegram 打开这个工作区。"]].map(([name, region, desc]: any) => (
+                <div className="bot-channel-card" key={name}>
+                  <div className="bot-channel-main"><strong>{name}{region && <span className="bot-region">{region}</span>}</strong><small>{desc}</small><button className="bot-config-link" onClick={() => { setMobileRemoteOpen(false); setBotManagerOpen(true); }}>去 Bot Channels 配置</button></div>
+                </div>
+              ))}
+              <button className="remote-manage-btn" onClick={() => setBotManagerOpen(true)}><Link2 size={13} />机器人管理</button>
+            </div>
+          </div>
+        </div>
+      </div>}
+      {botManagerOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setBotManagerOpen(false); }}>
+        <div className="bot-manager" role="dialog" aria-label="机器人">
+          <header><div className="bot-head-left"><Link2 size={17} /><strong>机器人</strong><small>把外部聊天工具和 Webhook 接入 ZCode 机器人。</small></div><button className="icon-button" title="关闭" onClick={() => setBotManagerOpen(false)}><X size={17} /></button></header>
+          <div className="bot-columns">
+            <div className="bot-side">
+              <button className="bot-new-btn" onClick={() => { const id = crypto.randomUUID(); setBots((cur) => { const next = [...cur, { id, name: "新机器人", channel: "", enabled: false }]; localStorage.setItem("bots", JSON.stringify(next)); return next; }); setActiveBotId(id); setBotChannelPick(null); setBotReconfigure(false); }}><Plus size={14} />新建机器人</button>
+              <div className="bot-list">
+                {bots.map((bot) => {
+                  const online = botOnlineOf(bot, channelOnline);
+                  return (
+                  <button key={bot.id} className={"bot-item " + (bot.id === activeBotId ? "active" : "")} onClick={() => { setActiveBotId(bot.id); setBotReconfigure(false); setBotChannelPick(null); }}>
+                    <span className="bot-icon">{bot.channel === "feishu" || bot.channel === "lark" ? "🐦" : bot.channel === "wechat" ? "💬" : bot.channel === "telegram" ? "✈️" : bot.channel === "dingtalk" ? "📌" : bot.channel === "discord" ? "🎮" : bot.channel === "qq" ? "🐧" : bot.channel === "slack" ? "💼" : bot.channel === "whatsapp" ? "📱" : "🤖"}</span>
+                    <span className="bot-item-main"><strong>{bot.name}</strong><small>{bot.channel === "feishu" ? "飞书" : bot.channel === "lark" ? "飞书" : bot.channel === "wechat" ? "微信" : bot.channel === "telegram" ? "Telegram" : bot.channel === "dingtalk" ? "钉钉" : bot.channel === "discord" ? "Discord" : bot.channel === "wecom" ? "企业微信" : bot.channel === "qq" ? "QQ" : bot.channel === "slack" ? "Slack" : bot.channel === "whatsapp" ? "WhatsApp" : "未选择渠道"}</small></span>
+                    <span className={"bot-conn " + (online ? "on" : "")} title={online ? "已连接" : "未连接"}>{online ? "已连接" : "未连接"}</span>
+                  </button>
+                  );
+                })}
+                {!bots.length && <p className="muted">还没有机器人，点上方新建。</p>}
+              </div>
+            </div>
+            <div className="bot-detail">
+              {(() => { const activeBot = bots.find((b) => b.id === activeBotId); if (!activeBot) return <div className="bot-empty"><p className="muted">从左侧选择一个机器人，或新建一个。</p></div>; return (<>
+                <div className="bot-detail-head">
+                  <div><strong>{activeBot.name}</strong></div>
+                  <label className="bot-switch"><input type="checkbox" checked={activeBot.enabled} onChange={() => setBots((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, enabled: !b.enabled } : b); localStorage.setItem("bots", JSON.stringify(next)); return next; })} /><span /></label>
+                </div>
+                {(() => { const online = Boolean(activeBot.channel) && botOnlineOf(activeBot, channelOnline); return (<>
+                <p className={"bot-status-line" + (online ? " online" : "")}>{online ? "● 已连接" : activeBot.enabled ? "● 已启用" : "○ 未启用"}</p>
+                {online && !botReconfigure ? (
+                  <div className="bot-connected-card">
+                    <span className="bot-connected-badge">✓ 已连接</span>
+                    <div className="bot-connected-main">
+                      <strong>{botChannelName(activeBot.channel)}</strong>
+                      <small>{activeBot.channel === "wechat" ? "消息会实时回推到微信，无需重新扫码。" : "该机器人已连接，无需重新扫码。"}</small>
+                    </div>
+                    <button className="bot-reconfigure-btn" onClick={() => { setBotReconfigure(true); setBotChannelPick(null); }}>更换渠道</button>
+                  </div>
+                ) : (<>
+                {botReconfigure && <div className="bot-reconfig-head"><span>选择要更换的渠道，扫码完成重新绑定</span><button className="bot-reconfigure-btn" onClick={() => { setBotReconfigure(false); setBotChannelPick(null); }}>取消</button></div>}
+                <div className="bot-channel-grid">
+                  {[["wechat", "微信", "手机扫码绑定，手机即控制端。", "中国"], ["feishu", "飞书", "扫码绑定 + 开放平台回调。", "中国"], ["lark", "Lark", "扫码绑定 + 开放平台回调。", "全球"], ["telegram", "Telegram", "扫码绑定，手机即控制端。", ""], ["dingtalk", "钉钉", "扫码绑定，手机即控制端。", "中国"], ["discord", "Discord", "扫码绑定，手机即控制端。", ""], ["wecom", "企业微信", "企微后台配置回调接入。", "中国"], ["qq", "QQ 机器人", "扫码绑定，手机即控制端。", "中国"], ["slack", "Slack", "扫码绑定，手机即控制端。", "全球"], ["whatsapp", "WhatsApp", "扫码绑定，手机即控制端。", "全球"]].map(([key, name, desc, region]: any) => (
+                    <button key={key} className={"bot-channel-opt " + (botChannelPick === key ? "picked" : "")} onClick={() => { setBotChannelPick(key); setBots((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, channel: key } : b); localStorage.setItem("bots", JSON.stringify(next)); return next; }); }}>
+                      <strong>{name}{region ? <span className="bot-region">{region}</span> : null}</strong>
+                      <small>{desc}</small>
+                    </button>
+                  ))}
+                </div>
+                {botChannelPick && <BotBindCard bot={activeBot} onBound={(deviceName) => { setBots((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, enabled: true } : b); localStorage.setItem("bots", JSON.stringify(next)); return next; }); showToast("机器人已绑定", `${activeBot.name} 与 ${deviceName} 绑定成功`); }} />}
+                </>)}
+                </>); })()}
+                <div className="bot-detail-row">
+                  <div><strong>机器人回复粒度</strong><small>回复助手正文和文件变更，隐藏工具调用过程。</small></div>
+                  <select className="bot-select" value={(activeBot as any).granularity ?? "standard"} onChange={(event) => setBots((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, granularity: event.target.value } : b); localStorage.setItem("bots", JSON.stringify(next)); return next; })}>
+                    <option value="standard">标准回复</option>
+                    <option value="concise">简洁回复</option>
+                    <option value="verbose">详细回复</option>
+                  </select>
+                </div>
+                <div className="bot-detail-row">
+                  <div><strong>工作区访问范围</strong><small>这个机器人可以使用所有已配置的工作区。</small></div>
+                  <select className="bot-select" value={(activeBot as any).scope ?? "all"} onChange={(event) => setBots((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, scope: event.target.value } : b); localStorage.setItem("bots", JSON.stringify(next)); return next; })}>
+                    <option value="all">所有工作区</option>
+                    <option value="current">仅当前工作区</option>
+                  </select>
+                </div>
+                <div className="bot-delete-row"><div><strong>删除机器人</strong><small>移除这个机器人。</small></div><button className="bot-delete-btn" onClick={() => { setBots((cur) => { const next = cur.filter((b) => b.id !== activeBot.id); localStorage.setItem("bots", JSON.stringify(next)); return next; }); setActiveBotId(null); }}><Trash2 size={13} />删除机器人</button></div>
+              </>); })()}
+            </div>
+          </div>
+        </div>
+      </div>}
+{autoFormVisible && <div className="modal-backdrop schedule-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setAutoFormVisible(false); }}><div className="schedule-modal" role="dialog" aria-modal="true" aria-label="定时任务">
+                <div className="se-head">
+                  <strong><Clock3 size={14} />新建定时任务</strong>
+                  <button type="button" className="icon-button" title="收起" onClick={() => setAutoFormVisible(false)}><X size={14} /></button>
+                </div>
+                <div className="se-body">
+                  <div className="se-row">
+                    <label className="se-field"><span>任务名称<i>*</i></span><input value={scheduleDraft.name} onChange={(event) => setScheduleDraft({ ...scheduleDraft, name: event.target.value })} placeholder="例如：每周五生成项目周报" /></label>
+                    <label className="se-field"><span>工作区<i>*</i></span>
+                      <span className="se-input-btn">
+                        <input value={scheduleDraft.workspace} onChange={(event) => setScheduleDraft({ ...scheduleDraft, workspace: event.target.value })} placeholder="任务执行时使用的工作目录" />
+                        <button type="button" onClick={() => void window.codex.chooseDirectoryAt(scheduleDraft.workspace || workspace || "").then((dir: string | null) => { if (dir) setScheduleDraft((current) => ({ ...current, workspace: dir })); })}>浏览…</button>
+                      </span>
+                    </label>
+                  </div>
+                  <label className="se-field"><span>执行提示词<i>*</i></span><textarea rows={3} value={scheduleDraft.prompt} onChange={(event) => setScheduleDraft({ ...scheduleDraft, prompt: event.target.value })} placeholder="描述这个任务每次运行时要做的事，例如：汇总本周 Git 提交与 CI 状态，生成周会话摘要并列出重要变更" /></label>
+                  <div className="se-row">
+                    <label className="se-field"><span>执行会话</span>
+                      <select value={scheduleDraft.threadId} onChange={(event) => setScheduleDraft({ ...scheduleDraft, threadId: event.target.value })}>
+                        <option value="">新建会话</option>
+                        {threads.filter((entry) => entry.cwd === scheduleDraft.workspace).map((entry) => <option key={entry.id} value={entry.id}>{cleanThreadDisplayTitle(entry.name, { preview: entry.preview })}</option>)}
+                      </select>
+                    </label>
+                    <label className="se-field"><span>执行模型</span>
+                      <select value={scheduleDraft.model} onChange={(event) => setScheduleDraft({ ...scheduleDraft, model: event.target.value })}>
+                        <option value="">跟随全局设置</option>
+                        {allModels.map((m) => <option key={m.id} value={m.model}>{m.displayName}</option>)}
+                      </select>
+                    </label>
+                    <label className="se-field"><span>推理强度</span>
+                      <select value={scheduleDraft.effort} onChange={(event) => setScheduleDraft({ ...scheduleDraft, effort: event.target.value })}>
+                        {ALL_EFFORTS.map((level) => <option key={level} value={level}>{effortLabels[level] ?? level}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="se-field"><span>调度方式</span>
+                    <div className="schedule-kind" role="group" aria-label="调度方式">
+                      <button type="button" className={scheduleDraft.kind === "interval" ? "active" : ""} onClick={() => setScheduleDraft({ ...scheduleDraft, kind: "interval" })}>间隔</button>
+                      <button type="button" className={scheduleDraft.kind === "daily" ? "active" : ""} onClick={() => setScheduleDraft({ ...scheduleDraft, kind: "daily" })}>每天</button>
+                      <button type="button" className={scheduleDraft.kind === "weekly" ? "active" : ""} onClick={() => setScheduleDraft({ ...scheduleDraft, kind: "weekly" })}>每周</button>
+                      <button type="button" className={scheduleDraft.kind === "monthly" ? "active" : ""} onClick={() => setScheduleDraft({ ...scheduleDraft, kind: "monthly" })}>每月</button>
+                      <button type="button" className={scheduleDraft.kind === "yearly" ? "active" : ""} onClick={() => setScheduleDraft({ ...scheduleDraft, kind: "yearly" })}>每年</button>
+                      <button type="button" className={scheduleDraft.kind === "once" ? "active" : ""} onClick={() => setScheduleDraft({ ...scheduleDraft, kind: "once" })}>一次性</button>
+                    </div>
+                  </div>
+                  <div className="se-schedule-detail">
+                    {scheduleDraft.kind === "interval" && <label className="se-field se-cond"><span>重复间隔</span><span className="se-input-unit"><input type="number" min="1" value={scheduleDraft.intervalMinutes} onChange={(event) => setScheduleDraft({ ...scheduleDraft, intervalMinutes: event.target.value })} /><em>小时</em></span></label>}
+                    {(scheduleDraft.kind === "daily" || scheduleDraft.kind === "weekly" || scheduleDraft.kind === "monthly" || scheduleDraft.kind === "yearly") && <label className="se-field se-cond"><span>执行时间</span><input type="time" value={scheduleDraft.timeOfDay} onChange={(event) => setScheduleDraft({ ...scheduleDraft, timeOfDay: event.target.value })} /></label>}
+                    {scheduleDraft.kind === "once" && <label className="se-field se-cond"><span>运行时间</span><input type="datetime-local" value={scheduleDraft.scheduledAt} onChange={(event) => setScheduleDraft({ ...scheduleDraft, scheduledAt: event.target.value })} /></label>}
+                    {scheduleDraft.kind === "weekly" && <div className="se-field se-cond"><span>重复星期</span>
+                      <span className="se-weekrow">
+                        <span className="schedule-weekdays" role="group" aria-label="重复星期">
+                          {["日", "一", "二", "三", "四", "五", "六"].map((label, day) => (
+                            <button type="button" key={day} className={scheduleDraft.weekdays.includes(day) ? "active" : ""} onClick={() => setScheduleDraft({ ...scheduleDraft, weekdays: scheduleDraft.weekdays.includes(day) ? scheduleDraft.weekdays.filter((entry) => entry !== day) : [...scheduleDraft.weekdays, day].sort() })}>{label}</button>
+                          ))}
+                        </span>
+                        <label className="se-check"><input type="checkbox" checked={scheduleDraft.biweekly} onChange={(event) => setScheduleDraft({ ...scheduleDraft, biweekly: event.target.checked })} />每两周</label>
+                      </span>
+                    </div>}
+                    {scheduleDraft.kind === "monthly" && <label className="se-field se-cond"><span>每月第几天</span><span className="se-input-unit"><input type="number" min="1" max="31" value={scheduleDraft.monthDay} onChange={(event) => setScheduleDraft({ ...scheduleDraft, monthDay: event.target.value })} /><em>日</em></span></label>}
+                    {scheduleDraft.kind === "yearly" && <label className="se-field se-cond"><span>每年</span><span className="se-input-unit"><input type="number" min="1" max="12" value={scheduleDraft.month} onChange={(event) => setScheduleDraft({ ...scheduleDraft, month: event.target.value })} /><em>月</em><input type="number" min="1" max="31" value={scheduleDraft.monthDay} onChange={(event) => setScheduleDraft({ ...scheduleDraft, monthDay: event.target.value })} /><em>日</em></span></label>}
+                    <label className="se-field se-cond"><span>有效期至（可选）</span><input type="datetime-local" value={scheduleDraft.validUntil} onChange={(event) => setScheduleDraft({ ...scheduleDraft, validUntil: event.target.value })} /></label>
+                  </div>
+                  {scheduleDraft.name.trim() !== "" && <div className="se-preview"><Clock3 size={13} /><span>计划：{describeSchedule({ kind: scheduleDraft.kind, timeOfDay: scheduleDraft.timeOfDay, weekdays: scheduleDraft.weekdays, intervalMinutes: Number(scheduleDraft.intervalMinutes) || 60, scheduleType: scheduleDraft.kind === "once" ? "once" : "recurring", scheduledAt: scheduleDraft.scheduledAt, monthDay: Number(scheduleDraft.monthDay) || 1, month: Number(scheduleDraft.month) || 1 })}{scheduleDraft.kind === "weekly" && scheduleDraft.biweekly ? "（每两周）" : ""}{scheduleDraft.validUntil ? ` · 至 ${scheduleDraft.validUntil.replace("T", " ").slice(5, 16)}` : ""}</span></div>}
+                </div>
+                <footer className="se-foot">
+                  <span className="se-status">{scheduleStatus}</span>
+                  <div>
+                    <button type="button" className="secondary-setting" onClick={() => setAutoFormVisible(false)}>取消</button>
+                    <button type="button" className="primary-setting" disabled={!scheduleDraft.name.trim() || !scheduleDraft.prompt.trim() || !scheduleDraft.workspace.trim()} onClick={() => void saveSchedule().then((ok) => { if (ok) setAutoFormVisible(false); })}><Check size={14} />添加任务</button>
+                  </div>
+                </footer>
+              </div></div>}
+      {appPrompt && <div className="modal-backdrop agent-ask-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { appPrompt.resolve(null); setAppPrompt(null); } }}>
+        <div className="agent-ask-card" role="dialog" aria-modal="true" aria-label={appPrompt.title}>
+          <header><PenLine size={16} /><strong>{appPrompt.title}</strong></header>
+          <form className="agent-ask-free app-prompt-form" onSubmit={(e) => { e.preventDefault(); const input = e.currentTarget.elements.namedItem("promptText") as HTMLInputElement | HTMLTextAreaElement; appPrompt.resolve(input.value); setAppPrompt(null); }}>
+            {appPrompt.multiline
+              ? <textarea ref={(node) => { appPromptInputRef.current = node; }} name="promptText" rows={6} defaultValue={appPrompt.value} />
+              : <input ref={(node) => { appPromptInputRef.current = node; }} name="promptText" defaultValue={appPrompt.value} />}
+            <div className="app-prompt-actions">
+              <button type="button" className="secondary-setting" onClick={() => { appPrompt.resolve(null); setAppPrompt(null); }}>取消</button>
+              <button type="submit" className="primary-setting"><Check size={14} />确定</button>
+            </div>
+          </form>
+        </div>
+      </div>}
+      {appConfirm && <div className="modal-backdrop agent-ask-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { appConfirm.resolve(false); setAppConfirm(null); } }}>
+        <div className="agent-ask-card app-confirm-card" role="dialog" aria-modal="true" aria-label={appConfirm.title}>
+          <header><Trash2 size={16} /><strong>{appConfirm.title}</strong></header>
+          <p>{appConfirm.text}</p>
+          <div className="app-prompt-actions">
+            <button type="button" className="secondary-setting" onClick={() => { appConfirm.resolve(false); setAppConfirm(null); }}>取消</button>
+            <button type="button" className="danger primary-setting" onClick={() => { appConfirm.resolve(true); setAppConfirm(null); }}>{appConfirm.confirmLabel}</button>
+          </div>
+        </div>
+      </div>}
+      {memoryPreview && <div className="modal-backdrop agent-ask-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setMemoryPreview(null); }}>
+        <div className="agent-ask-card memory-preview-card" role="dialog" aria-modal="true" aria-label="记忆全文">
+          <header>
+            <span className="memory-category-pill">{memoryPreview.category}</span>
+            <strong>记忆全文</strong>
+            <button className="icon-button" title="关闭" onClick={() => setMemoryPreview(null)}><X size={16} /></button>
+          </header>
+          <div className="memory-preview-body">{memoryPreview.content}</div>
+          <small>
+            {memoryPreview.sourceThreadId ? `来源 ${memoryPreview.sourceThreadId.slice(0, 8)}` : "手动保存"} · 保存于 {new Date(memoryPreview.updatedAt ?? Date.now()).toLocaleString("zh-CN")}
+            {memoryPreview.sourceThreadId && <button className="memory-preview-open" title="跳转到这条记忆来源的会话" onClick={() => { setMemoryPreview(null); void openThread(memoryPreview.sourceThreadId!); }}><MessageSquare size={11} />打开源会话</button>}
+          </small>
+        </div>
+      </div>}
+      {searchPreview && (
+        <SearchPreviewModal
+          target={searchPreview}
+          onClose={() => setSearchPreview(null)}
+          onOpenThread={(id) => { setSearchPreview(null); setMemoryCenterOpen(false); setSettingsOpen(false); void openThread(id); }}
+          onOpenSettings={(page) => { setSearchPreview(null); setMemoryCenterOpen(false); setSettingsPage(page as SettingsPage); }}
+          onCopyThreadId={(id) => { void copyThreadReferenceId({ id }); }}
+        />
+      )}
+      {/* 记忆中心：设置页「记忆」只做总览，条目浏览 / 常驻记忆编辑 / 存储切换都在这个大弹窗里完成 */}
+      {memoryCenterOpen && <div className="modal-backdrop memory-center-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setMemoryCenterOpen(false); }}>
+        <section className="memory-center-modal" role="dialog" aria-modal="true" aria-label="记忆中心">
+          <header className="memory-center-head">
+            <div className="memory-center-heading">
+              <span className="memory-center-logo"><Brain size={18} /></span>
+              <div><strong>记忆中心</strong><span>常驻记忆每轮对话自动注入；记忆条目在发消息时按需召回；存储决定条目保存在本地还是云端。</span></div>
+            </div>
+            <div className="memory-center-tabs" role="tablist" aria-label="记忆中心视图">
+              <button role="tab" aria-selected={memoryCenterTab === "library"} className={`memory-center-tab ${memoryCenterTab === "library" ? "active" : ""}`} onClick={() => setMemoryCenterTab("library")}><Archive size={14} />记忆库</button>
+              <button role="tab" aria-selected={memoryCenterTab === "search"} className={`memory-center-tab ${memoryCenterTab === "search" ? "active" : ""}`} onClick={() => setMemoryCenterTab("search")}><Search size={14} />全局搜索</button>
+              <button role="tab" aria-selected={memoryCenterTab === "layers"} className={`memory-center-tab ${memoryCenterTab === "layers" ? "active" : ""}`} onClick={() => setMemoryCenterTab("layers")}><BookOpen size={14} />常驻记忆</button>
+              <button role="tab" aria-selected={memoryCenterTab === "storage"} className={`memory-center-tab ${memoryCenterTab === "storage" ? "active" : ""}`} onClick={() => setMemoryCenterTab("storage")}><Cloud size={14} />存储与同步</button>
+            </div>
+            <button className="icon-button" title="关闭记忆中心" onClick={() => setMemoryCenterOpen(false)}><X size={18} /></button>
+          </header>
+          <div className="memory-center-body">
+            {memoryCenterTab === "library" && <div className="memory-center-pane">
+              <div className="memory-center-block">
+                <div className="memory-center-block-head"><div><strong>手动保存</strong><span>把临时约定或结论固化成可召回的记忆；对话里让引擎「记住」的内容也会带来源会话出现在下方记忆库（本地自动捕获只沉淀到常驻记忆的每日日志）。</span></div></div>
+                <div className="memory-editor">
+                  <select value={memoryCategory} onChange={(event) => setMemoryCategory(event.target.value)}>
+                    <option value="">保存到（不指定分类）</option>
+                    {MEMORY_CATEGORIES.map((entry) => <option key={entry.name} value={entry.name}>{entry.name}</option>)}
+                  </select>
+                  <textarea value={memoryDraft} onChange={(event) => setMemoryDraft(event.target.value)} placeholder={`保存一条可复用的事实或约定（${memoryMode === "cloud" ? "云端" : "本地"}）`} />
+                  <button className="primary-setting" disabled={!memoryDraft.trim()} onClick={() => void saveMemoryRecord()}><Check size={14} />保存记忆</button>
+                </div>
+              </div>
+              <div className="memory-library">
+                <div className="memory-library-head">
+                  <div className="memory-library-title"><h3>记忆库</h3><p>按重要度 P0–P3 分层，点击条目可看全文；★ 置顶的核心记忆不会被自动清理。</p></div>
+                  <div className="memory-toolbar">
+                    <button className="secondary-setting" onClick={() => void resetMemory()}><Trash2 size={14} />清空记忆</button>
+                    <span className="memory-count">{memories.length} 条 · {memoryMode === "cloud" ? "云端" : "本地"}</span>
+                  </div>
+                </div>
+                <div className="memory-funnel-toolbar">
+                  <span className="memory-funnel-toolbar-label">分类筛选</span>
+                  <div className="memory-funnel-chips" role="tablist" aria-label="按分类筛选">
+                    <button role="tab" aria-selected={memoryCategory === ""} className={`memory-funnel-chip ${memoryCategory === "" ? "active" : ""}`} onClick={() => setMemoryCategory("")}>全部</button>
+                    {MEMORY_CATEGORIES.map((cat) => <button key={cat.name} role="tab" aria-selected={memoryCategory === cat.name} className={`memory-funnel-chip ${memoryCategory === cat.name ? "active" : ""}`} onClick={() => setMemoryCategory(memoryCategory === cat.name ? "" : cat.name)}>{cat.name}</button>)}
+                  </div>
+                </div>
+                <MemoryFunnel
+                  groups={memoryGroupsFiltered}
+                  onPreview={(entry) => setMemoryPreview(entry)}
+                  onTogglePin={togglePinned}
+                  onDeleteOne={(id) => void deleteMemoryRecord(id)}
+                  onDeleteGroup={(group) => void deleteMemoryGroup((entry) => (entry.sourceThreadId ?? "__manual") === group.key).then((count) => count > 0 && setMemoryStatus(`已从「${group.threadTitle}」删除 ${count} 条记忆`))}
+                  onOpenThread={(threadId) => { setMemoryCenterOpen(false); setSettingsOpen(false); void openThread(threadId); }}
+                />
+              </div>
+            </div>}
+            {memoryCenterTab === "search" && (
+              <GlobalSearchView
+                threads={threads.map((entry) => ({ id: entry.id, title: entry.name, preview: entry.preview, updatedAt: entry.updatedAt, turnCount: entry.turns?.length }))}
+                memories={memories.map((entry) => ({ id: entry.id, category: entry.category, content: entry.content, sourceThreadId: entry.sourceThreadId, createdAt: entry.updatedAt }))}
+                tasks={scheduledTasks.map((task) => ({ id: task.id, name: task.name, prompt: task.prompt, enabled: task.enabled, schedule: describeSchedule(task) }))}
+                skills={localSkills.map((skill) => ({ name: skill.name, description: skill.description }))}
+                onPreview={setSearchPreview}
+                onOpenThread={(threadId) => { setMemoryCenterOpen(false); setSettingsOpen(false); void openThread(threadId); }}
+                onOpenSettings={(page) => { setMemoryCenterOpen(false); setSettingsPage(page as SettingsPage); }}
+              />
+            )}
+            {memoryCenterTab === "layers" && <div className="memory-center-pane">
+                <MemoryLayersEditor
+                  snapshot={memoryLayers}
+                  scope={memoryLayerScope}
+                  draft={memoryLayerDraft}
+                  dirty={memoryLayerDirty}
+                  distilling={memoryDistilling}
+                  hasWorkspace={Boolean(workspace)}
+                  onScope={setMemoryLayerScope}
+                  onDraft={setMemoryLayerDraft}
+                  onSave={() => void saveMemoryLayer()}
+                  onDistill={() => void runMemoryDistill()}
+                />
+            </div>}
+            {memoryCenterTab === "storage" && <div className="memory-center-pane">
+              <div className="memory-center-block">
+                <div className="memory-center-block-head">
+                  <div><strong>记忆保存在哪</strong><span>本地只存本机 memory.json；云端走 TencentDB Gateway 自动召回与保存，需要先完成配置。</span></div>
+                  <button className="secondary-setting" onClick={() => setMemoryConfigOpen(true)}><Settings2 size={13} />云端配置</button>
+                </div>
+                <div className="memory-mode-switch" role="tablist" aria-label="记忆来源">
+                  <button role="tab" aria-selected={memoryMode === "local"} className={`memory-mode-card ${memoryMode === "local" ? "active" : ""}`} onClick={() => updateMemoryMode("local")}>
+                    <div className="memory-mode-icon"><CloudOff size={15} /></div>
+                    <div className="memory-mode-body"><strong>本地记忆</strong><span>仅保存在本机 memory.json</span></div>
+                    <span className="memory-mode-tag">{memories.length} 条</span>
+                  </button>
+                  <button role="tab" aria-selected={memoryMode === "cloud"} className={`memory-mode-card ${memoryMode === "cloud" ? "active" : ""}`} onClick={() => updateMemoryMode("cloud")}>
+                    <div className="memory-mode-icon"><Cloud size={15} /></div>
+                    <div className="memory-mode-body"><strong>云端记忆</strong><span>TencentDB Gateway，自动云端查找</span></div>
+                    <span className="memory-mode-tag">{memoryGateway.endpoint ? "已配置" : "未配置"}</span>
+                  </button>
+                </div>
+                <div className="workspace-memory-row">
+                  <div className="workspace-memory-info">
+                    <strong>工作区记忆</strong>
+                    <span>在当前项目中复用长期上下文；新会话开始时生效。</span>
+                  </div>
+                  <label className="channel-enable"><input type="checkbox" checked={workspaceMemoryEnabled} onChange={(event) => updateWorkspaceMemory(event.target.checked)} /><span>{workspaceMemoryEnabled ? "已开启" : "已关闭"}</span></label>
+                </div>
+              </div>
+            </div>}
+            {memoryStatus && <p className="settings-status">{memoryStatus}</p>}
+          </div>
+        </section>
+      </div>}
+      {settingsOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
+        <div className="settings-modal" role="dialog" aria-modal="true" aria-label="设置">
+          <header><div><Settings2 size={18} /><strong>设置</strong><span className="esc-hint" title="按 ESC 关闭弹窗">ESC</span></div><button className="icon-button" title="关闭" onClick={() => setSettingsOpen(false)}><X size={18} /></button></header>
+          <div className="settings-layout">
+            <nav className="settings-nav" aria-label="设置分类">
+              {settingsNav.map((group) => (
+                <div key={group.group} className="settings-group">
+                  <div className="settings-group-label">{group.group}</div>
+                  {group.items.map(([key, label, Icon]) => <button key={key} className={settingsPage === key ? "active" : ""} onClick={() => setSettingsPage(key)}><Icon size={15} />{label}</button>)}
+                </div>
+              ))}
+            </nav>
+            <div className="settings-content">
+            {resourceError && <div className="resource-error"><AlertTriangle size={14} /><span>{resourceError}</span><button className="secondary-setting" onClick={() => void refreshSettingsResources()}>重试</button></div>}
+            {/* 二级入口页：自动化（浏览器/桌面/RPA）与智能体团队（子智能体/专家团）。
+                点卡片进入真实页面；进入的是二级成员页时顶部提供「返回」。 */}
+            {settingsPage === "automation" && (
+              <section className="settings-section stack hub-page">
+                <div className="settings-copy"><h2>自动化</h2><p>浏览器、桌面与 RPA 三类自动化能力的总入口。</p></div>
+                <div className="hub-card-grid">
+                  <button className="hub-card" onClick={() => setSettingsPage("browser")}>
+                    <span className="hub-card-icon"><Globe2 size={20} /></span>
+                    <strong>浏览器自动化</strong>
+                    <p>内置浏览器面板与 playwright-cli / CloakBrowser 工具链；默认起始页设置在这里。</p>
+                  </button>
+                  <button className="hub-card" onClick={() => setSettingsPage("computer")}>
+                    <span className="hub-card-icon"><ShieldCheck size={20} /></span>
+                    <strong>桌面自动化</strong>
+                    <p>审批与沙箱策略，nuphus MCP 桌面工具（截屏、键鼠、窗口、OCR）。</p>
+                  </button>
+                  <button className="hub-card" onClick={() => setSettingsPage("rpa")}>
+                    <span className="hub-card-icon"><Workflow size={20} /></span>
+                    <strong>RPA 自动化</strong>
+                    <p>Codex 自主沉淀流程配方，下次一句话直接复现；任务清单自主维护。</p>
+                  </button>
+                </div>
+              </section>
+            )}
+            {settingsPage === "agentteam" && (
+              <section className="settings-section stack hub-page">
+                <div className="settings-copy"><h2>智能体团队</h2><p>子智能体与专家团的总入口。</p></div>
+                <div className="hub-card-grid">
+                  <button className="hub-card" onClick={() => setSettingsPage("agents")}>
+                    <span className="hub-card-icon"><Bot size={20} /></span>
+                    <strong>子智能体</strong>
+                    <p>自定义角色，注册为 subagent_invoke 函数，Codex 在对话中直接调用。</p>
+                  </button>
+                  <button className="hub-card" onClick={() => setSettingsPage("teams")}>
+                    <span className="hub-card-icon"><Users size={20} /></span>
+                    <strong>专家团</strong>
+                    <p>主理人按 SOP 编排成员协作，独立会话产出，最终汇总交付。</p>
+                  </button>
+                </div>
+              </section>
+            )}
+            {(settingsPage === "browser" || settingsPage === "computer" || settingsPage === "rpa" || settingsPage === "agents" || settingsPage === "teams") && (
+              <button className="settings-back-row" onClick={() => setSettingsPage(settingsPage === "agents" || settingsPage === "teams" ? "agentteam" : "automation")}>
+                <ArrowLeft size={14} />{settingsPage === "agents" || settingsPage === "teams" ? "返回智能体团队" : "返回自动化"}
+              </button>
+            )}
+            {settingsPage === "user" && <UserCenterSection username={username} onUsernameChange={(name) => { setUsername(name); }} personality={personality} onPersonalityChange={(v) => changePersonality(v)} onNotice={(m) => setNotice(m)} onProfileChange={(p) => setUserAvatar(p.avatarType && p.avatar ? { type: p.avatarType, value: p.avatar } : null)} onLogout={handleLogout} />}
+
+            {settingsPage === "general" && <section className="settings-section stack general-page">
+              <div className="settings-copy"><h2>控制台</h2><p>管理工作区、数据目录与应用行为。</p></div>
+
+              <div className="settings-card">
+                <div className="settings-card-head"><FolderOpen size={15} /><strong>工作区与数据</strong></div>
+                <div className="settings-card-body">
+                  <div className="path-row">
+                    <span className="path-row-label">当前工作区</span>
+                    <span className="path-row-input"><span className="path-row-value" title={workspace || "未选择"}>{workspace || "未选择工作区"}</span>
+                      <span className="path-row-actions">
+                        <button className="secondary-setting" onClick={() => void chooseWorkspace()}><FolderOpen size={14} />更换目录</button>
+                        <button className="icon-button" title="在文件管理器中打开" disabled={!workspace} onClick={() => { if (workspace) void window.codex.shellReveal(workspace); }}><FolderTree size={15} /></button>
+                      </span>
+                    </span>
+                  </div>
+                  <div className="path-row">
+                    <span className="path-row-label">配置目录</span>
+                    <span className="path-row-input"><span className="path-row-value" title={userDataPath || "读取中…"}>{userDataPath || "读取中…"}</span>
+                      <span className="path-row-actions">
+                        <button className="secondary-setting" title="复制路径" onClick={() => { void navigator.clipboard.writeText(userDataPath || ""); setNotice("配置目录已复制"); }}><Copy size={14} />复制</button>
+                        <button className="icon-button" title="在文件管理器中打开" disabled={!userDataPath} onClick={() => { if (userDataPath) void window.codex.shellReveal(userDataPath); }}><FolderTree size={15} /></button>
+                      </span>
+                    </span>
+                  </div>
+                  <p className="settings-card-hint">模型、任务记录、记忆都保存在配置目录里。如果换了个启动方式后配置「消失」，多半是两个启动方式用了不同目录——把旧目录里的 custom-model.json 和 codex-home 拷过来即可恢复。</p>
+                </div>
+              </div>
+
+              <div className="settings-card">
+                <div className="settings-card-head"><Monitor size={15} /><strong>启动与行为</strong></div>
+                <div className="settings-card-body settings-toggle-list">
+                  <div className="settings-toggle-row">
+                    <span className="settings-toggle-icon"><PanelRightOpen size={16} /></span>
+                    <span className="settings-toggle-text"><strong>启动时打开右侧面板</strong><small>打开应用后自动显示上下文面板</small></span>
+                    <ToggleSwitch checked={rightOpen} label="启动时打开右侧面板" onChange={(next) => { setRightOpen(next); localStorage.setItem("right-panel-open", String(next)); }} />
+                  </div>
+                  <div className="settings-toggle-row">
+                    <span className="settings-toggle-icon"><Search size={16} /></span>
+                    <span className="settings-toggle-text"><strong>联网搜索</strong><small>每轮 prompt 带上 web_search 工具，可实时查资料；关闭能减少不必要的 API 往返、加快回复</small></span>
+                    <ToggleSwitch checked={webSearch} label="联网搜索" onChange={toggleWebSearch} />
+                  </div>
+                  <div className="settings-toggle-row">
+                    <span className="settings-toggle-icon"><Monitor size={16} /></span>
+                    <span className="settings-toggle-text"><strong>桌面自动化</strong><small>{capabilityHint("desktop-automation") ?? "加载 nuphus 桌面工具（屏幕、窗口、键鼠、剪贴板、OCR）。关闭后 nuphus MCP 不注册、desktop-automation 技能停用，约 10K 工具 schema 不再进上下文，能减少 token 占用、加快回复"}</small></span>
+                    <ToggleSwitch checked={desktopAuto} disabled={groupBusy === "desktop-automation"} label="桌面自动化" onChange={toggleDesktopAuto} />
+                  </div>
+                  <div className="settings-toggle-row">
+                    <span className="settings-toggle-icon"><Globe2 size={16} /></span>
+                    <span className="settings-toggle-text"><strong>浏览器自动化</strong><small>{capabilityHint("browser-automation") ?? "提供 playwright-cli / cloakbrowser 浏览器操作能力。关闭后移除浏览器调用说明与 browser_use feature、停用 browser-automation 技能，模型不再被引导使用浏览器工具，能减少上下文占用"}</small></span>
+                    <ToggleSwitch checked={browserAuto} disabled={groupBusy === "browser-automation"} label="浏览器自动化" onChange={toggleBrowserAuto} />
+                  </div>
+                  <div className="settings-toggle-row">
+                    <span className="settings-toggle-icon"><Code2 size={16} /></span>
+                    <span className="settings-toggle-text"><strong>写代码模式（代码钩子）</strong><small>{capabilityHint("writing-code") ?? "开启时启用 ponytail 注入开关、ponytail 插件及其 6 个子技能（audit / debt / gain / help / review 等），钩子生效、注入精简工程规则；关闭后钩子静默跳过，回复更快。日常聊天建议关闭。默认开启。"}</small></span>
+                    <ToggleSwitch checked={ponytailOn} disabled={groupBusy === "writing-code"} label="写代码模式（代码钩子）" onChange={(next) => void applyGroup("writing-code", next)} />
+                  </div>
+                  <div className="settings-toggle-row">
+                    <span className="settings-toggle-icon"><ShieldCheck size={16} /></span>
+                    <span className="settings-toggle-text"><strong>心跳监控</strong><small>周期性检测 Codex 引擎是否仍在响应（thread/list 心跳）。若引擎「活着但不回」（如中断慢速请求后偶发死锁），会自动重启引擎并恢复当前对话，避免回复卡死。关闭后引擎异常需手动重启应用</small></span>
+                    <ToggleSwitch checked={engineWatchdog} label="心跳监控" onChange={toggleEngineWatchdog} />
+                  </div>
+                  <p className="settings-card-hint">这三个是能力总闸：开关直接决定 Codex 引擎能不能用对应能力，并联动其下的 MCP、技能与插件（例如桌面自动化会一并启停 nuphus MCP 与 desktop-automation 技能）。在技能 / MCP / 插件页点关这些子项时会提示你回到这里操作，保证状态一致。</p>
+                </div>
+              </div>
+
+              <div className="settings-card">
+                <div className="settings-card-head"><Keyboard size={15} /><strong>键盘快捷键</strong></div>
+                <div className="settings-card-body">
+                  <div className="shortcut-preview">
+                    {SHORTCUT_GROUPS.slice(0, 2).flatMap((group) => group.shortcuts).slice(0, 6).map((item) => (
+                      <div className="shortcut-preview-row" key={item.keys.join("+")}><span>{item.desc}</span><span className="shortcut-keys">{item.keys.slice(0, 1).map((key, index) => <kbd key={index}>{key}</kbd>)}</span></div>
+                    ))}
+                  </div>
+                  <button className="secondary-setting shortcut-manage-btn" onClick={() => { setShortcutsOpen(true); }}><Keyboard size={14} />查看全部快捷键</button>
+                </div>
+              </div>
+            </section>}
+            {settingsPage === "devtools" && <section className="settings-section stack devtools-page">
+              <div className="settings-copy"><h2>开发工具</h2><p>Python 等基础运行时随应用提供；大型或低频工具可按需下载，安装后自动加入 Codex 环境。</p></div>
+              <div className="runtime-list">
+                {devRuntimes.map((runtime) => {
+                  const busy = runtimeInstalling === runtime.id || runtime.installing;
+                  const isDone = runtime.installed || runtime.installedBySystem;
+                  const isGuide = runtime.kind === "guide";
+                  return <div className={`runtime-row ${isDone ? "installed" : "missing"}`} key={runtime.id}>
+                    <span className="runtime-icon">{isDone ? <CircleCheck size={16} /> : <TerminalSquare size={16} />}</span>
+                    <span className="runtime-copy"><strong>{runtime.name}</strong><small>{runtime.description}</small>{busy && runtimeProgress[runtime.id] ? <em>{runtimeProgress[runtime.id]}</em> : null}</span>
+                    <span className="runtime-size">{runtime.size}</span>
+                    {runtime.builtIn ? <span className="runtime-badge">内置</span>
+                      : isDone ? <span className="runtime-badge installed">{runtime.installedBySystem ? "系统已装" : "已安装"}</span>
+                        : isGuide
+                          ? <button className="secondary-setting runtime-install" onClick={() => void installDevRuntime(runtime.id)}><ExternalLink size={13} />去官网安装</button>
+                          : <button className="secondary-setting runtime-install" disabled={Boolean(runtimeInstalling)} onClick={() => void installDevRuntime(runtime.id)}>{busy ? <Spinner /> : <ArrowDown size={14} />}下载</button>}
+                  </div>;
+                })}
+                {!devRuntimes.length && <div className="runtime-loading"><Spinner />正在读取开发工具状态…</div>}
+              </div>
+              <p className="settings-card-hint">Node、Python（含 Tkinter、requests/httpx/flask/fastapi/playwright）、Git、PowerShell、ripgrep、uv、CMake、7-Zip、jq、Ninja 已内置随应用提供。FFmpeg、yt-dlp、Playwright 浏览器内核、Miniconda、MinGW-w64 (gcc/g++/make) 需按需下载；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）。</p>
+            </section>}
+            {settingsPage === "browser" && <section className="settings-section stack">
+              <div className="settings-copy"><h2>浏览器控制</h2><p>内置浏览器面板与自动化浏览器工具链。</p></div>
+              <div className="settings-grid">
+                <label className="wide"><span>默认起始页</span><div className="input-button"><input value={browserHome} onChange={(event) => setBrowserHome(event.target.value)} placeholder="https://" /><button className="secondary-setting" onClick={() => { localStorage.setItem("browser-home", browserHome.trim()); setBrowserDraft(browserHome.trim()); setNotice("浏览器默认页已保存"); }}><Check size={14} />保存</button></div></label>
+              </div>
+              <div className="settings-actions"><span>面板空态会使用默认起始页作为建议地址；右侧浏览器面板默认以 CloakBrowser 指纹模式打开（不再提供切换回内置视图的开关）。</span></div>
+              <div className="settings-subhead"><Globe2 size={13} />浏览器自动化工具<span className="settings-subhead-hint">Codex 引擎可直接调用，PATH 与 NODE_PATH 已注入</span></div>
+              <div className="tool-card-grid">
+                {toolsStatus.filter((tool) => tool.scope === "browser").map((tool) => <ToolCard tool={tool} key={tool.id} />)}
+                {!toolsStatus.length && <p className="muted">正在读取工具状态…</p>}
+              </div>
+              <p className="muted">普通网页用 <code>playwright-cli</code>（open → snapshot → click/type）；有反爬/验证码的站点用 CloakBrowser（<code>require("cloakbrowser")</code>，humanize + geoip）。引擎已内置这两条路径的使用说明。</p>
+            </section>}
+            {settingsPage === "appearance" && <section className="settings-section stack appearance-page">
+              <div className="settings-copy"><h2>外观</h2><p>主题、字号与代码显示，即时生效并保存在本机。</p></div>
+              <div className="settings-subhead"><Sun size={13} />主题<span className="settings-subhead-hint">点击预览卡片即时切换</span></div>
+              <div className="theme-preview-grid" role="group" aria-label="主题">
+                <button type="button" className={`theme-preview ${theme === "light" ? "active" : ""}`} aria-pressed={theme === "light"} onClick={() => setTheme("light")}>
+                  <span className="theme-preview-window tpw-light">
+                    <span className="tpw-titlebar"><i /><i /><i /><b /></span>
+                    <span className="tpw-body">
+                      <span className="tpw-side"><i /><i /><i /></span>
+                      <span className="tpw-main"><i /><i /><i className="short" /></span>
+                    </span>
+                  </span>
+                  <span className="theme-preview-label"><Sun size={13} />白天{theme === "light" ? <em><Check size={11} /></em> : null}</span>
+                </button>
+                <button type="button" className={`theme-preview ${theme === "dark" ? "active" : ""}`} aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}>
+                  <span className="theme-preview-window tpw-dark">
+                    <span className="tpw-titlebar"><i /><i /><i /><b /></span>
+                    <span className="tpw-body">
+                      <span className="tpw-side"><i /><i /><i /></span>
+                      <span className="tpw-main"><i /><i /><i className="short" /></span>
+                    </span>
+                  </span>
+                  <span className="theme-preview-label"><Moon size={13} />黑夜{theme === "dark" ? <em><Check size={11} /></em> : null}</span>
+                </button>
+              </div>
+              <div className="settings-subhead"><ZoomIn size={13} />消息字号<span className="settings-subhead-hint">影响对话正文与过程内容</span></div>
+              <div className="theme-switch three" role="group" aria-label="字号">
+                <button type="button" className={uiFont === "compact" ? "active" : ""} onClick={() => { setUiFont("compact"); localStorage.setItem("ui-font", "compact"); }}><span className="fs-demo fs-demo-compact">紧凑</span></button>
+                <button type="button" className={uiFont === "default" ? "active" : ""} onClick={() => { setUiFont("default"); localStorage.setItem("ui-font", "default"); }}><span className="fs-demo fs-demo-default">标准</span></button>
+                <button type="button" className={uiFont === "large" ? "active" : ""} onClick={() => { setUiFont("large"); localStorage.setItem("ui-font", "large"); }}><span className="fs-demo fs-demo-large">大字</span></button>
+              </div>
+              <CodeAppearanceSection />
+              <div className="settings-subhead"><Zap size={13} />界面行为</div>
+              <div className="appearance-list">
+                <p className="settings-card-hint">暂无额外界面行为选项。</p>
+              </div>
+            </section>}
+            {settingsPage === "personalization" && <PersonalizationPage personality={personality} onPersonalityChange={changePersonality} onNotice={setNotice} />}
+            {settingsPage === "model" && <section className="settings-model-layout">
+              <div className="model-global-bar">
+                <div className="model-global-item">
+                  <span className="model-global-label"><Zap size={13} />自动压缩比例</span>
+                  <select value={autoCompactRatio} onChange={(event) => { const v = Number(event.target.value); setAutoCompactRatio(v); void window.codex.saveAppSettings({ autoCompactRatio: v }); setNotice('自动压缩比例已设为 ' + Math.round(v * 100) + '% ，达到该用量时自动压缩上下文'); }}>
+                    {[0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95].map((r) => <option key={r} value={r}>{Math.round(r * 100)}%</option>)}
+                  </select>
+                  <small>上下文用量达到此比例时引擎自动压缩较早对话</small>
+                </div>
+              </div>
+              <div className="provider-list">
+                <div className="provider-list-head"><h2>模型供应商</h2></div>
+                {providersList.length === 0 && <div className="provider-empty"><Plus size={16} /><span>还没有供应商</span><small>点下方「添加供应商」开始</small></div>}
+                {providersList.map((p) => (
+                  <div key={p.provider} className={`provider-item ${p.provider === editingProvider ? "selected" : ""}`} onClick={() => { setEditingProvider(p.provider); setEditingName(false); setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true }); }}>
+                    <span className="provider-item-icon"><Store size={13} /></span>
+                    <div className="provider-item-main"><strong>{p.name}</strong><small>{uniqueModelCount(p.models)} 个模型</small></div>
+                    <span className={`provider-dot ${p.provider === currentProvider ? "on" : ""}`} title={p.provider === currentProvider ? "当前生效供应商" : ""} />
+                  </div>
+                ))}
+                <button className="add-provider-btn" onClick={() => { setCustomDraft({ provider: "custom" + (Date.now() % 1000), name: "自定义供应商", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true }); setEditingProvider(null); setEditingName(false); }}><Plus size={13} />添加供应商</button>
+              </div>
+              <div className="provider-form">
+                <div className="provider-detail-head">
+                  {editingName ? (
+                    <input className="provider-name-input" value={customDraft.name} autoFocus onChange={(event) => setCustomDraft({ ...customDraft, name: event.target.value })} onBlur={() => setEditingName(false)} onKeyDown={(event) => { if (event.key === "Enter") setEditingName(false); }} placeholder="供应商名称" />
+                  ) : <strong onClick={() => setEditingName(true)} title="点击重命名">{customDraft.name || "未命名供应商"}</strong>}
+                  <button className="icon-button" title="重命名" onClick={() => setEditingName((v) => !v)}><PenLine size={13} /></button>
+                  {customDraft.enabled === false
+                    ? <span className="provider-state-badge off">已禁用</span>
+                    : <span className="provider-state-badge on">已启用</span>}
+                  {editingProvider && <button className="provider-state-btn" disabled={savingSettings} onClick={() => void setProviderEnabled(editingProvider, customDraft.enabled === false)}>{customDraft.enabled === false ? "启用" : "禁用"}</button>}
+                  <span className="provider-head-spacer" />
+                  {editingProvider && editingProvider !== currentProvider && <button className="secondary-setting" disabled={savingSettings} onClick={() => void selectProvider(editingProvider)}>设为当前</button>}
+                  {editingProvider && <button className="icon-button" title="删除供应商" onClick={() => { if (window.confirm(`删除供应商 ${customDraft.name}？`)) void removeProvider({ provider: customDraft.provider, name: customDraft.name, model: customDraft.model, baseUrl: customDraft.baseUrl }); }}><Trash2 size={14} /></button>}
+                </div>
+                <p className="provider-id-line">供应商 ID：{customDraft.provider}</p>
+                <label className="provider-field"><span>Base URL</span><input value={customDraft.baseUrl} onChange={(event) => setCustomDraft({ ...customDraft, baseUrl: event.target.value })} placeholder="https://example.com/v1" /></label>
+                <label className="provider-field"><span>API 格式</span><select value={customDraft.wireApi} onChange={(event) => setCustomDraft({ ...customDraft, wireApi: event.target.value === "chat" ? "chat" : "responses" })}><option value="responses">Responses (/responses)</option><option value="chat">Chat Completions (/chat/completions)</option></select></label>
+                <label className="provider-field"><span>API Key</span>
+                  <span className="key-input">
+                    <input type={showApiKey ? "text" : "password"} value={customDraft.apiKey} onChange={(event) => setCustomDraft({ ...customDraft, apiKey: event.target.value })} placeholder={customModel?.hasKey ? "已安全保存，留空则不修改" : "可留空用于本地服务"} />
+                    <button type="button" className="key-toggle" title={showApiKey ? "隐藏" : "显示"} onClick={() => setShowApiKey((v) => !v)}>{showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}</button>
+                  </span>
+                </label>
+                <div className="model-list-block">
+                  <div className="model-list-head">
+                    <span>模型列表</span>
+                    <div className="model-list-head-actions">
+                      <span className="model-list-hint">可多选生效</span>
+                      <button className="icon-button" title="全选模型" disabled={!!savingSettings || !(customDraft.models ?? []).length} onClick={() => setCustomDraft((current) => ({ ...current, models: (current.models ?? []).map((model) => ({ ...model, enabled: true })) }))}><ListChecks size={13} /></button>
+                      <button className="icon-button" title="取消全部生效" disabled={!!savingSettings || !(customDraft.models ?? []).length} onClick={() => setCustomDraft((current) => ({ ...current, models: (current.models ?? []).map((model) => ({ ...model, enabled: false })) }))}><X size={13} /></button>
+                      <button className="icon-button" title="测试连接并拉取可用模型列表" disabled={!!probingProvider || !customDraft.baseUrl} onClick={() => void probeProvider("list")}>{probingProvider === "list" ? <Spinner /> : <RefreshCw size={13} />}</button>
+                    </div>
+                  </div>
+                  {(customDraft.models ?? []).length > 0 && <div className="model-list">
+                    {(() => {
+                      const seen = new Set<string>();
+                      const unique = (customDraft.models ?? []).filter((m) => {
+                        if (seen.has(m.id)) return false;
+                        seen.add(m.id);
+                        return true;
+                      });
+                      return unique.map((m) => {
+                      const live = customModel?.provider === customDraft.provider && customModel.model === m.id;
+                      const enabled = m.enabled !== false;
+                      return (
+                        <div key={m.id} className={`model-row ${live ? "live" : ""} ${enabled ? "enabled" : "disabled"}`} title={enabled ? "已勾选，保存后生效" : "未勾选，保存后不参与模型列表"}>
+                          <label className="model-check" title={enabled ? "取消生效" : "勾选后生效"} onClick={(event) => event.stopPropagation()}>
+                            <input type="checkbox" checked={enabled} disabled={!editingProvider || !!savingSettings} onChange={(event) => setCustomDraft((current) => ({ ...current, models: (current.models ?? []).map((model) => model.id === m.id ? { ...model, enabled: event.target.checked } : model) }))} />
+                            <span className="model-check-ui" />
+                          </label>
+                          <em className="model-row-id">{m.id}</em>
+                          {m.contextWindow ? <b className="model-ctx-badge">{m.contextWindow >= 1000000 ? `${m.contextWindow / 1000000}M` : `${Math.round(m.contextWindow / 1000)}K`}</b> : null}
+                          {live && <b className="model-live-badge">当前使用</b>}
+                          <span className="model-row-actions">
+                            <button className="icon-button" title="测试该模型连通" disabled={switchingModel === m.id || !customDraft.baseUrl} onClick={(event) => { event.stopPropagation(); void probeOneModel(customDraft.provider, m.id); }}>{switchingModel === m.id ? <Spinner /> : <Zap size={13} />}</button>
+                            <button className="icon-button" title="编辑模型" onClick={(event) => { event.stopPropagation(); openModelEditor(m); }}><PenLine size={13} /></button>
+                            <button className="icon-button" title="删除模型" onClick={(event) => { event.stopPropagation(); void removeProviderModel(customDraft.provider, m.id); }}><Trash2 size={13} /></button>
+                          </span>
+                        </div>
+                      );
+                      });
+                    })()}
+                  </div>}
+                  <button className="add-model-btn" onClick={() => openModelEditor()}><Plus size={13} />添加模型</button>
+                  {providerStatus && <p className={`model-probe-status ${providerStatus.startsWith("连接失败") || providerStatus.includes("连接失败") ? "bad" : "ok"}`}>{providerStatus}</p>}
+                </div>
+                <div className="settings-actions"><span>配置后可在聊天时选择使用。带 ⚡ 可测试模型连通。</span>
+                  <button className="primary-setting" disabled={savingSettings || !customDraft.baseUrl} onClick={() => void saveCustomModel()}>{savingSettings ? <Spinner /> : <Check size={15} />}保存</button>
+                </div>
+              </div>
+              {modelEditor && <div className="modal-backdrop model-editor-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setModelEditor(null); }}>
+                <div className="model-editor-modal">
+                  <header><strong>{modelEditor.mode === "edit" ? "编辑模型配置" : "添加模型"}</strong><button className="icon-button" onClick={() => setModelEditor(null)}><X size={15} /></button></header>
+                  <label className="provider-field"><span>模型 ID</span><input list="provider-model-options" autoFocus value={modelEditor.draft.id} onChange={(event) => setModelEditor({ ...modelEditor, draft: { ...modelEditor.draft, id: event.target.value } })} placeholder="deepseek-v4-flash" /></label>
+                  <datalist id="provider-model-options">{modelSuggestions.map((option) => <option key={option} value={option} />)}</datalist>
+                  <label className="provider-field"><span>上下文窗口</span><input type="number" min="1024" step="1024" value={modelEditor.draft.contextWindow} onChange={(event) => setModelEditor({ ...modelEditor, draft: { ...modelEditor.draft, contextWindow: event.target.value } })} placeholder="1000000" /></label>
+                  <label className="provider-field"><span>最大输出 Token</span><input type="number" min="1" value={modelEditor.draft.maxOutputTokens} onChange={(event) => setModelEditor({ ...modelEditor, draft: { ...modelEditor.draft, maxOutputTokens: event.target.value } })} placeholder="384000" /></label>
+                  <div className="type-chip-group"><span>输入类型</span>
+                    <div className="type-chips">{(["text", "image", "video"] as const).map((t) => (
+                      <label key={t} className={`type-chip ${modelEditor.draft.inputTypes.includes(t) ? "on" : ""}`}>
+                        <input type="checkbox" checked={modelEditor.draft.inputTypes.includes(t)} onChange={(event) => setModelEditor({ ...modelEditor, draft: { ...modelEditor.draft, inputTypes: event.target.checked ? [...modelEditor.draft.inputTypes, t] : modelEditor.draft.inputTypes.filter((x) => x !== t) } })} />
+                        <span>{t === "text" ? "文本" : t === "image" ? "图片" : "视频"}</span>
+                      </label>
+                    ))}</div>
+                  </div>
+                  <div className="type-chip-group"><span>输出类型</span>
+                    <div className="type-chips">{(["text", "image"] as const).map((t) => (
+                      <label key={t} className={`type-chip ${modelEditor.draft.outputTypes.includes(t) ? "on" : ""}`}>
+                        <input type="checkbox" checked={modelEditor.draft.outputTypes.includes(t)} onChange={(event) => setModelEditor({ ...modelEditor, draft: { ...modelEditor.draft, outputTypes: event.target.checked ? [...modelEditor.draft.outputTypes, t] : modelEditor.draft.outputTypes.filter((x) => x !== t) } })} />
+                        <span>{t === "text" ? "文本" : "图片"}</span>
+                      </label>
+                    ))}</div>
+                  </div>
+                  <div className="type-chip-group"><span>思考档位 <small>GPT 系可勾选 minimal/高/超高</small></span>
+                    <div className="type-chips">{ALL_EFFORTS.map((t) => (
+                      <label key={t} className={`type-chip ${modelEditor.draft.efforts.includes(t) ? "on" : ""}`}>
+                        <input type="checkbox" checked={modelEditor.draft.efforts.includes(t)} onChange={(event) => setModelEditor({ ...modelEditor, draft: { ...modelEditor.draft, efforts: event.target.checked ? [...modelEditor.draft.efforts, t] : modelEditor.draft.efforts.filter((x) => x !== t) } })} />
+                        <span>{effortLabels[t] ?? t}</span>
+                      </label>
+                    ))}</div>
+                    <small className="provider-field-hint">只勾选模型 API 真正支持的档位；思考等级菜单会按此显示。</small>
+                  </div>
+                  <footer><button className="secondary-setting" onClick={() => setModelEditor(null)}>取消</button><button className="primary-setting" disabled={!modelEditor.draft.id.trim()} onClick={() => void saveModelEditor()}><Check size={14} />保存</button></footer>
+                </div>
+              </div>}
+            </section>}
+{settingsPage === "memory" && <section className="settings-section stack memory-center">
+              <div className="settings-copy channel-heading"><div><h2>记忆</h2><p>记忆分「常驻记忆」与「记忆条目」两部分：常驻记忆每轮对话自动注入；条目按需召回，按重要度分 P0–P3 管理。</p></div><label className="channel-enable"><input type="checkbox" checked={memoryEnabled} onChange={(event) => void setMemoryEnabled(event.target.checked)} /><span>{memoryEnabled ? "已启用" : "已停用"}</span></label></div>
+
+              <div className="memory-overview">
+                <button className="memory-overview-card" onClick={() => { setMemoryCenterTab("library"); setMemoryCenterOpen(true); }} title="浏览记忆条目">
+                  <span className="memory-overview-top"><span className="memory-overview-icon"><Archive size={16} /></span>
+                  <span className="memory-overview-body"><strong>记忆条目</strong><small>按重要度与来源会话整理，可逐条查看/置顶/删除</small></span></span>
+                  <span className="memory-overview-stat"><b>{memories.length}</b> 条 · {memoryGroups.length} 个会话 · {memoryGroups.reduce((s, g) => s + g.items.filter((it) => (it as any).pinned).length, 0)} 置顶</span>
+                </button>
+                <button className="memory-overview-card" onClick={() => { setMemoryCenterTab("layers"); setMemoryCenterOpen(true); }} title="编辑常驻记忆">
+                  <span className="memory-overview-top"><span className="memory-overview-icon"><BookOpen size={16} /></span>
+                  <span className="memory-overview-body"><strong>常驻记忆</strong><small>用户档案 · 项目记忆 · 近期日志，每轮对话自动注入</small></span></span>
+                  <span className="memory-overview-stat"><b>L0/L1/L2</b> 用户 {memoryLayers?.budget.user ?? 0} 字 · 项目 {memoryLayers?.budget.project ?? 0} 字</span>
+                </button>
+                <button className="memory-overview-card" onClick={() => { setMemoryCenterTab("storage"); setMemoryCenterOpen(true); }} title="选择记忆保存位置">
+                  <span className="memory-overview-top"><span className="memory-overview-icon"><Cloud size={16} /></span>
+                  <span className="memory-overview-body"><strong>存储与同步</strong><small>记忆保存在本地或云端；工作区记忆跨会话复用</small></span></span>
+                  <span className="memory-overview-stat"><b>{memoryMode === "cloud" ? "云端" : "本地"}</b>{workspaceMemoryEnabled ? " · 工作区已开启" : ""}</span>
+                </button>
+                <button className="memory-overview-card" onClick={() => { setMemoryCenterTab("search"); setMemoryCenterOpen(true); }} title="跨会话检索历史内容">
+                  <span className="memory-overview-top"><span className="memory-overview-icon"><Search size={16} /></span>
+                  <span className="memory-overview-body"><strong>全局搜索</strong><small>检索会话、记忆、任务与技能，命中按会话分组、可预览全文</small></span></span>
+                  <span className="memory-overview-stat"><b>{threads.length}</b> 会话 · {scheduledTasks.length} 任务 · {localSkills.length} 技能</span>
+                </button>
+              </div>
+
+              <div className="memory-overview-actions">
+                <button className="primary-setting" onClick={() => { setMemoryCenterTab("library"); setMemoryCenterOpen(true); }}><LayoutGrid size={15} />打开记忆中心</button>
+                <span className="muted">浏览条目、编辑常驻记忆、切换存储都在记忆中心里完成，这里只做总览。</span>
+              </div>
+              {memoryStatus && <p className="settings-status">{memoryStatus}</p>}
+              {memoryConfigOpen && <MemoryConfigModal gateway={memoryGateway} setGateway={setMemoryGateway} action={memoryGatewayAction} onClose={() => setMemoryConfigOpen(false)} onTest={() => void testMemoryGateway()} onSave={() => void saveMemoryGateway()} />}
+            </section>}
+            {settingsPage === "schedule" && <section className="settings-section stack">
+              <div className="settings-copy channel-heading"><div><h2>自动化</h2><p>创建定时任务，或排队在闲时算力空闲时后台执行。</p></div><button className="primary-setting" onClick={() => { setScheduleDraft({ ...emptyScheduleDraft(workspace || ""), name: "", prompt: "" }); setAutoFormVisible(true); }}><Plus size={14} />新增定时任务</button></div>
+              <div className="auto-card">
+                {scheduledTasks.length === 0 ? (
+                  <div className="auto-empty">
+                    <p className="muted">还没有定时任务</p>
+                    <div className="auto-empty-actions"><button className="primary-setting" onClick={() => setAutoFormVisible(true)}><Plus size={14} />添加任务</button></div>
+                  </div>
+                ) : (
+                  <div className="auto-cards">
+                    {scheduledTasks.map((task) => (
+                      <div className={`auto-card-item ${task.enabled ? "" : "disabled"}`} key={task.id}>
+                        <div className="auto-card-head">
+                          <strong title={task.name}>{task.name}</strong>
+                          <span className="auto-card-tag">{task.kind === "once" || task.scheduleType === "once" ? "一次性任务" : (task.kind === "interval" || task.kind === undefined && !task.rrule ? "循环任务" : "周期任务")}</span>
+                          <label className="auto-switch" title={task.enabled ? "停用" : "启用"}><input type="checkbox" checked={task.enabled} onChange={() => void toggleSchedule(task)} /><i /></label>
+                        </div>
+                        <p className="auto-card-desc" title={task.prompt}>{task.prompt}</p>
+                        <div className="auto-card-meta"><Clock3 size={13} /><span>运行计划</span><b>{describeSchedule(task)}</b></div>
+                        <div className="auto-card-meta"><MessageSquare size={13} /><span>{basename(task.workspace)}</span></div>
+                        <div className="auto-card-foot">
+                          <span className="auto-card-next">下次 {new Date(task.nextRunAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                          <div className="auto-card-actions">
+                            <button className="icon-button" title="立即运行" disabled={!task.enabled} onClick={() => void runSchedule(task.id)}><Play size={13} /></button>
+                            <button className="icon-button" title="编辑" onClick={() => editSchedule(task.id)}><PenLine size={13} /></button>
+                            <button className="icon-button" title="删除" onClick={() => void deleteSchedule(task.id)}><Trash2 size={13} /></button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="auto-awake"><Info size={14} /><span>Codex 运行会话时保持电脑唤醒。</span><input type="checkbox" checked={keepAwake} onChange={(event) => { const on = event.target.checked; setKeepAwake(on); localStorage.setItem("keep-awake", String(on)); void window.codex.setAwake(on); }} /></div>
+              <div className="auto-templates"><h3>闲时任务模板</h3><div className="template-grid">
+                {idleTemplates.map((tpl) => <button className="template-card" key={tpl.name} onClick={() => { setAutoFormVisible(true); setScheduleDraft({ ...emptyScheduleDraft(workspace || ""), name: tpl.name, prompt: tpl.prompt, effort: "high" }); }}><strong><ListFilter size={13} />{tpl.name}</strong><p>{tpl.desc}</p><small>最早可用时段</small></button>)}
+              </div></div>
+              <div className="auto-templates"><h3>定时任务模板</h3><div className="template-grid">
+                {cronTemplates.map((tpl) => <button className="template-card" key={tpl.name} onClick={() => { void window.codex.saveScheduledTask({ name: tpl.name, prompt: tpl.desc, workspace: workspace || "", intervalMinutes: tpl.intervalMinutes, enabled: true, kind: tpl.intervalMinutes === 1440 ? "daily" : "weekly", timeOfDay: tpl.intervalMinutes === 1440 ? "09:00" : "16:00", weekdays: tpl.intervalMinutes === 1440 ? undefined : [5] }).then((saved: any) => { setScheduledTasks((current) => [saved, ...current.filter((entry) => entry.id !== saved.id)]); setNotice("定时任务已创建：" + tpl.name); }).catch((error: any) => setNotice("创建失败：" + error.message)); }}><strong>{tpl.icon}{tpl.name}</strong><p>{tpl.desc}</p><small>{tpl.time}</small></button>)}
+              </div></div>
+              
+            </section>}
+            {settingsPage === "rpa" && <section className="settings-section stack">
+              <div className="settings-copy channel-heading"><div><h2>RPA 自动化</h2><p>Codex 引擎自主跑通一条流程后，会自动把步骤沉淀为配方；下次让 Codex 直接复现即可。</p></div></div>
+              <div className="auto-card">
+                {rpaRecipes.length === 0 ? (
+                  <div className="auto-empty"><p className="muted">还没有 RPA 配方。让 Codex 自主跑通一条流程后，它会自动把步骤沉淀成配方，无需手动创建。</p></div>
+                ) : (
+                  <div className="auto-cards">
+                    {rpaRecipes.map((recipe) => (
+                      <div className="auto-card-item" key={recipe.id}>
+                        <div className="auto-card-head">
+                          <strong title={recipe.name}>{recipe.name}</strong>
+                          <span className="auto-card-tag">{recipe.kind === "browser" ? "浏览器" : recipe.kind === "desktop" ? "桌面" : "混合"}</span>
+                          {rpaRunning === recipe.id && <span className="subagent-badge"><Bot size={11} />执行中</span>}
+                          {recipe.lastStatus === "ok" && <span className="rpa-status ok">上次成功</span>}
+                          {recipe.lastStatus === "fail" && <span className="rpa-status fail" title={recipe.lastError ?? ""}>上次失败</span>}
+                        </div>
+                        {recipe.desc && <p className="auto-card-desc" title={recipe.desc}>{recipe.desc}</p>}
+                        {recipe.steps?.length > 0 && <ol className="rpa-steps">{recipe.steps.map((step: string, index: number) => <li key={index}>{step}</li>)}</ol>}
+                        <div className="auto-card-foot">
+                          <span className="auto-card-next">{recipe.workspace ? basename(recipe.workspace) : "全局"} · 已存 {recipe.runCount ?? 0} 次运行</span>
+                          <div className="auto-card-actions">
+                            <button className="icon-button" title="在当前会话执行" disabled={rpaRunning !== null} onClick={() => { if (!thread) { setNotice("请先打开或新建一个会话再执行配方"); return; } setRpaRunning(recipe.id); void window.codex.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: `请执行 RPA 配方「${recipe.name}」：\n${recipe.steps.map((s: string, i: number) => `${i + 1}. ${s}`).join("\n")}`, text_elements: [] }], model: selectedModel?.model ?? modelName(modelId) }).catch((error: any) => setNotice("执行失败：" + error.message)).finally(() => setRpaRunning(null)); }}><Play size={13} /></button>
+                            <button className="icon-button danger" title="删除" onClick={() => { if (!window.confirm(`删除配方「${recipe.name}」？`)) return; void window.codex.deleteRpaRecipe(recipe.id).then(() => setRpaRecipes((current) => current.filter((entry) => entry.id !== recipe.id))).catch((error: any) => setNotice("删除失败：" + error.message)); }}><Trash2 size={13} /></button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="auto-templates"><h3>任务清单 <span className="muted" style={{ fontWeight: 400 }}>（Codex 通过 task_add / task_update 自主维护）</span></h3>
+                <div className="rpa-task-panel">
+                  <ul className="rpa-task-list">
+                    {taskList.length === 0 && <li className="muted">清单为空。让 Codex 跑通流程时自主安排待办，无需手动添加。</li>}
+                    {taskList.map((task) => (
+                      <li key={task.id} className={task.status}>
+                        <label className="auto-switch" title={task.status === "done" ? "标记待办" : "标记完成"}><input type="checkbox" checked={task.status === "done"} onChange={() => { const next = task.status === "done" ? "todo" : "done"; void window.codex.updateTask({ id: task.id, patch: { status: next } }).then((updated: any) => setTaskList((current) => current.map((entry) => entry.id === updated.id ? updated : entry))).catch(() => undefined); }} /><i /></label>
+                        <span className="rpa-task-text">{task.text}</span>
+                        <span className={`rpa-task-priority ${task.priority}`}>{task.priority === "high" ? "高" : task.priority === "low" ? "低" : "中"}</span>
+                        <button className="icon-button" title="删除" onClick={() => { void window.codex.deleteTask(task.id).then(() => setTaskList((current) => current.filter((entry) => entry.id !== task.id))).catch(() => undefined); }}><Trash2 size={13} /></button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </section>}
+            {settingsPage === "plugins" && <BuiltinPluginsSection onNotice={(m) => setNotice(m)} />}
+            {settingsPage === "plugins" && (() => {
+              const all = settingsResources.plugins as any[];
+              const installed = all.filter((plugin) => plugin.installed);
+              const enabledCount = installed.filter((plugin) => plugin.enabled !== false).length;
+              const disabledCount = installed.length - enabledCount;
+              const keyword = pluginSearch.trim().toLowerCase();
+              const visible = all.filter((plugin) => {
+                if (pluginInstalledOnly && !plugin.installed) return false;
+                if (!keyword) return true;
+                return `${pluginDisplayName(plugin)} ${pluginDescription(plugin)} ${plugin.marketplaceName ?? ""} ${plugin.name ?? ""}`.toLowerCase().includes(keyword);
+              });
+              // 只有已安装的插件可以勾选：没装的谈不上启用/停用
+              const selectableIds = visible.filter((plugin) => plugin.installed).map((plugin) => String(plugin.id ?? ""));
+              // 筛选变化后，之前勾的条目可能已不可见，取交集避免计数错乱
+              const checkedIds = pluginChecked.filter((id) => selectableIds.includes(id));
+              const checkedPlugins = all.filter((plugin) => checkedIds.includes(String(plugin.id ?? "")));
+              const batchTargets = {
+                enable: checkedPlugins.filter((plugin) => plugin.enabled === false),
+                disable: checkedPlugins.filter((plugin) => plugin.enabled !== false),
+              };
+              const togglePluginChecked = (id: string) => setPluginChecked((current) => current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]);
+              return <section className="settings-section stack plugin-center">
+                <div className="settings-copy channel-heading"><div><h2>插件</h2><p>来自插件市场（Plugins）的安装管理。停用后 Codex 不再加载该插件提供的指令、技能与钩子。</p></div><div className="settings-heading-actions"><button className="icon-button" title="刷新插件" onClick={() => void refreshSettingsResources()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+
+                <div className="plugin-stats">
+                  <div className="plugin-stat"><span>市场插件</span><strong>{all.length}</strong></div>
+                  <div className="plugin-stat"><span>已安装</span><strong>{installed.length}</strong></div>
+                  <div className="plugin-stat"><span>启用中</span><strong className="stat-ok">{enabledCount}</strong></div>
+                  <div className="plugin-stat"><span>已停用</span><strong className="stat-off">{disabledCount}</strong></div>
+                </div>
+
+                <div className="resource-toolbar">
+                  <SegmentedTabs
+                    value={pluginInstalledOnly ? "installed" : "all"}
+                    onChange={(next) => setPluginInstalledOnly(next === "installed")}
+                    options={[{ value: "all", label: "全部", count: all.length }, { value: "installed", label: "已安装", count: installed.length }]}
+                  />
+                  <SearchField value={pluginSearch} onChange={setPluginSearch} placeholder="搜索插件名称、描述或来源市场" />
+                </div>
+                <div className="resource-toolbar secondary">
+                  <SelectAllToggle total={selectableIds.length} selected={checkedIds.length} unit="个插件" onSelectAll={() => setPluginChecked(selectableIds)} onClear={() => setPluginChecked([])} />
+                  <BatchActions
+                    hint={checkedIds.length ? `选中里：${batchTargets.disable.length} 个启用中 · ${batchTargets.enable.length} 个已停用` : "勾选插件后可批量启用或停用"}
+                    actions={[
+                      { label: batchTargets.enable.length ? `启用所选 (${batchTargets.enable.length})` : "启用所选", icon: <Play size={13} />, disabled: !batchTargets.enable.length, busy: pluginBatchBusy === "enable", onClick: () => void batchSetPluginEnabled(batchTargets.enable, true), title: batchTargets.enable.length ? `启用选中的 ${batchTargets.enable.length} 个已停用插件` : "没有勾选已停用的插件" },
+                      { label: batchTargets.disable.length ? `停用所选 (${batchTargets.disable.length})` : "停用所选", icon: <CircleStop size={13} />, tone: "danger", disabled: !batchTargets.disable.length, busy: pluginBatchBusy === "disable", onClick: () => void batchSetPluginEnabled(batchTargets.disable, false), title: batchTargets.disable.length ? `停用选中的 ${batchTargets.disable.length} 个启用中插件` : "没有勾选启用中的插件" },
+                    ]}
+                  />
+                </div>
+
+                <div className="plugin-card-grid">
+                  {visible.map((plugin: any) => {
+                    const key = plugin.id ?? plugin.name ?? Math.random();
+                    const busy = pluginBusy === String(plugin.id ?? plugin.name ?? key);
+                    const isInstalled = Boolean(plugin.installed);
+                    const isEnabled = isInstalled && plugin.enabled !== false;
+                    const displayName = pluginDisplayName(plugin);
+                    const initial = displayName.replace(/^@/, "").charAt(0).toUpperCase();
+                    const capabilities: string[] = plugin.interface?.capabilities ?? [];
+                    const checked = checkedIds.includes(String(plugin.id ?? ""));
+                    return <article className={`plugin-card ${isInstalled ? "installed" : ""} ${isInstalled && !isEnabled ? "is-disabled" : ""} ${checked ? "is-checked" : ""}`} key={key}>
+                      <div className="plugin-card-head">
+                        <CheckCard checked={checked} disabled={!isInstalled} label={`选择 ${displayName}`} title={!isInstalled ? "未安装的插件无法勾选" : checked ? `取消选择 ${displayName}` : `勾选 ${displayName}`} onChange={() => togglePluginChecked(String(plugin.id ?? ""))} />
+                        <span className={`plugin-avatar tone-${avatarToneOf(displayName)}`}>{initial}</span>
+                        <div className="plugin-card-title"><strong title={displayName}>{displayName}</strong><small>{plugin.marketplaceName ? `来自 ${plugin.marketplaceName}` : "本地市场"}{plugin.interface?.developerName ? ` · ${plugin.interface.developerName}` : ""}</small></div>
+                        {!isInstalled && <span className="plugin-state off">未安装</span>}
+                        <ToggleSwitch
+                          checked={isEnabled}
+                          disabled={!isInstalled || busy !== false}
+                          label={`${displayName} 启用开关`}
+                          title={!isInstalled ? "安装后才能启用" : isEnabled ? "停用插件" : "启用插件"}
+                          onChange={(next) => void setPluginEnabled(plugin, next)}
+                        />
+                      </div>
+                      <p className="plugin-desc">{pluginDescription(plugin)}</p>
+                      {capabilities.length > 0 && <div className="plugin-tags">{capabilities.slice(0, 3).map((capability) => <span className="plugin-tag" key={capability}>{capability}</span>)}</div>}
+                      <div className="plugin-card-foot">
+                        <span className="plugin-source"><Store size={11} />{plugin.localVersion ? `v${plugin.localVersion}` : plugin.interface?.category ?? "plugin"}</span>
+                        <button className={isInstalled ? "secondary-setting plugin-action danger" : "primary-setting plugin-action"} disabled={busy} onClick={() => void changePlugin(plugin)}>
+                          {busy ? <Spinner /> : isInstalled ? <><Trash2 size={13} />卸载</> : <><Plus size={13} />安装</>}
+                        </button>
+                      </div>
+                    </article>;
+                  })}
+                  {!visible.length && <div className="plugin-empty"><Store size={26} /><strong>{all.length ? "没有匹配的插件" : "还没有发现插件"}</strong><p>{all.length ? "换个关键词，或清除「已安装」筛选。" : "在 Codex 配置里添加 marketplace 后，插件会出现在这里。"}</p></div>}
+                </div>
+              </section>;
+            })()}
+            {settingsPage === "skills" && <section className="settings-section stack skill-center">
+              <div className="settings-copy channel-heading"><div><h2>技能中心</h2><p>一键安装会自动写入 <code>{userDataPath ? `${userDataPath}\\codex-home\\skills` : "Codex 技能目录"}</code>，更新来源清单并重启引擎确认可用。</p></div><div className="settings-heading-actions"><button className="secondary-setting" onClick={() => void importSkill()}><Paperclip size={14} />从本地添加技能</button><button className="icon-button" title="刷新技能市场" onClick={() => void refreshMarketSkills(skillHubCategory, skillHubSearch, marketPage)}>{marketLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+              <div className="resource-toolbar">
+                {!skillsManageOnly && <div className="skill-tabs">{skillHubCategories.map((category) => <button key={category} className={skillHubCategory === category ? "active" : ""} onClick={() => { setSkillHubCategory(category); setMarketPage(1); setSkillsManageOnly(false); }}>{category}</button>)}</div>}
+                <SearchField
+                  value={skillsManageOnly ? skillManageSearch : skillHubSearch}
+                  onChange={(next) => { if (skillsManageOnly) setSkillManageSearch(next); else { setSkillHubSearch(next); setMarketPage(1); } }}
+                  placeholder={skillsManageOnly ? "搜索已安装技能的名称或描述" : "搜索 CocoLoop 技能"}
+                />
+                <button className={skillsManageOnly ? "active-manage" : "secondary-setting"} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={14} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button>
+              </div>
+              {skillsManageOnly ? (() => {
+                const localNames = new Set(localSkills.map((entry) => entry.name.toLowerCase()));
+                const localByPath = new Set(localSkills.map((entry) => entry.path));
+                const builtinSkills = settingsResources.skills.filter((entry: any) => !localByPath.has(entry.path) && !localNames.has((entry.name ?? "").toLowerCase()));
+                const keyword = skillManageSearch.trim().toLowerCase();
+                const match = (skill: { name: string; description: string }) => !keyword || `${skill.name} ${skill.description}`.toLowerCase().includes(keyword);
+                const marketInstalled = localSkills.filter((entry) => entry.source === "cocoloop" && match(entry));
+                const localInstalled = localSkills.filter((entry) => entry.source !== "cocoloop" && match(entry));
+                const shownBuiltin = builtinSkills.filter((skill: any) => match({ name: skill.name, description: skill.description ?? "" }));
+                // 批量只处理本机可移除的技能，内置技能由引擎提供、不支持停用
+                const manageable = [...marketInstalled, ...localInstalled];
+                const selectableFolders = manageable.map((skill) => skill.folder ?? skill.name);
+                // 筛选变化后取交集，避免已不可见的勾选项仍计入
+                const checkedFolders = skillChecked.filter((folder) => selectableFolders.includes(folder));
+                const checkedSkills = manageable.filter((skill) => checkedFolders.includes(skill.folder ?? skill.name));
+                const offList = checkedSkills.filter((skill) => skill.enabled === false).map((skill) => skill.folder ?? skill.name);
+                const onList = checkedSkills.filter((skill) => skill.enabled !== false).map((skill) => skill.folder ?? skill.name);
+                const toggleSkillChecked = (folder: string) => setSkillChecked((current) => current.includes(folder) ? current.filter((entry) => entry !== folder) : [...current, folder]);
+                const renderCard = (skill: { name: string; description: string; path?: string; source?: "cocoloop" | "local"; folder?: string; enabled?: boolean; allowedTools?: string[]; category?: string; icon?: string }, sourceTag: "builtin" | "market" | "local") => {
+                  const removable = sourceTag !== "builtin";
+                  const folder = removable ? skill.folder ?? skill.name : null;
+                  const sourceLabel = sourceTag === "builtin" ? "内置" : sourceTag === "market" ? "市场安装" : "本地导入";
+                  const enabled = skill.enabled !== false;
+                  const skillKey = folder ?? skill.name;
+                  const checked = removable && checkedFolders.includes(skillKey);
+                  const allowedTools = (skill.allowedTools ?? []).filter(Boolean);
+                  return <article className={`skill-card-compact source-${sourceTag} ${removable && !enabled ? "is-disabled" : ""} ${checked ? "is-checked" : ""}`} key={`${sourceTag}-${skill.name}`}>
+                    <div className="skill-card-compact-head">
+                      <div className="skill-card-head-left">
+                        <CheckCard checked={checked} disabled={!removable} label={`选择 ${skill.name}`} title={!removable ? "内置技能不可勾选" : checked ? `取消选择 ${skill.name}` : `勾选 ${skill.name}`} onChange={() => toggleSkillChecked(skillKey)} />
+                        <SkillAvatar skill={skill} size={14} />
+                        <span className={`skill-source-tag tag-${sourceTag}`}>{sourceLabel}</span>
+                      </div>
+                      <ToggleSwitch
+                        checked={enabled}
+                        disabled={!removable}
+                        label={`${skill.name} 启用开关`}
+                        title={!removable ? "内置技能由 Codex 引擎提供，不能停用" : enabled ? "停用技能（引擎将不再发现它）" : "启用技能"}
+                        onChange={() => void toggleSkillEnabled({ ...(skill as LocalSkillEntry), name: skill.name, folder: folder ?? skill.name, enabled })}
+                      />
+                    </div>
+                    <strong>{skill.name}{removable && !enabled && <em className="skill-disabled-label">已停用</em>}</strong>
+                    <p>{skill.description || "已发现技能"}</p>
+                    {allowedTools.length ? <div className="skill-card-allowed-tools" title="SKILL.md 声明的工具白名单（allowed-tools，展示用）">{allowedTools.slice(0, 5).map((tool) => <code key={tool}>{tool}</code>)}{allowedTools.length > 5 ? <code className="skill-card-tools-more">+{allowedTools.length - 5}</code> : null}</div> : null}
+                    <div className="skill-card-compact-foot">
+                      {skill.path && <span className="skill-card-path" title={skill.path}>{skill.path.replace(/^.*[\\/]/, "")}</span>}
+                      <div className="skill-card-compact-tools">
+                        <button className="icon-button" title="引用到对话" onClick={() => { setSelectedSkills((current) => current.some((entry) => entry.name === skill.name) ? current : [...current, { name: skill.name, description: skill.description }]); setSettingsOpen(false); }}><Quote size={13} /></button>
+                        {removable && folder && <button className="icon-button" title="卸载技能" onClick={() => void removeLocalSkill(folder)}><Trash2 size={13} /></button>}
+                      </div>
+                    </div>
+                  </article>;
+                };
+                return <div className="skill-installed-view">
+                  <div className="resource-toolbar secondary">
+                    <SelectAllToggle total={selectableFolders.length} selected={checkedFolders.length} unit="个技能" onSelectAll={() => setSkillChecked(selectableFolders)} onClear={() => setSkillChecked([])} />
+                    <div className="skill-installed-summary">共 {installedTotalCount} 项 · 内置 {builtinSkills.length} · 市场 {localSkills.filter((entry) => entry.source === "cocoloop").length} · 本地 {localSkills.filter((entry) => entry.source !== "cocoloop").length} · 停用 {localSkills.filter((entry) => entry.enabled === false).length}</div>
+                    <BatchActions
+                      hint={checkedFolders.length ? `选中里：${onList.length} 个启用中 · ${offList.length} 个已停用` : "勾选技能后可批量启用或停用"}
+                      actions={[
+                        { label: offList.length ? `启用所选 (${offList.length})` : "启用所选", icon: <Play size={13} />, disabled: !offList.length, busy: skillBatchBusy === "enable", onClick: () => void batchSetSkillEnabled(offList, true), title: offList.length ? `启用选中的 ${offList.length} 个已停用技能` : "没有勾选已停用的技能" },
+                        { label: onList.length ? `停用所选 (${onList.length})` : "停用所选", icon: <CircleStop size={13} />, tone: "danger", disabled: !onList.length, busy: skillBatchBusy === "disable", onClick: () => void batchSetSkillEnabled(onList, false), title: onList.length ? `停用选中的 ${onList.length} 个启用中技能` : "没有勾选启用中的技能" },
+                      ]}
+                    />
+                  </div>
+                  {shownBuiltin.length > 0 && <section className="skill-installed-group"><header><span className="skill-group-dot tag-builtin" />Codex 内置技能<small>由 Codex app-server 自带，不支持停用</small></header><div className="skill-card-grid compact">{shownBuiltin.map((skill: any) => renderCard({ name: skill.name, description: skill.description ?? "由 Codex 引擎内置提供", path: skill.path }, "builtin"))}</div></section>}
+                  {marketInstalled.length > 0 && <section className="skill-installed-group"><header><span className="skill-group-dot tag-market" />市场安装<small>从 CocoLoop Popular 安装到 Codex 技能目录</small></header><div className="skill-card-grid compact">{marketInstalled.map((skill) => renderCard(skill, "market"))}</div></section>}
+                  {localInstalled.length > 0 && <section className="skill-installed-group"><header><span className="skill-group-dot tag-local" />本地导入<small>通过 SKILL.md 添加到本机，不会随 Codex 更新被覆盖</small></header><div className="skill-card-grid compact">{localInstalled.map((skill) => renderCard(skill, "local"))}</div></section>}
+                  {!shownBuiltin.length && !marketInstalled.length && !localInstalled.length && <p className="muted">{keyword ? "没有匹配的已安装技能，换个关键词试试。" : "还没有已安装技能。可通过“市场浏览”安装，或“从本地添加技能”导入 SKILL.md。"}</p>}
+                </div>;
+              })() : <div className="skill-card-grid">{marketSkills.filter((skill) => (skillHubCategory === "总排行" || skillHubCategory === "近期最热" || skillHubCategory === "最新上传" || skill.category === skillHubCategory) && (!skillHubSearch || `${skill.name} ${skill.description}`.toLowerCase().includes(skillHubSearch.toLowerCase()))).map((skill) => { const installed = localSkills.some((entry) => entry.marketId === skill.id); return <article className={`skill-card ${installed ? "installed" : ""}`} key={skill.name}><div className="skill-card-head"><SkillAvatar skill={skill} /><button className="skill-add" title={installed ? "在对话中使用已安装技能" : "一键安装到 Codex 技能目录"} disabled={Boolean(installingMarketSkill)} onClick={() => { if (installed) { setSelectedSkills((current) => current.some((entry) => entry.name === skill.name) ? current : [...current, skill]); setSettingsOpen(false); setNotice(`已引用技能：${skill.name}`); } else void installMarketSkill(skill); }}>{installed ? <Check size={14} /> : <Plus size={14} />}</button></div><strong>{skill.name}</strong><p>{skill.description}</p><footer><span>{skill.category}</span><a href="https://hub.cocoloop.cn/popular" target="_blank" rel="noreferrer">查看来源</a></footer></article>; })}</div>}
+            </section>}
+            {settingsPage === "skills" && !skillsManageOnly && <div className="skill-market-pagination"><span>共 {marketTotal} 个技能 · 第 {marketPage} / {Math.max(1, Math.ceil(marketTotal / marketPageSize))} 页</span><div><button className="secondary-setting" disabled={marketLoading || marketPage <= 1} onClick={() => setMarketPage((page) => Math.max(1, page - 1))}><ArrowLeft size={14} />上一页</button><button className="secondary-setting" disabled={marketLoading || marketPage >= Math.max(1, Math.ceil(marketTotal / marketPageSize))} onClick={() => setMarketPage((page) => page + 1)}>下一页<ArrowRight size={14} /></button></div></div>}
+            {settingsPage === "commands" && (() => {
+              // 技能命令：已启用技能即 WorkBuddy 语义里的 slash-command 包
+              const skillCommands = settingsResources.skills.filter((skill: any) => skill.enabled !== false);
+              const customVisible = customCommands.filter((entry) => !commandSearch || `${entry.name} ${entry.description} ${entry.argumentHint}`.toLowerCase().includes(commandSearch.toLowerCase()));
+              const builtinVisible = builtinCommandCatalog.filter((cmd) => !commandSearch || `${cmd.name} ${cmd.description} ${cmd.hint ?? ""}`.toLowerCase().includes(commandSearch.toLowerCase()));
+              const skillVisible = skillCommands.filter((skill: any) => !commandSearch || `${skill.name} ${skill.description ?? ""}`.toLowerCase().includes(commandSearch.toLowerCase()));
+              const builtinCategories = ["会话管理", "上下文与状态", "模型与权限", "审查与代码", "信息查询", "运行控制"];
+              const totalCount = builtinCommandCatalog.length + customCommands.length + skillCommands.length;
+              const filterTabs: { key: "all" | "custom" | "builtin" | "skill"; label: string; count: number }[] = [
+                { key: "all", label: "全部", count: totalCount },
+                { key: "custom", label: "自定义", count: customCommands.length },
+                { key: "builtin", label: "内置", count: builtinCommandCatalog.length },
+                { key: "skill", label: "技能", count: skillCommands.length },
+              ];
+              const showAll = commandFilter === "all";
+              const copyCommand = async (text: string) => {
+                try { await navigator.clipboard.writeText(text); setNotice(`已复制 ${text}`); } catch { setNotice("复制失败"); }
+              };
+              const openNewCommand = () => setCommandEditor({ mode: "new", name: "", source: workspace ? "project" : "global", description: "", argumentHint: "", allowedTools: "", model: "", body: "" });
+              const openEditCommand = (entry: CustomCommandEntry) => setCommandEditor({ mode: "edit", name: entry.name, source: entry.source, description: entry.description, argumentHint: entry.argumentHint, allowedTools: entry.allowedTools, model: entry.model, body: entry.body, prevFilePath: entry.filePath });
+              return <section className="settings-section stack command-center">
+                <div className="settings-copy channel-heading"><div><h2>命令</h2><p>复用常用操作与自定义工作流。输入框输入 <code>/</code> 会弹出命令补全，点击下方命令可直接填入；自定义命令以 <code>commands/*.md</code> 保存，支持参数与文件引用。</p></div><div className="settings-heading-actions"><button className="secondary-setting" onClick={openNewCommand}><Plus size={14} />新建命令</button><button className="icon-button" title="刷新命令" onClick={() => void refreshCommands()}>{commandBusy ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+                <div className="command-toolbar">
+                  <label className="skill-search command-search"><Search size={14} /><input value={commandSearch} onChange={(event) => setCommandSearch(event.target.value)} placeholder="搜索命令名称或描述…" /></label>
+                  <div className="command-stats"><span>内置 <b>{builtinCommandCatalog.length}</b></span><span>自定义 <b>{customCommands.length}</b></span><span>技能 <b>{skillCommands.length}</b></span></div>
+                </div>
+                <div className="skill-tabs command-tabs">{filterTabs.map((tab) => <button key={tab.key} className={commandFilter === tab.key ? "active" : ""} onClick={() => setCommandFilter(tab.key)}>{tab.label} <small>{tab.count}</small></button>)}</div>
+                {commandFilter === "all" || commandFilter === "custom" ? (customVisible.length ? <section className="command-group"><header><span className="command-group-dot custom" />自定义命令<small>{customVisible.length} 个 · 个人全局与项目级 .md 模板</small></header><div className="command-grid">{customVisible.map((entry) => (
+                  <article className={`command-card custom`} key={entry.filePath}>
+                    <div className="command-card-top"><code className="command-slash">/{entry.name}</code><span className={`command-source-tag ${entry.source}`}>{entry.source === "global" ? "个人全局" : "项目级"}</span><div className="command-card-actions"><button className="icon-button" title="复制命令" onClick={() => void copyCommand(`/${entry.name}`)}><Copy size={12} /></button><button className="icon-button" title="编辑" onClick={() => openEditCommand(entry)}><PenLine size={12} /></button><button className="icon-button danger" title="删除" onClick={() => setCommandDelete(entry)}><Trash2 size={12} /></button></div></div>
+                    <p className="command-desc">{entry.description || "（无描述）"}</p>
+                    <div className="command-chips">{entry.argumentHint ? <span className="command-chip hint"><Type size={11} />{entry.argumentHint}</span> : null}{entry.allowedTools ? <span className="command-chip tools" title={entry.allowedTools}><Shield size={11} />{entry.allowedTools}</span> : null}{entry.model ? <span className="command-chip model"><Bot size={11} />{entry.model}</span> : null}</div>
+                    <button className="command-use" onClick={() => useCommand(entry.name, "custom")}><Play size={12} />使用</button>
+                  </article>
+                ))}</div></section> : <p className="muted command-empty">{commandSearch ? "没有匹配的自定义命令，换个关键词试试。" : "还没有自定义命令。点击「新建命令」创建你的第一个工作流，例如 /git:commit、/review-pr。"}</p>) : null}
+                {showAll || commandFilter === "builtin" ? builtinVisible.length ? builtinCategories.map((category) => {
+                  const categoryCommands = builtinVisible.filter((cmd) => cmd.category === category);
+                  if (!categoryCommands.length) return null;
+                  return <section className="command-group" key={category}><header><span className="command-group-dot builtin" />{category}<small>{categoryCommands.length} 个内置命令</small></header><div className="command-grid">{categoryCommands.map((cmd) => (
+                    <article className="command-card builtin" key={cmd.name}>
+                      <div className="command-card-top"><code className="command-slash">/{cmd.name}</code><span className="command-source-tag builtin">内置</span><div className="command-card-actions"><button className="icon-button" title="复制命令" onClick={() => void copyCommand(`/${cmd.name}`)}><Copy size={12} /></button></div></div>
+                      <p className="command-desc">{cmd.description}</p>
+                      {cmd.hint ? <div className="command-chips"><span className="command-chip hint"><Type size={11} />{cmd.hint}</span></div> : null}
+                      <button className="command-use" onClick={() => useCommand(cmd.name, "builtin")}><Play size={12} />使用</button>
+                    </article>
+                  ))}</div></section>;
+                }) : <p className="muted command-empty">{commandSearch ? "没有匹配的内置命令，换个关键词试试。" : "内置命令为空。"} </p> : null}
+                {showAll || commandFilter === "skill" ? skillVisible.length ? <section className="command-group"><header><span className="command-group-dot skill" />技能命令<small>{skillVisible.length} 个已启用技能 · 技能即 WorkBuddy 语义下的 slash-command 包</small></header><div className="command-grid">{skillVisible.map((skill: any) => (
+                  <article className="command-card skill" key={skill.name}>
+                    <div className="command-card-top"><code className="command-slash">/{skill.name}</code><span className="command-source-tag skill">技能</span><div className="command-card-actions"><button className="icon-button" title="复制命令" onClick={() => void copyCommand(`/${skill.name}`)}><Copy size={12} /></button></div></div>
+                    <p className="command-desc">{skill.description || "已启用的技能命令"}</p>
+                    <button className="command-use" onClick={() => useCommand(skill.name, "skill", skill)}><Quote size={12} />引用技能</button>
+                  </article>
+                ))}</div></section> : <p className="muted command-empty">{commandSearch ? "没有匹配的技能命令。" : "还没有可用的技能命令。到「技能」页安装或启用技能后，这里会列出它们的斜杠命令。"}</p> : null}
+                {commandEditor && <CommandEditorModal draft={commandEditor} saving={commandBusyKey === "save"} onChange={setCommandEditor} onClose={() => setCommandEditor(null)} onSave={() => void persistCommand()} />}
+                {commandDelete && createPortal(<div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setCommandDelete(null); }}><section className="connector-setup-modal command-delete-modal" role="dialog" aria-modal="true" aria-label="删除命令"><header><div className="connector-setup-title"><span><AlertTriangle size={17} /></span><div><strong>删除命令 /{commandDelete.name}</strong><p>将删除文件 <code>{commandDelete.filePath}</code>，删除后无法恢复。</p></div></div><button className="icon-button" title="关闭" onClick={() => setCommandDelete(null)}><X size={16} /></button></header><footer><button className="secondary-setting" onClick={() => setCommandDelete(null)}>取消</button><button className="danger-button" disabled={commandBusyKey === "delete"} onClick={() => void confirmDeleteCommand()}>{commandBusyKey === "delete" ? <Spinner /> : <Trash2 size={14} />}确认删除</button></footer></section></div>, document.body)}
+              </section>;
+            })()}
+            {settingsPage === "hooks" && (() => {
+              const hooks = settingsResources.hooks as any[];
+              const untrusted = hooks.filter((hook: any) => hook.trustStatus && hook.trustStatus !== "trusted");
+              const enabledCount = hooks.filter((hook: any) => hook.enabled !== false).length;
+              // 按来源分组：插件钩子归到插件名下（便于联动），其余算自定义钩子
+              const groups: { id: string; label: string; pluginId?: string; hooks: any[]; skillCount: number; pluginEnabled?: boolean }[] = [];
+              const byPlugin = new Map<string, any[]>();
+              const userHooks: any[] = [];
+              for (const hook of hooks) {
+                const pid = hook.pluginId ? String(hook.pluginId) : "";
+                if (pid) {
+                  if (!byPlugin.has(pid)) byPlugin.set(pid, []);
+                  byPlugin.get(pid)!.push(hook);
+                } else userHooks.push(hook);
+              }
+              // 分组必须以「已安装的插件」为准，不能只靠 hooks/list：
+              // 插件一旦停用，它提供的钩子会整组从 hooks/list 里消失，
+              // 只按钩子建组的话分组会一起消失，用户就再也找不到开关把插件开回来了。
+              const installedPlugins = (settingsResources.plugins as any[]).filter((plugin) => plugin.installed);
+              const seenPlugins = new Set<string>();
+              for (const plugin of installedPlugins) {
+                const pluginId = String(plugin.id ?? "");
+                if (!pluginId) continue;
+                seenPlugins.add(pluginId);
+                groups.push({
+                  id: pluginId,
+                  label: pluginDisplayName(plugin),
+                  pluginId,
+                  hooks: byPlugin.get(pluginId) ?? [],
+                  skillCount: localSkills.filter((entry) => entry.pluginId === pluginId).length,
+                  pluginEnabled: plugin.enabled !== false,
+                });
+              }
+              // 插件已卸载、但钩子还残留在配置里的情况也要给个出口
+              for (const [pluginId, list] of byPlugin) {
+                if (seenPlugins.has(pluginId)) continue;
+                groups.push({ id: pluginId, label: pluginId, pluginId, hooks: list, skillCount: localSkills.filter((entry) => entry.pluginId === pluginId).length, pluginEnabled: true });
+              }
+              if (userHooks.length) groups.push({ id: "user", label: "自定义钩子", hooks: userHooks, skillCount: 0 });
+              // 插件组的开关状态由插件本身决定（钩子列表可能为空），自定义组则由钩子决定
+              const groupEnabled = (group: typeof groups[number]) => group.pluginId ? group.pluginEnabled !== false : group.hooks.some((hook: any) => hook.enabled !== false);
+              return <section className="settings-section stack hook-center">
+                <div className="settings-copy channel-heading"><div><h2>钩子</h2><p>钩子的启停会<b>联动所属插件与它提供的技能</b>。另外 Codex <b>不会执行未信任的钩子</b>——新装后必须点一次「信任」，否则装了等于没装。</p></div><div className="settings-heading-actions">{untrusted.length > 0 && <button className="primary-setting" disabled={hookTrusting} onClick={() => void trustAllHooks()}>{hookTrusting ? <Spinner /> : <ShieldCheck size={14} />}信任全部 {untrusted.length}</button>}<button className="icon-button" title="刷新钩子" onClick={() => void refreshSettingsResources()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+
+                <div className="hook-stats">
+                  <div className="hook-stat"><span>钩子总数</span><strong>{hooks.length}</strong></div>
+                  <div className="hook-stat"><span>启用中</span><strong className="stat-ok">{enabledCount}</strong></div>
+                  <div className="hook-stat"><span>已停用</span><strong className="stat-off">{hooks.length - enabledCount}</strong></div>
+                  <div className="hook-stat"><span>未信任</span><strong className={untrusted.length ? "stat-warn" : "stat-ok"}>{untrusted.length}</strong></div>
+                  <div className="hook-stat"><span>来源</span><strong>{groups.length}</strong></div>
+                </div>
+
+                {groups.map((group) => {
+                  const groupOn = groupEnabled(group);
+                  const groupBusy = group.pluginId ? linkedBusy === group.pluginId : false;
+                  return <section className={`hook-group ${groupOn ? "" : "is-off"}`} key={group.id}>
+                    <header className="hook-group-head">
+                      <div className="hook-group-title">
+                        <strong>{group.label}</strong>
+                        <span className="hook-group-meta">
+                          {group.hooks.length} 个钩子
+                          {group.skillCount > 0 && <> · {group.skillCount} 个技能</>}
+                          {group.pluginId && <> · <code>{group.id}</code></>}
+                        </span>
+                      </div>
+                      {group.pluginId ? <ToggleSwitch
+                        checked={groupOn}
+                        disabled={groupBusy}
+                        label={`${group.label} 联动开关`}
+                        title={groupOn ? `停用「${group.label}」：插件、${group.hooks.length} 个钩子与 ${group.skillCount} 个技能一起停用` : `启用「${group.label}」：插件、${group.hooks.length} 个钩子与 ${group.skillCount} 个技能一起启用`}
+                        onChange={(next) => void setLinkedEnabled(group.id, next, group.label)}
+                      /> : <span className="hook-group-tag">用户自定义</span>}
+                    </header>
+                    <div className="hook-list">
+                  {group.hooks.map((hook: any, index: number) => {
+                    const trusted = hook.trustStatus === "trusted";
+                    const on = hook.enabled !== false;
+                    const key = hook.key ?? index;
+                    const busy = hookBusy === String(hook.key ?? "");
+                    return <article className={`hook-card ${trusted ? "trusted" : "untrusted"} ${on ? "" : "is-disabled"}`} key={key}>
+                      <div className="hook-card-head">
+                        <span className="hook-event">{hook.eventName ?? hook.event ?? "hook"}</span>
+                        <span className={`hook-trust ${trusted ? "on" : "off"}`}>{hook.trustStatus ?? "unknown"}</span>
+                        <ToggleSwitch
+                          checked={on}
+                          disabled={busy}
+                          label={`${hook.eventName ?? "钩子"} 启用开关`}
+                          title={on ? "停用这条钩子" : "启用这条钩子"}
+                          onChange={(next) => void setHookEnabled(hook, next)}
+                        />
+                      </div>
+                      <code className="hook-command" title={hook.command}>{hook.command ?? hook.scriptPath ?? "—"}</code>
+                      <div className="hook-card-foot">
+                        <span className="hook-source" title={hook.sourcePath}>{hook.matcher ? <>匹配 <code>{hook.matcher}</code> · </> : null}{hook.timeoutSec ? <>{hook.timeoutSec}s · </> : null}{hook.sourcePath ? String(hook.sourcePath).replace(/^.*[\\/]/, "") : (hook.source ?? "user")}</span>
+                        {!trusted && <button className="secondary-setting hook-trust-button" disabled={hookTrusting} onClick={() => void trustAllHooks()}><ShieldCheck size={12} />信任</button>}
+                      </div>
+                    </article>;
+                  })}
+                      {!group.hooks.length && <p className="hook-group-empty">{group.pluginId ? (groupOn ? "这个插件没有提供钩子。" : "插件已停用，它的钩子没有加载。打开上方开关即可恢复。") : "没有钩子。"}</p>}
+                    </div>
+                  </section>;
+                })}
+                {!hooks.length && <div className="hook-empty"><Wrench size={26} /><strong>还没有注册钩子</strong><p>钩子来自 <code>$CODEX_HOME/hooks.json</code> 或已安装的插件（例如 ponytail）。</p></div>}
+              </section>;
+            })()}
+            {settingsPage === "agents" && <section className="settings-section stack subagent-center">
+              <div className="settings-copy channel-heading"><div><h2>子智能体</h2><p>用户自定义角色；Codex 可以通过 <code>subagent_invoke</code> 真正调用它们完成子任务。</p></div><div className="settings-heading-actions"><button className="primary-setting" onClick={openNewSubAgent}><Plus size={14} />新建子智能体</button><button className="icon-button" title="刷新子智能体" onClick={() => void refreshSubAgents()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+
+              <div className="subagent-banner"><Sparkles size={16} /><div><strong>让 Codex 真正会叫子智能体干活</strong><p>每个子智能体保存后，会被注册为 <code>subagent_invoke(name, query)</code> 函数；Codex 在主对话中可以直接调用，返回结构化结果。</p></div></div>
+
+              <div className="subagent-grid">{subAgents.map((agent) => <article className={`subagent-card ${agent.enabled ? "enabled" : "disabled"}`} key={agent.id}>
+                <div className="subagent-card-head"><span className="subagent-avatar"><Bot size={16} /></span><label className="channel-enable" title={agent.enabled ? "停用" : "启用"}><input type="checkbox" checked={agent.enabled} onChange={() => void toggleSubAgentEnabled(agent)} /><span>{agent.enabled ? "已启用" : "已停用"}</span></label></div>
+                <strong className="subagent-name">{agent.name}</strong>
+                <p className="subagent-desc">{agent.description || "暂无描述"}</p>
+                <div className="subagent-meta">
+                  <span title="推理强度"><Sparkles size={11} />{effortLabels[agent.effort] ?? agent.effort}</span>
+                  <span title="模型"><Code2 size={11} />{agent.inheritModel ? "跟随主对话" : (agent.model || "未指定")}</span>
+                  <span title="沙箱"><ShieldCheck size={11} />{agent.inheritSandbox ? "跟随主对话" : (agent.sandbox ?? "未指定")}</span>
+                </div>
+                <div className="subagent-meta">
+                  <span title="审批策略"><Check size={11} />{agent.inheritApproval ? "跟随主对话" : (agent.approvalPolicy ?? "未指定")}</span>
+                  <span title="工具名"><Bot size={11} />subagent_invoke</span>
+                </div>
+                <div className="subagent-card-actions"><button className="secondary-setting" onClick={() => openEditSubAgent(agent)}><PenLine size={12} />编辑</button><button className="icon-button" title="删除" onClick={() => void deleteSubAgent(agent.id)}><Trash2 size={13} /></button></div>
+              </article>)}{!subAgents.length && <div className="subagent-empty"><Bot size={28} /><strong>还没有子智能体</strong><p>点击「新建子智能体」即可创建；它会跟随当前会话配置（模型、推理强度、沙箱、审批），并被 Codex 通过 dynamicTools 调用。</p><button className="primary-setting" onClick={openNewSubAgent}><Plus size={14} />创建第一个子智能体</button></div>}</div>
+
+              {subAgentEditorOpen && subAgentDraft && <SubAgentEditorModal draft={subAgentDraft} onChange={setSubAgentDraft} onClose={() => { setSubAgentEditorOpen(false); setSubAgentDraft(null); }} onSave={(draft) => void saveSubAgent(draft)} />}
+            </section>}
+            {settingsPage === "teams" && <section className="settings-section stack expert-team-center">
+              <div className="settings-copy channel-heading"><div><h2>专家团</h2><p>复刻 WorkBuddy 团队协作：主理人编排，成员按 SOP 分阶段独立产出，最终汇总交付。</p></div><div className="settings-heading-actions"><button className="primary-setting" onClick={openNewExpertTeam}><Plus size={14} />新建专家团</button><button className="secondary-setting" onClick={() => void resetExpertTeams()}><RotateCcw size={13} />恢复内置</button><button className="icon-button" title="刷新专家团" onClick={() => void refreshExpertTeams()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+
+              <div className="subagent-banner"><Users size={16} /><div><strong>让 Codex 真正会带团队协作</strong><p>发起会话后，主理人（lead）会在独立会话中通过 <code>team_member_invoke(memberId, query)</code> 按 SOP 调度成员，成员独立产出后回传，主理人最终汇总交付。</p></div></div>
+
+              <div className="expert-team-grid-list">{expertTeams.map((team) => <article className={`subagent-card ${team.enabled ? "enabled" : "disabled"}`} key={team.teamId}>
+                <div className="subagent-card-head"><span className="subagent-avatar"><Users size={16} /></span><label className="channel-enable" title={team.enabled ? "停用" : "启用"}><input type="checkbox" checked={team.enabled} onChange={() => void toggleExpertTeamEnabled(team)} /><span>{team.enabled ? "已启用" : "已停用"}</span></label></div>
+                <strong className="subagent-name">{team.profession.zh || team.displayName.zh}</strong>
+                <p className="subagent-desc">{team.description.zh || "暂无描述"}</p>
+                <div className="subagent-meta">
+                  <span title="行业分类"><Briefcase size={11} />{categoryLabel(team.category)}</span>
+                  <span title="成员数"><Users size={11} />主理人 + {team.members.length} 成员</span>
+                  {team.tags.slice(0, 3).map((tag, index) => <span className="expert-team-tag" key={index} title="标签"><Tag size={11} />{tag.zh}</span>)}
+                </div>
+                <div className="subagent-meta"><span title="SOP"><Workflow size={11} />{team.sop ? "已配置 SOP" : "未配置 SOP"}</span></div>
+                <div className="expert-team-member-chips" title="点击角色可进入单独会话">
+                  {[team.lead, ...team.members].map((member) => (
+                    <button key={member.id} className={`expert-team-member-chip${member.id === team.lead.id ? " is-lead" : ""}${expertTeamMemberRunning?.teamId === team.teamId && expertTeamMemberRunning.memberName === member.id ? " is-working" : ""}`}
+                      title={`${expertRoleLabel(member, member.id === team.lead.id)}${member.description ? `：${member.description}` : ""}`}
+                      disabled={expertTeamMemberDirect === `${team.teamId}:${member.id}`}
+                      onClick={() => void startMemberDirectSession(team, member)}>
+                      <span className="expert-team-member-chip-avatar" aria-hidden="true" style={member.id === team.lead.id ? undefined : { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] }}>{expertRoleLabel(member, member.id === team.lead.id).slice(0, 1)}</span>
+                      <span className="expert-team-member-chip-name">{expertRoleLabel(member, member.id === team.lead.id)}</span>
+                      {expertTeamMemberDirect === `${team.teamId}:${member.id}` ? <Spinner /> : null}
+                      {expertTeamMemberRunning?.teamId === team.teamId && expertTeamMemberRunning.memberName === member.id ? <span className="expert-member-working-dot" title="该成员正在执行子任务" /> : null}
+                    </button>
+                  ))}
+                </div>
+                <div className="expert-team-cwd" title={teamCwdMap[team.teamId] ?? workspace ?? "未选择项目"}>
+                  <FolderOpen size={12} />
+                  <span className="expert-team-cwd-path">{teamCwdMap[team.teamId] ?? workspace ?? "选择项目地址"}</span>
+                  <button className="expert-team-cwd-pick" title="选择该项目专家团的工作目录" onClick={() => void chooseTeamCwd(team.teamId)}><FolderOpen size={11} />{teamCwdMap[team.teamId] ? "更换" : "选择项目"}</button>
+                  {teamCwdMap[team.teamId] && <button className="icon-button expert-team-cwd-clear" title="清除，回退到全局工作区" onClick={() => clearTeamCwd(team.teamId)}><X size={11} /></button>}
+                </div>
+                <div className="expert-team-quickprompts">{team.quickPrompts.slice(0, 3).map((prompt, index) => <button key={index} className="expert-team-quick" title={prompt.zh} onClick={() => void startTeamSession(team, prompt.zh)}><MessageSquarePlus size={11} />{prompt.zh}</button>)}</div>
+                <div className="subagent-card-actions">
+                  <button className="primary-setting" disabled={expertTeamRunning === team.teamId} onClick={() => void startTeamSession(team, "")}><Rocket size={13} />{expertTeamRunning === team.teamId ? "创建中…" : "发起会话"}</button>
+                  <button className="secondary-setting" onClick={() => openEditExpertTeam(team)}><PenLine size={12} />编辑</button>
+                  <button className="icon-button" title="删除" onClick={() => void deleteExpertTeam(team.teamId)}><Trash2 size={13} /></button>
+                </div>
+              </article>)}{!expertTeams.length && <div className="subagent-empty"><Users size={28} /><strong>还没有专家团</strong><p>点击「新建专家团」创建，或「恢复内置」加载软件开发/交易分析示例团；发起会话后主理人会按 SOP 调度成员协作。</p><button className="primary-setting" onClick={openNewExpertTeam}><Plus size={14} />创建第一个专家团</button></div>}</div>
+
+              {expertTeamEditorOpen && expertTeamDraft && <ExpertTeamEditorModal draft={expertTeamDraft} onChange={setExpertTeamDraft} onClose={() => { setExpertTeamEditorOpen(false); setExpertTeamDraft(null); }} onSave={(draft) => void saveExpertTeam(draft)} />}
+            </section>}
+            {settingsPage === "mcp" && (() => {
+              const visibleConnectors = connectors.filter((connector) => (!connectorsManageOnly || settingsResources.mcp.some((server: any) => server.name === connector.id)) && (!connectorSearch || `${connector.name} ${connector.id} ${connector.command ?? ""} ${connector.url ?? ""}`.includes(connectorSearch)));
+              const selectableConnectorIds = visibleConnectors.map((connector) => connector.id);
+              // 勾选集合取交集：筛选变化后已不可见的勾选项不计入批量
+              const checkedConnectorIds = connectorChecked.filter((id) => selectableConnectorIds.includes(id));
+              const checkedConnectors = connectors.filter((connector) => checkedConnectorIds.includes(connector.id));
+              const connectorBatchTargets = {
+                enable: checkedConnectors.filter((connector) => connector.enabled === false),
+                disable: checkedConnectors.filter((connector) => connector.enabled !== false),
+              };
+              const toggleConnectorChecked = (id: string) => setConnectorChecked((current) => current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]);
+              // —— app-server MCP 状态：卡片自带开关与批量勾选 ——
+              // 名字集合不能只取 app-server 的回报：服务器一旦停用就不出现在回报里，
+              // 卡片会跟着消失，用户再也找不到开关把它开回来（和钩子分组消失是同一个坑）。
+              // 所以以「已知服务器」为准：内置 nuphus + 连接器 + 覆盖表 + 引擎回报。
+              const mcpRows = Array.from(new Set([
+                "nuphus",
+                ...connectors.map((entry) => entry.id),
+                ...Object.keys(mcpOverrides),
+                ...settingsResources.mcp.map((server: any) => String(server.name ?? "")),
+              ])).filter(Boolean).map((name) => {
+                const server: any = settingsResources.mcp.find((entry: any) => String(entry.name ?? "") === name);
+                const connector = connectors.find((entry) => entry.id === name);
+                const runtime = server?.runtimeStatus?.type ?? server?.runtimeStatus ?? "";
+                const tools = server ? (Array.isArray(server.tools) ? server.tools : Object.keys(server.tools ?? {})) : [];
+                return {
+                  name,
+                  reported: Boolean(server),
+                  runtime: String(runtime || (server?.authStatus ?? "")),
+                  toolNames: tools.map((tool: any) => String(typeof tool === "string" ? tool : tool?.name ?? "")),
+                  auth: String(server?.authStatus ?? ""),
+                  enabled: connector ? connector.enabled !== false : mcpOverrides[name] !== false,
+                  managed: Boolean(connector),
+                };
+              }).filter((row) => !mcpServerSearch || `${row.name} ${row.runtime} ${row.toolNames.join(" ")}`.toLowerCase().includes(mcpServerSearch.toLowerCase()));
+              const selectableMcpIds = mcpRows.map((row) => row.name);
+              const checkedMcpIds = mcpServerChecked.filter((id) => selectableMcpIds.includes(id));
+              const mcpBatchTargets = {
+                enable: mcpRows.filter((row) => checkedMcpIds.includes(row.name) && !row.enabled),
+                disable: mcpRows.filter((row) => checkedMcpIds.includes(row.name) && row.enabled),
+              };
+              const toggleMcpChecked = (id: string) => setMcpServerChecked((current) => current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]);
+              return (
+              <section className="settings-section stack connector-center">
+              <div className="settings-copy channel-heading"><div><h2>MCP</h2><p>管理真实 MCP 服务：保存后写入 Codex 配置、加密保存密钥并重启引擎；支持单个或批量启用/停用，停用的连接器引擎不会加载但配置保留。“可用”以 app-server 返回的运行/认证状态为准。</p></div><div className="settings-heading-actions"><button className="secondary-setting" onClick={() => { setConnectorSecret(""); setConnectorDraft({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} }); setConnectorEditorOpen(true); }}><Plus size={14} />添加 MCP</button><button className="icon-button" title="刷新 MCP 状态" onClick={() => void refreshSettingsResources()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+              <div className="settings-subhead connector-template-heading"><Zap size={13} />一键接入模板<span className="settings-subhead-hint">官方/社区 MCP 真实配置 · 填入你的凭据即可</span></div>
+              <div className="connector-template-grid">{connectorTemplates.map((template) => { const entry = connectors.find((connector) => connector.id === template.id); const installed = Boolean(entry); const oauthConnected = entry?.oauth?.status === "connected"; return <article className={`connector-template-card ${installed ? "installed" : ""} ${oauthConnected ? "oauth" : ""}`} key={template.id}><div className="connector-template-top"><span className="connector-card-icon"><Zap size={15} /></span><small>{template.vendor}</small>{oauthConnected ? <span className="connector-template-badge oauth-badge"><KeyRound size={11} />已授权</span> : installed ? <span className="connector-template-badge">已配置</span> : null}</div><strong>{template.name}</strong><p>{template.summary}</p>{oauthConnected && entry.oauth?.accountHint ? <small className="connector-oauth-hint">{entry.oauth.accountHint}</small> : null}<button className={installed ? "secondary-setting" : "primary-setting"} onClick={() => { setConnectorTemplateValues({}); setConnectorTemplateModal(template); setConnectorOAuth(null); }}><RefreshCw size={13} />{installed ? "重新配置" : "配置连接"}</button></article>; })}</div>
+              {connectorTemplateModal && <ConnectorTemplateModal template={connectorTemplateModal} values={connectorTemplateValues} saving={connectorTemplateSaving} oauth={connectorOAuth} onChange={setConnectorTemplateValues} onClose={() => { setConnectorTemplateModal(null); setConnectorTemplateValues({}); setConnectorOAuth(null); }} onSave={() => void saveConnectorFromTemplate(connectorTemplateModal)} onOAuth={() => void startConnectorOAuth()} />}
+              <div className="skill-center-toolbar"><div className="skill-tabs"><button className={!connectorsManageOnly ? "active" : ""} onClick={() => setConnectorsManageOnly(false)}>全部配置</button><button className={connectorsManageOnly ? "active" : ""} onClick={() => setConnectorsManageOnly(true)}>已验证 {settingsResources.mcp.filter((server: any) => connectors.some((connector) => connector.id === server.name)).length}</button></div><label className="skill-search"><Search size={14} /><input value={connectorSearch} onChange={(event) => setConnectorSearch(event.target.value)} placeholder="搜索 MCP 连接器" /></label></div>
+              <div className="resource-toolbar secondary">
+                <SelectAllToggle total={selectableConnectorIds.length} selected={checkedConnectorIds.length} unit="个连接器" onSelectAll={() => setConnectorChecked(selectableConnectorIds)} onClear={() => setConnectorChecked([])} />
+                <BatchActions
+                  hint={checkedConnectorIds.length ? `选中里：${connectorBatchTargets.disable.length} 个启用中 · ${connectorBatchTargets.enable.length} 个已停用` : "勾选连接器后可批量启用或停用"}
+                  actions={[
+                    { label: connectorBatchTargets.enable.length ? `启用所选 (${connectorBatchTargets.enable.length})` : "启用所选", icon: <Play size={13} />, disabled: !connectorBatchTargets.enable.length, busy: connectorBatchBusy === "enable", onClick: () => void batchSetConnectorsEnabled(connectorBatchTargets.enable.map((connector) => connector.id), true), title: connectorBatchTargets.enable.length ? `启用选中的 ${connectorBatchTargets.enable.length} 个已停用连接器` : "没有勾选已停用的连接器" },
+                    { label: connectorBatchTargets.disable.length ? `停用所选 (${connectorBatchTargets.disable.length})` : "停用所选", icon: <CircleStop size={13} />, tone: "danger", disabled: !connectorBatchTargets.disable.length, busy: connectorBatchBusy === "disable", onClick: () => void batchSetConnectorsEnabled(connectorBatchTargets.disable.map((connector) => connector.id), false), title: connectorBatchTargets.disable.length ? `停用选中的 ${connectorBatchTargets.disable.length} 个启用中连接器` : "没有勾选启用中的连接器" },
+                  ]}
+                />
+              </div>
+              <div className="connector-card-grid">{visibleConnectors.map((connector) => {
+                const status = settingsResources.mcp.find((server: any) => server.name === connector.id);
+                const detail = status?.runtimeStatus?.type ?? status?.runtimeStatus ?? status?.authStatus;
+                const isEnabled = connector.enabled !== false;
+                const checked = checkedConnectorIds.includes(connector.id);
+                const busy = connectorStatusBusy === connector.id;
+                return <article className={`connector-card ${status && isEnabled ? "connected" : ""} ${isEnabled ? "" : "is-disabled"} ${checked ? "is-checked" : ""}`} key={connector.id}>
+                  <div className="connector-card-head">
+                    <CheckCard checked={checked} label={`选择 ${connector.name}`} title={checked ? `取消选择 ${connector.name}` : `勾选 ${connector.name}，纳入批量操作`} onChange={() => toggleConnectorChecked(connector.id)} />
+                    <div className="connector-card-icon"><Link2 size={16} /></div>
+                    <div className="connector-card-title"><strong title={connector.name}>{connector.name}</strong><small>{connector.transport === "stdio" ? "本地命令 · stdio" : "远程服务 · HTTP MCP"}{connector.hasSecrets ? " · 已加密密钥" : ""}</small></div>
+                    {isEnabled ? <span className="plugin-state on">启用中</span> : <span className="plugin-state off">已停用</span>}
+                    <ToggleSwitch checked={isEnabled} disabled={busy} label={`${connector.name} 启用开关`} title={isEnabled ? "停用后引擎不再加载该 MCP，配置保留" : "启用该 MCP 连接器"} onChange={(next) => void setConnectorEnabled(connector, next)} />
+                  </div>
+                  <p className="connector-card-detail">{connector.transport === "stdio" ? `${connector.command} ${(connector.args ?? []).join(" ")}` : connector.url}</p>
+                  <div className="connector-card-foot">
+                    <small>{!isEnabled ? "已停用 · 引擎不会加载，配置与密钥保留" : status ? `引擎状态：${detail || "已发现"}` : "已写入配置，等待引擎状态返回"}</small>
+                    <button className="icon-button" title="移除连接器" onClick={() => void removeConnector(connector.id)}><Trash2 size={14} /></button>
+                  </div>
+                </article>;
+              })}{!connectors.length && <p className="muted">尚未配置连接器。请从服务提供方获取真实 MCP 启动命令或 HTTP MCP 地址后添加。</p>}</div>
+              {connectorEditorOpen && <ConnectorSetupModal draft={connectorDraft} secret={connectorSecret} saving={connectorSaving} onDraftChange={setConnectorDraft} onSecretChange={setConnectorSecret} onClose={() => setConnectorEditorOpen(false)} onSave={(draft) => void saveConnector(draft)} />}
+              {false && <div className="schedule-editor connector-editor connector-legacy-editor"><input value={connectorDraft.name} onChange={(event) => setConnectorDraft({ ...connectorDraft, name: event.target.value })} placeholder="连接器名称，例如 GitHub MCP" /><div className="schedule-kind" role="group"><button type="button" className={connectorDraft.transport === "stdio" ? "active" : ""} onClick={() => setConnectorDraft({ ...connectorDraft, transport: "stdio" })}>本地 stdio</button><button type="button" className={connectorDraft.transport === "streamable_http" ? "active" : ""} onClick={() => setConnectorDraft({ ...connectorDraft, transport: "streamable_http" })}>HTTP MCP</button></div>{connectorDraft.transport === "stdio" ? <><input value={connectorDraft.command ?? ""} onChange={(event) => setConnectorDraft({ ...connectorDraft, command: event.target.value })} placeholder="启动命令，例如 npx" /><input value={(connectorDraft.args ?? []).join(" ")} onChange={(event) => setConnectorDraft({ ...connectorDraft, args: event.target.value.trim() ? event.target.value.trim().split(/\s+/) : [] })} placeholder="参数，空格分隔，例如 -y @modelcontextprotocol/server-github" /></> : <input value={connectorDraft.url ?? ""} onChange={(event) => setConnectorDraft({ ...connectorDraft, url: event.target.value })} placeholder="https://service.example.com/mcp" />}<input value={connectorSecret} type="password" onChange={(event) => setConnectorSecret(event.target.value)} placeholder="可选：访问令牌（保存时使用 MCP_TOKEN 加密存储）" /><div className="settings-actions"><button className="secondary-setting" onClick={() => setConnectorEditorOpen(false)}>取消</button><button className="primary-setting" disabled={connectorSaving || !connectorDraft.name || (connectorDraft.transport === "stdio" ? !connectorDraft.command : !connectorDraft.url)} onClick={() => { const secrets: Record<string, string> = connectorSecret ? { MCP_TOKEN: connectorSecret } : {}; const draft: ConnectorDraft = { ...connectorDraft, secrets }; setConnectorDraft(draft); void saveConnector(draft); }}>{connectorSaving ? <Spinner /> : <Check size={14} />}保存并验证</button></div></div>}
+              <div className="settings-subhead"><Wifi size={13} />app-server MCP 状态<span className="settings-subhead-hint">引擎真实加载的服务器 · 可单卡或批量启停</span></div>
+              <div className="skill-center-toolbar"><label className="skill-search"><Search size={14} /><input value={mcpServerSearch} onChange={(event) => setMcpServerSearch(event.target.value)} placeholder="搜索 MCP 服务或工具名" /></label></div>
+              <div className="resource-toolbar secondary">
+                <SelectAllToggle total={selectableMcpIds.length} selected={checkedMcpIds.length} unit="个 MCP 服务" onSelectAll={() => setMcpServerChecked(selectableMcpIds)} onClear={() => setMcpServerChecked([])} />
+                <BatchActions
+                  hint={checkedMcpIds.length ? `选中里：${mcpBatchTargets.disable.length} 个启用中 · ${mcpBatchTargets.enable.length} 个已停用` : "勾选 MCP 服务后可批量启用或停用"}
+                  actions={[
+                    { label: mcpBatchTargets.enable.length ? `启用所选 (${mcpBatchTargets.enable.length})` : "启用所选", icon: <Play size={13} />, disabled: !mcpBatchTargets.enable.length, busy: mcpServerBatchBusy === "enable", onClick: () => void batchSetMcpServersEnabled(mcpBatchTargets.enable.map((row) => row.name), true), title: mcpBatchTargets.enable.length ? `启用选中的 ${mcpBatchTargets.enable.length} 个已停用 MCP 服务` : "没有勾选已停用的 MCP 服务" },
+                    { label: mcpBatchTargets.disable.length ? `停用所选 (${mcpBatchTargets.disable.length})` : "停用所选", icon: <CircleStop size={13} />, tone: "danger", disabled: !mcpBatchTargets.disable.length, busy: mcpServerBatchBusy === "disable", onClick: () => void batchSetMcpServersEnabled(mcpBatchTargets.disable.map((row) => row.name), false), title: mcpBatchTargets.disable.length ? `停用选中的 ${mcpBatchTargets.disable.length} 个启用中 MCP 服务` : "没有勾选启用中的 MCP 服务" },
+                  ]}
+                />
+              </div>
+              <div className="mcp-server-grid">{mcpRows.map((row) => {
+                const busy = mcpServerStatusBusy === row.name;
+                const checked = checkedMcpIds.includes(row.name);
+                const live = row.enabled && (row.runtime === "live" || row.runtime === "ready" || row.runtime === "running" || row.runtime === "connected");
+                const failed = row.enabled && (row.runtime === "error" || row.runtime === "failed" || row.runtime === "disconnected");
+                return <article className={`mcp-server-card ${live ? "live" : ""} ${failed ? "failed" : ""} ${row.enabled ? "" : "is-disabled"} ${checked ? "is-checked" : ""}`} key={row.name}>
+                  <div className="mcp-server-head">
+                    <CheckCard checked={checked} label={`选择 ${row.name}`} title={checked ? `取消选择 ${row.name}` : `勾选 ${row.name}，纳入批量操作`} onChange={() => toggleMcpChecked(row.name)} />
+                    <div className="mcp-server-icon"><Wrench size={15} /></div>
+                    <div className="mcp-server-title">
+                      <strong title={row.name}>{row.name}</strong>
+                      <small>{row.managed ? "本应用管理的连接器" : "引擎直管服务器"}{row.auth ? ` · 认证 ${row.auth}` : ""}</small>
+                    </div>
+                    <span className={`mcp-server-state ${row.enabled ? (live ? "on" : failed ? "bad" : "idle") : "off"}`}>
+                      {!row.enabled ? "已停用" : live ? "运行中" : failed ? "启动失败" : row.reported ? (row.runtime || "已发现") : "等待回报"}
+                    </span>
+                    <ToggleSwitch checked={row.enabled} disabled={busy} label={`${row.name} 启用开关`} title={row.enabled ? `停用后引擎不再加载 ${row.name}，配置保留` : `启用 ${row.name}`} onChange={(next) => void setMcpServerEnabled(row.name, next)} />
+                  </div>
+                  <div className="mcp-server-body">
+                    <span className="mcp-server-metric" title="该服务器暴露的工具数量"><Wrench size={11} />{row.toolNames.length} 个工具</span>
+                    <span className="mcp-server-metric" title="app-server 回报的运行状态">状态 {row.reported ? (row.runtime || "已发现") : "未加载"}</span>
+                    {row.auth ? <span className="mcp-server-metric" title="认证方式">认证 {row.auth}</span> : null}
+                  </div>
+                  {row.toolNames.length ? <div className="mcp-server-tools">{
+                    row.toolNames.slice(0, 10).map((tool: string) => {
+                      const perm = mcpToolPermissions[row.name]?.[tool];
+                      return (
+                        <button
+                          key={tool}
+                          className={`mcp-tool-chip${perm ? ` perm-${perm}` : ""}`}
+                          title={`${perm ? `当前权限：${perm === "deny" ? "拒绝" : perm === "ask" ? "询问" : "放行"}。` : "未设权限规则。"}点击循环：放行 → 询问 → 拒绝 → 清除`}
+                          onClick={() => { const next = perm === undefined || perm === "allow" ? "ask" : perm === "ask" ? "deny" : null; void setMcpToolPermission(row.name, tool, next); }}
+                        >
+                          <code>{tool}</code>{perm ? <em>{perm === "deny" ? "拒" : perm === "ask" ? "问" : "放"}</em> : null}
+                        </button>
+                      );
+                    })
+                  }{row.toolNames.length > 10 ? <code className="mcp-server-tools-more">+{row.toolNames.length - 10}</code> : null}</div> : null}
+                  <div className="mcp-server-foot"><small>{row.enabled ? (row.reported ? "已写入引擎配置，改动后引擎会自动重启" : "已写入引擎配置，等待 app-server 回报状态") : "已停用 · 引擎不会加载，配置保留"}</small></div>
+                </article>;
+              })}{!mcpRows.length && <div className="mcp-server-empty"><Wifi size={26} /><strong>app-server 还没有发现 MCP 服务</strong><p>在上面添加连接器并保存，引擎重启后这里会出现真实运行状态；内置桌面自动化 MCP 也会列在这里。</p></div>}</div>
+              </section>
+              ); })()}
+            {settingsPage === "ssh" && <section className="settings-section stack ssh-page">
+              <div className="settings-copy channel-heading">
+                <div>
+                  <h2>SSH 服务器</h2>
+                  <p>集中管理远程主机：保存连接与凭据，分组打标签，配置跳板机与登录后命令；可逐台或批量启用/停用、测试连通性、直接开终端或下发一次性命令。凭据仅保存在本机配置目录（ssh-servers.json）。</p>
+                </div>
+                <div className="settings-heading-actions">
+                  <button className="primary-setting" onClick={() => { setSshEditorTest(null); setSshDraft(emptySshDraft()); }}><Plus size={14} />新建连接</button>
+                </div>
+              </div>
+              <div className="ssh-toolbar">
+                <SearchField value={sshQuery} onChange={setSshQuery} placeholder="搜索名称 / 主机 / 标签 / 备注" width={240} />
+                <SegmentedTabs
+                  value={sshFilter}
+                  onChange={(value) => setSshFilter(value as "all" | "on" | "off" | "star")}
+                  options={[
+                    { value: "all", label: "全部", count: sshServers.length },
+                    { value: "on", label: "已启用", count: sshServers.filter((server) => server.enabled).length },
+                    { value: "off", label: "已停用", count: sshServers.filter((server) => !server.enabled).length },
+                    { value: "star", label: "收藏", count: sshServers.filter((server) => server.favorite).length },
+                  ]}
+                />
+                <span className="ssh-toolbar-spacer" />
+                <button className="secondary-setting" title="导出为 JSON（不含密码与私钥）" disabled={!sshServers.length} onClick={() => void exportSshEntries(false)}><Download size={14} />导出</button>
+                <button className="secondary-setting" title="从 JSON 文件导入连接" disabled={sshBatchBusy} onClick={() => void importSshEntries()}><Upload size={14} />导入</button>
+              </div>
+              {sshServers.length > 0 && <div className="ssh-bulk-bar">
+                <SelectAllToggle
+                  total={sshVisible.length}
+                  selected={sshChecked.filter((id) => sshVisible.some((server) => server.id === id)).length}
+                  unit="台"
+                  onSelectAll={() => setSshChecked(sshVisible.map((server) => server.id))}
+                  onClear={() => setSshChecked([])}
+                />
+                <BatchActions
+                  hint={sshChecked.length ? `已选 ${sshChecked.length} 台` : "勾选卡片后可批量操作"}
+                  actions={[
+                    { label: "批量启用", icon: <Play size={13} />, disabled: !sshChecked.length, busy: sshBatchBusy, onClick: () => void toggleSshBatch(true) },
+                    { label: "批量停用", icon: <PowerOff size={13} />, disabled: !sshChecked.length, busy: sshBatchBusy, onClick: () => void toggleSshBatch(false) },
+                    { label: "测试连通", icon: <Wifi size={13} />, disabled: !sshChecked.length, busy: sshBatchBusy, onClick: () => void testSshBatch() },
+                    { label: "导出所选", icon: <Download size={13} />, disabled: !sshChecked.length, title: "含凭据导出，便于迁移到另一台机器", onClick: () => void exportSshEntries(true) },
+                    { label: "删除", icon: <Trash2 size={13} />, tone: "danger", disabled: !sshChecked.length, busy: sshBatchBusy, onClick: () => void removeSshEntries(sshChecked) },
+                  ]}
+                />
+              </div>}
+              <div className="ssh-server-list">
+                {sshVisible.map((server) => {
+                  const busy = sshBusyId === server.id || sshTestingId === server.id;
+                  const checked = sshCheckedSet.has(server.id);
+                  const info = server.lastServerInfo;
+                  const lastTest = server.lastTestAt ? new Date(server.lastTestAt).toLocaleString() : "";
+                  const systemLabel = [info?.os, info?.uname].filter(Boolean).join(" · ");
+                  return <article className={`ssh-server-card ${server.enabled ? "" : "is-off"} ${checked ? "is-checked" : ""}`} key={server.id}>
+                    <div className="ssh-server-head">
+                      <CheckCard checked={checked} label={`选择 ${server.name}`} title={checked ? `取消选择 ${server.name}` : `勾选 ${server.name}，纳入批量操作`} onChange={() => sshToggleChecked(server.id)} />
+                      <span className={`ssh-status-dot ${server.lastTestOk === undefined ? "unknown" : server.lastTestOk ? "ok" : "fail"} ${sshTestingId === server.id ? "testing" : ""}`} title={server.lastTestOk === undefined ? "未测试" : server.lastTestOk ? "最近一次测试连通" : "最近一次测试失败"} />
+                      <div className="ssh-server-title">
+                        <strong>{server.name}</strong>
+                        <small><code>{server.username}@{server.host}{server.port !== 22 ? `:${server.port}` : ""}</code></small>
+                      </div>
+                      {server.group ? <span className="ssh-tag ssh-tag-group">{server.group}</span> : null}
+                      {(server.tags ?? []).slice(0, 3).map((tag) => <span className="ssh-tag" key={tag}>{tag}</span>)}
+                      <button className={`ssh-star ${server.favorite ? "on" : ""}`} title={server.favorite ? "取消收藏" : "收藏到顶部筛选"} onClick={() => void toggleSshFavorite(server)}><Star size={13} /></button>
+                      <span className={`ssh-auth-badge ${server.authType}`}><KeyRound size={12} />{server.authType === "password" ? "密码" : "私钥"}</span>
+                      <ToggleSwitch checked={server.enabled} disabled={busy} label={`${server.name} 启用开关`} title={server.enabled ? "停用后不参与自动连接，配置保留" : "启用这台服务器"} onChange={(next) => void toggleSshEntry(server, next)} />
+                    </div>
+                    <div className="ssh-server-meta">
+                      {lastTest
+                        ? <span className={`ssh-test-result ${server.lastTestOk ? "ok" : "fail"}`}>
+                            {server.lastTestOk
+                              ? `连通 · ${server.lastTestLatencyMs ?? "?"}ms · ${lastTest}`
+                              : `失败 · ${server.lastTestError || "未知错误"} · ${lastTest}`}
+                          </span>
+                        : <span className="ssh-test-result">尚未测试</span>}
+                      {server.lastTestOk && systemLabel ? <span title={`${info?.hostname ? `主机名 ${info.hostname}` : ""}${info?.uptime ? ` · 已运行 ${info.uptime}` : ""}`}>{systemLabel}</span> : null}
+                      {server.lastFingerprint ? <span className="ssh-fingerprint" title={`主机密钥指纹 ${server.lastFingerprint}`}>指纹 {server.lastFingerprint.replace(/^SHA256:/, "").slice(0, 12)}…</span> : null}
+                      {server.jumpHost?.host ? <span className="ssh-tag ssh-tag-jump">跳板机 {server.jumpHost.host}</span> : null}
+                      {server.remotePath ? <span>初始目录 {server.remotePath}</span> : null}
+                      {server.notes ? <span className="ssh-notes" title={server.notes}>{server.notes}</span> : null}
+                    </div>
+                    <div className="ssh-server-actions">
+                      <button className="secondary-setting" disabled={busy} onClick={() => setSshTerminal(server)}><TerminalSquare size={14} />打开终端</button>
+                      <button className="secondary-setting" disabled={busy} onClick={() => void testSshEntry(server)}>{sshTestingId === server.id ? <Spinner /> : <Wifi size={14} />}测试连接</button>
+                      <button className="secondary-setting" disabled={busy} onClick={() => setSshExecTarget(server)}><Play size={14} />运行命令</button>
+                      <span className="ssh-actions-spacer" />
+                      <button className="secondary-setting" disabled={busy} onClick={() => { setSshEditorTest(null); setSshDraft({ ...server }); }}><PenLine size={14} />编辑</button>
+                      <button className="secondary-setting" disabled={busy} onClick={() => void duplicateSshEntry(server)}><Copy size={14} />复制</button>
+                      <button className="secondary-setting ssh-delete" disabled={busy} onClick={() => void removeSshEntries([server.id])}><Trash2 size={14} />删除</button>
+                    </div>
+                  </article>;
+                })}
+                {!sshServers.length && <div className="ssh-server-empty">
+                  <Server size={28} />
+                  <strong>还没有 SSH 服务器</strong>
+                  <p>新建连接并填入主机、用户名与认证方式，保存后即可启用/停用、测试连通性，或直接打开终端与下发命令。</p>
+                  {/* 顶部工具栏的「+ 新建连接」是主入口；空状态这里只给提示文字，避免两个新建按钮让用户疑惑 */}
+                </div>}
+                {sshServers.length > 0 && !sshVisible.length && <div className="ssh-server-empty ssh-empty-filter">
+                  <Search size={24} />
+                  <strong>没有匹配的连接</strong>
+                  <p>换个关键字，或把筛选切换回「全部」。</p>
+                </div>}
+              </div>
+            </section>}
+            {sshDraft && createPortal(
+              <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSshDraft(null); }}>
+                <section className="connector-setup-modal ssh-editor-modal" role="dialog" aria-modal="true" aria-label={sshDraft.id ? "编辑 SSH 连接" : "新建 SSH 连接"}>
+                  <header>
+                    <div className="connector-setup-title">
+                      <span><Server size={17} /></span>
+                      <div><strong>{sshDraft.id ? `编辑「${sshDraft.name}」` : "新建 SSH 连接"}</strong><p>填好基本信息与认证方式即可保存；左下角「测试连接」可以在保存前先验证是否连得上。</p></div>
+                    </div>
+                    <button className="icon-button" title="关闭" onClick={() => setSshDraft(null)}><X size={16} /></button>
+                  </header>
+                  <div className="connector-form ssh-form">
+                    <div className="ssh-form-section">
+                      <h4>基本信息</h4>
+                      <div className="settings-grid two">
+                        <label><span>连接名称 <em>必填</em></span><input autoFocus value={sshDraft.name} onChange={(event) => setSshDraft({ ...sshDraft, name: event.target.value })} placeholder="例如：公司测试机 / GPU 服务器" /></label>
+                        <label><span>分组 <small>可选，用于归类</small></span><input value={sshDraft.group ?? ""} onChange={(event) => setSshDraft({ ...sshDraft, group: event.target.value })} placeholder="例如：生产 / 测试 / 客户 A" /></label>
+                      </div>
+                      <div className="settings-grid three">
+                        <label><span>主机地址 <em>必填</em></span><input value={sshDraft.host} onChange={(event) => setSshDraft({ ...sshDraft, host: event.target.value })} placeholder="192.168.1.100 或 ssh.example.com" /></label>
+                        <label><span>端口</span><input type="number" min={1} max={65535} value={sshDraft.port} onChange={(event) => setSshDraft({ ...sshDraft, port: Number(event.target.value) || 22 })} /></label>
+                        <label><span>用户名 <em>必填</em></span><input value={sshDraft.username} onChange={(event) => setSshDraft({ ...sshDraft, username: event.target.value })} placeholder="root / ubuntu" /></label>
+                      </div>
+                    </div>
+
+                    <div className="ssh-form-section">
+                      <h4>认证方式</h4>
+                      <div className="ssh-auth-switch">
+                        <button className={`ssh-auth-option ${sshDraft.authType === "password" ? "on" : ""}`} onClick={() => setSshDraft({ ...sshDraft, authType: "password" })}><KeyRound size={13} />密码认证</button>
+                        <button className={`ssh-auth-option ${sshDraft.authType === "key" ? "on" : ""}`} onClick={() => setSshDraft({ ...sshDraft, authType: "key" })}><KeyRound size={13} />私钥认证</button>
+                      </div>
+                      {sshDraft.authType === "password"
+                        ? <label><span>登录密码</span><input type="password" value={sshDraft.password ?? ""} onChange={(event) => setSshDraft({ ...sshDraft, password: event.target.value })} placeholder="登录密码" /></label>
+                        : <>
+                            <label><span>私钥内容 <small>粘贴 OpenSSH / PEM 私钥，与下方路径二选一</small></span><textarea rows={4} value={sshDraft.privateKey ?? ""} onChange={(event) => setSshDraft({ ...sshDraft, privateKey: event.target.value })} placeholder={"-----BEGIN OPENSSH PRIVATE KEY-----\n..."} /></label>
+                            <div className="ssh-key-row">
+                              <label className="ssh-key-path"><span>私钥文件路径 <small>例如 C:\Users\you\.ssh\id_ed25519</small></span><input value={sshDraft.keyPath ?? ""} onChange={(event) => setSshDraft({ ...sshDraft, keyPath: event.target.value })} placeholder="留空则仅使用上方私钥内容" /></label>
+                              <button className="secondary-setting ssh-key-browse" title="从磁盘选择私钥文件" onClick={() => void window.codex.chooseSshKey(sshDraft.keyPath || undefined).then((file: string | null) => { if (file) setSshDraft((current) => (current ? { ...current, keyPath: file } : current)); })}><FolderOpen size={14} />浏览…</button>
+                            </div>
+                            <label><span>私钥口令 <small>私钥设置了 passphrase 时填写</small></span><input type="password" value={sshDraft.passphrase ?? ""} onChange={(event) => setSshDraft({ ...sshDraft, passphrase: event.target.value })} placeholder="可选" /></label>
+                          </>}
+                    </div>
+
+                    <div className="ssh-form-section">
+                      <h4>会话与网络</h4>
+                      <div className="settings-grid three">
+                        <label><span>初始工作目录 <small>连接后自动 cd</small></span><input value={sshDraft.remotePath ?? ""} onChange={(event) => setSshDraft({ ...sshDraft, remotePath: event.target.value })} placeholder="/root 或 /home/ubuntu/project" /></label>
+                        <label><span>连接超时（秒）</span><input type="number" min={1} max={120} value={sshDraft.connectTimeout ?? 10} onChange={(event) => setSshDraft({ ...sshDraft, connectTimeout: Number(event.target.value) || 10 })} /></label>
+                        <label><span>心跳间隔（秒） <small>0 = 关闭</small></span><input type="number" min={0} max={600} value={sshDraft.keepaliveInterval ?? 30} onChange={(event) => setSshDraft({ ...sshDraft, keepaliveInterval: Number(event.target.value) || 0 })} /></label>
+                      </div>
+                      <div className="settings-grid two">
+                        <label><span>登录后自动执行 <small>开终端时自动运行</small></span><input value={sshDraft.startupCommand ?? ""} onChange={(event) => setSshDraft({ ...sshDraft, startupCommand: event.target.value })} placeholder="例如：tmux a 或 export PATH=$PATH:/opt/bin" /></label>
+                        <label><span>终端类型</span><input value={sshDraft.termType ?? ""} onChange={(event) => setSshDraft({ ...sshDraft, termType: event.target.value })} placeholder="xterm-256color" /></label>
+                      </div>
+                    </div>
+
+                    <div className="ssh-form-section">
+                      <h4>跳板机（ProxyJump）</h4>
+                      <label className="ssh-inline-check">
+                        <input type="checkbox" checked={Boolean(sshDraft.jumpHost?.host)} onChange={(event) => setSshDraft({ ...sshDraft, jumpHost: event.target.checked ? (sshDraft.jumpHost ?? emptySshJump()) : { ...emptySshJump(), host: "" } })} />
+                        <span>通过跳板机中继连接目标主机</span>
+                      </label>
+                      {Boolean(sshDraft.jumpHost?.host) && <>
+                        <div className="settings-grid three">
+                          <label><span>跳板机地址</span><input value={sshDraft.jumpHost?.host ?? ""} onChange={(event) => setSshDraft({ ...sshDraft, jumpHost: { ...(sshDraft.jumpHost ?? emptySshJump()), host: event.target.value } })} placeholder="bastion.example.com" /></label>
+                          <label><span>端口</span><input type="number" min={1} max={65535} value={sshDraft.jumpHost?.port ?? 22} onChange={(event) => setSshDraft({ ...sshDraft, jumpHost: { ...(sshDraft.jumpHost ?? emptySshJump()), port: Number(event.target.value) || 22 } })} /></label>
+                          <label><span>用户名</span><input value={sshDraft.jumpHost?.username ?? ""} onChange={(event) => setSshDraft({ ...sshDraft, jumpHost: { ...(sshDraft.jumpHost ?? emptySshJump()), username: event.target.value } })} placeholder="跳板机登录用户" /></label>
+                        </div>
+                        <div className="settings-grid two">
+                          <label><span>跳板机认证</span>
+                            <select value={sshDraft.jumpHost?.authType ?? "password"} onChange={(event) => setSshDraft({ ...sshDraft, jumpHost: { ...(sshDraft.jumpHost ?? emptySshJump()), authType: event.target.value as "password" | "key" } })}>
+                              <option value="password">密码认证</option>
+                              <option value="key">私钥认证</option>
+                            </select>
+                          </label>
+                          {(sshDraft.jumpHost?.authType ?? "password") === "password"
+                            ? <label><span>跳板机密码</span><input type="password" value={sshDraft.jumpHost?.password ?? ""} onChange={(event) => setSshDraft({ ...sshDraft, jumpHost: { ...(sshDraft.jumpHost ?? emptySshJump()), password: event.target.value } })} placeholder="跳板机登录密码" /></label>
+                            : <div className="ssh-key-row">
+                                <label className="ssh-key-path"><span>跳板机私钥路径</span><input value={sshDraft.jumpHost?.keyPath ?? ""} onChange={(event) => setSshDraft({ ...sshDraft, jumpHost: { ...(sshDraft.jumpHost ?? emptySshJump()), keyPath: event.target.value } })} placeholder="本地私钥文件路径" /></label>
+                                <button className="secondary-setting ssh-key-browse" onClick={() => void window.codex.chooseSshKey(sshDraft.jumpHost?.keyPath || undefined).then((file: string | null) => { if (file) setSshDraft((current) => current ? { ...current, jumpHost: { ...(current.jumpHost ?? emptySshJump()), keyPath: file } } : current); })}><FolderOpen size={14} />浏览…</button>
+                              </div>}
+                        </div>
+                      </>}
+                    </div>
+
+                    <div className="ssh-form-section">
+                      <h4>标签与备注</h4>
+                      <div className="settings-grid two">
+                        <label><span>标签 <small>英文逗号分隔</small></span><input value={(sshDraft.tags ?? []).join(", ")} onChange={(event) => setSshDraft({ ...sshDraft, tags: event.target.value.split(",").map((tag) => tag.trim()) })} placeholder="gpu, 内网, 客户A" /></label>
+                        <label className="ssh-inline-check ssh-inline-check-top">
+                          <input type="checkbox" checked={sshDraft.enabled} onChange={(event) => setSshDraft({ ...sshDraft, enabled: event.target.checked })} />
+                          <span>保存后立即启用这台服务器</span>
+                        </label>
+                      </div>
+                      <label><span>备注</span><textarea rows={2} value={sshDraft.notes ?? ""} onChange={(event) => setSshDraft({ ...sshDraft, notes: event.target.value })} placeholder="用途、负责人、注意事项…" /></label>
+                    </div>
+
+                    {sshEditorTest && <div className={`ssh-editor-test ${sshEditorTest.ok ? "ok" : "fail"}`}>
+                      {sshEditorTest.ok ? <CircleCheck size={14} /> : <X size={14} />}
+                      <span>{sshEditorTest.message}</span>
+                    </div>}
+                    <div className="connector-example"><Info size={14} /><span>凭据明文保存在本机配置目录，不会上传；连接仅由本机发起。停用只是不参与自动连接，配置会完整保留。</span></div>
+                  </div>
+                  <footer>
+                    <button className="secondary-setting" disabled={!sshDraftValid(sshDraft)} onClick={() => void testSshDraft()}>{sshTestingId === "draft" ? <Spinner /> : <Wifi size={14} />}测试连接</button>
+                    <span className="ssh-footer-spacer" />
+                    <button className="secondary-setting" onClick={() => setSshDraft(null)}>取消</button>
+                    <button className="primary-setting" disabled={!sshDraftValid(sshDraft) || sshSaving} onClick={() => void saveSshEntry()}>{sshSaving ? <Spinner /> : <CircleCheck size={15} />}保存</button>
+                  </footer>
+                </section>
+              </div>,
+              document.body,
+            )}
+            {sshTerminal && createPortal(<SshTerminalModal server={sshTerminal} onClose={() => setSshTerminal(null)} />, document.body)}
+            {sshExecTarget && createPortal(<SshExecModal server={sshExecTarget} onClose={() => setSshExecTarget(null)} />, document.body)}
+            {settingsPage === "usage" && <UsagePanel
+              stats={stats}
+              currentInput={usage?.inputTokens ?? usage?.input_tokens ?? 0}
+              currentOutput={usage?.outputTokens ?? usage?.output_tokens ?? 0}
+              contextWindow={tokenUsage?.modelContextWindow ?? 0}
+              onReset={() => { resetUsageStats(); setUsageStats(readUsageStats()); setNotice("使用统计已清空"); }}
+            />}
+            {settingsPage === "backup" && <section className="settings-section stack backup-page">
+              <div className="settings-copy"><h2>会话备份</h2><p>Markdown 用于阅读和交给其他 AI；JSON 用于完整迁移与恢复。</p></div>
+              <div className="backup-grid">
+                <article className="backup-card backup-card--current">
+                  <div className="backup-card-head"><span><MessageSquare size={16} /></span><div><strong>当前会话</strong><small>{thread ? cleanThreadDisplayTitle(thread.name, { preview: thread.preview }) : "尚未打开会话"}</small></div></div>
+                  <p>导出正在查看的这一条会话。默认使用通用 Markdown 格式。</p>
+                  <div className="backup-card-actions">
+                    <button className="primary-setting" disabled={backupBusy !== "" || !thread} onClick={() => { if (thread) void exportThreadsMarkdown([thread.id]); }}>{backupBusy === "export-md" ? <Spinner /> : <FileText size={14} />}导出 Markdown</button>
+                    <button className="secondary-setting" disabled={backupBusy !== "" || !thread} onClick={() => { if (thread) void exportThreadsBackup([thread.id]); }}><Archive size={14} />完整 JSON</button>
+                  </div>
+                </article>
+                <article className="backup-card">
+                  <div className="backup-card-head"><span><MessageSquare size={16} /></span><div><strong>全部会话</strong><small>{threads.length} 条未归档会话</small></div></div>
+                  <p>一次导出当前列表里的全部会话，适合存档或迁移到另一台电脑。</p>
+                  <div className="backup-card-actions">
+                    <button className="primary-setting" disabled={backupBusy !== "" || !threads.length} onClick={() => void exportThreadsMarkdown()}>{backupBusy === "export-md" ? <Spinner /> : <FileText size={14} />}导出 Markdown</button>
+                    <button className="secondary-setting" disabled={backupBusy !== "" || !threads.length} onClick={() => void exportThreadsBackup()}>{backupBusy === "export" ? <Spinner /> : <Archive size={14} />}完整 JSON</button>
+                  </div>
+                </article>
+                <article className="backup-card">
+                  <div className="backup-card-head"><span><Upload size={16} /></span><div><strong>导入与恢复</strong><small>不会覆盖同 ID 的已有会话</small></div></div>
+                  <p>JSON 恢复完整记录；Markdown 会创建一条可继续提问的新会话。</p>
+                  <div className="backup-card-actions">
+                    <button className="secondary-setting" disabled={backupBusy !== ""} onClick={() => void importThreadsBackup()}>{backupBusy === "import" ? <Spinner /> : <Upload size={14} />}导入 JSON</button>
+                    <button className="secondary-setting" disabled={backupBusy !== ""} onClick={() => void importConversationMarkdown()}>{backupBusy === "import-md" ? <Spinner /> : <FileUp size={14} />}导入 Markdown</button>
+                  </div>
+                </article>
+              </div>
+              <div className="backup-footnote"><Info size={14} /><span><strong>JSON</strong> 保留工具调用和引擎原始记录；<strong>Markdown</strong> 自动移除系统注入，适合阅读、分享和带入其他 AI。</span></div>
+            </section>}
+            {settingsPage === "archive" && <ArchivePage
+              onNotice={setNotice}
+              onOpenThread={(id) => { setSettingsOpen(false); void openThread(id); }}
+              onThreadRestored={(id) => {
+                setSettingsOpen(false);
+                void refreshThreads();
+                void openThread(id);
+              }}
+            />}
+            {settingsPage === "computer" && <section className="settings-section stack">
+              <div className="settings-copy"><h2>电脑控制</h2><p>审批与沙箱决定 Codex 能对这台电脑做什么；完全访问会关闭审批询问。</p></div>
+              <div className="settings-grid three">
+                <label><span>审批</span><select value={approvalPolicy} disabled={sandbox === "danger-full-access"} onChange={(event) => changeApproval(event.target.value)}><option value="on-request">按需询问</option><option value="untrusted">仅可信命令</option><option value="never">从不询问</option></select></label>
+                <label><span>沙箱</span><select value={sandbox} onChange={(event) => changeSandbox(event.target.value)}><option value="workspace-write">工作区可写</option><option value="read-only">只读</option><option value="danger-full-access">完全访问</option></select></label>
+                <label><span>风格</span><select value={personality} onChange={(event) => changePersonality(event.target.value)}><option value="pragmatic">务实</option><option value="friendly">友好</option><option value="none">默认</option></select></label>
+              </div>
+              <div className="settings-actions"><span>任务运行中可随时在输入框上方快捷切换。权限调低不会削弱引擎能力：越界操作会走审批卡，批准后继续执行。</span></div>
+              <div className="settings-subhead"><Monitor size={13} />桌面自动化工具<span className="settings-subhead-hint">已注册为 Codex MCP 服务器，38 个桌面/浏览器工具</span></div>
+              <div className="tool-card-grid">
+                {toolsStatus.filter((tool) => tool.scope === "computer").map((tool) => <ToolCard tool={tool} key={tool.id} />)}
+                {!toolsStatus.length && <p className="muted">正在读取工具状态…</p>}
+              </div>
+              <p className="muted">引擎通过 <code>nuphus</code> MCP 工具直接操作真实屏幕：截屏看界面、激活窗口、移动鼠标、敲键盘、读写剪贴板、本地 OCR，以及通过 CDP 驱动 Chrome。危险操作带有确认标注。</p>
+            </section>}
+            </div>
+          </div>
+        </div>
+      </div>}
+      {shortcutsOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShortcutsOpen(false); }}><div className="shortcuts-modal" role="dialog" aria-modal="true" aria-label="键盘快捷键"><header><div><Keyboard size={17} /><strong>键盘快捷键</strong><span className="esc-hint" title="按 ESC 关闭弹窗">ESC</span></div><button className="icon-button" title="关闭" onClick={() => setShortcutsOpen(false)}><X size={17} /></button></header><div className="shortcuts-body">{SHORTCUT_GROUPS.map((group) => <section className="shortcuts-group" key={group.group}><h3>{group.group}</h3>{group.shortcuts.map((item) => <div className="shortcuts-row" key={item.keys.join("+")}><span className="shortcut-desc">{item.desc}</span><span className="shortcut-keys">{item.keys.map((key, index) => <kbd key={index}>{key}</kbd>)}</span></div>)}</section>)}<footer><span className="muted">部分快捷键在输入框聚焦时优先用于文本编辑。</span></footer></div></div></div>}
+      {skillInstall && <SkillInstallModal state={skillInstall} onClose={() => setSkillInstall(null)} onUse={() => { const skill = { name: skillInstall.skill.name, description: skillInstall.skill.description }; setSelectedSkills((current) => current.some((entry) => entry.name === skill.name) ? current : [...current, skill]); setSkillInstall(null); setSettingsOpen(false); setNotice(`已引用技能：${skill.name}`); }} />}
+      {filePreview && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFilePreview(null); }}>
+        <div className={`file-preview ${filePreview.kind === "image" ? "image-preview" : "text-preview"}`} role="dialog" aria-label="文件预览">
+          <header>
+            <div>{filePreview.kind === "image" ? <Image size={17} /> : <FileCode2 size={17} />}<strong>{basename(filePreview.path)}</strong></div>
+            <div className="file-preview-actions">
+              {!fileEditing && filePreview.kind === "text" && !fileTruncated && workspace && <button className="secondary-setting" onClick={() => { setFileDraft(filePreview.content); setFileEditing(true); }}><PenLine size={14} />编辑</button>}
+              {fileEditing && <><button className="secondary-setting" onClick={() => setFileEditing(false)}>取消</button><button className="primary-setting" disabled={savingFile || fileDraft === filePreview.content} onClick={() => void saveFilePreview()}>{savingFile ? <Spinner /> : <Check size={14} />}保存</button></>}
+              <button className="icon-button" title="关闭" onClick={() => setFilePreview(null)}><X size={17} /></button>
+            </div>
+          </header>
+          <div className="file-preview-meta">{filePreview.path} · {filePreview.kind === "image" ? `${filePreview.language.toUpperCase()} 图片` : filePreview.language}{fileTruncated ? " · 文件过大，仅只读预览" : ""}</div>
+          {filePreview.kind === "image"
+            ? <div className="file-preview-image" title="点击图片外空白处关闭" onMouseDown={(event) => { if (event.target === event.currentTarget) setFilePreview(null); }}><img src={imageUrl(filePreview.path)} alt={basename(filePreview.path)} /></div>
+            : fileEditing
+              ? <textarea className="file-preview-editor" value={fileDraft} spellCheck={false} onChange={(event) => setFileDraft(event.target.value)} />
+              : <FilePreviewCode language={filePreview.language} content={filePreview.content} truncated={fileTruncated} />}
+        </div>
+      </div>}
+    </div>
+  );
+}
