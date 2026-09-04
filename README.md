@@ -102,6 +102,16 @@ npx electron-builder --mac zip
 
 本项目是对 OpenAI Codex CLI 的独立桌面封装，与 OpenAI 官方无隶属关系。使用本项目产生的 API 调用费用由用户自行承担。请遵守所在地区法律法规及 OpenAI 使用条款。
 
+## 💝 赞助支持
+
+如果你觉得这个项目有用，欢迎通过赞助商支持我们，助力持续开发：
+
+<p align="center">
+  <a href="https://api.pptoken.cc/register?aff=X82JSNVC3W3S" style="display:inline-block;padding:12px 32px;background:linear-gradient(135deg,#8b5cf6,#6366f1);color:#fff;border-radius:10px;font-size:15px;font-weight:600;text-decoration:none">💝 立即注册支持我们 →</a>
+  <br><br>
+  <em>https://api.pptoken.cc/register?aff=X82JSNVC3W3S</em>
+</p>
+
 ## License
 
 [MIT](LICENSE)
