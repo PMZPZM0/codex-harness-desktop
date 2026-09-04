@@ -51,10 +51,20 @@
 | 平台 | 文件 | 说明 |
 |---|---|---|
 | Windows 10/11 x64 | `Codex-Harness-Setup-<版本>.exe` | NSIS 安装向导，可选安装目录 |
-| macOS Intel | `Codex-Harness-<版本>-mac-x64.zip` | 解压即用（Apple Silicon 请用 arm64 包） |
-| macOS Apple Silicon | `Codex-Harness-<版本>-mac-arm64.zip` | 解压即用 |
+| macOS Intel | `Codex Harness Desktop-<版本>-x64-mac.zip` | 解压后拖入「应用程序」 |
+| macOS Apple Silicon (M1/M2/M3/M4) | `Codex Harness Desktop-<版本>-arm64-mac.zip` | 解压后拖入「应用程序」 |
 
 > 首次启动会按需下载引擎与工具链运行时（可选），国内网络建议保持默认配置。
+
+**macOS 首次打开**（安装包未做开发者签名，Gatekeeper 会拦截）：
+
+1. 解压后把 App 拖进「应用程序」
+2. **右键 → 打开**（不要直接双击），弹窗中点「打开」
+3. 若仍提示已损坏，终端执行：
+
+```bash
+xattr -cr "/Applications/Codex Harness Desktop.app"
+```
 
 ## 🛠 从源码构建
 
@@ -69,8 +79,9 @@ npm run dev
 # 构建 Windows 安装包（NSIS）
 npm run dist
 
-# macOS 包在 macOS 机器上执行（或用仓库内 GitHub Actions 云端构建）
-npx electron-builder --mac zip
+# macOS 包：在 macOS 机器上执行，或用仓库内 GitHub Actions 云端构建
+# （Actions → Build macOS → Run workflow，同时产出 arm64 与 x64 两个 zip）
+CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac zip --arm64   # 或 --x64
 ```
 
 内置工具链（Node/Python/Git 等）不随源码分发：Windows 上首次启动会引导下载；也可手动执行 `node scripts/install-runtimes.cjs` 预先拉取。
