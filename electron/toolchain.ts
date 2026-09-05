@@ -3,6 +3,7 @@
 // 子进程环境里优先命中内置 node/pwsh，应用自包含可移植。
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { app } from "electron";
 
 export function toolsRoot() {
@@ -21,8 +22,15 @@ export function toolsRoot() {
 export function augmentedPath() {
   const bundled: string[] = [];
   const discovered: string[] = [];
-  const system = (process.env.PATH ?? "").split(";").filter(Boolean);
+  const system = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
   const tools = toolsRoot();
+  if (process.platform !== "win32") {
+    const directories = [
+      "node/bin", "pwsh", "npm-global/bin", "bin", "git/bin", "python/bin",
+      "vscode-cli", "rg", "uv", "cmake/bin", "jq", "ninja",
+    ].map((directory) => path.join(tools, directory)).filter(fs.existsSync);
+    return [...new Set([...directories, ...system, "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"])].join(path.delimiter);
+  }
   if (tools) {
     // Codex app-server 是 GUI 子进程，直接拉起控制台版 pwsh.exe 会闪黑框。
     // pwsh-headless 是透明 GUI 桥（转发 stdio/退出码）；右侧终端仍通过 bundledPwsh
@@ -62,15 +70,15 @@ export function augmentedPath() {
 // 引擎侧用 CLOAKBROWSER_ENTRY 直连 dist/index.js 动态 import。
 export function npmGlobalRoot() {
   const tools = toolsRoot();
-  return tools ? `${tools}\\npm-global\\node_modules` : "";
+  return tools ? path.join(tools, "npm-global", "node_modules") : "";
 }
 
 // cloakbrowser ESM 入口的 file:// URL（供引擎脚本 import；空串表示未安装）。
 export function cloakEntryUrl() {
   const root = npmGlobalRoot();
-  const entry = root ? `${root}\\cloakbrowser\\dist\\index.js` : "";
+  const entry = root ? path.join(root, "cloakbrowser", "dist", "index.js") : "";
   try {
-    return entry && fs.existsSync(entry) ? `file:///${entry.replaceAll("\\", "/")}` : "";
+    return entry && fs.existsSync(entry) ? pathToFileURL(entry).href : "";
   } catch {
     return "";
   }
@@ -79,8 +87,16 @@ export function cloakEntryUrl() {
 // 桌面自动化 MCP 的原生二进制（Rust exe，无需 node 即可运行）。
 export function nuphusBinary() {
   const root = npmGlobalRoot();
+  const platform = process.platform === "darwin" ? "osx" : process.platform;
+  const name = `nuphus-mcp-${platform}-${process.arch}`;
+  const bin = process.platform === "win32" ? "nuphus-mcp.exe" : "nuphus-mcp";
   const candidates = root
-    ? [`${root}\\@nuphus\\nuphus-mcp\\node_modules\\@nuphus\\nuphus-mcp-win32-x64\\bin\\nuphus-mcp.exe`, `${root}\\nuphus-mcp-win32-x64\\bin\\nuphus-mcp.exe`]
+    ? [
+      path.join(root, "@nuphus", "nuphus-mcp", "node_modules", "@nuphus", name, "bin", bin),
+      path.join(root, "@nuphus", name, "bin", bin),
+      path.join(root, name, "bin", bin),
+      path.join(toolsRoot(), "nuphus", bin),
+    ]
     : [];
   for (const candidate of candidates) {
     try {
@@ -94,7 +110,7 @@ export function nuphusBinary() {
 // 引擎以命令行方式用时才拉起 nuphus，35 个工具 schema 不进上下文，回复速度不受影响。
 export function nuphusCallHelper() {
   const tools = toolsRoot();
-  const candidate = `${tools}\\nuphus-call.mjs`;
+  const candidate = path.join(tools, "nuphus-call.mjs");
   try {
     return tools && fs.existsSync(candidate) ? candidate : "";
   } catch {
@@ -105,17 +121,17 @@ export function nuphusCallHelper() {
 // Codex 子进程的完整环境：PATH + NODE_PATH，让引擎能直接使用已装自动化工具。
 // 同时把 CloakBrowser/playwright 的缓存指向应用内置目录，打包后随应用走。
 export function toolchainEnv() {
-  const env: Record<string, string> = { ...process.env, PATH: augmentedPath() };
+  const env: Record<string, string> = { ...process.env, PATH: augmentedPath(), NO_UPDATE_NOTIFIER: "1" };
   const nodePath = npmGlobalRoot();
   if (nodePath) env.NODE_PATH = nodePath;
   const tools = toolsRoot();
   if (tools) {
     const realPwsh = path.join(tools, "pwsh", "pwsh.exe");
     if (fs.existsSync(realPwsh)) env.CODEX_REAL_PWSH = realPwsh;
-    env.CLOAKBROWSER_CACHE_DIR = `${tools}\\cloak-cache`;
-    env.CLOAKBROWSER_AUTO_UPDATE = "0";
-    env.PLAYWRIGHT_BROWSERS_PATH = `${tools}\\pw-browsers`;
-    const python = path.join(tools, "python", "python.exe");
+    env.CLOAKBROWSER_CACHE_DIR = path.join(tools, "cloak-cache");
+    env.CLOAKBROWSER_AUTO_UPDATE = "false";
+    env.PLAYWRIGHT_BROWSERS_PATH = path.join(tools, "pw-browsers");
+    const python = bundledPython();
     if (fs.existsSync(python)) {
       env.PYTHON = python;
       env.PYTHONHOME = path.join(tools, "python");
@@ -133,13 +149,13 @@ export function toolchainEnv() {
 // CloakBrowser Chromium 内核缓存目录（resources/tools/cloak-cache，随应用打包）。
 export function cloakCacheDir() {
   const tools = toolsRoot();
-  return tools ? `${tools}\\cloak-cache` : "";
+  return tools ? path.join(tools, "cloak-cache") : "";
 }
 
 // 内置 pwsh 完整路径；没有则返回空串
 export function bundledPwsh() {
   const tools = toolsRoot();
-  const candidate = `${tools}\\pwsh\\pwsh.exe`;
+  const candidate = path.join(tools, "pwsh", process.platform === "win32" ? "pwsh.exe" : "pwsh");
   try {
     return fs.existsSync(candidate) ? candidate : "";
   } catch {
@@ -150,7 +166,7 @@ export function bundledPwsh() {
 // 内置 node 完整路径（主进程 spawn helper 脚本用）；没有则返回空串
 export function bundledNode() {
   const tools = toolsRoot();
-  const candidate = `${tools}\\node\\node.exe`;
+  const candidate = process.platform === "win32" ? path.join(tools, "node", "node.exe") : path.join(tools, "node", "bin", "node");
   try {
     return fs.existsSync(candidate) ? candidate : "";
   } catch {
@@ -161,7 +177,9 @@ export function bundledNode() {
 /** 内置 MinGit 入口；没有安装时返回空串。 */
 export function bundledGit() {
   const tools = toolsRoot();
-  const candidates = [path.join(tools, "git", "cmd", "git.exe"), path.join(tools, "git", "bin", "git.exe")];
+  const candidates = process.platform === "win32"
+    ? [path.join(tools, "git", "cmd", "git.exe"), path.join(tools, "git", "bin", "git.exe")]
+    : [path.join(tools, "git", "bin", "git"), path.join(tools, "bin", "git")];
   for (const candidate of candidates) {
     try { if (tools && fs.existsSync(candidate)) return candidate; } catch { /* 不存在 */ }
   }
@@ -171,12 +189,12 @@ export function bundledGit() {
 /** 内置 Python 解释器；没有安装时返回空串。 */
 export function bundledPython() {
   const tools = toolsRoot();
-  const candidate = path.join(tools, "python", "python.exe");
+  const candidate = process.platform === "win32" ? path.join(tools, "python", "python.exe") : path.join(tools, "python", "bin", "python3");
   try { return tools && fs.existsSync(candidate) ? candidate : ""; } catch { return ""; }
 }
 
 // CloakBrowser 常驻助手脚本（stdin 喂 URL，驱动指纹浏览器窗口）。
 export function cloakOpenHelper() {
   const tools = toolsRoot();
-  return tools ? `${tools}\\cloak-open.mjs` : "";
+  return tools ? path.join(tools, "cloak-open.mjs") : "";
 }

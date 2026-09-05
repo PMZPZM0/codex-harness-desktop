@@ -1415,7 +1415,7 @@ ipcMain.handle("app:doctor", async (_event, input: { cwd?: string } = {}) => {
     detail: log ? `${path.basename(log.path)} · ${sizeLabel(log.size)}${log.size > 200 * 1024 * 1024 ? "（偏大，可在设置里清理 codex-home）" : ""}` : "暂无日志文件",
   });
   const toolRoot = toolsRoot();
-  const modulesDir = toolRoot ? `${toolRoot}\\npm-global\\node_modules` : "";
+  const modulesDir = npmGlobalRoot();
   checks.push({
     label: "自动化工具链", ok: Boolean(modulesDir) && existsSync(modulesDir),
     detail: modulesDir ? `${modulesDir}${existsSync(modulesDir) ? " · 已安装" : " · 未安装（npm 包缺失）"}` : "未找到 resources/tools",
@@ -1722,7 +1722,7 @@ ipcMain.handle("tools:status", () => {
     catch { return ""; }
   };
   const root = toolsRoot();
-  const modules = root ? `${root}\\npm-global\\node_modules` : "";
+  const modules = npmGlobalRoot();
   const nuphusBin = nuphusBinary();
   // CloakBrowser 内核优先查应用内置缓存，兼容旧的用户目录缓存
   const cloakDirs = [cloakCacheDir(), path.join(os.homedir(), ".cloakbrowser")].filter(Boolean);
@@ -1733,22 +1733,23 @@ ipcMain.handle("tools:status", () => {
   return [
     {
       id: "nuphus-mcp", name: "Nuphus 桌面自动化", scope: "computer",
-      version: modules ? readVersion(`${modules}\\@nuphus\\nuphus-mcp\\package.json`) : "",
+      version: modules ? readVersion(path.join(modules, "@nuphus", "nuphus-mcp", "package.json")) : "",
       installed: Boolean(nuphusBin), binaryReady: Boolean(nuphusBin),
       detail: nuphusBin ? "35 个桌面/浏览器自动化工具就绪（屏幕、窗口、键鼠、剪贴板、OCR、Chrome CDP），经 nuphus-call 按需调用，不占模型上下文" : "未安装：运行 scripts/install-automation.cjs",
       command: nuphusBin,
     },
     {
       id: "playwright-cli", name: "Playwright 浏览器自动化", scope: "browser",
-      version: modules ? readVersion(`${modules}\\@playwright\\cli\\package.json`) : "",
-      installed: modules ? existsSync(`${modules}\\@playwright\\cli\\package.json`) : false, binaryReady: true,
+      version: modules ? readVersion(path.join(modules, "@playwright", "cli", "package.json")) : "",
+      installed: modules ? existsSync(path.join(modules, "@playwright", "cli", "package.json")) : false,
+      binaryReady: existsSync(path.join(root, "pw-browsers")) && readdirSync(path.join(root, "pw-browsers")).some((entry) => entry.startsWith("chromium-")),
       detail: "命令行浏览器自动化：open / snapshot / click / type / screenshot，首次 open 时自动下载浏览器内核",
       command: "playwright-cli",
     },
     {
       id: "cloakbrowser", name: "CloakBrowser 指纹浏览器", scope: "browser",
-      version: modules ? readVersion(`${modules}\\cloakbrowser\\package.json`) : "",
-      installed: modules ? existsSync(`${modules}\\cloakbrowser\\package.json`) : false,
+      version: modules ? readVersion(path.join(modules, "cloakbrowser", "package.json")) : "",
+      installed: modules ? existsSync(path.join(modules, "cloakbrowser", "package.json")) : false,
       binaryReady: cloakBinary,
       detail: cloakBinary ? "反检测 Chromium 内核已就绪（resources/tools/cloak-cache，随应用内置）" : "npm 包已装，Chromium 内核未下载（node scripts/download-cloak.cjs）",
       command: "cloakbrowser",
@@ -1843,12 +1844,13 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
       await runRuntimeInstaller(id, runtimeInstaller("install-automation.cjs"), [], bundledNode());
     } else if (id === "playwright-browsers") {
       // 用内置 Python 的 playwright 下载 Chromium 到 pw-browsers（toolchainEnv 已注入 PLAYWRIGHT_BROWSERS_PATH）
-      const py = path.join(toolsRoot(), "python", "python.exe");
-      if (!existsSync(py)) throw new Error("缺少内置 Python，请先安装 Python + pip");
+      const node = bundledNode();
+      const cli = path.join(npmGlobalRoot(), "@playwright", "cli", "node_modules", "playwright", "cli.js");
+      if (!node || !existsSync(cli)) throw new Error("缺少内置 Playwright，请重新安装应用工具包");
       await new Promise<void>((resolve, reject) => {
-        const child = spawn(py, ["-m", "playwright", "install", "chromium"], {
+        const child = spawn(node, [cli, "install", "chromium"], {
           windowsHide: true,
-          env: { ...process.env, TOOLS_ROOT: toolsRoot(), PLAYWRIGHT_BROWSERS_PATH: path.join(toolsRoot(), "pw-browsers") },
+          env: toolchainEnv(),
         });
         let tail = "";
         const report = (chunk: Buffer | string) => {
@@ -1902,7 +1904,11 @@ ipcMain.handle("browser:open-cloak", (_event, url: string) => {
       const text = chunk.toString().trim();
       if (text) cloakStatus = { event: "error", message: text.slice(0, 300) };
     });
-    cloakProc.once("exit", () => { cloakStatus = { event: "exit" }; cloakProc = null; });
+    cloakProc.once("error", (error) => { cloakStatus = { event: "error", message: error.message }; cloakProc = null; });
+    cloakProc.once("exit", (code) => {
+      if (cloakStatus.event !== "error") cloakStatus = { event: "exit", ...(code ? { message: `浏览器进程退出（${code}）` } : {}) };
+      cloakProc = null;
+    });
     cloakProc.stdin?.on("error", () => { /* EPIPE：进程刚退出 */ });
     cloakStatus = { event: "launching" };
   }
