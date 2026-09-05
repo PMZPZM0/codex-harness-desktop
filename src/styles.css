@@ -3419,6 +3419,14 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   color: var(--text);
   outline: 0;
 }
+/* 命令中文注释：弱化二列文字，与命令名区分层级 */
+.command-palette .command-desc {
+  color: var(--faint);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .command-palette code {
   color: var(--text);
   font:
@@ -7933,37 +7941,6 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
 }
 .engine-update-ok {
   color: #30a46c;
-}
-.engine-proxy-row {
-  border-top: 1px dashed var(--line);
-  margin-top: 12px;
-  padding-top: 10px;
-  align-items: center;
-  gap: 8px;
-  display: flex;
-}
-.engine-proxy-label {
-  color: var(--faint);
-  font-size: 11px;
-  flex: none;
-}
-.engine-proxy-row input {
-  border: 1px solid var(--line);
-  background: var(--bg);
-  border-radius: 7px;
-  min-height: 28px;
-  padding: 0 10px;
-  font-size: 11px;
-  color: var(--text);
-  min-width: 0;
-  flex: 1;
-  outline: none;
-}
-.engine-proxy-row input:focus {
-  border-color: var(--accent);
-}
-.engine-proxy-row .icon-button {
-  flex: none;
 }
 
 /* 设置 · 开发工具：内置运行时与按需下载项。 */

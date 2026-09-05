@@ -4436,7 +4436,6 @@ export default function App() {
 
   // —— Codex 引擎更新（设置 → 控制台底部） ——
   const [engineVersion, setEngineVersion] = useState("");
-  const [engineProxyDraft, setEngineProxyDraft] = useState("");
   const [engineCheck, setEngineCheck] = useState<{ state: "idle" | "checking" | "latest" | "available" | "error"; latest?: string; message?: string }>({ state: "idle" });
   const [engineUpdating, setEngineUpdating] = useState(false);
   const [engineUpdateLog, setEngineUpdateLog] = useState<string[]>([]);
@@ -4445,7 +4444,6 @@ export default function App() {
   const [engineUpdateResult, setEngineUpdateResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [relaunchCountdown, setRelaunchCountdown] = useState<number | null>(null);
   useEffect(() => { void window.codex.engineInfo().then((info) => setEngineVersion(info.version)).catch(() => undefined); }, []);
-  useEffect(() => { void window.codex.readAppSettings().then((settings) => setEngineProxyDraft(settings.engineProxyUrl ?? "")).catch(() => undefined); }, []);
   useEffect(() => window.codex.onEngineUpdateProgress((event) => {
     const stageTextMap: Record<string, string> = { wait: "等待当前任务结束…", query: "查询最新版本…", download: `下载引擎包 ${Math.round((event.percent ?? 0) * 100)}%`, extract: "解压引擎包…", verify: "校验新引擎…", replace: "替换引擎文件…", done: "更新完成" };
     const text = event.stage === "download" ? stageTextMap.download : (stageTextMap[event.stage] || event.detail || event.stage);
@@ -4494,12 +4492,6 @@ export default function App() {
     } finally {
       setEngineUpdating(false);
     }
-  };
-  const saveEngineProxy = () => {
-    const value = engineProxyDraft.trim();
-    void window.codex.saveAppSettings({ engineProxyUrl: value })
-      .then(() => setNotice(value ? "引擎更新代理已保存" : "代理已清空，将优先走国内镜像直连"))
-      .catch(() => setNotice("代理保存失败"));
   };
 
   // —— SSH 服务器连接管理 ——
@@ -5788,6 +5780,8 @@ export default function App() {
       efforts: m?.efforts?.length ? m.efforts : [...CUSTOM_MODEL_EFFORTS],
     },
   });
+  // 编辑器标题里显示的供应商名：编辑已存供应商时显示它的名字，防止同名模型改错供应商
+  const targetProviderHint = modelEditor?.originalId && (customModel?.models ?? []).some((m) => m.id === modelEditor.originalId) && customModel?.provider !== customDraft.provider ? customModel?.name : "";
   const saveModelEditor = async () => {
     if (!modelEditor) return;
     const id = modelEditor.draft.id.trim();
@@ -5913,12 +5907,17 @@ export default function App() {
   const toggleAllSidebarSections = viewTab === "groups" ? toggleAllGroups : toggleAllProjects;
   // 「清空当前视图」批量删除按钮已下架（2026-09-04 反馈：侧栏顶部太容易误触）。
   // purgeCurrentTab / currentTabIds 一并移除；批量删除能力保留在单条任务右键/菜单里。
-  const commandMatches = useMemo(() => {
+/** 常用命令置顶顺序（用户高频：模型/思考/计划/目标/压缩优先） */
+const COMMON_COMMAND_ORDER = ["plan", "goal", "model", "effort", "compact", "new", "resume", "review", "status", "help"];
+const commandMatches = useMemo(() => {
     if (!prompt.startsWith("/") || prompt.includes(" ")) return [];
     const query = prompt.slice(1).toLowerCase();
     const matches = slashCommands.filter(([name, description]) => name.includes(query) || description.includes(query));
-    // 前缀命中排前（打 /p 时 plan 置顶），全部展示——菜单本身可滚动，不再裁 9 条
-    return matches.sort((a, b) => Number(b[0].startsWith(query)) - Number(a[0].startsWith(query)));
+    // 排序：① 前缀命中排前（打 /p 时 plan 置顶）；② 同级按常用度（COMMON_COMMAND_ORDER）；③ 其余按目录序
+    const commonRank = (name: string) => { const i = COMMON_COMMAND_ORDER.indexOf(name); return i === -1 ? COMMON_COMMAND_ORDER.length : i; };
+    return matches.sort((a, b) =>
+      Number(b[0].startsWith(query)) - Number(a[0].startsWith(query))
+      || commonRank(a[0]) - commonRank(b[0]));
   }, [prompt]);
   const availableContextItems = useMemo(() => {
     if (!thread) return [];
@@ -9413,6 +9412,7 @@ export default function App() {
           <button className={`view-tab ${viewTab === "groups" ? "active" : ""}`} onClick={() => setViewTab("groups")} title="按时间分组"><Hash size={14} /><span>分组</span></button>
           <button className={`view-tab ${viewTab === "projects" ? "active" : ""}`} onClick={() => setViewTab("projects")} title="按项目分组"><FolderOpen size={14} /><span>项目</span></button>
           <div className="view-toolbar">
+            <button className="view-toolbar-btn" title="刷新会话列表" onClick={() => { void refreshThreads(); }}><ListRestart size={14} /></button>
             <button className="view-toolbar-btn" title={sidebarAllCollapsed ? "全部展开" : "全部折叠"} onClick={toggleAllSidebarSections} disabled={viewTab === "groups" ? !groupedThreads.length : !projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
           </div>
         </div>
@@ -9827,7 +9827,7 @@ export default function App() {
           {thread && <QueuedMessageList entries={queue} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />}
           {/* 图片以内联 chip 展示（composer-input-shell 内），此处只保留文件附件条 */}
           {files.length > 0 && <div className="attachment-strip">{files.map((path) => <div className="file-attachment" key={path}><FileCode2 size={18} /><span>{basename(path)}</span><button title="移除" onClick={() => setFiles(files.filter((entry) => entry !== path))}><X size={13} /></button></div>)}</div>}
-          {commandMatches.length > 0 && <div className="command-palette" role="listbox" aria-label="Codex 指令">{commandMatches.map(([name, description]) => <button type="button" role="option" key={name} onClick={() => { if (["rename", "review", "goal", "plan", "effort", "personality", "sandbox", "approval", "fork"].includes(name)) setPrompt(`/${name} `); else void runSlashCommand(`/${name}`); }}><code>/{name}</code><span>{description}</span></button>)}</div>}
+          {commandMatches.length > 0 && <div className="command-palette" role="listbox" aria-label="Codex 指令">{commandMatches.map(([name, description]) => <button type="button" role="option" key={name} onClick={() => { if (["rename", "review", "goal", "plan", "effort", "personality", "sandbox", "approval", "fork"].includes(name)) setPrompt(`/${name} `); else void runSlashCommand(`/${name}`); }}><code>/{name}</code><span className="command-desc">{description}</span></button>)}</div>}
           {contextOpen && <div className="context-picker" role="listbox" aria-label="引用本次对话上下文">
             <div className="context-picker-head"><span>引用本次对话</span><small>选择后会随本条消息发送</small></div>
             {availableContextItems.length ? availableContextItems.map((item) => <button type="button" role="option" key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => addContextItem(item)}><b>{item.role}</b><span>{item.text}</span></button>) : <p>没有匹配的历史消息</p>}
@@ -10657,11 +10657,7 @@ export default function App() {
                   )}
                   {engineUpdateResult && !engineUpdateResult.ok && <p className="settings-card-hint engine-update-error">更新失败：{engineUpdateResult.message}（旧引擎已回滚，应用不受影响，可重试）</p>}
                   {relaunchCountdown != null && <p className="settings-card-hint engine-update-ok">✅ 引擎更新完成，{relaunchCountdown} 秒后自动重启应用生效…</p>}
-                  <div className="engine-proxy-row">
-                    <span className="engine-proxy-label">下载代理</span>
-                    <input value={engineProxyDraft} onChange={(event) => setEngineProxyDraft(event.target.value)} placeholder="http://127.0.0.1:7890（留空优先走国内镜像）" />
-                    <button className="icon-button" title="保存代理设置" onClick={saveEngineProxy}><Check size={14} /></button>
-                  </div>
+                  <p className="settings-card-hint">下载默认跟随本地网络：优先国内镜像直连，检测到系统代理时自动走代理，无需手动配置。</p>
                 </div>
               </div>
             </section>}
@@ -10893,7 +10889,7 @@ export default function App() {
               </div>
               {modelEditor && <div className="modal-backdrop model-editor-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setModelEditor(null); }}>
                 <div className="model-editor-modal">
-                  <header><strong>{modelEditor.mode === "edit" ? "编辑模型配置" : "添加模型"}</strong><button className="icon-button" onClick={() => setModelEditor(null)}><X size={15} /></button></header>
+                  <header><strong>{modelEditor.mode === "edit" ? "编辑模型配置" : "添加模型"}{editingProvider || targetProviderHint ? ` · ${customDraft.name || editingProvider || targetProviderHint}` : ""}</strong><button className="icon-button" onClick={() => setModelEditor(null)}><X size={15} /></button></header>
                   <label className="provider-field"><span>模型 ID</span><input list="provider-model-options" autoFocus value={modelEditor.draft.id} onChange={(event) => setModelEditor({ ...modelEditor, draft: { ...modelEditor.draft, id: event.target.value } })} placeholder="deepseek-v4-flash" /></label>
                   <datalist id="provider-model-options">{modelSuggestions.map((option) => <option key={option} value={option} />)}</datalist>
                   <label className="provider-field"><span>上下文窗口</span><input type="number" min="1024" step="1024" value={modelEditor.draft.contextWindow} onChange={(event) => setModelEditor({ ...modelEditor, draft: { ...modelEditor.draft, contextWindow: event.target.value } })} placeholder="1000000" /></label>
