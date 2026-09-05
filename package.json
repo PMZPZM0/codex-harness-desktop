@@ -1,6 +1,6 @@
 {
   "name": "codex-harness-desktop",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": true,
   "description": "Independent desktop harness for OpenAI Codex",
   "main": "dist-electron/main.js",
@@ -27,12 +27,14 @@
     "verify:watchdog": "node scripts/check-watchdog.cjs",
     "verify:path-extractor": "node scripts/verify-file-path-extractor.mjs",
     "verify:lifecycle": "node scripts/check-lifecycle.cjs && node scripts/check-engine-cleanup.cjs",
+    "engine:upgrade": "node scripts/upgrade-codex-engine.cjs",
+    "engine:verify": "node scripts/upgrade-codex-engine.cjs --verify-only",
     "start": "electron .",
     "dist": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
     "@lydell/node-pty": "^1.2.0-beta.15",
-    "@openai/codex": "^0.150.1",
+    "@openai/codex": "^0.153.4",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/ssh2": "^1.15.5",
     "@xterm/addon-fit": "^0.11.0",

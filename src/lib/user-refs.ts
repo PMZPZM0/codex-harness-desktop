@@ -1,6 +1,7 @@
 // 用户消息文本解析：把 userMessage 文本中的"附件/技能/上下文/SYSTEM TASK"等约定引用段
 // 剥离为结构化字段，留下对外展示用的 cleanText。
 // 纯函数、零 React 依赖，可独立编译跑 node:test（scripts/verify-user-refs.mjs）。
+import { stripImageTokens } from "./prompt-images";
 
 /** 引用会话记录协议块的载荷：id=源会话 ID，note=折叠卡备注行（必须单行），content=记录全文。 */
 export type ThreadReferencePayload = { id: string; note: string; content: string };
@@ -97,13 +98,15 @@ export function parseUserRefs(text: string): ParsedUserRefs {
   return { cleanText: clean.replace(/\n{3,}/g, "\n\n").trim(), files, skills, contexts, teamTask, imported, threadReferences };
 }
 
-/** 用户消息对外可见文本（复制/引用/标题/上下文选择使用）：
+/** 用户消息对外可见文本（复制/引用/标题/上下文选择/乐观消息匹配键使用）：
  *  团队/成员会话首条的 SYSTEM TASK 段已整体折叠为"用户原文 + 系统任务指令卡片"，返回的就是用户真正写的字。
- *  普通消息走 parseUserRefs.cleanText（附件/技能/上下文段也被剥离，因为 UI 上它们是独立卡片而非气泡正文）。 */
+ *  普通消息走 parseUserRefs.cleanText（附件/技能/上下文段也被剥离，因为 UI 上它们是独立卡片而非气泡正文）。
+ *  内联图片占位符 [图片:...] 只属于气泡内的 chip 渲染，对外文本一律剥掉——
+ *  历史消息（占位符时代发送的）同样在此收敛；userMessageMatchesInput 两侧都过本函数，剥离保持对称。 */
 export function userDisplayText(rawText: string): string {
   const refs = parseUserRefs(rawText);
-  if (refs.teamTask) return refs.teamTask.requirement;
-  return refs.cleanText;
+  const text = refs.teamTask ? refs.teamTask.requirement : refs.cleanText;
+  return stripImageTokens(text);
 }
 
 /** 判断服务端落地的 userMessage 是否对应本地乐观 input。

@@ -196,6 +196,14 @@ contextBridge.exposeInMainWorld("codex", {
   shellReveal: (target: string) => ipcRenderer.invoke("shell:reveal", target),
   doctor: (cwd?: string) => ipcRenderer.invoke("app:doctor", { cwd }),
   engineInfo: () => ipcRenderer.invoke("app:engine-info"),
+  engineCheckUpdate: () => ipcRenderer.invoke("engine:check-update"),
+  enginePerformUpdate: () => ipcRenderer.invoke("engine:perform-update"),
+  relaunchApp: () => ipcRenderer.invoke("app:relaunch"),
+  onEngineUpdateProgress: (listener: (event: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: unknown) => listener(value);
+    ipcRenderer.on("engine:update:progress", handler);
+    return () => ipcRenderer.removeListener("engine:update:progress", handler);
+  },
   readBuiltinPlugins: () => ipcRenderer.invoke("builtin:read"),
   saveBuiltinPlugins: (cfg: unknown) => ipcRenderer.invoke("builtin:save", cfg),
   probeBuiltinModels: (input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) => ipcRenderer.invoke("builtin:probe", input),

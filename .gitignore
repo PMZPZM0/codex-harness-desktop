@@ -6,6 +6,8 @@ dist/
 dist-electron/
 release/
 release-*/
+# 发布站源码纳入版本控制（.env 与数据文件由 release-site/.gitignore 排除）
+!release-site/
 *.tsbuildinfo
 
 # 会话数据导出备份（引擎原档 jsonl/整包，含本机对话内容，不纳入 git）

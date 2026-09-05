@@ -16,7 +16,8 @@ export const DEFAULT_EFFORT = "high";
  * 也从同一 efforts 收口——两处同源，引擎按 catalog 校验 effort。
  * GPT 系模型可声明 minimal/xhigh/ultra 更多档位。
  */
-export const ALL_EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "ultra"] as const;
+// 显示顺序 = 强度递增：极少 低 中 高 最高 max——「最高」排在 max 之前（2026-09-04 用户要求）。
+export const ALL_EFFORTS = ["minimal", "low", "medium", "high", "ultra", "xhigh"] as const;
 export const CUSTOM_MODEL_EFFORTS = ["low", "medium", "high"] as const;
 
 /** 非法/历史遗留档位值归一：空值原样返回（表示未设置），不认识的回退默认档。 */

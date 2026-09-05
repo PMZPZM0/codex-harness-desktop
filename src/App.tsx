@@ -8,9 +8,10 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { codeFontStack, codeFonts, codePreviewSnippet, codeThemeStyle, codeThemes } from "./lib/code-themes";
 import { codeFontSize, useCodeSettings } from "./lib/code-settings";
 import { DEFAULT_EFFORT, pickDefaultEffort, CUSTOM_MODEL_EFFORTS, normalizeEffort, ALL_EFFORTS } from "./lib/effort";
+import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
 import { resolveSkillVisual, type SkillVisual } from "./lib/skill-icon";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "./lib/entity-avatar";
-import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens, insertImageToken, removeImageToken } from "./lib/prompt-images";
+import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens } from "./lib/prompt-images";
 import {
   AlertTriangle,
   Archive,
@@ -71,7 +72,6 @@ import {
   Send,
   Settings2,
   Shield,
-  SlidersHorizontal,
   Smartphone,
   ShieldCheck,
   Sparkles,
@@ -93,8 +93,10 @@ import {
   BookmarkPlus,
   Home,
   CircleCheck,
+  CircleX,
   ZoomIn,
   ZoomOut,
+  ListRestart,
   Keyboard,
   Server,
   WifiOff,
@@ -103,6 +105,7 @@ import {
   BookMarked,
   Users,
   ListChecks,
+  LoaderCircle,
   GitPullRequest,
   ShieldAlert,
   RotateCcw,
@@ -203,6 +206,9 @@ function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: 
           {busy ? <><Spinner />正在探测模型…</> : <><KeyRound size={15} />探测并登录</>}
         </button>
         <button className="ghost login-skip" onClick={onSkip}><WifiOff size={14} />暂时不登录，直接进入</button>
+        <a className="login-sponsor-link" href="https://api.pptoken.cc/register?aff=X82JSNVC3W3S" onClick={(event) => { event.preventDefault(); void window.codex.openExternal("https://api.pptoken.cc/register?aff=X82JSNVC3W3S"); }}>
+          <Rocket size={12} />没有 API Key？注册 PPtoken 领取体验额度<ExternalLink size={11} />
+        </a>
         <div className="login-foot">探测成功后会自动导入模型并完成配置</div>
       </div>
     </div>
@@ -253,7 +259,7 @@ type ThreadItem = { id: string; type: string; [key: string]: any };
 type Turn = { id: string; status: string; items: ThreadItem[]; error?: { message?: string } | null; durationMs?: number | null; startedAt?: number | null; completedAt?: number | null; usage?: any };
 type Thread = { id: string; preview: string; name?: string | null; cwd: string; updatedAt: number; status: any; turns: Turn[] };
 type PendingRequest = { id: string | number; method: string; params: any };
-type SystemEvent = { id: string; title: string; text: string; tone?: "info" | "warning" | "error" | "success"; hookKey?: string; at?: number; kind?: "compact" };
+type SystemEvent = { id: string; title: string; text: string; tone?: "info" | "warning" | "error" | "success"; hookKey?: string; at?: number };
 // —— 导入会话记录的待发送存储：threadId -> 外部 .md 对话记录 ——
 // 与 expert-pending-roles 同一思路：导入后立刻新建命名空会话并跳转到对话框，记录不立即发送，
 // 等用户发出该会话第一条消息时才随消息附上（界面折叠成「导入的会话记录」可展开卡）。
@@ -444,10 +450,11 @@ const builtinCommandCatalog: BuiltinCommandDef[] = [
   { name: "cd", description: "更换当前工作目录", hint: "[目录]", category: "上下文与状态" },
   { name: "queue", description: "查看待处理的消息队列", category: "上下文与状态" },
   { name: "memory", description: "打开记忆管理，查看或新增记忆", category: "上下文与状态" },
-  { name: "goal", description: "查看或设置长期目标", hint: "[条件 | clear]", category: "上下文与状态" },
+  { name: "plan", description: "计划模式：先调研输出方案，确认后执行", hint: "<任务描述>", category: "运行控制" },
+  { name: "goal", description: "目标模式：朝目标自动持续推进直至达成", hint: "<目标 | clear>", category: "运行控制" },
   // 模型与权限
   { name: "model", description: "模型与思考设置", category: "模型与权限" },
-  { name: "effort", description: "切换真实思考强度", hint: "[低|中|高|最高]", category: "模型与权限" },
+  { name: "effort", description: "切换真实思考强度", hint: "[极少|低|中|高|max|最高]", category: "模型与权限" },
   { name: "personality", description: "切换回复风格", hint: "[务实|友好|默认]", category: "模型与权限" },
   { name: "permissions", description: "运行权限设置", category: "模型与权限" },
   { name: "sandbox", description: "切换沙箱执行范围", hint: "[只读|工作区可写|完全访问]", category: "模型与权限" },
@@ -474,7 +481,7 @@ const effortLabels: Record<string, string> = {
   low: "低",
   medium: "中",
   high: "高",
-  xhigh: "最高",
+  xhigh: "max",
   ultra: "最高",
 };
 
@@ -1398,62 +1405,122 @@ function ThreadFilePicker({ query, onQuery, candidates, onPick, onClose }: { que
   );
 }
 
-function ComposerInlineImages({ prompt, onRemove, onPreview }: { prompt: string; onRemove: (path: string) => void; onPreview: (path: string) => void }) {
-  const [hovered, setHovered] = useState<string | null>(null);
-  const segments = useMemo(() => splitPromptSegments(prompt).filter((seg) => seg.kind === "image"), [prompt]);
-  if (!segments.length) return null;
+/** WorkBuddy 式输入框（contentEditable）：文本与图片 chip 真正内联在文字流里，
+ *  chip 粘贴/插入在光标处，退格可整体删除。prompt 仍以 [图片:路径] 占位符为数据源
+ *  （prompt-images.ts 管线与发送组装零改动），DOM 只是它的可编辑视图。
+ *  非受控：仅当外部 value 与 DOM 序列化结果不一致（发送清空/切会话/增强/斜杠命令）
+ *  才重建 DOM；用户输入只做 DOM→prompt 序列化回流，绝不反向覆盖正在编辑的 DOM。 */
+function ComposerEditor({ value, placeholder, editorRef, domValueRef, makeChip, onValueInput, onKeyDown, onBlur, onPasteImage }: {
+  value: string;
+  placeholder: string;
+  editorRef: { current: HTMLDivElement | null };
+  domValueRef: { current: string | null };
+  makeChip: (path: string) => HTMLElement;
+  onValueInput: (value: string) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
+  onBlur: () => void;
+  onPasteImage: (text: string) => void;
+}) {
+  useLayoutEffect(() => {
+    const el = editorRef.current;
+    if (!el || domValueRef.current === value) return;
+    rebuildComposerDom(el, value, makeChip);
+    domValueRef.current = value;
+    // 重建后光标放回末尾（外部置值场景：斜杠命令追加、发送清空等）
+    const selection = window.getSelection();
+    if (selection && document.activeElement === el) {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  }, [value, editorRef, domValueRef, makeChip]);
   return (
-    <div className="composer-inline-images" aria-label="输入框内联图片">
-      {segments.map((seg) => {
-        if (seg.kind !== "image") return null;
-        const path = seg.path;
-        const name = basename(path);
-        const isHovered = hovered === path;
-        return (
-          <span
-            className={`composer-image-chip ${isHovered ? "hovered" : ""}`}
-            key={path}
-            onMouseEnter={() => setHovered(path)}
-            onMouseLeave={() => setHovered((current) => current === path ? null : current)}
-            onClick={(event) => { event.preventDefault(); event.stopPropagation(); onPreview(path); }}
-            role="button"
-            tabIndex={0}
-            aria-label={`图片 ${name}`}
-            onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onPreview(path); } }}
-          >
-            {isHovered && <ComposerImageTooltip path={path} alt={name} />}
-            <span className="composer-image-chip-icon"><Image size={12} /></span>
-            <span className="composer-image-chip-name">{name}</span>
-            <button
-              type="button"
-              className="composer-image-chip-close"
-              aria-label={`移除 ${name}`}
-              title="移除图片"
-              onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
-              onClick={(event) => { event.preventDefault(); event.stopPropagation(); onRemove(path); }}
-            ><X size={10} /></button>
-          </span>
-        );
-      })}
-    </div>
+    <div
+      ref={editorRef}
+      className="composer-editor"
+      contentEditable="plaintext-only"
+      suppressContentEditableWarning
+      role="textbox"
+      aria-multiline="true"
+      aria-label={placeholder}
+      data-placeholder={placeholder}
+      onInput={(event) => {
+        const el = event.currentTarget;
+        let next = serializeComposerDom(el);
+        // 全删后可能残留孤立 <br>：清成真正 empty，让 :empty 占位符与发送守卫都成立
+        if (!next.trim() && !promptImagePaths(next).length) { el.innerHTML = ""; next = ""; }
+        domValueRef.current = next;
+        onValueInput(next);
+      }}
+      onKeyDown={onKeyDown}
+      onBlur={onBlur}
+      onPaste={(event) => {
+        const imageFile = [...event.clipboardData.files].find((file) => file.type.startsWith("image/"));
+        if (!imageFile) return; // 纯文本粘贴交给 plaintext-only 原生行为（自动去富文本格式）
+        event.preventDefault();
+        onPasteImage(event.clipboardData.getData("text/plain"));
+      }}
+    />
   );
 }
 
-/** 悬停预览卡：先在屏外预加载图片，加载完成才显示浮层（WorkBuddy deferred preview 同款思路）。 */
-function ComposerImageTooltip({ path, alt }: { path: string; alt: string }) {
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    const img = new window.Image();
-    img.onload = () => setReady(true);
-    img.src = imageUrl(path);
-    return () => { img.onload = null; };
-  }, [path]);
-  if (!ready) return null;
-  return (
-    <span className="composer-image-tooltip" role="presentation">
-      <img src={imageUrl(path)} alt={alt} />
-    </span>
-  );
+/** 序列化输入框 DOM 为 prompt 字符串：文本节点原样、图片 chip 还原为占位符、
+ *  BR/块级边界还原为换行。与 rebuildComposerDom 近似互逆（经 splitPromptSegments）。 */
+function serializeComposerDom(root: HTMLElement): string {
+  let out = "";
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) { out += node.textContent ?? ""; return; }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const el = node as HTMLElement;
+    const imagePath = el.getAttribute("data-image-path");
+    if (imagePath != null) { out += imageToken(imagePath); return; }
+    if (el.tagName === "BR") { out += "\n"; return; }
+    for (const child of Array.from(el.childNodes)) walk(child);
+    if (el.tagName === "DIV" || el.tagName === "P") out += "\n";
+  };
+  for (const child of Array.from(root.childNodes)) walk(child);
+  return out.replace(/\n$/, "");
+}
+
+/** 从占位符字符串重建输入框 DOM：文本段按行拆 <br>，图片段生成内联 chip。 */
+function rebuildComposerDom(root: HTMLElement, value: string, makeChip: (path: string) => HTMLElement) {
+  root.textContent = "";
+  for (const seg of splitPromptSegments(value)) {
+    if (seg.kind === "image") { root.appendChild(makeChip(seg.path)); continue; }
+    seg.text.split("\n").forEach((line, index) => {
+      if (index > 0) root.appendChild(document.createElement("br"));
+      if (line) root.appendChild(document.createTextNode(line));
+    });
+  }
+}
+
+const COMPOSER_CHIP_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>';
+
+/** 生成内联图片 chip（contenteditable=false）：点主体预览，点 X 删除。
+ *  全部原生 DOM：输入框 DOM 由用户编辑与重建函数共同维护，不经 React 渲染。 */
+function createInlineImageChip(path: string, onRemove: (path: string) => void, onPreview: (path: string) => void, onChange: () => void): HTMLElement {
+  const chip = document.createElement("span");
+  chip.className = "composer-image-chip-inline";
+  chip.setAttribute("contenteditable", "false");
+  chip.setAttribute("data-image-path", path);
+  chip.innerHTML = `<span class="composer-image-chip-icon">${COMPOSER_CHIP_ICON}</span><span class="composer-image-chip-name"></span><button type="button" class="composer-image-chip-close" title="移除图片">×</button>`;
+  chip.querySelector(".composer-image-chip-name")!.textContent = basename(path);
+  // 阻止 mousedown 默认行为：点 chip 不丢编辑光标
+  chip.addEventListener("mousedown", (event) => event.preventDefault());
+  chip.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if ((event.target as HTMLElement).closest(".composer-image-chip-close")) {
+      chip.remove();
+      onRemove(path);
+      onChange();
+      return;
+    }
+    onPreview(path);
+  });
+  return chip;
 }
 
 function ComposerMenu({ icon, label, options, value, onChange, disabled, title, width, tone, toneOf }: { icon: any; label: string; options: { value: string; title: string; desc?: string }[]; value: string; onChange: (value: string) => void; disabled?: boolean; title?: string; width?: number; tone?: "danger"; toneOf?: (option: { value: string; title: string; desc?: string }) => string | undefined }) {
@@ -1506,31 +1573,14 @@ const approvalMenuOptions = (fullAccess: boolean) => fullAccess ? [
 const skillHubCategories = ["总排行", "近期最热", "最新上传", "AI 增强", "开发", "办公", "效率", "设计", "内容创作", "专业技能"];
 const cocoLoopCategoryMap: Record<string, string> = { "总排行": "overall", "近期最热": "trending", "最新上传": "latest", "AI 增强": "ai_enhancement", "开发": "development", "办公": "office", "效率": "efficiency", "设计": "design", "内容创作": "content_creation", "专业技能": "professional" };
 
-/** 思考档位菜单全集（minimal~ultra）。菜单按所选模型声明的能力过滤，
- *  只显示该模型真正支持的档位——GPT 系可声明更多，普通模型只有三档。 */
+/** 思考档位菜单（minimal~ultra）。单一数据源 = 模型配置里的档位声明：
+ *  配置勾了才显示、取消勾选就从菜单消失（currentEffortOptions 与引擎 catalog 同源）；
+ *  菜单选中未声明档位（含 /effort 命令）时自动回写声明落库。 */
 const effortMenuOptions = ALL_EFFORTS.map((value) => ({
   value,
   title: effortLabels[value] ?? value,
-  desc: { minimal: "最快响应，几乎不思考。", low: "轻量思考。", medium: "平衡速度与质量。", high: "更严谨，适合复杂任务。", xhigh: "深度思考，速度稍慢。", ultra: "全量深度思考，最慢。" }[value] ?? "",
+  desc: { minimal: "最快响应，几乎不思考。", low: "轻量思考。", medium: "平衡速度与质量。", high: "更严谨，适合复杂任务。", xhigh: "max：极深思考，速度更慢。", ultra: "最高：全量深度思考，最慢。" }[value] ?? "",
 }));
-
-/** WorkBuddy 风格的上下文压缩状态卡：压缩中显示 spinner + 状态徽章，完成后显示对勾 */
-function CompactEventCard({ event }: { event: SystemEvent }) {
-  const isRunning = event.title === "正在压缩上下文";
-  const failed = event.tone === "error";
-  return (
-    <div className={`system-event compact-card ${isRunning ? "running" : failed ? "failed" : "done"}`}>
-      <span className="compact-icon">{isRunning ? <Spinner /> : failed ? <X size={18} /> : <CircleCheck size={18} />}</span>
-      <div className="compact-body">
-        <div className="compact-title-row">
-          <strong>{event.title}</strong>
-          <span className="compact-badge">{isRunning ? "压缩中" : failed ? "失败" : "完成"}</span>
-        </div>
-        <p>{event.text}</p>
-      </div>
-    </div>
-  );
-}
 
 /** 高度动画折叠原语（对齐 WorkBuddy cr-collapse：0.28s 高度 + 内容 opacity/位移过渡）
  * bare=true 时只输出 content/inner 两层，由外层容器提供 wb-fold 状态类（避免嵌套叠加过渡时长） */
@@ -1732,7 +1782,8 @@ const FilePreviewCode = memo(function FilePreviewCode({ language, content, trunc
       PreTag="pre"
       CodeTag="code"
       className="file-preview-code code-highlight"
-      showLineNumbers={settings.lineNumbers}
+      // WorkBuddy 式文件查看：行号常开（代码块内联展示才跟随用户设置）
+      showLineNumbers
       wrapLongLines={settings.wrap}
       customStyle={{ fontSize: codeFontSize(settings.fontScale), fontFamily: codeFontStack(settings.font), margin: 0 }}
     >{content.replace(/\n$/, "")}{truncated ? "\n…（文件过大，仅展示前 200K 字符）" : ""}</SyntaxHighlighter>
@@ -2224,7 +2275,7 @@ function usageCounterSnapshot(usage: any): UsageCounterSnapshot {
   };
 }
 
-function ContextUsageBadge({ tokenUsage, fallbackWindow }: { tokenUsage?: any; fallbackWindow?: number }) {
+function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction }: { tokenUsage?: any; fallbackWindow?: number; recentCompaction?: boolean }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -2280,7 +2331,7 @@ function ContextUsageBadge({ tokenUsage, fallbackWindow }: { tokenUsage?: any; f
           {turnCacheRate != null && <div className="ctx-pop-cache"><span>本轮缓存命中率</span><b>{turnCacheRate}%</b></div>}
           {averageCacheRate != null && <div className="ctx-pop-cache"><span>会话累计命中率</span><b>{averageCacheRate}%</b></div>}
           {input > 0 && <div className="ctx-pop-cache ctx-pop-cache-detail"><span>缓存输入</span><b>{cached.toLocaleString()} / {input.toLocaleString()}</b></div>}
-          {turnCacheRate != null && turnCacheRate < 20 && input >= 8192 && <p className="ctx-pop-cache-note">本轮缓存较低，通常是首次请求、恢复旧会话、上下文压缩、切换模型/供应商，或上游未复用相同提示词前缀导致。</p>}
+          {turnCacheRate != null && turnCacheRate < 20 && input >= 8192 && <p className="ctx-pop-cache-note">{recentCompaction ? "上下文刚压缩过：提示词前缀已被重写，上游缓存需要 1~3 轮对话重建，期间命中率偏低属正常现象。" : "本轮缓存较低，通常是首次请求、恢复旧会话、上下文压缩、切换模型/供应商，或上游未复用相同提示词前缀导致。"}</p>}
         </div>
       )}
     </div>
@@ -2389,8 +2440,26 @@ function PendingImportSlot({ threadId, onDiscard }: { threadId: string; onDiscar
   );
 }
 
+/** 刚发送出去的用户消息 id 集合（渲染层特效锚点）：send/编辑重发创建乐观气泡时登记，
+ *  UserMessageView 挂载命中即播放「发送出去」入场特效并从集合删除——历史消息/切会话
+ *  重挂载不会误播，乐观消息被服务端消息替换后（id 不同）也不会重复播放。 */
+const justSentIds = new Set<string>();
+
+/** 钉顶目标位：新消息钉在视口上边框下方约一行（行高 + 呼吸），用户反馈 56px 仍太靠下 */
+/** 钉顶目标位：新消息钉在视口上边框处（0 = 物理上限，无法再往上） */
+const PIN_TOP_OFFSET = 0;
+
 function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote, onImageCopy, onEditSubmit, onOpenFile, onOpenThread }: { item: ThreadItem; turn?: Turn; fallbackWindow?: number; pending?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void }) {
   const [editing, setEditing] = useState(false);
+  // 首帧同步判定（useState 惰性初始化）：just-sent class 随首帧 DOM 一起出现，入场动画
+  // 必定从挂载瞬间播放。旧版在 effect 里补 class：晚一帧、且与钉顶程序化滚动同帧，
+  // 动画被滚动/重排吞掉——表现为「发消息没有过渡动画」（09-05 反馈）。
+  const [justSent] = useState(() => justSentIds.has(String(item.id ?? "")));
+  useEffect(() => {
+    // 播过即清登记，历史消息/切会话重挂载不会误播
+    if (justSent) justSentIds.delete(String(item.id ?? ""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // hooks 必须在 early return 之前按固定顺序调用，否则编辑时 hook 数量变化会触发 React error #300
   const rawText = itemText(item);
   const refs = useMemo<ParsedUserRefs>(() => parseUserRefs(rawText), [rawText]);
@@ -2416,9 +2485,11 @@ function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote,
     );
   }
   const refsImagePaths = new Set(refs.files.filter(isImagePath));
-  const extraImages = images.filter((part: any) => !refsImagePaths.has(part.path));
+  // 文本占位符里出现过的图片以内联 chip 渲染在正文里，缩略图行去重避免双份
+  const inlineImageSet = new Set(promptImagePaths(rawText));
+  const extraImages = images.filter((part: any) => !refsImagePaths.has(part.path) && !inlineImageSet.has(part.path));
   return (
-    <div className={`message user-message${pending ? " pending" : ""}`} data-ruler-mark="user" data-turn-id={turn?.id} data-item-id={item.id}>
+    <div className={`message user-message${pending ? " pending" : ""}${justSent ? " just-sent" : ""}`} data-ruler-mark="user" data-turn-id={turn?.id} data-item-id={item.id}>
       <div className="avatar"><User size={15} /></div>
       <div className="message-body">
         <UserRefsRow refs={refs} onOpenFile={onOpenFile} onQuote={onQuote} />
@@ -2433,7 +2504,14 @@ function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote,
             <div className="user-message-team-task-body">{refs.teamTask.requirement}</div>
           </div>
         ) : refs.cleanText ? (
-          <p className="user-message-text">{refs.cleanText}</p>
+          <p className="user-message-text">
+            {splitPromptSegments(refs.cleanText).map((seg, index) => seg.kind === "text"
+              ? <span key={index}>{seg.text}</span>
+              : <button type="button" className="composer-image-chip-inline" key={index} title={`查看 ${basename(seg.path) || seg.path}`} onClick={() => openImageLightbox?.(seg.path, basename(seg.path) || seg.path)}>
+                  <span className="composer-image-chip-icon" dangerouslySetInnerHTML={{ __html: COMPOSER_CHIP_ICON }} />
+                  <span className="composer-image-chip-name">{basename(seg.path) || seg.path}</span>
+                </button>)}
+          </p>
         ) : null}
         {extraImages.length > 0 && (
           <div className="user-message-thumbs">
@@ -2572,8 +2650,10 @@ function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[
     // 并每帧强制同步布局 —— 这是长回复越往后越卡的主要来源之一。
     // 元素在 update 内部实时查询 DOM，只需在刻度数量变化时重建监听。
   }, [scrollRef, allMarks.length]);
-  // 少于两条消息、内容不满一屏、或容器太窄（右侧面板打开压窄 timeline）时自动隐藏刻度尺
-  if (allMarks.length < 2 || !scrollable || containerNarrow) return null;
+  // 没有用户消息、内容不满一屏、或容器太窄（右侧面板打开压窄 timeline）时自动隐藏刻度尺。
+  // 专家/专家团会话常常只有一条任务消息 + 超长执行输出，内容早就可滚了，
+  // 若仍要求 ≥2 条用户消息，这类窗口永远没有刻度线 —— 放宽为 ≥1 条即可定位回任务消息。
+  if (allMarks.length < 1 || !scrollable || containerNarrow) return null;
   return (
     <div className="message-ruler" role="navigation" aria-label="消息定位">
       <div
@@ -2656,6 +2736,14 @@ function revealStepFor(remaining: number) {
   if (remaining > 1200) return 10;   // 长文：快速追（约 625 字符/秒）
   if (remaining > 300) return 4;     // 中段：平稳流出（约 250 字符/秒）
   return 2;                          // 尾段：精细逐字（约 125 字符/秒，打字感）
+}
+// 深度思考正文比主出字慢一档（约一半速）：思考内容长、信息密度低，
+// 同速流出根本读不清。16ms 帧下：长文 ~312 字符/秒、中段 ~125、尾段逐字 ~62。
+function revealStepForReasoning(remaining: number) {
+  if (remaining > 3600) return Math.max(16, Math.ceil(remaining / 180));
+  if (remaining > 1200) return 5;
+  if (remaining > 300) return 2;
+  return 1;
 }
 function usePacketRevealText(
   key: string,
@@ -2769,6 +2857,16 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
       bufferedReasoningRevealStarts.delete(String(item.id));
       return;
     }
+    // 思考结束（running 已 false）：剩余追字缓冲立即放完并结束揭示。
+    // 用户要求「内容输出完就自动折叠，不停留」——不能让慢速追字拖到正文都出来后
+    // 思考卡还挂着展开（09-05 反馈：思考还没加载完正文就出来了）。
+    if (!running && revealing) {
+      displayedRef.current = text;
+      setDisplayed(text);
+      setRevealing(false);
+      bufferedReasoningRevealStarts.delete(String(item.id));
+      return;
+    }
     const remaining = text.length - start.length;
     if (remaining <= 0) {
       setRevealing(false);
@@ -2785,8 +2883,8 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
       return;
     }
     setRevealing(true);
-    // 与正文共用同一自适应速率（尾段逐字精雕，长文自动提速）。
-    const step = Math.max(1, Math.min(revealStepFor(remaining), Math.ceil(remaining / 3)));
+    // 思考正文专用慢速自适应（revealStepForReasoning，约为主正文一半速）。
+    const step = Math.max(1, Math.min(revealStepForReasoning(remaining), Math.ceil(remaining / 3)));
     let end = start.length;
     const timer = window.setInterval(() => {
       end = Math.min(text.length, end + step);
@@ -2804,35 +2902,10 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
   }, [item.id, text, revealing, running]);
   // 自动延迟可见与用户手动展开必须分开：自动行为不能写进 manualOpen，
   // 否则会被误认为“用户主动展开”，导致第一块思考永久保持打开。
-  const [autoHoldOpen, setAutoHoldOpen] = useState(false);
-  const { open, toggle, manualOpen } = useCardOpen(Boolean(running) || revealing || autoHoldOpen);
-  // 思考可能极快（几十 ms 就完成），或被中转一次性缓冲到完成态；若完成即折叠，用户根本来不及看到内容。
-  // 记录首次出现内容的时间，完成时若未达到最小可见时长，临时保持展开凑满时长后再折叠。
-  const runningSinceRef = useRef<number | null>(null);
-  const foldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useLayoutEffect(() => {
-    if (running) {
-      if (runningSinceRef.current == null) runningSinceRef.current = Date.now();
-      setAutoHoldOpen(false);
-      return;
-    }
-    // running=false：仅处理「本会话流式期间运行过」的完成；历史加载的完成态不折叠
-    if (runningSinceRef.current == null || manualOpen !== null) return;
-    // 渐进揭示还没放完就等它放完再决定折叠
-    if (revealing) return;
-    const elapsed = Date.now() - runningSinceRef.current;
-    runningSinceRef.current = null;
-    // 给用户留出纠错窗口：思考完成后至少可见 4 秒，再自动折叠。
-    const MIN_VISIBLE_MS = 4000;
-    const delay = Math.max(0, MIN_VISIBLE_MS - elapsed);
-    if (delay <= 0) { setAutoHoldOpen(false); return; }
-    // 太快：仅用独立自动状态保持展开，绝不污染用户手动选择。
-    setAutoHoldOpen(true);
-    if (foldTimerRef.current) clearTimeout(foldTimerRef.current);
-    foldTimerRef.current = setTimeout(() => setAutoHoldOpen(false), delay);
-  }, [displayed, running, revealing, manualOpen]);
-  // 卸载时清理折叠定时器
-  useEffect(() => () => { if (foldTimerRef.current) clearTimeout(foldTimerRef.current); }, []);
+  const { open, toggle, manualOpen } = useCardOpen(Boolean(running) || revealing);
+  // 思考输出完即自动折叠（running/revealing 双双转 false 时 useCardOpen 自动收起），
+  // 不做「完成后保持展开凑满最短可见时长」的停留——09-05 用户反馈停留体验不好。
+  // 思考结束瞬间的剩余缓冲由上面揭示 effect 立即放完，不会闪断。
   // 回合运行期间只要该 reasoning item 已进入事件流，就先保留它的标题节点；
   // 某些中转会先发 completed/started，再稍后补正文 delta，不能把后续思考误当空占位丢掉。
   useEffect(() => { if (running || turnActive) seenLiveRef.current = true; }, [running, turnActive]);
@@ -2966,8 +3039,23 @@ function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWindow, h
   if (item.type === "enteredReviewMode" || item.type === "exitedReviewMode") {
     return <ActionCard icon={<Search size={13} />} verb={item.type === "enteredReviewMode" ? "开始代码审查" : "完成代码审查"} info={item.review ? <code>{item.review}</code> : undefined} status="done" />;
   }
-  if (item.type === "hookPrompt" || item.type === "contextCompaction") {
-    return <ActionCard icon={<Wrench size={13} />} verb={item.type === "contextCompaction" ? "上下文压缩" : "Hook"} status="done" statusText="完成" />;
+  if (item.type === "hookPrompt") {
+    return <ActionCard icon={<Wrench size={13} />} verb="Hook" status="done" statusText="完成" />;
+  }
+  if (item.type === "contextCompaction") {
+    // 压缩结果常驻为「两边虚线 + 中间文字」分隔线（与压缩进行中的过渡态同一形态），
+    // 不再渲染「上下文压缩 · 完成」工具卡——那张卡用户明确不要。
+    const failed = item.status === "error" || Boolean(item.failure?.message);
+    return (
+      <div className={`compact-divider ${failed ? "compact-divider--error" : "compact-divider--success"}`} role="status" aria-label="上下文压缩状态">
+        <i className="compact-divider-line" aria-hidden />
+        <span className="compact-divider-text">
+          {failed ? <CircleX size={13} /> : <CircleCheck size={13} />}
+          {failed ? `上下文压缩失败：${item.failure?.message ?? "请稍后重试"}` : "上下文压缩成功"}
+        </span>
+        <i className="compact-divider-line" aria-hidden />
+      </div>
+    );
   }
   return (
     <ActionCard icon={<Wrench size={13} />} verb={item.type} status="done">
@@ -3029,7 +3117,10 @@ function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval,
     <div className={`turn-group ${running ? "running" : turn.error ? "error" : "completed"}`} id={`turn-${turn.id}`}>
       {userItems.map((item) => <MemoUserMessageView item={item} turn={turn} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} key={item.id} />)}
       <div className="turn-card">
-        {running && !hasVisible && <header className="turn-card-header">
+        {/* 占位头必须等回合内已有 userMessage：turn/started 先建回合、userMessage item 晚到，
+            若不等就会渲染在乐观用户气泡上方（切会话后首条消息时肉眼可见错位，09-04 反馈）。
+            空窗期反馈由乐观气泡 + 底部 working-indicator 覆盖。 */}
+        {running && !hasVisible && userItems.length > 0 && <header className="turn-card-header">
           <span className="turn-card-dot" aria-hidden />
           <span className="turn-card-status shimmer-text">{statusLabel}</span>
         </header>}
@@ -4150,6 +4241,89 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const sendInFlightRef = useRef(false);
+  // ── 429 限流自动重试（应用层兜底）──
+  // 引擎侧 request_max_retries/stream_max_retries 耗尽后 turn 仍以限流失败结束时，
+  // 把原输入自动重发，最多 RATE_LIMIT_MAX_ATTEMPTS 次，退避 5s→120s 逐次放长。
+  // 不区分模型/供应商——任何模型限流都走这条兜底；用户可停止或立即重试。
+  const [rateLimitRetry, setRateLimitRetry] = useState<{ threadId: string; attempt: number; retryAt: number } | null>(null);
+  const rateLimitTimerRef = useRef<number | null>(null);
+  const rateLimitAttemptRef = useRef(0);
+  const retryContextRef = useRef<{ threadId: string; input: any[]; model: string; effort: string | null; personality: string | null } | null>(null);
+  const [, setRateLimitTick] = useState(0);
+  useEffect(() => {
+    if (!rateLimitRetry) return;
+    const tick = window.setInterval(() => setRateLimitTick((n) => n + 1), 1000);
+    return () => window.clearInterval(tick);
+  }, [rateLimitRetry?.threadId, rateLimitRetry?.attempt]);
+
+  function clearRateLimitTimer() {
+    if (rateLimitTimerRef.current != null) { window.clearTimeout(rateLimitTimerRef.current); rateLimitTimerRef.current = null; }
+  }
+
+  function cancelRateLimitRetry(silent = false) {
+    clearRateLimitTimer();
+    setRateLimitRetry(null);
+    rateLimitAttemptRef.current = 0;
+    retryContextRef.current = null;
+    if (!silent) showToast("已停止限流重试", "不再自动重发该消息");
+  }
+
+  async function executeRateLimitRetry() {
+    clearRateLimitTimer();
+    const ctx = retryContextRef.current;
+    const attempt = rateLimitAttemptRef.current;
+    if (!ctx || !attempt) { setRateLimitRetry(null); return; }
+    setRateLimitRetry(null);
+    setSending(true);
+    setInterrupting(false);
+    setWorkStartedAt(Date.now());
+    markThreadRunning(ctx.threadId);
+    try {
+      const result: any = await window.codex.request("turn/start", {
+        threadId: ctx.threadId,
+        input: ctx.input,
+        model: ctx.model,
+        effort: ctx.effort,
+        personality: ctx.personality,
+      });
+      if (result?.turn?.id) {
+        setActiveTurnId(result.turn.id);
+        markThreadRunning(ctx.threadId, result.turn.id);
+      }
+      showToast("限流重试已发出", `第 ${attempt}/${RATE_LIMIT_MAX_ATTEMPTS} 次重试已被接受，任务继续运行`);
+    } catch (error: any) {
+      setSending(false);
+      markThreadStopped(ctx.threadId);
+      setWorkStartedAt(null);
+      if (isRateLimitError(error?.message) && attempt < RATE_LIMIT_MAX_ATTEMPTS) {
+        showToast("仍被限流", `第 ${attempt} 次重试仍失败，稍后自动继续`);
+        scheduleRateLimitRetry(attempt + 1);
+      } else {
+        setNotice(error?.message ?? "限流重试失败");
+        cancelRateLimitRetry(true);
+      }
+    }
+  }
+
+  function scheduleRateLimitRetry(attempt: number) {
+    const ctx = retryContextRef.current;
+    if (!ctx) return;
+    if (attempt > RATE_LIMIT_MAX_ATTEMPTS) {
+      cancelRateLimitRetry(true);
+      showToast("限流重试放弃", `已连续重试 ${RATE_LIMIT_MAX_ATTEMPTS} 次仍被限流，请稍后手动重发`);
+      return;
+    }
+    rateLimitAttemptRef.current = attempt;
+    const delay = rateLimitBackoffMs(attempt);
+    setSending(false);
+    setActiveTurnId(null);
+    markThreadStopped(ctx.threadId);
+    setInterrupting(false);
+    setWorkStartedAt(null);
+    setRateLimitRetry({ threadId: ctx.threadId, attempt, retryAt: Date.now() + delay });
+    clearRateLimitTimer();
+    rateLimitTimerRef.current = window.setTimeout(() => void executeRateLimitRetry(), delay);
+  }
   const compactPendingRef = useRef(new Set<string>());
   const [interrupting, setInterrupting] = useState(false);
   const [optimisticInput, setOptimisticInput] = useState<ThreadItem | null>(null);
@@ -4225,8 +4399,6 @@ export default function App() {
   // 上次 delta 落盘时刻：用于判断「新一轮出字」，首字立即渲染不等 rAF
   const lastFlushAtRef = useRef(0);
   const [rightOpen, setRightOpen] = useState(() => localStorage.getItem("right-panel-open") === "true");  // 启动默认展开：迁移旧的折叠偏好，桌面端始终先给完整导航；用户仍可手动收起。
-  // 联网搜索开关：写 userData/app-settings.json，重写 config.toml 的 [tools] web_search
-  const [webSearch, setWebSearch] = useState(true);
   const [desktopAuto, setDesktopAuto] = useState(true);
   const [browserAuto, setBrowserAuto] = useState(true);
   const [engineWatchdog, setEngineWatchdog] = useState(true);
@@ -4249,13 +4421,9 @@ export default function App() {
   const [sshExecTarget, setSshExecTarget] = useState<SshServer | null>(null);
   // 编辑器内「测试连接」的结果：草稿未保存也能测，结果只在弹窗内展示
   const [sshEditorTest, setSshEditorTest] = useState<{ ok: boolean; message: string } | null>(null);
-  useEffect(() => { void window.codex.readAppSettings().then((settings) => { setWebSearch(settings.webSearch !== false); setDesktopAuto(settings.desktopAutomation !== false); setBrowserAuto(settings.browserAutomation !== false); setEngineWatchdog(settings.engineWatchdog !== false); setAutoCompactRatio(typeof settings.autoCompactRatio === "number" ? settings.autoCompactRatio : 0.8); }).catch(() => undefined); }, []);
-  const toggleWebSearch = () => {
-    const next = !webSearch;
-    setWebSearch(next);
-    setNotice(next ? "联网搜索已开启（web_search=true）" : "联网搜索已关闭（web_search=false）");
-    void window.codex.saveAppSettings({ webSearch: next }).catch(() => setWebSearch(!next));
-  };
+  // 联网搜索 UI 入口已整体下架（2026-09-04：引擎沙箱本就允许联网，web_search 工具默认常开，
+  // 无需用户切换）。app-settings.webSearch 默认值仍由主进程写进 config.toml，引擎能力不受影响。
+  useEffect(() => { void window.codex.readAppSettings().then((settings) => { setDesktopAuto(settings.desktopAutomation !== false); setBrowserAuto(settings.browserAutomation !== false); setEngineWatchdog(settings.engineWatchdog !== false); setAutoCompactRatio(typeof settings.autoCompactRatio === "number" ? settings.autoCompactRatio : 0.8); }).catch(() => undefined); }, []);
   // 桌面/浏览器自动化是能力总闸：开关直接决定引擎能不能用，同时联动 nuphus MCP 与配套技能。
   // 具体实现在 applyGroup（见「能力总闸联动」块），这里只做转发，保证常规页是唯一入口。
   const toggleDesktopAuto = (next: boolean) => { void applyGroup("desktop-automation", next); };
@@ -4264,6 +4432,74 @@ export default function App() {
     setEngineWatchdog(next);
     setNotice(next ? "心跳监控已开启（引擎异常会自动重启）" : "心跳监控已关闭（引擎异常需手动重启应用）");
     void window.codex.saveAppSettings({ engineWatchdog: next }).catch(() => setEngineWatchdog(!next));
+  };
+
+  // —— Codex 引擎更新（设置 → 控制台底部） ——
+  const [engineVersion, setEngineVersion] = useState("");
+  const [engineProxyDraft, setEngineProxyDraft] = useState("");
+  const [engineCheck, setEngineCheck] = useState<{ state: "idle" | "checking" | "latest" | "available" | "error"; latest?: string; message?: string }>({ state: "idle" });
+  const [engineUpdating, setEngineUpdating] = useState(false);
+  const [engineUpdateLog, setEngineUpdateLog] = useState<string[]>([]);
+  const [engineUpdatePercent, setEngineUpdatePercent] = useState<number | null>(null);
+  const [engineUpdateStageText, setEngineUpdateStageText] = useState("准备更新…");
+  const [engineUpdateResult, setEngineUpdateResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [relaunchCountdown, setRelaunchCountdown] = useState<number | null>(null);
+  useEffect(() => { void window.codex.engineInfo().then((info) => setEngineVersion(info.version)).catch(() => undefined); }, []);
+  useEffect(() => { void window.codex.readAppSettings().then((settings) => setEngineProxyDraft(settings.engineProxyUrl ?? "")).catch(() => undefined); }, []);
+  useEffect(() => window.codex.onEngineUpdateProgress((event) => {
+    const stageTextMap: Record<string, string> = { wait: "等待当前任务结束…", query: "查询最新版本…", download: `下载引擎包 ${Math.round((event.percent ?? 0) * 100)}%`, extract: "解压引擎包…", verify: "校验新引擎…", replace: "替换引擎文件…", done: "更新完成" };
+    const text = event.stage === "download" ? stageTextMap.download : (stageTextMap[event.stage] || event.detail || event.stage);
+    setEngineUpdateStageText(text);
+    setEngineUpdatePercent(event.stage === "download" ? (event.percent ?? 0) : null);
+    const logText = event.stage === "download" ? text : (event.detail || event.stage);
+    setEngineUpdateLog((current) => [...current.slice(-9), logText]);
+  }), []);
+  useEffect(() => {
+    if (relaunchCountdown == null) return;
+    if (relaunchCountdown <= 0) { void window.codex.relaunchApp(); return; }
+    const timer = setTimeout(() => setRelaunchCountdown((value) => (value == null ? null : value - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [relaunchCountdown]);
+  const checkEngineUpdateNow = async () => {
+    setEngineCheck({ state: "checking" });
+    try {
+      const info = await window.codex.engineCheckUpdate();
+      setEngineVersion(info.current);
+      setEngineCheck(info.hasUpdate ? { state: "available", latest: info.latest } : { state: "latest", latest: info.latest });
+    } catch (error: any) {
+      setEngineCheck({ state: "error", message: error?.message ?? "检查失败" });
+    }
+  };
+  const performEngineUpdateNow = async () => {
+    if (engineUpdating) return;
+    if (!window.confirm(`确定把 Codex 引擎更新到 ${engineCheck.latest} 吗？\n\n· 更新会先停止引擎（正在运行的任务会先等它结束）\n· 下载约 30MB，失败会自动回滚旧版本\n· 完成后应用将自动重启生效`)) return;
+    setEngineUpdating(true);
+    setEngineUpdateLog([]);
+    setEngineUpdatePercent(null);
+    setEngineUpdateStageText("准备更新…");
+    setEngineUpdateResult(null);
+    try {
+      const result = await window.codex.enginePerformUpdate();
+      if (result.ok) {
+        setEngineUpdateLog((current) => [...current, result.message]);
+        setEngineVersion(`codex-cli ${result.version}`);
+        setEngineCheck({ state: "latest", latest: result.version });
+        setNotice("引擎更新完成，应用即将自动重启…");
+        setRelaunchCountdown(3);
+      } else {
+        setEngineUpdateResult({ ok: false, message: result.message });
+      }
+    } catch (error: any) {
+      setEngineUpdateResult({ ok: false, message: error?.message ?? "更新失败" });
+    } finally {
+      setEngineUpdating(false);
+    }
+  };
+  const saveEngineProxy = () => {
+    const value = engineProxyDraft.trim();
+    void window.codex.saveAppSettings({ engineProxyUrl: value })
+      .then(() => setNotice(value ? "引擎更新代理已保存" : "代理已清空，将优先走国内镜像直连"))
+      .catch(() => setNotice("代理保存失败"));
   };
 
   // —— SSH 服务器连接管理 ——
@@ -4639,6 +4875,39 @@ export default function App() {
   const [goalText, setGoalText] = useState("");
   const [goalsOpen, setGoalsOpen] = useState(true);
   const [doneExpanded, setDoneExpanded] = useState(false);
+  // ── /plan 计划模式（引擎原生 collaborationMode=plan）──
+  // planOnceRef：一次性旗标，下一次 send() 以 plan 协作模式启动回合；
+  // 方案回合正常结束后进入 planConfirm，用户确认后再以默认模式原任务执行。
+  const planOnceRef = useRef(false);
+  const planTurnRef = useRef<{ threadId: string; turnId: string } | null>(null);
+  const [planArmed, setPlanArmed] = useState(false); // 输入框小徽标：下一条消息将以计划模式执行，可叉掉
+  const [planRunning, setPlanRunning] = useState(false); // 计划回合执行中，徽标保持显示，叉掉=中断
+  const [planConfirm, setPlanConfirm] = useState<{ threadId: string; text: string } | null>(null);
+  const [planFeedback, setPlanFeedback] = useState(""); // 方案审阅卡的提意见输入框
+  // ── /goal 目标模式（引擎原生 thread goal：自动 continuation，模型用 update_goal 判定达成）──
+  // goalStatus: active/paused/blocked/usageLimited/budgetLimited/complete（引擎 ThreadGoalStatus）
+  const [goalStatus, setGoalStatus] = useState<string | null>(null);
+  // 目标卡生命周期：任务运行结束 → 清单自动收纳 → 20s 后卡片自动消失；
+  // 新任务开始（或压缩/plan 更新带来的运行态回升）立即恢复显示并清掉倒计时。
+  const [goalsAutoGone, setGoalsAutoGone] = useState(false);
+  const goalsAutoGoneTimerRef = useRef<number | null>(null);
+  const goalsPrevRunningRef = useRef(false);
+  const goalsTaskRunning = Boolean(sending || activeTurnId);
+  useEffect(() => {
+    const wasRunning = goalsPrevRunningRef.current;
+    goalsPrevRunningRef.current = goalsTaskRunning;
+    if (goalsTaskRunning) {
+      // 新任务开始：恢复显示、清掉未到期的消失倒计时
+      if (goalsAutoGoneTimerRef.current) { window.clearTimeout(goalsAutoGoneTimerRef.current); goalsAutoGoneTimerRef.current = null; }
+      setGoalsAutoGone(false);
+      return;
+    }
+    // 只在运行 → 空闲的下降沿触发（挂载时本就空闲不动作）
+    if (!wasRunning) return;
+    setGoalsExpanded(false);
+    goalsAutoGoneTimerRef.current = window.setTimeout(() => { setGoalsAutoGone(true); goalsAutoGoneTimerRef.current = null; }, 20000);
+    return () => { if (goalsAutoGoneTimerRef.current) { window.clearTimeout(goalsAutoGoneTimerRef.current); goalsAutoGoneTimerRef.current = null; } };
+  }, [goalsTaskRunning]);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewReport, setReviewReport] = useState("");
   const reviewTurnRef = useRef<string | null>(null);
@@ -4684,12 +4953,33 @@ export default function App() {
       return next;
     });
   }, []);
+  // 会话行「等待用户操作」动态徽标：侧栏对应会话上亮起需审批/需选择/需确认字样
+  // 优先级：需审批 > 需选择 > 需确认；审批请求缺 threadId 时归当前会话
+  const threadAttention = useMemo(() => {
+    const map = new Map<string, string>();
+    const priority: Record<string, number> = { "需审批": 3, "需选择": 2, "需确认": 1 };
+    const setLabel = (threadId: string, label: string) => {
+      if (!threadId) return;
+      const existing = map.get(threadId);
+      if (!existing || priority[label] > priority[existing]) map.set(threadId, label);
+    };
+    for (const request of pending) {
+      const tid = String(request.params?.threadId ?? threadRef.current?.id ?? "");
+      if (request.method === "item/tool/requestUserInput") setLabel(tid, "需选择");
+      else if (request.method === "mcpServer/elicitation/request") setLabel(tid, "需确认");
+      else setLabel(tid, "需审批"); // 审批类与其余默认渲染「批准」卡的 serverRequest
+    }
+    if (agentAsk) setLabel(agentAsk.threadId, "需选择");
+    return map;
+  }, [pending, agentAsk]);
   const renderThreadRow = (entry: Thread) => {
     const running = runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running";
+    const attentionLabel = threadAttention.get(entry.id);
+    const attentionTone = attentionLabel === "需审批" ? "approval" : attentionLabel === "需选择" ? "choice" : "confirm";
     return (
     <div className={`thread-row ${thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${threadRowMenu?.id === entry.id ? "menu-open" : ""}`} key={entry.id}>
       <button title={runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : "双击修改任务名称"} onClick={() => void openThread(entry.id)}>
-        <span onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void renameThread(entry.id, next); }); }}>{cleanThreadDisplayTitle(entry.name, { preview: entry.preview })}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
+        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void renameThread(entry.id, next); }); }}><span>{cleanThreadDisplayTitle(entry.name, { preview: entry.preview })}</span>{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
       </button>
       <div className="thread-actions">
         <button className={`thread-pin-button ${pinnedThreads.includes(entry.id) ? "pinned" : ""}`} title={pinnedThreads.includes(entry.id) ? "取消置顶" : "置顶会话"} onClick={(event) => { event.stopPropagation(); togglePinThread(entry.id); }}><Pin size={13} /></button>
@@ -4740,8 +5030,10 @@ export default function App() {
   });
   const [personality, setPersonality] = useState(() => localStorage.getItem("default-personality") ?? "pragmatic");
   const [notice, setNotice] = useState("");
+  // 上下文压缩进度/结果（短暂 toast，不进系统事件流，避免之前那种常驻 timeline 卡片）
+  const [compactToast, setCompactToast] = useState<{ state: "running" | "success" | "error"; message?: string; threadId: string } | null>(null);
   // 信息面板弹窗：/queue /skills /mcp 等查询命令的输出改为居中弹窗展示（不再插入消息流灰色横幅）
-  const [infoModal, setInfoModal] = useState<{ title: string; body: string } | null>(null);
+  const [infoModal, setInfoModal] = useState<{ title: string; body: string; markdown?: boolean } | null>(null);
   // 项目树高亮：openFile 后标出当前打开的文件，让用户看到「点了哪个」
   const [highlightedFilePath, setHighlightedFilePath] = useState<string | null>(null);
   // 高亮变化时：项目树里对应条目滚到视口内（用 data-tree-path 精确锁定）
@@ -4800,6 +5092,9 @@ export default function App() {
   const [switchingThreadId, setSwitchingThreadId] = useState<string | null>(null);
   // 切换序号：快速连点时只让最新一次 resume 落地（旧响应丢弃，防止内容串台）
   const switchSeqRef = useRef(0);
+  // 各会话最近一次完整 thread/resume 的时间：频繁来回切换时，30 秒内且无运行回合的会话
+  // 跳过重复 resume（全量加载长会话是"频繁切换会卡"的主因；期间无事件流说明内容没变）
+  const recentResumeAtRef = useRef(new Map<string, number>());
   // fade-out 动画控制：jumpToBottom settled 后等一帧再让遮罩淡出，避免内容继续增高
   // 时遮罩提前消失导致"切过去在中间"；markSettled 每次触发都重置 timer，保证只有最后
   // 一次稳定后才真正卸载
@@ -4927,6 +5222,9 @@ export default function App() {
     document.documentElement.dataset.uiFont = uiFont;
   }, [uiFont]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 未配置的 PPtoken 推荐卡可被用户「禁用」（仅置灰，不写引擎存储；配置真实密钥后走 setProviderEnabled）
+  const [pptokenCardOff, setPptokenCardOff] = useState(() => localStorage.getItem("pptoken-card-off") === "1");
+  useEffect(() => { try { localStorage.setItem("pptoken-card-off", pptokenCardOff ? "1" : "0"); } catch { /* ignore */ } }, [pptokenCardOff]);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>("general");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [toolsStatus, setToolsStatus] = useState<{ id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>([]);
@@ -5128,48 +5426,91 @@ export default function App() {
   const timelineWrapRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // WorkBuddy 式钉住：发完消息把最新用户消息定位到视口顶部固定偏移（header 下方留白）。
-  // 用 contentOffsetTop（两次 rect 求差）定位，与任何中间定位祖先无关（memory 记过的坑）。
-  // 目标优先最后一个 `[data-ruler-mark="user"]`（已落地回合消息），其次乐观消息（data-queued-id）。
-  const pinNewTurnToTop = useCallback(() => {
+  // WorkBuddy 同款顶部对齐（源码 scrollToLast：「最后一个 group 顶部对齐视口顶部，
+  // 用于用户发送消息后的顶部对齐」，behavior smooth）。用 contentOffsetTop（两次 rect
+  // 求差）定位，与任何中间定位祖先无关（memory 记过的坑）。
+  // 目标优先最后一个 `[data-ruler-mark="user"]`（乐观/已落地回合消息都带此标记），其次 queued。
+  // 一次性发出，不做补钉：内容不足被滚动上限钳住时顺其自然——消息停在输入框上方，
+  // 随回复流式长出被内容缓缓顶上去（Virtuoso followOutput 的涌现行为，WorkBuddy 同款）。
+  const alignNewTurnToTop = useCallback(() => {
     const scroller = scrollRef.current;
-    if (!scroller) return false;
+    if (!scroller) return;
     const pins = scroller.querySelectorAll<HTMLElement>('[data-ruler-mark="user"]');
     let target: HTMLElement | null = pins.length ? pins[pins.length - 1] : null;
     if (!target) {
       const queued = scroller.querySelectorAll<HTMLElement>('[data-queued-id]');
       if (queued.length) target = queued[queued.length - 1];
     }
-    if (!target) return false;
+    if (!target) return;
     const top = contentOffsetTop(target, scroller);
-    // 让消息顶对齐到 timeline 视口顶（header 下方）：contentOffsetTop 已含 timeline padding-top。
-    // 留 2px 呼吸，不额外偏移，消息正好出现在视口上方固定位置。
-    scroller.style.scrollBehavior = "auto";
-    scroller.scrollTop = Math.max(0, top - 2);
-    scroller.style.scrollBehavior = "";
-    return true;
+    scroller.scrollTo({ top: Math.max(0, top - PIN_TOP_OFFSET), behavior: "smooth" });
   }, []);
 
-  // 发送状态和服务端回合可能在不同渲染帧落地：先显示乐观消息，随后再被真实 userMessage 替换。
-  // 在布局阶段补几帧定位，确保两种落地顺序都能把最新消息固定在视口顶部，而不是偶尔停在底部。
+  // 发送 → 平滑滚动对齐窗口（WorkBuddy 同款）：alignNewTurnToTop 发起 smooth 滚动，
+  // 窗口期内 pinNewTurnRef 屏蔽底部跟随（流式 layout effect / packet-reveal 都检查它）；
+  // 动画结束后交还贴底跟随，回复内容增长把消息缓缓顶上去、长满一屏后自然滚出——全程连续。
+  // 滚轮（onWheel）随时解除：解除后 timeout 不再强行拉回底部。
+  const smoothAlignTimerRef = useRef<number | undefined>(undefined);
   useLayoutEffect(() => {
     if (!pinNewTurnRef.current) return;
-    let cancelled = false;
-    let attempts = 0;
-    let frame = 0;
-    const retry = () => {
-      if (cancelled || !pinNewTurnRef.current) return;
-      if (pinNewTurnToTop() || attempts >= 8) return;
-      attempts += 1;
-      frame = requestAnimationFrame(retry);
-    };
-    frame = requestAnimationFrame(retry);
-    return () => {
-      cancelled = true;
-      if (frame) cancelAnimationFrame(frame);
-    };
-  }, [optimisticInput?.id, thread?.id, thread?.turns.length, pinNewTurnToTop]);
-  const composerInputRef = useRef<HTMLTextAreaElement>(null);
+    if (smoothAlignTimerRef.current) window.clearTimeout(smoothAlignTimerRef.current);
+    const raf = requestAnimationFrame(() => {
+      alignNewTurnToTop();
+      smoothAlignTimerRef.current = window.setTimeout(() => {
+        smoothAlignTimerRef.current = undefined;
+        if (pinNewTurnRef.current) {
+          pinNewTurnRef.current = false;
+          stickToBottomRef.current = true;
+        }
+      }, 700);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [optimisticInput?.id, thread?.id, thread?.turns.length, alignNewTurnToTop]);
+  useEffect(() => () => { if (smoothAlignTimerRef.current) window.clearTimeout(smoothAlignTimerRef.current); }, []);
+  const composerInputRef = useRef<HTMLDivElement>(null);
+  const composerWrapRef = useRef<HTMLDivElement>(null);
+  // 编辑框 DOM 当前序列化结果：区分「用户输入回流」与「外部置值需重建」（见 ComposerEditor）
+  const composerDomValueRef = useRef<string | null>(null);
+
+  // 输入框区块（多行撑高 / 计划审阅卡 / 队列卡 / 引用条 / 模式横幅）高度一变，
+  // 消息区可视高度就被压缩——贴底跟随若不重申，底部回复会被裁在输入框上沿下
+  //（用户看到的「输入框遮住消息」）。贴底时任何高度变化都立刻重新贴底；
+  // 用户主动上滚（stick=false）则不打扰。
+  useLayoutEffect(() => {
+    const wrap = composerWrapRef.current;
+    if (!wrap || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      // 空态（docked-center）输入框悬浮在欢迎页上，无消息可遮
+      if (wrap.classList.contains("docked-center")) return;
+      if (!stickToBottomRef.current) return;
+      const el = scrollRef.current;
+      if (!el) return;
+      // .timeline 有 scroll-behavior:smooth，直接赋值 scrollTop 会触发平滑动画导致跟随滞后，须瞬时贴底
+      el.style.scrollBehavior = "auto";
+      el.scrollTop = el.scrollHeight;
+      el.style.scrollBehavior = "";
+    });
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, []);
+
+  /** 生成内联图片 chip：删除→清 images；主体点击→预览；任何变更→DOM 序列化回流状态 */
+  const makeComposerChip = useCallback((path: string) => createInlineImageChip(
+    path,
+    (target) => setImages((current) => current.filter((entry) => entry !== target)),
+    (target) => setLightbox({ path: target, alt: "待发送图片" }),
+    () => syncComposerFromDom(),
+  ), []);
+
+  /** 编辑框 DOM → 状态：序列化 prompt（images 跟随占位符，chip 被退格删除时同步收敛） */
+  function syncComposerFromDom() {
+    const el = composerInputRef.current;
+    if (!el) return;
+    const next = serializeComposerDom(el);
+    composerDomValueRef.current = next;
+    setImages(promptImagePaths(next));
+    onPromptChange(next);
+  }
 
   // 覆盖层焦点归还：设置页/删除确认框等遮罩关闭后，浏览器把焦点丢给 body，
   // 输入框随之失焦（表现为删除完回到对话框打字没反应）。统一在遮罩关闭时把焦点
@@ -5329,7 +5670,7 @@ export default function App() {
   }, [customModel?.hasKey]);
 
   const {
-    filePreview, setFilePreview, fileEditing, setFileEditing,
+    filePreview, setFilePreview, fileTabs, closeTab, fileEditing, setFileEditing,
     fileDraft, setFileDraft, savingFile, openFile: rawOpenFile, saveFilePreview,
   } = useFilePreview({ workspace, onNotice: setNotice });
   // 包装一层：用户每次点文件卡都顺手把项目树高亮打到对应条目上；
@@ -5451,9 +5792,13 @@ export default function App() {
     if (!modelEditor) return;
     const id = modelEditor.draft.id.trim();
     if (!id) { setNotice("模型 ID 不能为空"); return; }
-    if (modelEditor.mode === "edit" && modelEditor.originalId && modelEditor.originalId !== id) await removeProviderModel(customDraft.provider, modelEditor.originalId);
-    if (editingProvider) {
-      await upsertProviderModel(editingProvider, {
+    // 编辑「已保存供应商」的模型时（含输入框「更多」直达的编辑弹窗），editingProvider
+    // 可能为空——此时按 originalId 归属回落到 customModel 的供应商，否则只进本地草稿、
+    // 永远不持久化（表现：勾了最高保存后，思考菜单里不出现该档位，2026-09-04 反馈）。
+    const targetProvider = editingProvider ?? ((modelEditor.originalId && (customModel?.models ?? []).some((m) => m.id === modelEditor.originalId)) ? customModel!.provider : null);
+    if (modelEditor.mode === "edit" && modelEditor.originalId && modelEditor.originalId !== id) await removeProviderModel(targetProvider ?? customDraft.provider, modelEditor.originalId);
+    if (targetProvider) {
+      await upsertProviderModel(targetProvider, {
         id,
         contextWindow: Number(modelEditor.draft.contextWindow) || undefined,
         maxOutputTokens: Number(modelEditor.draft.maxOutputTokens) || undefined,
@@ -5498,11 +5843,6 @@ export default function App() {
     },
   } : {}, [usingCustomModel, customModel]);
   const listThreads = useMemo(() => projectFilter ? threads.filter((entry) => entry.cwd === projectFilter) : threads, [threads, projectFilter]);
-  const projectGroups = useMemo(() => {
-    const map = new Map<string, Thread[]>();
-    for (const entry of threads) map.set(entry.cwd, [...(map.get(entry.cwd) ?? []), entry]);
-    return [...map.entries()].sort((a, b) => Math.max(...b[1].map((entry) => entry.updatedAt)) - Math.max(...a[1].map((entry) => entry.updatedAt)));
-  }, [threads]);
   // 侧边栏视图模式：分组（按时间） vs 项目（按 cwd）；与 WorkBuddy 项目列表对齐
   const [viewTab, setViewTab] = useState<"groups" | "projects">(() => (localStorage.getItem("sidebar-view-tab-v1") === "projects" ? "projects" : "groups"));
   useEffect(() => { try { localStorage.setItem("sidebar-view-tab-v1", viewTab); } catch { /* ignore */ } }, [viewTab]);
@@ -5518,22 +5858,6 @@ export default function App() {
       return next;
     });
   }, []);
-  const allProjectsCollapsed = projectGroups.length > 0 && projectGroups.every(([cwd]) => !expandedProjects.has(cwd));
-  const toggleAllProjects = useCallback(() => {
-    setExpandedProjects((prev) => {
-      const next = new Set(prev);
-      const expand = projectGroups.every(([cwd]) => !next.has(cwd));
-      for (const [cwd] of projectGroups) {
-        if (expand) next.add(cwd);
-        else next.delete(cwd);
-      }
-      try { localStorage.setItem("sidebar-projects-expanded-v1", JSON.stringify([...next])); } catch { /* ignore */ }
-      return next;
-    });
-  }, [projectGroups]);
-  // 筛选条件（侧边栏视图用）：时间/状态
-  const [filter, setFilter] = useState<{ time?: "today" | "week" | "month" | "all"; status?: "running" | "ready" | "all" }>(() => ({ time: "all", status: "all" }));
-  const [filterOpen, setFilterOpen] = useState(false);
   // 项目右键菜单
   const [projectMenu, setProjectMenu] = useState<string | null>(null);
   // 会话置顶：纯前端偏好（引擎无 pin API），用 localStorage 存 id 列表。
@@ -5547,30 +5871,31 @@ export default function App() {
   function togglePinThread(id: string) {
     setPinnedThreads((current) => current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]);
   }
-  // 侧边栏视图共用：按筛选条件过滤后的 thread 列表（项目 tab 直接用这个，分组 tab 也用它分时间）
-  const filteredThreads = useMemo(() => {
-    const now = Date.now() / 1000;
-    let result = listThreads;
-    if (filter.time && filter.time !== "all") {
-      const window = filter.time === "today" ? 86400 : filter.time === "week" ? 7 * 86400 : 30 * 86400;
-      result = result.filter((entry) => now - entry.updatedAt <= window);
-    }
-    if (filter.status && filter.status !== "all") {
-      const wantRunning = filter.status === "running";
-      result = result.filter((entry) => {
-        const running = entry.status === "inProgress" || entry.status === "running";
-        return wantRunning ? running : !running;
-      });
-    }
-    return result;
-  }, [listThreads, filter]);
+  const projectGroups = useMemo(() => {
+    const map = new Map<string, Thread[]>();
+    for (const entry of listThreads) map.set(entry.cwd, [...(map.get(entry.cwd) ?? []), entry]);
+    return [...map.entries()].sort((a, b) => Math.max(...b[1].map((entry) => entry.updatedAt)) - Math.max(...a[1].map((entry) => entry.updatedAt)));
+  }, [listThreads]);
+  const allProjectsCollapsed = projectGroups.length > 0 && projectGroups.every(([cwd]) => !expandedProjects.has(cwd));
+  const toggleAllProjects = useCallback(() => {
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      const expand = projectGroups.every(([cwd]) => !next.has(cwd));
+      for (const [cwd] of projectGroups) {
+        if (expand) next.add(cwd);
+        else next.delete(cwd);
+      }
+      try { localStorage.setItem("sidebar-projects-expanded-v1", JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  }, [projectGroups]);
   const groupedThreads = useMemo(() => {
-    const groups = groupThreadsByTime(filteredThreads);
-    const pinned = filteredThreads.filter((entry) => pinnedThreads.includes(entry.id));
+    const groups = groupThreadsByTime(listThreads);
+    const pinned = listThreads.filter((entry) => pinnedThreads.includes(entry.id));
     if (!pinned.length) return groups;
-    // 置顶组固定排最前：仅保留还在「未归档+筛选」里的置顶项，组内按时间倒序
+    // 置顶组固定排最前：仅保留未归档里的置顶项，组内按时间倒序
     return [{ key: "pinned", label: "置顶", items: pinned.sort((a, b) => b.updatedAt - a.updatedAt) }, ...groups.filter((g) => g.key !== "pinned")];
-  }, [filteredThreads, pinnedThreads]);
+  }, [listThreads, pinnedThreads]);
   const allGroupsCollapsed = groupedThreads.length > 0 && groupedThreads.every((group) => collapsedSections.has(group.key));
   const toggleAllGroups = useCallback(() => {
     setCollapsedSections((previous) => {
@@ -5586,16 +5911,14 @@ export default function App() {
   }, [groupedThreads]);
   const sidebarAllCollapsed = viewTab === "groups" ? allGroupsCollapsed : allProjectsCollapsed;
   const toggleAllSidebarSections = viewTab === "groups" ? toggleAllGroups : toggleAllProjects;
-  // 当前 tab 可见 thread 的 id 集合（供「清空当前 tab」使用）
-  const currentTabIds = useMemo(() => filteredThreads.map((entry) => entry.id), [filteredThreads]);
-  async function purgeCurrentTab() {
-    if (!currentTabIds.length) { setNotice("当前视图下没有可清空的任务"); return; }
-    await bulkDeleteThreads(currentTabIds);
-  }
+  // 「清空当前视图」批量删除按钮已下架（2026-09-04 反馈：侧栏顶部太容易误触）。
+  // purgeCurrentTab / currentTabIds 一并移除；批量删除能力保留在单条任务右键/菜单里。
   const commandMatches = useMemo(() => {
     if (!prompt.startsWith("/") || prompt.includes(" ")) return [];
     const query = prompt.slice(1).toLowerCase();
-    return slashCommands.filter(([name, description]) => name.includes(query) || description.includes(query)).slice(0, 9);
+    const matches = slashCommands.filter(([name, description]) => name.includes(query) || description.includes(query));
+    // 前缀命中排前（打 /p 时 plan 置顶），全部展示——菜单本身可滚动，不再裁 9 条
+    return matches.sort((a, b) => Number(b[0].startsWith(query)) - Number(a[0].startsWith(query)));
   }, [prompt]);
   const availableContextItems = useMemo(() => {
     if (!thread) return [];
@@ -5642,22 +5965,38 @@ export default function App() {
     return found.reverse(); // 最新的在前
   }, [thread]);
 
-  function addSystemEvent(title: string, text: string, tone: SystemEvent["tone"] = "info", kind?: SystemEvent["kind"]) {
-    setSystemEvents((current) => [...current, { id: crypto.randomUUID(), title, text, tone, kind }]);
+  function addSystemEvent(title: string, text: string, tone: SystemEvent["tone"] = "info") {
+    setSystemEvents((current) => [...current, { id: crypto.randomUUID(), title, text, tone }]);
   }
 
   function setCompactEventState(state: "running" | "success" | "error", detail?: string) {
     const content = state === "running"
-      ? { title: "正在压缩上下文", text: "Codex 正在总结较早的对话内容。", tone: "info" as const }
+      ? { message: "正在压缩上下文" }
       : state === "success"
-        ? { title: "上下文已压缩", text: "较早对话已总结为摘要并释放空间；多次压缩可能丢失细节，建议适时开新任务。", tone: "success" as const }
-        : { title: "上下文压缩失败", text: detail || "压缩没有完成，请稍后重试。", tone: "error" as const };
-    setSystemEvents((current) => {
-      const existing = current.find((entry) => entry.kind === "compact");
-      const next: SystemEvent = { id: existing?.id ?? crypto.randomUUID(), ...content, kind: "compact" };
-      return [...current.filter((entry) => entry.kind !== "compact"), next];
-    });
+        ? { message: "上下文压缩成功" }
+        : { message: detail ? `上下文压缩失败：${detail}` : "上下文压缩失败" };
+    const threadId = Array.from(compactPendingRef.current)[0] ?? threadRef.current?.id ?? "";
+    setCompactToast({ state, message: content.message, threadId });
   }
+
+  // 压缩分隔线：success 5s、error 8s 自动消失；running 300s 没收到完成事件才标记失败。
+  // 90s 的旧超时会把大上下文的真实模型压缩（几分钟很常见）误判成失败——已实测踩坑。
+  useEffect(() => {
+    if (!compactToast) return;
+    if (compactToast.state === "success") {
+      const timer = window.setTimeout(() => setCompactToast(null), 5000);
+      return () => window.clearTimeout(timer);
+    }
+    if (compactToast.state === "error") {
+      const timer = window.setTimeout(() => setCompactToast(null), 8000);
+      return () => window.clearTimeout(timer);
+    }
+    // running 兜底超时：引擎吞请求 / 不发完成事件时不会一直卡住
+    const timer = window.setTimeout(() => {
+      setCompactToast((current) => current?.state === "running" ? { state: "error", message: "上下文压缩失败：压缩耗时超过 5 分钟仍未返回，可稍后重试 /compact", threadId: current.threadId } : current);
+    }, 300000);
+    return () => window.clearTimeout(timer);
+  }, [compactToast]);
 
   /** 一次性状态通知：使用现有 toast，不写入对话历史。 */
   function showToast(title: string, text?: unknown) {
@@ -5709,11 +6048,17 @@ export default function App() {
     const update = () => {
       const dist = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
       setAwayFromBottom(dist > scroller.clientHeight * 0.25);
+      // 向上滚动立即解除跟随（不等 25% 迟滞阈值）：wheel 只覆盖滚轮/触摸板，
+      // 拖滚动条、键盘 PageUp/方向键只产生 scroll 事件——靠"scrollTop 变小"识别向上。
+      // 没有这条，流式期间用户在迟滞区（4px~25% 视口）内往上拖会被下一帧拉回底部，
+      // 即"往上看回答会自动下滑直到回答给完"。
+      if (scroller.scrollTop < lastTop - 2 && dist > 4) stickToBottomRef.current = false;
       // 迟滞：距底 ≤4px 重新开启跟随；>25% 视口才关闭。中间地带保持原状，
       // 避免流式内容增高时 stick 反复翻转（此前 smooth 滚动动画的中间滚动事件
       // 会误关跟随，导致"消息发了不显示、停止后才出现"）。
       if (dist <= 4) stickToBottomRef.current = true;
       else if (dist > scroller.clientHeight * 0.25) stickToBottomRef.current = false;
+      lastTop = scroller.scrollTop;
     };
     // 任何方向滚轮 = 用户主动浏览，立即解除钉住模式（WorkBuddy：消息只在发送瞬间钉住，之后自由滚动）。
     // 向上滚额外停止底部跟随（不等 25% 阈值，防止跟流式滚动打架）。
@@ -5724,6 +6069,7 @@ export default function App() {
     updateBottomStateRef.current = update;
     // rAF 节流：scroll 事件密集时 update 会读 scrollHeight/scrollTop 强制同步布局
     let raf = 0;
+    let lastTop = scroller.scrollTop; // 供 update 识别"向上滚动"（拖滚动条/键盘）
     const schedule = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; update(); }); };
     update();
     // 绑定只跟会话走：若依赖 thread，流式出字每帧都会销毁重建 ResizeObserver + 监听器，
@@ -5760,6 +6106,7 @@ export default function App() {
     // 这里消费后立即重置，之后的流式更新走常规 stick 跟随（smooth 跟手）。
     if (switchJumpRef.current) {
       switchJumpRef.current = false;
+      pinNewTurnRef.current = false;
       stickToBottomRef.current = true;
       jumpToBottom(el);
       return;
@@ -5936,7 +6283,6 @@ export default function App() {
         () => { if (memoryConfigOpen) { setMemoryConfigOpen(false); return true; } return false; },
         () => { if (memoryCenterOpen) { setMemoryCenterOpen(false); return true; } return false; },
         () => { if (infoModal) { setInfoModal(null); return true; } return false; },
-        () => { if (filterOpen) { setFilterOpen(false); return true; } return false; },
         () => { if (autoFormVisible) { setAutoFormVisible(false); return true; } return false; },
         () => { if (reviewReport) { setReviewReport(""); return true; } return false; },
         () => { if (settingsOpen) { setSettingsOpen(false); return true; } return false; },
@@ -5963,7 +6309,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [showLogin, skillInstall, agentAsk, appConfirm, appPrompt, memoryPreview, searchPreview, filePreview, lightbox, modelEditor, connectorEditorOpen, connectorTemplateModal, commandEditor, subAgentEditorOpen, expertTeamEditorOpen, goalsOpen, memoryCenterOpen, memoryConfigOpen, infoModal, filterOpen, reviewReport, settingsOpen, shortcutsOpen, paletteOpen, skillMenuOpen, connectorMenuOpen, attachmentMenuOpen, contextOpen, switcherOpen, sideChooser, mobileNav, sidebarFlyout, autoFormVisible, taskMenuOpen, botManagerOpen, mobileRemoteOpen, ctxMenuOpen, accountMenuOpen, rightOpen]);
+  }, [showLogin, skillInstall, agentAsk, appConfirm, appPrompt, memoryPreview, searchPreview, filePreview, lightbox, modelEditor, connectorEditorOpen, connectorTemplateModal, commandEditor, subAgentEditorOpen, expertTeamEditorOpen, goalsOpen, memoryCenterOpen, memoryConfigOpen, infoModal, reviewReport, settingsOpen, shortcutsOpen, paletteOpen, skillMenuOpen, connectorMenuOpen, attachmentMenuOpen, contextOpen, switcherOpen, sideChooser, mobileNav, sidebarFlyout, autoFormVisible, taskMenuOpen, botManagerOpen, mobileRemoteOpen, ctxMenuOpen, accountMenuOpen, rightOpen]);
   useEffect(() => {
     if (workStartedAt == null) return;
     const timer = window.setInterval(() => setNowTick(Date.now()), 1000);
@@ -5974,6 +6320,14 @@ export default function App() {
     // 主侧栏只展示未归档会话；归档记录由「设置 → 归档管理」单独查看、恢复或删除。
     const result = await window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc", archived: false });
     setThreads(result.data ?? []);
+  }
+
+  // 后台会话（渠道机器人/手机端等在主进程创建的线程）不进当前会话事件流，
+  // 侧栏列表无从感知其出现与更新 → turn/started|completed 时防抖刷新一次。
+  const sidebarRefreshTimerRef = useRef<number | null>(null);
+  function scheduleSidebarRefresh() {
+    if (sidebarRefreshTimerRef.current != null) return;
+    sidebarRefreshTimerRef.current = window.setTimeout(() => { sidebarRefreshTimerRef.current = null; void refreshThreads(); }, 600);
   }
 
   async function refreshQueue(threadId: string) {
@@ -6633,15 +6987,17 @@ export default function App() {
             markThreadRunning(params.threadId);
           }
         }
+        // 渠道机器人等后台会话的 start/stop：走不到下面的当前会话事件流（threadId 过滤会拦掉），
+        // 新建的机器人会话永远进不了侧栏 → 防抖刷新一次 thread/list
+        if ((method0 === "turn/started" || method0 === "turn/completed") && params.threadId !== threadRef.current?.id) {
+          scheduleSidebarRefresh();
+        }
       }
       if (params.threadId && params.threadId !== threadRef.current?.id) return;
       const method = event.method ?? "";
-      // 新一轮助手内容开始后，从“把用户消息钉在顶部”切回跟随最新内容。
-      // 工具输出默认收起，因此视口会优先跟随正文/思考，而不是被大段代码占满。
-      if ((method === "item/started" && params.item?.type !== "userMessage") || isDeltaMethod(method)) {
-        pinNewTurnRef.current = false;
-        stickToBottomRef.current = true;
-      }
+      // 钉顶模式不在首条 delta 就切回底部跟随（旧做法让「钉在视口上边框下方两行」从未
+      // 真正出现就被贴底滚动冲掉，表现为「每次新消息位置都不一样」）：视口由钉顶循环接管，
+      // 下方内容长满视口后由循环自然交还贴底（衔接无跳变）。stick 本就为 true 时保持即可。
       if (threadStreamMethods.has(method)) {
         // delta 批量落盘：把累积到这一帧的 delta 一次性 apply 成新 thread 引用（只触发一次重渲染）
         const flushDeltas = () => {
@@ -6709,7 +7065,13 @@ export default function App() {
       if (method === "turn/plan/updated") {
         setPlanSteps((params.plan ?? []).map((step: any) => ({ step: step.step ?? "", status: step.status ?? "pending" })));
       } else if (method === "thread/goal/updated" || method === "thread/goal/set") {
-        if (params.goal?.objective) setGoalText(params.goal.objective);
+        if (params.goal?.objective) {
+          setGoalText(params.goal.objective);
+          setGoalStatus(params.goal.status ?? "active");
+        } else {
+          setGoalText("");
+          setGoalStatus(null);
+        }
       } else if (method === "turn/completed") {
         // 用本回合新增量累加（旧实现取的是 max，累计 Token 一直是错的）；拿不到增量时按上下文总量兜底
         try {
@@ -6743,10 +7105,20 @@ export default function App() {
         setActiveTurnId(null);
         markThreadStopped(params.threadId);
         setWorkStartedAt(null);
+        // 回合结束时钉顶仍未交还（回复太短没长满视口）：直接解除，别让循环空转；
+        // 不强制切贴底，视口停在用户当前看到的位置
+        pinNewTurnRef.current = false;
         // 只有服务端回合里的 userMessage 文本和乐观消息匹配才清；
         // 否则保留——清早了而服务端消息又没渲染出来，用户消息就"消失"了
         if (optimisticInput && (params.turn?.items ?? []).some((entry: ThreadItem) => entry.type === "userMessage" && userMessageMatchesInput(entry, optimisticInput.content ?? []))) setOptimisticInput(null);
         if (params.turn.error?.message) showToast("任务失败", params.turn.error.message);
+        // 限流失败 → 自动重试（10 次退避）。仅当失败回合属于最近一次发送的线程才接管
+        if (params.turn.error?.message && isRateLimitError(params.turn.error.message) && retryContextRef.current?.threadId === params.threadId) {
+          scheduleRateLimitRetry(rateLimitAttemptRef.current + 1);
+        } else if (!params.turn.error?.message && retryContextRef.current?.threadId === params.threadId) {
+          // 回合正常结束：清掉重试上下文，避免之后别的会话失败误用旧输入重发
+          cancelRateLimitRetry(true);
+        }
         // 运行结束通知：窗口最小化/失焦时弹系统通知，点击通知聚焦回窗口
         try {
           const isCurrent = params.threadId === threadRef.current?.id;
@@ -6757,6 +7129,16 @@ export default function App() {
           }
         } catch { /* 通知失败不影响主流程 */ }
         void window.codex.request("thread/queue/list", { threadId: params.threadId, limit: 1 }).then((result) => result.data?.[0] && window.codex.request("thread/queue/start", { threadId: params.threadId, queuedSubmissionId: result.data[0].id })).catch((error) => showToast("队列启动失败", error.message));
+        // 计划模式：方案回合正常结束 → 弹「开始执行」确认条；失败则静默复位（错误已 toast）
+        if (planTurnRef.current && planTurnRef.current.threadId === params.threadId && planTurnRef.current.turnId === String(params.turn?.id ?? "")) {
+          if (!params.turn.error?.message) {
+            const planText = (Array.isArray(params.turn?.items) ? params.turn.items : []).filter((item: any) => item.type === "agentMessage").map((item: any) => itemText(item)).join("\n\n").trim();
+            setPlanConfirm({ threadId: params.threadId, text: planText });
+            showToast("方案已生成", "确认无误后点击「开始执行」");
+          }
+          planTurnRef.current = null;
+          setPlanRunning(false);
+        }
         void refreshThreads();
       } else if (method === "item/started" || method === "item/completed") {
         // 不在这里清空 optimisticInput：清除时机交给渲染端的文本去重，
@@ -6779,6 +7161,13 @@ export default function App() {
         setSending(false);
         setInterrupting(false);
         markThreadStopped(params.threadId);
+        // error 通知也可能是限流（引擎 RPC 直接报错）：同样进入自动重试
+        const errorMessage = params.error?.message ?? params.message ?? "";
+        if (errorMessage && isRateLimitError(errorMessage) && retryContextRef.current?.threadId === params.threadId) {
+          scheduleRateLimitRetry(rateLimitAttemptRef.current + 1);
+        } else if (params.threadId && retryContextRef.current?.threadId === params.threadId) {
+          cancelRateLimitRetry(true);
+        }
         if (compactPendingRef.current.delete(String(params.threadId ?? threadRef.current?.id ?? ""))) {
           setCompactEventState("error", params.error?.message ?? params.message);
         }
@@ -6839,6 +7228,13 @@ export default function App() {
         showToast("模型安全缓冲", params.reasons?.join("；") || "正在检查模型输出");
       } else if (event.method === "thread/compacted") {
         compactPendingRef.current.delete(String(params.threadId ?? threadRef.current?.id ?? ""));
+        // 压缩后上下文骤降：清掉 total 差值快照，让引擎随后的 usage 推送不被
+        // 「input/cached 单调递增」的差值推导误判（压缩后 input 回落是正常的），
+        // ContextRing 才能真实反映压缩后的占用。下一轮对话完成时用量自然刷新。
+        {
+          const tid = String(params.threadId ?? threadRef.current?.id ?? "");
+          if (tid) { tokenUsageTotalsRef.current.delete(tid); derivedTokenUsageRef.current.delete(tid); }
+        }
         setCompactEventState("success");
       } else if (event.method === "model/rerouted") {
         showToast("模型已切换", `${params.fromModel} → ${params.toModel}`);
@@ -7047,6 +7443,20 @@ export default function App() {
     void updateThreadSettings({ approvalPolicy: value });
   }
 
+  /** 权限胶囊的组合档位切换：完全访问 = danger-full-access + never；其余档位 = workspace-write + 对应审批。
+   *  不能拆成 changeSandbox/changeApproval 先后调——两个 setter 都读旧 state 互相覆盖
+   *  （09-04 实证：从完全访问切「变更前确认」只改了审批，沙箱钉死 → 胶囊永远显示完全访问）。 */
+  function changePermissionMode(value: string) {
+    const sandboxValue = value === "never" ? "danger-full-access" : "workspace-write";
+    const approvalValue = value === "never" ? "never" : value;
+    setSandbox(sandboxValue);
+    setApprovalPolicy(approvalValue);
+    if (threadRef.current) saveThreadPermissions(threadRef.current.id, sandboxValue, approvalValue);
+    localStorage.setItem("default-sandbox", sandboxValue);
+    localStorage.setItem("default-approval", approvalValue);
+    void updateThreadSettings({ approvalPolicy: approvalValue, sandboxPolicy: sandboxPolicy(sandboxValue, workspace) });
+  }
+
   function changeSandbox(value: string) {
     // 切换执行范围不会废弃 Codex 的工具或推理能力；只改变命令/文件操作是否需要审批。
     // 从完全访问降级时默认启用按需审批，确保它仍会请求授权并继续执行。
@@ -7059,7 +7469,8 @@ export default function App() {
     void updateThreadSettings({ approvalPolicy: nextApproval, sandboxPolicy: sandboxPolicy(value, workspace) });
   }
 
-  function changeEffort(value: string) {
+  /** 只切档位、不碰模型声明（供菜单选择/命令与「声明被取消后回落」分别使用） */
+  function applyEffort(value: string) {
     setEffort(value);
     localStorage.setItem("default-effort", value);
     rememberEffortFor(selectedModel?.model ?? modelName(modelId), value);
@@ -7067,6 +7478,31 @@ export default function App() {
     if (threadRef.current?.id) saveThreadEffort(threadRef.current.id, value);
     void updateThreadSettings({ effort: value });
   }
+
+  function changeEffort(value: string) {
+    applyEffort(value);
+    // 菜单/命令选到模型未声明的档位时自动补声明：引擎按 catalog 的 supported_reasoning_levels
+    // 校验 effort，未声明会被拒。写回模型条目并落库（upsertProviderModel 重写
+    // model-catalog.json 并重启引擎），保证「菜单选项」与「模型配置勾选」始终一致。
+    const provider = customModel?.provider;
+    const current = (customModel?.models ?? []).find((m) => m.id === customModel?.model);
+    if (provider && current && !(current.efforts ?? []).includes(value)) {
+      void upsertProviderModel(provider, { ...current, efforts: [...(current.efforts ?? []), value] });
+    }
+  }
+
+  /** 当前模型「已声明」的档位——思考菜单与模型配置勾选的唯一数据源（双向同步）。 */
+  const currentEffortOptions = useMemo(() => {
+    const declared = (selectedModel?.supportedReasoningEfforts ?? []).map((entry) => entry.reasoningEffort);
+    return declared.length ? declared : (customModel ? customModelEfforts : []);
+  }, [selectedModel, customModel, customModelEfforts]);
+
+  // 模型配置里取消勾选某档位后，若它正好是当前生效档位，自动回落——否则会把
+  // 未声明档位继续发给引擎（引擎按 catalog 校验会拒）。
+  useEffect(() => {
+    if (!customModel || !currentEffortOptions.length) return;
+    if (effort && !currentEffortOptions.includes(effort)) applyEffort(DEFAULT_EFFORT);
+  }, [customModel, currentEffortOptions, effort]);
 
   function changePersonality(value: string) {
     setPersonality(value);
@@ -7168,9 +7604,11 @@ export default function App() {
       setWorkStartedAt(Date.now());
       optimisticTurnIdRef.current = null;
       optimisticBaselineRef.current = { threadId: forked.thread.id, turnIds: new Set((forked.thread.turns ?? []).map((entry: Turn) => entry.id)) };
-      setOptimisticInput({ id: `local-${Date.now()}`, type: "userMessage", content: input });
-      // WorkBuddy 式钉住：发完消息定位到视口顶部固定位置，不滚到底；流式期间不跟随直到用户手动滚动
-      // 双帧 rAF：等乐观消息 DOM 渲染就绪后再定位（React 批处理更新通常在下一帧才落 DOM）
+      const optimisticId = `local-${Date.now()}`;
+      justSentIds.add(optimisticId);
+      setOptimisticInput({ id: optimisticId, type: "userMessage", content: input });
+      // WorkBuddy 同款：发完消息平滑滚动到消息顶对齐视口顶（不瞬移、不滚到底）；
+      // 置 pinNewTurnRef 进入对齐窗口（屏蔽贴底跟随，700ms 后由窗口 effect 交还）
       stickToBottomRef.current = false;
       pinNewTurnRef.current = true;
       activeModelRef.current = selectedModel?.model ?? modelName(modelId);
@@ -7412,11 +7850,11 @@ export default function App() {
       else if (name === "copy") { const last = thread?.turns.flatMap((turn) => turn.items).filter((item) => item.type === "agentMessage").at(-1); await copyMessage(itemText(last ?? ({} as ThreadItem))); }
       else if (name === "memory") { setSettingsOpen(true); setSettingsPage("memory"); }
       else if (name === "effort") {
-        if (!argument) showToast("用法", "/effort 低|中|高|最高");
+        if (!argument) showToast("用法", "/effort 极少|低|中|高|max|最高");
         else {
-          const alias: Record<string, string> = { 低: "low", 中: "medium", 高: "high", low: "low", medium: "medium", high: "high" };
+          const alias: Record<string, string> = { 极少: "minimal", 低: "low", 中: "medium", 高: "high", max: "xhigh", 最高: "ultra", minimal: "minimal", low: "low", medium: "medium", high: "high", xhigh: "xhigh", ultra: "ultra" };
           const target = alias[argument];
-          if (!target) showToast("不支持的思考强度", "可选：低 / 中 / 高 / 最高");
+          if (!target) showToast("不支持的思考强度", "可选：极少 / 低 / 中 / 高 / max / 最高");
           else { changeEffort(target); showToast("思考强度已更新", effortLabels[target] ?? target); }
         }
       } else if (name === "personality") {
@@ -7469,12 +7907,32 @@ export default function App() {
           setActiveTurnId(result.turn.id);
           markThreadRunning(thread.id, result.turn.id);
         } else if (name === "goal") {
-          if (argument) {
+          // /goal 目标模式：引擎原生 thread goal——目标持续存在跨回合，回合结束后引擎
+          // 自动 continuation 续跑，模型用 update_goal 工具判定 complete/blocked 后停。
+          if (argument === "clear" || argument === "停止" || argument === "stop") {
+            await window.codex.request("thread/goal/clear", { threadId: thread.id });
+            setGoalText("");
+            setGoalStatus(null);
+            showToast("目标模式已停止", "已清除长期目标，自动推进结束");
+          } else if (argument) {
             await window.codex.request("thread/goal/set", { threadId: thread.id, objective: argument });
-            showToast("长期目标已更新", argument);
+            showToast("目标模式已启动", "将自动持续推进直到目标达成；/goal clear 可随时停止");
           } else {
             const result = await window.codex.request("thread/goal/get", { threadId: thread.id });
-            setInfoModal({ title: "长期目标", body: result.goal?.objective ?? "尚未设置长期目标" });
+            const goal = result.goal;
+            const statusLabel: Record<string, string> = { active: "进行中", paused: "已暂停", blocked: "受阻", usageLimited: "用量受限", budgetLimited: "预算受限", complete: "已完成" };
+            setInfoModal({ title: "目标模式", body: goal?.objective ? `状态：${statusLabel[goal.status ?? ""] ?? goal.status ?? "进行中"}\n目标：${goal.objective}${goal.tokensUsed != null ? `\n已消耗：${goal.tokensUsed} tokens` : ""}` : "尚未设置目标；用法 /goal <目标描述>" });
+          }
+        } else if (name === "plan") {
+          // /plan 计划模式：本轮以引擎原生 plan 协作模式运行（模型只调研+出方案，不执行改动），
+          // 方案输出后弹「开始执行」确认条，确认后按方案正常执行。
+          if (!argument) showToast("用法", "/plan <任务描述> —— 先出方案，确认后执行");
+          else {
+            planOnceRef.current = true;
+            setPlanArmed(true);
+            pendingCommandTextRef.current = argument;
+            showToast("计划模式已启动", "本轮只调研并输出方案，确认后才开始执行");
+            await send();
           }
         } else if (name === "undo") {
           const result = await window.codex.request("thread/rollback", { threadId: thread.id, numTurns: 1 });
@@ -7953,10 +8411,18 @@ export default function App() {
     } catch (error: any) { setNotice(`卸载技能失败：${error.message}`); }
   }
 
-  async function pasteImage() {
+  /** 粘贴图片：主进程读剪贴板位图落盘（截图/网页复制图都走这条）。
+   *  fallbackPath = 粘贴事件里的纯文本，用于「资源管理器复制图片文件」这类
+   *  剪贴板无位图、只有路径文本的来源；仅接受单行、无协议、扩展名像图片的路径。 */
+  async function pasteImage(fallbackPath = "") {
     const value = await window.codex.readClipboardImage();
-    if (value) insertComposerImages([value]);
-    else setNotice("剪贴板中没有图片");
+    if (value) { insertComposerImages([value]); return; }
+    const candidate = fallbackPath.trim();
+    if (candidate && !candidate.includes("\n") && !candidate.includes("://") && /\.(png|jpe?g|gif|webp|bmp)$/i.test(candidate)) {
+      insertComposerImages([candidate]);
+      return;
+    }
+    setNotice("剪贴板中没有图片");
   }
 
   /** 触发提示词增强：原文备份 → 调主进程 LLM 润色 → 替换输入框文本。
@@ -8009,28 +8475,34 @@ export default function App() {
     return stripImageTokens(current).includes(core.slice(0, Math.min(core.length, 60)));
   }
 
-  /** 把图片以占位符形式插入输入框光标处（WorkBuddy 式内联：粘贴在哪就出现在哪）。
-   *  同时保留 images 数组（发送管线数据源），占位符负责展示与位置语义。 */
+  /** WorkBuddy 式内联插入：在编辑框光标处直接插入图片 chip 节点（粘贴/选择图片共用），
+   *  随后序列化回流 prompt/images——DOM 即时可见，不走重建（否则光标闪跳）。 */
   function insertComposerImages(paths: string[]) {
     if (!paths.length) return;
     const el = composerInputRef.current;
-    setImages((current) => [...current, ...paths.filter((path) => !current.includes(path))]);
     if (!el) {
-      setPrompt((current) => `${current}${current && !current.endsWith("\n") ? "\n" : ""}${paths.map((path) => imageToken(path)).join(" ")}`);
+      setImages((current) => [...current, ...paths.filter((path) => !current.includes(path))]);
       return;
     }
-    setPrompt((current) => {
-      const start = el.selectionStart ?? current.length;
-      const end = el.selectionEnd ?? start;
-      let next = { text: current, caret: current.length };
-      for (const path of paths) {
-        const applied = insertImageToken(next.text, next.caret, next.caret, path);
-        next = applied;
+    el.focus();
+    const selection = window.getSelection();
+    for (const path of paths) {
+      const chip = makeComposerChip(path);
+      const range = document.createRange();
+      if (selection && selection.rangeCount > 0 && el.contains(selection.getRangeAt(0).startContainer)) {
+        const current = selection.getRangeAt(0);
+        range.setStart(current.startContainer, current.startOffset);
+      } else {
+        range.selectNodeContents(el);
       }
-      // insertImageToken 基于原始 start/end；多图时基于上次 caret 顺序追加
-      requestAnimationFrame(() => { el.focus(); el.setSelectionRange(next.caret, next.caret); });
-      return next.text;
-    });
+      range.collapse(false);
+      range.insertNode(chip);
+      range.setStartAfter(chip);
+      range.collapse(true);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
+    syncComposerFromDom();
   }
 
   async function openThread(id: string, freshThread?: Thread | null) {
@@ -8060,6 +8532,13 @@ export default function App() {
     reviewTurnRef.current = null;
     setPlanSteps([]);
     setGoalText("");
+    setGoalStatus(null);
+    // 目标模式状态回填：切会话后从引擎拉当前 goal（引擎原生自动续跑的依据）
+    void window.codex.request("thread/goal/get", { threadId: id }).then((result) => {
+      if (switchSeqRef.current !== seq) return;
+      setGoalText(result.goal?.objective ?? "");
+      setGoalStatus(result.goal?.status ?? null);
+    }).catch(() => { /* 引擎不支持 goal RPC 时静默 */ });
     // jumpToBottom settled 回调：内容渲染稳定（scrollHeight 连续两帧不变）后才让遮罩
     // 淡出；多次调用重置 timer，保证只有"所有路径的 jumpToBottom 都稳定"后才真正卸载，
     // 避免切到长会话时遮罩提前消失、内容继续增高导致"切过去在中间"。
@@ -8123,9 +8602,18 @@ export default function App() {
       // 防 markdown/图片在首帧后增高导致没贴底
       requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled));
     }
+    // 频繁切换优化：缓存已秒开、该会话不在运行、且 30 秒内刚完整 resume 过 → 跳过这轮
+    // resume。反复切换时每次都全量加载是卡顿主因；非运行会话期间无事件流，内容不可能变化。
+    // 运行中会话必须继续走 resume 对齐引擎状态，不能跳。
+    if (cached && !knownRunning && Date.now() - (recentResumeAtRef.current.get(id) ?? 0) < 30_000) {
+      recentResumeAtRef.current.set(id, Date.now());
+      setOpeningThread(null);
+      return;
+    }
     try {
       const result = await window.codex.request("thread/resume", { threadId: id, excludeTurns: false });
       if (seq !== switchSeqRef.current) return; // 已切到别的会话，丢弃本次结果
+      recentResumeAtRef.current.set(id, Date.now());
       // 残留运行态归一化（详见 normalizeLoadedThread）：旧会话丢过 turn/completed 的
       // 回合不能带着 inProgress 进渲染，否则永远走流式分支、展示回退到旧效果。
       const loaded = runningThreadIdsRef.current.has(id) ? result.thread : normalizeLoadedThread(result.thread);
@@ -8295,34 +8783,6 @@ export default function App() {
     }
   }
 
-  async function bulkDeleteThreads(ids: string[]) {
-    if (!ids.length) return;
-    if (!window.confirm(`确认永久删除 ${ids.length} 条任务？此操作无法撤销。`)) return;
-    for (const id of ids) {
-      try {
-        await window.codex.request("thread/delete", { threadId: id });
-        threadCacheRef.current.delete(id);
-      } catch (error: any) {
-        setNotice(`删除任务失败：${error.message ?? error}`);
-      }
-    }
-    setThreads((current) => {
-      const next = current.filter((entry) => !ids.includes(entry.id));
-      return next;
-    });
-    if (threadRef.current && ids.includes(threadRef.current.id)) {
-      threadRef.current = null;
-      setThread(null);
-      setOptimisticInput(null);
-      setActiveTurnId(null);
-      for (const id of ids) markThreadStopped(id);
-      setWorkStartedAt(null);
-      setSystemEvents([]);
-      setPlanSteps([]);
-      setGoalText("");
-    }
-  }
-
   async function deleteThreadsByCwd(cwd: string) {
     const ids = threads.filter((entry) => entry.cwd === cwd).map((entry) => entry.id);
     if (!ids.length) { setNotice("该项目下已无对话"); return; }
@@ -8411,9 +8871,13 @@ export default function App() {
     }
     if (!value && images.length === 0 && files.length === 0) return;
     if (sendInFlightRef.current) return;
+    // 用户手动发消息时取消等待中的 429 自动重试（手动发送优先，避免交错）
+    if (rateLimitRetry || rateLimitTimerRef.current != null) cancelRateLimitRetry(true);
     sendInFlightRef.current = true;
     try {
     if (!customModel || !selectedModel) {
+      planOnceRef.current = false; // /plan 旗标不跨发送泄漏：发送失败即复位
+      setPlanArmed(false);
       setNotice("请先配置并启用自定义模型");
       setSettingsOpen(true);
       return;
@@ -8434,6 +8898,8 @@ export default function App() {
       }
     }
     if (!workspace) {
+      planOnceRef.current = false; // /plan 旗标不跨发送泄漏：发送失败即复位
+      setPlanArmed(false);
       await chooseWorkspace();
       return;
     }
@@ -8443,7 +8909,9 @@ export default function App() {
     const inlineImagePaths = promptImagePaths(messageText);
     if (inlineImagePaths.length) messageText = stripImageTokens(messageText);
     try {
-      const resolved = await resolveThreadReferences(value, thread?.id);
+      // 必须用剥离占位符后的 messageText：传原始 value 会把 [图片:...] 编码路径
+      // 覆盖回发送文本（09-04 截图实证：气泡里出现整段乱码 token）
+      const resolved = await resolveThreadReferences(messageText, thread?.id);
       messageText = resolved.text;
       threadReferenceBlocks = resolved.blocks;
     } catch (error: any) {
@@ -8530,9 +8998,11 @@ export default function App() {
     }
     optimisticTurnIdRef.current = null;
     optimisticBaselineRef.current = { threadId: thread?.id ?? null, turnIds: new Set((thread?.turns ?? []).map((entry) => entry.id)) };
-    setOptimisticInput({ id: `local-${Date.now()}`, type: "userMessage", content: sendInput });
-    // WorkBuddy 式钉住：发完消息定位到视口顶部固定位置，不滚到底；流式期间不跟随直到用户手动滚动
-    // 双帧 rAF：等乐观消息 DOM 渲染就绪后再定位（React 批处理更新通常在下一帧才落 DOM）
+    const optimisticId = `local-${Date.now()}`;
+    justSentIds.add(optimisticId);
+    setOptimisticInput({ id: optimisticId, type: "userMessage", content: sendInput });
+    // WorkBuddy 同款：发完消息平滑滚动到消息顶对齐视口顶（不瞬移、不滚到底）；
+    // 置 pinNewTurnRef 进入对齐窗口（屏蔽贴底跟随，700ms 后由窗口 effect 交还）
     stickToBottomRef.current = false;
     pinNewTurnRef.current = true;
     let createdThreadId: string | null = null;
@@ -8543,6 +9013,8 @@ export default function App() {
         model: selectedModel?.model ?? modelName(modelId),
         effort: effort || null,
         personality: selectedModel?.supportsPersonality ? personality : null,
+        // /plan 计划模式：引擎原生 plan 协作模式（探针实证 turn/start 接受 {mode:"plan",settings:{model}}）
+        ...(planOnceRef.current ? { collaborationMode: { mode: "plan", settings: { model: selectedModel?.model ?? modelName(modelId) } } } : {}),
       });
       let active = thread;
       if (!active) {
@@ -8597,6 +9069,22 @@ export default function App() {
       }
       createdThreadId = null;
       if (result.turn?.id) {
+        // /plan 计划模式旗标已消费：记住这个方案回合，turn/completed 时弹「开始执行」确认条
+        if (planOnceRef.current) {
+          planOnceRef.current = false;
+          setPlanArmed(false);
+          setPlanRunning(true);
+          planTurnRef.current = { threadId: active.id, turnId: String(result.turn.id) };
+        }
+        // 记录限流重试上下文：该回合若以 429 失败，可用原输入在原会话自动重发
+        retryContextRef.current = {
+          threadId: active.id,
+          input: sendInput,
+          model: selectedModel?.model ?? modelName(modelId),
+          effort: effort || null,
+          personality: selectedModel?.supportsPersonality ? personality : null,
+        };
+        rateLimitAttemptRef.current = 0;
         const hydratedTurn = hydrateTurnUserMessage(result.turn, sendInput);
         optimisticTurnIdRef.current = hydratedTurn.id;
         setActiveTurnId(hydratedTurn.id);
@@ -8615,7 +9103,27 @@ export default function App() {
       if (readStoredPendingImport(active.id)) forgetPendingImport(active.id);
       void refreshThreads();
     } catch (error: any) {
+      // turn/start RPC 直接以限流失败：安排应用层自动重试（10 次退避）
+      if (isRateLimitError(error?.message)) {
+        const retryThreadId = createdThreadId ?? threadRef.current?.id;
+        if (retryThreadId) {
+          setSending(false);
+          setInterrupting(false);
+          setWorkStartedAt(null);
+          markThreadStopped(retryThreadId);
+          retryContextRef.current = {
+            threadId: retryThreadId,
+            input: sendInput,
+            model: selectedModel?.model ?? modelName(modelId),
+            effort: effort || null,
+            personality: selectedModel?.supportsPersonality ? personality : null,
+          };
+          scheduleRateLimitRetry(1);
+          return;
+        }
+      }
       // 彻底失败也必须复位运行态，否则停止按钮一直转、composer 一直锁
+      setPlanRunning(false);
       if (createdThreadId && !runningThreadIdsRef.current.has(createdThreadId)) {
         const orphanId = createdThreadId;
         await window.codex.request("thread/delete", { threadId: orphanId }).catch(() => undefined);
@@ -8700,6 +9208,41 @@ export default function App() {
     setShowLogin(true);
   }
 
+  // /plan 确认执行：以默认协作模式把「按方案执行」发进同一会话
+  function confirmPlanExecution() {
+    const pc = planConfirm;
+    if (!pc || !thread || thread.id !== pc.threadId || sendInFlightRef.current) return;
+    setPlanConfirm(null);
+    setPlanFeedback("");
+    pendingCommandTextRef.current = "方案已确认，请严格按照上述方案开始执行，完成后总结改动清单。";
+    void send();
+  }
+  function cancelPlanExecution() {
+    setPlanConfirm(null);
+    setPlanFeedback("");
+    showToast("计划模式已取消", "方案保留在对话里，可手动继续");
+  }
+  // /plan 提意见：不清计划旗标，带着反馈以 plan 模式再跑一轮修订，直到满意再执行
+  function submitPlanFeedback() {
+    const text = planFeedback.trim();
+    if (!planConfirm || !text || !thread || thread.id !== planConfirm.threadId || sendInFlightRef.current) return;
+    setPlanConfirm(null);
+    setPlanFeedback("");
+    planOnceRef.current = true;
+    pendingCommandTextRef.current = text;
+    showToast("已提交意见", "正在按你的反馈修订方案");
+    void send();
+  }
+  // /goal 停止：清引擎长期目标（引擎随即不再自动续跑）
+  function stopGoalLoop() {
+    if (!thread) return;
+    void window.codex.request("thread/goal/clear", { threadId: thread.id }).then(() => {
+      setGoalText("");
+      setGoalStatus(null);
+      showToast("目标模式已停止", "已清除长期目标，自动推进结束");
+    }).catch((error: any) => showToast("停止失败", error.message));
+  }
+
   async function interrupt() {
     if (!thread) return;
     const turnId = activeTurnId ?? runningTurnIdsRef.current.get(thread.id);
@@ -8736,7 +9279,7 @@ export default function App() {
     }
   }
 
-  function onComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+  function onComposerKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void send();
@@ -8818,6 +9361,16 @@ export default function App() {
   const activeMemberTeam = activeThreadMemberRunning ? expertTeams.find((team) => team.teamId === activeThreadMemberRunning.teamId) ?? null : null;
   const activeMember = activeMemberTeam && activeThreadMemberRunning ? [activeMemberTeam.lead, ...activeMemberTeam.members].find((member) => member.id === activeThreadMemberRunning.memberName) ?? null : null;
   const activityLabel = interrupting ? "正在停止" : waitingForApproval ? "等待你的确认" : waitingForInput ? "等待你的输入" : activeMember ? `专家「${activeMember.profession.zh || activeMember.name}」执行中` : subAgentRunning ? `子智能体「${subAgentRunning}」执行中` : activeThreadRunning ? (workStartedAt != null ? `已工作 ${Math.max(1, Math.round((nowTick - workStartedAt) / 1000))} 秒` : "Codex 正在处理") : "";
+  // 上下文压缩后的缓存重建窗口：压缩重写了提示词前缀，上游缓存命中需要 1~3 轮才恢复
+  // （rollout 实测：压缩后 last.cached=0 连续 2 轮，第 3 轮回到 98%）。窗口内 0% 不是 bug。
+  const recentCompaction = useMemo(() => {
+    if (!thread) return false;
+    const turns = thread.turns ?? [];
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (turns[i].items?.some((item) => item.type === "contextCompaction")) return turns.length - 1 - i < 3;
+    }
+    return false;
+  }, [thread]);
   const saveInlineRename = () => {
     const next = renameDraft.trim();
     if (next && thread) void renameThread(thread.id, next);
@@ -8861,28 +9414,8 @@ export default function App() {
           <button className={`view-tab ${viewTab === "projects" ? "active" : ""}`} onClick={() => setViewTab("projects")} title="按项目分组"><FolderOpen size={14} /><span>项目</span></button>
           <div className="view-toolbar">
             <button className="view-toolbar-btn" title={sidebarAllCollapsed ? "全部展开" : "全部折叠"} onClick={toggleAllSidebarSections} disabled={viewTab === "groups" ? !groupedThreads.length : !projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
-            <button className={`view-toolbar-btn ${filterOpen ? "active" : ""}`} title="筛选条件" onClick={() => setFilterOpen((current) => !current)}><SlidersHorizontal size={14} /></button>
-            <button className="view-toolbar-btn danger" title="清空当前视图" disabled={!currentTabIds.length} onClick={() => void purgeCurrentTab()}><Trash2 size={14} /></button>
           </div>
         </div>
-        {filterOpen && <div className="filter-popover" onMouseLeave={() => setFilterOpen(false)}>
-          <div className="filter-row">
-            <span className="filter-label">时间</span>
-            <div className="filter-options">
-              {([["all", "全部"], ["today", "今天"], ["week", "本周"], ["month", "本月"]] as const).map(([value, label]) => (
-                <button key={value} className={`filter-chip-btn ${filter.time === value ? "active" : ""}`} onClick={() => setFilter((current) => ({ ...current, time: value }))}>{label}</button>
-              ))}
-            </div>
-          </div>
-          <div className="filter-row">
-            <span className="filter-label">状态</span>
-            <div className="filter-options">
-              {([["all", "全部"], ["running", "运行中"], ["ready", "已就绪"]] as const).map(([value, label]) => (
-                <button key={value} className={`filter-chip-btn ${filter.status === value ? "active" : ""}`} onClick={() => setFilter((current) => ({ ...current, status: value }))}>{label}</button>
-              ))}
-            </div>
-          </div>
-        </div>}
         <div className="thread-list">
           {loading ? Array.from({ length: 5 }).map((_, index) => <div className="thread-skeleton shimmer" key={index} />) : viewTab === "projects" ? (
             <div className="project-list">
@@ -8908,7 +9441,7 @@ export default function App() {
                 );
               }) : <div className="empty-list">暂无项目</div>}
             </div>
-          ) : filteredThreads.length ? (
+          ) : listThreads.length ? (
             <>
               {groupedThreads.map((g) => (
                 <section className="conv-section" key={g.key}>
@@ -8934,6 +9467,7 @@ export default function App() {
               {accountMenuSub === null && <>
                 <button className="account-menu-item" onClick={() => setAccountMenuSub("lang")}><Globe2 size={15} /><span>界面语言</span><ChevronRight size={14} className="account-menu-arrow" /></button>
                 <button className="account-menu-item" onClick={() => setAccountMenuSub("theme")}><Sun size={15} /><span>界面主题</span><ChevronRight size={14} className="account-menu-arrow" /></button>
+                <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); void refreshThreads(); showToast("会话列表已刷新", "已重新读取全部会话"); }}><ListRestart size={15} /><span>刷新会话列表</span></button>
                 <button className="account-menu-item" onClick={() => setAccountMenuSub("zoom")}><ZoomIn size={15} /><span>界面缩放</span><ChevronRight size={14} className="account-menu-arrow" /></button>
                 <button className="account-menu-item" onClick={() => setAccountMenuSub("update")}>
                   <RefreshCw size={15} />
@@ -8944,6 +9478,7 @@ export default function App() {
                 <div className="account-menu-sep" />
                 <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setSettingsPage("usage"); setSettingsOpen(true); }}><CircleGauge size={15} /><span>使用统计</span></button>
                 <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setSettingsPage("user"); setSettingsOpen(true); setMobileNav(false); }}><UserRound size={15} /><span>用户中心</span></button>
+                <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); void window.codex.openExternal("https://www.jvszzp.ltd/feedback.html"); }}><MessageSquarePlus size={15} /><span>问题反馈</span><ExternalLink size={12} className="account-menu-arrow" /></button>
                 <div className="account-menu-sep" />
                 <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); handleLogout(); }}><LogOut size={15} /><span>退出登录</span></button>
               </>}
@@ -9107,7 +9642,19 @@ export default function App() {
           {thread?.turns.map((turn) => <MemoTurnView turn={turn} isLastTurn={turn.id === thread.turns[thread.turns.length - 1]?.id} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={tokenUsage} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />)}
           {optimisticInput && !optimisticConfirmed && <ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} />}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
-          {systemEvents.map((event) => event.kind === "compact" ? <CompactEventCard event={event} key={event.id} /> : <div className={`system-event ${event.tone ?? "info"}`} key={event.id}><strong>{event.tone === "success" ? <CircleCheck size={13} className="system-event-icon" /> : null}{event.title}</strong><Markdown>{event.text}</Markdown></div>)}
+          {systemEvents.map((event) => <div className={`system-event ${event.tone ?? "info"}`} key={event.id}><strong>{event.tone === "success" ? <CircleCheck size={13} className="system-event-icon" /> : null}{event.title}</strong><Markdown>{event.text}</Markdown></div>)}
+          {/* 上下文压缩分隔线：两边虚线 + 中间文字，状态切换带过渡；只属于发起压缩的会话。
+              成功态若时间线里已有 contextCompaction 项（同样渲染为成功分隔线），跳过避免重复 */}
+          {compactToast && compactToast.threadId === thread?.id && !(compactToast.state === "success" && (thread?.turns ?? []).some((t) => (t.items ?? []).some((i) => i.type === "contextCompaction"))) && (
+            <div className={`compact-divider compact-divider--${compactToast.state}`} key={compactToast.state} role="status" aria-label="上下文压缩状态">
+              <i className="compact-divider-line" aria-hidden />
+              <span className="compact-divider-text">
+                {compactToast.state === "running" && <LoaderCircle size={13} className="spin" />}
+                {compactToast.message}
+              </span>
+              <i className="compact-divider-line" aria-hidden />
+            </div>
+          )}
           {pending.filter((request) => !request.params?.threadId || request.params.threadId === thread?.id).map((request) => <RequestCard request={request} key={request.id} onDone={() => setPending((current) => current.filter((entry) => entry.id !== request.id))} />)}
           {activityLabel && <div className={`working-indicator ${waitingForApproval || waitingForInput ? "paused" : ""}`}>
             {activeMember
@@ -9135,16 +9682,23 @@ export default function App() {
           )}
         </div>
 
-        {goalsOpen && thread && (goalText || planSteps.length > 0) && (
+        {goalsOpen && !goalsAutoGone && thread && (goalText || planSteps.length > 0) && (
           <>
             <div className={`goals-pop ${goalsDocked ? "docked" : ""}`}>
-              <button className="goals-summary" onClick={() => setGoalsExpanded((current) => !current)}>
-                <Target size={14} />
-                <strong>目标与进程</strong>
-                {goalText && <span className="goals-goal-text">{goalText}</span>}
-                <span className="goals-count">{planSteps.filter((s) => s.status === "completed").length}/{planSteps.length}</span>
-                <ChevronDown size={13} className={goalsExpanded ? "open" : ""} />
-              </button>
+              <div className="goals-header-row">
+                <button className="goals-summary" onClick={() => setGoalsExpanded((current) => !current)}>
+                  <Target size={14} />
+                  <strong>目标与进程</strong>
+                  {goalText && <span className="goals-goal-text">{goalText}</span>}
+                  <span className="goals-count">{planSteps.filter((s) => s.status === "completed").length}/{planSteps.length}</span>
+                  <ChevronDown size={13} className={goalsExpanded ? "open" : ""} />
+                </button>
+                <div className="goals-actions">
+                  <button className="secondary-setting goals-set-btn" onClick={() => { void openAppPrompt("设置长期目标", goalText || "", true).then((text) => { if (text != null) { setGoalText(text); if (thread) void window.codex.request("thread/goal/set", { threadId: thread.id, objective: text }); } }); }}><PenLine size={12} />{goalText ? "编辑目标" : "设置目标"}</button>
+                  <button className="icon-button" title={goalsDocked ? "展开面板" : "收纳面板"} onClick={() => setGoalsDocked((current) => !current)}>{goalsDocked ? <PanelRightOpen size={13} /> : <PanelRightClose size={13} />}</button>
+                  <button className="icon-button" title="隐藏" onClick={() => setGoalsOpen(false)}><X size={13} /></button>
+                </div>
+              </div>
               {goalsExpanded && <div className="goals-body">
                 <div className="goal-line">{goalText || "尚未设置目标"}</div>
                 {planSteps.length > 0 && <FlowDiagram steps={planSteps} />}
@@ -9157,11 +9711,6 @@ export default function App() {
                     </details>
                   )}
                 </div>}
-                <div className="goals-edit">
-                  <button className="secondary-setting" onClick={() => { void openAppPrompt("设置长期目标", goalText || "", true).then((text) => { if (text != null) { setGoalText(text); if (thread) void window.codex.request("thread/goal/set", { threadId: thread.id, objective: text }); } }); }}><PenLine size={13} />{goalText ? "编辑目标" : "设置目标"}</button>
-                  <button className="icon-button" title={goalsDocked ? "展开面板" : "收纳面板"} onClick={() => setGoalsDocked((current) => !current)}>{goalsDocked ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />}</button>
-                  <button className="icon-button" title="隐藏" onClick={() => setGoalsOpen(false)}><X size={14} /></button>
-                </div>
               </div>}
             </div>
             {/* 收纳后露出的窄标签：点击展开面板 */}
@@ -9173,7 +9722,31 @@ export default function App() {
           </>
         )}
 
-        <div className={`composer-wrap ${isEmpty ? "docked-center" : ""}`}>
+        <div ref={composerWrapRef} className={`composer-wrap ${isEmpty ? "docked-center" : ""}`}>
+          {/* /plan 计划模式确认条：方案回合结束后出现，确认后才执行 */}
+          {planConfirm && planConfirm.threadId === thread?.id && (
+            <div className="agent-ask-inline plan-review" role="dialog" aria-label="方案确认">
+              <header><ListChecks size={15} /><strong>方案已生成，请审阅</strong></header>
+              {planConfirm.text && <p className="plan-review-summary" title="点击查看方案全文" onClick={() => setInfoModal({ title: "执行方案预览", body: planConfirm.text || "未捕获到方案正文，请查看对话中最后一条回复。", markdown: true })}>{planConfirm.text}</p>}
+              <div className="plan-review-actions">
+                <button className="primary-setting" onClick={confirmPlanExecution}>开始执行</button>
+                <button onClick={() => setInfoModal({ title: "执行方案预览", body: planConfirm.text || "未捕获到方案正文，请查看对话中最后一条回复。", markdown: true })}>查看方案</button>
+                <button onClick={cancelPlanExecution}>取消</button>
+              </div>
+              <form className="plan-review-feedback" onSubmit={(event) => { event.preventDefault(); submitPlanFeedback(); }}>
+                <input value={planFeedback} onChange={(event) => setPlanFeedback(event.target.value)} placeholder="对方案提意见，让它再改一版（如：换成高铁、预算砍半）…" />
+                <button type="submit" className="primary-setting" disabled={!planFeedback.trim()}>提意见</button>
+              </form>
+            </div>
+          )}
+          {/* /goal 目标模式状态条：引擎原生自动续跑中，可随时停止 */}
+          {thread && goalText && (
+            <div className={`mode-banner goal-loop ${goalStatus === "complete" ? "done" : ""}`} role="status" aria-label="目标模式">
+              <Target size={14} className="mode-banner-icon" />
+              <span className="mode-banner-text"><b>目标模式{goalStatus === "complete" ? " · 已完成" : goalStatus === "blocked" ? " · 受阻" : goalStatus === "paused" ? " · 已暂停" : " · 自动推进中"}</b>{goalText}</span>
+              {goalStatus !== "complete" && <button onClick={stopGoalLoop}>停止</button>}
+            </div>
+          )}
           {/* Agent 提问卡：贴输入框上方、与输入框同宽；只属于发起它的会话，不跨会话弹窗 */}
           {agentAsk && agentAsk.threadId === thread?.id && (
             <div className="agent-ask-inline" role="dialog" aria-label="Agent 提问">
@@ -9234,15 +9807,27 @@ export default function App() {
             <div className="info-modal-mask" onClick={() => setInfoModal(null)}>
               <div className="info-modal" role="dialog" aria-label={infoModal.title} onClick={(event) => event.stopPropagation()}>
                 <header><Info size={15} className="info-modal-icon" /><strong>{infoModal.title}</strong><button title="关闭" onClick={() => setInfoModal(null)}><X size={14} /></button></header>
-                <pre>{infoModal.body}</pre>
+                {infoModal.markdown ? <div className="info-modal-markdown"><Markdown>{infoModal.body}</Markdown></div> : <pre>{infoModal.body}</pre>}
               </div>
             </div>,
             document.body,
           )}
+          {/* 429 限流自动重试状态条：倒计时 + 立即重试 / 停止（对所有模型生效） */}
+          {rateLimitRetry && (
+            <div className="rate-limit-retry-bar" role="status" aria-label="限流自动重试中">
+              <LoaderCircle size={15} className="spin" />
+              <span className="rate-limit-retry-text">
+                模型限流（429），<b>第 {rateLimitRetry.attempt}/{RATE_LIMIT_MAX_ATTEMPTS}</b> 次重试将在{" "}
+                <b>{Math.max(0, Math.ceil((rateLimitRetry.retryAt - Date.now()) / 1000))}s</b> 后自动进行
+              </span>
+              <button type="button" onClick={() => void executeRateLimitRetry()}>立即重试</button>
+              <button type="button" onClick={() => cancelRateLimitRetry()}>停止</button>
+            </div>
+          )}
           {thread && <QueuedMessageList entries={queue} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />}
           {/* 图片以内联 chip 展示（composer-input-shell 内），此处只保留文件附件条 */}
           {files.length > 0 && <div className="attachment-strip">{files.map((path) => <div className="file-attachment" key={path}><FileCode2 size={18} /><span>{basename(path)}</span><button title="移除" onClick={() => setFiles(files.filter((entry) => entry !== path))}><X size={13} /></button></div>)}</div>}
-          {commandMatches.length > 0 && <div className="command-palette" role="listbox" aria-label="Codex 指令">{commandMatches.map(([name, description]) => <button type="button" role="option" key={name} onClick={() => { if (["rename", "review", "goal", "effort", "personality", "sandbox", "approval", "fork"].includes(name)) setPrompt(`/${name} `); else void runSlashCommand(`/${name}`); }}><code>/{name}</code><span>{description}</span></button>)}</div>}
+          {commandMatches.length > 0 && <div className="command-palette" role="listbox" aria-label="Codex 指令">{commandMatches.map(([name, description]) => <button type="button" role="option" key={name} onClick={() => { if (["rename", "review", "goal", "plan", "effort", "personality", "sandbox", "approval", "fork"].includes(name)) setPrompt(`/${name} `); else void runSlashCommand(`/${name}`); }}><code>/{name}</code><span>{description}</span></button>)}</div>}
           {contextOpen && <div className="context-picker" role="listbox" aria-label="引用本次对话上下文">
             <div className="context-picker-head"><span>引用本次对话</span><small>选择后会随本条消息发送</small></div>
             {availableContextItems.length ? availableContextItems.map((item) => <button type="button" role="option" key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => addContextItem(item)}><b>{item.role}</b><span>{item.text}</span></button>) : <p>没有匹配的历史消息</p>}
@@ -9256,12 +9841,9 @@ export default function App() {
             </div>}
             {(contextItems.length > 0 || selectedSkills.length > 0) && <div className="context-chip-row" aria-label="已引用上下文与技能">{contextItems.map((item) => <span className="context-chip" key={item.id}><Quote size={12} /><b>{item.role}</b><em>{item.text}</em><button type="button" title="移除引用" onClick={() => removeContextItem(item.id)}><X size={12} /></button></span>)}{selectedSkills.map((skill) => <span className="context-chip skill-chip" key={skill.name}><Zap size={12} /><b>技能</b><em>{skill.name}</em><button type="button" title="移除技能" onClick={() => setSelectedSkills((current) => current.filter((entry) => entry.name !== skill.name))}><X size={12} /></button></span>)}</div>}
             <div className="composer-input-shell">
-              <ComposerInlineImages prompt={prompt} onRemove={(path) => {
-                // 从文本中删除该占位符（按编码后的 token 精确匹配，见 prompt-images.ts）+ 从 images 数组移除
-                setPrompt((current) => removeImageToken(current, path));
-                setImages((current) => current.filter((entry) => entry !== path));
-              }} onPreview={(path) => setLightbox({ path, alt: "待发送图片" })} />
-              <textarea ref={composerInputRef} value={prompt} onChange={(event) => onPromptChange(event.target.value)} onKeyDown={(event) => { if (contextOpen && event.key === "Enter" && availableContextItems[0]) { event.preventDefault(); addContextItem(availableContextItems[0]); return; } if (event.key === "Escape" && contextOpen) { event.preventDefault(); setContextOpen(false); return; } onComposerKeyDown(event); }} onBlur={() => setTimeout(() => setContextOpen(false), 120)} onPaste={(event) => { if ([...event.clipboardData.files].some((file) => file.type.startsWith("image/"))) setTimeout(() => void pasteImage(), 0); }} placeholder="向 Codex 提问，使用 @ 添加上下文，使用 / 选择命令或能力" rows={1} />
+              {(planArmed || planRunning) && <button type="button" className={`mode-chip-float chip-plan ${planRunning ? "running" : ""}`} title={planRunning ? "计划模式 · 方案生成中（点击中断）" : "计划模式 · 下一条消息先出方案（点击退出）"} onClick={() => { if (planRunning) { void interrupt(); } else { planOnceRef.current = false; setPlanArmed(false); showToast("计划模式已退出", "下一条消息按普通模式执行"); } }}><ListChecks size={13} /></button>}
+              {thread && goalText && goalStatus !== "complete" && <button type="button" className="mode-chip-float chip-goal" title="目标模式 · 自动推进中（点击停止）" onClick={stopGoalLoop}><Target size={13} /></button>}
+              <ComposerEditor value={prompt} placeholder="向 Codex 提问，使用 @ 添加上下文，使用 / 选择命令或能力" editorRef={composerInputRef} domValueRef={composerDomValueRef} makeChip={makeComposerChip} onValueInput={onPromptChange} onKeyDown={(event) => { if (contextOpen && event.key === "Enter" && availableContextItems[0]) { event.preventDefault(); addContextItem(availableContextItems[0]); return; } if (event.key === "Escape" && contextOpen) { event.preventDefault(); setContextOpen(false); return; } onComposerKeyDown(event); }} onBlur={() => setTimeout(() => setContextOpen(false), 120)} onPasteImage={(text) => void pasteImage(text)} />
             </div>
             <div className="composer-actions">
               <div className="composer-left">
@@ -9337,19 +9919,24 @@ export default function App() {
                 </div>}
                   </div>}
                 </div>
-                <ComposerMenu icon={ShieldCheck} label="权限" title="权限模式" tone={sandbox === "danger-full-access" ? "danger" : undefined} value={sandbox === "danger-full-access" ? "never" : approvalPolicy} options={approvalMenuOptions(sandbox === "danger-full-access")} onChange={(value) => value === "never" ? changeSandbox("danger-full-access") : (sandbox === "danger-full-access" && changeApproval(value), changeApproval(value))} />
-                <button type="button" className={`composer-tool ${webSearch ? "on" : "off"}`} title={webSearch ? "联网搜索已开启，点击关闭" : "联网搜索已关闭，点击开启"} aria-pressed={webSearch} onClick={toggleWebSearch}><Search size={17} /><span className="composer-tool-label">联网</span></button>
+                <ComposerMenu icon={ShieldCheck} label="权限" title="权限模式" tone={sandbox === "danger-full-access" ? "danger" : undefined} value={sandbox === "danger-full-access" ? "never" : approvalPolicy} options={approvalMenuOptions(sandbox === "danger-full-access")} onChange={changePermissionMode} />
               </div>
               <div className="composer-right">
                 <div className="model-controls composer-model-controls">
-                  <ContextUsageBadge tokenUsage={tokenUsage} fallbackWindow={customModel?.models?.find((m) => m.id === customModel?.model)?.contextWindow ?? customModel?.contextWindow} />
-                  <ComposerMenu icon={Bot} label="模型" title="模型" disabled={!customModel} width={300} value={modelId} options={allModels.map((model) => ({
+                  <ContextUsageBadge tokenUsage={tokenUsage} fallbackWindow={customModel?.models?.find((m) => m.id === customModel?.model)?.contextWindow ?? customModel?.contextWindow} recentCompaction={recentCompaction} />
+                  <ComposerMenu icon={Bot} label="模型" title="模型" disabled={!customModel} value={modelId} options={[...allModels.map((model) => ({
                     value: model.id,
                     title: model.model,
                     // 当前供应商不需要重复说明；跨供应商模型只补充供应商名称用于区分。
                     desc: model.isActive ? "" : model.providerName,
-                  }))} toneOf={(option) => avatarToneOf(option.desc || option.title)} onChange={chooseModel} />
-                  <ComposerMenu icon={Zap} label="思考" title="真实思考强度" disabled={!customModel} value={effort} options={effortMenuOptions.filter((option) => !selectedModel || selectedModel.supportedReasoningEfforts.some((entry) => entry.reasoningEffort === option.value))} onChange={changeEffort} />
+                  })), { value: "__model_settings__", title: "更多设置…", desc: "打开模型配置，勾选思考档位" }]} toneOf={(option) => option.value === "__model_settings__" ? undefined : avatarToneOf(option.desc || option.title)} onChange={(value) => {
+                    if (value === "__model_settings__") { setSettingsPage("model"); setSettingsOpen(true); const live = customModel?.models?.find((m) => m.id === customModel?.model); if (live) openModelEditor(live); return; }
+                    chooseModel(value);
+                  }} />
+                  <ComposerMenu icon={Zap} label="思考" title="真实思考强度" disabled={!customModel} value={effort} options={[...effortMenuOptions.filter((option) => !currentEffortOptions.length || currentEffortOptions.includes(option.value)), { value: "__model_settings__", title: "更多档位…", desc: "打开模型配置，管理各模型档位声明" }]} onChange={(value) => {
+                    if (value === "__model_settings__") { setSettingsPage("model"); setSettingsOpen(true); const live = customModel?.models?.find((m) => m.id === customModel?.model); if (live) openModelEditor(live); return; }
+                    changeEffort(value);
+                  }} />
                 </div>
                 {(prompt.trim() || hasEnhanceBackup) && !activeThreadRunning && (
                   <button
@@ -9991,11 +10578,6 @@ export default function App() {
                     <ToggleSwitch checked={rightOpen} label="启动时打开右侧面板" onChange={(next) => { setRightOpen(next); localStorage.setItem("right-panel-open", String(next)); }} />
                   </div>
                   <div className="settings-toggle-row">
-                    <span className="settings-toggle-icon"><Search size={16} /></span>
-                    <span className="settings-toggle-text"><strong>联网搜索</strong><small>每轮 prompt 带上 web_search 工具，可实时查资料；关闭能减少不必要的 API 往返、加快回复</small></span>
-                    <ToggleSwitch checked={webSearch} label="联网搜索" onChange={toggleWebSearch} />
-                  </div>
-                  <div className="settings-toggle-row">
                     <span className="settings-toggle-icon"><Monitor size={16} /></span>
                     <span className="settings-toggle-text"><strong>桌面自动化</strong><small>{capabilityHint("desktop-automation") ?? "加载 nuphus 桌面工具（屏幕、窗口、键鼠、剪贴板、OCR）。关闭后 nuphus MCP 不注册、desktop-automation 技能停用，约 10K 工具 schema 不再进上下文，能减少 token 占用、加快回复"}</small></span>
                     <ToggleSwitch checked={desktopAuto} disabled={groupBusy === "desktop-automation"} label="桌面自动化" onChange={toggleDesktopAuto} />
@@ -10028,6 +10610,58 @@ export default function App() {
                     ))}
                   </div>
                   <button className="secondary-setting shortcut-manage-btn" onClick={() => { setShortcutsOpen(true); }}><Keyboard size={14} />查看全部快捷键</button>
+                </div>
+              </div>
+
+              <div className="settings-card engine-update-card">
+                <div className="settings-card-head"><RefreshCw size={15} /><strong>Codex 引擎更新</strong></div>
+                <div className="settings-card-body">
+                  <div className="engine-status-row">
+                    <span className="engine-ver-chip" title={engineVersion}>{(engineVersion.match(/[\d][\d.]*/) || ["—"])[0]}</span>
+                    <span className="engine-status-text">
+                      {engineCheck.state === "idle" && "检查更新会访问 npm 仓库（默认国内镜像直连，无需代理）"}
+                      {engineCheck.state === "checking" && "正在查询最新稳定版…"}
+                      {engineCheck.state === "latest" && "已是最新版本"}
+                      {engineCheck.state === "available" && `官方已发布新版 ${engineCheck.latest}`}
+                      {engineCheck.state === "error" && `检查失败：${engineCheck.message}`}
+                    </span>
+                    <button className="secondary-setting engine-check-btn" disabled={engineCheck.state === "checking" || engineUpdating} onClick={() => void checkEngineUpdateNow()}>
+                      {engineCheck.state === "checking" ? <Spinner /> : <Search size={14} />}{engineCheck.state === "checking" ? "检查中…" : "检查更新"}
+                    </button>
+                  </div>
+                  {engineCheck.state === "available" && !engineUpdating && (
+                    <div className="engine-update-strip">
+                      <div className="engine-update-strip-copy">
+                        <strong>更新到 {engineCheck.latest}</strong>
+                        <small>自动备份旧引擎 · 失败自动回滚 · 完成后自动重启应用</small>
+                      </div>
+                      <button className="primary-setting engine-update-btn" onClick={() => void performEngineUpdateNow()}>
+                        <RefreshCw size={14} />一键更新
+                      </button>
+                    </div>
+                  )}
+                  {engineUpdating && (
+                    <div className="engine-update-strip running">
+                      <div className="engine-update-progress">
+                        <div className="engine-update-progress-bar">
+                          <i style={{ width: `${Math.round((engineUpdatePercent ?? 0.06) * 100)}%` }} className={engineUpdatePercent == null ? "indeterminate" : ""} />
+                        </div>
+                        <span className="engine-update-busy">{engineUpdateStageText}·请勿关闭应用</span>
+                      </div>
+                    </div>
+                  )}
+                  {engineUpdateLog.length > 0 && (
+                    <div className="engine-update-log">
+                      {engineUpdateLog.map((line, index) => <p key={index}>{line}</p>)}
+                    </div>
+                  )}
+                  {engineUpdateResult && !engineUpdateResult.ok && <p className="settings-card-hint engine-update-error">更新失败：{engineUpdateResult.message}（旧引擎已回滚，应用不受影响，可重试）</p>}
+                  {relaunchCountdown != null && <p className="settings-card-hint engine-update-ok">✅ 引擎更新完成，{relaunchCountdown} 秒后自动重启应用生效…</p>}
+                  <div className="engine-proxy-row">
+                    <span className="engine-proxy-label">下载代理</span>
+                    <input value={engineProxyDraft} onChange={(event) => setEngineProxyDraft(event.target.value)} placeholder="http://127.0.0.1:7890（留空优先走国内镜像）" />
+                    <button className="icon-button" title="保存代理设置" onClick={saveEngineProxy}><Check size={14} /></button>
+                  </div>
                 </div>
               </div>
             </section>}
@@ -10116,14 +10750,61 @@ export default function App() {
               </div>
               <div className="provider-list">
                 <div className="provider-list-head"><h2>模型供应商</h2></div>
-                {providersList.length === 0 && <div className="provider-empty"><Plus size={16} /><span>还没有供应商</span><small>点下方「添加供应商」开始</small></div>}
-                {providersList.map((p) => (
-                  <div key={p.provider} className={`provider-item ${p.provider === editingProvider ? "selected" : ""}`} onClick={() => { setEditingProvider(p.provider); setEditingName(false); setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true }); }}>
-                    <span className="provider-item-icon"><Store size={13} /></span>
-                    <div className="provider-item-main"><strong>{p.name}</strong><small>{uniqueModelCount(p.models)} 个模型</small></div>
-                    <span className={`provider-dot ${p.provider === currentProvider ? "on" : ""}`} title={p.provider === currentProvider ? "当前生效供应商" : ""} />
-                  </div>
-                ))}
+                {(() => {
+                  // PPtoken 赞助商卡常驻置顶：真实配置存在时用真实数据参与排序，否则显示未配置引导卡
+                  const realPptoken = providersList.some((p) => p.provider === "pptoken");
+                  const display = realPptoken
+                    ? [...providersList].sort((a, b) => (a.provider === "pptoken" ? 0 : 1) - (b.provider === "pptoken" ? 0 : 1))
+                    : [{ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", wireApi: "responses" as const, hasKey: false, models: [], enabled: true }, ...providersList];
+                  return display.map((p) => {
+                    const isPseudoPptoken = p.provider === "pptoken" && !realPptoken;
+                    const pseudoOff = isPseudoPptoken && pptokenCardOff;
+                    return (
+                      <div
+                        key={p.provider}
+                        className={`provider-item ${p.provider === "pptoken" ? "sponsor" : ""} ${(p.enabled === false || pseudoOff) ? "disabled" : ""} ${p.provider === editingProvider ? "selected" : ""}`}
+                        onClick={() => {
+                          if (isPseudoPptoken) {
+                            // 未配置的常驻赞助商卡：进表单预填 PPtoken 端点，填密钥保存即可用；启用态与卡片开关联动
+                            setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
+                            setEditingProvider(null);
+                            setEditingName(false);
+                            return;
+                          }
+                          setEditingProvider(p.provider); setEditingName(false); setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true });
+                        }}
+                      >
+                        <span
+                          className="provider-item-icon"
+                          style={{ background: p.provider === "pptoken" ? "linear-gradient(135deg, #e64980, #9775fa)" : AVATAR_GRADIENTS[avatarToneOf(p.name)], color: "#fff" }}
+                        >
+                          {p.provider === "pptoken" ? <Rocket size={13} /> : <Store size={13} />}
+                        </span>
+                        <div className="provider-item-main">
+                          <span className="provider-name-row">
+                            <strong>{p.name}</strong>
+                            {p.provider === "pptoken" && <b className="provider-sponsor-badge">官方推荐</b>}
+                            {p.provider === "pptoken" && (
+                              <button className="provider-visit-btn" title="打开 PPtoken 官网（注册领额度）" onClick={(event) => { event.stopPropagation(); void window.codex.openExternal("https://api.pptoken.cc/register?aff=X82JSNVC3W3S"); }}>
+                                <ExternalLink size={11} />
+                              </button>
+                            )}
+                          </span>
+                          <small>{isPseudoPptoken ? (pseudoOff ? "已停用" : "未配置密钥") : p.hasKey === false && p.provider === "pptoken" ? "未配置密钥" : `${uniqueModelCount(p.models)} 个模型`}</small>
+                        </div>
+                        <label
+                          className={`provider-switch ${p.enabled === false ? "off" : ""}`}
+                          title={isPseudoPptoken ? (pseudoOff ? "推荐卡已停用 · 点击恢复展示" : "停用 PPtoken 推荐卡展示") : p.enabled === false ? "已禁用 · 点击启用" : "已启用 · 点击禁用"}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <input type="checkbox" checked={isPseudoPptoken ? !pseudoOff : p.enabled !== false} onChange={(event) => { if (isPseudoPptoken) setPptokenCardOff(!event.target.checked); else void setProviderEnabled(p.provider, event.target.checked); }} />
+                          <span className="provider-switch-ui" />
+                        </label>
+                        {!isPseudoPptoken && <span className={`provider-dot ${p.provider === currentProvider ? "on" : ""}`} title={p.provider === currentProvider ? "当前生效供应商" : ""} />}
+                      </div>
+                    );
+                  });
+                })()}
                 <button className="add-provider-btn" onClick={() => { setCustomDraft({ provider: "custom" + (Date.now() % 1000), name: "自定义供应商", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true }); setEditingProvider(null); setEditingName(false); }}><Plus size={13} />添加供应商</button>
               </div>
               <div className="provider-form">
@@ -10132,15 +10813,29 @@ export default function App() {
                     <input className="provider-name-input" value={customDraft.name} autoFocus onChange={(event) => setCustomDraft({ ...customDraft, name: event.target.value })} onBlur={() => setEditingName(false)} onKeyDown={(event) => { if (event.key === "Enter") setEditingName(false); }} placeholder="供应商名称" />
                   ) : <strong onClick={() => setEditingName(true)} title="点击重命名">{customDraft.name || "未命名供应商"}</strong>}
                   <button className="icon-button" title="重命名" onClick={() => setEditingName((v) => !v)}><PenLine size={13} /></button>
-                  {customDraft.enabled === false
-                    ? <span className="provider-state-badge off">已禁用</span>
-                    : <span className="provider-state-badge on">已启用</span>}
-                  {editingProvider && <button className="provider-state-btn" disabled={savingSettings} onClick={() => void setProviderEnabled(editingProvider, customDraft.enabled === false)}>{customDraft.enabled === false ? "启用" : "禁用"}</button>}
+                  {(() => {
+                    // 未配置的 PPtoken 推荐卡：表单头部启用态与左侧卡片开关同一数据源（pptokenCardOff），双向联动
+                    const pseudoPptokenForm = customDraft.provider === "pptoken" && !providersList.some((p) => p.provider === "pptoken");
+                    const effectiveEnabled = pseudoPptokenForm ? !pptokenCardOff : customDraft.enabled !== false;
+                    return (
+                      <>
+                        {effectiveEnabled
+                          ? <span className="provider-state-badge on">已启用</span>
+                          : <span className="provider-state-badge off">已停用</span>}
+                        {pseudoPptokenForm
+                          ? <button className="provider-state-btn" onClick={() => setPptokenCardOff(!pptokenCardOff)}>{pptokenCardOff ? "启用展示" : "停用展示"}</button>
+                          : editingProvider && <button className="provider-state-btn" disabled={savingSettings} onClick={() => void setProviderEnabled(editingProvider, customDraft.enabled === false)}>{customDraft.enabled === false ? "启用" : "禁用"}</button>}
+                      </>
+                    );
+                  })()}
                   <span className="provider-head-spacer" />
                   {editingProvider && editingProvider !== currentProvider && <button className="secondary-setting" disabled={savingSettings} onClick={() => void selectProvider(editingProvider)}>设为当前</button>}
                   {editingProvider && <button className="icon-button" title="删除供应商" onClick={() => { if (window.confirm(`删除供应商 ${customDraft.name}？`)) void removeProvider({ provider: customDraft.provider, name: customDraft.name, model: customDraft.model, baseUrl: customDraft.baseUrl }); }}><Trash2 size={14} /></button>}
                 </div>
                 <p className="provider-id-line">供应商 ID：{customDraft.provider}</p>
+                {customDraft.provider === "pptoken" && !providersList.some((p) => p.provider === "pptoken") && (
+                  <p className="provider-form-hint">PPtoken 推荐卡尚未配置：填入 API Key 保存后即可在模型下拉中直接选用；左上开关可停用/恢复这张推荐卡的展示。<a href="https://api.pptoken.cc/register?aff=X82JSNVC3W3S" onClick={(event) => { event.preventDefault(); void window.codex.openExternal("https://api.pptoken.cc/register?aff=X82JSNVC3W3S"); }}>注册 PPtoken 领取体验额度 ↗</a></p>
+                )}
                 <label className="provider-field"><span>Base URL</span><input value={customDraft.baseUrl} onChange={(event) => setCustomDraft({ ...customDraft, baseUrl: event.target.value })} placeholder="https://example.com/v1" /></label>
                 <label className="provider-field"><span>API 格式</span><select value={customDraft.wireApi} onChange={(event) => setCustomDraft({ ...customDraft, wireApi: event.target.value === "chat" ? "chat" : "responses" })}><option value="responses">Responses (/responses)</option><option value="chat">Chat Completions (/chat/completions)</option></select></label>
                 <label className="provider-field"><span>API Key</span>
@@ -10219,7 +10914,7 @@ export default function App() {
                       </label>
                     ))}</div>
                   </div>
-                  <div className="type-chip-group"><span>思考档位 <small>GPT 系可勾选 minimal/高/超高</small></span>
+                  <div className="type-chip-group"><span>思考档位 <small>按模型 API 实际支持勾选；GPT 系可勾选 max/最高</small></span>
                     <div className="type-chips">{ALL_EFFORTS.map((t) => (
                       <label key={t} className={`type-chip ${modelEditor.draft.efforts.includes(t) ? "on" : ""}`}>
                         <input type="checkbox" checked={modelEditor.draft.efforts.includes(t)} onChange={(event) => setModelEditor({ ...modelEditor, draft: { ...modelEditor.draft, efforts: event.target.checked ? [...modelEditor.draft.efforts, t] : modelEditor.draft.efforts.filter((x) => x !== t) } })} />
@@ -10443,7 +11138,7 @@ export default function App() {
               </section>;
             })()}
             {settingsPage === "skills" && <section className="settings-section stack skill-center">
-              <div className="settings-copy channel-heading"><div><h2>技能中心</h2><p>一键安装会自动写入 <code>{userDataPath ? `${userDataPath}\\codex-home\\skills` : "Codex 技能目录"}</code>，更新来源清单并重启引擎确认可用。</p></div><div className="settings-heading-actions"><button className="secondary-setting" onClick={() => void importSkill()}><Paperclip size={14} />从本地添加技能</button><button className="icon-button" title="刷新技能市场" onClick={() => void refreshMarketSkills(skillHubCategory, skillHubSearch, marketPage)}>{marketLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+              <div className="settings-copy channel-heading"><div><h2>技能中心</h2><p>一键安装会自动写入 <code>{userDataPath ? `${userDataPath}\\codex-home\\skills` : "Codex 技能目录"}</code>，更新来源清单并重启引擎确认可用。</p></div><div className="settings-heading-actions"><button className={skillsManageOnly ? "active-manage" : "secondary-setting"} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={14} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button><button className="secondary-setting" onClick={() => void importSkill()}><Paperclip size={14} />从本地添加技能</button><button className="icon-button" title="刷新技能市场" onClick={() => void refreshMarketSkills(skillHubCategory, skillHubSearch, marketPage)}>{marketLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
               <div className="resource-toolbar">
                 {!skillsManageOnly && <div className="skill-tabs">{skillHubCategories.map((category) => <button key={category} className={skillHubCategory === category ? "active" : ""} onClick={() => { setSkillHubCategory(category); setMarketPage(1); setSkillsManageOnly(false); }}>{category}</button>)}</div>}
                 <SearchField
@@ -10451,7 +11146,6 @@ export default function App() {
                   onChange={(next) => { if (skillsManageOnly) setSkillManageSearch(next); else { setSkillHubSearch(next); setMarketPage(1); } }}
                   placeholder={skillsManageOnly ? "搜索已安装技能的名称或描述" : "搜索 CocoLoop 技能"}
                 />
-                <button className={skillsManageOnly ? "active-manage" : "secondary-setting"} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={14} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button>
               </div>
               {skillsManageOnly ? (() => {
                 const localNames = new Set(localSkills.map((entry) => entry.name.toLowerCase()));
@@ -11180,6 +11874,16 @@ export default function App() {
       {skillInstall && <SkillInstallModal state={skillInstall} onClose={() => setSkillInstall(null)} onUse={() => { const skill = { name: skillInstall.skill.name, description: skillInstall.skill.description }; setSelectedSkills((current) => current.some((entry) => entry.name === skill.name) ? current : [...current, skill]); setSkillInstall(null); setSettingsOpen(false); setNotice(`已引用技能：${skill.name}`); }} />}
       {filePreview && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFilePreview(null); }}>
         <div className={`file-preview ${filePreview.kind === "image" ? "image-preview" : "text-preview"}`} role="dialog" aria-label="文件预览">
+          {fileTabs.length > 0 && (
+            <div className="file-preview-tabs">
+              {fileTabs.map((tabPath) => (
+                <div key={tabPath} className={`file-preview-tab ${tabPath === filePreview.path ? "active" : ""}`}>
+                  <button className="file-preview-tab-name" title={tabPath} onClick={() => void rawOpenFile(tabPath)}>{basename(tabPath)}</button>
+                  <button className="file-preview-tab-close" title="关闭标签" onClick={(event) => { event.stopPropagation(); closeTab(tabPath); }}><X size={11} /></button>
+                </div>
+              ))}
+            </div>
+          )}
           <header>
             <div>{filePreview.kind === "image" ? <Image size={17} /> : <FileCode2 size={17} />}<strong>{basename(filePreview.path)}</strong></div>
             <div className="file-preview-actions">

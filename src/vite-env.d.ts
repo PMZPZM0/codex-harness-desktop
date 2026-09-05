@@ -271,8 +271,8 @@ interface Window {
     readPersonalization(): Promise<PersonalizationConfig>;
     savePersonalization(input: { nickname?: string; customInstructions?: string }): Promise<PersonalizationConfig>;
     /** 应用级运行时开关（联网搜索等） */
-    readAppSettings(): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number }>;
-    saveAppSettings(patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number }): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean }>;
+    readAppSettings(): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string }>;
+    saveAppSettings(patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string }): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean }>;
     /** SSH 服务器连接管理：列表 CRUD、批量启停、连接测试、命令执行、交互式会话、导入导出 */
     listSshServers(): Promise<SshServer[]>;
     saveSshServer(server: SshServer): Promise<SshServer[]>;
@@ -400,6 +400,10 @@ interface Window {
       databases: { name: string; size: number }[]; sessions: number; archived: number;
     }>;
     readBuiltinPlugins(): Promise<{ image?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string }; vision?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string } }>;
+    engineCheckUpdate(): Promise<{ current: string; latest: string; hasUpdate: boolean }>;
+    enginePerformUpdate(): Promise<{ ok: boolean; version: string; message: string }>;
+    relaunchApp(): Promise<void>;
+    onEngineUpdateProgress(listener: (event: { stage: string; detail?: string; percent?: number }) => void): () => void;
     saveBuiltinPlugins(cfg: unknown): Promise<unknown>;
     probeBuiltinModels(input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }): Promise<{ models: string[] }>;
     generateImage(input: { baseUrl: string; apiKey: string; model: string; prompt: string }): Promise<{ url: string }>;
