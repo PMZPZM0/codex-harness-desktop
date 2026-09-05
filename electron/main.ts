@@ -3315,11 +3315,17 @@ ipcMain.handle("teams:invoke-member", async (_event, input: { teamId: string; me
 });
 
 ipcMain.handle("clipboard:image", async () => {
-  const image = clipboard.readImage();
-  if (image.isEmpty()) return null;
+  // Electron 44：clipboard.readImage() 已移除，改 W3C 风格 read() → ClipboardItem[] → image/png Blob
+  const items = await clipboard.read();
+  const item = items.find((entry) => entry.types.includes("image/png"));
+  if (!item) return null;
+  const blob = await item.getType("image/png");
+  if (!(blob instanceof Blob)) return null;
+  const buffer = Buffer.from(await blob.arrayBuffer());
+  if (!buffer.length) return null;
   await fs.mkdir(imagesDir, { recursive: true });
   const file = path.join(imagesDir, `codex-harness-${Date.now()}.png`);
-  await fs.writeFile(file, image.toPNG());
+  await fs.writeFile(file, buffer);
   return file;
 });
 ipcMain.handle("external:open", async (_event, value: string) => {
