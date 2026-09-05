@@ -37,6 +37,7 @@ function qrSvg(text: string) {
 import { installCocoLoopSkill, listCocoLoopSkills, type InstalledMarketSkill, type MarketSkill } from "./skills-market";
 import { augmentedPath, bundledGit, bundledNode, bundledPython, cloakCacheDir, cloakOpenHelper, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "./toolchain";
 import { ensureBuiltinSkills } from "./builtin-skills";
+import { ensurePonytailPlugin } from "./ponytail-plugin";
 import { getPonytailMode, setPonytailMode } from "./ponytail-mode";
 import { enrichThreadWithRolloutTools, listRolloutThreads, mergeThreadList } from "./session-tools";
 import { applySessionsBackup, backupFromRolloutFile, buildMarkdownExport, buildSessionsBackup, buildThreadPreview, parseMarkdownConversation, BACKUP_FORMAT, BACKUP_VERSION } from "./thread-backup";
@@ -1062,6 +1063,8 @@ app.on("second-instance", () => {
 app.whenReady().then(async () => {
   await fs.mkdir(codexHome, { recursive: true });
   await ensureBuiltinSkills(userSkillsDir);
+  // 内置 ponytail 插件种子：新机器装完插件/钩子不再空（随包目录 → 引擎 cache + config 注册段）
+  await ensurePonytailPlugin(codexHome, path.join(toolsRoot(), "ponytail-plugin"));
   // 启动即补齐 AGENTS.md（emoji + 中文语言规范基础段）：老版本升级后没有这些段，
   // 重写让模型默认用中文思考与回复；AGENTS.md 引擎每请求动态重读，无需重启即生效。
   try {

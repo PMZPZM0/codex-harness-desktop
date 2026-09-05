@@ -5661,6 +5661,62 @@ export default function App() {
     }
   }, [customModel?.hasKey]);
 
+  // 欢迎页副语个性化：已配置自定义模型时，用模型真实生成一条贴合用户称呼/时段的副语
+  // （隐藏临时线程跑一次轻量补全；未配模型保持内置文案池）。
+  const [welcomeAiSub, setWelcomeAiSub] = useState("");
+  const welcomeAiThreadRef = useRef<{ threadId: string } | null>(null);
+  const welcomeAiTextRef = useRef("");
+  useEffect(() => {
+    if (!customModel?.model) return; // 未配置模型：内置文案兜底，不打扰引擎
+    // 当天已生成过直接用缓存（跨重启复用，避免每次启动都烧 token）
+    try {
+      const cached = JSON.parse(localStorage.getItem("welcome-ai-sub") ?? "null") as { date: string; text: string } | null;
+      if (cached?.date === new Date().toDateString() && cached.text) { setWelcomeAiSub(cached.text); return; }
+    } catch { /* 无缓存 */ }
+    let cancelled = false;
+    (async () => {
+      try {
+        const hour = new Date().getHours();
+        const started = await window.codex.request("thread/start", {
+          cwd: workspace ?? "D:/",
+          approvalPolicy: "never",
+          sandbox: "read-only",
+          model: customModel.model,
+          modelProvider: customModel.provider,
+        });
+        if (cancelled) return;
+        welcomeAiThreadRef.current = { threadId: started.thread.id };
+        await window.codex.request("turn/start", {
+          threadId: started.thread.id,
+          input: [{ type: "text", text: `只输出一句话本身，不要解释、引号或 Markdown。你是编码助手 Codex，用户称呼是「${username}」，现在是${hour < 12 ? "上午" : hour < 18 ? "下午" : "晚上"}。写一句 30 字以内、轻松自然、鼓励用户开始工作的中文欢迎副语。`, text_elements: [] }],
+          model: customModel.model,
+          effort: "low",
+        });
+      } catch { /* 引擎未就绪/限流等：静默保留内置文案 */ }
+    })();
+    return () => { cancelled = true; };
+  }, [customModel?.model, customModel?.provider]);
+  // 收集隐藏线程的流式输出（reviewTurnRef 同款事件拦截模式）；turn/completed 后缓存当天结果
+  useEffect(() => {
+    if (!customModel?.model) return;
+    return window.codex.onEvent((event: any) => {
+      const hidden = welcomeAiThreadRef.current;
+      if (!hidden || event?.method?.startsWith("thread/")) return;
+      const params = event.params ?? {};
+      if (params.threadId !== hidden.threadId) return;
+      if (event.method === "item/agentMessage/delta") welcomeAiTextRef.current += params.delta ?? "";
+      else if (event.method === "item/completed" && params.item?.type === "agentMessage") welcomeAiTextRef.current = params.item.text ?? welcomeAiTextRef.current;
+      else if (event.method === "turn/completed") {
+        welcomeAiThreadRef.current = null;
+        const text = welcomeAiTextRef.current.trim().split("\n")[0].slice(0, 80);
+        if (text) {
+          setWelcomeAiSub(text);
+          try { localStorage.setItem("welcome-ai-sub", JSON.stringify({ date: new Date().toDateString(), text })); } catch { /* ignore */ }
+        }
+      }
+    });
+  }, [customModel?.model]);
+
   const {
     filePreview, setFilePreview, fileTabs, closeTab, fileEditing, setFileEditing,
     fileDraft, setFileDraft, savingFile, openFile: rawOpenFile, saveFilePreview,
@@ -9634,7 +9690,7 @@ const commandMatches = useMemo(() => {
             <div className="welcome-state">
               <div className="welcome-mark"><Code2 strokeWidth={0.5} size={96} /></div>
               <h1 className="welcome-greet">{greeting}</h1>
-              <p className="welcome-sub">{greetSub}</p>
+              <p className="welcome-sub">{welcomeAiSub || greetSub}</p>
             </div>
           ) : null}
           {/* 导入会话记录后、尚未发送首条消息：记录预览卡常驻消息区顶部；发送后转为消息内的导入卡 */}
