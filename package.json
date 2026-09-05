@@ -1,6 +1,6 @@
 {
   "name": "codex-harness-desktop",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "private": true,
   "description": "Independent desktop harness for OpenAI Codex",
   "main": "dist-electron/main.js",
@@ -220,6 +220,10 @@
       {
         "from": "resources/tools/ninja",
         "to": "tools/ninja"
+      },
+      {
+        "from": "resources/tools/ponytail-plugin",
+        "to": "tools/ponytail-plugin"
       }
     ],
     "asarUnpack": [
@@ -232,7 +236,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh"
     }
   }
 }
