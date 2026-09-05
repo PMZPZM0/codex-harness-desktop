@@ -6584,7 +6584,7 @@ const commandMatches = useMemo(() => {
       safe("子智能体", () => window.codex.request("app/list", { limit: 100, forceRefetch: false }), { data: [] }),
       safe("记忆", () => window.codex.listMemory(), []),
       safe("定时任务", () => window.codex.listScheduledTasks(), []),
-      safe("MCP", () => window.codex.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly" }), { data: [] }),
+      safe("MCP", () => window.codex.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly", ...(threadRef.current?.id ? { threadId: threadRef.current.id } : {}) }), { data: [] }),
     ]);
     setSettingsResources({
       skills: (skillsResult.data ?? []).flatMap((entry: any) => entry.skills ?? []),
