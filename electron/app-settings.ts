@@ -20,6 +20,8 @@ export type AppSettings = {
   engineWatchdog?: boolean;
   /** 全局自动压缩比例：上下文用量达到该比例时引擎自动压缩（0.5~0.95，默认 0.8） */
   autoCompactRatio?: number;
+  /** Codex 引擎更新用的 HTTP 代理（如 http://127.0.0.1:7890）。空 = 国内镜像直连 */
+  engineProxyUrl?: string;
 };
 
 let cached: AppSettings | null = null;

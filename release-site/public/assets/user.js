@@ -39,6 +39,20 @@ function fmtTime(t) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// 平台显示名映射（服务端 platform 字段：windows / mac-arm64 / mac-x64）
+const PLATFORM_LABEL = {
+  windows: "Windows x64",
+  "mac-arm64": "macOS Apple Silicon",
+  "mac-x64": "macOS Intel",
+};
+const PLATFORM_ORDER = ["windows", "mac-arm64", "mac-x64"];
+function platformOf(r) {
+  return r.platform || "windows";
+}
+function platformLabel(r) {
+  return PLATFORM_LABEL[platformOf(r)] || platformOf(r);
+}
+
 function render() {
   const list = allReleases.filter((r) => r.channel === activeChannel);
   if (!list.length) {
@@ -49,35 +63,64 @@ function render() {
       </div>`;
     return;
   }
-  const visible = expanded ? list : list.slice(0, PAGE_SIZE);
+
+  // 同一版本可能有多个平台包（Windows / macOS 双芯片）→ 合并成一张卡片
+  const groups = [];
+  const byVersion = new Map();
+  list.forEach((r) => {
+    if (!byVersion.has(r.version)) {
+      const g = { version: r.version, items: [], uploaded_at: r.uploaded_at, changelog: r.changelog, mandatory: r.mandatory };
+      byVersion.set(r.version, g);
+      groups.push(g);
+    }
+    const g = byVersion.get(r.version);
+    g.items.push(r);
+    if (r.uploaded_at > g.uploaded_at) g.uploaded_at = r.uploaded_at;
+    if (!g.changelog && r.changelog) g.changelog = r.changelog;
+    if (r.mandatory) g.mandatory = true;
+  });
+  groups.forEach((g) => {
+    g.items.sort((a, b) => PLATFORM_ORDER.indexOf(platformOf(a)) - PLATFORM_ORDER.indexOf(platformOf(b)));
+  });
+
+  const visible = expanded ? groups : groups.slice(0, PAGE_SIZE);
   grid.innerHTML = visible
-    .map((r) => `
+    .map((g) => {
+      const downloads = g.items
+        .map((r) => {
+          const isWin = platformOf(r) === "windows";
+          return `
+          <div class="dl-row">
+            <span class="dl-platform">${escapeHtml(platformLabel(r))}</span>
+            <span class="dl-size">${fmtSize(r.size)}</span>
+            <a class="btn ${isWin ? "btn-primary" : ""}" href="${r.downloadUrl}">下载</a>
+            ${r.sha256 ? `<button class="btn btn-ghost btn-copy" data-copy="${r.sha256}" title="复制 ${escapeHtml(platformLabel(r))} 的 SHA-256">SHA-256</button>` : ""}
+          </div>`;
+        })
+        .join("");
+      return `
       <div class="card">
         <div class="head">
-          <span class="ver">v${escapeHtml(r.version)}</span>
-          <span class="channel-tag ${escapeHtml(r.channel)}">${escapeHtml(r.channel)}</span>
-          ${r.mandatory ? `<span class="mandatory">强制更新</span>` : ""}
+          <span class="ver">v${escapeHtml(g.version)}</span>
+          <span class="channel-tag ${escapeHtml(activeChannel)}">${escapeHtml(activeChannel)}</span>
+          ${g.mandatory ? `<span class="mandatory">强制更新</span>` : ""}
         </div>
-        <div class="filename">${escapeHtml(r.filename)}</div>
+        <div class="dl-list">${downloads}</div>
         <div class="meta">
-          <span><b>大小</b> ${fmtSize(r.size)}</span>
-          <span><b>上传时间</b> ${fmtTime(r.uploaded_at)}</span>
+          <span><b>上传时间</b> ${fmtTime(g.uploaded_at)}</span>
         </div>
-        ${r.changelog ? `<div class="changelog">${escapeHtml(r.changelog)}</div>` : ""}
-        <div class="actions">
-          <a class="btn btn-primary" href="${r.downloadUrl}" download>下载安装包</a>
-          <button class="btn btn-ghost" data-copy="${r.sha256}">复制 SHA-256</button>
-        </div>
+        ${g.changelog ? `<div class="changelog">${escapeHtml(g.changelog)}</div>` : ""}
       </div>
-    `)
+    `;
+    })
     .join("");
 
   // 折叠：剩余版本收进「显示更多 / 收起」按钮
-  if (list.length > PAGE_SIZE) {
+  if (groups.length > PAGE_SIZE) {
     const more = document.createElement("button");
     more.className = "btn btn-ghost load-more";
     more.style.gridColumn = "1 / -1";
-    more.textContent = expanded ? `收起旧版本（共 ${list.length} 条）↑` : `显示更多（还有 ${list.length - PAGE_SIZE} 条旧版本）↓`;
+    more.textContent = expanded ? `收起旧版本（共 ${groups.length} 条）↑` : `显示更多（还有 ${groups.length - PAGE_SIZE} 条旧版本）↓`;
     more.addEventListener("click", () => {
       expanded = !expanded;
       render();
@@ -105,7 +148,10 @@ function escapeHtml(s) {
 }
 
 function setHero() {
-  const latest = allReleases.find((r) => r.channel === activeChannel);
+  // 主版本取 Windows 包（顶部「下载 Windows 版」按钮），没有则退回该 channel 的第一条
+  const latest =
+    allReleases.find((r) => r.channel === activeChannel && platformOf(r) === "windows") ||
+    allReleases.find((r) => r.channel === activeChannel);
   if (!latest) {
     heroVersion.textContent = "—";
     heroChannel.textContent = activeChannel;

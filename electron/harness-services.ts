@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { CodexServer } from "./codex-server";
+import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 
 export const MEMORY_CATEGORIES = ["用户偏好", "项目背景", "工作流/SOP", "任务经验", "临时上下文"] as const;
 /** 分类召回权重：核心类别高于临时 */
@@ -809,7 +810,7 @@ export class Scheduler {
           cwd: task.workspace,
           approvalPolicy: "never",
           sandbox: "workspace-write",
-          config: { model_provider: model.provider, model_providers: { [model.provider]: { name: model.name, base_url: model.baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false } } },
+          config: { model_provider: model.provider, model_providers: { [model.provider]: { name: model.name, base_url: model.baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } },
           dynamicTools: [
             { type: "function", name: "memory_recall", description: "按当前任务查询相关记忆。", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
           ],

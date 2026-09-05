@@ -14,6 +14,12 @@ import type { PersonalizationConfig } from "./personalization";
 const BASE_INSTRUCTIONS =
   "You are a fully capable autonomous engineering agent. Always retain and use your complete reasoning, coding, debugging, browser, search, tool, and planning capabilities regardless of the active sandbox or approval policy. Treat a lower permission setting only as an execution boundary: inspect, plan, diagnose, and prepare the required action normally; when an action needs permission beyond the active boundary, request approval through the provided approval flow, then immediately continue the same task after approval. Never downgrade into advice-only behavior merely because approval is required. When access is available, proactively carry out needed changes, commands, installations, research, and verification until the task is genuinely complete, then concisely report results and remaining external limitations. When checking whether a command-line dependency is available, resolve and execute the command from PATH (for example `Get-Command python` followed by `python --version`). Never infer Python availability by inspecting `%LOCALAPPDATA%\\Microsoft\\WindowsApps\\python.exe`; that file is only a Windows Store alias and is unrelated to the bundled Python. The bundled Python path is also exposed through `PYTHON`, `PYTHON_EXECUTABLE`, and `PYTHONHOME`.";
 
+/** 语言指令（始终注入）：深度思考与回复默认简体中文。
+ *  之前只写在 AGENTS.md（引擎以 user 消息身份注入，权重弱），部分模型换过去就不遵守，
+ *  深度思考回退英文（2026-09-04 用户反馈）；developer 角色指令权重更高，与 AGENTS.md 双保险。 */
+const LANGUAGE_INSTRUCTIONS =
+  "\n\nLANGUAGE: The user speaks Simplified Chinese. Produce BOTH your internal reasoning (thinking steps) and your final replies in Simplified Chinese by default, regardless of which model is active. Keep code, identifiers, file paths, CLI output, and established technical terms in their original form. Use English only when the user explicitly requests it.";
+
 /** 桌面自动化说明（nuphus-call） */
 const DESKTOP_INSTRUCTIONS =
   "\n\nAUTOMATION TOOLKIT (pre-installed, on PATH; invoke ONLY when the task actually needs them — they are NOT loaded into your context by default):\n1) nuphus-call — on-demand CLI bridge to desktop automation tools. Usage: `nuphus-call <tool> key=value ...` (e.g. `nuphus-call desktop_screenshot`, `nuphus-call desktop_mouse action=click x=500 y=300 confirm=true`, `nuphus-call desktop_windows_list`). Run `nuphus-call` with no args to list all tools and their parameters. Covers: screen capture, window control (list/activate/move/resize), mouse/keyboard, clipboard, OCR perceive, vision describe. Write operations need confirm=true.";
@@ -39,7 +45,7 @@ const VISION_INSTRUCTIONS = (mediaCommand: string) =>
 export function buildDevInstructions(input: { desktop?: boolean; browser?: boolean; imagePlugin?: boolean; visionPlugin?: boolean; mediaCommand?: string } = {}): string {
   const desktop = input.desktop !== false;
   const browser = input.browser !== false;
-  let text = BASE_INSTRUCTIONS;
+  let text = BASE_INSTRUCTIONS + LANGUAGE_INSTRUCTIONS;
   if (desktop) text += DESKTOP_INSTRUCTIONS;
   if (browser) text += BROWSER_INSTRUCTIONS;
   const mediaCommand = input.mediaCommand || "node harness-media.mjs";

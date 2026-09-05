@@ -12,6 +12,7 @@ import { CodexServer, codexBinaryPath } from "./codex-server";
 import { collectMcpServerNames, extractMcpSection, preserveUserConfig } from "./config-toml";
 import { deleteCustomCommand, expandCommandTemplate, listCustomCommands, readCustomCommand, saveCustomCommand } from "./commands";
 import { MemoryStore, Scheduler, type MemoryCategory, type MemoryRemoteConfig } from "./harness-services";
+import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { MemoryLayers } from "./memory-layers";
 import { RpaStore, type RpaRecipe } from "./rpa-store";
 import { TerminalService } from "./terminal";
@@ -23,6 +24,7 @@ import { readPersonalization, writePersonalization, applyPersonalizationToAgents
 import { developerInstructionsLine } from "./developer-instructions";
 import { readAppSettings, saveAppSettings, type AppSettings } from "./app-settings";
 import { checkLatestUpdate, defaultDownloadDir, downloadUpdate, fileExists, installUpdate, UPDATE_CHANNEL, UPDATE_SERVER_URL } from "./updates";
+import { checkEngineUpdate, performEngineUpdate } from "./engine-updater";
 import {
   deleteSshServer, execSshCommand, exportSshServers, parseSshImport, readSshServers, saveSshServer, setSshServerEnabled,
   testSshConnection, writeSshServers, SshSessionManager, type SshExecResult, type SshServer, type SshTestResult,
@@ -37,7 +39,7 @@ import { augmentedPath, bundledGit, bundledNode, bundledPython, cloakCacheDir, c
 import { ensureBuiltinSkills } from "./builtin-skills";
 import { getPonytailMode, setPonytailMode } from "./ponytail-mode";
 import { enrichThreadWithRolloutTools, listRolloutThreads, mergeThreadList } from "./session-tools";
-import { applySessionsBackup, buildMarkdownExport, buildSessionsBackup, buildThreadPreview, parseMarkdownConversation } from "./thread-backup";
+import { applySessionsBackup, backupFromRolloutFile, buildMarkdownExport, buildSessionsBackup, buildThreadPreview, parseMarkdownConversation, BACKUP_FORMAT, BACKUP_VERSION } from "./thread-backup";
 import {
   buildDefaultExpertTeams, buildTeamSystemPrompt, buildTeamTools, normalizeTeamConfig,
   readExpertTeams, setExpertTeamsFile, writeExpertTeams, type ExpertTeamConfig, type ExpertTeamMember,
@@ -548,6 +550,14 @@ async function applyCustomModel(entry: CustomModelFile) {
       'env_key = "CODEX_HARNESS_API_KEY"',
       `wire_api = "${normalized.wireApi ?? "responses"}"`,
       "requires_openai_auth = false",
+      // 429 限流防御（已用真实 app-server 探针实证，见 scripts/probe-provider-retries.cjs）：
+      // request_max_retries=10 HTTP 请求失败（含 429）最多重试 10 次；
+      // stream_max_retries=10 SSE 流断开重连最多 10 次；
+      // stream_idle_timeout_ms=600000 流空闲判定超时从默认 5 分钟放长到 10 分钟。
+      // 写在每个 provider 段内 → 不管什么模型都必须生效。
+      "request_max_retries = 10",
+      "stream_max_retries = 10",
+      "stream_idle_timeout_ms = 600000",
       `model_auto_compact_token_limit = ${Math.round(context * (appSettings.autoCompactRatio ?? 0.8))}`,
       'model_auto_compact_token_limit_scope = "model"',
     ];
@@ -1443,6 +1453,43 @@ ipcMain.handle("app:engine-info", async () => {
     sessions: (dirEntries(path.join(codexHome, "sessions"))?.length ?? 0),
     archived: (dirEntries(path.join(codexHome, "archived_sessions"))?.length ?? 0),
   };
+});
+
+// ── Codex 引擎在线更新（设置 → 控制台 → Codex 引擎更新） ──
+let engineUpdateRunning = false;
+ipcMain.handle("engine:check-update", async () => {
+  const settings = await readAppSettings(app.getPath("userData"));
+  return checkEngineUpdate(settings.engineProxyUrl?.trim() || undefined);
+});
+ipcMain.handle("engine:perform-update", async () => {
+  if (engineUpdateRunning) throw new Error("引擎更新正在进行中，请稍候");
+  engineUpdateRunning = true;
+  try {
+    const settings = await readAppSettings(app.getPath("userData"));
+    const proxy = settings.engineProxyUrl?.trim() || undefined;
+    // 有任务在跑就等它结束（最多 10 分钟），避免替换文件时引擎仍在写
+    if (engineActiveTurnIds.size) {
+      sendToWindow("engine:update:progress", { stage: "wait", detail: "等待当前任务结束后开始替换…" });
+      const deadline = Date.now() + 10 * 60_000;
+      while (engineActiveTurnIds.size && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    // 替换二进制前必须停引擎（否则 codex.exe 被占用，rename 失败）
+    server.stop();
+    const result = await performEngineUpdate(proxy, (progress) => {
+      sendToWindow("engine:update:progress", { stage: progress.stage, detail: progress.detail, percent: progress.percent });
+    });
+    if (!result.ok) {
+      // 更新失败要把引擎拉起来，应用保持可用（引擎会加载旧/回滚后的二进制）
+      await server.restart().catch(() => undefined);
+    }
+    return result;
+  } finally {
+    engineUpdateRunning = false;
+  }
+});
+ipcMain.handle("app:relaunch", () => {
+  app.relaunch();
+  app.exit(0);
 });
 
 
@@ -2754,15 +2801,43 @@ ipcMain.handle("threads:export-markdown", async (_event, input?: { threadIds?: s
 // 单会话只读全文预览（全局搜索「会话」命中点开）：直接读 rollout 原档渲染消息序列，不动引擎焦点
 ipcMain.handle("threads:preview-conversation", (_event, threadId: string) => buildThreadPreview(codexHome, String(threadId ?? "")));
 ipcMain.handle("threads:import", async (): Promise<{ path: string; imported: number; skipped: number; threads: { id: string; name: string; status: string }[] } | null> => {
+  // 支持两类文件：本应用导出的会话备份（.json）+ 原生 Codex rollout 会话记录（.jsonl，
+  // 用户反馈 #10：原生会话记录都是 .jsonl，此前只认 .json 导不进来）。可多选合并导入。
   const result = await dialog.showOpenDialog(mainWindow!, {
-    title: "导入会话备份",
-    properties: ["openFile"],
-    filters: [{ name: "Codex 会话备份", extensions: ["json"] }],
+    title: "导入会话备份 / 原生 Codex 会话记录",
+    properties: ["openFile", "multiSelections"],
+    filters: [
+      { name: "会话备份 / Codex 会话记录（json, jsonl）", extensions: ["json", "jsonl"] },
+      { name: "所有文件", extensions: ["*"] },
+    ],
   });
   if (result.canceled || !result.filePaths?.length) return null;
-  const raw = await fs.readFile(result.filePaths[0], "utf8");
-  const parsed = JSON.parse(raw);
-  const summary = applySessionsBackup(codexHome, parsed);
+  const merged: any = { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), threads: [] };
+  for (const filePath of result.filePaths) {
+    if (/\.jsonl$/i.test(filePath)) {
+      // 原生 Codex rollout：转成本应用备份格式后走同一条写回管线（重导入同会话按 duplicate/conflict 跳过）
+      merged.threads.push(...backupFromRolloutFile(filePath).threads);
+    } else {
+      let parsed: any;
+      try {
+        parsed = JSON.parse(await fs.readFile(filePath, "utf8"));
+      } catch (error: any) {
+        throw new Error(`${path.basename(filePath)}：不是有效的 JSON 文件（${error.message}）`);
+      }
+      if (!parsed || parsed.format !== BACKUP_FORMAT || !Array.isArray(parsed.threads)) {
+        // .json 但不是本应用备份格式：常见原因是把 rollout 内容存成了 .json，提示改扩展名
+        const looksLikeRollout = typeof parsed === "object" && parsed !== null && (parsed.type === "session_meta" || (Array.isArray(parsed) && parsed[0]?.type === "session_meta"));
+        throw new Error(
+          looksLikeRollout
+            ? `${path.basename(filePath)}：这是单条会话记录内容，请把扩展名改为 .jsonl 后再导入`
+            : `${path.basename(filePath)}：不是有效的会话备份文件（缺少 format 标记）`
+        );
+      }
+      merged.threads.push(...parsed.threads);
+    }
+  }
+  if (!merged.threads.length) return { path: result.filePaths[0], imported: 0, skipped: 0, threads: [] };
+  const summary = applySessionsBackup(codexHome, merged);
   return { path: result.filePaths[0], ...summary };
 });
 // 导入外部对话记录（主流 AI / 官方 Codex /export 导出的 .md/.txt 文本）→ 自动新建一个命名会话：
@@ -2799,7 +2874,7 @@ ipcMain.handle("threads:import-conversation", async (_event, input?: { cwd?: str
     sandbox: input?.sandbox || "workspace-write",
     modelProvider: provider,
     personality: input?.personality || null,
-    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false } } } : undefined,
+    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
   });
   const threadName = `导入：${parsed.title || path.basename(filePath, path.extname(filePath))}`.slice(0, 80);
   try { await server.request("thread/name/set", { threadId: started.thread.id, name: threadName }); } catch { /* 命名失败不阻塞进入会话 */ }
@@ -2998,7 +3073,7 @@ async function distillSummarize(prompt: string, body: string): Promise<string> {
     sandbox: "read-only",
     modelProvider: provider,
     config: model?.baseUrl
-      ? { model_provider: provider, model_providers: { [provider]: { name: model?.name ?? provider, base_url: model.baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false } } }
+      ? { model_provider: provider, model_providers: { [provider]: { name: model?.name ?? provider, base_url: model.baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } }
       : undefined,
   });
   const threadId = started.thread.id;
@@ -3039,7 +3114,7 @@ ipcMain.handle("subagents:invoke", async (_event, input: { id?: string; name?: s
     approvalPolicy: agent.inheritApproval ? (input.approvalPolicy ?? "never") : agent.approvalPolicy,
     sandbox: agent.inheritSandbox ? (input.sandbox ?? "workspace-write") : agent.sandbox,
     modelProvider: provider,
-    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false } } } : undefined,
+    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
   });
   const systemPrefix = `[子智能体 ${agent.name}] ${agent.systemPrompt}\n\n`;
   const finalQuery = `${systemPrefix}用户任务：${input.query}\n\n完成后请输出结构化结果（关键结论 + 行动步骤 + 任何上下文）；不要主动发起破坏性操作。`;
@@ -3122,7 +3197,7 @@ ipcMain.handle("teams:start-session", async (_event, input: { teamId: string; ta
     sandbox: input.sandbox || "workspace-write",
     modelProvider: provider,
     personality: input.personality || null,
-    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false } } } : undefined,
+    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
     dynamicTools: [teamTool],
   });
   if (input.defer) {
@@ -3170,7 +3245,7 @@ ipcMain.handle("teams:member-session", async (_event, input: { teamId: string; m
     sandbox: member.sandbox || input.sandbox || "workspace-write",
     modelProvider: provider,
     personality: input.personality || null,
-    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false } } } : undefined,
+    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
   });
   const systemPrefix = `[专家团「${team.displayName.zh}」${isLead ? "主理人" : "成员"} ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`;
   if (input.defer) {
@@ -3218,7 +3293,7 @@ ipcMain.handle("teams:invoke-member", async (_event, input: { teamId: string; me
     approvalPolicy: member.approvalPolicy || input.approvalPolicy || "never",
     sandbox: member.sandbox || input.sandbox || "workspace-write",
     modelProvider: provider,
-    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false } } } : undefined,
+    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
   });
   const systemPrefix = `[专家团「${team.displayName.zh}」成员 ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`;
   const finalQuery = `${systemPrefix}主理人分配的子任务：${input.query}\n\n请按你的角色给出专业产出（关键结论 + 依据 + 建议）；完成后通过 SendMessage 将完整结果回传给主理人。不要发起破坏性操作。`;

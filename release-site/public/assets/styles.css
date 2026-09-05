@@ -251,6 +251,24 @@ main {
   white-space: pre-wrap;
   max-height: 130px; overflow: auto;
 }
+/* 版本卡片内的多平台下载行（Windows / macOS 双芯片各一行） */
+.card .dl-list {
+  display: flex; flex-direction: column; gap: 8px;
+  margin: 12px 0 4px;
+}
+.card .dl-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.16);
+}
+.card .dl-platform { font-size: 13px; color: var(--text); flex: 1; }
+.card .dl-size { font-size: 12px; color: var(--text-mute); font-family: var(--mono); }
+.card .dl-row .btn { padding: 6px 14px; font-size: 12.5px; }
+.card .dl-row .btn-copy { padding: 6px 10px; font-size: 11.5px; color: var(--text-mute); }
+.card .dl-row .btn-copy:hover { color: var(--text); border-color: var(--text-mute); }
+
 .card .actions { display: flex; gap: 8px; margin-top: 14px; }
 .card .actions .btn { flex: 1; justify-content: center; }
 
@@ -806,3 +824,60 @@ table.admin .actions { display: flex; gap: 6px; }
 .prio-select { width: auto !important; }
 .dr-danger { margin-top: 26px; padding-top: 16px; border-top: 1px dashed var(--panel-border); }
 .dr-danger .btn { width: 100%; }
+
+.hero-tip { margin-top: 14px; font-size: 12.5px; line-height: 1.75; color: var(--text-mute); max-width: 560px; }
+.hero-tip strong { color: var(--text-dim); font-weight: 600; }
+.hero-tip code { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 1px 6px; font-size: 12px; color: var(--text-dim); }
+
+/* ===== 用户交流群（QQ 二维码） ===== */
+.group-card {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  background:
+    radial-gradient(420px 200px at 12% 15%, rgba(56, 189, 248, 0.28), transparent 65%),
+    linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(167, 139, 250, 0.12));
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 18px;
+  padding: 26px 28px;
+  box-shadow: 0 14px 56px -14px rgba(56, 189, 248, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.group-info { flex: 1; min-width: 0; }
+.group-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  margin-bottom: 10px;
+}
+.group-info h3 { margin: 0 0 8px; font-size: 19px; font-weight: 700; letter-spacing: 0.2px; }
+.group-info p { margin: 0 0 14px; font-size: 13.5px; color: var(--text-dim); line-height: 1.65; }
+.group-info p b { color: var(--text); }
+.group-perks {
+  list-style: none;
+  margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 7px;
+  font-size: 13px; color: var(--text-dim);
+}
+.group-qrcode {
+  flex-shrink: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 10px 10px 8px;
+  box-shadow: 0 10px 34px -10px rgba(0, 0, 0, 0.55);
+}
+.group-qrcode img {
+  display: block;
+  width: 148px; height: auto;
+  border-radius: 8px;
+}
+.group-qrcode-tip { font-size: 11.5px; color: #475569; font-weight: 500; }
+@media (max-width: 720px) {
+  .group-card { flex-direction: column; text-align: center; }
+  .group-perks { align-items: center; }
+}

@@ -106,6 +106,45 @@ export function buildSessionsBackup(codexHome: string, threadIds?: string[]): Se
   return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), threads };
 }
 
+/** 把单个原生 Codex rollout（.jsonl）文件转成会话备份包，供 threads:import 直接导入。
+ *  线程 id 优先取文件名 UUID（原生命名 rollout-<时间戳>-<uuid>.jsonl），取不到再读 session_meta 的 id 字段
+ *  （聚合键口径与 scanSessionFiles / listRolloutThreads 一致）。 */
+export function backupFromRolloutFile(filePath: string): SessionsBackup {
+  const raw = readFileSync(filePath, "utf8");
+  const fileName = path.basename(filePath);
+  let id = fileName.match(UUID_RE)?.[1] ?? "";
+  let startedAt = 0;
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    let row: any;
+    try { row = JSON.parse(line); } catch { continue; }
+    if (row.type === "session_meta") {
+      const payload = row.payload ?? {};
+      if (!id && typeof payload.id === "string" && payload.id.trim()) id = payload.id.trim();
+      if (typeof row.timestamp === "string") {
+        const t = Date.parse(row.timestamp);
+        if (Number.isFinite(t)) startedAt = t;
+      }
+      break; // session_meta 固定在 rollout 首行
+    }
+  }
+  if (!id) {
+    throw new Error(`${fileName}：无法识别会话 ID——不是有效的 Codex 会话记录（rollout）文件`);
+  }
+  id = id.toLowerCase();
+  const mtimeMs = statSync(filePath).mtimeMs;
+  // 写回路径约束：必须在 sessions/ 下且文件名以 -<uuid>.jsonl 结尾（scanSessionFiles 按 UUID_RE 聚合）
+  const rel = `sessions/imported/rollout-imported-${id}.jsonl`;
+  const meta = extractMeta(id, [{ rel, abs: filePath, mtimeMs }], false);
+  if (startedAt) meta.updatedAt = Math.max(meta.updatedAt, startedAt);
+  return {
+    format: BACKUP_FORMAT,
+    version: BACKUP_VERSION,
+    exportedAt: Date.now(),
+    threads: [{ id, meta, files: [{ rel, text: raw }] }],
+  };
+}
+
 function safeRel(rel: string): string | null {
   if (typeof rel !== "string" || !rel.trim()) return null;
   const normalized = path.normalize(rel).replace(/\\/g, "/");

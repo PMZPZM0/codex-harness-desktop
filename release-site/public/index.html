@@ -3,127 +3,189 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Codex Harness · 版本发布中心</title>
-<link rel="stylesheet" href="/assets/styles.css?v=1788508459067" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%238b5cf6'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='18' font-weight='700' text-anchor='middle' fill='white'%3E%3C%2Ftext%3E%3C/svg%3E" />
+<title>Codex Harness Desktop · 官方下载</title>
+<meta name="description" content="Codex Harness Desktop 官方发布渠道：Windows / macOS 安装包下载、更新日志、用户交流群。" />
+<link rel="stylesheet" href="/assets/home.css?v=1788517833031" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%238b5cf6'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='18' font-weight='700' text-anchor='middle' fill='white'%3E%E2%8C%AC%3C/text%3E%3C/svg%3E" />
 </head>
 <body>
+
 <nav class="nav">
-  <div class="brand">
-    <div class="logo">⌬</div>
-    <span>Codex Harness</span>
-  </div>
-  <div class="nav-links">
-    <a href="/" class="active">下载</a>
-    <a href="/feedback.html">反馈</a>
-    <a href="/admin.html">管理</a>
-    <a href="/api/health" target="_blank">API</a>
-    <a href="https://github.com/PMZPZM0/codex-harness-desktop" target="_blank" rel="noopener">GitHub ↗</a>
-    <a href="https://api.pptoken.cc/register?aff=X82JSNVC3W3S" target="_blank" rel="noopener" class="sponsor">赞助商</a>
-  </div>
-  <div class="right">
-    <span class="pill"><span class="dot"></span>服务正常</span>
+  <div class="nav-inner">
+    <a class="brand" href="/">
+      <span class="logo">⌬</span>
+      <span class="brand-name">Codex Harness</span>
+    </a>
+    <div class="nav-links">
+      <a href="/" class="active">下载</a>
+      <a href="/feedback.html">反馈</a>
+      <a href="https://github.com/PMZPZM0/codex-harness-desktop" target="_blank" rel="noopener">GitHub ↗</a>
+    </div>
   </div>
 </nav>
 
 <main>
-  <!-- Hero -->
+
+  <!-- ============ Hero ============ -->
   <section class="hero">
-    <div class="left">
-      <h1>下载最新版本</h1>
-      <p class="sub">
-        Codex Harness 桌面端的官方发布渠道。所有安装包均经过管理员审核，附 SHA-256 与更新日志。桌面端启动时也会自动到这里检查更新。
+    <div class="hero-copy">
+      <span class="eyebrow">官方发布渠道 · 持续更新</span>
+      <h1>把 Codex 引擎装进<br /><em>真正的桌面应用</em></h1>
+      <p class="hero-sub">
+        多会话并行、技能与插件生态、桌面与浏览器自动化，开箱即用。
+        所有安装包经管理员审核，附带 SHA-256 校验与更新日志。
       </p>
-      <div class="quick">
-        <button class="btn btn-primary" id="btn-latest">下载最新版</button>
-        <button class="btn" id="btn-refresh">刷新列表</button>
-        <a class="btn btn-ghost" href="https://github.com/PMZPZM0/codex-harness-desktop" target="_blank" rel="noopener">查看 GitHub 仓库 ↗</a>
+      <div class="hero-actions">
+        <button class="btn btn-primary btn-lg" id="btn-latest">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2v8m0 0l-3-3m3 3l3-3M3 12.5h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          下载 Windows 版
+        </button>
+        <a class="btn btn-outline btn-lg" href="https://github.com/PMZPZM0/codex-harness-desktop/releases/latest" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 .8a7.2 7.2 0 0 0-2.28 14.03c.36.07.5-.15.5-.35v-1.22c-2 .43-2.43-.97-2.43-.97-.32-.83-.8-1.05-.8-1.05-.66-.45.05-.44.05-.44.72.05 1.1.75 1.1.75.65 1.11 1.7.79 2.12.6.06-.47.25-.79.46-.97-1.6-.18-3.28-.8-3.28-3.56 0-.79.28-1.43.74-1.94-.07-.18-.32-.91.07-1.9 0 0 .6-.2 1.98.74a6.9 6.9 0 0 1 3.6 0c1.37-.94 1.97-.74 1.97-.74.4.99.15 1.72.07 1.9.46.5.74 1.15.74 1.94 0 2.77-1.69 3.38-3.3 3.56.26.22.5.66.5 1.33v1.97c0 .2.13.42.5.35A7.2 7.2 0 0 0 8 .8Z"/></svg>
+          macOS 下载
+        </a>
+        <button class="btn btn-ghost" id="btn-refresh" title="重新拉取版本列表">刷新</button>
+      </div>
+      <p class="hero-tip">
+        macOS 首次打开：<strong>右键 → 打开</strong>（安装包未签名）。若提示已损坏，终端执行
+        <code>xattr -cr "/Applications/Codex Harness Desktop.app"</code>
+      </p>
+    </div>
+
+    <aside class="hero-card" aria-label="当前最新版本">
+      <div class="hc-label">当前最新版本</div>
+      <div class="hc-version" id="hero-version">—</div>
+      <div class="hc-meta">
+        <span class="hc-channel" id="hero-channel">—</span>
+        <span class="hc-sep"></span>
+        <span id="hero-size">—</span>
+        <span class="hc-sep"></span>
+        <span id="hero-time">—</span>
+      </div>
+      <div class="hc-platforms">
+        <span>Windows x64</span>
+        <span>macOS Apple Silicon</span>
+        <span>macOS Intel</span>
+      </div>
+    </aside>
+  </section>
+
+  <!-- ============ 版本列表 ============ -->
+  <section class="section" id="releases">
+    <div class="section-head">
+      <div>
+        <span class="sec-eyebrow">下载</span>
+        <h2>所有发布版本</h2>
+      </div>
+      <div class="tabs" id="channel-tabs">
+        <button class="tab active" data-channel="stable">stable</button>
+        <button class="tab" data-channel="beta">beta</button>
+        <button class="tab" data-channel="canary">canary</button>
       </div>
     </div>
-    <div class="hero-card">
-      <div class="label">当前最新版本</div>
-      <div class="version" id="hero-version">—</div>
-      <div class="meta">
-        <span id="hero-channel">stable</span>
-        <span class="sep">·</span>
-        <span id="hero-size">—</span>
-        <span class="sep">·</span>
-        <span id="hero-time">—</span>
+    <div id="grid" class="grid"></div>
+  </section>
+
+  <!-- ============ 功能特性 ============ -->
+  <section class="section">
+    <div class="section-head">
+      <div>
+        <span class="sec-eyebrow">功能</span>
+        <h2>为一个桌面工作台而生</h2>
+      </div>
+    </div>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🗂️</div>
+        <h3>多任务会话管理</h3>
+        <p>分组、置顶、归档、分支、排队，多任务并行不丢消息。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">✨</div>
+        <h3>流式平滑渲染</h3>
+        <p>正文与深度思考逐字平滑揭示，长会话自动折叠成卡片。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔌</div>
+        <h3>插件与技能生态</h3>
+        <p>技能中心、插件市场、MCP 连接器，能力总闸一键管控。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🤖</div>
+        <h3>自动化工具箱</h3>
+        <p>桌面与浏览器自动化，内置 Node / Python / Git 运行时。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🧠</div>
+        <h3>多模型接入</h3>
+        <p>任意 OpenAI 兼容端点，多供应商自由切换，思考强度自适应。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📱</div>
+        <h3>移动远程接入</h3>
+        <p>微信 / 飞书 / Telegram / 钉钉 Bot，手机远程掌控任务。</p>
       </div>
     </div>
   </section>
 
-  <!-- 功能介绍 -->
-  <div class="section-head">
-    <h2>功能特性</h2>
-    <span class="hint">独立桌面工作台 · 开箱即用</span>
-  </div>
-  <div class="feature-grid">
-    <div class="feature-card">
-      <div class="feature-icon">🗂️</div>
-      <h3>多任务会话管理</h3>
-      <p>分组 / 置顶 / 归档 / 分支 / 排队，任务并行不丢消息</p>
+  <!-- ============ 用户交流群 ============ -->
+  <section class="section">
+    <div class="section-head">
+      <div>
+        <span class="sec-eyebrow">社区</span>
+        <h2>用户交流群</h2>
+      </div>
     </div>
-    <div class="feature-card">
-      <div class="feature-icon">✨</div>
-      <h3>流式平滑渲染</h3>
-      <p>正文与深度思考逐字平滑揭示，会话折叠成卡片</p>
+    <div class="group-card">
+      <div class="group-info">
+        <span class="group-badge">🎁 新人福利</span>
+        <h3>进群即送 10 美元模型体验卡</h3>
+        <p>扫码加入 QQ 群 <b>1092443646</b>，内测功能抢先体验，问题直连开发者。</p>
+        <ul class="group-perks">
+          <li>🎁 入群即领 10 美元体验卡</li>
+          <li>🚀 内测版本与活动第一时间发布</li>
+          <li>💬 反馈直达开发者，处理更快</li>
+        </ul>
+      </div>
+      <div class="group-qrcode">
+        <img src="/assets/qq-group-qrcode.jpg" alt="QQ 群二维码：codex harness 内测群 1092443646" loading="lazy" width="148" />
+        <span>QQ 扫一扫，加入群聊</span>
+      </div>
     </div>
-    <div class="feature-card">
-      <div class="feature-icon">🔌</div>
-      <h3>插件与技能生态</h3>
-      <p>技能中心 / 插件市场 / MCP 连接器，能力总闸一键管控</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🤖</div>
-      <h3>自动化工具箱</h3>
-      <p>桌面 + 浏览器自动化，内置 Node/Python/Git 等运行时</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🧠</div>
-      <h3>多模型接入</h3>
-      <p>任意 OpenAI 兼容端点，多供应商自由切换</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">📱</div>
-      <h3>移动远程接入</h3>
-      <p>手机扫码远程控制，微信 / 飞书 / Telegram / 钉钉 Bot</p>
-    </div>
-  </div>
+  </section>
 
-  <!-- 赞助商 -->
-  <div class="section-head">
-    <h2>赞助支持</h2>
-    <span class="hint">如果你觉得好用，欢迎支持我们</span>
-  </div>
-  <div class="sponsor-card">
-    <div class="sponsor-glow"></div>
-    <div class="sponsor-icon">💝</div>
-    <div class="sponsor-info">
-      <div class="sponsor-badge">推荐注册</div>
-      <h3>支持 Codex Harness 持续开发</h3>
-      <p>通过赞助商平台注册，即可支持项目的开发与维护。你的每一次支持，都是我们前进的动力。</p>
-      <a class="btn btn-primary sponsor-cta" href="https://api.pptoken.cc/register?aff=X82JSNVC3W3S" target="_blank" rel="noopener">立即注册支持 →</a>
+  <!-- ============ 赞助支持 ============ -->
+  <section class="section">
+    <div class="section-head">
+      <div>
+        <span class="sec-eyebrow">支持</span>
+        <h2>赞助支持</h2>
+      </div>
     </div>
-  </div>
-  <p class="sponsor-note">💡 赞助商 · https://api.pptoken.cc/register?aff=X82JSNVC3W3S</p>
+    <a class="sponsor-card" href="https://api.pptoken.cc/register?aff=X82JSNVC3W3S" target="_blank" rel="noopener">
+      <span class="sponsor-icon">💝</span>
+      <span class="sponsor-body">
+        <span class="sponsor-title">支持 Codex Harness 持续开发</span>
+        <span class="sponsor-desc">通过赞助商平台注册，你的每一次支持都是我们前进的动力。</span>
+      </span>
+      <span class="sponsor-cta">前往注册 →</span>
+    </a>
+  </section>
 
-  <!-- Channel Tabs -->
-  <div class="section-head">
-    <h2>所有发布版本</h2>
-    <span class="hint">按 channel 分组 · 点击卡片右上角的强制标识查看详情</span>
-  </div>
-  <div class="tabs" id="channel-tabs">
-    <button class="tab active" data-channel="stable">stable</button>
-    <button class="tab" data-channel="beta">beta</button>
-    <button class="tab" data-channel="canary">canary</button>
-  </div>
-
-  <div id="grid" class="grid"></div>
 </main>
 
-<div id="toast-host"></div>
+<footer class="footer">
+  <div class="footer-inner">
+    <span class="footer-brand">⌬ Codex Harness</span>
+    <div class="footer-links">
+      <a href="https://github.com/PMZPZM0/codex-harness-desktop" target="_blank" rel="noopener">GitHub</a>
+      <a href="/feedback.html">意见反馈</a>
+      <a href="https://api.pptoken.cc/register?aff=X82JSNVC3W3S" target="_blank" rel="noopener">赞助商</a>
+    </div>
+  </div>
+</footer>
 
-<script src="/assets/user.js?v=1788508459067"></script>
+<div id="toast-host"></div>
+<script src="/assets/user.js?v=1788517833031"></script>
 </body>
 </html>

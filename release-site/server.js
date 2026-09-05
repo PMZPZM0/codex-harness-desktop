@@ -9,6 +9,7 @@
 // 请务必在 .env 改掉 ADMIN_PASSWORD，并建议在 Caddy 后面加 TLS。
 
 const http = require("node:http");
+const https = require("node:https");
 const path = require("node:path");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
@@ -61,6 +62,28 @@ const FEEDBACK_STATUSES = ["pending", "in_progress", "resolved", "closed"];
 const FEEDBACK_TYPES = ["bug", "suggestion", "question", "other"];
 const FEEDBACK_PRIORITIES = ["low", "normal", "high"];
 const IMAGE_EXT_WHITELIST = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
+
+// ===== COS 对象存储（可选：安装包放 COS 直链下载，绕开服务器公网带宽瓶颈） =====
+// .env 配置（全部留空 = 功能关闭，完全走原有服务器下载逻辑）：
+//   COS_BUCKET     桶名（不带 -appid 后缀）
+//   COS_APPID      账号 APPID（桶全名 = <bucket>-<appid>）
+//   COS_REGION     地域，如 ap-shanghai（与服务器同地域上传走内网，不占公网带宽）
+//   COS_SECRET_ID / COS_SECRET_KEY   访问密钥（建议子账号、仅 COS 权限）
+//   COS_PUBLIC_BASE 可选，默认 https://<bucket>-<appid>.cos.<region>.myqcloud.com
+//   COS_UPLOAD_HOST 可选，默认 <bucket>-<appid>.cos-internal.<region>.myqcloud.com（内网）
+const COS_ENABLED = !!(ENV.COS_BUCKET && ENV.COS_REGION && ENV.COS_SECRET_ID && ENV.COS_SECRET_KEY);
+const COS_BUCKET = ENV.COS_BUCKET || "";
+const COS_APPID = ENV.COS_APPID || "";
+const COS_REGION = ENV.COS_REGION || "";
+const COS_SECRET_ID = ENV.COS_SECRET_ID || "";
+const COS_SECRET_KEY = ENV.COS_SECRET_KEY || "";
+const COS_FULL_BUCKET = COS_BUCKET + (COS_APPID ? "-" + COS_APPID : "");
+const COS_PUBLIC_BASE = (ENV.COS_PUBLIC_BASE || `https://${COS_FULL_BUCKET}.cos.${COS_REGION}.myqcloud.com`).replace(/\/$/, "");
+const COS_UPLOAD_HOST = ENV.COS_UPLOAD_HOST || `${COS_FULL_BUCKET}.cos-internal.${COS_REGION}.myqcloud.com`;
+
+// ===== 下载直连通道（可选）：DOWNLOAD_BASE_URL=https://dl.ppz123.asia =====
+// 留空 = 下载走本站相对路径（CF 链路）；填了 = downloadUrl 返回该域名的绝对地址（大陆直连，不绕 CF）
+const DOWNLOAD_BASE_URL = (ENV.DOWNLOAD_BASE_URL || "").trim().replace(/\/+$/, "");
 
 fs.mkdirSync(FILES_DIR, { recursive: true });
 fs.mkdirSync(FEEDBACK_IMAGES_DIR, { recursive: true });
@@ -200,6 +223,108 @@ function findRelease(id) {
   return db.releases.find((r) => r.id === id);
 }
 
+// ============== COS XML API（手写签名，零依赖） ==============
+// 签名算法：https://cloud.tencent.com/document/product/436/7778
+function cosSign(method, urlPath, headersToSign) {
+  const now = Math.floor(Date.now() / 1000);
+  const keyTime = `${now - 60};${now + 900}`;
+  const signKey = crypto.createHmac("sha1", COS_SECRET_KEY).update(keyTime).digest("hex");
+  const hkeys = Object.keys(headersToSign).map((k) => k.toLowerCase()).sort();
+  const hstr = hkeys.map((k) => `${k}=${headersToSign[k]}`).join("&");
+  const httpString = `${method.toLowerCase()}\n${urlPath}\n\n${hstr}\n`;
+  const sha1Http = crypto.createHash("sha1").update(httpString).digest("hex");
+  const stringToSign = `sha1\n${sha1Http}\n${keyTime}\n`;
+  const signature = crypto.createHmac("sha1", COS_SECRET_KEY).update(stringToSign).digest("hex");
+  return (
+    `q-sign-algorithm=sha1&q-ak=${encodeURIComponent(COS_SECRET_ID)}` +
+    `&q-sign-time=${encodeURIComponent(keyTime)}&q-key-time=${encodeURIComponent(keyTime)}` +
+    `&q-header-list=${hkeys.join(";")}&q-url-param-list=&q-signature=${signature}`
+  );
+}
+
+/** 把本地文件流式 PUT 到 COS（同地域走内网 host） */
+function cosPutFile(localPath, key, size) {
+  return new Promise((resolve, reject) => {
+    const urlPath = "/" + key.split("/").map(encodeURIComponent).join("/");
+    const auth = cosSign("PUT", urlPath, { host: COS_UPLOAD_HOST });
+    const req = https.request(
+      {
+        method: "PUT",
+        host: COS_UPLOAD_HOST,
+        port: 443,
+        path: urlPath,
+        headers: { Host: COS_UPLOAD_HOST, "Content-Length": size, Authorization: auth },
+      },
+      (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          const body = Buffer.concat(chunks).toString("utf8");
+          if (res.statusCode >= 200 && res.statusCode < 300) resolve();
+          else reject(new Error(`cos_put HTTP ${res.statusCode}: ${body.slice(0, 300)}`));
+        });
+      }
+    );
+    req.on("error", reject);
+    fs.createReadStream(localPath).pipe(req);
+  });
+}
+
+/** 删除 COS 上的对象（fire-and-forget，失败只打日志） */
+function cosDeleteObject(key) {
+  return new Promise((resolve, reject) => {
+    const urlPath = "/" + key.split("/").map(encodeURIComponent).join("/");
+    const auth = cosSign("DELETE", urlPath, { host: COS_UPLOAD_HOST });
+    const req = https.request(
+      {
+        method: "DELETE",
+        host: COS_UPLOAD_HOST,
+        port: 443,
+        path: urlPath,
+        headers: { Host: COS_UPLOAD_HOST, Authorization: auth },
+      },
+      (res) => {
+        res.resume();
+        res.on("end", () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) resolve();
+          else reject(new Error(`cos_delete HTTP ${res.statusCode}`));
+        });
+      }
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+/** 把某个 release 的安装包推到 COS，成功后记 cos_key（downloadUrl 即切换为 COS 直链） */
+async function cosPushRelease(row) {
+  if (!COS_ENABLED || !row) throw new Error("cos_disabled_or_no_row");
+  const local = path.join(FILES_DIR, row.stored_name);
+  const st = await fs.promises.stat(local);
+  const key = `releases/${row.stored_name}`;
+  await cosPutFile(local, key, st.size);
+  row.cos_key = key;
+  saveDb(db);
+  return key;
+}
+
+/** 统一的 downloadUrl 生成：COS 直链 > 下载直连域名 > 服务器相对路径 */
+function releaseDownloadUrl(r) {
+  // 外链包（如 macOS 包托管在 GitHub Releases）：直接返回外链，不经本站转发
+  if (r.external_url) return r.external_url;
+  if (COS_ENABLED && r.cos_key) return `${COS_PUBLIC_BASE}/${r.cos_key}`;
+  if (DOWNLOAD_BASE_URL) return `${DOWNLOAD_BASE_URL}/api/releases/${r.id}/download`;
+  return `/api/releases/${r.id}/download`;
+}
+
+/** 删除 release 时同步清理 COS 对象（异步，不阻塞响应） */
+function cosRemoveReleaseQuiet(rel) {
+  if (!COS_ENABLED || !rel || !rel.cos_key) return;
+  cosDeleteObject(rel.cos_key)
+    .then(() => console.log(`[cos] deleted ${rel.cos_key}`))
+    .catch((e) => console.error(`[cos] delete failed ${rel.cos_key}:`, e.message));
+}
+
 // ============== 反馈区 helper ==============
 function findFeedback(id) {
   return db.feedbacks.find((f) => f.id === id);
@@ -244,12 +369,15 @@ function isAdminPath(method, p) {
   return (
     (method === "GET" && p === "/api/releases") ||
     (method === "POST" && p === "/api/releases") ||
+    (method === "POST" && p === "/api/releases/batch-delete") ||
+    (method === "POST" && /^\/api\/releases\/\d+\/push-cos$/.test(p)) ||
     (method === "DELETE" && /^\/api\/releases\/\d+$/.test(p)) ||
     (method === "PATCH" && /^\/api\/releases\/\d+$/.test(p)) ||
     (method === "GET" && p === "/api/admin/feedback") ||
     (method === "GET" && /^\/api\/admin\/feedback\/\d+$/.test(p)) ||
     (method === "PATCH" && /^\/api\/admin\/feedback\/\d+$/.test(p)) ||
     (method === "POST" && /^\/api\/admin\/feedback\/\d+\/reply$/.test(p)) ||
+    (method === "POST" && p === "/api/admin/feedback/batch-delete") ||
     (method === "DELETE" && /^\/api\/admin\/feedback\/\d+$/.test(p))
   );
 }
@@ -314,6 +442,7 @@ const server = http.createServer(async (req, res) => {
         defaultChannel: DEFAULT_CHANNEL,
         time: Date.now(),
         releases: db.releases.length,
+        cos: COS_ENABLED ? "enabled" : "disabled",
       });
     }
 
@@ -321,8 +450,10 @@ const server = http.createServer(async (req, res) => {
     if (method === "GET" && p === "/api/latest") {
       const channel = u.searchParams.get("channel") || DEFAULT_CHANNEL;
       const current = u.searchParams.get("current") || "";
+      // 平台过滤：不带 platform 默认 windows（兼容已发布的桌面端，它不会传该参数）
+      const platform = (u.searchParams.get("platform") || "windows").trim();
       const rows = db.releases
-        .filter((r) => r.channel === channel)
+        .filter((r) => r.channel === channel && (r.platform || "windows") === platform)
         .sort((a, b) => b.uploaded_at - a.uploaded_at || b.id - a.id);
       const row = rows[0];
       if (!row) {
@@ -340,7 +471,7 @@ const server = http.createServer(async (req, res) => {
         changelog: row.changelog,
         mandatory: !!row.mandatory,
         uploadedAt: row.uploaded_at,
-        downloadUrl: `/api/releases/${row.id}/download`,
+        downloadUrl: releaseDownloadUrl(row),
       });
     }
 
@@ -352,13 +483,14 @@ const server = http.createServer(async (req, res) => {
           id: r.id,
           version: r.version,
           channel: r.channel,
+          platform: r.platform || "windows",
           filename: r.filename,
           size: r.size,
           sha256: r.sha256,
           changelog: r.changelog,
           mandatory: !!r.mandatory,
           uploaded_at: r.uploaded_at,
-          downloadUrl: `/api/releases/${r.id}/download`,
+          downloadUrl: releaseDownloadUrl(r),
         }));
       return json(res, 200, { releases: list });
     }
@@ -368,6 +500,12 @@ const server = http.createServer(async (req, res) => {
       const id = parseInt(p.split("/")[3], 10);
       const row = findRelease(id);
       if (!row) return json(res, 404, { error: "not_found" });
+      // 外链包（macOS）302 到 GitHub；旧链接/直接访问也能正确跳走
+      if (row.external_url) {
+        res.writeHead(302, { Location: row.external_url, "Cache-Control": "no-store" });
+        return res.end();
+      }
+      if (!row.stored_name) return json(res, 410, { error: "file_missing" });
       const filePath = path.join(FILES_DIR, row.stored_name);
       fs.stat(filePath, (err, st) => {
         if (err || !st.isFile()) return json(res, 410, { error: "file_missing" });
@@ -408,7 +546,7 @@ const server = http.createServer(async (req, res) => {
     if (method === "GET" && p === "/api/releases") {
       const list = [...db.releases]
         .sort((a, b) => b.uploaded_at - a.uploaded_at || b.id - a.id)
-        .map((r) => ({ ...r, mandatory: !!r.mandatory, downloadUrl: `/api/releases/${r.id}/download` }));
+        .map((r) => ({ ...r, mandatory: !!r.mandatory, downloadUrl: releaseDownloadUrl(r) }));
       return json(res, 200, { releases: list });
     }
 
@@ -432,7 +570,8 @@ const server = http.createServer(async (req, res) => {
       if (!version || !parseSemver(version)) {
         return json(res, 400, { error: "invalid_version", got: version });
       }
-      if (db.releases.some((r) => r.version === version && r.channel === channel)) {
+      const platform = (parsed.fields.platform || "windows").trim() || "windows";
+      if (db.releases.some((r) => r.version === version && r.channel === channel && (r.platform || "windows") === platform)) {
         return json(res, 409, { error: "version_exists" });
       }
       const ts = Date.now();
@@ -446,6 +585,7 @@ const server = http.createServer(async (req, res) => {
         id,
         version,
         channel,
+        platform,
         filename: file.filename,
         stored_name: storedName,
         size: file.data.length,
@@ -456,6 +596,13 @@ const server = http.createServer(async (req, res) => {
         uploaded_at: ts,
       });
       saveDb(db);
+      // 上传成功后自动后台推 COS（同地域走内网，不占公网带宽；失败不影响发布，可稍后手动重推）
+      if (COS_ENABLED) {
+        const row = db.releases.find((x) => x.id === id);
+        cosPushRelease(row)
+          .then(() => console.log(`[cos] pushed release #${id} -> ${row.cos_key}`))
+          .catch((e) => console.error(`[cos] auto-push failed #${id}:`, e.message));
+      }
       return json(res, 200, { id, version, channel, size: file.data.length, sha256 });
     }
 
@@ -465,9 +612,50 @@ const server = http.createServer(async (req, res) => {
       if (idx === -1) return json(res, 404, { error: "not_found" });
       const [removed] = db.releases.splice(idx, 1);
       saveDb(db);
-      const f = path.join(FILES_DIR, removed.stored_name);
-      if (fs.existsSync(f)) fs.unlinkSync(f);
+      if (removed.stored_name) {
+        const f = path.join(FILES_DIR, removed.stored_name);
+        if (fs.existsSync(f)) fs.unlinkSync(f);
+      }
+      cosRemoveReleaseQuiet(removed);
       return json(res, 200, { ok: true });
+    }
+
+    // ----- 管理员：批量删除 release（连带物理删除安装包文件） -----
+    if (method === "POST" && p === "/api/releases/batch-delete") {
+      const body = await readBody(req, 256 * 1024);
+      let data = {};
+      try { data = JSON.parse(body.toString("utf8")); } catch { /* 空 body */ }
+      const ids = Array.isArray(data.ids)
+        ? data.ids.map((x) => parseInt(x, 10)).filter((n) => Number.isFinite(n))
+        : [];
+      if (!ids.length) return json(res, 400, { error: "ids_required" });
+      let removed = 0;
+      for (const id of ids) {
+        const idx = db.releases.findIndex((r) => r.id === id);
+        if (idx === -1) continue;
+        const [rel] = db.releases.splice(idx, 1);
+        const f = path.join(FILES_DIR, rel.stored_name);
+        if (fs.existsSync(f)) { try { fs.unlinkSync(f); } catch { /* 忽略单文件删除失败 */ } }
+        cosRemoveReleaseQuiet(rel);
+        removed++;
+      }
+      saveDb(db);
+      console.log(`[releases] batch-delete removed=${removed}`);
+      return json(res, 200, { ok: true, removed });
+    }
+
+    // ----- 管理员：手动（重）推送某个 release 的安装包到 COS -----
+    if (method === "POST" && /^\/api\/releases\/(\d+)\/push-cos$/.test(p)) {
+      if (!COS_ENABLED) return json(res, 503, { error: "cos_disabled" });
+      const id = parseInt(p.split("/")[3], 10);
+      const row = findRelease(id);
+      if (!row) return json(res, 404, { error: "not_found" });
+      try {
+        await cosPushRelease(row);
+        return json(res, 200, { ok: true, id, cosUrl: releaseDownloadUrl(row) });
+      } catch (e) {
+        return json(res, 502, { error: "cos_push_failed", message: e.message });
+      }
     }
 
     if (method === "PATCH" && /^\/api\/releases\/(\d+)$/.test(p)) {
@@ -698,6 +886,32 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     }
 
+    // ----- 管理员：批量删除反馈（连带删除截图文件） -----
+    if (method === "POST" && p === "/api/admin/feedback/batch-delete") {
+      const body = await readBody(req, 512 * 1024);
+      let data = {};
+      try { data = JSON.parse(body.toString("utf8")); } catch { /* 空 body */ }
+      const ids = Array.isArray(data.ids)
+        ? data.ids.map((x) => parseInt(x, 10)).filter((n) => Number.isFinite(n))
+        : [];
+      const all = data.all === true;
+      if (!all && !ids.length) return json(res, 400, { error: "ids_required" });
+      const targets = all ? db.feedbacks : db.feedbacks.filter((f) => ids.includes(f.id));
+      if (!targets.length) return json(res, 200, { ok: true, removed: 0, images: 0 });
+      let removedImages = 0;
+      for (const fb of targets) {
+        for (const im of fb.images || []) {
+          const f = path.join(FEEDBACK_IMAGES_DIR, im.stored);
+          if (fs.existsSync(f)) { try { fs.unlinkSync(f); } catch { /* 忽略单文件删除失败 */ } removedImages++; }
+        }
+      }
+      if (all) db.feedbacks = [];
+      else db.feedbacks = db.feedbacks.filter((f) => !ids.includes(f.id));
+      saveDb(db);
+      console.log(`[feedback] batch-delete removed=${targets.length} images=${removedImages}`);
+      return json(res, 200, { ok: true, removed: targets.length, images: removedImages });
+    }
+
     // ----- 静态资源 + 首页 -----
     if (method === "GET") {
       return serveStatic(req, res, p);
@@ -717,4 +931,5 @@ server.listen(PORT, () => {
   console.log(`[server] admin: ${ADMIN_USER} / (密码见 .env)`);
   console.log(`[server] data: ${DB_FILE}`);
   console.log(`[server] files: ${FILES_DIR}  (上限 ${MAX_UPLOAD_BYTES / 1024 / 1024} MB)`);
+  console.log(`[server] cos: ${COS_ENABLED ? `enabled (${COS_FULL_BUCKET} @ ${COS_REGION}, 内网上传 ${COS_UPLOAD_HOST})` : "disabled (.env 里配 COS_* 即启用)"}`);
 });
