@@ -39,6 +39,10 @@ terminal-dump.txt
 # 工具数据
 .workbuddy/
 
+# 应用生成的本机数据（引擎项目级记忆目录 / 浏览器自动化运行时产物，不纳入 git）
+.codex-harness/
+.playwright-cli/
+
 # 并行构建流程的临时产物
 dist-new/
 

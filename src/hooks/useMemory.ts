@@ -87,15 +87,18 @@ export type MemoryMode = "local" | "cloud";
 type Options = {
   threadId?: string;
   activeTurnId?: string | null;
+  workspace?: string;
 };
 
 const MODE_KEY = "memory-mode";
 const WORKSPACE_KEY = "workspace-memory";
 
-export function useMemory({ threadId, activeTurnId }: Options = {}) {
+export function useMemory({ threadId, activeTurnId, workspace }: Options = {}) {
+  const managementWorkspace = workspace;
   const [memoryEnabled, setMemoryEnabledState] = useState(() => localStorage.getItem("memory-enabled") !== "false");
   const [memories, setMemories] = useState<MemoryRecord[]>([]);
   const [memoryCategory, setMemoryCategory] = useState(""); // 默认「全部」：自动捕获多落在项目背景等分类，默认选单一分类会显示空列表，被误认为记忆没生效
+  const [memorySaveCategory, setMemorySaveCategory] = useState("临时上下文");
   const [memoryDraft, setMemoryDraft] = useState("");
   const [memoryStatus, setMemoryStatus] = useState("");
   const [memoryGateway, setMemoryGateway] = useState<MemoryGatewayState>({ endpoint: "", sessionKey: "", userId: "codex-harness", apiKey: "", hasApiKey: false });
@@ -104,11 +107,11 @@ export function useMemory({ threadId, activeTurnId }: Options = {}) {
     const stored = localStorage.getItem(MODE_KEY);
     return stored === "cloud" ? "cloud" : "local";
   });
-  const [workspaceMemoryEnabled, setWorkspaceMemoryEnabled] = useState<boolean>(() => localStorage.getItem(WORKSPACE_KEY) === "true");
+  const [workspaceMemoryEnabled, setWorkspaceMemoryEnabled] = useState<boolean>(() => localStorage.getItem(WORKSPACE_KEY) !== "false");
 
   useEffect(() => {
     void window.codex.listMemory().then((result) => setMemories(result ?? [])).catch(() => undefined);
-  }, []);
+  }, [memoryMode]);
 
   useEffect(() => {
     void window.codex.getMemoryGateway()
@@ -121,6 +124,20 @@ export function useMemory({ threadId, activeTurnId }: Options = {}) {
     void window.codex.request("thread/memoryMode/set", { threadId, mode: memoryEnabled ? "enabled" : "disabled" }).catch(() => undefined);
   }, [threadId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!managementWorkspace) {
+      setWorkspaceMemoryEnabled(false);
+      return () => { cancelled = true; };
+    }
+    void window.codex.readWorkspaceMemoryEnabled(managementWorkspace).then((enabled) => {
+      if (cancelled) return;
+      setWorkspaceMemoryEnabled(Boolean(enabled));
+      localStorage.setItem(WORKSPACE_KEY, String(Boolean(enabled)));
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [managementWorkspace]);
+
   // 模式以主进程为准（真正决定 recall/capture 去哪儿的是它），启动时对齐一次
   useEffect(() => {
     void window.codex.readMemoryMode().then((mode) => {
@@ -129,13 +146,14 @@ export function useMemory({ threadId, activeTurnId }: Options = {}) {
     }).catch(() => undefined);
   }, []);
 
-  async function saveMemoryRecord() {
+  async function saveMemoryRecord(workspaceOverride?: string) {
     if (!memoryDraft.trim()) return;
+    const category = memorySaveCategory || "临时上下文";
     try {
-      const saved = await window.codex.saveMemory({ category: memoryCategory, content: memoryDraft, sourceThreadId: threadId, sourceTurnId: activeTurnId ?? undefined });
+      const saved = await window.codex.saveMemory({ category, content: memoryDraft, sourceThreadId: threadId, sourceTurnId: activeTurnId ?? undefined, workspace: workspaceOverride || managementWorkspace || undefined });
       setMemories((current) => [saved, ...current.filter((entry) => entry.id !== saved.id)]);
       setMemoryDraft("");
-      setMemoryStatus(`记忆已保存到「${memoryMode === "cloud" ? "云端" : "本地"}」`);
+      setMemoryStatus(`记忆已保存到「${memoryMode === "cloud" ? "云端并保留本地缓存" : "本地"}」`);
     } catch (error: any) {
       setMemoryStatus(error.message);
     }
@@ -158,6 +176,7 @@ export function useMemory({ threadId, activeTurnId }: Options = {}) {
   async function resetMemory() {
     await window.codex.resetMemory();
     setMemories([]);
+    setMemoryStatus(memoryMode === "cloud" ? "本地记忆缓存已清空；云端记忆需在 Gateway 管理端清理" : "本地记忆已清空");
   }
 
   async function testMemoryGateway() {
@@ -177,7 +196,7 @@ export function useMemory({ threadId, activeTurnId }: Options = {}) {
     try {
       const saved = await window.codex.saveMemoryGateway(memoryGateway);
       setMemoryGateway({ ...memoryGateway, apiKey: "", hasApiKey: saved.hasApiKey });
-      setMemoryStatus(saved.configured ? "Memory Gateway 已启用" : "已切换到本地记忆");
+      setMemoryStatus(saved.configured ? "Memory Gateway 已启用（本地保留缓存）" : "已切换到本地记忆");
     } catch (error: any) {
       setMemoryStatus(`Gateway 保存失败：${error.message}`);
     } finally {
@@ -204,7 +223,7 @@ export function useMemory({ threadId, activeTurnId }: Options = {}) {
       const applied = await window.codex.setMemoryMode(mode);
       setMemoryModeState(applied);
       localStorage.setItem(MODE_KEY, applied);
-      setMemoryStatus(applied === "cloud" ? "已切换到云端记忆 · codex 会去云端查找与保存" : "已切换到本地记忆 · 仅保存在本机 memory.json");
+      setMemoryStatus(applied === "cloud" ? "已切换到云端同步 · Codex 会去云端查找并保留本地缓存" : "已切换到本地记忆 · 仅保存在本机 memory.json");
     } catch (error: any) {
       setMemoryModeState(previous);
       localStorage.setItem(MODE_KEY, previous);
@@ -212,10 +231,14 @@ export function useMemory({ threadId, activeTurnId }: Options = {}) {
     }
   }
 
-  function updateWorkspaceMemory(enabled: boolean) {
+  function updateWorkspaceMemory(enabled: boolean, workspaceOverride?: string) {
     setWorkspaceMemoryEnabled(enabled);
     localStorage.setItem(WORKSPACE_KEY, String(enabled));
-    setMemoryStatus(enabled ? "工作区记忆已开启：新会话生效，可能增加模型调用与 Token 成本" : "工作区记忆已关闭");
+    const targetWorkspace = workspaceOverride || managementWorkspace;
+    if (!targetWorkspace) { setMemoryStatus("尚未选择工作区"); return; }
+    void window.codex.setWorkspaceMemoryEnabled({ workspace: targetWorkspace, enabled }).then(() => {
+      setMemoryStatus(enabled ? "工作区记忆已开启：新会话生效，可能增加模型调用与 Token 成本" : "工作区记忆已关闭：该项目的背景、项目记忆和日志不再注入或捕获");
+    }).catch((error: any) => setMemoryStatus(`保存工作区记忆开关失败：${error.message}`));
   }
 
   return {
@@ -224,6 +247,8 @@ export function useMemory({ threadId, activeTurnId }: Options = {}) {
     setMemories,
     memoryCategory,
     setMemoryCategory,
+    memorySaveCategory,
+    setMemorySaveCategory,
     memoryDraft,
     setMemoryDraft,
     memoryStatus,

@@ -102,13 +102,14 @@ function absolutize(downloadUrl: string): string {
 export async function checkLatestUpdate(
   currentVersion: string,
   source: UpdateSource = "web",
-  platform: NodeJS.Platform = "win32",
-  arch = "x64",
+  platform: NodeJS.Platform = process.platform,
+  arch = process.arch,
 ): Promise<LatestInfo> {
   if (source === "github") return checkGitHubUpdate(currentVersion, platform, arch);
 
   const u = new URL("/api/latest", UPDATE_SERVER_URL);
   u.searchParams.set("channel", UPDATE_CHANNEL);
+  u.searchParams.set("platform", platform === "darwin" ? `mac-${arch}` : "windows");
   if (currentVersion) u.searchParams.set("current", currentVersion);
   const res = await requestJson(u.toString());
   if (res.status < 200 || res.status >= 300) {
@@ -147,7 +148,7 @@ async function checkGitHubUpdate(currentVersion: string, platform: NodeJS.Platfo
   const assets: { name: string; browser_download_url: string; size?: number }[] = Array.isArray(release.assets) ? release.assets : [];
   let match: { name: string; browser_download_url: string; size?: number } | undefined;
   if (platform === "darwin") {
-    match = assets.find((a) => a.name.includes("mac") && a.name.endsWith(".zip") && a.name.includes(arch)) ?? assets.find((a) => a.name.includes("mac") && a.name.endsWith(".zip"));
+    match = assets.find((a) => a.name.includes("mac") && a.name.endsWith(".zip") && a.name.includes(arch));
   } else {
     match = assets.find((a) => a.name.endsWith(".exe"));
   }

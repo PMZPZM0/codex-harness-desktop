@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { DEFAULT_EFFORT } from "../lib/effort";
+import { matchModelSpec } from "../lib/model-specs";
 
 export type ProviderModel = { id: string; enabled?: boolean; contextWindow?: number; maxOutputTokens?: number; inputTypes?: ("text" | "image" | "video")[]; outputTypes?: ("text" | "image" | "video")[]; efforts?: string[] };
 
-export type CustomModel = { provider: string; name: string; model: string; baseUrl: string; contextWindow?: number; wireApi?: "responses" | "chat"; hasKey?: boolean; models?: ProviderModel[]; enabled?: boolean };
+export type CustomModel = { provider: string; name: string; model: string; baseUrl: string; contextWindow?: number; wireApi?: "responses" | "chat" | "auto"; hasKey?: boolean; models?: ProviderModel[]; enabled?: boolean };
 
 export type ProviderDraft = {
   provider: string;
@@ -11,7 +12,7 @@ export type ProviderDraft = {
   model: string;
   baseUrl: string;
   contextWindow: string;
-  wireApi: "responses" | "chat";
+  wireApi: "responses" | "chat" | "auto";
   apiKey: string;
   models: ProviderModel[];
   enabled: boolean;
@@ -23,7 +24,7 @@ export type ProviderSummary = {
   model: string;
   baseUrl: string;
   contextWindow?: number;
-  wireApi?: "responses" | "chat";
+  wireApi?: "responses" | "chat" | "auto";
   hasKey?: boolean;
   models?: ProviderModel[];
   enabled?: boolean;
@@ -56,7 +57,7 @@ function dedupModels(models: ProviderModel[] | undefined): ProviderModel[] {
 
 export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuccess }: Options) {
   const [customModel, setCustomModel] = useState<CustomModel | null>(null);
-  const [customDraft, setCustomDraft] = useState<ProviderDraft>({ provider: "custom", name: "Custom Provider", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true });
+  const [customDraft, setCustomDraft] = useState<ProviderDraft>({ provider: "custom", name: "Custom Provider", model: "", baseUrl: "", contextWindow: "128000", wireApi: "auto", apiKey: "", models: [], enabled: true });
   const [providersList, setProvidersList] = useState<ProviderSummary[]>([]);
   const [currentProvider, setCurrentProvider] = useState<string | null>(null);
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
@@ -78,7 +79,8 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
     if (saved.enabled !== false) {
       setCurrentProvider(saved.provider);
       setEditingProvider(saved.provider);
-      onSelect(`custom:${saved.provider}:${saved.model}`, DEFAULT_EFFORT);
+      // 保存供应商配置不抢模型选择：仅当用户从未选过模型时才初始化下拉
+      onAutoSelect(`custom:${saved.provider}:${saved.model}`, DEFAULT_EFFORT);
     }
     const modelIds = [...new Set([...(saved.models ?? []).map((model) => model.id), ...probedModels, saved.model].filter(Boolean))];
     setProviderModels(modelIds);
@@ -106,13 +108,19 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
   }, []);
 
   async function saveCustomModel() {
+    await saveCustomDraft();
+  }
+
+  /** 保存：不传参用当前 customDraft；模型编辑器"一次保存直生效"场景传入合并后的完整草稿（规避 setState 异步读旧值） */
+  async function saveCustomDraft(override?: any) {
     setSavingSettings(true);
     try {
-      const dedupedDraft = { ...customDraft, models: dedupModels(customDraft.models) };
-      const enabled = dedupedDraft.models.filter((model) => model.enabled !== false);
+      const source = override ?? customDraft;
+      const dedupedDraft = { ...source, models: dedupModels(source.models) };
+      const enabled = dedupedDraft.models.filter((model: any) => model.enabled !== false);
       // 配置界面不展示“默认模型”；引擎仍需要一个当前模型作为启动入口，
       // 有勾选模型时仅在保存时内部选择第一项；允许供应商暂时没有模型。
-      const effectiveModel = enabled.length === 0 ? "" : enabled.some((model) => model.id === dedupedDraft.model) ? dedupedDraft.model : enabled[0].id;
+      const effectiveModel = enabled.length === 0 ? "" : enabled.some((model: any) => model.id === dedupedDraft.model) ? dedupedDraft.model : enabled[0].id;
       const saved = await window.codex.saveCustomModel({ ...dedupedDraft, model: effectiveModel });
       adoptSavedProvider(saved);
       onNotice(saved.enabled === false ? "供应商已保存（保持禁用）" : "自定义模型已保存，Codex 服务已重新加载");
@@ -128,6 +136,9 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
     setProviderStatus("");
     try {
       const result = await window.codex.probeCustomModel({ ...customDraft, model: customDraft.model, wireApi: customDraft.wireApi ?? "responses" });
+      // 自动跟随上游：探测确定实际协议后回写草稿（下拉从「自动」变为实际值），保存即落定
+      const wireUsed = (result as any).wireUsed as "responses" | "chat" | undefined;
+      if (customDraft.wireApi === "auto" && wireUsed) setCustomDraft((current) => ({ ...current, wireApi: wireUsed }));
       if (result.models?.length) {
         // 拉全量 /models 时整体替换（避免上一家供应商的模型混进来）；只测单个模型时并入列表
         setProviderModels((current) => customDraft.model ? [...new Set([...result.models, ...current])] : [...new Set(result.models)]);
@@ -138,20 +149,45 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
             const existing = new Set((current.models ?? []).map((m) => m.id));
             const merged = [...(current.models ?? [])];
             for (const id of result.models) {
-              if (!existing.has(id)) merged.push({ id, enabled: true, contextWindow: Number(current.contextWindow) || undefined });
+              const spec = matchModelSpec(id);
+              if (!existing.has(id)) {
+                // 已知模型自动回填推荐规格（思考档位/上下文/最大输出/输入输出模态），未知模型用用户填写的兜底值
+                merged.push({
+                  id,
+                  enabled: false,
+                  contextWindow: spec?.contextWindow ?? (Number(current.contextWindow) || undefined),
+                  maxOutputTokens: spec?.maxOutputTokens,
+                  efforts: spec ? [...spec.efforts] : undefined,
+                  inputTypes: spec?.inputTypes ? [...spec.inputTypes] : ["text"],
+                  outputTypes: spec?.outputTypes ? [...spec.outputTypes] : ["text"],
+                });
+              } else if (spec) {
+                // 刷新即校准：存量条目缺参数字段的按内置规格补齐（用户显式改过的字段不动）
+                const idx = merged.findIndex((m) => m.id === id);
+                const cur = merged[idx];
+                merged[idx] = {
+                  ...cur,
+                  contextWindow: cur.contextWindow ?? spec.contextWindow,
+                  maxOutputTokens: cur.maxOutputTokens ?? spec.maxOutputTokens,
+                  efforts: cur.efforts?.length ? cur.efforts : [...spec.efforts],
+                  inputTypes: cur.inputTypes?.length ? cur.inputTypes : [...(spec.inputTypes ?? ["text"])],
+                  outputTypes: cur.outputTypes?.length ? cur.outputTypes : [...(spec.outputTypes ?? ["text"])],
+                };
+              }
             }
             // 探测只更新候选列表，不替用户指定“默认模型”；勾选状态由用户统一决定。
             return { ...current, models: merged };
           });
         }
       }
-      setProviderStatus(mode === "test" ? `连接成功 · HTTP ${result.status} · ${result.latencyMs} ms · ${result.models.length} 个模型` : `已获取 ${result.models.length} 个模型${result.via === "stream" ? "（网关未提供 /models，已实测模型连通）" : ""}，勾选要生效的模型后保存`);
+      const viaNote = result.via === "builtin" ? "（该网关不提供列表接口，已加载内置推荐清单，可手动增删）" : result.via === "stream" ? "（网关未提供 /models，已实测模型连通）" : "";
+      setProviderStatus(mode === "test" ? `连接成功 · HTTP ${result.status} · ${result.latencyMs} ms · ${result.models.length} 个模型` : `已获取 ${result.models.length} 个模型${viaNote}，勾选要生效的模型后保存`);
       // 成功弹 toast 醒目提醒（状态行小字保留作留痕）
       onProbeSuccess?.(
         mode === "test" ? "连接成功" : "模型列表已获取",
         mode === "test"
           ? `${customDraft.name || customDraft.provider} · HTTP ${result.status} · ${result.latencyMs} ms · ${result.models.length} 个模型可用`
-          : `${customDraft.name || customDraft.provider} · ${result.models.length} 个模型${result.via === "stream" ? "（实测连通）" : ""}，勾选要生效的模型后保存`,
+          : `${customDraft.name || customDraft.provider} · ${result.models.length} 个模型${viaNote}，勾选要生效的模型后保存`,
       );
     } catch (error: any) {
       setProviderStatus(`连接失败：${error.message}`);
@@ -297,8 +333,9 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
     setProviderModel,
     removeProviderModel,
     upsertProviderModel,
-    setProviderEnabled,
-    probeOneModel,
-    adoptSavedProvider,
-  };
+  setProviderEnabled,
+  probeOneModel,
+  adoptSavedProvider,
+  saveCustomDraft,
+};
 }

@@ -25,6 +25,7 @@ const ARCHIVE_DIR = "archive";
 /** 注入预算（字符）：超出即提示蒸馏，不做静默截断丢失 */
 export const MEMORY_BUDGET = {
   user: 1500,
+  background: 2000,
   project: 3000,
   logPerDay: 800,
   logDays: 3,
@@ -40,12 +41,13 @@ const DISTILL_MIN_CHARS = 200;
 
 export type MemoryLayersSnapshot = {
   user: string;
+  background: string;
   project: string;
   /** 工作区为空时 project 不可用 */
   hasWorkspace: boolean;
-  paths: { user: string; projectDir: string; project: string; logDir: string };
+  paths: { user: string; projectDir: string; background: string; project: string; logDir: string };
   logs: { date: string; chars: number }[];
-  budget: { user: number; project: number; total: number; over: boolean };
+  budget: { user: number; background: number; project: number; logs: number; total: number; over: boolean };
   pendingDistill: { dates: string[]; chars: number };
   lastDistillAt?: number;
 };
@@ -136,6 +138,19 @@ export class MemoryLayers {
     return this.readText(path.join(dir, "MEMORY.md"));
   }
 
+  /** 当前工作区的项目背景：面向该项目下所有会话的快速入门约束。 */
+  async readBackground(workspace?: string): Promise<string> {
+    const dir = this.projectDir(workspace);
+    if (!dir) return "";
+    return this.readText(path.join(dir, "BACKGROUND.md"));
+  }
+
+  async writeBackground(workspace: string, content: string): Promise<void> {
+    const dir = this.projectDir(workspace);
+    if (!dir) throw new Error("尚未选择工作区，无法保存项目背景");
+    await this.writeText(path.join(dir, "BACKGROUND.md"), content.trim() ? content.trim() + "\n" : "");
+  }
+
   async writeProject(workspace: string, content: string): Promise<void> {
     const dir = this.projectDir(workspace);
     if (!dir) throw new Error("尚未选择工作区，无法保存项目记忆");
@@ -185,15 +200,18 @@ export class MemoryLayers {
 
   // ── 注入上下文 ─────────────────────────────────────────────────
   /** 拼装常驻记忆块：L0 + L1 常驻，L2 只回灌最近 3 天 */
-  async context(workspace?: string): Promise<{ text: string; stats: { chars: number; over: boolean } }> {
+  async context(workspace?: string, includeWorkspace = true): Promise<{ text: string; stats: { chars: number; over: boolean } }> {
     const userRaw = (await this.readUser()).trim();
-    const projectRaw = (await this.readProject(workspace)).trim();
+    const backgroundRaw = includeWorkspace ? (await this.readBackground(workspace)).trim() : "";
+    const projectRaw = includeWorkspace ? (await this.readProject(workspace)).trim() : "";
     const user = clamp(userRaw, MEMORY_BUDGET.user);
+    const background = clamp(backgroundRaw, MEMORY_BUDGET.background);
     const project = clamp(projectRaw, MEMORY_BUDGET.project);
-    const logs = await this.recentLogs(workspace);
+    const logs = includeWorkspace ? await this.recentLogs(workspace) : [];
 
     const blocks: string[] = [];
     if (user.text) blocks.push(`## 用户档案\n${user.text}`);
+    if (background.text) blocks.push(`## 项目背景\n${background.text}`);
     if (project.text) blocks.push(`## 项目记忆\n${project.text}`);
     if (logs.length) {
       const logBlocks = logs.map((entry) => {
@@ -205,7 +223,7 @@ export class MemoryLayers {
     if (!blocks.length) return { text: "", stats: { chars: 0, over: false } };
 
     let body = blocks.join("\n\n");
-    const over = user.over || project.over || body.length > MEMORY_BUDGET.total;
+    const over = user.over || background.over || project.over || body.length > MEMORY_BUDGET.total;
     if (body.length > MEMORY_BUDGET.total) body = `${body.slice(0, MEMORY_BUDGET.total).trimEnd()}\n\n…（常驻记忆超预算，请蒸馏）`;
     return { text: `\n\n[Harness 常驻记忆 · 以下为已确认的长期上下文，与当前请求冲突时以当前请求为准]\n${body}\n[常驻记忆结束]\n`, stats: { chars: body.length, over } };
   }
@@ -294,25 +312,36 @@ export class MemoryLayers {
   async snapshot(workspace?: string): Promise<MemoryLayersSnapshot> {
     const dir = this.projectDir(workspace);
     const user = await this.readUser();
+    const background = await this.readBackground(workspace);
     const project = await this.readProject(workspace);
     const logs = dir ? await this.listLogDates(dir) : [];
     const logStats = dir
       ? await Promise.all(logs.slice(-7).map(async (date) => ({ date, chars: (await this.readText(path.join(dir, `${date}.md`))).length })))
       : [];
     const pending = dir ? await this.pickDistill(workspace) : null;
-    const total = user.length + project.length;
+    const logsChars = logStats.reduce((sum, entry) => sum + entry.chars, 0);
+    const total = user.length + background.length + project.length + logsChars;
     return {
       user,
+      background,
       project,
       hasWorkspace: Boolean(dir),
       paths: {
         user: this.userFile,
         projectDir: dir ?? "",
+        background: dir ? path.join(dir, "BACKGROUND.md") : "",
         project: dir ? path.join(dir, "MEMORY.md") : "",
         logDir: dir ?? "",
       },
       logs: logStats,
-      budget: { user: user.length, project: project.length, total, over: user.length > MEMORY_BUDGET.user || project.length > MEMORY_BUDGET.project },
+      budget: {
+        user: user.length,
+        background: background.length,
+        project: project.length,
+        logs: logsChars,
+        total,
+        over: user.length > MEMORY_BUDGET.user || background.length > MEMORY_BUDGET.background || project.length > MEMORY_BUDGET.project || total > MEMORY_BUDGET.total,
+      },
       pendingDistill: { dates: pending?.dates ?? [], chars: pending?.chars ?? 0 },
       lastDistillAt: workspace ? (await this.readState(workspace)).lastDistillAt : undefined,
     };

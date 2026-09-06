@@ -93,6 +93,10 @@ async function seedConfigSections(codexHome: string, bundledDir: string): Promis
 /**
  * 首启种子入口（app.whenReady 里、引擎启动前调用）：
  * 内置目录 → 插件 cache + config 注册段。两件事独立失败互不影响。
+ *
+ * 注意：**不**把插件 skills/ 拷到全局 codexHome/skills/——引擎 skills/list 会直接从
+ * 插件 cache 列出技能（实测 cache 就位即出现 6 个 ponytail-*，plugin 标记正确）；
+ * 额外种全局只会让技能列表重复（每个 ponytail-* 出现两遍，像假的）。
  */
 export async function ensurePonytailPlugin(codexHome: string, bundledDir: string): Promise<void> {
   if (!bundledDir || !fsSync.existsSync(bundledDir)) {
