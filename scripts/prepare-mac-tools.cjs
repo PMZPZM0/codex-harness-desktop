@@ -42,8 +42,12 @@ async function main() {
     CLOAKBROWSER_AUTO_UPDATE: "false",
     PLAYWRIGHT_BROWSERS_PATH: path.join(tools, "pw-browsers"),
   };
+  // x64 没有 nuphus-mcp-osx-x64 平台包，postinstall check 必炸；原生二进制由 cargo 构建提供（tools/nuphus/）
+  const npmFlags = arch === "x64"
+    ? ["--ignore-scripts"]
+    : ["--allow-scripts=@nuphus/nuphus-mcp"];
   run(node, [npm, "install", "-g", "--prefix", prefix, "--registry=https://registry.npmjs.org",
-    "--allow-scripts=@nuphus/nuphus-mcp", "@nuphus/nuphus-mcp@0.2.2", "@playwright/cli@0.1.18",
+    ...npmFlags, "@nuphus/nuphus-mcp@0.2.2", "@playwright/cli@0.1.18",
     "cloakbrowser@0.5.9", "playwright-core@1.58.2"], env);
   const modules = path.join(prefix, "lib/node_modules");
   // Keep the same module layout as the Windows distribution.
