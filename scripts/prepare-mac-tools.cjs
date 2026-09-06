@@ -68,6 +68,19 @@ async function main() {
     for (const file of fs.readdirSync(native).filter((name) => name.endsWith(".dylib"))) {
       fs.copyFileSync(path.join(native, file), path.join(destination, file));
     }
+    // build.rs 的 NuGet 下载在 CI 偶发静默失败（只警告）；这里兜底手动提取 osx-x64 的 ONNX Runtime
+    if (!fs.existsSync(path.join(destination, "libonnxruntime.dylib"))) {
+      console.log("[prepare] cargo 构建未产出 ONNX dylib，改从 NuGet 直接提取");
+      const nupkg = download("https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/1.27.0", "onnxruntime-x64.nupkg");
+      const ortDir = path.resolve(".test-tmp/ort-extract");
+      fs.rmSync(ortDir, { recursive: true, force: true });
+      run("unzip", ["-o", "-q", nupkg, "runtimes/osx-x64/native/*", "-d", ortDir]);
+      const ortNative = path.join(ortDir, "runtimes", "osx-x64", "native");
+      for (const file of fs.readdirSync(ortNative)) {
+        fs.copyFileSync(path.join(ortNative, file), path.join(native, file));
+        fs.copyFileSync(path.join(ortNative, file), path.join(destination, file));
+      }
+    }
     if (!fs.existsSync(path.join(destination, "libonnxruntime.dylib"))) throw new Error("Missing Intel ONNX runtime");
   }
   const helper = path.join(prefix, "bin/nuphus-call");
