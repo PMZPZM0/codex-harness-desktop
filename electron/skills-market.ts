@@ -8,6 +8,17 @@ import os from "node:os";
 const execFileAsync = promisify(execFile);
 const API_BASE = "https://api.cocoloop.cn";
 const MARKET_HOME = "https://hub.cocoloop.cn";
+// SkillHub（skillhub.cn）国内 Skill 商店：showcase/搜索 JSON API + COS zip 直链，
+// 与官方 CLI（skills_store_cli.py）走同一套后端接口，无需 python3/bash 依赖。
+const SKILLHUB_COS = "https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com";
+const SKILLHUB_API = "https://api.skillhub.cn";
+export type SkillHubSection = "hot" | "trending" | "newest" | "featured";
+const skillHubShowcasePaths: Record<SkillHubSection, string> = {
+  hot: "hot",            // 下载量最高（对应「总排行」）
+  trending: "trending",  // 近期最热
+  newest: "newest",      // 最新上传
+  featured: "featured",  // 官方精选
+};
 const MAX_ARCHIVE_BYTES = 50 * 1024 * 1024;
 const MAX_SKILL_BYTES = 512 * 1024;
 const MAX_EXTRACTED_FILES = 200;
@@ -18,6 +29,7 @@ export type MarketSkill = {
   name: string;
   description: string;
   category: string;
+  subCategory?: string;
   icon: string;
   author: string;
   securityLevel: string;
@@ -77,6 +89,58 @@ export async function listCocoLoopSkills(input: { category?: string; page?: numb
   return { items, total: Number(payload.data.total) || items.length, page, pageSize };
 }
 
+function mapSkillHubEntry(entry: any): MarketSkill {
+  const slug = text(entry.slug) || text(entry.namespace?.publicSlug);
+  const rawCategory = text(entry.category);
+  // subCategories 是中文命名（如「上下文管理」），展示时优先用中文
+  const zhSub = Array.isArray(entry.subCategories) && entry.subCategories.length ? text(entry.subCategories[0]?.name) : "";
+  return {
+    id: slug,
+    name: text(entry.displayName) || text(entry.name) || slug,
+    description: text(entry.description_zh) || text(entry.description) || "暂无技能简介",
+    // category 保留英文 key 用于分类过滤；zhSub 中文二级分类追加到作者旁展示
+    category: rawCategory || "skill",
+    subCategory: zhSub,
+    icon: text(entry.iconUrl) || text(entry.icon_url) || "✨",
+    author: text(entry.ownerName) || text(entry.namespace?.displayName) || "Unknown",
+    securityLevel: "unknown",
+    sourceCredibility: entry.verified ? "官方验证" : "",
+    downloads: String(entry.downloads ?? 0),
+    favorites: String(entry.installs ?? 0),
+    downloadUrl: `${SKILLHUB_COS}/skills/${encodeURIComponent(slug)}.zip`,
+    detailUrl: text(entry.homepage) || `${SKILLHUB_API}/skills/${encodeURIComponent(slug)}`,
+  };
+}
+
+/** SkillHub 市场清单：section 为 showcase 榜单；有 query 时走搜索接口 */
+export async function listSkillHubSkills(input: { section?: string; query?: string; limit?: number }) {
+  const section = (Object.prototype.hasOwnProperty.call(skillHubShowcasePaths, input.section ?? "") ? input.section : "hot") as SkillHubSection;
+  const limit = Math.min(40, Math.max(4, Math.floor(Number(input.limit) || 30)));
+  if (input.query?.trim()) {
+    const params = new URLSearchParams({ q: input.query.trim(), limit: String(limit) });
+    const response = await net.fetch(`${SKILLHUB_API}/api/v1/search?${params}`, { signal: AbortSignal.timeout(15_000) });
+    if (!response.ok) throw new Error(`SkillHub 搜索失败（HTTP ${response.status}）`);
+    const payload: any = await response.json();
+    const items = (Array.isArray(payload?.results) ? payload.results : []).map(mapSkillHubEntry).filter((entry: MarketSkill) => entry.id && entry.downloadUrl);
+    return { items, total: items.length, page: 1, pageSize: limit };
+  }
+  // 总排行（hot）拉四个 showcase 榜单并集去重，量级从 100 提升到 280+；
+  // 其余榜单各自单榜拉取。
+  const sections: SkillHubSection[] = section === "hot" ? ["hot", "trending", "newest", "featured"] : [section];
+  const seen = new Map<string, MarketSkill>();
+  for (const current of sections) {
+    const response = await net.fetch(`${SKILLHUB_API}/api/v1/showcase/${skillHubShowcasePaths[current]}`, { signal: AbortSignal.timeout(15_000) });
+    if (!response.ok) throw new Error(`SkillHub 市场请求失败（HTTP ${response.status}）`);
+    const payload: any = await response.json();
+    for (const entry of Array.isArray(payload?.skills) ? payload.skills : []) {
+      const mapped = mapSkillHubEntry(entry);
+      if (mapped.id && mapped.downloadUrl && !seen.has(mapped.id)) seen.set(mapped.id, mapped);
+    }
+  }
+  const items = [...seen.values()].sort((a, b) => (Number(b.downloads) || 0) - (Number(a.downloads) || 0));
+  return { items, total: items.length, page: 1, pageSize: limit };
+}
+
 async function collectFiles(root: string, relative = "", out: string[] = []): Promise<string[]> {
   if (out.length > MAX_EXTRACTED_FILES) throw new Error("技能压缩包包含过多文件，已拒绝安装");
   const entries = await fs.readdir(path.join(root, relative), { withFileTypes: true });
@@ -113,9 +177,16 @@ export type InstallProgress = { stage: "download" | "extract" | "audit" | "insta
 export async function installCocoLoopSkill(input: { skill: MarketSkill; destinationRoot: string; onProgress?: (progress: InstallProgress) => void }) {
   const skill = input.skill;
   const progress = (stage: InstallProgress["stage"], message: string) => input.onProgress?.({ stage, message });
-  if (!skill?.id || !skill?.name || !/^https:\/\/dl\.cocoloop\.cn\//i.test(skill.downloadUrl)) throw new Error("无效的 CocoLoop 技能下载地址");
-  progress("download", "正在从 CocoLoop 下载技能包");
-  const response = await net.fetch(skill.downloadUrl, { signal: AbortSignal.timeout(45_000) });
+  const isCocoLoopUrl = /^https:\/\/dl\.cocoloop\.cn\//i.test(skill.downloadUrl ?? "");
+  const isSkillHubUrl = /^https:\/\/skillhub-1388575217\.cos\.ap-guangzhou\.myqcloud\.com\//i.test(skill.downloadUrl ?? "");
+  const market = isSkillHubUrl ? "skillhub" : "cocoloop";
+  if (!skill?.id || !skill?.name || (!isCocoLoopUrl && !isSkillHubUrl)) throw new Error("无效的技能下载地址");
+  progress("download", market === "skillhub" ? "正在从 SkillHub 下载技能包" : "正在从 CocoLoop 下载技能包");
+  let response = await net.fetch(skill.downloadUrl, { signal: AbortSignal.timeout(45_000) });
+  // SkillHub 部分带 namespace 的技能不在 COS 直链上，404 时回退官方下载 API
+  if (!response.ok && isSkillHubUrl && response.status === 404) {
+    response = await net.fetch(`${SKILLHUB_API}/api/v1/download?slug=${encodeURIComponent(skill.id)}`, { signal: AbortSignal.timeout(45_000) });
+  }
   if (!response.ok) throw new Error(`技能下载失败（HTTP ${response.status}）`);
   const declaredSize = Number(response.headers.get("content-length") || 0);
   if (declaredSize > MAX_ARCHIVE_BYTES) throw new Error("技能压缩包超过 50 MB，已拒绝安装");
@@ -146,7 +217,8 @@ export async function installCocoLoopSkill(input: { skill: MarketSkill; destinat
     await fs.cp(sourceDir, target, { recursive: true, dereference: false, errorOnExist: true });
     progress("register", "正在写入市场来源清单");
     const manifest: InstalledMarketSkill = { marketId: skill.id, sourceUrl: skill.detailUrl, installedAt: new Date().toISOString(), icon: skill.icon || undefined, category: skill.category || undefined };
-    await fs.writeFile(path.join(target, ".cocoloop.json"), JSON.stringify(manifest, null, 2), "utf8");
+    // 清单文件名按市场区分；读取端（local-list / 健康检查）两个名字都认
+    await fs.writeFile(path.join(target, market === "skillhub" ? ".skillhub.json" : ".cocoloop.json"), JSON.stringify(manifest, null, 2), "utf8");
     return { id: folder, name: skill.name, path: path.join(target, "SKILL.md"), description: skill.description, marketId: skill.id, sourceUrl: skill.detailUrl, securityLevel: skill.securityLevel };
   } finally {
     await fs.rm(temp, { recursive: true, force: true }).catch(() => undefined);

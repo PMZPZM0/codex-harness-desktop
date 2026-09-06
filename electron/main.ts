@@ -1,4 +1,4 @@
-import { Menu, Notification, app, BrowserWindow, clipboard, dialog, ipcMain, net, powerSaveBlocker, protocol, safeStorage, shell } from "electron";
+import { Menu, Notification, app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, shell, systemPreferences } from "electron";
 import os from "node:os";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs/promises";
@@ -34,7 +34,8 @@ import {
 function qrSvg(text: string) {
   return QRCode.toString(text, { type: "svg", margin: 2, errorCorrectionLevel: "M" });
 }
-import { installCocoLoopSkill, listCocoLoopSkills, type InstalledMarketSkill, type MarketSkill } from "./skills-market";
+import { installCocoLoopSkill, listCocoLoopSkills, listSkillHubSkills, type InstalledMarketSkill, type MarketSkill } from "./skills-market";
+import { ensureCodexMarketplaceSection, installCodexMarketPlugin, listCodexMarketPlugins, type CodexMarketPlugin } from "./codex-market";
 import { augmentedPath, bundledGit, bundledNode, bundledPython, cloakCacheDir, cloakOpenHelper, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "./toolchain";
 import { ensureBuiltinSkills } from "./builtin-skills";
 import { ensurePonytailPlugin } from "./ponytail-plugin";
@@ -54,6 +55,16 @@ app.setPath("userData", process.env.CODEX_HARNESS_USER_DATA || path.join(app.get
 // 的默认原子图标、顶掉窗口图标——因此仅在打包后设置。
 if (app.isPackaged) app.setAppUserModelId("com.codexharness.desktop");
 if (process.env.CODEX_HARNESS_DEBUG_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.CODEX_HARNESS_DEBUG_PORT);
+// GPU 渲染策略：全部保持 Chromium 默认（健康显卡默认就走硬件加速）。
+// 曾试过 ignore-gpu-blocklist / enable-gpu-rasterization / enable-zero-copy / disable-frame-rate-limit
+// 四开关强推 GPU 通道，用户实测「点击延迟明显变高」——部分显卡（黑名单/驱动弱）上强制 GPU 反而劣化交互，
+// 已全部回退。仅保留启动时 GPU 功能状态日志，供掉帧/卡顿时诊断（引擎日志 grep "[gpu]"）。
+void app.whenReady().then(() => {
+  try {
+    const gpuStatus = app.getGPUFeatureStatus();
+    console.log("[gpu] feature status:", JSON.stringify(gpuStatus));
+  } catch { /* 诊断日志，失败不影响启动 */ }
+});
 
 const codexHome = path.join(app.getPath("userData"), "codex-home");
 const customModelFile = path.join(app.getPath("userData"), "custom-model.json");
@@ -460,10 +471,11 @@ function buildModelCatalog(entry: CustomModelFile) {
     seen.add(m.id);
     const contextWindow = m.contextWindow ?? fallbackWindow;
     if (!contextWindow) continue;
-    // 该模型显式声明的思考档位（GPT 系可声明 minimal/xhigh/ultra 等）；缺省三档。
+    // 该模型显式声明的思考档位（GPT 系可声明 minimal/xhigh/ultra 等）；未声明默认全档位——
+    // 复刻 ZCode：思考等级下拉选什么都能用，用户无需理解"档位声明"；显式勾选用于收窄。
     // 引擎按 catalog 的 supported_reasoning_levels 校验 effort，UI 也按它显示选项，
     // 两处必须同源——只在这里收口，UI 从 catalog 读。
-    const efforts = (m.efforts ?? ["low", "medium", "high"]).filter((effort): effort is string => typeof effort === "string" && ["minimal", "low", "medium", "high", "xhigh", "ultra"].includes(effort));
+    const efforts = (m.efforts ?? ["minimal", "low", "medium", "high", "xhigh", "ultra"]).filter((effort): effort is string => typeof effort === "string" && ["minimal", "low", "medium", "high", "xhigh", "ultra"].includes(effort));
     const effortDescriptions: Record<string, string> = {
       minimal: "Minimal reasoning, fastest responses",
       low: "Fast responses with lighter reasoning",
@@ -498,11 +510,16 @@ function buildModelCatalog(entry: CustomModelFile) {
   return { models: catalogModels };
 }
 
-/** 把当前生效模型的 catalog 写进 codex-home/model-catalog.json，返回其 TOML 配置行（无模型则空） */
+/** 把模型 catalog 写进 codex-home/model-catalog.json，返回其 TOML 配置行（无模型则空）。
+ * 合并所有已保存供应商的模型（含禁用）：历史线程引用禁用供应商的模型时引擎也要能
+ * 认出它——禁用只影响下拉新增可选，不影响旧会话继续使用。当前生效供应商排最前，同名去重保留靠前者。 */
 async function writeModelCatalogToml(entry: CustomModelFile): Promise<string> {
-  const catalog = buildModelCatalog(entry);
-  if (!catalog.models.length) return "";
-  await fs.writeFile(modelCatalogFile, JSON.stringify(catalog, null, 2), "utf8");
+  const savedProviders = await readCustomModels();
+  const providers = [entry, ...savedProviders.filter((candidate) => candidate.provider !== entry.provider)];
+  const seen = new Set<string>();
+  const models = providers.flatMap((candidate) => buildModelCatalog(candidate).models).filter((m) => !seen.has(m.slug) && seen.add(m.slug));
+  if (!models.length) return "";
+  await fs.writeFile(modelCatalogFile, JSON.stringify({ models }, null, 2), "utf8");
   return `model_catalog_json = "${escapeToml(modelCatalogFile)}"`;
 }
 
@@ -539,7 +556,10 @@ async function applyCustomModel(entry: CustomModelFile) {
   const currentCatalogModel = (normalizeProvider(entry).models ?? []).find((m) => m.id === entry.model);
   const effectiveContextWindow = currentCatalogModel?.contextWindow ?? entry.contextWindow ?? 128000;
   const savedProviders = await readCustomModels();
-  const providerEntries = [entry, ...savedProviders.filter((candidate) => candidate.provider !== entry.provider && candidate.enabled !== false)];
+  // 全部已保存供应商都写进引擎配置（含禁用的）：旧线程的 rollout 里记录着创建时的
+  // model_provider，抹掉 provider 段会让这些历史会话 resume 直接失败
+  // （"Model provider `X` not found"→ 表现为归档/恢复后内容全空）。禁用只影响下拉可选。
+  const providerEntries = [entry, ...savedProviders.filter((candidate) => candidate.provider !== entry.provider)];
   const providerToml = providerEntries.flatMap((provider, index) => {
     const normalized = normalizeProvider(provider);
     const context = normalized.models?.find((model) => model.id === normalized.model)?.contextWindow ?? normalized.contextWindow ?? 128000;
@@ -549,7 +569,7 @@ async function applyCustomModel(entry: CustomModelFile) {
       `name = "${escapeToml(normalized.name)}"`,
       `base_url = "${escapeToml(normalized.baseUrl)}"`,
       'env_key = "CODEX_HARNESS_API_KEY"',
-      `wire_api = "${normalized.wireApi ?? "responses"}"`,
+      `wire_api = "${normalized.wireApi === "chat" ? "chat" : "responses"}"`,
       "requires_openai_auth = false",
       // 429 限流防御（已用真实 app-server 探针实证，见 scripts/probe-provider-retries.cjs）：
       // request_max_retries=10 HTTP 请求失败（含 429）最多重试 10 次；
@@ -662,6 +682,7 @@ async function readMemoryGateway(): Promise<MemoryRemoteConfig | null> {
  * 这个开关必须落到主进程——真正决定 recall/capture 去哪儿的是 MemoryStore 有没有 remote。
  */
 const memoryModeFile = path.join(app.getPath("userData"), "memory-mode.json");
+const memoryWorkspaceFile = path.join(app.getPath("userData"), "memory-workspaces.json");
 type MemoryMode = "local" | "cloud";
 async function readMemoryMode(): Promise<MemoryMode> {
   try { return JSON.parse(await fs.readFile(memoryModeFile, "utf8"))?.mode === "cloud" ? "cloud" : "local"; }
@@ -671,6 +692,29 @@ async function applyMemoryMode(mode: MemoryMode) {
   await fs.writeFile(memoryModeFile, JSON.stringify({ mode }, null, 2), "utf8");
   memoryStore.setRemote(mode === "cloud" ? await readMemoryGateway() ?? undefined : undefined);
   return mode;
+}
+
+async function readWorkspaceMemorySettings(): Promise<Record<string, boolean>> {
+  try {
+    const raw = JSON.parse(await fs.readFile(memoryWorkspaceFile, "utf8"));
+    return raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, boolean> : {};
+  } catch (error: any) { if (error.code === "ENOENT") return {}; throw error; }
+}
+
+async function workspaceMemoryEnabled(workspace?: string): Promise<boolean> {
+  if (!workspace) return false;
+  const settings = await readWorkspaceMemorySettings();
+  // Keep existing behavior for projects that have never explicitly been disabled.
+  return settings[path.resolve(workspace)] !== false;
+}
+
+async function setWorkspaceMemoryEnabled(workspace: string, enabled: boolean): Promise<boolean> {
+  const key = path.resolve(workspace);
+  const settings = await readWorkspaceMemorySettings();
+  settings[key] = Boolean(enabled);
+  await fs.mkdir(path.dirname(memoryWorkspaceFile), { recursive: true });
+  await fs.writeFile(memoryWorkspaceFile, JSON.stringify(settings, null, 2), "utf8");
+  return settings[key];
 }
 
 async function saveMemoryGateway(input: any) {
@@ -895,7 +939,23 @@ function classifyProbeError(error: any): string {
   return message;
 }
 
-async function probeCustomModel(input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" }) {
+// 已知不提供 /models 列表的网关（Coding Plan 套餐等）：探测拉列表失败时返回内置推荐清单。
+// 模型清单基于各官方文档（2026-09）；wire 是该网关实测的协议偏好（火山 Coding 仅支持 Chat）。
+const KNOWN_GATEWAY_MODELS: { match: RegExp; wire: "responses" | "chat"; models: string[] }[] = [
+  // 火山方舟 Coding Plan：https://ark.cn-beijing.volces.com/api/coding/v3（仅 Chat 协议）
+  { match: /volces\.com\/api\/coding/, wire: "chat", models: ["doubao-seed-2.0-code", "doubao-seed-code", "glm-4.7", "deepseek-v3.2", "kimi-k2.5"] },
+  // 火山方舟标准端点
+  { match: /volces\.com/, wire: "chat", models: ["doubao-seed-1.8", "doubao-seed-1.6", "doubao-1.5-pro-32k", "deepseek-v3"] },
+  // 智谱 Coding Plan：https://open.bigmodel.cn/api/coding/paas/v4
+  { match: /bigmodel\.cn\/api\/coding/, wire: "responses", models: ["glm-5.3", "glm-5.2", "glm-5.1", "glm-5"] },
+  { match: /bigmodel\.cn/, wire: "responses", models: ["glm-5.3", "glm-5.2", "glm-5.1", "glm-5", "glm-4.6"] },
+  // Kimi For Coding：https://api.kimi.com/coding/v1
+  { match: /api\.kimi\.com|kimi\.com/, wire: "chat", models: ["kimi-k3", "kimi-k2-0905-preview", "kimi-k2-turbo-preview"] },
+  // MiniMax
+  { match: /minimaxi\.com|minimax\.io|minimax/, wire: "responses", models: ["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2"] },
+];
+
+async function probeCustomModel(input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) {
   const baseUrl = input.baseUrl.trim().replace(/\/$/, "");
   let parsedUrl: URL;
   try { parsedUrl = new URL(baseUrl); } catch { throw new Error("Base URL 不是合法地址"); }
@@ -941,38 +1001,57 @@ async function probeCustomModel(input: { provider?: string; baseUrl: string; api
     // 模型不在列表里：列表可能不全，用流式请求做精确判定
   }
 
-  // 第二步：对指定模型发起流式极简请求，收到首个响应分片即判定连通，避免推理模型思考耗时
-  const wire = input.wireApi === "chat" ? "chat" : "responses";
-  const endpoint = wire === "chat" ? `${baseUrl}/chat/completions` : `${baseUrl}/responses`;
+  // 第二步：对指定模型发起流式极简请求，收到首个响应分片即判定连通，避免推理模型思考耗时。
+  // wireApi=auto（自动跟随上游）：先试 Responses，端点/参数不被认就自动换 Chat Completions，
+  // 并把实际成功的协议通过 wireUsed 返回——前端回写配置，保存时落定具体值。
+  const wireOrder: ("responses" | "chat")[] = input.wireApi === "chat" ? ["chat"] : input.wireApi === "auto" ? ["responses", "chat"] : ["responses"];
   if (!model) {
-    throw new Error(modelsError ? `该网关不提供 /models：${modelsError.message}` : "该网关不提供 /models，且未指定要测试的模型");
+    // Coding Plan 类网关（火山方舟/智谱 Coding/Kimi/MiniMax 等）不提供 /models 列表：
+    // 命中已知网关时返回内置推荐清单（可手动增删），并给出该网关实测的协议偏好。
+    const known = KNOWN_GATEWAY_MODELS.find((entry) => entry.match.test(baseUrl));
+    if (known) {
+      const wireHint = /volces\.com\/api\/coding|coding\/v3/.test(baseUrl) ? "chat" : known.wire;
+      return { status: 200, latencyMs: Date.now() - startedAt, model: "", models: known.models, ok: true, via: "builtin", wireUsed: wireHint as "responses" | "chat" };
+    }
+    throw new Error(modelsError ? `该网关不提供 /models 列表接口：${modelsError.message}。可用下方「添加模型」手动输入模型 ID` : "该网关不提供 /models，且未指定要测试的模型。可用下方「添加模型」手动输入模型 ID");
   }
   const headers: Record<string, string> = { "Content-Type": "application/json", ...authHeaders };
-  const buildPayload = (tokenParam: string) => wire === "chat"
+  const buildPayload = (wire: "responses" | "chat", tokenParam: string) => wire === "chat"
     ? { model, messages: [{ role: "user", content: "hi" }], [tokenParam]: 16, stream: true }
     : { model, input: "hi", max_output_tokens: 16, stream: true };
-  const attempt = async (tokenParam: string) => {
-    const response = await probeFetch(endpoint, { method: "POST", headers, body: JSON.stringify(buildPayload(tokenParam)) }, 20_000);
+  const attempt = async (wire: "responses" | "chat", tokenParam: string) => {
+    const endpoint = wire === "chat" ? `${baseUrl}/chat/completions` : `${baseUrl}/responses`;
+    const response = await probeFetch(endpoint, { method: "POST", headers, body: JSON.stringify(buildPayload(wire, tokenParam)) }, 20_000);
     const body = response.ok ? "" : await response.text();
     return { response, body };
   };
   // gpt-5 系列要求 max_completion_tokens，旧网关只认 max_tokens：先按新规范发，参数不识别时自动换旧参数重试
-  let { response, body } = await attempt("max_completion_tokens");
-  if (!response.ok && response.status === 400 && /max_completion_tokens|max_tokens/i.test(body)) {
-    ({ response, body } = await attempt("max_tokens"));
-  }
-  if (!response.ok) {
-    const detail = body.slice(0, 300) || response.statusText;
-    if (response.status === 401 || response.status === 403) throw new Error(`认证失败（HTTP ${response.status}）：网络是通的，请检查 API Key`);
-    if (response.status === 400 && /model.*(not.*(found|exist)|不存在)/i.test(body)) throw new Error(`模型不存在（HTTP 400）：${detail}`);
-    throw new Error(`HTTP ${response.status}: ${detail}`);
+  let response!: Response;
+  let body = "";
+  let wireUsed: "responses" | "chat" = wireOrder[0];
+  for (let w = 0; w < wireOrder.length; w++) {
+    const wire = wireOrder[w];
+    wireUsed = wire;
+    ({ response, body } = await attempt(wire, "max_completion_tokens"));
+    if (!response.ok && response.status === 400 && /max_completion_tokens|max_tokens/i.test(body)) {
+      ({ response, body } = await attempt(wire, "max_tokens"));
+    }
+    if (response.ok) break;
+    // 自动模式：端点不存在/参数不认（非认证、非模型缺失错误）→ 换另一种协议再试
+    const canSwitch = w + 1 < wireOrder.length && (response.status === 404 || response.status === 405 || response.status === 400);
+    if (!canSwitch) {
+      const detail = body.slice(0, 300) || response.statusText;
+      if (response.status === 401 || response.status === 403) throw new Error(`认证失败（HTTP ${response.status}）：网络是通的，请检查 API Key`);
+      if (response.status === 400 && /model.*(not.*(found|exist)|不存在)/i.test(body)) throw new Error(`模型不存在（HTTP 400）：${detail}`);
+      throw new Error(`HTTP ${response.status}: ${detail}`);
+    }
   }
   // 200 已证明网络、认证、模型名全部有效；读首个分片后立即断开，不等待生成完成
   const reader = (response.body as any)?.getReader?.();
   if (reader) {
     try { await reader.read(); } finally { try { await reader.cancel(); } catch { /* 已断开 */ } }
   }
-  return { status: response.status, latencyMs: Date.now() - startedAt, model, models: models ?? [model], ok: true, via: "stream" };
+  return { status: response.status, latencyMs: Date.now() - startedAt, model, models: models ?? [model], ok: true, via: "stream", wireUsed };
 }
 // ── 原生右键菜单：为输入框/选中文本提供 Windows 式复制、粘贴、剪切、全选、删除、撤销、重做 ──
 // 渲染层跑在 sandbox + contextIsolation 下，且消息气泡的自定义「复制」按钮已存在；
@@ -1033,11 +1112,26 @@ function createWindow() {
     title: "Codex Harness Desktop",
     icon: existsSync(windowIcon) ? windowIcon : undefined,
     autoHideMenuBar: true,
+    // 无边框标题栏：系统标题栏隐藏，应用 topbar 顶到窗口边缘（省 ~32px 高度），
+    // 右上角保留系统窗口控制钮（贴靠/双击最大化等原生行为不变），颜色随主题由 theme:apply 更新。
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      // 与聊天顶栏 var(--bg) 同色（亮 #fff / 暗 #1b1b1a）——独立标题栏行已取消，
+      // 整条 44px 顶行（顶栏+操作簇+原生窗口钮）必须同色
+      color: "#ffffff",
+      symbolColor: "#1b1b1a",
+      // 43 而非 44：底下留 1px 给 .topbar::after 分隔线，线可贯通窗口钮下方
+      height: 43,
+    },
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // <webview> 标签（Electron 默认禁用）：主区「浏览器」视图用它嵌入外部网页。
+      // guest 内容是独立 webContents，与主应用隔离（拿不到 preload / node API），
+      // 仅用于渲染，不赋予任何宿主权限。
+      webviewTag: true,
     },
   });
   const devUrl = process.env.VITE_DEV_SERVER_URL;
@@ -1045,6 +1139,18 @@ function createWindow() {
   else void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   installContextMenu(mainWindow);
 }
+
+// 前端切主题时同步窗口外观：nativeTheme.themeSource 让系统标题栏与 Chromium 默认
+// 滚动条跟随应用主题（不影响系统全局，只作用于本应用窗口）；同时更新窗口底色，
+// 避免深色模式下「外边框/滚轮」残留浅色。
+ipcMain.handle("theme:apply", (_event, theme: string) => {
+  const dark = theme === "dark";
+  nativeTheme.themeSource = dark ? "dark" : "light";
+  mainWindow?.setBackgroundColor(dark ? "#1b1b1a" : "#ffffff");
+  // 无边框标题栏：窗口控制钮的底色/符号色跟随主题
+  try { mainWindow?.setTitleBarOverlay({ color: dark ? "#1b1b1a" : "#ffffff", symbolColor: dark ? "#e8e8e5" : "#1b1b1a", height: 43 }); } catch { /* overlay 未启用时忽略 */ }
+  return { ok: true };
+});
 
 // ── 单实例锁：防止启动两个应用前端（两份引擎 + 共享 codex-home 会互相打架） ──
 // 第二个实例启动时 requestSingleInstanceLock 返回 false → 立即退出；
@@ -1063,8 +1169,6 @@ app.on("second-instance", () => {
 app.whenReady().then(async () => {
   await fs.mkdir(codexHome, { recursive: true });
   await ensureBuiltinSkills(userSkillsDir);
-  // 内置 ponytail 插件种子：新机器装完插件/钩子不再空（随包目录 → 引擎 cache + config 注册段）
-  await ensurePonytailPlugin(codexHome, path.join(toolsRoot(), "ponytail-plugin"));
   // 启动即补齐 AGENTS.md（emoji + 中文语言规范基础段）：老版本升级后没有这些段，
   // 重写让模型默认用中文思考与回复；AGENTS.md 引擎每请求动态重读，无需重启即生效。
   try {
@@ -1124,13 +1228,19 @@ app.whenReady().then(async () => {
           buffer.user = items.filter((item: any) => item.type === "userMessage").flatMap((item: any) => item.content ?? []).filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n") || buffer.user;
           buffer.assistant = items.filter((item: any) => item.type === "agentMessage").map((item: any) => item.text ?? "").join("\n") || buffer.assistant;
         }
-        if (buffer.user.trim() || buffer.assistant.trim()) {
-          void memoryStore.captureTurn(p?.threadId ?? "", buffer.user, buffer.assistant, { workspace: buffer.cwd }).catch((error) => sendToWindow("harness:event", { type: "memory", message: `Memory Gateway 捕获失败：${error.message}`, at: Date.now() }));
+        // 欢迎语隐藏线程（[welcome-gen] 标记）不进记忆：一次性生成文案的内部线程
+        const isWelcomeGen = buffer.user.includes("[welcome-gen]") || items.some((item: any) => JSON.stringify(item?.content ?? item).includes("[welcome-gen]"));
+        if (!isWelcomeGen && (buffer.user.trim() || buffer.assistant.trim())) {
+          void workspaceMemoryEnabled(buffer.cwd).then((enabled) => memoryStore.captureTurn(p?.threadId ?? "", buffer.user, buffer.assistant, { workspace: buffer.cwd, includeWorkspace: enabled })).catch((error) => sendToWindow("harness:event", { type: "memory", message: `Memory Gateway 捕获失败：${error.message}`, at: Date.now() }));
         }
         // 会话结束自动蒸馏：主进程内部节流（6 小时一次），异常全吞，绝不影响主流程
         if (buffer.cwd) {
-          void memoryLayers.autoDistill(buffer.cwd, distillSummarize).then((result) => {
-            if (result?.ok) sendToWindow("harness:event", { type: "memory", message: `记忆自动蒸馏完成：${result.dates.length} 天日志已提炼进项目记忆`, at: Date.now() });
+          void workspaceMemoryEnabled(buffer.cwd).then((enabled) => {
+            if (!enabled) return null;
+            return memoryLayers.autoDistill(buffer.cwd!, distillSummarize).then((result) => {
+              if (result?.ok) sendToWindow("harness:event", { type: "memory", message: `记忆自动蒸馏完成：${result.dates.length} 天日志已提炼进项目记忆`, at: Date.now() });
+              return result;
+            });
           }).catch(() => undefined);
         }
       }
@@ -1146,13 +1256,20 @@ app.whenReady().then(async () => {
   // model-catalog.json → UI 一直显示 12.8 万。检测到漂移就重写一次（幂等：一致则跳过）。
   if (custom) {
     try {
+      // catalog 每次启动都重写（幂等）：确保包含所有启用供应商的模型——
+      // 旧会话切换到任何供应商的模型时引擎都查得到，不会报「不支持」。
+      await writeModelCatalogToml(custom);
       const configText = await fs.readFile(path.join(codexHome, "config.toml"), "utf8").catch(() => "");
       const written = Number(/^\s*model_context_window\s*=\s*(\d+)\s*$/m.exec(configText)?.[1] ?? 0);
       const wanted = (normalizeProvider(custom).models ?? []).find((candidate) => candidate.id === custom.model)?.contextWindow ?? custom.contextWindow ?? 128000;
       const environmentOutdated = !configText.includes("[shell_environment_policy.set]") || !configText.includes("PYTHON_EXECUTABLE");
       const instructionsOutdated = !configText.includes("Never infer Python availability");
-      if (written !== wanted || environmentOutdated || instructionsOutdated) {
-        console.warn(`[custom-model] config drift: context=${written}/${wanted}, environment=${environmentOutdated}, instructions=${instructionsOutdated}; rewriting`);
+      // 禁用供应商的 provider 段必须保留在 config.toml：历史线程 resume 时按创建时的
+      // model_provider 加载配置，段被移除会报 "Model provider `X` not found" → 会话内容全空。
+      // 旧版本 applyCustomModel 写配置时过滤了禁用供应商——检测到缺失就整份重写补回。
+      const disabledMissing = (await readCustomModels()).some((candidate) => candidate.enabled === false && !configText.includes(`[model_providers.${candidate.provider}]`));
+      if (written !== wanted || environmentOutdated || instructionsOutdated || disabledMissing) {
+        console.warn(`[custom-model] config drift: context=${written}/${wanted}, environment=${environmentOutdated}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}; rewriting`);
         await applyCustomModel(custom);
       }
     } catch (error) {
@@ -1292,7 +1409,25 @@ ipcMain.handle("ponytail:mode:get", async () => getPonytailMode());
 ipcMain.handle("ponytail:mode:set", async (_event, mode: string) => { await setPonytailMode(mode as any); return { mode }; });
 
 ipcMain.handle("codex:request", async (_event, method: string, params: unknown) => {
-  let result = await server.request(method, params);
+  let result: unknown;
+  try {
+    result = await server.request(method, params);
+  } catch (error: any) {
+    // 历史线程引用了已删除/换 ID 的供应商（rollout 里硬编码旧 model_provider）：
+    // 引擎 resume 报 "Model provider `X` not found" → 会话内容全空。
+    // 自动补一个指向当前生效端点的同名 provider 段，重启引擎后重试——内容找回。
+    const missing = /Model provider `([^`]+)` not found/.exec(String(error?.message ?? ""));
+    const active = missing ? await readCustomModel() : null;
+    if (!missing || !active?.baseUrl) throw error;
+    const alias = missing[1];
+    const configText = await fs.readFile(path.join(codexHome, "config.toml"), "utf8").catch(() => "");
+    if (configText.includes(`[model_providers.${alias}]`)) throw error;
+    const savedWire = (await readCustomModels()).find((c) => c.provider === alias)?.wireApi;
+    const wireApi = savedWire === "chat" ? "chat" : active.wireApi === "chat" ? "chat" : "responses";
+    await fs.appendFile(path.join(codexHome, "config.toml"), `\n[model_providers.${alias}]\nname = "${alias}"\nbase_url = "${active.baseUrl}"\nenv_key = "CODEX_HARNESS_API_KEY"\nwire_api = "${wireApi}"\n`);
+    await server.restart();
+    result = await server.request(method, params);
+  }
   if (method === "thread/list") {
     const response = result as any;
     const archiveFilter = typeof (params as any)?.archived === "boolean" ? Boolean((params as any).archived) : null;
@@ -1415,11 +1550,23 @@ ipcMain.handle("app:doctor", async (_event, input: { cwd?: string } = {}) => {
     detail: log ? `${path.basename(log.path)} · ${sizeLabel(log.size)}${log.size > 200 * 1024 * 1024 ? "（偏大，可在设置里清理 codex-home）" : ""}` : "暂无日志文件",
   });
   const toolRoot = toolsRoot();
-  const modulesDir = toolRoot ? `${toolRoot}\\npm-global\\node_modules` : "";
+  const modulesDir = npmGlobalRoot();
   checks.push({
     label: "自动化工具链", ok: Boolean(modulesDir) && existsSync(modulesDir),
     detail: modulesDir ? `${modulesDir}${existsSync(modulesDir) ? " · 已安装" : " · 未安装（npm 包缺失）"}` : "未找到 resources/tools",
   });
+  if (process.platform === "darwin") {
+    const accessibility = systemPreferences.isTrustedAccessibilityClient(false);
+    const screen = systemPreferences.getMediaAccessStatus("screen");
+    checks.push({
+      label: "macOS 辅助功能权限", ok: accessibility,
+      detail: accessibility ? "已授权键鼠和窗口控制" : "请在系统设置 → 隐私与安全性 → 辅助功能中允许本应用及 Nuphus",
+    });
+    checks.push({
+      label: "macOS 屏幕录制权限", ok: screen === "granted",
+      detail: screen === "granted" ? "已授权屏幕捕获" : "请在系统设置 → 隐私与安全性 → 屏幕录制中允许本应用及 Nuphus，授权后重新启动应用",
+    });
+  }
   const git = bundledGit();
   const python = bundledPython();
   checks.push({ label: "Git 运行时", ok: Boolean(git), detail: git || "未找到 Git（请重新安装应用工具包）" });
@@ -1511,10 +1658,28 @@ async function writeBuiltinPlugins(cfg: BuiltinPluginConfig) {
   await fs.writeFile(builtinPluginsFile, JSON.stringify(cfg, null, 2), "utf8");
 }
 
+// 网络层错误中文化：证书过期/域名解析/超时等 give 用户能看懂的原因（引擎/插件直连供应商时可能遇到）
+function describeNetworkError(error: unknown, what: string): Error {
+  const raw = error instanceof Error ? error.message : String(error);
+  const code = String((error as any)?.cause?.code ?? (error as any)?.code ?? "");
+  const haystack = raw + " " + code;
+  if (/CERT_HAS_EXPIRED|certificate has expired|ERR_CERT/i.test(haystack)) return new Error(`${what}失败：服务器的 HTTPS 证书已过期——这是接口服务商的问题，等其续期后自动恢复；也可先在插件配置里换成其他可用的接口地址。`);
+  if (/ENOTFOUND|EAI_AGAIN/i.test(haystack)) return new Error(`${what}失败：域名解析不到，检查网络连接或接口地址是否写错`);
+  if (/ECONNREFUSED/i.test(haystack)) return new Error(`${what}失败：连接被拒绝，服务未开放或地址/端口不对`);
+  if (/ETIMEDOUT|ECONNABORTED|timeout/i.test(haystack)) return new Error(`${what}失败：连接超时，检查网络或代理设置`);
+  if (/ECONNRESET|socket hang up/i.test(haystack)) return new Error(`${what}失败：连接被重置，网络波动或被防火墙拦截`);
+  return new Error(`${what}失败：${raw}`);
+}
+
 async function probeBuiltinModels(input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) {
   const base = input.baseUrl.trim().replace(/\/$/, "");
   const url = base + "/models";
-  const response = await fetch(url, { headers: { Authorization: "Bearer " + (input.apiKey || ""), "Content-Type": "application/json" } });
+  let response: Response;
+  try {
+    response = await fetch(url, { headers: { Authorization: "Bearer " + (input.apiKey || ""), "Content-Type": "application/json" } });
+  } catch (error) {
+    throw describeNetworkError(error, "检测");
+  }
   if (!response.ok) throw new Error("模型列表请求失败 HTTP " + response.status + (response.status === 401 ? "（密钥无效）" : response.status === 404 ? "（地址可能缺少 /v1）" : ""));
   const data = await response.json();
   const models = (Array.isArray(data) ? data : data.data ?? data.models ?? []).map((x: any) => typeof x === "string" ? x : x?.id ?? x?.model).filter(Boolean);
@@ -1525,16 +1690,28 @@ async function generateImageWith(input: { baseUrl: string; apiKey: string; model
   const base = input.baseUrl.trim().replace(/\/$/, "");
   // 兼容 /images/generations（OpenAI 兼容）与 /v1/images/generations
   const endpoint = /\/images\/generations$/.test(base) ? base : base + "/images/generations";
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { Authorization: "Bearer " + input.apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: input.model, prompt: input.prompt, n: 1 }),
-  });
-  if (!response.ok) throw new Error("生图失败 HTTP " + response.status);
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + input.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: input.model, prompt: input.prompt, n: 1 }),
+    });
+  } catch (error) {
+    throw describeNetworkError(error, "生图请求");
+  }
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    let hint = "";
+    try { hint = JSON.parse(detail)?.error?.message ?? ""; } catch { hint = detail.slice(0, 160); }
+    throw new Error("生图失败 HTTP " + response.status + (hint ? "：" + hint : ""));
+  }
   const data = await response.json();
   const item = data?.data?.[0];
-  const url = item?.url || item?.b64_json ? "data:image/png;base64," + item.b64_json : null;
-  return { url: url ?? item?.url ?? "" };
+  // 注意优先级：url 存在用 url；否则 b64_json 转 data URL（旧写法运算符优先级有误，
+  // 返回 url 时会拼出 "data:image/png;base64,undefined"，已修）
+  const url = item?.url ?? (item?.b64_json ? "data:image/png;base64," + item.b64_json : "");
+  return { url };
 }
 
 async function describeImageWith(input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) {
@@ -1542,14 +1719,24 @@ async function describeImageWith(input: { baseUrl: string; apiKey: string; model
   const endpoint = /\/chat\/completions$/.test(base) ? base : base + "/chat/completions";
   const content = [
     { type: "text", text: input.prompt || "请详细描述这张图片的内容，包括画面主体、场景、文字、布局等，用中文回答。" },
-    input.imageUrl.startsWith("data:") ? { type: "image_url", image_url: { url: input.imageUrl } } : { type: "image_url", image_url: { url: input.imageUrl } },
+    { type: "image_url", image_url: { url: input.imageUrl } },
   ];
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { Authorization: "Bearer " + input.apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: input.model, messages: [{ role: "user", content }] }),
-  });
-  if (!response.ok) throw new Error("识图失败 HTTP " + response.status);
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + input.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: input.model, messages: [{ role: "user", content }] }),
+    });
+  } catch (error) {
+    throw describeNetworkError(error, "识图请求");
+  }
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    let hint = "";
+    try { hint = JSON.parse(detail)?.error?.message ?? ""; } catch { hint = detail.slice(0, 160); }
+    throw new Error("识图失败 HTTP " + response.status + (hint ? "：" + hint : ""));
+  }
   const data = await response.json();
   return { text: data?.choices?.[0]?.message?.content ?? "" };
 }
@@ -1722,7 +1909,7 @@ ipcMain.handle("tools:status", () => {
     catch { return ""; }
   };
   const root = toolsRoot();
-  const modules = root ? `${root}\\npm-global\\node_modules` : "";
+  const modules = npmGlobalRoot();
   const nuphusBin = nuphusBinary();
   // CloakBrowser 内核优先查应用内置缓存，兼容旧的用户目录缓存
   const cloakDirs = [cloakCacheDir(), path.join(os.homedir(), ".cloakbrowser")].filter(Boolean);
@@ -1733,22 +1920,23 @@ ipcMain.handle("tools:status", () => {
   return [
     {
       id: "nuphus-mcp", name: "Nuphus 桌面自动化", scope: "computer",
-      version: modules ? readVersion(`${modules}\\@nuphus\\nuphus-mcp\\package.json`) : "",
+      version: modules ? readVersion(path.join(modules, "@nuphus", "nuphus-mcp", "package.json")) : "",
       installed: Boolean(nuphusBin), binaryReady: Boolean(nuphusBin),
       detail: nuphusBin ? "35 个桌面/浏览器自动化工具就绪（屏幕、窗口、键鼠、剪贴板、OCR、Chrome CDP），经 nuphus-call 按需调用，不占模型上下文" : "未安装：运行 scripts/install-automation.cjs",
       command: nuphusBin,
     },
     {
       id: "playwright-cli", name: "Playwright 浏览器自动化", scope: "browser",
-      version: modules ? readVersion(`${modules}\\@playwright\\cli\\package.json`) : "",
-      installed: modules ? existsSync(`${modules}\\@playwright\\cli\\package.json`) : false, binaryReady: true,
+      version: modules ? readVersion(path.join(modules, "@playwright", "cli", "package.json")) : "",
+      installed: modules ? existsSync(path.join(modules, "@playwright", "cli", "package.json")) : false,
+      binaryReady: existsSync(path.join(root, "pw-browsers")) && readdirSync(path.join(root, "pw-browsers")).some((entry) => entry.startsWith("chromium-")),
       detail: "命令行浏览器自动化：open / snapshot / click / type / screenshot，首次 open 时自动下载浏览器内核",
       command: "playwright-cli",
     },
     {
       id: "cloakbrowser", name: "CloakBrowser 指纹浏览器", scope: "browser",
-      version: modules ? readVersion(`${modules}\\cloakbrowser\\package.json`) : "",
-      installed: modules ? existsSync(`${modules}\\cloakbrowser\\package.json`) : false,
+      version: modules ? readVersion(path.join(modules, "cloakbrowser", "package.json")) : "",
+      installed: modules ? existsSync(path.join(modules, "cloakbrowser", "package.json")) : false,
       binaryReady: cloakBinary,
       detail: cloakBinary ? "反检测 Chromium 内核已就绪（resources/tools/cloak-cache，随应用内置）" : "npm 包已装，Chromium 内核未下载（node scripts/download-cloak.cjs）",
       command: "cloakbrowser",
@@ -1756,8 +1944,8 @@ ipcMain.handle("tools:status", () => {
   ];
 });
 
-type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "automation" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "conda" | "docker" | "mingw" | "openssl";
-type DevRuntimeSpec = { name: string; description: string; size: string; marker: string; builtIn?: boolean; kind?: "download" | "browsers" | "guide" };
+type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "automation" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl";
+type DevRuntimeSpec = { name: string; description: string; size: string; marker: string; builtIn?: boolean; kind?: "download" | "browsers" | "guide" | "plugin" };
 const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   python: { name: "Python + Tkinter + pip", description: "Python 项目、数据处理、GUI 脚本和 Python MCP（含 Tkinter、requests/httpx/flask/fastapi/playwright）", size: "约 40 MB + 依赖", marker: "python\\python.exe", builtIn: true },
   node: { name: "Node.js + npm", description: "JavaScript / TypeScript 项目和 npm 工具", size: "约 101 MB", marker: "node\\node.exe", builtIn: true },
@@ -1765,7 +1953,7 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   git: { name: "Git", description: "Diff、分支、提交、历史和仓库操作", size: "约 90 MB", marker: "git\\cmd\\git.exe", builtIn: true },
   ffmpeg: { name: "FFmpeg", description: "音视频转码、抽帧、探测与媒体处理", size: "约 307 MB", marker: "ffmpeg\\bin\\ffmpeg.exe" },
   "vscode-cli": { name: "VS Code CLI", description: "通过 code 命令打开文件与工作区", size: "约 28 MB", marker: "vscode-cli\\code.exe", builtIn: true },
-  automation: { name: "桌面与浏览器自动化", description: "Nuphus、Playwright CLI、CloakBrowser 及浏览器内核", size: "约 600 MB", marker: "npm-global\\node_modules\\@nuphus\\nuphus-mcp\\package.json", builtIn: true },
+  automation: { name: "桌面与浏览器自动化", description: "Nuphus（桌面 MCP）+ Playwright CLI + CloakBrowser 包本体，下载压缩包解压即用（不含浏览器内核）", size: "压缩包 18 MB", marker: "npm-global\\node_modules\\@nuphus\\nuphus-mcp\\package.json" },
   jq: { name: "jq", description: "命令行查询、筛选和转换 JSON", size: "约 1 MB", marker: "jq\\jq.exe", builtIn: true },
   ninja: { name: "Ninja", description: "高速构建工具，常与 CMake 配合", size: "约 1 MB", marker: "ninja\\ninja.exe", builtIn: true },
   sevenzip: { name: "7-Zip CLI", description: "解压和创建 7z、zip、tar 等归档", size: "约 1 MB", marker: "sevenzip\\7z.exe", builtIn: true },
@@ -1773,18 +1961,24 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   rg: { name: "ripgrep (rg)", description: "极速代码搜索，Codex 检索代码库的主力工具", size: "约 5 MB", marker: "rg\\rg.exe", builtIn: true },
   uv: { name: "uv", description: "极速 Python 包管理器（pip/venv 替代）", size: "约 12 MB", marker: "uv\\uv.exe", builtIn: true },
   cmake: { name: "CMake", description: "C/C++ 构建系统生成器（配合 Ninja）", size: "约 45 MB", marker: "cmake\\bin\\cmake.exe", builtIn: true },
-  "playwright-browsers": { name: "Playwright 浏览器内核", description: "Chromium 等浏览器内核，浏览器自动化 CLI 首次运行所需", size: "约 150 MB", marker: "pw-browsers\\chromium-*", kind: "browsers" },
+  "playwright-browsers": { name: "Playwright 浏览器内核", description: "Chromium 等浏览器内核，浏览器自动化 CLI 首次运行所需，联网下载", size: "约 170 MB", marker: "pw-browsers", kind: "browsers" },
+  "cloak-browsers": { name: "Cloak 指纹浏览器内核", description: "反检测 Chromium 内核（Cloudflare/reCAPTCHA 站点用），CloakBrowser 运行所需，联网下载", size: "约 200 MB", marker: "cloak-cache" },
   conda: { name: "Miniconda", description: "Python 环境管理器（conda 命令，科学计算/环境隔离）", size: "约 100 MB", marker: "miniconda\\Scripts\\conda.exe", kind: "download" },
   docker: { name: "Docker Desktop", description: "容器运行时，需要系统级安装（管理员权限 + 重启 + 登录）", size: "约 500 MB", marker: "docker\\docker.exe", kind: "guide" },
   mingw: { name: "MinGW-w64 (gcc/g++/make)", description: "C/C++ 编译器工具链，含 gcc、g++、make、gdb", size: "约 267 MB", marker: "mingw\\mingw64\\bin\\g++.exe", kind: "download" },
   openssl: { name: "OpenSSL", description: "加密/证书命令行工具（openssl 命令），系统级安装", size: "约 25 MB", marker: "openssl\\openssl.exe", kind: "guide" },
+  ponytail: { name: "ponytail 写代码模式插件", description: "Codex 写代码模式（会话钩子 + 6 个技能），安装后开箱即用", size: "随包 2 MB", marker: "ponytail-plugin", kind: "plugin" },
 };
 const runtimeInstalls = new Map<DevRuntimeId, Promise<void>>();
 
 function runtimeList() {
   const root = toolsRoot();
   return (Object.entries(devRuntimeSpecs) as [DevRuntimeId, DevRuntimeSpec][]).map(([id, spec]) => ({
-    id, ...spec, installed: Boolean(root) && existsSync(path.join(root, spec.marker)),
+    id, ...spec,
+    // ponytail 插件装在引擎侧 codex-home/plugins/cache，不走 tools 目录 marker
+    installed: id === "ponytail"
+      ? existsSync(path.join(codexHome, "plugins", "cache", "ponytail"))
+      : Boolean(root) && existsSync(path.join(root, spec.marker)),
     // docker 是系统级安装：未在工具目录时也探测系统 PATH 上的 docker.exe（已装则视为完成）
     installedBySystem: id === "docker" ? !!(process.env.PATH ?? "").split(";").some((dir) => dir && existsSync(path.join(dir.trim(), "docker.exe"))) : false,
     installing: runtimeInstalls.has(id),
@@ -1841,14 +2035,17 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
     if (id === "automation") {
       if (!bundledNode()) await runRuntimeInstaller("node", runtimeInstaller("install-runtimes.cjs"), ["node"]);
       await runRuntimeInstaller(id, runtimeInstaller("install-automation.cjs"), [], bundledNode());
+      // 解压安装成功后自动激活「桌面自动化」「浏览器自动化」联动开关（nuphus MCP 注册 + 技能启用）
+      await saveAppSettings(app.getPath("userData"), { desktopAutomation: true, browserAutomation: true });
     } else if (id === "playwright-browsers") {
       // 用内置 Python 的 playwright 下载 Chromium 到 pw-browsers（toolchainEnv 已注入 PLAYWRIGHT_BROWSERS_PATH）
-      const py = path.join(toolsRoot(), "python", "python.exe");
-      if (!existsSync(py)) throw new Error("缺少内置 Python，请先安装 Python + pip");
+      const node = bundledNode();
+      const cli = path.join(npmGlobalRoot(), "@playwright", "cli", "node_modules", "playwright", "cli.js");
+      if (!node || !existsSync(cli)) throw new Error("缺少 Playwright CLI，请先在「开发工具」安装「桌面与浏览器自动化」");
       await new Promise<void>((resolve, reject) => {
-        const child = spawn(py, ["-m", "playwright", "install", "chromium"], {
+        const child = spawn(node, [cli, "install", "chromium"], {
           windowsHide: true,
-          env: { ...process.env, TOOLS_ROOT: toolsRoot(), PLAYWRIGHT_BROWSERS_PATH: path.join(toolsRoot(), "pw-browsers") },
+          env: toolchainEnv(),
         });
         let tail = "";
         const report = (chunk: Buffer | string) => {
@@ -1862,6 +2059,31 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
         child.on("error", reject);
         child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim() || `浏览器内核下载失败（${code}）`)));
       });
+    } else if (id === "cloak-browsers") {
+      // CloakBrowser 反检测 Chromium 内核下载到 tools/cloak-cache（toolchainEnv 已注入 CLOAKBROWSER_CACHE_DIR）
+      const node = bundledNode();
+      const cli = path.join(npmGlobalRoot(), "cloakbrowser", "dist", "cli.js");
+      if (!node || !existsSync(cli)) throw new Error("缺少 CloakBrowser，请先在「开发工具」安装「桌面与浏览器自动化」");
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(node, [cli, "install"], {
+          windowsHide: true,
+          env: toolchainEnv(),
+        });
+        let tail = "";
+        const report = (chunk: Buffer | string) => {
+          const message = String(chunk).trim();
+          if (!message) return;
+          tail = `${tail}\n${message}`.slice(-4000);
+          sendToWindow("runtime:progress", { id, message });
+        };
+        child.stdout?.on("data", report);
+        child.stderr?.on("data", report);
+        child.on("error", reject);
+        child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim() || `Cloak 内核下载失败（${code}）`)));
+      });
+    } else if (id === "ponytail") {
+      // ponytail 写代码模式插件：从随包安装源种到引擎（plugins cache + config 注册段），技能随 cache 自动列出
+      await ensurePonytailPlugin(codexHome, path.join(toolsRoot(), "ponytail-plugin"));
     } else {
       await runRuntimeInstaller(id, runtimeInstaller("install-runtimes.cjs"), [id]);
     }
@@ -1902,7 +2124,11 @@ ipcMain.handle("browser:open-cloak", (_event, url: string) => {
       const text = chunk.toString().trim();
       if (text) cloakStatus = { event: "error", message: text.slice(0, 300) };
     });
-    cloakProc.once("exit", () => { cloakStatus = { event: "exit" }; cloakProc = null; });
+    cloakProc.once("error", (error) => { cloakStatus = { event: "error", message: error.message }; cloakProc = null; });
+    cloakProc.once("exit", (code) => {
+      if (cloakStatus.event !== "error") cloakStatus = { event: "exit", ...(code ? { message: `浏览器进程退出（${code}）` } : {}) };
+      cloakProc = null;
+    });
     cloakProc.stdin?.on("error", () => { /* EPIPE：进程刚退出 */ });
     cloakStatus = { event: "launching" };
   }
@@ -2023,7 +2249,12 @@ ipcMain.handle("skills:import", async () => {
   await server.restart();
   return { name, path: destination, source, content };
 });
-ipcMain.handle("skills:market-list", (_event, input: { category?: string; page?: number; pageSize?: number; query?: string } = {}) => listCocoLoopSkills(input));
+// SkillHub 榜单分类（技能中心 tab → showcase section）；其余分类名一律落回 hot
+const skillHubSectionMap: Record<string, string> = { "总排行": "hot", "近期最热": "trending", "最新上传": "newest", "官方精选": "featured" };
+ipcMain.handle("skills:market-list", (_event, input: { category?: string; query?: string } = {}) => {
+  const section = skillHubSectionMap[input.category ?? ""] ?? "hot";
+  return listSkillHubSkills({ section, query: input.query });
+});
 ipcMain.handle("skills:market-install", async (_event, skill: MarketSkill) => {
   const emit = (stage: string, message: string) => sendToWindow("harness:event", { type: "skill-install", skillId: skill.id, stage, message, at: Date.now() });
   const installed = await installCocoLoopSkill({
@@ -2049,6 +2280,43 @@ ipcMain.handle("skills:market-install", async (_event, skill: MarketSkill) => {
   emit(engineRegistered ? "complete" : "pending", engineCheckMessage);
   return { ...installed, engineRegistered, engineCheckMessage };
 });
+ipcMain.handle("plugins:market-list", (_event, input: { category?: string; query?: string; page?: number; pageSize?: number } = {}) => listCodexMarketPlugins(input));
+ipcMain.handle("plugins:market-install", async (_event, plugin: CodexMarketPlugin) => {
+  const emit = (stage: string, message: string) => sendToWindow("harness:event", { type: "plugin-install", pluginId: plugin.slug, stage, message, at: Date.now() });
+  // 幂等注册本地 marketplace 段（缺才写），返回插件落盘目录
+  const destinationRoot = await ensureCodexMarketplaceSection(codexHome);
+  const installed = await installCodexMarketPlugin({
+    plugin,
+    destinationRoot,
+    onProgress: ({ stage, message }) => emit(stage, message),
+  });
+  // 引擎实证：光把文件写进本地 marketplace 引擎不认（plugin/list 返回空），
+  // 必须调 plugin/install（marketplacePath 传 .claude-plugin/marketplace.json 文件路径）
+  // 让引擎把它拷进 plugins/cache/<marketplace>/<plugin>/<version> 并置 installed=true。
+  emit("engine", "正在通过引擎注册插件");
+  try {
+    await server.request("plugin/install", { pluginName: installed.marketId ?? plugin.slug, marketplacePath: installed.manifestPath });
+  } catch (error: any) {
+    emit("pending", `引擎注册插件未成功：${error?.message ?? error}（文件已落盘，重启引擎后会重新扫描）`);
+  }
+  emit("engine", "正在重启 Codex 引擎并注册插件");
+  await server.restart();
+  emit("verify", "正在确认 Codex 是否已发现该插件");
+  let engineRegistered = false;
+  let engineCheckMessage = "插件目录已写入，重启 Codex 后生效";
+  try {
+    const list: any = await server.request("plugin/list", { cwds: [], forceRefetch: false });
+    const base = (value: string) => String(value ?? "").split("@")[0];
+    const found = (list?.marketplaces ?? []).flatMap((marketplace: any) => marketplace.plugins ?? [])
+      .find((entry: any) => entry?.installed && (base(entry.id) === plugin.slug || entry.name === plugin.slug || entry.name === plugin.name));
+    engineRegistered = Boolean(found);
+    if (!engineRegistered) engineCheckMessage = "插件已写入本地插件目录；引擎已刷新，但当前列表未返回该插件，新建会话后仍会重新扫描。";
+  } catch (error: any) {
+    engineCheckMessage = `插件已安装且引擎已重启，但自动确认暂时不可用：${error.message}`;
+  }
+  emit(engineRegistered ? "complete" : "pending", engineCheckMessage);
+  return { ...installed, engineRegistered, engineCheckMessage };
+});
 ipcMain.handle("skills:local-list", async () => {
   try {
     const entries = await fs.readdir(userSkillsDir, { withFileTypes: true });
@@ -2060,9 +2328,11 @@ ipcMain.handle("skills:local-list", async () => {
       const target = active ? file : disabledFile;
       try {
         const content = await fs.readFile(target, "utf8");
-        const manifestPath = path.join(userSkillsDir, entry.name, ".cocoloop.json");
         let market: InstalledMarketSkill | null = null;
-        try { market = JSON.parse(await fs.readFile(manifestPath, "utf8")); } catch { /* 本地导入没有市场清单 */ }
+        let marketSource: "cocoloop" | "skillhub" | null = null;
+        // 市场来源清单：cocoloop 与 skillhub 两种命名都认
+        try { market = JSON.parse(await fs.readFile(path.join(userSkillsDir, entry.name, ".cocoloop.json"), "utf8")); marketSource = "cocoloop"; } catch { /* 继续查 skillhub 清单 */ }
+        if (!market) { try { market = JSON.parse(await fs.readFile(path.join(userSkillsDir, entry.name, ".skillhub.json"), "utf8")); marketSource = "skillhub"; } catch { /* 本地导入没有市场清单 */ } }
         // .plugin.json 记录「这个技能由哪个插件提供」，钩子页的联动开关靠它定位关联技能
         let pluginId: string | undefined;
         try { pluginId = JSON.parse(await fs.readFile(path.join(userSkillsDir, entry.name, ".plugin.json"), "utf8"))?.pluginId || undefined; } catch { /* 非插件技能没有归属 */ }
@@ -2073,7 +2343,7 @@ ipcMain.handle("skills:local-list", async () => {
         // allowed-tools：SKILL.md frontmatter 里声明的工具白名单（复刻 WorkBuddy 的 allowed-tools）。
         // 引擎不做强制（引擎技能对象只有 enabled），这里是给 UI 展示声明的工具范围；不声明则为空。
         const allowedTools = parseSkillAllowedTools(content);
-        return { name: declaredName || entry.name, folder: entry.name, path: target, description, enabled: active, pluginId, marketId: market?.marketId, sourceUrl: market?.sourceUrl, installedAt: market?.installedAt, source: market ? "cocoloop" : "local", allowedTools, icon: market?.icon, category: market?.category };
+        return { name: declaredName || entry.name, folder: entry.name, path: target, description, enabled: active, pluginId, marketId: market?.marketId, sourceUrl: market?.sourceUrl, installedAt: market?.installedAt, source: marketSource ?? "local", allowedTools, icon: market?.icon, category: market?.category };
       } catch { return null; }
     }));
     return results.filter(Boolean);
@@ -2678,6 +2948,11 @@ ipcMain.handle("personalization:save", async (_event, input: { nickname?: unknow
 
 // 应用级运行时开关（联网搜索等）。改完重写 config.toml 让引擎重载生效。
 ipcMain.handle("appSettings:read", async (): Promise<AppSettings> => readAppSettings(app.getPath("userData")));
+// 外部模型规格规则（userData/model-specs.json）：数据与代码分离，更新模型数据无需重新构建。
+// 文件不存在返回 null，渲染层用内置表兜底；更新 JSON 后重启应用生效。
+ipcMain.handle("model-specs:read", async () => {
+  try { return JSON.parse(await fs.readFile(path.join(app.getPath("userData"), "model-specs.json"), "utf8")); } catch { return null; }
+});
 ipcMain.handle("appSettings:save", async (_event, patch: Partial<AppSettings>): Promise<AppSettings> => {
   const next = await saveAppSettings(app.getPath("userData"), patch);
   const model = await readCustomModel();
@@ -3348,7 +3623,7 @@ ipcMain.handle("shell:reveal", async (_event, target: string) => {
   }
 });
 ipcMain.handle("custom-model:read", async () => publicCustomModel(await readCustomModel()));
-ipcMain.handle("custom-model:probe", (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" }) => probeCustomModel(input));
+ipcMain.handle("custom-model:probe", (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) => probeCustomModel(input));
 ipcMain.handle("custom-model:save", async (_event, input: { provider: string; name: string; model: string; baseUrl: string; contextWindow?: string | number; wireApi?: "responses" | "chat"; apiKey?: string; models?: ProviderModel[]; enabled?: boolean }) => {
   const provider = input.provider.trim();
   const name = input.name.trim();
@@ -3366,7 +3641,7 @@ ipcMain.handle("custom-model:save", async (_event, input: { provider: string; na
     if (!safeStorage.isEncryptionAvailable()) throw new Error("当前系统无法安全保存 API Key");
     encryptedKey = safeStorage.encryptString(input.apiKey).toString("base64");
   }
-  const wireApi = input.wireApi === "chat" ? "chat" : "responses";
+  const wireApi = input.wireApi === "chat" ? "chat" : "responses"; // auto 已在前端探测时落定为实际协议；兜底 responses
   // 合并历史模型列表：前端传来的列表覆盖同 ID 旧项，其余保留，再并入本次生效 model；按 ID 去重保前端传入顺序
   const list = await readCustomModels();
   const existing = list.find((entry) => entry.provider === provider);
@@ -3529,9 +3804,18 @@ ipcMain.handle("memory:reset", () => memoryStore.reset());
 ipcMain.handle("memory:gateway:read", async () => { const value = await readMemoryGateway(); return { ...memoryStore.remoteStatus(), sessionKey: value?.sessionKey ?? "", userId: value?.userId ?? "codex-harness", hasApiKey: Boolean(value?.apiKey) }; });
 ipcMain.handle("memory:gateway:save", (_event, input: unknown) => saveMemoryGateway(input));
 ipcMain.handle("memory:layers:read", (_event, workspace?: string) => memoryLayers.snapshot(workspace));
-ipcMain.handle("memory:layers:context", (_event, workspace?: string) => memoryLayers.context(workspace));
-ipcMain.handle("memory:layers:write", async (_event, input: { scope: "user" | "project"; content: string; workspace?: string }) => {
+ipcMain.handle("memory:layers:context", (_event, workspace?: string, includeWorkspace = true) => memoryLayers.context(workspace, includeWorkspace));
+ipcMain.handle("memory:workspace-enabled:read", (_event, workspace?: string) => workspaceMemoryEnabled(workspace));
+ipcMain.handle("memory:workspace-enabled:set", (_event, input: { workspace?: string; enabled?: boolean }) => {
+  if (!input?.workspace) throw new Error("尚未选择工作区");
+  return setWorkspaceMemoryEnabled(input.workspace, Boolean(input.enabled));
+});
+ipcMain.handle("memory:layers:write", async (_event, input: { scope: "user" | "background" | "project"; content: string; workspace?: string }) => {
   if (input.scope === "user") await memoryLayers.writeUser(input.content ?? "");
+  else if (input.scope === "background") {
+    if (!input.workspace) throw new Error("尚未选择工作区，无法保存项目背景");
+    await memoryLayers.writeBackground(input.workspace, input.content ?? "");
+  }
   else {
     if (!input.workspace) throw new Error("尚未选择工作区，无法保存项目记忆");
     await memoryLayers.writeProject(input.workspace, input.content ?? "");

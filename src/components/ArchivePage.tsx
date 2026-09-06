@@ -30,10 +30,13 @@ export default function ArchivePage({
   onNotice,
   onOpenThread,
   onThreadRestored,
+  onConfirm,
 }: {
   onNotice: (msg: string) => void;
   onOpenThread?: (id: string) => void;
   onThreadRestored?: (id: string) => void;
+  /** 应用内确认弹窗（替代 window.confirm：Electron 原生模态框关闭后吞焦点，导致输入框无法输入） */
+  onConfirm?: (title: string, text: string, confirmLabel?: string) => Promise<boolean>;
 }) {
   const [items, setItems] = useState<ArchiveThread[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,7 +105,7 @@ export default function ArchivePage({
   }
 
   async function remove(id: string) {
-    if (!window.confirm("永久删除这条归档任务？此操作无法撤销。")) return;
+    if (onConfirm ? !(await onConfirm("永久删除归档任务", "这条归档任务及其中的消息将被永久删除，此操作无法撤销。", "永久删除")) : !window.confirm("永久删除这条归档任务？此操作无法撤销。")) return;
     setBusy(id);
     try {
       await verifyArchived([id]);
@@ -120,7 +123,7 @@ export default function ArchivePage({
 
   async function batch(mode: "restore" | "delete") {
     if (!checkedIds.length) return;
-    if (mode === "delete" && !window.confirm(`永久删除选中的 ${checkedIds.length} 条归档任务？此操作无法撤销。`)) return;
+    if (mode === "delete" && onConfirm ? !(await onConfirm("批量永久删除", `选中的 ${checkedIds.length} 条归档任务将被永久删除，此操作无法撤销。`, "永久删除")) : mode === "delete" && !window.confirm(`永久删除选中的 ${checkedIds.length} 条归档任务？此操作无法撤销。`)) return;
     setBatchBusy(mode);
     try {
       const restoredIds: string[] = [];

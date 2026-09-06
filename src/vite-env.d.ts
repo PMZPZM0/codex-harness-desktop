@@ -47,11 +47,12 @@ type SubAgentEntry = {
 /** 记忆分层快照（L0 用户档案 / L1 项目记忆 / L2 每日日志） */
 type MemoryLayersSnapshot = {
   user: string;
+  background: string;
   project: string;
   hasWorkspace: boolean;
-  paths: { user: string; projectDir: string; project: string; logDir: string };
+  paths: { user: string; projectDir: string; background: string; project: string; logDir: string };
   logs: { date: string; chars: number }[];
-  budget: { user: number; project: number; total: number; over: boolean };
+  budget: { user: number; background: number; project: number; logs: number; total: number; over: boolean };
   pendingDistill: { dates: string[]; chars: number };
   lastDistillAt?: number;
 };
@@ -105,10 +106,16 @@ type ExpertTeamConfig = {
 };
 
 type MarketSkillEntry = {
-  id: string; name: string; description: string; category: string; icon: string; author: string;
+  id: string; name: string; description: string; category: string; subCategory?: string; icon: string; author: string;
   securityLevel: string; sourceCredibility: string; downloads: string; favorites: string; downloadUrl: string; detailUrl: string;
 };
-type LocalSkillEntry = { name: string; folder?: string; path: string; description: string; marketId?: string; pluginId?: string; sourceUrl?: string; installedAt?: string; engineRegistered?: boolean; engineCheckMessage?: string; source?: "cocoloop" | "local"; enabled?: boolean; allowedTools?: string[]; icon?: string; category?: string };
+type PluginMarketEntry = {
+  slug: string; name: string; displayName: string; description: string; category: string; logo: string;
+  author: string; repository: string; pluginPath: string; version: string; githubStars: number;
+  installs: number; homepage: string; source: string; featured: boolean; hasSkills: boolean; hasMcpServers: boolean;
+};
+type PluginMarketInstallResult = { id: string; name: string; path: string; version: string; description: string; marketId: string; sourceUrl: string; engineRegistered?: boolean; engineCheckMessage?: string };
+type LocalSkillEntry = { name: string; folder?: string; path: string; description: string; marketId?: string; pluginId?: string; sourceUrl?: string; installedAt?: string; engineRegistered?: boolean; engineCheckMessage?: string; source?: "cocoloop" | "skillhub" | "local"; enabled?: boolean; allowedTools?: string[]; icon?: string; category?: string };
 type PersonalizationConfig = { nickname?: string; customInstructions?: string };
 
 /** SSH 跳板机（ProxyJump）配置 */
@@ -243,6 +250,8 @@ interface Window {
     importSkill(): Promise<{ name: string; path: string; source: string; content: string } | null>;
     listMarketSkills(input?: { category?: string; page?: number; pageSize?: number; query?: string }): Promise<{ items: MarketSkillEntry[]; total: number; page: number; pageSize: number }>;
     installMarketSkill(skill: MarketSkillEntry): Promise<LocalSkillEntry>;
+    listMarketPlugins(input?: { category?: string; query?: string; page?: number; pageSize?: number }): Promise<{ items: PluginMarketEntry[]; total: number; page: number; pageSize: number }>;
+    installMarketPlugin(plugin: PluginMarketEntry): Promise<PluginMarketInstallResult>;
     listLocalSkills(): Promise<LocalSkillEntry[]>;
     setEnabledSkill(input: { folder: string; enabled: boolean }): Promise<{ ok: boolean }>;
     setEnabledSkillBatch(input: { folders: string[]; enabled: boolean }): Promise<{ ok: boolean; changed: number; failures: string[] }>;
@@ -273,6 +282,7 @@ interface Window {
     /** 应用级运行时开关（联网搜索等） */
     readAppSettings(): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string }>;
     saveAppSettings(patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string }): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean }>;
+    themeApply(theme: string): Promise<{ ok: boolean }>;
     /** SSH 服务器连接管理：列表 CRUD、批量启停、连接测试、命令执行、交互式会话、导入导出 */
     listSshServers(): Promise<SshServer[]>;
     saveSshServer(server: SshServer): Promise<SshServer[]>;
@@ -327,7 +337,8 @@ interface Window {
     deleteCommand(filePath: string): Promise<{ ok: boolean }>;
     expandCommand(input: { filePath: string; argument?: string; cwd?: string }): Promise<{ text: string }>;
     getCustomModel(): Promise<CustomModelState | null>;
-    probeCustomModel(config: unknown): Promise<{ status: number; latencyMs: number; models: string[]; model?: string; ok?: boolean; via?: "models" | "stream" }>;
+    probeCustomModel(config: unknown): Promise<{ status: number; latencyMs: number; models: string[]; model?: string; ok?: boolean; via?: "models" | "stream" | "builtin"; wireUsed?: "responses" | "chat" }>;
+    readModelSpecs(): Promise<unknown[] | null>;
     saveCustomModel(config: unknown): Promise<CustomModelState>;
     listCustomModels(): Promise<{ providers: ProviderSummary[]; current: string | null }>;
     selectCustomModel(providerId: string): Promise<CustomModelState>;
@@ -359,8 +370,10 @@ interface Window {
     saveMemoryGateway(config: unknown): Promise<any>;
     testMemoryGateway(config: unknown): Promise<{ ok: boolean; latencyMs: number; health: any }>;
     readMemoryLayers(workspace?: string): Promise<MemoryLayersSnapshot>;
-    readMemoryContext(workspace?: string): Promise<{ text: string; stats: { chars: number; over: boolean } }>;
-    writeMemoryLayer(input: { scope: "user" | "project"; content: string; workspace?: string }): Promise<MemoryLayersSnapshot>;
+    readMemoryContext(workspace?: string, includeWorkspace?: boolean): Promise<{ text: string; stats: { chars: number; over: boolean } }>;
+    writeMemoryLayer(input: { scope: "user" | "background" | "project"; content: string; workspace?: string }): Promise<MemoryLayersSnapshot>;
+    readWorkspaceMemoryEnabled(workspace?: string): Promise<boolean>;
+    setWorkspaceMemoryEnabled(input: { workspace: string; enabled: boolean }): Promise<boolean>;
     distillMemory(workspace?: string): Promise<{ ok: boolean; dates: string[]; added: number; reason?: string }>;
     listScheduledTasks(): Promise<any[]>;
     saveScheduledTask(input: unknown): Promise<any>;

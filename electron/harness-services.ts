@@ -74,8 +74,9 @@ export class MemoryStore {
     return { context: String(response.context ?? ""), remote: true, memoryCount: response.memory_count ?? 0 };
   }
 
-  async captureTurn(threadId: string, userContent: string, assistantContent: string, opts?: { workspace?: string }) {
+  async captureTurn(threadId: string, userContent: string, assistantContent: string, opts?: { workspace?: string; includeWorkspace?: boolean }) {
     if (!userContent.trim() && !assistantContent.trim()) return;
+    if (opts?.includeWorkspace === false) return;
     // 云端模式：照旧转发给远程
     if (this.remote) {
       await this.remoteRequest("/capture", { user_content: userContent, assistant_content: assistantContent, session_key: `${this.remote.sessionKey}:${threadId}`, session_id: threadId, user_id: this.remote.userId }).catch(() => undefined);

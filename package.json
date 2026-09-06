@@ -1,6 +1,6 @@
 {
   "name": "codex-harness-desktop",
-  "version": "0.0.6",
+  "version": "0.0.8",
   "private": true,
   "description": "Independent desktop harness for OpenAI Codex",
   "main": "dist-electron/main.js",
@@ -102,80 +102,28 @@
         "to": "tools/vscode-cli"
       },
       {
-        "from": "resources/tools/npm-global/node_modules/@nuphus",
-        "to": "tools/npm-global/node_modules/@nuphus"
+        "from": "resources/tools/rg",
+        "to": "tools/rg"
       },
       {
-        "from": "resources/tools/npm-global/node_modules/@playwright",
-        "to": "tools/npm-global/node_modules/@playwright"
+        "from": "resources/tools/uv",
+        "to": "tools/uv"
       },
       {
-        "from": "resources/tools/npm-global/node_modules/cloakbrowser",
-        "to": "tools/npm-global/node_modules/cloakbrowser"
+        "from": "resources/tools/cmake",
+        "to": "tools/cmake"
       },
       {
-        "from": "resources/tools/npm-global/node_modules/playwright-core",
-        "to": "tools/npm-global/node_modules/playwright-core"
+        "from": "resources/tools/ninja",
+        "to": "tools/ninja"
       },
       {
-        "from": "resources/tools/npm-global/cloakbrowser",
-        "to": "tools/npm-global/cloakbrowser"
+        "from": "resources/tools/sevenzip",
+        "to": "tools/sevenzip"
       },
       {
-        "from": "resources/tools/npm-global/cloakbrowser.cmd",
-        "to": "tools/npm-global/cloakbrowser.cmd"
-      },
-      {
-        "from": "resources/tools/npm-global/cloakbrowser.ps1",
-        "to": "tools/npm-global/cloakbrowser.ps1"
-      },
-      {
-        "from": "resources/tools/npm-global/nuphus-mcp",
-        "to": "tools/npm-global/nuphus-mcp"
-      },
-      {
-        "from": "resources/tools/npm-global/nuphus-mcp.cmd",
-        "to": "tools/npm-global/nuphus-mcp.cmd"
-      },
-      {
-        "from": "resources/tools/npm-global/nuphus-mcp.ps1",
-        "to": "tools/npm-global/nuphus-mcp.ps1"
-      },
-      {
-        "from": "resources/tools/npm-global/nuphus-call.cmd",
-        "to": "tools/npm-global/nuphus-call.cmd"
-      },
-      {
-        "from": "resources/tools/npm-global/playwright-cli",
-        "to": "tools/npm-global/playwright-cli"
-      },
-      {
-        "from": "resources/tools/npm-global/playwright-cli.cmd",
-        "to": "tools/npm-global/playwright-cli.cmd"
-      },
-      {
-        "from": "resources/tools/npm-global/playwright-cli.ps1",
-        "to": "tools/npm-global/playwright-cli.ps1"
-      },
-      {
-        "from": "resources/tools/npm-global/playwright-core",
-        "to": "tools/npm-global/playwright-core"
-      },
-      {
-        "from": "resources/tools/npm-global/playwright-core.cmd",
-        "to": "tools/npm-global/playwright-core.cmd"
-      },
-      {
-        "from": "resources/tools/npm-global/playwright-core.ps1",
-        "to": "tools/npm-global/playwright-core.ps1"
-      },
-      {
-        "from": "resources/tools/cloak-cache",
-        "to": "tools/cloak-cache"
-      },
-      {
-        "from": "resources/tools/pw-browsers",
-        "to": "tools/pw-browsers"
+        "from": "resources/tools/jq",
+        "to": "tools/jq"
       },
       {
         "from": "resources/tools/cloudflared.exe",
@@ -190,36 +138,16 @@
         "to": "tools/cloak-open.mjs"
       },
       {
+        "from": "resources/tools/automation-tools.zip",
+        "to": "tools/automation-tools.zip"
+      },
+      {
         "from": "scripts/install-runtimes.cjs",
         "to": "tools/install-runtimes.cjs"
       },
       {
         "from": "scripts/install-automation.cjs",
         "to": "tools/install-automation.cjs"
-      },
-      {
-        "from": "resources/tools/rg",
-        "to": "tools/rg"
-      },
-      {
-        "from": "resources/tools/uv",
-        "to": "tools/uv"
-      },
-      {
-        "from": "resources/tools/cmake",
-        "to": "tools/cmake"
-      },
-      {
-        "from": "resources/tools/sevenzip",
-        "to": "tools/sevenzip"
-      },
-      {
-        "from": "resources/tools/jq",
-        "to": "tools/jq"
-      },
-      {
-        "from": "resources/tools/ninja",
-        "to": "tools/ninja"
       },
       {
         "from": "resources/tools/ponytail-plugin",
