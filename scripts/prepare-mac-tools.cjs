@@ -14,7 +14,10 @@ const run = (file, args, env = {}) => execFileSync(file, args, {
   stdio: "inherit", env: { ...process.env, ...env }, timeout: 20 * 60_000,
 });
 async function json(url) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(60000) });
+  // CI runner IP 共享，无认证调 api.github.com 会撞 60/h 限流（403）——带 token 提到 1000/h
+  const headers = {};
+  if (process.env.GITHUB_TOKEN || process.env.GH_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN || process.env.GH_TOKEN}`;
+  const response = await fetch(url, { signal: AbortSignal.timeout(60000), headers });
   if (!response.ok) throw new Error(`${url}: ${response.status}`);
   return response.json();
 }
