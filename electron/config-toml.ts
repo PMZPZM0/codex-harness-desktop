@@ -7,7 +7,7 @@
  */
 
 /** harness 自己会重新生成的顶层键 */
-export const HARNESS_CONFIG_KEYS = new Set(["model", "model_context_window", "model_provider", "developer_instructions", "model_catalog_json"]);
+export const HARNESS_CONFIG_KEYS = new Set(["model", "model_context_window", "model_provider", "preferred_auth_method", "developer_instructions", "model_catalog_json"]);
 
 /** harness 自己会整段重写的表；其余段落（用户手工配置的 projects / marketplaces / plugins 等）原样保留 */
 export const HARNESS_CONFIG_SECTIONS = new Set(["model_providers", "windows", "tools", "sandbox_workspace_write", "shell_environment_policy", "features", "mcp_servers", "otel", "permissions"]);

@@ -8750,7 +8750,121 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
 .memory-project-context-copy > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .memory-project-context-copy strong { color: var(--text); font-size: 12px; font-weight: 600; }
 .memory-project-context-copy span { color: var(--muted); font-size: 10.5px; line-height: 1.4; }
-.memory-project-context select { min-width: min(360px, 100%); max-width: 100%; min-height: 30px; }
+.memory-project-select-wrap {
+  border: 1px solid color-mix(in srgb, var(--green) 28%, var(--line));
+  background: color-mix(in srgb, var(--bg) 82%, var(--green) 18%);
+  color: var(--green);
+  border-radius: 9px;
+  min-width: min(360px, 100%);
+  max-width: 100%;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 9px;
+  display: flex;
+  position: relative;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.memory-project-select-wrap:hover {
+  border-color: color-mix(in srgb, var(--green) 55%, var(--line));
+  background: color-mix(in srgb, var(--bg) 72%, var(--green) 28%);
+}
+.memory-project-select-wrap:focus-within {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 13%, transparent);
+}
+.memory-project-select-wrap > svg:last-child { color: var(--muted); pointer-events: none; flex: none; }
+.memory-project-select-wrap select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  min-width: 0;
+  width: 100%;
+  height: 32px;
+  padding: 0 2px;
+  font-size: 12px;
+  font-weight: 550;
+  text-overflow: ellipsis;
+}
+.memory-project-select-wrap select option { background: var(--panel); color: var(--text); }
+.memory-project-picker { min-width: min(360px, 100%); max-width: 100%; position: relative; z-index: 3; }
+.memory-project-picker-button {
+  border: 1px solid color-mix(in srgb, var(--green) 28%, var(--line));
+  background: color-mix(in srgb, var(--bg) 82%, var(--green) 18%);
+  color: var(--green);
+  border-radius: 10px;
+  min-height: 42px;
+  width: 100%;
+  cursor: pointer;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 10px;
+  text-align: left;
+  display: flex;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.memory-project-picker-button:hover,
+.memory-project-picker.open .memory-project-picker-button {
+  border-color: color-mix(in srgb, var(--green) 58%, var(--line));
+  background: color-mix(in srgb, var(--bg) 72%, var(--green) 28%);
+}
+.memory-project-picker.open .memory-project-picker-button { box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 12%, transparent); }
+.memory-project-picker-button > svg:last-child { color: var(--muted); flex: none; margin-left: auto; transition: transform .16s; }
+.memory-project-picker.open .memory-project-picker-button > svg:last-child { transform: rotate(180deg); color: var(--green); }
+.memory-project-picker-current { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.memory-project-picker-current strong { color: var(--text); font-size: 12px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memory-project-picker-current small { color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memory-project-picker-menu {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 12px;
+  box-shadow: 0 12px 30px color-mix(in srgb, #000 22%, transparent);
+  max-height: min(310px, 42vh);
+  min-width: 100%;
+  padding: 5px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  overflow-y: auto;
+  animation: memory-project-menu-in .14s ease-out;
+}
+.memory-project-option {
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  min-height: 42px;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  text-align: left;
+  display: flex;
+}
+.memory-project-option:hover { background: var(--panel-2); }
+.memory-project-option.selected { border-color: color-mix(in srgb, var(--green) 30%, transparent); background: color-mix(in srgb, var(--green) 9%, var(--panel)); }
+.memory-project-option > svg:last-child { color: var(--green); flex: none; margin-left: auto; }
+.memory-project-option-icon { background: color-mix(in srgb, var(--green) 12%, var(--bg)); color: var(--green); border-radius: 7px; width: 26px; height: 26px; display: grid; place-items: center; flex: none; }
+.memory-project-option-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.memory-project-option-copy strong { font-size: 11.5px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memory-project-option-copy small { color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memory-project-option-empty { color: var(--muted); font-size: 11px; padding: 14px 10px; text-align: center; }
+@keyframes memory-project-menu-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
+.memory-save-success {
+  background: var(--ok) !important;
+  border-color: var(--ok) !important;
+  color: #fff !important;
+  animation: memory-save-pop .22s ease-out;
+}
+@keyframes memory-save-pop {
+  from { transform: scale(.97); opacity: .72; }
+  to { transform: scale(1); opacity: 1; }
+}
 .memory-center-pane { min-width: 0; flex-direction: column; gap: 14px; display: flex; flex: 1; }
 .memory-center-block {
   border: 1px solid var(--line);
@@ -11496,6 +11610,9 @@ button.search-box:hover {
   color: var(--muted);
   font-size: 10.5px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
 }
 .ctx-pop-cell-value {
   color: var(--text);
@@ -11510,6 +11627,554 @@ button.search-box:hover {
   color: var(--faint);
   font-size: 10.5px;
   line-height: 1.55;
+}
+/* 中转站账户卡片（设置 → 模型） */
+.relay-account-card {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 13px;
+  padding: 13px 14px;
+  flex-direction: column;
+  gap: 10px;
+  display: flex;
+  margin-bottom: 14px;
+}
+.relay-account-head {
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  display: flex;
+}
+.relay-account-head strong {
+  font-size: 13px;
+}
+.relay-account-head small {
+  color: var(--faint);
+  font-size: 11px;
+}
+.relay-account-err {
+  align-items: center;
+  background: color-mix(in srgb, #b7791f 10%, var(--panel));
+  border: 1px solid color-mix(in srgb, #b7791f 35%, transparent);
+  border-radius: 10px;
+  color: var(--amber2, #b7791f);
+  display: flex;
+  font-size: 11.5px;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 12px;
+}
+.relay-login-row {
+  align-items: center;
+  gap: 8px;
+  display: flex;
+}
+.relay-login-row input {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  height: 34px;
+  color: var(--text);
+  border-radius: 9px;
+  outline: 0;
+  padding: 0 10px;
+  font-size: 12px;
+  min-width: 0;
+}
+.relay-login-row input:first-child { flex: 1.2; }
+.relay-login-row input:nth-child(2), .relay-login-row input:nth-child(3) { flex: 1; }
+.relay-account-meta {
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 11.5px;
+  display: flex;
+}
+.relay-account-meta b {
+  color: var(--green);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+.relay-plan-list {
+  flex-direction: column;
+  gap: 7px;
+  display: flex;
+}
+.relay-plan-row {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  display: flex;
+}
+.relay-plan-row.selected {
+  border-color: var(--green);
+}
+.relay-plan-info {
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  display: flex;
+}
+.relay-plan-info strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.relay-plan-info small {
+  color: var(--faint);
+  font-size: 10.5px;
+}
+/* 主界面中转站余额徽标（复用 context-ring 外观） */
+.relay-badge {
+  position: relative;
+}
+.relay-badge-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.relay-badge-btn small {
+  font-size: 11px;
+}
+.relay-pop {
+  width: 300px;
+}
+/* 中转站独立设置页 */
+.relay-center {
+  gap: 14px;
+}
+.relay-login-card {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 16px;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 420px;
+  padding: 22px;
+  display: flex;
+}
+.relay-login-title {
+  align-items: center;
+  gap: 9px;
+  color: var(--text);
+  display: flex;
+}
+.relay-login-title strong {
+  font-size: 15px;
+}
+.relay-login-sub {
+  color: var(--muted);
+  font-size: 11.5px;
+  margin: 0 0 4px;
+}
+.relay-login-btn {
+  justify-content: center;
+  margin-top: 4px;
+}
+.relay-hero {
+  border: 1px solid var(--line);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--green) 10%, var(--panel)), var(--panel));
+  border-radius: 16px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+  display: flex;
+}
+.relay-hero-main {
+  flex-direction: column;
+  gap: 2px;
+  display: flex;
+}
+.relay-hero-main small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.relay-hero-main strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-size: 26px;
+  line-height: 1.2;
+}
+.relay-hero-main span {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+/* OpenAI 订阅监控页 */
+.openai-account-grid {
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+}
+.openai-plan-badge {
+  background: color-mix(in srgb, var(--green) 16%, transparent);
+  border-radius: 999px;
+  color: var(--green);
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  padding: 2px 8px;
+}
+.openai-sub-line {
+  color: var(--muted);
+  font-size: 11.5px;
+  margin: 0;
+}
+.openai-quota-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.openai-quota-bar-label {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 10.5px;
+  justify-content: space-between;
+  margin-bottom: 3px;
+}
+.openai-quota-bar-label b {
+  color: var(--text);
+}
+.openai-quota-err {
+  color: #d33;
+}
+.openai-add-card {
+  max-width: 100%;
+}
+.openai-add-row {
+  flex-direction: row;
+  display: flex;
+}
+.openai-add-row input {
+  flex: 1;
+}
+
+/* OpenAI 官方订阅横幅 */
+.official-banner.active {
+  border-color: color-mix(in srgb, var(--green) 40%, transparent);
+}
+.official-device a {
+  color: var(--green);
+  word-break: break-all;
+}
+.official-error {
+  color: #d33;
+}
+.official-proxy-input {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  color: var(--text);
+  margin-left: 4px;
+  padding: 2px 8px;
+  width: 180px;
+  font-size: 11px;
+}
+.official-usage {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  color: var(--muted);
+  margin: 8px 0 0;
+  max-height: 200px;
+  overflow: auto;
+  padding: 8px 10px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.relay-hero {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--green) 10%, var(--panel)) 0%, var(--panel) 60%);
+  border: 1px solid color-mix(in srgb, var(--green) 18%, var(--line-soft));
+  border-radius: 16px;
+  display: flex;
+}
+.relay-plan-card {
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.relay-plan-card:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+.relay-plan-card.selected {
+  border-color: color-mix(in srgb, var(--green) 45%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--green) 30%, transparent) inset;
+}
+
+/* 密钥管理区 */
+.relay-accounts-card {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.relay-account-remove:hover {
+  color: #d33;
+  border-color: color-mix(in srgb, #d33 40%, transparent);
+}
+.relay-keys-card {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.relay-keys-head {
+  align-items: center;
+  gap: 8px;
+  display: flex;
+}
+.relay-keys-head strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.relay-keys-head small {
+  color: var(--faint);
+  flex: 1;
+  font-size: 10.5px;
+}
+.relay-key-form {
+  align-items: center;
+  gap: 8px;
+  display: flex;
+}
+.relay-key-form input {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  color: var(--text);
+  flex: 1;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+.relay-key-form select {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  color: var(--text);
+  max-width: 220px;
+  padding: 7px 8px;
+  font-size: 12px;
+}
+.relay-key-list {
+  flex-direction: column;
+  gap: 6px;
+  display: flex;
+}
+.relay-key-group-block {
+  flex-direction: column;
+  gap: 6px;
+  display: flex;
+}
+.relay-key-group-head {
+  align-items: center;
+  background: var(--panel-2);
+  border: 0;
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  display: flex;
+  text-align: left;
+  transition: background 0.15s;
+}
+.relay-key-group-head:hover {
+  background: color-mix(in srgb, var(--green) 8%, var(--panel-2));
+}
+.relay-key-group-head svg {
+  color: var(--faint);
+  flex-shrink: 0;
+}
+.relay-key-row {
+  align-items: center;
+  background: var(--panel-2);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  display: flex;
+}
+.relay-key-row.current {
+  border-color: color-mix(in srgb, var(--green) 45%, transparent);
+}
+.relay-key-status {
+  border-radius: 50%;
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+}
+.relay-key-status[data-status="on"] {
+  background: var(--green);
+}
+.relay-key-status[data-status="off"] {
+  background: var(--faint);
+}
+.relay-key-name {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+.relay-key-tail {
+  color: var(--muted);
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+}
+.relay-key-group {
+  color: var(--faint);
+  flex: 1;
+  font-size: 10.5px;
+}
+.relay-key-empty {
+  color: var(--faint);
+  margin: 0;
+  font-size: 11.5px;
+}
+/* 当前生效密钥行：脱敏展示 + 显隐 + 复制 */
+.relay-hero-key {
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  display: flex;
+}
+.relay-hero-key em {
+  color: var(--faint);
+  font-style: normal;
+  font-size: 11px;
+}
+.relay-hero-key code {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.relay-hero-actions {
+  align-items: center;
+  gap: 8px;
+  display: flex;
+}
+.relay-plan-grid {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  display: grid;
+}
+.relay-plan-card {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 13px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 15px;
+  display: flex;
+}
+.relay-plan-card.selected {
+  border-color: var(--green);
+  background: color-mix(in srgb, var(--green) 6%, var(--panel));
+}
+.relay-plan-card-head {
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  display: flex;
+}
+.relay-plan-card-head strong {
+  color: var(--text);
+  font-size: 13px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.relay-plan-live {
+  background: color-mix(in srgb, var(--green) 16%, transparent);
+  color: var(--green);
+  border-radius: 999px;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  font-size: 10.5px;
+  display: inline-flex;
+}
+.relay-plan-progress {
+  background: var(--panel-2);
+  border-radius: 999px;
+  height: 5px;
+  overflow: hidden;
+}
+.relay-plan-progress i {
+  background: var(--green);
+  border-radius: 999px;
+  height: 100%;
+  transition: width 0.3s;
+  display: block;
+}
+.relay-plan-card p {
+  color: var(--muted);
+  font-size: 11.5px;
+  margin: 0;
+}
+.relay-plan-card-foot {
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  display: flex;
+}
+.relay-plan-card-foot small {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+.relay-center-foot {
+  color: var(--faint);
+  font-size: 11.5px;
+  margin: 0;
+}
+/* 模型设置页里的中转站入口横幅 */
+.relay-entry-banner {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 12px;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 11px 14px;
+  font-size: 12px;
+  text-align: left;
+  margin-bottom: 14px;
+  display: flex;
+  transition: border-color 0.16s;
+}
+.relay-entry-banner:hover {
+  border-color: var(--green);
+}
+.relay-entry-banner b {
+  color: var(--text);
+}
+/* 登录界面的中转站 tab */
+.relay-login-hint {
+  color: var(--faint);
+  font-size: 10.5px;
+  line-height: 1.6;
+  margin: 0;
 }
 @media (width<=640px) {
   .ctx-pop {
@@ -17129,6 +17794,64 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .login-tabs { display: flex; gap: 6px; margin: 4px 0; }
 .login-tabs button { flex: 1; height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--muted); cursor: pointer; font-size: 12.5px; transition: all .18s ease; }
 .login-tabs button.active { border-color: var(--green); background: color-mix(in srgb, var(--green) 12%, var(--bg)); color: var(--text); font-weight: 500; }
+/* 登录方式 2×2 选项卡：图标 + 标题 + 副标题 */
+.login-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 6px 0 12px;
+}
+.login-option {
+  align-items: flex-start;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  flex-direction: column;
+  gap: 3px;
+  padding: 11px 12px;
+  display: flex;
+  text-align: left;
+  transition: border-color .18s ease, background .18s ease, transform .18s ease;
+}
+.login-option:hover {
+  border-color: var(--muted);
+  transform: translateY(-1px);
+}
+.login-option.active {
+  border-color: var(--green);
+  background: color-mix(in srgb, var(--green) 10%, var(--bg));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--green) 30%, transparent) inset;
+}
+.login-option svg {
+  color: var(--faint);
+}
+.login-option.active svg {
+  color: var(--green);
+}
+.login-option-title {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.login-option.active .login-option-title {
+  color: var(--green);
+}
+.login-option small {
+  color: var(--faint);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+.openai-device-panel {
+  background: color-mix(in srgb, var(--green) 8%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--green) 25%, transparent);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 9px 11px;
+  font-size: 12px;
+  line-height: 1.55;
+}
 .login-fields { display: flex; flex-direction: column; gap: 10px; }
 .login-fields .se-field select { height: 36px; }
 .login-endpoint-select { position: relative; }
@@ -18623,4 +19346,117 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   font-size: 12px;
   color: var(--muted);
   line-height: 1.6;
+}
+
+.relay-home-grid {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+.relay-account-card {
+  cursor: pointer;
+}
+.relay-account-card:hover {
+  border-color: color-mix(in srgb, var(--green) 40%, transparent);
+}
+.relay-add-card {
+  align-items: center;
+  border-style: dashed;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  min-height: 150px;
+  background: transparent;
+}
+.relay-add-card:hover {
+  border-color: var(--green);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+.relay-add-card small {
+  font-weight: 400;
+}
+.relay-modal-backdrop {
+  align-items: center;
+  background: rgba(15, 20, 25, 0.5);
+  backdrop-filter: blur(2px);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  position: fixed;
+  z-index: 900;
+}
+.relay-manage-modal {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 16px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 18px 20px;
+  width: min(760px, 94vw);
+}
+.relay-modal-title {
+  align-items: center;
+  display: inline-flex;
+  gap: 7px;
+}
+.relay-login-modal {
+  width: min(480px, 92vw);
+}
+.openai-card-hint {
+  opacity: 0.85;
+}
+
+.relay-keys-toggle {
+  align-items: center;
+  background: 0 0;
+  border: 0;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  padding: 0;
+  text-align: left;
+}
+.relay-keys-toggle svg {
+  color: var(--faint);
+}
+.relay-keys-toggle strong {
+  font-size: 14px;
+}
+.relay-keys-toggle small {
+  font-weight: 400;
+}
+
+/* OpenAI 管理弹窗：按钮成组、删除靠右，进度条配色统一 */
+.relay-manage-modal .relay-plan-card-foot {
+  justify-content: flex-start;
+  gap: 8px;
+}
+.relay-manage-modal .relay-account-remove {
+  margin-left: auto;
+}
+.relay-manage-modal .relay-plan-progress {
+  background: color-mix(in srgb, var(--green) 12%, var(--panel-2));
+  height: 6px;
+}
+.relay-manage-modal .relay-plan-progress i {
+  background: var(--green);
+}
+.relay-manage-modal .relay-plan-head-toggle,
+.relay-manage-modal .openai-quota-bar-label b {
+  font-variant-numeric: tabular-nums;
+}
+
+.relay-keys-head .relay-modal-close {
+  margin-left: auto;
+}
+.relay-keys-head .relay-modal-title {
+  align-items: center;
+  display: inline-flex;
+  gap: 7px;
+  white-space: nowrap;
 }

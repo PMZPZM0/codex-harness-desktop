@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import path from "node:path";
+import nodeFs from "node:fs";
 import { toolchainEnv } from "./toolchain";
 
 type RpcId = number | string;
@@ -150,6 +151,13 @@ export class CodexServer extends EventEmitter {
   private async launch() {
     this.emitEvent({ kind: "status", status: "starting" });
     const binary = codexBinaryPath();
+    const spawnEnv: Record<string, string> = {
+      ...toolchainEnv(),
+      ...this.externalEnv,
+      CODEX_HOME: this.codexHome,
+      CODEX_HARNESS_API_KEY: this.apiKey,
+      CODEX_INTERNAL_APP_SERVER_REMOTE_CONTROL_DISABLED: "1",
+    };
     this.child = spawn(binary, ["app-server", "--listen", "stdio://"], {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
@@ -158,16 +166,11 @@ export class CodexServer extends EventEmitter {
       // 关掉 remote control 轮询：它是 ChatGPT 账号专属功能，本机走 API key 没有登录态，
       // websocket 每秒重试解析偏好并连带触发 auth reload，实测占全部日志的 95%。
       // 这是二进制里的官方内部开关（不在 --help 里），对非登录态环境是安全关闭。
-      env: {
-        ...toolchainEnv(),
-        ...this.externalEnv,
-        CODEX_HOME: this.codexHome,
-        CODEX_HARNESS_API_KEY: this.apiKey,
-        CODEX_INTERNAL_APP_SERVER_REMOTE_CONTROL_DISABLED: "1",
-      },
+      env: spawnEnv,
     });
+    this.debugLog(`[spawn] HTTPS_PROXY=${spawnEnv.HTTPS_PROXY ?? "(无)"} NO_PROXY=${spawnEnv.NO_PROXY ?? "(无)"} CODEX_HOME=${spawnEnv.CODEX_HOME} provider 相关 env 已注入 ${this.externalEnv.HTTPS_PROXY ? "externalEnv" : "externalEnv 无代理"}`);
     this.child.stderr.setEncoding("utf8");
-    this.child.stderr.on("data", (message) => this.emitEvent({ kind: "log", message: String(message).trim() }));
+    this.child.stderr.on("data", (message) => { this.debugLog(`[stderr] ${String(message).trim().slice(0, 600)}`); this.emitEvent({ kind: "log", message: String(message).trim() }); });
     this.child.on("error", (error) => this.fail(error));
     this.child.on("exit", (code) => this.fail(new Error(`Codex app-server exited (${code ?? "unknown"})`)));
 
@@ -175,7 +178,7 @@ export class CodexServer extends EventEmitter {
     lines.on("line", (line) => this.handleLine(line));
 
     await this.request("initialize", {
-      clientInfo: { name: "codex_harness_desktop", title: "Codex Harness Desktop", version: "0.0.8" },
+      clientInfo: { name: "codex_harness_desktop", title: "Codex Harness Desktop", version: "0.0.9" },
       capabilities: { experimentalApi: true },
     });
     this.notify("initialized", {});
@@ -195,6 +198,17 @@ export class CodexServer extends EventEmitter {
   /** 引擎子进程是否存活（/doctor、/debug 等诊断命令用） */
   get running() {
     return Boolean(this.child && !this.child.killed && this.child.exitCode == null);
+  }
+
+  /** 黑匣子：引擎关键日志落盘 userData/engine-debug.log（>2MB 轮转），用于诊断流断开等现场问题 */
+  debugLog(line: string) {
+    try {
+      const file = path.join(path.dirname(this.codexHome), "engine-debug.log");
+      try {
+        if (nodeFs.statSync(file).size > 2 * 1024 * 1024) nodeFs.rmSync(file, { force: true });
+      } catch { /* 不存在则直接写 */ }
+      nodeFs.appendFileSync(file, `[${new Date().toISOString()}] ${line}\n`);
+    } catch { /* 日志失败不影响主流程 */ }
   }
 
   async request(method: string, params: unknown, timeoutMs = 60_000) {
@@ -236,9 +250,11 @@ export class CodexServer extends EventEmitter {
     try {
       message = JSON.parse(line);
     } catch {
+      this.debugLog(`[raw] ${line.slice(0, 600)}`);
       this.emitEvent({ kind: "log", message: line });
       return;
     }
+    if (message.method && /error|retry|disconnect|stream|warning|failed/i.test(message.method)) this.debugLog(`[notice] ${line.slice(0, 600)}`);
     if (message.id !== undefined && ("result" in message || "error" in message)) {
       const pending = this.pending.get(message.id);
       if (!pending) return;

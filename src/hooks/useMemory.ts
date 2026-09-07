@@ -100,6 +100,7 @@ export function useMemory({ threadId, activeTurnId, workspace }: Options = {}) {
   const [memoryCategory, setMemoryCategory] = useState(""); // 默认「全部」：自动捕获多落在项目背景等分类，默认选单一分类会显示空列表，被误认为记忆没生效
   const [memorySaveCategory, setMemorySaveCategory] = useState("临时上下文");
   const [memoryDraft, setMemoryDraft] = useState("");
+  const [memorySavedAt, setMemorySavedAt] = useState<number | null>(null);
   const [memoryStatus, setMemoryStatus] = useState("");
   const [memoryGateway, setMemoryGateway] = useState<MemoryGatewayState>({ endpoint: "", sessionKey: "", userId: "codex-harness", apiKey: "", hasApiKey: false });
   const [memoryGatewayAction, setMemoryGatewayAction] = useState<"save" | "test" | null>(null);
@@ -153,6 +154,8 @@ export function useMemory({ threadId, activeTurnId, workspace }: Options = {}) {
       const saved = await window.codex.saveMemory({ category, content: memoryDraft, sourceThreadId: threadId, sourceTurnId: activeTurnId ?? undefined, workspace: workspaceOverride || managementWorkspace || undefined });
       setMemories((current) => [saved, ...current.filter((entry) => entry.id !== saved.id)]);
       setMemoryDraft("");
+      setMemorySavedAt(Date.now());
+      window.setTimeout(() => setMemorySavedAt(null), 2200);
       setMemoryStatus(`记忆已保存到「${memoryMode === "cloud" ? "云端并保留本地缓存" : "本地"}」`);
     } catch (error: any) {
       setMemoryStatus(error.message);
@@ -251,6 +254,7 @@ export function useMemory({ threadId, activeTurnId, workspace }: Options = {}) {
     setMemorySaveCategory,
     memoryDraft,
     setMemoryDraft,
+    memorySavedAt,
     memoryStatus,
     setMemoryStatus,
     memoryGateway,

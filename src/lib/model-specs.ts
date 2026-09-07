@@ -18,6 +18,8 @@ const VIS: ("text" | "image" | "video")[] = ["text", "image"];
 const VISVIDEO: ("text" | "image" | "video")[] = ["text", "image", "video"];
 
 const RULES: { match: RegExp; spec: ModelSpec }[] = [
+  // ── OpenAI GPT-6（1M 上下文 / 128K 输出，推理档，多模态输入）──
+  { match: /gpt-6/, spec: { contextWindow: 1_000_000, maxOutputTokens: 128_000, efforts: ["minimal", "low", "medium", "high", "xhigh"], inputTypes: VIS, outputTypes: TXT } },
   // ── 视觉特例型号（独立视觉版：qwen-vl / glm-4v / deepseek-vl / doubao-vision / kimi-vl 等）──
   { match: /-vl\b|-vision\b|glm-4v/, spec: { contextWindow: 131_072, maxOutputTokens: 32_768, efforts: [], inputTypes: VIS, outputTypes: TXT } },
   // ── OpenAI GPT-5.x（400k 上下文 / 128k 输出，推理档 minimal..xhigh，多模态输入）──

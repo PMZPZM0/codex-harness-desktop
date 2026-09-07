@@ -12,6 +12,7 @@ import { matchModelSpec, loadExternalSpecs } from "./lib/model-specs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
 import { resolveSkillVisual, type SkillVisual } from "./lib/skill-icon";
 import { translateEngineNotice } from "./lib/engine-notices-zh";
+import { resolveRelayAutoTarget, resolveRelayTarget, resolveRelayKeyTarget, writeRelayActive, readRelayActive } from "./lib/relay";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "./lib/entity-avatar";
 import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens } from "./lib/prompt-images";
 import {
@@ -48,6 +49,7 @@ import {
   Info,
   KeyRound,
   LayoutGrid,
+  Layers3,
   Link2,
   ListFilter,
   Maximize2,
@@ -119,6 +121,8 @@ import {
   ChevronLeft,
   ExternalLink,
   Pin,
+  Wallet,
+  LogIn,
 } from "lucide-react";
 import { useMemory, type MemoryGatewayState, type MemoryGroup, type MemoryPriority, type MemoryRecord, groupMemoriesByThread } from "./hooks/useMemory";
 import UsagePanel from "./components/UsagePanel";
@@ -133,7 +137,7 @@ const PPTokenEndpoints = [
 ];
 
 function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string }) => Promise<boolean> }) {
-  const [mode, setMode] = useState<"custom" | "pptoken">("pptoken");
+  const [mode, setMode] = useState<"custom" | "pptoken" | "relay" | "openai">("pptoken");
   const [username, setUsername] = useState(() => localStorage.getItem("username") || "");
   const [apiBase, setApiBase] = useState("https://api.pptoken.cc/v1");
   const [apiKey, setApiKey] = useState("");
@@ -145,6 +149,13 @@ function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: 
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [showPw, setShowPw] = useState(false);
+  // 中转站账户登录（sub2api 兼容）
+  const [relayDraft, setRelayDraft] = useState({ baseUrl: "https://api.pptoken.cc", email: "", password: "" });
+  // OpenAI 官方订阅登录（设备码流程）
+  const [openaiDevice, setOpenaiDevice] = useState<{ url: string; code: string; raw?: string } | null>(null);
+  const [openaiProxy, setOpenaiProxy] = useState(() => localStorage.getItem("openai-proxy") ?? "");
+  const openaiTimerRef = useRef<number | null>(null);
+  useEffect(() => () => { if (openaiTimerRef.current) window.clearInterval(openaiTimerRef.current); }, []);
 
   useEffect(() => {
     if (!endpointOpen) return;
@@ -165,6 +176,78 @@ function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: 
     finally { setBusy(false); }
   };
 
+  // 中转站账户登录：登录 → 自动选计费方式（有套餐用套餐，否则余额）→ 生成供应商进主界面
+  const relayLogin = async () => {
+    setBusy(true); setStatus("");
+    try {
+      await window.codex.relayLogin({ baseUrl: relayDraft.baseUrl.trim(), email: relayDraft.email.trim(), password: relayDraft.password });
+      let target = await resolveRelayAutoTarget();
+      let ok = await onLogin({ provider: target.resolved.provider, name: target.resolved.displayName, baseUrl: target.resolved.gateway, apiKey: target.resolved.apiKey, model: "", username: username.trim() || undefined });
+      // 部分站点强制 key 必须绑分组（无分组 key 网关 403）：改绑第一个订阅分组重试
+      if (!ok && target.mode === "balance") {
+        const ov = await window.codex.relayOverview().catch(() => null);
+        const subs: any[] = ov?.subscriptions ?? [];
+        if (subs.length) {
+          const s0 = subs[0];
+          const group = { group_id: Number(s0.group_id), group_name: String(s0.group_name ?? "套餐") };
+          target = { mode: "plan", group, resolved: await resolveRelayTarget("plan", group) };
+          ok = await onLogin({ provider: target.resolved.provider, name: target.resolved.displayName, baseUrl: target.resolved.gateway, apiKey: target.resolved.apiKey, model: "", username: username.trim() || undefined });
+        }
+      }
+      // 只有供应商真正生成并生效后才落「已生效」标记，避免失败残留锁死按钮/徽标
+      if (ok) writeRelayActive(target.resolved.active);
+      else setStatus("供应商生成失败：网关探测不到可用模型，请稍后在 设置 → 中转站 重试");
+    } catch (error: any) { setStatus("中转站登录失败：" + (error.message ?? error)); }
+    finally { setBusy(false); }
+  };
+
+  // OpenAI 官方订阅：设备码登录 → 收进账号库 → 写 auth.json + 重启引擎 → 自动配置进主界面
+  const openaiLogin = async () => {
+    setBusy(true); setStatus("");
+    try {
+      const proxyValue = openaiProxy.trim();
+      if (proxyValue) localStorage.setItem("openai-proxy", proxyValue); else localStorage.removeItem("openai-proxy");
+      void window.codex.openaiSetProxy(proxyValue).catch(() => undefined);
+      await window.codex.openaiLoginStart({ proxy: proxyValue || undefined });
+      let opened = false;
+      const openAuth = (url: string) => {
+        if (opened || !url) return;
+        opened = true;
+        void window.codex.openExternal(url).catch((e: any) => setStatus("打开浏览器失败：" + (e.message ?? e) + "，请手动访问 " + url));
+      };
+      const first = await window.codex.openaiLoginStatus();
+      setOpenaiDevice({ url: first.url, code: first.code, raw: first.lines });
+      if (first.error) setStatus("登录失败：" + first.error + "。OpenAI 有区域限制——请确认代理已开启，或填好代理地址后重试。");
+      openAuth(first.url);
+      const startedAt = Date.now();
+      if (openaiTimerRef.current) window.clearInterval(openaiTimerRef.current);
+      openaiTimerRef.current = window.setInterval(async () => {
+        const s = await window.codex.openaiLoginStatus();
+        setOpenaiDevice({ url: s.url, code: s.code, raw: s.lines });
+        openAuth(s.url);
+        if (s.error && !s.childAlive && !s.loggedIn) {
+          if (openaiTimerRef.current) window.clearInterval(openaiTimerRef.current);
+          openaiTimerRef.current = null;
+          setStatus("登录失败：" + s.error + "。OpenAI 有区域限制——请确认代理已开启，或填好代理地址后重试。");
+          setBusy(false);
+        }
+        if (s.loggedIn) {
+          if (openaiTimerRef.current) window.clearInterval(openaiTimerRef.current);
+          openaiTimerRef.current = null;
+          setOpenaiDevice(null);
+          const saved = await window.codex.openaiCaptureLogin();
+          await window.codex.openaiAccountSwitch(saved.id);
+          const ok = await onLogin({ provider: "openai-official", name: "OpenAI 官方订阅", baseUrl: "https://chatgpt.com/backend-api/codex", apiKey: "", model: "", username: username.trim() || undefined });
+          if (!ok) setStatus("订阅启用失败，请稍后在 设置 → 模型 重试");
+        } else if (Date.now() - startedAt > 15 * 60_000) {
+          if (openaiTimerRef.current) window.clearInterval(openaiTimerRef.current);
+          openaiTimerRef.current = null;
+          void window.codex.openaiLoginCancel();
+        }
+      }, 2500);
+    } catch (error: any) { setStatus("OpenAI 登录失败：" + (error.message ?? error)); }
+  };
+
   return (
     <div className="login-screen">
       <div className="login-card">
@@ -172,11 +255,52 @@ function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: 
         <h1>欢迎使用 Codex Harness</h1>
         <p className="login-sub">配置 API 即可开始；暂不登录可直接体验主界面</p>
 
-        <div className="login-tabs">
-          <button type="button" className={mode === "pptoken" ? "active" : ""} onClick={() => { setMode("pptoken"); setEndpointOpen(false); queueMicrotask(() => apiKeyRef.current?.focus()); }}><Rocket size={14} />PPtoken 推荐</button>
-          <button type="button" className={mode === "custom" ? "active" : ""} onClick={() => { setMode("custom"); setEndpointOpen(false); queueMicrotask(() => { apiBaseRef.current?.focus(); apiBaseRef.current?.select(); }); }}><Settings2 size={14} />自定义 API</button>
+        <div className="login-options">
+          <button type="button" className={`login-option ${mode === "pptoken" ? "active" : ""}`} onClick={() => { setMode("pptoken"); setEndpointOpen(false); queueMicrotask(() => apiKeyRef.current?.focus()); }}>
+            <Rocket size={16} /><span className="login-option-title">PPtoken 推荐</span><small>中转线路 · 粘贴 Key 即用</small>
+          </button>
+          <button type="button" className={`login-option ${mode === "openai" ? "active" : ""}`} onClick={() => { setMode("openai"); setEndpointOpen(false); }}>
+            <CircleGauge size={16} /><span className="login-option-title">OpenAI 官方订阅</span><small>ChatGPT 账号设备码登录</small>
+          </button>
+          <button type="button" className={`login-option ${mode === "relay" ? "active" : ""}`} onClick={() => { setMode("relay"); setEndpointOpen(false); }}>
+            <Wallet size={16} /><span className="login-option-title">中转站账户</span><small>sub2api 网关 · 余额/套餐</small>
+          </button>
+          <button type="button" className={`login-option ${mode === "custom" ? "active" : ""}`} onClick={() => { setMode("custom"); setEndpointOpen(false); queueMicrotask(() => { apiBaseRef.current?.focus(); apiBaseRef.current?.select(); }); }}>
+            <Settings2 size={16} /><span className="login-option-title">自定义 API</span><small>任意 OpenAI 兼容端点</small>
+          </button>
         </div>
 
+        {mode === "openai" ? (
+          <div className="login-fields">
+            <p className="relay-login-hint">点击下方按钮后浏览器会打开 OpenAI 授权页，输入验证码即可；登录成功自动启用 Codex 订阅并进入主界面。OpenAI 有区域限制，需要可访问 OpenAI 的网络（代理）。</p>
+            <label className="se-field"><span>用户名（选填）</span>
+              <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="怎么称呼你？登录后显示在界面左上角" />
+            </label>
+            <label className="se-field"><span>代理地址（可选）</span>
+              <input value={openaiProxy} onChange={(e) => setOpenaiProxy(e.target.value)} placeholder="http://127.0.0.1:7890" />
+            </label>
+        {openaiDevice && (
+              <div className="official-device openai-device-panel">
+                {openaiDevice.url && <>浏览器已打开授权页，输入验证码：<b>{openaiDevice.code || "见下方引擎输出"}</b></>}
+                {!openaiDevice.url && "正在向 OpenAI 申请设备验证码…"}
+                {openaiDevice.raw && <pre className="official-usage">{openaiDevice.raw}</pre>}
+              </div>
+            )}
+          </div>
+        ) : mode === "relay" ? (
+          <div className="login-fields relay-login-fields">
+            <label className="se-field"><span>中转站地址（sub2api 网关）</span>
+              <input value={relayDraft.baseUrl} onChange={(e) => setRelayDraft({ ...relayDraft, baseUrl: e.target.value })} placeholder="https://api.pptoken.cc" />
+            </label>
+            <label className="se-field"><span>邮箱</span>
+              <input value={relayDraft.email} onChange={(e) => setRelayDraft({ ...relayDraft, email: e.target.value })} placeholder="你在中转站的账号邮箱" />
+            </label>
+            <label className="se-field"><span>密码</span>
+              <input type="password" value={relayDraft.password} onChange={(e) => setRelayDraft({ ...relayDraft, password: e.target.value })} placeholder="中转站账号密码" onKeyDown={(e) => { if (e.key === "Enter" && relayDraft.email && relayDraft.password && !busy) void relayLogin(); }} />
+            </label>
+            <p className="relay-login-hint">登录后自动同步余额与订阅套餐，优先使用生效中的套餐（无套餐走余额），并生成好供应商直接开聊；后续可在 设置 → 中转站 切换计费方式。</p>
+          </div>
+        ) : (
         <div className="login-fields">
           <label className="se-field"><span>用户名（选填）</span>
             <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="怎么称呼你？登录后显示在界面左上角" />
@@ -201,12 +325,23 @@ function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: 
             <div className="pw-wrap"><input ref={apiKeyRef} type={showPw ? "text" : "password"} value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." /><button type="button" className="pw-toggle" onClick={() => setShowPw(!showPw)}>{showPw ? "隐藏" : "显示"}</button></div>
           </label>
         </div>
+        )}
 
         {status && <div className="login-status">{status}</div>}
 
+        {mode === "openai" ? (
+          <button className="primary-setting login-btn" disabled={busy} onClick={() => void openaiLogin()}>
+            {busy ? <><Spinner />等待浏览器登录…</> : <><CircleGauge size={15} />登录并启用订阅</>}
+          </button>
+        ) : mode === "relay" ? (
+          <button className="primary-setting login-btn" disabled={!relayDraft.baseUrl.trim() || !relayDraft.email.trim() || !relayDraft.password.trim() || busy} onClick={() => void relayLogin()}>
+            {busy ? <><Spinner />正在登录中转站…</> : <><Wallet size={15} />登录并自动配置</>}
+          </button>
+        ) : (
         <button className="primary-setting login-btn" disabled={!apiBase.trim() || !apiKey.trim() || busy} onClick={() => { const selected = PPTokenEndpoints[endpoint]; void doLogin(mode === "pptoken" ? selected.id : `custom-login-${Date.now()}`, mode === "pptoken" ? selected.name : "自定义 API", apiBase.trim().replace(/\/$/, ""), apiKey.trim()); }}>
           {busy ? <><Spinner />正在探测模型…</> : <><KeyRound size={15} />探测并登录</>}
         </button>
+        )}
         <button className="ghost login-skip" onClick={onSkip}><WifiOff size={14} />暂时不登录，直接进入</button>
         <a className="login-sponsor-link" href="https://api.pptoken.cc/register?aff=X82JSNVC3W3S" onClick={(event) => { event.preventDefault(); void window.codex.openExternal("https://api.pptoken.cc/register?aff=X82JSNVC3W3S"); }}>
           <Rocket size={12} />没有 API Key？注册 PPtoken 领取体验额度<ExternalLink size={11} />
@@ -566,11 +701,11 @@ const cronTemplates = [
   { name: "发布简报", desc: "整理本周合并的 PR 和 commit，按功能、修复、体验及工程改进分类，同时生成团队版和面向用户的精简发布说明。", time: "每周五 16:00", intervalMinutes: 10080, icon: "📝" },
   { name: "文档同步检查", desc: "对照最近 7 天的代码、配置、接口与文档变更，识别已改变公开行为但文档尚未同步的高置信差异，并附文件路径和修复建议。", time: "每周三 15:00", intervalMinutes: 10080, icon: "📄" },
 ];
-type SettingsPage = "user" | "general" | "devtools" | "appearance" | "personalization" | "model" | "browser" | "computer" | "memory" | "agents" | "teams" | "plugins" | "mcp" | "ssh" | "skills" | "commands" | "hooks" | "usage" | "channel" | "schedule" | "rpa" | "archive" | "backup" | "automation" | "agentteam";
+type SettingsPage = "user" | "general" | "devtools" | "appearance" | "personalization" | "model" | "relay" | "openai" | "browser" | "computer" | "memory" | "agents" | "teams" | "plugins" | "mcp" | "ssh" | "skills" | "commands" | "hooks" | "usage" | "channel" | "schedule" | "rpa" | "archive" | "backup" | "automation" | "agentteam";
 // 导航分组：常用项置顶（技能/插件紧挨），自动化三合一、智能体+专家团合并为二级页。
 // "browser"/"computer"/"rpa"/"agents"/"teams" 保留在类型里（历史跳转兼容），但不再出现在导航。
 const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
-  { group: "账户", items: [["user", "用户中心", UserRound], ["model", "模型", Bot]] },
+  { group: "账户", items: [["user", "用户中心", UserRound], ["model", "模型", Bot], ["relay", "中转站", Wallet], ["openai", "OpenAI 订阅", CircleGauge]] },
   { group: "常用", items: [["general", "控制台", Settings2], ["appearance", "外观", Sun], ["personalization", "个性化", Sparkles], ["skills", "技能", Zap], ["plugins", "插件", Store], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare]] },
   { group: "自动化与能力", items: [["automation", "自动化", Workflow], ["mcp", "MCP", Wifi], ["schedule", "定时任务", Clock3], ["hooks", "钩子", Wrench], ["ssh", "SSH 服务器", Server]] },
   { group: "智能体", items: [["agentteam", "智能体团队", Users]] },
@@ -1647,7 +1782,7 @@ function MarketPreviewModal({ state, onClose }: { state: MarketPreviewState; onC
         <h3 className="market-preview-title">{state.title}</h3>
         {state.subtitle && <p className="market-preview-sub">{state.subtitle}</p>}
       </div>
-      <button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button>
+      <button className="icon-button relay-modal-close" title="关闭" onClick={onClose}><X size={16} /></button>
     </div>
     <p className="market-preview-desc">{state.description}</p>
     {state.meta.length > 0 && <div className="market-preview-meta">{state.meta.map((item) => <code key={item}>{item}</code>)}</div>}
@@ -2364,6 +2499,825 @@ function usageCounterSnapshot(usage: any): UsageCounterSnapshot {
   };
 }
 
+/** 官方订阅额度徽标：当前供应商是 openai-official 时显示，5 分钟轮询 wham/usage 与官方同步；弹窗看原始明细。 */
+function openaiWindowLabel(seconds?: number): string {
+  if (seconds === 604800) return "本周窗口";
+  if (seconds === 18000) return "5 小时窗口";
+  if (seconds) return `${Math.round(seconds / 3600)} 小时窗口`;
+  return "额度窗口";
+}
+/** wham/usage → 可视化面板数据：主/次窗口用量、档位、状态（官方字段变动手动适配） */
+function parseOpenaiUsagePanel(data: any): { planType: string; windows: { label: string; usedPercent: number }[]; limitReached: boolean } {
+  const rate = data?.rate_limit ?? data;
+  const windows: { label: string; usedPercent: number }[] = [];
+  for (const key of ["primary_window", "secondary_window", "tertiary_window"]) {
+    const win = rate?.[key];
+    if (win && typeof win.used_percent === "number") {
+      windows.push({ label: openaiWindowLabel(win.limit_window_seconds), usedPercent: Math.min(100, Math.max(0, win.used_percent)) });
+    }
+  }
+  return { planType: String(data?.plan_type ?? "plus").toUpperCase(), windows, limitReached: Boolean(rate?.limit_reached) };
+}
+
+function OpenaiBalanceBadge({ activeProvider }: { activeProvider?: string }) {
+  const [open, setOpen] = useState(false);
+  const [panel, setPanel] = useState<ReturnType<typeof parseOpenaiUsagePanel> | null>(null);
+  const [err, setErr] = useState("");
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const refresh = useCallback(async () => {
+    try {
+      setPanel(parseOpenaiUsagePanel(await window.codex.openaiUsage()));
+      setErr("");
+    } catch (e: any) { setErr(e.message ?? "额度同步失败"); }
+  }, []);
+  useEffect(() => {
+    if (activeProvider !== "openai-official") return;
+    void refresh();
+    const timer = window.setInterval(refresh, 5 * 60_000);
+    return () => window.clearInterval(timer);
+  }, [activeProvider, refresh]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) setOpen(false); };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+  if (activeProvider !== "openai-official") return null;
+  const primary = panel?.windows[0];
+  const summary = err ? "额度同步失败" : panel && primary ? `订阅已用 ${Math.round(primary.usedPercent)}%` : "订阅";
+  return <div className="relay-badge" ref={wrapRef}>
+    <button type="button" className="context-ring relay-badge-btn" title="OpenAI 订阅额度" aria-label="OpenAI 订阅额度" onClick={() => { setOpen((v) => !v); if (!panel) void refresh(); }}>
+      <CircleGauge size={13} /><small>{summary}</small>
+    </button>
+    {open && <div className="ctx-pop relay-pop" role="dialog" aria-label="OpenAI 订阅额度明细" onMouseLeave={() => setOpen(false)}>
+      <div className="ctx-pop-head"><strong>OpenAI 官方订阅</strong>{panel?.planType && <span className="openai-plan-badge">{panel.planType}</span>}</div>
+      <div className="ctx-pop-sub">{err ? err : "额度每 5 分钟与官方同步"}</div>
+      {panel && panel.windows.length > 0 && (
+        <div className="ctx-pop-grid openai-usage-grid">
+          {panel.windows.map((win) => (
+            <div className="ctx-pop-cell" key={win.label}>
+              <span className="ctx-pop-cell-label">{win.label}</span>
+              <div className="relay-plan-progress"><i style={{ width: win.usedPercent + "%" }} /></div>
+              <b className="ctx-pop-cell-value">已用 {Math.round(win.usedPercent)}%</b>
+            </div>
+          ))}
+        </div>
+      )}
+      {panel?.limitReached && <p className="relay-account-err"><AlertTriangle size={13} />当前窗口额度已用尽，等待窗口重置或切换中转站。</p>}
+      {!err && panel && panel.windows.length === 0 && <p className="openai-sub-line">官方未返回窗口用量数据（可能尚未产生用量）。</p>}
+      <p className="ctx-pop-cache-note">设置 → 账户 → OpenAI 订阅 可管理账号与切换。</p>
+    </div>}
+  </div>;
+}
+
+/** 中转站余额徽标：当前供应商是中转站生成的（relay-active-v1）时显示套餐余量或账户余额；点击弹明细。 */
+/** 分组名清洗：去掉站方加的装饰性 emoji/符号，截断超长名（完整名走 title 悬停查看）。 */
+function shortGroupName(name: unknown, max: number) {
+  const cleaned = String(name ?? "套餐").replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/gu, "").replace(/\s+/g, " ").trim() || "套餐";
+  return cleaned.length > max ? cleaned.slice(0, max) + "…" : cleaned;
+}
+
+const OFFICIAL_MODELS = ["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"];
+
+/** OpenAI 官方订阅卡：ChatGPT 设备码登录（引擎原生 codex login --device-auth，无需本地回调端口）。
+ *  启用后引擎配置不写 model_provider，走内置 openai + auth.json 的 ChatGPT 凭据（订阅额度）。 */
+function OpenaiOfficialCard({ activeProvider, onActivate, onNotice }: { activeProvider?: string; onActivate: (models: string[]) => Promise<void> | void; onNotice: (m: string) => void }) {
+  const [status, setStatus] = useState<{ loggedIn: boolean; email: string } | null>(null);
+  const [device, setDevice] = useState<{ url: string; code: string; raw?: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [usage, setUsage] = useState<string>("");
+  const [usageOpen, setUsageOpen] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [proxy, setProxy] = useState(() => localStorage.getItem("openai-proxy") ?? "");
+  const timerRef = useRef<number | null>(null);
+  const isActive = activeProvider === "openai-official";
+  useEffect(() => () => { if (timerRef.current) window.clearInterval(timerRef.current); }, []);
+  const loadUsage = async () => {
+    try { setUsage(JSON.stringify(await window.codex.openaiUsage(), null, 1).slice(0, 800)); } catch (e: any) { setUsage("额度查询失败：" + (e.message ?? e)); }
+  };
+  const startLogin = async () => {
+    setBusy(true); setLoginError("");
+    try {
+      const proxyValue = proxy.trim();
+      if (proxyValue) localStorage.setItem("openai-proxy", proxyValue); else localStorage.removeItem("openai-proxy");
+      void window.codex.openaiSetProxy(proxyValue).catch(() => undefined);
+      await window.codex.openaiLoginStart({ proxy: proxyValue || undefined });
+      let opened = false;
+      const openAuth = (url: string) => {
+        if (opened || !url) return;
+        opened = true;
+        void window.codex.openExternal(url).catch((e: any) => onNotice("打开浏览器失败：" + (e.message ?? e) + "，请手动访问 " + url));
+      };
+      const first = await window.codex.openaiLoginStatus();
+      setDevice({ url: first.url, code: first.code, raw: first.lines });
+      if (first.error) setLoginError(first.error);
+      openAuth(first.url);
+      const startedAt = Date.now();
+      if (timerRef.current) window.clearInterval(timerRef.current);
+      timerRef.current = window.setInterval(async () => {
+        const s = await window.codex.openaiLoginStatus();
+        setDevice({ url: s.url, code: s.code, raw: s.lines });
+        openAuth(s.url);
+        if (s.error && !s.childAlive && !s.loggedIn) {
+          if (timerRef.current) window.clearInterval(timerRef.current);
+          timerRef.current = null;
+          setLoginError(s.error);
+          setBusy(false);
+        }
+        if (s.loggedIn) {
+          if (timerRef.current) window.clearInterval(timerRef.current);
+          timerRef.current = null;
+          setStatus({ loggedIn: true, email: s.email });
+          setDevice(null); setLoginError("");
+          void window.codex.openaiCaptureLogin().catch(() => undefined);
+          onNotice(`OpenAI 官方账号已登录：${s.email}，正在启用订阅…`);
+          await onActivate(OFFICIAL_MODELS);
+        } else if (Date.now() - startedAt > 15 * 60_000) {
+          if (timerRef.current) window.clearInterval(timerRef.current);
+          timerRef.current = null;
+          void window.codex.openaiLoginCancel();
+        }
+      }, 2500);
+    } catch (e: any) { onNotice("官方登录失败：" + (e.message ?? e)); } finally { setBusy(false); }
+  };
+  useEffect(() => { void (async () => { try { const s = await window.codex.openaiLoginStatus(); setStatus({ loggedIn: s.loggedIn, email: s.email }); if (s.loggedIn) void loadUsage(); } catch { /* IPC 不可用 */ } })(); }, []);
+  return (
+    <div className={`relay-entry-banner official-banner ${isActive ? "active" : ""}`}>
+      <Bot size={16} />
+      <div className="relay-entry-text">
+        <b>OpenAI 官方订阅（ChatGPT 登录）</b>
+        <small>{status?.loggedIn ? `已登录：${status.email || "ChatGPT 账号"}` : "用 ChatGPT 账号设备码登录，直接使用 Codex 订阅额度，无需 API Key"}</small>
+        {device && device.url && <small className="official-device">浏览器已打开登录页：<a href={device.url} onClick={(e) => { e.preventDefault(); void window.codex.openExternal(device.url); }}>auth.openai.com</a>，输入验证码 <b>{device.code || "见下方引擎输出"}</b></small>}
+        {device && !device.code && device.raw ? <pre className="official-usage">{device.raw}</pre> : null}
+        {device && !device.url && !loginError && <small className="official-device">正在向 OpenAI 申请设备验证码…</small>}
+        {loginError && <small className="official-device official-error">登录失败：{loginError}。OpenAI 有区域限制——请确认代理/VPN 已开启；也可在下方填写代理地址后重试。</small>}
+        {!status?.loggedIn && <small className="official-device">代理（可选）：<input className="official-proxy-input" value={proxy} onChange={(event) => setProxy(event.target.value)} placeholder="http://127.0.0.1:7890" /></small>}
+      </div>
+      <div className="relay-entry-actions">
+        {status?.loggedIn && <button type="button" className="secondary-setting" onClick={() => { setUsageOpen((v) => !v); if (!usage) void loadUsage(); }}><CircleGauge size={13} />额度</button>}
+        {status?.loggedIn
+          ? <button type="button" className="secondary-setting" disabled={isActive} onClick={() => void onActivate(OFFICIAL_MODELS)}>{isActive ? <><Check size={13} />使用中</> : <><Play size={13} />启用</>}</button>
+          : <button type="button" className="secondary-setting" disabled={busy} onClick={() => void startLogin()}>{busy ? <><Spinner />等待登录…</> : <><LogIn size={13} />设备码登录</>}</button>}
+      </div>
+      {usageOpen && usage && <pre className="official-usage">{usage}</pre>}
+    </div>
+  );
+}
+
+/** 额度 JSON → 进度条数据：宽松收集 percent 字段（官方结构变动时自动适配），最多 5 条 */
+function extractQuotaBars(data: any): { label: string; value: number }[] {
+  const bars: { label: string; value: number }[] = [];
+  const walk = (node: any, context: string, depth: number) => {
+    if (node == null || typeof node !== "object" || depth > 4 || bars.length >= 5) return;
+    for (const [key, value] of Object.entries(node)) {
+      if (bars.length >= 5) return;
+      // 官方窗口结构：{ used_percent, limit_window_seconds } → 用友好窗口名（5 小时窗口/本周窗口）
+      if (typeof value === "object" && value && typeof (value as any).used_percent === "number") {
+        bars.push({ label: openaiWindowLabel((value as any).limit_window_seconds), value: (value as any).used_percent });
+      } else if (typeof value === "number" && /percent/i.test(key) && value >= 0 && value <= 100) {
+        bars.push({ label: (context ? context + " · " : "") + String(key).replace(/_/g, " "), value: value });
+      } else if (typeof value === "object") {
+        walk(value, /percent|ratio|window/i.test(key) ? context : String(key).replace(/_/g, " "), depth + 1);
+      }
+    }
+  };
+  walk(data, "", 0);
+  return bars;
+}
+
+/** OpenAI 订阅页（设置 → 账户 → OpenAI 订阅）：监控面板 + 多账号批量管理。 */
+function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice }: { activeProvider?: string; onActivate: (models: string[]) => Promise<void> | void; onNotice: (m: string) => void }) {
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [device, setDevice] = useState<{ url: string; code: string; raw?: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [working, setWorking] = useState("");
+  const [err, setErr] = useState("");
+  const [usageMap, setUsageMap] = useState<Record<string, string>>({});
+  const [manageOpen, setManageOpen] = useState(false);
+  const [manageEmail, setManageEmail] = useState("");
+  const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const [proxy, setProxy] = useState(() => localStorage.getItem("openai-proxy") ?? "");
+  const timerRef = useRef<number | null>(null);
+  const authOpenedRef = useRef(false);
+  const reload = useCallback(async () => {
+    try { setAccounts(await window.codex.openaiAccounts()); } catch { setAccounts([]); }
+  }, []);
+  const loadUsage = useCallback(async (email: string) => {
+    try {
+      const raw = JSON.stringify(await window.codex.openaiUsage({ email }), null, 1);
+      setUsageMap((m) => ({ ...m, [email]: raw }));
+    } catch (e: any) { setUsageMap((m) => ({ ...m, [email]: "ERR:" + (e.message ?? e) })); }
+  }, []);
+  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => () => { if (timerRef.current) window.clearInterval(timerRef.current); }, []);
+  // 账号列表加载后自动为每个账号拉一次额度
+  useEffect(() => {
+    const t = window.setTimeout(() => { accounts.forEach((a) => { if (!usageMap[a.email]) void loadUsage(a.email); }); }, 800);
+    return () => window.clearTimeout(t);
+  }, [accounts]);
+  // 浏览器打开一次即可（授权 URL 首次出现时触发）
+  const openAuthOnce = (url: string) => {
+    if (authOpenedRef.current || !url) return;
+    authOpenedRef.current = true;
+    void window.codex.openExternal(url).catch((e: any) => setErr("打开浏览器失败：" + (e.message ?? e) + "，请手动访问 " + url));
+  };
+  const startLogin = async () => {
+    setBusy(true); setErr("");
+    try {
+      const proxyValue = proxy.trim();
+      if (proxyValue) localStorage.setItem("openai-proxy", proxyValue); else localStorage.removeItem("openai-proxy");
+      await window.codex.openaiSetProxy(proxyValue).catch(() => undefined);
+      await window.codex.openaiLoginStart({ proxy: proxyValue || undefined });
+      const first = await window.codex.openaiLoginStatus();
+      setDevice({ url: first.url, code: first.code, raw: first.lines });
+      if (first.error) setErr("登录失败：" + first.error + "。OpenAI 有区域限制——请确认代理已开启（本机检测到 7897 端口代理，填 http://127.0.0.1:7897），或换正确端口后重试。");
+      openAuthOnce(first.url);
+      const startedAt = Date.now();
+      if (timerRef.current) window.clearInterval(timerRef.current);
+      timerRef.current = window.setInterval(async () => {
+        const s = await window.codex.openaiLoginStatus();
+        setDevice({ url: s.url, code: s.code, raw: s.lines });
+        openAuthOnce(s.url);
+        if (s.error && !s.childAlive && !s.loggedIn) {
+          if (timerRef.current) window.clearInterval(timerRef.current);
+          timerRef.current = null;
+          setErr("登录失败：" + s.error + "。OpenAI 有区域限制——请确认代理已开启后重试。");
+          setBusy(false);
+        }
+        if (s.loggedIn) {
+          if (timerRef.current) window.clearInterval(timerRef.current);
+          timerRef.current = null;
+          setDevice(null);
+          const saved = await window.codex.openaiCaptureLogin();
+          await reload();
+          // 登录即生效：写入 auth.json + 重启引擎 + 自动配置官方订阅模型，直接可对话
+          try {
+            await window.codex.openaiAccountSwitch(saved.id);
+            await onActivate(OFFICIAL_MODELS);
+            onNotice("OpenAI 账号已登录并启用订阅：" + saved.email + "，可以直接开始对话");
+          } catch (e: any) {
+            setErr("账号已保存，但自动启用失败：" + (e.message ?? e));
+          }
+        } else if (Date.now() - startedAt > 15 * 60_000) {
+          if (timerRef.current) window.clearInterval(timerRef.current);
+          timerRef.current = null;
+          void window.codex.openaiLoginCancel();
+        }
+      }, 2500);
+    } catch (e: any) { setErr("官方登录失败：" + (e.message ?? e)); } finally { setBusy(false); }
+  };
+  const switchAccount = async (id: string) => {
+    setWorking("sw" + id); setErr("");
+    try {
+      const r = await window.codex.openaiAccountSwitch(id);
+      onNotice("已切换官方账号：" + r.email + "，引擎已重启");
+    } catch (e: any) { setErr("切换失败：" + (e.message ?? e)); } finally { setWorking(""); }
+  };
+  const removeAccount = async (id: string) => {
+    setWorking("rm" + id); setErr("");
+    try { await window.codex.openaiAccountRemove(id); await reload(); onNotice("账号已删除"); } catch (e: any) { setErr("删除失败：" + (e.message ?? e)); } finally { setWorking(""); }
+  };
+  const enableSubscription = async (id: string) => {
+    setWorking("en" + id); setErr("");
+    try {
+      const r = await window.codex.openaiAccountSwitch(id);
+      await onActivate(OFFICIAL_MODELS);
+      onNotice("已启用 " + r.email + " 的 Codex 订阅");
+    } catch (e: any) { setErr("启用失败：" + (e.message ?? e)); } finally { setWorking(""); }
+  };
+  return (
+    <section className="settings-section stack relay-center openai-center">
+      <div className="settings-copy channel-heading"><div><h2>OpenAI 订阅监控</h2><p>多账号统一监控：每张卡片实时显示订阅档位、有效期与额度用量；切换账号即写入引擎并重启生效。登录与额度查询需要可访问 OpenAI 的网络（代理）。</p></div></div>
+      {err && <p className="relay-account-err"><AlertTriangle size={13} />{err}</p>}
+      <div className="relay-plan-grid openai-account-grid">
+        {accounts.map((a) => {
+          const usageRaw = usageMap[a.email];
+          let bars: { label: string; value: number }[] = [];
+          if (usageRaw && !usageRaw.startsWith("ERR:")) { try { bars = extractQuotaBars(JSON.parse(usageRaw)); } catch { bars = []; } }
+          const primary = bars[0];
+          return (
+            <div className={`relay-plan-card openai-account-card ${a.active ? "selected" : ""}`} key={a.id} onClick={() => { setManageEmail(a.email); setManageOpen(true); if (!usageRaw) void loadUsage(a.email); }} title="点卡片进入监控面板">
+              <div className="relay-plan-card-head">
+                <Bot size={15} />
+                <strong title={a.email}>{a.email || a.id}</strong>
+                {a.planType ? <span className="openai-plan-badge">{a.planType.toUpperCase()}</span> : null}
+                {a.active && <span className="relay-plan-live"><Check size={11} />使用中</span>}
+              </div>
+              <p className="openai-sub-line">订阅{a.subscriptionUntil ? "至 " + a.subscriptionUntil.slice(0, 10) : "生效中"} · {new Date(a.savedAt).toLocaleString()} 登录</p>
+              {primary ? (
+                <div className="openai-quota-bar">
+                  <div className="openai-quota-bar-label"><span>{primary.label}</span><b>{Math.round(primary.value)}%</b></div>
+                  <div className="relay-plan-progress"><i style={{ width: Math.min(100, primary.value) + "%" }} /></div>
+                </div>
+              ) : <p className="openai-sub-line">点卡片查看额度监控面板</p>}
+              <div className="relay-plan-card-foot">
+                <span className="relay-plan-live openai-card-hint"><CircleGauge size={11} />监控面板</span>
+                {!a.active && <button className="secondary-setting" disabled={working !== ""} onClick={(event) => { event.stopPropagation(); void enableSubscription(a.id); }}>{working === "en" + a.id ? <Spinner /> : <Play size={13} />}启用订阅</button>}
+              </div>
+            </div>
+          );
+        })}
+        {!accounts.length && <div className="relay-plan-card"><div className="relay-plan-card-head"><Bot size={15} /><strong>暂无已保存账号</strong></div><p>点下方「添加 OpenAI 账号」，ChatGPT 设备码登录，可添加多个统一监控。</p></div>}
+        <button className="relay-plan-card relay-add-card" onClick={() => setLoginModalOpen(true)}>
+          <Plus size={18} />
+          <strong>添加 OpenAI 账号</strong>
+          <small>ChatGPT 设备码登录 · 自动启用订阅</small>
+        </button>
+      </div>
+      {manageOpen && (() => {
+        const a = accounts.find((x) => x.email === manageEmail);
+        if (!a) return null;
+        const usageRaw = usageMap[a.email];
+        let bars: { label: string; value: number }[] = [];
+        if (usageRaw && !usageRaw.startsWith("ERR:")) { try { bars = extractQuotaBars(JSON.parse(usageRaw)); } catch { bars = []; } }
+        return (
+          <div className="relay-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setManageOpen(false); }}>
+            <div className="relay-manage-modal">
+              <div className="relay-keys-head">
+                <strong className="relay-modal-title"><Bot size={15} />{a.email || a.id}</strong>
+                {a.planType ? <span className="openai-plan-badge">{a.planType.toUpperCase()}</span> : null}
+                {a.active && <span className="relay-plan-live"><Check size={11} />使用中</span>}
+                <button className="icon-button relay-modal-close" title="关闭" onClick={() => setManageOpen(false)}><X size={15} /></button>
+              </div>
+              <p className="openai-sub-line">订阅{a.subscriptionUntil ? "至 " + a.subscriptionUntil.slice(0, 10) : "生效中"} · {new Date(a.savedAt).toLocaleString()} 登录 · 额度与官方实时同步</p>
+              {usageRaw && !usageRaw.startsWith("ERR:") && bars.length > 0 && (
+                <div className="openai-quota-bars">
+                  {bars.map((bar) => (
+                    <div className="openai-quota-bar" key={bar.label}>
+                      <div className="openai-quota-bar-label"><span>{bar.label}</span><b>{Math.round(bar.value)}%</b></div>
+                      <div className="relay-plan-progress"><i style={{ width: Math.min(100, bar.value) + "%" }} /></div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {usageRaw && !usageRaw.startsWith("ERR:") && bars.length === 0 && <p className="openai-sub-line">官方未返回百分比额度数据（可能尚未产生用量）。</p>}
+              {usageRaw && usageRaw.startsWith("ERR:") && <p className="openai-sub-line openai-quota-err">{usageRaw.slice(4)}</p>}
+              <div className="relay-plan-card-foot">
+                <button className="secondary-setting" disabled={working !== ""} onClick={() => void loadUsage(a.email)}><RefreshCw size={13} />刷新额度</button>
+                {a.active
+                  ? <button className="secondary-setting" disabled={working !== ""} onClick={() => void onActivate(OFFICIAL_MODELS)}>{working === "en" + a.id ? <Spinner /> : <Play size={13} />}重新启用</button>
+                  : <button className="secondary-setting" disabled={working !== ""} onClick={() => void enableSubscription(a.id)}>{working === "en" + a.id ? <Spinner /> : <Play size={13} />}启用订阅</button>}
+                <button className="secondary-setting relay-account-remove" title="删除账号" disabled={working !== ""} onClick={() => void removeAccount(a.id)}><LogOut size={13} /></button>
+              </div>
+              <p className="relay-center-foot">启用 = 写入引擎并重启生效，直接可对话；额度数据来自 chatgpt.com 后端（wham/usage）。</p>
+            </div>
+          </div>
+        );
+      })()}
+      {loginModalOpen && (
+        <div className="relay-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setLoginModalOpen(false); }}>
+          <div className="relay-manage-modal relay-login-modal">
+            <div className="relay-keys-head">
+              <strong className="relay-modal-title"><LogIn size={15} />添加 OpenAI 账号</strong>
+              <small>设备码登录 · 自动收进账号库并启用订阅</small>
+              <button className="icon-button relay-modal-close" title="关闭" onClick={() => setLoginModalOpen(false)}><X size={15} /></button>
+            </div>
+            <p className="openai-sub-line">点击登录后浏览器会打开 OpenAI 授权页，输入验证码即可；登录成功自动启用订阅并进入可用状态。OpenAI 有区域限制，需要可访问 OpenAI 的网络（代理）。</p>
+            <div className="relay-key-form openai-add-row">
+              <input value={proxy} onChange={(e) => setProxy(e.target.value)} placeholder="代理地址（可选，如 http://127.0.0.1:7897）" />
+              <button className="primary-setting" disabled={busy} onClick={() => void startLogin()}>{busy ? <><Spinner />等待浏览器登录…</> : <><LogIn size={14} />设备码登录</>}</button>
+            </div>
+            {device && (
+              <div className="official-device openai-device-panel">
+                {device.url && <>浏览器已打开授权页，输入验证码：<b>{device.code || "见下方引擎输出"}</b></>}
+                {!device.url && "正在向 OpenAI 申请设备验证码…"}
+                {device.raw ? <pre className="official-usage">{device.raw}</pre> : null}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+function RelayBalanceBadge({ activeProvider }: { activeProvider?: string }) {
+  const [open, setOpen] = useState(false);
+  const [overview, setOverview] = useState<any>(null);
+  const [err, setErr] = useState("");
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const active = useMemo(() => { try { return JSON.parse(localStorage.getItem("relay-active-v1") ?? "null"); } catch { return null; } }, [activeProvider]);
+  const refresh = useCallback(() => {
+    window.codex.relayOverview().then((data) => { setOverview(data); setErr(""); }).catch((e) => setErr(e.message ?? "加载失败"));
+  }, []);
+  useEffect(() => {
+    if (!active || activeProvider !== active.provider) return;
+    refresh();
+    const timer = window.setInterval(refresh, 5 * 60_000);
+    return () => window.clearInterval(timer);
+  }, [active?.provider, activeProvider, refresh]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) setOpen(false); };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+  if (!active || activeProvider !== active.provider) return null;
+  const subs: any[] = overview?.subscriptions ?? [];
+  const current = subs.find((s) => s.group_id === active.groupId);
+  let label = "中转站";
+  if (active.mode === "balance") {
+    label = overview ? `余额 $${Number(overview.balance).toFixed(2)}` : "余额 …";
+  } else if (current) {
+    const limit = current.monthly_limit_usd ?? current.daily_limit_usd ?? 0;
+    const used = current.monthly_used_usd ?? current.daily_used_usd ?? 0;
+    label = overview ? `${shortGroupName(current.group_name, 12)} 剩 $${Math.max(0, limit - used).toFixed(2)}` : "套餐 …";
+  } else if (overview) {
+    // 该分组没有生效订阅：用量按量从账户余额扣（如站方把 key 分组清掉、或选了非订阅分组的老 key）
+    label = overview ? `余额 $${Number(overview.balance).toFixed(2)}` : "余额 …";
+  }
+  return <div className="relay-badge" ref={wrapRef}>
+    <button type="button" className="context-ring relay-badge-btn" title="中转站余额" aria-label="中转站余额" onClick={() => { setOpen((v) => !v); if (!overview) refresh(); }}>
+      <Wallet size={13} /><small>{err ? "余额同步失败" : label}</small>
+    </button>
+    {open && <div className="ctx-pop relay-pop" role="dialog" aria-label="中转站余额明细" onMouseLeave={() => setOpen(false)}>
+      <div className="ctx-pop-head"><strong>{active.label || "中转站"}</strong></div>
+      <div className="ctx-pop-sub">{overview?.email || ""}{err ? ` · ${err}` : ""}{active.apiKey ? ` · 密钥 …${active.apiKey.slice(-6)}` : ""}</div>
+      <div className="ctx-pop-grid">
+        <div className="ctx-pop-cell"><span className="ctx-pop-cell-label">账户余额</span><b className="ctx-pop-cell-value">{overview ? `$${Number(overview.balance).toFixed(2)}` : "…"}</b></div>
+        {subs.map((s) => {
+          const values = [
+            s.monthly_limit_usd != null ? `月剩 $${Math.max(0, s.monthly_limit_usd - (s.monthly_used_usd ?? 0)).toFixed(2)}` : "",
+            s.weekly_limit_usd != null ? `周剩 $${Math.max(0, s.weekly_limit_usd - (s.weekly_used_usd ?? 0)).toFixed(2)}` : "",
+          ].filter(Boolean).join(" · ");
+          return (
+            <div className="ctx-pop-cell" key={s.id}>
+              <span className="ctx-pop-cell-label" title={`${s.group_name ?? ""}${s.expires_at ? `（至 ${String(s.expires_at).slice(0, 10)}）` : ""}`}>{shortGroupName(s.group_name, 18)}{s.expires_at ? ` · ${String(s.expires_at).slice(5, 10)}` : ""}</span>
+              <b className="ctx-pop-cell-value">{values || "生效中"}</b>
+            </div>
+          );
+        })}
+      </div>
+      <p className="ctx-pop-cache-note">设置 → 账户 → 中转站 可切换账号、套餐或密钥。</p>
+    </div>}
+  </div>;
+}
+
+/** 模型设置页里的中转站精简入口：显示当前绑定状态，点击进独立中转站页。 */
+function RelayAccountEntryBanner({ active, onOpen }: { active: { label: string } | null; onOpen: () => void }) {
+  return (
+    <button type="button" className="relay-entry-banner" onClick={onOpen}>
+      <Wallet size={14} />
+      <span>{active ? <>中转站账户 · 当前使用 <b>{active.label}</b></> : "中转站账户 · 登录后同步余额与订阅套餐，一键接入"}</span>
+      <ChevronRight size={14} />
+    </button>
+  );
+}
+
+/** 中转站中心页（设置 → 中转站）：余额总览 + 套餐卡片 + 登录/退出 + 一键切换计费方式。 */
+function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenModelSettings }: { busy: boolean; activeProvider?: string; onActivate: (mode: "balance" | "plan", group?: { group_id: number; group_name: string }, explicitKey?: { id: any; name: any; key: string; group_id: number | null }) => Promise<void> | void; onNotice: (m: string) => void; onOpenModelSettings: () => void }) {
+  const [account, setAccount] = useState<{ baseUrl: string; email: string } | null>(null);
+  const [draft, setDraft] = useState({ baseUrl: "https://api.pptoken.cc", email: "", password: "" });
+  const [overview, setOverview] = useState<any>(null);
+  const [err, setErr] = useState("");
+  const [working, setWorking] = useState("");
+  const active = readRelayActive();
+  const isActiveProvider = Boolean(active && activeProvider === active.provider);
+  const [refreshing, setRefreshing] = useState(false);
+  const load = useCallback(async (silent = true) => {
+    if (!silent) setRefreshing(true);
+    try {
+      const acc = await window.codex.relayLoadAccount();
+      if (acc?.loggedIn) {
+        setAccount({ baseUrl: acc.baseUrl, email: acc.email });
+        try {
+          setOverview(await window.codex.relayOverview());
+          setErr("");
+          if (!silent) onNotice("已刷新余额与套餐");
+        } catch (e: any) {
+          // 保留旧数据不闪空，错误显示在页面
+          setErr(e.message ?? "刷新失败");
+        }
+      } else if (acc) setDraft((d) => ({ ...d, baseUrl: acc.baseUrl, email: acc.email }));
+    } catch { /* 未登录过 */ } finally { if (!silent) setRefreshing(false); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  // 账户列表（多账号管理）
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const reloadAccounts = useCallback(async () => {
+    try { setAccounts(await window.codex.relayAccounts()); } catch { setAccounts([]); }
+  }, []);
+  useEffect(() => { void reloadAccounts(); }, [reloadAccounts]);
+  // 登录/切换账号后自动配置模型：已选中 key 优先 → 第一个套餐 → 余额（参数同步内置规格表在 onActivate 链路内）
+  const autoConfigure = async () => {
+    const ov = await window.codex.relayOverview().catch(() => null);
+    setOverview(ov);
+    // 简单规则：有生效订阅 → 用第一个订阅套餐；没有 → 走余额计费。
+    // 匹配不到可复用的 key 时激活链路会自动新建（Harness-套餐名/Harness-余额），站点强制绑分组时自动改绑重试。
+    const subs: any[] = ov?.subscriptions ?? [];
+    try {
+      if (subs.length) {
+        await onActivate("plan", { group_id: Number(subs[0].group_id), group_name: String(subs[0].group_name ?? "套餐") });
+      } else {
+        await onActivate("balance");
+      }
+      setOverview(await window.codex.relayOverview().catch(() => ov));
+    } catch (e: any) {
+      setErr("模型自动配置失败：" + (e.message ?? e) + "。可在下方密钥列表手动选择一把 key 重试。");
+    }
+  };
+  const login = async () => {
+    setWorking("login"); setErr("");
+    try {
+      await window.codex.relayLogin({ baseUrl: draft.baseUrl, email: draft.email, password: draft.password });
+      setDraft((d) => ({ ...d, password: "" }));
+      const acc = await window.codex.relayLoadAccount();
+      if (acc?.loggedIn) {
+        setAccount({ baseUrl: acc.baseUrl, email: acc.email });
+        onNotice("中转站登录成功，正在自动配置模型…");
+        setLoginModalOpen(false);
+        void reloadAccounts();
+        await autoConfigure();
+      }
+    } catch (e: any) { setErr(e.message ?? "登录失败"); } finally { setWorking(""); }
+  };
+  const switchAccount = async (id: string) => {
+    setWorking(`acc${id}`); setErr("");
+    try {
+      const r = await window.codex.relaySwitchAccount(id);
+      const acc = await window.codex.relayLoadAccount();
+      if (acc?.loggedIn) setAccount({ baseUrl: acc.baseUrl, email: acc.email });
+      onNotice(`已切换账号：${r.email}`);
+      await reloadAccounts();
+      await autoConfigure();
+    } catch (e: any) { setErr("切换账号失败：" + (e.message ?? e)); } finally { setWorking(""); }
+  };
+  const removeAccount = async (id: string) => {
+    setWorking(`acc${id}`); setErr("");
+    try {
+      const r = await window.codex.relayRemoveAccount(id);
+      onNotice("账号已删除");
+      const acc = await window.codex.relayLoadAccount();
+      if (acc?.loggedIn && r.activeId) {
+        setAccount({ baseUrl: acc.baseUrl, email: acc.email });
+        await reloadAccounts();
+        await autoConfigure();
+      } else {
+        setAccount(null); setOverview(null);
+        writeRelayActive(null);
+        await reloadAccounts();
+      }
+    } catch (e: any) { setErr("删除账号失败：" + (e.message ?? e)); } finally { setWorking(""); }
+  };
+  // 点账号卡片：非当前账号先切换（自动重配），再打开管理弹窗
+  const openManage = async (a: any) => {
+    if (!a.active) await switchAccount(a.id);
+    setManageOpen(true);
+    await load(false);
+    void loadKeyGroups();
+  };
+  const logout = async () => {
+    await window.codex.relayLogout();
+    const acc = await window.codex.relayLoadAccount();
+    if (acc?.loggedIn) {
+      // 还有其他账号：自动切到剩余的第一个并重新配置
+      setAccount({ baseUrl: acc.baseUrl, email: acc.email });
+      onNotice("已退出当前账号，已切换到剩余账号并重新配置");
+      await reloadAccounts();
+      await autoConfigure();
+    } else {
+      writeRelayActive(null);
+      setAccount(null); setOverview(null);
+      await reloadAccounts();
+      onNotice("已退出中转站账户（生成的供应商保留，可在模型设置里删除）");
+    }
+  };
+  const switchTarget = async (mode: "balance" | "plan", group?: { group_id: number; group_name: string }, explicitKey?: { id: any; name: any; key: string; group_id: number | null }) => {
+    setWorking(mode + (group?.group_id ?? "") + (explicitKey ? `key${explicitKey.id}` : "")); setErr("");
+    try {
+      await onActivate(mode, group, explicitKey);
+    } catch (e: any) {
+      setErr("切换失败：" + (e.message ?? e)); // 常驻显示在页面，不再只靠几秒的 toast
+    } finally { setWorking(""); }
+    setOverview(await window.codex.relayOverview().catch(() => null));
+  };
+  const subs: any[] = overview?.subscriptions ?? [];
+  const progress = (used: number, limit: number) => Math.min(100, Math.max(2, limit > 0 ? (used / limit) * 100 : 4));
+  // 密钥管理区状态
+  const [showKeyForm, setShowKeyForm] = useState(false);
+  const [newKey, setNewKey] = useState({ name: "", groupId: "" });
+  const [creatingKey, setCreatingKey] = useState(false);
+  // 全部账号的密钥（按账户分组，支持折叠）
+  const [keyGroups, setKeyGroups] = useState<any[]>([]);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [keysCollapsed, setKeysCollapsed] = useState(false); // 弹窗内密钥区折叠
+  const loadKeyGroups = useCallback(async () => {
+    try {
+      const groups = await window.codex.relayKeysAll();
+      setKeyGroups(groups);
+      setCollapsedGroups((prev) => {
+        const next: Record<string, boolean> = {};
+        for (const g of groups) next[g.id] = prev[g.id] ?? !g.active; // 默认只展开当前账号
+        return next;
+      });
+    } catch { setKeyGroups([]); }
+  }, []);
+  useEffect(() => { void loadKeyGroups(); }, [loadKeyGroups]);
+  const groupNameOf = (gid: any) => {
+    if (gid == null) return "无分组";
+    const sub = (overview?.subscriptions ?? []).find((s: any) => Number(s.group_id) === Number(gid));
+    if (sub) return String(sub.group_name ?? `分组 ${gid}`);
+    const g = (overview?.groups ?? []).find((x: any) => Number(x.group_id ?? x.id) === Number(gid));
+    return String(g?.group_name ?? g?.name ?? `分组 ${gid}`);
+  };
+  const createKey = async () => {
+    setCreatingKey(true); setErr("");
+    try {
+      await window.codex.relayCreateKey({ name: newKey.name.trim(), groupId: newKey.groupId ? Number(newKey.groupId) : null });
+      setNewKey({ name: "", groupId: "" }); setShowKeyForm(false);
+      setOverview(await window.codex.relayOverview().catch(() => null));
+      void loadKeyGroups();
+      onNotice("密钥已创建");
+    } catch (e: any) { setErr("创建密钥失败：" + (e.message ?? e)); } finally { setCreatingKey(false); }
+  };
+  const useKeyFromGroup = async (group: any, k: any) => {
+    // 非当前账号的 key：先切到该账号再激活（激活链路会用该账号网关+这把 key）
+    try {
+      if (!group.active) await window.codex.relaySwitchAccount(group.id);
+      await switchTarget(k.group_id != null ? "plan" : "balance", k.group_id != null ? { group_id: Number(k.group_id), group_name: shortGroupName(k.group_name ?? k.group_id, 16) } : undefined, { id: k.id, name: k.name, key: String(k.key ?? ""), group_id: k.group_id ?? null });
+      void loadKeyGroups();
+    } catch { /* switchTarget 已常驻报错 */ }
+  };
+  // 当前生效密钥：按已选 keyId / 计费方式与分组从密钥列表匹配（与 resolveRelayTarget 同规则）
+  const [keyVisible, setKeyVisible] = useState(false);
+  const currentKey = useMemo(() => {
+    if (!overview) return null;
+    const keys: any[] = overview.keys ?? [];
+    if (overview.selectedKeyId != null) {
+      const byId = keys.find((k) => k.id === overview.selectedKeyId);
+      if (byId) return byId;
+    }
+    if (overview.selectedMode === "plan" && overview.selectedGroupId != null) return keys.find((k) => k.status === "active" && k.group_id === overview.selectedGroupId) ?? null;
+    if (overview.selectedMode === "balance") return keys.find((k) => k.status === "active" && k.group_id == null) ?? null;
+    return null;
+  }, [overview]);
+  const maskKey = (key: string) => key.length > 14 ? `${key.slice(0, 10)}••••••••${key.slice(-4)}` : key;
+  return (
+    <section className="settings-section stack relay-center">
+      <div className="settings-copy channel-heading"><div><h2>中转站</h2><p>每个中转站账号一张卡片：点卡片进入该账号的管理面板（余额总览、订阅套餐、密钥管理），所有操作即时生效；聊天输入框旁会实时显示当前余量。</p></div></div>
+      {err && <p className="relay-account-err"><AlertTriangle size={13} />{err}</p>}
+      <div className="relay-plan-grid relay-home-grid">
+        {accounts.map((a) => {
+          const group = keyGroups.find((g) => g.id === a.id);
+          const keyCount = group ? (group.keys ?? []).length : null;
+          return (
+            <div className={`relay-plan-card relay-account-card ${a.active ? "selected" : ""}`} key={a.id} onClick={() => void openManage(a)} title="点卡片进入管理面板">
+              <div className="relay-plan-card-head">
+                <span className="relay-key-status" data-status={a.loggedIn && !group?.error ? "on" : "off"} />
+                <strong title={a.email}>{a.email}</strong>
+                {a.active && <span className="relay-plan-live"><Check size={11} />使用中</span>}
+              </div>
+              <p>{String(a.baseUrl || "").replace(/^https?:\/\//, "")}</p>
+              <p>{keyCount == null ? "密钥未读取" : `${keyCount} 把密钥`}{a.selectedKeyName ? ` · 当前 ${a.selectedKeyName}` : ""}</p>
+              <div className="relay-plan-card-foot">
+                {a.active
+                  ? <span className="relay-plan-live"><Check size={11} />当前生效</span>
+                  : <button className="secondary-setting" disabled={working !== ""} onClick={(event) => { event.stopPropagation(); void switchAccount(a.id); }}>{working === `acc${a.id}` ? <Spinner /> : <Play size={13} />}设为当前</button>}
+                <button className="secondary-setting" onClick={(event) => { event.stopPropagation(); void openManage(a); }}><Settings2 size={13} />管理</button>
+                <button className="secondary-setting relay-account-remove" title="删除账号" disabled={working !== ""} onClick={(event) => { event.stopPropagation(); void removeAccount(a.id); }}><LogOut size={13} /></button>
+              </div>
+            </div>
+          );
+        })}
+        <button className="relay-plan-card relay-add-card" onClick={() => setLoginModalOpen(true)}>
+          <Plus size={18} />
+          <strong>添加中转站账号</strong>
+          <small>支持任意 sub2api 网关，登录后余额与套餐一键接入</small>
+        </button>
+      </div>
+      <p className="relay-center-foot">{isActiveProvider ? <>当前生效供应商「{active!.label}」，输入框旁的余额徽标实时同步；点上方卡片进入各账号的管理面板。</> : <>尚无生效供应商：点账号卡片进入管理面板，选套餐或密钥即可自动生成并切换。</>}</p>
+      {manageOpen && account && (
+        <div className="relay-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setManageOpen(false); }}>
+          <div className="relay-manage-modal">
+            <div className="relay-keys-head">
+              <strong className="relay-modal-title"><Wallet size={15} />{account.email}</strong>
+              <small>{account.baseUrl}</small>
+              <button className="icon-button relay-modal-close" title="关闭" onClick={() => setManageOpen(false)}><X size={15} /></button>
+            </div>
+            <div className="relay-hero">
+              <div className="relay-hero-main">
+                <small>账户余额（USD）</small>
+                <strong>{overview ? `$${Number(overview.balance).toFixed(2)}` : "…"}</strong>
+                <span>{overview?.email || account.email} · {account.baseUrl}</span>
+                {currentKey && (
+                  <span className="relay-hero-key">
+                    <em>当前密钥{currentKey.name ? `（${currentKey.name}）` : ""}</em>
+                    <code>{keyVisible ? currentKey.key : maskKey(currentKey.key)}</code>
+                    <button type="button" className="icon-button" title={keyVisible ? "隐藏密钥" : "显示密钥"} onClick={() => setKeyVisible((v) => !v)}>{keyVisible ? <EyeOff size={12} /> : <Eye size={12} />}</button>
+                    <button type="button" className="icon-button" title="复制密钥" onClick={async () => { try { await navigator.clipboard.writeText(currentKey.key); onNotice("当前密钥已复制"); } catch { onNotice("复制失败，请手动选择复制"); } }}><Copy size={12} /></button>
+                  </span>
+                )}
+              </div>
+              <div className="relay-hero-actions">
+                <button className="icon-button" title="刷新余额与套餐" disabled={refreshing} onClick={() => void load(false)}>{refreshing ? <Spinner /> : <RefreshCw size={14} />}</button>
+                <button className="secondary-setting" onClick={() => onOpenModelSettings()}><Bot size={13} />模型配置</button>
+                <button className="secondary-setting" onClick={() => void logout()}><LogOut size={13} />退出登录</button>
+              </div>
+            </div>
+            {overview?.selectedMode && !isActiveProvider && <p className="relay-account-err"><AlertTriangle size={13} />上次切换没有完成（供应商未生成）：点下方套餐卡或密钥的「使用」重新激活即可。</p>}
+            <div className="relay-plan-grid">
+              {subs.map((s) => {
+                const limit = s.monthly_limit_usd ?? s.daily_limit_usd ?? 0;
+                const used = s.monthly_used_usd ?? s.daily_used_usd ?? 0;
+                const isSelected = isActiveProvider && overview?.selectedMode === "plan" && overview?.selectedGroupId === s.group_id;
+                return (
+                  <div className={`relay-plan-card ${isSelected ? "selected" : ""}`} key={s.id}>
+                    <div className="relay-plan-card-head"><FolderTree size={15} /><strong title={s.group_name}>{shortGroupName(s.group_name, 16)}</strong>{isSelected && <span className="relay-plan-live"><Check size={11} />使用中</span>}</div>
+                    <div className="relay-plan-progress"><i style={{ width: `${progress(Number(used), Number(limit))}%` }} /></div>
+                    <p>已用 ${Number(used).toFixed(2)}{limit ? ` / 月上限 $${Number(limit).toFixed(2)}` : ""}{s.expires_at ? ` · 到期 ${String(s.expires_at).slice(0, 10)}` : ""}</p>
+                    <div className="relay-plan-card-foot">
+                      <small>{limit ? `剩余 $${Math.max(0, Number(limit) - Number(used)).toFixed(2)}` : "生效中"}</small>
+                      <button className="secondary-setting" disabled={busy || working !== ""} onClick={() => void switchTarget("plan", { group_id: Number(s.group_id), group_name: String(s.group_name ?? "套餐") })}>{working === `plan${s.group_id}` ? <Spinner /> : isSelected ? <Check size={13} /> : <Play size={13} />}使用此套餐</button>
+                    </div>
+                  </div>
+                );
+              })}
+              {!subs.length && <div className="relay-plan-card"><div className="relay-plan-card-head"><FolderTree size={15} /><strong>暂无生效中的套餐</strong></div><p>可在中转站官网购买订阅套餐，购买后点「刷新」同步；或直接在下方「API 密钥」里选一把 key 使用（按量从余额扣）。</p></div>}
+            </div>
+            <div className="relay-keys-card">
+              <div className="relay-keys-head">
+                <button type="button" className="relay-keys-toggle" onClick={() => setKeysCollapsed((v) => !v)}>
+                  {keysCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+                  <strong>API 密钥</strong>
+                  <small>本账号的密钥 · 选一把即生成供应商并切换</small>
+                </button>
+                <button className="secondary-setting" onClick={() => setShowKeyForm((v) => !v)}>{showKeyForm ? "收起" : <><Plus size={13} />新建密钥</>}</button>
+              </div>
+              {showKeyForm && (
+                <div className="relay-key-form">
+                  <input value={newKey.name} onChange={(event) => setNewKey({ ...newKey, name: event.target.value })} placeholder="密钥名称（如 Harness-主力）" />
+                  <select value={newKey.groupId} onChange={(event) => setNewKey({ ...newKey, groupId: event.target.value })}>
+                    <option value="">无分组（部分站点不支持）</option>
+                    {(overview?.groups ?? []).map((g: any) => <option key={g.group_id ?? g.id} value={String(g.group_id ?? g.id)}>{g.group_name ?? g.name ?? `分组 ${g.group_id ?? g.id}`}</option>)}
+                    {(overview?.subscriptions ?? []).filter((s: any) => !(overview?.groups ?? []).some((g: any) => Number(g.group_id ?? g.id) === Number(s.group_id))).map((s: any) => <option key={s.group_id} value={String(s.group_id)}>{s.group_name}（订阅分组）</option>)}
+                  </select>
+                  <button className="primary-setting" disabled={creatingKey || !newKey.name.trim()} onClick={() => void createKey()}>{creatingKey ? <Spinner /> : <Plus size={13} />}创建</button>
+                </div>
+              )}
+              {!keysCollapsed && (
+                <>
+              {showKeyForm && (
+                <div className="relay-key-form">
+                  <input value={newKey.name} onChange={(event) => setNewKey({ ...newKey, name: event.target.value })} placeholder="密钥名称（如 Harness-主力）" />
+                  <select value={newKey.groupId} onChange={(event) => setNewKey({ ...newKey, groupId: event.target.value })}>
+                    <option value="">无分组（部分站点不支持）</option>
+                    {(overview?.groups ?? []).map((g: any) => <option key={g.group_id ?? g.id} value={String(g.group_id ?? g.id)}>{g.group_name ?? g.name ?? `分组 ${g.group_id ?? g.id}`}</option>)}
+                    {(overview?.subscriptions ?? []).filter((s: any) => !(overview?.groups ?? []).some((g: any) => Number(g.group_id ?? g.id) === Number(s.group_id))).map((s: any) => <option key={s.group_id} value={String(s.group_id)}>{s.group_name}（订阅分组）</option>)}
+                  </select>
+                  <button className="primary-setting" disabled={creatingKey || !newKey.name.trim()} onClick={() => void createKey()}>{creatingKey ? <Spinner /> : <Plus size={13} />}创建</button>
+                </div>
+              )}
+              {(() => {
+                const group = keyGroups.find((g) => g.active) ?? keyGroups[0];
+                if (!group) return <p className="relay-key-empty">暂无账号密钥。</p>;
+                const rows = [...(group.keys ?? [])].reverse();
+                return (
+                  <div className="relay-key-list">
+                    {group.error && <p className="relay-key-empty">读取失败：{group.error}</p>}
+                    {rows.map((k: any) => {
+                      const isCurrent = Boolean(active?.apiKey && k.key && String(k.key) === String(active.apiKey));
+                      return (
+                        <div className={`relay-key-row ${isCurrent ? "current" : ""}`} key={k.id}>
+                          <span className="relay-key-status" data-status={k.status === "active" ? "on" : "off"} title={k.status} />
+                          <span className="relay-key-name" title={k.name}>{k.name || `密钥 #${k.id}`}</span>
+                          <code className="relay-key-tail">{String(k.key ?? "").slice(0, 6)}••••{String(k.key ?? "").slice(-4)}</code>
+                          <small className="relay-key-group">{groupNameOf(k.group_id)}</small>
+                          {isCurrent
+                            ? <span className="relay-plan-live"><Check size={11} />使用中</span>
+                            : <button className="secondary-setting" disabled={busy || working !== ""} onClick={() => void useKeyFromGroup(group, k)}>{working === `key${k.id}` ? <Spinner /> : <Play size={13} />}使用</button>}
+                        </div>
+                      );
+                    })}
+                    {!rows.length && !group.error && <p className="relay-key-empty">该账号暂无密钥，点上方「新建密钥」创建。</p>}
+                  </div>
+                );
+              })()}
+                </>
+              )}
+            </div>
+            <p className="relay-center-foot">{isActiveProvider ? <>当前供应商即中转站生成的「{active!.label}」，输入框旁的余额徽标实时同步。</> : <>点套餐卡的「使用此套餐」或密钥列表的「使用」，会自动生成供应商并切换，无需手动去模型设置新增。</>}</p>
+          </div>
+        </div>
+      )}
+      {loginModalOpen && (
+        <div className="relay-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setLoginModalOpen(false); }}>
+          <div className="relay-manage-modal relay-login-modal">
+            <div className="relay-keys-head">
+              <strong className="relay-modal-title"><Wallet size={15} />登录中转站</strong>
+              <small>sub2api 站点账号密码，余额与套餐一键接入</small>
+              <button className="icon-button relay-modal-close" title="关闭" onClick={() => setLoginModalOpen(false)}><X size={15} /></button>
+            </div>
+            <label className="se-field"><span>站点地址</span><input value={draft.baseUrl} onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })} placeholder="https://api.pptoken.cc" /></label>
+            <label className="se-field"><span>邮箱</span><input value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} placeholder="你在中转站的账号邮箱" /></label>
+            <label className="se-field"><span>密码</span><input type="password" value={draft.password} onChange={(event) => setDraft({ ...draft, password: event.target.value })} placeholder="账号密码" onKeyDown={(event) => { if (event.key === "Enter" && draft.email && draft.password) void login(); }} /></label>
+            <button className="primary-setting relay-login-btn" disabled={working === "login" || !draft.email || !draft.password} onClick={() => void login()}>{working === "login" ? <><Spinner />正在登录…</> : <><LogIn size={15} />登录并自动配置</>}</button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
 function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction }: { tokenUsage?: any; fallbackWindow?: number; recentCompaction?: boolean }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -3426,7 +4380,7 @@ function SshExecModal({ server, onClose }: { server: SshServer; onClose: () => v
             <span><TerminalSquare size={17} /></span>
             <div><strong>在「{server.name}」上运行命令</strong><p>{server.username}@{server.host}{server.port !== 22 ? `:${server.port}` : ""} · 一次性执行，超时 30 秒</p></div>
           </div>
-          <button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button>
+          <button className="icon-button relay-modal-close" title="关闭" onClick={onClose}><X size={16} /></button>
         </header>
         <div className="connector-form">
           <label><span>命令 <small>Ctrl+Enter 运行</small></span>
@@ -3605,7 +4559,7 @@ function ConnectorSetupModal({ draft, secret, saving, onDraftChange, onSecretCha
   const changeTransport = (transport: ConnectorDraft["transport"]) => onDraftChange({ ...draft, transport });
   const save = () => onSave({ ...draft, secrets: secret.trim() ? { MCP_TOKEN: secret.trim() } : {} });
   return <div className="modal-backdrop connector-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="connector-setup-modal" role="dialog" aria-modal="true" aria-label="添加 MCP 连接器">
-    <header><div className="connector-setup-title"><span><Link2 size={17} /></span><div><strong>添加 MCP 连接器</strong><p>填写服务提供方给出的连接信息，保存后会自动重启引擎并校验状态。</p></div></div><button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button></header>
+    <header><div className="connector-setup-title"><span><Link2 size={17} /></span><div><strong>添加 MCP 连接器</strong><p>填写服务提供方给出的连接信息，保存后会自动重启引擎并校验状态。</p></div></div><button className="icon-button relay-modal-close" title="关闭" onClick={onClose}><X size={16} /></button></header>
     <div className="connector-setup-steps"><span className="active">1 选择方式</span><i /><span>2 填写连接</span><i /><span>3 保存并验证</span></div>
     <div className="connector-transport-cards"><button type="button" className={draft.transport === "stdio" ? "active" : ""} onClick={() => changeTransport("stdio")}><TerminalSquare size={18} /><b>本地命令</b><small>适用于 npm、uvx、Docker 或已安装的 MCP 服务。</small></button><button type="button" className={draft.transport === "streamable_http" ? "active" : ""} onClick={() => changeTransport("streamable_http")}><Globe2 size={18} /><b>远程 HTTP</b><small>适用于服务商提供的 HTTPS MCP 地址和令牌。</small></button></div>
     <div className="connector-form"><label><span>连接器名称 <em>必填</em></span><input autoFocus value={draft.name} onChange={(event) => onDraftChange({ ...draft, name: event.target.value })} placeholder="例如：GitHub MCP" /></label>{draft.transport === "stdio" ? <><label><span>启动命令 <em>必填</em></span><input value={draft.command ?? ""} onChange={(event) => onDraftChange({ ...draft, command: event.target.value })} placeholder="例如：npx" /></label><label><span>命令参数 <small>可选，按空格分隔</small></span><input value={(draft.args ?? []).join(" ")} onChange={(event) => onDraftChange({ ...draft, args: event.target.value.trim() ? event.target.value.trim().split(/\s+/) : [] })} placeholder="例如：-y @modelcontextprotocol/server-github" /></label><div className="connector-example"><Info size={14} /><span>示例：<code>npx -y @modelcontextprotocol/server-github</code></span></div></> : <><label><span>MCP 服务地址 <em>必填</em></span><input value={draft.url ?? ""} onChange={(event) => onDraftChange({ ...draft, url: event.target.value })} placeholder="https://service.example.com/mcp" /></label><div className="connector-example"><Info size={14} /><span>请粘贴服务方提供的完整 HTTPS MCP 地址，不是官网主页。</span></div></>}<label><span>访问令牌 <small>可选，系统会加密保存</small></span><input value={secret} type="password" onChange={(event) => onSecretChange(event.target.value)} placeholder="没有令牌可先留空" /></label></div>
@@ -3617,7 +4571,7 @@ function ConnectorTemplateModal({ template, values, saving, oauth, onChange, onC
   const invalid = template.fields.filter((field) => !field.optional && !values[field.key]?.trim());
   const oauthBusy = oauth?.phase === "waiting";
   return <div className="modal-backdrop connector-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !oauthBusy) onClose(); }}><section className="connector-setup-modal" role="dialog" aria-modal="true" aria-label={`配置 ${template.name}`}>
-    <header><div className="connector-setup-title"><span><Link2 size={17} /></span><div><strong>配置 {template.name}</strong><p>{template.summary}</p></div></div><button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button></header>
+    <header><div className="connector-setup-title"><span><Link2 size={17} /></span><div><strong>配置 {template.name}</strong><p>{template.summary}</p></div></div><button className="icon-button relay-modal-close" title="关闭" onClick={onClose}><X size={16} /></button></header>
     <div className="connector-template-vendor"><Zap size={13} /><span>{template.vendor}</span><small>{template.transport === "stdio" ? "本地命令 · stdio" : "远程服务 · HTTP MCP"}</small></div>
     <div className="connector-form">{template.fields.map((field, index) => <label key={field.key}><span>{field.label}{field.optional ? <small> 可选</small> : <em> 必填</em>}</span><input autoFocus={index === 0} value={values[field.key] ?? ""} type={field.secret ? "password" : "text"} onChange={(event) => onChange({ ...values, [field.key]: event.target.value })} placeholder={field.placeholder} />{field.hint && <small className="field-hint">{field.hint}</small>}</label>)}
       {template.oauth && <div className="connector-oauth-zone"><div className="connector-oauth-head"><KeyRound size={14} /><strong>OAuth 授权</strong><small>跳转官方授权页，授权完成即连接</small></div>{template.oauthNote && <p className="field-hint">{template.oauthNote}</p>}
@@ -3659,7 +4613,7 @@ function SkillInstallModal({ state, onClose, onUse }: { state: SkillInstallState
   const steps = ["下载技能包", "检查文件结构", "安全检查", "写入技能目录", "登记市场来源", "重启 Codex 引擎", "确认引擎发现"];
   const done = state.current >= steps.length;
   return <div className="modal-backdrop skill-install-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && (done || state.failed)) onClose(); }}><section className="skill-install-modal" role="dialog" aria-modal="true" aria-label="安装技能">
-    <header><div><SkillAvatar skill={state.skill} size={17} /><div><strong>正在安装 {state.skill.name}</strong><p>{state.failed ? "安装没有完成，文件不会作为可用技能显示。" : done ? "安装流程已结束。请查看引擎发现状态。" : "请保持此窗口打开，安装会自动继续。"}</p></div></div>{(done || state.failed) && <button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button>}</header>
+    <header><div><SkillAvatar skill={state.skill} size={17} /><div><strong>正在安装 {state.skill.name}</strong><p>{state.failed ? "安装没有完成，文件不会作为可用技能显示。" : done ? "安装流程已结束。请查看引擎发现状态。" : "请保持此窗口打开，安装会自动继续。"}</p></div></div>{(done || state.failed) && <button className="icon-button relay-modal-close" title="关闭" onClick={onClose}><X size={16} /></button>}</header>
     <ol className="skill-install-steps">{steps.map((label, index) => { const step = index + 1; const status = state.failed && step === state.current ? "failed" : step < state.current || (done && step <= state.current) ? "done" : step === state.current && !done ? "doing" : "todo"; return <li className={status} key={label}><span>{status === "done" ? <Check size={13} /> : status === "doing" ? <Spinner /> : status === "failed" ? <X size={13} /> : step}</span><div><b>{label}</b><small>{status === "done" ? "已完成" : status === "doing" ? "处理中…" : status === "failed" ? state.failed : "等待中"}</small></div></li>; })}</ol>
     {done && <div className={`skill-engine-result ${state.engineRegistered ? "ok" : "pending"}`}><CircleCheck size={17} /><div><strong>{state.engineRegistered ? "Codex 已发现此技能" : "技能已安装，等待引擎下一轮扫描"}</strong><p>{state.engineCheckMessage ?? "已写入技能目录。"}</p></div></div>}
     {state.failed && <div className="skill-engine-result failed"><AlertTriangle size={17} /><div><strong>安装失败</strong><p>{state.failed}</p></div></div>}
@@ -3672,7 +4626,7 @@ function PluginInstallModal({ state, onClose }: { state: PluginInstallState; onC
   const steps = ["解析插件仓库", "下载插件文件", "写入插件目录", "登记市场来源", "重启 Codex 引擎", "确认引擎发现"];
   const done = state.current >= steps.length;
   return <div className="modal-backdrop skill-install-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && (done || state.failed)) onClose(); }}><section className="skill-install-modal" role="dialog" aria-modal="true" aria-label="安装插件">
-    <header><div><span className="plugin-market-logo plugin-market-logo-letter modal">{state.plugin.displayName.charAt(0).toUpperCase()}</span><div><strong>正在安装 {state.plugin.displayName}</strong><p>{state.failed ? "安装没有完成，插件不会生效。" : done ? "安装流程已结束。请查看引擎发现状态。" : "请保持此窗口打开，安装会自动继续。"}</p></div></div>{(done || state.failed) && <button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button>}</header>
+    <header><div><span className="plugin-market-logo plugin-market-logo-letter modal">{state.plugin.displayName.charAt(0).toUpperCase()}</span><div><strong>正在安装 {state.plugin.displayName}</strong><p>{state.failed ? "安装没有完成，插件不会生效。" : done ? "安装流程已结束。请查看引擎发现状态。" : "请保持此窗口打开，安装会自动继续。"}</p></div></div>{(done || state.failed) && <button className="icon-button relay-modal-close" title="关闭" onClick={onClose}><X size={16} /></button>}</header>
     <ol className="skill-install-steps">{steps.map((label, index) => { const step = index + 1; const status = state.failed && step === state.current ? "failed" : step < state.current || (done && step <= state.current) ? "done" : step === state.current && !done ? "doing" : "todo"; return <li className={status} key={label}><span>{status === "done" ? <Check size={13} /> : status === "doing" ? <Spinner /> : status === "failed" ? <X size={13} /> : step}</span><div><b>{label}</b><small>{status === "done" ? "已完成" : status === "doing" ? "处理中…" : status === "failed" ? state.failed : "等待中"}</small></div></li>; })}</ol>
     {done && <div className={`skill-engine-result ${state.engineRegistered ? "ok" : "pending"}`}><CircleCheck size={17} /><div><strong>{state.engineRegistered ? "Codex 已发现此插件" : "插件已安装，等待引擎下一轮扫描"}</strong><p>{state.engineCheckMessage ?? "已写入本地插件目录。"}</p></div></div>}
     {state.failed && <div className="skill-engine-result failed"><AlertTriangle size={17} /><div><strong>安装失败</strong><p>{state.failed}</p></div></div>}
@@ -3795,13 +4749,14 @@ function MemoryFunnel({ groups, onPreview, onTogglePin, onDeleteOne, onDeleteGro
   );
 }
 
-function MemoryLayersEditor({ snapshot, scope, draft, dirty, distilling, hasWorkspace, onScope, onDraft, onSave, onDistill }: {
+function MemoryLayersEditor({ snapshot, scope, draft, dirty, distilling, hasWorkspace, savedAt, onScope, onDraft, onSave, onDistill }: {
   snapshot: MemoryLayersSnapshot | null;
   scope: "user" | "background" | "project";
   draft: string;
   dirty: boolean;
   distilling: boolean;
   hasWorkspace: boolean;
+  savedAt: number | null;
   onScope: (scope: "user" | "background" | "project") => void;
   onDraft: (value: string) => void;
   onSave: () => void;
@@ -3849,7 +4804,7 @@ function MemoryLayersEditor({ snapshot, scope, draft, dirty, distilling, hasWork
       />
 
       <div className="memory-layer-actions">
-        <button className="primary-setting" disabled={!dirty} onClick={onSave}><Check size={14} />保存{scope === "user" ? "用户档案" : scope === "background" ? "项目背景" : "项目记忆"}</button>
+        <button className={`primary-setting ${savedAt ? "memory-save-success" : ""}`} disabled={!dirty} onClick={onSave}>{savedAt ? <CircleCheck size={14} /> : <Check size={14} />}{savedAt ? "已保存" : `保存${scope === "user" ? "用户档案" : scope === "background" ? "项目背景" : "项目记忆"}`}</button>
         <button className="secondary-setting" disabled={distilling || !hasWorkspace || !pending} title={!hasWorkspace ? "先选择一个工作区" : pending ? `有 ${pending} 天日志满 30 天，可蒸馏进项目记忆` : "暂无满 30 天的日志"} onClick={onDistill}>
           {distilling ? <Spinner /> : <Sparkles size={14} />}蒸馏日志{pending ? `（${pending} 天）` : ""}
         </button>
@@ -3884,7 +4839,7 @@ function MemoryConfigModal({ gateway, setGateway, action, onClose, onTest, onSav
             <span><Cloud size={17} /></span>
             <div><strong>云端记忆配置</strong><p>配置 TencentDB Gateway 后，启用云端记忆时 Codex 会优先从云端召回与保存。</p></div>
           </div>
-          <button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button>
+          <button className="icon-button relay-modal-close" title="关闭" onClick={onClose}><X size={16} /></button>
         </header>
         <div className="connector-form">
           <label><span>TencentDB Gateway 地址 <em>必填</em></span><input autoFocus value={gateway.endpoint} onChange={(event) => setGateway({ ...gateway, endpoint: event.target.value })} placeholder="http://127.0.0.1:8420" /></label>
@@ -3912,7 +4867,7 @@ function SubAgentEditorModal({ draft, onChange, onClose, onSave }: { draft: SubA
             <span><Bot size={17} /></span>
             <div><strong>{draft.id ? `编辑「${draft.name}」` : "新建子智能体"}</strong><p>子智能体会跟随主对话的模型/沙箱/审批配置；保存后会被 Codex 通过 dynamicTools 调用。</p></div>
           </div>
-          <button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button>
+          <button className="icon-button relay-modal-close" title="关闭" onClick={onClose}><X size={16} /></button>
         </header>
         <div className="connector-form">
           <label><span>名称 <em>必填</em></span><input autoFocus value={draft.name} onChange={(event) => onChange({ ...draft, name: event.target.value })} placeholder="例如：代码审查员 / Bug Hunter / 测试工程师" /></label>
@@ -3973,7 +4928,7 @@ function ExpertTeamEditorModal({ draft, onChange, onClose, onSave }: { draft: Ex
             <span><Users size={17} /></span>
             <div><strong>{draft.teamId ? `编辑「${draft.displayName.zh}」` : "新建专家团"}</strong><p>复刻 WorkBuddy 专家团：主理人编排，成员独立产出，按 SOP 分阶段协作。</p></div>
           </div>
-          <button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button>
+          <button className="icon-button relay-modal-close" title="关闭" onClick={onClose}><X size={16} /></button>
         </header>
         <div className="connector-form">
           <div className="settings-grid two expert-team-grid">
@@ -4055,7 +5010,7 @@ function CommandEditorModal({ draft, saving, onChange, onClose, onSave }: {
             <span><TerminalSquare size={17} /></span>
             <div><strong>{draft.mode === "edit" ? `编辑 /${draft.name}` : "新建自定义命令"}</strong><p>保存为 commands/*.md 文件，输入框里敲 <code>/{draft.name || "命令名"}</code> 即可触发。</p></div>
           </div>
-          <button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button>
+          <button className="icon-button relay-modal-close" title="关闭" onClick={onClose}><X size={16} /></button>
         </header>
         <div className="connector-form">
           <div className="settings-grid two command-editor-grid">
@@ -4125,7 +5080,7 @@ function SearchPreviewModal({ target, onClose, onOpenThread, onOpenSettings, onC
           {target.kind === "thread" && onCopyThreadId && (
             <button className="icon-button" title="复制会话 ID（粘贴到其他会话发送即可引用这条会话）" onClick={() => onCopyThreadId(target.id)}><Copy size={16} /></button>
           )}
-          <button className="icon-button" title="关闭" onClick={onClose}><X size={16} /></button>
+          <button className="icon-button relay-modal-close" title="关闭" onClick={onClose}><X size={16} /></button>
         </header>
         <div className="search-preview-body">
           {target.kind === "thread" && (loading ? (
@@ -4384,6 +5339,11 @@ export default function App() {
     setRightTab("browser");
     setBrowserOpenReq({ url, seq: Date.now() });
   }, []);
+  // 中转站账户（sub2api）：余额/套餐同步与一键生成供应商
+  const [relayBusy, setRelayBusy] = useState(false);
+  const [relayActive, setRelayActive] = useState<{ provider: string; baseUrl: string; apiKey: string; mode: "balance" | "plan"; groupId: number | null; label: string } | null>(() => {
+    try { return JSON.parse(localStorage.getItem("relay-active-v1") ?? "null"); } catch { return null; }
+  });
   const [skillInstall, setSkillInstall] = useState<SkillInstallState | null>(null);
   const [connectorMenuOpen, setConnectorMenuOpen] = useState(false);
   const [connectors, setConnectors] = useState<ConnectorEntry[]>([]);
@@ -4908,7 +5868,20 @@ export default function App() {
   const [memoryCenterTab, setMemoryCenterTab] = useState<"library" | "search" | "layers" | "storage">("library");
   const [memoryProjectWorkspace, setMemoryProjectWorkspace] = useState(() => workspace || "__all__");
   const [memoryProjectEnabled, setMemoryProjectEnabled] = useState(false);
+  const [memoryProjectMenuOpen, setMemoryProjectMenuOpen] = useState(false);
+  const memoryProjectPickerRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setMemoryProjectWorkspace(workspace || "__all__"); }, [workspace]);
+  useEffect(() => {
+    if (!memoryProjectMenuOpen) return;
+    const close = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || !memoryProjectPickerRef.current?.contains(target)) setMemoryProjectMenuOpen(false);
+    };
+    const onKeyDown = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setMemoryProjectMenuOpen(false); };
+    document.addEventListener("pointerdown", close, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => { document.removeEventListener("pointerdown", close, true); document.removeEventListener("keydown", onKeyDown, true); };
+  }, [memoryProjectMenuOpen]);
   function openAppPrompt(title: string, defaultValue = "", multiline = false): Promise<string | null> {
     return new Promise((resolve) => setAppPrompt({ title, value: defaultValue, multiline, resolve }));
   }
@@ -5431,7 +6404,7 @@ export default function App() {
       void window.codex.listSshServers().then((servers) => { setSshServers(servers); setSshLoaded(true); }).catch(() => setSshLoaded(true));
     }
   }, [settingsOpen, settingsPage, sshLoaded]);
-  const [settingsResources, setSettingsResources] = useState<{ skills: any[]; hooks: any[]; plugins: any[]; apps: any[]; mcp: any[] }>({ skills: [], hooks: [], plugins: [], apps: [], mcp: [] });
+  const [settingsResources, setSettingsResources] = useState<{ skills: any[]; hooks: any[]; plugins: any[]; mcp: any[] }>({ skills: [], hooks: [], plugins: [], mcp: [] });
   const installedTotalCount = useMemo(() => {
     const localNames = new Set(localSkills.map((entry) => entry.name.toLowerCase()));
     const localByPath = new Set(localSkills.map((entry) => entry.path));
@@ -5678,7 +6651,7 @@ export default function App() {
   }), []);
 
   const {
-    memoryEnabled, memories, setMemories, memoryCategory, setMemoryCategory, memorySaveCategory, setMemorySaveCategory,
+    memoryEnabled, memories, setMemories, memoryCategory, setMemoryCategory, memorySaveCategory, setMemorySaveCategory, memorySavedAt,
     memoryDraft, setMemoryDraft, memoryStatus, setMemoryStatus,
     memoryGateway, setMemoryGateway, memoryGatewayAction,
     memoryMode, updateMemoryMode, workspaceMemoryEnabled, updateWorkspaceMemory,
@@ -5733,6 +6706,7 @@ export default function App() {
   const [memoryLayers, setMemoryLayers] = useState<MemoryLayersSnapshot | null>(null);
   const [memoryLayerScope, setMemoryLayerScope] = useState<"user" | "background" | "project">("user");
   const [memoryLayerDraft, setMemoryLayerDraft] = useState("");
+  const [memoryLayerSavedAt, setMemoryLayerSavedAt] = useState<number | null>(null);
   const [memoryDistilling, setMemoryDistilling] = useState(false);
 
   const applyMemoryLayers = useCallback((snapshot: MemoryLayersSnapshot, scope: "user" | "background" | "project") => {
@@ -5742,9 +6716,12 @@ export default function App() {
   // 打开记忆设置页或切换工作区时拉一次快照；切 tab 也要重载，否则会拿另一个作用域的内容覆盖草稿
   useEffect(() => {
     if (settingsPage !== "memory") return;
+    let cancelled = false;
+    setMemoryLayers(null);
     void window.codex.readMemoryLayers(memoryManagementWorkspace || undefined)
-      .then((snapshot) => applyMemoryLayers(snapshot, memoryLayerScope))
+      .then((snapshot) => { if (!cancelled) applyMemoryLayers(snapshot, memoryLayerScope); })
       .catch(() => undefined);
+    return () => { cancelled = true; };
   }, [settingsPage, memoryManagementWorkspace, memoryLayerScope, applyMemoryLayers]);
 
   const memoryLayerDirty = useMemo(
@@ -5757,6 +6734,8 @@ export default function App() {
     if ((scope === "project" || scope === "background") && !memoryManagementWorkspace) { setMemoryStatus("请先在记忆中心选择项目"); return; }
     try {
       applyMemoryLayers(await window.codex.writeMemoryLayer({ scope, content: memoryLayerDraft, workspace: memoryManagementWorkspace || undefined }), scope);
+      setMemoryLayerSavedAt(Date.now());
+      window.setTimeout(() => setMemoryLayerSavedAt(null), 2200);
       setMemoryStatus(scope === "user" ? "用户档案已保存 · 下一条消息起生效" : scope === "background" ? "项目背景已保存 · 该项目的新会话会优先读取" : "项目记忆已保存 · 下一条消息起生效");
     } catch (error: any) { setMemoryStatus(error.message); }
   }
@@ -5823,8 +6802,113 @@ export default function App() {
     onNotice: setNotice,
     onProbeSuccess: (title, detail) => showToast(title, detail),
   });
+  // 中转站一键切换：复用已有 key（按分组匹配）或新建 → 生成/更新供应商 → 选中生效。
+  // 失败时抛回给调用方（中转站页面常驻显示错误），relay-active 只在全部成功后写入。
+  const relayActivate = useCallback(async (mode: "balance" | "plan", group?: { group_id: number; group_name: string }, explicitKey?: { id: any; name: any; key: string; group_id: number | null }, retried = false): Promise<void> => {
+    setRelayBusy(true);
+    try {
+      const resolved = explicitKey ? await resolveRelayKeyTarget(explicitKey) : await resolveRelayTarget(mode, group);
+      let probeError: string = "";
+      try {
+        const probe = await window.codex.probeCustomModel({ provider: resolved.provider, baseUrl: resolved.gateway, apiKey: resolved.apiKey, wireApi: "responses" });
+        const models: string[] = probe?.models ?? [];
+        if (!models.length) throw new Error("网关探测不到可用模型，请检查站点地址");
+        // 优选通用对话/代码模型，避免默认选中 auto-review 之类的附属模型
+        const defaultModel = models.find((mid: string) => /gpt|codex|claude|gemini|deepseek|grok/i.test(mid) && !/auto-review/i.test(mid))
+          || models.find((mid: string) => !/image|embedding|moderation|audio|tts|whisper|auto-review/i.test(mid))
+          || models[0];
+        const saved = await window.codex.saveCustomModel({
+          provider: resolved.provider,
+          name: resolved.displayName,
+          model: defaultModel,
+          baseUrl: resolved.gateway,
+          contextWindow: matchModelSpec(defaultModel)?.contextWindow ?? 256000,
+          wireApi: "responses",
+          apiKey: resolved.apiKey,
+          // 模型参数同步内置规格表（userData/model-specs.json 优先）：上下文/最大输出/思考档位/视觉模态
+          models: models.map((mid: string) => {
+            const spec = matchModelSpec(mid);
+            return {
+              id: mid,
+              contextWindow: spec?.contextWindow ?? 256000,
+              maxOutputTokens: spec?.maxOutputTokens,
+              efforts: spec?.efforts ?? ["low", "medium", "high"],
+              inputTypes: spec?.inputTypes ?? (["text"] as ("text" | "image" | "video")[]),
+              outputTypes: spec?.outputTypes ?? (["text"] as ("text" | "image" | "video")[]),
+            };
+          }),
+          enabled: true,
+        });
+        const id = `custom:${saved.provider}:${saved.model}`;
+        setModelId(id);
+        localStorage.setItem("default-model", id);
+        adoptSavedProvider(saved, models);
+        setRelayActive(resolved.active);
+        writeRelayActive(resolved.active);
+        setNotice(`已切换：${resolved.displayName} · 模型 ${defaultModel}`);
+      } catch (error: any) {
+        probeError = String(error?.message ?? error);
+        // 部分站点（如 pptoken）要求 key 必须绑定分组：无分组 key 直接 403。自动改绑第一个订阅分组重试一次。
+        if (!retried && resolved.active.groupId == null && /HTTP 40[13]|assigned to any group|分组/.test(probeError)) {
+          const ov = await window.codex.relayOverview().catch(() => null);
+          const subs: any[] = ov?.subscriptions ?? [];
+          if (subs.length) {
+            const fallback = { group_id: Number(subs[0].group_id), group_name: String(subs[0].group_name ?? "默认分组") };
+            setNotice(`该站点要求密钥必须绑定分组，已自动改绑「${fallback.group_name}」重试…`);
+            await relayActivate("plan", fallback, undefined, true);
+            return;
+          }
+        }
+        throw error;
+      }
+    } catch (error: any) {
+      const message = "中转站切换失败：" + (error.message ?? error);
+      setNotice(message);
+      throw new Error(error.message ?? error);
+    } finally {
+      setRelayBusy(false);
+    }
+  }, [adoptSavedProvider, setNotice, setModelId]);
+  // 启用 OpenAI 官方订阅：伪供应商 openai-official（引擎不写 model_provider，走 auth.json ChatGPT 凭据）
+  const activateOfficialProvider = useCallback(async (modelsInput?: string[]) => {
+    // 代理先落盘再触发引擎重启（顺序敏感：applyCustomModel 读文件注入引擎环境）
+    await window.codex.openaiSetProxy(localStorage.getItem("openai-proxy") ?? "").catch(() => undefined);
+    // 模型列表优先从官方接口拉真实的（跟随官方更新），失败才用静态兜底表
+    const models = (modelsInput?.length ? modelsInput : await window.codex.openaiModels().catch(() => OFFICIAL_MODELS));
+    const defaultModel = models[0];
+    const saved = await window.codex.saveCustomModel({
+      provider: "openai-official",
+      name: "OpenAI 官方订阅",
+      model: defaultModel,
+      baseUrl: "https://chatgpt.com/backend-api/codex",
+      contextWindow: matchModelSpec(defaultModel)?.contextWindow ?? 400_000,
+      wireApi: "responses",
+      models: models.map((mid: string) => {
+        const spec = matchModelSpec(mid);
+        return {
+          id: mid,
+          contextWindow: spec?.contextWindow ?? 400_000,
+          maxOutputTokens: spec?.maxOutputTokens,
+          efforts: spec?.efforts ?? ["low", "medium", "high"],
+          inputTypes: spec?.inputTypes ?? (["text"] as ("text" | "image" | "video")[]),
+          outputTypes: ["text"] as ("text" | "image" | "video")[],
+        };
+      }),
+      enabled: true,
+    });
+    const id = `custom:${saved.provider}:${saved.model}`;
+    setModelId(id);
+    localStorage.setItem("default-model", id);
+    adoptSavedProvider(saved, models);
+    setNotice(`已启用 OpenAI 官方订阅 · 模型 ${defaultModel}`);
+  }, [adoptSavedProvider, setNotice, setModelId]);
   // 外部模型规格（userData/model-specs.json）启动装载一次：数据与代码分离，更新模型数据无需重新构建
   useEffect(() => { void loadExternalSpecs(); }, []);
+  // 启动时把 localStorage 里的 OpenAI 代理种子进主进程（引擎/官方接口要用），不依赖重新登录
+  useEffect(() => {
+    const proxy = localStorage.getItem("openai-proxy");
+    if (proxy) void window.codex.openaiSetProxy(proxy).catch(() => undefined);
+  }, []);
   // 兼容旧版本：本机已有安全保存的 API Key，但还没有登录状态标记时，自动进入主界面。
   // 明确点过“退出登录”会写 logout，不走这里。
   useEffect(() => {
@@ -6003,7 +7087,10 @@ export default function App() {
   };
   const selectedModel = allModels.find((entry) => entry.id === modelId || entry.model === modelId);
   const usingCustomModel = Boolean(customModel && modelId);
-  const providerConfig = useMemo(() => usingCustomModel && customModel ? {
+  // 官方订阅：thread/start 什么都不传（无 modelProvider、无内联 config）——
+  // 引擎走内置 openai 通道 + auth.json ChatGPT 登录凭据，与实测通过的协议复现完全一致；
+  // 任何内联 provider 定义（哪怕 requires_openai_auth=true）都会触发 CODEX_HARNESS_API_KEY 校验导致报错（实证）。
+  const providerConfig = useMemo(() => usingCustomModel && customModel && customModel.provider !== "openai-official" ? {
     modelProvider: customModel.provider,
     config: {
       model_provider: customModel.provider,
@@ -6012,7 +7099,7 @@ export default function App() {
           name: customModel.name,
           base_url: customModel.baseUrl,
           env_key: "CODEX_HARNESS_API_KEY",
-          wire_api: "responses",
+          wire_api: "responses" as const,
           requires_openai_auth: false,
         },
       },
@@ -6720,15 +7807,21 @@ const commandMatches = useMemo(() => {
     const failures: string[] = [];
     // 每项独立容错：某个接口不被当前 Codex 版本支持时，不能拖垮整批数据
     const safe = async (label: string, run: () => Promise<any>, fallback: any) => {
-      try { return await run(); } catch (error: any) { failures.push(`${label}（${error.message}）`); return fallback; }
+      try { return await run(); } catch (error: any) {
+        let msg = String(error.message ?? error);
+        // Cloudflare 挑战页/超长 HTML 不要甩到界面上，降级成一句人话
+        if (/<html|__cf_chl|challenge/i.test(msg)) msg = "请求被 Cloudflare 人机验证拦截（该项需要可直连 OpenAI 的网络或代理）";
+        else if (msg.length > 160) msg = msg.slice(0, 160) + "…";
+        failures.push(`${label}（${msg}）`);
+        return fallback;
+      }
     };
-    const [skillsResult, hooksResult, pluginsResult, appsResult, memoryResult, taskResult, mcpResult] = await Promise.all([
+    const [skillsResult, hooksResult, pluginsResult, memoryResult, taskResult, mcpResult] = await Promise.all([
       safe("技能", () => window.codex.request("skills/list", { cwds: cwd, forceReload: false }), { data: [] }),
       safe("钩子", () => window.codex.request("hooks/list", { cwds: cwd }), { data: [] }),
       // 不要用 forceRefetch：它会去远端重新拉取 marketplace（Codex 自带 git 不走系统代理，会卡到超时）；
       // 实测本地 config.toml 的改动在普通列表里就能立刻反映。
       safe("插件", () => window.codex.request("plugin/list", { cwds: cwd, forceRefetch: false }), { marketplaces: [] }),
-      safe("子智能体", () => window.codex.request("app/list", { limit: 100, forceRefetch: false }), { data: [] }),
       safe("记忆", () => window.codex.listMemory(), []),
       safe("定时任务", () => window.codex.listScheduledTasks(), []),
       safe("MCP", () => window.codex.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly", ...(threadRef.current?.id ? { threadId: threadRef.current.id } : {}) }), { data: [] }),
@@ -6743,7 +7836,6 @@ const commandMatches = useMemo(() => {
         // 与其显示一堆点不动的「虚假卡片」，直接不展示，用户需要的插件走「开发工具」随包内置。
         .filter((marketplace: any) => marketplace.name !== "openai-api-curated")
         .flatMap((marketplace: any) => (marketplace.plugins ?? []).map((plugin: any) => ({ ...plugin, marketplaceName: marketplace.name, marketplacePath: marketplace.path }))),
-      apps: appsResult.data ?? [],
       mcp: mcpResult.data ?? [],
     });
     setMemories(memoryResult ?? []);
@@ -9471,10 +10563,15 @@ const commandMatches = useMemo(() => {
         setUsername(info.username);
         void window.codex.setNickname(info.username).catch(() => undefined);
       }
-      // 1) 探测该端点模型
-      const probe = await window.codex.probeCustomModel({ provider: info.provider, baseUrl: info.baseUrl, apiKey: info.apiKey, wireApi: "responses" });
-      const models = probe?.models ?? [];
-      if (!models.length) return false;
+      // 1) 探测该端点模型；官方订阅走引擎内置模型目录（chatgpt 网关无裸 /models 探测），跳过探测
+      let models: string[];
+      if (info.provider === "openai-official") {
+        models = OFFICIAL_MODELS;
+      } else {
+        const probe = await window.codex.probeCustomModel({ provider: info.provider, baseUrl: info.baseUrl, apiKey: info.apiKey, wireApi: "responses" });
+        models = probe?.models ?? [];
+        if (!models.length) return false;
+      }
       // 2) 第一个非多媒体模型生效；已知模型按规格表回填上下文/最大输出/思考档位
       const defaultModel = info.model || models.find((id: string) => !/image|embedding|moderation|audio|tts|whisper|auto-review/i.test(id)) || models[0];
       const allModels = models.map((id: string) => { const spec = matchModelSpec(id); return { id, contextWindow: spec?.contextWindow ?? 256000, maxOutputTokens: spec?.maxOutputTokens, efforts: spec ? [...spec.efforts] : undefined, inputTypes: spec?.inputTypes ? [...spec.inputTypes] : ["text"] as ("text" | "image" | "video")[], outputTypes: ["text"] as ("text" | "image" | "video")[] }; });
@@ -10208,6 +11305,8 @@ const commandMatches = useMemo(() => {
               </div>
               <div className="composer-right">
                 <div className="model-controls composer-model-controls">
+                  {relayActive && customModel?.provider === relayActive.provider && <RelayBalanceBadge activeProvider={customModel?.provider} />}
+                  {customModel?.provider === "openai-official" && <OpenaiBalanceBadge activeProvider={customModel?.provider} />}
                   <ContextUsageBadge tokenUsage={tokenUsage} fallbackWindow={customModel?.models?.find((m) => m.id === customModel?.model)?.contextWindow ?? customModel?.contextWindow} recentCompaction={recentCompaction} />
                   <ComposerMenu icon={Bot} label="模型" title="模型" disabled={!customModel} value={modelId} options={[...allModels.map((model) => ({
                     value: model.id,
@@ -10340,7 +11439,7 @@ const commandMatches = useMemo(() => {
       </div>}
       {mobileRemoteOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setMobileRemoteOpen(false); }}>
         <div className="remote-panel2" role="dialog" aria-label="移动端远程控制">
-          <header><div className="remote-head-left"><Smartphone size={19} /><div><strong>移动端远程控制</strong><small>扫码或在手机上打开链接，即可远程控制当前工作区。</small></div></div><button className="icon-button" title="关闭" onClick={() => setMobileRemoteOpen(false)}><X size={17} /></button></header>
+          <header><div className="remote-head-left"><Smartphone size={19} /><div><strong>移动端远程控制</strong><small>扫码或在手机上打开链接，即可远程控制当前工作区。</small></div></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setMobileRemoteOpen(false)}><X size={17} /></button></header>
           <div className="remote-columns">
             <div className="remote-col">
               <div className="remote-col-title"><Smartphone size={15} /><strong>手机扫码连接</strong></div>
@@ -10377,7 +11476,7 @@ const commandMatches = useMemo(() => {
       </div>}
       {botManagerOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setBotManagerOpen(false); }}>
         <div className="bot-manager" role="dialog" aria-label="机器人">
-          <header><div className="bot-head-left"><Link2 size={17} /><strong>机器人</strong><small>把外部聊天工具和 Webhook 接入 ZCode 机器人。</small></div><button className="icon-button" title="关闭" onClick={() => setBotManagerOpen(false)}><X size={17} /></button></header>
+          <header><div className="bot-head-left"><Link2 size={17} /><strong>机器人</strong><small>把外部聊天工具和 Webhook 接入 ZCode 机器人。</small></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setBotManagerOpen(false)}><X size={17} /></button></header>
           <div className="bot-columns">
             <div className="bot-side">
               <button className="bot-new-btn" onClick={() => { const id = crypto.randomUUID(); setBots((cur) => { const next = [...cur, { id, name: "新机器人", channel: "", enabled: false }]; localStorage.setItem("bots", JSON.stringify(next)); return next; }); setActiveBotId(id); setBotChannelPick(null); setBotReconfigure(false); }}><Plus size={14} />新建机器人</button>
@@ -10548,7 +11647,7 @@ const commandMatches = useMemo(() => {
           <header>
             <span className="memory-category-pill">{memoryPreview.category}</span>
             <strong>记忆全文</strong>
-            <button className="icon-button" title="关闭" onClick={() => setMemoryPreview(null)}><X size={16} /></button>
+            <button className="icon-button relay-modal-close" title="关闭" onClick={() => setMemoryPreview(null)}><X size={16} /></button>
           </header>
           <div className="memory-preview-body">{memoryPreview.content}</div>
           <small>
@@ -10585,10 +11684,22 @@ const commandMatches = useMemo(() => {
           <div className="memory-center-body">
             <div className="memory-project-context">
               <div className="memory-project-context-copy"><FolderOpen size={14} /><div><strong>当前管理项目</strong><span>{memoryManagementWorkspace ? "项目背景、项目记忆、日志和条目都按这个项目管理" : "全部项目总览；选择具体项目后才能编辑项目背景或项目记忆"}</span></div></div>
-              <select aria-label="选择记忆项目" value={memoryProjectWorkspace} onChange={(event) => { setMemoryProjectWorkspace(event.target.value); setMemoryLayerScope("background"); }}>
-                <option value="__all__">全部项目</option>
-                {memoryProjectOptions.map((cwd) => <option key={cwd} value={cwd}>{basename(cwd)} · {cwd}</option>)}
-              </select>
+              <div className={`memory-project-picker ${memoryProjectMenuOpen ? "open" : ""}`} ref={memoryProjectPickerRef}>
+                <button type="button" className="memory-project-picker-button" aria-haspopup="listbox" aria-expanded={memoryProjectMenuOpen} onClick={() => setMemoryProjectMenuOpen((current) => !current)}>
+                  <FolderOpen size={14} aria-hidden="true" />
+                  <span className="memory-project-picker-current"><strong>{memoryManagementWorkspace ? basename(memoryManagementWorkspace) : "全部项目"}</strong><small>{memoryManagementWorkspace || "跨项目总览"}</small></span>
+                  <ChevronDown size={14} aria-hidden="true" />
+                </button>
+                {memoryProjectMenuOpen && <div className="memory-project-picker-menu" role="listbox" aria-label="选择记忆项目">
+                  <button type="button" role="option" aria-selected={memoryProjectWorkspace === "__all__"} className={`memory-project-option ${memoryProjectWorkspace === "__all__" ? "selected" : ""}`} onClick={() => { setMemoryProjectWorkspace("__all__"); setMemoryLayerScope("user"); setMemoryProjectMenuOpen(false); }}>
+                    <span className="memory-project-option-icon"><Layers3 size={14} /></span><span className="memory-project-option-copy"><strong>全部项目</strong><small>跨项目总览与全局记忆</small></span>{memoryProjectWorkspace === "__all__" && <Check size={14} />}
+                  </button>
+                  {memoryProjectOptions.map((cwd) => <button type="button" role="option" aria-selected={memoryProjectWorkspace === cwd} className={`memory-project-option ${memoryProjectWorkspace === cwd ? "selected" : ""}`} key={cwd} onClick={() => { setMemoryProjectWorkspace(cwd); setMemoryLayerScope("background"); setMemoryProjectMenuOpen(false); }}>
+                    <span className="memory-project-option-icon"><FolderOpen size={14} /></span><span className="memory-project-option-copy"><strong>{basename(cwd)}</strong><small title={cwd}>{cwd}</small></span>{memoryProjectWorkspace === cwd && <Check size={14} />}
+                  </button>)}
+                  {!memoryProjectOptions.length && <div className="memory-project-option-empty">还没有发现项目，请先打开一个工作区</div>}
+                </div>}
+              </div>
             </div>
             {memoryCenterTab === "library" && <div className="memory-center-pane">
               <div className="memory-center-block">
@@ -10598,7 +11709,7 @@ const commandMatches = useMemo(() => {
                     {MEMORY_CATEGORIES.map((entry) => <option key={entry.name} value={entry.name}>{entry.name}</option>)}
                   </select>
                   <textarea value={memoryDraft} onChange={(event) => setMemoryDraft(event.target.value)} placeholder={`保存一条可复用的事实或约定（${memoryMode === "cloud" ? "云端" : "本地"}）`} />
-                  <button className="primary-setting" disabled={!memoryDraft.trim() || !memoryManagementWorkspace} title={memoryManagementWorkspace ? "保存到当前管理项目" : "先选择一个项目"} onClick={() => void saveMemoryRecord(memoryManagementWorkspace)}><Check size={14} />保存记忆</button>
+                  <button className={`primary-setting ${memorySavedAt ? "memory-save-success" : ""}`} disabled={!memoryDraft.trim() || !memoryManagementWorkspace} title={memoryManagementWorkspace ? "保存到当前管理项目" : "先选择一个项目"} onClick={() => void saveMemoryRecord(memoryManagementWorkspace)}>{memorySavedAt ? <CircleCheck size={14} /> : <Check size={14} />}{memorySavedAt ? "已保存" : "保存记忆"}</button>
                 </div>
               </div>
               <div className="memory-library">
@@ -10645,6 +11756,7 @@ const commandMatches = useMemo(() => {
                   dirty={memoryLayerDirty}
                   distilling={memoryDistilling}
                   hasWorkspace={Boolean(memoryManagementWorkspace)}
+                  savedAt={memoryLayerSavedAt}
                   onScope={setMemoryLayerScope}
                   onDraft={setMemoryLayerDraft}
                   onSave={() => void saveMemoryLayer()}
@@ -10684,7 +11796,7 @@ const commandMatches = useMemo(() => {
       </div>}
       {settingsOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
         <div className="settings-modal" role="dialog" aria-modal="true" aria-label="设置">
-          <header><div><Settings2 size={18} /><strong>设置</strong><span className="esc-hint" title="按 ESC 关闭弹窗">ESC</span></div><button className="icon-button" title="关闭" onClick={() => setSettingsOpen(false)}><X size={18} /></button></header>
+          <header><div><Settings2 size={18} /><strong>设置</strong><span className="esc-hint" title="按 ESC 关闭弹窗">ESC</span></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setSettingsOpen(false)}><X size={18} /></button></header>
           <div className="settings-layout">
             <nav className="settings-nav" aria-label="设置分类">
               {settingsNav.map((group) => (
@@ -10963,6 +12075,8 @@ const commandMatches = useMemo(() => {
               </div>
             </section>}
             {settingsPage === "personalization" && <PersonalizationPage personality={personality} onPersonalityChange={changePersonality} onNotice={setNotice} />}
+            {settingsPage === "relay" && <RelayCenterPage busy={relayBusy} activeProvider={customModel?.provider} onActivate={relayActivate} onNotice={setNotice} onOpenModelSettings={() => { setSettingsPage("model"); }} />}
+            {settingsPage === "openai" && <OpenaiSubscriptionPage activeProvider={customModel?.provider} onActivate={(models) => activateOfficialProvider(models)} onNotice={setNotice} />}
             {settingsPage === "model" && <section className="settings-model-layout">
               <div className="model-global-bar">
                 <div className="model-global-item">
@@ -11076,6 +12190,7 @@ const commandMatches = useMemo(() => {
                       <span className="model-list-hint">可多选生效</span>
                       <button className="icon-button" title="全选模型" disabled={!!savingSettings || !(customDraft.models ?? []).length} onClick={() => setCustomDraft((current) => ({ ...current, models: (current.models ?? []).map((model) => ({ ...model, enabled: true })) }))}><ListChecks size={13} /></button>
                       <button className="icon-button" title="取消全部生效" disabled={!!savingSettings || !(customDraft.models ?? []).length} onClick={() => setCustomDraft((current) => ({ ...current, models: (current.models ?? []).map((model) => ({ ...model, enabled: false })) }))}><X size={13} /></button>
+                      <button className="icon-button" title="批量移除所有未勾选的模型（保存后生效）" disabled={!!savingSettings || !(customDraft.models ?? []).some((model) => model.enabled === false)} onClick={() => setCustomDraft((current) => ({ ...current, models: (current.models ?? []).filter((model) => model.enabled !== false), model: (current.models ?? []).some((model) => model.id === current.model && model.enabled !== false) ? current.model : ((current.models ?? []).find((model) => model.enabled !== false)?.id ?? "") }))}><Trash2 size={13} /></button>
                       <button className="icon-button" title="测试连接并拉取可用模型列表" disabled={!!probingProvider || !customDraft.baseUrl} onClick={() => void probeProvider("list")}>{probingProvider === "list" ? <Spinner /> : <RefreshCw size={13} />}</button>
                     </div>
                   </div>
@@ -11106,7 +12221,7 @@ const commandMatches = useMemo(() => {
                             )}
                             <button className="icon-button" title="测试该模型连通" disabled={switchingModel === m.id || !customDraft.baseUrl} onClick={(event) => { event.stopPropagation(); void probeOneModel(customDraft.provider, m.id); }}>{switchingModel === m.id ? <Spinner /> : <Zap size={13} />}</button>
                             <button className="icon-button" title="编辑模型" onClick={(event) => { event.stopPropagation(); openModelEditor(m); }}><PenLine size={13} /></button>
-                            <button className="icon-button" title="删除模型" onClick={(event) => { event.stopPropagation(); void removeProviderModel(customDraft.provider, m.id); }}><Trash2 size={13} /></button>
+                            <button className="icon-button" title="从列表移除（保存后生效）" onClick={(event) => { event.stopPropagation(); setCustomDraft((current) => { const models = (current.models ?? []).filter((model) => model.id !== m.id); const model = current.model === m.id ? (models.find((x) => x.enabled !== false)?.id ?? models[0]?.id ?? "") : current.model; return { ...current, models, model }; }); }}><Trash2 size={13} /></button>
                           </span>
                         </div>
                       );
@@ -11586,7 +12701,7 @@ const commandMatches = useMemo(() => {
                   </article>
                 ))}</div></section> : <p className="muted command-empty">{commandSearch ? "没有匹配的技能命令。" : "还没有可用的技能命令。到「技能」页安装或启用技能后，这里会列出它们的斜杠命令。"}</p> : null}
                 {commandEditor && <CommandEditorModal draft={commandEditor} saving={commandBusyKey === "save"} onChange={setCommandEditor} onClose={() => setCommandEditor(null)} onSave={() => void persistCommand()} />}
-                {commandDelete && createPortal(<div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setCommandDelete(null); }}><section className="connector-setup-modal command-delete-modal" role="dialog" aria-modal="true" aria-label="删除命令"><header><div className="connector-setup-title"><span><AlertTriangle size={17} /></span><div><strong>删除命令 /{commandDelete.name}</strong><p>将删除文件 <code>{commandDelete.filePath}</code>，删除后无法恢复。</p></div></div><button className="icon-button" title="关闭" onClick={() => setCommandDelete(null)}><X size={16} /></button></header><footer><button className="secondary-setting" onClick={() => setCommandDelete(null)}>取消</button><button className="danger-button" disabled={commandBusyKey === "delete"} onClick={() => void confirmDeleteCommand()}>{commandBusyKey === "delete" ? <Spinner /> : <Trash2 size={14} />}确认删除</button></footer></section></div>, document.body)}
+                {commandDelete && createPortal(<div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setCommandDelete(null); }}><section className="connector-setup-modal command-delete-modal" role="dialog" aria-modal="true" aria-label="删除命令"><header><div className="connector-setup-title"><span><AlertTriangle size={17} /></span><div><strong>删除命令 /{commandDelete.name}</strong><p>将删除文件 <code>{commandDelete.filePath}</code>，删除后无法恢复。</p></div></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setCommandDelete(null)}><X size={16} /></button></header><footer><button className="secondary-setting" onClick={() => setCommandDelete(null)}>取消</button><button className="danger-button" disabled={commandBusyKey === "delete"} onClick={() => void confirmDeleteCommand()}>{commandBusyKey === "delete" ? <Spinner /> : <Trash2 size={14} />}确认删除</button></footer></section></div>, document.body)}
               </section>;
             })()}
             {settingsPage === "hooks" && (() => {
@@ -12044,7 +13159,7 @@ const commandMatches = useMemo(() => {
                       <span><Server size={17} /></span>
                       <div><strong>{sshDraft.id ? `编辑「${sshDraft.name}」` : "新建 SSH 连接"}</strong><p>填好基本信息与认证方式即可保存；左下角「测试连接」可以在保存前先验证是否连得上。</p></div>
                     </div>
-                    <button className="icon-button" title="关闭" onClick={() => setSshDraft(null)}><X size={16} /></button>
+                    <button className="icon-button relay-modal-close" title="关闭" onClick={() => setSshDraft(null)}><X size={16} /></button>
                   </header>
                   <div className="connector-form ssh-form">
                     <div className="ssh-form-section">
@@ -12220,7 +13335,7 @@ const commandMatches = useMemo(() => {
           </div>
         </div>
       </div>}
-      {shortcutsOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShortcutsOpen(false); }}><div className="shortcuts-modal" role="dialog" aria-modal="true" aria-label="键盘快捷键"><header><div><Keyboard size={17} /><strong>键盘快捷键</strong><span className="esc-hint" title="按 ESC 关闭弹窗">ESC</span></div><button className="icon-button" title="关闭" onClick={() => setShortcutsOpen(false)}><X size={17} /></button></header><div className="shortcuts-body">{SHORTCUT_GROUPS.map((group) => <section className="shortcuts-group" key={group.group}><h3>{group.group}</h3>{group.shortcuts.map((item) => <div className="shortcuts-row" key={item.keys.join("+")}><span className="shortcut-desc">{item.desc}</span><span className="shortcut-keys">{item.keys.map((key, index) => <kbd key={index}>{key}</kbd>)}</span></div>)}</section>)}<footer><span className="muted">部分快捷键在输入框聚焦时优先用于文本编辑。</span></footer></div></div></div>}
+      {shortcutsOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShortcutsOpen(false); }}><div className="shortcuts-modal" role="dialog" aria-modal="true" aria-label="键盘快捷键"><header><div><Keyboard size={17} /><strong>键盘快捷键</strong><span className="esc-hint" title="按 ESC 关闭弹窗">ESC</span></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setShortcutsOpen(false)}><X size={17} /></button></header><div className="shortcuts-body">{SHORTCUT_GROUPS.map((group) => <section className="shortcuts-group" key={group.group}><h3>{group.group}</h3>{group.shortcuts.map((item) => <div className="shortcuts-row" key={item.keys.join("+")}><span className="shortcut-desc">{item.desc}</span><span className="shortcut-keys">{item.keys.map((key, index) => <kbd key={index}>{key}</kbd>)}</span></div>)}</section>)}<footer><span className="muted">部分快捷键在输入框聚焦时优先用于文本编辑。</span></footer></div></div></div>}
       {marketPreview && <MarketPreviewModal state={marketPreview} onClose={() => setMarketPreview(null)} />}
       {skillInstall && <SkillInstallModal state={skillInstall} onClose={() => setSkillInstall(null)} onUse={() => { const skill = { name: skillInstall.skill.name, description: skillInstall.skill.description }; setSelectedSkills((current) => current.some((entry) => entry.name === skill.name) ? current : [...current, skill]); setSkillInstall(null); setSettingsOpen(false); setNotice(`已引用技能：${skill.name}`); }} />}
       {pluginInstall && <PluginInstallModal state={pluginInstall} onClose={() => setPluginInstall(null)} />}
@@ -12242,7 +13357,7 @@ const commandMatches = useMemo(() => {
               {filePreview.kind === "text" && /\.(html?|htm)$/i.test(filePreview.path) && <button className="secondary-setting" title="在内置浏览器中打开这个网页" onClick={() => openInBrowserPane(toFileUrl(filePreview.path))}><Globe2 size={14} />浏览器打开</button>}
               {!fileEditing && filePreview.kind === "text" && !fileTruncated && workspace && <button className="secondary-setting" onClick={() => { setFileDraft(filePreview.content); setFileEditing(true); }}><PenLine size={14} />编辑</button>}
               {fileEditing && <><button className="secondary-setting" onClick={() => setFileEditing(false)}>取消</button><button className="primary-setting" disabled={savingFile || fileDraft === filePreview.content} onClick={() => void saveFilePreview()}>{savingFile ? <Spinner /> : <Check size={14} />}保存</button></>}
-              <button className="icon-button" title="关闭" onClick={() => setFilePreview(null)}><X size={17} /></button>
+              <button className="icon-button relay-modal-close" title="关闭" onClick={() => setFilePreview(null)}><X size={17} /></button>
             </div>
           </header>
           <div className="file-preview-meta">{filePreview.path} · {filePreview.kind === "image" ? `${filePreview.language.toUpperCase()} 图片` : filePreview.language}{fileTruncated ? " · 文件过大，仅只读预览" : ""}</div>
