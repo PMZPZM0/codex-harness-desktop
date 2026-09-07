@@ -180,7 +180,7 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
           });
         }
       }
-      const viaNote = result.via === "builtin" ? "（该网关不提供列表接口，已加载内置推荐清单，可手动增删）" : result.via === "stream" ? "（网关未提供 /models，已实测模型连通）" : "";
+      const viaNote = result.via === "official" ? "（已从 OpenAI 官方目录获取最新清单）" : result.via === "official-fallback" ? "（官方目录获取失败，当前为内置兜底清单）" : result.via === "builtin" ? "（该网关不提供列表接口，已加载内置推荐清单，可手动增删）" : result.via === "stream" ? "（网关未提供 /models，已实测模型连通）" : "";
       setProviderStatus(mode === "test" ? `连接成功 · HTTP ${result.status} · ${result.latencyMs} ms · ${result.models.length} 个模型` : `已获取 ${result.models.length} 个模型${viaNote}，勾选要生效的模型后保存`);
       // 成功弹 toast 醒目提醒（状态行小字保留作留痕）
       onProbeSuccess?.(

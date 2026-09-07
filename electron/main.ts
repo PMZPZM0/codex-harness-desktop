@@ -1,5 +1,6 @@
-import { Menu, Notification, app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, shell, systemPreferences } from "electron";
+import { Menu, Notification, app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, session, shell, systemPreferences } from "electron";
 import os from "node:os";
+import nodeNet from "node:net";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs/promises";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -150,7 +151,9 @@ const remote = new RemoteControlService({
       cwd: process.cwd(),
       approvalPolicy: "never",
       sandbox: "danger-full-access",
-      modelProvider: model.provider,
+      // 官方订阅是伪供应商：引擎配置里没有 model_providers.openai-official 段，
+      // 传给 thread/start 会导致流反复断开重连——省略让引擎走内置 openai + ChatGPT 登录凭据
+      ...(model.provider === "openai-official" ? {} : { modelProvider: model.provider }),
     }) as any;
     return { id: started.thread.id };
   },
@@ -545,10 +548,17 @@ async function applyCustomModel(entry: CustomModelFile) {
   const ownedMcpServers = new Set(["nuphus", ...connectors.map((connector) => safeConnectorId(connector.id))]);
   const { kept: preservedConfig, mcpExtra } = await readUserConfigSplit(ownedMcpServers, mcpOverrides);
   await writeMcpOverrides(mcpOverrides);
-  server.setExternalEnv(connectorEnv(connectors));
+  const connectorEnvValue = connectorEnv(connectors);
+  // 官方订阅走 chatgpt.com 后端（区域受限）：引擎也要走用户配置的代理，否则 Cloudflare 403/直连超时
+  if (entry.provider === "openai-official") {
+    const proxy = await resolveLiveProxy();
+    if (proxy) Object.assign(connectorEnvValue, { HTTPS_PROXY: proxy, HTTP_PROXY: proxy, NO_PROXY: "localhost,127.0.0.1,::1", no_proxy: "localhost,127.0.0.1,::1" });
+  }
+  server.setExternalEnv(connectorEnvValue);
   // 自定义模型目录：让引擎认识非内置模型，用 catalog 里的 context_window（否则 fallback ~121K，
-  // 用户设置的 1M 上下文不生效）。无模型时返回空串不写该行。
-  const catalogToml = await writeModelCatalogToml(entry);
+  // 用户设置的 1M 上下文不生效）。无模型时返回空串不写该行。官方订阅走引擎内置模型目录，不需要。
+  const isOfficialProvider = entry.provider === "openai-official";
+  const catalogToml = isOfficialProvider ? "" : await writeModelCatalogToml(entry);
   // 顶层 model_context_window 才是引擎真正使用的上下文上限。必须取「当前生效模型自己」的
   // contextWindow —— 用户在模型编辑器里改的 1M 存在 entry.models[].contextWindow，
   // 而 entry.contextWindow 只是供应商级默认值（128000）。写默认值会让用户设的 1M 完全不生效，
@@ -559,7 +569,8 @@ async function applyCustomModel(entry: CustomModelFile) {
   // 全部已保存供应商都写进引擎配置（含禁用的）：旧线程的 rollout 里记录着创建时的
   // model_provider，抹掉 provider 段会让这些历史会话 resume 直接失败
   // （"Model provider `X` not found"→ 表现为归档/恢复后内容全空）。禁用只影响下拉可选。
-  const providerEntries = [entry, ...savedProviders.filter((candidate) => candidate.provider !== entry.provider)];
+  // 官方订阅是伪供应商（走引擎内置 openai + ChatGPT 登录），不写 provider 段。
+  const providerEntries = isOfficialProvider ? savedProviders : [entry, ...savedProviders.filter((candidate) => candidate.provider !== entry.provider)];
   const providerToml = providerEntries.flatMap((provider, index) => {
     const normalized = normalizeProvider(provider);
     const context = normalized.models?.find((model) => model.id === normalized.model)?.contextWindow ?? normalized.contextWindow ?? 128000;
@@ -589,7 +600,8 @@ async function applyCustomModel(entry: CustomModelFile) {
   await fs.writeFile(path.join(codexHome, "config.toml"), [
     `model = "${escapeToml(entry.model)}"`,
     `model_context_window = ${effectiveContextWindow}`,
-    `model_provider = "${escapeToml(entry.provider)}"`,
+    // 官方订阅：不写 model_provider（引擎默认 openai），声明优先用 ChatGPT 登录凭据
+    ...(isOfficialProvider ? ['preferred_auth_method = "chatgpt"'] : [`model_provider = "${escapeToml(entry.provider)}"`]),
     ...(catalogToml ? [catalogToml] : []),
     // 完全自主工程模式 + 已装自动化工具使用说明（个性化走 $CODEX_HOME/AGENTS.md 原生机制）。
     // 桌面/浏览器自动化开关关掉时，对应段说明不注入，模型不会被引导去调用它们。
@@ -660,8 +672,21 @@ async function applyCustomModel(entry: CustomModelFile) {
     // 避免保存模型时把已安装插件的注册信息抹掉。
     ...(preservedConfig ? [preservedConfig, ""] : []),
   ].join("\n"), "utf8");
-  const apiKey = entry.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(entry.encryptedKey, "base64")) : "";
-  server.setApiKey(apiKey);
+  // 官方订阅绝不能带 API Key：chatgpt 后端只认 ChatGPT 登录凭据，
+  // 带上陈旧 sk- key 会 401 "api_key_not_supported" → 流无限重连（实证）。
+  // 顺手把存档里的陈旧密钥清掉。
+  if (entry.provider === "openai-official") {
+    if (entry.encryptedKey) {
+      try {
+        const { encryptedKey: _stripped, ...clean } = entry;
+        await upsertCustomModel(clean as CustomModelFile);
+      } catch { /* 清档失败不影响主流程 */ }
+    }
+    server.setApiKey("");
+  } else {
+    const apiKey = entry.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(entry.encryptedKey, "base64")) : "";
+    server.setApiKey(apiKey);
+  }
   await server.restart();
 }
 
@@ -965,6 +990,13 @@ async function probeCustomModel(input: { provider?: string; baseUrl: string; api
   const apiKey = input.apiKey?.trim() || (canReuseKey && previous?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(previous.encryptedKey, "base64")) : "");
   const model = input.model?.trim();
   const startedAt = Date.now();
+  // 官方订阅不走 HTTP 探测（chatgpt 后端无裸 /models，且 Bearer 语义不同）：以 auth.json 登录态为准
+  if (input.provider === "openai-official") {
+    const auth = await readOpenaiAuth();
+    if (!auth?.loggedIn) throw new Error("尚未登录 OpenAI 官方账号——请先在模型设置页完成设备码登录");
+    const catalog = await fetchOpenaiModels();
+    return { status: 200, latencyMs: Date.now() - startedAt, model: model ?? "", models: catalog.models, ok: true, via: catalog.source === "official" ? "official" : "official-fallback" };
+  }
   const authHeaders: Record<string, string> = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
 
   // 第一步：GET /models 轻量探测，毫秒级即可判断网络连通与认证
@@ -981,7 +1013,10 @@ async function probeCustomModel(input: { provider?: string; baseUrl: string; api
         modelsStatus = response.status;
       } catch { /* 返回的不是 JSON，走流式探测兜底 */ }
     } else if (response.status === 401 || response.status === 403) {
-      throw new Error(`认证失败（HTTP ${response.status}）：网络是通的，请检查 API Key`);
+      const raw = await response.text().catch(() => "");
+      let reason = "";
+      try { const parsed = JSON.parse(raw); reason = parsed?.error?.message ?? parsed?.message ?? ""; } catch { reason = raw.slice(0, 160); }
+      throw new Error(`认证失败（HTTP ${response.status}）${reason ? `：${reason}` : "：网络是通的，请检查 API Key"}`);
     } else if (response.status !== 404 && response.status !== 405) {
       const body = await response.text();
       throw new Error(`HTTP ${response.status}: ${body.slice(0, 200) || response.statusText}`);
@@ -1175,7 +1210,9 @@ app.whenReady().then(async () => {
     await applyPersonalizationToAgentsMd(await readPersonalization(), codexHome);
   } catch (error) { console.warn("AGENTS.md bootstrap failed:", error); }
   const custom = await readCustomModel();
-  if (custom?.encryptedKey && safeStorage.isEncryptionAvailable()) {
+  if (custom?.provider === "openai-official") {
+    server.setApiKey("");
+  } else if (custom?.encryptedKey && safeStorage.isEncryptionAvailable()) {
     try {
       server.setApiKey(safeStorage.decryptString(Buffer.from(custom.encryptedKey, "base64")));
     } catch (error) {
@@ -1247,6 +1284,16 @@ app.whenReady().then(async () => {
     }
   });
   try {
+    // 官方订阅走 chatgpt.com 后端（区域受限）：必须在引擎 spawn 之前注入代理 env——
+    // spawn 后再 setExternalEnv 对已运行进程无效，引擎会一直直连导致流反复断开（Reconnecting x/10）。
+    if (custom?.provider === "openai-official") {
+      const proxy = await resolveLiveProxy();
+      if (proxy) {
+        const officialEnv = connectorEnv(await readConnectors());
+        Object.assign(officialEnv, { HTTPS_PROXY: proxy, HTTP_PROXY: proxy, NO_PROXY: "localhost,127.0.0.1,::1", no_proxy: "localhost,127.0.0.1,::1" });
+        server.setExternalEnv(officialEnv);
+      }
+    }
     await server.start();
   } catch (error) {
     sendToWindow("codex:event", { kind: "status", status: "error", message: String(error) });
@@ -1318,7 +1365,7 @@ async function handleWeixinMessage(message: { from: string; text: string; contex
         cwd: botConfig?.workspace || app.getPath("home"),
         approvalPolicy: "never",
         sandbox: "danger-full-access",
-        modelProvider: model.provider,
+        ...(model.provider === "openai-official" ? {} : { modelProvider: model.provider }),
       }) as any;
       threadId = started.thread.id;
       weixinBindings.set(message.from, threadId);
@@ -1384,7 +1431,7 @@ async function handleTelegramMessage(message: { from: string; chatId: number; te
     if (threadId) { try { await server.request("thread/resume", { threadId, excludeTurns: false }); } catch { threadId = ""; weixinBindings.delete("tg:" + message.from); } }
     if (!threadId) {
       const botConfig = await readChannelBot().catch(() => null);
-      const started = await server.request("thread/start", { model: model.model, cwd: botConfig?.workspace || app.getPath("home"), approvalPolicy: "never", sandbox: "danger-full-access", modelProvider: model.provider }) as any;
+      const started = await server.request("thread/start", { model: model.model, cwd: botConfig?.workspace || app.getPath("home"), approvalPolicy: "never", sandbox: "danger-full-access", ...(model.provider === "openai-official" ? {} : { modelProvider: model.provider }) }) as any;
       threadId = started.thread.id;
       weixinBindings.set("tg:" + message.from, threadId);
     }
@@ -1753,6 +1800,461 @@ ipcMain.handle("builtin:save", async (_e, cfg: BuiltinPluginConfig) => {
 ipcMain.handle("builtin:probe", async (_e, input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) => probeBuiltinModels(input));
 ipcMain.handle("builtin:generate-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; prompt: string }) => generateImageWith(input));
 ipcMain.handle("builtin:describe-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) => describeImageWith(input));
+
+// —— 中转站账户（sub2api 兼容网关：登录 / 余额 / 订阅套餐 / 密钥） ——
+// 协议实证（Wei-Shaw/sub2api）：POST /api/v1/auth/login{email,password}→{access_token,refresh_token,user}；
+// GET /api/v1/user/profile→data.balance(USD)；GET /api/v1/subscriptions/summary→[{group_id,group_name,monthly_used_usd,monthly_limit_usd,expires_at}]；
+// GET /api/v1/keys→[{id,key(明文),name,group_id,quota,quota_used,status}]；POST /api/v1/keys{name,group_id?}；
+// GET /api/v1/groups/available；网关 OpenAI 兼容 = {baseUrl}/v1。
+const relayAccountFile = path.join(app.getPath("userData"), "relay-account.json");
+const relayStoreFile = path.join(app.getPath("userData"), "relay-store.json");
+type RelayAccount = {
+  baseUrl: string;
+  email: string;
+  passwordEnc?: string; // safeStorage 加密，401 时自动重登
+  accessToken?: string;
+  refreshToken?: string;
+  tokenExpiresAt?: number;
+  selectedMode?: "balance" | "plan";
+  selectedGroupId?: number | null;
+  selectedKeyId?: number;
+  selectedKeyName?: string;
+};
+type RelayStore = { activeId: string | null; accounts: (RelayAccount & { id: string })[] };
+// 多账户库：id = base|email；老的单账户 relay-account.json 首次读取时自动迁移
+async function readRelayStore(): Promise<RelayStore> {
+  try {
+    const store = JSON.parse(await fs.readFile(relayStoreFile, "utf8"));
+    if (store && Array.isArray(store.accounts)) return store as RelayStore;
+  } catch { /* 首次/损坏：走迁移 */ }
+  try {
+    const legacy = JSON.parse(await fs.readFile(relayAccountFile, "utf8"));
+    if (legacy?.baseUrl && legacy?.email) {
+      const store: RelayStore = { activeId: `${relayBase(legacy.baseUrl)}|${legacy.email}`, accounts: [{ ...legacy, id: `${relayBase(legacy.baseUrl)}|${legacy.email}` }] };
+      await fs.writeFile(relayStoreFile, JSON.stringify(store, null, 2), "utf8");
+      return store;
+    }
+  } catch { /* 无旧数据 */ }
+  return { activeId: null, accounts: [] };
+}
+async function writeRelayStore(store: RelayStore) {
+  await fs.writeFile(relayStoreFile, JSON.stringify(store, null, 2), "utf8");
+}
+async function readRelayAccount(): Promise<RelayAccount | null> {
+  const store = await readRelayStore();
+  return store.accounts.find((a) => a.id === store.activeId) ?? null;
+}
+async function writeRelayAccount(account: RelayAccount & { id?: string }) {
+  const store = await readRelayStore();
+  const id = account.id ?? `${relayBase(account.baseUrl)}|${account.email}`;
+  const next = { ...account, id };
+  const idx = store.accounts.findIndex((a) => a.id === id);
+  if (idx >= 0) store.accounts[idx] = next; else store.accounts.push(next);
+  store.activeId = id;
+  await writeRelayStore(store);
+}
+function relayBase(input: string | undefined): string {
+  return String(input ?? "").trim().replace(/\/$/, "") || "https://api.pptoken.cc";
+}
+async function relayRequest(url: string, init: RequestInit = {}): Promise<{ ok: boolean; status: number; data: any; message?: string }> {
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: AbortSignal.timeout(20_000), ...init });
+  } catch (error) {
+    throw describeNetworkError(error, "中转站请求");
+  }
+  const payload = await response.json().catch(() => null);
+  const code = payload?.code;
+  const ok = response.ok && (code === undefined || code === 0 || code === 200);
+  return { ok, status: response.status, data: payload?.data ?? payload, message: payload?.message };
+}
+async function relayLoginRaw(baseUrl: string, email: string, password: string) {
+  const { ok, data, message } = await relayRequest(`${baseUrl}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!ok || !data?.access_token) throw new Error("中转站登录失败：" + (message || "账号或密码不正确"));
+  return data as { access_token: string; refresh_token?: string; expires_in?: number; user?: { balance?: number } };
+}
+// 认证请求：401 且本地存有加密密码时自动重登一次再重试
+async function relayAuthedFetch(account: RelayAccount, urlPath: string, body?: unknown): Promise<any> {
+  const base = relayBase(account.baseUrl);
+  const call = (token: string) => relayRequest(`${base}${urlPath}`, {
+    method: body === undefined ? "GET" : "POST",
+    headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let result = await call(account.accessToken ?? "");
+  if (result.status === 401 && account.passwordEnc && safeStorage.isEncryptionAvailable()) {
+    const password = safeStorage.decryptString(Buffer.from(account.passwordEnc, "base64"));
+    const login = await relayLoginRaw(base, account.email, password);
+    account.accessToken = login.access_token;
+    account.refreshToken = login.refresh_token;
+    account.tokenExpiresAt = login.expires_in ? Date.now() + login.expires_in * 1000 : undefined;
+    await writeRelayAccount(account);
+    result = await call(login.access_token);
+  }
+  if (!result.ok) throw new Error("中转站请求失败：" + (result.message || `HTTP ${result.status}`));
+  return result.data;
+}
+async function relayAsArray(data: any): Promise<any[]> {
+  return Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : Array.isArray(data?.items) ? data.items : [];
+}
+ipcMain.handle("relay:login", async (_e, input: { baseUrl: string; email: string; password: string }) => {
+  const baseUrl = relayBase(input.baseUrl);
+  const email = String(input.email ?? "").trim();
+  const login = await relayLoginRaw(baseUrl, email, String(input.password ?? ""));
+  const account: RelayAccount = {
+    baseUrl,
+    email,
+    accessToken: login.access_token,
+    refreshToken: login.refresh_token,
+    tokenExpiresAt: login.expires_in ? Date.now() + login.expires_in * 1000 : undefined,
+  };
+  if (safeStorage.isEncryptionAvailable()) {
+    try { account.passwordEnc = safeStorage.encryptString(String(input.password ?? "")).toString("base64"); } catch { /* 加密不可用就不存密码，401 时需重新登录 */ }
+  }
+  await writeRelayAccount(account);
+  return { email, baseUrl, balance: Number(login.user?.balance ?? 0) };
+});
+ipcMain.handle("relay:load-account", async () => {
+  const account = await readRelayAccount();
+  if (!account) return null;
+  return { baseUrl: account.baseUrl, email: account.email, loggedIn: Boolean(account.accessToken), selectedMode: account.selectedMode ?? null, selectedGroupId: account.selectedGroupId ?? null, selectedKeyName: account.selectedKeyName ?? null };
+});
+ipcMain.handle("relay:logout", async () => {
+  // 退出 = 移除当前账号；还有其他账号时自动切到第一个
+  const store = await readRelayStore();
+  store.accounts = store.accounts.filter((a) => a.id !== store.activeId);
+  store.activeId = store.accounts[0]?.id ?? null;
+  await writeRelayStore(store);
+  return { ok: true, remaining: store.accounts.length };
+});
+ipcMain.handle("relay:accounts", async () => {
+  const store = await readRelayStore();
+  return store.accounts.map((a) => ({ id: a.id, baseUrl: a.baseUrl, email: a.email, loggedIn: Boolean(a.accessToken), selectedMode: a.selectedMode ?? null, selectedGroupId: a.selectedGroupId ?? null, selectedKeyName: a.selectedKeyName ?? null, active: a.id === store.activeId }));
+});
+ipcMain.handle("relay:switch-account", async (_e, id: string) => {
+  const store = await readRelayStore();
+  const target = store.accounts.find((a) => a.id === id);
+  if (!target) throw new Error("账户不存在");
+  store.activeId = id;
+  await writeRelayStore(store);
+  return { ok: true, baseUrl: target.baseUrl, email: target.email };
+});
+ipcMain.handle("relay:remove-account", async (_e, id: string) => {
+  const store = await readRelayStore();
+  store.accounts = store.accounts.filter((a) => a.id !== id);
+  if (store.activeId === id) store.activeId = store.accounts[0]?.id ?? null;
+  await writeRelayStore(store);
+  return { ok: true, activeId: store.activeId };
+});
+ipcMain.handle("relay:overview", async () => {
+  const account = await readRelayAccount();
+  if (!account?.accessToken) throw new Error("尚未登录中转站");
+  const profile = await relayAuthedFetch(account, "/api/v1/user/profile").catch(() => null);
+  // subscriptions/summary 的 data 是 {active_count,total_used_usd,subscriptions:[...]}——数组嵌在 subscriptions 字段
+  const summaryRaw = await relayAuthedFetch(account, "/api/v1/subscriptions/summary").catch(() => null);
+  const subscriptions = Array.isArray(summaryRaw) ? summaryRaw : Array.isArray(summaryRaw?.subscriptions) ? summaryRaw.subscriptions : relayAsArray(summaryRaw);
+  const keys = await relayAuthedFetch(account, "/api/v1/keys").then(relayAsArray).catch(() => [] as any[]);
+  const groups = await relayAuthedFetch(account, "/api/v1/groups/available").then(relayAsArray).catch(() => [] as any[]);
+  return {
+    baseUrl: account.baseUrl,
+    email: account.email,
+    balance: Number(profile?.balance ?? 0),
+    subscriptions,
+    keys,
+    groups,
+    selectedMode: account.selectedMode ?? null,
+    selectedGroupId: account.selectedGroupId ?? null,
+    selectedKeyId: account.selectedKeyId ?? null,
+    selectedKeyName: account.selectedKeyName ?? null,
+  };
+});
+ipcMain.handle("relay:create-key", async (_e, input: { name: string; groupId?: number | null }) => {
+  const account = await readRelayAccount();
+  if (!account?.accessToken) throw new Error("尚未登录中转站");
+  const body: Record<string, unknown> = { name: input.name };
+  if (input.groupId != null) body.group_id = input.groupId;
+  return relayAuthedFetch(account, "/api/v1/keys", body);
+});
+ipcMain.handle("relay:select", async (_e, input: { mode: "balance" | "plan"; groupId: number | null; keyId?: number; keyName?: string }) => {
+  const account = await readRelayAccount();
+  if (!account) throw new Error("尚未登录中转站");
+  account.selectedMode = input.mode;
+  account.selectedGroupId = input.groupId;
+  account.selectedKeyId = input.keyId;
+  account.selectedKeyName = input.keyName;
+  await writeRelayAccount(account);
+  return { ok: true };
+});
+// 主界面余额徽标：用 API key 直接查网关账单（无需面板 token）
+ipcMain.handle("relay:key-billing", async (_e, input: { baseUrl: string; apiKey: string }) => {
+  const base = relayBase(input.baseUrl);
+  const { ok, data, message } = await relayRequest(`${base}/v1/sub2api/billing`, { headers: { Authorization: `Bearer ${input.apiKey}` } });
+  if (!ok) throw new Error("账单查询失败：" + (message || ""));
+  return data;
+});
+
+// ── OpenAI 官方订阅（ChatGPT 登录）：走引擎原生 codex login --device-auth 设备码流程 ──
+// 登录成功后引擎在 CODEX_HOME/auth.json 拿到 ChatGPT tokens，config 由 applyCustomModel
+// 对 provider="openai-official" 特判（不写 model_provider，写 preferred_auth_method="chatgpt"）。
+type OpenaiLoginState = { child: { kill: () => void; exitCode: number | null } | null; lines: string[]; url: string; code: string; error: string };
+const openaiLogin: OpenaiLoginState = { child: null, lines: [], url: "", code: "", error: "" };
+function openaiAuthFile() {
+  return path.join(codexHome, "auth.json");
+}
+async function readOpenaiAuth(): Promise<{ loggedIn: boolean; email: string; accountId: string } | null> {
+  try {
+    const auth = JSON.parse(await fs.readFile(openaiAuthFile(), "utf8"));
+    const tokens = auth?.tokens;
+    if (!tokens?.id_token) return { loggedIn: false, email: "", accountId: "" };
+    // id_token 是 JWT：payload 里带 email / chatgpt_account_id
+    let email = "";
+    try {
+      const payload = JSON.parse(Buffer.from(String(tokens.id_token).split(".")[1], "base64").toString("utf8"));
+      email = String(payload?.email ?? "");
+    } catch { /* JWT 解析失败不影响登录态判定 */ }
+    return { loggedIn: true, email, accountId: String(tokens.account_id ?? "") };
+  } catch { return null; }
+}
+ipcMain.handle("openai:login-start", async (_e, input: { proxy?: string } = {}) => {
+  if (openaiLogin.child) { try { openaiLogin.child.kill(); } catch { /* 已退出 */ } }
+  openaiLogin.lines = []; openaiLogin.url = ""; openaiLogin.code = ""; openaiLogin.error = "";
+  // OpenAI 对部分地区/IP 限制访问（直连 403）：用户手填代理 > 进程环境变量 > 系统代理解析
+  const proxyEnv: Record<string, string> = {};
+  try {
+    const manual = String(input?.proxy ?? "").trim();
+    const direct = manual || process.env.HTTPS_PROXY || process.env.https_proxy || process.env.ALL_PROXY || process.env.all_proxy;
+    if (direct) {
+      proxyEnv.HTTPS_PROXY = direct; proxyEnv.HTTP_PROXY = direct;
+    } else {
+      const rule = await (await import("electron")).session.defaultSession.resolveProxy("https://auth.openai.com");
+      const match = rule.match(/PROXY\s+([^;\s]+)/i);
+      if (match && !/^direct/i.test(rule)) {
+        const proxyUrl = match[1].startsWith("http") ? match[1] : `http://${match[1]}`;
+        proxyEnv.HTTPS_PROXY = proxyUrl; proxyEnv.HTTP_PROXY = proxyUrl;
+      }
+    }
+  } catch { /* 代理解析失败就直连尝试 */ }
+  const child = spawn(codexBinaryPath(), ["login", "--device-auth"], {
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+    env: { ...process.env, ...proxyEnv, CODEX_HOME: codexHome },
+  });
+  openaiLogin.child = child;
+  child.on("exit", (code) => {
+    // 进程退出且没拿到授权 URL = 登录请求本身失败（典型：无代理直连 403），把最后错误行透出
+    if (!openaiLogin.url) {
+      const last = [...openaiLogin.lines].reverse().map((l) => l.trim()).find((l) => l && !/warning/i.test(l));
+      openaiLogin.error = last || `登录进程已退出（exit ${code ?? "?"}）`;
+    } else if (!existsSync(openaiAuthFile())) {
+      // URL 已发出但进程退出且 auth.json 没落地 = 授权没完成/令牌交换失败（如代码过期、代理中断）
+      const last = [...openaiLogin.lines].reverse().map((l) => l.trim()).find((l) => l && !/warning/i.test(l));
+      openaiLogin.error = last || `登录进程已退出（exit ${code ?? "?"}）但未完成授权，请重新登录获取新的验证码`;
+    }
+  });
+  child.stdout.on("data", (chunk: Buffer) => {
+    // Windows 控制台输出带 ANSI 颜色转义码（\x1b[36m 等），会污染 URL 和验证码——先剥掉
+    const text = chunk.toString().replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/[\u0000-\u001f](?=\S)/g, (m) => (m === "\n" ? m : ""));
+    openaiLogin.lines.push(text);
+    if (openaiLogin.lines.length > 40) openaiLogin.lines.shift();
+    const urlMatch = text.match(/https:\/\/auth\.openai\.com[^\s"'）\]]+/);
+    if (urlMatch && !openaiLogin.url) openaiLogin.url = urlMatch[0];
+    const codeMatch = text.match(/\b([A-Z0-9]{4}-[A-Z0-9?]{3,})\b/);
+    if (codeMatch && !openaiLogin.code) openaiLogin.code = codeMatch[1];
+    else if (!openaiLogin.code && !text.includes("https://")) {
+      // 兜底：官方输出格式可能变——含 "code" 的行里抓验证码样式的 token
+      const line = text.split(/\r?\n/).find((l) => /one-time|验证码|code/i.test(l) && !/https?:\/\//.test(l));
+      const m2 = line?.match(/([A-Z0-9]{4,}-[A-Z0-9?]{3,})/i) ?? line?.match(/code[^A-Za-z0-9]*([A-Za-z0-9][A-Za-z0-9-]{3,})/i);
+      if (m2) openaiLogin.code = m2[1];
+    }
+  });
+  child.stderr.on("data", (chunk: Buffer) => {
+    openaiLogin.lines.push(chunk.toString().replace(/\x1b\[[0-9;?]*[A-Za-z]/g, ""));
+    if (openaiLogin.lines.length > 40) openaiLogin.lines.shift();
+  });
+  return { started: true };
+});
+ipcMain.handle("openai:login-status", async () => {
+  const auth = await readOpenaiAuth();
+  const childAlive = Boolean(openaiLogin.child && openaiLogin.child.exitCode === null);
+  if (auth?.loggedIn && openaiLogin.child) { try { openaiLogin.child.kill(); } catch { /* 已退出 */ } }
+  return { loggedIn: Boolean(auth?.loggedIn), email: auth?.email ?? "", url: openaiLogin.url, code: openaiLogin.code, childAlive, error: openaiLogin.error, lines: openaiLogin.lines.slice(-6).join("") };
+});
+ipcMain.handle("openai:login-cancel", async () => {
+  if (openaiLogin.child) { try { openaiLogin.child.kill(); } catch { /* 已退出 */ } }
+  return { ok: true };
+});
+ipcMain.handle("openai:usage", async (_e, input: { email?: string } = {}) => {
+  // 额度：ChatGPT 后端 wham/usage（与 dsh-codex-subscription 同源）。可指定 vault 中的账号，缺省用当前 auth.json
+  let tokens: any = null;
+  let accountId = "";
+  if (input?.email) {
+    const account = (await readOpenaiVault()).find((a) => a.email === input.email);
+    if (!account?.tokens?.access_token) throw new Error("未找到该账号的登录凭据");
+    tokens = account.tokens; accountId = account.tokens.account_id ?? "";
+  } else {
+    const auth = await readOpenaiAuth();
+    if (!auth?.loggedIn) throw new Error("尚未登录 OpenAI 官方账号");
+    tokens = JSON.parse(await fs.readFile(openaiAuthFile(), "utf8")).tokens;
+    accountId = auth.accountId;
+  }
+  const response = await openaiFetch("https://chatgpt.com/backend-api/wham/usage", accountId, tokens.access_token);
+  if (!response.ok) throw new Error(`额度查询失败 HTTP ${response.status}`);
+  return await response.json();
+});
+// ── OpenAI 多账号 vault：每账号保存 tokens（本机明文仅 userData，引擎激活时写入 auth.json）──
+const openaiVaultFile = path.join(app.getPath("userData"), "openai-accounts.json");
+const openaiProxyFile = path.join(app.getPath("userData"), "openai-proxy.json");
+const OPENAI_FALLBACK_MODELS = ["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"];
+type OpenaiVaultAccount = { id: string; email: string; tokens: { id_token?: string; access_token?: string; refresh_token?: string; account_id?: string }; savedAt: number };
+async function readOpenaiProxy(): Promise<string> {
+  try { return String(JSON.parse(await fs.readFile(openaiProxyFile, "utf8")).proxy ?? "").trim(); } catch { return ""; }
+}
+ipcMain.handle("openai:set-proxy", async (_e, proxy: string) => {
+  await fs.writeFile(openaiProxyFile, JSON.stringify({ proxy: String(proxy ?? "").trim() }, null, 2), "utf8");
+  liveProxyCache = null;
+  return { ok: true };
+});
+// 本地代理端口自动探测：配置端口连不通时扫描常见端口（用户常把 7890/7897 记混，实证）
+let liveProxyCache: { value: string; at: number } | null = null;
+function proxyAlive(proxy: string): Promise<boolean> {
+  const match = proxy.match(/^(?:https?:\/\/)?([^:]+):(\d+)/);
+  if (!match) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const socket = nodeNet.connect(Number(match[2]), match[1], () => { socket.destroy(); resolve(true); });
+    socket.on("error", () => { socket.destroy(); resolve(false); });
+    socket.setTimeout(1200, () => { socket.destroy(); resolve(false); });
+  });
+}
+async function resolveLiveProxy(): Promise<string> {
+  if (liveProxyCache && Date.now() - liveProxyCache.at < 60_000) return liveProxyCache.value;
+  const configured = await readOpenaiProxy();
+  const candidates = [...new Set([configured, "http://127.0.0.1:7897", "http://127.0.0.1:7890", "http://127.0.0.1:7899", "http://127.0.0.1:10808", "http://127.0.0.1:10809", "http://127.0.0.1:2080"])].filter(Boolean);
+  for (const candidate of candidates) {
+    if (await proxyAlive(candidate)) { liveProxyCache = { value: candidate, at: Date.now() }; return candidate; }
+  }
+  liveProxyCache = { value: configured, at: Date.now() };
+  return configured;
+}
+// OpenAI 接口（chatgpt.com 后端）在部分区域被 Cloudflare 拦截：有代理设置时走独立 session 注入代理
+async function openaiFetch(url: string, accountId: string, accessToken: string): Promise<Response> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+    Accept: "application/json",
+    // 官方后端按 client_version/originator/UA 识别客户端（缺 client_version 会 400，实证）
+    originator: "codex-harness",
+    "User-Agent": `codex-harness/${app.getVersion()}`,
+  };
+  if (accountId) headers["chatgpt-account-id"] = accountId;
+  const init: Record<string, unknown> = { headers, signal: AbortSignal.timeout(20_000) };
+  const proxy = await resolveLiveProxy();
+  if (proxy) {
+    const ses = session.fromPartition("persist:openai-api");
+    await ses.setProxy({ proxyRules: proxy, proxyBypassRules: "<local>" });
+    init.session = ses;
+  }
+  return net.fetch(url, init as RequestInit);
+}
+async function fetchOpenaiModels(): Promise<{ models: string[]; source: "official" | "fallback" }> {
+  const auth = await readOpenaiAuth();
+  if (!auth?.loggedIn) throw new Error("尚未登录 OpenAI 官方账号");
+  const tokens = JSON.parse(await fs.readFile(openaiAuthFile(), "utf8")).tokens;
+  // 官方目录按 client_version 门控：不认识的版本返回 {"models":[]}（实证 1.14.3 可用、app 自身版本为空）
+  const candidates = ["1.14.3", app.getVersion()];
+  for (const cv of candidates) {
+    try {
+      const url = `https://chatgpt.com/backend-api/codex/models?client_version=${encodeURIComponent(cv)}`;
+      const response = await openaiFetch(url, auth.accountId, tokens.access_token);
+      if (!response.ok) continue;
+      const payload: any = await response.json().catch(() => null);
+      // 官方目录结构：{ models: [{ slug, visibility, display_name, priority, ... }] }（dsh 插件实证）
+      const arr = Array.isArray(payload?.models) ? payload.models : [];
+      const ids = arr
+        .filter((m: any) => m && typeof m === "object" && typeof m.slug === "string" && m.slug && m.visibility === "list")
+        .sort((a: any, b: any) => (Number(b?.priority) || 0) - (Number(a?.priority) || 0))
+        .map((m: any) => String(m.slug));
+      if (ids.length) return { models: [...new Set<string>(ids)], source: "official" };
+    } catch { /* 尝试下一个 client_version */ }
+  }
+  return { models: OPENAI_FALLBACK_MODELS, source: "fallback" };
+}
+ipcMain.handle("openai:models", async () => {
+  try { return (await fetchOpenaiModels()).models; } catch { return OPENAI_FALLBACK_MODELS; }
+});
+async function readOpenaiVault(): Promise<OpenaiVaultAccount[]> {
+  try {
+    const vault = JSON.parse(await fs.readFile(openaiVaultFile, "utf8"));
+    return Array.isArray(vault?.accounts) ? vault.accounts : [];
+  } catch { return []; }
+}
+async function writeOpenaiVault(accounts: OpenaiVaultAccount[]) {
+  await fs.writeFile(openaiVaultFile, JSON.stringify({ accounts }, null, 2), "utf8");
+}
+ipcMain.handle("openai:capture-login", async () => {
+  // 登录检测到成功后调用：把 CODEX_HOME/auth.json 的 tokens 收进 vault（按 email 去重）
+  const auth = await readOpenaiAuth();
+  if (!auth?.loggedIn) throw new Error("尚未检测到登录成功的账号");
+  const raw = JSON.parse(await fs.readFile(openaiAuthFile(), "utf8"));
+  const accounts = await readOpenaiVault();
+  const id = auth.email || auth.accountId || "account";
+  const entry: OpenaiVaultAccount = { id, email: auth.email, tokens: raw.tokens, savedAt: Date.now() };
+  const idx = accounts.findIndex((a) => a.id === id);
+  if (idx >= 0) accounts[idx] = entry; else accounts.push(entry);
+  await writeOpenaiVault(accounts);
+  return { id, email: auth.email, total: accounts.length };
+});
+function openaiJwtClaims(idToken?: string): Record<string, any> {
+  try {
+    const part = String(idToken ?? "").split(".")[1];
+    if (!part) return {};
+    const padded = part.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (part.length % 4)) % 4);
+    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+  } catch { return {}; }
+}
+ipcMain.handle("openai:accounts", async () => {
+  const [accounts, current] = await Promise.all([readOpenaiVault(), readOpenaiAuth()]);
+  return accounts.map((a) => {
+    const authClaims = openaiJwtClaims(a.tokens?.id_token)?.["https://api.openai.com/auth"] ?? {};
+    return {
+      id: a.id,
+      email: a.email,
+      savedAt: a.savedAt,
+      active: Boolean(current?.loggedIn && current.email && current.email === a.email),
+      planType: String(authClaims.chatgpt_plan_type ?? ""),
+      subscriptionUntil: String(authClaims.chatgpt_subscription_active_until ?? ""),
+    };
+  });
+});
+ipcMain.handle("openai:account-remove", async (_e, id: string) => {
+  const accounts = (await readOpenaiVault()).filter((a) => a.id !== id);
+  await writeOpenaiVault(accounts);
+  return { ok: true, total: accounts.length };
+});
+ipcMain.handle("openai:account-switch", async (_e, id: string) => {
+  // 切换 = 把该账号 tokens 写回 CODEX_HOME/auth.json 并重启引擎
+  const account = (await readOpenaiVault()).find((a) => a.id === id);
+  if (!account) throw new Error("账号不存在");
+  await fs.writeFile(openaiAuthFile(), JSON.stringify({ OPENAI_API_KEY: null, tokens: account.tokens, last_refresh: new Date().toISOString() }, null, 2), "utf8");
+  await server.restart();
+  return { ok: true, email: account.email };
+});
+// ── 中转站多账号：全部账号的密钥（按账户分组返回，渲染层折叠展示）──
+ipcMain.handle("relay:keys-all", async () => {
+  const store = await readRelayStore();
+  const groups: any[] = [];
+  for (const account of store.accounts) {
+    try {
+      const keys = await relayAuthedFetch(account, "/api/v1/keys").then(relayAsArray);
+      groups.push({ id: account.id, email: account.email, baseUrl: account.baseUrl, active: account.id === store.activeId, selectedKeyId: account.selectedKeyId ?? null, keys });
+    } catch (error: any) {
+      groups.push({ id: account.id, email: account.email, baseUrl: account.baseUrl, active: account.id === store.activeId, selectedKeyId: account.selectedKeyId ?? null, keys: [], error: String(error.message ?? error) });
+    }
+  }
+  return groups;
+});
 
 /**
  * 输入框提示词增强（复刻 WorkBuddy enhance 按钮）：用当前自定义模型把用户原文润色成
@@ -3642,6 +4144,9 @@ ipcMain.handle("custom-model:save", async (_event, input: { provider: string; na
     encryptedKey = safeStorage.encryptString(input.apiKey).toString("base64");
   }
   const wireApi = input.wireApi === "chat" ? "chat" : "responses"; // auto 已在前端探测时落定为实际协议；兜底 responses
+  // 官方订阅：chatgpt 后端只认 ChatGPT 登录凭据，绝不能把任何 API Key 带上（含「留空沿用上一供应商」的复用逻辑）
+  // 带上会 401 "api_key_not_supported" → 流无限重连（实证）
+  if (provider === "openai-official") encryptedKey = undefined;
   // 合并历史模型列表：前端传来的列表覆盖同 ID 旧项，其余保留，再并入本次生效 model；按 ID 去重保前端传入顺序
   const list = await readCustomModels();
   const existing = list.find((entry) => entry.provider === provider);
