@@ -10,6 +10,11 @@ export type RelayActive = {
   mode: "balance" | "plan";
   groupId: number | null;
   label: string;
+  /** 登录账户的邮箱（来自 relayOverview.email），用于区分同一网关下的不同账号 */
+  email?: string;
+  /** 每次成功切换/激活时写入的时间戳；UI 用它作为刷新与重渲染的强信号，
+   *  即便 provider 字符串因同网关复用而不变，也能强制监控与配置跟着切换。 */
+  switchedAt?: number;
 };
 
 export type RelayGroup = { group_id: number; group_name: string };
@@ -43,14 +48,14 @@ export async function resolveRelayTarget(mode: "balance" | "plan", group?: Relay
   let hostLabel = "中转站";
   try { hostLabel = new URL(baseUrl).host.replace(/^api\./i, "").split(".")[0] || hostLabel; } catch { /* 保底 */ }
   const provider = `relay-${hostLabel.toLowerCase()}`;
-  const displayName = `${hostLabel.toUpperCase()} · ${mode === "plan" ? group!.group_name : "余额"}`;
+  const displayName = `${hostLabel.toUpperCase()} · ${mode === "plan" ? group!.group_name : "余额"}${overview?.email ? " · " + overview.email : ""}`;
   return {
     overview,
     gateway: `${baseUrl}/v1`,
     apiKey: key.key,
     provider,
     displayName,
-    active: { provider, baseUrl, apiKey: key.key, mode, groupId: mode === "plan" ? group!.group_id : null, label: displayName },
+    active: { provider, baseUrl, apiKey: key.key, mode, groupId: mode === "plan" ? group!.group_id : null, label: displayName, email: overview?.email },
   };
 }
 
@@ -69,7 +74,7 @@ export async function resolveRelayKeyTarget(keyRow: { id: any; name: any; key: s
   try { hostLabel = new URL(baseUrl).host.replace(/^api\./i, "").split(".")[0] || hostLabel; } catch { /* 保底 */ }
   const provider = `relay-${hostLabel.toLowerCase()}`;
   const mode: "balance" | "plan" = keyRow.group_id != null ? "plan" : "balance";
-  const displayName = `${hostLabel.toUpperCase()} · ${keyRow.name || (mode === "plan" ? "套餐" : "余额")}`;
+  const displayName = `${hostLabel.toUpperCase()} · ${keyRow.name || (mode === "plan" ? "套餐" : "余额")}${overview?.email ? " · " + overview.email : ""}`;
   await window.codex.relaySelect({ mode, groupId: keyRow.group_id ?? null, keyId: keyRow.id, keyName: keyRow.name });
   return {
     overview,
@@ -77,7 +82,7 @@ export async function resolveRelayKeyTarget(keyRow: { id: any; name: any; key: s
     apiKey: keyRow.key,
     provider,
     displayName,
-    active: { provider, baseUrl, apiKey: keyRow.key, mode, groupId: keyRow.group_id ?? null, label: displayName },
+    active: { provider, baseUrl, apiKey: keyRow.key, mode, groupId: keyRow.group_id ?? null, label: displayName, email: overview?.email },
   };
 }
 

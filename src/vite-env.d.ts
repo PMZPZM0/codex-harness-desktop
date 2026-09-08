@@ -412,6 +412,13 @@ interface Window {
       logFile: { path: string; size: number; modifiedAt: number } | null;
       databases: { name: string; size: number }[]; sessions: number; archived: number;
     }>;
+    /** 数据管理：各数据目录占用（bytes）与是否可清理 */
+    storageInfo(): Promise<{
+      items: { key: string; label: string; bytes: number; deletable: boolean }[];
+      userData: string; engineLog: string; imagesDir: string;
+    }>;
+    /** 缓存清理：仅支持安全目标（引擎日志 / 本地图片缓存），绝不删会话历史 */
+    storageClear(target: "engine-log" | "images"): Promise<{ ok: boolean; target: string; error?: string }>;
     readBuiltinPlugins(): Promise<{ image?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string }; vision?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string } }>;
     engineCheckUpdate(): Promise<{ current: string; latest: string; hasUpdate: boolean }>;
     enginePerformUpdate(): Promise<{ ok: boolean; version: string; message: string }>;

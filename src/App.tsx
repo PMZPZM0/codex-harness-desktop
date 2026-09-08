@@ -2,6 +2,7 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { createPortal } from "react-dom";
 import "@xterm/xterm/css/xterm.css";
 import ReactMarkdown, { type Components } from "react-markdown";
+import { markdownUrlTransform } from "./lib/markdown-url";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -12,7 +13,7 @@ import { matchModelSpec, loadExternalSpecs } from "./lib/model-specs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
 import { resolveSkillVisual, type SkillVisual } from "./lib/skill-icon";
 import { translateEngineNotice } from "./lib/engine-notices-zh";
-import { resolveRelayAutoTarget, resolveRelayTarget, resolveRelayKeyTarget, writeRelayActive, readRelayActive } from "./lib/relay";
+import { resolveRelayAutoTarget, resolveRelayTarget, resolveRelayKeyTarget, writeRelayActive, readRelayActive, type RelayActive } from "./lib/relay";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "./lib/entity-avatar";
 import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens } from "./lib/prompt-images";
 import {
@@ -45,6 +46,7 @@ import {
   Image,
   GitBranch,
   Globe2,
+  GripVertical,
   Hash,
   Info,
   KeyRound,
@@ -123,6 +125,7 @@ import {
   Pin,
   Wallet,
   LogIn,
+  Database,
 } from "lucide-react";
 import { useMemory, type MemoryGatewayState, type MemoryGroup, type MemoryPriority, type MemoryRecord, groupMemoriesByThread } from "./hooks/useMemory";
 import UsagePanel from "./components/UsagePanel";
@@ -701,7 +704,7 @@ const cronTemplates = [
   { name: "发布简报", desc: "整理本周合并的 PR 和 commit，按功能、修复、体验及工程改进分类，同时生成团队版和面向用户的精简发布说明。", time: "每周五 16:00", intervalMinutes: 10080, icon: "📝" },
   { name: "文档同步检查", desc: "对照最近 7 天的代码、配置、接口与文档变更，识别已改变公开行为但文档尚未同步的高置信差异，并附文件路径和修复建议。", time: "每周三 15:00", intervalMinutes: 10080, icon: "📄" },
 ];
-type SettingsPage = "user" | "general" | "devtools" | "appearance" | "personalization" | "model" | "relay" | "openai" | "browser" | "computer" | "memory" | "agents" | "teams" | "plugins" | "mcp" | "ssh" | "skills" | "commands" | "hooks" | "usage" | "channel" | "schedule" | "rpa" | "archive" | "backup" | "automation" | "agentteam";
+type SettingsPage = "user" | "general" | "devtools" | "appearance" | "personalization" | "model" | "relay" | "openai" | "browser" | "computer" | "memory" | "agents" | "teams" | "plugins" | "mcp" | "ssh" | "skills" | "commands" | "hooks" | "usage" | "channel" | "schedule" | "rpa" | "archive" | "backup" | "storage" | "automation" | "agentteam";
 // 导航分组：常用项置顶（技能/插件紧挨），自动化三合一、智能体+专家团合并为二级页。
 // "browser"/"computer"/"rpa"/"agents"/"teams" 保留在类型里（历史跳转兼容），但不再出现在导航。
 const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
@@ -709,7 +712,7 @@ const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
   { group: "常用", items: [["general", "控制台", Settings2], ["appearance", "外观", Sun], ["personalization", "个性化", Sparkles], ["skills", "技能", Zap], ["plugins", "插件", Store], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare]] },
   { group: "自动化与能力", items: [["automation", "自动化", Workflow], ["mcp", "MCP", Wifi], ["schedule", "定时任务", Clock3], ["hooks", "钩子", Wrench], ["ssh", "SSH 服务器", Server]] },
   { group: "智能体", items: [["agentteam", "智能体团队", Users]] },
-  { group: "数据与统计", items: [["usage", "使用统计", CircleGauge], ["backup", "会话备份", Download], ["archive", "归档管理", Archive]] },
+  { group: "数据与统计", items: [["usage", "使用统计", CircleGauge], ["storage", "数据管理", Database], ["backup", "会话备份", Download], ["archive", "归档管理", Archive]] },
   { group: "开发工具", items: [["devtools", "开发工具", TerminalSquare]] },
 ];
 
@@ -1203,7 +1206,8 @@ function UserRefsRow({ refs, onOpenFile, onQuote }: { refs: ParsedUserRefs; onOp
   );
 }
 
-/** 排队消息列表：位于输入框上方，长条布局，新消息往上叠加（最新的在最顶部、紧贴输入框） */
+/** 排队消息列表：位于输入框上方，长条布局，新消息往上叠加（最新的在最顶部、紧贴输入框）。
+ *  含 2 条及以上时提供折叠/展开开关（默认展开，由用户手动折叠）；拖动排序由每条左侧手柄支持。 */
 function QueuedMessageList({ entries, onOpenFile, onQuote, onDelete, onStart, onSave, onReorder, dragIndex, setDragIndex }: {
   entries: QueueItem[];
   onOpenFile: (path: string) => void;
@@ -1215,14 +1219,23 @@ function QueuedMessageList({ entries, onOpenFile, onQuote, onDelete, onStart, on
   dragIndex: number | null;
   setDragIndex: (index: number | null) => void;
 }) {
+  const [collapsed, setCollapsed] = useState(false);
   if (!entries.length) return null;
   // 新消息往上叠加：渲染倒序（数组末尾的最新消息显示在最顶部）。拖拽 index 是显示序，需镜像回原数组序。
   const reversed = [...entries].reverse();
   const n = entries.length;
   const mapIndex = (displayIndex: number) => n - 1 - displayIndex;
   return (
-    <div className="queued-messages">
-      {reversed.map((entry, displayIndex) => <QueuedMessageItem key={entry.id} entry={entry} index={displayIndex} total={entries.length} onOpenFile={onOpenFile} onQuote={onQuote} onDelete={onDelete} onStart={onStart} onSave={onSave} onReorder={(from, to) => onReorder(mapIndex(from), mapIndex(to))} dragIndex={dragIndex} setDragIndex={setDragIndex} />)}
+    <div className={`queued-messages ${collapsed ? "is-collapsed" : ""}`}>
+      {n >= 2 && (
+        <button type="button" className="queued-collapse-toggle" onClick={() => setCollapsed((value) => !value)} title={collapsed ? "展开排队消息" : "折叠排队消息"}>
+          {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+          <span className="queued-collapse-label">排队消息</span>
+          <span className="queued-collapse-count">{n}</span>
+          <span className="queued-collapse-hint">{collapsed ? "展开" : "折叠"}</span>
+        </button>
+      )}
+      {!collapsed && reversed.map((entry, displayIndex) => <QueuedMessageItem key={entry.id} entry={entry} index={displayIndex} total={entries.length} onOpenFile={onOpenFile} onQuote={onQuote} onDelete={onDelete} onStart={onStart} onSave={onSave} onReorder={(from, to) => onReorder(mapIndex(from), mapIndex(to))} dragIndex={dragIndex} setDragIndex={setDragIndex} />)}
     </div>
   );
 }
@@ -1260,6 +1273,7 @@ function QueuedMessageItem({ entry, index, total, onOpenFile, onQuote, onDelete,
       onDragEnd={() => setDragIndex(null)}
       title={total > 1 ? "拖动可调整排队顺序" : undefined}
     >
+      <span className="queued-grip" aria-hidden="true"><GripVertical size={14} /></span>
       <div className="queued-main">
         <span className="queued-badge"><Clock3 size={11} />排队中{total > 1 ? ` ${index + 1}/${total}` : ""}</span>
         <UserRefsRow refs={refs} onOpenFile={onOpenFile} onQuote={onQuote} />
@@ -2070,7 +2084,7 @@ function splitMarkdown(text: string): string[] {
 
 /** 单块渲染：props 是字符串，memo 按值比较 —— 内容不变就完全跳过解析与 diff */
 const MdBlock = memo(function MdBlock({ text }: { text: string }) {
-  return <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>{text}</ReactMarkdown>;
+  return <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS} urlTransform={markdownUrlTransform}>{text}</ReactMarkdown>;
 });
 
 const Markdown = memo(function Markdown({ children }: { children: string }) {
@@ -2273,6 +2287,7 @@ function CappedToolRun({ label, units, renderUnit, limit = 3 }: {
   limit?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
+  // limit=Infinity：回合运行中不收起旧行——流式期间插入折叠行会把下方正在出字的正文顶得上跳下跳（实证）
   const hiddenCount = Math.max(0, units.length - limit);
   if (!hiddenCount) return <>{units.map(renderUnit)}</>;
   const hidden = units.slice(0, hiddenCount);
@@ -2450,7 +2465,67 @@ function ContextRing({ tokenUsage, fallbackWindow }: { tokenUsage?: any; fallbac
   const percent = used != null ? Math.min(100, Math.max(0, (used / contextWindow) * 100)) : 0;
   const label = used != null ? `${Math.round(percent)}%` : "—";
   const title = used != null ? `上下文 ${Math.round(percent)}% · ${Number(used).toLocaleString()} / ${Number(contextWindow).toLocaleString()} Token` : `上下文窗口 ${Number(contextWindow).toLocaleString()} Token · 用量未同步`;
-  return <span className="context-ring" role="progressbar" aria-label="上下文用量" aria-valuenow={Math.round(percent)} aria-valuemin={0} aria-valuemax={100} title={title}><CircleGauge size={13} /><small>{label}</small></span>;
+  // 重度长上下文：接近窗口上限时变色预警（warn 80% / danger 95%），提示该压缩了
+  const tone = percent >= 95 ? "danger" : percent >= 80 ? "warn" : "";
+  return <span className={`context-ring ${tone}`} role="progressbar" aria-label="上下文用量" aria-valuenow={Math.round(percent)} aria-valuemin={0} aria-valuemax={100} title={title}><CircleGauge size={13} /><small>{label}</small></span>;
+}
+
+// ── 数据管理 / 缓存清理（设置 → 数据与统计 → 数据管理） ──
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes < 0) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = bytes / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2)} ${units[i]}`;
+}
+
+function StorageSection({ onNotice, onClearMemoryCache, openAppConfirm }: {
+  onNotice: (message: string) => void;
+  onClearMemoryCache: () => void;
+  openAppConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean>;
+}) {
+  const [info, setInfo] = useState<{ items: { key: string; label: string; bytes: number; deletable: boolean }[]; userData: string; engineLog: string; imagesDir: string } | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const refresh = () => { window.codex.storageInfo().then(setInfo).catch((error: any) => onNotice("读取数据占用失败：" + (error?.message ?? error))); };
+  useEffect(() => { refresh(); }, []);
+  const clear = async (target: "engine-log" | "images", label: string) => {
+    const ok = await openAppConfirm("清理缓存", `确认清空「${label}」？此操作不可撤销。\n（会话历史记录不会被删除，仅清理诊断日志与图片缓存。）`, "清理");
+    if (!ok) return;
+    setBusy(target);
+    try {
+      const res = await window.codex.storageClear(target);
+      if (res?.ok) { onNotice(`已清理：${label}`); refresh(); }
+      else onNotice("清理失败：" + (res?.error ?? "未知错误"));
+    } catch (error: any) {
+      onNotice("清理失败：" + (error?.message ?? error));
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <section className="settings-section stack">
+      <div className="settings-copy"><h2>数据管理</h2><p>查看各数据目录占用，并清理可安全的缓存。会话历史（rollout 原档）是你的全部对话记录，<strong>不在清理范围内</strong>，请通过归档 / 备份管理。</p></div>
+      <div className="storage-list">
+        {info?.items.map((item) => (
+          <div className="storage-row" key={item.key}>
+            <div className="storage-meta"><strong>{item.label}</strong><span>{formatBytes(item.bytes)}</span></div>
+            {item.deletable
+              ? <button className="danger-setting" disabled={busy !== null} onClick={() => void clear(item.key as "engine-log" | "images", item.label)}>{busy === item.key ? "清理中…" : "清理"}</button>
+              : <span className="storage-locked" title="会话历史不可在此删除，请用归档 / 备份管理">保留</span>}
+          </div>
+        ))}
+        {!info && <p className="muted">正在统计占用…</p>}
+      </div>
+      <div className="settings-subhead"><Database size={13} />会话恢复缓存（内存）</div>
+      <p className="muted">应用会在内存里缓存已打开过的会话用于秒开；长时间运行、切换过大量会话后可能占用可观内存。清理后下次打开会话会重新从磁盘加载（略慢一瞬）。</p>
+      <div className="settings-actions">
+        <button className="secondary-setting" disabled={busy !== null} onClick={() => { onClearMemoryCache(); onNotice("已清理会话恢复缓存"); }}>清理会话恢复缓存</button>
+        <button className="secondary-setting" onClick={() => { window.codex.getUserData().then((p: string) => window.codex.shellReveal(p)).catch(() => undefined); }}>打开数据目录</button>
+      </div>
+    </section>
+  );
 }
 
 function usageBucket(tokenUsage: any, scope: "last" | "total") {
@@ -2507,19 +2582,34 @@ function openaiWindowLabel(seconds?: number): string {
   return "额度窗口";
 }
 /** wham/usage → 可视化面板数据：主/次窗口用量、档位、状态（官方字段变动手动适配） */
-function parseOpenaiUsagePanel(data: any): { planType: string; windows: { label: string; usedPercent: number }[]; limitReached: boolean } {
+function parseOpenaiUsagePanel(data: any): { planType: string; windows: { label: string; usedPercent: number; resetAt?: number; windowSeconds?: number }[]; limitReached: boolean } {
   const rate = data?.rate_limit ?? data;
-  const windows: { label: string; usedPercent: number }[] = [];
+  const windows: { label: string; usedPercent: number; resetAt?: number; windowSeconds?: number }[] = [];
   for (const key of ["primary_window", "secondary_window", "tertiary_window"]) {
     const win = rate?.[key];
     if (win && typeof win.used_percent === "number") {
-      windows.push({ label: openaiWindowLabel(win.limit_window_seconds), usedPercent: Math.min(100, Math.max(0, win.used_percent)) });
+      windows.push({
+        label: openaiWindowLabel(win.limit_window_seconds),
+        usedPercent: Math.min(100, Math.max(0, win.used_percent)),
+        resetAt: Number(win.reset_at) || undefined,
+        windowSeconds: Number(win.limit_window_seconds) || undefined,
+      });
     }
   }
   return { planType: String(data?.plan_type ?? "plus").toUpperCase(), windows, limitReached: Boolean(rate?.limit_reached) };
 }
+/** 重置倒计时：官方 reset_at（epoch 秒）→「X 小时 Y 分后重置（HH:mm）」 */
+function openaiResetText(resetAt: number | undefined, now: number): string {
+  if (!resetAt) return "";
+  const diff = resetAt * 1000 - now;
+  if (diff <= 0) return "已重置";
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  const clock = new Date(resetAt * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return h > 0 ? `${h} 小时 ${m} 分后重置（${clock}）` : `${m} 分后重置（${clock}）`;
+}
 
-function OpenaiBalanceBadge({ activeProvider }: { activeProvider?: string }) {
+function OpenaiBalanceBadge({ accountKey }: { accountKey?: string | null }) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<ReturnType<typeof parseOpenaiUsagePanel> | null>(null);
   const [err, setErr] = useState("");
@@ -2530,19 +2620,21 @@ function OpenaiBalanceBadge({ activeProvider }: { activeProvider?: string }) {
       setErr("");
     } catch (e: any) { setErr(e.message ?? "额度同步失败"); }
   }, []);
+  const [nowTick, setNowTick] = useState(Date.now());
   useEffect(() => {
-    if (activeProvider !== "openai-official") return;
+    if (!accountKey) return;
     void refresh();
-    const timer = window.setInterval(refresh, 5 * 60_000);
-    return () => window.clearInterval(timer);
-  }, [activeProvider, refresh]);
+    const timer = window.setInterval(refresh, 60_000); // 与中转站余额徽标同节奏的实时同步
+    const tick = window.setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => { window.clearInterval(timer); window.clearInterval(tick); };
+  }, [accountKey, refresh]);
   useEffect(() => {
     if (!open) return;
     const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) setOpen(false); };
     window.addEventListener("mousedown", onDown);
     return () => window.removeEventListener("mousedown", onDown);
   }, [open]);
-  if (activeProvider !== "openai-official") return null;
+  if (!accountKey) return null;
   const primary = panel?.windows[0];
   const summary = err ? "额度同步失败" : panel && primary ? `订阅已用 ${Math.round(primary.usedPercent)}%` : "订阅";
   return <div className="relay-badge" ref={wrapRef}>
@@ -2559,6 +2651,7 @@ function OpenaiBalanceBadge({ activeProvider }: { activeProvider?: string }) {
               <span className="ctx-pop-cell-label">{win.label}</span>
               <div className="relay-plan-progress"><i style={{ width: win.usedPercent + "%" }} /></div>
               <b className="ctx-pop-cell-value">已用 {Math.round(win.usedPercent)}%</b>
+              {win.resetAt ? <small className="openai-reset-line"><Clock3 size={10} />{openaiResetText(win.resetAt, nowTick)}</small> : null}
             </div>
           ))}
         </div>
@@ -2686,7 +2779,7 @@ function extractQuotaBars(data: any): { label: string; value: number }[] {
 }
 
 /** OpenAI 订阅页（设置 → 账户 → OpenAI 订阅）：监控面板 + 多账号批量管理。 */
-function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice }: { activeProvider?: string; onActivate: (models: string[]) => Promise<void> | void; onNotice: (m: string) => void }) {
+function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActiveChange }: { activeProvider?: string; onActivate: (models: string[]) => Promise<void> | void; onNotice: (m: string) => void; onActiveChange?: (email: string) => void }) {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [device, setDevice] = useState<{ url: string; code: string; raw?: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -2696,8 +2789,10 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice }: { acti
   const [manageOpen, setManageOpen] = useState(false);
   const [manageEmail, setManageEmail] = useState("");
   const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const [nowTick, setNowTick] = useState(Date.now());
   const [proxy, setProxy] = useState(() => localStorage.getItem("openai-proxy") ?? "");
   const timerRef = useRef<number | null>(null);
+  useEffect(() => { const t = window.setInterval(() => setNowTick(Date.now()), 30_000); return () => window.clearInterval(t); }, []);
   const authOpenedRef = useRef(false);
   const reload = useCallback(async () => {
     try { setAccounts(await window.codex.openaiAccounts()); } catch { setAccounts([]); }
@@ -2715,6 +2810,12 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice }: { acti
     const t = window.setTimeout(() => { accounts.forEach((a) => { if (!usageMap[a.email]) void loadUsage(a.email); }); }, 800);
     return () => window.clearTimeout(t);
   }, [accounts]);
+  // 实时同步：60s 轮询全部账号额度（与中转站余额徽标同节奏）
+  useEffect(() => {
+    if (!accounts.length) return;
+    const t = window.setInterval(() => { accounts.forEach((a) => void loadUsage(a.email)); }, 60_000);
+    return () => window.clearInterval(t);
+  }, [accounts, loadUsage]);
   // 浏览器打开一次即可（授权 URL 首次出现时触发）
   const openAuthOnce = (url: string) => {
     if (authOpenedRef.current || !url) return;
@@ -2753,6 +2854,7 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice }: { acti
           // 登录即生效：写入 auth.json + 重启引擎 + 自动配置官方订阅模型，直接可对话
           try {
             await window.codex.openaiAccountSwitch(saved.id);
+            onActiveChange?.(saved.email);
             await onActivate(OFFICIAL_MODELS);
             onNotice("OpenAI 账号已登录并启用订阅：" + saved.email + "，可以直接开始对话");
           } catch (e: any) {
@@ -2770,6 +2872,7 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice }: { acti
     setWorking("sw" + id); setErr("");
     try {
       const r = await window.codex.openaiAccountSwitch(id);
+      onActiveChange?.(r.email);
       onNotice("已切换官方账号：" + r.email + "，引擎已重启");
     } catch (e: any) { setErr("切换失败：" + (e.message ?? e)); } finally { setWorking(""); }
   };
@@ -2781,6 +2884,7 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice }: { acti
     setWorking("en" + id); setErr("");
     try {
       const r = await window.codex.openaiAccountSwitch(id);
+      onActiveChange?.(r.email);
       await onActivate(OFFICIAL_MODELS);
       onNotice("已启用 " + r.email + " 的 Codex 订阅");
     } catch (e: any) { setErr("启用失败：" + (e.message ?? e)); } finally { setWorking(""); }
@@ -2792,8 +2896,15 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice }: { acti
       <div className="relay-plan-grid openai-account-grid">
         {accounts.map((a) => {
           const usageRaw = usageMap[a.email];
-          let bars: { label: string; value: number }[] = [];
-          if (usageRaw && !usageRaw.startsWith("ERR:")) { try { bars = extractQuotaBars(JSON.parse(usageRaw)); } catch { bars = []; } }
+          let bars: { label: string; value: number; resetAt?: number }[] = [];
+          if (usageRaw && !usageRaw.startsWith("ERR:")) {
+            try {
+              const parsed = JSON.parse(usageRaw);
+              const panel = parseOpenaiUsagePanel(parsed);
+              bars = panel.windows.map((w) => ({ label: w.label, value: w.usedPercent, resetAt: w.resetAt }));
+              if (!bars.length) bars = extractQuotaBars(parsed).map((b) => ({ label: b.label, value: b.value }));
+            } catch { bars = []; }
+          }
           const primary = bars[0];
           return (
             <div className={`relay-plan-card openai-account-card ${a.active ? "selected" : ""}`} key={a.id} onClick={() => { setManageEmail(a.email); setManageOpen(true); if (!usageRaw) void loadUsage(a.email); }} title="点卡片进入监控面板">
@@ -2808,6 +2919,7 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice }: { acti
                 <div className="openai-quota-bar">
                   <div className="openai-quota-bar-label"><span>{primary.label}</span><b>{Math.round(primary.value)}%</b></div>
                   <div className="relay-plan-progress"><i style={{ width: Math.min(100, primary.value) + "%" }} /></div>
+                {primary.resetAt ? <div className="openai-reset-line"><Clock3 size={10} />{openaiResetText(primary.resetAt, nowTick)}</div> : null}
                 </div>
               ) : <p className="openai-sub-line">点卡片查看额度监控面板</p>}
               <div className="relay-plan-card-foot">
@@ -2828,8 +2940,15 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice }: { acti
         const a = accounts.find((x) => x.email === manageEmail);
         if (!a) return null;
         const usageRaw = usageMap[a.email];
-        let bars: { label: string; value: number }[] = [];
-        if (usageRaw && !usageRaw.startsWith("ERR:")) { try { bars = extractQuotaBars(JSON.parse(usageRaw)); } catch { bars = []; } }
+        let bars: { label: string; value: number; resetAt?: number }[] = [];
+        if (usageRaw && !usageRaw.startsWith("ERR:")) {
+          try {
+            const parsed = JSON.parse(usageRaw);
+            const panel = parseOpenaiUsagePanel(parsed);
+            bars = panel.windows.map((w) => ({ label: w.label, value: w.usedPercent, resetAt: w.resetAt }));
+            if (!bars.length) bars = extractQuotaBars(parsed).map((b) => ({ label: b.label, value: b.value }));
+          } catch { bars = []; }
+        }
         return (
           <div className="relay-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setManageOpen(false); }}>
             <div className="relay-manage-modal">
@@ -2846,6 +2965,7 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice }: { acti
                     <div className="openai-quota-bar" key={bar.label}>
                       <div className="openai-quota-bar-label"><span>{bar.label}</span><b>{Math.round(bar.value)}%</b></div>
                       <div className="relay-plan-progress"><i style={{ width: Math.min(100, bar.value) + "%" }} /></div>
+                      {bar.resetAt ? <div className="openai-reset-line"><Clock3 size={10} />{openaiResetText(bar.resetAt, nowTick)}</div> : null}
                     </div>
                   ))}
                 </div>
@@ -2890,28 +3010,31 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice }: { acti
     </section>
   );
 }
-function RelayBalanceBadge({ activeProvider }: { activeProvider?: string }) {
+function RelayBalanceBadge({ active }: { active: RelayActive | null }) {
   const [open, setOpen] = useState(false);
   const [overview, setOverview] = useState<any>(null);
   const [err, setErr] = useState("");
   const wrapRef = useRef<HTMLDivElement>(null);
-  const active = useMemo(() => { try { return JSON.parse(localStorage.getItem("relay-active-v1") ?? "null"); } catch { return null; } }, [activeProvider]);
+  // 强信号指纹：provider / apiKey / mode / groupId / switchedAt 任一变化都代表切换了账户或计费方式。
+  // 原实现只按 provider 名做 useMemo，同网关换账号时 provider 字符串不变 → 徽标永不刷新、余额/套餐卡死在旧账号。
+  const fingerprint = `${active?.provider ?? ""}|${active?.apiKey ?? ""}|${active?.mode ?? ""}|${active?.groupId ?? ""}|${active?.switchedAt ?? 0}`;
   const refresh = useCallback(() => {
+    if (!active) return;
     window.codex.relayOverview().then((data) => { setOverview(data); setErr(""); }).catch((e) => setErr(e.message ?? "加载失败"));
-  }, []);
+  }, [fingerprint]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!active || activeProvider !== active.provider) return;
+    if (!active) return;
     refresh();
     const timer = window.setInterval(refresh, 5 * 60_000);
     return () => window.clearInterval(timer);
-  }, [active?.provider, activeProvider, refresh]);
+  }, [refresh, active]);
   useEffect(() => {
     if (!open) return;
     const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) setOpen(false); };
     window.addEventListener("mousedown", onDown);
     return () => window.removeEventListener("mousedown", onDown);
   }, [open]);
-  if (!active || activeProvider !== active.provider) return null;
+  if (!active) return null;
   const subs: any[] = overview?.subscriptions ?? [];
   const current = subs.find((s) => s.group_id === active.groupId);
   let label = "中转站";
@@ -3318,7 +3441,7 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
     </section>
   );
 }
-function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction }: { tokenUsage?: any; fallbackWindow?: number; recentCompaction?: boolean }) {
+function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction, onCompact }: { tokenUsage?: any; fallbackWindow?: number; recentCompaction?: boolean; onCompact?: () => void }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -3372,6 +3495,11 @@ function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction }: { t
             {input > 0 && <div className="ctx-pop-cell"><span className="ctx-pop-cell-label">缓存输入</span><b className="ctx-pop-cell-value">{cached.toLocaleString()} / {input.toLocaleString()}</b></div>}
           </div>
           {turnCacheRate != null && turnCacheRate < 20 && input >= 8192 && <p className="ctx-pop-cache-note">{recentCompaction ? "上下文刚压缩过：提示词前缀已被重写，上游缓存需要 1~3 轮对话重建，期间命中率偏低属正常现象。" : "本轮缓存较低，通常是首次请求、恢复旧会话、上下文压缩、切换模型/供应商，或上游未复用相同提示词前缀导致。"}</p>}
+          {onCompact && percent >= 70 && (
+            <button type="button" className="ctx-pop-compact-btn" onClick={() => { setOpen(false); onCompact && onCompact(); }}>
+              <Minimize2 size={13} />压缩上下文（已用 {Math.round(percent)}%）
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -5341,9 +5469,11 @@ export default function App() {
   }, []);
   // 中转站账户（sub2api）：余额/套餐同步与一键生成供应商
   const [relayBusy, setRelayBusy] = useState(false);
-  const [relayActive, setRelayActive] = useState<{ provider: string; baseUrl: string; apiKey: string; mode: "balance" | "plan"; groupId: number | null; label: string } | null>(() => {
+  const [relayActive, setRelayActive] = useState<RelayActive | null>(() => {
     try { return JSON.parse(localStorage.getItem("relay-active-v1") ?? "null"); } catch { return null; }
   });
+  // OpenAI 官方订阅当前生效账号标识：切换账号时变化，驱动输入框额度徽标立即刷新（避免同 provider 下切号不更新）
+  const [openaiActiveAcct, setOpenaiActiveAcct] = useState<string | null>(null);
   const [skillInstall, setSkillInstall] = useState<SkillInstallState | null>(null);
   const [connectorMenuOpen, setConnectorMenuOpen] = useState(false);
   const [connectors, setConnectors] = useState<ConnectorEntry[]>([]);
@@ -6216,8 +6346,8 @@ export default function App() {
       void window.codex.listConnectors().then(setConnectors).catch(() => undefined);
     }
   }), []);
-  useEffect(() => { if (!skillsManageOnly) void refreshMarketSkills(); }, [skillHubCategory, skillHubSearch, skillsManageOnly, marketPage]);
-  useEffect(() => { void refreshMarketPlugins(); }, [pluginMarketCategory, pluginMarketSearch, pluginMarketPage]);
+  // 市场列表改为「进页才拉取」+ 搜索防抖（见 settingsContentReady 之后的门控效果）；
+  // 原先这里挂载即全量请求 SkillHub/插件市场，启动与每个搜索按键都会打远端接口
   const buildStamp = "20260831-1830";
   const [lightbox, setLightbox] = useState<{ path: string; alt: string } | null>(null);
   const [systemEvents, setSystemEvents] = useState<SystemEvent[]>([]);
@@ -6843,8 +6973,11 @@ export default function App() {
         setModelId(id);
         localStorage.setItem("default-model", id);
         adoptSavedProvider(saved, models);
-        setRelayActive(resolved.active);
-        writeRelayActive(resolved.active);
+        // switchedAt 标记本次切换时刻：即便同网关不同账号复用同一 provider 字符串，
+        // 也能让输入框余额徽标、模型配置等下游 UI 强制跟着刷新，避免「切换了但没反应」。
+        const active: RelayActive = { ...resolved.active, switchedAt: Date.now() };
+        setRelayActive(active);
+        writeRelayActive(active);
         setNotice(`已切换：${resolved.displayName} · 模型 ${defaultModel}`);
       } catch (error: any) {
         probeError = String(error?.message ?? error);
@@ -7247,23 +7380,17 @@ const commandMatches = useMemo(() => {
     setCompactToast({ state, message: content.message, threadId });
   }
 
-  // 压缩分隔线：success 5s、error 8s 自动消失；running 300s 没收到完成事件才标记失败。
+  // 压缩分隔线：success/error 常驻（用户可手动 × 关闭），running 300s 没收到完成事件才标记失败。
   // 90s 的旧超时会把大上下文的真实模型压缩（几分钟很常见）误判成失败——已实测踩坑。
   useEffect(() => {
     if (!compactToast) return;
-    if (compactToast.state === "success") {
-      const timer = window.setTimeout(() => setCompactToast(null), 5000);
+    if (compactToast.state === "running") {
+      // running 兜底超时：引擎吞请求 / 不发完成事件时不会一直卡住
+      const timer = window.setTimeout(() => {
+        setCompactToast((current) => current?.state === "running" ? { state: "error", message: "上下文压缩失败：压缩耗时超过 5 分钟仍未返回，可稍后重试 /compact", threadId: current.threadId } : current);
+      }, 300000);
       return () => window.clearTimeout(timer);
     }
-    if (compactToast.state === "error") {
-      const timer = window.setTimeout(() => setCompactToast(null), 8000);
-      return () => window.clearTimeout(timer);
-    }
-    // running 兜底超时：引擎吞请求 / 不发完成事件时不会一直卡住
-    const timer = window.setTimeout(() => {
-      setCompactToast((current) => current?.state === "running" ? { state: "error", message: "上下文压缩失败：压缩耗时超过 5 分钟仍未返回，可稍后重试 /compact", threadId: current.threadId } : current);
-    }, 300000);
-    return () => window.clearTimeout(timer);
   }, [compactToast]);
 
   /** 一次性状态通知：使用现有 toast，不写入对话历史。 */
@@ -7800,11 +7927,15 @@ const commandMatches = useMemo(() => {
     }
   }
 
-  async function refreshSettingsResources() {
+  async function refreshSettingsResources(opts: { mcpDetail?: boolean } = {}) {
     setResourceLoading(true);
     setResourceError("");
     const cwd = workspace ? [workspace] : [];
     const failures: string[] = [];
+    // mcpDetail=true 才做 toolsAndAuthOnly 全量枚举（会拉起全部 MCP 服务）；
+    // 已加载过详情的会话内后续刷新沿用，避免其他分区操作把 MCP 状态刷丢
+    const wantMcpDetail = opts.mcpDetail === true || mcpDetailLoadedRef.current;
+    if (opts.mcpDetail === true) mcpDetailLoadedRef.current = true;
     // 每项独立容错：某个接口不被当前 Codex 版本支持时，不能拖垮整批数据
     const safe = async (label: string, run: () => Promise<any>, fallback: any) => {
       try { return await run(); } catch (error: any) {
@@ -7824,7 +7955,9 @@ const commandMatches = useMemo(() => {
       safe("插件", () => window.codex.request("plugin/list", { cwds: cwd, forceRefetch: false }), { marketplaces: [] }),
       safe("记忆", () => window.codex.listMemory(), []),
       safe("定时任务", () => window.codex.listScheduledTasks(), []),
-      safe("MCP", () => window.codex.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly", ...(threadRef.current?.id ? { threadId: threadRef.current.id } : {}) }), { data: [] }),
+      wantMcpDetail
+        ? safe("MCP", () => window.codex.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly", ...(threadRef.current?.id ? { threadId: threadRef.current.id } : {}) }), { data: [] })
+        : Promise.resolve({ data: settingsResources.mcp }),
     ]);
     setSettingsResources({
       skills: (skillsResult.data ?? []).flatMap((entry: any) => entry.skills ?? []),
@@ -8592,9 +8725,43 @@ const commandMatches = useMemo(() => {
 
   useEffect(() => { if (!loading) void refreshThreads(); }, [loading]);
 
+  // 设置弹窗「骨架先行」：点击入口先画弹窗框架与 loading，重内容与引擎 RPC 延后一帧。
+  // 软件渲染（无 GPU 加速）机器上弹窗内容大，同步挂载会造成「点了没反应」的冻结感。
+  const [settingsContentReady, setSettingsContentReady] = useState(false);
   useEffect(() => {
-    if (settingsOpen) void refreshSettingsResources();
+    if (!settingsOpen) { setSettingsContentReady(false); return; }
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        setSettingsContentReady(true);
+        void refreshSettingsResources();
+      });
+    });
+    return () => { cancelAnimationFrame(raf1); if (raf2) cancelAnimationFrame(raf2); };
   }, [settingsOpen, workspace]);
+  // MCP 状态（toolsAndAuthOnly 会逐个拉起 MCP 服务枚举工具，CPU 开销大）只在真正进入
+  // MCP 管理页时拉取，打开技能/插件等其他分区不再连带触发冷启动争抢。
+  const mcpDetailLoadedRef = useRef(false);
+  useEffect(() => {
+    if (settingsOpen && settingsPage === "mcp" && settingsContentReady && !mcpDetailLoadedRef.current) {
+      mcpDetailLoadedRef.current = true;
+      void refreshSettingsResources({ mcpDetail: true });
+    }
+  }, [settingsOpen, settingsPage, settingsContentReady]);
+  // 市场列表按需加载：只有对应市场页真正可见时才请求（应用启动不再全量拉取）；
+  // 搜索输入 350ms 防抖，避免每个按键都打一次远端接口
+  const [skillHubSearchDebounced, setSkillHubSearchDebounced] = useState("");
+  useEffect(() => { const t = setTimeout(() => setSkillHubSearchDebounced(skillHubSearch), 350); return () => clearTimeout(t); }, [skillHubSearch]);
+  const [pluginMarketSearchDebounced, setPluginMarketSearchDebounced] = useState("");
+  useEffect(() => { const t = setTimeout(() => setPluginMarketSearchDebounced(pluginMarketSearch), 350); return () => clearTimeout(t); }, [pluginMarketSearch]);
+  useEffect(() => {
+    if (!settingsOpen || settingsPage !== "skills" || skillsManageOnly) return;
+    void refreshMarketSkills(skillHubCategory, skillHubSearchDebounced, marketPage);
+  }, [settingsOpen, settingsPage, skillHubCategory, skillHubSearchDebounced, skillsManageOnly, marketPage]);
+  useEffect(() => {
+    if (!settingsOpen || settingsPage !== "plugins") return;
+    void refreshMarketPlugins(pluginMarketCategory, pluginMarketSearchDebounced, pluginMarketPage);
+  }, [settingsOpen, settingsPage, pluginMarketCategory, pluginMarketSearchDebounced, pluginMarketPage]);
 
   useEffect(() => {
     if (!thread) return;
@@ -8696,7 +8863,44 @@ const commandMatches = useMemo(() => {
         setCustomModel(updated);
         const selectedId = `custom:${updated.provider}:${model}`;
         saveSelection(selectedId);
-        await updateThreadSettings({ model, model_provider: updated.provider, effort: nextEffort || null });
+        // 会话跨供应商迁移：引擎线程绑定创建时的 provider，settings/update 换 provider 会被拒。
+        // 唯一官方通道 = thread/resume { modelProvider, config, model }（schema 实证 resume 接受
+        // 这三个覆盖参数）——resume 后会话即绑定新供应商，历史完整保留，真正做到随切随用。
+        if (threadRef.current?.id) {
+          try {
+            const officialTarget = updated.provider === "openai-official";
+            const resumeParams: Record<string, unknown> = {
+              threadId: threadRef.current.id,
+              excludeTurns: true,
+              model,
+              // 官方订阅走引擎内置 openai 通道：不传 modelProvider/config（实证：传了即触发
+              // CODEX_HARNESS_API_KEY 校验导致流断）；其他供应商内联完整定义
+              ...(officialTarget ? {} : {
+                modelProvider: updated.provider,
+                config: {
+                  model_provider: updated.provider,
+                  model_providers: {
+                    [updated.provider]: {
+                      name: updated.name,
+                      base_url: updated.baseUrl,
+                      env_key: "CODEX_HARNESS_API_KEY",
+                      wire_api: (updated.wireApi === "chat" ? "chat" : "responses"),
+                      requires_openai_auth: false,
+                    },
+                  },
+                },
+              }),
+            };
+            await window.codex.request("thread/resume", resumeParams);
+            await updateThreadSettings({ model, ...(officialTarget ? {} : { model_provider: updated.provider }), effort: nextEffort || null });
+            showToast("已切换供应商", `当前会话已迁移到 ${updated.name} · ${model}，历史完整保留`);
+          } catch (migrateError: any) {
+            // 迁移失败（如极老会话）退回接力方案：新会话带上下文
+            showToast("已切换供应商", `新会话将使用 ${updated.name} · ${model}（当前会话无法迁移：${String(migrateError?.message ?? "").slice(0, 60)}）`);
+          }
+        } else {
+          await updateThreadSettings({ model, ...(updated.provider === "openai-official" ? {} : { model_provider: updated.provider }), effort: nextEffort || null });
+        }
         setNotice(`已切换到 ${updated.name} · ${model}`);
         return;
       } catch (error: any) {
@@ -11025,13 +11229,25 @@ const commandMatches = useMemo(() => {
           {optimisticInput && !optimisticConfirmed && <ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} />}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
           {systemEvents.map((event) => <div className={`system-event ${event.tone ?? "info"}`} key={event.id}><strong>{event.tone === "success" ? <CircleCheck size={13} className="system-event-icon" /> : null}{event.title}</strong><Markdown>{event.text}</Markdown></div>)}
-          {/* 上下文压缩分隔线：两边虚线 + 中间文字，状态切换带过渡；只属于发起压缩的会话。
-              成功态若时间线里已有 contextCompaction 项（同样渲染为成功分隔线），跳过避免重复 */}
-          {compactToast && compactToast.threadId === thread?.id && !(compactToast.state === "success" && (thread?.turns ?? []).some((t) => (t.items ?? []).some((i) => i.type === "contextCompaction"))) && (
-            <div className={`compact-divider compact-divider--${compactToast.state}`} key={compactToast.state} role="status" aria-label="上下文压缩状态">
+          {/* 上下文压缩分隔线：两边虚线 + 中间文字，状态切换带过渡；success/error 常驻可手动关闭，
+              只属于发起压缩的会话。成功态若时间线里已有 contextCompaction 项（同样渲染为成功分隔线），
+              跳过这条 toast 避免重复显示常驻卡 */}
+          {compactToast && compactToast.state !== "running" && compactToast.threadId === thread?.id && !(compactToast.state === "success" && (thread?.turns ?? []).some((t) => (t.items ?? []).some((i) => i.type === "contextCompaction"))) && (
+            <div className={`compact-divider compact-divider--${compactToast.state} compact-divider--settled`} role="status" aria-label="上下文压缩状态">
               <i className="compact-divider-line" aria-hidden />
               <span className="compact-divider-text">
-                {compactToast.state === "running" && <LoaderCircle size={13} className="spin" />}
+                {compactToast.state === "error" ? <CircleX size={13} /> : <CircleCheck size={13} />}
+                {compactToast.message}
+              </span>
+              <button type="button" className="compact-divider-close" title="关闭此条记录" aria-label="关闭" onClick={() => setCompactToast(null)}><X size={12} /></button>
+              <i className="compact-divider-line" aria-hidden />
+            </div>
+          )}
+          {compactToast && compactToast.state === "running" && compactToast.threadId === thread?.id && (
+            <div className={`compact-divider compact-divider--running`} role="status" aria-label="上下文压缩状态">
+              <i className="compact-divider-line" aria-hidden />
+              <span className="compact-divider-text">
+                <LoaderCircle size={13} className="spin" />
                 {compactToast.message}
               </span>
               <i className="compact-divider-line" aria-hidden />
@@ -11305,9 +11521,9 @@ const commandMatches = useMemo(() => {
               </div>
               <div className="composer-right">
                 <div className="model-controls composer-model-controls">
-                  {relayActive && customModel?.provider === relayActive.provider && <RelayBalanceBadge activeProvider={customModel?.provider} />}
-                  {customModel?.provider === "openai-official" && <OpenaiBalanceBadge activeProvider={customModel?.provider} />}
-                  <ContextUsageBadge tokenUsage={tokenUsage} fallbackWindow={customModel?.models?.find((m) => m.id === customModel?.model)?.contextWindow ?? customModel?.contextWindow} recentCompaction={recentCompaction} />
+                  {relayActive && customModel?.provider === relayActive.provider && <RelayBalanceBadge active={relayActive} />}
+                  {customModel?.provider === "openai-official" && <OpenaiBalanceBadge accountKey={openaiActiveAcct ?? "openai-official"} />}
+                  <ContextUsageBadge tokenUsage={tokenUsage} fallbackWindow={customModel?.models?.find((m) => m.id === customModel?.model)?.contextWindow ?? customModel?.contextWindow} recentCompaction={recentCompaction} onCompact={() => { if (thread?.id) { compactPendingRef.current.add(thread.id); setCompactEventState("running"); window.codex.request("thread/compact/start", { threadId: thread.id }).catch((error: any) => { compactPendingRef.current.delete(thread.id); setCompactEventState("error", error.message); }); } }} />
                   <ComposerMenu icon={Bot} label="模型" title="模型" disabled={!customModel} value={modelId} options={[...allModels.map((model) => ({
                     value: model.id,
                     title: (model.inputTypes ?? []).some((t) => t === "image" || t === "video") ? `${model.model} · 视觉` : model.model,
@@ -11807,6 +12023,8 @@ const commandMatches = useMemo(() => {
               ))}
             </nav>
             <div className="settings-content">
+            {/* 骨架先行：弹窗框架先绘制一帧，分区内容延后挂载（详见 settingsContentReady 注释） */}
+            {!settingsContentReady ? <div className="settings-boot" role="status"><Spinner /><span>正在载入…</span></div> : <>
             {resourceError && <div className="resource-error"><AlertTriangle size={14} /><span>{resourceError}</span><button className="secondary-setting" onClick={() => void refreshSettingsResources()}>重试</button></div>}
             {/* 二级入口页：自动化（浏览器/桌面/RPA）与智能体团队（子智能体/专家团）。
                 点卡片进入真实页面；进入的是二级成员页时顶部提供「返回」。 */}
@@ -12076,7 +12294,7 @@ const commandMatches = useMemo(() => {
             </section>}
             {settingsPage === "personalization" && <PersonalizationPage personality={personality} onPersonalityChange={changePersonality} onNotice={setNotice} />}
             {settingsPage === "relay" && <RelayCenterPage busy={relayBusy} activeProvider={customModel?.provider} onActivate={relayActivate} onNotice={setNotice} onOpenModelSettings={() => { setSettingsPage("model"); }} />}
-            {settingsPage === "openai" && <OpenaiSubscriptionPage activeProvider={customModel?.provider} onActivate={(models) => activateOfficialProvider(models)} onNotice={setNotice} />}
+            {settingsPage === "openai" && <OpenaiSubscriptionPage activeProvider={customModel?.provider} onActivate={(models) => activateOfficialProvider(models)} onNotice={setNotice} onActiveChange={setOpenaiActiveAcct} />}
             {settingsPage === "model" && <section className="settings-model-layout">
               <div className="model-global-bar">
                 <div className="model-global-item">
@@ -13316,6 +13534,11 @@ const commandMatches = useMemo(() => {
                 })();
               }}
             />}
+            {settingsPage === "storage" && <StorageSection
+              onNotice={setNotice}
+              openAppConfirm={openAppConfirm}
+              onClearMemoryCache={() => { threadCacheRef.current.clear(); void refreshThreads().catch(() => undefined); }}
+            />}
             {settingsPage === "computer" && <section className="settings-section stack">
               <div className="settings-copy"><h2>电脑控制</h2><p>审批与沙箱决定 Codex 能对这台电脑做什么；完全访问会关闭审批询问。</p></div>
               <div className="settings-grid three">
@@ -13331,6 +13554,7 @@ const commandMatches = useMemo(() => {
               </div>
               <p className="muted">引擎通过 <code>nuphus</code> MCP 工具直接操作真实屏幕：截屏看界面、激活窗口、移动鼠标、敲键盘、读写剪贴板、本地 OCR，以及通过 CDP 驱动 Chrome。危险操作带有确认标注。</p>
             </section>}
+            </>}
             </div>
           </div>
         </div>
