@@ -1552,6 +1552,11 @@ button {
   /* 回合与回合之间留出更多呼吸空间，避免 agent 末尾叙述贴到下一条用户消息 */
   margin: 0 0 32px;
   position: relative;
+  /* 超长会话性能：视口外的回合直接跳过布局/绘制（软件渲染机器尤其关键）。
+     contain-intrinsic-size 给一个估算高度，保证滚动条与「跳到底部」测量稳定；
+     auto 关键字会在回合计入视口后记住真实高度，长历史也不会跳动。 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 300px;
 }
 .turn-group > .message.user-message {
   /* 拉大与下方 turn-card 的间距，避免 hover 操作按钮时视觉过于紧凑 */
@@ -2187,6 +2192,17 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   align-items: center;
   gap: 3px;
   display: inline-flex;
+}
+/* 超长上下文预警：接近窗口上限变色（warn 80% / danger 95%） */
+.context-ring.warn {
+  color: color-mix(in srgb, var(--orange) 85%, var(--text));
+}
+.context-ring.danger {
+  color: var(--red);
+}
+.context-ring.warn small,
+.context-ring.danger small {
+  font-weight: 700;
 }
 .context-ring small {
   font-size: 9px;
@@ -7461,6 +7477,25 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   min-height: 0;
   overflow-y: auto;
 }
+/* 骨架先行：设置弹窗分区内容延后挂载时的占位状态（软件渲染机器避免点击后冻结感） */
+.settings-boot {
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+/* 长页首屏渲染：视口外的分区跳过布局与绘制（content-visibility），
+   滚动到可见时自动按需渲染；contain-intrinsic-size 给出估算高度保持滚动条稳定 */
+.settings-content > section,
+.settings-content > .plugin-market-block,
+.settings-content > .skill-installed-view {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 600px;
+}
 .resource-error {
   border: 1px solid color-mix(in srgb, var(--orange) 40%, transparent);
   background: color-mix(in srgb, var(--orange) 10%, transparent);
@@ -8612,6 +8647,48 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
 .secondary-setting:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ── 数据管理 / 缓存清理 ── */
+.storage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.storage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--bg);
+}
+.storage-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.storage-meta strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.storage-meta span {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.storage-locked {
+  font-size: 11.5px;
+  color: var(--muted);
+  padding: 5px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 7px;
+}
+.danger-setting:hover {
+  background: color-mix(in srgb, var(--red) 10%, transparent);
 }
 
 /* —— 记忆中心（常驻 / 存储 / 条目） —— */
@@ -11627,6 +11704,25 @@ button.search-box:hover {
   color: var(--faint);
   font-size: 10.5px;
   line-height: 1.55;
+}
+/* 上下文接近上限时的一键压缩入口（>=70% 出现） */
+.ctx-pop-compact-btn {
+  margin-top: 9px;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  border: 1px solid color-mix(in srgb, var(--orange) 45%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--orange) 10%, transparent);
+  color: color-mix(in srgb, var(--orange) 80%, var(--text));
+  font-size: 12px;
+  cursor: pointer;
+}
+.ctx-pop-compact-btn:hover {
+  background: color-mix(in srgb, var(--orange) 18%, transparent);
 }
 /* 中转站账户卡片（设置 → 模型） */
 .relay-account-card {
@@ -15455,6 +15551,67 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   gap: 6px;
   width: 100%;
   margin-bottom: 10px;
+}
+/* 折叠/展开开关：仅当排队消息 ≥2 条时出现，默认展开，由用户手动折叠 */
+.queued-collapse-toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.queued-collapse-toggle:hover {
+  color: var(--link);
+  border-color: color-mix(in srgb, var(--link) 35%, var(--line));
+  background: color-mix(in srgb, var(--link) 10%, var(--panel-2));
+}
+.queued-collapse-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--orange) 16%, transparent);
+  color: var(--orange);
+  font-size: 10.5px;
+}
+.queued-collapse-hint {
+  opacity: 0.7;
+  font-weight: 500;
+}
+/* 折叠态：隐藏消息列表，仅保留开关 */
+.queued-messages.is-collapsed {
+  gap: 0;
+}
+/* 拖动手柄：常驻半透明显示（提示可拖动排序），悬停/拖拽时高亮 */
+.queued-grip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  opacity: 0.4;
+  cursor: grab;
+  transition: opacity 0.12s, color 0.12s;
+}
+.queued-message:hover .queued-grip {
+  opacity: 0.85;
+}
+.queued-grip:active {
+  cursor: grabbing;
+}
+.queued-message.dragging .queued-grip {
+  opacity: 1;
+  color: var(--link);
 }
 .queued-message {
   width: 100%;
@@ -19459,4 +19616,58 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   display: inline-flex;
   gap: 7px;
   white-space: nowrap;
+}
+
+.openai-reset-line {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 10.5px;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.compact-divider--settled {
+  cursor: default;
+}
+.compact-divider-close {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  color: var(--faint);
+  cursor: pointer;
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 16px;
+  justify-content: center;
+  opacity: 0;
+  padding: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+  width: 16px;
+}
+.compact-divider:hover .compact-divider-close,
+.compact-divider-close:focus-visible {
+  opacity: 1;
+}
+.compact-divider-close:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--faint) 15%, transparent);
+}
+
+/* 流式期间折叠行条数变化：新进入折叠区的行以动画淡出式收缩，避免正文瞬间被顶跳；
+   折叠行本身高度过渡（0.22s），配合 stick-to-bottom 跟随，视觉上是「滑入收纳」而非硬切 */
+.capped-tool-hidden {
+  overflow: hidden;
+}
+.capped-tool-latest > .wb-fold,
+.capped-tool-latest > * {
+  animation: capped-row-in 0.22s ease both;
+}
+@keyframes capped-row-in {
+  from { opacity: 0.35; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .capped-tool-latest > * { animation: none; }
 }

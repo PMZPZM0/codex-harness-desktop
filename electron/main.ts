@@ -1627,6 +1627,60 @@ ipcMain.handle("app:doctor", async (_event, input: { cwd?: string } = {}) => {
   return { checks, at: Date.now() };
 });
 
+// ── 数据管理 / 缓存清理（设置 → 数据与统计 → 数据管理） ──
+/** 递归统计目录字节数（忽略不可读项） */
+async function dirSize(root: string): Promise<number> {
+  let total = 0;
+  try {
+    const entries = await fs.readdir(root, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(root, entry.name);
+      try {
+        if (entry.isDirectory()) total += await dirSize(full);
+        else if (entry.isFile()) total += (await fs.stat(full)).size;
+        // 符号链接等跳过，避免重复计数
+      } catch { /* 忽略不可读项 */ }
+    }
+  } catch { /* 目录不存在/无权限 */ }
+  return total;
+}
+
+ipcMain.handle("app:storage-info", async () => {
+  const ud = app.getPath("userData");
+  const imagesDir = path.join(ud, "images");
+  const engineLog = path.join(ud, "engine-debug.log");
+  const rolloutsDir = path.join(codexHome, "rollouts");
+  const [imagesBytes, engineLogBytes, rolloutsBytes] = await Promise.all([
+    dirSize(imagesDir),
+    (async () => { try { return (await fs.stat(engineLog)).size; } catch { return 0; } })(),
+    dirSize(rolloutsDir),
+  ]);
+  return {
+    items: [
+      // rollout 原档 = 全部会话历史，绝不在此处提供删除（清了就丢记录），仅展示占用
+      { key: "rollouts", label: "会话记录（rollout 原档，含全部历史）", bytes: rolloutsBytes, deletable: false },
+      { key: "images", label: "本地图片缩略图缓存", bytes: imagesBytes, deletable: true },
+      { key: "engine-log", label: "引擎诊断日志（黑匣子）", bytes: engineLogBytes, deletable: true },
+    ],
+    userData: ud,
+    engineLog,
+    imagesDir,
+  };
+});
+
+ipcMain.handle("app:storage-clear", async (_event, target: "engine-log" | "images") => {
+  const ud = app.getPath("userData");
+  if (target === "engine-log") {
+    await fs.rm(path.join(ud, "engine-debug.log"), { force: true });
+    return { ok: true, target };
+  }
+  if (target === "images") {
+    await fs.rm(path.join(ud, "images"), { recursive: true, force: true });
+    return { ok: true, target };
+  }
+  return { ok: false, error: "未知清理目标" };
+});
+
 ipcMain.handle("app:engine-info", async () => {
   let binary = "";
   try { binary = codexBinaryPath(); } catch { binary = ""; }
@@ -1743,6 +1797,7 @@ async function generateImageWith(input: { baseUrl: string; apiKey: string; model
       method: "POST",
       headers: { Authorization: "Bearer " + input.apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({ model: input.model, prompt: input.prompt, n: 1 }),
+      signal: AbortSignal.timeout(300_000),
     });
   } catch (error) {
     throw describeNetworkError(error, "生图请求");
@@ -1757,7 +1812,8 @@ async function generateImageWith(input: { baseUrl: string; apiKey: string; model
   const item = data?.data?.[0];
   // 注意优先级：url 存在用 url；否则 b64_json 转 data URL（旧写法运算符优先级有误，
   // 返回 url 时会拼出 "data:image/png;base64,undefined"，已修）
-  const url = item?.url ?? (item?.b64_json ? "data:image/png;base64," + item.b64_json : "");
+  const url = item?.url || (item?.b64_json ? "data:image/png;base64," + item.b64_json : "");
+  if (typeof url !== "string" || !url.trim()) throw new Error("生图服务未返回图片地址或图片数据");
   return { url };
 }
 
@@ -4147,7 +4203,10 @@ ipcMain.handle("custom-model:save", async (_event, input: { provider: string; na
   // 官方订阅：chatgpt 后端只认 ChatGPT 登录凭据，绝不能把任何 API Key 带上（含「留空沿用上一供应商」的复用逻辑）
   // 带上会 401 "api_key_not_supported" → 流无限重连（实证）
   if (provider === "openai-official") encryptedKey = undefined;
-  // 合并历史模型列表：前端传来的列表覆盖同 ID 旧项，其余保留，再并入本次生效 model；按 ID 去重保前端传入顺序
+  // 模型列表以「前端传入的完整列表」为权威：前端保存时总是带全量 models（模型设置页、
+  // 中转站/官方订阅切换、登录页都一样），其中不含的模型即视为「被用户删除」——绝不能
+  // 再从磁盘旧列表合并回来，否则删除的模型保存后立即复活（2026-09-08 实测反馈）。
+  // 仅当调用方完全没传 models 字段时才回退到磁盘旧列表兜底（老调用方兼容）。
   const list = await readCustomModels();
   const existing = list.find((entry) => entry.provider === provider);
   const seen = new Set<string>();
@@ -4158,11 +4217,13 @@ ipcMain.handle("custom-model:save", async (_event, input: { provider: string; na
     seen.add(id);
     mergedModels.push(typeof m === "string" ? { id, contextWindow } : m);
   }
-  for (const m of existing?.models ?? []) {
-    const id = typeof m === "string" ? m : m?.id;
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    mergedModels.push(typeof m === "string" ? { id, contextWindow: existing?.contextWindow } : m);
+  if (!Array.isArray(input.models)) {
+    for (const m of existing?.models ?? []) {
+      const id = typeof m === "string" ? m : m?.id;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      mergedModels.push(typeof m === "string" ? { id, contextWindow: existing?.contextWindow } : m);
+    }
   }
   const enabledModels = mergedModels.filter((entry) => entry.enabled !== false);
   const model = requestedModel || enabledModels[0]?.id || "";

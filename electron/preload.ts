@@ -201,6 +201,8 @@ contextBridge.exposeInMainWorld("codex", {
   shellReveal: (target: string) => ipcRenderer.invoke("shell:reveal", target),
   doctor: (cwd?: string) => ipcRenderer.invoke("app:doctor", { cwd }),
   engineInfo: () => ipcRenderer.invoke("app:engine-info"),
+  storageInfo: () => ipcRenderer.invoke("app:storage-info"),
+  storageClear: (target: "engine-log" | "images") => ipcRenderer.invoke("app:storage-clear", target),
   engineCheckUpdate: () => ipcRenderer.invoke("engine:check-update"),
   enginePerformUpdate: () => ipcRenderer.invoke("engine:perform-update"),
   relaunchApp: () => ipcRenderer.invoke("app:relaunch"),
