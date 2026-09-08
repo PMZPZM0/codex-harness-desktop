@@ -6,6 +6,22 @@
   <img src="docs/screenshots/main-light.png" width="820" alt="Codex Harness Desktop 主界面" />
 </p>
 
+## 🎯 核心能力速览
+
+| | 能力 | 一句话说明 |
+|---|---|---|
+| 🗂️ | **多会话并行与排队** | 分组/置顶/归档/分支/批量操作；运行中继续输入自动排队，≥2 条可折叠、可拖动调整顺序 |
+| 🎞️ | **沉浸式对话体验** | 正文与思考逐字平滑揭示，长会话自动折叠成卡片；AI 润色提示词、`@` 引用、图片内联粘贴 |
+| 🔑 | **OpenAI 官方订阅** | ChatGPT 设备码登录即用，无需 API Key；多账号切换，模型与 5 小时 / 本周额度实时同步 |
+| 🔀 | **多模型与中转站** | 任意 OpenAI 兼容端点自由接入；中转站多账号切换即重配套餐与密钥，内置规格表自动填参 |
+| 🧩 | **技能 · 插件 · MCP 生态** | SkillHub 技能、插件市场、MCP 连接器市场：详情预览 + 一键安装并直连引擎 |
+| 🖥️ | **桌面与浏览器自动化** | 键鼠/截屏/OCR/窗口控制 + Playwright 与反检测指纹浏览器；内置 Node/Python/Git 离线可用 |
+| 🧭 | **内置浏览器与项目树** | 右侧面板边聊边浏览；项目树多标签预览、行号常开、可编辑保存，HTML 一键浏览器打开 |
+| 📈 | **超长上下文与数据管理** | 视口外回合跳过渲染，几个 G 历史也流畅；≥70% 一键压缩、≥80%/≥95% 预警、可清理缓存 |
+| 🛡️ | **权限分级与沙箱** | 只读/自动编辑/完全访问三档审批，会话中途切换即时生效；敏感操作确认执行 |
+
+**还有**：三层记忆自动沉淀 · 微信/飞书/Telegram/钉钉 Bot 远程接入 · 可视化 diff 审阅与撤销 · xterm 内置终端 · 会话备份导出与归档 · 专家团队协作 · 应用内自更新 · 浅色/深色主题。
+
 ## ✨ 功能特性
 
 ### 🚀 任务与会话管理
@@ -67,9 +83,11 @@
 
 | 平台 | 文件 | 说明 |
 |---|---|---|
-| Windows 10/11 x64 | `Codex-Harness-Setup-<版本>.exe` | NSIS 安装向导，可选安装目录 |
-| macOS Intel | `Codex Harness Desktop-<版本>-x64-mac.zip` | 解压后拖入「应用程序」 |
-| macOS Apple Silicon (M1/M2/M3/M4) | `Codex Harness Desktop-<版本>-arm64-mac.zip` | 解压后拖入「应用程序」 |
+| Windows 10/11 x64 | `CodexHarness-Desktop-<版本>-Setup-x64.exe` | NSIS 安装向导，可选安装目录 |
+| macOS Intel | `Codex.Harness.Desktop-<版本>-x64-mac.zip` | 解压后拖入「应用程序」 |
+| macOS Apple Silicon (M1/M2/M3/M4) | `Codex.Harness.Desktop-<版本>-arm64-mac.zip` | 解压后拖入「应用程序」 |
+
+> GitHub 会把文件名里的空格显示为 `.`，因此 macOS 包在 Release 页显示为 `Codex.Harness.Desktop-<版本>-arm64-mac.zip`，下载链接请以 Release 页实际名称为准。
 
 > 基础运行时（Node/Python/Git/PowerShell/rg/uv 等）完整内置，安装即可离线使用；桌面/浏览器自动化工具与浏览器内核在「开发工具」页按需下载（压缩包解压即用），不再随包塞 1.2GB 内核。
 

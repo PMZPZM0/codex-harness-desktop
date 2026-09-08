@@ -391,6 +391,23 @@ main, .footer-inner, .nav-inner {
 .feature-icon { font-size: 24px; margin-bottom: 12px; }
 .feature-card h3 { font-size: 15.5px; font-weight: 700; margin-bottom: 8px; }
 .feature-card p { font-size: 13.5px; color: var(--text-dim); }
+/* 功能卡下方的「更多能力」标签行 */
+.feature-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.feature-more li {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--text-dim);
+}
 
 /* ============ 用户交流群 ============ */
 .group-card {
