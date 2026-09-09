@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Codex Harness 图标设计预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1117; color: #e6edf3; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 48px 24px 64px;
+  }
+  h1 { font-size: 26px; font-weight: 650; letter-spacing: .3px; }
+  .sub { color: #8b949e; margin-top: 8px; font-size: 14px; text-align: center; line-height: 1.7; }
+  .row { display: flex; gap: 40px; flex-wrap: wrap; justify-content: center; margin-top: 44px; }
+  .card {
+    width: 280px; background: #161b22; border: 1px solid #30363d; border-radius: 18px; padding: 26px 24px 22px;
+    display: flex; flex-direction: column; align-items: center; transition: transform .18s, border-color .18s;
+  }
+  .card:hover { transform: translateY(-3px); border-color: #58a6ff; }
+  .card.reco { border-color: #2f6bdd; box-shadow: 0 0 0 1px #2f6bdd66, 0 12px 32px rgba(47,107,221,.18); }
+  .stage {
+    width: 128px; height: 128px; border-radius: 26px; overflow: hidden; position: relative;
+    background: radial-gradient(circle at 30% 20%, #1c2430, #0d1117 70%);
+    box-shadow: inset 0 0 0 1px #ffffff14, 0 10px 26px rgba(0,0,0,.45);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .stage img { width: 84px; height: 84px; border-radius: 19px; box-shadow: 0 6px 18px rgba(0,0,0,.4); }
+  .badge {
+    position: absolute; top: 10px; left: 10px; font-size: 10px; font-weight: 700; letter-spacing: 1px;
+    background: #2f6bdd; color: #fff; padding: 3px 8px; border-radius: 99px;
+  }
+  .name { margin-top: 18px; font-size: 16px; font-weight: 650; }
+  .desc { margin-top: 8px; font-size: 12.5px; color: #8b949e; line-height: 1.7; text-align: center; min-height: 66px; }
+  .sizes { margin-top: 16px; display: flex; gap: 8px; align-items: flex-end; }
+  .sizes img { border-radius: 4px; }
+  .sizes img.s16 { width: 16px; height: 16px; }
+  .sizes img.s32 { width: 32px; height: 32px; }
+  .sizes img.s48 { width: 48px; height: 48px; }
+  .foot { margin-top: 40px; color: #6e7681; font-size: 12.5px; line-height: 1.8; text-align: center; }
+  kbd { background: #21262d; border: 1px solid #30363d; border-radius: 5px; padding: 1px 7px; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>Codex Harness · 桌面图标设计</h1>
+  <p class="sub">品牌蓝系渐变，贴合「AI 编程助手 · 对话式代码」的产品气质<br>主方案 A 已落盘为 <kbd>build/icon.ico</kbd> + <kbd>build/icon.png</kbd>，可随时换 B / C</p>
+
+  <div class="row">
+    <div class="card reco">
+      <div class="stage"><span class="badge">主推</span><img src="icon-a-spark-512.png" alt="Codex Spark"></div>
+      <div class="name">A · Codex Spark</div>
+      <div class="desc">品牌渐变圆角方 + 白色终端提示符 <kbd>&gt;</kbd> + 下划线光标，右上金色四角星（AI 火花）。呼应 Codex 官方符号，辨识度最高。</div>
+      <div class="sizes">
+        <img class="s16" src="icon-a-spark-16.png"><img class="s32" src="icon-a-spark-32.png"><img class="s48" src="icon-a-spark-48.png"><img class="s48" src="icon-a-spark-128.png">
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="stage"><img src="icon-b-terminal-512.png" alt="Terminal"></div>
+      <div class="name">B · 终端窗口</div>
+      <div class="desc">深色终端窗口 + 红黄绿三圆点 + 品牌蓝提示符 <kbd>&gt;</kbd> 与白色光标。极客感强，开发者一眼懂。</div>
+      <div class="sizes">
+        <img class="s16" src="icon-b-terminal-16.png"><img class="s32" src="icon-b-terminal-32.png"><img class="s48" src="icon-b-terminal-48.png"><img class="s48" src="icon-b-terminal-128.png">
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="stage"><img src="icon-c-dialogue-512.png" alt="Dialogue Code"></div>
+      <div class="name">C · 对话代码</div>
+      <div class="desc">品牌渐变底 + 白色对话气泡（带尾巴），内嵌 <kbd>&lt;/&gt;</kbd> 代码符号。直白表达「和 AI 聊着写代码」。</div>
+      <div class="sizes">
+        <img class="s16" src="icon-c-dialogue-16.png"><img class="s32" src="icon-c-dialogue-32.png"><img class="s48" src="icon-c-dialogue-48.png"><img class="s48" src="icon-c-dialogue-128.png">
+      </div>
+    </div>
+  </div>
+
+  <p class="foot">已同步：桌面 exe 图标（electron-builder <kbd>win.icon</kbd>）· 窗口图标 · 浏览器标签 favicon<br>换方案只需告诉我 A / B / C，重跑一次构建即可</p>
+</body>
+</html>

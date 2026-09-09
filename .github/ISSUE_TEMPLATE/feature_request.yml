@@ -1,0 +1,29 @@
+name: ✨ 功能建议
+description: 提出一个新功能或改进建议
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        欢迎提想法！也欢迎到 [官网反馈页](https://www.jvszzp.ltd/feedback.html) 讨论。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决什么问题？
+      description: 描述当前的使用痛点或场景
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: 期望的方案
+      description: 你希望它是什么样子？有参考产品/截图更好
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 确认
+      options:
+        - label: 我已搜索过现有 Issue，确认没有重复
+          required: true

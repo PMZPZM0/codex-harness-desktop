@@ -1,0 +1,77 @@
+name: Build macOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（留空则用 package.json 里的版本）"
+        required: false
+        default: ""
+
+jobs:
+  build-mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14 # Apple Silicon
+            mac_target: arm64
+          - os: macos-15-intel # Intel（macos-13 队列常年拥堵）
+            mac_target: x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Checkout desktop engine source (Intel)
+        if: matrix.mac_target == 'x64'
+        uses: actions/checkout@v4
+        with:
+          repository: mrpulor-gh/nuphus-mcp
+          ref: v0.2.2
+          path: .test-tmp/nuphus-src
+
+      - name: Build native desktop engine (Intel)
+        if: matrix.mac_target == 'x64'
+        working-directory: .test-tmp/nuphus-src
+        run: cargo build --release --locked -p nuphus-mcp
+
+      - name: Prepare native runtimes and automation
+        run: node scripts/prepare-mac-tools.cjs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify native automation before packaging
+        run: node scripts/verify-packaged-tools.cjs resources/tools
+
+      - name: Build renderer & main
+        run: npm run build
+
+      - name: Pack macOS zip (${{ matrix.mac_target }})
+        run: npx electron-builder --config build/electron-builder.mac.cjs --mac zip --${{ matrix.mac_target }} --publish never
+        env:
+          # 未配置签名证书时跳过 codesign（本地自用包）
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify packaged automation
+        shell: bash
+        run: |
+          set -euo pipefail
+          app=$(find release-mac -maxdepth 3 -name '*.app' -type d -print -quit)
+          test -n "$app"
+          node scripts/verify-packaged-tools.cjs "$app/Contents/Resources/tools"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-${{ matrix.mac_target }}
+          path: release-mac/*.zip
+          if-no-files-found: error
