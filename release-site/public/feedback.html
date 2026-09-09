@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>意见反馈 · Codex Harness</title>
+<link rel="stylesheet" href="/assets/styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%238b5cf6'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='18' font-weight='700' text-anchor='middle' fill='white'%3E%3C%2Ftext%3E%3C/svg%3E" />
+</head>
+<body>
+<nav class="nav">
+  <div class="brand">
+    <div class="logo">⌬</div>
+    <span>Codex Harness</span>
+  </div>
+  <div class="nav-links">
+    <a href="/">下载</a>
+    <a href="/feedback.html" class="active">反馈</a>
+    <a href="/admin.html">管理</a>
+  </div>
+  <div class="right">
+    <span class="pill"><span class="dot"></span>服务正常</span>
+  </div>
+</nav>
+
+<main class="fb-main">
+  <section class="fb-hero">
+    <div>
+      <h1>意见与反馈</h1>
+      <p class="sub">遇到 Bug、想要新功能，或者只是想说点什么？告诉我们。反馈会进入处理队列，处理进度与回复都会展示在这里。</p>
+    </div>
+    <div class="fb-hero-stat">
+      <span id="my-count" class="num">0</span>
+      <span class="lbl">我的反馈</span>
+    </div>
+  </section>
+
+  <div class="fb-layout">
+    <!-- ========== 左：提交表单 ========== -->
+    <section class="panel fb-form-card">
+      <h2 class="panel-title">提交反馈</h2>
+
+      <div class="field">
+        <label class="label">反馈类型</label>
+        <div class="type-chips" id="type-chips">
+          <button type="button" class="type-chip active" data-type="bug"><span class="ic">🐞</span>问题反馈</button>
+          <button type="button" class="type-chip" data-type="suggestion"><span class="ic">💡</span>功能建议</button>
+          <button type="button" class="type-chip" data-type="question"><span class="ic">❓</span>使用咨询</button>
+          <button type="button" class="type-chip" data-type="other"><span class="ic">💬</span>其他</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label">标题 <em>*</em></label>
+        <input class="input" id="fb-title" maxlength="80" placeholder="一句话概括问题，例如：切换会话后界面卡死" />
+      </div>
+
+      <div class="field">
+        <label class="label">详细描述 <em>*</em></label>
+        <textarea class="textarea" id="fb-content" maxlength="4000" rows="6"
+          placeholder="尽量描述清楚：&#10;1. 你做了什么操作&#10;2. 期望的结果是什么&#10;3. 实际发生了什么&#10;4. 是否有报错信息"></textarea>
+        <div class="counter"><span id="content-len">0</span> / 4000</div>
+      </div>
+
+      <div class="field">
+        <label class="label">截图（可选，最多 6 张 · PNG / JPG / GIF / WEBP · 单张 ≤ 10 MB）</label>
+        <div class="img-drop" id="img-drop">
+          <div class="img-drop-icon">🖼️</div>
+          <div class="img-drop-text">点击选择或拖拽截图到这里</div>
+          <div class="img-drop-hint">建议用「窗口截图」拍下整个问题现场</div>
+          <input type="file" id="img-input" accept="image/png,image/jpeg,image/gif,image/webp" multiple style="display:none;" />
+        </div>
+        <div class="img-previews" id="img-previews"></div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label class="label">联系方式（选填）</label>
+          <input class="input" id="fb-contact" maxlength="200" placeholder="邮箱 / 微信号，方便我们联系你" />
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label class="label">客户端版本（选填）</label>
+          <input class="input" id="fb-version" maxlength="40" placeholder="例如 0.4.1" />
+        </div>
+        <div class="field">
+          <label class="label">操作系统（选填）</label>
+          <input class="input" id="fb-os" maxlength="80" placeholder="例如 Windows 11" />
+        </div>
+      </div>
+
+      <button class="btn btn-primary fb-submit" id="btn-submit" style="width:100%;">提交反馈</button>
+      <p class="fb-privacy">提示：提交即视为允许我们查看并跟进该问题。若已留联系方式，处理完成会通知你。</p>
+    </section>
+
+    <!-- ========== 右：我的反馈 ========== -->
+    <section class="fb-mine">
+      <div class="panel fb-toolbar">
+        <div class="fb-toolbar-head">
+          <h2 class="panel-title">我的反馈</h2>
+          <button class="btn btn-ghost" id="btn-refresh-mine">刷新</button>
+        </div>
+        <div class="fb-mine-filters" id="mine-filters">
+          <button class="chip-filter active" data-s="all">全部</button>
+          <button class="chip-filter" data-s="pending">待处理</button>
+          <button class="chip-filter" data-s="in_progress">处理中</button>
+          <button class="chip-filter" data-s="resolved">已解决</button>
+          <button class="chip-filter" data-s="closed">已关闭</button>
+        </div>
+      </div>
+      <div id="mine-list" class="fb-list">
+        <div class="empty"><h3>加载中…</h3></div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div id="toast-host"></div>
+
+<!-- 大图查看 -->
+<div class="lightbox" id="lightbox" style="display:none;">
+  <button class="lb-close" id="lb-close">✕</button>
+  <button class="lb-nav lb-prev" id="lb-prev">‹</button>
+  <img id="lb-img" alt="截图预览" />
+  <button class="lb-nav lb-next" id="lb-next">›</button>
+  <div class="lb-caption" id="lb-caption"></div>
+</div>
+
+<script src="/assets/feedback.js"></script>
+</body>
+</html>

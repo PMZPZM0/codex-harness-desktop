@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4C8DF6"/>
+      <stop offset="0.55" stop-color="#2F6BDD"/>
+      <stop offset="1" stop-color="#17439B"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="cheat" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0B2A66" stop-opacity="0"/>
+      <stop offset="1" stop-color="#0B2A66" stop-opacity="0.32"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFD66B" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#FFD66B" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 底 -->
+  <rect x="0" y="0" width="512" height="512" rx="116" fill="url(#bg)"/>
+  <rect x="0" y="0" width="512" height="256" rx="116" fill="url(#shine)"/>
+  <rect x="0" y="256" width="512" height="256" fill="url(#cheat)"/>
+
+  <!-- 火花光晕 -->
+  <circle cx="362" cy="150" r="84" fill="url(#glow)"/>
+
+  <!-- 主图形：终端提示符 > -->
+  <path d="M148 196 L300 256 L148 316"
+        fill="none" stroke="#FFFFFF" stroke-width="58"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 内层阴影线：给 > 一点立体（略细、微透明的白） -->
+  <path d="M178 216 L288 256 L178 296"
+        fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="16"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- 光标 _（终端输入感） -->
+  <path d="M330 330 L414 330" fill="none" stroke="#FFFFFF" stroke-opacity="0.55"
+        stroke-width="24" stroke-linecap="round"/>
+
+  <!-- 四角星（AI 火花） -->
+  <path d="M362 96 L370 134 L408 142 L370 150 L362 188 L354 150 L316 142 L354 134 Z"
+        fill="#FFD66B"/>
+</svg>

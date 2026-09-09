@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --violet: #8b5cf6;
+    --violet-2: #6366f1;
+    --ink: #05060b;
+    --text: #f5f6fa;
+    --dim: #9aa0b4;
+    --line: rgba(255,255,255,0.10);
+  }
+  html, body { width: 1080px; height: 1920px; overflow: hidden; }
+  body {
+    background:
+      radial-gradient(1200px 700px at 50% -10%, rgba(139,92,246,0.30), transparent 62%),
+      radial-gradient(900px 600px at 110% 105%, rgba(99,102,241,0.20), transparent 60%),
+      var(--ink);
+    font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+    color: var(--text);
+    padding: 88px 72px 72px;
+    display: flex;
+    flex-direction: column;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- 顶部品牌 ---------- */
+  .brand { display: flex; align-items: center; gap: 16px; }
+  .logo {
+    width: 46px; height: 46px; border-radius: 13px;
+    background: linear-gradient(135deg, var(--violet), var(--violet-2));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px; font-weight: 700; color: #fff;
+    box-shadow: 0 8px 26px rgba(139,92,246,0.45);
+  }
+  .brand-name { font-size: 26px; font-weight: 700; letter-spacing: 0.06em; }
+  .brand-sub { font-size: 17px; color: var(--dim); letter-spacing: 0.16em; margin-top: 2px; }
+  .rule { height: 1px; background: var(--line); margin: 30px 0 0; }
+
+  /* ---------- 主标题 ---------- */
+  .headline { margin-top: 54px; }
+  .h1 { font-size: 96px; line-height: 1.10; font-weight: 800; letter-spacing: -0.01em; }
+  .h2 {
+    font-size: 96px; line-height: 1.12; font-weight: 800; letter-spacing: -0.01em;
+    background: linear-gradient(100deg, #a78bfa, #6366f1 70%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .lede { margin-top: 26px; font-size: 27px; line-height: 1.65; color: var(--dim); max-width: 860px; }
+
+  /* ---------- 产品截图 ---------- */
+  .shot-wrap { margin-top: 46px; position: relative; }
+  .shot {
+    width: 100%; border-radius: 20px; display: block;
+    border: 1px solid rgba(255,255,255,0.13);
+    box-shadow: 0 40px 90px rgba(0,0,0,0.65), 0 0 0 1px rgba(139,92,246,0.10);
+  }
+  .shot-glow {
+    position: absolute; inset: -6px; border-radius: 26px; z-index: -1;
+    background: linear-gradient(120deg, rgba(139,92,246,0.55), rgba(99,102,241,0.25), transparent 60%);
+    filter: blur(38px); opacity: 0.75;
+  }
+
+  /* ---------- 能力标签 ---------- */
+  .tags { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+  .tag {
+    padding: 12px 20px; border-radius: 999px; font-size: 20px; color: #d7dbe8;
+    border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.035);
+  }
+
+  /* ---------- 促销 ---------- */
+  .promo {
+    margin-top: 38px; padding: 34px 36px; border-radius: 22px; position: relative;
+    background: linear-gradient(135deg, rgba(139,92,246,0.16), rgba(99,102,241,0.07));
+    border: 1px solid rgba(139,92,246,0.42);
+  }
+  .promo-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 18px; color: #c4b5fd; letter-spacing: 0.10em; margin-bottom: 16px;
+  }
+  .promo-1 { font-size: 44px; font-weight: 800; line-height: 1.30; }
+  .promo-1 em { font-style: normal; color: #fbbf24; }
+  .promo-2 { margin-top: 12px; font-size: 30px; font-weight: 600; color: #a5b4fc; }
+
+  /* ---------- 页脚 ---------- */
+  .footer { margin-top: auto; padding-top: 40px; display: flex; align-items: flex-end; justify-content: space-between; }
+  .foot-l { font-size: 24px; line-height: 1.85; color: #c8cddb; letter-spacing: 0.02em; }
+  .foot-l b { color: #fff; font-weight: 600; }
+  .qr {
+    width: 156px; height: 156px; border-radius: 16px; background: #fff;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #4b5563; font-size: 15px; gap: 8px; flex: none;
+  }
+  .qr .qmark { font-size: 44px; line-height: 1; color: #111827; }
+</style>
+</head>
+<body>
+
+  <div class="brand">
+    <div class="logo">⌬</div>
+    <div>
+      <div class="brand-name">Codex Harness</div>
+      <div class="brand-sub">DESKTOP AI WORKBENCH</div>
+    </div>
+  </div>
+  <div class="rule"></div>
+
+  <div class="headline">
+    <div class="h1">Codex 国产化</div>
+    <div class="h2">让每个人都能用上</div>
+    <div class="lede">
+      中文界面开箱即用，多会话并行、技能 / 插件 / MCP 生态、桌面与浏览器自动化；
+      内置国内主流模型规格与中转站支持，无需命令行，人人都能上手。
+    </div>
+  </div>
+
+  <div class="shot-wrap">
+    <div class="shot-glow"></div>
+    <img class="shot" src="main-dark.png" alt="Codex Harness Desktop 主界面" />
+  </div>
+
+  <div class="tags">
+    <span class="tag">多会话并行与排队</span>
+    <span class="tag">技能 · 插件 · MCP 生态</span>
+    <span class="tag">桌面与浏览器自动化</span>
+    <span class="tag">内置浏览器与项目树</span>
+    <span class="tag">超长上下文</span>
+    <span class="tag">权限分级与沙箱</span>
+  </div>
+
+  <div class="promo">
+    <div class="promo-badge">🎁 新用户专享</div>
+    <div class="promo-1">注册即送 <em>10 美元</em> GPT 系列体验额度</div>
+    <div class="promo-2">DeepSeek-v4-flash 免费体验</div>
+  </div>
+
+  <div class="footer">
+    <div class="foot-l">
+      <div>🌐 官网 <b>www.jvszzp.ltd</b></div>
+      <div>💬 QQ 交流群 <b>1092443646</b></div>
+    </div>
+    <div class="qr">
+      <div class="qmark">▣</div>
+      <div>扫码进群</div>
+    </div>
+  </div>
+
+</body>
+</html>

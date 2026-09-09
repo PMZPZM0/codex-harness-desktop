@@ -1,0 +1,54 @@
+name: 🐛 Bug 反馈
+description: 报告一个可以复现的问题
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！填写得越完整，问题定位得越快。
+        不想用 GitHub 也可以到 [官网反馈页](https://www.jvszzp.ltd/feedback.html) 提交（支持截图，无需账号）。
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么？
+      description: 描述实际现象与期望行为；报错信息、截图可直接粘贴进来
+      placeholder: |
+        期望：点击「添加文件」弹出文件选择
+        实际：点击后无反应
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 从打开应用开始，一步一步写清楚
+      placeholder: |
+        1. 打开应用
+        2. 点击输入框 + 号
+        3. …
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS Apple Silicon (M1/M2/M3/M4)
+        - macOS Intel
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本
+      description: 关于/设置里查看，如 0.0.3
+      placeholder: "0.0.3"
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充信息（可选）
+      description: 日志片段、模型供应商、是否开启沙箱等

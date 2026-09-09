@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 官网反馈（支持截图上传）
+    url: https://www.jvszzp.ltd/feedback.html
+    about: 不想用 GitHub？在官网反馈页提交问题或建议，无需账号
+  - name: 📦 下载与更新日志
+    url: https://www.jvszzp.ltd
+    about: 最新版本下载、更新日志与发布历史

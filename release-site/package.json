@@ -1,0 +1,15 @@
+{
+  "name": "codex-harness-release-site",
+  "version": "0.1.0",
+  "description": "Codex Harness 桌面端的版本发布管理网站（管理员上传 / 普通用户下载 / 桌面端检查更新）",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {}
+}
