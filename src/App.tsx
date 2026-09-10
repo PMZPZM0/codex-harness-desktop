@@ -1019,6 +1019,22 @@ function imageUrl(path: string) {
   return `harness-image://local?path=${encodeURIComponent(encodeURIComponent(path))}`;
 }
 
+/** 把图片显示源的 path 还原成本地文件路径；非本地（http/data/相对）返回 null。
+ *  支持三种形态：本地绝对路径、harness-image://（双编码）、http(s) URL（返回 null 走外部打开）。 */
+function resolveImagePath(input: string): string | null {
+  if (!input) return null;
+  if (input.startsWith("harness-image://")) {
+    try {
+      let p = new URL(input).searchParams.get("path") ?? "";
+      // URLSearchParams 已解一层；双编码的 path 还剩一层（%5C 等）
+      if (!/^[a-zA-Z]:[\\/]/.test(p) && !p.startsWith("/")) { try { p = decodeURIComponent(p); } catch { return null; } }
+      return p || null;
+    } catch { return null; }
+  }
+  if (/^[a-zA-Z]:[\\/]/.test(input) || input.startsWith("/")) return input;
+  return null;
+}
+
 function timeAgo(timestamp: number) {
   const seconds = Math.max(0, Date.now() / 1000 - timestamp);
   if (seconds < 60) return "刚刚";
@@ -2473,6 +2489,14 @@ function ImageLightbox({ path, alt, onClose, onCopy }: { path: string; alt: stri
         <button className="lightbox-zoom" title="点击重置" onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }); }}>{Math.round(zoom * 100)}%</button>
         <button title="放大" onClick={() => setZoom((current) => clampZoom(current + 0.25))}><ZoomIn size={15} /></button>
         {onCopy && <button title="复制图片" onClick={onCopy}><Copy size={15} /></button>}
+        {(() => {
+          const local = resolveImagePath(path);
+          return local
+            ? <button title="在文件夹中显示" onClick={() => void window.codex.shellReveal(local)}><FolderOpen size={15} /></button>
+            : path.startsWith("http")
+              ? <button title="在浏览器中打开" onClick={() => void window.codex.openExternal(path)}><ExternalLink size={15} /></button>
+              : null;
+        })()}
         <button title="关闭 (Esc)" onClick={onClose}><X size={15} /></button>
       </div>
       <div
@@ -9731,7 +9755,15 @@ const commandMatches = useMemo(() => {
 
   async function copyImage(path: string) {
     try {
-      const response = await fetch(path.startsWith("http") ? path : imageUrl(path));
+      // 本地图片：渲染层 fetch harness-image:// 自定义协议拿不到 blob（复制不了根因），
+      // 走主进程 nativeImage → clipboard.write；http URL 才用 fetch + ClipboardItem。
+      const local = resolveImagePath(path);
+      if (local) {
+        await window.codex.writeClipboardImage(local);
+        setNotice("图片已复制");
+        return;
+      }
+      const response = await fetch(path);
       const blob = await response.blob();
       await navigator.clipboard.write([new ClipboardItem({ [blob.type || "image/png"]: blob })]);
       setNotice("图片已复制");
