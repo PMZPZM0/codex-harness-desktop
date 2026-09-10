@@ -4741,6 +4741,15 @@ ipcMain.handle("custom-model:save", async (_event, input: { provider: string; na
     // 禁用状态的供应商不抢生效位
     return publicCustomModel(saved);
   }
+  // 全局互斥：保存为启用状态的供应商成为唯一生效者，其他启用中的全部禁用
+  //（UI 置灰是第一道防线，这里是兜底——中转站/官方订阅/设置页保存都汇到这个 handler）
+  if (saved.enabled !== false) {
+    for (const other of list) {
+      if (other.provider !== provider && other.enabled !== false) {
+        await upsertCustomModel({ ...other, enabled: false });
+      }
+    }
+  }
   await fs.writeFile(customModelFile, JSON.stringify(saved, null, 2), "utf8");
   await applyCustomModel(saved);
   return publicCustomModel(saved);
@@ -4825,20 +4834,29 @@ ipcMain.handle("custom-model:set-enabled", async (_event, input: { provider: str
   const list = await readCustomModels();
   const target = list.find((entry) => entry.provider === input.provider);
   if (!target) throw new Error("未找到该供应商");
-  const next: CustomModelFile = { ...target, enabled: input.enabled };
-  await upsertCustomModel(next);
   const current = await readCustomModel();
   const isCurrent = current?.provider === input.provider;
-  if (!input.enabled && isCurrent) {
-    await fs.writeFile(customModelFile, "null", "utf8");
-    await server.restart();
+  // 全局互斥：一次只能启用一个供应商。启用 A 时若 B 在生效 → 自动禁用所有其他启用中的
+  // 供应商，并把 A 写为当前生效（引擎重启，切换语义）。UI 置灰是第一道防线，这里是兜底。
+  if (input.enabled) {
+    for (const other of list) {
+      if (other.provider !== input.provider && other.enabled !== false) {
+        await upsertCustomModel({ ...other, enabled: false });
+      }
+    }
+    const next: CustomModelFile = { ...target, enabled: true };
+    await upsertCustomModel(next);
+    if (!isCurrent) {
+      await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
+      await applyCustomModel(next);
+    }
     return publicCustomModel(next);
   }
-  if (input.enabled && !current) {
-    // 没有生效供应商时，启用即生效
-    await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
-    await applyCustomModel(next);
-    return publicCustomModel(next);
+  const next: CustomModelFile = { ...target, enabled: false };
+  await upsertCustomModel(next);
+  if (isCurrent) {
+    await fs.writeFile(customModelFile, "null", "utf8");
+    await server.restart();
   }
   return publicCustomModel(next);
 });

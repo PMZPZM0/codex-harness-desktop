@@ -3323,8 +3323,8 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActive
                 {a.planType ? <span className="openai-plan-badge">{a.planType.toUpperCase()}</span> : null}
                 {a.active && <span className="relay-plan-live"><Check size={11} />使用中</span>}
                 {a.disabled && <span className="acct-disabled-badge">已停用</span>}
-                <label className="bot-switch acct-switch" title={a.disabled ? "已停用，点击启用" : "启用中，点击停用"} onClick={(event) => event.stopPropagation()}>
-                  <input type="checkbox" checked={!a.disabled} disabled={working === "tg" + a.id} onChange={(event) => void toggleAccount(a.id, event.target.checked)} /><span />
+                <label className="bot-switch acct-switch" title={a.disabled ? (activeProvider && !a.active ? `已有供应商生效（一次只能启用一个），先停用再启用这个账号` : "已停用，点击启用") : "启用中，点击停用"} onClick={(event) => event.stopPropagation()}>
+                  <input type="checkbox" checked={!a.disabled} disabled={working === "tg" + a.id || (a.disabled && Boolean(activeProvider) && !a.active)} onChange={(event) => void toggleAccount(a.id, event.target.checked)} /><span />
                 </label>
               </div>
               <p className="openai-sub-line">订阅{a.subscriptionUntil ? "至 " + a.subscriptionUntil.slice(0, 10) : "生效中"} · {new Date(a.savedAt).toLocaleString()} 登录</p>
@@ -3739,8 +3739,8 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
                 <strong title={a.email}>{a.email}</strong>
                 {a.active && <span className="relay-plan-live"><Check size={11} />使用中</span>}
                 {a.disabled && <span className="acct-disabled-badge">已停用</span>}
-                <label className="bot-switch acct-switch" title={a.disabled ? "已停用，点击启用" : "启用中，点击停用"} onClick={(event) => event.stopPropagation()}>
-                  <input type="checkbox" checked={!a.disabled} disabled={working === `tg${a.id}`} onChange={(event) => void toggleAccount(a.id, event.target.checked)} /><span />
+                <label className="bot-switch acct-switch" title={a.disabled ? (activeProvider && !a.active ? `已有供应商生效（一次只能启用一个），先停用再启用这个账号` : "已停用，点击启用") : "启用中，点击停用"} onClick={(event) => event.stopPropagation()}>
+                  <input type="checkbox" checked={!a.disabled} disabled={working === `tg${a.id}` || (a.disabled && Boolean(activeProvider) && !a.active)} onChange={(event) => void toggleAccount(a.id, event.target.checked)} /><span />
                 </label>
               </div>
               <p>{String(a.baseUrl || "").replace(/^https?:\/\//, "")}</p>
@@ -13101,10 +13101,10 @@ const commandMatches = useMemo(() => {
                         </div>
                         <label
                           className={`provider-switch ${p.enabled === false ? "off" : ""}`}
-                          title={isPseudoPptoken ? (pseudoOff ? "推荐卡已停用 · 点击恢复展示" : "停用 PPtoken 推荐卡展示") : p.enabled === false ? "已禁用 · 点击启用" : "已启用 · 点击禁用"}
+                          title={isPseudoPptoken ? (pseudoOff ? "推荐卡已停用 · 点击恢复展示" : "停用 PPtoken 推荐卡展示") : (p.enabled !== false ? "已启用 · 点击禁用" : (customModel && customModel.provider !== p.provider ? `已有供应商「${customModel.name}」生效，一次只能启用一个——先停用它再启用这个` : "已禁用 · 点击启用"))}
                           onClick={(event) => event.stopPropagation()}
                         >
-                          <input type="checkbox" checked={isPseudoPptoken ? !pseudoOff : p.enabled !== false} onChange={(event) => { if (isPseudoPptoken) setPptokenCardOff(!event.target.checked); else void setProviderEnabled(p.provider, event.target.checked); }} />
+                          <input type="checkbox" checked={isPseudoPptoken ? !pseudoOff : p.enabled !== false} disabled={!isPseudoPptoken && p.enabled === false && customModel != null && customModel.provider !== p.provider} onChange={(event) => { if (isPseudoPptoken) setPptokenCardOff(!event.target.checked); else void setProviderEnabled(p.provider, event.target.checked); }} />
                           <span className="provider-switch-ui" />
                         </label>
                         {!isPseudoPptoken && <span className={`provider-dot ${p.provider === currentProvider ? "on" : ""}`} title={p.provider === currentProvider ? "当前生效供应商" : ""} />}
