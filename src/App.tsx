@@ -11192,16 +11192,27 @@ const commandMatches = useMemo(() => {
         } catch { /* 探测失败按无绑定处理，走正常发送 */ }
       }
       if (boundProvider && customModel && boundProvider !== customModel.provider && currentThread?.id) {
-        const migrated = await migrateThreadToProvider(currentThread.id, customModel);
-        if (!migrated) {
-          showToast("暂时不能发送", `该会话绑定 ${boundProvider}（已不是当前供应商），迁移到 ${customModel.name} 失败；请新建会话或切换回该供应商`);
+        // 关键：引擎进程是「一个全局 Key」（spawn 时注入 CODEX_HARNESS_API_KEY）。
+        // 只 resume 换 base_url 不换 Key → 目标供应商收到旧 Key → INVALID_API_KEY 401
+        // （实测：激活 ppz123 后旧 pptoken 会话迁移后仍 401，重启引擎才注入 ppz123 的 Key）。
+        // 所以迁移必须走完整切换：写激活 + applyCustomModel 重启引擎（注入新 Key）+ resume。
+        try {
+          const updated = await window.codex.setProviderModel({ provider: customModel.provider, model: customModel.model });
+          setCustomModel(updated);
+          const migrated = await migrateThreadToProvider(currentThread.id, customModel);
+          if (!migrated) {
+            showToast("已切换供应商", `已切换到 ${updated.name} 并重启生效；该会话未能迁移，请新建会话`);
+            return;
+          }
+          const selectedId = `custom:${updated.provider}:${updated.model}`;
+          setModelId(selectedId);
+          localStorage.setItem("default-model", selectedId);
+          saveThreadModel(currentThread.id, selectedId);
+          showToast("会话已迁移", `引擎已按 ${updated.name} 的 Key 重启，该会话已切换到 ${updated.model}，可正常发送`);
+        } catch (error: any) {
+          showToast("暂时不能发送", `迁移失败：${String(error?.message ?? error).slice(0, 80)}`);
           return;
         }
-        const selectedId = `custom:${customModel.provider}:${customModel.model}`;
-        setModelId(selectedId);
-        localStorage.setItem("default-model", selectedId);
-        saveThreadModel(currentThread.id, selectedId);
-        showToast("会话已迁移", `该会话已切换到 ${customModel.name} · ${customModel.model}，可正常发送`);
       }
     }
     if (!workspace) {
