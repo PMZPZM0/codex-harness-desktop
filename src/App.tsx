@@ -8100,6 +8100,28 @@ const commandMatches = useMemo(() => {
     setCompactToast({ state, message: content.message, threadId });
   }
 
+  /** 压缩分隔线只保留最新一条：新一轮压缩开始/完成时，把时间线里更早的 contextCompaction
+   *  项从渲染状态中移除（只改本地渲染副本，不动引擎 rollout）。旧「成功」分隔线一直挂着，
+   *  新压缩一开始就上下两条叠在一起，被当成多余展示（用户实测）。 */
+  function pruneSupersededCompactions(keepId: string) {
+    if (!keepId) return;
+    setThread((current) => {
+      if (!current) return current;
+      let changed = false;
+      const turns = current.turns.map((turn) => {
+        const before = (turn.items ?? []).length;
+        const items = (turn.items ?? []).filter((item) => item.type !== "contextCompaction" || String(item.id) === keepId);
+        if (items.length !== before) { changed = true; return { ...turn, items }; }
+        return turn;
+      });
+      if (!changed) return current;
+      const next = { ...current, turns };
+      threadRef.current = next;
+      threadCacheRef.current.set(current.id, next);
+      return next;
+    });
+  }
+
   // 压缩分隔线：success/error 常驻（用户可手动 × 关闭），running 300s 没收到完成事件才标记失败。
   // 90s 的旧超时会把大上下文的真实模型压缩（几分钟很常见）误判成失败——已实测踩坑。
   useEffect(() => {
@@ -9220,9 +9242,11 @@ const commandMatches = useMemo(() => {
       if (method === "item/started" && params.item?.type === "contextCompaction") {
         compactPendingRef.current.add(String(params.threadId ?? threadRef.current?.id ?? ""));
         setCompactEventState("running");
+        pruneSupersededCompactions(String(params.item?.id ?? ""));
       } else if (method === "item/completed" && params.item?.type === "contextCompaction") {
         compactPendingRef.current.delete(String(params.threadId ?? threadRef.current?.id ?? ""));
         setCompactEventState("success");
+        pruneSupersededCompactions(String(params.item?.id ?? ""));
       }
       if (method === "turn/plan/updated") {
         setPlanSteps((params.plan ?? []).map((step: any) => ({ step: step.step ?? "", status: step.status ?? "pending" })));
