@@ -432,6 +432,8 @@ type QueueItem = { id: string; input: any[]; clientUserMessageId: string };
 type useRefObject = { current: HTMLElement | null };
 type TreeEntry = { fileName: string; isDirectory: boolean; isFile: boolean };
 type SkillInstallState = { skill: MarketSkillEntry; current: number; failed?: string; engineRegistered?: boolean; engineCheckMessage?: string };
+/** 卸载技能进度（与安装对称）：folder=目录名、name=展示名；engineRemoved=引擎是否已确认移除。 */
+type SkillRemoveState = { folder: string; name: string; description: string; current: number; failed?: string; engineRemoved?: boolean; engineCheckMessage?: string };
 type PluginInstallState = { plugin: PluginMarketEntry; current: number; failed?: string; engineRegistered?: boolean; engineCheckMessage?: string };
 /** 本地绝对路径 → file:// URL（webview 内置浏览器可直接渲染本地 HTML） */
 function toFileUrl(p: string): string {
@@ -930,12 +932,15 @@ const SKILL_ZH_NOTES: Record<string, string> = {
   "skill-creator": "技能创建：新建或更新符合规范的 Codex 技能",
   "skill-installer": "技能安装：把技能安装到 Codex 技能目录",
 };
-/** 技能的中文注释：优先生效的中文注释表 → 技能自带的中文描述 → 技能类别 → 通用兜底。
- *  使命是「每个技能都有一句中文说明」，英文描述不会再原样铺给用户。 */
-function skillZhNote(entry: { name: string; description?: string; category?: string }): string {
+/** 技能的中文注释：高优先级中文注释表 → 安装时存下的市场中文简介 → 技能自带的中文描述 → 技能类别 → 通用兜底。
+ *  使命是「每个技能都有一句中文说明」——市场技能装到本地后 frontmatter 描述多为英文，
+ *  靠安装时写入来源清单的 descriptionZh 兜住「后续新装的技能」。英文描述不会再原样铺给用户。 */
+function skillZhNote(entry: { name: string; description?: string; descriptionZh?: string; category?: string }): string {
   const key = normSkillName(entry.name);
   const note = SKILL_ZH_NOTES[key];
   if (note) return note;
+  const marketZh = String(entry.descriptionZh ?? "").replace(/\s+/g, " ").trim();
+  if (marketZh && CJK_TEXT_RE.test(marketZh)) return marketZh.length > 72 ? `${marketZh.slice(0, 72)}…` : marketZh;
   const description = String(entry.description ?? "").replace(/^\s*>\s*/, "").replace(/\s+/g, " ").trim();
   if (description && CJK_TEXT_RE.test(description)) return description.length > 64 ? `${description.slice(0, 64)}…` : description;
   const byCategory: Record<string, string> = {
@@ -5323,6 +5328,22 @@ function SkillInstallModal({ state, onClose, onUse }: { state: SkillInstallState
   </section></div>;
 }
 
+/** 卸载技能弹窗：与安装同款分步进度（校验 → 删除文件 → 清理登记 → 重启引擎 → 确认移除），
+ *  解决「点一下只弹个小提示、感觉没卸掉」的问题——结束时明确给出引擎是否已移除的结论。 */
+function SkillRemoveModal({ state, onClose }: { state: SkillRemoveState; onClose: () => void }) {
+  const steps = ["校验技能目录", "删除技能文件", "清理来源登记", "重启 Codex 引擎", "确认引擎已移除"];
+  // 进度口径：事件把 current 推到 steps.length 时最后一步仍是「处理中」，收到 complete/pending
+  // （推一位）才判定整体完成——与安装弹窗「verify 后还有 complete」的节奏一致。
+  const done = state.current > steps.length;
+  return <div className="modal-backdrop skill-install-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && (done || state.failed)) onClose(); }}><section className="skill-install-modal" role="dialog" aria-modal="true" aria-label="卸载技能">
+    <header><div><span className="skill-remove-badge"><Trash2 size={16} /></span><div><strong>正在卸载 {state.name}</strong><p>{state.failed ? "卸载没有完成，技能目录可能仍存在。" : done ? "卸载流程已结束。请查看引擎移除状态。" : "请保持此窗口打开，卸载会自动继续。"}</p></div></div>{(done || state.failed) && <button className="icon-button relay-modal-close" title="关闭" onClick={onClose}><X size={16} /></button>}</header>
+    <ol className="skill-install-steps">{steps.map((label, index) => { const step = index + 1; const status = state.failed && step === state.current ? "failed" : step < state.current || (done && step <= state.current) ? "done" : step === state.current && !done ? "doing" : "todo"; return <li className={status} key={label}><span>{status === "done" ? <Check size={13} /> : status === "doing" ? <Spinner /> : status === "failed" ? <X size={13} /> : step}</span><div><b>{label}</b><small>{status === "done" ? "已完成" : status === "doing" ? "处理中…" : status === "failed" ? state.failed : "等待中"}</small></div></li>; })}</ol>
+    {done && <div className={`skill-engine-result ${state.engineRemoved ? "ok" : "pending"}`}>{state.engineRemoved ? <CircleCheck size={17} /> : <AlertTriangle size={17} />}<div><strong>{state.engineRemoved ? "已卸载：Codex 不再发现此技能" : "已删除文件，等待引擎下一轮扫描确认"}</strong><p>{state.engineCheckMessage ?? "技能目录已删除。"}</p></div></div>}
+    {state.failed && <div className="skill-engine-result failed"><AlertTriangle size={17} /><div><strong>卸载失败</strong><p>{state.failed}</p></div></div>}
+    {(done || state.failed) && <footer><button className="primary-setting" onClick={onClose}>完成</button></footer>}
+  </section></div>;
+}
+
 /** 插件市场安装弹窗：与技能安装同款进度，阶段为插件专属（GitHub 下载 → 写入 marketplace 目录） */
 function PluginInstallModal({ state, onClose }: { state: PluginInstallState; onClose: () => void }) {
   const steps = ["解析插件仓库", "下载插件文件", "写入插件目录", "登记市场来源", "重启 Codex 引擎", "确认引擎发现"];
@@ -6053,6 +6074,7 @@ export default function App() {
   // OpenAI 官方订阅当前生效账号标识：切换账号时变化，驱动输入框额度徽标立即刷新（避免同 provider 下切号不更新）
   const [openaiActiveAcct, setOpenaiActiveAcct] = useState<string | null>(null);
   const [skillInstall, setSkillInstall] = useState<SkillInstallState | null>(null);
+  const [skillRemove, setSkillRemove] = useState<SkillRemoveState | null>(null);
   const [connectorMenuOpen, setConnectorMenuOpen] = useState(false);
   const [connectors, setConnectors] = useState<ConnectorEntry[]>([]);
   const [connectorDraft, setConnectorDraft] = useState<ConnectorDraft>({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} });
@@ -7973,7 +7995,7 @@ const commandMatches = useMemo(() => {
   const mergedSkillCatalog = useMemo(() => {
     const seen = new Set<string>();
     const out: { name: string; description: string; note: string; path: string }[] = [];
-    const push = (entry: { name: string; description?: string; path?: string; category?: string }) => {
+    const push = (entry: { name: string; description?: string; descriptionZh?: string; path?: string; category?: string }) => {
       const key = normSkillName(entry.name);
       if (!key || seen.has(key)) return; // 同名（含插件限定名）只保留第一条（本地优先）
       seen.add(key);
@@ -8326,6 +8348,7 @@ const commandMatches = useMemo(() => {
       }
       const closers: Array<() => boolean> = [
         () => { if (skillInstall && (skillInstall.failed || skillInstall.current >= 7)) { setSkillInstall(null); return true; } return false; },
+        () => { if (skillRemove && (skillRemove.failed || skillRemove.current > 5)) { setSkillRemove(null); return true; } return false; },
         () => { if (agentAsk) { agentAsk.resolve(""); setAgentAsk(null); return true; } return false; },
         () => { if (appConfirm) { appConfirm.resolve(false); setAppConfirm(null); return true; } return false; },
         () => { if (appPrompt) { appPrompt.resolve(null); setAppPrompt(null); return true; } return false; },
@@ -8368,7 +8391,7 @@ const commandMatches = useMemo(() => {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [showLogin, skillInstall, agentAsk, appConfirm, appPrompt, memoryPreview, searchPreview, filePreview, lightbox, modelEditor, connectorEditorOpen, connectorTemplateModal, commandEditor, subAgentEditorOpen, expertTeamEditorOpen, goalsOpen, memoryCenterOpen, memoryConfigOpen, infoModal, reviewReport, settingsOpen, shortcutsOpen, paletteOpen, skillMenuOpen, connectorMenuOpen, attachmentMenuOpen, contextOpen, switcherOpen, mobileNav, sidebarFlyout, autoFormVisible, taskMenuOpen, botManagerOpen, mobileRemoteOpen, ctxMenuOpen, accountMenuOpen, rightOpen]);
+  }, [showLogin, skillInstall, skillRemove, agentAsk, appConfirm, appPrompt, memoryPreview, searchPreview, filePreview, lightbox, modelEditor, connectorEditorOpen, connectorTemplateModal, commandEditor, subAgentEditorOpen, expertTeamEditorOpen, goalsOpen, memoryCenterOpen, memoryConfigOpen, infoModal, reviewReport, settingsOpen, shortcutsOpen, paletteOpen, skillMenuOpen, connectorMenuOpen, attachmentMenuOpen, contextOpen, switcherOpen, mobileNav, sidebarFlyout, autoFormVisible, taskMenuOpen, botManagerOpen, mobileRemoteOpen, ctxMenuOpen, accountMenuOpen, rightOpen]);
   useEffect(() => {
     if (workStartedAt == null) return;
     const timer = window.setInterval(() => setNowTick(Date.now()), 1000);
@@ -9406,6 +9429,13 @@ const commandMatches = useMemo(() => {
         setSkillInstall((current) => {
           if (!current || current.skill.id !== event.skillId) return current;
           return { ...current, current: Math.max(current.current, positions[event.stage] ?? current.current), engineRegistered: event.stage === "complete" ? true : current.engineRegistered, engineCheckMessage: ["complete", "pending"].includes(event.stage) ? event.message : current.engineCheckMessage };
+        });
+      }
+      if (event.type === "skill-remove") {
+        const positions: Record<string, number> = { prepare: 1, delete: 2, registry: 3, engine: 4, verify: 5, complete: 6, pending: 6 };
+        setSkillRemove((current) => {
+          if (!current || current.folder !== event.skillId) return current;
+          return { ...current, current: Math.max(current.current, positions[event.stage] ?? current.current), engineRemoved: event.stage === "complete" ? true : current.engineRemoved, engineCheckMessage: ["complete", "pending"].includes(event.stage) ? event.message : current.engineCheckMessage };
         });
       }
       if (event.type === "plugin-install") {
@@ -10790,13 +10820,22 @@ const commandMatches = useMemo(() => {
     } catch (error: any) { setNotice(`导入技能失败：${error.message}`); }
   }
 
-  async function removeLocalSkill(name: string) {
+  /** 卸载技能：与安装对称，先用进度弹窗接手（校验→删除→清理登记→重启引擎→确认移除），
+   *  主进程逐步回推事件推进进度；结束时报「引擎是否已确认移除」，不再是一闪而过的 toast。 */
+  async function removeLocalSkill(entry: { folder?: string; name: string; description?: string }) {
+    const folder = entry.folder ?? entry.name;
+    setSkillRemove({ folder, name: entry.name, description: entry.description ?? "", current: 0 });
     try {
-      await window.codex.removeLocalSkill(name);
+      const result = await window.codex.removeLocalSkill({ folder, name: entry.name });
       setLocalSkills(await window.codex.listLocalSkills());
       await refreshSettingsResources();
-      setNotice(`技能已卸载：${name}`);
-    } catch (error: any) { setNotice(`卸载技能失败：${error.message}`); }
+      setSkillRemove((current) => current && current.folder === folder ? { ...current, current: 6, engineRemoved: result?.engineRemoved, engineCheckMessage: result?.engineCheckMessage } : current);
+      setNotice(result?.engineRemoved === false ? `技能已删除：${entry.name}（等待引擎下一轮扫描确认）` : `技能已卸载：${entry.name}`);
+    } catch (error: any) {
+      setSkillRemove((current) => current && current.folder === folder ? { ...current, failed: error.message } : null);
+      setNotice(`卸载技能失败：${error.message}`);
+      void window.codex.listLocalSkills().then(setLocalSkills).catch(() => undefined);
+    }
   }
 
   /** 粘贴图片：主进程读剪贴板位图落盘（截图/网页复制图都走这条）。
@@ -13761,7 +13800,7 @@ const commandMatches = useMemo(() => {
                 const offList = checkedSkills.filter((skill) => skill.enabled === false).map((skill) => skill.folder ?? skill.name);
                 const onList = checkedSkills.filter((skill) => skill.enabled !== false).map((skill) => skill.folder ?? skill.name);
                 const toggleSkillChecked = (folder: string) => setSkillChecked((current) => current.includes(folder) ? current.filter((entry) => entry !== folder) : [...current, folder]);
-                const renderCard = (skill: { name: string; description: string; path?: string; source?: "cocoloop" | "skillhub" | "local"; folder?: string; enabled?: boolean; allowedTools?: string[]; category?: string; icon?: string }, sourceTag: "builtin" | "market" | "local") => {
+                const renderCard = (skill: { name: string; description: string; descriptionZh?: string; path?: string; source?: "cocoloop" | "skillhub" | "local"; folder?: string; enabled?: boolean; allowedTools?: string[]; category?: string; icon?: string }, sourceTag: "builtin" | "market" | "local") => {
                   const removable = sourceTag !== "builtin";
                   const folder = removable ? skill.folder ?? skill.name : null;
                   const sourceLabel = sourceTag === "builtin" ? "内置" : sourceTag === "market" ? "市场安装" : "本地导入";
@@ -13769,6 +13808,9 @@ const commandMatches = useMemo(() => {
                   const skillKey = folder ?? skill.name;
                   const checked = removable && checkedFolders.includes(skillKey);
                   const allowedTools = (skill.allowedTools ?? []).filter(Boolean);
+                  // 卡片描述：中文注释优先（注释表 / 安装时存下的市场中文简介），没有中文才退回原文
+                  const zhNote = skillZhNote(skill);
+                  const cardDescription = zhNote !== "已安装技能" ? zhNote : (skill.description || "已发现技能");
                   return <article className={`skill-card-compact source-${sourceTag} ${removable && !enabled ? "is-disabled" : ""} ${checked ? "is-checked" : ""}`} key={`${sourceTag}-${skill.name}`}>
                     <div className="skill-card-compact-head">
                       <div className="skill-card-head-left">
@@ -13785,13 +13827,13 @@ const commandMatches = useMemo(() => {
                       />
                     </div>
                     <strong>{skill.name}{removable && !enabled && <em className="skill-disabled-label">已停用</em>}</strong>
-                    <p>{skill.description || "已发现技能"}</p>
+                    <p>{cardDescription}</p>
                     {allowedTools.length ? <div className="skill-card-allowed-tools" title="SKILL.md 声明的工具白名单（allowed-tools，展示用）">{allowedTools.slice(0, 5).map((tool) => <code key={tool}>{tool}</code>)}{allowedTools.length > 5 ? <code className="skill-card-tools-more">+{allowedTools.length - 5}</code> : null}</div> : null}
                     <div className="skill-card-compact-foot">
                       {skill.path && <span className="skill-card-path" title={skill.path}>{skill.path.replace(/^.*[\\/]/, "")}</span>}
                       <div className="skill-card-compact-tools">
                         <button className="icon-button" title="引用到对话" onClick={() => { setSelectedSkills((current) => current.some((entry) => entry.name === skill.name) ? current : [...current, { name: skill.name, description: skill.description }]); setSettingsOpen(false); }}><Quote size={13} /></button>
-                        {removable && folder && <button className="icon-button" title="卸载技能" onClick={() => void removeLocalSkill(folder)}><Trash2 size={13} /></button>}
+                        {removable && folder && <button className="icon-button" title="卸载技能" onClick={() => void removeLocalSkill({ folder, name: skill.name, description: skill.description })}><Trash2 size={13} /></button>}
                       </div>
                     </div>
                   </article>;
@@ -14528,6 +14570,7 @@ const commandMatches = useMemo(() => {
       {shortcutsOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShortcutsOpen(false); }}><div className="shortcuts-modal" role="dialog" aria-modal="true" aria-label="键盘快捷键"><header><div><Keyboard size={17} /><strong>键盘快捷键</strong><span className="esc-hint" title="按 ESC 关闭弹窗">ESC</span></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setShortcutsOpen(false)}><X size={17} /></button></header><div className="shortcuts-body">{SHORTCUT_GROUPS.map((group) => <section className="shortcuts-group" key={group.group}><h3>{group.group}</h3>{group.shortcuts.map((item) => <div className="shortcuts-row" key={item.keys.join("+")}><span className="shortcut-desc">{item.desc}</span><span className="shortcut-keys">{item.keys.map((key, index) => <kbd key={index}>{key}</kbd>)}</span></div>)}</section>)}<footer><span className="muted">部分快捷键在输入框聚焦时优先用于文本编辑。</span></footer></div></div></div>}
       {marketPreview && <MarketPreviewModal state={marketPreview} onClose={() => setMarketPreview(null)} />}
       {skillInstall && <SkillInstallModal state={skillInstall} onClose={() => setSkillInstall(null)} onUse={() => { const skill = { name: skillInstall.skill.name, description: skillInstall.skill.description }; setSelectedSkills((current) => current.some((entry) => entry.name === skill.name) ? current : [...current, skill]); setSkillInstall(null); setSettingsOpen(false); setNotice(`已引用技能：${skill.name}`); }} />}
+      {skillRemove && <SkillRemoveModal state={skillRemove} onClose={() => setSkillRemove(null)} />}
       {pluginInstall && <PluginInstallModal state={pluginInstall} onClose={() => setPluginInstall(null)} />}
       {filePreview && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFilePreview(null); }}>
         <div className={`file-preview ${filePreview.kind === "image" ? "image-preview" : "text-preview"}`} role="dialog" aria-label="文件预览">

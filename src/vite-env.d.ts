@@ -115,7 +115,7 @@ type PluginMarketEntry = {
   installs: number; homepage: string; source: string; featured: boolean; hasSkills: boolean; hasMcpServers: boolean;
 };
 type PluginMarketInstallResult = { id: string; name: string; path: string; version: string; description: string; marketId: string; sourceUrl: string; engineRegistered?: boolean; engineCheckMessage?: string };
-type LocalSkillEntry = { name: string; folder?: string; path: string; description: string; marketId?: string; pluginId?: string; sourceUrl?: string; installedAt?: string; engineRegistered?: boolean; engineCheckMessage?: string; source?: "cocoloop" | "skillhub" | "local"; enabled?: boolean; allowedTools?: string[]; icon?: string; category?: string };
+type LocalSkillEntry = { name: string; folder?: string; path: string; description: string; descriptionZh?: string; marketId?: string; pluginId?: string; sourceUrl?: string; installedAt?: string; engineRegistered?: boolean; engineCheckMessage?: string; source?: "cocoloop" | "skillhub" | "local"; enabled?: boolean; allowedTools?: string[]; icon?: string; category?: string };
 type PersonalizationConfig = { nickname?: string; customInstructions?: string };
 
 /** SSH 跳板机（ProxyJump）配置 */
@@ -280,7 +280,7 @@ interface Window {
     setEnabledSkill(input: { folder: string; enabled: boolean }): Promise<{ ok: boolean }>;
     setEnabledSkillBatch(input: { folders: string[]; enabled: boolean }): Promise<{ ok: boolean; changed: number; failures: string[] }>;
     setPluginEnabled(input: { pluginIds: string[]; enabled: boolean }): Promise<{ changed: number; failures: string[] }>;
-    removeLocalSkill(name: string): Promise<{ ok: boolean }>;
+    removeLocalSkill(input: { folder: string; name?: string }): Promise<{ ok: boolean; engineRemoved?: boolean; engineCheckMessage?: string }>;
     trustHooks(cwds?: string[]): Promise<{ total: number; trusted: number; alreadyTrusted: number; failures: string[] }>;
     setHookEnabled(input: { hookKeys: string[]; enabled: boolean }): Promise<{ changed: number; failures: string[] }>;
     setPluginLinkedEnabled(input: { pluginId: string; enabled: boolean }): Promise<{ ok: boolean; failures: string[] }>;
