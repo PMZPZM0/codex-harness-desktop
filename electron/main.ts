@@ -4858,6 +4858,26 @@ ipcMain.handle("custom-model:set-enabled", async (_event, input: { provider: str
     await fs.writeFile(customModelFile, "null", "utf8");
     await server.restart();
   }
+  // 反向联动：停用 relay-<host> 供应商 → 对应网关的中转站账号开关同步关
+  //（正向联动已有：停用账号会禁用同网关供应商；这里是供应商→账号方向）
+  if (input.provider.startsWith("relay-")) {
+    const hostSegment = input.provider.slice("relay-".length).toLowerCase();
+    try {
+      const store = await readRelayStore();
+      let changed = false;
+      for (const account of store.accounts) {
+        if (account.disabled) continue;
+        let accountHost = "";
+        try { accountHost = new URL(account.baseUrl).host.replace(/^api\./i, "").split(".")[0].toLowerCase(); } catch { /* 跳过 */ }
+        if (accountHost && accountHost === hostSegment) {
+          account.disabled = true;
+          if (store.activeId === account.id) store.activeId = null;
+          changed = true;
+        }
+      }
+      if (changed) await writeRelayStore(store);
+    } catch { /* relay store 不存在等，跳过联动 */ }
+  }
   return publicCustomModel(next);
 });
 ipcMain.handle("custom-model:remove", async (_event, providerId: string) => {
