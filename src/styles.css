@@ -3557,6 +3557,9 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
     Consolas,
     monospace;
 }
+/* 「#」技能面板：与命令面板同款两列（技能名 + 中文注释），技能名较长故首列加宽、名字与命令区分色。 */
+.command-palette.skill-palette button { grid-template-columns: 156px minmax(0, 1fr); }
+.command-palette.skill-palette code { color: var(--accent); }
 .composer {
   border: 1px solid var(--line);
   background: var(--bg);

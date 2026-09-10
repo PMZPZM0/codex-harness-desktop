@@ -888,6 +888,76 @@ const builtinCommandCatalog: BuiltinCommandDef[] = [
 /** 兼容旧引用的二元组（name, description） */
 const slashCommands = builtinCommandCatalog.map(({ name, description }) => [name, description] as const);
 
+/** 技能名规范化：剥掉插件限定前缀并转小写。引擎对插件技能返回 `ponytail:ponytail-audit`，
+ *  本地目录技能是 `ponytail-audit`——不归一化同一个技能会显示成两条。 */
+function normSkillName(raw: string): string {
+  const name = String(raw ?? "").toLowerCase().trim();
+  const index = name.lastIndexOf(":");
+  return index >= 0 ? name.slice(index + 1) : name;
+}
+/** 技能短名：去掉 `插件:` 前缀，保留原始大小写，用于界面展示。 */
+function shortSkillName(raw: string): string {
+  const name = String(raw ?? "");
+  const index = name.lastIndexOf(":");
+  return index >= 0 ? name.slice(index + 1) : name;
+}
+const CJK_TEXT_RE = /[\u3400-\u9fff]/;
+/** 已安装技能的中文注释表：市场技能与引擎内置技能的描述多为英文，这里补齐中文说明，
+ *  让「/」命令面板同款的中文注释列在技能面板里也有内容可读（key 为规范化技能名）。 */
+const SKILL_ZH_NOTES: Record<string, string> = {
+  "browser-automation": "浏览器自动化：网页打开抓取、自动填表、反检测指纹浏览器",
+  "desktop-automation": "桌面自动化：截屏、窗口切换、鼠标点击与键盘输入",
+  "find-skills": "技能发现：按需求在技能市场检索并安装合适的技能",
+  ponytail: "极简编码：只写够用的最少代码，少依赖、少抽象、反对过度设计",
+  "ponytail-audit": "极简审计：全仓库扫描过度设计，列出可删可简化的代码",
+  "ponytail-review": "极简评审：只针对过度设计审查代码改动",
+  "ponytail-debt": "极简技术债：收集代码里因简化而留下的待办",
+  "ponytail-gain": "极简收益：统计极简改造节省的代码量与依赖数",
+  "ponytail-help": "极简模式说明：Ponytail 全部模式与用法速查",
+  "ponytail-evaluate-skill": "评估技能：检查本地技能设计是否合理",
+  "self-improvement": "自我进化：记录报错、用户纠正与更好做法，持续沉淀为可复用经验",
+  "smart-prompt": "提示词强化：把普通描述改写成结构化高质量提示词再执行",
+  "smart-charts": "智能图表：读取数据自动生成可视化图表",
+  "dev-expert": "编程专家：项目总控、接口设计、Bug 诊断、代码审查与重构",
+  "evaluate-plugin": "插件评估：按工程视角评估本地 Codex 插件的质量",
+  "improve-skill": "技能改进：把评估结论转成具体的重写清单",
+  "metric-pack-designer": "指标包设计：为插件评估设计自定义度量指标",
+  "plugin-eval": "技能/插件评估入口：解释评估结论与改进方向",
+  imagegen: "生成图像：需要位图/插画时生成或编辑图片",
+  "openai-docs": "官方文档：查询 Codex 模型、定价、定时任务与技能说明",
+  "plugin-creator": "插件创建：脚手架式新建 Codex 插件目录",
+  "review-agent": "审查代理：对目标代码做只读、缺陷优先的审查",
+  "skill-creator": "技能创建：新建或更新符合规范的 Codex 技能",
+  "skill-installer": "技能安装：把技能安装到 Codex 技能目录",
+};
+/** 技能的中文注释：优先生效的中文注释表 → 技能自带的中文描述 → 技能类别 → 通用兜底。
+ *  使命是「每个技能都有一句中文说明」，英文描述不会再原样铺给用户。 */
+function skillZhNote(entry: { name: string; description?: string; category?: string }): string {
+  const key = normSkillName(entry.name);
+  const note = SKILL_ZH_NOTES[key];
+  if (note) return note;
+  const description = String(entry.description ?? "").replace(/^\s*>\s*/, "").replace(/\s+/g, " ").trim();
+  if (description && CJK_TEXT_RE.test(description)) return description.length > 64 ? `${description.slice(0, 64)}…` : description;
+  const byCategory: Record<string, string> = {
+    "ai-agent": "AI 智能体技能",
+    "数据可视化": "数据可视化技能",
+    "数据处理": "数据处理与清洗技能",
+    "开发工具": "开发工具技能",
+    "效率工具": "效率提升技能",
+  };
+  if (entry.category && byCategory[entry.category]) return byCategory[entry.category];
+  return "已安装技能";
+}
+/** 按查询词匹配技能（前缀命中优先，最多 limit 条）：输入框「#」面板与发送拦截共用，
+ *  保证「面板里看到的」与「回车/点发送时选中的」是同一套结果。 */
+function matchSkillCatalog<T extends { name: string; description: string; note: string }>(catalog: T[], query: string, limit = 12): T[] {
+  const q = (query ?? "").toLowerCase();
+  return catalog
+    .filter((skill) => !q || skill.name.toLowerCase().includes(q) || skill.note.toLowerCase().includes(q) || skill.description.toLowerCase().includes(q))
+    .sort((a, b) => Number(b.name.toLowerCase().startsWith(q)) - Number(a.name.toLowerCase().startsWith(q)))
+    .slice(0, limit);
+}
+
 const effortLabels: Record<string, string> = {
   none: "关闭思考",
   minimal: "极简思考",
@@ -7898,6 +7968,27 @@ const commandMatches = useMemo(() => {
       Number(b[0].startsWith(query)) - Number(a[0].startsWith(query))
       || commonRank(a[0]) - commonRank(b[0]));
   }, [prompt]);
+  /** 技能目录（本地 + 引擎，规范化去重）：技能子面板与输入框「#」技能面板共用同一份数据源，
+   *  避免两处各自去重导致同一技能在一处显示、另一处重复。每条都带一句中文注释。 */
+  const mergedSkillCatalog = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { name: string; description: string; note: string; path: string }[] = [];
+    const push = (entry: { name: string; description?: string; path?: string; category?: string }) => {
+      const key = normSkillName(entry.name);
+      if (!key || seen.has(key)) return; // 同名（含插件限定名）只保留第一条（本地优先）
+      seen.add(key);
+      out.push({ name: shortSkillName(entry.name), description: entry.description ?? "", note: skillZhNote(entry), path: entry.path ?? "" });
+    };
+    for (const entry of localSkills) push(entry);
+    for (const entry of settingsResources.skills) push(entry);
+    return out;
+  }, [localSkills, settingsResources.skills]);
+  /** 输入框「#」技能面板：与「/」命令面板同款触发条件（以 # 开头且未输入空格）与同款展示效果
+   *  （#技能名 + 中文注释），让技能可以直接在输入流里被看见和引用。 */
+  const skillCommandMatches = useMemo(
+    () => (prompt.startsWith("#") && !prompt.includes(" ") ? matchSkillCatalog(mergedSkillCatalog, prompt.slice(1)) : []),
+    [prompt, mergedSkillCatalog],
+  );
   const availableContextItems = useMemo(() => {
     if (!thread) return [];
     const query = contextQuery.trim().toLowerCase();
@@ -9906,6 +9997,14 @@ const commandMatches = useMemo(() => {
     setContextItems((current) => current.filter((item) => item.id !== id));
   }
 
+  /** 引用一个技能：加入本轮技能条（发送时拼成 [本轮已引用技能]）并清掉输入框里的 #查询词。
+   *  技能子面板与输入框「#」面板共用，保证两条入口行为一致。 */
+  function addSkillReference(skill: { name: string; description: string }) {
+    setSelectedSkills((current) => current.some((entry) => entry.name === skill.name) ? current : [...current, { name: skill.name, description: skill.description }]);
+    setPrompt((current) => current.replace(/#[^\s]*$/, ""));
+    requestAnimationFrame(() => composerInputRef.current?.focus());
+  }
+
   function onPromptChange(value: string) {
     setPrompt(value);
     const at = value.lastIndexOf("@");
@@ -10183,7 +10282,16 @@ const commandMatches = useMemo(() => {
         } else if (name === "skills") {
           const result = await window.codex.request("skills/list", { cwds: workspace ? [workspace] : [], forceReload: false });
           const skills = (result.data ?? []).flatMap((entry: any) => entry.skills ?? []);
-          setInfoModal({ title: "Skills", body: skills.length ? skills.map((skill: any) => `${skill.enabled ? "●" : "○"} ${skill.name} - ${skill.description}`).join("\n") : "没有发现可用 Skill" });
+          // 描述多为英文：统一走中文注释（输入框「#」面板同款口径），每个技能都有一句中文说明。
+          const seen = new Set<string>();
+          const rows: string[] = [];
+          for (const skill of skills) {
+            const key = normSkillName(skill.name);
+            if (!key || seen.has(key)) continue;
+            seen.add(key);
+            rows.push(`${skill.enabled ? "●" : "○"} ${shortSkillName(skill.name)} —— ${skillZhNote(skill)}`);
+          }
+          setInfoModal({ title: "可用技能", body: rows.length ? `${rows.join("\n")}\n\n提示：在输入框输入 # 可快速引用技能` : "没有发现可用 Skill" });
         } else if (name === "mcp") {
           const result = await window.codex.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly", threadId: thread.id });
           setInfoModal({ title: "MCP 服务", body: result.data?.length ? result.data.map((server: any) => `${server.name} - ${server.runtimeStatus?.type ?? server.runtimeStatus ?? server.authStatus}`).join("\n") : "没有配置 MCP 服务" });
@@ -11170,6 +11278,12 @@ const commandMatches = useMemo(() => {
     const pendingText = pendingCommandTextRef.current;
     if (pendingText != null) pendingCommandTextRef.current = null;
     const value = (pendingText ?? prompt).trim();
+    // 「#技能名」：与「/」命令面板同款——回车或点发送即引用该技能，不把 #查询词当正文发出去。
+    // 未匹配到任何技能时按普通文本发送（用户可能真的想发以 # 开头的内容）。
+    if (pendingText == null && value.startsWith("#") && !value.includes(" ") && images.length === 0 && files.length === 0) {
+      const hit = matchSkillCatalog(mergedSkillCatalog, value.slice(1), 1)[0];
+      if (hit) { addSkillReference(hit); return; }
+    }
     if (pendingText == null && value.startsWith("/") && images.length === 0) {
       const command = value.slice(1).split(/\s+/, 1)[0].toLowerCase();
       if (thread && runningThreadIdsRef.current.has(thread.id) && !["stop", "status", "diff", "pwd", "model", "permissions", "help", "context", "clear", "copy", "memory", "effort", "personality", "sandbox", "approval", "skills", "mcp", "plugins", "apps", "queue"].includes(command)) {
@@ -12154,6 +12268,8 @@ const commandMatches = useMemo(() => {
           {/* 图片以内联 chip 展示（composer-input-shell 内），此处只保留文件附件条 */}
           {files.length > 0 && <div className="attachment-strip">{files.map((path) => <div className="file-attachment" key={path}><FileCode2 size={18} /><span>{basename(path)}</span><button title="移除" onClick={() => setFiles(files.filter((entry) => entry !== path))}><X size={13} /></button></div>)}</div>}
           {commandMatches.length > 0 && <div className="command-palette" role="listbox" aria-label="Codex 指令">{commandMatches.map(([name, description]) => <button type="button" role="option" key={name} onClick={() => { if (["rename", "review", "goal", "plan", "effort", "personality", "sandbox", "approval", "fork"].includes(name)) setPrompt(`/${name} `); else void runSlashCommand(`/${name}`); }}><code>/{name}</code><span className="command-desc">{description}</span></button>)}</div>}
+          {/* 「#」技能面板：与「/」命令面板同款展示（等宽技能名 + 中文注释列），点击即引用该技能 */}
+          {skillCommandMatches.length > 0 && <div className="command-palette skill-palette" role="listbox" aria-label="可用技能">{skillCommandMatches.map((skill) => <button type="button" role="option" key={skill.name} title={`${skill.name}：${skill.note}`} onClick={() => addSkillReference(skill)}><code>#{skill.name}</code><span className="command-desc">{skill.note}</span></button>)}</div>}
           {contextOpen && <div className="context-picker" role="listbox" aria-label="引用本次对话上下文">
             <div className="context-picker-head"><span>引用本次对话</span><small>选择后会随本条消息发送</small></div>
             {availableContextItems.length ? availableContextItems.map((item) => <button type="button" role="option" key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => addContextItem(item)}><b>{item.role}</b><span>{item.text}</span></button>) : <p>没有匹配的历史消息</p>}
@@ -12182,7 +12298,7 @@ const commandMatches = useMemo(() => {
             <div className="composer-input-shell">
               {(planArmed || planRunning) && <button type="button" className={`mode-chip-float chip-plan ${planRunning ? "running" : ""}`} title={planRunning ? "计划模式 · 方案生成中（点击中断）" : "计划模式 · 下一条消息先出方案（点击退出）"} onClick={() => { if (planRunning) { void interrupt(); } else { planOnceRef.current = false; setPlanArmed(false); showToast("计划模式已退出", "下一条消息按普通模式执行"); } }}><ListChecks size={13} /></button>}
               {thread && goalText && goalStatus !== "complete" && <button type="button" className="mode-chip-float chip-goal" title="目标模式 · 自动推进中（点击停止）" onClick={stopGoalLoop}><Target size={13} /></button>}
-              <ComposerEditor value={prompt} placeholder="向 Codex 提问，使用 @ 添加上下文，使用 / 选择命令或能力" editorRef={composerInputRef} domValueRef={composerDomValueRef} makeChip={makeComposerChip} onValueInput={onPromptChange} onKeyDown={(event) => { if (contextOpen && event.key === "Enter" && availableContextItems[0]) { event.preventDefault(); addContextItem(availableContextItems[0]); return; } if (event.key === "Escape" && contextOpen) { event.preventDefault(); setContextOpen(false); return; } onComposerKeyDown(event); }} onBlur={() => setTimeout(() => setContextOpen(false), 120)} onPasteImage={(text) => void pasteImage(text)} onPasteFiles={(paths) => {
+              <ComposerEditor value={prompt} placeholder="向 Codex 提问，使用 / 选择命令、@ 引用上下文、# 引用技能" editorRef={composerInputRef} domValueRef={composerDomValueRef} makeChip={makeComposerChip} onValueInput={onPromptChange} onKeyDown={(event) => { if (skillCommandMatches.length && event.key === "Enter") { event.preventDefault(); addSkillReference(skillCommandMatches[0]); return; } if (skillCommandMatches.length && event.key === "Escape") { event.preventDefault(); setPrompt(""); return; } if (contextOpen && event.key === "Enter" && availableContextItems[0]) { event.preventDefault(); addContextItem(availableContextItems[0]); return; } if (event.key === "Escape" && contextOpen) { event.preventDefault(); setContextOpen(false); return; } onComposerKeyDown(event); }} onBlur={() => setTimeout(() => setContextOpen(false), 120)} onPasteImage={(text) => void pasteImage(text)} onPasteFiles={(paths) => {
                     const added = paths.filter((p) => !files.includes(p));
                     if (!added.length) return;
                     setFiles((current) => [...new Set([...current, ...added])]);
@@ -12249,22 +12365,15 @@ const commandMatches = useMemo(() => {
                   <div className="submenu-search"><Search size={13} /><input autoFocus value={skillQuery} onChange={(event) => setSkillQuery(event.target.value)} placeholder="搜索已安装技能" /></div>
                   <div className="submenu-list">
                     {(() => {
-                      // 规范化技能名：剥插件限定前缀（引擎插件技能返回 `ponytail:ponytail-audit`，
-                      // 本地目录技能是 `ponytail-audit`）——不归一化会同一技能显示两条。
-                      const norm = (name: string) => { const n = String(name ?? "").toLowerCase(); const i = n.lastIndexOf(":"); return i >= 0 ? n.slice(i + 1) : n; };
-                      const shortName = (name: string) => { const i = String(name ?? "").lastIndexOf(":"); return i >= 0 ? String(name).slice(i + 1) : String(name ?? ""); };
-                      const seen = new Set<string>();
-                      const merged: { name: string; path: string; description: string }[] = [];
-                      for (const entry of [...localSkills, ...settingsResources.skills.map((skill: any) => ({ name: skill.name, path: skill.path, description: skill.description ?? "" }))]) {
-                        const key = norm(entry.name);
-                        if (!key || seen.has(key)) continue; // 同名（含插件限定名）只保留第一条（本地优先）
-                        seen.add(key);
-                        merged.push({ name: shortName(entry.name), path: entry.path, description: entry.description ?? "" });
-                      }
-                      const q = skillQuery.toLowerCase();
-                      return merged.filter((skill) => skill.name.toLowerCase().includes(q) || skill.description.toLowerCase().includes(q)).slice(0, 8).map((skill) => <button type="button" key={skill.name} onClick={() => { setSelectedSkills((current) => current.some((entry) => entry.name === skill.name) ? current : [...current, skill]); setAttachmentMenuOpen(false); setAttachSubmenu("none"); }}><Zap size={15} /><span className="expert-menu-name">{skill.name}</span><small>{skill.description || "已安装技能"}</small></button>);
+                      // 数据源统一走 mergedSkillCatalog（本地 + 引擎，规范化去重，附中文注释）：
+                      // 原先此处只显示前 8 条，列表一长就看不到后面的技能（自我进化技能就是这样"没透"）。
+                      // 面板本身有 max-height + overflow-y，直接全量展示由滚动承载。
+                      const q = skillQuery.trim().toLowerCase();
+                      return mergedSkillCatalog
+                        .filter((skill) => !q || skill.name.toLowerCase().includes(q) || skill.note.toLowerCase().includes(q) || skill.description.toLowerCase().includes(q))
+                        .map((skill) => <button type="button" key={skill.name} title={`${skill.name}：${skill.note}`} onClick={() => { addSkillReference(skill); setAttachmentMenuOpen(false); setAttachSubmenu("none"); }}><Zap size={15} /><span className="expert-menu-name">{skill.name}</span><small>{skill.note}</small></button>);
                     })()}
-                    {!skillQuery.trim() && ![...localSkills, ...settingsResources.skills].length && <p className="submenu-empty">还没有安装技能</p>}
+                    {!skillQuery.trim() && !mergedSkillCatalog.length && <p className="submenu-empty">还没有安装技能</p>}
                   </div>
                   <button type="button" className="submenu-manage" onClick={() => { setAttachmentMenuOpen(false); setAttachSubmenu("none"); setSettingsPage("skills"); setSettingsOpen(true); }}><ArrowUpRight size={14} /><span>管理技能中心</span></button>
                 </div>}
