@@ -1,4 +1,4 @@
-import { Menu, Notification, app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, session, shell, systemPreferences } from "electron";
+import { Menu, Notification, app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, session, shell, systemPreferences } from "electron";
 import os from "node:os";
 import nodeNet from "node:net";
 import { execSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -4644,6 +4644,17 @@ ipcMain.handle("shell:reveal", async (_event, target: string) => {
   } catch {
     shell.showItemInFolder(target);
   }
+});
+/** 复制本地图片文件到剪贴板：渲染层 fetch harness-image:// 自定义协议拿不到 blob，
+ * 必须主进程读文件 → nativeImage → clipboard.write（Electron 44 已移除 writeImage，
+ * 改用 W3C ClipboardItem）。 */
+ipcMain.handle("clipboard:write-image", async (_event, filePath: string) => {
+  if (!filePath) throw new Error("缺少图片路径");
+  const image = nativeImage.createFromPath(filePath);
+  if (image.isEmpty()) throw new Error("无法读取该图片文件");
+  const png = image.toPNG();
+  await clipboard.write([new Electron.ClipboardItem({ "image/png": new Blob([new Uint8Array(png)], { type: "image/png" }) })]);
+  return true;
 });
 ipcMain.handle("custom-model:read", async () => publicCustomModel(await readCustomModel()));
 ipcMain.handle("custom-model:probe", (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) => probeCustomModel(input));
