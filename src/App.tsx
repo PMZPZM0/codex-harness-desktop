@@ -9452,8 +9452,13 @@ const commandMatches = useMemo(() => {
 
     void window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc", archived: false })
       .then((threadResult) => {
-        setThreads(threadResult.data ?? []);
+        const list = threadResult.data ?? [];
+        setThreads(list);
         setServerStatus("ready");
+        // 启动恢复上次会话：不恢复会停在欢迎页，用户一发消息就新建空会话——
+        // 表现为「重启后莫名其妙多出一个分支」，而原对话其实还在列表里（09-10 反馈）。
+        const lastId = (() => { try { return localStorage.getItem("last-thread"); } catch { return null; } })();
+        if (lastId && list.some((entry: any) => entry.id === lastId)) void openThread(lastId);
       })
       .catch(() => setServerStatus("error"))
       .finally(() => setLoading(false));
@@ -10940,6 +10945,8 @@ const commandMatches = useMemo(() => {
     // 快速连点防竞态：只有最新一次切换的 resume 响应才允许落地渲染
     const seq = ++switchSeqRef.current;
     setOpeningThread(id);
+    // 记住本次打开的会话：重启后据此恢复（否则停在欢迎页，一发消息就新建空会话）
+    try { localStorage.setItem("last-thread", id); } catch { /* 隐私模式等：忽略 */ }
     const storedModel = loadThreadModel(id);
     if (storedModel) setModelId(storedModel);
     // 切会话一律显示遮罩（缓存秒开也走）：给"刚切过去就在最新消息位置"的视觉过渡，
