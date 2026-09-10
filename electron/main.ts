@@ -1,4 +1,4 @@
-import { Menu, Notification, app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, session, shell, systemPreferences } from "electron";
+import { Menu, Notification, app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, nativeImage, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, session, shell, systemPreferences } from "electron";
 import os from "node:os";
 import nodeNet from "node:net";
 import { execSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -4653,11 +4653,11 @@ ipcMain.handle("clipboard:write-image", async (_event, filePath: string) => {
   const image = nativeImage.createFromPath(filePath);
   if (image.isEmpty()) throw new Error("无法读取该图片文件");
   const png = image.toPNG();
-  // Electron 主进程运行时没有全局 `Electron` 命名空间（只是类型层）；ClipboardItem
-  // 是 Electron 注入的全局构造器（类继承自 Electron.ClipboardItem），经 globalThis 取。
-  const ClipboardItemCtor = (globalThis as any).ClipboardItem;
-  if (typeof ClipboardItemCtor !== "function") throw new Error("剪贴板 API 不可用");
-  await clipboard.write([new ClipboardItemCtor({ "image/png": new Blob([new Uint8Array(png)], { type: "image/png" }) })]);
+  // Electron 44 的 ClipboardItem 是 electron 模块具名导出（官方 breaking-changes 迁移示例：
+  // const { clipboard, ClipboardItem } = require('electron')）。writeImage 已移除，写图片 =
+  // clipboard.write([new ClipboardItem({ 'image/png': new Blob([image.toPNG()]) })]）。
+  if (typeof ClipboardItem !== "function") throw new Error("剪贴板 API 不可用");
+  await clipboard.write([new ClipboardItem({ "image/png": new Blob([new Uint8Array(png)], { type: "image/png" }) })]);
   return true;
 });
 ipcMain.handle("custom-model:read", async () => publicCustomModel(await readCustomModel()));
