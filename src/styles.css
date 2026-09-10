@@ -1769,6 +1769,39 @@ html[data-ui-font="large"] .action-content pre {
 }
 .load-earlier-turns:hover { color: var(--text); background: var(--panel); }
 .load-earlier-turns small { color: var(--faint); font-size: 11px; }
+/* 供应商启用/停用：状态与动作合成一颗药丸（此前是「徽标 + 纯文字按钮」两块） */
+.provider-state-btn.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 999px;
+  padding: 4px 11px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+.provider-state-btn.pill .provider-state-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.provider-state-btn.pill.on {
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  color: var(--ok);
+}
+.provider-state-btn.pill.on .provider-state-dot { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.provider-state-btn.pill.off { color: var(--faint); }
+.provider-state-btn.pill.off .provider-state-dot { background: var(--faint); }
+.provider-state-btn.pill:not(:disabled):hover { border-color: var(--muted); color: var(--text); }
+.provider-state-btn.pill:disabled { cursor: not-allowed; opacity: 0.6; }
 .user-message {
   grid-template-columns: minmax(0, 1fr);
   width: min(88%, 720px);
