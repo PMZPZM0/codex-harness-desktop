@@ -9378,8 +9378,18 @@ const commandMatches = useMemo(() => {
         const savedPerms = threadId ? loadThreadPermissions(threadId) : null;
         const localSandbox = savedPerms && (savedPerms.sandbox === "danger-full-access" || savedPerms.sandbox === "read-only" || savedPerms.sandbox === "workspace-write") ? savedPerms.sandbox : null;
         const localApproval = savedPerms && (savedPerms.approval === "never" || savedPerms.approval === "on-request" || savedPerms.approval === "untrusted") ? savedPerms.approval : null;
-        const effectiveSandbox = recentPush && localSandbox ? localSandbox : (localSandbox ?? mode);
-        const effectiveApproval = recentPush && localApproval ? localApproval : (localApproval ?? policy);
+        // 记录可信度（09-10「权限总是掉」的真凶）：本地记录若 == 引擎本次推的值 且 ≠ 全局默认，
+        // 说明是旧版本自动回写/引擎回推烙进来的脏数据（用户从没选过）——照单全收会把 UI 拖回
+        // 低权限（实测 21:41 起沙箱被拖回 workspace-write，之后每轮都掉）。这种记录忽略，
+        // 保持用户当前选择；引擎侧由 openThread 自愈与逐回合 sandboxPolicy 纠正，此处**不回推**
+        // （回推会触发引擎再推 settings/updated，5s 节流挡不住周期性循环）。
+        const globalDefaultSandbox = (["danger-full-access", "read-only", "workspace-write"] as const).includes(localStorage.getItem("default-sandbox") as never) ? (localStorage.getItem("default-sandbox") as string) : "danger-full-access";
+        const globalDefaultApproval = (["never", "on-request", "untrusted"] as const).includes(localStorage.getItem("default-approval") as never) ? (localStorage.getItem("default-approval") as string) : "never";
+        const recordTrustedHere = (value: string | null, engineValue: string | null | undefined, globalDefault: string) => Boolean(value) && !(value && engineValue && value === engineValue && value !== globalDefault);
+        const trustedSandbox = recordTrustedHere(localSandbox, mode, globalDefaultSandbox) ? localSandbox : null;
+        const trustedApproval = recordTrustedHere(localApproval, policy, globalDefaultApproval) ? localApproval : null;
+        const effectiveSandbox = recentPush && localSandbox ? localSandbox : (trustedSandbox ?? sandbox ?? globalDefaultSandbox);
+        const effectiveApproval = recentPush && localApproval ? localApproval : (trustedApproval ?? approvalPolicy ?? globalDefaultApproval);
         // 引擎回推的 sandboxPolicy 是线程当前状态，可能是被历史降级/创建时旧值，不可作为持久记录——
         // 本地无用户选择时只临时显示（等 resume 恢复给出权威值），绝不落盘。落盘会污染 localPerms，
         // 让 resume 恢复读到灰值并 push 回引擎 → 重启后完全权限被静默降级成 workspace-write（变灰根因）。
@@ -9825,6 +9835,30 @@ const commandMatches = useMemo(() => {
     localStorage.setItem("default-sandbox", sandboxValue);
     localStorage.setItem("default-approval", approvalValue);
     void pushThreadPermissions(threadRef.current?.id ?? "", sandboxValue, approvalValue);
+  }
+
+  // 设置页全局审批权限的展示值（与 localStorage 双写，进页面读一次）
+  const [globalPermApproval, setGlobalPermApproval] = useState(() => localStorage.getItem("default-approval") ?? "on-request");
+  /** 设置页「全局审批权限」：只写全局默认并应用到**未被手动改过权限**的会话。
+   *  与胶囊（changePermissionMode）的差异：胶囊会把当前会话写进本地记录（= 手动修改，
+   *  之后不随全局）；这里不动任何会话的记录——手动改过的对话框保留自己的选择。
+   *  全局默认落在 localStorage，重启/换供应商都不会变（沙箱策略同时按档位联动）。 */
+  function applyGlobalPermissionMode(value: string) {
+    const sandboxValue = value === "never" ? "danger-full-access" : "workspace-write";
+    const approvalValue = value === "never" ? "never" : value;
+    setGlobalPermApproval(value);
+    localStorage.setItem("default-sandbox", sandboxValue);
+    localStorage.setItem("default-approval", approvalValue);
+    const current = threadRef.current;
+    const manual = current ? loadThreadPermissions(current.id) : { sandbox: "", approval: "" };
+    if (current && (manual.sandbox || manual.approval)) {
+      showToast("全局权限已更新", "当前会话手动改过权限，保留它自己的选择；其余会话与新会话使用新档位");
+      return;
+    }
+    setSandbox(sandboxValue);
+    setApprovalPolicy(approvalValue);
+    if (current) void pushThreadPermissions(current.id, sandboxValue, approvalValue);
+    showToast("全局权限已更新", "所有未手动改过权限的会话与新会话都使用新档位，重启不变");
   }
 
   function changeSandbox(value: string) {
@@ -13363,6 +13397,15 @@ const commandMatches = useMemo(() => {
                     {[0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95].map((r) => <option key={r} value={r}>{Math.round(r * 100)}%</option>)}
                   </select>
                   <small>上下文用量达到此比例时引擎自动压缩较早对话</small>
+                </div>
+                <div className="model-global-item">
+                  <span className="model-global-label"><ShieldCheck size={13} />全局审批权限</span>
+                  <div className="model-global-perm">
+                    {[{ v: "never", t: "完全访问", d: "自动执行，减少确认次数" }, { v: "on-request", t: "变更前确认", d: "改文件前先问我" }, { v: "untrusted", t: "自动编辑", d: "自动编辑文件" }].map((opt) => (
+                      <button key={opt.v} type="button" className={`model-global-perm-btn ${globalPermApproval === opt.v ? "on" : ""}`} title={opt.d} onClick={() => applyGlobalPermissionMode(opt.v)}>{opt.t}</button>
+                    ))}
+                  </div>
+                  <small>所有未手动改过权限的会话与新会话都跟随此档位，重启不变；手动改过的对话框保留自己的选择</small>
                 </div>
               </div>
               <div className="provider-list">
