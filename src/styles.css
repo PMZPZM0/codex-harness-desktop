@@ -1751,37 +1751,6 @@ html[data-ui-font="large"] .action-content pre {
 .markdown > :last-child {
   margin-bottom: 0;
 }
-/* 排队中的消息：与普通消息一样在右侧展示（.user-message 自带 margin-left:auto），
-   操作条贴在消息下方右对齐——不再让排队消息只藏在输入框上方的独立列表里。 */
-.queued-inline { display: block; }
-.queued-inline-bar {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 6px;
-  margin: -2px 0 10px;
-  padding-right: 2px;
-}
-.queued-inline-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--muted);
-  font-size: 11px;
-  background: var(--panel-2);
-  border-radius: 999px;
-  padding: 2px 8px;
-}
-.queued-inline-bar button {
-  color: var(--muted);
-  font-size: 11px;
-  cursor: pointer;
-  background: 0 0;
-  border: 0;
-  border-radius: 6px;
-  padding: 3px 7px;
-}
-.queued-inline-bar button:hover { background: var(--panel-2); color: var(--text); }
 .user-message {
   grid-template-columns: minmax(0, 1fr);
   width: min(88%, 720px);
