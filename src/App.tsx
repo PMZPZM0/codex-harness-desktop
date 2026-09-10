@@ -9466,26 +9466,18 @@ const commandMatches = useMemo(() => {
       else localStorage.setItem("default-model", nextId);
     };
     // 跨供应商切换 = 切换全局 API Key，必须重启引擎生效。用户要求「切换必须重启应用」：
-    // 弹窗确认后立即重启引擎（正在运行的任务会中断，会话历史保留），并把当前会话迁移到
-    // 新供应商（thread/resume 官方通道，重启后原会话直接用新供应商模型继续聊）。
+    // 弹窗确认后先落盘配置（apply:false 不重启引擎），再整体重启应用——启动时引擎按新
+    // 供应商的 Key 全新注入，状态彻底归位；旧会话下次打开时由发送前迁移自动跟随。
     if (provider && customModel && provider !== customModel.provider) {
-      if (!(await openAppConfirm("切换供应商", `将切换到 ${nextLabel || model} 并重启引擎生效。\n正在运行的任务会被中断，当前会话历史完整保留、自动迁移到新供应商。\n是否继续？`, "切换并重启"))) return;
+      if (!(await openAppConfirm("切换供应商", `将切换到 ${nextLabel || model}，应用将自动重启使配置完全生效。\n正在运行的任务会被中断，会话历史完整保留。\n是否继续？`, "切换并重启应用"))) return;
       try {
-        const updated = await window.codex.setProviderModel({ provider, model }); // apply 默认 true → 立即重启引擎
-        setCustomModel(updated);
-        const selectedId = `custom:${updated.provider}:${updated.model}`;
+        await window.codex.setProviderModel({ provider, model, apply: false }); // 只落盘
+        const selectedId = `custom:${provider}:${model}`;
         saveSelection(selectedId);
         localStorage.setItem("default-model", selectedId);
-        if (threadRef.current?.id) {
-          const migrated = await migrateThreadToProvider(threadRef.current.id, {
-            provider: updated.provider, model: updated.model, name: updated.name, baseUrl: updated.baseUrl, wireApi: updated.wireApi,
-          });
-          if (migrated) showToast("已切换供应商", `当前会话已迁移到 ${updated.name} · ${updated.model}，历史完整保留`);
-          else showToast("已切换供应商", `新会话将使用 ${updated.name} · ${updated.model}（当前会话迁移失败，历史保留在原会话）`);
-        } else {
-          await updateThreadSettings({ model: updated.model, ...(updated.provider === "openai-official" ? {} : { model_provider: updated.provider }), effort: null });
-        }
-        setNotice(`已切换到 ${updated.name} · ${updated.model}`);
+        localStorage.setItem("thread-model-" + (threadRef.current?.id ?? ""), selectedId);
+        showToast("已切换", "应用即将重启以完全生效……");
+        setTimeout(() => { void window.codex.relaunchApp(); }, 800);
         return;
       } catch (error: any) {
         setNotice(`切换供应商失败：${error.message}`);
@@ -13237,8 +13229,15 @@ const commandMatches = useMemo(() => {
                 </div>
                 <div className="settings-actions"><span>配置后可在聊天时选择使用。带 ⚡ 可测试模型连通。</span>
                   <button className="primary-setting" disabled={savingSettings || !customDraft.baseUrl} onClick={() => void (async () => {
-                    // 用户要求：供应商保存后强制重启生效 + 弹窗提醒（正在运行的任务会中断）
-                    if (await openAppConfirm("保存供应商", "保存后引擎将重启使新配置生效，正在运行的任务会中断（会话历史保留）。\n是否继续？", "保存并重启")) { void saveCustomModel(); }
+                    // 用户要求：保存模型配置后重启整个应用（引擎 Key 全新注入，状态彻底归位）
+                    if (!(await openAppConfirm("保存供应商", "保存后应用将自动重启使配置完全生效。\n是否继续？", "保存并重启应用"))) return;
+                    try {
+                      await saveCustomModel();
+                      showToast("已保存", "应用即将重启以完全生效……");
+                      setTimeout(() => { void window.codex.relaunchApp(); }, 800);
+                    } catch (error: any) {
+                      setNotice(`保存失败：${error.message}`);
+                    }
                   })()}>{savingSettings ? <Spinner /> : <Check size={15} />}保存</button>
                 </div>
               </div>
