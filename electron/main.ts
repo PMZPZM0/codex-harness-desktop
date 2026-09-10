@@ -1396,12 +1396,18 @@ app.whenReady().then(async () => {
       const wanted = (normalizeProvider(custom).models ?? []).find((candidate) => candidate.id === custom.model)?.contextWindow ?? custom.contextWindow ?? 128000;
       const environmentOutdated = !configText.includes("[shell_environment_policy.set]") || !configText.includes("PYTHON_EXECUTABLE");
       const instructionsOutdated = !configText.includes("Never infer Python availability");
+      // 供应商/模型漂移：custom-model.json（当前激活）与 config.toml 顶层 model / model_provider 不一致时重写。
+      // 场景：UI 切换供应商只保存配置（延迟生效），用户没点「重启生效」就退出应用——下次启动必须
+      // 按新配置生效，否则引擎继续跑旧供应商（self-heal 原只查 context_window，查不出这种漂移）。
+      const cfgModel = /^\s*model\s*=\s*"([^"]*)"/m.exec(configText)?.[1];
+      const cfgProvider = /^\s*model_provider\s*=\s*"([^"]*)"/m.exec(configText)?.[1];
+      const providerOutdated = cfgModel !== custom.model || (custom.provider !== "openai-official" && cfgProvider !== custom.provider);
       // 禁用供应商的 provider 段必须保留在 config.toml：历史线程 resume 时按创建时的
       // model_provider 加载配置，段被移除会报 "Model provider `X` not found" → 会话内容全空。
       // 旧版本 applyCustomModel 写配置时过滤了禁用供应商——检测到缺失就整份重写补回。
       const disabledMissing = (await readCustomModels()).some((candidate) => candidate.enabled === false && !configText.includes(`[model_providers.${candidate.provider}]`));
-      if (written !== wanted || environmentOutdated || instructionsOutdated || disabledMissing) {
-        console.warn(`[custom-model] config drift: context=${written}/${wanted}, environment=${environmentOutdated}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}; rewriting`);
+      if (written !== wanted || providerOutdated || environmentOutdated || instructionsOutdated || disabledMissing) {
+        console.warn(`[custom-model] config drift: context=${written}/${wanted}, providerOutdated=${providerOutdated}, environment=${environmentOutdated}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}; rewriting`);
         await applyCustomModel(custom);
       }
     } catch (error) {
@@ -4715,7 +4721,7 @@ ipcMain.handle("custom-model:select", async (_event, providerId: string) => {
   return publicCustomModel(next);
 });
 /** 在同一供应商内切换生效模型：保留 models 列表，只改 model 字段 */
-ipcMain.handle("custom-model:set-model", async (_event, input: { provider: string; model: string }) => {
+ipcMain.handle("custom-model:set-model", async (_event, input: { provider: string; model: string; apply?: boolean }) => {
   const model = input.model.trim();
   if (!model) throw new Error("模型 ID 不能为空");
   const list = await readCustomModels();
@@ -4724,8 +4730,17 @@ ipcMain.handle("custom-model:set-model", async (_event, input: { provider: strin
   const next = withModels({ ...target, model }, model);
   await upsertCustomModel(next);
   await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
-  await applyCustomModel(next);
+  // apply=false 时只保存配置不重启（供应商切换「延迟生效」模式：不打断正在运行的会话，
+  // 用户手动点「重启生效」或下次启动时引擎才按新配置生效）。默认 true 保持旧调用方兼容。
+  if (input.apply !== false) await applyCustomModel(next);
   return publicCustomModel(next);
+});
+/** 延迟生效：读取当前激活供应商并重启引擎使配置生效（供应商切换「重启生效」按钮用，幂等） */
+ipcMain.handle("custom-model:apply", async () => {
+  const custom = await readCustomModel();
+  if (!custom) throw new Error("尚未配置供应商");
+  await applyCustomModel(custom);
+  return publicCustomModel(custom);
 });
 /** 添加或更新供应商下的一个模型（按模型 ID 匹配）；新模型不自动生效 */
 ipcMain.handle("custom-model:upsert-model", async (_event, input: { provider: string; model: ProviderModel }) => {

@@ -36,6 +36,8 @@ type Options = {
   onNotice: (message: string) => void;
   /** 检测成功时弹 toast（富样式弹窗提醒，比状态行小字醒目） */
   onProbeSuccess?: (title: string, detail: string) => void;
+  /** 引擎已重启并使新配置生效（供应商切换「待重启生效」banner 需随之清理） */
+  onEngineApplied?: () => void;
 };
 
 function savedEffortFor(model: string | undefined) {
@@ -55,7 +57,7 @@ function dedupModels(models: ProviderModel[] | undefined): ProviderModel[] {
   return out;
 }
 
-export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuccess }: Options) {
+export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuccess, onEngineApplied }: Options) {
   const [customModel, setCustomModel] = useState<CustomModel | null>(null);
   const [customDraft, setCustomDraft] = useState<ProviderDraft>({ provider: "custom", name: "Custom Provider", model: "", baseUrl: "", contextWindow: "128000", wireApi: "auto", apiKey: "", models: [], enabled: true });
   const [providersList, setProvidersList] = useState<ProviderSummary[]>([]);
@@ -123,6 +125,7 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
       const effectiveModel = enabled.length === 0 ? "" : enabled.some((model: any) => model.id === dedupedDraft.model) ? dedupedDraft.model : enabled[0].id;
       const saved = await window.codex.saveCustomModel({ ...dedupedDraft, model: effectiveModel });
       adoptSavedProvider(saved);
+      onEngineApplied?.();
       onNotice(saved.enabled === false ? "供应商已保存（保持禁用）" : "自定义模型已保存，Codex 服务已重新加载");
     } catch (error: any) {
       onNotice(error.message);
