@@ -84,7 +84,7 @@ contextBridge.exposeInMainWorld("codex", {
   setEnabledSkill: (input: { folder: string; enabled: boolean }) => ipcRenderer.invoke("skills:set-enabled", input),
   setEnabledSkillBatch: (input: { folders: string[]; enabled: boolean }) => ipcRenderer.invoke("skills:set-enabled-batch", input),
   setPluginEnabled: (input: { pluginIds: string[]; enabled: boolean }) => ipcRenderer.invoke("plugins:set-enabled", input),
-  removeLocalSkill: (name: string) => ipcRenderer.invoke("skills:local-remove", name),
+  removeLocalSkill: (input: { folder: string; name?: string }) => ipcRenderer.invoke("skills:local-remove", input),
   trustHooks: (cwds?: string[]) => ipcRenderer.invoke("hooks:trust", { cwds }),
   setHookEnabled: (input: { hookKeys: string[]; enabled: boolean }) => ipcRenderer.invoke("hooks:set-enabled", input),
   setPluginLinkedEnabled: (input: { pluginId: string; enabled: boolean }) => ipcRenderer.invoke("plugins:set-linked-enabled", input),

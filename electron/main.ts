@@ -3343,7 +3343,7 @@ ipcMain.handle("skills:local-list", async () => {
         // allowed-tools：SKILL.md frontmatter 里声明的工具白名单（复刻 WorkBuddy 的 allowed-tools）。
         // 引擎不做强制（引擎技能对象只有 enabled），这里是给 UI 展示声明的工具范围；不声明则为空。
         const allowedTools = parseSkillAllowedTools(content);
-        return { name: declaredName || entry.name, folder: entry.name, path: target, description, enabled: active, pluginId, marketId: market?.marketId, sourceUrl: market?.sourceUrl, installedAt: market?.installedAt, source: marketSource ?? "local", allowedTools, icon: market?.icon, category: market?.category };
+        return { name: declaredName || entry.name, folder: entry.name, path: target, description, descriptionZh: market?.descriptionZh, enabled: active, pluginId, marketId: market?.marketId, sourceUrl: market?.sourceUrl, installedAt: market?.installedAt, source: marketSource ?? "local", allowedTools, icon: market?.icon, category: market?.category };
       } catch { return null; }
     }));
     return results.filter(Boolean);
@@ -3405,13 +3405,47 @@ ipcMain.handle("skills:set-enabled-batch", async (_event, input: { folders: stri
   await server.restart();
   return { ok: failures.length === 0, changed: folders.length - failures.length, failures };
 });
-ipcMain.handle("skills:local-remove", async (_event, name: string) => {
-  const target = path.resolve(userSkillsDir, name);
-  if (!target.startsWith(path.resolve(userSkillsDir) + path.sep)) throw new Error("非法技能路径");
+/**
+ * 卸载技能：与安装对称——分批发出进度事件（校验 → 删除 → 清理登记 → 重启引擎 → 确认移除），
+ * 让渲染层用安装同款进度弹窗呈现，结束时明确回报「引擎是否已不再发现该技能」。
+ * 兼容旧调用：入参传字符串时按「文件夹名」处理。
+ */
+ipcMain.handle("skills:local-remove", async (_event, input: { folder?: string; name?: string } | string) => {
+  const folder = (typeof input === "string" ? input : String(input?.folder ?? "")).trim();
+  const label = (typeof input === "string" ? input : String(input?.name ?? folder)).trim() || folder;
+  if (!folder) throw new Error("缺少技能目录名");
+  const emit = (stage: string, message: string) => sendToWindow("harness:event", { type: "skill-remove", skillId: folder, stage, message, at: Date.now() });
+  const root = path.resolve(userSkillsDir);
+  const target = path.resolve(userSkillsDir, folder);
+  // 防目录穿越：解析后必须仍在技能根目录内
+  if (!target.startsWith(root + path.sep)) throw new Error("非法技能路径");
+  if (!existsSync(target)) throw new Error("技能目录不存在，可能已被卸载");
+  emit("prepare", `已确认待卸载技能：${label}`);
+  emit("delete", "正在删除技能文件");
   await removeFromSkillRegistry(path.join(target, "SKILL.md"));
   await fs.rm(target, { recursive: true, force: true });
+  emit("registry", "已清理市场来源与来源登记");
+  emit("engine", "正在重启 Codex 引擎并注销技能");
   await server.restart();
-  return { ok: true };
+  emit("verify", "正在确认 Codex 是否已移除该技能");
+  let engineRemoved = false;
+  let engineCheckMessage = "技能目录已删除，引擎已刷新";
+  try {
+    const result: any = await server.request("skills/list", { cwds: [], forceReload: true });
+    const discovered = (result.data ?? []).flatMap((entry: any) => entry.skills ?? []);
+    const stillPresent = discovered.some((entry: any) => {
+      const entryPath = String(entry?.path ?? "").replace(/\\/g, "/").toLowerCase();
+      const targetPath = target.replace(/\\/g, "/").toLowerCase();
+      const entryFolder = entryPath.split("/").slice(-2, -1)[0] ?? "";
+      return entryPath.startsWith(targetPath) || entryFolder === folder.toLowerCase();
+    });
+    engineRemoved = !stillPresent;
+    if (!engineRemoved) engineCheckMessage = `技能文件已删除，但引擎列表仍返回「${label}」；引擎已刷新，下一轮任务会重新扫描确认。`;
+  } catch (error: any) {
+    engineCheckMessage = `技能已删除且引擎已重启，但自动确认暂时不可用：${error.message}`;
+  }
+  emit(engineRemoved ? "complete" : "pending", engineCheckMessage);
+  return { ok: true, engineRemoved, engineCheckMessage };
 });
 /**
  * 信任钩子：Codex 默认不执行未信任的钩子（装了等于没装）。

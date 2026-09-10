@@ -13292,6 +13292,8 @@ button.search-box:hover {
 .skill-install-modal > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 20px 21px 16px; border-bottom: 1px solid var(--line-soft); }
 .skill-install-modal > header > div { display: flex; align-items: flex-start; gap: 10px; }
 .skill-install-modal > header .skill-avatar { width: 34px; height: 34px; border-radius: 10px; }
+/* 卸载弹窗头部图标：与安装弹窗 skill-avatar 同尺寸，红色调区分「删除」语义 */
+.skill-install-modal > header .skill-remove-badge { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 10px; background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
 .skill-install-modal > header strong { display: block; color: var(--text); font-size: 14px; }
 .skill-install-modal > header p { margin: 4px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
 .skill-install-steps { margin: 0; padding: 14px 21px 16px; display: grid; gap: 0; list-style: none; }

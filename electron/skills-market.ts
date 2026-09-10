@@ -22,12 +22,17 @@ const skillHubShowcasePaths: Record<SkillHubSection, string> = {
 const MAX_ARCHIVE_BYTES = 50 * 1024 * 1024;
 const MAX_SKILL_BYTES = 512 * 1024;
 const MAX_EXTRACTED_FILES = 200;
+/** 是否含中日韩文字：用来判断一段简介是不是中文，决定能否当「中文注释」存下来。 */
+const CJK_RE = /[\u3400-\u9fff]/;
 
 export type MarketCategory = "overall" | "trending" | "latest" | "ai_enhancement" | "development" | "office" | "efficiency" | "design" | "content_creation" | "professional";
 export type MarketSkill = {
   id: string;
   name: string;
   description: string;
+  /** 市场提供的中文简介（SkillHub 的 description_zh）。安装时写进来源清单，供宿主展示中文注释——
+   *  技能装到本地后只有 SKILL.md frontmatter，其 description 往往是英文，没有它就只能显示英文原文。 */
+  descriptionZh?: string;
   category: string;
   subCategory?: string;
   icon: string;
@@ -39,7 +44,7 @@ export type MarketSkill = {
   downloadUrl: string;
   detailUrl: string;
 };
-export type InstalledMarketSkill = { marketId: string; sourceUrl: string; installedAt: string; icon?: string; category?: string };
+export type InstalledMarketSkill = { marketId: string; sourceUrl: string; installedAt: string; icon?: string; category?: string; descriptionZh?: string };
 
 // 注意：tab 参数本身已按分类过滤，不能再叠加 tags —— 实测
 // `tab=development&tags=开发` 返回 total:0，去掉 tags 后正常返回 2838 条。
@@ -98,6 +103,7 @@ function mapSkillHubEntry(entry: any): MarketSkill {
     id: slug,
     name: text(entry.displayName) || text(entry.name) || slug,
     description: text(entry.description_zh) || text(entry.description) || "暂无技能简介",
+    descriptionZh: text(entry.description_zh) || undefined,
     // category 保留英文 key 用于分类过滤；zhSub 中文二级分类追加到作者旁展示
     category: rawCategory || "skill",
     subCategory: zhSub,
@@ -216,7 +222,7 @@ export async function installCocoLoopSkill(input: { skill: MarketSkill; destinat
     await fs.rm(target, { recursive: true, force: true });
     await fs.cp(sourceDir, target, { recursive: true, dereference: false, errorOnExist: true });
     progress("register", "正在写入市场来源清单");
-    const manifest: InstalledMarketSkill = { marketId: skill.id, sourceUrl: skill.detailUrl, installedAt: new Date().toISOString(), icon: skill.icon || undefined, category: skill.category || undefined };
+    const manifest: InstalledMarketSkill = { marketId: skill.id, sourceUrl: skill.detailUrl, installedAt: new Date().toISOString(), icon: skill.icon || undefined, category: skill.category || undefined, descriptionZh: skill.descriptionZh || (CJK_RE.test(skill.description ?? "") ? skill.description : undefined) };
     // 清单文件名按市场区分；读取端（local-list / 健康检查）两个名字都认
     await fs.writeFile(path.join(target, market === "skillhub" ? ".skillhub.json" : ".cocoloop.json"), JSON.stringify(manifest, null, 2), "utf8");
     return { id: folder, name: skill.name, path: path.join(target, "SKILL.md"), description: skill.description, marketId: skill.id, sourceUrl: skill.detailUrl, securityLevel: skill.securityLevel };
