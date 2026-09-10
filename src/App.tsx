@@ -6140,6 +6140,8 @@ export default function App() {
         model: ctx.model,
         effort: ctx.effort,
         personality: ctx.personality,
+        // 限流重试这一轮也要带上沙箱，否则重试后会掉回会话创建时的旧权限
+        sandboxPolicy: sandboxPolicy(sandbox, threadRef.current?.cwd ?? workspace ?? ""),
       });
       if (result?.turn?.id) {
         setActiveTurnId(result.turn.id);
@@ -9988,6 +9990,8 @@ const commandMatches = useMemo(() => {
         effort: effort || null,
         personality: selectedModel?.supportsPersonality ? personality : null,
         approvalPolicy,
+        // 沙箱逐回合下发：fork 出的编辑分支同样按当前权限跑（见 send() 里的实证说明）
+        sandboxPolicy: sandboxPolicy(sandbox, forked.thread.cwd ?? workspace ?? ""),
       });
       if (result.turn?.id) {
         const hydratedTurn = hydrateTurnUserMessage(result.turn, input);
@@ -11130,12 +11134,12 @@ const commandMatches = useMemo(() => {
       setSandbox(nextSandbox);
       setApprovalPolicy(nextApproval);
       saveThreadPermissions(id, nextSandbox, nextApproval);
-      // 权限不一致自愈：本地记录（用户明确选择）与引擎真实 sandbox 不同 → 主动 push 给引擎。
-      // 场景实证：切换供应商/重启引擎时线程被引擎重置成 workspace-write，而本地记录仍是
-      // danger-full-access——UI 显示完全访问、引擎实际受限（"审批策略 never 且不允许传
-      // sandbox_permissions"）。仅在「本地有记录且与引擎不一致」时 push（纠正降级）；
-      // 本地无记录时不 push（防止旧快照污染引擎，即此前的降级根因）。
-      if (localPerms.sandbox && resumedSandbox && localPerms.sandbox !== resumedSandbox) {
+      // 权限不一致自愈：UI 呈现的权限（本地记录 > 引擎 > 全局默认）与引擎真实 sandbox 不同 →
+      // 主动 push 给引擎。场景实证：切换供应商/重启引擎时线程被引擎重置成 workspace-write，
+      // 而 UI/全局默认是 danger-full-access——显示完全访问、引擎实际受限（"权限总是掉"）。
+      // 只要 UI 展示值与引擎不一致就纠正（此前仅在「本地有记录」时 push，导致没在该会话里
+      // 手动选过权限的历史会话永远不自愈）——09-10 反馈后放宽。
+      if (resumedSandbox && nextSandbox !== resumedSandbox) {
         void pushThreadPermissions(id, nextSandbox, nextApproval).catch(() => undefined);
       }
       // 本地无记录但引擎与全局默认也不一致时不干预：等用户在 UI 上选择（写入本地记录）后自动纠正。
@@ -11529,6 +11533,11 @@ const commandMatches = useMemo(() => {
         // 审批档位逐回合下发（TurnStartParams.approvalPolicy，协议 schema 实证 09-06）：
         // 权限胶囊切「完全访问/never」后即使 resume 未及时生效，本条回合也按新档位审批
         approvalPolicy,
+        // 沙箱策略逐回合下发（TurnStartParams.sandboxPolicy，09-10 真实引擎实证）：
+        // turn/start 带 {type:"dangerFullAccess"} 能让该轮与后续轮真正切到完全访问。
+        // 历史会话/重启后引擎可能仍按创建时的沙箱跑（表现为「UI 显示完全访问却写不了
+        // 工作区外、权限总是掉」），每轮按 UI 当前权限下发是唯一稳的做法。
+        sandboxPolicy: sandboxPolicy(sandbox, target.cwd ?? workspace ?? ""),
         // 协作模式的 settings 优先于顶层 effort；漏传时计划模式会回落 medium。
         ...(planOnceRef.current ? { collaborationMode: { mode: "plan", settings: { model: selectedModel?.model ?? modelName(modelId), reasoning_effort: effort || null } } } : {}),
       });
@@ -13633,7 +13642,7 @@ const commandMatches = useMemo(() => {
                         <div className="auto-card-foot">
                           <span className="auto-card-next">{recipe.workspace ? basename(recipe.workspace) : "全局"} · 已存 {recipe.runCount ?? 0} 次运行</span>
                           <div className="auto-card-actions">
-                            <button className="icon-button" title="在当前会话执行" disabled={rpaRunning !== null} onClick={() => { if (!thread) { setNotice("请先打开或新建一个会话再执行配方"); return; } setRpaRunning(recipe.id); void window.codex.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: `请执行 RPA 配方「${recipe.name}」：\n${recipe.steps.map((s: string, i: number) => `${i + 1}. ${s}`).join("\n")}`, text_elements: [] }], model: selectedModel?.model ?? modelName(modelId) }).catch((error: any) => setNotice("执行失败：" + error.message)).finally(() => setRpaRunning(null)); }}><Play size={13} /></button>
+                            <button className="icon-button" title="在当前会话执行" disabled={rpaRunning !== null} onClick={() => { if (!thread) { setNotice("请先打开或新建一个会话再执行配方"); return; } setRpaRunning(recipe.id); void window.codex.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: `请执行 RPA 配方「${recipe.name}」：\n${recipe.steps.map((s: string, i: number) => `${i + 1}. ${s}`).join("\n")}`, text_elements: [] }], model: selectedModel?.model ?? modelName(modelId), sandboxPolicy: sandboxPolicy(sandbox, thread.cwd ?? workspace ?? "") }).catch((error: any) => setNotice("执行失败：" + error.message)).finally(() => setRpaRunning(null)); }}><Play size={13} /></button>
                             <button className="icon-button danger" title="删除" onClick={async () => { if (!(await openAppConfirm("删除配方", `配方「${recipe.name}」将被删除，此操作无法撤销。`, "删除"))) return; void window.codex.deleteRpaRecipe(recipe.id).then(() => setRpaRecipes((current) => current.filter((entry) => entry.id !== recipe.id))).catch((error: any) => setNotice("删除失败：" + error.message)); }}><Trash2 size={13} /></button>
                           </div>
                         </div>
