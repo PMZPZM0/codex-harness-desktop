@@ -7594,6 +7594,19 @@ export default function App() {
   useEffect(() => {
     if (settingsOpen && (settingsPage === "relay" || settingsPage === "openai" || settingsPage === "model")) refreshActive();
   }, [settingsOpen, settingsPage, refreshActive]);
+  // 进入模型配置页直接展开「已配置好的（当前生效）供应商」，不再停在空白表单
+  // ——用 ref 记账，页面关闭才复位，避免用户点「添加供应商」后被自动打开盖掉。
+  const providerAutoOpenRef = useRef(false);
+  useEffect(() => {
+    if (!settingsOpen) { providerAutoOpenRef.current = false; return; }
+    if (settingsPage !== "model" || providerAutoOpenRef.current || editingProvider || !customModel) return;
+    const target = providersList.find((entry) => entry.provider === customModel.provider);
+    if (!target) return;
+    providerAutoOpenRef.current = true;
+    setEditingProvider(target.provider);
+    setEditingName(false);
+    setCustomDraft({ provider: target.provider, name: target.name, model: target.model, baseUrl: target.baseUrl, contextWindow: String(target.contextWindow ?? 128000), wireApi: target.wireApi ?? "responses", apiKey: "", models: target.models ?? (target.model ? [{ id: target.model }] : []), enabled: target.enabled ?? true });
+  }, [settingsOpen, settingsPage, customModel, providersList, editingProvider]);
   // 供应商切换「待重启生效」：切换只保存配置不重启引擎（不打断正在运行的会话），
   // 用户点 banner 的「重启生效」或下次启动时才让新供应商生效。生效前消息继续用原供应商。
   const [pendingRestart, setPendingRestart] = useState<{ provider: string; model: string; label: string; prevProvider: string; prevModel: string } | null>(null);
@@ -13355,7 +13368,7 @@ const commandMatches = useMemo(() => {
                 {/* 不打开编辑器也能测当前生效供应商：切换/保存后最常用的自检动作。
                     失败会弹带排查清单的中文提示，认证类错误保留供应商原文。 */}
                 {customModel && <button className="add-provider-btn" title={`测试当前生效供应商：${customModel.name} · ${customModel.model}`} disabled={!!probingProvider} onClick={() => void probeActiveProvider()}>{probingProvider === "test" ? <Spinner /> : <RefreshCw size={13} />}测试当前供应商</button>}
-                <button className="add-provider-btn" onClick={() => { setCustomDraft({ provider: "custom" + (Date.now() % 1000), name: "自定义供应商", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true }); setEditingProvider(null); setEditingName(false); }}><Plus size={13} />添加供应商</button>
+                <button className="add-provider-btn" onClick={() => { providerAutoOpenRef.current = true; setCustomDraft({ provider: "custom" + (Date.now() % 1000), name: "自定义供应商", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true }); setEditingProvider(null); setEditingName(false); }}><Plus size={13} />添加供应商</button>
               </div>
               <div className="provider-form">
                 <div className="provider-detail-head">
@@ -13369,17 +13382,15 @@ const commandMatches = useMemo(() => {
                     const effectiveEnabled = pseudoPptokenForm ? !pptokenCardOff : customDraft.enabled !== false;
                     return (
                       <>
-                        {effectiveEnabled
-                          ? <span className="provider-state-badge on">已启用</span>
-                          : <span className="provider-state-badge off">已停用</span>}
+                        {/* 启用/停用合并成一颗状态药丸：状态与动作一眼可读 */}
                         {pseudoPptokenForm
-                          ? <button className="provider-state-btn" onClick={() => setPptokenCardOff(!pptokenCardOff)}>{pptokenCardOff ? "启用展示" : "停用展示"}</button>
-                          : editingProvider && <button className="provider-state-btn" disabled={savingSettings || (customDraft.enabled === false && customModel != null && customModel.provider !== editingProvider)} title={(customDraft.enabled === false && customModel && customModel.provider !== editingProvider) ? `已有供应商「${customModel.name}」生效，请先停用它再启用` : undefined} onClick={() => void setProviderEnabled(editingProvider, customDraft.enabled === false)}>{customDraft.enabled === false ? "启用" : "禁用"}</button>}
+                          ? <button className={`provider-state-btn pill ${effectiveEnabled ? "on" : "off"}`} onClick={() => setPptokenCardOff(!pptokenCardOff)}><span className="provider-state-dot" />{effectiveEnabled ? "展示中 · 点击停用" : "已停用 · 点击展示"}</button>
+                          : editingProvider && <button className={`provider-state-btn pill ${effectiveEnabled ? "on" : "off"}`} disabled={savingSettings || (customDraft.enabled === false && customModel != null && customModel.provider !== editingProvider)} title={(customDraft.enabled === false && customModel && customModel.provider !== editingProvider) ? `已有供应商「${customModel.name}」生效，请先停用它再启用` : undefined} onClick={() => void setProviderEnabled(editingProvider, customDraft.enabled === false)}><span className="provider-state-dot" />{effectiveEnabled ? "启用中 · 点击停用" : "已停用 · 点击启用"}</button>}
                       </>
                     );
                   })()}
                   <span className="provider-head-spacer" />
-                  {editingProvider && editingProvider !== currentProvider && <button className="secondary-setting" disabled={savingSettings} onClick={() => void selectProvider(editingProvider)}>设为当前</button>}
+                  {/* 「设为当前」已移除：启用即生效（全局只生效一个），不需要二次确认按钮 */}
                   {editingProvider && <button className="icon-button" title="删除供应商" onClick={async () => { if (!(await openAppConfirm("删除供应商", `供应商「${customDraft.name}」将被删除，此操作无法撤销。`, "删除"))) return; void removeProvider({ provider: customDraft.provider, name: customDraft.name, model: customDraft.model, baseUrl: customDraft.baseUrl }); }}><Trash2 size={14} /></button>}
                 </div>
                 {customDraft.provider === "pptoken" && !providersList.some((p) => p.provider === "pptoken") && (
