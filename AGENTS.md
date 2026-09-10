@@ -65,8 +65,6 @@
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
-- **排队消息改在时间线右侧展示**（09-10，用户要求「排队发出去的消息要像正常消息一样在右边」）：原来排队消息渲染在输入框上方的独立 `<QueuedMessageList>` 里（容易被忽略）。现在改为在时间线 turns 之后、`optimisticInput` 之前 `queue.map` 渲染 `<ItemView item={{ id: "queued-<id>", type: "userMessage", content: entry.input }} pending>`——直接复用真实用户消息渲染（`.user-message` 自带 `margin-left:auto` 右对齐），下方挂 `.queued-inline-bar`（「排队中」徽标 + 立即发送/编辑/删除，分别复用 `startQueued` / `editQueued` / `deleteQueued`）。独立列表已移除，避免两处重复；`QueuedMessageList`/`QueuedMessageItem`/`reorderQueued`/`saveQueued`/`queueDragIndex` 成为未引用代码（tsconfig 未开 `noUnusedLocals`，构建不报错），**拖拽排序入口随之消失**（引擎 `thread/queue/reorder` 能力仍在，需要时可挂回时间线的排队条上）。
-
 - **【定论·勿回退】旧会话供应商由 config.toml 决定，不由会话决定**（09-10 跨引擎生命周期探针实证，用户「新会话能用、旧会话不行」）：真实 app-server + 两个假模型端点实测——①只改会话存档 `session_meta.model_provider` → 重启引擎后**无效**；②只改 config.toml 里该 id 的 `base_url` → 重启后**生效**。即：会话存档只记「供应商名字(id)」，请求地址永远取自 config.toml 该 id 的段；且单进程内改任何地方都无效（线程常驻引擎内存），**必须重启引擎重新加载会话**。因此 `migrateThreadToProvider` 的 `thread/resume + modelProvider + 内联 config` 与 `thread/settings/update` 都**改不掉后续 turn 的供应商**（后者不给 `capabilities.experimentalApi=true` 还会被 -32600 拒绝；变体扫描 9 种全失败）——这两条已确认是装样子，别再依赖。
   **落定修法（`applyCustomModel`）**：config.toml 里**每个** `[model_providers.*]` 段一律写「当前生效供应商的 base_url + wire_api」（保留各自 id/name 以便展示与兼容引用）；`collectSessionProviderIds()` 扫 `codex-home/sessions/**/*.jsonl` 首行收集历史引用过的 id，把**已删除供应商的 id 补成别名段**（同上指向当前生效地址），避免 `Model provider not found`。依据：引擎进程只有一把全局 Key（= 当前生效供应商的 Key），故「所有 id 指向当前生效端点」是唯一自洽形态——任何历史会话都必然走当前供应商。**用户明确拒绝 fork/新建分支方案，必须在原会话可用。** 回归脚本 `.workbuddy/verify-provider-alias.cjs`（11 项断言）。
 

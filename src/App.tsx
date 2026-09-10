@@ -12107,19 +12107,6 @@ const commandMatches = useMemo(() => {
           {/* 导入会话记录后、尚未发送首条消息：记录预览卡常驻消息区顶部；发送后转为消息内的导入卡 */}
           {thread && (thread.turns ?? []).length === 0 && pendingImportThreads[thread.id] ? <PendingImportSlot key={thread.id} threadId={thread.id} onDiscard={() => forgetPendingImport(thread.id)} /> : null}
           {thread?.turns.map((turn) => <MemoTurnView turn={turn} isLastTurn={turn.id === thread.turns[thread.turns.length - 1]?.id} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={tokenUsage} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />)}
-          {/* 排队中的消息：直接在时间线右侧按普通消息展示（此前只在上方排队列表里，容易看不到）。
-              每条下方带「排队中」标记与 立即发送 / 编辑 / 删除，顺序与引擎队列一致。 */}
-          {queue.map((entry) => (
-            <div className="queued-inline" key={`queued-${entry.id}`}>
-              <ItemView item={{ id: `queued-${entry.id}`, type: "userMessage", content: entry.input } as ThreadItem} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} />
-              <div className="queued-inline-bar">
-                <span className="queued-inline-badge"><Clock3 size={11} />排队中</span>
-                <button type="button" onClick={() => void startQueued(entry.id)}>立即发送</button>
-                <button type="button" onClick={() => editQueued(entry)}>编辑</button>
-                <button type="button" onClick={() => void deleteQueued(entry.id)}>删除</button>
-              </div>
-            </div>
-          ))}
           {optimisticInput && !optimisticConfirmed && <ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} />}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
           {systemEvents.map((event) => <div className={`system-event ${event.tone ?? "info"}`} key={event.id}><strong>{event.tone === "success" ? <CircleCheck size={13} className="system-event-icon" /> : null}{event.title}</strong><Markdown>{event.text}</Markdown></div>)}
@@ -12316,8 +12303,7 @@ const commandMatches = useMemo(() => {
               <button type="button" onClick={() => cancelRateLimitRetry()}>停止</button>
             </div>
           )}
-          {/* 排队消息已改为在时间线右侧按普通消息展示（见上方 queued-inline），
-              这里不再渲染独立列表，避免同一批消息出现两处。 */}
+          {thread && <QueuedMessageList entries={queue} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />}
           {/* 图片以内联 chip 展示（composer-input-shell 内），此处只保留文件附件条 */}
           {files.length > 0 && <div className="attachment-strip">{files.map((path) => <div className="file-attachment" key={path}><FileCode2 size={18} /><span>{basename(path)}</span><button title="移除" onClick={() => setFiles(files.filter((entry) => entry !== path))}><X size={13} /></button></div>)}</div>}
           {commandMatches.length > 0 && <div className="command-palette" role="listbox" aria-label="Codex 指令">{commandMatches.map(([name, description]) => <button type="button" role="option" key={name} onClick={() => { if (["rename", "review", "goal", "plan", "effort", "personality", "sandbox", "approval", "fork"].includes(name)) setPrompt(`/${name} `); else void runSlashCommand(`/${name}`); }}><code>/{name}</code><span className="command-desc">{description}</span></button>)}</div>}
