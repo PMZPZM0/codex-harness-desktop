@@ -3282,6 +3282,14 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActive
         return;
       }
       const target = (list ?? []).find((a: any) => a.id === id);
+      if (enabled) {
+        // 全局互斥：启用 A 时自动停用其他已启用的账号（一次只能开一个）
+        for (const other of (list ?? []) as any[]) {
+          if (other.id !== id && other.disabled !== true) {
+            await window.codex.openaiToggleAccount({ id: other.id, disabled: true }).catch(() => undefined);
+          }
+        }
+      }
       if (enabled && target) {
         // 没有任何生效的官方账号：自动把刚启用的账号恢复为当前订阅（vault 内账号必有登录态）
         onNotice("账号已启用，正在自动恢复官方订阅…");
@@ -3323,8 +3331,8 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActive
                 {a.planType ? <span className="openai-plan-badge">{a.planType.toUpperCase()}</span> : null}
                 {a.active && <span className="relay-plan-live"><Check size={11} />使用中</span>}
                 {a.disabled && <span className="acct-disabled-badge">已停用</span>}
-                <label className="bot-switch acct-switch" title={a.disabled ? "已停用，点击启用" : "启用中，点击停用"} onClick={(event) => event.stopPropagation()}>
-                  <input type="checkbox" checked={!a.disabled} disabled={working === "tg" + a.id} onChange={(event) => void toggleAccount(a.id, event.target.checked)} /><span />
+                <label className="bot-switch acct-switch" title={a.disabled ? (activeProvider && !a.active ? `已有供应商生效（一次只能启用一个），先停用再启用这个账号` : "已停用，点击启用") : "启用中，点击停用"} onClick={(event) => event.stopPropagation()}>
+                  <input type="checkbox" checked={!a.disabled} disabled={working === "tg" + a.id || (a.disabled && Boolean(activeProvider) && !a.active)} onChange={(event) => void toggleAccount(a.id, event.target.checked)} /><span />
                 </label>
               </div>
               <p className="openai-sub-line">订阅{a.subscriptionUntil ? "至 " + a.subscriptionUntil.slice(0, 10) : "生效中"} · {new Date(a.savedAt).toLocaleString()} 登录</p>
@@ -3611,17 +3619,28 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
         return;
       }
       const list = enabled ? await window.codex.relayAccounts().catch(() => []) : [];
-      if (enabled && !list.some((a: any) => a.active)) {
-        // 没有任何生效账号：自动把刚启用的账号恢复为当前（切换 + 自动重配模型 + 引擎重启）
+      if (enabled) {
+        // 全局互斥：启用 A 时自动停用其他已启用的账号（开关即生效候选，一次只能开一个）
+        for (const other of list) {
+          if (other.id !== id && !other.disabled) {
+            await window.codex.relayToggleAccount({ id: other.id, disabled: true }).catch(() => undefined);
+          }
+        }
+        if (list.some((a: any) => a.active)) {
+          // 已有生效账号（就是本账号）：直接完成
+          onNotice("账号已启用，当前生效");
+          return;
+        }
+        // 没有生效账号：自动把刚启用的账号设为当前（切换 + 自动重配模型 + 引擎重启）
         const target = list.find((a: any) => a.id === id);
         if (target?.loggedIn) {
-          onNotice("账号已启用，正在自动恢复模型配置…");
+          onNotice("账号已启用，正在自动设为当前生效…");
           await window.codex.relaySwitchAccount(id);
           const acc = await window.codex.relayLoadAccount();
           if (acc?.loggedIn) setAccount({ baseUrl: acc.baseUrl, email: acc.email });
           await reloadAccounts();
           await autoConfigure();
-          onNotice("账号已启用并恢复为当前生效，模型已自动重配");
+          onNotice("账号已启用并设为当前生效，模型已自动重配");
           return;
         }
       }
@@ -3739,8 +3758,8 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
                 <strong title={a.email}>{a.email}</strong>
                 {a.active && <span className="relay-plan-live"><Check size={11} />使用中</span>}
                 {a.disabled && <span className="acct-disabled-badge">已停用</span>}
-                <label className="bot-switch acct-switch" title={a.disabled ? "已停用，点击启用" : "启用中，点击停用"} onClick={(event) => event.stopPropagation()}>
-                  <input type="checkbox" checked={!a.disabled} disabled={working === `tg${a.id}`} onChange={(event) => void toggleAccount(a.id, event.target.checked)} /><span />
+                <label className="bot-switch acct-switch" title={a.disabled ? (activeProvider && !a.active ? `已有供应商生效（一次只能启用一个），先停用再启用这个账号` : "已停用，点击启用") : "启用中，点击停用"} onClick={(event) => event.stopPropagation()}>
+                  <input type="checkbox" checked={!a.disabled} disabled={working === `tg${a.id}` || (a.disabled && Boolean(activeProvider) && !a.active)} onChange={(event) => void toggleAccount(a.id, event.target.checked)} /><span />
                 </label>
               </div>
               <p>{String(a.baseUrl || "").replace(/^https?:\/\//, "")}</p>
@@ -7459,6 +7478,7 @@ export default function App() {
   const {
     customModel, setCustomModel, customDraft, setCustomDraft, providersList, currentProvider,
     editingProvider, setEditingProvider, savingSettings, providerModels, modelSourceProvider,
+    refreshActive,
     probingProvider, providerStatus, switchingModel, saveCustomModel, probeProvider,
     selectProvider, removeProvider, setProviderModel, removeProviderModel,
     upsertProviderModel, setProviderEnabled, probeOneModel, adoptSavedProvider, saveCustomDraft,
@@ -7477,6 +7497,11 @@ export default function App() {
     // 设置页保存等路径已触发引擎重启生效：清掉「待重启生效」banner，避免残留误导
     onEngineApplied: () => setPendingRestart(null),
   });
+  // 进入中转站/官方订阅/模型页时刷新生效供应商：这些页的互斥判断依赖 customModel，
+  // 状态过期（如另一处刚停用/启用）会导致「明明没有生效供应商却全灰」的死锁
+  useEffect(() => {
+    if (settingsOpen && (settingsPage === "relay" || settingsPage === "openai" || settingsPage === "model")) refreshActive();
+  }, [settingsOpen, settingsPage, refreshActive]);
   // 供应商切换「待重启生效」：切换只保存配置不重启引擎（不打断正在运行的会话），
   // 用户点 banner 的「重启生效」或下次启动时才让新供应商生效。生效前消息继续用原供应商。
   const [pendingRestart, setPendingRestart] = useState<{ provider: string; model: string; label: string; prevProvider: string; prevModel: string } | null>(null);
@@ -9166,16 +9191,29 @@ const commandMatches = useMemo(() => {
         setInterrupting(false);
         markThreadStopped(params.threadId);
         // error 通知也可能是限流（引擎 RPC 直接报错）：同样进入自动重试
-        const errorMessage = params.error?.message ?? params.message ?? "";
+        const rawError = params.error?.message ?? params.message ?? "";
+        const details = String(params.error?.additionalDetails ?? params.additionalDetails ?? "");
+        // 引擎的 Reconnecting 是英文原始报错，直接显示不友好——翻译成中文提醒：
+        // 401=Key 错配（供应商切换后旧会话），流中断=网关不稳（pptoken 常见），均会自动重试。
+        const reconnectMatch = rawError.match(/^Reconnecting\.\.\.\s*(\d+)\/(\d+)/);
+        let errorMessage = rawError;
+        if (reconnectMatch) {
+          const no = reconnectMatch[1], total = reconnectMatch[2];
+          if (details.includes("401")) errorMessage = `第 ${no}/${total} 次自动重试：供应商认证失败（API Key 不匹配）。若刚切换过供应商，请停止后重发以自动迁移会话；仍失败请检查该供应商的 Key`;
+          else if (/stream (dis)?connected|closed before/i.test(details) || details.includes("httpStatusCode\":null")) errorMessage = `第 ${no}/${total} 次自动重试：上游网关响应中断（模型服务不稳）。引擎正在自动重连，多数情况下稍等即可恢复；持续失败建议换模型或换供应商`;
+          else errorMessage = `第 ${no}/${total} 次自动重试：连接中断，引擎正在自动恢复……`;
+        } else if (details.includes("401") && /API key format is incorrect/i.test(details)) {
+          errorMessage = "供应商认证失败（API Key 与服务商不匹配）：当前供应商的 Key 被发到了另一个服务商。请停止后重发（会自动迁移会话），或检查供应商配置";
+        }
         if (errorMessage && isRateLimitError(errorMessage) && retryContextRef.current?.threadId === params.threadId) {
           scheduleRateLimitRetry(rateLimitAttemptRef.current + 1);
         } else if (params.threadId && retryContextRef.current?.threadId === params.threadId) {
           cancelRateLimitRetry(true);
         }
         if (compactPendingRef.current.delete(String(params.threadId ?? threadRef.current?.id ?? ""))) {
-          setCompactEventState("error", params.error?.message ?? params.message);
+          setCompactEventState("error", errorMessage);
         }
-        setNotice(params.error?.message ?? params.message ?? "Codex 请求失败");
+        setNotice(errorMessage || "Codex 请求失败");
       } else if (event.method === "serverRequest/resolved") {
         setPending((current) => current.filter((entry) => entry.id !== params.requestId));
       } else if (method === "thread/name/updated") {
@@ -9428,26 +9466,18 @@ const commandMatches = useMemo(() => {
       else localStorage.setItem("default-model", nextId);
     };
     // 跨供应商切换 = 切换全局 API Key，必须重启引擎生效。用户要求「切换必须重启应用」：
-    // 弹窗确认后立即重启引擎（正在运行的任务会中断，会话历史保留），并把当前会话迁移到
-    // 新供应商（thread/resume 官方通道，重启后原会话直接用新供应商模型继续聊）。
+    // 弹窗确认后先落盘配置（apply:false 不重启引擎），再整体重启应用——启动时引擎按新
+    // 供应商的 Key 全新注入，状态彻底归位；旧会话下次打开时由发送前迁移自动跟随。
     if (provider && customModel && provider !== customModel.provider) {
-      if (!(await openAppConfirm("切换供应商", `将切换到 ${nextLabel || model} 并重启引擎生效。\n正在运行的任务会被中断，当前会话历史完整保留、自动迁移到新供应商。\n是否继续？`, "切换并重启"))) return;
+      if (!(await openAppConfirm("切换供应商", `将切换到 ${nextLabel || model}，应用将自动重启使配置完全生效。\n正在运行的任务会被中断，会话历史完整保留。\n是否继续？`, "切换并重启应用"))) return;
       try {
-        const updated = await window.codex.setProviderModel({ provider, model }); // apply 默认 true → 立即重启引擎
-        setCustomModel(updated);
-        const selectedId = `custom:${updated.provider}:${updated.model}`;
+        await window.codex.setProviderModel({ provider, model, apply: false }); // 只落盘
+        const selectedId = `custom:${provider}:${model}`;
         saveSelection(selectedId);
         localStorage.setItem("default-model", selectedId);
-        if (threadRef.current?.id) {
-          const migrated = await migrateThreadToProvider(threadRef.current.id, {
-            provider: updated.provider, model: updated.model, name: updated.name, baseUrl: updated.baseUrl, wireApi: updated.wireApi,
-          });
-          if (migrated) showToast("已切换供应商", `当前会话已迁移到 ${updated.name} · ${updated.model}，历史完整保留`);
-          else showToast("已切换供应商", `新会话将使用 ${updated.name} · ${updated.model}（当前会话迁移失败，历史保留在原会话）`);
-        } else {
-          await updateThreadSettings({ model: updated.model, ...(updated.provider === "openai-official" ? {} : { model_provider: updated.provider }), effort: null });
-        }
-        setNotice(`已切换到 ${updated.name} · ${updated.model}`);
+        localStorage.setItem("thread-model-" + (threadRef.current?.id ?? ""), selectedId);
+        showToast("已切换", "应用即将重启以完全生效……");
+        setTimeout(() => { void window.codex.relaunchApp(); }, 800);
         return;
       } catch (error: any) {
         setNotice(`切换供应商失败：${error.message}`);
@@ -9493,6 +9523,11 @@ const commandMatches = useMemo(() => {
         threadId,
         excludeTurns: true,
         model: target.model,
+        // 实证（rollout 07:19:54）：引擎重启后 resume 若不带 sandbox，线程权限被重置成
+        // workspace-write+restricted——完全访问静默失效。resume 接受 sandbox 字符串
+        // （schema 实证），这里带上当前用户偏好，迁移同时把权限一并钉住。
+        sandbox: sandbox,
+        approvalPolicy: approvalPolicy,
         // 官方订阅走引擎内置 openai 通道：不传 modelProvider/config（实证：传了即触发
         // CODEX_HARNESS_API_KEY 校验导致流断）；其他供应商内联完整定义
         ...(officialTarget ? {} : {
@@ -9607,11 +9642,15 @@ const commandMatches = useMemo(() => {
     // 记录推送时间戳：引擎在设置生效后异步回推一条带旧策略的 settings/updated，
     // 时间窗内的回推是旧值，事件侧据此忽略（防止胶囊被打回灰色）。
     threadPermPushAtRef.current.set(id, Date.now());
-    // 用 settings/update 推送（协议实证的有效通道）；resume 通道带 sandbox 参数引擎并不回读，
-    // 且 resume 会触发 settings/updated 事件回推创建时的旧策略，反过来把 UI 打回灰色。
+    // 双通道推送：settings/update 换审批+沙箱策略（0.153.4 实证接受 sandboxPolicy）；
+    // 但引擎重启后 settings/update 对已存在线程**不回读 sandbox**（实证 07:19:54：
+    // 重启后首个 turn 权限被重置成 workspace-write，settings/update 推了也没生效）——
+    // resume 通道才真正接受 sandbox 字符串（schema 实证）。所以补一发带沙箱的 resume
+    // 钉住权限（excludeTurns:true 不拉历史，开销极小）。
     const call = () => window.codex.request("thread/settings/update", { threadId: id, approvalPolicy: approvalValue, sandboxPolicy: sandboxPolicy(sandboxValue, workspace) });
     try {
       await call();
+      await window.codex.request("thread/resume", { threadId: id, excludeTurns: true, sandbox: sandboxValue, approvalPolicy: approvalValue });
     } catch (error: any) {
       const message = String(error?.message ?? "");
       // 空会话（还没发过首条消息）没有 rollout，settings/update 会报 "thread not found"——
@@ -10852,7 +10891,17 @@ const commandMatches = useMemo(() => {
       return;
     }
     try {
-      const result = await resumeThreadWithTurns({ threadId: id, excludeTurns: false });
+      // resume 必带沙箱（schema 实证 resume 接受 sandbox 字符串）：引擎重启后 resume 不带
+      // sandbox 会把线程权限重置成 workspace-write+restricted（实证 rollout 07:19:54，
+      // 「完全访问静默失效」的真根因）。本地有用户选择用之，否则用全局默认。
+      const permForResume = loadThreadPermissions(id);
+      const resumeSandbox = permForResume.sandbox === "danger-full-access" || permForResume.sandbox === "read-only" || permForResume.sandbox === "workspace-write"
+        ? permForResume.sandbox
+        : (localStorage.getItem("default-sandbox") ?? "danger-full-access");
+      const resumeApproval = permForResume.approval === "never" || permForResume.approval === "on-request" || permForResume.approval === "untrusted"
+        ? permForResume.approval
+        : (localStorage.getItem("default-approval") ?? "never");
+      const result = await resumeThreadWithTurns({ threadId: id, excludeTurns: false, sandbox: resumeSandbox, approvalPolicy: resumeApproval });
       if (seq !== switchSeqRef.current) return; // 已切到别的会话，丢弃本次结果
       recentResumeAtRef.current.set(id, Date.now());
       // 残留运行态归一化（详见 normalizeLoadedThread）：旧会话丢过 turn/completed 的
@@ -10911,9 +10960,15 @@ const commandMatches = useMemo(() => {
       setSandbox(nextSandbox);
       setApprovalPolicy(nextApproval);
       saveThreadPermissions(id, nextSandbox, nextApproval);
-      // 打开会话绝不向引擎 push 权限：settings/update 会把恢复值写回引擎，若恢复值来自被污染的
-      // localPerms 或旧快照，引擎权限会被静默降级（重启后完全权限变灰根因）。引擎权限只由用户
-      // 显式切换（changePermissionMode → pushThreadPermissions 带 threadPermPushAt 时间戳保护）管理。
+      // 权限不一致自愈：本地记录（用户明确选择）与引擎真实 sandbox 不同 → 主动 push 给引擎。
+      // 场景实证：切换供应商/重启引擎时线程被引擎重置成 workspace-write，而本地记录仍是
+      // danger-full-access——UI 显示完全访问、引擎实际受限（"审批策略 never 且不允许传
+      // sandbox_permissions"）。仅在「本地有记录且与引擎不一致」时 push（纠正降级）；
+      // 本地无记录时不 push（防止旧快照污染引擎，即此前的降级根因）。
+      if (localPerms.sandbox && resumedSandbox && localPerms.sandbox !== resumedSandbox) {
+        void pushThreadPermissions(id, nextSandbox, nextApproval).catch(() => undefined);
+      }
+      // 本地无记录但引擎与全局默认也不一致时不干预：等用户在 UI 上选择（写入本地记录）后自动纠正。
       const resumedRunningTurn = loaded.turns.find((turn: Turn) => isTurnRunning(turn));
       setActiveTurnId(resumedRunningTurn?.id ?? null);
       setSending(Boolean(resumedRunningTurn));
@@ -11154,16 +11209,27 @@ const commandMatches = useMemo(() => {
         } catch { /* 探测失败按无绑定处理，走正常发送 */ }
       }
       if (boundProvider && customModel && boundProvider !== customModel.provider && currentThread?.id) {
-        const migrated = await migrateThreadToProvider(currentThread.id, customModel);
-        if (!migrated) {
-          showToast("暂时不能发送", `该会话绑定 ${boundProvider}（已不是当前供应商），迁移到 ${customModel.name} 失败；请新建会话或切换回该供应商`);
+        // 关键：引擎进程是「一个全局 Key」（spawn 时注入 CODEX_HARNESS_API_KEY）。
+        // 只 resume 换 base_url 不换 Key → 目标供应商收到旧 Key → INVALID_API_KEY 401
+        // （实测：激活 ppz123 后旧 pptoken 会话迁移后仍 401，重启引擎才注入 ppz123 的 Key）。
+        // 所以迁移必须走完整切换：写激活 + applyCustomModel 重启引擎（注入新 Key）+ resume。
+        try {
+          const updated = await window.codex.setProviderModel({ provider: customModel.provider, model: customModel.model });
+          setCustomModel(updated);
+          const migrated = await migrateThreadToProvider(currentThread.id, customModel);
+          if (!migrated) {
+            showToast("已切换供应商", `已切换到 ${updated.name} 并重启生效；该会话未能迁移，请新建会话`);
+            return;
+          }
+          const selectedId = `custom:${updated.provider}:${updated.model}`;
+          setModelId(selectedId);
+          localStorage.setItem("default-model", selectedId);
+          saveThreadModel(currentThread.id, selectedId);
+          showToast("会话已迁移", `引擎已按 ${updated.name} 的 Key 重启，该会话已切换到 ${updated.model}，可正常发送`);
+        } catch (error: any) {
+          showToast("暂时不能发送", `迁移失败：${String(error?.message ?? error).slice(0, 80)}`);
           return;
         }
-        const selectedId = `custom:${customModel.provider}:${customModel.model}`;
-        setModelId(selectedId);
-        localStorage.setItem("default-model", selectedId);
-        saveThreadModel(currentThread.id, selectedId);
-        showToast("会话已迁移", `该会话已切换到 ${customModel.name} · ${customModel.model}，可正常发送`);
       }
     }
     if (!workspace) {
@@ -13088,10 +13154,10 @@ const commandMatches = useMemo(() => {
                         </div>
                         <label
                           className={`provider-switch ${p.enabled === false ? "off" : ""}`}
-                          title={isPseudoPptoken ? (pseudoOff ? "推荐卡已停用 · 点击恢复展示" : "停用 PPtoken 推荐卡展示") : p.enabled === false ? "已禁用 · 点击启用" : "已启用 · 点击禁用"}
+                          title={isPseudoPptoken ? (pseudoOff ? "推荐卡已停用 · 点击恢复展示" : "停用 PPtoken 推荐卡展示") : (p.enabled !== false ? "已启用 · 点击禁用" : (customModel && customModel.provider !== p.provider ? `已有供应商「${customModel.name}」生效，一次只能启用一个——先停用它再启用这个` : "已禁用 · 点击启用"))}
                           onClick={(event) => event.stopPropagation()}
                         >
-                          <input type="checkbox" checked={isPseudoPptoken ? !pseudoOff : p.enabled !== false} onChange={(event) => { if (isPseudoPptoken) setPptokenCardOff(!event.target.checked); else void setProviderEnabled(p.provider, event.target.checked); }} />
+                          <input type="checkbox" checked={isPseudoPptoken ? !pseudoOff : p.enabled !== false} disabled={!isPseudoPptoken && p.enabled === false && customModel != null && customModel.provider !== p.provider} onChange={(event) => { if (isPseudoPptoken) setPptokenCardOff(!event.target.checked); else void setProviderEnabled(p.provider, event.target.checked); }} />
                           <span className="provider-switch-ui" />
                         </label>
                         {!isPseudoPptoken && <span className={`provider-dot ${p.provider === currentProvider ? "on" : ""}`} title={p.provider === currentProvider ? "当前生效供应商" : ""} />}
@@ -13188,8 +13254,15 @@ const commandMatches = useMemo(() => {
                 </div>
                 <div className="settings-actions"><span>配置后可在聊天时选择使用。带 ⚡ 可测试模型连通。</span>
                   <button className="primary-setting" disabled={savingSettings || !customDraft.baseUrl} onClick={() => void (async () => {
-                    // 用户要求：供应商保存后强制重启生效 + 弹窗提醒（正在运行的任务会中断）
-                    if (await openAppConfirm("保存供应商", "保存后引擎将重启使新配置生效，正在运行的任务会中断（会话历史保留）。\n是否继续？", "保存并重启")) { void saveCustomModel(); }
+                    // 用户要求：保存模型配置后重启整个应用（引擎 Key 全新注入，状态彻底归位）
+                    if (!(await openAppConfirm("保存供应商", "保存后应用将自动重启使配置完全生效。\n是否继续？", "保存并重启应用"))) return;
+                    try {
+                      await saveCustomModel();
+                      showToast("已保存", "应用即将重启以完全生效……");
+                      setTimeout(() => { void window.codex.relaunchApp(); }, 800);
+                    } catch (error: any) {
+                      setNotice(`保存失败：${error.message}`);
+                    }
                   })()}>{savingSettings ? <Spinner /> : <Check size={15} />}保存</button>
                 </div>
               </div>
