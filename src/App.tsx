@@ -12248,7 +12248,22 @@ const commandMatches = useMemo(() => {
                 {attachSubmenu === "skills" && <div className={`composer-quick-pop submenu-pop skills-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="skills" style={{ "--submenu-top": `${submenuTop}px` } as React.CSSProperties}>
                   <div className="submenu-search"><Search size={13} /><input autoFocus value={skillQuery} onChange={(event) => setSkillQuery(event.target.value)} placeholder="搜索已安装技能" /></div>
                   <div className="submenu-list">
-                    {[...localSkills, ...settingsResources.skills.map((skill: any) => ({ name: skill.name, path: skill.path, description: skill.description ?? "" }))].filter((skill, index, all) => all.findIndex((entry) => entry.name.toLowerCase() === skill.name.toLowerCase() || (entry.path && entry.path === skill.path)) === index).filter((skill) => skill.name.toLowerCase().includes(skillQuery.toLowerCase()) || skill.description.toLowerCase().includes(skillQuery.toLowerCase())).slice(0, 8).map((skill) => <button type="button" key={skill.name} onClick={() => { setSelectedSkills((current) => current.some((entry) => entry.name === skill.name) ? current : [...current, skill]); setAttachmentMenuOpen(false); setAttachSubmenu("none"); }}><Zap size={15} /><span className="expert-menu-name">{skill.name}</span><small>{skill.description || "已安装技能"}</small></button>)}
+                    {(() => {
+                      // 规范化技能名：剥插件限定前缀（引擎插件技能返回 `ponytail:ponytail-audit`，
+                      // 本地目录技能是 `ponytail-audit`）——不归一化会同一技能显示两条。
+                      const norm = (name: string) => { const n = String(name ?? "").toLowerCase(); const i = n.lastIndexOf(":"); return i >= 0 ? n.slice(i + 1) : n; };
+                      const shortName = (name: string) => { const i = String(name ?? "").lastIndexOf(":"); return i >= 0 ? String(name).slice(i + 1) : String(name ?? ""); };
+                      const seen = new Set<string>();
+                      const merged: { name: string; path: string; description: string }[] = [];
+                      for (const entry of [...localSkills, ...settingsResources.skills.map((skill: any) => ({ name: skill.name, path: skill.path, description: skill.description ?? "" }))]) {
+                        const key = norm(entry.name);
+                        if (!key || seen.has(key)) continue; // 同名（含插件限定名）只保留第一条（本地优先）
+                        seen.add(key);
+                        merged.push({ name: shortName(entry.name), path: entry.path, description: entry.description ?? "" });
+                      }
+                      const q = skillQuery.toLowerCase();
+                      return merged.filter((skill) => skill.name.toLowerCase().includes(q) || skill.description.toLowerCase().includes(q)).slice(0, 8).map((skill) => <button type="button" key={skill.name} onClick={() => { setSelectedSkills((current) => current.some((entry) => entry.name === skill.name) ? current : [...current, skill]); setAttachmentMenuOpen(false); setAttachSubmenu("none"); }}><Zap size={15} /><span className="expert-menu-name">{skill.name}</span><small>{skill.description || "已安装技能"}</small></button>);
+                    })()}
                     {!skillQuery.trim() && ![...localSkills, ...settingsResources.skills].length && <p className="submenu-empty">还没有安装技能</p>}
                   </div>
                   <button type="button" className="submenu-manage" onClick={() => { setAttachmentMenuOpen(false); setAttachSubmenu("none"); setSettingsPage("skills"); setSettingsOpen(true); }}><ArrowUpRight size={14} /><span>管理技能中心</span></button>
@@ -13603,13 +13618,30 @@ const commandMatches = useMemo(() => {
                 {marketSkills.length > 0 && <span className="skill-filter-count">当前榜单 {marketSkills.length} 个技能 · 分类 <b>{skillHubFilterCategory ? skillHubCategoryName(skillHubFilterCategory) : "全部"}</b></span>}
               </div>}
               {skillsManageOnly ? (() => {
-                const localNames = new Set(localSkills.map((entry) => entry.name.toLowerCase()));
-                const localByPath = new Set(localSkills.map((entry) => entry.path));
-                const builtinSkills = settingsResources.skills.filter((entry: any) => !localByPath.has(entry.path) && !localNames.has((entry.name ?? "").toLowerCase()));
+                // 技能规范化名：剥掉插件限定前缀（引擎对插件技能返回 `ponytail:ponytail-audit`，
+                // 本地目录同名技能是 `ponytail-audit`）——不归一化会让同一个技能重复出现在两组。
+                const normSkillName = (name: string) => { const n = String(name ?? "").toLowerCase(); const i = n.lastIndexOf(":"); return i >= 0 ? n.slice(i + 1) : n; };
+                // 同技能装两遍（市场一次 + 本地导入一次）会产生两个目录、同名 → 只保留市场来源那条，
+                // 避免同一技能同时出现在「市场安装」与「本地导入」两张卡。
+                const dedupedLocal = (() => {
+                  const byName = new Map<string, LocalSkillEntry>();
+                  for (const entry of localSkills) {
+                    const key = normSkillName(entry.name);
+                    const existing = byName.get(key);
+                    const isMarket = entry.source === "cocoloop" || entry.source === "skillhub";
+                    if (!existing) { byName.set(key, entry); continue; }
+                    const existingIsMarket = existing.source === "cocoloop" || existing.source === "skillhub";
+                    if (isMarket && !existingIsMarket) byName.set(key, entry);
+                  }
+                  return [...byName.values()];
+                })();
+                const localNames = new Set(dedupedLocal.map((entry) => normSkillName(entry.name)));
+                const localByPath = new Set(dedupedLocal.map((entry) => entry.path));
+                const builtinSkills = settingsResources.skills.filter((entry: any) => !localByPath.has(entry.path) && !localNames.has(normSkillName(entry.name ?? "")));
                 const keyword = skillManageSearch.trim().toLowerCase();
                 const match = (skill: { name: string; description: string }) => !keyword || `${skill.name} ${skill.description}`.toLowerCase().includes(keyword);
-                const marketInstalled = localSkills.filter((entry) => (entry.source === "cocoloop" || entry.source === "skillhub") && match(entry));
-                const localInstalled = localSkills.filter((entry) => entry.source !== "cocoloop" && match(entry));
+                const marketInstalled = dedupedLocal.filter((entry) => (entry.source === "cocoloop" || entry.source === "skillhub") && match(entry));
+                const localInstalled = dedupedLocal.filter((entry) => entry.source !== "cocoloop" && entry.source !== "skillhub" && match(entry));
                 const shownBuiltin = builtinSkills.filter((skill: any) => match({ name: skill.name, description: skill.description ?? "" }));
                 // 批量只处理本机可移除的技能，内置技能由引擎提供、不支持停用
                 const manageable = [...marketInstalled, ...localInstalled];
