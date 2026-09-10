@@ -6859,6 +6859,10 @@ export default function App() {
   // 会话消息缓存（复刻 WorkBuddy 切换体验）：打开过的会话缓存 thread，切回时秒开渲染，
   // 后台 thread/resume 刷新；有实质变化才替换，避免无感闪烁。
   const threadCacheRef = useRef(new Map<string, Thread>());
+  // 会话真实绑定的供应商登记表（resume 响应回带 modelProvider 时记录）。发送前据此判断
+  // 「会话绑定的供应商 ≠ 当前激活供应商」→ 自动迁移，防止引擎全局 Key 换了而旧会话还
+  // 向旧供应商发请求（401 无限重连）。不依赖 UI 下拉框（下拉可能已被切换动作改掉）。
+  const threadProviderRef = useRef(new Map<string, string>());
   // 无缓存切换时的恢复遮罩：盖住旧内容直到新会话渲染完成（不再让旧内容残留+跳顶）；
   // 缓存秒开也走遮罩——给"刚切过去就在最新消息位置"的视觉过渡，避免内容直接落底的突兀
   const [switchingThreadId, setSwitchingThreadId] = useState<string | null>(null);
@@ -9509,6 +9513,8 @@ const commandMatches = useMemo(() => {
       };
       await window.codex.request("thread/resume", resumeParams);
       await updateThreadSettings({ model: target.model, ...(officialTarget ? {} : { model_provider: target.provider }), effort: null });
+      // 迁移成功：更新会话绑定供应商登记表（发送前检测依赖此表）
+      threadProviderRef.current.set(threadId, target.provider);
       return true;
     } catch { return false; }
   }
@@ -10870,6 +10876,8 @@ const commandMatches = useMemo(() => {
       // 回调——markSettled 会重置 fade-out timer，确保遮罩等到所有路径都跳完才淡出）
       requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled)));
       const resultProvider = String(result.modelProvider ?? result.model_provider ?? customModel?.provider ?? "custom");
+      // 记录会话真实绑定的供应商（迁移成功后 migrateThreadToProvider 会覆盖为新值）
+      threadProviderRef.current.set(id, resultProvider);
       const resultModel = String(result.model ?? "").trim();
       const restoredModel = storedModel || (resultModel ? `custom:${resultProvider}:${resultModel}` : modelId || localStorage.getItem("default-model") || "");
       if (restoredModel) {
@@ -11129,34 +11137,33 @@ const commandMatches = useMemo(() => {
       return;
     }
     // 打开一个使用其他供应商的历史会话时，仅恢复下拉框选择，不立刻重启引擎。
-    // 真正发送前：若会话绑定供应商 ≠ 当前激活供应商（旧供应商可能已停用/已切走，
-    // 引擎全局 key 已换），直接发会因 key 错配 401 无限重连——自动把会话迁移到当前
-    // 激活供应商（thread/resume），不再自动切回旧供应商（原 setProviderModel 会把
-    // 激活又切回旧 key，造成 key 来回换）。
-    if (selectedModel.provider && customModel && selectedModel.provider !== customModel.provider) {
-      if (thread?.id) {
-        const migrated = await migrateThreadToProvider(thread.id, customModel);
-        if (!migrated) {
-          showToast("暂时不能发送", `该会话绑定 ${selectedModel.providerName ?? "旧供应商"}，迁移到 ${customModel.name} 失败；请新建会话或先切换回该供应商`);
-          return;
-        }
-        setModelId(`custom:${customModel.provider}:${customModel.model}`);
-        localStorage.setItem("default-model", `custom:${customModel.provider}:${customModel.model}`);
-        saveThreadModel(thread.id, `custom:${customModel.provider}:${customModel.model}`);
-        showToast("会话已迁移", `该会话已切换到 ${customModel.name} · ${customModel.model}，可正常发送`);
-      } else {
-        // 无当前线程（欢迎页直接选模型）：把激活切到所选供应商
-        if (runningThreadIdsRef.current.size > 0) {
-          showToast("暂时不能发送", "该会话使用另一家模型供应商，当前还有任务运行；请等待任务完成或改选当前供应商的模型");
-          return;
-        }
+    // 真正发送前：若会话真实绑定的供应商 ≠ 当前激活供应商（引擎全局 Key 已换），
+    // 直接发会因 Key 错配 401 无限重连——自动把会话迁移到当前激活供应商。
+    // 判定依据是 threadProviderRef 登记表（resume 时记录的线程真实绑定），
+    // 不是 UI 下拉框（下拉可能已被切换动作改成新供应商，比不出差异）。
+    {
+      const currentThread = thread;
+      let boundProvider = currentThread?.id ? threadProviderRef.current.get(currentThread.id) : undefined;
+      // 登记表无记录（本次启动还没 resume 过该会话）：轻量 resume（不带历史）问引擎要真实绑定，
+      // 防止「切换供应商后不重开会话直接发」漏检——引擎是绑定的唯一权威。
+      if (currentThread?.id && !boundProvider) {
         try {
-          const updated = await window.codex.setProviderModel({ provider: selectedModel.provider, model: selectedModel.model });
-          setCustomModel(updated);
-        } catch (error: any) {
-          setNotice(`切换模型供应商失败：${error.message}`);
+          const probe = await window.codex.request("thread/resume", { threadId: currentThread.id, excludeTurns: true });
+          const probed = String(probe?.modelProvider ?? probe?.model_provider ?? "").trim();
+          if (probed) { threadProviderRef.current.set(currentThread.id, probed); boundProvider = probed; }
+        } catch { /* 探测失败按无绑定处理，走正常发送 */ }
+      }
+      if (boundProvider && customModel && boundProvider !== customModel.provider && currentThread?.id) {
+        const migrated = await migrateThreadToProvider(currentThread.id, customModel);
+        if (!migrated) {
+          showToast("暂时不能发送", `该会话绑定 ${boundProvider}（已不是当前供应商），迁移到 ${customModel.name} 失败；请新建会话或切换回该供应商`);
           return;
         }
+        const selectedId = `custom:${customModel.provider}:${customModel.model}`;
+        setModelId(selectedId);
+        localStorage.setItem("default-model", selectedId);
+        saveThreadModel(currentThread.id, selectedId);
+        showToast("会话已迁移", `该会话已切换到 ${customModel.name} · ${customModel.model}，可正常发送`);
       }
     }
     if (!workspace) {
