@@ -4788,7 +4788,17 @@ function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWindow, h
   if (item.type === "contextCompaction") {
     // 压缩结果常驻为「两边虚线 + 中间文字」分隔线（与压缩进行中的过渡态同一形态），
     // 不再渲染「上下文压缩 · 完成」工具卡——那张卡用户明确不要。
+    // 进行中的压缩必须渲染成转圈「正在压缩上下文」：此前 inProgress 也走成功分支，
+    // 时间线里先冒出一条假「上下文压缩成功」，下面又挂着「正在压缩上下文」，自相矛盾（用户实测）。
     const failed = item.status === "error" || Boolean(item.failure?.message);
+    const running = !failed && (item.status === "inProgress" || item.status === "running");
+    if (running) return (
+      <div className="compact-divider compact-divider--running" role="status" aria-label="上下文压缩状态">
+        <i className="compact-divider-line" aria-hidden />
+        <span className="compact-divider-text"><LoaderCircle size={13} className="spin" />正在压缩上下文</span>
+        <i className="compact-divider-line" aria-hidden />
+      </div>
+    );
     return (
       <div className={`compact-divider ${failed ? "compact-divider--error" : "compact-divider--success"}`} role="status" aria-label="上下文压缩状态">
         <i className="compact-divider-line" aria-hidden />
@@ -12251,7 +12261,7 @@ const commandMatches = useMemo(() => {
               <i className="compact-divider-line" aria-hidden />
             </div>
           )}
-          {compactToast && compactToast.state === "running" && compactToast.threadId === thread?.id && (
+          {compactToast && compactToast.state === "running" && compactToast.threadId === thread?.id && !(thread?.turns ?? []).some((t) => (t.items ?? []).some((i) => i.type === "contextCompaction" && (i.status === "inProgress" || i.status === "running"))) && (
             <div className={`compact-divider compact-divider--running`} role="status" aria-label="上下文压缩状态">
               <i className="compact-divider-line" aria-hidden />
               <span className="compact-divider-text">
