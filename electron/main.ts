@@ -4660,6 +4660,32 @@ ipcMain.handle("clipboard:write-image", async (_event, filePath: string) => {
   await clipboard.write([new ClipboardItem({ "image/png": new Blob([new Uint8Array(png)], { type: "image/png" }) })]);
   return true;
 });
+/** 读取剪贴板里的文件路径（渲染层 clipboardData.files/uri-list 拿不到时的兜底）：
+ *  Windows 复制文件进剪贴板是 CF_HDROP，Chromium 渲染层有时不暴露，但主进程
+ *  clipboard.read() 的 ClipboardItem 带 text/uri-list（file:/// 列表）。 */
+ipcMain.handle("clipboard:read-files", async () => {
+  const items = await clipboard.read();
+  const paths: string[] = [];
+  for (const item of items) {
+    if (!item.types.includes("text/uri-list")) continue;
+    try {
+      const payload = await item.getType("text/uri-list");
+      if (!(payload instanceof Blob)) continue;
+      const text = await payload.text();
+      for (const line of text.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const url = new URL(trimmed);
+          if (url.protocol === "file:") {
+            paths.push(decodeURIComponent(trimmed.slice("file://".length)).replace(/\//g, "\\").replace(/^\\/, ""));
+          }
+        } catch { /* 非 URL 行跳过 */ }
+      }
+    } catch { /* 单个 item 读取失败不影响其他 */ }
+  }
+  return paths;
+});
 ipcMain.handle("custom-model:read", async () => publicCustomModel(await readCustomModel()));
 ipcMain.handle("custom-model:probe", (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) => probeCustomModel(input));
 ipcMain.handle("custom-model:save", async (_event, input: { provider: string; name: string; model: string; baseUrl: string; contextWindow?: string | number; wireApi?: "responses" | "chat"; apiKey?: string; models?: ProviderModel[]; enabled?: boolean }) => {
