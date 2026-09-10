@@ -3842,7 +3842,7 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
               <div className="relay-plan-card-foot">
                 {a.active
                   ? <span className="relay-plan-live"><Check size={11} />当前生效</span>
-                  : <button className="secondary-setting" disabled={working !== "" || a.disabled || Boolean(activeProvider)} title={activeProvider ? `已有供应商生效，请先停用再设为当前` : (a.disabled ? "已停用的账号不能设为当前，请先在卡片上启用" : undefined)} onClick={(event) => { event.stopPropagation(); void switchAccount(a.id); }}>{working === `acc${a.id}` ? <Spinner /> : <Play size={13} />}设为当前</button>}
+                  : <button className="secondary-setting" disabled={working !== "" || a.disabled || (Boolean(activeProvider) && !isActiveProvider)} title={activeProvider && !isActiveProvider ? `已有供应商生效，请先停用再设为当前` : (a.disabled ? "已停用的账号不能设为当前，请先在卡片上启用" : undefined)} onClick={(event) => { event.stopPropagation(); void switchAccount(a.id); }}>{working === `acc${a.id}` ? <Spinner /> : <Play size={13} />}设为当前</button>}
                 <button className="secondary-setting" onClick={(event) => { event.stopPropagation(); void openManage(a); }}><Settings2 size={13} />管理</button>
                 <button className="secondary-setting relay-account-remove" title="删除账号" disabled={working !== ""} onClick={(event) => { event.stopPropagation(); void removeAccount(a.id); }}><LogOut size={13} /></button>
               </div>
