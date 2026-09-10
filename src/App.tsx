@@ -9166,16 +9166,29 @@ const commandMatches = useMemo(() => {
         setInterrupting(false);
         markThreadStopped(params.threadId);
         // error 通知也可能是限流（引擎 RPC 直接报错）：同样进入自动重试
-        const errorMessage = params.error?.message ?? params.message ?? "";
+        const rawError = params.error?.message ?? params.message ?? "";
+        const details = String(params.error?.additionalDetails ?? params.additionalDetails ?? "");
+        // 引擎的 Reconnecting 是英文原始报错，直接显示不友好——翻译成中文提醒：
+        // 401=Key 错配（供应商切换后旧会话），流中断=网关不稳（pptoken 常见），均会自动重试。
+        const reconnectMatch = rawError.match(/^Reconnecting\.\.\.\s*(\d+)\/(\d+)/);
+        let errorMessage = rawError;
+        if (reconnectMatch) {
+          const no = reconnectMatch[1], total = reconnectMatch[2];
+          if (details.includes("401")) errorMessage = `第 ${no}/${total} 次自动重试：供应商认证失败（API Key 不匹配）。若刚切换过供应商，请停止后重发以自动迁移会话；仍失败请检查该供应商的 Key`;
+          else if (/stream (dis)?connected|closed before/i.test(details) || details.includes("httpStatusCode\":null")) errorMessage = `第 ${no}/${total} 次自动重试：上游网关响应中断（模型服务不稳）。引擎正在自动重连，多数情况下稍等即可恢复；持续失败建议换模型或换供应商`;
+          else errorMessage = `第 ${no}/${total} 次自动重试：连接中断，引擎正在自动恢复……`;
+        } else if (details.includes("401") && /API key format is incorrect/i.test(details)) {
+          errorMessage = "供应商认证失败（API Key 与服务商不匹配）：当前供应商的 Key 被发到了另一个服务商。请停止后重发（会自动迁移会话），或检查供应商配置";
+        }
         if (errorMessage && isRateLimitError(errorMessage) && retryContextRef.current?.threadId === params.threadId) {
           scheduleRateLimitRetry(rateLimitAttemptRef.current + 1);
         } else if (params.threadId && retryContextRef.current?.threadId === params.threadId) {
           cancelRateLimitRetry(true);
         }
         if (compactPendingRef.current.delete(String(params.threadId ?? threadRef.current?.id ?? ""))) {
-          setCompactEventState("error", params.error?.message ?? params.message);
+          setCompactEventState("error", errorMessage);
         }
-        setNotice(params.error?.message ?? params.message ?? "Codex 请求失败");
+        setNotice(errorMessage || "Codex 请求失败");
       } else if (event.method === "serverRequest/resolved") {
         setPending((current) => current.filter((entry) => entry.id !== params.requestId));
       } else if (method === "thread/name/updated") {
