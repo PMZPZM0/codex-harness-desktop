@@ -582,6 +582,44 @@ async function writeModelCatalogToml(entry: CustomModelFile): Promise<string> {
 }
 
 /** 把某个供应商配置写进 codex-home/config.toml 并重启 Codex 服务 */
+/** 扫描历史会话存档，收集所有被引用过的 model_provider id。
+ *  用途：这些 id 必须继续在 config.toml 里有段（否则旧会话 resume 报 "Model provider not found"），
+ *  且必须指向当前生效供应商——见 applyCustomModel 里「旧会话永远走当前供应商」的实证说明。
+ *  只读每个 rollout 的首行（session_meta），损坏文件静默跳过；结果缓存 60s，避免每次切换都全盘扫描。 */
+let sessionProviderIdsCache: { at: number; ids: Set<string> } | null = null;
+async function collectSessionProviderIds(): Promise<Set<string>> {
+  const now = Date.now();
+  if (sessionProviderIdsCache && now - sessionProviderIdsCache.at < 60_000) return sessionProviderIdsCache.ids;
+  const ids = new Set<string>();
+  const stack = [path.join(codexHome, "sessions")];
+  let visited = 0;
+  while (stack.length && visited < 4000) {
+    const dir = stack.pop() as string;
+    let entries: any[] = [];
+    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { continue; }
+    for (const dirEntry of entries) {
+      const full = path.join(dir, dirEntry.name);
+      if (dirEntry.isDirectory()) { stack.push(full); continue; }
+      if (!dirEntry.name.endsWith(".jsonl")) continue;
+      visited += 1;
+      // 只读首行（session_meta）即可拿到创建时的 model_provider，避免整文件读入
+      try {
+        const handle = await fs.open(full, "r");
+        try {
+          const buffer = Buffer.alloc(8192);
+          const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+          const firstLine = buffer.subarray(0, bytesRead).toString("utf8").split("\n")[0];
+          const parsed = JSON.parse(firstLine);
+          const id = parsed?.payload?.model_provider ?? parsed?.payload?.modelProvider;
+          if (typeof id === "string" && id.trim()) ids.add(id.trim());
+        } finally { await handle.close(); }
+      } catch { /* 空文件/损坏行：跳过 */ }
+    }
+  }
+  sessionProviderIdsCache = { at: now, ids };
+  return ids;
+}
+
 async function applyCustomModel(entry: CustomModelFile) {
   const connectors = await readConnectors();
   const mcpOverrides = await readMcpOverrides();
@@ -626,17 +664,35 @@ async function applyCustomModel(entry: CustomModelFile) {
   // （"Model provider `X` not found"→ 表现为归档/恢复后内容全空）。禁用只影响下拉可选。
   // 官方订阅是伪供应商（走引擎内置 openai + ChatGPT 登录），不写 provider 段。
   const providerEntries = isOfficialProvider ? savedProviders : [entry, ...savedProviders.filter((candidate) => candidate.provider !== entry.provider)];
+  // ── 旧会话必须永远走「当前生效供应商」（09-10 跨引擎生命周期探针实证） ──
+  // 实测结论：会话存档里的 model_provider 只记「名字」，引擎解析请求地址时只认 config.toml 里
+  // 该名字对应段的 base_url（改存档无效、改 config.toml 生效，且必须重启引擎后重新加载会话）。
+  // 而引擎进程只有一把全局 Key（= 当前生效供应商的 Key），所以「每个 id 各自指向自家网关」
+  // 是错的自洽性：旧会话拿着当前 Key 去打老网关 → 必然 401 无限重连。
+  // 正确形态：所有 id（含已删除供应商的历史 id）一律指向**当前生效供应商的地址与协议**，
+  // 名字保留用于展示/兼容引用。这样任何历史会话都必然走当前供应商，切换后原会话直接可用。
+  const activeNormalized = normalizeProvider(entry);
+  const activeBaseUrl = activeNormalized.baseUrl;
+  const activeWireApi = activeNormalized.wireApi === "chat" ? "chat" as const : "responses" as const;
+  const activeContext = activeNormalized.models?.find((model) => model.id === activeNormalized.model)?.contextWindow ?? activeNormalized.contextWindow ?? 128000;
+  // 历史会话引用过、但已从供应商列表删除的 id（如重装供应商后 id 变化）→ 补成别名段，
+  // 否则引擎解析不到会报 "Model provider not found"，会话同样打不开。
+  const knownIds = new Set(providerEntries.map((provider) => normalizeProvider(provider).provider));
+  const aliasIds = isOfficialProvider ? [] : [...(await collectSessionProviderIds())].filter((id) => !knownIds.has(id) && id && id !== entry.provider);
   const providerToml = providerEntries.flatMap((provider, index) => {
     const normalized = normalizeProvider(provider);
     const context = normalized.models?.find((model) => model.id === normalized.model)?.contextWindow ?? normalized.contextWindow ?? 128000;
     const maxOut = normalized.models?.find((model) => model.id === normalized.model)?.maxOutputTokens;
+    // 非官方模式下所有段共用当前生效供应商的地址/协议（见上方实证说明）；官方模式保持各自原值
+    const baseUrl = isOfficialProvider ? normalized.baseUrl : activeBaseUrl;
+    const wireApi = isOfficialProvider ? (normalized.wireApi === "chat" ? "chat" : "responses") : activeWireApi;
     return [
       ...(index ? [""] : []),
       `[model_providers.${escapeToml(normalized.provider)}]`,
       `name = "${escapeToml(normalized.name)}"`,
-      `base_url = "${escapeToml(normalized.baseUrl)}"`,
+      `base_url = "${escapeToml(baseUrl)}"`,
       'env_key = "CODEX_HARNESS_API_KEY"',
-      `wire_api = "${normalized.wireApi === "chat" ? "chat" : "responses"}"`,
+      `wire_api = "${wireApi}"`,
       "requires_openai_auth = false",
       // 429 限流防御（已用真实 app-server 探针实证，见 scripts/probe-provider-retries.cjs）：
       // request_max_retries=10 HTTP 请求失败（含 429）最多重试 10 次；
@@ -655,6 +711,21 @@ async function applyCustomModel(entry: CustomModelFile) {
       ...(maxOut ? [`model_max_output_tokens = ${maxOut}`] : []),
     ];
   });
+  // 已删除供应商 id 的别名段：名字沿用原名（不可考），其余与当前生效供应商完全一致
+  const aliasToml = aliasIds.flatMap((aliasId) => [
+    "",
+    `[model_providers.${escapeToml(aliasId)}]`,
+    `name = "${escapeToml(aliasId)}（历史会话别名 → 当前生效供应商）"`,
+    `base_url = "${escapeToml(activeBaseUrl)}"`,
+    'env_key = "CODEX_HARNESS_API_KEY"',
+    `wire_api = "${activeWireApi}"`,
+    "requires_openai_auth = false",
+    "request_max_retries = 10",
+    "stream_max_retries = 10",
+    "stream_idle_timeout_ms = 600000",
+    `model_auto_compact_token_limit = ${Math.round(activeContext * (appSettings.autoCompactRatio ?? 0.8))}`,
+    'model_auto_compact_token_limit_scope = "model"',
+  ]);
   // 自动化三件套不再注册为 MCP 常驻服务器：35 个工具 schema 会把每轮 prompt 撑大十几 KB，
   // 拖慢所有对话。改为按需命令行调用（nuphus-call / playwright-cli / cloakbrowser，
   // 用法见 developer_instructions），工具能力不变，上下文零占用。
@@ -670,6 +741,7 @@ async function applyCustomModel(entry: CustomModelFile) {
     developerInstructionsLine({ desktop: desktopAuto, browser: browserAuto, imagePlugin: imagePluginOn, visionPlugin: visionPluginOn, mediaCommand }),
     ...connectorToml(connectors),
     ...providerToml,
+    ...aliasToml,
     "",
     // Windows 原生沙箱：elevated 模式需要一次性管理员安装（建沙箱用户/防火墙规则），
     // harness 静默 spawn 装不了，会导致所有 exec_command "blocked by policy"。
