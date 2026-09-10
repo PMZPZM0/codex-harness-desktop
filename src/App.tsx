@@ -3389,7 +3389,7 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActive
                 <button className="secondary-setting" disabled={working !== ""} onClick={() => void loadUsage(a.email)}><RefreshCw size={13} />刷新额度</button>
                 {a.active
                   ? <button className="secondary-setting" disabled={working !== ""} onClick={() => void onActivate(OFFICIAL_MODELS)}>{working === "en" + a.id ? <Spinner /> : <Play size={13} />}重新启用</button>
-                  : <button className="secondary-setting" disabled={working !== ""} onClick={() => void enableSubscription(a.id)}>{working === "en" + a.id ? <Spinner /> : <Play size={13} />}启用订阅</button>}
+                  : <button className="secondary-setting" disabled={working !== "" || Boolean(activeProvider)} title={activeProvider ? `已有供应商「${activeProvider}」生效，请先停用再启用 OpenAI 订阅` : undefined} onClick={() => void enableSubscription(a.id)}>{working === "en" + a.id ? <Spinner /> : <Play size={13} />}启用订阅</button>}
                 <button className="secondary-setting relay-account-remove" title="删除账号" disabled={working !== ""} onClick={() => void removeAccount(a.id)}><LogOut size={13} /></button>
               </div>
               <p className="relay-center-foot">启用 = 写入引擎并重启生效，直接可对话；额度数据来自 chatgpt.com 后端（wham/usage）。</p>
@@ -3748,7 +3748,7 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
               <div className="relay-plan-card-foot">
                 {a.active
                   ? <span className="relay-plan-live"><Check size={11} />当前生效</span>
-                  : <button className="secondary-setting" disabled={working !== "" || a.disabled} title={a.disabled ? "已停用的账号不能设为当前，请先在卡片上启用" : undefined} onClick={(event) => { event.stopPropagation(); void switchAccount(a.id); }}>{working === `acc${a.id}` ? <Spinner /> : <Play size={13} />}设为当前</button>}
+                  : <button className="secondary-setting" disabled={working !== "" || a.disabled || Boolean(activeProvider)} title={activeProvider ? `已有供应商生效，请先停用再设为当前` : (a.disabled ? "已停用的账号不能设为当前，请先在卡片上启用" : undefined)} onClick={(event) => { event.stopPropagation(); void switchAccount(a.id); }}>{working === `acc${a.id}` ? <Spinner /> : <Play size={13} />}设为当前</button>}
                 <button className="secondary-setting" onClick={(event) => { event.stopPropagation(); void openManage(a); }}><Settings2 size={13} />管理</button>
                 <button className="secondary-setting relay-account-remove" title="删除账号" disabled={working !== ""} onClick={(event) => { event.stopPropagation(); void removeAccount(a.id); }}><LogOut size={13} /></button>
               </div>
@@ -9366,6 +9366,11 @@ const commandMatches = useMemo(() => {
         if (currentEvents.some((event) => event.hookKey === `stream-stale-${staleTurnId}`)) return currentEvents;
         return [...currentEvents, { id: crypto.randomUUID(), title: "回复等待中", text: "超过 90 秒没有收到新内容，正在与引擎校对任务状态……（若上游卡住，可点输入框旁的停止按钮后重发）", tone: "warning", hookKey: `stream-stale-${staleTurnId}` }] as any;
       });
+      // 提醒不常驻：无论校对是否确认（上游真卡住时 resume 对不上会一直挂着），25s 后自动撤掉，
+      // 避免「回复等待中」占位卡在时间线里不好看；引擎恢复/校对确认时下方也会主动清除。
+      window.setTimeout(() => {
+        setSystemEvents((currentEvents) => currentEvents.filter((event) => event.hookKey !== `stream-stale-${staleTurnId}`));
+      }, 25_000);
       void window.codex.request("thread/resume", { threadId: current.id, excludeTurns: false }).then((result) => {
         if (!result?.thread) return;
         const serverLast = result.thread.turns[result.thread.turns.length - 1];
@@ -9418,25 +9423,27 @@ const commandMatches = useMemo(() => {
       if (currentThreadId) saveThreadModel(currentThreadId, nextId);
       else localStorage.setItem("default-model", nextId);
     };
-    // 跨供应商切换 = 切换全局 API Key，引擎必须重启才生效。为避免打断正在运行的会话
-    // （原会话继续可用），采用「延迟生效」：只保存配置（apply:false 不重启引擎）。
-    // 引擎空闲（无任何会话在运行）→ 立即自动重启生效；有任务在跑 → 留 banner 待用户
-    // 点「重启生效」或下次启动时生效；生效前消息继续用原供应商。
-    // 一次只生效一个供应商：pendingRestart 是唯一的，连续切换只保留最后一次。
+    // 跨供应商切换 = 切换全局 API Key，必须重启引擎生效。用户要求「切换必须重启应用」：
+    // 弹窗确认后立即重启引擎（正在运行的任务会中断，会话历史保留），并把当前会话迁移到
+    // 新供应商（thread/resume 官方通道，重启后原会话直接用新供应商模型继续聊）。
     if (provider && customModel && provider !== customModel.provider) {
+      if (!(await openAppConfirm("切换供应商", `将切换到 ${nextLabel || model} 并重启引擎生效。\n正在运行的任务会被中断，当前会话历史完整保留、自动迁移到新供应商。\n是否继续？`, "切换并重启"))) return;
       try {
-        const prevProvider = customModel.provider;
-        const prevModel = customModel.model;
-        await window.codex.setProviderModel({ provider, model, apply: false });
-        const pending = { provider, model, label: nextLabel || model, prevProvider, prevModel };
-        if (runningThreadIdsRef.current.size === 0) {
-          // 引擎空闲：自动重启生效（不弹 banner，避免一闪而过）
-          void applyPendingRestart(pending);
-          showToast("已切换供应商", `正在重启生效：${nextLabel || model}（当前无运行任务，自动完成）`);
+        const updated = await window.codex.setProviderModel({ provider, model }); // apply 默认 true → 立即重启引擎
+        setCustomModel(updated);
+        const selectedId = `custom:${updated.provider}:${updated.model}`;
+        saveSelection(selectedId);
+        localStorage.setItem("default-model", selectedId);
+        if (threadRef.current?.id) {
+          const migrated = await migrateThreadToProvider(threadRef.current.id, {
+            provider: updated.provider, model: updated.model, name: updated.name, baseUrl: updated.baseUrl, wireApi: updated.wireApi,
+          });
+          if (migrated) showToast("已切换供应商", `当前会话已迁移到 ${updated.name} · ${updated.model}，历史完整保留`);
+          else showToast("已切换供应商", `新会话将使用 ${updated.name} · ${updated.model}（当前会话迁移失败，历史保留在原会话）`);
         } else {
-          setPendingRestart(pending);
-          showToast("已选择新供应商", `已切换到 ${nextLabel || model}，点「重启生效」后生效；当前会话继续使用原供应商`);
+          await updateThreadSettings({ model: updated.model, ...(updated.provider === "openai-official" ? {} : { model_provider: updated.provider }), effort: null });
         }
+        setNotice(`已切换到 ${updated.name} · ${updated.model}`);
         return;
       } catch (error: any) {
         setNotice(`切换供应商失败：${error.message}`);
@@ -13104,7 +13111,7 @@ const commandMatches = useMemo(() => {
                           : <span className="provider-state-badge off">已停用</span>}
                         {pseudoPptokenForm
                           ? <button className="provider-state-btn" onClick={() => setPptokenCardOff(!pptokenCardOff)}>{pptokenCardOff ? "启用展示" : "停用展示"}</button>
-                          : editingProvider && <button className="provider-state-btn" disabled={savingSettings} onClick={() => void setProviderEnabled(editingProvider, customDraft.enabled === false)}>{customDraft.enabled === false ? "启用" : "禁用"}</button>}
+                          : editingProvider && <button className="provider-state-btn" disabled={savingSettings || (customDraft.enabled === false && customModel != null && customModel.provider !== editingProvider)} title={(customDraft.enabled === false && customModel && customModel.provider !== editingProvider) ? `已有供应商「${customModel.name}」生效，请先停用它再启用` : undefined} onClick={() => void setProviderEnabled(editingProvider, customDraft.enabled === false)}>{customDraft.enabled === false ? "启用" : "禁用"}</button>}
                       </>
                     );
                   })()}
@@ -13173,7 +13180,10 @@ const commandMatches = useMemo(() => {
                   {providerStatus && <p className={`model-probe-status ${providerStatus.startsWith("连接失败") || providerStatus.includes("连接失败") ? "bad" : "ok"}`}>{providerStatus}</p>}
                 </div>
                 <div className="settings-actions"><span>配置后可在聊天时选择使用。带 ⚡ 可测试模型连通。</span>
-                  <button className="primary-setting" disabled={savingSettings || !customDraft.baseUrl} onClick={() => void saveCustomModel()}>{savingSettings ? <Spinner /> : <Check size={15} />}保存</button>
+                  <button className="primary-setting" disabled={savingSettings || !customDraft.baseUrl} onClick={() => void (async () => {
+                    // 用户要求：供应商保存后强制重启生效 + 弹窗提醒（正在运行的任务会中断）
+                    if (await openAppConfirm("保存供应商", "保存后引擎将重启使新配置生效，正在运行的任务会中断（会话历史保留）。\n是否继续？", "保存并重启")) { void saveCustomModel(); }
+                  })()}>{savingSettings ? <Spinner /> : <Check size={15} />}保存</button>
                 </div>
               </div>
               {modelEditor && <div className="modal-backdrop model-editor-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setModelEditor(null); }}>
