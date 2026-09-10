@@ -6016,10 +6016,6 @@ export default function App() {
   const [files, setFiles] = useState<string[]>([]);
   const [skillMenuOpen, setSkillMenuOpen] = useState(false);
   const [skillQuery, setSkillQuery] = useState("");
-  // 输入框技能预提醒：空输入框时提示「# 可引用技能」，点「不再提示」后长期关闭（localStorage 记忆）。
-  const [skillHintDismissed, setSkillHintDismissed] = useState(() => {
-    try { return localStorage.getItem("skill-hint-dismissed") === "1"; } catch { return false; }
-  });
   const [selectedSkills, setSelectedSkills] = useState<{ name: string; description: string }[]>([]);
   const [localSkills, setLocalSkills] = useState<LocalSkillEntry[]>([]);
   const [marketSkills, setMarketSkills] = useState<MarketSkillEntry[]>([]);
@@ -10009,17 +10005,6 @@ const commandMatches = useMemo(() => {
     requestAnimationFrame(() => composerInputRef.current?.focus());
   }
 
-  /** 技能预提醒：点提示条 → 输入框置 # 并聚焦，直接展开「#」技能面板（面板只在 # 打头时出现，
-   *  所以这里用整条替换而不是追加）。 */
-  function promptOpenSkillPanel() {
-    setPrompt("#");
-    requestAnimationFrame(() => composerInputRef.current?.focus());
-  }
-  function dismissSkillHint() {
-    setSkillHintDismissed(true);
-    try { localStorage.setItem("skill-hint-dismissed", "1"); } catch { /* ignore */ }
-  }
-
   function onPromptChange(value: string) {
     setPrompt(value);
     const at = value.lastIndexOf("@");
@@ -12310,15 +12295,6 @@ const commandMatches = useMemo(() => {
               <button type="button" title="取消引用" onClick={cancelQuote}><X size={13} /></button>
             </div>}
             {(contextItems.length > 0 || selectedSkills.length > 0) && <div className="context-chip-row" aria-label="已引用上下文与技能">{contextItems.map((item) => <span className="context-chip" key={item.id}><Quote size={12} /><b>{item.role}</b><em>{item.text}</em><button type="button" title="移除引用" onClick={() => removeContextItem(item.id)}><X size={12} /></button></span>)}{selectedSkills.map((skill) => <span className="context-chip skill-chip" key={skill.name}><Zap size={12} /><b>技能</b><em>{skill.name}</em><button type="button" title="移除技能" onClick={() => setSelectedSkills((current) => current.filter((entry) => entry.name !== skill.name))}><X size={12} /></button></span>)}</div>}
-            {/* 技能预提醒：空输入框时提示可用技能与「#」触发方式，可一键展开技能面板 / 永久关闭 */}
-            {!skillHintDismissed && !prompt.trim() && mergedSkillCatalog.length > 0 && !skillCommandMatches.length && (
-              <div className="skill-hint-bar" role="note" aria-label="技能使用提示">
-                <Zap size={12} className="skill-hint-icon" />
-                <span className="skill-hint-text">输入 <code>#</code> 可引用技能（{mergedSkillCatalog.length} 个可用，支持中文搜索）</span>
-                <button type="button" className="skill-hint-open" onClick={promptOpenSkillPanel}>展开技能列表</button>
-                <button type="button" className="skill-hint-close" title="不再提示" aria-label="不再提示" onClick={dismissSkillHint}><X size={12} /></button>
-              </div>
-            )}
             <div className="composer-input-shell">
               {(planArmed || planRunning) && <button type="button" className={`mode-chip-float chip-plan ${planRunning ? "running" : ""}`} title={planRunning ? "计划模式 · 方案生成中（点击中断）" : "计划模式 · 下一条消息先出方案（点击退出）"} onClick={() => { if (planRunning) { void interrupt(); } else { planOnceRef.current = false; setPlanArmed(false); showToast("计划模式已退出", "下一条消息按普通模式执行"); } }}><ListChecks size={13} /></button>}
               {thread && goalText && goalStatus !== "complete" && <button type="button" className="mode-chip-float chip-goal" title="目标模式 · 自动推进中（点击停止）" onClick={stopGoalLoop}><Target size={13} /></button>}
