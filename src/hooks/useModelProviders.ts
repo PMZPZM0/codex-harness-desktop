@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DEFAULT_EFFORT } from "../lib/effort";
 import { matchModelSpec } from "../lib/model-specs";
 
@@ -93,6 +93,14 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
     void window.codex.listCustomModels()
       .then(({ providers, current }) => { setProvidersList(providers); setCurrentProvider(current); })
       .catch(() => undefined);
+  }, []);
+
+  // 引入 refreshActive：供外部在设置页打开等时机刷新生效供应商（防状态过期导致互斥误判）
+  const refreshActive = useCallback(() => {
+    void window.codex.listCustomModels()
+      .then(({ providers, current }) => { setProvidersList(providers); setCurrentProvider(current); })
+      .catch(() => undefined);
+    void window.codex.getCustomModel().then((result) => { setCustomModel(result); }).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -291,8 +299,20 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
     try {
       const updated = await window.codex.setProviderEnabled({ provider: providerId, enabled });
       setProvidersList((current) => current.map((p) => p.provider === providerId ? { ...p, enabled: updated.enabled } : p));
-      if (enabled) setCurrentProvider(providerId); else if (currentProvider === providerId) setCurrentProvider(null);
-      setCustomDraft((current) => current.provider === providerId ? { ...current, enabled: updated.enabled ?? true } : current);
+      if (enabled) {
+        setCurrentProvider(providerId);
+        // 启用即生效（引擎层已互斥禁用其他供应商）：同步 customModel，否则中转站/OpenAI
+        // 页的互斥判断还看着旧值，出现「全禁用死锁」——谁都开不了
+        setCustomModel(updated);
+        setCustomDraft((current) => ({ ...current, enabled: updated.enabled ?? true }));
+      } else {
+        if (currentProvider === providerId) {
+          setCurrentProvider(null);
+          // 停用当前生效供应商：清空生效状态（custom-model.json 已写 null），解锁其他供应商的启用
+          setCustomModel(null);
+        }
+        setCustomDraft((current) => current.provider === providerId ? { ...current, enabled: updated.enabled ?? true } : current);
+      }
       onNotice(enabled ? `已启用 ${updated.name}` : `已禁用 ${updated.name}`);
     } catch (error: any) {
       onNotice(error.message);
@@ -320,6 +340,7 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
     customDraft,
     setCustomDraft,
     providersList,
+    refreshActive,
     currentProvider,
     editingProvider,
     setEditingProvider,
