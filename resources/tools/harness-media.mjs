@@ -23,6 +23,35 @@ function loadConfig() {
 // 因此主进程在保存配置时同时写一份「引擎可读」的明文密钥到 builtin-plugins.json。
 function readStdinText() { try { return fs.readFileSync(0, "utf8"); } catch { return ""; } }
 
+// 生图可选参数（内置示例）：
+//   --size 2160x2880 | --preset 34-2k | --quality high | --model gpt-image-2-4k
+//   --ref 参考图.png（可多个，自动改走 images/edits 改图）| --n 1 | --out 输出路径
+// 模型默认取插件配置（设置 → 插件 → 内置插件的「模型」项），--model 只在临时换档位时用，不要拿它当默认。
+// 部分 SKU 会静默忽略 size（如 sunburst 固定约 1086x1448），此时输出会带 warning 字段。
+const PRESETS = {
+  "11-1k": "1024x1024", "11-2k": "2048x2048",
+  "34-1k": "1152x1536", "34-2k": "2160x2880", "34-max": "2448x3264",
+  "43-2k": "2880x2160", "169-2k": "2560x1440", "169-4k": "3840x2160",
+};
+function parseOptions(args) {
+  const o = { ref: [] };
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--ref") { while (args[i + 1] && !args[i + 1].startsWith("--")) o.ref.push(args[++i]); }
+    else if (a.startsWith("--")) { const v = args[i + 1]; o[a.slice(2)] = !v || v.startsWith("--") ? true : args[++i]; }
+    else o.prompt = (o.prompt ? o.prompt + " " : "") + a;
+  }
+  if (o.preset) o.size = o.size || PRESETS[o.preset];
+  return o;
+}
+function checkSize(size) {
+  const [w, h] = String(size).split("x").map(Number);
+  if (!w || !h || w % 16 || h % 16) throw new Error(`size 宽高必须是 16 的倍数: ${size}`);
+  if (Math.max(w, h) / Math.min(w, h) > 3) throw new Error(`size 比例不能超过 3:1: ${size}`);
+  if (w * h < 655360 || w * h > 8294400) throw new Error(`size 像素需在 655360-8294400 之间: ${size}`);
+  return `${w}x${h}`;
+}
+
 /** 从 data URL / 托管 URL / 响应字段推断图片扩展名（缺省 .png） */
 function guessImageExt(url, item) {
   const fromMime = (mime) => {
@@ -46,7 +75,9 @@ async function main() {
   const [kind, ...rest] = process.argv.slice(2);
   const cfg = loadConfig();
   if (kind === "image") {
-    const prompt = rest.join(" ").trim() || readStdinText().trim();
+    const opt = parseOptions(rest);
+    if (opt.help) { console.log(JSON.stringify({ 用法: 'harness-media.mjs image "提示词" [选项]', 选项: ["--size 2160x2880", "--preset 34-2k", "--quality high", "--model gpt-image-2-4k", "--ref 参考图.png", "--n 1", "--out 输出路径"], 预设: PRESETS, 提示: "模型默认跟随插件配置（下拉框值），--model 仅临时覆盖；输出若带 warning 说明该 SKU 不支持所请求的尺寸" }, null, 1)); return; }
+    const prompt = (opt.prompt || "").trim() || readStdinText().trim();
     const conf = cfg.image;
     if (!conf || conf.enabled === false || !conf.baseUrl || !conf.apiKey || !conf.model) {
       console.error(JSON.stringify({ error: "生图插件未配置：请到 设置 → 插件 → 内置插件 完成「生图插件」配置" }));
@@ -54,13 +85,25 @@ async function main() {
     }
     if (!prompt) { console.error(JSON.stringify({ error: "缺少图片描述（prompt）" })); process.exit(2); }
     const base = conf.baseUrl.trim().replace(/\/$/, "");
-    const endpoint = /\/images\/generations$/.test(base) ? base : base + "/images/generations";
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { Authorization: "Bearer " + conf.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: conf.model, prompt, n: 1 }),
-      signal: AbortSignal.timeout(300_000),
-    });
+    const root = base.replace(/\/images\/(generations|edits)$/, "");
+    const endpoint = root + (opt.ref.length ? "/images/edits" : "/images/generations");
+    const fields = { model: opt.model || conf.model, prompt, n: String(opt.n || 1) };
+    if (opt.size) fields.size = checkSize(opt.size);
+    if (opt.quality) fields.quality = opt.quality;
+    let response;
+    if (opt.ref.length) {
+      const form = new FormData();
+      for (const [k, v] of Object.entries(fields)) form.append(k, v);
+      for (const [i, p] of opt.ref.entries()) form.append("image", new Blob([fs.readFileSync(p)], { type: /\.jpe?g$/i.test(p) ? "image/jpeg" : "image/png" }), "ref" + i + ".png");
+      response = await fetch(endpoint, { method: "POST", headers: { Authorization: "Bearer " + conf.apiKey }, body: form, signal: AbortSignal.timeout(600_000) });
+    } else {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: { Authorization: "Bearer " + conf.apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify(Object.assign({}, fields, { n: Number(fields.n) })),
+        signal: AbortSignal.timeout(300_000),
+      });
+    }
     if (!response.ok) {
       const detail = await response.text();
       let hint;
@@ -75,9 +118,10 @@ async function main() {
     // 下载存到 userData/images/（data URL 直接解码落盘），返回 path（本地持久文件，推荐引用）
     // + url（原始托管地址，可能很快失效）。落盘失败不影响返回原始 url。
     let savedPath = "";
+    let actualPx = "";
     try {
       const ext = guessImageExt(url, item);
-      const file = path.join(userData, "images", `codex-harness-${Date.now()}${ext}`);
+      const file = opt.out ? path.resolve(opt.out) : path.join(userData, "images", `codex-harness-${Date.now()}${ext}`);
       // 注意：这里 fs 是 node:fs（回调式 API），不传 callback 会同步抛 TypeError——用同步方法
       fs.mkdirSync(path.dirname(file), { recursive: true });
       if (/^data:/i.test(url)) {
@@ -87,11 +131,21 @@ async function main() {
         if (!imgRes.ok) throw new Error(`HTTP ${imgRes.status}`);
         fs.writeFileSync(file, Buffer.from(await imgRes.arrayBuffer()));
       }
+      if (opt.size) {
+        // 网关可能虚报 size，用 PNG 头里的真实宽高做校验
+        const fd = fs.openSync(file, "r"); const head = Buffer.alloc(33);
+        fs.readSync(fd, head, 0, 33, 0); fs.closeSync(fd);
+        if (head.subarray(1, 4).toString() === "PNG") actualPx = head.readUInt32BE(16) + "x" + head.readUInt32BE(20);
+      }
       if (fs.existsSync(file)) savedPath = file;
     } catch (error) { console.error(`[harness-media] 图片落盘失败（不影响返回，仍给原始 url）：${error?.message ?? error}`); }
+    const actualSize = actualPx || data?.size || "";
+    const warning = opt.size && actualSize && actualSize !== fields.size
+      ? `模型 ${fields.model} 实际输出 ${actualSize}，与请求的 ${fields.size} 不符：该档位不支持此尺寸（网关会虚报 size），请在插件设置的「模型」项改用支持该尺寸的档位`
+      : "";
     console.log(JSON.stringify(savedPath
-      ? { path: savedPath, url, note: "path 是本地持久文件，引用图片请用它（view_image 可直接查看）；url 是生图网关的临时托管地址，可能很快失效，不要当永久链接发给用户" }
-      : { url }));
+      ? { path: savedPath, ...(/^https?:/i.test(url) ? { url } : {}), note: "path 是本地持久文件，引用图片请用它（view_image 可直接查看）；url 是生图网关的临时托管地址，可能很快失效，不要当永久链接发给用户", ...(warning ? { warning } : {}) }
+      : { url: /^https?:/i.test(url) ? url : "(内联 data URL，已落盘见 path)", ...(warning ? { warning } : {}) }));
     return;
   }
   if (kind === "vision") {
