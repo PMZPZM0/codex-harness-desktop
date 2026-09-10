@@ -2120,7 +2120,7 @@ const pluginMarketCategoryTabs: [string, string][] = [["全部", "全部"], ["�
 const effortMenuOptions = ALL_EFFORTS.map((value) => ({
   value,
   title: effortLabels[value] ?? value,
-  desc: { minimal: "最快响应，几乎不思考。", low: "轻量思考。", medium: "平衡速度与质量。", high: "更严谨，适合复杂任务。", xhigh: "max：极深思考，速度更慢。", ultra: "最高：全量深度思考，最慢。" }[value] ?? "",
+  desc: { minimal: "最快响应，几乎不思考。", low: "轻量思考。", medium: "平衡速度与质量。", high: "更严谨，适合复杂任务。", xhigh: "请求 xhigh 强度，需供应商支持。", ultra: "引擎扩展档，实际请求强度按模型映射。" }[value] ?? "",
 }));
 
 /** 高度动画折叠原语（对齐 WorkBuddy cr-collapse：0.28s 高度 + 内容 opacity/位移过渡）
@@ -9566,7 +9566,7 @@ const commandMatches = useMemo(() => {
   // 未声明档位继续发给引擎（引擎按 catalog 校验会拒）。
   useEffect(() => {
     if (!customModel || !currentEffortOptions.length) return;
-    if (effort && !currentEffortOptions.includes(effort)) applyEffort(DEFAULT_EFFORT);
+    if (effort && !currentEffortOptions.includes(effort)) applyEffort(pickDefaultEffort(currentEffortOptions));
   }, [customModel, currentEffortOptions, effort]);
 
   function changePersonality(value: string) {
@@ -11133,8 +11133,8 @@ const commandMatches = useMemo(() => {
         // 审批档位逐回合下发（TurnStartParams.approvalPolicy，协议 schema 实证 09-06）：
         // 权限胶囊切「完全访问/never」后即使 resume 未及时生效，本条回合也按新档位审批
         approvalPolicy,
-        // /plan 计划模式：引擎原生 plan 协作模式（探针实证 turn/start 接受 {mode:"plan",settings:{model}}）
-        ...(planOnceRef.current ? { collaborationMode: { mode: "plan", settings: { model: selectedModel?.model ?? modelName(modelId) } } } : {}),
+        // 协作模式的 settings 优先于顶层 effort；漏传时计划模式会回落 medium。
+        ...(planOnceRef.current ? { collaborationMode: { mode: "plan", settings: { model: selectedModel?.model ?? modelName(modelId), reasoning_effort: effort || null } } } : {}),
       });
       let active = thread;
       if (!active) {
@@ -12041,7 +12041,7 @@ const commandMatches = useMemo(() => {
                     if (value === "__model_settings__") { setSettingsPage("model"); setSettingsOpen(true); const live = customModel?.models?.find((m) => m.id === customModel?.model); if (live) openModelEditor(live); return; }
                     chooseModel(value);
                   }} />
-                  <ComposerMenu icon={Zap} label="思考" title="真实思考强度" value={effort} options={[...effortMenuOptions.filter((option) => !currentEffortOptions.length || currentEffortOptions.includes(option.value)), { value: "__model_settings__", title: "更多档位…", desc: "打开模型配置，管理各模型档位勾选" }]} onChange={(value) => {
+                  <ComposerMenu icon={Zap} label="思考" title="请求思考强度（由引擎与供应商决定实际支持）" value={effort} options={[...effortMenuOptions.filter((option) => !currentEffortOptions.length || currentEffortOptions.includes(option.value)).map((option) => option.value === "ultra" && (selectedModel?.model ?? modelName(modelId)) === "deepseek-v4-flash" ? { ...option, desc: "当前引擎实际发送 high，与标准档相同。" } : option), { value: "__model_settings__", title: "更多档位…", desc: "打开模型配置，管理各模型档位勾选" }]} onChange={(value) => {
                     if (value === "__model_settings__") { setSettingsPage("model"); setSettingsOpen(true); const live = customModel?.models?.find((m) => m.id === customModel?.model); if (live) openModelEditor(live); return; }
                     changeEffort(value);
                   }} />

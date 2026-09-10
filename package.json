@@ -13,6 +13,7 @@
     "verify:ui": "node scripts/verify-ui.mjs",
     "verify:native": "node scripts/verify-native.mjs",
     "verify:conversation": "node scripts/verify-conversation.mjs",
+    "verify:reasoning": "node scripts/verify-reasoning-transport.cjs",
     "verify:channel": "node scripts/verify-channel-bot.mjs",
     "verify:services": "node scripts/verify-harness-services.mjs",
     "verify:turnfold": "cross-env CODEBUDDY_SAFE_DELETE_ENABLED=0 node scripts/verify-turn-fold.mjs",
