@@ -12590,7 +12590,16 @@ const commandMatches = useMemo(() => {
                     {enhanceBusy ? <Spinner /> : hasEnhanceBackup ? <RotateCcw size={16} /> : <Sparkles size={16} />}
                   </button>
                 )}
-                {activeThreadRunning ? (
+                {/* 任务运行中：输入框有内容 → 显示发送（点击加入排队，不丢消息），旁边保留停止；
+                    输入框为空 → 只显示停止。此前运行中恒显示停止，想排队也得先清空输入框。 */}
+                {activeThreadRunning && (prompt.trim() || quoteItem || images.length || files.length) ? (
+                  <>
+                    <button type="button" className="stop-button" title="停止当前任务" disabled={interrupting} onClick={() => void interrupt()}>
+                      {interrupting ? <Spinner /> : <CircleStop size={18} />}
+                    </button>
+                    <button type="submit" className="send-button" title="发送（任务运行中，将加入排队）"><Send size={18} /></button>
+                  </>
+                ) : activeThreadRunning ? (
                   <button type="button" className="stop-button" title="停止" disabled={interrupting} onClick={() => void interrupt()}>
                     {interrupting ? <Spinner /> : <CircleStop size={18} />}
                   </button>
