@@ -9472,6 +9472,40 @@ const commandMatches = useMemo(() => {
     void updateThreadSettings({ model: model ?? value, effort: nextEffort || null });
   }
 
+  /** 会话跨供应商迁移：引擎线程绑定创建时的 provider，settings/update 换 provider 会被拒。
+   *  唯一官方通道 = thread/resume { modelProvider, config, model }（schema 实证 resume 接受
+   *  这三个覆盖参数）——resume 后会话即绑定新供应商，历史完整保留，原会话数据不丢。 */
+  async function migrateThreadToProvider(threadId: string, target: { provider: string; model: string; name: string; baseUrl: string; wireApi?: string }): Promise<boolean> {
+    try {
+      const officialTarget = target.provider === "openai-official";
+      const resumeParams: Record<string, unknown> = {
+        threadId,
+        excludeTurns: true,
+        model: target.model,
+        // 官方订阅走引擎内置 openai 通道：不传 modelProvider/config（实证：传了即触发
+        // CODEX_HARNESS_API_KEY 校验导致流断）；其他供应商内联完整定义
+        ...(officialTarget ? {} : {
+          modelProvider: target.provider,
+          config: {
+            model_provider: target.provider,
+            model_providers: {
+              [target.provider]: {
+                name: target.name,
+                base_url: target.baseUrl,
+                env_key: "CODEX_HARNESS_API_KEY",
+                wire_api: (target.wireApi === "chat" ? "chat" : "responses"),
+                requires_openai_auth: false,
+              },
+            },
+          },
+        }),
+      };
+      await window.codex.request("thread/resume", resumeParams);
+      await updateThreadSettings({ model: target.model, ...(officialTarget ? {} : { model_provider: target.provider }), effort: null });
+      return true;
+    } catch { return false; }
+  }
+
   /** 供应商切换「重启生效」：重启引擎使新供应商配置生效，成功后迁移当前会话并刷新 UI 状态。
    *  手动点击 banner 时读 state；引擎空闲自动生效时由 chooseModel 直接传入 pending 对象。 */
   async function applyPendingRestart(pendingOverride?: { provider: string; model: string; label: string; prevProvider: string; prevModel: string } | null) {
@@ -9482,40 +9516,17 @@ const commandMatches = useMemo(() => {
       setCustomModel(updated);
       setModelId(`custom:${updated.provider}:${updated.model}`);
       localStorage.setItem("default-model", `custom:${updated.provider}:${updated.model}`);
-      // 会话跨供应商迁移：引擎线程绑定创建时的 provider，settings/update 换 provider 会被拒。
-      // 唯一官方通道 = thread/resume { modelProvider, config, model }（schema 实证 resume 接受
-      // 这三个覆盖参数）——resume 后会话即绑定新供应商，历史完整保留，原会话数据不丢。
+      // 会话跨供应商迁移（复用 migrateThreadToProvider：resume 后会话即绑定新供应商，
+      // 历史完整保留，原会话数据不丢）。
       if (threadRef.current?.id) {
-        try {
-          const officialTarget = updated.provider === "openai-official";
-          const resumeParams: Record<string, unknown> = {
-            threadId: threadRef.current.id,
-            excludeTurns: true,
-            model: updated.model,
-            // 官方订阅走引擎内置 openai 通道：不传 modelProvider/config（实证：传了即触发
-            // CODEX_HARNESS_API_KEY 校验导致流断）；其他供应商内联完整定义
-            ...(officialTarget ? {} : {
-              modelProvider: updated.provider,
-              config: {
-                model_provider: updated.provider,
-                model_providers: {
-                  [updated.provider]: {
-                    name: updated.name,
-                    base_url: updated.baseUrl,
-                    env_key: "CODEX_HARNESS_API_KEY",
-                    wire_api: (updated.wireApi === "chat" ? "chat" : "responses"),
-                    requires_openai_auth: false,
-                  },
-                },
-              },
-            }),
-          };
-          await window.codex.request("thread/resume", resumeParams);
-          await updateThreadSettings({ model: updated.model, ...(officialTarget ? {} : { model_provider: updated.provider }), effort: null });
+        const migrated = await migrateThreadToProvider(threadRef.current.id, {
+          provider: updated.provider, model: updated.model, name: updated.name, baseUrl: updated.baseUrl, wireApi: updated.wireApi,
+        });
+        if (migrated) {
           showToast("已切换供应商", `当前会话已迁移到 ${updated.name} · ${updated.model}，历史完整保留`);
-        } catch (migrateError: any) {
+        } else {
           // 迁移失败（如极老会话）退回接力方案：新会话带上下文
-          showToast("已切换供应商", `新会话将使用 ${updated.name} · ${updated.model}（当前会话无法迁移：${String(migrateError?.message ?? "").slice(0, 60)}）`);
+          showToast("已切换供应商", `新会话将使用 ${updated.name} · ${updated.model}（当前会话迁移失败，历史保留在原会话）`);
         }
       } else {
         await updateThreadSettings({ model: updated.model, ...(updated.provider === "openai-official" ? {} : { model_provider: updated.provider }), effort: null });
@@ -11111,18 +11122,34 @@ const commandMatches = useMemo(() => {
       return;
     }
     // 打开一个使用其他供应商的历史会话时，仅恢复下拉框选择，不立刻重启引擎。
-    // 真正发送前再切换供应商；若有任何任务运行则拒绝，绝不能为了切模型停止后台会话。
-    if (selectedModel.provider && selectedModel.provider !== customModel.provider) {
-      if (runningThreadIdsRef.current.size > 0) {
-        showToast("暂时不能发送", "该会话使用另一家模型供应商，当前还有任务运行；请等待任务完成或改选当前供应商的模型");
-        return;
-      }
-      try {
-        const updated = await window.codex.setProviderModel({ provider: selectedModel.provider, model: selectedModel.model });
-        setCustomModel(updated);
-      } catch (error: any) {
-        setNotice(`切换模型供应商失败：${error.message}`);
-        return;
+    // 真正发送前：若会话绑定供应商 ≠ 当前激活供应商（旧供应商可能已停用/已切走，
+    // 引擎全局 key 已换），直接发会因 key 错配 401 无限重连——自动把会话迁移到当前
+    // 激活供应商（thread/resume），不再自动切回旧供应商（原 setProviderModel 会把
+    // 激活又切回旧 key，造成 key 来回换）。
+    if (selectedModel.provider && customModel && selectedModel.provider !== customModel.provider) {
+      if (thread?.id) {
+        const migrated = await migrateThreadToProvider(thread.id, customModel);
+        if (!migrated) {
+          showToast("暂时不能发送", `该会话绑定 ${selectedModel.providerName ?? "旧供应商"}，迁移到 ${customModel.name} 失败；请新建会话或先切换回该供应商`);
+          return;
+        }
+        setModelId(`custom:${customModel.provider}:${customModel.model}`);
+        localStorage.setItem("default-model", `custom:${customModel.provider}:${customModel.model}`);
+        saveThreadModel(thread.id, `custom:${customModel.provider}:${customModel.model}`);
+        showToast("会话已迁移", `该会话已切换到 ${customModel.name} · ${customModel.model}，可正常发送`);
+      } else {
+        // 无当前线程（欢迎页直接选模型）：把激活切到所选供应商
+        if (runningThreadIdsRef.current.size > 0) {
+          showToast("暂时不能发送", "该会话使用另一家模型供应商，当前还有任务运行；请等待任务完成或改选当前供应商的模型");
+          return;
+        }
+        try {
+          const updated = await window.codex.setProviderModel({ provider: selectedModel.provider, model: selectedModel.model });
+          setCustomModel(updated);
+        } catch (error: any) {
+          setNotice(`切换模型供应商失败：${error.message}`);
+          return;
+        }
       }
     }
     if (!workspace) {
