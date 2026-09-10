@@ -10941,9 +10941,15 @@ const commandMatches = useMemo(() => {
       setSandbox(nextSandbox);
       setApprovalPolicy(nextApproval);
       saveThreadPermissions(id, nextSandbox, nextApproval);
-      // 打开会话绝不向引擎 push 权限：settings/update 会把恢复值写回引擎，若恢复值来自被污染的
-      // localPerms 或旧快照，引擎权限会被静默降级（重启后完全权限变灰根因）。引擎权限只由用户
-      // 显式切换（changePermissionMode → pushThreadPermissions 带 threadPermPushAt 时间戳保护）管理。
+      // 权限不一致自愈：本地记录（用户明确选择）与引擎真实 sandbox 不同 → 主动 push 给引擎。
+      // 场景实证：切换供应商/重启引擎时线程被引擎重置成 workspace-write，而本地记录仍是
+      // danger-full-access——UI 显示完全访问、引擎实际受限（"审批策略 never 且不允许传
+      // sandbox_permissions"）。仅在「本地有记录且与引擎不一致」时 push（纠正降级）；
+      // 本地无记录时不 push（防止旧快照污染引擎，即此前的降级根因）。
+      if (localPerms.sandbox && resumedSandbox && localPerms.sandbox !== resumedSandbox) {
+        void pushThreadPermissions(id, nextSandbox, nextApproval).catch(() => undefined);
+      }
+      // 本地无记录但引擎与全局默认也不一致时不干预：等用户在 UI 上选择（写入本地记录）后自动纠正。
       const resumedRunningTurn = loaded.turns.find((turn: Turn) => isTurnRunning(turn));
       setActiveTurnId(resumedRunningTurn?.id ?? null);
       setSending(Boolean(resumedRunningTurn));
