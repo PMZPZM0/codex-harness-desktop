@@ -1908,7 +1908,7 @@ function ThreadFilePicker({ query, onQuery, candidates, onPick, onClose }: { que
  *  （prompt-images.ts 管线与发送组装零改动），DOM 只是它的可编辑视图。
  *  非受控：仅当外部 value 与 DOM 序列化结果不一致（发送清空/切会话/增强/斜杠命令）
  *  才重建 DOM；用户输入只做 DOM→prompt 序列化回流，绝不反向覆盖正在编辑的 DOM。 */
-function ComposerEditor({ value, placeholder, editorRef, domValueRef, makeChip, onValueInput, onKeyDown, onBlur, onPasteImage }: {
+function ComposerEditor({ value, placeholder, editorRef, domValueRef, makeChip, onValueInput, onKeyDown, onBlur, onPasteImage, onPasteFiles }: {
   value: string;
   placeholder: string;
   editorRef: { current: HTMLDivElement | null };
@@ -1918,6 +1918,7 @@ function ComposerEditor({ value, placeholder, editorRef, domValueRef, makeChip, 
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   onBlur: () => void;
   onPasteImage: (text: string) => void;
+  onPasteFiles: (paths: string[]) => void;
 }) {
   useLayoutEffect(() => {
     const el = editorRef.current;
@@ -1955,10 +1956,23 @@ function ComposerEditor({ value, placeholder, editorRef, domValueRef, makeChip, 
       onKeyDown={onKeyDown}
       onBlur={onBlur}
       onPaste={(event) => {
-        const imageFile = [...event.clipboardData.files].find((file) => file.type.startsWith("image/"));
-        if (!imageFile) return; // 纯文本粘贴交给 plaintext-only 原生行为（自动去富文本格式）
-        event.preventDefault();
-        onPasteImage(event.clipboardData.getData("text/plain"));
+        const pasted = [...event.clipboardData.files];
+        const imageFile = pasted.find((file) => file.type.startsWith("image/"));
+        // 从系统复制的非图片文件（PDF/代码/文档等）：作为附件加入输入框。
+        // Electron 渲染层 File 对象带 path（原生扩展），可直接作为附件路径。
+        const filePaths = pasted
+          .filter((file) => !file.type.startsWith("image/"))
+          .map((file) => (file as File & { path?: string }).path)
+          .filter((p): p is string => typeof p === "string" && p.length > 0);
+        if (filePaths.length) {
+          event.preventDefault();
+          onPasteFiles(filePaths);
+        }
+        if (imageFile) {
+          event.preventDefault();
+          onPasteImage(event.clipboardData.getData("text/plain"));
+        }
+        if (!imageFile && !filePaths.length) return; // 纯文本粘贴交给 plaintext-only 原生行为（自动去富文本格式）
       }}
     />
   );
@@ -12025,7 +12039,12 @@ const commandMatches = useMemo(() => {
             <div className="composer-input-shell">
               {(planArmed || planRunning) && <button type="button" className={`mode-chip-float chip-plan ${planRunning ? "running" : ""}`} title={planRunning ? "计划模式 · 方案生成中（点击中断）" : "计划模式 · 下一条消息先出方案（点击退出）"} onClick={() => { if (planRunning) { void interrupt(); } else { planOnceRef.current = false; setPlanArmed(false); showToast("计划模式已退出", "下一条消息按普通模式执行"); } }}><ListChecks size={13} /></button>}
               {thread && goalText && goalStatus !== "complete" && <button type="button" className="mode-chip-float chip-goal" title="目标模式 · 自动推进中（点击停止）" onClick={stopGoalLoop}><Target size={13} /></button>}
-              <ComposerEditor value={prompt} placeholder="向 Codex 提问，使用 @ 添加上下文，使用 / 选择命令或能力" editorRef={composerInputRef} domValueRef={composerDomValueRef} makeChip={makeComposerChip} onValueInput={onPromptChange} onKeyDown={(event) => { if (contextOpen && event.key === "Enter" && availableContextItems[0]) { event.preventDefault(); addContextItem(availableContextItems[0]); return; } if (event.key === "Escape" && contextOpen) { event.preventDefault(); setContextOpen(false); return; } onComposerKeyDown(event); }} onBlur={() => setTimeout(() => setContextOpen(false), 120)} onPasteImage={(text) => void pasteImage(text)} />
+              <ComposerEditor value={prompt} placeholder="向 Codex 提问，使用 @ 添加上下文，使用 / 选择命令或能力" editorRef={composerInputRef} domValueRef={composerDomValueRef} makeChip={makeComposerChip} onValueInput={onPromptChange} onKeyDown={(event) => { if (contextOpen && event.key === "Enter" && availableContextItems[0]) { event.preventDefault(); addContextItem(availableContextItems[0]); return; } if (event.key === "Escape" && contextOpen) { event.preventDefault(); setContextOpen(false); return; } onComposerKeyDown(event); }} onBlur={() => setTimeout(() => setContextOpen(false), 120)} onPasteImage={(text) => void pasteImage(text)} onPasteFiles={(paths) => {
+                    const added = paths.filter((p) => !files.includes(p));
+                    if (!added.length) return;
+                    setFiles((current) => [...new Set([...current, ...added])]);
+                    setNotice(`已粘贴 ${added.length} 个文件附件`);
+                  }} />
             </div>
             <div className="composer-actions">
               <div className="composer-left">
