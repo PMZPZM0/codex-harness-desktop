@@ -9523,6 +9523,11 @@ const commandMatches = useMemo(() => {
         threadId,
         excludeTurns: true,
         model: target.model,
+        // 实证（rollout 07:19:54）：引擎重启后 resume 若不带 sandbox，线程权限被重置成
+        // workspace-write+restricted——完全访问静默失效。resume 接受 sandbox 字符串
+        // （schema 实证），这里带上当前用户偏好，迁移同时把权限一并钉住。
+        sandbox: sandbox,
+        approvalPolicy: approvalPolicy,
         // 官方订阅走引擎内置 openai 通道：不传 modelProvider/config（实证：传了即触发
         // CODEX_HARNESS_API_KEY 校验导致流断）；其他供应商内联完整定义
         ...(officialTarget ? {} : {
@@ -9637,11 +9642,15 @@ const commandMatches = useMemo(() => {
     // 记录推送时间戳：引擎在设置生效后异步回推一条带旧策略的 settings/updated，
     // 时间窗内的回推是旧值，事件侧据此忽略（防止胶囊被打回灰色）。
     threadPermPushAtRef.current.set(id, Date.now());
-    // 用 settings/update 推送（协议实证的有效通道）；resume 通道带 sandbox 参数引擎并不回读，
-    // 且 resume 会触发 settings/updated 事件回推创建时的旧策略，反过来把 UI 打回灰色。
+    // 双通道推送：settings/update 换审批+沙箱策略（0.153.4 实证接受 sandboxPolicy）；
+    // 但引擎重启后 settings/update 对已存在线程**不回读 sandbox**（实证 07:19:54：
+    // 重启后首个 turn 权限被重置成 workspace-write，settings/update 推了也没生效）——
+    // resume 通道才真正接受 sandbox 字符串（schema 实证）。所以补一发带沙箱的 resume
+    // 钉住权限（excludeTurns:true 不拉历史，开销极小）。
     const call = () => window.codex.request("thread/settings/update", { threadId: id, approvalPolicy: approvalValue, sandboxPolicy: sandboxPolicy(sandboxValue, workspace) });
     try {
       await call();
+      await window.codex.request("thread/resume", { threadId: id, excludeTurns: true, sandbox: sandboxValue, approvalPolicy: approvalValue });
     } catch (error: any) {
       const message = String(error?.message ?? "");
       // 空会话（还没发过首条消息）没有 rollout，settings/update 会报 "thread not found"——
@@ -10882,7 +10891,17 @@ const commandMatches = useMemo(() => {
       return;
     }
     try {
-      const result = await resumeThreadWithTurns({ threadId: id, excludeTurns: false });
+      // resume 必带沙箱（schema 实证 resume 接受 sandbox 字符串）：引擎重启后 resume 不带
+      // sandbox 会把线程权限重置成 workspace-write+restricted（实证 rollout 07:19:54，
+      // 「完全访问静默失效」的真根因）。本地有用户选择用之，否则用全局默认。
+      const permForResume = loadThreadPermissions(id);
+      const resumeSandbox = permForResume.sandbox === "danger-full-access" || permForResume.sandbox === "read-only" || permForResume.sandbox === "workspace-write"
+        ? permForResume.sandbox
+        : (localStorage.getItem("default-sandbox") ?? "danger-full-access");
+      const resumeApproval = permForResume.approval === "never" || permForResume.approval === "on-request" || permForResume.approval === "untrusted"
+        ? permForResume.approval
+        : (localStorage.getItem("default-approval") ?? "never");
+      const result = await resumeThreadWithTurns({ threadId: id, excludeTurns: false, sandbox: resumeSandbox, approvalPolicy: resumeApproval });
       if (seq !== switchSeqRef.current) return; // 已切到别的会话，丢弃本次结果
       recentResumeAtRef.current.set(id, Date.now());
       // 残留运行态归一化（详见 normalizeLoadedThread）：旧会话丢过 turn/completed 的
