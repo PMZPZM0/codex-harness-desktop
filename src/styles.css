@@ -3470,6 +3470,62 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   color: var(--text);
 }
 /* 输入框上方的引用条：消息引用显示在这里，发送时以块引用前缀拼进消息文本 */
+/* 输入框技能预提醒条：空输入框时提示「# 可引用技能」；可一键展开技能面板 / 永久关闭 */
+.skill-hint-bar {
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-radius: 10px;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 8px;
+  padding: 6px 8px 6px 10px;
+  display: flex;
+}
+.skill-hint-icon { color: var(--accent); flex: none; }
+.skill-hint-text {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.skill-hint-text code {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 4px;
+  padding: 0 5px;
+  font: 12px Cascadia Code, Consolas, monospace;
+}
+.skill-hint-open {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  background: 0 0;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 7px;
+  margin-left: auto;
+  flex: none;
+}
+.skill-hint-open:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.skill-hint-close {
+  width: 20px;
+  height: 20px;
+  color: var(--faint);
+  cursor: pointer;
+  background: 0 0;
+  border: 0;
+  border-radius: 5px;
+  padding: 0;
+  place-items: center;
+  display: grid;
+  flex: none;
+}
+.skill-hint-close:hover { background: var(--panel-2); color: var(--text); }
 .quote-bar {
   border: 1px solid color-mix(in srgb, var(--link) 32%, transparent);
   background: color-mix(in srgb, var(--link) 7%, transparent);
