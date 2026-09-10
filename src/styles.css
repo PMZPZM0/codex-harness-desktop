@@ -1751,6 +1751,24 @@ html[data-ui-font="large"] .action-content pre {
 .markdown > :last-child {
   margin-bottom: 0;
 }
+/* 长会话窗口化入口：默认只渲染最近若干回合，点这里加载更早的历史 */
+.load-earlier-turns {
+  width: 100%;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  margin: 6px 0 12px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.load-earlier-turns:hover { color: var(--text); background: var(--panel); }
+.load-earlier-turns small { color: var(--faint); font-size: 11px; }
 .user-message {
   grid-template-columns: minmax(0, 1fr);
   width: min(88%, 720px);

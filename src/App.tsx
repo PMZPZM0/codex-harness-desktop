@@ -7978,6 +7978,9 @@ export default function App() {
   const toggleAllSidebarSections = viewTab === "groups" ? toggleAllGroups : toggleAllProjects;
   // 「清空当前视图」批量删除按钮已下架（2026-09-04 反馈：侧栏顶部太容易误触）。
   // purgeCurrentTab / currentTabIds 一并移除；批量删除能力保留在单条任务右键/菜单里。
+/** 长会话首屏最多渲染的回合数：软件渲染下全量挂载几千个回合是「切会话慢」的主因，
+ *  默认只渲染最近这么多回合，更早的由「显示更早的 N 条消息」按需展开。 */
+const TURN_WINDOW = 40;
 /** 常用命令置顶顺序（用户高频：模型/思考/计划/目标/压缩优先） */
 const COMMON_COMMAND_ORDER = ["plan", "goal", "model", "effort", "compact", "new", "resume", "review", "status", "help"];
 const commandMatches = useMemo(() => {
@@ -11801,6 +11804,10 @@ const commandMatches = useMemo(() => {
     setSwitcherOpen(false);
   }
 
+  // 长会话窗口化：默认只渲染最近 TURN_WINDOW 个回合，更早的按需展开。
+  // 这台机器是软件渲染（无 GPU），把几千个回合一次性挂进 React 是「切会话要等很久」的主因
+  // ——content-visibility 只省绘制，省不掉建元素与 Markdown 解析的成本。
+  const [earlyTurnExpanded, setEarlyTurnExpanded] = useState<Record<string, boolean>>({});
   const allItems = thread?.turns.flatMap((turn) => turn.items) ?? [];
   const isEmpty = !thread && !allItems.length;
   // 欢迎页（空会话）自动聚焦输入框：docked-center 的 absolute 定位 + 过渡动画期间命中区域会
@@ -12106,7 +12113,16 @@ const commandMatches = useMemo(() => {
           ) : null}
           {/* 导入会话记录后、尚未发送首条消息：记录预览卡常驻消息区顶部；发送后转为消息内的导入卡 */}
           {thread && (thread.turns ?? []).length === 0 && pendingImportThreads[thread.id] ? <PendingImportSlot key={thread.id} threadId={thread.id} onDiscard={() => forgetPendingImport(thread.id)} /> : null}
-          {thread?.turns.map((turn) => <MemoTurnView turn={turn} isLastTurn={turn.id === thread.turns[thread.turns.length - 1]?.id} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={tokenUsage} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />)}
+          {/* 长会话窗口化：默认只挂最近 TURN_WINDOW 个回合，更早的按需展开。
+              软件渲染下全量挂载几千个回合是「切换会话慢」的主因，这里把首屏成本封顶。 */}
+          {thread && thread.turns.length > TURN_WINDOW && !earlyTurnExpanded[thread.id] && (
+            <button type="button" className="load-earlier-turns" onClick={() => setEarlyTurnExpanded((current) => ({ ...current, [thread.id]: true }))}>
+              <ChevronDown size={13} style={{ transform: "rotate(180deg)" }} />
+              显示更早的 {thread.turns.length - TURN_WINDOW} 条消息
+              <small>为加快打开速度，默认只渲染最近 {TURN_WINDOW} 条</small>
+            </button>
+          )}
+          {thread?.turns.slice(thread.turns.length > TURN_WINDOW && !earlyTurnExpanded[thread.id] ? thread.turns.length - TURN_WINDOW : 0).map((turn) => <MemoTurnView turn={turn} isLastTurn={turn.id === thread.turns[thread.turns.length - 1]?.id} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={tokenUsage} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />)}
           {optimisticInput && !optimisticConfirmed && <ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} />}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
           {systemEvents.map((event) => <div className={`system-event ${event.tone ?? "info"}`} key={event.id}><strong>{event.tone === "success" ? <CircleCheck size={13} className="system-event-icon" /> : null}{event.title}</strong><Markdown>{event.text}</Markdown></div>)}
