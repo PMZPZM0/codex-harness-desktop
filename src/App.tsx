@@ -11175,22 +11175,22 @@ const commandMatches = useMemo(() => {
       const validApproval = (value?: string) => value === "never" || value === "on-request" || value === "untrusted" ? value : null;
       const savedDefault = validSandbox(localStorage.getItem("default-sandbox") ?? undefined) ?? "danger-full-access";
       const savedDefaultApproval = validApproval(localStorage.getItem("default-approval") ?? undefined) ?? "never";
-      // 优先级：本地每会话记录（用户明确选择，最权威）> 引擎真实 sandbox（线程当前实际状态，
-      // 比全局默认更能反映该会话）> 全局默认。引擎被历史错误降级时，用户重选一次即写入本地记录自愈。
-      const nextSandbox = validSandbox(localPerms.sandbox) ?? validSandbox(resumedSandbox ?? undefined) ?? savedDefault;
-      const nextApproval = validApproval(localPerms.approval) ?? validApproval(resumedApproval ?? undefined) ?? savedDefaultApproval;
+      // 优先级（09-10 修正「重启后审批档变成变更前确认」）：**用户当前的全局选择权威**。
+      // 引擎 resume 返回的是会话创建时的旧档位（resumed），此前被排在全局默认前面——
+      // 会话建在「变更前确认」上，就永远回不到用户后来选的档位。
+      // 本地每会话记录仅应在用户于该会话显式改过权限时生效；旧版本会在打开时把 resumed
+      // 回写进记录（污染），识别特征 = 记录 == 引擎值 且 ≠ 全局默认 → 视为污染忽略。
+      const recordTrusted = (value?: string | null) => Boolean(value) && !(value && resumedSandbox && value === resumedSandbox && value !== savedDefault) && !(value && resumedApproval && value === resumedApproval && value !== savedDefaultApproval);
+      const nextSandbox = (recordTrusted(localPerms.sandbox) ? validSandbox(localPerms.sandbox) : null) ?? savedDefault;
+      const nextApproval = (recordTrusted(localPerms.approval) ? validApproval(localPerms.approval) : null) ?? savedDefaultApproval;
       setSandbox(nextSandbox);
       setApprovalPolicy(nextApproval);
-      saveThreadPermissions(id, nextSandbox, nextApproval);
-      // 权限不一致自愈：UI 呈现的权限（本地记录 > 引擎 > 全局默认）与引擎真实 sandbox 不同 →
-      // 主动 push 给引擎。场景实证：切换供应商/重启引擎时线程被引擎重置成 workspace-write，
-      // 而 UI/全局默认是 danger-full-access——显示完全访问、引擎实际受限（"权限总是掉"）。
-      // 只要 UI 展示值与引擎不一致就纠正（此前仅在「本地有记录」时 push，导致没在该会话里
-      // 手动选过权限的历史会话永远不自愈）——09-10 反馈后放宽。
-      if (resumedSandbox && nextSandbox !== resumedSandbox) {
+      // 不再把解析结果回写本地记录：回写会把引擎旧值烙进记录，导致用户之后改全局默认
+      // 对该会话永不生效。记录只由用户的显式操作（权限胶囊/审批选择）写入。
+      // 权限不一致自愈：UI 呈现值与引擎真实值不同 → push 纠正（沙箱与审批任一不同都纠正）。
+      if ((resumedSandbox && nextSandbox !== resumedSandbox) || (resumedApproval && nextApproval !== resumedApproval)) {
         void pushThreadPermissions(id, nextSandbox, nextApproval).catch(() => undefined);
       }
-      // 本地无记录但引擎与全局默认也不一致时不干预：等用户在 UI 上选择（写入本地记录）后自动纠正。
       const resumedRunningTurn = loaded.turns.find((turn: Turn) => isTurnRunning(turn));
       setActiveTurnId(resumedRunningTurn?.id ?? null);
       setSending(Boolean(resumedRunningTurn));
