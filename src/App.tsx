@@ -3282,6 +3282,14 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActive
         return;
       }
       const target = (list ?? []).find((a: any) => a.id === id);
+      if (enabled) {
+        // 全局互斥：启用 A 时自动停用其他已启用的账号（一次只能开一个）
+        for (const other of (list ?? []) as any[]) {
+          if (other.id !== id && other.disabled !== true) {
+            await window.codex.openaiToggleAccount({ id: other.id, disabled: true }).catch(() => undefined);
+          }
+        }
+      }
       if (enabled && target) {
         // 没有任何生效的官方账号：自动把刚启用的账号恢复为当前订阅（vault 内账号必有登录态）
         onNotice("账号已启用，正在自动恢复官方订阅…");
@@ -3611,17 +3619,28 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
         return;
       }
       const list = enabled ? await window.codex.relayAccounts().catch(() => []) : [];
-      if (enabled && !list.some((a: any) => a.active)) {
-        // 没有任何生效账号：自动把刚启用的账号恢复为当前（切换 + 自动重配模型 + 引擎重启）
+      if (enabled) {
+        // 全局互斥：启用 A 时自动停用其他已启用的账号（开关即生效候选，一次只能开一个）
+        for (const other of list) {
+          if (other.id !== id && !other.disabled) {
+            await window.codex.relayToggleAccount({ id: other.id, disabled: true }).catch(() => undefined);
+          }
+        }
+        if (list.some((a: any) => a.active)) {
+          // 已有生效账号（就是本账号）：直接完成
+          onNotice("账号已启用，当前生效");
+          return;
+        }
+        // 没有生效账号：自动把刚启用的账号设为当前（切换 + 自动重配模型 + 引擎重启）
         const target = list.find((a: any) => a.id === id);
         if (target?.loggedIn) {
-          onNotice("账号已启用，正在自动恢复模型配置…");
+          onNotice("账号已启用，正在自动设为当前生效…");
           await window.codex.relaySwitchAccount(id);
           const acc = await window.codex.relayLoadAccount();
           if (acc?.loggedIn) setAccount({ baseUrl: acc.baseUrl, email: acc.email });
           await reloadAccounts();
           await autoConfigure();
-          onNotice("账号已启用并恢复为当前生效，模型已自动重配");
+          onNotice("账号已启用并设为当前生效，模型已自动重配");
           return;
         }
       }
