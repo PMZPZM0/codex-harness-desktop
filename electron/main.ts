@@ -42,7 +42,7 @@ import {
 function qrSvg(text: string) {
   return QRCode.toString(text, { type: "svg", margin: 2, errorCorrectionLevel: "M" });
 }
-import { installCocoLoopSkill, listCocoLoopSkills, listSkillHubSkills, type InstalledMarketSkill, type MarketSkill } from "./skills-market";
+import { installCocoLoopSkill, listCocoLoopSkills, listSkillHubSkills, repairSkillBomScan, stripSkillBom, type InstalledMarketSkill, type MarketSkill } from "./skills-market";
 import { ensureCodexMarketplaceSection, installCodexMarketPlugin, listCodexMarketPlugins, type CodexMarketPlugin } from "./codex-market";
 import { augmentedPath, bundledGit, bundledNode, bundledPython, cloakCacheDir, cloakOpenHelper, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "./toolchain";
 import { ensureBuiltinSkills } from "./builtin-skills";
@@ -1016,6 +1016,21 @@ function probeFetch(url: string, init: RequestInit, timeoutMs: number) {
   });
 }
 
+/** 把探测失败时的 HTTP 响应体整理成一句可读的话：优先取 JSON 里的 error.message / message，
+ *  拿不到再退回原始文本（截断）。网关原话必须原样保留——它是判断「Key 错」还是「通道不配套」
+ *  的唯一依据，直接丢给用户看整坨 JSON 也不友好。 */
+function describeHttpBody(body: string): string {
+  const raw = String(body ?? "").trim();
+  if (!raw) return "";
+  try {
+    const data: any = JSON.parse(raw);
+    const message = data?.error?.message ?? data?.error?.msg ?? data?.message ?? data?.msg ?? data?.error;
+    if (typeof message === "string" && message.trim()) return message.trim().slice(0, 300);
+    if (message && typeof message === "object") return JSON.stringify(message).slice(0, 300);
+  } catch { /* 非 JSON：走原文 */ }
+  return raw.slice(0, 300);
+}
+
 /** 把 net.fetch 的底层错误翻译成能看懂的中文提示 */
 function classifyProbeError(error: any): string {
   const message = String(error?.message ?? error);
@@ -1136,8 +1151,11 @@ async function probeCustomModel(input: { provider?: string; baseUrl: string; api
     // 自动模式：端点不存在/参数不认（非认证、非模型缺失错误）→ 换另一种协议再试
     const canSwitch = w + 1 < wireOrder.length && (response.status === 404 || response.status === 405 || response.status === 400);
     if (!canSwitch) {
-      const detail = body.slice(0, 300) || response.statusText;
-      if (response.status === 401 || response.status === 403) throw new Error(`认证失败（HTTP ${response.status}）：网络是通的，请检查 API Key`);
+      // 认证失败必须把供应商自己的原话带上：不同网关的 401 含义不同——「API key 格式不正确」
+      // 说明 Key 与通道/Key 类型不配套（如火山 /api/plan/v3 要套餐专属 Key），
+      // 「Invalid API key」才是 Key 值不对。丢掉原文用户只能看到笼统提示，无从下手（实测踩坑）。
+      const detail = describeHttpBody(body) || response.statusText;
+      if (response.status === 401 || response.status === 403) throw new Error(`认证失败（HTTP ${response.status}）${detail ? `：${detail}` : "：网络是通的，请检查 API Key"}`);
       if (response.status === 400 && /model.*(not.*(found|exist)|不存在)/i.test(body)) throw new Error(`模型不存在（HTTP 400）：${detail}`);
       throw new Error(`HTTP ${response.status}: ${detail}`);
     }
@@ -1265,6 +1283,12 @@ app.on("second-instance", () => {
 app.whenReady().then(async () => {
   await fs.mkdir(codexHome, { recursive: true });
   await ensureBuiltinSkills(userSkillsDir);
+  // 启动自愈：剥掉已安装技能 SKILL.md 的 UTF-8 BOM。带 BOM 的文件引擎会判「缺 frontmatter」
+  // 整份拒载（装了但永远不被使用），市场包/本地导入都可能带 BOM——这里兜住存量文件。
+  try {
+    const bomFixed = await repairSkillBomScan(userSkillsDir);
+    if (bomFixed > 0) console.log(`[skills] 修复 ${bomFixed} 个带 BOM 的 SKILL.md`);
+  } catch (error) { console.warn("skill BOM repair failed:", error); }
   // 启动即补齐 AGENTS.md（emoji + 中文语言规范基础段）：老版本升级后没有这些段，
   // 重写让模型默认用中文思考与回复；AGENTS.md 引擎每请求动态重读，无需重启即生效。
   try {
@@ -3245,6 +3269,8 @@ ipcMain.handle("skills:import", async () => {
   await fs.mkdir(destination, { recursive: true });
   const skillPath = path.join(destination, "SKILL.md");
   await fs.copyFile(source, skillPath);
+  // 用户从本地挑的 SKILL.md 也可能带 BOM（编辑器/导出习惯所致）：剥掉，否则引擎拒载
+  await stripSkillBom(skillPath);
   await updateSkillRegistry({ name, path: skillPath, source: "local", installedAt: new Date().toISOString() });
   await server.restart();
   return { name, path: destination, source, content };

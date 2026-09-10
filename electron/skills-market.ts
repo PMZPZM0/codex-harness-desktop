@@ -25,6 +25,38 @@ const MAX_EXTRACTED_FILES = 200;
 /** 是否含中日韩文字：用来判断一段简介是不是中文，决定能否当「中文注释」存下来。 */
 const CJK_RE = /[\u3400-\u9fff]/;
 
+/** 去掉 SKILL.md 开头的 UTF-8 BOM（EF BB BF）。
+ *  引擎的 frontmatter 解析要求文件必须以 `---` 起始，带 BOM 会报
+ *  「missing YAML frontmatter delimited by ---」→ **整份技能加载失败**，表现为
+ *  「装了、列表里有，但引擎永远不用」（实测：市场包里的 skill-smart-prompt 就是 BOM 文件）。
+ *  安装/导入时统一剥掉；已存在的坏文件由启动自愈 repairSkillBomScan 修复。 */
+export async function stripSkillBom(skillFile: string): Promise<boolean> {
+  try {
+    const buffer = await fs.readFile(skillFile);
+    if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
+      await fs.writeFile(skillFile, buffer.subarray(3));
+      return true;
+    }
+  } catch { /* 读不到就交给调用方处理（如文件不存在） */ }
+  return false;
+}
+
+/** 启动自愈：扫一遍用户技能目录，剥掉 SKILL.md 的 BOM（幂等，正常文件不动）。
+ *  返回修复数量，供调用方打日志。 */
+export async function repairSkillBomScan(root: string): Promise<number> {
+  let fixed = 0;
+  try {
+    const entries = await fs.readdir(root, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      for (const filename of ["SKILL.md", "SKILL.md.disabled"]) {
+        if (await stripSkillBom(path.join(root, entry.name, filename))) fixed += 1;
+      }
+    }
+  } catch { /* 目录不存在等：忽略 */ }
+  return fixed;
+}
+
 export type MarketCategory = "overall" | "trending" | "latest" | "ai_enhancement" | "development" | "office" | "efficiency" | "design" | "content_creation" | "professional";
 export type MarketSkill = {
   id: string;
@@ -221,6 +253,8 @@ export async function installCocoLoopSkill(input: { skill: MarketSkill; destinat
     await fs.mkdir(input.destinationRoot, { recursive: true });
     await fs.rm(target, { recursive: true, force: true });
     await fs.cp(sourceDir, target, { recursive: true, dereference: false, errorOnExist: true });
+    // 市场包可能带 UTF-8 BOM：不剥掉引擎会判定「缺 frontmatter」直接拒载这份技能
+    await stripSkillBom(path.join(target, "SKILL.md"));
     progress("register", "正在写入市场来源清单");
     const manifest: InstalledMarketSkill = { marketId: skill.id, sourceUrl: skill.detailUrl, installedAt: new Date().toISOString(), icon: skill.icon || undefined, category: skill.category || undefined, descriptionZh: skill.descriptionZh || (CJK_RE.test(skill.description ?? "") ? skill.description : undefined) };
     // 清单文件名按市场区分；读取端（local-list / 健康检查）两个名字都认

@@ -7571,7 +7571,7 @@ export default function App() {
     customModel, setCustomModel, customDraft, setCustomDraft, providersList, currentProvider,
     editingProvider, setEditingProvider, savingSettings, providerModels, modelSourceProvider,
     refreshActive,
-    probingProvider, providerStatus, switchingModel, saveCustomModel, probeProvider,
+    probingProvider, providerStatus, switchingModel, saveCustomModel, probeProvider, probeActiveProvider,
     selectProvider, removeProvider, setProviderModel, removeProviderModel,
     upsertProviderModel, setProviderEnabled, probeOneModel, adoptSavedProvider, saveCustomDraft,
   } = useModelProviders({
@@ -13329,6 +13329,9 @@ const commandMatches = useMemo(() => {
                     );
                   });
                 })()}
+                {/* 不打开编辑器也能测当前生效供应商：切换/保存后最常用的自检动作。
+                    失败会弹带排查清单的中文提示，认证类错误保留供应商原文。 */}
+                {customModel && <button className="add-provider-btn" title={`测试当前生效供应商：${customModel.name} · ${customModel.model}`} disabled={!!probingProvider} onClick={() => void probeActiveProvider()}>{probingProvider === "test" ? <Spinner /> : <RefreshCw size={13} />}测试当前供应商</button>}
                 <button className="add-provider-btn" onClick={() => { setCustomDraft({ provider: "custom" + (Date.now() % 1000), name: "自定义供应商", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true }); setEditingProvider(null); setEditingName(false); }}><Plus size={13} />添加供应商</button>
               </div>
               <div className="provider-form">

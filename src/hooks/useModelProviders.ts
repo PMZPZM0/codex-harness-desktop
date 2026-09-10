@@ -4,6 +4,27 @@ import { matchModelSpec } from "../lib/model-specs";
 
 export type ProviderModel = { id: string; enabled?: boolean; contextWindow?: number; maxOutputTokens?: number; inputTypes?: ("text" | "image" | "video")[]; outputTypes?: ("text" | "image" | "video")[]; efforts?: string[] };
 
+/** 把「测试连接」的失败原文翻译成能直接照做的中文。
+ *  认证失败是最容易被笼统提示吞掉的一类：供应商原文里的措辞决定排查方向不同——
+ *  「API key 格式不正确」= Key 与通道/Key 类型不配套；「Invalid API key」= Key 值不对或已失效。
+ *  供应商原话一律保留（最权威），后面补一句排查清单。 */
+export function classifyProviderProbeFailure(raw: string): string {
+  const text = String(raw ?? "").replace(/^Error invoking remote method '[^']+':\s*/i, "").trim();
+  if (/认证失败|401|403|api\s*key|unauthorized|authentication/i.test(text)) {
+    return `${text}\n排查：① Key 是否复制完整（末尾无空格/换行）；② Key 与 Base URL 通道是否配套（例：火山方舟 /api/plan/v3 需套餐专属 Key，普通 Key 用 /api/v3）；③ Key 是否已过期/被禁用，或该账号未开通对应模型`;
+  }
+  if (/域名解析失败|连接被拒绝|连接超时|ENOTFOUND|ECONNREFUSED|timeout/i.test(text)) {
+    return `${text}\n排查：本机网络/代理能否直连该地址（Base URL 是否写错、服务是否在运行）`;
+  }
+  if (/404|405|不提供 \/models|不提供\s*\/models/i.test(text)) {
+    return `${text}\n排查：Base URL 末段是否是网关要求的 /v1、/api/v3 之类前缀`;
+  }
+  if (/模型不存在/.test(text)) {
+    return `${text}\n排查：模型 ID 是否与网关文档一致（部分网关要求带版本或接入点 ID）`;
+  }
+  return text;
+}
+
 export type CustomModel = { provider: string; name: string; model: string; baseUrl: string; contextWindow?: number; wireApi?: "responses" | "chat" | "auto"; hasKey?: boolean; models?: ProviderModel[]; enabled?: boolean };
 
 export type ProviderDraft = {
@@ -201,7 +222,31 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
           : `${customDraft.name || customDraft.provider} · ${result.models.length} 个模型${viaNote}，勾选要生效的模型后保存`,
       );
     } catch (error: any) {
-      setProviderStatus(`连接失败：${error.message}`);
+      // 失败也要醒目弹提示：状态行是行内小字，容易被忽略——用户看到的只是「换了供应商还是用不了」。
+      const failure = classifyProviderProbeFailure(String(error?.message ?? error));
+      setProviderStatus(`连接失败：${failure}`);
+      onNotice(`连接失败（${customDraft.name || customDraft.provider}）：${failure}`);
+    } finally {
+      setProbingProvider(null);
+    }
+  }
+
+  /** 测试「当前生效」的供应商：不必先打开编辑器——切换供应商后最常用的动作。
+   *  复用已存的 Key（probeCustomModel 在 provider+baseUrl 与生效档一致时会解密复用）。 */
+  async function probeActiveProvider() {
+    const current = customModel;
+    if (!current) { onNotice("当前没有生效的供应商，先启用一个再测试"); return; }
+    setProbingProvider("test");
+    setProviderStatus("");
+    try {
+      const result = await window.codex.probeCustomModel({ provider: current.provider, baseUrl: current.baseUrl, model: current.model, wireApi: current.wireApi ?? "responses" });
+      const detail = `HTTP ${result.status} · ${result.latencyMs} ms · ${result.models?.length ?? 0} 个模型可用`;
+      setProviderStatus(`当前供应商连接正常：${detail}`);
+      onProbeSuccess?.("当前供应商连接正常", `${current.name} · ${current.model} · ${detail}`);
+    } catch (error: any) {
+      const failure = classifyProviderProbeFailure(String(error?.message ?? error));
+      setProviderStatus(`当前供应商连接失败：${failure}`);
+      onNotice(`当前供应商（${current.name}）连接失败：${failure}`);
     } finally {
       setProbingProvider(null);
     }
@@ -352,6 +397,7 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
     switchingModel,
     saveCustomModel,
     probeProvider,
+    probeActiveProvider,
     selectProvider,
     removeProvider,
     setProviderModel,
