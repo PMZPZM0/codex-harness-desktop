@@ -7459,6 +7459,7 @@ export default function App() {
   const {
     customModel, setCustomModel, customDraft, setCustomDraft, providersList, currentProvider,
     editingProvider, setEditingProvider, savingSettings, providerModels, modelSourceProvider,
+    refreshActive,
     probingProvider, providerStatus, switchingModel, saveCustomModel, probeProvider,
     selectProvider, removeProvider, setProviderModel, removeProviderModel,
     upsertProviderModel, setProviderEnabled, probeOneModel, adoptSavedProvider, saveCustomDraft,
@@ -7477,6 +7478,11 @@ export default function App() {
     // 设置页保存等路径已触发引擎重启生效：清掉「待重启生效」banner，避免残留误导
     onEngineApplied: () => setPendingRestart(null),
   });
+  // 进入中转站/官方订阅/模型页时刷新生效供应商：这些页的互斥判断依赖 customModel，
+  // 状态过期（如另一处刚停用/启用）会导致「明明没有生效供应商却全灰」的死锁
+  useEffect(() => {
+    if (settingsOpen && (settingsPage === "relay" || settingsPage === "openai" || settingsPage === "model")) refreshActive();
+  }, [settingsOpen, settingsPage, refreshActive]);
   // 供应商切换「待重启生效」：切换只保存配置不重启引擎（不打断正在运行的会话），
   // 用户点 banner 的「重启生效」或下次启动时才让新供应商生效。生效前消息继续用原供应商。
   const [pendingRestart, setPendingRestart] = useState<{ provider: string; model: string; label: string; prevProvider: string; prevModel: string } | null>(null);
