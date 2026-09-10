@@ -13164,6 +13164,24 @@ const commandMatches = useMemo(() => {
             {settingsPage === "general" && <section className="settings-section stack general-page">
               <div className="settings-copy"><h2>控制台</h2><p>管理工作区、数据目录与应用行为。</p></div>
 
+              {/* 全局审批权限：控制台一级入口。选择立即生效（当前会话马上推送引擎，
+                  其余未手动改过权限的会话打开时跟随，新会话默认使用），无需重启。 */}
+              <div className="settings-card">
+                <div className="settings-card-head"><ShieldCheck size={15} /><strong>全局审批权限</strong><span className="settings-subhead-hint">选择立即生效，无需重启</span></div>
+                <div className="settings-card-body">
+                  <div className="perm-seg">
+                    {[{ v: "never", t: "完全访问", d: "自动执行，减少确认次数" }, { v: "on-request", t: "变更前确认", d: "改文件前先问我" }, { v: "untrusted", t: "自动编辑", d: "自动编辑文件" }].map((opt) => (
+                      <button key={opt.v} type="button" className={`perm-seg-btn ${globalPermApproval === opt.v ? "on" : ""}`} onClick={() => applyGlobalPermissionMode(opt.v)}>
+                        <strong>{opt.t}</strong>
+                        <small>{opt.d}</small>
+                        {globalPermApproval === opt.v && <em>当前</em>}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="settings-card-hint">所有未手动改过权限的会话与新会话都使用此档位；在对话里手动改过权限的对话框保留自己的选择，不跟随。重启后保持不变。</p>
+                </div>
+              </div>
+
               <div className="settings-card">
                 <div className="settings-card-head"><FolderOpen size={15} /><strong>工作区与数据</strong></div>
                 <div className="settings-card-body">
@@ -13397,15 +13415,6 @@ const commandMatches = useMemo(() => {
                     {[0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95].map((r) => <option key={r} value={r}>{Math.round(r * 100)}%</option>)}
                   </select>
                   <small>上下文用量达到此比例时引擎自动压缩较早对话</small>
-                </div>
-                <div className="model-global-item">
-                  <span className="model-global-label"><ShieldCheck size={13} />全局审批权限</span>
-                  <div className="model-global-perm">
-                    {[{ v: "never", t: "完全访问", d: "自动执行，减少确认次数" }, { v: "on-request", t: "变更前确认", d: "改文件前先问我" }, { v: "untrusted", t: "自动编辑", d: "自动编辑文件" }].map((opt) => (
-                      <button key={opt.v} type="button" className={`model-global-perm-btn ${globalPermApproval === opt.v ? "on" : ""}`} title={opt.d} onClick={() => applyGlobalPermissionMode(opt.v)}>{opt.t}</button>
-                    ))}
-                  </div>
-                  <small>所有未手动改过权限的会话与新会话都跟随此档位，重启不变；手动改过的对话框保留自己的选择</small>
                 </div>
               </div>
               <div className="provider-list">

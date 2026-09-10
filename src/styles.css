@@ -1822,6 +1822,38 @@ html[data-ui-font="large"] .action-content pre {
   color: var(--ok);
   font-weight: 600;
 }
+/* 控制台「全局审批权限」分段选择：三档一排，选中态高亮并带「当前」角标 */
+.perm-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.perm-seg-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  cursor: pointer;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  padding: 9px 12px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.perm-seg-btn strong { color: var(--text); font-size: 12.5px; }
+.perm-seg-btn small { color: var(--faint); font-size: 11px; }
+.perm-seg-btn em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--ok);
+  border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+.perm-seg-btn:hover { border-color: var(--muted); }
+.perm-seg-btn.on {
+  border-color: color-mix(in srgb, var(--ok) 50%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+}
+.perm-seg-btn.on strong { color: var(--ok); }
+.perm-seg-btn.on small { color: var(--muted); }
 .user-message {
   grid-template-columns: minmax(0, 1fr);
   width: min(88%, 720px);
