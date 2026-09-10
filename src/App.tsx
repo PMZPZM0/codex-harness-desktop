@@ -7396,7 +7396,14 @@ export default function App() {
     },
     onNotice: setNotice,
     onProbeSuccess: (title, detail) => showToast(title, detail),
+    // 设置页保存等路径已触发引擎重启生效：清掉「待重启生效」banner，避免残留误导
+    onEngineApplied: () => setPendingRestart(null),
   });
+  // 供应商切换「待重启生效」：切换只保存配置不重启引擎（不打断正在运行的会话），
+  // 用户点 banner 的「重启生效」或下次启动时才让新供应商生效。生效前消息继续用原供应商。
+  const [pendingRestart, setPendingRestart] = useState<{ provider: string; model: string; label: string; prevProvider: string; prevModel: string } | null>(null);
+  const pendingRestartRef = useRef(pendingRestart);
+  pendingRestartRef.current = pendingRestart;
   // 中转站一键切换：复用已有 key（按分组匹配）或新建 → 生成/更新供应商 → 选中生效。
   // 失败时抛回给调用方（中转站页面常驻显示错误），relay-active 只在全部成功后写入。
   const relayActivate = useCallback(async (mode: "balance" | "plan", group?: { group_id: number; group_name: string }, explicitKey?: { id: any; name: any; key: string; group_id: number | null }, retried = false): Promise<void> => {
@@ -7444,6 +7451,8 @@ export default function App() {
         setRelayActive(active);
         writeRelayActive(active);
         setNotice(`已切换：${resolved.displayName} · 模型 ${defaultModel}`);
+        // 中转站一键切换已立即重启引擎生效：清掉可能残留的「待重启生效」banner
+        setPendingRestart(null);
       } catch (error: any) {
         probeError = String(error?.message ?? error);
         // 部分站点（如 pptoken）要求 key 必须绑定分组：无分组 key 直接 403。自动改绑第一个订阅分组重试一次。
@@ -9332,11 +9341,30 @@ const commandMatches = useMemo(() => {
       if (currentThreadId) saveThreadModel(currentThreadId, nextId);
       else localStorage.setItem("default-model", nextId);
     };
-    // 跨供应商意味着切换全局 API Key，当前实现必须重启 app-server。存在任何运行任务时
-    // 禁止执行，避免为了当前下拉框把其他会话强制停止。
-    if (provider && customModel && provider !== customModel.provider && runningThreadIdsRef.current.size > 0) {
-      showToast("暂时不能切换供应商", "还有任务正在运行；可切换同一供应商内的模型，跨供应商请等任务完成后操作");
-      return;
+    // 跨供应商切换 = 切换全局 API Key，引擎必须重启才生效。为避免打断正在运行的会话
+    // （原会话继续可用），采用「延迟生效」：只保存配置（apply:false 不重启引擎）。
+    // 引擎空闲（无任何会话在运行）→ 立即自动重启生效；有任务在跑 → 留 banner 待用户
+    // 点「重启生效」或下次启动时生效；生效前消息继续用原供应商。
+    // 一次只生效一个供应商：pendingRestart 是唯一的，连续切换只保留最后一次。
+    if (provider && customModel && provider !== customModel.provider) {
+      try {
+        const prevProvider = customModel.provider;
+        const prevModel = customModel.model;
+        await window.codex.setProviderModel({ provider, model, apply: false });
+        const pending = { provider, model, label: nextLabel || model, prevProvider, prevModel };
+        if (runningThreadIdsRef.current.size === 0) {
+          // 引擎空闲：自动重启生效（不弹 banner，避免一闪而过）
+          void applyPendingRestart(pending);
+          showToast("已切换供应商", `正在重启生效：${nextLabel || model}（当前无运行任务，自动完成）`);
+        } else {
+          setPendingRestart(pending);
+          showToast("已选择新供应商", `已切换到 ${nextLabel || model}，点「重启生效」后生效；当前会话继续使用原供应商`);
+        }
+        return;
+      } catch (error: any) {
+        setNotice(`切换供应商失败：${error.message}`);
+        return;
+      }
     }
     // 用户主动切模型时给一条会话内提醒（与引擎 sideband 的模型切换事件互为补充）
     if (nextLabel && prevLabel && nextLabel !== prevLabel) showToast("模型已切换", `${prevLabel} → ${nextLabel}`);
@@ -9351,80 +9379,6 @@ const commandMatches = useMemo(() => {
     }
     saveSelection(value);
 
-    // 跨供应商切换：没有运行任务时一次性切换供应商+模型（会重启引擎）。
-    if (provider && customModel && provider !== customModel.provider) {
-      try {
-        const updated = await window.codex.setProviderModel({ provider, model });
-        setCustomModel(updated);
-        const selectedId = `custom:${updated.provider}:${model}`;
-        saveSelection(selectedId);
-        // 会话跨供应商迁移：引擎线程绑定创建时的 provider，settings/update 换 provider 会被拒。
-        // 唯一官方通道 = thread/resume { modelProvider, config, model }（schema 实证 resume 接受
-        // 这三个覆盖参数）——resume 后会话即绑定新供应商，历史完整保留，真正做到随切随用。
-        if (threadRef.current?.id) {
-          try {
-            const officialTarget = updated.provider === "openai-official";
-            const resumeParams: Record<string, unknown> = {
-              threadId: threadRef.current.id,
-              excludeTurns: true,
-              model,
-              // 官方订阅走引擎内置 openai 通道：不传 modelProvider/config（实证：传了即触发
-              // CODEX_HARNESS_API_KEY 校验导致流断）；其他供应商内联完整定义
-              ...(officialTarget ? {} : {
-                modelProvider: updated.provider,
-                config: {
-                  model_provider: updated.provider,
-                  model_providers: {
-                    [updated.provider]: {
-                      name: updated.name,
-                      base_url: updated.baseUrl,
-                      env_key: "CODEX_HARNESS_API_KEY",
-                      wire_api: (updated.wireApi === "chat" ? "chat" : "responses"),
-                      requires_openai_auth: false,
-                    },
-                  },
-                },
-              }),
-            };
-            await window.codex.request("thread/resume", resumeParams);
-            await updateThreadSettings({ model, ...(officialTarget ? {} : { model_provider: updated.provider }), effort: nextEffort || null });
-            showToast("已切换供应商", `当前会话已迁移到 ${updated.name} · ${model}，历史完整保留`);
-          } catch (migrateError: any) {
-            // 迁移失败（如极老会话）退回接力方案：新会话带上下文
-            showToast("已切换供应商", `新会话将使用 ${updated.name} · ${model}（当前会话无法迁移：${String(migrateError?.message ?? "").slice(0, 60)}）`);
-          }
-        } else {
-          await updateThreadSettings({ model, ...(updated.provider === "openai-official" ? {} : { model_provider: updated.provider }), effort: nextEffort || null });
-        }
-        setNotice(`已切换到 ${updated.name} · ${model}`);
-        return;
-      } catch (error: any) {
-        // 引擎会拒绝为旧线程更换供应商（线程绑定创建时的 provider）→ 自动接力：
-        // 新建新供应商线程，把旧会话最近上下文带入（下条消息自动携带）
-        const oldThread = threadRef.current;
-        if (oldThread?.turns?.length) {
-          const recent = oldThread.turns.flatMap((turn) => turn.items)
-            .filter((item: any) => item.type === "userMessage" || item.type === "agentMessage")
-            .slice(-40)
-            .map((item: any, index: number) => ({
-              id: `relay-${index}`,
-              role: item.type === "userMessage" ? "用户" as const : "Codex" as const,
-              text: item.type === "userMessage"
-                ? (item.content ?? []).filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n")
-                : (item.text ?? ""),
-            }))
-            .filter((item) => item.text.trim());
-          const active = await createEmptyThread();
-          if (active) {
-            setContextItems(recent);
-            showToast("已接力到新供应商", `原会话上下文（${recent.length} 条）已带入，下一条消息自动携带`);
-            return;
-          }
-        }
-        setNotice(error.message);
-        return;
-      }
-    }
     // 同供应商模型已在 catalog 中，直接更新当前会话即可。这里绝不能调用
     // setProviderModel：它会重写全局配置并重启引擎，导致其他运行会话被终止。
     if (provider && customModel && provider === customModel.provider) {
@@ -9439,6 +9393,76 @@ const commandMatches = useMemo(() => {
     }
     // 无 provider 前缀（内置模型）：只更新线程设置
     void updateThreadSettings({ model: model ?? value, effort: nextEffort || null });
+  }
+
+  /** 供应商切换「重启生效」：重启引擎使新供应商配置生效，成功后迁移当前会话并刷新 UI 状态。
+   *  手动点击 banner 时读 state；引擎空闲自动生效时由 chooseModel 直接传入 pending 对象。 */
+  async function applyPendingRestart(pendingOverride?: { provider: string; model: string; label: string; prevProvider: string; prevModel: string } | null) {
+    const pending = pendingOverride ?? pendingRestartRef.current;
+    if (!pending) return;
+    try {
+      const updated = await window.codex.applyCustomModel();
+      setCustomModel(updated);
+      setModelId(`custom:${updated.provider}:${updated.model}`);
+      localStorage.setItem("default-model", `custom:${updated.provider}:${updated.model}`);
+      // 会话跨供应商迁移：引擎线程绑定创建时的 provider，settings/update 换 provider 会被拒。
+      // 唯一官方通道 = thread/resume { modelProvider, config, model }（schema 实证 resume 接受
+      // 这三个覆盖参数）——resume 后会话即绑定新供应商，历史完整保留，原会话数据不丢。
+      if (threadRef.current?.id) {
+        try {
+          const officialTarget = updated.provider === "openai-official";
+          const resumeParams: Record<string, unknown> = {
+            threadId: threadRef.current.id,
+            excludeTurns: true,
+            model: updated.model,
+            // 官方订阅走引擎内置 openai 通道：不传 modelProvider/config（实证：传了即触发
+            // CODEX_HARNESS_API_KEY 校验导致流断）；其他供应商内联完整定义
+            ...(officialTarget ? {} : {
+              modelProvider: updated.provider,
+              config: {
+                model_provider: updated.provider,
+                model_providers: {
+                  [updated.provider]: {
+                    name: updated.name,
+                    base_url: updated.baseUrl,
+                    env_key: "CODEX_HARNESS_API_KEY",
+                    wire_api: (updated.wireApi === "chat" ? "chat" : "responses"),
+                    requires_openai_auth: false,
+                  },
+                },
+              },
+            }),
+          };
+          await window.codex.request("thread/resume", resumeParams);
+          await updateThreadSettings({ model: updated.model, ...(officialTarget ? {} : { model_provider: updated.provider }), effort: null });
+          showToast("已切换供应商", `当前会话已迁移到 ${updated.name} · ${updated.model}，历史完整保留`);
+        } catch (migrateError: any) {
+          // 迁移失败（如极老会话）退回接力方案：新会话带上下文
+          showToast("已切换供应商", `新会话将使用 ${updated.name} · ${updated.model}（当前会话无法迁移：${String(migrateError?.message ?? "").slice(0, 60)}）`);
+        }
+      } else {
+        await updateThreadSettings({ model: updated.model, ...(updated.provider === "openai-official" ? {} : { model_provider: updated.provider }), effort: null });
+      }
+      setPendingRestart(null);
+      setNotice(`已切换到 ${updated.name} · ${updated.model}`);
+    } catch (error: any) {
+      // 失败时挂上 banner 供手动重试（自动模式失败也可见，避免静默失败）
+      if (pendingOverride && !pendingRestartRef.current) setPendingRestart(pendingOverride);
+      setNotice(`重启生效失败：${error.message}`);
+    }
+  }
+
+  /** 撤销待重启的供应商切换：把激活配置恢复为原供应商（只改配置不重启，原会话不受影响） */
+  async function cancelPendingRestart() {
+    const pending = pendingRestartRef.current;
+    if (!pending) return;
+    try {
+      await window.codex.setProviderModel({ provider: pending.prevProvider, model: pending.prevModel, apply: false });
+      setPendingRestart(null);
+      showToast("已撤销切换", "继续使用原供应商");
+    } catch (error: any) {
+      setNotice(`撤销失败：${error.message}`);
+    }
   }
 
   async function updateThreadSettings(values: Record<string, unknown>) {
@@ -11938,6 +11962,19 @@ const commandMatches = useMemo(() => {
             <div className="context-picker-head"><span>引用本次对话</span><small>选择后会随本条消息发送</small></div>
             {availableContextItems.length ? availableContextItems.map((item) => <button type="button" role="option" key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => addContextItem(item)}><b>{item.role}</b><span>{item.text}</span></button>) : <p>没有匹配的历史消息</p>}
           </div>}
+          {/* 供应商切换「待重启生效」banner：切换只保存配置，重启前不打断任何会话 */}
+          {pendingRestart && (
+            <div className="provider-restart-banner">
+              <div className="provider-restart-banner-text">
+                <RefreshCw size={13} />
+                <span>已选择 <b>{pendingRestart.label}</b>，<b>重启后生效</b> —— 当前会话继续使用原供应商，正在运行的任务不受影响</span>
+              </div>
+              <div className="provider-restart-banner-actions">
+                <button type="button" className="provider-restart-banner-btn primary" onClick={() => void applyPendingRestart()}><RefreshCw size={13} />重启生效</button>
+                <button type="button" className="provider-restart-banner-btn" onClick={() => void cancelPendingRestart()}><X size={13} />撤销</button>
+              </div>
+            </div>
+          )}
           <form className="composer" onSubmit={send}>
             {quoteItem && <div className="quote-bar">
               <Quote size={13} className="quote-bar-icon" />

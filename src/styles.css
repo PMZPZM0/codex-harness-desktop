@@ -19835,3 +19835,65 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   font-size: 12px;
   white-space: pre-wrap;
 }
+
+/* ===== 供应商切换「待重启生效」banner ===== */
+.provider-restart-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 16px 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.35));
+  border-left: 3px solid #f59e0b;
+  border-radius: 10px;
+  background: var(--panel, #fff);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+  font-size: 13px;
+  color: var(--text, #0f172a);
+}
+.provider-restart-banner-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.provider-restart-banner-text svg {
+  color: #f59e0b;
+  flex-shrink: 0;
+}
+.provider-restart-banner-text b {
+  color: var(--text, #0f172a);
+  font-weight: 600;
+}
+.provider-restart-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.provider-restart-banner-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.4));
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text, #0f172a);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.provider-restart-banner-btn:hover {
+  background: rgba(148, 163, 184, 0.12);
+}
+.provider-restart-banner-btn.primary {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+  font-weight: 600;
+}
+.provider-restart-banner-btn.primary:hover {
+  background: rgba(245, 158, 11, 0.2);
+}
