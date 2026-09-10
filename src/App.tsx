@@ -6984,6 +6984,8 @@ export default function App() {
   // 各会话最近一次完整 thread/resume 的时间：频繁来回切换时，30 秒内且无运行回合的会话
   // 跳过重复 resume（全量加载长会话是"频繁切换会卡"的主因；期间无事件流说明内容没变）
   const recentResumeAtRef = useRef(new Map<string, number>());
+  // 分页游标：每个会话最近一次 turns/list 的 nextCursor，供「显示更早的消息」按需续拉
+  const turnsCursorRef = useRef(new Map<string, string | null>());
   // fade-out 动画控制：jumpToBottom settled 后等一帧再让遮罩淡出，避免内容继续增高
   // 时遮罩提前消失导致"切过去在中间"；markSettled 每次触发都重置 timer，保证只有最后
   // 一次稳定后才真正卸载
@@ -10957,6 +10959,50 @@ const commandMatches = useMemo(() => {
     syncComposerFromDom();
   }
 
+  /** 轻量 resume：excludeTurns:true 只取会话元数据（引擎不再全量水合历史），
+   *  另按 desc 取最新一页回合供首屏——配合回合窗口化，打开成本与会话长度无关。
+   *  此前 excludeTurns:false 会让引擎把几千个回合整个序列化回来、然后 turns/list 又取
+   *  一遍——「切会话慢」的数据侧主因（渲染侧已窗口化）。 */
+  async function resumeThreadLight(params: { threadId: string; sandbox?: string; approvalPolicy?: string }, turnBudget = 200): Promise<any> {
+    const result = await window.codex.request("thread/resume", { threadId: params.threadId, excludeTurns: true, sandbox: params.sandbox, approvalPolicy: params.approvalPolicy });
+    const thread = result?.thread;
+    if (thread && !(Array.isArray(thread.turns) && thread.turns.length)) {
+      try {
+        const page: any = await window.codex.request("thread/turns/list", { threadId: params.threadId, limit: turnBudget, sortDirection: "desc", itemsView: "full" });
+        const data = Array.isArray(page?.data) ? page.data : [];
+        if (data.length) thread.turns = [...data].reverse();
+        if (page?.nextCursor) turnsCursorRef.current.set(params.threadId, page.nextCursor);
+        else turnsCursorRef.current.delete(params.threadId);
+      } catch { /* 分页失败维持原结果，不影响会话打开 */ }
+    }
+    return result;
+  }
+
+  /** 展开更早的历史：按游标继续 desc 续拉，直到到底（上限 20 页，防异常死循环）。 */
+  async function loadEarlierTurns(id: string) {
+    let cursor = turnsCursorRef.current.get(id) ?? null;
+    if (!cursor) return;
+    const older: any[] = [];
+    for (let page = 0; page < 20 && cursor; page++) {
+      const result: any = await window.codex.request("thread/turns/list", { threadId: id, limit: 200, sortDirection: "desc", itemsView: "full", cursor }).catch(() => null);
+      const data = Array.isArray(result?.data) ? result.data : [];
+      if (!data.length) { cursor = null; break; }
+      older.push(...data);
+      cursor = result?.nextCursor ?? null;
+    }
+    if (cursor) turnsCursorRef.current.set(id, cursor);
+    else turnsCursorRef.current.delete(id);
+    if (!older.length) return;
+    const earlier = [...older].reverse();
+    setThread((current) => {
+      if (!current || current.id !== id) return current;
+      const next = { ...current, turns: [...earlier, ...(current.turns ?? [])] };
+      threadRef.current = next;
+      threadCacheRef.current.set(id, next);
+      return next;
+    });
+  }
+
   async function openThread(id: string, freshThread?: Thread | null) {
     setChatSearchOpen(false);
     // 快速连点防竞态：只有最新一次切换的 resume 响应才允许落地渲染
@@ -11075,7 +11121,9 @@ const commandMatches = useMemo(() => {
       const resumeApproval = permForResume.approval === "never" || permForResume.approval === "on-request" || permForResume.approval === "untrusted"
         ? permForResume.approval
         : (localStorage.getItem("default-approval") ?? "never");
-      const result = await resumeThreadWithTurns({ threadId: id, excludeTurns: false, sandbox: resumeSandbox, approvalPolicy: resumeApproval });
+      // 轻量 resume（excludeTurns:true + 最新一页回合）：不再让引擎全量水合几千个回合——
+      // 这是切会话慢的数据侧主因；更早的历史由「显示更早的消息」按需续拉
+      const result = await resumeThreadLight({ threadId: id, sandbox: resumeSandbox, approvalPolicy: resumeApproval });
       if (seq !== switchSeqRef.current) return; // 已切到别的会话，丢弃本次结果
       recentResumeAtRef.current.set(id, Date.now());
       // 残留运行态归一化（详见 normalizeLoadedThread）：旧会话丢过 turn/completed 的
@@ -12145,7 +12193,7 @@ const commandMatches = useMemo(() => {
           {/* 长会话窗口化：默认只挂最近 TURN_WINDOW 个回合，更早的按需展开。
               软件渲染下全量挂载几千个回合是「切换会话慢」的主因，这里把首屏成本封顶。 */}
           {thread && thread.turns.length > TURN_WINDOW && !earlyTurnExpanded[thread.id] && (
-            <button type="button" className="load-earlier-turns" onClick={() => setEarlyTurnExpanded((current) => ({ ...current, [thread.id]: true }))}>
+            <button type="button" className="load-earlier-turns" onClick={() => { setEarlyTurnExpanded((current) => ({ ...current, [thread.id]: true })); void loadEarlierTurns(thread.id); }}>
               <ChevronDown size={13} style={{ transform: "rotate(180deg)" }} />
               显示更早的 {thread.turns.length - TURN_WINDOW} 条消息
               <small>为加快打开速度，默认只渲染最近 {TURN_WINDOW} 条</small>
