@@ -432,6 +432,7 @@ interface Window {
     browserPopout(url: string): Promise<{ ok: boolean }>;
     shellReveal(target: string): Promise<void>;
     writeClipboardImage(filePath: string): Promise<boolean>;
+    readClipboardFiles(): Promise<string[]>;
     doctor(cwd?: string): Promise<{ checks: { label: string; ok: boolean; detail: string }[]; at: number }>;
     engineInfo(): Promise<{
       codexHome: string; binary: string; binaryExists: boolean; version: string; running: boolean;

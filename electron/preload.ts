@@ -227,6 +227,7 @@ contextBridge.exposeInMainWorld("codex", {
   browserPopout: (url: string) => ipcRenderer.invoke("browser:popout", url),
   shellReveal: (target: string) => ipcRenderer.invoke("shell:reveal", target),
   writeClipboardImage: (filePath: string) => ipcRenderer.invoke("clipboard:write-image", filePath),
+  readClipboardFiles: () => ipcRenderer.invoke("clipboard:read-files"),
   doctor: (cwd?: string) => ipcRenderer.invoke("app:doctor", { cwd }),
   engineInfo: () => ipcRenderer.invoke("app:engine-info"),
   storageInfo: () => ipcRenderer.invoke("app:storage-info"),

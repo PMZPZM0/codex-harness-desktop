@@ -1964,15 +1964,51 @@ function ComposerEditor({ value, placeholder, editorRef, domValueRef, makeChip, 
           .filter((file) => !file.type.startsWith("image/"))
           .map((file) => (file as File & { path?: string }).path)
           .filter((p): p is string => typeof p === "string" && p.length > 0);
-        if (filePaths.length) {
-          event.preventDefault();
-          onPasteFiles(filePaths);
+        // Windows 上从资源管理器复制文件时 clipboardData.files 常为空（系统剪贴板是
+        // CF_HDROP，浏览器不转成 File 列表）——可靠通道是 text/uri-list（file:/// 列表）。
+        const uriList = event.clipboardData.getData("text/uri-list");
+        const uriPaths: string[] = [];
+        if (uriList) {
+          for (const raw of uriList.split(/\r?\n/)) {
+            const line = raw.trim();
+            if (!line) continue;
+            try {
+              const url = new URL(line);
+              if (url.protocol === "file:") {
+                // file:///C:/foo bar.txt → C:\foo bar.txt
+                uriPaths.push(decodeURIComponent(line.slice("file://".length)).replace(/\//g, "\\").replace(/^\\/, ""));
+              }
+            } catch { /* 非 URL 行（如注释）跳过 */ }
+          }
         }
-        if (imageFile) {
+        const allFilePaths = [...new Set([...filePaths, ...uriPaths])];
+        if (allFilePaths.length) {
+          event.preventDefault();
+          onPasteFiles(allFilePaths);
+        } else if (imageFile) {
           event.preventDefault();
           onPasteImage(event.clipboardData.getData("text/plain"));
+        } else {
+          // 渲染层 files/uri-list 都拿不到：剪贴板可能是文件（Windows CF_HDROP 渲染层不暴露）
+          // 也可能是纯文本。先阻止原生，主进程 clipboard.read() 兜底判断文件；
+          // 若确认无文件再手动插入纯文本（保持光标位置），保证纯文本粘贴不失效。
+          event.preventDefault();
+          const plain = event.clipboardData.getData("text/plain");
+          void window.codex.readClipboardFiles().then((paths) => {
+            if (paths.length) { onPasteFiles(paths); return; }
+            if (plain) {
+              try { document.execCommand("insertText", false, plain); } catch { /* ignore */ }
+              const el = editorRef.current;
+              if (el) {
+                const next = serializeComposerDom(el);
+                if (next !== domValueRef.current) {
+                  domValueRef.current = next;
+                  onValueInput(next);
+                }
+              }
+            }
+          });
         }
-        if (!imageFile && !filePaths.length) return; // 纯文本粘贴交给 plaintext-only 原生行为（自动去富文本格式）
       }}
     />
   );
