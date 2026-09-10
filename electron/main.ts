@@ -4982,6 +4982,30 @@ ipcMain.handle("custom-model:set-enabled", async (_event, input: { provider: str
       await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
       await applyCustomModel(next);
     }
+    // 正向联动：在「模型供应商」列表启用 → 对应账号库里被停用的账号同步恢复启用。
+    // 不补这一步会出现死锁（实测反馈）：供应商生效了，但账号卡仍显示「已停用」，
+    // 而账号的 disabled 又会把开关/「启用订阅/设为当前」按钮一起禁用 → 用户回到订阅页什么都点不了。
+    try {
+      if (input.provider === "openai-official") {
+        const vault = await readOpenaiVault();
+        let changed = false;
+        for (const account of vault) {
+          if ((account as any).disabled) { delete (account as any).disabled; changed = true; }
+        }
+        if (changed) await writeOpenaiVault(vault);
+      } else if (input.provider.startsWith("relay-")) {
+        const hostSegment = input.provider.slice("relay-".length).toLowerCase();
+        const store = await readRelayStore();
+        let changed = false;
+        for (const account of store.accounts) {
+          if (!account.disabled) continue;
+          let accountHost = "";
+          try { accountHost = new URL(account.baseUrl).host.replace(/^api\./i, "").split(".")[0].toLowerCase(); } catch { /* 跳过 */ }
+          if (accountHost && accountHost === hostSegment) { account.disabled = false; changed = true; }
+        }
+        if (changed) await writeRelayStore(store);
+      }
+    } catch { /* 账号库不存在等：跳过联动，不影响启用主流程 */ }
     return publicCustomModel(next);
   }
   const next: CustomModelFile = { ...target, enabled: false };
@@ -5009,6 +5033,17 @@ ipcMain.handle("custom-model:set-enabled", async (_event, input: { provider: str
       }
       if (changed) await writeRelayStore(store);
     } catch { /* relay store 不存在等，跳过联动 */ }
+  }
+  // 反向联动：停用 openai-official 供应商 → 订阅账号一并置为「已停用」（与中转站账号同语义）
+  if (input.provider === "openai-official") {
+    try {
+      const vault = await readOpenaiVault();
+      let changed = false;
+      for (const account of vault) {
+        if (!(account as any).disabled) { (account as any).disabled = true; changed = true; }
+      }
+      if (changed) await writeOpenaiVault(vault);
+    } catch { /* 跳过 */ }
   }
   return publicCustomModel(next);
 });
