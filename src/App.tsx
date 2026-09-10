@@ -9130,7 +9130,10 @@ const commandMatches = useMemo(() => {
         const localApproval = savedPerms && (savedPerms.approval === "never" || savedPerms.approval === "on-request" || savedPerms.approval === "untrusted") ? savedPerms.approval : null;
         const effectiveSandbox = recentPush && localSandbox ? localSandbox : (localSandbox ?? mode);
         const effectiveApproval = recentPush && localApproval ? localApproval : (localApproval ?? policy);
-        if (effectiveSandbox && threadId) saveThreadPermissions(threadId, effectiveSandbox, effectiveApproval);
+        // 引擎回推的 sandboxPolicy 是线程当前状态，可能是被历史降级/创建时旧值，不可作为持久记录——
+        // 本地无用户选择时只临时显示（等 resume 恢复给出权威值），绝不落盘。落盘会污染 localPerms，
+        // 让 resume 恢复读到灰值并 push 回引擎 → 重启后完全权限被静默降级成 workspace-write（变灰根因）。
+        if (effectiveSandbox && threadId && localSandbox) saveThreadPermissions(threadId, effectiveSandbox, effectiveApproval);
         if (effectiveSandbox) setSandbox(effectiveSandbox);
         setApprovalPolicy(effectiveApproval);
         // 思考等级同理：引擎回推的可能是创建时的旧值，本地有每会话记录时以本地为准
@@ -10793,12 +10796,16 @@ const commandMatches = useMemo(() => {
       const validApproval = (value?: string) => value === "never" || value === "on-request" || value === "untrusted" ? value : null;
       const savedDefault = validSandbox(localStorage.getItem("default-sandbox") ?? undefined) ?? "danger-full-access";
       const savedDefaultApproval = validApproval(localStorage.getItem("default-approval") ?? undefined) ?? "never";
-      const nextSandbox = validSandbox(localPerms.sandbox) ?? savedDefault ?? resumedSandbox;
-      const nextApproval = validApproval(localPerms.approval) ?? savedDefaultApproval ?? resumedApproval;
+      // 优先级：本地每会话记录（用户明确选择，最权威）> 引擎真实 sandbox（线程当前实际状态，
+      // 比全局默认更能反映该会话）> 全局默认。引擎被历史错误降级时，用户重选一次即写入本地记录自愈。
+      const nextSandbox = validSandbox(localPerms.sandbox) ?? validSandbox(resumedSandbox ?? undefined) ?? savedDefault;
+      const nextApproval = validApproval(localPerms.approval) ?? validApproval(resumedApproval ?? undefined) ?? savedDefaultApproval;
       setSandbox(nextSandbox);
       setApprovalPolicy(nextApproval);
       saveThreadPermissions(id, nextSandbox, nextApproval);
-      void window.codex.request("thread/settings/update", { threadId: id, approvalPolicy: nextApproval, sandboxPolicy: sandboxPolicy(nextSandbox, result.cwd ?? workspace) }).catch(() => undefined);
+      // 打开会话绝不向引擎 push 权限：settings/update 会把恢复值写回引擎，若恢复值来自被污染的
+      // localPerms 或旧快照，引擎权限会被静默降级（重启后完全权限变灰根因）。引擎权限只由用户
+      // 显式切换（changePermissionMode → pushThreadPermissions 带 threadPermPushAt 时间戳保护）管理。
       const resumedRunningTurn = loaded.turns.find((turn: Turn) => isTurnRunning(turn));
       setActiveTurnId(resumedRunningTurn?.id ?? null);
       setSending(Boolean(resumedRunningTurn));
