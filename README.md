@@ -80,6 +80,7 @@
 
 - **复制走主进程剪贴板**：消息/密钥/路径等所有「复制」按钮统一走主进程 electron clipboard（`clipboard:write` IPC），不再依赖渲染层 Clipboard API——窗口失焦或权限被拒时后者会抛「Write permission denied」（用户实测的「复制失败」toast 即此因）；IPC 不可用时回落浏览器 API，再回落隐藏 textarea + execCommand。
 - **config.toml 孤儿键自清理 + 钩子中文徽标**：引擎运行中写进 config.toml 的顶层键若错位落到某个段落内（如 `model_reasoning_effort` 落进 `[mcp_servers.nuphus]`，TOML 语义上属于该段、引擎不读，还会误导排查），重写时自动清除；消息 footer 的小扳手钩子徽标把「session-start:0C:\Users\...」这类原始名映射成「会话启动钩子 #0」等中文短名，长路径悬停可见。
+- **会话切换直切（缓存秒开不再遮罩）**：打开过的会话（缓存命中）切换时直接渲染缓存内容并定位到最新消息，不再强制显示 ~200ms 过渡遮罩——缓存直渲 + 后台 resume 对齐（30 秒内切回免重复 resume）；只有首次打开、需要真正加载的会话才显示遮罩。
 - **思考等级档案持久化 + 立即生效**：思考档位跟模型一起进档案——`custom-model.json`（`models[].effort` + 顶层 `effort`）+ `config.toml` 顶层 `model_reasoning_effort`。在输入框「思考」菜单里换档位，**下一条消息立刻生效**（每轮 `turn/start` 逐回合下发引擎），同时写档案（切供应商/重装不丢、重启后 resume 的老会话也有兜底默认）；打开旧会话时优先用该会话的显式记录，没有才落档案档位。回归场景 `effort-scope`（UI 切档 → 档案三处落盘 → rollout 取证引擎实收值）。另注：**模型自报思考档位不可信**——模型看不到请求参数，问它「你思考等级是几」得到的答案是编的，判定只认 rollout 的 `turn_context.effort`。
 - **沙箱隔离**：Windows 沙箱执行，命令越界走审批流
 - **多模型接入**：任意 OpenAI 兼容端点，多供应商多模型自由切换；内置 GPT 系/主流国模规格表（上下文/最大输出/思考档位/视觉模态按型号自动识别），填模型 ID 即自动填好全部参数；支持外部规格文件更新模型数据无需改代码；API 协议自动跟随上游（探测时 Responses/Chat 自动判定并落定）；Coding Plan 套餐网关（火山方舟/智谱/Kimi/MiniMax）不提供模型列表接口时自动加载内置推荐清单
