@@ -129,6 +129,7 @@ import {
   Wallet,
   LogIn,
   Database,
+  Headphones,
 } from "lucide-react";
 import { useMemory, type MemoryGatewayState, type MemoryGroup, type MemoryPriority, type MemoryRecord, groupMemoriesByThread } from "./hooks/useMemory";
 import UsagePanel from "./components/UsagePanel";
@@ -364,6 +365,7 @@ import { BuiltinPluginsSection } from "./components/BuiltinPlugins";
 import { CODEX_MARKET_ZH, zhCategory } from "./lib/codex-market-zh";
 import { SKILLHUB_MCP_CATALOG, SKILLHUB_MCP_CATEGORIES, skillhubMcpDetailUrl, type SkillHubMcpEntry } from "./lib/skillhub-mcp";
 import { PersonalizationPage } from "./components/PersonalizationPage";
+import VoiceSettingsSection from "./components/VoiceSettingsSection";
 import { GlobalSearchView } from "./components/IndexLibrary";
 import BrowserPane from "./components/BrowserPane";
 import type { SearchPreviewTarget } from "./components/IndexLibrary";
@@ -1076,12 +1078,12 @@ const cronTemplates = [
   { name: "发布简报", desc: "整理本周合并的 PR 和 commit，按功能、修复、体验及工程改进分类，同时生成团队版和面向用户的精简发布说明。", time: "每周五 16:00", intervalMinutes: 10080, icon: "📝" },
   { name: "文档同步检查", desc: "对照最近 7 天的代码、配置、接口与文档变更，识别已改变公开行为但文档尚未同步的高置信差异，并附文件路径和修复建议。", time: "每周三 15:00", intervalMinutes: 10080, icon: "📄" },
 ];
-type SettingsPage = "user" | "general" | "devtools" | "appearance" | "personalization" | "model" | "relay" | "openai" | "browser" | "computer" | "memory" | "agents" | "teams" | "plugins" | "mcp" | "ssh" | "skills" | "commands" | "hooks" | "usage" | "channel" | "schedule" | "rpa" | "archive" | "backup" | "storage" | "automation" | "agentteam";
+type SettingsPage = "user" | "general" | "devtools" | "appearance" | "personalization" | "model" | "relay" | "openai" | "browser" | "computer" | "memory" | "agents" | "teams" | "plugins" | "mcp" | "ssh" | "skills" | "commands" | "hooks" | "usage" | "channel" | "schedule" | "rpa" | "archive" | "backup" | "storage" | "automation" | "agentteam" | "voice";
 // 导航分组：常用项置顶（技能/插件紧挨），自动化三合一、智能体+专家团合并为二级页。
 // "browser"/"computer"/"rpa"/"agents"/"teams" 保留在类型里（历史跳转兼容），但不再出现在导航。
 const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
   { group: "账户", items: [["user", "用户中心", UserRound], ["model", "模型", Bot], ["relay", "中转站", Wallet], ["openai", "OpenAI 订阅", CircleGauge]] },
-  { group: "常用", items: [["general", "控制台", Settings2], ["appearance", "外观", Sun], ["personalization", "个性化", Sparkles], ["skills", "技能", Zap], ["plugins", "插件", Store], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare]] },
+  { group: "常用", items: [["general", "控制台", Settings2], ["appearance", "外观", Sun], ["personalization", "个性化", Sparkles], ["voice", "语音通话", Headphones], ["skills", "技能", Zap], ["plugins", "插件", Store], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare]] },
   { group: "自动化与能力", items: [["automation", "自动化", Workflow], ["mcp", "MCP", Wifi], ["schedule", "定时任务", Clock3], ["hooks", "钩子", Wrench], ["ssh", "SSH 服务器", Server]] },
   { group: "智能体", items: [["agentteam", "智能体团队", Users]] },
   { group: "数据与统计", items: [["usage", "使用统计", CircleGauge], ["storage", "数据管理", Database], ["backup", "会话备份", Download], ["archive", "归档管理", Archive]] },
@@ -11240,9 +11242,10 @@ const commandMatches = useMemo(() => {
     // 改全局默认也只影响新会话与**当时打开的那一个**会话（规则见 src/lib/model-scope.mjs）。
     const storedModel = resolveThreadModel(id);
     if (storedModel) setModelId(storedModel);
-    // 切会话一律显示遮罩（缓存秒开也走）：给"刚切过去就在最新消息位置"的视觉过渡，
-    // 避免内容直接落底的突兀；遮罩由 markSettled 在内容稳定后 ~180ms 自动淡出
-    setSwitchingThreadId(id);
+    // 切会话过渡遮罩：只在「没有缓存、需要真正加载」时显示（首次打开的长会话）。
+    // 缓存秒开的会话不再强制遮罩——WorkBuddy 式直切（缓存直渲 + 后台 resume 对齐），
+    // 每次切换都白遮 ~200ms 是「切换不够丝滑」的直接观感来源。
+    if (!threadCacheRef.current.get(id)) setSwitchingThreadId(id);
     setMobileNav(false);
     setDiff("");
     setSystemEvents([]);
@@ -13609,6 +13612,7 @@ const commandMatches = useMemo(() => {
               <CodeAppearanceSection />
             </section>}
             {settingsPage === "personalization" && <PersonalizationPage personality={personality} onPersonalityChange={changePersonality} onNotice={setNotice} />}
+            {settingsPage === "voice" && <VoiceSettingsSection onNotice={setNotice} />}
             {settingsPage === "relay" && <RelayCenterPage busy={relayBusy} activeProvider={customModel?.provider} onActivate={relayActivate} onNotice={setNotice} onOpenModelSettings={() => { setSettingsPage("model"); }} />}
             {settingsPage === "openai" && <OpenaiSubscriptionPage activeProvider={customModel?.provider} onActivate={(models) => activateOfficialProvider(models)} onNotice={setNotice} onActiveChange={setOpenaiActiveAcct} />}
             {settingsPage === "model" && <section className="settings-model-layout">

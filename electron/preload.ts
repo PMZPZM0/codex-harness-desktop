@@ -302,7 +302,23 @@ contextBridge.exposeInMainWorld("codex", {
   voicePlaybackDone: () => ipcRenderer.invoke("voice:playback-done") as Promise<{ ok: boolean }>,
   voiceModelsStatus: () => ipcRenderer.invoke("voice:models-status") as Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string }>,
   voiceModelsInstall: () => ipcRenderer.invoke("voice:models-install") as Promise<{ ok: boolean; error?: string }>,
+  voiceModelsCancel: () => ipcRenderer.invoke("voice:models-cancel") as Promise<{ ok: boolean }>,
   voiceMicPermission: () => ipcRenderer.invoke("voice:mic-permission") as Promise<{ status: string; error?: string }>,
+  voiceSettingsGet: () => ipcRenderer.invoke("voice:settings-get") as Promise<{
+    settings: {
+      tts: { sid: number; speed: number };
+      barge: { gateDb: number; mode: "auto" | "manual" };
+      modelHost: "auto" | "huggingface" | "hf-mirror";
+    };
+    ttsVoices: Record<number, string>;
+    modelHosts: Record<string, string>;
+    modelHostOptions: string[];
+  }>,
+  voiceSettingsSet: (patch: any) => ipcRenderer.invoke("voice:settings-set", patch) as Promise<{
+    tts: { sid: number; speed: number };
+    barge: { gateDb: number; mode: "auto" | "manual" };
+    modelHost: "auto" | "huggingface" | "hf-mirror";
+  }>,
   onVoiceEvent: (listener: (event: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, value: unknown) => listener(value);
     ipcRenderer.on("voice:event", handler);

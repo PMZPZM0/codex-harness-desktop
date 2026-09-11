@@ -67,6 +67,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   const playQueueRef = useRef<AudioBufferSourceNode[]>([]);
   const playingCountRef = useRef(0);
   const aecRef = useRef<any>(null);
+  const bargeModeRef = useRef<"auto" | "manual">("auto");
   const gateRef = useRef<any>(null);
   const chunkerRef = useRef<any>(null);
   const refRingRef = useRef<Float32Array>(new Float32Array(CAPTURE_RATE * 2));
@@ -252,7 +253,12 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     }
 
     aecRef.current = createAec({ filterLength: 512, delay: 480, step: 0.12 });
-    gateRef.current = createEchoGate({ echoGateDb: 6 });
+    // 打断方式 + 灵敏度从设置取：auto=能量门控自动打断，manual=仅手动按钮（外放场景避免误触发）
+    const settings = await window.codex.voiceSettingsGet().catch(() => null);
+    const bargeMode = settings?.settings?.barge?.mode ?? "auto";
+    const gateDb = settings?.settings?.barge?.gateDb ?? 6;
+    gateRef.current = createEchoGate({ echoGateDb: gateDb });
+    bargeModeRef.current = bargeMode;
 
     const node = new AudioWorkletNode(ctx, "voice-capture", {
       numberOfInputs: 1,
@@ -283,7 +289,8 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       // 播报期门控：只有「能量显著高于回声地板」才算真人插话
       const doubleTalk = gateRef.current?.update(rms, speakingRef.current) ?? false;
       aecRef.current?.setFrozen(doubleTalk);
-      if (doubleTalk && Date.now() - lastBargeAtRef.current > BARGUE_COOLDOWN_MS) {
+      // manual 模式：只算出门控，不自动打断——让用户用「打断」按钮（外放场景避免误触发）
+      if (doubleTalk && bargeModeRef.current === "auto" && Date.now() - lastBargeAtRef.current > BARGUE_COOLDOWN_MS) {
         lastBargeAtRef.current = Date.now();
         stopPlayback();
         void window.codex.voiceBarge().catch(() => undefined);
@@ -509,9 +516,15 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
               )}
               <div className="voice-panel-actions">
                 {!modelsReady && (
-                  <button className="voice-secondary" disabled={Boolean(download)} onClick={() => void installModels()}>
-                    {download ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />}下载模型
-                  </button>
+                  download ? (
+                    <button className="voice-secondary" onClick={() => void window.codex.voiceModelsCancel()}>
+                      <X size={14} />取消下载
+                    </button>
+                  ) : (
+                    <button className="voice-secondary" onClick={() => void installModels()}>
+                      <Download size={14} />下载模型
+                    </button>
+                  )
                 )}
                 <button className="voice-primary" disabled={phase === "starting"} onClick={() => void startCall()}>
                   {phase === "starting" ? <LoaderCircle size={14} className="spin" /> : <Mic size={14} />}开始通话
