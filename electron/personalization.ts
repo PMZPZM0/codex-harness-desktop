@@ -9,7 +9,17 @@ import path from "node:path";
  * （已实测确认），并自动与用户项目仓库里的 AGENTS.md 分层合并（越深优先级越高）。
  * 纯 Markdown 落盘，没有 TOML 转义问题。
  */
-export type PersonalizationConfig = { nickname?: string; customInstructions?: string };
+export type PersonalizationConfig = {
+  /** 用户称呼（引擎以此称呼用户） */
+  nickname?: string;
+  customInstructions?: string;
+  /** 用户给 Codex 取的名字（引导对话或设置页设置；为空时引擎用默认自称） */
+  assistantName?: string;
+  /** 用户补充的自我介绍/使用场景（引导对话收集，写进 About the user 段） */
+  userContext?: string;
+  /** 首次对话身份引导是否已完成：完成后新会话不再注入引导指令 */
+  onboarded?: boolean;
+};
 
 // 注意：不能在模块顶层调用 app.getPath("userData") —— 模块在主进程 whenReady 之前就被
 // main.ts 顶层 import 加载，此时 Electron 的 app getter 仍是 undefined，会导致
@@ -22,16 +32,29 @@ function getPersonalizationFile(): string {
 export async function readPersonalization(): Promise<PersonalizationConfig> {
   try {
     const stored = JSON.parse(await fs.readFile(getPersonalizationFile(), "utf8"));
-    return { nickname: String(stored?.nickname ?? "").trim(), customInstructions: String(stored?.customInstructions ?? "").trim() };
+    return {
+      nickname: String(stored?.nickname ?? "").trim(),
+      customInstructions: String(stored?.customInstructions ?? "").trim(),
+      assistantName: String(stored?.assistantName ?? "").trim(),
+      userContext: String(stored?.userContext ?? "").trim(),
+      onboarded: stored?.onboarded === true,
+    };
   } catch {
     return {};
   }
 }
 
-export async function writePersonalization(input: { nickname?: unknown; customInstructions?: unknown }): Promise<PersonalizationConfig> {
+/** 写入：先读现档合并（partial 语义——调用方只传要改的字段，其余原样保留，
+ *  否则 setNickname 等局部保存会把 assistantName/onboarded 等新字段清掉）。 */
+export async function writePersonalization(input: { nickname?: unknown; customInstructions?: unknown; assistantName?: unknown; userContext?: unknown; onboarded?: unknown }): Promise<PersonalizationConfig> {
+  const current = await readPersonalization();
+  const str = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
   const config: PersonalizationConfig = {
-    nickname: String(input.nickname ?? "").trim().slice(0, 60),
-    customInstructions: String(input.customInstructions ?? "").trim().slice(0, 8000),
+    nickname: input.nickname === undefined ? current.nickname : str(input.nickname, 60),
+    customInstructions: input.customInstructions === undefined ? current.customInstructions : str(input.customInstructions, 8000),
+    assistantName: input.assistantName === undefined ? current.assistantName : str(input.assistantName, 40),
+    userContext: input.userContext === undefined ? current.userContext : str(input.userContext, 2000),
+    onboarded: input.onboarded === undefined ? current.onboarded : input.onboarded === true,
   };
   await fs.writeFile(getPersonalizationFile(), JSON.stringify(config, null, 2), "utf8");
   return config;
@@ -72,6 +95,8 @@ export function buildAgentsMd(personalization: PersonalizationConfig): string {
   lines.push(LANGUAGE_GUIDELINES);
   lines.push("");
   if (personalization.nickname) lines.push(`- Address the user as "${personalization.nickname}" (the user's preferred name).`);
+  if (personalization.assistantName) lines.push(`- Your name is "${personalization.assistantName}" — the user named you. Use it as your identity in conversations naturally.`);
+  if (personalization.userContext) lines.push(`- About the user: ${personalization.userContext}`);
   if (personalization.customInstructions) {
     lines.push("- User custom instructions (always apply, they take precedence over stylistic defaults):");
     lines.push("");

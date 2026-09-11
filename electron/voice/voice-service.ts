@@ -63,6 +63,8 @@ type Deps = {
 export class VoiceService {
   private asr: VoiceWorkerClient | null = null;
   private tts: VoiceWorkerClient | null = null;
+  /** 唤醒用的独立识别器（持续聆听，不参与通话、不开引擎回合） */
+  private wakeAsr: VoiceWorkerClient | null = null;
   private threadId = "";
   private state: VoiceState = "idle";
   private active = false;
@@ -389,6 +391,66 @@ export class VoiceService {
     } finally {
       void client?.terminate?.().catch?.(() => undefined);
     }
+  }
+
+  // ── 语音唤醒（持续聆听，只用 ASR、不开引擎回合）──
+  // 说明：这里复用的是**已有的流式识别模型**（不是专门的 KWS 关键词模型），
+  // 所以会持续占用 CPU。专门的唤醒模型更省电，但需要额外下载一个模型仓库；
+  // 当前实现的好处是「装上就能用」，代价是 standby 时 CPU 有常驻开销（UI 里已明确提示）。
+
+  async startWakeListener(): Promise<{ ok: boolean; error?: string }> {
+    if (this.wakeAsr) return { ok: true };
+    const sherpaPath = resolveSherpaPath();
+    if (!sherpaPath) return { ok: false, error: "语音运行时未就绪（sherpa-onnx 未安装）" };
+    if (!(await this.refreshModelsReady())) {
+      return { ok: false, error: "语音模型未下载完整，请先到「开发工具 → 语音模型」下载" };
+    }
+    try {
+      this.wakeAsr = new VoiceWorkerClient(
+        "语音唤醒",
+        ASR_WORKER_SOURCE,
+        {
+          sherpaPath,
+          sampleRate: SAMPLE_RATE,
+          encoder: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "encoder.int8.onnx"),
+          decoder: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "decoder.onnx"),
+          joiner: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "joiner.int8.onnx"),
+          tokens: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "tokens.txt"),
+          numThreads: 1,
+          // 唤醒不需要长句：用更短的静音阈值，命中后立即成句
+          rule1: 0.8,
+          rule2: 0.5,
+          rule3: 6,
+        },
+        () => { this.wakeAsr = null; }
+      );
+      return { ok: true };
+    } catch (error: any) {
+      return { ok: false, error: String(error?.message ?? error) };
+    }
+  }
+
+  /** 喂一帧音频给唤醒识别器，返回当前累计文本。 */
+  async feedWakeAudio(samples: Float32Array): Promise<{ text: string }> {
+    if (!this.wakeAsr) return { text: "" };
+    try {
+      const r = await this.wakeAsr.request("feed", { samples });
+      return { text: String(r?.text ?? "") };
+    } catch {
+      return { text: "" };
+    }
+  }
+
+  /** 唤醒词命中后重置识别流，准备下一次唤醒。 */
+  async resetWakeStream(): Promise<void> {
+    if (!this.wakeAsr) return;
+    await this.wakeAsr.request("reset", {}).catch(() => undefined);
+  }
+
+  async stopWakeListener(): Promise<void> {
+    const client = this.wakeAsr;
+    this.wakeAsr = null;
+    await client?.terminate?.().catch?.(() => undefined);
   }
 
   /** 模型目录（供 UI 显示）。 */

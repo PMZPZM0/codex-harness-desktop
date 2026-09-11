@@ -27,6 +27,10 @@ export type VoiceSettings = {
   mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
   barge: { gateDb: number; mode: BargeMode };
   modelHost: ModelHost;
+  /** 按键启动：系统级快捷键（Electron globalShortcut），空串 = 关闭 */
+  hotkey: { enabled: boolean; accelerator: string };
+  /** 语音唤醒：持续聆听并匹配唤醒词（会持续占用 CPU，默认关） */
+  wake: { enabled: boolean; phrase: string };
 };
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
@@ -35,6 +39,8 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   mic: { deviceId: "", noiseSuppression: false, echoCancellation: true, autoGainControl: false },
   barge: { gateDb: 6, mode: "auto" },
   modelHost: "auto",
+  hotkey: { enabled: false, accelerator: "Ctrl+Shift+M" },
+  wake: { enabled: false, phrase: "小柯小柯" },
 };
 
 export const TTS_VOICE_NAMES: Record<number, string> = {
@@ -97,6 +103,8 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
   const asr = raw.asr ?? d.asr;
   const mic = raw.mic ?? d.mic;
   const barge = raw.barge ?? d.barge;
+  const hotkey = raw.hotkey ?? d.hotkey;
+  const wake = raw.wake ?? d.wake;
   const modelHost = raw.modelHost && MODEL_HOST_PRESETS[raw.modelHost] ? raw.modelHost : d.modelHost;
   return {
     tts: {
@@ -120,8 +128,43 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
       gateDb: clampInt(barge.gateDb, 3, 12, d.barge.gateDb),
       mode: barge.mode === "manual" ? "manual" : "auto",
     },
+    hotkey: {
+      enabled: Boolean(hotkey.enabled),
+      accelerator: sanitizeAccelerator(hotkey.accelerator, d.hotkey.accelerator),
+    },
+    wake: {
+      enabled: Boolean(wake.enabled),
+      // 唤醒词：去掉空白与控制字符，限长（太长既难识别也难念）
+      phrase: String(wake.phrase ?? "").replace(/\s+/g, "").slice(0, 16) || d.wake.phrase,
+    },
     modelHost,
   };
+}
+
+/**
+ * 规范化 Electron 快捷键字符串：只保留允许的修饰键 + 单个主键，避免注册时抛错。
+ * 允许 Ctrl / Shift / Alt / Super(Win/Cmd)，主键取最后一个 token。
+ */
+function sanitizeAccelerator(value: unknown, fallback: string): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return fallback;
+  const parts = raw.split("+").map((p) => p.trim()).filter(Boolean);
+  if (!parts.length) return fallback;
+  const key = parts[parts.length - 1];
+  const mods = parts.slice(0, -1).map((m) => {
+    const lower = m.toLowerCase();
+    if (lower === "ctrl" || lower === "control" || lower === "cmdorctrl") return "Ctrl";
+    if (lower === "shift") return "Shift";
+    if (lower === "alt" || lower === "option") return "Alt";
+    if (lower === "super" || lower === "meta" || lower === "cmd" || lower === "win") return "Super";
+    return "";
+  }).filter(Boolean);
+  // 必须至少有一个修饰键（否则单键快捷键会吞掉正常输入）
+  if (!mods.length) return fallback;
+  const allowed = /^(F([1-9]|1[0-2])|[A-Z0-9]|Space|Enter|Tab|Esc|Up|Down|Left|Right)$/i;
+  const cleanKey = key.length === 1 ? key.toUpperCase() : key.charAt(0).toUpperCase() + key.slice(1).toLowerCase();
+  if (!allowed.test(cleanKey)) return fallback;
+  return [...new Set(mods), cleanKey].join("+");
 }
 
 function clampInt(v: unknown, min: number, max: number, fallback: number): number {

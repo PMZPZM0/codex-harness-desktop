@@ -1020,6 +1020,32 @@ async function copyTextToClipboard(text: string): Promise<void> {
   }
 }
 
+/** 首次对话身份引导：随新会话的 thread/start developerInstructions 注入（引擎每会话
+ *  全新读入，天然「每个新会话初次对话生效」）。引导收集的信息由 identity_onboard 工具
+ *  落盘（personalization.json），onboarded=true 后新会话不再注入——已配置就不再引导。 */
+const IDENTITY_ONBOARD_INSTRUCTIONS = [
+  "【首次对话引导（只在本会话生效，完成即结束）】这是用户与你的第一次对话，请：",
+  "1. 热情、真诚地欢迎用户（一两句话，不要长篇大论）；",
+  "2. 介绍你还没有名字，邀请用户给你取一个名字（用户不想取就跳过）；",
+  "3. 自然地了解两件小事：希望怎么称呼 TA、TA 主要想用你做什么（聊家常一样问，不要像审问）;",
+  "4. 信息齐了、或用户明确表示不想继续这个话题时，调用 identity_onboard 工具保存（assistantName=用户给你取的名字，没取传空字符串；userName=用户的称呼；about=TA 的使用场景一句话）。",
+  "5. 保存成功后热情确认一句（取了名字就正式认下这个名字），然后立刻回归正常、简洁的工作风格。",
+  "约束：整个引导最多两个回合；用户如果直接开始谈正事，就先干正事，把引导揉进自然的对话里，绝不打断工作。",
+].join("\n");
+const IDENTITY_ONBOARD_TOOL = {
+  type: "function",
+  name: "identity_onboard",
+  description: "保存首次对话引导收集的身份信息（用户给 Codex 取的名字、对用户的称呼、使用场景）。调用后本次引导结束，后续会话不再引导。",
+  inputSchema: {
+    type: "object",
+    properties: {
+      assistantName: { type: "string", description: "用户给 Codex 取的名字；用户没有取则传空字符串" },
+      userName: { type: "string", description: "用户希望被称呼的名字；未提供则传空字符串" },
+      about: { type: "string", description: "用户的主要使用场景/背景，一句话；未提供则传空字符串" },
+    },
+  },
+};
+
 const effortLabels: Record<string, string> = {
   none: "关闭思考",
   minimal: "极简思考",
@@ -7074,6 +7100,12 @@ export default function App() {
   // 仅欢迎页展示，发送首条消息（thread 有回合）后随欢迎态一起消失。
   const [welcomeScratchDir, setWelcomeScratchDir] = useState<string | null>(null);
   const [welcomeCwdMenuOpen, setWelcomeCwdMenuOpen] = useState(false);
+  // 首次对话身份引导：null=档案未拉取，false=未引导（新会话注入引导指令+工具），
+  // true=已完成（不再引导）。保存后立即置 true，本机后续所有新会话都不再出现。
+  const [identityOnboarded, setIdentityOnboarded] = useState<boolean | null>(null);
+  useEffect(() => {
+    void window.codex.readPersonalization().then((config) => setIdentityOnboarded(config.onboarded === true)).catch(() => setIdentityOnboarded(true));
+  }, []);
   // 写代码模式（ponytail）开关状态：默认开启，与「常规」页的总闸联动
   const [ponytailOn, setPonytailOn] = useState(true);
   // 各渠道真实连接状态（微信/Telegram 网关是否在线）
@@ -9196,6 +9228,18 @@ const commandMatches = useMemo(() => {
                 const result = await window.codex.saveMemory({ category: cat, content: args.content ?? "", sourceThreadId: event.params?.threadId, workspace, pinned: cat === "项目背景" || cat === "工作流/SOP" });
                 showToast("已记住", `${cat}：${String(args.content ?? "").slice(0, 60)}（记忆中心可查看 / 跳回本会话）`);
                 await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `记忆已保存：${result.id}` }], success: true });
+              } else if (event.params?.tool === "identity_onboard") {
+                // 首次对话引导落盘：写个性化档案（助手名/用户称呼/使用场景 + onboarded），
+                // AGENTS.md 即时重建——之后所有新会话都不再注入引导。
+                try {
+                  const assistantName = String(args.assistantName ?? "").trim();
+                  await window.codex.saveIdentity({ assistantName, userName: String(args.userName ?? "").trim(), about: String(args.about ?? "").trim() });
+                  setIdentityOnboarded(true);
+                  showToast(assistantName ? `你好，${assistantName}！` : "身份已保存", assistantName ? "这个名字已经正式归你啦，以后新会话都会用它" : "引导完成，后续新会话不再出现");
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `身份信息已保存并全局生效（助手名：${assistantName || "未取名"}）。请热情确认一句后结束引导。` }], success: true });
+                } catch (error: any) {
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `保存失败：${error.message}` }], success: false });
+                }
               } else if (event.params?.tool === "subagent_invoke") {
                 setSubAgentRunning(String(args.name ?? ""));
                 try {
@@ -11699,7 +11743,11 @@ const commandMatches = useMemo(() => {
       { type: "function", name: "task_update", description: "更新任务清单：列出全部任务（不传任何参数）、改状态或删除。status 只有 todo/doing/done。", inputSchema: { type: "object", properties: { id: { type: "string" }, status: { type: "string", enum: ["todo", "doing", "done"] }, text: { type: "string" }, priority: { type: "string", enum: ["low", "medium", "high"] }, done: { type: "boolean", description: "删除任务" } } } },
       { type: "function", name: "agent_ask", description: "在对话里向用户展示一组选项并等待选择（提问时必须给出选项）。options 里第一项会作为推荐项高亮，也可以留空让用户自由输入。", inputSchema: { type: "object", properties: { question: { type: "string", description: "要问用户的问题" }, options: { type: "array", items: { type: "string" }, description: "2-4 个候选选项，第一项为推荐" }, allowFree: { type: "boolean", description: "是否允许自由输入，默认允许" } }, required: ["question", "options"] } },
     ];
+    // 首次对话身份引导：未完成引导的新会话注入引导指令 + identity_onboard 工具；
+    // 已引导（onboarded）的会话两者都不带——「已配置过就不再引导」。
+    if (identityOnboarded === false) dynamicTools.push(IDENTITY_ONBOARD_TOOL as unknown as (typeof dynamicTools)[number]);
     const memoryTools = dynamicTools.length ? { dynamicTools } : {};
+    const onboardingInstructions = identityOnboarded === false ? IDENTITY_ONBOARD_INSTRUCTIONS : null;
     const started = await window.codex.request("thread/start", {
       model: selectedModel?.model ?? modelName(modelId),
       // 欢迎页「无项目」模式：本会话用自动创建的独立临时目录（每个会话单独一个）；
@@ -11710,6 +11758,7 @@ const commandMatches = useMemo(() => {
       sandbox,
       sandboxPolicy: sandboxPolicy(sandbox, welcomeScratchDir ?? workspace),
       personality: selectedModel?.supportsPersonality ? personality : null,
+      developerInstructions: onboardingInstructions,
       ...providerConfig,
       ...memoryTools,
     });

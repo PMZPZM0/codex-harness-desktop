@@ -57,6 +57,8 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   const [agentText, setAgentText] = useState("");
   // 字幕广播用：delta 是逐字累加的，用 ref 拿累计值，避免依赖 state 更新时机
   const agentTextRef = useRef("");
+  /** 悬浮球 DOM：每帧把音量写进 CSS 变量，让球跟着声音呼吸/发光 */
+  const ballRef = useRef<HTMLButtonElement | null>(null);
   const [notice, setNotice] = useState("");
   const [models, setModels] = useState<ModelsStatus | null>(null);
   const [download, setDownload] = useState<{ percent: number; message: string } | null>(null);
@@ -206,7 +208,9 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       let sum = 0;
       for (const v of scopeData) sum += v * v;
       const rms = Math.sqrt(sum / scopeData.length);
-      setVoiceLevel(Math.min(1, rms * 6), "speaking");
+      const level = Math.min(1, rms * 6);
+      ballRef.current?.style.setProperty("--voice-level", level.toFixed(3));
+      setVoiceLevel(level, "speaking");
     }, 60);
 
     // 把这段音频写进 AEC 参考环（重采样到采集率）
@@ -363,6 +367,8 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       const rms = rmsOf(cleaned);
       const nextLevel = Math.min(1, rms * 12);
       setLevel(nextLevel);
+      // 悬浮球跟着音量呼吸（写 CSS 变量，不用 state，避免每帧重渲染）
+      ballRef.current?.style.setProperty("--voice-level", nextLevel.toFixed(3));
       // 广播给输入框上方的波浪（播报时不抢 Codex 的电平，避免两边互相抖动）
       if (!speakingRef.current) setVoiceLevel(nextLevel, "listening");
 
@@ -440,6 +446,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     await window.codex.voiceStop().catch(() => undefined);
     setState("listening");
     setLevel(0);
+    ballRef.current?.style.setProperty("--voice-level", "0");
     setExpanded(false);
     // 波浪/字幕随之收起
     resetVoiceStage();
@@ -450,6 +457,72 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     setVoiceStopHandler(() => { void endCall(); });
     return () => setVoiceStopHandler(null);
   }, [endCall]);
+
+  // ── 按键启动：全局快捷键（应用没聚焦也能唤起）→ 切换通话 ──
+  useEffect(() => {
+    const off = window.codex.onVoiceHotkey(() => {
+      if (phaseRef.current === "active" || phaseRef.current === "starting") void endCall();
+      else void startCall();
+    });
+    return off;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── 语音唤醒：持续聆听 + 匹配唤醒词（会常驻占用 CPU，默认关）──
+  useEffect(() => {
+    // 通话中/启动中不跑唤醒（避免抢麦克风与 CPU）
+    if (phase === "active" || phase === "starting") return;
+    let disposed = false;
+    let stream: MediaStream | null = null;
+    let ctx: AudioContext | null = null;
+    let node: AudioWorkletNode | null = null;
+    let blobUrl = "";
+
+    (async () => {
+      const s = await window.codex.voiceSettingsGet().catch(() => null);
+      const wake = s?.settings?.wake;
+      if (disposed || !wake?.enabled || !wake.phrase) return;
+      const started = await window.codex.voiceWakeStart().catch(() => ({ ok: false }));
+      if (disposed || !started?.ok) return;
+
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+      });
+      if (disposed) { stream.getTracks().forEach((t) => t.stop()); return; }
+      ctx = new AudioContext({ sampleRate: CAPTURE_RATE });
+      blobUrl = URL.createObjectURL(new Blob([CAPTURE_WORKLET_SOURCE], { type: "text/javascript" }));
+      await ctx.audioWorklet.addModule(blobUrl);
+      if (disposed) return;
+      node = new AudioWorkletNode(ctx, "voice-capture", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+      node.port.onmessage = (e: MessageEvent) => {
+        const raw = e.data?.samples as Float32Array | undefined;
+        if (!raw || disposed) return;
+        void window.codex.voiceWakeAudio(raw).then((r) => {
+          const text = String(r?.text ?? "");
+          if (!text) return;
+          // 归一化后再匹配：去掉空白与常见标点（识别结果常带空格/句号）
+          const norm = text.replace(/[\s，。！？、,.!?~]/g, "");
+          if (norm.includes(wake.phrase)) {
+            void window.codex.voiceWakeReset();
+            void startCall();
+          }
+        }).catch(() => undefined);
+      };
+      const src = ctx.createMediaStreamSource(stream);
+      src.connect(node);
+      node.connect(ctx.destination);
+    })().catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      try { node?.disconnect(); } catch { /* 已断开 */ }
+      void ctx?.close().catch(() => undefined);
+      stream?.getTracks().forEach((t) => t.stop());
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      void window.codex.voiceWakeStop().catch(() => undefined);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   // 卸载时务必释放麦克风与音频上下文（不留后台采集）
   useEffect(() => {
@@ -634,6 +707,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       )}
 
       <button
+        ref={ballRef}
         className={ballClass}
         title={phase === "active" ? "语音通话进行中（点击展开/收起）" : "语音通话（本机离线）"}
         aria-label={phase === "active" ? "语音通话进行中" : "开始语音通话"}
@@ -643,8 +717,16 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
         onPointerCancel={onPointerUp}
         onClick={onBallClick}
       >
+        {/* 两圈脉冲环（错开动画，音量越大扩散越远） */}
         <span className="voice-ball-ring" aria-hidden />
-        {phase === "starting" ? <LoaderCircle size={20} className="spin" /> : <Mic size={20} />}
+        <span className="voice-ball-ring" aria-hidden />
+        {phase === "starting" ? (
+          <LoaderCircle size={20} className="spin" />
+        ) : state === "speaking" ? (
+          <AudioLines size={20} />
+        ) : (
+          <Mic size={20} />
+        )}
       </button>
     </div>,
     document.body
