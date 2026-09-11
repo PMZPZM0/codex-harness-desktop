@@ -500,7 +500,11 @@ interface Window {
     voiceSpeak(text: string, options?: { sid?: number; speed?: number }): Promise<{ ok: boolean; sampleRate?: number; samples?: Float32Array; error?: string }>;
     voiceBarge(): Promise<{ ok: boolean }>;
     voicePlaybackDone(): Promise<{ ok: boolean }>;
-    voiceModelsStatus(): Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string }>;
+    voiceModelsStatus(): Promise<{
+      ready: boolean; missing: string[]; readyFiles: number; totalFiles: number;
+      bytes: number; root: string;
+      repos: { id: string; lastSegment: string }[];
+    }>;
     voiceModelsInstall(): Promise<{ ok: boolean; error?: string }>;
     voiceModelsCancel(): Promise<{ ok: boolean }>;
     voiceModelsImport(input: { sourceDir: string }): Promise<{ ok: boolean; failures: string[] }>;

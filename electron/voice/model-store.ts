@@ -12,7 +12,7 @@
 import { createHash } from "crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "fs";
 import { copyFile, mkdir, open, rename, stat, unlink } from "fs/promises";
-import { dirname, join } from "path";
+import { basename, dirname, join } from "path";
 import { MODEL_HOSTS, modelUrl, type VoiceModelFile, type VoiceModelRepo } from "./model-manifest";
 
 export type VoiceDownloadProgress = {
@@ -80,10 +80,36 @@ export async function isRepoReady(modelsRoot: string, repo: VoiceModelRepo): Pro
 }
 
 /**
+ * 找到 repo 在 sourceRoot 下的实际位置（容忍三种常见布局）：
+ *   A) `<sourceRoot>/<repoId>/...`              （标准 HF 快照布局）
+ *   B) `<sourceRoot>/<basename(repoId)>/...`    （只含最后一段）
+ *   C) `<sourceRoot>` 本身就是仓库根目录     （直接把模型下到 sourceRoot）
+ *   D) `<sourceRoot>` 的 basename == repoId     （zip 解压后只剩一段名字）
+ * 找不到返回 null，并把缺失详情抛到 failures。
+ */
+function resolveRepoSourceDir(sourceRoot: string, repo: VoiceModelRepo): { dir: string; matchedAs: string } | null {
+  const last = repo.repo.includes("/") ? repo.repo.split("/").pop()! : null;
+  const candidates: { name: string; dir: string }[] = [];
+  for (const n of [repo.repo, last].filter(Boolean) as string[]) {
+    const d = join(sourceRoot, n);
+    if (existsSync(d)) candidates.push({ name: n, dir: d });
+  }
+  if (basename(sourceRoot) === repo.repo || (last && basename(sourceRoot) === last)) {
+    candidates.push({ name: basename(sourceRoot), dir: sourceRoot });
+  }
+  // 探测：sourceRoot 下直接放着 repo 的第一个文件（说明 sourceRoot 本身是 repo 根）
+  const probe = repo.files[0];
+  if (probe && existsSync(join(sourceRoot, probe.name))) {
+    candidates.push({ name: "(根目录直接放文件)", dir: sourceRoot });
+  }
+  return candidates[0] ? { dir: candidates[0].dir, matchedAs: candidates[0].name } : null;
+}
+
+/**
  * 从本地目录导入一个仓库：把 `<sourceRoot>/<repoId>/<file>` 复制到 `<modelsRoot>/<repoId>/<file>`，
  * 校验 SHA256 通过后落盘。**用于开发版**：开发者自己下好模型后，不必走网络再下一次。
  *
- * 与 ensureRepo 不同：不会联网；不会断点续传；源文件存在性是硬要求（缺文件就当失败）。
+ * 与 ensureRepo 不同：不会联网；不会断点续传；源文件存在性是硬要求（缺文件就当失败并列出）。
  */
 export async function importRepoFromDir(
   modelsRoot: string,
@@ -94,14 +120,23 @@ export async function importRepoFromDir(
   const failures: string[] = [];
   const total = repo.files.length;
   let done = 0;
+  const resolved = resolveRepoSourceDir(sourceRoot, repo);
+  if (!resolved) {
+    const last = repo.repo.includes("/") ? repo.repo.split("/").pop()! : repo.repo;
+    failures.push(`找不到仓库目录；期望以下任一布局：\n  • <sourceRoot>/${repo.repo}/ （HF 标准快照）\n  • <sourceRoot>/${last}/ （只含仓库最后一段）\n  • 直接选仓库根目录（里面应是：${repo.files.slice(0, 3).map((f) => f.name).join("、")}... 等 ${repo.files.length} 个文件）`);
+    return failures;
+  }
+  const repoDir = resolved.dir;
+  onProgress?.({ repo: repo.repo, file: "(目录)", doneFiles: 0, totalFiles: total, percent: 0, message: `识别为 ${resolved.matchedAs}` });
+
   for (const f of repo.files) {
-    const src = join(sourceRoot, repo.repo, f.name);
+    const src = join(repoDir, f.name);
     const dest = modelFilePath(modelsRoot, repo.repo, f.name);
     const partPath = `${dest}.part`;
     onProgress?.({ repo: repo.repo, file: f.name, doneFiles: done, totalFiles: total, percent: 0, message: `导入 ${f.name}` });
     if (!existsSync(src)) {
       done += 1;
-      failures.push(`${f.name}：源目录里没有 ${src}`);
+      failures.push(`${f.name}：在 ${repoDir} 里没找到（期望 SHA256 ${f.sha256.slice(0, 8)}…）`);
       onProgress?.({ repo: repo.repo, file: f.name, doneFiles: done, totalFiles: total, percent: 100, message: `${f.name} 源目录里没有` });
       continue;
     }
@@ -111,7 +146,7 @@ export async function importRepoFromDir(
       const sha = await sha256File(partPath);
       if (sha !== f.sha256) {
         await unlink(partPath).catch(() => undefined);
-        failures.push(`${f.name}：SHA256 不匹配（实际 ${sha.slice(0, 8)}...）`);
+        failures.push(`${f.name}：SHA256 不匹配（实际 ${sha.slice(0, 8)}…，期望 ${f.sha256.slice(0, 8)}…）`);
         onProgress?.({ repo: repo.repo, file: f.name, doneFiles: done + 1, totalFiles: total, percent: 100, message: `${f.name} SHA256 不匹配` });
       } else {
         await rename(partPath, dest);
