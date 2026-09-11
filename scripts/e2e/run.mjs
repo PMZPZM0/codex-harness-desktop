@@ -2,7 +2,7 @@
 //
 // 用法：
 //   npm run e2e                  # 跑**全部**场景（验收门槛，新场景自动纳入）
-//   npm run e2e -- smoke         # 只跑指定场景（可给多个：smoke model-recency）
+//   npm run e2e -- smoke         # 只跑指定场景（可给多个：smoke model-scope）
 //   npm run e2e -- --list        # 列出全部场景
 //   npm run e2e -- smoke --keep  # 跑完不关闭应用（留给你手动接着看）
 
