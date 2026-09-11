@@ -216,7 +216,7 @@ type CodexEvent = {
   status?: "starting" | "ready" | "stopped" | "error";
   message?: string;
 };
-type DevRuntimeEntry = { id: string; name: string; description: string; size: string; marker: string; builtIn?: boolean; kind?: "download" | "browsers" | "guide"; installed: boolean; installedBySystem?: boolean; installing: boolean };
+type DevRuntimeEntry = { id: string; name: string; description: string; size: string; marker: string; builtIn?: boolean; kind?: "download" | "browsers" | "guide" | "plugin"; noUninstall?: boolean; installed: boolean; installedBySystem?: boolean; installing: boolean };
 
 interface Window {
   codex: {

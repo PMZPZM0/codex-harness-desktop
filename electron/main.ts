@@ -3229,7 +3229,7 @@ ipcMain.handle("tools:status", () => {
 });
 
 type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "automation" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl";
-type DevRuntimeSpec = { name: string; description: string; size: string; marker: string; builtIn?: boolean; kind?: "download" | "browsers" | "guide" | "plugin" };
+type DevRuntimeSpec = { name: string; description: string; size: string; marker: string; builtIn?: boolean; kind?: "download" | "browsers" | "guide" | "plugin"; noUninstall?: boolean };
 const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   python: { name: "Python + Tkinter + pip", description: "Python 项目、数据处理、GUI 脚本和 Python MCP（含 Tkinter、requests/httpx/flask/fastapi/playwright）", size: "约 40 MB + 依赖", marker: "python\\python.exe", builtIn: true },
   node: { name: "Node.js + npm", description: "JavaScript / TypeScript 项目和 npm 工具", size: "约 101 MB", marker: "node\\node.exe", builtIn: true },
@@ -3237,7 +3237,9 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   git: { name: "Git", description: "Diff、分支、提交、历史和仓库操作", size: "约 90 MB", marker: "git\\cmd\\git.exe", builtIn: true },
   ffmpeg: { name: "FFmpeg", description: "音视频转码、抽帧、探测与媒体处理", size: "约 307 MB", marker: "ffmpeg\\bin\\ffmpeg.exe" },
   "vscode-cli": { name: "VS Code CLI", description: "通过 code 命令打开文件与工作区", size: "约 28 MB", marker: "vscode-cli\\code.exe", builtIn: true },
-  automation: { name: "桌面与浏览器自动化", description: "Nuphus（桌面 MCP）+ Playwright CLI + CloakBrowser 包本体，下载压缩包解压即用（不含浏览器内核）", size: "压缩包 18 MB", marker: "npm-global\\node_modules\\@nuphus\\nuphus-mcp\\package.json" },
+  // noUninstall：来源是**随包内置资源**（zip / 插件目录）而不是联网下载 —— 删掉后没有
+// 可靠的重取途径（压缩包本体随应用分发、不单独缓存），用户误删很难找回，因此不支持卸载。
+  automation: { name: "桌面与浏览器自动化", description: "Nuphus（桌面 MCP）+ Playwright CLI + CloakBrowser 包本体，下载压缩包解压即用（不含浏览器内核）", size: "压缩包 18 MB", marker: "npm-global\\node_modules\\@nuphus\\nuphus-mcp\\package.json", noUninstall: true },
   jq: { name: "jq", description: "命令行查询、筛选和转换 JSON", size: "约 1 MB", marker: "jq\\jq.exe", builtIn: true },
   ninja: { name: "Ninja", description: "高速构建工具，常与 CMake 配合", size: "约 1 MB", marker: "ninja\\ninja.exe", builtIn: true },
   sevenzip: { name: "7-Zip CLI", description: "解压和创建 7z、zip、tar 等归档", size: "约 1 MB", marker: "sevenzip\\7z.exe", builtIn: true },
@@ -3251,7 +3253,7 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   docker: { name: "Docker Desktop", description: "容器运行时，需要系统级安装（管理员权限 + 重启 + 登录）", size: "约 500 MB", marker: "docker\\docker.exe", kind: "guide" },
   mingw: { name: "MinGW-w64 (gcc/g++/make)", description: "C/C++ 编译器工具链，含 gcc、g++、make、gdb", size: "约 267 MB", marker: "mingw\\mingw64\\bin\\g++.exe", kind: "download" },
   openssl: { name: "OpenSSL", description: "加密/证书命令行工具（openssl 命令），系统级安装", size: "约 25 MB", marker: "openssl\\openssl.exe", kind: "guide" },
-  ponytail: { name: "ponytail 写代码模式插件", description: "Codex 写代码模式（会话钩子 + 6 个技能），安装后开箱即用", size: "随包 2 MB", marker: "ponytail-plugin", kind: "plugin" },
+  ponytail: { name: "ponytail 写代码模式插件", description: "Codex 写代码模式（会话钩子 + 6 个技能），安装后开箱即用", size: "随包 2 MB", marker: "ponytail-plugin", kind: "plugin", noUninstall: true },
 };
 const runtimeInstalls = new Map<DevRuntimeId, Promise<void>>();
 
@@ -3316,11 +3318,23 @@ ipcMain.handle("runtime:uninstall", async (_event, idValue: string) => {
   if (!spec) throw new Error("未知开发工具");
   if (spec.builtIn) throw new Error("内置工具不可卸载");
   if (spec.kind === "guide") throw new Error("该工具是系统级安装，请到系统的「应用与功能」里卸载");
+  // 随包内置资源（zip / 插件目录），不是联网下载 —— 删了没有可靠的重取途径，直接拒绝
+  if (spec.noUninstall) throw new Error("该工具来自随包内置资源，删除后难以恢复，因此不支持卸载");
   const target = runtimeUninstallPath(id, spec);
   // 一些 marker 是文件而不是目录（如 npm-global/.../package.json）—— 删父目录的安装根即可
   await fs.rm(target, { recursive: true, force: true });
-  // ponytail 卸载后顺手取消 config.toml 里的注册段（否则重启引擎会找不到模块）
-  if (id === "ponytail") await server.request("config/value/write", { filePath: path.join(codexHome, "config.toml"), keyPath: "plugins.\"ponytail-plugin\".enabled", value: false }).catch(() => undefined);
+// ponytail 卸载后要显式关掉 config.toml 里的注册段（否则引擎重启找不到已删的 cache）：
+// 插件 key 是 **"ponytail@ponytail"**（见 ponytail-plugin.ts 的 MARKETPLACE_SECTION），
+// 写成 "ponytail-plugin" 会静默无效。
+// 注意：install 分支必须对应地把 enabled 置回 true —— 因为 seedConfigSections 是
+// 「注册段已存在就幂等跳过」，不会把 false 翻回 true，漏了会导致重装后永久失效。
+if (id === "ponytail") {
+  await server.request("config/value/write", {
+    filePath: path.join(codexHome, "config.toml"),
+    keyPath: 'plugins."ponytail@ponytail".enabled',
+    value: false,
+  }).catch(() => undefined);
+}
   return { ok: true, runtimes: runtimeList() };
 });
 ipcMain.handle("runtime:install", async (_event, idValue: string) => {
@@ -3390,6 +3404,13 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
     } else if (id === "ponytail") {
       // ponytail 写代码模式插件：从随包安装源种到引擎（plugins cache + config 注册段），技能随 cache 自动列出
       await ensurePonytailPlugin(codexHome, path.join(toolsRoot(), "ponytail-plugin"));
+      // 卸载时把注册段置成了 false，这里必须显式置回 true —— seedConfigSections 是
+      // 「段已存在就幂等跳过」，不会自己翻回 true，漏了会导致「卸载→重装」后插件永久不可用。
+      await server.request("config/value/write", {
+        filePath: path.join(codexHome, "config.toml"),
+        keyPath: 'plugins."ponytail@ponytail".enabled',
+        value: true,
+      }).catch(() => undefined);
     } else {
       await runRuntimeInstaller(id, runtimeInstaller("install-runtimes.cjs"), [id]);
     }

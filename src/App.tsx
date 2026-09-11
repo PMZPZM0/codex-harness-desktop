@@ -7258,7 +7258,8 @@ export default function App() {
 
   async function uninstallDevRuntime(id: string) {
     const spec = devRuntimes.find((r) => r.id === id);
-    if (!spec || spec.builtIn) return;
+    // 内置 / 随包资源 / 系统级安装都不允许卸载（UI 也不出按钮，这里是第二道防线）
+    if (!spec || spec.builtIn || spec.noUninstall) return;
     setRuntimeInstalling(id);
     setRuntimeProgress((current) => ({ ...current, [id]: "正在卸载…" }));
     setRuntimeModal({ id, name: spec.name, mode: "uninstall", done: false, failed: false });
@@ -13582,7 +13583,8 @@ const commandMatches = useMemo(() => {
                             {runtime.builtIn ? <span className="runtime-badge">内置</span>
                               : isDone ? <>
                                   <span className="runtime-badge installed">{runtime.installedBySystem ? "系统已装" : "已安装"}</span>
-                                  {!runtime.installedBySystem && (
+                                  {/* 随包内置资源（automation 的 zip、ponytail 插件）不支持卸载——删了没有可靠重取途径 */}
+                                  {!runtime.installedBySystem && !runtime.noUninstall && (
                                     <button className="secondary-setting runtime-uninstall" disabled={Boolean(runtimeInstalling)} onClick={() => void uninstallDevRuntime(runtime.id)}>卸载</button>
                                   )}
                                 </>
