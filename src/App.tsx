@@ -824,19 +824,43 @@ function pluginDescription(plugin: any): string {
   return String(plugin?.interface?.shortDescription || plugin?.interface?.longDescription || plugin?.description || "这个插件没有提供描述。");
 }
 
-/** Hook 注入徽标：footer 末尾的小钩子图标，hover 展开本次注入的 hook 列表 */
-function HookBadge({ hooks }: { hooks: { name: string; done: boolean }[] }) {
+/** Hook 注入徽标：footer 末尾的小钩子图标，hover 展开本次注入的 hook 列表。
+ *  name 是配对键（引擎原始 run.name，含序号与命令路径）；label 是人看的短名。 */
+function HookBadge({ hooks }: { hooks: { name: string; label?: string; done: boolean }[] }) {
   const [open, setOpen] = useState(false);
   return (
     <span className="hook-badge-wrap" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
       <span className={`hook-badge ${hooks.every((h) => h.done) ? "done" : "running"}`} title="本回合注入的 Hook"><Wrench size={12} />{hooks.length}</span>
       {open && (
         <span className="hook-badge-pop">
-          {hooks.map((hook) => <span className="hook-badge-row" key={hook.name}><span className={`hook-dot ${hook.done ? "ok" : ""}`} />{hook.name}</span>)}
+          {hooks.map((hook) => <span className="hook-badge-row" key={hook.name} title={hook.name}><span className={`hook-dot ${hook.done ? "ok" : ""}`} />{hook.label ?? hook.name}</span>)}
         </span>
       )}
     </span>
   );
+}
+
+/** 钩子事件名 → 中文短名（引擎推的 run.name 形如 "session-start:0C:\Users\..."，
+ *  事件名 + 序号 + 命令路径全拼在一起，直接展示是一长串谁也看不懂的地址）。
+ *  展示时剥掉盘符路径、映射中文；配对仍用原始 name。 */
+const HOOK_EVENT_LABELS: Record<string, string> = {
+  "session-start": "会话启动钩子",
+  "session-end": "会话结束钩子",
+  "user-prompt-submit": "用户消息钩子",
+  "subagent-start": "子代理启动钩子",
+  "subagent-end": "子代理结束钩子",
+  "pre-tool-use": "工具执行前钩子",
+  "post-tool-use": "工具执行后钩子",
+  "notification": "通知钩子",
+  "stop": "回复完成钩子",
+};
+function prettifyHookLabel(raw: string): string {
+  // 剥掉事件名/序号后面跟的盘符路径（C:\... 或 D:/...，可能含空格直到串尾）
+  const stripped = (raw || "").replace(/\s*[A-Za-z]:[\\/].*$/, "").trim() || raw;
+  const match = stripped.match(/^([A-Za-z0-9_-]+?)[\s:_]*(\d+)?$/);
+  if (!match) return stripped;
+  const label = HOOK_EVENT_LABELS[match[1].toLowerCase()] ?? match[1];
+  return match[2] ? `${label} #${match[2]}` : label;
 }
 
 function noticeTone(text: string): "success" | "error" | "warning" | "info" {
@@ -7007,7 +7031,7 @@ export default function App() {
   const [lightbox, setLightbox] = useState<{ path: string; alt: string } | null>(null);
   const [systemEvents, setSystemEvents] = useState<SystemEvent[]>([]);
   // 本回合 hook 注入徽标（静默）：完成回复时展示在 footer 末尾
-  const [hookPulse, setHookPulse] = useState<{ count: number; hooks: { name: string; done: boolean }[]; at: number }>({ count: 0, hooks: [], at: 0 });
+  const [hookPulse, setHookPulse] = useState<{ count: number; hooks: { name: string; label?: string; done: boolean }[]; at: number }>({ count: 0, hooks: [], at: 0 });
   // 写代码模式（ponytail）开关状态：默认开启，与「常规」页的总闸联动
   const [ponytailOn, setPonytailOn] = useState(true);
   // 各渠道真实连接状态（微信/Telegram 网关是否在线）
@@ -8232,11 +8256,13 @@ const commandMatches = useMemo(() => {
 
   // Hook 注入反馈：静默记录到回合徽标（不产生系统卡），最新回复 footer 末尾展示小钩子图标
   function addHookEvent(running: boolean, hookName: string) {
+    // label 供展示（事件中文名+序号）；配对仍用原始 hookName（含路径，保证 started/completed 对上）
+    const label = prettifyHookLabel(hookName);
     setHookPulse((current) => ({
       count: running ? current.count + 1 : current.count,
       hooks: current.hooks.some((entry) => entry.name === hookName)
-        ? current.hooks.map((entry) => entry.name === hookName ? { name: hookName, done: !running } : entry)
-        : [...current.hooks, { name: hookName, done: !running }],
+        ? current.hooks.map((entry) => entry.name === hookName ? { name: hookName, label, done: !running } : entry)
+        : [...current.hooks, { name: hookName, label, done: !running }],
       at: Date.now(),
     }));
   }

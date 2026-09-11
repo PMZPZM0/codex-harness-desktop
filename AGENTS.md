@@ -112,6 +112,9 @@ resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **config.toml 错位孤儿键自动清理（09-11）**：`preserveUserConfig` 现在会把「落在某个 section 内的 harness 顶层键」（`HARNESS_CONFIG_KEYS`，含新加的 `model_reasoning_effort`）当错位数据丢弃——引擎运行中 append 顶层键时若文件尾正好在某个段落里，键会被 TOML 归进该段（实测 L136 `model_reasoning_effort="medium"` 落进 `[mcp_servers.nuphus]`，引擎不读、纯误导排查）。用户自建段落（projects 等）的其它行不受影响（行为断言 3 条已验）。
+- **钩子徽标中文名（09-11）**：消息 footer 小扳手的 hook 列表把引擎原始 `run.name`（形如 `session-start:0C:\Users\...`，事件名+序号+命令路径拼一起）映射成「会话启动钩子 #0」等中文短名展示；配对仍用原始 name，悬停 title 可看原始值。
+
 - **思考等级档案持久化 + 立即生效（09-11 定稿；用户 21:0x 实测「模型等级切换生效了」，勿回退）**：`custom-model:set-effort` 新 IPC——思考档位写进 `custom-model.json`（`models[].effort` + 顶层 `effort`）并同步 `config.toml` 顶层 `model_reasoning_effort`（`restart:false`，不打断回合；config 顶层只作重启后 resume 老会话的兜底默认）。UI 侧 `applyEffort` 写档案、打开会话时「无会话显式记录才落档案档位」（优先级与会话独立模型一致）。**档案归档键必须用 `customModel.model`（当前生效模型），不能用会话级 `selectedModel`**——两者在「会话选了别的模型」时分叉，顶层与 `models[]` 会各写各的。协议考证：`TurnStartParams.effort`（每轮下发）与 `ThreadSettings.effort`（settings/update）字段名都叫 `effort`；**模型自报思考档位不可信**（模型看不到请求参数，rollout `turn_context.effort` 才是实收值）。回归：`scripts/e2e/scenarios/effort-scope.mjs`（UI 切档 → 档案三处落盘 → rollout 取证）。
 
 - **本机离线语音通话（09-11 新增，旁挂，勿侵入既有输入链路）**：右下角悬浮球一键通话，识别与合成都跑本机（`sherpa-onnx-node`，零凭据、零联网）。
