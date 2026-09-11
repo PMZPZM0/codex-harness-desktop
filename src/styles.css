@@ -20758,3 +20758,336 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   font-size: 11.5px; color: var(--text);
   white-space: nowrap;
 }
+
+/* ═══════════ 付费订阅：置顶长条卡 + 套餐市场 + 注册 tabs（09-12） ═══════════ */
+.relay-sub-banner {
+  align-items: center;
+  background:
+    radial-gradient(120% 180% at 100% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 55%),
+    var(--panel);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line-soft));
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  display: flex;
+  gap: 14px;
+  padding: 14px 16px;
+  position: relative;
+  overflow: hidden;
+}
+.relay-sub-banner::before {
+  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 55%, transparent));
+  border-radius: 3px;
+  content: "";
+  inset: 0 auto 0 0;
+  position: absolute;
+  width: 3px;
+}
+.relay-sub-banner[data-state="expiring"] {
+  border-color: color-mix(in srgb, var(--orange) 38%, var(--line-soft));
+  background: radial-gradient(120% 180% at 100% 0%, color-mix(in srgb, var(--orange) 10%, transparent), transparent 55%), var(--panel);
+}
+.relay-sub-banner[data-state="expired"] {
+  border-color: color-mix(in srgb, var(--red) 38%, var(--line-soft));
+  background: radial-gradient(120% 180% at 100% 0%, color-mix(in srgb, var(--red) 9%, transparent), transparent 55%), var(--panel);
+}
+.relay-sub-banner-icon {
+  align-items: center;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  border-radius: 12px;
+  color: var(--accent);
+  display: flex;
+  flex-shrink: 0;
+  height: 44px;
+  justify-content: center;
+  width: 44px;
+}
+.relay-sub-banner[data-state="expiring"] .relay-sub-banner-icon {
+  background: color-mix(in srgb, var(--orange) 12%, transparent);
+  border-color: color-mix(in srgb, var(--orange) 26%, transparent);
+  color: var(--orange);
+}
+.relay-sub-banner[data-state="expired"] .relay-sub-banner-icon {
+  background: color-mix(in srgb, var(--red) 11%, transparent);
+  border-color: color-mix(in srgb, var(--red) 26%, transparent);
+  color: var(--red);
+}
+.relay-sub-banner-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.relay-sub-banner-main > strong {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 14px;
+  gap: 8px;
+}
+.relay-sub-banner-main > p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.relay-sub-banner-site {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 400;
+}
+.relay-sub-banner-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 10px;
+  color: var(--muted);
+}
+.relay-sub-progress {
+  background: var(--panel-2);
+  border-radius: 99px;
+  flex: 0 1 220px;
+  height: 6px;
+  min-width: 120px;
+  overflow: hidden;
+}
+.relay-sub-progress i {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 75%, transparent), var(--accent));
+  border-radius: 99px;
+  display: block;
+  height: 100%;
+  transition: width 0.4s ease;
+}
+.relay-sub-banner[data-state="expiring"] .relay-sub-progress i,
+.relay-sub-banner[data-state="expired"] .relay-sub-progress i {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--orange) 75%, transparent), var(--orange));
+}
+.relay-sub-banner-due {
+  color: var(--text);
+  font-weight: 600;
+}
+.relay-sub-banner[data-state="expiring"] .relay-sub-banner-due,
+.relay-sub-banner[data-state="expired"] .relay-sub-banner-due {
+  color: var(--orange);
+}
+.relay-sub-banner[data-state="expired"] .relay-sub-banner-due {
+  color: var(--red);
+}
+.relay-sub-banner-actions {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 8px;
+  align-items: stretch;
+}
+.relay-sub-banner-actions .primary-setting,
+.relay-sub-banner-actions .secondary-setting {
+  justify-content: center;
+  white-space: nowrap;
+}
+.relay-sub-banner.watching::after {
+  animation: relay-sub-pulse 1.8s ease-in-out infinite;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 45%, transparent), transparent 70%);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+@keyframes relay-sub-pulse {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.7; }
+}
+@media (max-width: 900px) {
+  .relay-sub-banner { flex-direction: column; align-items: stretch; }
+  .relay-sub-banner-actions { flex-direction: row; }
+  .relay-sub-banner-actions > * { flex: 1; }
+}
+
+/* ── 套餐市场二级弹窗 ── */
+.relay-plans-backdrop { z-index: 40; }
+.relay-plans-modal {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 16px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 18px 20px;
+  width: min(880px, 94vw);
+}
+.relay-plans-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.relay-plan-market-card {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 15px;
+  position: relative;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.relay-plan-market-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line-soft));
+  box-shadow: 0 6px 22px color-mix(in srgb, var(--accent) 12%, transparent);
+  transform: translateY(-2px);
+}
+.relay-plan-market-card.in-use {
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--line-soft));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ok) 28%, transparent) inset;
+}
+.relay-plan-market-head {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+.relay-plan-market-head > strong {
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.relay-plan-owned {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  color: var(--muted);
+  flex-shrink: 0;
+  font-size: 10.5px;
+  padding: 2px 8px;
+}
+.relay-plan-market-group {
+  color: var(--faint);
+  font-size: 11px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.relay-plan-market-price {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+}
+.relay-plan-market-price b {
+  font-size: 22px;
+  letter-spacing: -0.5px;
+}
+.relay-plan-market-price s {
+  color: var(--faint);
+  font-size: 12px;
+}
+.relay-plan-market-valid {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 6px;
+  margin: 0;
+}
+.relay-plan-rate {
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  border-radius: 5px;
+  color: var(--accent);
+  font-size: 10.5px;
+  font-style: normal;
+  padding: 1px 6px;
+}
+.relay-plan-market-desc {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+.relay-plan-market-feats {
+  border-top: 1px dashed var(--line-soft);
+  font-size: 11.5px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+.relay-plan-market-feats summary {
+  color: var(--link);
+  cursor: pointer;
+  user-select: none;
+}
+.relay-plan-market-feats pre {
+  color: var(--muted);
+  font-family: inherit;
+  line-height: 1.55;
+  margin: 8px 0 0;
+  max-height: 180px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+.relay-plan-buy { margin-top: 10px; }
+.relay-plans-loading {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 13px;
+  gap: 10px;
+  justify-content: center;
+  padding: 34px 0;
+}
+.relay-plans-foot {
+  color: var(--faint);
+  font-size: 11.5px;
+  margin: 0;
+  text-align: center;
+}
+
+/* ── 登录/注册双 tab ── */
+.relay-auth-tabs {
+  background: var(--panel-2);
+  border-radius: 10px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+}
+.relay-auth-tabs button {
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  flex: 1;
+  font-size: 13px;
+  padding: 7px 0;
+  transition: background 0.15s, color 0.15s;
+}
+.relay-auth-tabs button:hover { color: var(--text); }
+.relay-auth-tabs button.on {
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-weight: 600;
+}
+.relay-auth-note {
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.55;
+  margin: 0;
+  text-align: center;
+}
+.relay-auth-note code {
+  background: var(--panel-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+}

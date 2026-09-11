@@ -3872,6 +3872,108 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
     } catch { setKeyGroups([]); }
   }, []);
   useEffect(() => { void loadKeyGroups(); }, [loadKeyGroups]);
+  // ── 付费订阅：应用内注册 → 套餐市场 → 站内付款 → 自动建 key 生效（正向联动）──
+  // 反向联动不需要额外代码：置顶卡是派生态（relay-active + selectedGroupId + summary），
+  // 手动切套餐/切 key/切账号都会在 60s 静默刷新或下一次 overview 拉取时自动跟上。
+  const AFF_CODE = "X82JSNVC3W3S"; // 中转站邀请返利码（注册请求 aff_code 字段）
+  const [authTab, setAuthTab] = useState<"login" | "register">("login");
+  const [regDraft, setRegDraft] = useState({ email: "", password: "", confirm: "" });
+  const [plansOpen, setPlansOpen] = useState(false);
+  const [plans, setPlans] = useState<any[] | null>(null);
+  const [plansLoading, setPlansLoading] = useState(false);
+  const [plansErr, setPlansErr] = useState("");
+  const [watching, setWatching] = useState(false);
+  const watchRef = useRef<{ timer: number | null; baseline: Set<string>; startedAt: number } | null>(null);
+  const subChangeKey = (s: any) => `${Number(s.group_id)}|${String(s.expires_at ?? "")}`;
+  const stopWatch = useCallback(() => {
+    if (watchRef.current?.timer != null) window.clearInterval(watchRef.current.timer);
+    watchRef.current = null;
+    setWatching(false);
+  }, []);
+  useEffect(() => () => stopWatch(), [stopWatch]);
+  // 页面打开期间 60s 静默刷新：别处手动切套餐/账号（反向联动）置顶卡自动跟上
+  useEffect(() => {
+    const timer = window.setInterval(() => { void load(); void loadKeyGroups(); }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [load, loadKeyGroups]);
+  // 支付核验：轮询 subscriptions/summary，出现「新 group 或到期时间变化」即视为付款完成
+  const verifyPayment = async (silent = false) => {
+    const cur = watchRef.current;
+    if (!cur) return;
+    if (Date.now() - cur.startedAt > 600_000) { stopWatch(); return; } // 10 分钟窗口后停自动轮询
+    const ov = await window.codex.relayOverview().catch(() => null);
+    if (!ov) return;
+    setOverview(ov);
+    const fresh: any[] = (ov.subscriptions ?? []).filter((s: any) => !cur.baseline.has(subChangeKey(s)));
+    if (!fresh.length) {
+      if (!silent) onNotice("暂未检测到新订阅：付款到账通常几秒内，稍候自动重查，也可稍后再点「我已完成支付」。");
+      return;
+    }
+    if (cur.timer != null) window.clearInterval(cur.timer);
+    watchRef.current = null;
+    setWatching(false);
+    const target = [...fresh].sort((a, b) => String(b.expires_at ?? "").localeCompare(String(a.expires_at ?? "")))[0];
+    onNotice(`检测到新订阅「${shortGroupName(String(target.group_name ?? "套餐"), 16)}」，正在生成密钥并生效…`);
+    try {
+      await onActivate("plan", { group_id: Number(target.group_id), group_name: String(target.group_name ?? "套餐") });
+      setOverview(await window.codex.relayOverview().catch(() => ov));
+      onNotice("订阅已生效，模型已切换，可以直接发消息了");
+    } catch (e: any) {
+      setErr("订阅自动生效失败：" + (e.message ?? e) + "。可在管理面板套餐卡上点「使用此套餐」重试。");
+    }
+  };
+  const startWatch = () => {
+    const baseline = new Set(subs.map(subChangeKey));
+    if (watchRef.current?.timer != null) window.clearInterval(watchRef.current.timer);
+    watchRef.current = { timer: null, baseline, startedAt: Date.now() };
+    setWatching(true);
+    const timer = window.setInterval(() => void verifyPayment(true), 20_000);
+    if (watchRef.current) watchRef.current.timer = timer;
+  };
+  const openPurchase = async () => {
+    setErr("");
+    try {
+      await window.codex.relayOpenPurchase();
+      setPlansOpen(false);
+      startWatch();
+      onNotice("已打开支付页（已自动登录站内），付款完成后这里会自动生效");
+    } catch (e: any) {
+      setErr("打开支付页失败：" + (e.message ?? e) + "。可到站点官网手动购买，完成后点「我已完成支付」。");
+    }
+  };
+  const openPlans = async () => {
+    setPlansOpen(true);
+    setPlansErr("");
+    setPlansLoading(true);
+    try {
+      setPlans(await window.codex.relayPaymentPlans());
+    } catch (e: any) {
+      setPlans(null);
+      setPlansErr(String(e?.message ?? e).replace(/^Error invoking remote method '[^']+':\s*/i, ""));
+    } finally { setPlansLoading(false); }
+  };
+  const register = async () => {
+    if (regDraft.password !== regDraft.confirm) { setErr("两次输入的密码不一致"); return; }
+    setWorking("register"); setErr("");
+    const baseUrl = draft.baseUrl || "https://api.pptoken.cc";
+    try {
+      await window.codex.relayRegister({ baseUrl, email: regDraft.email, password: regDraft.password, affCode: AFF_CODE });
+      setRegDraft({ email: "", password: "", confirm: "" });
+      onNotice("注册成功，已自动登录");
+      void reloadAccounts();
+      await load(false);
+      setLoginModalOpen(false);
+      await autoConfigure();
+      void openPlans();
+    } catch (e: any) {
+      const msg = String(e?.message ?? e).replace(/^Error invoking remote method '[^']+':\s*/i, "");
+      if (/captcha|turnstile|verify_code|验证码|邮箱验证/i.test(msg)) {
+        // 站点开了验证码/邮箱验证（sub2api 可选配置）：降级为外部注册页，注册完回应用里登录
+        setErr("该站点注册需要验证码/邮箱验证，已打开外部注册页；注册完成后回到这里登录即可。");
+        void window.codex.openExternal(`${baseUrl}/register?aff=${AFF_CODE}`).catch(() => undefined);
+      } else setErr(msg);
+    } finally { setWorking(""); }
+  };
   const groupNameOf = (gid: any) => {
     if (gid == null) return "无分组";
     const sub = (overview?.subscriptions ?? []).find((s: any) => Number(s.group_id) === Number(gid));
@@ -3914,6 +4016,93 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
   return (
     <section className="settings-section stack relay-center">
       <div className="settings-copy channel-heading"><div><h2>中转站</h2><p>每个中转站账号一张卡片：点卡片进入该账号的管理面板（余额总览、订阅套餐、密钥管理），所有操作即时生效；聊天输入框旁会实时显示当前余量。</p></div></div>
+      {(() => {
+        // 置顶付费订阅长条卡：展示当前生效订阅（正向：付款后自动更新；反向：手动切换自动跟上）
+        const selected = account && overview?.selectedMode === "plan" && overview?.selectedGroupId != null
+          ? subs.find((s: any) => Number(s.group_id) === Number(overview?.selectedGroupId)) ?? null
+          : null;
+        const current = selected ?? (subs.length ? [...subs].sort((a: any, b: any) => String(b.expires_at ?? "").localeCompare(String(a.expires_at ?? "")))[0] : null);
+        const limit = current ? Number(current.monthly_limit_usd ?? current.weekly_limit_usd ?? current.daily_limit_usd ?? 0) : 0;
+        const used = current ? Number(current.monthly_used_usd ?? current.weekly_used_usd ?? current.daily_used_usd ?? 0) : 0;
+        const daysLeft = current?.expires_at ? Math.ceil((new Date(String(current.expires_at)).getTime() - Date.now()) / 86400_000) : null;
+        const expired = daysLeft != null && daysLeft <= 0;
+        const expiring = !expired && daysLeft != null && daysLeft <= 3;
+        const state = !account ? "guest" : expired ? "expired" : expiring ? "expiring" : current ? "active" : "empty";
+        const site = account ? String(account.baseUrl || "").replace(/^https?:\/\//, "") : "";
+        return (
+          <div className={`relay-sub-banner${watching ? " watching" : ""}`} data-state={state}>
+            <div className="relay-sub-banner-icon">
+              {state === "guest" ? <Wallet size={19} /> : expired ? <AlertTriangle size={19} /> : expiring ? <Clock3 size={19} /> : <Sparkles size={19} />}
+            </div>
+            <div className="relay-sub-banner-main">
+              {watching ? (
+                <>
+                  <strong>等待支付结果…</strong>
+                  <p>已打开中转站支付页（站内已自动登录）。付款到账后这里会自动创建套餐密钥并生效，无需任何手动操作。</p>
+                </>
+              ) : state === "guest" ? (
+                <>
+                  <strong>付费订阅 · 开通即用</strong>
+                  <p>登录或注册中转站账号后，可在此选购订阅套餐：付款完成自动生成套餐密钥、自动切换模型供应商，对话直接可用。</p>
+                </>
+              ) : expired ? (
+                <>
+                  <strong>订阅已到期</strong>
+                  <p>套餐「{shortGroupName(String(current?.group_name ?? ""), 20)}」已于 {current?.expires_at ? String(current.expires_at).slice(0, 10) : "—"} 到期，重新订阅后自动恢复生效。</p>
+                </>
+              ) : expiring ? (
+                <>
+                  <strong>订阅即将到期（剩 {daysLeft} 天）</strong>
+                  <p>套餐「{shortGroupName(String(current?.group_name ?? ""), 20)}」将于 {current?.expires_at ? String(current.expires_at).slice(0, 10) : "—"} 到期，提前续费可保持额度与时长不中断。</p>
+                </>
+              ) : current ? (
+                <>
+                  <strong>
+                    {selected ? <span className="relay-plan-live"><Check size={11} />当前生效</span> : null}
+                    {shortGroupName(String(current.group_name ?? "订阅套餐"), 22)}
+                    {site && <small className="relay-sub-banner-site">{site}</small>}
+                  </strong>
+                  <div className="relay-sub-banner-meta">
+                    <div className="relay-sub-progress"><i style={{ width: `${progress(used, limit)}%` }} /></div>
+                    <span>{limit ? `月额度已用 $${used.toFixed(2)} / $${limit.toFixed(2)}` : "额度按量计费"}</span>
+                    <span className="relay-sub-banner-due">{daysLeft != null ? `${daysLeft} 天后到期` : "生效中"}</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <strong>暂无生效中的订阅套餐</strong>
+                  <p>当前计费走账户余额（${Number(overview?.balance ?? 0).toFixed(2)}）。选购订阅套餐可享专属分组额度与倍率。</p>
+                </>
+              )}
+            </div>
+            <div className="relay-sub-banner-actions">
+              {watching ? (
+                <>
+                  <button className="primary-setting" onClick={() => void verifyPayment(false)}><CircleCheck size={14} />我已完成支付</button>
+                  <button className="secondary-setting" onClick={() => { stopWatch(); onNotice("已停止自动检测；付款到账后可在套餐卡上点「使用此套餐」。"); }}>停止等待</button>
+                </>
+              ) : state === "guest" ? (
+                <>
+                  <button className="primary-setting" onClick={() => { setAuthTab("login"); setLoginModalOpen(true); }}><LogIn size={14} />登录 / 注册</button>
+                </>
+              ) : state === "expired" ? (
+                <>
+                  <button className="primary-setting" onClick={() => void openPlans()}><Sparkles size={14} />重新订阅</button>
+                  <button className="secondary-setting" onClick={() => void load(false)} disabled={refreshing}>{refreshing ? <Spinner /> : <RefreshCw size={13} />}刷新状态</button>
+                </>
+              ) : (
+                <>
+                  <button className="primary-setting" onClick={() => void openPlans()}><ArrowUpRight size={14} />{current ? (expired ? "重新订阅" : "升级 / 续费") : "选购套餐"}</button>
+                  {current && !selected && (
+                    <button className="secondary-setting" disabled={busy || working !== ""} onClick={() => void switchTarget("plan", { group_id: Number(current.group_id), group_name: String(current.group_name ?? "套餐") })}>{working === `plan${current.group_id}` ? <Spinner /> : <Zap size={13} />}一键生效</button>
+                  )}
+                  <button className="secondary-setting" onClick={() => void openManage(accounts.find((a: any) => a.active) ?? accounts[0])} disabled={!accounts.length}><Settings2 size={13} />管理</button>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
       {err && <p className="relay-account-err"><AlertTriangle size={13} />{err}</p>}
       <div className="relay-plan-grid relay-home-grid">
         {accounts.map((a) => {
@@ -4066,14 +4255,77 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
         <div className="relay-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setLoginModalOpen(false); }}>
           <div className="relay-manage-modal relay-login-modal">
             <div className="relay-keys-head">
-              <strong className="relay-modal-title"><Wallet size={15} />登录中转站</strong>
-              <small>sub2api 站点账号密码，余额与套餐一键接入</small>
+              <strong className="relay-modal-title"><Wallet size={15} />{authTab === "login" ? "登录中转站" : "注册中转站账号"}</strong>
+              <small>{authTab === "login" ? "sub2api 站点账号密码，余额与套餐一键接入" : "注册后自动登录，直接进入套餐选购"}</small>
               <button className="icon-button relay-modal-close" title="关闭" onClick={() => setLoginModalOpen(false)}><X size={15} /></button>
             </div>
-            <label className="se-field"><span>站点地址</span><input value={draft.baseUrl} onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })} placeholder="https://api.pptoken.cc" /></label>
-            <label className="se-field"><span>邮箱</span><input value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} placeholder="你在中转站的账号邮箱" /></label>
-            <label className="se-field"><span>密码</span><input type="password" value={draft.password} onChange={(event) => setDraft({ ...draft, password: event.target.value })} placeholder="账号密码" onKeyDown={(event) => { if (event.key === "Enter" && draft.email && draft.password) void login(); }} /></label>
-            <button className="primary-setting relay-login-btn" disabled={working === "login" || !draft.email || !draft.password} onClick={() => void login()}>{working === "login" ? <><Spinner />正在登录…</> : <><LogIn size={15} />登录并自动配置</>}</button>
+            <div className="relay-auth-tabs" role="tablist">
+              <button type="button" role="tab" aria-selected={authTab === "login"} className={authTab === "login" ? "on" : ""} onClick={() => { setAuthTab("login"); setErr(""); }}>已有账号，登录</button>
+              <button type="button" role="tab" aria-selected={authTab === "register"} className={authTab === "register" ? "on" : ""} onClick={() => { setAuthTab("register"); setErr(""); }}>新用户，注册</button>
+            </div>
+            {authTab === "login" ? (
+              <>
+                <label className="se-field"><span>站点地址</span><input value={draft.baseUrl} onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })} placeholder="https://api.pptoken.cc" /></label>
+                <label className="se-field"><span>邮箱</span><input value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} placeholder="你在中转站的账号邮箱" /></label>
+                <label className="se-field"><span>密码</span><input type="password" value={draft.password} onChange={(event) => setDraft({ ...draft, password: event.target.value })} placeholder="账号密码" onKeyDown={(event) => { if (event.key === "Enter" && draft.email && draft.password) void login(); }} /></label>
+                <button className="primary-setting relay-login-btn" disabled={working === "login" || !draft.email || !draft.password} onClick={() => void login()}>{working === "login" ? <><Spinner />正在登录…</> : <><LogIn size={15} />登录并自动配置</>}</button>
+              </>
+            ) : (
+              <>
+                <label className="se-field"><span>站点地址</span><input value={draft.baseUrl} onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })} placeholder="https://api.pptoken.cc" /></label>
+                <label className="se-field"><span>邮箱</span><input value={regDraft.email} onChange={(event) => setRegDraft({ ...regDraft, email: event.target.value })} placeholder="用于登录中转站的邮箱" autoComplete="email" /></label>
+                <label className="se-field"><span>密码（至少 6 位）</span><input type="password" value={regDraft.password} onChange={(event) => setRegDraft({ ...regDraft, password: event.target.value })} placeholder="设置账号密码" autoComplete="new-password" /></label>
+                <label className="se-field"><span>确认密码</span><input type="password" value={regDraft.confirm} onChange={(event) => setRegDraft({ ...regDraft, confirm: event.target.value })} placeholder="再输入一次" autoComplete="new-password" onKeyDown={(event) => { if (event.key === "Enter" && regDraft.email && regDraft.password) void register(); }} /></label>
+                <button className="primary-setting relay-login-btn" disabled={working === "register" || !regDraft.email || !regDraft.password} onClick={() => void register()}>{working === "register" ? <><Spinner />正在注册…</> : <><Sparkles size={15} />注册并进入套餐选购</>}</button>
+                <p className="relay-auth-note">注册成功后自动登录并打开套餐市场；邀请码 <code>{AFF_CODE}</code> 已自动携带。站点若要求验证码/邮箱验证，会自动打开站内注册页兜底。</p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      {plansOpen && (
+        <div className="relay-modal-backdrop relay-plans-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPlansOpen(false); }}>
+          <div className="relay-plans-modal">
+            <div className="relay-keys-head">
+              <strong className="relay-modal-title"><Sparkles size={15} />订阅套餐</strong>
+              <small>{account ? `${String(account.baseUrl || "").replace(/^https?:\/\//, "")} · 付款成功后自动生效` : "登录后可订阅"}</small>
+              <button className="icon-button relay-modal-close" title="关闭" onClick={() => setPlansOpen(false)}><X size={15} /></button>
+            </div>
+            {plansLoading && <div className="relay-plans-loading"><Spinner />正在获取套餐目录…</div>}
+            {!plansLoading && plansErr && <p className="relay-account-err"><AlertTriangle size={13} />{plansErr}</p>}
+            {!plansLoading && !plansErr && (
+              <div className="relay-plans-grid">
+                {(plans ?? []).map((p: any) => {
+                  const price = Number(p.price ?? 0);
+                  const orig = p.original_price != null ? Number(p.original_price) : null;
+                  const owned = subs.some((s: any) => Number(s.group_id) === Number(p.group_id));
+                  const inUse = overview?.selectedMode === "plan" && Number(overview?.selectedGroupId) === Number(p.group_id);
+                  const rate = Number(p.rate_multiplier ?? 1);
+                  return (
+                    <div className={`relay-plan-market-card${inUse ? " in-use" : ""}`} key={p.id}>
+                      <div className="relay-plan-market-head">
+                        <strong title={String(p.name ?? "套餐")}>{shortGroupName(String(p.name ?? "套餐"), 16)}</strong>
+                        {inUse ? <span className="relay-plan-live"><Check size={11} />使用中</span> : owned ? <span className="relay-plan-owned">已拥有</span> : null}
+                      </div>
+                      <p className="relay-plan-market-group" title={String(p.group_name ?? "")}>{shortGroupName(String(p.group_name ?? ""), 26)}</p>
+                      <div className="relay-plan-market-price">
+                        <b>¥{price % 1 === 0 ? price.toFixed(0) : price.toFixed(2)}</b>
+                        {orig != null && orig > price && <s>¥{orig % 1 === 0 ? orig.toFixed(0) : orig.toFixed(2)}</s>}
+                      </div>
+                      <p className="relay-plan-market-valid">
+                        {p.validity_days != null ? `${p.validity_days} 天有效期` : "按站点规则"}
+                        {rate !== 1 && <em className="relay-plan-rate">{rate.toFixed(2)}x 倍率</em>}
+                      </p>
+                      {p.description && <p className="relay-plan-market-desc" title={String(p.description)}>{shortGroupName(String(p.description), 30)}</p>}
+                      {p.features && <details className="relay-plan-market-feats"><summary>套餐说明</summary><pre>{String(p.features)}</pre></details>}
+                      <button className="primary-setting relay-plan-buy" disabled={plansLoading || working !== ""} onClick={() => void openPurchase()}>{owned ? "续费此套餐" : "立即订阅"}</button>
+                    </div>
+                  );
+                })}
+                {plans != null && !plans.length && <div className="relay-plans-loading">该站点暂无上架套餐。</div>}
+              </div>
+            )}
+            <p className="relay-plans-foot">付款在中转站收银台完成（支付宝 / 微信等）。支付成功后本页自动检测并生效，无需重启应用；多次购买同套餐 = 时长累加。</p>
           </div>
         </div>
       )}

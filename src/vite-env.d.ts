@@ -489,6 +489,9 @@ interface Window {
     relayCreateKey(input: { name: string; groupId?: number | null }): Promise<{ id: number; key: string; name: string; group_id: number | null; status: string }>;
     relaySelect(input: { mode: "balance" | "plan"; groupId: number | null; keyId?: number; keyName?: string }): Promise<{ ok: boolean }>;
     relayKeyBilling(input: { baseUrl: string; apiKey: string }): Promise<any>;
+    relayRegister(input: { baseUrl: string; email: string; password: string; affCode?: string }): Promise<{ email: string; baseUrl: string; balance: number }>;
+    relayPaymentPlans(): Promise<any[]>;
+    relayOpenPurchase(): Promise<{ ok: boolean; url: string }>;
     enhancePrompt(text: string): Promise<{ ok: boolean; text?: string; error?: string }>;
     listTerminals(): Promise<{ id: string; alive: boolean; cwd: string }[]>;
     validatePlugin(target: string): Promise<{ ok: boolean; root: string; manifestPath?: string; issues: string[]; inventory: { skills: number; commands: number; agents: number; hooks: number }; name?: string }>;
