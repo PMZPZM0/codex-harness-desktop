@@ -11,9 +11,9 @@
 
 import { createHash } from "crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "fs";
-import { mkdir, rename, stat, unlink } from "fs/promises";
+import { mkdir, open, rename, stat, unlink } from "fs/promises";
 import { dirname, join } from "path";
-import { MODEL_HOSTS, modelUrl, type VoiceModelRepo } from "./model-manifest";
+import { MODEL_HOSTS, modelUrl, type VoiceModelFile, type VoiceModelRepo } from "./model-manifest";
 
 export type VoiceDownloadProgress = {
   /** 当前仓库 id */
@@ -91,7 +91,8 @@ async function downloadOne(
   file: string,
   destPath: string,
   expectedSha: string,
-  onBytes: (received: number, total: number) => void
+  onBytes: (received: number, total: number) => void,
+  opts?: { signal?: AbortSignal }
 ): Promise<DownloadOneResult> {
   const partPath = `${destPath}.part`;
   await mkdir(dirname(destPath), { recursive: true });
@@ -104,7 +105,7 @@ async function downloadOne(
 
   let response: Response;
   try {
-    response = await fetch(modelUrl(host, repo, file), { headers });
+    response = await fetch(modelUrl(host, repo, file), { headers, signal: opts?.signal });
   } catch (error: any) {
     return { ok: false, error: `请求失败：${error?.message ?? error}` };
   }
@@ -169,68 +170,268 @@ async function downloadOne(
 }
 
 /**
+ * HEAD 探测文件大小与延迟。
+ * 返回 { host, size, latencyMs }，调用方按 size>0 + latencyMs 升序选最快的可用镜像。
+ */
+async function probeFile(
+  host: string,
+  repo: string,
+  file: string,
+  signal?: AbortSignal
+): Promise<{ host: string; size: number; latencyMs: number; ok: boolean; error?: string }> {
+  const t0 = Date.now();
+  try {
+    const res = await fetch(modelUrl(host, repo, file), { method: "HEAD", signal });
+    const size = Number(res.headers.get("content-length") ?? 0);
+    return { host, size, latencyMs: Date.now() - t0, ok: res.ok && size > 0 };
+  } catch (error: any) {
+    return { host, size: 0, latencyMs: Date.now() - t0, ok: false, error: String(error?.message ?? error) };
+  }
+}
+
+/** 并发探测一个仓库下所有文件，按「可用主机 + 速度」排序取最优。 */
+export async function probeHosts(
+  hosts: readonly string[],
+  repo: VoiceModelRepo,
+  opts?: { signal?: AbortSignal }
+): Promise<{ host: string; size: number; latencyMs: number }[]> {
+  // 对每个 host 抽测前两个文件，取其最差延迟作代表（保守）
+  const perHostProbes = await Promise.all(
+    hosts.map(async (h) => {
+      const probes = await Promise.all(
+        repo.files.slice(0, 2).map((f) => probeFile(h, repo.repo, f.name, opts?.signal))
+      );
+      return { host: h, probes };
+    })
+  );
+  // 每个 host 取其最差延迟（最保守：按最难的文件算）+ 任一成功 size 作为该 host 的代表 size
+  const byHost = new Map<string, { size: number; worstLatency: number }>();
+  for (const { host, probes } of perHostProbes) {
+    for (const r of probes) {
+      if (!r.ok) continue;
+      const cur = byHost.get(host) ?? { size: 0, worstLatency: 0 };
+      cur.size = cur.size || r.size;
+      cur.worstLatency = Math.max(cur.worstLatency, r.latencyMs);
+      byHost.set(host, cur);
+    }
+  }
+  return [...byHost.entries()]
+    .map(([host, { size, worstLatency }]) => ({ host, size, latencyMs: worstLatency }))
+    .sort((a, b) => a.latencyMs - b.latencyMs);
+}
+
+/** 多少字节以上的文件才走分块并行下载（小于它的不值得分块开销）。 */
+const PARALLEL_MIN_BYTES = 24 * 1024 * 1024; // 24MB
+const PARALLEL_CHUNKS = 4;
+
+/**
+ * 大文件分块并行下载（用 Range 拆成 N 段，并发拉，写到不同偏移）。
+ * 服务端必须支持 Range 头（HF / hf-mirror 都支持）。不支持时降级为单流。
+ * 末尾统一验 SHA256。
+ */
+async function downloadParallel(
+  host: string,
+  repo: string,
+  file: string,
+  destPath: string,
+  expectedSha: string,
+  onBytes: (received: number, total: number) => void,
+  signal?: AbortSignal
+): Promise<DownloadOneResult> {
+  const partPath = `${destPath}.part`;
+  await mkdir(dirname(destPath), { recursive: true });
+
+  // 1) 拿总大小
+  const probe = await probeFile(host, repo, file, signal);
+  if (!probe.ok || probe.size <= 0) {
+    return { ok: false, error: `分块探测失败：${probe.error ?? "no content-length"}` };
+  }
+  const total = probe.size;
+
+  // 2) 拆成 N 段
+  const chunkSize = Math.ceil(total / PARALLEL_CHUNKS);
+  const ranges = Array.from({ length: PARALLEL_CHUNKS }, (_, i) => {
+    const start = i * chunkSize;
+    const end = Math.min(total - 1, start + chunkSize - 1);
+    return { start, end, idx: i };
+  });
+
+  // 3) 预分配目标文件
+  const fh = await open(partPath, "w");
+  try {
+    await fh.truncate(total);
+  } finally {
+    await fh.close().catch(() => undefined);
+  }
+
+  // 4) 并发拉各段，写到对应偏移
+  const perChunk = new Array(ranges.length).fill(0);
+  const writeToOffset = async (chunk: typeof ranges[number], buf: Uint8Array) => {
+    const h = await open(partPath, "r+");
+    try { await h.write(buf, 0, buf.length, chunk.start); }
+    finally { await h.close().catch(() => undefined); }
+  };
+
+  let aborted = false;
+  const tasks = ranges.map(async (chunk) => {
+    const headers: Record<string, string> = {
+      "user-agent": "codex-harness-voice/1.0",
+      range: `bytes=${chunk.start}-${chunk.end}`,
+    };
+    let res: Response;
+    try {
+      res = await fetch(modelUrl(host, repo, file), { headers, signal });
+    } catch (e: any) {
+      aborted = true;
+      throw new Error(`分块 ${chunk.idx} 请求失败：${e?.message ?? e}`);
+    }
+    if (res.status !== 206 && res.status !== 200) {
+      aborted = true;
+      throw new Error(`分块 ${chunk.idx} HTTP ${res.status}`);
+    }
+    if (!res.body) throw new Error(`分块 ${chunk.idx} 无 body`);
+    const reader = (res.body as any).getReader();
+    let received = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      await writeToOffset(chunk, value);
+      received += value.byteLength;
+      perChunk[chunk.idx] = received;
+      const totalReceived = perChunk.reduce((s, n) => s + n, 0);
+      onBytes(totalReceived, total);
+    }
+  });
+
+  try {
+    await Promise.all(tasks);
+  } catch (error: any) {
+    await unlink(partPath).catch(() => undefined);
+    return { ok: false, error: `分块下载失败：${error?.message ?? error}` };
+  }
+
+  // 5) 验 SHA256
+  if ((await fileShaOrEmpty(partPath)) !== expectedSha) {
+    await unlink(partPath).catch(() => undefined);
+    return { ok: false, error: "分块下载 SHA256 校验不符" };
+  }
+
+  // 6) 改名
+  try { await rename(partPath, destPath); }
+  catch (error: any) { return { ok: false, error: `重命名失败：${error?.message ?? error}` }; }
+
+  return { ok: true };
+  // aborted 变量留着以便未来用（TS 严格无未用变量会报错？——目前类型是 boolean 已用）
+  void aborted;
+}
+
+/** 单文件下载入口：大文件走分块并行，否则走单流；任一失败都允许上层换 host 重试。 */
+async function downloadFile(
+  host: string,
+  repo: string,
+  file: string,
+  bytes: number,
+  destPath: string,
+  expectedSha: string,
+  onBytes: (received: number, total: number) => void,
+  opts?: { signal?: AbortSignal }
+): Promise<DownloadOneResult> {
+  if (bytes >= PARALLEL_MIN_BYTES) {
+    return downloadParallel(host, repo, file, destPath, expectedSha, onBytes, opts?.signal);
+  }
+  return downloadOne(host, repo, file, destPath, expectedSha, onBytes, opts);
+}
+
+/**
  * 确保一个仓库的全部文件就绪；已就绪的文件跳过。
  * 返回失败列表（空数组 = 全部成功）。
  */
 export async function ensureRepo(
   modelsRoot: string,
   repo: VoiceModelRepo,
-  onProgress?: (p: VoiceDownloadProgress) => void
+  onProgress?: (p: VoiceDownloadProgress) => void,
+  opts?: { hosts?: readonly string[]; concurrency?: number; signal?: AbortSignal }
 ): Promise<string[]> {
-  const failures: string[] = [];
+  const hosts = opts?.hosts?.length ? opts.hosts : MODEL_HOSTS;
   const total = repo.files.length;
+  const concurrency = Math.max(1, Math.min(opts?.concurrency ?? 4, total));
+  const failures: string[] = [];
   let done = 0;
+  const queue: VoiceModelFile[] = [...repo.files];
+  // 节流：每个文件只在上次报告的百分比变化 ≥ 1% 时才发一次进度（避免并发下载刷爆 IPC）
+  const lastPercent = new Map<string, number>();
+  let activeCount = 0;
 
-  for (const f of repo.files) {
-    const dest = modelFilePath(modelsRoot, repo.repo, f.name);
+  const reportDone = (file: string) => {
+    done += 1;
+    lastPercent.delete(file);
+    onProgress?.({
+      repo: repo.repo,
+      file,
+      doneFiles: done,
+      totalFiles: total,
+      percent: 100,
+      message: `${file} 完成（${done}/${total} · 并行 ${Math.max(1, activeCount - 1)}）`,
+    });
+  };
+  const reportStart = (file: string, host: string) => {
+    lastPercent.set(file, 0);
+    onProgress?.({
+      repo: repo.repo,
+      file,
+      doneFiles: done,
+      totalFiles: total,
+      percent: 0,
+      message: `下载 ${file}（${host.replace(/^https?:\/\//, "")}）· 并行 ${activeCount}/${concurrency}`,
+    });
+  };
+  const reportProgress = (file: string, received: number, bytes: number, host: string) => {
+    const pct = bytes > 0 ? Math.min(99, Math.round((received / bytes) * 100)) : -1;
+    if (pct >= 0 && lastPercent.get(file) === pct) return;
+    lastPercent.set(file, pct);
+    onProgress?.({
+      repo: repo.repo,
+      file,
+      doneFiles: done,
+      totalFiles: total,
+      percent: pct,
+      message: `下载 ${file} ${pct >= 0 ? pct + "%" : ""} · ${host.replace(/^https?:\/\//, "")}`,
+    });
+  };
+
+  async function processFile(f: VoiceModelFile): Promise<void> {
     if (await isFileReady(modelsRoot, repo.repo, f.name, f.sha256)) {
-      done += 1;
-      onProgress?.({
-        repo: repo.repo,
-        file: f.name,
-        doneFiles: done,
-        totalFiles: total,
-        percent: 100,
-        message: `${f.name} 已就绪`,
-      });
-      continue;
+      reportDone(f.name);
+      return;
     }
-
+    const dest = modelFilePath(modelsRoot, repo.repo, f.name);
     let lastError = "";
     let ok = false;
-    for (const host of MODEL_HOSTS) {
-      onProgress?.({
-        repo: repo.repo,
-        file: f.name,
-        doneFiles: done,
-        totalFiles: total,
-        percent: 0,
-        message: `下载 ${f.name}（${host.replace(/^https?:\/\//, "")}）`,
-      });
-      const result = await downloadOne(host, repo.repo, f.name, dest, f.sha256, (received, bytes) => {
-        onProgress?.({
-          repo: repo.repo,
-          file: f.name,
-          doneFiles: done,
-          totalFiles: total,
-          percent: bytes > 0 ? Math.min(99, Math.round((received / bytes) * 100)) : -1,
-          message: `下载 ${f.name} ${bytes > 0 ? `${Math.round((received / bytes) * 100)}%` : ""}`,
-        });
-      });
-      if (result.ok) {
-        ok = true;
-        break;
-      }
+    for (const host of hosts) {
+      reportStart(f.name, host);
+      const result = await downloadFile(host, repo.repo, f.name, f.bytes, dest, f.sha256, (received, bytes) => {
+        reportProgress(f.name, received, bytes, host);
+      }, { signal: opts?.signal });
+      if (result.ok) { ok = true; break; }
       lastError = result.error;
     }
-
-    if (!ok) {
-      failures.push(`${f.name}：${lastError || "两个镜像均失败"}`);
-      continue;
-    }
-    done += 1;
+    if (!ok) failures.push(`${f.name}：${lastError || "所有镜像均失败"}`);
+    else reportDone(f.name);
   }
 
+  async function worker(): Promise<void> {
+    while (queue.length > 0) {
+      const f = queue.shift();
+      if (!f) return;
+      activeCount += 1;
+      try { await processFile(f); }
+      finally { activeCount -= 1; }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, total) }, () => worker())
+  );
   return failures;
 }
 

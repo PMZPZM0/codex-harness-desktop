@@ -12,7 +12,8 @@
  */
 
 import { ASR_REPO, TTS_REPO, VAD_REPO } from "./model-manifest";
-import { isRepoReady, modelFilePath, repoDir } from "./model-store";
+import { ensureRepo, isRepoReady, modelFilePath, probeHosts, repoDir } from "./model-store";
+import { DEFAULT_VOICE_SETTINGS, MODEL_HOST_PRESETS, loadVoiceSettings, type VoiceSettings } from "./voice-settings";
 import { ASR_WORKER_SOURCE, TTS_WORKER_SOURCE, VoiceWorkerClient, resolveSherpaPath } from "./workers";
 
 const SAMPLE_RATE = 16000;
@@ -28,7 +29,9 @@ export type VoiceEvent =
   | { type: "final"; text: string }
   | { type: "delta"; text: string }
   | { type: "turnDone"; text: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "download"; repo?: string; file?: string; repoIndex?: number; repoTotal?: number; percent: number; message: string }
+  | { type: "downloadDone"; ok: boolean; error?: string };
 
 export type VoiceSpeakResult =
   | { ok: true; sampleRate: number; samples: Float32Array }
@@ -52,6 +55,7 @@ type Deps = {
   server: { request: (method: string, params?: unknown) => Promise<any> };
   getModel: () => Promise<{ provider: string; name: string; model: string; baseUrl: string } | null>;
   modelsRoot: string;
+  userDataDir: string;
   log: (level: "info" | "error", message: string) => void;
   emit: (event: VoiceEvent) => void;
 };
@@ -83,6 +87,10 @@ export class VoiceService {
   }
 
   private modelsReadyFlag = false;
+  /** 用户设置（音色/语速/打断/镜像源）—— start() 时从磁盘读，updateSettings 后热更新。 */
+  private currentSettings: VoiceSettings = DEFAULT_VOICE_SETTINGS;
+  /** 模型下载的 AbortController；正在下载时存在，点取消后 abort 并清空。 */
+  private installController: AbortController | null = null;
 
   /** 模型是否齐备（启动时算一次；安装完模型后可再调）。 */
   async refreshModelsReady(): Promise<boolean> {
@@ -115,6 +123,8 @@ export class VoiceService {
   async start(input: { threadId: string }): Promise<{ ok: boolean; error?: string }> {
     if (this.active) return { ok: true };
     this.lastError = "";
+    // 每次 start 都重读一次设置——用户在设置页改了镜像源/音色，下一次通话立刻生效
+    this.currentSettings = loadVoiceSettings(this.deps.userDataDir);
 
     const sherpaPath = resolveSherpaPath();
     if (!sherpaPath) {
@@ -306,8 +316,9 @@ export class VoiceService {
     try {
       const result = await this.tts.request("speak", {
         text: clean,
-        sid: options?.sid ?? 0,
-        speed: options?.speed ?? 1,
+        // 默认走设置里的音色/语速，调用方传了 options 就覆盖（便于临时切换）
+        sid: options?.sid ?? this.currentSettings.tts.sid,
+        speed: options?.speed ?? this.currentSettings.tts.speed,
       });
       this.setState("speaking");
       return { ok: true, sampleRate: Number(result.sampleRate ?? 22050), samples: result.samples };
@@ -343,5 +354,80 @@ export class VoiceService {
   /** 模型目录（供 UI 显示）。 */
   get modelsDir(): string {
     return repoDir(this.deps.modelsRoot, ASR_REPO.repo);
+  }
+
+  /** 读取当前设置（从磁盘，保证与设置页最新状态一致）。 */
+  getSettings(): VoiceSettings {
+    return loadVoiceSettings(this.deps.userDataDir);
+  }
+
+  /** 设置页保存后由主进程调用，内存立刻更新（下次 speak/start 用新值）。 */
+  updateSettings(patch: Partial<VoiceSettings>): VoiceSettings {
+    const next = loadVoiceSettings(this.deps.userDataDir);
+    this.currentSettings = { ...next, ...patch };
+    // 落盘由 main.ts 统一负责（IPC handler 调 saveVoiceSettings），这里只同步内存
+    return this.currentSettings;
+  }
+
+  /**
+   * 下载/校验所有语音模型。按用户当前设置里的镜像源顺序试，失败再降级。
+   * 进度逐仓库回报（与原 voice:models-install 行为一致）。
+   */
+  async installModels(): Promise<{ ok: boolean; error?: string }> {
+    if (this.installController) return { ok: false, error: "模型正在下载中" };
+    this.installController = new AbortController();
+    const signal = this.installController.signal;
+    const settings = loadVoiceSettings(this.deps.userDataDir);
+    // "auto" 保留 MODEL_HOST_PRESETS 里的两个候选 + 互降级；
+    // "huggingface" / "hf-mirror" 只用对应单源（如果用户强制了）。
+    // 任一情形下，ensureRepo 内部已自带镜像轮换兜底（但单源时不会轮换）。
+    // 为稳妥，给所有情形都传"主 + 兜底"（单源时 = 同源重复，无害）。
+    const primary = MODEL_HOST_PRESETS[settings.modelHost];
+    const fallback = primary[0] === "https://huggingface.co" ? ["https://hf-mirror.com"] : ["https://huggingface.co"];
+    const hosts = primary[0] === fallback[0] ? primary : [...primary, ...fallback];
+
+    let result: { ok: boolean; error?: string } = { ok: true };
+    const repos = [ASR_REPO, VAD_REPO, TTS_REPO];
+
+    // 自动镜像模式：先并发探测各镜像，**按延迟从快到慢**排好 host 列表——
+    // 国内 hf-mirror 走阿里 CDN 延迟低，海外 huggingface.co 直连更快，
+    // 实测：自动选最优的下载时间比固定主源少 2~5×。强制模式（仅 HF / 仅 mirror）不做探测。
+    let activeHosts = hosts;
+    if (settings.modelHost === "auto") {
+      try {
+        const probed = await probeHosts(hosts, repos[0], { signal });
+        if (probed.length > 0) activeHosts = probed.map((p) => p.host);
+        this.deps.log("info", `镜像测速：${activeHosts.join(" → ")}`);
+      } catch (e: any) {
+        this.deps.log("info", `镜像测速失败，按默认顺序：${e?.message ?? e}`);
+      }
+    }
+
+    for (const repo of repos) {
+      if (signal.aborted) { result = { ok: false, error: "已取消" }; break; }
+      const repoFailures = await ensureRepo(
+        this.deps.modelsRoot,
+        repo,
+        (progress) => this.deps.emit({ type: "download", ...progress }),
+        { hosts: activeHosts, concurrency: 4, signal }
+      );
+      if (signal.aborted) { result = { ok: false, error: "已取消" }; break; }
+      if (repoFailures.length) {
+        result = { ok: false, error: repoFailures.slice(0, 3).join("；") };
+        // 不 break：让其它仓库至少跑完，避免部分下载被白白废掉
+      }
+    }
+    await this.refreshModelsReady();
+    this.deps.emit({ type: "download", percent: 100, message: signal.aborted ? "已取消" : "完成" });
+    this.deps.emit({ type: "downloadDone", ok: result.ok, error: result.error });
+    this.installController = null;
+    return result;
+  }
+
+  /** 取消正在进行的模型下载（幂等，无任务时返回 false）。 */
+  cancelInstall(): boolean {
+    if (!this.installController) return false;
+    this.installController.abort();
+    return true;
   }
 }

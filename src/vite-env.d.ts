@@ -502,7 +502,23 @@ interface Window {
     voicePlaybackDone(): Promise<{ ok: boolean }>;
     voiceModelsStatus(): Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string }>;
     voiceModelsInstall(): Promise<{ ok: boolean; error?: string }>;
+    voiceModelsCancel(): Promise<{ ok: boolean }>;
     voiceMicPermission(): Promise<{ status: string; error?: string }>;
+    voiceSettingsGet(): Promise<{
+      settings: {
+        tts: { sid: number; speed: number };
+        barge: { gateDb: number; mode: "auto" | "manual" };
+        modelHost: "auto" | "huggingface" | "hf-mirror";
+      };
+      ttsVoices: Record<number, string>;
+      modelHosts: Record<string, string>;
+      modelHostOptions: string[];
+    }>;
+    voiceSettingsSet(patch: any): Promise<{
+      tts: { sid: number; speed: number };
+      barge: { gateDb: number; mode: "auto" | "manual" };
+      modelHost: "auto" | "huggingface" | "hf-mirror";
+    }>;
     onVoiceEvent(listener: (event: any) => void): () => void;
     // 自更新：网页源（发布站）/ GitHub Releases 双源可切换
     updateCheck(input?: { source?: "web" | "github" }): Promise<{ ok: boolean; info?: { hasUpdate: boolean; reason: string; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string }; currentVersion?: string; serverUrl?: string; source?: string; error?: string }>;

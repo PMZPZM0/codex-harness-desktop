@@ -460,6 +460,7 @@ const voiceService = new VoiceService({
     return model ? { provider: model.provider, name: model.name, model: model.model, baseUrl: model.baseUrl } : null;
   },
   modelsRoot: voiceModelsRoot,
+  userDataDir: app.getPath("userData"),
   log: (level, message) => {
     voiceLogs.push({ at: Date.now(), level, message });
     if (voiceLogs.length > 50) voiceLogs.shift();
@@ -468,10 +469,27 @@ const voiceService = new VoiceService({
   emit: (event) => sendToWindow("voice:event", event),
 });
 
-/** 语音模型安装的进行中标记（同一时刻只允许一个下载任务）。 */
-let voiceInstallTask: Promise<{ ok: boolean; error?: string }> | null = null;
-
+/** 语音模型安装的并发与取消由 voiceService 内部管（installController），主进程不再包一层。 */
 ipcMain.handle("voice:status", () => voiceService.status());
+
+ipcMain.handle("voice:settings-get", () => {
+  const { loadVoiceSettings, TTS_VOICE_NAMES, MODEL_HOST_PRESETS, MODEL_HOST_LABELS } = require("./voice/voice-settings");
+  const settings = voiceService.getSettings();
+  // 把枚举的可选值一起回传，渲染层不用自己硬码
+  return {
+    settings,
+    ttsVoices: TTS_VOICE_NAMES,
+    modelHosts: MODEL_HOST_LABELS,
+    modelHostOptions: Object.keys(MODEL_HOST_PRESETS),
+  };
+});
+
+ipcMain.handle("voice:settings-set", async (_event, patch: any) => {
+  const { saveVoiceSettings } = require("./voice/voice-settings");
+  const next = saveVoiceSettings(app.getPath("userData"), patch ?? {});
+  voiceService.updateSettings(next);
+  return next;
+});
 
 ipcMain.handle("voice:start", async (_event, threadId: string) => {
   const result = await voiceService.start({ threadId: String(threadId ?? "") });
@@ -504,37 +522,8 @@ ipcMain.handle("voice:models-status", async () => {
   return { ...status, bytes: modelsSizeOnDisk(voiceModelsRoot), root: voiceModelsRoot };
 });
 
-ipcMain.handle("voice:models-install", async () => {
-  if (voiceInstallTask) return { ok: false, error: "模型正在下载中" };
-  const task = (async (): Promise<{ ok: boolean; error?: string }> => {
-    const failures: string[] = [];
-    let index = 0;
-    const totalRepos = ALL_VOICE_REPOS.length;
-    for (const repo of ALL_VOICE_REPOS) {
-      index += 1;
-      const repoFailures = await ensureRepo(voiceModelsRoot, repo, (progress) => {
-        sendToWindow("voice:event", {
-          type: "download",
-          repoIndex: index,
-          repoTotal: totalRepos,
-          percent: progress.percent,
-          message: progress.message,
-        });
-      });
-      failures.push(...repoFailures.map((f) => `${repo.repo} → ${f}`));
-    }
-    await voiceService.refreshModelsReady();
-    sendToWindow("voice:event", { type: "download", percent: 100, message: "完成" });
-    if (failures.length) return { ok: false, error: failures.slice(0, 3).join("；") };
-    return { ok: true };
-  })();
-  voiceInstallTask = task;
-  try {
-    return await task;
-  } finally {
-    voiceInstallTask = null;
-  }
-});
+ipcMain.handle("voice:models-install", () => voiceService.installModels());
+ipcMain.handle("voice:models-cancel", () => ({ ok: voiceService.cancelInstall() }));
 
 /** macOS 需要显式申请麦克风授权；Windows/Linux 直接按「已授权」处理。 */
 ipcMain.handle("voice:mic-permission", async () => {
