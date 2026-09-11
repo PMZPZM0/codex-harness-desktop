@@ -4,10 +4,13 @@
 //   1. 构建产物存在 + 新鲜度（源码比产物新 = 你还没 build，别急着测）
 //   2. IPC 三件套一致性（main.ts 的 handler ↔ preload.ts 桥接 ↔ vite-env.d.ts 类型）
 //   3. CSS 类覆盖（JSX/SVG 里写死的类名，在 styles.css 里是否有规则）—— 仅告警
+//   4. 纯逻辑行为断言（src/lib/*.mjs 这类零依赖纯函数，node 直接 import 跑断言）
+//      —— 目前只有「会话模型谁后改谁生效」（09-11「切换的模型没生效」的修法）
 //
 // 用法：npm run check（= build 之后自动跑本脚本）
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
+import { resolveEffectiveModel, DEFAULT_MODEL_AT_KEY, threadModelAtKey } from "../src/lib/model-recency.mjs";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -132,7 +135,7 @@ rendererOk ? ok("dist/index.html 存在") : fail("dist/index.html 缺失 —— 
 mainOk ? ok("dist-electron/main.js 存在") : fail("dist-electron/main.js 缺失 —— 先 npm run build:electron");
 
 if (rendererOk && mainOk) {
-  const srcNewest = Math.max(0, ...walk(join(ROOT, "src"), [".ts", ".tsx", ".css"]).map((f) => f.mtime));
+  const srcNewest = Math.max(0, ...walk(join(ROOT, "src"), [".ts", ".tsx", ".css", ".mjs"]).map((f) => f.mtime));
   const distFiles = walk(join(ROOT, "dist"), [".js", ".css", ".html"]);
   const distNewest = Math.max(0, ...distFiles.map((f) => f.mtime));
 
@@ -277,6 +280,80 @@ if (!existsSync(stylesPath)) {
     warn(`有 ${missing.length} 个 JSX 类名在 styles.css 里找不到规则（可能是父选择器承载 / 动态变体，需人眼判定）：\n      ${missing.slice(0, 25).join(", ")}${missing.length > 25 ? ` …另 ${missing.length - 25} 个` : ""}`);
   } else {
     ok(`全部 ${usedClasses.size} 个静态类名在 styles.css 均有规则`);
+  }
+}
+
+// ---------- 4. 纯逻辑行为断言 ----------
+
+console.log(C.bold("\n【4】纯逻辑行为断言（会话模型「谁后改谁生效」）"));
+
+if (typeof resolveEffectiveModel !== "function") {
+  fail("src/lib/model-recency.mjs 没有导出 resolveEffectiveModel");
+} else {
+  // 每条都先断言「喂进去的确实是这两个值」，再断言输出——防假通过
+  const cases = [
+    {
+      name: "全局后改 → 用全局【修的正是这个：改完全局打开旧会话还是老模型】",
+      input: { stored: "custom:p:old", storedAt: 0, global: "custom:p:new", globalAt: 1000 },
+      want: "custom:p:new",
+    },
+    {
+      name: "会话后改 → 用会话记录（会话里亲手选过的算它的）",
+      input: { stored: "custom:p:old", storedAt: 2000, global: "custom:p:new", globalAt: 1000 },
+      want: "custom:p:old",
+    },
+    {
+      name: "时间戳相同 → 保守取会话记录（不算全局赢）",
+      input: { stored: "custom:p:old", storedAt: 1500, global: "custom:p:new", globalAt: 1500 },
+      want: "custom:p:old",
+    },
+    {
+      name: "两者相同 → 原值返回（不因时间戳跳到别的模型）",
+      input: { stored: "custom:p:same", storedAt: 1, global: "custom:p:same", globalAt: 99999 },
+      want: "custom:p:same",
+    },
+    {
+      name: "会话没有记录、只有全局 → 用全局",
+      input: { stored: "", storedAt: 0, global: "custom:p:new", globalAt: 1000 },
+      want: "custom:p:new",
+    },
+    {
+      name: "都没有 → 空串（交调用方兜底）",
+      input: { stored: "", storedAt: 0, global: "", globalAt: 0 },
+      want: "",
+    },
+  ];
+
+  for (const c of cases) {
+    const got = resolveEffectiveModel(c.input);
+    // 前置条件：输入原样（防止用例自身写错导致断言无意义）
+    const inputIntact =
+      c.input.stored === (c.input.stored ?? "") &&
+      Number.isFinite(Number(c.input.storedAt)) &&
+      Number.isFinite(Number(c.input.globalAt));
+    if (!inputIntact) fail(`${c.name} —— 用例输入本身不合法`);
+    if (got === c.want) ok(c.name);
+    else fail(`${c.name} —— 期望 ${JSON.stringify(c.want)}，实际 ${JSON.stringify(got)}`);
+  }
+
+  // 存储键不能被随手改名：改了会让老用户的历史会话记录全部读不到（模型回退到默认）
+  DEFAULT_MODEL_AT_KEY === "default-model-at"
+    ? ok("全局时间戳键名为 default-model-at（兼容既有数据）")
+    : fail(`全局时间戳键名被改成 ${DEFAULT_MODEL_AT_KEY}，老数据会读不到`);
+  threadModelAtKey("abc") === "thread-model-at-abc"
+    ? ok("每会话时间戳键名形态 thread-model-at-<id>")
+    : fail(`每会话时间戳键名形态异常：${threadModelAtKey("abc")}`);
+
+  // 接线守卫：openThread 的模型回填必须走这层判定（防日后被改回「无条件用会话记录」）
+  const appSrc = existsSync(join(ROOT, "src", "App.tsx")) ? readFileSync(join(ROOT, "src", "App.tsx"), "utf8") : "";
+  if (!appSrc) {
+    warn("找不到 src/App.tsx，跳过接线守卫");
+  } else {
+    const wired = /const storedModel = resolveThreadModel\(id\);/.test(appSrc);
+    const imported = /from "\.\/lib\/model-recency\.mjs"/.test(appSrc);
+    wired && imported
+      ? ok("openThread 回填已接上 resolveThreadModel（且 import 了 model-recency）")
+      : fail(`openThread 模型回填未接上新鲜度判定（import=${imported} wire=${wired}）——「切模型没生效」会复发`);
   }
 }
 
