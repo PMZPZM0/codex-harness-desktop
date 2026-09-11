@@ -256,23 +256,16 @@ async function downloadParallel(
     return { start, end, idx: i };
   });
 
-  // 3) 预分配目标文件
-  const fh = await open(partPath, "w");
-  try {
-    await fh.truncate(total);
-  } finally {
-    await fh.close().catch(() => undefined);
+  // 3) 预创建 + 预分配目标文件（让后续分块 fd 以 r+ 打开时直接定位写入位置；
+  //    预分配让单文件大小不会因为延迟写入而出现"先稀疏再补洞"的碎片）
+  {
+    const wfh = await open(partPath, "w");
+    try { await wfh.truncate(total); } finally { await wfh.close().catch(() => undefined); }
   }
 
-  // 4) 并发拉各段，写到对应偏移
+  // 4) 并发拉各段：每个分块自己持有 fd 顺序写自己那段（开/关各一次，避开旧版每片 open/close）
   const perChunk = new Array(ranges.length).fill(0);
-  const writeToOffset = async (chunk: typeof ranges[number], buf: Uint8Array) => {
-    const h = await open(partPath, "r+");
-    try { await h.write(buf, 0, buf.length, chunk.start); }
-    finally { await h.close().catch(() => undefined); }
-  };
 
-  let aborted = false;
   const tasks = ranges.map(async (chunk) => {
     const headers: Record<string, string> = {
       "user-agent": "codex-harness-voice/1.0",
@@ -282,24 +275,29 @@ async function downloadParallel(
     try {
       res = await fetch(modelUrl(host, repo, file), { headers, signal });
     } catch (e: any) {
-      aborted = true;
       throw new Error(`分块 ${chunk.idx} 请求失败：${e?.message ?? e}`);
     }
     if (res.status !== 206 && res.status !== 200) {
-      aborted = true;
       throw new Error(`分块 ${chunk.idx} HTTP ${res.status}`);
     }
     if (!res.body) throw new Error(`分块 ${chunk.idx} 无 body`);
     const reader = (res.body as any).getReader();
+    const fh = await open(partPath, "r+");
+    let offset = chunk.start;
     let received = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      await writeToOffset(chunk, value);
-      received += value.byteLength;
-      perChunk[chunk.idx] = received;
-      const totalReceived = perChunk.reduce((s, n) => s + n, 0);
-      onBytes(totalReceived, total);
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        await fh.write(value, 0, value.byteLength, offset);
+        offset += value.byteLength;
+        received += value.byteLength;
+        perChunk[chunk.idx] = received;
+        const totalReceived = perChunk.reduce((s, n) => s + n, 0);
+        onBytes(totalReceived, total);
+      }
+    } finally {
+      await fh.close().catch(() => undefined);
     }
   });
 
@@ -321,8 +319,6 @@ async function downloadParallel(
   catch (error: any) { return { ok: false, error: `重命名失败：${error?.message ?? error}` }; }
 
   return { ok: true };
-  // aborted 变量留着以便未来用（TS 严格无未用变量会报错？——目前类型是 boolean 已用）
-  void aborted;
 }
 
 /** 单文件下载入口：大文件走分块并行，否则走单流；任一失败都允许上层换 host 重试。 */
