@@ -126,6 +126,14 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac zip --arm64   # 或
 
 ## 🧪 验证与测试
 
+> ⛔ **本项目硬性要求**：任何源码改动，**必须**以自动验收全绿为完成标准，不接受「我改完了，你自己点一下试试」。一条命令跑完两层：
+>
+> ```bash
+> npm run verify   # = npm run check && npm run e2e
+> ```
+>
+> **只跑一半不算验收**；改了哪个模块，就给哪个模块补 `scripts/e2e/scenarios/` 里的场景，让这次验证沉淀成下次的自动回归。
+
 改完代码不必手点一遍，两条命令覆盖：
 
 ```bash
@@ -135,6 +143,7 @@ npm run e2e     # UI 冒烟：自动拉起已构建的应用，经 CDP 驱动主
 
 - `npm run e2e` 跑完在 `.e2e-artifacts/shots/` 留下**每步截图**，扫一眼就知道有没有破相；退出码非 0 即有断言失败。
 - 场景脚本在 `scripts/e2e/scenarios/`，新增场景只需导出一个 `steps` 数组；框架零新依赖（复用 `ws`），经主进程自带的 `CODEX_HARNESS_USER_DATA` / `CODEX_HARNESS_DEBUG_PORT` 开关在**隔离的临时 profile** 里跑，绝不碰你的真实会话与配置。
+- **Codex 引擎自己也能跑**（无需 npm）：`resources/tools/node/node.exe scripts/e2e/run.mjs smoke`。E2E 拉的是隔离实例，与应用内常驻的引擎互不干扰。
 - 打包发布前的门槛验收用 `npm run verify:packaged-tools`。
 
 详见 [`docs/TESTING.md`](docs/TESTING.md)。
