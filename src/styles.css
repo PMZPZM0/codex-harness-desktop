@@ -19391,16 +19391,16 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .mode-chip-float:hover { filter: brightness(1.15); }
 .mode-chip-float + .mode-chip-float { right: 37px; }
 
-/* ── 欢迎页「项目地址」选择 chip（贴输入框内侧左上角，仅空态显示） ── */
-.welcome-cwd-picker { position: absolute; top: 8px; left: 10px; z-index: 5; }
+/* ── 欢迎页「项目地址」选择 chip（骑在输入框顶边框左上角，外侧贴边，仅空态显示） ── */
+.welcome-cwd-picker { position: absolute; top: -12px; left: 10px; z-index: 6; }
 .welcome-cwd-chip {
   display: inline-flex; align-items: center; gap: 6px;
   max-width: 60vw; padding: 3px 9px 3px 8px; border-radius: 999px;
   font-size: 11px; line-height: 1.5; cursor: pointer;
   color: var(--text-secondary, #666);
-  background: color-mix(in srgb, var(--text-primary, #111) 4%, transparent);
-  border: 1px solid color-mix(in srgb, var(--text-primary, #111) 12%, transparent);
-  backdrop-filter: blur(3px);
+  background: var(--color-background-primary, #fff);
+  border: 1px solid color-mix(in srgb, var(--text-primary, #111) 16%, transparent);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 .welcome-cwd-chip > svg:first-child { color: var(--blue, #3b82f6); flex-shrink: 0; }
@@ -19411,17 +19411,16 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .welcome-cwd-chip .menu-caret { opacity: 0.55; }
 .welcome-cwd-chip:hover {
   color: var(--text-primary, #111);
-  background: color-mix(in srgb, var(--text-primary, #111) 8%, transparent);
-  border-color: color-mix(in srgb, var(--text-primary, #111) 24%, transparent);
+  border-color: color-mix(in srgb, var(--text-primary, #111) 32%, transparent);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
 }
-.welcome-cwd-chip.scratch { color: var(--orange); border-color: color-mix(in srgb, var(--orange) 30%, transparent); }
+.welcome-cwd-chip.scratch { color: var(--orange); border-color: color-mix(in srgb, var(--orange) 40%, transparent); }
 .welcome-cwd-chip.scratch > svg:first-child { color: var(--orange); }
-.welcome-cwd-chip.scratch:hover { background: color-mix(in srgb, var(--orange) 8%, transparent); }
-/* chip 贴左上角时给编辑区第一行让位：placeholder 与输入文本从 chip 下方开始，
-   发送后（docked-center 移除）恢复原布局 */
-.composer-wrap.docked-center .composer-editor { padding-top: 32px; }
+.welcome-cwd-chip.scratch:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+/* chip 骑在顶边框上（底缘伸入框内 ~12px）：placeholder 从其下方开始，避免压字 */
+.composer-wrap.docked-center .composer-editor { padding-top: 20px; }
 .welcome-cwd-menu {
-  position: absolute; top: calc(100% + 4px); left: 0; z-index: 30;
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
   min-width: 300px; padding: 4px;
   border-radius: 12px;
   background: var(--color-background-primary, #fff);
