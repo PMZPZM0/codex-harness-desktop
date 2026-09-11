@@ -5,12 +5,12 @@
 //   2. IPC 三件套一致性（main.ts 的 handler ↔ preload.ts 桥接 ↔ vite-env.d.ts 类型）
 //   3. CSS 类覆盖（JSX/SVG 里写死的类名，在 styles.css 里是否有规则）—— 仅告警
 //   4. 纯逻辑行为断言（src/lib/*.mjs 这类零依赖纯函数，node 直接 import 跑断言）
-//      —— 目前只有「会话模型谁后改谁生效」（09-11「切换的模型没生效」的修法）
+//      —— 目前只有「模型选择的作用域」（会话独立选模型，09-11 两次返工后定稿）+ 写入点守卫
 //
 // 用法：npm run check（= build 之后自动跑本脚本）
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
-import { resolveEffectiveModel, DEFAULT_MODEL_AT_KEY, threadModelAtKey } from "../src/lib/model-recency.mjs";
+import { resolveModelForOpen, shouldSyncOpenThread } from "../src/lib/model-scope.mjs";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -285,75 +285,85 @@ if (!existsSync(stylesPath)) {
 
 // ---------- 4. 纯逻辑行为断言 ----------
 
-console.log(C.bold("\n【4】纯逻辑行为断言（会话模型「谁后改谁生效」）"));
+console.log(C.bold("\n【4】纯逻辑行为断言（模型选择的作用域：每个会话独立）"));
 
-if (typeof resolveEffectiveModel !== "function") {
-  fail("src/lib/model-recency.mjs 没有导出 resolveEffectiveModel");
+if (typeof resolveModelForOpen !== "function") {
+  fail("src/lib/model-scope.mjs 没有导出 resolveModelForOpen");
 } else {
   // 每条都先断言「喂进去的确实是这两个值」，再断言输出——防假通过
   const cases = [
     {
-      name: "全局后改 → 用全局【修的正是这个：改完全局打开旧会话还是老模型】",
-      input: { stored: "custom:p:old", storedAt: 0, global: "custom:p:new", globalAt: 1000 },
-      want: "custom:p:new",
+      name: "会话有记录 → 用会话自己的（哪怕全局是别的模型）【会话独立的核心】",
+      input: { stored: "custom:p:mine", global: "custom:p:global" },
+      want: "custom:p:mine",
     },
     {
-      name: "会话后改 → 用会话记录（会话里亲手选过的算它的）",
-      input: { stored: "custom:p:old", storedAt: 2000, global: "custom:p:new", globalAt: 1000 },
-      want: "custom:p:old",
+      name: "会话还没记录 → 用全局默认（新建 / 从没选过的会话）",
+      input: { stored: "", global: "custom:p:global" },
+      want: "custom:p:global",
     },
     {
-      name: "时间戳相同 → 保守取会话记录（不算全局赢）",
-      input: { stored: "custom:p:old", storedAt: 1500, global: "custom:p:new", globalAt: 1500 },
-      want: "custom:p:old",
-    },
-    {
-      name: "两者相同 → 原值返回（不因时间戳跳到别的模型）",
-      input: { stored: "custom:p:same", storedAt: 1, global: "custom:p:same", globalAt: 99999 },
-      want: "custom:p:same",
-    },
-    {
-      name: "会话没有记录、只有全局 → 用全局",
-      input: { stored: "", storedAt: 0, global: "custom:p:new", globalAt: 1000 },
-      want: "custom:p:new",
-    },
-    {
-      name: "都没有 → 空串（交调用方兜底）",
-      input: { stored: "", storedAt: 0, global: "", globalAt: 0 },
+      name: "会话记录与全局都空 → 空串（交调用方兜底）",
+      input: { stored: "", global: "" },
       want: "",
+    },
+    {
+      name: "字段缺省（undefined）不炸：按「没记录」处理",
+      input: {},
+      want: "",
+    },
+    {
+      name: "两者相同 → 原值返回",
+      input: { stored: "custom:p:same", global: "custom:p:same" },
+      want: "custom:p:same",
     },
   ];
 
   for (const c of cases) {
-    const got = resolveEffectiveModel(c.input);
+    const got = resolveModelForOpen(c.input);
     // 前置条件：输入原样（防止用例自身写错导致断言无意义）
     const inputIntact =
-      c.input.stored === (c.input.stored ?? "") &&
-      Number.isFinite(Number(c.input.storedAt)) &&
-      Number.isFinite(Number(c.input.globalAt));
+      (c.input.stored === undefined || typeof c.input.stored === "string") &&
+      (c.input.global === undefined || typeof c.input.global === "string");
     if (!inputIntact) fail(`${c.name} —— 用例输入本身不合法`);
     if (got === c.want) ok(c.name);
     else fail(`${c.name} —— 期望 ${JSON.stringify(c.want)}，实际 ${JSON.stringify(got)}`);
   }
 
-  // 存储键不能被随手改名：改了会让老用户的历史会话记录全部读不到（模型回退到默认）
-  DEFAULT_MODEL_AT_KEY === "default-model-at"
-    ? ok("全局时间戳键名为 default-model-at（兼容既有数据）")
-    : fail(`全局时间戳键名被改成 ${DEFAULT_MODEL_AT_KEY}，老数据会读不到`);
-  threadModelAtKey("abc") === "thread-model-at-abc"
-    ? ok("每会话时间戳键名形态 thread-model-at-<id>")
-    : fail(`每会话时间戳键名形态异常：${threadModelAtKey("abc")}`);
+  // 改「全局默认模型」时要不要顺手同步当前会话：只有真有会话打开才是 true
+  const scopeCases = [
+    { name: "有会话打开 → 同步到该会话（用户改了就该生效）", input: "thread-abc", want: true },
+    { name: "无会话（欢迎页）→ 只改全局默认，别碰任何会话", input: "", want: false },
+    { name: "undefined → 不同步（防拼出 'undefined' 这样的幽灵会话键）", input: undefined, want: false },
+  ];
+  for (const c of scopeCases) {
+    const got = shouldSyncOpenThread(c.input);
+    got === c.want ? ok(c.name) : fail(`${c.name} —— 期望 ${c.want}，实际 ${got}`);
+  }
 
-  // 接线守卫：openThread 的模型回填必须走这层判定（防日后被改回「无条件用会话记录」）
+  // 接线守卫：openThread 的模型回填必须走这层判定（防日后退回「无条件用会话记录」或
+  // 「全局后改就覆盖会话」——后者会把所有旧会话的模型选择冲掉，与「会话独立」冲突）
   const appSrc = existsSync(join(ROOT, "src", "App.tsx")) ? readFileSync(join(ROOT, "src", "App.tsx"), "utf8") : "";
   if (!appSrc) {
     warn("找不到 src/App.tsx，跳过接线守卫");
   } else {
     const wired = /const storedModel = resolveThreadModel\(id\);/.test(appSrc);
-    const imported = /from "\.\/lib\/model-recency\.mjs"/.test(appSrc);
+    const imported = /from "\.\/lib\/model-scope\.mjs"/.test(appSrc);
     wired && imported
-      ? ok("openThread 回填已接上 resolveThreadModel（且 import 了 model-recency）")
-      : fail(`openThread 模型回填未接上新鲜度判定（import=${imported} wire=${wired}）——「切模型没生效」会复发`);
+      ? ok("openThread 回填已接上 resolveThreadModel（且 import 了 model-scope）")
+      : fail(`openThread 模型回填未接上作用域判定（import=${imported} wire=${wired}）`);
+
+    // 写入点守卫：`default-model` 全仓库只许在 applyGlobalModelChoice 里写一次。
+    // 散落写入 = 绕过「有会话才同步、其它会话一律不动」的作用域规则（09-11 返工的根因）。
+    const writes = appSrc.match(/setItem\(\s*"default-model"/g) ?? [];
+    writes.length === 1
+      ? ok("`default-model` 只有一处写入（applyGlobalModelChoice 统一入口）")
+      : fail(`\`default-model\` 有 ${writes.length} 处写入，应全部收敛到 applyGlobalModelChoice——散落写入会绕过作用域规则`);
+
+    const helperUsesScope = /shouldSyncOpenThread\(openId\)/.test(appSrc);
+    helperUsesScope
+      ? ok("applyGlobalModelChoice 按 shouldSyncOpenThread 决定是否同步当前会话")
+      : fail("applyGlobalModelChoice 没走 shouldSyncOpenThread —— 改全局默认会波及别的会话");
   }
 }
 

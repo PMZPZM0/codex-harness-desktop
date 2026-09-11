@@ -22,7 +22,7 @@ npm run verify     # 等价于 npm run check && npm run e2e
 1. **只跑一半不算验收**。`check` 过但 `e2e` 没过 = 没完成，不许提交。
 2. **改了哪个模块，就给哪个模块补/改场景**。在 `scripts/e2e/scenarios/` 加 `<名>.mjs`（导出 `steps` 数组）或往现有场景加步骤，或给 `scripts/check-preflight.mjs` 加检查项——**让这次验证沉淀成下次的自动回归**，不许写成一次性脚本跑完就丢（这正是 09-06 那批 `verify-*.mjs` 全员消失的教训）。`npm run e2e` 不带参数即跑全部场景，新场景自动进门槛。
 3. **断言必须带前置条件**（先断言「弹窗是关的」再点开），否则上一步的残留状态会导致假通过。
-4. **新断言的正确性当场反证一次**：把修复临时改回去，确认断言真的会红（`model-recency` 步骤③ 实测过）。永远绿的断言等于没有断言，尤其「XX 没生效」类 bug。
+4. **新断言的正确性当场反证一次**：把修复临时改回去，确认断言真的会红。永远绿的断言等于没有断言，尤其「XX 没生效」类 bug。（`model-scope` 实测过两次：把判定改成「全局永远赢」→ 步骤③/⑤ 红；把 `openThread` 改回「只认会话记录」→ 步骤④ 红。）
 
 GUI 起不来时，最低限度跑 `check`（离线可用），并在提交信息里写明 `e2e` 未跑的原因。手册见 `docs/TESTING.md`。
 
@@ -93,7 +93,7 @@ resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
 
 - **E2E 靠主进程自带开关实现**：`CODEX_HARNESS_USER_DATA`（重定向 userData，完全隔离）+ `CODEX_HARNESS_DEBUG_PORT`（开 CDP 端口，端口随机取空闲）——见 `electron/main.ts:60` / `:65`。框架 `scripts/e2e/lib/harness.mjs` 零新依赖（复用 `ws`），**不要引入 Playwright/Puppeteer**。
 - **离线预检**：`npm run check` = `build` + `scripts/check-preflight.mjs`。其中 IPC「方法面」解析用自写的括号深度扫描器（纯正则会被「同一行写多个方法 `a: …,  b: …`」和「类型里的 `name(...)` 括号被吃掉后参数名被误当方法名」骗到）。
-- **现存场景**：`smoke` 覆盖引导页 → 主界面骨架（`.topbar`/`aside.sidebar`/`main.workspace`/`.composer-editor`/`.send-button`）→ 侧栏六项 → 输入框读写 → `#` 技能面板 → `/` 命令面板 → 技能中心开关 → 右栏展开 → 设置弹窗开关 + 焦点归还 → 渲染层无 console.error。`model-recency` 覆盖**打开会话时的模型回填**（真起引擎真建会话，重载渲染层让 `openThread` 跑一遍，断言「全局后改 → 用全局」「会话后改 → 用会话记录」）。
+- **现存场景**：`smoke` 覆盖引导页 → 主界面骨架（`.topbar`/`aside.sidebar`/`main.workspace`/`.composer-editor`/`.send-button`）→ 侧栏六项 → 输入框读写 → `#` 技能面板 → `/` 命令面板 → 技能中心开关 → 右栏展开 → 设置弹窗开关 + 焦点归还 → 渲染层无 console.error。`model-scope` 覆盖**每个会话独立选模型**（真起引擎真建 **两个**会话，重载渲染层让 `openThread` 跑一遍）：③ 有记录 → 不被全局冲掉、且不改写全局默认；④ 没记录 → 落全局默认；⑤ 打开 B 不动 A。
 - **环境坑（踩过）**：①环境里的 `HTTP_PROXY` 会把回环请求也代理走 → harness 已自动注入 `NO_PROXY=127.0.0.1,localhost`；②`ws` 库的 `on("message", (data) => …)` 首参是**原始数据**不是 `MessageEvent`；③`clickByText` 必须取**最内层**元素（按 innerText 长度升序），否则点到 wrapper 上；④`contenteditable` 用 CDP `Input.insertText` 输入，`[contenteditable="true"]` 匹配不到 `plaintext-only`；⑤**宿主带着 `ELECTRON_RUN_AS_NODE` 时 Electron 会被降级成纯 node 跑主进程**（启动即崩 `Cannot read properties of undefined (reading 'registerSchemesAsPrivileged')`，栈尾打 `Node.js vXX`）→ harness 在 spawn 前 `delete` 掉这个变量；⑥**引擎的 rollout 是首回合才落盘的**：只 `thread/start` 的会话 `thread/resume` 报 `no rollout found`、`thread/list` 里也不出现 → 想造「能 resume 的会话」必须补一发 `turn/start`（模型调用失败无妨，rollout 已落盘）。
 - **历史遗留**：`verify:turnfold`/`verify:userrefs`/`verify:memory-layers` 等一批 npm script 指向的文件早已删除（跑必 ENOENT），**09-11 已从 package.json 清理**；现存真脚本只有 `verify:reasoning` / `verify:image-plugin` / `verify:packaged-tools`。新增验证请走 e2e 场景或 preflight 检查项，**别再散落一次性 `.mjs`**。
 - 手册见 `docs/TESTING.md`。
@@ -111,7 +111,10 @@ resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
-- **模型是会话级设置，回填改「谁后改谁生效」**（09-11，用户报「我切换的模型没生效」+「思考又是英文」；纯逻辑 `src/lib/model-recency.mjs`，回归场景 `model-recency`）：引擎 `thread/resume` **不回带 model**，模型由客户端每轮 `turn/start` 的 `model` 字段下发（rollout 的 `turn_context.model` / `thread_settings_applied` 记的是**实际执行**的模型，是唯一权威判据），所以模型必然是会话级状态。旧逻辑在 `openThread` 里**无条件**用 localStorage `thread-model-<id>` 回填 → 用户改了全局模型后打开旧会话仍跑老模型（「思考是英文」只是表象：实跑的是那个原生说英文的旧模型，指令早已注入）。修法：给**用户显式选择**打时间戳（全局 `default-model-at` / 每会话 `thread-model-at-<id>`），打开会话时后改的赢；**自动回填、新建会话时一律不打戳**（否则回填会把自己刷成「最新」，全局永远进不来）。打戳点只有 6 处用户动作：模型选择器（会话内/无会话时）、设置页「生效模型」、一键切中转站、启用 OpenAI 官方订阅、登录导入、供应商重启生效落定。
+- **模型选择的作用域：每个会话独立**（09-11，用户两轮反馈——先是「我切换的模型没生效」「思考又是英文」，再是「每个会话独立模型选择为啥也不行」；纯逻辑 `src/lib/model-scope.mjs`，回归场景 `model-scope`）：
+  引擎 `thread/resume` **不回带 model**，模型由客户端每轮 `turn/start` 的 `model` 字段下发（rollout 的 `turn_context.model` = **该回合真正跑的模型**、`thread_settings_applied.thread_settings.model` = 会话级设置，两者是唯一权威判据），所以模型必然是会话级状态。
+  **返工史（别再走回头路）**：第一版 `openThread` 无条件用会话记录 → 改了全局默认，打开旧会话仍跑老模型；第二版改成「谁后改谁生效」（时间戳）→ 治好了上面，但**改一次全局默认就把所有旧会话的模型冲掉**，与「会话独立」直接冲突。**定稿只有两条规则**：① 打开会话：该会话自己的记录优先，它还没记录（新建/从没选过）才用全局默认；② 改全局默认：写全局（新会话用），**若此刻有会话打开只同步这一个**，其它会话一律不动。落地上给所有「改全局默认」的动作收敛到唯一入口 `applyGlobalModelChoice`（设置页生效模型/一键切中转站/官方订阅/登录导入/重启生效落定/无会话时选模型），`default-model` 全仓库只有这一处写入（预检有守卫断言）。
+  **另一个隐藏坑**：`allModels` 兜底 effect 曾在「modelId 不在可用列表」时把回落值**写进 localStorage**（会话记录与全局都写）——供应商列表是异步加载的，加载完成前所有非生效供应商的模型都「不在列表里」，于是用户刚选的模型被默默冲掉。现在该 effect **只改内存、不落盘**。
 
 - **【定论·勿回退】旧会话供应商由 config.toml 决定，不由会话决定**（09-10 跨引擎生命周期探针实证，用户「新会话能用、旧会话不行」）：真实 app-server + 两个假模型端点实测——①只改会话存档 `session_meta.model_provider` → 重启引擎后**无效**；②只改 config.toml 里该 id 的 `base_url` → 重启后**生效**。即：会话存档只记「供应商名字(id)」，请求地址永远取自 config.toml 该 id 的段；且单进程内改任何地方都无效（线程常驻引擎内存），**必须重启引擎重新加载会话**。因此 `migrateThreadToProvider` 的 `thread/resume + modelProvider + 内联 config` 与 `thread/settings/update` 都**改不掉后续 turn 的供应商**（后者不给 `capabilities.experimentalApi=true` 还会被 -32600 拒绝；变体扫描 9 种全失败）——这两条已确认是装样子，别再依赖。
   **落定修法（`applyCustomModel`）**：config.toml 里**每个** `[model_providers.*]` 段一律写「当前生效供应商的 base_url + wire_api」（保留各自 id/name 以便展示与兼容引用）；`collectSessionProviderIds()` 扫 `codex-home/sessions/**/*.jsonl` 首行收集历史引用过的 id，把**已删除供应商的 id 补成别名段**（同上指向当前生效地址），避免 `Model provider not found`。依据：引擎进程只有一把全局 Key（= 当前生效供应商的 Key），故「所有 id 指向当前生效端点」是唯一自洽形态——任何历史会话都必然走当前供应商。**用户明确拒绝 fork/新建分支方案，必须在原会话可用。** 回归脚本 `.workbuddy/verify-provider-alias.cjs`（11 项断言）。

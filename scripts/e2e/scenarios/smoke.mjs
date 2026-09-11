@@ -53,8 +53,13 @@ export const steps = [
         `[...document.querySelectorAll(".composer-setting")].map(e => e.innerText).join("|")`
       );
       h.check("输入框底部「权限」档", String(settingsText).includes("访问"), String(settingsText));
-      h.check("输入框底部「模型」档", String(settingsText).includes("模型"), String(settingsText));
-      h.check("输入框底部「思考」档", String(settingsText).includes("思考"), String(settingsText));
+      // 「模型 / 思考」两档在有真实模型配置时显示的是**模型名与档位**（如 "deepseek-v4-flash"），
+      // 只有空配置才退回占位文案——所以按 title 属性判定，别按文案（否则带上真配置就假红）。
+      const modelControls = await h.eval(
+        `[...document.querySelectorAll(".model-controls .composer-setting")].map(e => e.getAttribute("title")).join("|")`
+      );
+      h.check("输入框底部「模型」档", String(modelControls).includes("模型"), String(modelControls));
+      h.check("输入框底部「思考」档", String(modelControls).includes("思考"), String(modelControls));
     },
   },
 

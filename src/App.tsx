@@ -10,7 +10,7 @@ import { codeFontStack, codeFonts, codePreviewSnippet, codeThemeStyle, codeTheme
 import { codeFontSize, useCodeSettings } from "./lib/code-settings";
 import { DEFAULT_EFFORT, pickDefaultEffort, CUSTOM_MODEL_EFFORTS, normalizeEffort, ALL_EFFORTS } from "./lib/effort";
 import { matchModelSpec, loadExternalSpecs } from "./lib/model-specs";
-import { resolveEffectiveModel, DEFAULT_MODEL_AT_KEY, threadModelAtKey } from "./lib/model-recency.mjs";
+import { resolveModelForOpen, shouldSyncOpenThread } from "./lib/model-scope.mjs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
 import { resolveSkillVisual, type SkillVisual } from "./lib/skill-icon";
 import { translateEngineNotice } from "./lib/engine-notices-zh";
@@ -1674,33 +1674,12 @@ function saveThreadModel(id: string, modelId: string) {
   try { localStorage.setItem("thread-model-" + id, modelId); } catch { /* ignore */ }
 }
 
-/** —— 模型选择的「新鲜度」记录（判定逻辑在 src/lib/model-recency.mjs）——
- *  只有**用户亲手选模型**时才打戳（全局 / 每会话各一份）。自动回填、新建会话时的写入
- *  一律不打戳，否则回填会把会话记录的"新鲜度"刷成现在、永远压过全局默认。 */
-function markThreadModelPicked(id: string) {
-  if (!id) return;
-  try { localStorage.setItem(threadModelAtKey(id), String(Date.now())); } catch { /* ignore */ }
-}
-function markDefaultModelPicked() {
-  try { localStorage.setItem(DEFAULT_MODEL_AT_KEY, String(Date.now())); } catch { /* ignore */ }
-}
-function loadThreadModelAt(id: string): number {
-  try { return Number(localStorage.getItem(threadModelAtKey(id)) ?? 0) || 0; } catch { return 0; }
-}
-function loadDefaultModelAt(): number {
-  try { return Number(localStorage.getItem(DEFAULT_MODEL_AT_KEY) ?? 0) || 0; } catch { return 0; }
-}
-/** 打开会话时的模型回填：全局默认 vs 该会话记录，**谁被用户更晚显式选中就用谁**。
- *  旧逻辑无条件偏向会话记录 → 用户改了全局模型后打开旧会话仍跑老模型（09-11 排查结论）。 */
+/** 打开会话时的模型回填：**该会话自己的记录优先**，它还没有记录（新建/从没选过）才用全局默认。
+ *  规则与两次返工的由来见 src/lib/model-scope.mjs——别再退回「全局后改就覆盖会话」。 */
 function resolveThreadModel(id: string): string {
   let global = "";
   try { global = localStorage.getItem("default-model") ?? ""; } catch { /* ignore */ }
-  return resolveEffectiveModel({
-    stored: loadThreadModel(id),
-    storedAt: loadThreadModelAt(id),
-    global,
-    globalAt: loadDefaultModelAt(),
-  });
+  return resolveModelForOpen({ stored: loadThreadModel(id), global });
 }
 
 /** 每会话独立的思考等级：切会话互不串扰（对齐 thread-model 的按会话存储模式）。 */
@@ -7625,9 +7604,9 @@ export default function App() {
     },
     onSelect: (modelId, effort) => {
       setModelId(modelId);
-      localStorage.setItem("default-model", modelId);
-      // 设置页/供应商页选「生效模型」= 明确的全局模型变更，刷全局新鲜度戳
-      markDefaultModelPicked();
+      // 设置页/供应商页选「生效模型」= 全局默认变更：新会话用它，当前会话一并跟过去，
+      // 其它会话各自保持（作用域规则见 src/lib/model-scope.mjs）
+      applyGlobalModelChoice(modelId);
       if (effort) setEffort(effort);
     },
     onNotice: setNotice,
@@ -7697,7 +7676,7 @@ export default function App() {
         });
         const id = `custom:${saved.provider}:${saved.model}`;
         setModelId(id);
-        localStorage.setItem("default-model", id);
+        applyGlobalModelChoice(id);
         adoptSavedProvider(saved, models);
         // switchedAt 标记本次切换时刻：即便同网关不同账号复用同一 provider 字符串，
         // 也能让输入框余额徽标、模型配置等下游 UI 强制跟着刷新，避免「切换了但没反应」。
@@ -7759,8 +7738,7 @@ export default function App() {
     });
     const id = `custom:${saved.provider}:${saved.model}`;
     setModelId(id);
-    localStorage.setItem("default-model", id);
-    markDefaultModelPicked();
+    applyGlobalModelChoice(id);
     adoptSavedProvider(saved, models);
     setNotice(`已启用 OpenAI 官方订阅 · 模型 ${defaultModel}`);
   }, [adoptSavedProvider, setNotice, setModelId]);
@@ -7881,13 +7859,13 @@ export default function App() {
   }, [providerModels, customModel, customModelOption, providersList]);
   // 模型兜底：当前选择不在可用列表里时（如曾选中探测出来的无效模型），自动回落到
   // 已配置的默认模型，避免 turn/start 带上无效模型导致引擎不回复。
+  // 这里**只改内存里的当前选择，不落任何持久化**：供应商列表是异步加载的，加载完成前
+  // allModels 里只有生效供应商的模型，此时「不在列表里」并不等于模型无效；一旦落盘，会把
+  // 用户刚改的全局默认、以及会话自己记着的模型一起冲掉（「切换的模型没生效」的隐藏来源）。
   useEffect(() => {
     if (!customModel?.model) return;
     if (allModels.some((entry) => entry.id === modelId || entry.model === modelId)) return;
-    const fallback = `custom:${customModel.provider}:${customModel.model}`;
-    setModelId(fallback);
-    if (threadRef.current?.id) saveThreadModel(threadRef.current.id, fallback);
-    else localStorage.setItem("default-model", fallback);
+    setModelId(`custom:${customModel.provider}:${customModel.model}`);
   }, [customModel, allModels, modelId]);
   // 供应商下已配置的模型清单：已保存的 models + 输入框里尚未保存的那个
   // probe 拉到的可用模型只属于探测时的那家供应商，换供应商后不再用于补全
@@ -9660,6 +9638,20 @@ const commandMatches = useMemo(() => {
   // （已删除重复的 smooth 跟随 effect：sticky layout effect 已在 [thread] 变化时
   // 用 behavior:auto 同步跳底，smooth 版本会在长会话切换时产生数秒的滚动动画。）
 
+  /** 改「全局默认模型」的**唯一入口**（设置页「生效模型」/ 一键切中转站 / 启用官方订阅 /
+   *  登录导入 / 供应商重启生效落定 / 无会话时在输入框选模型）。
+   *  写全局默认 → 新会话用它；**若此刻有会话打开，只把这一个会话一并改过去**（用户意图：
+   *  改了就生效）；其它会话一律不动 —— 「每个会话独立选模型」就靠这条保证，
+   *  规则见 src/lib/model-scope.mjs。
+   *  注意：不要在别处直接写 localStorage 的 `default-model`，否则会绕过这条作用域规则
+   *  （离线预检有守卫断言盯着）。 */
+  function applyGlobalModelChoice(nextId: string) {
+    if (!nextId) return;
+    try { localStorage.setItem("default-model", nextId); } catch { /* ignore */ }
+    const openId = threadRef.current?.id ?? "";
+    if (shouldSyncOpenThread(openId)) saveThreadModel(openId, nextId);
+  }
+
   function savedEffortFor(model: string | undefined) {
     if (!model) return "";
     try { return (JSON.parse(localStorage.getItem("model-efforts") ?? "{}") as Record<string, string>)[model] ?? ""; } catch { return ""; }
@@ -9685,10 +9677,10 @@ const commandMatches = useMemo(() => {
     const currentThreadId = threadRef.current?.id;
     const saveSelection = (nextId: string) => {
       setModelId(nextId);
-      // 用户亲手选的模型要打「新鲜度」戳：有会话就记在这个会话名下，没有就是全局默认。
-      // 打开会话时据此判断该用全局还是用会话记录（src/lib/model-recency.mjs）。
-      if (currentThreadId) { saveThreadModel(currentThreadId, nextId); markThreadModelPicked(currentThreadId); }
-      else { localStorage.setItem("default-model", nextId); markDefaultModelPicked(); }
+      // 作用域：**有会话就只记到这个会话名下**（其它会话不受影响）；没有会话时选的才算
+      // 「新会话默认」（src/lib/model-scope.mjs）。
+      if (currentThreadId) saveThreadModel(currentThreadId, nextId);
+      else applyGlobalModelChoice(nextId);
     };
     // 跨供应商切换 = 切换全局 API Key，必须重启引擎生效。用户要求「切换必须重启应用」：
     // 弹窗确认后先落盘配置（apply:false 不重启引擎），再整体重启应用——启动时引擎按新
@@ -9699,11 +9691,8 @@ const commandMatches = useMemo(() => {
         await window.codex.setProviderModel({ provider, model, apply: false }); // 只落盘
         const selectedId = `custom:${provider}:${model}`;
         saveSelection(selectedId);
-        localStorage.setItem("default-model", selectedId);
-        localStorage.setItem("thread-model-" + (threadRef.current?.id ?? ""), selectedId);
-        // 跨供应商切换是明确的全局模型变更：全局戳 + 当前会话戳都刷新
-        markDefaultModelPicked();
-        markThreadModelPicked(threadRef.current?.id ?? "");
+        // 跨供应商切换是明确的全局模型变更：全局默认 + **当前会话**一起换（其它会话不动）
+        applyGlobalModelChoice(selectedId);
         showToast("已切换", "应用即将重启以完全生效……");
         setTimeout(() => { void window.codex.relaunchApp(); }, 800);
         return;
@@ -9791,7 +9780,7 @@ const commandMatches = useMemo(() => {
       const updated = await window.codex.applyCustomModel();
       setCustomModel(updated);
       setModelId(`custom:${updated.provider}:${updated.model}`);
-      localStorage.setItem("default-model", `custom:${updated.provider}:${updated.model}`);
+      applyGlobalModelChoice(`custom:${updated.provider}:${updated.model}`);
       // 会话跨供应商迁移（复用 migrateThreadToProvider：resume 后会话即绑定新供应商，
       // 历史完整保留，原会话数据不丢）。
       if (threadRef.current?.id) {
@@ -11116,8 +11105,9 @@ const commandMatches = useMemo(() => {
     setOpeningThread(id);
     // 记住本次打开的会话：重启后据此恢复（否则停在欢迎页，一发消息就新建空会话）
     try { localStorage.setItem("last-thread", id); } catch { /* 隐私模式等：忽略 */ }
-    // 模型回填：全局默认 vs 本会话记录，谁被用户更晚显式选中就用谁（src/lib/model-recency.mjs）。
-    // 旧逻辑无条件用会话记录，导致「全局改了模型，打开旧会话还是老模型」。
+    // 模型回填：**该会话自己的记录优先**，它还没有记录（新建/从没选过）才用全局默认。
+    // 这就是「每个会话独立选模型」——切到哪个会话就亮哪个会话的模型，互不串扰；
+    // 改全局默认也只影响新会话与**当时打开的那一个**会话（规则见 src/lib/model-scope.mjs）。
     const storedModel = resolveThreadModel(id);
     if (storedModel) setModelId(storedModel);
     // 切会话一律显示遮罩（缓存秒开也走）：给"刚切过去就在最新消息位置"的视觉过渡，
@@ -11559,8 +11549,8 @@ const commandMatches = useMemo(() => {
           }
           const selectedId = `custom:${updated.provider}:${updated.model}`;
           setModelId(selectedId);
-          localStorage.setItem("default-model", selectedId);
-          saveThreadModel(currentThread.id, selectedId);
+          // 该会话刚迁移成功：全局默认 + 这个会话一起换（其它会话不动）
+          applyGlobalModelChoice(selectedId);
           showToast("会话已迁移", `引擎已按 ${updated.name} 的 Key 重启，该会话已切换到 ${updated.model}，可正常发送`);
         } catch (error: any) {
           showToast("暂时不能发送", `迁移失败：${String(error?.message ?? error).slice(0, 80)}`);
@@ -11862,8 +11852,8 @@ const commandMatches = useMemo(() => {
       // 3) 选中生效 + 设置思考
       const id = `custom:${saved.provider}:${saved.model}`;
       setModelId(id);
-      localStorage.setItem("default-model", id);
-      markDefaultModelPicked(); // 登录/切换账号导入的供应商模型 = 全局默认，刷新鲜度戳
+      // 登录/切换账号导入的供应商模型 = 全局默认（当前会话一并跟过去，其它会话不动）
+      applyGlobalModelChoice(id);
       setEffort("high");
       localStorage.setItem("default-effort", "high");
       adoptSavedProvider(saved, models);

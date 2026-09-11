@@ -10,9 +10,9 @@
 
 import { spawn, execSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { tmpdir, homedir } from "node:os";
+import { join, dirname } from "node:path";
 import net from "node:net";
 import WebSocket from "ws";
 
@@ -20,6 +20,76 @@ const require = createRequire(import.meta.url);
 const electronPath = require("electron");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 应用名必须与 electron/main.ts 里 app.setPath("userData", …) 的那串一致 */
+const APP_DIR_NAME = "Codex Harness Desktop";
+
+/** 用户真实的 userData 目录（可用 CODEX_HARNESS_REAL_USER_DATA 覆盖） */
+export function realUserDataDir() {
+  if (process.env.CODEX_HARNESS_REAL_USER_DATA) return process.env.CODEX_HARNESS_REAL_USER_DATA;
+  if (process.platform === "win32") {
+    return join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), APP_DIR_NAME);
+  }
+  if (process.platform === "darwin") return join(homedir(), "Library", "Application Support", APP_DIR_NAME);
+  return join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), APP_DIR_NAME);
+}
+
+/** 真实配置里与「模型」有关的文件（相对真实 userData）。
+ *  注意：都不含明文密钥——custom-model.json 里的 encryptedKey 是本机 safeStorage 密文，
+ *  复制到同一台机器的隔离 profile 仍能解出，**不会**被带出这台机器、也不会进 git（临时目录）。 */
+const MODEL_CONFIG_FILES = [
+  "custom-model.json",           // 当前生效供应商 + 它已启用的模型清单
+  "custom-models.json",          // 全部供应商清单（选择器里跨供应商的那些）
+  "codex-home/config.toml",      // 引擎侧 model / model_provider / model_providers
+  "codex-home/model-catalog.json",
+];
+
+/**
+ * 把**真实模型配置**灌进隔离的 e2e profile。
+ *
+ * 为什么必须做：隔离 profile 如果是一张白纸，模型选择器里就没有任何模型——「每个会话独立选
+ * 模型」这类断言会跑在空配置上（选择器点不开、只能摆弄假的 model id），**等于没测**。
+ */
+export function seedRealModelConfig(userDataDir) {
+  const src = realUserDataDir();
+  const copied = [];
+  for (const rel of MODEL_CONFIG_FILES) {
+    const from = join(src, rel);
+    if (!existsSync(from)) continue;
+    const to = join(userDataDir, rel);
+    mkdirSync(dirname(to), { recursive: true });
+    copyFileSync(from, to);
+    copied.push(rel);
+  }
+  // 抹掉密钥字段：e2e 不需要真 Key，而 encryptedKey 是本机 safeStorage 密文，换到新 profile
+  // 一定解不开（实测 main 会打 "API key decrypt failed"、探针直接抛错），噪音还会被
+  // 「渲染层无 console.error」那条断言误判成失败。模型清单本身不含密钥，抹掉不影响本场景。
+  for (const rel of ["custom-model.json", "custom-models.json"]) {
+    const file = join(userDataDir, rel);
+    if (!existsSync(file)) continue;
+    try {
+      const data = JSON.parse(readFileSync(file, "utf8"));
+      const scrub = (obj) => {
+        if (obj && typeof obj === "object") { delete obj.encryptedKey; delete obj.apiKey; }
+        return obj;
+      };
+      if (Array.isArray(data)) data.forEach(scrub); else scrub(data);
+      writeFileSync(file, JSON.stringify(data, null, 2));
+    } catch { /* 解析失败就原样保留 */ }
+  }
+
+  const ok = copied.includes("codex-home/config.toml");
+  // config.toml 里的 model_catalog_json 是**绝对路径**，指回真实目录；改写成隔离目录，
+  // 免得测试去读/依赖真实安装目录（两边内容此时一致，改写只为彻底隔离）
+  const cfg = join(userDataDir, "codex-home", "config.toml");
+  if (ok && existsSync(cfg)) {
+    const realHome = join(src, "codex-home");
+    const tempHome = join(userDataDir, "codex-home");
+    const swap = (text, from, to) => text.split(from.replace(/\\/g, "\\\\")).join(to.replace(/\\/g, "\\\\")).split(from).join(to);
+    writeFileSync(cfg, swap(readFileSync(cfg, "utf8"), realHome, tempHome));
+  }
+  return { src, copied, ok };
+}
 
 /** 取一个空闲回环端口，避免与用户正在运行的应用（9223）撞车 */
 export async function freePort() {
@@ -43,6 +113,9 @@ export class ElectronHarness {
     this.artifactsDir = opts.artifactsDir || join(this.root, ".e2e-artifacts");
     // 多场景共用一个截图目录时给文件名加前缀，避免不同场景的同名步骤互相覆盖
     this.namePrefix = opts.namePrefix || "";
+    // 默认把真实模型配置灌进隔离 profile（否则选择器里没模型，模型类断言无从谈起）
+    this.seedRealConfig = opts.seedRealConfig !== false;
+    this.realConfig = null;
     this.checks = [];
     this.stepIndex = 0;
     this.child = null;
@@ -60,6 +133,16 @@ export class ElectronHarness {
     this.port = await freePort();
     this.userDataDir = mkdtempSync(join(tmpdir(), "harness-e2e-"));
     mkdirSync(this.artifactsDir, { recursive: true });
+
+    // 真实模型配置必须先进隔离 profile：进程一起来就读它，晚了不生效
+    this.realConfig = this.seedRealConfig
+      ? seedRealModelConfig(this.userDataDir)
+      : { src: realUserDataDir(), copied: [], ok: false };
+    if (this.realConfig.ok) {
+      console.log(`\x1b[90m(已灌入真实模型配置：${this.realConfig.copied.join(" · ")} ← ${this.realConfig.src})\x1b[0m`);
+    } else {
+      console.log(`\x1b[33m(⚠ 未找到真实模型配置（${this.realConfig.src}）——模型相关断言会跑在空配置上，结论不可信)\x1b[0m`);
+    }
 
     const childEnv = {
       ...process.env,
@@ -122,9 +205,20 @@ export class ElectronHarness {
   }
 
   async _connect() {
-    const list = await (await fetch(`http://127.0.0.1:${this.port}/json`)).json();
-    const page = list.find((t) => t.type === "page");
-    if (!page) throw new Error("未找到 page target：" + JSON.stringify(list.map((t) => t.type)));
+    // /json/version（浏览器端点）先就绪、page target 后注册；带了真实模型配置之后启动要拉引擎、
+    // 探测供应商，页面注册得更晚——给 page target 留出轮询窗口，别一上来就判死。
+    const deadline = Date.now() + 20000;
+    let page = null;
+    let lastTypes = [];
+    while (!page && Date.now() < deadline) {
+      try {
+        const list = await (await fetch(`http://127.0.0.1:${this.port}/json`)).json();
+        lastTypes = list.map((t) => t.type);
+        page = list.find((t) => t.type === "page");
+      } catch { /* 端口还没稳，继续等 */ }
+      if (!page) await sleep(300);
+    }
+    if (!page) throw new Error(`未找到 page target（等待 20s，见到过：${JSON.stringify(lastTypes)}）`);
     this.ws = new WebSocket(page.webSocketDebuggerUrl);
     await new Promise((res, rej) => {
       this.ws.onopen = res;
@@ -208,6 +302,57 @@ export class ElectronHarness {
 
   async bodyText(limit = 500) {
     return await this.eval(`(document.body?.innerText || "").slice(0, ${limit})`);
+  }
+
+  // ---------- 引擎侧取证（rollout）----------
+  // 「模型切换到底有没有生效」只有引擎自己说了算：UI 状态与 localStorage 都只是**意图**，
+  // rollout 里的 turn_context.model 才是**实际执行**的模型（thread_settings_applied 是会话级设置）。
+
+  /** 本次隔离 profile 下所有 rollout 文件的绝对路径 */
+  _rolloutFiles() {
+    const root = join(this.userDataDir, "codex-home", "sessions");
+    if (!existsSync(root)) return [];
+    const out = [];
+    const walk = (dir) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, entry.name);
+        if (entry.isDirectory()) walk(p);
+        else if (/^rollout-.*\.jsonl$/.test(entry.name)) out.push(p);
+      }
+    };
+    walk(root);
+    return out;
+  }
+
+  /** 某会话引擎侧的真实模型证据。
+   *  @returns {{ file: string|null, turns: number, turnModel: string|null, turnModels: string[], settingsModel: string|null, provider: string|null }}
+   *    - `turnModel`：最新一条 `turn_context.model`（该回合**真正跑**在哪个模型上）
+   *    - `turnModels`：历次回合的模型序列（可断言「从没跑过别的模型」）
+   *    - `settingsModel` / `provider`：最新一条 `thread_settings_applied`（会话级设置） */
+  engineModelOf(threadId) {
+    const file = this._rolloutFiles().find((p) => p.includes(threadId)) ?? null;
+    const info = { file, turns: 0, turnModel: null, turnModels: [], settingsModel: null, provider: null };
+    if (!file) return info;
+    for (const line of readFileSync(file, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+      let record;
+      try {
+        record = JSON.parse(line);
+      } catch {
+        continue; // 回合正在写：末行可能是半截 JSON
+      }
+      const payload = record.payload ?? {};
+      if (record.type === "turn_context" && payload.model) {
+        info.turnModel = payload.model;
+        info.turnModels.push(payload.model);
+        info.turns += 1;
+      }
+      if (record.type === "event_msg" && payload.type === "thread_settings_applied") {
+        info.settingsModel = payload.thread_settings?.model ?? info.settingsModel;
+        info.provider = payload.thread_settings?.model_provider_id ?? info.provider;
+      }
+    }
+    return info;
   }
 
   /** 原生点击（对 React 的 onClick 有效） */
