@@ -20658,3 +20658,77 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   direction: rtl; /* 让文件名的左端（短）保留，长的中间省略号；鼠标悬浮看完整路径 */
 }
+
+
+/* ===== 实时语音舞台：输入框上方的彩色波浪 + 字幕 ===== */
+.voice-stage {
+  position: relative;
+  margin: 0 auto 10px;
+  padding: 10px 12px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 6px 20px color-mix(in srgb, #000 8%, transparent);
+  display: flex; flex-direction: column; gap: 6px;
+  animation: voice-stage-in .18s ease-out;
+}
+@keyframes voice-stage-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.voice-stage-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.voice-stage-mode {
+  font-size: 11.5px; font-weight: 600; color: var(--muted);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.voice-stage-mode::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--link);
+  animation: voice-dot 1.4s ease-in-out infinite;
+}
+.voice-stage-speaking .voice-stage-mode::before { background: #a855f7; }
+.voice-stage-thinking .voice-stage-mode::before { background: #f59e0b; }
+@keyframes voice-dot {
+  0%, 100% { opacity: .35; transform: scale(.85); }
+  50%      { opacity: 1;  transform: scale(1.15); }
+}
+.voice-stage-stop {
+  height: 24px; padding: 0 10px; border-radius: 6px;
+  font-size: 11.5px; font-weight: 500; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg); color: var(--muted);
+}
+.voice-stage-stop:hover {
+  color: #c0392b;
+  border-color: color-mix(in srgb, #c0392b 35%, var(--line));
+  background: color-mix(in srgb, #c0392b 8%, transparent);
+}
+
+.voice-wave-canvas {
+  display: block; width: 100%; height: 56px;
+}
+
+/* 字幕：中英混排友好（不强制断词、行高宽松、等宽数字不必要） */
+.voice-subtitle {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 13px; line-height: 1.6;
+  max-height: 4.8em; overflow: hidden;
+  word-break: break-word;
+}
+.voice-subtitle-who {
+  flex: 0 0 auto;
+  font-size: 10.5px; font-weight: 600;
+  padding: 2px 6px; border-radius: 4px;
+  margin-top: 2px;
+}
+.voice-subtitle.user .voice-subtitle-who {
+  color: #0ea5e9;
+  background: color-mix(in srgb, #0ea5e9 12%, transparent);
+}
+.voice-subtitle.agent .voice-subtitle-who {
+  color: #a855f7;
+  background: color-mix(in srgb, #a855f7 12%, transparent);
+}
+.voice-subtitle.user .voice-subtitle-text { color: var(--text); }
+.voice-subtitle.agent .voice-subtitle-text { color: var(--text); }
