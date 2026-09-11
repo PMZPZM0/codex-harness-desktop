@@ -233,14 +233,34 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
           : "无法获取麦克风权限"
       );
     }
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: false,
-        autoGainControl: false,
-        channelCount: 1,
-      },
-    });
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: false,
+          autoGainControl: false,
+          channelCount: 1,
+        },
+      });
+    } catch (error: any) {
+      // getUserMedia 报错名 → 人话 + 排查提示（开发工具里也能定位）
+      const name = String(error?.name ?? "");
+      const msg = String(error?.message ?? error);
+      if (name === "NotFoundError" || /requested device not found/i.test(msg)) {
+        throw new Error("未找到可用的麦克风设备（Requested device not found）。请检查：(1) 麦克风已物理接入并被系统识别；(2) 没有被其它程序独占（浏览器、Zoom、VoiceMeeter、OBS 等）；(3) Windows：在「设置 → 系统 → 声音」里能看到输入设备且没禁用；macOS：在「系统设置 → 隐私与安全 → 麦克风」授权本应用。");
+      }
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        throw new Error("麦克风权限被拒绝。请到系统的「麦克风隐私设置」里授权本应用，然后重试。");
+      }
+      if (name === "NotReadableError" || /in use/i.test(msg)) {
+        throw new Error("麦克风正被其它程序独占（could not start audio source）。请关掉占用麦克风的应用再试。");
+      }
+      if (name === "OverconstrainedError") {
+        throw new Error("请求的麦克风参数不被设备支持（OverconstrainedError）。通常是采样率/通道数不匹配。");
+      }
+      throw new Error(`打开麦克风失败：${msg}`);
+    }
     mediaStreamRef.current = stream;
 
     const ctx = new AudioContext({ sampleRate: CAPTURE_RATE });

@@ -303,6 +303,8 @@ contextBridge.exposeInMainWorld("codex", {
   voiceModelsStatus: () => ipcRenderer.invoke("voice:models-status") as Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string }>,
   voiceModelsInstall: () => ipcRenderer.invoke("voice:models-install") as Promise<{ ok: boolean; error?: string }>,
   voiceModelsCancel: () => ipcRenderer.invoke("voice:models-cancel") as Promise<{ ok: boolean }>,
+  voiceModelsImport: (input: { sourceDir: string }) => ipcRenderer.invoke("voice:models-import", input) as Promise<{ ok: boolean; failures: string[] }>,
+  voiceModelsReveal: () => ipcRenderer.invoke("voice:models-reveal") as Promise<string>,
   voiceMicPermission: () => ipcRenderer.invoke("voice:mic-permission") as Promise<{ status: string; error?: string }>,
   voiceSettingsGet: () => ipcRenderer.invoke("voice:settings-get") as Promise<{
     settings: {
