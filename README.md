@@ -155,6 +155,7 @@ npm run e2e     # UI 场景（默认全部）：自动拉起已构建的应用�
 - `npm run e2e` 跑完在 `.e2e-artifacts/shots/` 留下**每步截图**（文件名带场景前缀），扫一眼就知道有没有破相；退出码非 0 即有断言失败。
 - 场景脚本在 `scripts/e2e/scenarios/`，新增场景只需导出一个 `steps` 数组；框架零新依赖（复用 `ws`），经主进程自带的 `CODEX_HARNESS_USER_DATA` / `CODEX_HARNESS_DEBUG_PORT` 开关在**隔离的临时 profile** 里跑，绝不碰你的真实会话与配置。现存场景：`smoke`（主界面骨架与主干交互）、`model-scope`（每个会话独立选模型）、`voice-call`（语音悬浮入口 + 既有输入链路零回归守卫）。
 - **无 GPU 的机器 / CI 也能跑**：Chromium 的 GPU 子进程在无显卡环境里会反复起不来并最终 FATAL 自杀（表现为「CDP 超时」，实测连零项目代码的最小 Electron 应用也一样），框架会带上 `CODEX_HARNESS_IN_PROCESS_GPU` 开关把 GPU 进程合并进主进程——该开关**只对测试实例生效**，不影响你日常使用。
+- **测试实例的工作区固定为项目根目录**：隔离 profile 是一张白纸，界面本来会停在「尚未选择工作区」（部分路径下发送会被拦）。框架现在会把 `workspace` 注入成项目根并重载一次，所以截图里顶栏显示的就是本仓库路径。
 - **隔离 profile 会带上你的真实模型配置**（`custom-model.json` / `custom-models.json` / `codex-home/{config.toml,model-catalog.json}`，外加 `Local State`，并**保留密钥密文**）：否则选择器里一个模型都没有，「切换模型到底生效没、会话之间是否独立」这类断言只能拿假 id 糊弄，**等于没测**。保留真 Key（本机 safeStorage 密文 + 同机 `Local State` 的 DPAPI 密钥材料即可解出）是为了让断言打到**真实后端**——真实网关真的回包才算数；只想跑「无 Key」的纯逻辑断言可设 `CODEX_HARNESS_KEEP_SECRETS=0`。改过供应商/模型配置后，这些场景测的就是你的真实环境。
 - **「生效没生效」查到引擎侧、并且要查到后端**：涉及下发给引擎的开关（模型、权限等）只断言 localStorage / UI 文案不够——框架提供 `h.engineModelOf(threadId)` 直读该会话 rollout：`turn_context.model` = 引擎**真正跑**的模型，`token_usage_record.response_id` = **真实网关真的回了包**（没有它只能证明「引擎接了参数」，09-11 用户指正过这点）。`model-scope` 用前者证明「A 会话跑 deepseek、B 会话跑 glm，互不串扰」，用后者证明这几轮都是真实后端回的话。
 - **Codex 引擎自己也能跑**（无需 npm）：`resources/tools/node/node.exe scripts/e2e/run.mjs`。E2E 拉的是隔离实例，与应用内常驻的引擎互不干扰。
