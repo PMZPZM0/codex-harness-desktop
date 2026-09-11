@@ -19391,41 +19391,54 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .mode-chip-float:hover { filter: brightness(1.15); }
 .mode-chip-float + .mode-chip-float { right: 37px; }
 
-/* ── 欢迎页「项目地址」选择 chip（输入框左上角，仅空态显示） ── */
-.welcome-cwd-picker { position: absolute; top: 7px; left: 9px; z-index: 5; }
+/* ── 欢迎页「项目地址」选择 chip（贴输入框内侧左上角，仅空态显示） ── */
+.welcome-cwd-picker { position: absolute; top: 8px; left: 10px; z-index: 5; }
 .welcome-cwd-chip {
-  display: inline-flex; align-items: center; gap: 5px;
-  max-width: 46vw; padding: 3px 8px; border-radius: 7px;
-  font-size: 11px; line-height: 1.4; cursor: pointer;
-  color: var(--text-secondary, #555);
-  background: color-mix(in srgb, var(--text-secondary, #888) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--text-secondary, #888) 24%, transparent);
+  display: inline-flex; align-items: center; gap: 6px;
+  max-width: 60vw; padding: 3px 9px 3px 8px; border-radius: 999px;
+  font-size: 11px; line-height: 1.5; cursor: pointer;
+  color: var(--text-secondary, #666);
+  background: color-mix(in srgb, var(--text-primary, #111) 4%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-primary, #111) 12%, transparent);
+  backdrop-filter: blur(3px);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
-.welcome-cwd-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.welcome-cwd-chip.scratch {
-  color: var(--orange);
-  background: color-mix(in srgb, var(--orange) 10%, transparent);
-  border-color: color-mix(in srgb, var(--orange) 34%, transparent);
+.welcome-cwd-chip > svg:first-child { color: var(--blue, #3b82f6); flex-shrink: 0; }
+.welcome-cwd-chip span {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 500; max-width: 260px;
 }
-.welcome-cwd-chip:hover { filter: brightness(1.1); }
+.welcome-cwd-chip .menu-caret { opacity: 0.55; }
+.welcome-cwd-chip:hover {
+  color: var(--text-primary, #111);
+  background: color-mix(in srgb, var(--text-primary, #111) 8%, transparent);
+  border-color: color-mix(in srgb, var(--text-primary, #111) 24%, transparent);
+}
+.welcome-cwd-chip.scratch { color: var(--orange); border-color: color-mix(in srgb, var(--orange) 30%, transparent); }
+.welcome-cwd-chip.scratch > svg:first-child { color: var(--orange); }
+.welcome-cwd-chip.scratch:hover { background: color-mix(in srgb, var(--orange) 8%, transparent); }
+/* chip 贴左上角时给编辑区第一行让位：placeholder 与输入文本从 chip 下方开始，
+   发送后（docked-center 移除）恢复原布局 */
+.composer-wrap.docked-center .composer-editor { padding-top: 32px; }
 .welcome-cwd-menu {
-  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
-  min-width: 280px; padding: 4px;
-  border-radius: 10px;
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 30;
+  min-width: 300px; padding: 4px;
+  border-radius: 12px;
   background: var(--color-background-primary, #fff);
   border: 1px solid var(--color-border-tertiary, rgba(0,0,0,0.12));
-  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.14);
 }
 .welcome-cwd-menu button {
-  display: flex; align-items: flex-start; gap: 8px; width: 100%;
-  padding: 8px 10px; border: 0; border-radius: 7px; background: transparent;
+  display: flex; align-items: flex-start; gap: 9px; width: 100%;
+  padding: 8px 10px; border: 0; border-radius: 8px; background: transparent;
   color: var(--color-text-primary, #111); text-align: left; cursor: pointer; font-size: 12px;
 }
 .welcome-cwd-menu button:hover { background: color-mix(in srgb, var(--color-text-primary, #111) 7%, transparent); }
 .welcome-cwd-menu button.active { background: color-mix(in srgb, var(--blue, #3b82f6) 10%, transparent); }
-.welcome-cwd-menu button svg { flex-shrink: 0; margin-top: 1px; }
-.welcome-cwd-menu button span { display: flex; flex-direction: column; gap: 2px; }
-.welcome-cwd-menu button small { color: var(--color-text-tertiary, #888); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }
+.welcome-cwd-menu button svg { flex-shrink: 0; margin-top: 2px; color: var(--text-secondary, #666); }
+.welcome-cwd-menu button.active svg { color: var(--blue, #3b82f6); }
+.welcome-cwd-menu button span { display: flex; flex-direction: column; gap: 2px; font-weight: 500; }
+.welcome-cwd-menu button small { color: var(--color-text-tertiary, #888); font-size: 11px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
 
 /* ── /plan 方案审阅卡（agent-ask 同族，蓝色调）：预览摘要 + 执行/意见迭代 ── */
 .agent-ask-inline.plan-review { border-color: color-mix(in srgb, var(--blue, #3b82f6) 45%, var(--line)); }
