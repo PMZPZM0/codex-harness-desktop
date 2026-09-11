@@ -519,7 +519,13 @@ ipcMain.handle("voice:playback-done", () => {
 
 ipcMain.handle("voice:models-status", async () => {
   const status = await voiceModelsStatus(voiceModelsRoot, ALL_VOICE_REPOS);
-  return { ...status, bytes: modelsSizeOnDisk(voiceModelsRoot), root: voiceModelsRoot };
+  return {
+    ...status,
+    bytes: modelsSizeOnDisk(voiceModelsRoot),
+    root: voiceModelsRoot,
+    // 提示 UI「本地导入」该期望的目录结构（HF 仓库 id 很长，用户需要明确看到）
+    repos: ALL_VOICE_REPOS.map((r) => ({ id: r.repo, lastSegment: r.repo.split("/").pop() ?? r.repo })),
+  };
 });
 
 ipcMain.handle("voice:models-install", () => voiceService.installModels());

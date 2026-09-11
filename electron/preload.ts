@@ -300,7 +300,11 @@ contextBridge.exposeInMainWorld("codex", {
   voiceSpeak: (text: string, options?: { sid?: number; speed?: number }) => ipcRenderer.invoke("voice:speak", text, options) as Promise<{ ok: boolean; sampleRate?: number; samples?: Float32Array; error?: string }>,
   voiceBarge: () => ipcRenderer.invoke("voice:barge") as Promise<{ ok: boolean }>,
   voicePlaybackDone: () => ipcRenderer.invoke("voice:playback-done") as Promise<{ ok: boolean }>,
-  voiceModelsStatus: () => ipcRenderer.invoke("voice:models-status") as Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string }>,
+  voiceModelsStatus: () => ipcRenderer.invoke("voice:models-status") as Promise<{
+    ready: boolean; missing: string[]; readyFiles: number; totalFiles: number;
+    bytes: number; root: string;
+    repos: { id: string; lastSegment: string }[];
+  }>,
   voiceModelsInstall: () => ipcRenderer.invoke("voice:models-install") as Promise<{ ok: boolean; error?: string }>,
   voiceModelsCancel: () => ipcRenderer.invoke("voice:models-cancel") as Promise<{ ok: boolean }>,
   voiceModelsImport: (input: { sourceDir: string }) => ipcRenderer.invoke("voice:models-import", input) as Promise<{ ok: boolean; failures: string[] }>,
