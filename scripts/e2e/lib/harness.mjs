@@ -354,7 +354,7 @@ export class ElectronHarness {
    *    - `settingsModel` / `provider`：最新一条 `thread_settings_applied`（会话级设置） */
   engineModelOf(threadId) {
     const file = this._rolloutFiles().find((p) => p.includes(threadId)) ?? null;
-    const info = { file, turns: 0, turnModel: null, turnModels: [], settingsModel: null, provider: null, backendResponses: [], errors: [] };
+    const info = { file, turns: 0, turnModel: null, turnModels: [], turnEffort: null, turnEfforts: [], settingsModel: null, settingsEffort: null, provider: null, backendResponses: [], errors: [] };
     if (!file) return info;
     for (const line of readFileSync(file, "utf8").split("\n")) {
       if (!line.trim()) continue;
@@ -368,10 +368,16 @@ export class ElectronHarness {
       if (record.type === "turn_context" && payload.model) {
         info.turnModel = payload.model;
         info.turnModels.push(payload.model);
+        // 该回合引擎实际收到的思考档位（collaboration_mode.settings.reasoning_effort
+        // 与顶层 effort 同值；null = 引擎兜底默认，非显式下发）
+        const eff = payload.effort ?? payload.collaboration_mode?.settings?.reasoning_effort ?? null;
+        info.turnEffort = eff;
+        info.turnEfforts.push(eff);
         info.turns += 1;
       }
       if (record.type === "event_msg" && payload.type === "thread_settings_applied") {
         info.settingsModel = payload.thread_settings?.model ?? info.settingsModel;
+        info.settingsEffort = payload.thread_settings?.reasoning_effort ?? info.settingsEffort;
         info.provider = payload.thread_settings?.model_provider_id ?? info.provider;
       }
       // 真实后端证据：token_usage_record 带 response_id（网关回包才有）+ 实际 output tokens。

@@ -7888,6 +7888,16 @@ export default function App() {
       .setProviderModel({ provider, model: match[2], apply: true, restart: false })
       .catch(() => { archiveSyncRef.current = ""; });
   }, [customModel, modelId]);
+  // 思考等级对账（与上面模型对账同型）：档案里记了当前生效模型的档位、而当前上下文
+  // 没有更具体的显式值（会话无 thread-effort 记录）→ 应用档案档位。用户在会话里显式
+  // 选过档位时以会话记录为准（每会话独立优先级，与 model 的规则一致）。
+  useEffect(() => {
+    const archived = customModel?.effort;
+    if (!archived) return;
+    const tid = threadRef.current?.id;
+    if (tid && loadThreadEffort(tid)) return;
+    setEffort((current) => normalizeEffort(current) === archived ? current : archived);
+  }, [customModel?.effort, customModel?.model, thread?.id]);
   // 供应商下已配置的模型清单：已保存的 models + 输入框里尚未保存的那个
   // probe 拉到的可用模型只属于探测时的那家供应商，换供应商后不再用于补全
   const modelSuggestions = modelSourceProvider === customDraft.provider ? (providerModels ?? []) : [];
@@ -9967,6 +9977,17 @@ const commandMatches = useMemo(() => {
     // 思考等级按会话独立：当前有会话就记到会话上（切回来自动恢复），无会话才只是全局默认
     if (threadRef.current?.id) saveThreadEffort(threadRef.current.id, value);
     void updateThreadSettings({ effort: value });
+    // 档案 100% 同步（对齐「模型自报」案）：写进 custom-model.json（models[].effort +
+    // 顶层 effort）与 config.toml 顶层 model_reasoning_effort，切供应商/重装不丢、
+    // 重启后 resume 的老会话也有兜底默认。restart:false 不打断在跑回合。
+    // 归档键必须是档案里的「当前生效模型」（customModel.model），不能用会话级
+    // selectedModel —— 两者在「会话选了别的模型」时不是同一个 id，用会话的会把
+    // 档位写到另一个模型条目上，顶层与 models[] 就此分叉。
+    if (customModel?.provider && customModel.model) {
+      void window.codex.setProviderEffort({ provider: customModel.provider, model: customModel.model, effort: value })
+        .then((next) => setCustomModel(next))
+        .catch(() => undefined);
+    }
   }
 
   function changeEffort(value: string) {
