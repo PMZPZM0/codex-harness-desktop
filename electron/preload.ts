@@ -9,7 +9,8 @@ contextBridge.exposeInMainWorld("codex", {
   showNotification: (title: string, body: string) => ipcRenderer.invoke("notify:show", title, body),
   toolStatus: () => ipcRenderer.invoke("tools:status"),
   listRuntimes: () => ipcRenderer.invoke("runtime:list"),
-  installRuntime: (id: string) => ipcRenderer.invoke("runtime:install", id),
+  installRuntime: (id: string) => ipcRenderer.invoke("runtime:install", id) as Promise<{ ok: boolean; guide?: string; runtimes?: unknown[] }>,
+  uninstallRuntime: (id: string) => ipcRenderer.invoke("runtime:uninstall", id) as Promise<{ ok: boolean; runtimes?: unknown[] }>,
   onRuntimeProgress: (listener: (event: unknown) => void) => {
     const handler = (_e: unknown, payload: unknown) => listener(payload);
     ipcRenderer.on("runtime:progress", handler);
@@ -310,6 +311,7 @@ contextBridge.exposeInMainWorld("codex", {
   voiceModelsCancel: () => ipcRenderer.invoke("voice:models-cancel") as Promise<{ ok: boolean }>,
   voiceModelsImport: (input: { sourceDir: string }) => ipcRenderer.invoke("voice:models-import", input) as Promise<{ ok: boolean; failures: string[] }>,
   voiceModelsReveal: () => ipcRenderer.invoke("voice:models-reveal") as Promise<string>,
+  voiceModelsUninstall: () => ipcRenderer.invoke("voice:models-uninstall") as Promise<{ ok: boolean }>,
   voiceMicPermission: () => ipcRenderer.invoke("voice:mic-permission") as Promise<{ status: string; error?: string }>,
   voiceSettingsGet: () => ipcRenderer.invoke("voice:settings-get") as Promise<{
     settings: {

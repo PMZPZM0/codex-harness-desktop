@@ -247,7 +247,7 @@ export const steps = [
       // 卡片头（图标 + 标题 + sherpa-onnx 副标题）
       const cardText = await h.text(".voice-devtools-card").catch(() => "");
       h.check("卡片标题有「语音模型」", String(cardText).includes("语音模型"));
-      h.check("卡片描述「生产构建不打包」", String(cardText).includes("生产构建不打包"));
+      h.check("卡片描述有「按需下载」", String(cardText).includes("按需下载") && !String(cardText).includes("生产构建不打包"));
       // 按钮在右边（量最后一个按钮的右边到卡片右边的距离；< 卡片左内边距就算"贴右"）
       const layout = await h.eval(`(() => {
         const buttons = [...document.querySelectorAll(".voice-devtools-actions button")];
