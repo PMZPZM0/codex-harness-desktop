@@ -11244,30 +11244,84 @@ const commandMatches = useMemo(() => {
     return result;
   }
 
-  /** 展开更早的历史：按游标继续 desc 续拉，直到到底（上限 20 页，防异常死循环）。 */
+  /** 向上加载更早的历史（ZCode 式增量）：
+   *  ① 内存里还有未渲染的回合（hidden>0）→ 只扩大渲染窗口，不碰网络；
+   *  ② 内存耗尽且有游标 → thread/turns/list 按 cursor 拉**一页**（200）拼到最前。
+   *  拼接会让视口上方长高，按 scrollHeight 增量补偿 scrollTop，视口内容不跳。
+   *  loadingEarlierRef 防重入：滚动近顶自动触发 + 按钮点击共用这一个入口。 */
   async function loadEarlierTurns(id: string) {
-    let cursor = turnsCursorRef.current.get(id) ?? null;
-    if (!cursor) return;
-    const older: any[] = [];
-    for (let page = 0; page < 20 && cursor; page++) {
-      const result: any = await window.codex.request("thread/turns/list", { threadId: id, limit: 200, sortDirection: "desc", itemsView: "full", cursor }).catch(() => null);
-      const data = Array.isArray(result?.data) ? result.data : [];
-      if (!data.length) { cursor = null; break; }
-      older.push(...data);
-      cursor = result?.nextCursor ?? null;
+    if (loadingEarlierRef.current.has(id)) return;
+    const current = threadCacheRef.current.get(id) ?? threadRef.current;
+    if (!current || current.id !== id) return;
+    const rendered = turnWindowRef.current[id] ?? TURN_WINDOW;
+    const hidden = current.turns.length - rendered;
+    const cursor = turnsCursorRef.current.get(id) ?? null;
+    if (hidden <= 0 && !cursor) return;
+    loadingEarlierRef.current.add(id);
+    try {
+      const el0 = scrollRef.current;
+      const beforeTop = el0?.scrollTop ?? 0;
+      const beforeHeight = el0?.scrollHeight ?? 0;
+      let grow = 0;
+      if (hidden > 0) {
+        grow = Math.min(hidden, 200); // 本地展开一屏的量，翻老历史不产生网络请求
+      } else if (cursor) {
+        try {
+          const result: any = await window.codex.request("thread/turns/list", { threadId: id, limit: 200, sortDirection: "desc", itemsView: "full", cursor });
+          const data = Array.isArray(result?.data) ? result.data : [];
+          if (result?.nextCursor) turnsCursorRef.current.set(id, result.nextCursor);
+          else turnsCursorRef.current.delete(id);
+          if (data.length) {
+            grow = data.length;
+            const earlier = [...data].reverse();
+            setThread((c) => {
+              if (!c || c.id !== id) return c;
+              const next = { ...c, turns: [...earlier, ...(c.turns ?? [])] };
+              threadRef.current = next;
+              threadCacheRef.current.set(id, next);
+              return next;
+            });
+          }
+        } catch { /* 拉取失败不影响当前视口 */ }
+      }
+      if (grow > 0) {
+        expandTurnWindow(id, grow);
+        // 双 rAF 等 React 提交 DOM 后按高度增量把视口钉回原内容（上方插入了新渲染的回合）
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          const el = scrollRef.current;
+          if (el) el.scrollTop = beforeTop + Math.max(0, el.scrollHeight - beforeHeight);
+        }));
+      }
+    } finally {
+      loadingEarlierRef.current.delete(id);
     }
-    if (cursor) turnsCursorRef.current.set(id, cursor);
-    else turnsCursorRef.current.delete(id);
-    if (!older.length) return;
-    const earlier = [...older].reverse();
-    setThread((current) => {
-      if (!current || current.id !== id) return current;
-      const next = { ...current, turns: [...earlier, ...(current.turns ?? [])] };
-      threadRef.current = next;
-      threadCacheRef.current.set(id, next);
-      return next;
-    });
   }
+
+  /** 时间线滚动近顶（<480px）自动续载更早的历史（ZCode 式）：
+   *  loadEarlierTurns 内部防重入 + 切换动画期间跳过（switchJumpRef，避免对旧 DOM 做
+   *  scrollTop 补偿）；贴近顶部时每向上滚一屏加载一页，离开顶部自然停止。 */
+  function onTimelineScroll(event: React.UIEvent<HTMLDivElement>) {
+    const el = event.currentTarget;
+    if (el.scrollTop > 480 || switchJumpRef.current) return;
+    const id = threadRef.current?.id;
+    if (id) void loadEarlierTurns(id);
+  }
+
+  /** 刻度尺跳转：目标回合可能还在渲染窗口之外（元素未挂载，scrollIntoView 找不到目标）。
+   *  先把窗口扩到覆盖目标回合，等 React 提交 DOM 后再跳。引用恒定（useCallback []），
+   *  保证 MemoMessageRuler 的 memo 比较仍然拦得住无关重渲染。 */
+  const jumpToTurnInWindow = useCallback((turnId: string) => {
+    const t = threadRef.current;
+    if (t) {
+      const idx = t.turns.findIndex((turn: Turn) => turn.id === turnId);
+      const rendered = turnWindowRef.current[t.id] ?? TURN_WINDOW;
+      if (idx >= 0 && idx < t.turns.length - rendered) {
+        turnWindowRef.current = { ...turnWindowRef.current, [t.id]: t.turns.length - idx };
+        setTurnWindow(turnWindowRef.current);
+      }
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => jumpToTurn(turnId)));
+  }, []);
 
   async function openThread(id: string, freshThread?: Thread | null) {
     setChatSearchOpen(false);
@@ -11296,6 +11350,12 @@ const commandMatches = useMemo(() => {
     setInterrupting(false);
     // 切会话后滚动位置属于旧会话，不能带过来；等新内容渲染后直接跳到最新消息。
     switchJumpRef.current = true;
+    // 渲染窗口一并重置：切换成本与会话历史长度、上次翻页深度无关（切回即锚定最新一屏）。
+    // 游标保留在 turnsCursorRef，向上滚动时按需继续增量加载。
+    if ((turnWindowRef.current[id] ?? TURN_WINDOW) !== TURN_WINDOW) {
+      turnWindowRef.current = { ...turnWindowRef.current, [id]: TURN_WINDOW };
+      setTurnWindow(turnWindowRef.current);
+    }
     closeTaskMenu();
     setReviewBusy(false);
     setReviewReport("");
@@ -12156,10 +12216,19 @@ const commandMatches = useMemo(() => {
     setSwitcherOpen(false);
   }
 
-  // 长会话窗口化：默认只渲染最近 TURN_WINDOW 个回合，更早的按需展开。
-  // 这台机器是软件渲染（无 GPU），把几千个回合一次性挂进 React 是「切会话要等很久」的主因
-  // ——content-visibility 只省绘制，省不掉建元素与 Markdown 解析的成本。
-  const [earlyTurnExpanded, setEarlyTurnExpanded] = useState<Record<string, boolean>>({});
+  // 长会话窗口化：默认只渲染最近 TURN_WINDOW 个回合，更早的由「显示更早/滚动到顶」
+  // 增量加载（loadEarlierTurns）。这台机器是软件渲染（无 GPU），把几千个回合一次性挂进
+  // React 是「切会话要等很久」的主因——content-visibility 只省绘制，省不掉建元素与
+  // Markdown 解析的成本。窗口按会话记数（turnWindow[id]），openThread 切回时重置，
+  // 保证切换成本恒定；ref 镜像供 loadEarlierTurns/刻度尺跳转免重渲染读取。
+  const [turnWindow, setTurnWindow] = useState<Record<string, number>>({});
+  const turnWindowRef = useRef<Record<string, number>>({});
+  const loadingEarlierRef = useRef<Set<string>>(new Set());
+  function expandTurnWindow(id: string, count: number) {
+    const next = { ...turnWindowRef.current, [id]: (turnWindowRef.current[id] ?? TURN_WINDOW) + count };
+    turnWindowRef.current = next;
+    setTurnWindow(next);
+  }
   const allItems = thread?.turns.flatMap((turn) => turn.items) ?? [];
   const isEmpty = !thread && !allItems.length;
   // 欢迎页（空会话）自动聚焦输入框：docked-center 的 absolute 定位 + 过渡动画期间命中区域会
@@ -12454,8 +12523,8 @@ const commandMatches = useMemo(() => {
       <main className="workspace">
 
         <div className="timeline-wrap" ref={timelineWrapRef}>
-          {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurn} />}
-          <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef}>
+          {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurnInWindow} />}
+          <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll}>
           {isEmpty ? (
             <div className="welcome-state">
               <div className="welcome-mark"><Code2 strokeWidth={0.5} size={96} /></div>
@@ -12465,16 +12534,18 @@ const commandMatches = useMemo(() => {
           ) : null}
           {/* 导入会话记录后、尚未发送首条消息：记录预览卡常驻消息区顶部；发送后转为消息内的导入卡 */}
           {thread && (thread.turns ?? []).length === 0 && pendingImportThreads[thread.id] ? <PendingImportSlot key={thread.id} threadId={thread.id} onDiscard={() => forgetPendingImport(thread.id)} /> : null}
-          {/* 长会话窗口化：默认只挂最近 TURN_WINDOW 个回合，更早的按需展开。
-              软件渲染下全量挂载几千个回合是「切换会话慢」的主因，这里把首屏成本封顶。 */}
-          {thread && thread.turns.length > TURN_WINDOW && !earlyTurnExpanded[thread.id] && (
-            <button type="button" className="load-earlier-turns" onClick={() => { setEarlyTurnExpanded((current) => ({ ...current, [thread.id]: true })); void loadEarlierTurns(thread.id); }}>
+          {/* 长会话窗口化：默认只挂最近 TURN_WINDOW 个回合，更早的滚动到顶/点按钮增量加载
+              （每次一页，内存展开优先）。软件渲染下全量挂载几千个回合是「切换会话慢」的主因。 */}
+          {thread && (thread.turns.length > (turnWindow[thread.id] ?? TURN_WINDOW) || turnsCursorRef.current.get(thread.id)) && (
+            <button type="button" className="load-earlier-turns" onClick={() => void loadEarlierTurns(thread.id)}>
               <ChevronDown size={13} style={{ transform: "rotate(180deg)" }} />
-              显示更早的 {thread.turns.length - TURN_WINDOW} 条消息
-              <small>为加快打开速度，默认只渲染最近 {TURN_WINDOW} 条</small>
+              {thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW) > 0
+                ? `显示更早的 ${Math.min(thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW), 200)} 条消息`
+                : "加载更早的消息"}
+              <small>向上滚动到此也会自动继续加载</small>
             </button>
           )}
-          {thread?.turns.slice(thread.turns.length > TURN_WINDOW && !earlyTurnExpanded[thread.id] ? thread.turns.length - TURN_WINDOW : 0).map((turn) => <MemoTurnView turn={turn} isLastTurn={turn.id === thread.turns[thread.turns.length - 1]?.id} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={tokenUsage} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />)}
+          {thread?.turns.slice(Math.max(0, thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW))).map((turn) => <MemoTurnView turn={turn} isLastTurn={turn.id === thread.turns[thread.turns.length - 1]?.id} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={tokenUsage} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />)}
           {optimisticInput && !optimisticConfirmed && <ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} />}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
           {systemEvents.map((event) => <div className={`system-event ${event.tone ?? "info"}`} key={event.id}><strong>{event.tone === "success" ? <CircleCheck size={13} className="system-event-icon" /> : null}{event.title}</strong><Markdown>{event.text}</Markdown></div>)}

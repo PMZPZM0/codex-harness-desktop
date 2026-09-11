@@ -113,6 +113,13 @@ resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **长会话窗口化 + 增量加载（09-12，ZCode 式会话切换）**：逆向 ZCode app.asar 得出其「切换秒开」三要素——窗口级 host 子进程常驻、snapshot+deltas 订阅增量、**会话历史按行分页只挂最新一屏**。宿主侧落地第三条（引擎侧多 thread 并行本就同构）：
+  ① `resumeThreadLight`（excludeTurns:true + desc 一页）首屏只取引擎单页上限 100 回合，`TURN_WINDOW=40` 只挂最近 40 回合——打开成本与历史长度无关。
+  ② `loadEarlierTurns` 增量化：内存还有未渲染的 → 只扩 `turnWindow[id]` 窗口（零网络）；内存耗尽且有游标 → `thread/turns/list` 按 cursor 拉**一页**（引擎单页上限 100，请求 200 会被静默截到 100）拼到最前，并按 scrollHeight 增量补偿 scrollTop（双 rAF 等提交）防止视口跳动。
+  ③ `.timeline` 滚动近顶（<480px）经 `onTimelineScroll` 自动续载（`loadingEarlierRef` 防重入、`switchJumpRef` 切换期间跳过）；「显示更早」按钮同一入口；刻度尺跳转 `jumpToTurnInWindow` 先扩窗到覆盖目标回合再 scrollIntoView（否则元素未挂载、跳转静默失败）。
+  ④ `openThread` 重置窗口为 40：切回任何会话首屏成本恒定（游标留在 `turnsCursorRef`，向上滚动按需续拉）。原 `earlyTurnExpanded` 布尔（一键全展开，最多 4000 回合同时挂载）已删除。
+  **e2e 种子技术（`turn-window` 场景）**：向隔离 profile 写**合成 rollout** 造 260 回合长会话——两个必须：session_meta 要 `history_mode:"paginated"`（缺了引擎不走分页索引、items 重建为空）；文件名必须 canonical `rollout-<ISO带T>-<uuid>.jsonl`（缺 T 报 "does not have a canonical rollout filename"）。回合块形状：task_started → turn_context → item_completed(UserMessage content 小写 `text`/AgentMessage content 大写 `Text`) + response_item(user/assistant message) → task_complete，ordinal 全局连续（有洞整个文件解析失败）。harness 新增 `seedProfile` 钩子（run.mjs 转发 `scenario.harnessOpts`），供场景在进程启动前落盘夹具。
+
 - **欢迎页「项目地址」选择（09-12 新增）**：欢迎页输入框左上角 chip（仅空态 `isEmpty` 显示，发送首条消息后消失）。两种模式：①「使用项目地址」= 全局 workspace（与右上角 📁 完全联动，`chooseWorkspace` 同一入口）；②「不使用项目地址」= 主进程 `scratch:create` IPC 每次新建独立临时目录（优先安装目录下 `scratch/`，不可写回落 userData），`thread/start` 的 `cwd` 用该目录（`sandboxPolicy` 同步），会话建立后 scratch 记录清空——下次再选「无项目」新建另一个目录。引擎据此在该会话内的文件操作都落在独立目录，不污染真实项目。
 
 - **config.toml 错位孤儿键自动清理（09-11）**：`preserveUserConfig` 现在会把「落在某个 section 内的 harness 顶层键」（`HARNESS_CONFIG_KEYS`，含新加的 `model_reasoning_effort`）当错位数据丢弃——引擎运行中 append 顶层键时若文件尾正好在某个段落里，键会被 TOML 归进该段（实测 L136 `model_reasoning_effort="medium"` 落进 `[mcp_servers.nuphus]`，引擎不读、纯误导排查）。用户自建段落（projects 等）的其它行不受影响（行为断言 3 条已验）。

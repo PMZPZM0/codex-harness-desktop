@@ -127,6 +127,9 @@ export class ElectronHarness {
     this.namePrefix = opts.namePrefix || "";
     // 默认把真实模型配置灌进隔离 profile（否则选择器里没模型，模型类断言无从谈起）
     this.seedRealConfig = opts.seedRealConfig !== false;
+    // 场景可选的 profile 预播种钩子（launch 时、真实配置灌入前调用）：用于写合成 rollout
+    // 等需要在**进程启动前**落盘的夹具（引擎只在启动时扫描 sessions 目录）。
+    this.seedProfile = opts.seedProfile ?? null;
     this.realConfig = null;
     this.checks = [];
     this.stepIndex = 0;
@@ -145,6 +148,9 @@ export class ElectronHarness {
     this.port = await freePort();
     this.userDataDir = mkdtempSync(join(tmpdir(), "harness-e2e-"));
     mkdirSync(this.artifactsDir, { recursive: true });
+
+    // 场景自定义种子先落盘（合成 rollout 等），随后的真实配置灌入不会覆盖它
+    if (this.seedProfile) this.seedProfile(this.userDataDir);
 
     // 真实模型配置必须先进隔离 profile：进程一起来就读它，晚了不生效
     this.realConfig = this.seedRealConfig
