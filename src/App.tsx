@@ -9714,11 +9714,17 @@ const commandMatches = useMemo(() => {
     }
     saveSelection(value);
 
-    // 同供应商模型已在 catalog 中，直接更新当前会话即可。这里绝不能调用
-    // setProviderModel：它会重写全局配置并重启引擎，导致其他运行会话被终止。
+    // 同供应商模型已在 catalog 中，直接更新当前会话即可。这里不能走 apply:true：
+    // 那会整份重写 config.toml；运行中的引擎不重读该文件，没必要在每次选模型时都做。
     if (provider && customModel && provider === customModel.provider) {
       try {
         await updateThreadSettings({ model, model_provider: provider, effort: nextEffort || null });
+        // 同步「供应商档案的当前模型」（custom-model.json 顶层 model 字段）。
+        // 实测（09-11 用户截图）：引擎已真跑新模型（rollout turn_context 为证），但模型被问
+        // 「你是什么模型」时会去读这个文件自查，陈旧的 model 字段让它自报旧模型，
+        // 用户由此误判「切换没生效」。apply:false 只写档案文件，不重写 config.toml、
+        // 不重启引擎、不碰在跑的回合；config.toml 由启动时的漂移检测对齐。
+        void window.codex.setProviderModel({ provider, model, apply: false }).catch(() => {});
         setNotice(`${threadRef.current ? "当前会话" : "新会话默认"}已选择：${customModel.name} · ${model}`);
         return;
       } catch (error: any) {
