@@ -11,7 +11,7 @@
 
 import { createHash } from "crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "fs";
-import { mkdir, open, rename, stat, unlink } from "fs/promises";
+import { copyFile, mkdir, open, rename, stat, unlink } from "fs/promises";
 import { dirname, join } from "path";
 import { MODEL_HOSTS, modelUrl, type VoiceModelFile, type VoiceModelRepo } from "./model-manifest";
 
@@ -77,6 +77,52 @@ export async function isRepoReady(modelsRoot: string, repo: VoiceModelRepo): Pro
     if (!(await isFileReady(modelsRoot, repo.repo, f.name, f.sha256))) return false;
   }
   return true;
+}
+
+/**
+ * 从本地目录导入一个仓库：把 `<sourceRoot>/<repoId>/<file>` 复制到 `<modelsRoot>/<repoId>/<file>`，
+ * 校验 SHA256 通过后落盘。**用于开发版**：开发者自己下好模型后，不必走网络再下一次。
+ *
+ * 与 ensureRepo 不同：不会联网；不会断点续传；源文件存在性是硬要求（缺文件就当失败）。
+ */
+export async function importRepoFromDir(
+  modelsRoot: string,
+  sourceRoot: string,
+  repo: VoiceModelRepo,
+  onProgress?: (p: VoiceDownloadProgress) => void
+): Promise<string[]> {
+  const failures: string[] = [];
+  const total = repo.files.length;
+  let done = 0;
+  for (const f of repo.files) {
+    const src = join(sourceRoot, repo.repo, f.name);
+    const dest = modelFilePath(modelsRoot, repo.repo, f.name);
+    const partPath = `${dest}.part`;
+    onProgress?.({ repo: repo.repo, file: f.name, doneFiles: done, totalFiles: total, percent: 0, message: `导入 ${f.name}` });
+    if (!existsSync(src)) {
+      done += 1;
+      failures.push(`${f.name}：源目录里没有 ${src}`);
+      onProgress?.({ repo: repo.repo, file: f.name, doneFiles: done, totalFiles: total, percent: 100, message: `${f.name} 源目录里没有` });
+      continue;
+    }
+    try {
+      await mkdir(dirname(dest), { recursive: true });
+      await copyFile(src, partPath);
+      const sha = await sha256File(partPath);
+      if (sha !== f.sha256) {
+        await unlink(partPath).catch(() => undefined);
+        failures.push(`${f.name}：SHA256 不匹配（实际 ${sha.slice(0, 8)}...）`);
+        onProgress?.({ repo: repo.repo, file: f.name, doneFiles: done + 1, totalFiles: total, percent: 100, message: `${f.name} SHA256 不匹配` });
+      } else {
+        await rename(partPath, dest);
+        onProgress?.({ repo: repo.repo, file: f.name, doneFiles: done + 1, totalFiles: total, percent: 100, message: `${f.name} 已导入` });
+      }
+    } catch (error: any) {
+      failures.push(`${f.name}：${error?.message ?? error}`);
+    }
+    done += 1;
+  }
+  return failures;
 }
 
 type DownloadOneResult = { ok: true } | { ok: false; error: string };

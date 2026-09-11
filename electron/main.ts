@@ -524,6 +524,26 @@ ipcMain.handle("voice:models-status", async () => {
 
 ipcMain.handle("voice:models-install", () => voiceService.installModels());
 ipcMain.handle("voice:models-cancel", () => ({ ok: voiceService.cancelInstall() }));
+ipcMain.handle("voice:models-import", async (_event, input: { sourceDir: string }) => {
+  // 开发版：从开发者本机已下载的目录导入，按 repo 校验 SHA 后落盘到 userData/voice-models
+  const { importRepoFromDir } = require("./voice/model-store");
+  const { ALL_VOICE_REPOS } = require("./voice/model-manifest");
+  const failures: string[] = [];
+  for (const repo of ALL_VOICE_REPOS) {
+    const f = await importRepoFromDir(voiceModelsRoot, input.sourceDir, repo, (progress: any) => {
+      sendToWindow("voice:event", { type: "download", ...progress });
+    });
+    failures.push(...f.map((x: string) => `${repo.repo} → ${x}`));
+  }
+  await voiceService.refreshModelsReady();
+  sendToWindow("voice:event", { type: "download", percent: 100, message: "导入完成" });
+  sendToWindow("voice:event", { type: "downloadDone", ok: failures.length === 0, error: failures.slice(0, 3).join("；") });
+  return { ok: failures.length === 0, failures };
+});
+ipcMain.handle("voice:models-reveal", () => {
+  // 在文件管理器里打开模型目录（开发者验证下载内容用）
+  return shell.openPath(voiceModelsRoot);
+});
 
 /** macOS 需要显式申请麦克风授权；Windows/Linux 直接按「已授权」处理。 */
 ipcMain.handle("voice:mic-permission", async () => {

@@ -20294,3 +20294,12 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   font-size:12px; color: var(--muted); line-height:1.5;
 }
 .settings-hint { display:block; color: var(--muted); font-size:11.5px; }
+
+
+/* ===== 开发工具 → 语音模型 ===== */
+.voice-devtools { padding:4px 0; }
+.voice-devtools .runtime-row { grid-template-columns: 24px 1fr auto auto; align-items:center; gap:10px; padding:10px 12px; }
+.voice-devtools .runtime-copy small code,
+.voice-devtools .voice-devtools-path code { background: color-mix(in srgb, var(--muted) 12%, transparent); padding:1px 5px; border-radius:4px; font-size:11.5px; }
+.voice-devtools .voice-devtools-path { display:block; margin-top:6px; padding-left:34px; color:var(--muted); font-size:11.5px; }
+.voice-devtools .runtime-install + .runtime-install { margin-left:6px; }

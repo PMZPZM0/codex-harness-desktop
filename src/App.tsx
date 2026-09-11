@@ -366,6 +366,7 @@ import { CODEX_MARKET_ZH, zhCategory } from "./lib/codex-market-zh";
 import { SKILLHUB_MCP_CATALOG, SKILLHUB_MCP_CATEGORIES, skillhubMcpDetailUrl, type SkillHubMcpEntry } from "./lib/skillhub-mcp";
 import { PersonalizationPage } from "./components/PersonalizationPage";
 import VoiceSettingsSection from "./components/VoiceSettingsSection";
+import VoiceDevToolsSection from "./components/VoiceDevToolsSection";
 import { GlobalSearchView } from "./components/IndexLibrary";
 import BrowserPane from "./components/BrowserPane";
 import type { SearchPreviewTarget } from "./components/IndexLibrary";
@@ -13519,6 +13520,8 @@ const commandMatches = useMemo(() => {
             </section>}
             {settingsPage === "devtools" && <section className="settings-section stack devtools-page">
               <div className="settings-copy"><h2>开发工具</h2><p>引擎原生基础运行时随应用内置；自动化工具与浏览器内核按需下载，安装后自动加入 Codex 环境（不改系统 PATH）。</p></div>
+              <div className="settings-subhead"><Download size={13} />语音模型<span className="settings-subhead-hint">sherpa-onnx · 本机推理 · 按需下载</span></div>
+              <VoiceDevToolsSection onNotice={setNotice} />
               {(() => {
                 const autoIds = ["automation", "playwright-browsers", "cloak-browsers", "ponytail"];
                 const groups = [

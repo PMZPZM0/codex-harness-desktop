@@ -503,6 +503,8 @@ interface Window {
     voiceModelsStatus(): Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string }>;
     voiceModelsInstall(): Promise<{ ok: boolean; error?: string }>;
     voiceModelsCancel(): Promise<{ ok: boolean }>;
+    voiceModelsImport(input: { sourceDir: string }): Promise<{ ok: boolean; failures: string[] }>;
+    voiceModelsReveal(): Promise<string>;
     voiceMicPermission(): Promise<{ status: string; error?: string }>;
     voiceSettingsGet(): Promise<{
       settings: {
