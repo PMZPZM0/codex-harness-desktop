@@ -298,6 +298,7 @@ contextBridge.exposeInMainWorld("codex", {
   voiceStop: () => ipcRenderer.invoke("voice:stop") as Promise<{ ok: boolean }>,
   voiceAudio: (samples: Float32Array) => ipcRenderer.send("voice:audio", samples),
   voiceSpeak: (text: string, options?: { sid?: number; speed?: number }) => ipcRenderer.invoke("voice:speak", text, options) as Promise<{ ok: boolean; sampleRate?: number; samples?: Float32Array; error?: string }>,
+  voicePreviewVoice: (input?: { sid?: number; speed?: number; text?: string }) => ipcRenderer.invoke("voice:preview-voice", input) as Promise<{ ok: boolean; sampleRate?: number; samples?: Float32Array; error?: string }>,
   voiceBarge: () => ipcRenderer.invoke("voice:barge") as Promise<{ ok: boolean }>,
   voicePlaybackDone: () => ipcRenderer.invoke("voice:playback-done") as Promise<{ ok: boolean }>,
   voiceModelsStatus: () => ipcRenderer.invoke("voice:models-status") as Promise<{
