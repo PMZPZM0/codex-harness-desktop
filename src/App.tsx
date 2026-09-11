@@ -359,6 +359,7 @@ function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: 
 }
 import { CodeAppearanceSection } from "./components/CodeAppearance";
 import { UserCenterSection } from "./components/UserCenter";
+import VoiceCallFloat from "./components/VoiceCallFloat";
 import { BuiltinPluginsSection } from "./components/BuiltinPlugins";
 import { CODEX_MARKET_ZH, zhCategory } from "./lib/codex-market-zh";
 import { SKILLHUB_MCP_CATALOG, SKILLHUB_MCP_CATEGORIES, skillhubMcpDetailUrl, type SkillHubMcpEntry } from "./lib/skillhub-mcp";
@@ -14856,6 +14857,7 @@ const commandMatches = useMemo(() => {
                   : <FilePreviewCode language={filePreview.language} content={filePreview.content} truncated={fileTruncated} />}
         </div>
       </div>}
+      <VoiceCallFloat threadId={thread?.id ?? ""} />
     </div>
   );
 }

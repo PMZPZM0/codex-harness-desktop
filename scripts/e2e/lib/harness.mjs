@@ -158,6 +158,11 @@ export class ElectronHarness {
       CODEBUDDY_SAFE_DELETE_ENABLED: "0",
       CODEX_HARNESS_USER_DATA: this.userDataDir,
       CODEX_HARNESS_DEBUG_PORT: String(this.port),
+      // 把 GPU 进程合并进主进程。无 GPU 的机器 / CI / 沙箱里，Chromium 的 GPU 子进程会
+      // 反复起不来并最终 `GPU process isn't usable. Goodbye.` 直接 FATAL 自杀，表现为
+      // 「CDP Runtime.enable 超时」——实测连零项目代码的最小 Electron 应用也一样崩，
+      // 与本项目代码无关。该开关只在测试实例上生效，不影响真实用户。
+      CODEX_HARNESS_IN_PROCESS_GPU: "1",
       // 本机回环直连，绕开环境里的 HTTP_PROXY
       NO_PROXY: "127.0.0.1,localhost",
       no_proxy: "127.0.0.1,localhost",
@@ -187,7 +192,13 @@ export class ElectronHarness {
 
     await this._waitCdp();
     await this._connect();
-    await this._send("Runtime.enable");
+    // 带真实模型配置时启动更慢（要拉引擎、探测供应商），渲染层就绪也晚——给足窗口。
+    // 超时时把主进程输出一并抛出，否则只看到一句「超时」根本没法定位。
+    try {
+      await this._send("Runtime.enable", {}, 45000);
+    } catch (error) {
+      throw new Error(`${error?.message ?? error}\n--- 被测应用输出（尾部）---\n${this._childOutput()}`);
+    }
     await this._send("Page.enable");
     // 收集渲染层 console，便于失败定位
     this.ws.on("message", (data) => {

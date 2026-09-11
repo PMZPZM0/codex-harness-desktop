@@ -94,7 +94,7 @@ resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
 - **E2E 靠主进程自带开关实现**：`CODEX_HARNESS_USER_DATA`（重定向 userData，完全隔离）+ `CODEX_HARNESS_DEBUG_PORT`（开 CDP 端口，端口随机取空闲）——见 `electron/main.ts:60` / `:65`。框架 `scripts/e2e/lib/harness.mjs` 零新依赖（复用 `ws`），**不要引入 Playwright/Puppeteer**。
 - **离线预检**：`npm run check` = `build` + `scripts/check-preflight.mjs`。其中 IPC「方法面」解析用自写的括号深度扫描器（纯正则会被「同一行写多个方法 `a: …,  b: …`」和「类型里的 `name(...)` 括号被吃掉后参数名被误当方法名」骗到）。
 - **现存场景**：`smoke` 覆盖引导页 → 主界面骨架（`.topbar`/`aside.sidebar`/`main.workspace`/`.composer-editor`/`.send-button`）→ 侧栏六项 → 输入框读写 → `#` 技能面板 → `/` 命令面板 → 技能中心开关 → 右栏展开 → 设置弹窗开关 + 焦点归还 → 渲染层无 console.error。`model-scope` 覆盖**每个会话独立选模型**（真起引擎真建 **两个**会话，灌真实配置且**保留 Key**，共 60 断言）：③ 有记录 → 不被全局冲掉、且不改写全局默认；④ 没记录 → 落全局默认；⑤ 打开 B 不动 A；⑥ 欢迎页改全局默认 → 只动全局、两个会话都不动；⑦ **真发消息**后读 rollout —— `turn_context.model` 证明 A 跑 deepseek、B 跑 glm（会话独立），`token_usage_record.response_id` 证明**两轮都是真实后端回包**（实测 output=159 / 3 tokens）；⑦bis 同一会话里换下拉 → 下一轮**立刻**跑新模型，且 `custom-model.json` + `config.toml` 顶层同步；⑦ter 打开另一个会话 → 档案对齐该会话的模型。**引导页可能被跳过**：真实 Key 灌进去后 `customModel.hasKey=true`，`App.tsx:7754` 的兼容 effect 会自动进入主界面（写 `login-skipped`），所以步骤① 是「引导页或主界面二选一」，不能硬等跳过按钮。
-- **环境坑（踩过）**：①环境里的 `HTTP_PROXY` 会把回环请求也代理走 → harness 已自动注入 `NO_PROXY=127.0.0.1,localhost`；②`ws` 库的 `on("message", (data) => …)` 首参是**原始数据**不是 `MessageEvent`；③`clickByText` 必须取**最内层**元素（按 innerText 长度升序），否则点到 wrapper 上；④`contenteditable` 用 CDP `Input.insertText` 输入，`[contenteditable="true"]` 匹配不到 `plaintext-only`；⑤**宿主带着 `ELECTRON_RUN_AS_NODE` 时 Electron 会被降级成纯 node 跑主进程**（启动即崩 `Cannot read properties of undefined (reading 'registerSchemesAsPrivileged')`，栈尾打 `Node.js vXX`）→ harness 在 spawn 前 `delete` 掉这个变量；⑥**引擎的 rollout 是首回合才落盘的**：只 `thread/start` 的会话 `thread/resume` 报 `no rollout found`、`thread/list` 里也不出现 → 想造「能 resume 的会话」必须补一发 `turn/start`（模型调用失败无妨，rollout 已落盘）；⑦宿主还会注入 `NODE_OPTIONS=--require …node-language-shim.cjs`（拦截子进程 fs 写入）——继承下去会让主进程写 userData 时 `EPERM`、启动链断掉（**窗口能开、引擎不 spawn、发消息零回复**）→ harness 也一并 `delete` 掉 `NODE_OPTIONS`（与 ⑤ 同源：都是宿主环境泄漏）。
+- **环境坑（踩过）**：①环境里的 `HTTP_PROXY` 会把回环请求也代理走 → harness 已自动注入 `NO_PROXY=127.0.0.1,localhost`；②`ws` 库的 `on("message", (data) => …)` 首参是**原始数据**不是 `MessageEvent`；③`clickByText` 必须取**最内层**元素（按 innerText 长度升序），否则点到 wrapper 上；④`contenteditable` 用 CDP `Input.insertText` 输入，`[contenteditable="true"]` 匹配不到 `plaintext-only`；⑤**宿主带着 `ELECTRON_RUN_AS_NODE` 时 Electron 会被降级成纯 node 跑主进程**（启动即崩 `Cannot read properties of undefined (reading 'registerSchemesAsPrivileged')`，栈尾打 `Node.js vXX`）→ harness 在 spawn 前 `delete` 掉这个变量；⑥**引擎的 rollout 是首回合才落盘的**：只 `thread/start` 的会话 `thread/resume` 报 `no rollout found`、`thread/list` 里也不出现 → 想造「能 resume 的会话」必须补一发 `turn/start`（模型调用失败无妨，rollout 已落盘）；⑦宿主还会注入 `NODE_OPTIONS=--require …node-language-shim.cjs`（拦截子进程 fs 写入）——继承下去会让主进程写 userData 时 `EPERM`、启动链断掉（**窗口能开、引擎不 spawn、发消息零回复**）→ harness 也一并 `delete` 掉 `NODE_OPTIONS`（与 ⑤ 同源：都是宿主环境泄漏）；⑧**无 GPU 的机器 / CI 上 Chromium 的 GPU 子进程会反复起不来并最终 FATAL 自杀**（`GPU process isn't usable. Goodbye.`），表现为 e2e「CDP Runtime.enable 超时 / Target crashed」——实测连零项目代码的最小 Electron 应用也一样崩，**与本项目代码无关**；harness 已带 `CODEX_HARNESS_IN_PROCESS_GPU`（主进程据此 `appendSwitch("in-process-gpu")`，另附 `no-sandbox` 等，**仅测试实例生效**）绕开。
 - **历史遗留**：`verify:turnfold`/`verify:userrefs`/`verify:memory-layers` 等一批 npm script 指向的文件早已删除（跑必 ENOENT），**09-11 已从 package.json 清理**；现存真脚本只有 `verify:reasoning` / `verify:image-plugin` / `verify:packaged-tools`。新增验证请走 e2e 场景或 preflight 检查项，**别再散落一次性 `.mjs`**。
 - 手册见 `docs/TESTING.md`。
 
@@ -110,6 +110,18 @@ resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
 - **指纹内核（cloak-browsers）仅用于自动化场景**（模型经 `cloakbrowser` CLI 调用）；浏览器视图的「隐身浏览」按钮为预留位，尚未接入 CDP 嵌入。
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
+
+- **本机离线语音通话（09-11 新增，旁挂，勿侵入既有输入链路）**：右下角悬浮球一键通话，识别与合成都跑本机（`sherpa-onnx-node`，零凭据、零联网）。
+  **分工**：渲染层做采集 / 回声消除（NLMS，需要采样对齐的播放参考）/ 回声门控 / 断句 / 播放；主进程做编排（ASR 与 TTS 跑 `worker_threads`，把识别文本交给引擎、把 `item/agentMessage/delta` 转回渲染层）。
+  **关键实现约束（踩过）**：
+  ① **不能复用 `BotStreamSession`**——它把思考/工具/正文拼成一条文本且 flush 节流 1500ms，喂语音会「1.5 秒吐一坨还念 emoji」；语音必须另写只吃 `item/agentMessage/delta` 的零节流消费者（可复用的只有 `channel-bot` 的 turn 管线与 `turn/interrupt`）。
+  ② **ASR/TTS 必须在 `worker_threads` 里跑**，ONNX 推理放主进程会卡死整个应用的 IPC。
+  ③ worker 用 `new Worker(源码字符串, { eval: true })` 创建，**不能用文件路径**——打包后代码在 `app.asar` 内，而 Node 的 worker_threads 走 C++ 层读文件、不经过 Electron 对 asar 的补丁。原生模块路径由主进程 `require.resolve` 后经 `workerData` 传入。**另：eval 模式不允许顶层 `return`**。
+  ④ 全项目此前**没有任何权限处理**，`getUserMedia` 会被直接拒——已补 `setPermissionRequestHandler`/`setPermissionCheckHandler`（只放行 `media`）；macOS 另走 `systemPreferences.askForMediaAccess`。
+  ⑤ 模型放 `%APPDATA%`（不是应用目录），首次使用按需下载（约 270MB，HF / hf-mirror 双镜像 + SHA256 + `.part` 断点续传），**不随包**。
+  ⑥ 语音轮的 `effort` 用 `low`（通话优先低延迟；自定义模型档位是 low/medium/high）。
+  **验收**：纯逻辑（重采样 / NLMS / 回声门控 / 断句）在 `src/lib/voice-aec.mjs`，预检【4b】有 18 条断言（含「双讲期间地板必须冻结」——去掉冻结会红，已反证）；UI 场景 `voice-call`（22 断言，含**既有输入链路零回归守卫**）。
+  **可拆卸**：删掉 `electron/voice/`、`src/voice/`、`src/components/VoiceCallFloat.tsx` 及 `App.tsx` 里那 2 行挂载即可，其余功能零影响。
 
 - **模型选择的作用域：每个会话独立**（09-11，用户两轮反馈——先是「我切换的模型没生效」「思考又是英文」，再是「每个会话独立模型选择为啥也不行」；纯逻辑 `src/lib/model-scope.mjs`，回归场景 `model-scope`）：
   引擎 `thread/resume` **不回带 model**，模型由客户端每轮 `turn/start` 的 `model` 字段下发（rollout 的 `turn_context.model` = **该回合真正跑的模型**、`thread_settings_applied.thread_settings.model` = 会话级设置，两者是唯一权威判据），所以模型必然是会话级状态。

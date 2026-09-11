@@ -290,4 +290,20 @@ contextBridge.exposeInMainWorld("codex", {
     ipcRenderer.on("harness:event", handler);
     return () => ipcRenderer.removeListener("harness:event", handler);
   },
+  // ---- 语音通话（旁挂新增，不影响任何既有方法） ----
+  voiceStatus: () => ipcRenderer.invoke("voice:status") as Promise<{ active: boolean; state: string; runtimeReady: boolean; modelsReady: boolean; threadId: string; lastError: string }>,
+  voiceStart: (threadId: string) => ipcRenderer.invoke("voice:start", threadId) as Promise<{ ok: boolean; error?: string; status: unknown }>,
+  voiceStop: () => ipcRenderer.invoke("voice:stop") as Promise<{ ok: boolean }>,
+  voiceAudio: (samples: Float32Array) => ipcRenderer.send("voice:audio", samples),
+  voiceSpeak: (text: string, options?: { sid?: number; speed?: number }) => ipcRenderer.invoke("voice:speak", text, options) as Promise<{ ok: boolean; sampleRate?: number; samples?: Float32Array; error?: string }>,
+  voiceBarge: () => ipcRenderer.invoke("voice:barge") as Promise<{ ok: boolean }>,
+  voicePlaybackDone: () => ipcRenderer.invoke("voice:playback-done") as Promise<{ ok: boolean }>,
+  voiceModelsStatus: () => ipcRenderer.invoke("voice:models-status") as Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string }>,
+  voiceModelsInstall: () => ipcRenderer.invoke("voice:models-install") as Promise<{ ok: boolean; error?: string }>,
+  voiceMicPermission: () => ipcRenderer.invoke("voice:mic-permission") as Promise<{ status: string; error?: string }>,
+  onVoiceEvent: (listener: (event: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: unknown) => listener(value);
+    ipcRenderer.on("voice:event", handler);
+    return () => ipcRenderer.removeListener("voice:event", handler);
+  },
 });

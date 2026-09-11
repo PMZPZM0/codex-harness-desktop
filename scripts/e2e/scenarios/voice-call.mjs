@@ -1,0 +1,162 @@
+// scripts/e2e/scenarios/voice-call.mjs
+//
+// 回归场景：**语音通话悬浮入口**（本机离线识别与合成的旁挂新增）。
+//
+// 这个场景要钉住两件事，缺一不可：
+//   1) 语音入口本身可用：悬浮球在、点得开、面板内容齐全、能收起。
+//   2) **既有输入链路零回归**：语音是「旁挂」，绝不能动输入框/发送键/引用面板。
+//      所以下面专门有一组回归守卫断言——这正是「设计铁律 0」的自动化体现。
+//
+// 注意：本场景**不启动真实通话**（那需要下载约 270MB 模型 + 麦克风授权，不适合放进自动回归）。
+// 真实通话链路的正确性由 preflight 的纯逻辑断言（AEC/门控/断句）+ 人工验收覆盖。
+
+export const name = "voice-call";
+export const description = "语音悬浮入口：开关面板 + 既有输入链路零回归守卫";
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const BALL = ".voice-ball";
+const PANEL = ".voice-panel";
+
+export const steps = [
+  {
+    name: "① 进入主界面",
+    run: async (h) => {
+      // 引导页可能被跳过（真实 Key 灌进去后会自动进主界面），两种落点都接受
+      await h.waitFor(
+        `(document.body && document.body.innerText.includes("直接进入")) || !!document.querySelector(".app-shell")`,
+        { label: "引导页或主界面", timeoutMs: 30000 }
+      );
+      const hasGuide = await h.eval(`document.body.innerText.includes("直接进入")`);
+      if (hasGuide) await h.clickByText("暂时不登录，直接进入").catch(() => undefined);
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "app-shell 挂载", timeoutMs: 25000 });
+      await wait(1500);
+      h.check("已进入主界面", true);
+    },
+  },
+
+  {
+    name: "② 前置：悬浮球在、面板是关的",
+    run: async (h) => {
+      // 先断言前置条件，否则「点一下能打开」可能只是上一步的残留状态
+      h.check("前置：语音悬浮球存在", await h.exists(BALL));
+      h.check("前置：通话面板初始为关闭", !(await h.exists(PANEL)));
+      const cls = await h.eval(`(document.querySelector("${BALL}")||{}).className || ""`);
+      h.check("悬浮球初始为未通话态（无 is-listening）", !String(cls).includes("is-listening"), String(cls));
+      await h.screenshot("语音悬浮球");
+    },
+  },
+
+  {
+    name: "③ 点击悬浮球 → 面板展开",
+    run: async (h) => {
+      await h.click(BALL);
+      const opened = await h
+        .waitFor(`!!document.querySelector("${PANEL}")`, { label: "通话面板出现", timeoutMs: 6000 })
+        .then(() => true)
+        .catch(() => false);
+      h.check("点击悬浮球可展开通话面板", opened);
+      if (opened) await h.screenshot("语音面板");
+    },
+  },
+
+  {
+    name: "④ 面板内容齐全",
+    run: async (h) => {
+      if (!(await h.exists(PANEL))) {
+        h.check("面板存在（前置）", false, "上一步未打开面板");
+        return;
+      }
+      const text = String(await h.text(PANEL));
+      h.check("面板标题「语音通话」", text.includes("语音通话"), text.slice(0, 80).replace(/\n/g, " "));
+      h.check("面板说明「原有打字输入完全不受影响」", text.includes("原有打字输入完全不受影响"));
+      h.check("面板有模型状态行", text.includes("语音模型") || text.includes("无法读取模型状态"), text.slice(0, 120).replace(/\n/g, " "));
+      const buttons = await h.eval(
+        `[...document.querySelectorAll("${PANEL} button")].map(b => (b.innerText||"").trim()).join("|")`
+      );
+      h.check("面板有「开始通话」按钮", String(buttons).includes("开始通话"), String(buttons));
+      const hasBall = await h.exists(BALL);
+      h.check("面板展开时悬浮球仍在（可再次点击收起）", hasBall);
+    },
+  },
+
+  {
+    name: "⑤ 回归守卫：既有输入链路零改动",
+    run: async (h) => {
+      // 「旁挂新增」的自动化体现：语音入口出现后，原有输入相关元素必须原样还在
+      h.check("回归：输入框 .composer-editor 仍在", await h.exists(".composer-editor"));
+      h.check("回归：发送键 .send-button 仍在", await h.exists(".send-button"));
+      h.check("回归：附件按钮 .plus-spin-button 仍在", await h.exists(".plus-spin-button"));
+      h.check("回归：输入框设置区 .composer-setting 仍在", (await h.count(".composer-setting")) > 0);
+      h.check("回归：侧栏 aside.sidebar 仍在", await h.exists("aside.sidebar"));
+      h.check("回归：主区 main.workspace 仍在", await h.exists("main.workspace"));
+
+      // 真打字一遍，确认输入框功能没被语音组件截胡
+      const typed = "voice-regression-probe";
+      await h.typeInto(".composer-editor", typed);
+      const value = String(await h.text(".composer-editor"));
+      h.check("回归：输入框仍可正常输入", value.includes(typed), value.slice(0, 60));
+      // 清空，避免残留影响后续步骤/场景
+      await h.eval(`(() => {
+        const el = document.querySelector(".composer-editor");
+        if (!el) return false;
+        el.focus();
+        document.execCommand("selectAll");
+        document.execCommand("delete");
+        return true;
+      })()`);
+      await wait(200);
+    },
+  },
+
+  {
+    name: "⑥ 收起面板 → 悬浮球保留",
+    run: async (h) => {
+      const closed = await h
+        .eval(`(() => {
+          const btn = [...document.querySelectorAll("${PANEL} button")].find(b => (b.getAttribute("title")||"") === "收起");
+          if (!btn) return false;
+          btn.click();
+          return true;
+        })()`)
+        .catch(() => false);
+      h.check("面板有「收起」按钮", Boolean(closed));
+      if (closed) {
+        const gone = await h
+          .waitFor(`!document.querySelector("${PANEL}")`, { label: "面板收起", timeoutMs: 6000 })
+          .then(() => true)
+          .catch(() => false);
+        h.check("点「收起」后面板消失", gone);
+      }
+      h.check("收起后悬浮球仍在", await h.exists(BALL));
+      await h.screenshot("语音面板已收起");
+    },
+  },
+
+  {
+    name: "⑦ 悬浮球位置可持久化（拖动不改坏布局）",
+    run: async (h) => {
+      // 只断言「可写可读」的持久化通道，不模拟真实拖拽（CDP 合成 pointer 事件不稳）
+      const saved = await h.eval(`(() => {
+        localStorage.setItem("voice-float-pos", JSON.stringify({ right: 30, bottom: 120 }));
+        const raw = localStorage.getItem("voice-float-pos");
+        localStorage.removeItem("voice-float-pos");
+        return raw;
+      })()`);
+      h.check("悬浮球位置持久化通道可用", String(saved).includes("bottom"), String(saved));
+      // 还原成默认位置，避免影响用户真实使用
+      await h.eval(`localStorage.removeItem("voice-float-pos"); true`);
+    },
+  },
+
+  {
+    name: "⑧ 无渲染层报错",
+    run: async (h) => {
+      h.check(
+        "渲染层无 console.error",
+        h.consoleLog.length === 0,
+        h.consoleLog.slice(0, 3).join(" ｜ ")
+      );
+    },
+  },
+];

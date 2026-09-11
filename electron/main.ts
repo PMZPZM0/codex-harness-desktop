@@ -33,6 +33,9 @@ import { developerInstructionsLine } from "./developer-instructions";
 import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings } from "./app-settings";
 import { checkLatestUpdate, defaultDownloadDir, downloadUpdate, fileExists, installUpdate, UPDATE_CHANNEL, UPDATE_SERVER_URL } from "./updates";
 import { checkEngineUpdate, performEngineUpdate } from "./engine-updater";
+import { VoiceService } from "./voice/voice-service";
+import { ALL_VOICE_REPOS } from "./voice/model-manifest";
+import { ensureRepo, modelsSizeOnDisk, voiceModelsStatus } from "./voice/model-store";
 import {
   deleteSshServer, execSshCommand, exportSshServers, parseSshImport, readSshServers, saveSshServer, setSshServerEnabled,
   testSshConnection, writeSshServers, SshSessionManager, type SshExecResult, type SshServer, type SshTestResult,
@@ -79,6 +82,23 @@ try {
     app.disableHardwareAcceleration();
   }
 } catch { /* 设置读取失败不影响启动，保持默认 */ }
+
+// 测试开关（与 CODEX_HARNESS_USER_DATA / CODEX_HARNESS_DEBUG_PORT 同源）：
+// 把 GPU 进程合并进主进程。无 GPU 的机器 / CI / 沙箱里，Chromium 的 GPU 子进程会反复
+// 起不来并最终 FATAL 自杀（`GPU process isn't usable. Goodbye.`），表现为 e2e 连不上 CDP。
+// 只在显式设置该变量时生效，真实用户不受影响。
+if (process.env.CODEX_HARNESS_IN_PROCESS_GPU) {
+  app.commandLine.appendSwitch("in-process-gpu");
+  app.commandLine.appendSwitch("no-sandbox");
+  app.commandLine.appendSwitch("disable-gpu-sandbox");
+  app.commandLine.appendSwitch("disable-gpu-compositing");
+  app.commandLine.appendSwitch("disable-software-rasterizer");
+  // 只在测试开关下挂：渲染进程崩溃时打出确切原因（crashed / oom / killed），
+  // 否则 e2e 只能看到一句「Target crashed」，没法定位。
+  app.on("render-process-gone", (_event, _contents, details) => {
+    console.error(`[e2e-diag] 渲染进程退出 reason=${details?.reason} exitCode=${details?.exitCode}`);
+  });
+}
 void app.whenReady().then(() => {
   try {
     const gpuStatus = app.getGPUFeatureStatus();
@@ -420,6 +440,106 @@ const channelBot = new ChannelBotService(
     sendToWindow("channel-bot:event", { level, message, at: Date.now(), status: channelBot.status() });
   },
 );
+
+// ---- 语音通话（旁挂新增：不改动任何既有输入链路） ----
+// 模型放 userData 而非应用目录：重装应用不丢，与其它用户数据一致。
+const voiceModelsRoot = path.join(app.getPath("userData"), "voice-models");
+const voiceLogs: { at: number; level: "info" | "error"; message: string }[] = [];
+const voiceService = new VoiceService({
+  server,
+  getModel: async () => {
+    const model = await readCustomModel();
+    return model ? { provider: model.provider, name: model.name, model: model.model, baseUrl: model.baseUrl } : null;
+  },
+  modelsRoot: voiceModelsRoot,
+  log: (level, message) => {
+    voiceLogs.push({ at: Date.now(), level, message });
+    if (voiceLogs.length > 50) voiceLogs.shift();
+    if (level === "error") console.error(`[voice] ${message}`);
+  },
+  emit: (event) => sendToWindow("voice:event", event),
+});
+
+/** 语音模型安装的进行中标记（同一时刻只允许一个下载任务）。 */
+let voiceInstallTask: Promise<{ ok: boolean; error?: string }> | null = null;
+
+ipcMain.handle("voice:status", () => voiceService.status());
+
+ipcMain.handle("voice:start", async (_event, threadId: string) => {
+  const result = await voiceService.start({ threadId: String(threadId ?? "") });
+  return { ...result, status: voiceService.status() };
+});
+
+ipcMain.handle("voice:stop", async () => {
+  await voiceService.stop();
+  return { ok: true, status: voiceService.status() };
+});
+
+// 音频块走 send（不等回包），避免每 64ms 一次 IPC 往返带来的抖动
+ipcMain.on("voice:audio", (_event, samples: Float32Array) => {
+  void voiceService.handleAudio(samples).catch((error) => console.error("[voice] audio:", error));
+});
+
+ipcMain.handle("voice:speak", async (_event, text: string, options?: { sid?: number; speed?: number }) => {
+  return voiceService.speak(String(text ?? ""), options);
+});
+
+ipcMain.handle("voice:barge", () => voiceService.barge());
+
+ipcMain.handle("voice:playback-done", () => {
+  voiceService.notifyPlaybackDone();
+  return { ok: true };
+});
+
+ipcMain.handle("voice:models-status", async () => {
+  const status = await voiceModelsStatus(voiceModelsRoot, ALL_VOICE_REPOS);
+  return { ...status, bytes: modelsSizeOnDisk(voiceModelsRoot), root: voiceModelsRoot };
+});
+
+ipcMain.handle("voice:models-install", async () => {
+  if (voiceInstallTask) return { ok: false, error: "模型正在下载中" };
+  const task = (async (): Promise<{ ok: boolean; error?: string }> => {
+    const failures: string[] = [];
+    let index = 0;
+    const totalRepos = ALL_VOICE_REPOS.length;
+    for (const repo of ALL_VOICE_REPOS) {
+      index += 1;
+      const repoFailures = await ensureRepo(voiceModelsRoot, repo, (progress) => {
+        sendToWindow("voice:event", {
+          type: "download",
+          repoIndex: index,
+          repoTotal: totalRepos,
+          percent: progress.percent,
+          message: progress.message,
+        });
+      });
+      failures.push(...repoFailures.map((f) => `${repo.repo} → ${f}`));
+    }
+    await voiceService.refreshModelsReady();
+    sendToWindow("voice:event", { type: "download", percent: 100, message: "完成" });
+    if (failures.length) return { ok: false, error: failures.slice(0, 3).join("；") };
+    return { ok: true };
+  })();
+  voiceInstallTask = task;
+  try {
+    return await task;
+  } finally {
+    voiceInstallTask = null;
+  }
+});
+
+/** macOS 需要显式申请麦克风授权；Windows/Linux 直接按「已授权」处理。 */
+ipcMain.handle("voice:mic-permission", async () => {
+  if (process.platform !== "darwin") return { status: "granted" };
+  try {
+    const current = systemPreferences.getMediaAccessStatus("microphone");
+    if (current === "granted") return { status: "granted" };
+    const granted = await systemPreferences.askForMediaAccess("microphone");
+    return { status: granted ? "granted" : current };
+  } catch (error: any) {
+    return { status: "unknown", error: String(error?.message ?? error) };
+  }
+});
 
 async function readCustomModel(): Promise<CustomModelFile | null> {
   try {
@@ -1402,10 +1522,26 @@ app.whenReady().then(async () => {
       return placeholderPngResponse();
     }
   });
+  // 语音通话：授予麦克风权限。此前全项目没有任何权限处理，getUserMedia 会被直接拒绝。
+  // 只放行 media，其余权限一律沿用 Electron 默认（不放大授权面）。
+  // macOS 上还需要 Info.plist 的 NSMicrophoneUsageDescription（见 build/entitlements 与文档），
+  // 且首次调用会弹系统授权框，由系统偏好设置持久记忆。
+  try {
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+      callback(permission === "media");
+    });
+    session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+      return permission === "media";
+    });
+  } catch (error) {
+    console.warn("voice permission handler failed:", error);
+  }
   createWindow();
   server.on("event", (event) => {
     sendToWindow("codex:event", event);
     channelBot.handleCodexEvent(event);
+    // 语音通话：只旁听事件（正文增量 / 回合生命周期），不改变事件本身的任何流向
+    voiceService.handleCodexEvent(event);
     // 引擎就绪后按设置启停健康看门狗（engineWatchdog 默认开）
     if (event.kind === "status" && event.status === "ready") void syncEngineWatchdog();
     // 手机对话页实时同步：流式增量 / 用户消息 / 回合完成

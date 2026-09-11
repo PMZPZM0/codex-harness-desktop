@@ -486,6 +486,18 @@ interface Window {
     onEvent(listener: (event: CodexEvent) => void): () => void;
     onChannelBotEvent(listener: (event: any) => void): () => void;
     onHarnessEvent(listener: (event: any) => void): () => void;
+    // ---- 语音通话（本机离线识别与合成，旁挂新增） ----
+    voiceStatus(): Promise<{ active: boolean; state: string; runtimeReady: boolean; modelsReady: boolean; threadId: string; lastError: string }>;
+    voiceStart(threadId: string): Promise<{ ok: boolean; error?: string; status: unknown }>;
+    voiceStop(): Promise<{ ok: boolean }>;
+    voiceAudio(samples: Float32Array): void;
+    voiceSpeak(text: string, options?: { sid?: number; speed?: number }): Promise<{ ok: boolean; sampleRate?: number; samples?: Float32Array; error?: string }>;
+    voiceBarge(): Promise<{ ok: boolean }>;
+    voicePlaybackDone(): Promise<{ ok: boolean }>;
+    voiceModelsStatus(): Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string }>;
+    voiceModelsInstall(): Promise<{ ok: boolean; error?: string }>;
+    voiceMicPermission(): Promise<{ status: string; error?: string }>;
+    onVoiceEvent(listener: (event: any) => void): () => void;
     // 自更新：网页源（发布站）/ GitHub Releases 双源可切换
     updateCheck(input?: { source?: "web" | "github" }): Promise<{ ok: boolean; info?: { hasUpdate: boolean; reason: string; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string }; currentVersion?: string; serverUrl?: string; source?: string; error?: string }>;
     updateDownload(input: { downloadUrl: string; filename?: string }): Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;
