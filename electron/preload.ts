@@ -168,6 +168,7 @@ contextBridge.exposeInMainWorld("codex", {
   setProviderEffort: (input: { provider: string; model: string; effort: string }) => ipcRenderer.invoke("custom-model:set-effort", input),
   writeClipboard: (text: string) => ipcRenderer.invoke("clipboard:write", text),
   createScratchDir: () => ipcRenderer.invoke("scratch:create"),
+  saveIdentity: (input: { assistantName?: string; userName?: string; about?: string }) => ipcRenderer.invoke("personalization:save-identity", input),
   applyCustomModel: () => ipcRenderer.invoke("custom-model:apply"),
   upsertProviderModel: (input: { provider: string; model: unknown }) => ipcRenderer.invoke("custom-model:upsert-model", input),
   removeProviderModel: (input: { provider: string; modelId: string }) => ipcRenderer.invoke("custom-model:remove-model", input),
@@ -334,4 +335,17 @@ contextBridge.exposeInMainWorld("codex", {
     ipcRenderer.on("voice:event", handler);
     return () => ipcRenderer.removeListener("voice:event", handler);
   },
+  // 语音通话「按键启动」：全局快捷键（即便应用没聚焦也能唤起）
+  voiceHotkeySet: (input: { accelerator: string; enabled?: boolean }) => ipcRenderer.invoke("voice:hotkey-set", input) as Promise<{ ok: boolean; error?: string }>,
+  voiceHotkeyGet: () => ipcRenderer.invoke("voice:hotkey-get") as Promise<{ registered: string }>,
+  onVoiceHotkey: (listener: (event: { accelerator: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: { accelerator: string }) => listener(value);
+    ipcRenderer.on("voice:hotkey", handler);
+    return () => ipcRenderer.removeListener("voice:hotkey", handler);
+  },
+  // 语音唤醒：持续聆听 + 文本匹配唤醒词（会持续占用 CPU）
+  voiceWakeStart: () => ipcRenderer.invoke("voice:wake-start") as Promise<{ ok: boolean; error?: string }>,
+  voiceWakeAudio: (samples: Float32Array) => ipcRenderer.invoke("voice:wake-audio", samples) as Promise<{ text: string }>,
+  voiceWakeReset: () => ipcRenderer.invoke("voice:wake-reset") as Promise<{ ok: boolean }>,
+  voiceWakeStop: () => ipcRenderer.invoke("voice:wake-stop") as Promise<{ ok: boolean }>,
 });

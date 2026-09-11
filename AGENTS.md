@@ -113,6 +113,8 @@ resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **首次对话身份引导（09-12 新增）**：未完成引导（personalization.json `onboarded!==true`）时，宿主给新会话的 `thread/start` 带 `developerInstructions`（热情欢迎 + 邀请给 Codex 取名字 + 询问称呼/使用场景）并注册动态工具 `identity_onboard`（assistantName/userName/about）。工具落盘走 `personalization:save-identity`（写 assistantName/userContext/onboarded=true，重建 AGENTS.md，**不重启引擎**——AGENTS.md 每新会话由引擎读取，天然「新会话生效、已配置不再引导」）。协议考证：`ThreadStartParams.developerInstructions`（camelCase，schema 实证）。`writePersonalization` 已改 merge 语义（partial 保存不清其它字段）。
+
 - **长会话窗口化 + 增量加载（09-12，ZCode 式会话切换）**：逆向 ZCode app.asar 得出其「切换秒开」三要素——窗口级 host 子进程常驻、snapshot+deltas 订阅增量、**会话历史按行分页只挂最新一屏**。宿主侧落地第三条（引擎侧多 thread 并行本就同构）：
   ① `resumeThreadLight`（excludeTurns:true + desc 一页）首屏只取引擎单页上限 100 回合，`TURN_WINDOW=40` 只挂最近 40 回合——打开成本与历史长度无关。
   ② `loadEarlierTurns` 增量化：内存还有未渲染的 → 只扩 `turnWindow[id]` 窗口（零网络）；内存耗尽且有游标 → `thread/turns/list` 按 cursor 拉**一页**（引擎单页上限 100，请求 200 会被静默截到 100）拼到最前，并按 scrollHeight 增量补偿 scrollTop（双 rAF 等提交）防止视口跳动。

@@ -1,4 +1,4 @@
-import { Menu, Notification, app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, nativeImage, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, session, shell, systemPreferences } from "electron";
+import { Menu, Notification, app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, ipcMain, nativeImage, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, session, shell, systemPreferences } from "electron";
 import os from "node:os";
 import nodeNet from "node:net";
 import { execSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -513,6 +513,44 @@ ipcMain.handle("voice:preview-voice", async (_event, input?: { sid?: number; spe
   // 设置页「音色试听」：不必在通话中，内部会临时起一个 TTS worker，合成完即销毁
   return voiceService.previewVoice(input ?? {});
 });
+
+// ── 语音通话「按键启动」：系统级快捷键（Electron globalShortcut）──
+// 用全局快捷键而不是页面内 keydown：即便应用没聚焦、焦点在别处也能唤起语音。
+let registeredVoiceHotkey = "";
+function applyVoiceHotkey(accelerator: string): { ok: boolean; error?: string } {
+  try {
+    if (registeredVoiceHotkey) {
+      globalShortcut.unregister(registeredVoiceHotkey);
+      registeredVoiceHotkey = "";
+    }
+    if (!accelerator) return { ok: true };
+    const ok = globalShortcut.register(accelerator, () => {
+      // 触发时把事件推给渲染层，由 VoiceCallFloat 决定开始/结束通话
+      sendToWindow("voice:hotkey", { accelerator });
+    });
+    if (!ok) return { ok: false, error: `快捷键「${accelerator}」注册失败（可能被其它程序占用）` };
+    registeredVoiceHotkey = accelerator;
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+}
+// 启动时按已保存的设置注册一次
+app.whenReady().then(() => {
+  const s = require("./voice/voice-settings").loadVoiceSettings(app.getPath("userData"));
+  if (s.hotkey?.enabled && s.hotkey.accelerator) applyVoiceHotkey(s.hotkey.accelerator);
+});
+ipcMain.handle("voice:hotkey-set", async (_event, input: { accelerator: string; enabled?: boolean }) => {
+  const accelerator = input?.enabled === false ? "" : String(input?.accelerator ?? "");
+  return applyVoiceHotkey(accelerator);
+});
+ipcMain.handle("voice:hotkey-get", () => ({ registered: registeredVoiceHotkey }));
+
+// ── 语音唤醒（持续聆听 + 文本匹配唤醒词）──
+ipcMain.handle("voice:wake-start", () => voiceService.startWakeListener());
+ipcMain.handle("voice:wake-audio", async (_event, samples: Float32Array) => voiceService.feedWakeAudio(samples));
+ipcMain.handle("voice:wake-reset", async () => { await voiceService.resetWakeStream(); return { ok: true }; });
+ipcMain.handle("voice:wake-stop", async () => { await voiceService.stopWakeListener(); return { ok: true }; });
 
 ipcMain.handle("voice:barge", () => voiceService.barge());
 
@@ -4323,6 +4361,24 @@ ipcMain.handle("personalization:save", async (_event, input: { nickname?: unknow
   const model = await readCustomModel();
   // 重写 config.toml：把迁移前残留在 developer_instructions 里的旧个性化段清掉，并重启引擎
   if (model) await applyCustomModel(model);
+  return config;
+});
+/** 首次对话引导保存（identity_onboard 工具的落点）：写助手名/用户称呼/使用场景，
+ *  置 onboarded=true（此后新会话不再注入引导指令），重建 AGENTS.md 即时生效——
+ *  刻意不重启引擎、不重写 config.toml（AGENTS.md 每个新会话开始时由引擎读取）。 */
+ipcMain.handle("personalization:save-identity", async (_event, input: { assistantName?: unknown; userName?: unknown; about?: unknown }) => {
+  const current = await readPersonalization();
+  const contextParts: string[] = [];
+  const userName = String(input.userName ?? "").trim();
+  if (userName) contextParts.push(`希望被称呼为「${userName}」`);
+  const about = String(input.about ?? "").trim();
+  if (about) contextParts.push(about);
+  const config = await writePersonalization({
+    assistantName: input.assistantName,
+    userContext: contextParts.join("；"),
+    onboarded: true,
+  });
+  await applyPersonalizationToAgentsMd(config, codexHome);
   return config;
 });
 

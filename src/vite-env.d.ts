@@ -120,7 +120,7 @@ type PluginMarketEntry = {
 };
 type PluginMarketInstallResult = { id: string; name: string; path: string; version: string; description: string; marketId: string; sourceUrl: string; engineRegistered?: boolean; engineCheckMessage?: string };
 type LocalSkillEntry = { name: string; folder?: string; path: string; description: string; descriptionZh?: string; marketId?: string; pluginId?: string; sourceUrl?: string; installedAt?: string; engineRegistered?: boolean; engineCheckMessage?: string; source?: "cocoloop" | "skillhub" | "local"; enabled?: boolean; allowedTools?: string[]; icon?: string; category?: string };
-type PersonalizationConfig = { nickname?: string; customInstructions?: string };
+type PersonalizationConfig = { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean };
 
 /** SSH 跳板机（ProxyJump）配置 */
 type SshJumpHost = {
@@ -306,7 +306,8 @@ interface Window {
     /** 设置/清除某个 MCP 工具的权限档位；mode 传 null 清除。改动后引擎重启生效 */
     setMcpToolPermission(server: string, tool: string, mode: "deny" | "ask" | "allow" | null): Promise<{ ok: boolean; updated: boolean; reason?: string }>;
     readPersonalization(): Promise<PersonalizationConfig>;
-    savePersonalization(input: { nickname?: string; customInstructions?: string }): Promise<PersonalizationConfig>;
+    savePersonalization(input: { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean }): Promise<PersonalizationConfig>;
+    saveIdentity(input: { assistantName?: string; userName?: string; about?: string }): Promise<unknown>;
     /** 应用级运行时开关（联网搜索等） */
     readAppSettings(): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off" }>;
     saveAppSettings(patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off" }): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean }>;
@@ -374,6 +375,7 @@ interface Window {
     setProviderEffort(input: { provider: string; model: string; effort: string }): Promise<CustomModelState>;
     writeClipboard(text: string): Promise<boolean>;
     createScratchDir(): Promise<string>;
+    saveIdentity(input: { assistantName?: string; userName?: string; about?: string }): Promise<unknown>;
     applyCustomModel(): Promise<CustomModelState>;
     upsertProviderModel(input: { provider: string; model: ProviderModelConfig }): Promise<CustomModelState>;
     removeProviderModel(input: { provider: string; modelId: string }): Promise<CustomModelState>;
@@ -521,6 +523,8 @@ interface Window {
         mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
         barge: { gateDb: number; mode: "auto" | "manual" };
         modelHost: "auto" | "huggingface" | "hf-mirror";
+        hotkey: { enabled: boolean; accelerator: string };
+        wake: { enabled: boolean; phrase: string };
       };
       ttsVoices: Record<number, string>;
       modelHosts: Record<string, string>;
@@ -532,8 +536,17 @@ interface Window {
       mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
       barge: { gateDb: number; mode: "auto" | "manual" };
       modelHost: "auto" | "huggingface" | "hf-mirror";
+      hotkey: { enabled: boolean; accelerator: string };
+      wake: { enabled: boolean; phrase: string };
     }>;
     onVoiceEvent(listener: (event: any) => void): () => void;
+    voiceHotkeySet(input: { accelerator: string; enabled?: boolean }): Promise<{ ok: boolean; error?: string }>;
+    voiceHotkeyGet(): Promise<{ registered: string }>;
+    onVoiceHotkey(listener: (event: { accelerator: string }) => void): () => void;
+    voiceWakeStart(): Promise<{ ok: boolean; error?: string }>;
+    voiceWakeAudio(samples: Float32Array): Promise<{ text: string }>;
+    voiceWakeReset(): Promise<{ ok: boolean }>;
+    voiceWakeStop(): Promise<{ ok: boolean }>;
     // 自更新：网页源（发布站）/ GitHub Releases 双源可切换
     updateCheck(input?: { source?: "web" | "github" }): Promise<{ ok: boolean; info?: { hasUpdate: boolean; reason: string; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string }; currentVersion?: string; serverUrl?: string; source?: string; error?: string }>;
     updateDownload(input: { downloadUrl: string; filename?: string }): Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;
