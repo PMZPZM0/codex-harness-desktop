@@ -2805,6 +2805,92 @@ ipcMain.handle("relay:key-billing", async (_e, input: { baseUrl: string; apiKey:
   return data;
 });
 
+// ── 付费订阅：应用内注册 → 自动登录 → 套餐目录 → 站内付款弹窗 ──
+// 协议实证（Wei-Shaw/sub2api + pptoken 实测 09-12）：
+//   POST /api/v1/auth/register {email,password,aff_code?}（站点可选用 verify_code/turnstile，
+//   未开启时三字段即可；开启时报错原文透传，渲染层降级为外部注册页）
+ipcMain.handle("relay:register", async (_e, input: { baseUrl: string; email: string; password: string; affCode?: string }) => {
+  const baseUrl = relayBase(input.baseUrl);
+  const email = String(input.email ?? "").trim();
+  const password = String(input.password ?? "");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("邮箱格式不正确");
+  if (password.length < 6) throw new Error("密码至少 6 位");
+  const { ok, data, message } = await relayRequest(`${baseUrl}/api/v1/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, ...(input.affCode ? { aff_code: input.affCode } : {}) }),
+  });
+  if (!ok) throw new Error("注册失败：" + (message || `HTTP ${data?.status ?? ""}`));
+  // 注册成功 = 立即登录（同一套凭据），落多账号库并设为当前 —— 真正的「注册完自动登录」
+  const login = await relayLoginRaw(baseUrl, email, password);
+  const account: RelayAccount = {
+    baseUrl,
+    email,
+    accessToken: login.access_token,
+    refreshToken: login.refresh_token,
+    tokenExpiresAt: login.expires_in ? Date.now() + login.expires_in * 1000 : undefined,
+  };
+  if (safeStorage.isEncryptionAvailable()) {
+    try { account.passwordEnc = safeStorage.encryptString(password).toString("base64"); } catch { /* 加密不可用就不存密码 */ }
+  }
+  await writeRelayAccount(account);
+  return { email, baseUrl, balance: Number(login.user?.balance ?? 0) };
+});
+// 套餐市场目录（站方定价/有效期/划线价/features），登录后可拉
+ipcMain.handle("relay:payment-plans", async () => {
+  const account = await readRelayAccount();
+  if (!account?.accessToken) throw new Error("尚未登录中转站");
+  const plans = await relayAuthedFetch(account, "/api/v1/payment/plans");
+  const arr = Array.isArray(plans) ? plans : Array.isArray(plans?.data) ? plans.data : [];
+  return arr.filter((p: any) => p?.for_sale !== false);
+});
+// 付款页弹窗：独立窗口打开 {站点}/purchase，首帧加载后把面板 token 注入站点 localStorage
+// （sub2api 前端键名实证：auth_token / refresh_token / token_expires_at）再刷新一次 —— 打开即登录态，
+// 用户在站内完成选套餐+支付；应用侧同时轮询 subscriptions/summary 等待新订阅出现。
+let purchaseWindow: Electron.BrowserWindow | null = null;
+ipcMain.handle("relay:open-purchase", async () => {
+  const account = await readRelayAccount();
+  if (!account?.accessToken) throw new Error("尚未登录中转站");
+  const base = relayBase(account.baseUrl);
+  if (purchaseWindow && !purchaseWindow.isDestroyed()) {
+    purchaseWindow.focus();
+    return { ok: true, url: `${base}/purchase` };
+  }
+  const win = new BrowserWindow({
+    width: 1120,
+    height: 840,
+    minWidth: 760,
+    minHeight: 560,
+    title: "订阅支付 · 中转站",
+    autoHideMenuBar: true,
+    backgroundColor: "#0d0f12",
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  purchaseWindow = win;
+  let injected = false;
+  win.webContents.on("did-finish-load", async () => {
+    if (injected || win.isDestroyed()) return;
+    injected = true;
+    try {
+      const script = [
+        `localStorage.setItem("auth_token", ${JSON.stringify(account.accessToken ?? "")});`,
+        account.refreshToken ? `localStorage.setItem("refresh_token", ${JSON.stringify(account.refreshToken)});` : "",
+        `localStorage.setItem("token_expires_at", String(${account.tokenExpiresAt ?? Date.now() + 3600_000}));`,
+        "true;",
+      ].join(" ");
+      await win.webContents.executeJavaScript(script, true);
+      win.webContents.reload();
+    } catch { /* 注入失败 = 用户在站内手动登录，不堵流程 */ }
+  });
+  win.on("closed", () => { if (purchaseWindow === win) purchaseWindow = null; });
+  // loadURL 不阻塞 IPC 返回：收银台页加载慢/失败（代理、断网）不应卡死订阅流程——
+  // 渲染层拿到返回值就开始轮询 summary（用户也可以在站点官网手动付款后点「我已完成支付」）
+  void win.loadURL(`${base}/purchase`).catch((error: unknown) => {
+    console.log("[relay-purchase] 支付页加载失败:", error instanceof Error ? error.message : String(error));
+  });
+  return { ok: true, url: `${base}/purchase` };
+});
+
 // ── OpenAI 官方订阅（ChatGPT 登录）：走引擎原生 codex login --device-auth 设备码流程 ──
 // 登录成功后引擎在 CODEX_HOME/auth.json 拿到 ChatGPT tokens，config 由 applyCustomModel
 // 对 provider="openai-official" 特判（不写 model_provider，写 preferred_auth_method="chatgpt"）。
