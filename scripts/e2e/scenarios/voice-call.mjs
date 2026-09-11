@@ -203,4 +203,68 @@ export const steps = [
       h.check("打断方式可切到「手动」", Boolean(switched));
     },
   },
+
+  {
+    name: "⑩ 开发工具 → 语音模型：卡片布局 + 按钮在右 + 导入提示",
+    run: async (h) => {
+      // 关掉设置弹窗，回到主界面（按 ESC 触发 React 的关闭逻辑）
+      await h.pressKey("Escape");
+      await wait(400);
+      // 重新打开设置 → 切到"开发工具"
+      await h.eval(`(() => {
+        const btns = [...document.querySelectorAll("button")];
+        const t = btns.find(b => (b.getAttribute("title") || b.getAttribute("aria-label") || "").trim() === "设置");
+        if (t) t.click();
+      })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置弹窗", timeoutMs: 5000 });
+      await wait(300);
+      const found = await h.eval(`(() => {
+        const btns = [...document.querySelectorAll(".settings-nav button")];
+        const t = btns.find(b => (b.innerText || "").trim() === "开发工具");
+        if (t) { t.click(); return true; } return false;
+      })()`);
+      h.check("设置导航里有「开发工具」", Boolean(found));
+      await h.waitFor(`!!document.querySelector(".voice-devtools-card")`, { label: "语音模型卡片", timeoutMs: 6000 });
+      // 卡片头（图标 + 标题 + sherpa-onnx 副标题）
+      const cardText = await h.text(".voice-devtools-card").catch(() => "");
+      h.check("卡片标题有「语音模型」", String(cardText).includes("语音模型"));
+      h.check("卡片描述「生产构建不打包」", String(cardText).includes("生产构建不打包"));
+      // 按钮在右边（量最后一个按钮的右边到卡片右边的距离；< 卡片左内边距就算"贴右"）
+      const layout = await h.eval(`(() => {
+        const buttons = [...document.querySelectorAll(".voice-devtools-actions button")];
+        if (!buttons.length) return null;
+        const last = buttons[buttons.length - 1];
+        const first = buttons[0];
+        const card = last.closest(".voice-devtools-card");
+        const lr = last.getBoundingClientRect();
+        const fr = first.getBoundingClientRect();
+        const cr = card.getBoundingClientRect();
+        return {
+          rightGap: Math.round(cr.right - lr.right),
+          leftGap: Math.round(fr.left - cr.left),
+        };
+      })()`);
+      h.check("操作按钮贴右边（右边距 < 左边距）", layout && layout.rightGap < layout.leftGap, JSON.stringify(layout));
+      // 按钮文字
+      const btnLabels = await h.eval(`(() => {
+        return [...document.querySelectorAll(".voice-devtools-actions button")].map(b => (b.innerText || "").trim());
+      })()`);
+      h.check("下载模型按钮存在", String(btnLabels).includes("下载模型"), JSON.stringify(btnLabels));
+      h.check("本地导入按钮存在", String(btnLabels).includes("本地导入"), JSON.stringify(btnLabels));
+      // 路径行
+      const pathText = await h.text(".voice-devtools-path").catch(() => "");
+      h.check("显示模型路径", String(pathText).includes("路径") && /[\\/]/.test(String(pathText)), String(pathText).slice(0, 80));
+      // 导入提示 details（默认收着）
+      const hintPresent = await h.exists(".voice-devtools-import-hint");
+      h.check("本地导入提示 details 存在", Boolean(hintPresent));
+      // 展开后再校验
+      if (hintPresent) {
+        await h.eval(`(() => { const d = document.querySelector(".voice-devtools-import-hint"); if (d) d.open = true; })()`);
+        await wait(200);
+        const hintText = await h.text(".voice-devtools-import-hint-body").catch(() => "");
+        h.check("导入提示列出三种布局", /HF 标准快照/.test(String(hintText)) && /单独某个仓库/.test(String(hintText)) && /仓库根/.test(String(hintText)));
+        h.check("导入提示列出仓库 basename", /sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30/.test(String(hintText)) && /vad/.test(String(hintText)) && /sherpa-onnx-vits-zh-ll/.test(String(hintText)));
+      }
+    },
+  },
 ];
