@@ -1689,6 +1689,8 @@ const reasoningDuration = new Map<string, number>();
 const bufferedAgentRevealStarts = new Map<string, string>();
 // reasoning 同理：完成快照一次性交付思考全文时，渐进揭示避免"瞬间冒出来"
 const bufferedReasoningRevealStarts = new Map<string, string>();
+// 思考出字进度表（模块级）：同 revealProgressStore，防「运行中切会话再切回重播出字」
+const revealReasoningProgress = new Map<string, string>();
 // 命令/动态工具/文件编辑内容在 completed 快照里整包交付时，也从旧内容继续追字。
 const bufferedToolRevealStarts = new Map<string, string>();
 
@@ -4548,6 +4550,12 @@ function revealStepForReasoning(remaining: number) {
   if (remaining > 300) return 2;
   return 1;
 }
+// 播放进度表（模块级，跨组件卸载存活）：key -> 已播放到的正文前缀。
+// 运行中的回合切去别的会话再切回来，组件会卸载重建（state 全丢）——没有这张表，
+// active=true 时 initial 会退回「前 10 字」从头重播整段出字（用户实测的重播 bug）。
+// 记录进度后：切回来从上次进度继续平滑追剩余增量；完成后保留全文前缀防二次重播。
+const revealProgressStore = new Map<string, string>();
+
 function usePacketRevealText(
   key: string,
   text: string,
@@ -4558,6 +4566,8 @@ function usePacketRevealText(
   const initial = (() => {
     const marked = markerStore?.get(key);
     if (marked != null && text.startsWith(marked)) return marked;
+    const progressed = revealProgressStore.get(key);
+    if (progressed != null && text.startsWith(progressed)) return progressed;
     if (active && text.length >= threshold) return text.slice(0, Math.min(10, text.length));
     return text;
   })();
@@ -4572,6 +4582,14 @@ function usePacketRevealText(
     let start = displayedRef.current;
     if (marked != null && text.startsWith(marked) && start.length < marked.length) {
       start = marked;
+      displayedRef.current = start;
+      setDisplayed(start);
+    }
+    // 进度表优先级介于 marker 与本地 state 之间：跨卸载重建后本地 state 是空的（initial
+    // 已读过进度表），这里再对齐一次，兜住「initial 读了但 effect 前文本又追加」的窗口。
+    const progressed = revealProgressStore.get(key);
+    if (progressed != null && text.startsWith(progressed) && start.length < progressed.length) {
+      start = progressed;
       displayedRef.current = start;
       setDisplayed(start);
     }
@@ -4605,11 +4623,14 @@ function usePacketRevealText(
       end = Math.min(text.length, end + step);
       const next = text.slice(0, end);
       displayedRef.current = next;
+      revealProgressStore.set(key, next);
       setDisplayed(next);
       window.dispatchEvent(new Event("codex:packet-reveal"));
       if (end >= text.length) {
         window.clearInterval(timer);
         markerStore?.delete(key);
+        // 进度表保留全文前缀：运行中的回合还没结束，切会话回来时 active 仍为 true，
+        // 若删掉进度会从「前 10 字」二次重播。文本不匹配时由上方分支自然清理。
         setRevealing(false);
       }
     }, 16);
@@ -4637,6 +4658,8 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
   const initialReveal = useMemo(() => {
     const marked = bufferedReasoningRevealStarts.get(String(item.id));
     if (marked != null && text.startsWith(marked)) return marked;
+    const progressed = revealReasoningProgress.get(String(item.id));
+    if (progressed != null && text.startsWith(progressed)) return progressed;
     if (turnActive && text.length >= 24) return text.slice(0, Math.min(10, text.length));
     return text;
   }, [item.id]);
@@ -4649,6 +4672,13 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
     let start = displayedRef.current;
     if (markedStart != null && text.startsWith(markedStart) && start.length < markedStart.length) {
       start = markedStart;
+      displayedRef.current = start;
+      setDisplayed(start);
+    }
+    // 进度表对齐：跨卸载重建后从上次播放进度续追，不从头重播（同 revealProgressStore）
+    const progressed = revealReasoningProgress.get(String(item.id));
+    if (progressed != null && text.startsWith(progressed) && start.length < progressed.length) {
+      start = progressed;
       displayedRef.current = start;
       setDisplayed(start);
     }
@@ -4693,11 +4723,13 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
       end = Math.min(text.length, end + step);
       const next = text.slice(0, end);
       displayedRef.current = next;
+      revealReasoningProgress.set(String(item.id), next);
       setDisplayed(next);
       window.dispatchEvent(new Event("codex:packet-reveal"));
       if (end >= text.length) {
         window.clearInterval(timer);
         bufferedReasoningRevealStarts.delete(String(item.id));
+        // 进度保留全文：回合未结束前切会话回来 active 仍 true，删了会二次重播
         setRevealing(false);
       }
     }, 16);
