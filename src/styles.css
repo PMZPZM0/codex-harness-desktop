@@ -20747,3 +20747,14 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 .voice-subtitle.user .voice-subtitle-text { color: var(--text); }
 .voice-subtitle.agent .voice-subtitle-text { color: var(--text); }
+
+
+/* 设置页：快捷键键帽 + 唤醒词输入 */
+.voice-kbd {
+  padding: 3px 9px; border-radius: 5px;
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+  border: 1px solid var(--line-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px; color: var(--text);
+  white-space: nowrap;
+}
