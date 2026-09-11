@@ -13,6 +13,7 @@
     "check": "npm run build && node scripts/check-preflight.mjs",
     "e2e": "node scripts/e2e/run.mjs",
     "e2e:list": "node scripts/e2e/run.mjs --list",
+    "verify": "npm run check && npm run e2e",
     "verify:reasoning": "node scripts/verify-reasoning-transport.cjs",
     "verify:image-plugin": "node scripts/verify-image-plugin.mjs",
     "verify:packaged-tools": "node scripts/verify-packaged-tools.cjs",

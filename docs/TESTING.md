@@ -2,6 +2,35 @@
 
 本项目的自动化验证分两层，**目的只有一个：改完代码后不用手点一遍**。
 
+## 〇、验收门槛（硬性要求）
+
+**本项目任何源码改动，一律以「自动验收全绿」为完成标准。禁止「我改完了，你自己点一下试试」。**
+
+```bash
+npm run verify   # = npm run check && npm run e2e，退出码 0 才算完成
+```
+
+- **只跑一半不算验收**：`check` 过但 `e2e` 没过 = 没完成，不许提交。
+- **改了哪个模块，就给哪个模块补场景**：在 `scripts/e2e/scenarios/` 加/改场景，让这次验证沉淀成下次的自动回归。不要写一次性脚本跑完就丢——09-06 那批 `verify-*.mjs` 全员消失就是这么来的。
+- **GUI 起不来时**最低跑 `check`（离线可用），并在提交信息里写明 `e2e` 未跑的原因。
+
+### Codex 引擎自己怎么跑
+
+引擎跑在应用体内，而 `e2e` 会再拉起一个**隔离实例**，两者不冲突。实测依据：单实例锁（`electron/main.ts:1344`）按 `userData` 隔离，E2E 用临时 profile，两实例完全独立并存——A 窗口里写的 `window.__PROBE_TAG__` 在 B 里读不到，两个 electron 进程都存活。
+
+```bash
+# 推荐：随包 node，不依赖 npm
+resources/tools/node/node.exe scripts/e2e/run.mjs smoke
+resources/tools/node/node.exe scripts/e2e/run.mjs --list     # 列出场景
+
+# 有 node 在 PATH 时等价于
+npm run check && npm run e2e
+```
+
+注意 **E2E 跑的是构建产物**（`dist/` + `dist-electron/`）；只跑 `e2e` 而不跑 `check` 时，务必先确保产物不过期（`check` 含构建，会替你保证这点）。
+
+---
+
 | 命令 | 层级 | 需要 GUI | 耗时 | 能发现什么 |
 |---|---|---|---|---|
 | `npm run check` | 离线预检 | 否 | ~1 分钟（含构建） | 编译不过、产物没重建、IPC 桥接与类型不一致、CSS 类没规则 |

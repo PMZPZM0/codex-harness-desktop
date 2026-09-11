@@ -2,6 +2,41 @@
 
 本文件供 Codex 引擎读取：进到本项目（Codex Harness Desktop 桌面应用的源码 / 或本机运行环境）时，先读这里就知道「环境里有什么、缺什么怎么装、怎么调用」。保持简洁，详细手册见 `docs/TOOLCHAIN.md`（若存在）。
 
+## ⛔ 验收铁律（硬性要求，2026-09-11 起生效，先读这条）
+
+**本项目任何源码改动，一律以「自动验收通过」为完成标准。禁止「我改完了，你自己点一下试试」。**
+
+改动完成 = 下面这条命令**退出码为 0**：
+
+```bash
+npm run verify     # 等价于 npm run check && npm run e2e
+```
+
+| 层级 | 命令 | 覆盖什么 | 失败意味什么 |
+|---|---|---|---|
+| ① 离线预检 | `npm run check` | 构建 + **产物新鲜度** + IPC 三件套一致性（main.ts handler ↔ preload 桥接 ↔ vite-env.d.ts 方法面）+ CSS 类覆盖告警 | 改了没重建 / 桥接漏了类型 / 有死链 |
+| ② UI 冒烟 | `npm run e2e` | 自动拉起**已构建**应用跑剧本，逐步截图到 `.e2e-artifacts/shots/` | 界面真破了相（看截图即知） |
+
+三条纪律：
+
+1. **只跑一半不算验收**。`check` 过但 `e2e` 没过 = 没完成，不许提交。
+2. **改了哪个模块，就给哪个模块补/改场景**。在 `scripts/e2e/scenarios/` 加 `<名>.mjs`（导出 `steps` 数组）或往现有场景加步骤——**让这次验证沉淀成下次的自动回归**，不许写成一次性脚本跑完就丢（这正是 09-06 那批 `verify-*.mjs` 全员消失的教训）。
+3. **断言必须带前置条件**（先断言「弹窗是关的」再点开），否则上一步的残留状态会导致假通过。
+
+GUI 起不来时，最低限度跑 `check`（离线可用），并在提交信息里写明 `e2e` 未跑的原因。手册见 `docs/TESTING.md`。
+
+### 引擎自己怎么跑验收（已实测）
+
+引擎跑在应用体内，而 `e2e` 会**再拉起一个隔离实例**——不会和自己撞车。实测依据：单实例锁按 `userData` 隔离，E2E 用临时 profile，两实例完全独立并存（A 窗口里的 `window` 标记 B 读不到，两个进程都存活）。
+
+```bash
+# 用随包 node，不依赖 npm（引擎环境最稳的一条）
+resources/tools/node/node.exe scripts/e2e/run.mjs smoke
+resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
+```
+
+`npm run check` / `npm run e2e` 亦可，前提是 PATH 里有 node。**E2E 跑的是 `dist/` + `dist-electron/` 产物，必须先构建**——`check` 已含构建；只跑 `e2e` 前先确认产物不过期。
+
 ## 这是什么
 
 一个 Electron 桌面应用，把 OpenAI Codex 引擎（`@openai/codex` app-server，stdio JSON-RPC）封装成可用的桌面工作台：多会话、插件/技能、自动化工具、连接器（MCP）、记忆分层。
@@ -52,19 +87,13 @@
 4. **缺 ponytail 插件**：`runtime:install`（id=`ponytail`），随包安装源 `tools/ponytail-plugin` 种到 `codex-home/plugins/cache` + 写 `[marketplaces.ponytail]` / `[plugins."ponytail@ponytail"]` / 钩子信任。
 5. **装完统一**：重启引擎生效；插件/技能/钩子状态从 `plugin/list`、`skills/list`、`hooks/list` 读。
 
-## 改完代码怎么验证（2026-09-11 新增，取代已删的 verify-*.mjs 散脚本）
-
-改完源码不要靠人工点一遍，两条命令：
-
-| 命令 | 做什么 | 需要 GUI |
-|---|---|---|
-| `npm run check` | `build` + `scripts/check-preflight.mjs`：产物存在与新鲜度、IPC 通道/方法面一致性（main.ts ↔ preload.ts ↔ vite-env.d.ts）、CSS 类覆盖告警 | 否 |
-| `npm run e2e` | 启动**已构建**应用（隔离临时 profile）跑 `scripts/e2e/scenarios/*.mjs` 剧本，逐步截图到 `.e2e-artifacts/shots/` | 是（自动拉起） |
+## 验证基建实现细节（配合开头的「验收铁律」看）
 
 - **E2E 靠主进程自带开关实现**：`CODEX_HARNESS_USER_DATA`（重定向 userData，完全隔离）+ `CODEX_HARNESS_DEBUG_PORT`（开 CDP 端口，端口随机取空闲）——见 `electron/main.ts:60` / `:65`。框架 `scripts/e2e/lib/harness.mjs` 零新依赖（复用 `ws`），**不要引入 Playwright/Puppeteer**。
-- 新增场景：`scripts/e2e/scenarios/<名>.mjs` 导出 `steps` 数组即可。**断言必须带前置条件**（先断言「弹窗是关的」再点开），否则上一步残留状态会导致假通过。
-- 现存场景 `smoke` 覆盖：引导页 → 主界面骨架（`.topbar`/`aside.sidebar`/`main.workspace`/`.composer-editor`/`.send-button`）→ 侧栏六项 → 输入框读写 → `#` 技能面板 → `/` 命令面板 → 技能中心开关 → 右栏展开 → 设置弹窗开关 + 焦点归还 → 渲染层无 console.error。
-- 历史遗留：`verify:turnfold`/`verify:userrefs`/`verify:memory-layers` 等一批 npm script 指向的文件早已删除（跑必 ENOENT），**09-11 已从 package.json 清理**；现存真脚本只有 `verify:reasoning` / `verify:image-plugin` / `verify:packaged-tools`。新增验证请走 e2e 场景或 preflight 检查项，别再散落一次性 `.mjs`。
+- **离线预检**：`npm run check` = `build` + `scripts/check-preflight.mjs`。其中 IPC「方法面」解析用自写的括号深度扫描器（纯正则会被「同一行写多个方法 `a: …,  b: …`」和「类型里的 `name(...)` 括号被吃掉后参数名被误当方法名」骗到）。
+- **现存场景** `smoke` 覆盖：引导页 → 主界面骨架（`.topbar`/`aside.sidebar`/`main.workspace`/`.composer-editor`/`.send-button`）→ 侧栏六项 → 输入框读写 → `#` 技能面板 → `/` 命令面板 → 技能中心开关 → 右栏展开 → 设置弹窗开关 + 焦点归还 → 渲染层无 console.error。
+- **环境坑（踩过）**：①环境里的 `HTTP_PROXY` 会把回环请求也代理走 → harness 已自动注入 `NO_PROXY=127.0.0.1,localhost`；②`ws` 库的 `on("message", (data) => …)` 首参是**原始数据**不是 `MessageEvent`；③`clickByText` 必须取**最内层**元素（按 innerText 长度升序），否则点到 wrapper 上；④`contenteditable` 用 CDP `Input.insertText` 输入，`[contenteditable="true"]` 匹配不到 `plaintext-only`。
+- **历史遗留**：`verify:turnfold`/`verify:userrefs`/`verify:memory-layers` 等一批 npm script 指向的文件早已删除（跑必 ENOENT），**09-11 已从 package.json 清理**；现存真脚本只有 `verify:reasoning` / `verify:image-plugin` / `verify:packaged-tools`。新增验证请走 e2e 场景或 preflight 检查项，**别再散落一次性 `.mjs`**。
 - 手册见 `docs/TESTING.md`。
 
 ## 引擎初始化原则（2026-09 定）
