@@ -189,8 +189,8 @@ export const steps = [
         const labels = [...document.querySelectorAll(".voice-settings .settings-label-main")].map(n => n.innerText.trim());
         return labels;
       })()`);
-      // 控件齐全（直接查全页文本：含 SVG 的 span innerText 会丢字符，避开）
-      const fullText = await h.text(".voice-settings").catch(() => "");
+      // 控件齐全（用 textContent：innerText 对隐藏元素返回空，会误判）
+      const fullText = await h.eval(`(document.querySelector(".voice-settings")?.textContent || "").trim()`).catch(() => "");
       const want = [
         "音色", "语速", "播报音量", "麦克风",
         "断句等待", "长句提前断句", "单句最长时长", "识别线程数",
@@ -211,9 +211,13 @@ export const steps = [
         return !!b;
       })()`);
       h.check("麦克风有「测试麦克风」按钮", Boolean(hasMicTest));
-      // 降噪/回声消除/自动增益三个开关
+      // 开关：麦克风 3 个（回声消除/噪声抑制/自动增益）+ 按键启动启用 + 语音唤醒启用 = 5
       const toggleCount = await h.eval(`document.querySelectorAll('.voice-settings .voice-toggle input[type=checkbox]').length`);
-      h.check("麦克风三个开关齐全（回声消除/噪声抑制/自动增益）", Number(toggleCount) === 3, `实际 ${toggleCount}`);
+      h.check("开关齐全（麦克风3 + 按键启动 + 语音唤醒）", Number(toggleCount) === 5, `实际 ${toggleCount}`);
+      // 按键启动 + 语音唤醒卡片
+      const uiText = await h.text(".voice-settings").catch(() => "");
+      h.check("有「按键启动」卡片", String(uiText).includes("按键启动"));
+      h.check("有「语音唤醒」卡片", String(uiText).includes("语音唤醒"));
       // 改一个值（barge.mode 切到 manual）—— 验证 UI 状态切换
       const switched = await h.eval(`(() => {
         const radios = [...document.querySelectorAll('.voice-settings input[type="radio"][value="manual"]')];

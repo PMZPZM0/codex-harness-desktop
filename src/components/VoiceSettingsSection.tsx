@@ -9,7 +9,7 @@
  * 改值后立即同步到主进程，**下一次**开始通话时生效（音色试听是即时的）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Headphones, Mic, Play, ShieldAlert, Square, Zap } from "lucide-react";
+import { Headphones, Keyboard, Mic, Play, Radio, ShieldAlert, Square, Zap } from "lucide-react";
 
 type Settings = {
   tts: { sid: number; speed: number; volume: number };
@@ -17,6 +17,8 @@ type Settings = {
   mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
   barge: { gateDb: number; mode: "auto" | "manual" };
   modelHost: "auto" | "huggingface" | "hf-mirror";
+  hotkey: { enabled: boolean; accelerator: string };
+  wake: { enabled: boolean; phrase: string };
 };
 type Meta = {
   ttsVoices: Record<number, string>;
@@ -49,7 +51,13 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
   const [mics, setMics] = useState<{ deviceId: string; label: string }[]>([]);
   const [micTesting, setMicTesting] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
+  // 快捷键录入中
+  const [capturing, setCapturing] = useState(false);
+  // 唤醒词草稿（输完失焦/回车才落盘，避免每敲一个字就写一次文件）
+  const [wakePhraseDraft, setWakePhraseDraft] = useState("");
   const micTestRef = useRef<{ stop: () => void } | null>(null);
+  /** 设置从主进程读回来后，同步一次唤醒词草稿 */
+  const wakePhraseSyncedRef = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -152,6 +160,51 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       onNotice(`麦克风测试失败：${e?.name ?? ""} ${e?.message ?? e}`);
     }
   }, [micTesting, settings, onNotice]);
+
+  // 首次读到设置后同步唤醒词草稿（之后以用户输入为准，不再覆盖）
+  useEffect(() => {
+    if (!settings?.wake?.phrase || wakePhraseSyncedRef.current) return;
+    setWakePhraseDraft(settings.wake.phrase);
+    wakePhraseSyncedRef.current = true;
+  }, [settings?.wake?.phrase]);
+
+  /** 录入快捷键：按住组合键 → 翻译成 Electron accelerator 字符串并注册 */
+  const captureHotkey = useCallback(() => {
+    setCapturing(true);
+    const cleanup = () => {
+      setCapturing(false);
+      window.removeEventListener("keydown", onKey, true);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") { cleanup(); return; }
+      // 必须带修饰键（单键会吞掉正常输入，不收）
+      const mods: string[] = [];
+      if (e.ctrlKey || e.metaKey) mods.push("Ctrl");
+      if (e.shiftKey) mods.push("Shift");
+      if (e.altKey) mods.push("Alt");
+      if (!mods.length) return;
+      const keyRaw = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+      const letter = e.code?.match(/^Key([A-Z])$/)?.[1];
+      const main = letter || (/^F\d{1,2}$/.test(keyRaw) ? keyRaw : /^[A-Z0-9]$/.test(keyRaw) ? keyRaw : "");
+      if (!main) return;
+      const accelerator = [...mods, main].join("+");
+      cleanup();
+      apply({ hotkey: { enabled: true, accelerator } });
+      void window.codex.voiceHotkeySet({ accelerator, enabled: true }).then((r: any) => {
+        if (!r?.ok) onNotice(`快捷键注册失败：${r?.error ?? "可能被其它程序占用"}`);
+      });
+    };
+    window.addEventListener("keydown", onKey, true);
+  }, [apply, onNotice]);
+
+  const commitWakePhrase = useCallback(() => {
+    if (!settings) return;
+    const phrase = wakePhraseDraft.replace(/\s+/g, "").slice(0, 16);
+    if (!phrase || phrase === settings.wake.phrase) return;
+    apply({ wake: { enabled: settings.wake.enabled, phrase } });
+  }, [settings, wakePhraseDraft, apply]);
 
   const voiceOptions = useMemo(() => {
     if (!meta) return [] as { value: number; label: string }[];
@@ -440,6 +493,64 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
               <span>外放推荐，避开回声误触；只有按「打断」按钮才停 TTS。</span>
             </div>
           </label>
+        </div>
+      </div>
+
+      {/* 按键启动（全局快捷键） */}
+      <div className="voice-card">
+        <div className="voice-card-head"><Keyboard size={15} /><span>按键启动</span></div>
+        <div className="voice-card-body">
+          <div className="voice-row">
+            <button className="secondary-setting" onClick={captureHotkey} disabled={capturing}>
+              {capturing ? "请按下组合键…（Esc 取消）" : "录入快捷键"}
+            </button>
+            <code className="voice-kbd">{settings.hotkey.accelerator || "未设置"}</code>
+            <label className="voice-toggle">
+              <input
+                type="checkbox"
+                checked={settings.hotkey.enabled}
+                onChange={(e) => {
+                  const enabled = e.target.checked;
+                  apply({ hotkey: { enabled, accelerator: settings.hotkey.accelerator } });
+                  void window.codex.voiceHotkeySet({ accelerator: settings.hotkey.accelerator, enabled });
+                }}
+                disabled={saving}
+              />
+              <span>启用（应用没聚焦也能唤起）</span>
+            </label>
+          </div>
+          <div className="voice-card-hint">
+            系统级快捷键，按一下开始、再按一下结束。需要至少带一个修饰键（Ctrl / Shift / Alt），避免吞掉正常输入。
+          </div>
+        </div>
+      </div>
+
+      {/* 语音唤醒 */}
+      <div className="voice-card">
+        <div className="voice-card-head"><Radio size={15} /><span>语音唤醒</span></div>
+        <div className="voice-card-body">
+          <label className="voice-toggle">
+            <input
+              type="checkbox"
+              checked={settings.wake.enabled}
+              onChange={(e) => apply({ wake: { enabled: e.target.checked, phrase: wakePhraseDraft || settings.wake.phrase } })}
+              disabled={saving}
+            />
+            <span>持续聆听并等待唤醒词</span>
+          </label>
+          <input
+            className="voice-input"
+            value={wakePhraseDraft}
+            placeholder="唤醒词，例如：小柯小柯"
+            onChange={(e) => setWakePhraseDraft(e.target.value)}
+            onBlur={commitWakePhrase}
+            onKeyDown={(e) => { if (e.key === "Enter") commitWakePhrase(); }}
+            disabled={saving}
+          />
+          <div className="voice-card-hint">
+            说出唤醒词即可开始通话（识别文本归一化后再匹配，会忽略空格与标点）。
+            <strong>注意：开启后会持续占用 CPU</strong>——这里复用的是已有的识别模型，不是专门的低功耗唤醒模型；不用时建议关掉。
+          </div>
         </div>
       </div>
 
