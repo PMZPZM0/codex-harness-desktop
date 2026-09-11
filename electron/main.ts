@@ -555,7 +555,15 @@ ipcMain.handle("voice:models-reveal", () => {
   return shell.openPath(voiceModelsRoot);
 });
 ipcMain.handle("voice:models-uninstall", async () => {
-  // 卸载 = 直接删整个 voice-models 根目录（含 .part）；下次再点下载会重新拉
+  // 防御（破坏性操作必须显式收口）：只认 <userData>/voice-models 这一个专用子目录。
+  // 万一将来路径拼错（比如退化成 userData 本身），宁可直接失败也不能端掉整个配置目录。
+  const userData = app.getPath("userData");
+  const expected = path.join(userData, "voice-models");
+  const target = path.resolve(voiceModelsRoot);
+  if (!voiceModelsRoot || target !== path.resolve(expected) || target === path.resolve(userData)) {
+    return { ok: false, error: "语音模型目录路径异常，已取消卸载" };
+  }
+  // 卸载 = 删除整个 voice-models 根目录（含 .part）；下次再点下载会重新拉
   await fs.rm(voiceModelsRoot, { recursive: true, force: true });
   await voiceService.refreshModelsReady();
   return { ok: true };
@@ -3321,6 +3329,15 @@ ipcMain.handle("runtime:uninstall", async (_event, idValue: string) => {
   // 随包内置资源（zip / 插件目录），不是联网下载 —— 删了没有可靠的重取途径，直接拒绝
   if (spec.noUninstall) throw new Error("该工具来自随包内置资源，删除后难以恢复，因此不支持卸载");
   const target = runtimeUninstallPath(id, spec);
+  // 防御：marker 解析异常时 target 可能退化成某个根目录 —— 那会把**所有**工具/插件删光。
+  // 要求 target 必须落在 toolsRoot 或 codexHome 之内（ponytail 走引擎侧 codexHome），
+  // 且不等于这两者本身；宁可失败也不能误删全局。
+  const allowedRoots = [toolsRoot(), codexHome].filter(Boolean).map((r) => path.resolve(r));
+  const resolvedTarget = path.resolve(target);
+  const underAllowed = allowedRoots.some((r) => resolvedTarget.startsWith(r + path.sep));
+  if (!resolvedTarget || allowedRoots.includes(resolvedTarget) || !underAllowed) {
+    throw new Error("安装路径解析异常，已取消卸载");
+  }
   // 一些 marker 是文件而不是目录（如 npm-global/.../package.json）—— 删父目录的安装根即可
   await fs.rm(target, { recursive: true, force: true });
 // ponytail 卸载后要显式关掉 config.toml 里的注册段（否则引擎重启找不到已删的 cache）：
