@@ -122,11 +122,22 @@ npm run dist
 CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac zip --arm64   # 或 --x64
 ```
 
-内置工具链随 extraResources 整目录打包。打包发布前先跑发布门槛验收（工具清单 / nuphus MCP 握手 / Playwright 浏览器启动，25 项全绿才可发布）：
+内置工具链随 extraResources 整目录打包。
+
+## 🧪 验证与测试
+
+改完代码不必手点一遍，两条命令覆盖：
 
 ```bash
-node scripts/verify-package.mjs <win-unpacked 目录>
+npm run check   # 离线预检：构建 + 产物新鲜度 + IPC 桥接/类型一致性 + CSS 类覆盖（不需要图形界面）
+npm run e2e     # UI 冒烟：自动拉起已构建的应用，经 CDP 驱动主界面跑剧本，逐步截图
 ```
+
+- `npm run e2e` 跑完在 `.e2e-artifacts/shots/` 留下**每步截图**，扫一眼就知道有没有破相；退出码非 0 即有断言失败。
+- 场景脚本在 `scripts/e2e/scenarios/`，新增场景只需导出一个 `steps` 数组；框架零新依赖（复用 `ws`），经主进程自带的 `CODEX_HARNESS_USER_DATA` / `CODEX_HARNESS_DEBUG_PORT` 开关在**隔离的临时 profile** 里跑，绝不碰你的真实会话与配置。
+- 打包发布前的门槛验收用 `npm run verify:packaged-tools`。
+
+详见 [`docs/TESTING.md`](docs/TESTING.md)。
 
 ## 🏗 技术栈
 
@@ -155,6 +166,7 @@ node scripts/verify-package.mjs <win-unpacked 目录>
 | `README.md` | 全量项目说明（功能/安装/构建/文档体系） | 人 + 引擎查阅 | **每个改动都同步更新** |
 | `AGENTS.md` | 项目记录：环境速览（能力/工具清单/安装操作） | 存档型项目记录；Codex 引擎进本项目时按指令机制读取 | **重要功能**（新增能力/工具链/安装方式变化）才更新，不随会话重复注入 |
 | `docs/TOOLCHAIN.md` | 工具链详查手册（调用命令/自助安装/故障排查） | 涉及工具/安装时查阅 | 工具链或安装方式变化时同步 |
+| `docs/TESTING.md` | 验证与测试手册（`check` / `e2e` 用法、写场景、常见问题） | 改完代码做验证时查阅 | 验证方式变化时同步 |
 
 > **读取机制澄清**：项目根 `AGENTS.md` 是存档型项目记录，**不是**每次会话动态注入的上下文。
 > 真正每会话/每请求动态读取的是另两份：①应用内引擎读 `codex-home/AGENTS.md`（个性化 + 中文语言规范，每请求重读）；②WorkBuddy 助手读 `.workbuddy/memory/MEMORY.md`（工作记忆）。三者内容不同、互不干扰。

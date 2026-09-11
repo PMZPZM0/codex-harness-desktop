@@ -52,6 +52,21 @@
 4. **缺 ponytail 插件**：`runtime:install`（id=`ponytail`），随包安装源 `tools/ponytail-plugin` 种到 `codex-home/plugins/cache` + 写 `[marketplaces.ponytail]` / `[plugins."ponytail@ponytail"]` / 钩子信任。
 5. **装完统一**：重启引擎生效；插件/技能/钩子状态从 `plugin/list`、`skills/list`、`hooks/list` 读。
 
+## 改完代码怎么验证（2026-09-11 新增，取代已删的 verify-*.mjs 散脚本）
+
+改完源码不要靠人工点一遍，两条命令：
+
+| 命令 | 做什么 | 需要 GUI |
+|---|---|---|
+| `npm run check` | `build` + `scripts/check-preflight.mjs`：产物存在与新鲜度、IPC 通道/方法面一致性（main.ts ↔ preload.ts ↔ vite-env.d.ts）、CSS 类覆盖告警 | 否 |
+| `npm run e2e` | 启动**已构建**应用（隔离临时 profile）跑 `scripts/e2e/scenarios/*.mjs` 剧本，逐步截图到 `.e2e-artifacts/shots/` | 是（自动拉起） |
+
+- **E2E 靠主进程自带开关实现**：`CODEX_HARNESS_USER_DATA`（重定向 userData，完全隔离）+ `CODEX_HARNESS_DEBUG_PORT`（开 CDP 端口，端口随机取空闲）——见 `electron/main.ts:60` / `:65`。框架 `scripts/e2e/lib/harness.mjs` 零新依赖（复用 `ws`），**不要引入 Playwright/Puppeteer**。
+- 新增场景：`scripts/e2e/scenarios/<名>.mjs` 导出 `steps` 数组即可。**断言必须带前置条件**（先断言「弹窗是关的」再点开），否则上一步残留状态会导致假通过。
+- 现存场景 `smoke` 覆盖：引导页 → 主界面骨架（`.topbar`/`aside.sidebar`/`main.workspace`/`.composer-editor`/`.send-button`）→ 侧栏六项 → 输入框读写 → `#` 技能面板 → `/` 命令面板 → 技能中心开关 → 右栏展开 → 设置弹窗开关 + 焦点归还 → 渲染层无 console.error。
+- 历史遗留：`verify:turnfold`/`verify:userrefs`/`verify:memory-layers` 等一批 npm script 指向的文件早已删除（跑必 ENOENT），**09-11 已从 package.json 清理**；现存真脚本只有 `verify:reasoning` / `verify:image-plugin` / `verify:packaged-tools`。新增验证请走 e2e 场景或 preflight 检查项，别再散落一次性 `.mjs`。
+- 手册见 `docs/TESTING.md`。
+
 ## 引擎初始化原则（2026-09 定）
 
 - **初始化回归原生**：不预写 marketplace 段、不首启自动种插件/技能。

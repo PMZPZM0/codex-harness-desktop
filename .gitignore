@@ -36,6 +36,9 @@ Thumbs.db
 .test-tmp/
 terminal-dump.txt
 
+# E2E 运行产物（截图 / 报告，每次跑都会重新生成）
+.e2e-artifacts/
+
 # 工具数据
 .workbuddy/
 
