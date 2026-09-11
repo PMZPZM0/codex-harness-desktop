@@ -82,3 +82,21 @@ kill 旧进程 → reject 所有 pending 请求 → spawn 新进程 → initiali
 - 补 e2e 场景：断言「改供应商并保存后，正在流式输出的回合不中断 / 不出现 `Codex app-server restarted` reject」；
 - 新断言当场反证一次（把热交接改回 kill 重启，确认断言会红）；
 - `npm run verify` 退出码 0 才算完成。
+
+## 附录：多进程前提验证（2026-09-12 05:05 实验定案，脚本 .e2e-artifacts/multiproc-probe.mjs）
+
+**实验**：两个裸 codex.exe app-server 进程共享同一 CODEX_HOME，并发 thread/start + 各 3 个 turn/start（共 6 回合并发）。
+
+**结果**：
+- ✅ 全部成功，rollout 按会话分文件（2 个 .jsonl 各自独立），**文件级并发写不互损**——方案 A/B 的头号风险（rollout 并发写冲突）解除
+- ⚠️ thread/list 各进程只看到自己的会话（互不可见）→ 多进程架构下「会话列表」必须在宿主层聚合（遍历各进程 thread/list 合并）
+- ⚠️ 每进程一份内存/CPU 开销；config.toml 并发写风险仍在（引擎某些操作会写它），需在设计中规避（配置变更走 flush 重建，运行期只读）
+
+**「每会话一进程」的完整工程量（WorkBuddy 式）**：
+1. CodexServer → 引擎管理器：会话→进程路由表 + 进程生命周期（prewarm/activate/kill）
+2. 全局 RPC 聚合：thread/list、搜索、归档等跨进程合并（main.ts 数百处 server.* 调用按 threadId 分派或走主实例）
+3. 事件流路由：notification 带 threadId，按归属进程回传渲染层（事件本身已带 threadId ✓）
+4. 渲染层零改动可行（IPC 契约不变）
+5. 工期：数天级重构，非一晚可安全完成；且需与「切换会话」改动的并行任务协调落点
+
+**建议路径**：先上「方案 A 热交接」（单引擎多会话不变，配置切换不断回合，1 晚可完成）；「每会话一进程」作为二期，待切换会话改动合流后动工。
