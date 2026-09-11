@@ -4942,6 +4942,13 @@ ipcMain.handle("shell:reveal", async (_event, target: string) => {
 /** 复制本地图片文件到剪贴板：渲染层 fetch harness-image:// 自定义协议拿不到 blob，
  * 必须主进程读文件 → nativeImage → clipboard.write（Electron 44 已移除 writeImage，
  * 改用 W3C ClipboardItem）。 */
+/** 文本写剪贴板：走主进程 electron clipboard，不受渲染层 Clipboard API 的
+ *  焦点/权限限制（用户实测窗口失焦时 navigator.clipboard.writeText 抛
+ *  "Write permission denied"，表现为「复制失败」toast）。 */
+ipcMain.handle("clipboard:write", async (_event, text: string) => {
+  clipboard.writeText(String(text ?? ""));
+  return true;
+});
 ipcMain.handle("clipboard:write-image", async (_event, filePath: string) => {
   if (!filePath) throw new Error("缺少图片路径");
   const image = nativeImage.createFromPath(filePath);
