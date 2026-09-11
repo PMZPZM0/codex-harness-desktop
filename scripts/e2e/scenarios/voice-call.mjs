@@ -159,4 +159,48 @@ export const steps = [
       );
     },
   },
+
+  {
+    name: "⑨ 设置 → 语音通话：5 项控件齐全 + 改值可切",
+    run: async (h) => {
+      // 打开设置弹窗（找"设置"按钮，回退到快捷键 ","）
+      let opened = await h.eval(`(() => {
+        const btns = [...document.querySelectorAll("button")];
+        const t = btns.find(b => (b.getAttribute("title") || b.getAttribute("aria-label") || "").trim() === "设置");
+        if (t) { t.click(); return true; } return false;
+      })()`);
+      if (!opened) {
+        await h.pressKey(",");
+        opened = await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置弹窗", timeoutMs: 5000 }).then(() => true).catch(() => false);
+      }
+      h.check("设置弹窗可打开", Boolean(opened));
+      if (!opened) return;
+      // 点"语音通话"导航
+      const found = await h.eval(`(() => {
+        const btns = [...document.querySelectorAll(".settings-nav button")];
+        const t = btns.find(b => (b.innerText || "").trim() === "语音通话");
+        if (t) { t.click(); return true; } return false;
+      })()`);
+      h.check("设置导航里有「语音通话」", Boolean(found));
+      await h.waitFor(`!!document.querySelector(".voice-settings")`, { label: "语音通话设置页", timeoutMs: 5000 }).catch(() => undefined);
+      h.check("语音通话设置页渲染", await h.exists(".voice-settings"));
+      // 五项控件齐全
+      const rows = await h.eval(`(() => {
+        const labels = [...document.querySelectorAll(".voice-settings .settings-label-main")].map(n => n.innerText.trim());
+        return labels;
+      })()`);
+      // 五项控件齐全（直接查全页文本：含 SVG 的 span innerText 会丢字符，避开）
+      const fullText = await h.text(".voice-settings").catch(() => "");
+      const want = ["音色", "语速", "打断灵敏度", "打断方式", "模型下载镜像源"];
+      for (const w of want) {
+        h.check(`设置页有「${w}」`, String(fullText).includes(w), String(fullText).slice(0, 80));
+      }
+      // 改一个值（barge.mode 切到 manual）—— 验证 UI 状态切换
+      const switched = await h.eval(`(() => {
+        const radios = [...document.querySelectorAll('.voice-settings input[type="radio"][value="manual"]')];
+        const r = radios[0]; if (!r) return false; r.click(); return r.checked;
+      })()`);
+      h.check("打断方式可切到「手动」", Boolean(switched));
+    },
+  },
 ];
