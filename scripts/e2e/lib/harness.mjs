@@ -118,6 +118,9 @@ export class ElectronHarness {
    */
   constructor(opts = {}) {
     this.root = opts.root || process.cwd();
+    // 测试实例的工作区 = 项目根目录（用户 09-11 定：以后拉 CDP 就用这个项目地址测）。
+    // 传 null 可显式关掉（需要「未选择工作区」空态的场景）。
+    this.workspace = opts.workspace === null ? "" : (opts.workspace || this.root);
     this.launchTimeoutMs = opts.launchTimeoutMs ?? 60000;
     this.artifactsDir = opts.artifactsDir || join(this.root, ".e2e-artifacts");
     // 多场景共用一个截图目录时给文件名加前缀，避免不同场景的同名步骤互相覆盖
@@ -200,6 +203,22 @@ export class ElectronHarness {
       throw new Error(`${error?.message ?? error}\n--- 被测应用输出（尾部）---\n${this._childOutput()}`);
     }
     await this._send("Page.enable");
+    // 工作区：测试实例统一用**项目根目录**（用户 09-11 定：以后拉 CDP 就用这个项目地址测）。
+    // 应用从 localStorage.workspace 读工作区，隔离 profile 是一张白纸 → 界面会停在
+    // 「尚未选择工作区」，发送链路在部分路径下会被拦（实测：点了发送键消息仍留在输入框）。
+    // 用 addScriptToEvaluateOnNewDocument 在**每次新文档**执行前注入，所以首次加载 + 后续 reload 都生效。
+    if (this.workspace) {
+      const src = `try { localStorage.setItem("workspace", ${JSON.stringify(this.workspace)}); } catch (e) {}`;
+      // 新文档注入（覆盖后续 reload）+ 当前文档直接写
+      await this._send("Page.addScriptToEvaluateOnNewDocument", { source: src }).catch(() => undefined);
+      await this.eval(src).catch(() => undefined);
+      // 应用的 workspace 是 useState 初始化时读的（App.tsx:5972），当前文档已错过 → 重载一次
+      // 让注入脚本在页面脚本之前执行。场景都在 launch 之后才等引导页/主界面，重载是透明的。
+      await this._send("Page.reload", {}).catch(() => undefined);
+      await sleep(1500);
+      await this._send("Runtime.enable", {}, 30000).catch(() => undefined);
+      await this._send("Page.enable").catch(() => undefined);
+    }
     // 收集渲染层 console，便于失败定位
     this.ws.on("message", (data) => {
       try {
