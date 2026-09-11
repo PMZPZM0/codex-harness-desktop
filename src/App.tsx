@@ -7228,6 +7228,8 @@ export default function App() {
   const [devRuntimes, setDevRuntimes] = useState<DevRuntimeEntry[]>([]);
   const [runtimeInstalling, setRuntimeInstalling] = useState<string | null>(null);
   const [runtimeProgress, setRuntimeProgress] = useState<Record<string, string>>({});
+  // 安装/卸载的内置弹窗（替代 window.confirm——浏览器原生 confirm 会抢焦点且打断输入框）
+  const [runtimeModal, setRuntimeModal] = useState<{ id: string; name: string; mode: "install" | "uninstall"; done: boolean; failed: boolean } | null>(null);
   const refreshDevRuntimes = () => { window.codex.listRuntimes().then(setDevRuntimes).catch(() => setDevRuntimes([])); };
   useEffect(() => window.codex.onRuntimeProgress((event) => {
     setRuntimeProgress((current) => ({ ...current, [event.id]: event.message.split(/\r?\n/).at(-1) || event.message }));
@@ -7236,31 +7238,44 @@ export default function App() {
   async function installDevRuntime(id: string) {
     setRuntimeInstalling(id);
     setRuntimeProgress((current) => ({ ...current, [id]: "准备下载…" }));
+    setRuntimeModal({ id, name: devRuntimes.find((r) => r.id === id)?.name ?? id, mode: "install", done: false, failed: false });
     try {
       const result = await window.codex.installRuntime(id);
       setDevRuntimes(result.runtimes);
       // 同步能力总闸联动开关（桌面/浏览器自动化）与工具状态，安装后立即生效
       await Promise.all([refreshSettingsResources(), refreshToolsStatus()]);
+      setRuntimeModal((m) => m ? { ...m, done: true } : m);
+      setRuntimeProgress((current) => ({ ...current, [id]: "安装完成" }));
       setNotice("开发工具安装成功，Codex 引擎已刷新");
     } catch (error: any) {
+      setRuntimeModal((m) => m ? { ...m, done: true, failed: true } : m);
+      setRuntimeProgress((current) => ({ ...current, [id]: `安装失败：${error.message}` }));
       setNotice(`开发工具安装失败：${error.message}`);
-    } finally { setRuntimeInstalling(null); }
+    } finally {
+      setRuntimeInstalling(null);
+    }
   }
 
   async function uninstallDevRuntime(id: string) {
     const spec = devRuntimes.find((r) => r.id === id);
     if (!spec || spec.builtIn) return;
-    const ok = window.confirm(`确认卸载「${spec.name}」？\n\n删除安装文件后可以随时重新下载（≈${spec.size}）。`);
-    if (!ok) return;
     setRuntimeInstalling(id);
+    setRuntimeProgress((current) => ({ ...current, [id]: "正在卸载…" }));
+    setRuntimeModal({ id, name: spec.name, mode: "uninstall", done: false, failed: false });
     try {
       const result = await window.codex.uninstallRuntime(id);
       setDevRuntimes(result.runtimes);
       await Promise.all([refreshSettingsResources(), refreshToolsStatus()]);
+      setRuntimeModal((m) => m ? { ...m, done: true } : m);
+      setRuntimeProgress((current) => ({ ...current, [id]: "卸载完成" }));
       setNotice(`已卸载「${spec.name}」`);
     } catch (error: any) {
+      setRuntimeModal((m) => m ? { ...m, done: true, failed: true } : m);
+      setRuntimeProgress((current) => ({ ...current, [id]: `卸载失败：${error.message}` }));
       setNotice(`卸载失败：${error.message}`);
-    } finally { setRuntimeInstalling(null); }
+    } finally {
+      setRuntimeInstalling(null);
+    }
   }
   useEffect(() => { if (settingsOpen) refreshToolsStatus(); }, [settingsOpen]);
   useEffect(() => { if (settingsOpen && settingsPage === "devtools") refreshDevRuntimes(); }, [settingsOpen, settingsPage]);
@@ -13591,6 +13606,39 @@ const commandMatches = useMemo(() => {
               </details>
               <p className="settings-card-hint">Node、Python（含 Tkinter、requests/httpx/flask/fastapi/playwright）、Git、PowerShell、ripgrep、uv、CMake、7-Zip、jq、Ninja 已内置随应用提供。桌面/浏览器自动化（nuphus + playwright-cli + cloakbrowser）与浏览器内核按需下载；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）。</p>
             </section>}
+
+            {/* 开发工具 安装/卸载 实时进度弹窗（替代 window.confirm——后者会抢焦点 + 打断输入框） */}
+            {runtimeModal && (
+              <div className="modal-overlay dev-runtime-modal" role="dialog" aria-modal="true" aria-label={`${runtimeModal.mode === "install" ? "安装" : "卸载"} ${runtimeModal.name}`}>
+                <div className="modal-card">
+                  <header>
+                    <strong>{runtimeModal.mode === "install" ? "正在安装" : "正在卸载"}「{runtimeModal.name}」</strong>
+                    {runtimeModal.done && (
+                      <button className="icon-button" aria-label="关闭" onClick={() => setRuntimeModal(null)}><X size={16} /></button>
+                    )}
+                  </header>
+                  <div className="dev-runtime-modal-body">
+                    {runtimeProgress[runtimeModal.id]?.split(/\r?\n/).filter(Boolean).slice(-8).map((line, i, arr) => (
+                      <small key={i} className={i === arr.length - 1 ? "dev-runtime-modal-line latest" : "dev-runtime-modal-line"}>{line}</small>
+                    ))}
+                    {!runtimeModal.done && (
+                      <div className="dev-runtime-modal-spinner">
+                        <Spinner /><span>进行中…</span>
+                      </div>
+                    )}
+                  </div>
+                  <footer>
+                    <button
+                      className="primary-setting"
+                      disabled={!runtimeModal.done}
+                      onClick={() => setRuntimeModal(null)}
+                    >
+                      {runtimeModal.failed ? "关闭" : runtimeModal.mode === "install" ? "完成" : "知道了"}
+                    </button>
+                  </footer>
+                </div>
+              </div>
+            )}
             {settingsPage === "browser" && <section className="settings-section stack">
               <div className="settings-copy"><h2>浏览器控制</h2><p>内置浏览器面板与自动化浏览器工具链。</p></div>
               <div className="settings-grid">

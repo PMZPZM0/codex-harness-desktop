@@ -84,7 +84,8 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
   }, [onNotice]);
 
   const uninstall = useCallback(() => {
-    if (!window.confirm("确认卸载语音模型？\n\n删除已下载的 270MB 模型文件，可以随时重新下载。")) return;
+    // 不再 window.confirm——浏览器原生确认框会抢焦点、打断输入框；直接开始卸载
+    // （卸载瞬间完成、不可逆的操作让用户主动在按钮上点就行；卸载本身也只是删本地文件）
     window.codex.voiceModelsUninstall()
       .then((r: any) => { if (r.ok) onNotice("语音模型已卸载"); else onNotice("卸载失败"); refresh(); })
       .catch((e: any) => onNotice(`卸载失败：${e?.message ?? e}`));
@@ -102,6 +103,9 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
         <div className="voice-devtools-title">
           <strong>语音模型</strong>
           <span className="voice-devtools-sub">sherpa-onnx（识别 zipformer + 端点检测 silero + 合成 vits-zh-ll）</span>
+          {status && (
+            <code className="voice-devtools-path-inline" title={status.root}>{status.root}</code>
+          )}
         </div>
         <span className={`voice-devtools-badge ${ready ? "ok" : "missing"}`}>
           {status ? (ready ? "已就绪" : `${sizeMB} MB · ${status.ready}/${status.total}`) : "读取中…"}
@@ -164,12 +168,6 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
           </>
         )}
       </div>
-
-      {status && (
-        <div className="voice-devtools-path" title="模型存放路径">
-          <span>路径</span><code>{status.root}</code>
-        </div>
-      )}
     </div>
   );
 }

@@ -20548,3 +20548,66 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   font-size:12.5px; color: var(--text); cursor:pointer;
 }
 .voice-toggle input[type=checkbox] { accent-color: var(--link); width:15px; height:15px; }
+
+
+/* ===== 开发工具：安装/卸载内置进度弹窗（取代 window.confirm） ===== */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: color-mix(in srgb, #000 45%, transparent);
+  display: grid; place-items: center;
+  z-index: 1200;
+  animation: modal-fade .15s ease-out;
+}
+@keyframes modal-fade { from { opacity: 0 } to { opacity: 1 } }
+.modal-card {
+  width: min(440px, 92vw);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0,0,0,.25);
+  display: flex; flex-direction: column;
+  max-height: 80vh; overflow: hidden;
+}
+.modal-card > header {
+  padding: 12px 16px; border-bottom: 1px solid var(--line-soft);
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.modal-card > header strong { font-size: 13.5px; font-weight: 600; }
+.modal-card > footer {
+  padding: 10px 16px; border-top: 1px solid var(--line-soft);
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+.modal-card .icon-button { background: transparent; border: 0; cursor: pointer; color: var(--muted); }
+
+.dev-runtime-modal .modal-card { width: min(480px, 92vw); }
+.dev-runtime-modal-body {
+  padding: 14px 18px; display: flex; flex-direction: column; gap: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  min-height: 100px;
+}
+.dev-runtime-modal-line {
+  font-size: 11.5px; color: var(--muted); line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.dev-runtime-modal-line.latest { color: var(--text); }
+.dev-runtime-modal-spinner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 0; color: var(--link); font-size: 12px;
+  font-family: inherit;
+}
+.dev-runtime-modal-spinner svg { animation: spin 1s linear infinite; }
+
+/* 路径内联到标题区，不单独占一行 */
+.voice-devtools-path-inline {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 7px;
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+  border-radius: 4px;
+  font-size: 10.5px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  direction: rtl; /* 让文件名的左端（短）保留，长的中间省略号；鼠标悬浮看完整路径 */
+}
