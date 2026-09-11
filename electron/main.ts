@@ -1449,9 +1449,9 @@ function createWindow() {
     // 右上角保留系统窗口控制钮（贴靠/双击最大化等原生行为不变），颜色随主题由 theme:apply 更新。
     titleBarStyle: "hidden",
     titleBarOverlay: {
-      // 与聊天顶栏 var(--bg) 同色（亮 #fff / 暗 #1b1b1a）——独立标题栏行已取消，
-      // 整条 44px 顶行（顶栏+操作簇+原生窗口钮）必须同色
-      color: "#ffffff",
+      // 让 `.topbar { background: var(--bg) }` 自己穿过来——钮不再"浮在自己的色条上"，
+      // 也无需枚举每个主题调色；亮/暗主题都能干净。符号色在 theme:apply 里跟着主题切。
+      color: "#00000000",
       symbolColor: "#1b1b1a",
       // 43 而非 44：底下留 1px 给 .topbar::after 分隔线，线可贯通窗口钮下方
       height: 43,
@@ -1480,8 +1480,9 @@ ipcMain.handle("theme:apply", (_event, theme: string) => {
   const dark = theme === "dark";
   nativeTheme.themeSource = dark ? "dark" : "light";
   mainWindow?.setBackgroundColor(dark ? "#1b1b1a" : "#ffffff");
-  // 无边框标题栏：窗口控制钮的底色/符号色跟随主题
-  try { mainWindow?.setTitleBarOverlay({ color: dark ? "#1b1b1a" : "#ffffff", symbolColor: dark ? "#e8e8e5" : "#1b1b1a", height: 43 }); } catch { /* overlay 未启用时忽略 */ }
+  // 无边框标题栏：窗口控制钮的底色让 `.topbar { background: var(--bg) }` 自己穿过去（透明），
+  // 符号色仍跟随主题；这样钮不再"浮在自己的色条上"，也无需枚举每个主题调色。
+  try { mainWindow?.setTitleBarOverlay({ color: "#00000000", symbolColor: dark ? "#e8e8e5" : "#1b1b1a", height: 43 }); } catch { /* overlay 未启用时忽略 */ }
   return { ok: true };
 });
 
