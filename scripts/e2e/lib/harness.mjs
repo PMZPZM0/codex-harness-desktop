@@ -41,6 +41,8 @@ export class ElectronHarness {
     this.root = opts.root || process.cwd();
     this.launchTimeoutMs = opts.launchTimeoutMs ?? 60000;
     this.artifactsDir = opts.artifactsDir || join(this.root, ".e2e-artifacts");
+    // 多场景共用一个截图目录时给文件名加前缀，避免不同场景的同名步骤互相覆盖
+    this.namePrefix = opts.namePrefix || "";
     this.checks = [];
     this.stepIndex = 0;
     this.child = null;
@@ -59,18 +61,25 @@ export class ElectronHarness {
     this.userDataDir = mkdtempSync(join(tmpdir(), "harness-e2e-"));
     mkdirSync(this.artifactsDir, { recursive: true });
 
+    const childEnv = {
+      ...process.env,
+      CODEBUDDY_SAFE_DELETE_ENABLED: "0",
+      CODEX_HARNESS_USER_DATA: this.userDataDir,
+      CODEX_HARNESS_DEBUG_PORT: String(this.port),
+      // 本机回环直连，绕开环境里的 HTTP_PROXY
+      NO_PROXY: "127.0.0.1,localhost",
+      no_proxy: "127.0.0.1,localhost",
+    };
+    // 必须摘掉：宿主（WorkBuddy 桌面端等）自己可能就是 Electron 起的，环境里带着
+    // ELECTRON_RUN_AS_NODE —— 继承下去会让 Electron 退化成纯 node 跑主进程
+    // （require("electron") 拿不到 protocol/app），表现为「启动即崩」：
+    //   TypeError: Cannot read properties of undefined (reading 'registerSchemesAsPrivileged')
+    // 且栈尾会打「Node.js vXX」而不是 Electron 版本——看到这个特征就是这个原因。
+    delete childEnv.ELECTRON_RUN_AS_NODE;
     this.child = spawn(electronPath, ["."], {
       cwd: this.root,
       stdio: ["ignore", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        CODEBUDDY_SAFE_DELETE_ENABLED: "0",
-        CODEX_HARNESS_USER_DATA: this.userDataDir,
-        CODEX_HARNESS_DEBUG_PORT: String(this.port),
-        // 本机回环直连，绕开环境里的 HTTP_PROXY
-        NO_PROXY: "127.0.0.1,localhost",
-        no_proxy: "127.0.0.1,localhost",
-      },
+      env: childEnv,
     });
     let out = "";
     const collect = (d) => {
@@ -175,6 +184,12 @@ export class ElectronHarness {
       await sleep(intervalMs);
     }
     throw new Error(`等待超时：${label}（最后取值 ${JSON.stringify(last)}）`);
+  }
+
+  /** 重载渲染层（只刷 renderer，主进程不动）：验证「启动时」逻辑（如会话模型回填）用 */
+  async reload({ waitMs = 1500 } = {}) {
+    await this._send("Page.reload", { ignoreCache: false });
+    await sleep(waitMs);
   }
 
   async exists(selector) {
@@ -306,7 +321,7 @@ export class ElectronHarness {
     const safe = String(label).replace(/[^\w\u4e00-\u9fa5-]+/g, "_").slice(0, 60);
     const dir = join(this.artifactsDir, "shots");
     mkdirSync(dir, { recursive: true });
-    const file = join(dir, `${idx}-${safe}.png`);
+    const file = join(dir, `${this.namePrefix}${idx}-${safe}.png`);
     const r = await this._send("Page.captureScreenshot", { format: "png" });
     writeFileSync(file, Buffer.from(r.data, "base64"));
     return file;

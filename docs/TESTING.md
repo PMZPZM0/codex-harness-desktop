@@ -11,7 +11,8 @@ npm run verify   # = npm run check && npm run e2e，退出码 0 才算完成
 ```
 
 - **只跑一半不算验收**：`check` 过但 `e2e` 没过 = 没完成，不许提交。
-- **改了哪个模块，就给哪个模块补场景**：在 `scripts/e2e/scenarios/` 加/改场景，让这次验证沉淀成下次的自动回归。不要写一次性脚本跑完就丢——09-06 那批 `verify-*.mjs` 全员消失就是这么来的。
+- **改了哪个模块，就给哪个模块补场景**：在 `scripts/e2e/scenarios/` 加/改场景（`npm run e2e` 不带参数就是跑**全部**场景，新场景自动进门槛），或给 `check-preflight.mjs` 加检查项。不要写一次性脚本跑完就丢——09-06 那批 `verify-*.mjs` 全员消失就是这么来的。
+- **新断言的正确性要当场反证一次**：把修复临时改回去，确认这条断言真的会红（本项目实测过 `model-recency` 步骤③）。不做这一步的断言，很可能只是永远绿的摆设——尤其「没生效」类的 bug。
 - **GUI 起不来时**最低跑 `check`（离线可用），并在提交信息里写明 `e2e` 未跑的原因。
 
 ### Codex 引擎自己怎么跑
@@ -20,7 +21,8 @@ npm run verify   # = npm run check && npm run e2e，退出码 0 才算完成
 
 ```bash
 # 推荐：随包 node，不依赖 npm
-resources/tools/node/node.exe scripts/e2e/run.mjs smoke
+resources/tools/node/node.exe scripts/e2e/run.mjs            # 全部场景
+resources/tools/node/node.exe scripts/e2e/run.mjs smoke      # 指定场景
 resources/tools/node/node.exe scripts/e2e/run.mjs --list     # 列出场景
 
 # 有 node 在 PATH 时等价于
@@ -33,8 +35,9 @@ npm run check && npm run e2e
 
 | 命令 | 层级 | 需要 GUI | 耗时 | 能发现什么 |
 |---|---|---|---|---|
-| `npm run check` | 离线预检 | 否 | ~1 分钟（含构建） | 编译不过、产物没重建、IPC 桥接与类型不一致、CSS 类没规则 |
-| `npm run e2e` | 应用冒烟 | 是（自动拉起，不用你操作） | ~11 秒 | 应用能不能起来、主界面有没有破相、关键交互还在不在 |
+| `npm run check` | 离线预检 | 否 | ~1 分钟（含构建） | 编译不过、产物没重建、IPC 桥接与类型不一致、CSS 类没规则、**纯函数逻辑跑偏** |
+| `npm run e2e` | 应用冒烟（**全部场景**） | 是（自动拉起，不用你操作） | ~22 秒 | 应用能不能起来、主界面有没有破相、关键交互与关键判定还在不在 |
+| `npm run e2e -- smoke` | 只跑指定场景 | 是 | ~11 秒 | 同上，单场景 |
 | `npm run e2e -- --list` | 列出全部场景 | 否 | 瞬时 | —— |
 
 改动完成的标准流程：
@@ -62,14 +65,19 @@ npm run e2e          # UI 冒烟全绿，去 .e2e-artifacts/shots/ 扫一眼截�
 3. **CSS 类覆盖**（仅告警）
    扫 `src/` 里 `className="..."` 的**静态字面量**，看 `src/styles.css` 有没有对应规则。动态拼接的类（含 `${}`）不参与。
    告警不等于 bug——父选择器承载、动态变体都会命中，需人眼过一遍。判定口径：动态模板类先 grep `.x-xxx` 变体；单类且无任何兜底才是真缺口。
+4. **纯逻辑行为断言**
+   `src/lib/*.mjs` 这类**零依赖纯函数**（node 能直接 `import`，不用转译）在预检里跑真实实现的行为断言，边界一次定死。目前只有 `src/lib/model-recency.mjs`（会话模型「谁后改谁生效」），另外带一条**接线守卫**——`App.tsx` 里 `openThread` 的模型回填必须走 `resolveThreadModel`，防止日后被改回「无条件用会话记录」。
+   > 这类逻辑放 `.mjs`（纯实现）+ `.d.mts`（类型）是因为 tsconfig 关着 `allowJs`：渲染层 `import` 有类型，预检 `import` 能直接跑，一份实现两处用，不复制粘贴。
 
 **退出码**：0 = 通过（告警不算失败），1 = 有硬失败。
 
 ---
 
-## 二、`npm run e2e` —— 应用冒烟
+## 二、`npm run e2e` —— 应用冒烟（全场景）
 
 自动拉起**已构建**的应用（跑之前必须先构建，脚本会检查），经 CDP 驱动渲染层跑剧本，逐步截图。
+
+**不带参数 = 跑 `scripts/e2e/scenarios/` 下的全部场景**（验收门槛必须覆盖所有回归场景，否则新写的场景只是摆设）；指定名字则只跑那几个：`npm run e2e -- smoke model-recency`。
 
 ### 原理
 
@@ -84,8 +92,9 @@ CODEX_HARNESS_DEBUG_PORT  → 打开 CDP 调试端口（端口随机取空闲端
 
 ### 产出
 
-- 终端：逐步断言结果 + 每步耗时
-- `.e2e-artifacts/shots/NN-名称.png`：**每步一张截图**，失败时额外存一张「失败-步骤名.png」
+- 终端：逐步断言结果 + 每步耗时；多场景时最后附一行各场景结果汇总
+- `.e2e-artifacts/shots/<场景名>-NN-名称.png`：**每步一张截图**，失败时额外存一张「失败-步骤名.png」
+  （文件名带场景前缀，多场景共用一个目录也不会互相覆盖）
 - `.e2e-artifacts/` 已进 `.gitignore`
 
 **这个截图目录就是替代「你手动点一遍」的东西**——跑完扫一眼，破相立刻看得见。
@@ -95,6 +104,7 @@ CODEX_HARNESS_DEBUG_PORT  → 打开 CDP 调试端口（端口随机取空闲端
 | 场景 | 覆盖 |
 |---|---|
 | `smoke` | 引导页 → 跳过 → 主界面骨架（标题栏/侧栏/输入框/发送键）→ 侧栏六项 → 输入框读写 → `#` 技能面板 → `/` 命令面板 → 技能中心开关 → 右栏展开 → 设置弹窗开关 + **焦点归还** → 渲染层无 console.error |
+| `model-recency` | **打开会话时的模型回填**：真起引擎真建会话，重载渲染层让 `openThread` 跑一遍，断言「全局后改 → 用全局」「会话后改 → 用会话记录」。防的是「我切换的模型没生效」（旧逻辑无条件用会话记录，全局改了也进不去） |
 
 ### 写新场景
 
@@ -128,6 +138,7 @@ export const steps = [
 | `h.click(sel)` | 原生点击（React onClick 有效） |
 | `h.clickByText(text)` | 按可见文本点（自动取最内层匹配元素） |
 | `h.clickByTitle(title)` | 按 `title` / `aria-label` 点（本项目大量按钮只有 title） |
+| `h.reload()` | 重载渲染层（只刷 renderer，主进程不动）——验证「启动时」逻辑用 |
 | `h.typeInto(sel, text)` | 用 CDP 真实输入（对 `contenteditable` 最可靠） |
 | `h.clearInput(sel)` | 清空输入框 |
 | `h.pressKey(key)` | 派发按键（如 `"Escape"`） |
@@ -144,8 +155,10 @@ export const steps = [
 | 现象 | 原因 / 处理 |
 |---|---|
 | `CDP 端口未就绪` | 应用启动失败。看报错里附的 Electron 输出尾部；沙箱/权限受限时属环境限制 |
+| 启动即崩：`Cannot read properties of undefined (reading 'registerSchemesAsPrivileged')`，栈尾还打着 `Node.js vXX` | 环境里带着 `ELECTRON_RUN_AS_NODE`（自己就跑在 Electron 里的宿主终端会把这条传下来），Electron 被降级成纯 node 跑主进程。框架已在 spawn 前 `delete` 掉这个变量；外部直接 `electron .` 复现时也要先 `unset` |
 | `E2E 前置检查失败：构建产物缺失` | 先 `npm run build`（或 `npm run check`） |
 | 页面请求被代理拦 | 框架已给子进程注入 `NO_PROXY=127.0.0.1,localhost`；本机环境有 `HTTP_PROXY` 时这条必须有 |
+| 想造一个「能 resume 的会话」 | 引擎的 rollout 是**首回合**才落盘的：只 `thread/start` 的会话 `thread/resume` 报 `no rollout found`、`thread/list` 里也没有。先补一发 `turn/start` 把它坐实（见 `scenarios/model-recency.mjs` 步骤②） |
 | 想跑完不关应用 | `npm run e2e -- smoke --keep` |
 
 ---
