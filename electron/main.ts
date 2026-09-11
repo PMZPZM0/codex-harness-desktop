@@ -1510,9 +1510,17 @@ app.whenReady().then(async () => {
       console.warn("[custom-model] context window self-heal failed:", error);
     }
   }
-  await applyMemoryMode(await readMemoryMode());
-  await scheduler.start();
-  await remote.start();
+  // 启动副作用一律「尽力而为」：这里任何一处抛出都会让 whenReady 的 promise 变成
+  // unhandled rejection，**整条启动链就此中断、引擎根本不 spawn** —— 表现是「界面能打开、
+  // 发消息完全没有回复」，且日志里只有一行 EPERM（实测：memory-mode.json 写不进去，
+  // 例如被安全软件/同步盘占用或磁盘满）。周边 channelBot.configure 早已是 try/catch，
+  // 这三处漏了，补齐；记忆模式/调度/远端的失败都只降级、不影响会话可用。
+  try { await applyMemoryMode(await readMemoryMode()); }
+  catch (error) { console.warn("[boot] applyMemoryMode failed (降级继续):", error); }
+  try { await scheduler.start(); }
+  catch (error) { console.warn("[boot] scheduler.start failed (降级继续):", error); }
+  try { await remote.start(); }
+  catch (error) { console.warn("[boot] remote.start failed (降级继续):", error); }
   // 微信机器人网关：扫码登录 → 微信消息 → Codex 会话处理 → 回复发回微信
   weixinGateway = new WeixinGateway(path.join(app.getPath("userData"), "weixin-accounts"), {
     onMessage: (message) => void handleWeixinMessage(message),

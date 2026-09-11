@@ -367,6 +367,41 @@ export const steps = [
   },
 
   {
+    name: "⑦bis 同会话内把下拉改到另一个真实模型 = 下一轮立刻生效",
+    run: async (h) => {
+      // 用户实测场景（09-11 第三次反馈）：会话正在用真模型 A，在下拉里改成真模型 B 后
+      // **下一条消息**就得用 B。「要重开会话 / 重开应用才生效」= 不达标。
+      // 判据仍然取引擎 rollout 的 turn_context.model —— 下拉/记录只是意图。
+      const wantNow = bareModel(h.modelB);
+      await h.eval(`localStorage.setItem("last-thread", ${JSON.stringify(h.threadA)})`);
+      await reopenAndExpect(h, h.threadA, h.modelA);
+
+      await openModelMenu(h);
+      const activeIdx = await activeOptionIndexes(h);
+      const opts = h.modelMenuOptions;
+      const targetIdx = activeIdx.find((i) => String(opts[i].title).includes(wantNow));
+      h.check(
+        "前置：菜单里能找到一个**同供应商**的另一个真实模型（跨供应商会触发重启）",
+        targetIdx !== undefined,
+        `目标 ${wantNow}，可选：${activeIdx.map((i) => opts[i].title).join(" / ")}`
+      );
+      if (targetIdx === undefined) throw new Error("找不到可切换的同供应商真实模型");
+      const title = await pickOption(h, targetIdx);
+
+      const rec = await h.eval(`localStorage.getItem("thread-model-" + ${JSON.stringify(h.threadA)})`);
+      h.check("改下拉后，会话记录立刻变成新模型", rec === h.modelB, `期望 ${h.modelB}，实际 ${rec}（菜单项「${title}」）`);
+      await h.screenshot("改下拉立刻换模型");
+
+      const a = await sendAndReadEngineModel(h, h.threadA);
+      h.check("前置：切换后的回合真的发出去了", a.after.turns > a.before.turns, `回合数 ${a.before.turns} → ${a.after.turns}`);
+      h.check("改了下拉后的下一轮，引擎真跑新模型（立刻生效）", a.after.turnModel === wantNow, `期望 ${wantNow}，引擎实际 ${a.after.turnModel}`);
+      h.check("引擎侧会话模型设置同步成新模型", a.after.settingsModel === wantNow, `期望 ${wantNow}，引擎记录 ${a.after.settingsModel}`);
+      h.check("新回合没有继续用旧模型", a.after.turnModel !== bareModel(h.modelA), `旧模型 ${bareModel(h.modelA)}，本轮 ${a.after.turnModel}`);
+      await h.screenshot("切换后引擎侧跑新模型");
+    },
+  },
+
+  {
     name: "⑧ 无渲染层报错",
     run: async (h) => {
       h.check("渲染层无 console.error", h.consoleLog.length === 0, h.consoleLog.slice(0, 3).join(" ｜ "));

@@ -367,6 +367,28 @@ if (typeof resolveModelForOpen !== "function") {
   }
 }
 
+console.log(C.bold("\n【5】启动链健壮性（boot 副作用不得裸 await）"));
+{
+  // 为什么是硬失败：主进程 boot 是 `app.whenReady().then(async () => { … })`——里面任何一处
+  // await 抛出都会变成 unhandled rejection，**整条启动链就此中断、引擎根本不 spawn**，
+  // 表现是「界面能打开、发消息完全没有回复」，日志里只有一行 EPERM（09-11 实测：
+  // memory-mode.json 写不进去）。下面三处是已知副作用点，必须各自 try/catch 兜底降级；
+  // 以后往 boot 里加类似步骤，请照此办理。
+  if (!mainSrc) {
+    warn("找不到 electron/main.ts，跳过启动链守卫");
+  } else {
+    const guarded = [
+      /try\s*\{\s*await applyMemoryMode\(await readMemoryMode\(\)\);\s*\}/,
+      /try\s*\{\s*await scheduler\.start\(\);\s*\}/,
+      /try\s*\{\s*await remote\.start\(\);\s*\}/,
+    ];
+    const missing = guarded.filter((re) => !re.test(mainSrc)).length;
+    missing === 0
+      ? ok("boot 的 applyMemoryMode / scheduler.start / remote.start 都有 try/catch 兜底")
+      : fail(`boot 里有 ${missing} 处副作用没兜底 —— 裸 await 抛出会掐死引擎启动（界面能开但毫无回复）`);
+  }
+}
+
 // ---------- 汇总 ----------
 
 console.log("");
