@@ -17,6 +17,9 @@
 export const name = "model-scope";
 export const description = "每个会话独立选模型：真实模型配置下用菜单选模型，会话之间互不串扰";
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const FAKE_A = "custom:e2e-fake:FAKE-A-MODEL";
@@ -397,6 +400,10 @@ export const steps = [
       h.check("改了下拉后的下一轮，引擎真跑新模型（立刻生效）", a.after.turnModel === wantNow, `期望 ${wantNow}，引擎实际 ${a.after.turnModel}`);
       h.check("引擎侧会话模型设置同步成新模型", a.after.settingsModel === wantNow, `期望 ${wantNow}，引擎记录 ${a.after.settingsModel}`);
       h.check("新回合没有继续用旧模型", a.after.turnModel !== bareModel(h.modelA), `旧模型 ${bareModel(h.modelA)}，本轮 ${a.after.turnModel}`);
+      // 供应商档案（custom-model.json 顶层 model）必须跟着选择走：模型被问「你是什么模型」
+      // 时会读这个文件自查，不同步它就会自报旧模型（09-11 用户实测误判「切换没生效」的根源）
+      const archive = JSON.parse(readFileSync(join(h.userDataDir, "custom-model.json"), "utf8"));
+      h.check("供应商档案的当前模型已同步成新选择", archive.model === wantNow, `期望 ${wantNow}，档案实际 ${archive.model}`);
       await h.screenshot("切换后引擎侧跑新模型");
     },
   },
