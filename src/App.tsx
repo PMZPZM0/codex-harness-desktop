@@ -130,6 +130,7 @@ import {
   LogIn,
   Database,
   Headphones,
+  FileQuestion,
 } from "lucide-react";
 import { useMemory, type MemoryGatewayState, type MemoryGroup, type MemoryPriority, type MemoryRecord, groupMemoriesByThread } from "./hooks/useMemory";
 import UsagePanel from "./components/UsagePanel";
@@ -7067,6 +7068,11 @@ export default function App() {
   const [systemEvents, setSystemEvents] = useState<SystemEvent[]>([]);
   // 本回合 hook 注入徽标（静默）：完成回复时展示在 footer 末尾
   const [hookPulse, setHookPulse] = useState<{ count: number; hooks: { name: string; label?: string; done: boolean }[]; at: number }>({ count: 0, hooks: [], at: 0 });
+  // 欢迎页「项目地址」选择：null = 跟随全局项目地址（与右上角 📁 联动）；
+  // 字符串 = 「无项目」模式的临时目录（每次选择都新建一个独立子目录）。
+  // 仅欢迎页展示，发送首条消息（thread 有回合）后随欢迎态一起消失。
+  const [welcomeScratchDir, setWelcomeScratchDir] = useState<string | null>(null);
+  const [welcomeCwdMenuOpen, setWelcomeCwdMenuOpen] = useState(false);
   // 写代码模式（ponytail）开关状态：默认开启，与「常规」页的总闸联动
   const [ponytailOn, setPonytailOn] = useState(true);
   // 各渠道真实连接状态（微信/Telegram 网关是否在线）
@@ -11635,14 +11641,18 @@ const commandMatches = useMemo(() => {
     const memoryTools = dynamicTools.length ? { dynamicTools } : {};
     const started = await window.codex.request("thread/start", {
       model: selectedModel?.model ?? modelName(modelId),
-      cwd: workspace,
+      // 欢迎页「无项目」模式：本会话用自动创建的独立临时目录（每个会话单独一个）；
+      // 正常模式跟随全局项目地址。会话建立后清掉 scratch 记录——下次再选「无项目」
+      // 会新建另一个目录，实现「每次新建单独目录」。
+      cwd: welcomeScratchDir ?? workspace,
       approvalPolicy,
       sandbox,
-      sandboxPolicy: sandboxPolicy(sandbox, workspace),
+      sandboxPolicy: sandboxPolicy(sandbox, welcomeScratchDir ?? workspace),
       personality: selectedModel?.supportsPersonality ? personality : null,
       ...providerConfig,
       ...memoryTools,
     });
+    if (welcomeScratchDir) setWelcomeScratchDir(null);
     const active = started.thread as Thread;
     threadRef.current = active;
     setThread(active);
@@ -12693,7 +12703,42 @@ const commandMatches = useMemo(() => {
             </div>}
             {(contextItems.length > 0 || selectedSkills.length > 0) && <div className="context-chip-row" aria-label="已引用上下文与技能">{contextItems.map((item) => <span className="context-chip" key={item.id}><Quote size={12} /><b>{item.role}</b><em>{item.text}</em><button type="button" title="移除引用" onClick={() => removeContextItem(item.id)}><X size={12} /></button></span>)}{selectedSkills.map((skill) => <span className="context-chip skill-chip" key={skill.name}><Zap size={12} /><b>技能</b><em>{skill.name}</em><button type="button" title="移除技能" onClick={() => setSelectedSkills((current) => current.filter((entry) => entry.name !== skill.name))}><X size={12} /></button></span>)}</div>}
             <div className="composer-input-shell">
-              {(planArmed || planRunning) && <button type="button" className={`mode-chip-float chip-plan ${planRunning ? "running" : ""}`} title={planRunning ? "计划模式 · 方案生成中（点击中断）" : "计划模式 · 下一条消息先出方案（点击退出）"} onClick={() => { if (planRunning) { void interrupt(); } else { planOnceRef.current = false; setPlanArmed(false); showToast("计划模式已退出", "下一条消息按普通模式执行"); } }}><ListChecks size={13} /></button>}
+            {/* 欢迎页「项目地址」选择（仅空态显示，发送首条消息后随欢迎态消失）：
+                与右上角 📁 同一全局 workspace 联动；「无项目」模式每次自动新建独立临时目录 */}
+            {isEmpty && (
+              <div className="welcome-cwd-picker">
+                <button type="button" className={`welcome-cwd-chip ${welcomeScratchDir ? "scratch" : ""}`} title={welcomeScratchDir ? "无项目 · 本会话使用独立临时目录（点击更改）" : "项目地址：" + (workspace || "未选择（点击选择）")} onClick={() => setWelcomeCwdMenuOpen((open) => !open)}>
+                  {welcomeScratchDir ? <FileQuestion size={12} /> : <FolderOpen size={12} />}
+                  <span>{welcomeScratchDir ? "无项目 · 临时目录" : workspace ? workspace.split(/[\\/]/).filter(Boolean).pop() || "项目地址" : "选择项目地址"}</span>
+                  <ChevronDown size={11} className={welcomeCwdMenuOpen ? "up" : ""} />
+                </button>
+                {welcomeCwdMenuOpen && (
+                  <div className="welcome-cwd-menu" role="menu">
+                    <button type="button" role="menuitem" className={!welcomeScratchDir ? "active" : ""} onClick={async () => {
+                      setWelcomeCwdMenuOpen(false);
+                      setWelcomeScratchDir(null);
+                      await chooseWorkspace();
+                    }}>
+                      <FolderOpen size={13} />
+                      <span>使用项目地址<small>{workspace || "当前未选择，点击选择目录"}</small></span>
+                    </button>
+                    <button type="button" role="menuitem" className={welcomeScratchDir ? "active" : ""} onClick={async () => {
+                      setWelcomeCwdMenuOpen(false);
+                      if (welcomeScratchDir) return;
+                      try {
+                        const dir = await window.codex.createScratchDir();
+                        setWelcomeScratchDir(dir);
+                        showToast("无项目模式", "本次会话将使用自动创建的独立临时目录");
+                      } catch (error: any) { setNotice(`临时目录创建失败：${error.message}`); }
+                    }}>
+                      <FileQuestion size={13} />
+                      <span>不使用项目地址<small>自动创建独立临时目录（每个会话单独一个）</small></span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {(planArmed || planRunning) && <button type="button" className={`mode-chip-float chip-plan ${planRunning ? "running" : ""}`} title={planRunning ? "计划模式 · 方案生成中（点击中断）" : "计划模式 · 下一条消息先出方案（点击退出）"} onClick={() => { if (planRunning) { void interrupt(); } else { planOnceRef.current = false; setPlanArmed(false); showToast("计划模式已退出", "下一条消息按普通模式执行"); } }}><ListChecks size={13} /></button>}
               {thread && goalText && goalStatus !== "complete" && <button type="button" className="mode-chip-float chip-goal" title="目标模式 · 自动推进中（点击停止）" onClick={stopGoalLoop}><Target size={13} /></button>}
               <ComposerEditor value={prompt} placeholder="向 Codex 提问，使用 / 选择命令、@ 引用上下文、# 引用技能" editorRef={composerInputRef} domValueRef={composerDomValueRef} makeChip={makeComposerChip} onValueInput={onPromptChange} onKeyDown={(event) => { if (skillCommandMatches.length && event.key === "Enter") { event.preventDefault(); addSkillReference(skillCommandMatches[0]); return; } if (skillCommandMatches.length && event.key === "Escape") { event.preventDefault(); setPrompt(""); return; } if (contextOpen && event.key === "Enter" && availableContextItems[0]) { event.preventDefault(); addContextItem(availableContextItems[0]); return; } if (event.key === "Escape" && contextOpen) { event.preventDefault(); setContextOpen(false); return; } onComposerKeyDown(event); }} onBlur={() => setTimeout(() => setContextOpen(false), 120)} onPasteImage={(text) => void pasteImage(text)} onPasteFiles={(paths) => {
                     const added = paths.filter((p) => !files.includes(p));

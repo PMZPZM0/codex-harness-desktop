@@ -113,6 +113,8 @@ resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **欢迎页「项目地址」选择（09-12 新增）**：欢迎页输入框左上角 chip（仅空态 `isEmpty` 显示，发送首条消息后消失）。两种模式：①「使用项目地址」= 全局 workspace（与右上角 📁 完全联动，`chooseWorkspace` 同一入口）；②「不使用项目地址」= 主进程 `scratch:create` IPC 每次新建独立临时目录（优先安装目录下 `scratch/`，不可写回落 userData），`thread/start` 的 `cwd` 用该目录（`sandboxPolicy` 同步），会话建立后 scratch 记录清空——下次再选「无项目」新建另一个目录。引擎据此在该会话内的文件操作都落在独立目录，不污染真实项目。
+
 - **config.toml 错位孤儿键自动清理（09-11）**：`preserveUserConfig` 现在会把「落在某个 section 内的 harness 顶层键」（`HARNESS_CONFIG_KEYS`，含新加的 `model_reasoning_effort`）当错位数据丢弃——引擎运行中 append 顶层键时若文件尾正好在某个段落里，键会被 TOML 归进该段（实测 L136 `model_reasoning_effort="medium"` 落进 `[mcp_servers.nuphus]`，引擎不读、纯误导排查）。用户自建段落（projects 等）的其它行不受影响（行为断言 3 条已验）。
 - **钩子徽标中文名（09-11）**：消息 footer 小扳手的 hook 列表把引擎原始 `run.name`（形如 `session-start:0C:\Users\...`，事件名+序号+命令路径拼一起）映射成「会话启动钩子 #0」等中文短名展示；配对仍用原始 name，悬停 title 可看原始值。
 

@@ -373,6 +373,7 @@ interface Window {
     setProviderModel(input: { provider: string; model: string; apply?: boolean; restart?: boolean }): Promise<CustomModelState>;
     setProviderEffort(input: { provider: string; model: string; effort: string }): Promise<CustomModelState>;
     writeClipboard(text: string): Promise<boolean>;
+    createScratchDir(): Promise<string>;
     applyCustomModel(): Promise<CustomModelState>;
     upsertProviderModel(input: { provider: string; model: ProviderModelConfig }): Promise<CustomModelState>;
     removeProviderModel(input: { provider: string; modelId: string }): Promise<CustomModelState>;

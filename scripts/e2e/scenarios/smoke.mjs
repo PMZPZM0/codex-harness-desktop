@@ -47,6 +47,8 @@ export const steps = [
       h.check("输入框 .composer-editor", await h.exists(".composer-editor"));
       h.check("发送键 .send-button", await h.exists(".send-button"));
       h.check("附件按钮 .plus-spin-button", await h.exists(".plus-spin-button"));
+      // 欢迎页「项目地址」选择 chip（09-11 新增；仅空态显示，发送首条消息后随欢迎态消失）
+      h.check("欢迎页项目地址 chip .welcome-cwd-chip", await h.exists(".welcome-cwd-chip"));
 
       const tabsText = await h.eval(`[...document.querySelectorAll(".sidebar-tab")].map(e => e.innerText).join("|")`);
       for (const t of ["新建任务", "自动化", "技能中心", "插件市场", "专家团", "会话备份"]) {
