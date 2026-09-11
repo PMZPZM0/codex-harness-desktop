@@ -270,9 +270,9 @@ export const steps = [
       })()`);
       h.check("下载模型按钮存在", String(btnLabels).includes("下载模型"), JSON.stringify(btnLabels));
       h.check("本地导入按钮存在", String(btnLabels).includes("本地导入"), JSON.stringify(btnLabels));
-      // 路径行
-      const pathText = await h.text(".voice-devtools-path").catch(() => "");
-      h.check("显示模型路径", String(pathText).includes("路径") && /[\\/]/.test(String(pathText)), String(pathText).slice(0, 80));
+      // 路径（不再单独占一行——内联到标题区作为 mono 小字）
+      const pathInline = await h.text(".voice-devtools-path-inline").catch(() => "");
+      h.check("显示模型路径（内联）", String(pathInline).includes("voice-models") || /[\\/]/.test(String(pathInline)), String(pathInline).slice(0, 80));
       // 导入提示 details（默认收着）
       const hintPresent = await h.exists(".voice-devtools-import-hint");
       h.check("本地导入提示 details 存在", Boolean(hintPresent));
