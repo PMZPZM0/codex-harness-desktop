@@ -430,6 +430,7 @@ interface Window {
     toolStatus(): Promise<{ id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>;
     listRuntimes(): Promise<DevRuntimeEntry[]>;
     installRuntime(id: string): Promise<{ ok: boolean; runtimes: DevRuntimeEntry[] }>;
+    uninstallRuntime(id: string): Promise<{ ok: boolean; runtimes: DevRuntimeEntry[] }>;
     onRuntimeProgress(listener: (event: { id: string; message: string; done?: boolean; failed?: boolean; auto?: boolean }) => void): () => void;
     openInCloakBrowser(url: string): Promise<{ ok: boolean; detail: string }>;
     cloakBrowserStatus(): Promise<{ event?: string; message?: string; url?: string; title?: string }>;
@@ -510,6 +511,7 @@ interface Window {
     voiceModelsCancel(): Promise<{ ok: boolean }>;
     voiceModelsImport(input: { sourceDir: string }): Promise<{ ok: boolean; failures: string[] }>;
     voiceModelsReveal(): Promise<string>;
+    voiceModelsUninstall(): Promise<{ ok: boolean }>;
     voiceMicPermission(): Promise<{ status: string; error?: string }>;
     voiceSettingsGet(): Promise<{
       settings: {

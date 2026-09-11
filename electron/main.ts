@@ -554,6 +554,12 @@ ipcMain.handle("voice:models-reveal", () => {
   // 在文件管理器里打开模型目录（开发者验证下载内容用）
   return shell.openPath(voiceModelsRoot);
 });
+ipcMain.handle("voice:models-uninstall", async () => {
+  // 卸载 = 直接删整个 voice-models 根目录（含 .part）；下次再点下载会重新拉
+  await fs.rm(voiceModelsRoot, { recursive: true, force: true });
+  await voiceService.refreshModelsReady();
+  return { ok: true };
+});
 
 /** macOS 需要显式申请麦克风授权；Windows/Linux 直接按「已授权」处理。 */
 ipcMain.handle("voice:mic-permission", async () => {
@@ -3295,6 +3301,28 @@ async function restartServerWhenIdle(id: DevRuntimeId) {
 }
 
 ipcMain.handle("runtime:list", () => runtimeList());
+
+/** 运行时卸载：删除安装根目录（不是单个 marker），状态回退为"未下载" */
+function runtimeUninstallPath(id: DevRuntimeId, spec: DevRuntimeSpec): string {
+  // 引擎侧安装：ponytail 在 codex-home/plugins/cache/ponytail
+  if (id === "ponytail") return path.join(codexHome, "plugins", "cache", "ponytail");
+  // 工具侧：安装根 = marker 路径的第一段（automation -> npm-global / playwright-browsers -> pw-browsers / etc）
+  return path.join(toolsRoot(), spec.marker.split(/[\\/]/)[0]);
+}
+
+ipcMain.handle("runtime:uninstall", async (_event, idValue: string) => {
+  const id = idValue as DevRuntimeId;
+  const spec = devRuntimeSpecs[id];
+  if (!spec) throw new Error("未知开发工具");
+  if (spec.builtIn) throw new Error("内置工具不可卸载");
+  if (spec.kind === "guide") throw new Error("该工具是系统级安装，请到系统的「应用与功能」里卸载");
+  const target = runtimeUninstallPath(id, spec);
+  // 一些 marker 是文件而不是目录（如 npm-global/.../package.json）—— 删父目录的安装根即可
+  await fs.rm(target, { recursive: true, force: true });
+  // ponytail 卸载后顺手取消 config.toml 里的注册段（否则重启引擎会找不到模块）
+  if (id === "ponytail") await server.request("config/value/write", { filePath: path.join(codexHome, "config.toml"), keyPath: "plugins.\"ponytail-plugin\".enabled", value: false }).catch(() => undefined);
+  return { ok: true, runtimes: runtimeList() };
+});
 ipcMain.handle("runtime:install", async (_event, idValue: string) => {
   const id = idValue as DevRuntimeId;
   if (!devRuntimeSpecs[id]) throw new Error("未知开发工具");

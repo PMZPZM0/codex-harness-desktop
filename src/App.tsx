@@ -7246,6 +7246,22 @@ export default function App() {
       setNotice(`开发工具安装失败：${error.message}`);
     } finally { setRuntimeInstalling(null); }
   }
+
+  async function uninstallDevRuntime(id: string) {
+    const spec = devRuntimes.find((r) => r.id === id);
+    if (!spec || spec.builtIn) return;
+    const ok = window.confirm(`确认卸载「${spec.name}」？\n\n删除安装文件后可以随时重新下载（≈${spec.size}）。`);
+    if (!ok) return;
+    setRuntimeInstalling(id);
+    try {
+      const result = await window.codex.uninstallRuntime(id);
+      setDevRuntimes(result.runtimes);
+      await Promise.all([refreshSettingsResources(), refreshToolsStatus()]);
+      setNotice(`已卸载「${spec.name}」`);
+    } catch (error: any) {
+      setNotice(`卸载失败：${error.message}`);
+    } finally { setRuntimeInstalling(null); }
+  }
   useEffect(() => { if (settingsOpen) refreshToolsStatus(); }, [settingsOpen]);
   useEffect(() => { if (settingsOpen && settingsPage === "devtools") refreshDevRuntimes(); }, [settingsOpen, settingsPage]);
   // 进入「SSH 服务器」分区时拉取一次服务器列表
@@ -13547,11 +13563,18 @@ const commandMatches = useMemo(() => {
                               : !isDone && runtime.id === "automation" ? <em className="runtime-hint">解压即用 · 含 nuphus + playwright-cli + cloakbrowser</em> : null}
                           </span>
                           <span className="runtime-size">{runtime.size}</span>
-                          {runtime.builtIn ? <span className="runtime-badge">内置</span>
-                            : isDone ? <span className="runtime-badge installed">{runtime.installedBySystem ? "系统已装" : "已安装"}</span>
-                              : isGuide
-                                ? <button className="secondary-setting runtime-install" onClick={() => void installDevRuntime(runtime.id)}><ExternalLink size={13} />去官网安装</button>
-                                : <button className="secondary-setting runtime-install" disabled={Boolean(runtimeInstalling)} onClick={() => void installDevRuntime(runtime.id)}>{busy ? <Spinner /> : <ArrowDown size={14} />}下载</button>}
+                          <div className="runtime-actions">
+                            {runtime.builtIn ? <span className="runtime-badge">内置</span>
+                              : isDone ? <>
+                                  <span className="runtime-badge installed">{runtime.installedBySystem ? "系统已装" : "已安装"}</span>
+                                  {!runtime.installedBySystem && (
+                                    <button className="secondary-setting runtime-uninstall" disabled={Boolean(runtimeInstalling)} onClick={() => void uninstallDevRuntime(runtime.id)}>卸载</button>
+                                  )}
+                                </>
+                                : isGuide
+                                  ? <button className="secondary-setting runtime-install" onClick={() => void installDevRuntime(runtime.id)}><ExternalLink size={13} />去官网安装</button>
+                                  : <button className="primary-setting runtime-install" disabled={Boolean(runtimeInstalling)} onClick={() => void installDevRuntime(runtime.id)}>{busy ? <Spinner /> : <ArrowDown size={14} />}下载</button>}
+                          </div>
                         </div>;
                       })}
                     </div>

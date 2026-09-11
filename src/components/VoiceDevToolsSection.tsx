@@ -83,6 +83,13 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
     window.codex.voiceModelsReveal().catch((e: any) => onNotice(`打开失败：${e?.message ?? e}`));
   }, [onNotice]);
 
+  const uninstall = useCallback(() => {
+    if (!window.confirm("确认卸载语音模型？\n\n删除已下载的 270MB 模型文件，可以随时重新下载。")) return;
+    window.codex.voiceModelsUninstall()
+      .then((r: any) => { if (r.ok) onNotice("语音模型已卸载"); else onNotice("卸载失败"); refresh(); })
+      .catch((e: any) => onNotice(`卸载失败：${e?.message ?? e}`));
+  }, [onNotice, refresh]);
+
   const ready = status ? status.ready === status.total && status.total > 0 : false;
   const sizeMB = status ? Math.round(status.bytes / 1024 / 1024) : null;
 
@@ -103,7 +110,7 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
 
       <div className="voice-devtools-body">
         <div className="voice-devtools-desc">
-          <strong>总大小约 270MB，<u>生产构建不打包</u></strong>——首次使用按需下载（HF / hf-mirror 镜像自动测速），或从本地目录导入（开发版专用）。
+          <strong>总大小约 270MB</strong>——首次使用按需下载（HF / hf-mirror 镜像自动测速），或从本地目录导入。
         </div>
         {status && !ready && status.repos.length > 0 && (
           <details className="voice-devtools-import-hint">
@@ -138,9 +145,14 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
             <X size={13} />取消{downloading.mode === "import" ? "导入" : "下载"}
           </button>
         ) : ready ? (
-          <button className="secondary-setting" onClick={reveal}>
-            <FolderOpen size={13} />打开目录
-          </button>
+          <>
+            <button className="secondary-setting" onClick={reveal}>
+              <FolderOpen size={13} />打开目录
+            </button>
+            <button className="secondary-setting voice-uninstall" onClick={uninstall}>
+              <X size={13} />卸载
+            </button>
+          </>
         ) : (
           <>
             <button className="primary-setting" onClick={startInstall}>
