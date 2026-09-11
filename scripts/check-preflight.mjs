@@ -11,6 +11,7 @@
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../src/lib/model-scope.mjs";
+import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../src/lib/voice-aec.mjs";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -364,6 +365,120 @@ if (typeof resolveModelForOpen !== "function") {
     helperUsesScope
       ? ok("applyGlobalModelChoice 按 shouldSyncOpenThread 决定是否同步当前会话")
       : fail("applyGlobalModelChoice 没走 shouldSyncOpenThread —— 改全局默认会波及别的会话");
+  }
+}
+
+// ---------- 4b. 语音通话纯逻辑（回声消除 / 门控 / 断句） ----------
+
+console.log(C.bold("\n【4b】语音通话纯逻辑（回声消除 / 回声门控 / 断句）"));
+
+{
+  // 重采样：采样率相同时必须原样返回（不做无谓的插值，避免引入失真）
+  const src = new Float32Array([0, 0.5, 1, 0.5, 0, -0.5, -1, -0.5]);
+  const same = resampleLinear(src, 16000, 16000);
+  same === src ? ok("重采样：同采样率原样返回（不重复插值）") : fail("重采样：同采样率不应复制/变换");
+  const half = resampleLinear(new Float32Array(1600), 16000, 8000);
+  half.length === 800 ? ok("重采样：16k → 8k 长度减半") : fail(`重采样：期望 800，实际 ${half.length}`);
+
+  // 能量：静音必须是 0，满幅正弦约 0.707
+  rmsOf(new Float32Array(1024)) === 0 ? ok("能量：静音 = 0") : fail("能量：静音应为 0");
+  const sine = new Float32Array(1600);
+  for (let i = 0; i < sine.length; i++) sine[i] = Math.sin((2 * Math.PI * 440 * i) / 16000);
+  const sineRms = rmsOf(sine);
+  Math.abs(sineRms - 0.7071) < 0.02 ? ok(`能量：满幅正弦 ≈ 0.707（实际 ${sineRms.toFixed(3)}）`) : fail(`能量：满幅正弦期望 ≈0.707，实际 ${sineRms.toFixed(3)}`);
+
+  // --- 回声消除：合成一条线性回声路径，验证真的压下去了 ---
+  const N = 12000;
+  const ECHO_DELAY = 40;
+  const far = new Float32Array(N);
+  for (let i = 0; i < N; i++) far[i] = 0.3 * Math.sin((2 * Math.PI * 220 * i) / 16000);
+  const mic = new Float32Array(N);
+  for (let i = 0; i < N; i++) mic[i] = i - ECHO_DELAY >= 0 ? far[i - ECHO_DELAY] * 0.5 : 0;
+
+  const aec = createAec({ filterLength: 128, delay: 32, step: 0.2 });
+  const out = new Float32Array(N);
+  const CHUNK = 256;
+  for (let off = 0; off < N; off += CHUNK) {
+    out.set(aec.process(mic.subarray(off, off + CHUNK), far.subarray(off, off + CHUNK)), off);
+  }
+  const tailStart = N - 4000;
+  const erle = 20 * Math.log10(rmsOf(mic.subarray(tailStart)) / Math.max(rmsOf(out.subarray(tailStart)), 1e-12));
+  erle > 12
+    ? ok(`回声消除：纯回声段抑制 ${erle.toFixed(1)} dB（>12dB 判定有效）`)
+    : fail(`回声消除：抑制只有 ${erle.toFixed(1)} dB，滤波器没收敛`);
+
+  // 前置条件断言：确认这段输入里**确实有回声**，否则上面那条断言等于没测
+  rmsOf(mic) > 0.05 ? ok("回声消除：用例输入确有回声（前置条件成立）") : fail("回声消除：用例输入没有回声，断言无意义");
+
+  // 双讲冻结：冻结时只减不学，滤波器不会跟着跑
+  const frozenAec = createAec({ filterLength: 128, delay: 32, step: 0.2 });
+  frozenAec.setFrozen(true);
+  const frozenOut = new Float32Array(N);
+  for (let off = 0; off < N; off += CHUNK) {
+    frozenOut.set(frozenAec.process(mic.subarray(off, off + CHUNK), far.subarray(off, off + CHUNK)), off);
+  }
+  const frozenErle = 20 * Math.log10(rmsOf(mic.subarray(tailStart)) / Math.max(rmsOf(frozenOut.subarray(tailStart)), 1e-12));
+  frozenErle < 3
+    ? ok("回声消除：全程冻结时滤波器不收敛（证明冻结真的生效）")
+    : fail(`回声消除：冻结后仍收敛了 ${frozenErle.toFixed(1)} dB，冻结没生效`);
+
+  // --- 回声门控：稳态回声不算说话；突然变响才算；双讲期间地板必须冻住 ---
+  const gate = createEchoGate({ echoGateDb: 6 });
+  gate.update(0.01, true);
+  gate.update(0.01, true);
+  gate.doubleTalk === false ? ok("门控：稳态回声不误判为插话") : fail("门控：稳态回声被误判为插话");
+  gate.update(0.5, true);
+  gate.doubleTalk === true ? ok("门控：能量突然高出地板 6dB 以上 → 判定插话") : fail("门控：明显插话没被识别");
+  // 连喊 80 次：无冻结时地板会爬升，约第 34 帧起就不再判插话（实测过这个临界点）；
+  // 有冻结时地板纹丝不动，80 帧全部判插话。
+  const floorBefore = gate.floor;
+  let stayed = true;
+  for (let i = 0; i < 80; i++) {
+    gate.update(0.5, true);
+    if (!gate.doubleTalk) stayed = false;
+  }
+  stayed
+    ? ok("门控：双讲期间地板冻结（连喊 80 次仍判插话，不会越喊越难打断）")
+    : fail("门控：地板被插话带高，越说越难打断（冻结失效）");
+  Math.abs(gate.floor - floorBefore) < 1e-9
+    ? ok(`门控：双讲期间地板数值不变（保持 ${floorBefore.toFixed(4)}）`)
+    : fail(`门控：地板在双讲期间被抬高了（${floorBefore.toFixed(4)} → ${gate.floor.toFixed(4)}）`);
+  gate.update(0.5, false);
+  gate.doubleTalk === false && gate.floor === 0
+    ? ok("门控：播报停止后复位（下次播报重新学习地板）")
+    : fail("门控：播报停止后未复位");
+
+  // --- 断句：句读即切、超长在软断点切、结尾 flush ---
+  const hard = createSentenceChunker({ maxChars: 10 });
+  const got1 = hard.push("你好。");
+  got1.length === 1 && got1[0] === "你好。" ? ok("断句：遇到句号立即成句") : fail(`断句：句号未切，实际 ${JSON.stringify(got1)}`);
+  hard.push("abc").length === 0 ? ok("断句：未到句读且不超长 → 继续攒") : fail("断句：短句被提前切了");
+
+  const hardCut = createSentenceChunker({ maxChars: 10 });
+  const got2 = hardCut.push("abcdefghijklmn");
+  got2.length === 1 && got2[0] === "abcdefghij"
+    ? ok("断句：无标点超长 → 按上限硬切（避免长回答憋着不出声）")
+    : fail(`断句：硬切结果不对，实际 ${JSON.stringify(got2)}`);
+  const tail2 = hardCut.flush();
+  tail2.length === 1 && tail2[0] === "klmn" ? ok("断句：flush 吐出残留") : fail(`断句：flush 结果不对，实际 ${JSON.stringify(tail2)}`);
+
+  const soft = createSentenceChunker({ maxChars: 10 });
+  const got3 = soft.push("abc,defghijkl");
+  got3.length === 1 && got3[0] === "abc," ? ok("断句：超长时优先在逗号处切") : fail(`断句：软断点结果不对，实际 ${JSON.stringify(got3)}`);
+}
+
+// 接线守卫：语音悬浮入口必须真的挂到 App 上（防「组件写了但没接」）
+{
+  const appPath = join(ROOT, "src", "App.tsx");
+  if (!existsSync(appPath)) {
+    warn("找不到 src/App.tsx，跳过语音接线守卫");
+  } else {
+    const appSrc = readFileSync(appPath, "utf8");
+    const imported = /import\s+VoiceCallFloat\s+from\s+["']\.\/components\/VoiceCallFloat["']/.test(appSrc);
+    const mounted = /<VoiceCallFloat\s+threadId=/.test(appSrc);
+    imported && mounted
+      ? ok("语音悬浮入口已挂载到 App（且带 threadId）")
+      : fail(`语音悬浮入口未接线（import=${imported} mounted=${mounted}）`);
   }
 }
 

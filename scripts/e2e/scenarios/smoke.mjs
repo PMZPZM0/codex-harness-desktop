@@ -13,22 +13,26 @@ export const steps = [
   {
     name: "① 引导页渲染",
     run: async (h) => {
-      await h.waitFor(`document.body && document.body.innerText.includes("直接进入")`, {
-        label: "引导页出现",
-        timeoutMs: 30000,
-      });
-      h.check("引导页出现", true);
-      await h.screenshot("引导页");
+      // 引导页**可能被跳过**：隔离 profile 里灌了真实模型配置且带 Key 时，
+      // customModel.hasKey=true，App 的兼容 effect 会自动进入主界面（写 login-skipped）。
+      // 所以这里等的是「引导页或主界面二选一」，不能硬等跳过按钮（否则带真配置必假红）。
+      await h.waitFor(
+        `(document.body && document.body.innerText.includes("直接进入")) || !!document.querySelector(".app-shell")`,
+        { label: "引导页或主界面", timeoutMs: 30000 }
+      );
+      h.check("引导页或主界面已就绪", true);
+      await h.screenshot("启动落点");
     },
   },
 
   {
     name: "② 跳过引导进入主界面",
     run: async (h) => {
-      await h.clickByText("暂时不登录，直接进入");
+      const hasGuide = await h.eval(`document.body.innerText.includes("直接进入")`);
+      if (hasGuide) await h.clickByText("暂时不登录，直接进入");
       await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "app-shell 挂载", timeoutMs: 25000 });
       await wait(1800); // 等首屏数据（会话列表/工作区）落定
-      h.check("引导页已跳过、主界面挂载", true);
+      h.check("主界面挂载（引导页已跳过或本就被跳过）", true);
       await h.screenshot("主界面");
     },
   },
