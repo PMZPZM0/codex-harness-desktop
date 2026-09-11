@@ -7867,6 +7867,26 @@ export default function App() {
     if (allModels.some((entry) => entry.id === modelId || entry.model === modelId)) return;
     setModelId(`custom:${customModel.provider}:${customModel.model}`);
   }, [customModel, allModels, modelId]);
+  // 档案 100% 同步（09-11「切换的不够干净，必须 100% 同步」）：custom-model.json 顶层
+  // model 是模型自查「我是什么模型」的依据，也是 config.toml 顶层 model 的源头；它滞后于
+  // 当前选择时模型自报就会撒谎（实测：引擎已跑新模型，模型却自报旧模型）。这里盯着内存里
+  // 的当前选择 modelId（= 打开的会话自己的模型，或无会话时的全局默认）：指向生效供应商的
+  // 某个模型而档案还停在旧值（旧版本遗留 / 从别的端改过）→ 就地写齐档案 + config.toml。
+  // restart:false 不重启引擎、不碰在跑的回合。同一次对账只写一次，
+  // 防止与 chooseModel 里的直接写重复落盘。
+  const archiveSyncRef = useRef<string>("");
+  useEffect(() => {
+    const provider = customModel?.provider;
+    if (!provider || !customModel?.model) return;
+    const match = modelId.match(/^custom:([^:]+):(.+)$/);
+    if (!match || match[1] !== provider || match[2] === customModel.model) return;
+    const stamp = `${match[1]}:${match[2]}`;
+    if (archiveSyncRef.current === stamp) return;
+    archiveSyncRef.current = stamp;
+    void window.codex
+      .setProviderModel({ provider, model: match[2], apply: true, restart: false })
+      .catch(() => { archiveSyncRef.current = ""; });
+  }, [customModel, modelId]);
   // 供应商下已配置的模型清单：已保存的 models + 输入框里尚未保存的那个
   // probe 拉到的可用模型只属于探测时的那家供应商，换供应商后不再用于补全
   const modelSuggestions = modelSourceProvider === customDraft.provider ? (providerModels ?? []) : [];
@@ -9714,17 +9734,15 @@ const commandMatches = useMemo(() => {
     }
     saveSelection(value);
 
-    // 同供应商模型已在 catalog 中，直接更新当前会话即可。这里不能走 apply:true：
-    // 那会整份重写 config.toml；运行中的引擎不重读该文件，没必要在每次选模型时都做。
+    // 同供应商模型已在 catalog 中，直接更新当前会话即可，不重启引擎。
     if (provider && customModel && provider === customModel.provider) {
       try {
         await updateThreadSettings({ model, model_provider: provider, effort: nextEffort || null });
-        // 同步「供应商档案的当前模型」（custom-model.json 顶层 model 字段）。
-        // 实测（09-11 用户截图）：引擎已真跑新模型（rollout turn_context 为证），但模型被问
-        // 「你是什么模型」时会去读这个文件自查，陈旧的 model 字段让它自报旧模型，
-        // 用户由此误判「切换没生效」。apply:false 只写档案文件，不重写 config.toml、
-        // 不重启引擎、不碰在跑的回合；config.toml 由启动时的漂移检测对齐。
-        void window.codex.setProviderModel({ provider, model, apply: false }).catch(() => {});
+        // 100% 同步（09-11 用户要求）：一次性写齐 custom-model.json 顶层 model（模型自查
+        // 「我是什么模型」读的就是它）+ config.toml 顶层 model + catalog 上下文窗口。
+        // restart:false 很关键——applyCustomModel 默认以 server.restart() 收尾，
+        // 那会打断所有在跑的回合（实测 ⑦ 全红：回合被杀、渲染层 20s 超时）。
+        void window.codex.setProviderModel({ provider, model, apply: true, restart: false }).catch(() => {});
         setNotice(`${threadRef.current ? "当前会话" : "新会话默认"}已选择：${customModel.name} · ${model}`);
         return;
       } catch (error: any) {

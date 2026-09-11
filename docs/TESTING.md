@@ -12,7 +12,7 @@ npm run verify   # = npm run check && npm run e2e，退出码 0 才算完成
 
 - **只跑一半不算验收**：`check` 过但 `e2e` 没过 = 没完成，不许提交。
 - **改了哪个模块，就给哪个模块补场景**：在 `scripts/e2e/scenarios/` 加/改场景（`npm run e2e` 不带参数就是跑**全部**场景，新场景自动进门槛），或给 `check-preflight.mjs` 加检查项。不要写一次性脚本跑完就丢——09-06 那批 `verify-*.mjs` 全员消失就是这么来的。
-- **新断言的正确性要当场反证一次**：把修复临时改回去，确认这条断言真的会红。不做这一步的断言，很可能只是永远绿的摆设——尤其「没生效」类的 bug。（本项目实测过两次：`model-scope` 步骤③/⑤ 会因「全局永远赢」变红，步骤④ 会因「只认会话记录」变红。）
+- **新断言的正确性要当场反证一次**：把修复临时改回去，确认这条断言真的会红。不做这一步的断言，很可能只是永远绿的摆设——尤其「没生效」类的 bug。（本项目实测过三次：`model-scope` 步骤③/⑤ 会因「全局永远赢」变红，步骤④ 会因「只认会话记录」变红；把档案同步整个关掉 → ⑦bis/⑦ter 的「档案/config.toml 已同步」断言变红（55 条里红 2 条）。**反证跑完记得先 `npm run build` 再跑正式那轮**，否则测的还是反证版的旧产物。）
 - **GUI 起不来时**最低跑 `check`（离线可用），并在提交信息里写明 `e2e` 未跑的原因。
 
 ### Codex 引擎自己怎么跑
@@ -90,7 +90,7 @@ CODEX_HARNESS_DEBUG_PORT  → 打开 CDP 调试端口（端口随机取空闲端
 
 框架在 `scripts/e2e/lib/harness.mjs`，只用项目已有的 `ws` 依赖。启动时它会先做一件事：
 
-> **把真实模型配置灌进隔离 profile**——从真实 userData 复制 `custom-model.json`、`custom-models.json`、`codex-home/config.toml`、`codex-home/model-catalog.json`（可用 `CODEX_HARNESS_REAL_USER_DATA` 指定别的目录；复制时抹掉 `encryptedKey`，因为换 profile 后 safeStorage 密文解不开，只会刷一堆噪音）。
+> **把真实模型配置灌进隔离 profile**——从真实 userData 复制 `custom-model.json`、`custom-models.json`、`codex-home/config.toml`、`codex-home/model-catalog.json`，**外加 Chromium 的 `Local State`，并保留 `encryptedKey` 密钥密文**（可用 `CODEX_HARNESS_REAL_USER_DATA` 指定别的目录）。保留 Key 是为了让「切换生效」的断言打到**真实后端**（真实网关真的回包才算数）；Key 是本机 safeStorage 密文，必须配合同机同用户的 `Local State`（DPAPI 密钥材料）才解得开——早先「抹掉密钥」的做法只能测到「引擎接了参数」那一层，用户指正过不算数。只想跑无 Key 的纯逻辑断言时设 `CODEX_HARNESS_KEEP_SECRETS=0`。密文只落在系统临时目录、不出这台机器、不进 git。
 >
 > **为什么必须**：隔离 profile 若是白纸，模型选择器里一个模型都没有，「每个会话独立选模型」「切换到底有没有生效」这类断言就只能摆弄假的 model id，**等于没测**。带上真配置，场景才能真的点开菜单、真的选中 `custom:custom906:deepseek-v4-flash`。harness 找不到真实配置时会打黄字警告——看到它就意味着模型类结论不可信。
 
@@ -108,7 +108,7 @@ CODEX_HARNESS_DEBUG_PORT  → 打开 CDP 调试端口（端口随机取空闲端
 | 场景 | 覆盖 |
 |---|---|
 | `smoke` | 引导页 → 跳过 → 主界面骨架（标题栏/侧栏/输入框/发送键）→ 侧栏六项 → 输入框读写 → `#` 技能面板 → `/` 命令面板 → 技能中心开关 → 右栏展开 → 设置弹窗开关 + **焦点归还** → 渲染层无 console.error |
-| `model-scope` | **每个会话独立选模型 + 切换真实生效**（43 断言）。真起引擎真建 **两个**会话：③ 有记录 → 打开时不被全局默认冲掉、且不改写全局；④ 没记录 → 落全局默认；⑤⑥ 用**真实模型菜单**点选（`custom:custom906:…`），断言在会话里选模型不动全局、在欢迎页选模型不动任何会话；⑦ **引擎侧取证**——真发一条消息，从 rollout 读 `turn_context.model` / `thread_settings_applied`，断言 A 的回合真跑 A 选的模型、B 真跑 B 选的模型、两边互不追加回合 |
+| `model-scope` | **每个会话独立选模型 + 切换真实生效**（60 断言）。真起引擎真建 **两个**会话：③ 有记录 → 打开时不被全局默认冲掉、且不改写全局；④ 没记录 → 落全局默认；⑤⑥ 用**真实模型菜单**点选（`custom:custom906:…`），断言在会话里选模型不动全局、在欢迎页选模型不动任何会话；⑦ **引擎侧 + 后端取证**——真发一条消息，从 rollout 读 `turn_context.model` / `thread_settings_applied` / `token_usage_record.response_id`，断言 A 真跑 A 的模型、B 真跑 B 的模型、两边互不追加回合，**且每一轮都是真实网关回包**（实测 output=159 / 3 tokens）；⑦bis 同一会话换下拉 → 下一轮**立刻**跑新模型 + `custom-model.json` 与 `config.toml` 顶层同步；⑦ter 打开另一个会话 → 档案对齐该会话的模型 |
 
 ### 写新场景
 
@@ -148,14 +148,15 @@ export const steps = [
 | `h.pressKey(key)` | 派发按键（如 `"Escape"`） |
 | `h.screenshot(label)` | 截图落盘，返回路径 |
 | `h.check(label, cond, detail)` | 记一条断言（不中断，最后统一汇总） |
-| `h.realConfig` | `{ ok, src, copied }`：真实模型配置灌入结果。**模型类场景必须先断言 `ok`**，否则结论不可信 |
-| `h.engineModelOf(threadId)` | **引擎侧取证**：读该会话 rollout，返回 `{ file, turns, turnModel, turnModels, settingsModel, provider }`。`turnModel` = 最新一回合 `turn_context.model`（引擎**真正跑**的模型）；`settingsModel` = `thread_settings_applied` 的会话级设置。判定「切换有没有真实生效」只认它——localStorage / UI 都只是意图 |
+| `h.realConfig` | `{ ok, src, copied }`：真实模型配置灌入结果（`copied` 里应含 `Local State`）。**模型类场景必须先断言 `ok`，并断言 `custom-model.json` 里 `encryptedKey` 仍在**——否则「真实后端回包」这类结论不成立 |
+| `h.engineModelOf(threadId)` | **引擎侧 + 后端取证**：读该会话 rollout，返回 `{ file, turns, turnModel, turnModels, settingsModel, provider, backendResponses, errors }`。`turnModel` = 最新一回合 `turn_context.model`（引擎**真正跑**的模型）；`settingsModel` = `thread_settings_applied` 的会话级设置；`backendResponses` = `token_usage_record`（带网关 `response_id` 与 `usage.output_tokens`，**真实后端回包的硬证据**）；`errors` = 后端/流错误事件。判定「切换有没有真实生效」只认它——localStorage / UI 都只是意图 |
+| env `CODEX_HARNESS_KEEP_SECRETS` | 设 `0` → 灌配置时抹掉 `encryptedKey`（跑不需要真实后端的纯逻辑断言时用）。默认不设 = **保留真 Key + `Local State`**，断言打到真实后端 |
 
 **三条写场景的纪律：**
 
 1. **断言要有前置条件**——先断言「弹窗此刻是关的」，再点开、再断言「打开了」。否则上一步残留的弹窗会让这一步**假通过**（这个坑真的踩过）。
 2. **每步自收尾**——步骤结束时把打开的面板关掉，别把状态留给下一步。
-3. **「生效没生效」必须查到引擎侧**——涉及模型/权限这类**下发到引擎**的开关，只断言 localStorage 或 UI 文案是不够的（改错了照样绿）。要么读 rollout（`h.engineModelOf`），要么读引擎 RPC 的回带值。反面教材：`smoke` 里那条「输入框底部「模型」档」曾按**占位文案**断言，profile 一带真实模型就假红——现在改成按 `title` 属性判定。
+3. **「生效没生效」必须查到引擎侧，并且要打到真实后端**——涉及模型/权限这类**下发到引擎**的开关，只断言 localStorage 或 UI 文案是不够的（改错了照样绿）。要么读 rollout（`h.engineModelOf`），要么读引擎 RPC 的回带值。**再往前一步**：还要证明**真实后端真的回了包**（09-11 用户指正「你这个没有拉起来真实后端测试」）——只证明「引擎接受了 model 参数」不算「切换真的生效」。判据是 rollout 里的 `token_usage_record.response_id`（即 `h.engineModelOf().backendResponses`）；出现 `error/stream_error/turn_failed` 就早停早红。反面教材：`smoke` 里那条「输入框底部「模型」档」曾按**占位文案**断言，profile 一带真实模型就假红——现在改成按 `title` 属性判定。
 
 ### 常见问题
 
@@ -169,6 +170,9 @@ export const steps = [
 | `未找到 page target` | `/json/version`（浏览器端点）先就绪、page target 后注册；带真实模型配置后启动更慢。框架已轮询 20s，仍失败就看报错里列出的 target 类型 |
 | 模型选择器点不开 / 菜单里只有「更多设置…」 | 真实模型配置没灌进去（看开头的黄字警告），或 `custom-model.json` 缺失 |
 | 黄字 `未找到真实模型配置` | 本机还没配置过供应商，或 userData 不在默认位置——用 `CODEX_HARNESS_REAL_USER_DATA=<目录>` 指定 |
+| 步骤① 「按文本点击失败：暂时不登录，直接进入」 | 真实 Key 灌进去后 `customModel.hasKey=true`，`App.tsx:7754` 会自动跳过引导页进主界面，按钮已消失。步骤① 现在等的是「引导页**或**主界面」，两者都放行 |
+| 断言「真实后端回了话」红、`后端响应 0 → 0` | 三种可能：① 灌配置时把 `encryptedKey` 抹掉了（看步骤① 的 `encryptedKey 已保留` 断言）；② 没复制 `Local State`，safeStorage 解不开；③ 网关侧问题（看 `errors` 里的 401 原文） |
+| 断言「真实后端回了话」红、`encryptedKey 已保留` 也红 | 灌配置代码又被改回「抹密钥」了——检查 `seedRealModelConfig` 里 `CODEX_HARNESS_KEEP_SECRETS === "0"` 那个分支（默认必须**不**进） |
 | 想跑完不关应用 | `npm run e2e -- smoke --keep` |
 
 ---

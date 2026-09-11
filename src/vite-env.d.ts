@@ -366,7 +366,7 @@ interface Window {
     saveCustomModel(config: unknown): Promise<CustomModelState>;
     listCustomModels(): Promise<{ providers: ProviderSummary[]; current: string | null }>;
     selectCustomModel(providerId: string): Promise<CustomModelState>;
-    setProviderModel(input: { provider: string; model: string; apply?: boolean }): Promise<CustomModelState>;
+    setProviderModel(input: { provider: string; model: string; apply?: boolean; restart?: boolean }): Promise<CustomModelState>;
     applyCustomModel(): Promise<CustomModelState>;
     upsertProviderModel(input: { provider: string; model: ProviderModelConfig }): Promise<CustomModelState>;
     removeProviderModel(input: { provider: string; modelId: string }): Promise<CustomModelState>;

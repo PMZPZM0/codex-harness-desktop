@@ -163,7 +163,7 @@ contextBridge.exposeInMainWorld("codex", {
   saveCustomModel: (config: unknown) => ipcRenderer.invoke("custom-model:save", config),
   listCustomModels: () => ipcRenderer.invoke("custom-model:list"),
   selectCustomModel: (providerId: string) => ipcRenderer.invoke("custom-model:select", providerId),
-  setProviderModel: (input: { provider: string; model: string; apply?: boolean }) => ipcRenderer.invoke("custom-model:set-model", input),
+  setProviderModel: (input: { provider: string; model: string; apply?: boolean; restart?: boolean }) => ipcRenderer.invoke("custom-model:set-model", input),
   applyCustomModel: () => ipcRenderer.invoke("custom-model:apply"),
   upsertProviderModel: (input: { provider: string; model: unknown }) => ipcRenderer.invoke("custom-model:upsert-model", input),
   removeProviderModel: (input: { provider: string; modelId: string }) => ipcRenderer.invoke("custom-model:remove-model", input),
