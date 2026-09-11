@@ -965,6 +965,32 @@ function matchSkillCatalog<T extends { name: string; description: string; note: 
     .slice(0, limit);
 }
 
+/** 统一复制入口：首选主进程 electron clipboard（不受渲染层 Clipboard API 的
+ *  焦点/权限限制——用户实测窗口失焦时 navigator.clipboard.writeText 抛
+ *  "Write permission denied"），旧构建没有该 IPC 或再失败时回落浏览器 API，
+ *  最后用隐藏 textarea + execCommand 兜底（http 环境/老内核）。 */
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (text == null) return;
+  try {
+    await window.codex.writeClipboard(text);
+    return;
+  } catch { /* IPC 不可用，走浏览器路径 */ }
+  if (typeof navigator.clipboard?.writeText === "function") {
+    try { await navigator.clipboard.writeText(text); return; } catch { /* 落 execCommand */ }
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    if (!document.execCommand("copy")) throw new Error("execCommand('copy') 返回 false");
+  } finally {
+    ta.remove();
+  }
+}
+
 const effortLabels: Record<string, string> = {
   none: "关闭思考",
   minimal: "极简思考",
@@ -3884,7 +3910,7 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
                     <em>当前密钥{currentKey.name ? `（${currentKey.name}）` : ""}</em>
                     <code>{keyVisible ? currentKey.key : maskKey(currentKey.key)}</code>
                     <button type="button" className="icon-button" title={keyVisible ? "隐藏密钥" : "显示密钥"} onClick={() => setKeyVisible((v) => !v)}>{keyVisible ? <EyeOff size={12} /> : <Eye size={12} />}</button>
-                    <button type="button" className="icon-button" title="复制密钥" onClick={async () => { try { await navigator.clipboard.writeText(currentKey.key); onNotice("当前密钥已复制"); } catch { onNotice("复制失败，请手动选择复制"); } }}><Copy size={12} /></button>
+                    <button type="button" className="icon-button" title="复制密钥" onClick={async () => { try { await copyTextToClipboard(currentKey.key); onNotice("当前密钥已复制"); } catch { onNotice("复制失败，请手动选择复制"); } }}><Copy size={12} /></button>
                   </span>
                 )}
               </div>
@@ -10028,7 +10054,7 @@ const commandMatches = useMemo(() => {
 
   async function copyMessage(text: string) {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyTextToClipboard(text);
       setNotice("消息已复制");
     } catch (error: any) {
       setNotice(`复制失败：${error.message}`);
@@ -10037,7 +10063,7 @@ const commandMatches = useMemo(() => {
 
   async function copyThreadReferenceId(target: { id: string }) {
     try {
-      await navigator.clipboard.writeText(`会话 ID：${target.id}`);
+      await copyTextToClipboard(`会话 ID：${target.id}`);
       showToast("会话 ID 已复制", "粘贴到其他会话并发送，即可读取这条会话的对话记录");
     } catch (error: any) {
       setNotice(`复制会话 ID 失败：${error.message}`);
@@ -12823,7 +12849,7 @@ const commandMatches = useMemo(() => {
               </div>
               <div className="remote-scan-row"><span>无法扫码？可以在手机上打开链接。</span>
                 <button className="remote-mini-btn" title="刷新二维码" onClick={() => void window.codex.remoteQrcode().then((svg) => setRemoteQr(svg))}><RefreshCw size={13} />刷新二维码</button>
-                <button className="remote-mini-btn" title="复制链接" onClick={() => { if (remoteUrl) void navigator.clipboard.writeText(remoteUrl); }}><Copy size={13} />复制链接</button>
+                <button className="remote-mini-btn" title="复制链接" onClick={() => { if (remoteUrl) void copyTextToClipboard(remoteUrl); }}><Copy size={13} />复制链接</button>
               </div>
               {remoteUrl ? (
                 <div className="remote-qr-box" dangerouslySetInnerHTML={{ __html: remoteQr }} />
@@ -13318,7 +13344,7 @@ const commandMatches = useMemo(() => {
                     <span className="path-row-label">配置目录</span>
                     <span className="path-row-input"><span className="path-row-value" title={userDataPath || "读取中…"}>{userDataPath || "读取中…"}</span>
                       <span className="path-row-actions">
-                        <button className="secondary-setting" title="复制路径" onClick={() => { void navigator.clipboard.writeText(userDataPath || ""); setNotice("配置目录已复制"); }}><Copy size={14} />复制</button>
+                        <button className="secondary-setting" title="复制路径" onClick={() => { void copyTextToClipboard(userDataPath || ""); setNotice("配置目录已复制"); }}><Copy size={14} />复制</button>
                         <button className="icon-button" title="在文件管理器中打开" disabled={!userDataPath} onClick={() => { if (userDataPath) void window.codex.shellReveal(userDataPath); }}><FolderTree size={15} /></button>
                       </span>
                     </span>
@@ -13473,7 +13499,7 @@ const commandMatches = useMemo(() => {
                 <summary><BookOpen size={13} />工具清单说明（Codex 引擎安装参考）<span className="settings-subhead-hint">点击展开 / 复制</span></summary>
                 <div className="devtools-manifest-body">
                   <pre>{devRuntimes.map((r: any) => `# ${r.name}\n${r.description}\n${r.installed || r.builtIn ? "状态：已就绪" : "状态：未安装"}\n`).join("\n")}</pre>
-                  <button className="secondary-setting" onClick={() => { void navigator.clipboard?.writeText(devRuntimes.map((r: any) => `# ${r.name}\n${r.description}\n${r.installed || r.builtIn ? "状态：已就绪" : "状态：未安装"}\n`).join("\n")); setNotice("工具清单已复制"); }}><Copy size={13} />复制清单</button>
+                  <button className="secondary-setting" onClick={() => { void copyTextToClipboard(devRuntimes.map((r: any) => `# ${r.name}\n${r.description}\n${r.installed || r.builtIn ? "状态：已就绪" : "状态：未安装"}\n`).join("\n")); setNotice("工具清单已复制"); }}><Copy size={13} />复制清单</button>
                 </div>
               </details>
               <p className="settings-card-hint">Node、Python（含 Tkinter、requests/httpx/flask/fastapi/playwright）、Git、PowerShell、ripgrep、uv、CMake、7-Zip、jq、Ninja 已内置随应用提供。桌面/浏览器自动化（nuphus + playwright-cli + cloakbrowser）与浏览器内核按需下载；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）。</p>
@@ -14154,7 +14180,7 @@ const commandMatches = useMemo(() => {
               ];
               const showAll = commandFilter === "all";
               const copyCommand = async (text: string) => {
-                try { await navigator.clipboard.writeText(text); setNotice(`已复制 ${text}`); } catch { setNotice("复制失败"); }
+                try { await copyTextToClipboard(text); setNotice(`已复制 ${text}`); } catch { setNotice("复制失败"); }
               };
               const openNewCommand = () => setCommandEditor({ mode: "new", name: "", source: workspace ? "project" : "global", description: "", argumentHint: "", allowedTools: "", model: "", body: "" });
               const openEditCommand = (entry: CustomCommandEntry) => setCommandEditor({ mode: "edit", name: entry.name, source: entry.source, description: entry.description, argumentHint: entry.argumentHint, allowedTools: entry.allowedTools, model: entry.model, body: entry.body, prevFilePath: entry.filePath });

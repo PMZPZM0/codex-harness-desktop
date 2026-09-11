@@ -372,6 +372,7 @@ interface Window {
     selectCustomModel(providerId: string): Promise<CustomModelState>;
     setProviderModel(input: { provider: string; model: string; apply?: boolean; restart?: boolean }): Promise<CustomModelState>;
     setProviderEffort(input: { provider: string; model: string; effort: string }): Promise<CustomModelState>;
+    writeClipboard(text: string): Promise<boolean>;
     applyCustomModel(): Promise<CustomModelState>;
     upsertProviderModel(input: { provider: string; model: ProviderModelConfig }): Promise<CustomModelState>;
     removeProviderModel(input: { provider: string; modelId: string }): Promise<CustomModelState>;
