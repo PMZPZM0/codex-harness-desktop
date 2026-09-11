@@ -35,13 +35,16 @@ export function realUserDataDir() {
 }
 
 /** 真实配置里与「模型」有关的文件（相对真实 userData）。
- *  注意：都不含明文密钥——custom-model.json 里的 encryptedKey 是本机 safeStorage 密文，
- *  复制到同一台机器的隔离 profile 仍能解出，**不会**被带出这台机器、也不会进 git（临时目录）。 */
+ *  注意：custom-model.json 里的 encryptedKey 是本机 safeStorage 密文（机器内不出机器、不进 git）。
+ *  **必须一并复制 `Local State`**：Chromium os_crypt 的解密密钥材料就存在 profile 的
+ *  Local State 里，只复制密文不复制密钥材料 → 解密失败（此前「抹掉 encryptedKey」的根因）。
+ *  留着真 Key，「引擎真跑了新模型」的断言才能升级成「真实后端真的回话了」。 */
 const MODEL_CONFIG_FILES = [
-  "custom-model.json",           // 当前生效供应商 + 它已启用的模型清单
+  "custom-model.json",           // 当前生效供应商 + 它已启用的模型清单（含 encryptedKey 密文）
   "custom-models.json",          // 全部供应商清单（选择器里跨供应商的那些）
   "codex-home/config.toml",      // 引擎侧 model / model_provider / model_providers
   "codex-home/model-catalog.json",
+  "Local State",                 // Chromium os_crypt 密钥材料（解 encryptedKey 用）
 ];
 
 /**
@@ -61,21 +64,27 @@ export function seedRealModelConfig(userDataDir) {
     copyFileSync(from, to);
     copied.push(rel);
   }
-  // 抹掉密钥字段：e2e 不需要真 Key，而 encryptedKey 是本机 safeStorage 密文，换到新 profile
-  // 一定解不开（实测 main 会打 "API key decrypt failed"、探针直接抛错），噪音还会被
-  // 「渲染层无 console.error」那条断言误判成失败。模型清单本身不含密钥，抹掉不影响本场景。
-  for (const rel of ["custom-model.json", "custom-models.json"]) {
-    const file = join(userDataDir, rel);
-    if (!existsSync(file)) continue;
-    try {
-      const data = JSON.parse(readFileSync(file, "utf8"));
-      const scrub = (obj) => {
-        if (obj && typeof obj === "object") { delete obj.encryptedKey; delete obj.apiKey; }
-        return obj;
-      };
-      if (Array.isArray(data)) data.forEach(scrub); else scrub(data);
-      writeFileSync(file, JSON.stringify(data, null, 2));
-    } catch { /* 解析失败就原样保留 */ }
+  // **encryptedKey 一律保留**（09-11 用户指正「你没拉起真实后端」后定稿）：
+  // 「切换模型真实生效」的断言必须打到**真实后端**——真实网关真的回包（rollout 里
+  // token_usage_record 带网关 response_id），而不是只证明「引擎接受了 model 参数」。
+  // 没 Key 就发不出真实请求，那种绿是假绿。Key 密文是本机 safeStorage 产物，配合一并
+  // 复制的 `Local State`（DPAPI 密钥材料）在同一台机器、同一用户下可正常解出；
+  // 隔离 profile 在系统临时目录里，密文不出这台机器、也不会进 git。
+  // 想跑「无 Key」的纯逻辑测试时，设 CODEX_HARNESS_KEEP_SECRETS=0 才会抹掉密钥。
+  if (process.env.CODEX_HARNESS_KEEP_SECRETS === "0") {
+    for (const rel of ["custom-model.json", "custom-models.json"]) {
+      const file = join(userDataDir, rel);
+      if (!existsSync(file)) continue;
+      try {
+        const data = JSON.parse(readFileSync(file, "utf8"));
+        const scrub = (obj) => {
+          if (obj && typeof obj === "object") { delete obj.encryptedKey; delete obj.apiKey; }
+          return obj;
+        };
+        if (Array.isArray(data)) data.forEach(scrub); else scrub(data);
+        writeFileSync(file, JSON.stringify(data, null, 2));
+      } catch { /* 解析失败就原样保留 */ }
+    }
   }
 
   const ok = copied.includes("codex-home/config.toml");
@@ -159,6 +168,9 @@ export class ElectronHarness {
     //   TypeError: Cannot read properties of undefined (reading 'registerSchemesAsPrivileged')
     // 且栈尾会打「Node.js vXX」而不是 Electron 版本——看到这个特征就是这个原因。
     delete childEnv.ELECTRON_RUN_AS_NODE;
+    // 同时摘掉宿主注入的语言 shim（node-language-shim.cjs）：它会拦截子进程的 fs 写入，
+    // 让主进程启动链在写 userData 时抛 EPERM（实测表现为「窗口能开、引擎起不来」）。
+    delete childEnv.NODE_OPTIONS;
     this.child = spawn(electronPath, ["."], {
       cwd: this.root,
       stdio: ["ignore", "pipe", "pipe"],
@@ -331,7 +343,7 @@ export class ElectronHarness {
    *    - `settingsModel` / `provider`：最新一条 `thread_settings_applied`（会话级设置） */
   engineModelOf(threadId) {
     const file = this._rolloutFiles().find((p) => p.includes(threadId)) ?? null;
-    const info = { file, turns: 0, turnModel: null, turnModels: [], settingsModel: null, provider: null };
+    const info = { file, turns: 0, turnModel: null, turnModels: [], settingsModel: null, provider: null, backendResponses: [], errors: [] };
     if (!file) return info;
     for (const line of readFileSync(file, "utf8").split("\n")) {
       if (!line.trim()) continue;
@@ -350,6 +362,21 @@ export class ElectronHarness {
       if (record.type === "event_msg" && payload.type === "thread_settings_applied") {
         info.settingsModel = payload.thread_settings?.model ?? info.settingsModel;
         info.provider = payload.thread_settings?.model_provider_id ?? info.provider;
+      }
+      // 真实后端证据：token_usage_record 带 response_id（网关回包才有）+ 实际 output tokens。
+      // 只有它才能证明「不是引擎本地走了个过场，而是真实模型服务真的响应了」。
+      if (record.type === "token_usage_record" && payload.response_id) {
+        info.backendResponses.push({
+          turnId: payload.turn_id ?? null,
+          responseId: payload.response_id,
+          outputTokens: payload.usage?.output_tokens ?? 0,
+          inputTokens: payload.usage?.input_tokens ?? 0,
+        });
+      }
+      // 后端/流错误（401、模型不存在、断流重试失败等）：真实后端测试里出现即失败。
+      // 不含 turn_aborted——那是我们自己 turn/interrupt 打断产生的正常事件。
+      if (record.type === "event_msg" && /^(error|stream_error|turn_failed)$/i.test(String(payload.type))) {
+        info.errors.push({ type: payload.type, message: String(payload.message ?? "").slice(0, 300) });
       }
     }
     return info;

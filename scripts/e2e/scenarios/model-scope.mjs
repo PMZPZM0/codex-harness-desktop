@@ -17,7 +17,7 @@
 export const name = "model-scope";
 export const description = "每个会话独立选模型：真实模型配置下用菜单选模型，会话之间互不串扰";
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -67,6 +67,15 @@ async function seedThread(h, tag) {
 async function reopenAndExpect(h, threadId, want) {
   await h.reload();
   await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "重载后主界面", timeoutMs: 25000 });
+  // 必须等到「会话真的打开」：composer-wrap 脱离 docked-center（空态=欢迎页悬浮输入框）
+  // 才算 openThread 完成。只等 localStorage 会在记录早已是期望值时瞬间通过，
+  // 而会话还在恢复中 → 随后的发送落空（⑦/⑦bis 假红，09-11 实测）。
+  await h
+    .waitFor(`(() => { const w = document.querySelector(".composer-wrap"); return !!w && !w.classList.contains("docked-center"); })()`, {
+      label: `会话 ${threadId.slice(0, 8)} 真正打开（非欢迎页空态）`,
+      timeoutMs: 25000,
+    })
+    .catch(() => undefined);
   await h
     .waitFor(`localStorage.getItem("thread-model-" + ${JSON.stringify(threadId)}) === ${JSON.stringify(want)}`, {
       label: `openThread 落定 ${want}`,
@@ -126,26 +135,28 @@ const bareModel = (id) => String(id).split(":").slice(2).join(":");
 const providerOf = (id) => String(id).split(":")[1] ?? "";
 
 /**
- * 在已打开的会话里**真发一条消息**，然后从引擎 rollout 里读「这一回合实际跑的模型」。
- * 这是「切换模型到底有没有真实生效」的唯一硬证据：localStorage / UI 都只是意图，
- * rollout 的 turn_context.model 才是引擎真正执行的东西。
+ * 在已打开的会话里**真发一条消息**，等**真实后端**回话，再从引擎 rollout 里读证据。
+ * 「真实生效」的完整判据链：turn_context.model = 引擎接的模型；token_usage_record 带
+ * response_id = 真实模型网关真的回了包（09-11 用户指正：只测到引擎接参数不算拉起真实后端）。
+ * 让模型只回一个字，省钱省时间；拿到证据立刻打断。
  */
-async function sendAndReadEngineModel(h, threadId, { timeoutMs = 40000 } = {}) {
+async function sendAndReadEngineModel(h, threadId, { timeoutMs = 120000 } = {}) {
   const before = h.engineModelOf(threadId);
-  await h.typeInto(".composer-editor", "e2e 模型生效验证");
+  await h.typeInto(".composer-editor", "e2e 模型生效验证：只回复一个「好」字，不要做任何其他事");
   await h.waitFor(`(document.querySelector(".composer-editor")?.innerText || "").includes("e2e 模型生效验证")`, {
     label: "文本已进输入框",
     timeoutMs: 8000,
   });
   await h.click(".send-button");
-  await wait(1500);
-
+  // 等**真实后端**回包：新回合落盘 + token_usage_record（网关 response_id）出现。
+  // 出现 error/stream_error 就早停早红（401 = Key 没带上，模型不存在 = 供应商不认）。
   const t0 = Date.now();
   let info = h.engineModelOf(threadId);
   while (Date.now() - t0 < timeoutMs) {
     info = h.engineModelOf(threadId);
-    if (info.turns > before.turns) break; // 新回合的 turn_context 已落盘
-    await wait(700);
+    if (info.errors.length > before.errors.length) break;
+    if (info.turns > before.turns && info.backendResponses.length > before.backendResponses.length) break;
+    await wait(1000);
   }
   // 别把真实回复跑完（省钱省时间）：拿到证据就打断
   await h
@@ -169,14 +180,25 @@ export const steps = [
         (h.realConfig?.copied ?? []).includes("codex-home/model-catalog.json"),
         JSON.stringify(h.realConfig?.copied ?? [])
       );
+      // 真实后端测试的前提：Key 密文 + 解密密钥材料都在。缺一个，后面的
+      // 「真实后端回话」断言必然 401 —— 这里先红，别让根因藏到 ⑦ 才暴露。
+      const seededArchive = (() => { try { return JSON.parse(readFileSync(join(h.userDataDir, "custom-model.json"), "utf8")); } catch { return {}; } })();
+      h.check("前置：encryptedKey 已保留（Key 密文进隔离 profile）", Boolean(seededArchive.encryptedKey), seededArchive.encryptedKey ? `密文 ${String(seededArchive.encryptedKey).length} 字符` : "缺失");
+      h.check("前置：Local State 已复制（safeStorage 解密密钥材料）", existsSync(join(h.userDataDir, "Local State")), h.realConfig?.copied.join(" · ") ?? "");
 
-      await h.waitFor(`document.body && document.body.innerText.includes("直接进入")`, {
-        label: "引导页出现",
-        timeoutMs: 30000,
-      });
-      h.check("前置：处于引导页", !(await h.exists(".app-shell")));
-      await h.clickByText("暂时不登录，直接进入");
+      // 引导页可能被自动跳过：真实配置灌入后 custom-model.json 带可用 Key
+      // （hasKey=true），App.tsx:7754 的兼容 effect 会**自动进入主界面**（写 login-skipped），
+      // 引导页的「暂时不登录，直接进入」按钮随即消失。两种落点都接受，进主界面即算通过。
+      await h.waitFor(
+        `(document.body && document.body.innerText.includes("直接进入")) || !!document.querySelector(".app-shell")`,
+        { label: "引导页或主界面出现", timeoutMs: 30000 }
+      );
+      h.check("前置：已到引导页或已自动进入主界面", true);
+      if (await h.exists(".login-skip")) {
+        await h.clickByText("暂时不登录，直接进入").catch(() => undefined);
+      }
       await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "app-shell 挂载", timeoutMs: 25000 });
+
       await wait(1800);
       h.check("主界面已挂载", true);
       await h.screenshot("主界面");
@@ -347,6 +369,12 @@ export const steps = [
       h.check("A 发出的回合，引擎真跑的是 A 选的模型（切换真实生效）", a.after.turnModel === wantA, `期望 ${wantA}，引擎实际 ${a.after.turnModel}`);
       h.check("A 的会话级模型设置也被引擎接受（thread_settings_applied）", a.after.settingsModel === wantA, `期望 ${wantA}，引擎记录 ${a.after.settingsModel}`);
       h.check("A 的会话绑定供应商与所选模型一致", a.after.provider === provA, `期望 ${provA}，引擎记录 ${a.after.provider}`);
+      h.check(
+        "前置：真实后端回了话（token_usage_record 带网关 response_id）",
+        a.after.backendResponses.length > a.before.backendResponses.length,
+        `后端响应 ${a.before.backendResponses.length} → ${a.after.backendResponses.length}，最新 output=${a.after.backendResponses.at(-1)?.outputTokens} tokens`
+      );
+      h.check("A 的回合无后端/流错误（401、模型不存在等）", a.after.errors.length === a.before.errors.length, a.after.errors.map((e) => `${e.type}:${e.message}`).join(" ｜ ") || "无");
       await h.screenshot("A 引擎侧真实生效");
 
       // ── B：切到 B（它记着 modelB）→ 真发一条 → 引擎必须跑 modelB，且 A 的 rollout 不动 ──
@@ -356,6 +384,11 @@ export const steps = [
       const b = await sendAndReadEngineModel(h, h.threadB);
       h.check("前置：B 的回合数真的增加了", b.after.turns > b.before.turns, `回合数 ${b.before.turns} → ${b.after.turns}`);
       h.check("B 发出的回合，引擎真跑的是 B 选的模型（与 A 不同）", b.after.turnModel === wantB, `期望 ${wantB}，引擎实际 ${b.after.turnModel}`);
+      h.check(
+        "B 也是真实后端回的话（与 A 不同供应商响应链）",
+        b.after.backendResponses.length > b.before.backendResponses.length && b.after.errors.length === b.before.errors.length,
+        `后端响应 ${b.before.backendResponses.length} → ${b.after.backendResponses.length}，最新 output=${b.after.backendResponses.at(-1)?.outputTokens} tokens`
+      );
       h.check(
         "两个会话在引擎侧跑的确实是两个不同模型（会话独立生效）",
         b.after.turnModel !== a.after.turnModel,
@@ -400,11 +433,43 @@ export const steps = [
       h.check("改了下拉后的下一轮，引擎真跑新模型（立刻生效）", a.after.turnModel === wantNow, `期望 ${wantNow}，引擎实际 ${a.after.turnModel}`);
       h.check("引擎侧会话模型设置同步成新模型", a.after.settingsModel === wantNow, `期望 ${wantNow}，引擎记录 ${a.after.settingsModel}`);
       h.check("新回合没有继续用旧模型", a.after.turnModel !== bareModel(h.modelA), `旧模型 ${bareModel(h.modelA)}，本轮 ${a.after.turnModel}`);
+      h.check(
+        "换模型后的这一轮，也是真实后端回的话",
+        a.after.backendResponses.length > a.before.backendResponses.length && a.after.errors.length === a.before.errors.length,
+        `后端响应 ${a.before.backendResponses.length} → ${a.after.backendResponses.length}，最新 output=${a.after.backendResponses.at(-1)?.outputTokens} tokens`
+      );
       // 供应商档案（custom-model.json 顶层 model）必须跟着选择走：模型被问「你是什么模型」
       // 时会读这个文件自查，不同步它就会自报旧模型（09-11 用户实测误判「切换没生效」的根源）
       const archive = JSON.parse(readFileSync(join(h.userDataDir, "custom-model.json"), "utf8"));
       h.check("供应商档案的当前模型已同步成新选择", archive.model === wantNow, `期望 ${wantNow}，档案实际 ${archive.model}`);
+      // 100% 同步：config.toml 顶层 model 也要一并对齐（apply:true 一次性写齐）
+      const cfgText = readFileSync(join(h.userDataDir, "codex-home", "config.toml"), "utf8");
+      const cfgModel = /^\s*model\s*=\s*"([^"]*)"/m.exec(cfgText)?.[1] ?? "";
+      h.check("config.toml 顶层 model 已同步成新选择", cfgModel === wantNow, `期望 ${wantNow}，config.toml 实际 ${cfgModel}`);
       await h.screenshot("切换后引擎侧跑新模型");
+    },
+  },
+
+  {
+    name: "⑦ter 打开另一个会话 = 档案跟着该会话的模型走（自查不撒谎）",
+    run: async (h) => {
+      // 「当前模型」档案只有一份，而会话各自记各自的模型 —— 打开哪个会话，档案就得是哪个
+      // 会话的模型，否则在那个会话里问「你是什么模型」又会得到旧答案。
+      const wantOpen = bareModel(h.modelA); // deepseek
+      await h.eval(`(() => {
+        localStorage.setItem("thread-model-" + ${JSON.stringify(h.threadA)}, ${JSON.stringify(h.modelA)});
+        localStorage.setItem("last-thread", ${JSON.stringify(h.threadA)});
+        return true;
+      })()`);
+      const shown = await reopenAndExpect(h, h.threadA, h.modelA);
+      h.check("前置：会话打开后显示它自己的模型", shown === h.modelA, `实际 ${shown}`);
+      await wait(1200); // 档案同步是异步落盘
+      const archive = JSON.parse(readFileSync(join(h.userDataDir, "custom-model.json"), "utf8"));
+      h.check("打开会话后，供应商档案已对齐该会话的模型", archive.model === wantOpen, `期望 ${wantOpen}，档案实际 ${archive.model}`);
+      const cfgText = readFileSync(join(h.userDataDir, "codex-home", "config.toml"), "utf8");
+      const cfgModel = /^\s*model\s*=\s*"([^"]*)"/m.exec(cfgText)?.[1] ?? "";
+      h.check("config.toml 顶层 model 一并对齐", cfgModel === wantOpen, `期望 ${wantOpen}，config.toml 实际 ${cfgModel}`);
+      await h.screenshot("打开会话档案对齐");
     },
   },
 

@@ -620,7 +620,7 @@ async function collectSessionProviderIds(): Promise<Set<string>> {
   return ids;
 }
 
-async function applyCustomModel(entry: CustomModelFile) {
+async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boolean }) {
   const connectors = await readConnectors();
   const mcpOverrides = await readMcpOverrides();
   const appSettings = await readAppSettings(app.getPath("userData"));
@@ -820,7 +820,10 @@ async function applyCustomModel(entry: CustomModelFile) {
     const apiKey = entry.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(entry.encryptedKey, "base64")) : "";
     server.setApiKey(apiKey);
   }
-  await server.restart();
+  // restart:false = 同供应商内换模型的「只写配置」通道：引擎只在启动时读 config.toml，
+  // 运行中重写零影响；重启会打断所有在跑回合（「app-server restarted」），只在
+  // 真正切换供应商/Key 的流程里才需要。
+  if (opts?.restart !== false) await server.restart();
 }
 
 async function readStoredChannelBot(): Promise<StoredChannelBot | null> {
@@ -4911,7 +4914,7 @@ ipcMain.handle("custom-model:select", async (_event, providerId: string) => {
   return publicCustomModel(next);
 });
 /** 在同一供应商内切换生效模型：保留 models 列表，只改 model 字段 */
-ipcMain.handle("custom-model:set-model", async (_event, input: { provider: string; model: string; apply?: boolean }) => {
+ipcMain.handle("custom-model:set-model", async (_event, input: { provider: string; model: string; apply?: boolean; restart?: boolean }) => {
   const model = input.model.trim();
   if (!model) throw new Error("模型 ID 不能为空");
   const list = await readCustomModels();
@@ -4920,9 +4923,11 @@ ipcMain.handle("custom-model:set-model", async (_event, input: { provider: strin
   const next = withModels({ ...target, model }, model);
   await upsertCustomModel(next);
   await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
-  // apply=false 时只保存配置不重启（供应商切换「延迟生效」模式：不打断正在运行的会话，
-  // 用户手动点「重启生效」或下次启动时引擎才按新配置生效）。默认 true 保持旧调用方兼容。
-  if (input.apply !== false) await applyCustomModel(next);
+  // apply=false 时只保存配置不重写 config.toml（最轻量，仅对齐档案文件）。
+  // apply=true + restart=false：一次性写齐 custom-model.json + config.toml 顶层 + catalog，
+  // 但**不重启引擎**——同供应商换模型不需要重启，重启会打断在跑的回合。
+  // apply=true + restart 缺省 = 旧语义：写配置并重启引擎（供应商级切换用）。
+  if (input.apply !== false) await applyCustomModel(next, { restart: input.restart !== false });
   return publicCustomModel(next);
 });
 /** 延迟生效：读取当前激活供应商并重启引擎使配置生效（供应商切换「重启生效」按钮用，幂等） */
