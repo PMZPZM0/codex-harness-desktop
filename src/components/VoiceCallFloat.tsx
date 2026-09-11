@@ -142,6 +142,13 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       if (event.type === "download") {
         setDownload({ percent: Number(event.percent ?? -1), message: String(event.message ?? "") });
       }
+      if (event.type === "downloadDone") {
+        // 下载/导入完成后立即刷一次模型状态——面板里 "语音模型未下载 (0/12)"
+        // 和底部红字要切到"已就绪"（不刷就会停在旧的未下载状态）
+        setDownload(null);
+        setNotice("");
+        void refreshModels();
+      }
     });
     return off;
     // eslint-disable-next-line react-hooks/exhaustive-deps
