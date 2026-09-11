@@ -367,6 +367,7 @@ import { CODEX_MARKET_ZH, zhCategory } from "./lib/codex-market-zh";
 import { SKILLHUB_MCP_CATALOG, SKILLHUB_MCP_CATEGORIES, skillhubMcpDetailUrl, type SkillHubMcpEntry } from "./lib/skillhub-mcp";
 import { PersonalizationPage } from "./components/PersonalizationPage";
 import VoiceSettingsSection from "./components/VoiceSettingsSection";
+import VoiceWaveform from "./components/VoiceWaveform";
 import VoiceDevToolsSection from "./components/VoiceDevToolsSection";
 import { GlobalSearchView } from "./components/IndexLibrary";
 import BrowserPane from "./components/BrowserPane";
@@ -12765,6 +12766,8 @@ const commandMatches = useMemo(() => {
               </div>
             </div>
           )}
+          {/* 实时语音舞台：彩色波浪 + 中英字幕，只在通话中显示（状态来自 voice/wave-level 广播） */}
+          <VoiceWaveform />
           <form className="composer" onSubmit={send}>
 {/* 欢迎页「项目地址」选择（仅空态显示，发送首条消息后随欢迎态消失）：
                 与右上角 📁 同一全局 workspace 联动；「无项目」模式每次自动新建独立临时目录 */}

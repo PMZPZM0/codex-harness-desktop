@@ -18,6 +18,7 @@ import { createPortal } from "react-dom";
 import { AlertCircle, AudioLines, Download, LoaderCircle, Mic, PhoneOff, X } from "lucide-react";
 import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../lib/voice-aec.mjs";
 import { CAPTURE_WORKLET_SOURCE } from "../voice/capture-worklet";
+import { patchVoiceStage, resetVoiceStage, setVoiceLevel, setVoiceStopHandler } from "../voice/wave-level";
 
 type VoicePhase = "idle" | "starting" | "active";
 type VoiceState = "listening" | "thinking" | "speaking";
@@ -54,6 +55,8 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   const [level, setLevel] = useState(0);
   const [userText, setUserText] = useState("");
   const [agentText, setAgentText] = useState("");
+  // 字幕广播用：delta 是逐字累加的，用 ref 拿累计值，避免依赖 state 更新时机
+  const agentTextRef = useRef("");
   const [notice, setNotice] = useState("");
   const [models, setModels] = useState<ModelsStatus | null>(null);
   const [download, setDownload] = useState<{ percent: number; message: string } | null>(null);
@@ -115,20 +118,32 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       if (!event || typeof event !== "object") return;
       if (event.type === "state") {
         setState(event.state);
+        // 舞台模式跟随通话状态（聆听/思考/播报）
+        patchVoiceStage({ mode: event.state === "speaking" ? "speaking" : event.state === "thinking" ? "thinking" : "listening" });
         return;
       }
       if (event.type === "partial") {
         setUserText(event.text);
+        patchVoiceStage({ userText: String(event.text ?? "") });
         return;
       }
       if (event.type === "final") {
         setUserText(event.text);
         setAgentText("");
+        agentTextRef.current = "";
+        patchVoiceStage({ userText: String(event.text ?? ""), agentText: "" });
         return;
       }
       if (event.type === "delta") {
-        setAgentText((prev) => prev + String(event.text ?? ""));
-        void speakDelta(String(event.text ?? ""));
+        const piece = String(event.text ?? "");
+        setAgentText((prev) => {
+          const next = prev + piece;
+          agentTextRef.current = next;
+          return next;
+        });
+        // 舞台字幕用 ref 里的累计值（不依赖 state 更新时机）
+        patchVoiceStage({ agentText: agentTextRef.current });
+        void speakDelta(piece);
         return;
       }
       if (event.type === "turnDone") {
@@ -180,6 +195,19 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     gain.gain.value = volumeRef.current;
     source.connect(gain);
     gain.connect(ctx.destination);
+    // 分一路给 AnalyserNode：波浪要"跟着 Codex 声音波动"——TTS 输出电平从这里取
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    gain.connect(analyser);
+    const scopeData = new Float32Array(analyser.fftSize);
+    const scopeTimer = window.setInterval(() => {
+      if (!speakingRef.current) return;
+      analyser.getFloatTimeDomainData(scopeData);
+      let sum = 0;
+      for (const v of scopeData) sum += v * v;
+      const rms = Math.sqrt(sum / scopeData.length);
+      setVoiceLevel(Math.min(1, rms * 6), "speaking");
+    }, 60);
 
     // 把这段音频写进 AEC 参考环（重采样到采集率）
     pushRef(sampleRate === CAPTURE_RATE ? samples : resampleLinear(samples, sampleRate, CAPTURE_RATE));
@@ -191,6 +219,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     playingCountRef.current += 1;
     speakingRef.current = true;
     source.onended = () => {
+      window.clearInterval(scopeTimer);
       playingCountRef.current = Math.max(0, playingCountRef.current - 1);
       playQueueRef.current = playQueueRef.current.filter((item) => item !== source);
       if (playingCountRef.current === 0) {
@@ -332,7 +361,10 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
 
       const cleaned = aecRef.current ? aecRef.current.process(raw, ref) : raw;
       const rms = rmsOf(cleaned);
-      setLevel(Math.min(1, rms * 12));
+      const nextLevel = Math.min(1, rms * 12);
+      setLevel(nextLevel);
+      // 广播给输入框上方的波浪（播报时不抢 Codex 的电平，避免两边互相抖动）
+      if (!speakingRef.current) setVoiceLevel(nextLevel, "listening");
 
       // 播报期门控：只有「能量显著高于回声地板」才算真人插话
       const doubleTalk = gateRef.current?.update(rms, speakingRef.current) ?? false;
@@ -390,6 +422,9 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       setExpanded(true);
       setUserText("");
       setAgentText("");
+      agentTextRef.current = "";
+      // 通知输入框上方的舞台：通话开始（波浪 + 字幕由此显示）
+      patchVoiceStage({ active: true, mode: "listening", level: 0, userText: "", agentText: "" });
     } catch (error: any) {
       setPhase("idle");
       await teardown();
@@ -406,7 +441,15 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     setState("listening");
     setLevel(0);
     setExpanded(false);
+    // 波浪/字幕随之收起
+    resetVoiceStage();
   }, [teardown]);
+
+  // 波浪舞台上的「结束通话」按钮调的是这里（注册进 store，跨组件调用）
+  useEffect(() => {
+    setVoiceStopHandler(() => { void endCall(); });
+    return () => setVoiceStopHandler(null);
+  }, [endCall]);
 
   // 卸载时务必释放麦克风与音频上下文（不留后台采集）
   useEffect(() => {
