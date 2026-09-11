@@ -1,15 +1,17 @@
 /**
- * 语音通话设置：音色 / 语速 / 打断灵敏度 / 打断方式 / 模型镜像源。
+ * 语音通话设置：音色 / 语速 / 音量 / 断句 / 麦克风 / 打断 / 镜像源。
  *
  * 存放在 userData/voice-settings.json（与 bot-stream / personalization 同款），
- * 由主进程读写并对外暴露 IPC；渲染层用设置时通过 `voice:settings-get` 取最新值。
+ * 由主进程读写并对外暴露 IPC；渲染层通过 `voice:settings-get` 取最新值。
  *
  * 设计要点：
  * - 镜像源默认 "auto"：优先 huggingface.co，国内走 hf-mirror（用户无须感知）。
- *   想强制某一边的可以从设置切；切了之后 `voice:models-install` 按该顺序试，
- *   失败再降级（与原双镜像兜底一致）。
- * - 音色 sid 是 sherpa-onnx VITS 的说话人 id（vits-zh-ll 有 5 个：0..4），
- *   名字按"音色 N"展示，等真正跑 TTS 时再从模型拿 numSpeakers 决定要不要多显示。
+ * - 音色 sid 是 sherpa-onnx VITS 的说话人 id（vits-zh-ll 有 5 个：0..4）。
+ * - 断句三参数对应 sherpa-onnx 的 endpoint 规则：
+ *     rule1 = 常规句尾静音阈值（秒，调小→反应快但容易截断）
+ *     rule2 = 已识别较长文本时的短静音阈值（秒）
+ *     rule3 = 单句最长时长（秒，到点强制成句）
+ * - 麦克风：deviceId 为空串 = 用系统默认设备；三个布尔开关直接进 getUserMedia constraints。
  * - 任何写入都先读旧值再合并，避免丢字段。
  */
 
@@ -20,13 +22,17 @@ export type BargeMode = "auto" | "manual";
 export type ModelHost = "auto" | "huggingface" | "hf-mirror";
 
 export type VoiceSettings = {
-  tts: { sid: number; speed: number };
+  tts: { sid: number; speed: number; volume: number };
+  asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
+  mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
   barge: { gateDb: number; mode: BargeMode };
   modelHost: ModelHost;
 };
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
-  tts: { sid: 0, speed: 1.0 },
+  tts: { sid: 0, speed: 1.0, volume: 1.0 },
+  asr: { rule1: 2.4, rule2: 1.2, rule3: 20, numThreads: 2 },
+  mic: { deviceId: "", noiseSuppression: false, echoCancellation: true, autoGainControl: false },
   barge: { gateDb: 6, mode: "auto" },
   modelHost: "auto",
 };
@@ -38,6 +44,9 @@ export const TTS_VOICE_NAMES: Record<number, string> = {
   3: "音色 4",
   4: "音色 5",
 };
+
+/** 试听用的示例句——简短、含常见声韵母，能听出音色差别。 */
+export const VOICE_SAMPLE_TEXT = "你好，我是你的语音助手，很高兴为你服务。";
 
 export const MODEL_HOST_PRESETS: Record<ModelHost, readonly string[]> = {
   // 自动：主源 HF（全球可达），国内自动降级到 hf-mirror
@@ -83,16 +92,32 @@ export function saveVoiceSettings(userDataDir: string, patch: Partial<VoiceSetti
 
 function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
   if (!raw || typeof raw !== "object") return { ...DEFAULT_VOICE_SETTINGS };
-  const tts = raw.tts ?? DEFAULT_VOICE_SETTINGS.tts;
-  const barge = raw.barge ?? DEFAULT_VOICE_SETTINGS.barge;
-  const modelHost = (raw.modelHost && MODEL_HOST_PRESETS[raw.modelHost]) ? raw.modelHost : DEFAULT_VOICE_SETTINGS.modelHost;
+  const d = DEFAULT_VOICE_SETTINGS;
+  const tts = raw.tts ?? d.tts;
+  const asr = raw.asr ?? d.asr;
+  const mic = raw.mic ?? d.mic;
+  const barge = raw.barge ?? d.barge;
+  const modelHost = raw.modelHost && MODEL_HOST_PRESETS[raw.modelHost] ? raw.modelHost : d.modelHost;
   return {
     tts: {
-      sid: clampInt(tts.sid, 0, 4, DEFAULT_VOICE_SETTINGS.tts.sid),
-      speed: clampNum(tts.speed, 0.5, 2.0, DEFAULT_VOICE_SETTINGS.tts.speed),
+      sid: clampInt(tts.sid, 0, 4, d.tts.sid),
+      speed: clampNum(tts.speed, 0.5, 2.0, d.tts.speed),
+      volume: clampNum(tts.volume, 0, 2.0, d.tts.volume),
+    },
+    asr: {
+      rule1: clampNum(asr.rule1, 0.4, 6.0, d.asr.rule1),
+      rule2: clampNum(asr.rule2, 0.2, 4.0, d.asr.rule2),
+      rule3: clampNum(asr.rule3, 3, 60, d.asr.rule3),
+      numThreads: clampInt(asr.numThreads, 1, 4, d.asr.numThreads),
+    },
+    mic: {
+      deviceId: typeof mic.deviceId === "string" ? mic.deviceId : d.mic.deviceId,
+      noiseSuppression: Boolean(mic.noiseSuppression),
+      echoCancellation: mic.echoCancellation !== false,
+      autoGainControl: Boolean(mic.autoGainControl),
     },
     barge: {
-      gateDb: clampInt(barge.gateDb, 3, 12, DEFAULT_VOICE_SETTINGS.barge.gateDb),
+      gateDb: clampInt(barge.gateDb, 3, 12, d.barge.gateDb),
       mode: barge.mode === "manual" ? "manual" : "auto",
     },
     modelHost,

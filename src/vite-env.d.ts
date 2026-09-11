@@ -498,6 +498,7 @@ interface Window {
     voiceStop(): Promise<{ ok: boolean }>;
     voiceAudio(samples: Float32Array): void;
     voiceSpeak(text: string, options?: { sid?: number; speed?: number }): Promise<{ ok: boolean; sampleRate?: number; samples?: Float32Array; error?: string }>;
+    voicePreviewVoice(input?: { sid?: number; speed?: number; text?: string }): Promise<{ ok: boolean; sampleRate?: number; samples?: Float32Array; error?: string }>;
     voiceBarge(): Promise<{ ok: boolean }>;
     voicePlaybackDone(): Promise<{ ok: boolean }>;
     voiceModelsStatus(): Promise<{
@@ -512,7 +513,9 @@ interface Window {
     voiceMicPermission(): Promise<{ status: string; error?: string }>;
     voiceSettingsGet(): Promise<{
       settings: {
-        tts: { sid: number; speed: number };
+        tts: { sid: number; speed: number; volume: number };
+        asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
+        mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
         barge: { gateDb: number; mode: "auto" | "manual" };
         modelHost: "auto" | "huggingface" | "hf-mirror";
       };
@@ -521,7 +524,9 @@ interface Window {
       modelHostOptions: string[];
     }>;
     voiceSettingsSet(patch: any): Promise<{
-      tts: { sid: number; speed: number };
+      tts: { sid: number; speed: number; volume: number };
+      asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
+      mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
       barge: { gateDb: number; mode: "auto" | "manual" };
       modelHost: "auto" | "huggingface" | "hf-mirror";
     }>;

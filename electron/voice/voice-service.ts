@@ -13,7 +13,7 @@
 
 import { ASR_REPO, TTS_REPO, VAD_REPO } from "./model-manifest";
 import { ensureRepo, isRepoReady, modelFilePath, probeHosts, repoDir } from "./model-store";
-import { DEFAULT_VOICE_SETTINGS, MODEL_HOST_PRESETS, loadVoiceSettings, type VoiceSettings } from "./voice-settings";
+import { DEFAULT_VOICE_SETTINGS, MODEL_HOST_PRESETS, VOICE_SAMPLE_TEXT, loadVoiceSettings, type VoiceSettings } from "./voice-settings";
 import { ASR_WORKER_SOURCE, TTS_WORKER_SOURCE, VoiceWorkerClient, resolveSherpaPath } from "./workers";
 
 const SAMPLE_RATE = 16000;
@@ -139,7 +139,8 @@ export class VoiceService {
     }
 
     this.threadId = input.threadId;
-    const numThreads = 2;
+    // 识别参数来自设置：线程数 + 端点检测三规则（说完静音多久算一句结束）
+    const numThreads = this.currentSettings.asr.numThreads;
     try {
       this.asr = new VoiceWorkerClient(
         "语音识别",
@@ -152,10 +153,9 @@ export class VoiceService {
           joiner: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "joiner.int8.onnx"),
           tokens: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "tokens.txt"),
           numThreads,
-          // 端点检测：说完静音多久算一句结束
-          rule1: 2.4,
-          rule2: 1.2,
-          rule3: 20,
+          rule1: this.currentSettings.asr.rule1,
+          rule2: this.currentSettings.asr.rule2,
+          rule3: this.currentSettings.asr.rule3,
         },
         () => {
           if (this.active) this.fail("语音识别线程意外退出，请重新开始通话");
@@ -349,6 +349,46 @@ export class VoiceService {
       this.deps.log("error", `中断失败：${error?.message ?? error}`);
     }
     return { ok: true };
+  }
+
+  /**
+   * 音色试听：不依赖通话态——没有活跃 TTS 时临时起一个 worker，合成完即销毁。
+   * 这样在设置页（没在通话）也能点「试听」听到某个音色/语速的效果。
+   */
+  async previewVoice(input?: { sid?: number; speed?: number; text?: string }): Promise<VoiceSpeakResult> {
+    if (this.tts) {
+      return this.speak(input?.text ?? VOICE_SAMPLE_TEXT, { sid: input?.sid, speed: input?.speed });
+    }
+    const sherpaPath = resolveSherpaPath();
+    if (!sherpaPath) return { ok: false, error: "语音运行时未就绪（sherpa-onnx 未安装）" };
+    if (!(await this.refreshModelsReady())) {
+      return { ok: false, error: "语音模型未下载完整，请先到「开发工具 → 语音模型」下载" };
+    }
+    let client: VoiceWorkerClient | null = null;
+    try {
+      client = new VoiceWorkerClient(
+        "语音试听",
+        TTS_WORKER_SOURCE,
+        {
+          sherpaPath,
+          model: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "model.onnx"),
+          lexicon: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "lexicon.txt"),
+          tokens: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "tokens.txt"),
+          numThreads: 1,
+        },
+        () => undefined
+      );
+      const result = await client.request("speak", {
+        text: String(input?.text ?? VOICE_SAMPLE_TEXT),
+        sid: input?.sid ?? this.currentSettings.tts.sid,
+        speed: input?.speed ?? this.currentSettings.tts.speed,
+      });
+      return { ok: true, sampleRate: Number(result.sampleRate ?? 22050), samples: result.samples };
+    } catch (error: any) {
+      return { ok: false, error: String(error?.message ?? error) };
+    } finally {
+      void client?.terminate?.().catch?.(() => undefined);
+    }
   }
 
   /** 模型目录（供 UI 显示）。 */

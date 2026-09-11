@@ -189,12 +189,31 @@ export const steps = [
         const labels = [...document.querySelectorAll(".voice-settings .settings-label-main")].map(n => n.innerText.trim());
         return labels;
       })()`);
-      // 五项控件齐全（直接查全页文本：含 SVG 的 span innerText 会丢字符，避开）
+      // 控件齐全（直接查全页文本：含 SVG 的 span innerText 会丢字符，避开）
       const fullText = await h.text(".voice-settings").catch(() => "");
-      const want = ["音色", "语速", "打断灵敏度", "打断方式", "模型下载镜像源"];
+      const want = [
+        "音色", "语速", "播报音量", "麦克风",
+        "断句等待", "长句提前断句", "单句最长时长", "识别线程数",
+        "打断灵敏度", "打断方式", "模型下载镜像源",
+      ];
       for (const w of want) {
         h.check(`设置页有「${w}」`, String(fullText).includes(w), String(fullText).slice(0, 80));
       }
+      // 试听按钮（音色配套，用户点名要的）
+      const hasAudition = await h.eval(`(() => {
+        const b = [...document.querySelectorAll(".voice-settings button")].find(x => (x.innerText || "").includes("试听"));
+        return !!b;
+      })()`);
+      h.check("音色有「试听」按钮", Boolean(hasAudition));
+      // 麦克风测试按钮
+      const hasMicTest = await h.eval(`(() => {
+        const b = [...document.querySelectorAll(".voice-settings button")].find(x => (x.innerText || "").includes("测试麦克风"));
+        return !!b;
+      })()`);
+      h.check("麦克风有「测试麦克风」按钮", Boolean(hasMicTest));
+      // 降噪/回声消除/自动增益三个开关
+      const toggleCount = await h.eval(`document.querySelectorAll('.voice-settings .voice-toggle input[type=checkbox]').length`);
+      h.check("麦克风三个开关齐全（回声消除/噪声抑制/自动增益）", Number(toggleCount) === 3, `实际 ${toggleCount}`);
       // 改一个值（barge.mode 切到 manual）—— 验证 UI 状态切换
       const switched = await h.eval(`(() => {
         const radios = [...document.querySelectorAll('.voice-settings input[type="radio"][value="manual"]')];

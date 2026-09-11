@@ -68,6 +68,15 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   const playingCountRef = useRef(0);
   const aecRef = useRef<any>(null);
   const bargeModeRef = useRef<"auto" | "manual">("auto");
+  /** 麦克风约束（设备选择 + 降噪/回声消除/自动增益），从设置读到后给 getUserMedia 用 */
+  const micSettingsRef = useRef<{
+    deviceId: string;
+    noiseSuppression: boolean;
+    echoCancellation: boolean;
+    autoGainControl: boolean;
+  }>({ deviceId: "", noiseSuppression: false, echoCancellation: true, autoGainControl: false });
+  /** 播报音量（TTS 输出增益，1.0 = 原音量） */
+  const volumeRef = useRef(1);
   const gateRef = useRef<any>(null);
   const chunkerRef = useRef<any>(null);
   const refRingRef = useRef<Float32Array>(new Float32Array(CAPTURE_RATE * 2));
@@ -159,7 +168,11 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     buffer.copyToChannel(new Float32Array(samples), 0);
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(ctx.destination);
+    // 音量：设置里的 tts.volume（1.0 = 原音量）；走 GainNode 便于随时改且不影响 AEC 参考
+    const gain = ctx.createGain();
+    gain.gain.value = volumeRef.current;
+    source.connect(gain);
+    gain.connect(ctx.destination);
 
     // 把这段音频写进 AEC 参考环（重采样到采集率）
     pushRef(sampleRate === CAPTURE_RATE ? samples : resampleLinear(samples, sampleRate, CAPTURE_RATE));
@@ -233,34 +246,39 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
           : "无法获取麦克风权限"
       );
     }
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: false,
-          autoGainControl: false,
-          channelCount: 1,
-        },
-      });
-    } catch (error: any) {
-      // getUserMedia 报错名 → 人话 + 排查提示（开发工具里也能定位）
-      const name = String(error?.name ?? "");
-      const msg = String(error?.message ?? error);
-      if (name === "NotFoundError" || /requested device not found/i.test(msg)) {
-        throw new Error("未找到可用的麦克风设备（Requested device not found）。请检查：(1) 麦克风已物理接入并被系统识别；(2) 没有被其它程序独占（浏览器、Zoom、VoiceMeeter、OBS 等）；(3) Windows：在「设置 → 系统 → 声音」里能看到输入设备且没禁用；macOS：在「系统设置 → 隐私与安全 → 麦克风」授权本应用。");
+    const mic = micSettingsRef.current;
+      let stream: MediaStream;
+      const audioConstraint: MediaTrackConstraints = {
+        echoCancellation: mic.echoCancellation,
+        noiseSuppression: mic.noiseSuppression,
+        autoGainControl: mic.autoGainControl,
+        channelCount: 1,
+      };
+      // 指定了设备才加 deviceId（空串 = 系统默认）；设备被拔掉时放宽为 ideal，
+      // 避免 OverconstrainedError 直接打不开——宁可用默认设备也别整个失败。
+      if (mic.deviceId) {
+        audioConstraint.deviceId = { ideal: mic.deviceId };
       }
-      if (name === "NotAllowedError" || name === "SecurityError") {
-        throw new Error("麦克风权限被拒绝。请到系统的「麦克风隐私设置」里授权本应用，然后重试。");
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
+      } catch (error: any) {
+        // getUserMedia 报错名 → 人话 + 排查提示（开发工具里也能定位）
+        const name = String(error?.name ?? "");
+        const msg = String(error?.message ?? error);
+        if (name === "NotFoundError" || /requested device not found/i.test(msg)) {
+          throw new Error("未找到可用的麦克风设备（Requested device not found）。请检查：(1) 麦克风已物理接入并被系统识别；(2) 没有被其它程序独占（浏览器、Zoom、VoiceMeeter、OBS 等）；(3) Windows：在「设置 → 系统 → 声音」里能看到输入设备且没禁用；macOS：在「系统设置 → 隐私与安全 → 麦克风」授权本应用。也可以在「设置 → 语音通话 → 麦克风」里换一个输入设备试试。");
+        }
+        if (name === "NotAllowedError" || name === "SecurityError") {
+          throw new Error("麦克风权限被拒绝。请到系统的「麦克风隐私设置」里授权本应用，然后重试。");
+        }
+        if (name === "NotReadableError" || /in use/i.test(msg)) {
+          throw new Error("麦克风正被其它程序独占（could not start audio source）。请关掉占用麦克风的应用再试。");
+        }
+        if (name === "OverconstrainedError") {
+          throw new Error("请求的麦克风参数不被设备支持（OverconstrainedError）。通常是采样率/通道数不匹配，或所选设备已不可用——可到「设置 → 语音通话 → 麦克风」改回系统默认。");
+        }
+        throw new Error(`打开麦克风失败：${msg}`);
       }
-      if (name === "NotReadableError" || /in use/i.test(msg)) {
-        throw new Error("麦克风正被其它程序独占（could not start audio source）。请关掉占用麦克风的应用再试。");
-      }
-      if (name === "OverconstrainedError") {
-        throw new Error("请求的麦克风参数不被设备支持（OverconstrainedError）。通常是采样率/通道数不匹配。");
-      }
-      throw new Error(`打开麦克风失败：${msg}`);
-    }
     mediaStreamRef.current = stream;
 
     const ctx = new AudioContext({ sampleRate: CAPTURE_RATE });
@@ -275,8 +293,11 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     aecRef.current = createAec({ filterLength: 512, delay: 480, step: 0.12 });
     // 打断方式 + 灵敏度从设置取：auto=能量门控自动打断，manual=仅手动按钮（外放场景避免误触发）
     const settings = await window.codex.voiceSettingsGet().catch(() => null);
-    const bargeMode = settings?.settings?.barge?.mode ?? "auto";
-    const gateDb = settings?.settings?.barge?.gateDb ?? 6;
+    const s = settings?.settings;
+    const bargeMode = s?.barge?.mode ?? "auto";
+    const gateDb = s?.barge?.gateDb ?? 6;
+    micSettingsRef.current = s?.mic ?? { deviceId: "", noiseSuppression: false, echoCancellation: true, autoGainControl: false };
+    volumeRef.current = s?.tts?.volume ?? 1;
     gateRef.current = createEchoGate({ echoGateDb: gateDb });
     bargeModeRef.current = bargeMode;
 

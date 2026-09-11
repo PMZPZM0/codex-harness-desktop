@@ -509,6 +509,10 @@ ipcMain.on("voice:audio", (_event, samples: Float32Array) => {
 ipcMain.handle("voice:speak", async (_event, text: string, options?: { sid?: number; speed?: number }) => {
   return voiceService.speak(String(text ?? ""), options);
 });
+ipcMain.handle("voice:preview-voice", async (_event, input?: { sid?: number; speed?: number; text?: string }) => {
+  // 设置页「音色试听」：不必在通话中，内部会临时起一个 TTS worker，合成完即销毁
+  return voiceService.previewVoice(input ?? {});
+});
 
 ipcMain.handle("voice:barge", () => voiceService.barge());
 

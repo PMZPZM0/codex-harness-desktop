@@ -1,17 +1,20 @@
 /**
- * 语音通话设置：音色 / 语速 / 打断灵敏度 / 打断方式 / 模型镜像源。
+ * 语音通话设置（完整配套）：
+ *   音色（带**试听**） / 语速 / 音量 / 麦克风（选择 + 电平测试 + 降噪回声消除开关）
+ *   / 断句灵敏度 / 识别线程数 / 打断灵敏度 / 打断方式 / 模型镜像源
  *
  * 设计：每条设置**单独一张卡片**——标题一行、控件铺满卡片宽度、提示在底部。
- * 比"标签靠左 / 控件靠右"的两列挤夹更清爽，读起来也更自然（标题→值→说明）。
  *
  * 状态由主进程持有（userData/voice-settings.json），通过 IPC 读写；
- * 改值后立即同步到主进程，**下一次**开始通话时生效。
+ * 改值后立即同步到主进程，**下一次**开始通话时生效（音色试听是即时的）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Headphones, Mic, ShieldAlert, Zap } from "lucide-react";
+import { Headphones, Mic, Play, ShieldAlert, Square, Zap } from "lucide-react";
 
 type Settings = {
-  tts: { sid: number; speed: number };
+  tts: { sid: number; speed: number; volume: number };
+  asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
+  mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
   barge: { gateDb: number; mode: "auto" | "manual" };
   modelHost: "auto" | "huggingface" | "hf-mirror";
 };
@@ -20,11 +23,33 @@ type Meta = {
   modelHosts: Record<string, string>;
 };
 
+/** 试听时把 samples 播出来（独立于通话的播放链路，用最简单的 AudioContext） */
+async function playSamples(samples: Float32Array | undefined, sampleRate: number | undefined) {
+  if (!samples || !sampleRate) return;
+  const ctx = new AudioContext();
+  if (ctx.state === "suspended") await ctx.resume().catch(() => undefined);
+  const buffer = ctx.createBuffer(1, samples.length, sampleRate);
+  buffer.copyToChannel(new Float32Array(samples), 0);
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(ctx.destination);
+  src.onended = () => { void ctx.close().catch(() => undefined); };
+  src.start();
+}
+
 export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: string) => void }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+
+  // 试听
+  const [auditioning, setAuditioning] = useState(false);
+  // 麦克风列表 + 电平测试
+  const [mics, setMics] = useState<{ deviceId: string; label: string }[]>([]);
+  const [micTesting, setMicTesting] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
+  const micTestRef = useRef<{ stop: () => void } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -35,8 +60,19 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
         setMeta({ ttsVoices: res.ttsVoices, modelHosts: res.modelHosts });
       })
       .catch((e: any) => onNotice(`读取语音设置失败：${e?.message ?? e}`));
+    // 设备列表：标签要授权后才可读，拿不到就退化成「麦克风 N」
+    navigator.mediaDevices?.enumerateDevices?.()
+      .then((devices) => {
+        if (!alive) return;
+        const inputs = (devices ?? []).filter((d) => d.kind === "audioinput");
+        setMics(inputs.map((d, i) => ({ deviceId: d.deviceId, label: d.label || `麦克风 ${i + 1}` })));
+      })
+      .catch(() => undefined);
     return () => { alive = false; };
   }, [onNotice]);
+
+  // 卸载时停掉电平测试
+  useEffect(() => () => { micTestRef.current?.stop(); }, []);
 
   const apply = useCallback((patch: Partial<Settings>) => {
     if (!settings || savingRef.current) return;
@@ -46,6 +82,8 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       ...settings,
       ...patch,
       tts: { ...settings.tts, ...(patch.tts ?? {}) },
+      asr: { ...settings.asr, ...(patch.asr ?? {}) },
+      mic: { ...settings.mic, ...(patch.mic ?? {}) },
       barge: { ...settings.barge, ...(patch.barge ?? {}) },
     };
     setSettings(next);
@@ -54,6 +92,66 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       .catch((e: any) => onNotice(`保存语音设置失败：${e?.message ?? e}`))
       .finally(() => { savingRef.current = false; setSaving(false); });
   }, [settings, onNotice]);
+
+  const audition = useCallback(async () => {
+    if (!settings || auditioning) return;
+    setAuditioning(true);
+    try {
+      const r = await window.codex.voicePreviewVoice({ sid: settings.tts.sid, speed: settings.tts.speed });
+      if (!r.ok) { onNotice(`试听失败：${r.error ?? "未知"}`); return; }
+      await playSamples(r.samples, r.sampleRate);
+    } catch (e: any) {
+      onNotice(`试听失败：${e?.message ?? e}`);
+    } finally {
+      setAuditioning(false);
+    }
+  }, [settings, auditioning, onNotice]);
+
+  const toggleMicTest = useCallback(async () => {
+    if (micTesting) {
+      micTestRef.current?.stop();
+      micTestRef.current = null;
+      setMicTesting(false);
+      setMicLevel(0);
+      return;
+    }
+    if (!settings) return;
+    try {
+      const constraint: MediaTrackConstraints = {
+        echoCancellation: settings.mic.echoCancellation,
+        noiseSuppression: settings.mic.noiseSuppression,
+        autoGainControl: settings.mic.autoGainControl,
+      };
+      if (settings.mic.deviceId) constraint.deviceId = { ideal: settings.mic.deviceId };
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: constraint });
+      const ctx = new AudioContext();
+      const src = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      src.connect(analyser);
+      const data = new Float32Array(analyser.fftSize);
+      let raf = 0;
+      const tick = () => {
+        analyser.getFloatTimeDomainData(data);
+        let sum = 0;
+        for (const v of data) sum += v * v;
+        setMicLevel(Math.min(1, Math.sqrt(sum / data.length) * 8));
+        raf = requestAnimationFrame(tick);
+      };
+      tick();
+      micTestRef.current = {
+        stop: () => {
+          cancelAnimationFrame(raf);
+          src.disconnect();
+          void ctx.close().catch(() => undefined);
+          stream.getTracks().forEach((t) => t.stop());
+        },
+      };
+      setMicTesting(true);
+    } catch (e: any) {
+      onNotice(`麦克风测试失败：${e?.name ?? ""} ${e?.message ?? e}`);
+    }
+  }, [micTesting, settings, onNotice]);
 
   const voiceOptions = useMemo(() => {
     if (!meta) return [] as { value: number; label: string }[];
@@ -75,25 +173,33 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
     <section className="settings-section stack voice-settings">
       <div className="settings-section-title">语音通话</div>
       <div className="settings-section-desc">
-        本机离线识别与合成（<code>sherpa-onnx</code>）。点右下角悬浮球开始通话；改值后下次通话生效。
+        本机离线识别与合成（<code>sherpa-onnx</code>）。点右下角悬浮球开始通话；改值后下次通话生效（试听即时）。
       </div>
 
+      {/* 音色 + 试听 */}
       <div className="voice-card">
         <div className="voice-card-head"><Headphones size={15} /><span>音色</span></div>
         <div className="voice-card-body">
-          <select
-            className="voice-input"
-            value={settings.tts.sid}
-            onChange={(e) => apply({ tts: { sid: Number(e.target.value), speed: settings.tts.speed } })}
-            disabled={saving}
-          >
-            {voiceOptions.map((v) => (
-              <option key={v.value} value={v.value}>{v.label}</option>
-            ))}
-          </select>
+          <div className="voice-row">
+            <select
+              className="voice-input"
+              value={settings.tts.sid}
+              onChange={(e) => apply({ tts: { ...settings.tts, sid: Number(e.target.value) } })}
+              disabled={saving}
+            >
+              {voiceOptions.map((v) => (
+                <option key={v.value} value={v.value}>{v.label}</option>
+              ))}
+            </select>
+            <button className="secondary-setting voice-audition" onClick={() => void audition()} disabled={auditioning || saving}>
+              <Play size={13} />{auditioning ? "合成中…" : "试听"}
+            </button>
+          </div>
+          <div className="voice-card-hint">点「试听」会用当前音色和语速念一句示例话，用来对比哪个声音合适。</div>
         </div>
       </div>
 
+      {/* 语速 */}
       <div className="voice-card">
         <div className="voice-card-head">
           <span>语速</span>
@@ -107,13 +213,181 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
             max={2.0}
             step={0.05}
             value={settings.tts.speed}
-            onChange={(e) => apply({ tts: { sid: settings.tts.sid, speed: Number(e.target.value) } })}
+            onChange={(e) => apply({ tts: { ...settings.tts, speed: Number(e.target.value) } })}
             disabled={saving}
           />
           <div className="voice-card-hint">慢 0.5× ↔ 快 2.0×</div>
         </div>
       </div>
 
+      {/* 音量 */}
+      <div className="voice-card">
+        <div className="voice-card-head">
+          <span>播报音量</span>
+          <span className="voice-card-value">{Math.round(settings.tts.volume * 100)}%</span>
+        </div>
+        <div className="voice-card-body">
+          <input
+            className="voice-range"
+            type="range"
+            min={0}
+            max={2.0}
+            step={0.05}
+            value={settings.tts.volume}
+            onChange={(e) => apply({ tts: { ...settings.tts, volume: Number(e.target.value) } })}
+            disabled={saving}
+          />
+          <div className="voice-card-hint">0%（静音）↔ 100%（原始音量）↔ 200%（放大）</div>
+        </div>
+      </div>
+
+      {/* 麦克风 */}
+      <div className="voice-card">
+        <div className="voice-card-head"><Mic size={15} /><span>麦克风</span></div>
+        <div className="voice-card-body">
+          <select
+            className="voice-input"
+            value={settings.mic.deviceId}
+            onChange={(e) => apply({ mic: { ...settings.mic, deviceId: e.target.value } })}
+            disabled={saving}
+          >
+            <option value="">系统默认设备</option>
+            {mics.map((m) => (
+              <option key={m.deviceId} value={m.deviceId}>{m.label}</option>
+            ))}
+          </select>
+          <div className="voice-row">
+            <button className="secondary-setting" onClick={() => void toggleMicTest()}>
+              {micTesting ? <Square size={13} /> : <Mic size={13} />}{micTesting ? "停止测试" : "测试麦克风"}
+            </button>
+            {micTesting && (
+              <div className="voice-level" title="对着麦克风说话，条会动说明拾音正常">
+                <span style={{ width: `${Math.round(micLevel * 100)}%` }} />
+              </div>
+            )}
+          </div>
+          <div className="voice-card-hint">
+            {micTesting ? "对着麦克风说话——上面的电平条会跳动，说明这个设备能正常拾音。" : "选不到想要的麦克风？先在别的程序里禁用/拔掉多余的，或点「测试麦克风」确认拾音。"}
+          </div>
+          <div className="voice-toggles">
+            <label className="voice-toggle">
+              <input
+                type="checkbox"
+                checked={settings.mic.echoCancellation}
+                onChange={(e) => apply({ mic: { ...settings.mic, echoCancellation: e.target.checked } })}
+                disabled={saving}
+              />
+              <span>回声消除（外放时建议开）</span>
+            </label>
+            <label className="voice-toggle">
+              <input
+                type="checkbox"
+                checked={settings.mic.noiseSuppression}
+                onChange={(e) => apply({ mic: { ...settings.mic, noiseSuppression: e.target.checked } })}
+                disabled={saving}
+              />
+              <span>噪声抑制（环境吵时开，可能压低人声）</span>
+            </label>
+            <label className="voice-toggle">
+              <input
+                type="checkbox"
+                checked={settings.mic.autoGainControl}
+                onChange={(e) => apply({ mic: { ...settings.mic, autoGainControl: e.target.checked } })}
+                disabled={saving}
+              />
+              <span>自动增益（离麦远时开，会放大底噪）</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* 断句灵敏度 */}
+      <div className="voice-card">
+        <div className="voice-card-head">
+          <span>断句等待</span>
+          <span className="voice-card-value">{settings.asr.rule1.toFixed(1)} 秒</span>
+        </div>
+        <div className="voice-card-body">
+          <input
+            className="voice-range"
+            type="range"
+            min={0.4}
+            max={6.0}
+            step={0.1}
+            value={settings.asr.rule1}
+            onChange={(e) => apply({ asr: { ...settings.asr, rule1: Number(e.target.value) } })}
+            disabled={saving}
+          />
+          <div className="voice-card-hint">
+            说完停多久算「这句说完了」。<strong>调小反应更快</strong>（0.4~1.2 秒），但容易被自己的停顿截断；调大更稳但等得久。
+          </div>
+        </div>
+      </div>
+
+      {/* 长句阈值 */}
+      <div className="voice-card">
+        <div className="voice-card-head">
+          <span>长句提前断句</span>
+          <span className="voice-card-value">{settings.asr.rule2.toFixed(1)} 秒</span>
+        </div>
+        <div className="voice-card-body">
+          <input
+            className="voice-range"
+            type="range"
+            min={0.2}
+            max={4.0}
+            step={0.1}
+            value={settings.asr.rule2}
+            onChange={(e) => apply({ asr: { ...settings.asr, rule2: Number(e.target.value) } })}
+            disabled={saving}
+          />
+          <div className="voice-card-hint">已经说了一大段时，用更短的停顿就断句（避免长句子憋着不提交）。</div>
+        </div>
+      </div>
+
+      {/* 单句上限 */}
+      <div className="voice-card">
+        <div className="voice-card-head">
+          <span>单句最长时长</span>
+          <span className="voice-card-value">{settings.asr.rule3} 秒</span>
+        </div>
+        <div className="voice-card-body">
+          <input
+            className="voice-range"
+            type="range"
+            min={3}
+            max={60}
+            step={1}
+            value={settings.asr.rule3}
+            onChange={(e) => apply({ asr: { ...settings.asr, rule3: Number(e.target.value) } })}
+            disabled={saving}
+          />
+          <div className="voice-card-hint">到点强制成句提交，防止一直不停地说导致迟迟不出字。</div>
+        </div>
+      </div>
+
+      {/* 识别线程数 */}
+      <div className="voice-card">
+        <div className="voice-card-head">
+          <span>识别线程数</span>
+          <span className="voice-card-value">{settings.asr.numThreads} 线程</span>
+        </div>
+        <div className="voice-card-body">
+          <input
+            className="voice-range"
+            type="range"
+            min={1}
+            max={4}
+            step={1}
+            value={settings.asr.numThreads}
+            onChange={(e) => apply({ asr: { ...settings.asr, numThreads: Number(e.target.value) } })}
+            disabled={saving}
+          />
+          <div className="voice-card-hint">CPU 核心多可以调高（识别更跟手）；机器弱或要省电就调低。</div>
+        </div>
+      </div>
+
+      {/* 打断灵敏度 */}
       <div className="voice-card">
         <div className="voice-card-head">
           <Mic size={15} /><span>打断灵敏度</span>
@@ -134,6 +408,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
         </div>
       </div>
 
+      {/* 打断方式 */}
       <div className="voice-card">
         <div className="voice-card-head"><span>打断方式</span></div>
         <div className="voice-card-body voice-card-body-row">
@@ -168,6 +443,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
         </div>
       </div>
 
+      {/* 镜像源 */}
       <div className="voice-card">
         <div className="voice-card-head"><Zap size={15} /><span>模型下载镜像源</span></div>
         <div className="voice-card-body">
