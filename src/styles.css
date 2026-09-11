@@ -19391,6 +19391,42 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .mode-chip-float:hover { filter: brightness(1.15); }
 .mode-chip-float + .mode-chip-float { right: 37px; }
 
+/* ── 欢迎页「项目地址」选择 chip（输入框左上角，仅空态显示） ── */
+.welcome-cwd-picker { position: absolute; top: 7px; left: 9px; z-index: 5; }
+.welcome-cwd-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  max-width: 46vw; padding: 3px 8px; border-radius: 7px;
+  font-size: 11px; line-height: 1.4; cursor: pointer;
+  color: var(--text-secondary, #555);
+  background: color-mix(in srgb, var(--text-secondary, #888) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-secondary, #888) 24%, transparent);
+}
+.welcome-cwd-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.welcome-cwd-chip.scratch {
+  color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 10%, transparent);
+  border-color: color-mix(in srgb, var(--orange) 34%, transparent);
+}
+.welcome-cwd-chip:hover { filter: brightness(1.1); }
+.welcome-cwd-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+  min-width: 280px; padding: 4px;
+  border-radius: 10px;
+  background: var(--color-background-primary, #fff);
+  border: 1px solid var(--color-border-tertiary, rgba(0,0,0,0.12));
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+}
+.welcome-cwd-menu button {
+  display: flex; align-items: flex-start; gap: 8px; width: 100%;
+  padding: 8px 10px; border: 0; border-radius: 7px; background: transparent;
+  color: var(--color-text-primary, #111); text-align: left; cursor: pointer; font-size: 12px;
+}
+.welcome-cwd-menu button:hover { background: color-mix(in srgb, var(--color-text-primary, #111) 7%, transparent); }
+.welcome-cwd-menu button.active { background: color-mix(in srgb, var(--blue, #3b82f6) 10%, transparent); }
+.welcome-cwd-menu button svg { flex-shrink: 0; margin-top: 1px; }
+.welcome-cwd-menu button span { display: flex; flex-direction: column; gap: 2px; }
+.welcome-cwd-menu button small { color: var(--color-text-tertiary, #888); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }
+
 /* ── /plan 方案审阅卡（agent-ask 同族，蓝色调）：预览摘要 + 执行/意见迭代 ── */
 .agent-ask-inline.plan-review { border-color: color-mix(in srgb, var(--blue, #3b82f6) 45%, var(--line)); }
 .agent-ask-inline.plan-review > header { color: var(--blue, #3b82f6); }

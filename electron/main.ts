@@ -5035,6 +5035,23 @@ ipcMain.handle("clipboard:write", async (_event, text: string) => {
   clipboard.writeText(String(text ?? ""));
   return true;
 });
+/** 欢迎页「无项目」会话的临时工作目录：每次调用在基础目录下新建一个独立子目录。
+ *  基础目录优先应用安装目录（便携安装可写，用户要求"安装目录下"）；装在系统盘
+ *  Program Files 等不可写位置时回落 userData（%APPDATA%\Codex Harness Desktop）。 */
+ipcMain.handle("scratch:create", async () => {
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const name = `chat-${stamp}-${Date.now().toString(36)}`;
+  const make = async (root: string) => {
+    const dir = path.join(root, "scratch", name);
+    await fs.mkdir(dir, { recursive: true });
+    return dir;
+  };
+  try {
+    return await make(path.dirname(app.getPath("exe")));
+  } catch {
+    return await make(app.getPath("userData"));
+  }
+});
 ipcMain.handle("clipboard:write-image", async (_event, filePath: string) => {
   if (!filePath) throw new Error("缺少图片路径");
   const image = nativeImage.createFromPath(filePath);
