@@ -111,7 +111,7 @@ resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
-- **思考等级档案持久化 + 立即生效（09-11）**：`custom-model:set-effort` 新 IPC——思考档位写进 `custom-model.json`（`models[].effort` + 顶层 `effort`）并同步 `config.toml` 顶层 `model_reasoning_effort`（`restart:false`，不打断回合；config 顶层只作重启后 resume 老会话的兜底默认）。UI 侧 `applyEffort` 写档案、打开会话时「无会话显式记录才落档案档位」（优先级与会话独立模型一致）。**档案归档键必须用 `customModel.model`（当前生效模型），不能用会话级 `selectedModel`**——两者在「会话选了别的模型」时分叉，顶层与 `models[]` 会各写各的。协议考证：`TurnStartParams.effort`（每轮下发）与 `ThreadSettings.effort`（settings/update）字段名都叫 `effort`；**模型自报思考档位不可信**（模型看不到请求参数，rollout `turn_context.effort` 才是实收值）。回归：`scripts/e2e/scenarios/effort-scope.mjs`（UI 切档 → 档案三处落盘 → rollout 取证）。
+- **思考等级档案持久化 + 立即生效（09-11 定稿；用户 21:0x 实测「模型等级切换生效了」，勿回退）**：`custom-model:set-effort` 新 IPC——思考档位写进 `custom-model.json`（`models[].effort` + 顶层 `effort`）并同步 `config.toml` 顶层 `model_reasoning_effort`（`restart:false`，不打断回合；config 顶层只作重启后 resume 老会话的兜底默认）。UI 侧 `applyEffort` 写档案、打开会话时「无会话显式记录才落档案档位」（优先级与会话独立模型一致）。**档案归档键必须用 `customModel.model`（当前生效模型），不能用会话级 `selectedModel`**——两者在「会话选了别的模型」时分叉，顶层与 `models[]` 会各写各的。协议考证：`TurnStartParams.effort`（每轮下发）与 `ThreadSettings.effort`（settings/update）字段名都叫 `effort`；**模型自报思考档位不可信**（模型看不到请求参数，rollout `turn_context.effort` 才是实收值）。回归：`scripts/e2e/scenarios/effort-scope.mjs`（UI 切档 → 档案三处落盘 → rollout 取证）。
 
 - **本机离线语音通话（09-11 新增，旁挂，勿侵入既有输入链路）**：右下角悬浮球一键通话，识别与合成都跑本机（`sherpa-onnx-node`，零凭据、零联网）。
   **分工**：渲染层做采集 / 回声消除（NLMS，需要采样对齐的播放参考）/ 回声门控 / 断句 / 播放；主进程做编排（ASR 与 TTS 跑 `worker_threads`，把识别文本交给引擎、把 `item/agentMessage/delta` 转回渲染层）。
