@@ -3369,6 +3369,7 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   transform: translate(-50%, -50%);
 }
 .composer-wrap.docked-center .composer {
+  position: relative;
   min-height: 96px;
   box-shadow: 0 18px 44px #00000012;
 }
@@ -19392,7 +19393,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .mode-chip-float + .mode-chip-float { right: 37px; }
 
 /* ── 欢迎页「项目地址」选择 chip（骑在输入框顶边框左上角，外侧贴边，仅空态显示） ── */
-.welcome-cwd-picker { position: absolute; top: -12px; left: 10px; z-index: 6; }
+.welcome-cwd-picker { position: absolute; bottom: calc(100% + 5px); left: 12px; z-index: 6; }
 .welcome-cwd-chip {
   display: inline-flex; align-items: center; gap: 6px;
   max-width: 60vw; padding: 3px 9px 3px 8px; border-radius: 999px;
@@ -19417,8 +19418,6 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .welcome-cwd-chip.scratch { color: var(--orange); border-color: color-mix(in srgb, var(--orange) 40%, transparent); }
 .welcome-cwd-chip.scratch > svg:first-child { color: var(--orange); }
 .welcome-cwd-chip.scratch:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
-/* chip 骑在顶边框上（底缘伸入框内 ~12px）：placeholder 从其下方开始，避免压字 */
-.composer-wrap.docked-center .composer-editor { padding-top: 20px; }
 .welcome-cwd-menu {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
   min-width: 300px; padding: 4px;
