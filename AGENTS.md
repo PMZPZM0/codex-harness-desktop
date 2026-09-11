@@ -78,6 +78,7 @@ resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
 | ponytail 写代码模式插件 | 随包 2MB | 开发工具页「下载」→ 种到引擎插件 cache + 注册段 | 会话钩子 + 6 个 ponytail-* 技能 |
 | FFmpeg / yt-dlp / Miniconda / MinGW | 各 20~300MB | 开发工具页「下载」（联网） | 对应命令可用 |
 | Docker Desktop / OpenSSL | — | 系统级安装（开发工具页打开官网） | 系统命令 |
+| 语音模型（sherpa-onnx 三件套，识别+端点检测+合成） | 总 ~270MB | 开发工具页「下载模型」或「本地导入」（开发版专用：识别 4 种常见目录布局，SHA256 校验后落盘到 `<userData>/voice-models/`） | **生产构建不打包**——`package.json` 的 `asarUnpack` 只解 `sherpa-onnx-*/**`（原生 addon），模型数据走 userData 按需下载 |
 
 ## 安装操作（引擎缺工具时怎么自助装）
 
