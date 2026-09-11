@@ -10,6 +10,8 @@ type ProviderModelConfig = {
   outputTypes?: ("text" | "image" | "video")[];
   /** 该模型支持的思考档位（按声明顺序）；缺省 low/medium/high */
   efforts?: string[];
+  /** 用户为该模型选定的思考档位（档案持久化；切供应商/切模型时自动应用） */
+  effort?: string;
 };
 
 /** 与 electron/main.ts 的 CustomModelFile 对应（不含 encryptedKey，改为 hasKey） */
@@ -21,6 +23,8 @@ type CustomModelState = {
   contextWindow: number;
   wireApi?: "responses" | "chat";
   hasKey?: boolean;
+  /** 当前生效模型的思考档位（档案同步；config.toml 顶层 model_reasoning_effort 同源） */
+  effort?: string;
   models?: ProviderModelConfig[];
   enabled?: boolean;
 };
@@ -367,6 +371,7 @@ interface Window {
     listCustomModels(): Promise<{ providers: ProviderSummary[]; current: string | null }>;
     selectCustomModel(providerId: string): Promise<CustomModelState>;
     setProviderModel(input: { provider: string; model: string; apply?: boolean; restart?: boolean }): Promise<CustomModelState>;
+    setProviderEffort(input: { provider: string; model: string; effort: string }): Promise<CustomModelState>;
     applyCustomModel(): Promise<CustomModelState>;
     upsertProviderModel(input: { provider: string; model: ProviderModelConfig }): Promise<CustomModelState>;
     removeProviderModel(input: { provider: string; modelId: string }): Promise<CustomModelState>;

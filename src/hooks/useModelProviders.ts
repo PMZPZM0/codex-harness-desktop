@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { DEFAULT_EFFORT } from "../lib/effort";
 import { matchModelSpec } from "../lib/model-specs";
 
-export type ProviderModel = { id: string; enabled?: boolean; contextWindow?: number; maxOutputTokens?: number; inputTypes?: ("text" | "image" | "video")[]; outputTypes?: ("text" | "image" | "video")[]; efforts?: string[] };
+export type ProviderModel = { id: string; enabled?: boolean; contextWindow?: number; maxOutputTokens?: number; inputTypes?: ("text" | "image" | "video")[]; outputTypes?: ("text" | "image" | "video")[]; efforts?: string[]; effort?: string };
 
 /** 把「测试连接」的失败原文翻译成能直接照做的中文。
  *  认证失败是最容易被笼统提示吞掉的一类：供应商原文里的措辞决定排查方向不同——
@@ -25,7 +25,7 @@ export function classifyProviderProbeFailure(raw: string): string {
   return text;
 }
 
-export type CustomModel = { provider: string; name: string; model: string; baseUrl: string; contextWindow?: number; wireApi?: "responses" | "chat" | "auto"; hasKey?: boolean; models?: ProviderModel[]; enabled?: boolean };
+export type CustomModel = { provider: string; name: string; model: string; baseUrl: string; contextWindow?: number; wireApi?: "responses" | "chat" | "auto"; hasKey?: boolean; effort?: string; models?: ProviderModel[]; enabled?: boolean };
 
 export type ProviderDraft = {
   provider: string;

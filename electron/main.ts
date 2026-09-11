@@ -267,6 +267,10 @@ type ProviderModel = {
   /** 该模型支持的思考档位（按声明顺序）；缺省走默认三档 low/medium/high。
    *   GPT 系等模型支持 minimal/xhigh/ultra 更多档位，在这里显式声明后引擎才认。 */
   efforts?: string[];
+  /** 用户为该模型选定的思考档位（档案持久化）：切供应商/切模型时自动应用，
+   *  重装/清存储后不丢。仅存档不写入引擎——引擎侧兜底默认走 config.toml
+   *  顶层 model_reasoning_effort，会话内显式值由每轮 turn/start 下发。 */
+  effort?: string;
 };
 
 type CustomModelFile = {
@@ -277,6 +281,10 @@ type CustomModelFile = {
   contextWindow: number;
   wireApi?: "responses" | "chat";
   encryptedKey?: string;
+  /** 当前生效模型的思考档位（档案 100% 同步口径，对齐顶层 model）：
+   *  写 config.toml 顶层 model_reasoning_effort 作引擎兜底默认，
+   *  也是 UI「切供应商/切模型」时恢复用户所选档位的依据。 */
+  effort?: string;
   /** 该供应商下已保存的模型列表，model 是其中当前生效的那个 */
   models?: ProviderModel[];
   /** 启用状态；禁用时若为当前供应商则清空当前配置 */
@@ -852,6 +860,13 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
   await fs.writeFile(path.join(codexHome, "config.toml"), [
     `model = "${escapeToml(entry.model)}"`,
     `model_context_window = ${effectiveContextWindow}`,
+    // 思考档位兜底默认（当前生效模型档案里记的档）：会话内显式值由每轮 turn/start
+    // 的 effort 覆盖，这里只管「重启后 resume 的老会话没显式值时」的默认落点，
+    // 与 custom-model.json 的 effort 字段同源。模型没记档位时不写，引擎用内置默认。
+    ...((() => {
+      const effort = currentCatalogModel?.effort ?? entry.effort;
+      return effort ? [`model_reasoning_effort = "${escapeToml(effort)}"`] : [];
+    })()),
     // 官方订阅：不写 model_provider（引擎默认 openai），声明优先用 ChatGPT 登录凭据
     ...(isOfficialProvider ? ['preferred_auth_method = "chatgpt"'] : [`model_provider = "${escapeToml(entry.provider)}"`]),
     ...(catalogToml ? [catalogToml] : []),
@@ -5064,6 +5079,28 @@ ipcMain.handle("custom-model:set-model", async (_event, input: { provider: strin
   // 但**不重启引擎**——同供应商换模型不需要重启，重启会打断在跑的回合。
   // apply=true + restart 缺省 = 旧语义：写配置并重启引擎（供应商级切换用）。
   if (input.apply !== false) await applyCustomModel(next, { restart: input.restart !== false });
+  return publicCustomModel(next);
+});
+/** 思考等级档案持久化：写进 custom-model.json（models[].effort + 顶层 effort），
+ *  并同步 config.toml 顶层 model_reasoning_effort（restart:false 不重启引擎——
+ *  会话内显式档位由每轮 turn/start 的 effort 下发，config.toml 只做重启后的兜底默认）。
+ *  与「模型自报」同步案同源：档案不写，切供应商/重装后档位就丢了。 */
+ipcMain.handle("custom-model:set-effort", async (_event, input: { provider: string; model: string; effort: string }) => {
+  const model = input.model.trim();
+  const effort = String(input.effort ?? "").trim();
+  if (!model) throw new Error("模型 ID 不能为空");
+  if (effort && !["minimal", "low", "medium", "high", "ultra", "xhigh"].includes(effort)) throw new Error(`未知思考档位: ${effort}`);
+  const list = await readCustomModels();
+  const target = list.find((entry) => entry.provider === input.provider);
+  if (!target) throw new Error("未找到该供应商");
+  const effortPatch = effort ? { effort } : { effort: undefined };
+  let models = (target.models ?? []).map((m) => m.id === model ? { ...m, ...effortPatch } : m);
+  // 旧档案 models 缺当前生效模型条目时补一条，保证顶层与 models[] 永不同步分叉
+  if (effort && !models.some((m) => m.id === model)) models = [...models, { id: model, effort }];
+  const next: CustomModelFile = { ...target, models, ...(model === target.model ? { effort: effort || undefined } : {}) };
+  await upsertCustomModel(next);
+  await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
+  await applyCustomModel(next, { restart: false });
   return publicCustomModel(next);
 });
 /** 延迟生效：读取当前激活供应商并重启引擎使配置生效（供应商切换「重启生效」按钮用，幂等） */
