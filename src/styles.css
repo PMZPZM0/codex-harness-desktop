@@ -21189,12 +21189,12 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 /* ===== 随机短提示气泡 ===== */
 .voice-hint-bubble {
   position: absolute;
-  /* 从悬浮球往左弹出：刻意收窄（文字也压到 6 字以内），不让它盖住输入框 */
-  right: 100%;
-  bottom: 50%;
-  margin-right: 10px;
-  transform: translateY(50%);
-  max-width: 128px;
+  /* 放在悬浮球**正上方**（用户要求：比在左边好——向左会横穿输入框，向上则完全避开） */
+  bottom: 100%;
+  left: 50%;
+  margin-bottom: 9px;
+  transform: translateX(-50%);
+  max-width: 150px;
   padding: 5px 9px;
   border-radius: 9px;
   background: var(--panel);
@@ -21207,22 +21207,23 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   animation: voice-hint-in .2s cubic-bezier(.2,.8,.25,1);
   pointer-events: none;
 }
-/* 小尾巴（指向悬浮球） */
+/* 小尾巴：指向正下方的悬浮球 */
 .voice-hint-bubble::after {
   content: "";
   position: absolute;
-  right: -5px;
-  top: 50%;
+  left: 50%;
+  bottom: -5px;
   width: 9px; height: 9px;
-  margin-top: -4.5px;
+  margin-left: -4.5px;
   background: var(--panel);
   border-right: 1px solid var(--line);
-  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
   transform: rotate(45deg);
 }
+/* 从球的方向（下方）滑入 */
 @keyframes voice-hint-in {
-  from { opacity: 0; transform: translateY(50%) translateX(6px) scale(.94); }
-  to   { opacity: 1; transform: translateY(50%) translateX(0) scale(1); }
+  from { opacity: 0; transform: translateX(-50%) translateY(7px) scale(.96); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
 }
 
 /* ===== 悬浮球右键菜单 ===== */
