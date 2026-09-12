@@ -100,7 +100,9 @@ export const steps = [
     name: "③ 混合形态 NDJSON：裸 token / auth.json 形 / 扁平 JSON 各入一账",
     run: async (h) => {
       await injectFiles(h, [["mixed.txt", MIXED]]);
-      await h.waitFor(`window.codex.openaiAccounts().then((list) => list.length >= 3)`, { label: "账号数 ≥ 3", timeoutMs: 60_000 });
+      // 等待「入库完成且重切换落定」：首个可登录条目（imported@test.local，带 id_token）
+      // 被重新写回 auth.json 并 active —— 单等 length 会在 accountSwitch 完成前抢跑（实测竞态）
+      await h.waitFor(`window.codex.openaiAccounts().then((list) => list.length >= 3 && list.some((a) => a.active && a.email === "imported@test.local"))`, { label: "入库 ≥3 且可登录条目重新生效", timeoutMs: 60_000 });
       const accounts = await h.eval(`window.codex.openaiAccounts().then(list => list.map(a => ({ id: a.email || a.id, active: a.active })))`);
       const emails = (accounts || []).map((a) => a.id);
       h.check("flat@test.local（扁平 JSON 的 email 字段）入账", emails.includes("flat@test.local"), JSON.stringify(emails));
@@ -116,7 +118,33 @@ export const steps = [
   },
 
   {
-    name: "④ 渲染层无 console.error",
+    name: "④ 停用当前生效账号 → 全套退出清理（与中转站对称）+ 死锁解除",
+    run: async (h) => {
+      const accounts = await h.eval(`window.codex.openaiAccounts()`);
+      const active = (accounts || []).find((a) => a.active);
+      h.check("前置：有当前生效账号", Boolean(active), JSON.stringify((accounts || []).map((a) => a.email)));
+      // 账号卡开关停用 = 停用当前生效账号：auth.json 置空 + openai-official 条目停用 + custom-model.json 清空
+      await h.eval(`window.codex.openaiToggleAccount({ id: ${JSON.stringify(active?.id ?? "")}, disabled: true })`);
+      await h.waitFor(`window.codex.openaiAccounts().then((list) => list.every((a) => !a.active))`, { label: "账号退出登录态", timeoutMs: 20_000 });
+      const st = await h.eval(`window.codex.listCustomModels()`);
+      const official = (st?.providers || []).find((p) => p.provider === "openai-official");
+      h.check("openai-official 供应商条目已自动停用", Boolean(official) && official.enabled === false, JSON.stringify(official && { provider: official.provider, enabled: official.enabled }));
+      h.check("生效配置已清空（不悬挂在无凭据的供应商上）", st?.current === null, String(st?.current));
+      // 死锁解除：生效位空了，其他供应商现在能正常启用（此前会被残留的 openai-official 互斥卡死）
+      const other = (st?.providers || []).find((p) => p.provider !== "openai-official");
+      if (other) {
+        await h.eval(`window.codex.setProviderEnabled({ provider: ${JSON.stringify(other.provider)}, enabled: true })`);
+        const st2 = await h.eval(`window.codex.listCustomModels()`);
+        h.check("其他供应商可正常启用（无残留互斥死锁）", st2?.current === other.provider, `current=${String(st2?.current)}`);
+      } else {
+        h.check("其他供应商可正常启用（无残留互斥死锁）", false, "列表里没有其他供应商可验证");
+      }
+      await h.screenshot("04-deactivated-cleanup");
+    },
+  },
+
+  {
+    name: "⑤ 渲染层无 console.error",
     run: async (h) => {
       h.check("渲染层无 console.error", h.consoleLog.length === 0, h.consoleLog.slice(0, 3).join(" ｜ "));
     },

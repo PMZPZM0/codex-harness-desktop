@@ -3329,7 +3329,7 @@ function extractQuotaBars(data: any): { label: string; value: number }[] {
 }
 
 /** OpenAI 订阅页（设置 → 账户 → OpenAI 订阅）：监控面板 + 多账号批量管理。 */
-function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActiveChange }: { activeProvider?: string; onActivate: (models: string[]) => Promise<void> | void; onNotice: (m: string) => void; onActiveChange?: (email: string) => void }) {
+function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActiveChange, onRefreshActive }: { activeProvider?: string; onActivate: (models: string[]) => Promise<void> | void; onNotice: (m: string) => void; onActiveChange?: (email: string) => void; onRefreshActive?: () => unknown }) {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [device, setDevice] = useState<{ url: string; code: string; raw?: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -3485,6 +3485,9 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActive
       const list = await reload();
       if ((r as any).deactivated) {
         onActiveChange?.("");
+        // 主进程停用生效账号时已把 openai-official 条目停用 + custom-model.json 清空；
+        // 这里刷新 App 的 customModel 状态，否则互斥判断还挂着旧供应商，其他供应商启用按钮被置灰
+        await onRefreshActive?.();
         onNotice("账号已停用，官方订阅已退出引擎（重新打开开关可恢复）");
         return;
       }
@@ -14189,7 +14192,7 @@ const commandMatches = useMemo(() => {
             {settingsPage === "personalization" && <PersonalizationPage personality={personality} onPersonalityChange={changePersonality} onNotice={setNotice} />}
             {settingsPage === "voice" && <VoiceSettingsSection onNotice={setNotice} />}
             {settingsPage === "relay" && <RelayCenterPage busy={relayBusy} activeProvider={customModel?.provider} onActivate={relayActivate} onNotice={setNotice} onOpenModelSettings={() => { setSettingsPage("model"); }} />}
-            {settingsPage === "openai" && <OpenaiSubscriptionPage activeProvider={customModel?.provider} onActivate={(models) => activateOfficialProvider(models)} onNotice={setNotice} onActiveChange={setOpenaiActiveAcct} />}
+            {settingsPage === "openai" && <OpenaiSubscriptionPage activeProvider={customModel?.provider} onActivate={(models) => activateOfficialProvider(models)} onNotice={setNotice} onActiveChange={setOpenaiActiveAcct} onRefreshActive={() => refreshActive()} />}
             {settingsPage === "model" && <section className="settings-model-layout">
               <div className="model-global-bar">
                 <div className="model-global-item">
