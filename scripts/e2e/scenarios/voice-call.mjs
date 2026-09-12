@@ -189,7 +189,11 @@ export const steps = [
         const labels = [...document.querySelectorAll(".voice-settings .settings-label-main")].map(n => n.innerText.trim());
         return labels;
       })()`);
-      // 控件齐全（用 textContent：innerText 对隐藏元素返回空，会误判）
+      // 控件齐全：先等到设置数据真正加载（出现"音色"等控件），再读 textContent
+      await h.waitFor(
+        `(() => { const el = document.querySelector(".voice-settings"); return !!el && (el.textContent || "").includes("音色"); })()`,
+        { label: "设置数据加载", timeoutMs: 8000 }
+      ).catch(() => undefined);
       const fullText = await h.eval(`(document.querySelector(".voice-settings")?.textContent || "").trim()`).catch(() => "");
       const want = [
         "音色", "语速", "播报音量", "麦克风",
