@@ -254,7 +254,7 @@ const CHECKS = [
 
       const adbgDump = `(() => {
         const all = Array.isArray(window.__adbg) ? window.__adbg : [];
-        return all.filter((e) => ["send-arm-main", "send-arm-fork", "init-pin", "confirm-fired", "cancel:bottom-scroll", "pin-apply", "follow-grow", "stick-jump"].includes(e.r)).slice(-16);
+        return all.filter((e) => ["send-arm-main", "send-arm-fork", "init-pin", "confirm-fired", "cancel:bottom-scroll", "pin-apply", "pin-fix", "pin-miss", "follow-grow", "stick-jump", "clear-anchor"].includes(e.r) || String(e.r).startsWith("release:")).slice(-18);
       })()`;
       const idle = (h) => h.waitFor(`!document.querySelector(".timeline-bottom-spacer.compact")`, { label: "回合跑完", timeoutMs: 60000 }).catch(() => undefined);
       for (const [label, text] of [["第 1 条", "只回复一个数字：31"], ["第 2 条", "只回复一个数字：32"]]) {
@@ -297,27 +297,80 @@ const CHECKS = [
       await wait(250);
       await h.click(".send-button");
       const samples = [];
-      for (let i = 0; i < 45; i++) {
-        const v = await h.eval(`(() => { const tl = document.querySelector(".timeline"); return tl ? Math.round(tl.scrollTop) : -1; })()`);
-        samples.push(Number(v));
-        await wait(70);
+      const hiddenSamples = [];
+      const bottomSamples = [];
+      const busySamples = [];
+      let ch0 = 0;
+      // 采样到「回合真的跑完」为止（上限 5 分钟），**不许中途截断**：
+      // 用户指出「每次测试消息都不看完，你能发现什么bug，总是运行中就杀应用」——
+      // 长回合的问题（跟随跟不上、完成瞬间折叠导致跳变）只会在后段暴露，
+      // 采样 3~40 秒然后关掉应用等于把最关键的证据扔掉。
+      for (let i = 0; i < 1500; i++) {
+        // 同时采「视口位置」和「正文有多少 px 被挤到输入框下面（看不见）」——后者就是
+        // 用户截图反馈的「输入框上面一行永远不动、自动跟随又没了」：
+        // 钉顶把消息钉在顶上，但正文一路往下长、最新一行始终在视口外。
+        const v = await h.eval(`(() => {
+          const tl = document.querySelector(".timeline");
+          if (!tl) return null;
+          const blankOf = (sel) => { const n = document.querySelector(sel); return n ? n.offsetHeight : 0; };
+          const bottom = tl.scrollHeight - blankOf(".timeline-bottom-spacer.anchor-pad") - blankOf(".timeline-bottom-spacer.compact");
+          return [Math.round(tl.scrollTop), Math.round(bottom - tl.scrollTop - tl.clientHeight), Math.round(bottom), tl.clientHeight, document.querySelector(".timeline-bottom-spacer.compact") ? 1 : 0];
+        })()`);
+        samples.push(Array.isArray(v) ? Number(v[0]) : -1);
+        hiddenSamples.push(Array.isArray(v) ? Number(v[1]) : -1);
+        bottomSamples.push(Array.isArray(v) ? Number(v[2]) : -1);
+        busySamples.push(Array.isArray(v) ? Number(v[4]) : 0);
+        if (Array.isArray(v)) ch0 = Number(v[3]);
+        await wait(200);
+        // 回合跑完（运行留白撤掉）再收工——这才是"消息看完"
+        if (i > 10 && Array.isArray(v) && Number(v[4]) === 0) break;
       }
       const deltas = [];
       for (let i = 1; i < samples.length; i++) deltas.push(samples[i] - samples[i - 1]);
-      const maxJump = deltas.length ? Math.max(...deltas.map((d) => Math.abs(d))) : 0;
+      // 前 5 个采样（≈1s）是**钉顶落位**本身：发送时视口还在上一条的底部，钉顶把新消息
+      // 放到 54px 处必然是一段位移，那是功能而不是"跳"。从第 6 个采样起才是在流式过程中
+      // 的稳定性，判据只对它生效。
+      const activeDeltas = deltas.slice(5);
+      const maxJump = activeDeltas.length ? Math.max(...activeDeltas.map((d) => Math.abs(d))) : 0;
       let reversals = 0;
+      let bigReversals = 0;
       let dir = 0;
-      for (const d of deltas) {
+      for (const d of activeDeltas) {
         if (Math.abs(d) < 2) continue;             // 抖动量级不算方向
         const next = d > 0 ? 1 : -1;
-        if (dir !== 0 && next !== dir) reversals += 1;
+        if (dir !== 0 && next !== dir) { reversals += 1; if (Math.abs(d) >= 40) bigReversals += 1; }
         dir = next;
       }
       console.log(`  [弹跳] 采样 ${samples.length} 次；最大相邻跳变 ${maxJump}px；方向反转 ${reversals} 次`);
       console.log(`  [弹跳] 轨迹(前 20): ${JSON.stringify(samples.slice(0, 20))}`);
-      // 反转阈值放宽到 2（流式里偶尔一次基线重置是允许的）；来回拉扯会产生几十次反转
-      h.check("流式期间视口没有来回拉扯（方向反转 ≤ 2 次）", reversals <= 2, `reversals=${reversals} samples=${JSON.stringify(samples.slice(0, 24))}`);
-      h.check("相邻跳变有界（≤ 400px，无整屏弹跳）", maxJump <= 400, `maxJump=${maxJump}px deltas=${JSON.stringify(deltas.slice(0, 24))}`);
+      // 这一轮打点是**整段长回合**跑完之后取的（含跟随为什么不动的证据）
+      console.log(`  [长回合] 打点：${JSON.stringify(await h.eval(adbgDump))}`);
+      // 判据（09-13 按"用户看得见吗"重定标）：
+      //   · 相邻跳变 ≤ 120px —— 跟随一档是 60px，落点复核一次约 30px，超过 120 才是"整屏弹跳"；
+      //   · **大幅**方向反转（|Δ| ≥ 40px）≤ 1 次 —— 长回合里 20~30px 的落点微调不算"来回闪"，
+      //     用"所有反转 ≤ 2 次"会把采样时长越拉越长就越容易假红（100 次采样里两次微调很正常）。
+      h.check("流式期间视口没有来回拉扯（大幅反转 ≤ 1 次）", bigReversals <= 1, `bigReversals=${bigReversals} reversals=${reversals} samples=${JSON.stringify(samples.slice(0, 24))}`);
+      // 跳变判据按**方向**分开看（09-13 重定标）：
+      //   · 向下的一次大跳 = 内容成批到达后视口追赶，是**必须**的（否则最新内容留在屏幕外），
+      //     上限给 1.5 屏，超过说明在追历史；
+      //   · 向上的一次大跳 = 视口被往回拽，这才是用户说的"跳/闪"，必须 ≤ 60px（一档跟随量）。
+      //   原来只卡 |Δ| ≤ 120，会把"成批到达的追赶"误判成 bug，同时放过不了"往回拽"的性质区分。
+      const maxUp = activeDeltas.length ? Math.max(0, ...activeDeltas.map((d) => -d)) : 0;
+      const maxDown = activeDeltas.length ? Math.max(0, ...activeDeltas) : 0;
+      h.check("视口不回跳（单次向上 ≤ 60px）", maxUp <= 60, `maxUp=${maxUp}px deltas=${JSON.stringify(deltas.slice(0, 24))}`);
+      h.check("追赶步长有界（单次向下 ≤ 1.5 屏）", maxDown <= ch0 * 1.5, `maxDown=${maxDown}px ch=${ch0}`);
+      // ── 自动跟随：流式期间「最新内容」必须一直在视口内 ──
+      // 钉顶只负责"消息在顶上"，跟随负责"最新一行看得见"，两者缺一不可。判据用
+      // **被挤到视口下方的内容高度**（不含尾部留白），阈值给约 5 行（120px）——
+      // 跟随是按 60px 一档推进的，所以稳定态下这个值天然在 0~60 之间。
+      const grew = bottomSamples[bottomSamples.length - 1] - bottomSamples[0];
+      const hiddenMax = Math.max(...hiddenSamples);
+      const hiddenTail = hiddenSamples[hiddenSamples.length - 1];
+      console.log(`  [跟随] 内容增长 ${grew}px（视口 ${ch0}px）；视口外正文最大 ${hiddenMax}px；末尾 ${hiddenTail}px`);
+      console.log(`  [跟随] 视口外轨迹: ${JSON.stringify(hiddenSamples.slice(0, 26))}`);
+      // 前置：内容必须真的长过一屏（否则这条断言测不出东西 —— 短回复跟随触没触发都一样）
+      h.check("[前置] 流式内容长过一屏（跟随才可能被检验）", grew > ch0, `grew=${grew}px ch=${ch0}`);
+      h.check("流式期间最新正文始终可见（视口外 ≤ 120px）", hiddenMax <= 120, `hiddenMax=${hiddenMax}px tail=${hiddenTail} grew=${grew} samples=${JSON.stringify(hiddenSamples.slice(0, 26))}`);
       await h.screenshot("发送钉顶");
     },
   },
@@ -436,7 +489,18 @@ try {
   results.push({ id: "(启动)", ok: false, ms: Date.now() - t0, error: e.message });
 } finally {
   if (flag("keep")) console.log("\n\x1b[33m--keep：应用保持运行\x1b[0m");
-  else await h.close();
+  else {
+    // ⛔ 绝不在回合运行中关应用（09-13 用户指出：「每次测试消息都不看完，你能发现
+    // 什么bug，总是运行中就杀应用」）。跑完所有验收项后如果还有回合在流式，等它跑完
+    // （上限 5 分钟）再退出——半路杀掉等于把最关键的证据扔了，而且会把"没跑完"误报成失败。
+    for (let i = 0; i < 300; i++) {
+      const busy = await h.eval(`!!document.querySelector(".timeline-bottom-spacer.compact")`).catch(() => false);
+      if (!busy) break;
+      if (i === 0) console.log("\x1b[90m(还有回合在流式：等它跑完再关应用…)\x1b[0m");
+      await wait(1000);
+    }
+    await h.close();
+  }
 }
 
 const summary = h.summary("验收");
