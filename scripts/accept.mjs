@@ -252,11 +252,31 @@ const CHECKS = [
       })()`;
       h.check("[前置] 已打开一个会话（时间线在）", await h.exists(".timeline"));
 
+      const adbgDump = `(() => {
+        const all = Array.isArray(window.__adbg) ? window.__adbg : [];
+        return all.filter((e) => ["send-arm-main", "send-arm-fork", "init-pin", "confirm-fired", "cancel:bottom-scroll", "pin-apply", "follow-grow", "stick-jump"].includes(e.r)).slice(-16);
+      })()`;
+      const idle = (h) => h.waitFor(`!document.querySelector(".timeline-bottom-spacer.compact")`, { label: "回合跑完", timeoutMs: 60000 }).catch(() => undefined);
       for (const [label, text] of [["第 1 条", "只回复一个数字：31"], ["第 2 条", "只回复一个数字：32"]]) {
+        // ⚠️ 必须等上一条真跑完再发下一条：运行中发送会走「排队」路径（没有钉顶、也不会
+        // 立刻产生新回合），测出来的是排队行为而不是发送钉顶（09-12 实测：第 2 条
+        // 打点表全空 = send-arm-main 根本没触发）。
+        await idle(h);
         await h.clearInput(".composer-editor");
         await h.typeInto(".composer-editor", text);
         await wait(250);
+        // 发送后 1.2s 高频采样：乐观锚（#chat-anchor）在不在、scrollTop 走向 —— 钉顶失败的
+        // 第一现场。少了这段，事后只能看到"没钉住"却不知道是哪一步没发生（09-12 排查）。
+        await h.eval(`window.__adbg = []`);
         await h.click(".send-button");
+        const trail = [];
+        for (let i = 0; i < 24; i++) {
+          trail.push(await h.eval(`(() => { const tl = document.querySelector(".timeline"); return [document.getElementById("chat-anchor") ? 1 : 0, tl ? Math.round(tl.scrollTop) : -1]; })()`));
+          await wait(50);
+        }
+        const anchors = trail.filter((s) => Array.isArray(s) && s[0] === 1).length;
+        console.log(`  [轨迹] ${label}：乐观锚出现 ${anchors}/24 帧；scrollTop ${JSON.stringify(trail.slice(0, 12).map((s) => (Array.isArray(s) ? s[1] : s)))}`);
+        console.log(`  [轨迹] ${label} 打点：${JSON.stringify(await h.eval(adbgDump))}`);
         await h.waitFor(`document.querySelectorAll(".turn-group").length >= 1`, { label: "回合出现", timeoutMs: 40000 }).catch(() => undefined);
         await wait(1500);
         const m = await h.eval(measure);
@@ -272,6 +292,7 @@ const CHECKS = [
       // 采样整段流式期间的 scrollTop：钉顶与跟随如果各抢一次，就会出现**方向反转**。
       // 判据：相邻采样的最大跳变有界；方向反转次数极少（正常跟随是单向递增）。
       await h.clearInput(".composer-editor");
+      await idle(h);
       await h.typeInto(".composer-editor", "请从 1 数到 30，每个数字单独一行，每行后面加一句十字以上的说明。");
       await wait(250);
       await h.click(".send-button");
