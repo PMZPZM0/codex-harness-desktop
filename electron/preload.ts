@@ -266,6 +266,7 @@ contextBridge.exposeInMainWorld("codex", {
   openaiAccounts: () => ipcRenderer.invoke("openai:accounts"),
   openaiAccountRemove: (id: string) => ipcRenderer.invoke("openai:account-remove", id),
   openaiAccountSwitch: (id: string) => ipcRenderer.invoke("openai:account-switch", id),
+  openaiImportFile: (input: { contents: string[] }) => ipcRenderer.invoke("openai:import-file", input),
   relayKeysAll: () => ipcRenderer.invoke("relay:keys-all"),
   relayOverview: () => ipcRenderer.invoke("relay:overview"),
   relayCreateKey: (input: { name: string; groupId?: number | null }) => ipcRenderer.invoke("relay:create-key", input),
