@@ -20096,78 +20096,46 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 
 /* 悬浮球：渐变 + 发光 + 跟着音量呼吸的脉冲环（--voice-level 由 JS 每帧写入 0..1） */
+/* 悬浮球：不再画"圈+底色"——动物本身就是 3D 玻璃挂件（透明小狐狸）。
+   这里只剩"位置 + 交互 + 跟音量的发光"：背景透明，发光跟随 --voice-level。 */
 .voice-ball {
   --voice-level: 0;
   position: relative;
   width: 52px;
   height: 52px;
-  border-radius: 50%;
-  border: 0;
-  padding: 0;
   display: grid;
   place-items: center;
   cursor: pointer;
   touch-action: none;
-  color: #fff;
-  /* 斜向渐变（与波浪配色呼应：蓝 → 紫） */
-  background: linear-gradient(140deg, #3b82f6 0%, #6366f1 48%, #a855f7 100%);
+  color: transparent;
+  background: transparent;
   box-shadow:
-    0 2px 10px color-mix(in srgb, #6366f1 35%, transparent),
-    0 0 calc(6px + var(--voice-level) * 26px) color-mix(in srgb, #a855f7 calc(20% + var(--voice-level) * 60%), transparent);
-  transform: scale(calc(1 + var(--voice-level) * 0.06));
+    0 0 calc(8px + var(--voice-level) * 30px) color-mix(in srgb, #ff9a4a calc(18% + var(--voice-level) * 60%), transparent);
+  transform: scale(calc(1 + var(--voice-level) * 0.08));
   transition: transform .12s ease-out, box-shadow .12s ease-out, filter .16s ease;
+  border: 0;
+  padding: 0;
 }
-.voice-ball:hover {
-  filter: brightness(1.08);
-}
-.voice-ball:active {
-  transform: scale(.96);
-}
-.voice-ball.is-thinking {
-  background: linear-gradient(140deg, #f59e0b 0%, #fb923c 100%);
-  box-shadow: 0 2px 10px color-mix(in srgb, #f59e0b 40%, transparent);
-}
-.voice-ball.is-speaking {
-  background: linear-gradient(140deg, #8b5cf6 0%, #d946ef 100%);
-  box-shadow:
-    0 2px 10px color-mix(in srgb, #d946ef 40%, transparent),
-    0 0 calc(8px + var(--voice-level) * 30px) color-mix(in srgb, #d946ef calc(25% + var(--voice-level) * 65%), transparent);
-}
+.voice-ball:hover { filter: brightness(1.05) drop-shadow(0 0 6px color-mix(in srgb, #ff9a4a 35%, transparent)); }
+.voice-ball:active { transform: scale(.95); }
 
-/* 两圈脉冲环：音量越大扩散越远、越不透明 */
+/* 脉冲环：跟狐狸同色暖琥珀，扩散半径和不透明度跟 --voice-level 走 */
 .voice-ball-ring {
   position: absolute;
-  inset: -3px;
+  inset: -4px;
   border-radius: 50%;
-  border: 2px solid color-mix(in srgb, #a855f7 65%, transparent);
+  border: 1.5px solid color-mix(in srgb, #ff9a4a 70%, transparent);
   pointer-events: none;
   opacity: 0;
 }
 .voice-ball.is-listening .voice-ball-ring,
 .voice-ball.is-speaking .voice-ball-ring {
-  animation: voice-ball-pulse 1.8s ease-out infinite;
+  animation: voice-ball-pulse 1.6s ease-out infinite;
 }
-.voice-ball.is-speaking .voice-ball-ring {
-  border-color: color-mix(in srgb, #d946ef 65%, transparent);
-}
-.voice-ball-ring:nth-child(2) { animation-delay: .9s; }
+.voice-ball-ring:nth-child(2) { animation-delay: .8s; }
 @keyframes voice-ball-pulse {
-  0%   { opacity: calc(.35 + var(--voice-level) * .5); transform: scale(1); }
-  100% { opacity: 0; transform: scale(calc(1.5 + var(--voice-level) * .7)); }
-}
-.voice-ball.is-listening .voice-ball-ring {
-  border-color: var(--accent);
-  animation: voice-pulse 1.8s ease-out infinite;
-}
-.voice-ball.is-speaking .voice-ball-ring {
-  border-color: var(--ok);
-  animation: voice-pulse 1.1s ease-out infinite;
-}
-
-@keyframes voice-pulse {
-  0% { transform: scale(.92); opacity: .75; }
-  70% { transform: scale(1.18); opacity: 0; }
-  100% { transform: scale(1.18); opacity: 0; }
+  0%   { opacity: calc(.32 + var(--voice-level) * .55); transform: scale(1); }
+  100% { opacity: 0; transform: scale(calc(1.7 + var(--voice-level) * .8)); }
 }
 
 .voice-panel {
