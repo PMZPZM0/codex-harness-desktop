@@ -8028,6 +8028,36 @@ export default function App() {
       这个「非用户意愿」的增大若被 update() 当成用户滚到底就会解除钉顶（09-12
       实测：连发第二/三条正是这样退回贴底）。 */
   const pinnedScrollTopRef = useRef(-1);
+  /** 已经钉过的锚点标识（`turn:<id>` / `opt:<id>`）。**只钉一次**：同一个锚点后续的
+      thread 更新只刷新基线，滚动完全交给 update() 里的增量跟随。
+      为什么必须有这个（09-12 用户反馈「钉顶和最新跟随来回拉扯、上下弹跳」）：
+      此前钉顶 effect 在**每次**流式更新都按绝对坐标重新钉回去（= 往上滚），而
+      update() 又按增长量往下推（= 往下滚）—— 两个 owner 反方向抢，就有了弹跳。 */
+  const pinnedAnchorKeyRef = useRef<string | null>(null);
+  /** 钉顶过渡动画的 rAF id（同一个锚点只播一次入场动画；新动画开始前先取消旧的）。 */
+  const anchorGlideRef = useRef(0);
+  /** 钉顶入场：短距离用 ~180ms easeOut 滑过去（用户要的「丝滑过渡」），长距离直接瞬移
+      （切会话/首次定位）。**只用于钉顶落位这一次**，流式跟随永远瞬时——
+      跟随若带动画，动画中途内容继续增高会互相 retarget，就是历史上那个抖动。 */
+  const glideTo = useCallback((el: HTMLElement, target: number) => {
+    const from = el.scrollTop;
+    const delta = target - from;
+    if (anchorGlideRef.current) cancelAnimationFrame(anchorGlideRef.current);
+    if (!Number.isFinite(delta) || Math.abs(delta) < 2 || Math.abs(delta) > 240) {
+      el.scrollTop = target;
+      anchorGlideRef.current = 0;
+      return;
+    }
+    const t0 = performance.now();
+    const DURATION = 180;
+    const step = (now: number) => {
+      const p = Math.min(1, (now - t0) / DURATION);
+      const eased = 1 - Math.pow(1 - p, 3);
+      el.scrollTop = from + delta * eased;
+      anchorGlideRef.current = p < 1 ? requestAnimationFrame(step) : 0;
+    };
+    anchorGlideRef.current = requestAnimationFrame(step);
+  }, []);
   const [workStartedAt, setWorkStartedAt] = useState<number | null>(null);
   // 注意：这里曾有一个 `nowTick` 每秒 setState（原意给「已工作 X 秒」计时），但那个指示
   // 已删除、App 层再无任何读取点 → 唯一效果是**每秒强制 App 全量重渲染一次**
@@ -9036,6 +9066,7 @@ const commandMatches = useMemo(() => {
       switchJumpRef.current = false;
       // 切会话 = 全新定位（贴底看最新），不携带上一个会话遗留的锚定模式
       anchorTopRef.current = false;
+      pinnedAnchorKeyRef.current = null;   // 新会话的锚点要能重新钉
       clearAnchorPad();   // 上一个会话的锚顶留白不能带到新会话（否则新会话底部一大段空白）
       stickToBottomRef.current = true;
       jumpToBottom(el);
@@ -9062,7 +9093,20 @@ const commandMatches = useMemo(() => {
         anchorTopOffsetRef.current = contentOffsetTop(a, el);
         contentAnchorTopRef.current = anchorTopOffsetRef.current - ANCHOR_TOP_OFFSET_PX;
       }
-      selfScrollUntilRef.current = Date.now() + 80;
+      // ⛔ 同一个锚点**只钉一次**（09-12 用户反馈「钉顶与最新跟随来回拉扯、上下弹跳」）。
+      // 增量跟随（update() 里按 growth 往下推）本身就把锚点保持在视图顶部——它才是滚动 owner。
+      // 这里若每次更新都按绝对坐标再钉回去，就等于往反方向抢，于是弹跳。
+      // 后续更新只做两件事：① 维持底部留白尺寸；② 刷新基线（下一个增长量从新高度算起）。
+      const anchorKey = anchorTurnIdRef.current
+        ? `turn:${anchorTurnIdRef.current}`
+        : (optimisticInput?.id ? `opt:${optimisticInput.id}` : null);
+      if (anchorKey && pinnedAnchorKeyRef.current === anchorKey) {
+        anchorHeightBaselineRef.current = el.scrollHeight;
+        return;
+      }
+      pinnedAnchorKeyRef.current = anchorKey;
+      // 抑制窗要盖住整个入场动画（180ms）——动画期间产生的 scroll 事件不能被当成用户滚动
+      selfScrollUntilRef.current = Date.now() + 280;
       // 用户消息**自己就比一屏还高**（长粘贴/多段长指令）时，钉顶没有意义：
       // 整条消息装不下，钉顶只会把回复推到屏幕外。此时用户的期望是**直接看到
       // agent 的回复**（用户实测反馈：「一次发很长消息，一屏展示不下来，agent
@@ -9079,11 +9123,13 @@ const commandMatches = useMemo(() => {
         pinnedScrollTopRef.current = el.scrollTop;
         return;
       }
-      scrollToOffsetInstant(el, contentAnchorTopRef.current);
+      glideTo(el, contentAnchorTopRef.current);
       // 基线 = 当前内容高度：之后 update() 只按「增长量」温和跟随
       anchorHeightBaselineRef.current = el.scrollHeight;
-      // 记下本次钉顶实际落点（可能被 clamp），供 update() 区分程序滚动与用户滚到底
-      pinnedScrollTopRef.current = el.scrollTop;
+      // 记下本次钉顶**最终**落点（不是动画起点！glideTo 是异步的，若记起点，
+      // update() 的 byUs 判定会把自己的入场动画当成"用户滚到底"，于是解除钉顶 →
+      // 下一条消息就退回贴底（09-12 实测：第 2 条 gap=418、atBottom=true）。
+      pinnedScrollTopRef.current = Math.max(0, Math.min(contentAnchorTopRef.current, el.scrollHeight - el.clientHeight));
       return;
     }
     if (!stickToBottomRef.current) return;
@@ -9110,7 +9156,8 @@ const commandMatches = useMemo(() => {
     anchorTopOffsetRef.current = contentOffsetTop(anchor, el);
     contentAnchorTopRef.current = anchorTopOffsetRef.current - ANCHOR_TOP_OFFSET_PX;
     anchorElRef.current = anchor;
-    selfScrollUntilRef.current = Date.now() + 80;
+    pinnedAnchorKeyRef.current = optimisticInput?.id ? `opt:${optimisticInput.id}` : "opt:";
+    selfScrollUntilRef.current = Date.now() + 280;
     // 长消息（自身超一屏）→ 直接跟到回复位置；否则正常钉顶（判据说明见 thread 布局 effect）
     if (anchor.getBoundingClientRect().height > el.clientHeight) {
       anchorTopRef.current = false;   // 退出钉顶：交给常规贴底跟随（steer 到回复位置）
@@ -9121,11 +9168,10 @@ const commandMatches = useMemo(() => {
       pinnedScrollTopRef.current = el.scrollTop;
       return;
     }
-    scrollToOffsetInstant(el, contentAnchorTopRef.current);
+    glideTo(el, contentAnchorTopRef.current);
     anchorHeightBaselineRef.current = el.scrollHeight;
-    pinnedScrollTopRef.current = el.scrollTop;
-  }, [optimisticInput]);
-  useEffect(() => {
+    pinnedScrollTopRef.current = Math.max(0, Math.min(contentAnchorTopRef.current, el.scrollHeight - el.clientHeight));
+  }, [optimisticInput]);  useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("theme", theme);
     // 同步窗口外观：深色模式下标题栏 overlay 与背景跟随主题（不再残留浅色外框）
