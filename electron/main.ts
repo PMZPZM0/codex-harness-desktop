@@ -568,16 +568,24 @@ ipcMain.handle("voice:preview-voice", async (_event, input?: { sid?: number; spe
 let registeredVoiceHotkey = "";
 function applyVoiceHotkey(accelerator: string): { ok: boolean; error?: string } {
   try {
-    if (registeredVoiceHotkey) {
-      globalShortcut.unregister(registeredVoiceHotkey);
-      registeredVoiceHotkey = "";
+    if (!accelerator) {
+      if (registeredVoiceHotkey) {
+        globalShortcut.unregister(registeredVoiceHotkey);
+        registeredVoiceHotkey = "";
+      }
+      return { ok: true };
     }
-    if (!accelerator) return { ok: true };
+    // 同键重复设置直接视为成功（globalShortcut 对已注册的键二次 register 会失败，
+    // 而设置页开关切换时会用同一个键反复 set）
+    if (accelerator === registeredVoiceHotkey) return { ok: true };
+    // 先注册新键、成功后才放旧键：反过来（先注销再注册）一旦新键被占用，
+    // 旧键已没了、新键又没注册上，快捷键两头空——「改了一下就用不了」的主因之一
     const ok = globalShortcut.register(accelerator, () => {
       // 触发时把事件推给渲染层，由 VoiceCallFloat 决定开始/结束通话
       sendToWindow("voice:hotkey", { accelerator });
     });
     if (!ok) return { ok: false, error: `快捷键「${accelerator}」注册失败（可能被其它程序占用）` };
+    if (registeredVoiceHotkey) globalShortcut.unregister(registeredVoiceHotkey);
     registeredVoiceHotkey = accelerator;
     return { ok: true };
   } catch (error: any) {

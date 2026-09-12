@@ -15,12 +15,12 @@ npm run verify     # 等价于 npm run check && npm run e2e
 | 层级 | 命令 | 覆盖什么 | 失败意味什么 |
 |---|---|---|---|
 | ① 离线预检 | `npm run check` | 构建 + **产物新鲜度** + IPC 三件套一致性（main.ts handler ↔ preload 桥接 ↔ vite-env.d.ts 方法面）+ CSS 类覆盖告警 + **纯函数行为断言**（`src/lib/*.mjs`，node 直接 import 跑真实现） | 改了没重建 / 桥接漏了类型 / 有死链 / 判定逻辑跑偏 |
-| ② UI 场景（**默认跑全部**） | `npm run e2e` | 自动拉起**已构建**应用逐个跑 `scenarios/*.mjs`，逐步截图到 `.e2e-artifacts/shots/`（文件名带场景前缀） | 界面真破了相（看截图即知） |
+| ② UI 场景（**默认只跑最新的**） | `npm run e2e` | 自动拉起**已构建**应用跑 `scenarios/*.mjs`，逐步截图到 `.e2e-artifacts/shots/`（文件名带场景前缀）。**默认只跑 mtime 最新的一个场景**（刚给哪个模块补的场景就验哪个）；`npm run e2e -- --all` 全量回归；`npm run e2e -- <名>` 跑指定 | 界面真破了相（看截图即知） |
 
 四条纪律：
 
 1. **只跑一半不算验收**。`check` 过但 `e2e` 没过 = 没完成，不许提交。
-2. **改了哪个模块，就给哪个模块补/改场景**。在 `scripts/e2e/scenarios/` 加 `<名>.mjs`（导出 `steps` 数组）或往现有场景加步骤，或给 `scripts/check-preflight.mjs` 加检查项——**让这次验证沉淀成下次的自动回归**，不许写成一次性脚本跑完就丢（这正是 09-06 那批 `verify-*.mjs` 全员消失的教训）。`npm run e2e` 不带参数即跑全部场景，新场景自动进门槛。
+2. **改了哪个模块，就给哪个模块补/改场景**。在 `scripts/e2e/scenarios/` 加 `<名>.mjs`（导出 `steps` 数组）或往现有场景加步骤，或给 `scripts/check-preflight.mjs` 加检查项——**让这次验证沉淀成下次的自动回归**，不许写成一次性脚本跑完就丢（这正是 09-06 那批 `verify-*.mjs` 全员消失的教训）。新场景是最新 mtime，`npm run e2e` 默认就会跑到它；**发版前用 `npm run e2e -- --all` 跑全量**（2026-09-12 用户定稿：日常验收只验最新，不再每次从头跑全部历史场景）。
 3. **断言必须带前置条件**（先断言「弹窗是关的」再点开），否则上一步的残留状态会导致假通过。
 4. **新断言的正确性当场反证一次**：把修复临时改回去，确认断言真的会红。永远绿的断言等于没有断言，尤其「XX 没生效」类 bug。（`model-scope` 实测过三次：把判定改成「全局永远赢」→ 步骤③/⑤ 红；把 `openThread` 改回「只认会话记录」→ 步骤④ 红；把档案同步整个关掉 → ⑦bis/⑦ter 的档案与 config.toml 断言红。**反证后必须 `npm run build` 重建再跑正式那轮**，否则测的是反证版旧产物。）
 
@@ -112,6 +112,8 @@ resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
 - **指纹内核（cloak-browsers）仅用于自动化场景**（模型经 `cloakbrowser` CLI 调用）；浏览器视图的「隐身浏览」按钮为预留位，尚未接入 CDP 嵌入。
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
+
+- **应用内通话界面 + 语音快捷键修复（09-12 下午）**：①新增**来电式全屏通话界面** `VoiceCallScreen.tsx`（`.voice-call-screen`，深色渐变+居中大头像随 `--voice-level` 呼吸发光+状态字+你说/回复字幕区+底部大圆钮打断/挂断）；接通自动弹出、右上角「收起」只收界面**不挂断**（悬浮球继续承载通话），右键菜单「打开通话界面」随时唤起；纯展示组件，音频链路全留在 VoiceCallFloat。**踩坑**：入场动画若带 `opacity:0` 起点，在 GPU 合成/遮挡节流下可能冻在第一帧把整个界面冻透明——动画只动 `transform`。②全局快捷键三连修：VoiceCallFloat 的 `onVoiceHotkey` 回调空依赖闭包锁死挂载时的 startCall/threadId（切会话后快捷键「就用不了」的根因）→ 经 ref 每次渲染转发最新 handler；录入组合键主键改按 `e.code`（Ctrl+Shift+1 的 `e.key` 是「!」，按 e.key 匹配被静默丢弃）、`metaKey` 映射 Super 不再冒充 Ctrl；**注册成功才落盘**（先落盘再注册会在新键被占用时留下死键配置且旧键已注销），主进程 `applyVoiceHotkey` 改为先注册新键再放旧键、同键重复设置直接成功。③e2e 流程改版（用户定稿）：`npm run e2e` 默认**只跑 mtime 最新的场景**，`--all` 才全量。回归：`scripts/e2e/scenarios/voice-call-screen.mjs`（16 断言，含「收起≠挂断」与输入链路零回归；harness 新增 `evalInTarget/screenshotInTarget` 供多窗口场景用）。
 
 - **内置付费订阅系统（09-12，中转站 sub2api 套餐的应用内闭环）**：中转站页新增**置顶订阅长条卡**（`.relay-sub-banner`，六态：guest 未登录 / empty 无订阅 / active 生效中 / expiring ≤3 天琥珀 / expired 红 / watching 等待支付）+ **套餐市场二级弹窗**（`.relay-plans-modal`，`GET /api/v1/payment/plans`，for_sale 才上架；价格/划线价/倍率/有效期/features 折叠）+ 登录弹窗升级**登录/注册双 tab**（`.relay-auth-tabs`）。
   **链路协议（pptoken 实测 + Wei-Shaw/sub2api 源码实证）**：① `POST /api/v1/auth/register {email,password,aff_code}`（`relay:register` IPC）——pptoken 无验证码/邮箱验证（RegisterRequest 的 turnstile/verify_code 是站点可选开关），注册成功同凭据 login 落多账号库＝真·自动登录；站点若开验证码，报错原文含 captcha/verify → 渲染层降级 `openExternal` 站点 `/register?aff=` 页兜底。② 付款 = 主进程 `relay:open-purchase` 开**独立 BrowserWindow** 加载 `{站点}/purchase`，`did-finish-load` 后向站点 localStorage 注入 `auth_token`/`refresh_token`/`token_expires_at`（键名来自 sub2api 前端 auth store）再 reload——打开即登录态；**loadURL 不阻塞 IPC**（收银台加载慢/失败只记日志，轮询照常，用户也可在官网付款）。③ 支付完成判定 = 渲染层每 20s 轮询 `subscriptions/summary`（10 分钟窗口，可「我已完成支付」手动核验），出现「新 group_id 或 expires_at 变化」→ 复用/新建该分组 key（`resolveRelayTarget` 幂等，防重复建 key）→ 走既有 `relayActivate` 全链（探测→saveCustomModel→供应商生效，全局互斥其他让位）。④ 供应商 id 恒为 `relay-<host>` 只换 key——会话模型作用域/旧会话迁移/互斥全部零改动兼容。**教训**：断言「激活完成」不能拿 banner 状态当信号（verifyPayment 先 setOverview 再跑激活，banner 提前变 active）——以 `relay-active-v1` 落库 mode/groupId 为权威。回归：`scripts/e2e/scenarios/relay-subscription.mjs`（17 断言，场景进程内起 **mock sub2api 网关**：register/login/summary/keys/payment-plans/purchase 页/v1/models + `__test/mark-paid` 模拟到账）。

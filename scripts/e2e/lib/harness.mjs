@@ -541,6 +541,96 @@ export class ElectronHarness {
     return file;
   }
 
+  /**
+   * 在匹配 urlPart 的**另一个 page target**（如独立通话弹窗 ?view=voice-popup）里求值。
+   * 每次新建短连接：弹窗 target 会关闭/重建，长连接容易挂着死 ws。
+   */
+  async evalInTarget(urlPart, expression, { timeoutMs = 15000 } = {}) {
+    const deadline = Date.now() + timeoutMs;
+    let lastErr = "";
+    while (Date.now() < deadline) {
+      try {
+        const list = await (await fetch(`http://127.0.0.1:${this.port}/json`)).json();
+        const target = list.find((t) => t.type === "page" && (t.url || "").includes(urlPart));
+        if (target) {
+          const value = await this._evalOverWs(target.webSocketDebuggerUrl, expression);
+          return value;
+        }
+        lastErr = `未见 URL 含「${urlPart}」的 page target（当前 ${list.filter((t) => t.type === "page").length} 个）`;
+      } catch (e) {
+        lastErr = e?.message ?? String(e);
+      }
+      await sleep(300);
+    }
+    throw new Error(`等待 target「${urlPart}」超时：${lastErr}`);
+  }
+
+  /** 单连接 CDP Runtime.evaluate（供 evalInTarget 复用） */
+  _evalOverWs(wsUrl, expression) {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(wsUrl);
+      const timer = setTimeout(() => { try { ws.close(); } catch {} reject(new Error("CDP 求值超时")); }, 10000);
+      ws.on("error", (e) => { clearTimeout(timer); reject(new Error("CDP 连接失败: " + (e?.message ?? e))); });
+      ws.on("message", (data) => {
+        const m = JSON.parse(data.toString());
+        if (m.id === 1) {
+          clearTimeout(timer);
+          try { ws.close(); } catch {}
+          if (m.error) return reject(new Error("CDP 报错: " + m.error.message));
+          const v = m.result?.result?.value;
+          if (typeof v === "string" && v.startsWith("__ERR__:")) return reject(new Error("页面求值失败 " + v));
+          resolve(v);
+        }
+      });
+      ws.on("open", () => {
+        ws.send(JSON.stringify({
+          id: 1,
+          method: "Runtime.evaluate",
+          params: {
+            expression: `(() => { try { return (${expression}); } catch (e) { return "__ERR__:" + e.message; } })()`,
+            returnByValue: true,
+            awaitPromise: true,
+          },
+        }));
+      });
+    });
+  }
+
+  /** 对匹配 urlPart 的另一个 page target 截图（如独立弹窗），返回文件路径 */
+  async screenshotInTarget(urlPart, label) {
+    const list = await (await fetch(`http://127.0.0.1:${this.port}/json`)).json();
+    const target = list.find((t) => t.type === "page" && (t.url || "").includes(urlPart));
+    if (!target) throw new Error(`截图失败：未见 URL 含「${urlPart}」的 page target`);
+    const idx = String(++this.stepIndex).padStart(2, "0");
+    const safe = String(label).replace(/[^\w\u4e00-\u9fa5-]+/g, "_").slice(0, 60);
+    const dir = join(this.artifactsDir, "shots");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, `${this.namePrefix}${idx}-${safe}.png`);
+    const r = await this._evalOverWsCapture(target.webSocketDebuggerUrl);
+    writeFileSync(file, Buffer.from(r, "base64"));
+    return file;
+  }
+
+  _evalOverWsCapture(wsUrl) {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(wsUrl);
+      const timer = setTimeout(() => { try { ws.close(); } catch {} reject(new Error("CDP 截图超时")); }, 10000);
+      ws.on("error", (e) => { clearTimeout(timer); reject(new Error("CDP 连接失败: " + (e?.message ?? e))); });
+      ws.on("message", (data) => {
+        const m = JSON.parse(data.toString());
+        if (m.id === 1) {
+          clearTimeout(timer);
+          try { ws.close(); } catch {}
+          if (m.error) return reject(new Error("CDP 报错: " + m.error.message));
+          resolve(m.result?.data);
+        }
+      });
+      ws.on("open", () => {
+        ws.send(JSON.stringify({ id: 1, method: "Page.captureScreenshot", params: { format: "png" } }));
+      });
+    });
+  }
+
   // ---------- 断言 ----------
 
   /** 记录一条断言结果 */

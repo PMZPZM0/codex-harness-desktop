@@ -21346,3 +21346,190 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .voice-profile-draft { display: flex; flex-direction: column; gap: 8px; }
 .voice-profile-draft textarea { width: 100%; resize: vertical; font-family: inherit; }
 .voice-profile-draft .voice-input { min-width: 0; flex: 1; }
+
+/* ── 应用内实时通话界面（手机来电式全屏遮罩；收起 ≠ 挂断）──
+   深色底是通话界面的行业惯例（微信/电话都如此），与主题无关——
+   头像呼吸/发光幅度跟 --voice-level 走，声音越大越亮。 */
+.voice-call-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 28px 24px;
+  background: radial-gradient(120% 90% at 50% 0%, #232a4d 0%, #141828 52%, #0c0f1a 100%);
+  color: #f2f3f8;
+  animation: voice-call-in .18s ease-out;
+}
+@keyframes voice-call-in {
+  /* 只动 transform、不动 opacity：GPU 合成/遮挡节流下动画可能冻在第一帧，
+     opacity:0 起点会把整个通话界面冻成「透明」——用户看到的就是主界面
+     上浮着几个看不清的字。transform 冻住顶多差 1.5%，无感知。 */
+  from { transform: scale(1.015); }
+  to { transform: none; }
+}
+.voice-call-min {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  background: rgba(255, 255, 255, .06);
+  color: rgba(255, 255, 255, .82);
+  cursor: pointer;
+  padding: 7px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+}
+.voice-call-min:hover { background: rgba(255, 255, 255, .14); color: #fff; }
+
+.voice-call-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.voice-call-avatar {
+  position: relative;
+  width: 176px;
+  height: 176px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 38%, #3b4780 0%, #262e56 62%, #1b2140 100%);
+  box-shadow: 0 0 calc(28px + var(--voice-level, 0) * 70px) rgba(122, 148, 255, calc(.28 + var(--voice-level, 0) * .5));
+  transition: box-shadow .12s ease;
+}
+.voice-call-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(140, 165, 255, .55);
+  pointer-events: none;
+  opacity: 0;
+}
+.voice-call-avatar.is-listening .voice-call-ring,
+.voice-call-avatar.is-speaking .voice-call-ring {
+  animation: voice-call-pulse 1.6s ease-out infinite;
+}
+.voice-call-ring:nth-child(2) { animation-delay: .8s; }
+@keyframes voice-call-pulse {
+  0%   { opacity: calc(.3 + var(--voice-level, 0) * .6); transform: scale(1); }
+  100% { opacity: 0; transform: scale(calc(1.55 + var(--voice-level, 0) * .7)); }
+}
+.voice-call-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #cdd6ff;
+}
+.voice-call-state {
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: .5px;
+}
+.voice-call-sub {
+  font-size: 12px;
+  color: rgba(242, 243, 248, .55);
+}
+
+/* 字幕：半透明卡片，限高滚动 */
+.voice-call-captions {
+  width: min(560px, 92%);
+  max-height: 168px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(255, 255, 255, .055);
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+.voice-call-caption-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.voice-call-caption-row p {
+  margin: 0;
+  color: #eef0f8;
+  word-break: break-word;
+}
+.voice-call-caption-row.agent p { color: rgba(238, 240, 248, .72); }
+.voice-call-caption-tag {
+  flex: none;
+  font-size: 11px;
+  color: rgba(242, 243, 248, .65);
+  background: rgba(255, 255, 255, .09);
+  border-radius: 5px;
+  padding: 1px 7px;
+  margin-top: 2px;
+}
+
+/* 底部大圆钮：打断（次级）/ 挂断（红色大钮）/ 开始（绿色大钮） */
+.voice-call-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 46px;
+  margin-top: 4px;
+}
+.voice-call-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+.voice-call-action span {
+  font-size: 12px;
+  color: rgba(242, 243, 248, .62);
+}
+.voice-call-btn {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: rgba(255, 255, 255, .13);
+  transition: transform .12s ease, background .12s ease;
+}
+.voice-call-btn:hover { transform: scale(1.05); background: rgba(255, 255, 255, .2); }
+.voice-call-btn:active { transform: scale(.97); }
+.voice-call-btn:disabled { opacity: .5; cursor: default; }
+.voice-call-btn.is-hangup {
+  width: 72px;
+  height: 72px;
+  background: linear-gradient(180deg, #ff5f57 0%, #e5484d 100%);
+  box-shadow: 0 6px 22px rgba(229, 72, 77, .4);
+}
+.voice-call-btn.is-hangup:hover { background: linear-gradient(180deg, #ff6b63 0%, #ef5055 100%); }
+.voice-call-btn.is-start {
+  width: 72px;
+  height: 72px;
+  background: linear-gradient(180deg, #43d17c 0%, #2fae64 100%);
+  box-shadow: 0 6px 22px rgba(47, 174, 100, .4);
+}
+.voice-call-btn.is-start:hover { background: linear-gradient(180deg, #4cd984 0%, #35b96c 100%); }
+.voice-call-btn.is-quiet { background: rgba(255, 255, 255, .09); }
+
+.voice-call-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 76%;
+  font-size: 12.5px;
+  color: #ffb4ae;
+  background: rgba(229, 72, 77, .12);
+  border: 1px solid rgba(229, 72, 77, .3);
+  border-radius: 9px;
+  padding: 7px 11px;
+}
