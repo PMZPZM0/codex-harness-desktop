@@ -1887,6 +1887,18 @@ html[data-ui-font="large"] .action-content pre {
   width: 100%;
   margin-bottom: 0;
 }
+/* ★ 用户消息固定槽位（09-12 架构改：布局保证位置，不再用滚动补偿钉顶）
+   只作用于**当前回合**（TurnView 会打 data-current-turn），历史回合的用户消息照常随流滚动。
+   sticky 让它在滚动容器里天然停在对话区顶部往下 54px —— 于是：
+     · agent 正文在它下面向下流式增长，视口自动跟随，用户消息位置**恒定**；
+     · 不再需要"锚顶专用底部留白"（anchor-pad）去把 scrollTop 撑到够得着锚点，
+       也就不存在留白归零/撑大导致的 scrollHeight 突变与弹跳。
+   top 值与 App.tsx 的 ANCHOR_TOP_OFFSET_PX 保持一致（54 = 顶部留两行）。 */
+.turn-group[data-current-turn="true"] .user-message-stack {
+  position: sticky;
+  top: 54px;
+  z-index: 3;
+}
 .user-attach-row {
   margin-bottom: 0;
 }

@@ -5354,7 +5354,7 @@ function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval,
     : turn.durationMs ? `已用 ${formatDuration(turn.durationMs)}` : "已完成";
   const hookBadge = hooks && hooks.length > 0 ? <HookBadge hooks={hooks} /> : undefined;
   return (
-    <div className={`turn-group ${running ? "running" : turn.error ? "error" : "completed"}`} id={`turn-${turn.id}`}>
+    <div className={`turn-group ${running ? "running" : turn.error ? "error" : "completed"}`} id={`turn-${turn.id}`} data-current-turn={isLastTurn ? "true" : undefined}>
       {userItems.map((item) => <MemoUserMessageView item={item} turn={turn} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} key={item.id} />)}
       <div className="turn-card">
         {/* 占位头必须等回合内已有 userMessage：turn/started 先建回合、userMessage item 晚到，
@@ -8747,6 +8747,10 @@ const TURN_WINDOW = 40;
  *  取两行正文的高度：正文 14px × line-height 1.72 ≈ 24px/行 → 两行 ≈ 48px，
  *  外加原有 6px 余量 = 54。改这个值即可整体上下平移钉顶位置。 */
 const ANCHOR_TOP_OFFSET_PX = 54;
+/** 用户消息固定槽位（09-12 架构改）：true = 位置由 CSS sticky 保证，不再做滚动补偿钉顶。
+ *  打开后 `anchorTopRef` 的钉顶分支整体跳过（留白也不再撑），滚动只剩一个 owner：
+ *  「在底部就跟随最新」。要回退成旧的滚动钉顶，把它改成 false 即可。 */
+const STICKY_USER_SLOT = true;
 /** 常用命令置顶顺序（用户高频：模型/思考/计划/目标/压缩优先） */
 const COMMON_COMMAND_ORDER = ["plan", "goal", "model", "effort", "compact", "new", "resume", "review", "status", "help"];
 const commandMatches = useMemo(() => {
@@ -9072,7 +9076,10 @@ const commandMatches = useMemo(() => {
       jumpToBottom(el);
       return;
     }
-    if (anchorTopRef.current) {
+    if (anchorTopRef.current && !STICKY_USER_SLOT) {
+      // ⛔ 09-12 架构改：用户消息位置改由**布局**保证（`.turn-group[data-current-turn] .user-message-stack
+      // { position: sticky; top: 54px }`，见 styles.css），这里不再做滚动补偿钉顶。
+      // 保留整段代码只为渐进落地：STICKY_USER_SLOT 一旦全链路验证通过就整段删除。
       // 锚定模式：**每次**发送都把新消息钉回对话区顶部（用户明确要求），每个
       // thread 更新都重新钉一次（瞬时，无动画），抵消内容增长带来的位移——
       // 视口全程稳定，消灭「正文出字上下跳动/来回闪」。不自动转贴底：长回复
