@@ -52,7 +52,8 @@ import { augmentedPath, bundledGit, bundledNode, bundledPython, cloakCacheDir, c
 import { ensureBuiltinSkills } from "./builtin-skills";
 import { ensurePonytailPlugin } from "./ponytail-plugin";
 import { getPonytailMode, setPonytailMode } from "./ponytail-mode";
-import { enrichThreadWithRolloutTools, listRolloutThreads, mergeThreadList } from "./session-tools";
+import { mergeThreadList } from "./session-tools";
+import { enrichThreadWithRolloutToolsAsync, listRolloutThreadsAsync } from "./rollout-pool";
 /** 诊断计数（09-12 多会话性能）：thread/list 走了几次「rollout 全量兜底扫描」。
     旧实现每次必扫（渲染层每个回合结束都打一发 → O(N²)）；现在只在引擎索引为空时扫。
     e2e 场景据此断言「跑 10 个会话时扫描次数为 0」，避免优化被悄悄改回去。 */
@@ -2542,13 +2543,17 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
     const response = result as any;
     const archiveFilter = typeof (params as any)?.archived === "boolean" ? Boolean((params as any).archived) : null;
     const indexed = Array.isArray(response?.data) ? response.data : [];
-    // 性能（09-12 P0）：兜底扫描本身**按 mtime+size 缓存**（session-tools 的
-    // rolloutListCache），历史文件只解析一次，重复调用近乎零成本。
-    // ⚠️ 不要改成「仅 indexed 为空时才扫」——引擎索引在新建会话/迁移期间可能瞬时为空，
-    // 那样侧栏会整片消失（用户侧表现就是「会话没了/像宕机」）。语义必须与旧版一致。
+    // 零阻塞宿主（09-12）：兜底扫描整体在 **worker 线程**里跑（目录遍历 + 单文件解析都是
+    // 同步 I/O，放主进程会阻塞**所有会话**的事件转发）。语义与原实现一致：仍然无条件扫
+    // （不要改成「仅 indexed 为空时才扫」——引擎索引瞬时为空会让侧栏整片消失）。
+    // worker 不可用时退化为「不发兜底」：宁可列表少一截，也不能让主线程被同步 I/O 堵住。
     rolloutFallbackScanCount += 1;
-    const fallback = listRolloutThreads(codexHome);
-    result = { ...response, data: mergeThreadList(indexed, fallback, archiveFilter, Number((params as any)?.limit ?? 100)) };
+    try {
+      const fallback = await listRolloutThreadsAsync(codexHome);
+      result = { ...response, data: mergeThreadList(indexed, fallback, archiveFilter, Number((params as any)?.limit ?? 100)) };
+    } catch (error: any) {
+      console.warn("[thread/list] rollout 兜底扫描（worker）失败，本次仅返回引擎索引：", error?.message);
+    }
   }
   // 记忆捕获用：记录 threadId → cwd（新建线程响应 / 线程设置更新都带 cwd）
   try {
@@ -2557,8 +2562,14 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
     if (method === "thread/start" && r?.thread?.id) {
       threadCwd.set(String(r.thread.id), String(p?.cwd ?? r.thread.cwd ?? ""));
     } else if (method === "thread/resume" && r?.thread?.id) {
+      // 零阻塞宿主（09-12）：rollout 增强解析也在 worker 线程里（同步读盘 + 逐行 parse
+      // 会阻塞所有会话）。失败就退化为「不增强」——工具调用卡片少几个，但界面不卡。
       const __t0 = performance.now();
-      r.thread = enrichThreadWithRolloutTools(r.thread, codexHome);
+      try {
+        r.thread = await enrichThreadWithRolloutToolsAsync(r.thread, codexHome);
+      } catch (error: any) {
+        console.warn("[thread/resume] rollout 增强（worker）失败，本次跳过：", error?.message);
+      }
       const __enrich = performance.now() - __t0;
       resumeCount += 1;
       resumeEnrichMs += __enrich;

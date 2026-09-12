@@ -83,6 +83,10 @@ archive/
 scripts/tmp-fix-shortcut.cjs
 cdp-check.mjs
 
+# 构建期生成物：rollout worker 源码内联（由 scripts/gen-rollout-worker.mjs 从
+# electron/rollout-worker.cjs 生成，改源文件即可，产物不入库）
+electron/rollout-worker-source.ts
+
 # 开发模式工作区（独立 git 仓，不进应用根仓——stash -u/reset 才不会波及它）
 
 # 编辑器/调试残留，不入库

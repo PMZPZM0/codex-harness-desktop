@@ -545,6 +545,45 @@ console.log(C.bold("\n【5】启动链健壮性（boot 副作用不得裸 await�
   }
 }
 
+console.log(C.bold("\n【6】零阻塞宿主（codex:request 链上禁止同步磁盘 I/O）"));
+{
+  // 为什么是硬失败（09-12 多会话性能）：所有会话共用**同一个主进程事件循环**，而
+  // codex:request 的处理链上只要出现同步文件读写，那段时间里**所有会话**的事件转发
+  // 全部停摆 —— 这正是「多会话一起卡」的形态（实测曾有 9.9ms/次的同步 rollout 扫描，
+  // 且渲染层每个回合结束都打一发）。所以这两个函数（内部是 readdirSync/readFileSync/
+  // statSync + 逐行 JSON.parse）**不允许**再出现在 main.ts 里；它们已被 worker 版替代。
+  //
+  // 以后要往 codex:request 链上加"要看磁盘"的能力：先用 worker / 异步 fs，
+  // 或把结果缓存在内存里；不要直接调同步函数。
+  const SYNC_IO_CALLS = ["listRolloutThreads", "enrichThreadWithRolloutTools"];
+  if (!mainSrc) {
+    warn("找不到 electron/main.ts，跳过零阻塞宿主守卫");
+  } else {
+    const hits = SYNC_IO_CALLS.filter((name) => new RegExp(`\\b${name}\\s*\\(`).test(mainSrc));
+    hits.length === 0
+      ? ok("codex:request 链上没有任何同步磁盘 I/O 调用（rollout 扫描已移出主进程）")
+      : fail(`main.ts 仍在调用同步 I/O 函数：${hits.join(", ")} —— 会阻塞所有会话的事件转发（应改用 worker 版）`);
+  }
+  // 附带守卫：worker 源码的内联产物必须存在且不落后于源文件。
+  // 它由 `node scripts/gen-rollout-worker.mjs` 生成（已挂进 build:electron）——产物缺失
+  // 会让打包后的应用 new Worker 直接失败、侧栏兜底与 resume 增强全丢。
+  {
+    const workerSrc = join(ROOT, "electron", "rollout-worker.cjs");
+    const workerGen = join(ROOT, "electron", "rollout-worker-source.ts");
+    if (!existsSync(workerSrc)) {
+      fail("缺少 electron/rollout-worker.cjs（rollout 磁盘 I/O 的 worker 实现）");
+    } else if (!existsSync(workerGen)) {
+      fail("缺少 electron/rollout-worker-source.ts —— 先跑 `node scripts/gen-rollout-worker.mjs`（build:electron 已含）");
+    } else {
+      const srcM = statSync(workerSrc).mtimeMs;
+      const genM = statSync(workerGen).mtimeMs;
+      genM + 1 >= srcM
+        ? ok("rollout worker 内联产物已生成且不落后于源文件")
+        : fail("electron/rollout-worker-source.ts 落后于 rollout-worker.cjs —— 重新生成（build:electron 会做）");
+    }
+  }
+}
+
 // ---------- 汇总 ----------
 
 console.log("");
