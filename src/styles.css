@@ -20126,7 +20126,28 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .voice-ball:hover { filter: brightness(1.05) drop-shadow(0 0 6px color-mix(in srgb, #ff9a4a 35%, transparent)); }
 .voice-ball:active { transform: scale(.95); }
 
-/* 脉冲环：跟狐狸同色暖琥珀，扩散半径和不透明度跟 --voice-level 走 */
+/* 启动中：logo 保持可见，只略微降亮；白色 spinner 叠在正中。
+   显式写 color:#fff，不能继承 button 的 color:transparent。 */
+.voice-ball.is-starting .voice-mascot {
+  opacity: .68;
+  filter: saturate(.8) brightness(.82);
+}
+.voice-ball-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 4px rgba(22, 18, 56, .65));
+}
+.voice-ball-loading svg {
+  display: block;
+  stroke-width: 2.6;
+}
+
+/* 脉冲环：暖色半透明，扩散半径和不透明度跟 --voice-level 走 */
 .voice-ball-ring {
   position: absolute;
   inset: -4px;

@@ -863,13 +863,16 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
             {/* 两圈脉冲环（错开动画，音量越大扩散越远） */}
             <span className="voice-ball-ring" aria-hidden />
             <span className="voice-ball-ring" aria-hidden />
-            {phase === "starting" ? (
-              <LoaderCircle size={20} className="spin" />
-            ) : (
-              <VoiceMascot
-                mode={phase === "active" ? (state as "listening" | "thinking" | "speaking") : "idle"}
-                size={34}
-              />
+            {/* 启动中也始终保留语音 logo：之前用 LoaderCircle 直接替换 logo，
+                但 button 本身 color:transparent，导致点击后整颗球像"透明消失"。 */}
+            <VoiceMascot
+              mode={phase === "starting" ? "thinking" : phase === "active" ? (state as "listening" | "thinking" | "speaking") : "idle"}
+              size={34}
+            />
+            {phase === "starting" && (
+              <span className="voice-ball-loading" aria-label="语音正在启动">
+                <LoaderCircle size={19} className="spin" />
+              </span>
             )}
           </button>
 
