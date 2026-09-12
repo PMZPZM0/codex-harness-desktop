@@ -13456,7 +13456,7 @@ const commandMatches = useMemo(() => {
           </div>}
           {/* 底部留白只按回合状态：活跃回合给 compact 跟随留白；空闲态一律不留空白。
               乐观气泡不再触发大缓冲（它会在服务端消息确认后消失，大缓冲会残留成空白）。 */}
-          {(activeTurnId || sending || (optimisticInput && !optimisticConfirmed)) ? <div className="timeline-bottom-spacer compact" aria-hidden />
+          {(activeTurnId || sending || (optimisticInput && !optimisticConfirmed)) ? <div className={`timeline-bottom-spacer${STICKY_USER_SLOT ? "" : " compact"}`} aria-hidden />
             : null}
           {/* 排队消息的对话区反馈（用户要求：把发出去排队的内容正常展示出来）：
               排队中的消息在输入框上方有管理卡，但**对话区里完全看不到** —— 发完消息
