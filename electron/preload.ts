@@ -235,6 +235,9 @@ contextBridge.exposeInMainWorld("codex", {
   readClipboardFiles: () => ipcRenderer.invoke("clipboard:read-files"),
   doctor: (cwd?: string) => ipcRenderer.invoke("app:doctor", { cwd }),
   engineInfo: () => ipcRenderer.invoke("app:engine-info"),
+  perfCounters: () => ipcRenderer.invoke("app:perf-counters") as Promise<{ rolloutFallbackScans: number; droppedForInactiveSession: number }>,
+  /** 上报当前正在查看的会话：主进程只把该会话的高频事件转发给渲染层（多会话性能） */
+  setActiveThread: (threadId: string | null) => ipcRenderer.invoke("codex:set-active-thread", threadId) as Promise<{ ok: boolean }>,
   storageInfo: () => ipcRenderer.invoke("app:storage-info"),
   storageClear: (target: "engine-log" | "images") => ipcRenderer.invoke("app:storage-clear", target),
   engineCheckUpdate: () => ipcRenderer.invoke("engine:check-update"),

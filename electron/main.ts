@@ -53,6 +53,74 @@ import { ensureBuiltinSkills } from "./builtin-skills";
 import { ensurePonytailPlugin } from "./ponytail-plugin";
 import { getPonytailMode, setPonytailMode } from "./ponytail-mode";
 import { enrichThreadWithRolloutTools, listRolloutThreads, mergeThreadList } from "./session-tools";
+/** 诊断计数（09-12 多会话性能）：thread/list 走了几次「rollout 全量兜底扫描」。
+    旧实现每次必扫（渲染层每个回合结束都打一发 → O(N²)）；现在只在引擎索引为空时扫。
+    e2e 场景据此断言「跑 10 个会话时扫描次数为 0」，避免优化被悄悄改回去。 */
+let rolloutFallbackScanCount = 0;
+/** 主进程耗时打点：thread/resume 总耗时 与 其中 enrich（同步解析 rollout）的耗时。
+    切会话卡不卡主要看这两项——它们是主进程**同步**路径，会连带堵住所有会话的事件转发。 */
+let resumeTotalMs = 0;
+let resumeCount = 0;
+let resumeEnrichMs = 0;
+let resumeMaxMs = 0;
+function enrichScanCountSnapshot() {
+  return {
+    rolloutFallbackScans: rolloutFallbackScanCount,
+    droppedForInactiveSession: rendererDroppedEventCount,
+    resumeCount,
+    resumeAvgMs: resumeCount ? Math.round(resumeTotalMs / resumeCount) : 0,
+    resumeMaxMs: Math.round(resumeMaxMs),
+    resumeEnrichAvgMs: resumeCount ? Math.round(resumeEnrichMs / resumeCount) : 0,
+  };
+}
+
+/** 渲染层当前正在查看的会话（由渲染层在切换会话时上报）。
+    多会话性能（09-12 P1）：引擎事件原本**全量广播**给渲染层，渲染层到
+    `App.tsx` 的 threadId 过滤才丢弃——序列化 + 跨进程拷贝的成本已经付过却白付，
+    N 个后台会话同时流式就是 N 倍的冤枉开销。这里在**发给渲染层之前**就按会话裁掉。 */
+let rendererActiveThreadId = "";
+/** 诊断计数：被按会话过滤掉的事件数（e2e 用它证明过滤真的生效，而非「碰巧没事件」）。 */
+let rendererDroppedEventCount = 0;
+
+/** 跨会话也必须送达渲染层的**轻量**事件白名单。
+    依据是渲染层真实依赖：侧栏转圈/运行指示（markThreadRunning 系）靠
+    thread/status/changed + turn/started + turn/completed；排队角标靠 thread/queue/changed；
+    后台新建会话（渠道机器人）要靠 thread/started 触发侧栏刷新。
+    **其余事件（各种 delta / item 全文 / outputDelta）只有当前会话需要。** */
+const RENDERER_CROSS_SESSION_METHODS = new Set([
+  "thread/started",
+  "thread/status/changed",
+  "thread/name/updated",
+  "thread/queue/changed",
+  "thread/closed",
+  "thread/archived",
+  "thread/unarchived",
+  "thread/deleted",
+  "turn/started",
+  "turn/completed",
+]);
+
+/** 会话 id 提取：不同事件把归属放在不同字段上，逐个兜。取不到就不敢裁（放行）。 */
+function eventThreadId(params: any): string {
+  if (!params || typeof params !== "object") return "";
+  return String(params.threadId ?? params.thread_id ?? params.conversationId ?? "");
+}
+
+function filterForRenderer(event: any) {
+  if (event?.kind !== "notification") return event;
+  const method = String(event?.method ?? "");
+  if (RENDERER_CROSS_SESSION_METHODS.has(method)) return event;
+  const tid = eventThreadId(event?.params);
+  if (!tid) return event;
+  if (!rendererActiveThreadId || tid === rendererActiveThreadId) return event;
+  // ⚠️ 2026-09-12 临时回退为「放行」：按会话过滤一旦与渲染层的 activeThreadId 上报不同步，
+  // 正在跑的会话就会收不到自己的事件 → 永久转圈（用户实测「另一个会话宕机」）。
+  // 先只记账、证明收益与安全性，再决定是否真正启用裁剪（把下面改成 return null 即可）。
+  rendererDroppedEventCount += 1;
+  return event;
+}
+
+
 import { applySessionsBackup, backupFromRolloutFile, buildMarkdownExport, buildSessionsBackup, buildThreadPreview, parseMarkdownConversation, BACKUP_FORMAT, BACKUP_VERSION } from "./thread-backup";
 import {
   buildDefaultExpertTeams, buildTeamSystemPrompt, buildTeamTools, normalizeTeamConfig,
@@ -1819,7 +1887,7 @@ app.whenReady().then(async () => {
   }
   createWindow();
   server.on("event", (event) => {
-    sendToWindow("codex:event", event);
+    sendToWindow("codex:event", filterForRenderer(event));
     channelBot.handleCodexEvent(event);
     // 语音通话：只旁听事件（正文增量 / 回合生命周期），不改变事件本身的任何流向
     voiceService.handleCodexEvent(event);
@@ -2431,6 +2499,7 @@ ipcMain.handle("ponytail:mode:set", async (_event, mode: string) => { await setP
 
 ipcMain.handle("codex:request", async (_event, method: string, params: unknown) => {
   let result: unknown;
+  const __reqT0 = performance.now();
   try {
     result = await server.request(method, params);
   } catch (error: any) {
@@ -2468,6 +2537,11 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
     const response = result as any;
     const archiveFilter = typeof (params as any)?.archived === "boolean" ? Boolean((params as any).archived) : null;
     const indexed = Array.isArray(response?.data) ? response.data : [];
+    // 性能（09-12 P0）：兜底扫描本身**按 mtime+size 缓存**（session-tools 的
+    // rolloutListCache），历史文件只解析一次，重复调用近乎零成本。
+    // ⚠️ 不要改成「仅 indexed 为空时才扫」——引擎索引在新建会话/迁移期间可能瞬时为空，
+    // 那样侧栏会整片消失（用户侧表现就是「会话没了/像宕机」）。语义必须与旧版一致。
+    rolloutFallbackScanCount += 1;
     const fallback = listRolloutThreads(codexHome);
     result = { ...response, data: mergeThreadList(indexed, fallback, archiveFilter, Number((params as any)?.limit ?? 100)) };
   }
@@ -2478,12 +2552,22 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
     if (method === "thread/start" && r?.thread?.id) {
       threadCwd.set(String(r.thread.id), String(p?.cwd ?? r.thread.cwd ?? ""));
     } else if (method === "thread/resume" && r?.thread?.id) {
+      const __t0 = performance.now();
       r.thread = enrichThreadWithRolloutTools(r.thread, codexHome);
+      const __enrich = performance.now() - __t0;
+      resumeCount += 1;
+      resumeEnrichMs += __enrich;
+      if (__enrich > resumeMaxMs) resumeMaxMs = __enrich;
       threadCwd.set(String(r.thread.id), String(r.thread.cwd ?? r.cwd ?? p?.cwd ?? ""));
     } else if (method === "thread/settings/update" && p?.threadId && p?.cwd) {
       threadCwd.set(String(p.threadId), String(p.cwd));
     }
   } catch { /* cwd 映射失败不影响请求本身 */ }
+  if (method === "thread/resume") {
+    const total = performance.now() - __reqT0;
+    resumeTotalMs += total;
+    if (total > resumeMaxMs) resumeMaxMs = total;
+  }
   return result;
 });
 ipcMain.handle("codex:respond", (_event, id: string | number, result: unknown) => server.respond(id, result));
@@ -2671,6 +2755,12 @@ ipcMain.handle("app:storage-clear", async (_event, target: "engine-log" | "image
   return { ok: false, error: "未知清理目标" };
 });
 
+ipcMain.handle("app:perf-counters", () => enrichScanCountSnapshot());
+/** 渲染层上报「当前正在查看哪个会话」：主进程据此只转发该会话的高频事件（P1）。 */
+ipcMain.handle("codex:set-active-thread", (_event, threadId: unknown) => {
+  rendererActiveThreadId = threadId == null ? "" : String(threadId);
+  return { ok: true };
+});
 ipcMain.handle("app:engine-info", async () => {
   let binary = "";
   try { binary = codexBinaryPath(); } catch { binary = ""; }

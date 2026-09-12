@@ -13,6 +13,8 @@
 
 export const name = "voice-call-screen";
 export const description = "应用内通话界面：右键入口 + 界面要素 + 收起不挂断 + 输入零回归";
+/** 本场景负责覆盖的源文件（供 run.mjs 增量判断）。 */
+export const covers = ["src/components/VoiceCallScreen.tsx"];
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 

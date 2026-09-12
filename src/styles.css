@@ -15959,8 +15959,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text);
+  white-space: nowrap;  color: var(--text);
 }
 .queued-actions {
   flex: none;
@@ -21544,4 +21543,46 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   border: 1px solid rgba(229, 72, 77, .3);
   border-radius: 9px;
   padding: 7px 11px;
+}
+
+/* 对话区里的排队消息反馈：发出去排队的内容必须在时间线上看得见（此前只有输入框
+   上方那张管理卡，对话区毫无反馈）。风格刻意比正文轻：浅底 + 虚线边 + 小角标。 */
+.timeline-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 2px;
+}
+.timeline-queue-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: 76%;
+  padding: 7px 11px;
+  border: 1px dashed color-mix(in srgb, var(--link) 35%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--link) 6%, transparent);
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.timeline-queue-item:hover {
+  background: color-mix(in srgb, var(--link) 12%, transparent);
+  border-color: color-mix(in srgb, var(--link) 55%, var(--line));
+}
+.timeline-queue-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--orange);
+  white-space: nowrap;
+}
+.timeline-queue-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

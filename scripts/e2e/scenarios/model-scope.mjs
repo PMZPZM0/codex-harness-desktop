@@ -16,6 +16,8 @@
 
 export const name = "model-scope";
 export const description = "每个会话独立选模型：真实模型配置下用菜单选模型，会话之间互不串扰";
+/** 本场景负责覆盖的源文件（供 run.mjs 增量判断）。 */
+export const covers = ["src/lib/model-scope.mjs", "src/hooks/useModelProviders.ts", "electron/config-toml.ts"];
 
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";

@@ -12,6 +12,8 @@
 
 export const name = "voice-call";
 export const description = "语音悬浮入口：开关面板 + 既有输入链路零回归守卫";
+/** 本场景负责覆盖的源文件（供 run.mjs 增量判断）。 */
+export const covers = ["src/components/VoiceCallFloat.tsx", "src/lib/voice-aec.mjs", "src/voice/", "electron/voice/"];
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 

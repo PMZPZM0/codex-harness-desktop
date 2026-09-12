@@ -450,6 +450,10 @@ interface Window {
       logFile: { path: string; size: number; modifiedAt: number } | null;
       databases: { name: string; size: number }[]; sessions: number; archived: number;
     }>;
+    /** 多会话性能诊断计数：rollout 兜底扫描次数（应为 0）与被按会话过滤掉的事件数 */
+    perfCounters(): Promise<{ rolloutFallbackScans: number; droppedForInactiveSession: number }>;
+    /** 上报当前正在查看的会话：主进程据此只转发该会话的高频事件（多会话性能） */
+    setActiveThread(threadId: string | null): Promise<{ ok: boolean }>;
     /** 数据管理：各数据目录占用（bytes）与是否可清理 */
     storageInfo(): Promise<{
       items: { key: string; label: string; bytes: number; deletable: boolean }[];

@@ -17,6 +17,8 @@
 
 export const name = "turn-window";
 export const description = "长会话窗口化：首屏 40 回合秒开，按钮/滚动近顶增量加载，切回重置";
+/** 本场景负责覆盖的源文件（供 run.mjs 增量判断）。长会话加载/窗口逻辑在 electron/session-tools.ts。 */
+export const covers = ["electron/session-tools.ts"];
 
 import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";

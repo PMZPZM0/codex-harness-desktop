@@ -13,6 +13,8 @@
 
 export const name = "send-anchor-top";
 export const description = "发送锚顶·连发：每条新消息都钉在对话区顶部，流式稳定不跳动";
+/** 本场景负责覆盖的源文件（供 run.mjs 增量判断）。 */
+export const covers = ["src/components/scroll-utils.ts", "src/styles.css"];
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
