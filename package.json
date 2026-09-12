@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "npm run build:electron && concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "prebuild": "tsc -b",
-    "build:electron": "tsc -p electron/tsconfig.json",
+    "build:electron": "node scripts/gen-rollout-worker.mjs && tsc -p electron/tsconfig.json",
     "build:vite": "cross-env CODEBUDDY_SAFE_DELETE_ENABLED=0 vite build",
     "build": "npm run build:electron && npm run build:vite",
     "check": "npm run build && node scripts/check-preflight.mjs",
