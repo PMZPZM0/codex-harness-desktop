@@ -20676,20 +20676,31 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 
 
 /* ===== 实时语音舞台：输入框上方的彩色波浪 + 字幕 ===== */
+/* 语音舞台：透明毛玻璃弹窗，浮在对话框上半区（absolute，不挤压输入框布局） */
 .voice-stage {
-  position: relative;
-  margin: 0 auto 10px;
-  padding: 10px 12px 8px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  box-shadow: 0 6px 20px color-mix(in srgb, #000 8%, transparent);
+  position: absolute;
+  /* 贴在 composer-wrap 上沿之外 = 对话区上半部，浮在消息之上 */
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: 12px;
+  padding: 10px 14px 12px;
+  border-radius: 14px;
+  z-index: 40;
+  /* 透明 + 毛玻璃：能看到后面的消息 */
+  background: color-mix(in srgb, var(--panel) 42%, transparent);
+  border: 1px solid color-mix(in srgb, #fff 22%, transparent);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  box-shadow:
+    0 10px 34px color-mix(in srgb, #000 14%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent);
   display: flex; flex-direction: column; gap: 6px;
-  animation: voice-stage-in .18s ease-out;
+  animation: voice-stage-in .22s cubic-bezier(.2,.8,.25,1);
 }
 @keyframes voice-stage-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(10px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 .voice-stage-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -21090,4 +21101,20 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   background: var(--panel-2);
   border-radius: 4px;
   padding: 1px 5px;
+}
+
+
+/* 透明弹窗上的文字可读性（毛玻璃背景 + 轻微文字阴影） */
+.voice-stage .voice-stage-mode,
+.voice-stage .voice-subtitle-text {
+  text-shadow: 0 1px 2px color-mix(in srgb, #000 25%, transparent);
+}
+.voice-stage .voice-stage-stop {
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.voice-stage .voice-subtitle-who {
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
