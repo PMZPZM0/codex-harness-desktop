@@ -304,8 +304,9 @@ contextBridge.exposeInMainWorld("codex", {
   voiceStart: (threadId: string) => ipcRenderer.invoke("voice:start", threadId) as Promise<{ ok: boolean; error?: string; status: unknown }>,
   voiceStop: () => ipcRenderer.invoke("voice:stop") as Promise<{ ok: boolean }>,
   voiceAudio: (samples: Float32Array) => ipcRenderer.send("voice:audio", samples),
-  voiceSpeak: (text: string, options?: { sid?: number; speed?: number }) => ipcRenderer.invoke("voice:speak", text, options) as Promise<{ ok: boolean; sampleRate?: number; samples?: Float32Array; error?: string }>,
-  voicePreviewVoice: (input?: { sid?: number; speed?: number; text?: string }) => ipcRenderer.invoke("voice:preview-voice", input) as Promise<{ ok: boolean; sampleRate?: number; samples?: Float32Array; error?: string }>,
+  // TTS 音频走 Base64 字符串跨 Electron IPC；避免 native/external ArrayBuffer 被 structured clone 拒绝。
+  voiceSpeak: (text: string, options?: { sid?: number; speed?: number }) => ipcRenderer.invoke("voice:speak", text, options) as Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>,
+  voicePreviewVoice: (input?: { sid?: number; speed?: number; text?: string }) => ipcRenderer.invoke("voice:preview-voice", input) as Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>, 
   voiceBarge: () => ipcRenderer.invoke("voice:barge") as Promise<{ ok: boolean }>,
   voicePlaybackDone: () => ipcRenderer.invoke("voice:playback-done") as Promise<{ ok: boolean }>,
   voiceModelsStatus: () => ipcRenderer.invoke("voice:models-status") as Promise<{

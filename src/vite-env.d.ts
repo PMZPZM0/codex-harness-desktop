@@ -505,8 +505,8 @@ interface Window {
     voiceStart(threadId: string): Promise<{ ok: boolean; error?: string; status: unknown }>;
     voiceStop(): Promise<{ ok: boolean }>;
     voiceAudio(samples: Float32Array): void;
-    voiceSpeak(text: string, options?: { sid?: number; speed?: number }): Promise<{ ok: boolean; sampleRate?: number; samples?: Float32Array; error?: string }>;
-    voicePreviewVoice(input?: { sid?: number; speed?: number; text?: string }): Promise<{ ok: boolean; sampleRate?: number; samples?: Float32Array; error?: string }>;
+    voiceSpeak(text: string, options?: { sid?: number; speed?: number }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
+    voicePreviewVoice(input?: { sid?: number; speed?: number; text?: string }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
     voiceBarge(): Promise<{ ok: boolean }>;
     voicePlaybackDone(): Promise<{ ok: boolean }>;
     voiceModelsStatus(): Promise<{

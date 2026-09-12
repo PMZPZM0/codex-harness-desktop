@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Headphones, Keyboard, Mic, Play, Radio, ShieldAlert, Sparkles, Square, Zap } from "lucide-react";
+import { decodeFloat32Base64 } from "../voice/audio-transport";
 
 type Settings = {
   tts: { sid: number; speed: number; volume: number };
@@ -108,7 +109,9 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
     try {
       const r = await window.codex.voicePreviewVoice({ sid: settings.tts.sid, speed: settings.tts.speed });
       if (!r.ok) { onNotice(`试听失败：${r.error ?? "未知"}`); return; }
-      await playSamples(r.samples, r.sampleRate);
+      const samples = decodeFloat32Base64(r.audioBase64);
+      if (!samples.length) { onNotice("试听失败：合成结果没有音频数据"); return; }
+      await playSamples(samples, r.sampleRate);
     } catch (e: any) {
       onNotice(`试听失败：${e?.message ?? e}`);
     } finally {

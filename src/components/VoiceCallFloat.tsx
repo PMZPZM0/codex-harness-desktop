@@ -18,6 +18,7 @@ import { createPortal } from "react-dom";
 import { AlertCircle, AudioLines, Download, EyeOff, LoaderCircle, Mic, PhoneOff, Settings2, X } from "lucide-react";
 import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../lib/voice-aec.mjs";
 import { CAPTURE_WORKLET_SOURCE } from "../voice/capture-worklet";
+import { decodeFloat32Base64 } from "../voice/audio-transport";
 import VoiceMascot from "./VoiceMascot";
 import { patchVoiceStage, requestVoiceOpenSettings, resetVoiceStage, setVoiceLevel, setVoiceStopHandler } from "../voice/wave-level";
 
@@ -390,11 +391,12 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       const sentences: string[] = chunkerRef.current.push(delta);
       for (const sentence of sentences) {
         const result = await window.codex.voiceSpeak(sentence).catch(() => null);
-        if (!result?.ok || !result.samples || !result.sampleRate) {
+        if (!result?.ok || !result.audioBase64 || !result.sampleRate) {
           if (result && !result.ok && result.error) setNotice(result.error);
           continue;
         }
-        await enqueuePlay(result.samples, result.sampleRate);
+        const samples = decodeFloat32Base64(result.audioBase64);
+        if (samples.length) await enqueuePlay(samples, result.sampleRate);
       }
     },
     [enqueuePlay]
@@ -404,8 +406,9 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     const rest: string[] = chunkerRef.current?.flush() ?? [];
     for (const sentence of rest) {
       const result = await window.codex.voiceSpeak(sentence).catch(() => null);
-      if (result?.ok && result.samples && result.sampleRate) {
-        await enqueuePlay(result.samples, result.sampleRate);
+      if (result?.ok && result.audioBase64 && result.sampleRate) {
+        const samples = decodeFloat32Base64(result.audioBase64);
+        if (samples.length) await enqueuePlay(samples, result.sampleRate);
       }
     }
   }, [enqueuePlay]);
