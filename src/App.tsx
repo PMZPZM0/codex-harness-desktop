@@ -4941,7 +4941,14 @@ function usePacketRevealText(
     }
     // active（流式运行中）：内容在增长就平滑续字，不要求大跳才追——小增量也逐字流出。
     // 非 active 或一次性整包交付（marker）也追，避免整段瞬间出现；纯历史不做动画。
-    const shouldReveal = revealingRef.current || active || marked != null;
+    //
+    // ⚠️ 但**存量正文必须一次性显示**（09-12 用户实测实锤）：流式中切走再切回时，
+    // 进度表里存的是切走那一刻的位置（如 244 字），而正文已经长到 1078 字——
+    // 若照旧揭示，就会把 834 个字的**存量**从头播一遍，表现为「切过去正文重新出字」。
+    // 判据：待播字数远超单帧/单批的正常增量（> REVEAL_INSTANT_JUMP）时，判定为
+    // 「重挂载后补齐存量」而非「新到的增量」→ 直接显示，不做动画。
+    const REVEAL_INSTANT_JUMP = 400;
+    const shouldReveal = (revealingRef.current || active || marked != null) && remaining <= REVEAL_INSTANT_JUMP;
     if (!shouldReveal) {
       displayedRef.current = text;
       setDisplayed(text);
