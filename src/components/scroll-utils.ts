@@ -43,10 +43,15 @@ export function scrollToOffsetInstant(scroller: HTMLElement, top: number) {
  *
  * @param scroller 滚动容器（可为 null 时直接回调，便于上层一视同仁处理）
  * @param onSettled scrollHeight 稳定后回调；多次调用时上层应自行去重/重置
+ * @param getTarget 可选：返回本次应落的 scrollTop。**默认 `scrollHeight` 是错的**——
+ *   滚动容器的末尾挂着尾部留白（`.timeline-bottom-spacer*`），`scrollHeight` 把留白也算进
+ *   "内容"，于是"到底"= 滚进留白（09-12 用户截图：切回会话后用户消息被切在视口顶、
+ *   下方一大片空白）。调用方应传「内容底部」的解析函数。
  */
 export function jumpToBottom(
   scroller: HTMLElement | null,
   onSettled?: () => void,
+  getTarget?: (scroller: HTMLElement) => number,
 ) {
   if (!scroller) {
     onSettled?.();
@@ -59,7 +64,7 @@ export function jumpToBottom(
   const MAX_FRAMES = 60; // ~1s 上限（60 * 16ms），超过即强制 settled
   const tick = () => {
     totalFrames += 1;
-    scroller.scrollTop = scroller.scrollHeight;
+    scroller.scrollTop = getTarget ? getTarget(scroller) : scroller.scrollHeight;
     if (scroller.scrollHeight === lastHeight) {
       stableFrames += 1;
     } else {

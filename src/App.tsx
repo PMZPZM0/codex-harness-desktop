@@ -6768,22 +6768,12 @@ export default function App() {
     // 锚定模式：真实回合接管临时气泡的瞬间，把锚点平滑换到真实回合——
     // 乐观气泡挂在回合列表末尾、真实 turn 在其前一位，位置相邻但不重合，
     // 不重锚的话「消息钉在顶部」会在确认瞬间跳一下（锚定模式的核心承诺就是不跳）。
+    // 确认瞬间**不再自己做一次重锚**（09-12：两处各自钉一次 = 互相抢 = 抖）。
+    // 位置统一由 [thread] 布局 effect 里的 pinSentMessage 按"真实消息元素"实测维持：
+    // 真实回合一接管，它量到 gap 变了就一次性纠正，量到没变就什么都不做。
     if (anchorTopRef.current) {
       const baseline = optimisticBaselineRef.current;
-      const newTurn = thread?.turns.find((turn) => {
-        if (baseline.threadId === thread?.id && baseline.turnIds.has(turn.id)) return false;
-        return turn.items.some((item) => item.type === "userMessage" && userMessageMatchesInput(item, optimisticInput.content ?? []));
-      });
-      const el = scrollRef.current;
-      const anchor = newTurn ? document.getElementById(`turn-${newTurn.id}`) : null;
-      if (el && anchor) {
-        // 锚点平滑换到真实回合：乐观气泡与真实消息渲染位置相邻，重锚保证「消息钉在
-        // 顶部」在确认瞬间不跳；基线同步刷新，回复增长量从此刻起算
-        anchorElRef.current = anchor;
-        contentAnchorTopRef.current = contentOffsetTop(anchor, el) - ANCHOR_TOP_OFFSET_PX;
-        selfScrollUntilRef.current = Date.now() + 80;
-        if (Math.abs(contentAnchorTopRef.current - el.scrollTop) > 8) scrollToOffsetInstant(el, contentAnchorTopRef.current);
-      }
+      const newTurn = thread?.turns.find((turn) => !(baseline.threadId === thread?.id && baseline.turnIds.has(turn.id)));
       if (newTurn) anchorTurnIdRef.current = newTurn.id;
     }
     optimisticTurnIdRef.current = null;
@@ -7564,8 +7554,16 @@ export default function App() {
   // 各渠道真实连接状态（微信/Telegram 网关是否在线）
   const [channelOnline, setChannelOnline] = useState<Record<string, boolean | undefined>>({ weixin: false, telegram: false, feishu: false, dingtalk: false, qq: false, "wecom-webhook": false });
   useEffect(() => { void window.codex.channelsStatus?.().then(setChannelOnline).catch(() => undefined); }, []);
-  // 刚切换会话：首跳用瞬时滚动（auto），之后的流式跟随仍用平滑
-  const switchJumpRef = useRef(false);
+  // 刚切换会话：首跳用瞬时滚动（auto），之后的流式跟随仍用平滑。
+  // ⛔ 必须是「会话 id + 时间戳」而不是裸布尔（09-12 根因修复）：裸布尔的实测后果是
+  // **下一次任意 thread 更新**都会把它消费掉 —— 打开会话时置位、若那次没有紧跟一次
+  // thread 变更（缓存秒开/同一对象重提交流程），标志就一直挂着，直到发送消息触发的
+  // 那次更新把它吃掉：于是「切会话瞬时定位」的分支在发送时执行 → 解除钉顶 + 留白归零
+  // + 贴底 → 用户看到「发送后消息不在那个位置」「上下弹跳」。绑 id 后只有该会话自己的
+  // 那次渲染能消费它，并且钉顶进行中一律不许被覆盖。
+  const switchJumpRef = useRef<{ id: string; at: number } | null>(null);
+  /** 切换瞬时定位是否仍然有效（绑定会话 id + 15s 过期，防陈旧标志永久阻塞向上续载） */
+  const switchJumpPending = () => Boolean(switchJumpRef.current && Date.now() - switchJumpRef.current.at < 15000);
   // 会话消息缓存（复刻 WorkBuddy 切换体验）：打开过的会话缓存 thread，切回时秒开渲染，
   // 后台 thread/resume 刷新；有实质变化才替换，避免无感闪烁。
   const threadCacheRef = useRef(new Map<string, Thread>());
@@ -8023,11 +8021,103 @@ export default function App() {
     const pad = anchorSpacerRef.current;
     if (pad) pad.style.height = "0px";
   }, []);
+  /** 内容底部（详见 `contentBottomOf`）：所有"滚到底 / 跟随到最新"的基准，**不含尾部留白**。
+   *  用 `scrollHeight` 会把 compact / anchor-pad 留白算成内容 → "到底"= 滚进留白 →
+   *  切回会话时用户消息被切在视口顶、下方一大片空白（09-12 用户截图实锤）。 */
+  const compactSpacerRef = useRef<HTMLDivElement | null>(null);
+  /** 内容底部的滚动坐标（**不含**尾部留白）。留白高度一变（回合结束撤 compact、
+   *  钉顶撑 anchor-pad）都不影响它，所以它才是稳定的"最新内容在哪"。
+   *  算法 = `scrollHeight − Σ 留白高度`：两个留白都是**纯空白**元素，扣掉它们的总高度
+   *  正好得到最后一个真实元素（回合 / 排队气泡 / 处理中行）的底边；不需要额外插哨兵节点，
+   *  也就不必改 `.timeline` 的子元素顺序。 */
+  const contentBottomOf = useCallback((el: HTMLElement) => {
+    const blank = (compactSpacerRef.current?.offsetHeight ?? 0) + (anchorSpacerRef.current?.offsetHeight ?? 0);
+    return el.scrollHeight - blank;
+  }, []);
+  /** 「最新内容」应有的 scrollTop：内容底部贴到视口底，再留 CONTENT_TAIL_GAP_PX 呼吸位。 */
+  const contentTailTarget = useCallback((el: HTMLElement) => {
+    const max = Math.max(0, el.scrollHeight - el.clientHeight);
+    return Math.max(0, Math.min(contentBottomOf(el) - el.clientHeight + CONTENT_TAIL_GAP_PX, max));
+  }, [contentBottomOf]);
+  /** ★ 发送锚顶的唯一 owner：把「本次发送的那条用户消息」放到对话区顶部往下
+   *  ANCHOR_TOP_OFFSET_PX 处，并让它一直待在那儿（位置由本函数 + update() 的
+   *  增量跟随共同维持，二者不会互相抢：跟随只补增长量，gap 因此恒等于 54）。
+   *
+   *  为什么锚点取**真实 `.user-message` 元素**而不是 `#chat-anchor`（09-12 根因）：
+   *  `#chat-anchor` 挂在回合列表**末尾**（在真实回合组之后），它的 top 并不等于用户
+   *  消息的 top —— 一旦真实回合组里已经有内容，按它钉出来就是错的（实测连发第 2 条
+   *  gap=418）。真实消息元素才是"那条消息"本身。
+   *
+   *  为什么要**实测校验**（`gapErr`）而不是只信一次计算：锚点会从乐观气泡换成真实消息、
+   *  上游渲染时序也会变，任何一次算错的落点如果没人纠正就会一直错下去（这就是这一天
+   *  反复出现"位置不对"的机制）。这里每次调用都量一次实际 gap，偏差 > 4px 才一次性
+   *  修正；正常情况下偏差为 0，校验不触发，所以不会跟跟随打架。 */
+  const pinSentMessage = useCallback((el: HTMLElement) => {
+    // 锚点 = 最后一个回合组里的真实用户消息（前提：这个回合是本次发送新建的，
+    // 即不在发送前的回合基线里）；还没有真实消息时退回乐观气泡。
+    const groups = document.querySelectorAll<HTMLElement>(".turn-group");
+    const lastGroup = groups[groups.length - 1];
+    const baseline = optimisticBaselineRef.current;
+    const lastId = lastGroup?.id?.startsWith("turn-") ? lastGroup.id.slice(5) : "";
+    const isNewTurn = Boolean(lastId) && !(baseline.threadId && baseline.turnIds.has(lastId));
+    let anchor: HTMLElement | null = null;
+    if (isNewTurn) anchor = lastGroup.querySelector<HTMLElement>(".user-message");
+    if (!anchor) anchor = document.getElementById("chat-anchor");
+    if (!anchor || !anchor.isConnected) { dbg("pin-miss", { isNewTurn }); return; }
+    const anchorH = anchor.getBoundingClientRect().height;
+    // 用户消息自身超过一屏 → 钉顶没有意义（整条装不下），直接让用户看到回复
+    if (anchorH > el.clientHeight) {
+      dbg("clear-anchor", { at: "long:msg", h: Math.round(anchorH), ch: el.clientHeight });
+      anchorTopRef.current = false;
+      clearAnchorPad();
+      stickToBottomRef.current = true;
+      selfScrollUntilRef.current = Date.now() + 80;
+      scrollToOffsetInstant(el, contentTailTarget(el));
+      pinnedScrollTopRef.current = el.scrollTop;
+      return;
+    }
+    // 留白固定给**一整屏**：保证「锚点滚到顶部」这个目标永远可达（不依赖锚点高度，
+    // 也就不用随锚高反复改高度 → 没有新的 scrollHeight 突变源）。
+    const pad = anchorSpacerRef.current;
+    if (pad && pad.style.height !== `${el.clientHeight}px`) pad.style.height = `${el.clientHeight}px`;
+    const key = isNewTurn ? `turn-${lastId}` : "opt";
+    const gapErr = (anchor.getBoundingClientRect().top - el.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
+    const first = pinnedAnchorKeyRef.current !== key;
+    pinnedAnchorKeyRef.current = key;
+    anchorHeightBaselineRef.current = contentBottomOf(el);
+    // 首次落位**立即**执行（用户要的第一时间就在那个位置）；之后的复核若发现偏差，
+    // 延到下一帧再量一次才改：本帧布局常常还在收敛（content-visibility 提交、
+    // 代码高亮/字体完成），照当帧 gap 直接改 scrollTop 会过冲（实测 332 → −226 → −32
+    // 三次来回）。下一帧仍偏才修，一次到位。
+    if (first) {
+      dbg("pin-apply", { key, gapErr: Math.round(gapErr), top: Math.round(el.scrollTop) });
+      selfScrollUntilRef.current = Date.now() + 80;
+      scrollToOffsetInstant(el, el.scrollTop + gapErr);
+      pinnedScrollTopRef.current = el.scrollTop;
+      return;
+    }
+    if (Math.abs(gapErr) <= 8) return;
+    if (pinFixRef.current) cancelAnimationFrame(pinFixRef.current);
+    selfScrollUntilRef.current = Date.now() + 200;
+    pinFixRef.current = requestAnimationFrame(() => {
+      pinFixRef.current = 0;
+      if (!anchorTopRef.current) return;
+      const now = (anchor.isConnected ? anchor : document.getElementById("chat-anchor")) as HTMLElement | null;
+      if (!now) return;
+      const err = (now.getBoundingClientRect().top - el.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
+      if (Math.abs(err) <= 4) return;
+      dbg("pin-fix", { key, err: Math.round(err), top: Math.round(el.scrollTop) });
+      scrollToOffsetInstant(el, el.scrollTop + err);
+      pinnedScrollTopRef.current = el.scrollTop;
+    });
+  }, [clearAnchorPad, contentBottomOf, contentTailTarget]);
   /** 最近一次钉顶实际落到的 scrollTop。用于区分「程序滚动」与「用户滚到底」：
       锚顶时若锚点下方内容不足，scrollTop 会被浏览器钳到 maxScroll（= 贴底位置），
       这个「非用户意愿」的增大若被 update() 当成用户滚到底就会解除钉顶（09-12
       实测：连发第二/三条正是这样退回贴底）。 */
   const pinnedScrollTopRef = useRef(-1);
+  /** 落点复核修正的 rAF id（延一帧去抖，见 pinSentMessage）。 */
+  const pinFixRef = useRef(0);
   /** 已经钉过的锚点标识（`turn:<id>` / `opt:<id>`）。**只钉一次**：同一个锚点后续的
       thread 更新只刷新基线，滚动完全交给 update() 里的增量跟随。
       为什么必须有这个（09-12 用户反馈「钉顶和最新跟随来回拉扯、上下弹跳」）：
@@ -8747,10 +8837,20 @@ const TURN_WINDOW = 40;
  *  取两行正文的高度：正文 14px × line-height 1.72 ≈ 24px/行 → 两行 ≈ 48px，
  *  外加原有 6px 余量 = 54。改这个值即可整体上下平移钉顶位置。 */
 const ANCHOR_TOP_OFFSET_PX = 54;
-/** 用户消息固定槽位（09-12 架构改）：true = 位置由 CSS sticky 保证，不再做滚动补偿钉顶。
- *  打开后 `anchorTopRef` 的钉顶分支整体跳过（留白也不再撑），滚动只剩一个 owner：
- *  「在底部就跟随最新」。要回退成旧的滚动钉顶，把它改成 false 即可。 */
-const STICKY_USER_SLOT = true;
+/** 用户消息固定槽位（09-12 架构改，**已关**）：曾经想用 CSS `position: sticky` 让位置
+ *  由布局保证、彻底不碰滚动条。实测不成立——sticky 只能在**包含块内部**位移，而用户消息的
+ *  包含块是 `.turn-group`：刚发消息时那个组里只有这条消息（~72px），下方没有空间可借，
+ *  sticky 根本钉不住（实测连发第 2 条 gap=396），而把留白放到 `.timeline` 末尾是**兄弟节点**、
+ *  扩不了包含块。除非给回合组塞一个动态高度的尾巴（高度一变就是新的 scrollHeight 突变源），
+ *  否则 sticky 在这个结构里无解。故回到「滚动式锚顶」：钉一次 + 按增长量跟随（见下方注释），
+ *  位置观感等价，且没有包含块限制。 */
+const STICKY_USER_SLOT = false;
+/** 尾部留白（`.timeline-bottom-spacer*`）**不参与**「跟到哪」的计算：
+ *  所有"到底部"的目标一律取**内容底部**（`#timeline-content-end` 哨兵）而不是 `scrollHeight`。
+ *  这是 09-12 那次「切走再切回：用户消息被切在视口顶 + 下方一大片空白」的根因——
+ *  紧随留白一起滚到底 = 滚进留白里。留白只负责给锚点腾出可滚空间，绝不改变落点。
+ *  取 0 = 内容底部正好贴住视口底沿（留白仍在下方、看不见）。 */
+const CONTENT_TAIL_GAP_PX = 0;
 /** 常用命令置顶顺序（用户高频：模型/思考/计划/目标/压缩优先） */
 const COMMON_COMMAND_ORDER = ["plan", "goal", "model", "effort", "compact", "new", "resume", "review", "status", "help"];
 const commandMatches = useMemo(() => {
@@ -8927,9 +9027,24 @@ const commandMatches = useMemo(() => {
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return;
-    let lastTop = scroller.scrollTop; // 供 update 识别「向上滚动」（拖滚动条/键盘）
+    let lastTop = scroller.scrollTop; // 供 update 识别「指针拖拽期间的位置变化」
+    let pointerDown = false;
+    /** 用户接管视口：钉顶与贴底一起让位，并撤掉锚顶留白。
+     *  **只能被真实用户输入调用**（滚轮/触摸/键盘翻页/指针拖拽）——这是设计上的唯一解除信号。 */
+    const releaseToUser = (why: string) => {
+      dbg("release:" + why, { top: Math.round(scroller.scrollTop), was: anchorTopRef.current ? "pin" : stickToBottomRef.current ? "stick" : "none" });
+      if (!anchorTopRef.current && !stickToBottomRef.current) return;
+      stickToBottomRef.current = false;
+      anchorTopRef.current = false;
+      pinnedScrollTopRef.current = -1;
+      clearAnchorPad();
+    };
+    // ⚠️ 距底一律按**内容底部**算（不含尾部留白）：若用 scrollHeight，钉顶/跟随把视口停在
+    // 内容底部时 dist 仍等于留白高度（compact 64px）→「到底了」判定永远不成立，
+    // 贴底跟随再也开不回来（09-12：切换会话后跟随失效就是这么来的）。
+    const contentBottom = () => contentBottomOf(scroller);
     const update = () => {
-      const dist = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      const dist = contentBottom() - scroller.scrollTop - scroller.clientHeight;
       // ── 钉顶模式的自动跟随（09-12 用户实测反馈「回复流出屏幕、看不到最新」）──
       // 钉顶保持位置不变，但内容增长到一定程度就把视口往下推同样多：
       //   · 新内容始终落在视口内（不必手动滚）= 用户要的「自动跟随」；
@@ -8940,13 +9055,17 @@ const commandMatches = useMemo(() => {
       // 期间视口完全不动，出字是平滑的。
       const FOLLOW_STEP_PX = 60;
       if (anchorTopRef.current) {
-        const growth = scroller.scrollHeight - anchorHeightBaselineRef.current;
+        // 增长量按**内容底部**算，不按 scrollHeight：后者把尾部留白的出现/归零（回合结束
+        // 撤掉 compact 留白 = −64px）也算成"增长"，会凭空触发一次多余跟随。
+        const bottom = contentBottom();
+        const growth = bottom - anchorHeightBaselineRef.current;
         // 只在**真正滚动之后**才推进基线（见下）。这里不能无脑刷基线，
         // 否则 growth 永远攒不到阈值，跟随就失效了。
         if (growth >= FOLLOW_STEP_PX) {
           const target = Math.min(scroller.scrollTop + growth, scroller.scrollHeight - scroller.clientHeight);
           if (target > scroller.scrollTop) {
-            anchorHeightBaselineRef.current = scroller.scrollHeight;
+            dbg("follow-grow", { growth: Math.round(growth), base: Math.round(anchorHeightBaselineRef.current), bottom: Math.round(bottom), from: Math.round(scroller.scrollTop), to: Math.round(target) });
+            anchorHeightBaselineRef.current = bottom;
             selfScrollUntilRef.current = Date.now() + 80;
             scrollToOffsetInstant(scroller, target);
             pinnedScrollTopRef.current = scroller.scrollTop;
@@ -8959,41 +9078,35 @@ const commandMatches = useMemo(() => {
       // 会被当成用户滚动，误解除钉顶——09-12 调试探针实锤）
       if (Date.now() < selfScrollUntilRef.current) { lastTop = scroller.scrollTop; return; }
       setAwayFromBottom(dist > scroller.clientHeight * 0.25);
-      // 向上滚动立即解除跟随（不等 25% 迟滞阈值）：wheel 只覆盖滚轮/触摸板，
-      // 拖滚动条、键盘 PageUp/方向键只产生 scroll 事件——靠"scrollTop 变小"识别向上。
-      // 没有这条，流式期间用户在迟滞区（4px~25% 视口）内往上拖会被下一帧拉回底部，
-      // 即"往上看回答会自动下滑直到回答给完"。
-      if (scroller.scrollTop < lastTop - 2 && dist > 4) {
-        stickToBottomRef.current = false;
-        anchorTopRef.current = false; // 用户主动上滚 = 解除钉顶（否则下次更新又被钉回去）
-        pinnedScrollTopRef.current = -1;
-        clearAnchorPad();
-      }
       // 迟滞：距底 ≤4px 重新开启跟随；>25% 视口才关闭。中间地带保持原状，
       // 避免流式内容增高时 stick 反复翻转（此前 smooth 滚动动画的中间滚动事件
       // 会误关跟随，导致"消息发了不显示、停止后才出现"）。
-      if (dist <= 4) {
-        stickToBottomRef.current = true;
-        // 只有「scrollTop 真实增大」（用户主动往下滚）到触底才解除钉顶；回合完成时
-        // 思考卡折叠等会让内容高度骤减、dist 瞬间 ≤4——那不是用户行为，解除钉顶
-        // 会让第二条消息起全部退回旧行为（09-12 实测）
-        // 且钉顶被 clamp 的那次增大也要放过：它就是钉顶自己把 scrollTop 顶到 maxScroll
-        // 造成的，与用户滚到底无法区分——否则短消息一钉顶就自杀（09-12 实测复现）。
-        const byUs = Math.abs(scroller.scrollTop - pinnedScrollTopRef.current) <= 2;
-        if (scroller.scrollTop > lastTop + 2 && !byUs) { dbg("cancel:bottom-scroll"); anchorTopRef.current = false; pinnedScrollTopRef.current = -1; clearAnchorPad(); }
-      }
+      if (dist <= 4) stickToBottomRef.current = true;
       else if (dist > scroller.clientHeight * 0.25) stickToBottomRef.current = false;
+      // ⛔ 这里**不再**用「scrollTop 方向」猜用户意图（09-12 拆除，勿加回来）。
+      // 那套启发式的实测结局：钉顶落点与记录值差 13px（浏览器 clamp / 内容重排造成，
+      // 不是用户操作）→ byUs 判定失败 → 紧接着流式内容长高让 scrollTop 增大 → 被当成
+      // 「用户滚到底」→ 钉顶自杀、留白归零、视口掉回内容底部。用户看到的就是
+      // 「发送后消息不在那个位置」「上下弹跳」。判据本身不可靠，任何阈值都救不了。
+      // 现在只有**真实用户输入**（滚轮 / 触摸 / 拖拽 / 键盘翻页）能解除，见下方监听器。
+      // 拖拽/框选（指针按下期间产生的滚动）也算用户操作：
+      if (pointerDown && Math.abs(scroller.scrollTop - lastTop) > 2) releaseToUser("drag");
       lastTop = scroller.scrollTop;
     };
-    // 向上滚轮 = 用户主动浏览，立即停止底部跟随（不等 25% 阈值，防止跟流式滚动打架）。
+    // ── 唯一 owner 的解除信号：真实用户输入 ──
+    // 为什么必须按输入事件判而不是按 scroll 事件判：流式内容增长、浏览器 clamp、
+    // content-visibility 重排都会让 scrollTop 自己动，从 scroll 事件里无法区分
+    // 「用户滚的」和「内容/浏览器弄的」。输入事件没有这个问题。
     const onWheel = (event: WheelEvent) => {
-      if (event.deltaY < 0) {
-        stickToBottomRef.current = false;
-        anchorTopRef.current = false;
-        pinnedScrollTopRef.current = -1;
-        clearAnchorPad();
-      }
+      if (event.deltaY < 0) releaseToUser("wheel-up");
     };
+    const onTouchMove = () => releaseToUser("touch");
+    const onKeyDown = (event: Event) => {
+      const key = (event as unknown as { key?: string }).key ?? "";
+      if (["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown", " "].includes(key)) releaseToUser("key");
+    };
+    const onPointerDown = () => { pointerDown = true; };
+    const onPointerUp = () => { pointerDown = false; };
     updateBottomStateRef.current = update;
     // rAF 节流：scroll 事件密集时 update 会读 scrollHeight/scrollTop 强制同步布局
     let raf = 0;
@@ -9005,6 +9118,11 @@ const commandMatches = useMemo(() => {
     observer.observe(scroller);
     scroller.addEventListener("scroll", schedule, { passive: true });
     scroller.addEventListener("wheel", onWheel, { passive: true });
+    scroller.addEventListener("touchmove", onTouchMove, { passive: true });
+    scroller.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+    scroller.addEventListener("keydown", onKeyDown);
     const onPacketReveal = () => requestAnimationFrame(() => {
       update();
       // 钉顶模式下绝不抢滚动条：打字机揭示每帧都触发这里，若此时还贴底跟随，
@@ -9014,7 +9132,7 @@ const commandMatches = useMemo(() => {
         // 揭示互相 retarget = 出字闪烁）；钉顶模式下 stick=false 不会进这里
         selfScrollUntilRef.current = Date.now() + 80;
         scroller.style.scrollBehavior = "auto";
-        scroller.scrollTop = scroller.scrollHeight;
+        scroller.scrollTop = contentTailTarget(scroller);
         scroller.style.scrollBehavior = "";
       }
     });
@@ -9024,6 +9142,11 @@ const commandMatches = useMemo(() => {
       observer.disconnect();
       scroller.removeEventListener("scroll", schedule);
       scroller.removeEventListener("wheel", onWheel);
+      scroller.removeEventListener("touchmove", onTouchMove);
+      scroller.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+      scroller.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("codex:packet-reveal", onPacketReveal);
     };
   }, [thread?.id, scrollRef]);
@@ -9066,84 +9189,27 @@ const commandMatches = useMemo(() => {
     // 必须瞬时：.timeline 的 CSS scroll-behavior:smooth 会让 scrollTo 走平滑动画，
     // 表现为"从上往下滚动"，且动画目标基于发起时的 scrollHeight，内容随后增高会停在半路。
     // 这里消费后立即重置，之后的流式更新走常规 stick 跟随（smooth 跟手）。
-    if (switchJumpRef.current) {
-      switchJumpRef.current = false;
+    // 切会话瞬时定位**只对刚打开的那个会话、且当前没有钉顶**时生效。
+    // 见 switchJumpRef 声明处：裸布尔会被后续任意更新消费，把发送钉顶掀掉。
+    if (switchJumpRef.current && switchJumpRef.current.id === thread?.id && !anchorTopRef.current && switchJumpPending()) {
+      switchJumpRef.current = null;
+      dbg("clear-anchor", { at: "switch-jump" });
       // 切会话 = 全新定位（贴底看最新），不携带上一个会话遗留的锚定模式
       anchorTopRef.current = false;
       pinnedAnchorKeyRef.current = null;   // 新会话的锚点要能重新钉
       clearAnchorPad();   // 上一个会话的锚顶留白不能带到新会话（否则新会话底部一大段空白）
       stickToBottomRef.current = true;
-      jumpToBottom(el);
+      jumpToBottom(el, undefined, contentTailTarget);
       return;
     }
-    if (anchorTopRef.current && !STICKY_USER_SLOT) {
-      // ⛔ 09-12 架构改：用户消息位置改由**布局**保证（`.turn-group[data-current-turn] .user-message-stack
-      // { position: sticky; top: 54px }`，见 styles.css），这里不再做滚动补偿钉顶。
-      // 保留整段代码只为渐进落地：STICKY_USER_SLOT 一旦全链路验证通过就整段删除。
-      // 锚定模式：**每次**发送都把新消息钉回对话区顶部（用户明确要求），每个
-      // thread 更新都重新钉一次（瞬时，无动画），抵消内容增长带来的位移——
-      // 视口全程稳定，消灭「正文出字上下跳动/来回闪」。不自动转贴底：长回复
-      // 超屏后新内容在下方堆积，由「回到底部」按钮 / 用户滚到底（update() 里
-      // dist≤4 重开跟随并解除钉顶）接管。
-      // 动态解析锚元素：确认后优先真实回合（元素可能晚一帧挂载，按 id 实时查），
-      // 未确认用乐观气泡；都取不到再用兜底坐标。
-      let a: HTMLElement | null = null;
-      if (anchorTurnIdRef.current) a = document.getElementById(`turn-${anchorTurnIdRef.current}`);
-      if (!a) a = anchorElRef.current;
-      // 先按锚点高度补足底部留白，再量坐标：留白本身就是为「让锚点能滚到顶部」
-      // 而存在的，必须先落盘尺寸，量出来的 contentOffsetTop 才与最终布局一致。
-      if (a && a.isConnected && anchorSpacerRef.current) {
-        const aH = a.getBoundingClientRect().height;
-        anchorSpacerRef.current.style.height = `${Math.max(0, Math.round(el.clientHeight - aH))}px`;
-      }
-      if (a && a.isConnected) {
-        anchorTopOffsetRef.current = contentOffsetTop(a, el);
-        contentAnchorTopRef.current = anchorTopOffsetRef.current - ANCHOR_TOP_OFFSET_PX;
-      }
-      // ⛔ 同一个锚点**只钉一次**（09-12 用户反馈「钉顶与最新跟随来回拉扯、上下弹跳」）。
-      // 增量跟随（update() 里按 growth 往下推）本身就把锚点保持在视图顶部——它才是滚动 owner。
-      // 这里若每次更新都按绝对坐标再钉回去，就等于往反方向抢，于是弹跳。
-      // 后续更新只做两件事：① 维持底部留白尺寸；② 刷新基线（下一个增长量从新高度算起）。
-      const anchorKey = anchorTurnIdRef.current
-        ? `turn:${anchorTurnIdRef.current}`
-        : (optimisticInput?.id ? `opt:${optimisticInput.id}` : null);
-      if (anchorKey && pinnedAnchorKeyRef.current === anchorKey) {
-        anchorHeightBaselineRef.current = el.scrollHeight;
-        return;
-      }
-      pinnedAnchorKeyRef.current = anchorKey;
-      // 抑制窗要盖住整个入场动画（180ms）——动画期间产生的 scroll 事件不能被当成用户滚动
-      selfScrollUntilRef.current = Date.now() + 280;
-      // 用户消息**自己就比一屏还高**（长粘贴/多段长指令）时，钉顶没有意义：
-      // 整条消息装不下，钉顶只会把回复推到屏幕外。此时用户的期望是**直接看到
-      // agent 的回复**（用户实测反馈：「一次发很长消息，一屏展示不下来，agent
-      // 会话后马上跳转到 agent 回复消息的那个位置」）。
-      // 注意判据是**锚点自身高度**，不是 scrollHeight——后者会把「回复长过一屏」
-      // 也误判成溢出，导致正常短消息一发送就被推到底部（实测 gap -296）。
-      const anchorHeight = a?.isConnected ? a.getBoundingClientRect().height : 0;
-      if (anchorHeight > el.clientHeight) {
-        anchorTopRef.current = false;   // 退出钉顶：交给常规贴底跟随（steer 到回复位置）
-        clearAnchorPad();
-        stickToBottomRef.current = true;
-        selfScrollUntilRef.current = Date.now() + 80;
-        scrollToOffsetInstant(el, el.scrollHeight);
-        pinnedScrollTopRef.current = el.scrollTop;
-        return;
-      }
-      glideTo(el, contentAnchorTopRef.current);
-      // 基线 = 当前内容高度：之后 update() 只按「增长量」温和跟随
-      anchorHeightBaselineRef.current = el.scrollHeight;
-      // 记下本次钉顶**最终**落点（不是动画起点！glideTo 是异步的，若记起点，
-      // update() 的 byUs 判定会把自己的入场动画当成"用户滚到底"，于是解除钉顶 →
-      // 下一条消息就退回贴底（09-12 实测：第 2 条 gap=418、atBottom=true）。
-      pinnedScrollTopRef.current = Math.max(0, Math.min(contentAnchorTopRef.current, el.scrollHeight - el.clientHeight));
-      return;
-    }
+      // ★ 唯一 owner：把本次发送的用户消息钉在顶部（自带几何校验，见 pinSentMessage）
+      if (anchorTopRef.current && !STICKY_USER_SLOT) { pinSentMessage(el); return; }
     if (!stickToBottomRef.current) return;
     selfScrollUntilRef.current = Date.now() + 80;
+    dbg("stick-jump", { from: Math.round(el.scrollTop), to: Math.round(contentTailTarget(el)) });
     // 贴底跟随必须瞬时：.timeline 的 CSS scroll-behavior:smooth 会让
     // behavior:"auto" 也走平滑动画，动画与下一次内容增长互相 retarget = 抖动
-    scrollToOffsetInstant(el, el.scrollHeight);
+    scrollToOffsetInstant(el, contentTailTarget(el));
   }, [thread]);
   // 锚顶滚动：乐观气泡挂载后把这条新消息顶到对话区顶部（WorkBuddy 观感）。
   // 必须瞬时（scrollToOffsetInstant）：.timeline 的 CSS scroll-behavior:smooth 会让
@@ -9151,34 +9217,11 @@ const commandMatches = useMemo(() => {
   useLayoutEffect(() => {
     if (!optimisticInput || !anchorTopRef.current) return;
     const el = scrollRef.current;
-    const anchor = document.getElementById("chat-anchor");
-    if (!el || !anchor) return;
-    dbg("init-pin");
-    // 与确认后的钉顶同款：先按锚点高度补足底部留白，短消息才可能被滚到顶部
-    // （否则 scrollTop 被钳在 maxScroll，落回贴底观感）
-    if (anchorSpacerRef.current) {
-      const aH = anchor.getBoundingClientRect().height;
-      anchorSpacerRef.current.style.height = `${Math.max(0, Math.round(el.clientHeight - aH))}px`;
-    }
-    anchorTopOffsetRef.current = contentOffsetTop(anchor, el);
-    contentAnchorTopRef.current = anchorTopOffsetRef.current - ANCHOR_TOP_OFFSET_PX;
-    anchorElRef.current = anchor;
-    pinnedAnchorKeyRef.current = optimisticInput?.id ? `opt:${optimisticInput.id}` : "opt:";
-    selfScrollUntilRef.current = Date.now() + 280;
-    // 长消息（自身超一屏）→ 直接跟到回复位置；否则正常钉顶（判据说明见 thread 布局 effect）
-    if (anchor.getBoundingClientRect().height > el.clientHeight) {
-      anchorTopRef.current = false;   // 退出钉顶：交给常规贴底跟随（steer 到回复位置）
-      clearAnchorPad();
-      stickToBottomRef.current = true;
-      selfScrollUntilRef.current = Date.now() + 80;
-      scrollToOffsetInstant(el, el.scrollHeight);
-      pinnedScrollTopRef.current = el.scrollTop;
-      return;
-    }
-    glideTo(el, contentAnchorTopRef.current);
-    anchorHeightBaselineRef.current = el.scrollHeight;
-    pinnedScrollTopRef.current = Math.max(0, Math.min(contentAnchorTopRef.current, el.scrollHeight - el.clientHeight));
-  }, [optimisticInput]);  useEffect(() => {
+    if (!el) return;
+    // 乐观气泡刚挂上就先钉一次（此时真实回合可能还没建出来）；之后每次 thread 更新
+    // 都由 [thread] 布局 effect 调同一个 pinSentMessage 复核并纠正。
+    pinSentMessage(el);
+  }, [optimisticInput, pinSentMessage]);  useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("theme", theme);
     // 同步窗口外观：深色模式下标题栏 overlay 与背景跟随主题（不再残留浅色外框）
@@ -12138,7 +12181,7 @@ const commandMatches = useMemo(() => {
    *  scrollTop 补偿）；贴近顶部时每向上滚一屏加载一页，离开顶部自然停止。 */
   function onTimelineScroll(event: React.UIEvent<HTMLDivElement>) {
     const el = event.currentTarget;
-    if (el.scrollTop > 480 || switchJumpRef.current) return;
+    if (el.scrollTop > 480 || switchJumpPending()) return;
     const id = threadRef.current?.id;
     if (id) void loadEarlierTurns(id);
   }
@@ -12186,7 +12229,7 @@ const commandMatches = useMemo(() => {
     setWorkStartedAt(knownRunning ? (runningStartedAtRef.current.get(id) ?? Date.now()) : null);
     setInterrupting(false);
     // 切会话后滚动位置属于旧会话，不能带过来；等新内容渲染后直接跳到最新消息。
-    switchJumpRef.current = true;
+    switchJumpRef.current = { id, at: Date.now() };
     // 渲染窗口一并重置：切换成本与会话历史长度、上次翻页深度无关（切回即锚定最新一屏）。
     // 游标保留在 turnsCursorRef，向上滚动时按需继续增量加载。
     if ((turnWindowRef.current[id] ?? TURN_WINDOW) !== TURN_WINDOW) {
@@ -12232,7 +12275,7 @@ const commandMatches = useMemo(() => {
         setModelId(initialModel);
         saveThreadModel(id, initialModel);
       }
-      switchJumpRef.current = true;
+      switchJumpRef.current = { id, at: Date.now() };
       // 线程已按当前用户偏好建好（调用方传入 sandbox/approvalPolicy），直接固化本地权限记录
       setSandbox(sandbox);
       setApprovalPolicy(approvalPolicy);
@@ -12267,7 +12310,7 @@ const commandMatches = useMemo(() => {
       if (cachedRunningTurn) markThreadRunning(id, cachedRunningTurn.id);
       // layout effect 会消费 switchJumpRef 瞬时滚到底；这里再兜底一次（带 settled 回调），
       // 防 markdown/图片在首帧后增高导致没贴底
-      requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled));
+      requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled, contentTailTarget));
     }
     // 频繁切换优化：缓存已秒开、该会话不在运行、且 30 秒内刚完整 resume 过 → 跳过这轮
     // resume。反复切换时每次都全量加载是卡顿主因；非运行会话期间无事件流，内容不可能变化。
@@ -12306,7 +12349,7 @@ const commandMatches = useMemo(() => {
       if (changed) {
         // 内容补齐会再次渲染：重设 switchJump，让这次渲染也瞬时定位（否则 smooth 动画
         // 又会从中间滑到底部，且动画目标基于渲染瞬间的 scrollHeight，易停在半路）
-        switchJumpRef.current = true;
+        switchJumpRef.current = { id, at: Date.now() };
       }
       // 历史内容即使没有数据变化，也重新提交一次，让旧会话应用当前折叠标题与样式。
       setThread(mergedLoaded);
@@ -12382,7 +12425,7 @@ const commandMatches = useMemo(() => {
           setActiveTurnId(null);
           setWorkStartedAt(null);
           markThreadStopped(id);
-          requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled)));
+          requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled, contentTailTarget)));
           requestAnimationFrame(() => composerInputRef.current?.focus());
           return;
         }
@@ -13455,8 +13498,9 @@ const commandMatches = useMemo(() => {
             <span>{activityLabel}</span>
           </div>}
           {/* 底部留白只按回合状态：活跃回合给 compact 跟随留白；空闲态一律不留空白。
-              乐观气泡不再触发大缓冲（它会在服务端消息确认后消失，大缓冲会残留成空白）。 */}
-          {(activeTurnId || sending || (optimisticInput && !optimisticConfirmed)) ? <div className="timeline-bottom-spacer compact" aria-hidden />
+              乐观气泡不再触发大缓冲（它会在服务端消息确认后消失，大缓冲会残留成空白）。
+              ⚠️ 留白**不参与落点计算**：contentBottomOf 会扣掉它的高度（见该函数注释）。 */}
+          {(activeTurnId || sending || (optimisticInput && !optimisticConfirmed)) ? <div className="timeline-bottom-spacer compact" ref={compactSpacerRef} aria-hidden />
             : null}
           {/* 排队消息的对话区反馈（用户要求：把发出去排队的内容正常展示出来）：
               排队中的消息在输入框上方有管理卡，但**对话区里完全看不到** —— 发完消息
@@ -13486,7 +13530,7 @@ const commandMatches = useMemo(() => {
             <button
               className="jump-bottom"
               title="回到底部"
-              onClick={() => { stickToBottomRef.current = true; anchorTopRef.current = false; const el = scrollRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }); }}
+              onClick={() => { stickToBottomRef.current = true; anchorTopRef.current = false; const el = scrollRef.current; if (el) el.scrollTo({ top: contentTailTarget(el), behavior: "smooth" }); }}
             ><ArrowDown size={16} /></button>
           )}
         </div>
