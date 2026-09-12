@@ -14,6 +14,8 @@ const STATE_FILE = path.join(
 
 export type FeishuEvents = {
   onMessage: (message: { from: string; chatId: string; text: string; replyHint: string }) => void;
+  /** 飞书语音消息：上层负责下载后 ASR，避免网关耦合语音模型。 */
+  onAudio?: (message: { from: string; chatId: string; messageId: string; fileKey: string; replyHint: string }) => void;
   log?: (level: "info" | "error", message: string) => void;
 };
 
@@ -66,6 +68,15 @@ export class FeishuGateway {
               const zh = post?.zh_cn ?? Object.values(post ?? {})[0] as any;
               text = (zh?.content ?? []).flat?.(9).map((node: any) => node?.text ?? node?.content ?? "").join("") ?? "";
             } catch { text = ""; }
+          } else if (msg.message_type === "audio") {
+            // 语音消息：交给上层下载 + ASR 转写（转写完按普通文本走管线）
+            try {
+              const fileKey = String(JSON.parse(msg.content ?? "{}")?.fileKey ?? "");
+              if (fileKey && chatId) {
+                this.events.onAudio?.({ from, chatId, messageId: String(msg.message_id ?? ""), fileKey, replyHint: chatId });
+              }
+            } catch (error: any) { this.log("error", `语音消息解析异常：${error?.message ?? error}`); }
+            return;
           }
           if (!text || !chatId) return;
           // @机器人 的文本会带 @_user_1 占位，去掉
@@ -87,6 +98,26 @@ export class FeishuGateway {
     try { fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true }); fs.writeFileSync(STATE_FILE, JSON.stringify({ appId: id, appSecret: secret }, null, 2), "utf8"); } catch { /* 持久化失败不阻塞 */ }
     this.log("info", `飞书机器人${this.botName ? `「${this.botName}」` : ""}已连接（长连接模式）`);
     return { ok: true, name: this.botName || "飞书机器人" };
+  }
+
+  /** 下载语音消息的音频文件到临时目录。飞书语音是 opus 编码（.ogg），上层负责用
+   *  ffmpeg 归一成 16k 单声道 wav 再喂 ASR——网关只管取到原始字节。 */
+  async downloadAudio(messageId: string, fileKey: string): Promise<string> {
+    if (!this.client) throw new Error("飞书网关未连接");
+    const result: any = await this.client.im.messageResources.get({
+      path: { message_id: messageId },
+      params: { file_key: fileKey, type: "file" },
+    });
+    let data: Buffer | null = null;
+    if (Buffer.isBuffer(result)) data = result;
+    else if (result?.data instanceof ArrayBuffer) data = Buffer.from(result.data);
+    else if (Buffer.isBuffer(result?.data)) data = result.data;
+    else if (typeof result?.arrayBuffer === "function") data = Buffer.from(await result.arrayBuffer());
+    else if (result) data = Buffer.from(result);
+    if (!data?.length) throw new Error("语音文件下载为空（检查应用是否有 im:message.resource 权限）");
+    const file = path.join(os.tmpdir(), `feishu-voice-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.ogg`);
+    await fs.promises.writeFile(file, data);
+    return file;
   }
 
   /** 回复消息：reply 参数给 received_message_id（群内回复）/ 否则 chatId 直发 */

@@ -19,6 +19,7 @@ type Settings = {
   barge: { gateDb: number; mode: "auto" | "manual" };
   modelHost: "auto" | "huggingface" | "hf-mirror";
   hotkey: { enabled: boolean; accelerator: string };
+  dictationHotkey: { enabled: boolean; accelerator: string };
   wake: { enabled: boolean; phrase: string };
   ball: { visible: boolean; hints: boolean };
 };
@@ -53,8 +54,8 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
   const [mics, setMics] = useState<{ deviceId: string; label: string }[]>([]);
   const [micTesting, setMicTesting] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
-  // 快捷键录入中
-  const [capturing, setCapturing] = useState(false);
+  // 快捷键录入中（通话快捷键 / 长按听写快捷键）
+  const [capturing, setCapturing] = useState<"call" | "dictation" | null>(null);
   // 唤醒词草稿（输完失焦/回车才落盘，避免每敲一个字就写一次文件）
   const [wakePhraseDraft, setWakePhraseDraft] = useState("");
   const micTestRef = useRef<{ stop: () => void } | null>(null);
@@ -172,11 +173,11 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
     wakePhraseSyncedRef.current = true;
   }, [settings?.wake?.phrase]);
 
-  /** 录入快捷键：按住组合键 → 翻译成 Electron accelerator 字符串并注册 */
-  const captureHotkey = useCallback(() => {
-    setCapturing(true);
+  /** 录入快捷键：按住组合键 → 翻译成 Electron accelerator 字符串 */
+  const captureHotkey = useCallback((kind: "call" | "dictation" = "call") => {
+    setCapturing(kind);
     const cleanup = () => {
-      setCapturing(false);
+      setCapturing(null);
       window.removeEventListener("keydown", onKey, true);
     };
     const onKey = (e: KeyboardEvent) => {
@@ -195,10 +196,14 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       if (!main) return;
       const accelerator = [...mods, main].join("+");
       cleanup();
-      apply({ hotkey: { enabled: true, accelerator } });
-      void window.codex.voiceHotkeySet({ accelerator, enabled: true }).then((r: any) => {
-        if (!r?.ok) onNotice(`快捷键注册失败：${r?.error ?? "可能被其它程序占用"}`);
-      });
+      if (kind === "dictation") {
+        apply({ dictationHotkey: { enabled: true, accelerator } });
+      } else {
+        apply({ hotkey: { enabled: true, accelerator } });
+        void window.codex.voiceHotkeySet({ accelerator, enabled: true }).then((r: any) => {
+          if (!r?.ok) onNotice(`快捷键注册失败：${r?.error ?? "可能被其它程序占用"}`);
+        });
+      }
     };
     window.addEventListener("keydown", onKey, true);
   }, [apply, onNotice]);
@@ -535,8 +540,8 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
         <div className="voice-card-head"><Keyboard size={15} /><span>按键启动</span></div>
         <div className="voice-card-body">
           <div className="voice-row">
-            <button className="secondary-setting" onClick={captureHotkey} disabled={capturing}>
-              {capturing ? "请按下组合键…（Esc 取消）" : "录入快捷键"}
+            <button className="secondary-setting" onClick={() => captureHotkey("call")} disabled={Boolean(capturing)}>
+              {capturing === "call" ? "请按下组合键…（Esc 取消）" : "录入快捷键"}
             </button>
             <code className="voice-kbd">{settings.hotkey.accelerator || "未设置"}</code>
             <label className="voice-toggle">
@@ -555,6 +560,31 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
           </div>
           <div className="voice-card-hint">
             系统级快捷键，按一下开始、再按一下结束。需要至少带一个修饰键（Ctrl / Shift / Alt），避免吞掉正常输入。
+          </div>
+        </div>
+      </div>
+
+      {/* 长按语音输入快捷键（仅应用内：按住开始听写，松开结束） */}
+      <div className="voice-card">
+        <div className="voice-card-head"><Mic size={15} /><span>长按语音输入</span></div>
+        <div className="voice-card-body">
+          <div className="voice-row">
+            <button className="secondary-setting" onClick={() => captureHotkey("dictation")} disabled={Boolean(capturing)}>
+              {capturing === "dictation" ? "请按下组合键…（Esc 取消）" : "录入长按快捷键"}
+            </button>
+            <code className="voice-kbd">{settings.dictationHotkey.accelerator || "未设置"}</code>
+            <label className="voice-toggle">
+              <input
+                type="checkbox"
+                checked={settings.dictationHotkey.enabled}
+                onChange={(e) => apply({ dictationHotkey: { enabled: e.target.checked, accelerator: settings.dictationHotkey.accelerator } })}
+                disabled={saving}
+              />
+              <span>启用</span>
+            </label>
+          </div>
+          <div className="voice-card-hint">
+            在应用内<strong>按住</strong>快捷键开始语音输入，松开即结束；识别出的中文字幕会放进输入框，确认后再点发送。默认 Alt + Space。
           </div>
         </div>
       </div>

@@ -19,6 +19,8 @@ export type VoiceStageState = {
   agentText: string;
   /** 通话是否进行中（决定舞台要不要显示） */
   active: boolean;
+  /** 是否是输入框语音听写（只转文字到 composer，不自动发送、不播报） */
+  dictating: boolean;
 };
 
 type Listener = (state: VoiceStageState) => void;
@@ -29,6 +31,7 @@ const initial: VoiceStageState = {
   userText: "",
   agentText: "",
   active: false,
+  dictating: false,
 };
 
 let current: VoiceStageState = initial;
@@ -94,4 +97,27 @@ export function setVoiceOpenSettingsHandler(fn: (() => void) | null): void {
 
 export function requestVoiceOpenSettings(): void {
   try { openSettingsHandler?.(); } catch { /* 打开设置失败不冒泡到 UI */ }
+}
+
+// ── 输入框旁的语音听写按钮：由 App 请求，VoiceCallFloat 执行真正的采集/停止 ──
+type DictationRequest = { action?: "toggle" | "start" | "stop"; send?: boolean };
+let dictationHandler: ((request?: DictationRequest) => void) | null = null;
+
+export function setVoiceDictationHandler(fn: ((request?: DictationRequest) => void) | null): void {
+  dictationHandler = fn;
+}
+
+export function requestVoiceDictation(request?: DictationRequest): void {
+  try { dictationHandler?.(request); } catch { /* 听写启动失败由 VoiceCallFloat 的 notice 呈现 */ }
+}
+
+// ── 听写 final 后「松手即发送」回调：App 注册 send()，VoiceCallFloat 在停止前请求 ──
+let dictationSendHandler: (() => void) | null = null;
+
+export function setVoiceDictationSendHandler(fn: (() => void) | null): void {
+  dictationSendHandler = fn;
+}
+
+export function requestVoiceDictationSend(): void {
+  try { dictationSendHandler?.(); } catch { /* 发送错误由现有 send 链路呈现 */ }
 }

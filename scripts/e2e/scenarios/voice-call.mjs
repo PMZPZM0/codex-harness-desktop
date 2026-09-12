@@ -86,6 +86,8 @@ export const steps = [
       // 「旁挂新增」的自动化体现：语音入口出现后，原有输入相关元素必须原样还在
       h.check("回归：输入框 .composer-editor 仍在", await h.exists(".composer-editor"));
       h.check("回归：发送键 .send-button 仍在", await h.exists(".send-button"));
+      h.check("输入框旁有语音按钮 .composer-mic-button", await h.exists(".composer-mic-button"));
+      h.check("主操作区只有一个发送/暂停按钮", Number(await h.count(".composer-right .send-button")) === 1);
       h.check("回归：附件按钮 .plus-spin-button 仍在", await h.exists(".plus-spin-button"));
       h.check("回归：输入框设置区 .composer-setting 仍在", (await h.count(".composer-setting")) > 0);
       h.check("回归：侧栏 aside.sidebar 仍在", await h.exists("aside.sidebar"));
@@ -215,9 +217,10 @@ export const steps = [
         return !!b;
       })()`);
       h.check("麦克风有「测试麦克风」按钮", Boolean(hasMicTest));
-      // 开关：麦克风 3 + 按键启动 + 语音唤醒 + 悬浮球显示 + 随机气泡 = 7
+      // 开关：麦克风 3 + 按键启动 + 长按听写 + 语音唤醒 + 悬浮球显示 + 随机气泡 = 8
       const toggleCount = await h.eval(`document.querySelectorAll('.voice-settings .voice-toggle input[type=checkbox]').length`);
-      h.check("开关齐全（麦克风3 + 按键 + 唤醒 + 悬浮球 + 气泡）", Number(toggleCount) === 7, `实际 ${toggleCount}`);
+      h.check("开关齐全（麦克风3 + 按键 + 长按听写 + 唤醒 + 悬浮球 + 气泡）", Number(toggleCount) === 8, `实际 ${toggleCount}`);
+      h.check("有「长按语音输入」卡片", String(fullText).includes("长按语音输入"));
       h.check("有「悬浮球」卡片", String(fullText).includes("悬浮球"));
       // 按键启动 + 语音唤醒卡片
       const uiText = await h.text(".voice-settings").catch(() => "");

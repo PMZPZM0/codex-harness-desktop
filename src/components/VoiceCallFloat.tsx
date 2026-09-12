@@ -20,7 +20,7 @@ import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf
 import { CAPTURE_WORKLET_SOURCE } from "../voice/capture-worklet";
 import { decodeFloat32Base64 } from "../voice/audio-transport";
 import VoiceMascot from "./VoiceMascot";
-import { patchVoiceStage, requestVoiceOpenSettings, resetVoiceStage, setVoiceLevel, setVoiceStopHandler } from "../voice/wave-level";
+import { patchVoiceStage, requestVoiceDictationSend, requestVoiceOpenSettings, resetVoiceStage, setVoiceDictationHandler, setVoiceLevel, setVoiceStopHandler } from "../voice/wave-level";
 
 type VoicePhase = "idle" | "starting" | "active";
 type VoiceState = "listening" | "thinking" | "speaking";
@@ -163,6 +163,8 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   const lastBargeAtRef = useRef(0);
   const speakingRef = useRef(false);
   const phaseRef = useRef<VoicePhase>("idle");
+  /** conversation=正常通话；dictation=只把识别内容回填输入框 */
+  const voiceModeRef = useRef<"conversation" | "dictation">("conversation");
   const dragRef = useRef<{ dx: number; dy: number; moved: boolean } | null>(null);
 
   phaseRef.current = phase;
@@ -544,9 +546,10 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   }, [stopPlayback]);
 
   // ---- 开始 / 结束通话 ----
-  const startCall = useCallback(async () => {
+  const startCall = useCallback(async (mode: "conversation" | "dictation" = "conversation") => {
     setNotice("");
-    if (!threadId) {
+    // 听写只转文字进 composer，不需要已有会话；正常语音通话仍要求绑定会话。
+    if (mode === "conversation" && !threadId) {
       setNotice("请先打开一个会话，再开始语音通话");
       setExpanded(true);
       return;
@@ -556,18 +559,20 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       setExpanded(true);
       return;
     }
+    voiceModeRef.current = mode;
     setPhase("starting");
     try {
-      const started = await window.codex.voiceStart(threadId);
+      const started = await window.codex.voiceStart(threadId || "", { mode });
       if (!started?.ok) throw new Error(started?.error || "语音引擎启动失败");
       await startCapture();
       setPhase("active");
-      setExpanded(true);
+      // 输入框听写不弹右下角通话面板；只显示 composer 上方实时字幕。
+      setExpanded(mode === "conversation");
       setUserText("");
       setAgentText("");
       agentTextRef.current = "";
-      // 通知输入框上方的舞台：通话开始（波浪 + 字幕由此显示）
-      patchVoiceStage({ active: true, mode: "listening", level: 0, userText: "", agentText: "" });
+      // 通知输入框上方的舞台：通话/听写开始（波浪 + 中文字幕由此显示）
+      patchVoiceStage({ active: true, mode: "listening", level: 0, userText: "", agentText: "", dictating: mode === "dictation" });
     } catch (error: any) {
       setPhase("idle");
       await teardown();
@@ -579,6 +584,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
 
   const endCall = useCallback(async () => {
     setPhase("idle");
+    voiceModeRef.current = "conversation";
     await teardown();
     await window.codex.voiceStop().catch(() => undefined);
     setState("listening");
@@ -594,6 +600,32 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     setVoiceStopHandler(() => { void endCall(); });
     return () => setVoiceStopHandler(null);
   }, [endCall]);
+
+  // composer 发送键旁的麦克风：启动/停止「只转文字、不自动发送」的听写模式。
+  useEffect(() => {
+    setVoiceDictationHandler((request) => {
+      const active = phaseRef.current === "active" || phaseRef.current === "starting";
+      const action = request?.action ?? "toggle";
+      if (action === "start") {
+        if (!active) void startCall("dictation");
+        return;
+      }
+      if (action === "stop") {
+        if (!active) return;
+        void (async () => {
+          // 先 flush ASR 尾句，再停 worker；否则松手时最后几个字还没命中 endpoint 会丢。
+          if (voiceModeRef.current === "dictation") await window.codex.voiceDictationFinish().catch(() => undefined);
+          await endCall();
+          // final 字幕更新 prompt 是 React state；下一帧再发，避免 send() 读到旧 prompt。
+          if (request?.send) window.setTimeout(() => requestVoiceDictationSend(), 120);
+        })();
+        return;
+      }
+      if (active) void endCall();
+      else void startCall("dictation");
+    });
+    return () => setVoiceDictationHandler(null);
+  }, [endCall, startCall]);
 
   // ── 按键启动：全局快捷键（应用没聚焦也能唤起）→ 切换通话 ──
   useEffect(() => {
