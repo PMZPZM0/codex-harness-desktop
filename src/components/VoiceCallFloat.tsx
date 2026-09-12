@@ -33,52 +33,51 @@ const BARGUE_COOLDOWN_MS = 1200;
 
 /**
  * 悬浮球的随机短提示词——按任务状态**分池**，每条池里是"运行状态/搞笑话语/个性化"三类混合。
- * 不再是固定的 6 条随机抽：用户说"根据任务状态多种提示词"——
- * 待机时偏闲聊/搞怪，聆听时偏鼓励/个性化，思考时偏调侃/思考，播报时偏"我正在说话"；
- * 模型没就绪时偏引导（"先去设置页下载"那种）。
+ *
+ * **刻意写得很短（≤6 字）**：气泡是从悬浮球往左弹出的，太长会盖住输入框。
+ * 所以每条都压到 6 个字以内，配合设置里的"是否弹出"开关，不想要可以关掉。
+ * 弹的频率也调低了（15~25 秒一次，显示 3 秒）——之前 7~12 秒太吵。
  */
 const HINT_POOLS: Record<string, string[]> = {
   // 待机（ball 显示但通话没开）
   idle: [
-    "点我一下开始说话 →",
-    "需要我帮忙就说一声",
-    "敲一行字也能找我，语音不是唯一的",
-    "外放的话调高打断灵敏度（设置里）",
-    "右键我可以隐身 / 跳到设置",
-    "今天想做点啥？",
+    "点我开始 →",
+    "戳我说话",
+    "右键可隐藏",
+    "今天聊点啥",
+    "我在呢",
+    "说句话呗",
   ],
   // 启动中
   starting: [
-    "模型在起床，3 秒就好…",
-    "麦克风要开了，先别出声",
-    "加载说话脑，loading…",
+    "准备中…",
+    "马上好…",
   ],
   // 聆听
   listening: [
-    "我在听，慢慢说 →",
-    "中英都行，哪怕混着说",
-    "我听到就打断你，不浪费你时间",
-    "这段话儿等下让我想想…",
+    "我在听…",
+    "慢慢说",
+    "嗯，在听",
+    "继续说",
   ],
   // 思考
   thinking: [
-    "嗯让我想想…",
-    "这个问题有意思",
-    "正在拼拼图…",
-    "哎这个角度我还没想过",
+    "想想…",
+    "让我想想",
+    "算一下…",
+    "有意思",
   ],
   // 播报
   speaking: [
-    "我在说，你随便打断",
-    "外放记得调打断灵敏度",
-    "下一句马上接上…",
-    "我尽量说短点，别嫌我啰嗦",
+    "我在说…",
+    "可打断我",
+    "稍等…",
   ],
   // 模型没下完
   modelsMissing: [
-    "我还没准备好，先到设置下个模型？",
-    "脑子还在快递路上（设置 → 开发工具）",
-    "点我之前先到「开发工具」下载语音模型",
+    "先下模型",
+    "去设置下",
+    "还没准备好",
   ],
 };
 
@@ -197,17 +196,19 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     }).catch(() => undefined);
   }, []);
 
-  // 随机短提示气泡：按当前 phase/state/模型就绪 选池子，每 7~12 秒冒一句，4 秒后收起
+  // 随机短提示气泡：按当前 phase/state/模型就绪 选池子
+  // 频率刻意调低：首次 3 秒，之后每 15~25 秒冒一句，显示 3 秒后收起
+  // （之前 7~12 秒一次、显示 4 秒——用户反馈"太吵 + 太长会盖住输入框"）
   useEffect(() => {
     if (!hintsEnabled) { setHint(null); return; }
     let timer = 0;
     let hideTimer = 0;
     const tick = () => {
       setHint(pickHint(phase, state, models?.ready ?? false));
-      hideTimer = window.setTimeout(() => setHint(null), 4000);
-      timer = window.setTimeout(tick, 7000 + Math.random() * 5000);
+      hideTimer = window.setTimeout(() => setHint(null), 3000);
+      timer = window.setTimeout(tick, 15000 + Math.random() * 10000);
     };
-    timer = window.setTimeout(tick, 1500);
+    timer = window.setTimeout(tick, 3000);
     return () => { window.clearTimeout(timer); window.clearTimeout(hideTimer); };
     // 依赖 phase/state/modelsReady —— 状态变了下一条提示会立刻刷新成对应池
   }, [hintsEnabled, phase, state, models?.ready]);
