@@ -118,6 +118,38 @@ export const steps = [
   },
 
   {
+    name: "④bis **切会话不得重播正文**（诊断：揭示动画的 animated 字数不得异常大）",
+    run: async (h) => {
+      // 清空探针 → 切到 B → 切回 A → 看这一路上有没有「把已有正文整段重播」的揭示。
+      await h.eval(`(window.__adbg = [])`);
+      await h.eval(`(() => {
+        const rows = [...document.querySelectorAll(".thread-row")];
+        const t = rows.find((r) => (r.innerText || "").includes("B]")) || rows[1] || rows[0];
+        t?.querySelector("button")?.click();
+        return true;
+      })()`);
+      await wait(2500);
+      await h.eval(`(() => {
+        const rows = [...document.querySelectorAll(".thread-row")];
+        const t = rows.find((r) => (r.innerText || "").includes("A]")) || rows[0];
+        t?.querySelector("button")?.click();
+        return true;
+      })()`);
+      await wait(3000);
+
+      const reveals = await h.eval(`(() => (window.__adbg || []).filter((e) => e && e.r === "reveal"))()`);
+      const maxAnimated = reveals.length ? Math.max(...reveals.map((e) => Number(e.animated) || 0)) : 0;
+      const totalAnimated = reveals.reduce((a, e) => a + (Number(e.animated) || 0), 0);
+      console.log(`  [重播取证] 切会话期间揭示次数=${reveals.length} 最大单次 animated=${maxAnimated} 累计=${totalAnimated}`);
+      if (reveals.length) console.log(`  [重播取证] 明细: ${JSON.stringify(reveals.slice(-6))}`);
+      // 判定：切会话只是重新挂载，已有正文应当**直接显示**（animated 接近 0）。
+      // 若单次 animated 达到数百字，就是把整段正文重播了一遍。
+      h.check("切会话没有整段重播正文（单次揭示 animated < 200 字）", maxAnimated < 200, `maxAnimated=${maxAnimated} reveals=${JSON.stringify(reveals.slice(-6))}`);
+      await h.screenshot("切会话重播取证");
+    },
+  },
+
+  {
     name: "⑤ 再切回 B，两个会话都还能用 + 无渲染层报错",
     run: async (h) => {
       await h.eval(`(() => {
