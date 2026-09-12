@@ -7936,6 +7936,14 @@ export default function App() {
   const anchorTurnIdRef = useRef<string | null>(null);
   /** 锚元素的内容坐标兜底值（锚元素已卸载时用） */
   const contentAnchorTopRef = useRef(0);
+  /** 锚点顶端**未减去偏移**的内容坐标：用来判断内容是否已长过一屏。
+      超出「锚点顶端 + 视口高」就说明回复已经被推到屏幕外，必须交回跟随，
+      否则视口钉在原地、正文一路流出屏幕（用户实测：大片空白、看不到最新内容）。 */
+  const anchorTopOffsetRef = useRef(0);
+  /** 钉顶时的内容高度基线：回复每长出一段，就按**增长量**把视口往下推同样多，
+      既保证新内容始终可见（用户要的自动跟随），又不会像旧版那样每个字重推整屏
+      （那正是「出字上下跳动」的来源）。 */
+  const anchorHeightBaselineRef = useRef(0);
   /** 锚顶专用底部留白：把「锚点下方」补足到一整屏，让短消息也能钉到顶部。
       几何原因（09-12 实测探针实锤）：视口高 622px、短消息只有 72px，若下方没有
       内容顶着，scrollTop 会被浏览器钳在 maxScroll → 消息停在视口中间，随后被贴底
@@ -7959,8 +7967,6 @@ export default function App() {
   // （App 是 1.1MB 单组件，多会话时 workStartedAt 几乎长期非空 = 常驻开销）。
   // 相对时间的显示由各子组件自持的 30s tick 负责，App 层不再需要。
   const scrollRef = useRef<HTMLDivElement>(null);
-  /** 会话切换起始时刻（诊断「切会话卡」用）：openThread 落笔，thread 真正换上去时结算。 */
-  const switchStartRef = useRef(0);
   const timelineWrapRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -8823,6 +8829,26 @@ const commandMatches = useMemo(() => {
     let lastTop = scroller.scrollTop; // 供 update 识别「向上滚动」（拖滚动条/键盘）
     const update = () => {
       const dist = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      // ── 钉顶模式的自动跟随（09-12 用户实测反馈「回复流出屏幕、看不到最新」）──
+      // 钉顶保持位置不变，但**内容增长多少就把视口往下推多少**：
+      //   · 新内容始终落在视口内（不必手动滚）；用户要的「自动跟随」；
+      //   · 只按增量滚动，不会像旧版那样每个字重推整屏 → 不再有出字跳动。
+      // 判定放在方向判定之前，并同步推进 lastTop，避免被当成用户滚动而误解除钉顶。
+      if (anchorTopRef.current) {
+        const growth = scroller.scrollHeight - anchorHeightBaselineRef.current;
+        if (growth > 2) {
+          const target = Math.min(scroller.scrollTop + growth, scroller.scrollHeight - scroller.clientHeight);
+          anchorHeightBaselineRef.current = scroller.scrollHeight;
+          if (target > scroller.scrollTop) {
+            selfScrollUntilRef.current = Date.now() + 80;
+            scrollToOffsetInstant(scroller, target);
+            pinnedScrollTopRef.current = scroller.scrollTop;
+            lastTop = scroller.scrollTop;
+            return;
+          }
+        }
+        anchorHeightBaselineRef.current = scroller.scrollHeight;
+      }
       // 程序滚动的抑制窗内：只刷新基线，不做方向判定（否则自己的钉顶/贴底
       // 会被当成用户滚动，误解除钉顶——09-12 调试探针实锤）
       if (Date.now() < selfScrollUntilRef.current) { lastTop = scroller.scrollTop; return; }
@@ -8953,9 +8979,14 @@ const commandMatches = useMemo(() => {
         const aH = a.getBoundingClientRect().height;
         anchorSpacerRef.current.style.height = `${Math.max(0, Math.round(el.clientHeight - aH))}px`;
       }
-      if (a && a.isConnected) contentAnchorTopRef.current = contentOffsetTop(a, el) - ANCHOR_TOP_OFFSET_PX;
+      if (a && a.isConnected) {
+        anchorTopOffsetRef.current = contentOffsetTop(a, el);
+        contentAnchorTopRef.current = anchorTopOffsetRef.current - ANCHOR_TOP_OFFSET_PX;
+      }
       selfScrollUntilRef.current = Date.now() + 80;
       scrollToOffsetInstant(el, contentAnchorTopRef.current);
+      // 基线 = 当前内容高度：之后 update() 只按「增长量」温和跟随
+      anchorHeightBaselineRef.current = el.scrollHeight;
       // 记下本次钉顶实际落点（可能被 clamp），供 update() 区分程序滚动与用户滚到底
       pinnedScrollTopRef.current = el.scrollTop;
       return;
@@ -8981,10 +9012,12 @@ const commandMatches = useMemo(() => {
       const aH = anchor.getBoundingClientRect().height;
       anchorSpacerRef.current.style.height = `${Math.max(0, Math.round(el.clientHeight - aH))}px`;
     }
-    contentAnchorTopRef.current = contentOffsetTop(anchor, el) - ANCHOR_TOP_OFFSET_PX;
+    anchorTopOffsetRef.current = contentOffsetTop(anchor, el);
+    contentAnchorTopRef.current = anchorTopOffsetRef.current - ANCHOR_TOP_OFFSET_PX;
     anchorElRef.current = anchor;
     selfScrollUntilRef.current = Date.now() + 80;
     scrollToOffsetInstant(el, contentAnchorTopRef.current);
+    anchorHeightBaselineRef.current = el.scrollHeight;
     pinnedScrollTopRef.current = el.scrollTop;
   }, [optimisticInput]);
   useEffect(() => {
