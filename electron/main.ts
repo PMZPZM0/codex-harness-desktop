@@ -3108,6 +3108,90 @@ function openaiJwtClaims(idToken?: string): Record<string, any> {
     return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
   } catch { return {}; }
 }
+// ── 导入账号文件直接登录（复刻 sub2api account_codex_import 的格式面，09-12）──
+// 接受四种形态（可混用；JSON 数组 / 连续 JSON 流 / 每行一个 JSON 或裸 token 均可）：
+//   ① 裸 accessToken（一行一个，非 JWT 也收）
+//   ② Codex CLI auth.json：{tokens:{access_token,refresh_token,id_token}, last_refresh}
+//   ③ 扁平 JSON：{access_token|accessToken|token, refresh_token?, id_token?, email?, chatgpt_account_id?}
+//   ④ 上述任意整体包成 JSON 数组
+// 身份识别：id_token/access_token 是 JWT → 解 `https://api.openai.com/auth` claims
+// （chatgpt_account_id / chatgpt_plan_type / email）——与 capture-login 的 vault 结构完全一致。
+function openaiImportEntries(content: string): any[] {
+  const trimmed = String(content ?? "").trim();
+  if (!trimmed) return [];
+  const flatten = (v: any): any[] => (Array.isArray(v) ? v.flatMap(flatten) : [v]);
+  try {
+    return flatten(JSON.parse(trimmed));
+  } catch { /* 整体不是合法 JSON → 按行拆（NDJSON / 每行一个裸 token） */ }
+  const out: any[] = [];
+  for (const line of trimmed.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    if (t.startsWith("{") || t.startsWith("[")) {
+      try { out.push(...flatten(JSON.parse(t))); continue; } catch { /* 当作裸 token 处理 */ }
+    }
+    out.push(t);
+  }
+  return out;
+}
+function openaiImportPick(obj: any, paths: string[][]): string {
+  for (const path of paths) {
+    let cur = obj;
+    for (const key of path) {
+      if (cur == null || typeof cur !== "object") { cur = undefined; break; }
+      cur = cur[key];
+    }
+    const value = typeof cur === "string" ? cur.trim() : "";
+    if (value) return value;
+  }
+  return "";
+}
+ipcMain.handle("openai:import-file", async (_e, input: { contents: string[] }) => {
+  const contents = Array.isArray(input?.contents) ? input.contents : [];
+  if (!contents.length) throw new Error("没有可导入的文件内容");
+  const accounts = await readOpenaiVault();
+  const items: { index: number; name: string; id?: string; email?: string; loginable?: boolean; action: "imported" | "updated" | "failed"; message?: string }[] = [];
+  let index = 0;
+  for (const content of contents) {
+    for (const entry of openaiImportEntries(content)) {
+      index += 1;
+      const name = `#${index}`;
+      try {
+        const raw = typeof entry === "string" ? { access_token: entry } : entry;
+        if (raw == null || typeof raw !== "object") throw new Error("无法识别的条目格式");
+        const tokens = {
+          access_token: openaiImportPick(raw, [["tokens", "access_token"], ["tokens", "accessToken"], ["access_token"], ["accessToken"], ["token"]]),
+          refresh_token: openaiImportPick(raw, [["tokens", "refresh_token"], ["tokens", "refreshToken"], ["refresh_token"], ["refreshToken"]]),
+          id_token: openaiImportPick(raw, [["tokens", "id_token"], ["tokens", "idToken"], ["id_token"], ["idToken"]]),
+        };
+        if (!tokens.access_token) throw new Error("缺少 accessToken（无法登录）");
+        const claims = openaiJwtClaims(tokens.id_token || tokens.access_token);
+        const auth = claims["https://api.openai.com/auth"] ?? {};
+        const email = openaiImportPick(raw, [["email"], ["user", "email"]]) || String(claims.email ?? "");
+        const accountId = openaiImportPick(raw, [["chatgpt_account_id"], ["chatgptAccountId"], ["account_id"], ["accountId"], ["account", "id"], ["account", "account_id"], ["account", "chatgpt_account_id"]]) || String(auth.chatgpt_account_id ?? "");
+        // JWT exp 已过期只警告不阻断：refresh_token 仍在时引擎激活后会自行刷新
+        let message: string | undefined;
+        if (claims.exp && Number(claims.exp) * 1000 < Date.now()) message = "token 已过期（凭 refresh_token 激活后会自动刷新）";
+        const id = email || accountId || String(claims.sub ?? "") || `import-${Date.now()}-${index}`;
+        const entryOut: OpenaiVaultAccount = { id, email, tokens: { ...tokens, account_id: accountId || undefined }, savedAt: Date.now() };
+        const idx = accounts.findIndex((a) => a.id === id);
+        if (idx >= 0) accounts[idx] = entryOut; else accounts.push(entryOut);
+        // loginable = 带 id_token（写 auth.json 后引擎才认作登录态）；裸 token 只入 vault 不作为切换目标
+        items.push({ index, name: email || id, id, email, loginable: Boolean(tokens.id_token), action: idx >= 0 ? "updated" : "imported", message });
+      } catch (error: any) {
+        items.push({ index, name, action: "failed", message: String(error.message ?? error) });
+      }
+    }
+  }
+  await writeOpenaiVault(accounts);
+  return {
+    total: items.length,
+    imported: items.filter((i) => i.action === "imported").length,
+    updated: items.filter((i) => i.action === "updated").length,
+    failed: items.filter((i) => i.action === "failed").length,
+    items,
+  };
+});
 ipcMain.handle("openai:accounts", async () => {
   const [accounts, current] = await Promise.all([readOpenaiVault(), readOpenaiAuth()]);
   return accounts.map((a) => {

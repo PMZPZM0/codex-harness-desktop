@@ -3344,6 +3344,42 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActive
   const timerRef = useRef<number | null>(null);
   useEffect(() => { const t = window.setInterval(() => setNowTick(Date.now()), 30_000); return () => window.clearInterval(t); }, []);
   const authOpenedRef = useRef(false);
+  // 导入账号文件直接登录（复刻 sub2api 的 Codex 导入格式面）：裸 accessToken 文本 /
+  // Codex CLI auth.json / 扁平 JSON，多选一次导入；导入即切换生效（写 auth.json + 重启引擎 + 启用订阅）。
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const [importing, setImporting] = useState(false);
+  const onImportFiles = async (files: FileList | null) => {
+    const list = Array.from(files ?? []);
+    if (!list.length) return;
+    setImporting(true); setErr("");
+    try {
+      const contents: string[] = [];
+      for (const file of list) contents.push(await file.text());
+      const result = await window.codex.openaiImportFile({ contents });
+      const okItems = result.items.filter((i) => i.action !== "failed");
+      const failText = result.items.filter((i) => i.action === "failed").map((i) => `#${i.index} ${i.message ?? ""}`).join("；");
+      if (!okItems.length) throw new Error(failText || "没有可识别的账号条目（支持 auth.json、扁平 token JSON、每行一个 accessToken）");
+      await reload();
+      // 导入即登录：切到第一个「可登录」条目（带 id_token，写 auth.json 后引擎才认）；
+      // 裸 token 条目只入 vault 作存档，不能构成登录态。切换后必须再刷一次：账号卡的
+      // 「使用中」徽章读的是这次 reload 的 active 快照。
+      const first = okItems.find((i) => i.id && i.loginable);
+      if (first?.id) {
+        const sw = await window.codex.openaiAccountSwitch(first.id);
+        await onActivate(OFFICIAL_MODELS);
+        onActiveChange?.(sw.email);
+        await reload();
+        onNotice(`导入完成：新增 ${result.imported}、更新 ${result.updated}、失败 ${result.failed}；已切换登录 ${sw.email}，可以直接对话`);
+      } else {
+        onNotice(`导入完成：新增 ${result.imported}、更新 ${result.updated}、失败 ${result.failed}`);
+      }
+    } catch (e: any) {
+      setErr("导入失败：" + (e.message ?? e));
+    } finally {
+      setImporting(false);
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  };
   const reload = useCallback(async () => {
     try { const list = await window.codex.openaiAccounts(); setAccounts(list); return list as { id: string; email: string; loggedIn?: boolean }[]; } catch { setAccounts([]); return []; }
   }, []);
@@ -3521,12 +3557,18 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActive
             </div>
           );
         })}
-        {!accounts.length && <div className="relay-plan-card"><div className="relay-plan-card-head"><Bot size={15} /><strong>暂无已保存账号</strong></div><p>点下方「添加 OpenAI 账号」，ChatGPT 设备码登录，可添加多个统一监控。</p></div>}
+        {!accounts.length && <div className="relay-plan-card"><div className="relay-plan-card-head"><Bot size={15} /><strong>暂无已保存账号</strong></div><p>点下方「添加 OpenAI 账号」设备码登录，或「导入账号文件」用已有的 auth.json / token 直接登入。</p></div>}
         <button className="relay-plan-card relay-add-card" onClick={() => setLoginModalOpen(true)}>
           <Plus size={18} />
           <strong>添加 OpenAI 账号</strong>
           <small>ChatGPT 设备码登录 · 自动启用订阅</small>
         </button>
+        <button className="relay-plan-card relay-add-card" disabled={importing} title="支持 Codex CLI 的 auth.json、扁平 token JSON、每行一个 accessToken 的文本（可多选）；导入后自动登录生效" onClick={() => importInputRef.current?.click()}>
+          {importing ? <Spinner /> : <FileUp size={18} />}
+          <strong>导入账号文件</strong>
+          <small>auth.json / token 文本 · 导入即登录生效</small>
+        </button>
+        <input ref={importInputRef} type="file" multiple accept=".json,.txt,.jsonl,application/json,text/plain" style={{ display: "none" }} onChange={(event) => void onImportFiles(event.target.files)} />
       </div>
       {manageOpen && (() => {
         const a = accounts.find((x) => x.email === manageEmail);
