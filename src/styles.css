@@ -21373,7 +21373,9 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 .voice-call-min {
   position: absolute;
-  top: 14px;
+  /* 顶到 top:56px：系统标题栏 overlay（叉掉/最小化钮，高 43px）画在右上角，
+     收起钮放 14px 会跟叉掉钮叠在一起（用户截图实锤）——挪到按钮区下方 */
+  top: 56px;
   right: 14px;
   border: 1px solid rgba(255, 255, 255, .16);
   background: rgba(255, 255, 255, .06);
