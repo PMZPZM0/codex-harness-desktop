@@ -24,6 +24,8 @@ type DownloadState = { percent: number; message: string; mode: "download" | "imp
 export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: string) => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [downloading, setDownloading] = useState<DownloadState>(null);
+  // 音色克隆模型（ZipVoice）独立下载状态：与基础语音模型分开显示/取消
+  const [zipDownloading, setZipDownloading] = useState<DownloadState>(null);
   const unsubRef = useRef<(() => void) | null>(null);
 
   const refresh = useCallback(() => {
@@ -42,9 +44,20 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
     refresh();
     const unsub = window.codex.onVoiceEvent((event: any) => {
       if (event?.type === "download") {
+        if (event.target === "zipvoice") {
+          setZipDownloading((d) => ({ percent: Number(event.percent ?? -1), message: String(event.message ?? ""), mode: d?.mode ?? "download" }));
+          return;
+        }
         setDownloading((d) => ({ percent: Number(event.percent ?? -1), message: String(event.message ?? ""), mode: d?.mode ?? "download" }));
       }
       if (event?.type === "downloadDone") {
+        if (event.target === "zipvoice") {
+          setZipDownloading(null);
+          refresh();
+          if (event.ok) onNotice("音色克隆模型就绪，可在语音设置里导入/录制你的专属音色");
+          else onNotice(`音色克隆模型安装失败：${event.error ?? "未知"}`);
+          return;
+        }
         setDownloading(null);
         refresh();
         if (event.ok) onNotice("语音模型就绪");
@@ -93,8 +106,20 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
 
   const ready = status ? status.ready === status.total && status.total > 0 : false;
   const sizeMB = status ? Math.round(status.bytes / 1024 / 1024) : null;
+  const zipReady = Boolean((status as any)?.zipvoice?.ready);
+
+  const installZipvoice = useCallback(() => {
+    setZipDownloading({ percent: 0, message: "准备下载音色克隆模型…", mode: "download" });
+    window.codex.voiceZipvoiceInstall().catch((e: any) => { setZipDownloading(null); onNotice(`下载失败：${e?.message ?? e}`); });
+  }, [onNotice]);
+
+  const cancelZipvoice = useCallback(() => {
+    window.codex.voiceZipvoiceCancel();
+    setZipDownloading(null);
+  }, []);
 
   return (
+    <>
     <div className="voice-devtools-card">
       <div className="voice-devtools-card-head">
         <div className="voice-devtools-icon">
@@ -169,5 +194,48 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
         )}
       </div>
     </div>
+
+    {/* 音色克隆模型（ZipVoice）：zero-shot 克隆，导入/录制一段参考音频即可拥有专属音色。
+        按需下载、不进安装包；与基础语音模型（识别+合成）独立安装、独立卸载。 */}
+    <div className="voice-devtools-card" style={{ marginTop: 12 }}>
+      <div className="voice-devtools-card-head">
+        <div className="voice-devtools-icon">
+          {zipDownloading ? <LoaderCircle className="spin" size={20} /> : zipReady ? <Mic size={20} /> : <Download size={20} />}
+        </div>
+        <div className="voice-devtools-title">
+          <strong>音色克隆模型</strong>
+          <span className="voice-devtools-sub">ZipVoice zero-shot 克隆（中英双语 · 约 156MB）——导入或录制一段参考音频，就能用那个嗓音朗读任意文本；现有 5 个内置音色不受影响</span>
+        </div>
+        <span className={`voice-devtools-badge ${zipReady ? "ok" : "missing"}`}>
+          {status ? (zipReady ? "已就绪" : "未安装") : "读取中…"}
+        </span>
+      </div>
+
+      <div className="voice-devtools-body">
+        {zipDownloading && (
+          <div className="voice-devtools-progress">
+            <div className="voice-devtools-progress-bar"><span style={{ width: `${zipDownloading.percent >= 0 ? zipDownloading.percent : 6}%` }} /></div>
+            <small>{zipDownloading.message}（{zipDownloading.percent >= 0 ? zipDownloading.percent + "%" : "…"}）</small>
+          </div>
+        )}
+      </div>
+
+      <div className="voice-devtools-actions">
+        {zipDownloading ? (
+          <button className="secondary-setting" onClick={cancelZipvoice}>
+            <X size={13} />取消下载
+          </button>
+        ) : zipReady ? (
+          <button className="secondary-setting" onClick={reveal}>
+            <FolderOpen size={13} />打开模型目录
+          </button>
+        ) : (
+          <button className="primary-setting" onClick={installZipvoice}>
+            <Download size={13} />下载音色克隆模型
+          </button>
+        )}
+      </div>
+    </div>
+    </>
   );
 }

@@ -314,8 +314,11 @@ contextBridge.exposeInMainWorld("codex", {
     ready: boolean; missing: string[]; readyFiles: number; totalFiles: number;
     bytes: number; root: string;
     repos: { id: string; lastSegment: string }[];
+    zipvoice?: { ready: boolean; bytes: number; dir: string };
   }>,
   voiceModelsInstall: () => ipcRenderer.invoke("voice:models-install") as Promise<{ ok: boolean; error?: string }>,
+  voiceZipvoiceInstall: () => ipcRenderer.invoke("voice:zipvoice-install") as Promise<{ ok: boolean; error?: string }>,
+  voiceZipvoiceCancel: () => ipcRenderer.invoke("voice:zipvoice-cancel") as Promise<{ ok: boolean }>,
   voiceModelsCancel: () => ipcRenderer.invoke("voice:models-cancel") as Promise<{ ok: boolean }>,
   voiceModelsImport: (input: { sourceDir: string }) => ipcRenderer.invoke("voice:models-import", input) as Promise<{ ok: boolean; failures: string[] }>,
   voiceModelsReveal: () => ipcRenderer.invoke("voice:models-reveal") as Promise<string>,
