@@ -162,7 +162,19 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       };
       setMicTesting(true);
     } catch (e: any) {
-      onNotice(`麦克风测试失败：${e?.name ?? ""} ${e?.message ?? e}`);
+      // 报错人话化：用户截图反馈「麦克风测试用不了」时，原始报错只有英文名
+      // （实测无设备机器上是 NotFoundError | Requested device not found），看不出该修什么。
+      const name = String(e?.name ?? "");
+      const friendly = name === "NotFoundError"
+        ? "系统里没有检测到可用的麦克风输入设备——请确认麦克风已接好、未被禁用，且已在「Windows 设置 → 隐私和安全性 → 麦克风」里允许桌面应用使用。"
+        : name === "NotAllowedError"
+          ? "麦克风权限被拒绝——请在「Windows 设置 → 隐私和安全性 → 麦克风」里允许桌面应用访问麦克风，然后重试。"
+          : name === "NotReadableError"
+            ? "麦克风被其它程序占用或硬件无响应——关掉正在录音/通话的程序（会议软件、录音机等）后重试。"
+            : name === "OverconstrainedError"
+              ? "所选麦克风当前不可用（可能已拔出）——换成「系统默认设备」再试。"
+              : `${name || "未知错误"} ${e?.message ?? e}`;
+      onNotice(`麦克风测试失败：${friendly}`);
     }
   }, [micTesting, settings, onNotice]);
 
@@ -317,6 +329,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
             {mics.map((m) => (
               <option key={m.deviceId} value={m.deviceId}>{m.label}</option>
             ))}
+            {!mics.length && <option value="" disabled>（未检测到麦克风设备）</option>}
           </select>
           <div className="voice-row">
             <button className="secondary-setting" onClick={() => void toggleMicTest()}>
@@ -329,7 +342,9 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
             )}
           </div>
           <div className="voice-card-hint">
-            {micTesting ? "对着麦克风说话——上面的电平条会跳动，说明这个设备能正常拾音。" : "选不到想要的麦克风？先在别的程序里禁用/拔掉多余的，或点「测试麦克风」确认拾音。"}
+            {!mics.length
+              ? "未检测到任何麦克风输入设备——本机的语音通话 / 语音输入用不了（不影响渠道语音消息转写，那不需要本机麦克风）。请检查设备是否接好、是否被禁用。"
+              : micTesting ? "对着麦克风说话——上面的电平条会跳动，说明这个设备能正常拾音。" : "选不到想要的麦克风？先在别的程序里禁用/拔掉多余的，或点「测试麦克风」确认拾音。"}
           </div>
           <div className="voice-toggles">
             <label className="voice-toggle">
