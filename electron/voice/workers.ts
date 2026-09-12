@@ -114,6 +114,11 @@ parentPort.on("message", (msg) => {
         text: msg.text,
         sid: msg.sid,
         speed: msg.speed,
+        // sherpa-onnx-node 默认 true，会用 napi_create_external_buffer 返回音频。
+        // Electron 21+ 禁止 native addon 创建 external buffer，generate() 内部就会抛：
+        // "External buffers are not allowed"。必须从源头关掉，让 addon 返回普通 V8 buffer。
+        // 见 sherpa-onnx issue #3108 / node_modules types.js 的 TtsRequest 定义。
+        enableExternalBuffer: false,
       });
       // sherpa-onnx 返回的 samples 背后是 native/external ArrayBuffer，不能直接
       // transfer（截图里的 "External buffers are not allowed" 就是这么来的）。
