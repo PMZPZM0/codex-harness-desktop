@@ -506,12 +506,31 @@ ipcMain.on("voice:audio", (_event, samples: Float32Array) => {
   void voiceService.handleAudio(samples).catch((error) => console.error("[voice] audio:", error));
 });
 
+/**
+ * TTS 音频跨 Electron IPC 的安全封装。
+ * Float32Array 直接从 worker/native 一路返回给 renderer 时，Electron 的 structured clone
+ * 会拒绝某些 external backing store（"External buffers are not allowed"）。
+ * 所以主进程统一转 Base64 字符串：字符串 IPC 最稳定，渲染层再还原 Float32Array。
+ */
+function voiceAudioForIpc(result: Awaited<ReturnType<VoiceService["speak"]>>):
+  | { ok: true; sampleRate: number; audioBase64: string }
+  | { ok: false; error: string } {
+  if (!result.ok) return result;
+  const samples = result.samples;
+  const bytes = Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength);
+  return {
+    ok: true,
+    sampleRate: result.sampleRate,
+    audioBase64: bytes.toString("base64"),
+  };
+}
+
 ipcMain.handle("voice:speak", async (_event, text: string, options?: { sid?: number; speed?: number }) => {
-  return voiceService.speak(String(text ?? ""), options);
+  return voiceAudioForIpc(await voiceService.speak(String(text ?? ""), options));
 });
 ipcMain.handle("voice:preview-voice", async (_event, input?: { sid?: number; speed?: number; text?: string }) => {
   // 设置页「音色试听」：不必在通话中，内部会临时起一个 TTS worker，合成完即销毁
-  return voiceService.previewVoice(input ?? {});
+  return voiceAudioForIpc(await voiceService.previewVoice(input ?? {}));
 });
 
 // ── 语音通话「按键启动」：系统级快捷键（Electron globalShortcut）──
