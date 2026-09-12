@@ -84,6 +84,26 @@ async function sendAndAssertPinned(h, text, label) {
     return { gap: Math.round(g.top - s.top), away: Math.round(scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight) };
   })()`);
   h.check(`[${label}] 流式期间钉顶稳定（移动 <40px）`, before !== null && Math.abs(after.gap - before) < 40, JSON.stringify({ before, after }));
+  // ── 防抖断言（09-12 用户实测「每次新一行出字，消息整体往上抖一下」）──
+  // 在**出字进行中**连续采样，比较每一次相邻采样的消息位置：抖动 = 相邻跳变。
+  // 用「相邻跳变」而不是「总位移」——总位移会因为「攒够一行才跟随」而正常增大，
+  // 那是有意为之的平滑跟随，不是抖动。
+  const jitter = await h.eval(`(async () => {
+    const s = document.querySelector("${SCROLLER}");
+    if (!s) return null;
+    const gaps = [];
+    for (let i = 0; i < 14; i++) {
+      const g = [...document.querySelectorAll(".turn-group")].pop();
+      if (g) gaps.push(Math.round(g.getBoundingClientRect().top - s.getBoundingClientRect().top));
+      await new Promise((r) => setTimeout(r, 90));
+    }
+    let maxJump = 0;
+    for (let i = 1; i < gaps.length; i++) maxJump = Math.max(maxJump, Math.abs(gaps[i] - gaps[i - 1]));
+    return { gaps, maxJump };
+  })()`);
+  console.log(`  [防抖 ${label}] 相邻最大跳变=${jitter?.maxJump}px 采样=${JSON.stringify(jitter?.gaps)}`);
+  // 阈值：一行约 24px；单次相邻跳变若超过一行半（36px）就是肉眼可见的「抖一下」。
+  h.check(`[${label}] 出字期间无抖动（相邻跳变 <36px）`, jitter != null && jitter.maxJump < 36, JSON.stringify(jitter));
   // 「不自动贴底」的判据必须是「视口没被拉到内容最底部」（scrollTop < maxScroll），
   // 不能用 away 的绝对值：短回复（回答只有一行）在视口里本来就凑不满一屏，
   // away 天然很小——那不代表落到了底部（09-12 实测：gap 稳定在 1~6px，away 仅 67）。

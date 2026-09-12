@@ -61,15 +61,18 @@ export const steps = [
     name: "② 会话 A 发一条会长回复的消息，并**等到它开始流式**",
     run: async (h) => {
       await h.clearInput(".composer-editor");
-      await h.typeInto(".composer-editor", "请从 1 数到 60，每个数字单独一行，每行后面加一句简短说明。不要省略任何一行。");
+      // 提示词刻意要得更长：保证切走时正文有足够体量，重播与否才有区分度
+      // （回复太短时「从第 2 字开始播」和「重播」难以区分 → 断言会偶发假红）。
+      await h.typeInto(".composer-editor", "请从 1 数到 80，每个数字单独一行，每行后面加一句十五字以上的说明。不要省略任何一行，也不要提前结束。");
       await wait(250);
       await h.click(".send-button");
-      // 等到正文出现且确实在 running —— 这是本场景的核心前置
+      // 等到正文出现（**只要出字就够**）——本场景要的是「切走时有可观存量正文」，
+      // 不必强求采样瞬间 turn 恰好是 running（真实引擎出字节奏下会偶发采样不到）。
       const ok = await h.waitFor(
         `(() => {
           const groups = [...document.querySelectorAll(".turn-group")];
           const last = groups[groups.length - 1];
-          if (!last || !last.className.includes("running")) return false;
+          if (!last) return false;
           const body = last.querySelector(".assistant-message .message-body");
           return !!body && (body.innerText || "").length > 30;
         })()`,
@@ -77,9 +80,17 @@ export const steps = [
       ).then(() => true).catch(() => false);
       h.check("[前置] A 已开始流式出字（本场景必须有这个前提）", ok);
       await wait(2500); // 再多出一点字，确保切走时有可观长度
+      // 等正文攒到 150 字以上再切走：太短会让「起点靠前的正常续播」与「重播」混为一谈
+      const grew = await h.waitFor(`(() => {
+        const groups = [...document.querySelectorAll(".turn-group")];
+        const last = groups[groups.length - 1];
+        const body = last?.querySelector(".assistant-message .message-body");
+        return !!body && (body.innerText || "").length >= 150;
+      })()`, { label: "正文攒到 150 字", timeoutMs: 45000 }).then(() => true).catch(() => false);
+      h.check("[前置] 正文已攒到 150 字以上（重播判据才有区分度）", grew);
       h.__aTextBefore = Number(await h.eval(agentLen));
       console.log(`  [A] 切走前正文长度 = ${h.__aTextBefore}`);
-      h.check("[前置] A 已有可观正文（>60 字）", h.__aTextBefore > 60, `len=${h.__aTextBefore}`);
+      h.check("[前置] A 已有可观正文（>120 字）", h.__aTextBefore > 120, `len=${h.__aTextBefore}`);
     },
   },
 
@@ -122,8 +133,16 @@ export const steps = [
 
       // 核心断言 1：切回后正文**不得回退**到比切走时更短（回退 = 从头重播的典型表现）
       h.check("切回后正文长度未回退（≥ 切走时长度）", afterLen >= Math.min(h.__aTextBefore, afterLen) && afterLen >= firstSeen, `before=${h.__aTextBefore} firstSeen=${firstSeen} after=${afterLen}`);
-      // 核心断言 2：不得出现整段重播（单次揭示的字数不应接近已有全文）
-      h.check("切回不触发整段重播（单次揭示 animated < 120 字）", maxAnimated < 120, `maxAnimated=${maxAnimated} reveals=${JSON.stringify(reveals.slice(0, 8))}`);
+      // 核心断言 2（判据经过反证修正）：不得出现「从头重播」。
+      // 信号是 **reveal 的 from 位置是否回退到接近 0**：
+      //   · 修复后：from 从切走时的位置（如 250）继续往后（实测明细 from=250,250,...）
+      //   · 关掉修复：from 会掉回 1、3、9…（从头重播的实锤，反证实测）
+      // 注意**不能**用「单次 animated 的大小」判定——重播是分小批进行的，
+      // 单批只有几十字，反证时 animated 仅 81，用 animated<200 抓不住（已实测）。
+      const fromList = reveals.map((e) => Number(e.from) || 0);
+      const minFrom = fromList.length ? Math.min(...fromList) : -1;
+      console.log(`  [重播判据] reveal 起始位置最小 = ${minFrom}（切走时正文 ${h.__aTextBefore} 字）`);
+      h.check("切回后揭示从存量之后继续（from 未回退到接近 0）", minFrom >= 30, `minFrom=${minFrom} fromList=${JSON.stringify(fromList.slice(0, 12))}`);
       await h.screenshot("流式中切回");
     },
   },

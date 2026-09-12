@@ -63,10 +63,14 @@ let resumeTotalMs = 0;
 let resumeCount = 0;
 let resumeEnrichMs = 0;
 let resumeMaxMs = 0;
+/** thread/list 的请求次数（多会话性能验证用）：渲染层原本**每个回合结束都打一发**，
+    改成「本地补丁 + 去抖兜底」后应显著下降。 */
+let threadListRequestCount = 0;
 function enrichScanCountSnapshot() {
   return {
     rolloutFallbackScans: rolloutFallbackScanCount,
     droppedForInactiveSession: rendererDroppedEventCount,
+    threadListRequests: threadListRequestCount,
     resumeCount,
     resumeAvgMs: resumeCount ? Math.round(resumeTotalMs / resumeCount) : 0,
     resumeMaxMs: Math.round(resumeMaxMs),
@@ -2534,6 +2538,7 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
     }
   }
   if (method === "thread/list") {
+    threadListRequestCount += 1;
     const response = result as any;
     const archiveFilter = typeof (params as any)?.archived === "boolean" ? Boolean((params as any).archived) : null;
     const indexed = Array.isArray(response?.data) ? response.data : [];
@@ -4916,6 +4921,13 @@ ipcMain.handle("personalization:save", async (_event, input: { nickname?: unknow
 ipcMain.handle("personalization:save-identity", async (_event, input: Record<string, unknown>) => {
   const config = await writePersonalization(input);
   await applyPersonalizationToAgentsMd(config, codexHome);
+  return config;
+});
+/** 标记「身份引导已打过招呼」（09-12 用户反馈「怎么每次新会话都强制引导」）：
+    第一次对话注入引导指令后调用一次，此后新会话不再引导、直接干活——
+    与 `onboarded` 分开：那个表示用户**真的回答了**，这个只表示**问过一次**。 */
+ipcMain.handle("personalization:mark-greeted", async () => {
+  const config = await writePersonalization({ greeted: true });
   return config;
 });
 

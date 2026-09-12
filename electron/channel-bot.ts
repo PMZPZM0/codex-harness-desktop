@@ -99,16 +99,26 @@ export class ChannelBotService {
 
   handleCodexEvent(event: CodexEvent) {
     if (event.kind !== "notification") return;
+    // 短路（09-12 多会话性能）：机器人**未启用**、或还没有任何渠道绑定该会话时，
+    // 这个事件跟本服务毫无关系。旧实现会继续往下走，对**所有会话**的每条
+    // item/agentMessage/delta 做 `turnMessages.set(turnId, 旧值 + delta)` ——
+    // 字符串 `+` 拼接是 O(n) 拷贝（长回复累计 O(n²)），且 Map 只在 turn/completed
+    // 才清理。多会话并行时这是纯浪费（不配机器人也一样付）。
+    if (!this.config?.enabled) return;
     const params = event.params as any;
+    // 该会话没绑定任何渠道 → 只维护 busyThreads（turn/completed 里有兜底删除），
+    // 正文累积完全没必要（finishTurn 找不到 route 会直接 return，白攒）。
+    const bound = Object.values(this.bindings).some((binding) => binding.threadId === params.threadId);
     if (event.method === "turn/started") {
-      this.busyThreads.add(params.threadId);
+      if (bound) this.busyThreads.add(params.threadId);
     } else if (event.method === "item/agentMessage/delta") {
-      this.turnMessages.set(params.turnId, (this.turnMessages.get(params.turnId) ?? "") + (params.delta ?? ""));
+      if (bound) this.turnMessages.set(params.turnId, (this.turnMessages.get(params.turnId) ?? "") + (params.delta ?? ""));
     } else if (event.method === "item/completed" && params.item?.type === "agentMessage") {
-      this.turnMessages.set(params.turnId, params.item.text ?? this.turnMessages.get(params.turnId) ?? "");
+      if (bound) this.turnMessages.set(params.turnId, params.item.text ?? this.turnMessages.get(params.turnId) ?? "");
     } else if (event.method === "turn/completed") {
       this.busyThreads.delete(params.threadId);
-      void this.finishTurn(params).catch((error) => this.log("error", `飞书回复失败：${error.message}`));
+      if (bound) void this.finishTurn(params).catch((error) => this.log("error", `飞书回复失败：${error.message}`));
+      else this.turnMessages.delete(params.turnId);
     }
   }
 

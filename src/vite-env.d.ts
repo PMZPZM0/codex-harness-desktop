@@ -120,7 +120,7 @@ type PluginMarketEntry = {
 };
 type PluginMarketInstallResult = { id: string; name: string; path: string; version: string; description: string; marketId: string; sourceUrl: string; engineRegistered?: boolean; engineCheckMessage?: string };
 type LocalSkillEntry = { name: string; folder?: string; path: string; description: string; descriptionZh?: string; marketId?: string; pluginId?: string; sourceUrl?: string; installedAt?: string; engineRegistered?: boolean; engineCheckMessage?: string; source?: "cocoloop" | "skillhub" | "local"; enabled?: boolean; allowedTools?: string[]; icon?: string; category?: string };
-type PersonalizationConfig = { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean };
+type PersonalizationConfig = { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean; greeted?: boolean };
 
 /** SSH 跳板机（ProxyJump）配置 */
 type SshJumpHost = {
@@ -306,7 +306,9 @@ interface Window {
     /** 设置/清除某个 MCP 工具的权限档位；mode 传 null 清除。改动后引擎重启生效 */
     setMcpToolPermission(server: string, tool: string, mode: "deny" | "ask" | "allow" | null): Promise<{ ok: boolean; updated: boolean; reason?: string }>;
     readPersonalization(): Promise<PersonalizationConfig>;
-    savePersonalization(input: { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean }): Promise<PersonalizationConfig>;
+    savePersonalization(input: { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean; greeted?: boolean }): Promise<PersonalizationConfig>;
+    /** 标记身份引导已打过招呼（此后新会话不再引导、直接干活） */
+    markIdentityGreeted(): Promise<PersonalizationConfig>;
     saveIdentity(input: Record<string, string>): Promise<unknown>;
     /** 应用级运行时开关（联网搜索等） */
     readAppSettings(): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off" }>;
@@ -451,7 +453,7 @@ interface Window {
       databases: { name: string; size: number }[]; sessions: number; archived: number;
     }>;
     /** 多会话性能诊断计数：rollout 兜底扫描次数（应为 0）与被按会话过滤掉的事件数 */
-    perfCounters(): Promise<{ rolloutFallbackScans: number; droppedForInactiveSession: number }>;
+    perfCounters(): Promise<{ rolloutFallbackScans: number; droppedForInactiveSession: number; threadListRequests: number }>;
     /** 上报当前正在查看的会话：主进程据此只转发该会话的高频事件（多会话性能） */
     setActiveThread(threadId: string | null): Promise<{ ok: boolean }>;
     /** 数据管理：各数据目录占用（bytes）与是否可清理 */

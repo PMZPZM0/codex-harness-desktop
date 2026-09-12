@@ -31,6 +31,13 @@ export type PersonalizationConfig = {
   userContext?: string;
   /** 首次对话身份引导是否已完成：完成后新会话不再注入引导指令 */
   onboarded?: boolean;
+  /** 引导**是否已经打过招呼**（09-12 用户反馈「怎么每次新会话都强制引导」）。
+      只认第一印象：第一次对话引导过后就置 true，之后无论用户有没有回答那套提问，
+      新会话都不再重复引导，直接开始干活。
+      与 `onboarded` 的区别：`onboarded` = 用户**真的回答了**并落盘了信息；
+      `greeted` = 只是**问过一次**。之前只判 `onboarded`，导致不回答的用户每个新会话
+      都被强制引导一遍。 */
+  greeted?: boolean;
 };
 
 // 注意：不能在模块顶层调用 app.getPath("userData") —— 模块在主进程 whenReady 之前就被
@@ -57,6 +64,7 @@ export async function readPersonalization(): Promise<PersonalizationConfig> {
       habits: str(stored?.habits),
       userContext: str(stored?.userContext),
       onboarded: stored?.onboarded === true,
+      greeted: stored?.greeted === true,
     };
   } catch {
     return {};
@@ -82,6 +90,7 @@ export async function writePersonalization(input: Record<string, unknown>): Prom
     habits: pick("habits", 600),
     userContext: pick("userContext", 2000),
     onboarded: input.onboarded === undefined ? current.onboarded : input.onboarded === true,
+    greeted: input.greeted === undefined ? current.greeted : input.greeted === true,
   };
   await fs.writeFile(getPersonalizationFile(), JSON.stringify(config, null, 2), "utf8");
   return config;
