@@ -168,7 +168,7 @@ contextBridge.exposeInMainWorld("codex", {
   setProviderEffort: (input: { provider: string; model: string; effort: string }) => ipcRenderer.invoke("custom-model:set-effort", input),
   writeClipboard: (text: string) => ipcRenderer.invoke("clipboard:write", text),
   createScratchDir: () => ipcRenderer.invoke("scratch:create"),
-  saveIdentity: (input: { assistantName?: string; userName?: string; about?: string }) => ipcRenderer.invoke("personalization:save-identity", input),
+  saveIdentity: (input: Record<string, string>) => ipcRenderer.invoke("personalization:save-identity", input),
   applyCustomModel: () => ipcRenderer.invoke("custom-model:apply"),
   upsertProviderModel: (input: { provider: string; model: unknown }) => ipcRenderer.invoke("custom-model:upsert-model", input),
   removeProviderModel: (input: { provider: string; modelId: string }) => ipcRenderer.invoke("custom-model:remove-model", input),

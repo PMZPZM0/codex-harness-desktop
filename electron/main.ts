@@ -4449,21 +4449,11 @@ ipcMain.handle("personalization:save", async (_event, input: { nickname?: unknow
   if (model) await applyCustomModel(model);
   return config;
 });
-/** 首次对话引导保存（identity_onboard 工具的落点）：写助手名/用户称呼/使用场景，
- *  置 onboarded=true（此后新会话不再注入引导指令），重建 AGENTS.md 即时生效——
- *  刻意不重启引擎、不重写 config.toml（AGENTS.md 每个新会话开始时由引擎读取）。 */
-ipcMain.handle("personalization:save-identity", async (_event, input: { assistantName?: unknown; userName?: unknown; about?: unknown }) => {
-  const current = await readPersonalization();
-  const contextParts: string[] = [];
-  const userName = String(input.userName ?? "").trim();
-  if (userName) contextParts.push(`希望被称呼为「${userName}」`);
-  const about = String(input.about ?? "").trim();
-  if (about) contextParts.push(about);
-  const config = await writePersonalization({
-    assistantName: input.assistantName,
-    userContext: contextParts.join("；"),
-    onboarded: true,
-  });
+/** 首次见面引导保存（identity_onboard 工具的落点）：全维度写个性化档案
+ *  （助手名/称呼/场景/职业/风格/语气/爱好/习惯 + onboarded=true），重建 AGENTS.md
+ *  即时生效——刻意不重启引擎、不重写 config.toml（AGENTS.md 每新会话由引擎读取）。 */
+ipcMain.handle("personalization:save-identity", async (_event, input: Record<string, unknown>) => {
+  const config = await writePersonalization(input);
   await applyPersonalizationToAgentsMd(config, codexHome);
   return config;
 });
