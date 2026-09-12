@@ -185,7 +185,7 @@ export class ElectronHarness {
     // 同时摘掉宿主注入的语言 shim（node-language-shim.cjs）：它会拦截子进程的 fs 写入，
     // 让主进程启动链在写 userData 时抛 EPERM（实测表现为「窗口能开、引擎起不来」）。
     delete childEnv.NODE_OPTIONS;
-    this.child = spawn(electronPath, ["."], {
+    this.child = spawn(electronPath, [".", "--no-sandbox"], {
       cwd: this.root,
       stdio: ["ignore", "pipe", "pipe"],
       env: childEnv,

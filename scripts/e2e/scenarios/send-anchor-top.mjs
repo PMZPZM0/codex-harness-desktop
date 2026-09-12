@@ -1,153 +1,165 @@
 // scripts/e2e/scenarios/send-anchor-top.mjs
 //
-// 回归场景：**发送锚顶**（对齐 WorkBuddy 观感，09-12 用户反馈「正文出字上下跳动」）。
+// 回归场景：**发送锚顶·连发版**（对齐 WorkBuddy 观感，09-12 用户反馈「正文出字
+// 上下跳动/来回闪」，并明确要求「每次发新消息都要在那个位置」）。
 //
-// 旧行为：发送即贴底（stickToBottom=true），回复在视口底部下方展开——每出一个字整屏
-// 内容上移，「思考中」占位头塌陷时再猛坠一下 = 上下跳动。
-// 新行为：发送后把这条新消息**顶到对话区顶部**，回复向下方的空白处长，第一屏上方
-// 内容纹丝不动；回复长超一屏（内容开始在视口下方堆积 >64px）后自动转回贴底跟随。
+// 钉住的事（连发三条消息逐条验证）：
+//   1) **每一条**新消息发出去都被钉到对话区顶部（不是只有第一条）；
+//   2) 流式出字期间消息原地不动（视口稳定 = 不跳动）、不自动贴底；
+//   3) 消息无双显（乐观气泡被真实回合接管/渲染去重）；
+//   4) 输入链路零回归、无渲染层报错。
 //
-// 本场景发一条真实消息（harness 已灌真实模型配置），断言：
-//   ① 乐观气泡出现时锚在对话区顶部附近（不是底部）；
-//   ② 真实回合接管后锚点平滑换位，用户消息仍钉在顶部（确认瞬间不跳）；
-//   ③ 流式开始后视口依然稳定（回复未超屏时用户消息不移动）。
+// 真实引擎 + 真实模型配置（harness 已灌），每轮等上一轮回复完成再发下一条。
 
 export const name = "send-anchor-top";
-export const description = "发送锚顶：新消息钉在对话区顶部，回复向下展开（消灭出字跳动）";
+export const description = "发送锚顶·连发：每条新消息都钉在对话区顶部，流式稳定不跳动";
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const SCROLLER = ".timeline";
 const ANCHOR = "#chat-anchor";
+let seq = 0;
+
+async function enterMain(h) {
+  await h.waitFor(
+    `(document.body && document.body.innerText.includes("直接进入")) || !!document.querySelector(".app-shell")`,
+    { label: "引导页或主界面", timeoutMs: 30000 }
+  );
+  if (await h.eval(`document.body.innerText.includes("直接进入")`)) {
+    await h.clickByText("暂时不登录，直接进入").catch(() => undefined);
+  }
+  await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "app-shell 挂载", timeoutMs: 25000 });
+  await wait(1500);
+}
+
+/** 发一条消息并断言「钉顶 + 无双显 + 流式稳定 + 不自动贴底」 */
+async function sendAndAssertPinned(h, text, label) {
+  seq += 1;
+  await h.clearInput(".composer-editor");
+  await h.typeInto(".composer-editor", text);
+  await wait(300);
+  const baseTurns = await h.eval(`document.querySelectorAll(".turn-group").length`);
+  await h.click(".send-button");
+  await wait(1200);
+  const sentProbe = await h.eval(`!!document.querySelector("${ANCHOR}") || document.querySelectorAll(".turn-group").length > ${baseTurns}`);
+  if (!sentProbe) {
+    await h.eval(`document.querySelector(".composer-editor")?.focus()`);
+    await h.pressKey("Enter");
+  }
+  const appeared = await h
+    .waitFor(`!!document.querySelector("${ANCHOR}") || document.querySelectorAll(".turn-group").length > ${baseTurns}`, { label: `${label} 消息出现`, timeoutMs: 10000 })
+    .then(() => true)
+    .catch(() => false);
+  h.check(`[${label}] 消息出现`, appeared);
+  if (!appeared) return;
+  // 轮询等钉顶稳定（欢迎块卸载/真实回合接管是布局剧变，允许最多 10s 收敛）
+  let pos = null;
+  let settled = false;
+  for (let i = 0; i < 33; i++) {
+    pos = await h.eval(`(() => {
+      const scroller = document.querySelector("${SCROLLER}");
+      const groups = [...document.querySelectorAll(".turn-group")];
+      const last = groups[groups.length - 1];
+      if (!last) return { gap: null };
+      const s = scroller.getBoundingClientRect();
+      const g = last.getBoundingClientRect();
+      return { gap: Math.round(g.top - s.top) };
+    })()`);
+    if (pos.gap !== null && pos.gap >= -64 && pos.gap < 96) { settled = true; break; }
+    await wait(300);
+  }
+  h.check(`[${label}] 消息钉在对话区顶部（-64px ≤ gap < 96px）`, settled, JSON.stringify(pos));
+  await h.screenshot(`${label}-钉顶`);
+  // 流式期间（2.5s 窗口）消息原地不动 + 不自动贴底
+  const before = pos ? pos.gap : null;
+  await wait(2500);
+  const after = await h.eval(`(() => {
+    const scroller = document.querySelector("${SCROLLER}");
+    const groups = [...document.querySelectorAll(".turn-group")];
+    const last = groups[groups.length - 1];
+    const s = scroller.getBoundingClientRect();
+    const g = last.getBoundingClientRect();
+    return { gap: Math.round(g.top - s.top), away: Math.round(scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight) };
+  })()`);
+  h.check(`[${label}] 流式期间钉顶稳定（移动 <40px）`, before !== null && Math.abs(after.gap - before) < 40, JSON.stringify({ before, after }));
+  h.check(`[${label}] 不自动贴底（视口保持钉顶）`, after.away > 80, `away=${after.away}`);
+  // 无双显：乐观/真实渲染同一文本只能出现一次
+  const key = text.startsWith("【") ? text.slice(0, 4) : text.slice(0, 12);
+  const hits = await h.eval(`(() => {
+    const scroller = document.querySelector("${SCROLLER}");
+    return (scroller.innerText || "").split(${JSON.stringify(key)}).length - 1;
+  })()`);
+  h.check(`[${label}] 消息无双显`, hits === 1, `命中 ${hits} 次`);
+  const dbg = await h.eval(`(() => { if (!window.__adbg) return "NO-ARRAY"; window.__adbg.push({ r: "scenario-probe" }); return { n: window.__adbg.length, tail: window.__adbg.slice(-30) }; })()`);
+  console.log(`  [锚定调试 ${label}]`, JSON.stringify(dbg));
+}
+
+/** 等当前回合结束（.running 消失），60s 上限 */
+async function waitForTurnDone(h, label) {
+  const done = await h
+    .waitFor(`![...document.querySelectorAll(".turn-group")].some(g => g.className.includes("running"))`, { label: `${label} 回复完成`, timeoutMs: 60000 })
+    .then(() => true)
+    .catch(() => false);
+  h.check(`[${label}] 回复已完成`, done);
+  await wait(600);
+  // 诊断：发送键此时是什么状态（发送 vs 暂停/队列）
+  const btn = await h.eval(`(() => { const b = document.querySelector(".send-button"); return b ? { title: b.title, aria: b.getAttribute("aria-label"), cls: b.className.slice(0,80), html: b.innerHTML.slice(0,80) } : null; })()`);
+  console.log(`  [诊断] ${label} 完成后发送键：`, JSON.stringify(btn));
+}
 
 export const steps = [
   {
     name: "① 进入主界面",
     run: async (h) => {
-      await h.waitFor(
-        `(document.body && document.body.innerText.includes("直接进入")) || !!document.querySelector(".app-shell")`,
-        { label: "引导页或主界面", timeoutMs: 30000 }
-      );
-      const hasGuide = await h.eval(`document.body.innerText.includes("直接进入")`);
-      if (hasGuide) await h.clickByText("暂时不登录，直接进入").catch(() => undefined);
-      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "app-shell 挂载", timeoutMs: 25000 });
-      await wait(1500);
-      h.check("已进入主界面", true);
+      await enterMain(h);
+      h.check("已进入主界面", await h.exists(".app-shell"));
+      h.check("前置：输入框与滚动容器就绪", (await h.exists(".composer-editor")) && (await h.exists(SCROLLER)));
     },
   },
 
   {
-    name: "② 前置：输入框与发送键就绪",
+    name: "② 第一条（长消息）：钉顶 + 流式稳定",
     run: async (h) => {
-      h.check("前置：输入框 .composer-editor 存在", await h.exists(".composer-editor"));
-      h.check("前置：滚动容器 .timeline 存在", await h.exists(SCROLLER));
-    },
-  },
-
-  {
-    name: "③ 发送长消息 → 乐观气泡锚在顶部（内容溢出才有锚定意义）",
-    run: async (h) => {
-      // 用长消息保证发送后内容**超出视口**：away(scrollHeight-scrollTop-clientHeight)>0
-      // 才能区分「锚顶」与「贴底」——贴底模式下 away 恒为 0（内容不满屏两种行为长得一样）
-      const longText = "请记住以下测试材料，之后我会提问。"
+      const longText = "【标记一】请记住以下测试材料，之后我会提问。"
         + "窗口化渲染是长会话性能的关键。".repeat(150)
         + "\n问题：只回答一个数字，1+1=?";
+      await sendAndAssertPinned(h, longText, "第一条");
+    },
+  },
+
+  {
+    name: "③ 等第一轮完成",
+    run: async (h) => { await waitForTurnDone(h, "第一条"); },
+  },
+
+  {
+    name: "④ 第二条（短消息）：同样钉顶",
+    run: async (h) => {
+      await sendAndAssertPinned(h, "【标记二】继续，2+2等于几？只回答数字", "第二条");
+    },
+  },
+
+  {
+    name: "⑤ 等第二轮完成",
+    run: async (h) => { await waitForTurnDone(h, "第二条"); },
+  },
+
+  {
+    name: "⑥ 第三条（中长消息）：同样钉顶",
+    run: async (h) => {
+      const mid = "【标记三】" + "再用三句话介绍一下秋天的特点，不要标题，直接开始。".repeat(6);
+      await sendAndAssertPinned(h, mid, "第三条");
+    },
+  },
+
+  {
+    name: "⑦ 收尾：输入框仍可输入 + 无渲染层报错",
+    run: async (h) => {
+      const typed = "anchor-regression";
+      await h.typeInto(".composer-editor", typed);
+      const value = String(await h.text(".composer-editor"));
+      h.check("输入框仍可正常输入", value.includes(typed), value.slice(0, 40));
       await h.clearInput(".composer-editor");
-      await h.typeInto(".composer-editor", longText);
-      await wait(400);
-      await h.click(".send-button");
-      const appeared = await h
-        .waitFor(`!!document.querySelector("${ANCHOR}")`, { label: "乐观气泡出现", timeoutMs: 8000 })
-        .then(() => true)
-        .catch(() => false);
-      h.check("发送后乐观气泡出现", appeared);
-      if (!appeared) return;
-      await wait(500); // 等锚顶滚动生效
-      const pos = await h.eval(`(() => {
-        const scroller = document.querySelector("${SCROLLER}");
-        const anchor = document.querySelector("${ANCHOR}");
-        const s = scroller.getBoundingClientRect();
-        const a = anchor.getBoundingClientRect();
-        // 诊断：锚点上方有什么（前两个可见兄弟/子元素的类名与高度）
-        const above = [];
-        let node = anchor?.previousElementSibling;
-        for (let i = 0; node && i < 3; i++) {
-          const r = node.getBoundingClientRect();
-          if (r.height > 0) above.push(String(node.className || node.tagName).slice(0, 40) + ":" + Math.round(r.height));
-          node = node.previousElementSibling;
-        }
-        return { gap: Math.round(a.top - s.top), scrollTop: Math.round(scroller.scrollTop), away: Math.round(scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight), hasWelcome: !!document.querySelector(".welcome-state"), above };
-      })()`);
-      // 锚定生效的三个特征：内容溢出（away>0）+ 气泡顶在容器顶（gap 小）+ 不在底部（scrollTop<scrollHeight-clientHeight）
-      h.check("发送后内容溢出视口（away>80，贴底模式不可能）", pos.away > 80, JSON.stringify(pos));
-      // 新会话第一条消息：欢迎块要等会话真正建立才卸载，期间布局由它支配（中间态，
-      // 会话建立后的钉顶由步骤④兜底）——欢迎块尚存时豁免 gap 断言
-      if (pos.hasWelcome) {
-        h.check("欢迎块尚存（新会话中间态，跳过 gap 断言）", true, "welcome-state 在场");
-      } else {
-        h.check("乐观气泡锚在对话区顶部（gap<64px）", pos.gap >= -10 && pos.gap < 64, JSON.stringify(pos));
-      }
-      await h.screenshot("发送后锚顶");
-    },
-  },
-
-  {
-    name: "④ 真实回合接管 → 用户消息钉在顶部、无双显",
-    run: async (h) => {
-      const turnAppeared = await h
-        .waitFor(`!!document.querySelector(".turn-group.running") || document.querySelectorAll(".turn-group").length > 0`, { label: "真实回合出现", timeoutMs: 20000 })
-        .then(() => true)
-        .catch(() => false);
-      h.check("真实回合出现", turnAppeared);
-      if (!turnAppeared) return;
-      await wait(800); // 等换锚滚动
-      const pos = await h.eval(`(() => {
-        const scroller = document.querySelector("${SCROLLER}");
-        const groups = [...document.querySelectorAll(".turn-group")];
-        const last = groups[groups.length - 1];
-        const s = scroller.getBoundingClientRect();
-        const g = last.getBoundingClientRect();
-        // 用户可见属性：消息正文在时间线只出现一次（乐观/真实双显 = 跳动 + 重影）
-        const hits = (scroller.innerText || "").split("1+1").length - 1;
-        return { gap: Math.round(g.top - s.top), textHits: hits };
-      })()`);
-      // 用户消息钉在顶部：顶部对齐（gap∈[-20,96)）。gap 大负值 = 消息被卷出视口上方（贴底接管了）= 失败
-      h.check("用户消息钉在顶部（-20px ≤ gap < 96px）", pos.gap >= -20 && pos.gap < 96, JSON.stringify(pos));
-      h.check("消息无双显（乐观气泡已被接管/去重）", pos.textHits === 1, JSON.stringify(pos));
-      await h.screenshot("真实回合接管后");
-    },
-  },
-
-  {
-    name: "⑤ 流式出字期间视口稳定（未超屏时用户消息不动）",
-    run: async (h) => {
-      // 取当前用户消息顶部位置，等 2.5 秒流式后再取——回复没长超一屏时它必须原地不动
-      const before = await h.eval(`(() => {
-        const groups = [...document.querySelectorAll(".turn-group")];
-        const last = groups[groups.length - 1];
-        return last ? Math.round(last.getBoundingClientRect().top) : null;
-      })()`);
-      await wait(2500);
-      const after = await h.eval(`(() => {
-        const groups = [...document.querySelectorAll(".turn-group")];
-        const last = groups[groups.length - 1];
-        const scroller = document.querySelector("${SCROLLER}");
-        return { top: last ? Math.round(last.getBoundingClientRect().top) : null, away: Math.round(scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight) };
-      })()`);
-      h.check("用户消息位置有效（前置）", before !== null && after.top !== null, JSON.stringify({ before, after }));
-      // 回复未长超一屏（away 小）时，视口稳定 = 顶部位置不大幅移动
-      if (after.away < 200) {
-        h.check("流式期间视口稳定（用户消息移动 <40px）", Math.abs((after.top ?? 0) - (before ?? 0)) < 40, JSON.stringify({ before, after }));
-      } else {
-        // 回复已超屏转贴底：内容上移是预期行为，跳过稳定性断言
-        h.check("回复已超屏（转贴底跟随），跳过锚定稳定性断言", true, `away=${after.away}`);
-      }
-    },
-  },
-
-  {
-    name: "⑥ 无渲染层报错",
-    run: async (h) => {
       h.check("渲染层无 console.error", h.consoleLog.length === 0, h.consoleLog.slice(0, 3).join(" ｜ "));
     },
   },

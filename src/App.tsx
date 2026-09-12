@@ -6692,6 +6692,7 @@ export default function App() {
   }, [optimisticInput, thread]);
   useEffect(() => {
     if (!optimisticInput || !optimisticConfirmed) return;
+    dbg("confirm-fired", { inp: !!optimisticInput });
     // 锚定模式：真实回合接管临时气泡的瞬间，把锚点平滑换到真实回合——
     // 乐观气泡挂在回合列表末尾、真实 turn 在其前一位，位置相邻但不重合，
     // 不重锚的话「消息钉在顶部」会在确认瞬间跳一下（锚定模式的核心承诺就是不跳）。
@@ -6708,7 +6709,7 @@ export default function App() {
         // 顶部」在确认瞬间不跳；基线同步刷新，回复增长量从此刻起算
         anchorElRef.current = anchor;
         contentAnchorTopRef.current = contentOffsetTop(anchor, el) - 6;
-        anchorBaselineHeightRef.current = el.scrollHeight;
+        selfScrollUntilRef.current = Date.now() + 80;
         if (Math.abs(contentAnchorTopRef.current - el.scrollTop) > 8) scrollToOffsetInstant(el, contentAnchorTopRef.current);
       }
       if (newTurn) anchorTurnIdRef.current = newTurn.id;
@@ -7904,16 +7905,20 @@ export default function App() {
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   // 流式跟随：用户滚到底时为 true（持续自动跟 agent 最新内容），向上滚看历史时为 false
   const stickToBottomRef = useRef(true);
-  // ── 发送锚顶（对齐 WorkBuddy，09-12 用户反馈「正文出字上下跳动」）──
-  // 发送后不再贴底，而是把这条新消息钉在对话区顶部：回复向下方的空白处长，
-  // 第一屏上方内容纹丝不动。贴底模式下每个字都把整屏往上顶、「思考中」占位头
-  // 塌陷时再猛坠一下 = 上下跳动。
-  // 退出锚定 = 回复开始后内容**增长量**（相对锚定时刻的 scrollHeight）超过 40px，
-  // 即回复已长满第一屏、新字开始流到视口下方——此时交回贴底跟随（此时贴底与钉顶
-  // 只差 ≤40px，切换无感）。判据必须用增长量而不是 away（视口下方内容量）：
-  // 长消息本身在锚定瞬间就有巨大的 away，用它会在发送瞬间就误退回贴底（实测反证）。
+  // ── 发送锚顶（对齐 WorkBuddy，09-12 用户反馈「正文出字上下跳动/来回闪」）──
+  // **每次**发送都把新消息钉在对话区顶部：回复向下方的空白处流式展开，视口
+  // 全程稳定（用户明确要求「每次发新消息都要在那个位置」）。不自动转贴底——
+  // 旧贴底跟随每字推屏+占位头塌陷猛坠 = 跳动，smooth 动画与内容增长互相
+  // retarget = 闪烁。长回复超屏后由「回到底部」按钮 / 用户滚到底（dist≤4
+  // 重开跟随并解除钉顶）接管；向上滚动随时解除钉顶自由翻阅。
   const anchorTopRef = useRef(false);
-  const anchorBaselineHeightRef = useRef(0);
+  // TEMP-DEBUG2
+  if (!(window as any).__adbg) (window as any).__adbg = [];
+  const dbg = (r: string, extra: any = {}) => { try { (window as any).__adbg.push({ r, t: Date.now() % 100000, ...extra }); } catch {} };  /** 程序滚动抑制窗：钉顶/贴底的瞬时滚动会把 scrollTop 拨来拨去，scroll 事件
+      异步到达时若被 update() 当成用户滚动做方向判定，就会误解除钉顶（实测：
+      钉顶 1ms 后被 cancel:up-scroll 杀掉）。程序滚动后 80ms 内的 scroll 事件
+      只刷新基线、不做判定。 */
+  const selfScrollUntilRef = useRef(0);
   /** 锚元素（乐观气泡或确认后的真实回合），流式跟随钉顶时实时取坐标用 */
   const anchorElRef = useRef<HTMLElement | null>(null);
   /** 确认后的真实回合 id：钉顶时动态按 id 查元素——回合元素可能比确认信号晚一帧挂载，
@@ -8777,8 +8782,12 @@ const commandMatches = useMemo(() => {
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return;
+    let lastTop = scroller.scrollTop; // 供 update 识别「向上滚动」（拖滚动条/键盘）
     const update = () => {
       const dist = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      // 程序滚动的抑制窗内：只刷新基线，不做方向判定（否则自己的钉顶/贴底
+      // 会被当成用户滚动，误解除钉顶——09-12 调试探针实锤）
+      if (Date.now() < selfScrollUntilRef.current) { lastTop = scroller.scrollTop; return; }
       setAwayFromBottom(dist > scroller.clientHeight * 0.25);
       // 向上滚动立即解除跟随（不等 25% 迟滞阈值）：wheel 只覆盖滚轮/触摸板，
       // 拖滚动条、键盘 PageUp/方向键只产生 scroll 事件——靠"scrollTop 变小"识别向上。
@@ -8791,7 +8800,13 @@ const commandMatches = useMemo(() => {
       // 迟滞：距底 ≤4px 重新开启跟随；>25% 视口才关闭。中间地带保持原状，
       // 避免流式内容增高时 stick 反复翻转（此前 smooth 滚动动画的中间滚动事件
       // 会误关跟随，导致"消息发了不显示、停止后才出现"）。
-      if (dist <= 4) stickToBottomRef.current = true;
+      if (dist <= 4) {
+        stickToBottomRef.current = true;
+        // 只有「scrollTop 真实增大」（用户主动往下滚）到触底才解除钉顶；回合完成时
+        // 思考卡折叠等会让内容高度骤减、dist 瞬间 ≤4——那不是用户行为，解除钉顶
+        // 会让第二条消息起全部退回旧行为（09-12 实测）
+        if (scroller.scrollTop > lastTop + 2) { dbg("cancel:bottom-scroll"); anchorTopRef.current = false; }
+      }
       else if (dist > scroller.clientHeight * 0.25) stickToBottomRef.current = false;
       lastTop = scroller.scrollTop;
     };
@@ -8805,7 +8820,6 @@ const commandMatches = useMemo(() => {
     updateBottomStateRef.current = update;
     // rAF 节流：scroll 事件密集时 update 会读 scrollHeight/scrollTop 强制同步布局
     let raf = 0;
-    let lastTop = scroller.scrollTop; // 供 update 识别"向上滚动"（拖滚动条/键盘）
     const schedule = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; update(); }); };
     update();
     // 绑定只跟会话走：若依赖 thread，流式出字每帧都会销毁重建 ResizeObserver + 监听器，
@@ -8816,7 +8830,16 @@ const commandMatches = useMemo(() => {
     scroller.addEventListener("wheel", onWheel, { passive: true });
     const onPacketReveal = () => requestAnimationFrame(() => {
       update();
-      if (stickToBottomRef.current) scroller.scrollTo({ top: scroller.scrollHeight, behavior: "auto" });
+      // 钉顶模式下绝不抢滚动条：打字机揭示每帧都触发这里，若此时还贴底跟随，
+      // 两个滚动驱动互相拉扯 = 出字来回闪（09-12 调试探针实锤）
+      if (stickToBottomRef.current && !anchorTopRef.current) {
+        // 瞬时贴底（behavior:"auto" 会被 .timeline 的 CSS smooth 变成动画，与下次
+        // 揭示互相 retarget = 出字闪烁）；钉顶模式下 stick=false 不会进这里
+        selfScrollUntilRef.current = Date.now() + 80;
+        scroller.style.scrollBehavior = "auto";
+        scroller.scrollTop = scroller.scrollHeight;
+        scroller.style.scrollBehavior = "";
+      }
     });
     window.addEventListener("codex:packet-reveal", onPacketReveal);
     return () => {
@@ -8849,31 +8872,27 @@ const commandMatches = useMemo(() => {
       return;
     }
     if (anchorTopRef.current) {
-      // 锚定模式：每个 thread 更新都把消息重新钉回顶部（瞬时，无动画），抵消内容
-      // 增长带来的位移——视口完全稳定。回复增长超过 40px（长满第一屏、新字流到
-      // 视口下方）→ 交回贴底跟随（此刻贴底与钉顶只差 ≤40px，切换无感）。
-      // 注意：确认（optimisticConfirmed）之前 scrollHeight 的猛涨是「真实回合挂载」
-      // 的布局跳变（回合里会把消息再渲染一遍），不是回复增长——只刷新基线不退出，
-      // 否则锚定会在确认瞬间就被误杀（长消息下必现，实测反证）。
-      const growth = el.scrollHeight - anchorBaselineHeightRef.current;
-      if (growth > 40 && optimisticConfirmed) {
-        anchorTopRef.current = false;
-        stickToBottomRef.current = true;
-      } else {
-        if (growth > 40) anchorBaselineHeightRef.current = el.scrollHeight;
-        // 动态解析锚元素：确认后优先真实回合（元素可能晚一帧挂载，按 id 实时查），
-        // 未确认用乐观气泡；都取不到再用兜底坐标
-        let a: HTMLElement | null = null;
-        if (anchorTurnIdRef.current) a = document.getElementById(`turn-${anchorTurnIdRef.current}`);
-        if (!a) a = anchorElRef.current;
-        if (a && a.isConnected) contentAnchorTopRef.current = contentOffsetTop(a, el) - 6;
-        scrollToOffsetInstant(el, contentAnchorTopRef.current);
-        return;
-      }
+      // 锚定模式：**每次**发送都把新消息钉回对话区顶部（用户明确要求），每个
+      // thread 更新都重新钉一次（瞬时，无动画），抵消内容增长带来的位移——
+      // 视口全程稳定，消灭「正文出字上下跳动/来回闪」。不自动转贴底：长回复
+      // 超屏后新内容在下方堆积，由「回到底部」按钮 / 用户滚到底（update() 里
+      // dist≤4 重开跟随并解除钉顶）接管。
+      // 动态解析锚元素：确认后优先真实回合（元素可能晚一帧挂载，按 id 实时查），
+      // 未确认用乐观气泡；都取不到再用兜底坐标。
+      let a: HTMLElement | null = null;
+      if (anchorTurnIdRef.current) a = document.getElementById(`turn-${anchorTurnIdRef.current}`);
+      if (!a) a = anchorElRef.current;
+      if (a && a.isConnected) contentAnchorTopRef.current = contentOffsetTop(a, el) - 6;
+      selfScrollUntilRef.current = Date.now() + 80;
+      scrollToOffsetInstant(el, contentAnchorTopRef.current);
+      return;
     }
     if (!stickToBottomRef.current) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
-  }, [thread, optimisticConfirmed]);
+    selfScrollUntilRef.current = Date.now() + 80;
+    // 贴底跟随必须瞬时：.timeline 的 CSS scroll-behavior:smooth 会让
+    // behavior:"auto" 也走平滑动画，动画与下一次内容增长互相 retarget = 抖动
+    scrollToOffsetInstant(el, el.scrollHeight);
+  }, [thread]);
   // 锚顶滚动：乐观气泡挂载后把这条新消息顶到对话区顶部（WorkBuddy 观感）。
   // 必须瞬时（scrollToOffsetInstant）：.timeline 的 CSS scroll-behavior:smooth 会让
   // scrollTo({behavior:"auto"}) 也走平滑动画，动画中途与流式跟随互相打架。
@@ -8882,9 +8901,10 @@ const commandMatches = useMemo(() => {
     const el = scrollRef.current;
     const anchor = document.getElementById("chat-anchor");
     if (!el || !anchor) return;
+    dbg("init-pin");
     contentAnchorTopRef.current = contentOffsetTop(anchor, el) - 6;
-    anchorBaselineHeightRef.current = el.scrollHeight;
     anchorElRef.current = anchor;
+    selfScrollUntilRef.current = Date.now() + 80;
     scrollToOffsetInstant(el, contentAnchorTopRef.current);
   }, [optimisticInput]);
   useEffect(() => {
@@ -10764,6 +10784,7 @@ const commandMatches = useMemo(() => {
       stickToBottomRef.current = false;
       anchorTopRef.current = true;
       anchorTurnIdRef.current = null;
+      dbg("send-arm-fork");
       activeModelRef.current = selectedModel?.model ?? modelName(modelId);
       const result = await window.codex.request("turn/start", {
         threadId: forked.thread.id,
@@ -12432,6 +12453,7 @@ const commandMatches = useMemo(() => {
     stickToBottomRef.current = false;
     anchorTopRef.current = true;
     anchorTurnIdRef.current = null;
+    dbg("send-arm-main");
     let createdThreadId: string | null = null;
     try {
       const startTurn = async (target: Thread) => window.codex.request("turn/start", {
@@ -12813,7 +12835,9 @@ const commandMatches = useMemo(() => {
   const activeThreadMemberRunning = expertTeamMemberRunning && thread && expertTeamMemberRunning.teamId === (teamThreadMapRef.current.get(thread.id) || teamThreadConfigRef.current.get(thread.id)?.teamId) ? expertTeamMemberRunning : null;
   const activeMemberTeam = activeThreadMemberRunning ? expertTeams.find((team) => team.teamId === activeThreadMemberRunning.teamId) ?? null : null;
   const activeMember = activeMemberTeam && activeThreadMemberRunning ? [activeMemberTeam.lead, ...activeMemberTeam.members].find((member) => member.id === activeThreadMemberRunning.memberName) ?? null : null;
-  const activityLabel = interrupting ? "正在停止" : waitingForApproval ? "等待你的确认" : waitingForInput ? "等待你的输入" : activeMember ? `专家「${activeMember.profession.zh || activeMember.name}」执行中` : subAgentRunning ? `子智能体「${subAgentRunning}」执行中` : activeThreadRunning ? (workStartedAt != null ? `已工作 ${Math.max(1, Math.round((nowTick - workStartedAt) / 1000))} 秒` : "Codex 正在处理") : "";
+  // 09-12 用户要求：去掉「已工作 X 秒」耗时指示（上方回合头部已有处理时间，重复且
+  // 在流式期间跟着内容上下跳）；只保留真正有信息量的状态（停止中/等确认/等输入/专家/子智能体）
+  const activityLabel = interrupting ? "正在停止" : waitingForApproval ? "等待你的确认" : waitingForInput ? "等待你的输入" : activeMember ? `专家「${activeMember.profession.zh || activeMember.name}」执行中` : subAgentRunning ? `子智能体「${subAgentRunning}」执行中` : "";
   // 上下文压缩后的缓存重建窗口：压缩重写了提示词前缀，上游缓存命中需要 1~3 轮才恢复
   // （rollout 实测：压缩后 last.cached=0 连续 2 轮，第 3 轮回到 98%）。窗口内 0% 不是 bug。
   const recentCompaction = useMemo(() => {
@@ -13123,7 +13147,7 @@ const commandMatches = useMemo(() => {
             <button
               className="jump-bottom"
               title="回到底部"
-              onClick={() => { stickToBottomRef.current = true; const el = scrollRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }); }}
+              onClick={() => { stickToBottomRef.current = true; anchorTopRef.current = false; const el = scrollRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }); }}
             ><ArrowDown size={16} /></button>
           )}
         </div>
