@@ -224,6 +224,54 @@ const CHECKS = [
   },
 
   {
+    id: "send-anchor",
+    name: "⑦ 发送后新消息仍钉在顶上那个位置（不贴底、不漂移）",
+    run: async (h) => {
+      // 用户反馈「我发的消息怎么不在那个位置了」。注意：旧的 send-anchor-top 场景在收编验收
+      // 流程时被我删掉了 → 这条行为一度**零覆盖**。现在补回到唯一入口里。
+      // 判据（沿用当时实测定的口径）：
+      //   · 锚点顶部相对对话区顶部 ≈ ANCHOR_TOP_OFFSET_PX（54，允许一点抖动）；
+      //   · `scrollTop < maxScroll − 4` —— 证明视口没被贴底接管（这才是"钉顶"）。
+      // 补发：本项在**当前已打开的旧会话**里发，不新建会话（用户定稿）。
+      // 量「最后一条用户消息」相对对话区顶部的距离（`#chat-anchor` 只在乐观气泡阶段存在，
+      // 真消息一到就被换掉，所以不能拿它当长期判据）。
+      const measure = `(() => {
+        const tl = document.querySelector(".timeline");
+        if (!tl) return { error: "no-timeline" };
+        const users = [...document.querySelectorAll(".turn-group .user-message, .user-message")];
+        const last = users[users.length - 1];
+        if (!last) return { error: "no-user-message" };
+        const gap = Math.round(last.getBoundingClientRect().top - tl.getBoundingClientRect().top);
+        return {
+          gap,
+          hasAnchor: !!document.getElementById("chat-anchor"),
+          scrollTop: Math.round(tl.scrollTop),
+          max: Math.round(tl.scrollHeight - tl.clientHeight),
+          atBottom: tl.scrollTop >= tl.scrollHeight - tl.clientHeight - 4,
+        };
+      })()`;
+      h.check("[前置] 已打开一个会话（时间线在）", await h.exists(".timeline"));
+
+      for (const [label, text] of [["第 1 条", "只回复一个数字：31"], ["第 2 条", "只回复一个数字：32"]]) {
+        await h.clearInput(".composer-editor");
+        await h.typeInto(".composer-editor", text);
+        await wait(250);
+        await h.click(".send-button");
+        await h.waitFor(`document.querySelectorAll(".turn-group").length >= 1`, { label: "回合出现", timeoutMs: 40000 }).catch(() => undefined);
+        await wait(1500);
+        const m = await h.eval(measure);
+        console.log(`  [钉顶] ${label}：gap=${m?.gap}px scrollTop=${m?.scrollTop}/${m?.max} 贴底=${m?.atBottom} 乐观锚在=${m?.hasAnchor}`);
+        h.check(`[${label}] 量到了用户消息位置`, !m?.error, JSON.stringify(m));
+        // gap ≈ 54：给 0~130 的宽窗（内容不足一屏时钉顶会被留白托住，gap 会略大）
+        h.check(`[${label}] 新消息钉在顶部附近（gap 0~130px，目标 54）`, Number(m?.gap) >= 0 && Number(m?.gap) <= 130, `gap=${m?.gap}`);
+        // 钉顶的核心：视口**没有**停在内容最底部
+        h.check(`[${label}] 视口没被贴底接管（钉顶而非贴底）`, m?.atBottom === false, `scrollTop=${m?.scrollTop} max=${m?.max}`);
+      }
+      await h.screenshot("发送钉顶");
+    },
+  },
+
+  {
     id: "fold-anchor",
     name: "⑥ 折叠组里不得有长正文/最终汇报（用户报的「折叠吞汇报」）",
     run: async (h) => {
