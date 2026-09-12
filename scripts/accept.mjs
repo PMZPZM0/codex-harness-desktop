@@ -73,6 +73,101 @@ const CHECKS = [
   },
 
   {
+    id: "switch-running",
+    name: "③bis **运行中**切走再切回：内容必须照常展示（用户截图：切回来整个空白）",
+    run: async (h) => {
+      // 用户实测（09-13 截图）：会话在跑的时候切出去、切回来，整个对话区**空白**。
+      // 这是最严重的一类回归（比位置错更难忍：什么都看不到），必须有独立覆盖。
+      const rows = Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0;
+      h.check("[前置] 侧栏有旧会话可切（≥2 行）", rows >= 2, `thread-row=${rows}`);
+      await clickRow(h, 0);
+      await wait(1200);
+      // 造一个"长时间运行"的回合：30 轮工具调用（用户实际用法），跑起来就切走
+      await h.clearInput(".composer-editor");
+      await h.typeInto(".composer-editor", "分30轮调用工具运行命令编辑文件，每轮做完报一下第几轮，全部做完再汇总。");
+      await wait(300);
+      await h.click(".send-button");
+      const running = await h.waitFor(`!!document.querySelector(".timeline-bottom-spacer.compact")`, { label: "回合跑起来", timeoutMs: 60000 }).then(() => true).catch(() => false);
+      h.check("[前置] 回合已进入运行态（运行留白在）", running);
+      // 切走**之前**先记一份内容基准：用户报的是"切回来整个不展示"，
+      // 所以判据必须是"切回来不得比切走时更少"，而不是"只要有字就算过"。
+      const before = await h.eval(`(() => {
+        const tl = document.querySelector(".timeline");
+        const groups = [...document.querySelectorAll(".turn-group")];
+        const last = groups[groups.length - 1];
+        const bodies = [...document.querySelectorAll(".assistant-message .message-body")];
+        // ⚠️ 用 textContent 而不是 innerText：折叠组收起后 innerText 为空（innerText 尊重渲染），
+        // 折叠状态一变这个数就跳，会把"折叠了"误判成"内容丢了"（实测 252→136 的假红）。
+        // 另外总文字量会被折叠开合影响，所以**判据落在"最后那个回合"（= 正在跑的那个）**，
+        // 它的内容与折叠无关，正是用户截图里"切回来不见了"的那部分。
+        return {
+          text: tl ? (tl.textContent || "").length : 0,
+          lastTurnText: last ? (last.textContent || "").length : 0,
+          lastTurnItems: last ? last.querySelectorAll(".message, .wb-fold").length : 0,
+          maxBody: bodies.reduce((m, b) => Math.max(m, (b.textContent || "").length), 0),
+          groups: groups.length,
+        };
+      })()`);
+      console.log(`  [运行中切走前] ${JSON.stringify(before)}`);
+      // 运行中切走 → 在后台跑一段（关键变量：切走期间回合并未停，缓存/流式都在推进）
+      // → 再切回来。用户截图就是"运行中切出去、切回来整个空白"。
+      await clickRow(h, 1);
+      await wait(12000);
+      await clickRow(h, 0);
+      await wait(2500);
+      const state = await h.eval(`(() => {
+        const tl = document.querySelector(".timeline");
+        if (!tl) return { noTimeline: true };
+        const groups = document.querySelectorAll(".turn-group").length;
+        const text = (tl.innerText || "").trim().length;
+        const bodies = [...document.querySelectorAll(".assistant-message .message-body")].map((b) => (b.textContent || "").length);
+        const rect = tl.getBoundingClientRect();
+        // 视口里**真正看得见**的回合数：0 而 groups>0 = 视口停在留白里 = 用户看到的"整个不展示"
+        let visibleGroups = 0;
+        for (const g of document.querySelectorAll(".turn-group")) {
+          const r = g.getBoundingClientRect();
+          if (r.bottom > rect.top && r.top < rect.bottom) visibleGroups += 1;
+        }
+        const pad = document.querySelector(".timeline-bottom-spacer.anchor-pad");
+        const cmp = document.querySelector(".timeline-bottom-spacer.compact");
+        const allGroups = [...document.querySelectorAll(".turn-group")];
+        const last = allGroups[allGroups.length - 1];
+        return {
+          groups: allGroups.length, lastTurnText: last ? (last.textContent || "").length : 0,
+          lastTurnItems: last ? last.querySelectorAll(".message, .wb-fold").length : 0,
+          text, visibleGroups,
+          maxBody: bodies.length ? Math.max(...bodies) : 0,
+          scrollTop: Math.round(tl.scrollTop), sh: Math.round(tl.scrollHeight), ch: tl.clientHeight,
+          pad: pad ? Math.round(pad.offsetHeight) : -1,
+          compact: cmp ? Math.round(cmp.offsetHeight) : -1,
+          running: !!cmp,
+        };
+      })()`);
+      console.log(`  [运行中切回] ${JSON.stringify(state)}`);
+      await h.screenshot("运行中切回");
+      h.check("切回来时间线还在（不是空白页）", !state?.noTimeline, JSON.stringify(state));
+      h.check("切回来有回合内容（.turn-group ≥ 1）", Number(state?.groups) >= 1, `groups=${state?.groups}`);
+      h.check("切回来对话区有可见文字（≥ 20 字）", Number(state?.text) >= 20, `text=${state?.text}`);
+      h.check("切回来正文没丢（最长正文 > 0）", Number(state?.maxBody) > 0, `maxBody=${state?.maxBody}`);
+      // 权威判据：切回来不得比切走时更少（正文只增不减——回合在后台一直在长）。
+      // 判据落在**最后那个回合**（正在跑的那个）：它的内容不受折叠开合影响，
+      // 正是用户截图里"切回来整个不展示"的那部分。
+      h.check("切回来正在跑的回合内容不缩水（≥ 切走时的 80%）",
+        Number(state?.lastTurnText) >= Number(before?.lastTurnText) * 0.8,
+        `before=${before?.lastTurnText} after=${state?.lastTurnText}`);
+      h.check("切回来正文不缩水（≥ 切走时的 80%）", Number(state?.maxBody) >= Number(before?.maxBody) * 0.8,
+        `before=${before?.maxBody} after=${state?.maxBody}`);
+      // ⚠️ 不断言"时间线总文字量"：折叠组的展开/收起会直接改变 textContent（收起时子节点
+      // 不在 DOM 里），切会话时折叠状态本来就会重算 —— 那个数字测的是折叠状态而不是内容
+      // 丢没丢（实测 17314 → 1340 是折叠收起造成的假红）。内容完整性由上面两条
+      // （最长正文、正在跑的回合）保证。
+      h.check("视口没有停在留白里（看得见的回合 ≥ 1）", Number(state?.visibleGroups) >= 1, JSON.stringify(state));
+      h.check("切回来没有残留一屏锚顶留白（≤ 一屏）", Number(state?.pad) <= Number(state?.ch), `pad=${state?.pad} ch=${state?.ch}`);
+      h.check("渲染层没有报错（否则整棵树会被卸载 = 空白）", h.consoleLog.length === 0, h.consoleLog.slice(0, 3).join(" ｜ "));
+    },
+  },
+
+  {
     id: "switch-speed",
     name: "② 旧会话切进切出：首次打开 vs 再次切回",
     run: async (h) => {

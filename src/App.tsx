@@ -1823,32 +1823,43 @@ function threadContentChanged(a: Thread | null, b: Thread | null): boolean {
 
 /** 运行中会话切回时的 resume 合并：快照可能落后于本地流式积累（切走期间 delta 仍在更新内存）。
  *  逐 item 取文本更长的一方（agentMessage 正文 / reasoning 摘要与内容），避免正文回退后
- *  delta 从快照点重新追加 = 已渲染内容「重新走一遍出字动画」（09-08 反馈）。 */
+ *  delta 从快照点重新追加 = 已渲染内容「重新走一遍出字动画」（09-08 反馈）。
+ *  ⛔ 并且必须做**并集**：resume 快照常常只带部分 items（运行中的回合尤其明显），
+ *  早期实现只遍历快照的 items，于是"缓存里有、快照里没有"的条目**整条消失** ——
+ *  用户实测「运行中切出去、切回来整个不展示」（同一时间线 textContent 39341 → 6107，
+ *  而最长的那条正文还在，正因为丢的是"快照没带回来的那部分"）。
+ *  以**缓存的顺序**为骨架（缓存是本地一直累积的那份，最全），快照里新增的追加到末尾。 */
 function mergeLongerStreams(cached: Thread, loaded: Thread): Thread {
-  return {
-    ...loaded,
-    turns: loaded.turns.map((turn) => {
-      const oldTurn = cached.turns.find((entry) => entry.id === turn.id);
-      if (!oldTurn) return turn;
-      return {
-        ...turn,
-        items: turn.items.map((item) => {
-          const prev = oldTurn.items.find((entry) => entry.id === item.id);
-          if (!prev) return item;
-          if (item.type === "agentMessage" && typeof item.text === "string" && typeof prev.text === "string" && prev.text.length > item.text.length) {
-            return { ...item, text: prev.text };
-          }
-          if (item.type === "reasoning") {
-            const longer = (arr: any[] | undefined, cur: any[] | undefined) => (Array.isArray(arr) && (cur?.length ?? 0) < arr.length ? arr : cur);
-            const summary = longer(prev.summary as any[], item.summary as any[]);
-            const content = longer(prev.content as any[], item.content as any[]);
-            if (summary !== item.summary || content !== item.content) return { ...item, summary, content };
-          }
-          return item;
-        }),
-      };
-    }),
+  const mergeItems = (oldItems: ThreadItem[], newItems: ThreadItem[]): ThreadItem[] => {
+    const newById = new Map(newItems.map((entry) => [entry.id, entry] as const));
+    const oldById = new Map(oldItems.map((entry) => [entry.id, entry] as const));
+    const pick = (item: ThreadItem): ThreadItem => {
+      const prev = oldById.get(item.id);
+      if (!prev) return item;
+      if (item.type === "agentMessage" && typeof item.text === "string" && typeof prev.text === "string" && prev.text.length > item.text.length) {
+        return { ...item, text: prev.text };
+      }
+      if (item.type === "reasoning") {
+        const longer = (arr: any[] | undefined, cur: any[] | undefined) => (Array.isArray(arr) && (cur?.length ?? 0) < arr.length ? arr : cur);
+        const summary = longer(prev.summary as any[], item.summary as any[]);
+        const content = longer(prev.content as any[], item.content as any[]);
+        if (summary !== item.summary || content !== item.content) return { ...item, summary, content };
+      }
+      return item;
+    };
+    const out = oldItems.map((item) => pick(newById.get(item.id) ?? item));
+    for (const item of newItems) if (!oldById.has(item.id)) out.push(item);
+    return out;
   };
+  const mergedTurns = loaded.turns.map((turn) => {
+    const oldTurn = cached.turns.find((entry) => entry.id === turn.id);
+    if (!oldTurn) return turn;
+    return { ...turn, items: mergeItems(oldTurn.items, turn.items) };
+  });
+  // 快照整段没带回来的回合同样不能丢
+  const loadedIds = new Set(loaded.turns.map((turn) => turn.id));
+  const extraTurns = cached.turns.filter((turn) => !loadedIds.has(turn.id));
+  return { ...loaded, turns: [...extraTurns, ...mergedTurns] };
 }
 
 function mergeTurn(thread: Thread | null, nextTurn: Turn) {
@@ -9196,7 +9207,11 @@ const commandMatches = useMemo(() => {
     // 这里消费后立即重置，之后的流式更新走常规 stick 跟随（smooth 跟手）。
     // 切会话瞬时定位**只对刚打开的那个会话、且当前没有钉顶**时生效。
     // 见 switchJumpRef 声明处：裸布尔会被后续任意更新消费，把发送钉顶掀掉。
-    if (switchJumpRef.current && switchJumpRef.current.id === thread?.id && !anchorTopRef.current && switchJumpPending()) {
+    // 切会话瞬时定位**只对刚打开的那个会话**生效（裸布尔会被后续任意更新消费，
+    // 见 switchJumpRef 声明处）。这里**不再**附加 `!anchorTopRef.current`：
+    // 锚定状态的清零已经归 openThread 管（见那里的注释），在这里再挡一下只会让
+    // "定位 + 清留白"被整段跳过 —— 实测后果就是切回来 pad 残留一整屏、定位错乱。
+    if (switchJumpRef.current && switchJumpRef.current.id === thread?.id && switchJumpPending()) {
       switchJumpRef.current = null;
       dbg("clear-anchor", { at: "switch-jump" });
       // 切会话 = 全新定位（贴底看最新），不携带上一个会话遗留的锚定模式
@@ -12228,6 +12243,17 @@ const commandMatches = useMemo(() => {
     setDiff("");
     setSystemEvents([]);
     setOptimisticInput(null);
+    // ★ 切会话 = 锚定状态**就地清零**（09-13 用户截图：运行中切走再切回，对话区整个空白）。
+    // 以前这套重置写在 [thread] 布局 effect 的"切换瞬时定位"分支里，而那一段一旦被
+    // 任何条件挡掉（当时写的是 `!anchorTopRef.current`，而上一会话的发送钉顶可能仍是
+    // armed），重置就**一起被跳过**：锚顶留白残留一整屏、钉顶 key 指向别的会话的回合，
+    // 于是切回来的定位完全错乱（实测 pad=622 一直没被清掉）。
+    // 结论：状态重置必须挂在"打开会话"这个动作上，不能挂在某条渲染分支上。
+    anchorTopRef.current = false;
+    pinnedAnchorKeyRef.current = null;
+    pinGapLockedRef.current = null;
+    pinnedScrollTopRef.current = -1;
+    clearAnchorPad();
     const knownRunning = runningThreadIdsRef.current.has(id);
     setSending(knownRunning);
     setActiveTurnId(knownRunning ? (runningTurnIdsRef.current.get(id) ?? null) : null);
