@@ -88,7 +88,9 @@ export function bodyTextOf(item: ThreadItem) {
   return item.type === "agentMessage" ? String(item.text ?? "").trim() : "";
 }
 
-/** 分段（对齐 buildSegments）：连续 ≥2 个可折叠单元 → 折叠段；单个自成普通段；正文并入普通段 */
+/** 完成态折叠计划见 ./turn-fold-plan.mjs（纯逻辑放 .mjs，预检可直接 import 跑断言）。 */
+
+
 export function buildSegments(units: FoldUnit[], turnFinished: boolean): FoldSegment[] {
   const segments: FoldSegment[] = [];
   let buffer: FoldUnit[] = [];

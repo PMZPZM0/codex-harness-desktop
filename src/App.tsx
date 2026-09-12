@@ -384,6 +384,7 @@ import { useChannelBot, type ChannelDraft } from "./hooks/useChannelBot";
 import { useModelProviders } from "./hooks/useModelProviders";
 import { useFilePreview } from "./hooks/useFilePreview";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "./lib/turn-fold";
+import { planCompletedFold } from "./lib/turn-fold-plan.mjs";
 import { WidgetCard } from "./components/GenerativeWidget";
 import { hasWidgetFence, extractStreamingWidget, type ShowWidgetData } from "./lib/generative-widget";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "./lib/user-refs";
@@ -2964,22 +2965,31 @@ function TurnFoldStream({ items, turn, running, fallbackWindow, waitingForApprov
     }
   }
   const finalUnit = finalUnitIndex >= 0 ? units[finalUnitIndex] : undefined;
-  const completedProcess = finalUnit ? units.filter((_, index) => index !== finalUnitIndex) : [];
-  // 历史会话常只保留 reasoning + 中间 agentMessage，工具 item 可能没有进入快照。
-  // 不能继续只按连续工具段折叠：最后一条正文是结果，其前面的全部内容都是过程。
-  if (finalUnit && completedProcess.length > 0) {
-    return <>
-      <FoldGroup
-        key={`fold-completed-${turn.id}`}
-        variant="completed"
-        title={completedTitle}
-        leadGroup={topToolGroup(completedProcess)}
-        failedCount={failedCountOf(completedProcess) || undefined}
-      >
-        <CappedToolSequence units={completedProcess} renderUnit={(unit) => renderItem(unit, unit.item.type === "agentMessage" ? true : undefined)} />
-      </FoldGroup>
-      {renderItem(finalUnit, true)}
-    </>;
+  // ⛔ 长正文不许进折叠组（09-12 用户反馈「折叠消息把 codex 最后汇报的也折叠进去了」）。
+  // 实测该会话 rollout 的条目序列：… AgentMessage(712字) → DynamicToolCall → Reasoning
+  // → AgentMessage(80字)。「最终答复 = 最后一条有正文的消息」只挑中那条 80 字收尾，
+  // 于是 712 字的**汇报本身**被当成过程收进了「耗时」折叠组（要点开才看得到）。
+  // 现在按 planCompletedFold 排：长正文（≥ FOLD_BODY_ANCHOR_CHARS）与最终答复留在外面，
+  // 只有夹在它们之间的过程（工具/思考/一句话过渡）才收进折叠组。
+  if (finalUnit && units.length > 1) {
+    const plan = planCompletedFold(units, finalUnit.item.id);
+    if (plan.some((entry) => entry.kind === "fold")) {
+      return <>
+        {plan.map((entry, index) => entry.kind === "fold"
+          ? (
+            <FoldGroup
+              key={`fold-completed-${turn.id}-${index}`}
+              variant="completed"
+              title={completedTitle}
+              leadGroup={topToolGroup(entry.units)}
+              failedCount={failedCountOf(entry.units) || undefined}
+            >
+              <CappedToolSequence units={entry.units} renderUnit={(unit) => renderItem(unit, unit.item.type === "agentMessage" ? true : undefined)} />
+            </FoldGroup>
+          )
+          : renderItem(entry.unit, true))}
+      </>;
+    }
   }
   const out: React.ReactNode[] = [];
   let bodySeen = false;
