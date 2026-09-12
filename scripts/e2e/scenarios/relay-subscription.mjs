@@ -160,7 +160,8 @@ async function openRelaySettings(h) {
     return "NO_ITEM";
   })()`);
   if (hit !== "OK") throw new Error(`打开中转站设置失败：${hit}`);
-  await h.waitFor(`!!document.querySelector(".relay-sub-banner")`, { label: "订阅置顶卡出现", timeoutMs: 15000 });
+  // 冷启动（刚构建完首跑）引擎起来慢，置顶卡可能 15s+ 才渲染 —— 放宽到 30s 吸收偶发
+  await h.waitFor(`!!document.querySelector(".relay-sub-banner")`, { label: "订阅置顶卡出现", timeoutMs: 30000 });
 }
 
 export const steps = [
