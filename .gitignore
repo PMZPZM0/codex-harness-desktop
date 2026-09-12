@@ -96,3 +96,11 @@ electron/rollout-worker-source.ts
 *.pre-mermaid.bak
 __perm_test.txt
 mermaid-e2e-test.html
+
+# 运行时溢出到仓库根的产物（不是源码，一直在 git status 里当噪音）
+#   .tmp/         —— 调试用例落盘的截图/探针输出
+#   images/       —— 生图/视觉插件落盘的图片（内含 .dsh-image-sync.json 同步标记）
+#   .workbuddy-ai/ —— AI 助手的工作记忆目录
+.tmp/
+images/
+.workbuddy-ai/
