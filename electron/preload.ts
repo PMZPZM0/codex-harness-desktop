@@ -308,6 +308,13 @@ contextBridge.exposeInMainWorld("codex", {
   // TTS 音频走 Base64 字符串跨 Electron IPC；避免 native/external ArrayBuffer 被 structured clone 拒绝。
   voiceSpeak: (text: string, options?: { sid?: number; speed?: number }) => ipcRenderer.invoke("voice:speak", text, options) as Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>,
   voicePreviewVoice: (input?: { sid?: number; speed?: number; text?: string }) => ipcRenderer.invoke("voice:preview-voice", input) as Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>, 
+  voiceProfilesList: () => ipcRenderer.invoke("voice:profiles-list") as Promise<{ profiles: any[]; zipvoiceReady: boolean }>,
+  voiceProfilesImport: () => ipcRenderer.invoke("voice:profiles-import") as Promise<any>,
+  voiceProfilesRecord: (input: { samples: number[]; sampleRate: number }) => ipcRenderer.invoke("voice:profiles-record", input) as Promise<any>,
+  voiceProfilesSave: (input: { draftFile: string; name: string; refText: string }) => ipcRenderer.invoke("voice:profiles-save", input) as Promise<any>,
+  voiceProfilesDelete: (id: string) => ipcRenderer.invoke("voice:profiles-delete", id) as Promise<{ ok: boolean }>,
+  voiceProfilesSelect: (id: string) => ipcRenderer.invoke("voice:profiles-select", id) as Promise<{ ok: boolean; profileId: string }>,
+  voiceProfilesPreview: (input: { id?: string; text?: string }) => ipcRenderer.invoke("voice:profiles-preview", input) as Promise<any>,
   voiceBarge: () => ipcRenderer.invoke("voice:barge") as Promise<{ ok: boolean }>,
   voicePlaybackDone: () => ipcRenderer.invoke("voice:playback-done") as Promise<{ ok: boolean }>,
   voiceModelsStatus: () => ipcRenderer.invoke("voice:models-status") as Promise<{

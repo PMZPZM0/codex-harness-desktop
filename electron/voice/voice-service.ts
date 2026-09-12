@@ -11,11 +11,13 @@
  * 挂断后不残留任何常驻监听、线程或麦克风占用。
  */
 
-import { ASR_REPO, TTS_REPO, VAD_REPO } from "./model-manifest";
+import { ASR_REPO, TTS_REPO, VAD_REPO, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "./model-manifest";
 import { ensureRepo, isRepoReady, modelFilePath, probeHosts, repoDir } from "./model-store";
 import { DEFAULT_VOICE_SETTINGS, MODEL_HOST_PRESETS, VOICE_SAMPLE_TEXT, loadVoiceSettings, type VoiceSettings } from "./voice-settings";
 import { ASR_WORKER_SOURCE, TTS_WORKER_SOURCE, VoiceWorkerClient, resolveSherpaPath } from "./workers";
 import fsPromises from "node:fs/promises";
+import path from "node:path";
+import { listProfiles, profileAudioPath, type VoiceProfile } from "./voice-profiles";
 
 /** 把 16k 单声道 PCM16 wav 解成 Float32（渠道语音经 ffmpeg 归一后的标准形态）。
  *  只做块级遍历找 data 块，不做任何重采样/多声道混缩——格式归一是上游 ffmpeg 的职责。 */
@@ -192,13 +194,7 @@ export class VoiceService {
         this.tts = new VoiceWorkerClient(
           "语音合成",
           TTS_WORKER_SOURCE,
-          {
-            sherpaPath,
-            model: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "model.onnx"),
-            lexicon: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "lexicon.txt"),
-            tokens: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "tokens.txt"),
-            numThreads,
-          },
+          await this.ttsWorkerData(sherpaPath, numThreads),
           () => {
             if (this.active) this.fail("语音合成线程意外退出，请重新开始通话");
           }
@@ -398,6 +394,44 @@ export class VoiceService {
     }
   }
 
+  /**
+   * 组装 TTS 工作线程的初始化数据：
+   * 选了「我的音色」且克隆模型已就绪 → zipvoice 克隆模式（参考音频 + 参考文本成对传）；
+   * 否则沿用内置 vits（预置 5 个音色）。参考文本为空时不走克隆——文本对不上音质会明显劣化。
+   */
+  private async ttsWorkerData(sherpaPath: string, numThreads: number, profileId?: string): Promise<Record<string, unknown>> {
+    const wanted = String(profileId ?? this.currentSettings?.tts?.profileId ?? "").trim();
+    if (wanted && zipvoiceReady(this.deps.modelsRoot)) {
+      const profile = (await listProfiles(this.deps.userDataDir)).find((p: VoiceProfile) => p.id === wanted);
+      if (profile?.refText?.trim()) {
+        const dir = path.join(this.deps.modelsRoot, ZIPVOICE_DIR);
+        return {
+          mode: "zipvoice",
+          sherpaPath,
+          numThreads,
+          referenceAudioPath: profileAudioPath(this.deps.userDataDir, profile),
+          referenceText: profile.refText.trim(),
+          zipvoice: {
+            tokens: path.join(dir, "tokens.txt"),
+            encoder: path.join(dir, "encoder.int8.onnx"),
+            decoder: path.join(dir, "decoder.int8.onnx"),
+            vocoder: path.join(dir, ZIPVOICE_ARCHIVE.vocoder.name),
+            dataDir: path.join(dir, "espeak-ng-data"),
+            lexicon: path.join(dir, "lexicon.txt"),
+          },
+        };
+      }
+    }
+    return {
+      mode: "vits",
+      sherpaPath,
+      numThreads,
+      model: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "model.onnx"),
+      lexicon: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "lexicon.txt"),
+      tokens: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "tokens.txt"),
+    };
+  }
+
   /** 合成一句话（渲染层按句调用，实现边生成边播）。 */
   async speak(text: string, options?: { sid?: number; speed?: number }): Promise<VoiceSpeakResult> {
     if (!this.tts) return { ok: false, error: "语音合成未就绪" };
@@ -445,8 +479,9 @@ export class VoiceService {
    * 音色试听：不依赖通话态——没有活跃 TTS 时临时起一个 worker，合成完即销毁。
    * 这样在设置页（没在通话）也能点「试听」听到某个音色/语速的效果。
    */
-  async previewVoice(input?: { sid?: number; speed?: number; text?: string }): Promise<VoiceSpeakResult> {
-    if (this.tts) {
+  async previewVoice(input?: { sid?: number; speed?: number; text?: string; profileId?: string }): Promise<VoiceSpeakResult> {
+    // 指定 profileId = 试听某个音色档案：即使通话中也要单独开一个临时线程，不能用正在用的那个
+    if (this.tts && !input?.profileId) {
       return this.speak(input?.text ?? VOICE_SAMPLE_TEXT, { sid: input?.sid, speed: input?.speed });
     }
     const sherpaPath = resolveSherpaPath();
@@ -459,14 +494,8 @@ export class VoiceService {
       client = new VoiceWorkerClient(
         "语音试听",
         TTS_WORKER_SOURCE,
-        {
-          sherpaPath,
-          model: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "model.onnx"),
-          lexicon: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "lexicon.txt"),
-          tokens: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "tokens.txt"),
-          // 跟正式通话对齐（之前用 1 偶尔触发 sherpa-onnx 的不同代码路径）
-          numThreads: this.currentSettings.asr.numThreads,
-        },
+        // 跟正式通话对齐（之前用 1 偶尔触发 sherpa-onnx 的不同代码路径）
+        await this.ttsWorkerData(sherpaPath, this.currentSettings.asr.numThreads, input?.profileId),
         () => undefined
       );
       const result = await client.request("speak", {

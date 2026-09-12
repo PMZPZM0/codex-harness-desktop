@@ -9,11 +9,11 @@
  * 改值后立即同步到主进程，**下一次**开始通话时生效（音色试听是即时的）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Headphones, Keyboard, Mic, Play, Radio, ShieldAlert, Sparkles, Square, Zap } from "lucide-react";
+import { Trash2, Upload, Headphones, Keyboard, Mic, Play, Radio, ShieldAlert, Sparkles, Square, Zap } from "lucide-react";
 import { decodeFloat32Base64 } from "../voice/audio-transport";
 
 type Settings = {
-  tts: { sid: number; speed: number; volume: number };
+  tts: { sid: number; speed: number; volume: number; profileId?: string };
   asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
   mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
   barge: { gateDb: number; mode: "auto" | "manual" };
@@ -59,6 +59,136 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
   // 唤醒词草稿（输完失焦/回车才落盘，避免每敲一个字就写一次文件）
   const [wakePhraseDraft, setWakePhraseDraft] = useState("");
   const micTestRef = useRef<{ stop: () => void } | null>(null);
+  // ── 我的音色（音色克隆 ZipVoice）──导入/录制参考音频 → 自动转写原文 → 保存为专属音色
+  const [profiles, setProfiles] = useState<any[]>([]);
+  const [zipReady, setZipReady] = useState(false);
+  const [draft, setDraft] = useState<{ draftFile: string; refText: string; sourceName: string; durationSec: number } | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const [profileBusy, setProfileBusy] = useState("");
+  const [profileRecording, setProfileRecording] = useState(false);
+  const recordingRef = useRef<{ stop: () => void } | null>(null);
+
+  const reloadProfiles = useCallback(async () => {
+    try {
+      const r = await window.codex.voiceProfilesList();
+      setProfiles(r.profiles ?? []);
+      setZipReady(Boolean(r.zipvoiceReady));
+    } catch (e: any) {
+      onNotice(`读取音色列表失败：${e?.message ?? e}`);
+    }
+  }, [onNotice]);
+
+  useEffect(() => { void reloadProfiles(); }, [reloadProfiles]);
+  useEffect(() => () => { recordingRef.current?.stop(); }, []);
+
+  const importProfile = useCallback(async () => {
+    setProfileBusy("正在读取并识别音频…");
+    try {
+      const r = await window.codex.voiceProfilesImport();
+      if (r?.canceled) { setProfileBusy(""); return; }
+      if (!r?.ok) { onNotice(`导入失败：${r?.error ?? "未知"}`); setProfileBusy(""); return; }
+      setDraft({ draftFile: r.draftFile, refText: r.refText ?? "", sourceName: r.sourceName ?? "音频", durationSec: r.durationSec ?? 0 });
+      setDraftName("我的音色");
+      setProfileBusy(r.refText ? "" : (r.transcribeError ? `自动识别未成功，请手填原文：${r.transcribeError}` : "自动识别未成功，请手填原文"));
+      if (!r.refText) onNotice("没能自动识别出音频内容，请在下方手填音频里念的那句话");
+    } catch (e: any) {
+      onNotice(`导入失败：${e?.message ?? e}`);
+      setProfileBusy("");
+    }
+  }, [onNotice]);
+
+  const startProfileRecord = useCallback(async () => {
+    setProfileBusy("正在录音…（最多 10 秒，说完点停止）");
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      });
+    } catch (e: any) {
+      setProfileBusy("");
+      const name = String(e?.name ?? "");
+      onNotice(name === "NotFoundError"
+        ? "本机没有检测到麦克风 —— 请用「导入音频」选择一段录音文件"
+        : `无法开始录音：${e?.message ?? e}`);
+      return;
+    }
+    const ctx = new AudioContext({ sampleRate: 16000 });
+    const source = ctx.createMediaStreamSource(stream);
+    const proc = ctx.createScriptProcessor(4096, 1, 1);
+    const chunks: Float32Array[] = [];
+    proc.onaudioprocess = (event: any) => { chunks.push(new Float32Array(event.inputBuffer.getChannelData(0))); };
+    source.connect(proc);
+    proc.connect(ctx.destination);
+    recordingRef.current = {
+      stop: () => {
+        recordingRef.current = null;
+        try { source.disconnect(); proc.disconnect(); stream.getTracks().forEach((t) => t.stop()); void ctx.close(); } catch { /* 已断开 */ }
+        setProfileRecording(false);
+        const total = chunks.reduce((n, c) => n + c.length, 0);
+        const merged = new Float32Array(total);
+        let offset = 0;
+        for (const c of chunks) { merged.set(c, offset); offset += c.length; }
+        setProfileBusy("正在识别录音…");
+        window.codex.voiceProfilesRecord({ samples: Array.from(merged), sampleRate: ctx.sampleRate || 16000 })
+          .then((r: any) => {
+            if (!r?.ok) { onNotice(`录音处理失败：${r?.error ?? "未知"}`); setProfileBusy(""); return; }
+            setDraft({ draftFile: r.draftFile, refText: r.refText ?? "", sourceName: "麦克风录制", durationSec: r.durationSec ?? 0 });
+            setDraftName("我的音色");
+            setProfileBusy(r.refText ? "" : "自动识别未成功，请手填原文");
+          })
+          .catch((e: any) => { onNotice(`录音处理失败：${e?.message ?? e}`); setProfileBusy(""); });
+      },
+    };
+    setProfileRecording(true);
+    window.setTimeout(() => recordingRef.current?.stop(), 10000);
+  }, [onNotice]);
+
+  const saveDraft = useCallback(async () => {
+    if (!draft) return;
+    setProfileBusy("正在保存音色…");
+    const r = await window.codex.voiceProfilesSave({ draftFile: draft.draftFile, name: draftName, refText: draft.refText });
+    setProfileBusy("");
+    if (!r?.ok) { onNotice(`保存失败：${r?.error ?? "未知"}`); return; }
+    setDraft(null);
+    setDraftName("");
+    await reloadProfiles();
+    await window.codex.voiceProfilesSelect(r.profile.id).catch(() => undefined);
+    onNotice(`音色「${r.profile.name}」已保存并启用`);
+  }, [draft, draftName, reloadProfiles, onNotice]);
+
+  const selectProfile = useCallback(async (id: string) => {
+    await window.codex.voiceProfilesSelect(id).catch(() => undefined);
+    const fresh = await window.codex.voiceSettingsGet().catch(() => null);
+    if (fresh) setSettings(fresh.settings as Settings);
+  }, []);
+
+  const removeProfile = useCallback(async (id: string) => {
+    await window.codex.voiceProfilesDelete(id).catch(() => undefined);
+    await reloadProfiles();
+  }, [reloadProfiles]);
+
+  const previewProfile = useCallback(async (id: string) => {
+    setProfileBusy("正在合成试听…");
+    try {
+      const r = await window.codex.voiceProfilesPreview({ id });
+      if (!r?.ok) { onNotice(`试听失败：${r?.error ?? "未知"}`); return; }
+      const samples = decodeFloat32Base64(r.audioBase64);
+      if (!samples.length) { onNotice("试听失败：没有音频数据"); return; }
+      const ctx = new AudioContext({ sampleRate: r.sampleRate || 22050 });
+      const buffer = ctx.createBuffer(1, samples.length, r.sampleRate || 22050);
+      buffer.copyToChannel(Float32Array.from(samples), 0);
+      const node = ctx.createBufferSource();
+      node.buffer = buffer;
+      node.connect(ctx.destination);
+      node.start();
+      node.onended = () => { void ctx.close(); };
+    } catch (e: any) {
+      onNotice(`试听失败：${e?.message ?? e}`);
+    } finally {
+      setProfileBusy("");
+    }
+  }, [onNotice]);
+
   /** 设置从主进程读回来后，同步一次唤醒词草稿 */
   const wakePhraseSyncedRef = useRef(false);
 
@@ -270,6 +400,72 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
             </button>
           </div>
           <div className="voice-card-hint">点「试听」会用当前音色和语速念一句示例话，用来对比哪个声音合适。</div>
+        </div>
+      </div>
+
+      {/* 我的音色（音色克隆）：导入/录制一段参考音频 → 本机识别原文 → 用那个嗓音说话 */}
+      <div className="voice-card">
+        <div className="voice-card-head"><Headphones size={15} /><span>我的音色（音色克隆）</span></div>
+        <div className="voice-card-body">
+          {!zipReady ? (
+            <div className="voice-card-hint">
+              还没安装音色克隆模型：到「设置 → 开发工具 → 音色克隆模型」下载（约 156MB），装好后这里就能导入或录制音色。
+            </div>
+          ) : !draft ? (
+            <div className="voice-row">
+              <button className="secondary-setting" onClick={() => void importProfile()} disabled={Boolean(profileBusy) || profileRecording}>
+                <Upload size={13} />导入音频（wav）
+              </button>
+              <button className="secondary-setting" onClick={() => (profileRecording ? recordingRef.current?.stop() : void startProfileRecord())} disabled={Boolean(profileBusy) && !profileRecording}>
+                <Mic size={13} />{profileRecording ? "停止录音" : "录制 10 秒"}
+              </button>
+            </div>
+          ) : (
+            <div className="voice-profile-draft">
+              <div className="voice-card-hint">
+                来源：{draft.sourceName}{draft.durationSec ? `（${draft.durationSec} 秒）` : ""} —— 下面是自动识别出的原文，
+                <b>请核对成音频里真正念的那句话</b>（对不上会让克隆音质明显变差）。
+              </div>
+              <textarea
+                className="voice-input"
+                rows={3}
+                value={draft.refText}
+                onChange={(e) => setDraft({ ...draft, refText: e.target.value })}
+                placeholder="音频里念的那句话（必须与音频一致）"
+              />
+              <div className="voice-row">
+                <input className="voice-input" value={draftName} onChange={(e) => setDraftName(e.target.value)} placeholder="给这个音色起个名字" />
+                <button className="primary-setting" onClick={() => void saveDraft()} disabled={!draftName.trim() || !draft.refText.trim()}>保存</button>
+                <button className="secondary-setting" onClick={() => { setDraft(null); setDraftName(""); setProfileBusy(""); }}>取消</button>
+              </div>
+            </div>
+          )}
+
+          {profileBusy && <div className="voice-card-hint">{profileBusy}</div>}
+
+          {profiles.length > 0 && (
+            <div className="voice-profile-list">
+              {profiles.map((p) => (
+                <div key={p.id} className="voice-profile-item">
+                  <label className="voice-profile-pick">
+                    <input
+                      type="radio"
+                      name="voice-profile"
+                      checked={(settings?.tts?.profileId ?? "") === p.id}
+                      onChange={() => void selectProfile(p.id)}
+                    />
+                    <span>{p.name}</span>
+                    <em>{p.durationSec}s</em>
+                  </label>
+                  <button className="secondary-setting" onClick={() => void previewProfile(p.id)} disabled={Boolean(profileBusy)}><Play size={12} />试听</button>
+                  <button className="secondary-setting" onClick={() => void removeProfile(p.id)}><Trash2 size={12} />删除</button>
+                </div>
+              ))}
+              {(settings?.tts?.profileId ?? "") && (
+                <button className="secondary-setting" onClick={() => void selectProfile("")}>改回内置音色</button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
