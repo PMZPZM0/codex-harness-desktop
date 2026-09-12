@@ -376,7 +376,8 @@ export class VoiceService {
           model: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "model.onnx"),
           lexicon: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "lexicon.txt"),
           tokens: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "tokens.txt"),
-          numThreads: 1,
+          // 跟正式通话对齐（之前用 1 偶尔触发 sherpa-onnx 的不同代码路径）
+          numThreads: this.currentSettings.asr.numThreads,
         },
         () => undefined
       );

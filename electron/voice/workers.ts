@@ -115,9 +115,18 @@ parentPort.on("message", (msg) => {
         sid: msg.sid,
         speed: msg.speed,
       });
-      const samples = audio.samples;
+      // sherpa-onnx 返回的 samples 背后是 native/external ArrayBuffer，不能直接
+      // transfer（截图里的 "External buffers are not allowed" 就是这么来的）。
+      // 显式拷到 V8 管理的普通 Float32Array 后才可安全跨 worker 传输；用 transfer
+      // 转移这份副本，主进程拿到后不再发生第二次复制。
+      const samples = new Float32Array(audio.samples);
       parentPort.postMessage(
-        { id: msg.id, ok: true, sampleRate: audio.sampleRate, samples: samples },
+        {
+          id: msg.id,
+          ok: true,
+          sampleRate: audio.sampleRate,
+          samples,
+        },
         [samples.buffer]
       );
       return;
