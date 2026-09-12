@@ -20103,6 +20103,8 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   position: relative;
   width: 52px;
   height: 52px;
+  /* 关键：圆角，box-shadow 才是圆形发光而不是方框 */
+  border-radius: 50%;
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -20115,6 +20117,11 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   transition: transform .12s ease-out, box-shadow .12s ease-out, filter .16s ease;
   border: 0;
   padding: 0;
+  /* 彻底清除浏览器/Electron 对 button 的默认外观：避免白底/默认边框/焦点高亮 */
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: transparent;
+  outline: none;
 }
 .voice-ball:hover { filter: brightness(1.05) drop-shadow(0 0 6px color-mix(in srgb, #ff9a4a 35%, transparent)); }
 .voice-ball:active { transform: scale(.95); }
