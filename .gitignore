@@ -53,6 +53,9 @@ dist-new/
 resources/tools/*
 !resources/tools/harness-media.mjs
 
+# 本地留存的已发布安装包（数百 MB 二进制，发布站/GitHub 才是权威分发处）
+installers-archive/
+
 # 调试/一次性产物（本机排查用，不属于源码）
 diag-*.mjs
 diag-*.py
