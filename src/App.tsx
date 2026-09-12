@@ -1024,24 +1024,33 @@ async function copyTextToClipboard(text: string): Promise<void> {
  *  全新读入，天然「每个新会话初次对话生效」）。引导收集的信息由 identity_onboard 工具
  *  落盘（personalization.json），onboarded=true 后新会话不再注入——已配置就不再引导。 */
 const IDENTITY_ONBOARD_INSTRUCTIONS = [
-  "【首次对话引导（只在本会话生效，完成即结束）】这是用户与你的第一次对话，请：",
-  "1. 热情、真诚地欢迎用户（一两句话，不要长篇大论）；",
-  "2. 介绍你还没有名字，邀请用户给你取一个名字（用户不想取就跳过）；",
-  "3. 自然地了解两件小事：希望怎么称呼 TA、TA 主要想用你做什么（聊家常一样问，不要像审问）;",
-  "4. 信息齐了、或用户明确表示不想继续这个话题时，调用 identity_onboard 工具保存（assistantName=用户给你取的名字，没取传空字符串；userName=用户的称呼；about=TA 的使用场景一句话）。",
-  "5. 保存成功后热情确认一句（取了名字就正式认下这个名字），然后立刻回归正常、简洁的工作风格。",
-  "约束：整个引导最多两个回合；用户如果直接开始谈正事，就先干正事，把引导揉进自然的对话里，绝不打断工作。",
+  "【初次见面引导（跨多轮自然进行，完成即结束）】这是你与用户的第一次对话——像陌生人初次见面那样认识和被认识，不是填表。请覆盖以下维度（按聊天节奏自然展开，每轮最多问一两个问题，绝不通篇连环审问）：",
+  "1. 热情欢迎用户，介绍自己还没有名字，邀请用户给你取一个（取了就正式认下；不想取就跳过）；",
+  "2. 怎么称呼 TA；",
+  "3. TA 主要想用你做什么（写代码、自动化、数据、写作、学习…），手头在做什么项目；",
+  "4. TA 的职业/技术栈/常用语言（便于你以后用对术语和示例）；",
+  "5. 回复风格偏好：简洁要点还是详细解释？轻松幽默还是专业中性？喜欢代码示例多还是结论先行？",
+  "6. 爱好与兴趣（闲聊契合点，纯可选）；",
+  "7. 还有什么想让长期记住的偏好或习惯（比如「直接指出我的错误」「别主动建议」）。",
+  "节奏与边界：用户抛出正事就先干正事，引导揉进对话；任何维度用户表示不想说就直接跳过；",
+  "聊得差不多（或用户叫停）时，调用 identity_onboard 工具一次性保存所有已知信息——",
+  "没聊到的维度传空字符串，不要编造。保存后热情确认一句，立刻回归正常简洁的工作风格。",
 ].join("\n");
 const IDENTITY_ONBOARD_TOOL = {
   type: "function",
   name: "identity_onboard",
-  description: "保存首次对话引导收集的身份信息（用户给 Codex 取的名字、对用户的称呼、使用场景）。调用后本次引导结束，后续会话不再引导。",
+  description: "保存初次见面引导收集的用户中心信息（所有字段可选，没聊到的传空字符串）。调用后引导结束，后续会话不再引导。",
   inputSchema: {
     type: "object",
     properties: {
-      assistantName: { type: "string", description: "用户给 Codex 取的名字；用户没有取则传空字符串" },
+      assistantName: { type: "string", description: "用户给 Codex 取的名字；没取则传空字符串" },
       userName: { type: "string", description: "用户希望被称呼的名字；未提供则传空字符串" },
-      about: { type: "string", description: "用户的主要使用场景/背景，一句话；未提供则传空字符串" },
+      about: { type: "string", description: "用户的主要使用场景/手头项目，一句话" },
+      occupation: { type: "string", description: "职业/技术栈/常用语言" },
+      replyStyle: { type: "string", description: "回复风格偏好（如：简洁要点/详细解释/代码优先/结论先行）" },
+      tone: { type: "string", description: "语气偏好（如：轻松幽默/专业中性/热情）" },
+      interests: { type: "string", description: "爱好与兴趣，自由文本" },
+      habits: { type: "string", description: "其它想被长期记住的偏好或习惯（如：直接指出错误、别主动建议）" },
     },
   },
 };
@@ -9481,14 +9490,23 @@ const commandMatches = useMemo(() => {
                 showToast("已记住", `${cat}：${String(args.content ?? "").slice(0, 60)}（记忆中心可查看 / 跳回本会话）`);
                 await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `记忆已保存：${result.id}` }], success: true });
               } else if (event.params?.tool === "identity_onboard") {
-                // 首次对话引导落盘：写个性化档案（助手名/用户称呼/使用场景 + onboarded），
+                // 首次见面引导落盘：全部维度写个性化档案（助手名/称呼/场景/职业/风格/语气/爱好/习惯 + onboarded），
                 // AGENTS.md 即时重建——之后所有新会话都不再注入引导。
                 try {
                   const assistantName = String(args.assistantName ?? "").trim();
-                  await window.codex.saveIdentity({ assistantName, userName: String(args.userName ?? "").trim(), about: String(args.about ?? "").trim() });
+                  await window.codex.saveIdentity({
+                    assistantName,
+                    userName: String(args.userName ?? "").trim(),
+                    about: String(args.about ?? "").trim(),
+                    occupation: String(args.occupation ?? "").trim(),
+                    replyStyle: String(args.replyStyle ?? "").trim(),
+                    tone: String(args.tone ?? "").trim(),
+                    interests: String(args.interests ?? "").trim(),
+                    habits: String(args.habits ?? "").trim(),
+                  });
                   setIdentityOnboarded(true);
-                  showToast(assistantName ? `你好，${assistantName}！` : "身份已保存", assistantName ? "这个名字已经正式归你啦，以后新会话都会用它" : "引导完成，后续新会话不再出现");
-                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `身份信息已保存并全局生效（助手名：${assistantName || "未取名"}）。请热情确认一句后结束引导。` }], success: true });
+                  showToast(assistantName ? `你好，${assistantName}！` : "用户中心已建立", assistantName ? "这个名字已经正式归你啦，以后新会话都会用它" : "初次见面档案已保存，后续新会话不再出现");
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: "用户中心档案已保存并全局生效（含称呼/场景/风格/爱好等维度）。请热情确认一句后结束引导。" }], success: true });
                 } catch (error: any) {
                   await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `保存失败：${error.message}` }], success: false });
                 }

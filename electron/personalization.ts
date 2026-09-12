@@ -15,7 +15,19 @@ export type PersonalizationConfig = {
   customInstructions?: string;
   /** 用户给 Codex 取的名字（引导对话或设置页设置；为空时引擎用默认自称） */
   assistantName?: string;
-  /** 用户补充的自我介绍/使用场景（引导对话收集，写进 About the user 段） */
+  /** 主要使用场景/手头项目（引导对话收集） */
+  about?: string;
+  /** 职业/技术栈/常用语言 */
+  occupation?: string;
+  /** 回复风格偏好（简洁要点/详细解释/代码优先…） */
+  replyStyle?: string;
+  /** 语气偏好（轻松幽默/专业中性…） */
+  tone?: string;
+  /** 爱好与兴趣 */
+  interests?: string;
+  /** 其它想被长期记住的偏好/习惯（直接指出错误、别主动建议…） */
+  habits?: string;
+  /** 用户补充的自我介绍（引导对话收集，写进 About the user 段） */
   userContext?: string;
   /** 首次对话身份引导是否已完成：完成后新会话不再注入引导指令 */
   onboarded?: boolean;
@@ -32,11 +44,18 @@ function getPersonalizationFile(): string {
 export async function readPersonalization(): Promise<PersonalizationConfig> {
   try {
     const stored = JSON.parse(await fs.readFile(getPersonalizationFile(), "utf8"));
+    const str = (v: unknown) => String(v ?? "").trim();
     return {
-      nickname: String(stored?.nickname ?? "").trim(),
-      customInstructions: String(stored?.customInstructions ?? "").trim(),
-      assistantName: String(stored?.assistantName ?? "").trim(),
-      userContext: String(stored?.userContext ?? "").trim(),
+      nickname: str(stored?.nickname),
+      customInstructions: str(stored?.customInstructions),
+      assistantName: str(stored?.assistantName),
+      about: str(stored?.about),
+      occupation: str(stored?.occupation),
+      replyStyle: str(stored?.replyStyle),
+      tone: str(stored?.tone),
+      interests: str(stored?.interests),
+      habits: str(stored?.habits),
+      userContext: str(stored?.userContext),
       onboarded: stored?.onboarded === true,
     };
   } catch {
@@ -46,14 +65,22 @@ export async function readPersonalization(): Promise<PersonalizationConfig> {
 
 /** 写入：先读现档合并（partial 语义——调用方只传要改的字段，其余原样保留，
  *  否则 setNickname 等局部保存会把 assistantName/onboarded 等新字段清掉）。 */
-export async function writePersonalization(input: { nickname?: unknown; customInstructions?: unknown; assistantName?: unknown; userContext?: unknown; onboarded?: unknown }): Promise<PersonalizationConfig> {
+export async function writePersonalization(input: Record<string, unknown>): Promise<PersonalizationConfig> {
   const current = await readPersonalization();
   const str = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
+  const pick = (key: keyof PersonalizationConfig, max: number): string | undefined =>
+    input[key] === undefined ? current[key] as string | undefined : str(input[key], max);
   const config: PersonalizationConfig = {
-    nickname: input.nickname === undefined ? current.nickname : str(input.nickname, 60),
-    customInstructions: input.customInstructions === undefined ? current.customInstructions : str(input.customInstructions, 8000),
-    assistantName: input.assistantName === undefined ? current.assistantName : str(input.assistantName, 40),
-    userContext: input.userContext === undefined ? current.userContext : str(input.userContext, 2000),
+    nickname: pick("nickname", 60),
+    customInstructions: pick("customInstructions", 8000),
+    assistantName: pick("assistantName", 40),
+    about: pick("about", 2000),
+    occupation: pick("occupation", 300),
+    replyStyle: pick("replyStyle", 300),
+    tone: pick("tone", 120),
+    interests: pick("interests", 600),
+    habits: pick("habits", 600),
+    userContext: pick("userContext", 2000),
     onboarded: input.onboarded === undefined ? current.onboarded : input.onboarded === true,
   };
   await fs.writeFile(getPersonalizationFile(), JSON.stringify(config, null, 2), "utf8");
@@ -96,6 +123,12 @@ export function buildAgentsMd(personalization: PersonalizationConfig): string {
   lines.push("");
   if (personalization.nickname) lines.push(`- Address the user as "${personalization.nickname}" (the user's preferred name).`);
   if (personalization.assistantName) lines.push(`- Your name is "${personalization.assistantName}" — the user named you. Use it as your identity in conversations naturally.`);
+  if (personalization.about) lines.push(`- What the user mainly uses you for: ${personalization.about}`);
+  if (personalization.occupation) lines.push(`- Occupation / tech stack: ${personalization.occupation} — match terminology and examples to it.`);
+  if (personalization.replyStyle) lines.push(`- Reply style preference: ${personalization.replyStyle}.`);
+  if (personalization.tone) lines.push(`- Tone preference: ${personalization.tone}.`);
+  if (personalization.interests) lines.push(`- Interests (nice small-talk anchors): ${personalization.interests}.`);
+  if (personalization.habits) lines.push(`- Long-term habits/preferences: ${personalization.habits}.`);
   if (personalization.userContext) lines.push(`- About the user: ${personalization.userContext}`);
   if (personalization.customInstructions) {
     lines.push("- User custom instructions (always apply, they take precedence over stylistic defaults):");
