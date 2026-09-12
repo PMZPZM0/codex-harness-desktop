@@ -162,6 +162,48 @@ export const steps = [
   },
 
   {
+    name: "⑥bis **长回复时最新内容必须可见**（回归：钉顶把正文推出屏幕 = 大片空白）",
+    run: async (h) => {
+      // 先确保消息已钉在顶部（前置条件），再等回复长到超过一屏
+      const pinned = await h.eval(`(() => {
+        const s = document.querySelector("${SCROLLER}");
+        const g = [...document.querySelectorAll(".turn-group")].pop();
+        if (!s || !g) return null;
+        return { gap: Math.round(g.getBoundingClientRect().top - s.getBoundingClientRect().top) };
+      })()`);
+      h.check("[前置] 第三条已钉在顶部附近", pinned && pinned.gap >= -64 && pinned.gap < 96, JSON.stringify(pinned));
+      // 等回复长过一屏（最多 40s）
+      const grew = await h.waitFor(`(() => {
+        const s = document.querySelector("${SCROLLER}");
+        return s && s.scrollHeight > s.clientHeight * 1.6;
+      })()`, { label: "回复长过一屏", timeoutMs: 40000 }).then(() => true).catch(() => false);
+      h.check("[前置] 回复确实长过一屏（否则本断言无意义）", grew);
+      await wait(2500);
+      // 核心断言：内容溢出后，视口底部必须贴近内容底部（跟随），否则就是「正文流到屏幕外」
+      const vis = await h.eval(`(() => {
+        const s = document.querySelector("${SCROLLER}");
+        const groups = [...document.querySelectorAll(".turn-group")];
+        const last = groups[groups.length - 1];
+        const lr = last ? last.getBoundingClientRect() : null;
+        return {
+          away: Math.round(s.scrollHeight - s.scrollTop - s.clientHeight),
+          maxScroll: Math.round(s.scrollHeight - s.clientHeight),
+          scrollTop: Math.round(s.scrollTop),
+          lastBottom: lr ? Math.round(lr.bottom) : null,
+          viewBottom: Math.round(s.getBoundingClientRect().bottom),
+        };
+      })()`);
+      console.log(`  [长回复可见性] ${JSON.stringify(vis)}`);
+      // 内容溢出后应已交回跟随：视口距内容底部不超过 120px 级别，而不是钉死在锚点位置
+      // （钉死会让 away 涨到几百甚至上千像素 —— 正是用户看到的「大片空白 + 看不到最新」）。
+      h.check("[长回复] 视口已跟随到内容底部（away ≤ 120px）", vis.away <= 120, JSON.stringify(vis));
+      h.check("[长回复] 最后一个回合的底部落在视口内（正文没被推出屏幕）",
+        vis.lastBottom != null && vis.lastBottom <= vis.viewBottom + 4, JSON.stringify(vis));
+      await h.screenshot("长回复可见性");
+    },
+  },
+
+  {
     name: "⑦ 收尾：输入框仍可输入 + 无渲染层报错",
     run: async (h) => {
       const typed = "anchor-regression";
