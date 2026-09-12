@@ -514,8 +514,11 @@ interface Window {
       ready: boolean; missing: string[]; readyFiles: number; totalFiles: number;
       bytes: number; root: string;
       repos: { id: string; lastSegment: string }[];
+      zipvoice?: { ready: boolean; bytes: number; dir: string };
     }>;
     voiceModelsInstall(): Promise<{ ok: boolean; error?: string }>;
+    voiceZipvoiceInstall(): Promise<{ ok: boolean; error?: string }>;
+    voiceZipvoiceCancel(): Promise<{ ok: boolean }>;
     voiceModelsCancel(): Promise<{ ok: boolean }>;
     voiceModelsImport(input: { sourceDir: string }): Promise<{ ok: boolean; failures: string[] }>;
     voiceModelsReveal(): Promise<string>;

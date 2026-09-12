@@ -10,10 +10,11 @@
  */
 
 import { createHash } from "crypto";
+import { spawn } from "node:child_process";
 import { createReadStream, createWriteStream, existsSync, statSync } from "fs";
 import { copyFile, mkdir, open, rename, stat, unlink } from "fs/promises";
 import { basename, dirname, join } from "path";
-import { MODEL_HOSTS, modelUrl, type VoiceModelFile, type VoiceModelRepo } from "./model-manifest";
+import { MODEL_HOSTS, modelUrl, type VoiceModelFile, type VoiceModelRepo, ZIPVOICE_DIR, ZIPVOICE_ARCHIVE, zipvoiceReady } from "./model-manifest";
 
 export type VoiceDownloadProgress = {
   /** 当前仓库 id */
@@ -575,4 +576,143 @@ export function modelsSizeOnDisk(modelsRoot: string): number {
   };
   walk(modelsRoot);
   return total;
+}
+
+// ── 归档型资源：音色克隆模型（ZipVoice，GitHub release tar.bz2）────────────────
+// 与 HF 逐文件仓库不同：整包下载 → SHA256 校验 → 解压到 modelsRoot → 声码器单独下载。
+// 按需下载，不进安装包（与其它语音模型一致）。
+
+/** 单流下载到文件（带进度与 SHA256 校验）。GitHub release 场景不需要多段并发。 */
+async function downloadUrlToFile(
+  url: string,
+  destPath: string,
+  sha256: string,
+  bytes: number,
+  onBytes?: (received: number, total: number) => void,
+  signal?: AbortSignal,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await mkdir(dirname(destPath), { recursive: true });
+    const response = await fetch(url, { redirect: "follow", signal: signal as any });
+    if (!response.ok || !response.body) return { ok: false, error: "下载失败 HTTP " + response.status };
+    const total = Number(response.headers.get("content-length") ?? 0) || bytes;
+    const hash = createHash("sha256");
+    const out = createWriteStream(destPath);
+    let received = 0;
+    const reader = (response.body as any).getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      received += chunk.length;
+      hash.update(chunk);
+      if (!out.write(chunk)) await new Promise<void>((resolve) => out.once("drain", () => resolve()));
+      onBytes?.(received, total);
+      if (signal?.aborted) throw new Error("已取消");
+    }
+    await new Promise<void>((resolve, reject) => out.end(() => resolve()).on("error", reject));
+    if (sha256 && hash.digest("hex") !== sha256) {
+      await unlink(destPath).catch(() => undefined);
+      return { ok: false, error: "SHA256 校验失败（下载损坏），请重试" };
+    }
+    return { ok: true };
+  } catch (error: any) {
+    await unlink(destPath).catch(() => undefined);
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+}
+
+/** 解压 tar.bz2：**优先随包 Python**（`tarfile` + `_bz2.pyd` 原生支持，跨平台一致）。
+ *  实测坑：Windows 自带 bsdtar 报 `Can't initialize filter; unable to run program "bzip2 -d"`
+ *  （bsdtar 不内置 bz2，系统又没有 bzip2 程序）；随包 7z 26.02 对该 .tar.bz2 报
+ *  `Cannot open as archive`。所以 Python 是首选，tar/7z 仅作最后的回落。 */
+async function extractTarBz2(archivePath: string, destDir: string, resourcesToolsDir: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const run = (cmd: string, args: string[]) =>
+    new Promise<{ code: number | null; stderr: string }>((resolve) => {
+      const child = spawn(cmd, args, { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+      let stderr = "";
+      child.stderr?.on("data", (chunk) => { stderr += String(chunk); });
+      child.on("error", (error) => resolve({ code: -1, stderr: String(error.message) }));
+      child.on("exit", (code) => resolve({ code, stderr }));
+    });
+
+  await mkdir(destDir, { recursive: true });
+
+  const python = join(resourcesToolsDir, "python", process.platform === "win32" ? "python.exe" : "bin/python3");
+  if (existsSync(python)) {
+    const py = await run(python, ["-c", "import sys, tarfile; tarfile.open(sys.argv[1]).extractall(sys.argv[2])", archivePath, destDir]);
+    if (py.code === 0) return { ok: true };
+  }
+
+  const tar = await run("tar", ["-xjf", archivePath, "-C", destDir]);
+  if (tar.code === 0) return { ok: true };
+
+  const sevenZip = join(resourcesToolsDir, "sevenzip", process.platform === "win32" ? "7z.exe" : "7z");
+  if (!existsSync(sevenZip)) {
+    return { ok: false, error: "解压失败（随包 Python 不可用，tar: " + tar.stderr.slice(-120) + "），且未找到随包 7z" };
+  }
+  const stage = await run(sevenZip, ["x", archivePath, "-o" + destDir, "-y"]);
+  if (stage.code !== 0) return { ok: false, error: "7z 解压失败：" + stage.stderr.slice(-160) };
+  const inner = archivePath.replace(/\.bz2$/, "");
+  if (existsSync(inner)) {
+    const second = await run(sevenZip, ["x", inner, "-o" + destDir, "-y"]);
+    if (second.code !== 0) return { ok: false, error: "7z 二次解压失败：" + second.stderr.slice(-160) };
+    await unlink(inner).catch(() => undefined);
+  }
+  return { ok: true };
+}
+
+/** 安装/补齐音色克隆模型（ZipVoice + vocos 声码器）。已就绪时直接返回。 */
+export async function ensureZipvoice(
+  modelsRoot: string,
+  resourcesToolsDir: string,
+  onProgress?: (p: VoiceDownloadProgress) => void,
+  signal?: AbortSignal,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (zipvoiceReady(modelsRoot)) return { ok: true };
+  const report = (file: string, percent: number, message: string, doneFiles: number, totalFiles: number) =>
+    onProgress?.({ repo: ZIPVOICE_DIR, file, doneFiles, totalFiles, percent, message });
+
+  const dir = join(modelsRoot, ZIPVOICE_DIR);
+  const needMain = ZIPVOICE_ARCHIVE.readyFiles.some((name) => {
+    try { return statSync(join(dir, name)).size <= 0; } catch { return true; }
+  });
+
+  if (needMain) {
+    const archivePath = join(modelsRoot, ".cache", ZIPVOICE_DIR + ".tar.bz2");
+    const cached = existsSync(archivePath)
+      ? await sha256File(archivePath).then((h) => h === ZIPVOICE_ARCHIVE.sha256).catch(() => false)
+      : false;
+    if (!cached) {
+      report("模型包", 0, "正在下载音色克隆模型（约 109MB）…", 0, 2);
+      const downloaded = await downloadUrlToFile(
+        ZIPVOICE_ARCHIVE.url, archivePath, ZIPVOICE_ARCHIVE.sha256, ZIPVOICE_ARCHIVE.bytes,
+        (received, total) => report("模型包", total ? Math.round((received / total) * 100) : -1,
+          "正在下载音色克隆模型 " + (received / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + "MB", 0, 2),
+        signal,
+      );
+      if (!downloaded.ok) return downloaded;
+    }
+    report("模型包", 100, "正在解压音色克隆模型…", 0, 2);
+    const extracted = await extractTarBz2(archivePath, modelsRoot, resourcesToolsDir);
+    if (!extracted.ok) return extracted;
+    await unlink(archivePath).catch(() => undefined);
+  }
+
+  const vocoderPath = join(dir, ZIPVOICE_ARCHIVE.vocoder.name);
+  const vocoderOk = existsSync(vocoderPath)
+    && (await sha256File(vocoderPath).then((h) => h === ZIPVOICE_ARCHIVE.vocoder.sha256).catch(() => false));
+  if (!vocoderOk) {
+    report(ZIPVOICE_ARCHIVE.vocoder.name, 0, "正在下载声码器（约 54MB）…", 1, 2);
+    const result = await downloadUrlToFile(
+      ZIPVOICE_ARCHIVE.vocoder.url, vocoderPath, ZIPVOICE_ARCHIVE.vocoder.sha256, ZIPVOICE_ARCHIVE.vocoder.bytes,
+      (received, total) => report(ZIPVOICE_ARCHIVE.vocoder.name, total ? Math.round((received / total) * 100) : -1,
+        "正在下载声码器 " + (received / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + "MB", 1, 2),
+      signal,
+    );
+    if (!result.ok) return result;
+  }
+
+  report("完成", 100, "音色克隆模型就绪", 2, 2);
+  return { ok: true };
 }

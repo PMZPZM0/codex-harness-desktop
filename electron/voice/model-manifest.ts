@@ -1,3 +1,5 @@
+import path from "node:path";
+import { statSync } from "node:fs";
 /**
  * 语音模型清单（纯数据，无副作用）。
  *
@@ -66,6 +68,38 @@ export const TTS_REPO: VoiceModelRepo = {
     { name: "number.fst", sha256: "743f402181fcfebf76cc2f0546b71fa26476e626fbe4e460fb7b4c3a7a8bd5bd", bytes: 40_000 },
   ],
 };
+
+/**
+ * 音色克隆（ZipVoice）：zero-shot 语音克隆 TTS——导入/录制一段参考音频即可获得专属音色。
+ * 与上面三个仓库不同，它在 GitHub release 以 tar.bz2 整包发布（espeak-ng-data 是目录，
+ * 逐文件清单不现实），所以走「归档型资源」：整包下载 → 校验 → 解压到 modelsRoot，
+ * 声码器 vocos_24khz.onnx 单独下载进模型目录。**按需下载，不进安装包。**
+ */
+export const ZIPVOICE_DIR = "sherpa-onnx-zipvoice-distill-int8-zh-en-emilia";
+export const ZIPVOICE_ARCHIVE = {
+  dir: ZIPVOICE_DIR,
+  url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-zipvoice-distill-int8-zh-en-emilia.tar.bz2",
+  sha256: "77219c8b40f4ee8d73a7f902305ff6c1128ef9b54461c41b4ca6ed890b6c2803",
+  bytes: 109_162_785,
+  /** 解压后必须存在的关键文件（相对模型目录），就绪判定用 */
+  readyFiles: ["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt", "lexicon.txt"],
+  /** 声码器：不在主包里，单独下载到模型目录 */
+  vocoder: {
+    name: "vocos_24khz.onnx",
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/vocoder-models/vocos_24khz.onnx",
+    sha256: "bcb3b970e384161c4d634f0bb9e999ff1c471b34c9bc0b1049a5014065ed3cc0",
+    bytes: 54_157_409,
+  },
+} as const;
+
+/** 音色克隆模型是否就绪（关键文件 + 声码器都在）。 */
+export function zipvoiceReady(modelsRoot: string): boolean {
+  const dir = path.join(modelsRoot, ZIPVOICE_DIR);
+  const need = [...ZIPVOICE_ARCHIVE.readyFiles, ZIPVOICE_ARCHIVE.vocoder.name];
+  return need.every((name) => {
+    try { return statSync(path.join(dir, name)).size > 0; } catch { return false; }
+  });
+}
 
 /** 一次安装（runtime:install id=voice-models）要拉的全部仓库。 */
 export const ALL_VOICE_REPOS: VoiceModelRepo[] = [ASR_REPO, VAD_REPO, TTS_REPO];

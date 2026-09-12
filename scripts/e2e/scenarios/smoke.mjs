@@ -188,7 +188,40 @@ export const steps = [
   },
 
   {
-    name: "⑩ 无渲染层报错",
+    name: "⑩ 开发工具页含音色克隆模型入口",
+    run: async (h) => {
+      // 前置：弹窗初始关闭（避免上一步残留造成假通过）
+      const preClosed = !(await h.exists(".modal-backdrop"));
+      h.check("前置：设置弹窗初始为关闭", preClosed);
+      await h.clickByTitle("设置");
+      await h.waitFor(`!!document.querySelector(".modal-backdrop")`, { label: "设置弹窗", timeoutMs: 8000 });
+      // 在弹窗内点「开发工具」分页（限域查找，避免点到侧栏的同名文本）
+      const clicked = await h.eval(`(() => {
+        const root = document.querySelector(".modal-backdrop");
+        if (!root) return false;
+        const btn = [...root.querySelectorAll("button")].find((b) => (b.innerText || "").trim() === "开发工具");
+        if (!btn) return false;
+        btn.click();
+        return true;
+      })()`);
+      h.check("设置内可切到「开发工具」页", Boolean(clicked));
+      await wait(400);
+      // 开发工具页内容由异步状态驱动（等待而非猜时间：固定等待在冷启动下会假红）
+      const appeared = await h
+        .waitFor(`document.body.innerText.includes("音色克隆模型")`, { label: "音色克隆模型卡片", timeoutMs: 10000 })
+        .then(() => true)
+        .catch(() => false);
+      h.check("开发工具页显示「音色克隆模型」卡片", appeared);
+      const hasAction = await h.eval(`[...document.querySelectorAll("button")].some((b) => /下载音色克隆模型|打开模型目录|取消下载/.test(b.innerText || ""))`);
+      h.check("音色克隆模型卡片含安装/打开按钮", hasAction);
+      await h.screenshot("开发工具-音色克隆模型");
+      await h.pressKey("Escape");
+      await h.waitFor(`!document.querySelector(".modal-backdrop")`, { label: "设置弹窗关闭", timeoutMs: 8000 });
+    },
+  },
+
+  {
+    name: "⑪ 无渲染层报错",
     run: async (h) => {
       h.check(
         "渲染层无 console.error",

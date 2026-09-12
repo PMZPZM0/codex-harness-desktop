@@ -10123,13 +10123,21 @@ const commandMatches = useMemo(() => {
   useEffect(() => {
     if (!settingsOpen) { setSettingsContentReady(false); return; }
     let raf2 = 0;
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      setSettingsContentReady(true);
+      void refreshSettingsResources();
+    };
     const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => {
-        setSettingsContentReady(true);
-        void refreshSettingsResources();
-      });
+      raf2 = requestAnimationFrame(settle);
     });
-    return () => { cancelAnimationFrame(raf1); if (raf2) cancelAnimationFrame(raf2); };
+    // 兜底：软件渲染 / 窗口后台时 rAF 可能被抑制甚至不触发，只靠 rAF 会让设置页
+    // 永远停在「正在载入…」（e2e 隔离实例实测复现）。120ms 定时器与 rAF 竞争，
+    // 谁先到都能让内容挂载——只是骨架先行的时长稍微放宽，不影响正常机器的手感。
+    const timer = window.setTimeout(settle, 120);
+    return () => { cancelAnimationFrame(raf1); if (raf2) cancelAnimationFrame(raf2); window.clearTimeout(timer); };
   }, [settingsOpen, workspace]);
   // MCP 状态（toolsAndAuthOnly 会逐个拉起 MCP 服务枚举工具，CPU 开销大）只在真正进入
   // MCP 管理页时拉取，打开技能/插件等其他分区不再连带触发冷启动争抢。
