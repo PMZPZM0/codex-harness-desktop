@@ -66,6 +66,17 @@ parentPort.on("message", (msg) => {
       parentPort.postMessage({ id: msg.id, ok: true, text: text, endpoint: endpoint });
       return;
     }
+    if (msg.op === "finish") {
+      ensure();
+      // 长按听写松手时不一定已命中 endpoint；补 3 秒静音把尾句完整解出来。
+      const silence = new Float32Array(workerData.sampleRate * 3);
+      stream.acceptWaveform({ samples: silence, sampleRate: workerData.sampleRate });
+      while (recognizer.isReady(stream)) recognizer.decode(stream);
+      const text = String(recognizer.getResult(stream).text || "").trim();
+      resetStream();
+      parentPort.postMessage({ id: msg.id, ok: true, text });
+      return;
+    }
     if (msg.op === "reset") {
       resetStream();
       parentPort.postMessage({ id: msg.id, ok: true, text: "" });

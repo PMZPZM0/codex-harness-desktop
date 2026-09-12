@@ -29,6 +29,8 @@ export type VoiceSettings = {
   modelHost: ModelHost;
   /** 按键启动：系统级快捷键（Electron globalShortcut），空串 = 关闭 */
   hotkey: { enabled: boolean; accelerator: string };
+  /** 输入框语音输入快捷键：按住说话、松开发送识别结果；渲染层 keydown/up 监听 */
+  dictationHotkey: { enabled: boolean; accelerator: string };
   /** 语音唤醒：持续聆听并匹配唤醒词（会持续占用 CPU，默认关） */
   wake: { enabled: boolean; phrase: string };
   /** 悬浮球：是否显示 + 是否弹出随机的短提示气泡 */
@@ -42,6 +44,7 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   barge: { gateDb: 6, mode: "auto" },
   modelHost: "auto",
   hotkey: { enabled: false, accelerator: "Ctrl+Shift+M" },
+  dictationHotkey: { enabled: false, accelerator: "Alt+Space" },
   wake: { enabled: false, phrase: "小柯小柯" },
   ball: { visible: true, hints: true },
 };
@@ -107,6 +110,7 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
   const mic = raw.mic ?? d.mic;
   const barge = raw.barge ?? d.barge;
   const hotkey = raw.hotkey ?? d.hotkey;
+  const dictationHotkey = raw.dictationHotkey ?? d.dictationHotkey;
   const wake = raw.wake ?? d.wake;
   const ball = raw.ball ?? d.ball;
   const modelHost = raw.modelHost && MODEL_HOST_PRESETS[raw.modelHost] ? raw.modelHost : d.modelHost;
@@ -135,6 +139,10 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
     hotkey: {
       enabled: Boolean(hotkey.enabled),
       accelerator: sanitizeAccelerator(hotkey.accelerator, d.hotkey.accelerator),
+    },
+    dictationHotkey: {
+      enabled: Boolean(dictationHotkey.enabled),
+      accelerator: sanitizeAccelerator(dictationHotkey.accelerator, d.dictationHotkey.accelerator),
     },
     wake: {
       enabled: Boolean(wake.enabled),

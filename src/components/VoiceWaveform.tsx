@@ -23,16 +23,16 @@ export default function VoiceWaveform() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const levelRef = useRef(0);
   const modeRef = useRef<VoiceWaveMode>("idle");
-  const [stage, setStage] = useState({ mode: "idle" as VoiceWaveMode, userText: "", agentText: "", active: false });
+  const [stage, setStage] = useState({ mode: "idle" as VoiceWaveMode, userText: "", agentText: "", active: false, dictating: false });
   const rafRef = useRef(0);
 
   useEffect(() => subscribeVoiceStage((s) => {
     levelRef.current = s.level;
     modeRef.current = s.mode;
     setStage((prev) => (
-      prev.mode === s.mode && prev.userText === s.userText && prev.agentText === s.agentText && prev.active === s.active
+      prev.mode === s.mode && prev.userText === s.userText && prev.agentText === s.agentText && prev.active === s.active && prev.dictating === s.dictating
         ? prev
-        : { mode: s.mode, userText: s.userText, agentText: s.agentText, active: s.active }
+        : { mode: s.mode, userText: s.userText, agentText: s.agentText, active: s.active, dictating: s.dictating }
     ));
   }), []);
 
@@ -109,13 +109,13 @@ export default function VoiceWaveform() {
   return (
     <div className={`voice-stage voice-stage-${mode}`}>
       <div className="voice-stage-head">
-        <span className="voice-stage-mode">{MODE_LABEL[mode]}</span>
+        <span className="voice-stage-mode">{stage.dictating ? "语音输入中…" : MODE_LABEL[mode]}</span>
         <button
           type="button"
           className="voice-stage-stop"
           onClick={() => requestVoiceStop()}
         >
-          结束通话
+          {stage.dictating ? "结束输入" : "结束通话"}
         </button>
       </div>
       <canvas ref={canvasRef} className="voice-wave-canvas" aria-hidden="true" />

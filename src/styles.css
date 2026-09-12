@@ -4145,6 +4145,70 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
 .send-button {
   background: var(--green);
   color: var(--accent-text);
+  transition: background-color .2s ease, color .2s ease, transform .18s ease, box-shadow .2s ease;
+}
+
+/* 输入框语音按钮：普通麦克风 → 录音中三根动态声柱 */
+.composer-mic-button {
+  cursor: pointer;
+  border: 0;
+  border-radius: 10px;
+  width: 32px;
+  height: 32px;
+  margin-left: 6px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--link) 8%, var(--bg));
+  transition: background-color .2s ease, color .2s ease, transform .18s ease, box-shadow .2s ease;
+}
+.composer-mic-button:hover {
+  color: var(--link);
+  background: color-mix(in srgb, var(--link) 14%, var(--bg));
+}
+.composer-mic-button.recording {
+  color: #fff;
+  background: linear-gradient(145deg, #ef4444, #f43f5e);
+  box-shadow: 0 0 0 4px color-mix(in srgb, #ef4444 14%, transparent);
+}
+.composer-recording-bars {
+  height: 17px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.composer-recording-bars i {
+  width: 2.5px;
+  border-radius: 3px;
+  background: currentColor;
+  animation: composer-recording-wave .65s ease-in-out infinite alternate;
+}
+.composer-recording-bars i:nth-child(1) { height: 7px; animation-delay: -.3s; }
+.composer-recording-bars i:nth-child(2) { height: 15px; animation-delay: -.1s; }
+.composer-recording-bars i:nth-child(3) { height: 10px; animation-delay: -.5s; }
+@keyframes composer-recording-wave {
+  from { transform: scaleY(.45); opacity: .65; }
+  to { transform: scaleY(1); opacity: 1; }
+}
+
+/* 单一主操作按钮：发送 ↔ 暂停/停止，DOM 不替换，避免两个图标并排和宽度抖动 */
+.send-button.morph-action {
+  overflow: hidden;
+}
+.send-button.morph-action.is-pause {
+  background: color-mix(in srgb, var(--red) 15%, var(--bg));
+  color: var(--red);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--red) 18%, transparent);
+}
+.morph-action-icon {
+  display: grid;
+  place-items: center;
+  animation: morph-action-swap .2s cubic-bezier(.2,.8,.25,1);
+}
+@keyframes morph-action-swap {
+  from { opacity: 0; transform: scale(.55) rotate(-18deg); }
+  to { opacity: 1; transform: scale(1) rotate(0); }
 }
 /* ── 提示词增强按钮（WorkBuddy enhance 复刻）：空闲魔法紫 / 加载转圈 / 撤销蓝 ── */
 .enhance-button {

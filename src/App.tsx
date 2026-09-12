@@ -130,6 +130,8 @@ import {
   LogIn,
   Database,
   Headphones,
+  Mic,
+  Pause,
   FileQuestion,
 } from "lucide-react";
 import { useMemory, type MemoryGatewayState, type MemoryGroup, type MemoryPriority, type MemoryRecord, groupMemoriesByThread } from "./hooks/useMemory";
@@ -6330,7 +6332,8 @@ async function resumeThreadWithTurns(params: { threadId: string; excludeTurns?: 
   return result;
 }
 
-import { setVoiceOpenSettingsHandler } from "./voice/wave-level";
+import { requestVoiceDictation, setVoiceDictationSendHandler, setVoiceOpenSettingsHandler, subscribeVoiceStage } from "./voice/wave-level";
+import { matchesVoiceAccelerator } from "./voice/hotkey-match";
 
 /** 把「打开设置 → 语音通话页」注册给悬浮球（悬浮球是 body portal，拿不到 App 的 setSettingsPage）。 */
 function VoiceSettingsBridge({ onOpen }: { onOpen: () => void }): null {
@@ -6395,6 +6398,46 @@ export default function App() {
   }, []);
   const [workspace, setWorkspace] = useState(localStorage.getItem("workspace") ?? "");
   const [prompt, setPrompt] = useState("");
+  // 输入框语音听写状态：partial/final 中文字幕实时回填到 composer，不自动发送。
+  const [voiceDictating, setVoiceDictating] = useState(false);
+  const dictationBaseRef = useRef("");
+  useEffect(() => subscribeVoiceStage((stage) => {
+    setVoiceDictating(stage.active && stage.dictating);
+    if (!stage.dictating) return;
+    // partial/final 均表示当前整段字幕；实时回填 composer，但不自动发送。
+    setPrompt([dictationBaseRef.current.trim(), stage.userText.trim()].filter(Boolean).join(" "));
+  }), []);
+
+  // 长按语音输入快捷键：keydown 开始听写，keyup 结束；只在应用聚焦时响应。
+  useEffect(() => {
+    let held = false;
+    let accelerator = "";
+    let enabled = false;
+    void window.codex.voiceSettingsGet().then((r: any) => {
+      enabled = Boolean(r?.settings?.dictationHotkey?.enabled);
+      accelerator = String(r?.settings?.dictationHotkey?.accelerator ?? "");
+    }).catch(() => undefined);
+    const down = (event: globalThis.KeyboardEvent) => {
+      if (!enabled || held || event.repeat || !matchesVoiceAccelerator(event, accelerator)) return;
+      held = true;
+      event.preventDefault();
+      dictationBaseRef.current = prompt;
+      requestVoiceDictation({ action: "start" });
+    };
+    const up = (event: globalThis.KeyboardEvent) => {
+      if (!held || !matchesVoiceAccelerator(event, accelerator)) return;
+      held = false;
+      event.preventDefault();
+      // 长按快捷键松开 = 结束识别并直接发送；点击麦克风仍是只填入输入框、不自动发。
+      requestVoiceDictation({ action: "stop", send: true });
+    };
+    window.addEventListener("keydown", down, true);
+    window.addEventListener("keyup", up, true);
+    return () => {
+      window.removeEventListener("keydown", down, true);
+      window.removeEventListener("keyup", up, true);
+    };
+  }, [prompt]);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   // WorkBuddy 式附件菜单子面板：本地文件/引用对话文件/专家（技能、连接器已有独立面板）
   const [attachSubmenu, setAttachSubmenu] = useState<"none" | "files" | "thread-files" | "experts" | "skills" | "connectors">("none");
@@ -12104,6 +12147,12 @@ const commandMatches = useMemo(() => {
     return active;
   }
 
+  // 让「长按语音输入」在松手后走现有 send()（发送/排队/权限全部复用）。
+  useEffect(() => {
+    setVoiceDictationSendHandler(() => { void send(); });
+    return () => setVoiceDictationSendHandler(null);
+  });
+
   async function send(event?: FormEvent) {
     event?.preventDefault();
     // 自定义命令展开文本优先消费（跳过 / 前缀解析，避免展开结果被二次当命令处理）
@@ -13323,22 +13372,46 @@ const commandMatches = useMemo(() => {
                     {enhanceBusy ? <Spinner /> : hasEnhanceBackup ? <RotateCcw size={16} /> : <Sparkles size={16} />}
                   </button>
                 )}
-                {/* 任务运行中：输入框有内容 → 显示发送（点击加入排队，不丢消息），旁边保留停止；
-                    输入框为空 → 只显示停止。此前运行中恒显示停止，想排队也得先清空输入框。 */}
-                {activeThreadRunning && (prompt.trim() || quoteItem || images.length || files.length) ? (
-                  <>
-                    <button type="button" className="stop-button" title="停止当前任务" disabled={interrupting} onClick={() => void interrupt()}>
-                      {interrupting ? <Spinner /> : <CircleStop size={18} />}
+                {/* 输入框语音听写：只展示图标。点击一次开始/停止，识别字幕实时回填 composer。 */}
+                <button
+                  type="button"
+                  className={`composer-mic-button ${voiceDictating ? "recording" : ""}`}
+                  title={voiceDictating ? "结束语音输入" : "语音输入（长按快捷键也可说话）"}
+                  aria-label={voiceDictating ? "结束语音输入" : "语音输入"}
+                  onClick={() => {
+                    if (!voiceDictating) {
+                      dictationBaseRef.current = prompt;
+                    }
+                    requestVoiceDictation();
+                  }}
+                >
+                  {voiceDictating ? <span className="composer-recording-bars" aria-hidden><i /><i /><i /></span> : <Mic size={18} />}
+                </button>
+
+                {/* 始终只有一个主操作按钮：
+                    - 空闲：发送图标
+                    - 运行中且输入框为空：暂停/停止图标
+                    - 运行中输入了新内容：同一个按钮平滑过渡成发送图标，点击加入排队
+                    - 排队发送后输入框清空：同一个按钮自动过渡回暂停图标 */}
+                {(() => {
+                  const hasDraft = Boolean(prompt.trim() || quoteItem || images.length || files.length);
+                  const runningCanQueue = activeThreadRunning && hasDraft;
+                  const showPause = activeThreadRunning && !hasDraft;
+                  return (
+                    <button
+                      type={runningCanQueue || !activeThreadRunning ? "submit" : "button"}
+                      className={`send-button morph-action ${showPause ? "is-pause" : "is-send"}`}
+                      title={showPause ? "停止当前任务" : runningCanQueue ? "发送（任务运行中，将加入排队）" : "发送"}
+                      aria-label={showPause ? "停止当前任务" : "发送"}
+                      disabled={showPause ? interrupting : !hasDraft}
+                      onClick={showPause ? () => void interrupt() : undefined}
+                    >
+                      <span className="morph-action-icon">
+                        {interrupting && showPause ? <Spinner /> : showPause ? <Pause size={18} fill="currentColor" /> : <Send size={18} />}
+                      </span>
                     </button>
-                    <button type="submit" className="send-button" title="发送（任务运行中，将加入排队）"><Send size={18} /></button>
-                  </>
-                ) : activeThreadRunning ? (
-                  <button type="button" className="stop-button" title="停止" disabled={interrupting} onClick={() => void interrupt()}>
-                    {interrupting ? <Spinner /> : <CircleStop size={18} />}
-                  </button>
-                ) : (
-                  <button type="submit" className="send-button" title="发送" disabled={!prompt.trim() && !quoteItem && !images.length && !files.length}><Send size={18} /></button>
-                )}
+                  );
+                })()}
               </div>
             </div>
           </form>

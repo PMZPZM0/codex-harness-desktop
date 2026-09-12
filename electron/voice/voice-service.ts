@@ -15,6 +15,27 @@ import { ASR_REPO, TTS_REPO, VAD_REPO } from "./model-manifest";
 import { ensureRepo, isRepoReady, modelFilePath, probeHosts, repoDir } from "./model-store";
 import { DEFAULT_VOICE_SETTINGS, MODEL_HOST_PRESETS, VOICE_SAMPLE_TEXT, loadVoiceSettings, type VoiceSettings } from "./voice-settings";
 import { ASR_WORKER_SOURCE, TTS_WORKER_SOURCE, VoiceWorkerClient, resolveSherpaPath } from "./workers";
+import fsPromises from "node:fs/promises";
+
+/** 把 16k 单声道 PCM16 wav 解成 Float32（渠道语音经 ffmpeg 归一后的标准形态）。
+ *  只做块级遍历找 data 块，不做任何重采样/多声道混缩——格式归一是上游 ffmpeg 的职责。 */
+function pcm16WavToFloat32(buf: Buffer): Float32Array {
+  if (buf.length < 44 || buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WAVE") return new Float32Array();
+  let offset = 12;
+  while (offset + 8 <= buf.length) {
+    const id = buf.toString("ascii", offset, offset + 4);
+    const size = buf.readUInt32LE(offset + 4);
+    if (id === "data") {
+      const count = Math.min(size, buf.length - offset - 8);
+      const n = Math.floor(count / 2);
+      const out = new Float32Array(n);
+      for (let i = 0; i < n; i++) out[i] = buf.readInt16LE(offset + 8 + i * 2) / 32768;
+      return out;
+    }
+    offset += 8 + size + (size % 2);
+  }
+  return new Float32Array();
+}
 
 const SAMPLE_RATE = 16000;
 
@@ -66,6 +87,8 @@ export class VoiceService {
   /** 唤醒用的独立识别器（持续聆听，不参与通话、不开引擎回合） */
   private wakeAsr: VoiceWorkerClient | null = null;
   private threadId = "";
+  /** conversation=自动提交并播报；dictation=只把识别字幕回传输入框 */
+  private mode: "conversation" | "dictation" = "conversation";
   private state: VoiceState = "idle";
   private active = false;
   private lastError = "";
@@ -122,8 +145,9 @@ export class VoiceService {
   }
 
   /** 开始通话：校验运行时与模型 → 建工作线程。 */
-  async start(input: { threadId: string }): Promise<{ ok: boolean; error?: string }> {
+  async start(input: { threadId: string; mode?: "conversation" | "dictation" }): Promise<{ ok: boolean; error?: string }> {
     if (this.active) return { ok: true };
+    this.mode = input.mode === "dictation" ? "dictation" : "conversation";
     this.lastError = "";
     // 每次 start 都重读一次设置——用户在设置页改了镜像源/音色，下一次通话立刻生效
     this.currentSettings = loadVoiceSettings(this.deps.userDataDir);
@@ -163,23 +187,26 @@ export class VoiceService {
           if (this.active) this.fail("语音识别线程意外退出，请重新开始通话");
         }
       );
-      this.tts = new VoiceWorkerClient(
-        "语音合成",
-        TTS_WORKER_SOURCE,
-        {
-          sherpaPath,
-          model: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "model.onnx"),
-          lexicon: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "lexicon.txt"),
-          tokens: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "tokens.txt"),
-          numThreads,
-        },
-        () => {
-          if (this.active) this.fail("语音合成线程意外退出，请重新开始通话");
-        }
-      );
+      // 听写只需要 ASR，不创建 TTS（更快、更省内存）；通话模式才创建合成线程。
+      if (this.mode === "conversation") {
+        this.tts = new VoiceWorkerClient(
+          "语音合成",
+          TTS_WORKER_SOURCE,
+          {
+            sherpaPath,
+            model: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "model.onnx"),
+            lexicon: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "lexicon.txt"),
+            tokens: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "tokens.txt"),
+            numThreads,
+          },
+          () => {
+            if (this.active) this.fail("语音合成线程意外退出，请重新开始通话");
+          }
+        );
+      }
       // 先建起来，把模型加载的耗时挡在通话之前（失败会在下面被捕获）
       await this.asr.request("create");
-      await this.tts.request("create");
+      if (this.tts) await this.tts.request("create");
     } catch (error: any) {
       await this.stop();
       const message = `语音模型加载失败：${error?.message ?? error}`;
@@ -205,6 +232,7 @@ export class VoiceService {
     this.currentTurnId = "";
     this.turnText = "";
     this.threadId = "";
+    this.mode = "conversation";
     this.setState("idle");
     await Promise.allSettled([asr?.terminate(), tts?.terminate()]);
   }
@@ -230,6 +258,61 @@ export class VoiceService {
     }
   }
 
+  /** 长按听写松手：补静音 flush 尾句并只回传 final，不提交引擎。 */
+  async finishDictation(): Promise<{ ok: boolean; text?: string; error?: string }> {
+    if (!this.active || !this.asr || this.mode !== "dictation") return { ok: false, error: "当前不在语音输入状态" };
+    try {
+      const result = await this.asr.request("finish", {});
+      const text = String(result?.text ?? "").trim();
+      if (text) this.deps.emit({ type: "final", text });
+      return { ok: true, text };
+    } catch (error: any) {
+      return { ok: false, error: String(error?.message ?? error) };
+    }
+  }
+
+  /** 独立转写一个 16k 单声道 PCM wav 文件（渠道语音消息：上游 ffmpeg 已归一格式）。
+   *  临时建 ASR worker，转写完立即销毁——不影响正在进行的通话/听写。 */
+  async transcribeAudioFile(wavPath: string): Promise<{ ok: boolean; text?: string; error?: string }> {
+    const sherpaPath = resolveSherpaPath();
+    if (!sherpaPath) return { ok: false, error: "语音运行时未就绪（sherpa-onnx 未安装）" };
+    if (!(await this.refreshModelsReady())) return { ok: false, error: "语音模型未下载完整，请先在通话面板点「下载模型」" };
+    const settings = this.currentSettings ?? loadVoiceSettings(this.deps.userDataDir);
+    let worker: VoiceWorkerClient | null = null;
+    try {
+      worker = new VoiceWorkerClient(
+        "语音转写",
+        ASR_WORKER_SOURCE,
+        {
+          sherpaPath,
+          sampleRate: SAMPLE_RATE,
+          encoder: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "encoder.int8.onnx"),
+          decoder: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "decoder.onnx"),
+          joiner: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "joiner.int8.onnx"),
+          tokens: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "tokens.txt"),
+          numThreads: settings.asr.numThreads,
+          rule1: settings.asr.rule1,
+          rule2: settings.asr.rule2,
+          rule3: settings.asr.rule3,
+        },
+        () => { /* 临时 worker，短命，无需失败回调 */ },
+      );
+      await worker.request("create");
+      const buf = await fsPromises.readFile(wavPath);
+      const samples = pcm16WavToFloat32(buf);
+      if (!samples.length) return { ok: false, error: "音频解码为空（需要 16k 单声道 PCM wav）" };
+      await worker.request("feed", { samples });
+      const final = await worker.request("finish", {});
+      const text = String(final?.text ?? "").trim();
+      if (!text) return { ok: false, error: "转写结果为空（可能没有可识别的人声）" };
+      return { ok: true, text };
+    } catch (error: any) {
+      return { ok: false, error: String(error?.message ?? error) };
+    } finally {
+      await worker?.terminate().catch(() => undefined);
+    }
+  }
+
   /** 用户说完了：把这一句交给引擎。 */
   private async finishUtterance(text: string): Promise<void> {
     const utterance = text.trim();
@@ -243,6 +326,11 @@ export class VoiceService {
     }, 500);
 
     this.deps.emit({ type: "final", text: utterance });
+    // 输入框听写模式只回传字幕，不自动提交、不进入 thinking/TTS。
+    if (this.mode === "dictation") {
+      this.setState("listening");
+      return;
+    }
     try {
       await this.submitTurn(utterance);
     } catch (error: any) {

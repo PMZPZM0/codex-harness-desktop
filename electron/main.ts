@@ -491,11 +491,12 @@ ipcMain.handle("voice:settings-set", async (_event, patch: any) => {
   return next;
 });
 
-ipcMain.handle("voice:start", async (_event, threadId: string) => {
-  const result = await voiceService.start({ threadId: String(threadId ?? "") });
+ipcMain.handle("voice:start", async (_event, threadId: string, options?: { mode?: "conversation" | "dictation" }) => {
+  const result = await voiceService.start({ threadId: String(threadId ?? ""), mode: options?.mode });
   return { ...result, status: voiceService.status() };
 });
 
+ipcMain.handle("voice:dictation-finish", async () => voiceService.finishDictation());
 ipcMain.handle("voice:stop", async () => {
   await voiceService.stop();
   return { ok: true, status: voiceService.status() };
@@ -2054,8 +2055,66 @@ function channelLog(level: "info" | "error", message: string) {
 
 const feishuGateway = new FeishuGateway({
   onMessage: (message) => void handleChannelMessage("feishu", message.from, message.chatId, message.text),
+  // 语音消息：下载原始 opus → ffmpeg 归一 16k wav → ASR 转写 → 按普通文本走会话管线
+  onAudio: (message) => void handleChannelAudioMessage(message),
   log: channelLog,
 });
+
+/** ffmpeg 可执行文件：随包按需安装（开发工具页），装过就在 tools/ffmpeg 下；都没装则期望 PATH 里有。 */
+function resolveFfmpegPath(): string {
+  const candidates = [
+    path.join(process.resourcesPath ?? "", "tools", "ffmpeg", "ffmpeg.exe"),
+    path.join(process.cwd(), "tools", "ffmpeg", "ffmpeg.exe"),
+  ];
+  for (const candidate of candidates) {
+    try { if (existsSync(candidate)) return candidate; } catch { /* 忽略路径异常，继续下一个 */ }
+  }
+  return "ffmpeg";
+}
+
+/** 把渠道语音（飞书 opus / 其它）归一成 16k 单声道 PCM wav，供 sherpa ASR 直接吃。 */
+async function transcodeToWav16k(inputPath: string): Promise<string> {
+  const outPath = inputPath.replace(/\.[^.]+$/, "") + "-16k.wav";
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(resolveFfmpegPath(), ["-y", "-i", inputPath, "-ar", "16000", "-ac", "1", "-f", "wav", outPath], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr?.on("data", (chunk) => { stderr += String(chunk); });
+    child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg 退出码 ${code}：${stderr.slice(-200)}`))));
+    child.on("error", (error) => reject(new Error(`ffmpeg 不可用（请在开发工具页下载 FFmpeg）：${error.message}`)));
+  });
+  return outPath;
+}
+
+/** 渠道语音消息管线：转写成功后与普通文本消息走同一条路（会话绑定/回复机制全部复用）。 */
+async function handleChannelAudioMessage(message: { from: string; chatId: string; messageId: string; fileKey: string; replyHint: string }) {
+  try {
+    await feishuGateway.sendMessage(message.chatId, "🎤 收到语音，正在转写…");
+    const rawPath = await feishuGateway.downloadAudio(message.messageId, message.fileKey);
+    let wavPath = "";
+    try {
+      wavPath = await transcodeToWav16k(rawPath);
+    } catch (error: any) {
+      await feishuGateway.sendMessage(message.chatId, `⚠️ ${error.message}`);
+      return;
+    } finally {
+      await fs.rm(rawPath, { force: true }).catch(() => undefined);
+    }
+    const result = await voiceService.transcribeAudioFile(wavPath);
+    await fs.rm(wavPath, { force: true }).catch(() => undefined);
+    if (!result.ok) {
+      await feishuGateway.sendMessage(message.chatId, `⚠️ 语音转写失败：${result.error ?? ""}`);
+      return;
+    }
+    const text = String(result.text ?? "").trim();
+    if (!text) {
+      await feishuGateway.sendMessage(message.chatId, "⚠️ 语音转写结果为空，请靠近麦克风再说一遍");
+      return;
+    }
+    await handleChannelMessage("feishu", message.from, message.chatId, text);
+  } catch (error: any) {
+    await feishuGateway.sendMessage(message.chatId, `⚠️ 语音处理失败：${error?.message ?? error}`).catch(() => undefined);
+  }
+}
 const dingtalkGateway = new DingtalkGateway({
   onMessage: (message) => void handleChannelMessage("dingtalk", message.from, message.chatId, message.text),
   log: channelLog,
