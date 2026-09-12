@@ -1423,6 +1423,10 @@ button {
 }
 .timeline {
   scroll-behavior: smooth;
+  /* 关闭浏览器滚动锚定：钉顶/贴底跟随由 App 手动管理（瞬时滚动），Chrome 的
+     overflow-anchor 会在思考卡折叠等内容高度突变时自行补偿 scrollTop，跟手动
+     滚动打架 = 出字时来回闪（09-12 实测） */
+  overflow-anchor: none;
   flex: 1 1 0;
   width: 0;
   min-width: 0;
