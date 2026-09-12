@@ -3880,12 +3880,12 @@ function runtimeList() {
 }
 
 /**
- * 自动化工具包（npm-global：nuphus-mcp + playwright-cli + cloakbrowser）在线地址。
- * 随包 zip 缺失时由 install-automation.cjs 的 --url 走这里下载——「发布包漏带 zip」
- * 是 09-12 用户实测的真实故障（Windows 打包链路此前没有「打包前准备 + 校验」环节）。
- * 指向 GitHub Release 的 latest 资产，跨版本稳定，不必随版本改。
+ * ⛔ 这里曾经有过一个「自动化工具包在线回落地址」（GitHub Release 的 automation-tools.zip），
+ * 已于 09-12 删除：那个 release 资产**根本不存在**（实测 v0.0.13 只有两个 mac zip），
+ * 回落只会让用户看到「下载失败」，还把真正的问题（安装包没带 zip）藏起来。
+ * 现在「包里必须有 zip」由打包链路硬保证（scripts/before-pack.cjs 硬失败）。
+ * 注意：本段注释刻意不写出那个常量的字面名——preflight【8】会全文搜它，注释也会命中。
  */
-const AUTOMATION_TOOLS_URL = `https://github.com/${GITHUB_REPO}/releases/latest/download/automation-tools.zip`;
 
 function runtimeInstaller(name: string) {
   return app.isPackaged ? path.join(toolsRoot(), name) : path.join(app.getAppPath(), "scripts", name);
@@ -3979,10 +3979,21 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
   const task = (async () => {
     if (id === "automation") {
       if (!bundledNode()) await runRuntimeInstaller("node", runtimeInstaller("install-runtimes.cjs"), ["node"]);
-      // 随包 zip 优先（离线可用）；打包链路漏带 zip 时回落在线下载，不再硬失败
+      // ⛔ 只认随包 zip（解压安装），**不再回落在线下载**（09-12 用户实测发布包故障）：
+      //   旧实现找不到 zip 就去拉 GitHub Release 的 automation-tools.zip —— 而那个资产
+      //   **根本不存在**（实测 v0.0.13 的 release 只有两个 mac zip），于是用户看到的是
+      //   「直接下载失败」，且浏览器自动化/内核两个（依赖这个包里的 playwright-cli /
+      //   cloakbrowser）跟着一起装不了。既然装不上就当场说清楚，别去撞一个死地址。
+      //   保证「包里一定有 zip」是打包链路的责任：scripts/before-pack.cjs 现在**硬失败**
+      //   （不再 warn 后静默放过），宁可不打包也不发坏包。
       const bundledAutomationZip = path.join(toolsRoot(), "automation-tools.zip");
-      const automationArgs = existsSync(bundledAutomationZip) ? [] : [`--url=${AUTOMATION_TOOLS_URL}`];
-      await runRuntimeInstaller(id, runtimeInstaller("install-automation.cjs"), automationArgs, bundledNode());
+      if (!existsSync(bundledAutomationZip)) {
+        throw new Error(
+          "随包缺少 tools/automation-tools.zip —— 这一版安装包不完整，装不了「桌面与浏览器自动化」。"
+          + "请更新到带该文件的版本；自建包时先在本机装一次自动化工具链再执行打包。"
+        );
+      }
+      await runRuntimeInstaller(id, runtimeInstaller("install-automation.cjs"), [], bundledNode());
       // 解压安装成功后自动激活「桌面自动化」「浏览器自动化」联动开关（nuphus MCP 注册 + 技能启用）
       await saveAppSettings(app.getPath("userData"), { desktopAutomation: true, browserAutomation: true });
     } else if (id === "playwright-browsers") {

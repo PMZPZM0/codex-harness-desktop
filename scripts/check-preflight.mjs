@@ -9,7 +9,8 @@
 //
 // 用法：npm run check（= build 之后自动跑本脚本）
 
-import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../src/lib/model-scope.mjs";
 import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../src/lib/voice-aec.mjs";
 import { join, dirname, relative } from "node:path";
@@ -677,6 +678,50 @@ console.log(C.bold("\n【7】验收入口唯一化 + 持久 profile（带历史�
         ok("身份引导判据与 App.tsx 注入文本同源，且只看 developer 消息（不会被 AGENTS.md 干扰）");
       }
     }
+  }
+}
+
+console.log(C.bold("\n【8】打包必备件：随包 automation-tools.zip（发布包三大安装项的前提）"));
+{
+  // 为什么是硬失败（09-12 用户实测发布包故障，原话「桌面自动化和浏览器自动化还有浏览内核，
+  // 这三个都下载安装不了，直接下载失败」）：
+  //   实测 v0.0.13 的 GitHub Release **只有两个 mac zip**，没有 automation-tools.zip 资产；
+  //   而旧代码在「随包 zip 缺失」时是 **warn 后静默放过**，应用侧再回落去拉那个 404 地址 →
+  //   用户看到「直接下载失败」，浏览器内核两项（依赖该包里的 playwright-cli / cloakbrowser）
+  //   跟着一起废。结论：**包里没有 zip 的安装包就是坏包**，打包必须失败而不是放行。
+  // 这里直接**跑一遍 before-pack**（指向一个空的 tools 根）来验证它真的会硬失败；
+  // 再验证逃生阀 AUTOMATION_ZIP_OPTIONAL=1 能放行（否则发布链路会被彻底卡死）。
+  const beforePack = join(ROOT, "scripts", "before-pack.cjs");
+  if (!existsSync(beforePack)) {
+    fail("缺少 scripts/before-pack.cjs —— 打包前不再保证 automation-tools.zip 存在");
+  } else {
+    const emptyRoot = join(ROOT, ".e2e-artifacts", "empty-tools-probe");
+    try { rmSync(emptyRoot, { recursive: true, force: true }); } catch { /* 忽略 */ }
+    mkdirSync(emptyRoot, { recursive: true });
+    // 必须**真的调用**那个导出的钩子（直接 `node before-pack.cjs` 只是加载模块、永远退出 0）
+    const invoke = `require(${JSON.stringify(beforePack)})().then(() => process.exit(0), (e) => { console.error(String((e && e.message) || e)); process.exit(1); });`;
+    const strict = spawnSync(process.execPath, ["-e", invoke], {
+      encoding: "utf8",
+      env: { ...process.env, AUTOMATION_TOOLS_ROOT: emptyRoot, AUTOMATION_ZIP_OPTIONAL: "" },
+    });
+    const relaxed = spawnSync(process.execPath, ["-e", invoke], {
+      encoding: "utf8",
+      env: { ...process.env, AUTOMATION_TOOLS_ROOT: emptyRoot, AUTOMATION_ZIP_OPTIONAL: "1" },
+    });
+    try { rmSync(emptyRoot, { recursive: true, force: true }); } catch { /* 忽略 */ }
+    strict.status !== 0
+      ? ok("缺 automation-tools.zip 时 before-pack 会**中止打包**（不发坏包）")
+      : fail("before-pack 在缺 zip 时仍然放行 —— 会打出「三大安装项全废」的坏包");
+    relaxed.status === 0
+      ? ok("逃生阀 AUTOMATION_ZIP_OPTIONAL=1 可显式放行（发布链路不会被卡死）")
+      : fail("AUTOMATION_ZIP_OPTIONAL=1 也无法放行 —— 需要出无自动化包的版本时会卡死");
+  }
+  // 应用侧不得再回落在线下载（那个地址 404，只会把真问题藏起来）
+  if (mainSrc) {
+    const hasUrlFallback = /AUTOMATION_TOOLS_URL/.test(mainSrc) || /--url=\$\{AUTOMATION_TOOLS_URL\}/.test(mainSrc);
+    hasUrlFallback
+      ? fail("main.ts 又出现了 AUTOMATION_TOOLS_URL 在线回落 —— 那个 Release 资产不存在，只会变成「下载失败」")
+      : ok("应用侧只认随包 zip（解压安装），不再回落到不存在的在线地址");
   }
 }
 
