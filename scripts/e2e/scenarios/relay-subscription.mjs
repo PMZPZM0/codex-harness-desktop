@@ -230,8 +230,9 @@ export const steps = [
       // 弹窗先渲染 loading 态，卡片由 relayPaymentPlans 异步返回后才有 —— 必须等卡片，否则点击空放
       await h.waitFor(`!!document.querySelector(".relay-plan-market-card .relay-plan-buy")`, { label: "套餐卡片渲染", timeoutMs: 15000 });
       await h.eval(`document.querySelector(".relay-plan-market-card .relay-plan-buy")?.click()`);
-      // openPurchase：主进程弹窗 loadURL /purchase → mock 记录命中；渲染层进入 watching
+      // openPurchase：主进程弹窗 loadURL /purchase → mock 记录命中（异步加载，轮询等它）
       await h.waitFor(`document.querySelector(".relay-sub-banner").classList.contains("watching")`, { label: "置顶卡进入等待支付态", timeoutMs: 20000 });
+      for (let i = 0; i < 40 && !state.hits.includes("GET /purchase"); i++) await wait(250);
       h.check("站内支付页被打开（mock 命中 /purchase）", state.hits.includes("GET /purchase"), `hits=${state.hits.filter((x) => x.includes("purchase")).join(",")}`);
       h.check("等待态提供「我已完成支付」核验按钮", await h.eval(`(() => { const b = [...document.querySelectorAll(".relay-sub-banner button")].find(x => (x.textContent || "").includes("我已完成支付")); return !!b; })()`) === true);
       await h.screenshot("04-watching");
@@ -258,12 +259,42 @@ export const steps = [
       await h.waitFor(`(() => { const el = document.querySelector(".relay-sub-banner"); return !!el && el.innerText.includes("当前生效"); })()`, { label: "置顶卡亮「当前生效」", timeoutMs: 20_000 });
       const badge = await h.eval(`(() => { const el = document.querySelector(".relay-sub-banner"); return el ? el.innerText.replace(/\\n/g, " | ") : ""; })()`);
       h.check("置顶卡展示套餐与额度", badge.includes("月额度已用"), badge.slice(0, 120));
+      // 正向联动加强：中转站激活后，模型供应商列表里**只有本站供应商是启用态**（其他全部自动停用）
+      // 注意必须走 Electron IPC（window.codex.listCustomModels）——window.codex.request 是引擎 RPC，
+      // 引擎不认识 custom-model:list，reject 后 eval 返回错误串会把它当 truthy 假绿（实测踩过）。
+      await h.waitFor(`window.codex.listCustomModels().then((r) => {
+        const relay = (r.providers || []).find((p) => p.provider === ${JSON.stringify("relay-127")});
+        return Boolean(relay && relay.enabled !== false) && (r.providers || []).every((p) => p.provider === ${JSON.stringify("relay-127")} || p.enabled === false);
+      })`, { label: "供应商互斥：仅 relay 供应商启用", timeoutMs: 30_000 });
+      h.check("互斥生效：其他供应商已自动停用，只启用 relay 对应供应商", true);
       await h.screenshot("05-activated");
     },
   },
 
   {
-    name: "⑥ 渲染层无 console.error",
+    name: "⑥ 反向联动：手动启用其他供应商 → relay 供应商被停用 + 中转站退出当前生效",
+    run: async (h) => {
+      // 模拟用户在模型设置里启用另一个供应商（custom906 是灌入的真实供应商）
+      const listResp = await h.eval(`window.codex.listCustomModels()`);
+      const list = JSON.stringify((listResp?.providers || []).map((p) => p.provider));
+      const others = JSON.parse(list).filter((p) => p !== "relay-127");
+      if (!others.length) { h.check("前置：存在其他供应商可反向切换", false, list); return; }
+      await h.eval(`window.codex.setProviderEnabled({ provider: ${JSON.stringify(others[0])}, enabled: true }).then(() => "ok").catch(e => "ERR:" + e.message)`);
+      // set-enabled 全局互斥 → relay-127 被停用；provider-activated 广播 → 渲染层清 relay-active
+      await h.waitFor(`window.codex.listCustomModels().then((r) => {
+        const relay = (r.providers || []).find((p) => p.provider === ${JSON.stringify("relay-127")});
+        const other = (r.providers || []).find((p) => p.provider === ${JSON.stringify(others[0])});
+        return other?.enabled !== false && relay?.enabled === false;
+      })`, { label: "互斥反转：relay 供应商被停用", timeoutMs: 30_000 });
+      h.check("反向互斥：启用其他供应商后 relay 供应商自动停用", true);
+      await h.waitFor(`(() => { try { return localStorage.getItem("relay-active-v1") === null; } catch { return false; } })()`, { label: "relay-active 已清（中转站退出当前生效）", timeoutMs: 20_000 });
+      h.check("反向联动：中转站「当前生效」标记已清除（置顶卡/徽标同步退场）", true);
+      await h.screenshot("06-reverse-linkage");
+    },
+  },
+
+  {
+    name: "⑦ 渲染层无 console.error",
     run: async (h) => {
       h.check("渲染层无 console.error", h.consoleLog.length === 0, h.consoleLog.slice(0, 3).join(" ｜ "));
     },

@@ -5372,6 +5372,7 @@ ipcMain.handle("custom-model:save", async (_event, input: { provider: string; na
   }
   await fs.writeFile(customModelFile, JSON.stringify(saved, null, 2), "utf8");
   await applyCustomModel(saved);
+  broadcastProviderActivated(provider);
   return publicCustomModel(saved);
 });
 ipcMain.handle("custom-model:list", async () => {
@@ -5386,11 +5387,29 @@ ipcMain.handle("custom-model:select", async (_event, providerId: string) => {
   if (!target) throw new Error("未找到该供应商");
   const next = withModels(target);
   if (next !== target) await upsertCustomModel(next);
+  await disableOtherCustomProviders(providerId);
   await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
   await applyCustomModel(next);
+  broadcastProviderActivated(providerId);
   return publicCustomModel(next);
 });
 /** 在同一供应商内切换生效模型：保留 models 列表，只改 model 字段 */
+/** 全局互斥兜底：provider 成为唯一启用者后，其余启用中的供应商全部停用。
+ *  save / set-enabled 原本就有；set-model（下拉跨供应商切换）与 select（直接选档案）
+ *  同样会改变生效者——漏掉会出现「中转站登录后模型列表里其他供应商仍显示启用」。 */
+async function disableOtherCustomProviders(provider: string) {
+  const list = await readCustomModels();
+  for (const other of list) {
+    if (other.provider !== provider && other.enabled !== false) {
+      await upsertCustomModel({ ...other, enabled: false });
+    }
+  }
+}
+/** 供应商→中转站反向联动的信号：任何供应商成为当前生效后广播给渲染层，
+ *  渲染层据此清掉不再匹配的 relay-active（localStorage 在渲染层，主进程清不了）。 */
+function broadcastProviderActivated(provider: string) {
+  try { sendToWindow("harness:event", { type: "provider-activated", provider, at: Date.now() }); } catch { /* 窗口未就绪 */ }
+}
 ipcMain.handle("custom-model:set-model", async (_event, input: { provider: string; model: string; apply?: boolean; restart?: boolean }) => {
   const model = input.model.trim();
   if (!model) throw new Error("模型 ID 不能为空");
@@ -5399,12 +5418,16 @@ ipcMain.handle("custom-model:set-model", async (_event, input: { provider: strin
   if (!target) throw new Error("未找到该供应商");
   const next = withModels({ ...target, model }, model);
   await upsertCustomModel(next);
+  await disableOtherCustomProviders(input.provider);
   await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
   // apply=false 时只保存配置不重写 config.toml（最轻量，仅对齐档案文件）。
   // apply=true + restart=false：一次性写齐 custom-model.json + config.toml 顶层 + catalog，
   // 但**不重启引擎**——同供应商换模型不需要重启，重启会打断在跑的回合。
   // apply=true + restart 缺省 = 旧语义：写配置并重启引擎（供应商级切换用）。
-  if (input.apply !== false) await applyCustomModel(next, { restart: input.restart !== false });
+  if (input.apply !== false) {
+    await applyCustomModel(next, { restart: input.restart !== false });
+    broadcastProviderActivated(input.provider);
+  }
   return publicCustomModel(next);
 });
 /** 思考等级档案持久化：写进 custom-model.json（models[].effort + 顶层 effort），
@@ -5518,6 +5541,7 @@ ipcMain.handle("custom-model:set-enabled", async (_event, input: { provider: str
         if (changed) await writeRelayStore(store);
       }
     } catch { /* 账号库不存在等：跳过联动，不影响启用主流程 */ }
+    broadcastProviderActivated(input.provider);
     return publicCustomModel(next);
   }
   const next: CustomModelFile = { ...target, enabled: false };

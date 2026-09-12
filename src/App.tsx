@@ -8151,6 +8151,9 @@ export default function App() {
         setNotice(`已切换：${resolved.displayName} · 模型 ${defaultModel}`);
         // 中转站一键切换已立即重启引擎生效：清掉可能残留的「待重启生效」banner
         setPendingRestart(null);
+        // 互斥落盘在主进程 save handler 里做了（其他供应商 enabled=false），这里刷新
+        // 渲染层供应商列表，模型设置页立即反映「只有本中转站供应商是启用态」。
+        void refreshActive();
       } catch (error: any) {
         probeError = String(error?.message ?? error);
         // 部分站点（如 pptoken）要求 key 必须绑定分组：无分组 key 直接 403。自动改绑第一个订阅分组重试一次。
@@ -8173,7 +8176,7 @@ export default function App() {
     } finally {
       setRelayBusy(false);
     }
-  }, [adoptSavedProvider, setNotice, setModelId]);
+  }, [adoptSavedProvider, refreshActive, setNotice, setModelId]);
   // 启用 OpenAI 官方订阅：伪供应商 openai-official（引擎不写 model_provider，走 auth.json ChatGPT 凭据）
   const activateOfficialProvider = useCallback(async (modelsInput?: string[]) => {
     // 代理先落盘再触发引擎重启（顺序敏感：applyCustomModel 读文件注入引擎环境）
@@ -10023,6 +10026,17 @@ const commandMatches = useMemo(() => {
           if (!current || current.skill.id !== event.skillId) return current;
           return { ...current, current: Math.max(current.current, positions[event.stage] ?? current.current), engineRegistered: event.stage === "complete" ? true : current.engineRegistered, engineCheckMessage: ["complete", "pending"].includes(event.stage) ? event.message : current.engineCheckMessage };
         });
+      }
+      if (event.type === "provider-activated") {
+        // 供应商→中转站反向联动：生效供应商变成非 relay 时，清掉中转站「当前生效」标记，
+        // 余额徽标/置顶订阅卡即时退场（此前只靠 activeProvider 逐处比对，relay-active 会残留）。
+        // relayActivate 自身最后一步才写 relay-active，本分支先清后写也会收敛到正确终态。
+        const activated = String((event as any).provider ?? "");
+        const relay = readRelayActive();
+        if (activated && relay && relay.provider !== activated) {
+          writeRelayActive(null);
+          showToast("已切换到其他供应商", `中转站「${relay.label}」退出当前生效；重新选用套餐或密钥即可再启用`);
+        }
       }
       if (event.type === "skill-remove") {
         const positions: Record<string, number> = { prepare: 1, delete: 2, registry: 3, engine: 4, verify: 5, complete: 6, pending: 6 };
