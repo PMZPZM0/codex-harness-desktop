@@ -31,15 +31,71 @@ const DEFAULT_POS = { right: 22, bottom: 104 };
 const CAPTURE_RATE = 16000;
 const BARGUE_COOLDOWN_MS = 1200;
 
-/** 悬浮球的随机短提示词（气泡里冒出来的那种，刻意做得短、口语化、带点引导性） */
-const HINTS = [
-  "点我开始通话 →",
-  "说完停一下就提交",
-  "播报时可以直接插话打断",
-  "外放的话调高打断灵敏度",
-  "音色可以在设置里试听",
-  "右键我可以隐藏或进设置",
-];
+/**
+ * 悬浮球的随机短提示词——按任务状态**分池**，每条池里是"运行状态/搞笑话语/个性化"三类混合。
+ * 不再是固定的 6 条随机抽：用户说"根据任务状态多种提示词"——
+ * 待机时偏闲聊/搞怪，聆听时偏鼓励/个性化，思考时偏调侃/思考，播报时偏"我正在说话"；
+ * 模型没就绪时偏引导（"先去设置页下载"那种）。
+ */
+const HINT_POOLS: Record<string, string[]> = {
+  // 待机（ball 显示但通话没开）
+  idle: [
+    "点我一下开始说话 →",
+    "需要我帮忙就说一声",
+    "敲一行字也能找我，语音不是唯一的",
+    "外放的话调高打断灵敏度（设置里）",
+    "右键我可以隐身 / 跳到设置",
+    "今天想做点啥？",
+  ],
+  // 启动中
+  starting: [
+    "模型在起床，3 秒就好…",
+    "麦克风要开了，先别出声",
+    "加载说话脑，loading…",
+  ],
+  // 聆听
+  listening: [
+    "我在听，慢慢说 →",
+    "中英都行，哪怕混着说",
+    "我听到就打断你，不浪费你时间",
+    "这段话儿等下让我想想…",
+  ],
+  // 思考
+  thinking: [
+    "嗯让我想想…",
+    "这个问题有意思",
+    "正在拼拼图…",
+    "哎这个角度我还没想过",
+  ],
+  // 播报
+  speaking: [
+    "我在说，你随便打断",
+    "外放记得调打断灵敏度",
+    "下一句马上接上…",
+    "我尽量说短点，别嫌我啰嗦",
+  ],
+  // 模型没下完
+  modelsMissing: [
+    "我还没准备好，先到设置下个模型？",
+    "脑子还在快递路上（设置 → 开发工具）",
+    "点我之前先到「开发工具」下载语音模型",
+  ],
+};
+
+/** 按当前 phase/state/模型状态挑一个最合适的池子随机抽 */
+function pickHint(phase: VoicePhase, state: VoiceState, modelsReady: boolean): string {
+  let pool: string[];
+  if (!modelsReady && phase !== "active") {
+    pool = HINT_POOLS.modelsMissing;
+  } else if (phase === "active") {
+    pool = HINT_POOLS[state] ?? HINT_POOLS.idle;
+  } else if (phase === "starting") {
+    pool = HINT_POOLS.starting;
+  } else {
+    pool = HINT_POOLS.idle;
+  }
+  return pool[Math.floor(Math.random() * pool.length)];
+}
 
 function formatBytes(bytes: number): string {
   if (!bytes || bytes <= 0) return "0 MB";
@@ -70,7 +126,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   const [ballVisible, setBallVisible] = useState(true);
   const [hintsEnabled, setHintsEnabled] = useState(true);
   const [hint, setHint] = useState<string | null>(null);
-  // 右键菜单
+  // 右键菜单位置：做视口边界检测（看用户截图：之前直接用 clientX/Y 会跑出屏幕）
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   // 字幕广播用：delta 是逐字累加的，用 ref 拿累计值，避免依赖 state 更新时机
   const agentTextRef = useRef("");
@@ -141,20 +197,20 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     }).catch(() => undefined);
   }, []);
 
-  // 随机短提示气泡：每隔 7~12 秒冒一句，4 秒后自动收起（可在设置里关掉）
+  // 随机短提示气泡：按当前 phase/state/模型就绪 选池子，每 7~12 秒冒一句，4 秒后收起
   useEffect(() => {
     if (!hintsEnabled) { setHint(null); return; }
     let timer = 0;
     let hideTimer = 0;
     const tick = () => {
-      const text = HINTS[Math.floor(Math.random() * HINTS.length)];
-      setHint(text);
+      setHint(pickHint(phase, state, models?.ready ?? false));
       hideTimer = window.setTimeout(() => setHint(null), 4000);
       timer = window.setTimeout(tick, 7000 + Math.random() * 5000);
     };
     timer = window.setTimeout(tick, 1500);
     return () => { window.clearTimeout(timer); window.clearTimeout(hideTimer); };
-  }, [hintsEnabled]);
+    // 依赖 phase/state/modelsReady —— 状态变了下一条提示会立刻刷新成对应池
+  }, [hintsEnabled, phase, state, models?.ready]);
 
   // 点空白处收起右键菜单
   useEffect(() => {
@@ -172,7 +228,15 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   const onBallContextMenu = useCallback((e: ReactMouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setMenu({ x: e.clientX, y: e.clientY });
+    // 菜单大小约 150×88。鼠标处为锚点，越右/下边就贴回视口边内
+    // —— 直接用 clientX/Y 在 52px 的小窗口里会被聊天区遮住、跑出屏幕。
+    const W = 158;
+    const H = 88;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const x = Math.max(6, Math.min(e.clientX, vw - W - 6));
+    const y = Math.max(6, Math.min(e.clientY, vh - H - 6));
+    setMenu({ x, y });
   }, []);
 
   const hideBall = useCallback(() => {
