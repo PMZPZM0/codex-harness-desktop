@@ -4900,16 +4900,19 @@ function usePacketRevealText(
 ) {
   const initial = (() => {
     const marked = markerStore?.get(key);
+    // ⛔ 只有「一次性整包交付」的 marker 才允许起播动画；其余情况（**含切会话回来**）
+    // 一律直接显示到当前实时进度 —— 用户定稿：「实时进度在哪里，进来就在哪里」，
+    // 任何形式的存量复播都不允许（旧实现会从 `slice(0,10)` 起播 = 整段重播）。
     if (marked != null && text.startsWith(marked)) return marked;
-    const progressed = revealProgressStore.get(key);
-    if (progressed != null && text.startsWith(progressed)) return progressed;
-    if (active && text.length >= threshold) return text.slice(0, Math.min(10, text.length));
     return text;
   })();
   const [displayed, setDisplayed] = useState(initial);
   const [revealing, setRevealing] = useState(initial.length < text.length);
   const displayedRef = useRef(displayed);
   const revealingRef = useRef(revealing);
+  // 本组件实例是否是「第一次跑揭示 effect」（= 刚挂载）。用来区分「重挂载补齐存量」与
+  // 「挂载后新到的增量」——只有前者必须一次性显示（见 isStockOnMount）。
+  const firstRunRef = useRef(true);
   useEffect(() => { displayedRef.current = displayed; }, [displayed]);
   useEffect(() => { revealingRef.current = revealing; }, [revealing]);
   useEffect(() => {
@@ -4965,8 +4968,19 @@ function usePacketRevealText(
     // 若照旧揭示，就会把 834 个字的**存量**从头播一遍，表现为「切过去正文重新出字」。
     // 判据：待播字数远超单帧/单批的正常增量（> REVEAL_INSTANT_JUMP）时，判定为
     // 「重挂载后补齐存量」而非「新到的增量」→ 直接显示，不做动画。
+    // ⛔ 存量必须一次性显示（09-12 用户「切换一下就重复播放一次」的**真根因**）：
+    // 判据不是「待播字数多大」，而是「**这次是不是重挂载后第一次跑、且已经有存量**」。
+    // 实测反例：切走时 173 字，切回后存量涨到 532 字 → remaining=334 < 400 的旧阈值，
+    // 于是把这 334 个**已经显示过的**字又逐字播了一遍（reveal 打点 `animated:334`），
+    // 用户看到的就是「切一下就重播一次」。凡是挂载时就有存量（start 明显不止初始 10 字），
+    // 一律整段直接显示；**之后新到的增量**才走打字机。
+    const isStockOnMount = firstRunRef.current && remaining > 0 && marked == null;
+    firstRunRef.current = false;
     const REVEAL_INSTANT_JUMP = 400;
-    const shouldReveal = (revealingRef.current || active || marked != null) && remaining <= REVEAL_INSTANT_JUMP;
+    const allowReveal = isStockOnMount
+      ? false                                    // 挂载时就有待播内容 = 存量 → 一次性显示
+      : (revealingRef.current || active || marked != null);
+    const shouldReveal = allowReveal && remaining <= REVEAL_INSTANT_JUMP;
     if (!shouldReveal) {
       displayedRef.current = text;
       setDisplayed(text);
@@ -5024,7 +5038,11 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
     const marked = bufferedReasoningRevealStarts.get(String(item.id));
     if (marked != null && text.startsWith(marked)) return marked;
     const progressed = revealReasoningProgress.get(String(item.id));
-    if (progressed != null && text.startsWith(progressed)) return progressed;
+    // 单调下限（09-12 用户「切换一下就重复播放一次」）：进度表里只要有记录，就**取它**，
+    // 不再要求 `text.startsWith(progressed)`——思考正文在 resume/流式合并后可能不是严格
+    // 前缀（末尾被修订），旧条件一旦不成立就掉回下面的 `slice(0,10)` 分支 =
+    // **整段思考从头重播**。位置只许前进，这是唯一正确的语义。
+    if (progressed != null) return text.slice(0, Math.min(progressed.length, text.length));
     if (turnActive && text.length >= 24) return text.slice(0, Math.min(10, text.length));
     return text;
   }, [item.id]);
@@ -5040,10 +5058,11 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
       displayedRef.current = start;
       setDisplayed(start);
     }
-    // 进度表对齐：跨卸载重建后从上次播放进度续追，不从头重播（同 revealProgressStore）
+    // 进度表对齐：跨卸载重建后从上次播放进度续追，不从头重播（同 revealProgressStore）。
+    // 同样**不要求** startsWith：位置只能前进（见上面 initialReveal 的说明）。
     const progressed = revealReasoningProgress.get(String(item.id));
-    if (progressed != null && text.startsWith(progressed) && start.length < progressed.length) {
-      start = progressed;
+    if (progressed != null && start.length < progressed.length) {
+      start = text.slice(0, Math.min(progressed.length, text.length));
       displayedRef.current = start;
       setDisplayed(start);
     }
