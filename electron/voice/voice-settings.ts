@@ -22,7 +22,7 @@ export type BargeMode = "auto" | "manual";
 export type ModelHost = "auto" | "huggingface" | "hf-mirror";
 
 export type VoiceSettings = {
-  tts: { sid: number; speed: number; volume: number };
+  tts: { sid: number; speed: number; volume: number; /** "我的音色"档案 id；空串/缺省 = 用内置预置音色 */ profileId?: string };
   asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
   mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
   barge: { gateDb: number; mode: BargeMode };

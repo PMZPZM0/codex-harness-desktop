@@ -119,6 +119,15 @@ resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
     **供应商互斥与双向联动加强（09-12 二期）**：①`custom-model:set-model`（输入框下拉跨供应商切换）与 `custom-model:select` 此前**没有互斥**——补上 `disableOtherCustomProviders`（save/set-enabled 原本就有），至此四个激活入口（save/set-enabled/set-model/select）全部「启用谁就停用其他」，中转站登录/订阅支付后模型列表里只留本站供应商启用。②反向联动走主进程广播：四个入口在供应商成为当前生效后发 `harness:event {type:"provider-activated", provider}`，渲染层 onEvent 分支发现与 `relay-active-v1` 的 provider 不符 → `writeRelayActive(null)` + toast（余额徽标/置顶订阅卡即时退场，不再残留）。③`relayActivate` 成功尾部补 `refreshActive()`，模型设置页立即反映互斥结果。**e2e 踩坑**：场景里断言 Electron IPC 必须用 `window.codex.listCustomModels()` 等**桥接方法**——`window.codex.request` 是引擎 RPC，引擎不认识会 reject，而 harness.eval 把页面异常变成 `__ERR__:...` 字符串返回（truthy）→ waitFor 假绿；h.check 的 detail 传对象前先 JSON.stringify。
 **顺带实锤**：`groups/available` 带 `max_reasoning_effort` + `max_reasoning_effort_over_limit:"downgrade"`——网关分组会强制降思考档位，是「思考等级传最高跑最低」的站方因素（此前只归因到上游模型）。
 
+- **音色档案（我的音色）09-12 新增**：`electron/voice/voice-profiles.ts`（CRUD + wav 编解码 + 重采样），
+  TTS worker 新增 `mode: "zipvoice"` 分支（配置照 `.e2e-artifacts/zipvoice-verify.mjs` 里跑通的那份；
+  **reference* 必须放进 generationConfig 层**，平铺会报 `reference_sample_rate 0 is invalid`）。
+  `voice-service.ts` 的 `ttsWorkerData()` 按 `settings.tts.profileId` 决定用克隆还是内置 vits。
+  IPC：`voice:profiles-list/import/record/save/delete/select/preview`。
+  流程：导入/录制 → 落草稿 wav → 重采样 16k 交给 `transcribeAudioFile` 自动转写原文 → 用户校对 → 保存 → 选用。
+- **⚠️ 显式字段映射会吞掉新字段（09-12 踩）**：`VoiceDevToolsSection.refresh()` 把 IPC 返回重新拼成对象
+  （只列了 5 个字段），主进程新增的 `zipvoice` 被丢掉 → 表现「模型装完了状态一直显示未安装」。
+  **主进程新增字段时，必须同步检查渲染层有没有这种显式映射**（已在该处加注释警示）。
 - **实时语音三修（09-12 用户实测反馈）**：① 回声门控 `createEchoGate` 起播首块不再直接当回声地板（旧实现地板≈0 → 下一秒必然超阈 → **自己打断自己的播报**，用户原话「我没说话它也断」）：新增 `seedBlocks=8` 学习期、`minFloor=0.004` 绝对地板、`holdBlocks=6` 连续超阈去抖。② 断句 `createSentenceChunker` 新增 `firstMaxChars=18`——模型开头几十字常无标点，旧阈值 `maxChars=60` 会憋到很晚才出声（用户「语音跟不上正文」）。③ 字幕浮窗 `.voice-stage` 由「composer 上沿 absolute + 半透明毛玻璃」改为「position:fixed 顶部 84px 居中 + var(--bg) 实心白底 + max-height」，脱离输入区文档流（顺带消除运行中的上下文跳动）。preflight 新增 3 条断言，**已逐条反证会红**。
 - **崩溃取证 + 渲染进程自愈（09-12）**：`app.on("render-process-gone")` 在非 e2e 模式也落盘 `userData/voice-crash.log`（reason/exitCode）并**自动 reload**。旧行为：渲染进程一死 → 窗口关闭 → `window-all-closed` → `app.quit()`，用户看到「闪退」且零证据。另接 `process.on("uncaughtException"/"unhandledRejection")` 落盘。**注：ASR/TTS 原生推理已用独立探针压测 4 分钟（`.e2e-artifacts/voice-crash-probe.mjs`，连续 feed+speak，RSS 稳定 530MB、干净退出）→ ONNX 路径不是闪退元凶**，别再从这里查。
 - **打包钩子 `build.beforePack`（09-12）**：`scripts/before-pack.cjs` 打包前确保 `resources/tools/automation-tools.zip` 存在（有 npm-global/node_modules 时按 mtime 决定是否重建，失败即**中止打包**）。根因：`resources/tools/*` 全在 .gitignore，zip 必须现造，而 electron-builder 对**缺失的 extraResources 静默跳过** → 装出来的应用点「桌面与浏览器自动化」必报缺 zip。mac 不走此路（mac 配置 extraResources 为空 + `build/copy-mac-tools.cjs` 直接把 npm-global 铺进 Resources/tools，所以 mac 开箱即用）。

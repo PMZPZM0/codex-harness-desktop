@@ -91,24 +91,82 @@ parentPort.on("message", (msg) => {
 
 export const TTS_WORKER_SOURCE = `
 const { parentPort, workerData } = require("worker_threads");
+const fs = require("node:fs");
 let tts = null;
 let sherpa = null;
+let refSamples = null;
+let refRate = 0;
+
+/** 读 16-bit PCM wav（只用于参考音频——那由我们自己写盘，格式可控）。 */
+function readWav16(buf) {
+  if (buf.length < 44) return null;
+  let offset = 12, rate = 0, ch = 1, bits = 16;
+  while (offset + 8 <= buf.length) {
+    const id = buf.toString("ascii", offset, offset + 4);
+    const size = buf.readUInt32LE(offset + 4);
+    if (id === "fmt ") {
+      ch = buf.readUInt16LE(offset + 10) || 1;
+      rate = buf.readUInt32LE(offset + 12);
+      bits = buf.readUInt16LE(offset + 22);
+    } else if (id === "data") {
+      if (bits !== 16) return null;
+      const count = Math.min(size, buf.length - offset - 8);
+      const frames = Math.floor(count / 2 / ch);
+      const out = new Float32Array(frames);
+      for (let i = 0; i < frames; i++) {
+        let sum = 0;
+        for (let c = 0; c < ch; c++) sum += buf.readInt16LE(offset + 8 + (i * ch + c) * 2);
+        out[i] = sum / ch / 32768;
+      }
+      return { samples: out, sampleRate: rate || 16000 };
+    }
+    offset += 8 + size + (size % 2);
+  }
+  return null;
+}
 
 function ensure() {
   if (!sherpa) sherpa = require(workerData.sherpaPath);
   if (!tts) {
-    tts = new sherpa.OfflineTts({
-      model: {
-        vits: {
-          model: workerData.model,
-          lexicon: workerData.lexicon,
-          tokens: workerData.tokens,
+    if (workerData.mode === "zipvoice") {
+      // 音色克隆（zero-shot）：模型 + (参考音频, 参考文本) 成对使用
+      const z = workerData.zipvoice || {};
+      tts = new sherpa.OfflineTts({
+        model: {
+          zipvoice: {
+            tokens: z.tokens,
+            encoder: z.encoder,
+            decoder: z.decoder,
+            vocoder: z.vocoder,
+            dataDir: z.dataDir,
+            lexicon: z.lexicon,
+          },
         },
-      },
-      maxNumSentences: 1,
-      numThreads: workerData.numThreads,
-      provider: "cpu",
-    });
+        maxNumSentences: 1,
+        numThreads: workerData.numThreads,
+        provider: "cpu",
+      });
+      if (workerData.referenceAudioPath && fs.existsSync(workerData.referenceAudioPath)) {
+        const parsed = readWav16(fs.readFileSync(workerData.referenceAudioPath));
+        if (parsed && parsed.samples.length) {
+          refSamples = parsed.samples;
+          refRate = parsed.sampleRate;
+        }
+      }
+    } else {
+      tts = new sherpa.OfflineTts({
+        model: {
+          vits: {
+            model: workerData.model,
+            lexicon: workerData.lexicon,
+            tokens: workerData.tokens,
+          },
+        },
+        maxNumSentences: 1,
+        numThreads: workerData.numThreads,
+        provider: "cpu",
+      });
+    }
   }
 }
 
@@ -121,7 +179,7 @@ parentPort.on("message", (msg) => {
     }
     if (msg.op === "speak") {
       ensure();
-      const audio = tts.generate({
+      const request = {
         text: msg.text,
         sid: msg.sid,
         speed: msg.speed,
@@ -130,7 +188,19 @@ parentPort.on("message", (msg) => {
         // "External buffers are not allowed"。必须从源头关掉，让 addon 返回普通 V8 buffer。
         // 见 sherpa-onnx issue #3108 / node_modules types.js 的 TtsRequest 定义。
         enableExternalBuffer: false,
-      });
+      };
+      if (workerData.mode === "zipvoice") {
+        if (!refSamples || !refSamples.length) throw new Error("参考音频未就绪（音色档案缺音频）");
+        // 坑（实测）：reference* 必须放进 generationConfig 这一层；平铺进 generate() 会被忽略，
+        // 表现为 native 侧报 "reference_sample_rate 0 is invalid"。
+        request.generationConfig = {
+          referenceAudio: refSamples,
+          referenceSampleRate: refRate,
+          referenceText: String(workerData.referenceText || ""),
+          numSteps: Number(workerData.numSteps || 4),
+        };
+      }
+      const audio = tts.generate(request);
       // sherpa-onnx 返回的 samples 背后是 native/external ArrayBuffer，不能直接
       // transfer（截图里的 "External buffers are not allowed" 就是这么来的）。
       // 显式拷到 V8 管理的普通 Float32Array 后才可安全跨 worker 传输；用 transfer

@@ -21328,3 +21328,21 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   font-size: 12.5px; text-align: left; cursor: pointer;
 }
 .voice-ball-menu button:hover { background: color-mix(in srgb, var(--link) 12%, transparent); }
+
+/* ── 我的音色（音色克隆）列表与草稿编辑器 ── */
+.voice-profile-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.voice-profile-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 8px;
+  border: 1px solid var(--line);
+}
+.voice-profile-item > button { flex-shrink: 0; }
+.voice-profile-pick {
+  display: flex; align-items: center; gap: 6px;
+  flex: 1; min-width: 0; cursor: pointer; font-size: 12px;
+}
+.voice-profile-pick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voice-profile-pick em { color: var(--muted); font-style: normal; font-size: 11px; flex-shrink: 0; }
+.voice-profile-draft { display: flex; flex-direction: column; gap: 8px; }
+.voice-profile-draft textarea { width: 100%; resize: vertical; font-family: inherit; }
+.voice-profile-draft .voice-input { min-width: 0; flex: 1; }

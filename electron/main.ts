@@ -34,6 +34,7 @@ import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings
 import { checkLatestUpdate, defaultDownloadDir, downloadUpdate, fileExists, installUpdate, UPDATE_CHANNEL, UPDATE_SERVER_URL, GITHUB_REPO } from "./updates";
 import { checkEngineUpdate, performEngineUpdate } from "./engine-updater";
 import { VoiceService } from "./voice/voice-service";
+import * as voiceProfiles from "./voice/voice-profiles";
 import { ALL_VOICE_REPOS, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "./voice/model-manifest";
 import { ensureRepo, ensureZipvoice, modelsSizeOnDisk, voiceModelsStatus } from "./voice/model-store";
 import {
@@ -642,6 +643,118 @@ ipcMain.handle("voice:zipvoice-cancel", () => {
   zipvoiceAbort?.abort();
   return { ok: true };
 });
+
+// ── 音色档案（音色克隆 ZipVoice）：导入/录制参考音频 → 本机 ASR 转写参考文本 → 保存为专属音色 ──
+const voiceProfilesDirOf = () => path.join(app.getPath("userData"), "voice-profiles");
+
+/** 把一段音频做成草稿：落盘 + 重采样到 16k 用本机 ASR 自动转写「参考文本」。
+ *  参考文本必须与音频内容一致（zeroshot 硬约束，对不上音质会明显劣化）——
+ *  所以这里转成草稿后**一定**要让用户校对一遍再保存。 */
+async function draftProfileAudio(samples: Float32Array, sampleRate: number, sourceName: string) {
+  const root = voiceProfilesDirOf();
+  await fs.mkdir(root, { recursive: true });
+  const draftFile = ".draft-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) + ".wav";
+  await fs.writeFile(path.join(root, draftFile), voiceProfiles.encodeWav16(samples, sampleRate));
+  const at16k = voiceProfiles.resampleLinear(samples, sampleRate, 16000);
+  const tmp16 = draftFile.replace(/\.wav$/, "-16k.wav");
+  await fs.writeFile(path.join(root, tmp16), voiceProfiles.encodeWav16(at16k, 16000));
+  let refText = "";
+  let transcribeError = "";
+  try {
+    const done = await voiceService.transcribeAudioFile(path.join(root, tmp16));
+    if (done.ok) refText = String(done.text ?? "").trim();
+    else transcribeError = String(done.error ?? "");
+  } catch (error) {
+    transcribeError = String((error as any)?.message ?? error);
+  }
+  await fs.rm(path.join(root, tmp16), { force: true }).catch(() => undefined);
+  return {
+    ok: true,
+    draftFile,
+    refText,
+    transcribeError,
+    sampleRate,
+    durationSec: Math.round((samples.length / sampleRate) * 10) / 10,
+    sourceName,
+  };
+}
+
+ipcMain.handle("voice:profiles-list", async () => ({
+  profiles: await voiceProfiles.listProfiles(app.getPath("userData")),
+  zipvoiceReady: zipvoiceReady(voiceModelsRoot),
+}));
+
+ipcMain.handle("voice:profiles-import", async () => {
+  const picked = await dialog.showOpenDialog({
+    title: "选择一段参考音频（16-bit PCM wav，10 秒左右效果最好）",
+    filters: [{ name: "音频", extensions: ["wav"] }],
+    properties: ["openFile"],
+  });
+  if (picked.canceled || !picked.filePaths?.[0]) return { ok: false, canceled: true };
+  const file = picked.filePaths[0];
+  try {
+    const parsed = voiceProfiles.readWav(await fs.readFile(file));
+    if (!parsed || !parsed.samples.length) {
+      return { ok: false, error: "只能读取 16-bit PCM 的 wav 文件（mp3/m4a 请先用音频工具转成 wav）" };
+    }
+    if (parsed.samples.length / parsed.sampleRate > 60) {
+      return { ok: false, error: "参考音频请控制在 60 秒以内（10 秒左右效果最好）" };
+    }
+    return await draftProfileAudio(parsed.samples, parsed.sampleRate, path.basename(file));
+  } catch (error: any) {
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+});
+
+/** 渲染层录制（麦克风）→ PCM 回传 → 与导入走同一条草稿链路。 */
+ipcMain.handle("voice:profiles-record", async (_event, input: { samples?: number[]; sampleRate?: number }) => {
+  try {
+    const samples = Float32Array.from(Array.isArray(input?.samples) ? input!.samples! : []);
+    const rate = Number(input?.sampleRate ?? 16000) || 16000;
+    if (samples.length < rate * 1) return { ok: false, error: "录得太短了，至少录 1 秒" };
+    return await draftProfileAudio(samples, rate, "麦克风录制");
+  } catch (error: any) {
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+});
+
+ipcMain.handle("voice:profiles-save", async (_event, input: { draftFile?: string; name?: string; refText?: string }) => {
+  try {
+    const root = voiceProfilesDirOf();
+    const draft = String(input?.draftFile ?? "");
+    const parsed = voiceProfiles.readWav(await fs.readFile(path.join(root, draft)));
+    if (!parsed) return { ok: false, error: "草稿音频已失效，请重新导入或录制" };
+    const profile = await voiceProfiles.createProfile(app.getPath("userData"), {
+      name: String(input?.name ?? ""),
+      refText: String(input?.refText ?? ""),
+      samples: parsed.samples,
+      sampleRate: parsed.sampleRate,
+    });
+    await fs.rm(path.join(root, draft), { force: true }).catch(() => undefined);
+    return { ok: true, profile };
+  } catch (error: any) {
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+});
+
+ipcMain.handle("voice:profiles-delete", async (_event, id: string) => ({
+  ok: await voiceProfiles.deleteProfile(app.getPath("userData"), String(id ?? "")),
+}));
+
+/** 选用某个音色（写进语音设置 tts.profileId；空串 = 用内置预置音色）。 */
+ipcMain.handle("voice:profiles-select", async (_event, id: string) => {
+  const { saveVoiceSettings } = require("./voice/voice-settings");
+  const current = voiceService.getSettings();
+  const next = saveVoiceSettings(app.getPath("userData"), {
+    tts: { ...current.tts, profileId: String(id ?? "") },
+  });
+  voiceService.updateSettings(next);
+  return { ok: true, profileId: String(id ?? "") };
+});
+
+ipcMain.handle("voice:profiles-preview", async (_event, input?: { id?: string; text?: string }) =>
+  voiceAudioForIpc(await voiceService.previewVoice({ profileId: input?.id, text: input?.text }))
+);
 
 ipcMain.handle("voice:models-install", () => voiceService.installModels());
 ipcMain.handle("voice:models-cancel", () => ({ ok: voiceService.cancelInstall() }));

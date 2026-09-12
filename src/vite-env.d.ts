@@ -508,6 +508,13 @@ interface Window {
     voiceAudio(samples: Float32Array): void;
     voiceSpeak(text: string, options?: { sid?: number; speed?: number }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
     voicePreviewVoice(input?: { sid?: number; speed?: number; text?: string }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
+    voiceProfilesList(): Promise<{ profiles: any[]; zipvoiceReady: boolean }>;
+    voiceProfilesImport(): Promise<any>;
+    voiceProfilesRecord(input: { samples: number[]; sampleRate: number }): Promise<any>;
+    voiceProfilesSave(input: { draftFile: string; name: string; refText: string }): Promise<any>;
+    voiceProfilesDelete(id: string): Promise<{ ok: boolean }>;
+    voiceProfilesSelect(id: string): Promise<{ ok: boolean; profileId: string }>;
+    voiceProfilesPreview(input: { id?: string; text?: string }): Promise<any>;
     voiceBarge(): Promise<{ ok: boolean }>;
     voicePlaybackDone(): Promise<{ ok: boolean }>;
     voiceModelsStatus(): Promise<{
