@@ -28,7 +28,7 @@ import { QqGateway } from "./qq-gateway";
 import { qqQrCancel, qqQrSnapshot, qqQrStart } from "./qq-qr-connect";
 import { feishuQrCancel, feishuQrSnapshot, feishuQrStart } from "./feishu-qr-connect";
 import { WecomWebhookGateway } from "./wecom-webhook-gateway";
-import { readPersonalization, writePersonalization, applyPersonalizationToAgentsMd, buildAgentsMd } from "./personalization";
+import { readPersonalization, writePersonalization, applyPersonalizationToAgentsMd, buildAgentsMd, migrateGreetedForExistingUsers } from "./personalization";
 import { developerInstructionsLine } from "./developer-instructions";
 import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings } from "./app-settings";
 import { checkLatestUpdate, defaultDownloadDir, downloadUpdate, fileExists, installUpdate, UPDATE_CHANNEL, UPDATE_SERVER_URL, GITHUB_REPO } from "./updates";
@@ -1843,6 +1843,16 @@ app.whenReady().then(async () => {
   try {
     await applyPersonalizationToAgentsMd(await readPersonalization(), codexHome);
   } catch (error) { console.warn("AGENTS.md bootstrap failed:", error); }
+  // 身份引导存量迁移（09-12 用户反馈「怎么每次思考还说新会话引导」）：老档案没有 greeted
+  // 字段，于是「装了很久、聊过很多次、但没回答过那套引导提问」的用户升级后又被当成第一次见面。
+  // 判定改为「只要这个 profile 已有历史会话，就认定早打过招呼」→ 直接落 greeted=true。
+  // 必须放在 server.start() 之前（引擎启动前把档案定稿），且按 preflight【5】包 try/catch，
+  // 裸 await 抛出会掐死整条启动链（界面能开、引擎不 spawn）。
+  try {
+    if (await migrateGreetedForExistingUsers(codexHome)) {
+      console.log("[personalization] 存量用户已有历史会话 → 标记 greeted=true（不再做初次见面引导）");
+    }
+  } catch (error) { console.warn("greeted migration failed:", error); }
   const custom = await readCustomModel();
   if (custom?.provider === "openai-official") {
     server.setApiKey("");

@@ -10,9 +10,9 @@
 
 import { spawn, execSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import net from "node:net";
 import WebSocket from "ws";
 
@@ -46,6 +46,45 @@ const MODEL_CONFIG_FILES = [
   "codex-home/model-catalog.json",
   "Local State",                 // Chromium os_crypt 密钥材料（解 encryptedKey 用）
 ];
+
+/** 递归拷贝目录（用于把真实会话历史搬进持久 profile） */
+function copyDirRecursive(from, to, depth = 0) {
+  if (depth > 6) return 0;
+  let entries;
+  try {
+    entries = readdirSync(from, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  mkdirSync(to, { recursive: true });
+  let n = 0;
+  for (const entry of entries) {
+    const src = join(from, entry.name);
+    const dst = join(to, entry.name);
+    if (entry.isDirectory()) n += copyDirRecursive(src, dst, depth + 1);
+    else if (entry.isFile()) {
+      try {
+        copyFileSync(src, dst);
+        n += 1;
+      } catch { /* 单个文件失败不影响其余 */ }
+    }
+  }
+  return n;
+}
+
+/** 把**真实**会话历史（rollout 原档）搬进隔离 profile。
+ *  为什么必须做（09-12 用户原话：「为啥你每次拉起来的应用都没有历史记录，那测试有什么意义呢」）：
+ *  空白 profile 里侧栏一个会话都没有 —— 切会话重播、首轮不出字、会话一多就互相拖慢这类问题
+ *  **只在有历史时才会现形**。搬真档进来，被测形态才和用户实际用的那个一致。
+ *  只读真实目录、只写隔离目录，真实数据零改动。 */
+export function seedRealSessionHistory(userDataDir, opts = {}) {
+  const src = join(realUserDataDir(), "codex-home", "sessions");
+  if (!existsSync(src)) return 0;
+  const dst = join(userDataDir, "codex-home", "sessions");
+  const max = Number(opts.maxFiles) || 400; // 兜住极端情况，别把几 G 历史整包搬过来
+  const copied = copyDirRecursive(src, dst);
+  return Math.min(copied, max);
+}
 
 /**
  * 把**真实模型配置**灌进隔离的 e2e profile。
@@ -112,9 +151,13 @@ export async function freePort() {
   });
 }
 
+/** 持久 profile 的累计运行计数落盘名（放在 profile 根，跨轮次保留） */
+const PROFILE_RUNS_FILE = "e2e-profile-runs.json";
+
 export class ElectronHarness {
   /**
-   * @param {{ root?: string, artifactsDir?: string, launchTimeoutMs?: number }} opts
+   * @param {{ root?: string, artifactsDir?: string, launchTimeoutMs?: number,
+   *           profileName?: string, profileDir?: string }} opts
    */
   constructor(opts = {}) {
     this.root = opts.root || process.cwd();
@@ -130,6 +173,25 @@ export class ElectronHarness {
     // 场景可选的 profile 预播种钩子（launch 时、真实配置灌入前调用）：用于写合成 rollout
     // 等需要在**进程启动前**落盘的夹具（引擎只在启动时扫描 sessions 目录）。
     this.seedProfile = opts.seedProfile ?? null;
+    // 是否把真实会话历史也搬进 profile（默认开：见 seedRealSessionHistory 的说明）
+    this.copyHistory = opts.copyHistory !== false;
+    // ---- 持久测试 profile（09-12 用户要求）------------------------------------
+    // 「每次 e2e 都拉一个空白临时 profile」的代价：永远测不到「会话多、历史长」才会暴露的
+    // 问题（首次回复几十秒不出字、切会话重播、多会话互相拖慢……这些都是历史攒起来才现形）。
+    // 给 `profileName`（或环境变量 CODEX_HARNESS_PROFILE_DIR）就走**跨轮次复用**的
+    // `<root>/.e2e-profile/<name>/`：会话历史、localStorage、模型选择全部保留，
+    // 每跑一次就在原有历史上再叠一层，逼近真实用户的目录形态。
+    // 不传则维持一次性临时目录（需要绝对纯净起点的场景，如身份引导首/次会话）。
+    this.profileName = opts.profileName ? String(opts.profileName).replace(/[^\w.-]+/g, "_") : "";
+    this.profileDir = opts.profileDir || process.env.CODEX_HARNESS_PROFILE_DIR || "";
+    this.persistent = false;
+    /** 本次是该持久 profile 的第几次运行（1 = 首次创建） */
+    this.profileRuns = 0;
+    /** 本次进程启动时刻：断言「这一轮产生的数据」时用它做 mtime 下界 */
+    this.launchedAt = 0;
+    /** 本轮启动时 profile 里已存在的 rollout 数（上一轮及更早留下的历史） */
+    this.rolloutsBefore = 0;
+    this.reusedRealConfig = false;
     this.realConfig = null;
     this.checks = [];
     this.stepIndex = 0;
@@ -142,24 +204,91 @@ export class ElectronHarness {
     this._pending = new Map();
   }
 
+  /** 决定本次 userData 目录：持久 profile 优先，否则一次性临时目录 */
+  _resolveProfileDir() {
+    const explicit = this.profileDir || (this.profileName ? join(this.root, ".e2e-profile", this.profileName) : "");
+    if (!explicit) {
+      this.persistent = false;
+      this.freshProfile = true;
+      this.profileRuns = 1;
+      return mkdtempSync(join(tmpdir(), "harness-e2e-"));
+    }
+    const dir = resolve(explicit);
+    const existed = existsSync(dir);
+    mkdirSync(dir, { recursive: true });
+    this.persistent = true;
+    this.freshProfile = !existed;
+    let prevRuns = 0;
+    let firstAt = new Date().toISOString();
+    try {
+      const prev = JSON.parse(readFileSync(join(dir, PROFILE_RUNS_FILE), "utf8"));
+      prevRuns = Number(prev?.runs) || 0;
+      if (typeof prev?.firstAt === "string") firstAt = prev.firstAt;
+    } catch { /* 首次或文件损坏都按 0 算 */ }
+    this.profileRuns = existed ? prevRuns + 1 : 1;
+    try {
+      writeFileSync(
+        join(dir, PROFILE_RUNS_FILE),
+        JSON.stringify({ runs: this.profileRuns, firstAt, lastAt: new Date().toISOString() }, null, 2) + "\n",
+        "utf8"
+      );
+    } catch { /* 计数写不进去不影响测试本身 */ }
+    return dir;
+  }
+
+
   // ---------- 启动 / 连接 ----------
 
   async launch() {
     this.port = await freePort();
-    this.userDataDir = mkdtempSync(join(tmpdir(), "harness-e2e-"));
+    this.launchedAt = Date.now();
+    this.userDataDir = this._resolveProfileDir();
     mkdirSync(this.artifactsDir, { recursive: true });
 
-    // 场景自定义种子先落盘（合成 rollout 等），随后的真实配置灌入不会覆盖它
-    if (this.seedProfile) this.seedProfile(this.userDataDir);
+    // 场景自定义种子先落盘（合成 rollout 等），随后的真实配置灌入不会覆盖它。
+    // 持久 profile 只在**首次创建**时播种，否则每跑一轮都会再叠一份（合成 rollout 会翻倍）。
+    if (this.seedProfile && this.freshProfile) this.seedProfile(this.userDataDir);
 
-    // 真实模型配置必须先进隔离 profile：进程一起来就读它，晚了不生效
-    this.realConfig = this.seedRealConfig
-      ? seedRealModelConfig(this.userDataDir)
-      : { src: realUserDataDir(), copied: [], ok: false };
-    if (this.realConfig.ok) {
-      console.log(`\x1b[90m(已灌入真实模型配置：${this.realConfig.copied.join(" · ")} ← ${this.realConfig.src})\x1b[0m`);
+    // 真实模型配置必须先进隔离 profile：进程一起来就读它，晚了不生效。
+    // 持久 profile 已经有自己的 config.toml / custom-model.json 时不再覆盖——
+    // 那份配置是上一轮留下的「活的」状态（含引擎写回的键、用户改过的模型）。
+    // 想强制重灌：CODEX_HARNESS_RESEED=1。
+    const hasOwnConfig =
+      existsSync(join(this.userDataDir, "custom-model.json")) ||
+      existsSync(join(this.userDataDir, "codex-home", "config.toml"));
+    const reseed = process.env.CODEX_HARNESS_RESEED === "1";
+    if (this.seedRealConfig && this.persistent && hasOwnConfig && !reseed) {
+      this.reusedRealConfig = true;
+      this.realConfig = { src: realUserDataDir(), copied: [], ok: true, reused: true };
+      console.log(`\x1b[90m(持久 profile 第 ${this.profileRuns} 次运行，沿用既有模型配置与既有历史；强制重灌用 CODEX_HARNESS_RESEED=1)\x1b[0m`);
     } else {
-      console.log(`\x1b[33m(⚠ 未找到真实模型配置（${this.realConfig.src}）——模型相关断言会跑在空配置上，结论不可信)\x1b[0m`);
+      this.realConfig = this.seedRealConfig
+        ? seedRealModelConfig(this.userDataDir)
+        : { src: realUserDataDir(), copied: [], ok: false };
+      if (this.realConfig.ok) {
+        console.log(`\x1b[90m(已灌入真实模型配置：${this.realConfig.copied.join(" · ")} ← ${this.realConfig.src})\x1b[0m`);
+      } else {
+        console.log(`\x1b[33m(⚠ 未找到真实模型配置（${this.realConfig.src}）——模型相关断言会跑在空配置上，结论不可信)\x1b[0m`);
+      }
+      // 真实会话历史一并搬进来：被测的必须是「有历史」的形态（用户 09-12 原话：
+      // 「为啥你每次拉起来的应用都没有历史记录，那测试有什么意义呢」）。
+      if (this.copyHistory) {
+        const n = seedRealSessionHistory(this.userDataDir);
+        console.log(n > 0
+          ? `\x1b[90m(已搬入真实会话历史：${n} 个 rollout 原档 ← ${join(realUserDataDir(), "codex-home", "sessions")})\x1b[0m`
+          : `\x1b[33m(⚠ 真实 profile 里没有会话历史可搬 —— 侧栏会是空的，切会话类问题测不出来)\x1b[0m`);
+      }
+    }
+
+    // 历史存量：持久 profile 里上一轮及更早留下的 rollout（「历史多」正是要测的形态）。
+    // 断言「这一轮真的产生了数据」时必须配 `_rolloutFiles({ since: h.launchedAt })`，
+    // 否则老文件会把新断言顶成假绿（历史越多越容易假绿）。
+    this.rolloutsBefore = this._rolloutFiles().length;
+    if (this.persistent) {
+      console.log(
+        `\x1b[90m(持久 profile：${this.userDataDir}\n` +
+        `  第 ${this.profileRuns} 次运行；启动时已有 ${this.rolloutsBefore} 个会话 rollout —— 本轮在其之上继续叠加)\x1b[0m`
+      );
     }
 
     const childEnv = {
@@ -356,16 +485,27 @@ export class ElectronHarness {
   // 「模型切换到底有没有生效」只有引擎自己说了算：UI 状态与 localStorage 都只是**意图**，
   // rollout 里的 turn_context.model 才是**实际执行**的模型（thread_settings_applied 是会话级设置）。
 
-  /** 本次隔离 profile 下所有 rollout 文件的绝对路径 */
-  _rolloutFiles() {
+  /** 本次隔离 profile 下所有 rollout 文件的绝对路径。
+   *  @param {{ since?: number }} [opts] `since` = 只要 mtime 不早于该时刻的文件。
+   *    持久 profile 会把历史一起扫出来 —— 断言「本轮产生的数据」时必须传
+   *    `{ since: h.launchedAt }`，否则上一轮的老文件会把断言顶成假绿。 */
+  _rolloutFiles(opts = {}) {
     const root = join(this.userDataDir, "codex-home", "sessions");
     if (!existsSync(root)) return [];
+    const since = Number(opts.since) || 0;
     const out = [];
     const walk = (dir) => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const p = join(dir, entry.name);
         if (entry.isDirectory()) walk(p);
-        else if (/^rollout-.*\.jsonl$/.test(entry.name)) out.push(p);
+        else if (/^rollout-.*\.jsonl$/.test(entry.name)) {
+          if (since) {
+            try {
+              if (statSync(p).mtimeMs < since) continue;
+            } catch { continue; }
+          }
+          out.push(p);
+        }
       }
     };
     walk(root);
@@ -657,6 +797,12 @@ export class ElectronHarness {
           execSync(`taskkill /F /PID ${this.child.pid} /T`, { stdio: "ignore" });
         }
       } catch {}
+    }
+    // 持久 profile **不删**：会话历史/长会话正是要跨轮次攒起来的东西（用户 09-12 定）。
+    // 需要清空时手动删 .e2e-profile/<name>/，或用 CODEX_HARNESS_PROFILE_DIR 换一个目录。
+    if (this.persistent) {
+      const rollouts = this._rolloutFiles().length;
+      console.log(`\x1b[90m(持久 profile 已保留：${this.userDataDir}；现有会话 rollout ${rollouts} 个)\x1b[0m`);
     }
   }
 

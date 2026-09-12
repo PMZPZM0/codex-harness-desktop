@@ -542,6 +542,18 @@ console.log(C.bold("\n【5】启动链健壮性（boot 副作用不得裸 await�
     missing === 0
       ? ok("boot 的 applyMemoryMode / scheduler.start / remote.start 都有 try/catch 兜底")
       : fail(`boot 里有 ${missing} 处副作用没兜底 —— 裸 await 抛出会掐死引擎启动（界面能开但毫无回复）`);
+    // 身份引导存量迁移（09-12）也必须满足两条：带 try/catch，且在 server.start() **之前**跑完
+    // （引擎启动后档案才改就晚了——新会话可能已经按旧档案注入过引导）。
+    if (!/migrateGreetedForExistingUsers\s*\(/.test(mainSrc)) {
+      fail("main.ts 没有调用 migrateGreetedForExistingUsers —— 存量用户（有历史会话、档案无 greeted）升级后会被当成初次见面再引导一遍");
+    } else {
+      const iMig = mainSrc.indexOf("migrateGreetedForExistingUsers(");
+      const iStart = mainSrc.indexOf("await server.start()");
+      const guardedMig = /try\s*\{[^}]*migrateGreetedForExistingUsers\s*\(/.test(mainSrc);
+      iMig > 0 && iStart > 0 && iMig < iStart && guardedMig
+        ? ok("存量身份引导迁移在 server.start() 之前、且有 try/catch 兜底")
+        : fail(`存量身份引导迁移位置不对（iMig=${iMig} iStart=${iStart} 有兜底=${guardedMig}）—— 必须在 server.start() 之前且包 try/catch`);
+    }
   }
 }
 
@@ -584,6 +596,90 @@ console.log(C.bold("\n【6】零阻塞宿主（codex:request 链上禁止同步�
   }
 }
 
+console.log(C.bold("\n【7】验收入口唯一化 + 持久 profile（带历史，不得回落成空白临时目录）"));
+{
+  // 为什么是硬失败（09-12 用户两次定稿，原话「把旧的验收流程删干净，每次都写最新的 cpd 脚本
+  // 验收，不然你老是卡住」/「为啥你每次拉起来的应用都没有历史记录，那测试有什么意义呢」）：
+  //   ① 旧的「一堆历史场景 + 增量哈希 runner」：改一处主进程源码就连带选中十几个历史场景，
+  //      一轮十几分钟，人卡在等它跑完 → **不允许再回来**；
+  //   ② 收成一条 `scripts/accept.mjs`（CDP 直连），跑在**跨轮次复用的持久 profile** 上，
+  //      首次把真实会话历史搬进来 → 测的才是有历史的真实形态。
+  // 结构上必须满足这几条，缺一条这层能力就悄悄退化了：
+  //   ① 旧流程（scenarios/ + run.mjs）确实已删除，验收入口只有 accept.mjs；
+  //   ② harness 支持持久 profile（profileName → <root>/.e2e-profile/<name>，close 不删）；
+  //   ③ 首次构建 profile 时会把**真实会话历史**搬进来（否则侧栏零会话，测了等于没测）；
+  //   ④ `_rolloutFiles` 支持 { since } 过滤 —— 否则历史文件会把「本轮数据」的断言顶成假绿；
+  //   ⑤ profile 目录必须被 gitignore —— 它含真实对话内容与本机 Key 密文。
+  const legacy = ["scripts/e2e/run.mjs", "scripts/e2e/scenarios"];
+  const leftovers = legacy.filter((p) => existsSync(join(ROOT, p)));
+  leftovers.length === 0
+    ? ok("旧的场景验收流程已删干净（scripts/e2e/run.mjs、scenarios/ 均不存在）")
+    : fail(`旧的场景验收流程又回来了：${leftovers.join(", ")} —— 验收入口必须只有 scripts/accept.mjs`);
+  const acceptPath = join(ROOT, "scripts", "accept.mjs");
+  if (!existsSync(acceptPath)) {
+    fail("缺少 scripts/accept.mjs（唯一验收入口）");
+  } else {
+    const acceptSrc = readFileSync(acceptPath, "utf8");
+    /profileName:\s*value\("profile",\s*"main"\)/.test(acceptSrc)
+      ? ok("accept.mjs 跑在持久 profile 上（默认 .e2e-profile/main，跨轮次累积历史）")
+      : fail("accept.mjs 没有用持久 profile（profileName）—— 又会回到「每次拉起来都没有历史记录」");
+  }
+  const harnessPath = join(ROOT, "scripts", "e2e", "lib", "harness.mjs");
+  if (!existsSync(harnessPath)) {
+    fail("缺少 scripts/e2e/lib/harness.mjs（CDP 驱动）");
+  } else {
+    const src = readFileSync(harnessPath, "utf8");
+    // 注意：判据必须锚在**代码**上，不能只搜 ".e2e-profile" 字样——注释里就写着这串，
+    // 反证时整段实现删掉、只留注释也会假绿（实测踩过）。
+    const hasResolve = /_resolveProfileDir\s*\(/.test(src) && /join\(\s*this\.root\s*,\s*"\.e2e-profile"/.test(src);
+    hasResolve
+      ? ok("harness 支持持久 profile（.e2e-profile/<name>，跨轮次复用、close 不删）")
+      : fail("harness 丢了持久 profile 能力（_resolveProfileDir / .e2e-profile）—— 又回到「每轮空白 profile」了");
+    const hasHistory = /export function seedRealSessionHistory\s*\(/.test(src)
+      && /seedRealSessionHistory\s*\(this\.userDataDir\)/.test(src);
+    hasHistory
+      ? ok("首次建 profile 会把真实会话历史搬进来（侧栏不是空的）")
+      : fail("harness 不再搬真实会话历史（seedRealSessionHistory）—— 空侧栏测不出切会话类问题");
+    const hasSince = /_rolloutFiles\s*\(\s*opts\s*=\s*\{\}\s*\)/.test(src) && /since/.test(src);
+    hasSince
+      ? ok("harness 的 rollout 扫描支持 { since } 过滤（断言本轮数据不被历史顶成假绿）")
+      : fail("harness._rolloutFiles 不支持 { since } —— 持久 profile 下历史文件会让「本轮」断言假绿");
+  }
+  const giPath = join(ROOT, ".gitignore");
+  const gi = existsSync(giPath) ? readFileSync(giPath, "utf8") : "";
+  /^\.e2e-profile\/?\s*$/m.test(gi)
+    ? ok(".e2e-profile/ 已被 gitignore（含真实对话内容 + 本机 Key 密文，绝不入库）")
+    : fail(".gitignore 里缺 .e2e-profile/ —— 持久 profile 含真实对话内容与 Key 密文，必须排除");
+
+  // 身份引导的判据标记必须与 App.tsx 的注入文本同源。
+  // 为什么是硬失败：判据一旦和真实注入文本脱钩，断言就会**恒定假绿**
+  // （比如改文案后老标记再也匹配不到 → 「次会话没有引导」永远成立，等于没断言）。
+  // 另注：判据只能看 rollout 里 role === "developer" 的消息——项目 AGENTS.md 里就有
+  // 一段写着「初次见面」的文档，e2e 工作区 = 项目根 → 对整份文本 includes 会恒为真。
+  {
+    const appPath = join(ROOT, "src", "App.tsx");
+    const inspectPath = join(ROOT, "scripts", "e2e", "lib", "rollout-inspect.mjs");
+    if (!existsSync(appPath) || !existsSync(inspectPath)) {
+      warn("找不到 App.tsx 或 rollout-inspect.mjs，跳过身份引导判据守卫");
+    } else {
+      const appSrc = readFileSync(appPath, "utf8");
+      const inspectSrc = readFileSync(inspectPath, "utf8");
+      const injected = /const IDENTITY_ONBOARD_INSTRUCTIONS = \[\s*"([^"]+)"/.exec(appSrc)?.[1] ?? "";
+      const marker = /export const GREETING_MARKER = "([^"]+)"/.exec(inspectSrc)?.[1] ?? "";
+      const guardsRole = /payload\?\.role === "developer"/.test(inspectSrc);
+      if (!injected) fail("App.tsx 里找不到 IDENTITY_ONBOARD_INSTRUCTIONS 的首句（判据守卫失效）");
+      else if (!marker) fail("rollout-inspect.mjs 里找不到 GREETING_MARKER 导出");
+      else if (!injected.startsWith(marker)) {
+        fail(`身份引导判据标记与注入文本不同源：marker=${marker.slice(0, 24)}… 注入首句=${injected.slice(0, 24)}…（断言会恒定假绿）`);
+      } else if (!guardsRole) {
+        fail("身份引导判据没有限定 role === \"developer\" —— 会被项目 AGENTS.md 的文档文本顶成假红");
+      } else {
+        ok("身份引导判据与 App.tsx 注入文本同源，且只看 developer 消息（不会被 AGENTS.md 干扰）");
+      }
+    }
+  }
+}
+
 // ---------- 汇总 ----------
 
 console.log("");
@@ -592,5 +688,5 @@ if (hardFails === 0) {
 } else {
   console.log(C.red(`预检失败：${hardFails} 项硬失败${warns ? `，${warns} 条告警` : ""}`));
 }
-console.log(C.gray("下一步：npm run e2e（启动应用跑 UI 冒烟，出截图）"));
+console.log(C.gray("下一步：npm run accept（拉起应用，在带历史的持久 profile 上跑本轮验收）"));
 process.exit(hardFails === 0 ? 0 : 1);

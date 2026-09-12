@@ -14,30 +14,32 @@ npm run verify     # 等价于 npm run check && npm run e2e
 
 | 层级 | 命令 | 覆盖什么 | 失败意味什么 |
 |---|---|---|---|
-| ① 离线预检 | `npm run check` | 构建 + **产物新鲜度** + IPC 三件套一致性（main.ts handler ↔ preload 桥接 ↔ vite-env.d.ts 方法面）+ CSS 类覆盖告警 + **纯函数行为断言**（`src/lib/*.mjs`，node 直接 import 跑真实现） | 改了没重建 / 桥接漏了类型 / 有死链 / 判定逻辑跑偏 |
-| ② UI 场景（**默认只跑最新的**） | `npm run e2e` | 自动拉起**已构建**应用跑 `scenarios/*.mjs`，逐步截图到 `.e2e-artifacts/shots/`（文件名带场景前缀）。**默认只跑 mtime 最新的一个场景**（刚给哪个模块补的场景就验哪个）；`npm run e2e -- --all` 全量回归；`npm run e2e -- <名>` 跑指定 | 界面真破了相（看截图即知） |
+| ① 离线预检 | `npm run check` | 构建 + **产物新鲜度** + IPC 三件套一致性（main.ts handler ↔ preload 桥接 ↔ vite-env.d.ts 方法面）+ CSS 类覆盖告警 + **纯函数行为断言**（`src/lib/*.mjs`，node 直接 import 跑真实现）+ 结构守卫（零阻塞宿主 / 验收入口唯一化） | 改了没重建 / 桥接漏了类型 / 有死链 / 判定逻辑跑偏 / 架构约束被破 |
+| ② 验收（**只有一条脚本**） | `npm run accept` | `scripts/accept.mjs`：拉起**已构建**应用，在**跨轮次复用的持久 profile**（`.e2e-profile/main`，首次把真实会话历史搬进来）上跑本轮验收项，失败自动截图到 `.e2e-artifacts/shots/` | 界面/行为真破了（看截图与逐项输出即知） |
 
 四条纪律：
 
-1. **只跑一半不算验收**。`check` 过但 `e2e` 没过 = 没完成，不许提交。
-2. **改了哪个模块，就给哪个模块补/改场景**。在 `scripts/e2e/scenarios/` 加 `<名>.mjs`（导出 `steps` 数组）或往现有场景加步骤，或给 `scripts/check-preflight.mjs` 加检查项——**让这次验证沉淀成下次的自动回归**，不许写成一次性脚本跑完就丢（这正是 09-06 那批 `verify-*.mjs` 全员消失的教训）。新场景是最新 mtime，`npm run e2e` 默认就会跑到它；**发版前用 `npm run e2e -- --all` 跑全量**（2026-09-12 用户定稿：日常验收只验最新，不再每次从头跑全部历史场景）。
-3. **断言必须带前置条件**（先断言「弹窗是关的」再点开），否则上一步的残留状态会导致假通过。
-4. **新断言的正确性当场反证一次**：把修复临时改回去，确认断言真的会红。永远绿的断言等于没有断言，尤其「XX 没生效」类 bug。（`model-scope` 实测过三次：把判定改成「全局永远赢」→ 步骤③/⑤ 红；把 `openThread` 改回「只认会话记录」→ 步骤④ 红；把档案同步整个关掉 → ⑦bis/⑦ter 的档案与 config.toml 断言红。**反证后必须 `npm run build` 重建再跑正式那轮**，否则测的是反证版旧产物。）
+1. **只跑一半不算验收**。`check` 过但 `accept` 没过 = 没完成，不许提交。
+2. **改了哪个模块，就改 `scripts/accept.mjs` 里对应的验收项**（每一项是 `{ id, name, run(h) }`，可 `--only <id>` 单独跑）。旧的「一堆历史场景 + 增量哈希 runner」**已按用户要求删干净**（`scripts/e2e/run.mjs`、`scripts/e2e/scenarios/` 都没了，preflight【7】硬守卫不许它们回来）：那套东西改一处主进程源码就带出十几个历史场景、一轮十几分钟，人卡在等它跑完。**不要再新建场景目录**；本轮不再对应的旧验收项**直接删掉**，别攒着。
+3. **断言必须带前置条件**（先断言「有这个前提」再做判断），否则上一步的残留状态会导致假通过。
+4. **新断言的正确性当场反证一次**：把修复临时改回去，确认断言真的会红。永远绿的断言等于没有断言。**反证后必须重新构建再跑正式那轮**，否则测的是反证版旧产物。
 
-GUI 起不来时，最低限度跑 `check`（离线可用），并在提交信息里写明 `e2e` 未跑的原因。手册见 `docs/TESTING.md`。
+**为什么验收跑在持久 profile 上（09-12 用户定，别再改回临时目录）**：临时 profile 每轮都是白纸 —— 侧栏零会话，「切会话重播 / 首轮不出字 / 会话一多互相拖慢」这类问题**只在有历史时才现形**，空目录里测等于没测（用户原话：「为啥你每次拉起来的应用都没有历史记录，那测试有什么意义呢」）。现在首次建 profile 时会把**真实 profile 的会话历史**（`codex-home/sessions/**`）搬进来，之后一轮轮叠加；断言「本轮数据」时用 `h._rolloutFiles({ since: h.launchedAt })`，别让历史文件把断言顶成假绿。profile 在 `.e2e-profile/<name>/`（已 gitignore，含真实对话内容与 Key 密文，**绝不入库**）；想重来就删目录，想重灌真实配置/历史用 `CODEX_HARNESS_RESEED=1`。
+
+GUI 起不来时，最低限度跑 `check`（离线可用），并在提交信息里写明 `accept` 未跑的原因。手册见 `docs/TESTING.md`。
 
 ### 引擎自己怎么跑验收（已实测）
 
-引擎跑在应用体内，而 `e2e` 会**再拉起一个隔离实例**——不会和自己撞车。实测依据：单实例锁按 `userData` 隔离，E2E 用临时 profile，两实例完全独立并存（A 窗口里的 `window` 标记 B 读不到，两个进程都存活）。
+引擎跑在应用体内，而 `accept` 会**再拉起一个隔离实例**——不会和自己撞车。实测依据：单实例锁按 `userData` 隔离，验收用 `.e2e-profile/main`，两实例完全独立并存。
 
 ```bash
-# 用随包 node，不依赖 npm（引擎环境最稳的一条）
-resources/tools/node/node.exe scripts/e2e/run.mjs           # 全部场景
-resources/tools/node/node.exe scripts/e2e/run.mjs smoke     # 只跑指定场景
-resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
+resources/tools/node/node.exe scripts/accept.mjs              # 跑本轮全部验收项（约 20s）
+resources/tools/node/node.exe scripts/accept.mjs --list        # 列出验收项
+resources/tools/node/node.exe scripts/accept.mjs --only greet  # 只跑 id 含 greet 的项
+resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应用，留着手动看
 ```
 
-`npm run check` / `npm run e2e` 亦可，前提是 PATH 里有 node。**E2E 跑的是 `dist/` + `dist-electron/` 产物，必须先构建**——`check` 已含构建；只跑 `e2e` 前先确认产物不过期。
+`npm run accept` / `npm run e2e`（同一条）亦可，前提是 PATH 里有 node。**验收跑的是 `dist/` + `dist-electron/` 产物，必须先构建**——`check` 已含构建。
 
 ## 这是什么
 
@@ -135,7 +137,10 @@ resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
   修法：**存量正文一次性显示，只对真正新到的增量做打字机**。判据 `remaining > REVEAL_INSTANT_JUMP(400)` → 判定为「重挂载补齐存量」→ 直接显示（单帧/单批真实增量在几十字量级，400 是安全的量级分界）。
   回归：`scripts/e2e/scenarios/replay-on-switch.mjs`（真引擎：A 流式中切走 → 切回 → 量 `window.__adbg` 的 reveal 打点；断言「单次 animated < 120 字」+「正文长度不回退」）。修复后实测 最大单次揭示 **834 → 30 字**，8/8 通过。
   **排查工具**：`window.__adbg` 探针（send-arm-main / init-pin / confirm-fired / cancel:bottom-scroll / pin-apply / thread-switch / reveal），场景每条消息结束自动 dump 轨迹，`node scripts/e2e/run.mjs send-anchor-top` 直接复跑。**注意**：App.tsx 是 CRLF 行尾，脚本批量替换务必容忍 `\r?\n`；e2e harness 已带 `--no-sandbox`（本机 WorkBuddy 宿主 shell 会话下 Chromium 沙箱可能起不来 → Electron 静默 exit 1，与代码无关）。**另一个坑**：改 `styles.css` 不要用 PowerShell `Add-Content` 追加中文（会写进非 UTF-8 字节 → vite 报 `stream did not contain valid UTF-8`、构建直接失败），要用编辑工具。
-- **首次对话身份引导：只打一次招呼（09-12 用户反馈「怎么每次新会话都强制引导呢，改成一次打招呼才需要引导，其他情况下直接开始干活」）**：`personalization.json` 新增 **`greeted`** 字段——`onboarded` 表示「用户**真的回答了**并落盘了信息」，`greeted` 只表示「**问过一次**」。判定看 `greeted`（`App.tsx` 的 `identityGreeted`，读档时 `greeted === true || onboarded === true` 都算已问候）；注入引导指令的**同时**调新 IPC `personalization:mark-greeted` 落 `greeted=true`，此后新会话一律不带引导、直接干活。IPC 三件套同步（main.ts handler ↔ preload `markIdentityGreeted` ↔ vite-env.d.ts + `PersonalizationConfig` 加 `greeted`）。回归：`scripts/e2e/scenarios/identity-greeting-once.mjs`（真引擎 + 隔离 profile：首会话 rollout **有**「初次见面」、次会话**没有**、档案 `greeted=true`，9/9）。
+- **首次对话身份引导：只打一次招呼（09-12 两轮反馈：「怎么每次新会话都强制引导呢，改成一次打招呼才需要引导，其他情况下直接开始干活」→「我看每次思考还说新会话引导那个」）**：`personalization.json` 新增 **`greeted`** 字段——`onboarded` 表示「用户**真的回答了**并落盘了信息」，`greeted` 只表示「**问过一次**」。判定看 `greeted`（`App.tsx` 的 `identityGreeted`，读档时 `greeted === true || onboarded === true` 都算已问候）；注入引导指令的**同时**调新 IPC `personalization:mark-greeted` 落 `greeted=true`，此后新会话一律不带引导、直接干活。IPC 三件套同步（main.ts handler ↔ preload `markIdentityGreeted` ↔ vite-env.d.ts + `PersonalizationConfig` 加 `greeted`）。
+  **存量用户迁移（09-12 补，`migrateGreetedForExistingUsers`）**：老档案没有 `greeted`，而 `onboarded` 只在用户真的回答过提问后才为 true → 「装了很久、聊过很多次但从没回答过提问」的用户（本机真实档案正是 `onboarded:false` 且无 `greeted`）升级后又被当成第一次见面。现在启动时迁移：**档案无 `greeted` 且该 profile 已有历史会话 → 直接落 `greeted=true`**（零会话的真·新用户不写，保留一次引导）；**不写 `onboarded`**（那表示"用户回答过"，不能伪装）。调用点必须在 `server.start()` 之前且包 try/catch（preflight【5】硬守卫）。
+  **⚠️ 判据必须按 `role === "developer"` 判，不能对整份 rollout 文本 `includes("初次见面")`（09-12 实测踩坑，差点写成"修了还是没修"）**：本文件（项目 AGENTS.md）**自己**就有一段身份引导文档，写着「初次见面」四个字；而 e2e 的工作区 = 项目根 → 引擎把项目 AGENTS.md 注入**每个**会话 → 对整份文本做 includes 会对**每个**会话都为真，断言恒定红（实测：修复后次会话被判成"仍有引导"，纯属误报）。权威判据只有一条：rollout 里 `role === "developer"` 的 message 是否带引导指令（引导走 `developerInstructions`；项目 AGENTS.md 走 `role: "user"` 的「# AGENTS.md instructions」消息）。工具落在 `scripts/e2e/lib/rollout-inspect.mjs`（`greetingInjected` / `GREETING_MARKER`），preflight【7】守卫「判据标记与 App.tsx 注入首句同源 + 限定 developer 角色」，脱钩即硬失败。
+  回归：`scripts/e2e/scenarios/identity-greeting-once.mjs`（11/11：首会话**有**引导、次会话**没有**、档案 `greeted=true`、**重开应用（重载渲染层）后新会话仍没有**）与 `identity-greeting-migrate.mjs`（8/8：种入历史会话 + 无 `greeted` → 启动即迁移、新会话不带引导）。**反证已做**：把判定退回「只看 `onboarded`」→ 只有"重开后"那一步红（同一次运行里内存标志会掩盖，**这正是该步存在的理由**）；关掉迁移 → migrate 场景 3 条红。
 - **⛔ 零阻塞宿主（09-12；架构约束，preflight【6】硬守卫）**：**`ipcMain.handle("codex:request")` 的处理链上禁止任何同步磁盘 I/O**。理由：所有会话共用同一个主进程事件循环，同步读盘期间**所有会话**的事件转发全部停摆——这就是「多会话一起卡」的形态。落地上 rollout 的目录遍历/解析（原 `session-tools.ts` 的 `listRolloutThreads` / `enrichThreadWithRolloutTools`）已**整体迁入 worker 线程**：实现 `electron/rollout-worker.cjs`，客户端 `electron/rollout-pool.ts`（常驻 worker + 请求 id 配对 Promise + 15s 超时 + 崩溃时失败在途请求并允许重建）；`session-tools.ts` 精简为**纯内存**的 `mergeThreadList`。
   **worker 源码必须内联成字符串**（`scripts/gen-rollout-worker.mjs` 生成 `electron/rollout-worker-source.ts`，已挂进 `build:electron`，生成物不入库）：打包后 worker 文件在 `app.asar` 内，而 `new Worker(路径)` 走 C++ 层读文件、**不经过 Electron 的 asar 补丁** → 读不到（语音 worker 踩过同一个坑，用 `{eval:true}` 绕开）。
   **preflight【6】两条硬失败**：① `main.ts` 不得再出现那两个同步函数名；② worker 内联产物必须存在且不落后于 `.cjs`。**以后往 codex:request 链上加「要看磁盘」的能力，必须走 worker / 异步 fs / 内存缓存。**
