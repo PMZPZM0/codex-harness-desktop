@@ -8084,19 +8084,35 @@ export default function App() {
     const gapErr = (anchor.getBoundingClientRect().top - el.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
     const first = pinnedAnchorKeyRef.current !== key;
     pinnedAnchorKeyRef.current = key;
-    anchorHeightBaselineRef.current = contentBottomOf(el);
+    // ⛔ 基线**只在真正钉顶/修正时**刷新，位置已经对了就一个字都不要碰它。
+    // 这是「自动跟随又没了」的根因（09-13 用户截图：消息钉在顶上，正文却一路流出
+    // 输入框外、最新一行永远看不到）：本函数每次 thread 更新都会被调用，若每次都把
+    // 基线刷成当前内容底部，update() 里的 `growth = 内容底部 − 基线` 永远 ≈ 0，
+    // 攒不到 FOLLOW_STEP_PX(60) → 跟随一次都不触发。基线必须让增长量**累积**。
     // 首次落位**立即**执行（用户要的第一时间就在那个位置）；之后的复核若发现偏差，
     // 延到下一帧再量一次才改：本帧布局常常还在收敛（content-visibility 提交、
     // 代码高亮/字体完成），照当帧 gap 直接改 scrollTop 会过冲（实测 332 → −226 → −32
     // 三次来回）。下一帧仍偏才修，一次到位。
     if (first) {
+      anchorHeightBaselineRef.current = contentBottomOf(el);
       dbg("pin-apply", { key, gapErr: Math.round(gapErr), top: Math.round(el.scrollTop) });
       selfScrollUntilRef.current = Date.now() + 80;
       scrollToOffsetInstant(el, el.scrollTop + gapErr);
       pinnedScrollTopRef.current = el.scrollTop;
       return;
     }
+    // ★ 交棒规则（09-13 定稿，修「来回拉扯」的真正来源）：
+    //   「消息稳在 54px」与「最新一行永远可见」在回复长过视口时**必然矛盾**——
+    //   跟随为了露出新内容要把视口往下推，钉顶为了让 gap 恒等于 54 又要把它拉回来，
+    //   两个 owner 每 60px 打一轮（实测打点：follow-grow{+65} → pin-fix{−65} 循环），
+    //   用户看到的就是抖。所以：内容一旦长出视口，**钉顶停止纠偏**、位置交给跟随，
+    //   消息自然往上走 —— 这正是用户要的「agent 消息很丝滑往下流、自动跟随」。
+    //   短回复（未超屏）时继续纠偏，消息就稳稳待在 54px。
+    const overflow = contentBottomOf(el) - el.scrollTop - el.clientHeight;
+    if (overflow > 4) { pinGapLockedRef.current = key; return; }
+    if (pinGapLockedRef.current === key) return;
     if (Math.abs(gapErr) <= 8) return;
+    anchorHeightBaselineRef.current = contentBottomOf(el);
     if (pinFixRef.current) cancelAnimationFrame(pinFixRef.current);
     selfScrollUntilRef.current = Date.now() + 200;
     pinFixRef.current = requestAnimationFrame(() => {
@@ -8116,6 +8132,8 @@ export default function App() {
       这个「非用户意愿」的增大若被 update() 当成用户滚到底就会解除钉顶（09-12
       实测：连发第二/三条正是这样退回贴底）。 */
   const pinnedScrollTopRef = useRef(-1);
+  /** 内容已长出视口后，这个锚点不再做 gap 纠偏（交棒给跟随，避免两个 owner 互拉）。 */
+  const pinGapLockedRef = useRef<string | null>(null);
   /** 落点复核修正的 rAF id（延一帧去抖，见 pinSentMessage）。 */
   const pinFixRef = useRef(0);
   /** 已经钉过的锚点标识（`turn:<id>` / `opt:<id>`）。**只钉一次**：同一个锚点后续的
@@ -9045,33 +9063,20 @@ const commandMatches = useMemo(() => {
     const contentBottom = () => contentBottomOf(scroller);
     const update = () => {
       const dist = contentBottom() - scroller.scrollTop - scroller.clientHeight;
-      // ── 钉顶模式的自动跟随（09-12 用户实测反馈「回复流出屏幕、看不到最新」）──
-      // 钉顶保持位置不变，但内容增长到一定程度就把视口往下推同样多：
-      //   · 新内容始终落在视口内（不必手动滚）= 用户要的「自动跟随」；
-      //   · 只按增量滚动，不会像旧版那样每个字重推整屏 = 不再有出字跳动。
-      // ⚠️ 阈值必须**≥一行的高度**（09-12 用户实测「每次新一行出字，消息整体往上抖一下」）：
-      // 之前用 `growth > 2`，等于 scrollHeight 每变一点（每个字、每次增量）就滚一次，
-      // 视口被反复顶 —— 表现为「每出一行抖一下」。现在攒够一行（~24-30px）才跟一次，
-      // 期间视口完全不动，出字是平滑的。
-      const FOLLOW_STEP_PX = 60;
+      // ── 钉顶期间的自动跟随：**只有一条规则**（09-13 定稿）──
+      //   「内容超出视口多少，就把视口往下补多少」。
+      //     · 没超出（短回复）→ 一动不动，消息稳在 54px；
+      //     · 超出了（长回复）→ 每次补齐，最新一行始终贴着视口底 = 自动跟随。
+      //   同一时刻只有一条成立，所以**结构上不可能**出现"跟随往下推、钉顶往回拉"的互拉
+      //   （旧实现按"增长量累计 60px 才推一次"，在内容刚好卡在视口边缘时两边同时成立，
+      //   实测打点 follow-grow{+65} → pin-fix{−65} 一轮一轮地打，用户看到的就是抖）。
       if (anchorTopRef.current) {
-        // 增长量按**内容底部**算，不按 scrollHeight：后者把尾部留白的出现/归零（回合结束
-        // 撤掉 compact 留白 = −64px）也算成"增长"，会凭空触发一次多余跟随。
-        const bottom = contentBottom();
-        const growth = bottom - anchorHeightBaselineRef.current;
-        // 只在**真正滚动之后**才推进基线（见下）。这里不能无脑刷基线，
-        // 否则 growth 永远攒不到阈值，跟随就失效了。
-        if (growth >= FOLLOW_STEP_PX) {
-          const target = Math.min(scroller.scrollTop + growth, scroller.scrollHeight - scroller.clientHeight);
-          if (target > scroller.scrollTop) {
-            dbg("follow-grow", { growth: Math.round(growth), base: Math.round(anchorHeightBaselineRef.current), bottom: Math.round(bottom), from: Math.round(scroller.scrollTop), to: Math.round(target) });
-            anchorHeightBaselineRef.current = bottom;
-            selfScrollUntilRef.current = Date.now() + 80;
-            scrollToOffsetInstant(scroller, target);
-            pinnedScrollTopRef.current = scroller.scrollTop;
-            lastTop = scroller.scrollTop;
-            return;
-          }
+        if (dist > 8) {
+          selfScrollUntilRef.current = Date.now() + 80;
+          scrollToOffsetInstant(scroller, scroller.scrollTop + dist);
+          pinnedScrollTopRef.current = scroller.scrollTop;
+          lastTop = scroller.scrollTop;
+          return;
         }
       }
       // 程序滚动的抑制窗内：只刷新基线，不做方向判定（否则自己的钉顶/贴底
