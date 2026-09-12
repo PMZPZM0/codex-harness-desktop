@@ -40,6 +40,8 @@ terminal-dump.txt
 .e2e-artifacts/
 # E2E 增量验收状态（记录每个场景已按哪份内容验收过，本机文件不入库）
 .e2e-state.json
+# E2E 持久测试 profile（跨轮次保留会话历史/长会话，含真实 Key 密文与本机对话内容）
+.e2e-profile/
 
 # 工具数据
 .workbuddy/

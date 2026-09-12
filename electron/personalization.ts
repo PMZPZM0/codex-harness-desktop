@@ -96,6 +96,54 @@ export async function writePersonalization(input: Record<string, unknown>): Prom
   return config;
 }
 
+/** 该 profile 里有没有**任何**历史会话（rollout 文件）。只探到第一个就返回，避免整目录遍历。 */
+async function hasAnySession(codexHome: string): Promise<boolean> {
+  const walk = async (dir: string, depth: number): Promise<boolean> => {
+    if (depth > 4) return false;
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    for (const entry of entries) {
+      if (entry.isFile() && /^rollout-.*\.jsonl$/.test(entry.name)) return true;
+      if (entry.isDirectory()) {
+        if (await walk(path.join(dir, entry.name), depth + 1)) return true;
+      }
+    }
+    return false;
+  };
+  return walk(path.join(codexHome, "sessions"), 0);
+}
+
+/**
+ * 存量用户迁移：老版本档案里**没有** `greeted` 字段，而 `onboarded` 只在用户真的回答了
+ * 那套提问后才为 true —— 结果「装了很久、聊了很多次但没回答过引导提问」的用户，
+ * 升级后还会被当成第一次见面、再引导一遍（09-12 用户原话：
+ * 「初次打招呼才需要那样引导，正常不要刻意引导，直接开始干活」）。
+ *
+ * 判定：档案里没有 greeted 时，只要**这个 profile 已经有历史会话**，就认定「早就打过招呼了」，
+ * 直接落 greeted=true —— 谈过话就不必再做初次见面引导。全新用户（零会话）不写，
+ * 保留一次引导。
+ *
+ * 只在启动时调用一次（引擎启动前），不在 codex:request 链上，不阻塞任何会话；
+ * 调用方负责 try/catch（见 preflight【5】：boot 副作用不得裸 await）。
+ */
+export async function migrateGreetedForExistingUsers(codexHome: string): Promise<boolean> {
+  let raw: Record<string, unknown> | null = null;
+  try {
+    raw = JSON.parse(await fs.readFile(getPersonalizationFile(), "utf8"));
+  } catch {
+    raw = null; // 还没有档案 = 全新用户，不写
+  }
+  if (raw && raw.greeted !== undefined) return false;      // 已迁移过
+  if (raw?.onboarded === true) return false;               // 已完整引导过（渲染层按 onboarded 也判已问候）
+  if (!(await hasAnySession(codexHome))) return false;     // 零会话 = 真·全新用户，保留一次引导
+  await writePersonalization({ greeted: true });
+  return true;
+}
+
 /**
  * Emoji 使用规范（内置基础段，随 AGENTS.md 注入所有会话）。
  * 用户要求：标题/要点/状态/进度等场景自然使用多样化 emoji，语境匹配、风格统一、数量适度，
