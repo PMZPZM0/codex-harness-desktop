@@ -224,8 +224,40 @@ const CHECKS = [
   },
 
   {
+    id: "fold-anchor",
+    name: "⑥ 折叠组里不得有长正文/最终汇报（用户报的「折叠吞汇报」）",
+    run: async (h) => {
+      // 用户反馈「折叠消息把 codex 最后汇报的也折叠进去了」→「折叠怎么还能出问题」。
+      // 直接用 DOM 判：**折叠组内部**不允许出现长正文（≥200 字）。组里可以放工具、思考、
+      // 以及一两句过渡，但「汇报本身」必须留在外面。这是用户视角的判据，不依赖内部实现。
+      const rows = Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0;
+      h.check("[前置] 有历史会话可查（≥3）", rows >= 3, `thread-row=${rows}`);
+      const found = [];
+      for (let i = 0; i < Math.min(6, rows); i++) {
+        await clickRow(h, i);
+        await wait(1200);
+        const folded = await h.eval(`(() => {
+          const out = [];
+          for (const grp of document.querySelectorAll(".wb-fold--completed, .wb-fold--summary")) {
+            for (const body of grp.querySelectorAll(".assistant-message .message-body")) {
+              const len = (body.innerText || "").length;
+              if (len >= 200) out.push({ len, head: (body.innerText || "").slice(0, 24) });
+            }
+          }
+          return out;
+        })()`);
+        if (Array.isArray(folded) && folded.length) found.push({ row: i, folded: folded.slice(0, 3) });
+      }
+      console.log(`  [折叠] 检查了 ${Math.min(6, rows)} 个旧会话；折叠组内发现长正文的：${found.length} 个`);
+      for (const f of found.slice(0, 3)) console.log(`  [折叠]   会话#${f.row}: ${JSON.stringify(f.folded)}`);
+      h.check("没有任何折叠组吞掉长正文（≥200 字的汇报必须留在外面）", found.length === 0, JSON.stringify(found.slice(0, 2)));
+      await h.screenshot("折叠检查");
+    },
+  },
+
+  {
     id: "clean",
-    name: "⑥ 渲染层无 console.error",
+    name: "⑦ 渲染层无 console.error",
     run: async (h) => {
       h.check("渲染层无 console.error", h.consoleLog.length === 0, h.consoleLog.slice(0, 3).join(" ｜ "));
     },
