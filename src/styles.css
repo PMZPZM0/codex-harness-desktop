@@ -20737,30 +20737,31 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 
 /* ===== 实时语音舞台：输入框上方的彩色波浪 + 字幕 ===== */
 /* 语音舞台：透明毛玻璃弹窗，浮在对话框上半区（absolute，不挤压输入框布局） */
+/* 语音舞台：**实心白底**浮在对话区**上半部**（09-12 用户要求）。
+   旧版贴 composer 上沿（下半部）且半透明+毛玻璃，后面的消息会透上来和字幕重影；
+   另外它挂在 composer-wrap 里，输入区任何变化都会带着它一起动（「上下文跳动」）。
+   现在 position:fixed 脱离输入区文档流：位置固定、不参与重排、不再跳动。 */
 .voice-stage {
-  position: absolute;
-  /* 贴在 composer-wrap 上沿之外 = 对话区上半部，浮在消息之上 */
-  bottom: 100%;
-  left: 0;
-  right: 0;
-  margin-bottom: 12px;
-  padding: 10px 14px 12px;
+  position: fixed;
+  top: 84px;
+  left: 50%;
+  transform: translate(-50%, 0);
+  width: min(760px, calc(100vw - 420px));
+  min-width: 320px;
+  max-height: min(46vh, 360px);
+  overflow: hidden;
+  z-index: 60;
+  padding: 12px 14px 12px;
   border-radius: 14px;
-  z-index: 40;
-  /* 透明 + 毛玻璃：能看到后面的消息 */
-  background: color-mix(in srgb, var(--panel) 42%, transparent);
-  border: 1px solid color-mix(in srgb, #fff 22%, transparent);
-  backdrop-filter: blur(16px) saturate(150%);
-  -webkit-backdrop-filter: blur(16px) saturate(150%);
-  box-shadow:
-    0 10px 34px color-mix(in srgb, #000 14%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 46px color-mix(in srgb, #000 26%, transparent);
   display: flex; flex-direction: column; gap: 6px;
   animation: voice-stage-in .22s cubic-bezier(.2,.8,.25,1);
 }
 @keyframes voice-stage-in {
-  from { opacity: 0; transform: translateY(10px) scale(.98); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translate(-50%, 10px) scale(.98); }
+  to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 .voice-stage-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -21164,15 +21165,9 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 
 
-/* 透明弹窗上的文字可读性（毛玻璃背景 + 轻微文字阴影） */
-.voice-stage .voice-stage-mode,
-.voice-stage .voice-subtitle-text {
-  text-shadow: 0 1px 2px color-mix(in srgb, #000 25%, transparent);
-}
+/* 实心白底弹窗：不再需要文字阴影与半透明按钮（09-12 改白底后一并清掉） */
 .voice-stage .voice-stage-stop {
-  background: color-mix(in srgb, var(--bg) 70%, transparent);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: var(--bg);
 }
 .voice-stage .voice-subtitle-who {
   backdrop-filter: blur(6px);

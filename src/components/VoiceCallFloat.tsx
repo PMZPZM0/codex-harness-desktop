@@ -919,6 +919,13 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
               <button
                 type="button"
                 role="menuitem"
+                onClick={() => { setMenu(null); setExpanded((open) => !open); }}
+              >
+                <AudioLines size={13} />{expanded ? "收起通话面板" : "打开通话面板"}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
                 onClick={() => { setMenu(null); requestVoiceOpenSettings(); }}
               >
                 <Settings2 size={13} />语音设置

@@ -109,23 +109,46 @@ const GATE_DEFAULTS = {
   echoGateDb: 6,
   /** 回声地板的自适应速度：越小越稳（每块保留的比例） */
   floorDecay: 0.98,
+  /** 绝对地板（RMS）：再安静的环境也有底噪，低于此值不可能是人声（09-12 新增） */
+  minFloor: 0.004,
+  /** 起播前若干块只学习地板（避开起播瞬态），期间不判双讲（09-12 新增） */
+  seedBlocks: 8,
+  /** 连续超阈块数才算真的插话（约 150~250ms，滤掉爆音/回声毛刺）（09-12 新增） */
+  holdBlocks: 6,
 };
 
 /**
  * 回声门控 / 双讲判定。
  *
- * 逻辑：只在「正在播报」期间工作。首块把当前能量当作回声地板，之后在**非双讲**的块上
- * 缓慢跟踪地板；当某块能量高出地板 `echoGateDb` 分贝时判定为双讲（= 用户在说话）。
- * 双讲期间冻结地板更新，否则用户的大嗓门会被当成新的「回声水平」而抬高门槛，
- * 导致越说越难打断。
+ * 只在「正在播报」期间工作：
+ * 1. **起播前 `seedBlocks` 块只学习地板**（取最大值）。旧实现把**第一块**直接当地板，
+ *    而播报刚起步那几十毫秒往往是静音/起音瞬态，地板≈0 → 下一块必然 `rms > 0×ratio`
+ *    → 误判双讲 → 播报被自己打断（用户 09-12 实测「我没说话它也断」）。
+ * 2. 地板带**绝对下限 `minFloor`**：低于底噪的能量不可能判成人声。
+ * 3. 判定要求**连续 `holdBlocks` 块**超阈（去抖），单块毛刺不再触发打断。
+ * 4. 双讲期间冻结地板更新，否则用户的大嗓门会被当成新的「回声水平」而抬高门槛，
+ *    导致越说越难打断。
  */
 export function createEchoGate(options = {}) {
   const echoGateDb = options.echoGateDb ?? GATE_DEFAULTS.echoGateDb;
   const floorDecay = options.floorDecay ?? GATE_DEFAULTS.floorDecay;
+  const minFloor = options.minFloor ?? GATE_DEFAULTS.minFloor;
+  const seedBlocks = options.seedBlocks ?? GATE_DEFAULTS.seedBlocks;
+  const holdBlocks = options.holdBlocks ?? GATE_DEFAULTS.holdBlocks;
   const gateRatio = Math.pow(10, echoGateDb / 20);
   let floor = 0;
   let peak = 0;
   let doubleTalk = false;
+  let seedLeft = seedBlocks;
+  let above = 0;
+
+  const reset = () => {
+    floor = 0;
+    peak = 0;
+    doubleTalk = false;
+    seedLeft = seedBlocks;
+    above = 0;
+  };
 
   return {
     get floor() {
@@ -138,11 +161,7 @@ export function createEchoGate(options = {}) {
       return doubleTalk;
     },
     /** 播报停止时复位（下次播报重新学习地板）。 */
-    reset() {
-      floor = 0;
-      peak = 0;
-      doubleTalk = false;
-    },
+    reset,
     /**
      * @param {number} rms 当前块能量
      * @param {boolean} playing 是否正在播报
@@ -150,16 +169,21 @@ export function createEchoGate(options = {}) {
      */
     update(rms, playing, weight = 1) {
       if (!playing) {
-        floor = 0;
-        peak = 0;
-        doubleTalk = false;
-        return doubleTalk;
+        reset();
+        return false;
       }
       peak = Math.max(peak * Math.pow(0.9, weight), rms);
-      doubleTalk = floor > 0 && rms > floor * gateRatio;
-      if (floor === 0) {
-        floor = rms;
-      } else if (!doubleTalk) {
+      // 起播学习期：只抬高地板，绝不判双讲（避开「地板≈0 → 秒断」）
+      if (seedLeft > 0) {
+        floor = Math.max(floor, rms);
+        seedLeft -= 1;
+        doubleTalk = false;
+        return false;
+      }
+      const threshold = Math.max(floor, minFloor) * gateRatio;
+      above = rms > threshold ? above + 1 : 0;
+      doubleTalk = above >= holdBlocks;
+      if (!doubleTalk) {
         const alpha = 1 - Math.pow(floorDecay, weight);
         floor = floor * (1 - alpha) + rms * alpha;
       }
@@ -177,9 +201,14 @@ export function createEchoGate(options = {}) {
  */
 export function createSentenceChunker(options = {}) {
   const maxChars = options.maxChars ?? 60;
+  // 首句阈值单独调小（09-12 用户反馈「正文出来了语音还没跟上」）：模型输出往往
+  // 前几十字都没有句号，等满 maxChars 才开口，体感就是「慢半拍」。首句尽早出声后
+  // 后续仍按 maxChars 攒长句，语气不至于碎。
+  const firstMaxChars = options.firstMaxChars ?? Math.min(18, maxChars);
   const hardBreak = new Set(["。", "！", "？", "!", "?", "\n", "；", ";"]);
   const softBreak = new Set(["，", ",", "、", "：", ":", " "]);
   let buffer = "";
+  let emitted = 0;
 
   const take = (text) => {
     buffer = buffer.slice(text.length);
@@ -193,15 +222,18 @@ export function createSentenceChunker(options = {}) {
       buffer += delta;
       const out = [];
       for (;;) {
+        const limit = emitted === 0 ? firstMaxChars : maxChars;
         const hit = firstBreakIndex(buffer, hardBreak);
         if (hit >= 0) {
           out.push(take(buffer.slice(0, hit + 1)).trim());
+          emitted += 1;
           continue;
         }
-        if (buffer.length <= maxChars) break;
-        const soft = lastBreakIndex(buffer.slice(0, maxChars), softBreak);
-        const cut = soft >= 0 ? soft + 1 : maxChars;
+        if (buffer.length <= limit) break;
+        const soft = lastBreakIndex(buffer.slice(0, limit), softBreak);
+        const cut = soft >= 0 ? soft + 1 : limit;
         out.push(take(buffer.slice(0, cut)).trim());
+        emitted += 1;
       }
       return out.filter((s) => s.length > 0);
     },
@@ -209,6 +241,7 @@ export function createSentenceChunker(options = {}) {
     flush() {
       const rest = buffer.trim();
       buffer = "";
+      emitted = 0;
       return rest ? [rest] : [];
     },
     get pending() {

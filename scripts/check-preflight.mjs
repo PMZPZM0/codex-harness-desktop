@@ -422,15 +422,45 @@ console.log(C.bold("\n【4b】语音通话纯逻辑（回声消除 / 回声门�
     ? ok("回声消除：全程冻结时滤波器不收敛（证明冻结真的生效）")
     : fail(`回声消除：冻结后仍收敛了 ${frozenErle.toFixed(1)} dB，冻结没生效`);
 
-  // --- 回声门控：稳态回声不算说话；突然变响才算；双讲期间地板必须冻住 ---
+  // --- 回声门控：起播静音不压零；单块尖峰不算；持续人声才算；双讲期间地板冻住 ---
+  // 回归用例（09-12 用户实测「我没说话，播报也会自动断」）：旧实现把**第一块**直接当回声
+  // 地板，而播报刚起步那几十毫秒是静音 → 地板≈0 → 之后任何回声都超阈 → 播报被自己打断。
+  const quietGate = createEchoGate({ echoGateDb: 6 });
+  let quietFalse = false;
+  for (let i = 0; i < 30; i++) {
+    quietGate.update(0.0002, true); // 播报起步的静音段
+    if (quietGate.doubleTalk) quietFalse = true;
+  }
+  for (let i = 0; i < 30; i++) {
+    quietGate.update(0.006, true); // 之后的稳态回声：比起步静音大 30 倍，仍属回声量级
+    if (quietGate.doubleTalk) quietFalse = true;
+  }
+  quietFalse === false
+    ? ok("门控：起播静音不再把地板压到 0（回归：播报不会被自己打断）")
+    : fail("门控：起播静音后误判插话 —— 播报会被自动打断（旧 bug 回归）");
+
+  // 起播学习期：前若干块只学地板，即使突然变响也不判插话（避开起音瞬态）
+  const seeded = createEchoGate({ echoGateDb: 6 });
+  let earlyFire = false;
+  for (let i = 0; i < 8; i++) {
+    seeded.update(0.01, true);
+    if (seeded.doubleTalk) earlyFire = true;
+  }
+  earlyFire === false ? ok("门控：起播学习期内不判插话（起音瞬态不误触发）") : fail("门控：起播学习期就判了插话");
+
   const gate = createEchoGate({ echoGateDb: 6 });
-  gate.update(0.01, true);
+  for (let i = 0; i < 8; i++) gate.update(0.01, true); // 学习期
   gate.update(0.01, true);
   gate.doubleTalk === false ? ok("门控：稳态回声不误判为插话") : fail("门控：稳态回声被误判为插话");
   gate.update(0.5, true);
-  gate.doubleTalk === true ? ok("门控：能量突然高出地板 6dB 以上 → 判定插话") : fail("门控：明显插话没被识别");
-  // 连喊 80 次：无冻结时地板会爬升，约第 34 帧起就不再判插话（实测过这个临界点）；
-  // 有冻结时地板纹丝不动，80 帧全部判插话。
+  gate.doubleTalk === false ? ok("门控：单块能量尖峰不判插话（去抖生效）") : fail("门控：单块尖峰就判插话（去抖失效）");
+  let fired = false;
+  for (let i = 0; i < 6; i++) {
+    gate.update(0.5, true);
+    if (gate.doubleTalk) fired = true;
+  }
+  fired ? ok("门控：持续人声（连续多块超阈）→ 判定插话") : fail("门控：持续人声没被识别");
+  // 连喊 80 次：无冻结时地板会爬升、越喊越难打断；有冻结时地板纹丝不动，80 帧全部判插话。
   const floorBefore = gate.floor;
   let stayed = true;
   for (let i = 0; i < 80; i++) {
@@ -447,6 +477,17 @@ console.log(C.bold("\n【4b】语音通话纯逻辑（回声消除 / 回声门�
   gate.doubleTalk === false && gate.floor === 0
     ? ok("门控：播报停止后复位（下次播报重新学习地板）")
     : fail("门控：播报停止后未复位");
+
+  // 首句阈值：模型开头常常几十字没有句号，首句必须比后续句子更早出声（跟手感）
+  const firstFast = createSentenceChunker({ maxChars: 60 });
+  const firstOut = firstFast.push("这是一句没有任何标点符号而且很长的话用来验证首句是不是会提前切出来");
+  firstOut.length === 1 && firstOut[0].length <= 18
+    ? ok(`断句：首句提前切出（${firstOut[0].length} 字，不等满 60 字）`)
+    : fail(`断句：首句没有提前切出（${JSON.stringify(firstOut).slice(0, 60)}）`);
+  const later = firstFast.push("第二句同样没有标点但是首句已经出过声了所以应该按 60 字阈值继续攒着" + "补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字");
+  later.length === 0 || later[0].length > 18
+    ? ok("断句：首句之后回到常规阈值（不会一直碎句）")
+    : fail("断句：首句之后仍在碎切（阈值没回到 maxChars）");
 
   // --- 断句：句读即切、超长在软断点切、结尾 flush ---
   const hard = createSentenceChunker({ maxChars: 10 });
