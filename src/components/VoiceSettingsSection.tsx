@@ -326,24 +326,39 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       e.preventDefault();
       e.stopPropagation();
       if (e.key === "Escape") { cleanup(); return; }
-      // 必须带修饰键（单键会吞掉正常输入，不收）
+      // 必须带修饰键（单键会吞掉正常输入，不收）；还没按到修饰键时静默等待
       const mods: string[] = [];
-      if (e.ctrlKey || e.metaKey) mods.push("Ctrl");
+      if (e.ctrlKey) mods.push("Ctrl");
+      if (e.metaKey) mods.push("Super"); // Win/Cmd 是独立修饰键，此前冒充 Ctrl 会导致注册的键与按的键对不上
       if (e.shiftKey) mods.push("Shift");
       if (e.altKey) mods.push("Alt");
       if (!mods.length) return;
-      const keyRaw = e.key.length === 1 ? e.key.toUpperCase() : e.key;
-      const letter = e.code?.match(/^Key([A-Z])$/)?.[1];
-      const main = letter || (/^F\d{1,2}$/.test(keyRaw) ? keyRaw : /^[A-Z0-9]$/.test(keyRaw) ? keyRaw : "");
-      if (!main) return;
+      // 主键优先用 e.code（物理键位）：按 Ctrl+Shift+1 时 e.key 是「!」，按 e.key 匹配会
+      // 静默丢弃——用户按了半天没反应，就是「改了一下就用不了」的另一半原因。
+      const code = e.code ?? "";
+      const letter = code.match(/^Key([A-Z])$/)?.[1];
+      const digit = code.match(/^Digit([0-9])$/)?.[1];
+      const fkey = code.match(/^F([1-9]|1[0-2])$/)?.[0];
+      let main = letter ?? digit ?? fkey ?? "";
+      if (!main && code === "Space") main = "Space";
+      if (!main && /^[A-Z0-9]$/.test(e.key)) main = e.key;
+      if (!main) {
+        onNotice("这个键不能做快捷键（支持：字母 / 数字 / F1~F12 / Space，且至少带一个修饰键）");
+        return;
+      }
       const accelerator = [...mods, main].join("+");
       cleanup();
       if (kind === "dictation") {
         apply({ dictationHotkey: { enabled: true, accelerator } });
       } else {
-        apply({ hotkey: { enabled: true, accelerator } });
+        // 先注册、成功才落盘：注册失败时若先落盘，配置里存的就是一个注册不上的死键，
+        // 且旧快捷键已被注销——重启后永远失联。失败保留原设置并明确提示。
         void window.codex.voiceHotkeySet({ accelerator, enabled: true }).then((r: any) => {
-          if (!r?.ok) onNotice(`快捷键注册失败：${r?.error ?? "可能被其它程序占用"}`);
+          if (!r?.ok) {
+            onNotice(`快捷键「${accelerator}」注册失败，已保留原设置：${r?.error ?? "可能被其它程序占用"}`);
+            return;
+          }
+          apply({ hotkey: { enabled: true, accelerator } });
         });
       }
     };
@@ -761,8 +776,14 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
                 checked={settings.hotkey.enabled}
                 onChange={(e) => {
                   const enabled = e.target.checked;
-                  apply({ hotkey: { enabled, accelerator: settings.hotkey.accelerator } });
-                  void window.codex.voiceHotkeySet({ accelerator: settings.hotkey.accelerator, enabled });
+                  // 与录入一致：注册/注销成功才落盘，失败保留原状态并提示
+                  void window.codex.voiceHotkeySet({ accelerator: settings.hotkey.accelerator, enabled }).then((r: any) => {
+                    if (!r?.ok) {
+                      onNotice(`快捷键${enabled ? "注册" : "注销"}失败：${r?.error ?? "可能被其它程序占用"}`);
+                      return;
+                    }
+                    apply({ hotkey: { enabled, accelerator: settings.hotkey.accelerator } });
+                  });
                 }}
                 disabled={saving}
               />

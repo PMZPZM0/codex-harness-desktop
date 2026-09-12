@@ -15,11 +15,12 @@
 
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, AudioLines, Download, EyeOff, LoaderCircle, Mic, PhoneOff, Settings2, X } from "lucide-react";
+import { AlertCircle, AudioLines, Download, EyeOff, LoaderCircle, Mic, Monitor, PhoneOff, Settings2, X } from "lucide-react";
 import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../lib/voice-aec.mjs";
 import { CAPTURE_WORKLET_SOURCE } from "../voice/capture-worklet";
 import { decodeFloat32Base64 } from "../voice/audio-transport";
 import VoiceMascot from "./VoiceMascot";
+import VoiceCallScreen from "./VoiceCallScreen";
 import { patchVoiceStage, requestVoiceDictationSend, requestVoiceOpenSettings, resetVoiceStage, setVoiceDictationHandler, setVoiceLevel, setVoiceStopHandler } from "../voice/wave-level";
 
 type VoicePhase = "idle" | "starting" | "active";
@@ -128,6 +129,8 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   const [hint, setHint] = useState<string | null>(null);
   // 右键菜单位置：做视口边界检测（看用户截图：之前直接用 clientX/Y 会跑出屏幕）
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  // 应用内通话界面（全屏遮罩，像手机来电那样的界面；关掉 ≠ 挂断）
+  const [callScreen, setCallScreen] = useState(false);
   // 字幕广播用：delta 是逐字累加的，用 ref 拿累计值，避免依赖 state 更新时机
   const agentTextRef = useRef("");
   /** 悬浮球 DOM：每帧把音量写进 CSS 变量，让球跟着声音呼吸/发光 */
@@ -228,14 +231,14 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     };
   }, [menu]);
 
-  /** 右键菜单：隐藏 / 跳转到语音设置 */
+  /** 右键菜单：打开通话弹窗 / 展开面板 / 语音设置 / 隐藏 */
   const onBallContextMenu = useCallback((e: ReactMouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // 菜单大小约 150×88。鼠标处为锚点，越右/下边就贴回视口边内
+    // 菜单大小约 158×150（4 项）。鼠标处为锚点，越右/下边就贴回视口边内
     // —— 直接用 clientX/Y 在 52px 的小窗口里会被聊天区遮住、跑出屏幕。
     const W = 158;
-    const H = 88;
+    const H = 150;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const x = Math.max(6, Math.min(e.clientX, vw - W - 6));
@@ -346,6 +349,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       for (const v of scopeData) sum += v * v;
       const rms = Math.sqrt(sum / scopeData.length);
       const level = Math.min(1, rms * 6);
+      levelRef.current = level;
       ballRef.current?.style.setProperty("--voice-level", level.toFixed(3));
       setVoiceLevel(level, "speaking");
     }, 60);
@@ -505,6 +509,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       const cleaned = aecRef.current ? aecRef.current.process(raw, ref) : raw;
       const rms = rmsOf(cleaned);
       const nextLevel = Math.min(1, rms * 12);
+      levelRef.current = nextLevel;
       setLevel(nextLevel);
       // 悬浮球跟着音量呼吸（写 CSS 变量，不用 state，避免每帧重渲染）
       ballRef.current?.style.setProperty("--voice-level", nextLevel.toFixed(3));
@@ -568,6 +573,8 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       setPhase("active");
       // 输入框听写不弹右下角通话面板；只显示 composer 上方实时字幕。
       setExpanded(mode === "conversation");
+      // 通话接通即进「通话界面」（像接电话一样）；可收起，收起不挂断
+      if (mode === "conversation") setCallScreen(true);
       setUserText("");
       setAgentText("");
       agentTextRef.current = "";
@@ -589,8 +596,11 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     await window.codex.voiceStop().catch(() => undefined);
     setState("listening");
     setLevel(0);
+    levelRef.current = 0;
     ballRef.current?.style.setProperty("--voice-level", "0");
     setExpanded(false);
+    // 通话界面随挂断一起退出
+    setCallScreen(false);
     // 波浪/字幕随之收起
     resetVoiceStage();
   }, [teardown]);
@@ -628,14 +638,21 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   }, [endCall, startCall]);
 
   // ── 按键启动：全局快捷键（应用没聚焦也能唤起）→ 切换通话 ──
+  // 铁律：回调必须经 ref 转发到「最新」的 startCall/endCall。此前这里用空依赖 effect
+  // 直接闭包捕获了挂载那一刻的 startCall（连带当时的 threadId / models）——之后切换
+  // 会话、模型加载完成，快捷键仍在用旧闭包，表现为「改了快捷键/切了会话就用不了」。
+  const callToggleRef = useRef<() => void>(() => undefined);
+  callToggleRef.current = () => {
+    if (phaseRef.current === "active" || phaseRef.current === "starting") void endCall();
+    else void startCall();
+  };
   useEffect(() => {
-    const off = window.codex.onVoiceHotkey(() => {
-      if (phaseRef.current === "active" || phaseRef.current === "starting") void endCall();
-      else void startCall();
-    });
+    const off = window.codex.onVoiceHotkey(() => callToggleRef.current());
     return off;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 电平 ref：通话界面呼吸/发光用（每帧写 CSS 变量，不经 state，避免重渲染打断音频链路）
+  const levelRef = useRef(0);
 
   // ── 语音唤醒：持续聆听 + 匹配唤醒词（会常驻占用 CPU，默认关）──
   useEffect(() => {
@@ -776,7 +793,27 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   const ballClass = `voice-ball ${phase === "active" ? `is-${state}` : ""} ${phase === "starting" ? "is-starting" : ""}`;
 
   return createPortal(
-    <div className="voice-float-layer" style={{ right: pos.right, bottom: pos.bottom }}>
+    <>
+      {/* 应用内通话界面：全屏遮罩，接通自动弹出、可收起（收起不挂断） */}
+      {callScreen && (
+        <VoiceCallScreen
+          phase={phase}
+          state={state}
+          level={level}
+          userText={userText}
+          agentText={agentText}
+          notice={notice}
+          modelsReady={modelsReady}
+          onStart={() => void startCall()}
+          onBarge={() => {
+            stopPlayback();
+            void window.codex.voiceBarge().catch(() => undefined);
+          }}
+          onHangup={() => void endCall()}
+          onMinimize={() => setCallScreen(false)}
+        />
+      )}
+      <div className="voice-float-layer" style={{ right: pos.right, bottom: pos.bottom }}>
       {expanded && (
         <div className="voice-panel" role="dialog" aria-label="语音通话">
           <header className="voice-panel-head">
@@ -919,6 +956,13 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
               <button
                 type="button"
                 role="menuitem"
+                onClick={() => { setMenu(null); setCallScreen(true); }}
+              >
+                <Monitor size={13} />打开通话界面
+              </button>
+              <button
+                type="button"
+                role="menuitem"
                 onClick={() => { setMenu(null); setExpanded((open) => !open); }}
               >
                 <AudioLines size={13} />{expanded ? "收起通话面板" : "打开通话面板"}
@@ -937,7 +981,8 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
           )}
         </>
       )}
-    </div>,
+      </div>
+    </>,
     document.body
   );
 }

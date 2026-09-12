@@ -1,12 +1,13 @@
 // scripts/e2e/run.mjs —— E2E 场景运行器
 //
 // 用法：
-//   npm run e2e                  # 跑**全部**场景（验收门槛，新场景自动纳入）
+//   npm run e2e                  # 只跑**最新的**一个场景（按文件 mtime；日常验收默认）
+//   npm run e2e -- --all         # 跑全部场景（发版前全量回归）
 //   npm run e2e -- smoke         # 只跑指定场景（可给多个：smoke model-scope）
 //   npm run e2e -- --list        # 列出全部场景
 //   npm run e2e -- smoke --keep  # 跑完不关闭应用（留给你手动接着看）
 
-import { readdirSync, existsSync } from "node:fs";
+import { readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ElectronHarness } from "./lib/harness.mjs";
@@ -49,8 +50,24 @@ if (flags.has("--list")) {
   process.exit(0);
 }
 
-// 默认跑全部场景：验收门槛必须覆盖所有回归场景，否则新写的场景只是摆设。
-const names = positional.length ? positional : Object.keys(scenarios);
+// 场景选择（2026-09-12 用户定稿：验收只验最新，不再每次从头跑全部历史场景）：
+//   npm run e2e            → 只跑「最新的」一个场景（按场景文件 mtime，刚改完哪个模块新写的场景就是它）
+//   npm run e2e -- --all   → 跑全部场景（发版前的整体回归才用）
+//   npm run e2e -- 名字 …  → 跑指定场景
+let names;
+if (positional.length) {
+  names = positional;
+} else if (flags.has("--all")) {
+  names = Object.keys(scenarios);
+} else {
+  const files = readdirSync(SCENARIO_DIR).filter((f) => f.endsWith(".mjs"));
+  const newest = files
+    .map((f) => ({ f, m: statSync(join(SCENARIO_DIR, f)).mtimeMs }))
+    .sort((a, b) => b.m - a.m)[0];
+  const newestName = newest ? (scenarios[newest.f.replace(/\.mjs$/, "")]?.name ?? newest.f.replace(/\.mjs$/, "")) : "";
+  names = newestName ? [newestName] : [];
+  if (names.length) console.log(`\x1b[90m(默认只跑最新场景：${names[0]} —— 全量回归用 npm run e2e -- --all)\x1b[0m`);
+}
 const unknown = names.filter((n) => !scenarios[n]);
 if (unknown.length) {
   console.error(`未知场景「${unknown.join(", ")}」。可用：${Object.keys(scenarios).join(", ")}`);
