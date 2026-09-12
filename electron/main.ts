@@ -3,7 +3,7 @@ import os from "node:os";
 import nodeNet from "node:net";
 import { execSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs/promises";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
@@ -34,8 +34,8 @@ import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings
 import { checkLatestUpdate, defaultDownloadDir, downloadUpdate, fileExists, installUpdate, UPDATE_CHANNEL, UPDATE_SERVER_URL } from "./updates";
 import { checkEngineUpdate, performEngineUpdate } from "./engine-updater";
 import { VoiceService } from "./voice/voice-service";
-import { ALL_VOICE_REPOS } from "./voice/model-manifest";
-import { ensureRepo, modelsSizeOnDisk, voiceModelsStatus } from "./voice/model-store";
+import { ALL_VOICE_REPOS, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "./voice/model-manifest";
+import { ensureRepo, ensureZipvoice, modelsSizeOnDisk, voiceModelsStatus } from "./voice/model-store";
 import {
   deleteSshServer, execSshCommand, exportSshServers, parseSshImport, readSshServers, saveSshServer, setSshServerEnabled,
   testSshConnection, writeSshServers, SshSessionManager, type SshExecResult, type SshServer, type SshTestResult,
@@ -587,7 +587,32 @@ ipcMain.handle("voice:models-status", async () => {
     root: voiceModelsRoot,
     // 提示 UI「本地导入」该期望的目录结构（HF 仓库 id 很长，用户需要明确看到）
     repos: ALL_VOICE_REPOS.map((r) => ({ id: r.repo, lastSegment: r.repo.split("/").pop() ?? r.repo })),
+    // 音色克隆模型（ZipVoice，归档型资源，单独安装）：UI 按它显示独立条目
+    zipvoice: { ready: zipvoiceReady(voiceModelsRoot), bytes: ZIPVOICE_ARCHIVE.bytes + ZIPVOICE_ARCHIVE.vocoder.bytes, dir: ZIPVOICE_DIR },
   };
+});
+
+/** 音色克隆模型的安装与取消（归档型资源：GitHub release 整包 + 声码器，按需下载）。 */
+let zipvoiceAbort: AbortController | null = null;
+ipcMain.handle("voice:zipvoice-install", async () => {
+  if (zipvoiceAbort) return { ok: false, error: "正在安装中" };
+  zipvoiceAbort = new AbortController();
+  try {
+    const result = await ensureZipvoice(
+      voiceModelsRoot,
+      toolsRoot,
+      (progress) => sendToWindow("voice:event", { type: "download", ...progress }),
+      zipvoiceAbort.signal,
+    );
+    sendToWindow("voice:event", { type: "downloadDone", ok: result.ok, error: result.ok ? undefined : (result as any).error, target: "zipvoice" });
+    return result;
+  } finally {
+    zipvoiceAbort = null;
+  }
+});
+ipcMain.handle("voice:zipvoice-cancel", () => {
+  zipvoiceAbort?.abort();
+  return { ok: true };
 });
 
 ipcMain.handle("voice:models-install", () => voiceService.installModels());
@@ -1772,6 +1797,16 @@ app.whenReady().then(async () => {
     onMessage: (message) => void handleWeixinMessage(message),
     log: (level, message) => {
       channelLogs.push({ at: Date.now(), level, message });
+      // 同步落盘：网关故障（token 失效/发送失败）此前只在内存和 UI 事件里，窗口没开就丢，
+      // 排查「微信消息没同步」时完全瞎抓（09-12 事故）。1MB 轮转。
+      try {
+        const logFile = path.join(app.getPath("userData"), "channel-logs", "gateway.log");
+        if (!existsSync(logFile) || statSync(logFile).size > 1024 * 1024) {
+          mkdirSync(path.dirname(logFile), { recursive: true });
+          if (existsSync(logFile)) renameSync(logFile, logFile.replace(/\.log$/, ".old"));
+        }
+        appendFileSync(logFile, `[${new Date().toISOString()}] [${level}] ${message}\n`, "utf8");
+      } catch { /* 日志落盘失败不影响主流程 */ }
       sendToWindow("channel-bot:event", { level, message, at: Date.now(), status: channelBot.status() });
     },
   });
@@ -1798,9 +1833,11 @@ const weixinBindings = new Map<string, string>(); // 微信用户 → Codex 线�
 const botStreamSessions = new Map<string, BotStreamSession>();
 
 function weixinStreamSink(from: string): BotStreamSink {
+  // 微信 iLink 的 context_token 实测**一次一发**（09-12 事故实证：流式模式下每条入站
+  // 消息只有第一次 sendmessage 成功，后续追加与最终正文全部失败且被静默吞掉——表现为
+  // 微信端只剩「💭 思考」半截气泡、正文永远到不了）。因此微信渠道不传 append/finalize，
+  // 只保留 send：turn/completed 后一次性发最终正文（必达）。思考/工具流式同步仅 Telegram 支持。
   return {
-    append: (delta, clientId) => weixinGateway!.sendText(from, delta, { clientId, state: 1 }),
-    finalizeAppend: (tail, clientId) => weixinGateway!.sendText(from, tail, { clientId, state: 2 }),
     send: (full) => weixinGateway!.sendText(from, full),
   };
 }
