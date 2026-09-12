@@ -13,12 +13,13 @@
  * `systemPreferences.askForMediaAccess`）；权限被拒时给出明确提示而不是静默失败。
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, AudioLines, Download, LoaderCircle, Mic, PhoneOff, X } from "lucide-react";
+import { AlertCircle, AudioLines, Download, EyeOff, LoaderCircle, Mic, PhoneOff, Settings2, X } from "lucide-react";
 import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../lib/voice-aec.mjs";
 import { CAPTURE_WORKLET_SOURCE } from "../voice/capture-worklet";
-import { patchVoiceStage, resetVoiceStage, setVoiceLevel, setVoiceStopHandler } from "../voice/wave-level";
+import VoiceMascot from "./VoiceMascot";
+import { patchVoiceStage, requestVoiceOpenSettings, resetVoiceStage, setVoiceLevel, setVoiceStopHandler } from "../voice/wave-level";
 
 type VoicePhase = "idle" | "starting" | "active";
 type VoiceState = "listening" | "thinking" | "speaking";
@@ -29,6 +30,16 @@ const POS_KEY = "voice-float-pos";
 const DEFAULT_POS = { right: 22, bottom: 104 };
 const CAPTURE_RATE = 16000;
 const BARGUE_COOLDOWN_MS = 1200;
+
+/** 悬浮球的随机短提示词（气泡里冒出来的那种，刻意做得短、口语化、带点引导性） */
+const HINTS = [
+  "点我开始通话 →",
+  "说完停一下就提交",
+  "播报时可以直接插话打断",
+  "外放的话调高打断灵敏度",
+  "音色可以在设置里试听",
+  "右键我可以隐藏或进设置",
+];
 
 function formatBytes(bytes: number): string {
   if (!bytes || bytes <= 0) return "0 MB";
@@ -55,6 +66,12 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   const [level, setLevel] = useState(0);
   const [userText, setUserText] = useState("");
   const [agentText, setAgentText] = useState("");
+  // 悬浮球显隐（设置里可关）+ 随机提示气泡
+  const [ballVisible, setBallVisible] = useState(true);
+  const [hintsEnabled, setHintsEnabled] = useState(true);
+  const [hint, setHint] = useState<string | null>(null);
+  // 右键菜单
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   // 字幕广播用：delta 是逐字累加的，用 ref 拿累计值，避免依赖 state 更新时机
   const agentTextRef = useRef("");
   /** 悬浮球 DOM：每帧把音量写进 CSS 变量，让球跟着声音呼吸/发光 */
@@ -113,6 +130,58 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   useEffect(() => {
     void refreshModels();
   }, [refreshModels]);
+
+  // 读悬浮球显隐 + 气泡开关（设置页改完即时生效）
+  useEffect(() => {
+    void window.codex.voiceSettingsGet().then((s: any) => {
+      const b = s?.settings?.ball;
+      if (!b) return;
+      setBallVisible(b.visible !== false);
+      setHintsEnabled(b.hints !== false);
+    }).catch(() => undefined);
+  }, []);
+
+  // 随机短提示气泡：每隔 7~12 秒冒一句，4 秒后自动收起（可在设置里关掉）
+  useEffect(() => {
+    if (!hintsEnabled) { setHint(null); return; }
+    let timer = 0;
+    let hideTimer = 0;
+    const tick = () => {
+      const text = HINTS[Math.floor(Math.random() * HINTS.length)];
+      setHint(text);
+      hideTimer = window.setTimeout(() => setHint(null), 4000);
+      timer = window.setTimeout(tick, 7000 + Math.random() * 5000);
+    };
+    timer = window.setTimeout(tick, 1500);
+    return () => { window.clearTimeout(timer); window.clearTimeout(hideTimer); };
+  }, [hintsEnabled]);
+
+  // 点空白处收起右键菜单
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("contextmenu", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("contextmenu", close);
+    };
+  }, [menu]);
+
+  /** 右键菜单：隐藏 / 跳转到语音设置 */
+  const onBallContextMenu = useCallback((e: ReactMouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  const hideBall = useCallback(() => {
+    setBallVisible(false);
+    setMenu(null);
+    setHint(null);
+    // 落盘，下次启动保持隐藏（设置页可以再打开）
+    void window.codex.voiceSettingsSet({ ball: { visible: false, hints: hintsEnabled } }).catch(() => undefined);
+  }, [hintsEnabled]);
 
   // ---- 主进程事件 ----
   useEffect(() => {
@@ -706,28 +775,58 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
         </div>
       )}
 
-      <button
-        ref={ballRef}
-        className={ballClass}
-        title={phase === "active" ? "语音通话进行中（点击展开/收起）" : "语音通话（本机离线）"}
-        aria-label={phase === "active" ? "语音通话进行中" : "开始语音通话"}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        onClick={onBallClick}
-      >
-        {/* 两圈脉冲环（错开动画，音量越大扩散越远） */}
-        <span className="voice-ball-ring" aria-hidden />
-        <span className="voice-ball-ring" aria-hidden />
-        {phase === "starting" ? (
-          <LoaderCircle size={20} className="spin" />
-        ) : state === "speaking" ? (
-          <AudioLines size={20} />
-        ) : (
-          <Mic size={20} />
-        )}
-      </button>
+      {ballVisible && (
+        <>
+          {/* 随机短提示气泡 */}
+          {hint && <div className="voice-hint-bubble" role="status">{hint}</div>}
+
+          <button
+            ref={ballRef}
+            className={ballClass}
+            title={phase === "active" ? "语音通话进行中（点击展开/收起，右键更多）" : "语音通话（本机离线，右键更多）"}
+            aria-label={phase === "active" ? "语音通话进行中" : "开始语音通话"}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            onClick={onBallClick}
+            onContextMenu={onBallContextMenu}
+          >
+            {/* 两圈脉冲环（错开动画，音量越大扩散越远） */}
+            <span className="voice-ball-ring" aria-hidden />
+            <span className="voice-ball-ring" aria-hidden />
+            {phase === "starting" ? (
+              <LoaderCircle size={20} className="spin" />
+            ) : (
+              <VoiceMascot
+                mode={phase === "active" ? (state as "listening" | "thinking" | "speaking") : "idle"}
+                size={34}
+              />
+            )}
+          </button>
+
+          {/* 右键菜单：隐藏 / 跳转到语音设置 */}
+          {menu && (
+            <div
+              className="voice-ball-menu"
+              style={{ left: menu.x, top: menu.y }}
+              role="menu"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setMenu(null); requestVoiceOpenSettings(); }}
+              >
+                <Settings2 size={13} />语音设置
+              </button>
+              <button type="button" role="menuitem" onClick={hideBall}>
+                <EyeOff size={13} />隐藏悬浮球
+              </button>
+            </div>
+          )}
+        </>
+      )}
     </div>,
     document.body
   );

@@ -215,9 +215,10 @@ export const steps = [
         return !!b;
       })()`);
       h.check("麦克风有「测试麦克风」按钮", Boolean(hasMicTest));
-      // 开关：麦克风 3 个（回声消除/噪声抑制/自动增益）+ 按键启动启用 + 语音唤醒启用 = 5
+      // 开关：麦克风 3 + 按键启动 + 语音唤醒 + 悬浮球显示 + 随机气泡 = 7
       const toggleCount = await h.eval(`document.querySelectorAll('.voice-settings .voice-toggle input[type=checkbox]').length`);
-      h.check("开关齐全（麦克风3 + 按键启动 + 语音唤醒）", Number(toggleCount) === 5, `实际 ${toggleCount}`);
+      h.check("开关齐全（麦克风3 + 按键 + 唤醒 + 悬浮球 + 气泡）", Number(toggleCount) === 7, `实际 ${toggleCount}`);
+      h.check("有「悬浮球」卡片", String(fullText).includes("悬浮球"));
       // 按键启动 + 语音唤醒卡片
       const uiText = await h.text(".voice-settings").catch(() => "");
       h.check("有「按键启动」卡片", String(uiText).includes("按键启动"));

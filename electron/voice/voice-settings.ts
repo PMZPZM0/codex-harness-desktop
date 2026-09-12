@@ -31,6 +31,8 @@ export type VoiceSettings = {
   hotkey: { enabled: boolean; accelerator: string };
   /** 语音唤醒：持续聆听并匹配唤醒词（会持续占用 CPU，默认关） */
   wake: { enabled: boolean; phrase: string };
+  /** 悬浮球：是否显示 + 是否弹出随机的短提示气泡 */
+  ball: { visible: boolean; hints: boolean };
 };
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
@@ -41,6 +43,7 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   modelHost: "auto",
   hotkey: { enabled: false, accelerator: "Ctrl+Shift+M" },
   wake: { enabled: false, phrase: "小柯小柯" },
+  ball: { visible: true, hints: true },
 };
 
 export const TTS_VOICE_NAMES: Record<number, string> = {
@@ -105,6 +108,7 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
   const barge = raw.barge ?? d.barge;
   const hotkey = raw.hotkey ?? d.hotkey;
   const wake = raw.wake ?? d.wake;
+  const ball = raw.ball ?? d.ball;
   const modelHost = raw.modelHost && MODEL_HOST_PRESETS[raw.modelHost] ? raw.modelHost : d.modelHost;
   return {
     tts: {
@@ -136,6 +140,11 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
       enabled: Boolean(wake.enabled),
       // 唤醒词：去掉空白与控制字符，限长（太长既难识别也难念）
       phrase: String(wake.phrase ?? "").replace(/\s+/g, "").slice(0, 16) || d.wake.phrase,
+    },
+    ball: {
+      // 隐藏后仍要留入口：右键菜单/设置页都能再打开，所以允许 false
+      visible: ball.visible !== false,
+      hints: ball.hints !== false,
     },
     modelHost,
   };

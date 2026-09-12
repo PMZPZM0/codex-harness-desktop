@@ -9,7 +9,7 @@
  * 改值后立即同步到主进程，**下一次**开始通话时生效（音色试听是即时的）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Headphones, Keyboard, Mic, Play, Radio, ShieldAlert, Square, Zap } from "lucide-react";
+import { Headphones, Keyboard, Mic, Play, Radio, ShieldAlert, Sparkles, Square, Zap } from "lucide-react";
 
 type Settings = {
   tts: { sid: number; speed: number; volume: number };
@@ -19,6 +19,7 @@ type Settings = {
   modelHost: "auto" | "huggingface" | "hf-mirror";
   hotkey: { enabled: boolean; accelerator: string };
   wake: { enabled: boolean; phrase: string };
+  ball: { visible: boolean; hints: boolean };
 };
 type Meta = {
   ttsVoices: Record<number, string>;
@@ -493,6 +494,36 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
               <span>外放推荐，避开回声误触；只有按「打断」按钮才停 TTS。</span>
             </div>
           </label>
+        </div>
+      </div>
+
+      {/* 悬浮球（显示 / 随机气泡） */}
+      <div className="voice-card">
+        <div className="voice-card-head"><Sparkles size={15} /><span>悬浮球</span></div>
+        <div className="voice-card-body">
+          <div className="voice-toggles">
+            <label className="voice-toggle">
+              <input
+                type="checkbox"
+                checked={settings.ball.visible}
+                onChange={(e) => apply({ ball: { visible: e.target.checked, hints: settings.ball.hints } })}
+                disabled={saving}
+              />
+              <span>显示悬浮球</span>
+            </label>
+            <label className="voice-toggle">
+              <input
+                type="checkbox"
+                checked={settings.ball.hints}
+                onChange={(e) => apply({ ball: { visible: settings.ball.visible, hints: e.target.checked } })}
+                disabled={saving}
+              />
+              <span>冒随机的短提示气泡</span>
+            </label>
+          </div>
+          <div className="voice-card-hint">
+            关掉显示后，可以回到这里重新打开；悬浮球上<strong>右键</strong>也能直接隐藏或跳到本页。
+          </div>
         </div>
       </div>
 

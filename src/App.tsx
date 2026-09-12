@@ -6291,6 +6291,17 @@ async function resumeThreadWithTurns(params: { threadId: string; excludeTurns?: 
   return result;
 }
 
+import { setVoiceOpenSettingsHandler } from "./voice/wave-level";
+
+/** 把「打开设置 → 语音通话页」注册给悬浮球（悬浮球是 body portal，拿不到 App 的 setSettingsPage）。 */
+function VoiceSettingsBridge({ onOpen }: { onOpen: () => void }): null {
+  useEffect(() => {
+    setVoiceOpenSettingsHandler(onOpen);
+    return () => setVoiceOpenSettingsHandler(null);
+  }, [onOpen]);
+  return null;
+}
+
 export default function App() {
   const [serverStatus, setServerStatus] = useState("starting");
   // null=首次使用/明确退出，true=跳过登录，false=已成功登录。
@@ -15480,7 +15491,10 @@ const commandMatches = useMemo(() => {
                   : <FilePreviewCode language={filePreview.language} content={filePreview.content} truncated={fileTruncated} />}
         </div>
       </div>}
+      {/* 悬浮球右键菜单里的「语音设置」：把「打开设置并跳到语音页」注册给 VoiceCallFloat
+      （悬浮球是 body portal，拿不到这里的 setSettingsPage） */}
       <VoiceCallFloat threadId={thread?.id ?? ""} />
+      <VoiceSettingsBridge onOpen={() => { setSettingsPage("voice"); setSettingsOpen(true); }} />
     </div>
   );
 }

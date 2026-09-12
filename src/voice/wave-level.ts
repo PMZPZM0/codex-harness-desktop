@@ -83,3 +83,15 @@ export function setVoiceStopHandler(fn: (() => void) | null): void {
 export function requestVoiceStop(): void {
   try { stopHandler?.(); } catch { /* 结束通话失败不冒泡到 UI */ }
 }
+
+// ── 「跳转到语音设置」回调：悬浮球右键菜单用（悬浮球是 body portal，
+//    拿不到 App 里的 setSettingsPage，所以由 App 注册一个打开设置页的钩子）
+let openSettingsHandler: (() => void) | null = null;
+
+export function setVoiceOpenSettingsHandler(fn: (() => void) | null): void {
+  openSettingsHandler = fn;
+}
+
+export function requestVoiceOpenSettings(): void {
+  try { openSettingsHandler?.(); } catch { /* 打开设置失败不冒泡到 UI */ }
+}

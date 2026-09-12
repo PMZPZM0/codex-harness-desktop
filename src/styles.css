@@ -21118,3 +21118,102 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
+
+
+/* ===== 语音小小英雄（SVG 萌宠 + 3D 打光）===== */
+.voice-mascot { display: block; overflow: visible; }
+/* 待机：轻轻上下呼吸 */
+.voice-mascot-idle .vm-hop { animation: vm-breathe 2.6s ease-in-out infinite; transform-origin: 50% 80%; }
+@keyframes vm-breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(-2.5%) scale(1.02); }
+}
+/* 聆听：呼吸更快 + 触角光球闪 */
+.voice-mascot-listening .vm-hop { animation: vm-listen 1.5s ease-in-out infinite; transform-origin: 50% 80%; }
+@keyframes vm-listen {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50%      { transform: translateY(-3.5%) rotate(1deg); }
+}
+.voice-mascot-listening .vm-orb { animation: vm-orb 1.5s ease-in-out infinite; }
+@keyframes vm-orb { 0%,100% { opacity: .75 } 50% { opacity: 1 } }
+/* 播报：跟音量跳动（--voice-level 由 JS 每帧写入） */
+.voice-mascot-speaking .vm-hop {
+  animation: vm-speak .42s ease-in-out infinite;
+  transform-origin: 50% 85%;
+}
+@keyframes vm-speak {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  50%      { transform: translateY(calc(-2% - var(--voice-level, 0) * 5%)) scaleY(calc(1 + var(--voice-level, 0) * 0.08)); }
+}
+.voice-mascot-speaking .vm-mouth { animation: vm-mouth .42s ease-in-out infinite; transform-origin: 50% 66%; }
+@keyframes vm-mouth {
+  0%, 100% { transform: scaleY(.7); }
+  50%      { transform: scaleY(1.5); }
+}
+/* 落影跟着跳动缩放 */
+.vm-shadow { animation: vm-shadow 2.6s ease-in-out infinite; transform-origin: 50% 50%; }
+@keyframes vm-shadow {
+  0%, 100% { transform: scale(1); opacity: .9; }
+  50%      { transform: scale(.9); opacity: .7; }
+}
+
+/* ===== 随机短提示气泡 ===== */
+.voice-hint-bubble {
+  position: absolute;
+  right: 100%;
+  bottom: 50%;
+  margin-right: 12px;
+  transform: translateY(50%);
+  max-width: 210px;
+  padding: 7px 11px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 6px 18px color-mix(in srgb, #000 12%, transparent);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+  white-space: nowrap;
+  animation: voice-hint-in .22s cubic-bezier(.2,.8,.25,1);
+  pointer-events: none;
+}
+/* 小尾巴（指向悬浮球） */
+.voice-hint-bubble::after {
+  content: "";
+  position: absolute;
+  right: -5px;
+  top: 50%;
+  width: 9px; height: 9px;
+  margin-top: -4.5px;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  transform: rotate(45deg);
+}
+@keyframes voice-hint-in {
+  from { opacity: 0; transform: translateY(50%) translateX(6px) scale(.94); }
+  to   { opacity: 1; transform: translateY(50%) translateX(0) scale(1); }
+}
+
+/* ===== 悬浮球右键菜单 ===== */
+.voice-ball-menu {
+  position: fixed;
+  z-index: 2000;
+  min-width: 148px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 30px color-mix(in srgb, #000 22%, transparent);
+  display: flex; flex-direction: column;
+  animation: voice-menu-in .12s ease-out;
+}
+@keyframes voice-menu-in { from { opacity: 0; transform: scale(.96) } to { opacity: 1; transform: scale(1) } }
+.voice-ball-menu button {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px;
+  border: 0; border-radius: 6px;
+  background: transparent; color: var(--text);
+  font-size: 12.5px; text-align: left; cursor: pointer;
+}
+.voice-ball-menu button:hover { background: color-mix(in srgb, var(--link) 12%, transparent); }
