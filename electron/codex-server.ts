@@ -157,7 +157,10 @@ export class CodexServer extends EventEmitter {
     });
     this.debugLog(`[spawn] HTTPS_PROXY=${spawnEnv.HTTPS_PROXY ?? "(无)"} NO_PROXY=${spawnEnv.NO_PROXY ?? "(无)"} CODEX_HOME=${spawnEnv.CODEX_HOME} provider 相关 env 已注入 ${this.externalEnv.HTTPS_PROXY ? "externalEnv" : "externalEnv 无代理"}`);
     this.child.stderr.setEncoding("utf8");
-    this.child.stderr.on("data", (message) => { this.debugLog(`[stderr] ${String(message).trim().slice(0, 600)}`); this.emitEvent({ kind: "log", message: String(message).trim() }); });
+    // stderr 只落盘、**不再转发渲染层**（多会话性能 09-12）：渲染层对 kind:"log" 的事件
+    // 在 App.tsx 直接 return 丢弃，转发等于白付一次 IPC 序列化；而引擎 stderr 很密
+    // （实测 4 小时 1.4 万条），多会话并行时是纯粹的开销。要排查仍看 engine-debug.log。
+    this.child.stderr.on("data", (message) => { this.debugLog(`[stderr] ${String(message).trim().slice(0, 600)}`); });
     this.child.on("error", (error) => this.fail(error));
     this.child.on("exit", (code) => this.fail(new Error(`Codex app-server exited (${code ?? "unknown"})`)));
 
@@ -231,8 +234,32 @@ export class CodexServer extends EventEmitter {
     this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
+  /** 大 payload 事件（命令输出 / file diff 可达数 MB）的延后解析队列。
+      多会话性能（09-12）：所有会话共用这一条 stdio 管道，而 `JSON.parse` 是**同步**的——
+      一条数 MB 的行在主线程解析期间，其它会话的流式字全部停在管道里。
+      处理方式：只对**超过阈值**的行延后到事件循环空闲再解析；小行（绝大多数流式 delta）
+      仍然同步解析、**保持原有即时性**。延后项用单条链串起来，确保它们之间顺序不乱。 */
+  private deferredParseChain: Promise<void> = Promise.resolve();
+  private static readonly DEFER_PARSE_BYTES = 256 * 1024;
+
   private handleLine(line: string) {
     if (!line.trim()) return;
+    // 快速预检：只看前 4KB 同时含 method 与 params 字段（响应是 result/error）+
+    // 整行超过阈值 —— 三个条件都满足才认为是「大通知」，值得延后。
+    if (line.length > CodexServer.DEFER_PARSE_BYTES) {
+      const head = line.slice(0, 4096);
+      if (head.includes('"method"') && head.includes('"params"')) {
+        this.deferredParseChain = this.deferredParseChain
+          .then(() => new Promise<void>((resolve) => setImmediate(resolve)))
+          .then(() => { this.parseAndDispatch(line); })
+          .catch(() => { /* 单行失败不影响后续 */ });
+        return;
+      }
+    }
+    this.parseAndDispatch(line);
+  }
+
+  private parseAndDispatch(line: string) {
     let message: any;
     try {
       message = JSON.parse(line);

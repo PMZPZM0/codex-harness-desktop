@@ -197,7 +197,13 @@ export const steps = [
       await h.clearInput(".composer-editor");
       const c = await h.eval(`window.codex.perfCounters()`);
       const delta = (c?.rolloutFallbackScans ?? 0) - (h.__base?.rolloutFallbackScans ?? 0);
-      console.log(`  [末态计数] ${JSON.stringify(c)}（兜底扫描增量 ${delta}）`);
+      const tlDelta = (c?.threadListRequests ?? 0) - (h.__base?.threadListRequests ?? 0);
+      console.log(`  [末态计数] ${JSON.stringify(c)}（兜底扫描增量 ${delta}；thread/list 请求增量 ${tlDelta}）`);
+      // ④ 的验证说明：turn/completed 已改成「本地补丁 + 去抖兜底」，不再每回合一发；
+      // 但**新建会话路径本身要刷新侧栏**（本场景点了 10 次新建），所以总数不会等于 0。
+      // 这里只做「病态增长」上界守卫（旧实现每回合 1 发 + 新建 1 发，量级相同；
+      // 真正防的是「某次改动把刷新频率放大成每帧一发」）。
+      h.check("thread/list 请求数没有病态增长（< 50）", tlDelta < 50, `threadListRequests=${tlDelta}`);
       h.check("渲染层无 console.error", h.consoleLog.length === 0, h.consoleLog.slice(0, 3).join(" ｜ "));
       await h.screenshot("压测收尾");
     },

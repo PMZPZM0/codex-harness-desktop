@@ -7502,9 +7502,14 @@ export default function App() {
   const [welcomeCwdMenuOpen, setWelcomeCwdMenuOpen] = useState(false);
   // 首次对话身份引导：null=档案未拉取，false=未引导（新会话注入引导指令+工具），
   // true=已完成（不再引导）。保存后立即置 true，本机后续所有新会话都不再出现。
-  const [identityOnboarded, setIdentityOnboarded] = useState<boolean | null>(null);
+  /** 身份引导状态：只认第一印象——**问过一次就不再问**（09-12 用户反馈
+      「怎么每次新会话都强制引导呢，改成一次打招呼才需要引导，其他情况下直接开始干活」）。
+      与旧的 `onboarded`（用户真的回答了并落盘）区分开：那个不改，新会话仍会反复引导。 */
+  const [identityGreeted, setIdentityGreeted] = useState<boolean | null>(null);
   useEffect(() => {
-    void window.codex.readPersonalization().then((config) => setIdentityOnboarded(config.onboarded === true)).catch(() => setIdentityOnboarded(true));
+    void window.codex.readPersonalization()
+      .then((config) => setIdentityGreeted(config.greeted === true || config.onboarded === true))
+      .catch(() => setIdentityGreeted(true)); // 读不到档案就按「已问候」处理：宁可不引导，也不打扰
   }, []);
   // 写代码模式（ponytail）开关状态：默认开启，与「常规」页的总闸联动
   const [ponytailOn, setPonytailOn] = useState(true);
@@ -8844,16 +8849,22 @@ const commandMatches = useMemo(() => {
     const update = () => {
       const dist = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
       // ── 钉顶模式的自动跟随（09-12 用户实测反馈「回复流出屏幕、看不到最新」）──
-      // 钉顶保持位置不变，但**内容增长多少就把视口往下推多少**：
-      //   · 新内容始终落在视口内（不必手动滚）；用户要的「自动跟随」；
-      //   · 只按增量滚动，不会像旧版那样每个字重推整屏 → 不再有出字跳动。
-      // 判定放在方向判定之前，并同步推进 lastTop，避免被当成用户滚动而误解除钉顶。
+      // 钉顶保持位置不变，但内容增长到一定程度就把视口往下推同样多：
+      //   · 新内容始终落在视口内（不必手动滚）= 用户要的「自动跟随」；
+      //   · 只按增量滚动，不会像旧版那样每个字重推整屏 = 不再有出字跳动。
+      // ⚠️ 阈值必须**≥一行的高度**（09-12 用户实测「每次新一行出字，消息整体往上抖一下」）：
+      // 之前用 `growth > 2`，等于 scrollHeight 每变一点（每个字、每次增量）就滚一次，
+      // 视口被反复顶 —— 表现为「每出一行抖一下」。现在攒够一行（~24-30px）才跟一次，
+      // 期间视口完全不动，出字是平滑的。
+      const FOLLOW_STEP_PX = 60;
       if (anchorTopRef.current) {
         const growth = scroller.scrollHeight - anchorHeightBaselineRef.current;
-        if (growth > 2) {
+        // 只在**真正滚动之后**才推进基线（见下）。这里不能无脑刷基线，
+        // 否则 growth 永远攒不到阈值，跟随就失效了。
+        if (growth >= FOLLOW_STEP_PX) {
           const target = Math.min(scroller.scrollTop + growth, scroller.scrollHeight - scroller.clientHeight);
-          anchorHeightBaselineRef.current = scroller.scrollHeight;
           if (target > scroller.scrollTop) {
+            anchorHeightBaselineRef.current = scroller.scrollHeight;
             selfScrollUntilRef.current = Date.now() + 80;
             scrollToOffsetInstant(scroller, target);
             pinnedScrollTopRef.current = scroller.scrollTop;
@@ -8861,7 +8872,6 @@ const commandMatches = useMemo(() => {
             return;
           }
         }
-        anchorHeightBaselineRef.current = scroller.scrollHeight;
       }
       // 程序滚动的抑制窗内：只刷新基线，不做方向判定（否则自己的钉顶/贴底
       // 会被当成用户滚动，误解除钉顶——09-12 调试探针实锤）
@@ -9858,7 +9868,7 @@ const commandMatches = useMemo(() => {
                     interests: String(args.interests ?? "").trim(),
                     habits: String(args.habits ?? "").trim(),
                   });
-                  setIdentityOnboarded(true);
+                  setIdentityGreeted(true);
                   showToast(assistantName ? `你好，${assistantName}！` : "用户中心已建立", assistantName ? "这个名字已经正式归你啦，以后新会话都会用它" : "初次见面档案已保存，后续新会话不再出现");
                   await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: "用户中心档案已保存并全局生效（含称呼/场景/风格/爱好等维度）。请热情确认一句后结束引导。" }], success: true });
                 } catch (error: any) {
@@ -10176,7 +10186,37 @@ const commandMatches = useMemo(() => {
           planTurnRef.current = null;
           setPlanRunning(false);
         }
-        void refreshThreads();
+        // 多会话性能（09-12）：这里原本**每个回合结束都打一发全量 thread/list**，
+        // N 个会话并行就是 N 发（每次都要主进程扫 rollout 兜底）。而这次 turn/completed
+        // 事件本身就带了完整 turn —— 本地就能把侧栏那一项更新到位：
+        //   ① 先把本条 turn 合并进当前会话缓存（前端纯函数，零 RPC）；
+        //   ② 侧栏只把这一项的状态/时间戳就地改掉；
+        //   ③ 仍在跑或还没记录过的会话，才走一次去抖刷新兜底（渠道机器人等后台会话
+        //      不在当前事件流里，靠 scheduleSidebarRefresh 那条路径）。
+        {
+          const tid = String(params.threadId ?? "");
+          const doneTurn = params.turn;
+          if (tid && doneTurn?.id) {
+            const cached = threadCacheRef.current.get(tid);
+            if (cached) {
+              const merged = mergeTurn(cached, doneTurn);
+              if (merged && merged !== cached) {
+                threadCacheRef.current.set(tid, merged);
+                if (threadRef.current?.id === tid) {
+                  threadRef.current = merged;
+                  setThread(merged);
+                }
+              }
+            }
+            setThreads((current) => current.map((entry) => entry.id === tid
+              ? { ...entry, updatedAt: Math.floor(Date.now() / 1000), status: doneTurn.status ?? entry.status }
+              : entry));
+          }
+          // 兜底：当前会话刚结束却没有缓存（罕见），或者还有别的会话在跑 → 去抖刷新一次
+          if (!tid || !threadCacheRef.current.has(tid) || runningThreadIdsRef.current.size > 0) {
+            scheduleSidebarRefresh();
+          }
+        }
       } else if (method === "item/started" || method === "item/completed") {
         // 不在这里清空 optimisticInput：清除时机交给渲染端的文本去重，
         // 否则 item/started 与 setThread 的批处理时序差异会让用户消息瞬间消失。
@@ -12394,11 +12434,19 @@ const commandMatches = useMemo(() => {
       { type: "function", name: "task_update", description: "更新任务清单：列出全部任务（不传任何参数）、改状态或删除。status 只有 todo/doing/done。", inputSchema: { type: "object", properties: { id: { type: "string" }, status: { type: "string", enum: ["todo", "doing", "done"] }, text: { type: "string" }, priority: { type: "string", enum: ["low", "medium", "high"] }, done: { type: "boolean", description: "删除任务" } } } },
       { type: "function", name: "agent_ask", description: "在对话里向用户展示一组选项并等待选择（提问时必须给出选项）。options 里第一项会作为推荐项高亮，也可以留空让用户自由输入。", inputSchema: { type: "object", properties: { question: { type: "string", description: "要问用户的问题" }, options: { type: "array", items: { type: "string" }, description: "2-4 个候选选项，第一项为推荐" }, allowFree: { type: "boolean", description: "是否允许自由输入，默认允许" } }, required: ["question", "options"] } },
     ];
-    // 首次对话身份引导：未完成引导的新会话注入引导指令 + identity_onboard 工具；
-    // 已引导（onboarded）的会话两者都不带——「已配置过就不再引导」。
-    if (identityOnboarded === false) dynamicTools.push(IDENTITY_ONBOARD_TOOL as unknown as (typeof dynamicTools)[number]);
+    // 首次对话身份引导：**只在「从没打过招呼」时注入一次**（09-12 用户反馈修正）。
+    // 旧判定用 `onboarded`（用户真的回答了才为 true）→ 不回答的用户每个新会话都被
+    // 强制引导一遍。现在只要问过一次就落 `greeted=true`，后续新会话一律不带引导，
+    // 直接开始干活。
+    const shouldGreet = identityGreeted === false;
+    if (shouldGreet) {
+      dynamicTools.push(IDENTITY_ONBOARD_TOOL as unknown as (typeof dynamicTools)[number]);
+      // 落标记：本轮之后的新会话不再引导。失败也不影响本次发送（内存里也置 true）。
+      void window.codex.markIdentityGreeted?.().catch(() => undefined);
+      setIdentityGreeted(true);
+    }
     const memoryTools = dynamicTools.length ? { dynamicTools } : {};
-    const onboardingInstructions = identityOnboarded === false ? IDENTITY_ONBOARD_INSTRUCTIONS : null;
+    const onboardingInstructions = shouldGreet ? IDENTITY_ONBOARD_INSTRUCTIONS : null;
     const started = await window.codex.request("thread/start", {
       model: selectedModel?.model ?? modelName(modelId),
       // 欢迎页「无项目」模式：本会话用自动创建的独立临时目录（每个会话单独一个）；
