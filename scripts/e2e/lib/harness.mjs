@@ -118,12 +118,18 @@ export class ElectronHarness {
    */
   constructor(opts = {}) {
     this.root = opts.root || process.cwd();
+    // 测试实例的工作区 = 项目根目录（用户 09-11 定：以后拉 CDP 就用这个项目地址测）。
+    // 传 null 可显式关掉（需要「未选择工作区」空态的场景）。
+    this.workspace = opts.workspace === null ? "" : (opts.workspace || this.root);
     this.launchTimeoutMs = opts.launchTimeoutMs ?? 60000;
     this.artifactsDir = opts.artifactsDir || join(this.root, ".e2e-artifacts");
     // 多场景共用一个截图目录时给文件名加前缀，避免不同场景的同名步骤互相覆盖
     this.namePrefix = opts.namePrefix || "";
     // 默认把真实模型配置灌进隔离 profile（否则选择器里没模型，模型类断言无从谈起）
     this.seedRealConfig = opts.seedRealConfig !== false;
+    // 场景可选的 profile 预播种钩子（launch 时、真实配置灌入前调用）：用于写合成 rollout
+    // 等需要在**进程启动前**落盘的夹具（引擎只在启动时扫描 sessions 目录）。
+    this.seedProfile = opts.seedProfile ?? null;
     this.realConfig = null;
     this.checks = [];
     this.stepIndex = 0;
@@ -143,6 +149,9 @@ export class ElectronHarness {
     this.userDataDir = mkdtempSync(join(tmpdir(), "harness-e2e-"));
     mkdirSync(this.artifactsDir, { recursive: true });
 
+    // 场景自定义种子先落盘（合成 rollout 等），随后的真实配置灌入不会覆盖它
+    if (this.seedProfile) this.seedProfile(this.userDataDir);
+
     // 真实模型配置必须先进隔离 profile：进程一起来就读它，晚了不生效
     this.realConfig = this.seedRealConfig
       ? seedRealModelConfig(this.userDataDir)
@@ -158,6 +167,11 @@ export class ElectronHarness {
       CODEBUDDY_SAFE_DELETE_ENABLED: "0",
       CODEX_HARNESS_USER_DATA: this.userDataDir,
       CODEX_HARNESS_DEBUG_PORT: String(this.port),
+      // 把 GPU 进程合并进主进程。无 GPU 的机器 / CI / 沙箱里，Chromium 的 GPU 子进程会
+      // 反复起不来并最终 `GPU process isn't usable. Goodbye.` 直接 FATAL 自杀，表现为
+      // 「CDP Runtime.enable 超时」——实测连零项目代码的最小 Electron 应用也一样崩，
+      // 与本项目代码无关。该开关只在测试实例上生效，不影响真实用户。
+      CODEX_HARNESS_IN_PROCESS_GPU: "1",
       // 本机回环直连，绕开环境里的 HTTP_PROXY
       NO_PROXY: "127.0.0.1,localhost",
       no_proxy: "127.0.0.1,localhost",
@@ -187,8 +201,30 @@ export class ElectronHarness {
 
     await this._waitCdp();
     await this._connect();
-    await this._send("Runtime.enable");
+    // 带真实模型配置时启动更慢（要拉引擎、探测供应商），渲染层就绪也晚——给足窗口。
+    // 超时时把主进程输出一并抛出，否则只看到一句「超时」根本没法定位。
+    try {
+      await this._send("Runtime.enable", {}, 45000);
+    } catch (error) {
+      throw new Error(`${error?.message ?? error}\n--- 被测应用输出（尾部）---\n${this._childOutput()}`);
+    }
     await this._send("Page.enable");
+    // 工作区：测试实例统一用**项目根目录**（用户 09-11 定：以后拉 CDP 就用这个项目地址测）。
+    // 应用从 localStorage.workspace 读工作区，隔离 profile 是一张白纸 → 界面会停在
+    // 「尚未选择工作区」，发送链路在部分路径下会被拦（实测：点了发送键消息仍留在输入框）。
+    // 用 addScriptToEvaluateOnNewDocument 在**每次新文档**执行前注入，所以首次加载 + 后续 reload 都生效。
+    if (this.workspace) {
+      const src = `try { localStorage.setItem("workspace", ${JSON.stringify(this.workspace)}); } catch (e) {}`;
+      // 新文档注入（覆盖后续 reload）+ 当前文档直接写
+      await this._send("Page.addScriptToEvaluateOnNewDocument", { source: src }).catch(() => undefined);
+      await this.eval(src).catch(() => undefined);
+      // 应用的 workspace 是 useState 初始化时读的（App.tsx:5972），当前文档已错过 → 重载一次
+      // 让注入脚本在页面脚本之前执行。场景都在 launch 之后才等引导页/主界面，重载是透明的。
+      await this._send("Page.reload", {}).catch(() => undefined);
+      await sleep(1500);
+      await this._send("Runtime.enable", {}, 30000).catch(() => undefined);
+      await this._send("Page.enable").catch(() => undefined);
+    }
     // 收集渲染层 console，便于失败定位
     this.ws.on("message", (data) => {
       try {
@@ -343,7 +379,7 @@ export class ElectronHarness {
    *    - `settingsModel` / `provider`：最新一条 `thread_settings_applied`（会话级设置） */
   engineModelOf(threadId) {
     const file = this._rolloutFiles().find((p) => p.includes(threadId)) ?? null;
-    const info = { file, turns: 0, turnModel: null, turnModels: [], settingsModel: null, provider: null, backendResponses: [], errors: [] };
+    const info = { file, turns: 0, turnModel: null, turnModels: [], turnEffort: null, turnEfforts: [], settingsModel: null, settingsEffort: null, provider: null, backendResponses: [], errors: [] };
     if (!file) return info;
     for (const line of readFileSync(file, "utf8").split("\n")) {
       if (!line.trim()) continue;
@@ -357,10 +393,16 @@ export class ElectronHarness {
       if (record.type === "turn_context" && payload.model) {
         info.turnModel = payload.model;
         info.turnModels.push(payload.model);
+        // 该回合引擎实际收到的思考档位（collaboration_mode.settings.reasoning_effort
+        // 与顶层 effort 同值；null = 引擎兜底默认，非显式下发）
+        const eff = payload.effort ?? payload.collaboration_mode?.settings?.reasoning_effort ?? null;
+        info.turnEffort = eff;
+        info.turnEfforts.push(eff);
         info.turns += 1;
       }
       if (record.type === "event_msg" && payload.type === "thread_settings_applied") {
         info.settingsModel = payload.thread_settings?.model ?? info.settingsModel;
+        info.settingsEffort = payload.thread_settings?.reasoning_effort ?? info.settingsEffort;
         info.provider = payload.thread_settings?.model_provider_id ?? info.provider;
       }
       // 真实后端证据：token_usage_record 带 response_id（网关回包才有）+ 实际 output tokens。

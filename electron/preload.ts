@@ -9,7 +9,8 @@ contextBridge.exposeInMainWorld("codex", {
   showNotification: (title: string, body: string) => ipcRenderer.invoke("notify:show", title, body),
   toolStatus: () => ipcRenderer.invoke("tools:status"),
   listRuntimes: () => ipcRenderer.invoke("runtime:list"),
-  installRuntime: (id: string) => ipcRenderer.invoke("runtime:install", id),
+  installRuntime: (id: string) => ipcRenderer.invoke("runtime:install", id) as Promise<{ ok: boolean; guide?: string; runtimes?: unknown[] }>,
+  uninstallRuntime: (id: string) => ipcRenderer.invoke("runtime:uninstall", id) as Promise<{ ok: boolean; runtimes?: unknown[] }>,
   onRuntimeProgress: (listener: (event: unknown) => void) => {
     const handler = (_e: unknown, payload: unknown) => listener(payload);
     ipcRenderer.on("runtime:progress", handler);
@@ -164,6 +165,10 @@ contextBridge.exposeInMainWorld("codex", {
   listCustomModels: () => ipcRenderer.invoke("custom-model:list"),
   selectCustomModel: (providerId: string) => ipcRenderer.invoke("custom-model:select", providerId),
   setProviderModel: (input: { provider: string; model: string; apply?: boolean; restart?: boolean }) => ipcRenderer.invoke("custom-model:set-model", input),
+  setProviderEffort: (input: { provider: string; model: string; effort: string }) => ipcRenderer.invoke("custom-model:set-effort", input),
+  writeClipboard: (text: string) => ipcRenderer.invoke("clipboard:write", text),
+  createScratchDir: () => ipcRenderer.invoke("scratch:create"),
+  saveIdentity: (input: Record<string, string>) => ipcRenderer.invoke("personalization:save-identity", input),
   applyCustomModel: () => ipcRenderer.invoke("custom-model:apply"),
   upsertProviderModel: (input: { provider: string; model: unknown }) => ipcRenderer.invoke("custom-model:upsert-model", input),
   removeProviderModel: (input: { provider: string; modelId: string }) => ipcRenderer.invoke("custom-model:remove-model", input),
@@ -261,11 +266,15 @@ contextBridge.exposeInMainWorld("codex", {
   openaiAccounts: () => ipcRenderer.invoke("openai:accounts"),
   openaiAccountRemove: (id: string) => ipcRenderer.invoke("openai:account-remove", id),
   openaiAccountSwitch: (id: string) => ipcRenderer.invoke("openai:account-switch", id),
+  openaiImportFile: (input: { contents: string[] }) => ipcRenderer.invoke("openai:import-file", input),
   relayKeysAll: () => ipcRenderer.invoke("relay:keys-all"),
   relayOverview: () => ipcRenderer.invoke("relay:overview"),
   relayCreateKey: (input: { name: string; groupId?: number | null }) => ipcRenderer.invoke("relay:create-key", input),
   relaySelect: (input: { mode: "balance" | "plan"; groupId: number | null; keyId?: number; keyName?: string }) => ipcRenderer.invoke("relay:select", input),
   relayKeyBilling: (input: { baseUrl: string; apiKey: string }) => ipcRenderer.invoke("relay:key-billing", input),
+  relayRegister: (input: { baseUrl: string; email: string; password: string; affCode?: string }) => ipcRenderer.invoke("relay:register", input),
+  relayPaymentPlans: () => ipcRenderer.invoke("relay:payment-plans"),
+  relayOpenPurchase: () => ipcRenderer.invoke("relay:open-purchase"),
   enhancePrompt: (text: string) => ipcRenderer.invoke("prompt:enhance", { text }),
   listTerminals: () => ipcRenderer.invoke("terminal:list"),
   validatePlugin: (target: string) => ipcRenderer.invoke("plugin:validate", { path: target }),
@@ -290,4 +299,62 @@ contextBridge.exposeInMainWorld("codex", {
     ipcRenderer.on("harness:event", handler);
     return () => ipcRenderer.removeListener("harness:event", handler);
   },
+  // ---- 语音通话（旁挂新增，不影响任何既有方法） ----
+  voiceStatus: () => ipcRenderer.invoke("voice:status") as Promise<{ active: boolean; state: string; runtimeReady: boolean; modelsReady: boolean; threadId: string; lastError: string }>,
+  voiceStart: (threadId: string, options?: { mode?: "conversation" | "dictation" }) => ipcRenderer.invoke("voice:start", threadId, options) as Promise<{ ok: boolean; error?: string; status: unknown }>, 
+  voiceDictationFinish: () => ipcRenderer.invoke("voice:dictation-finish") as Promise<{ ok: boolean; text?: string; error?: string }>,
+  voiceStop: () => ipcRenderer.invoke("voice:stop") as Promise<{ ok: boolean }>,
+  voiceAudio: (samples: Float32Array) => ipcRenderer.send("voice:audio", samples),
+  // TTS 音频走 Base64 字符串跨 Electron IPC；避免 native/external ArrayBuffer 被 structured clone 拒绝。
+  voiceSpeak: (text: string, options?: { sid?: number; speed?: number }) => ipcRenderer.invoke("voice:speak", text, options) as Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>,
+  voicePreviewVoice: (input?: { sid?: number; speed?: number; text?: string }) => ipcRenderer.invoke("voice:preview-voice", input) as Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>, 
+  voiceBarge: () => ipcRenderer.invoke("voice:barge") as Promise<{ ok: boolean }>,
+  voicePlaybackDone: () => ipcRenderer.invoke("voice:playback-done") as Promise<{ ok: boolean }>,
+  voiceModelsStatus: () => ipcRenderer.invoke("voice:models-status") as Promise<{
+    ready: boolean; missing: string[]; readyFiles: number; totalFiles: number;
+    bytes: number; root: string;
+    repos: { id: string; lastSegment: string }[];
+    zipvoice?: { ready: boolean; bytes: number; dir: string };
+  }>,
+  voiceModelsInstall: () => ipcRenderer.invoke("voice:models-install") as Promise<{ ok: boolean; error?: string }>,
+  voiceZipvoiceInstall: () => ipcRenderer.invoke("voice:zipvoice-install") as Promise<{ ok: boolean; error?: string }>,
+  voiceZipvoiceCancel: () => ipcRenderer.invoke("voice:zipvoice-cancel") as Promise<{ ok: boolean }>,
+  voiceModelsCancel: () => ipcRenderer.invoke("voice:models-cancel") as Promise<{ ok: boolean }>,
+  voiceModelsImport: (input: { sourceDir: string }) => ipcRenderer.invoke("voice:models-import", input) as Promise<{ ok: boolean; failures: string[] }>,
+  voiceModelsReveal: () => ipcRenderer.invoke("voice:models-reveal") as Promise<string>,
+  voiceModelsUninstall: () => ipcRenderer.invoke("voice:models-uninstall") as Promise<{ ok: boolean }>,
+  voiceMicPermission: () => ipcRenderer.invoke("voice:mic-permission") as Promise<{ status: string; error?: string }>,
+  voiceSettingsGet: () => ipcRenderer.invoke("voice:settings-get") as Promise<{
+    settings: {
+      tts: { sid: number; speed: number };
+      barge: { gateDb: number; mode: "auto" | "manual" };
+      modelHost: "auto" | "huggingface" | "hf-mirror";
+    };
+    ttsVoices: Record<number, string>;
+    modelHosts: Record<string, string>;
+    modelHostOptions: string[];
+  }>,
+  voiceSettingsSet: (patch: any) => ipcRenderer.invoke("voice:settings-set", patch) as Promise<{
+    tts: { sid: number; speed: number };
+    barge: { gateDb: number; mode: "auto" | "manual" };
+    modelHost: "auto" | "huggingface" | "hf-mirror";
+  }>,
+  onVoiceEvent: (listener: (event: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: unknown) => listener(value);
+    ipcRenderer.on("voice:event", handler);
+    return () => ipcRenderer.removeListener("voice:event", handler);
+  },
+  // 语音通话「按键启动」：全局快捷键（即便应用没聚焦也能唤起）
+  voiceHotkeySet: (input: { accelerator: string; enabled?: boolean }) => ipcRenderer.invoke("voice:hotkey-set", input) as Promise<{ ok: boolean; error?: string }>,
+  voiceHotkeyGet: () => ipcRenderer.invoke("voice:hotkey-get") as Promise<{ registered: string }>,
+  onVoiceHotkey: (listener: (event: { accelerator: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: { accelerator: string }) => listener(value);
+    ipcRenderer.on("voice:hotkey", handler);
+    return () => ipcRenderer.removeListener("voice:hotkey", handler);
+  },
+  // 语音唤醒：持续聆听 + 文本匹配唤醒词（会持续占用 CPU）
+  voiceWakeStart: () => ipcRenderer.invoke("voice:wake-start") as Promise<{ ok: boolean; error?: string }>,
+  voiceWakeAudio: (samples: Float32Array) => ipcRenderer.invoke("voice:wake-audio", samples) as Promise<{ text: string }>,
+  voiceWakeReset: () => ipcRenderer.invoke("voice:wake-reset") as Promise<{ ok: boolean }>,
+  voiceWakeStop: () => ipcRenderer.invoke("voice:wake-stop") as Promise<{ ok: boolean }>,
 });

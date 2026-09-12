@@ -13,22 +13,26 @@ export const steps = [
   {
     name: "① 引导页渲染",
     run: async (h) => {
-      await h.waitFor(`document.body && document.body.innerText.includes("直接进入")`, {
-        label: "引导页出现",
-        timeoutMs: 30000,
-      });
-      h.check("引导页出现", true);
-      await h.screenshot("引导页");
+      // 引导页**可能被跳过**：隔离 profile 里灌了真实模型配置且带 Key 时，
+      // customModel.hasKey=true，App 的兼容 effect 会自动进入主界面（写 login-skipped）。
+      // 所以这里等的是「引导页或主界面二选一」，不能硬等跳过按钮（否则带真配置必假红）。
+      await h.waitFor(
+        `(document.body && document.body.innerText.includes("直接进入")) || !!document.querySelector(".app-shell")`,
+        { label: "引导页或主界面", timeoutMs: 30000 }
+      );
+      h.check("引导页或主界面已就绪", true);
+      await h.screenshot("启动落点");
     },
   },
 
   {
     name: "② 跳过引导进入主界面",
     run: async (h) => {
-      await h.clickByText("暂时不登录，直接进入");
+      const hasGuide = await h.eval(`document.body.innerText.includes("直接进入")`);
+      if (hasGuide) await h.clickByText("暂时不登录，直接进入");
       await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "app-shell 挂载", timeoutMs: 25000 });
       await wait(1800); // 等首屏数据（会话列表/工作区）落定
-      h.check("引导页已跳过、主界面挂载", true);
+      h.check("主界面挂载（引导页已跳过或本就被跳过）", true);
       await h.screenshot("主界面");
     },
   },
@@ -43,6 +47,8 @@ export const steps = [
       h.check("输入框 .composer-editor", await h.exists(".composer-editor"));
       h.check("发送键 .send-button", await h.exists(".send-button"));
       h.check("附件按钮 .plus-spin-button", await h.exists(".plus-spin-button"));
+      // 欢迎页「项目地址」选择 chip（09-11 新增；仅空态显示，发送首条消息后随欢迎态消失）
+      h.check("欢迎页项目地址 chip .welcome-cwd-chip", await h.exists(".welcome-cwd-chip"));
 
       const tabsText = await h.eval(`[...document.querySelectorAll(".sidebar-tab")].map(e => e.innerText).join("|")`);
       for (const t of ["新建任务", "自动化", "技能中心", "插件市场", "专家团", "会话备份"]) {
@@ -182,7 +188,40 @@ export const steps = [
   },
 
   {
-    name: "⑩ 无渲染层报错",
+    name: "⑩ 开发工具页含音色克隆模型入口",
+    run: async (h) => {
+      // 前置：弹窗初始关闭（避免上一步残留造成假通过）
+      const preClosed = !(await h.exists(".modal-backdrop"));
+      h.check("前置：设置弹窗初始为关闭", preClosed);
+      await h.clickByTitle("设置");
+      await h.waitFor(`!!document.querySelector(".modal-backdrop")`, { label: "设置弹窗", timeoutMs: 8000 });
+      // 在弹窗内点「开发工具」分页（限域查找，避免点到侧栏的同名文本）
+      const clicked = await h.eval(`(() => {
+        const root = document.querySelector(".modal-backdrop");
+        if (!root) return false;
+        const btn = [...root.querySelectorAll("button")].find((b) => (b.innerText || "").trim() === "开发工具");
+        if (!btn) return false;
+        btn.click();
+        return true;
+      })()`);
+      h.check("设置内可切到「开发工具」页", Boolean(clicked));
+      await wait(400);
+      // 开发工具页内容由异步状态驱动（等待而非猜时间：固定等待在冷启动下会假红）
+      const appeared = await h
+        .waitFor(`document.body.innerText.includes("音色克隆模型")`, { label: "音色克隆模型卡片", timeoutMs: 10000 })
+        .then(() => true)
+        .catch(() => false);
+      h.check("开发工具页显示「音色克隆模型」卡片", appeared);
+      const hasAction = await h.eval(`[...document.querySelectorAll("button")].some((b) => /下载音色克隆模型|打开模型目录|取消下载/.test(b.innerText || ""))`);
+      h.check("音色克隆模型卡片含安装/打开按钮", hasAction);
+      await h.screenshot("开发工具-音色克隆模型");
+      await h.pressKey("Escape");
+      await h.waitFor(`!document.querySelector(".modal-backdrop")`, { label: "设置弹窗关闭", timeoutMs: 8000 });
+    },
+  },
+
+  {
+    name: "⑪ 无渲染层报错",
     run: async (h) => {
       h.check(
         "渲染层无 console.error",
