@@ -31,7 +31,7 @@ import { WecomWebhookGateway } from "./wecom-webhook-gateway";
 import { readPersonalization, writePersonalization, applyPersonalizationToAgentsMd, buildAgentsMd } from "./personalization";
 import { developerInstructionsLine } from "./developer-instructions";
 import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings } from "./app-settings";
-import { checkLatestUpdate, defaultDownloadDir, downloadUpdate, fileExists, installUpdate, UPDATE_CHANNEL, UPDATE_SERVER_URL } from "./updates";
+import { checkLatestUpdate, defaultDownloadDir, downloadUpdate, fileExists, installUpdate, UPDATE_CHANNEL, UPDATE_SERVER_URL, GITHUB_REPO } from "./updates";
 import { checkEngineUpdate, performEngineUpdate } from "./engine-updater";
 import { VoiceService } from "./voice/voice-service";
 import { ALL_VOICE_REPOS, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "./voice/model-manifest";
@@ -99,6 +99,34 @@ if (process.env.CODEX_HARNESS_IN_PROCESS_GPU) {
     console.error(`[e2e-diag] 渲染进程退出 reason=${details?.reason} exitCode=${details?.exitCode}`);
   });
 }
+/**
+ * 崩溃取证（09-12 新增）：用户反馈「开实时语音一会就闪退」，但应用跑 e2e 之外的路径
+ * 没有任何崩溃日志——渲染进程一死 → 窗口关闭 → window-all-closed → app.quit()，
+ * 从用户视角就是「应用自己没了」，且不留证据。
+ * 现在两件事一起做：① 落盘确切原因（reason/exitCode/时间）到 userData/voice-crash.log；
+ * ② 渲染进程异常退出时重载窗口（应用不再整体退出），把「闪退」降级成「闪一下自动恢复」。
+ */
+function logCrash(scope: string, detail: unknown): void {
+  try {
+    const line = `[${new Date().toISOString()}] ${scope} ${typeof detail === "string" ? detail : JSON.stringify(detail)}\n`;
+    void fs.appendFile(path.join(app.getPath("userData"), "voice-crash.log"), line).catch(() => undefined);
+    console.error("[crash]", line.trim());
+  } catch {
+    /* 取证失败不能影响主流程 */
+  }
+}
+app.on("render-process-gone", (_event, contents, details) => {
+  logCrash("renderer-gone", { reason: details?.reason, exitCode: details?.exitCode });
+  if (details?.reason === "clean-exit") return;
+  try {
+    if (!contents.isDestroyed()) contents.reload();
+  } catch {
+    /* 重载失败就交给用户手动重开 */
+  }
+});
+process.on("uncaughtException", (error) => logCrash("main-uncaught", String(error?.stack ?? error)));
+process.on("unhandledRejection", (reason) => logCrash("main-unhandled", String((reason as any)?.stack ?? reason)));
+
 void app.whenReady().then(() => {
   try {
     const gpuStatus = app.getGPUFeatureStatus();
@@ -3614,6 +3642,14 @@ function runtimeList() {
   }));
 }
 
+/**
+ * 自动化工具包（npm-global：nuphus-mcp + playwright-cli + cloakbrowser）在线地址。
+ * 随包 zip 缺失时由 install-automation.cjs 的 --url 走这里下载——「发布包漏带 zip」
+ * 是 09-12 用户实测的真实故障（Windows 打包链路此前没有「打包前准备 + 校验」环节）。
+ * 指向 GitHub Release 的 latest 资产，跨版本稳定，不必随版本改。
+ */
+const AUTOMATION_TOOLS_URL = `https://github.com/${GITHUB_REPO}/releases/latest/download/automation-tools.zip`;
+
 function runtimeInstaller(name: string) {
   return app.isPackaged ? path.join(toolsRoot(), name) : path.join(app.getAppPath(), "scripts", name);
 }
@@ -3706,7 +3742,10 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
   const task = (async () => {
     if (id === "automation") {
       if (!bundledNode()) await runRuntimeInstaller("node", runtimeInstaller("install-runtimes.cjs"), ["node"]);
-      await runRuntimeInstaller(id, runtimeInstaller("install-automation.cjs"), [], bundledNode());
+      // 随包 zip 优先（离线可用）；打包链路漏带 zip 时回落在线下载，不再硬失败
+      const bundledAutomationZip = path.join(toolsRoot(), "automation-tools.zip");
+      const automationArgs = existsSync(bundledAutomationZip) ? [] : [`--url=${AUTOMATION_TOOLS_URL}`];
+      await runRuntimeInstaller(id, runtimeInstaller("install-automation.cjs"), automationArgs, bundledNode());
       // 解压安装成功后自动激活「桌面自动化」「浏览器自动化」联动开关（nuphus MCP 注册 + 技能启用）
       await saveAppSettings(app.getPath("userData"), { desktopAutomation: true, browserAutomation: true });
     } else if (id === "playwright-browsers") {

@@ -64,6 +64,7 @@
     "appId": "com.codexharness.desktop",
     "productName": "Codex Harness Desktop",
     "npmRebuild": false,
+  "beforePack": "scripts/before-pack.cjs",
     "directories": {
       "output": "release"
     },

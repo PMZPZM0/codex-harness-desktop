@@ -12,7 +12,7 @@
 import { createHash } from "crypto";
 import { spawn } from "node:child_process";
 import { createReadStream, createWriteStream, existsSync, statSync } from "fs";
-import { copyFile, mkdir, open, rename, stat, unlink } from "fs/promises";
+import { copyFile, mkdir, open, readFile, rename, stat, unlink } from "fs/promises";
 import { basename, dirname, join } from "path";
 import { MODEL_HOSTS, modelUrl, type VoiceModelFile, type VoiceModelRepo, ZIPVOICE_DIR, ZIPVOICE_ARCHIVE, zipvoiceReady } from "./model-manifest";
 
@@ -583,6 +583,79 @@ export function modelsSizeOnDisk(modelsRoot: string): number {
 // 按需下载，不进安装包（与其它语音模型一致）。
 
 /** 单流下载到文件（带进度与 SHA256 校验）。GitHub release 场景不需要多段并发。 */
+/**
+ * GitHub Release 的下载加速前缀（直连不通/被限速时依次回落）。均为「前缀 + 原始 URL」形式，
+ * 实测对 sherpa-onnx release 资产返回 206 且支持 Range（可续传）。
+ */
+const GITHUB_MIRROR_PREFIXES = ["https://ghfast.top/", "https://gh-proxy.com/"];
+
+/** 单次下载（可续传）。网络中断**保留**已下部分供下次续传；只有 SHA256 不符才删除。 */
+async function downloadOnce(
+  url: string,
+  destPath: string,
+  sha256: string,
+  bytes: number,
+  onBytes?: (received: number, total: number) => void,
+  signal?: AbortSignal,
+): Promise<{ ok: true } | { ok: false; error: string; fatal?: boolean }> {
+  let received = 0;
+  try {
+    await mkdir(dirname(destPath), { recursive: true });
+    received = existsSync(destPath) ? statSync(destPath).size : 0;
+    const headers: Record<string, string> = {};
+    if (received > 0) headers.Range = "bytes=" + received + "-";
+    const response = await fetch(url, { redirect: "follow", headers, signal: signal as any });
+    // 服务器不支持续传（回 200 而不是 206）：丢弃残file 从头来，避免拼出坏文件
+    if (received > 0 && response.status !== 206) received = 0;
+    if (!response.ok || !response.body) return { ok: false, error: "下载失败 HTTP " + response.status };
+
+    const total = (Number(response.headers.get("content-length") ?? 0) || 0) + received || bytes;
+    const hash = createHash("sha256");
+    // 续传时先把已有部分喂进哈希，最后才能对整文件校验
+    if (received > 0 && received < total) hash.update(await readFile(destPath));
+    const outStream = createWriteStream(destPath, received > 0 && received < total ? { flags: "a" } : {});
+    const reader = (response.body as any).getReader();
+    let stallTimer: NodeJS.Timeout | null = null;
+    const readChunk = () =>
+      Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => {
+          // 卡死保护：45 秒没有任何数据就当作断流，让上层换镜像/续传（而不是永远转圈）
+          stallTimer = setTimeout(() => reject(new Error("下载中断（45 秒无数据）")), 45000);
+        }),
+      ]).finally(() => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; } });
+
+    for (;;) {
+      const { done, value } = await readChunk();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      received += chunk.length;
+      hash.update(chunk);
+      if (!outStream.write(chunk)) await new Promise<void>((resolve) => outStream.once("drain", () => resolve()));
+      onBytes?.(received, total);
+      if (signal?.aborted) throw Object.assign(new Error("已取消"), { fatal: true });
+    }
+    await new Promise<void>((resolve, reject) => outStream.end(() => resolve()).on("error", reject));
+    if (sha256 && hash.digest("hex") !== sha256) {
+      await unlink(destPath).catch(() => undefined);
+      return { ok: false, error: "SHA256 校验失败（下载损坏），已清理，请重试", fatal: true };
+    }
+    return { ok: true };
+  } catch (error: any) {
+    if (error?.fatal || signal?.aborted) {
+      await unlink(destPath).catch(() => undefined);
+      return { ok: false, error: String(error?.message ?? error), fatal: true };
+    }
+    // 网络类失败：保留残file，供下一次续传
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+}
+
+/**
+ * 下载到文件：**直连 + 镜像轮流尝试，每个地址最多两次（第二次断点续传）**。
+ * 旧实现一次 fetch 定生死、失败即删残file → 大文件在抖动网络下几乎必失败（09-12 用户实测
+ * 「54M 的声码器下载不了」，同一链路 109MB 主包却侥幸成功 = 纯运气问题）。
+ */
 async function downloadUrlToFile(
   url: string,
   destPath: string,
@@ -590,36 +663,20 @@ async function downloadUrlToFile(
   bytes: number,
   onBytes?: (received: number, total: number) => void,
   signal?: AbortSignal,
+  mirrors: string[] = [],
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  try {
-    await mkdir(dirname(destPath), { recursive: true });
-    const response = await fetch(url, { redirect: "follow", signal: signal as any });
-    if (!response.ok || !response.body) return { ok: false, error: "下载失败 HTTP " + response.status };
-    const total = Number(response.headers.get("content-length") ?? 0) || bytes;
-    const hash = createHash("sha256");
-    const out = createWriteStream(destPath);
-    let received = 0;
-    const reader = (response.body as any).getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = Buffer.from(value);
-      received += chunk.length;
-      hash.update(chunk);
-      if (!out.write(chunk)) await new Promise<void>((resolve) => out.once("drain", () => resolve()));
-      onBytes?.(received, total);
-      if (signal?.aborted) throw new Error("已取消");
+  const candidates = mirrors.length ? [url, ...mirrors.map((prefix) => prefix + url)] : [url];
+  let lastError = "";
+  for (let c = 0; c < candidates.length; c += 1) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (signal?.aborted) return { ok: false, error: "已取消" };
+      const result = await downloadOnce(candidates[c], destPath, sha256, bytes, onBytes, signal);
+      if (result.ok) return result;
+      if (result.fatal) return { ok: false, error: result.error };
+      lastError = result.error;
     }
-    await new Promise<void>((resolve, reject) => out.end(() => resolve()).on("error", reject));
-    if (sha256 && hash.digest("hex") !== sha256) {
-      await unlink(destPath).catch(() => undefined);
-      return { ok: false, error: "SHA256 校验失败（下载损坏），请重试" };
-    }
-    return { ok: true };
-  } catch (error: any) {
-    await unlink(destPath).catch(() => undefined);
-    return { ok: false, error: String(error?.message ?? error) };
   }
+  return { ok: false, error: lastError || "下载失败" };
 }
 
 /** 解压 tar.bz2：**优先随包 Python**（`tarfile` + `_bz2.pyd` 原生支持，跨平台一致）。
@@ -690,6 +747,7 @@ export async function ensureZipvoice(
         (received, total) => report("模型包", total ? Math.round((received / total) * 100) : -1,
           "正在下载音色克隆模型 " + (received / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + "MB", 0, 2),
         signal,
+        GITHUB_MIRROR_PREFIXES,
       );
       if (!downloaded.ok) return downloaded;
     }
@@ -709,6 +767,7 @@ export async function ensureZipvoice(
       (received, total) => report(ZIPVOICE_ARCHIVE.vocoder.name, total ? Math.round((received / total) * 100) : -1,
         "正在下载声码器 " + (received / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + "MB", 1, 2),
       signal,
+      GITHUB_MIRROR_PREFIXES,
     );
     if (!result.ok) return result;
   }
