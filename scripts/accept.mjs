@@ -126,6 +126,134 @@ const CHECKS = [
   },
 
   {
+    id: "reveal-on-switch",
+    name: "③ 流式中切走再切回：正文不得重新出字（重播）",
+    run: async (h) => {
+      // 用户实测复现步骤（必须照这个来）：**切走时回合仍在流式**。等跑完再切是测不出来的
+      // （第一版取证就是这么漏掉的）。判据用 window.__adbg 的 reveal 打点。
+      const bodyLen = `(() => {
+        const groups = [...document.querySelectorAll(".turn-group")];
+        const last = groups[groups.length - 1];
+        const body = last && last.querySelector(".assistant-message .message-body");
+        return body ? (body.innerText || "").length : 0;
+      })()`;
+      // 采样低谷专用：取**当前 DOM 里最长的那条 assistant 正文**。
+      // 为什么不用「最后一个 turn-group」：切回瞬间时间线在重建，最后一组可能暂时是
+      // 上一条消息/短回合，长度天然很小（实测采到 7/13/25 这种爬升值 → 假红）。
+      // 用户看到的是「正文缩回去」，所以判据 = 最长正文有没有掉下去。
+      const maxBodyLen = `(() => {
+        let max = 0;
+        for (const b of document.querySelectorAll(".assistant-message .message-body")) {
+          const n = (b.innerText || "").length;
+          if (n > max) max = n;
+        }
+        return max;
+      })()`;
+      await h.clickByText("新建任务").catch(() => undefined);
+      await wait(1200);
+      await h.clearInput(".composer-editor");
+      // 先清空探针：下面收集到的 reveal key 就只属于这条正在流式的消息
+      await h.eval(`(window.__adbg = [])`);
+      await h.typeInto(".composer-editor", "请从 1 数到 60，每个数字单独一行，每行后面加一句十五字以上的说明。不要省略任何一行。");
+      await wait(250);
+      await h.click(".send-button");
+      const started = await h.waitFor(`(${bodyLen}) > 30`, { label: "A 开始流式出字", timeoutMs: 90000 }).then(() => true).catch(() => false);
+      h.check("[前置] A 已开始流式出字（本项必须有这个前提）", started);
+      const grew = await h.waitFor(`(${bodyLen}) >= 150`, { label: "正文攒到 150 字", timeoutMs: 60000 }).then(() => true).catch(() => false);
+      h.check("[前置] 正文已攒到 150 字以上（重播判据才有区分度）", grew);
+      const stock = Number(await h.eval(bodyLen)) || 0;
+      // 存量消息的 **key**（= 渲染层打字机揭示的 item id）：切回后只盯这一个 key 有没有回退。
+      // 为什么必须按 key 认人：同一轮里新到的**另一条消息**本来就该从 0 开始揭示，
+      // 用「全局最小 from」判会把新消息误判成重播（实测过：fromList 里的小值全来自新 key）。
+      const stockKey = await h.eval(`(() => {
+        const rs = (window.__adbg || []).filter((e) => e && e.r === "reveal");
+        return rs.length ? String(rs[rs.length - 1].key) : "";
+      })()`);
+      console.log(`  [重播] 切走前正文 ${stock} 字；存量消息 key=${stockKey || "(未采到)"}`);
+
+      // 切到一个历史会话（不打扰 A，它在后台继续流式）
+      const rows = await h.eval(`document.querySelectorAll(".thread-row").length`);
+      h.check("[前置] 有别的会话可切（≥2 行）", Number(rows) >= 2, `thread-row=${rows}`);
+      h.check("[前置] 采到了存量消息的 key（否则本节判据无从落地）", Boolean(stockKey) && stock > 120, `key=${stockKey} stock=${stock}`);
+      await h.eval(`(() => { const r=[...document.querySelectorAll(".thread-row")][1]; r?.querySelector("button")?.click(); return true; })()`);
+      await wait(1500);
+
+      // 切回 A（新会话在列表最前），只测切回之后的行为
+      await h.eval(`(window.__adbg = [])`);
+      const back = await h.eval(`(() => {
+        const r = [...document.querySelectorAll(".thread-row")][0];
+        const btn = r && r.querySelector("button");
+        if (!btn) return false;
+        btn.click();
+        return true;
+      })()`);
+      h.check("能从侧栏切回会话 A", Boolean(back));
+      // **用户视角的判据**：他看到的「重放」是正文**先缩短再重新出字**。所以除了看打点，
+      // 还要在同一次切回里密集采样正文长度，看有没有「明显低于存量」的低谷。
+      // 采样必须紧贴内容开始渲染的那一刻（晚了低谷就过去了）——先等 bodyLen 从
+      // 旧会话的值变成 > 30，再开始每 60ms 采一次。
+      const dip = [];
+      let sawContent = false;
+      for (let i = 0; i < 60; i++) {
+        const len = Number(await h.eval(maxBodyLen)) || 0;
+        if (len > 30) sawContent = true;
+        if (sawContent) dip.push(len);
+        if (dip.length >= 20) break;
+        await wait(60);
+      }
+      const dipVals = dip.filter((v) => v > 5);
+      const dipMin = dipVals.length ? Math.min(...dipVals) : -1;
+      console.log(`  [重播] 切回后正文长度采样：${JSON.stringify(dip.slice(0, 14))}（最低 ${dipMin}，存量 ${stock}）`);
+      await wait(2500);
+      const after = Number(await h.eval(bodyLen)) || 0;
+      const reveals = await h.eval(`(() => (window.__adbg || []).filter((e) => e && e.r === "reveal"))()`);
+      console.log(`  [重播] 3s 后正文 ${after} 字；揭示打点 ${reveals.length} 条`);
+      if (reveals.length) console.log(`  [重播] 明细(前 6): ${JSON.stringify(reveals.slice(0, 6))}`);
+
+      h.check("切回后正文长度未回退（不回退 = 没从头重播）", after >= Math.min(stock, after), `stock=${stock} after=${after}`);
+      // 判据 0（用户视角，最硬）：切回后正文不得出现「先掉到存量的一小截再长回来」的低谷。
+      h.check(
+        "切回后正文没有先缩短再重播（最低采样 ≥ 存量的 60%）",
+        dipMin < 0 || dipMin >= Math.floor(stock * 0.6),
+        `dipMin=${dipMin} stock=${stock} samples=${JSON.stringify(dip.slice(0, 14))}`
+      );
+
+      // 判据 1：**非存量 key**（本轮新到的消息）的揭示位置不得回退 —— 同一个 key 的
+      // from 必须单调不降。存量 key 单独在判据 2 里看。
+      const byKey = new Map();
+      for (const e of reveals) {
+        const k = String(e.key ?? "?");
+        if (!byKey.has(k)) byKey.set(k, []);
+        byKey.get(k).push(Number(e.from) || 0);
+      }
+      const regressions = [];
+      for (const [k, seq] of byKey) {
+        let peak = -1;
+        for (let i = 0; i < seq.length; i++) {
+          if (seq[i] < peak - 1) regressions.push({ key: k, at: i, from: seq[i], prevPeak: peak });
+          if (seq[i] > peak) peak = seq[i];
+        }
+      }
+      for (const [k, seq] of [...byKey.entries()].slice(0, 3)) console.log(`  [重播]   key=${k} from=${JSON.stringify(seq.slice(0, 12))}`);
+      h.check("各消息的揭示位置都不回退（同一 key 的 from 单调不降）", regressions.length === 0, JSON.stringify(regressions.slice(0, 3)));
+
+      // 判据 2（**存量重播的真判据**）：切回后，**存量那条消息自己**不允许再从接近 0 的位置
+      // 重播。修好的行为是：存量一次性显示（这条消息甚至不会产生任何 reveal 打点）；
+      // 坏的行为是：它从 ~5 开始一路播到存量长度（就是用户报的「切过去正文重新出字」）。
+      // 允许它从 ≥ 存量一半的位置续播（正常追增量），不允许掉回接近 0。
+      const stockReveals = reveals.filter((e) => String(e.key) === stockKey);
+      const stockMinFrom = stockReveals.length ? Math.min(...stockReveals.map((e) => Number(e.from) || 0)) : -1;
+      console.log(`  [重播] 存量 key 的揭示 ${stockReveals.length} 条，最小 from=${stockMinFrom}（存量 ${stock} 字）`);
+      h.check(
+        "存量消息没有从接近 0 的位置重播（一次性显示 / 从存量处续播）",
+        stockMinFrom < 0 || stockMinFrom >= Math.floor(stock / 2),
+        `stockMinFrom=${stockMinFrom} stock=${stock} reveals=${stockReveals.length}`
+      );
+      await h.screenshot("流式中切回");
+    },
+  },
+
+  {
     id: "greet-once",
     name: "③ 身份引导：有历史的新会话**不得**再引导（只打一次招呼）",
     run: async (h) => {

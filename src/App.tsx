@@ -4875,13 +4875,15 @@ function revealStepFor(remaining: number) {
   if (remaining > 300) return 4;     // 中段：平稳流出（约 250 字符/秒）
   return 2;                          // 尾段：精细逐字（约 125 字符/秒，打字感）
 }
-// 深度思考正文比主出字慢一档（约一半速）：思考内容长、信息密度低，
-// 同速流出根本读不清。16ms 帧下：长文 ~312 字符/秒、中段 ~125、尾段逐字 ~62。
+// 深度思考正文的流出速率（09-12 用户反馈「思考出字怎么这么慢，拉快一点」）。
+// 旧实现刻意压到主正文的**一半速**（长文 ~312 字符/秒、尾段逐字 ~62），实测在思考摘要
+// 动辄上千字时就是「看得见地慢」，像卡住。现在与主正文同级（16ms 帧下）：
+// 巨量 ≈1.3s 追完、长文 ~1000 字符/秒、中段 ~500、尾段 ~187（保留一点打字感，不再拖沓）。
 function revealStepForReasoning(remaining: number) {
-  if (remaining > 3600) return Math.max(16, Math.ceil(remaining / 180));
-  if (remaining > 1200) return 5;
-  if (remaining > 300) return 2;
-  return 1;
+  if (remaining > 3600) return Math.max(40, Math.ceil(remaining / 80));
+  if (remaining > 1200) return 16;
+  if (remaining > 300) return 8;
+  return 3;
 }
 // 播放进度表（模块级，跨组件卸载存活）：key -> 已播放到的正文前缀。
 // 运行中的回合切去别的会话再切回来，组件会卸载重建（state 全丢）——没有这张表，
@@ -4925,6 +4927,22 @@ function usePacketRevealText(
       start = progressed;
       displayedRef.current = start;
       setDisplayed(start);
+    }
+    // ⛔ 单调保证（09-12 用户「重放还是有」实测定位，**别删**）：同一个 key 的揭示位置
+    // **只能前进、不能后退**。实测切回会话时，同一条消息先按存量续播（`{from:178,to:232}`），
+    // 紧接着又冒出一批 `{from:2,to:4}` 的揭示——把已经显示过的 170 多字重播了一遍，
+    // 用户看到的就是「正文先缩回去再重新出字」（DOM 采样 172→59→125→…→391）。
+    // 这里给 start 加一条**硬下限**：不得小于进度表里已播长度所对应的前缀。
+    // 注意**不要求** `text.startsWith(stored)`：内容被替换 / 快照落后时 startsWith 会失败，
+    // 而那条路径正是 from 回退到 2 的来源（回退本身就是重播）。
+    {
+      const storedRaw = revealProgressStore.get(key);
+      const storedLen = storedRaw != null ? Math.min(storedRaw.length, text.length) : 0;
+      if (storedLen > start.length) {
+        start = text.slice(0, storedLen);
+        displayedRef.current = start;
+        setDisplayed(start);
+      }
     }
     if (!text.startsWith(start)) {
       displayedRef.current = text;
@@ -5063,7 +5081,8 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
       return;
     }
     setRevealing(true);
-    // 思考正文专用慢速自适应（revealStepForReasoning，约为主正文一半速）。
+    // 思考正文速率自适应（revealStepForReasoning；09-12 已提到与主正文同级，
+    // 用户原话「思考出字怎么这么慢，拉快一点」——不要再调慢回去）。
     const step = Math.max(1, Math.min(revealStepForReasoning(remaining), Math.ceil(remaining / 3)));
     let end = start.length;
     const timer = window.setInterval(() => {
