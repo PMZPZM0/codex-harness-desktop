@@ -6708,7 +6708,7 @@ export default function App() {
         // 锚点平滑换到真实回合：乐观气泡与真实消息渲染位置相邻，重锚保证「消息钉在
         // 顶部」在确认瞬间不跳；基线同步刷新，回复增长量从此刻起算
         anchorElRef.current = anchor;
-        contentAnchorTopRef.current = contentOffsetTop(anchor, el) - 6;
+        contentAnchorTopRef.current = contentOffsetTop(anchor, el) - ANCHOR_TOP_OFFSET_PX;
         selfScrollUntilRef.current = Date.now() + 80;
         if (Math.abs(contentAnchorTopRef.current - el.scrollTop) > 8) scrollToOffsetInstant(el, contentAnchorTopRef.current);
       }
@@ -8623,6 +8623,12 @@ export default function App() {
 /** 长会话首屏最多渲染的回合数：软件渲染下全量挂载几千个回合是「切会话慢」的主因，
  *  默认只渲染最近这么多回合，更早的由「显示更早的 N 条消息」按需展开。 */
 const TURN_WINDOW = 40;
+/** 发送锚顶的落点偏移：钉顶时让锚点顶部再**下移**这么多像素，而不是紧贴视口上沿。
+ *  用户反馈（09-12 晚，附截图）：「太高了，往下放两行」——原来只上移 6px，消息首行
+ *  几乎贴着对话区上边缘，`已深度思考` 之类的头部也被顶到视口最上沿。
+ *  取两行正文的高度：正文 14px × line-height 1.72 ≈ 24px/行 → 两行 ≈ 48px，
+ *  外加原有 6px 余量 = 54。改这个值即可整体上下平移钉顶位置。 */
+const ANCHOR_TOP_OFFSET_PX = 54;
 /** 常用命令置顶顺序（用户高频：模型/思考/计划/目标/压缩优先） */
 const COMMON_COMMAND_ORDER = ["plan", "goal", "model", "effort", "compact", "new", "resume", "review", "status", "help"];
 const commandMatches = useMemo(() => {
@@ -8912,7 +8918,7 @@ const commandMatches = useMemo(() => {
         const aH = a.getBoundingClientRect().height;
         anchorSpacerRef.current.style.height = `${Math.max(0, Math.round(el.clientHeight - aH))}px`;
       }
-      if (a && a.isConnected) contentAnchorTopRef.current = contentOffsetTop(a, el) - 6;
+      if (a && a.isConnected) contentAnchorTopRef.current = contentOffsetTop(a, el) - ANCHOR_TOP_OFFSET_PX;
       selfScrollUntilRef.current = Date.now() + 80;
       scrollToOffsetInstant(el, contentAnchorTopRef.current);
       // 记下本次钉顶实际落点（可能被 clamp），供 update() 区分程序滚动与用户滚到底
@@ -8940,7 +8946,7 @@ const commandMatches = useMemo(() => {
       const aH = anchor.getBoundingClientRect().height;
       anchorSpacerRef.current.style.height = `${Math.max(0, Math.round(el.clientHeight - aH))}px`;
     }
-    contentAnchorTopRef.current = contentOffsetTop(anchor, el) - 6;
+    contentAnchorTopRef.current = contentOffsetTop(anchor, el) - ANCHOR_TOP_OFFSET_PX;
     anchorElRef.current = anchor;
     selfScrollUntilRef.current = Date.now() + 80;
     scrollToOffsetInstant(el, contentAnchorTopRef.current);
