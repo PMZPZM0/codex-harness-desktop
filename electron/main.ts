@@ -3208,7 +3208,10 @@ ipcMain.handle("openai:accounts", async () => {
   });
 });
 // 账号启用/停用：停用 = 退出切换候选（vault 数据保留，随时可重新启用）。
-// 停用**当前生效**账号时同步退出生效状态：auth.json 置空 + 重启引擎（官方订阅退出）。
+// 停用**当前生效**账号时同步退出生效状态——与 relay:toggle-account 对称做全套：
+// auth.json 置空 + openai-official 供应商条目停用 + custom-model.json 清空 + 重启引擎。
+// 只清 auth.json 会留下「生效配置指向一个没有凭据的供应商」：引擎请求必 401，且
+// customModel.provider 还挂着 openai-official 会把其他供应商的启用按钮全部互斥置灰（卡死）。
 ipcMain.handle("openai:toggle-account", async (_e, input: { id: string; disabled: boolean }) => {
   const accounts = await readOpenaiVault();
   const account = accounts.find((a) => a.id === input.id);
@@ -3218,7 +3221,11 @@ ipcMain.handle("openai:toggle-account", async (_e, input: { id: string; disabled
   if (input.disabled) {
     const current = await readOpenaiAuth();
     if (current?.loggedIn && current.email && current.email === account.email) {
+      const list = await readCustomModels();
+      const entry = list.find((e) => e.provider === "openai-official");
+      if (entry && entry.enabled !== false) await upsertCustomModel({ ...entry, enabled: false });
       await fs.writeFile(openaiAuthFile(), "null", "utf8");
+      await fs.writeFile(customModelFile, "null", "utf8");
       await server.restart();
       return { ok: true, disabled: true, deactivated: true };
     }
