@@ -21182,21 +21182,22 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 /* ===== 随机短提示气泡 ===== */
 .voice-hint-bubble {
   position: absolute;
+  /* 从悬浮球往左弹出：刻意收窄（文字也压到 6 字以内），不让它盖住输入框 */
   right: 100%;
   bottom: 50%;
-  margin-right: 12px;
+  margin-right: 10px;
   transform: translateY(50%);
-  max-width: 210px;
-  padding: 7px 11px;
-  border-radius: 10px;
+  max-width: 128px;
+  padding: 5px 9px;
+  border-radius: 9px;
   background: var(--panel);
   border: 1px solid var(--line);
-  box-shadow: 0 6px 18px color-mix(in srgb, #000 12%, transparent);
-  font-size: 12px;
-  line-height: 1.45;
+  box-shadow: 0 5px 16px color-mix(in srgb, #000 12%, transparent);
+  font-size: 11.5px;
+  line-height: 1.4;
   color: var(--text);
   white-space: nowrap;
-  animation: voice-hint-in .22s cubic-bezier(.2,.8,.25,1);
+  animation: voice-hint-in .2s cubic-bezier(.2,.8,.25,1);
   pointer-events: none;
 }
 /* 小尾巴（指向悬浮球） */
