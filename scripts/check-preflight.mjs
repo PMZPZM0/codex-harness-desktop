@@ -12,6 +12,7 @@
 import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../src/lib/model-scope.mjs";
+import { planCompletedFold } from "../src/lib/turn-fold-plan.mjs";
 import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../src/lib/voice-aec.mjs";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -723,6 +724,38 @@ console.log(C.bold("\n【8】打包必备件：随包 automation-tools.zip（发
       ? fail("main.ts 又出现了 AUTOMATION_TOOLS_URL 在线回落 —— 那个 Release 资产不存在，只会变成「下载失败」")
       : ok("应用侧只认随包 zip（解压安装），不再回落到不存在的在线地址");
   }
+}
+
+console.log(C.bold("\n【9】过程折叠不得吞掉正文（长正文/最终答复永远是正文锚点）"));
+{
+  // 09-12 用户反馈「折叠消息把 codex 最后汇报的也折叠进去了」。
+  // 实测某会话 rollout 条目序列：… AgentMessage(712字) → DynamicToolCall → Reasoning → AgentMessage(80字)。
+  // 旧的「完成态」把「除最后一条正文以外的**全部**内容」塞进一个折叠组，而“最后一条正文”挑中的
+  // 是那条 80 字收尾 → 712 字的**汇报本身**被当过程收了起来。这里跑真实现断言行为。
+  const unit = (id, type, text = "") => ({ item: { id, type, text }, kind: type === "agentMessage" ? "body" : "foldable" });
+  const units = [
+    unit("tool1", "commandExecution"),
+    unit("thinking1", "reasoning"),
+    unit("body712", "agentMessage", "报".repeat(712)),
+    unit("tool2", "dynamicToolCall"),
+    unit("thinking2", "reasoning"),
+    unit("body80", "agentMessage", "收".repeat(80)),
+  ];
+  const plan = planCompletedFold(units, "body80");
+  const bodies = plan.filter((p) => p.kind === "body").map((p) => p.unit.item.id);
+  const folded = plan.filter((p) => p.kind === "fold").flatMap((p) => p.units.map((u) => u.item.id));
+  bodies.includes("body712")
+    ? ok("长正文（712 字汇报）留在折叠组外 —— 不会再被「耗时」吞掉")
+    : fail(`长正文被折叠进去了（folded=${folded.join(",")}）—— 用户报的正是这个`);
+  bodies.includes("body80")
+    ? ok("最终答复（80 字收尾）也留在折叠组外")
+    : fail("最终答复被折叠进去了");
+  !folded.includes("body712") && !folded.includes("body80")
+    ? ok("折进过程组的只有工具/思考等真过程单元")
+    : fail(`正文混进了过程组：${folded.join(",")}`);
+  folded.includes("tool1") && folded.includes("thinking1") && folded.includes("tool2")
+    ? ok("工具与思考仍照常收进过程组（折叠能力没被削弱）")
+    : fail(`过程单元没被收进去（folded=${folded.join(",")}）—— 折叠功能被改坏了`);
 }
 
 // ---------- 汇总 ----------
