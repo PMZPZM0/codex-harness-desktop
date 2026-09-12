@@ -82,7 +82,14 @@ async function sendAndAssertPinned(h, text, label) {
     return { gap: Math.round(g.top - s.top), away: Math.round(scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight) };
   })()`);
   h.check(`[${label}] 流式期间钉顶稳定（移动 <40px）`, before !== null && Math.abs(after.gap - before) < 40, JSON.stringify({ before, after }));
-  h.check(`[${label}] 不自动贴底（视口保持钉顶）`, after.away > 80, `away=${after.away}`);
+  // 「不自动贴底」的判据必须是「视口没被拉到内容最底部」（scrollTop < maxScroll），
+  // 不能用 away 的绝对值：短回复（回答只有一行）在视口里本来就凑不满一屏，
+  // away 天然很小——那不代表落到了底部（09-12 实测：gap 稳定在 1~6px，away 仅 67）。
+  const atBottom = await h.eval(`(() => {
+    const s = document.querySelector("${SCROLLER}");
+    return { scrollTop: Math.round(s.scrollTop), maxScroll: Math.round(s.scrollHeight - s.clientHeight) };
+  })()`);
+  h.check(`[${label}] 不自动贴底（视口未停在内容最底部）`, atBottom.scrollTop < atBottom.maxScroll - 4, JSON.stringify(atBottom));
   // 无双显：乐观/真实渲染同一文本只能出现一次
   const key = text.startsWith("【") ? text.slice(0, 4) : text.slice(0, 12);
   const hits = await h.eval(`(() => {
