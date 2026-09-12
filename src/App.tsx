@@ -8984,6 +8984,22 @@ const commandMatches = useMemo(() => {
         contentAnchorTopRef.current = anchorTopOffsetRef.current - ANCHOR_TOP_OFFSET_PX;
       }
       selfScrollUntilRef.current = Date.now() + 80;
+      // 用户消息**自己就比一屏还高**（长粘贴/多段长指令）时，钉顶没有意义：
+      // 整条消息装不下，钉顶只会把回复推到屏幕外。此时用户的期望是**直接看到
+      // agent 的回复**（用户实测反馈：「一次发很长消息，一屏展示不下来，agent
+      // 会话后马上跳转到 agent 回复消息的那个位置」）。
+      // 注意判据是**锚点自身高度**，不是 scrollHeight——后者会把「回复长过一屏」
+      // 也误判成溢出，导致正常短消息一发送就被推到底部（实测 gap -296）。
+      const anchorHeight = a?.isConnected ? a.getBoundingClientRect().height : 0;
+      if (anchorHeight > el.clientHeight) {
+        anchorTopRef.current = false;   // 退出钉顶：交给常规贴底跟随（steer 到回复位置）
+        clearAnchorPad();
+        stickToBottomRef.current = true;
+        selfScrollUntilRef.current = Date.now() + 80;
+        scrollToOffsetInstant(el, el.scrollHeight);
+        pinnedScrollTopRef.current = el.scrollTop;
+        return;
+      }
       scrollToOffsetInstant(el, contentAnchorTopRef.current);
       // 基线 = 当前内容高度：之后 update() 只按「增长量」温和跟随
       anchorHeightBaselineRef.current = el.scrollHeight;
@@ -9016,6 +9032,16 @@ const commandMatches = useMemo(() => {
     contentAnchorTopRef.current = anchorTopOffsetRef.current - ANCHOR_TOP_OFFSET_PX;
     anchorElRef.current = anchor;
     selfScrollUntilRef.current = Date.now() + 80;
+    // 长消息（自身超一屏）→ 直接跟到回复位置；否则正常钉顶（判据说明见 thread 布局 effect）
+    if (anchor.getBoundingClientRect().height > el.clientHeight) {
+      anchorTopRef.current = false;   // 退出钉顶：交给常规贴底跟随（steer 到回复位置）
+      clearAnchorPad();
+      stickToBottomRef.current = true;
+      selfScrollUntilRef.current = Date.now() + 80;
+      scrollToOffsetInstant(el, el.scrollHeight);
+      pinnedScrollTopRef.current = el.scrollTop;
+      return;
+    }
     scrollToOffsetInstant(el, contentAnchorTopRef.current);
     anchorHeightBaselineRef.current = el.scrollHeight;
     pinnedScrollTopRef.current = el.scrollTop;
