@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import path from "node:path";
 
 type ToolCallRecord = { kind: "tool"; id: string; callId: string; name: string; arguments: string };
@@ -10,7 +10,35 @@ type ParsedRollout = {
   outputs: Map<string, string>;
   /** app-server 本地 turn id -> 上游 response_item 元数据里的 turn id */
   turnAliases: Map<string, string>;
+  /** 增量解析游标（09-12 多会话性能）：已消费的字节数与当时的文件大小。
+      会话在跑时 rollout 持续追加，旧实现只看 mtime → 每次都整份重读重解析
+      （O(文件大小)），切会话越频繁越慢。现在只解析新增的完整行。 */
+  bytesConsumed: number;
+  size: number;
+  /** 上一行是否写了一半（文件尾无换行）：保留下来与下次新增内容拼起来再解析 */
+  pendingTail: string;
+  /** function_call 的 call_id -> 上游 turn id，增量解析时也要延续（供 function_call_output 关联） */
+  callTurns: Map<string, string>;
 };
+
+type RolloutListEntry = {
+  id: string;
+  name: string;
+  preview: string;
+  cwd: string;
+  updatedAt: number;
+  status: { type: string };
+  archived: boolean;
+};
+/** listRolloutThreads 的单文件解析结果缓存。
+    意义（09-12 实测 P0）：thread/list 每次调用都会全量遍历 sessions/ 目录树 + 逐文件
+    全文 readFileSync + 逐行 JSON.parse，而渲染层**每个回合结束**都打一发 thread/list
+    → 调用次数 ∝ 完成回合数、每次仍扫全部历史 = O(N²)，且全是同步 I/O 会堵住主进程
+    事件循环（所有会话一起卡）。按「路径 + mtimeMs + size」缓存后，历史文件只解析一次。 */
+const rolloutListCache = new Map<string, { mtimeMs: number; size: number; entry: RolloutListEntry | null }>();
+/** enrichThreadWithRolloutTools 的短路缓存：同一 thread 对象 + rollout 未变更时
+    直接返回原引用（同时也保住了 React 侧的记忆化，不会每次 resume 都产生新对象）。 */
+const enrichCache = new WeakMap<object, { fp: string; size: number; mtimeMs: number }>();
 
 const rolloutPathCache = new Map<string, string>();
 const rolloutParseCache = new Map<string, ParsedRollout>();
@@ -80,21 +108,22 @@ function findRolloutFile(codexHome: string, threadId: string) {
   return "";
 }
 
-function parseRollout(filePath: string): ParsedRollout {
-  const mtimeMs = statSync(filePath).mtimeMs;
-  const cached = rolloutParseCache.get(filePath);
-  if (cached?.mtimeMs === mtimeMs) return cached;
-  const turns = new Map<string, TurnRecord[]>();
-  const outputs = new Map<string, string>();
-  const callTurns = new Map<string, string>();
-  const turnAliases = new Map<string, string>();
+/** 把一批「新行 + 上一轮残留的半行」喂进解析状态。抽出来是为了让增量与全量共用同一套
+    解析逻辑（避免两套规则漂移），返回值是尚未成行的尾巴。 */
+function consumeRolloutLines(
+  text: string,
+  state: { turns: Map<string, TurnRecord[]>; outputs: Map<string, string>; callTurns: Map<string, string>; turnAliases: Map<string, string> },
+) {
+  const { turns, outputs, callTurns, turnAliases } = state;
   const push = (turnId: string, record: TurnRecord) => {
     if (!turnId) return;
     const list = turns.get(turnId) ?? [];
     list.push(record);
     turns.set(turnId, list);
   };
-  for (const line of readFileSync(filePath, "utf8").split(/\r?\n/)) {
+  const lines = text.split("\n");
+  const tail = lines.pop() ?? "";
+  for (const line of lines) {
     if (!line.trim()) continue;
     let row: any;
     try { row = JSON.parse(line); } catch { continue; }
@@ -124,7 +153,41 @@ function parseRollout(filePath: string): ParsedRollout {
       push(metaTurn, { kind: "item", id: String(item.id), itemType: "agentMessage" });
     }
   }
-  const parsed = { mtimeMs, turns, outputs, turnAliases };
+  return tail;
+}
+
+function parseRollout(filePath: string): ParsedRollout {
+  const stat = statSync(filePath);
+  const { mtimeMs, size } = stat;
+  const cached = rolloutParseCache.get(filePath);
+  if (cached && cached.mtimeMs === mtimeMs && cached.size === size) return cached;
+  // 追加场景（会话正在跑）：文件只变长 → 只解析新增部分，历史不再重解析。
+  // size 变小 = 被截断/迁移重写，退回全量。mtime 变化但长度不变同样退回全量。
+  if (cached && size > cached.size && cached.bytesConsumed === cached.size) {
+    try {
+      const fd = openSync(filePath, "r");
+      let chunk = "";
+      try {
+        const buffer = Buffer.alloc(size - cached.bytesConsumed);
+        const read = readSync(fd, buffer, 0, buffer.length, cached.bytesConsumed);
+        chunk = buffer.subarray(0, read).toString("utf8");
+      } finally { closeSync(fd); }
+      const state = { turns: cached.turns, outputs: cached.outputs, callTurns: cached.callTurns, turnAliases: cached.turnAliases };
+      cached.pendingTail = consumeRolloutLines(cached.pendingTail + chunk, state);
+      cached.bytesConsumed = size;
+      cached.size = size;
+      cached.mtimeMs = mtimeMs;
+      return cached;
+    } catch {
+      // 增量失败（文件被替换/权限等）→ 落到下面的全量路径，绝不返回半截数据
+    }
+  }
+  const turns = new Map<string, TurnRecord[]>();
+  const outputs = new Map<string, string>();
+  const callTurns = new Map<string, string>();
+  const turnAliases = new Map<string, string>();
+  const pendingTail = consumeRolloutLines(readFileSync(filePath, "utf8"), { turns, outputs, callTurns, turnAliases });
+  const parsed: ParsedRollout = { mtimeMs, turns, outputs, turnAliases, callTurns, bytesConsumed: size, size, pendingTail };
   rolloutParseCache.set(filePath, parsed);
   return parsed;
 }
@@ -149,12 +212,31 @@ function syntheticTool(record: ToolCallRecord, output: string) {
   return { id: record.id, type: "dynamicToolCall", tool: record.name, arguments: args, result: output, status: meta.exitCode ? "failed" : "completed", durationMs: meta.durationMs, callId: record.callId };
 }
 
+/** thread.turns 的轻量指纹：用来判断「同一 thread 对象是否已经按这份 rollout 富化过」。
+    只取 回合数 + 每回合的 item id/数量，不做深比较（这里只为短路，不需要精确分辨）。 */
+function turnsFingerprint(thread: any): string {
+  const turns = Array.isArray(thread?.turns) ? thread.turns : [];
+  let out = `${turns.length}`;
+  for (const turn of turns) {
+    const items = Array.isArray(turn?.items) ? turn.items : [];
+    out += `|${items.length}`;
+    for (const item of items) out += `,${String(item?.id ?? "")}`;
+  }
+  return out.length > 4096 ? out.slice(0, 4096) : out;
+}
+
 export function enrichThreadWithRolloutTools(thread: any, codexHome: string) {
   if (!thread?.id || !Array.isArray(thread.turns)) return thread;
   const filePath = findRolloutFile(codexHome, String(thread.id));
   if (!filePath) return thread;
   let parsed: ParsedRollout;
   try { parsed = parseRollout(filePath); } catch { return thread; }
+  // 短路（09-12 多会话性能）：同一个 thread 对象 + 同一份 rollout（size/mtime 未变）
+  // 已经富化过一次 → 直接返回原对象。既省掉 O(T×R×C) 的匹配，又保住引用相等，
+  // 不会每次 thread/resume 都造新对象去打穿渲染层的记忆化。
+  const fp = turnsFingerprint(thread);
+  const memo = enrichCache.get(thread);
+  if (memo && memo.fp === fp && memo.size === parsed.size && memo.mtimeMs === parsed.mtimeMs) return thread;
   let changed = false;
   const assignedRecordGroups = new Set<string>();
   const recordGroups = [...parsed.turns.entries()];
@@ -215,16 +297,78 @@ export function enrichThreadWithRolloutTools(thread: any, codexHome: string) {
     }
     return items.length === existing.length && items.every((item, index) => item === existing[index]) ? turn : { ...turn, items };
   });
-  return changed || turns.some((turn: any, index: number) => turn !== thread.turns[index]) ? { ...thread, turns } : thread;
+  const result = changed || turns.some((turn: any, index: number) => turn !== thread.turns[index]) ? { ...thread, turns } : thread;
+  // 记下这次富化对应的 rollout 状态与结果指纹，供下次同对象调用短路。
+  // WeakMap：thread 对象被 GC 时缓存自动消失，无需自己清理；指纹自带长度上限。
+  const stamp = { size: parsed.size, mtimeMs: parsed.mtimeMs };
+  enrichCache.set(thread, { fp, ...stamp });
+  if (result !== thread) enrichCache.set(result, { fp: turnsFingerprint(result), ...stamp });
+  return result;
 }
 
-/** 当 app-server 的 thread/list 索引尚未完成迁移时，从 rollout 文件恢复左侧会话列表。 */
+/** 解析单个 rollout 文件、取出侧栏需要的元数据（标题/预览/cwd/更新时间）。
+    带 mtime+size 缓存：同一个文件只在内容变化时重读，历史会话永远只解析一次。 */
+function readRolloutListEntry(full: string, id: string, archived: boolean): RolloutListEntry | null {
+  let stat: ReturnType<typeof statSync>;
+  try { stat = statSync(full); } catch { return null; }
+  const cached = rolloutListCache.get(full);
+  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.entry;
+  let title = "";
+  let preview = "";
+  let cwd = "";
+  let updatedAt = stat.mtimeMs;
+  try {
+    for (const line of readFileSync(full, "utf8").split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let row: any;
+      try { row = JSON.parse(line); } catch { continue; }
+      const payload = row?.payload ?? {};
+      const meta = payload.internal_chat_message_metadata_passthrough;
+      if (row.type === "session_meta" && payload.cwd) cwd = cwd || String(payload.cwd);
+      if (row.type === "turn_context" && payload.cwd) cwd = cwd || String(payload.cwd);
+      if (payload.type === "message" && payload.role === "user") {
+        const text = (payload.content ?? []).filter((part: any) => part.type === "input_text").map((part: any) => String(part.text ?? "")).join("\n").trim();
+        const injected = text.startsWith("# AGENTS.md") || text.startsWith("<environment_context>") || text.startsWith("<filesystem>");
+        const isUserPrompt = meta?.content_item_kinds?.includes?.("user.text") || !meta?.content_item_kinds;
+        if (text && isUserPrompt && !injected) {
+          if (!title) title = text.slice(0, 80);
+          preview = text.slice(0, 160);
+        }
+        cwd = cwd || String(meta?.cwd ?? "");
+      }
+      if (row.type === "event_msg" && payload.type === "task_complete") {
+        const text = String(payload.last_agent_message ?? "").trim();
+        if (text) preview = text.slice(0, 160);
+      }
+      if (row.type === "event_msg" && payload.type === "task_started") {
+        const started = Number(payload.started_at);
+        if (Number.isFinite(started)) updatedAt = Math.max(updatedAt, started * 1000);
+      }
+    }
+  } catch { return null; }
+  const entry: RolloutListEntry = {
+    id,
+    name: title || preview || "未命名任务",
+    preview: preview || title || "",
+    cwd,
+    updatedAt,
+    status: { type: "completed" },
+    archived,
+  };
+  rolloutListCache.set(full, { mtimeMs: stat.mtimeMs, size: stat.size, entry });
+  return entry;
+}
+
+/** 当 app-server 的 thread/list 索引尚未完成迁移时，从 rollout 文件恢复左侧会话列表。
+ *  性能（09-12 P0）：目录遍历仍是同步的，但每个文件的**内容解析**按 mtime+size 缓存，
+ *  历史文件不再重复 readFileSync + 逐行 JSON.parse；调用方还应只在引擎索引为空时兜底。 */
 export function listRolloutThreads(codexHome: string) {
   const roots = [path.join(codexHome, "sessions"), path.join(codexHome, "archived_sessions")];
-  const out: any[] = [];
+  const out: RolloutListEntry[] = [];
   const seen = new Set<string>();
   for (const root of roots) {
     if (!existsSync(root)) continue;
+    const archived = root.endsWith("archived_sessions");
     const stack = [root];
     while (stack.length) {
       const current = stack.pop()!;
@@ -237,43 +381,10 @@ export function listRolloutThreads(codexHome: string) {
         const match = entry.name.match(/-([0-9a-f]{8}-[0-9a-f-]{27,})\.jsonl$/i);
         if (!match || seen.has(match[1])) continue;
         const id = match[1];
-        let title = "";
-        let preview = "";
-        let cwd = "";
-        let updatedAt = 0;
-        try {
-          const stat = statSync(full);
-          updatedAt = stat.mtimeMs;
-          for (const line of readFileSync(full, "utf8").split(/\r?\n/)) {
-            if (!line.trim()) continue;
-            let row: any;
-            try { row = JSON.parse(line); } catch { continue; }
-            const payload = row?.payload ?? {};
-            const meta = payload.internal_chat_message_metadata_passthrough;
-            if (row.type === "session_meta" && payload.cwd) cwd = cwd || String(payload.cwd);
-            if (row.type === "turn_context" && payload.cwd) cwd = cwd || String(payload.cwd);
-            if (payload.type === "message" && payload.role === "user") {
-              const text = (payload.content ?? []).filter((part: any) => part.type === "input_text").map((part: any) => String(part.text ?? "")).join("\n").trim();
-              const injected = text.startsWith("# AGENTS.md") || text.startsWith("<environment_context>") || text.startsWith("<filesystem>");
-              const isUserPrompt = meta?.content_item_kinds?.includes?.("user.text") || !meta?.content_item_kinds;
-              if (text && isUserPrompt && !injected) {
-                if (!title) title = text.slice(0, 80);
-                preview = text.slice(0, 160);
-              }
-              cwd = cwd || String(meta?.cwd ?? "");
-            }
-            if (row.type === "event_msg" && payload.type === "task_complete") {
-              const text = String(payload.last_agent_message ?? "").trim();
-              if (text) preview = text.slice(0, 160);
-            }
-            if (row.type === "event_msg" && payload.type === "task_started") {
-              const started = Number(payload.started_at);
-              if (Number.isFinite(started)) updatedAt = Math.max(updatedAt, started * 1000);
-            }
-          }
-        } catch { continue; }
+        const parsedEntry = readRolloutListEntry(full, id, archived);
+        if (!parsedEntry) continue;
         seen.add(id);
-        out.push({ id, name: title || preview || "未命名任务", preview: preview || title || "", cwd, updatedAt, status: { type: "completed" }, archived: root.endsWith("archived_sessions") });
+        out.push(parsedEntry);
       }
     }
   }

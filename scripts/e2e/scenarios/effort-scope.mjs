@@ -13,6 +13,8 @@
 
 export const name = "effort-scope";
 export const description = "思考等级：UI 切换写档案（custom-model.json + config.toml），引擎逐回合真实生效";
+/** 本场景负责覆盖的源文件（供 run.mjs 增量判断）。 */
+export const covers = ["src/lib/effort.ts"];
 
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";

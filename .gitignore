@@ -38,6 +38,8 @@ terminal-dump.txt
 
 # E2E 运行产物（截图 / 报告，每次跑都会重新生成）
 .e2e-artifacts/
+# E2E 增量验收状态（记录每个场景已按哪份内容验收过，本机文件不入库）
+.e2e-state.json
 
 # 工具数据
 .workbuddy/

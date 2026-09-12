@@ -11,6 +11,8 @@
 
 export const name = "openai-import";
 export const description = "导入账号文件直接登录 OpenAI：auth.json/扁平 JSON/裸 token 混导 + 导入即生效";
+/** 本场景负责覆盖的源文件（供 run.mjs 增量判断）。账号导入的 IPC 与解析都在 main.ts。 */
+export const covers = ["electron/main.ts"];
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 

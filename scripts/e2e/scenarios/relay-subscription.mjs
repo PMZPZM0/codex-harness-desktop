@@ -14,6 +14,8 @@
 
 export const name = "relay-subscription";
 export const description = "付费订阅全链路：应用内注册→自动登录→套餐市场→支付检测→自动建密钥并生效";
+/** 本场景负责覆盖的源文件（供 run.mjs 增量判断）。 */
+export const covers = ["src/lib/relay.ts"];
 
 import http from "node:http";
 

@@ -6359,6 +6359,10 @@ export default function App() {
   const [effort, setEffort] = useState(() => normalizeEffort(localStorage.getItem("default-effort")) || DEFAULT_EFFORT);
   const [threads, setThreads] = useState<Thread[]>([]);
   const [thread, setThread] = useState<Thread | null>(null);
+  /** 会话切换耗时诊断（09-12 压测）：openThread 落笔，thread 真正换上去时结算并写入
+       window.__adbg。这是「点一下到内容可见」的真实值——比 e2e 里轮询文本可靠得多
+       （会话内容相同时文本不变，轮询会一直等到超时）。 */
+  const switchStartRef = useRef(0);
   const threadRef = useRef<Thread | null>(null);
   // 心跳监控联动：记录「引擎无响应→自动重启」标记，ready 时自动恢复当前线程；
   // 以及发送/运行态的快照 ref，供 status:error 分支复位（避免闭包读到旧 state）。
@@ -6374,21 +6378,27 @@ export default function App() {
   const runningStartedAtRef = useRef<Map<string, number>>(new Map());
   const markThreadRunning = useCallback((threadId: string, turnId?: string, startedAt = Date.now()) => {
     if (!threadId) return;
+    if (turnId) runningTurnIdsRef.current.set(threadId, turnId);
+    if (!runningStartedAtRef.current.has(threadId)) runningStartedAtRef.current.set(threadId, startedAt);
+    // 值判短路（09-12 多会话性能）：引擎会为**每个**会话反复推 thread/status/changed +
+    // turn/started，旧实现无条件 `new Set` + setState → 每来一条就整棵 App 重渲染一次
+    // （多会话时事件数 × N，而 App 是 1.1MB 单组件）。id 已在集合里就什么都不做。
+    if (runningThreadIdsRef.current.has(threadId)) return;
     const next = new Set(runningThreadIdsRef.current);
     next.add(threadId);
     runningThreadIdsRef.current = next;
     setRunningThreadIds(next);
-    if (turnId) runningTurnIdsRef.current.set(threadId, turnId);
-    if (!runningStartedAtRef.current.has(threadId)) runningStartedAtRef.current.set(threadId, startedAt);
   }, []);
   const markThreadStopped = useCallback((threadId?: string) => {
     if (!threadId) return;
+    runningTurnIdsRef.current.delete(threadId);
+    runningStartedAtRef.current.delete(threadId);
+    // 同上：本来就不在集合里（重复的 turn/completed、或从未标记过）→ 不 setState
+    if (!runningThreadIdsRef.current.has(threadId)) return;
     const next = new Set(runningThreadIdsRef.current);
     next.delete(threadId);
     runningThreadIdsRef.current = next;
     setRunningThreadIds(next);
-    runningTurnIdsRef.current.delete(threadId);
-    runningStartedAtRef.current.delete(threadId);
   }, []);
   const clearRunningThreads = useCallback(() => {
     runningThreadIdsRef.current = new Set();
@@ -7944,8 +7954,13 @@ export default function App() {
       实测：连发第二/三条正是这样退回贴底）。 */
   const pinnedScrollTopRef = useRef(-1);
   const [workStartedAt, setWorkStartedAt] = useState<number | null>(null);
-  const [nowTick, setNowTick] = useState(() => Date.now());
+  // 注意：这里曾有一个 `nowTick` 每秒 setState（原意给「已工作 X 秒」计时），但那个指示
+  // 已删除、App 层再无任何读取点 → 唯一效果是**每秒强制 App 全量重渲染一次**
+  // （App 是 1.1MB 单组件，多会话时 workStartedAt 几乎长期非空 = 常驻开销）。
+  // 相对时间的显示由各子组件自持的 30s tick 负责，App 层不再需要。
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** 会话切换起始时刻（诊断「切会话卡」用）：openThread 落笔，thread 真正换上去时结算。 */
+  const switchStartRef = useRef(0);
   const timelineWrapRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -8880,6 +8895,26 @@ const commandMatches = useMemo(() => {
       window.removeEventListener("codex:packet-reveal", onPacketReveal);
     };
   }, [thread?.id, scrollRef]);
+  // 会话切换耗时诊断（09-12 压测用）：openThread 落笔 switchStartRef，这里在 **DOM 已提交**
+  // 之后结算一次——这才是用户真正感知的「点一下到看见内容」的时间。
+  // 写进 window.__adbg（e2e 场景会 dump），不参与任何业务逻辑。
+  useLayoutEffect(() => {
+    if (!thread?.id || !switchStartRef.current) return;
+    const ms = Math.round(performance.now() - switchStartRef.current);
+    switchStartRef.current = 0;
+    try {
+      const w = window as any;
+      if (!w.__adbg) w.__adbg = [];
+      w.__adbg.push({ r: "thread-switch", id: String(thread.id).slice(0, 8), ms });
+    } catch { /* 诊断失败不影响功能 */ }
+  }, [thread?.id]);
+  // 多会话性能（09-12 P1）：把「当前正在查看哪个会话」上报主进程，主进程据此只把
+  // 该会话的高频事件（各种 delta / item 全文 / outputDelta）转发给渲染层——
+  // 后台会话的流式事件不再白白序列化跨进程、到了再被丢掉（N 会话 = N 倍无用开销）。
+  // 只订阅 thread?.id：覆盖 openThread / 新建会话 / 删除后回退 / 启动恢复全部路径。
+  useEffect(() => {
+    void window.codex.setActiveThread?.(thread?.id ?? null).catch(() => undefined);
+  }, [thread?.id]);
   // 流式出字时 scrollHeight 在涨，但既不触发 resize 也不触发 scroll，
   // 必须主动刷一次，否则「回到底部」按钮的出现时机是错的。
   useEffect(() => { updateBottomStateRef.current(); }, [thread]);
@@ -9148,11 +9183,7 @@ const commandMatches = useMemo(() => {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [showLogin, skillInstall, skillRemove, agentAsk, appConfirm, appPrompt, memoryPreview, searchPreview, filePreview, lightbox, modelEditor, connectorEditorOpen, connectorTemplateModal, commandEditor, subAgentEditorOpen, expertTeamEditorOpen, goalsOpen, memoryCenterOpen, memoryConfigOpen, infoModal, reviewReport, settingsOpen, shortcutsOpen, paletteOpen, skillMenuOpen, connectorMenuOpen, attachmentMenuOpen, contextOpen, switcherOpen, mobileNav, sidebarFlyout, autoFormVisible, taskMenuOpen, botManagerOpen, mobileRemoteOpen, ctxMenuOpen, accountMenuOpen, rightOpen]);
-  useEffect(() => {
-    if (workStartedAt == null) return;
-    const timer = window.setInterval(() => setNowTick(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [workStartedAt]);
+  // （原 App 层每秒 nowTick 定时器已移除：无读取点，纯重渲染开销，见 nowTick 处注释。）
 
   async function refreshThreads() {
     // 主侧栏只展示未归档会话；归档记录由「设置 → 归档管理」单独查看、恢复或删除。
@@ -11904,6 +11935,7 @@ const commandMatches = useMemo(() => {
   }, []);
 
   async function openThread(id: string, freshThread?: Thread | null) {
+    switchStartRef.current = performance.now();
     setChatSearchOpen(false);
     // 快速连点防竞态：只有最新一次切换的 resume 响应才允许落地渲染
     const seq = ++switchSeqRef.current;
@@ -12837,25 +12869,32 @@ const commandMatches = useMemo(() => {
   // 无缓存切换会话期间（thread 尚未恢复），顶部标题先用列表里的名称，避免闪「新任务」
   const switchingMeta = switchingThreadId ? threads.find((entry) => entry.id === switchingThreadId) : null;
 
-  const paletteSections = (() => {
+  // 命令面板条目（09-12 多会话性能）：原来是未 memo 的 IIFE，**每次 App 渲染**都要
+  // 过滤 threads + 整棵项目树、构造十几个带闭包的对象——而 onEvent 里的 setState
+  // 会让 App 高频重渲染（多会话时更密）。这里只对「数据」做记忆化：函数们不是
+  // useCallback（不在依赖里，否则每次渲染都变、memo 形同虚设），统一走 ref 取最新值。
+  const paletteHandlersRef = useRef({ startNewThread, chooseWorkspace, setSettingsPage, setSettingsOpen, setRightOpen, openPanelTab, openThread, openFile });
+  paletteHandlersRef.current = { startNewThread, chooseWorkspace, setSettingsPage, setSettingsOpen, setRightOpen, openPanelTab, openThread, openFile };
+  const paletteSections = useMemo(() => {
+    const H = paletteHandlersRef.current;
     const q = paletteQuery.toLowerCase();
     const match = (label: string) => label.toLowerCase().includes(q);
     const ops = [
-      { group: "建议", label: "新任务", shortcut: "Ctrl+N", icon: MessageSquarePlus, run: () => startNewThread() },
-      { group: "建议", label: "打开工作区", shortcut: "Ctrl+O", icon: FolderOpen, run: () => void chooseWorkspace() },
-      { group: "建议", label: "设置", icon: Settings2, run: () => { setSettingsPage("general"); setSettingsOpen(true); } },
-      { group: "面板", label: "切换侧边栏", shortcut: "Ctrl+B", icon: PanelRightOpen, run: () => setRightOpen((current) => !current) },
-      { group: "面板", label: "切换终端", shortcut: "Ctrl+J", icon: TerminalSquare, run: () => openPanelTab("terminal", workspace ? basename(workspace) : "终端") },
-      { group: "面板", label: "切换预览", icon: Globe2, run: () => openPanelTab("browser", "浏览器") },
-      { group: "面板", label: "打开变更视图", icon: GitBranch, run: () => openPanelTab("review", "变更") },
-      { group: "面板", label: "添加项目树标签", icon: FolderTree, run: () => openPanelTab("tree", "项目树") },
-      { group: "配置", label: "自动化", icon: Clock3, run: () => { setSettingsPage("schedule"); setSettingsOpen(true); } },
-      { group: "配置", label: "模型设置", icon: Bot, run: () => { setSettingsPage("model"); setSettingsOpen(true); } },
-      { group: "配置", label: "插件", icon: Store, run: () => { setSettingsPage("plugins"); setSettingsOpen(true); } },
-      { group: "配置", label: "记忆", icon: Archive, run: () => { setSettingsPage("memory"); setSettingsOpen(true); } },
+      { group: "建议", label: "新任务", shortcut: "Ctrl+N", icon: MessageSquarePlus, run: () => H.startNewThread() },
+      { group: "建议", label: "打开工作区", shortcut: "Ctrl+O", icon: FolderOpen, run: () => void H.chooseWorkspace() },
+      { group: "建议", label: "设置", icon: Settings2, run: () => { H.setSettingsPage("general"); H.setSettingsOpen(true); } },
+      { group: "面板", label: "切换侧边栏", shortcut: "Ctrl+B", icon: PanelRightOpen, run: () => H.setRightOpen((current) => !current) },
+      { group: "面板", label: "切换终端", shortcut: "Ctrl+J", icon: TerminalSquare, run: () => H.openPanelTab("terminal", workspace ? basename(workspace) : "终端") },
+      { group: "面板", label: "切换预览", icon: Globe2, run: () => H.openPanelTab("browser", "浏览器") },
+      { group: "面板", label: "打开变更视图", icon: GitBranch, run: () => H.openPanelTab("review", "变更") },
+      { group: "面板", label: "添加项目树标签", icon: FolderTree, run: () => H.openPanelTab("tree", "项目树") },
+      { group: "配置", label: "自动化", icon: Clock3, run: () => { H.setSettingsPage("schedule"); H.setSettingsOpen(true); } },
+      { group: "配置", label: "模型设置", icon: Bot, run: () => { H.setSettingsPage("model"); H.setSettingsOpen(true); } },
+      { group: "配置", label: "插件", icon: Store, run: () => { H.setSettingsPage("plugins"); H.setSettingsOpen(true); } },
+      { group: "配置", label: "记忆", icon: Archive, run: () => { H.setSettingsPage("memory"); H.setSettingsOpen(true); } },
     ].filter((row) => match(row.label));
-    const tasks = threads.filter((entry) => (entry.name ?? "").toLowerCase().includes(q) || (entry.preview ?? "").toLowerCase().includes(q)).map((entry) => ({ group: "任务", label: cleanThreadDisplayTitle(entry.name, { preview: entry.preview }), icon: MessageSquare, run: () => void openThread(entry.id) }));
-    const files = treeEntries.filter((entry) => !entry.isDirectory && entry.fileName.toLowerCase().includes(q)).map((entry) => ({ group: "文件", label: entry.fileName, icon: FileCode2, run: () => void openFile(`${treePath || workspace}${treePath || workspace ? (treePath.includes("\\") ? "\\" : "/") : ""}${entry.fileName}`) }));
+    const tasks = threads.filter((entry) => (entry.name ?? "").toLowerCase().includes(q) || (entry.preview ?? "").toLowerCase().includes(q)).map((entry) => ({ group: "任务", label: cleanThreadDisplayTitle(entry.name, { preview: entry.preview }), icon: MessageSquare, run: () => void H.openThread(entry.id) }));
+    const files = treeEntries.filter((entry) => !entry.isDirectory && entry.fileName.toLowerCase().includes(q)).map((entry) => ({ group: "文件", label: entry.fileName, icon: FileCode2, run: () => void H.openFile(`${treePath || workspace}${treePath || workspace ? (treePath.includes("\\") ? "\\" : "/") : ""}${entry.fileName}`) }));
     const sections: { group: string; rows: any[] }[] = [];
     if (paletteTab === "all" || paletteTab === "ops") for (const group of ["建议", "面板", "配置"]) {
       const rows = ops.filter((row) => row.group === group);
@@ -12864,11 +12903,13 @@ const commandMatches = useMemo(() => {
     if ((paletteTab === "all" || paletteTab === "tasks") && tasks.length) sections.push({ group: "任务", rows: tasks });
     if ((paletteTab === "all" || paletteTab === "files") && files.length) sections.push({ group: "文件", rows: files });
     return sections;
-  })();
+  }, [paletteQuery, paletteTab, threads, treeEntries, treePath, workspace]);
   const fileTruncated = filePreview?.kind === "text" && filePreview.content.length >= 200_000;
   const usage = tokenUsage?.total ?? tokenUsage?.last ?? tokenUsage;
   const lastUsage = tokenUsage?.last ?? usage;
-  const completedTurns = thread?.turns.filter((turn) => turn.status !== "inProgress") ?? [];
+  // 记忆化理由同 paletteSections：原来每次 App 渲染都新建数组（O(回合数)），
+  // 而 onEvent 高频 setState 会让它每帧都跑一遍。
+  const completedTurns = useMemo(() => thread?.turns.filter((turn) => turn.status !== "inProgress") ?? [], [thread?.turns]);
   const latestCompletedTurn = completedTurns.at(-1);
   const stats = usageStats;
   const activeFlags: string[] = thread?.status?.activeFlags ?? [];
@@ -13142,7 +13183,7 @@ const commandMatches = useMemo(() => {
               <small>向上滚动到此也会自动继续加载</small>
             </button>
           )}
-          {thread?.turns.slice(Math.max(0, thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW))).map((turn) => <MemoTurnView turn={turn} isLastTurn={turn.id === thread.turns[thread.turns.length - 1]?.id} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={tokenUsage} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />)}
+          {thread?.turns.slice(Math.max(0, thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW))).map((turn) => <MemoTurnView turn={turn} isLastTurn={turn.id === thread.turns[thread.turns.length - 1]?.id} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={turn.id === latestCompletedTurn?.id || turn.id === activeTurnId ? tokenUsage : null} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />)}
           {optimisticInput && !optimisticConfirmed && <div id="chat-anchor"><ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} /></div>}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
           {systemEvents.map((event) => <div className={`system-event ${event.tone ?? "info"}`} key={event.id}><strong>{event.tone === "success" ? <CircleCheck size={13} className="system-event-icon" /> : null}{event.title}</strong><Markdown>{event.text}</Markdown></div>)}
@@ -13184,6 +13225,21 @@ const commandMatches = useMemo(() => {
               乐观气泡不再触发大缓冲（它会在服务端消息确认后消失，大缓冲会残留成空白）。 */}
           {(activeTurnId || sending || (optimisticInput && !optimisticConfirmed)) ? <div className="timeline-bottom-spacer compact" aria-hidden />
             : null}
+          {/* 排队消息的对话区反馈（用户要求：把发出去排队的内容正常展示出来）：
+              排队中的消息在输入框上方有管理卡，但**对话区里完全看不到** —— 发完消息
+              却像什么都没发生。这里在时间线末尾按队列顺序渲染成浅色气泡，带「排队中 n」
+              角标；只在当前会话运行中、队列非空时出现，不干扰正在流式的正文。
+              点击气泡 = 立即注入（等价输入框上方卡片的「立即」）。 */}
+          {queue.length > 0 && (
+            <div className="timeline-queue" data-queue-count={queue.length}>
+              {queue.map((entry: QueueItem, index: number) => (
+                <div className="timeline-queue-item" key={entry.id} onClick={() => void startQueued(entry.id)} title="点击立即注入思路（不打断当前任务）">
+                  <span className="timeline-queue-badge"><Clock3 size={11} />排队中 {index + 1}/{queue.length}</span>
+                  <span className="timeline-queue-text">{inputText(entry.input) || "（图片/附件）"}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {/* 锚顶留白（高度由钉顶逻辑按「视口高 − 锚点高」动态设置）：
               让短消息下方也有一屏空间，scrollTop 才够得着锚点、消息才能钉在顶部。
               非钉顶时高度为 0（inline style 控制），不占位、不影响贴底。

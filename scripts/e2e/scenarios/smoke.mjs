@@ -6,6 +6,12 @@
 
 export const name = "smoke";
 export const description = "冒烟：跳过引导 → 主界面骨架 → 输入框/#//面板 → 侧栏 → 右栏 → 设置弹窗";
+/** 本场景负责覆盖的源文件（供 run.mjs 做「只跑受影响场景」的增量判断）。
+    注意：输入框 / 设置弹窗的组件实体都在 src/App.tsx 内（没有独立的 ComposerEditor/
+    SettingsModal 文件），所以这里不声明 App.tsx——App.tsx 是全部功能的共同依赖，
+    声明它会让本场景在每次 App.tsx 改动时都跑。真正的兜底由 run.mjs 的
+    「未被任何场景覆盖的改动」告警负责，不靠这里硬绑。 */
+export const covers = ["src/components/SettingsWidgets.tsx", "src/components/BrowserPane.tsx"];
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
