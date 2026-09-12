@@ -600,8 +600,8 @@ ipcMain.handle("voice:zipvoice-install", async () => {
   try {
     const result = await ensureZipvoice(
       voiceModelsRoot,
-      toolsRoot,
-      (progress) => sendToWindow("voice:event", { type: "download", ...progress }),
+      toolsRoot(),
+      (progress) => sendToWindow("voice:event", { type: "download", ...progress, target: "zipvoice" }),
       zipvoiceAbort.signal,
     );
     sendToWindow("voice:event", { type: "downloadDone", ok: result.ok, error: result.ok ? undefined : (result as any).error, target: "zipvoice" });
@@ -1797,16 +1797,7 @@ app.whenReady().then(async () => {
     onMessage: (message) => void handleWeixinMessage(message),
     log: (level, message) => {
       channelLogs.push({ at: Date.now(), level, message });
-      // 同步落盘：网关故障（token 失效/发送失败）此前只在内存和 UI 事件里，窗口没开就丢，
-      // 排查「微信消息没同步」时完全瞎抓（09-12 事故）。1MB 轮转。
-      try {
-        const logFile = path.join(app.getPath("userData"), "channel-logs", "gateway.log");
-        if (!existsSync(logFile) || statSync(logFile).size > 1024 * 1024) {
-          mkdirSync(path.dirname(logFile), { recursive: true });
-          if (existsSync(logFile)) renameSync(logFile, logFile.replace(/\.log$/, ".old"));
-        }
-        appendFileSync(logFile, `[${new Date().toISOString()}] [${level}] ${message}\n`, "utf8");
-      } catch { /* 日志落盘失败不影响主流程 */ }
+      persistChannelLog(level, message);
       sendToWindow("channel-bot:event", { level, message, at: Date.now(), status: channelBot.status() });
     },
   });
@@ -2087,7 +2078,21 @@ ipcMain.handle("telegram:status", async () => ({ bound: telegramGateway.hasSessi
 // ── 新增渠道（飞书/钉钉/QQ/企微Webhook）：统一走 handleChannelMessage 管线 ──
 function channelLog(level: "info" | "error", message: string) {
   channelLogs.push({ at: Date.now(), level, message });
+  persistChannelLog(level, message);
   sendToWindow("channel-bot:event", { level, message, at: Date.now(), status: channelBot.status() });
+}
+
+/** 渠道网关日志统一落盘（1MB 轮转 .old）：token 失效/发送失败这类事故只存在内存和 UI
+ *  事件里时，窗口没开就丢——「消息没同步」类问题排查全靠它（09-12 微信事故教训）。 */
+function persistChannelLog(level: "info" | "error", message: string) {
+  try {
+    const logFile = path.join(app.getPath("userData"), "channel-logs", "gateway.log");
+    if (!existsSync(logFile) || statSync(logFile).size > 1024 * 1024) {
+      mkdirSync(path.dirname(logFile), { recursive: true });
+      if (existsSync(logFile)) renameSync(logFile, logFile.replace(/\.log$/, ".old"));
+    }
+    appendFileSync(logFile, `[${new Date().toISOString()}] [${level}] ${message}\n`, "utf8");
+  } catch { /* 日志落盘失败不影响主流程 */ }
 }
 
 const feishuGateway = new FeishuGateway({

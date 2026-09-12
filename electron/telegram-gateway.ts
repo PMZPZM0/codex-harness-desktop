@@ -46,10 +46,16 @@ export class TelegramGateway {
         if (!data.ok) { this.log("error", `getUpdates 失败：${data.description ?? ""}`); await new Promise((r) => setTimeout(r, 3000)); continue; }
         for (const update of data.result ?? []) {
           this.offset = Math.max(this.offset, update.update_id + 1);
-          const text = update.message?.text?.trim();
-          const chatId = update.message?.chat?.id;
-          const from = update.message?.from?.username ?? update.message?.from?.first_name ?? String(chatId ?? "");
-          if (text && chatId) this.events.onMessage({ from, chatId, text });
+          const message = update.message;
+          const text = message?.text?.trim();
+          const chatId = message?.chat?.id;
+          const from = message?.from?.username ?? message?.from?.first_name ?? String(chatId ?? "");
+          if (text && chatId) { this.events.onMessage({ from, chatId, text }); continue; }
+          // 非文本消息（语音条/图片/贴纸等）：明确告知不支持，不再静默丢弃（微信同款事故教训）
+          if (chatId && message && !text) {
+            const kind = message.voice || message.video_note ? "语音条" : message.photo ? "图片" : "非文本消息";
+            this.sendText(chatId, `暂不支持${kind}。请用 Telegram 的语音转文字，或直接打字发送～`).catch(() => { /* 尽力而为 */ });
+          }
         }
       } catch (error: any) {
         if (!this.running) break;
@@ -68,7 +74,11 @@ export class TelegramGateway {
         signal: AbortSignal.timeout(15_000),
       });
       const data = await res.json();
-      if (!data.ok) throw new Error(`Telegram 发送失败：${data.description ?? ""}`);
+      if (!data.ok) {
+        // 发送失败必须留痕：流式最终回复失败被上层 catch 吞掉时，这里就是唯一线索
+        this.log("error", `sendMessage 失败（chat ${chatId}）：${data.description ?? ""}`);
+        throw new Error(`Telegram 发送失败：${data.description ?? ""}`);
+      }
     }
   }
 
