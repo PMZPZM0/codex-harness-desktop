@@ -267,6 +267,36 @@ const CHECKS = [
         // 钉顶的核心：视口**没有**停在内容最底部
         h.check(`[${label}] 视口没被贴底接管（钉顶而非贴底）`, m?.atBottom === false, `scrollTop=${m?.scrollTop} max=${m?.max}`);
       }
+
+      // ── 弹跳判据（09-12 用户反馈「钉顶想往上、跟随想往下，来回拉扯、上下弹跳」）──
+      // 采样整段流式期间的 scrollTop：钉顶与跟随如果各抢一次，就会出现**方向反转**。
+      // 判据：相邻采样的最大跳变有界；方向反转次数极少（正常跟随是单向递增）。
+      await h.clearInput(".composer-editor");
+      await h.typeInto(".composer-editor", "请从 1 数到 30，每个数字单独一行，每行后面加一句十字以上的说明。");
+      await wait(250);
+      await h.click(".send-button");
+      const samples = [];
+      for (let i = 0; i < 45; i++) {
+        const v = await h.eval(`(() => { const tl = document.querySelector(".timeline"); return tl ? Math.round(tl.scrollTop) : -1; })()`);
+        samples.push(Number(v));
+        await wait(70);
+      }
+      const deltas = [];
+      for (let i = 1; i < samples.length; i++) deltas.push(samples[i] - samples[i - 1]);
+      const maxJump = deltas.length ? Math.max(...deltas.map((d) => Math.abs(d))) : 0;
+      let reversals = 0;
+      let dir = 0;
+      for (const d of deltas) {
+        if (Math.abs(d) < 2) continue;             // 抖动量级不算方向
+        const next = d > 0 ? 1 : -1;
+        if (dir !== 0 && next !== dir) reversals += 1;
+        dir = next;
+      }
+      console.log(`  [弹跳] 采样 ${samples.length} 次；最大相邻跳变 ${maxJump}px；方向反转 ${reversals} 次`);
+      console.log(`  [弹跳] 轨迹(前 20): ${JSON.stringify(samples.slice(0, 20))}`);
+      // 反转阈值放宽到 2（流式里偶尔一次基线重置是允许的）；来回拉扯会产生几十次反转
+      h.check("流式期间视口没有来回拉扯（方向反转 ≤ 2 次）", reversals <= 2, `reversals=${reversals} samples=${JSON.stringify(samples.slice(0, 24))}`);
+      h.check("相邻跳变有界（≤ 400px，无整屏弹跳）", maxJump <= 400, `maxJump=${maxJump}px deltas=${JSON.stringify(deltas.slice(0, 24))}`);
       await h.screenshot("发送钉顶");
     },
   },
