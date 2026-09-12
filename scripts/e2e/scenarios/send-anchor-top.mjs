@@ -127,12 +127,11 @@ export const steps = [
   },
 
   {
-    name: "② 第一条（长消息）：钉顶 + 流式稳定",
+    name: "② 第一条（**短**消息）：钉顶 + 流式稳定",
     run: async (h) => {
-      const longText = "【标记一】请记住以下测试材料，之后我会提问。"
-        + "窗口化渲染是长会话性能的关键。".repeat(150)
-        + "\n问题：只回答一个数字，1+1=?";
-      await sendAndAssertPinned(h, longText, "第一条");
+      // 短消息：能装进一屏 → 应当钉顶（长消息另有 ⑥ter 专门验「跟到回复位置」）
+      const shortText = "【标记一】只回答一个数字，1+1=?";
+      await sendAndAssertPinned(h, shortText, "第一条");
     },
   },
 
@@ -200,6 +199,44 @@ export const steps = [
       h.check("[长回复] 最后一个回合的底部落在视口内（正文没被推出屏幕）",
         vis.lastBottom != null && vis.lastBottom <= vis.viewBottom + 4, JSON.stringify(vis));
       await h.screenshot("长回复可见性");
+    },
+  },
+
+  {
+    name: "⑥ter **长消息（自身超一屏）→ 直接跟到 agent 回复位置**",
+    run: async (h) => {
+      // 构造一条明显超过一屏的用户消息（约 3 屏）
+      const huge = "【标记超长】" + "这是一段用于把用户消息撑到超过一屏的填充文本，目的是验证长消息不钉顶而是跟到回复。".repeat(90);
+      await h.clearInput(".composer-editor");
+      await h.typeInto(".composer-editor", huge);
+      await wait(300);
+      await h.click(".send-button");
+      const appeared = await h.waitFor(`!!document.querySelector("#chat-anchor") || [...document.querySelectorAll(".turn-group")].some(g => (g.innerText||"").includes("标记超长"))`, { label: "超长消息出现", timeoutMs: 20000 }).then(() => true).catch(() => false);
+      h.check("[超长] 消息已发出并渲染", appeared);
+      await wait(3500);   // 等回复开始出现
+      const r = await h.eval(`(() => {
+        const s = document.querySelector("${SCROLLER}");
+        const groups = [...document.querySelectorAll(".turn-group")];
+        const last = groups[groups.length - 1];
+        const lastUser = [...groups].reverse().find((g) => (g.innerText || "").includes("标记超长"));
+        const ur = lastUser ? lastUser.getBoundingClientRect() : null;
+        const sr = s.getBoundingClientRect();
+        return {
+          away: Math.round(s.scrollHeight - s.scrollTop - s.clientHeight),
+          maxScroll: Math.round(s.scrollHeight - s.clientHeight),
+          userTopVisible: ur ? Math.round(ur.top - sr.top) : null,
+          userBottomVisible: ur ? Math.round(ur.bottom - sr.top) : null,
+          viewH: Math.round(sr.height),
+          lastBottom: last ? Math.round(last.getBoundingClientRect().bottom - sr.top) : null,
+        };
+      })()`);
+      console.log(`  [超长消息] ${JSON.stringify(r)}`);
+      // 核心：长消息不钉顶，视口停在内容尾部区域（跟到 agent 回复位置）。
+      // 容差按「流式增长量」给：断言瞬间可能刚好又长了一段，away 会有几十~百来像素的浮动；
+      // 关键判据是**绝不能停在长消息开头**（那会让 away ≈ 整条消息高度，实测 1990+）。
+      h.check("[超长] 视口已跟到内容底部（away ≤ 240px，即 agent 回复位置可见）", r.away <= 240, JSON.stringify(r));
+      h.check("[超长] 最后一个回合底部在视口内", r.lastBottom != null && r.lastBottom <= r.viewH + 4, JSON.stringify(r));
+      await h.screenshot("超长消息跟到回复");
     },
   },
 
