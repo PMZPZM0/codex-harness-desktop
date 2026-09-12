@@ -1447,6 +1447,12 @@ button {
 .timeline-bottom-spacer.compact {
   height: 64px;
 }
+/* 锚顶专用留白（09-12）：高度由 App.tsx 钉顶逻辑按「视口高 − 锚点高」写成
+   inline style。这里只负责把默认的 max(360px, 100vh-360px) 归零，避免非钉顶
+   状态下凭空多出一屏空白。 */
+.timeline-bottom-spacer.anchor-pad {
+  height: 0;
+}
 .jump-bottom {
   border: 1px solid var(--line);
   background: var(--panel);

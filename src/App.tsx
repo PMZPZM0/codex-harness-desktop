@@ -7926,6 +7926,23 @@ export default function App() {
   const anchorTurnIdRef = useRef<string | null>(null);
   /** 锚元素的内容坐标兜底值（锚元素已卸载时用） */
   const contentAnchorTopRef = useRef(0);
+  /** 锚顶专用底部留白：把「锚点下方」补足到一整屏，让短消息也能钉到顶部。
+      几何原因（09-12 实测探针实锤）：视口高 622px、短消息只有 72px，若下方没有
+      内容顶着，scrollTop 会被浏览器钳在 maxScroll → 消息停在视口中间，随后被贴底
+      接管（away=0）。第一条长消息能成，正是因为它自己就撑满了一屏。
+      高度必须随锚点高度自适应（= clientHeight - 锚高），否则大留白会把下一个
+      新消息的坐标一起撑大（实测 want 因此比 maxScroll 还大）。 */
+  const anchorSpacerRef = useRef<HTMLDivElement | null>(null);
+  /** 解除锚顶/贴底接管时的收尾：把锚顶留白归零，否则会残留一屏空白。 */
+  const clearAnchorPad = useCallback(() => {
+    const pad = anchorSpacerRef.current;
+    if (pad) pad.style.height = "0px";
+  }, []);
+  /** 最近一次钉顶实际落到的 scrollTop。用于区分「程序滚动」与「用户滚到底」：
+      锚顶时若锚点下方内容不足，scrollTop 会被浏览器钳到 maxScroll（= 贴底位置），
+      这个「非用户意愿」的增大若被 update() 当成用户滚到底就会解除钉顶（09-12
+      实测：连发第二/三条正是这样退回贴底）。 */
+  const pinnedScrollTopRef = useRef(-1);
   const [workStartedAt, setWorkStartedAt] = useState<number | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -8796,6 +8813,8 @@ const commandMatches = useMemo(() => {
       if (scroller.scrollTop < lastTop - 2 && dist > 4) {
         stickToBottomRef.current = false;
         anchorTopRef.current = false; // 用户主动上滚 = 解除钉顶（否则下次更新又被钉回去）
+        pinnedScrollTopRef.current = -1;
+        clearAnchorPad();
       }
       // 迟滞：距底 ≤4px 重新开启跟随；>25% 视口才关闭。中间地带保持原状，
       // 避免流式内容增高时 stick 反复翻转（此前 smooth 滚动动画的中间滚动事件
@@ -8805,7 +8824,10 @@ const commandMatches = useMemo(() => {
         // 只有「scrollTop 真实增大」（用户主动往下滚）到触底才解除钉顶；回合完成时
         // 思考卡折叠等会让内容高度骤减、dist 瞬间 ≤4——那不是用户行为，解除钉顶
         // 会让第二条消息起全部退回旧行为（09-12 实测）
-        if (scroller.scrollTop > lastTop + 2) { dbg("cancel:bottom-scroll"); anchorTopRef.current = false; }
+        // 且钉顶被 clamp 的那次增大也要放过：它就是钉顶自己把 scrollTop 顶到 maxScroll
+        // 造成的，与用户滚到底无法区分——否则短消息一钉顶就自杀（09-12 实测复现）。
+        const byUs = Math.abs(scroller.scrollTop - pinnedScrollTopRef.current) <= 2;
+        if (scroller.scrollTop > lastTop + 2 && !byUs) { dbg("cancel:bottom-scroll"); anchorTopRef.current = false; pinnedScrollTopRef.current = -1; clearAnchorPad(); }
       }
       else if (dist > scroller.clientHeight * 0.25) stickToBottomRef.current = false;
       lastTop = scroller.scrollTop;
@@ -8815,6 +8837,8 @@ const commandMatches = useMemo(() => {
       if (event.deltaY < 0) {
         stickToBottomRef.current = false;
         anchorTopRef.current = false;
+        pinnedScrollTopRef.current = -1;
+        clearAnchorPad();
       }
     };
     updateBottomStateRef.current = update;
@@ -8882,9 +8906,17 @@ const commandMatches = useMemo(() => {
       let a: HTMLElement | null = null;
       if (anchorTurnIdRef.current) a = document.getElementById(`turn-${anchorTurnIdRef.current}`);
       if (!a) a = anchorElRef.current;
+      // 先按锚点高度补足底部留白，再量坐标：留白本身就是为「让锚点能滚到顶部」
+      // 而存在的，必须先落盘尺寸，量出来的 contentOffsetTop 才与最终布局一致。
+      if (a && a.isConnected && anchorSpacerRef.current) {
+        const aH = a.getBoundingClientRect().height;
+        anchorSpacerRef.current.style.height = `${Math.max(0, Math.round(el.clientHeight - aH))}px`;
+      }
       if (a && a.isConnected) contentAnchorTopRef.current = contentOffsetTop(a, el) - 6;
       selfScrollUntilRef.current = Date.now() + 80;
       scrollToOffsetInstant(el, contentAnchorTopRef.current);
+      // 记下本次钉顶实际落点（可能被 clamp），供 update() 区分程序滚动与用户滚到底
+      pinnedScrollTopRef.current = el.scrollTop;
       return;
     }
     if (!stickToBottomRef.current) return;
@@ -8902,10 +8934,17 @@ const commandMatches = useMemo(() => {
     const anchor = document.getElementById("chat-anchor");
     if (!el || !anchor) return;
     dbg("init-pin");
+    // 与确认后的钉顶同款：先按锚点高度补足底部留白，短消息才可能被滚到顶部
+    // （否则 scrollTop 被钳在 maxScroll，落回贴底观感）
+    if (anchorSpacerRef.current) {
+      const aH = anchor.getBoundingClientRect().height;
+      anchorSpacerRef.current.style.height = `${Math.max(0, Math.round(el.clientHeight - aH))}px`;
+    }
     contentAnchorTopRef.current = contentOffsetTop(anchor, el) - 6;
     anchorElRef.current = anchor;
     selfScrollUntilRef.current = Date.now() + 80;
     scrollToOffsetInstant(el, contentAnchorTopRef.current);
+    pinnedScrollTopRef.current = el.scrollTop;
   }, [optimisticInput]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -13139,6 +13178,11 @@ const commandMatches = useMemo(() => {
               乐观气泡不再触发大缓冲（它会在服务端消息确认后消失，大缓冲会残留成空白）。 */}
           {(activeTurnId || sending || (optimisticInput && !optimisticConfirmed)) ? <div className="timeline-bottom-spacer compact" aria-hidden />
             : null}
+          {/* 锚顶留白（高度由钉顶逻辑按「视口高 − 锚点高」动态设置）：
+              让短消息下方也有一屏空间，scrollTop 才够得着锚点、消息才能钉在顶部。
+              非钉顶时高度为 0（inline style 控制），不占位、不影响贴底。
+              注意它必须排在 #chat-anchor（乐观气泡）之后。 */}
+          <div className="timeline-bottom-spacer anchor-pad" ref={anchorSpacerRef} style={{ height: 0 }} aria-hidden />
         </div>
           {switchingThreadId && (
             <div className={`thread-switch-overlay ${switchingFading ? "fading" : ""}`} role="status"><Spinner /><span>正在恢复会话…</span></div>
