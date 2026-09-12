@@ -4949,6 +4949,13 @@ function usePacketRevealText(
       return;
     }
     setRevealing(true);
+    // 诊断（09-12）：记录「这次揭示要播多少字」。切会话若出现异常大的 animated 值
+    // （接近全文长度），就是「正文重复播放」的实锤——e2e 读 window.__adbg 核对。
+    try {
+      const w = window as any;
+      if (!w.__adbg) w.__adbg = [];
+      w.__adbg.push({ r: "reveal", key: String(key).slice(0, 12), from: start.length, to: text.length, animated: remaining });
+    } catch { /* 诊断失败不影响功能 */ }
     // 速率按剩余量自适应：尾段逐字精雕（打字感），长文自动提速不拖沓。
     const step = Math.max(1, Math.min(revealStepFor(remaining), Math.ceil(remaining / 3)));
     let end = start.length;
@@ -8921,6 +8928,12 @@ const commandMatches = useMemo(() => {
       window.removeEventListener("codex:packet-reveal", onPacketReveal);
     };
   }, [thread?.id, scrollRef]);
+  // 锚顶留白只在「当前会话的钉顶期间」有效：会话一变立刻归零，
+  // 否则切走再切回会在底部留一大段空白（用户实测「流动空间太大」）。
+  useEffect(() => {
+    clearAnchorPad();
+  }, [thread?.id, clearAnchorPad]);
+
   // 会话切换耗时诊断（09-12 压测用）：openThread 落笔 switchStartRef，这里在 **DOM 已提交**
   // 之后结算一次——这才是用户真正感知的「点一下到看见内容」的时间。
   // 写进 window.__adbg（e2e 场景会 dump），不参与任何业务逻辑。
@@ -8958,6 +8971,7 @@ const commandMatches = useMemo(() => {
       switchJumpRef.current = false;
       // 切会话 = 全新定位（贴底看最新），不携带上一个会话遗留的锚定模式
       anchorTopRef.current = false;
+      clearAnchorPad();   // 上一个会话的锚顶留白不能带到新会话（否则新会话底部一大段空白）
       stickToBottomRef.current = true;
       jumpToBottom(el);
       return;
@@ -9971,6 +9985,10 @@ const commandMatches = useMemo(() => {
           markThreadRunning(params.threadId, params.turn?.id ?? params.turnId);
         } else if (method0 === "turn/completed") {
           markThreadStopped(params.threadId);
+          // 回合结束：锚顶留白归零。它只在「钉顶期间」为让锚点滚得上去而存在，
+          // 回合结束后继续留着就会在底部残留一大段空白（用户实测「流动空间太大，
+          // 汇总时上面消息都看不到」）。
+          clearAnchorPad();
         } else if (method0 === "thread/status/changed") {
           // 侧边栏每个会话的运行状态：即使不是当前会话也要更新，保证切走后转圈还在原会话
           setThreads((current) => current.map((entry) => entry.id === params.threadId ? { ...entry, status: params.status } : entry));
