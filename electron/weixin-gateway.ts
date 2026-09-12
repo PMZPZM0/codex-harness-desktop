@@ -133,15 +133,29 @@ export class WeixinGateway {
   private async startPolling() {
     if (this.running) return;
     this.running = true;
+    let tokenErrors = 0;
     while (this.running && this.token) {
       try {
         const response = await post(this.baseUrl, "ilink/bot/getupdates", { get_updates_buf: this.updatesBuf, base_info: baseInfo() }, this.token, UPDATES_POLL_TIMEOUT_MS);
         if (response.ret !== undefined && response.ret !== 0) {
           this.log("error", `getupdates 失败 ret=${response.ret} ${response.errmsg ?? ""}`);
-          if (response.ret === -14 || /token/i.test(response.errmsg ?? "")) { this.log("error", "登录态失效，请重新扫码"); this.stop(); break; }
+          if (response.ret === -14 || /token/i.test(response.errmsg ?? "")) {
+            // 网络抖动可能偶发误报：连续 3 次确认是登录态失效才停（停了必须重新扫码，
+            // 误停一次用户就得重扫一次——宁可多试）。停掉后日志必须可见可查（主进程会落盘）。
+            tokenErrors += 1;
+            if (tokenErrors >= 3) {
+              this.log("error", "微信登录态已失效，机器人停止收消息；请到 设置→机器人管理 重新扫码绑定");
+              this.stop();
+              break;
+            }
+            await new Promise((r) => setTimeout(r, 5000));
+            continue;
+          }
+          tokenErrors = 0;
           await new Promise((r) => setTimeout(r, 3000));
           continue;
         }
+        tokenErrors = 0;
         if (response.get_updates_buf) this.updatesBuf = response.get_updates_buf;
         for (const msg of response.msgs ?? []) this.dispatchInbound(msg);
       } catch (error: any) {
@@ -155,8 +169,16 @@ export class WeixinGateway {
     const from = String(msg.from_user_id ?? "");
     if (!from || msg.message_type === 2 /* BOT 自身 */) return;
     const text = (msg.item_list ?? []).filter((item: any) => item.type === 1 && item.text_item?.text).map((item: any) => item.text_item.text).join("\n").trim();
-    if (!text) return;
     if (msg.context_token) this.contextTokens.set(from, msg.context_token);
+    if (!text) {
+      // 语音条/图片等非文本消息：明确告知不支持（此前静默丢弃，用户以为已送达桌面端）
+      const kinds = (msg.item_list ?? []).map((item: any) => item.type).join(",");
+      if (kinds) {
+        this.log("info", `收到 ${from} 的非文本消息（item 类型 ${kinds}），已回复引导`);
+        this.sendText(from, "暂不支持语音条 / 图片消息。请用键盘的「语音转文字」输入，或直接打字发送～").catch(() => { /* 尽力而为 */ });
+      }
+      return;
+    }
     this.events.onMessage({ from, text, contextToken: msg.context_token ?? this.contextTokens.get(from) ?? "" });
   }
 
@@ -197,7 +219,11 @@ export class WeixinGateway {
       base_info: baseInfo(),
     };
     const response = await post(this.baseUrl, "ilink/bot/sendmessage", body, this.token);
-    if (response.ret && response.ret !== 0) throw new Error(`微信发送失败 ret=${response.ret} ${response.errmsg ?? ""}`);
+    if (response.ret && response.ret !== 0) {
+      // 发送失败必须留痕：流式追加/收尾失败此前被上层静默吞掉，正文丢没丢完全无从排查（09-12 事故）
+      this.log("error", `sendmessage 失败 ret=${response.ret} ${response.errmsg ?? ""} (state=${opts?.state ?? 2}, to=${to})`);
+      throw new Error(`微信发送失败 ret=${response.ret} ${response.errmsg ?? ""}`);
+    }
   }
 
   // ── 持久化 ────────────────────────────────────────────────

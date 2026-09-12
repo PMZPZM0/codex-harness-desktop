@@ -66,6 +66,8 @@ async function runScenario(name) {
     artifactsDir: join(ROOT, ".e2e-artifacts"),
     // 多场景共用一个截图目录：文件名带场景前缀，避免互相覆盖
     namePrefix: `${name}-`,
+    // 场景可自带 harness 选项（如 seedProfile 预播种钩子）
+    ...(scenario.harnessOpts || {}),
   });
   const t0 = Date.now();
   const results = [];

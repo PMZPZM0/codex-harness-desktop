@@ -1,6 +1,6 @@
 {
   "name": "codex-harness-desktop",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "private": true,
   "description": "Independent desktop harness for OpenAI Codex",
   "main": "dist-electron/main.js",
@@ -17,6 +17,7 @@
     "verify:reasoning": "node scripts/verify-reasoning-transport.cjs",
     "verify:image-plugin": "node scripts/verify-image-plugin.mjs",
     "verify:packaged-tools": "node scripts/verify-packaged-tools.cjs",
+    "voice:models": "node scripts/install-voice-models.cjs",
     "engine:upgrade": "node scripts/upgrade-codex-engine.cjs",
     "engine:verify": "node scripts/upgrade-codex-engine.cjs --verify-only",
     "start": "electron .",
@@ -40,6 +41,7 @@
     "react-syntax-highlighter": "^16.1.1",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
+    "sherpa-onnx-node": "^1.13.8",
     "ssh2": "^1.17.0",
     "ws": "^8.21.3"
   },
@@ -155,7 +157,8 @@
     ],
     "asarUnpack": [
       "node_modules/@openai/codex-*/vendor/**",
-      "node_modules/@lydell/node-pty/**"
+      "node_modules/@lydell/node-pty/**",
+      "node_modules/sherpa-onnx-*/**"
     ],
     "win": {
       "target": "nsis",

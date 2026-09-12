@@ -10,6 +10,8 @@ type ProviderModelConfig = {
   outputTypes?: ("text" | "image" | "video")[];
   /** 该模型支持的思考档位（按声明顺序）；缺省 low/medium/high */
   efforts?: string[];
+  /** 用户为该模型选定的思考档位（档案持久化；切供应商/切模型时自动应用） */
+  effort?: string;
 };
 
 /** 与 electron/main.ts 的 CustomModelFile 对应（不含 encryptedKey，改为 hasKey） */
@@ -21,6 +23,8 @@ type CustomModelState = {
   contextWindow: number;
   wireApi?: "responses" | "chat";
   hasKey?: boolean;
+  /** 当前生效模型的思考档位（档案同步；config.toml 顶层 model_reasoning_effort 同源） */
+  effort?: string;
   models?: ProviderModelConfig[];
   enabled?: boolean;
 };
@@ -116,7 +120,7 @@ type PluginMarketEntry = {
 };
 type PluginMarketInstallResult = { id: string; name: string; path: string; version: string; description: string; marketId: string; sourceUrl: string; engineRegistered?: boolean; engineCheckMessage?: string };
 type LocalSkillEntry = { name: string; folder?: string; path: string; description: string; descriptionZh?: string; marketId?: string; pluginId?: string; sourceUrl?: string; installedAt?: string; engineRegistered?: boolean; engineCheckMessage?: string; source?: "cocoloop" | "skillhub" | "local"; enabled?: boolean; allowedTools?: string[]; icon?: string; category?: string };
-type PersonalizationConfig = { nickname?: string; customInstructions?: string };
+type PersonalizationConfig = { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean };
 
 /** SSH 跳板机（ProxyJump）配置 */
 type SshJumpHost = {
@@ -212,7 +216,7 @@ type CodexEvent = {
   status?: "starting" | "ready" | "stopped" | "error";
   message?: string;
 };
-type DevRuntimeEntry = { id: string; name: string; description: string; size: string; marker: string; builtIn?: boolean; kind?: "download" | "browsers" | "guide"; installed: boolean; installedBySystem?: boolean; installing: boolean };
+type DevRuntimeEntry = { id: string; name: string; description: string; size: string; marker: string; builtIn?: boolean; kind?: "download" | "browsers" | "guide" | "plugin"; noUninstall?: boolean; installed: boolean; installedBySystem?: boolean; installing: boolean };
 
 interface Window {
   codex: {
@@ -302,7 +306,8 @@ interface Window {
     /** 设置/清除某个 MCP 工具的权限档位；mode 传 null 清除。改动后引擎重启生效 */
     setMcpToolPermission(server: string, tool: string, mode: "deny" | "ask" | "allow" | null): Promise<{ ok: boolean; updated: boolean; reason?: string }>;
     readPersonalization(): Promise<PersonalizationConfig>;
-    savePersonalization(input: { nickname?: string; customInstructions?: string }): Promise<PersonalizationConfig>;
+    savePersonalization(input: { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean }): Promise<PersonalizationConfig>;
+    saveIdentity(input: Record<string, string>): Promise<unknown>;
     /** 应用级运行时开关（联网搜索等） */
     readAppSettings(): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off" }>;
     saveAppSettings(patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off" }): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean }>;
@@ -367,6 +372,10 @@ interface Window {
     listCustomModels(): Promise<{ providers: ProviderSummary[]; current: string | null }>;
     selectCustomModel(providerId: string): Promise<CustomModelState>;
     setProviderModel(input: { provider: string; model: string; apply?: boolean; restart?: boolean }): Promise<CustomModelState>;
+    setProviderEffort(input: { provider: string; model: string; effort: string }): Promise<CustomModelState>;
+    writeClipboard(text: string): Promise<boolean>;
+    createScratchDir(): Promise<string>;
+    saveIdentity(input: { assistantName?: string; userName?: string; about?: string }): Promise<unknown>;
     applyCustomModel(): Promise<CustomModelState>;
     upsertProviderModel(input: { provider: string; model: ProviderModelConfig }): Promise<CustomModelState>;
     removeProviderModel(input: { provider: string; modelId: string }): Promise<CustomModelState>;
@@ -424,6 +433,7 @@ interface Window {
     toolStatus(): Promise<{ id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>;
     listRuntimes(): Promise<DevRuntimeEntry[]>;
     installRuntime(id: string): Promise<{ ok: boolean; runtimes: DevRuntimeEntry[] }>;
+    uninstallRuntime(id: string): Promise<{ ok: boolean; runtimes: DevRuntimeEntry[] }>;
     onRuntimeProgress(listener: (event: { id: string; message: string; done?: boolean; failed?: boolean; auto?: boolean }) => void): () => void;
     openInCloakBrowser(url: string): Promise<{ ok: boolean; detail: string }>;
     cloakBrowserStatus(): Promise<{ event?: string; message?: string; url?: string; title?: string }>;
@@ -474,11 +484,15 @@ interface Window {
     openaiAccounts(): Promise<{ id: string; email: string; savedAt: number; active: boolean; disabled: boolean; planType: string; subscriptionUntil: string }[]>;
     openaiAccountRemove(id: string): Promise<{ ok: boolean; total: number }>;
     openaiAccountSwitch(id: string): Promise<{ ok: boolean; email: string }>;
+    openaiImportFile(input: { contents: string[] }): Promise<{ total: number; imported: number; updated: number; failed: number; items: { index: number; name: string; id?: string; email?: string; loginable?: boolean; action: "imported" | "updated" | "failed"; message?: string }[] }>;
     relayKeysAll(): Promise<{ id: string; email: string; baseUrl: string; active: boolean; selectedKeyId: number | null; keys: any[]; error?: string }[]>;
     relayOverview(): Promise<{ baseUrl: string; email: string; balance: number; subscriptions: any[]; keys: any[]; groups: any[]; selectedMode: "balance" | "plan" | null; selectedGroupId: number | null; selectedKeyId: number | null; selectedKeyName: string | null }>;
     relayCreateKey(input: { name: string; groupId?: number | null }): Promise<{ id: number; key: string; name: string; group_id: number | null; status: string }>;
     relaySelect(input: { mode: "balance" | "plan"; groupId: number | null; keyId?: number; keyName?: string }): Promise<{ ok: boolean }>;
     relayKeyBilling(input: { baseUrl: string; apiKey: string }): Promise<any>;
+    relayRegister(input: { baseUrl: string; email: string; password: string; affCode?: string }): Promise<{ email: string; baseUrl: string; balance: number }>;
+    relayPaymentPlans(): Promise<any[]>;
+    relayOpenPurchase(): Promise<{ ok: boolean; url: string }>;
     enhancePrompt(text: string): Promise<{ ok: boolean; text?: string; error?: string }>;
     listTerminals(): Promise<{ id: string; alive: boolean; cwd: string }[]>;
     validatePlugin(target: string): Promise<{ ok: boolean; root: string; manifestPath?: string; issues: string[]; inventory: { skills: number; commands: number; agents: number; hooks: number }; name?: string }>;
@@ -486,6 +500,63 @@ interface Window {
     onEvent(listener: (event: CodexEvent) => void): () => void;
     onChannelBotEvent(listener: (event: any) => void): () => void;
     onHarnessEvent(listener: (event: any) => void): () => void;
+    // ---- 语音通话（本机离线识别与合成，旁挂新增） ----
+    voiceStatus(): Promise<{ active: boolean; state: string; runtimeReady: boolean; modelsReady: boolean; threadId: string; lastError: string }>;
+    voiceStart(threadId: string, options?: { mode?: "conversation" | "dictation" }): Promise<{ ok: boolean; error?: string; status: unknown }>;
+    voiceDictationFinish(): Promise<{ ok: boolean; text?: string; error?: string }>;
+    voiceStop(): Promise<{ ok: boolean }>;
+    voiceAudio(samples: Float32Array): void;
+    voiceSpeak(text: string, options?: { sid?: number; speed?: number }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
+    voicePreviewVoice(input?: { sid?: number; speed?: number; text?: string }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
+    voiceBarge(): Promise<{ ok: boolean }>;
+    voicePlaybackDone(): Promise<{ ok: boolean }>;
+    voiceModelsStatus(): Promise<{
+      ready: boolean; missing: string[]; readyFiles: number; totalFiles: number;
+      bytes: number; root: string;
+      repos: { id: string; lastSegment: string }[];
+      zipvoice?: { ready: boolean; bytes: number; dir: string };
+    }>;
+    voiceModelsInstall(): Promise<{ ok: boolean; error?: string }>;
+    voiceZipvoiceInstall(): Promise<{ ok: boolean; error?: string }>;
+    voiceZipvoiceCancel(): Promise<{ ok: boolean }>;
+    voiceModelsCancel(): Promise<{ ok: boolean }>;
+    voiceModelsImport(input: { sourceDir: string }): Promise<{ ok: boolean; failures: string[] }>;
+    voiceModelsReveal(): Promise<string>;
+    voiceModelsUninstall(): Promise<{ ok: boolean }>;
+    voiceMicPermission(): Promise<{ status: string; error?: string }>;
+    voiceSettingsGet(): Promise<{
+      settings: {
+        tts: { sid: number; speed: number; volume: number };
+        asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
+        mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
+        barge: { gateDb: number; mode: "auto" | "manual" };
+        modelHost: "auto" | "huggingface" | "hf-mirror";
+        hotkey: { enabled: boolean; accelerator: string };
+        dictationHotkey: { enabled: boolean; accelerator: string };
+        wake: { enabled: boolean; phrase: string };
+      };
+      ttsVoices: Record<number, string>;
+      modelHosts: Record<string, string>;
+      modelHostOptions: string[];
+    }>;
+    voiceSettingsSet(patch: any): Promise<{
+      tts: { sid: number; speed: number; volume: number };
+      asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
+      mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
+      barge: { gateDb: number; mode: "auto" | "manual" };
+      modelHost: "auto" | "huggingface" | "hf-mirror";
+      hotkey: { enabled: boolean; accelerator: string };
+      dictationHotkey: { enabled: boolean; accelerator: string };
+      wake: { enabled: boolean; phrase: string };
+    }>;
+    onVoiceEvent(listener: (event: any) => void): () => void;
+    voiceHotkeySet(input: { accelerator: string; enabled?: boolean }): Promise<{ ok: boolean; error?: string }>;
+    voiceHotkeyGet(): Promise<{ registered: string }>;
+    onVoiceHotkey(listener: (event: { accelerator: string }) => void): () => void;
+    voiceWakeStart(): Promise<{ ok: boolean; error?: string }>;
+    voiceWakeAudio(samples: Float32Array): Promise<{ text: string }>;
+    voiceWakeReset(): Promise<{ ok: boolean }>;
+    voiceWakeStop(): Promise<{ ok: boolean }>;
     // 自更新：网页源（发布站）/ GitHub Releases 双源可切换
     updateCheck(input?: { source?: "web" | "github" }): Promise<{ ok: boolean; info?: { hasUpdate: boolean; reason: string; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string }; currentVersion?: string; serverUrl?: string; source?: string; error?: string }>;
     updateDownload(input: { downloadUrl: string; filename?: string }): Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;

@@ -1,9 +1,9 @@
-import { Menu, Notification, app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, nativeImage, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, session, shell, systemPreferences } from "electron";
+import { Menu, Notification, app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, ipcMain, nativeImage, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, session, shell, systemPreferences } from "electron";
 import os from "node:os";
 import nodeNet from "node:net";
 import { execSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs/promises";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
@@ -33,6 +33,9 @@ import { developerInstructionsLine } from "./developer-instructions";
 import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings } from "./app-settings";
 import { checkLatestUpdate, defaultDownloadDir, downloadUpdate, fileExists, installUpdate, UPDATE_CHANNEL, UPDATE_SERVER_URL } from "./updates";
 import { checkEngineUpdate, performEngineUpdate } from "./engine-updater";
+import { VoiceService } from "./voice/voice-service";
+import { ALL_VOICE_REPOS, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "./voice/model-manifest";
+import { ensureRepo, ensureZipvoice, modelsSizeOnDisk, voiceModelsStatus } from "./voice/model-store";
 import {
   deleteSshServer, execSshCommand, exportSshServers, parseSshImport, readSshServers, saveSshServer, setSshServerEnabled,
   testSshConnection, writeSshServers, SshSessionManager, type SshExecResult, type SshServer, type SshTestResult,
@@ -79,6 +82,23 @@ try {
     app.disableHardwareAcceleration();
   }
 } catch { /* 设置读取失败不影响启动，保持默认 */ }
+
+// 测试开关（与 CODEX_HARNESS_USER_DATA / CODEX_HARNESS_DEBUG_PORT 同源）：
+// 把 GPU 进程合并进主进程。无 GPU 的机器 / CI / 沙箱里，Chromium 的 GPU 子进程会反复
+// 起不来并最终 FATAL 自杀（`GPU process isn't usable. Goodbye.`），表现为 e2e 连不上 CDP。
+// 只在显式设置该变量时生效，真实用户不受影响。
+if (process.env.CODEX_HARNESS_IN_PROCESS_GPU) {
+  app.commandLine.appendSwitch("in-process-gpu");
+  app.commandLine.appendSwitch("no-sandbox");
+  app.commandLine.appendSwitch("disable-gpu-sandbox");
+  app.commandLine.appendSwitch("disable-gpu-compositing");
+  app.commandLine.appendSwitch("disable-software-rasterizer");
+  // 只在测试开关下挂：渲染进程崩溃时打出确切原因（crashed / oom / killed），
+  // 否则 e2e 只能看到一句「Target crashed」，没法定位。
+  app.on("render-process-gone", (_event, _contents, details) => {
+    console.error(`[e2e-diag] 渲染进程退出 reason=${details?.reason} exitCode=${details?.exitCode}`);
+  });
+}
 void app.whenReady().then(() => {
   try {
     const gpuStatus = app.getGPUFeatureStatus();
@@ -247,6 +267,10 @@ type ProviderModel = {
   /** 该模型支持的思考档位（按声明顺序）；缺省走默认三档 low/medium/high。
    *   GPT 系等模型支持 minimal/xhigh/ultra 更多档位，在这里显式声明后引擎才认。 */
   efforts?: string[];
+  /** 用户为该模型选定的思考档位（档案持久化）：切供应商/切模型时自动应用，
+   *  重装/清存储后不丢。仅存档不写入引擎——引擎侧兜底默认走 config.toml
+   *  顶层 model_reasoning_effort，会话内显式值由每轮 turn/start 下发。 */
+  effort?: string;
 };
 
 type CustomModelFile = {
@@ -257,6 +281,10 @@ type CustomModelFile = {
   contextWindow: number;
   wireApi?: "responses" | "chat";
   encryptedKey?: string;
+  /** 当前生效模型的思考档位（档案 100% 同步口径，对齐顶层 model）：
+   *  写 config.toml 顶层 model_reasoning_effort 作引擎兜底默认，
+   *  也是 UI「切供应商/切模型」时恢复用户所选档位的依据。 */
+  effort?: string;
   /** 该供应商下已保存的模型列表，model 是其中当前生效的那个 */
   models?: ProviderModel[];
   /** 启用状态；禁用时若为当前供应商则清空当前配置 */
@@ -420,6 +448,222 @@ const channelBot = new ChannelBotService(
     sendToWindow("channel-bot:event", { level, message, at: Date.now(), status: channelBot.status() });
   },
 );
+
+// ---- 语音通话（旁挂新增：不改动任何既有输入链路） ----
+// 模型放 userData 而非应用目录：重装应用不丢，与其它用户数据一致。
+const voiceModelsRoot = path.join(app.getPath("userData"), "voice-models");
+const voiceLogs: { at: number; level: "info" | "error"; message: string }[] = [];
+const voiceService = new VoiceService({
+  server,
+  getModel: async () => {
+    const model = await readCustomModel();
+    return model ? { provider: model.provider, name: model.name, model: model.model, baseUrl: model.baseUrl } : null;
+  },
+  modelsRoot: voiceModelsRoot,
+  userDataDir: app.getPath("userData"),
+  log: (level, message) => {
+    voiceLogs.push({ at: Date.now(), level, message });
+    if (voiceLogs.length > 50) voiceLogs.shift();
+    if (level === "error") console.error(`[voice] ${message}`);
+  },
+  emit: (event) => sendToWindow("voice:event", event),
+});
+
+/** 语音模型安装的并发与取消由 voiceService 内部管（installController），主进程不再包一层。 */
+ipcMain.handle("voice:status", () => voiceService.status());
+
+ipcMain.handle("voice:settings-get", () => {
+  const { loadVoiceSettings, TTS_VOICE_NAMES, MODEL_HOST_PRESETS, MODEL_HOST_LABELS } = require("./voice/voice-settings");
+  const settings = voiceService.getSettings();
+  // 把枚举的可选值一起回传，渲染层不用自己硬码
+  return {
+    settings,
+    ttsVoices: TTS_VOICE_NAMES,
+    modelHosts: MODEL_HOST_LABELS,
+    modelHostOptions: Object.keys(MODEL_HOST_PRESETS),
+  };
+});
+
+ipcMain.handle("voice:settings-set", async (_event, patch: any) => {
+  const { saveVoiceSettings } = require("./voice/voice-settings");
+  const next = saveVoiceSettings(app.getPath("userData"), patch ?? {});
+  voiceService.updateSettings(next);
+  return next;
+});
+
+ipcMain.handle("voice:start", async (_event, threadId: string, options?: { mode?: "conversation" | "dictation" }) => {
+  const result = await voiceService.start({ threadId: String(threadId ?? ""), mode: options?.mode });
+  return { ...result, status: voiceService.status() };
+});
+
+ipcMain.handle("voice:dictation-finish", async () => voiceService.finishDictation());
+ipcMain.handle("voice:stop", async () => {
+  await voiceService.stop();
+  return { ok: true, status: voiceService.status() };
+});
+
+// 音频块走 send（不等回包），避免每 64ms 一次 IPC 往返带来的抖动
+ipcMain.on("voice:audio", (_event, samples: Float32Array) => {
+  void voiceService.handleAudio(samples).catch((error) => console.error("[voice] audio:", error));
+});
+
+/**
+ * TTS 音频跨 Electron IPC 的安全封装。
+ * Float32Array 直接从 worker/native 一路返回给 renderer 时，Electron 的 structured clone
+ * 会拒绝某些 external backing store（"External buffers are not allowed"）。
+ * 所以主进程统一转 Base64 字符串：字符串 IPC 最稳定，渲染层再还原 Float32Array。
+ */
+function voiceAudioForIpc(result: Awaited<ReturnType<VoiceService["speak"]>>):
+  | { ok: true; sampleRate: number; audioBase64: string }
+  | { ok: false; error: string } {
+  if (!result.ok) return result;
+  const samples = result.samples;
+  const bytes = Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength);
+  return {
+    ok: true,
+    sampleRate: result.sampleRate,
+    audioBase64: bytes.toString("base64"),
+  };
+}
+
+ipcMain.handle("voice:speak", async (_event, text: string, options?: { sid?: number; speed?: number }) => {
+  return voiceAudioForIpc(await voiceService.speak(String(text ?? ""), options));
+});
+ipcMain.handle("voice:preview-voice", async (_event, input?: { sid?: number; speed?: number; text?: string }) => {
+  // 设置页「音色试听」：不必在通话中，内部会临时起一个 TTS worker，合成完即销毁
+  return voiceAudioForIpc(await voiceService.previewVoice(input ?? {}));
+});
+
+// ── 语音通话「按键启动」：系统级快捷键（Electron globalShortcut）──
+// 用全局快捷键而不是页面内 keydown：即便应用没聚焦、焦点在别处也能唤起语音。
+let registeredVoiceHotkey = "";
+function applyVoiceHotkey(accelerator: string): { ok: boolean; error?: string } {
+  try {
+    if (registeredVoiceHotkey) {
+      globalShortcut.unregister(registeredVoiceHotkey);
+      registeredVoiceHotkey = "";
+    }
+    if (!accelerator) return { ok: true };
+    const ok = globalShortcut.register(accelerator, () => {
+      // 触发时把事件推给渲染层，由 VoiceCallFloat 决定开始/结束通话
+      sendToWindow("voice:hotkey", { accelerator });
+    });
+    if (!ok) return { ok: false, error: `快捷键「${accelerator}」注册失败（可能被其它程序占用）` };
+    registeredVoiceHotkey = accelerator;
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+}
+// 启动时按已保存的设置注册一次
+app.whenReady().then(() => {
+  const s = require("./voice/voice-settings").loadVoiceSettings(app.getPath("userData"));
+  if (s.hotkey?.enabled && s.hotkey.accelerator) applyVoiceHotkey(s.hotkey.accelerator);
+});
+ipcMain.handle("voice:hotkey-set", async (_event, input: { accelerator: string; enabled?: boolean }) => {
+  const accelerator = input?.enabled === false ? "" : String(input?.accelerator ?? "");
+  return applyVoiceHotkey(accelerator);
+});
+ipcMain.handle("voice:hotkey-get", () => ({ registered: registeredVoiceHotkey }));
+
+// ── 语音唤醒（持续聆听 + 文本匹配唤醒词）──
+ipcMain.handle("voice:wake-start", () => voiceService.startWakeListener());
+ipcMain.handle("voice:wake-audio", async (_event, samples: Float32Array) => voiceService.feedWakeAudio(samples));
+ipcMain.handle("voice:wake-reset", async () => { await voiceService.resetWakeStream(); return { ok: true }; });
+ipcMain.handle("voice:wake-stop", async () => { await voiceService.stopWakeListener(); return { ok: true }; });
+
+ipcMain.handle("voice:barge", () => voiceService.barge());
+
+ipcMain.handle("voice:playback-done", () => {
+  voiceService.notifyPlaybackDone();
+  return { ok: true };
+});
+
+ipcMain.handle("voice:models-status", async () => {
+  const status = await voiceModelsStatus(voiceModelsRoot, ALL_VOICE_REPOS);
+  return {
+    ...status,
+    bytes: modelsSizeOnDisk(voiceModelsRoot),
+    root: voiceModelsRoot,
+    // 提示 UI「本地导入」该期望的目录结构（HF 仓库 id 很长，用户需要明确看到）
+    repos: ALL_VOICE_REPOS.map((r) => ({ id: r.repo, lastSegment: r.repo.split("/").pop() ?? r.repo })),
+    // 音色克隆模型（ZipVoice，归档型资源，单独安装）：UI 按它显示独立条目
+    zipvoice: { ready: zipvoiceReady(voiceModelsRoot), bytes: ZIPVOICE_ARCHIVE.bytes + ZIPVOICE_ARCHIVE.vocoder.bytes, dir: ZIPVOICE_DIR },
+  };
+});
+
+/** 音色克隆模型的安装与取消（归档型资源：GitHub release 整包 + 声码器，按需下载）。 */
+let zipvoiceAbort: AbortController | null = null;
+ipcMain.handle("voice:zipvoice-install", async () => {
+  if (zipvoiceAbort) return { ok: false, error: "正在安装中" };
+  zipvoiceAbort = new AbortController();
+  try {
+    const result = await ensureZipvoice(
+      voiceModelsRoot,
+      toolsRoot(),
+      (progress) => sendToWindow("voice:event", { type: "download", ...progress, target: "zipvoice" }),
+      zipvoiceAbort.signal,
+    );
+    sendToWindow("voice:event", { type: "downloadDone", ok: result.ok, error: result.ok ? undefined : (result as any).error, target: "zipvoice" });
+    return result;
+  } finally {
+    zipvoiceAbort = null;
+  }
+});
+ipcMain.handle("voice:zipvoice-cancel", () => {
+  zipvoiceAbort?.abort();
+  return { ok: true };
+});
+
+ipcMain.handle("voice:models-install", () => voiceService.installModels());
+ipcMain.handle("voice:models-cancel", () => ({ ok: voiceService.cancelInstall() }));
+ipcMain.handle("voice:models-import", async (_event, input: { sourceDir: string }) => {
+  // 开发版：从开发者本机已下载的目录导入，按 repo 校验 SHA 后落盘到 userData/voice-models
+  const { importRepoFromDir } = require("./voice/model-store");
+  const { ALL_VOICE_REPOS } = require("./voice/model-manifest");
+  const failures: string[] = [];
+  for (const repo of ALL_VOICE_REPOS) {
+    const f = await importRepoFromDir(voiceModelsRoot, input.sourceDir, repo, (progress: any) => {
+      sendToWindow("voice:event", { type: "download", ...progress });
+    });
+    failures.push(...f.map((x: string) => `${repo.repo} → ${x}`));
+  }
+  await voiceService.refreshModelsReady();
+  sendToWindow("voice:event", { type: "download", percent: 100, message: "导入完成" });
+  sendToWindow("voice:event", { type: "downloadDone", ok: failures.length === 0, error: failures.slice(0, 3).join("；") });
+  return { ok: failures.length === 0, failures };
+});
+ipcMain.handle("voice:models-reveal", () => {
+  // 在文件管理器里打开模型目录（开发者验证下载内容用）
+  return shell.openPath(voiceModelsRoot);
+});
+ipcMain.handle("voice:models-uninstall", async () => {
+  // 防御（破坏性操作必须显式收口）：只认 <userData>/voice-models 这一个专用子目录。
+  // 万一将来路径拼错（比如退化成 userData 本身），宁可直接失败也不能端掉整个配置目录。
+  const userData = app.getPath("userData");
+  const expected = path.join(userData, "voice-models");
+  const target = path.resolve(voiceModelsRoot);
+  if (!voiceModelsRoot || target !== path.resolve(expected) || target === path.resolve(userData)) {
+    return { ok: false, error: "语音模型目录路径异常，已取消卸载" };
+  }
+  // 卸载 = 删除整个 voice-models 根目录（含 .part）；下次再点下载会重新拉
+  await fs.rm(voiceModelsRoot, { recursive: true, force: true });
+  await voiceService.refreshModelsReady();
+  return { ok: true };
+});
+
+/** macOS 需要显式申请麦克风授权；Windows/Linux 直接按「已授权」处理。 */
+ipcMain.handle("voice:mic-permission", async () => {
+  if (process.platform !== "darwin") return { status: "granted" };
+  try {
+    const current = systemPreferences.getMediaAccessStatus("microphone");
+    if (current === "granted") return { status: "granted" };
+    const granted = await systemPreferences.askForMediaAccess("microphone");
+    return { status: granted ? "granted" : current };
+  } catch (error: any) {
+    return { status: "unknown", error: String(error?.message ?? error) };
+  }
+});
 
 async function readCustomModel(): Promise<CustomModelFile | null> {
   try {
@@ -732,6 +976,13 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
   await fs.writeFile(path.join(codexHome, "config.toml"), [
     `model = "${escapeToml(entry.model)}"`,
     `model_context_window = ${effectiveContextWindow}`,
+    // 思考档位兜底默认（当前生效模型档案里记的档）：会话内显式值由每轮 turn/start
+    // 的 effort 覆盖，这里只管「重启后 resume 的老会话没显式值时」的默认落点，
+    // 与 custom-model.json 的 effort 字段同源。模型没记档位时不写，引擎用内置默认。
+    ...((() => {
+      const effort = currentCatalogModel?.effort ?? entry.effort;
+      return effort ? [`model_reasoning_effort = "${escapeToml(effort)}"`] : [];
+    })()),
     // 官方订阅：不写 model_provider（引擎默认 openai），声明优先用 ChatGPT 登录凭据
     ...(isOfficialProvider ? ['preferred_auth_method = "chatgpt"'] : [`model_provider = "${escapeToml(entry.provider)}"`]),
     ...(catalogToml ? [catalogToml] : []),
@@ -1305,9 +1556,9 @@ function createWindow() {
     // 右上角保留系统窗口控制钮（贴靠/双击最大化等原生行为不变），颜色随主题由 theme:apply 更新。
     titleBarStyle: "hidden",
     titleBarOverlay: {
-      // 与聊天顶栏 var(--bg) 同色（亮 #fff / 暗 #1b1b1a）——独立标题栏行已取消，
-      // 整条 44px 顶行（顶栏+操作簇+原生窗口钮）必须同色
-      color: "#ffffff",
+      // 让 `.topbar { background: var(--bg) }` 自己穿过来——钮不再"浮在自己的色条上"，
+      // 也无需枚举每个主题调色；亮/暗主题都能干净。符号色在 theme:apply 里跟着主题切。
+      color: "#00000000",
       symbolColor: "#1b1b1a",
       // 43 而非 44：底下留 1px 给 .topbar::after 分隔线，线可贯通窗口钮下方
       height: 43,
@@ -1336,8 +1587,9 @@ ipcMain.handle("theme:apply", (_event, theme: string) => {
   const dark = theme === "dark";
   nativeTheme.themeSource = dark ? "dark" : "light";
   mainWindow?.setBackgroundColor(dark ? "#1b1b1a" : "#ffffff");
-  // 无边框标题栏：窗口控制钮的底色/符号色跟随主题
-  try { mainWindow?.setTitleBarOverlay({ color: dark ? "#1b1b1a" : "#ffffff", symbolColor: dark ? "#e8e8e5" : "#1b1b1a", height: 43 }); } catch { /* overlay 未启用时忽略 */ }
+  // 无边框标题栏：窗口控制钮的底色让 `.topbar { background: var(--bg) }` 自己穿过去（透明），
+  // 符号色仍跟随主题；这样钮不再"浮在自己的色条上"，也无需枚举每个主题调色。
+  try { mainWindow?.setTitleBarOverlay({ color: "#00000000", symbolColor: dark ? "#e8e8e5" : "#1b1b1a", height: 43 }); } catch { /* overlay 未启用时忽略 */ }
   return { ok: true };
 });
 
@@ -1402,10 +1654,26 @@ app.whenReady().then(async () => {
       return placeholderPngResponse();
     }
   });
+  // 语音通话：授予麦克风权限。此前全项目没有任何权限处理，getUserMedia 会被直接拒绝。
+  // 只放行 media，其余权限一律沿用 Electron 默认（不放大授权面）。
+  // macOS 上还需要 Info.plist 的 NSMicrophoneUsageDescription（见 build/entitlements 与文档），
+  // 且首次调用会弹系统授权框，由系统偏好设置持久记忆。
+  try {
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+      callback(permission === "media");
+    });
+    session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+      return permission === "media";
+    });
+  } catch (error) {
+    console.warn("voice permission handler failed:", error);
+  }
   createWindow();
   server.on("event", (event) => {
     sendToWindow("codex:event", event);
     channelBot.handleCodexEvent(event);
+    // 语音通话：只旁听事件（正文增量 / 回合生命周期），不改变事件本身的任何流向
+    voiceService.handleCodexEvent(event);
     // 引擎就绪后按设置启停健康看门狗（engineWatchdog 默认开）
     if (event.kind === "status" && event.status === "ready") void syncEngineWatchdog();
     // 手机对话页实时同步：流式增量 / 用户消息 / 回合完成
@@ -1529,6 +1797,7 @@ app.whenReady().then(async () => {
     onMessage: (message) => void handleWeixinMessage(message),
     log: (level, message) => {
       channelLogs.push({ at: Date.now(), level, message });
+      persistChannelLog(level, message);
       sendToWindow("channel-bot:event", { level, message, at: Date.now(), status: channelBot.status() });
     },
   });
@@ -1555,9 +1824,11 @@ const weixinBindings = new Map<string, string>(); // 微信用户 → Codex 线�
 const botStreamSessions = new Map<string, BotStreamSession>();
 
 function weixinStreamSink(from: string): BotStreamSink {
+  // 微信 iLink 的 context_token 实测**一次一发**（09-12 事故实证：流式模式下每条入站
+  // 消息只有第一次 sendmessage 成功，后续追加与最终正文全部失败且被静默吞掉——表现为
+  // 微信端只剩「💭 思考」半截气泡、正文永远到不了）。因此微信渠道不传 append/finalize，
+  // 只保留 send：turn/completed 后一次性发最终正文（必达）。思考/工具流式同步仅 Telegram 支持。
   return {
-    append: (delta, clientId) => weixinGateway!.sendText(from, delta, { clientId, state: 1 }),
-    finalizeAppend: (tail, clientId) => weixinGateway!.sendText(from, tail, { clientId, state: 2 }),
     send: (full) => weixinGateway!.sendText(from, full),
   };
 }
@@ -1807,13 +2078,85 @@ ipcMain.handle("telegram:status", async () => ({ bound: telegramGateway.hasSessi
 // ── 新增渠道（飞书/钉钉/QQ/企微Webhook）：统一走 handleChannelMessage 管线 ──
 function channelLog(level: "info" | "error", message: string) {
   channelLogs.push({ at: Date.now(), level, message });
+  persistChannelLog(level, message);
   sendToWindow("channel-bot:event", { level, message, at: Date.now(), status: channelBot.status() });
+}
+
+/** 渠道网关日志统一落盘（1MB 轮转 .old）：token 失效/发送失败这类事故只存在内存和 UI
+ *  事件里时，窗口没开就丢——「消息没同步」类问题排查全靠它（09-12 微信事故教训）。 */
+function persistChannelLog(level: "info" | "error", message: string) {
+  try {
+    const logFile = path.join(app.getPath("userData"), "channel-logs", "gateway.log");
+    if (!existsSync(logFile) || statSync(logFile).size > 1024 * 1024) {
+      mkdirSync(path.dirname(logFile), { recursive: true });
+      if (existsSync(logFile)) renameSync(logFile, logFile.replace(/\.log$/, ".old"));
+    }
+    appendFileSync(logFile, `[${new Date().toISOString()}] [${level}] ${message}\n`, "utf8");
+  } catch { /* 日志落盘失败不影响主流程 */ }
 }
 
 const feishuGateway = new FeishuGateway({
   onMessage: (message) => void handleChannelMessage("feishu", message.from, message.chatId, message.text),
+  // 语音消息：下载原始 opus → ffmpeg 归一 16k wav → ASR 转写 → 按普通文本走会话管线
+  onAudio: (message) => void handleChannelAudioMessage(message),
   log: channelLog,
 });
+
+/** ffmpeg 可执行文件：随包按需安装（开发工具页），装过就在 tools/ffmpeg 下；都没装则期望 PATH 里有。 */
+function resolveFfmpegPath(): string {
+  const candidates = [
+    path.join(process.resourcesPath ?? "", "tools", "ffmpeg", "ffmpeg.exe"),
+    path.join(process.cwd(), "tools", "ffmpeg", "ffmpeg.exe"),
+  ];
+  for (const candidate of candidates) {
+    try { if (existsSync(candidate)) return candidate; } catch { /* 忽略路径异常，继续下一个 */ }
+  }
+  return "ffmpeg";
+}
+
+/** 把渠道语音（飞书 opus / 其它）归一成 16k 单声道 PCM wav，供 sherpa ASR 直接吃。 */
+async function transcodeToWav16k(inputPath: string): Promise<string> {
+  const outPath = inputPath.replace(/\.[^.]+$/, "") + "-16k.wav";
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(resolveFfmpegPath(), ["-y", "-i", inputPath, "-ar", "16000", "-ac", "1", "-f", "wav", outPath], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr?.on("data", (chunk) => { stderr += String(chunk); });
+    child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg 退出码 ${code}：${stderr.slice(-200)}`))));
+    child.on("error", (error) => reject(new Error(`ffmpeg 不可用（请在开发工具页下载 FFmpeg）：${error.message}`)));
+  });
+  return outPath;
+}
+
+/** 渠道语音消息管线：转写成功后与普通文本消息走同一条路（会话绑定/回复机制全部复用）。 */
+async function handleChannelAudioMessage(message: { from: string; chatId: string; messageId: string; fileKey: string; replyHint: string }) {
+  try {
+    await feishuGateway.sendMessage(message.chatId, "🎤 收到语音，正在转写…");
+    const rawPath = await feishuGateway.downloadAudio(message.messageId, message.fileKey);
+    let wavPath = "";
+    try {
+      wavPath = await transcodeToWav16k(rawPath);
+    } catch (error: any) {
+      await feishuGateway.sendMessage(message.chatId, `⚠️ ${error.message}`);
+      return;
+    } finally {
+      await fs.rm(rawPath, { force: true }).catch(() => undefined);
+    }
+    const result = await voiceService.transcribeAudioFile(wavPath);
+    await fs.rm(wavPath, { force: true }).catch(() => undefined);
+    if (!result.ok) {
+      await feishuGateway.sendMessage(message.chatId, `⚠️ 语音转写失败：${result.error ?? ""}`);
+      return;
+    }
+    const text = String(result.text ?? "").trim();
+    if (!text) {
+      await feishuGateway.sendMessage(message.chatId, "⚠️ 语音转写结果为空，请靠近麦克风再说一遍");
+      return;
+    }
+    await handleChannelMessage("feishu", message.from, message.chatId, text);
+  } catch (error: any) {
+    await feishuGateway.sendMessage(message.chatId, `⚠️ 语音处理失败：${error?.message ?? error}`).catch(() => undefined);
+  }
+}
 const dingtalkGateway = new DingtalkGateway({
   onMessage: (message) => void handleChannelMessage("dingtalk", message.from, message.chatId, message.text),
   log: channelLog,
@@ -2582,6 +2925,92 @@ ipcMain.handle("relay:key-billing", async (_e, input: { baseUrl: string; apiKey:
   return data;
 });
 
+// ── 付费订阅：应用内注册 → 自动登录 → 套餐目录 → 站内付款弹窗 ──
+// 协议实证（Wei-Shaw/sub2api + pptoken 实测 09-12）：
+//   POST /api/v1/auth/register {email,password,aff_code?}（站点可选用 verify_code/turnstile，
+//   未开启时三字段即可；开启时报错原文透传，渲染层降级为外部注册页）
+ipcMain.handle("relay:register", async (_e, input: { baseUrl: string; email: string; password: string; affCode?: string }) => {
+  const baseUrl = relayBase(input.baseUrl);
+  const email = String(input.email ?? "").trim();
+  const password = String(input.password ?? "");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("邮箱格式不正确");
+  if (password.length < 6) throw new Error("密码至少 6 位");
+  const { ok, data, message } = await relayRequest(`${baseUrl}/api/v1/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, ...(input.affCode ? { aff_code: input.affCode } : {}) }),
+  });
+  if (!ok) throw new Error("注册失败：" + (message || `HTTP ${data?.status ?? ""}`));
+  // 注册成功 = 立即登录（同一套凭据），落多账号库并设为当前 —— 真正的「注册完自动登录」
+  const login = await relayLoginRaw(baseUrl, email, password);
+  const account: RelayAccount = {
+    baseUrl,
+    email,
+    accessToken: login.access_token,
+    refreshToken: login.refresh_token,
+    tokenExpiresAt: login.expires_in ? Date.now() + login.expires_in * 1000 : undefined,
+  };
+  if (safeStorage.isEncryptionAvailable()) {
+    try { account.passwordEnc = safeStorage.encryptString(password).toString("base64"); } catch { /* 加密不可用就不存密码 */ }
+  }
+  await writeRelayAccount(account);
+  return { email, baseUrl, balance: Number(login.user?.balance ?? 0) };
+});
+// 套餐市场目录（站方定价/有效期/划线价/features），登录后可拉
+ipcMain.handle("relay:payment-plans", async () => {
+  const account = await readRelayAccount();
+  if (!account?.accessToken) throw new Error("尚未登录中转站");
+  const plans = await relayAuthedFetch(account, "/api/v1/payment/plans");
+  const arr = Array.isArray(plans) ? plans : Array.isArray(plans?.data) ? plans.data : [];
+  return arr.filter((p: any) => p?.for_sale !== false);
+});
+// 付款页弹窗：独立窗口打开 {站点}/purchase，首帧加载后把面板 token 注入站点 localStorage
+// （sub2api 前端键名实证：auth_token / refresh_token / token_expires_at）再刷新一次 —— 打开即登录态，
+// 用户在站内完成选套餐+支付；应用侧同时轮询 subscriptions/summary 等待新订阅出现。
+let purchaseWindow: Electron.BrowserWindow | null = null;
+ipcMain.handle("relay:open-purchase", async () => {
+  const account = await readRelayAccount();
+  if (!account?.accessToken) throw new Error("尚未登录中转站");
+  const base = relayBase(account.baseUrl);
+  if (purchaseWindow && !purchaseWindow.isDestroyed()) {
+    purchaseWindow.focus();
+    return { ok: true, url: `${base}/purchase` };
+  }
+  const win = new BrowserWindow({
+    width: 1120,
+    height: 840,
+    minWidth: 760,
+    minHeight: 560,
+    title: "订阅支付 · 中转站",
+    autoHideMenuBar: true,
+    backgroundColor: "#0d0f12",
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  purchaseWindow = win;
+  let injected = false;
+  win.webContents.on("did-finish-load", async () => {
+    if (injected || win.isDestroyed()) return;
+    injected = true;
+    try {
+      const script = [
+        `localStorage.setItem("auth_token", ${JSON.stringify(account.accessToken ?? "")});`,
+        account.refreshToken ? `localStorage.setItem("refresh_token", ${JSON.stringify(account.refreshToken)});` : "",
+        `localStorage.setItem("token_expires_at", String(${account.tokenExpiresAt ?? Date.now() + 3600_000}));`,
+        "true;",
+      ].join(" ");
+      await win.webContents.executeJavaScript(script, true);
+      win.webContents.reload();
+    } catch { /* 注入失败 = 用户在站内手动登录，不堵流程 */ }
+  });
+  win.on("closed", () => { if (purchaseWindow === win) purchaseWindow = null; });
+  // loadURL 不阻塞 IPC 返回：收银台页加载慢/失败（代理、断网）不应卡死订阅流程——
+  // 渲染层拿到返回值就开始轮询 summary（用户也可以在站点官网手动付款后点「我已完成支付」）
+  void win.loadURL(`${base}/purchase`).catch((error: unknown) => {
+    console.log("[relay-purchase] 支付页加载失败:", error instanceof Error ? error.message : String(error));
+  });
+  return { ok: true, url: `${base}/purchase` };
+});
+
 // ── OpenAI 官方订阅（ChatGPT 登录）：走引擎原生 codex login --device-auth 设备码流程 ──
 // 登录成功后引擎在 CODEX_HOME/auth.json 拿到 ChatGPT tokens，config 由 applyCustomModel
 // 对 provider="openai-official" 特判（不写 model_provider，写 preferred_auth_method="chatgpt"）。
@@ -2799,6 +3228,90 @@ function openaiJwtClaims(idToken?: string): Record<string, any> {
     return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
   } catch { return {}; }
 }
+// ── 导入账号文件直接登录（复刻 sub2api account_codex_import 的格式面，09-12）──
+// 接受四种形态（可混用；JSON 数组 / 连续 JSON 流 / 每行一个 JSON 或裸 token 均可）：
+//   ① 裸 accessToken（一行一个，非 JWT 也收）
+//   ② Codex CLI auth.json：{tokens:{access_token,refresh_token,id_token}, last_refresh}
+//   ③ 扁平 JSON：{access_token|accessToken|token, refresh_token?, id_token?, email?, chatgpt_account_id?}
+//   ④ 上述任意整体包成 JSON 数组
+// 身份识别：id_token/access_token 是 JWT → 解 `https://api.openai.com/auth` claims
+// （chatgpt_account_id / chatgpt_plan_type / email）——与 capture-login 的 vault 结构完全一致。
+function openaiImportEntries(content: string): any[] {
+  const trimmed = String(content ?? "").trim();
+  if (!trimmed) return [];
+  const flatten = (v: any): any[] => (Array.isArray(v) ? v.flatMap(flatten) : [v]);
+  try {
+    return flatten(JSON.parse(trimmed));
+  } catch { /* 整体不是合法 JSON → 按行拆（NDJSON / 每行一个裸 token） */ }
+  const out: any[] = [];
+  for (const line of trimmed.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    if (t.startsWith("{") || t.startsWith("[")) {
+      try { out.push(...flatten(JSON.parse(t))); continue; } catch { /* 当作裸 token 处理 */ }
+    }
+    out.push(t);
+  }
+  return out;
+}
+function openaiImportPick(obj: any, paths: string[][]): string {
+  for (const path of paths) {
+    let cur = obj;
+    for (const key of path) {
+      if (cur == null || typeof cur !== "object") { cur = undefined; break; }
+      cur = cur[key];
+    }
+    const value = typeof cur === "string" ? cur.trim() : "";
+    if (value) return value;
+  }
+  return "";
+}
+ipcMain.handle("openai:import-file", async (_e, input: { contents: string[] }) => {
+  const contents = Array.isArray(input?.contents) ? input.contents : [];
+  if (!contents.length) throw new Error("没有可导入的文件内容");
+  const accounts = await readOpenaiVault();
+  const items: { index: number; name: string; id?: string; email?: string; loginable?: boolean; action: "imported" | "updated" | "failed"; message?: string }[] = [];
+  let index = 0;
+  for (const content of contents) {
+    for (const entry of openaiImportEntries(content)) {
+      index += 1;
+      const name = `#${index}`;
+      try {
+        const raw = typeof entry === "string" ? { access_token: entry } : entry;
+        if (raw == null || typeof raw !== "object") throw new Error("无法识别的条目格式");
+        const tokens = {
+          access_token: openaiImportPick(raw, [["tokens", "access_token"], ["tokens", "accessToken"], ["access_token"], ["accessToken"], ["token"]]),
+          refresh_token: openaiImportPick(raw, [["tokens", "refresh_token"], ["tokens", "refreshToken"], ["refresh_token"], ["refreshToken"]]),
+          id_token: openaiImportPick(raw, [["tokens", "id_token"], ["tokens", "idToken"], ["id_token"], ["idToken"]]),
+        };
+        if (!tokens.access_token) throw new Error("缺少 accessToken（无法登录）");
+        const claims = openaiJwtClaims(tokens.id_token || tokens.access_token);
+        const auth = claims["https://api.openai.com/auth"] ?? {};
+        const email = openaiImportPick(raw, [["email"], ["user", "email"]]) || String(claims.email ?? "");
+        const accountId = openaiImportPick(raw, [["chatgpt_account_id"], ["chatgptAccountId"], ["account_id"], ["accountId"], ["account", "id"], ["account", "account_id"], ["account", "chatgpt_account_id"]]) || String(auth.chatgpt_account_id ?? "");
+        // JWT exp 已过期只警告不阻断：refresh_token 仍在时引擎激活后会自行刷新
+        let message: string | undefined;
+        if (claims.exp && Number(claims.exp) * 1000 < Date.now()) message = "token 已过期（凭 refresh_token 激活后会自动刷新）";
+        const id = email || accountId || String(claims.sub ?? "") || `import-${Date.now()}-${index}`;
+        const entryOut: OpenaiVaultAccount = { id, email, tokens: { ...tokens, account_id: accountId || undefined }, savedAt: Date.now() };
+        const idx = accounts.findIndex((a) => a.id === id);
+        if (idx >= 0) accounts[idx] = entryOut; else accounts.push(entryOut);
+        // loginable = 带 id_token（写 auth.json 后引擎才认作登录态）；裸 token 只入 vault 不作为切换目标
+        items.push({ index, name: email || id, id, email, loginable: Boolean(tokens.id_token), action: idx >= 0 ? "updated" : "imported", message });
+      } catch (error: any) {
+        items.push({ index, name, action: "failed", message: String(error.message ?? error) });
+      }
+    }
+  }
+  await writeOpenaiVault(accounts);
+  return {
+    total: items.length,
+    imported: items.filter((i) => i.action === "imported").length,
+    updated: items.filter((i) => i.action === "updated").length,
+    failed: items.filter((i) => i.action === "failed").length,
+    items,
+  };
+});
 ipcMain.handle("openai:accounts", async () => {
   const [accounts, current] = await Promise.all([readOpenaiVault(), readOpenaiAuth()]);
   return accounts.map((a) => {
@@ -2815,7 +3328,10 @@ ipcMain.handle("openai:accounts", async () => {
   });
 });
 // 账号启用/停用：停用 = 退出切换候选（vault 数据保留，随时可重新启用）。
-// 停用**当前生效**账号时同步退出生效状态：auth.json 置空 + 重启引擎（官方订阅退出）。
+// 停用**当前生效**账号时同步退出生效状态——与 relay:toggle-account 对称做全套：
+// auth.json 置空 + openai-official 供应商条目停用 + custom-model.json 清空 + 重启引擎。
+// 只清 auth.json 会留下「生效配置指向一个没有凭据的供应商」：引擎请求必 401，且
+// customModel.provider 还挂着 openai-official 会把其他供应商的启用按钮全部互斥置灰（卡死）。
 ipcMain.handle("openai:toggle-account", async (_e, input: { id: string; disabled: boolean }) => {
   const accounts = await readOpenaiVault();
   const account = accounts.find((a) => a.id === input.id);
@@ -2825,7 +3341,11 @@ ipcMain.handle("openai:toggle-account", async (_e, input: { id: string; disabled
   if (input.disabled) {
     const current = await readOpenaiAuth();
     if (current?.loggedIn && current.email && current.email === account.email) {
+      const list = await readCustomModels();
+      const entry = list.find((e) => e.provider === "openai-official");
+      if (entry && entry.enabled !== false) await upsertCustomModel({ ...entry, enabled: false });
       await fs.writeFile(openaiAuthFile(), "null", "utf8");
+      await fs.writeFile(customModelFile, "null", "utf8");
       await server.restart();
       return { ok: true, disabled: true, deactivated: true };
     }
@@ -3052,7 +3572,7 @@ ipcMain.handle("tools:status", () => {
 });
 
 type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "automation" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl";
-type DevRuntimeSpec = { name: string; description: string; size: string; marker: string; builtIn?: boolean; kind?: "download" | "browsers" | "guide" | "plugin" };
+type DevRuntimeSpec = { name: string; description: string; size: string; marker: string; builtIn?: boolean; kind?: "download" | "browsers" | "guide" | "plugin"; noUninstall?: boolean };
 const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   python: { name: "Python + Tkinter + pip", description: "Python 项目、数据处理、GUI 脚本和 Python MCP（含 Tkinter、requests/httpx/flask/fastapi/playwright）", size: "约 40 MB + 依赖", marker: "python\\python.exe", builtIn: true },
   node: { name: "Node.js + npm", description: "JavaScript / TypeScript 项目和 npm 工具", size: "约 101 MB", marker: "node\\node.exe", builtIn: true },
@@ -3060,7 +3580,9 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   git: { name: "Git", description: "Diff、分支、提交、历史和仓库操作", size: "约 90 MB", marker: "git\\cmd\\git.exe", builtIn: true },
   ffmpeg: { name: "FFmpeg", description: "音视频转码、抽帧、探测与媒体处理", size: "约 307 MB", marker: "ffmpeg\\bin\\ffmpeg.exe" },
   "vscode-cli": { name: "VS Code CLI", description: "通过 code 命令打开文件与工作区", size: "约 28 MB", marker: "vscode-cli\\code.exe", builtIn: true },
-  automation: { name: "桌面与浏览器自动化", description: "Nuphus（桌面 MCP）+ Playwright CLI + CloakBrowser 包本体，下载压缩包解压即用（不含浏览器内核）", size: "压缩包 18 MB", marker: "npm-global\\node_modules\\@nuphus\\nuphus-mcp\\package.json" },
+  // noUninstall：来源是**随包内置资源**（zip / 插件目录）而不是联网下载 —— 删掉后没有
+// 可靠的重取途径（压缩包本体随应用分发、不单独缓存），用户误删很难找回，因此不支持卸载。
+  automation: { name: "桌面与浏览器自动化", description: "Nuphus（桌面 MCP）+ Playwright CLI + CloakBrowser 包本体，下载压缩包解压即用（不含浏览器内核）", size: "压缩包 18 MB", marker: "npm-global\\node_modules\\@nuphus\\nuphus-mcp\\package.json", noUninstall: true },
   jq: { name: "jq", description: "命令行查询、筛选和转换 JSON", size: "约 1 MB", marker: "jq\\jq.exe", builtIn: true },
   ninja: { name: "Ninja", description: "高速构建工具，常与 CMake 配合", size: "约 1 MB", marker: "ninja\\ninja.exe", builtIn: true },
   sevenzip: { name: "7-Zip CLI", description: "解压和创建 7z、zip、tar 等归档", size: "约 1 MB", marker: "sevenzip\\7z.exe", builtIn: true },
@@ -3074,7 +3596,7 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   docker: { name: "Docker Desktop", description: "容器运行时，需要系统级安装（管理员权限 + 重启 + 登录）", size: "约 500 MB", marker: "docker\\docker.exe", kind: "guide" },
   mingw: { name: "MinGW-w64 (gcc/g++/make)", description: "C/C++ 编译器工具链，含 gcc、g++、make、gdb", size: "约 267 MB", marker: "mingw\\mingw64\\bin\\g++.exe", kind: "download" },
   openssl: { name: "OpenSSL", description: "加密/证书命令行工具（openssl 命令），系统级安装", size: "约 25 MB", marker: "openssl\\openssl.exe", kind: "guide" },
-  ponytail: { name: "ponytail 写代码模式插件", description: "Codex 写代码模式（会话钩子 + 6 个技能），安装后开箱即用", size: "随包 2 MB", marker: "ponytail-plugin", kind: "plugin" },
+  ponytail: { name: "ponytail 写代码模式插件", description: "Codex 写代码模式（会话钩子 + 6 个技能），安装后开箱即用", size: "随包 2 MB", marker: "ponytail-plugin", kind: "plugin", noUninstall: true },
 };
 const runtimeInstalls = new Map<DevRuntimeId, Promise<void>>();
 
@@ -3124,6 +3646,49 @@ async function restartServerWhenIdle(id: DevRuntimeId) {
 }
 
 ipcMain.handle("runtime:list", () => runtimeList());
+
+/** 运行时卸载：删除安装根目录（不是单个 marker），状态回退为"未下载" */
+function runtimeUninstallPath(id: DevRuntimeId, spec: DevRuntimeSpec): string {
+  // 引擎侧安装：ponytail 在 codex-home/plugins/cache/ponytail
+  if (id === "ponytail") return path.join(codexHome, "plugins", "cache", "ponytail");
+  // 工具侧：安装根 = marker 路径的第一段（automation -> npm-global / playwright-browsers -> pw-browsers / etc）
+  return path.join(toolsRoot(), spec.marker.split(/[\\/]/)[0]);
+}
+
+ipcMain.handle("runtime:uninstall", async (_event, idValue: string) => {
+  const id = idValue as DevRuntimeId;
+  const spec = devRuntimeSpecs[id];
+  if (!spec) throw new Error("未知开发工具");
+  if (spec.builtIn) throw new Error("内置工具不可卸载");
+  if (spec.kind === "guide") throw new Error("该工具是系统级安装，请到系统的「应用与功能」里卸载");
+  // 随包内置资源（zip / 插件目录），不是联网下载 —— 删了没有可靠的重取途径，直接拒绝
+  if (spec.noUninstall) throw new Error("该工具来自随包内置资源，删除后难以恢复，因此不支持卸载");
+  const target = runtimeUninstallPath(id, spec);
+  // 防御：marker 解析异常时 target 可能退化成某个根目录 —— 那会把**所有**工具/插件删光。
+  // 要求 target 必须落在 toolsRoot 或 codexHome 之内（ponytail 走引擎侧 codexHome），
+  // 且不等于这两者本身；宁可失败也不能误删全局。
+  const allowedRoots = [toolsRoot(), codexHome].filter(Boolean).map((r) => path.resolve(r));
+  const resolvedTarget = path.resolve(target);
+  const underAllowed = allowedRoots.some((r) => resolvedTarget.startsWith(r + path.sep));
+  if (!resolvedTarget || allowedRoots.includes(resolvedTarget) || !underAllowed) {
+    throw new Error("安装路径解析异常，已取消卸载");
+  }
+  // 一些 marker 是文件而不是目录（如 npm-global/.../package.json）—— 删父目录的安装根即可
+  await fs.rm(target, { recursive: true, force: true });
+// ponytail 卸载后要显式关掉 config.toml 里的注册段（否则引擎重启找不到已删的 cache）：
+// 插件 key 是 **"ponytail@ponytail"**（见 ponytail-plugin.ts 的 MARKETPLACE_SECTION），
+// 写成 "ponytail-plugin" 会静默无效。
+// 注意：install 分支必须对应地把 enabled 置回 true —— 因为 seedConfigSections 是
+// 「注册段已存在就幂等跳过」，不会把 false 翻回 true，漏了会导致重装后永久失效。
+if (id === "ponytail") {
+  await server.request("config/value/write", {
+    filePath: path.join(codexHome, "config.toml"),
+    keyPath: 'plugins."ponytail@ponytail".enabled',
+    value: false,
+  }).catch(() => undefined);
+}
+  return { ok: true, runtimes: runtimeList() };
+});
 ipcMain.handle("runtime:install", async (_event, idValue: string) => {
   const id = idValue as DevRuntimeId;
   if (!devRuntimeSpecs[id]) throw new Error("未知开发工具");
@@ -3191,6 +3756,13 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
     } else if (id === "ponytail") {
       // ponytail 写代码模式插件：从随包安装源种到引擎（plugins cache + config 注册段），技能随 cache 自动列出
       await ensurePonytailPlugin(codexHome, path.join(toolsRoot(), "ponytail-plugin"));
+      // 卸载时把注册段置成了 false，这里必须显式置回 true —— seedConfigSections 是
+      // 「段已存在就幂等跳过」，不会自己翻回 true，漏了会导致「卸载→重装」后插件永久不可用。
+      await server.request("config/value/write", {
+        filePath: path.join(codexHome, "config.toml"),
+        keyPath: 'plugins."ponytail@ponytail".enabled',
+        value: true,
+      }).catch(() => undefined);
     } else {
       await runRuntimeInstaller(id, runtimeInstaller("install-runtimes.cjs"), [id]);
     }
@@ -4088,6 +4660,14 @@ ipcMain.handle("personalization:save", async (_event, input: { nickname?: unknow
   if (model) await applyCustomModel(model);
   return config;
 });
+/** 首次见面引导保存（identity_onboard 工具的落点）：全维度写个性化档案
+ *  （助手名/称呼/场景/职业/风格/语气/爱好/习惯 + onboarded=true），重建 AGENTS.md
+ *  即时生效——刻意不重启引擎、不重写 config.toml（AGENTS.md 每新会话由引擎读取）。 */
+ipcMain.handle("personalization:save-identity", async (_event, input: Record<string, unknown>) => {
+  const config = await writePersonalization(input);
+  await applyPersonalizationToAgentsMd(config, codexHome);
+  return config;
+});
 
 // 应用级运行时开关（联网搜索等）。改完重写 config.toml 让引擎重载生效。
 ipcMain.handle("appSettings:read", async (): Promise<AppSettings> => readAppSettings(app.getPath("userData")));
@@ -4791,6 +5371,30 @@ ipcMain.handle("shell:reveal", async (_event, target: string) => {
 /** 复制本地图片文件到剪贴板：渲染层 fetch harness-image:// 自定义协议拿不到 blob，
  * 必须主进程读文件 → nativeImage → clipboard.write（Electron 44 已移除 writeImage，
  * 改用 W3C ClipboardItem）。 */
+/** 文本写剪贴板：走主进程 electron clipboard，不受渲染层 Clipboard API 的
+ *  焦点/权限限制（用户实测窗口失焦时 navigator.clipboard.writeText 抛
+ *  "Write permission denied"，表现为「复制失败」toast）。 */
+ipcMain.handle("clipboard:write", async (_event, text: string) => {
+  clipboard.writeText(String(text ?? ""));
+  return true;
+});
+/** 欢迎页「无项目」会话的临时工作目录：每次调用在基础目录下新建一个独立子目录。
+ *  基础目录优先应用安装目录（便携安装可写，用户要求"安装目录下"）；装在系统盘
+ *  Program Files 等不可写位置时回落 userData（%APPDATA%\Codex Harness Desktop）。 */
+ipcMain.handle("scratch:create", async () => {
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const name = `chat-${stamp}-${Date.now().toString(36)}`;
+  const make = async (root: string) => {
+    const dir = path.join(root, "scratch", name);
+    await fs.mkdir(dir, { recursive: true });
+    return dir;
+  };
+  try {
+    return await make(path.dirname(app.getPath("exe")));
+  } catch {
+    return await make(app.getPath("userData"));
+  }
+});
 ipcMain.handle("clipboard:write-image", async (_event, filePath: string) => {
   if (!filePath) throw new Error("缺少图片路径");
   const image = nativeImage.createFromPath(filePath);
@@ -4895,6 +5499,7 @@ ipcMain.handle("custom-model:save", async (_event, input: { provider: string; na
   }
   await fs.writeFile(customModelFile, JSON.stringify(saved, null, 2), "utf8");
   await applyCustomModel(saved);
+  broadcastProviderActivated(provider);
   return publicCustomModel(saved);
 });
 ipcMain.handle("custom-model:list", async () => {
@@ -4909,11 +5514,29 @@ ipcMain.handle("custom-model:select", async (_event, providerId: string) => {
   if (!target) throw new Error("未找到该供应商");
   const next = withModels(target);
   if (next !== target) await upsertCustomModel(next);
+  await disableOtherCustomProviders(providerId);
   await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
   await applyCustomModel(next);
+  broadcastProviderActivated(providerId);
   return publicCustomModel(next);
 });
 /** 在同一供应商内切换生效模型：保留 models 列表，只改 model 字段 */
+/** 全局互斥兜底：provider 成为唯一启用者后，其余启用中的供应商全部停用。
+ *  save / set-enabled 原本就有；set-model（下拉跨供应商切换）与 select（直接选档案）
+ *  同样会改变生效者——漏掉会出现「中转站登录后模型列表里其他供应商仍显示启用」。 */
+async function disableOtherCustomProviders(provider: string) {
+  const list = await readCustomModels();
+  for (const other of list) {
+    if (other.provider !== provider && other.enabled !== false) {
+      await upsertCustomModel({ ...other, enabled: false });
+    }
+  }
+}
+/** 供应商→中转站反向联动的信号：任何供应商成为当前生效后广播给渲染层，
+ *  渲染层据此清掉不再匹配的 relay-active（localStorage 在渲染层，主进程清不了）。 */
+function broadcastProviderActivated(provider: string) {
+  try { sendToWindow("harness:event", { type: "provider-activated", provider, at: Date.now() }); } catch { /* 窗口未就绪 */ }
+}
 ipcMain.handle("custom-model:set-model", async (_event, input: { provider: string; model: string; apply?: boolean; restart?: boolean }) => {
   const model = input.model.trim();
   if (!model) throw new Error("模型 ID 不能为空");
@@ -4922,12 +5545,38 @@ ipcMain.handle("custom-model:set-model", async (_event, input: { provider: strin
   if (!target) throw new Error("未找到该供应商");
   const next = withModels({ ...target, model }, model);
   await upsertCustomModel(next);
+  await disableOtherCustomProviders(input.provider);
   await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
   // apply=false 时只保存配置不重写 config.toml（最轻量，仅对齐档案文件）。
   // apply=true + restart=false：一次性写齐 custom-model.json + config.toml 顶层 + catalog，
   // 但**不重启引擎**——同供应商换模型不需要重启，重启会打断在跑的回合。
   // apply=true + restart 缺省 = 旧语义：写配置并重启引擎（供应商级切换用）。
-  if (input.apply !== false) await applyCustomModel(next, { restart: input.restart !== false });
+  if (input.apply !== false) {
+    await applyCustomModel(next, { restart: input.restart !== false });
+    broadcastProviderActivated(input.provider);
+  }
+  return publicCustomModel(next);
+});
+/** 思考等级档案持久化：写进 custom-model.json（models[].effort + 顶层 effort），
+ *  并同步 config.toml 顶层 model_reasoning_effort（restart:false 不重启引擎——
+ *  会话内显式档位由每轮 turn/start 的 effort 下发，config.toml 只做重启后的兜底默认）。
+ *  与「模型自报」同步案同源：档案不写，切供应商/重装后档位就丢了。 */
+ipcMain.handle("custom-model:set-effort", async (_event, input: { provider: string; model: string; effort: string }) => {
+  const model = input.model.trim();
+  const effort = String(input.effort ?? "").trim();
+  if (!model) throw new Error("模型 ID 不能为空");
+  if (effort && !["minimal", "low", "medium", "high", "ultra", "xhigh"].includes(effort)) throw new Error(`未知思考档位: ${effort}`);
+  const list = await readCustomModels();
+  const target = list.find((entry) => entry.provider === input.provider);
+  if (!target) throw new Error("未找到该供应商");
+  const effortPatch = effort ? { effort } : { effort: undefined };
+  let models = (target.models ?? []).map((m) => m.id === model ? { ...m, ...effortPatch } : m);
+  // 旧档案 models 缺当前生效模型条目时补一条，保证顶层与 models[] 永不同步分叉
+  if (effort && !models.some((m) => m.id === model)) models = [...models, { id: model, effort }];
+  const next: CustomModelFile = { ...target, models, ...(model === target.model ? { effort: effort || undefined } : {}) };
+  await upsertCustomModel(next);
+  await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
+  await applyCustomModel(next, { restart: false });
   return publicCustomModel(next);
 });
 /** 延迟生效：读取当前激活供应商并重启引擎使配置生效（供应商切换「重启生效」按钮用，幂等） */
@@ -5019,6 +5668,7 @@ ipcMain.handle("custom-model:set-enabled", async (_event, input: { provider: str
         if (changed) await writeRelayStore(store);
       }
     } catch { /* 账号库不存在等：跳过联动，不影响启用主流程 */ }
+    broadcastProviderActivated(input.provider);
     return publicCustomModel(next);
   }
   const next: CustomModelFile = { ...target, enabled: false };

@@ -7,7 +7,7 @@
  */
 
 /** harness 自己会重新生成的顶层键 */
-export const HARNESS_CONFIG_KEYS = new Set(["model", "model_context_window", "model_provider", "preferred_auth_method", "developer_instructions", "model_catalog_json"]);
+export const HARNESS_CONFIG_KEYS = new Set(["model", "model_context_window", "model_provider", "preferred_auth_method", "developer_instructions", "model_catalog_json", "model_reasoning_effort"]);
 
 /** harness 自己会整段重写的表；其余段落（用户手工配置的 projects / marketplaces / plugins 等）原样保留 */
 export const HARNESS_CONFIG_SECTIONS = new Set(["model_providers", "windows", "tools", "sandbox_workspace_write", "shell_environment_policy", "features", "mcp_servers", "otel", "permissions"]);
@@ -48,6 +48,13 @@ export function preserveUserConfig(existing: string): string {
         continue;
       }
       skipping = false;
+    } else if (!skipping) {
+      // 错位孤儿键清理：这些顶层键若出现在某个 section 内（引擎运行中 append、
+      // 或历史版本写在文件尾被段落吞掉），TOML 语义上属于该 section、引擎不读，
+      // 只会误导排查（实测：L136 model_reasoning_effort="medium" 落进
+      // [mcp_servers.nuphus]，让人以为思考等级被改成了 medium）。一律丢弃。
+      const scalar = line.match(/^\s*([A-Za-z0-9_-]+)\s*=/);
+      if (scalar && HARNESS_CONFIG_KEYS.has(scalar[1])) continue;
     }
     if (!skipping) kept.push(line);
   }
