@@ -375,7 +375,7 @@ import { GlobalSearchView } from "./components/IndexLibrary";
 import BrowserPane from "./components/BrowserPane";
 import type { SearchPreviewTarget } from "./components/IndexLibrary";
 import ArchivePage from "./components/ArchivePage";
-import { jumpToBottom } from "./components/scroll-utils";
+import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant } from "./components/scroll-utils";
 import { FlowDiagram } from "./components/FlowDiagram";
 import { MermaidDiagram } from "./components/MermaidDiagram";
 import { currentStreak, dayKey, formatTokens, lastDays, readUsageStats, recordTurnUsage, resetUsageStats, totalTokens } from "./lib/usage-stats";
@@ -6692,9 +6692,30 @@ export default function App() {
   }, [optimisticInput, thread]);
   useEffect(() => {
     if (!optimisticInput || !optimisticConfirmed) return;
+    // 锚定模式：真实回合接管临时气泡的瞬间，把锚点平滑换到真实回合——
+    // 乐观气泡挂在回合列表末尾、真实 turn 在其前一位，位置相邻但不重合，
+    // 不重锚的话「消息钉在顶部」会在确认瞬间跳一下（锚定模式的核心承诺就是不跳）。
+    if (anchorTopRef.current) {
+      const baseline = optimisticBaselineRef.current;
+      const newTurn = thread?.turns.find((turn) => {
+        if (baseline.threadId === thread?.id && baseline.turnIds.has(turn.id)) return false;
+        return turn.items.some((item) => item.type === "userMessage" && userMessageMatchesInput(item, optimisticInput.content ?? []));
+      });
+      const el = scrollRef.current;
+      const anchor = newTurn ? document.getElementById(`turn-${newTurn.id}`) : null;
+      if (el && anchor) {
+        // 锚点平滑换到真实回合：乐观气泡与真实消息渲染位置相邻，重锚保证「消息钉在
+        // 顶部」在确认瞬间不跳；基线同步刷新，回复增长量从此刻起算
+        anchorElRef.current = anchor;
+        contentAnchorTopRef.current = contentOffsetTop(anchor, el) - 6;
+        anchorBaselineHeightRef.current = el.scrollHeight;
+        if (Math.abs(contentAnchorTopRef.current - el.scrollTop) > 8) scrollToOffsetInstant(el, contentAnchorTopRef.current);
+      }
+      if (newTurn) anchorTurnIdRef.current = newTurn.id;
+    }
     optimisticTurnIdRef.current = null;
     setOptimisticInput(null);
-  }, [optimisticConfirmed, optimisticInput]);
+  }, [optimisticConfirmed, optimisticInput, thread]);
   const [openingThread, setOpeningThread] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingRequest[]>([]);
   const [diff, setDiff] = useState("");
@@ -7883,6 +7904,23 @@ export default function App() {
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   // 流式跟随：用户滚到底时为 true（持续自动跟 agent 最新内容），向上滚看历史时为 false
   const stickToBottomRef = useRef(true);
+  // ── 发送锚顶（对齐 WorkBuddy，09-12 用户反馈「正文出字上下跳动」）──
+  // 发送后不再贴底，而是把这条新消息钉在对话区顶部：回复向下方的空白处长，
+  // 第一屏上方内容纹丝不动。贴底模式下每个字都把整屏往上顶、「思考中」占位头
+  // 塌陷时再猛坠一下 = 上下跳动。
+  // 退出锚定 = 回复开始后内容**增长量**（相对锚定时刻的 scrollHeight）超过 40px，
+  // 即回复已长满第一屏、新字开始流到视口下方——此时交回贴底跟随（此时贴底与钉顶
+  // 只差 ≤40px，切换无感）。判据必须用增长量而不是 away（视口下方内容量）：
+  // 长消息本身在锚定瞬间就有巨大的 away，用它会在发送瞬间就误退回贴底（实测反证）。
+  const anchorTopRef = useRef(false);
+  const anchorBaselineHeightRef = useRef(0);
+  /** 锚元素（乐观气泡或确认后的真实回合），流式跟随钉顶时实时取坐标用 */
+  const anchorElRef = useRef<HTMLElement | null>(null);
+  /** 确认后的真实回合 id：钉顶时动态按 id 查元素——回合元素可能比确认信号晚一帧挂载，
+      一次性换锚会错过它（实测钉到已卸载的乐观气泡坐标上，gap -506） */
+  const anchorTurnIdRef = useRef<string | null>(null);
+  /** 锚元素的内容坐标兜底值（锚元素已卸载时用） */
+  const contentAnchorTopRef = useRef(0);
   const [workStartedAt, setWorkStartedAt] = useState<number | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -8746,7 +8784,10 @@ const commandMatches = useMemo(() => {
       // 拖滚动条、键盘 PageUp/方向键只产生 scroll 事件——靠"scrollTop 变小"识别向上。
       // 没有这条，流式期间用户在迟滞区（4px~25% 视口）内往上拖会被下一帧拉回底部，
       // 即"往上看回答会自动下滑直到回答给完"。
-      if (scroller.scrollTop < lastTop - 2 && dist > 4) stickToBottomRef.current = false;
+      if (scroller.scrollTop < lastTop - 2 && dist > 4) {
+        stickToBottomRef.current = false;
+        anchorTopRef.current = false; // 用户主动上滚 = 解除钉顶（否则下次更新又被钉回去）
+      }
       // 迟滞：距底 ≤4px 重新开启跟随；>25% 视口才关闭。中间地带保持原状，
       // 避免流式内容增高时 stick 反复翻转（此前 smooth 滚动动画的中间滚动事件
       // 会误关跟随，导致"消息发了不显示、停止后才出现"）。
@@ -8756,7 +8797,10 @@ const commandMatches = useMemo(() => {
     };
     // 向上滚轮 = 用户主动浏览，立即停止底部跟随（不等 25% 阈值，防止跟流式滚动打架）。
     const onWheel = (event: WheelEvent) => {
-      if (event.deltaY < 0) stickToBottomRef.current = false;
+      if (event.deltaY < 0) {
+        stickToBottomRef.current = false;
+        anchorTopRef.current = false;
+      }
     };
     updateBottomStateRef.current = update;
     // rAF 节流：scroll 事件密集时 update 会读 scrollHeight/scrollTop 强制同步布局
@@ -8798,13 +8842,51 @@ const commandMatches = useMemo(() => {
     // 这里消费后立即重置，之后的流式更新走常规 stick 跟随（smooth 跟手）。
     if (switchJumpRef.current) {
       switchJumpRef.current = false;
+      // 切会话 = 全新定位（贴底看最新），不携带上一个会话遗留的锚定模式
+      anchorTopRef.current = false;
       stickToBottomRef.current = true;
       jumpToBottom(el);
       return;
     }
+    if (anchorTopRef.current) {
+      // 锚定模式：每个 thread 更新都把消息重新钉回顶部（瞬时，无动画），抵消内容
+      // 增长带来的位移——视口完全稳定。回复增长超过 40px（长满第一屏、新字流到
+      // 视口下方）→ 交回贴底跟随（此刻贴底与钉顶只差 ≤40px，切换无感）。
+      // 注意：确认（optimisticConfirmed）之前 scrollHeight 的猛涨是「真实回合挂载」
+      // 的布局跳变（回合里会把消息再渲染一遍），不是回复增长——只刷新基线不退出，
+      // 否则锚定会在确认瞬间就被误杀（长消息下必现，实测反证）。
+      const growth = el.scrollHeight - anchorBaselineHeightRef.current;
+      if (growth > 40 && optimisticConfirmed) {
+        anchorTopRef.current = false;
+        stickToBottomRef.current = true;
+      } else {
+        if (growth > 40) anchorBaselineHeightRef.current = el.scrollHeight;
+        // 动态解析锚元素：确认后优先真实回合（元素可能晚一帧挂载，按 id 实时查），
+        // 未确认用乐观气泡；都取不到再用兜底坐标
+        let a: HTMLElement | null = null;
+        if (anchorTurnIdRef.current) a = document.getElementById(`turn-${anchorTurnIdRef.current}`);
+        if (!a) a = anchorElRef.current;
+        if (a && a.isConnected) contentAnchorTopRef.current = contentOffsetTop(a, el) - 6;
+        scrollToOffsetInstant(el, contentAnchorTopRef.current);
+        return;
+      }
+    }
     if (!stickToBottomRef.current) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
-  }, [thread]);
+  }, [thread, optimisticConfirmed]);
+  // 锚顶滚动：乐观气泡挂载后把这条新消息顶到对话区顶部（WorkBuddy 观感）。
+  // 必须瞬时（scrollToOffsetInstant）：.timeline 的 CSS scroll-behavior:smooth 会让
+  // scrollTo({behavior:"auto"}) 也走平滑动画，动画中途与流式跟随互相打架。
+  useLayoutEffect(() => {
+    if (!optimisticInput || !anchorTopRef.current) return;
+    const el = scrollRef.current;
+    const anchor = document.getElementById("chat-anchor");
+    if (!el || !anchor) return;
+    contentAnchorTopRef.current = contentOffsetTop(anchor, el) - 6;
+    anchorBaselineHeightRef.current = el.scrollHeight;
+    anchorElRef.current = anchor;
+    scrollToOffsetInstant(el, contentAnchorTopRef.current);
+  }, [optimisticInput]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("theme", theme);
@@ -10678,8 +10760,10 @@ const commandMatches = useMemo(() => {
       const optimisticId = `local-${Date.now()}`;
       justSentIds.add(optimisticId);
       setOptimisticInput({ id: optimisticId, type: "userMessage", content: input });
-      // 发送即贴底跟随最新：agent 回复从底部展开，始终自动滚到最新内容
-      stickToBottomRef.current = true;
+      // 编辑分支发送同样锚顶（与主发送一致，见 anchorTopRef 注释）
+      stickToBottomRef.current = false;
+      anchorTopRef.current = true;
+      anchorTurnIdRef.current = null;
       activeModelRef.current = selectedModel?.model ?? modelName(modelId);
       const result = await window.codex.request("turn/start", {
         threadId: forked.thread.id,
@@ -12343,8 +12427,11 @@ const commandMatches = useMemo(() => {
     const optimisticId = `local-${Date.now()}`;
     justSentIds.add(optimisticId);
     setOptimisticInput({ id: optimisticId, type: "userMessage", content: sendInput });
-    // 发送即贴底跟随最新：agent 回复从底部展开，始终自动滚到最新内容
-    stickToBottomRef.current = true;
+    // 发送后锚顶：新消息顶到对话区顶部，回复向下展开（对齐 WorkBuddy；贴底跟随
+    // 在回复长超一屏后由 anchor 分支自动接管）
+    stickToBottomRef.current = false;
+    anchorTopRef.current = true;
+    anchorTurnIdRef.current = null;
     let createdThreadId: string | null = null;
     try {
       const startTurn = async (target: Thread) => window.codex.request("turn/start", {
@@ -12987,7 +13074,7 @@ const commandMatches = useMemo(() => {
             </button>
           )}
           {thread?.turns.slice(Math.max(0, thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW))).map((turn) => <MemoTurnView turn={turn} isLastTurn={turn.id === thread.turns[thread.turns.length - 1]?.id} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={tokenUsage} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />)}
-          {optimisticInput && !optimisticConfirmed && <ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} />}
+          {optimisticInput && !optimisticConfirmed && <div id="chat-anchor"><ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} /></div>}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
           {systemEvents.map((event) => <div className={`system-event ${event.tone ?? "info"}`} key={event.id}><strong>{event.tone === "success" ? <CircleCheck size={13} className="system-event-icon" /> : null}{event.title}</strong><Markdown>{event.text}</Markdown></div>)}
           {/* 上下文压缩分隔线：两边虚线 + 中间文字，状态切换带过渡；success/error 常驻可手动关闭，

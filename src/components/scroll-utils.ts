@@ -14,6 +14,20 @@ export function contentOffsetTop(el: HTMLElement, scroller: HTMLElement) {
 }
 
 /**
+ * 瞬时滚动到指定内容坐标（绕过 CSS scroll-behavior:smooth 的平滑动画）。
+ *
+ * 「发送锚顶」用：锚定必须是瞬时的——smooth 动画中途的滚动事件会跟流式跟随、
+ * 事件监听互相打架（实测表现为锚定位置漂移、测量时停在半路）。与 jumpToBottom
+ * 同一套「临时置 scrollBehavior=auto」的窍门，只是目标是指定坐标而不是底部。
+ */
+export function scrollToOffsetInstant(scroller: HTMLElement, top: number) {
+  const prev = scroller.style.scrollBehavior;
+  scroller.style.scrollBehavior = "auto";
+  scroller.scrollTop = Math.max(0, Math.round(top));
+  scroller.style.scrollBehavior = prev;
+}
+
+/**
  * 瞬时定位到滚动容器底部（最新消息）。
  *
  * 背景 1：`.timeline` 上设置了 `scroll-behavior: smooth`，Chrome 里 `scrollTo({behavior:"auto"})`
