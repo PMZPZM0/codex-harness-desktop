@@ -8103,9 +8103,18 @@ export default function App() {
     const lastId = lastGroup?.id?.startsWith("turn-") ? lastGroup.id.slice(5) : "";
     const isNewTurn = Boolean(lastId) && !(baseline.threadId && baseline.turnIds.has(lastId));
     let anchor: HTMLElement | null = null;
-    if (isNewTurn) anchor = lastGroup.querySelector<HTMLElement>(".user-message");
+    // ⛔ 锚点必须是「**本次发送的那条真实消息**」，不能退回挂在时间线**末尾**的乐观气泡。
+    // 为什么（用户实测：「我排队消息点立即发出去了，Codex发出来的消息还在我消息上面运行呢」）：
+    // 「立即」走 `turn/steer`，引擎的后续输出是**追加进那个已有回合组**里的，而乐观气泡在
+    // 所有回合组**之后** —— 钉住气泡就等于把视口钉在"回合内容的后面"，于是后续输出出现在
+    // 气泡（= 用户消息）**上方**。取组内**最后一条** `.user-message` 才是刚发的那条：
+    //   · 正常发送 → isNewTurn 为真，组里只有这一条，取最后一条 = 同一条；
+    //   · steer    → 不是新回合，但组里有多条 user message，最后一条正是刚注入的这条。
+    const userMessages = lastGroup ? [...lastGroup.querySelectorAll<HTMLElement>(".user-message")] : [];
+    const lastUserMessage = userMessages[userMessages.length - 1] ?? null;
+    if (lastUserMessage && (isNewTurn || userMessages.length > 1)) anchor = lastUserMessage;
     if (!anchor) anchor = document.getElementById("chat-anchor");
-    if (!anchor || !anchor.isConnected) { dbg("pin-miss", { isNewTurn }); return false; }
+    if (!anchor || !anchor.isConnected) { dbg("pin-miss", { isNewTurn, users: userMessages.length }); return false; }
     const anchorH = anchor.getBoundingClientRect().height;
     // 用户消息自身超过一屏 → 钉顶没有意义（整条装不下），直接让用户看到回复
     if (anchorH > el.clientHeight) {
