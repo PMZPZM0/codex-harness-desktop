@@ -2560,6 +2560,47 @@ function payloadLanguage(text: string): string {
   return "text";
 }
 
+/** 行级虚拟化的阈值与几何常量（必须与 .virtual-diff-line 的 line-height 一致，否则滚动会跳）。 */
+const DIFF_VIRTUAL_THRESHOLD = 400;
+const DIFF_LINE_HEIGHT = 20;
+const DIFF_OVERSCAN = 40;
+
+/** 大 diff 的行级虚拟化（09-14，学 WorkBuddy 的 tool-diff 行虚拟化）：只挂可视区 ± overscan 的行。
+ *  diff 每行自带 +/- 前缀，逐行判定着色是准确的、不需要跨行语法上下文——
+ *  这正是它比「虚拟化整个代码块」安全的原因（后者要靠 SyntaxHighlighter 的跨行状态）。
+ *  ⚠️ 虚拟化后 DOM 里只有可视行：Ctrl+F / 全选复制拿不到屏幕外的行，所以只在 diff 且行数 > 阈值时启用。 */
+const VirtualDiffLines = memo(function VirtualDiffLines({ text, maxHeight, fontSize, fontFamily }: { text: string; maxHeight: number; fontSize: number | string; fontFamily: string }) {
+  const lines = useMemo(() => text.split("\n"), [text]);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [range, setRange] = useState(() => ({ start: 0, end: Math.min(lines.length, 120) }));
+  const recompute = useCallback(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const first = Math.max(0, Math.floor(el.scrollTop / DIFF_LINE_HEIGHT) - DIFF_OVERSCAN);
+    const count = Math.ceil((el.clientHeight || maxHeight) / DIFF_LINE_HEIGHT) + DIFF_OVERSCAN * 2;
+    const end = Math.min(lines.length, first + count);
+    setRange((current) => (current.start === first && current.end === end ? current : { start: first, end }));
+  }, [lines.length, maxHeight]);
+  useLayoutEffect(() => { recompute(); }, [recompute]);
+  const rows = [];
+  for (let i = range.start; i < range.end; i++) {
+    const line = lines[i] ?? "";
+    const kind = /^(\+\+\+|---)/.test(line) ? "meta" : line.startsWith("@@") ? "hunk" : line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "ctx";
+    rows.push(<div key={i} className={`virtual-diff-line ${kind}`} style={{ transform: `translateY(${i * DIFF_LINE_HEIGHT}px)` }}>{line || " "}</div>);
+  }
+  return (
+    <div
+      ref={boxRef}
+      className="virtual-diff tool-code-pre"
+      style={{ maxHeight, fontSize, fontFamily }}
+      onScroll={recompute}
+      data-total-lines={lines.length}
+    >
+      <div className="virtual-diff-inner" style={{ height: lines.length * DIFF_LINE_HEIGHT }}>{rows}</div>
+    </div>
+  );
+});
+
 const ToolCodeBlock = memo(function ToolCodeBlock({ language, text, revealing, className, maxHeight = 260 }: {
   language: string;
   text: string;
@@ -2568,24 +2609,34 @@ const ToolCodeBlock = memo(function ToolCodeBlock({ language, text, revealing, c
   maxHeight?: number;
 }) {
   const settings = useCodeSettings();
+  // 大 diff 走行级虚拟化（09-14，学 WorkBuddy 的 tool-diff 行虚拟化）：
+  // 一个几千行的 diff 真建几千个行节点 + 语法高亮，是「切会话/展开编辑卡就卡」的主要来源。
+  // 只在「diff + 行数够多 + 未开启折行（行高恒定）+ 不在流式追字」时启用——流水追字期间文本还在长，
+  // 虚拟化会与逐字追字互相打架；折行会让行高不固定，测不准。其余情况仍走 SyntaxHighlighter。
+  const lineCount = useMemo(() => (text ? text.split("\n").length : 0), [text]);
+  const virtualizable = language === "diff" && !revealing && !settings.wrap && lineCount > DIFF_VIRTUAL_THRESHOLD;
   return (
     <div className={`tool-code-block ${className ?? ""} ${revealing ? "packet-revealing" : ""}`.trim()}>
-      <SyntaxHighlighter
-        language={language}
-        style={codeThemeStyle(settings.theme)}
-        PreTag="pre"
-        CodeTag="code"
-        className="tool-code-pre code-highlight"
-        showLineNumbers={settings.lineNumbers}
-        wrapLongLines={settings.wrap}
-        customStyle={{
-          fontSize: codeFontSize(settings.fontScale),
-          fontFamily: codeFontStack(settings.font),
-          lineHeight: 1.55,
-          maxHeight,
-          margin: 0,
-        }}
-      >{text || " "}</SyntaxHighlighter>
+      {virtualizable
+        ? <VirtualDiffLines text={text} maxHeight={maxHeight} fontSize={codeFontSize(settings.fontScale)} fontFamily={codeFontStack(settings.font)} />
+        : (
+          <SyntaxHighlighter
+            language={language}
+            style={codeThemeStyle(settings.theme)}
+            PreTag="pre"
+            CodeTag="code"
+            className="tool-code-pre code-highlight"
+            showLineNumbers={settings.lineNumbers}
+            wrapLongLines={settings.wrap}
+            customStyle={{
+              fontSize: codeFontSize(settings.fontScale),
+              fontFamily: codeFontStack(settings.font),
+              lineHeight: 1.55,
+              maxHeight,
+              margin: 0,
+            }}
+          >{text || " "}</SyntaxHighlighter>
+        )}
       {revealing ? <span className="packet-stream-cursor tool-code-cursor" aria-hidden /> : null}
     </div>
   );
@@ -6622,6 +6673,14 @@ export default function App() {
        window.__adbg。这是「点一下到内容可见」的真实值——比 e2e 里轮询文本可靠得多
        （会话内容相同时文本不变，轮询会一直等到超时）。 */
   const switchStartRef = useRef(0);
+  /** 本次切换是「命中缓存秒开」还是「冷加载」—— 结算时一起记进 __adbg，
+      否则 P95 里两拨数据混在一起，看不出优化到底作用在哪一拨（09-14）。 */
+  const switchModeRef = useRef<"cached" | "fresh">("fresh");
+  /** 本次切换开始时该会话已渲染的回合数（验收用：证明"秒开"是真的有内容，不是空壳）。 */
+  const switchTurnsRef = useRef(0);
+  /** 每个会话离开时的阅读位置（距底像素）。命中缓存切回时还原——09-14：
+   *  原先无条件跳底，用户「切出去看一眼再切回来」会丢掉正在读的位置。 */
+  const scrollMemoRef = useRef<Map<string, number>>(new Map());
   const threadRef = useRef<Thread | null>(null);
   /** 弹窗锁定会话 id 的 ref 形态：boot effect（[] 空依赖）闭包里要读到它，
    *  用 state 会在首次渲染拿到 null（popoutThreadId 是异步探测的）。 */
@@ -9198,6 +9257,21 @@ export default function App() {
 /** 长会话首屏最多渲染的回合数：软件渲染下全量挂载几千个回合是「切会话慢」的主因，
  *  默认只渲染最近这么多回合，更早的由「显示更早的 N 条消息」按需展开。 */
 const TURN_WINDOW = 40;
+
+/** 窗口状态（每个会话展开了多少回合）最多记忆多少个会话：超出的按「最久未访问」淘汰。
+ *  这是内存保护——记忆本身是 09-14 为「切回长会话不缩水」加的，但不能无限涨。 */
+const TURN_WINDOW_MEMORY_KEEP = 8;
+
+/** 把某会话的窗口状态「提到最新」，并淘汰最久未访问的条目（对象键序 = 访问序）。 */
+function touchTurnWindow(id: string, map: Record<string, number>): Record<string, number> {
+  const value = map[id];
+  const rest: Record<string, number> = {};
+  for (const key of Object.keys(map)) if (key !== id) rest[key] = map[key];
+  const merged = value === undefined ? rest : { ...rest, [id]: value };
+  const keys = Object.keys(merged);
+  for (const key of keys.slice(0, Math.max(0, keys.length - TURN_WINDOW_MEMORY_KEEP))) delete merged[key];
+  return merged;
+}
 /** 发送锚顶的落点偏移：钉顶时让锚点顶部再**下移**这么多像素，而不是紧贴视口上沿。
  *  用户反馈（09-12 晚，附截图）：「太高了，往下放两行」——原来只上移 6px，消息首行
  *  几乎贴着对话区上边缘，`已深度思考` 之类的头部也被顶到视口最上沿。
@@ -9537,6 +9611,8 @@ const commandMatches = useMemo(() => {
   // 会话切换耗时诊断（09-12 压测用）：openThread 落笔 switchStartRef，这里在 **DOM 已提交**
   // 之后结算一次——这才是用户真正感知的「点一下到看见内容」的时间。
   // 写进 window.__adbg（e2e 场景会 dump），不参与任何业务逻辑。
+  // 09-14 扩充：带上 mode(cached/fresh) 与回合数，并提供 window.__switchPerfStats() 算分位数，
+  // 供 accept switch-perf 场景直接断言「命中缓存的切换」与「冷加载」两条曲线。
   useLayoutEffect(() => {
     if (!thread?.id || !switchStartRef.current) return;
     const ms = Math.round(performance.now() - switchStartRef.current);
@@ -9544,9 +9620,28 @@ const commandMatches = useMemo(() => {
     try {
       const w = window as any;
       if (!w.__adbg) w.__adbg = [];
-      w.__adbg.push({ r: "thread-switch", id: String(thread.id).slice(0, 8), ms });
+      w.__adbg.push({ r: "thread-switch", id: String(thread.id).slice(0, 8), ms, mode: switchModeRef.current, turns: switchTurnsRef.current });
+      if (w.__adbg.length > 400) w.__adbg.splice(0, w.__adbg.length - 400);
     } catch { /* 诊断失败不影响功能 */ }
+    switchModeRef.current = "fresh";
   }, [thread?.id]);
+
+  /** accept switch-perf 场景的读数口：把 __adbg 里的 thread-switch 记录算成分位数，
+   *  并按 cached / fresh 分组——否则「命中缓存秒开」与「冷加载」两拨数据混在一个 P95 里，
+   *  优化了哪一拨根本看不出来（09-14）。纯诊断，不参与业务。 */
+  useEffect(() => {
+    const w = window as any;
+    w.__switchPerfStats = () => {
+      const rows = (w.__adbg ?? []).filter((x: any) => x.r === "thread-switch");
+      const pct = (arr: number[], p: number) => (arr.length ? [...arr].sort((a, b) => a - b)[Math.min(arr.length - 1, Math.floor(arr.length * p))] : null);
+      const group = (mode: "cached" | "fresh" | null) => {
+        const arr = rows.filter((r: any) => (mode ? r.mode === mode : true)).map((r: any) => r.ms);
+        return { n: arr.length, p50: pct(arr, 0.5), p95: pct(arr, 0.95), max: arr.length ? Math.max(...arr) : null };
+      };
+      return { all: group(null), cached: group("cached"), fresh: group("fresh") };
+    };
+    return () => { try { delete (window as any).__switchPerfStats; } catch { /* ignore */ } };
+  }, []);
   // 多会话性能（09-12 P1）：把「当前正在查看哪个会话」上报主进程，主进程据此只把
   // 该会话的高频事件（各种 delta / item 全文 / outputDelta）转发给渲染层——
   // 后台会话的流式事件不再白白序列化跨进程、到了再被丢掉（N 会话 = N 倍无用开销）。
@@ -9592,6 +9687,15 @@ const commandMatches = useMemo(() => {
         pinGapLockedRef.current = null;
       }
       clearAnchorPad();   // 锚顶留白不能串到另一条会话（切回来时钉顶会重新撑起来）
+      // ★ 09-14：切回**命中过缓存**的会话且用户当时在读历史 → 还原距底偏移，不贴底。
+      //   recallScrollOffset 取一次即消费；没有记忆（一直贴底/首次打开）才走下面的贴底。
+      const remembered = recallScrollOffset(thread?.id ?? "");
+      if (remembered !== null) {
+        stickToBottomRef.current = false;
+        scrollToOffsetInstant(el, Math.max(0, el.scrollHeight - el.clientHeight - remembered));
+        updateBottomStateRef.current?.();
+        return;
+      }
       stickToBottomRef.current = true;
       jumpToBottom(el, undefined, contentTailTarget);
       return;
@@ -12919,6 +13023,31 @@ const commandMatches = useMemo(() => {
     }
   }
 
+  /** 离开某会话前记下阅读位置：只在「用户确实往上翻了」时记（距底 > 40px），
+   *  贴在底部的会话不需要记忆（切回来本来就该贴底）。 */
+  function rememberScrollPosition(id: string) {
+    if (!id) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (fromBottom > 40) scrollMemoRef.current.set(id, fromBottom);
+    else scrollMemoRef.current.delete(id);
+    // 与窗口记忆同量级的 LRU 上限，避免长跑进程里无界增长
+    if (scrollMemoRef.current.size > TURN_WINDOW_MEMORY_KEEP) {
+      const first = scrollMemoRef.current.keys().next().value;
+      if (first !== undefined) scrollMemoRef.current.delete(first);
+    }
+  }
+
+  /** 取回某会话的阅读位置；没有记忆（或已贴在底部）返回 null → 调用方走原来的贴底逻辑。 */
+  function recallScrollOffset(id: string): number | null {
+    if (!id) return null;
+    const value = scrollMemoRef.current.get(id);
+    if (value === undefined) return null;
+    scrollMemoRef.current.delete(id); // 用一次即消费，避免后续无关渲染反复跳位
+    return value;
+  }
+
   async function openThread(id: string, freshThread?: Thread | null) {    switchStartRef.current = performance.now();
     setChatSearchOpen(false);
     // 快速连点防竞态：只有最新一次切换的 resume 响应才允许落地渲染
@@ -12943,6 +13072,10 @@ const commandMatches = useMemo(() => {
     // 缓存秒开的会话不再强制遮罩——WorkBuddy 式直切（缓存直渲 + 后台 resume 对齐），
     // 每次切换都白遮 ~200ms 是「切换不够丝滑」的直接观感来源。
     if (!threadCacheRef.current.get(id)) setSwitchingThreadId(id);
+    // 切换诊断（09-14）：这一笔是「冷加载」还是「命中缓存」，以及缓存里有几轮内容——
+    // 结算时一并写进 __adbg，accept switch-perf 靠它区分两条曲线。
+    switchModeRef.current = threadCacheRef.current.get(id) ? "cached" : "fresh";
+    switchTurnsRef.current = threadCacheRef.current.get(id)?.turns.length ?? 0;
     setMobileNav(false);
     setDiff("");
     setSystemEvents([]);
@@ -12961,12 +13094,18 @@ const commandMatches = useMemo(() => {
     setWorkStartedAt(knownRunning ? (runningStartedAtRef.current.get(id) ?? Date.now()) : null);
     setInterrupting(false);
     // 切会话后滚动位置属于旧会话，不能带过来；等新内容渲染后直接跳到最新消息。
+    // ★ 09-14：离开前先把「旧会话的阅读位置」记下来（距底偏移），命中缓存切回时据此还原——
+    //   原先无条件跳底，用户切出去看一眼再切回来会丢掉正在读的位置（WorkBuddy 靠缓存保住它）。
+    rememberScrollPosition(threadRef.current?.id ?? "");
     switchJumpRef.current = { id, at: Date.now() };
-    // 渲染窗口一并重置：切换成本与会话历史长度、上次翻页深度无关（切回即锚定最新一屏）。
-    // 游标保留在 turnsCursorRef，向上滚动时按需继续增量加载。
-    if ((turnWindowRef.current[id] ?? TURN_WINDOW) !== TURN_WINDOW) {
-      turnWindowRef.current = { ...turnWindowRef.current, [id]: TURN_WINDOW };
+    // 渲染窗口：**命中缓存则保留上次展开的深度**（切回刚看过的长会话不该把内容缩回去），
+    // 冷加载才重置——重置的意义是「切换成本与会话历史长度无关」，冷加载本来就没内容。
+    const keepWindow = Boolean(threadCacheRef.current.get(id));
+    if (!keepWindow && (turnWindowRef.current[id] ?? TURN_WINDOW) !== TURN_WINDOW) {
+      turnWindowRef.current = touchTurnWindow(id, { ...turnWindowRef.current, [id]: TURN_WINDOW });
       setTurnWindow(turnWindowRef.current);
+    } else {
+      turnWindowRef.current = touchTurnWindow(id, turnWindowRef.current);
     }
     closeTaskMenu();
     setReviewBusy(false);
@@ -14345,7 +14484,19 @@ const commandMatches = useMemo(() => {
           <div className="timeline-bottom-spacer anchor-pad" ref={anchorSpacerRef} style={{ height: 0 }} aria-hidden />
         </div>
           {switchingThreadId && (
-            <div className={`thread-switch-overlay ${switchingFading ? "fading" : ""}`} role="status"><Spinner /><span>正在恢复会话…</span></div>
+            <div className={`thread-switch-overlay ${switchingFading ? "fading" : ""}`} role="status">
+              <Spinner /><span>正在恢复会话…</span>
+              {/* 09-14（学 WorkBuddy 骨架优先）：冷加载时先把这个会话的形态画出来——
+                  列表里已有的名称与预览先行占位，用户立刻知道"打开的是哪个会话"，
+                  而不是盯着一句「正在恢复会话…」的纯等待。真实内容到达后整体替换。 */}
+              {switchingMeta && (
+                <div className="thread-switch-skeleton" aria-hidden="true">
+                  {switchingMeta.name ? <div className="skeleton-line title">{switchingMeta.name}</div> : null}
+                  {switchingMeta.preview ? <div className="skeleton-line">{switchingMeta.preview.slice(0, 120)}</div> : null}
+                  <div className="skeleton-line short" />
+                </div>
+              )}
+            </div>
           )}
           {awayFromBottom && (
             <button
