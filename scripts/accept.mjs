@@ -61,6 +61,60 @@ const clickRow = (h, i) => h.eval(`(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 const CHECKS = [
   {
+    id: "wake-settings",
+    name: "⑪ 设置 → 语音通话：唤醒卡片与「最近听到什么」诊断可见（09-13 唤醒修复的渲染侧）",
+    run: async (h) => {
+      // 为什么断言这一条：唤醒是常驻监听，跑在 VoiceCallFloat，而状态显示在设置页 ——
+      // 中间靠 `src/voice/wake-state.ts` 广播。CDP 测不了麦克风与识别，但**这条广播链是否接上**
+      // 完全可以从 DOM 上看出来（卡片必须渲染出状态行，且文案随 enabled 变化）。
+      // ① 打开设置弹窗（Ctrl+, 与 App 内的快捷键同源）
+      await h.eval(`(() => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", ctrlKey: true, bubbles: true }));
+        return true;
+      })()`);
+      const opened = await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置弹窗打开", timeoutMs: 15000 })
+        .then(() => true).catch(() => false);
+      h.check("[前置] 设置弹窗能打开", opened);
+      if (!opened) return;
+
+      // ② 切到「语音通话」分区（导航按钮按文案点，索引会随导航顺序变化）
+      const clicked = await h.eval(`(() => {
+        const nav = document.querySelector(".settings-nav");
+        if (!nav) return false;
+        const btn = [...nav.querySelectorAll("button")].find((b) => (b.innerText || "").trim() === "语音通话");
+        if (!btn) return false;
+        btn.click();
+        return true;
+      })()`);
+      h.check("[前置] 导航里有「语音通话」分区", clicked === true);
+      const cardUp = await h.waitFor(`!!document.querySelector("[data-voice-wake-status]")`, { label: "唤醒卡片挂载", timeoutMs: 20000 })
+        .then(() => true).catch(() => false);
+      h.check("[前置] 唤醒卡片渲染出来了（含状态行）", cardUp);
+      if (!cardUp) return;
+
+      // ③ 状态行必须有内容，且不能是「载入中」这种占位
+      const status = String(await h.eval(`(document.querySelector("[data-voice-wake-status]")?.innerText || "").trim()`) ?? "");
+      console.log(`  [唤醒状态] 「${status}」`);
+      h.check("状态行有文案（不是空白/未接线）", status.length > 0, `len=${status.length}`);
+      h.check(
+        "状态行给出「听到什么/未开启」这类可执行信息",
+        /未开启|正在聆听|已开启|未启动/.test(status),
+        `status=「${status}」`
+      );
+      // ④ 唤醒卡片里必须有「同音容错」的说明（用户据此理解为什么小科小科也能唤醒）
+      const cardText = String(await h.eval(`(() => {
+        const line = document.querySelector("[data-voice-wake-status]");
+        const card = line && line.closest(".voice-card");
+        return card ? card.innerText : "";
+      })()`) ?? "");
+      h.check("卡片说明了同音容错匹配", /同音/.test(cardText), `card="${cardText.slice(0, 60)}…"`);
+      await h.screenshot("语音唤醒设置卡片");
+      await h.eval(`(() => { const b = document.querySelector(".settings-modal .relay-modal-close"); if (b) b.click(); return true; })()`);
+      await wait(300);
+    },
+  },
+
+  {
     id: "boot-history",
     name: "① 启动即带真实历史（不是空白 profile，也不新建会话）",
     run: async (h) => {
@@ -728,6 +782,7 @@ const ROUND_OF = {
   "queue-display": "09-13",
   "queue-immediate": "09-13",
   "clean": "09-13",
+  "wake-settings": "09-13",
 };
 const roundOf = (id) => ROUND_OF[id] ?? "(未登记)";
 

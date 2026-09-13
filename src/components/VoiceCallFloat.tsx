@@ -23,6 +23,7 @@ import { decodeFloat32Base64 } from "../voice/audio-transport";
 import VoiceMascot from "./VoiceMascot";
 import VoiceCallScreen from "./VoiceCallScreen";
 import { patchVoiceStage, requestVoiceDictationSend, requestVoiceOpenSettings, resetVoiceStage, setVoiceDictationHandler, setVoiceLevel, setVoiceStopHandler } from "../voice/wave-level";
+import { patchWakeState, resetWakeState } from "../voice/wake-state";
 
 type VoicePhase = "idle" | "starting" | "active";
 type VoiceState = "listening" | "thinking" | "speaking";
@@ -333,6 +334,19 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       }
       if (event.type === "error") {
         setNotice(String(event.message ?? ""));
+        return;
+      }
+      if (event.type === "wakeHeard") {
+        // 诊断：把「最近听到什么」贴给设置页（用户据此判断该换词还是改匹配）
+        patchWakeState({ heard: String(event.text ?? ""), matched: Boolean(event.matched) });
+        return;
+      }
+      if (event.type === "wake") {
+        patchWakeState({ heard: String(event.text ?? ""), matched: true });
+        // ★ 唤醒命中 → 开始通话。走 ref 转发最新闭包（旧实现在唤醒 effect 里直接用
+        //   捕获的 startCall，threadId 早已过期 → 命中后报「请先打开一个会话」）。
+        //   通话中/启动中不重复触发（监听本就应该已停，这里再兜一层）。
+        if (phaseRef.current === "idle") startCallRef.current();
         return;
       }
       if (event.type === "download") {
@@ -783,6 +797,12 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     return () => setVoiceStopHandler(null);
   }, [endCall]);
 
+  // ★ startCall 的最新闭包转发（与 09-12 快捷键那次同一个坑）：
+  //   任何「常驻监听」（唤醒 / 快捷键 / 右键菜单）都必须经 ref 取最新闭包，
+  //   否则会一直用挂载那一刻的 threadId / models。声明位置在 startCall 之后。
+  const startCallRef = useRef<() => void>(() => undefined);
+  startCallRef.current = () => { void startCall(); };
+
   // composer 发送键旁的麦克风：启动/停止「只转文字、不自动发送」的听写模式。
   useEffect(() => {
     setVoiceDictationHandler((request) => {
@@ -827,21 +847,76 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   const levelRef = useRef(0);
 
   // ── 语音唤醒：持续聆听 + 匹配唤醒词（会常驻占用 CPU，默认关）──
+  /**
+   * ⚠️ 09-13 三处重写（用户反馈「唤醒功能不太行」，取证见 `src/lib/wake-match.mjs` 顶部）：
+   * 1. **配置必须进 state 并进 effect 依赖**：旧实现只在 effect 里读一次设置、依赖数组只有
+   *    `[phase]` —— 在设置页打开开关后 phase 不变 → 监听根本没起来，表现就是「开了没反应」。
+   * 2. **匹配搬到主进程**：渲染层只收 `wake` 事件（识别文本每块回传 = O(n²) IPC，已去掉）。
+   * 3. **命中后不再从这里的闭包调 startCall**：旧实现捕获的是 effect 那次渲染的 `startCall`，
+   *    `threadId` 早已过期 → 命中后报「请先打开一个会话」或绑到旧会话（与 09-12 快捷键同族 bug）。
+   *    现在由主事件通道统一处理（`startCallRef` 每次渲染转发最新闭包）。
+   */
+  const [wakeCfg, setWakeCfg] = useState<{ enabled: boolean; phrase: string }>({ enabled: false, phrase: "" });
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      void window.codex.voiceSettingsGet().then((s: any) => {
+        if (!alive) return;
+        const w = s?.settings?.wake;
+        setWakeCfg({ enabled: Boolean(w?.enabled), phrase: String(w?.phrase ?? "") });
+      }).catch(() => undefined);
+    };
+    load();
+    // 设置保存时主进程会广播 {type:"settings"}：开关/唤醒词改了立刻生效，不必等状态变化
+    const off = window.codex.onVoiceEvent((event: any) => {
+      if (event?.type === "settings") load();
+    });
+    return () => { alive = false; off?.(); };
+  }, []);
+
   useEffect(() => {
     // 通话中/启动中不跑唤醒（避免抢麦克风与 CPU）
     if (phase === "active" || phase === "starting") return;
+    if (!wakeCfg.enabled || !wakeCfg.phrase) {
+      resetWakeState();
+      return;
+    }
     let disposed = false;
     let stream: MediaStream | null = null;
     let ctx: AudioContext | null = null;
     let node: AudioWorkletNode | null = null;
     let blobUrl = "";
+    // ⚠️ 背压：识别链是串行的，一块没跑完就再塞一块 → 延迟越积越大（唤醒越叫越不应）。
+    // 忙时把新块攒着（上限 1 秒），空了再合并发一次；超限丢最旧的（唤醒只要「最近说了什么」）。
+    let busy = false;
+    let pending: Float32Array[] = [];
+    let pendingLen = 0;
+    const MAX_PENDING = CAPTURE_RATE;
+
+    const pump = () => {
+      if (disposed || busy || !pending.length) return;
+      const blocks = pending;
+      pending = [];
+      pendingLen = 0;
+      const merged = new Float32Array(blocks.reduce((n, b) => n + b.length, 0));
+      let offset = 0;
+      for (const block of blocks) { merged.set(block, offset); offset += block.length; }
+      busy = true;
+      void window.codex.voiceWakeAudio(merged)
+        .catch(() => undefined)
+        .then(() => { busy = false; pump(); });
+    };
 
     (async () => {
-      const s = await window.codex.voiceSettingsGet().catch(() => null);
-      const wake = s?.settings?.wake;
-      if (disposed || !wake?.enabled || !wake.phrase) return;
-      const started = await window.codex.voiceWakeStart().catch(() => ({ ok: false }));
-      if (disposed || !started?.ok) return;
+      const started: { ok: boolean; error?: string; phrase?: string; hint?: string } =
+        await window.codex.voiceWakeStart().catch((error: any) => ({ ok: false, error: String(error?.message ?? error) }));
+      if (disposed) return;
+      if (!started?.ok) {
+        // 旧实现静默 return（模型没下全 / 唤醒词为空时用户完全看不出为什么没反应）
+        patchWakeState({ listening: false, error: String(started?.error ?? "语音唤醒启动失败") });
+        return;
+      }
+      patchWakeState({ listening: true, error: "", hint: String(started?.hint ?? ""), phrase: String(started?.phrase ?? wakeCfg.phrase) });
 
       stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
@@ -855,21 +930,17 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       node.port.onmessage = (e: MessageEvent) => {
         const raw = e.data?.samples as Float32Array | undefined;
         if (!raw || disposed) return;
-        void window.codex.voiceWakeAudio(raw).then((r) => {
-          const text = String(r?.text ?? "");
-          if (!text) return;
-          // 归一化后再匹配：去掉空白与常见标点（识别结果常带空格/句号）
-          const norm = text.replace(/[\s，。！？、,.!?~]/g, "");
-          if (norm.includes(wake.phrase)) {
-            void window.codex.voiceWakeReset();
-            void startCall();
-          }
-        }).catch(() => undefined);
+        pending.push(raw);
+        pendingLen += raw.length;
+        while (pendingLen > MAX_PENDING && pending.length > 1) pendingLen -= pending.shift()!.length;
+        pump();
       };
       const src = ctx.createMediaStreamSource(stream);
       src.connect(node);
       node.connect(ctx.destination);
-    })().catch(() => undefined);
+    })().catch((error: any) => {
+      if (!disposed) patchWakeState({ listening: false, error: String(error?.message ?? error) });
+    });
 
     return () => {
       disposed = true;
@@ -877,10 +948,11 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       void ctx?.close().catch(() => undefined);
       stream?.getTracks().forEach((t) => t.stop());
       if (blobUrl) URL.revokeObjectURL(blobUrl);
+      resetWakeState();
       void window.codex.voiceWakeStop().catch(() => undefined);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase]);
+    // 唤醒词/开关都进依赖：改了立刻重挂（这是 09-13 修的主要 bug）
+  }, [phase, wakeCfg.enabled, wakeCfg.phrase]);
 
   // 卸载时务必释放麦克风与音频上下文（不留后台采集）
   useEffect(() => {

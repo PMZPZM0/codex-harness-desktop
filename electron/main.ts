@@ -592,6 +592,10 @@ ipcMain.handle("voice:settings-set", async (_event, patch: any) => {
   const { saveVoiceSettings } = require("./voice/voice-settings");
   const next = saveVoiceSettings(app.getPath("userData"), patch ?? {});
   voiceService.updateSettings(next);
+  // ★ 广播出去：语音唤醒这类「按设置常驻」的能力必须能**立刻**重挂。
+  //   旧实现：VoiceCallFloat 的唤醒 effect 只在 phase 变化时读一次设置 →
+  //   在设置页打开开关后毫无反应（用户 09-13 反馈「唤醒功能不太行」的直接原因之一）。
+  sendToWindow("voice:event", { type: "settings", settings: next });
   return next;
 });
 

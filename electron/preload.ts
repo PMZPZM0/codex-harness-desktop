@@ -366,8 +366,9 @@ contextBridge.exposeInMainWorld("codex", {
     return () => ipcRenderer.removeListener("voice:hotkey", handler);
   },
   // 语音唤醒：持续聆听 + 文本匹配唤醒词（会持续占用 CPU）
-  voiceWakeStart: () => ipcRenderer.invoke("voice:wake-start") as Promise<{ ok: boolean; error?: string }>,
-  voiceWakeAudio: (samples: Float32Array) => ipcRenderer.invoke("voice:wake-audio", samples) as Promise<{ text: string }>,
+  voiceWakeStart: () => ipcRenderer.invoke("voice:wake-start") as Promise<{ ok: boolean; error?: string; phrase?: string; hint?: string }>,
+  /** 只回「命中没命中」：文本与匹配都留在主进程（旧实现每块回传整坨累积文本 = O(n²) IPC） */
+  voiceWakeAudio: (samples: Float32Array) => ipcRenderer.invoke("voice:wake-audio", samples) as Promise<{ ok: boolean; matched: boolean }>,
   voiceWakeReset: () => ipcRenderer.invoke("voice:wake-reset") as Promise<{ ok: boolean }>,
   voiceWakeStop: () => ipcRenderer.invoke("voice:wake-stop") as Promise<{ ok: boolean }>,
 });

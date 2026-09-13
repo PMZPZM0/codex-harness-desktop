@@ -570,8 +570,9 @@ interface Window {
     voiceHotkeySet(input: { accelerator: string; enabled?: boolean }): Promise<{ ok: boolean; error?: string }>;
     voiceHotkeyGet(): Promise<{ registered: string }>;
     onVoiceHotkey(listener: (event: { accelerator: string }) => void): () => void;
-    voiceWakeStart(): Promise<{ ok: boolean; error?: string }>;
-    voiceWakeAudio(samples: Float32Array): Promise<{ text: string }>;
+    voiceWakeStart(): Promise<{ ok: boolean; error?: string; phrase?: string; hint?: string }>;
+    /** 只回「命中没命中」：识别文本与匹配都在主进程做 */
+    voiceWakeAudio(samples: Float32Array): Promise<{ ok: boolean; matched: boolean }>;
     voiceWakeReset(): Promise<{ ok: boolean }>;
     voiceWakeStop(): Promise<{ ok: boolean }>;
     // 自更新：网页源（发布站）/ GitHub Releases 双源可切换

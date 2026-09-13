@@ -15,6 +15,7 @@ import { ASR_REPO, TTS_REPO, VAD_REPO, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceR
 import { ensureRepo, isRepoReady, modelFilePath, probeHosts, repoDir } from "./model-store";
 import { DEFAULT_VOICE_SETTINGS, MODEL_HOST_PRESETS, VOICE_SAMPLE_TEXT, loadVoiceSettings, type VoiceSettings } from "./voice-settings";
 import { ASR_WORKER_SOURCE, TTS_WORKER_SOURCE, VoiceWorkerClient, resolveSherpaPath } from "./workers";
+import { buildHomophoneMap, createWakeMatcher, phraseVocabHint, type WakeMatcher } from "./wake-match";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
 import { listProfiles, profileAudioPath, type VoiceProfile } from "./voice-profiles";
@@ -72,6 +73,10 @@ export type VoiceEvent =
   /** `aborted` = 这一轮是「被打断/失败」结束的：渲染层必须丢弃断句器里的半句与在途合成，
    *  不能再 flush 出来念（否则用户插话后，它会把打断前那半句继续念完）。 */
   | { type: "turnDone"; text: string; aborted?: boolean }
+  /** 唤醒词命中（渲染层据此开始通话）。匹配在主进程做：唤醒词、同音表、模型词表都在这一侧 */
+  | { type: "wake"; text: string }
+  /** 唤醒诊断：最近听到的一句（节流），给设置页显示「为什么没唤醒」用 */
+  | { type: "wakeHeard"; text: string; matched: boolean }
   | { type: "error"; message: string }
   | { type: "download"; repo?: string; file?: string; repoIndex?: number; repoTotal?: number; percent: number; message: string }
   | { type: "downloadDone"; ok: boolean; error?: string };
@@ -627,14 +632,61 @@ export class VoiceService {
   // 说明：这里复用的是**已有的流式识别模型**（不是专门的 KWS 关键词模型），
   // 所以会持续占用 CPU。专门的唤醒模型更省电，但需要额外下载一个模型仓库；
   // 当前实现的好处是「装上就能用」，代价是 standby 时 CPU 有常驻开销（UI 里已明确提示）。
+  //
+  // ⚠️ 09-13 取证修正（改这块先读 `src/lib/wake-match.mjs` 顶部注释）：
+  //   通用模型的输出**不等于**唤醒词本身——默认词「小柯小柯」实测会被识别成
+  //   「小柯小柯 / 小哥小哥」，说「小科小科」时又常被写成「小柯小柯」。
+  //   所以：① 匹配必须同音容错（同音表取自音色模型自带的 lexicon.txt，零新依赖）；
+  //   ② 匹配放在主进程（唤醒词/同音表/词表都在这边），渲染层只收事件；
+  //   ③ 每次端点必须复位识别流（旧实现从不复位 → 识别文本跨句无限累积，
+  //      每块还要把整坨文本回传渲染层）。
 
-  async startWakeListener(): Promise<{ ok: boolean; error?: string }> {
-    if (this.wakeAsr) return { ok: true };
+  /** 唤醒匹配器（唤醒词或同音表变了要重建） */
+  private wakeMatcher: WakeMatcher | null = null;
+  /** 同音表缓存（lexicon.txt 只解析一次，实测 175ms / 2 万字） */
+  private wakeHomophones: Map<string, Set<string>> | null = null;
+  private wakeHomophonesLoaded = false;
+  /** 诊断节流：最近一次上报「听到什么」的时间与文本 */
+  private wakeHeardAt = 0;
+  private wakeHeardText = "";
+
+  /** 同音表：从音色模型的 lexicon.txt 构建（取不到就退化成精确匹配，不报错） */
+  private async loadWakeHomophones(): Promise<Map<string, Set<string>> | null> {
+    if (this.wakeHomophonesLoaded) return this.wakeHomophones;
+    this.wakeHomophonesLoaded = true;
+    try {
+      const lexiconPath = modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "lexicon.txt");
+      const text = await fsPromises.readFile(lexiconPath, "utf8");
+      const map = buildHomophoneMap(text);
+      this.wakeHomophones = map.size ? map : null;
+      this.deps.log("info", `唤醒同音表已加载（${map.size} 个字）`);
+    } catch (error: any) {
+      this.wakeHomophones = null;
+      this.deps.log("info", `唤醒同音表不可用（${error?.message ?? error}），本次只做精确匹配`);
+    }
+    return this.wakeHomophones;
+  }
+
+  private async rebuildWakeMatcher(phrase: string): Promise<void> {
+    const homophones = await this.loadWakeHomophones();
+    this.wakeMatcher = createWakeMatcher({ phrase, homophones });
+    this.deps.log(
+      "info",
+      `唤醒词「${this.wakeMatcher.phrase}」就绪（同音等价类 ${this.wakeMatcher.homophoneGroups} 组` +
+        `${homophones ? "" : "，未启用同音容错"}）`
+    );
+  }
+
+  async startWakeListener(): Promise<{ ok: boolean; error?: string; phrase?: string; hint?: string }> {
+    if (this.wakeAsr) return { ok: true, phrase: this.wakeMatcher?.phrase ?? "" };
     const sherpaPath = resolveSherpaPath();
     if (!sherpaPath) return { ok: false, error: "语音运行时未就绪（sherpa-onnx 未安装）" };
     if (!(await this.refreshModelsReady())) {
       return { ok: false, error: "语音模型未下载完整，请先到「开发工具 → 语音模型」下载" };
     }
+    const settings = loadVoiceSettings(this.deps.userDataDir);
+    const phrase = String(settings.wake?.phrase ?? "").trim();
+    if (!phrase) return { ok: false, error: "唤醒词为空，请先在「设置 → 语音通话 → 语音唤醒」里填写" };
     try {
       this.wakeAsr = new VoiceWorkerClient(
         "语音唤醒",
@@ -654,20 +706,61 @@ export class VoiceService {
         },
         () => { this.wakeAsr = null; }
       );
-      return { ok: true };
+      // ★ 预热：旧实现不预热，154MB 模型加载被拖到**第一块音频**上（1~3 秒），
+      //   那段时间的音频全排在链上 → 唤醒要等好几秒才可能响应。
+      await this.wakeAsr.request("create");
+      await this.rebuildWakeMatcher(phrase);
+      let hint = "";
+      try {
+        const tokens = await fsPromises.readFile(modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "tokens.txt"), "utf8");
+        hint = phraseVocabHint(phrase, tokens);
+      } catch { /* 词表读不到就不提示 */ }
+      this.wakeHeardText = "";
+      this.wakeHeardAt = 0;
+      return { ok: true, phrase, hint };
     } catch (error: any) {
+      await this.stopWakeListener();
       return { ok: false, error: String(error?.message ?? error) };
     }
   }
 
-  /** 喂一帧音频给唤醒识别器，返回当前累计文本。 */
-  async feedWakeAudio(samples: Float32Array): Promise<{ text: string }> {
-    if (!this.wakeAsr) return { text: "" };
+  /**
+   * 喂一帧音频给唤醒识别器。
+   * 匹配、复位、诊断都在这里完成；返回值**不带文本**（旧实现每块回传整坨累积文本 = O(n²) IPC）。
+   */
+  async feedWakeAudio(samples: Float32Array): Promise<{ ok: boolean; matched: boolean }> {
+    const client = this.wakeAsr;
+    if (!client) return { ok: false, matched: false };
     try {
-      const r = await this.wakeAsr.request("feed", { samples });
-      return { text: String(r?.text ?? "") };
-    } catch {
-      return { text: "" };
+      const r = await client.request("feed", { samples });
+      const text = String(r?.text ?? "");
+      const endpoint = Boolean(r?.endpoint);
+      const matched = Boolean(text) && Boolean(this.wakeMatcher?.match(text));
+      if (matched) {
+        // 命中即复位：不清的话下一句话会接在唤醒词后面继续累积
+        await client.request("reset", {});
+        this.wakeHeardText = "";
+        this.deps.log("info", `唤醒词命中（识别为「${text}」）`);
+        this.deps.emit({ type: "wake", text });
+        return { ok: true, matched: true };
+      }
+      if (endpoint) {
+        // ★ 端点即复位（09-13 修复）：sherpa 的 isEndpoint 只是查询，**不会**自动复位流；
+        //   不复位则文本跨句无限累积（实测三轮下来变成一整坨），匹配窗口也就不受控了。
+        await client.request("reset", {});
+        this.wakeHeardText = "";
+        return { ok: true, matched: false };
+      }
+      // 诊断：文本变了才报（节流 500ms），设置页据此显示「最近听到」
+      if (text && text !== this.wakeHeardText && Date.now() - this.wakeHeardAt > 500) {
+        this.wakeHeardAt = Date.now();
+        this.wakeHeardText = text;
+        this.deps.emit({ type: "wakeHeard", text, matched: false });
+      }
+      return { ok: true, matched: false };
+    } catch (error: any) {
+      this.deps.log("error", `唤醒识别失败：${error?.message ?? error}`);
+      return { ok: false, matched: false };
     }
   }
 
@@ -680,6 +773,9 @@ export class VoiceService {
   async stopWakeListener(): Promise<void> {
     const client = this.wakeAsr;
     this.wakeAsr = null;
+    this.wakeMatcher = null;
+    this.wakeHeardText = "";
+    this.wakeHeardAt = 0;
     await client?.terminate?.().catch?.(() => undefined);
   }
 
@@ -697,7 +793,13 @@ export class VoiceService {
   updateSettings(patch: Partial<VoiceSettings>): VoiceSettings {
     const next = loadVoiceSettings(this.deps.userDataDir);
     this.currentSettings = { ...next, ...patch };
-    // 落盘由 main.ts 统一负责（IPC handler 调 saveVoiceSettings），这里只同步内存
+    // 落盘由 main.ts 统一负责（IPC handler 调 saveVoiceSettings），这里只同步内存。
+    // ★ 唤醒词改了要**立刻**重建匹配器：唤醒是常驻监听，等下次 start 才生效 =
+    //   「改了唤醒词它还在等旧词」（与「开关改了不生效」同一类 bug）。
+    if (this.wakeAsr) {
+      const phrase = String(this.currentSettings.wake?.phrase ?? "").trim();
+      if (phrase && phrase !== this.wakeMatcher?.phrase) void this.rebuildWakeMatcher(phrase);
+    }
     return this.currentSettings;
   }
 
