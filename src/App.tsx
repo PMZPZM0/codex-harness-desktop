@@ -8112,8 +8112,15 @@ export default function App() {
     //   · steer    → 不是新回合，但组里有多条 user message，最后一条正是刚注入的这条。
     const userMessages = lastGroup ? [...lastGroup.querySelectorAll<HTMLElement>(".user-message")] : [];
     const lastUserMessage = userMessages[userMessages.length - 1] ?? null;
-    if (lastUserMessage && (isNewTurn || userMessages.length > 1)) anchor = lastUserMessage;
-    if (!anchor) anchor = document.getElementById("chat-anchor");
+    // 取真实消息的三个条件（任一成立即可，互为兜底）：
+    //  ① isNewTurn —— 正常发送：这个回合是本次新建的；
+    //  ② userMessages.length > 1 —— steer 把消息补进已有回合（组里有多条）；
+    //  ③ 气泡已经不在 —— 兜底：此时再退回 `#chat-anchor` 必然 `pin-miss`，视口会掉回贴底
+    //     （实测「打断 + 新回合」路径：queue/start 已经建好新回合、thread 先更新，基线因此
+    //      包含了它 → ① 判假；组里又只有一条 → ② 判假；气泡已被确认卸载 → 掉回贴底 gap=359）。
+    const bubble = document.getElementById("chat-anchor");
+    if (lastUserMessage && (isNewTurn || userMessages.length > 1 || !bubble)) anchor = lastUserMessage;
+    if (!anchor) anchor = bubble;
     if (!anchor || !anchor.isConnected) { dbg("pin-miss", { isNewTurn, users: userMessages.length }); return false; }
     const anchorH = anchor.getBoundingClientRect().height;
     // 用户消息自身超过一屏 → 钉顶没有意义（整条装不下），直接让用户看到回复
@@ -9742,20 +9749,26 @@ const commandMatches = useMemo(() => {
   async function startQueued(id?: string) {
     if (!thread) return;
     const entry = id ? queue.find((q) => q.id === id) : undefined;
-    // 「立即」= 提供思路：有活跃回合时用 turn/steer 把这条消息追加到当前回合（不打断，让任务继续跑）；
-    // 空闲时才把它启动成一个新回合。turn/steer 不触发 turn/started，只是给正在跑的回合补一段用户输入。
+    // 「立即」= **先打断上面那一段，再把这条当新任务在下面跑**（用户 09-13 定稿）：
+    //   「排队消息发出去立即打断，这样配合才行，不打断的话流式消息还在这个立即发出去的
+    //    排队消息上面运行；打断不是直接让开始这个新任务，而是先完成上面，再完成下面的新任务」。
+    // 为什么不能再用 `turn/steer`：steer 是把输入**补进正在跑的那个回合**里，引擎的后续输出
+    // 也追加进同一个回合组 —— 而那个组在用户消息**上方**，于是永远表现为"回复在我的消息上面运行"
+    // （用户截图实锤）。打断后这条变成**新回合**：上面那段就地收尾，新消息在它下面，输出在它下面流。
     if (activeTurnId && entry) {
       try {
-        await window.codex.request("turn/steer", {
-          threadId: thread.id,
-          expectedTurnId: activeTurnId,
-          input: entry.input,
-          ...(entry.clientUserMessageId ? { clientUserMessageId: entry.clientUserMessageId } : {}),
-        });
-        armQueuedDisplay(entry);   // 发出去就在聊天区按正常消息展示（钉在顶上、跟随回复）
-        await deleteQueued(entry.id);
+        showToast("已打断上面那一段", "正在收尾，随后执行这条排队消息");
+        await interrupt();   // 复用停止键那套（含「你在 X 秒后停止了」状态复位）
+        // 必须等引擎真的空闲再启动：否则 queue/start 会被当成"仍在运行"而只是把它排到最前
+        for (let i = 0; i < 40 && runningThreadIdsRef.current.has(thread.id); i++) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        await window.codex.request("thread/queue/start", { threadId: thread.id, queuedSubmissionId: entry.id });
+        // 这一次它会是**新回合** → 乐观气泡按正常消息展示（钉顶 + 跟随），且能被真实消息正常接管
+        armQueuedDisplay(entry);
+        setQueue((current) => current.filter((item) => item.id !== entry.id));
         void refreshQueue(thread.id);
-        showToast("发送成功", "排队消息已提供给当前任务");
+        showToast("发送成功", "排队消息已作为新任务开始");
       } catch (error: any) {
         showToast("发送失败", error.message);
       }
