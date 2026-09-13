@@ -238,6 +238,11 @@ interface Window {
     remoteDeny(rid: string): Promise<{ ok: boolean }>;
     remoteRevoke(deviceId: string): Promise<{ ok: boolean }>;
     onRemotePairRequest(handler: (request: { rid: string; deviceId: string; name: string }) => void): () => void;
+    botPairState(): Promise<{ code: string; pending: { rid: string; channel: string; chatId: string; name: string; createdAt: number }[]; approved: { key: string; channel: string; chatId: string; name: string; approvedAt: number }[] }>;
+    botApprove(rid: string): Promise<{ ok: boolean }>;
+    botDeny(rid: string): Promise<{ ok: boolean }>;
+    botRevoke(key: string): Promise<{ ok: boolean }>;
+    onBotPairRequest(handler: (request: { rid: string; channel: string; chatId: string; name: string }) => void): () => void;
     botBindQrcode(botId: string, botName: string): Promise<{ qr: string; url: string; code: string }>;
     botBindStatus(code: string): Promise<"waiting" | "confirmed" | "expired">;
     botBindConsume(code: string): Promise<{ botId: string; deviceName?: string } | null>;
