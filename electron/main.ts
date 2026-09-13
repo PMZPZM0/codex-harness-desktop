@@ -601,6 +601,8 @@ ipcMain.handle("voice:start", async (_event, threadId: string, options?: { mode?
 });
 
 ipcMain.handle("voice:dictation-finish", async () => voiceService.finishDictation());
+/** 提前端点（审计 ④）：渲染层判定「句末标点 + 停口 0.5s」时调用，立即提交这一句 */
+ipcMain.handle("voice:endpoint-now", async () => voiceService.endpointNow());
 ipcMain.handle("voice:stop", async () => {
   await voiceService.stop();
   return { ok: true, status: voiceService.status() };
@@ -870,7 +872,10 @@ ipcMain.handle("voice:models-uninstall", async () => {
   if (!voiceModelsRoot || target !== path.resolve(expected) || target === path.resolve(userData)) {
     return { ok: false, error: "语音模型目录路径异常，已取消卸载" };
   }
-  // 卸载 = 删除整个 voice-models 根目录（含 .part）；下次再点下载会重新拉
+  // 卸载 = 删除整个 voice-models 根目录（含 .part）；下次再点下载会重新拉。
+  // ★ 必须先销毁「挂断后保活」的工作线程：它们持有已加载的 onnx 文件句柄，
+  //   Windows 上会让 fs.rm 报 EBUSY（表现为「卸载失败但也没提示」）。
+  voiceService.disposeIdleWorkers();
   await fs.rm(voiceModelsRoot, { recursive: true, force: true });
   await voiceService.refreshModelsReady();
   return { ok: true };
@@ -6268,6 +6273,8 @@ app.on("before-quit", () => {
   cleanupAll();
   // SSH 会话持有 ssh2 连接，不主动断开会让退出流程挂住
   sshSessions.closeAll();
+  // 挂断后保活的语音工作线程：退出时彻底销毁（否则 90s 内进程里还挂着两份 ONNX 模型）
+  voiceService.disposeIdleWorkers();
 });
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();

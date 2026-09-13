@@ -20392,6 +20392,13 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   line-height: 1.6;
   color: var(--muted);
 }
+/* 通话中显示「说完停顿多久就回话」（端点静音阈值，设置里可调） */
+.voice-latency-hint {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+}
 .voice-models {
   font-size: 11.5px;
 }

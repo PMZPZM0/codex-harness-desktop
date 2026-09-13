@@ -14,6 +14,7 @@ import { spawnSync } from "node:child_process";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../src/lib/model-scope.mjs";
 import { planCompletedFold } from "../src/lib/turn-fold-plan.mjs";
 import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../src/lib/voice-aec.mjs";
+import { createSpeakFilter, normalizeNumbers, numberToChinese, toSpeakableText } from "../src/lib/speak-text.mjs";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -390,10 +391,19 @@ console.log(C.bold("\n【4b】语音通话纯逻辑（回声消除 / 回声门�
   Math.abs(sineRms - 0.7071) < 0.02 ? ok(`能量：满幅正弦 ≈ 0.707（实际 ${sineRms.toFixed(3)}）`) : fail(`能量：满幅正弦期望 ≈0.707，实际 ${sineRms.toFixed(3)}`);
 
   // --- 回声消除：合成一条线性回声路径，验证真的压下去了 ---
+  // 用宽带噪声：正弦下「任意延迟都等价于同频不同相」，滤波器怎么都能减干净，测不出对齐问题
   const N = 12000;
   const ECHO_DELAY = 40;
-  const far = new Float32Array(N);
-  for (let i = 0; i < N; i++) far[i] = 0.3 * Math.sin((2 * Math.PI * 220 * i) / 16000);
+  const noiseAt = (len, seed) => {
+    const out = new Float32Array(len);
+    let state = seed >>> 0;
+    for (let i = 0; i < len; i++) {
+      state = (state * 1664525 + 1013904223) >>> 0;
+      out[i] = ((state / 0xffffffff) * 2 - 1) * 0.3;
+    }
+    return out;
+  };
+  const far = noiseAt(N, 999);
   const mic = new Float32Array(N);
   for (let i = 0; i < N; i++) mic[i] = i - ECHO_DELAY >= 0 ? far[i - ECHO_DELAY] * 0.5 : 0;
 
@@ -483,9 +493,16 @@ console.log(C.bold("\n【4b】语音通话纯逻辑（回声消除 / 回声门�
   // 首句阈值：模型开头常常几十字没有句号，首句必须比后续句子更早出声（跟手感）
   const firstFast = createSentenceChunker({ maxChars: 60 });
   const firstOut = firstFast.push("这是一句没有任何标点符号而且很长的话用来验证首句是不是会提前切出来");
-  firstOut.length === 1 && firstOut[0].length <= 18
-    ? ok(`断句：首句提前切出（${firstOut[0].length} 字，不等满 60 字）`)
+  firstOut.length === 1 && firstOut[0].length <= 10
+    ? ok(`断句：首句提前切出（${firstOut[0].length} 字，阈值 10，不等满 60 字）`)
     : fail(`断句：首句没有提前切出（${JSON.stringify(firstOut).slice(0, 60)}）`);
+  // 反证口径：09-13 审计 ④ 把首句阈值从 18 压到 10，这里必须跟着压，
+  // 否则「阈值被改回 18」这种回归照不出来（10 也算 ≤18）
+  const firstOld = createSentenceChunker({ maxChars: 60, firstMaxChars: 18 });
+  const oldOut = firstOld.push("这是一句没有任何标点符号而且很长的话用来验证首句是不是会提前切出来");
+  oldOut[0].length > firstOut[0].length
+    ? ok(`断句：首句阈值确实变小了（18 字 → ${firstOut[0].length} 字，首块合成更快出声）`)
+    : fail("断句：首句阈值没有随审计 ④ 调小（firstMaxChars 还是 18）");
   const later = firstFast.push("第二句同样没有标点但是首句已经出过声了所以应该按 60 字阈值继续攒着" + "补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字");
   later.length === 0 || later[0].length > 18
     ? ok("断句：首句之后回到常规阈值（不会一直碎句）")
@@ -508,6 +525,167 @@ console.log(C.bold("\n【4b】语音通话纯逻辑（回声消除 / 回声门�
   const soft = createSentenceChunker({ maxChars: 10 });
   const got3 = soft.push("abc,defghijkl");
   got3.length === 1 && got3[0] === "abc," ? ok("断句：超长时优先在逗号处切") : fail(`断句：软断点结果不对，实际 ${JSON.stringify(got3)}`);
+}
+
+// ---------- 4c. 语音链路（09-13 审计 ①~⑥） ----------
+
+console.log(C.bold("\n【4c】语音链路（打断世代号 / 朗读视图 / 听写预热 / 延迟 / AEC 对齐 / 来源标记）"));
+
+{
+  // ===== ② 朗读视图：给人看的 markdown → 给耳朵听的口语 =====
+  const codeFilter = createSpeakFilter();
+  const s1 = codeFilter.push("先看这段代码：");
+  const s2 = codeFilter.push("```ts");
+  const s3 = codeFilter.push("const answer = 42;");
+  const s4 = codeFilter.push("```");
+  s1.length > 0 && s2 === "" && s3 === ""
+    ? ok("朗读视图：代码块整段不念（围栏内逐行丢弃）")
+    : fail(`朗读视图：代码块没被丢弃（${JSON.stringify([s2, s3]).slice(0, 80)}）`);
+  /代码块/.test(s4)
+    ? ok("朗读视图：代码块用一句占位提示代替（用户知道「有代码，看屏幕」）")
+    : fail(`朗读视图：代码块收尾没有占位提示（实际 ${JSON.stringify(s4)}）`);
+
+  const tableFilter = createSpeakFilter();
+  const t1 = tableFilter.push("| 指标 | 值 |");
+  const t2 = tableFilter.push("| --- | --- |");
+  const t3 = tableFilter.push("| gap | 54 |");
+  /表格/.test(t1) && t2 === "" && t3 === ""
+    ? ok("朗读视图：表格整段不念（只留一句占位）")
+    : fail(`朗读视图：表格没被丢弃（${JSON.stringify([t1, t2, t3]).slice(0, 80)}）`);
+
+  const inline = toSpeakableText("见 https://example.com/a/b 的 **锚点** 🎉 与 `code`，文件 C:\\Users\\me\\a.ts");
+  !/http|\*\*|🎉|`/.test(inline) && /锚点/.test(inline) && /路径/.test(inline) && /code/.test(inline)
+    ? ok(`朗读视图：URL/加粗/emoji/路径/反引号都清掉了（"${inline.slice(0, 40)}…"）`)
+    : fail(`朗读视图：行内清洗不完整（实际 "${inline}"）`);
+
+  numberToChinese(10) === "十" && numberToChinese(105) === "一百零五" && numberToChinese(20005) === "二万零五" && numberToChinese(1000000) === "一百万"
+    ? ok("朗读视图：中文读数正确（十 / 一百零五 / 二万零五 / 一百万）")
+    : fail(`朗读视图：中文读数不对（${[10, 105, 20005, 1000000].map(numberToChinese).join(" / ")}）`);
+
+  const spokenNum = normalizeNumbers("2026-09-13 12:30 覆盖率 98%，耗时 3.5 秒，共 1,234 条");
+  /二零二六年九月十三日/.test(spokenNum) && /十二点三十分/.test(spokenNum) && /百分之九十八/.test(spokenNum) && /三点五/.test(spokenNum) && /一千二百三十四/.test(spokenNum)
+    ? ok("朗读视图：日期/时间/百分数/小数/千分位都中文化了")
+    : fail(`朗读视图：数字中文化不完整（实际 "${spokenNum}"）`);
+
+  // 前置条件式反证：标识符**必须**原样保留，否则会把 GPT-4 念成「GPT 四」、1.2.3 念成「一点二点三」
+  normalizeNumbers("GPT-4 与 v2 接口、H264、版本 1.2.3") === "GPT-4 与 v2 接口、H264、版本 1.2.3"
+    ? ok("朗读视图：紧贴字母/版本号的数字不动（GPT-4 / v2 / H264 / 1.2.3）")
+    : fail(`朗读视图：把标识符里的数字也改了（实际 "${normalizeNumbers("GPT-4 与 v2 接口、H264、版本 1.2.3")}"）`);
+
+  toSpeakableText("---") === "" && toSpeakableText("🎉") === "" && toSpeakableText("```") === ""
+    ? ok("朗读视图：清完为空 → 调用方可直接跳过合成（不会合成空音频）")
+    : fail(`朗读视图：纯记号文本没有被清空（${JSON.stringify([toSpeakableText("---"), toSpeakableText("🎉"), toSpeakableText("```")])}）`);
+
+  // ===== ⑤ AEC 延迟线：真实设备量级的回声延迟（旧用例 delay=32/回声 40 样本，恰好落在可覆盖区间，测不出失配） =====
+  // ⚠️ 必须用**宽带信号**（噪声）而不是正弦：单频正弦的任意延迟都等价于「同频不同相」，
+  //    256 抽头的滤波器照样能把它减干净（实测正弦下错配也会「压 150dB」）→ 测不出对齐。
+  //    噪声不可预测，只有抽头窗口真的覆盖到那个延迟才减得掉。
+  const noiseOf = (len, seed = 12345) => {
+    const out = new Float32Array(len);
+    let state = seed >>> 0;
+    for (let i = 0; i < len; i++) {
+      state = (state * 1664525 + 1013904223) >>> 0;
+      out[i] = ((state / 0xffffffff) * 2 - 1) * 0.3;
+    }
+    return out;
+  };
+  const M = 24000;
+  const ECHO_OFFSET = 600; // 37.5ms @16k：外放/蓝牙量级，**大于** 256 抽头 → 延迟线不校正就压不掉
+  const far = noiseOf(M);
+  const micEcho = new Float32Array(M);
+  for (let i = 0; i < M; i++) micEcho[i] = i - ECHO_OFFSET >= 0 ? far[i - ECHO_OFFSET] * 0.5 : 0;
+  const runAec = (aec) => {
+    const buf = new Float32Array(M);
+    for (let off = 0; off < M; off += 256) {
+      buf.set(aec.process(micEcho.subarray(off, off + 256), far.subarray(off, off + 256)), off);
+    }
+    return buf;
+  };
+  const tailAt = M - 8000;
+  const erleOf = (buf) => 20 * Math.log10(rmsOf(micEcho.subarray(tailAt)) / Math.max(rmsOf(buf.subarray(tailAt)), 1e-12));
+
+  const alignedAec = createAec({ filterLength: 256, delay: 0, maxDelay: 1024, step: 0.2 });
+  alignedAec.setDelay(ECHO_OFFSET);
+  const erleAligned = erleOf(runAec(alignedAec));
+  const blindAec = createAec({ filterLength: 256, delay: 0, maxDelay: 1024, step: 0.2 });
+  const erleBlind = erleOf(runAec(blindAec));
+
+  alignedAec.delay === ECHO_OFFSET ? ok(`AEC：setDelay 生效（延迟线 = ${ECHO_OFFSET} 样本）`) : fail(`AEC：setDelay 没生效（delay=${alignedAec.delay}）`);
+  erleAligned > 12
+    ? ok(`AEC：校正延迟线后 600 样本回声被压 ${erleAligned.toFixed(1)} dB`)
+    : fail(`AEC：校正延迟线后仍只压了 ${erleAligned.toFixed(1)} dB —— 延迟线没起作用`);
+  erleBlind < 6
+    ? ok(`AEC：不校正延迟线时压不掉（${erleBlind.toFixed(1)} dB）—— 证明上面那条断言真的在测「对齐」`)
+    : fail(`AEC：不校正也能压 ${erleBlind.toFixed(1)} dB —— 这条断言测不出对齐问题（用例不成立）`);
+  alignedAec.setDelay(999999);
+  alignedAec.delay === 1024 ? ok("AEC：setDelay 越界被夹到 maxDelay（不会写坏延迟线）") : fail(`AEC：setDelay 越界没夹住（${alignedAec.delay}）`);
+
+  // ===== 静态接线守卫（主进程/引擎侧 CDP 测不到，按 AGENTS.md 铁律 5 钉在这里） =====
+  const readSrc = (rel) => (existsSync(join(ROOT, rel)) ? readFileSync(join(ROOT, rel), "utf8") : "");
+  const floatSrc = readSrc("src/components/VoiceCallFloat.tsx");
+  const serviceSrc = readSrc("electron/voice/voice-service.ts");
+  const settingsSrc = readSrc("electron/voice/voice-settings.ts");
+  const workersSrc = readSrc("electron/voice/workers.ts");
+  const preloadSrcV = readSrc("electron/preload.ts");
+
+  if (!floatSrc || !serviceSrc || !settingsSrc || !workersSrc) {
+    warn("找不到语音源码，跳过语音接线守卫");
+  } else {
+    // ① 打断：引擎把「被打断的回合」标出来，渲染层据此丢弃半句
+    const statusChecked = /turn\/completed[\s\S]{0,600}?turn\?\.status/.test(serviceSrc) && /aborted/.test(serviceSrc);
+    const abortedHandled = /event\.type === "turnDone"[\s\S]{0,300}?event\.aborted[\s\S]{0,120}?bumpSpeechEpoch/.test(floatSrc);
+    const epochOnFinal = /event\.type === "final"[\s\S]{0,300}?bumpSpeechEpoch\(\)/.test(floatSrc);
+    const epochGuard = /epoch !== speechEpochRef\.current/.test(floatSrc) && /if \(epoch !== speechEpochRef\.current\) return/.test(floatSrc);
+    statusChecked && abortedHandled && epochOnFinal && epochGuard
+      ? ok("① 打断：世代号 + turn.status=interrupted 双保险（在途合成与断句器半句都会被丢弃）")
+      : fail(`① 打断链路不完整（status=${statusChecked} aborted=${abortedHandled} final=${epochOnFinal} epochGuard=${epochGuard}）`);
+
+    // ③ 听写：先开麦再加载识别线程 + 补静音不再写死 3 秒 + 线程保活
+    const captureIdx = floatSrc.indexOf("await startCapture();");
+    const voiceStartIdx = floatSrc.indexOf("await window.codex.voiceStart(");
+    captureIdx > 0 && voiceStartIdx > captureIdx
+      ? ok("③ 听写：startCall 里先开麦（startCapture）再加载识别线程（voiceStart）")
+      : fail(`③ 听写：开麦与加载顺序没换过来（capture=${captureIdx} voiceStart=${voiceStartIdx}）—— 开头 1~3 秒又会丢字`);
+    const prebufferWired = /PREBUFFER_MAX_SAMPLES/.test(floatSrc) && /prebufferRef\.current = \[\]/.test(floatSrc) && /for \(const block of pending\) window\.codex\.voiceAudio\(block\)/.test(floatSrc) && /liveRef\.current = true/.test(floatSrc);
+    prebufferWired
+      ? ok("③ 听写：加载期间的音频暂存并在就绪后按序回灌（回灌后才切实时链路，顺序不乱）")
+      : fail("③ 听写：暂存/回灌链路没接全（prebufferRef / liveRef / 回灌循环）");
+    const silenceParam = /finishSilenceSec/.test(workersSrc) && !/sampleRate \* 3/.test(workersSrc);
+    const keepAlive = /WORKER_KEEPALIVE_MS/.test(serviceSrc) && /parkIdle\("asr"/.test(serviceSrc) && /takeIdle\("asr"/.test(serviceSrc);
+    silenceParam && keepAlive
+      ? ok("③ 听写：松手补静音改为 rule2+0.3（不再 3 秒）+ 挂断后线程保活复用")
+      : fail(`③ 听写：松手/保活优化缺失（silence=${silenceParam} keepAlive=${keepAlive}）`);
+
+    // ④ 延迟：默认端点阈值 + 老档案迁移 + 提前端点
+    const rule2Default = /asr: \{ rule1: 2\.4, rule2: 0\.8/.test(settingsSrc);
+    const migrated = /VOICE_SETTINGS_VERSION/.test(settingsSrc) && /migrateSettings\(raw\)/.test(settingsSrc) && /1\.2/.test(settingsSrc);
+    const endpointWired = /voice:endpoint-now/.test(mainSrc) && /voiceEndpointNow/.test(preloadSrcV) && /voiceEndpointNow\(\)/.test(floatSrc);
+    rule2Default && migrated && endpointWired
+      ? ok("④ 延迟：rule2 默认 0.8 + 老档案迁移（只改还是旧默认 1.2 的档案）+ 提前端点接线")
+      : fail(`④ 延迟链路不完整（rule2=${rule2Default} migrate=${migrated} endpoint=${endpointWired}）`);
+
+    // ⑤ AEC：参考环容量、延迟线校正、与浏览器 AEC 不叠加、麦克风设置读取顺序
+    const ringOk = /REF_RING_SECONDS = 30/.test(floatSrc) && /CAPTURE_RATE \* REF_RING_SECONDS/.test(floatSrc);
+    const delayWired = /maxDelay: AEC_MAX_DELAY_SAMPLES/.test(floatSrc) && /\.setDelay\?\.\(/.test(floatSrc) && /outputLatency/.test(floatSrc);
+    const noDoubleAec = /browserAec/.test(floatSrc) && /useSelfAec/.test(floatSrc) && /aecRef\.current = useSelfAec/.test(floatSrc);
+    const micReadIdx = floatSrc.indexOf("micSettingsRef.current = mic;");
+    const gumIdx = floatSrc.indexOf("navigator.mediaDevices.getUserMedia(");
+    micReadIdx > 0 && gumIdx > micReadIdx
+      ? ok("⑤ AEC：麦克风/回声消除设置先读后用（第一次通话就生效）")
+      : fail(`⑤ AEC：设置读取仍在 getUserMedia 之后（sett=${micReadIdx} gum=${gumIdx}）`);
+    ringOk && delayWired && noDoubleAec
+      ? ok("⑤ AEC：参考环 30s + 按播放领先量写入 + outputLatency 校正延迟线 + 浏览器 AEC 开启时不叠加 NLMS")
+      : fail(`⑤ AEC 接线不完整（ring=${ringOk} delay=${delayWired} noDouble=${noDoubleAec}）`);
+
+    // ⑥ 来源标记：引擎要能区分「语音消息」与「打字消息」
+    const prefixDefined = /export const VOICE_MESSAGE_PREFIX = "\[语音\] "/.test(serviceSrc);
+    const prefixUsed = /const input = \[\{ type: "text", text: `\$\{VOICE_MESSAGE_PREFIX\}\$\{text\}`/.test(serviceSrc);
+    const bothPaths = (serviceSrc.match(/^\s+input,$/gm) ?? []).length >= 2;
+    const trigger = /turnTrigger: VOICE_TURN_TRIGGER/.test(serviceSrc);
+    prefixDefined && prefixUsed && bothPaths && trigger
+      ? ok("⑥ 来源标记：语音消息带 [语音] 前缀（turn/start 与排队两条路径都带）+ turnTrigger=voice")
+      : fail(`⑥ 来源标记不完整（def=${prefixDefined} use=${prefixUsed} both=${bothPaths} trigger=${trigger}）`);
+  }
 }
 
 // 接线守卫：语音悬浮入口必须真的挂到 App 上（防「组件写了但没接」）

@@ -68,8 +68,11 @@ parentPort.on("message", (msg) => {
     }
     if (msg.op === "finish") {
       ensure();
-      // 长按听写松手时不一定已命中 endpoint；补 3 秒静音把尾句完整解出来。
-      const silence = new Float32Array(workerData.sampleRate * 3);
+      // 长按听写松手时不一定已命中 endpoint；补一段静音把尾句完整解出来。
+      // ⚠️ 静音长度不能写死 3 秒（旧实现）：那是「松手到出字」里最长的一段纯等待。
+      // 取 rule2 + 0.3s —— 比端点阈值略长，刚好把最后一个字的尾音解完（审计 ③）。
+      const seconds = Number(workerData.finishSilenceSec) > 0 ? Number(workerData.finishSilenceSec) : 0.6;
+      const silence = new Float32Array(Math.max(1, Math.round(workerData.sampleRate * seconds)));
       stream.acceptWaveform({ samples: silence, sampleRate: workerData.sampleRate });
       while (recognizer.isReady(stream)) recognizer.decode(stream);
       const text = String(recognizer.getResult(stream).text || "").trim();

@@ -44,6 +44,24 @@ const SAMPLE_RATE = 16000;
 /** 语音轮的推理档位：通话场景优先低延迟（自定义模型档位是 low/medium/high）。 */
 const VOICE_EFFORT = "low";
 
+/**
+ * ★ 语音消息标记（2026-09-13 用户要求：引擎要能区分「语音消息」和「打字消息」）。
+ *
+ * 引擎协议里**没有**「这条输入来自语音」的字段（`TurnStartParams` 的 22 个字段逐个查过，
+ * 只有 `turnTrigger` 是「调用方来源分类」，且它只进遥测、模型看不到），所以标记只能落在
+ * 文本上 —— 这与本项目既有做法一致：飞书渠道就是 `[飞书用户 xxx]\n正文`。
+ * 前缀进 rollout 后：① 模型/引擎能分辨来源（可以据此调整回答风格）；② 界面上一眼能认出
+ * 这条是语音说的。副作用是用户消息文本会带这个前缀（长度 4 字符，可接受）。
+ */
+export const VOICE_MESSAGE_PREFIX = "[语音] ";
+
+/** `turnTrigger`：引擎侧的来源分类（遥测维度，不改变模型行为） */
+const VOICE_TURN_TRIGGER = "voice";
+
+/** 挂断后工作线程的保活时长（毫秒）。模型加载 1~3 秒，连着说第二句不该重来一遍；
+ *  到期自动销毁，内存回到挂断前的水平。 */
+const WORKER_KEEPALIVE_MS = 90_000;
+
 export type VoiceState = "idle" | "listening" | "thinking" | "speaking";
 
 export type VoiceEvent =
@@ -51,7 +69,9 @@ export type VoiceEvent =
   | { type: "partial"; text: string }
   | { type: "final"; text: string }
   | { type: "delta"; text: string }
-  | { type: "turnDone"; text: string }
+  /** `aborted` = 这一轮是「被打断/失败」结束的：渲染层必须丢弃断句器里的半句与在途合成，
+   *  不能再 flush 出来念（否则用户插话后，它会把打断前那半句继续念完）。 */
+  | { type: "turnDone"; text: string; aborted?: boolean }
   | { type: "error"; message: string }
   | { type: "download"; repo?: string; file?: string; repoIndex?: number; repoTotal?: number; percent: number; message: string }
   | { type: "downloadDone"; ok: boolean; error?: string };
@@ -99,6 +119,12 @@ export class VoiceService {
   private turnText = "";
   /** 本回合是否已经提交过一次识别结果（避免同一句重复提交） */
   private submittedThisUtterance = false;
+  /** 挂断后寄存的工作线程（保活复用，见 parkIdle/takeIdle） */
+  private idleAsr: { client: VoiceWorkerClient; key: string; timer: NodeJS.Timeout } | null = null;
+  private idleTts: { client: VoiceWorkerClient; key: string; timer: NodeJS.Timeout } | null = null;
+  /** 本次通话工作线程的配置指纹（设置一变就不能复用旧线程） */
+  private asrKey = "";
+  private ttsKey = "";
 
   constructor(private readonly deps: Deps) {}
 
@@ -169,39 +195,42 @@ export class VoiceService {
     this.threadId = input.threadId;
     // 识别参数来自设置：线程数 + 端点检测三规则（说完静音多久算一句结束）
     const numThreads = this.currentSettings.asr.numThreads;
+    // 松手 flush 的补静音时长 = 端点阈值 + 0.3s（不要写死 3 秒，见 workers.ts 注释）
+    const finishSilenceSec = Number(this.currentSettings.asr.rule2 ?? 0.8) + 0.3;
     try {
-      this.asr = new VoiceWorkerClient(
-        "语音识别",
-        ASR_WORKER_SOURCE,
-        {
-          sherpaPath,
-          sampleRate: SAMPLE_RATE,
-          encoder: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "encoder.int8.onnx"),
-          decoder: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "decoder.onnx"),
-          joiner: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "joiner.int8.onnx"),
-          tokens: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "tokens.txt"),
-          numThreads,
-          rule1: this.currentSettings.asr.rule1,
-          rule2: this.currentSettings.asr.rule2,
-          rule3: this.currentSettings.asr.rule3,
-        },
-        () => {
-          if (this.active) this.fail("语音识别线程意外退出，请重新开始通话");
-        }
-      );
+      const asrData = {
+        sherpaPath,
+        sampleRate: SAMPLE_RATE,
+        encoder: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "encoder.int8.onnx"),
+        decoder: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "decoder.onnx"),
+        joiner: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "joiner.int8.onnx"),
+        tokens: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "tokens.txt"),
+        numThreads,
+        rule1: this.currentSettings.asr.rule1,
+        rule2: this.currentSettings.asr.rule2,
+        rule3: this.currentSettings.asr.rule3,
+        finishSilenceSec,
+      };
+      this.asrKey = JSON.stringify(asrData);
+      // ★ 复用刚挂断时寄存的识别线程（审计 ③）：省掉 154MB 模型的 1~3 秒加载，
+      //   「连着问第二句」和「再按一次听写」立刻可用。配置不一致则丢弃重建。
+      const reusedAsr = this.takeIdle("asr", this.asrKey);
+      this.asr = reusedAsr ?? new VoiceWorkerClient("语音识别", ASR_WORKER_SOURCE, asrData, () => {
+        if (this.active) this.fail("语音识别线程意外退出，请重新开始通话");
+      });
       // 听写只需要 ASR，不创建 TTS（更快、更省内存）；通话模式才创建合成线程。
       if (this.mode === "conversation") {
-        this.tts = new VoiceWorkerClient(
-          "语音合成",
-          TTS_WORKER_SOURCE,
-          await this.ttsWorkerData(sherpaPath, numThreads),
-          () => {
-            if (this.active) this.fail("语音合成线程意外退出，请重新开始通话");
-          }
-        );
+        const ttsData = await this.ttsWorkerData(sherpaPath, numThreads);
+        this.ttsKey = JSON.stringify(ttsData);
+        const reusedTts = this.takeIdle("tts", this.ttsKey);
+        this.tts = reusedTts ?? new VoiceWorkerClient("语音合成", TTS_WORKER_SOURCE, ttsData, () => {
+          if (this.active) this.fail("语音合成线程意外退出，请重新开始通话");
+        });
       }
       // 先建起来，把模型加载的耗时挡在通话之前（失败会在下面被捕获）
       await this.asr.request("create");
+      // 复用来的线程里可能还留着上一句的流，必须清掉（否则新话会接在旧话后面）
+      if (reusedAsr) await this.asr.request("reset");
       if (this.tts) await this.tts.request("create");
     } catch (error: any) {
       await this.stop();
@@ -217,10 +246,11 @@ export class VoiceService {
     return { ok: true };
   }
 
-  /** 结束通话：释放工作线程与全部状态。 */
+  /** 结束通话：释放麦克风/状态；工作线程**寄存保活**一段时间（见 WORKER_KEEPALIVE_MS）。 */
   async stop(): Promise<void> {
     const asr = this.asr;
     const tts = this.tts;
+    const wasActive = this.active;
     this.asr = null;
     this.tts = null;
     this.active = false;
@@ -230,7 +260,58 @@ export class VoiceService {
     this.threadId = "";
     this.mode = "conversation";
     this.setState("idle");
+    if (wasActive) {
+      // 正常挂断 → 寄存（下次 start 复用）；启动失败等异常路径 → 直接销毁
+      this.parkIdle("asr", asr, this.asrKey);
+      this.parkIdle("tts", tts, this.ttsKey);
+      return;
+    }
     await Promise.allSettled([asr?.terminate(), tts?.terminate()]);
+  }
+
+  // ── 工作线程保活（审计 ③）───────────────────────────────────────────────
+  // 挂断即 terminate 的代价是「每次按下都要重新加载 154MB 模型」，听写场景尤其明显。
+  // 寄存到 idle 槽 + 超时自动销毁：既快，也不会有进程长期占着内存。
+
+  /** 取出可复用的寄存线程；配置指纹不一致或线程已死则丢弃。 */
+  private takeIdle(slot: "asr" | "tts", key: string): VoiceWorkerClient | null {
+    const idle = slot === "asr" ? this.idleAsr : this.idleTts;
+    if (!idle) return null;
+    if (slot === "asr") this.idleAsr = null;
+    else this.idleTts = null;
+    clearTimeout(idle.timer);
+    if (idle.key !== key || !idle.client.alive) {
+      void idle.client.terminate().catch(() => undefined);
+      return null;
+    }
+    this.deps.log("info", `${slot === "asr" ? "语音识别" : "语音合成"}线程复用（省掉模型重新加载）`);
+    return idle.client;
+  }
+
+  /** 把线程寄存进 idle 槽，超时自动销毁。 */
+  private parkIdle(slot: "asr" | "tts", client: VoiceWorkerClient | null, key: string): void {
+    if (!client) return;
+    const timer = setTimeout(() => {
+      const idle = slot === "asr" ? this.idleAsr : this.idleTts;
+      if (slot === "asr") this.idleAsr = null;
+      else this.idleTts = null;
+      if (idle?.client === client) void client.terminate().catch(() => undefined);
+    }, WORKER_KEEPALIVE_MS);
+    (timer as any).unref?.();
+    if (slot === "asr") this.idleAsr = { client, key, timer };
+    else this.idleTts = { client, key, timer };
+  }
+
+  /** 立刻销毁寄存的线程（卸载模型 / 应用退出前调用：别让占着模型文件的线程挡住删除）。 */
+  disposeIdleWorkers(): void {
+    const slots = [this.idleAsr, this.idleTts];
+    this.idleAsr = null;
+    this.idleTts = null;
+    for (const idle of slots) {
+      if (!idle) continue;
+      clearTimeout(idle.timer);
+      void idle.client.terminate().catch(() => undefined);
+    }
   }
 
   /**
@@ -267,6 +348,25 @@ export class VoiceService {
     }
   }
 
+  /**
+   * ★ 提前端点（审计 ④）：渲染层发现「识别文本已以句末标点收尾 + 用户停口 ~0.5s」时调用。
+   * 复用 `finish` op（补一小段静音把尾句解完 + 复位流），拿到文本就直接提交，
+   * 不必再干等 `rule2`（默认 0.8s）——这是端到端延迟里唯一纯粹的等待。
+   */
+  async endpointNow(): Promise<{ ok: boolean; text?: string }> {
+    if (!this.active || !this.asr) return { ok: false };
+    try {
+      const result = await this.asr.request("finish", {});
+      const text = String(result?.text ?? "").trim();
+      if (!text) return { ok: true, text: "" };
+      await this.finishUtterance(text);
+      return { ok: true, text };
+    } catch (error: any) {
+      this.deps.log("error", `提前端点失败：${error?.message ?? error}`);
+      return { ok: false };
+    }
+  }
+
   /** 独立转写一个 16k 单声道 PCM wav 文件（渠道语音消息：上游 ffmpeg 已归一格式）。
    *  临时建 ASR worker，转写完立即销毁——不影响正在进行的通话/听写。 */
   async transcribeAudioFile(wavPath: string): Promise<{ ok: boolean; text?: string; error?: string }> {
@@ -290,6 +390,8 @@ export class VoiceService {
           rule1: settings.asr.rule1,
           rule2: settings.asr.rule2,
           rule3: settings.asr.rule3,
+          // 整段 wav 一次喂完，尾部补的静音只要够解出最后一个字
+          finishSilenceSec: Number(settings.asr.rule2 ?? 0.8) + 0.3,
         },
         () => { /* 临时 worker，短命，无需失败回调 */ },
       );
@@ -339,7 +441,9 @@ export class VoiceService {
     if (!model) throw new Error("尚未配置模型，无法对话");
     const threadId = this.threadId;
     if (!threadId) throw new Error("通话未绑定会话");
-    const input = [{ type: "text", text, text_elements: [] }];
+    // ★ 标记来源（见 VOICE_MESSAGE_PREFIX 注释）：文本前缀让模型/引擎能分辨语音消息，
+    //   排队路径与直接 start 路径都要带，否则「引擎时而不认识」。
+    const input = [{ type: "text", text: `${VOICE_MESSAGE_PREFIX}${text}`, text_elements: [] }];
 
     this.setState("thinking");
     this.turnText = "";
@@ -359,6 +463,8 @@ export class VoiceService {
       model: model.model,
       effort: VOICE_EFFORT,
       personality: "pragmatic",
+      // 引擎侧来源分类（遥测维度；模型看的是上面那个文本前缀）
+      turnTrigger: VOICE_TURN_TRIGGER,
     });
     this.deps.log("info", "语音消息已提交给引擎");
   }
@@ -389,7 +495,13 @@ export class VoiceService {
         [...(params?.turn?.items ?? [])].reverse().find((item: any) => item.type === "agentMessage")?.text ??
         this.turnText;
       this.turnText = "";
-      this.deps.emit({ type: "turnDone", text: String(finalText ?? "") });
+      // ★ 必须看 turn.status（审计 ①）：`turn/interrupt` 之后引擎回的也是 turn/completed，
+      //   不看状态就会把「打断」当正常结束 → 渲染层把断句器里的半句继续念完。
+      const status = String(params?.turn?.status ?? "");
+      const aborted = status === "interrupted" || status === "failed";
+      this.deps.emit({ type: "turnDone", text: String(finalText ?? ""), aborted });
+      // 被打断的回合：断句器等渲染层一起清（这里只能清服务端侧的记账）
+      if (aborted) this.submittedThisUtterance = false;
       if (this.active) this.setState("listening");
     }
   }
