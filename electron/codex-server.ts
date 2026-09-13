@@ -61,6 +61,8 @@ export class CodexServer extends EventEmitter {
   private heartbeatTimer?: NodeJS.Timeout;
   private heartbeatFails = 0;
   private heartbeatRestarting = false;
+  /** 主动停止意图（退出应用 / 引擎自更新替换二进制）：置位后 fail() 不再自动拉起引擎。 */
+  private stopping = false;
   private heartbeatRestartCount = 0;
 
   constructor(private readonly codexHome: string) {
@@ -122,6 +124,7 @@ export class CodexServer extends EventEmitter {
   }
 
   async restart() {
+    this.stopping = false;   // 显式重启（不是退出）→ 恢复正常崩溃自愈
     if (this.child) {
       this.child.removeAllListeners("exit");
       this.child.kill();
@@ -225,6 +228,13 @@ export class CodexServer extends EventEmitter {
 
   stop() {
     this.stopWatchdog();
+    // ⛔ 必须先摘掉 exit/error 监听（09-13 审计 P0）：`exit` 事件接到 `fail()`，而 `fail()`
+    // 无条件 `restart()` —— 不摘监听的话，退出路径（cleanupAll → server.stop()）会把引擎
+    // **重新 spawn** 出来（孤儿 codex.exe 占同一份 codex-home），引擎自更新时还会和
+    // codex.exe 的文件替换抢占用，正好破坏"先停引擎才能换二进制"这个前提。
+    this.stopping = true;
+    this.child?.removeAllListeners("exit");
+    this.child?.removeAllListeners("error");
     this.child?.kill();
     this.child = undefined;
   }
@@ -287,6 +297,18 @@ export class CodexServer extends EventEmitter {
 
   private fail(error: Error) {
     this.child = undefined;
+    // ⛔ 主动停止（退出应用 / 引擎自更新替换二进制）时**不许自动拉起**（09-13 审计 P0）。
+    // 退出路径 cleanupAll → stop() 会 kill 引擎，若这里还无条件 restart，就会在退出过程中
+    // 重新 spawn 一个孤儿 codex.exe（占同一份 codex-home，下次启动两个引擎抢索引）；
+    // 引擎自更新路径更硬：stop() 之后要替换 codex.exe，自动重启会和 rename 抢占用。
+    if (this.stopping) {
+      for (const { reject, timer } of this.pending.values()) {
+        clearTimeout(timer);
+        reject(error);
+      }
+      this.pending.clear();
+      return;
+    }
     for (const { reject, timer } of this.pending.values()) {
       clearTimeout(timer);
       reject(error);

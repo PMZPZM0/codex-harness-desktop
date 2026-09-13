@@ -892,7 +892,19 @@ async function readCustomModel(): Promise<CustomModelFile | null> {
     return JSON.parse(await fs.readFile(customModelFile, "utf8"));
   } catch (error: any) {
     if (error.code === "ENOENT") return null;
-    throw error;
+    // ⛔ 绝不 throw（09-13 审计 P0）：这个函数在启动链上被裸 await，而它前面就是
+    // `createWindow()` —— 一旦文件被写坏（非原子写/断电/并发写撞车），异常会掐断整条
+    // `app.whenReady().then(...)`（那条链没有 .catch），**窗口根本不创建**：双击没反应、
+    // 连引导页都不出现，用户只能手工删 %APPDATA% 下的文件才能再用。
+    // 现在的语义：解析失败 → 把坏文件改名留证 + 当"没配置"继续启动（用户看到提示，可重配）。
+    try {
+      const bad = `${customModelFile}.bad-${Date.now()}`;
+      await fs.rename(customModelFile, bad);
+      console.warn(`[custom-model] 配置损坏，已备份为 ${bad} 并按空配置继续启动：`, error?.message ?? error);
+    } catch (renameError) {
+      console.warn("[custom-model] 配置损坏且备份失败，按空配置继续启动：", error?.message ?? error);
+    }
+    return null;
   }
 }
 
