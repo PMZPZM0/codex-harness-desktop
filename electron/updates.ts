@@ -9,7 +9,8 @@
  * 流程：checkLatestUpdate() 拉 /api/latest → downloadUpdate() 流式落盘 → installUpdate() 运行安装包
  */
 import fs from "node:fs/promises";
-import { existsSync, createWriteStream } from "node:fs";
+import { existsSync, createWriteStream, createReadStream } from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import https from "node:https";
 import http from "node:http";
@@ -174,12 +175,16 @@ export type DownloadProgress = (info: {
 export async function downloadUpdate(
   releaseUrl: string,
   destPath: string,
-  onProgress?: DownloadProgress
+  onProgress?: DownloadProgress,
+  expectedSha256?: string,
 ): Promise<{ path: string; bytes: number }> {
   const parsed = new URL(absolutize(releaseUrl));
-  const lib = parsed.protocol === "https:" ? https : http;
+  // ⛔ 只允许 https（09-13 审计 P0）：这条链的产物会被 `shell.openPath` 当安装包执行，
+  // 明文 http 给中间的代理/DNS/公共 Wi-Fi 留了一个"把安装包换掉"的窗口。
+  if (parsed.protocol !== "https:") throw new Error(`更新包地址必须是 https（收到 ${parsed.protocol}）`);
+  const lib = https;
   await fs.mkdir(path.dirname(destPath), { recursive: true });
-  return new Promise((resolve, reject) => {
+  const result = await new Promise<{ path: string; bytes: number }>((resolve, reject) => {
     const req = lib.request(
       {
         method: "GET",
@@ -217,6 +222,29 @@ export async function downloadUpdate(
     );
     req.on("error", reject);
     req.end();
+  });
+
+  // ⛔ 完整性校验（09-13 审计 P0）：`sha256` 字段以前从下发到使用**全链路没人比对** ——
+  // 下载 → `shell.openPath()` 直接执行，等于"发布站被换掉就静默装上攻击者的包"。
+  // 现在：有期望哈希就必须匹配，不匹配**删文件并报错**；没有期望哈希则只接受 https（上面已强制）。
+  if (expectedSha256) {
+    const actual = await sha256OfFile(result.path);
+    if (actual.toLowerCase() !== expectedSha256.toLowerCase()) {
+      await fs.rm(result.path, { force: true }).catch(() => undefined);
+      throw new Error(`更新包校验失败（期望 ${expectedSha256.slice(0, 12)}…，实际 ${actual.slice(0, 12)}…），已删除下载文件`);
+    }
+  }
+  return result;
+}
+
+/** 流式计算文件 sha256（大安装包不整份读进内存）。 */
+async function sha256OfFile(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("error", reject);
+    stream.on("end", () => resolve(hash.digest("hex")));
   });
 }
 
