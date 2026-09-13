@@ -10285,6 +10285,56 @@ const commandMatches = useMemo(() => {
                 const answer = await new Promise<string>((resolve) => setAgentAsk({ threadId: askThreadId, question, options, recommended: options[0] ?? null, allowFree: args.allowFree !== false, resolve }));
                 // ESC 关闭问答卡时 answer 为空串：明确告知引擎用户跳过了选择，避免它等一个不存在的选项
                 await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: answer ? `[用户选择] ${answer}` : "[用户取消了选择] 请继续其它工作，或稍后换一种方式再问。" }], success: true });
+              } else if (event.params?.tool === "skill_search") {
+                const query = String(args.query ?? "").trim();
+                const [market, local] = await Promise.all([
+                  window.codex.listMarketSkills({ query }).catch(() => null),
+                  window.codex.listLocalSkills().catch(() => []),
+                ]);
+                const installedNames = new Set((local as any[]).map((s: any) => normSkillName(s.name)));
+                const rows = (market?.items ?? []).slice(0, 6).map((s: any) => `- ${s.name}｜${String(s.description ?? "").slice(0, 80)}｜${installedNames.has(normSkillName(s.name)) ? "已安装" : "未安装"}`);
+                const text = rows.length
+                  ? `技能市场「${query}」搜索结果：\n${rows.join("\n")}\n要装哪条就调 skill_install 并把 query 传它的准确名称。`
+                  : `技能市场没有搜到「${query}」相关技能。请手工完成本任务，并在回复末尾加一行「💡 未找到合适技能：${query}」。`;
+                await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text }], success: true });
+              } else if (event.params?.tool === "skill_install") {
+                const query = String(args.query ?? "").trim();
+                const market = await window.codex.listMarketSkills({ query }).catch(() => null);
+                const target = (market?.items ?? []).find((s: any) => normSkillName(s.name) === normSkillName(query)) ?? (market?.items ?? [])[0];
+                if (!target) {
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `技能市场没有「${query}」的匹配技能。请手工完成本任务，并在回复末尾加一行「💡 未找到合适技能：${query}」。` }], success: true });
+                } else {
+                  const r = await window.codex.installMarketSkillLight(target);
+                  showToast("技能已自主安装", `${r.name}（${r.discovered ? "引擎已发现" : "下回合生效"}）`);
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `技能「${r.name}」已安装（市场来源，已通过安全校验）。${r.engineCheckMessage}。现在请先读它的 SKILL.md（skills 目录下同名文件夹），严格按说明书使用。` }], success: true });
+                }
+              } else if (event.params?.tool === "connector_search") {
+                const query = String(args.query ?? "").trim();
+                const [templates, configured] = await Promise.all([
+                  window.codex.listConnectorTemplates(),
+                  window.codex.listConnectors().catch(() => []),
+                ]);
+                const configuredIds = new Set((configured as any[]).map((c: any) => c.id));
+                const rows = (templates as any[])
+                  .filter((t: any) => !query || `${t.name}${t.summary}`.toLowerCase().includes(query.toLowerCase()))
+                  .slice(0, 8)
+                  .map((t: any) => `- ${t.id}｜${t.name}｜${String(t.summary ?? "").slice(0, 70)}｜${configuredIds.has(t.id) ? "已配置" : "未配置"}${(t.fields ?? []).some((f: any) => f.secret) ? "（需凭据）" : ""}`);
+                const text = rows.length
+                  ? `内置 MCP 连接器模板：\n${rows.join("\n")}\n要装某条：先用 agent_ask 征得用户同意，再调 connector_install 传它的 id（安装会重启引擎并中断当前回合）。`
+                  : "没有匹配的内置连接器模板。请手工完成，或建议用户在 设置 → 连接器 里自定义。";
+                await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text }], success: true });
+              } else if (event.params?.tool === "connector_install") {
+                const templateId = String(args.templateId ?? "").trim();
+                const templates = await window.codex.listConnectorTemplates();
+                const template = templates.find((t: any) => t.id === templateId);
+                if (!template) {
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `没有 id 为「${templateId}」的连接器模板。请先调 connector_search 查询。` }], success: false });
+                } else {
+                  const draft: ConnectorDraft = { id: template.id, name: template.name, transport: template.transport, command: template.command, args: template.args, url: template.url };
+                  await window.codex.saveConnector(draft);
+                  showToast("连接器已安装", template.name);
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `MCP 连接器「${template.name}」已配置并生效（引擎已重启，当前回合已中断）。请告诉用户：重新发一条消息即可继续，该连接器的工具已可直接使用。` }], success: true });
+                }
               } else {
                 await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `Dynamic tool ${event.params?.tool ?? "unknown"} is not registered by this harness.` }], success: false });
               }
@@ -12782,6 +12832,11 @@ const commandMatches = useMemo(() => {
       { type: "function", name: "task_add", description: "把一条任务加入用户的任务清单。", inputSchema: { type: "object", properties: { text: { type: "string" }, priority: { type: "string", enum: ["low", "medium", "high"] } }, required: ["text"] } },
       { type: "function", name: "task_update", description: "更新任务清单：列出全部任务（不传任何参数）、改状态或删除。status 只有 todo/doing/done。", inputSchema: { type: "object", properties: { id: { type: "string" }, status: { type: "string", enum: ["todo", "doing", "done"] }, text: { type: "string" }, priority: { type: "string", enum: ["low", "medium", "high"] }, done: { type: "boolean", description: "删除任务" } } } },
       { type: "function", name: "agent_ask", description: "在对话里向用户展示一组选项并等待选择（提问时必须给出选项）。options 里第一项会作为推荐项高亮，也可以留空让用户自由输入。", inputSchema: { type: "object", properties: { question: { type: "string", description: "要问用户的问题" }, options: { type: "array", items: { type: "string" }, description: "2-4 个候选选项，第一项为推荐" }, allowFree: { type: "boolean", description: "是否允许自由输入，默认允许" } }, required: ["question", "options"] } },
+      // 技能运用纪律：缺技能自主搜市场/安装，缺连接器先查模板（安装前必须 agent_ask 征得同意）
+      { type: "function", name: "skill_search", description: "在内置技能市场按关键词搜索技能（返回名称/简介/安装状态）。当任务没有合适技能、你想找现成技能提效时调用。", inputSchema: { type: "object", properties: { query: { type: "string", description: "关键词，如 excel、爬虫、pdf" } }, required: ["query"] } },
+      { type: "function", name: "skill_install", description: "从技能市场安装一个技能（不重启应用，下一回合即可用）。传 query 自动匹配最相似的技能；装完先读它的 SKILL.md 再按说明书使用。", inputSchema: { type: "object", properties: { query: { type: "string", description: "技能名或关键词，优先用 skill_search 结果里的准确名称" } }, required: ["query"] } },
+      { type: "function", name: "connector_search", description: "列出内置 MCP 连接器模板与已配置状态（浏览器自动化、桌面自动化、GitHub 等）。需要某种外部服务能力但当前没有对应工具时调用。", inputSchema: { type: "object", properties: { query: { type: "string", description: "过滤关键词，可省略" } } } },
+      { type: "function", name: "connector_install", description: "安装一个 MCP 连接器模板（写入配置并重启引擎，会中断当前回合）。必须先用 agent_ask 征得用户同意才能调用；安装后提醒用户重新发一条消息继续。", inputSchema: { type: "object", properties: { templateId: { type: "string", description: "connector_search 结果里的模板 id" } }, required: ["templateId"] } },
     ];
     // 首次对话身份引导：**只在「从没打过招呼」时注入一次**（09-12 用户反馈修正）。
     // 旧判定用 `onboarded`（用户真的回答了才为 true）→ 不回答的用户每个新会话都被
