@@ -11207,11 +11207,17 @@ const commandMatches = useMemo(() => {
     if (provider && customModel && provider === customModel.provider) {
       try {
         await updateThreadSettings({ model, model_provider: provider, effort: nextEffort || null });
-        // 100% 同步（09-11 用户要求）：一次性写齐 custom-model.json 顶层 model（模型自查
-        // 「我是什么模型」读的就是它）+ config.toml 顶层 model + catalog 上下文窗口。
-        // restart:false 很关键——applyCustomModel 默认以 server.restart() 收尾，
-        // 那会打断所有在跑的回合（实测 ⑦ 全红：回合被杀、渲染层 20s 超时）。
-        void window.codex.setProviderModel({ provider, model, apply: true, restart: false }).catch(() => {});
+        // ⛔ 多窗口模型作用域（09-13）：这里**不再**调 setProviderModel({apply:true}) 写全局
+        // —— 它会改写 custom-model.json 顶层 model + config.toml 顶层 `model = "..."`，
+        // 那是全应用共享的一份磁盘配置。单窗口时代「当前会话=全局」没毛病；两个独立会话
+        // 窗口后互相污染：A 窗口切模型 → B 窗口会话自查「我是谁」读 config 顶层 → 报成
+        // A 的模型（用户实测 glm/deepseek 错位）。会话级模型靠 updateThreadSettings +
+        // 每轮 turn/start 的 model 参数（权威判据 = rollout turn_context.model），全局
+        // 落盘只在「无会话选默认」/「跨供应商切换」两条路径发生。
+        if (!currentThreadId) {
+          // 无会话时选的才是「新会话默认」：写全局档案（apply:false 只落盘不动引擎）
+          void window.codex.setProviderModel({ provider, model, apply: false }).catch(() => {});
+        }
         setNotice(`${threadRef.current ? "当前会话" : "新会话默认"}已选择：${customModel.name} · ${model}`);
         return;
       } catch (error: any) {
@@ -11435,13 +11441,11 @@ const commandMatches = useMemo(() => {
     // 思考等级按会话独立：当前有会话就记到会话上（切回来自动恢复），无会话才只是全局默认
     if (threadRef.current?.id) saveThreadEffort(threadRef.current.id, value);
     void updateThreadSettings({ effort: value });
-    // 档案 100% 同步（对齐「模型自报」案）：写进 custom-model.json（models[].effort +
-    // 顶层 effort）与 config.toml 顶层 model_reasoning_effort，切供应商/重装不丢、
-    // 重启后 resume 的老会话也有兜底默认。restart:false 不打断在跑回合。
-    // 归档键必须是档案里的「当前生效模型」（customModel.model），不能用会话级
-    // selectedModel —— 两者在「会话选了别的模型」时不是同一个 id，用会话的会把
-    // 档位写到另一个模型条目上，顶层与 models[] 就此分叉。
-    if (customModel?.provider && customModel.model) {
+    // ⛔ 多窗口作用域（09-13）：有会话时**不再**写全局档案（custom-model.json 顶层 /
+    // config.toml 顶层 model_reasoning_effort）——那是全应用共享的，A 窗口会话改档位
+    // 会污染 B 窗口重启后的兜底默认。会话内档位由每轮 turn/start 的 effort 下发（权威），
+    // 只有「无会话选默认」才落全局档案。
+    if (!threadRef.current?.id && customModel?.provider && customModel.model) {
       void window.codex.setProviderEffort({ provider: customModel.provider, model: customModel.model, effort: value })
         .then((next) => setCustomModel(next))
         .catch(() => undefined);
