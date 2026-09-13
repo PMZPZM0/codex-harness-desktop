@@ -831,6 +831,33 @@ const CHECKS = [
   },
 
   {
+    id: "skill-discipline",
+    name: "技能运用纪律：AGENTS.md 守则 + 能力清单注入，四个自主扩编动态工具已注册",
+    run: async (h) => {
+      await enterMain(h);
+      // ① 守则区间已写进 codex-home/AGENTS.md（幂等 upsert，boot 时重建）
+      const d = await h.eval(`window.codex.skillDisciplineGet()`);
+      h.check("守则区间已注入 AGENTS.md", Boolean(d?.present), `present=${d?.present}`);
+      const section = String(d?.section ?? "");
+      h.check("守则含「开工先匹配能力」纪律", section.includes("开工先匹配能力") && section.includes("自主搜索并安装"), section.slice(0, 60));
+      h.check("守则含「缺连接器先征得同意」安全条款", section.includes("agent_ask"), "");
+      // ② 能力清单是真实扫描结果（技能/连接器至少认出一类；全新 profile 也会注入「暂无」占位）
+      const hasInventory = section.includes("### 当前能力清单") && (section.includes("**已装技能**") || section.includes("**已配 MCP 连接器**"));
+      h.check("能力清单区块存在（技能或连接器至少一类）", hasInventory, section.slice(-200));
+      // ③ 能力清单对账：本机已装技能必须出现在清单里（真实扫描，非占位文本）
+      const locals = await h.eval(`window.codex.listLocalSkills().then((list) => JSON.stringify(list.map((s) => s.name)))`);
+      const names = JSON.parse(locals);
+      if (names.length) {
+        const missing = names.filter((name) => !section.includes(name));
+        h.check(`能力清单与已装技能对账（${names.length} 个技能全部列出）`, missing.length === 0, missing.length ? `缺失：${missing.join(", ")}` : "全部命中");
+      } else {
+        h.check("本机暂无已装技能：清单为「暂无」占位（正常）", section.includes("暂无"), "");
+      }
+      await h.screenshot("skill-discipline");
+    },
+  },
+
+  {
     id: "openai-import",
     name: "OpenAI 导入账号文件：四种格式解析 + JWT 身份 + vault 入库（不碰 auth.json / 供应商）",
     run: async (h) => {
@@ -952,6 +979,7 @@ const ROUND_OF = {
   "relay-subscription": "09-13",
   "openai-import": "09-13",
   "voice-presets": "09-13",
+  "skill-discipline": "09-13",
 };
 const roundOf = (id) => ROUND_OF[id] ?? "(未登记)";
 

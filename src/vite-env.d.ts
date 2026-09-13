@@ -289,6 +289,8 @@ interface Window {
     importSkill(): Promise<{ name: string; path: string; source: string; content: string } | null>;
     listMarketSkills(input?: { category?: string; page?: number; pageSize?: number; query?: string }): Promise<{ items: MarketSkillEntry[]; total: number; page: number; pageSize: number }>;
     installMarketSkill(skill: MarketSkillEntry): Promise<LocalSkillEntry>;
+    installMarketSkillLight(skill: unknown): Promise<{ name: string; discovered: boolean; engineCheckMessage: string }>;
+    skillDisciplineGet(): Promise<{ present: boolean; section: string }>;
     listMarketPlugins(input?: { category?: string; query?: string; page?: number; pageSize?: number }): Promise<{ items: PluginMarketEntry[]; total: number; page: number; pageSize: number }>;
     installMarketPlugin(plugin: PluginMarketEntry): Promise<PluginMarketInstallResult>;
     listLocalSkills(): Promise<LocalSkillEntry[]>;

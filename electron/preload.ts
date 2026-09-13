@@ -96,6 +96,8 @@ contextBridge.exposeInMainWorld("codex", {
   importSkill: () => ipcRenderer.invoke("skills:import"),
   listMarketSkills: (input: unknown = {}) => ipcRenderer.invoke("skills:market-list", input),
   installMarketSkill: (skill: unknown) => ipcRenderer.invoke("skills:market-install", skill),
+  installMarketSkillLight: (skill: unknown) => ipcRenderer.invoke("skills:market-install-light", skill) as Promise<{ name: string; discovered: boolean; engineCheckMessage: string }>,
+  skillDisciplineGet: () => ipcRenderer.invoke("skill-discipline:get") as Promise<{ present: boolean; section: string }>,
   listMarketPlugins: (input: unknown = {}) => ipcRenderer.invoke("plugins:market-list", input),
   installMarketPlugin: (plugin: unknown) => ipcRenderer.invoke("plugins:market-install", plugin),
   listLocalSkills: () => ipcRenderer.invoke("skills:local-list"),

@@ -48,6 +48,7 @@ function qrSvg(text: string) {
   return QRCode.toString(text, { type: "svg", margin: 2, errorCorrectionLevel: "M" });
 }
 import { installCocoLoopSkill, listCocoLoopSkills, listSkillHubSkills, repairSkillBomScan, stripSkillBom, type InstalledMarketSkill, type MarketSkill } from "./skills-market";
+import { upsertSkillDiscipline, DISCIPLINE_START, DISCIPLINE_END } from "./skill-discipline";
 import { ensureCodexMarketplaceSection, installCodexMarketPlugin, listCodexMarketPlugins, type CodexMarketPlugin } from "./codex-market";
 import { augmentedPath, bundledGit, bundledNode, bundledPython, cloakCacheDir, cloakOpenHelper, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "./toolchain";
 import { ensureBuiltinSkills } from "./builtin-skills";
@@ -1996,6 +1997,7 @@ app.whenReady().then(async () => {
   // 重写让模型默认用中文思考与回复；AGENTS.md 引擎每请求动态重读，无需重启即生效。
   try {
     await applyPersonalizationToAgentsMd(await readPersonalization(), codexHome);
+    void refreshSkillDiscipline();
   } catch (error) { console.warn("AGENTS.md bootstrap failed:", error); }
   // 身份引导存量迁移（09-12 用户反馈「怎么每次思考还说新会话引导」）：老档案没有 greeted
   // 字段，于是「装了很久、聊过很多次、但没回答过那套引导提问」的用户升级后又被当成第一次见面。
@@ -4431,6 +4433,7 @@ ipcMain.handle("skills:import", async () => {
   await stripSkillBom(skillPath);
   await updateSkillRegistry({ name, path: skillPath, source: "local", installedAt: new Date().toISOString() });
   await server.restart();
+  void refreshSkillDiscipline();
   return { name, path: destination, source, content };
 });
 // SkillHub 榜单分类（技能中心 tab → showcase section）；其余分类名一律落回 hot
@@ -4462,7 +4465,47 @@ ipcMain.handle("skills:market-install", async (_event, skill: MarketSkill) => {
     engineCheckMessage = `技能已安装且引擎已重启，但自动确认暂时不可用：${error.message}`;
   }
   emit(engineRegistered ? "complete" : "pending", engineCheckMessage);
+  void refreshSkillDiscipline();
   return { ...installed, engineRegistered, engineCheckMessage };
+});
+
+/** 技能/连接器变化后刷新 AGENTS.md 里的「技能与 MCP 运用守则」区间（引擎每会话注入，
+ *  模型开局即知当前军火库）。任何失败都不影响主流程。 */
+async function refreshSkillDiscipline() {
+  try {
+    const connectors = await readConnectors();
+    const mcp = connectors
+      .filter((c) => c.enabled !== false)
+      .map((c) => ({ name: c.name, desc: c.transport === "stdio" ? `本地 MCP（${String(c.command ?? "")}）` : `HTTP MCP（${String(c.url ?? "")}）` }));
+    await upsertSkillDiscipline(codexHome, mcp);
+  } catch (error: any) {
+    console.warn("技能纪律注入失败:", error?.message ?? error);
+  }
+}
+
+/** 给引擎动态工具用的轻量安装：**不重启引擎**（重启会杀掉正在跑的回合）——
+ *  写目录 + 刷新注册表 + forceReload 重扫（下一回合即可用）+ 刷新 AGENTS 纪律区间。 */
+ipcMain.handle("skills:market-install-light", async (_event, skill: MarketSkill) => {
+  const installed = await installCocoLoopSkill({ skill, destinationRoot: userSkillsDir });
+  await updateSkillRegistry({ name: installed.name, path: installed.path, source: "cocoloop", marketId: installed.marketId, sourceUrl: installed.sourceUrl, installedAt: new Date().toISOString() });
+  let discovered = false;
+  try {
+    const result: any = await server.request("skills/list", { cwds: [], forceReload: true });
+    discovered = (result.data ?? []).flatMap((entry: any) => entry.skills ?? [])
+      .some((entry: any) => entry?.name === installed.name || entry?.path === installed.path);
+  } catch { /* 重扫失败不阻塞：下一回合引擎自己会重新扫描 */ }
+  await refreshSkillDiscipline();
+  return { name: installed.name, path: installed.path, discovered, engineCheckMessage: discovered ? "引擎已发现该技能，下一回合即可使用" : "技能已入库，下一回合引擎重新扫描后即可使用" };
+});
+
+ipcMain.handle("skill-discipline:get", async () => {
+  try {
+    const raw = await fs.readFile(path.join(codexHome, "AGENTS.md"), "utf8");
+    const start = raw.indexOf(DISCIPLINE_START);
+    const end = raw.indexOf(DISCIPLINE_END);
+    return { present: start >= 0 && end > start, section: start >= 0 && end > start ? raw.slice(start, end + DISCIPLINE_END.length) : "" };
+  } catch { return { present: false, section: "" };
+  }
 });
 ipcMain.handle("plugins:market-list", (_event, input: { category?: string; query?: string; page?: number; pageSize?: number } = {}) => listCodexMarketPlugins(input));
 ipcMain.handle("plugins:market-install", async (_event, plugin: CodexMarketPlugin) => {
@@ -4577,6 +4620,7 @@ async function setSkillEnabledSilent(folder: string, enabled: boolean) {
 ipcMain.handle("skills:set-enabled", async (_event, input: { folder: string; enabled: boolean }) => {
   await setSkillEnabledSilent(input.folder, Boolean(input.enabled));
   await server.restart();
+  void refreshSkillDiscipline();
   return { ok: true };
 });
 ipcMain.handle("skills:set-enabled-batch", async (_event, input: { folders: string[]; enabled: boolean }) => {
@@ -4587,6 +4631,7 @@ ipcMain.handle("skills:set-enabled-batch", async (_event, input: { folders: stri
     catch (error: any) { failures.push(`${folder}：${error.message}`); }
   }
   await server.restart();
+  void refreshSkillDiscipline();
   return { ok: failures.length === 0, changed: folders.length - failures.length, failures };
 });
 /**
@@ -4629,6 +4674,7 @@ ipcMain.handle("skills:local-remove", async (_event, input: { folder?: string; n
     engineCheckMessage = `技能已删除且引擎已重启，但自动确认暂时不可用：${error.message}`;
   }
   emit(engineRemoved ? "complete" : "pending", engineCheckMessage);
+  void refreshSkillDiscipline();
   return { ok: true, engineRemoved, engineCheckMessage };
 });
 /**
@@ -5026,6 +5072,7 @@ ipcMain.handle("connectors:save", async (_event, input: any) => {
   await writeConnectors([...list.filter((entry) => entry.id !== id), config]);
   const model = await readCustomModel();
   if (model) await applyCustomModel(model); else { server.setExternalEnv(connectorEnv(await readConnectors())); await server.restart(); }
+  void refreshSkillDiscipline();
   return publicConnector(config);
 });
 ipcMain.handle("connectors:remove", async (_event, id: string) => {
@@ -5035,6 +5082,7 @@ ipcMain.handle("connectors:remove", async (_event, id: string) => {
   await writeConnectors(next);
   const model = await readCustomModel();
   if (model) await applyCustomModel(model); else { server.setExternalEnv(connectorEnv(next)); await server.restart(); }
+  void refreshSkillDiscipline();
   return { ok: true };
 });
 // 单个或批量启用/停用：ids 传一个等价单卡开关，传多个走批量勾选。每次改动都重启引擎使 config.toml 生效
@@ -5055,6 +5103,7 @@ ipcMain.handle("connectors:set-enabled", async (_event, input: { ids?: unknown; 
   await writeConnectors(next);
   const model = await readCustomModel();
   if (model) await applyCustomModel(model); else { server.setExternalEnv(connectorEnv(next)); await server.restart(); }
+  void refreshSkillDiscipline();
   return { ok: true, updated };
 });
 
@@ -5158,6 +5207,7 @@ ipcMain.handle("personalization:read", async () => readPersonalization());
 ipcMain.handle("personalization:save", async (_event, input: { nickname?: unknown; customInstructions?: unknown }) => {
   const config = await writePersonalization(input);
   await applyPersonalizationToAgentsMd(config, codexHome);
+  void refreshSkillDiscipline();
   const model = await readCustomModel();
   // 重写 config.toml：把迁移前残留在 developer_instructions 里的旧个性化段清掉，并重启引擎
   if (model) await applyCustomModel(model);
@@ -5169,6 +5219,7 @@ ipcMain.handle("personalization:save", async (_event, input: { nickname?: unknow
 ipcMain.handle("personalization:save-identity", async (_event, input: Record<string, unknown>) => {
   const config = await writePersonalization(input);
   await applyPersonalizationToAgentsMd(config, codexHome);
+  void refreshSkillDiscipline();
   return config;
 });
 /** 标记「身份引导已打过招呼」（09-12 用户反馈「怎么每次新会话都强制引导」）：
@@ -5411,6 +5462,7 @@ ipcMain.handle("personalization:setNickname", async (_event, nickname: unknown) 
   const current = await readPersonalization();
   const config = await writePersonalization({ nickname, customInstructions: current.customInstructions });
   await applyPersonalizationToAgentsMd(config, codexHome);
+  void refreshSkillDiscipline();
   return config;
 });
 // 回读真实落盘的 AGENTS.md，确认个性化确实在引擎会读取的位置——避免「保存成功但没生效」
