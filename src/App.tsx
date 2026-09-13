@@ -1387,10 +1387,14 @@ function botChannelName(channel: string) {
   return channel === "wechat" ? "微信" : channel === "feishu" ? "飞书" : channel === "telegram" ? "Telegram" : channel === "dingtalk" ? "钉钉" : channel === "wecom-webhook" ? "企微推送" : channel === "qq" ? "QQ 机器人" : "";
 }
 
-/** 机器人是否在线：所有渠道都看网关真实连接状态 */
+/** 机器人是否在线：所有渠道都看网关真实连接状态。
+ *  ⚠️ 键名映射：主进程 channels:status 的微信键是 **weixin**，而机器人档案里存的是
+ *  **wechat** —— 不映射的话扫码成功后状态永远 undefined，徽章永远「未连接」
+ * （09-08 加轮询、09-13 用户再反馈后才定位到是这个键名不匹配）。 */
+const CHANNEL_STATUS_KEY: Record<string, string> = { wechat: "weixin" };
 function botOnlineOf(bot: { channel: string; enabled: boolean }, channelOnline: Record<string, boolean | undefined>) {
   if (!bot.channel) return false;
-  return Boolean(channelOnline[bot.channel]);
+  return Boolean(channelOnline[CHANNEL_STATUS_KEY[bot.channel] ?? bot.channel]);
 }
 
 function formatDuration(value: unknown) {
@@ -7963,14 +7967,17 @@ export default function App() {
   }, [username]);
   const [mobileRemoteOpen, setMobileRemoteOpen] = useState(false);
   const [botManagerOpen, setBotManagerOpen] = useState(false);
+  // botManagerOpen 的 ref 镜像：配对请求到达时判断用户是否正开着机器人面板（决定弹不弹远控面板）
+  const botManagerOpenRef = useRef(false);
   // 机器人管理弹窗打开期间轮询渠道在线状态（5s）：扫码绑定成功/断开时左侧徽章即时跟上，
-  // 不依赖网关 log 事件转发链路（09-08 反馈：扫码连接成功但状态一直「未连接」）
+  // 不依赖网关 log 事件转发链路（09-08 反馈：扫码连接成功但状态一直「未连接」）。
+  // 09-13 改为**常驻**轮询：用户经常叉掉面板再回来看，关闭期间停轮询会导致重开瞬间
+  // 状态还是旧的（弹窗内 5s 才追上）；5s 一次 IPC 成本可忽略。
   useEffect(() => {
-    if (!botManagerOpen) return;
     void window.codex.channelsStatus?.().then(setChannelOnline).catch(() => undefined);
     const timer = window.setInterval(() => { void window.codex.channelsStatus?.().then(setChannelOnline).catch(() => undefined); }, 5000);
     return () => window.clearInterval(timer);
-  }, [botManagerOpen]);
+  }, []);
   // 频道机器人流式回复设置（全局，主进程 bot-stream.json）：弹窗打开时加载
   const [botStream, setBotStream] = useState<{ enabled: boolean; thinking: boolean; tools: boolean }>({ enabled: true, thinking: true, tools: true });
   useEffect(() => {
@@ -7996,6 +8003,11 @@ export default function App() {
   };
   const [bots, setBots] = useState<{ id: string; name: string; channel: string; enabled: boolean }[]>(() => { try { return JSON.parse(localStorage.getItem("bots") ?? "[]"); } catch { return []; } });
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
+  // 机器人管理面板打开时拉一次配对状态（6 位码 + 待审批）——配对卡就显示在面板里
+  useEffect(() => {
+    if (!botManagerOpen) return;
+    void window.codex.remotePairState?.().then((s) => { setPairCode(s.code); setPairPending(s.pending); setPairApproved(s.approved); }).catch(() => undefined);
+  }, [botManagerOpen]);
   // 打开机器人管理弹窗默认选中已配置的机器人（优先已启用的），不再显示空详情页
   useEffect(() => {
     if (!botManagerOpen) return;
@@ -9475,21 +9487,24 @@ const commandMatches = useMemo(() => {
     return () => { offDevice(); offCommand(); };
   }, []);
   // 手机提交了正确的 6 位配对码 → 这里收到挂起请求，弹审批卡等用户点「允许/拒绝」
+  // 09-13：机器人管理面板里也有配对卡了——若用户正开着它，请求直接在面板里审批，
+  // 不再叠弹「手机远控」面板（两层弹窗很割裂）。
+  useEffect(() => { botManagerOpenRef.current = botManagerOpen; }, [botManagerOpen]);
   useEffect(() => {
     const offPair = window.codex.onRemotePairRequest((request) => {
       setPairPending((current) => current.some((r) => r.rid === request.rid) ? current : [...current, request]);
       // 审批只能在「手机远控」面板里做，而用户此刻大概率没开着它 —— 请求一到就把
       // 面板顶到前台并刷新状态，否则请求会在 2 分钟后静默超时（等于"手机连不上"）。
-      setMobileRemoteOpen(true);
+      if (!botManagerOpenRef.current) setMobileRemoteOpen(true);
       void window.codex.remotePairState().then((s) => { setPairCode(s.code); setPairPending(s.pending); setPairApproved(s.approved); }).catch(() => undefined);
-      showToast("手机请求连接", `${request.name}：请在「手机远控」面板允许或拒绝`);
+      showToast("手机请求连接", `${request.name}：请${botManagerOpenRef.current ? "在本面板" : "在弹出的面板"}点允许或拒绝`);
     });
     // Bot Channel（微信/QQ/飞书/钉钉/Telegram）聊天里发来 6 位授权码 → 同一张审批卡（rid 以 bp- 开头）
     const offBotPair = window.codex.onBotPairRequest((request) => {
       setPairPending((current) => current.some((r) => r.rid === request.rid) ? current : [...current, { rid: request.rid, name: request.name, createdAt: Date.now() }]);
-      setMobileRemoteOpen(true);
+      if (!botManagerOpenRef.current) setMobileRemoteOpen(true);
       void window.codex.botPairState().then((s) => { setPairPending(s.pending.map((r) => ({ rid: r.rid, name: r.name, createdAt: r.createdAt }))); setPairApproved(s.approved.map((a) => ({ deviceId: a.key, name: a.name, approvedAt: a.approvedAt }))); }).catch(() => undefined);
-      showToast("机器人请求配对", `${request.name}：请在「手机远控」面板允许或拒绝`);
+      showToast("机器人请求配对", `${request.name}：请${botManagerOpenRef.current ? "在本面板" : "在弹出的面板"}点允许或拒绝`);
     });
     return () => { offPair(); offBotPair(); };
   }, []);
@@ -14375,6 +14390,29 @@ const commandMatches = useMemo(() => {
       {botManagerOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setBotManagerOpen(false); }}>
         <div className="bot-manager" role="dialog" aria-label="机器人">
           <header><div className="bot-head-left"><Link2 size={17} /><strong>机器人</strong><small>把外部聊天工具和 Webhook 接入 ZCode 机器人。</small></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setBotManagerOpen(false)}><X size={17} /></button></header>
+          {/* 09-13：首次连接的 6 位配对码与待审批请求直接在这里展示——
+              否则用户得叉掉面板回「手机远控」看码，来回跳（用户反馈「不方便」） */}
+          <div className="bot-pair-banner">
+            <div className="bot-pair-main">
+              <span className="bot-pair-label">首次连接配对码</span>
+              <strong className="bot-pair-code" data-pair-code>{pairCode ? pairCode.replace(/(\d{3})(\d{3})/, "$1 $2") : "······"}</strong>
+              <button className="remote-mini-btn" title="换一个配对码" onClick={() => void window.codex.remotePairRotate().then((r) => setPairCode(r.code)).catch(() => undefined)}><RefreshCw size={12} />刷新</button>
+            </div>
+            <small className="bot-pair-hint">机器人首次对话时，在聊天里发这个 6 位码（5 分钟内有效）；收到「等待批准」后回到这里点允许。</small>
+            {pairPending.length > 0 && (
+              <div className="bot-pair-pending">
+                {pairPending.map((request) => (
+                  <div className="remote-approve-row" key={request.rid} data-pair-row={request.rid}>
+                    <div className="remote-approve-info"><strong>{request.name}</strong><small>等待电脑端批准</small></div>
+                    <div className="remote-approve-actions">
+                      <button className="remote-allow-btn" onClick={() => { const done = request.rid.startsWith("bp-") ? window.codex.botApprove(request.rid) : window.codex.remoteApprove(request.rid); void done.then(() => { setPairPending((c) => c.filter((r) => r.rid !== request.rid)); void window.codex.remotePairState().then((s) => setPairApproved(s.approved)).catch(() => undefined); void window.codex.botPairState().then((s) => setPairApproved((prev) => [...s.approved.map((a) => ({ deviceId: a.key, name: a.name, approvedAt: a.approvedAt })), ...prev.filter((p) => !s.approved.some((q) => q.key === p.deviceId))])).catch(() => undefined); }).catch(() => undefined); }}>允许</button>
+                      <button className="remote-deny-btn" onClick={() => { const done = request.rid.startsWith("bp-") ? window.codex.botDeny(request.rid) : window.codex.remoteDeny(request.rid); void done.then(() => setPairPending((c) => c.filter((r) => r.rid !== request.rid))).catch(() => undefined); }}>拒绝</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="bot-columns">
             <div className="bot-side">
               <button className="bot-new-btn" onClick={() => { const id = crypto.randomUUID(); setBots((cur) => { const next = [...cur, { id, name: "新机器人", channel: "", enabled: false }]; localStorage.setItem("bots", JSON.stringify(next)); return next; }); setActiveBotId(id); setBotChannelPick(null); showToast("机器人已创建", "选择渠道并扫码绑定后即可使用"); }}><Plus size={14} />新建机器人</button>

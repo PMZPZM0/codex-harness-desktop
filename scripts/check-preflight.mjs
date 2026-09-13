@@ -1121,6 +1121,16 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
   settingsSrc.includes("playCtlRef") && settingsSrc.includes('"playing"')
     ? ok("试听有播放态反馈且播放中可停止")
     : fail("试听反馈缺失 —— 只有合成中、没有播放态/停止按钮");
+
+  // 09-13 徽章键映射：主进程 channels:status 的微信键是 weixin，机器人档案存的是 wechat
+  // —— 不映射的话扫码成功后状态永远「未连接」（映射丢失 = 回归）
+  const appSrc = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  appSrc.includes("CHANNEL_STATUS_KEY") && appSrc.includes('wechat: "weixin"')
+    ? ok("渠道状态键已映射（wechat→weixin，连接后徽章即时变「已连接」）")
+    : fail("徽章键映射丢失（CHANNEL_STATUS_KEY）—— 扫码成功后状态又会卡在「未连接」");
+  appSrc.includes("bot-pair-banner") || appSrc.includes("botPairState")
+    ? ok("机器人管理面板内嵌配对卡（码 + 待审批）")
+    : fail("机器人面板的配对码横条丢失 —— 用户又要回「手机远控」看码");
 }
 
 
