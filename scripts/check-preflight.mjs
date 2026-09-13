@@ -572,6 +572,50 @@ console.log(C.bold("\n【4a-4】多窗口并发保护（会话运行时配置由
   }
 }
 
+// ---------- 4a-5. 审批卡形态：输入框上一行 + 点开预览（09-14 用户「卡片太大」） ----------
+
+console.log(C.bold("\n【4a-5】审批卡：一行摘要 + 点开预览（多条不占满输入框）"));
+
+{
+  const uiSrc = existsSync(join(ROOT, "src", "App.tsx")) ? readFileSync(join(ROOT, "src", "App.tsx"), "utf8") : "";
+  const cssSrc = existsSync(join(ROOT, "src", "styles.css")) ? readFileSync(join(ROOT, "src", "styles.css"), "utf8") : "";
+
+  if (!uiSrc || !cssSrc) {
+    warn("找不到 src/App.tsx 或 src/styles.css，跳过审批卡形态守卫");
+  } else {
+    // ① 形态：一行条（compact）+ 摘要按钮 + 可展开细节
+    /className=\{`approval-card compact \$\{expanded \? "expanded" : ""\}`\}/.test(uiSrc)
+      ? ok("审批卡用 compact 形态（收起态只占一行）")
+      : fail("审批卡不是 compact 形态——会退回「每条一张大卡」（两条就占满输入框上方）");
+    /className="approval-summary"/.test(uiSrc) && /setExpanded\(/.test(uiSrc)
+      ? ok("摘要行可点开/收起（点一下预览正文）")
+      : fail("摘要行不可展开——用户要的「可以预览审批内容」没实现");
+    /\{expanded && \(/.test(uiSrc)
+      ? ok("正文只在展开时渲染（DOM 里不常驻大块内容）")
+      : fail("正文无条件渲染——收起态也会被撑成大卡（反证 F5 实测 heights 148/73/108）");
+    // ② 要用户填东西的两类必须默认展开（收起了没法填）
+    /useState\(\(\) => isUserInput \|\| isElicitation\)/.test(uiSrc)
+      ? ok("问问题 / MCP elicitation 默认展开（不展开就没法填，属可用性）")
+      : fail("需要输入的两类没有默认展开——收起了用户没法填");
+    // ③ 多条统一收进限高容器
+    /className="approval-stack" data-count=\{mine\.length\}/.test(uiSrc)
+      ? ok("多条审批收进 .approval-stack（整体限高，条数再多也不推挤输入框）")
+      : fail("审批卡没有统一容器——多条会一路往下堆");
+    // ④ CSS：容器滚动 + 行高不压缩 + 摘要省略号
+    const stackRule = cssSrc.match(/\.approval-stack\s*\{[^}]*\}/)?.[0] ?? "";
+    /max-height:/.test(stackRule) && /overflow-y:\s*auto/.test(stackRule)
+      ? ok("CSS：stack 限高 + overflow-y auto（多条出滚动条）")
+      : fail("CSS：stack 没限高/没滚动——多条会把输入框顶出视口");
+    // flex 列默认压缩子项（flex-shrink:1），行高会被压到 24px 且永不溢出 → 必须 flex: none
+    /\.composer-wrap \.approval-stack \.approval-card\s*\{[^}]*flex:\s*none/.test(cssSrc)
+      ? ok("CSS：行不参与压缩（flex:none，否则行高被压、滚动条永不出现）")
+      : fail("CSS：缺少 flex:none——flex 列会把每行压扁且不产生滚动（实测 8 条时 scrollable=false）");
+    /\.approval-card\.compact \.approval-peek\s*\{[^}]*text-overflow:\s*ellipsis/.test(cssSrc)
+      ? ok("CSS：摘要行超长省略（长命令不把按钮挤出可视区）")
+      : fail("CSS：摘要行没有省略号——长命令会撑破一行布局");
+  }
+}
+
 // ---------- 4b. 语音通话纯逻辑（回声消除 / 门控 / 断句） ----------
 
 console.log(C.bold("\n【4b】语音通话纯逻辑（回声消除 / 回声门控 / 断句）"));

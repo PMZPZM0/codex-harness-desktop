@@ -319,6 +319,12 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   **两条反证**：F3 摘掉广播 → ② 红（界面不跟随）；F4 把字段级合并改成整对象覆盖 → ④ 红（sandbox 被抹成空）。
   **场景设计教训**：给会话级字段写「测试值」必须用**合法枚举**或**真实存在的模型**（且同供应商，否则 `allModels` 兜底 effect 会回落），否则应用自己会把测试写入纠正掉、把断言带红——先用真 UI 动作走一遍链路，再模拟另一窗口。
 
+- **审批卡改「输入框上一行 + 点开预览」（09-14，用户「审批弹窗有点丑，卡片太大，两个卡片直接占满」）**：
+  `RequestCard`（App.tsx ≈5920）原来三个分支各返回一张 `<section className="approval-card">` 大卡（header 42px + 正文 + footer 42px），两条就把输入框上方占满。现在统一成一段结构：`<section className="approval-card compact">` + `header.approval-line`（**36px 一行**：图标 + 标题 + 一句话 `approval-peek` + 允许/拒绝 + caret）+ `{expanded && <div className="approval-detail">}`（命令全文 / reason / cwd / 权限清单 / 表单）；多条由 `.approval-stack`（`max-height: min(232px,38vh)` + `overflow-y:auto`）收纳，条数再多也只滚动、不推挤输入框。
+  **⛔ 两个必须记住的点**：① 要用户**填东西**的两类（`item/tool/requestUserInput` / `mcpServer/elicitation/request`）`useState(() => isUserInput || isElicitation)` 默认展开——收起了用户没法填，这是可用性不是审美；② flex 列默认 `flex-shrink:1` **会压缩子项**：不写 `.approval-stack .approval-card { flex: none }`，行高会被压到 24px 且 `scrollHeight === clientHeight`（**滚动条永远不出现**，实测 8 条时 `scrollable=false`）。
+  **e2e 钩子**：审批在 e2e 里无法从真实引擎触发（profile 跑 `danger-full-access`，永不问审批），所以加了与 `window.__adbg` 同款的测试入口 `window.__harnessApprovals.push/clear`（只改内存 state，不碰引擎），供截图与断言。
+  **回归**：`accept.mjs` 的 `approval-compact`（10 断言：三条各占一行 ≤44px / 收起态不渲染正文 / 收起态也能允许拒绝 / 摘要只露首行 / **八条时限高滚动且输入框仍在视口** / 展开看到完整命令 / 只影响这一条 / 再点收起 / 清空不残留）+ 预检【4a-5】8 条形态守卫。**反证**：把 `{expanded && …}` 改成恒真（= 旧大卡行为）→ ①②⑦ 红（heights 148/73/108）。
+
 - **【定论·勿回退】旧会话供应商由 config.toml 决定，不由会话决定**（09-10 跨引擎生命周期探针实证，用户「新会话能用、旧会话不行」）：真实 app-server + 两个假模型端点实测——①只改会话存档 `session_meta.model_provider` → 重启引擎后**无效**；②只改 config.toml 里该 id 的 `base_url` → 重启后**生效**。即：会话存档只记「供应商名字(id)」，请求地址永远取自 config.toml 该 id 的段；且单进程内改任何地方都无效（线程常驻引擎内存），**必须重启引擎重新加载会话**。因此 `migrateThreadToProvider` 的 `thread/resume + modelProvider + 内联 config` 与 `thread/settings/update` 都**改不掉后续 turn 的供应商**（后者不给 `capabilities.experimentalApi=true` 还会被 -32600 拒绝；变体扫描 9 种全失败）——这两条已确认是装样子，别再依赖。
   **落定修法（`applyCustomModel`）**：config.toml 里**每个** `[model_providers.*]` 段一律写「当前生效供应商的 base_url + wire_api」（保留各自 id/name 以便展示与兼容引用）；`collectSessionProviderIds()` 扫 `codex-home/sessions/**/*.jsonl` 首行收集历史引用过的 id，把**已删除供应商的 id 补成别名段**（同上指向当前生效地址），避免 `Model provider not found`。依据：引擎进程只有一把全局 Key（= 当前生效供应商的 Key），故「所有 id 指向当前生效端点」是唯一自洽形态——任何历史会话都必然走当前供应商。**用户明确拒绝 fork/新建分支方案，必须在原会话可用。** 回归脚本 `.workbuddy/verify-provider-alias.cjs`（11 项断言）。
 

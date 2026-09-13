@@ -1574,6 +1574,102 @@ const CHECKS = [
   },
 
   {
+    id: "approval-compact",
+    name: "⑰ 审批卡改成「输入框上一行 + 点开预览」：多条不占满（09-14 用户反馈卡片太大）",
+    run: async (h) => {
+      // 用户原话：「审批弹窗现在有点丑，卡片太大了，两个卡片直接占满了，改成小输入框上一行，
+      // 然后可以预览审批内容这样，这样好几个审批也没事」。
+      // 断言口径：① 每条收起态就是一行（高度 ≈36px，不是两三百的大卡）；② 三条加起来也不挤爆
+      // 输入框（stack 限高 + 滚动，输入框仍在视口内）；③ 收起态不渲染正文；④ 点摘要能展开看到
+      // 完整命令（预览）；⑤ 收起态就能直接允许/拒绝（点开不是操作前置）。
+      const rows = Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0;
+      if (rows >= 1) { await clickRow(h, 0); await wait(1200); }
+      const injected = String(await h.eval(`(() => {
+        const api = window.__harnessApprovals;
+        if (!api) return "ERR:no-hook";
+        const ids = [
+          api.push({ id: "e2e-appr-cmd", params: { command: "npm run test -- --grep approval\\necho 第二行只在展开时可见", cwd: "D:\\\\Codex Harness Desktop", reason: "运行测试套件" } }),
+          api.push({ id: "e2e-appr-file", method: "item/fileChange/requestApproval", params: { reason: "修改 3 个文件（src/App.tsx 等）" } }),
+          api.push({ id: "e2e-appr-perm", method: "item/permissions/requestApproval", params: { permissions: { network: true } } }),
+        ];
+        return ids.join(",");
+      })()`));
+      console.log(`  [审批] 注入合成审批 → ${injected}`);
+      h.check("[前置] 合成审批可注入（e2e 钩子）", !injected.startsWith("ERR"), injected);
+      await wait(600);
+
+      const shape = JSON.parse(await h.eval(`(() => {
+        const stack = document.querySelector(".approval-stack");
+        if (!stack) return JSON.stringify({ error: "no-stack" });
+        const cards = [...stack.querySelectorAll(".approval-card.compact")];
+        return JSON.stringify({
+          count: Number(stack.dataset.count || 0),
+          cards: cards.length,
+          heights: cards.map((c) => Math.round(c.getBoundingClientRect().height)),
+          stackHeight: Math.round(stack.getBoundingClientRect().height),
+          detailsOpen: stack.querySelectorAll(".approval-detail").length,
+          pres: stack.querySelectorAll("pre").length,
+          actions: cards.map((c) => c.querySelectorAll(".approval-actions button").length),
+          peek: cards[0]?.querySelector(".approval-peek")?.textContent ?? "",
+        });
+      })()`));
+      console.log(`  [审批] 收起态形态 → ${JSON.stringify(shape)}`);
+      h.check("① 三条审批各占一行（卡片高度 ≤ 44px，不再是大卡）", shape.cards === 3 && shape.heights.every((value) => value > 0 && value <= 44), `heights=${JSON.stringify(shape.heights)}`);
+      h.check("② 收起态不渲染正文（没有 approval-detail / 命令块）", shape.detailsOpen === 0 && shape.pres === 0, `detail=${shape.detailsOpen} pre=${shape.pres}`);
+      h.check("③ 收起态也能直接允许/拒绝（每条两个按钮在位）", shape.actions.every((value) => value === 2), `actions=${JSON.stringify(shape.actions)}`);
+      h.check("④ 摘要行露出的是一句话预览（命令首个非空行，不含后续行）", shape.peek.includes("npm run test") && !shape.peek.includes("第二行"), `peek="${shape.peek}"`);
+
+      // 多条也不挤爆：再塞 5 条（共 8 条），stack 应限高滚动，输入框仍在视口内
+      await h.eval(`(() => { for (let index = 0; index < 5; index += 1) window.__harnessApprovals.push({ id: "e2e-appr-extra-" + index, params: { command: "echo 第 " + (index + 1) + " 条", reason: "批量审批压力" } }); })()`);
+      await wait(600);
+      const crowded = JSON.parse(await h.eval(`(() => {
+        const stack = document.querySelector(".approval-stack");
+        const editor = document.querySelector(".composer-editor") ?? document.querySelector(".composer-wrap");
+        const rect = editor?.getBoundingClientRect();
+        return JSON.stringify({
+          count: Number(stack?.dataset.count || 0),
+          stackHeight: Math.round(stack?.getBoundingClientRect().height ?? 0),
+          scrollable: (stack?.scrollHeight ?? 0) > (stack?.clientHeight ?? 0) + 4,
+          editorBottom: Math.round(rect?.bottom ?? 0),
+          viewport: window.innerHeight,
+        });
+      })()`));
+      console.log(`  [审批] 八条压力 → ${JSON.stringify(crowded)}`);
+      h.check("⑤ 八条审批也不挤爆输入框（stack 限高 + 滚动，输入框仍在视口内）", crowded.count === 8 && crowded.scrollable && crowded.editorBottom > 0 && crowded.editorBottom <= crowded.viewport + 1, JSON.stringify(crowded));
+      await h.screenshot("审批-八条一行排列");
+
+      // 展开预览：点第一条摘要 → 出现正文且是**完整**命令（含第二行）
+      const expandedInfo = JSON.parse(await h.eval(`(async () => {
+        const stack = document.querySelector(".approval-stack");
+        const first = stack.querySelector(".approval-card.compact");
+        first.querySelector(".approval-summary").click();
+        await new Promise((r) => setTimeout(r, 260));
+        const detail = first.querySelector(".approval-detail");
+        const pre = detail?.querySelector("pre");
+        return JSON.stringify({ hasDetail: Boolean(detail), preText: pre?.textContent ?? "", height: Math.round(first.getBoundingClientRect().height) });
+      })()`));
+      console.log(`  [审批] 展开第一条 → ${JSON.stringify({ ...expandedInfo, preText: expandedInfo.preText.slice(0, 40) })}`);
+      h.check("⑥ 点摘要能展开预览完整内容（命令两行都在）", expandedInfo.hasDetail === true && expandedInfo.preText.includes("npm run test") && expandedInfo.preText.includes("第二行"), JSON.stringify(expandedInfo.preText).slice(0, 120));
+      h.check("⑥bis 展开只影响这一条（其余仍是一行）", expandedInfo.height > 44, `height=${expandedInfo.height}`);
+      await h.screenshot("审批-一行摘要与展开预览");
+
+      const collapsed = JSON.parse(await h.eval(`(async () => {
+        const first = document.querySelector(".approval-stack .approval-card.compact");
+        first.querySelector(".approval-summary").click();
+        await new Promise((r) => setTimeout(r, 260));
+        return JSON.stringify({ detail: first.querySelectorAll(".approval-detail").length, height: Math.round(first.getBoundingClientRect().height) });
+      })()`));
+      h.check("⑦ 再点一次收起（详情消失、回到一行）", collapsed.detail === 0 && collapsed.height <= 44, JSON.stringify(collapsed));
+
+      // 收尾：清掉合成审批，别把假请求留在界面上
+      await h.eval(`window.__harnessApprovals.clear()`);
+      await wait(300);
+      const left = Number(await h.eval(`document.querySelectorAll(".approval-stack .approval-card").length`)) || 0;
+      h.check("⑧ 清空后审批区消失（不残留假请求）", left === 0, `剩余 ${left} 条`);
+    },
+  },
+
+  {
     id: "clean",
     name: "⑦ 渲染层无 console.error",
     run: async (h) => {
@@ -1636,6 +1732,7 @@ const ROUND_OF = {
   "session-scope": "09-14",
   "thread-runtime": "09-14",
   "thread-runtime-multiwin": "09-14",
+  "approval-compact": "09-14",
 };
 const roundOf = (id) => ROUND_OF[id] ?? "(未登记)";
 
