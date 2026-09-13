@@ -11,6 +11,7 @@ import { codeFontSize, useCodeSettings } from "./lib/code-settings";
 import { DEFAULT_EFFORT, pickDefaultEffort, CUSTOM_MODEL_EFFORTS, normalizeEffort, ALL_EFFORTS } from "./lib/effort";
 import { matchModelSpec, loadExternalSpecs } from "./lib/model-specs";
 import { resolveModelForOpen, shouldSyncOpenThread } from "./lib/model-scope.mjs";
+import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "./lib/session-scope.mjs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
 import { resolveSkillVisual, type SkillVisual } from "./lib/skill-icon";
 import { translateEngineNotice } from "./lib/engine-notices-zh";
@@ -8948,6 +8949,14 @@ export default function App() {
   // 防止与 chooseModel 里的直接写重复落盘。
   const archiveSyncRef = useRef<string>("");
   useEffect(() => {
+    // ⛔ 多会话/多窗口作用域（09-14 用户实测「模型还是串全局的」的**次因**）：
+    // 有会话打开时 `modelId` 是**该会话自己**的模型，绝不能拿它去写全局档案
+    // （setProviderModel 会就地改写 custom-model.json 顶层 model + config.toml 顶层 model +
+    //  model-catalog.json）。而「模型自查我是谁」读的正是这两处 → 写进去之后，别的会话
+    // （或另一个弹窗）自报的模型就变成这个会话的模型，两个窗口还会互相覆盖。
+    // 用户定稿的规则：全局档案只在「无会话时选默认」「跨供应商切换」两条路径上更新。
+    // 这条对账从此只负责**无会话时的遗留漂移修正**（modelId 此时就等于全局默认）。
+    if (threadRef.current?.id) return;
     const provider = customModel?.provider;
     if (!provider || !customModel?.model) return;
     const match = modelId.match(/^custom:([^:]+):(.+)$/);
@@ -8958,7 +8967,7 @@ export default function App() {
     void window.codex
       .setProviderModel({ provider, model: match[2], apply: true, restart: false })
       .catch(() => { archiveSyncRef.current = ""; });
-  }, [customModel, modelId]);
+  }, [customModel, modelId, thread?.id]);
   // 思考等级对账（与上面模型对账同型）：档案里记了当前生效模型的档位、而当前上下文
   // 没有更具体的显式值（会话无 thread-effort 记录）→ 应用档案档位。用户在会话里显式
   // 选过档位时以会话记录为准（每会话独立优先级，与 model 的规则一致）。
@@ -11127,6 +11136,72 @@ const commandMatches = useMemo(() => {
   // （已删除重复的 smooth 跟随 effect：sticky layout effect 已在 [thread] 变化时
   // 用 behavior:auto 同步跳底，smooth 版本会在长会话切换时产生数秒的滚动动画。）
 
+  /** 全局基线 developer instructions（config.toml 顶层那段：语言 / 内置工具 / 自动化说明）。
+   *  会话作用域块必须**拼在它之后**一起下发——只发作用域块会把基线顶掉，模型就不知道
+   *  nuphus-call / playwright-cli / generate_image 这些内置工具怎么用了。读一次缓存住。 */
+  const baseInstructionsRef = useRef("");
+  /** 每个会话最近一次下发的作用域签名：同签名不重发，避免反复打开会话刷 RPC。 */
+  const scopeSigRef = useRef<Record<string, string>>({});
+
+  async function loadBaseInstructions(): Promise<string> {
+    if (baseInstructionsRef.current) return baseInstructionsRef.current;
+    try {
+      const read: any = await window.codex.request("config/read", {});
+      baseInstructionsRef.current = String(read?.config?.developer_instructions ?? "");
+    } catch { /* 读不到就只发作用域块（降级不致命） */ }
+    return baseInstructionsRef.current;
+  }
+
+  /** 组装「会话作用域」下发体。引擎把 collaboration_mode.settings.developer_instructions
+   *  **持久在该会话自己的 thread settings 里**（rollout 的 `thread_settings_applied` 可回读），
+   *  天然按会话隔离——A 会话切模型不会改写 B 会话模型能读到的配置。
+   *  09-14 用户实测的根因：会话实际跑 glm-5.3-flash（rollout `turn_context.model` 实证），
+   *  但模型没有任何「会话级出口」能回答「我是什么模型」，只能去读全局 config.toml /
+   *  custom-model.json 的顶层 model（那只是「新建会话的默认值」），于是自报 deepseek-v4-flash
+   *  → 用户看到的「模型还是串全局的」。修法 = 把会话级取值写进会话自己的 instructions。 */
+  async function buildSessionScope(threadId: string, override?: { model?: unknown; effort?: unknown; sandbox?: unknown; approval?: unknown; provider?: unknown }): Promise<{ signature: string; collaborationMode: Record<string, unknown> } | null> {
+    if (!threadId) return null;
+    const model = String(override?.model ?? selectedModel?.model ?? modelName(modelId) ?? "").trim();
+    if (!model) return null;
+    const effortValue = override && "effort" in override ? String(override.effort ?? "") : String(effort ?? "");
+    const values = {
+      threadId,
+      model,
+      provider: String(override?.provider ?? customModel?.provider ?? ""),
+      effort: effortValue,
+      // 权限取本轮即将生效的值（调用方刚 setSandbox 时 React 状态还没刷新，必须由 override 传）
+      sandbox: String(override?.sandbox ?? sandbox ?? ""),
+      approval: String(override?.approval ?? approvalPolicy ?? ""),
+      workspace: String(workspace ?? ""),
+    };
+    const base = await loadBaseInstructions();
+    return {
+      signature: sessionScopeSignature(values),
+      collaborationMode: {
+        // 本应用引擎侧的会话协作模式恒为 default（rollout `task_started.collaboration_mode_kind`
+        // 实证）；「计划模式」由 /plan 旗标 + turn/start 实现，不走引擎的 collaboration mode。
+        mode: "default",
+        settings: {
+          model,
+          reasoning_effort: effortValue || null,
+          developer_instructions: composeScopeInstructions(base, sessionScopeBlock(values)),
+        },
+      },
+    };
+  }
+
+  /** 把会话作用域下发到引擎（协议通道 = thread/settings/update；空会话无 rollout 时失败可忽略）。 */
+  async function pushSessionScope(threadId: string, override?: { model?: unknown; effort?: unknown; sandbox?: unknown; approval?: unknown; provider?: unknown }) {
+    if (!threadId) return;
+    const built = await buildSessionScope(threadId, override);
+    if (!built) return;
+    if (scopeSigRef.current[threadId] === built.signature) return;
+    try {
+      await window.codex.request("thread/settings/update", { threadId, collaborationMode: built.collaborationMode });
+      scopeSigRef.current[threadId] = built.signature;
+    } catch { /* 空会话还没落 rollout / 引擎重启中：留给下一次下发 */ }
+  }
+
   /** 改「全局默认模型」的**唯一入口**（设置页「生效模型」/ 一键切中转站 / 启用官方订阅 /
    *  登录导入 / 供应商重启生效落定 / 无会话时在输入框选模型）。
    *  写全局默认 → 新会话用它；**若此刻有会话打开，只把这一个会话一并改过去**（用户意图：
@@ -11322,9 +11397,14 @@ const commandMatches = useMemo(() => {
 
   async function updateThreadSettings(values: Record<string, unknown>) {
     if (!thread) return;
+    // 会话作用域（模型/档位/权限）随每次设置变更一并下发：模型自报「我是谁」必须读会话级，
+    // 不能读全局 config.toml 顶层（那是新会话默认值）。取值以本次 values 为准（改档位时
+    // 引擎与模型要同时看到新档位）。签名未变时不重复下发（见 pushSessionScope）。
+    const scope = await buildSessionScope(thread.id, { ...("model" in values ? { model: values.model } : {}), ...("effort" in values ? { effort: values.effort } : {}) });
+    if (scope) scopeSigRef.current[thread.id] = scope.signature;
     // codex app-server 偶尔会重启（切换供应商/启用禁用），重启后内存里没有旧任务，
     // 直接 thread/settings/update 会报 "thread not found"。自动 re-resume 一次再重试。
-    const call = () => window.codex.request("thread/settings/update", { threadId: thread.id, ...values });
+    const call = () => window.codex.request("thread/settings/update", { threadId: thread.id, ...values, ...(scope ? { collaborationMode: scope.collaborationMode } : {}) });
     const resume = () => resumeThreadWithTurns({ threadId: thread.id, excludeTurns: false });
     try {
       await call();
@@ -11366,7 +11446,11 @@ const commandMatches = useMemo(() => {
     // 重启后首个 turn 权限被重置成 workspace-write，settings/update 推了也没生效）——
     // resume 通道才真正接受 sandbox 字符串（schema 实证）。所以补一发带沙箱的 resume
     // 钉住权限（excludeTurns:true 不拉历史，开销极小）。
-    const call = () => window.codex.request("thread/settings/update", { threadId: id, approvalPolicy: approvalValue, sandboxPolicy: sandboxPolicy(sandboxValue, workspace) });
+    const call = () => window.codex.request("thread/settings/update", { threadId: id, approvalPolicy: approvalValue, sandboxPolicy: sandboxPolicy(sandboxValue, workspace), ...(scope ? { collaborationMode: scope.collaborationMode } : {}) });
+    // 权限也是会话级配置的一部分：改权限后模型读到的「执行权限」必须是新的（override 传值，
+    // 此刻 React 状态还是旧档位）
+    const scope = await buildSessionScope(id, { sandbox: sandboxValue, approval: approvalValue });
+    if (scope) scopeSigRef.current[id] = scope.signature;
     try {
       await call();
       await window.codex.request("thread/resume", { threadId: id, excludeTurns: true, sandbox: sandboxValue, approvalPolicy: approvalValue });
@@ -12947,6 +13031,17 @@ const commandMatches = useMemo(() => {
       if ((resumedSandbox && nextSandbox !== resumedSandbox) || (resumedApproval && nextApproval !== resumedApproval)) {
         void pushThreadPermissions(id, nextSandbox, nextApproval).catch(() => undefined);
       }
+      // 会话作用域下发（09-14）：把本会话**解析后的**会话级取值写进会话自己的 instructions，
+      // 让会话里的模型能回答「我当前是什么模型 / 档位 / 权限」。必须显式传值——此刻
+      // setModelId/setEffort/setSandbox 都还没提交，直接读 React 状态会拿到**上一个会话**的值
+      // （那会把 A 的模型烙进刚打开的 B，正是要根治的串扰）。
+      void pushSessionScope(id, {
+        model: modelName(restoredModel) || modelName(modelId),
+        provider: restoredModel.startsWith("custom:") ? restoredModel.split(":")[1] : resultProvider,
+        effort: loadThreadEffort(id) || String(result.reasoningEffort ?? "") || effort || "",
+        sandbox: nextSandbox,
+        approval: nextApproval,
+      });
       const resumedRunningTurn = loaded.turns.find((turn: Turn) => isTurnRunning(turn));
       setActiveTurnId(resumedRunningTurn?.id ?? null);
       setSending(Boolean(resumedRunningTurn));
@@ -13149,6 +13244,19 @@ const commandMatches = useMemo(() => {
     }
     const memoryTools = dynamicTools.length ? { dynamicTools } : {};
     const onboardingInstructions = shouldGreet ? IDENTITY_ONBOARD_INSTRUCTIONS : null;
+    // 新建会话即刻带上「会话作用域」（此时会话 ID 还没生成 → 块里标「未登记」，
+    // thread/start 成功后由 pushSessionScope 用真实 ID 再补一发）。三段共存：全局基线 +
+    // 会话作用域 + 引导语，顺序固定，避免把语言/内置工具说明或引导语顶掉。
+    const scopeSeed = composeScopeInstructions(await loadBaseInstructions(), sessionScopeBlock({
+      threadId: "",
+      model: selectedModel?.model ?? modelName(modelId) ?? "",
+      provider: String(customModel?.provider ?? ""),
+      effort: String(effort ?? ""),
+      sandbox: String(sandbox ?? ""),
+      approval: String(approvalPolicy ?? ""),
+      workspace: String(welcomeScratchDir ?? workspace ?? ""),
+    }));
+    const developerInstructions = [scopeSeed, onboardingInstructions].filter(Boolean).join("\n\n");
     const started = await window.codex.request("thread/start", {
       model: selectedModel?.model ?? modelName(modelId),
       // 欢迎页「无项目」模式：本会话用自动创建的独立临时目录（每个会话单独一个）；
@@ -13159,7 +13267,7 @@ const commandMatches = useMemo(() => {
       sandbox,
       sandboxPolicy: sandboxPolicy(sandbox, welcomeScratchDir ?? workspace),
       personality: selectedModel?.supportsPersonality ? personality : null,
-      developerInstructions: onboardingInstructions,
+      developerInstructions,
       ...providerConfig,
       ...memoryTools,
     });
@@ -13177,6 +13285,9 @@ const commandMatches = useMemo(() => {
       if (!loadThreadModel(tid)) saveThreadModel(tid, modelId);
       if (!loadThreadEffort(tid) && effort) saveThreadEffort(tid, effort);
       saveThreadPermissions(tid, sandbox, approvalPolicy);
+      // 会话作用域用真实会话 ID 补发一发（thread/start 那发块里会话 ID 只能标「未登记」）：
+      // 空会话此刻可能还没有 rollout，失败也无所谓——首次发消息时 updateThreadSettings 会再补。
+      void pushSessionScope(tid);
     }
     return active;
   }

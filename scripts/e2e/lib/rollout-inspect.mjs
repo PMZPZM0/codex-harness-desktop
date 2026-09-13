@@ -42,3 +42,25 @@ export function developerMessages(rolloutText) {
 export function greetingInjected(rolloutText) {
   return developerMessages(rolloutText).some((t) => t.includes(GREETING_MARKER));
 }
+
+/** 引擎侧「会话级 instructions」的落盘值：最新一条 `thread_settings_applied` 里的
+ *  `thread_settings.collaboration_mode.settings.developer_instructions`。
+ *  这是**引擎真的收下并持久了**的证据（不是宿主侧意图）——09-14 会话作用域修复的权威判据。 */
+export function threadScopeInstructions(rolloutText) {
+  let latest = null;
+  for (const line of String(rolloutText ?? "").split("\n")) {
+    if (!line.trim()) continue;
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const payload = row?.payload;
+    if (row?.type === "event_msg" && payload?.type === "thread_settings_applied") {
+      const dev = payload.thread_settings?.collaboration_mode?.settings?.developer_instructions;
+      if (typeof dev === "string" && dev) latest = dev;
+    }
+  }
+  return latest;
+}
