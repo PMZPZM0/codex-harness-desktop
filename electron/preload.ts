@@ -266,6 +266,8 @@ contextBridge.exposeInMainWorld("codex", {
   popoutClose: (threadId: string | null) => ipcRenderer.invoke("window:popout-close", threadId) as Promise<{ ok: boolean }>,
   /** 当前窗口是否是独立会话弹窗（主进程按 URL query 判定） */
   popoutThreadId: () => ipcRenderer.invoke("window:popout-id"),
+  /** 所有弹窗锁定的会话 id（主窗口据此隐藏侧栏会话，避免重复渲染） */
+  popoutList: () => ipcRenderer.invoke("window:popout-list") as Promise<string[]>,
   storageInfo: () => ipcRenderer.invoke("app:storage-info"),
   storageClear: (target: "engine-log" | "images") => ipcRenderer.invoke("app:storage-clear", target),
   engineCheckUpdate: () => ipcRenderer.invoke("engine:check-update"),
