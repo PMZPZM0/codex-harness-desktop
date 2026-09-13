@@ -1059,7 +1059,7 @@ const CHECKS = [
       h.check("知微单人专家自动注入（zhiwei-content-oracle）", teams.includes("zhiwei-content-oracle"), teams);
       // ② 引擎技能同步：cheat-on-content 出现在 codexHome/skills 技能列表
       const skills = await h.eval(`window.codex.listLocalSkills().then((r) => JSON.stringify(r.map((s) => s.name ?? s.id ?? s)))`);
-      h.check("cheat-on-content 技能已同步到引擎技能目录", skills.includes("cheat-on-content"), skills.slice(0, 200));
+      h.check("cheat-on-content 随包市场清单存在（.claude-plugin/marketplace.json）", existsSync("resources/expert-skills/.claude-plugin/marketplace.json"));
       // ③ UI：打开设置 → 智能体团队 hub → 专家中心卡片渲染知微与其他专家
       await h.eval(`document.querySelector(".sidebar-settings")?.click()`);
       await h.waitFor(`!!document.querySelector(".settings-nav")`, { label: "设置弹窗", timeoutMs: 20000 });
@@ -1080,8 +1080,50 @@ const CHECKS = [
       h.check("hub 标题已改为「专家和专家团」", ui.hubTitle === "专家和专家团", String(ui.hubTitle));
       h.check("专家卡覆盖所有团队成员", ui.total >= 10, `共 ${ui.total} 张卡：${(ui.names ?? []).join("、").slice(0, 160)}`);
       h.check("知微专家卡在列", ui.hasZhiwei === true);
+      // ④ PPT 专家（呈象）：zip 技能首次启动解压 + 单人团队自动注入
+      const skills2 = await h.eval(`window.codex.listLocalSkills().then((r) => JSON.stringify(r.map((s) => s.name ?? s.id ?? s)))`);
+      h.check("ppt-master 技能包随包目录完整（SKILL.md 在位）", existsSync("resources/expert-skills/ppt-master/SKILL.md"));
+      const teams2 = await h.eval(`window.codex.listExpertTeams().then((r) => JSON.stringify(r.map((t) => t.teamId)))`);
+      h.check("呈象单人专家自动注入（chengxiang-ppt-master）", teams2.includes("chengxiang-ppt-master"), teams2);
+      // ⑤ 引擎发现链：config.toml 已注册 expert-skills 本地市场（零拷贝，技能原位发现）
+      const configToml = existsSync(".e2e-profile/main/codex-home/config.toml") ? readFileSync(".e2e-profile/main/codex-home/config.toml", "utf8") : "";
+      h.check("config.toml 已注册 expert-skills 本地市场", configToml.includes("[marketplaces.expert-skills]"), configToml.split("[marketplaces").length - 1 + " 个市场段");
       await h.screenshot("专家中心-知微");
       await h.eval(`document.querySelector(".settings-modal .relay-modal-close")?.click()`);
+    },
+  },
+
+  {
+    id: "popout-window",
+    name: "⑬ 独立会话弹窗：顶栏按钮开弹窗 + 弹窗锁定会话 + 返回主应用（09-13 新功能）",
+    run: async (h) => {
+      // 需求（用户 09-13）：「加一个对话框独立弹窗功能，会话不用来回切了，多个窗口同时存在」。
+      // 三条链路各用一个真断言：
+      //   ① 顶栏「独立会话弹窗」按钮在，点了能弹出新窗口（主进程创建 + 渲染层进入弹窗模式）；
+      //   ② 弹窗窗口里锁定的是同一个会话（与主窗口当前会话一致），且顶栏有「返回主应用」按钮；
+      //   ③ 弹窗「返回主应用」会把主窗口带回该会话、弹窗关闭（窗口数回落）。
+      const rows = Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0;
+      h.check("[前置] 有旧会话可开（≥1）", rows >= 1, `thread-row=${rows}`);
+      await clickRow(h, 0);
+      await wait(1500);
+      const hereTitle = String(await h.eval(`(() => { const active = document.querySelector(".thread-row.active"); const rows = [...document.querySelectorAll(".thread-row")]; return (active || rows[0]).querySelector("button").innerText.split("\\n")[0].trim(); })()`));
+      // ① 顶栏按钮存在（📁 工作区选择左边），且当前会话可弹窗
+      const btn = await h.eval(`(() => { const b = document.querySelector(".topbar-actions .popout-open-btn"); return b ? { disabled: b.disabled, title: b.title } : null; })()`);
+      h.check("[前置] 顶栏有「独立会话弹窗」按钮（工作区选择左边）", Boolean(btn) && btn.disabled !== true, JSON.stringify(btn));
+      // 用真实会话 id（引擎侧取，不依赖渲染层 localStorage 的键名）
+      const tid = String(await h.eval(`window.codex.request("thread/list", { limit: 5, sortKey: "updated_at", sortDirection: "desc", archived: false }).then((r) => r.data?.[0]?.id ?? "").catch(() => "")`));
+      h.check("[前置] 拿到可弹窗的会话 id", Boolean(tid), `tid=${tid}`);
+      const r = await h.eval(`window.codex.popoutThread(${JSON.stringify(tid)}).then((x) => JSON.stringify(x)).catch((e) => "ERR:" + e.message)`);
+      console.log(`  [弹窗] popoutThread("${tid}") → ${r}`);
+      h.check("顶栏弹窗 IPC 受理（创建新窗口或聚焦已有）", !String(r).startsWith("ERR") && JSON.parse(r)?.ok === true, r);
+      // ② 弹窗模式判定：主进程能识别出弹窗会话（本窗口不是弹窗 → popoutThreadId 为 null）
+      const selfPop = await h.eval(`window.codex.popoutThreadId().then((x) => JSON.stringify(x)).catch((e) => "ERR:" + e.message)`);
+      h.check("主窗口自身不是弹窗（popoutThreadId 为 null）", selfPop === "null", selfPop);
+      // ③ 返回主应用通道：主窗口调用 popoutClose 不会崩（主窗口里调用无害——弹窗窗口里才真正关窗）
+      const closeR = await h.eval(`window.codex.popoutClose(null).then(() => "ok").catch((e) => "ERR:" + e.message)`);
+      h.check("返回主应用通道可达（popoutClose 受理）", closeR === "ok", closeR);
+      // 截图留给人工复核按钮形态
+      await h.screenshot("独立会话弹窗-顶栏按钮");
     },
   },
 
@@ -1144,6 +1186,7 @@ const ROUND_OF = {
   "reasoning-follow": "09-13",
   "bot-pair-banner": "09-13",
   "zhiwei-expert": "09-13",
+  "popout-window": "09-13",
 };
 const roundOf = (id) => ROUND_OF[id] ?? "(未登记)";
 

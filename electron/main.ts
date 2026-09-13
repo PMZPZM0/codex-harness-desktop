@@ -51,7 +51,7 @@ import { installCocoLoopSkill, listCocoLoopSkills, listSkillHubSkills, repairSki
 import { upsertSkillDiscipline, DISCIPLINE_START, DISCIPLINE_END } from "./skill-discipline";
 import { ensureCodexMarketplaceSection, installCodexMarketPlugin, listCodexMarketPlugins, type CodexMarketPlugin } from "./codex-market";
 import { augmentedPath, bundledGit, bundledNode, bundledPython, cloakCacheDir, cloakOpenHelper, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "./toolchain";
-import { ensureBuiltinSkills } from "./builtin-skills";
+import { ensureBuiltinSkills, ensureExpertSkillsMarketplace } from "./builtin-skills";
 import { ensurePonytailPlugin } from "./ponytail-plugin";
 import { getPonytailMode, setPonytailMode } from "./ponytail-mode";
 import { mergeThreadList } from "./session-tools";
@@ -130,7 +130,7 @@ function filterForRenderer(event: any) {
 
 import { applySessionsBackup, backupFromRolloutFile, buildMarkdownExport, buildSessionsBackup, buildThreadPreview, parseMarkdownConversation, BACKUP_FORMAT, BACKUP_VERSION } from "./thread-backup";
 import {
-  buildDefaultExpertTeams, buildTeamSystemPrompt, buildTeamTools, buildZhiweiExpertTeam, normalizeTeamConfig,
+  buildChengxiangExpertTeam, buildDefaultExpertTeams, buildTeamSystemPrompt, buildTeamTools, buildZhiweiExpertTeam, normalizeTeamConfig,
   readExpertTeams, setExpertTeamsFile, writeExpertTeams, type ExpertTeamConfig, type ExpertTeamMember,
 } from "./expert-teams";
 
@@ -261,10 +261,14 @@ void (async () => {
   try {
     const existing = await readExpertTeams();
     if (!existing.length) await writeExpertTeams(buildDefaultExpertTeams());
-    // 知微（单人专家，捆绑 cheat-on-content 技能包）每次启动都确保存在：
-    // 用户可能删掉后再想要回来，它随包分发不该一次性的
-    if (!existing.some((entry) => entry.teamId === "zhiwei-content-oracle")) {
-      await writeExpertTeams([...(existing.length ? existing : await readExpertTeams()), buildZhiweiExpertTeam()]);
+    // 内置单人专家（知微/呈象）每次启动都确保存在：用户可能删掉后再想要回来，随包分发不该一次性的
+    const builtinSoloTeams = [buildZhiweiExpertTeam(), buildChengxiangExpertTeam()];
+    let teams = existing.length ? existing : await readExpertTeams();
+    for (const solo of builtinSoloTeams) {
+      if (!teams.some((entry) => entry.teamId === solo.teamId)) {
+        teams = [...teams, solo];
+        await writeExpertTeams(teams);
+      }
     }
   } catch { /* 忽略初始化失败 */ }
 })();
@@ -288,6 +292,17 @@ let closeConfirmed = false;
 const captureBuffers = new Map<string, { user: string; assistant: string; cwd?: string }>();
 const threadCwd = new Map<string, string>();
 let mainWindow: BrowserWindow | null = null;
+/** 独立会话弹窗（09-13 新增）：主窗口之外可开多个只显示单个会话的窗口。
+ *  所有 popout 窗口与主窗口同 origin（共享 localStorage）但各自持有 thread 状态；
+ *  引擎事件全量广播（filterForRenderer 当前为放行态），每个窗口按自己的会话过滤。 */
+const popoutWindows = new Set<BrowserWindow>();
+/** codex:event 广播：主窗口 + 所有独立会话弹窗（弹窗也要收到自己那个会话的流式事件）。 */
+function broadcastCodexEvent(payload: unknown) {
+  for (const win of [mainWindow, ...popoutWindows]) {
+    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) continue;
+    try { win.webContents.send("codex:event", payload); } catch { /* 发送失败忽略 */ }
+  }
+}
 function sendToWindow(channel: string, payload: unknown) {
   // 退出时窗口可能已销毁，?. 挡不住 destroyed 的 webContents，必须显式判活
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
@@ -1972,9 +1987,74 @@ function createWindow() {
       mainWindow?.close();
     }).catch(() => undefined);
   });
+  // 主窗口真正关闭后，独立会话弹窗跟着一起关（用户 09-13 明确要求「跟着主应用关闭」）。
+  mainWindow.on("closed", () => {
+    for (const win of popoutWindows) { if (!win.isDestroyed()) win.close(); }
+  });
   if (devUrl) void mainWindow.loadURL(devUrl);
   else void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   installContextMenu(mainWindow);
+}
+
+/** 独立会话弹窗：打开一个只显示指定会话对话区的新窗口（09-13）。
+ *  样式与主窗口一致（hidden titleBar + overlay 43px + 同款图标），可拖出应用外；
+ *  渲染层通过 URL query `?popout=<threadId>` 进入弹窗模式（只渲染对话区并锁定该会话）。
+ *  主题/事件都走全局广播，弹窗无需额外维护。 */
+function createPopoutWindow(threadId: string) {
+  const windowIcon = path.join(
+    __dirname,
+    "..",
+    "build",
+    process.platform === "win32" ? "icon.ico" : "icon.png",
+  );
+  const win = new BrowserWindow({
+    width: 860,
+    height: 720,
+    minWidth: 480,
+    minHeight: 400,
+    backgroundColor: "#ffffff",
+    title: "Codex Harness Desktop — 独立会话",
+    icon: existsSync(windowIcon) ? windowIcon : undefined,
+    autoHideMenuBar: true,
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: "#00000000",
+      symbolColor: "#1b1b1a",
+      height: 43,
+    },
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      // 弹窗只渲染对话区，不需要 webview 标签
+      webviewTag: false,
+    },
+  });
+  // ⛔ 导航收敛与主窗口同规则：弹窗永不导航，新窗口一律拒绝并转系统浏览器。
+  win.webContents.on("will-navigate", (event, target) => {
+    const devUrl = process.env.VITE_DEV_SERVER_URL ?? "";
+    if (devUrl && target.startsWith(devUrl)) return;   // 开发期 HMR reload 放行
+    if (target.startsWith("file://") && target.includes("/dist/index.html")) return;
+    event.preventDefault();
+    if (/^https?:/i.test(target)) void shell.openExternal(target).catch(() => undefined);
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) void shell.openExternal(url).catch(() => undefined);
+    return { action: "deny" };
+  });
+  win.on("closed", () => popoutWindows.delete(win));
+  popoutWindows.add(win);
+  const devUrl = process.env.VITE_DEV_SERVER_URL;
+  const query = `?popout=${encodeURIComponent(threadId)}`;
+  if (devUrl) {
+    const sep = devUrl.includes("?") ? "&" : "?";
+    void win.loadURL(devUrl + sep + query.slice(1));
+  } else {
+    void win.loadFile(path.join(__dirname, "../dist/index.html"), { query: { popout: threadId } });
+  }
+  installContextMenu(win);
+  return win;
 }
 
 // 前端切主题时同步窗口外观：nativeTheme.themeSource 让系统标题栏与 Chromium 默认
@@ -2006,6 +2086,8 @@ app.on("second-instance", () => {
 
 app.whenReady().then(async () => {
   await fs.mkdir(codexHome, { recursive: true });
+  // 专家技能市场（cheat-on-content / ppt-master）原位注册，零拷贝——见 ensureExpertSkillsMarketplace
+  await ensureExpertSkillsMarketplace(codexHome);
   await ensureBuiltinSkills(userSkillsDir);
   // 启动自愈：剥掉已安装技能 SKILL.md 的 UTF-8 BOM。带 BOM 的文件引擎会判「缺 frontmatter」
   // 整份拒载（装了但永远不被使用），市场包/本地导入都可能带 BOM——这里兜住存量文件。
@@ -2090,7 +2172,7 @@ app.whenReady().then(async () => {
   }
   createWindow();
   server.on("event", (event) => {
-    sendToWindow("codex:event", filterForRenderer(event));
+    broadcastCodexEvent(filterForRenderer(event));
     channelBot.handleCodexEvent(event);
     // 语音通话：只旁听事件（正文增量 / 回合生命周期），不改变事件本身的任何流向
     voiceService.handleCodexEvent(event);
@@ -2168,7 +2250,7 @@ app.whenReady().then(async () => {
     }
     await server.start();
   } catch (error) {
-    sendToWindow("codex:event", { kind: "status", status: "error", message: String(error) });
+    broadcastCodexEvent({ kind: "status", status: "error", message: String(error) });
   }
   // 自愈：config.toml 顶层的 model_context_window 才是引擎真正使用的上下文上限。
   // 旧版本把它写成供应商级默认值（128000），用户在模型编辑器里改的 1M 只进了 models[] 与
@@ -2995,6 +3077,39 @@ ipcMain.handle("app:perf-counters", () => enrichScanCountSnapshot());
 /** 渲染层上报「当前正在查看哪个会话」：主进程据此只转发该会话的高频事件（P1）。 */
 ipcMain.handle("codex:set-active-thread", (_event, threadId: unknown) => {
   rendererActiveThreadId = threadId == null ? "" : String(threadId);
+  return { ok: true };
+});
+/** 当前窗口是否为独立会话弹窗：读 URL query `popout`（渲染层据此进入弹窗布局）。 */
+ipcMain.handle("window:popout-id", (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return null;
+  try {
+    return new URL(win.webContents.getURL()).searchParams.get("popout") ?? null;
+  } catch { return null; }
+});
+/** 独立会话弹窗：按 threadId 打开一个新窗口（渲染层在顶栏/侧栏长按触发）。
+ *  允许同时存在多个弹窗；主窗口关闭不会带走弹窗（window-all-closed 只在全部窗口
+ *  关闭后触发，弹窗还开着时应用保持运行）。 */
+ipcMain.handle("window:popout-thread", (_event, threadId: unknown) => {  const tid = threadId == null ? "" : String(threadId);
+  if (!tid) throw new Error("缺少会话 ID");
+  // 同一会话已弹窗 → 聚焦已有窗口，不重复开（避免开着开着冒出几十个）
+  for (const win of popoutWindows) {
+    if (win.isDestroyed()) continue;
+    const id = new URL(win.webContents.getURL()).searchParams.get("popout");
+    if (id === tid) { win.focus(); return { ok: true, focused: true }; }
+  }
+  createPopoutWindow(tid);
+  return { ok: true };
+});
+/** 弹窗「返回主应用」：关闭该弹窗，并把主窗口带到指定会话（渲染层据此恢复视角）。 */
+ipcMain.handle("window:popout-close", (event, threadId: unknown) => {
+  const tid = threadId == null ? "" : String(threadId);
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win && popoutWindows.has(win) && !win.isDestroyed()) win.close();
+  if (tid) {
+    try { mainWindow?.webContents.send("harness:event", { type: "popout-return", threadId: tid, at: Date.now() }); } catch { /* 主窗口可能已关 */ }
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); }
   return { ok: true };
 });
 ipcMain.handle("app:engine-info", async () => {
