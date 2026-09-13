@@ -325,6 +325,15 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   **e2e 钩子**：审批在 e2e 里无法从真实引擎触发（profile 跑 `danger-full-access`，永不问审批），所以加了与 `window.__adbg` 同款的测试入口 `window.__harnessApprovals.push/clear`（只改内存 state，不碰引擎），供截图与断言。
   **回归**：`accept.mjs` 的 `approval-compact`（10 断言：三条各占一行 ≤44px / 收起态不渲染正文 / 收起态也能允许拒绝 / 摘要只露首行 / **八条时限高滚动且输入框仍在视口** / 展开看到完整命令 / 只影响这一条 / 再点收起 / 清空不残留）+ 预检【4a-5】8 条形态守卫。**反证**：把 `{expanded && …}` 改成恒真（= 旧大卡行为）→ ①②⑦ 红（heights 148/73/108）。
 
+- **会话配置提示的两次误报与修法（09-14，用户「我切换模型会提示另一个窗口修了模型」）**：
+  多窗口权威化后我加了一条「广播驱动的界面同步 + 提示」，结果**自己切模型也弹「另一个窗口更新了…」**。两个独立成因，都要修：
+  ① **广播回声**：主进程把变更广播给所有窗口（含写入者），而广播常早于 React 提交 state 到达——那一刻 `runtimeStateRef` 还是旧值，被误判成「变了」。修法：写入时 `rememberOwnWrite(ownRuntimeWrites, id, runtime)` 登记签名，广播回来先 `isOwnEcho` 认领，是回声就只写镜像、不 setState、不提示。
+  ② **自造冲突**：`patch` 返回的 `conflict` 只说明「你的 baseRev 过期了」，而过期常是自己连续两次写入造成的（切模型会先写档位、再写模型）。拿它当「另一个窗口改的」就是自己吓自己。修法：**conflict 一律静默合并**，提示只留给「广播 + 非回声」（真·别的窗口一定有广播）。
+  ③ **中间态不能算回声**（第二轮实测）：回声表若按「签名集合」累计，切模型时先写的**中间态**（模型还是旧的 + 新档位）也在表里——另一个窗口恰好把值改回那个中间态时会被静默吞掉（`thread-runtime-multiwin` ② 就是这么假红的）。修法：回声表 **每个会话只保留最近一次写入**（`Map<threadId, {signature, at}>`）。
+  ④ **迟到响应不许回退**：连写两次时先写的响应常在第二次之后才到，照收会把界面与镜像一起退回中间态（模型自己跳回去）。修法：`admitThreadRuntime` 用 `adoptedRevRef` 记每会话已采纳的最大 rev，`next.rev < knownRev` 一律丢弃。
+  **回归**：纯函数断言走了预检【4a-4b】（9 条：回声命中 / rev 不参与签名 / 不同值不是回声 / 按会话区分 / TTL / **中间态不算回声** / 每会话一条 / 接线守卫）——**这条时序竞态 e2e 复现不了，必须靠纯函数钉死**；e2e 侧 `thread-runtime-multiwin` 的 ①bis（自己切模型不提示）+ ②bis（别的窗口改了一定提示，保证 ①bis 不是空断言），并给 toast 装了 MutationObserver 累计器（showToast 同时只显示一条，后到的会把前一条顶掉 → 只看瞬时快照会假红）。
+  **反证**：F8 让 `isOwnEcho` 恒返回 false → ① 红；F9 改回「按签名累计」的回声表 → 中间态断言 + 表增长断言红。
+
 - **【定论·勿回退】旧会话供应商由 config.toml 决定，不由会话决定**（09-10 跨引擎生命周期探针实证，用户「新会话能用、旧会话不行」）：真实 app-server + 两个假模型端点实测——①只改会话存档 `session_meta.model_provider` → 重启引擎后**无效**；②只改 config.toml 里该 id 的 `base_url` → 重启后**生效**。即：会话存档只记「供应商名字(id)」，请求地址永远取自 config.toml 该 id 的段；且单进程内改任何地方都无效（线程常驻引擎内存），**必须重启引擎重新加载会话**。因此 `migrateThreadToProvider` 的 `thread/resume + modelProvider + 内联 config` 与 `thread/settings/update` 都**改不掉后续 turn 的供应商**（后者不给 `capabilities.experimentalApi=true` 还会被 -32600 拒绝；变体扫描 9 种全失败）——这两条已确认是装样子，别再依赖。
   **落定修法（`applyCustomModel`）**：config.toml 里**每个** `[model_providers.*]` 段一律写「当前生效供应商的 base_url + wire_api」（保留各自 id/name 以便展示与兼容引用）；`collectSessionProviderIds()` 扫 `codex-home/sessions/**/*.jsonl` 首行收集历史引用过的 id，把**已删除供应商的 id 补成别名段**（同上指向当前生效地址），避免 `Model provider not found`。依据：引擎进程只有一把全局 Key（= 当前生效供应商的 Key），故「所有 id 指向当前生效端点」是唯一自洽形态——任何历史会话都必然走当前供应商。**用户明确拒绝 fork/新建分支方案，必须在原会话可用。** 回归脚本 `.workbuddy/verify-provider-alias.cjs`（11 项断言）。
 

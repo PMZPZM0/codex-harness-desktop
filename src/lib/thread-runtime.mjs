@@ -104,6 +104,39 @@ export function runtimeSignature(runtime) {
   return [r.model, r.effort, r.sandbox, r.approval].join("|");
 }
 
+/** 回声表的 TTL：主进程广播几毫秒内就到，5 秒足够宽松，又不会把「几秒后另一个窗口恰好
+ *  改成同样值」这种真事件误判成回声（真事件本来就是同值，不提示也无害）。 */
+export const OWN_WRITE_TTL_MS = 5000;
+
+/** 记下「本窗口刚写出去的这份运行时」——用于认领主进程广播回来的自己的回声。
+ *  ⛔ 每个会话**只保留最近一次**写入：一次用户动作可能连写多次（切模型会先写档位、再写模型），
+ *  中间态不算「自己的回声」——否则另一个窗口恰好把值改回那个中间态时，会被误判成回声而
+ *  静默吞掉（实测：② 断言就是这么假红的）。也不吃内存：每会话一条，另外顺手清理过期项。
+ *  @param {Map<string, { signature: string, at: number }>} store 调用方持有的回声表
+ *  @param {number} now 当前时间戳（显式传入，便于纯函数测试） */
+export function rememberOwnWrite(store, threadId, runtime, now = Date.now()) {
+  if (!store || !threadId) return store;
+  store.set(String(threadId), { signature: runtimeSignature(runtime), at: now });
+  if (store.size > 256) {
+    for (const [key, entry] of store) if (now - entry.at > OWN_WRITE_TTL_MS) store.delete(key);
+  }
+  return store;
+}
+
+/** 这份运行时是不是「本窗口刚写出去、又被主进程原样广播回来」的那一份？
+ *  ⛔ 为什么必须有这一层：主进程把变更广播给**所有**窗口（含写入者自己），而广播可能在
+ *  React 提交 state 之前到达——那一刻界面的取值还是旧的，会被误判成「另一个窗口改了」，
+ *  于是用户自己切个模型就弹「另一个窗口更新了…」（09-14 用户实测的误报）。
+ *  判据只用四项取值的签名：rev 是主进程的计数器，不参与判定。
+ *  @param {Map<string, number>} store 回声表
+ *  @param {number} now 当前时间戳 */
+export function isOwnEcho(store, threadId, runtime, now = Date.now()) {
+  if (!store || !threadId) return false;
+  const entry = store.get(String(threadId));
+  if (!entry || typeof entry.at !== "number") return false;
+  return now - entry.at < OWN_WRITE_TTL_MS && entry.signature === runtimeSignature(runtime);
+}
+
 /** 派生旧三键族的镜像值（只用于向下兼容写入；**读取路径禁止用它**）
  *  @returns {{ model: string, effort: string, permissions: string }} permissions 是 JSON 字符串 */
 export function legacyMirror(runtime) {

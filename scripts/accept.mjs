@@ -1483,34 +1483,68 @@ const CHECKS = [
       const patch = (body) => h.eval(`window.codex.patchThreadRuntime(${JSON.stringify({ threadId: tid, ...body })}).then((r) => JSON.stringify(r)).catch((e) => "ERR:" + e.message)`);
       const chipText = () => h.eval(`(() => { const menu = [...document.querySelectorAll(".model-controls .composer-menu")].find((m) => (m.querySelector("button.composer-setting")?.title ?? "").startsWith("请求思考强度")); return menu?.querySelector("button.composer-setting span")?.textContent ?? ""; })()`);
 
+      // toast 累计器：showToast 同一时刻只显示一条，后到的会把前一条顶掉——只看瞬时快照会漏判
+      // （实测「另一个窗口…」被「当前会话已选择…」顶掉 → 断言假红）。装个 MutationObserver 收全量。
+      await h.eval(`(() => {
+        window.__toastLog = [];
+        const collect = () => document.querySelectorAll(".notice-toast").forEach((el) => {
+          const text = el.textContent || "";
+          if (text && !window.__toastLog.includes(text)) window.__toastLog.push(text);
+        });
+        collect();
+        window.__toastObserver?.disconnect?.();
+        window.__toastObserver = new MutationObserver(collect);
+        window.__toastObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+      })()`);
+      const toastLog = async () => String(await h.eval(`(window.__toastLog || []).join(" || ")`));
+      const clearToastLog = async () => { await h.eval(`(window.__toastLog = [])`); };
+
       const rt0 = await readMirror();
       const rev0 = Number(rt0?.rev) || 0;
       h.check("[前置] 本地镜像有 rev 可作冲突判据", rev0 >= 0, `rev=${rev0} mirror=${JSON.stringify(rt0)}`);
       const modelChip = () => h.eval(`(() => { const menu = [...document.querySelectorAll(".model-controls .composer-menu")].find((m) => m.querySelector("button.composer-setting")?.title === "模型"); return menu?.querySelector("button.composer-setting span")?.textContent ?? ""; })()`);
+      // 目标模型**确定化**：从应用自己的列表里取同供应商的另一个真实模型，
+      // 再点菜单里对应那一项（避免「点到的就是当前模型 → 没写入 → rev 不变」的假红）
+      const catalog = JSON.parse(await h.eval(`window.codex.listCustomModels().then((r) => {
+        const out = [];
+        for (const p of (r?.providers ?? [])) for (const m of (p.models ?? [])) out.push("custom:" + p.provider + ":" + m.id);
+        return JSON.stringify(out);
+      }).catch(() => "[]")`));
+      const providerOfCurrent = String(rt0?.model ?? "").split(":")[1] ?? "";
+      const targetModel = catalog.filter((value) => value.startsWith(`custom:${providerOfCurrent}:`)).find((value) => value !== rt0?.model) ?? "";
+      const targetName = String(targetModel.split(":").pop() ?? "");
+      h.check("[前置] 同供应商下有另一个可用模型可切（避免切成没变）", Boolean(targetModel), `当前=${rt0?.model} 目标=${targetModel}`);
 
       // ① 真 UI 动作（切模型）走完整链路：渲染层写镜像 → 推主进程 → 磁盘权威文件同步。
       //    ⛔ 不用「直接调 IPC 改档位」来测这一步：档位有**模型支持集**，写一个不支持的档位会被
       //    应用自己的兜底 effect 纠正回去，把测试写入覆盖掉（实测 minimal 被改回 high）。
+      await clearToastLog();
       const modelSwitch = JSON.parse(await h.eval(`(async () => {
+        const target = ${JSON.stringify(targetName)};
         const menu = [...document.querySelectorAll(".model-controls .composer-menu")].find((m) => m.querySelector("button.composer-setting")?.title === "模型");
         if (!menu) return JSON.stringify({ error: "no-model-menu" });
         const before = (menu.querySelector("button.composer-setting span")?.textContent ?? "").split(" · ")[0].trim();
         menu.querySelector("button.composer-setting").click();
         await new Promise((r) => setTimeout(r, 400));
         const opts = [...document.querySelectorAll(".composer-menu-pop button[role=option]")].filter((b) => !/更多设置/.test(b.innerText || ""));
-        const pick = opts.find((b) => (b.querySelector("strong")?.textContent ?? "") !== before) ?? null;
-        if (!pick) return JSON.stringify({ error: "no-target", before, options: opts.length });
+        const pick = opts.find((b) => (b.querySelector("strong")?.textContent ?? "").split(" · ")[0].trim() === target) ?? null;
+        if (!pick) return JSON.stringify({ error: "no-target", before, target, options: opts.map((b) => b.querySelector("strong")?.textContent) });
         const title = pick.querySelector("strong")?.textContent ?? "";
         pick.click();
-        await new Promise((r) => setTimeout(r, 1200));
+        await new Promise((r) => setTimeout(r, 1400));
         return JSON.stringify({ before, picked: title, options: opts.length });
       })()`));
-      console.log(`  [多窗口] UI 切模型 → ${JSON.stringify(modelSwitch)}`);
-      h.check("[前置] 模型菜单可切换到另一个模型", Boolean(modelSwitch.picked), JSON.stringify(modelSwitch));
+      console.log(`  [多窗口] UI 切模型（目标 ${targetName}）→ ${JSON.stringify(modelSwitch)}`);
+      h.check("[前置] 模型菜单点到了目标模型", String(modelSwitch.picked ?? "").startsWith(targetName) && targetName.length > 0, JSON.stringify(modelSwitch));
       await wait(900); // 主进程写盘有 120ms 合并窗口
       const onDisk1 = readFileRuntime();
       const mirror1 = await readMirror();
-      h.check("① 真 UI 动作已由主进程权威落盘（thread-runtime.json 与镜像一致）", Boolean(onDisk1) && onDisk1.model === mirror1?.model && Number(onDisk1.rev) > rev0, `磁盘=${JSON.stringify(onDisk1)} 镜像=${JSON.stringify(mirror1)}`);
+      h.check("① 真 UI 动作已由主进程权威落盘（thread-runtime.json 与镜像一致）", Boolean(onDisk1) && onDisk1.model === mirror1?.model && mirror1?.model === targetModel && Number(onDisk1.rev) > rev0, `磁盘=${JSON.stringify(onDisk1)} 镜像=${JSON.stringify(mirror1)} 目标=${targetModel}`);
+      // ①bis 自己切模型**不许**提示「另一个窗口改了」——两条路径都要干净：
+      //      · 广播回声（主进程把自己的写入原样广播回来，且常早于 React 提交 state）
+      //      · patch 的 conflict（自己的连续写入会让 baseRev 过期，那是自己造成的，不是别人）
+      const selfToast = await toastLog();
+      h.check("①bis 自己切模型不提示「另一个窗口」（回声 + 自造冲突都被排除）", !selfToast.includes("另一个窗口"), selfToast.slice(0, 200));
 
       // ② 广播驱动界面：模拟「另一个窗口」改了同一个会话（绕过 React 直接调 IPC，等价于
       //    另一个窗口的写入）→ 本窗口收到广播后界面必须跟着变，否则本窗口下次写入会拿
@@ -1534,6 +1568,9 @@ const CHECKS = [
       const afterChip = String(await modelChip());
       const mirrorNow = await readMirror();
       h.check("② 另一个窗口的改动经广播同步到本窗口界面（模型胶囊已变）", afterChip !== beforeChip && afterChip.includes(String(altModel.split(":").pop())), `胶囊「${beforeChip}」→「${afterChip}」镜像 model=${mirrorNow?.model}`);
+      // ②bis 真·别的窗口的改动**必须**提示（证明提示通道有效，否则 ①bis 是空断言）
+      const remoteToast = await toastLog();
+      h.check("②bis 别的窗口的改动会提示「另一个窗口」", remoteToast.includes("另一个窗口"), remoteToast.slice(0, 200));
 
       // ③ 冲突可检出：拿一个过期 rev 去写，主进程必须报 conflict（渲染层据此知道「有人先改过」）。
       //    这里用沙箱档位——它是**枚举值、没有模型支持集约束**，写进去不会被应用纠正。
@@ -1661,11 +1698,206 @@ const CHECKS = [
       })()`));
       h.check("⑦ 再点一次收起（详情消失、回到一行）", collapsed.detail === 0 && collapsed.height <= 44, JSON.stringify(collapsed));
 
+      // ⑨⑩ 窄窗口自适应（09-14 用户截图「审批卡片没有自适应大小」）：
+      //    窄窗口下 `.composer-wrap` 是 `.workspace` 的 grid item，默认 `min-width: auto`
+      //    = **内容的 min-content**；摘要行里的命令是 nowrap 长路径 → 整列被撑到 1150px
+      //    （实测视口 520 时），表现为内容横向溢出、右侧「允许/拒绝」被挤出可视区。
+      //    这里用 CDP 模拟两档窄视口，断言「行宽服从视口 / 按钮在可视区内 / 预览被省略号截断」。
+      const narrowCase = async (width) => {
+        await h._send("Emulation.setDeviceMetricsOverride", { width, height: 780, deviceScaleFactor: 1, mobile: false });
+        try {
+          await h.eval(`(() => {
+            window.__harnessApprovals.clear();
+            window.__harnessApprovals.push({ id: "e2e-appr-narrow-${width}", params: {
+              command: "& \\"D:\\\\Codex Harness Desktop\\\\resources\\\\tools\\\\pwsh-headless\\\\pwsh-headless.exe\\" -NoProfile -Command \\"Get-ChildItem -Recurse | Select-Object -First 50\\"",
+              cwd: "D:\\\\Codex Harness Desktop", reason: "查看目录" } });
+          })()`);
+          await wait(600);
+          return JSON.parse(await h.eval(`(() => {
+            const stack = document.querySelector(".approval-stack");
+            const card = stack?.querySelector(".approval-card.compact");
+            const peek = card?.querySelector(".approval-peek");
+            const actions = card?.querySelector(".approval-actions");
+            const rect = (el) => el?.getBoundingClientRect();
+            const composer = document.querySelector(".composer-wrap");
+            return JSON.stringify({
+              inner: window.innerWidth,
+              docScrollW: document.documentElement.scrollWidth,
+              stackW: Math.round(rect(stack)?.width ?? 0),
+              composerW: Math.round(rect(composer)?.width ?? 0),
+              cardH: Math.round(rect(card)?.height ?? 0),
+              cardRight: Math.round(rect(card)?.right ?? 0),
+              actionsRight: Math.round(rect(actions)?.right ?? 0),
+              actionsVisible: Boolean(actions) && (rect(actions).right <= window.innerWidth + 1) && rect(actions).width > 40,
+              peekClientW: peek?.clientWidth ?? 0,
+              peekScrollW: peek?.scrollWidth ?? 0,
+            });
+          })()`));
+        } finally {
+          await h._send("Emulation.clearDeviceMetricsOverride", {});
+        }
+      };
+      const m520 = await narrowCase(520);
+      console.log(`  [审批] 窄窗口 520 → ${JSON.stringify(m520)}`);
+      h.check("⑨ 窄窗口(520)行宽服从视口（长命令不再把输入区撑宽）", m520.stackW <= m520.inner && m520.stackW <= m520.composerW + 1 && m520.cardRight <= m520.inner, JSON.stringify({ stackW: m520.stackW, composerW: m520.composerW, inner: m520.inner, cardRight: m520.cardRight }));
+      h.check("⑨bis 窄窗口(520)允许/拒绝仍在可视区内", m520.actionsVisible === true, `actionsRight=${m520.actionsRight} inner=${m520.inner}`);
+      h.check("⑨ter 窄窗口(520)摘要被省略号截断（内容比可视区宽）", m520.peekScrollW > m520.peekClientW && m520.peekClientW > 0, `client=${m520.peekClientW} scroll=${m520.peekScrollW}`);
+      await h.screenshot("审批-窄窗口");
+      const m380 = await narrowCase(380);
+      console.log(`  [审批] 窄窗口 380 → ${JSON.stringify(m380)}`);
+      h.check("⑩ 更窄(380)仍自适应（卡片不出视口、按钮可见、无横向滚动）", m380.cardRight <= m380.inner && m380.actionsVisible === true && m380.docScrollW <= m380.inner + 1 && m380.cardH <= 44, JSON.stringify({ cardRight: m380.cardRight, actionsRight: m380.actionsRight, docScrollW: m380.docScrollW, cardH: m380.cardH }));
+
       // 收尾：清掉合成审批，别把假请求留在界面上
       await h.eval(`window.__harnessApprovals.clear()`);
       await wait(300);
       const left = Number(await h.eval(`document.querySelectorAll(".approval-stack .approval-card").length`)) || 0;
       h.check("⑧ 清空后审批区消失（不残留假请求）", left === 0, `剩余 ${left} 条`);
+    },
+  },
+
+  {
+    id: "narrow-dialogs",
+    name: "⑱ 窄窗口下询问弹窗 / 选择浮层自适应（09-14 用户「类似都检查一下」）",
+    run: async (h) => {
+      // 用户报「审批卡片没有自适应大小」后要求「还有类似询问弹窗，和选择窗口，类似都检查一下」。
+      // 统一口径：两档视口（520×780 常规窄窗、380×520 又窄又矮），把**能真实打开**的
+      // 询问弹窗与选择浮层逐个打开，量它们的盒子是否完全落在视口内（弹窗本就该在里面），
+      // 并断言应用外壳没有横向溢出（审批行那次的病根就是「外层被撑宽」）。
+      const rows = Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0;
+      if (rows >= 1) { await clickRow(h, 0); await wait(1200); }
+
+      const escape = async () => { await h.eval(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`); await wait(220); };
+      const clickExpr = async (expr) => { const r = await h.eval(`(() => { const el = ${expr}; if (!el) return "missing"; el.click(); return "ok"; })()`); await wait(340); return r; };
+      const pressCtrl = async (key) => { await h.eval(`window.dispatchEvent(new KeyboardEvent("keydown", { key: ${JSON.stringify(key)}, ctrlKey: true, bubbles: true }))`); await wait(560); };
+      const measure = async (selector) => JSON.parse(await h.eval(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return JSON.stringify({ found: false });
+        const r = el.getBoundingClientRect();
+        return JSON.stringify({ found: true, left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height), inner: window.innerWidth, innerH: window.innerHeight });
+      })()`));
+      const inside = (m) => Boolean(m.found) && m.left >= -1 && m.right <= m.inner + 1 && m.top >= -1 && m.bottom <= m.innerH + 1;
+      const closeModal = async () => {
+        await escape();
+        await h.eval(`(() => {
+          const close = document.querySelector(".settings-modal .relay-modal-close, .modal-backdrop .relay-modal-close, .settings-modal header button");
+          if (close) close.click();
+          for (const mask of document.querySelectorAll(".modal-backdrop")) {
+            if (mask.querySelector(".agent-ask-card")) mask.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+          }
+        })()`);
+        await wait(300);
+      };
+
+      /** 量完一个浮层后的判定：**零尺寸＝没打开**，必须算失败——否则 `0,0,0,0` 会被
+       *  「在视口内」误判成通过（本轮实测踩过：模型/思考菜单量到 0×0 却报 ok）。 */
+      const verdict = (m) => {
+        if (!m.found) return { found: false, ok: false, why: "dom-missing" };
+        if (m.w < 8 || m.h < 8) return { ...m, ok: false, why: "zero-size(未打开)" };
+        return { ...m, ok: inside(m), why: inside(m) ? "" : "out-of-viewport" };
+      };
+      /** 触发器在当前布局里是否**可见**。不可见就不该点它——点了目标弹层要么不渲染、
+       *  要么按锚点的负坐标定位到视口外（实测会话行菜单在收起侧栏下 L=-217），
+       *  两者都不是「弹窗自适应」的真问题，属于「该控件此刻不该出现」。 */
+      const anchorVisible = async (expr) => String(await h.eval(`(() => {
+        const el = ${expr};
+        if (!el) return "absent";
+        if (typeof el.checkVisibility === "function") return el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) ? "visible" : "hidden";
+        return el.offsetParent ? "visible" : "hidden";
+      })()`));
+      /** 合法跳过的理由（必须能指回**布局决策**，不能是「懒得测」）。 */
+      const skipReason = async (kind) => String(await h.eval(`(() => {
+        if (${JSON.stringify(kind)} === "model-controls") {
+          const el = document.querySelector(".model-controls");
+          return el ? "窄布局隐藏 .model-controls(display:" + getComputedStyle(el).display + ")" : "该布局无 .model-controls";
+        }
+        const shell = document.querySelector(".app-shell")?.className ?? "";
+        const sidebar = document.querySelector(".sidebar")?.className ?? "";
+        return "侧栏未展开(" + shell + " | " + sidebar + ")";
+      })()`));
+
+      const audit = async (width, height) => {
+        await h._send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+        const out = { menus: [], palettes: [], modals: [], scroll: 0 };
+        try {
+          // ① 输入框下排三个选择菜单（模型 / 思考档位 / 权限）
+          for (const [label, expr] of [
+            ["模型菜单", `[...document.querySelectorAll(".model-controls .composer-menu")].find((m) => m.querySelector("button.composer-setting")?.title === "模型")?.querySelector("button.composer-setting")`],
+            ["思考档位菜单", `[...document.querySelectorAll(".model-controls .composer-menu")].find((m) => (m.querySelector("button.composer-setting")?.title ?? "").startsWith("请求思考强度"))?.querySelector("button.composer-setting")`],
+            ["权限菜单", `document.querySelector('.composer-menu button[title="权限模式"]')`],
+          ]) {
+            if ((await anchorVisible(expr)) !== "visible") {
+              out.menus.push({ label, found: false, ok: true, skipped: await skipReason("model-controls") });
+              continue;
+            }
+            await clickExpr(expr);
+            out.menus.push({ label, ...verdict(await measure(".composer-menu-pop")) });
+            await escape();
+          }
+          // ② 输入框浮层：# 技能 / / 命令 / @ 引用
+          for (const [label, typed] of [["技能面板 #", "#"], ["命令面板 /", "/"], ["引用面板 @", "@"]]) {
+            await h.clearInput(".composer-editor");
+            await h.typeInto(".composer-editor", typed);
+            await wait(520);
+            const m = await measure(".command-palette, .context-picker");
+            out.palettes.push({ label, ...verdict(m) });
+            await h.clearInput(".composer-editor");
+            await escape();
+          }
+          // ③ 命令中心（Ctrl+K，真实快捷键）——类名是 .palette（不是 .command-palette）
+          await pressCtrl("k");
+          out.palettes.push({ label: "命令中心 Ctrl+K", ...verdict(await measure(".palette")) });
+          await escape();
+          // ④ 设置弹窗（Ctrl+,）
+          await pressCtrl(",");
+          out.modals.push({ label: "设置弹窗", ...verdict(await measure(".settings-modal")) });
+          await closeModal();
+          // ⑤ 应用内输入/询问弹窗：双击会话标题改名（与引擎「询问」共用同一套 .agent-ask-card）
+          if (rows >= 1) {
+            await h.eval(`(() => { const el = document.querySelector(".thread-row-title-line"); if (el) el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); })()`);
+            await wait(520);
+            out.modals.push({ label: "询问弹窗(.agent-ask-card)", ...verdict(await measure(".agent-ask-card")) });
+            await closeModal();
+          }
+          // ⑥ 会话行操作菜单（自带 viewport 感知定位，纳入回归）。
+          //    窄布局下侧栏是收起/隐藏的（锚点不可见）→ 该控件此刻不该被点，按布局理由跳过。
+          const rowAnchor = `document.querySelector(".thread-more-button")`;
+          if ((await anchorVisible(rowAnchor)) !== "visible") {
+            out.modals.push({ label: "会话行菜单", found: false, ok: true, skipped: await skipReason("sidebar") });
+          } else {
+            await h.eval(`(() => { const el = ${rowAnchor}; if (el) el.click(); })()`);
+            await wait(360);
+            out.modals.push({ label: "会话行菜单", ...verdict(await measure(".thread-row-menu")) });
+            await escape();
+          }
+          out.scroll = Number(await h.eval(`document.documentElement.scrollWidth - window.innerWidth`)) || 0;
+          await h.screenshot(`窄窗口弹窗-${width}x${height}`);
+        } finally {
+          await h._send("Emulation.clearDeviceMetricsOverride", {});
+          await escape();
+        }
+        return out;
+      };
+
+      const summarize = (list) => JSON.stringify(list.map((m) => ({ l: m.label, ok: m.ok, why: m.why || "", skip: m.skipped || "", L: m.left, R: m.right, T: m.top, B: m.bottom, vw: m.inner, vh: m.innerH })));
+      const bad = (list) => list.filter((m) => !m.ok);
+
+      const desktop = await audit(1000, 760);
+      console.log(`  [弹窗审计] 1000×760 → ${summarize([...desktop.menus, ...desktop.palettes, ...desktop.modals])}`);
+      h.check("⑱a 桌面(1000×760)：选择菜单/浮层/模态全部打开且都在视口内", bad([...desktop.menus, ...desktop.palettes, ...desktop.modals]).length === 0, summarize([...desktop.menus, ...desktop.palettes, ...desktop.modals]));
+
+      const wide = await audit(520, 780);
+      console.log(`  [弹窗审计] 520×780 → ${summarize([...wide.menus, ...wide.palettes, ...wide.modals])}`);
+      h.check("⑱b 窄窗口(520×780)：选择菜单/浮层/模态全部打开且都在视口内", bad([...wide.menus, ...wide.palettes, ...wide.modals]).length === 0, summarize([...wide.menus, ...wide.palettes, ...wide.modals]));
+
+      const tiny = await audit(380, 520);
+      console.log(`  [弹窗审计] 380×520 → ${summarize([...tiny.menus, ...tiny.palettes, ...tiny.modals])}`);
+      h.check("⑱c 又窄又矮(380×520)：各类弹窗仍全部落在视口内（含 vertically clipped 检查）", bad([...tiny.menus, ...tiny.palettes, ...tiny.modals]).length === 0, summarize([...tiny.menus, ...tiny.palettes, ...tiny.modals]));
+
+      // ⑱d 跳过必须**可验证**：理由只能来自「该控件在当前布局不渲染/不可见」这条设计决策
+      //     （窄布局隐藏 .model-controls / 侧栏未展开），不允许出现无理由跳过。
+      const skips = [...desktop.menus, ...desktop.palettes, ...desktop.modals, ...wide.menus, ...wide.palettes, ...wide.modals, ...tiny.menus, ...tiny.palettes, ...tiny.modals].filter((m) => m.skipped);
+      h.check("⑱d 跳过项都带「布局理由」（窄布局隐藏 .model-controls / 侧栏未展开），无理由跳过＝0", skips.every((m) => /窄布局隐藏 \.model-controls|侧栏未展开/.test(String(m.skipped))), summarize(skips));
+      h.check("⑱e 三档视口下应用外壳均无横向溢出", desktop.scroll <= 1 && wide.scroll <= 1 && tiny.scroll <= 1, `1000:${desktop.scroll} 520:${wide.scroll} 380:${tiny.scroll}`);
     },
   },
 
@@ -1733,6 +1965,7 @@ const ROUND_OF = {
   "thread-runtime": "09-14",
   "thread-runtime-multiwin": "09-14",
   "approval-compact": "09-14",
+  "narrow-dialogs": "09-14",
 };
 const roundOf = (id) => ROUND_OF[id] ?? "(未登记)";
 
