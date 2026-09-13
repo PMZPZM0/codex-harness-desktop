@@ -688,6 +688,132 @@ console.log(C.bold("\n【4c】语音链路（打断世代号 / 朗读视图 / �
   }
 }
 
+// ---------- 4d. 语音唤醒（09-13 取证：默认唤醒词根本匹配不上） ----------
+
+console.log(C.bold("\n【4d】语音唤醒（同音容错匹配 / 端点复位 / 配置即时生效）"));
+
+{
+  // 纯逻辑跑的是**编译产物**（electron/voice/wake-match.ts → dist-electron/voice/wake-match.js）：
+  // 主进程代码 CDP 测不到，但它是纯函数，直接把真正会上线的那份 require 进来断言。
+  let wakeMatch = null;
+  try {
+    wakeMatch = await import("../dist-electron/voice/wake-match.js");
+  } catch (error) {
+    fail(`语音唤醒纯逻辑产物读不到（先 npm run build）：${error?.message ?? error}`);
+  }
+
+  if (wakeMatch) {
+    const { buildHomophoneMap, createWakeMatcher, normalizeWakeText, phraseVocabHint } = wakeMatch;
+
+    // lexicon 样本照抄真实 lexicon.txt 的写法（注音 + 声调符号）：柯/科 同音，哥 不同声母
+    const LEXICON = [
+      "柯 ㄎ ㄜ ˉ",
+      "科 ㄎ ㄜ ˉ",
+      "可 ㄎ ㄜ ˇ",
+      "客 ㄎ ㄜ ˋ",
+      "哥 ㄍ ㄜ ˉ",
+      "小 ㄒ ㄧ ㄠ ˇ",
+      "消 ㄒ ㄧ ㄠ ˉ",
+      "多字词 ㄉ ㄨ ㄛ ˉ ㄗ ㄘ ˊ", // 多字条目必须被忽略（读音是拼接的）
+    ].join("\n");
+    const homo = buildHomophoneMap(LEXICON);
+    homo.get("柯")?.has("科") && homo.get("柯")?.has("可")
+      ? ok(`唤醒：同音表按读音归类（柯 ≈ ${[...(homo.get("柯") ?? [])].join("")}）`)
+      : fail("唤醒：同音表没把 柯/科/可 归为一类（lexicon 解析错了）");
+    homo.get("柯")?.has("哥") === false
+      ? ok("唤醒：不同声母不算同音（柯 ㄎㄜ ≠ 哥 ㄍㄜ）")
+      : fail("唤醒：把 哥 也当成 柯 的同音字 —— 会把「小哥」这种日常词误唤醒");
+
+    const matcher = createWakeMatcher({ phrase: "小柯小柯", homophones: homo });
+    // 正例：探针实测到的真实识别结果（合成音频 → 唤醒配置识别）
+    const positives = [
+      ["小柯小柯", "完全正确（探针实测出现过）"],
+      ["小科小科", "同音常用字（说小科小科时模型常写成小柯小柯）"],
+      ["消客小客", "探针实测「说小可小可」的输出：同音不同调"],
+      ["嗯，小科小科，帮我看下", "前后有别的字（滑窗）"],
+    ];
+    for (const [text, note] of positives) {
+      matcher.match(text) ? ok(`唤醒：match("${text}") = true（${note}）`) : fail(`唤醒：漏唤醒 —— match("${text}") 应为 true（${note}）`);
+    }
+    // 负例：不能为了「能唤醒」把门槛放到把日常话也当唤醒
+    const negatives = [
+      ["小哥小哥", "声母听错：故意不匹配（否则「小哥」天天误唤醒）"],
+      ["哎呀这个项目真不错", "无关内容"],
+      ["小", "只说了一半"],
+      ["", "空文本"],
+    ];
+    for (const [text, note] of negatives) {
+      matcher.match(text) === false ? ok(`唤醒：match("${text}") = false（${note}）`) : fail(`唤醒：误唤醒 —— match("${text}") 应为 false（${note}）`);
+    }
+    // 前置条件：同音容错确实在起作用（去掉同音表后「小科小科」必须匹配不上）
+    const exactOnly = createWakeMatcher({ phrase: "小柯小柯", homophones: null });
+    exactOnly.match("小科小科") === false && exactOnly.match("小柯小柯") === true
+      ? ok("唤醒：同音容错真的在起作用（无同音表时只认精确匹配）")
+      : fail("唤醒：同音表接没接上分不出来 —— 这条断言没意义");
+    createWakeMatcher({ phrase: "  " }).ready === false
+      ? ok("唤醒：空唤醒词永不命中（不会把每句话都当唤醒）")
+      : fail("唤醒：空唤醒词也能命中 —— 会疯狂误唤醒");
+    normalizeWakeText(" 小 柯，小柯。 ") === "小柯小柯"
+      ? ok("唤醒：归一化去掉空白与标点")
+      : fail(`唤醒：归一化不对（${normalizeWakeText(" 小 柯，小柯。 ")}）`);
+    // 词表可达性提示：柯 不在 tokens 里（真实模型 2002 项词表就是这种情况）→ 必须提示
+    phraseVocabHint("小柯小柯", "小 1\n哥 2\n科 3") .includes("柯")
+      ? ok("唤醒：唤醒词含词表外字时给出提示（这正是默认词「小柯小柯」时好时坏的原因）")
+      : fail("唤醒：没有提示词表外字，用户无从知道该换词");
+    phraseVocabHint("小科小科", "小 1\n科 2") === ""
+      ? ok("唤醒：唤醒词全在词表内时不打扰用户")
+      : fail("唤醒：词表内也报警，提示会被无视");
+  }
+
+  // ===== 接线守卫（唤醒是常驻监听，主进程侧 CDP 测不到）=====
+  const readSrc2 = (rel) => (existsSync(join(ROOT, rel)) ? readFileSync(join(ROOT, rel), "utf8") : "");
+  const floatSrc2 = readSrc2("src/components/VoiceCallFloat.tsx");
+  const serviceSrc2 = readSrc2("electron/voice/voice-service.ts");
+  const settingsUiSrc = readSrc2("src/components/VoiceSettingsSection.tsx");
+
+  if (!floatSrc2 || !serviceSrc2 || !settingsUiSrc) {
+    warn("找不到语音源码，跳过唤醒接线守卫");
+  } else {
+    // ① 开关/唤醒词改了必须立刻重挂（旧实现依赖数组只有 [phase] → 打开开关毫无反应）
+    const depsOk = /\}, \[phase, wakeCfg\.enabled, wakeCfg\.phrase\]\);/.test(floatSrc2);
+    const broadcast = /type: "settings", settings: next/.test(mainSrc);
+    const listensSettings = /event\?\.type === "settings"/.test(floatSrc2);
+    depsOk && broadcast && listensSettings
+      ? ok("唤醒：设置变更即时生效（主进程广播 settings + effect 依赖含开关与唤醒词）")
+      : fail(`唤醒：改了设置不重挂（deps=${depsOk} 广播=${broadcast} 监听=${listensSettings}）`);
+
+    // ② 命中后不得用 effect 里捕获的 startCall（threadId 会过期）
+    const refForwarded = /startCallRef\.current\(\)/.test(floatSrc2) && /const startCallRef = useRef/.test(floatSrc2);
+    const noStaleCall = !/event\.type === "wake"[\s\S]{0,400}?\bstartCall\(\)/.test(floatSrc2);
+    refForwarded && noStaleCall
+      ? ok("唤醒：命中后经 startCallRef 取最新闭包（不会用到过期的 threadId）")
+      : fail(`唤醒：命中路径仍可能用过期闭包（ref=${refForwarded} 无裸调用=${noStaleCall}）`);
+
+    // ③ 匹配与复位在主进程：渲染层不再拿文本、不再自己 includes
+    const mainMatches = /wakeMatcher\?\.match\(text\)/.test(serviceSrc2);
+    const endpointReset = /if \(endpoint\)[\s\S]{0,300}?request\("reset"/.test(serviceSrc2);
+    const preloaded = /await this\.wakeAsr\.request\("create"\)/.test(serviceSrc2);
+    const noRenderMatch = !/norm\.includes\(wake\.phrase\)/.test(floatSrc2) && !/includes\(wakeCfg\.phrase\)/.test(floatSrc2);
+    mainMatches && endpointReset && preloaded && noRenderMatch
+      ? ok("唤醒：匹配在主进程 + 每次端点复位识别流 + 启动即预热模型（不再每块回传整坨文本）")
+      : fail(`唤醒：主进程侧不完整（match=${mainMatches} reset=${endpointReset} 预热=${preloaded} 渲染层无匹配=${noRenderMatch}）`);
+
+    // ④ 背压：忙时攒块、空了合并发送（旧实现每块无条件 invoke → 越积越慢）
+    const backpressure = /let busy = false;/.test(floatSrc2) && /pending\.push\(raw\)/.test(floatSrc2) && /const pump = \(\) => \{/.test(floatSrc2) && /MAX_PENDING/.test(floatSrc2);
+    backpressure
+      ? ok("唤醒：识别忙时攒块合并发送（有背压上限，不会无限积压）")
+      : fail("唤醒：没有背压 —— 识别跟不上时会越积越慢");
+
+    // ⑤ 失败必须可见 + 「最近听到什么」必须显示得出来
+    //    判据要落在**启动失败那条分支**上（catch 块里也有一处 patchWakeState，只匹配调用会让守卫放水）
+    const failureVisible = /if \(!started\?\.ok\) \{[\s\S]{0,240}?patchWakeState\(\{ listening: false, error:/.test(floatSrc2);
+    const statusShown = /wakeState\.heard/.test(settingsUiSrc) && /subscribeWakeState/.test(settingsUiSrc);
+    failureVisible && statusShown
+      ? ok("唤醒：启动失败会提示 + 设置页显示「最近听到什么」（诊断可见）")
+      : fail(`唤醒：失败静默或诊断不可见（失败提示=${failureVisible} 状态显示=${statusShown}）`);
+  }
+}
+
 // 接线守卫：语音悬浮入口必须真的挂到 App 上（防「组件写了但没接」）
 {
   const appPath = join(ROOT, "src", "App.tsx");

@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Trash2, Upload, Headphones, Keyboard, Mic, Play, Radio, ShieldAlert, Sparkles, Square, Zap } from "lucide-react";
 import { decodeFloat32Base64 } from "../voice/audio-transport";
+import { getWakeState, subscribeWakeState } from "../voice/wake-state";
 
 type Settings = {
   tts: { sid: number; speed: number; volume: number; profileId?: string };
@@ -58,6 +59,9 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
   const [capturing, setCapturing] = useState<"call" | "dictation" | null>(null);
   // 唤醒词草稿（输完失焦/回车才落盘，避免每敲一个字就写一次文件）
   const [wakePhraseDraft, setWakePhraseDraft] = useState("");
+  /** 唤醒运行态（是否在听 / 最近听到什么 / 词表提示）——由 VoiceCallFloat 经 store 广播过来 */
+  const [wakeState, setWakeState] = useState(getWakeState());
+  useEffect(() => subscribeWakeState(setWakeState), []);
   const micTestRef = useRef<{ stop: () => void } | null>(null);
   // ── 我的音色（音色克隆 ZipVoice）──导入/录制参考音频 → 自动转写原文 → 保存为专属音色
   const [profiles, setProfiles] = useState<any[]>([]);
@@ -844,9 +848,22 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
             disabled={saving}
           />
           <div className="voice-card-hint">
-            说出唤醒词即可开始通话（识别文本归一化后再匹配，会忽略空格与标点）。
+            说出唤醒词即可开始通话（识别文本归一化 + <strong>同音容错</strong>后再匹配：唤醒词只要求读音相同，
+            所以「小柯小柯」能被「小科小科/小可小可」命中）。
             <strong>注意：开启后会持续占用 CPU</strong>——这里复用的是已有的识别模型，不是专门的低功耗唤醒模型；不用时建议关掉。
           </div>
+          {/* 「为什么没唤醒」的唯一可用诊断：通用模型会把生僻字听成同音常用字，
+              只有把「最近听到什么」显示出来，用户才知道该换词还是该改匹配。 */}
+          <div className="voice-card-hint" data-voice-wake-status>
+            {wakeState.error
+              ? `唤醒未启动：${wakeState.error}`
+              : wakeState.listening
+                ? `正在聆听「${wakeState.phrase}」${wakeState.heard ? `｜最近听到：${wakeState.heard}${wakeState.matched ? " ✅ 已命中" : "（未命中）"}` : "｜（还没听到说话）"}`
+                : settings.wake.enabled
+                  ? "已开启：通话中会暂停聆听，挂断后自动恢复"
+                  : "唤醒未开启（打开上面的开关并保持应用运行即可）"}
+          </div>
+          {wakeState.hint && <div className="voice-card-hint">⚠️ {wakeState.hint}</div>}
         </div>
       </div>
 
