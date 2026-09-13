@@ -6793,6 +6793,16 @@ export default function App() {
     }));
   }, [optimisticInput, thread]);
   useEffect(() => {
+    // ★ 乐观气泡**安全阀**（09-13）：回合已经跑完、气泡却始终没被真实消息接管 → 回收。
+    // 触发场景：排队消息点「立即」走 `turn/steer` 把输入补进**已有回合**（不产生新回合），
+    // 而下面的确认逻辑只认「新回合里的用户消息」→ 永远匹配不到，气泡会一直赖在聊天区。
+    // 有它兜底，最坏情况也只是"这一轮跑完时气泡消失"，绝不会跨回合残留。
+    // 正常发送不受影响：真实消息在回合进行中就接管了（turn 还在 running 时这里不会触发）。
+    if (optimisticInput && !optimisticConfirmed && !(thread?.turns ?? []).some((turn) => isTurnRunning(turn))) {
+      dbg("confirm-timeout", { inp: String(optimisticInput.id).slice(0, 12) });
+      setOptimisticInput(null);
+      return;
+    }
     if (!optimisticInput || !optimisticConfirmed) return;
     dbg("confirm-fired", { inp: !!optimisticInput });
     // 锚定模式：真实回合接管临时气泡的瞬间，把锚点平滑换到真实回合——
@@ -9698,6 +9708,28 @@ const commandMatches = useMemo(() => {
     }
   }
 
+  /** 排队消息「立即」的本地呈现：与正常发送**同一套**（乐观气泡 + 钉顶 + 跟随）。
+   *  为什么需要它（用户实测：「点立即发送的时候，能不能跟正常消息一样在聊天框展示出来」）：
+   *  「立即」走的是 `turn/steer`（把这条输入补进**正在跑的那个回合**，既不触发 turn/started
+   *  也不产生新回合），空闲时才走 `thread/queue/start` —— 两条路渲染层此前都**什么都不做**，
+   *  于是消息看起来"不是一条正常消息"，只能等引擎回推的 item 自己冒出来。
+   *  真实 item 到达后由 `optimisticConfirmed` 接管换掉气泡（位置不动）；若该回合跑完都没接管
+   *  （steer 把消息补进已有回合、现有确认逻辑只认新回合），则由确认 effect 里的安全阀回收。 */
+  function armQueuedDisplay(entry: QueueItem) {
+    const optimisticId = `queued-${entry.id}`;
+    justSentIds.add(optimisticId);
+    optimisticTurnIdRef.current = null;
+    optimisticBaselineRef.current = {
+      threadId: threadRef.current?.id ?? null,
+      turnIds: new Set(((threadRef.current?.turns ?? []) as Turn[]).map((turn) => turn.id)),
+    };
+    setOptimisticInput({ id: optimisticId, type: "userMessage", content: entry.input } as ThreadItem);
+    stickToBottomRef.current = false;
+    anchorTopRef.current = true;
+    anchorTurnIdRef.current = null;
+    dbg("send-arm-queued");
+  }
+
   async function startQueued(id?: string) {
     if (!thread) return;
     const entry = id ? queue.find((q) => q.id === id) : undefined;
@@ -9711,6 +9743,7 @@ const commandMatches = useMemo(() => {
           input: entry.input,
           ...(entry.clientUserMessageId ? { clientUserMessageId: entry.clientUserMessageId } : {}),
         });
+        armQueuedDisplay(entry);   // 发出去就在聊天区按正常消息展示（钉在顶上、跟随回复）
         await deleteQueued(entry.id);
         void refreshQueue(thread.id);
         showToast("发送成功", "排队消息已提供给当前任务");
@@ -9721,6 +9754,7 @@ const commandMatches = useMemo(() => {
     }
     try {
       await window.codex.request("thread/queue/start", { threadId: thread.id, ...(id ? { queuedSubmissionId: id } : {}) });
+      if (entry) armQueuedDisplay(entry);
       // 同「回合结束自动启动」：先本地摘掉，避免与真实气泡并存（否则会短暂重复展示）
       if (id) setQueue((current) => current.filter((entry) => entry.id !== id));
       void refreshQueue(thread.id);
