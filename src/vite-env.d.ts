@@ -510,6 +510,8 @@ interface Window {
     voiceStatus(): Promise<{ active: boolean; state: string; runtimeReady: boolean; modelsReady: boolean; threadId: string; lastError: string }>;
     voiceStart(threadId: string, options?: { mode?: "conversation" | "dictation" }): Promise<{ ok: boolean; error?: string; status: unknown }>;
     voiceDictationFinish(): Promise<{ ok: boolean; text?: string; error?: string }>;
+    /** 提前端点：识别文本已收尾 + 停口 ~0.5s 时调用，立即提交这一句（不等 rule2 静音） */
+    voiceEndpointNow(): Promise<{ ok: boolean; text?: string }>;
     voiceStop(): Promise<{ ok: boolean }>;
     voiceAudio(samples: Float32Array): void;
     voiceSpeak(text: string, options?: { sid?: number; speed?: number }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
@@ -543,6 +545,7 @@ interface Window {
         asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
         mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
         barge: { gateDb: number; mode: "auto" | "manual" };
+        aec?: { mode: "auto" | "on" | "off" };
         modelHost: "auto" | "huggingface" | "hf-mirror";
         hotkey: { enabled: boolean; accelerator: string };
         dictationHotkey: { enabled: boolean; accelerator: string };
@@ -557,6 +560,7 @@ interface Window {
       asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
       mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
       barge: { gateDb: number; mode: "auto" | "manual" };
+      aec?: { mode: "auto" | "on" | "off" };
       modelHost: "auto" | "huggingface" | "hf-mirror";
       hotkey: { enabled: boolean; accelerator: string };
       dictationHotkey: { enabled: boolean; accelerator: string };

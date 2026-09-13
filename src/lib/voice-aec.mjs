@@ -48,14 +48,20 @@ const MIN_REF_NORM = 1e-6;
  * 参考信号（扬声器在放的内容）比麦克风块短时补零——播放结束的那一块必然更短。
  * `setFrozen(true)` 暂停权重自适应（双讲期间），此时**仍照常做回声相减**，
  * 只是不再更新滤波器，防止用户语音把滤波器带偏。
+ *
+ * `delay` = 回声路径延迟的样本数（16k 下 480 ≈ 30ms），即「参考里第几个样本开始对应
+ * 当前麦克风样本」。**必须是可调量**（`setDelay`）：设备输出延迟由
+ * `AudioContext.outputLatency` 自报，不同设备（内置扬声器 10ms / 蓝牙 100~300ms）差一个
+ * 数量级，写死常量只在某一类设备上成立。缓冲区按 `maxDelay` 预分配，运行中只改读指针偏移。
  */
 export function createAec(options = {}) {
   const filterLength = options.filterLength ?? AEC_DEFAULTS.filterLength;
-  const delay = options.delay ?? AEC_DEFAULTS.delay;
   const mu = options.step ?? AEC_DEFAULTS.step;
   const eps = options.epsilon ?? AEC_DEFAULTS.epsilon;
+  const maxDelay = Math.max(options.maxDelay ?? options.delay ?? AEC_DEFAULTS.delay, 0);
+  let delay = Math.min(Math.max(options.delay ?? AEC_DEFAULTS.delay, 0), maxDelay);
   const w = new Float32Array(filterLength);
-  const xBuf = new Float32Array(delay + filterLength);
+  const xBuf = new Float32Array(maxDelay + filterLength);
   let cursor = 0;
   let filled = 0;
   let frozen = false;
@@ -63,6 +69,15 @@ export function createAec(options = {}) {
   return {
     setFrozen(next) {
       frozen = Boolean(next);
+    },
+    /** 校正延迟线（样本数，按采集率）：超出 [0, maxDelay] 的值被夹住 */
+    setDelay(next) {
+      const value = Math.round(Number(next));
+      if (!Number.isFinite(value)) return;
+      delay = Math.max(0, Math.min(maxDelay, value));
+    },
+    get delay() {
+      return delay;
     },
     /** 送入一块麦克风与对应参考，返回去回声后的麦克风（与输入等长）。 */
     process(mic, ref) {
@@ -204,7 +219,9 @@ export function createSentenceChunker(options = {}) {
   // 首句阈值单独调小（09-12 用户反馈「正文出来了语音还没跟上」）：模型输出往往
   // 前几十字都没有句号，等满 maxChars 才开口，体感就是「慢半拍」。首句尽早出声后
   // 后续仍按 maxChars 攒长句，语气不至于碎。
-  const firstMaxChars = options.firstMaxChars ?? Math.min(18, maxChars);
+  // 09-13（审计 ④）：18 → 10 —— 首块合成是延迟链上最贵的一环（18 字≈4 秒音频），
+  // 再往前压 0.3~0.8s；有软断点（逗号/顿号）时仍优先在断点处切，不会把词切断。
+  const firstMaxChars = options.firstMaxChars ?? Math.min(10, maxChars);
   const hardBreak = new Set(["。", "！", "？", "!", "?", "\n", "；", ";"]);
   const softBreak = new Set(["，", ",", "、", "：", ":", " "]);
   let buffer = "";

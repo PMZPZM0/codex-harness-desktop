@@ -307,6 +307,8 @@ contextBridge.exposeInMainWorld("codex", {
   voiceStatus: () => ipcRenderer.invoke("voice:status") as Promise<{ active: boolean; state: string; runtimeReady: boolean; modelsReady: boolean; threadId: string; lastError: string }>,
   voiceStart: (threadId: string, options?: { mode?: "conversation" | "dictation" }) => ipcRenderer.invoke("voice:start", threadId, options) as Promise<{ ok: boolean; error?: string; status: unknown }>, 
   voiceDictationFinish: () => ipcRenderer.invoke("voice:dictation-finish") as Promise<{ ok: boolean; text?: string; error?: string }>,
+  /** 提前端点：识别文本已收尾 + 用户停口 ~0.5s 时调用，立即提交这一句（不等 rule2 静音） */
+  voiceEndpointNow: () => ipcRenderer.invoke("voice:endpoint-now") as Promise<{ ok: boolean; text?: string }>,
   voiceStop: () => ipcRenderer.invoke("voice:stop") as Promise<{ ok: boolean }>,
   voiceAudio: (samples: Float32Array) => ipcRenderer.send("voice:audio", samples),
   // TTS 音频走 Base64 字符串跨 Electron IPC；避免 native/external ArrayBuffer 被 structured clone 拒绝。

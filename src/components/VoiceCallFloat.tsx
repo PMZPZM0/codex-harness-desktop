@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouse
 import { createPortal } from "react-dom";
 import { AlertCircle, AudioLines, Download, EyeOff, LoaderCircle, Mic, Monitor, PhoneOff, Settings2, X } from "lucide-react";
 import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../lib/voice-aec.mjs";
+import { createSpeakFilter } from "../lib/speak-text.mjs";
 import { CAPTURE_WORKLET_SOURCE } from "../voice/capture-worklet";
 import { decodeFloat32Base64 } from "../voice/audio-transport";
 import VoiceMascot from "./VoiceMascot";
@@ -32,6 +33,16 @@ const POS_KEY = "voice-float-pos";
 const DEFAULT_POS = { right: 22, bottom: 104 };
 const CAPTURE_RATE = 16000;
 const BARGUE_COOLDOWN_MS = 1200;
+/** 参考环 30 秒（审计 ⑤①）：TTS 队列领先量可以到十几秒，2 秒的环必然失步 */
+const REF_RING_SECONDS = 30;
+/** AEC 延迟线上限 256ms：蓝牙耳机也够（真实值由 outputLatency 按次校正） */
+const AEC_MAX_DELAY_SAMPLES = Math.round(CAPTURE_RATE * 0.256);
+const AEC_DEFAULT_DELAY_SAMPLES = Math.round(CAPTURE_RATE * 0.02);
+/** 听写/通话：先开麦时最多暂存多久音频（等 ASR 加载时用）。超出丢最旧的。 */
+const PREBUFFER_MAX_SAMPLES = CAPTURE_RATE * 3;
+/** 端点提前判定：partial 以句末标点收尾 + 连续这么久低能量 → 立即提交（审计 ④） */
+const ENDPOINT_QUIET_RMS = 0.006;
+const ENDPOINT_QUIET_MS = 500;
 
 /**
  * 悬浮球的随机短提示词——按任务状态**分池**，每条池里是"运行状态/搞笑话语/个性化"三类混合。
@@ -136,6 +147,8 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   /** 悬浮球 DOM：每帧把音量写进 CSS 变量，让球跟着声音呼吸/发光 */
   const ballRef = useRef<HTMLButtonElement | null>(null);
   const [notice, setNotice] = useState("");
+  /** 当前端点静音阈值（秒）：面板上显示出来，让「为什么它等了一下才回话」可见（审计 ④） */
+  const [endpointSec, setEndpointSec] = useState(0.8);
   const [models, setModels] = useState<ModelsStatus | null>(null);
   const [download, setDownload] = useState<{ percent: number; message: string } | null>(null);
   const [pos, setPos] = useState(readPos);
@@ -160,9 +173,23 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   const volumeRef = useRef(1);
   const gateRef = useRef<any>(null);
   const chunkerRef = useRef<any>(null);
-  const refRingRef = useRef<Float32Array>(new Float32Array(CAPTURE_RATE * 2));
+  /** 朗读视图过滤器（审计 ②）：跨句保持「代码围栏/表格」状态，随回合重建 */
+  const speakFilterRef = useRef<any>(null);
+  /** ★ 先开麦暂存（审计 ③）：ASR 工作线程加载要 1~3 秒，这段时间的音频先攒着，就绪后回灌，
+   *  否则「按下就说」的开头几个字必然丢。null = 不暂存。 */
+  const prebufferRef = useRef<Float32Array[] | null>(null);
+  /** 音频是否已经进入「实时上行」阶段（回灌完成）。用 ref 而不是 phase state：
+   *  state 落地晚一帧，那一帧的块会丢。 */
+  const liveRef = useRef(false);
+  /** 参考环：30 秒 + 「按播放领先量写入」，见 pushRef 注释（审计 ⑤①②） */
+  const refRingRef = useRef<Float32Array>(new Float32Array(CAPTURE_RATE * REF_RING_SECONDS));
   const refWriteRef = useRef(0);
   const refReadRef = useRef(0);
+  /** 因领先量超出环容量而丢弃的参考段数（只用于诊断，不参与逻辑） */
+  const refDropsRef = useRef(0);
+  /** 端点提前判定用：partial 是否已以句末标点收尾 / 低能量起点 */
+  const endpointArmedRef = useRef(false);
+  const quietSinceRef = useRef(0);
   const lastBargeAtRef = useRef(0);
   const speakingRef = useRef(false);
   const phaseRef = useRef<VoicePhase>("idle");
@@ -264,16 +291,23 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
         patchVoiceStage({ mode: event.state === "speaking" ? "speaking" : event.state === "thinking" ? "thinking" : "listening" });
         return;
       }
-      if (event.type === "partial") {
-        setUserText(event.text);
-        patchVoiceStage({ userText: String(event.text ?? "") });
-        return;
-      }
       if (event.type === "final") {
+        // ★ 新的一句（= 新一轮）开始：世代号 +1，把上一轮还在 TTS 线程里生成中的句子作废。
+        //   手动模式下没有 barge 动作，就靠这一下保证「我说话时它必须闭嘴」。
+        bumpSpeechEpoch();
+        endpointArmedRef.current = false;
         setUserText(event.text);
         setAgentText("");
         agentTextRef.current = "";
         patchVoiceStage({ userText: String(event.text ?? ""), agentText: "" });
+        return;
+      }
+      if (event.type === "partial") {
+        setUserText(event.text);
+        patchVoiceStage({ userText: String(event.text ?? "") });
+        // 端点提前判定（审计 ④）：识别文本已经以句末标点收尾 → 允许「静音 0.5s 就提交」，
+        // 不必再等满 rule2（默认 0.8s）。只在有真文本时武装，避免空提交。
+        if (/[。！？!?]$/.test(String(event.text ?? "").trim())) endpointArmedRef.current = true;
         return;
       }
       if (event.type === "delta") {
@@ -289,6 +323,11 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
         return;
       }
       if (event.type === "turnDone") {
+        // 被打断/失败的回合：断句器里的半句与在途合成全部作废，不 flush（审计 ①）
+        if (event.aborted) {
+          bumpSpeechEpoch();
+          return;
+        }
         void flushSpeech();
         return;
       }
@@ -312,12 +351,29 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   }, []);
 
   // ---- 播放队列 ----
-  const pushRef = useCallback((samples: Float32Array) => {
+  /**
+   * 把一段参考音频写进 AEC 参考环。
+   *
+   * ★ 写法是「读指针 + 播放领先量」（审计 ⑤）：
+   * - 参考必须与**真正出声的时刻**对齐。入队时按当前读指针写（旧实现）在队列领先 >2s 时
+   *   就会覆盖未读样本、参考永久失步；按领先量写则写指针天然落在「将来才会被读到」的位置，
+   *   读到它的时候正好就是它在播的时候。
+   * - `leadSamples` = 这段音频距离开始播放还有多少个采集样本（由 `source.start(startAt)` 推出）。
+   * - 领先量超出环容量（>30s，只可能出现在病态积压）→ **丢弃这一段**：宁可不消回声，
+   *   也不能拿错位的参考去做减法（那会往麦克风里注入失真）。
+   */
+  const pushRef = useCallback((samples: Float32Array, leadSamples = 0) => {
     const ring = refRingRef.current;
-    for (let i = 0; i < samples.length; i++) {
-      ring[refWriteRef.current % ring.length] = samples[i];
-      refWriteRef.current += 1;
+    if (!samples.length) return;
+    const at = refReadRef.current + Math.max(0, Math.round(leadSamples));
+    if (at + samples.length - refReadRef.current > ring.length) {
+      refDropsRef.current += 1;
+      return;
     }
+    for (let i = 0; i < samples.length; i++) {
+      ring[(at + i) % ring.length] = samples[i];
+    }
+    refWriteRef.current = at + samples.length;
   }, []);
 
   const enqueuePlay = useCallback(async (samples: Float32Array, sampleRate: number) => {
@@ -354,15 +410,27 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       setVoiceLevel(level, "speaking");
     }, 60);
 
-    // 把这段音频写进 AEC 参考环（重采样到采集率）
-    pushRef(sampleRate === CAPTURE_RATE ? samples : resampleLinear(samples, sampleRate, CAPTURE_RATE));
-
     const last = playQueueRef.current[playQueueRef.current.length - 1];
     const startAt = last ? Math.max(ctx.currentTime, (last as any).__endsAt ?? 0) : ctx.currentTime;
     (source as any).__endsAt = startAt + buffer.duration;
     playQueueRef.current.push(source);
     playingCountRef.current += 1;
     speakingRef.current = true;
+
+    // ★ AEC 参考（审计 ⑤②）：用播放上下文自报的输出延迟校正延迟线，再按「领先量」把这段
+    //   参考写到将来才会被读到的位置——参考与「真正出声的时刻」对齐，而不是与入队时刻对齐。
+    //   （NLMS 只在浏览器回声消除关闭时才创建，这里 null 判断就是这条链路的开关。）
+    if (aecRef.current) {
+      const latencySec = Number((ctx as any).outputLatency || (ctx as any).baseLatency || 0);
+      const delaySamples = Math.min(
+        AEC_MAX_DELAY_SAMPLES,
+        Math.max(0, Math.round((latencySec || 0.02) * CAPTURE_RATE))
+      );
+      aecRef.current.setDelay?.(delaySamples);
+      const leadSamples = Math.max(0, (startAt - ctx.currentTime) * CAPTURE_RATE);
+      pushRef(sampleRate === CAPTURE_RATE ? samples : resampleLinear(samples, sampleRate, CAPTURE_RATE), leadSamples);
+    }
+
     source.onended = () => {
       window.clearInterval(scopeTimer);
       playingCountRef.current = Math.max(0, playingCountRef.current - 1);
@@ -376,7 +444,23 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     source.start(startAt);
   }, [pushRef]);
 
+  /** ★ 语音世代号（「打断之后它还在念上一轮」的根因修复）：
+   *  每个 delta 都会 `speakDelta`，而 TTS 是 **await 中的 IPC** —— 用户打断后它才 resolve，
+   *  回来时 `enqueuePlay` 会把**打断前那半句**照念（缓冲里最多还有一句，能念十几秒）。
+   *  `stopPlayback` 只能清已入队的 source，管不到"已经在 TTS 线程里生成中"的请求。
+   *  所以打断/挂断/新一轮开始时把世代号 +1，所有 await 前后都比一次，不一致就丢弃结果。
+   *  声明位置必须在 `stopPlayback` 之前：依赖数组在 render 期求值，放到后面会 TDZ 报错。 */
+  const speechEpochRef = useRef(0);
+  const bumpSpeechEpoch = useCallback(() => {
+    speechEpochRef.current += 1;
+    // 同时丢掉断句器里的半句与朗读视图的跨句状态（代码围栏/表格），
+    // 否则它们会在下一轮被当成新内容念出来
+    chunkerRef.current = null;
+    speakFilterRef.current = null;
+  }, []);
+
   const stopPlayback = useCallback(() => {
+    bumpSpeechEpoch();   // ★ 世代号 +1：让「已经在 TTS 线程里生成中」的那半句回来时被丢弃
     for (const source of playQueueRef.current) {
       try {
         source.stop();
@@ -388,15 +472,23 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     playingCountRef.current = 0;
     speakingRef.current = false;
     gateRef.current?.reset();
-  }, []);
+  }, [bumpSpeechEpoch]);
 
   // ---- 断句 → 合成 → 播放 ----
   const speakDelta = useCallback(
     async (delta: string) => {
       if (!chunkerRef.current) chunkerRef.current = createSentenceChunker({ maxChars: 60 });
+      if (!speakFilterRef.current) speakFilterRef.current = createSpeakFilter();
+      const epoch = speechEpochRef.current;
       const sentences: string[] = chunkerRef.current.push(delta);
       for (const sentence of sentences) {
-        const result = await window.codex.voiceSpeak(sentence).catch(() => null);
+        // ★ 朗读视图（审计 ②）：断句用的是**原文**（字幕照旧显示原文），送进 TTS 之前
+        //   过一层「给人听」的清洗——代码块/表格整段跳过，markdown 记号/URL/路径/emoji 去掉，
+        //   数字日期中文化。清完为空（整句都是代码）就跳过，不合成空音频。
+        const spoken = speakFilterRef.current.push(sentence);
+        if (!spoken) continue;
+        const result = await window.codex.voiceSpeak(spoken).catch(() => null);
+        if (epoch !== speechEpochRef.current) return;   // 期间被打断：这段不念（否则会把上一轮念完）
         if (!result?.ok || !result.audioBase64 || !result.sampleRate) {
           if (result && !result.ok && result.error) setNotice(result.error);
           continue;
@@ -409,9 +501,14 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   );
 
   const flushSpeech = useCallback(async () => {
+    const epoch = speechEpochRef.current;
     const rest: string[] = chunkerRef.current?.flush() ?? [];
+    if (!speakFilterRef.current) speakFilterRef.current = createSpeakFilter();
     for (const sentence of rest) {
-      const result = await window.codex.voiceSpeak(sentence).catch(() => null);
+      const spoken = speakFilterRef.current?.push(sentence) ?? "";
+      if (!spoken) continue;
+      const result = await window.codex.voiceSpeak(spoken).catch(() => null);
+      if (epoch !== speechEpochRef.current) return;   // 期间被用户打断：这段不要念
       if (result?.ok && result.audioBase64 && result.sampleRate) {
         const samples = decodeFloat32Base64(result.audioBase64);
         if (samples.length) await enqueuePlay(samples, result.sampleRate);
@@ -421,6 +518,20 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
 
   // ---- 采集链路 ----
   const startCapture = useCallback(async () => {
+    // ★ 设置必须在 getUserMedia **之前**读（审计 ⑥）：旧实现先开麦、后读设置，
+    //   于是「改过麦克风/降噪/回声消除」的用户**第一次**通调用的是系统默认设备与默认开关，
+    //   而同一函数后面的 gateDb/volume 却当次生效 —— 现象因此更迷惑。而且「要不要启用自己的
+    //   NLMS」正是由 mic.echoCancellation 决定的（审计 ⑤③），读晚了判断必然是错的。
+    const settings = await window.codex.voiceSettingsGet().catch(() => null);
+    const s = settings?.settings;
+    const mic = s?.mic ?? { deviceId: "", noiseSuppression: false, echoCancellation: true, autoGainControl: false };
+    micSettingsRef.current = mic;
+    volumeRef.current = s?.tts?.volume ?? 1;
+    // 打断方式 + 灵敏度从设置取：auto=能量门控自动打断，manual=仅手动按钮（外放场景避免误触发）
+    gateRef.current = createEchoGate({ echoGateDb: s?.barge?.gateDb ?? 6 });
+    bargeModeRef.current = s?.barge?.mode ?? "auto";
+    if (typeof s?.asr?.rule2 === "number") setEndpointSec(s.asr.rule2);
+
     const permission = await window.codex.voiceMicPermission().catch(() => ({ status: "unknown" }));
     if (permission.status !== "granted") {
       throw new Error(
@@ -429,39 +540,38 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
           : "无法获取麦克风权限"
       );
     }
-    const mic = micSettingsRef.current;
-      let stream: MediaStream;
-      const audioConstraint: MediaTrackConstraints = {
-        echoCancellation: mic.echoCancellation,
-        noiseSuppression: mic.noiseSuppression,
-        autoGainControl: mic.autoGainControl,
-        channelCount: 1,
-      };
-      // 指定了设备才加 deviceId（空串 = 系统默认）；设备被拔掉时放宽为 ideal，
-      // 避免 OverconstrainedError 直接打不开——宁可用默认设备也别整个失败。
-      if (mic.deviceId) {
-        audioConstraint.deviceId = { ideal: mic.deviceId };
+    let stream: MediaStream;
+    const audioConstraint: MediaTrackConstraints = {
+      echoCancellation: mic.echoCancellation,
+      noiseSuppression: mic.noiseSuppression,
+      autoGainControl: mic.autoGainControl,
+      channelCount: 1,
+    };
+    // 指定了设备才加 deviceId（空串 = 系统默认）；设备被拔掉时放宽为 ideal，
+    // 避免 OverconstrainedError 直接打不开——宁可用默认设备也别整个失败。
+    if (mic.deviceId) {
+      audioConstraint.deviceId = { ideal: mic.deviceId };
+    }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
+    } catch (error: any) {
+      // getUserMedia 报错名 → 人话 + 排查提示（开发工具里也能定位）
+      const name = String(error?.name ?? "");
+      const msg = String(error?.message ?? error);
+      if (name === "NotFoundError" || /requested device not found/i.test(msg)) {
+        throw new Error("未找到可用的麦克风设备（Requested device not found）。请检查：(1) 麦克风已物理接入并被系统识别；(2) 没有被其它程序独占（浏览器、Zoom、VoiceMeeter、OBS 等）；(3) Windows：在「设置 → 系统 → 声音」里能看到输入设备且没禁用；macOS：在「系统设置 → 隐私与安全 → 麦克风」授权本应用。也可以在「设置 → 语音通话 → 麦克风」里换一个输入设备试试。");
       }
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
-      } catch (error: any) {
-        // getUserMedia 报错名 → 人话 + 排查提示（开发工具里也能定位）
-        const name = String(error?.name ?? "");
-        const msg = String(error?.message ?? error);
-        if (name === "NotFoundError" || /requested device not found/i.test(msg)) {
-          throw new Error("未找到可用的麦克风设备（Requested device not found）。请检查：(1) 麦克风已物理接入并被系统识别；(2) 没有被其它程序独占（浏览器、Zoom、VoiceMeeter、OBS 等）；(3) Windows：在「设置 → 系统 → 声音」里能看到输入设备且没禁用；macOS：在「系统设置 → 隐私与安全 → 麦克风」授权本应用。也可以在「设置 → 语音通话 → 麦克风」里换一个输入设备试试。");
-        }
-        if (name === "NotAllowedError" || name === "SecurityError") {
-          throw new Error("麦克风权限被拒绝。请到系统的「麦克风隐私设置」里授权本应用，然后重试。");
-        }
-        if (name === "NotReadableError" || /in use/i.test(msg)) {
-          throw new Error("麦克风正被其它程序独占（could not start audio source）。请关掉占用麦克风的应用再试。");
-        }
-        if (name === "OverconstrainedError") {
-          throw new Error("请求的麦克风参数不被设备支持（OverconstrainedError）。通常是采样率/通道数不匹配，或所选设备已不可用——可到「设置 → 语音通话 → 麦克风」改回系统默认。");
-        }
-        throw new Error(`打开麦克风失败：${msg}`);
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        throw new Error("麦克风权限被拒绝。请到系统的「麦克风隐私设置」里授权本应用，然后重试。");
       }
+      if (name === "NotReadableError" || /in use/i.test(msg)) {
+        throw new Error("麦克风正被其它程序独占（could not start audio source）。请关掉占用麦克风的应用再试。");
+      }
+      if (name === "OverconstrainedError") {
+        throw new Error("请求的麦克风参数不被设备支持（OverconstrainedError）。通常是采样率/通道数不匹配，或所选设备已不可用——可到「设置 → 语音通话 → 麦克风」改回系统默认。");
+      }
+      throw new Error(`打开麦克风失败：${msg}`);
+    }
     mediaStreamRef.current = stream;
 
     const ctx = new AudioContext({ sampleRate: CAPTURE_RATE });
@@ -473,16 +583,26 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       URL.revokeObjectURL(blobUrl);
     }
 
-    aecRef.current = createAec({ filterLength: 512, delay: 480, step: 0.12 });
-    // 打断方式 + 灵敏度从设置取：auto=能量门控自动打断，manual=仅手动按钮（外放场景避免误触发）
-    const settings = await window.codex.voiceSettingsGet().catch(() => null);
-    const s = settings?.settings;
-    const bargeMode = s?.barge?.mode ?? "auto";
-    const gateDb = s?.barge?.gateDb ?? 6;
-    micSettingsRef.current = s?.mic ?? { deviceId: "", noiseSuppression: false, echoCancellation: true, autoGainControl: false };
-    volumeRef.current = s?.tts?.volume ?? 1;
-    gateRef.current = createEchoGate({ echoGateDb: gateDb });
-    bargeModeRef.current = bargeMode;
+    // ★ 自研 NLMS 的开关（审计 ⑤③）：约束只是「建议值」，实际生效的要看 track 自报。
+    //   浏览器自带 AEC3 已经在跑时**不再叠加**第二级 NLMS —— 拿不对齐的参考做减法
+    //   会往麦克风里注入失真（"反向注入"），这也是外放/蓝牙场景听不清的可疑来源之一。
+    //   设置里关掉「回声消除」即回到自研 NLMS（`aec.mode` 可强制 on/off）。
+    const applied = (stream.getAudioTracks()[0] as any)?.getSettings?.() ?? {};
+    const browserAec = applied.echoCancellation ?? mic.echoCancellation;
+    const aecMode = String((s as any)?.aec?.mode ?? "auto");
+    const useSelfAec = aecMode === "on" || (aecMode === "auto" && browserAec !== true);
+    aecRef.current = useSelfAec
+      ? createAec({
+          filterLength: 512,
+          delay: AEC_DEFAULT_DELAY_SAMPLES,
+          maxDelay: AEC_MAX_DELAY_SAMPLES,
+          step: 0.12,
+        })
+      : null;
+    // 参考环按「读/写指针」工作，每次采集重新归零（挂断残留会让第一块参考读到旧数据）
+    refWriteRef.current = 0;
+    refReadRef.current = 0;
+    refDropsRef.current = 0;
 
     const node = new AudioWorkletNode(ctx, "voice-capture", {
       numberOfInputs: 1,
@@ -493,20 +613,40 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     ctx.createMediaStreamSource(stream).connect(node);
 
     node.port.onmessage = (event: MessageEvent) => {
-      if (phaseRef.current !== "active") return;
       const raw = event.data as Float32Array;
       if (!raw || !raw.length) return;
-
-      // 参考信号与麦克风对齐：按块读取（近似对齐，真实偏移由 AEC 的 delay 线吸收）
-      const ring = refRingRef.current;
-      const ref = new Float32Array(raw.length);
-      const available = Math.min(raw.length, Math.max(0, refWriteRef.current - refReadRef.current));
-      for (let i = 0; i < available; i++) {
-        ref[i] = ring[(refReadRef.current + i) % ring.length];
+      if (phaseRef.current !== "active") {
+        // ★ 先开麦暂存（审计 ③）：识别工作线程还在加载（154MB 模型，1~3 秒），
+        //   但用户按下就说 —— 这段时间的音频先攒着，ASR 就绪后由 startCall 按序回灌，
+        //   「每次按下都丢开头一两秒」才是真的没了。只画电平，不做 AEC/门控（这段没有播报）。
+        const buf = prebufferRef.current;
+        if (buf && !liveRef.current) {
+          buf.push(raw.slice());
+          let total = 0;
+          for (const block of buf) total += block.length;
+          while (total > PREBUFFER_MAX_SAMPLES && buf.length > 1) total -= buf.shift()!.length;
+          const level = Math.min(1, rmsOf(raw) * 12);
+          levelRef.current = level;
+          setLevel(level);
+          ballRef.current?.style.setProperty("--voice-level", level.toFixed(3));
+        }
+        return;
       }
-      refReadRef.current += raw.length;
 
-      const cleaned = aecRef.current ? aecRef.current.process(raw, ref) : raw;
+      // 参考信号与麦克风对齐：按块读取。写入侧按「播放领先量」落位（见 pushRef），
+      // 所以这里顺序读到的就是「此刻正在播放」的那一段；延迟线再吸收设备输出延迟。
+      const cleaned = aecRef.current
+        ? (() => {
+            const ring = refRingRef.current;
+            const ref = new Float32Array(raw.length);
+            const available = Math.min(raw.length, Math.max(0, refWriteRef.current - refReadRef.current));
+            for (let i = 0; i < available; i++) {
+              ref[i] = ring[(refReadRef.current + i) % ring.length];
+            }
+            refReadRef.current += raw.length;
+            return aecRef.current.process(raw, ref);
+          })()
+        : raw;
       const rms = rmsOf(cleaned);
       const nextLevel = Math.min(1, rms * 12);
       levelRef.current = nextLevel;
@@ -526,12 +666,31 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
         void window.codex.voiceBarge().catch(() => undefined);
       }
 
+      // ★ 端点提前判定（审计 ④）：识别文本已经以句末标点收尾（partial 事件里武装），
+      //   且麦克风连续 ~500ms 低能量 → 不再干等 rule2（默认 0.8s），立刻让主进程提交这一句。
+      //   播报中不判（那是喇叭的声音，不是用户说话）。
+      const now = Date.now();
+      if (rms >= ENDPOINT_QUIET_RMS) {
+        quietSinceRef.current = 0;
+      } else if (!speakingRef.current) {
+        if (!quietSinceRef.current) quietSinceRef.current = now;
+        if (endpointArmedRef.current && now - quietSinceRef.current >= ENDPOINT_QUIET_MS) {
+          endpointArmedRef.current = false;
+          quietSinceRef.current = 0;
+          void window.codex.voiceEndpointNow().catch(() => undefined);
+        }
+      }
+
       window.codex.voiceAudio(cleaned);
     };
   }, [stopPlayback]);
 
   const teardown = useCallback(async () => {
     stopPlayback();
+    prebufferRef.current = null;
+    liveRef.current = false;
+    endpointArmedRef.current = false;
+    quietSinceRef.current = 0;
     try {
       workletRef.current?.port.postMessage({ type: "stop" });
       workletRef.current?.disconnect();
@@ -546,6 +705,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     await playCtxRef.current?.close().catch(() => undefined);
     playCtxRef.current = null;
     chunkerRef.current = null;
+    speakFilterRef.current = null;
     refWriteRef.current = 0;
     refReadRef.current = 0;
   }, [stopPlayback]);
@@ -566,10 +726,22 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     }
     voiceModeRef.current = mode;
     setPhase("starting");
+    prebufferRef.current = [];
+    liveRef.current = false;
     try {
+      // ★ 顺序反过来了（审计 ③）：**先开麦**（~100ms）并开始暂存音频，**再**加载识别线程
+      //   （`voice/start` 内部要 `await asr.request("create")`，154MB 模型 1~3 秒）。
+      //   旧顺序是「先加载、后开麦」——用户按下就说，开头 1~3 秒根本没被采到，凭空丢字。
+      await startCapture();
       const started = await window.codex.voiceStart(threadId || "", { mode });
       if (!started?.ok) throw new Error(started?.error || "语音引擎启动失败");
-      await startCapture();
+      // 就绪后把暂存音频按序回灌。顺序保证：回灌是**同步**的，回灌完才把 liveRef 打开，
+      // 此后的块走实时链路——先到的先发，绝不乱序（不要改成 setPhase 之后再回灌：
+      // React state 落地晚一帧，那一帧的块会被丢）。
+      const pending = prebufferRef.current ?? [];
+      for (const block of pending) window.codex.voiceAudio(block);
+      liveRef.current = true;
+      prebufferRef.current = null;
       setPhase("active");
       // 输入框听写不弹右下角通话面板；只显示 composer 上方实时字幕。
       setExpanded(mode === "conversation");
@@ -856,6 +1028,11 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
                 <button className="voice-danger" onClick={() => void endCall()}>
                   <PhoneOff size={14} />挂断
                 </button>
+              </div>
+              {/* 端点静音：说完了等多久算一句话（越小越跟手，太小会截断长句）。
+                  设置 → 语音通话 → 长句提前断句 可调；这里只做「可见」。 */}
+              <div className="voice-latency-hint">
+                说完停顿 {endpointSec.toFixed(1)}s 即回话（设置里可调）
               </div>
             </>
           ) : (

@@ -20,12 +20,19 @@ import { join } from "path";
 
 export type BargeMode = "auto" | "manual";
 export type ModelHost = "auto" | "huggingface" | "hf-mirror";
+/** 自研 NLMS 回声消除：auto=浏览器自带 AEC 关掉时才启用（避免两级 AEC 叠加）、on=总是启用、off=只用门控 */
+export type AecMode = "auto" | "on" | "off";
+
+/** 设置文件结构版本：每次「默认值语义变了、老档案需要迁移」就 +1（见 migrateSettings） */
+export const VOICE_SETTINGS_VERSION = 2;
 
 export type VoiceSettings = {
   tts: { sid: number; speed: number; volume: number; /** "我的音色"档案 id；空串/缺省 = 用内置预置音色 */ profileId?: string };
   asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
   mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
   barge: { gateDb: number; mode: BargeMode };
+  /** 自研 NLMS 的启用策略（见 AecMode）；缺省 auto */
+  aec?: { mode: AecMode };
   modelHost: ModelHost;
   /** 按键启动：系统级快捷键（Electron globalShortcut），空串 = 关闭 */
   hotkey: { enabled: boolean; accelerator: string };
@@ -35,18 +42,25 @@ export type VoiceSettings = {
   wake: { enabled: boolean; phrase: string };
   /** 悬浮球：是否显示 + 是否弹出随机的短提示气泡 */
   ball: { visible: boolean; hints: boolean };
+  /** 结构版本（迁移用） */
+  version?: number;
 };
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   tts: { sid: 0, speed: 1.0, volume: 1.0 },
-  asr: { rule1: 2.4, rule2: 1.2, rule3: 20, numThreads: 2 },
+  // rule2 = 已识别出文字后，尾静音超过它就算「说完了」。09-13 由 1.2 → 0.8：
+  // 它是端到端延迟里**唯一纯等待**的一块（审计 ④），每轮省 0.4s，且 0.8s 仍明显长于
+  // 汉语自然停顿（~0.3s），不会把长句切碎。
+  asr: { rule1: 2.4, rule2: 0.8, rule3: 20, numThreads: 2 },
   mic: { deviceId: "", noiseSuppression: false, echoCancellation: true, autoGainControl: false },
   barge: { gateDb: 6, mode: "auto" },
+  aec: { mode: "auto" },
   modelHost: "auto",
   hotkey: { enabled: false, accelerator: "Ctrl+Shift+M" },
   dictationHotkey: { enabled: false, accelerator: "Alt+Space" },
   wake: { enabled: false, phrase: "小柯小柯" },
   ball: { visible: true, hints: true },
+  version: VOICE_SETTINGS_VERSION,
 };
 
 export const TTS_VOICE_NAMES: Record<number, string> = {
@@ -88,10 +102,40 @@ export function loadVoiceSettings(userDataDir: string): VoiceSettings {
       return { ...DEFAULT_VOICE_SETTINGS };
     }
     const raw = JSON.parse(readFileSync(file, "utf8")) as Partial<VoiceSettings>;
-    return mergeSettings(raw);
+    const migrated = migrateSettings(raw);
+    // 迁移过就落盘一次（不然每次读都要再算一遍，且用户看不出档案已被升级）
+    if (migrated.changed) writeFileSync(file, JSON.stringify(migrated.settings, null, 2), "utf8");
+    return migrated.settings;
   } catch {
     return { ...DEFAULT_VOICE_SETTINGS };
   }
+}
+
+/**
+ * 老档案迁移。**为什么必须有**：`loadVoiceSettings` 读的是文件里的值，
+ * 只改 `DEFAULT_VOICE_SETTINGS` 对**已存在档案**（第一次运行时就写下了旧默认值）完全无效——
+ * 用户永远停在旧默认上，改了个寂寞。
+ *
+ * v2（2026-09-13）：`asr.rule2` 默认 1.2 → 0.8。只有「还是旧默认值」的档案才跟着改；
+ * 用户自己调过的值（≠1.2）一律保留。
+ */
+export function migrateSettings(raw: Partial<VoiceSettings> | undefined): { settings: VoiceSettings; changed: boolean } {
+  const source: Partial<VoiceSettings> = raw && typeof raw === "object" ? { ...raw } : {};
+  let changed = false;
+  const version = Number((source as any).version ?? 1);
+  if (version < 2) {
+    const rule2 = Number(source.asr?.rule2);
+    if (!Number.isFinite(rule2) || Math.abs(rule2 - 1.2) < 1e-9) {
+      source.asr = { ...(source.asr as any), rule2: DEFAULT_VOICE_SETTINGS.asr.rule2 };
+      changed = true;
+    }
+  }
+  const settings = mergeSettings(source);
+  if (Number(settings.version ?? 0) !== VOICE_SETTINGS_VERSION) {
+    settings.version = VOICE_SETTINGS_VERSION;
+    changed = true;
+  }
+  return { settings, changed };
 }
 
 /** 部分写入并落盘；返回合并后的完整设置。 */
@@ -114,6 +158,7 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
   const wake = raw.wake ?? d.wake;
   const ball = raw.ball ?? d.ball;
   const modelHost = raw.modelHost && MODEL_HOST_PRESETS[raw.modelHost] ? raw.modelHost : d.modelHost;
+  const aecMode = (raw as any).aec?.mode;
   return {
     tts: {
       sid: clampInt(tts.sid, 0, 4, d.tts.sid),
@@ -154,7 +199,9 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
       visible: ball.visible !== false,
       hints: ball.hints !== false,
     },
+    aec: { mode: aecMode === "on" || aecMode === "off" ? aecMode : d.aec!.mode },
     modelHost,
+    version: VOICE_SETTINGS_VERSION,
   };
 }
 
