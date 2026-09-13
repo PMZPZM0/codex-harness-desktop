@@ -8020,6 +8020,10 @@ export default function App() {
   const [remoteLog, setRemoteLog] = useState<string[]>([]);
   void remoteDevices; void remoteCmd; void remoteLog; void setRemoteCmd; void setRemoteLog; /* WIP: 用户远控面板尚未接线，先占位防 noUnusedLocals */
   const [remoteQr, setRemoteQr] = useState("");
+  // 配对码 + 电脑端审批（09-13 二次加固：手机首次连接要过这两关）
+  const [pairCode, setPairCode] = useState("");
+  const [pairPending, setPairPending] = useState<any[]>([]);
+  const [pairApproved, setPairApproved] = useState<any[]>([]);
   const [userDataPath, setUserDataPath] = useState("");
   const [taskMenuOpen, setTaskMenuOpen] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
@@ -9469,6 +9473,18 @@ const commandMatches = useMemo(() => {
       setTimeout(() => { (document.querySelector("form.composer") as HTMLFormElement | null)?.requestSubmit(); }, 120);
     });
     return () => { offDevice(); offCommand(); };
+  }, []);
+  // 手机提交了正确的 6 位配对码 → 这里收到挂起请求，弹审批卡等用户点「允许/拒绝」
+  useEffect(() => {
+    const offPair = window.codex.onRemotePairRequest((request) => {
+      setPairPending((current) => current.some((r) => r.rid === request.rid) ? current : [...current, request]);
+      // 审批只能在「手机远控」面板里做，而用户此刻大概率没开着它 —— 请求一到就把
+      // 面板顶到前台并刷新状态，否则请求会在 2 分钟后静默超时（等于"手机连不上"）。
+      setMobileRemoteOpen(true);
+      void window.codex.remotePairState().then((s) => { setPairCode(s.code); setPairPending(s.pending); setPairApproved(s.approved); }).catch(() => undefined);
+      showToast("手机请求连接", `${request.name}：请在「手机远控」面板允许或拒绝`);
+    });
+    return () => offPair();
   }, []);
   useEffect(() => {
     if (showLogin) return;
@@ -13635,7 +13651,7 @@ const commandMatches = useMemo(() => {
               </>}
             </div>
           )}
-          <button className="account-icon" title="移动端远程控制" onClick={() => { setMobileRemoteOpen(true); void window.codex.remoteStart().then((r) => setRemoteUrl(r.url)).catch(() => undefined); void window.codex.remoteStatus().then((s) => { setRemoteStatus(s.status); setRemoteDevices(s.devices); setRemoteUrl(s.url); }).catch(() => undefined); void window.codex.remoteQrcode().then((svg) => setRemoteQr(svg)).catch(() => undefined); }}><Smartphone size={15} /></button>
+          <button className="account-icon" title="移动端远程控制" onClick={() => { setMobileRemoteOpen(true); void window.codex.remoteStart().then((r) => setRemoteUrl(r.url)).catch(() => undefined); void window.codex.remoteStatus().then((s) => { setRemoteStatus(s.status); setRemoteDevices(s.devices); setRemoteUrl(s.url); }).catch(() => undefined); void window.codex.remoteQrcode().then((svg) => setRemoteQr(svg)).catch(() => undefined); void window.codex.remotePairState().then((s) => { setPairCode(s.code); setPairPending(s.pending); setPairApproved(s.approved); }).catch(() => undefined); }}><Smartphone size={15} /></button>
           <button className="sidebar-settings" title="设置" onClick={() => { setSettingsPage("appearance"); setSettingsOpen(true); setMobileNav(false); }}><Settings2 size={16} /></button>
         </div>
       </aside>
@@ -14206,6 +14222,39 @@ const commandMatches = useMemo(() => {
         <div className="remote-panel2" role="dialog" aria-label="移动端远程控制">
           <header><div className="remote-head-left"><Smartphone size={19} /><div><strong>移动端远程控制</strong><small>扫码或在手机上打开链接，即可远程控制当前工作区。</small></div></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setMobileRemoteOpen(false)}><X size={17} /></button></header>
           <div className="remote-columns">
+            {/* 6 位配对码：手机扫码后要输它，之后还要在下面这张卡里点「允许」 */}
+            <div className="remote-pair-card">
+              <div className="remote-pair-head"><KeyRound size={15} /><strong>首次连接需要配对码</strong>
+                <button className="remote-mini-btn" title="换一个配对码" onClick={() => void window.codex.remotePairRotate().then((r) => setPairCode(r.code)).catch(() => undefined)}><RefreshCw size={13} />刷新</button>
+              </div>
+              <div className="remote-pair-code" data-pair-code>{pairCode ? pairCode.replace(/(\d{3})(\d{3})/, "$1 $2") : "······"}</div>
+              <small>手机扫码后输入这 6 位数字，再回到这里点「允许」。配对码 5 分钟内有效，错 10 次自动作废。</small>
+            </div>
+            {pairPending.length > 0 && (
+              <div className="remote-approve-card" data-pair-pending>
+                <div className="remote-approve-head"><ShieldCheck size={15} /><strong>有 {pairPending.length} 台手机等待批准</strong></div>
+                {pairPending.map((request) => (
+                  <div className="remote-approve-row" key={request.rid} data-pair-row={request.rid}>
+                    <div className="remote-approve-info"><strong>{request.name}</strong><small>请求连接这台电脑的工作区</small></div>
+                    <div className="remote-approve-actions">
+                      <button className="remote-allow-btn" onClick={() => { void window.codex.remoteApprove(request.rid).then(() => { setPairPending((c) => c.filter((r) => r.rid !== request.rid)); void window.codex.remotePairState().then((s) => setPairApproved(s.approved)).catch(() => undefined); }).catch(() => undefined); }}>允许</button>
+                      <button className="remote-deny-btn" onClick={() => { void window.codex.remoteDeny(request.rid).then(() => setPairPending((c) => c.filter((r) => r.rid !== request.rid))).catch(() => undefined); }}>拒绝</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {pairApproved.length > 0 && (
+              <div className="remote-approved-card">
+                <div className="remote-approve-head"><Smartphone size={15} /><strong>已批准的设备（{pairApproved.length}）</strong></div>
+                {pairApproved.map((device) => (
+                  <div className="remote-approved-row" key={device.deviceId}>
+                    <span>{device.name}</span>
+                    <button className="remote-mini-btn" title="撤销，下次重新配对" onClick={() => void window.codex.remoteRevoke(device.deviceId).then(() => setPairApproved((c) => c.filter((d) => d.deviceId !== device.deviceId))).catch(() => undefined)}>移除</button>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="remote-col">
               <div className="remote-col-title"><Smartphone size={15} /><strong>手机扫码连接</strong></div>
               <p className="remote-col-desc">用手机<b>相机</b>扫一扫（若扫码识别成文本，请选「打开链接」）。{remoteUrl?.startsWith("https") ? "手机无需与电脑同一 Wi-Fi。" : "手机需与电脑同一 Wi-Fi。"}</p>

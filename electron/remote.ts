@@ -20,6 +20,9 @@ type RemoteEvents = {
   onThreadEvent?: (listener: (event: { threadId: string; kind: string; text: string }) => void) => () => void;
   /** 设备会话记忆持久化文件（userData/remote-sessions.json）；不传则不持久化 */
   storageFile?: string;
+  /** 09-13 二次加固：手机首次配对需要「6 位配对码 + 电脑端审批」。
+      新设备提交正确配对码后不直接放行，而是挂起等电脑端点「允许」。 */
+  onPairRequest?: (request: { rid: string; deviceId: string; name: string }) => void;
 };
 
 type Device = {
@@ -30,6 +33,24 @@ type Device = {
   lastSeen: number;
   socket: any;
 };
+
+/** 待审批的配对请求（手机提交正确配对码后创建，电脑端点允许/拒绝后消解） */
+type PairRequest = {
+  rid: string;
+  deviceId: string;
+  name: string;
+  status: "pending" | "approved" | "denied" | "expired";
+  createdAt: number;
+};
+
+/** 已批准设备（持久化，之后凭 cookie 直接进，不再重复审批） */
+type ApprovedDevice = { name: string; approvedAt: number; lastSeen: number };
+
+/** 6 位配对码：5 分钟有效，错 10 次作废并轮换（挡暴力试码） */
+const PAIR_CODE_TTL = 5 * 60_000;
+const PAIR_CODE_MAX_TRIES = 10;
+/** 审批请求 2 分钟没人理就作废（手机端轮询到 expired） */
+const PAIR_REQUEST_TTL = 2 * 60_000;
 
 /** 机器人绑定会话：扫码 → 手机确认 → 应用侧标记已绑定 */
 type BindSession = {
@@ -51,11 +72,39 @@ export class RemoteControlService {
   private storageFile: string;
   /** 设备（手机端 localStorage 生成的 deviceId）→ 上次使用的会话 threadId */
   private deviceThreads = new Map<string, string>();
+  /** 6 位配对码（首次配对的第二道关：光拿到链接还不够，还得看得见电脑屏幕上这串数字） */
+  private pairing = { code: "", expiresAt: 0, tries: 0 };
+  /** 待审批队列 rid → 请求（手机提交配对码后挂起，等电脑端点允许） */
+  private pairRequests = new Map<string, PairRequest>();
+  /** 已批准设备 deviceId → 记录（持久化到 userData/remote-devices.json） */
+  private approved = new Map<string, ApprovedDevice>();
+  /** 已批准设备的持久化文件（与 storageFile 同目录） */
+  private approvedFile = "";
 
   constructor(opts: RemoteEvents) {
     this.events = opts;
     this.storageFile = opts.storageFile ?? "";
+    this.approvedFile = this.storageFile ? path.join(path.dirname(this.storageFile), "remote-devices.json") : "";
     this.loadDeviceThreads();
+    this.loadApproved();
+  }
+
+  private loadApproved() {
+    if (!this.approvedFile) return;
+    try {
+      const data = JSON.parse(fs.readFileSync(this.approvedFile, "utf8"));
+      for (const [key, value] of Object.entries<any>(data ?? {})) {
+        if (value && typeof value.name === "string") this.approved.set(key, { name: value.name, approvedAt: Number(value.approvedAt ?? 0), lastSeen: Number(value.lastSeen ?? 0) });
+      }
+    } catch { /* 首次运行无文件 */ }
+  }
+
+  private saveApproved() {
+    if (!this.approvedFile) return;
+    try {
+      fs.mkdirSync(path.dirname(this.approvedFile), { recursive: true });
+      fs.writeFileSync(this.approvedFile, JSON.stringify(Object.fromEntries(this.approved), null, 2), "utf8");
+    } catch { /* 写盘失败忽略 */ }
   }
 
   private loadDeviceThreads() {
@@ -81,12 +130,15 @@ export class RemoteControlService {
 
   async start(port = 0) {
     if (this.server) return this.port;
-    // ★ 控制面凭据（09-13 审计 P0：此前 remote 全文件**没有任何鉴权代码**，而它监听全网卡、
-    // 自动放行防火墙、还能起公网隧道，开的会话又是 danger-full-access + 从不询问 →
-    // 同网段任何人无需配对即可在你机器上执行任意命令）。现在每次启动生成一次性 token，
-    // 由扫码打开的配对 URL（`?k=`）带来，校验通过后种 HttpOnly cookie，
-    // 之后手机页面的 fetch 与 WebSocket 自动携带 —— **不需要改手机页面**。
+    // ★ 控制面凭据（09-13 审计 P0：此前 remote 全文件**没有任何鉴权代码**…）。
+    //   09-13 二次加固：**accessToken 不再出现在二维码/配对链接里**（能力式 URL 会随
+    //   链接、截图、浏览器历史、隧道日志外泄）。现在手机要连上必须过两道关：
+    //     ① 6 位配对码（显示在电脑端，5 分钟有效，错 10 次作废）；
+    //     ② 电脑端审批（手机提交正确码后挂起，等用户在应用里点「允许」）。
+    //   两关都过才种 HttpOnly cookie（accessToken + deviceId），之后手机页面的
+    //   fetch 与 WebSocket 自动携带 —— **不需要改手机页面**。
     this.accessToken = require("node:crypto").randomBytes(16).toString("hex");
+    this.rotatePairingCode();
     this.port = port;
     this.server = http.createServer((req, res) => this.route(req, res));
     await new Promise<void>((resolve) => {
@@ -433,13 +485,59 @@ pollLoop();
 
   private route(req: http.IncomingMessage, res: http.ServerResponse) {
     const url = req.url ?? "/";
-    // ★ 控制面鉴权（09-13 审计 P0，**所有路由的统一入口**，含 /api/rpc、/r/* 与 WebSocket 升级）：
-    //   此前这一层完全不存在，于是"监听全网卡 + 自动放行防火墙 + 可起公网隧道"就等于把一台
-    //   以 danger-full-access / 从不询问运行的 agent 挂到了网络上。
-    //   凭据来源（按序）：URL 里的 `k` 参数（扫码打开的配对链接自带）→ `Authorization: Bearer`
-    //   → HttpOnly cookie（首次带 k 访问时种下，之后页面自己的 fetch 与 WS 自动携带，
-    //   **因此手机页面代码无需改动**）。校验失败一律 401，不再继续任何业务分支。
-    if (!this.authorize(req, res, url)) return;
+    // ★ 控制面鉴权（09-13 审计 P0 + 二次加固，**所有路由的统一入口**）：
+    //   - 已配对设备：cookie 里带 accessToken + deviceId，且该 deviceId 在已批准表里 → 放行；
+    //   - 未配对设备：/api/pair* 是"投名状"入口（校验 6 位配对码 → 挂起等电脑端审批），
+    //     允许匿名访问；其余 API 与 WebSocket 一律 401；页面请求返回**配对页**（输码/等审批），
+    //     不再是冷冰冰的 401 —— 扫码的人得知道下一步该干什么。
+    const pairEndpoint = url.startsWith("/api/pair");
+    if (!pairEndpoint && !this.authorize(req, res, url)) return;
+    // ── 配对（未鉴权入口）：① 提交 6 位配对码 → 挂起等电脑端审批；② 轮询审批结果 ──
+    if (url.startsWith("/api/pair") && req.method === "POST" && !url.startsWith("/api/pair-status")) {
+      void this.readBody(req).then((body) => {
+        try {
+          const data = JSON.parse(body);
+          const deviceId = String(data.deviceId ?? "").trim();
+          const name = String(data.deviceName ?? "手机").slice(0, 40);
+          // 老朋友：已批准过 → 直接发凭据（不用再输码、不用再审批）
+          if (deviceId && this.approved.has(deviceId)) {
+            const info = this.approved.get(deviceId)!;
+            this.approved.set(deviceId, { ...info, lastSeen: Date.now() });
+            this.saveApproved();
+            this.grantCookies(res, deviceId);
+            this.json(res, 200, { ok: true, approved: true });
+            return;
+          }
+          if (!this.checkPairingCode(String(data.code ?? ""))) {
+            this.json(res, 200, { ok: false, error: "配对码错误或已过期，请对照电脑端显示的 6 位数字重输" });
+            return;
+          }
+          // 配对码正确 → 挂起，等电脑端在应用里点「允许」
+          const rid = crypto.randomBytes(6).toString("hex");
+          this.pairRequests.set(rid, { rid, deviceId, name, status: "pending", createdAt: Date.now() });
+          this.events.onPairRequest?.({ rid, deviceId, name });
+          this.json(res, 200, { ok: true, approved: false, rid });
+        } catch (error: any) {
+          this.json(res, 200, { ok: false, error: error.message });
+        }
+      });
+      return;
+    }
+    if (url.startsWith("/api/pair-status")) {
+      const params = new URL(url, "http://x").searchParams;
+      const req0 = this.pairRequests.get(params.get("rid") ?? "");
+      let status: string = req0?.status ?? "expired";
+      if (req0 && status === "pending" && Date.now() - req0.createdAt > PAIR_REQUEST_TTL) { req0.status = "expired"; status = "expired"; }
+      if (status === "approved") {
+        // 审批通过 → 发凭据（accessToken + deviceId 两个 HttpOnly cookie）
+        this.grantCookies(res, req0!.deviceId);
+        this.pairRequests.delete(req0!.rid);
+      } else if (status === "denied" || status === "expired") {
+        this.pairRequests.delete(params.get("rid") ?? "");
+      }
+      this.json(res, 200, { ok: status === "approved", status });
+      return;
+    }
     // WebSocket upgrade
     if (url.startsWith("/ws/") && req.headers.upgrade?.toLowerCase() === "websocket") {
       return this.handleWs(req, res);
@@ -508,6 +606,13 @@ pollLoop();
       const botName = params.get("name") ?? undefined;
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(this.html(code, botId, botName));
+      return;
+    }
+    // 根路径（二维码扫出来的地址）：固定跳 /r/mobile —— 会话记忆 key 稳定，
+    // 手机端才能跨扫码恢复上次会话（旧逻辑每次随机 code，localStorage key 对不上，历史全丢）
+    if (url === "/" || url.startsWith("/?")) {
+      res.writeHead(302, { Location: "/r/mobile" });
+      res.end();
       return;
     }
     // 绑定会话 API：状态查询 / 手机确认
@@ -648,8 +753,9 @@ pollLoop();
     this.bindSessions.set(code, { botId, code, status: "waiting", createdAt: Date.now() });
     // 清理过期会话
     for (const [key, session] of this.bindSessions) if (Date.now() - session.createdAt > 10 * 60_000) this.bindSessions.delete(key);
-    // 机器人绑定二维码：路径在前、参数在后，并带上一次性凭据（鉴权见 authorize）
-    return `${this.pairUrl()}/r/${code}?bot=${encodeURIComponent(botId)}&name=${encodeURIComponent(botName)}&k=${this.accessToken}`;
+    // 机器人绑定二维码：路径在前、参数在后。⛔ 不再带 `k=`（二维码不夹带凭据，
+    // 见 pairUrlFor 的说明）—— 绑定前同样要先过配对码 + 审批。
+    return `${this.pairUrl()}/r/${code}?bot=${encodeURIComponent(botId)}&name=${encodeURIComponent(botName)}`;
   }
 
   /** 查询绑定会话状态：waiting / confirmed / expired（找不到即 expired） */
@@ -667,6 +773,63 @@ pollLoop();
     return { botId: session.botId, deviceName: session.deviceName };
   }
 
+  /** 生成新的 6 位配对码（轮换后旧码立即失效） */
+  rotatePairingCode() {
+    const { randomInt } = require("node:crypto") as typeof import("node:crypto");
+    this.pairing = { code: String(randomInt(100000, 999999)).padStart(6, "0"), expiresAt: Date.now() + PAIR_CODE_TTL, tries: 0 };
+    return this.pairing.code;
+  }
+
+  /** 当前有效的 6 位配对码（过期自动轮换；电脑端界面展示它） */
+  pairingCode() {
+    if (!this.pairing.code || Date.now() > this.pairing.expiresAt) this.rotatePairingCode();
+    return this.pairing.code;
+  }
+
+  /** 校验 6 位配对码：过期/不匹配都算失败；连续错 PAIR_CODE_MAX_TRIES 次作废并轮换 */
+  private checkPairingCode(input: string) {
+    if (!this.pairing.code || Date.now() > this.pairing.expiresAt) return false;
+    this.pairing.tries += 1;
+    if (this.pairing.tries >= PAIR_CODE_MAX_TRIES) { this.rotatePairingCode(); return false; }
+    return input.trim() === this.pairing.code;
+  }
+
+  /** 待审批的配对请求列表（电脑端渲染审批卡片用） */
+  pendingPairs() {
+    for (const [, req] of this.pairRequests) if (Date.now() - req.createdAt > PAIR_REQUEST_TTL) req.status = "expired";
+    return [...this.pairRequests.values()].filter((r) => r.status === "pending").map((r) => ({ rid: r.rid, deviceId: r.deviceId, name: r.name, createdAt: r.createdAt }));
+  }
+
+  /** 电脑端批准：该设备写入已批准表（持久化），请求标记 approved */
+  approvePair(rid: string) {
+    const req = this.pairRequests.get(rid);
+    if (!req || req.status !== "pending") return false;
+    req.status = "approved";
+    this.approved.set(req.deviceId, { name: req.name, approvedAt: Date.now(), lastSeen: Date.now() });
+    this.saveApproved();
+    return true;
+  }
+
+  /** 电脑端拒绝（手机端会看到「已被拒绝」） */
+  denyPair(rid: string) {
+    const req = this.pairRequests.get(rid);
+    if (!req || req.status !== "pending") return false;
+    req.status = "denied";
+    return true;
+  }
+
+  /** 撤销已批准设备（下次连接重新走配对码 + 审批） */
+  revokeDevice(deviceId: string) {
+    const gone = this.approved.delete(deviceId);
+    if (gone) this.saveApproved();
+    return gone;
+  }
+
+  /** 已批准设备列表（界面可撤销） */
+  approvedDevices() {
+    return [...this.approved.entries()].map(([deviceId, info]) => ({ deviceId, name: info.name, approvedAt: info.approvedAt, lastSeen: info.lastSeen }));
+  }
+
   private readBody(request: http.IncomingMessage): Promise<string> {
     return new Promise((resolve) => {
       let body = "";
@@ -676,35 +839,99 @@ pollLoop();
     });
   }
 
-  /** 控制面鉴权：校验 URL `k` / Bearer / cookie 三者之一，通过则种 cookie 并放行。
-   *  失败给 401（/api/* 与 WS 返回 JSON，页面访问返回一段可读提示，告诉用户重新扫码）。 */
+  /** 下发凭据 cookie（配对码 + 电脑端审批都通过之后） */
+  private grantCookies(res: http.ServerResponse, deviceId: string) {
+    const secure = this.externalBase().startsWith("https") ? "; Secure" : "";
+    res.setHeader("set-cookie", [
+      `harness_remote=${this.accessToken}; Path=/; HttpOnly; SameSite=Lax${secure}; Max-Age=2592000`,
+      `harness_device=${encodeURIComponent(deviceId)}; Path=/; HttpOnly; SameSite=Lax${secure}; Max-Age=2592000`,
+    ]);
+  }
+
+  /** 已放行设备的 deviceId（凭据 + 设备都在已批准表里才算数） */
+  private authorizedDevice(req: http.IncomingMessage): string {
+    if (!this.accessToken) return "";
+    const cookie = String(req.headers.cookie ?? "");
+    let token = "";
+    let deviceId = "";
+    for (const part of cookie.split(";")) {
+      const bit = part.trim();
+      if (bit.startsWith("harness_remote=")) token = bit.slice("harness_remote=".length);
+      if (bit.startsWith("harness_device=")) deviceId = bit.slice("harness_device=".length);
+    }
+    if (!token || token !== this.accessToken) return "";
+    deviceId = decodeURIComponent(deviceId);
+    if (!deviceId || !this.approved.has(deviceId)) return "";
+    const info = this.approved.get(deviceId)!;
+    this.approved.set(deviceId, { ...info, lastSeen: Date.now() });
+    return deviceId;
+  }
+
+  /** 控制面鉴权：只认「凭据 cookie + 已批准设备」。
+   *  未配对的设备访问 API/WS → 401；访问页面 → 200 配对页（输 6 位码 / 等审批提示）。
+   *  注：不再接受 URL 里的 `?k=`（09-13 二次加固：能力式 URL 会随链接与截图外泄）。 */
   private authorize(req: http.IncomingMessage, res: http.ServerResponse, url: string): boolean {
-    if (!this.accessToken) return true;   // 未初始化（理论上不会发生）：不拦，避免把功能锁死
-    let provided = "";
-    try { provided = new URL(url, "http://x").searchParams.get("k") ?? ""; } catch { /* 相对/畸形 URL */ }
-    if (!provided) {
-      const auth = String(req.headers.authorization ?? "");
-      if (auth.toLowerCase().startsWith("bearer ")) provided = auth.slice(7).trim();
-    }
-    if (!provided) {
-      const cookie = String(req.headers.cookie ?? "");
-      const hit = cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith("harness_remote="));
-      if (hit) provided = hit.slice("harness_remote=".length);
-    }
-    if (provided && provided === this.accessToken) {
-      // 首次带 k 访问：种 HttpOnly cookie，后续请求（含同源 WebSocket）自动带凭据
-      res.setHeader("set-cookie", `harness_remote=${this.accessToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`);
-      return true;
-    }
+    if (this.authorizedDevice(req)) return true;
     const isUpgrade = req.headers.upgrade?.toLowerCase() === "websocket";
     if (url.startsWith("/api/") || isUpgrade) {
       res.writeHead(401, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: false, error: "unauthorized", hint: "请从应用里重新扫码配对" }));
     } else {
-      res.writeHead(401, { "content-type": "text/html; charset=utf-8" });
-      res.end(`<!doctype html><meta charset="utf-8"><title>需要配对</title><body style="font:15px/1.7 system-ui;padding:40px;max-width:520px;margin:auto"><h2>需要配对</h2><p>这个地址需要配对码才能访问。请回到 Codex Harness 桌面端，点「手机远控」重新扫码（配对链接里带有一次性凭据），或在地址后补上 <code>?k=你的配对码</code>。</p></body>`);
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(this.pairHtml());
     }
     return false;
+  }
+
+  /** 配对页：新设备扫码后落到这里 —— 输入电脑端显示的 6 位配对码，然后等电脑端点「允许」。 */
+  private pairHtml() {
+    return `<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>配对这台手机</title><style>
+body{font-family:system-ui,sans-serif;background:#f7f7f5;margin:0;color:#23231f}
+.card{background:#fff;border:1px solid #e7e7e4;border-radius:14px;padding:22px;margin:48px 16px;text-align:center}
+h1{font-size:18px;margin:0 0 8px}p{color:#6f6f69;font-size:13px;line-height:1.75;margin:10px 0}
+input{width:100%;box-sizing:border-box;margin-top:14px;padding:14px;font-size:22px;letter-spacing:8px;text-align:center;border:1px solid #d7d9d4;border-radius:12px}
+button{width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;background:#1e1e1c;color:#fff;font-size:15px;cursor:pointer}
+.err{color:#c0392b} .ok{color:#1a7f37;font-weight:600} .wait{color:#8a6d1f}
+</style>
+<div class="card"><h1>配对这台手机</h1><p>在电脑上的 Codex Harness 里打开「手机远控」，把界面上显示的 <b>6 位配对码</b>填进来。</p>
+<input id="code" inputmode="numeric" maxlength="6" placeholder="······" autocomplete="one-time-code">
+<button onclick="submit()">配对并请求连接</button><p id="state"></p></div>
+<script>
+const KEY_DEVICE = "chm-pair-device";
+let deviceId = localStorage.getItem(KEY_DEVICE);
+if (!deviceId) { deviceId = "dev-" + Math.random().toString(36).slice(2,10) + Date.now().toString(36); localStorage.setItem(KEY_DEVICE, deviceId); }
+const ua = navigator.userAgent;
+const deviceName = ua.includes("iPhone") ? "iPhone" : ua.includes("Android") ? "Android 手机" : "手机";
+const el = document.getElementById("state");
+async function submit(){
+  const code = document.getElementById("code").value.trim();
+  if (code.length !== 6) { el.className = "err"; el.textContent = "请输入 6 位数字"; return; }
+  el.className = ""; el.textContent = "正在校验…";
+  try {
+    const r = await fetch("/api/pair", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ code, deviceId, deviceName }) });
+    const j = await r.json();
+    if (!j.ok) { el.className = "err"; el.textContent = j.error || "配对失败"; return; }
+    if (j.approved) { el.className = "ok"; el.textContent = "已配对，正在进入…"; setTimeout(() => location.href = "/r/mobile", 600); return; }
+    el.className = "wait"; el.textContent = "配对码正确，等待电脑端批准…";
+    poll(j.rid);
+  } catch(e) { el.className = "err"; el.textContent = "网络错误：" + e.message; }
+}
+async function poll(rid){
+  const t0 = Date.now();
+  while (Date.now() - t0 < 120000) {
+    await new Promise(r => setTimeout(r, 1500));
+    try {
+      const r = await fetch("/api/pair-status?rid=" + rid);
+      const j = await r.json();
+      if (j.status === "approved") { el.className = "ok"; el.textContent = "已批准，正在进入…"; setTimeout(() => location.href = "/r/mobile", 600); return; }
+      if (j.status === "denied") { el.className = "err"; el.textContent = "电脑端拒绝了这次连接"; return; }
+      if (j.status === "expired") { el.className = "err"; el.textContent = "等待超时，请重新配对"; return; }
+    } catch { /* 隧道偶尔超时，继续轮询 */ }
+  }
+  el.className = "err"; el.textContent = "等待批准超时，请重试";
+}
+</script></html>`;
   }
 
   private json(response: http.ServerResponse, status: number, value: unknown) {
@@ -718,17 +945,19 @@ pollLoop();
     return this.externalBase();
   }
 
-  /** 带一次性凭据的配对地址（界面展示 / 复制的链接用）：扫码或点开即可通过鉴权。 */
+  /** 带一次性凭据的配对地址（界面展示 / 复制的链接用）：扫码或点开即可通过鉴权。
+   *  ⛔ 09-13 二次加固：**不再带 `?k=`** —— 二维码与链接不再夹带任何凭据，
+   * 手机连上必须走「6 位配对码 + 电脑端审批」（见 authorize / pairHtml）。 */
   pairUrlAuth() {
-    const base = this.externalBase();
-    return base ? `${base}?k=${this.accessToken}` : base;
+    return this.externalBase();
   }
 
-  /** 带凭据 + 可选机器人参数的二维码地址。**由服务端拼**，调用方不要再手工拼 `?`/`&`。 */
+  /** 带凭据 + 可选机器人参数的二维码地址。**由服务端拼**，调用方不要再手工拼 `?`/`&`。
+   *  同样不再带 `k=`（理由同上）。 */
   pairUrlFor(botId?: string) {
     const base = this.externalBase();
     if (!base) return base;
-    return `${base}?${botId ? `bot=${encodeURIComponent(botId)}&` : ""}k=${this.accessToken}`;
+    return `${base}?${botId ? `bot=${encodeURIComponent(botId)}` : "p=1"}`;
   }
 
   stop() {

@@ -17,6 +17,8 @@ export type WakeState = {
   phrase: string;
   /** 正在用哪个引擎：kws=关键词模型（只认读音、不误唤醒）；asr=通用识别 + 同音容错回退 */
   engine: "kws" | "asr" | "";
+  /** 实际打开的麦克风名字（授权后才读得到；排查「用错麦」用） */
+  device: string;
   /** 词表可达性提示（唤醒词里有模型词表外的字时给出） */
   hint: string;
   /** 最近听到的一句（诊断） */
@@ -33,6 +35,7 @@ const initial: WakeState = {
   listening: false,
   phrase: "",
   engine: "",
+  device: "",
   hint: "",
   heard: "",
   matched: false,
@@ -55,6 +58,7 @@ export function patchWakeState(patch: Partial<WakeState>): void {
     next.listening === current.listening &&
     next.phrase === current.phrase &&
     next.engine === current.engine &&
+    next.device === current.device &&
     next.hint === current.hint &&
     next.heard === current.heard &&
     next.matched === current.matched &&

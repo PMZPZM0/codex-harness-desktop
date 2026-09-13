@@ -943,6 +943,81 @@ console.log(C.bold("\n【4e】语音唤醒关键词模型（KWS，读音匹配�
   }
 }
 
+// ---------- 4f. 麦克风错误翻译 + 模型下载（取消 / 提速） ----------
+
+console.log(C.bold("\n【4f】麦克风错误翻译（唤醒/通话共用）+ 模型下载（可取消 / 会换源提速）"));
+
+{
+  // ===== 纯逻辑：错误翻译（用户实测界面直接显示过英文原文 Requested device not found）=====
+  let describeMicError = null;
+  try {
+    ({ describeMicError } = await import("../src/lib/mic-error.mjs"));
+  } catch (error) {
+    fail(`麦克风错误翻译模块读不到：${error?.message ?? error}`);
+  }
+  if (describeMicError) {
+    const notFound = describeMicError(Object.assign(new Error("Requested device not found"), { name: "NotFoundError" }));
+    /未找到可用的麦克风设备/.test(notFound) && /(1)/.test(notFound) && !/^Requested device not found$/.test(notFound)
+      ? ok("麦克风错误：NotFoundError → 中文说明 + 三步排查（不再把英文原文丢给用户）")
+      : fail(`麦克风错误：NotFoundError 没翻译（${notFound}）`);
+    /权限/.test(describeMicError(Object.assign(new Error("Permission denied"), { name: "NotAllowedError" })))
+      ? ok("麦克风错误：NotAllowedError → 权限提示")
+      : fail("麦克风错误：NotAllowedError 没翻译");
+    /独占/.test(describeMicError(Object.assign(new Error("Could not start audio source"), { name: "NotReadableError" })))
+      ? ok("麦克风错误：NotReadableError → 「被别的程序独占」提示")
+      : fail("麦克风错误：NotReadableError 没翻译");
+    /OverconstrainedError/.test(describeMicError(Object.assign(new Error("bad constraints"), { name: "OverconstrainedError" })))
+      ? ok("麦克风错误：OverconstrainedError → 参数/设备提示")
+      : fail("麦克风错误：OverconstrainedError 没翻译");
+    // 兜底：未知错误也必须带前缀（便于在日志里认出来），且不能是空串
+    const unknown = describeMicError(new Error("weird failure"));
+    /^打开麦克风失败：/.test(unknown) && unknown.length > 8
+      ? ok("麦克风错误：未知错误有兜底前缀（不会显示空白提示）")
+      : fail(`麦克风错误：未知错误兜底不对（${unknown}）`);
+  }
+
+  const readSrc4 = (rel) => (existsSync(join(ROOT, rel)) ? readFileSync(join(ROOT, rel), "utf8") : "");
+  const floatSrc4 = readSrc4("src/components/VoiceCallFloat.tsx");
+  const storeSrc4 = readSrc4("electron/voice/model-store.ts");
+  const settingsUiSrc4 = readSrc4("src/components/VoiceSettingsSection.tsx");
+
+  if (!floatSrc4 || !storeSrc4 || !settingsUiSrc4) {
+    warn("找不到源码，跳过【4f】接线守卫");
+  } else {
+    // ① 两条采集链路共用同一份翻译（旧实现只有通话侧有，唤醒侧直接漏英文）
+    const usesTranslator = (floatSrc4.match(/describeMicError\(/g) ?? []).length >= 2;
+    const noRawLeak = !/patchWakeState\(\{ listening: false, error: String\(error\?\.message/.test(floatSrc4);
+    usesTranslator && noRawLeak
+      ? ok("唤醒：麦克风错误与通话共用一份翻译（唤醒侧不再漏原生英文）")
+      : fail(`唤醒：错误翻译没共用或仍有裸英文（translator=${usesTranslator} raw=${!noRawLeak}）`);
+
+    // ② 唤醒要重试 + 用设置里的设备（旧实现硬编码 constraints，用户换的麦不生效）
+    const retries = /for \(let attempt = 0; attempt < 3/.test(floatSrc4);
+    const usesSettingsMic = /micCfg\.deviceId/.test(floatSrc4) && /wakeConstraint/.test(floatSrc4);
+    retries && usesSettingsMic
+      ? ok("唤醒：麦克风失败重试 3 次 + 使用设置里选的设备/开关")
+      : fail(`唤醒：缺重试或用的是硬编码设备（retry=${retries} settingsMic=${usesSettingsMic}）`);
+
+    // ③ 下载可取消：UI 有按钮 + 取消**保留**断点（旧实现取消也把残file 删了 → 下次从头来）
+    const cancelUi = /取消下载/.test(settingsUiSrc4) && /voiceKwsCancel\(\)/.test(settingsUiSrc4);
+    const cancelKeepsPartial = /cancelled: true/.test(storeSrc4) && !/error\?\.fatal \|\| signal\?\.aborted/.test(storeSrc4);
+    cancelUi && cancelKeepsPartial
+      ? ok("下载：设置页有「取消下载」，且取消保留已下载部分（下次点下载续传）")
+      : fail(`下载：取消不完整（ui=${cancelUi} keepPartial=${cancelKeepsPartial}）`);
+
+    // ④ 提速：候选地址并发探测排序 + 连接超时 + 速度下限换源 + 进度显示速度
+    //    判据要落在**调用点**上：只查函数定义的话，把调用删掉守卫照样绿（反证时踩到过）
+    const ordered = /await orderCandidatesByLatency\(candidates, signal\)/.test(storeSrc4)
+      && /async function orderCandidatesByLatency\(/.test(storeSrc4);
+    const connTimeout = /headersTimeoutMs/.test(storeSrc4) && /AbortController/.test(storeSrc4);
+    const speedFloor = /minSpeedBytesPerSec/.test(storeSrc4) && /alternativesLeft/.test(storeSrc4);
+    const speedShown = /MB\/s/.test(storeSrc4);
+    ordered && connTimeout && speedFloor && speedShown
+      ? ok("下载：候选地址按实测首字节排序 + 连接超时 + 太慢自动换源 + 进度带 MB/s")
+      : fail(`下载：提速项缺失（order=${ordered} timeout=${connTimeout} speedFloor=${speedFloor} shown=${speedShown}）`);
+  }
+}
+
 // 接线守卫：语音悬浮入口必须真的挂到 App 上（防「组件写了但没接」）
 {
   const appPath = join(ROOT, "src", "App.tsx");
@@ -1283,12 +1358,26 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
     : fail("readCustomModel 又抛异常了 —— 配置写坏一次就会永远打不开窗口");
 
   // ③ 远控控制面必须有鉴权，且不得再自动改系统防火墙策略
-  /private authorize\(/.test(remoteSrc) && /if \(!this\.authorize\(req, res, url\)\) return;/.test(remoteSrc)
+  // （配对端点 /api/pair* 是"投名状"入口，允许匿名；其余一律走 authorize）
+  /private authorize\(/.test(remoteSrc) && /!this\.authorize\(req, res, url\)\) return;/.test(remoteSrc)
     ? ok("远控所有路由（含 WS 升级）统一走 authorize 鉴权")
     : fail("remote.ts 缺少统一鉴权入口 —— 控制面会再次对局域网裸奔");
   !/advfirewall", \["firewall", "add"/.test(remoteSrc)
     ? ok("远控不再自动添加防火墙放行规则（改由用户显式放行）")
     : fail("remote.ts 又在自动改系统防火墙策略了");
+
+  // ③-b 09-13 二次加固：二维码/配对链接不得夹带凭据 + 必须有「6 位配对码 + 电脑端审批」
+  //     （能力式 URL 会随链接、截图、浏览器历史、隧道日志外泄；拿到链接就等于拿到
+  //      danger-full-access agent 的控制权。这两条都不适合用 CDP 验，钉在预检里）
+  const pairUrlAuthBody = remoteSrc.slice(remoteSrc.indexOf("  pairUrlAuth() {"), remoteSrc.indexOf("  pairUrlAuth() {") + 400);
+  const pairUrlForBody = remoteSrc.slice(remoteSrc.indexOf("  pairUrlFor("), remoteSrc.indexOf("  pairUrlFor(") + 400);
+  const bindBody = remoteSrc.slice(remoteSrc.indexOf("  createBindSession("), remoteSrc.indexOf("  createBindSession(") + 700);
+  !/accessToken/.test(pairUrlAuthBody) && !/accessToken/.test(pairUrlForBody) && !/k=\$\{this\.accessToken\}/.test(bindBody)
+    ? ok("配对地址/二维码不再夹带一次性凭据（不再是能力式 URL）")
+    : fail("配对地址又把 accessToken 拼进 URL 了 —— 链接或截图一泄露就等于交出控制权");
+  /rotatePairingCode\(/.test(remoteSrc) && /checkPairingCode\(/.test(remoteSrc) && /approvePair\(/.test(remoteSrc) && /onPairRequest/.test(remoteSrc)
+    ? ok("首次连接走「6 位配对码 + 电脑端审批」（配对码可轮换、审批有批准入口）")
+    : fail("远控缺配对码或电脑端审批入口 —— 又退回成「扫码即控制」");
 
   // ④ 引擎 thread.status 是对象，不许再按字符串比较（否则"在跑"判据恒假）
   !/params\.status !== "inProgress"/.test(appSrc) && !/input\.status === "inProgress"/.test(readFileSync(join(ROOT, "src", "lib", "turn-fold.ts"), "utf8"))

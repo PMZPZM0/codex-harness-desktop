@@ -233,7 +233,8 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       if (event.type === "download") setKwsDownload({ percent: Number(event.percent ?? -1), message: String(event.message ?? "") });
       if (event.type === "downloadDone") {
         setKwsDownload(null);
-        if (!event.ok && event.error) onNotice(`唤醒模型安装失败：${event.error}`);
+        // 「已取消」不是错误：主进程会带上已下载的体积，提示用户再点会续传
+        if (!event.ok && event.error) onNotice(String(event.error).includes("已取消") ? String(event.error) : `唤醒模型安装失败：${event.error}`);
         loadKws();
       }
     });
@@ -897,7 +898,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
             {wakeState.error
               ? `唤醒未启动：${wakeState.error}`
               : wakeState.listening
-                ? `正在聆听「${wakeState.phrase}」（${wakeState.engine === "kws" ? "关键词模型：只认读音、不误唤醒" : "识别模型匹配"}）${wakeState.heard ? `｜最近听到：${wakeState.heard}${wakeState.matched ? " ✅ 已命中" : ""}` : ""}`
+                ? `正在聆听「${wakeState.phrase}」（${wakeState.engine === "kws" ? "关键词模型：只认读音、不误唤醒" : "识别模型匹配"}）${wakeState.device ? `｜麦克风：${wakeState.device}` : ""}${wakeState.heard ? `｜最近听到：${wakeState.heard}${wakeState.matched ? " ✅ 已命中" : ""}` : ""}`
                 : settings.wake.enabled
                   ? "已开启：通话中会暂停聆听，挂断后自动恢复"
                   : "唤醒未开启（打开上面的开关并保持应用运行即可）"}
@@ -909,6 +910,13 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
               <button className="secondary-setting" onClick={() => void installKws()} disabled={Boolean(kwsDownload)}>
                 {kwsDownload ? `下载中 ${kwsDownload.percent >= 0 ? kwsDownload.percent + "%" : "…"}` : "下载唤醒模型（约 31MB，推荐）"}
               </button>
+              {/* 下载可取消（用户 09-13：「还没有取消下载功能」）：取消会**保留**已下载的部分，
+                  再点「下载」从断点续传，不必从头再来 */}
+              {kwsDownload && (
+                <button className="secondary-setting" onClick={() => void window.codex.voiceKwsCancel()}>
+                  取消下载
+                </button>
+              )}
               <span className="voice-card-hint">不装也能用：会回退到识别模型匹配（更易误唤醒、更费 CPU）</span>
             </div>
           )}

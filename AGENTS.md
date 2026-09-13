@@ -148,6 +148,9 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **手机远控二次加固：6 位配对码 + 电脑端审批（09-13）**：手机扫码/打开链接后不再「连上即控」。新流程 = 输入电脑端显示的 **6 位配对码**（5 分钟有效、错 10 次作废、可刷新）→ 挂起等电脑端在「手机远控」面板点**允许/拒绝**（请求到达时面板自动弹到前台 + toast 提醒；2 分钟没人理自动过期）→ 通过后以 HttpOnly cookie 下发凭据（`harness_remote` + `harness_device`，https 场景带 Secure）。**已批准设备持久化**（`userData/remote-devices.json`），再连直接进、可单独移除。**二维码/配对链接不再夹带 `?k=` 凭据**（能力式 URL 会随链接/截图/历史/隧道日志外泄）；`authorize()` 只认「凭据 cookie + 已批准设备」，未配对访问 API/WS 一律 401、页面落到配对页；fail-open（token 为空全放行）已删。实现：`electron/remote.ts`（pairing/pairRequests/approved + `/api/pair`、`/api/pair-status`）+ main.ts IPC（`remote:pair-state/approve/deny/revoke/pair-rotate`）+ App.tsx 面板（配对码大字/审批卡/已批准设备列表）。回归：`scripts/accept.mjs --only remote-auth`（14 断言：无凭据 401/配对页/错码拒绝/对码挂起/审批前仍 401/审批卡/点允许/cookie 下发/带凭据 200/已批准直连）；预检【11】新增静态守卫（配对地址不得夹带 accessToken、必须有配对码+审批入口）。
+
+
 - **✅ 发送锚顶 · 09-13 定稿（当前实现，改这块先读这一段）**：完整走过一天弯路后的收敛版本，**只有三个概念**：
   ① **位置 = 把「这次发送的那条用户消息」放在对话区顶部往下 `ANCHOR_TOP_OFFSET_PX`(54) 处**，唯一 owner 是 `App.tsx` 的 `pinSentMessage(el, threadId)`：锚点取**当前回合里的真实 `.user-message` 元素**（不在发送前回合基线里才算"本次新建"；乐观阶段尚未落进回合时才退回 `#chat-anchor`）。首次调用**立即**落位；之后每次调用**实测 gap**，偏差 > 8px 才延一帧再量一次并一次性修正。**不要**再引入第二个写滚动条的地方 —— 这一天所有"抖/跳/位置不对"最后都归到"两个 owner 抢同一根滚动条"。
   ② **内容一旦长出视口，钉顶就"交棒"给跟随**（`pinGapLockedRef` 记下这个 key，此后不再纠偏）：**「消息稳在 54px」与「最新一行可见」在超屏时必然二选一**，两头都要 = 每 60px 互拉一轮（打点原文 `follow-grow{+65}` → `pin-fix{−65}` 循环）。短回复继续纠偏，长回复消息自然往上走。

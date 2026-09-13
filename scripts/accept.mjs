@@ -626,12 +626,13 @@ const CHECKS = [
 
   {
     id: "remote-auth",
-    name: "⑧ 手机远控面必须鉴权（无凭据 401 / 带凭据 200）",
+    name: "⑨ 手机远控：6 位配对码 + 电脑端审批（09-13 二次加固）",
     run: async (h) => {
-      // 09-13 审计 P0：远控控制面此前**没有任何凭据校验**，而它监听全网卡、自动放行防火墙、
-      // 还能起公网隧道，开的会话又是 danger-full-access + 从不询问 → 同网段任何人无需配对
-      // 即可在用户机器上执行任意命令。这条断言就是那个洞的回归守卫。
-      // 用「先发起、再轮询全局变量」的写法：不依赖 harness 是否 await 返回值（promise 会让 eval 卡住）
+      // 09-13 二次加固：二维码/配对链接**不再夹带任何凭据**（能力式 URL 会随链接、截图、
+      // 浏览器历史、隧道日志外泄）。手机要连上必须过两道关：
+      //   ① 6 位配对码（电脑端显示，5 分钟有效，错 10 次作废）；
+      //   ② 电脑端审批（提交正确码后挂起，用户在应用里点「允许」）。
+      // 这条断言就是「拿到链接就能控我机器」那个洞的回归守卫。
       await h.eval(`(() => { window.__remoteProbe = null; window.codex.remoteStart().then((r) => { window.__remoteProbe = r; }).catch((e) => { window.__remoteProbe = { error: String(e?.message ?? e) }; }); return true; })()`);
       await h.waitFor(`!!window.__remoteProbe`, { label: "远控启动返回", timeoutMs: 20000 }).catch(() => undefined);
       const info = await h.eval(`JSON.stringify(window.__remoteProbe ?? null)`);
@@ -639,27 +640,77 @@ const CHECKS = [
       try { parsed = JSON.parse(info); } catch { /* eval 出错会返回字符串 */ }
       h.check("[前置] 远控服务已启动并给出配对地址", Boolean(parsed?.port && parsed?.url), String(info).slice(0, 200));
       const port = Number(parsed?.port);
-      const token = String(parsed?.url ?? "").match(/[?&]k=([a-f0-9]+)/)?.[1] ?? "";
-      h.check("[前置] 配对地址里带一次性凭据", Boolean(token), String(parsed?.url ?? "").slice(0, 120));
-      const get = (path) => new Promise((resolve) => {
-        const req = http.request({ host: "127.0.0.1", port, path, method: "GET", timeout: 4000 }, (res) => {
-          res.resume();
-          resolve(res.statusCode ?? 0);
+      h.check("配对地址不再夹带一次性凭据（无 k=）", !/[?&]k=/.test(String(parsed?.url ?? "")), String(parsed?.url ?? "").slice(0, 120));
+
+      // ① 电脑端拿到 6 位配对码
+      await h.eval(`(() => { window.__pair = null; window.codex.remotePairState().then((r) => { window.__pair = r; }).catch((e) => { window.__pair = { error: String(e) }; }); return true; })()`);
+      await h.waitFor(`!!window.__pair`, { label: "配对状态返回", timeoutMs: 10000 }).catch(() => undefined);
+      let pair = null;
+      try { pair = JSON.parse(await h.eval(`JSON.stringify(window.__pair ?? null)`)); } catch { /* ignore */ }
+      const code = String(pair?.code ?? "");
+      h.check("电脑端给出 6 位配对码", /^\d{6}$/.test(code), `code=「${code}」`);
+
+      const req = (method, path, body, cookie) => new Promise((resolve) => {
+        const headers = {};
+        if (body) headers["content-type"] = "application/json";
+        if (cookie) headers.cookie = cookie;
+        const r = http.request({ host: "127.0.0.1", port, path, method, headers, timeout: 5000 }, (res) => {
+          let text = "";
+          res.on("data", (c) => (text += c.toString()));
+          res.on("end", () => resolve({ status: res.statusCode ?? 0, text, cookies: res.headers["set-cookie"] ?? [] }));
         });
-        req.on("error", () => resolve(-1));
-        req.on("timeout", () => { req.destroy(); resolve(-1); });
-        req.end();
+        r.on("error", () => resolve({ status: -1, text: "", cookies: [] }));
+        r.on("timeout", () => { r.destroy(); resolve({ status: -1, text: "", cookies: [] }); });
+        if (body) r.write(JSON.stringify(body));
+        r.end();
       });
-      const anon = await get("/api/status");
-      const authed = await get(`/api/status?k=${token}`);
-      const anonPage = await get("/");
-      console.log(`  [远控鉴权] 无凭据 /api/status=${anon}；带凭据=${authed}；无凭据 / =${anonPage}`);
-      h.check("无凭据访问控制面被拒（401）", anon === 401, `status=${anon}`);
-      h.check("无凭据访问配对页被拒（401）", anonPage === 401, `status=${anonPage}`);
-      h.check("带一次性凭据可正常访问（200）", authed === 200, `status=${authed}`);
+      const jsonOf = (text) => { try { return JSON.parse(text); } catch { return {}; } };
+
+      // ② 无凭据：API 401；页面落到配对页（要求输 6 位码）
+      const anonApi = await req("GET", "/api/status");
+      const anonPage = await req("GET", "/r/mobile");
+      h.check("无凭据访问控制面被拒（401）", anonApi.status === 401, `status=${anonApi.status}`);
+      h.check("无凭据打开页面落到配对页（要求输 6 位码）", anonPage.status === 200 && /配对这台手机|6 位配对码/.test(anonPage.text), `status=${anonPage.status}`);
+
+      // ③ 配对码错误 → 拒绝，且不进入审批
+      // 设备 id 每轮随机：持久 profile 会记住批准过的设备，固定 id 第二轮就走老朋友分支了
+      const deviceId = "dev-test-" + Date.now().toString(36);
+      const wrong = jsonOf((await req("POST", "/api/pair", { code: "000000", deviceId, deviceName: "测试手机" })).text);
+      h.check("配对码错误时被拒绝（不挂起审批）", wrong.ok === false, `resp=${JSON.stringify(wrong).slice(0, 120)}`);
+
+      // ④ 配对码正确 → 挂起等审批；审批前控制面仍 401
+      const right = jsonOf((await req("POST", "/api/pair", { code, deviceId, deviceName: "测试手机" })).text);
+      h.check("配对码正确 → 挂起等电脑端审批（给 rid）", right.ok === true && Boolean(right.rid) && right.approved === false, `resp=${JSON.stringify(right).slice(0, 160)}`);
+      const rid = String(right.rid ?? "");
+      const still401 = await req("GET", "/api/status");
+      h.check("未审批前控制面仍然拒绝（401）", still401.status === 401, `status=${still401.status}`);
+
+      // ⑤ 电脑端弹出审批卡片 → 点「允许」
+      const cardUp = await h.waitFor(`!!document.querySelector("[data-pair-pending]")`, { label: "审批卡片出现", timeoutMs: 15000 }).then(() => true).catch(() => false);
+      h.check("电脑端弹出审批卡片（有手机等待批准）", cardUp);
+      if (!cardUp) { await h.eval(`window.codex.remoteStop().catch(() => undefined)`); return; }
+      try { await h.screenshot("手机远控-审批卡片"); } catch { /* 截图超时不影响结论（断言已全部落在 DOM/HTTP 上） */ }
+      const clicked = await h.eval(`(() => { const btn = document.querySelector("[data-pair-pending] .remote-allow-btn"); if (!btn) return false; btn.click(); return true; })()`);
+      h.check("点下「允许」按钮", clicked === true);
+
+      // ⑥ 手机端轮询到 approved 并拿到 HttpOnly cookie；带 cookie 访问 200
+      const st = await req("GET", `/api/pair-status?rid=${rid}`);
+      const stJson = jsonOf(st.text);
+      h.check("审批通过后手机端拿到凭据（approved）", stJson.status === "approved", `resp=${JSON.stringify(stJson).slice(0, 160)}`);
+      const rawCookies = Array.isArray(st.cookies) ? st.cookies : [String(st.cookies)];
+      const cookie = rawCookies.map((c) => String(c).split(";")[0].trim()).join("; ");
+      const cookieRaw = rawCookies.join(" | ");
+      h.check("凭据以 HttpOnly cookie 下发（含设备身份）", /harness_remote=/.test(cookie) && /harness_device=/.test(cookie) && /HttpOnly/.test(cookieRaw), `cookie=${cookieRaw.slice(0, 120)}`);
+      const authed = await req("GET", "/api/status", null, cookie);
+      h.check("带凭据可正常访问控制面（200）", authed.status === 200, `status=${authed.status}`);
+
+      // ⑦ 已批准过的设备再次连接 → 直接放行（不用再输码、不用再审批）
+      const again = jsonOf((await req("POST", "/api/pair", { code: "000000", deviceId, deviceName: "测试手机" })).text);
+      h.check("已批准设备再次连接直接放行（不再走审批）", again.ok === true && again.approved === true, `resp=${JSON.stringify(again).slice(0, 120)}`);
       await h.eval(`window.codex.remoteStop().catch(() => undefined)`);
     },
   },
+
 
   {
     id: "queue-display",
