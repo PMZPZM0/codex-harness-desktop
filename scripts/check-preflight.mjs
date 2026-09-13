@@ -758,6 +758,55 @@ console.log(C.bold("\n【9】过程折叠不得吞掉正文（长正文/最终�
     : fail(`过程单元没被收进去（folded=${folded.join(",")}）—— 折叠功能被改坏了`);
 }
 
+// ---------- 【10】滚动/锚定状态的单一 owner（09-13 审计加的结构守卫） ----------
+// 这一天的所有 bug 都长成同一个形状：**同一份状态有两个写者**、或**默认值选错逼每个调用点自己兜**。
+// 下面三条把这类回归钉死在预检里（改坏了 build 阶段就红，不必等到验收）。
+console.log(C.bold("\n【10】滚动与锚定状态：单一 owner + 默认值不许回退"));
+
+{
+  const appSrc = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const utilsSrc = readFileSync(join(ROOT, "src", "components", "scroll-utils.ts"), "utf8");
+
+  // ① jumpToBottom 的第三个参数必须保持**必传**：一旦回退成可选并给 scrollHeight 默认值，
+  //    "滚到底"就会重新变成"滚进尾部留白"（切回会话用户消息被切在视口顶 + 下方一大片空白）。
+  !/getTarget\s*\?:/.test(utilsSrc) && /getTarget:\s*\(scroller: HTMLElement\)\s*=>\s*number/.test(utilsSrc)
+    ? ok("jumpToBottom 的目标解析函数是必传参数（不会悄悄回退成 scrollHeight）")
+    : fail("jumpToBottom 的 getTarget 又变成可选了 —— 默认值 scrollHeight 会把视口滚进尾部留白");
+
+  // ② 「到底部」类落点不得再直写 scrollHeight：主时间线一律走 contentTailTarget。
+  //    `contentRef` / `bodyRef` 是**卡片内部**的滚动容器（工具输出卡、思考卡），
+  //    里面没有尾部留白，`scrollTop = scrollHeight` 在那里是正确的语义 —— 放行。
+  const srcLines = appSrc.split("\n");
+  const rawScrollHeightHits = srcLines
+    .map((line, i) => ({ line: line.trim(), no: i + 1 }))
+    .filter((entry) => /scrollTop\s*=\s*(scroller|el)\.scrollHeight/.test(entry.line))
+    // 卡片内部的滚动容器（工具输出卡 contentRef / 思考卡 bodyRef）里没有尾部留白，
+    // `scrollTop = scrollHeight` 在那里是正确的语义 —— 按"上文 15 行内绑定的容器"放行。
+    .filter((entry) => {
+      const context = srcLines.slice(Math.max(0, entry.no - 15), entry.no).join("\n");
+      return !/contentRef\.current|bodyRef\.current/.test(context);
+    });
+  rawScrollHeightHits.length === 0
+    ? ok("主时间线没有「scrollTop = scrollHeight」的直写（内容底部一律经 contentTailTarget 计算）")
+    : fail(`主时间线仍有直写 scrollHeight 的落点：${rawScrollHeightHits.map((h) => `L${h.no}`).join(", ")}`);
+
+  // ③ 锚定标志的写者数量做成"预算"：新增写入点就红，逼作者先想清楚这是不是第二个 owner。
+  //    （09-13 之前「回到底部」按钮就绕过 releaseToUser 直写 anchorTopRef，留下半死的锚定状态。）
+  const anchorWriters = appSrc
+    .split("\n")
+    .map((line, i) => ({ line: line.trim(), no: i + 1 }))
+    .filter((entry) => /anchorTopRef\.current\s*=/.test(entry.line) && !entry.line.startsWith("*") && !entry.line.startsWith("//"));
+  const ANCHOR_WRITER_BUDGET = 7; // 发送 2 处 + releaseToUser + 长消息 + 切换分支 + 声明初始化
+  anchorWriters.length <= ANCHOR_WRITER_BUDGET
+    ? ok(`锚定状态写者 ${anchorWriters.length} 处（预算 ${ANCHOR_WRITER_BUDGET}）—— 没有新增第二 owner`)
+    : fail(`锚定状态写者增到 ${anchorWriters.length} 处（预算 ${ANCHOR_WRITER_BUDGET}）：${anchorWriters.map((w) => `L${w.no}`).join(", ")} —— 请先确认是不是又出现了第二个 owner，再调预算`);
+
+  // ④ 点「回到底部」这类按钮必须走 releaseToUser（统一复位全部锚定状态），不许直写标志。
+  /releaseToUserRef\.current\("button"\)/.test(appSrc)
+    ? ok("「回到底部」按钮走 releaseToUser 统一复位（不再直写锚定标志）")
+    : fail("「回到底部」按钮没有走 releaseToUser —— 直写标志会漏掉 pinGapLocked/pinFix 等复位");
+}
+
 // ---------- 汇总 ----------
 
 console.log("");

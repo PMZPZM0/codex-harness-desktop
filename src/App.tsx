@@ -2478,11 +2478,18 @@ function CommandExecutionCard({ item, waitingForApproval, turnActive }: { item: 
   const { displayed: displayedOutput, revealing: outputRevealing } = usePacketRevealText(String(item.id), tailOutput, Boolean(turnActive), bufferedToolRevealStarts, 48);
   const contentRef = useRef<HTMLDivElement | null>(null);
   // 流式输出时贴底滚动（对齐 ReasoningCard 的 rAF 合帧方案）
+  // ⚠️ 必须有「用户接管」守卫（09-13 审计）：原来无条件贴底，用户往上翻看这段长输出时，
+  // 下一个 delta 就把他拽回底部 —— 和主时间线当初那个 bug 同类。判据用经典口径：
+  // **只有本来就在底部附近才继续跟**（用户滚上去就不再动他的视口），不需要额外监听输入。
   useEffect(() => {
     if (!running && !outputRevealing) return;
     const el = contentRef.current;
     if (!el) return;
-    const raf = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > 40) return;   // 用户已上滚：不抢
+    const raf = requestAnimationFrame(() => {
+      if (el.scrollHeight - el.scrollTop - el.clientHeight > 40) return; // 帧内二次确认
+      el.scrollTop = el.scrollHeight;
+    });
     return () => cancelAnimationFrame(raf);
   }, [displayedOutput, running, outputRevealing]);
   const verb = waitingForApproval && running ? "等待批准" : running ? "正在运行" : failed ? "运行失败" : "已运行";
@@ -5152,11 +5159,17 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
   useEffect(() => { if (running || turnActive) seenLiveRef.current = true; }, [running, turnActive]);
   // 思考进行中：新内容到达时自动贴底滚动。
   // 用 rAF 合并：一帧内可能来好几个 delta，直接滚会读 scrollHeight 触发多次强制同步布局。
+  // ⚠️ 同样要有「用户接管」守卫（09-13 审计，与工具输出卡一致）：用户上滚查看思考过程时
+  // 不许把他拽回底部；本来就在底部附近才继续跟。
   useEffect(() => {
     if (!running || manualOpen === false) return;
     const el = bodyRef.current;
     if (!el) return;
-    const raf = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > 40) return;
+    const raf = requestAnimationFrame(() => {
+      if (el.scrollHeight - el.scrollTop - el.clientHeight > 40) return;
+      el.scrollTop = el.scrollHeight;
+    });
     return () => cancelAnimationFrame(raf);
   }, [displayed, running, manualOpen]);
   // 没现场出现过且无内容的（历史加载的空占位）才不渲染；现场出现过的保留标题行常驻
@@ -8000,7 +8013,9 @@ export default function App() {
   const anchorTopRef = useRef(false);
   // TEMP-DEBUG2
   if (!(window as any).__adbg) (window as any).__adbg = [];
-  const dbg = (r: string, extra: any = {}) => { try { (window as any).__adbg.push({ r, t: Date.now() % 100000, ...extra }); } catch {} };  /** 程序滚动抑制窗：钉顶/贴底的瞬时滚动会把 scrollTop 拨来拨去，scroll 事件
+  /** 诊断打点：只保留最近 2000 条。揭示动画是每帧 push 的（≈60 条/秒），无上限的话
+   *  长时间跑长回复能累积到几十 MB 且被 window 强引用无法回收（09-13 性能审计）。 */
+  const dbg = (r: string, extra: any = {}) => { try { const log = (window as any).__adbg; log.push({ r, t: Date.now() % 100000, ...extra }); if (log.length > 2000) log.splice(0, log.length - 2000); } catch {} };  /** 程序滚动抑制窗：钉顶/贴底的瞬时滚动会把 scrollTop 拨来拨去，scroll 事件
       异步到达时若被 update() 当成用户滚动做方向判定，就会误解除钉顶（实测：
       钉顶 1ms 后被 cancel:up-scroll 杀掉）。程序滚动后 80ms 内的 scroll 事件
       只刷新基线、不做判定。 */
@@ -8066,7 +8081,7 @@ export default function App() {
   const pinSentMessage = useCallback((el: HTMLElement, threadId?: string | null) => {
     // 锚点 = 最后一个回合组里的真实用户消息（前提：这个回合是本次发送新建的，
     // 即不在发送前的回合基线里）；还没有真实消息时退回乐观气泡。
-    const groups = document.querySelectorAll<HTMLElement>(".turn-group");
+    const groups = el.querySelectorAll<HTMLElement>(".turn-group");   // 只在时间线子树里查（全文档查一次几万节点）
     const lastGroup = groups[groups.length - 1];
     const baseline = optimisticBaselineRef.current;
     const lastId = lastGroup?.id?.startsWith("turn-") ? lastGroup.id.slice(5) : "";
@@ -8140,6 +8155,10 @@ export default function App() {
     pinFixRef.current = requestAnimationFrame(() => {
       pinFixRef.current = 0;
       if (!anchorTopRef.current) return;
+      // ⚠️ 归属校验（09-13 审计）：这个 rAF 可以从上一个会话挂到下一次渲染才执行，
+      // 而 `el` 是跨会话不重建的 .timeline、`#chat-anchor` 此时已是**新会话**渲染的元素 ——
+      // 不校验就会在新会话第一帧莫名滚一下，还会把落点记账写成别的会话的值。
+      if (pinThreadIdRef.current !== (threadId ?? null)) return;
       const now = (anchor.isConnected ? anchor : document.getElementById("chat-anchor")) as HTMLElement | null;
       if (!now) return;
       const err = (now.getBoundingClientRect().top - el.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
@@ -8220,10 +8239,13 @@ export default function App() {
       if (!stickToBottomRef.current) return;
       const el = scrollRef.current;
       if (!el) return;
-      // .timeline 有 scroll-behavior:smooth，直接赋值 scrollTop 会触发平滑动画导致跟随滞后，须瞬时贴底
-      el.style.scrollBehavior = "auto";
-      el.scrollTop = el.scrollHeight;
-      el.style.scrollBehavior = "";
+      // ⛔ 落点必须走 contentTailTarget（= 内容底部，**不含**尾部留白），绝不能写 scrollHeight。
+      // 这里是第二个 scrollTop owner，曾经踩实：钉顶期间用户多打一行（输入框撑高）→
+      // 这个观察器按 scrollHeight 把视口推下去 64px~一整屏（推进留白），下一帧钉顶的
+      // 几何纠偏又把它拉回 54px → 用户看到的就是**"下跳一下再上跳一下"**（09-13 审计确认）。
+      // 钉顶进行中一律不碰滚动条：位置由 pinSentMessage 负责，这里插手就是抢 owner。
+      if (anchorTopRef.current) return;
+      scrollToOffsetInstant(el, contentTailTarget(el));
     });
     ro.observe(wrap);
     return () => ro.disconnect();
@@ -9069,6 +9091,11 @@ const commandMatches = useMemo(() => {
   // 回到底部按钮：内容可滚动且当前视口距底部超过一屏的 25% 时出现
   // 缓存 update，供「内容变化」时直接调用而不必重建监听器
   const updateBottomStateRef = useRef<() => void>(() => {});
+  /** 「用户接管视口」的统一入口（由 update effect 里的 `releaseToUser` 注入）。
+   *  给 JSX 侧用：任何要打断钉顶/跟随的按钮都必须走它，**不许直接写 anchorTopRef** ——
+   *  直接写会漏掉 pinGapLocked / pinFix / pinThreadId / pinDormantSeen 的复位，
+   *  留下"半死"的锚定状态（09-13 审计发现「回到底部」按钮就是这么写的）。 */
+  const releaseToUserRef = useRef<(why: string) => void>(() => {});
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return;
@@ -9121,7 +9148,10 @@ const commandMatches = useMemo(() => {
       // 迟滞：距底 ≤4px 重新开启跟随；>25% 视口才关闭。中间地带保持原状，
       // 避免流式内容增高时 stick 反复翻转（此前 smooth 滚动动画的中间滚动事件
       // 会误关跟随，导致"消息发了不显示、停止后才出现"）。
-      if (dist <= 4) stickToBottomRef.current = true;
+      // ⚠️ 钉顶进行中不许把 stick 置真（09-13 审计）：(anchor=true, stick=true) 会同时成立，
+      // 而不同消费者对这对标志的解释不一致（有的看 `stick && !anchor`、有的只看 stick）
+      // → 同一状态在不同路径行为不同 = "有时跳有时不跳"，调阈值救不了。
+      if (dist <= 4 && !anchorTopRef.current) stickToBottomRef.current = true;
       else if (dist > scroller.clientHeight * 0.25) stickToBottomRef.current = false;
       // ⛔ 这里**不再**用「scrollTop 方向」猜用户意图（09-12 拆除，勿加回来）。
       // 那套启发式的实测结局：钉顶落点与记录值差 13px（浏览器 clamp / 内容重排造成，
@@ -9148,6 +9178,7 @@ const commandMatches = useMemo(() => {
     const onPointerDown = () => { pointerDown = true; };
     const onPointerUp = () => { pointerDown = false; };
     updateBottomStateRef.current = update;
+    releaseToUserRef.current = releaseToUser;
     // rAF 节流：scroll 事件密集时 update 会读 scrollHeight/scrollTop 强制同步布局
     let raf = 0;
     const schedule = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; update(); }); };
@@ -10203,7 +10234,10 @@ const commandMatches = useMemo(() => {
           // 回合结束：锚顶留白归零。它只在「钉顶期间」为让锚点滚得上去而存在，
           // 回合结束后继续留着就会在底部残留一大段空白（用户实测「流动空间太大，
           // 汇总时上面消息都看不到」）。
-          clearAnchorPad();
+          // ⚠️ 必须限定**当前会话**（09-13 审计发现）：留白是当前会话的几何依赖，
+          // 后台会话跑完就跑完，顺手清掉当前会话的留白会让被 clamp 的 scrollTop 掉下来
+          // （短会话正是靠这一屏留白才够得着 54px）→ 画面无故跳一下且不恢复。
+          if (params.threadId === threadRef.current?.id) clearAnchorPad();
         } else if (method0 === "thread/status/changed") {
           // 侧边栏每个会话的运行状态：即使不是当前会话也要更新，保证切走后转圈还在原会话
           setThreads((current) => current.map((entry) => entry.id === params.threadId ? { ...entry, status: params.status } : entry));
@@ -11438,7 +11472,16 @@ const commandMatches = useMemo(() => {
       else if (name === "help") setInfoModal({ title: "可用命令", body: builtinCommandCatalog.map((cmd) => `/${cmd.name}${cmd.hint ? " " + cmd.hint : ""} — ${cmd.description}`).join("\n") });
       else if (name === "context") setInfoModal({ title: "上下文占用", body: contextUsageText() });
       else if (name === "clear") {
-        await clearCurrentConversation();
+        // ⛔ 必须确认（09-13 审计）：`clearCurrentConversation` 是 `thread/delete` + 从侧栏移除
+        // = **永久删除**，而命令目录里把它描述成「清空上下文…旧会话保留在历史里」，
+        // 文案与行为相反 → 用户按文案理解就会不可逆地删掉整个会话（含工具记录）。
+        // 同族的 /delete 一直有确认，这条漏了。
+        const confirmed = await openAppConfirm(
+          "永久删除当前会话？",
+          `「${cleanThreadDisplayTitle(thread?.name, { preview: thread?.preview }) || "当前会话"}」的消息与工具记录会被删除，且无法恢复。\n（只是想清空上下文继续聊，请用 /compact 或直接新建会话。）`,
+          "永久删除",
+        );
+        if (confirmed) await clearCurrentConversation();
       }
       else if (name === "copy") { const last = thread?.turns.flatMap((turn) => turn.items).filter((item) => item.type === "agentMessage").at(-1); await copyMessage(itemText(last ?? ({} as ThreadItem))); }
       else if (name === "memory") { setSettingsOpen(true); setSettingsPage("memory"); }
@@ -12351,7 +12394,7 @@ const commandMatches = useMemo(() => {
       // 工作区与线程一致（团队卡片可指定独立项目地址）
       if (freshThread.cwd) setWorkspace(freshThread.cwd);
       // 内容渲染完成后瞬时定位到最新消息（两帧重试；带 settled 回调确保遮罩等渲染稳定）
-      requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled)));
+      requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled, contentTailTarget)));
       setOpeningThread(null);
       markSettled();
       return;
@@ -12417,7 +12460,7 @@ const commandMatches = useMemo(() => {
       setThread(mergedLoaded);
       // 内容渲染完成后再次瞬时定位到最新消息（两帧重试，等 React 提交 DOM；带 settled
       // 回调——markSettled 会重置 fade-out timer，确保遮罩等到所有路径都跳完才淡出）
-      requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled)));
+      requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled, contentTailTarget)));
       const resultProvider = String(result.modelProvider ?? result.model_provider ?? customModel?.provider ?? "custom");
       // 记录会话真实绑定的供应商（迁移成功后 migrateThreadToProvider 会覆盖为新值）
       threadProviderRef.current.set(id, resultProvider);
@@ -13592,7 +13635,7 @@ const commandMatches = useMemo(() => {
             <button
               className="jump-bottom"
               title="回到底部"
-              onClick={() => { stickToBottomRef.current = true; anchorTopRef.current = false; const el = scrollRef.current; if (el) el.scrollTo({ top: contentTailTarget(el), behavior: "smooth" }); }}
+              onClick={() => { releaseToUserRef.current("button"); stickToBottomRef.current = true; const el = scrollRef.current; if (el) scrollToOffsetInstant(el, contentTailTarget(el)); }}
             ><ArrowDown size={16} /></button>
           )}
         </div>
