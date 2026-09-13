@@ -2651,6 +2651,39 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
     monospace;
   overflow-y: auto;
 }
+
+/* 大 diff 行级虚拟化（09-14）：滚动容器 + 绝对定位行，只挂可视区 ± overscan。
+   line-height 必须与 App.tsx 的 DIFF_LINE_HEIGHT(20) 严格一致——不一致会导致滚动位置与行错位。 */
+.virtual-diff {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow: auto;
+  line-height: 20px;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 7px;
+  scrollbar-width: thin;
+  contain: content;
+  background: color-mix(in srgb, var(--panel-2) 55%, transparent);
+}
+.virtual-diff-inner { position: relative; width: 100%; }
+.virtual-diff-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 20px;
+  line-height: 20px;
+  padding: 0 10px;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  contain: layout paint;
+}
+.virtual-diff-line.add { background: color-mix(in srgb, var(--green) 14%, transparent); }
+.virtual-diff-line.del { background: color-mix(in srgb, var(--red) 14%, transparent); }
+.virtual-diff-line.hunk { color: var(--muted); background: color-mix(in srgb, var(--line) 22%, transparent); }
+.virtual-diff-line.meta { color: var(--faint); font-weight: 600; }
 .tool-code-block {
   min-width: 0;
   max-width: 100%;
@@ -15825,6 +15858,31 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 /* —— 会话切换恢复遮罩：无缓存切换时盖住旧内容，避免「旧内容跳顶+闪烁」；
   // 缓存秒开也走遮罩——给"刚切过去就在最新消息位置"的视觉过渡，
   // 内容渲染稳定后由 App.openThread 的 markSettled 触发 .fading 淡出 —— */
+/* 冷加载骨架（09-14）：遮罩里先画出目标会话的名称/预览形态，避免"纯等待"观感。 */
+.thread-switch-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(560px, 76%);
+  margin-top: 6px;
+  opacity: 0.7;
+}
+.thread-switch-skeleton .skeleton-line {
+  height: 14px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--line) 55%, transparent);
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 14px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+.thread-switch-skeleton .skeleton-line.title { font-weight: 600; color: var(--muted); }
+.thread-switch-skeleton .skeleton-line.short { width: 42%; }
+@keyframes skeleton-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
 .thread-switch-overlay {
   position: absolute;
   inset: 0;

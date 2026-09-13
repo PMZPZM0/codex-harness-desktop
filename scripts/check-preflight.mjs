@@ -1758,6 +1758,60 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
     : fail("权限判据又回到「记录==引擎值即污染 → 落全局默认」—— 那会把只读会话悄悄变成完全访问");
 }
 
+// ---------- 【12】09-14 会话切换丝滑化（学 WorkBuddy）的结构守卫 ----------
+// 这四条都是"改了但没接线 / 接错线"才会出问题的结构，光看 UI 是绿的：
+// 虚拟化组件写了却没接进代码块渲染器、过滤器写了却仍无条件放行、窗口记忆被下一次重构顺手删掉。
+console.log(C.bold("\n【12】09-14 切换丝滑化不得回退（diff 行级虚拟化 / 按会话事件裁剪 / 窗口与位置记忆）"));
+
+{
+  const appSrc2 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const mainSrc2 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  const cssSrc = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+
+  // ① 大 diff 行级虚拟化：组件存在 + 真的接进 ToolCodeBlock + 几何常量与 CSS 行高一致
+  const hasVirtualComponent = /const VirtualDiffLines = memo\(/.test(appSrc2);
+  const wiredInToolCode = /virtualizable\s*\n?\s*\?\s*<VirtualDiffLines/.test(appSrc2) || /<VirtualDiffLines text=\{text\}/.test(appSrc2);
+  hasVirtualComponent && wiredInToolCode
+    ? ok("大 diff 行级虚拟化已接线（VirtualDiffLines 在 ToolCodeBlock 内生效）")
+    : fail("VirtualDiffLines 没接线到 ToolCodeBlock —— 写了不用等于没写");
+  const lineHeightMatch = /const DIFF_LINE_HEIGHT = (\d+)/.exec(appSrc2);
+  const cssLineHeight = /\.virtual-diff-line \{[^}]*height: (\d+)px/.exec(cssSrc);
+  lineHeightMatch && cssLineHeight && lineHeightMatch[1] === cssLineHeight[1]
+    ? ok(`虚拟化行高与 CSS 一致（${lineHeightMatch[1]}px）`)
+    : fail(`虚拟化行高与 CSS 不一致（js=${lineHeightMatch?.[1] ?? "?"} css=${cssLineHeight?.[1] ?? "?"}）—— 会导致滚动错位`);
+  // 只在 diff + 行数超阈值 + 未折行 + 非追字时启用（否则会破坏折行/流式）
+  /language === "diff" && !revealing && !settings\.wrap && lineCount > DIFF_VIRTUAL_THRESHOLD/.test(appSrc2)
+    ? ok("虚拟化启用条件收窄（仅 diff / 大文件 / 不折行 / 非流式追字）")
+    : fail("虚拟化启用条件放宽了 —— 折行或流式追字场景会错位");
+
+  // ② 按会话事件裁剪：必须真的 return null（而不是继续记账放行），且保留逃生阀与空事件保护
+  const filterBody = mainSrc2.slice(mainSrc2.indexOf("function filterForRenderer"), mainSrc2.indexOf("function filterForRenderer") + 1200);
+  /return null;/.test(filterBody)
+    ? ok("按会话事件裁剪真的在裁（filterForRenderer 命中即 return null）")
+    : fail("filterForRenderer 又变成无条件放行了 —— 多会话时 N 倍无用事件照旧跨进程");
+  /HARNESS_EVENT_FILTER !== "off"/.test(mainSrc2)
+    ? ok("裁剪保留逃生阀（HARNESS_EVENT_FILTER=off 一键回放行）")
+    : fail("裁剪没有逃生阀 —— 线上出问题时无法不改代码回退");
+  /watchedThreadIds\(\)/.test(mainSrc2) && /popoutThreadIds\.values\(\)/.test(mainSrc2)
+    ? ok("裁剪把「独立弹窗锁定的会话」也算作必须放行（否则弹窗会永久转圈）")
+    : fail("裁剪没考虑弹窗锁定会话 —— 弹窗会收不到自己的事件");
+  const forwardedGuard = mainSrc2.slice(mainSrc2.indexOf('server.on("event"'), mainSrc2.indexOf('server.on("event"') + 400);
+  /const forwarded = filterForRenderer\(event\);\s*if \(forwarded\) broadcastCodexEvent\(forwarded\)/.test(forwardedGuard)
+    ? ok("裁剪结果先判空再广播（null 不会当成空事件发给渲染层）")
+    : fail("裁剪后没有判空就广播 —— 渲染层会收到空事件");
+
+  // ③ 窗口与阅读位置记忆：切回命中缓存时必须保留（不能被下一次重构顺手改回无条件重置）
+  /const keepWindow = Boolean\(threadCacheRef\.current\.get\(id\)\)/.test(appSrc2)
+    ? ok("命中缓存的切换会保留展开的渲染窗口")
+    : fail("openThread 又无条件把渲染窗口重置成 TURN_WINDOW —— 切回长会话内容会缩水");
+  /function recallScrollOffset/.test(appSrc2) && /rememberScrollPosition\(threadRef\.current\?\.id/.test(appSrc2)
+    ? ok("离开时记阅读位置、切回时还原（贴底会话不记忆）")
+    : fail("阅读位置记忆链断了一环（记或还原缺一）");
+  /function touchTurnWindow/.test(appSrc2) && /TURN_WINDOW_MEMORY_KEEP/.test(appSrc2)
+    ? ok("窗口记忆有 LRU 上限（长跑不会无界增长）")
+    : fail("窗口记忆没有淘汰上限 —— 会话多了会一直涨");
+}
+
 // ---------- 汇总 ----------
 
 console.log("");

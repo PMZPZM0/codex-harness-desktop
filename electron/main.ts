@@ -74,6 +74,8 @@ function enrichScanCountSnapshot() {
   return {
     rolloutFallbackScans: rolloutFallbackScanCount,
     droppedForInactiveSession: rendererDroppedEventCount,
+    // 09-14：裁剪是否真的在生效（accept 断言用它区分「真的裁了」与「碰巧没事件」）。
+    eventFilterEnabled: EVENT_FILTER_ENABLED,
     threadListRequests: threadListRequestCount,
     resumeCount,
     resumeAvgMs: resumeCount ? Math.round(resumeTotalMs / resumeCount) : 0,
@@ -114,18 +116,45 @@ function eventThreadId(params: any): string {
   return String(params.threadId ?? params.thread_id ?? params.conversationId ?? "");
 }
 
+/** 每个窗口各自上报的「我在看哪个会话」——**必须按窗口分别记**。
+ *  09-12 那次事故的根因就在这里：主窗口与独立弹窗共用同一个全局变量，
+ *  后上报的窗口会覆盖前一个 → 另一个窗口正在看的会话被裁掉事件 → 永久转圈。 */
+const rendererActiveByWindow = new Map<number, { threadId: string; at: number }>();
+/** 上报新鲜度窗口：超过这个时间没再上报，就认为「不知道它在看什么」，一律放行（宁多不漏）。 */
+const ACTIVE_THREAD_FRESH_MS = 30_000;
+/** 逃生阀：HARNESS_EVENT_FILTER=off 一键回到全量放行（改代码之外的回退路径）。 */
+const EVENT_FILTER_ENABLED = process.env.HARNESS_EVENT_FILTER !== "off";
+
+/** 当前「必须收到事件」的会话集合 = 各窗口新鲜的活跃会话 ∪ 独立弹窗锁定的会话。
+ *  返回 null 表示「信息不可信」——此时调用方必须全量放行。 */
+function watchedThreadIds(): Set<string> | null {
+  const now = Date.now();
+  const ids = new Set<string>();
+  let trusted = false;
+  for (const entry of rendererActiveByWindow.values()) {
+    if (now - entry.at <= ACTIVE_THREAD_FRESH_MS) {
+      trusted = true;
+      if (entry.threadId) ids.add(entry.threadId);
+    }
+  }
+  // 弹窗锁定的会话：即使主窗口已经切走，也必须继续收到它自己的流式事件
+  for (const tid of popoutThreadIds.values()) if (tid) { ids.add(tid); trusted = true; }
+  return trusted ? ids : null;
+}
+
 function filterForRenderer(event: any) {
+  if (!EVENT_FILTER_ENABLED) return event;
   if (event?.kind !== "notification") return event;
   const method = String(event?.method ?? "");
   if (RENDERER_CROSS_SESSION_METHODS.has(method)) return event;
   const tid = eventThreadId(event?.params);
   if (!tid) return event;
-  if (!rendererActiveThreadId || tid === rendererActiveThreadId) return event;
-  // ⚠️ 2026-09-12 临时回退为「放行」：按会话过滤一旦与渲染层的 activeThreadId 上报不同步，
-  // 正在跑的会话就会收不到自己的事件 → 永久转圈（用户实测「另一个会话宕机」）。
-  // 先只记账、证明收益与安全性，再决定是否真正启用裁剪（把下面改成 return null 即可）。
+  const watched = watchedThreadIds();
+  if (!watched) return event;          // 不知道任何窗口在看什么 → 放行
+  if (watched.has(tid)) return event;  // 正在被看着 → 放行
+  // 真的可以裁掉：只有渲染层当前不看的会话的高频事件（各种 delta / item 全文 / outputDelta）。
   rendererDroppedEventCount += 1;
-  return event;
+  return null;
 }
 
 
@@ -2238,7 +2267,10 @@ app.whenReady().then(async () => {
   }
   createWindow();
   server.on("event", (event) => {
-    broadcastCodexEvent(filterForRenderer(event));
+    // 裁剪后可能为 null（09-14 启用按会话过滤）——null 绝不能进 broadcastCodexEvent，
+    // 否则渲染层收到一条空事件。channelBot / voiceService 拿的是未裁剪的原始事件。
+    const forwarded = filterForRenderer(event);
+    if (forwarded) broadcastCodexEvent(forwarded);
     channelBot.handleCodexEvent(event);
     // 语音通话：只旁听事件（正文增量 / 回合生命周期），不改变事件本身的任何流向
     voiceService.handleCodexEvent(event);
@@ -3141,8 +3173,14 @@ ipcMain.handle("app:storage-clear", async (_event, target: "engine-log" | "image
 
 ipcMain.handle("app:perf-counters", () => enrichScanCountSnapshot());
 /** 渲染层上报「当前正在查看哪个会话」：主进程据此只转发该会话的高频事件（P1）。 */
-ipcMain.handle("codex:set-active-thread", (_event, threadId: unknown) => {
-  rendererActiveThreadId = threadId == null ? "" : String(threadId);
+ipcMain.handle("codex:set-active-thread", (event, threadId: unknown) => {
+  const id = threadId == null ? "" : String(threadId);
+  rendererActiveThreadId = id;
+  try { rendererActiveByWindow.set(event.sender.id, { threadId: id, at: Date.now() }); } catch { /* 窗口已销毁：忽略 */ }
+  // 窗口销毁时清掉记录：否则一个已关闭窗口的旧值会在新鲜度窗口内继续放行它的会话事件
+  try {
+    event.sender.once("destroyed", () => rendererActiveByWindow.delete(event.sender.id));
+  } catch { /* ignore */ }
   return { ok: true };
 });
 /** 当前窗口是否为独立会话弹窗：优先读登记表，URL query 兜底。 */
