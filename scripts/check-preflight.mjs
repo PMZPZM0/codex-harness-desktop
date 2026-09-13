@@ -13,6 +13,7 @@ import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, rmSync } fr
 import { spawnSync } from "node:child_process";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../src/lib/model-scope.mjs";
 import { SESSION_SCOPE_HEADING, composeScopeInstructions, sessionScopeBlock, sessionScopeSignature, stripScopeBlock } from "../src/lib/session-scope.mjs";
+import { emptyRuntime, legacyMirror, migrateRuntime, normalizeRuntime, patchRuntime, runtimeSignature } from "../src/lib/thread-runtime.mjs";
 import { planCompletedFold } from "../src/lib/turn-fold-plan.mjs";
 import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../src/lib/voice-aec.mjs";
 import { createSpeakFilter, normalizeNumbers, numberToChinese, toSpeakableText } from "../src/lib/speak-text.mjs";
@@ -449,6 +450,87 @@ console.log(C.bold("\n【4a-2】会话作用域块（会话级配置下发到会
     archiveGuarded
       ? ok("全局档案对账已加「无会话才写」守卫（切会话模型不再改写全局档案）")
       : fail("全局档案对账缺少会话守卫——切会话模型会把 custom-model.json / config.toml 顶层 model 改成该会话的模型");
+  }
+}
+
+// ---------- 4a-3. 会话运行时配置：单一存放处（09-14 向 ZCode 形态收敛） ----------
+
+console.log(C.bold("\n【4a-3】会话运行时配置（模型/档位/权限收敛到一个对象）"));
+
+{
+  const rtSrc = existsSync(join(ROOT, "src", "App.tsx")) ? readFileSync(join(ROOT, "src", "App.tsx"), "utf8") : "";
+
+  // ① 空态：字段恒在（不然后面的对账逻辑又要到处 ?? ""）
+  const empty = emptyRuntime();
+  const hasAllFields = ["model", "effort", "sandbox", "approval"].every((k) => k in empty) && empty.rev === 0;
+  hasAllFields ? ok("空运行时四个字段恒在（rev 从 0 起）") : fail(`空运行时字段不全：${JSON.stringify(empty)}`);
+
+  // ② 归一化：坏 JSON / 缺字段 / 类型不对都不能炸，也不能吐 undefined
+  const messy = normalizeRuntime({ model: undefined, effort: 5, sandbox: null, approval: "never" });
+  messy.model === "" && messy.effort === "5" && messy.sandbox === "" && messy.approval === "never"
+    ? ok("归一化：缺项回落空串、非字符串转字符串，不吐 undefined/null")
+    : fail(`归一化结果异常：${JSON.stringify(messy)}`);
+  normalizeRuntime("not-an-object").model === "" ? ok("归一化：非对象输入回落到空运行时") : fail("归一化：非对象输入没有兜住");
+
+  // ③ 迁移：旧三键族只在「新键没有值」时说话（这是旧键唯一还能生效的时刻）
+  const fromLegacy = migrateRuntime({ model: "custom:custom906:glm-5.3-flash", effort: "ultra", permissions: { sandbox: "danger-full-access", approval: "never" } });
+  fromLegacy.model === "custom:custom906:glm-5.3-flash" && fromLegacy.effort === "ultra" && fromLegacy.sandbox === "danger-full-access" && fromLegacy.approval === "never"
+    ? ok("迁移：新键缺失时从旧三键族补齐（含权限对象）")
+    : fail(`迁移没补齐旧值：${JSON.stringify(fromLegacy)}`);
+  const stringPerms = migrateRuntime({ permissions: JSON.stringify({ sandbox: "read-only", approval: "on-request" }) });
+  stringPerms.sandbox === "read-only" ? ok("迁移：permissions 为 JSON 字符串也能解析") : fail("迁移：permissions 字符串形态解析失败");
+
+  // ④ 新键优先：新键有值时旧键**一律忽略**（否则又变成两处权威，回到分叉老路）
+  const newWins = migrateRuntime({ runtime: { model: "custom:custom906:deepseek-v4-flash", effort: "high" }, model: "custom:custom906:glm-5.3-flash", effort: "ultra" });
+  newWins.model === "custom:custom906:deepseek-v4-flash" && newWins.effort === "high"
+    ? ok("迁移：新键有值时旧键一律忽略（旧键只是镜像，不具权威性）")
+    : fail(`迁移让旧值盖掉了新值：${JSON.stringify(newWins)}`);
+
+  // ⑤ 打补丁：只改传入的字段，其余原样保留（以前三键族分家最容易互相踩空）
+  const patched = patchRuntime(fromLegacy, { effort: "low" });
+  patched.changed && patched.runtime.effort === "low" && patched.runtime.model === fromLegacy.model && patched.runtime.sandbox === fromLegacy.sandbox
+    ? ok("打补丁：只覆盖传入字段，其余原样保留")
+    : fail(`打补丁污染了其它字段：${JSON.stringify(patched.runtime)}`);
+
+  // ⑥ 空值不抹掉已有值（等价旧 helper 的「空值直接 return」——对账逻辑不许把选择清成空）
+  const noop = patchRuntime(fromLegacy, { model: "", effort: undefined });
+  noop.changed === false && noop.runtime.model === fromLegacy.model
+    ? ok("打补丁：空串/undefined 不抹掉已有值（changed=false，不落盘）")
+    : fail("打补丁把已有值清成了空——对账逻辑会误伤用户的选择");
+
+  // ⑦ rev 递增：只有真变化才 +1（给后续多窗口并发保护留的钩子）
+  patchRuntime(fromLegacy, { model: "custom:custom906:deepseek-v4-flash" }).runtime.rev === fromLegacy.rev + 1
+    ? ok("rev 只在真变化时递增（多窗口互踩可据此判定）")
+    : fail("rev 没有按变化递增");
+
+  // ⑧ 签名：四项齐全才变，用于「要不要重新下发给引擎」的去重
+  runtimeSignature(fromLegacy) !== runtimeSignature({ ...fromLegacy, approval: "on-request" })
+    ? ok("签名覆盖 模型/档位/沙箱/审批 四项")
+    : fail("签名漏掉了权限项——改权限后不会重新下发作用域");
+
+  // ⑨ 镜像是派生值：只写不读（读取路径若再从旧键取值，等于把三处存放又救活了）
+  const mirror = legacyMirror(fromLegacy);
+  mirror.model === fromLegacy.model && JSON.parse(mirror.permissions).sandbox === fromLegacy.sandbox
+    ? ok("旧键镜像是派生值（模型/权限与新键一致）")
+    : fail(`旧键镜像与新键不一致：${JSON.stringify(mirror)}`);
+
+  // ⑩ 接线守卫：App.tsx 里六个 helper 必须全部走单一对象，不许再有裸的旧键 setItem
+  if (!rtSrc) {
+    warn("找不到 src/App.tsx，跳过会话运行时接线守卫");
+  } else {
+    const legacyWrites = (rtSrc.match(/setItem\(\s*(?:"|`)(?:thread-model-|thread-effort-|thread-permissions-)/g) ?? []).length;
+    // 镜像写的是 `LEGACY_PREFIX.model + id`（常量拼接），所以**字面量**前缀的写入应当归零
+    legacyWrites === 0
+      ? ok("旧三键族已无散落写入（镜像统一经 LEGACY_PREFIX 常量派生）")
+      : fail(`旧三键族仍有 ${legacyWrites} 处字面量写入——应全部经 saveThreadRuntime 派生`);
+    const helpersGoThroughRuntime = /function saveThreadModel\([^)]*\)\s*\{\s*saveThreadRuntime\(/.test(rtSrc)
+      && /function saveThreadEffort\([^)]*\)\s*\{\s*saveThreadRuntime\(/.test(rtSrc)
+      && /function saveThreadPermissions\([^)]*\)\s*\{\s*saveThreadRuntime\(/.test(rtSrc);
+    helpersGoThroughRuntime
+      ? ok("模型/档位/权限三个 save helper 全部走 saveThreadRuntime 单一入口")
+      : fail("还有 helper 在直接写旧键——三处存放没真正收敛");
+    const readsGoThroughRuntime = /function loadThreadModel\(id: string\): string \{\s*return loadThreadRuntime\(id\)\.model;/.test(rtSrc);
+    readsGoThroughRuntime ? ok("读取也统一走 loadThreadRuntime（旧键只在迁移时被读）") : fail("读取路径仍在直接读旧键");
   }
 }
 

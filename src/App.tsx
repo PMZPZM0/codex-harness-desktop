@@ -12,6 +12,7 @@ import { DEFAULT_EFFORT, pickDefaultEffort, CUSTOM_MODEL_EFFORTS, normalizeEffor
 import { matchModelSpec, loadExternalSpecs } from "./lib/model-specs";
 import { resolveModelForOpen, shouldSyncOpenThread } from "./lib/model-scope.mjs";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "./lib/session-scope.mjs";
+import { LEGACY_PREFIX, emptyRuntime, legacyMirror, migrateRuntime, normalizeRuntime, patchRuntime, runtimeKey, runtimeSignature } from "./lib/thread-runtime.mjs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
 import { resolveSkillVisual, type SkillVisual } from "./lib/skill-icon";
 import { translateEngineNotice } from "./lib/engine-notices-zh";
@@ -1798,20 +1799,70 @@ function reasoningTextOf(item: ThreadItem): string {
 const deltaMethods = new Set(["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded", "item/reasoning/textDelta", "item/commandExecution/outputDelta"]);
 const isDeltaMethod = (method: string) => deltaMethods.has(method);
 
+// ── 会话运行时配置：单一存放处（09-14 收敛，见 src/lib/thread-runtime.mjs） ──────────────
+// 以前模型/档位/权限是 `thread-model-*` / `thread-effort-*` / `thread-permissions-*` 三套键族
+// 各自读写（约 20 处写、15 处读），对账逻辑对着三处写，互相踩踏过两回（档案与会话记录分叉、
+// 兜底 effect 把用户刚选的模型冲掉）。现在**只有一个对象** `thread-runtime-<id>`：
+// 读 = 新键优先、缺项从旧键迁移一次；写 = 写新键 + 派生镜像到旧键（旧键从此只是镜像，
+// 读取路径一律不再从旧键取值）。下面六个 helper 保留原签名，只是全部改为走这个对象，
+// 所以所有调用点（chooseModel / openThread / 权限切换 / fork / 迁移）自动收敛到一处。
+function loadThreadRuntimeRaw(id: string): ReturnType<typeof emptyRuntime> {
+  if (!id) return emptyRuntime();
+  try {
+    const raw = localStorage.getItem(runtimeKey(id));
+    if (raw) return normalizeRuntime(JSON.parse(raw));
+  } catch { /* 坏 JSON 视为没有，走下面的迁移 */ }
+  // 首次读取：从旧三键族迁移（旧键**唯一**还能说话的时刻）
+  let legacyModel = "";
+  let legacyEffort = "";
+  let legacyPerms: unknown = {};
+  try {
+    legacyModel = localStorage.getItem(LEGACY_PREFIX.model + id) ?? "";
+    legacyEffort = localStorage.getItem(LEGACY_PREFIX.effort + id) ?? "";
+    legacyPerms = JSON.parse(localStorage.getItem(LEGACY_PREFIX.permissions + id) ?? "{}");
+  } catch { /* ignore */ }
+  return migrateRuntime({ model: legacyModel, effort: legacyEffort, permissions: legacyPerms });
+}
+
+/** 读会话运行时配置（含旧键自动迁移）。**只有明确的用户动作才调 save，effect 请勿落盘。** */
+function loadThreadRuntime(id: string): ReturnType<typeof emptyRuntime> {
+  const runtime = loadThreadRuntimeRaw(id);
+  // 迁移落盘：旧键里有值、而新键还没有 → 补写一次，之后旧键只作镜像
+  if (id && !localStorage.getItem(runtimeKey(id)) && runtimeSignature(runtime) !== "|||") {
+    saveThreadRuntime(id, runtime);
+  }
+  return runtime;
+}
+
+/** 写会话运行时配置：一次读、一次合并、一次落盘（外加旧键镜像）。空补丁不落盘。 */
+function saveThreadRuntime(id: string, patch: Partial<ReturnType<typeof emptyRuntime>>) {
+  if (!id) return;
+  try {
+    const { runtime, changed } = patchRuntime(loadThreadRuntimeRaw(id), patch);
+    if (!changed) return;
+    localStorage.setItem(runtimeKey(id), JSON.stringify(runtime));
+    // 旧键镜像（派生值，给已发布的旧版本读；读取路径永不从旧键取值）
+    const mirror = legacyMirror(runtime);
+    if (mirror.model) localStorage.setItem(LEGACY_PREFIX.model + id, mirror.model);
+    if (mirror.effort) localStorage.setItem(LEGACY_PREFIX.effort + id, mirror.effort);
+    localStorage.setItem(LEGACY_PREFIX.permissions + id, mirror.permissions);
+  } catch { /* ignore */ }
+}
+
 function loadThreadPermissions(id: string): { sandbox?: string; approval?: string } {
-  try { return JSON.parse(localStorage.getItem("thread-permissions-" + id) ?? "{}"); } catch { return {}; }
+  const r = loadThreadRuntime(id);
+  return { sandbox: r.sandbox, approval: r.approval };
 }
 function saveThreadPermissions(id: string, sandbox: string, approval: string) {
-  localStorage.setItem("thread-permissions-" + id, JSON.stringify({ sandbox, approval }));
+  saveThreadRuntime(id, { sandbox, approval });
 }
 
 function loadThreadModel(id: string): string {
-  try { return localStorage.getItem("thread-model-" + id) ?? ""; } catch { return ""; }
+  return loadThreadRuntime(id).model;
 }
 
 function saveThreadModel(id: string, modelId: string) {
-  if (!id || !modelId) return;
-  try { localStorage.setItem("thread-model-" + id, modelId); } catch { /* ignore */ }
+  saveThreadRuntime(id, { model: modelId });
 }
 
 /** 打开会话时的模型回填：**该会话自己的记录优先**，它还没有记录（新建/从没选过）才用全局默认。
@@ -1824,12 +1875,11 @@ function resolveThreadModel(id: string): string {
 
 /** 每会话独立的思考等级：切会话互不串扰（对齐 thread-model 的按会话存储模式）。 */
 function loadThreadEffort(id: string): string {
-  try { return localStorage.getItem("thread-effort-" + id) ?? ""; } catch { return ""; }
+  return loadThreadRuntime(id).effort;
 }
 
 function saveThreadEffort(id: string, effort: string) {
-  if (!id || !effort) return;
-  try { localStorage.setItem("thread-effort-" + id, effort); } catch { /* ignore */ }
+  saveThreadRuntime(id, { effort });
 }
 
 function sandboxPolicy(mode: string, cwd: string) {
