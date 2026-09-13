@@ -1422,11 +1422,14 @@ button {
   overflow: hidden;
 }
 .timeline {
-  scroll-behavior: smooth;
-  /* 关闭浏览器滚动锚定：钉顶/贴底跟随由 App 手动管理（瞬时滚动），Chrome 的
-     overflow-anchor 会在思考卡折叠等内容高度突变时自行补偿 scrollTop，跟手动
-     滚动打架 = 出字时来回闪（09-12 实测） */
-  overflow-anchor: none;
+  /* ⛔ 这里**不要**写 `scroll-behavior: smooth`（09-13 拆除）：
+     它只作用于**程序滚动**，而聊天区的程序滚动几乎全部要求"瞬时到位"——留白/跟随/钉顶
+     都必须一帧到位，动画中途内容还会继续长高 → retarget → 出字抖动、互相拉扯。
+     一行 CSS 曾逼出代码里 8 处 `style.scrollBehavior = "auto"` 的临时改写与还原，
+     还有 3 处 `scrollIntoView({behavior:"smooth"})` 根本没绕过（刻度尺跳转/搜索跳转）。
+     需要动画的地方**显式**写 `behavior: "smooth"`（少数几处跳转），默认保持瞬时。
+     注：`scroll-behavior` 不影响用户手动滚轮/拖拽，所以拆掉它不会让手动滚动变生硬。 */
+  overflow-anchor: none; /* 浏览器滚动锚定会跟手动滚动打架（思考卡折叠等内容高度突变时自行补偿 scrollTop）= 出字来回闪，09-12 实测 */
   flex: 1 1 0;
   width: 0;
   min-width: 0;
