@@ -22025,46 +22025,20 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .popout-return-btn:hover {
   filter: brightness(1.15);
 }
-/* 侧栏会话行进入「拖出」态：整行高亮 + 光标提示可拖 */
-.thread-row.drag-out {
-  background: color-mix(in srgb, var(--accent, #4f7cff) 14%, transparent);
-  outline: 1px dashed color-mix(in srgb, var(--accent, #4f7cff) 65%, transparent);
-  outline-offset: -2px;
-  cursor: grab;
+/* 侧栏会话行被弹窗锁定：置灰不可点（行保留原位，弹窗关闭自动恢复；用户 09-13 定稿
+   「隐藏改为置灰」）。标题/摘要降透明度，hover 不变色，光标 not-allowed。 */
+.thread-row.popped-out {
+  opacity: 0.45;
+  pointer-events: auto;
 }
-.thread-row.drag-out .thread-row-title-line {
-  color: var(--accent, #4f7cff);
+.thread-row.popped-out .thread-row-title-line {
+  color: var(--muted);
 }
-/* 拖出浮动提示：跟随鼠标的浅色卡片，与弹窗按钮同语义（PanelRightOpen 图标） */
-.popout-drag-ghost {
-  position: fixed;
-  z-index: 9999;
-  transform: translate(10px, -50%);
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 340px;
-  padding: 8px 13px;
-  border-radius: 10px;
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--text, #26251f);
-  background: var(--bg-elev, #ffffff);
-  border: 1px solid var(--line, rgba(0, 0, 0, .14));
-  box-shadow: 0 8px 26px rgba(0, 0, 0, .18), 0 2px 8px rgba(0, 0, 0, .1);
-  pointer-events: none;
-  animation: 0.16s ease-out both popout-ghost-in;
+.thread-row.popped-out button {
+  cursor: not-allowed;
 }
-.popout-drag-ghost svg {
-  flex: none;
-  color: var(--accent, #4f7cff);
-}
-.popout-drag-ghost b {
-  font-weight: 600;
-}
-@keyframes popout-ghost-in {
-  from { opacity: 0; transform: translate(10px, -50%) scale(.92); }
-  to { opacity: 1; transform: translate(10px, -50%) scale(1); }
+.thread-row.popped-out:hover {
+  background: transparent;
 }
 /* 弹窗窗口本体：与主窗口同构（同款顶栏/侧栏），无需额外布局类；
    顶栏右侧的操作簇按钮在弹窗里同样可用（右栏开关等）。 */

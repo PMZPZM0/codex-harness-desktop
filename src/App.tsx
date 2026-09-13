@@ -7570,72 +7570,20 @@ export default function App() {
     if (agentAsk) setLabel(agentAsk.threadId, "需选择");
     return map;
   }, [pending, agentAsk]);
-  // ── 侧栏会话行长按拖出为独立窗口（09-13）──
-  // 按住会话行不放 600ms 进入「拖出」态（行高亮 + 浮动 ghost 提示松手），此时松手即弹窗；
-  // 未到 600ms 松手 = 普通点击（打开会话）；拖出中移动超过 12px 视为拖拽仍保持（可拖到窗口外）。
-  const [dragOutHint, setDragOutHint] = useState<{ id: string; name: string; x: number; y: number } | null>(null);
-  const dragOutRef = useRef<{ id: string; name: string; timer: number; armed: boolean } | null>(null);
-  const longPressStart = useCallback((id: string, x: number, y: number) => {
-    // 已有一个拖出中的行则忽略新按压（防多指）
-    if (dragOutRef.current?.armed) return;
-    const entry = threadsRef.current.find((t) => t.id === id);
-    dragOutRef.current = {
-      id,
-      name: entry ? cleanThreadDisplayTitle(entry.name, { preview: entry.preview }) : "会话",
-      timer: window.setTimeout(() => {
-        if (!dragOutRef.current || dragOutRef.current.id !== id) return;
-        dragOutRef.current.armed = true;
-        setDragOutHint({ id, name: dragOutRef.current.name, x, y });
-      }, 600),
-      armed: false,
-    };
-  }, []);
-  const longPressMove = useCallback((id: string, x: number, y: number) => {
-    if (!dragOutRef.current || dragOutRef.current.id !== id || !dragOutRef.current.armed) return;
-    setDragOutHint((current) => (current && current.id === id ? { ...current, x, y } : current));
-  }, []);
-  const longPressEnd = useCallback((id: string) => {
-    const state = dragOutRef.current;
-    if (!state || state.id !== id) return;
-    if (state.timer) window.clearTimeout(state.timer);
-    if (state.armed) {
-      dragOutRef.current = null;
-      setDragOutHint(null);
-      void popoutCurrentThread(id);
-    } else {
-      dragOutRef.current = null;
-    }
-  }, []);
-  const longPressCancel = useCallback((id: string) => {
-    const state = dragOutRef.current;
-    if (!state || state.id !== id) return;
-    if (state.timer) window.clearTimeout(state.timer);
-    dragOutRef.current = null;
-    setDragOutHint((current) => (current?.id === id ? null : current));
-  }, []);
-  // pointerleave 只在「未武装」（还没到 600ms）时取消；已进入拖出态则跟随鼠标继续（可拖出窗口）
-  const longPressLeave = useCallback((id: string) => {
-    const state = dragOutRef.current;
-    if (!state || state.id !== id || state.armed) return;
-    if (state.timer) window.clearTimeout(state.timer);
-    dragOutRef.current = null;
-  }, []);
+  // 侧栏「长按拖出为独立窗口」已删（09-13 用户定稿：入口只留顶栏的独立/返回按钮）。
   const renderThreadRow = (entry: Thread) => {
     const running = runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running";
     const attentionLabel = threadAttention.get(entry.id);
     const attentionTone = attentionLabel === "需审批" ? "approval" : attentionLabel === "需选择" ? "choice" : "confirm";
-    const draggingOut = dragOutRef.current?.id === entry.id;
+    // 被弹窗锁定的会话：侧栏置灰不可点（会话已在独立窗口里渲染，点击会造成双窗口重复渲染），
+    // 行仍保留在原位置（用户 09-13 定稿：隐藏改为置灰）。弹窗关闭后自动恢复可点。
+    const poppedOut = poppedOutThreadIds.has(entry.id);
     return (
     <div
-      className={`thread-row ${thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${threadRowMenu?.id === entry.id ? "menu-open" : ""} ${draggingOut ? "drag-out" : ""}`}
+      className={`thread-row ${thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${threadRowMenu?.id === entry.id ? "menu-open" : ""} ${poppedOut ? "popped-out" : ""}`}
       key={entry.id}
-      onPointerDown={(event) => { if (event.button !== 0) return; longPressStart(entry.id, event.clientX, event.clientY); }}
-      onPointerMove={(event) => { longPressMove(entry.id, event.clientX, event.clientY); }}
-      onPointerUp={() => { longPressEnd(entry.id); }}
-      onPointerCancel={() => { longPressCancel(entry.id); }}
-      onPointerLeave={() => { longPressLeave(entry.id); }}
     >
-      <button title={runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : "双击修改任务名称"} onClick={() => void openThread(entry.id)}>
+      <button title={poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : "双击修改任务名称"} onClick={() => { if (poppedOut) { showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } void openThread(entry.id); }}>
         <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void renameThread(entry.id, next); }); }}><span>{cleanThreadDisplayTitle(entry.name, { preview: entry.preview })}</span>{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
       </button>
       <div className="thread-actions">
@@ -9099,12 +9047,7 @@ export default function App() {
       },
     },
   } : {}, [usingCustomModel, customModel]);
-  const listThreads = useMemo(() => {
-    const base = projectFilter ? threads.filter((entry) => entry.cwd === projectFilter) : threads;
-    // 被弹窗锁定的会话从侧栏隐藏（弹窗窗口里才能看到它）；弹窗关闭后自动回来
-    if (poppedOutThreadIds.size > 0) return base.filter((entry) => !poppedOutThreadIds.has(entry.id));
-    return base;
-  }, [threads, projectFilter, poppedOutThreadIds]);
+  const listThreads = useMemo(() => projectFilter ? threads.filter((entry) => entry.cwd === projectFilter) : threads, [threads, projectFilter]);
   // 侧边栏视图模式：分组（按时间） vs 项目（按 cwd）；与 WorkBuddy 项目列表对齐
   const [viewTab, setViewTab] = useState<"groups" | "projects">(() => (localStorage.getItem("sidebar-view-tab-v1") === "projects" ? "projects" : "groups"));
   useEffect(() => { try { localStorage.setItem("sidebar-view-tab-v1", viewTab); } catch { /* ignore */ } }, [viewTab]);
@@ -12737,11 +12680,12 @@ const commandMatches = useMemo(() => {
         showToast("已弹出独立窗口", "会话可拖出应用外，多个弹窗可同时存在");
       }
       refreshPoppedOut();
-      // 主窗口当前正在看的会话被弹窗出去 → 自动切到侧栏第一个可用会话，
-      // 避免主窗口与弹窗重复渲染同一会话（用户 09-13 明确要求侧栏隐藏 + 原窗口不展示）。
+      // 主窗口当前正在看的会话被弹窗出去 → 自动离开它（避免双窗口重复渲染）：
+      // 切到侧栏第一个「未被弹窗」的会话；全都弹出去了 → 回欢迎页（用户 09-13 定稿）。
+      // poppedOutThreadIds 可能还没含刚弹窗的这个（refreshPoppedOut 异步），用 threadId 显式排除。
       if (threadRef.current?.id === threadId) {
-        const first = listThreads[0];
-        if (first && first.id !== threadId) void openThread(first.id);
+        const firstAvailable = listThreads.find((entry) => entry.id !== threadId && !poppedOutThreadIds.has(entry.id));
+        if (firstAvailable) void openThread(firstAvailable.id);
         else setThread(null);
       }
     } catch (error: any) {
@@ -14686,14 +14630,6 @@ const commandMatches = useMemo(() => {
           </div>
         </div>
       </div>}
-      {/* 侧栏会话长按拖出 → 独立窗口的浮动提示（跟随鼠标，松手即弹窗） */}
-      {dragOutHint && createPortal(
-        <div className="popout-drag-ghost" style={{ left: dragOutHint.x, top: dragOutHint.y }}>
-          <Maximize2 size={14} />
-          <span><b>{dragOutHint.name}</b> · 松开鼠标拖出为独立窗口</span>
-        </div>,
-        document.body,
-      )}
       {botManagerOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setBotManagerOpen(false); }}>
         <div className="bot-manager" role="dialog" aria-label="机器人">
           <header><div className="bot-head-left"><Link2 size={17} /><strong>机器人</strong><small>把外部聊天工具和 Webhook 接入为你的聊天机器人。</small></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setBotManagerOpen(false)}><X size={17} /></button></header>
