@@ -268,6 +268,8 @@ interface Window {
     wecomWebhookLogout(): Promise<{ ok: boolean }>;
     wecomWebhookTest(text?: string): Promise<{ ok: boolean; error?: string }>;
     botBindingGet(): Promise<{ wechat: { threadId: string; title: string; updatedAt: number } | null; telegram: { threadId: string; title: string; updatedAt: number } | null }>;
+    botsGet(): Promise<any[]>;
+    botsSet(list: any[]): Promise<{ ok: boolean; count: number }>;
     botBindingSet(input: { channel: string; threadId: string | null; title?: string }): Promise<{ threadId: string; title: string; updatedAt: number } | null>;
     homeDir(): Promise<string>;
     onBotBindingChanged(handler: (bindings: unknown) => void): () => void;

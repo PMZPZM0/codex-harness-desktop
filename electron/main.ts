@@ -2307,6 +2307,19 @@ async function writeBotBindings() {
 }
 
 ipcMain.handle("bot-binding:get", async () => { await loadBotBindings(); return channelBotBindings; });
+
+// ── 机器人档案持久化（09-13）：此前机器人列表只存渲染层 localStorage —— 清缓存/换实例
+// 就整单丢失（用户实丢过一次，配对/绑定记录都在 userData 而档案没了）。迁到 userData/bots.json，
+// 与 botBindings / bot-pairing 同层。localStorage 旧数据由渲染层启动时上交迁移（见 App.tsx）。
+const botsFile = path.join(app.getPath("userData"), "bots.json");
+ipcMain.handle("bots:get", async () => {
+  try { return JSON.parse(await fs.readFile(botsFile, "utf8")); } catch { return []; }
+});
+ipcMain.handle("bots:set", async (_e, list: unknown) => {
+  const safe = Array.isArray(list) ? list : [];
+  await fs.writeFile(botsFile, JSON.stringify(safe, null, 2), "utf8");
+  return { ok: true, count: safe.length };
+});
 ipcMain.handle("bot-binding:set", async (_e, input: { channel: string; threadId: string | null; title?: string }) => {
   await loadBotBindings();
   const key = ["wechat", "telegram", "feishu", "dingtalk", "qq"].includes(String(input?.channel)) ? String(input.channel) : "wechat";
