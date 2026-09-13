@@ -14586,6 +14586,8 @@ const commandMatches = useMemo(() => {
                 <div className="bot-delete-row"><div><strong>删除机器人</strong><small>移除这个机器人，并断开其渠道连接（微信/Telegram 需重新扫码绑定）。</small></div><button className="bot-delete-btn" onClick={async () => {
                   // 删除必须同步断开渠道会话：网关凭据（微信 token/Telegram token）是主进程全局的，
                   // 只删 UI 记录的话同渠道新建会被判定「已连接」直接复用旧会话，扫码入口都不出现
+                  // ⚠️ 清凭据不可逆（微信要重新扫码），必须二次确认——此前无确认，误点一下登录态就没了
+                  if (!window.confirm(`删除机器人「${activeBot.name}」？\n\n将同时断开${botChannelName(activeBot.channel) || "渠道"}连接并清除登录凭据（微信/Telegram 需重新扫码），机器人卡片不会自动恢复。`)) return;
                   try {
                     if (activeBot.channel === "wechat") await window.codex.weixinLogout();
                     if (activeBot.channel === "telegram") await window.codex.telegramLogout();
