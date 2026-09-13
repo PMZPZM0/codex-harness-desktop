@@ -260,6 +260,12 @@ contextBridge.exposeInMainWorld("codex", {
   /** 标记身份引导已打过招呼（此后新会话不再引导、直接干活） */
   markIdentityGreeted: () => ipcRenderer.invoke("personalization:mark-greeted"),
   setActiveThread: (threadId: string | null) => ipcRenderer.invoke("codex:set-active-thread", threadId) as Promise<{ ok: boolean }>,
+  /** 独立会话弹窗：把会话开到新窗口（返回已聚焦=true 表示该会话已有弹窗） */
+  popoutThread: (threadId: string) => ipcRenderer.invoke("window:popout-thread", threadId) as Promise<{ ok: boolean; focused?: boolean }>,
+  /** 弹窗返回主应用：关闭本弹窗并把主窗口带到指定会话 */
+  popoutClose: (threadId: string | null) => ipcRenderer.invoke("window:popout-close", threadId) as Promise<{ ok: boolean }>,
+  /** 当前窗口是否是独立会话弹窗（主进程按 URL query 判定） */
+  popoutThreadId: () => ipcRenderer.invoke("window:popout-id"),
   storageInfo: () => ipcRenderer.invoke("app:storage-info"),
   storageClear: (target: "engine-log" | "images") => ipcRenderer.invoke("app:storage-clear", target),
   engineCheckUpdate: () => ipcRenderer.invoke("engine:check-update"),

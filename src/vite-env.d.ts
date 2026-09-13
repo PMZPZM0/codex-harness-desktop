@@ -471,6 +471,12 @@ interface Window {
     perfCounters(): Promise<{ rolloutFallbackScans: number; droppedForInactiveSession: number; threadListRequests: number }>;
     /** 上报当前正在查看的会话：主进程据此只转发该会话的高频事件（多会话性能） */
     setActiveThread(threadId: string | null): Promise<{ ok: boolean }>;
+    /** 独立会话弹窗：把会话开到新窗口（focused=true 表示该会话已有弹窗，聚焦了旧窗口） */
+    popoutThread(threadId: string): Promise<{ ok: boolean; focused?: boolean }>;
+    /** 弹窗返回主应用：关闭本弹窗并把主窗口带到指定会话 */
+    popoutClose(threadId: string | null): Promise<{ ok: boolean }>;
+    /** 当前窗口是否为独立会话弹窗（返回弹窗锁定的会话 id，非弹窗返回 null） */
+    popoutThreadId(): Promise<string | null>;
     /** 数据管理：各数据目录占用（bytes）与是否可清理 */
     storageInfo(): Promise<{
       items: { key: string; label: string; bytes: number; deletable: boolean }[];
