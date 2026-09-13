@@ -14,30 +14,65 @@ npm run verify     # 等价于 npm run check && npm run e2e
 
 | 层级 | 命令 | 覆盖什么 | 失败意味什么 |
 |---|---|---|---|
-| ① 离线预检 | `npm run check` | 构建 + **产物新鲜度** + IPC 三件套一致性（main.ts handler ↔ preload 桥接 ↔ vite-env.d.ts 方法面）+ CSS 类覆盖告警 + **纯函数行为断言**（`src/lib/*.mjs`，node 直接 import 跑真实现） | 改了没重建 / 桥接漏了类型 / 有死链 / 判定逻辑跑偏 |
-| ② UI 场景（**默认跑全部**） | `npm run e2e` | 自动拉起**已构建**应用逐个跑 `scenarios/*.mjs`，逐步截图到 `.e2e-artifacts/shots/`（文件名带场景前缀） | 界面真破了相（看截图即知） |
+| ① 离线预检 | `npm run check` | 构建 + **产物新鲜度** + IPC 三件套一致性（main.ts handler ↔ preload 桥接 ↔ vite-env.d.ts 方法面）+ CSS 类覆盖告警 + **纯函数行为断言**（`src/lib/*.mjs`，node 直接 import 跑真实现）+ 结构守卫（零阻塞宿主 / 验收入口唯一化） | 改了没重建 / 桥接漏了类型 / 有死链 / 判定逻辑跑偏 / 架构约束被破 |
+| ② 验收（**只有一条脚本**） | `npm run accept` | `scripts/accept.mjs`：拉起**已构建**应用，在**跨轮次复用的持久 profile**（`.e2e-profile/main`，首次把真实会话历史搬进来）上跑本轮验收项，失败自动截图到 `.e2e-artifacts/shots/` | 界面/行为真破了（看截图与逐项输出即知） |
 
 四条纪律：
 
-1. **只跑一半不算验收**。`check` 过但 `e2e` 没过 = 没完成，不许提交。
-2. **改了哪个模块，就给哪个模块补/改场景**。在 `scripts/e2e/scenarios/` 加 `<名>.mjs`（导出 `steps` 数组）或往现有场景加步骤，或给 `scripts/check-preflight.mjs` 加检查项——**让这次验证沉淀成下次的自动回归**，不许写成一次性脚本跑完就丢（这正是 09-06 那批 `verify-*.mjs` 全员消失的教训）。`npm run e2e` 不带参数即跑全部场景，新场景自动进门槛。
-3. **断言必须带前置条件**（先断言「弹窗是关的」再点开），否则上一步的残留状态会导致假通过。
-4. **新断言的正确性当场反证一次**：把修复临时改回去，确认断言真的会红。永远绿的断言等于没有断言，尤其「XX 没生效」类 bug。（`model-scope` 实测过三次：把判定改成「全局永远赢」→ 步骤③/⑤ 红；把 `openThread` 改回「只认会话记录」→ 步骤④ 红；把档案同步整个关掉 → ⑦bis/⑦ter 的档案与 config.toml 断言红。**反证后必须 `npm run build` 重建再跑正式那轮**，否则测的是反证版旧产物。）
+1. **⛔ 验收范围由流程保证：默认只跑「最新一轮」（2026-09-13 用户严令后**改写流程**，不再是"靠自觉加 --only"）**。
+   用户原话：「能不能不要再跑旧的测试了，不要浪费我token啊…只能测试最新改动，给你说了几百遍」→
+   「验收流程是死的嘛，你不会重新写嘛」。所以 `scripts/accept.mjs` 现在**按轮次分区**：
+   - 每个验收项在文件顶部的 `ROUND_OF` 里登记轮次，`LATEST_ROUND` 指向当前轮；
+   - **默认（不带参数）= 只跑 `LATEST_ROUND` 那一轮**；`--only <id>` 只跑指定项；`--all` 才是全量；
+   - `--list` 会打印每项所属轮次；新增验收项**必须**登记轮次，否则默认跑不到且会打印警告。
+   历史项不删（仍是回归证据），但**永远不会在默认路径上被执行** —— 单跑一次默认验收只有 4~5 项。
+   **全量 `--all` 只在三种情况**：发版/里程碑前、跨模块改动无法界定范围、用户明确要求，且跑之前先说明理由。
+   判断"本轮该跑什么"的原则：改渲染层交互/滚动 → 那几项渲染项；**改主进程/引擎/打包 → 不跑 accept**
+   （CDP 断言测不到），改跑 `check` 并把可静态验证的部分补进预检守卫；纯文档/注释 → 只跑 `check`。
+   判据：**这条断言会不会因为这次改动而变红** —— 不会就是纯浪费用户的时间和 token。
+2. **改了哪个模块，就改 `scripts/accept.mjs` 里对应的验收项**（每一项是 `{ id, name, run(h) }`，可 `--only <id>` 单独跑）。旧的「一堆历史场景 + 增量哈希 runner」**已按用户要求删干净**（`scripts/e2e/run.mjs`、`scripts/e2e/scenarios/` 都没了，preflight【7】硬守卫不许它们回来）：那套东西改一处主进程源码就带出十几个历史场景、一轮十几分钟，人卡在等它跑完。**不要再新建场景目录**；本轮不再对应的旧验收项**直接删掉**，别攒着。
+3. **断言必须带前置条件**（先断言「有这个前提」再做判断），否则上一步的残留状态会导致假通过。
+4. **新断言的正确性当场反证一次**：把修复临时改回去，确认断言真的会红。永远绿的断言等于没有断言。**反证后必须重新构建再跑正式那轮**，否则测的是反证版旧产物。
+5. **能用静态守卫的别用 CDP 跑**：要「重启应用 / 断网 / 换网段 / 并发多会话」才能复现的，钉进 `scripts/check-preflight.mjs`（如【10】【11】），改坏了 build 阶段就红，零运行成本。
 
-GUI 起不来时，最低限度跑 `check`（离线可用），并在提交信息里写明 `e2e` 未跑的原因。手册见 `docs/TESTING.md`。
+
+### 排查方法论（09-13 一整天弯路换来的，下一轮动手前先读）
+
+1. **看到症状先别调阈值、别加条件**。先问一句：「**现在有几个东西在写同一份状态 / 同一根滚动条？**」这一天 6 次修复的真根因全部是两类 —— ①**多个 owner 抢同一个东西**（钉顶与跟随每 60px 互拉、`switchJumpRef` 被两处消费）；②**状态被提前/错位消费**（裸布尔被下一次任意渲染吃掉）。**阈值从来不是根因**，调阈值只是把互拉挪到另一个区间。
+2. **先打点，再推理**。`window.__adbg` 一次 dump 出的时间线胜过半小时的代码推演：这一天每次"我觉得是这个原因"都猜错，每次打点都一击命中（`pin-fix{err:-65}` ↔ `follow-grow{+65}` 互拉、`clear-anchor{at:"switch-jump"}` 出现在**发送**时刻、`pad:622` 残留、`follow-grow` 全程不触发）。**加打点是第一动作，不是最后手段**；打点要带数字（top/gap/pad/err），不要只写"到这里了"。
+3. **测试必须跑到事件真正结束**（用户原话：「每次测试消息都不看完，你能发现什么bug，总是运行中就杀应用」）。长回合的毛病只在后段暴露；采样截断 + 收尾杀应用 = 把最关键的证据扔掉，还会把"没跑完"误报成失败。
+4. **判据不能用会随渲染状态变化的量**：折叠组收起时 `innerText` 是空串、`textContent` 才与折叠无关；侧栏按最近活动重排，**会话要用标题点、不能用行索引**（用索引测出来的"钉顶没了"有一半是点开了别的会话 → 假红）。判据要落在**语义主体**上（"正在跑的那个回合"），不要用整页总量。
+5. **状态重置要挂在「动作」上，不能挂在「某条渲染分支」上**。曾经把锚定状态清零写在"切会话瞬时定位"分支里，那段一旦被任何条件挡掉，清零就跟着被跳过 → 留白残留一整屏、锚点指向别的会话。现在清零挂在 `openThread` 里，结构上不可能被跳过。
+6. **每个改动都要有反证记录**。这一天真正抓住 bug 的都不是"断言变绿"，而是"我知道把哪一行改回去它就一定红"。
+7. **文档与代码同轮更新**。过时文档会主动误导下一轮（旧版 AGENTS.md 详细描述了已被删除的 `anchorHeightBaselineRef` 增长量模型与 `byUs` 判据，这一天的弯路有一部分就是照着它走的）。**删掉实现就把对应文档段落标记作废或改写**，别让后来者读到一段"看起来很像现状"的历史。
+8. **⛔ 不跑与本次改动无关的断言（用户 09-13 严令，第二次强调）**。原话：「能不能不要再跑旧的测试了，不要浪费我token啊…只能测试最新改动，给你说了几百遍」。
+   - 每轮改完只跑 **`--only <与改动相关的 id>`**；判据是「**这条断言会不会因为这次改动而变红**」，不会就别跑。
+   - 全量 `accept.mjs` 只用于**发版前 / 跨模块改动 / 用户明确要求**，且跑之前先说明为什么必须全量。
+   - 改主进程/引擎/打包这类 CDP 测不到的模块 → **不要跑 accept**，改跑 `check`，并把可静态验证的部分补进预检守卫（【10】【11】就是为此存在的）。
+   - 曾经一整天每轮都全量跑 57 项，其中绝大多数与本轮改动无关 —— 纯浪费用户时间和 token，**这是行为准则层面的硬约束，不是建议**。
+9. **⛔ 改动范围纪律：只做「架构层设计缺陷」和「渲染层真 bug」，不许顺手改行为（用户 09-13 明令）**。
+   原话：「设计缺陷是只架构层，渲染层的bug，你别给我乱改」。
+   - **两类可动**：① **架构层设计缺陷** —— IPC 契约与错误传播、真相源数量、事件通道与背压、持久化原子性与迁移、模块边界与守卫、生命周期状态机；② **渲染层真 bug** —— 有可复现路径、能说清"用户看到什么错"的。
+   - **不许动**：行为语义、权限边界、可见交互（不经用户确认就"收紧/放开"）。**教训**：我自作主张把 `fs:write` 限定到工作区，用户不得不叫停并回退（`7f0de22`）—— 安全收紧也是**产品决策**，先问再做。
+   - **重构不算修复**：除非要动的那段代码本身就是缺陷（例如"两个 owner 抢同一份状态"），否则不要为了"更干净"去改它。
+   - 动之前先回答两句：**这是架构缺陷还是渲染 bug？**、**这个改动会不会改变用户看得见的行为？** 第二问为"是"就先问用户。
+
+**为什么验收跑在持久 profile 上（09-12 用户定，别再改回临时目录）**：临时 profile 每轮都是白纸 —— 侧栏零会话，「切会话重播 / 首轮不出字 / 会话一多互相拖慢」这类问题**只在有历史时才现形**，空目录里测等于没测（用户原话：「为啥你每次拉起来的应用都没有历史记录，那测试有什么意义呢」）。现在首次建 profile 时会把**真实 profile 的会话历史**（`codex-home/sessions/**`）搬进来，之后一轮轮叠加；断言「本轮数据」时用 `h._rolloutFiles({ since: h.launchedAt })`，别让历史文件把断言顶成假绿。profile 在 `.e2e-profile/<name>/`（已 gitignore，含真实对话内容与 Key 密文，**绝不入库**）；想重来就删目录，想重灌真实配置/历史用 `CODEX_HARNESS_RESEED=1`。
+
+GUI 起不来时，最低限度跑 `check`（离线可用），并在提交信息里写明 `accept` 未跑的原因。手册见 `docs/TESTING.md`。
 
 ### 引擎自己怎么跑验收（已实测）
 
-引擎跑在应用体内，而 `e2e` 会**再拉起一个隔离实例**——不会和自己撞车。实测依据：单实例锁按 `userData` 隔离，E2E 用临时 profile，两实例完全独立并存（A 窗口里的 `window` 标记 B 读不到，两个进程都存活）。
+引擎跑在应用体内，而 `accept` 会**再拉起一个隔离实例**——不会和自己撞车。实测依据：单实例锁按 `userData` 隔离，验收用 `.e2e-profile/main`，两实例完全独立并存。
 
 ```bash
-# 用随包 node，不依赖 npm（引擎环境最稳的一条）
-resources/tools/node/node.exe scripts/e2e/run.mjs           # 全部场景
-resources/tools/node/node.exe scripts/e2e/run.mjs smoke     # 只跑指定场景
-resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
+resources/tools/node/node.exe scripts/accept.mjs              # 跑本轮全部验收项（约 20s）
+resources/tools/node/node.exe scripts/accept.mjs --list        # 列出验收项
+resources/tools/node/node.exe scripts/accept.mjs --only greet  # 只跑 id 含 greet 的项
+resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应用，留着手动看
 ```
 
-`npm run check` / `npm run e2e` 亦可，前提是 PATH 里有 node。**E2E 跑的是 `dist/` + `dist-electron/` 产物，必须先构建**——`check` 已含构建；只跑 `e2e` 前先确认产物不过期。
+`npm run accept` / `npm run e2e`（同一条）亦可，前提是 PATH 里有 node。**验收跑的是 `dist/` + `dist-electron/` 产物，必须先构建**——`check` 已含构建。
 
 ## 这是什么
 
@@ -113,12 +148,113 @@ resources/tools/node/node.exe scripts/e2e/run.mjs --list    # 列出全部场景
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **独立会话弹窗（09-13）**：会话可开成**独立 BrowserWindow**（主窗口之外多个同时存在、互不干扰），三种打开方式——① 顶栏 📁 左边「独立会话弹窗」按钮；② 侧栏会话行**长按 600ms 拖出**（拖出态行高亮 + 浮动 ghost 提示，松手即弹窗）；③ 同一会话重复弹窗 → 聚焦已有窗口。主进程 `electron/main.ts`：`popoutWindows` Set + `createPopoutWindow()`（同款 hidden titleBar + overlay 43px，可拖出应用外）+ `window:popout-thread` / `window:popout-close` / `window:popout-id` 三个 IPC；`codex:event` 改 `broadcastCodexEvent`（主窗口 + 全部弹窗）；**主窗口 closed → 弹窗跟随关闭**；`theme:apply` 遍历所有窗口。渲染层 `src/App.tsx`：弹窗窗口 = **完整主界面克隆**（侧栏/顶栏全保留，可自由切会话），boot 前探测 `popoutThreadId` 并锁定初始会话（不读 last-thread）；弹窗顶栏同位置变「返回主应用」按钮（`popoutClose` → 主进程关弹窗 + 发 `harness:event {type:"popout-return"}` → 主窗口 `openThread` 带回）。preload/vite-env 三方法对齐（check 预检【2】IPC 一致性守卫覆盖）。验收：`--only popout-window`（7 断言：按钮存在/引擎侧取 id/IPC 受理/主窗口非弹窗/返回通道可达）+ 弹窗窗口 CDP 全链路实测（会话锁定一致/返回按钮/侧栏 22 行/截图）。
+
+- **手机远控二次加固：6 位配对码 + 电脑端审批（09-13）**：手机扫码/打开链接后不再「连上即控」。新流程 = 输入电脑端显示的 **6 位配对码**（5 分钟有效、错 10 次作废、可刷新）→ 挂起等电脑端在「手机远控」面板点**允许/拒绝**（请求到达时面板自动弹到前台 + toast 提醒；2 分钟没人理自动过期）→ 通过后以 HttpOnly cookie 下发凭据（`harness_remote` + `harness_device`，https 场景带 Secure）。**已批准设备持久化**（`userData/remote-devices.json`），再连直接进、可单独移除。**二维码/配对链接不再夹带 `?k=` 凭据**（能力式 URL 会随链接/截图/历史/隧道日志外泄）；`authorize()` 只认「凭据 cookie + 已批准设备」，未配对访问 API/WS 一律 401、页面落到配对页；fail-open（token 为空全放行）已删。实现：`electron/remote.ts`（pairing/pairRequests/approved + `/api/pair`、`/api/pair-status`）+ main.ts IPC（`remote:pair-state/approve/deny/revoke/pair-rotate`）+ App.tsx 面板（配对码大字/审批卡/已批准设备列表）。回归：`scripts/accept.mjs --only remote-auth`（14 断言：无凭据 401/配对页/错码拒绝/对码挂起/审批前仍 401/审批卡/点允许/cookie 下发/带凭据 200/已批准直连）；预检【11】新增静态守卫（配对地址不得夹带 accessToken、必须有配对码+审批入口）。
+
+
+- **✅ 发送锚顶 · 09-13 定稿（当前实现，改这块先读这一段）**：完整走过一天弯路后的收敛版本，**只有三个概念**：
+  ① **位置 = 把「这次发送的那条用户消息」放在对话区顶部往下 `ANCHOR_TOP_OFFSET_PX`(54) 处**，唯一 owner 是 `App.tsx` 的 `pinSentMessage(el, threadId)`：锚点取**当前回合里的真实 `.user-message` 元素**（不在发送前回合基线里才算"本次新建"；乐观阶段尚未落进回合时才退回 `#chat-anchor`）。首次调用**立即**落位；之后每次调用**实测 gap**，偏差 > 8px 才延一帧再量一次并一次性修正。**不要**再引入第二个写滚动条的地方 —— 这一天所有"抖/跳/位置不对"最后都归到"两个 owner 抢同一根滚动条"。
+  ② **内容一旦长出视口，钉顶就"交棒"给跟随**（`pinGapLockedRef` 记下这个 key，此后不再纠偏）：**「消息稳在 54px」与「最新一行可见」在超屏时必然二选一**，两头都要 = 每 60px 互拉一轮（打点原文 `follow-grow{+65}` → `pin-fix{−65}` 循环）。短回复继续纠偏，长回复消息自然往上走。
+  ③ **跟随 = 一条规则 + 一个步长**：`dist = 内容底部 − scrollTop − clientHeight`，`dist > 48` 才**整体**补一次（两次之间视口完全静止）。**不要写成逐帧跟随**（`dist > 8` 就补）——打字机逐字揭示、末行不断重排，逐帧跟随 = 视口每帧都在动，用户原话「长消息换行跟自动跟随在抢，整个内容上下跳动」。
+  **所有"滚到底 / 跟随到最新"一律以「内容底部」为准**：`contentBottomOf(el) = scrollHeight − Σ 尾部留白高度`（`.timeline-bottom-spacer.compact` 64px + `.anchor-pad`）。**绝不能用 `scrollHeight`** —— 留白被算进"内容"后，"到底"= 滚进留白，切回会话就是「用户消息被切在视口顶 + 下方一大片空白」（用户截图实锤）。`jumpToBottom(scroller, onSettled, getTarget?)` 第三个参数就是为此加的。
+  **解除钉顶只有一个信号：真实用户输入**（滚轮 / 触摸 / 键盘翻页 / 指针拖拽，见 `releaseToUser`）。**已彻底删除**「按 scrollTop 方向猜用户意图」那套启发式 —— 流式增长、浏览器 clamp、`content-visibility` 重排都会让 scrollTop 自己动，从 scroll 事件里根本分不清是谁弄的（旧判据实测把钉顶自己掀掉，用户看到"消息不在那个位置"）。
+  **钉顶跟着会话活着**：`pinThreadIdRef` 记归属；切到别的会话 = **休眠**（`pinDormant`：不生效也不销毁），切回来立即复活（`pinDormantSeenRef` → 当 first 处理，因为切回那一帧几何是脏的，延帧纠偏会被跟随抢先）。`openThread` 里**只清留白**，**不要**清 `anchorTopRef` —— 清了就是「切换会话，钉顶没了」。归属记账必须用调用方传入的 threadId，**不能**用 `threadRef.current`（被动 effect 更新，布局 effect 期间还停在上一个会话）。
+  ⛔ **sticky 方案已证伪，别再试**：`position: sticky` 只能在**包含块内部**位移，用户消息的包含块是 `.turn-group` —— 刚发消息时组里只有这条消息（~72px），下方没有空间可借，钉不住（实测连发第 2 条 gap=396）；把留白放到 `.timeline` 末尾是**兄弟节点**，扩不了包含块。
+- **验收口径的硬要求（这一天的假红假绿都出在这里）**：① **采样必须跑到事件真正结束**（回合跑完再收工，收尾时若还有回合在流式要等它跑完再关应用）—— 用户原话「每次测试消息都不看完，你能发现什么bug，总是运行中就杀应用」，长回合的问题只在后段暴露；② **跳变判据按方向分开**：向下大跳 = 内容成批到达后的追赶（允许，≤1.5 屏），向上大跳才是"往回拽"（≤60px）；采样前 5 帧是**落位本身**，不计入判据；③ **内容完整性不能用会随渲染状态变的量**：折叠组收起时 `innerText` 为空、`textContent` 才与折叠无关；④ 判据落在**正在跑的那个回合**上（`lastTurnText`），别用整条时间线的总量；⑤ **切会话要点「会话标题」而不是行索引** —— 侧栏按最近活动排序，刚发过消息的会话会跳到最前，索引会指到别的会话上去（用索引测出来的"钉顶没了"有一半是假红）。
+- **`switchJumpRef` 必须是 `{id, at}`，不能是裸布尔**（这是「发送后消息不在那个位置」的真根因）：裸布尔在"打开会话时置位、当次却没有紧跟一次 thread 变更"（缓存秒开路径）时会一直挂着，直到**发送**触发的那次 thread 更新把它消费掉 → "切会话瞬时定位"分支在发送时执行 = 解除钉顶 + 留白归零 + 贴底。绑 id + 15s 过期后只有该会话自己的渲染能消费它。
+- **`mergeLongerStreams` 必须做并集**：resume 快照常常只带部分 items，早期实现只遍历快照 → "缓存里有、快照里没有"的条目**整条消失**，用户看到「运行中切走再切回，对话区整个不展示」（实测同一时间线 textContent 39341 → 6107）。以**缓存顺序**为骨架逐条合并，快照新增的追加末尾，快照整段没带回来的回合补在最前。
+- **诊断探针 `window.__adbg`（排这类问题的最快路径）**：打点 `send-arm-main / init-pin / pin-enter / pin-apply / pin-fix / pin-miss / follow-grow / stick-jump / clear-anchor{at} / release:{why} / thread-switch / reveal`。**先拿打点再推理**：这一天每次"猜根因"都猜错，每次"打点"都一击命中（`pin-fix{err:-65}` 与 `follow-grow{+65}` 互拉、`clear-anchor{at:"switch-jump"}` 在发送时触发、`pad:622` 残留……全是打点直接看出来的）。`scripts/accept.mjs --only send-anchor` 会把整段轨迹打出来。
+- **⚠️ 以下 09-12 版实现细节已部分作废（`anchorHeightBaselineRef` 增量基线、`byUs` 判据、anchor-pad 按锚高自适应、`cancel:bottom-scroll` 方向判定、`scripts/e2e/**` 场景）全部已删除，仅作历史留档**：目标观感 = WorkBuddy——**每次**发送都把新消息钉在对话区顶部，回复向下展开，视口全程稳定（用户明确「每次发新消息都要在那个位置」，不要自动转贴底）。已落地并验证：①跟随/钉顶全部瞬时滚动（`scroll-utils.ts` 的 `scrollToOffsetInstant`，`.timeline` 的 CSS smooth 让 `behavior:"auto"` 也走动画）；②`.timeline` 加 `overflow-anchor:none`；③程序滚动抑制窗 `selfScrollUntilRef`（钉顶/贴底后 80ms 内的 scroll 事件只刷新基线不做方向判定）；④打字机 packet-reveal 的贴底驱动加 `!anchorTopRef` 守卫；⑤「已工作 X 秒」指示已删。
+  **连发失效的真根因（09-12 晚实测探针定位，勿再按「分支没执行」方向排查）**：不是逻辑分支没跑（`init-pin`/`confirm-fired` 探针三连条条都触发），而是**几何 + 误判双重**——(a) **几何**：视口高 622px 而短消息只有 72px，锚点**下方没有内容**时 `scrollTop` 被浏览器钳在 `maxScroll`（探针实测 `want=1598 / got=1155 / sh=1777 / ch=622`，精确等于贴底位置），消息停在视口中间；第一条长消息能成，是**因为它自己就撑满了一屏**（`aH=1102`）。(b) **误判**：被钳制那一下 `scrollTop` 是**增大**的，`update()` 里「scrollTop 真实增大到触底 ⇒ 用户主动往下滚 ⇒ 解除钉顶」把它当成用户行为，于是钉顶**自杀**、退回贴底（away=0）——这条本来是为「回合完成时思考卡折叠导致 dist 骤减」加的防御，反被自己触发。
+  **修法（两处，互为冗余）**：①新增**锚顶专用底部留白** `.timeline-bottom-spacer.anchor-pad`（`anchorSpacerRef`，inline height = `clientHeight − 锚点高`，排在 `#chat-anchor` 之后），把锚点下方补足到一整屏 → `scrollTop` 够得着锚点；高度必须随锚高自适应，固定的「一屏」会把下一个新消息的坐标一起撑大（实测 `want` 因此大于 `maxScroll`）。②`pinnedScrollTopRef` 记下**每次钉顶实际落点**，`update()` 里加 `byUs = |scrollTop − pinnedScrollTop| ≤ 2` 判据，把「自己造成的钳制」从「用户滚到底」里摘出来。解除钉顶（上滚 / wheel / 触底）时同步 `pinnedScrollTopRef = -1` + `clearAnchorPad()` 归零留白，避免残留一屏空白。
+  **验收**：`scripts/e2e/scenarios/send-anchor-top.mjs` **21/21**（连发三条逐条断言钉顶，gap 实测 5/0/1px，`scrollTop < maxScroll` 证明未被贴底接管）；**联合反证已做**：把留白与 `byUs` 同时关掉 → gap 立刻回到 379/280、`scrollTop === maxScroll`（3 条红），恢复即绿——两个机制各自都能兜住，故**不要单独删任一个**。
+  **「不自动贴底」的断言口径**：不能用 `away > 80`（短回复本来就在视口里凑不满一屏，away 天然很小，实测 gap 稳定 1~6px 时 away 只有 67 → 假红）；要用 **`scrollTop < maxScroll − 4`**（视口没停在内容最底部）。
+  **落点偏移可调（09-12 晚用户反馈「太高了，往下放两行」）**：钉顶落点由常量 **`ANCHOR_TOP_OFFSET_PX`（`App.tsx` 紧邻 `TURN_WINDOW`，当前 **54**）** 控制，三处使用点（确认换锚 6711 / thread 布局 effect / init-pin）都用它，**不要再写魔法数字**。语义 = 锚点顶部再下移这么多像素（原来只上移 6px，首行几乎贴着对话区上沿）；54 = 原来的 6 + 两行正文（正文 14px × line-height 1.72 ≈ 24px/行）。**用户想再往下就调大这个值**（一行 ≈ 24px）。改后实测 gap 6 → 54（正好 +48），场景 21/21。
+  **⚠️ 钉顶必须带「增量自动跟随」（09-12 用户实测二次反馈：「回复流出屏幕、看不到最新」，原话「出消息自动跟随很难吗」）**：第一版 v2 把跟随**整个关掉了**（坚持「不自动转贴底」），后果是消息钉在顶部后正文一路往下流出屏幕、视口钉死不动 → 大片空白 + 看不到最新内容（用户截图实锤）。
+  **定稿语义（两者必须同时成立）**：① 新消息钉在顶部（位置稳定）；② **内容每长出一段，就按「增长量」把视口往下推同样多**（`update()` 里 `anchorHeightBaselineRef` 记录基线，`growth = scrollHeight - 基线`，`scrollTop += growth`）。这样新内容始终可见，又不会像旧版「每字重推整屏」那样跳动——**跟随 ≠ 贴底，跟随 = 只补增长量**。
+  实现要点：跟随判定必须放在 `update()` 的**方向判定之前**，并同步推进 `lastTop` / `pinnedScrollTopRef`，否则自己的程序滚动会被当成「用户滚到底」而误解除钉顶。基线在每次钉顶后重置为当前 `scrollHeight`。
+  回归：`send-anchor-top` 第 ⑥bis 步「长回复时最新内容必须可见」（回复长过一屏后断言 `away ≤ 120px` 且最后回合底部在视口内）；**已反证**：把增量跟随关掉 → 该断言立刻变红（away 130 且越流越大），恢复即绿。
+  注意区分：用户消息**自身**比一屏还高（长粘贴）时钉顶无意义（整条装不下），此时跟随底部看结尾才是期望——不要用「锚点高度 > 视口高」去解除钉顶后又立刻被 clamp 逻辑拉回来。
+  **⚠️ 长消息不钉顶（09-12 用户实测第三次反馈：「一次发很长消息，一屏展示不下来，agent 会话后马上跳转到 agent 回复消息的那个位置」）**：钉顶的前提是「用户消息能装进一屏」。用户消息**自身**比一屏还高（长粘贴/多段长指令）时钉顶没有意义——整条装不下，钉顶只会把 agent 回复推到屏幕外。**判据必须是「锚点自身高度 > 视口高」**（`a.getBoundingClientRect().height > el.clientHeight`），**不能用 `scrollHeight`**：后者会把「回复长过一屏」也误判成溢出，导致正常短消息一发送就被推到底部（实测 gap -296，已废弃该方案）。命中长消息时：`anchorTopRef = false` + `clearAnchorPad()` + `stickToBottomRef = true` + 瞬时滚到底 → 用户马上看到 agent 回复位置，随后走常规贴底跟随。
+  三条语义现在各自独立、互不冲突：①**短消息** → 钉顶（gap≈54）+ 增量跟随；②**回复长过一屏** → 仍钉顶，靠增量跟随保证最新可见；③**用户消息自身超一屏** → 不钉顶，直接跟到回复位置。
+  回归：`send-anchor-top` 第 ⑥ter 步（超长消息断言 `away ≤ 240px` 且最后回合底部在视口内；实测 `userTopVisible=-1381 / away=0`）；第 ② 步已改成**短**消息（原为长消息，与新语义冲突）。
+  **⚠️ 锚顶留白必须归零（09-12 用户反馈「流动空间太大，汇总时上面消息都看不到」）**：`.timeline-bottom-spacer.anchor-pad` 只为「让锚点滚得上去」而存在，但它是**常驻 DOM 元素**，用完不归零就会在回合结束后残留一整屏空白。**三个归零时机**：① `turn/completed`；② 切会话（`switchJumpRef` 分支）；③ `thread?.id` 变化 effect。钉顶期间的行为不变。**不要**改成「按差额动态收缩」——流式增长会让差额归零、把留白撤掉，锚点立刻被 clamp 弹飞（实测 gap 23→363）。
+  **切会话正文重播（09-12 用户反馈）与取证手段**：打字机揭示有进度表（`revealProgressStore`）防重播，但重挂载时若进度表与新渲染对不上就会整段重播。**已加诊断打点**：揭示开始时向 `window.__adbg` 写 `{r:"reveal", key, from, to, animated}`；`multi-session-live` 第 ④bis 步据此断言「单次 animated < 200 字」。实测切会话 揭示次数=0（无重播）。**另外**：`enrichThreadWithRolloutTools` 曾加过「同对象短路返回」优化，它会改变 `thread/resume` 返回对象的引用身份——渲染层据此判断「是否同一批流」，是重播的可疑来源，**已删除**（性能收益由 `parseRollout` 增量解析承担，不改变对外行为）。
+  **✅ 流式中切会话切回不再重播正文（09-12 用户精确复现：「都是运行过程中，正文出来了一些，切过去，才会触发正文重新出字」）**：**必须按这个步骤验**——切走时回合**仍在流式**，等跑完再切是测不出来的（第一版取证就是这么漏掉的）。
+  复现数据（修复前）：切走时正文 238 字 → 切回涨到 1078 字，`reveal` 打点 `{from:244, to:1078, animated:834}` —— 把 834 个字的**存量**重播了一遍。
+  根因：`usePacketRevealText` 重挂载后从 `revealProgressStore` 续播，而进度表存的是**切走那一刻**的位置（244），正文已长到 1078 → 中间 834 字存量被当成「新内容」逐字播出。既有的防重播只挡住「从头播」，挡不住这种。
+  修法：**存量正文一次性显示，只对真正新到的增量做打字机**。判据 `remaining > REVEAL_INSTANT_JUMP(400)` → 判定为「重挂载补齐存量」→ 直接显示（单帧/单批真实增量在几十字量级，400 是安全的量级分界）。
+  回归：`scripts/e2e/scenarios/replay-on-switch.mjs`（真引擎：A 流式中切走 → 切回 → 量 `window.__adbg` 的 reveal 打点；断言「单次 animated < 120 字」+「正文长度不回退」）。修复后实测 最大单次揭示 **834 → 30 字**，8/8 通过。
+  **排查工具**：`window.__adbg` 探针（send-arm-main / init-pin / confirm-fired / cancel:bottom-scroll / pin-apply / thread-switch / reveal），场景每条消息结束自动 dump 轨迹，`node scripts/e2e/run.mjs send-anchor-top` 直接复跑。**注意**：App.tsx 是 CRLF 行尾，脚本批量替换务必容忍 `\r?\n`；e2e harness 已带 `--no-sandbox`（本机 WorkBuddy 宿主 shell 会话下 Chromium 沙箱可能起不来 → Electron 静默 exit 1，与代码无关）。**另一个坑**：改 `styles.css` 不要用 PowerShell `Add-Content` 追加中文（会写进非 UTF-8 字节 → vite 报 `stream did not contain valid UTF-8`、构建直接失败），要用编辑工具。
+- **首次对话身份引导：只打一次招呼（09-12 两轮反馈：「怎么每次新会话都强制引导呢，改成一次打招呼才需要引导，其他情况下直接开始干活」→「我看每次思考还说新会话引导那个」）**：`personalization.json` 新增 **`greeted`** 字段——`onboarded` 表示「用户**真的回答了**并落盘了信息」，`greeted` 只表示「**问过一次**」。判定看 `greeted`（`App.tsx` 的 `identityGreeted`，读档时 `greeted === true || onboarded === true` 都算已问候）；注入引导指令的**同时**调新 IPC `personalization:mark-greeted` 落 `greeted=true`，此后新会话一律不带引导、直接干活。IPC 三件套同步（main.ts handler ↔ preload `markIdentityGreeted` ↔ vite-env.d.ts + `PersonalizationConfig` 加 `greeted`）。
+  **存量用户迁移（09-12 补，`migrateGreetedForExistingUsers`）**：老档案没有 `greeted`，而 `onboarded` 只在用户真的回答过提问后才为 true → 「装了很久、聊过很多次但从没回答过提问」的用户（本机真实档案正是 `onboarded:false` 且无 `greeted`）升级后又被当成第一次见面。现在启动时迁移：**档案无 `greeted` 且该 profile 已有历史会话 → 直接落 `greeted=true`**（零会话的真·新用户不写，保留一次引导）；**不写 `onboarded`**（那表示"用户回答过"，不能伪装）。调用点必须在 `server.start()` 之前且包 try/catch（preflight【5】硬守卫）。
+  **⚠️ 判据必须按 `role === "developer"` 判，不能对整份 rollout 文本 `includes("初次见面")`（09-12 实测踩坑，差点写成"修了还是没修"）**：本文件（项目 AGENTS.md）**自己**就有一段身份引导文档，写着「初次见面」四个字；而 e2e 的工作区 = 项目根 → 引擎把项目 AGENTS.md 注入**每个**会话 → 对整份文本做 includes 会对**每个**会话都为真，断言恒定红（实测：修复后次会话被判成"仍有引导"，纯属误报）。权威判据只有一条：rollout 里 `role === "developer"` 的 message 是否带引导指令（引导走 `developerInstructions`；项目 AGENTS.md 走 `role: "user"` 的「# AGENTS.md instructions」消息）。工具落在 `scripts/e2e/lib/rollout-inspect.mjs`（`greetingInjected` / `GREETING_MARKER`），preflight【7】守卫「判据标记与 App.tsx 注入首句同源 + 限定 developer 角色」，脱钩即硬失败。
+  回归：`scripts/e2e/scenarios/identity-greeting-once.mjs`（11/11：首会话**有**引导、次会话**没有**、档案 `greeted=true`、**重开应用（重载渲染层）后新会话仍没有**）与 `identity-greeting-migrate.mjs`（8/8：种入历史会话 + 无 `greeted` → 启动即迁移、新会话不带引导）。**反证已做**：把判定退回「只看 `onboarded`」→ 只有"重开后"那一步红（同一次运行里内存标志会掩盖，**这正是该步存在的理由**）；关掉迁移 → migrate 场景 3 条红。
+- **⛔ 零阻塞宿主（09-12；架构约束，preflight【6】硬守卫）**：**`ipcMain.handle("codex:request")` 的处理链上禁止任何同步磁盘 I/O**。理由：所有会话共用同一个主进程事件循环，同步读盘期间**所有会话**的事件转发全部停摆——这就是「多会话一起卡」的形态。落地上 rollout 的目录遍历/解析（原 `session-tools.ts` 的 `listRolloutThreads` / `enrichThreadWithRolloutTools`）已**整体迁入 worker 线程**：实现 `electron/rollout-worker.cjs`，客户端 `electron/rollout-pool.ts`（常驻 worker + 请求 id 配对 Promise + 15s 超时 + 崩溃时失败在途请求并允许重建）；`session-tools.ts` 精简为**纯内存**的 `mergeThreadList`。
+  **worker 源码必须内联成字符串**（`scripts/gen-rollout-worker.mjs` 生成 `electron/rollout-worker-source.ts`，已挂进 `build:electron`，生成物不入库）：打包后 worker 文件在 `app.asar` 内，而 `new Worker(路径)` 走 C++ 层读文件、**不经过 Electron 的 asar 补丁** → 读不到（语音 worker 踩过同一个坑，用 `{eval:true}` 绕开）。
+  **preflight【6】两条硬失败**：① `main.ts` 不得再出现那两个同步函数名；② worker 内联产物必须存在且不落后于 `.cjs`。**以后往 codex:request 链上加「要看磁盘」的能力，必须走 worker / 异步 fs / 内存缓存。**
+  **实测收益**：10 会话并发压测下主进程探测最大 **37ms → 17ms**（多数 1~3ms）；切会话冷启动 **939ms → 11ms**、热切换平均 **15ms**。
+  **关于「一会话一进程」的评估（结论：暂不做）**：单引擎空闲实测仅 **31MB**（10 个 ≈ 310MB），内存可行；但 ① 引擎只有**一把全局 Key**、`config.toml` 只有一份 → 要做得先解决「每会话一份 config + Key 池」，会推翻现有全局互斥/旧会话迁移/会话独立选模型；② 实测引擎侧已不是瓶颈。**另注：DSH 自己也不是一会话一线程**（一个 Node 宿主 + 一个事件循环 + 每会话协程式 Agent 对象，包名 `dsh-subagent-in-process-driver`），我们的「单引擎多 thread」在会话粒度上已与它等价。
+  ① **大 payload 延后解析**（`electron/codex-server.ts`）：所有会话共用一条 stdio 管道而 `JSON.parse` 是同步的 → 超 **256KB** 且头部含 `method`+`params` 的行延后到 `setImmediate` 解析（延后项走单条 Promise 链保序）；小行仍同步解析保持即时性。
+  ② **引擎 stderr 不再转发渲染层**：渲染层对 `kind:"log"` 直接 return 丢弃，转发是白付 IPC 序列化；仍落 `engine-debug.log`。
+  ③ **channel-bot 短路**：未启用（`!config?.enabled`）或该会话**没绑定任何渠道**时直接返回，不再对所有会话的每条 delta 做 `+` 拼接（长回复 O(n²)）。
+  ④ **`turn/completed` 不再每回合一发 `thread/list`**：该事件自带完整 turn，本地 `mergeTurn` 进缓存 + 就地更新侧栏那一项；只在「没缓存」「还有别的会话在跑」时才走去抖刷新兜底。新增 `app:perf-counters` 的 `threadListRequests` 计数供度量（注意：新建会话路径仍会刷新侧栏，所以计数不会归零）。
+  **出字抖动修复**：增量跟随的阈值原为 `growth > 2`（等于每变一点就滚一次 → 视口被反复顶 = 「每出一行抖一下」），改为攒够 **`FOLLOW_STEP_PX`(60px ≈ 两行)** 才跟一次；且**基线只在真正滚动后推进**（无脑刷基线会让 growth 永远攒不到阈值、跟随失效）。回归：`send-anchor-top` 的防抖断言——流式中连续 14 次采样，**相邻最大跳变实测 0px**。
+- **应用内通话界面 + 语音快捷键修复（09-12 下午）**：①新增**来电式全屏通话界面** `VoiceCallScreen.tsx`（`.voice-call-screen`，深色渐变+居中大头像随 `--voice-level` 呼吸发光+状态字+你说/回复字幕区+底部大圆钮打断/挂断）；接通自动弹出、右上角「收起」只收界面**不挂断**（悬浮球继续承载通话），右键菜单「打开通话界面」随时唤起；纯展示组件，音频链路全留在 VoiceCallFloat。**踩坑**：入场动画若带 `opacity:0` 起点，在 GPU 合成/遮挡节流下可能冻在第一帧把整个界面冻透明——动画只动 `transform`。②全局快捷键三连修：VoiceCallFloat 的 `onVoiceHotkey` 回调空依赖闭包锁死挂载时的 startCall/threadId（切会话后快捷键「就用不了」的根因）→ 经 ref 每次渲染转发最新 handler；录入组合键主键改按 `e.code`（Ctrl+Shift+1 的 `e.key` 是「!」，按 e.key 匹配被静默丢弃）、`metaKey` 映射 Super 不再冒充 Ctrl；**注册成功才落盘**（先落盘再注册会在新键被占用时留下死键配置且旧键已注销），主进程 `applyVoiceHotkey` 改为先注册新键再放旧键、同键重复设置直接成功。③e2e 流程改版（用户定稿）：`npm run e2e` 默认**只跑 mtime 最新的场景**，`--all` 才全量。回归：`scripts/e2e/scenarios/voice-call-screen.mjs`（16 断言，含「收起≠挂断」与输入链路零回归；harness 新增 `evalInTarget/screenshotInTarget` 供多窗口场景用）。
+
+- **技能运用纪律（09-13，让 Codex 主动用技能与 MCP 办事）**：`electron/skill-discipline.ts` 往 codex-home/AGENTS.md 幂等注入 `<!-- skill-discipline:start/end -->` 区间（boot + 技能装/卸/启停/导入 + 连接器增删/启停 + personalization 保存都会刷新），内容 = ①运用守则（开工先匹配能力、缺技能自主搜市场并安装、缺连接器先查模板且**必须 agent_ask 征得同意**再装、用完汇报 🧩/🔌、效率准则）+ ②当前能力清单（已装技能 name+desc 真实扫描、已配 MCP 连接器）。动态工具四个（createEmptyThread dynamicTools）：`skill_search`（市场搜索+安装状态标注）、`skill_install`（走新 IPC `skills:market-install-light`：**不重启引擎**——重启会杀正在跑的回合；forceReload 重扫，下一回合即可用）、`connector_search`（模板+已配状态）、`connector_install`（复用 connectors:save；描述里写明必须先 agent_ask）。验收项 `skill-discipline`（5 断言：区间存在/守则关键词/安全条款/清单对账）。
+- **内置音色预设（09-13 二次换源：开源项目官方成对样本）**：`resources/voice-presets/`（参考 wav 16-bit PCM 单声道 + presets.json，随包 extraResources `voice-presets/`）。当前 3 个预设，音源全部来自 GitHub 热门开源 TTS 项目的**官方示例**（wav 与转写成对、可直接随包分发）：温柔女声·晓晨（CosyVoice `asset/zero_shot_prompt.wav` +「希望你以后能够做的比我还好呦。」）、沉稳男声·阿远（FireRedTTS2 `chat_prompt/zh/S1.flac` 官方转写，已转 PCM16）、磁性英文男声·Nature（F5-TTS `basic_ref_en.wav` + "Some call me nature, others call me mother nature."）。性别标签用基频（F0）实测判定（245/117/115Hz），不是猜的。**旧预设 taiwan-female / jarvis-butler 已下线**：presets.json 移除 + wav 删除 + main.ts 启动时清理用户档案里的同名克隆档案。铁律不变：**预设必须 wav+精确参考文本成对**（ZipVoice zeroshot 文本对不上音质劣化），preflight【4h】守卫（下线预设不得回归/成对完整/试听 worker 缓存/播放反馈）。IPC：`voice:preset-list` / `voice:preset-apply`（幂等：同名档案已存在直接复用）→ createProfile → 选用写 `tts.profileId`。入口在 设置→语音通话→我的音色 卡片（需先装音色克隆模型）。**顺带修了 mergeSettings 吞 profileId 的真 bug**（显式字段映射吞新字段同款）：此前选用克隆音色后设置不持久、通话一直用内置音色（试听因显式传 id 才正常）——voice-presets 验收项抓到。
 - **内置付费订阅系统（09-12，中转站 sub2api 套餐的应用内闭环）**：中转站页新增**置顶订阅长条卡**（`.relay-sub-banner`，六态：guest 未登录 / empty 无订阅 / active 生效中 / expiring ≤3 天琥珀 / expired 红 / watching 等待支付）+ **套餐市场二级弹窗**（`.relay-plans-modal`，`GET /api/v1/payment/plans`，for_sale 才上架；价格/划线价/倍率/有效期/features 折叠）+ 登录弹窗升级**登录/注册双 tab**（`.relay-auth-tabs`）。
   **链路协议（pptoken 实测 + Wei-Shaw/sub2api 源码实证）**：① `POST /api/v1/auth/register {email,password,aff_code}`（`relay:register` IPC）——pptoken 无验证码/邮箱验证（RegisterRequest 的 turnstile/verify_code 是站点可选开关），注册成功同凭据 login 落多账号库＝真·自动登录；站点若开验证码，报错原文含 captcha/verify → 渲染层降级 `openExternal` 站点 `/register?aff=` 页兜底。② 付款 = 主进程 `relay:open-purchase` 开**独立 BrowserWindow** 加载 `{站点}/purchase`，`did-finish-load` 后向站点 localStorage 注入 `auth_token`/`refresh_token`/`token_expires_at`（键名来自 sub2api 前端 auth store）再 reload——打开即登录态；**loadURL 不阻塞 IPC**（收银台加载慢/失败只记日志，轮询照常，用户也可在官网付款）。③ 支付完成判定 = 渲染层每 20s 轮询 `subscriptions/summary`（10 分钟窗口，可「我已完成支付」手动核验），出现「新 group_id 或 expires_at 变化」→ 复用/新建该分组 key（`resolveRelayTarget` 幂等，防重复建 key）→ 走既有 `relayActivate` 全链（探测→saveCustomModel→供应商生效，全局互斥其他让位）。④ 供应商 id 恒为 `relay-<host>` 只换 key——会话模型作用域/旧会话迁移/互斥全部零改动兼容。**教训**：断言「激活完成」不能拿 banner 状态当信号（verifyPayment 先 setOverview 再跑激活，banner 提前变 active）——以 `relay-active-v1` 落库 mode/groupId 为权威。回归：`scripts/e2e/scenarios/relay-subscription.mjs`（17 断言，场景进程内起 **mock sub2api 网关**：register/login/summary/keys/payment-plans/purchase 页/v1/models + `__test/mark-paid` 模拟到账）。
     **OpenAI 导入账号文件直接登录（09-12，复刻 sub2api account_codex_import 格式面）**：OpenAI 订阅页「导入账号文件」卡片（多选文件，DataTransfer 读文本）→ 新 IPC `openai:import-file`。认四种形态（可混用：JSON 数组/NDJSON/每行一条）：裸 accessToken 行、Codex CLI auth.json（tokens.access_token/refresh_token/id_token）、扁平 token JSON（驼峰也认）、以上任意数组。身份从 JWT `https://api.openai.com/auth` claims 解（email/chatgpt_account_id/plan_type/订阅期），与 capture-login 同一 vault、按 identity 去重（重导=刷新 tokens）。**导入即登录**：首个 loginable（带 id_token）条目自动 accountSwitch（写 auth.json+重启引擎）+ activateOfficialProvider（启用订阅供应商）；裸 token 无 id_token 只入 vault 存档、不作切换目标（构不成引擎认得的登录态）。**停用当前生效 OpenAI 账号 = 全套退出**（与 relay:toggle-account 对称）：auth.json 置空 + openai-official 条目停用 + custom-model.json 清空 + 重启；只清 auth.json 会留下「生效配置悬空在无凭据供应商上 + 互斥把其他供应商启用按钮卡死」双坑（已修）。页面停用后回调 onRefreshActive 刷新 App 的 customModel 状态解锁互斥。回归：`scripts/e2e/scenarios/openai-import.mjs`（14 断言：四形态混导/JWT claims 解析/导入即生效/停用清理/死锁解除）。
     **供应商互斥与双向联动加强（09-12 二期）**：①`custom-model:set-model`（输入框下拉跨供应商切换）与 `custom-model:select` 此前**没有互斥**——补上 `disableOtherCustomProviders`（save/set-enabled 原本就有），至此四个激活入口（save/set-enabled/set-model/select）全部「启用谁就停用其他」，中转站登录/订阅支付后模型列表里只留本站供应商启用。②反向联动走主进程广播：四个入口在供应商成为当前生效后发 `harness:event {type:"provider-activated", provider}`，渲染层 onEvent 分支发现与 `relay-active-v1` 的 provider 不符 → `writeRelayActive(null)` + toast（余额徽标/置顶订阅卡即时退场，不再残留）。③`relayActivate` 成功尾部补 `refreshActive()`，模型设置页立即反映互斥结果。**e2e 踩坑**：场景里断言 Electron IPC 必须用 `window.codex.listCustomModels()` 等**桥接方法**——`window.codex.request` 是引擎 RPC，引擎不认识会 reject，而 harness.eval 把页面异常变成 `__ERR__:...` 字符串返回（truthy）→ waitFor 假绿；h.check 的 detail 传对象前先 JSON.stringify。
 **顺带实锤**：`groups/available` 带 `max_reasoning_effort` + `max_reasoning_effort_over_limit:"downgrade"`——网关分组会强制降思考档位，是「思考等级传最高跑最低」的站方因素（此前只归因到上游模型）。
 
+- **音色档案（我的音色）09-12 新增**：`electron/voice/voice-profiles.ts`（CRUD + wav 编解码 + 重采样），
+  TTS worker 新增 `mode: "zipvoice"` 分支（配置照 `.e2e-artifacts/zipvoice-verify.mjs` 里跑通的那份；
+  **reference* 必须放进 generationConfig 层**，平铺会报 `reference_sample_rate 0 is invalid`）。
+  `voice-service.ts` 的 `ttsWorkerData()` 按 `settings.tts.profileId` 决定用克隆还是内置 vits。
+  IPC：`voice:profiles-list/import/record/save/delete/select/preview`。
+  流程：导入/录制 → 落草稿 wav → 重采样 16k 交给 `transcribeAudioFile` 自动转写原文 → 用户校对 → 保存 → 选用。
+- **⚠️ 显式字段映射会吞掉新字段（09-12 踩）**：`VoiceDevToolsSection.refresh()` 把 IPC 返回重新拼成对象
+  （只列了 5 个字段），主进程新增的 `zipvoice` 被丢掉 → 表现「模型装完了状态一直显示未安装」。
+  **主进程新增字段时，必须同步检查渲染层有没有这种显式映射**（已在该处加注释警示）。
+- **✅ 实时语音六项优化（09-13 第二轮，用户「12345 全部优化」+「引擎要能区分语音消息」；改这块先读这段）**：完整清单与证据见 `docs/AUDIT-VOICE-2026-09-13.md` 顶部表格，要点与**不许回退的约束**：
+  ① **打断必须靠世代号，不能只清播放队列**：`VoiceCallFloat` 的 `speechEpochRef`（`stopPlayback`/`final`/`turnDone{aborted}` 三处 +1，`speakDelta`/`flushSpeech` 在 `await voiceSpeak` **前后**都比一次）；主进程 `turn/completed` **必须读 `turn.status`**（`interrupted/failed` → 渲染层不 flush 断句器半句）。TTS 是 await 中的 IPC，只清已入队的 source 管不到「已经在 TTS 线程里生成中」的那句。
+  ② **朗读视图是独立一层**（`src/lib/speak-text.mjs`，`.d.mts` 同步）：断句仍吃**原文**（字幕显示原文），进 `voiceSpeak` 前过 `createSpeakFilter()` —— 代码围栏/表格整段丢（各留一句占位），行内清 markdown/URL/邮箱/路径/emoji，数字日期中文化（`GPT-4`/`v2`/`1.2.3` 保持原样，判据是「紧贴字母数字/版本号」）。**过滤器状态跨句**（围栏与句边界不重合），所以它跟断句器一起在 `bumpSpeechEpoch` 里重建。
+  ③ **听写预热＝先开麦再加载**：`startCall` 顺序是 `startCapture()` → `voiceStart()` → 同步回灌暂存块 → `liveRef=true`。**不要改回「先加载后开麦」**（开头 1~3 秒直接丢），**也不要用 phase state 当回灌开关**（state 落地晚一帧，那一帧的块会被丢）。`finish` 补静音 = `rule2+0.3`（写死 3 秒是纯等待）；挂断后 ASR/TTS **保活 90s**（`parkIdle`/`takeIdle`，配置指纹一致才复用），卸载模型/退出应用要 `disposeIdleWorkers()`。
+  ④ **延迟三处**：`asr.rule2` 默认 0.8（`VOICE_SETTINGS_VERSION=2` + `migrateSettings`：**只改还是旧默认 1.2 的档案**，用户调过的不动 —— 只改默认值对已存在档案无效）；首句阈值 `firstMaxChars=10`；`voice:endpoint-now`（partial 以 `。！？` 收尾 + 连续 500ms 低能量 → 立即提交，**只在未播报时**判）。
+  ⑤ **AEC 别再拿错参考做减法**：参考环 30s + **按播放领先量**写入（`pushRef(samples, leadSamples)`；入队即写在队列领先 >2s 时会覆盖未读样本、永久失步）；`createAec` 的 `delay` 由 `setDelay()` 按 `outputLatency‖baseLatency` 校正（`maxDelay` 预分配）；**浏览器自带 AEC 生效时（`track.getSettings().echoCancellation`）默认不启自研 NLMS**（`aec.mode=auto`，两级叠加会注入失真）。**麦克风/回声消除设置必须在 `getUserMedia` 之前读**——它既是「第一次通话设置不生效」的根因，也是这条判断的前提。
+  ⑥ **引擎区分语音/打字**：协议里没有来源字段（`TurnStartParams` 全字段查过；`turnTrigger` 只进遥测），所以 `voice-service.ts` 的 `VOICE_MESSAGE_PREFIX="[语音] "` 加在 `submitTurn` 的 `input` 文本上 + `turnTrigger:"voice"`；**排队与 turn/start 共用同一个 `input`**（两条路径都要带）。与 `channel-bot.ts` 的 `[飞书用户 xxx]` 同一手法。副作用：用户消息文本带 4 字符前缀。
+  回归：预检【4c】（纯逻辑跑真实现 + 主进程接线静态守卫；**反证清单与逐条实测输出见 `docs/AUDIT-VOICE-2026-09-13.md`**）。AEC 用例**必须用宽带噪声**：正弦下「任意延迟都等价于同频不同相」，256 抽头照样减干净（实测错配也能「压 150dB」）→ 测不出对齐问题。
+- **✅ 语音唤醒专项（09-13 用户「唤醒功能好像不太行」；改这块先读 `electron/voice/wake-match.ts` 顶部注释）**：取证结论是**匹配方式错了，不是链路不通** ——
+  ① **`text.includes(phrase)` 永远匹配不上**：唤醒复用的是通用流式识别模型，而**「柯」不在它的词表里**（`tokens.txt` 只有 2002 项，是字节级 BPE：有 科/可/客/刻/课，没有 柯）。真机实测「小柯小柯」被识别成 **小咳小壳 / 小颗小颗 / 小哥小哥**，说「小科小科」又被写成「小柯小柯」→ 精确匹配漏唤醒。**修法 = 同音容错**（`electron/voice/wake-match.ts`，同音表由音色模型自带的 `lexicon.txt` 构建，`柯 ㄎ ㄜ ˉ`≈`科 ㄎ ㄜ ˉ`，去声调归一类，20885 字 / 175ms / 缓存一次，零新依赖）。**故意不做**「部分命中/声母容错」：把 哥(ㄍㄜ) 也算作 柯(ㄎㄜ) 会让「小哥」天天误唤醒。
+  ② **匹配搬进主进程**（唤醒词、同音表、词表都在这一侧）：渲染层只收 `wake` 事件，`feedWakeAudio` 只回 `{ok, matched}`（旧实现每块回传**整坨累积文本** = O(n²) IPC）。
+  ③ **每次 `endpoint` 必须 `reset` 识别流**：`isEndpoint()` 只是查询、不会自动复位（旧实现从不复位 → 文本跨句无限累积，实测三轮变一整坨）；`startWakeListener` 里要 `await create` **预热**（旧实现把 154MB 模型加载拖到第一块音频上，实测整链 6.5s）。
+  ④ **常驻监听的配置必须即时生效**：`voice:settings-set` 保存后主进程广播 `{type:"settings"}`，渲染层 effect 依赖 `[phase, wakeCfg.enabled, wakeCfg.phrase]`（旧实现只有 `[phase]` → **在设置页打开开关毫无反应**，这是用户反馈的直接原因之一）；主进程侧唤醒词变了立刻重建匹配器。
+  ⑤ **命中后不得用 effect 捕获的 `startCall`**：走 `startCallRef.current()`（与 09-12 快捷键同族 bug：旧闭包的 `threadId` 早已过期 → 命中后报「请先打开一个会话」）。
+  ⑥ 背压（忙时攒块合并发、上限 1s）＋启动失败给提示＋新增 `src/voice/wake-state.ts` 广播，设置页唤醒卡片显示「正在聆听 / **最近听到：xxx（未命中）** / 词表提示」—— 通用模型当关键词用，**没有这句诊断用户无从判断该换词还是该改匹配**。
+  端到端复验（跑编译产物 `VoiceService` + 本机真模型）：说「小柯小柯」→识别「小咳小壳」→ **命中**；说「小科小科」→「小颗小颗」→ **命中**；说日常话 → 不误唤醒。**这两条在旧实现下全部漏唤醒**。回归：预检【4d】（纯逻辑跑 `dist-electron/voice/wake-match.js` + 6 条接线守卫，逐条反证过）。
+- **✅ 唤醒关键词模型（KWS）已内置（09-13，用户「安排一下，内置好」）**：唤醒**优先走专用关键词模型**，识别模型只作回退。
+  - 模型：`sherpa-onnx-kws-zipformer-wenetspeech-3.3M`（GitHub release 归档 **31.1MB**，SHA256 `b2f7c89…7f35f`），用 float32 `epoch-12-avg-2` 三件套 —— 3.3M 参数，不是 154MB 识别模型 → 启动 **1.0s**（回退路径 6.5s）、常驻 CPU 低一个量级。
+  - 安装：归档型按需（`ensureKws`：多镜像下载 → SHA256 → 随包 Python 解压 → `kwsReady`）；入口在**设置 → 语音通话 → 唤醒卡片**「下载唤醒模型（约 31MB，推荐）」，IPC `voice:kws-install/cancel/status`。**实测直连 GitHub 失败、`ghfast.top` 前缀成功**（55.7s），幂等复调 0ms。
+  - 关键词生成：`electron/voice/kws-keywords.ts`（纯逻辑）= **注音（音色词典 lexicon.txt）→ 带声调拼音 → 拆声母/韵母 → 按模型 token 表校验**。模型的 keywords.txt 每行形如 `x iǎo m ǐ x iǎo m ǐ @小米小米`（拼音 token，声调必带）。**判据必须对着模型自带的 8 行 keywords.txt 逐行比对**（预检【4e】，实测 8/8 一致）；踩过的两个坑：① `j/q/x` 后的 ü 要写成 u（军 jūn / 学 xué）；② ㄓ/ㄔ/ㄕ/ㄖ/ㄗ/ㄘ/ㄙ 单独成音节时写 zhi/shi/zi（世 = `sh ì`）—— 少这两条会有整批字生成不出关键词。
+  - 效果（真模型）：说「小柯小柯」命中、同音变体「小科小科」也命中（按读音匹配，不再依赖同音兜底）、3 句日常话零误触发、跨关键词不触发；**改唤醒词后自动重建 worker**（keywordsFile 是启动参数），新词命中、旧词不再命中。
+  - **KWS 不进 `ALL_VOICE_REPOS`**：它只服务唤醒，没装不该把通话/听写判成「模型未下载完整」；转不出拼音的唤醒词（生僻字）自动回退识别模型并在卡片说明原因。
+  - 回归：预检【4e】（生成器对照模型样例 + 6 条接线守卫，逐条反证过）；验收项 `wake-settings`（唤醒卡片状态行 + 同音说明 + 下载入口，7/7）。
+- **模型下载提速 + 可取消 + 语音来源标记（09-13，DeepSeek 会话收尾的三项，已提交 `3a73e7b` 等）**：
+  - **提速**：候选镜像按「首字节延迟」实测排序后再下（`orderCandidatesByLatency`，`Range: bytes=0-1` 探测），**实测 55.7s → 11.2s**；探测超时 6s → 2s（点下载后不再"几秒没反应"）；连接超时 + 速度下限自动换源（还有备选时才换，避免把自己掐死）。
+  - **可取消**：`downloadUrlToFile` / `downloadOnce` 全程接受 `AbortSignal`，取消时**保留 `.part` 断点**并回 `已取消（已下载 xMB，下次点「下载」会接着传）`；续传走 `Range` 206，镜像忽略 Range 返回 200 时从头写（不会写花）。IPC：`voice:kws-install/cancel/status`。
+  - **进度不刷爆 IPC**：`downloadOnce` 每 **2MB** 才报一次进度（单流 16~64KB 分片 → 原本可达每秒数百次 IPC + React 更新）。
+  - **语音来源标记**：语音发起的消息带 `[语音]` 文本前缀，且 `turn/start` 与排队两条路径都带 `turnTrigger=voice`，引擎侧可区分「语音说的」与「手打的」。回归：预检【4c】⑥ +【4f】（下载可取消/换源提速）。
+  - 内置专家技能市场（09-13）：cheat-on-content 与 ppt-master 随包静态分发在 resources/expert-skills/（含 .claude-plugin/marketplace.json 清单），main.ts 启动幂等注册 [marketplaces.expert-skills]（source_type=local，零拷贝——技能原位发现，引擎 plugin/list 直接扫描；不要改回运行时拷贝方案，1.3 万文件体量下有中断/阻塞/启动拖慢三连问题）。内置单人专家：知微（zhiwei-content-oracle，cheat-on-content）与呈象（chengxiang-ppt-master，ppt-master），expert-teams.ts buildXxxExpertTeam + main.ts 启动 ensure（删除后自动回来）；expertIconOf 按职业映射图标，点击专家卡直达单人会话（teams:member-session）。
+  - 专家中心独立页 + 全员笔名（09-13 晚，替代上一条的 hub 铺卡形态）：「智能体团队」hub 改三入口卡（专家中心/子智能体/专家团），专家卡全部挪进独立 `expert-center` 设置页，按 `EXPERT_CATEGORY_DEFS`（App.tsx，7 组：研发交付/投资交易/内容创作/数据分析/市场增长/产品设计/专项专家）分组陈列，自定义团队落「更多专家」；卡片=笔名+主理人徽标+职业（高亮）+一句话职责。30 位内置专家全量改笔名（承枢/问需/构梁/键客/守关/执舵/观潮/察本/衡值/执缰/文枢/落纸/裁云/调彩/剔瑕/观澜/疏渠/析毫/显影/察势/拔节/执棋/传声/校靶/丈量/执矩/问俗/明断/织流/造境；知微/呈象保留），SOP 与 systemPrompt 内引用同步；**main.ts 启动迁移**按 teamId+memberId 把老存档 expert-teams.json 残留旧名就地同步（只动 name，不碰启用态与自定义团队）。回归：accept --only zhiwei-expert（9 断言，含专家中心页标题/分组数）。
+- **Bot Channel 二次加固：授权码配对（09-13，紧随手机远控）**：机器人聊天的**首次使用**不再"发消息即执行"。新流程 = 在聊天里给机器人**发送电脑端显示的 6 位授权码**（与「手机远控」同一个码，5 分钟有效、连错 5 次冷却 10 分钟）→ 挂起等电脑端在「手机远控」面板点**允许/拒绝**（请求到达自动弹面板 + toast；2 分钟超时）→ 批准后该聊天写入已批准表（`userData/bot-pairing.json`）并持久化，之后消息正常执行；面板可「移除」撤销。未批准的聊天发普通消息只会收到配对引导（消息不会到达引擎）。**覆盖全部 5 个渠道入口**：微信（`handleWeixinMessage`）、Telegram、飞书/钉钉/QQ（`handleChannelMessage`）；钉钉被动回复过期时引导文案仍会发（sessionWebhook 90 分钟内）。实现：`electron/bot-pairing.ts`（纯逻辑 + 注入持久化，跑编译产物可直接断言）+ main.ts IPC（`bot:pair-state/approve/deny/revoke`）+ 事件 `bot:pair-request`；审批卡与手机远控共用（rid 以 `bp-` 开头分流）。回归：预检【4g】7 断言（引导/错码不进队列/对码挂起/审批前拦截/批准放行/冷却锁定/撤销重拦，逐条反证过）。
+- **实时语音三修（09-12 用户实测反馈；其中 ② `firstMaxChars=18` 已被 09-13 的 10 取代）**：① 回声门控 `createEchoGate` 起播首块不再直接当回声地板（旧实现地板≈0 → 下一秒必然超阈 → **自己打断自己的播报**，用户原话「我没说话它也断」）：新增 `seedBlocks=8` 学习期、`minFloor=0.004` 绝对地板、`holdBlocks=6` 连续超阈去抖。② 断句 `createSentenceChunker` 新增 `firstMaxChars`——模型开头几十字常无标点，旧阈值 `maxChars=60` 会憋到很晚才出声（用户「语音跟不上正文」）。③ 字幕浮窗 `.voice-stage` 由「composer 上沿 absolute + 半透明毛玻璃」改为「position:fixed 顶部 84px 居中 + var(--bg) 实心白底 + max-height」，脱离输入区文档流（顺带消除运行中的上下文跳动）。preflight 新增 3 条断言，**已逐条反证会红**。
+- **崩溃取证 + 渲染进程自愈（09-12）**：`app.on("render-process-gone")` 在非 e2e 模式也落盘 `userData/voice-crash.log`（reason/exitCode）并**自动 reload**。旧行为：渲染进程一死 → 窗口关闭 → `window-all-closed` → `app.quit()`，用户看到「闪退」且零证据。另接 `process.on("uncaughtException"/"unhandledRejection")` 落盘。**注：ASR/TTS 原生推理已用独立探针压测 4 分钟（`.e2e-artifacts/voice-crash-probe.mjs`，连续 feed+speak，RSS 稳定 530MB、干净退出）→ ONNX 路径不是闪退元凶**，别再从这里查。
+- **打包钩子 `build.beforePack`（09-12）**：`scripts/before-pack.cjs` 打包前确保 `resources/tools/automation-tools.zip` 存在（有 npm-global/node_modules 时按 mtime 决定是否重建，失败即**中止打包**）。根因：`resources/tools/*` 全在 .gitignore，zip 必须现造，而 electron-builder 对**缺失的 extraResources 静默跳过** → 装出来的应用点「桌面与浏览器自动化」必报缺 zip。mac 不走此路（mac 配置 extraResources 为空 + `build/copy-mac-tools.cjs` 直接把 npm-global 铺进 Resources/tools，所以 mac 开箱即用）。
+- **模型下载健壮性（09-12）**：`model-store` 的 `downloadUrlToFile` 重写为「多候选地址（直连 + `https://ghfast.top/` / `https://gh-proxy.com/` 前缀镜像，实测 206 支持 Range）× 每个地址两次（第二次 Range 续传）」，新增 45 秒无数据卡死判失败，网络类失败**保留断点**（旧实现失败即删残file → 大文件在抖动网络下几乎必失败：实测 54MB 声码器失败而 109MB 主包侥幸成功）。
 - **音色克隆（ZipVoice）按需安装（09-12）**：manifest 新增归档型资源 ZIPVOICE_ARCHIVE（GitHub release tar.bz2 109MB + vocos_24khz.onnx 54MB，均带 SHA256）；`ensureZipvoice`（model-store）跑「整包下载→SHA256→解压→声码器」；IPC `voice:zipvoice-install` / `voice:zipvoice-cancel`，`voice:models-status` 带 `zipvoice` 字段；开发工具页独立卡片（`VoiceDevToolsSection`）。**解压必须用随包 Python**：`resources/tools/python/python.exe -c "import sys, tarfile; tarfile.open(sys.argv[1]).extractall(sys.argv[2])" <归档> <目标>`——实测 Windows 自带 bsdtar 报 Can't initialize filter / unable to run program "bzip2 -d"（不内置 bz2），随包 7z 26.02 对该包报 Cannot open as archive；tar/7z 仅作回落。就绪判定 `zipvoiceReady`（关键文件 + 声码器）。
 - **设置页内容就绪兜底（09-12）**：`settingsContentReady` 原只靠双 requestAnimationFrame，软件渲染 / 窗口后台时 rAF 被抑制 → 设置页永远停在「正在载入…」（e2e 隔离实例实测复现，也让开发工具页的语音模型卡片「找不到」）；已加 120ms 定时器与 rAF 竞争兜底。
 - **渠道语音消息转写（09-12 接力）**：飞书 onAudio 事件（message_type==="audio"）→ `im.messageResources.get` 下载 opus → ffmpeg 归一 16k mono wav（`tools/ffmpeg` 或 PATH，未装时明确提示）→ `VoiceService.transcribeAudioFile`（临时 ASR worker，feed+finish，用完即毁，不影响通话）→ 转写文本走 `handleChannelMessage` 原管线。WAV 解析：`pcm16WavToFloat32`（块级遍历 data 块）。微信渠道未接（silk 编码需专用解码器，本期不做）。

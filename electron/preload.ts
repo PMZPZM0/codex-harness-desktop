@@ -24,6 +24,23 @@ contextBridge.exposeInMainWorld("codex", {
   remoteSend: (cmd: string) => ipcRenderer.invoke("remote:send", cmd),
   remoteStop: () => ipcRenderer.invoke("remote:stop"),
   remoteQrcode: (botId?: string) => ipcRenderer.invoke("remote:qrcode", botId),
+  remotePairState: () => ipcRenderer.invoke("remote:pair-state"),
+  remotePairRotate: () => ipcRenderer.invoke("remote:pair-rotate"),
+  remoteApprove: (rid: string) => ipcRenderer.invoke("remote:approve", rid),
+  remoteDeny: (rid: string) => ipcRenderer.invoke("remote:deny", rid),
+  remoteRevoke: (deviceId: string) => ipcRenderer.invoke("remote:revoke", deviceId),
+  onRemotePairRequest: (handler: (request: { rid: string; deviceId: string; name: string }) => void) => {
+    ipcRenderer.on("remote:pair-request", (_event, request) => handler(request));
+    return () => ipcRenderer.removeAllListeners("remote:pair-request");
+  },
+  botPairState: () => ipcRenderer.invoke("bot:pair-state"),
+  botApprove: (rid: string) => ipcRenderer.invoke("bot:approve", rid),
+  botDeny: (rid: string) => ipcRenderer.invoke("bot:deny", rid),
+  botRevoke: (key: string) => ipcRenderer.invoke("bot:revoke", key),
+  onBotPairRequest: (handler: (request: { rid: string; channel: string; chatId: string; name: string }) => void) => {
+    ipcRenderer.on("bot:pair-request", (_event, request) => handler(request));
+    return () => ipcRenderer.removeAllListeners("bot:pair-request");
+  },
   botBindQrcode: (botId: string, botName: string) => ipcRenderer.invoke("bot:bind-qrcode", botId, botName),
   botBindStatus: (code: string) => ipcRenderer.invoke("bot:bind-status", code),
   botBindConsume: (code: string) => ipcRenderer.invoke("bot:bind-consume", code),
@@ -49,6 +66,8 @@ contextBridge.exposeInMainWorld("codex", {
   wecomWebhookLogout: () => ipcRenderer.invoke("wecom-webhook:logout") as Promise<{ ok: boolean }>,
   wecomWebhookTest: (text?: string) => ipcRenderer.invoke("wecom-webhook:test", text) as Promise<{ ok: boolean; error?: string }>,
   botBindingGet: () => ipcRenderer.invoke("bot-binding:get") as Promise<{ wechat: { threadId: string; title: string; updatedAt: number } | null; telegram: { threadId: string; title: string; updatedAt: number } | null }>,
+  botsGet: () => ipcRenderer.invoke("bots:get") as Promise<any[]>,
+  botsSet: (list: any[]) => ipcRenderer.invoke("bots:set", list) as Promise<{ ok: boolean; count: number }>,
   botBindingSet: (input: { channel: string; threadId: string | null; title?: string }) => ipcRenderer.invoke("bot-binding:set", input) as Promise<{ threadId: string; title: string; updatedAt: number } | null>,
   homeDir: () => ipcRenderer.invoke("app:home-dir") as Promise<string>,
   botStreamGet: () => ipcRenderer.invoke("bot-stream:get") as Promise<{ enabled: boolean; thinking: boolean; tools: boolean }>,
@@ -79,6 +98,8 @@ contextBridge.exposeInMainWorld("codex", {
   importSkill: () => ipcRenderer.invoke("skills:import"),
   listMarketSkills: (input: unknown = {}) => ipcRenderer.invoke("skills:market-list", input),
   installMarketSkill: (skill: unknown) => ipcRenderer.invoke("skills:market-install", skill),
+  installMarketSkillLight: (skill: unknown) => ipcRenderer.invoke("skills:market-install-light", skill) as Promise<{ name: string; discovered: boolean; engineCheckMessage: string }>,
+  skillDisciplineGet: () => ipcRenderer.invoke("skill-discipline:get") as Promise<{ present: boolean; section: string }>,
   listMarketPlugins: (input: unknown = {}) => ipcRenderer.invoke("plugins:market-list", input),
   installMarketPlugin: (plugin: unknown) => ipcRenderer.invoke("plugins:market-install", plugin),
   listLocalSkills: () => ipcRenderer.invoke("skills:local-list"),
@@ -235,6 +256,18 @@ contextBridge.exposeInMainWorld("codex", {
   readClipboardFiles: () => ipcRenderer.invoke("clipboard:read-files"),
   doctor: (cwd?: string) => ipcRenderer.invoke("app:doctor", { cwd }),
   engineInfo: () => ipcRenderer.invoke("app:engine-info"),
+  perfCounters: () => ipcRenderer.invoke("app:perf-counters") as Promise<{ rolloutFallbackScans: number; droppedForInactiveSession: number; threadListRequests: number }>,
+  /** 标记身份引导已打过招呼（此后新会话不再引导、直接干活） */
+  markIdentityGreeted: () => ipcRenderer.invoke("personalization:mark-greeted"),
+  setActiveThread: (threadId: string | null) => ipcRenderer.invoke("codex:set-active-thread", threadId) as Promise<{ ok: boolean }>,
+  /** 独立会话弹窗：把会话开到新窗口（返回已聚焦=true 表示该会话已有弹窗） */
+  popoutThread: (threadId: string) => ipcRenderer.invoke("window:popout-thread", threadId) as Promise<{ ok: boolean; focused?: boolean }>,
+  /** 弹窗返回主应用：关闭本弹窗并把主窗口带到指定会话 */
+  popoutClose: (threadId: string | null) => ipcRenderer.invoke("window:popout-close", threadId) as Promise<{ ok: boolean }>,
+  /** 当前窗口是否是独立会话弹窗（主进程按 URL query 判定） */
+  popoutThreadId: () => ipcRenderer.invoke("window:popout-id"),
+  /** 所有弹窗锁定的会话 id（主窗口据此隐藏侧栏会话，避免重复渲染） */
+  popoutList: () => ipcRenderer.invoke("window:popout-list") as Promise<string[]>,
   storageInfo: () => ipcRenderer.invoke("app:storage-info"),
   storageClear: (target: "engine-log" | "images") => ipcRenderer.invoke("app:storage-clear", target),
   engineCheckUpdate: () => ipcRenderer.invoke("engine:check-update"),
@@ -303,11 +336,22 @@ contextBridge.exposeInMainWorld("codex", {
   voiceStatus: () => ipcRenderer.invoke("voice:status") as Promise<{ active: boolean; state: string; runtimeReady: boolean; modelsReady: boolean; threadId: string; lastError: string }>,
   voiceStart: (threadId: string, options?: { mode?: "conversation" | "dictation" }) => ipcRenderer.invoke("voice:start", threadId, options) as Promise<{ ok: boolean; error?: string; status: unknown }>, 
   voiceDictationFinish: () => ipcRenderer.invoke("voice:dictation-finish") as Promise<{ ok: boolean; text?: string; error?: string }>,
+  /** 提前端点：识别文本已收尾 + 用户停口 ~0.5s 时调用，立即提交这一句（不等 rule2 静音） */
+  voiceEndpointNow: () => ipcRenderer.invoke("voice:endpoint-now") as Promise<{ ok: boolean; text?: string }>,
   voiceStop: () => ipcRenderer.invoke("voice:stop") as Promise<{ ok: boolean }>,
   voiceAudio: (samples: Float32Array) => ipcRenderer.send("voice:audio", samples),
   // TTS 音频走 Base64 字符串跨 Electron IPC；避免 native/external ArrayBuffer 被 structured clone 拒绝。
   voiceSpeak: (text: string, options?: { sid?: number; speed?: number }) => ipcRenderer.invoke("voice:speak", text, options) as Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>,
   voicePreviewVoice: (input?: { sid?: number; speed?: number; text?: string }) => ipcRenderer.invoke("voice:preview-voice", input) as Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>, 
+  voiceProfilesList: () => ipcRenderer.invoke("voice:profiles-list") as Promise<{ profiles: any[]; zipvoiceReady: boolean }>,
+  voiceProfilesImport: () => ipcRenderer.invoke("voice:profiles-import") as Promise<any>,
+  voiceProfilesRecord: (input: { samples: number[]; sampleRate: number }) => ipcRenderer.invoke("voice:profiles-record", input) as Promise<any>,
+  voiceProfilesSave: (input: { draftFile: string; name: string; refText: string }) => ipcRenderer.invoke("voice:profiles-save", input) as Promise<any>,
+  voiceProfilesDelete: (id: string) => ipcRenderer.invoke("voice:profiles-delete", id) as Promise<{ ok: boolean }>,
+  voicePresetList: () => ipcRenderer.invoke("voice:preset-list") as Promise<{ presets: { id: string; name: string; desc: string; lang: string; applied: boolean }[] }>,
+  voicePresetApply: (presetId: string) => ipcRenderer.invoke("voice:preset-apply", presetId) as Promise<{ ok: boolean; profile?: any; existed?: boolean; error?: string }>,
+  voiceProfilesSelect: (id: string) => ipcRenderer.invoke("voice:profiles-select", id) as Promise<{ ok: boolean; profileId: string }>,
+  voiceProfilesPreview: (input: { id?: string; text?: string }) => ipcRenderer.invoke("voice:profiles-preview", input) as Promise<any>,
   voiceBarge: () => ipcRenderer.invoke("voice:barge") as Promise<{ ok: boolean }>,
   voicePlaybackDone: () => ipcRenderer.invoke("voice:playback-done") as Promise<{ ok: boolean }>,
   voiceModelsStatus: () => ipcRenderer.invoke("voice:models-status") as Promise<{
@@ -353,8 +397,13 @@ contextBridge.exposeInMainWorld("codex", {
     return () => ipcRenderer.removeListener("voice:hotkey", handler);
   },
   // 语音唤醒：持续聆听 + 文本匹配唤醒词（会持续占用 CPU）
-  voiceWakeStart: () => ipcRenderer.invoke("voice:wake-start") as Promise<{ ok: boolean; error?: string }>,
-  voiceWakeAudio: (samples: Float32Array) => ipcRenderer.invoke("voice:wake-audio", samples) as Promise<{ text: string }>,
+  voiceWakeStart: () => ipcRenderer.invoke("voice:wake-start") as Promise<{ ok: boolean; error?: string; phrase?: string; hint?: string }>,
+  /** 只回「命中没命中」：文本与匹配都留在主进程（旧实现每块回传整坨累积文本 = O(n²) IPC） */
+  voiceWakeAudio: (samples: Float32Array) => ipcRenderer.invoke("voice:wake-audio", samples) as Promise<{ ok: boolean; matched: boolean }>,
   voiceWakeReset: () => ipcRenderer.invoke("voice:wake-reset") as Promise<{ ok: boolean }>,
   voiceWakeStop: () => ipcRenderer.invoke("voice:wake-stop") as Promise<{ ok: boolean }>,
+  /** 关键词唤醒模型（KWS）：安装/取消/状态（31MB 归档，服务「语音唤醒」） */
+  voiceKwsInstall: () => ipcRenderer.invoke("voice:kws-install") as Promise<{ ok: boolean; error?: string }>,
+  voiceKwsCancel: () => ipcRenderer.invoke("voice:kws-cancel") as Promise<{ ok: boolean }>,
+  voiceKwsStatus: () => ipcRenderer.invoke("voice:kws-status") as Promise<{ ready: boolean }>,
 });

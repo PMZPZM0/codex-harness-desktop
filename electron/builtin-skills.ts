@@ -2,6 +2,7 @@
 // 应用启动时写入 codexHome/skills/，与市场技能同构。
 import fs from "node:fs/promises";
 import path from "node:path";
+import { existsSync } from "node:fs";
 
 const DESKTOP_SKILL = `---
 name: desktop-automation
@@ -106,4 +107,38 @@ export async function ensureBuiltinSkills(skillsDir: string) {
       }
     } catch { /* 写不进不阻塞启动 */ }
   }
+}
+
+/**
+ * 专家技能市场（09-13）：cheat-on-content / ppt-master 随包静态分发在
+ * resources/expert-skills/（含 .claude-plugin/marketplace.json 清单），**原位不动、零拷贝**——
+ * 只在 config.toml 幂等注册 [marketplaces.expert-skills]（source_type=local 指向该目录），
+ * 引擎 plugin/list 直接从原目录发现技能，装好即用。
+ * 该段不在 HARNESS_CONFIG_SECTIONS，harness 整份重写 config 时由 preserveUserConfig 原样保留。
+ */
+export async function ensureExpertSkillsMarketplace(codexHome: string): Promise<void> {
+  const marketDir = expertSkillsSourceDir();
+  const configPath = path.join(codexHome, "config.toml");
+  try {
+    const existing = await fs.readFile(configPath, "utf8").catch(() => "");
+    if (!/\[marketplaces\.expert-skills\]/.test(existing)) {
+      const section = [
+        "[marketplaces.expert-skills]",
+        'source_type = "local"',
+        `source = "${marketDir.replaceAll("\\", "/")}"`,
+        "",
+      ].join("\n");
+      const next = existing.trim() ? existing.trimEnd() + "\n\n" + section + "\n" : section + "\n";
+      await fs.writeFile(configPath, next, "utf8");
+    }
+  } catch (error) {
+    console.warn("seed expert-skills marketplace section failed:", error);
+  }
+}
+
+/** 专家技能包源目录：开发版用项目 resources/，打包版用 process.resourcesPath（与 voicePresetsDir 同规则）。 */
+function expertSkillsSourceDir(): string {
+  const dev = path.join(process.cwd(), "resources", "expert-skills");
+  if (existsSync(dev)) return dev;
+  return path.join(process.resourcesPath ?? process.cwd(), "expert-skills");
 }

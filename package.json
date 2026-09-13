@@ -1,19 +1,21 @@
 {
   "name": "codex-harness-desktop",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "private": true,
   "description": "Independent desktop harness for OpenAI Codex",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "npm run build:electron && concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "prebuild": "tsc -b",
-    "build:electron": "tsc -p electron/tsconfig.json",
+    "build:electron": "node scripts/gen-rollout-worker.mjs && tsc -p electron/tsconfig.json",
     "build:vite": "cross-env CODEBUDDY_SAFE_DELETE_ENABLED=0 vite build",
     "build": "npm run build:electron && npm run build:vite",
     "check": "npm run build && node scripts/check-preflight.mjs",
-    "e2e": "node scripts/e2e/run.mjs",
-    "e2e:list": "node scripts/e2e/run.mjs --list",
-    "verify": "npm run check && npm run e2e",
+    "accept": "node scripts/accept.mjs",
+    "accept:list": "node scripts/accept.mjs --list",
+    "e2e": "node scripts/accept.mjs",
+    "e2e:list": "node scripts/accept.mjs --list",
+    "verify": "npm run check && npm run accept",
     "verify:reasoning": "node scripts/verify-reasoning-transport.cjs",
     "verify:image-plugin": "node scripts/verify-image-plugin.mjs",
     "verify:packaged-tools": "node scripts/verify-packaged-tools.cjs",
@@ -64,6 +66,7 @@
     "appId": "com.codexharness.desktop",
     "productName": "Codex Harness Desktop",
     "npmRebuild": false,
+    "beforePack": "scripts/before-pack.cjs",
     "directories": {
       "output": "release"
     },
@@ -143,6 +146,14 @@
         "to": "tools/automation-tools.zip"
       },
       {
+        "from": "resources/tools/cloak-cache",
+        "to": "tools/cloak-cache"
+      },
+      {
+        "from": "resources/tools/pw-browsers",
+        "to": "tools/pw-browsers"
+      },
+      {
         "from": "scripts/install-runtimes.cjs",
         "to": "tools/install-runtimes.cjs"
       },
@@ -153,6 +164,14 @@
       {
         "from": "resources/tools/ponytail-plugin",
         "to": "tools/ponytail-plugin"
+      },
+      {
+        "from": "resources/voice-presets",
+        "to": "voice-presets"
+      },
+      {
+        "from": "resources/expert-skills",
+        "to": "expert-skills"
       }
     ],
     "asarUnpack": [

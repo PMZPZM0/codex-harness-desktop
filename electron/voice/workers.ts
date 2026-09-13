@@ -68,8 +68,11 @@ parentPort.on("message", (msg) => {
     }
     if (msg.op === "finish") {
       ensure();
-      // 长按听写松手时不一定已命中 endpoint；补 3 秒静音把尾句完整解出来。
-      const silence = new Float32Array(workerData.sampleRate * 3);
+      // 长按听写松手时不一定已命中 endpoint；补一段静音把尾句完整解出来。
+      // ⚠️ 静音长度不能写死 3 秒（旧实现）：那是「松手到出字」里最长的一段纯等待。
+      // 取 rule2 + 0.3s —— 比端点阈值略长，刚好把最后一个字的尾音解完（审计 ③）。
+      const seconds = Number(workerData.finishSilenceSec) > 0 ? Number(workerData.finishSilenceSec) : 0.6;
+      const silence = new Float32Array(Math.max(1, Math.round(workerData.sampleRate * seconds)));
       stream.acceptWaveform({ samples: silence, sampleRate: workerData.sampleRate });
       while (recognizer.isReady(stream)) recognizer.decode(stream);
       const text = String(recognizer.getResult(stream).text || "").trim();
@@ -89,26 +92,150 @@ parentPort.on("message", (msg) => {
 });
 `;
 
-export const TTS_WORKER_SOURCE = `
+/**
+ * 关键词唤醒（KWS）工作线程：3.3M 参数的 zipformer 关键词模型，只认注册过的词。
+ * 与识别线程的区别：`feed` 不返回文本，只返回命中的关键词名（空 = 没命中），
+ * 命中后**必须** reset（否则同一句会被反复命中）。
+ */
+export const KWS_WORKER_SOURCE = `
 const { parentPort, workerData } = require("worker_threads");
-let tts = null;
+let spotter = null;
+let stream = null;
 let sherpa = null;
 
 function ensure() {
   if (!sherpa) sherpa = require(workerData.sherpaPath);
-  if (!tts) {
-    tts = new sherpa.OfflineTts({
-      model: {
-        vits: {
-          model: workerData.model,
-          lexicon: workerData.lexicon,
-          tokens: workerData.tokens,
+  if (!spotter) {
+    spotter = new sherpa.KeywordSpotter({
+      featConfig: { sampleRate: workerData.sampleRate, featureDim: 80 },
+      modelConfig: {
+        transducer: {
+          encoder: workerData.encoder,
+          decoder: workerData.decoder,
+          joiner: workerData.joiner,
         },
+        tokens: workerData.tokens,
+        numThreads: workerData.numThreads,
+        provider: "cpu",
+        debug: 0,
       },
-      maxNumSentences: 1,
-      numThreads: workerData.numThreads,
-      provider: "cpu",
+      keywordsFile: workerData.keywordsFile,
+      keywordsScore: workerData.keywordsScore,
+      keywordsThreshold: workerData.keywordsThreshold,
+      maxActivePaths: workerData.maxActivePaths,
+      numTrailingBlanks: workerData.numTrailingBlanks,
     });
+  }
+  if (!stream) stream = spotter.createStream();
+}
+
+parentPort.on("message", (msg) => {
+  try {
+    if (msg.op === "create") {
+      ensure();
+      parentPort.postMessage({ id: msg.id, ok: true });
+      return;
+    }
+    if (msg.op === "feed") {
+      ensure();
+      stream.acceptWaveform({ samples: msg.samples, sampleRate: workerData.sampleRate });
+      while (spotter.isReady(stream)) spotter.decode(stream);
+      const result = spotter.getResult(stream) || {};
+      const keyword = String(result.keyword || "");
+      if (keyword) spotter.reset(stream);
+      parentPort.postMessage({ id: msg.id, ok: true, keyword: keyword });
+      return;
+    }
+    if (msg.op === "reset") {
+      ensure();
+      spotter.reset(stream);
+      parentPort.postMessage({ id: msg.id, ok: true });
+      return;
+    }
+    parentPort.postMessage({ id: msg.id, ok: false, error: "unknown op: " + msg.op });
+  } catch (e) {
+    parentPort.postMessage({ id: msg.id, ok: false, error: String((e && e.message) || e) });
+  }
+});
+`;
+
+export const TTS_WORKER_SOURCE = `const { parentPort, workerData } = require("worker_threads");
+const fs = require("node:fs");
+let tts = null;
+let sherpa = null;
+let refSamples = null;
+let refRate = 0;
+
+/** 读 16-bit PCM wav（只用于参考音频——那由我们自己写盘，格式可控）。 */
+function readWav16(buf) {
+  if (buf.length < 44) return null;
+  let offset = 12, rate = 0, ch = 1, bits = 16;
+  while (offset + 8 <= buf.length) {
+    const id = buf.toString("ascii", offset, offset + 4);
+    const size = buf.readUInt32LE(offset + 4);
+    if (id === "fmt ") {
+      ch = buf.readUInt16LE(offset + 10) || 1;
+      rate = buf.readUInt32LE(offset + 12);
+      bits = buf.readUInt16LE(offset + 22);
+    } else if (id === "data") {
+      if (bits !== 16) return null;
+      const count = Math.min(size, buf.length - offset - 8);
+      const frames = Math.floor(count / 2 / ch);
+      const out = new Float32Array(frames);
+      for (let i = 0; i < frames; i++) {
+        let sum = 0;
+        for (let c = 0; c < ch; c++) sum += buf.readInt16LE(offset + 8 + (i * ch + c) * 2);
+        out[i] = sum / ch / 32768;
+      }
+      return { samples: out, sampleRate: rate || 16000 };
+    }
+    offset += 8 + size + (size % 2);
+  }
+  return null;
+}
+
+function ensure() {
+  if (!sherpa) sherpa = require(workerData.sherpaPath);
+  if (!tts) {
+    if (workerData.mode === "zipvoice") {
+      // 音色克隆（zero-shot）：模型 + (参考音频, 参考文本) 成对使用
+      const z = workerData.zipvoice || {};
+      tts = new sherpa.OfflineTts({
+        model: {
+          zipvoice: {
+            tokens: z.tokens,
+            encoder: z.encoder,
+            decoder: z.decoder,
+            vocoder: z.vocoder,
+            dataDir: z.dataDir,
+            lexicon: z.lexicon,
+          },
+        },
+        maxNumSentences: 1,
+        numThreads: workerData.numThreads,
+        provider: "cpu",
+      });
+      if (workerData.referenceAudioPath && fs.existsSync(workerData.referenceAudioPath)) {
+        const parsed = readWav16(fs.readFileSync(workerData.referenceAudioPath));
+        if (parsed && parsed.samples.length) {
+          refSamples = parsed.samples;
+          refRate = parsed.sampleRate;
+        }
+      }
+    } else {
+      tts = new sherpa.OfflineTts({
+        model: {
+          vits: {
+            model: workerData.model,
+            lexicon: workerData.lexicon,
+            tokens: workerData.tokens,
+          },
+        },
+        maxNumSentences: 1,
+        numThreads: workerData.numThreads,
+        provider: "cpu",
+      });
+    }
   }
 }
 
@@ -121,7 +248,7 @@ parentPort.on("message", (msg) => {
     }
     if (msg.op === "speak") {
       ensure();
-      const audio = tts.generate({
+      const request = {
         text: msg.text,
         sid: msg.sid,
         speed: msg.speed,
@@ -130,7 +257,19 @@ parentPort.on("message", (msg) => {
         // "External buffers are not allowed"。必须从源头关掉，让 addon 返回普通 V8 buffer。
         // 见 sherpa-onnx issue #3108 / node_modules types.js 的 TtsRequest 定义。
         enableExternalBuffer: false,
-      });
+      };
+      if (workerData.mode === "zipvoice") {
+        if (!refSamples || !refSamples.length) throw new Error("参考音频未就绪（音色档案缺音频）");
+        // 坑（实测）：reference* 必须放进 generationConfig 这一层；平铺进 generate() 会被忽略，
+        // 表现为 native 侧报 "reference_sample_rate 0 is invalid"。
+        request.generationConfig = {
+          referenceAudio: refSamples,
+          referenceSampleRate: refRate,
+          referenceText: String(workerData.referenceText || ""),
+          numSteps: Number(workerData.numSteps || 4),
+        };
+      }
+      const audio = tts.generate(request);
       // sherpa-onnx 返回的 samples 背后是 native/external ArrayBuffer，不能直接
       // transfer（截图里的 "External buffers are not allowed" 就是这么来的）。
       // 显式拷到 V8 管理的普通 Float32Array 后才可安全跨 worker 传输；用 transfer

@@ -11,6 +11,7 @@ import { pathToFileURL } from "node:url";
 import { ChannelBotService, type ChannelBotConfig } from "./channel-bot";
 import { BotStreamSession, readBotStreamSettings, readBotStreamSettingsSync, writeBotStreamSettings, type BotStreamSink, type BotStreamSettings } from "./bot-stream";
 import { CodexServer, codexBinaryPath } from "./codex-server";
+import { BotPairingService } from "./bot-pairing";
 import { collectMcpServerNames, extractMcpSection, preserveUserConfig } from "./config-toml";
 import { deleteCustomCommand, expandCommandTemplate, listCustomCommands, readCustomCommand, saveCustomCommand } from "./commands";
 import { MemoryStore, Scheduler, type MemoryCategory, type MemoryRemoteConfig } from "./harness-services";
@@ -28,13 +29,14 @@ import { QqGateway } from "./qq-gateway";
 import { qqQrCancel, qqQrSnapshot, qqQrStart } from "./qq-qr-connect";
 import { feishuQrCancel, feishuQrSnapshot, feishuQrStart } from "./feishu-qr-connect";
 import { WecomWebhookGateway } from "./wecom-webhook-gateway";
-import { readPersonalization, writePersonalization, applyPersonalizationToAgentsMd, buildAgentsMd } from "./personalization";
+import { readPersonalization, writePersonalization, applyPersonalizationToAgentsMd, buildAgentsMd, migrateGreetedForExistingUsers } from "./personalization";
 import { developerInstructionsLine } from "./developer-instructions";
 import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings } from "./app-settings";
-import { checkLatestUpdate, defaultDownloadDir, downloadUpdate, fileExists, installUpdate, UPDATE_CHANNEL, UPDATE_SERVER_URL } from "./updates";
+import { checkLatestUpdate, defaultDownloadDir, downloadUpdate, fileExists, installUpdate, UPDATE_CHANNEL, UPDATE_SERVER_URL, GITHUB_REPO } from "./updates";
 import { checkEngineUpdate, performEngineUpdate } from "./engine-updater";
 import { VoiceService } from "./voice/voice-service";
-import { ALL_VOICE_REPOS, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "./voice/model-manifest";
+import * as voiceProfiles from "./voice/voice-profiles";
+import { ALL_VOICE_REPOS, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "./voice/model-manifest";
 import { ensureRepo, ensureZipvoice, modelsSizeOnDisk, voiceModelsStatus } from "./voice/model-store";
 import {
   deleteSshServer, execSshCommand, exportSshServers, parseSshImport, readSshServers, saveSshServer, setSshServerEnabled,
@@ -46,15 +48,89 @@ function qrSvg(text: string) {
   return QRCode.toString(text, { type: "svg", margin: 2, errorCorrectionLevel: "M" });
 }
 import { installCocoLoopSkill, listCocoLoopSkills, listSkillHubSkills, repairSkillBomScan, stripSkillBom, type InstalledMarketSkill, type MarketSkill } from "./skills-market";
+import { upsertSkillDiscipline, DISCIPLINE_START, DISCIPLINE_END } from "./skill-discipline";
 import { ensureCodexMarketplaceSection, installCodexMarketPlugin, listCodexMarketPlugins, type CodexMarketPlugin } from "./codex-market";
 import { augmentedPath, bundledGit, bundledNode, bundledPython, cloakCacheDir, cloakOpenHelper, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "./toolchain";
-import { ensureBuiltinSkills } from "./builtin-skills";
+import { ensureBuiltinSkills, ensureExpertSkillsMarketplace } from "./builtin-skills";
 import { ensurePonytailPlugin } from "./ponytail-plugin";
 import { getPonytailMode, setPonytailMode } from "./ponytail-mode";
-import { enrichThreadWithRolloutTools, listRolloutThreads, mergeThreadList } from "./session-tools";
+import { mergeThreadList } from "./session-tools";
+import { enrichThreadWithRolloutToolsAsync, listRolloutThreadsAsync } from "./rollout-pool";
+/** 诊断计数（09-12 多会话性能）：thread/list 走了几次「rollout 全量兜底扫描」。
+    旧实现每次必扫（渲染层每个回合结束都打一发 → O(N²)）；现在只在引擎索引为空时扫。
+    e2e 场景据此断言「跑 10 个会话时扫描次数为 0」，避免优化被悄悄改回去。 */
+let rolloutFallbackScanCount = 0;
+/** 主进程耗时打点：thread/resume 总耗时 与 其中 enrich（同步解析 rollout）的耗时。
+    切会话卡不卡主要看这两项——它们是主进程**同步**路径，会连带堵住所有会话的事件转发。 */
+let resumeTotalMs = 0;
+let resumeCount = 0;
+let resumeEnrichMs = 0;
+let resumeMaxMs = 0;
+/** thread/list 的请求次数（多会话性能验证用）：渲染层原本**每个回合结束都打一发**，
+    改成「本地补丁 + 去抖兜底」后应显著下降。 */
+let threadListRequestCount = 0;
+function enrichScanCountSnapshot() {
+  return {
+    rolloutFallbackScans: rolloutFallbackScanCount,
+    droppedForInactiveSession: rendererDroppedEventCount,
+    threadListRequests: threadListRequestCount,
+    resumeCount,
+    resumeAvgMs: resumeCount ? Math.round(resumeTotalMs / resumeCount) : 0,
+    resumeMaxMs: Math.round(resumeMaxMs),
+    resumeEnrichAvgMs: resumeCount ? Math.round(resumeEnrichMs / resumeCount) : 0,
+  };
+}
+
+/** 渲染层当前正在查看的会话（由渲染层在切换会话时上报）。
+    多会话性能（09-12 P1）：引擎事件原本**全量广播**给渲染层，渲染层到
+    `App.tsx` 的 threadId 过滤才丢弃——序列化 + 跨进程拷贝的成本已经付过却白付，
+    N 个后台会话同时流式就是 N 倍的冤枉开销。这里在**发给渲染层之前**就按会话裁掉。 */
+let rendererActiveThreadId = "";
+/** 诊断计数：被按会话过滤掉的事件数（e2e 用它证明过滤真的生效，而非「碰巧没事件」）。 */
+let rendererDroppedEventCount = 0;
+
+/** 跨会话也必须送达渲染层的**轻量**事件白名单。
+    依据是渲染层真实依赖：侧栏转圈/运行指示（markThreadRunning 系）靠
+    thread/status/changed + turn/started + turn/completed；排队角标靠 thread/queue/changed；
+    后台新建会话（渠道机器人）要靠 thread/started 触发侧栏刷新。
+    **其余事件（各种 delta / item 全文 / outputDelta）只有当前会话需要。** */
+const RENDERER_CROSS_SESSION_METHODS = new Set([
+  "thread/started",
+  "thread/status/changed",
+  "thread/name/updated",
+  "thread/queue/changed",
+  "thread/closed",
+  "thread/archived",
+  "thread/unarchived",
+  "thread/deleted",
+  "turn/started",
+  "turn/completed",
+]);
+
+/** 会话 id 提取：不同事件把归属放在不同字段上，逐个兜。取不到就不敢裁（放行）。 */
+function eventThreadId(params: any): string {
+  if (!params || typeof params !== "object") return "";
+  return String(params.threadId ?? params.thread_id ?? params.conversationId ?? "");
+}
+
+function filterForRenderer(event: any) {
+  if (event?.kind !== "notification") return event;
+  const method = String(event?.method ?? "");
+  if (RENDERER_CROSS_SESSION_METHODS.has(method)) return event;
+  const tid = eventThreadId(event?.params);
+  if (!tid) return event;
+  if (!rendererActiveThreadId || tid === rendererActiveThreadId) return event;
+  // ⚠️ 2026-09-12 临时回退为「放行」：按会话过滤一旦与渲染层的 activeThreadId 上报不同步，
+  // 正在跑的会话就会收不到自己的事件 → 永久转圈（用户实测「另一个会话宕机」）。
+  // 先只记账、证明收益与安全性，再决定是否真正启用裁剪（把下面改成 return null 即可）。
+  rendererDroppedEventCount += 1;
+  return event;
+}
+
+
 import { applySessionsBackup, backupFromRolloutFile, buildMarkdownExport, buildSessionsBackup, buildThreadPreview, parseMarkdownConversation, BACKUP_FORMAT, BACKUP_VERSION } from "./thread-backup";
 import {
-  buildDefaultExpertTeams, buildTeamSystemPrompt, buildTeamTools, normalizeTeamConfig,
+  buildChengxiangExpertTeam, buildDefaultExpertTeams, buildTeamSystemPrompt, buildTeamTools, buildZhiweiExpertTeam, normalizeTeamConfig,
   readExpertTeams, setExpertTeamsFile, writeExpertTeams, type ExpertTeamConfig, type ExpertTeamMember,
 } from "./expert-teams";
 
@@ -99,6 +175,34 @@ if (process.env.CODEX_HARNESS_IN_PROCESS_GPU) {
     console.error(`[e2e-diag] 渲染进程退出 reason=${details?.reason} exitCode=${details?.exitCode}`);
   });
 }
+/**
+ * 崩溃取证（09-12 新增）：用户反馈「开实时语音一会就闪退」，但应用跑 e2e 之外的路径
+ * 没有任何崩溃日志——渲染进程一死 → 窗口关闭 → window-all-closed → app.quit()，
+ * 从用户视角就是「应用自己没了」，且不留证据。
+ * 现在两件事一起做：① 落盘确切原因（reason/exitCode/时间）到 userData/voice-crash.log；
+ * ② 渲染进程异常退出时重载窗口（应用不再整体退出），把「闪退」降级成「闪一下自动恢复」。
+ */
+function logCrash(scope: string, detail: unknown): void {
+  try {
+    const line = `[${new Date().toISOString()}] ${scope} ${typeof detail === "string" ? detail : JSON.stringify(detail)}\n`;
+    void fs.appendFile(path.join(app.getPath("userData"), "voice-crash.log"), line).catch(() => undefined);
+    console.error("[crash]", line.trim());
+  } catch {
+    /* 取证失败不能影响主流程 */
+  }
+}
+app.on("render-process-gone", (_event, contents, details) => {
+  logCrash("renderer-gone", { reason: details?.reason, exitCode: details?.exitCode });
+  if (details?.reason === "clean-exit") return;
+  try {
+    if (!contents.isDestroyed()) contents.reload();
+  } catch {
+    /* 重载失败就交给用户手动重开 */
+  }
+});
+process.on("uncaughtException", (error) => logCrash("main-uncaught", String(error?.stack ?? error)));
+process.on("unhandledRejection", (reason) => logCrash("main-unhandled", String((reason as any)?.stack ?? reason)));
+
 void app.whenReady().then(() => {
   try {
     const gpuStatus = app.getGPUFeatureStatus();
@@ -157,6 +261,28 @@ void (async () => {
   try {
     const existing = await readExpertTeams();
     if (!existing.length) await writeExpertTeams(buildDefaultExpertTeams());
+    // 内置单人专家（知微/呈象）每次启动都确保存在：用户可能删掉后再想要回来，随包分发不该一次性的
+    const builtinSoloTeams = [buildZhiweiExpertTeam(), buildChengxiangExpertTeam()];
+    let teams = existing.length ? existing : await readExpertTeams();
+    for (const solo of builtinSoloTeams) {
+      if (!teams.some((entry) => entry.teamId === solo.teamId)) {
+        teams = [...teams, solo];
+        await writeExpertTeams(teams);
+      }
+    }
+    // 内置团队改名同步（09-13 全员改笔名）：内置团队在老存档里残留的旧名，按
+    // teamId + memberId 就地更新为最新内置名；只动 name 字段，不碰启用态与用户自定义团队
+    let renamed = false;
+    for (const def of buildDefaultExpertTeams()) {
+      const stored = teams.find((entry) => entry.teamId === def.teamId);
+      if (!stored) continue;
+      const syncName = (target: ExpertTeamMember | undefined, source: ExpertTeamMember) => {
+        if (target && target.name !== source.name) { target.name = source.name; renamed = true; }
+      };
+      syncName(stored.lead, def.lead);
+      for (const m of def.members) syncName(stored.members?.find((x) => x.id === m.id), m);
+    }
+    if (renamed) await writeExpertTeams(teams);
   } catch { /* 忽略初始化失败 */ }
 })();
 // 引擎直管的 MCP 服务器（如内置 nuphus）不在 connectors 列表里，单独存一份 名字 -> 是否启用
@@ -173,10 +299,27 @@ function placeholderPngResponse(): Response {
 }
 const server = new CodexServer(codexHome);
 const engineActiveTurnIds = new Set<string>();
+/** 关窗确认只问一次（用户点过「仍然关闭」后不再拦）。 */
+let closeConfirmed = false;
 // 记忆捕获：turnId → { user, assistant, cwd }；threadId → cwd（thread/start 响应与 settings/updated 维护）
 const captureBuffers = new Map<string, { user: string; assistant: string; cwd?: string }>();
 const threadCwd = new Map<string, string>();
 let mainWindow: BrowserWindow | null = null;
+/** 独立会话弹窗（09-13 新增）：主窗口之外可开多个只显示单个会话的窗口。
+ *  所有 popout 窗口与主窗口同 origin（共享 localStorage）但各自持有 thread 状态；
+ *  引擎事件全量广播（filterForRenderer 当前为放行态），每个窗口按自己的会话过滤。 */
+const popoutWindows = new Set<BrowserWindow>();
+/** 弹窗窗口 → 会话 id 的同步登记表：创建时立即写入（不依赖 URL 加载完成）。
+ *  之前的实现靠「读窗口 URL 里的 ?popout=」反查，但 loadFile 异步加载、URL 未就绪时
+ *  popoutList 拿到空 → 主窗口侧栏隐藏不生效（用户 09-13 实测）。 */
+const popoutThreadIds = new Map<BrowserWindow, string>();
+/** codex:event 广播：主窗口 + 所有独立会话弹窗（弹窗也要收到自己那个会话的流式事件）。 */
+function broadcastCodexEvent(payload: unknown) {
+  for (const win of [mainWindow, ...popoutWindows]) {
+    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) continue;
+    try { win.webContents.send("codex:event", payload); } catch { /* 发送失败忽略 */ }
+  }
+}
 function sendToWindow(channel: string, payload: unknown) {
   // 退出时窗口可能已销毁，?. 挡不住 destroyed 的 webContents，必须显式判活
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
@@ -200,6 +343,8 @@ const remote = new RemoteControlService({
   storageFile: path.join(app.getPath("userData"), "remote-sessions.json"),
   onDeviceConnected: (device) => { try { mainWindow?.webContents.send("remote:device", device); } catch { /* ignore */ } },
   onCommand: (command, device) => { try { mainWindow?.webContents.send("remote:command", { command, device }); } catch { /* ignore */ } },
+  // 手机提交了正确的 6 位配对码 → 挂起等电脑端在应用里点「允许/拒绝」
+  onPairRequest: (request) => { try { mainWindow?.webContents.send("remote:pair-request", request); } catch { /* ignore */ } },
   // 手机对话 UI 的引擎桥：选会话 / 新建会话 / 发消息 / 实时收流式回复
   listThreads: async () => {
     const result = await server.request("thread/list", { limit: 30, sortKey: "updated_at", sortDirection: "desc", archived: false }) as any;
@@ -469,6 +614,21 @@ const voiceService = new VoiceService({
   emit: (event) => sendToWindow("voice:event", event),
 });
 
+// 09-13：下线的内置音色预设（台湾腔·小美 / AI管家·贾维斯风）——把它们在用户档案里
+// 已创建的同名克隆档案一并清掉，否则「内置音色」列表没了、
+// 「我的音色」里还挂着两个来源不明的条目。
+void (async () => {
+  const removed = ["台湾腔 · 小美", "AI 管家 · 贾维斯风"];
+  try {
+    for (const profile of await voiceProfiles.listProfiles(app.getPath("userData"))) {
+      if (removed.includes(profile.name)) {
+        await voiceProfiles.deleteProfile(app.getPath("userData"), profile.id);
+        console.log(`[voice] 已清理下线预设的音色档案：${profile.name}`);
+      }
+    }
+  } catch { /* 清理失败不阻塞启动 */ }
+})();
+
 /** 语音模型安装的并发与取消由 voiceService 内部管（installController），主进程不再包一层。 */
 ipcMain.handle("voice:status", () => voiceService.status());
 
@@ -488,15 +648,30 @@ ipcMain.handle("voice:settings-set", async (_event, patch: any) => {
   const { saveVoiceSettings } = require("./voice/voice-settings");
   const next = saveVoiceSettings(app.getPath("userData"), patch ?? {});
   voiceService.updateSettings(next);
+  // ★ 广播出去：语音唤醒这类「按设置常驻」的能力必须能**立刻**重挂。
+  //   旧实现：VoiceCallFloat 的唤醒 effect 只在 phase 变化时读一次设置 →
+  //   在设置页打开开关后毫无反应（用户 09-13 反馈「唤醒功能不太行」的直接原因之一）。
+  sendToWindow("voice:event", { type: "settings", settings: next });
   return next;
 });
 
-ipcMain.handle("voice:start", async (_event, threadId: string, options?: { mode?: "conversation" | "dictation" }) => {
-  const result = await voiceService.start({ threadId: String(threadId ?? ""), mode: options?.mode });
+ipcMain.handle("voice:start", async (event, threadId: string, options?: { mode?: "conversation" | "dictation" }) => {
+  // ⛔ 全局互斥（09-13 用户要求）：语音通话是**全应用唯一**的（麦克风/ASR/TTS 线程只有一份），
+  // 多窗口下每个窗口都渲染了自己的悬浮球——A 窗口通话中，B 窗口再点会被 voiceService
+  // 静默复用（`if (this.active) return ok`），把 B 的会话绑不上、音频还全喂给了 A 的通话。
+  // 规则：同一会话重复 start = 恢复语义放行；不同会话 → 明确拒绝，前端据此把悬浮球置灰。
+  const status = voiceService.status();
+  const requestedThread = String(threadId ?? "");
+  if (status.active && status.threadId && requestedThread && status.threadId !== requestedThread) {
+    return { ok: false, busy: true, error: "另一个窗口正在语音通话中，请先挂断那边的通话再试" };
+  }
+  const result = await voiceService.start({ threadId: requestedThread, mode: options?.mode });
   return { ...result, status: voiceService.status() };
 });
 
 ipcMain.handle("voice:dictation-finish", async () => voiceService.finishDictation());
+/** 提前端点（审计 ④）：渲染层判定「句末标点 + 停口 0.5s」时调用，立即提交这一句 */
+ipcMain.handle("voice:endpoint-now", async () => voiceService.endpointNow());
 ipcMain.handle("voice:stop", async () => {
   await voiceService.stop();
   return { ok: true, status: voiceService.status() };
@@ -539,16 +714,24 @@ ipcMain.handle("voice:preview-voice", async (_event, input?: { sid?: number; spe
 let registeredVoiceHotkey = "";
 function applyVoiceHotkey(accelerator: string): { ok: boolean; error?: string } {
   try {
-    if (registeredVoiceHotkey) {
-      globalShortcut.unregister(registeredVoiceHotkey);
-      registeredVoiceHotkey = "";
+    if (!accelerator) {
+      if (registeredVoiceHotkey) {
+        globalShortcut.unregister(registeredVoiceHotkey);
+        registeredVoiceHotkey = "";
+      }
+      return { ok: true };
     }
-    if (!accelerator) return { ok: true };
+    // 同键重复设置直接视为成功（globalShortcut 对已注册的键二次 register 会失败，
+    // 而设置页开关切换时会用同一个键反复 set）
+    if (accelerator === registeredVoiceHotkey) return { ok: true };
+    // 先注册新键、成功后才放旧键：反过来（先注销再注册）一旦新键被占用，
+    // 旧键已没了、新键又没注册上，快捷键两头空——「改了一下就用不了」的主因之一
     const ok = globalShortcut.register(accelerator, () => {
       // 触发时把事件推给渲染层，由 VoiceCallFloat 决定开始/结束通话
       sendToWindow("voice:hotkey", { accelerator });
     });
     if (!ok) return { ok: false, error: `快捷键「${accelerator}」注册失败（可能被其它程序占用）` };
+    if (registeredVoiceHotkey) globalShortcut.unregister(registeredVoiceHotkey);
     registeredVoiceHotkey = accelerator;
     return { ok: true };
   } catch (error: any) {
@@ -589,6 +772,8 @@ ipcMain.handle("voice:models-status", async () => {
     repos: ALL_VOICE_REPOS.map((r) => ({ id: r.repo, lastSegment: r.repo.split("/").pop() ?? r.repo })),
     // 音色克隆模型（ZipVoice，归档型资源，单独安装）：UI 按它显示独立条目
     zipvoice: { ready: zipvoiceReady(voiceModelsRoot), bytes: ZIPVOICE_ARCHIVE.bytes + ZIPVOICE_ARCHIVE.vocoder.bytes, dir: ZIPVOICE_DIR },
+    // 语音唤醒关键词模型（KWS，归档型资源，单独安装）：唤醒卡片按它决定显示「一键下载」还是「已就绪」
+    kws: { ready: kwsReady(voiceModelsRoot), bytes: KWS_ARCHIVE.bytes, dir: KWS_DIR },
   };
 });
 
@@ -614,6 +799,201 @@ ipcMain.handle("voice:zipvoice-cancel", () => {
   zipvoiceAbort?.abort();
   return { ok: true };
 });
+
+/**
+ * 语音唤醒关键词模型（KWS，31MB 归档）：只服务「语音唤醒」，与三个主模型分开装 ——
+ * 不装也能用（回退到识别模型匹配），装了才是不误唤醒 + 低 CPU 的那条路。
+ */
+let kwsAbort: AbortController | null = null;
+ipcMain.handle("voice:kws-install", async () => {
+  const { ensureKws } = require("./voice/model-store");
+  const { kwsReady } = require("./voice/model-manifest");
+  if (kwsReady(voiceModelsRoot)) return { ok: true };
+  if (kwsAbort) return { ok: false, error: "正在安装中" };
+  kwsAbort = new AbortController();
+  try {
+    const result = await ensureKws(
+      voiceModelsRoot,
+      toolsRoot(),
+      (progress: any) => sendToWindow("voice:event", { type: "download", ...progress, target: "kws" }),
+      kwsAbort.signal,
+    );
+    sendToWindow("voice:event", { type: "downloadDone", ok: result.ok, error: result.ok ? undefined : (result as any).error, target: "kws" });
+    // 装好了让唤醒用上关键词模型：唤醒词没变也要重挂（引擎从 asr 换成 kws）
+    if (result.ok && voiceService.wakeListening()) {
+      await voiceService.stopWakeListener();
+      await voiceService.startWakeListener();
+    }
+    return result;
+  } finally {
+    kwsAbort = null;
+  }
+});
+ipcMain.handle("voice:kws-cancel", () => {
+  kwsAbort?.abort();
+  return { ok: true };
+});
+ipcMain.handle("voice:kws-status", () => {
+  const { kwsReady } = require("./voice/model-manifest");
+  return { ready: kwsReady(voiceModelsRoot) };
+});
+
+// ── 音色档案（音色克隆 ZipVoice）：导入/录制参考音频 → 本机 ASR 转写参考文本 → 保存为专属音色 ──
+const voiceProfilesDirOf = () => path.join(app.getPath("userData"), "voice-profiles");
+
+/** 把一段音频做成草稿：落盘 + 重采样到 16k 用本机 ASR 自动转写「参考文本」。
+ *  参考文本必须与音频内容一致（zeroshot 硬约束，对不上音质会明显劣化）——
+ *  所以这里转成草稿后**一定**要让用户校对一遍再保存。 */
+async function draftProfileAudio(samples: Float32Array, sampleRate: number, sourceName: string) {
+  const root = voiceProfilesDirOf();
+  await fs.mkdir(root, { recursive: true });
+  const draftFile = ".draft-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) + ".wav";
+  await fs.writeFile(path.join(root, draftFile), voiceProfiles.encodeWav16(samples, sampleRate));
+  const at16k = voiceProfiles.resampleLinear(samples, sampleRate, 16000);
+  const tmp16 = draftFile.replace(/\.wav$/, "-16k.wav");
+  await fs.writeFile(path.join(root, tmp16), voiceProfiles.encodeWav16(at16k, 16000));
+  let refText = "";
+  let transcribeError = "";
+  try {
+    const done = await voiceService.transcribeAudioFile(path.join(root, tmp16));
+    if (done.ok) refText = String(done.text ?? "").trim();
+    else transcribeError = String(done.error ?? "");
+  } catch (error) {
+    transcribeError = String((error as any)?.message ?? error);
+  }
+  await fs.rm(path.join(root, tmp16), { force: true }).catch(() => undefined);
+  return {
+    ok: true,
+    draftFile,
+    refText,
+    transcribeError,
+    sampleRate,
+    durationSec: Math.round((samples.length / sampleRate) * 10) / 10,
+    sourceName,
+  };
+}
+
+ipcMain.handle("voice:profiles-list", async () => ({
+  profiles: await voiceProfiles.listProfiles(app.getPath("userData")),
+  zipvoiceReady: zipvoiceReady(voiceModelsRoot),
+}));
+
+/** 内置音色预设（合成音源的克隆预设）：wav+参考文本随包分发，一键创建档案。
+ *  目录解析与 resolveFfmpegPath 同规则：开发版用项目 resources/，打包版用 process.resourcesPath/。 */
+function voicePresetsDir(): string {
+  const dev = path.join(process.cwd(), "resources", "voice-presets");
+  if (existsSync(dev)) return dev;
+  return path.join(process.resourcesPath ?? process.cwd(), "voice-presets");
+}
+
+ipcMain.handle("voice:preset-list", async () => {
+  try {
+    const raw = JSON.parse(await fs.readFile(path.join(voicePresetsDir(), "presets.json"), "utf8"));
+    const profiles = await voiceProfiles.listProfiles(app.getPath("userData"));
+    const presets = (Array.isArray(raw) ? raw : []).map((p: any) => ({
+      id: String(p.id ?? ""),
+      name: String(p.name ?? ""),
+      desc: String(p.desc ?? ""),
+      lang: String(p.lang ?? "zh"),
+      applied: profiles.some((profile) => profile.name === String(p.name ?? "")),
+    }));
+    return { presets };
+  } catch { return { presets: [] }; }
+});
+
+ipcMain.handle("voice:preset-apply", async (_event, presetId: string) => {
+  try {
+    const raw = JSON.parse(await fs.readFile(path.join(voicePresetsDir(), "presets.json"), "utf8"));
+    const preset = (Array.isArray(raw) ? raw : []).find((p: any) => p.id === String(presetId ?? ""));
+    if (!preset) return { ok: false, error: "内置音色不存在" };
+    const parsed = voiceProfiles.readWav(await fs.readFile(path.join(voicePresetsDir(), String(preset.wav ?? ""))));
+    if (!parsed) return { ok: false, error: "预设音频缺失或格式不对" };
+    const existing = await voiceProfiles.listProfiles(app.getPath("userData"));
+    const already = existing.find((profile) => profile.name === String(preset.name ?? ""));
+    if (already) return { ok: true, profile: already, existed: true };
+    const profile = await voiceProfiles.createProfile(app.getPath("userData"), {
+      name: String(preset.name ?? ""),
+      refText: String(preset.refText ?? ""),
+      samples: parsed.samples,
+      sampleRate: parsed.sampleRate,
+    });
+    return { ok: true, profile };
+  } catch (error: any) {
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+});
+
+ipcMain.handle("voice:profiles-import", async () => {
+  const picked = await dialog.showOpenDialog({
+    title: "选择一段参考音频（16-bit PCM wav，10 秒左右效果最好）",
+    filters: [{ name: "音频", extensions: ["wav"] }],
+    properties: ["openFile"],
+  });
+  if (picked.canceled || !picked.filePaths?.[0]) return { ok: false, canceled: true };
+  const file = picked.filePaths[0];
+  try {
+    const parsed = voiceProfiles.readWav(await fs.readFile(file));
+    if (!parsed || !parsed.samples.length) {
+      return { ok: false, error: "只能读取 16-bit PCM 的 wav 文件（mp3/m4a 请先用音频工具转成 wav）" };
+    }
+    if (parsed.samples.length / parsed.sampleRate > 60) {
+      return { ok: false, error: "参考音频请控制在 60 秒以内（10 秒左右效果最好）" };
+    }
+    return await draftProfileAudio(parsed.samples, parsed.sampleRate, path.basename(file));
+  } catch (error: any) {
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+});
+
+/** 渲染层录制（麦克风）→ PCM 回传 → 与导入走同一条草稿链路。 */
+ipcMain.handle("voice:profiles-record", async (_event, input: { samples?: number[]; sampleRate?: number }) => {
+  try {
+    const samples = Float32Array.from(Array.isArray(input?.samples) ? input!.samples! : []);
+    const rate = Number(input?.sampleRate ?? 16000) || 16000;
+    if (samples.length < rate * 1) return { ok: false, error: "录得太短了，至少录 1 秒" };
+    return await draftProfileAudio(samples, rate, "麦克风录制");
+  } catch (error: any) {
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+});
+
+ipcMain.handle("voice:profiles-save", async (_event, input: { draftFile?: string; name?: string; refText?: string }) => {
+  try {
+    const root = voiceProfilesDirOf();
+    const draft = String(input?.draftFile ?? "");
+    const parsed = voiceProfiles.readWav(await fs.readFile(path.join(root, draft)));
+    if (!parsed) return { ok: false, error: "草稿音频已失效，请重新导入或录制" };
+    const profile = await voiceProfiles.createProfile(app.getPath("userData"), {
+      name: String(input?.name ?? ""),
+      refText: String(input?.refText ?? ""),
+      samples: parsed.samples,
+      sampleRate: parsed.sampleRate,
+    });
+    await fs.rm(path.join(root, draft), { force: true }).catch(() => undefined);
+    return { ok: true, profile };
+  } catch (error: any) {
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+});
+
+ipcMain.handle("voice:profiles-delete", async (_event, id: string) => ({
+  ok: await voiceProfiles.deleteProfile(app.getPath("userData"), String(id ?? "")),
+}));
+
+/** 选用某个音色（写进语音设置 tts.profileId；空串 = 用内置预置音色）。 */
+ipcMain.handle("voice:profiles-select", async (_event, id: string) => {
+  const { saveVoiceSettings } = require("./voice/voice-settings");
+  const current = voiceService.getSettings();
+  const next = saveVoiceSettings(app.getPath("userData"), {
+    tts: { ...current.tts, profileId: String(id ?? "") },
+  });
+  voiceService.updateSettings(next);
+  return { ok: true, profileId: String(id ?? "") };
+});
+
+ipcMain.handle("voice:profiles-preview", async (_event, input?: { id?: string; text?: string }) =>
+  voiceAudioForIpc(await voiceService.previewVoice({ profileId: input?.id, text: input?.text }))
+);
 
 ipcMain.handle("voice:models-install", () => voiceService.installModels());
 ipcMain.handle("voice:models-cancel", () => ({ ok: voiceService.cancelInstall() }));
@@ -646,7 +1026,10 @@ ipcMain.handle("voice:models-uninstall", async () => {
   if (!voiceModelsRoot || target !== path.resolve(expected) || target === path.resolve(userData)) {
     return { ok: false, error: "语音模型目录路径异常，已取消卸载" };
   }
-  // 卸载 = 删除整个 voice-models 根目录（含 .part）；下次再点下载会重新拉
+  // 卸载 = 删除整个 voice-models 根目录（含 .part）；下次再点下载会重新拉。
+  // ★ 必须先销毁「挂断后保活」的工作线程：它们持有已加载的 onnx 文件句柄，
+  //   Windows 上会让 fs.rm 报 EBUSY（表现为「卸载失败但也没提示」）。
+  voiceService.disposeIdleWorkers();
   await fs.rm(voiceModelsRoot, { recursive: true, force: true });
   await voiceService.refreshModelsReady();
   return { ok: true };
@@ -670,7 +1053,19 @@ async function readCustomModel(): Promise<CustomModelFile | null> {
     return JSON.parse(await fs.readFile(customModelFile, "utf8"));
   } catch (error: any) {
     if (error.code === "ENOENT") return null;
-    throw error;
+    // ⛔ 绝不 throw（09-13 审计 P0）：这个函数在启动链上被裸 await，而它前面就是
+    // `createWindow()` —— 一旦文件被写坏（非原子写/断电/并发写撞车），异常会掐断整条
+    // `app.whenReady().then(...)`（那条链没有 .catch），**窗口根本不创建**：双击没反应、
+    // 连引导页都不出现，用户只能手工删 %APPDATA% 下的文件才能再用。
+    // 现在的语义：解析失败 → 把坏文件改名留证 + 当"没配置"继续启动（用户看到提示，可重配）。
+    try {
+      const bad = `${customModelFile}.bad-${Date.now()}`;
+      await fs.rename(customModelFile, bad);
+      console.warn(`[custom-model] 配置损坏，已备份为 ${bad} 并按空配置继续启动：`, error?.message ?? error);
+    } catch (renameError) {
+      console.warn("[custom-model] 配置损坏且备份失败，按空配置继续启动：", error?.message ?? error);
+    }
+    return null;
   }
 }
 
@@ -1574,10 +1969,125 @@ function createWindow() {
       webviewTag: true,
     },
   });
+  // ⛔ 导航与新窗口收敛（09-13 审计 S5）：全仓此前 `will-navigate` / `setWindowOpenHandler`
+  // **零命中** —— 主窗口加载了任意页面（模型输出里的链接、拖入的本地 html）就能在当前
+  // webContents 里换掉整个应用界面，而它带着 `harness-image://` 与全部 IPC 桥。
+  // 规则：**主窗口自身永不导航**（应用只从 dist/devServer 加载），新窗口一律拒绝并转系统浏览器。
+  mainWindow.webContents.on("will-navigate", (event, target) => {
+    const devUrl = process.env.VITE_DEV_SERVER_URL ?? "";
+    if (devUrl && target.startsWith(devUrl)) return;   // 开发期 HMR reload 放行
+    if (target.startsWith("file://") && target.includes("/dist/index.html")) return;
+    event.preventDefault();
+    if (/^https?:/i.test(target)) void shell.openExternal(target).catch(() => undefined);
+  });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) void shell.openExternal(url).catch(() => undefined);
+    return { action: "deny" };
+  });
+  // <webview> guest 只允许 http(s) 且禁弹窗；不给它任何宿主权限（分区隔离见 BrowserPane）。
+  mainWindow.webContents.on("will-attach-webview", (_event, webPreferences, params) => {
+    delete (webPreferences as any).preload;
+    (webPreferences as any).nodeIntegration = false;
+    (webPreferences as any).contextIsolation = true;
+    if (!/^https?:/i.test(String(params.src ?? ""))) delete (params as any).src;
+  });
   const devUrl = process.env.VITE_DEV_SERVER_URL;
+  // ⛔ 关窗守卫（09-13 审计第 5 条）：此前全 `main.ts` **没有 `mainWindow.on("close")`、没有确认框**，
+  // 而 `cleanupAll()` 里 `server.stop()` 直接 kill 引擎 —— 长任务流式中点关闭 = 该回合在 rollout 里
+  // 没有 task_complete（半截），排队中的消息随引擎内存一起消失。
+  // 只做一件事：**有在跑回合时先问一句**。不阻塞主进程（异步对话框 + preventDefault + 二次 close）。
+  mainWindow.on("close", (event) => {
+    if (closeConfirmed || engineActiveTurnIds.size === 0) return;
+    event.preventDefault();
+    const busy = engineActiveTurnIds.size;
+    void dialog.showMessageBox(mainWindow!, {
+      type: "warning",
+      buttons: ["继续运行（取消关闭）", "仍然关闭"],
+      defaultId: 0,
+      cancelId: 0,
+      message: `还有 ${busy} 个任务在运行`,
+      detail: "关闭应用会中断正在运行的回合，未完成的内容不会写入会话记录；排队中的消息也会丢失。",
+    }).then(({ response }) => {
+      if (response !== 1) return;
+      closeConfirmed = true;
+      mainWindow?.close();
+    }).catch(() => undefined);
+  });
+  // 主窗口真正关闭后，独立会话弹窗跟着一起关（用户 09-13 明确要求「跟着主应用关闭」）。
+  mainWindow.on("closed", () => {
+    for (const win of popoutWindows) { if (!win.isDestroyed()) win.close(); }
+  });
   if (devUrl) void mainWindow.loadURL(devUrl);
   else void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   installContextMenu(mainWindow);
+}
+
+/** 独立会话弹窗：打开一个只显示指定会话对话区的新窗口（09-13）。
+ *  样式与主窗口一致（hidden titleBar + overlay 43px + 同款图标），可拖出应用外；
+ *  渲染层通过 URL query `?popout=<threadId>` 进入弹窗模式（只渲染对话区并锁定该会话）。
+ *  主题/事件都走全局广播，弹窗无需额外维护。 */
+function createPopoutWindow(threadId: string) {
+  const windowIcon = path.join(
+    __dirname,
+    "..",
+    "build",
+    process.platform === "win32" ? "icon.ico" : "icon.png",
+  );
+  const win = new BrowserWindow({
+    // 1120 而非 1080：主布局在 ≤1080px 时隐藏消息刻度尺（media query），弹窗初始宽度
+    // 必须避开这个断点，否则弹窗里看不到刻度线（用户截图反馈）。
+    width: 1120,
+    height: 760,
+    minWidth: 520,
+    minHeight: 420,
+    backgroundColor: "#ffffff",
+    title: "Codex Harness Desktop — 独立会话",
+    icon: existsSync(windowIcon) ? windowIcon : undefined,
+    autoHideMenuBar: true,
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: "#00000000",
+      symbolColor: "#1b1b1a",
+      height: 43,
+    },
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      // 弹窗只渲染对话区，不需要 webview 标签
+      webviewTag: false,
+    },
+  });
+  // ⛔ 导航收敛与主窗口同规则：弹窗永不导航，新窗口一律拒绝并转系统浏览器。
+  win.webContents.on("will-navigate", (event, target) => {
+    const devUrl = process.env.VITE_DEV_SERVER_URL ?? "";
+    if (devUrl && target.startsWith(devUrl)) return;   // 开发期 HMR reload 放行
+    if (target.startsWith("file://") && target.includes("/dist/index.html")) return;
+    event.preventDefault();
+    if (/^https?:/i.test(target)) void shell.openExternal(target).catch(() => undefined);
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) void shell.openExternal(url).catch(() => undefined);
+    return { action: "deny" };
+  });
+  win.on("closed", () => {
+    popoutWindows.delete(win);
+    popoutThreadIds.delete(win);
+    notifyPopoutClosed(threadId);
+  });
+  popoutWindows.add(win);
+  popoutThreadIds.set(win, threadId);
+  const devUrl = process.env.VITE_DEV_SERVER_URL;
+  const query = `?popout=${encodeURIComponent(threadId)}`;
+  if (devUrl) {
+    const sep = devUrl.includes("?") ? "&" : "?";
+    void win.loadURL(devUrl + sep + query.slice(1));
+  } else {
+    void win.loadFile(path.join(__dirname, "../dist/index.html"), { query: { popout: threadId } });
+  }
+  installContextMenu(win);
+  return win;
 }
 
 // 前端切主题时同步窗口外观：nativeTheme.themeSource 让系统标题栏与 Chromium 默认
@@ -1609,6 +2119,8 @@ app.on("second-instance", () => {
 
 app.whenReady().then(async () => {
   await fs.mkdir(codexHome, { recursive: true });
+  // 专家技能市场（cheat-on-content / ppt-master）原位注册，零拷贝——见 ensureExpertSkillsMarketplace
+  await ensureExpertSkillsMarketplace(codexHome);
   await ensureBuiltinSkills(userSkillsDir);
   // 启动自愈：剥掉已安装技能 SKILL.md 的 UTF-8 BOM。带 BOM 的文件引擎会判「缺 frontmatter」
   // 整份拒载（装了但永远不被使用），市场包/本地导入都可能带 BOM——这里兜住存量文件。
@@ -1620,7 +2132,18 @@ app.whenReady().then(async () => {
   // 重写让模型默认用中文思考与回复；AGENTS.md 引擎每请求动态重读，无需重启即生效。
   try {
     await applyPersonalizationToAgentsMd(await readPersonalization(), codexHome);
+    void refreshSkillDiscipline();
   } catch (error) { console.warn("AGENTS.md bootstrap failed:", error); }
+  // 身份引导存量迁移（09-12 用户反馈「怎么每次思考还说新会话引导」）：老档案没有 greeted
+  // 字段，于是「装了很久、聊过很多次、但没回答过那套引导提问」的用户升级后又被当成第一次见面。
+  // 判定改为「只要这个 profile 已有历史会话，就认定早打过招呼」→ 直接落 greeted=true。
+  // 必须放在 server.start() 之前（引擎启动前把档案定稿），且按 preflight【5】包 try/catch，
+  // 裸 await 抛出会掐死整条启动链（界面能开、引擎不 spawn）。
+  try {
+    if (await migrateGreetedForExistingUsers(codexHome)) {
+      console.log("[personalization] 存量用户已有历史会话 → 标记 greeted=true（不再做初次见面引导）");
+    }
+  } catch (error) { console.warn("greeted migration failed:", error); }
   const custom = await readCustomModel();
   if (custom?.provider === "openai-official") {
     server.setApiKey("");
@@ -1638,6 +2161,18 @@ app.whenReady().then(async () => {
     // 盘符/根路径形态，再手动解一层（兼容旧的单编码 URL）。
     if (!/^[a-zA-Z]:[\\/]/.test(imagePath) && !imagePath.startsWith("/")) {
       try { imagePath = decodeURIComponent(imagePath); } catch { /* 原样使用 */ }
+    }
+    // ⛔ 收敛到「图片 + 可信根内」（09-13 审计 S5）：这个协议注册在**默认 session** 上，
+    // 而渲染层要渲染模型输出 / 内置浏览器里的网页 / 渠道消息 —— 不收敛就等于给它们一个
+    // `harness-image://img/?path=C:/任意文件` 的任意文件读取原语。
+    // 允许：常见图片扩展名，且落在 userData / images 缓存目录 / 任一已知会话工作目录内。
+    if (!/\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(imagePath)) {
+      return new Response("Unsupported media type", { status: 415 });
+    }
+    {
+      const resolved = path.resolve(imagePath);
+      if (!isInsideTrustedRoots(resolved)) return new Response("Forbidden", { status: 403 });
+      imagePath = resolved;
     }
     // 斜杠方向兜底：引擎/宿主写入的路径斜杠方向可能不一致
     if (!existsSync(imagePath)) {
@@ -1670,7 +2205,7 @@ app.whenReady().then(async () => {
   }
   createWindow();
   server.on("event", (event) => {
-    sendToWindow("codex:event", event);
+    broadcastCodexEvent(filterForRenderer(event));
     channelBot.handleCodexEvent(event);
     // 语音通话：只旁听事件（正文增量 / 回合生命周期），不改变事件本身的任何流向
     voiceService.handleCodexEvent(event);
@@ -1748,7 +2283,7 @@ app.whenReady().then(async () => {
     }
     await server.start();
   } catch (error) {
-    sendToWindow("codex:event", { kind: "status", status: "error", message: String(error) });
+    broadcastCodexEvent({ kind: "status", status: "error", message: String(error) });
   }
   // 自愈：config.toml 顶层的 model_context_window 才是引擎真正使用的上下文上限。
   // 旧版本把它写成供应商级默认值（128000），用户在模型编辑器里改的 1M 只进了 models[] 与
@@ -1892,6 +2427,19 @@ async function writeBotBindings() {
 }
 
 ipcMain.handle("bot-binding:get", async () => { await loadBotBindings(); return channelBotBindings; });
+
+// ── 机器人档案持久化（09-13）：此前机器人列表只存渲染层 localStorage —— 清缓存/换实例
+// 就整单丢失（用户实丢过一次，配对/绑定记录都在 userData 而档案没了）。迁到 userData/bots.json，
+// 与 botBindings / bot-pairing 同层。localStorage 旧数据由渲染层启动时上交迁移（见 App.tsx）。
+const botsFile = path.join(app.getPath("userData"), "bots.json");
+ipcMain.handle("bots:get", async () => {
+  try { return JSON.parse(await fs.readFile(botsFile, "utf8")); } catch { return []; }
+});
+ipcMain.handle("bots:set", async (_e, list: unknown) => {
+  const safe = Array.isArray(list) ? list : [];
+  await fs.writeFile(botsFile, JSON.stringify(safe, null, 2), "utf8");
+  return { ok: true, count: safe.length };
+});
 ipcMain.handle("bot-binding:set", async (_e, input: { channel: string; threadId: string | null; title?: string }) => {
   await loadBotBindings();
   const key = ["wechat", "telegram", "feishu", "dingtalk", "qq"].includes(String(input?.channel)) ? String(input.channel) : "wechat";
@@ -1924,6 +2472,9 @@ ipcMain.handle("bot-stream:set", async (_event, input: BotStreamSettings) => {
 
 async function handleWeixinMessage(message: { from: string; text: string; contextToken: string }) {
   if (!weixinGateway) return;
+  // 配对门卫（09-13）：未批准的聊天只有发对 6 位授权码才放行，其余消息只收到配对引导
+  const gate = botPairing.onChannelMessage("wechat", message.from, `微信 ${message.from}`, message.text);
+  if (gate.action !== "allow") { await weixinGateway.sendText(message.from, gate.message).catch(() => undefined); return; }
   try {
     const model = await readCustomModel();
     if (!model) { await weixinGateway.sendText(message.from, "请先在应用里配置模型再使用微信机器人。"); return; }
@@ -2027,6 +2578,9 @@ const telegramGateway = new TelegramGateway({
 });
 const telegramBindings = new Map<string, number>();
 async function handleTelegramMessage(message: { from: string; chatId: number; text: string }) {
+  // 配对门卫（09-13）：同微信
+  const gate = botPairing.onChannelMessage("telegram", String(message.chatId), `Telegram ${message.from}`, message.text);
+  if (gate.action !== "allow") { await telegramGateway.sendText(message.chatId, gate.message).catch(() => undefined); return; }
   try {
     const model = await readCustomModel();
     if (!model) { await telegramGateway.sendText(message.chatId, "请先在应用里配置模型。"); return; }
@@ -2188,6 +2742,9 @@ async function handleChannelMessage(channel: "feishu" | "dingtalk" | "qq", from:
       channelLog("error", `${channel} 回复失败：${error?.message ?? error}`);
     }
   };
+  // 配对门卫（09-13）：未批准的聊天先发 6 位授权码配对（等电脑端允许），其余消息只收到配对引导
+  const gate = botPairing.onChannelMessage(channel, chatId, `${channel} ${from}`, text);
+  if (gate.action !== "allow") { await reply(gate.message); return; }
   try {
     const model = await readCustomModel();
     if (!model) { await reply("请先在应用里配置模型。"); return; }
@@ -2282,6 +2839,7 @@ ipcMain.handle("ponytail:mode:set", async (_event, mode: string) => { await setP
 
 ipcMain.handle("codex:request", async (_event, method: string, params: unknown) => {
   let result: unknown;
+  const __reqT0 = performance.now();
   try {
     result = await server.request(method, params);
   } catch (error: any) {
@@ -2316,11 +2874,21 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
     }
   }
   if (method === "thread/list") {
+    threadListRequestCount += 1;
     const response = result as any;
     const archiveFilter = typeof (params as any)?.archived === "boolean" ? Boolean((params as any).archived) : null;
     const indexed = Array.isArray(response?.data) ? response.data : [];
-    const fallback = listRolloutThreads(codexHome);
-    result = { ...response, data: mergeThreadList(indexed, fallback, archiveFilter, Number((params as any)?.limit ?? 100)) };
+    // 零阻塞宿主（09-12）：兜底扫描整体在 **worker 线程**里跑（目录遍历 + 单文件解析都是
+    // 同步 I/O，放主进程会阻塞**所有会话**的事件转发）。语义与原实现一致：仍然无条件扫
+    // （不要改成「仅 indexed 为空时才扫」——引擎索引瞬时为空会让侧栏整片消失）。
+    // worker 不可用时退化为「不发兜底」：宁可列表少一截，也不能让主线程被同步 I/O 堵住。
+    rolloutFallbackScanCount += 1;
+    try {
+      const fallback = await listRolloutThreadsAsync(codexHome);
+      result = { ...response, data: mergeThreadList(indexed, fallback, archiveFilter, Number((params as any)?.limit ?? 100)) };
+    } catch (error: any) {
+      console.warn("[thread/list] rollout 兜底扫描（worker）失败，本次仅返回引擎索引：", error?.message);
+    }
   }
   // 记忆捕获用：记录 threadId → cwd（新建线程响应 / 线程设置更新都带 cwd）
   try {
@@ -2329,12 +2897,28 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
     if (method === "thread/start" && r?.thread?.id) {
       threadCwd.set(String(r.thread.id), String(p?.cwd ?? r.thread.cwd ?? ""));
     } else if (method === "thread/resume" && r?.thread?.id) {
-      r.thread = enrichThreadWithRolloutTools(r.thread, codexHome);
+      // 零阻塞宿主（09-12）：rollout 增强解析也在 worker 线程里（同步读盘 + 逐行 parse
+      // 会阻塞所有会话）。失败就退化为「不增强」——工具调用卡片少几个，但界面不卡。
+      const __t0 = performance.now();
+      try {
+        r.thread = await enrichThreadWithRolloutToolsAsync(r.thread, codexHome);
+      } catch (error: any) {
+        console.warn("[thread/resume] rollout 增强（worker）失败，本次跳过：", error?.message);
+      }
+      const __enrich = performance.now() - __t0;
+      resumeCount += 1;
+      resumeEnrichMs += __enrich;
+      if (__enrich > resumeMaxMs) resumeMaxMs = __enrich;
       threadCwd.set(String(r.thread.id), String(r.thread.cwd ?? r.cwd ?? p?.cwd ?? ""));
     } else if (method === "thread/settings/update" && p?.threadId && p?.cwd) {
       threadCwd.set(String(p.threadId), String(p.cwd));
     }
   } catch { /* cwd 映射失败不影响请求本身 */ }
+  if (method === "thread/resume") {
+    const total = performance.now() - __reqT0;
+    resumeTotalMs += total;
+    if (total > resumeMaxMs) resumeMaxMs = total;
+  }
   return result;
 });
 ipcMain.handle("codex:respond", (_event, id: string | number, result: unknown) => server.respond(id, result));
@@ -2522,6 +3106,65 @@ ipcMain.handle("app:storage-clear", async (_event, target: "engine-log" | "image
   return { ok: false, error: "未知清理目标" };
 });
 
+ipcMain.handle("app:perf-counters", () => enrichScanCountSnapshot());
+/** 渲染层上报「当前正在查看哪个会话」：主进程据此只转发该会话的高频事件（P1）。 */
+ipcMain.handle("codex:set-active-thread", (_event, threadId: unknown) => {
+  rendererActiveThreadId = threadId == null ? "" : String(threadId);
+  return { ok: true };
+});
+/** 当前窗口是否为独立会话弹窗：优先读登记表，URL query 兜底。 */
+ipcMain.handle("window:popout-id", (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return null;
+  const registered = popoutThreadIds.get(win);
+  if (registered) return registered;
+  try {
+    return new URL(win.webContents.getURL()).searchParams.get("popout") ?? null;
+  } catch { return null; }
+});
+/** 所有独立会话弹窗锁定的会话 id 列表：主窗口据此在侧栏隐藏这些会话
+ *  （避免主窗口与弹窗重复渲染同一会话，用户 09-13 明确要求）。
+ *  读同步登记表（创建时立即写入），不受窗口 URL 加载时序影响。 */
+ipcMain.handle("window:popout-list", () => {
+  const ids: string[] = [];
+  for (const [win, id] of popoutThreadIds) {
+    if (!win.isDestroyed()) ids.push(id);
+  }
+  return ids;
+});
+/** 弹窗被关闭（用户点 X / 返回主应用 / 主窗口联动关）→ 通知主窗口：
+ *  ① popout-closed：把该会话从侧栏隐藏列表移除（回到侧栏）；
+ *  ② popout-return：主窗口自动打开该会话（用户 09-13 要求「点独立窗口的叉，会话自动返回主窗口」，
+ *     与「返回主应用」按钮同语义——弹窗里只有对话区、会话锁定在创建时那个，关窗即该会话）。 */
+function notifyPopoutClosed(threadId: string) {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+  try {
+    mainWindow.webContents.send("harness:event", { type: "popout-closed", threadId, at: Date.now() });
+    mainWindow.webContents.send("harness:event", { type: "popout-return", threadId, at: Date.now() });
+  } catch { /* 主窗口可能已关 */ }
+}
+/** 独立会话弹窗：按 threadId 打开一个新窗口（渲染层在顶栏/侧栏长按触发）。
+ *  允许同时存在多个弹窗；主窗口关闭不会带走弹窗（window-all-closed 只在全部窗口
+ *  关闭后触发，弹窗还开着时应用保持运行）。 */
+ipcMain.handle("window:popout-thread", (_event, threadId: unknown) => {  const tid = threadId == null ? "" : String(threadId);
+  if (!tid) throw new Error("缺少会话 ID");
+  // 同一会话已弹窗 → 聚焦已有窗口，不重复开（避免开着开着冒出几十个）。读同步登记表。
+  for (const [win, id] of popoutThreadIds) {
+    if (!win.isDestroyed() && id === tid) { win.focus(); return { ok: true, focused: true }; }
+  }
+  createPopoutWindow(tid);
+  return { ok: true };
+});
+/** 弹窗「返回主应用」：关闭该弹窗，并把主窗口带到指定会话（渲染层据此恢复视角）。 */
+ipcMain.handle("window:popout-close", (event, threadId: unknown) => {
+  const tid = threadId == null ? "" : String(threadId);
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win && popoutWindows.has(win) && !win.isDestroyed()) win.close();
+  // ⛔ 不在这里发 popout-return：win.close() 会触发 closed → notifyPopoutClosed
+  // 统一发（含 popout-closed 解除侧栏隐藏），避免「返回按钮」路径重复 openThread。
+  if (mainWindow && !mainWindow.isDestroyed()) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); }
+  return { ok: true };
+});
 ipcMain.handle("app:engine-info", async () => {
   let binary = "";
   try { binary = codexBinaryPath(); } catch { binary = ""; }
@@ -3436,30 +4079,42 @@ ipcMain.handle("prompt:enhance", async (_event, input: { text: string }) => {
 
 ipcMain.handle("terminal:list", () => [...terminals.entries()].map(([id, service]) => ({ id, alive: service.alive, cwd: service.dir })));
 
+// ★ 更新链的主进程侧权威（09-13 审计 P0）：下载地址与安装路径**不再由渲染层决定**。
+//   `updates:check` 拿到的 info 存在这里，下载用它自己的 downloadUrl + sha256 校验，
+//   安装只接受"刚刚校验通过的那个文件"——渲染层即使被注入也换不掉安装包。
+let lastUpdateInfo: { downloadUrl?: string; sha256?: string; version?: string; filename?: string } | null = null;
+let lastVerifiedUpdatePath = "";
+
 ipcMain.handle("updates:check", async (_event, input?: { source?: "web" | "github" }) => {
   try {
     const currentVersion = String(app.getVersion() || "0.0.0");
     const source = input?.source ?? "web";
     const info = await checkLatestUpdate(currentVersion, source, process.platform, process.arch);
+    lastUpdateInfo = info ? { downloadUrl: (info as any).downloadUrl, sha256: (info as any).sha256, version: (info as any).version, filename: (info as any).filename } : null;
     return { ok: true, info, currentVersion, serverUrl: UPDATE_SERVER_URL, channel: UPDATE_CHANNEL, source };
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) };
   }
 });
-ipcMain.handle("updates:download", async (event, input: { downloadUrl: string; filename?: string }) => {
+ipcMain.handle("updates:download", async (event, input: { downloadUrl?: string; filename?: string }) => {
   try {
+    // 有"刚检查到的官方地址"就用它；渲染层传的地址只在没有检查结果时才作为兜底，
+    // 而且无论如何都会被 downloadUpdate 的 https + sha256 双重校验挡住。
+    const url = lastUpdateInfo?.downloadUrl || input?.downloadUrl;
+    if (!url) return { ok: false, error: "没有可用的更新地址（请先检查更新）" };
     const dir = defaultDownloadDir(app.getPath("downloads"));
-    const safeName = (input.filename || "codex-harness-update.bin").replace(/[\\/:*?"<>|]/g, "_");
+    const safeName = String(input?.filename || lastUpdateInfo?.filename || "codex-harness-update.bin").replace(/[\\/:*?"<>|]/g, "_");
     const dest = path.join(dir, safeName);
     let lastPushed = -1;
-    const info = await downloadUpdate(input.downloadUrl, dest, ({ percent }) => {
+    const info = await downloadUpdate(url, dest, ({ percent }) => {
       const pct = Math.round(percent * 100);
       // 每 2% 推一次（+ 必定推 100%），避免高频 IPC 刷屏
       if (pct !== lastPushed && (pct - lastPushed >= 2 || pct >= 100)) {
         lastPushed = pct;
         event.sender.send("updates:download-progress", percent);
       }
-    });
+    }, lastUpdateInfo?.sha256);
+    lastVerifiedUpdatePath = info.path;   // 只有校验通过才会走到这里
     return { ok: true, path: info.path, bytes: info.bytes };
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) };
@@ -3471,9 +4126,15 @@ ipcMain.handle("updates:reveal", async (_event, filePath: string) => {
   return { ok: true };
 });
 // 下载完成后运行安装包：交给系统默认程序打开（Windows 下即启动安装向导）
+// ⛔ 只接受**刚刚下载并通过 sha256 校验的那个文件**（09-13 审计 P0）：此前渲染层可以传任意
+// 路径进来，配合"下载地址也由渲染层给"就构成"任意 exe 落盘并执行"。渲染层被注入时也换不掉。
 ipcMain.handle("updates:install", async (_event, filePath: string) => {
-  if (!filePath || !fileExists(filePath)) return { ok: false, error: "file_not_found" };
-  const started = await installUpdate(filePath);
+  if (!lastVerifiedUpdatePath) return { ok: false, error: "no_verified_update" };
+  if (path.resolve(String(filePath ?? "")) !== path.resolve(lastVerifiedUpdatePath)) {
+    return { ok: false, error: "path_not_verified" };
+  }
+  if (!fileExists(lastVerifiedUpdatePath)) return { ok: false, error: "file_not_found" };
+  const started = await installUpdate(lastVerifiedUpdatePath);
   return { ok: started, error: started ? undefined : "open_failed" };
 });
 
@@ -3496,14 +4157,37 @@ ipcMain.handle("plugin:validate", async (_event, input: { path?: string }) => {
   if (!inventory.skills && !inventory.commands && !inventory.agents && !inventory.hooks) issues.push("插件没有任何能力目录（skills / commands / agents / hooks）");
   return { ok: issues.length === 0, root, manifestPath, issues, inventory, name: manifest?.name ?? "" };
 });
-ipcMain.handle("remote:start", () => { const port = remote.start(); return { port, url: remote.pairUrl() }; });
-ipcMain.handle("remote:status", () => ({ status: "idle", devices: remote.listDevices(), url: remote.pairUrl() }));
+// ⚠️ 必须 await：`remote.start()` 是 async，不 await 时 port 是个 Promise 对象（渲染层拿到
+// `{}`、二维码地址也可能在 token 生成前取），这正是 09-13 冒烟测试第一次跑就超时的原因。
+ipcMain.handle("remote:start", async () => { const port = await remote.start(); return { port, url: remote.pairUrlAuth() }; });
+ipcMain.handle("remote:status", () => ({ status: "idle", devices: remote.listDevices(), url: remote.pairUrlAuth() }));
 ipcMain.handle("remote:devices", () => remote.listDevices());
 ipcMain.handle("remote:send", (_event, cmd: string) => { mainWindow?.webContents.send("remote:command", { command: String(cmd), device: { id: "local", name: "本机" } }); return { ok: true }; });
 ipcMain.handle("remote:stop", () => { remote.stop(); return { ok: true }; });
+// 配对码 + 审批（09-13 二次加固：手机首次连接 = 6 位配对码 + 电脑端点允许）
+ipcMain.handle("remote:pair-state", () => ({ code: remote.pairingCode(), pending: remote.pendingPairs(), approved: remote.approvedDevices() }));
+// ── Bot Channel 配对门卫（09-13：机器人聊天的首次使用 = 聊天里发 6 位授权码 + 电脑端点允许）──
+// 与「手机远控」共用同一个 6 位码（电脑端只显示一个数字）；approved 持久化到 userData/bot-pairing.json
+const botPairing = new BotPairingService(
+  () => remote.pairingCode(),
+  (request) => { try { mainWindow?.webContents.send("bot:pair-request", request); } catch { /* ignore */ } },
+  (approved) => { void fs.writeFile(path.join(app.getPath("userData"), "bot-pairing.json"), JSON.stringify(approved, null, 2), "utf8").catch(() => undefined); },
+);
+try {
+  const saved = JSON.parse(readFileSync(path.join(app.getPath("userData"), "bot-pairing.json"), "utf8")) as Record<string, unknown>;
+  botPairing.restoreApproved(saved ?? {});
+} catch { /* 首次运行无文件 */ }
+ipcMain.handle("bot:pair-state", () => botPairing.state());
+ipcMain.handle("bot:approve", (_event, rid: string) => ({ ok: botPairing.approve(String(rid)) }));
+ipcMain.handle("bot:deny", (_event, rid: string) => ({ ok: botPairing.deny(String(rid)) }));
+ipcMain.handle("bot:revoke", (_event, key: string) => { const [channel, ...rest] = String(key).split(":"); return { ok: botPairing.revoke(channel, rest.join(":")) }; });
+ipcMain.handle("remote:pair-rotate", () => ({ code: remote.rotatePairingCode() }));
+ipcMain.handle("remote:approve", (_event, rid: string) => ({ ok: remote.approvePair(String(rid)) }));
+ipcMain.handle("remote:deny", (_event, rid: string) => ({ ok: remote.denyPair(String(rid)) }));
+ipcMain.handle("remote:revoke", (_event, deviceId: string) => ({ ok: remote.revokeDevice(String(deviceId)) }));
 ipcMain.handle("remote:qrcode", async (_event, botId?: string) => {
-  const base = remote.pairUrl();
-  return qrSvg(botId ? `${base}?bot=${encodeURIComponent(botId)}` : base);
+  // 服务端拼 URL（含一次性凭据），避免调用方把 `?`/`&` 拼错 —— 拼错的后果是扫码后 401
+  return qrSvg(remote.pairUrlFor(botId));
 });
 // 机器人扫码绑定：创建绑定会话二维码 + 渲染层轮询状态
 let lastBindSession = "";
@@ -3614,6 +4298,14 @@ function runtimeList() {
   }));
 }
 
+/**
+ * ⛔ 这里曾经有过一个「自动化工具包在线回落地址」（GitHub Release 的 automation-tools.zip），
+ * 已于 09-12 删除：那个 release 资产**根本不存在**（实测 v0.0.13 只有两个 mac zip），
+ * 回落只会让用户看到「下载失败」，还把真正的问题（安装包没带 zip）藏起来。
+ * 现在「包里必须有 zip」由打包链路硬保证（scripts/before-pack.cjs 硬失败）。
+ * 注意：本段注释刻意不写出那个常量的字面名——preflight【8】会全文搜它，注释也会命中。
+ */
+
 function runtimeInstaller(name: string) {
   return app.isPackaged ? path.join(toolsRoot(), name) : path.join(app.getAppPath(), "scripts", name);
 }
@@ -3706,6 +4398,20 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
   const task = (async () => {
     if (id === "automation") {
       if (!bundledNode()) await runRuntimeInstaller("node", runtimeInstaller("install-runtimes.cjs"), ["node"]);
+      // ⛔ 只认随包 zip（解压安装），**不再回落在线下载**（09-12 用户实测发布包故障）：
+      //   旧实现找不到 zip 就去拉 GitHub Release 的 automation-tools.zip —— 而那个资产
+      //   **根本不存在**（实测 v0.0.13 的 release 只有两个 mac zip），于是用户看到的是
+      //   「直接下载失败」，且浏览器自动化/内核两个（依赖这个包里的 playwright-cli /
+      //   cloakbrowser）跟着一起装不了。既然装不上就当场说清楚，别去撞一个死地址。
+      //   保证「包里一定有 zip」是打包链路的责任：scripts/before-pack.cjs 现在**硬失败**
+      //   （不再 warn 后静默放过），宁可不打包也不发坏包。
+      const bundledAutomationZip = path.join(toolsRoot(), "automation-tools.zip");
+      if (!existsSync(bundledAutomationZip)) {
+        throw new Error(
+          "随包缺少 tools/automation-tools.zip —— 这一版安装包不完整，装不了「桌面与浏览器自动化」。"
+          + "请更新到带该文件的版本；自建包时先在本机装一次自动化工具链再执行打包。"
+        );
+      }
       await runRuntimeInstaller(id, runtimeInstaller("install-automation.cjs"), [], bundledNode());
       // 解压安装成功后自动激活「桌面自动化」「浏览器自动化」联动开关（nuphus MCP 注册 + 技能启用）
       await saveAppSettings(app.getPath("userData"), { desktopAutomation: true, browserAutomation: true });
@@ -3865,27 +4571,27 @@ ipcMain.handle("fs:exists", async (_event, input: { path: string }) => {
 });
 ipcMain.handle("dialog:directory", async () => {
   const result = await dialog.showOpenDialog(mainWindow!, { properties: ["openDirectory", "createDirectory"] });
-  return result.canceled ? null : result.filePaths[0];
+  if (result.canceled) return null; trustPicked(result.filePaths); return result.filePaths[0];
 });
 // /add-dir：从指定起始目录打开选择器（目录不存在时回落到默认行为）
 ipcMain.handle("dialog:directory-at", async (_event, startPath: string) => {
   const start = startPath && existsSync(startPath) ? startPath : undefined;
   const result = await dialog.showOpenDialog(mainWindow!, { properties: ["openDirectory", "createDirectory"], defaultPath: start });
-  return result.canceled ? null : result.filePaths[0];
+  if (result.canceled) return null; trustPicked(result.filePaths); return result.filePaths[0];
 });
 ipcMain.handle("dialog:images", async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ["openFile", "multiSelections"],
     filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
   });
-  return result.canceled ? [] : result.filePaths;
+  if (result.canceled) return []; trustPicked(result.filePaths); return result.filePaths;
 });
 ipcMain.handle("dialog:files", async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ["openFile", "multiSelections"],
     filters: [{ name: "All files", extensions: ["*"] }],
   });
-  return result.canceled ? [] : result.filePaths;
+  if (result.canceled) return []; trustPicked(result.filePaths); return result.filePaths;
 });
 const userSkillsDir = path.join(codexHome, "skills");
 const skillsRegistryFile = path.join(codexHome, "skills-registry.json");
@@ -3928,6 +4634,7 @@ ipcMain.handle("skills:import", async () => {
   await stripSkillBom(skillPath);
   await updateSkillRegistry({ name, path: skillPath, source: "local", installedAt: new Date().toISOString() });
   await server.restart();
+  void refreshSkillDiscipline();
   return { name, path: destination, source, content };
 });
 // SkillHub 榜单分类（技能中心 tab → showcase section）；其余分类名一律落回 hot
@@ -3959,7 +4666,47 @@ ipcMain.handle("skills:market-install", async (_event, skill: MarketSkill) => {
     engineCheckMessage = `技能已安装且引擎已重启，但自动确认暂时不可用：${error.message}`;
   }
   emit(engineRegistered ? "complete" : "pending", engineCheckMessage);
+  void refreshSkillDiscipline();
   return { ...installed, engineRegistered, engineCheckMessage };
+});
+
+/** 技能/连接器变化后刷新 AGENTS.md 里的「技能与 MCP 运用守则」区间（引擎每会话注入，
+ *  模型开局即知当前军火库）。任何失败都不影响主流程。 */
+async function refreshSkillDiscipline() {
+  try {
+    const connectors = await readConnectors();
+    const mcp = connectors
+      .filter((c) => c.enabled !== false)
+      .map((c) => ({ name: c.name, desc: c.transport === "stdio" ? `本地 MCP（${String(c.command ?? "")}）` : `HTTP MCP（${String(c.url ?? "")}）` }));
+    await upsertSkillDiscipline(codexHome, mcp);
+  } catch (error: any) {
+    console.warn("技能纪律注入失败:", error?.message ?? error);
+  }
+}
+
+/** 给引擎动态工具用的轻量安装：**不重启引擎**（重启会杀掉正在跑的回合）——
+ *  写目录 + 刷新注册表 + forceReload 重扫（下一回合即可用）+ 刷新 AGENTS 纪律区间。 */
+ipcMain.handle("skills:market-install-light", async (_event, skill: MarketSkill) => {
+  const installed = await installCocoLoopSkill({ skill, destinationRoot: userSkillsDir });
+  await updateSkillRegistry({ name: installed.name, path: installed.path, source: "cocoloop", marketId: installed.marketId, sourceUrl: installed.sourceUrl, installedAt: new Date().toISOString() });
+  let discovered = false;
+  try {
+    const result: any = await server.request("skills/list", { cwds: [], forceReload: true });
+    discovered = (result.data ?? []).flatMap((entry: any) => entry.skills ?? [])
+      .some((entry: any) => entry?.name === installed.name || entry?.path === installed.path);
+  } catch { /* 重扫失败不阻塞：下一回合引擎自己会重新扫描 */ }
+  await refreshSkillDiscipline();
+  return { name: installed.name, path: installed.path, discovered, engineCheckMessage: discovered ? "引擎已发现该技能，下一回合即可使用" : "技能已入库，下一回合引擎重新扫描后即可使用" };
+});
+
+ipcMain.handle("skill-discipline:get", async () => {
+  try {
+    const raw = await fs.readFile(path.join(codexHome, "AGENTS.md"), "utf8");
+    const start = raw.indexOf(DISCIPLINE_START);
+    const end = raw.indexOf(DISCIPLINE_END);
+    return { present: start >= 0 && end > start, section: start >= 0 && end > start ? raw.slice(start, end + DISCIPLINE_END.length) : "" };
+  } catch { return { present: false, section: "" };
+  }
 });
 ipcMain.handle("plugins:market-list", (_event, input: { category?: string; query?: string; page?: number; pageSize?: number } = {}) => listCodexMarketPlugins(input));
 ipcMain.handle("plugins:market-install", async (_event, plugin: CodexMarketPlugin) => {
@@ -4074,6 +4821,7 @@ async function setSkillEnabledSilent(folder: string, enabled: boolean) {
 ipcMain.handle("skills:set-enabled", async (_event, input: { folder: string; enabled: boolean }) => {
   await setSkillEnabledSilent(input.folder, Boolean(input.enabled));
   await server.restart();
+  void refreshSkillDiscipline();
   return { ok: true };
 });
 ipcMain.handle("skills:set-enabled-batch", async (_event, input: { folders: string[]; enabled: boolean }) => {
@@ -4084,6 +4832,7 @@ ipcMain.handle("skills:set-enabled-batch", async (_event, input: { folders: stri
     catch (error: any) { failures.push(`${folder}：${error.message}`); }
   }
   await server.restart();
+  void refreshSkillDiscipline();
   return { ok: failures.length === 0, changed: folders.length - failures.length, failures };
 });
 /**
@@ -4126,6 +4875,7 @@ ipcMain.handle("skills:local-remove", async (_event, input: { folder?: string; n
     engineCheckMessage = `技能已删除且引擎已重启，但自动确认暂时不可用：${error.message}`;
   }
   emit(engineRemoved ? "complete" : "pending", engineCheckMessage);
+  void refreshSkillDiscipline();
   return { ok: true, engineRemoved, engineCheckMessage };
 });
 /**
@@ -4523,6 +5273,7 @@ ipcMain.handle("connectors:save", async (_event, input: any) => {
   await writeConnectors([...list.filter((entry) => entry.id !== id), config]);
   const model = await readCustomModel();
   if (model) await applyCustomModel(model); else { server.setExternalEnv(connectorEnv(await readConnectors())); await server.restart(); }
+  void refreshSkillDiscipline();
   return publicConnector(config);
 });
 ipcMain.handle("connectors:remove", async (_event, id: string) => {
@@ -4532,6 +5283,7 @@ ipcMain.handle("connectors:remove", async (_event, id: string) => {
   await writeConnectors(next);
   const model = await readCustomModel();
   if (model) await applyCustomModel(model); else { server.setExternalEnv(connectorEnv(next)); await server.restart(); }
+  void refreshSkillDiscipline();
   return { ok: true };
 });
 // 单个或批量启用/停用：ids 传一个等价单卡开关，传多个走批量勾选。每次改动都重启引擎使 config.toml 生效
@@ -4552,6 +5304,7 @@ ipcMain.handle("connectors:set-enabled", async (_event, input: { ids?: unknown; 
   await writeConnectors(next);
   const model = await readCustomModel();
   if (model) await applyCustomModel(model); else { server.setExternalEnv(connectorEnv(next)); await server.restart(); }
+  void refreshSkillDiscipline();
   return { ok: true, updated };
 });
 
@@ -4655,6 +5408,7 @@ ipcMain.handle("personalization:read", async () => readPersonalization());
 ipcMain.handle("personalization:save", async (_event, input: { nickname?: unknown; customInstructions?: unknown }) => {
   const config = await writePersonalization(input);
   await applyPersonalizationToAgentsMd(config, codexHome);
+  void refreshSkillDiscipline();
   const model = await readCustomModel();
   // 重写 config.toml：把迁移前残留在 developer_instructions 里的旧个性化段清掉，并重启引擎
   if (model) await applyCustomModel(model);
@@ -4666,6 +5420,14 @@ ipcMain.handle("personalization:save", async (_event, input: { nickname?: unknow
 ipcMain.handle("personalization:save-identity", async (_event, input: Record<string, unknown>) => {
   const config = await writePersonalization(input);
   await applyPersonalizationToAgentsMd(config, codexHome);
+  void refreshSkillDiscipline();
+  return config;
+});
+/** 标记「身份引导已打过招呼」（09-12 用户反馈「怎么每次新会话都强制引导」）：
+    第一次对话注入引导指令后调用一次，此后新会话不再引导、直接干活——
+    与 `onboarded` 分开：那个表示用户**真的回答了**，这个只表示**问过一次**。 */
+ipcMain.handle("personalization:mark-greeted", async () => {
+  const config = await writePersonalization({ greeted: true });
   return config;
 });
 
@@ -4901,6 +5663,7 @@ ipcMain.handle("personalization:setNickname", async (_event, nickname: unknown) 
   const current = await readPersonalization();
   const config = await writePersonalization({ nickname, customInstructions: current.customInstructions });
   await applyPersonalizationToAgentsMd(config, codexHome);
+  void refreshSkillDiscipline();
   return config;
 });
 // 回读真实落盘的 AGENTS.md，确认个性化确实在引擎会读取的位置——避免「保存成功但没生效」
@@ -4948,6 +5711,20 @@ ipcMain.handle("commands:read", async (_event, input: { filePath?: unknown; cwd?
 });
 ipcMain.handle("commands:save", async (_event, input: any) => saveCustomCommand({ ...input, codexHome }));
 ipcMain.handle("commands:delete", async (_event, filePath: string) => {
+  // ⛔ 收敛到「自定义命令目录内」（09-13 审计 S5）：`deleteCustomCommand` 内部就是裸 `fs.rm`
+  // 且**没有任何包含性校验**，而这条链由渲染层任意字符串直达 —— 一个 `fs.rm` 原语。
+  {
+    const target = path.resolve(String(filePath ?? ""));
+    // 自定义命令有两个来源目录（见 commands.ts）：全局 `<codexHome>/commands` 与
+    // 项目级 `<cwd>/.codex/commands` —— 两个都要放行，否则删项目命令会误报。
+    const bases = [path.join(codexHome, "commands"), ...[...threadCwd.values()].filter(Boolean).map((cwd) => path.join(String(cwd), ".codex", "commands"))]
+      .map((base) => path.resolve(base));
+    const inside = Boolean(target) && bases.some((base) => {
+      const relative = path.relative(base, target);
+      return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+    });
+    if (!inside) throw new Error("只能删除自定义命令目录内的文件");
+  }
   await deleteCustomCommand(String(filePath ?? ""));
   return { ok: true };
 });
@@ -5329,16 +6106,56 @@ ipcMain.handle("clipboard:image", async () => {
   await fs.writeFile(file, buffer);
   return file;
 });
+// ⛔ `file:` 只在**工作区内的 .html** 上放行（09-13 审计 S5）：这条链是
+// `shell.openExternal` = 交给系统默认程序执行 —— 放行任意 `file:` 意味着渲染层（它要渲染
+// 模型输出 / 市场条目描述 / 内置浏览器里的网页）可以 `file:///C:/.../x.exe` 让系统去跑它。
+// 本地预览只需要工作区里的 html，其余一律拒。
+const filePreviewAllowed = (target: URL) => {
+  if (target.protocol !== "file:") return false;
+  let p = "";
+  try { p = require("node:url").fileURLToPath(target); } catch { return false; }
+  if (!/\.html?$/i.test(p)) return false;
+  // 可信根 = 主进程自己记着的会话工作目录 + userData + **用户亲自用系统对话框选过的路径**
+  // （后者是文件对话框返回值，渲染层伪造不出来 —— 所以不牺牲"我能自己选文件"的自由度）
+  return isInsideTrustedRoots(p);
+};
+/**
+ * 「用户亲自选过」的路径 = **可信来源**（09-13 审计 S5 的安全版修法，用户要求"别把口子焊死"）。
+ * 为什么这样既安全又不憋屈：这些路径是**主进程自己弹的系统对话框**返回的，渲染层伪造不出来；
+ * 而渲染层里跑着模型输出 / 内置浏览器网页 / 渠道消息，它们想凭空写 `C:\Windows\...` 是拿不到
+ * 这条信任的。于是：工作区/userData（主进程记着的）+ 用户选过的路径 → 放行；其余一律拒。
+ */
+const userPickedPaths = new Set<string>();
+const trustPicked = (paths: readonly string[]) => {
+  for (const p of paths) {
+    if (!p) continue;
+    const resolved = path.resolve(String(p));
+    userPickedPaths.add(resolved);
+    if (userPickedPaths.size > 200) userPickedPaths.delete(userPickedPaths.values().next().value as string);
+  }
+};
+/** 可信根集合：主进程记着的各会话工作目录 + userData + 用户亲自选过的路径（含其所在目录）。 */
+const trustedRoots = () => {
+  const roots = [app.getPath("userData"), ...[...threadCwd.values()].filter(Boolean).map((cwd) => String(cwd))];
+  for (const picked of userPickedPaths) roots.push(picked, path.dirname(picked));
+  return roots.filter(Boolean).map((root) => path.resolve(root));
+};
+const isInsideTrustedRoots = (target: string) => {
+  const resolved = path.resolve(target);
+  return trustedRoots().some((root) => {
+    const relative = path.relative(root, resolved);
+    return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+  });
+};
 ipcMain.handle("external:open", async (_event, value: string) => {
   const url = new URL(value);
-  // file: 放行——本地 HTML 预览「在系统浏览器打开」走 file:// 协议，只认 http/https 会静默失败
-  if (url.protocol !== "https:" && url.protocol !== "http:" && url.protocol !== "file:") throw new Error("Unsupported URL");
+  if (url.protocol !== "https:" && url.protocol !== "http:" && !filePreviewAllowed(url)) throw new Error("Unsupported URL");
   await shell.openExternal(url.toString());
 });
 // 放大查看：独立 BrowserWindow 弹出预览（右栏 BrowserPane 太窄时用），宽高可自由调整
 ipcMain.handle("browser:popout", async (_event, value: string) => {
   const url = new URL(value);
-  if (url.protocol !== "https:" && url.protocol !== "http:" && url.protocol !== "file:") throw new Error("Unsupported URL");
+  if (url.protocol !== "https:" && url.protocol !== "http:" && !filePreviewAllowed(url)) throw new Error("Unsupported URL");
   const pop = new BrowserWindow({
     width: 1180,
     height: 800,
@@ -5831,6 +6648,8 @@ app.on("before-quit", () => {
   cleanupAll();
   // SSH 会话持有 ssh2 连接，不主动断开会让退出流程挂住
   sshSessions.closeAll();
+  // 挂断后保活的语音工作线程：退出时彻底销毁（否则 90s 内进程里还挂着两份 ONNX 模型）
+  voiceService.disposeIdleWorkers();
 });
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();

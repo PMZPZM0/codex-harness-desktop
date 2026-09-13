@@ -88,7 +88,9 @@ export function bodyTextOf(item: ThreadItem) {
   return item.type === "agentMessage" ? String(item.text ?? "").trim() : "";
 }
 
-/** 分段（对齐 buildSegments）：连续 ≥2 个可折叠单元 → 折叠段；单个自成普通段；正文并入普通段 */
+/** 完成态折叠计划见 ./turn-fold-plan.mjs（纯逻辑放 .mjs，预检可直接 import 跑断言）。 */
+
+
 export function buildSegments(units: FoldUnit[], turnFinished: boolean): FoldSegment[] {
   const segments: FoldSegment[] = [];
   let buffer: FoldUnit[] = [];
@@ -243,7 +245,11 @@ export function isTurnRunning(turn: Turn) {
 // 引擎级会话状态明确仍在运行（后台任务）时保持原样；否则把残留运行态一律落成完成态，
 // 让旧消息与新消息一样走完成态合并折叠展示。
 export function normalizeLoadedThread(input: Thread): Thread {
-  if (input.status === "inProgress" || input.status === "running") return input;
+  // ⛔ 引擎的 `thread.status` 是对象（`{type:"active",activeFlags}`），不是字符串 —— 早期按
+  // `status === "inProgress"` 比较是**恒假**的，于是"引擎明确仍在跑就保持原样"这个逃逸口
+  // 是死代码：真正在跑的回合会被归一化成 completed（切回来停止键消失、消息绕过排队）。
+  const statusType = (input.status as any)?.type ?? input.status;
+  if (statusType === "active" || statusType === "inProgress" || statusType === "running") return input;
   let changed = false;
   const turns = input.turns.map((turn) => {
     if (!isTurnRunning(turn)) return turn;
