@@ -270,6 +270,19 @@ void (async () => {
         await writeExpertTeams(teams);
       }
     }
+    // 内置团队改名同步（09-13 全员改笔名）：内置团队在老存档里残留的旧名，按
+    // teamId + memberId 就地更新为最新内置名；只动 name 字段，不碰启用态与用户自定义团队
+    let renamed = false;
+    for (const def of buildDefaultExpertTeams()) {
+      const stored = teams.find((entry) => entry.teamId === def.teamId);
+      if (!stored) continue;
+      const syncName = (target: ExpertTeamMember | undefined, source: ExpertTeamMember) => {
+        if (target && target.name !== source.name) { target.name = source.name; renamed = true; }
+      };
+      syncName(stored.lead, def.lead);
+      for (const m of def.members) syncName(stored.members?.find((x) => x.id === m.id), m);
+    }
+    if (renamed) await writeExpertTeams(teams);
   } catch { /* 忽略初始化失败 */ }
 })();
 // 引擎直管的 MCP 服务器（如内置 nuphus）不在 connectors 列表里，单独存一份 名字 -> 是否启用
@@ -2008,10 +2021,10 @@ function createPopoutWindow(threadId: string) {
     process.platform === "win32" ? "icon.ico" : "icon.png",
   );
   const win = new BrowserWindow({
-    width: 860,
-    height: 720,
-    minWidth: 480,
-    minHeight: 400,
+    width: 1080,
+    height: 760,
+    minWidth: 520,
+    minHeight: 420,
     backgroundColor: "#ffffff",
     title: "Codex Harness Desktop — 独立会话",
     icon: existsSync(windowIcon) ? windowIcon : undefined,

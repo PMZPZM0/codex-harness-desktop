@@ -15444,7 +15444,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 .expert-center-main small {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--link, #2f6bdd);
 }
 .expert-center-main em {
   font-style: normal;
@@ -15453,6 +15453,63 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* 专家中心页（09-13）：按领域分类陈列 + 主理人徽标 */
+.hub-card-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.expert-category {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.expert-category + .expert-category {
+  margin-top: 14px;
+}
+.expert-category-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 2px;
+}
+.expert-category-icon {
+  align-self: center;
+  display: inline-flex;
+  color: var(--accent, #7a94ff);
+}
+.expert-category-head strong {
+  font-size: 13.5px;
+  color: var(--text);
+}
+.expert-category-head small {
+  font-size: 11.5px;
+  color: var(--muted);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.expert-category-head em {
+  margin-left: auto;
+  flex: none;
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--muted);
+  background: var(--panel-2, rgba(127, 127, 127, 0.08));
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.2));
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.expert-lead-badge {
+  font-style: normal;
+  font-size: 9.5px;
+  line-height: 1;
+  color: var(--accent, #7a94ff);
+  background: color-mix(in srgb, var(--accent, #7a94ff) 12%, transparent);
+  border-radius: 999px;
+  padding: 2px 6px;
+  margin-left: 6px;
+  vertical-align: 1px;
 }
 .expert-team-member-chip {
   display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%;
@@ -22011,3 +22068,28 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 /* 弹窗窗口本体：与主窗口同构（同款顶栏/侧栏），无需额外布局类；
    顶栏右侧的操作簇按钮在弹窗里同样可用（右栏开关等）。 */
+/* ── 独立会话弹窗布局（09-13 用户定稿：弹窗只带对话区，不要左侧会话列表侧栏）──
+   弹窗窗口 = 顶栏（含返回/右栏按钮）+ 对话区 + 可展开的右栏面板。
+   grid 模板不含 256px 侧栏列；右栏项目树展开时也只占 1px 分隔 + 面板宽，
+   对话区始终拿满剩余宽度、随窗口缩放自适应（不再被侧栏列挤扁/变透明）。 */
+.app-shell.popout-shell {
+  grid-template-columns: minmax(0, 1fr);
+}
+.app-shell.popout-shell.with-context {
+  grid-template-columns: minmax(0, 1fr) 1px 308px;
+}
+.app-shell.popout-shell .sidebar {
+  display: none;
+}
+.app-shell.popout-shell .sidebar-hotzone {
+  display: none;
+}
+/* 顶栏在弹窗里也去掉「展开侧栏」按钮与移动端菜单（没有侧栏可展开） */
+.app-shell.popout-shell .sidebar-reveal,
+.app-shell.popout-shell .mobile-menu {
+  display: none;
+}
+/* 弹窗里任务标题占满顶栏（不再为侧栏按钮留位） */
+.app-shell.popout-shell .task-title {
+  margin-left: 4px;
+}
