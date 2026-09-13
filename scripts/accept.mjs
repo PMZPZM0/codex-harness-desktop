@@ -1258,6 +1258,173 @@ const CHECKS = [
   },
 
   {
+    id: "thread-runtime",
+    name: "⑮ 会话运行时配置收敛：模型/档位/权限只存一个对象（09-14 向 ZCode 形态收敛）",
+    run: async (h) => {
+      // 背景（ZCode 逆向报告的落地项）：ZCode 里三件套是**会话状态对象的字段**，只有一个存放处，
+      // 所以不存在「切换后要对账」。我们以前是三套键族各自读写（thread-model-* /
+      // thread-effort-* / thread-permissions-*），约 20 处写、15 处读散在十来处函数里——
+      // 「档案与会话记录分叉」「兜底 effect 冲掉刚选的模型」都是这么来的。
+      // 收敛后：`thread-runtime-<id> = { model, effort, sandbox, approval, rev }` 一个对象，
+      // 读一次写一次；旧三键降级为**派生镜像**（只写不读，仅给旧版本降级兼容）。
+      const rows = Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0;
+      h.check("[前置] 有旧会话可开（≥1）", rows >= 1, `thread-row=${rows}`);
+      await clickRow(h, 0);
+      await wait(1500);
+      const tid = String(await h.eval(`window.codex.request("thread/list", { limit: 5, sortKey: "updated_at", sortDirection: "desc", archived: false }).then((r) => r.data?.[0]?.id ?? "").catch(() => "")`));
+      h.check("[前置] 拿到会话 id", Boolean(tid), `tid=${tid}`);
+      if (!tid) return;
+      const K = JSON.stringify(tid);
+      const readRuntime = async () => {
+        const raw = await h.eval(`localStorage.getItem("thread-runtime-" + ${K})`);
+        try { return JSON.parse(raw ?? "null"); } catch { return null; }
+      };
+      const readLegacy = async () => JSON.parse(await h.eval(`(() => {
+        const id = ${K};
+        return JSON.stringify({
+          model: localStorage.getItem("thread-model-" + id) ?? "",
+          effort: localStorage.getItem("thread-effort-" + id) ?? "",
+          permissions: localStorage.getItem("thread-permissions-" + id) ?? "",
+        });
+      })()`));
+
+      // ① 切模型：必须落进**单一对象**（以前这里只写 thread-model-<id>）
+      const modelSwitch = JSON.parse(await h.eval(`(async () => {
+        const menu = [...document.querySelectorAll(".model-controls .composer-menu")].find((m) => m.querySelector("button.composer-setting")?.title === "模型");
+        if (!menu) return JSON.stringify({ error: "no-model-menu" });
+        const before = (menu.querySelector("button.composer-setting span")?.textContent ?? "").split(" · ")[0].trim();
+        menu.querySelector("button.composer-setting").click();
+        await new Promise((r) => setTimeout(r, 400));
+        const opts = [...document.querySelectorAll(".composer-menu-pop button[role=option]")].filter((b) => !/更多设置/.test(b.innerText || ""));
+        const pick = opts.find((b) => (b.querySelector("strong")?.textContent ?? "") !== before) ?? null;
+        if (!pick) return JSON.stringify({ error: "no-target", before, options: opts.length });
+        const title = pick.querySelector("strong")?.textContent ?? "";
+        pick.click();
+        await new Promise((r) => setTimeout(r, 1200));
+        return JSON.stringify({ before, picked: title, options: opts.length });
+      })()`));
+      console.log(`  [运行时] 模型菜单 → ${JSON.stringify(modelSwitch)}`);
+      h.check("[前置] 模型菜单可切换到另一个模型", Boolean(modelSwitch.picked), JSON.stringify(modelSwitch));
+      const rt1 = await readRuntime();
+      h.check("① 切模型后单一对象存在（thread-runtime-<id>）", Boolean(rt1) && typeof rt1 === "object", JSON.stringify(rt1));
+      // 菜单标题可能带「 · 视觉」后缀，比较时剥掉
+      const pickedName = String(modelSwitch.picked ?? "").split(" · ")[0].trim();
+      h.check("①bis 对象里的模型 = 刚选中的那个", Boolean(rt1?.model) && String(rt1.model).includes(pickedName), `model=${rt1?.model} picked=${pickedName}`);
+
+      // ② 切思考档位：同一对象里换 effort，**model 不许被冲掉**（一个对象的核心收益）
+      const modelAfterFirst = rt1?.model ?? "";
+      const effortSwitch = JSON.parse(await h.eval(`(async () => {
+        const menu = [...document.querySelectorAll(".model-controls .composer-menu")].find((m) => (m.querySelector("button.composer-setting")?.title ?? "").startsWith("请求思考强度"));
+        if (!menu) return JSON.stringify({ error: "no-effort-menu" });
+        const before = menu.querySelector("button.composer-setting span")?.textContent ?? "";
+        menu.querySelector("button.composer-setting").click();
+        await new Promise((r) => setTimeout(r, 400));
+        const opts = [...document.querySelectorAll(".composer-menu-pop button[role=option]")].filter((b) => !/更多档位/.test(b.innerText || ""));
+        const pick = opts.find((b) => (b.querySelector("strong")?.textContent ?? "") !== before) ?? null;
+        if (!pick) return JSON.stringify({ error: "no-target", before, options: opts.length });
+        const title = pick.querySelector("strong")?.textContent ?? "";
+        pick.click();
+        await new Promise((r) => setTimeout(r, 1200));
+        return JSON.stringify({ before, picked: title, options: opts.length });
+      })()`));
+      console.log(`  [运行时] 思考档位菜单 → ${JSON.stringify(effortSwitch)}`);
+      if (effortSwitch.picked) {
+        const rt2 = await readRuntime();
+        h.check("② 切档位后对象里 effort 已更新", Boolean(rt2?.effort), `effort=${rt2?.effort}`);
+        h.check("②bis 切档位没有冲掉模型（一个对象里改一处不动另一处）", rt2?.model === modelAfterFirst, `模型 ${modelAfterFirst} → ${rt2?.model}`);
+      } else {
+        console.log(`  \x1b[33m⚠️ 当前模型无可切换的档位选项（${effortSwitch.error}），② 跳过\x1b[0m`);
+      }
+
+      // ③ 切权限：同一对象里换 sandbox/approval，model/effort 保留
+      const beforePerm = await readRuntime();
+      const permSwitch = JSON.parse(await h.eval(`(async () => {
+        const menu = [...document.querySelectorAll(".composer-menu")].find((m) => m.querySelector("button.composer-setting")?.title === "权限模式");
+        if (!menu) return JSON.stringify({ error: "no-perm-menu" });
+        const label = menu.querySelector("button.composer-setting span")?.textContent ?? "";
+        menu.querySelector("button.composer-setting").click();
+        await new Promise((r) => setTimeout(r, 400));
+        const opts = [...document.querySelectorAll(".composer-menu-pop button[role=option]")];
+        const pick = opts.find((b) => (b.querySelector("strong")?.textContent ?? "") !== label) ?? null;
+        if (!pick) return JSON.stringify({ error: "no-target", label, options: opts.length });
+        const title = pick.querySelector("strong")?.textContent ?? "";
+        pick.click();
+        await new Promise((r) => setTimeout(r, 1500));
+        return JSON.stringify({ label, picked: title, options: opts.length });
+      })()`));
+      console.log(`  [运行时] 权限菜单 → ${JSON.stringify(permSwitch)}`);
+      if (permSwitch.picked) {
+        const rt3 = await readRuntime();
+        h.check("③ 切权限后对象里 sandbox/approval 已更新", Boolean(rt3?.sandbox) && rt3.sandbox !== beforePerm?.sandbox, `${beforePerm?.sandbox} → ${rt3?.sandbox}`);
+        h.check("③bis 切权限没有冲掉模型与档位", rt3?.model === beforePerm?.model && rt3?.effort === beforePerm?.effort, `model=${rt3?.model} effort=${rt3?.effort}`);
+      } else {
+        console.log(`  \x1b[33m⚠️ 权限菜单无可切换选项（${permSwitch.error}），③ 跳过\x1b[0m`);
+      }
+
+      // ④ 旧三键族 == 对象派生值（镜像是派生值，不是第二个权威）
+      const rt4 = await readRuntime();
+      const legacy = await readLegacy();
+      const mirrorOk = legacy.model === rt4?.model && legacy.effort === rt4?.effort
+        && (() => { try { const p = JSON.parse(legacy.permissions || "{}"); return p.sandbox === rt4?.sandbox && p.approval === rt4?.approval; } catch { return false; } })();
+      h.check("④ 旧三键镜像与对象一致（派生值，随对象更新）", mirrorOk, `对象=${JSON.stringify(rt4)} 旧键=${JSON.stringify(legacy)}`);
+
+      // ⑤ 迁移：删掉新键（只留旧键）→ 用**真实用户动作**（切权限）触发读取路径，
+      //    模型/档位必须从旧三键族迁移回来（升级不丢配置）。
+      //    ⛔ 不能靠「重新打开会话」触发：openThread 有 30 秒秒开快路径会提前 return，
+      //    根本不读 localStorage（实测这条断言因此恒假红）。
+      const legacyBeforeMigrate = await readLegacy();
+      await h.eval(`localStorage.removeItem("thread-runtime-" + ${K})`);
+      const pickPermission = (async (want) => JSON.parse(await h.eval(`(async () => {
+        const menu = [...document.querySelectorAll(".composer-menu")].find((m) => m.querySelector("button.composer-setting")?.title === "权限模式");
+        if (!menu) return JSON.stringify({ error: "no-perm-menu" });
+        const label = menu.querySelector("button.composer-setting span")?.textContent ?? "";
+        menu.querySelector("button.composer-setting").click();
+        await new Promise((r) => setTimeout(r, 400));
+        const opts = [...document.querySelectorAll(".composer-menu-pop button[role=option]")];
+        const pick = opts.find((b) => {
+          const t = b.querySelector("strong")?.textContent ?? "";
+          return ${JSON.stringify(want)} === null ? (t && t !== label) : t === ${JSON.stringify(want)};
+        }) ?? null;
+        if (!pick) return JSON.stringify({ error: "no-target", label, options: opts.length });
+        const title = pick.querySelector("strong")?.textContent ?? "";
+        pick.click();
+        await new Promise((r) => setTimeout(r, 1500));
+        return JSON.stringify({ label, picked: title, options: opts.length });
+      })()`)));
+      const migrateSwitch = await pickPermission(null);
+      console.log(`  [运行时] 迁移触发用切权限 → ${JSON.stringify(migrateSwitch)}`);
+      const rt5 = await readRuntime();
+      h.check("⑤ 新键缺失时按旧三键族自动迁移重建（升级不丢配置）", Boolean(rt5)
+        && rt5.model === legacyBeforeMigrate.model && rt5.effort === legacyBeforeMigrate.effort
+        && String(rt5.model) === String(rt4?.model) && String(rt5.effort) === String(rt4?.effort),
+        `迁移后=${JSON.stringify(rt5)} 旧键=${JSON.stringify(legacyBeforeMigrate)}`);
+
+      // ⑥ 反向：把旧三键**写成伪造值**，再切一次权限 —— 对象里的模型/档位必须仍是新键的值。
+      //    （这是「旧键不具权威性」的可证伪形态：只要哪条读取路径还在读旧键，伪造值就会浮出来；
+      //      单纯「删掉旧键」是读不出来的——那段流程里可能压根没有读取动作，删了也照样绿。）
+      await h.eval(`(() => { const id = ${K};
+        localStorage.setItem("thread-model-" + id, "custom:custom906:伪造模型-旧键");
+        localStorage.setItem("thread-effort-" + id, "minimal");
+        localStorage.setItem("thread-permissions-" + id, JSON.stringify({ sandbox: "read-only", approval: "on-failure" }));
+      })()`);
+      const beforeFake = await readRuntime();
+      const afterFake = await pickPermission(null);
+      console.log(`  [运行时] 旧键写成伪造值后再切权限 → ${JSON.stringify(afterFake)}`);
+      const rt6 = await readRuntime();
+      h.check("⑥ 旧键被写成伪造值时对象不受影响（旧键只作镜像，读取一律走新键）",
+        Boolean(rt6) && !String(rt6.model).includes("伪造") && rt6.model === beforeFake?.model && rt6.effort === beforeFake?.effort,
+        `切前=${JSON.stringify(beforeFake)} 之后=${JSON.stringify(rt6)}`);
+
+      // 收尾：把权限拨回本场景开始前的那个档位（本场景切过三次权限，避免影响后续场景的沙箱前提）
+      if (permSwitch.label) {
+        const restored = await pickPermission(permSwitch.label);
+        console.log(`  [运行时] 权限复位回「${permSwitch.label}」→ ${JSON.stringify(restored)}`);
+      }
+      await h.screenshot("会话运行时配置-单一对象");
+    },
+  },
+
+  {
     id: "clean",
     name: "⑦ 渲染层无 console.error",
     run: async (h) => {
@@ -1318,6 +1485,7 @@ const ROUND_OF = {
   "zhiwei-expert": "09-13",
   "popout-window": "09-13",
   "session-scope": "09-14",
+  "thread-runtime": "09-14",
 };
 const roundOf = (id) => ROUND_OF[id] ?? "(未登记)";
 
