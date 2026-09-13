@@ -1131,6 +1131,14 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
   appSrc.includes("bot-pair-banner") || appSrc.includes("botPairState")
     ? ok("机器人管理面板内嵌配对卡（码 + 待审批）")
     : fail("机器人面板的配对码横条丢失 —— 用户又要回「手机远控」看码");
+
+  // 机器人档案持久化 + 已连接渠道自动恢复卡片（09-13 用户实丢档案 + 「已连接机器人没显示」）
+  appSrc.includes("botsGet") && appSrc.includes("botsSet") && !/localStorage\.setItem\(.bots./.test(appSrc)
+    ? ok("机器人档案持久化到主进程（userData/bots.json，不再只存 localStorage）")
+    : fail("机器人档案又退回 localStorage 直写 —— 清缓存/换实例会整单丢失");
+  appSrc.includes("channelsStatus?.() ?? Promise.resolve({})")
+    ? ok("档案为空时从渠道登录态自动恢复机器人卡片（已连接的不会隐身）")
+    : fail("已连接渠道的卡片自动恢复缺失 —— 登录态在、卡片丢了就隐身");
 }
 
 
