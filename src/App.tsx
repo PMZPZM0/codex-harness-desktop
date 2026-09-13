@@ -15065,15 +15065,15 @@ const commandMatches = useMemo(() => {
               <section className="settings-section stack hub-page">
                 <div className="settings-copy"><h2>专家和专家团</h2><p>单体专家与多角色团队的总入口。</p></div>
                 <div className="hub-card-grid hub-card-grid-3">
-                  <button className="hub-card" onClick={() => setSettingsPage("expert-center")}>
-                    <span className="hub-card-icon"><LayoutGrid size={20} /></span>
-                    <strong>专家中心</strong>
-                    <p>全部专家按领域分类陈列，一眼看清谁能干什么；点卡直达一对一会话。</p>
-                  </button>
                   <button className="hub-card" onClick={() => setSettingsPage("agents")}>
                     <span className="hub-card-icon"><Bot size={20} /></span>
                     <strong>子智能体</strong>
                     <p>自定义角色，注册为 subagent_invoke 函数，Codex 在对话中直接调用。</p>
+                  </button>
+                  <button className="hub-card" onClick={() => setSettingsPage("expert-center")}>
+                    <span className="hub-card-icon"><LayoutGrid size={20} /></span>
+                    <strong>专家中心</strong>
+                    <p>全部专家按领域分类陈列，一眼看清谁能干什么；点卡直达一对一会话。</p>
                   </button>
                   <button className="hub-card" onClick={() => setSettingsPage("teams")}>
                     <span className="hub-card-icon"><Users size={20} /></span>
