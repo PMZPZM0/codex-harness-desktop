@@ -9074,15 +9074,18 @@ const commandMatches = useMemo(() => {
     const contentBottom = () => contentBottomOf(scroller);
     const update = () => {
       const dist = contentBottom() - scroller.scrollTop - scroller.clientHeight;
-      // ── 钉顶期间的自动跟随：**只有一条规则**（09-13 定稿）──
-      //   「内容超出视口多少，就把视口往下补多少」。
+      // ── 钉顶期间的自动跟随：**一条规则 + 一个步长**（09-13 定稿）──
+      //   规则：「内容超出视口多少，就把视口往下补多少」——
       //     · 没超出（短回复）→ 一动不动，消息稳在 54px；
-      //     · 超出了（长回复）→ 每次补齐，最新一行始终贴着视口底 = 自动跟随。
-      //   同一时刻只有一条成立，所以**结构上不可能**出现"跟随往下推、钉顶往回拉"的互拉
-      //   （旧实现按"增长量累计 60px 才推一次"，在内容刚好卡在视口边缘时两边同时成立，
-      //   实测打点 follow-grow{+65} → pin-fix{−65} 一轮一轮地打，用户看到的就是抖）。
+      //     · 超出了（长回复）→ 补到最新一行贴着视口底 = 自动跟随。
+      //   同一时刻只有一条成立，所以**结构上不可能**出现"跟随往下推、钉顶往回拉"的互拉。
+      //   步长：**攒够约两行（48px）才跟一次**，不是每帧都跟。打字机是逐字揭示的，
+      //   末行会随字数不断重排（换行位置一格一格往后挪），逐帧跟随 = 视口每帧都在动，
+      //   用户看到的就是「长消息换行跟自动跟随在抢，整个内容上下跳动」（09-13 用户实测）。
+      //   攒够一段再**整体**跟一次，两次之间视口完全静止——最新内容最多滞后 48px（约两行）。
+      const FOLLOW_STEP_PX = 48;
       if (anchorTopRef.current) {
-        if (dist > 8) {
+        if (dist > FOLLOW_STEP_PX) {
           selfScrollUntilRef.current = Date.now() + 80;
           scrollToOffsetInstant(scroller, scroller.scrollTop + dist);
           pinnedScrollTopRef.current = scroller.scrollTop;
