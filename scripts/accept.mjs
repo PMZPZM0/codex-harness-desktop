@@ -1070,14 +1070,22 @@ const CHECKS = [
         return false;
       })()`);
       if (!nav) { await h.eval(`document.querySelector(".settings-modal .relay-modal-close")?.click()`); throw new Error("设置导航里没有「智能体团队」"); }
+      await h.waitFor(`!!document.querySelector(".hub-card-grid")`, { label: "智能体团队入口卡", timeoutMs: 15000 });
+      // 09-13：专家卡挪进独立「专家中心」页，hub 上点「专家中心」入口卡进入
+      await h.eval(`(() => {
+        for (const btn of document.querySelectorAll(".hub-card")) {
+          if ((btn.textContent || "").includes("专家中心")) { btn.click(); return true; }
+        }
+        return false;
+      })()`);
       await h.waitFor(`!!document.querySelector(".expert-center-grid")`, { label: "专家中心卡片区", timeoutMs: 15000 });
       const cards = await h.eval(`(() => {
-        const grid = document.querySelector(".expert-center-grid");
-        const cards = [...(grid?.querySelectorAll(".expert-center-card") ?? [])];
-        return JSON.stringify({ total: cards.length, names: cards.map((c) => c.querySelector("strong")?.textContent), hasZhiwei: cards.some((c) => (c.textContent || "").includes("知微")), hubTitle: document.querySelector(".hub-page h2")?.textContent });
+        const cards = [...document.querySelectorAll(".expert-center-card")];
+        return JSON.stringify({ total: cards.length, names: cards.map((c) => c.querySelector("strong")?.textContent), hasZhiwei: cards.some((c) => (c.textContent || "").includes("知微")), pageTitle: document.querySelector(".expert-center-page h2")?.textContent, categories: [...document.querySelectorAll(".expert-category-head strong")].map((e) => e.textContent) });
       })()`);
       const ui = JSON.parse(cards);
-      h.check("hub 标题已改为「专家和专家团」", ui.hubTitle === "专家和专家团", String(ui.hubTitle));
+      h.check("专家中心页已就位（标题=专家中心）", ui.pageTitle === "专家中心", String(ui.pageTitle));
+      h.check("专家按领域分类陈列（≥5 个分组）", (ui.categories ?? []).length >= 5, (ui.categories ?? []).join("、"));
       h.check("专家卡覆盖所有团队成员", ui.total >= 10, `共 ${ui.total} 张卡：${(ui.names ?? []).join("、").slice(0, 160)}`);
       h.check("知微专家卡在列", ui.hasZhiwei === true);
       // ④ PPT 专家（呈象）：zip 技能首次启动解压 + 单人团队自动注入

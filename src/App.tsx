@@ -57,7 +57,10 @@ import {
   Link2,
   ListFilter,
   Maximize2,
+  Megaphone,
   Menu,
+  BarChart3,
+  PenTool,
   MessageSquare,
   MessageSquarePlus,
   Monitor,
@@ -1100,6 +1103,17 @@ function expertIconOf(member: ExpertTeamMember) {
   return Bot;
 }
 
+/** 专家中心分类：按领域分组陈列，让用户一眼看清每个专家是干嘛的；未归类的团队落「更多专家」。 */
+const EXPERT_CATEGORY_DEFS = [
+  { title: "研发交付", blurb: "需求 → 架构 → 编码 → 测试，全流程软件交付", icon: Code2, teamIds: ["software-dev-team"] },
+  { title: "投资交易", blurb: "行情策略、资金分析、估值定价与风控", icon: TrendingUp, teamIds: ["trading-analysis-team"] },
+  { title: "内容创作", blurb: "文案策划、编辑润色、视觉设计与校对质检", icon: PenTool, teamIds: ["content-creation-team"] },
+  { title: "数据分析", blurb: "数据工程、统计分析、可视化与业务洞察", icon: BarChart3, teamIds: ["data-analysis-team"] },
+  { title: "市场增长", blurb: "市场策略、内容营销、投放优化与增长分析", icon: Megaphone, teamIds: ["marketing-growth-team"] },
+  { title: "产品设计", blurb: "用户研究、产品策略与 UI/UX 设计", icon: DraftingCompass, teamIds: ["product-design-team"] },
+  { title: "专项专家", blurb: "开箱即用的独立单人专家", icon: Sparkles, teamIds: ["zhiwei-content-oracle", "chengxiang-ppt-master"] },
+];
+
 const MEMORY_CATEGORIES = [
   { name: "用户偏好", icon: User, hint: "用户风格、口味、习惯、长期偏好" },
   { name: "项目背景", icon: BookOpen, hint: "项目定位、模块、关键约束" },
@@ -1138,7 +1152,7 @@ const cronTemplates = [
   { name: "发布简报", desc: "整理本周合并的 PR 和 commit，按功能、修复、体验及工程改进分类，同时生成团队版和面向用户的精简发布说明。", time: "每周五 16:00", intervalMinutes: 10080, icon: "📝" },
   { name: "文档同步检查", desc: "对照最近 7 天的代码、配置、接口与文档变更，识别已改变公开行为但文档尚未同步的高置信差异，并附文件路径和修复建议。", time: "每周三 15:00", intervalMinutes: 10080, icon: "📄" },
 ];
-type SettingsPage = "user" | "general" | "devtools" | "appearance" | "personalization" | "model" | "relay" | "openai" | "browser" | "computer" | "memory" | "agents" | "teams" | "plugins" | "mcp" | "ssh" | "skills" | "commands" | "hooks" | "usage" | "channel" | "schedule" | "rpa" | "archive" | "backup" | "storage" | "automation" | "agentteam" | "voice";
+type SettingsPage = "user" | "general" | "devtools" | "appearance" | "personalization" | "model" | "relay" | "openai" | "browser" | "computer" | "memory" | "agents" | "teams" | "expert-center" | "plugins" | "mcp" | "ssh" | "skills" | "commands" | "hooks" | "usage" | "channel" | "schedule" | "rpa" | "archive" | "backup" | "storage" | "automation" | "agentteam" | "voice";
 // 导航分组：常用项置顶（技能/插件紧挨），自动化三合一、智能体+专家团合并为二级页。
 // "browser"/"computer"/"rpa"/"agents"/"teams" 保留在类型里（历史跳转兼容），但不再出现在导航。
 const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
@@ -13773,9 +13787,9 @@ const commandMatches = useMemo(() => {
   const topbarActionsNode = (
     <>
                 {popoutThreadId ? (
-        <button className="icon-button popout-return-btn" title="返回主应用（关闭本独立窗口）" onClick={() => void window.codex.popoutClose(thread?.id ?? null)}><PanelLeftClose size={16} /></button>
+        <button className="icon-button popout-return-btn" title="返回主应用（关闭本独立窗口）" onClick={() => void window.codex.popoutClose(thread?.id ?? null)}><Minimize2 size={16} /></button>
       ) : (
-        <button className="icon-button popout-open-btn" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!thread} onClick={() => { if (thread) void popoutCurrentThread(thread.id); }}><PanelRightOpen size={16} className="popout-open-icon" /></button>
+        <button className="icon-button popout-open-btn" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!thread} onClick={() => { if (thread) void popoutCurrentThread(thread.id); }}><Maximize2 size={16} /></button>
       )}
                 <div className="ctx-picker">
           <button className="icon-button ctx-picker-btn" title="工作区上下文（当前会话使用的项目目录）" onClick={() => setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
@@ -13815,12 +13829,12 @@ const commandMatches = useMemo(() => {
   return (
     <div
       ref={shellRef}
-      className={`app-shell ${rightOpen ? "with-context" : ""} ${sidebarCollapsed ? "side-collapsed" : ""} ${narrow ? "narrow" : ""}`}
+      className={`app-shell ${rightOpen ? "with-context" : ""} ${sidebarCollapsed ? "side-collapsed" : ""} ${narrow ? "narrow" : ""} ${popoutThreadId ? "popout-shell" : ""}`}
       // 右侧上下文面板仅在用户显式开启后参与网格；收起左栏时不能塞入一个 0px 首列，
       // 否则 CSS Grid 会保留隐式轨道，把 workspace 挤到最右侧。
-      style={rightOpen ? { gridTemplateColumns: sidebarCollapsed ? `minmax(0, 1fr) 1px ${panelWidth}px` : `256px minmax(0, 1fr) 1px ${panelWidth}px` } : undefined}
+      style={rightOpen ? { gridTemplateColumns: popoutThreadId ? `minmax(0, 1fr) 1px ${panelWidth}px` : sidebarCollapsed ? `minmax(0, 1fr) 1px ${panelWidth}px` : `256px minmax(0, 1fr) 1px ${panelWidth}px` } : undefined}
     >
-      {sidebarCollapsed && <div className="sidebar-hotzone" aria-hidden onMouseEnter={() => setSidebarFlyout(true)} />}
+      {!popoutThreadId && sidebarCollapsed && <div className="sidebar-hotzone" aria-hidden onMouseEnter={() => setSidebarFlyout(true)} />}
         <header className="topbar">
         {sidebarCollapsed && !narrow && <button className="icon-button sidebar-reveal" title="展开侧边栏" onClick={() => { setSidebarCollapsed(false); setSidebarFlyout(false); localStorage.setItem("sidebar-collapsed", "false"); }}><Menu size={18} /></button>}
         <button className="icon-button mobile-menu" title="打开导航" onClick={() => setMobileNav(!mobileNav)}><Menu size={18} /></button>
@@ -13831,7 +13845,7 @@ const commandMatches = useMemo(() => {
         </div>
         <div className="topbar-actions">{topbarActionsNode}</div>
       </header>
-      <aside className={`sidebar ${mobileNav ? "mobile-open" : ""} ${sidebarFlyout ? "flyout-open" : ""}`} onMouseEnter={() => sidebarCollapsed && setSidebarFlyout(true)} onMouseLeave={() => sidebarCollapsed && setSidebarFlyout(false)}>        <div className="brand-row">
+      {!popoutThreadId && <aside className={`sidebar ${mobileNav ? "mobile-open" : ""} ${sidebarFlyout ? "flyout-open" : ""}`} onMouseEnter={() => sidebarCollapsed && setSidebarFlyout(true)} onMouseLeave={() => sidebarCollapsed && setSidebarFlyout(false)}>        <div className="brand-row">
           <button className={`brand-mark sidebar-toggle ${sidebarCollapsed ? "is-collapsed" : "is-expanded"}`} aria-label={narrow ? "Codex Harness" : sidebarCollapsed ? "展开侧栏" : "收起侧栏"} title={narrow ? "Codex Harness" : sidebarCollapsed ? "展开侧栏" : "收起侧栏"} onClick={() => { if (narrow) return; const next = !sidebarCollapsed; setSidebarCollapsed(next); localStorage.setItem("sidebar-collapsed", String(next)); }}>
             <span className="ch-logo" aria-hidden="true"><i>C</i><i>H</i></span>
             <span className="sidebar-toggle-arrow"><ArrowLeft size={13} strokeWidth={2.4} /></span>
@@ -13980,7 +13994,8 @@ const commandMatches = useMemo(() => {
           <button className="account-icon" title="移动端远程控制" onClick={() => { setMobileRemoteOpen(true); void window.codex.remoteStart().then((r) => setRemoteUrl(r.url)).catch(() => undefined); void window.codex.remoteStatus().then((s) => { setRemoteStatus(s.status); setRemoteDevices(s.devices); setRemoteUrl(s.url); }).catch(() => undefined); void window.codex.remoteQrcode().then((svg) => setRemoteQr(svg)).catch(() => undefined); void loadPairStates(); }}><Smartphone size={15} /></button>
           <button className="sidebar-settings" title="设置" onClick={() => { setSettingsPage("appearance"); setSettingsOpen(true); setMobileNav(false); }}><Settings2 size={16} /></button>
         </div>
-      </aside>
+      </aside>}
+      {popoutThreadId && <div className="popout-sidebar-gap" aria-hidden />}
 
       <main className="workspace">
 
@@ -14629,7 +14644,7 @@ const commandMatches = useMemo(() => {
       {/* 侧栏会话长按拖出 → 独立窗口的浮动提示（跟随鼠标，松手即弹窗） */}
       {dragOutHint && createPortal(
         <div className="popout-drag-ghost" style={{ left: dragOutHint.x, top: dragOutHint.y }}>
-          <PanelRightOpen size={14} />
+          <Maximize2 size={14} />
           <span><b>{dragOutHint.name}</b> · 松开鼠标拖出为独立窗口</span>
         </div>,
         document.body,
@@ -15065,35 +15080,15 @@ const commandMatches = useMemo(() => {
                 </div>
               </section>
             )}
-            {settingsPage === "agentteam" && (() => {
-              // 专家中心：把所有专家团的成员（含主理人）铺成专家卡片，点卡直达单人会话；
-              // 知微（内置单人专家）也在这里。智能体团队入口卡保留在下方。
-              const expertCards = expertTeams.flatMap((team) => [team.lead, ...team.members].map((member) => ({ team, member, isLead: member.id === team.lead.id })));
-              return (
+            {settingsPage === "agentteam" && (
               <section className="settings-section stack hub-page">
                 <div className="settings-copy"><h2>专家和专家团</h2><p>单体专家与多角色团队的总入口。</p></div>
-                <div className="settings-copy" style={{ marginTop: -6 }}><h3 style={{ fontSize: 14, margin: 0 }}>专家</h3><p style={{ margin: "2px 0 0" }}>点击任意专家卡片，直接进入与 TA 的一对一会话。</p></div>
-                <div className="expert-center-grid">
-                  {expertCards.map(({ team, member, isLead }) => {
-                    const Icon = expertIconOf(member);
-                    return (
-                    <button key={team.teamId + ":" + member.id} className={`expert-center-card${expertTeamMemberDirect === `${team.teamId}:${member.id}` ? " is-working" : ""}`}
-                      title={member.description || member.profession.zh}
-                      disabled={expertTeamMemberDirect === `${team.teamId}:${member.id}`}
-                      onClick={() => void startMemberDirectSession(team, member)}>
-                      <span className="expert-center-avatar" style={isLead ? undefined : { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] }}><Icon size={17} /></span>
-                      <span className="expert-center-main">
-                        <strong>{member.name}</strong>
-                        <small>{member.profession.zh}</small>
-                        <em>{team.displayName.zh}{isLead ? " · 主理人" : ""}</em>
-                      </span>
-                      {expertTeamMemberDirect === `${team.teamId}:${member.id}` ? <Spinner /> : <ArrowRight size={14} />}
-                    </button>
-                    );
-                  })}
-                  {!expertCards.length && <p className="muted">还没有专家——先在下方「专家团」里创建。</p>}
-                </div>
-                <div className="hub-card-grid">
+                <div className="hub-card-grid hub-card-grid-3">
+                  <button className="hub-card" onClick={() => setSettingsPage("expert-center")}>
+                    <span className="hub-card-icon"><LayoutGrid size={20} /></span>
+                    <strong>专家中心</strong>
+                    <p>全部专家按领域分类陈列，一眼看清谁能干什么；点卡直达一对一会话。</p>
+                  </button>
                   <button className="hub-card" onClick={() => setSettingsPage("agents")}>
                     <span className="hub-card-icon"><Bot size={20} /></span>
                     <strong>子智能体</strong>
@@ -15106,11 +15101,54 @@ const commandMatches = useMemo(() => {
                   </button>
                 </div>
               </section>
+            )}
+            {settingsPage === "expert-center" && (() => {
+              // 专家中心：全部专家按领域分类陈列，点卡直达单人会话；
+              // 内置团队按 EXPERT_CATEGORY_DEFS 归类，自定义团队落「更多专家」。
+              const expertCards = expertTeams.flatMap((team) => [team.lead, ...team.members].map((member) => ({ team, member, isLead: member.id === team.lead.id })));
+              const groups = EXPERT_CATEGORY_DEFS.map(({ title, blurb, icon, teamIds }) => ({ title, blurb, icon, cards: expertCards.filter((c) => teamIds.includes(c.team.teamId)) })).filter((g) => g.cards.length);
+              const known = new Set(EXPERT_CATEGORY_DEFS.flatMap((d) => d.teamIds));
+              const rest = expertCards.filter((c) => !known.has(c.team.teamId));
+              if (rest.length) groups.push({ title: "更多专家", blurb: "自定义团队与外部导入的专家", icon: Users, cards: rest });
+              return (
+              <section className="settings-section stack hub-page expert-center-page">
+                <div className="settings-copy"><h2>专家中心</h2><p>按领域分类的全部专家——点击任意专家卡片，直接进入与 TA 的一对一会话。</p></div>
+                {groups.map((g) => (
+                  <div className="expert-category" key={g.title}>
+                    <div className="expert-category-head">
+                      <span className="expert-category-icon"><g.icon size={15} /></span>
+                      <strong>{g.title}</strong>
+                      <small>{g.blurb}</small>
+                      <em>{g.cards.length} 位</em>
+                    </div>
+                    <div className="expert-center-grid">
+                      {g.cards.map(({ team, member, isLead }) => {
+                        const Icon = expertIconOf(member);
+                        return (
+                        <button key={team.teamId + ":" + member.id} className={`expert-center-card${expertTeamMemberDirect === `${team.teamId}:${member.id}` ? " is-working" : ""}`}
+                          title={member.description || member.profession.zh}
+                          disabled={expertTeamMemberDirect === `${team.teamId}:${member.id}`}
+                          onClick={() => void startMemberDirectSession(team, member)}>
+                          <span className="expert-center-avatar" style={isLead ? undefined : { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] }}><Icon size={17} /></span>
+                          <span className="expert-center-main">
+                            <strong>{member.name}{isLead && <i className="expert-lead-badge">主理人</i>}</strong>
+                            <small>{member.profession.zh}</small>
+                            <em>{member.description || team.displayName.zh}</em>
+                          </span>
+                          {expertTeamMemberDirect === `${team.teamId}:${member.id}` ? <Spinner /> : <ArrowRight size={14} />}
+                        </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+                {!expertCards.length && <p className="muted">还没有专家——先在「专家团」里创建。</p>}
+              </section>
               );
             })()}
-            {(settingsPage === "browser" || settingsPage === "computer" || settingsPage === "rpa" || settingsPage === "agents" || settingsPage === "teams") && (
-              <button className="settings-back-row" onClick={() => setSettingsPage(settingsPage === "agents" || settingsPage === "teams" ? "agentteam" : "automation")}>
-                <ArrowLeft size={14} />{settingsPage === "agents" || settingsPage === "teams" ? "返回智能体团队" : "返回自动化"}
+            {(settingsPage === "browser" || settingsPage === "computer" || settingsPage === "rpa" || settingsPage === "agents" || settingsPage === "teams" || settingsPage === "expert-center") && (
+              <button className="settings-back-row" onClick={() => setSettingsPage(settingsPage === "agents" || settingsPage === "teams" || settingsPage === "expert-center" ? "agentteam" : "automation")}>
+                <ArrowLeft size={14} />{settingsPage === "agents" || settingsPage === "teams" || settingsPage === "expert-center" ? "返回智能体团队" : "返回自动化"}
               </button>
             )}
             {settingsPage === "user" && <UserCenterSection username={username} onUsernameChange={(name) => { setUsername(name); }} personality={personality} onPersonalityChange={(v) => changePersonality(v)} onNotice={(m) => setNotice(m)} onProfileChange={(p) => setUserAvatar(p.avatarType && p.avatar ? { type: p.avatarType, value: p.avatar } : null)} onLogout={handleLogout} />}
