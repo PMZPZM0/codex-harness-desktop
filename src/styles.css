@@ -2384,6 +2384,36 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   margin: 0 0 18px;
   font-size: 12.5px;
 }
+/* ⛔ 贴输入框上方的审批卡（09-13 从消息流大卡迁来，用户反馈「审批弹窗太大」）：
+   与 agent-ask-inline 同款容器定位，整体限高（命令预览最多 8 行滚动），紧凑行距。
+   主窗口与独立会话窗口共用同一组件，弹窗里同样贴输入框展示。 */
+.composer-wrap .approval-card {
+  margin: 0 0 10px;
+  max-height: min(320px, 45vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .1);
+}
+.composer-wrap .approval-card > p {
+  margin: 8px 12px;
+  line-height: 1.45;
+}
+.composer-wrap .approval-card pre {
+  max-height: 9.5em;   /* ≈8 行命令，超出滚动，不再撑起 360px 大块 */
+  min-height: 0;
+  padding: 8px 12px;
+}
+.composer-wrap .approval-card .question {
+  margin: 6px 12px;
+}
+.composer-wrap .approval-card .tool-meta {
+  padding: 4px 12px;
+}
+.composer-wrap .approval-card footer {
+  min-height: 42px;
+  padding: 6px 10px;
+}
 .tool-block summary {
   cursor: pointer;
   min-height: 40px;
