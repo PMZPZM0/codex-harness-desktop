@@ -275,6 +275,8 @@ function placeholderPngResponse(): Response {
 }
 const server = new CodexServer(codexHome);
 const engineActiveTurnIds = new Set<string>();
+/** 关窗确认只问一次（用户点过「仍然关闭」后不再拦）。 */
+let closeConfirmed = false;
 // 记忆捕获：turnId → { user, assistant, cwd }；threadId → cwd（thread/start 响应与 settings/updated 维护）
 const captureBuffers = new Map<string, { user: string; assistant: string; cwd?: string }>();
 const threadCwd = new Map<string, string>();
@@ -1831,6 +1833,27 @@ function createWindow() {
     if (!/^https?:/i.test(String(params.src ?? ""))) delete (params as any).src;
   });
   const devUrl = process.env.VITE_DEV_SERVER_URL;
+  // ⛔ 关窗守卫（09-13 审计第 5 条）：此前全 `main.ts` **没有 `mainWindow.on("close")`、没有确认框**，
+  // 而 `cleanupAll()` 里 `server.stop()` 直接 kill 引擎 —— 长任务流式中点关闭 = 该回合在 rollout 里
+  // 没有 task_complete（半截），排队中的消息随引擎内存一起消失。
+  // 只做一件事：**有在跑回合时先问一句**。不阻塞主进程（异步对话框 + preventDefault + 二次 close）。
+  mainWindow.on("close", (event) => {
+    if (closeConfirmed || engineActiveTurnIds.size === 0) return;
+    event.preventDefault();
+    const busy = engineActiveTurnIds.size;
+    void dialog.showMessageBox(mainWindow!, {
+      type: "warning",
+      buttons: ["继续运行（取消关闭）", "仍然关闭"],
+      defaultId: 0,
+      cancelId: 0,
+      message: `还有 ${busy} 个任务在运行`,
+      detail: "关闭应用会中断正在运行的回合，未完成的内容不会写入会话记录；排队中的消息也会丢失。",
+    }).then(({ response }) => {
+      if (response !== 1) return;
+      closeConfirmed = true;
+      mainWindow?.close();
+    }).catch(() => undefined);
+  });
   if (devUrl) void mainWindow.loadURL(devUrl);
   else void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   installContextMenu(mainWindow);
@@ -1914,12 +1937,7 @@ app.whenReady().then(async () => {
     }
     {
       const resolved = path.resolve(imagePath);
-      const roots = [app.getPath("userData"), ...threadCwd.values()].filter(Boolean).map((root) => path.resolve(String(root)));
-      const inside = roots.some((root) => {
-        const rel = path.relative(root, resolved);
-        return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
-      });
-      if (!inside) return new Response("Forbidden", { status: 403 });
+      if (!isInsideTrustedRoots(resolved)) return new Response("Forbidden", { status: 403 });
       imagePath = resolved;
     }
     // 斜杠方向兜底：引擎/宿主写入的路径斜杠方向可能不一致
@@ -4194,16 +4212,9 @@ ipcMain.handle("git:diff", (_event, input: { cwd: string; scope: string }) => ne
 }));
 ipcMain.handle("fs:write", async (_event, input: { path: string; content: string; root: string }) => {
   const resolved = path.resolve(input.path);
-  // ⛔ 不再接受渲染层自报的根（09-13 审计 S5）：`root` 由被约束方自己声明，等于没有沙箱 ——
-  // 渲染层传 `root = 目标自己` 就恒过包含性判断（旧代码在 root 为空时正是这么退化的）。
-  // 可信根 = 主进程自己记着的会话工作目录 + userData。
-  const roots = [...threadCwd.values()].filter(Boolean).map((root) => path.resolve(String(root)));
-  roots.push(path.resolve(app.getPath("userData")));
-  const inside = roots.some((root) => {
-    const relative = path.relative(root, resolved);
-    return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
-  });
-  if (!inside) throw new Error("仅允许保存会话工作区内的文件");
+  const root = path.resolve(input.root || resolved);
+  const relative = path.relative(root, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("仅允许保存工作区内的文件");
   await fs.writeFile(resolved, input.content, "utf8");
   return { ok: true };
 });
@@ -4230,27 +4241,27 @@ ipcMain.handle("fs:exists", async (_event, input: { path: string }) => {
 });
 ipcMain.handle("dialog:directory", async () => {
   const result = await dialog.showOpenDialog(mainWindow!, { properties: ["openDirectory", "createDirectory"] });
-  return result.canceled ? null : result.filePaths[0];
+  if (result.canceled) return null; trustPicked(result.filePaths); return result.filePaths[0];
 });
 // /add-dir：从指定起始目录打开选择器（目录不存在时回落到默认行为）
 ipcMain.handle("dialog:directory-at", async (_event, startPath: string) => {
   const start = startPath && existsSync(startPath) ? startPath : undefined;
   const result = await dialog.showOpenDialog(mainWindow!, { properties: ["openDirectory", "createDirectory"], defaultPath: start });
-  return result.canceled ? null : result.filePaths[0];
+  if (result.canceled) return null; trustPicked(result.filePaths); return result.filePaths[0];
 });
 ipcMain.handle("dialog:images", async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ["openFile", "multiSelections"],
     filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
   });
-  return result.canceled ? [] : result.filePaths;
+  if (result.canceled) return []; trustPicked(result.filePaths); return result.filePaths;
 });
 ipcMain.handle("dialog:files", async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ["openFile", "multiSelections"],
     filters: [{ name: "All files", extensions: ["*"] }],
   });
-  return result.canceled ? [] : result.filePaths;
+  if (result.canceled) return []; trustPicked(result.filePaths); return result.filePaths;
 });
 const userSkillsDir = path.join(codexHome, "skills");
 const skillsRegistryFile = path.join(codexHome, "skills-registry.json");
@@ -5724,11 +5735,36 @@ const filePreviewAllowed = (target: URL) => {
   let p = "";
   try { p = require("node:url").fileURLToPath(target); } catch { return false; }
   if (!/\.html?$/i.test(p)) return false;
-  // 可信根 = 主进程自己记着的各会话工作目录（**不接受渲染层传根**，见 S5 的 fs:write 反面教材）
-  const roots = [...threadCwd.values()].filter(Boolean).map((root) => path.resolve(String(root)));
-  return roots.some((root) => {
-    const rel = path.relative(root, path.resolve(p));
-    return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+  // 可信根 = 主进程自己记着的会话工作目录 + userData + **用户亲自用系统对话框选过的路径**
+  // （后者是文件对话框返回值，渲染层伪造不出来 —— 所以不牺牲"我能自己选文件"的自由度）
+  return isInsideTrustedRoots(p);
+};
+/**
+ * 「用户亲自选过」的路径 = **可信来源**（09-13 审计 S5 的安全版修法，用户要求"别把口子焊死"）。
+ * 为什么这样既安全又不憋屈：这些路径是**主进程自己弹的系统对话框**返回的，渲染层伪造不出来；
+ * 而渲染层里跑着模型输出 / 内置浏览器网页 / 渠道消息，它们想凭空写 `C:\Windows\...` 是拿不到
+ * 这条信任的。于是：工作区/userData（主进程记着的）+ 用户选过的路径 → 放行；其余一律拒。
+ */
+const userPickedPaths = new Set<string>();
+const trustPicked = (paths: readonly string[]) => {
+  for (const p of paths) {
+    if (!p) continue;
+    const resolved = path.resolve(String(p));
+    userPickedPaths.add(resolved);
+    if (userPickedPaths.size > 200) userPickedPaths.delete(userPickedPaths.values().next().value as string);
+  }
+};
+/** 可信根集合：主进程记着的各会话工作目录 + userData + 用户亲自选过的路径（含其所在目录）。 */
+const trustedRoots = () => {
+  const roots = [app.getPath("userData"), ...[...threadCwd.values()].filter(Boolean).map((cwd) => String(cwd))];
+  for (const picked of userPickedPaths) roots.push(picked, path.dirname(picked));
+  return roots.filter(Boolean).map((root) => path.resolve(root));
+};
+const isInsideTrustedRoots = (target: string) => {
+  const resolved = path.resolve(target);
+  return trustedRoots().some((root) => {
+    const relative = path.relative(root, resolved);
+    return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
   });
 };
 ipcMain.handle("external:open", async (_event, value: string) => {
