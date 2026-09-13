@@ -1065,11 +1065,11 @@ const CHECKS = [
       await h.waitFor(`!!document.querySelector(".settings-nav")`, { label: "设置弹窗", timeoutMs: 20000 });
       const nav = await h.eval(`(() => {
         for (const btn of document.querySelectorAll(".settings-nav button")) {
-          if ((btn.textContent || "").includes("智能体团队")) { btn.click(); return true; }
+          if ((btn.textContent || "").includes("专家/专家团")) { btn.click(); return true; }
         }
         return false;
       })()`);
-      if (!nav) { await h.eval(`document.querySelector(".settings-modal .relay-modal-close")?.click()`); throw new Error("设置导航里没有「智能体团队」"); }
+      if (!nav) { await h.eval(`document.querySelector(".settings-modal .relay-modal-close")?.click()`); throw new Error("设置导航里没有「专家/专家团」"); }
       await h.waitFor(`!!document.querySelector(".hub-card-grid")`, { label: "智能体团队入口卡", timeoutMs: 15000 });
       // 09-13：专家卡挪进独立「专家中心」页，hub 上点「专家中心」入口卡进入
       await h.eval(`(() => {

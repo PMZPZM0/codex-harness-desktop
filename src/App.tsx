@@ -1158,8 +1158,8 @@ type SettingsPage = "user" | "general" | "devtools" | "appearance" | "personaliz
 const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
   { group: "账户", items: [["user", "用户中心", UserRound], ["model", "模型", Bot], ["relay", "中转站", Wallet], ["openai", "OpenAI 订阅", CircleGauge]] },
   { group: "常用", items: [["general", "控制台", Settings2], ["appearance", "外观", Sun], ["personalization", "个性化", Sparkles], ["voice", "语音通话", Headphones], ["skills", "技能", Zap], ["plugins", "插件", Store], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare]] },
+  { group: "智能体", items: [["agentteam", "专家/专家团", Users]] },
   { group: "自动化与能力", items: [["automation", "自动化", Workflow], ["mcp", "MCP", Wifi], ["schedule", "定时任务", Clock3], ["hooks", "钩子", Wrench], ["ssh", "SSH 服务器", Server]] },
-  { group: "智能体", items: [["agentteam", "智能体团队", Users]] },
   { group: "数据与统计", items: [["usage", "使用统计", CircleGauge], ["storage", "数据管理", Database], ["backup", "会话备份", Download], ["archive", "归档管理", Archive]] },
   { group: "开发工具", items: [["devtools", "开发工具", TerminalSquare]] },
 ];
@@ -13857,7 +13857,7 @@ const commandMatches = useMemo(() => {
           <button className="sidebar-tab" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}><Clock3 size={15} /><span>自动化</span></button>
           <button className="sidebar-tab" onClick={() => { setSettingsPage("skills"); setSettingsOpen(true); setMobileNav(false); }}><Zap size={15} /><span>技能中心</span></button>
           <button className="sidebar-tab" onClick={() => { setSettingsPage("plugins"); setSettingsOpen(true); setMobileNav(false); }}><Store size={15} /><span>插件市场</span></button>
-          <button className="sidebar-tab" onClick={() => { setSettingsPage("teams"); setSettingsOpen(true); setMobileNav(false); }}><Users size={15} /><span>专家团</span></button>
+          <button className="sidebar-tab" onClick={() => { setSettingsPage("agentteam"); setSettingsOpen(true); setMobileNav(false); }}><Users size={15} /><span>专家/专家团</span></button>
           <button className="sidebar-tab" onClick={() => { setSettingsPage("backup"); setSettingsOpen(true); setMobileNav(false); }}><Download size={15} /><span>会话备份</span></button>
         </div>
         <button className="search-box" title="搜索任务与操作（Ctrl+K）" onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={15} /><span>搜索任务</span><kbd>Ctrl K</kbd></button>
