@@ -6529,6 +6529,13 @@ export default function App() {
    *  弹窗窗口与主窗口同构（完整侧边栏/顶栏都带着），只多一个「返回主应用」按钮；
    *  初始打开 popout 指定的会话而不是 last-thread。 */
   const [popoutThreadId, setPopoutThreadId] = useState<string | null>(null);
+  /** 主窗口侧：被弹窗锁定的会话 id 集合。弹窗窗口里渲染同一会话会与主窗口重复
+   *  （两份渲染层各自维护 thread 状态，事件竞争/状态不同步），用户 09-13 明确要求
+   *  「原界面侧边栏把弹窗出去的会话直接隐藏」。弹窗关闭后（popout-closed 事件）移出。 */
+  const [poppedOutThreadIds, setPoppedOutThreadIds] = useState<Set<string>>(() => new Set());
+  const refreshPoppedOut = useCallback(() => {
+    void window.codex.popoutList().then((ids) => setPoppedOutThreadIds(new Set(ids ?? []))).catch(() => undefined);
+  }, []);
   // null=首次使用/明确退出，true=跳过登录，false=已成功登录。
   // 旧逻辑把 false 也解释成“显示登录页”，导致每次重启都要重新输入已安全保存的 API Key。
   const [showLogin, setShowLogin] = useState(() => {
@@ -9092,7 +9099,12 @@ export default function App() {
       },
     },
   } : {}, [usingCustomModel, customModel]);
-  const listThreads = useMemo(() => projectFilter ? threads.filter((entry) => entry.cwd === projectFilter) : threads, [threads, projectFilter]);
+  const listThreads = useMemo(() => {
+    const base = projectFilter ? threads.filter((entry) => entry.cwd === projectFilter) : threads;
+    // 被弹窗锁定的会话从侧栏隐藏（弹窗窗口里才能看到它）；弹窗关闭后自动回来
+    if (poppedOutThreadIds.size > 0) return base.filter((entry) => !poppedOutThreadIds.has(entry.id));
+    return base;
+  }, [threads, projectFilter, poppedOutThreadIds]);
   // 侧边栏视图模式：分组（按时间） vs 项目（按 cwd）；与 WorkBuddy 项目列表对齐
   const [viewTab, setViewTab] = useState<"groups" | "projects">(() => (localStorage.getItem("sidebar-view-tab-v1") === "projects" ? "projects" : "groups"));
   useEffect(() => { try { localStorage.setItem("sidebar-view-tab-v1", viewTab); } catch { /* ignore */ } }, [viewTab]);
@@ -10976,6 +10988,12 @@ const commandMatches = useMemo(() => {
           }).catch(() => undefined);
         }
       }
+      if (event.type === "popout-closed") {
+        // 弹窗被关闭（点 X / 返回主应用 / 主窗口联动）：被隐藏的会话回到侧栏。
+        // 全量重拉（而非只删单条）：弹窗异常退出时主进程已移除、渲染层状态可能残留，
+        // 重拉保证收敛到主进程的真实弹窗列表。
+        refreshPoppedOut();
+      }
       if (event.type === "scheduler") showToast("定时任务", event.message);
       if (event.type === "memory") showToast("记忆", event.message);
       if (event.type === "skill-install") {
@@ -11029,9 +11047,23 @@ const commandMatches = useMemo(() => {
     return () => { off(); offChannel(); offHarness(); };
   }, []);
 
-  // 独立会话弹窗探测：主进程按 URL query 判定本窗口是否为弹窗并给出锁定的会话 id。
-  // 必须在 boot（thread/list 恢复）之前跑完（popoutThreadIdRef 供 boot 读取）。
+  // 独立会话弹窗探测：**同步读 URL query**（弹窗 URL 固定带 ?popout=<id>，首帧即可确定，
+  // 不必等 IPC 往返——异步探测会让弹窗先按主界面布局渲染一帧：timeline 820 居中 + 侧栏
+  // 列占位 → 用户看到的就是「打开弹窗右边一大片空白，要加载一会儿才没」）。
+  // IPC 探测保留作兜底（某些加载路径 query 可能被剥离），但状态在首帧同步置好。
+  const popoutFromQuery = useMemo(() => {
+    try {
+      const q = new URLSearchParams(window.location.search).get("popout");
+      return q ? String(q) : null;
+    } catch { return null; }
+  }, []);
   useEffect(() => {
+    if (popoutFromQuery) {
+      popoutThreadIdRef.current = popoutFromQuery;
+      setPopoutThreadId(popoutFromQuery);
+      try { document.title = `Codex Harness — 独立会话`; } catch { /* 忽略 */ }
+      return;
+    }
     void window.codex.popoutThreadId().then((id) => {
       if (id) {
         popoutThreadIdRef.current = id;
@@ -11039,7 +11071,9 @@ const commandMatches = useMemo(() => {
         try { document.title = `Codex Harness — 独立会话`; } catch { /* 忽略 */ }
       }
     }).catch(() => undefined);
-  }, []);
+    // 主窗口侧：启动时同步一次「哪些会话已被弹窗」→ 侧栏隐藏它们
+    if (!popoutFromQuery) refreshPoppedOut();
+  }, [popoutFromQuery, refreshPoppedOut]);
 
   useEffect(() => { if (!loading) void refreshThreads(); }, [loading]);
 
@@ -12697,8 +12731,19 @@ const commandMatches = useMemo(() => {
   async function popoutCurrentThread(threadId: string) {
     try {
       const result = await window.codex.popoutThread(threadId);
-      if (result?.focused) showToast("独立窗口已打开", "该会话已有独立窗口，已聚焦到它");
-      else showToast("已弹出独立窗口", "会话可拖出应用外，多个弹窗可同时存在");
+      if (result?.focused) {
+        showToast("独立窗口已打开", "该会话已有独立窗口，已聚焦到它");
+      } else {
+        showToast("已弹出独立窗口", "会话可拖出应用外，多个弹窗可同时存在");
+      }
+      refreshPoppedOut();
+      // 主窗口当前正在看的会话被弹窗出去 → 自动切到侧栏第一个可用会话，
+      // 避免主窗口与弹窗重复渲染同一会话（用户 09-13 明确要求侧栏隐藏 + 原窗口不展示）。
+      if (threadRef.current?.id === threadId) {
+        const first = listThreads[0];
+        if (first && first.id !== threadId) void openThread(first.id);
+        else setThread(null);
+      }
     } catch (error: any) {
       setNotice(`打开独立窗口失败：${error?.message ?? String(error)}`);
     }

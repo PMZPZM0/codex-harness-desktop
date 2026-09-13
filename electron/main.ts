@@ -309,6 +309,10 @@ let mainWindow: BrowserWindow | null = null;
  *  所有 popout 窗口与主窗口同 origin（共享 localStorage）但各自持有 thread 状态；
  *  引擎事件全量广播（filterForRenderer 当前为放行态），每个窗口按自己的会话过滤。 */
 const popoutWindows = new Set<BrowserWindow>();
+/** 弹窗窗口 → 会话 id 的同步登记表：创建时立即写入（不依赖 URL 加载完成）。
+ *  之前的实现靠「读窗口 URL 里的 ?popout=」反查，但 loadFile 异步加载、URL 未就绪时
+ *  popoutList 拿到空 → 主窗口侧栏隐藏不生效（用户 09-13 实测）。 */
+const popoutThreadIds = new Map<BrowserWindow, string>();
 /** codex:event 广播：主窗口 + 所有独立会话弹窗（弹窗也要收到自己那个会话的流式事件）。 */
 function broadcastCodexEvent(payload: unknown) {
   for (const win of [mainWindow, ...popoutWindows]) {
@@ -2056,8 +2060,13 @@ function createPopoutWindow(threadId: string) {
     if (/^https?:/i.test(url)) void shell.openExternal(url).catch(() => undefined);
     return { action: "deny" };
   });
-  win.on("closed", () => popoutWindows.delete(win));
+  win.on("closed", () => {
+    popoutWindows.delete(win);
+    popoutThreadIds.delete(win);
+    notifyPopoutClosed(threadId);
+  });
   popoutWindows.add(win);
+  popoutThreadIds.set(win, threadId);
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   const query = `?popout=${encodeURIComponent(threadId)}`;
   if (devUrl) {
@@ -3092,24 +3101,45 @@ ipcMain.handle("codex:set-active-thread", (_event, threadId: unknown) => {
   rendererActiveThreadId = threadId == null ? "" : String(threadId);
   return { ok: true };
 });
-/** 当前窗口是否为独立会话弹窗：读 URL query `popout`（渲染层据此进入弹窗布局）。 */
+/** 当前窗口是否为独立会话弹窗：优先读登记表，URL query 兜底。 */
 ipcMain.handle("window:popout-id", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win || win.isDestroyed()) return null;
+  const registered = popoutThreadIds.get(win);
+  if (registered) return registered;
   try {
     return new URL(win.webContents.getURL()).searchParams.get("popout") ?? null;
   } catch { return null; }
 });
+/** 所有独立会话弹窗锁定的会话 id 列表：主窗口据此在侧栏隐藏这些会话
+ *  （避免主窗口与弹窗重复渲染同一会话，用户 09-13 明确要求）。
+ *  读同步登记表（创建时立即写入），不受窗口 URL 加载时序影响。 */
+ipcMain.handle("window:popout-list", () => {
+  const ids: string[] = [];
+  for (const [win, id] of popoutThreadIds) {
+    if (!win.isDestroyed()) ids.push(id);
+  }
+  return ids;
+});
+/** 弹窗被关闭（用户点 X / 返回主应用 / 主窗口联动关）→ 通知主窗口：
+ *  ① popout-closed：把该会话从侧栏隐藏列表移除（回到侧栏）；
+ *  ② popout-return：主窗口自动打开该会话（用户 09-13 要求「点独立窗口的叉，会话自动返回主窗口」，
+ *     与「返回主应用」按钮同语义——弹窗里只有对话区、会话锁定在创建时那个，关窗即该会话）。 */
+function notifyPopoutClosed(threadId: string) {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+  try {
+    mainWindow.webContents.send("harness:event", { type: "popout-closed", threadId, at: Date.now() });
+    mainWindow.webContents.send("harness:event", { type: "popout-return", threadId, at: Date.now() });
+  } catch { /* 主窗口可能已关 */ }
+}
 /** 独立会话弹窗：按 threadId 打开一个新窗口（渲染层在顶栏/侧栏长按触发）。
  *  允许同时存在多个弹窗；主窗口关闭不会带走弹窗（window-all-closed 只在全部窗口
  *  关闭后触发，弹窗还开着时应用保持运行）。 */
 ipcMain.handle("window:popout-thread", (_event, threadId: unknown) => {  const tid = threadId == null ? "" : String(threadId);
   if (!tid) throw new Error("缺少会话 ID");
-  // 同一会话已弹窗 → 聚焦已有窗口，不重复开（避免开着开着冒出几十个）
-  for (const win of popoutWindows) {
-    if (win.isDestroyed()) continue;
-    const id = new URL(win.webContents.getURL()).searchParams.get("popout");
-    if (id === tid) { win.focus(); return { ok: true, focused: true }; }
+  // 同一会话已弹窗 → 聚焦已有窗口，不重复开（避免开着开着冒出几十个）。读同步登记表。
+  for (const [win, id] of popoutThreadIds) {
+    if (!win.isDestroyed() && id === tid) { win.focus(); return { ok: true, focused: true }; }
   }
   createPopoutWindow(tid);
   return { ok: true };
@@ -3119,9 +3149,8 @@ ipcMain.handle("window:popout-close", (event, threadId: unknown) => {
   const tid = threadId == null ? "" : String(threadId);
   const win = BrowserWindow.fromWebContents(event.sender);
   if (win && popoutWindows.has(win) && !win.isDestroyed()) win.close();
-  if (tid) {
-    try { mainWindow?.webContents.send("harness:event", { type: "popout-return", threadId: tid, at: Date.now() }); } catch { /* 主窗口可能已关 */ }
-  }
+  // ⛔ 不在这里发 popout-return：win.close() 会触发 closed → notifyPopoutClosed
+  // 统一发（含 popout-closed 解除侧栏隐藏），避免「返回按钮」路径重复 openThread。
   if (mainWindow && !mainWindow.isDestroyed()) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); }
   return { ok: true };
 });

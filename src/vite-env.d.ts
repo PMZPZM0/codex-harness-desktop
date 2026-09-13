@@ -477,6 +477,8 @@ interface Window {
     popoutClose(threadId: string | null): Promise<{ ok: boolean }>;
     /** 当前窗口是否为独立会话弹窗（返回弹窗锁定的会话 id，非弹窗返回 null） */
     popoutThreadId(): Promise<string | null>;
+    /** 所有弹窗锁定的会话 id 列表（主窗口侧栏据此隐藏，避免重复渲染） */
+    popoutList(): Promise<string[]>;
     /** 数据管理：各数据目录占用（bytes）与是否可清理 */
     storageInfo(): Promise<{
       items: { key: string; label: string; bytes: number; deletable: boolean }[];

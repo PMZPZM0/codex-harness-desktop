@@ -22093,3 +22093,28 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .app-shell.popout-shell .task-title {
   margin-left: 4px;
 }
+/* ⛔ 弹窗 grid 修正：主布局里 .topbar 固定 grid-column:2/-1（给 256px 侧栏列让位），
+   .sidebar 占 1 列。弹窗没有侧栏 → grid 收成 1~3 列，必须把 topbar 拉回第 1 列、
+   workspace 落到第 1 列，否则 topbar 被推到隐式第 2 列、对话区被挤到右边半屏
+   （用户截图实锤：消息列只占左侧 450px，右侧全空）。
+   ⚠️ 消息列宽度**不改**：.timeline 自带的 `50% - 410px` 内边距让内容 820px 居中，
+   与底部输入框同列对齐 —— 曾试过 padding:28px 26px 全宽铺开，结果消息列贴边、
+   输入框居中，两者错位 = 用户说的「中间内容歪了」。 */
+.app-shell.popout-shell .topbar {
+  grid-column: 1 / -1;
+}
+.app-shell.popout-shell > main.workspace {
+  grid-column: 1;
+  grid-row: 2;
+}
+.app-shell.popout-shell.with-context > main.workspace {
+  grid-column: 1;
+}
+.app-shell.popout-shell > .panel-divider {
+  grid-column: 2;
+  grid-row: 2;
+}
+.app-shell.popout-shell > .context-panel {
+  grid-column: 3;
+  grid-row: 2;
+}
