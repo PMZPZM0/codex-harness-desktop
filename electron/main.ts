@@ -304,6 +304,8 @@ const remote = new RemoteControlService({
   storageFile: path.join(app.getPath("userData"), "remote-sessions.json"),
   onDeviceConnected: (device) => { try { mainWindow?.webContents.send("remote:device", device); } catch { /* ignore */ } },
   onCommand: (command, device) => { try { mainWindow?.webContents.send("remote:command", { command, device }); } catch { /* ignore */ } },
+  // 手机提交了正确的 6 位配对码 → 挂起等电脑端在应用里点「允许/拒绝」
+  onPairRequest: (request) => { try { mainWindow?.webContents.send("remote:pair-request", request); } catch { /* ignore */ } },
   // 手机对话 UI 的引擎桥：选会话 / 新建会话 / 发消息 / 实时收流式回复
   listThreads: async () => {
     const result = await server.request("thread/list", { limit: 30, sortKey: "updated_at", sortDirection: "desc", archived: false }) as any;
@@ -3904,6 +3906,12 @@ ipcMain.handle("remote:status", () => ({ status: "idle", devices: remote.listDev
 ipcMain.handle("remote:devices", () => remote.listDevices());
 ipcMain.handle("remote:send", (_event, cmd: string) => { mainWindow?.webContents.send("remote:command", { command: String(cmd), device: { id: "local", name: "本机" } }); return { ok: true }; });
 ipcMain.handle("remote:stop", () => { remote.stop(); return { ok: true }; });
+// 配对码 + 审批（09-13 二次加固：手机首次连接 = 6 位配对码 + 电脑端点允许）
+ipcMain.handle("remote:pair-state", () => ({ code: remote.pairingCode(), pending: remote.pendingPairs(), approved: remote.approvedDevices() }));
+ipcMain.handle("remote:pair-rotate", () => ({ code: remote.rotatePairingCode() }));
+ipcMain.handle("remote:approve", (_event, rid: string) => ({ ok: remote.approvePair(String(rid)) }));
+ipcMain.handle("remote:deny", (_event, rid: string) => ({ ok: remote.denyPair(String(rid)) }));
+ipcMain.handle("remote:revoke", (_event, deviceId: string) => ({ ok: remote.revokeDevice(String(deviceId)) }));
 ipcMain.handle("remote:qrcode", async (_event, botId?: string) => {
   // 服务端拼 URL（含一次性凭据），避免调用方把 `?`/`&` 拼错 —— 拼错的后果是扫码后 401
   return qrSvg(remote.pairUrlFor(botId));

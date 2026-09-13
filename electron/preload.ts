@@ -24,6 +24,15 @@ contextBridge.exposeInMainWorld("codex", {
   remoteSend: (cmd: string) => ipcRenderer.invoke("remote:send", cmd),
   remoteStop: () => ipcRenderer.invoke("remote:stop"),
   remoteQrcode: (botId?: string) => ipcRenderer.invoke("remote:qrcode", botId),
+  remotePairState: () => ipcRenderer.invoke("remote:pair-state"),
+  remotePairRotate: () => ipcRenderer.invoke("remote:pair-rotate"),
+  remoteApprove: (rid: string) => ipcRenderer.invoke("remote:approve", rid),
+  remoteDeny: (rid: string) => ipcRenderer.invoke("remote:deny", rid),
+  remoteRevoke: (deviceId: string) => ipcRenderer.invoke("remote:revoke", deviceId),
+  onRemotePairRequest: (handler: (request: { rid: string; deviceId: string; name: string }) => void) => {
+    ipcRenderer.on("remote:pair-request", (_event, request) => handler(request));
+    return () => ipcRenderer.removeAllListeners("remote:pair-request");
+  },
   botBindQrcode: (botId: string, botName: string) => ipcRenderer.invoke("bot:bind-qrcode", botId, botName),
   botBindStatus: (code: string) => ipcRenderer.invoke("bot:bind-status", code),
   botBindConsume: (code: string) => ipcRenderer.invoke("bot:bind-consume", code),

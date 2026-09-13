@@ -24,6 +24,7 @@ import VoiceMascot from "./VoiceMascot";
 import VoiceCallScreen from "./VoiceCallScreen";
 import { patchVoiceStage, requestVoiceDictationSend, requestVoiceOpenSettings, resetVoiceStage, setVoiceDictationHandler, setVoiceLevel, setVoiceStopHandler } from "../voice/wave-level";
 import { patchWakeState, resetWakeState } from "../voice/wake-state";
+import { describeMicError } from "../lib/mic-error.mjs";
 
 type VoicePhase = "idle" | "starting" | "active";
 type VoiceState = "listening" | "thinking" | "speaking";
@@ -569,22 +570,8 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
     } catch (error: any) {
-      // getUserMedia 报错名 → 人话 + 排查提示（开发工具里也能定位）
-      const name = String(error?.name ?? "");
-      const msg = String(error?.message ?? error);
-      if (name === "NotFoundError" || /requested device not found/i.test(msg)) {
-        throw new Error("未找到可用的麦克风设备（Requested device not found）。请检查：(1) 麦克风已物理接入并被系统识别；(2) 没有被其它程序独占（浏览器、Zoom、VoiceMeeter、OBS 等）；(3) Windows：在「设置 → 系统 → 声音」里能看到输入设备且没禁用；macOS：在「系统设置 → 隐私与安全 → 麦克风」授权本应用。也可以在「设置 → 语音通话 → 麦克风」里换一个输入设备试试。");
-      }
-      if (name === "NotAllowedError" || name === "SecurityError") {
-        throw new Error("麦克风权限被拒绝。请到系统的「麦克风隐私设置」里授权本应用，然后重试。");
-      }
-      if (name === "NotReadableError" || /in use/i.test(msg)) {
-        throw new Error("麦克风正被其它程序独占（could not start audio source）。请关掉占用麦克风的应用再试。");
-      }
-      if (name === "OverconstrainedError") {
-        throw new Error("请求的麦克风参数不被设备支持（OverconstrainedError）。通常是采样率/通道数不匹配，或所选设备已不可用——可到「设置 → 语音通话 → 麦克风」改回系统默认。");
-      }
-      throw new Error(`打开麦克风失败：${msg}`);
+      // getUserMedia 报错名 → 人话 + 排查提示（翻译只有一份，见 voice/mic-error.ts）
+      throw new Error(describeMicError(error));
     }
     mediaStreamRef.current = stream;
 
@@ -924,10 +911,36 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
         engine: started?.engine ?? "",
       });
 
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
-      });
+      // ★ 麦克风（09-13 修）：① 用**设置里选的设备与开关**（旧实现硬编码，用户换的麦在唤醒里不生效）；
+      //   ② 失败重试（最常见的原因是上一次通话的麦还没释放、或别的程序刚占用）；
+      //   ③ 失败时给**人话**而不是 Chromium 的英文原文（用户实测「唤醒未启动：Requested device not found」）。
+      const micCfg = (await window.codex.voiceSettingsGet().catch(() => null))?.settings?.mic
+        ?? { deviceId: "", noiseSuppression: false, echoCancellation: true, autoGainControl: false };
+      const wakeConstraint: MediaTrackConstraints = {
+        echoCancellation: micCfg.echoCancellation,
+        noiseSuppression: micCfg.noiseSuppression,
+        autoGainControl: micCfg.autoGainControl,
+        channelCount: 1,
+      };
+      if (micCfg.deviceId) wakeConstraint.deviceId = { ideal: micCfg.deviceId };
+      let micError = "";
+      for (let attempt = 0; attempt < 3 && !disposed; attempt += 1) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: wakeConstraint });
+          break;
+        } catch (error) {
+          micError = describeMicError(error);
+          await new Promise((resolve) => window.setTimeout(resolve, 800));
+        }
+      }
+      if (!stream) {
+        patchWakeState({ listening: false, error: micError || "打开麦克风失败" });
+        void window.codex.voiceWakeStop().catch(() => undefined);
+        return;
+      }
       if (disposed) { stream.getTracks().forEach((t) => t.stop()); return; }
+      const micLabel = String((stream.getAudioTracks()[0] as any)?.label ?? "").trim();
+      if (micLabel) patchWakeState({ device: micLabel });
       ctx = new AudioContext({ sampleRate: CAPTURE_RATE });
       blobUrl = URL.createObjectURL(new Blob([CAPTURE_WORKLET_SOURCE], { type: "text/javascript" }));
       await ctx.audioWorklet.addModule(blobUrl);
@@ -945,7 +958,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       src.connect(node);
       node.connect(ctx.destination);
     })().catch((error: any) => {
-      if (!disposed) patchWakeState({ listening: false, error: String(error?.message ?? error) });
+      if (!disposed) patchWakeState({ listening: false, error: describeMicError(error) });
     });
 
     return () => {

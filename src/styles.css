@@ -12814,6 +12814,98 @@ button.search-box:hover {
   padding: 0 20px;
   display: flex;
 }
+/* ── 首次连接：6 位配对码 + 电脑端审批（09-13 二次加固）──
+   配对码要一眼能读出来（手机照着输），审批卡要有明确的允许/拒绝动作。 */
+.remote-pair-card {
+  border: 1px solid var(--line);
+  background: var(--panel, #fff);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin: 0 0 14px;
+}
+.remote-pair-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.remote-pair-head strong { flex: 1; }
+.remote-pair-code {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 6px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  padding: 10px 0 12px;
+  color: var(--text);
+}
+.remote-pair-card small {
+  display: block;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+.remote-approve-card {
+  border: 1px solid #e8b34b66;
+  background: #e8b34b12;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0 0 14px;
+}
+.remote-approve-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.remote-approve-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px dashed #e8b34b55;
+}
+.remote-approve-info { flex: 1; min-width: 0; }
+.remote-approve-info strong { font-size: 13px; display: block; }
+.remote-approve-info small { color: var(--muted); font-size: 11.5px; }
+.remote-approve-actions { display: flex; gap: 8px; flex: none; }
+.remote-allow-btn {
+  border: 0;
+  border-radius: 9px;
+  padding: 7px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  background: #1a7f37;
+  color: #fff;
+}
+.remote-allow-btn:hover { background: #166a2d; }
+.remote-deny-btn {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  background: var(--bg);
+  color: var(--text);
+}
+.remote-deny-btn:hover { background: #c0392b18; }
+.remote-approved-card {
+  border: 1px solid var(--line);
+  background: var(--panel, #fff);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0 0 14px;
+}
+.remote-approved-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 12.5px;
+}
 .remote-head-left {
   align-items: center;
   gap: 10px;

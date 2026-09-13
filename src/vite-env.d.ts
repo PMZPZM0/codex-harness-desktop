@@ -232,6 +232,12 @@ interface Window {
     remoteSend(cmd: string): Promise<{ ok: boolean }>;
     remoteStop(): Promise<{ ok: boolean }>;
     remoteQrcode(botId?: string): Promise<string>;
+    remotePairState(): Promise<{ code: string; pending: { rid: string; deviceId: string; name: string; createdAt: number }[]; approved: { deviceId: string; name: string; approvedAt: number; lastSeen: number }[] }>;
+    remotePairRotate(): Promise<{ code: string }>;
+    remoteApprove(rid: string): Promise<{ ok: boolean }>;
+    remoteDeny(rid: string): Promise<{ ok: boolean }>;
+    remoteRevoke(deviceId: string): Promise<{ ok: boolean }>;
+    onRemotePairRequest(handler: (request: { rid: string; deviceId: string; name: string }) => void): () => void;
     botBindQrcode(botId: string, botName: string): Promise<{ qr: string; url: string; code: string }>;
     botBindStatus(code: string): Promise<"waiting" | "confirmed" | "expired">;
     botBindConsume(code: string): Promise<{ botId: string; deviceName?: string } | null>;
