@@ -14,7 +14,7 @@ import { spawn } from "node:child_process";
 import { createReadStream, createWriteStream, existsSync, statSync } from "fs";
 import { copyFile, mkdir, open, readFile, rename, stat, unlink } from "fs/promises";
 import { basename, dirname, join } from "path";
-import { MODEL_HOSTS, modelUrl, type VoiceModelFile, type VoiceModelRepo, ZIPVOICE_DIR, ZIPVOICE_ARCHIVE, zipvoiceReady } from "./model-manifest";
+import { MODEL_HOSTS, modelUrl, type VoiceModelFile, type VoiceModelRepo, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_DIR, ZIPVOICE_ARCHIVE, zipvoiceReady } from "./model-manifest";
 
 export type VoiceDownloadProgress = {
   /** 当前仓库 id */
@@ -773,5 +773,47 @@ export async function ensureZipvoice(
   }
 
   report("完成", 100, "音色克隆模型就绪", 2, 2);
+  return { ok: true };
+}
+
+/**
+ * 安装/补齐**语音唤醒关键词模型**（KWS，归档型，31MB）。已就绪时直接返回。
+ * 与 zipvoice 同一条路：整包下载（含 GitHub 镜像前缀）→ SHA256 → 随包 Python 解压 → 校验关键文件。
+ */
+export async function ensureKws(
+  modelsRoot: string,
+  resourcesToolsDir: string,
+  onProgress?: (p: VoiceDownloadProgress) => void,
+  signal?: AbortSignal,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (kwsReady(modelsRoot)) return { ok: true };
+  const report = (percent: number, message: string) =>
+    onProgress?.({ repo: KWS_DIR, file: "唤醒模型", doneFiles: 0, totalFiles: 1, percent, message });
+
+  const archivePath = join(modelsRoot, ".cache", KWS_DIR + ".tar.bz2");
+  const cached = existsSync(archivePath)
+    ? await sha256File(archivePath).then((h) => h === KWS_ARCHIVE.sha256).catch(() => false)
+    : false;
+  if (!cached) {
+    report(0, "正在下载语音唤醒模型（约 31MB）…");
+    const downloaded = await downloadUrlToFile(
+      KWS_ARCHIVE.url, archivePath, KWS_ARCHIVE.sha256, KWS_ARCHIVE.bytes,
+      (received, total) => report(
+        total ? Math.round((received / total) * 100) : -1,
+        "正在下载语音唤醒模型 " + (received / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + "MB",
+      ),
+      signal,
+      GITHUB_MIRROR_PREFIXES,
+    );
+    if (!downloaded.ok) return downloaded;
+  }
+  report(100, "正在解压语音唤醒模型…");
+  const extracted = await extractTarBz2(archivePath, modelsRoot, resourcesToolsDir);
+  if (!extracted.ok) return extracted;
+  await unlink(archivePath).catch(() => undefined);
+  if (!kwsReady(modelsRoot)) {
+    return { ok: false, error: "解压后仍缺少关键词模型文件（归档结构可能变了）" };
+  }
+  report(100, "语音唤醒模型就绪");
   return { ok: true };
 }

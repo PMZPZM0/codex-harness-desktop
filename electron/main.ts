@@ -35,7 +35,7 @@ import { checkLatestUpdate, defaultDownloadDir, downloadUpdate, fileExists, inst
 import { checkEngineUpdate, performEngineUpdate } from "./engine-updater";
 import { VoiceService } from "./voice/voice-service";
 import * as voiceProfiles from "./voice/voice-profiles";
-import { ALL_VOICE_REPOS, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "./voice/model-manifest";
+import { ALL_VOICE_REPOS, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "./voice/model-manifest";
 import { ensureRepo, ensureZipvoice, modelsSizeOnDisk, voiceModelsStatus } from "./voice/model-store";
 import {
   deleteSshServer, execSshCommand, exportSshServers, parseSshImport, readSshServers, saveSshServer, setSshServerEnabled,
@@ -707,6 +707,8 @@ ipcMain.handle("voice:models-status", async () => {
     repos: ALL_VOICE_REPOS.map((r) => ({ id: r.repo, lastSegment: r.repo.split("/").pop() ?? r.repo })),
     // 音色克隆模型（ZipVoice，归档型资源，单独安装）：UI 按它显示独立条目
     zipvoice: { ready: zipvoiceReady(voiceModelsRoot), bytes: ZIPVOICE_ARCHIVE.bytes + ZIPVOICE_ARCHIVE.vocoder.bytes, dir: ZIPVOICE_DIR },
+    // 语音唤醒关键词模型（KWS，归档型资源，单独安装）：唤醒卡片按它决定显示「一键下载」还是「已就绪」
+    kws: { ready: kwsReady(voiceModelsRoot), bytes: KWS_ARCHIVE.bytes, dir: KWS_DIR },
   };
 });
 
@@ -731,6 +733,44 @@ ipcMain.handle("voice:zipvoice-install", async () => {
 ipcMain.handle("voice:zipvoice-cancel", () => {
   zipvoiceAbort?.abort();
   return { ok: true };
+});
+
+/**
+ * 语音唤醒关键词模型（KWS，31MB 归档）：只服务「语音唤醒」，与三个主模型分开装 ——
+ * 不装也能用（回退到识别模型匹配），装了才是不误唤醒 + 低 CPU 的那条路。
+ */
+let kwsAbort: AbortController | null = null;
+ipcMain.handle("voice:kws-install", async () => {
+  const { ensureKws } = require("./voice/model-store");
+  const { kwsReady } = require("./voice/model-manifest");
+  if (kwsReady(voiceModelsRoot)) return { ok: true };
+  if (kwsAbort) return { ok: false, error: "正在安装中" };
+  kwsAbort = new AbortController();
+  try {
+    const result = await ensureKws(
+      voiceModelsRoot,
+      toolsRoot(),
+      (progress: any) => sendToWindow("voice:event", { type: "download", ...progress, target: "kws" }),
+      kwsAbort.signal,
+    );
+    sendToWindow("voice:event", { type: "downloadDone", ok: result.ok, error: result.ok ? undefined : (result as any).error, target: "kws" });
+    // 装好了让唤醒用上关键词模型：唤醒词没变也要重挂（引擎从 asr 换成 kws）
+    if (result.ok && voiceService.wakeListening()) {
+      await voiceService.stopWakeListener();
+      await voiceService.startWakeListener();
+    }
+    return result;
+  } finally {
+    kwsAbort = null;
+  }
+});
+ipcMain.handle("voice:kws-cancel", () => {
+  kwsAbort?.abort();
+  return { ok: true };
+});
+ipcMain.handle("voice:kws-status", () => {
+  const { kwsReady } = require("./voice/model-manifest");
+  return { ready: kwsReady(voiceModelsRoot) };
 });
 
 // ── 音色档案（音色克隆 ZipVoice）：导入/录制参考音频 → 本机 ASR 转写参考文本 → 保存为专属音色 ──

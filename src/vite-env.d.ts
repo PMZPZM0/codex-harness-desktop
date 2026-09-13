@@ -530,6 +530,7 @@ interface Window {
       bytes: number; root: string;
       repos: { id: string; lastSegment: string }[];
       zipvoice?: { ready: boolean; bytes: number; dir: string };
+      kws?: { ready: boolean; bytes: number; dir: string };
     }>;
     voiceModelsInstall(): Promise<{ ok: boolean; error?: string }>;
     voiceZipvoiceInstall(): Promise<{ ok: boolean; error?: string }>;
@@ -575,6 +576,10 @@ interface Window {
     voiceWakeAudio(samples: Float32Array): Promise<{ ok: boolean; matched: boolean }>;
     voiceWakeReset(): Promise<{ ok: boolean }>;
     voiceWakeStop(): Promise<{ ok: boolean }>;
+    /** 关键词唤醒模型（KWS，31MB 归档）：装完唤醒自动切到「读音匹配」引擎 */
+    voiceKwsInstall(): Promise<{ ok: boolean; error?: string }>;
+    voiceKwsCancel(): Promise<{ ok: boolean }>;
+    voiceKwsStatus(): Promise<{ ready: boolean }>;
     // 自更新：网页源（发布站）/ GitHub Releases 双源可切换
     updateCheck(input?: { source?: "web" | "github" }): Promise<{ ok: boolean; info?: { hasUpdate: boolean; reason: string; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string }; currentVersion?: string; serverUrl?: string; source?: string; error?: string }>;
     updateDownload(input: { downloadUrl: string; filename?: string }): Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;

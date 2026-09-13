@@ -11,11 +11,12 @@
  * 挂断后不残留任何常驻监听、线程或麦克风占用。
  */
 
-import { ASR_REPO, TTS_REPO, VAD_REPO, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "./model-manifest";
+import { ASR_REPO, KWS_ARCHIVE, TTS_REPO, VAD_REPO, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, kwsDir, kwsReady, zipvoiceReady } from "./model-manifest";
 import { ensureRepo, isRepoReady, modelFilePath, probeHosts, repoDir } from "./model-store";
 import { DEFAULT_VOICE_SETTINGS, MODEL_HOST_PRESETS, VOICE_SAMPLE_TEXT, loadVoiceSettings, type VoiceSettings } from "./voice-settings";
-import { ASR_WORKER_SOURCE, TTS_WORKER_SOURCE, VoiceWorkerClient, resolveSherpaPath } from "./workers";
+import { ASR_WORKER_SOURCE, KWS_WORKER_SOURCE, TTS_WORKER_SOURCE, VoiceWorkerClient, resolveSherpaPath } from "./workers";
 import { buildHomophoneMap, createWakeMatcher, phraseVocabHint, type WakeMatcher } from "./wake-match";
+import { buildKeywordLines, parseLexiconReadings } from "./kws-keywords";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
 import { listProfiles, profileAudioPath, type VoiceProfile } from "./voice-profiles";
@@ -641,14 +642,20 @@ export class VoiceService {
   //   ③ 每次端点必须复位识别流（旧实现从不复位 → 识别文本跨句无限累积，
   //      每块还要把整坨文本回传渲染层）。
 
-  /** 唤醒匹配器（唤醒词或同音表变了要重建） */
+  /** 唤醒匹配器（唤醒词或同音表变了要重建）—— 仅 ASR 回退模式使用 */
   private wakeMatcher: WakeMatcher | null = null;
+  /** 唤醒引擎：kws=关键词模型（首选）；asr=通用识别 + 同音容错（回退） */
+  private wakeEngine: "kws" | "asr" | "" = "";
   /** 同音表缓存（lexicon.txt 只解析一次，实测 175ms / 2 万字） */
   private wakeHomophones: Map<string, Set<string>> | null = null;
   private wakeHomophonesLoaded = false;
   /** 诊断节流：最近一次上报「听到什么」的时间与文本 */
   private wakeHeardAt = 0;
   private wakeHeardText = "";
+  /** 关键词模型用的 keywords.txt（写在 userData 下，进程内记路径便于重建） */
+  private wakeKeywordsFile = "";
+  /** 当前 keywords.txt 对应的唤醒词（改词判定用） */
+  private wakeKeywordsPhrase = "";
 
   /** 同音表：从音色模型的 lexicon.txt 构建（取不到就退化成精确匹配，不报错） */
   private async loadWakeHomophones(): Promise<Map<string, Set<string>> | null> {
@@ -677,16 +684,112 @@ export class VoiceService {
     );
   }
 
-  async startWakeListener(): Promise<{ ok: boolean; error?: string; phrase?: string; hint?: string }> {
-    if (this.wakeAsr) return { ok: true, phrase: this.wakeMatcher?.phrase ?? "" };
+  /**
+   * 关键词模型所需的 keywords.txt：中文唤醒词 → 拼音 token 行。
+   * 写在 userData 下（模型目录只读语义，别往里塞用户数据）。
+   * 返回可用行；一行都没有（字不在音色词典 / token 表里）时返回空数组，由调用方回退到 ASR。
+   */
+  private async writeKwsKeywords(phrase: string): Promise<{ lines: string[]; hint: string }> {
+    const lexiconPath = modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "lexicon.txt");
+    const tokensPath = `${kwsDir(this.deps.modelsRoot)}${path.sep}${KWS_ARCHIVE.model.tokens}`;
+    const [lexiconText, tokensText] = await Promise.all([
+      fsPromises.readFile(lexiconPath, "utf8"),
+      fsPromises.readFile(tokensPath, "utf8").catch(() => ""),
+    ]);
+    const tokens = new Set(tokensText.split("\n").map((line) => line.split(" ")[0]).filter(Boolean));
+    const readings = parseLexiconReadings(lexiconText);
+    const built = buildKeywordLines({ phrase, readings, tokens: tokens.size ? tokens : undefined });
+    const usable = built.lines.filter((line) => line.missing.length === 0);
+    if (!usable.length) {
+      const hint = built.unknownChars.length
+        ? `唤醒词里的「${built.unknownChars.join("")}」在本机音色词典里查不到读音，无法生成关键词（换个常见字的词更稳）`
+        : `唤醒词的读音里有本关键词模型不支持的音节（${built.lines[0]?.missing.join("、") ?? ""}），已改用识别模型匹配`;
+      return { lines: [], hint };
+    }
+    const dir = path.join(this.deps.userDataDir, "voice-kws");
+    await fsPromises.mkdir(dir, { recursive: true });
+    const file = path.join(dir, "keywords.txt");
+    await fsPromises.writeFile(file, usable.map((line) => line.line).join("\n") + "\n", "utf8");
+    this.wakeKeywordsFile = file;
+    this.wakeKeywordsPhrase = phrase;
+    return { lines: usable.map((line) => line.line), hint: "" };
+  }
+
+  /**
+   * 启动唤醒监听。**优先用关键词模型**（读音匹配、不误唤醒、CPU 低）；
+   * 没装关键词模型 / 唤醒词无法转成拼音 token 时回退到「通用识别 + 同音容错」。
+   */
+  async startWakeListener(): Promise<{ ok: boolean; error?: string; phrase?: string; hint?: string; engine?: "kws" | "asr" }> {
+    if (this.wakeAsr) {
+      return { ok: true, phrase: this.wakeMatcher?.phrase ?? String(this.getSettings().wake?.phrase ?? ""), engine: this.wakeEngine || undefined };
+    }
     const sherpaPath = resolveSherpaPath();
     if (!sherpaPath) return { ok: false, error: "语音运行时未就绪（sherpa-onnx 未安装）" };
-    if (!(await this.refreshModelsReady())) {
-      return { ok: false, error: "语音模型未下载完整，请先到「开发工具 → 语音模型」下载" };
-    }
     const settings = loadVoiceSettings(this.deps.userDataDir);
     const phrase = String(settings.wake?.phrase ?? "").trim();
     if (!phrase) return { ok: false, error: "唤醒词为空，请先在「设置 → 语音通话 → 语音唤醒」里填写" };
+
+    // ── 首选：关键词模型（KWS）──
+    if (kwsReady(this.deps.modelsRoot)) {
+      try {
+        const built = await this.writeKwsKeywords(phrase);
+        if (built.lines.length) {
+          this.wakeAsr = new VoiceWorkerClient(
+            "语音唤醒",
+            KWS_WORKER_SOURCE,
+            {
+              sherpaPath,
+              sampleRate: SAMPLE_RATE,
+              encoder: path.join(kwsDir(this.deps.modelsRoot), KWS_ARCHIVE.model.encoder),
+              decoder: path.join(kwsDir(this.deps.modelsRoot), KWS_ARCHIVE.model.decoder),
+              joiner: path.join(kwsDir(this.deps.modelsRoot), KWS_ARCHIVE.model.joiner),
+              tokens: path.join(kwsDir(this.deps.modelsRoot), KWS_ARCHIVE.model.tokens),
+              numThreads: 1,
+              keywordsFile: this.wakeKeywordsFile,
+              keywordsScore: 1.0,
+              // 阈值越低越灵敏（越容易误唤醒）。0.25 是 sherpa-onnx 文档给出的默认档，
+              // 实测：目标词 3/4 命中、三句日常话与跨关键词均不误触发。
+              keywordsThreshold: 0.25,
+              maxActivePaths: 4,
+              numTrailingBlanks: 1,
+            },
+            () => { this.wakeAsr = null; }
+          );
+          await this.wakeAsr.request("create");
+          this.wakeEngine = "kws";
+          this.wakeMatcher = null;
+          this.wakeHeardText = "";
+          this.wakeHeardAt = 0;
+          this.deps.log("info", `唤醒已启动（关键词模型）：${built.lines.join(" | ")}`);
+          return { ok: true, phrase, engine: "kws", hint: "" };
+        }
+        this.deps.log("info", `关键词模型不可用于该唤醒词：${built.hint}`);
+        // 继续走下面的 ASR 回退
+        return await this.startWakeAsrFallback(sherpaPath, phrase, built.hint);
+      } catch (error: any) {
+        await this.stopWakeListener();
+        this.deps.log("error", `关键词模型启动失败（回退识别模型）：${error?.message ?? error}`);
+        return await this.startWakeAsrFallback(sherpaPath, phrase, "");
+      }
+    }
+
+    // ── 回退：通用识别模型 + 同音容错 ──
+    const noKwsHint = "未安装语音唤醒关键词模型（约 31MB），当前用识别模型匹配（会误唤醒、也更费 CPU）——可在「设置 → 语音通话 → 语音唤醒」里一键下载";
+    if (!(await this.refreshModelsReady())) {
+      return { ok: false, error: "语音模型未下载完整，请先到「开发工具 → 语音模型」下载" };
+    }
+    return await this.startWakeAsrFallback(sherpaPath, phrase, noKwsHint);
+  }
+
+  /** 回退路径：通用识别模型 + 同音容错匹配（09-13 第二轮实现，仍保留兜底） */
+  private async startWakeAsrFallback(
+    sherpaPath: string,
+    phrase: string,
+    hint: string,
+  ): Promise<{ ok: boolean; error?: string; phrase?: string; hint?: string; engine?: "kws" | "asr" }> {
+    if (!(await this.refreshModelsReady())) {
+      return { ok: false, error: "语音模型未下载完整，请先到「开发工具 → 语音模型」下载" };
+    }
     try {
       this.wakeAsr = new VoiceWorkerClient(
         "语音唤醒",
@@ -709,11 +812,12 @@ export class VoiceService {
       // ★ 预热：旧实现不预热，154MB 模型加载被拖到**第一块音频**上（1~3 秒），
       //   那段时间的音频全排在链上 → 唤醒要等好几秒才可能响应。
       await this.wakeAsr.request("create");
+      this.wakeEngine = "asr";
       await this.rebuildWakeMatcher(phrase);
-      let hint = "";
+      let vocabHint = "";
       try {
         const tokens = await fsPromises.readFile(modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "tokens.txt"), "utf8");
-        hint = phraseVocabHint(phrase, tokens);
+        vocabHint = phraseVocabHint(phrase, tokens);
       } catch { /* 词表读不到就不提示 */ }
       this.wakeHeardText = "";
       this.wakeHeardAt = 0;
@@ -732,6 +836,19 @@ export class VoiceService {
     const client = this.wakeAsr;
     if (!client) return { ok: false, matched: false };
     try {
+      // ── 关键词模型：只回「命中了哪个关键词」，没有整句文本 ──
+      if (this.wakeEngine === "kws") {
+        const r = await client.request("feed", { samples });
+        const keyword = String(r?.keyword ?? "");
+        if (keyword) {
+          // 线程侧已 reset；这里只需上报。命名里带了词，多个关键词时也能分辨。
+          this.deps.log("info", `唤醒词命中（关键词模型：「${keyword}」）`);
+          this.deps.emit({ type: "wake", text: keyword });
+          return { ok: true, matched: true };
+        }
+        return { ok: true, matched: false };
+      }
+
       const r = await client.request("feed", { samples });
       const text = String(r?.text ?? "");
       const endpoint = Boolean(r?.endpoint);
@@ -774,9 +891,21 @@ export class VoiceService {
     const client = this.wakeAsr;
     this.wakeAsr = null;
     this.wakeMatcher = null;
+    this.wakeEngine = "";
+    this.wakeKeywordsFile = "";
     this.wakeHeardText = "";
     this.wakeHeardAt = 0;
     await client?.terminate?.().catch?.(() => undefined);
+  }
+
+  /** 唤醒监听是否正在跑（下载完关键词模型后据此决定要不要重挂）。 */
+  wakeListening(): boolean {
+    return Boolean(this.wakeAsr);
+  }
+
+  /** 唤醒引擎：kws=关键词模型；asr=通用识别回退；空串=没在跑。 */
+  wakeEngineName(): "kws" | "asr" | "" {
+    return this.wakeEngine;
   }
 
   /** 模型目录（供 UI 显示）。 */
@@ -794,11 +923,19 @@ export class VoiceService {
     const next = loadVoiceSettings(this.deps.userDataDir);
     this.currentSettings = { ...next, ...patch };
     // 落盘由 main.ts 统一负责（IPC handler 调 saveVoiceSettings），这里只同步内存。
-    // ★ 唤醒词改了要**立刻**重建匹配器：唤醒是常驻监听，等下次 start 才生效 =
+    // ★ 唤醒词改了要**立刻**重建：唤醒是常驻监听，等下次 start 才生效 =
     //   「改了唤醒词它还在等旧词」（与「开关改了不生效」同一类 bug）。
     if (this.wakeAsr) {
       const phrase = String(this.currentSettings.wake?.phrase ?? "").trim();
-      if (phrase && phrase !== this.wakeMatcher?.phrase) void this.rebuildWakeMatcher(phrase);
+      const activePhrase = this.wakeEngine === "kws" ? this.wakeKeywordsPhrase : (this.wakeMatcher?.phrase ?? "");
+      if (phrase && phrase !== activePhrase) {
+        if (this.wakeEngine === "kws") {
+          // keywordsFile 是 worker 启动参数，改词必须重建 worker（顺带重新生成 keywords.txt）
+          void this.stopWakeListener().then(() => this.startWakeListener());
+        } else {
+          void this.rebuildWakeMatcher(phrase);
+        }
+      }
     }
     return this.currentSettings;
   }

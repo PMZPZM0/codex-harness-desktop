@@ -371,4 +371,8 @@ contextBridge.exposeInMainWorld("codex", {
   voiceWakeAudio: (samples: Float32Array) => ipcRenderer.invoke("voice:wake-audio", samples) as Promise<{ ok: boolean; matched: boolean }>,
   voiceWakeReset: () => ipcRenderer.invoke("voice:wake-reset") as Promise<{ ok: boolean }>,
   voiceWakeStop: () => ipcRenderer.invoke("voice:wake-stop") as Promise<{ ok: boolean }>,
+  /** 关键词唤醒模型（KWS）：安装/取消/状态（31MB 归档，服务「语音唤醒」） */
+  voiceKwsInstall: () => ipcRenderer.invoke("voice:kws-install") as Promise<{ ok: boolean; error?: string }>,
+  voiceKwsCancel: () => ipcRenderer.invoke("voice:kws-cancel") as Promise<{ ok: boolean }>,
+  voiceKwsStatus: () => ipcRenderer.invoke("voice:kws-status") as Promise<{ ready: boolean }>,
 });

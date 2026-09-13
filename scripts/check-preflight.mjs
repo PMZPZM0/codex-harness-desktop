@@ -814,6 +814,135 @@ console.log(C.bold("\n【4d】语音唤醒（同音容错匹配 / 端点复位 /
   }
 }
 
+// ---------- 4e. 语音唤醒关键词模型（KWS）：中文唤醒词 → 拼音 token 行 ----------
+
+console.log(C.bold("\n【4e】语音唤醒关键词模型（KWS，读音匹配；关键词生成器对照模型自带样例验证）"));
+
+{
+  let kwsMod = null;
+  try {
+    kwsMod = await import("../dist-electron/voice/kws-keywords.js");
+  } catch (error) {
+    fail(`关键词生成器产物读不到（先 npm run build）：${error?.message ?? error}`);
+  }
+
+  if (kwsMod) {
+    const { buildKeywordLines, parseLexiconReadings, zhuyinToSyllable } = kwsMod;
+
+    // 对照验证：模型自带 keywords_raw.txt（中文）↔ keywords.txt（拼音 token）8 对，
+    // 生成器必须原样复现 —— 这是判断注音→拼音表对不对**唯一**可信的判据。
+    const GROUND_TRUTH = [
+      ["你好军哥", "n ǐ h ǎo j ūn g ē @你好军哥"],
+      ["蛋哥蛋哥", "d àn g ē d àn g ē @蛋哥蛋哥"],
+      ["小爱同学", "x iǎo ài t óng x ué @小爱同学"],
+      ["你好问问", "n ǐ h ǎo w èn w èn @你好问问"],
+      ["小艺小艺", "x iǎo y ì x iǎo y ì @小艺小艺"],
+      ["小米小米", "x iǎo m ǐ x iǎo m ǐ @小米小米"],
+      ["林美丽", "l ín m ěi l ì @林美丽"],
+      ["你好西西", "n ǐ h ǎo x ī x ī @你好西西"],
+    ];
+    // 模型自带的注音（与音色模型 lexicon.txt 同一套写法）：手写这批读音，避免依赖本机模型文件
+    const LEXICON = [
+      "你 ㄋ ㄧ ˇ", "好 ㄏ ㄠ ˇ", "军 ㄐ ㄩ ㄣ ˉ", "哥 ㄍ ㄜ ˉ",
+      "蛋 ㄉ ㄢ ˋ", "小 ㄒ ㄧ ㄠ ˇ", "爱 ㄞ ˋ", "同 ㄊ ㄨ ㄥ ˊ", "学 ㄒ ㄩ ㄝ ˊ",
+      "问 ㄨ ㄣ ˋ", "艺 ㄧ ˋ", "米 ㄇ ㄧ ˇ", "林 ㄌ ㄧ ㄣ ˊ", "美 ㄇ ㄟ ˇ", "丽 ㄌ ㄧ ˋ",
+      "西 ㄒ ㄧ ˉ", "柯 ㄎ ㄜ ˉ", "助 ㄓ ㄨ ˋ", "手 ㄕ ㄡ ˇ",
+    ].join("\n");
+    const readings = parseLexiconReadings(LEXICON);
+    readings.size >= 15
+      ? ok(`关键词：注音词典解析出 ${readings.size} 个字`)
+      : fail(`关键词：注音词典解析数量异常（${readings.size}）`);
+
+    let matched = 0;
+    for (const [phrase, expected] of GROUND_TRUTH) {
+      const built = buildKeywordLines({ phrase, readings });
+      const got = built.lines[0]?.line ?? "(空)";
+      if (got === expected) matched += 1;
+      else fail(`关键词：与模型自带样例不一致 —— ${phrase}\n      期望 ${expected}\n      实际 ${got}`);
+    }
+    matched === GROUND_TRUTH.length
+      ? ok(`关键词：${matched}/${GROUND_TRUTH.length} 行与模型自带 keywords.txt 完全一致（注音→拼音→声母/韵母拆分全对）`)
+      : fail(`关键词：只有 ${matched}/${GROUND_TRUTH.length} 行与模型样例一致`);
+
+    const target = buildKeywordLines({ phrase: "小柯小柯", readings });
+    target.lines[0]?.line === "x iǎo k ē x iǎo k ē @小柯小柯"
+      ? ok("关键词：默认唤醒词「小柯小柯」→ `x iǎo k ē x iǎo k ē @小柯小柯`（探针实测该行命中 3/4、零误触发）")
+      : fail(`关键词：默认唤醒词生成错误（${target.lines[0]?.line}）`);
+
+    // 前置条件/反证口径：j/q/x 后的 ü 必须写成 u（军 jūn / 学 xué）——写错就是 token 表里不存在的韵母
+    const jun = zhuyinToSyllable(["ㄐ", "ㄩ", "ㄣ", "ˉ"]);
+    const xue = zhuyinToSyllable(["ㄒ", "ㄩ", "ㄝ", "ˊ"]);
+    jun?.final === "ūn" && xue?.final === "ué"
+      ? ok("关键词：j/q/x 后的 ü 写成 u（军 ūn / 学 ué，与模型样例一致）")
+      : fail(`关键词：ü 的拼写规则不对（军=${jun?.final} 学=${xue?.final}）`);
+    // 舌尖元音：ㄓ/ㄔ/ㄕ/ㄖ/ㄗ/ㄘ/ㄙ 单独成音节时写作 zhi/chi/shi/ri/zi/ci/si（声调在韵母上：世 → sh ì）
+    const shi = zhuyinToSyllable(["ㄕ", "ˋ"]);
+    const zhi = zhuyinToSyllable(["ㄓ", "ˉ"]);
+    shi?.initial === "sh" && shi?.final === "ì" && zhi?.initial === "zh" && zhi?.final === "ī"
+      ? ok("关键词：舌尖元音音节（ㄕ ˋ → sh ì）能正确转换（lexicon 里这类字很多）")
+      : fail(`关键词：舌尖元音音节转换失败（世=${shi?.initial}/${shi?.final} 之=${zhi?.initial}/${zhi?.final}）`);
+
+    // 无法转换时**必须报出来**，不能生成一条永远唤不醒的关键词
+    const unknown = buildKeywordLines({ phrase: "小柯𠀀", readings });
+    unknown.unknownChars.length > 0 || unknown.lines.some((l) => l.missing.length > 0)
+      ? ok("关键词：查不到读音/不在 token 表时如实上报（不会静默生成无效关键词）")
+      : fail("关键词：无效字被静默吞掉 —— 用户会遇到「唤不醒且无提示」");
+    const empty = buildKeywordLines({ phrase: "   ", readings });
+    empty.lines.length === 0 ? ok("关键词：空唤醒词不生成任何行") : fail("关键词：空唤醒词生成了行");
+  }
+
+  // ===== KWS 接线守卫 =====
+  const readSrc3 = (rel) => (existsSync(join(ROOT, rel)) ? readFileSync(join(ROOT, rel), "utf8") : "");
+  const serviceSrc3 = readSrc3("electron/voice/voice-service.ts");
+  const workersSrc3 = readSrc3("electron/voice/workers.ts");
+  const settingsUiSrc3 = readSrc3("src/components/VoiceSettingsSection.tsx");
+  const manifestSrc = readSrc3("electron/voice/model-manifest.ts");
+  const storeSrc = readSrc3("electron/voice/model-store.ts");
+
+  if (!serviceSrc3 || !workersSrc3 || !settingsUiSrc3) {
+    warn("找不到语音源码，跳过 KWS 接线守卫");
+  } else {
+    // ① 首选关键词模型、失败再回退识别模型（顺序反了就等于白装）
+    const kwsFirst = serviceSrc3.indexOf("if (kwsReady(this.deps.modelsRoot))") > 0
+      && serviceSrc3.indexOf("if (kwsReady(this.deps.modelsRoot))") < serviceSrc3.indexOf("startWakeAsrFallback(");
+    kwsFirst
+      ? ok("KWS：唤醒优先用关键词模型，装不上/转不出关键词才回退识别模型")
+      : fail("KWS：引擎选择顺序不对（回退分支排在关键词模型之前）");
+
+    // ② 关键词落盘在 userData（模型目录只读语义），且命中即 reset（否则同句反复命中）
+    const kwFile = /voice-kws/.test(serviceSrc3) && /keywords\.txt/.test(serviceSrc3);
+    const kwsWorkerReset = /keyword/.test(workersSrc3) && /if \(keyword\) spotter\.reset\(stream\)/.test(workersSrc3);
+    kwFile && kwsWorkerReset
+      ? ok("KWS：keywords.txt 写在 userData + worker 命中后立即 reset 识别流")
+      : fail(`KWS：关键词落盘或 reset 缺失（file=${kwFile} reset=${kwsWorkerReset}）`);
+
+    // ③ 关键词行必须来自生成器（不许手拼拼音），且要按 token 表过滤
+    const usesBuilder = /buildKeywordLines\(/.test(serviceSrc3) && /parseLexiconReadings\(/.test(serviceSrc3);
+    const filtersMissing = /filter\(\(line\) => line\.missing\.length === 0\)/.test(serviceSrc3);
+    usesBuilder && filtersMissing
+      ? ok("KWS：关键词行由生成器产出并按模型 token 表过滤（无效行不会写进 keywords.txt）")
+      : fail(`KWS：关键词生成没走生成器或没过滤（builder=${usesBuilder} filter=${filtersMissing}）`);
+
+    // ④ 换唤醒词必须重挂（keywordsFile 是 worker 启动参数，改词不重建 = 还在等旧词）
+    const rearm = /stopWakeListener\(\)\.then\(\(\) => this\.startWakeListener\(\)\)/.test(serviceSrc3);
+    rearm ? ok("KWS：改唤醒词后重建 worker（keywordsFile 是启动参数，不重建就还在等旧词）") : fail("KWS：改唤醒词没有重挂 worker");
+
+    // ⑤ 安装链路 + UI 入口（模型 31MB，按需下载；不装也能用回退）
+    const installChain = /voice:kws-install/.test(mainSrc) && /voiceKwsInstall/.test(preloadSrc) && /ensureKws\(/.test(storeSrc);
+    const uiEntry = /installKws\(\)/.test(settingsUiSrc3) && /voiceKwsInstall\(\)/.test(settingsUiSrc3);
+    const archive = /KWS_ARCHIVE/.test(manifestSrc) && /kwsReady/.test(manifestSrc) && /b2f7c89690dc8ce4c6ed6afeab7cd800c36ad1421fb6b6302b4a4b194cf7f35f/.test(manifestSrc);
+    installChain && uiEntry && archive
+      ? ok("KWS：安装链路（归档 SHA256 + ensureKws + IPC + 设置页一键下载）齐全")
+      : fail(`KWS：安装链路不完整（chain=${installChain} ui=${uiEntry} archive=${archive}）`);
+
+    // ⑥ 关键词模型不能进「主模型齐备」判定：它只服务唤醒，缺了不该把整个语音功能挡住
+    const notInAll = !/ALL_VOICE_REPOS[^\n]*KWS/.test(manifestSrc) && /KWS_REPO/.test(manifestSrc) === false;
+    notInAll
+      ? ok("KWS：关键词模型不参与「主模型是否齐备」判定（不装也能用通话/听写）")
+      : fail("KWS：关键词模型被算进了主模型齐备判定 —— 没装唤醒模型的用户会看到「语音模型未下载完整」");
+  }
+}
+
 // 接线守卫：语音悬浮入口必须真的挂到 App 上（防「组件写了但没接」）
 {
   const appPath = join(ROOT, "src", "App.tsx");

@@ -101,6 +101,44 @@ export function zipvoiceReady(modelsRoot: string): boolean {
   });
 }
 
+/**
+ * 语音唤醒专用**关键词模型**（KWS）：zipformer 中文，建模单元是拼音（声母+韵母），
+ * 自带关键词解码约束 —— 与「拿通用识别模型整句转写再字符串匹配」完全不是一回事：
+ * 它对**读音**做匹配（所以「小柯小柯」不会被写成「小咳小壳」），且只认注册过的词
+ * （日常说话不会误唤醒），常驻 CPU 也低得多（3.3M 参数 vs 154MB 识别模型）。
+ *
+ * 来源与 zipvoice 一样是 GitHub release 整包（tar.bz2，31MB），
+ * 归档里同时含 epoch-12-avg-2 与 epoch-99-avg-1，以及 int8 版本；我们用 **float32 epoch-12-avg-2**
+ * （KWS 本身才 3.3M 参数，没必要冒量化误差的风险）。SHA256 与体积为实测值。
+ */
+export const KWS_DIR = "sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01";
+export const KWS_ARCHIVE = {
+  dir: KWS_DIR,
+  url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01.tar.bz2",
+  sha256: "b2f7c89690dc8ce4c6ed6afeab7cd800c36ad1421fb6b6302b4a4b194cf7f35f",
+  bytes: 32_654_866,
+  /** 我们实际使用的三个 onnx + 词表（就绪判定用） */
+  model: {
+    encoder: "encoder-epoch-12-avg-2-chunk-16-left-64.onnx",
+    decoder: "decoder-epoch-12-avg-2-chunk-16-left-64.onnx",
+    joiner: "joiner-epoch-12-avg-2-chunk-16-left-64.onnx",
+    tokens: "tokens.txt",
+  },
+} as const;
+
+/** 关键词模型是否就绪（三个 onnx + tokens 都在且非空）。 */
+export function kwsReady(modelsRoot: string): boolean {
+  const dir = path.join(modelsRoot, KWS_DIR);
+  return Object.values(KWS_ARCHIVE.model).every((name) => {
+    try { return statSync(path.join(dir, name)).size > 0; } catch { return false; }
+  });
+}
+
+/** 关键词模型目录（拼文件路径用）。 */
+export function kwsDir(modelsRoot: string): string {
+  return path.join(modelsRoot, KWS_DIR);
+}
+
 /** 一次安装（runtime:install id=voice-models）要拉的全部仓库。 */
 export const ALL_VOICE_REPOS: VoiceModelRepo[] = [ASR_REPO, VAD_REPO, TTS_REPO];
 
