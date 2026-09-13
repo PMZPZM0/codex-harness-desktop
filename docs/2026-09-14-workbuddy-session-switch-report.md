@@ -227,16 +227,27 @@ writeRendererLog("startup-perf", "info",
 
 ## 三、对照：Codex Harness 的差距在哪
 
-| 维度 | WorkBuddy | Codex Harness 现状 |
-|---|---|---|
-| 打开会话 | 命中 `messageCache`，无 IO | `thread/resume` + `enrichThreadWithRolloutToolsAsync`（worker 解析 rollout）是**必经 await**（`electron/main.ts:2904`），渲染层要等它回来才能画 |
-| 翻历史 | 虚拟化，只渲染可视区 | 全量渲染消息列表 |
-| 流式出字 | `directDomUpdates` 直写 transform，不触发 React | 每个 delta 走 React state → 组件重渲 |
-| 事件分发 | 按会话隔离 + detach 监听 | 主进程对**每条**通知都 `sendToWindow("codex:event")` 全广播，渲染层才按 threadId 丢 |
-| 会话列表刷新 | 增量 | 每个 `turn/completed` 打一发 `thread/list`（`App.tsx`），触发一次列表重建 |
-| 长会话 | 虚拟化 + 链表增量 | 数组 + 全量 map |
+> ⚠️ 本节已于 2026-09-14 修订过一次：初版凭印象写了「全量渲染消息列表 / 每个 turn/completed 打一发 thread/list」，逐行核对代码后**证实不成立**（我们已有回合窗口化、侧栏刷新已 debounce 600ms）。下表是核对后的准确版本。**结论：我们的短板比初版说的窄得多，只剩 4 个真缺口。**
 
-> 注：我们在 09-12 已把 rollout 解析挪进 worker（`electron/rollout-pool.ts`）解决了"阻塞其它会话"的问题，但**打开会话的往返延迟**仍在关键路径上。
+| 维度 | WorkBuddy | Codex Harness 现状（已核实） |
+|---|---|---|
+| 打开会话 | 命中 `messageCache` 直接渲染 | **已有**：`threadCacheRef` 秒开（先渲染缓存再后台对齐）+ `recentResumeAtRef` 30s 快路径 + `resumeThreadLight`（`excludeTurns` + 最新一页）+ `switchSeqRef` 序号丢弃陈旧响应（App.tsx:12963-13017）。**缺口**：首开（无缓存）仍要等 `thread/resume`（含 worker 内的 rollout enrich，`main.ts:2904`） |
+| 翻历史 | 可视区虚拟化 | **已有**：回合窗口化 `TURN_WINDOW` + 分页游标增量续拉（App.tsx:13875-13887）。**缺口**：窗口内仍全量挂载——`content-visibility` 只省绘制，省不掉建元素与 Markdown 解析 |
+| 大 diff / 长代码块 | **行级虚拟化**（`count: lines.length` + `overscan`） | 全量挂载（一个几千行的 diff 会真建几千个行节点） |
+| 流式出字 | **`directDomUpdates`**：transform 直写 DOM，绕开 React 重渲 | 每个 delta 走 React state → 组件重渲 |
+| 事件分发 | 按会话隔离 + `detach()` 摘监听 | 主进程**全广播**（`broadcastCodexEvent`，main.ts:317）。**注意**：`filterForRenderer`（main.ts:116）已写好按会话裁剪逻辑，因 09-12 一次「过滤与渲染层 activeThreadId 不同步 → 会话永久转圈」事故**临时回退为放行**，当前只累计 `rendererDroppedEventCount` 记账 |
+| 会话列表刷新 | 增量 | **已有**：增量 `setThreads(map)` 为主 + 后台会话变化时 debounce 600ms 刷新（App.tsx:9826-9832） |
+| 切回旧会话 | 缓存保住窗口与滚动位置 | **缺口**：`openThread` 把该会话 `turnWindow` 重置回 `TURN_WINDOW`（App.tsx:12897）——成本恒定（这是优点），但"内容变少、位置丢失"是体验代价 |
+| 性能可观测 | `startup-perf` 结构化埋点（带 elapsedMs） | **缺口**：渲染层无切换耗时埋点，"卡"无法量化 |
+
+### 3.1 一句话总结差距
+
+我们的**数据层已经做对了**（缓存、快路径、轻量水合、序号丢弃），真正剩下的是**渲染层的两个半问题**：
+
+1. 窗口内 / 大块内容不做可视区虚拟化（同一屏外的东西也在建 DOM、跑 Markdown）
+2. 流式出字把 React 拖进了每一帧
+3. 事件全广播（半成品：代码就绪，缺的是安全启用与量化验证）
+
 
 ---
 
