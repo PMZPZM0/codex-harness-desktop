@@ -133,6 +133,14 @@ import {
   Mic,
   Pause,
   FileQuestion,
+  ClipboardList,
+  DraftingCompass,
+  FlaskConical,
+  Crown,
+  TrendingUp,
+  Microscope,
+  Calculator,
+  Telescope,
 } from "lucide-react";
 import { useMemory, type MemoryGatewayState, type MemoryGroup, type MemoryPriority, type MemoryRecord, groupMemoriesByThread } from "./hooks/useMemory";
 import UsagePanel from "./components/UsagePanel";
@@ -1073,6 +1081,22 @@ function categoryLabel(id: string) { return EXPERT_CATEGORY_LABELS[id] ?? (id ||
 
 function expertRoleLabel(member: ExpertTeamMember, isLead = false) {
   return member.profession.zh?.trim() || (isLead ? "主理人" : "团队成员");
+}
+
+/** 按职业头衔/名字映射专家头像图标（专家中心卡与成员 chip 共用，替代千篇一律的首字色块） */
+function expertIconOf(member: ExpertTeamMember) {
+  const p = `${member.profession.zh}${member.name}`;
+  if (/产品/.test(p)) return ClipboardList;
+  if (/架构/.test(p)) return DraftingCompass;
+  if (/测试|验收|质量|过关/.test(p)) return FlaskConical;
+  if (/开发|豆码/.test(p)) return Code2;
+  if (/总监|主理|交付|活林/.test(p)) return Crown;
+  if (/资金|流向|行情/.test(p)) return TrendingUp;
+  if (/基本面|研究/.test(p)) return Microscope;
+  if (/估值|定价/.test(p)) return Calculator;
+  if (/风控|安全/.test(p)) return Shield;
+  if (/策略|预测|知微|慎思/.test(p)) return Telescope;
+  return Bot;
 }
 
 const MEMORY_CATEGORIES = [
@@ -5178,18 +5202,51 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
   // 回合运行期间只要该 reasoning item 已进入事件流，就先保留它的标题节点；
   // 某些中转会先发 completed/started，再稍后补正文 delta，不能把后续思考误当空占位丢掉。
   useEffect(() => { if (running || turnActive) seenLiveRef.current = true; }, [running, turnActive]);
+  // 新一块思考开始直播时重置跟随：上一块被用户接管过（reasoningFollowRef=false）不该
+  // 殃及下一块——每块思考开始时用户都在看最新内容，默认应该跟。
+  useEffect(() => { if (running) reasoningFollowRef.current = true; }, [running]);
   // 思考进行中：新内容到达时自动贴底滚动。
-  // 用 rAF 合并：一帧内可能来好几个 delta，直接滚会读 scrollHeight 触发多次强制同步布局。
-  // ⚠️ 同样要有「用户接管」守卫（09-13 审计，与工具输出卡一致）：用户上滚查看思考过程时
-  // 不许把他拽回底部；本来就在底部附近才继续跟。
+  // ⛔ 用户接管判定必须挂在真实用户输入上，不能用「距底>40 就不跟」（09-13 用户反馈
+  // 「思考内容不自动跟随」真根因）：思考正文经常整段大块交付、追字步长大，一帧内
+  // dist 直接跳过 40px，旧判据把它当成「用户上滚」→ 从此永远不再跟随。
+  // 与外层时间线同一哲学：滚轮/触摸/按住滚动条拖动 = 接管；滚回距底 ≤8px = 重新跟随。
+  const reasoningFollowRef = useRef(true);
+  const reasoningBodyPointerDownRef = useRef(false);
+  const reasoningBodyMounted = Boolean(displayed);
   useEffect(() => {
-    if (!running || manualOpen === false) return;
     const el = bodyRef.current;
     if (!el) return;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight > 40) return;
+    const dist = () => el.scrollHeight - el.scrollTop - el.clientHeight;
+    const onWheel = () => { reasoningFollowRef.current = false; };
+    const onTouchMove = () => { reasoningFollowRef.current = false; };
+    const onScroll = () => {
+      if (dist() <= 8) reasoningFollowRef.current = true;
+      else if (reasoningBodyPointerDownRef.current) reasoningFollowRef.current = false;
+    };
+    const onPointerDown = () => { reasoningBodyPointerDownRef.current = true; };
+    const onPointerUp = () => { reasoningBodyPointerDownRef.current = false; };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+    };
+    // 监听器只在正文元素首次挂载时装一次（displayed 从空到有）；逐字追字期间不重装。
+  }, [reasoningBodyMounted]);
+  useEffect(() => {
+    if (!running || manualOpen === false) return;
+    if (!reasoningFollowRef.current) return;
     const raf = requestAnimationFrame(() => {
-      if (el.scrollHeight - el.scrollTop - el.clientHeight > 40) return;
-      el.scrollTop = el.scrollHeight;
+      const el = bodyRef.current;
+      if (el && reasoningFollowRef.current) el.scrollTop = el.scrollHeight;
     });
     return () => cancelAnimationFrame(raf);
   }, [displayed, running, manualOpen]);
@@ -14889,9 +14946,34 @@ const commandMatches = useMemo(() => {
                 </div>
               </section>
             )}
-            {settingsPage === "agentteam" && (
+            {settingsPage === "agentteam" && (() => {
+              // 专家中心：把所有专家团的成员（含主理人）铺成专家卡片，点卡直达单人会话；
+              // 知微（内置单人专家）也在这里。智能体团队入口卡保留在下方。
+              const expertCards = expertTeams.flatMap((team) => [team.lead, ...team.members].map((member) => ({ team, member, isLead: member.id === team.lead.id })));
+              return (
               <section className="settings-section stack hub-page">
-                <div className="settings-copy"><h2>智能体团队</h2><p>子智能体与专家团的总入口。</p></div>
+                <div className="settings-copy"><h2>专家和专家团</h2><p>单体专家与多角色团队的总入口。</p></div>
+                <div className="settings-copy" style={{ marginTop: -6 }}><h3 style={{ fontSize: 14, margin: 0 }}>专家</h3><p style={{ margin: "2px 0 0" }}>点击任意专家卡片，直接进入与 TA 的一对一会话。</p></div>
+                <div className="expert-center-grid">
+                  {expertCards.map(({ team, member, isLead }) => {
+                    const Icon = expertIconOf(member);
+                    return (
+                    <button key={team.teamId + ":" + member.id} className={`expert-center-card${expertTeamMemberDirect === `${team.teamId}:${member.id}` ? " is-working" : ""}`}
+                      title={member.description || member.profession.zh}
+                      disabled={expertTeamMemberDirect === `${team.teamId}:${member.id}`}
+                      onClick={() => void startMemberDirectSession(team, member)}>
+                      <span className="expert-center-avatar" style={isLead ? undefined : { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] }}><Icon size={17} /></span>
+                      <span className="expert-center-main">
+                        <strong>{member.name}</strong>
+                        <small>{member.profession.zh}</small>
+                        <em>{team.displayName.zh}{isLead ? " · 主理人" : ""}</em>
+                      </span>
+                      {expertTeamMemberDirect === `${team.teamId}:${member.id}` ? <Spinner /> : <ArrowRight size={14} />}
+                    </button>
+                    );
+                  })}
+                  {!expertCards.length && <p className="muted">还没有专家——先在下方「专家团」里创建。</p>}
+                </div>
                 <div className="hub-card-grid">
                   <button className="hub-card" onClick={() => setSettingsPage("agents")}>
                     <span className="hub-card-icon"><Bot size={20} /></span>
@@ -14905,7 +14987,8 @@ const commandMatches = useMemo(() => {
                   </button>
                 </div>
               </section>
-            )}
+              );
+            })()}
             {(settingsPage === "browser" || settingsPage === "computer" || settingsPage === "rpa" || settingsPage === "agents" || settingsPage === "teams") && (
               <button className="settings-back-row" onClick={() => setSettingsPage(settingsPage === "agents" || settingsPage === "teams" ? "agentteam" : "automation")}>
                 <ArrowLeft size={14} />{settingsPage === "agents" || settingsPage === "teams" ? "返回智能体团队" : "返回自动化"}
@@ -16006,7 +16089,7 @@ const commandMatches = useMemo(() => {
               <div className="subagent-banner"><Users size={16} /><div><strong>让 Codex 真正会带团队协作</strong><p>发起会话后，主理人（lead）会在独立会话中通过 <code>team_member_invoke(memberId, query)</code> 按 SOP 调度成员，成员独立产出后回传，主理人最终汇总交付。</p></div></div>
 
               <div className="expert-team-grid-list">{expertTeams.map((team) => <article className={`subagent-card ${team.enabled ? "enabled" : "disabled"}`} key={team.teamId}>
-                <div className="subagent-card-head"><span className="subagent-avatar"><Users size={16} /></span><label className="channel-enable" title={team.enabled ? "停用" : "启用"}><input type="checkbox" checked={team.enabled} onChange={() => void toggleExpertTeamEnabled(team)} /><span>{team.enabled ? "已启用" : "已停用"}</span></label></div>
+                <div className="subagent-card-head"><span className="subagent-avatar expert-team-avatar"><Users size={16} /></span><label className="channel-enable" title={team.enabled ? "停用" : "启用"}><input type="checkbox" checked={team.enabled} onChange={() => void toggleExpertTeamEnabled(team)} /><span>{team.enabled ? "已启用" : "已停用"}</span></label></div>
                 <strong className="subagent-name">{team.profession.zh || team.displayName.zh}</strong>
                 <p className="subagent-desc">{team.description.zh || "暂无描述"}</p>
                 <div className="subagent-meta">
@@ -16016,17 +16099,20 @@ const commandMatches = useMemo(() => {
                 </div>
                 <div className="subagent-meta"><span title="SOP"><Workflow size={11} />{team.sop ? "已配置 SOP" : "未配置 SOP"}</span></div>
                 <div className="expert-team-member-chips" title="点击角色可进入单独会话">
-                  {[team.lead, ...team.members].map((member) => (
+                  {[team.lead, ...team.members].map((member) => {
+                    const ChipIcon = expertIconOf(member);
+                    return (
                     <button key={member.id} className={`expert-team-member-chip${member.id === team.lead.id ? " is-lead" : ""}${expertTeamMemberRunning?.teamId === team.teamId && expertTeamMemberRunning.memberName === member.id ? " is-working" : ""}`}
                       title={`${expertRoleLabel(member, member.id === team.lead.id)}${member.description ? `：${member.description}` : ""}`}
                       disabled={expertTeamMemberDirect === `${team.teamId}:${member.id}`}
                       onClick={() => void startMemberDirectSession(team, member)}>
-                      <span className="expert-team-member-chip-avatar" aria-hidden="true" style={member.id === team.lead.id ? undefined : { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] }}>{expertRoleLabel(member, member.id === team.lead.id).slice(0, 1)}</span>
+                      <span className="expert-team-member-chip-avatar" aria-hidden="true" style={member.id === team.lead.id ? undefined : { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] }}><ChipIcon size={12} /></span>
                       <span className="expert-team-member-chip-name">{expertRoleLabel(member, member.id === team.lead.id)}</span>
                       {expertTeamMemberDirect === `${team.teamId}:${member.id}` ? <Spinner /> : null}
                       {expertTeamMemberRunning?.teamId === team.teamId && expertTeamMemberRunning.memberName === member.id ? <span className="expert-member-working-dot" title="该成员正在执行子任务" /> : null}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="expert-team-cwd" title={teamCwdMap[team.teamId] ?? workspace ?? "未选择项目"}>
                   <FolderOpen size={12} />

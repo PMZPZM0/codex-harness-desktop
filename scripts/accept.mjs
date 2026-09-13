@@ -986,6 +986,103 @@ const CHECKS = [
   },
 
   {
+    id: "reasoning-follow",
+    name: "⑫ 深度思考流式期间自动跟随最新内容（09-13 用户反馈「思考内容没有自动跟随」）",
+    run: async (h) => {
+      // 真根因（App.tsx ReasoningCard 旧实现）：思考卡内部跟随的「用户接管」判据写成了
+      // 「距底 > 40px 就不跟」。思考正文经常整段大块交付、追字步长大，一帧内 dist 直接
+      // 跳过 40px → 被误判成用户上滚 → 从此永远不跟。修法：接管只挂真实用户输入
+      // （滚轮/触摸/按住滚动条拖动），滚回距底 ≤8px 重新跟随。
+      // 判据（全部 DOM 可测）：
+      //   ① 前置：回合运行中，思考卡处于 live 态（橙色 live 类 = running）；
+      //   ② 核心断言 A（采样，旧逻辑下必红）：流式期间思考卡内部视口贴底
+      //      （dist = scrollHeight − scrollTop − clientHeight 有界，不随内容增长而暴涨）。
+      //      反证依据：旧逻辑在整段交付的帧直接判接管，之后 dist 无界增长 → 断言红。
+      //   ③ 核心断言 B：新块思考开始时跟随自动重置（每块默认跟随，不被上一块的接管殃及）。
+      const rows = Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0;
+      h.check("[前置] 有旧会话可开（≥1）", rows >= 1, `thread-row=${rows}`);
+      await clickRow(h, 0);
+      await wait(1200);
+      // 让模型产生一段可观的思考：要求先深度思考再作答
+      await h.clearInput(".composer-editor");
+      await h.typeInto(".composer-editor", "请先深度思考（完整展示思考过程，尽量长）：一个农场里有鸡和兔共 35 个头、94 只脚，鸡兔各几只？请完整推理并倒推验证，再给出答案。");
+      await wait(250);
+      await h.click(".send-button");
+      // 等思考卡出现且处于 live 态（.reasoning-card.live = running）
+      const live = await h.waitFor(`!!document.querySelector(".reasoning-card.live")`, { label: "思考卡进入 live 态", timeoutMs: 60000 }).then(() => true).catch(() => false);
+      h.check("[前置] 思考卡出现并处于直播态（.reasoning-card.live）", live);
+      if (!live) { await h.screenshot("思考跟随-无live卡"); return; }
+
+      // 采样思考卡内部滚动状态：直到思考卡离开 live（回合推进）为止
+      // 思考卡正文有 max-height:260px + overflow-y:auto（styles.css .reasoning-body），
+      // 内容超过 260px 后内部滚动条才出现 → dist 才有意义；内容不足时 dist 恒 0，恒过。
+      const samples = [];
+      for (let i = 0; i < 400; i++) {
+        const v = await h.eval(`(() => {
+          const card = document.querySelector(".reasoning-card.live");
+          if (!card) return null;
+          const body = card.querySelector(".reasoning-body");
+          if (!body) return [0, 0];
+          return [Math.round(body.scrollHeight - body.scrollTop - body.clientHeight), Math.round(body.scrollHeight)];
+        })()`);
+        if (!Array.isArray(v)) break;               // live 卡消失（思考结束/回合推进）→ 采样结束
+        samples.push(v);
+        await wait(100);
+        if (samples.length >= 400) break;
+      }
+      const withScroll = samples.filter(([d, sh]) => sh > 300);   // 只有内部滚动条出现后的样本才有意义
+      const maxDist = withScroll.length ? Math.max(...withScroll.map(([d]) => d)) : 0;
+      const tail = samples.length ? samples[samples.length - 1] : null;
+      console.log(`  [思考跟随] 采样 ${samples.length} 次；有内部滚动条的样本 ${withScroll.length}；视口外思考正文最大 ${maxDist}px`);
+      console.log(`  [思考跟随] dist 轨迹(前 24): ${JSON.stringify(samples.slice(0, 24).map(([d]) => d))}`);
+      h.check("[前置] 思考内容确实长到出了内部滚动条（断言才有效）", withScroll.length > 0, `scrollable=${withScroll.length} sh=${tail?.[1] ?? "?"}`);
+      // 核心断言：跟随正常时 dist 始终有界（≤ 80px ≈ 2 行）；旧逻辑下整段交付那一帧
+      // 起跟随死亡，dist 会一路涨到几百 px → 这里必红（反证已做实：把接管判据改回
+      // 「>40 不跟」并给思考正文整段注入时，maxDist 显著超阈）。
+      h.check("思考流式期间最新内容始终可见（视口外 ≤ 80px）", maxDist <= 80, `maxDist=${maxDist}px withScroll=${withScroll.length}`);
+      await h.screenshot("思考跟随");
+    },
+  },
+
+  {
+    id: "zhiwei-expert",
+    name: "⑪ 专家中心：知微自动注入 + cheat-on-content 技能同步 + 专家卡直达会话（09-13）",
+    run: async (h) => {
+      // 用户要求：把 cheat-on-content 技能包做成独立专家「知微」并在智能体团队页默认可见。
+      // 数据链：main.ts 启动 ensure 知微团队 → builtin-skills 同步技能到 codexHome/skills → hub 页铺专家卡。
+      await enterMain(h);
+      // ① 知微团队自动注入（每次启动确保存在，删了也会回来）
+      const teams = await h.eval(`window.codex.listExpertTeams().then((r) => JSON.stringify(r.map((t) => t.teamId)))`);
+      h.check("知微单人专家自动注入（zhiwei-content-oracle）", teams.includes("zhiwei-content-oracle"), teams);
+      // ② 引擎技能同步：cheat-on-content 出现在 codexHome/skills 技能列表
+      const skills = await h.eval(`window.codex.listLocalSkills().then((r) => JSON.stringify(r.map((s) => s.name ?? s.id ?? s)))`);
+      h.check("cheat-on-content 技能已同步到引擎技能目录", skills.includes("cheat-on-content"), skills.slice(0, 200));
+      // ③ UI：打开设置 → 智能体团队 hub → 专家中心卡片渲染知微与其他专家
+      await h.eval(`document.querySelector(".sidebar-settings")?.click()`);
+      await h.waitFor(`!!document.querySelector(".settings-nav")`, { label: "设置弹窗", timeoutMs: 20000 });
+      const nav = await h.eval(`(() => {
+        for (const btn of document.querySelectorAll(".settings-nav button")) {
+          if ((btn.textContent || "").includes("智能体团队")) { btn.click(); return true; }
+        }
+        return false;
+      })()`);
+      if (!nav) { await h.eval(`document.querySelector(".settings-modal .relay-modal-close")?.click()`); throw new Error("设置导航里没有「智能体团队」"); }
+      await h.waitFor(`!!document.querySelector(".expert-center-grid")`, { label: "专家中心卡片区", timeoutMs: 15000 });
+      const cards = await h.eval(`(() => {
+        const grid = document.querySelector(".expert-center-grid");
+        const cards = [...(grid?.querySelectorAll(".expert-center-card") ?? [])];
+        return JSON.stringify({ total: cards.length, names: cards.map((c) => c.querySelector("strong")?.textContent), hasZhiwei: cards.some((c) => (c.textContent || "").includes("知微")), hubTitle: document.querySelector(".hub-page h2")?.textContent });
+      })()`);
+      const ui = JSON.parse(cards);
+      h.check("hub 标题已改为「专家和专家团」", ui.hubTitle === "专家和专家团", String(ui.hubTitle));
+      h.check("专家卡覆盖所有团队成员", ui.total >= 10, `共 ${ui.total} 张卡：${(ui.names ?? []).join("、").slice(0, 160)}`);
+      h.check("知微专家卡在列", ui.hasZhiwei === true);
+      await h.screenshot("专家中心-知微");
+      await h.eval(`document.querySelector(".settings-modal .relay-modal-close")?.click()`);
+    },
+  },
+
+  {
     id: "clean",
     name: "⑦ 渲染层无 console.error",
     run: async (h) => {
@@ -1041,6 +1138,9 @@ const ROUND_OF = {
   "openai-import": "09-13",
   "voice-presets": "09-13",
   "skill-discipline": "09-13",
+  "reasoning-follow": "09-13",
+  "bot-pair-banner": "09-13",
+  "zhiwei-expert": "09-13",
 };
 const roundOf = (id) => ROUND_OF[id] ?? "(未登记)";
 

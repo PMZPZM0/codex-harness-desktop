@@ -66,7 +66,7 @@
     "appId": "com.codexharness.desktop",
     "productName": "Codex Harness Desktop",
     "npmRebuild": false,
-  "beforePack": "scripts/before-pack.cjs",
+    "beforePack": "scripts/before-pack.cjs",
     "directories": {
       "output": "release"
     },
@@ -160,6 +160,10 @@
       {
         "from": "resources/voice-presets",
         "to": "voice-presets"
+      },
+      {
+        "from": "resources/expert-skills",
+        "to": "expert-skills"
       }
     ],
     "asarUnpack": [

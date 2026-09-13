@@ -2,6 +2,7 @@
 // 应用启动时写入 codexHome/skills/，与市场技能同构。
 import fs from "node:fs/promises";
 import path from "node:path";
+import { existsSync } from "node:fs";
 
 const DESKTOP_SKILL = `---
 name: desktop-automation
@@ -106,4 +107,22 @@ export async function ensureBuiltinSkills(skillsDir: string) {
       }
     } catch { /* 写不进不阻塞启动 */ }
   }
+  // 专家专属技能包（如 cheat-on-content，服务知微专家）：多文件目录技能，从随包资源
+  // 整目录同步到 codexHome/skills/。**不存在才拷**（用户可能编辑过自己的副本，不覆盖）。
+  try {
+    const sourceRoot = expertSkillsSourceDir();
+    for (const name of await fs.readdir(sourceRoot).catch(() => [] as string[])) {
+      const target = path.join(skillsDir, name);
+      const marker = path.join(target, "SKILL.md");
+      if (await fs.readFile(marker, "utf8").then(() => true).catch(() => false)) continue;
+      await fs.cp(path.join(sourceRoot, name), target, { recursive: true });
+    }
+  } catch { /* 资源缺失不阻塞启动 */ }
+}
+
+/** 专家技能包源目录：开发版用项目 resources/，打包版用 process.resourcesPath（与 voicePresetsDir 同规则）。 */
+function expertSkillsSourceDir(): string {
+  const dev = path.join(process.cwd(), "resources", "expert-skills");
+  if (existsSync(dev)) return dev;
+  return path.join(process.resourcesPath ?? process.cwd(), "expert-skills");
 }

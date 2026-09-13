@@ -130,7 +130,7 @@ function filterForRenderer(event: any) {
 
 import { applySessionsBackup, backupFromRolloutFile, buildMarkdownExport, buildSessionsBackup, buildThreadPreview, parseMarkdownConversation, BACKUP_FORMAT, BACKUP_VERSION } from "./thread-backup";
 import {
-  buildDefaultExpertTeams, buildTeamSystemPrompt, buildTeamTools, normalizeTeamConfig,
+  buildDefaultExpertTeams, buildTeamSystemPrompt, buildTeamTools, buildZhiweiExpertTeam, normalizeTeamConfig,
   readExpertTeams, setExpertTeamsFile, writeExpertTeams, type ExpertTeamConfig, type ExpertTeamMember,
 } from "./expert-teams";
 
@@ -261,6 +261,11 @@ void (async () => {
   try {
     const existing = await readExpertTeams();
     if (!existing.length) await writeExpertTeams(buildDefaultExpertTeams());
+    // 知微（单人专家，捆绑 cheat-on-content 技能包）每次启动都确保存在：
+    // 用户可能删掉后再想要回来，它随包分发不该一次性的
+    if (!existing.some((entry) => entry.teamId === "zhiwei-content-oracle")) {
+      await writeExpertTeams([...(existing.length ? existing : await readExpertTeams()), buildZhiweiExpertTeam()]);
+    }
   } catch { /* 忽略初始化失败 */ }
 })();
 // 引擎直管的 MCP 服务器（如内置 nuphus）不在 connectors 列表里，单独存一份 名字 -> 是否启用
