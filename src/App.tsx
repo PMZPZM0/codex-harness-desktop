@@ -12730,6 +12730,10 @@ const commandMatches = useMemo(() => {
     // 改全局默认也只影响新会话与**当时打开的那一个**会话（规则见 src/lib/model-scope.mjs）。
     const storedModel = resolveThreadModel(id);
     if (storedModel) setModelId(storedModel);
+    // ⛔ 旧会话种子烙印（09-13）：改动前的旧会话没有 thread-model-<id> 记录（回填走全局
+    // 兜底 = 还留着一根被「其他会话改全局默认」污染的口子）。首次打开时把当时的生效值
+    // 烙成它自己的记录，此后该会话与新会话一样完全走会话级。
+    if (!storedModel) saveThreadModel(id, modelId);
     // 切会话过渡遮罩：只在「没有缓存、需要真正加载」时显示（首次打开的长会话）。
     // 缓存秒开的会话不再强制遮罩——WorkBuddy 式直切（缓存直渲 + 后台 resume 对齐），
     // 每次切换都白遮 ~200ms 是「切换不够丝滑」的直接观感来源。
@@ -12899,6 +12903,12 @@ const commandMatches = useMemo(() => {
         if (localEffort) setEffort(localEffort);
         else if (!result.reasoningEffort) setEffort(normalizeEffort(localStorage.getItem("default-effort")) || "");
         saveThreadEffort(id, localEffort || result.reasoningEffort || effort || "");
+        // ⛔ 旧会话种子烙印（09-13）：本地没有记录且引擎也没带时，把刚回填的生效值烙成
+        // 该会话自己的记录——旧会话与新会话一样，此后不再读全局默认。
+        if (!localEffort && !result.reasoningEffort) {
+          const seeded = loadThreadEffort(id);
+          if (!seeded && effort) saveThreadEffort(id, effort);
+        }
       }
       // 打开会话后工作区跟随该会话的 cwd（会话创建时锁定的项目目录）。
       setWorkspace(result.cwd);
