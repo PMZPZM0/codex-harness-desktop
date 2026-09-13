@@ -58,4 +58,27 @@ module.exports = async function beforePack() {
     throw new Error("automation-tools.zip 生成失败：桌面/浏览器自动化会被打成「装了也不能用」，中止打包");
   }
   console.log(`[before-pack] OK ${(fs.statSync(zip).size / 1048576).toFixed(1)} MB`);
+
+  // ② ponytail 写代码模式插件（随包 2MB，会话钩子 + 6 个技能）。
+  //    09-13 发 v0.0.14 前逐项核对 extraResources 源时发现：这个目录在开发机根本不存在，
+  //    而 electron-builder 对缺失源静默跳过 → 装出来的应用「写代码模式插件」= 空（插件 0、钩子空）。
+  //    mac 侧由 prepare-mac-tools.cjs 从 GitHub 拉取，Windows 侧必须在本机先备好。
+  //    同样的硬失败原则：宁可不打包，也不发缺功能的坏包（逃生阀同一个 AUTOMATION_ZIP_OPTIONAL=1）。
+  const pluginDir = path.join(toolsRoot, "ponytail-plugin");
+  const pluginYaml = path.join(pluginDir, "plugin.yaml");
+  const pluginOk = fs.existsSync(pluginYaml) && fs.existsSync(path.join(pluginDir, "skills"));
+  if (!pluginOk) {
+    const message = `[before-pack] 缺少 ${pluginDir}（或里面没有 plugin.yaml / skills）\n`
+      + "  没有它，装出来的应用「ponytail 写代码模式插件」是空的（插件 0、钩子空、6 个技能全无）。\n"
+      + "  补法（v4.9.0）：\n"
+      + "    curl -L -o ponytail.tar.gz https://github.com/DietrichGebert/ponytail/archive/refs/tags/v4.9.0.tar.gz\n"
+      + "    tar -xzf ponytail.tar.gz -C resources/tools/ponytail-plugin --strip-components=1\n"
+      + "  确实要出一版不带它的包：设 AUTOMATION_ZIP_OPTIONAL=1。";
+    if (optional) {
+      console.warn(`${message}\n  （AUTOMATION_ZIP_OPTIONAL=1：已按你的要求放行）`);
+      return;
+    }
+    throw new Error(message);
+  }
+  console.log(`[before-pack] ponytail-plugin OK（${/^version:\s*(\S+)/m.exec(fs.readFileSync(pluginYaml, "utf8"))?.[1] ?? "?"}）`);
 };
