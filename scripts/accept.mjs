@@ -598,6 +598,96 @@ const CHECKS = [
   },
 
   {
+    id: "queue-display",
+    name: "⑨ 排队消息只在输入框上方展示 + 超过 2 条折叠（用户 09-13 定稿）",
+    run: async (h) => {
+      // 用户定稿：「排队消息只贴在输入框上面展示就行，支持消息超2条可以折叠就行，折叠功能应该有」。
+      // 判据全部走 DOM：聊天区里不能再有那份 `.timeline-queue`（重复展示的来源），
+      // 输入框上方的管理卡在 3 条时必须默认折叠成 2 条且给出「展开全部 3 条」。
+      const rows = Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0;
+      h.check("[前置] 有旧会话可开（≥1）", rows >= 1, `thread-row=${rows}`);
+      await clickRow(h, 0);
+      await wait(1200);
+      // 先起一个长回合，后面的消息才会进队列（空闲时会直接发出去）
+      await h.clearInput(".composer-editor");
+      await h.typeInto(".composer-editor", "请从 1 数到 60，每个数字单独一行，每行后面加一句十五字以上的说明。");
+      await wait(250);
+      await h.click(".send-button");
+      const busy = await h.waitFor(`!!document.querySelector(".timeline-bottom-spacer.compact")`, { label: "回合跑起来", timeoutMs: 60000 }).then(() => true).catch(() => false);
+      h.check("[前置] 已进入运行态（排队才会发生）", busy);
+      for (const text of ["排队甲", "排队乙", "排队丙"]) {
+        await h.clearInput(".composer-editor");
+        await h.typeInto(".composer-editor", text);
+        await wait(180);
+        await h.click(".send-button");
+        await wait(500);
+      }
+      const state = await h.eval(`(() => {
+        const items = document.querySelectorAll(".queued-messages .queued-message").length;
+        const toggle = document.querySelector(".queued-collapse-toggle");
+        const count = document.querySelector(".queued-collapse-count");
+        return {
+          timelineQueue: document.querySelectorAll(".timeline-queue").length,
+          card: !!document.querySelector(".queued-messages"),
+          items,
+          count: count ? Number(count.textContent) : 0,
+          toggle: toggle ? (toggle.innerText || "").replace(/\\s+/g, " ").trim() : "",
+        };
+      })()`);
+      console.log(`  [队列] ${JSON.stringify(state)}`);
+      h.check("[前置] 输入框上方有排队管理卡", state?.card === true, JSON.stringify(state));
+      h.check("[前置] 队列里确有 3 条", Number(state?.count) >= 3, `count=${state?.count}`);
+      h.check("聊天区里不再渲染排队气泡（只保留输入框上方一处）", Number(state?.timelineQueue) === 0, `timeline-queue=${state?.timelineQueue}`);
+      h.check("超过 2 条时默认折叠成 2 条", Number(state?.items) === 2, `items=${state?.items} count=${state?.count}`);
+      h.check("折叠控件给出「展开全部 N 条」", /展开全部\s*3\s*条/.test(String(state?.toggle)), `toggle=「${state?.toggle}」`);
+      await h.click(".queued-collapse-toggle");
+      await wait(400);
+      const expanded = Number(await h.eval(`document.querySelectorAll(".queued-messages .queued-message").length`));
+      h.check("点开后 3 条全部展示", expanded === 3, `items=${expanded}`);
+      await h.screenshot("排队消息展示");
+    },
+  },
+
+  {
+    id: "queue-immediate",
+    name: "⑩ 排队消息点「立即」按正常消息展示（钉在顶上 + 气泡回收）",
+    run: async (h) => {
+      // 用户要求：「排队消息点那个立即发送按键发出去的时候，能不能跟正常消息一样在聊天框展示出来」。
+      // 判据：① 点「立即」后聊天区立刻出现这条正文的用户气泡（此前要等引擎回推，位置不定）；
+      //       ② 它钉在对话区顶部附近（gap ≈ 54）；③ 回合结束后乐观气泡被安全阀回收，不残留。
+      const before = await h.eval(`(() => {
+        const tl = document.querySelector(".timeline");
+        return { text: tl ? (tl.innerText || "") : "", items: document.querySelectorAll(".queued-messages .queued-message").length };
+      })()`);
+      h.check("[前置] 队列里还有排队消息可点「立即」", Number(before?.items) >= 1, `items=${before?.items}`);
+      await h.click(".queued-messages .queued-message .queued-action");
+      await wait(900);
+      const shown = await h.eval(`(() => {
+        const tl = document.querySelector(".timeline");
+        if (!tl) return { error: "no-timeline" };
+        const users = [...tl.querySelectorAll(".user-message")];
+        const last = users[users.length - 1];
+        return {
+          count: users.length,
+          gap: last ? Math.round(last.getBoundingClientRect().top - tl.getBoundingClientRect().top) : null,
+          alpha: (tl.innerText || "").includes("排队甲") || (tl.innerText || "").includes("排队乙") || (tl.innerText || "").includes("排队丙"),
+          anchor: !!document.getElementById("chat-anchor"),
+        };
+      })()`);
+      console.log(`  [立即] ${JSON.stringify(shown).slice(0, 200)}`);
+      h.check("点「立即」后聊天区立刻出现该消息的用户气泡", Number(shown?.count) > 0 && shown?.alpha === true, JSON.stringify(shown));
+      h.check("这条消息钉在对话区顶部附近（gap 0~130px）", Number(shown?.gap) >= 0 && Number(shown?.gap) <= 130, `gap=${shown?.gap}`);
+      // 安全阀：回合跑完后乐观气泡必须被回收（steer 路径不产生新回合，确认逻辑匹配不到）
+      const idle = await h.waitFor(`!document.querySelector(".timeline-bottom-spacer.compact")`, { label: "回合结束", timeoutMs: 180000 }).then(() => true).catch(() => false);
+      await wait(1500);
+      const after = await h.eval(`(() => ({ anchor: !!document.getElementById("chat-anchor") }))()`);
+      console.log(`  [立即] 回合结束=${idle}；残留乐观气泡=${after?.anchor}`);
+      h.check("回合结束后不残留乐观气泡（安全阀生效）", after?.anchor === false, JSON.stringify(after));
+      await h.screenshot("立即发送展示");
+    },
+  },
+
+  {
     id: "clean",
     name: "⑦ 渲染层无 console.error",
     run: async (h) => {
@@ -645,6 +735,8 @@ const ROUND_OF = {
   "send-anchor": "09-13",
   "switch-running": "09-13",
   "remote-auth": "09-13",
+  "queue-display": "09-13",
+  "queue-immediate": "09-13",
   "clean": "09-13",
 };
 const roundOf = (id) => ROUND_OF[id] ?? "(未登记)";
