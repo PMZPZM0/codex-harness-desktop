@@ -853,6 +853,23 @@ const CHECKS = [
       } else {
         h.check("本机暂无已装技能：清单为「暂无」占位（正常）", section.includes("暂无"), "");
       }
+      // ④ 引擎实测：thread/resume 带 dynamicTools 必须被受理（旧会话工具面重注册的通路；
+      //    纯 RPC 探针，不发模型回合）。引擎报 unknown field/参数错都会在这里现形。
+      const resumeProbe = await h.eval(`(() => {
+        const threads = JSON.parse(localStorage.getItem("threads") || "[]");
+        return threads[0]?.id || "";
+      })()`);
+      const threadIdForProbe = resumeProbe || await h.eval(`window.codex.request("thread/list", { limit: 1, sortKey: "updated_at", sortDirection: "desc", archived: false }).then((r) => r.data?.[0]?.id ?? "")`);
+      if (threadIdForProbe) {
+        const resumeErr = await h.eval(`window.codex.request("thread/resume", {
+          threadId: ${JSON.stringify(threadIdForProbe)},
+          excludeTurns: true,
+          dynamicTools: [{ type: "function", name: "skill_search", description: "probe", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } }],
+        }).then(() => "accepted").catch((e) => "ERR:" + e.message)`);
+        h.check("resume 带 dynamicTools 被引擎受理（旧会话可重注册工具面）", resumeErr === "accepted", resumeErr);
+      } else {
+        h.check("无旧会话可探针（跳过 resume 受理断言）", true, "profile 无会话");
+      }
       await h.screenshot("skill-discipline");
     },
   },

@@ -12344,9 +12344,11 @@ const commandMatches = useMemo(() => {
   /** 轻量 resume：excludeTurns:true 只取会话元数据（引擎不再全量水合历史），
    *  另按 desc 取最新一页回合供首屏——配合回合窗口化，打开成本与会话长度无关。
    *  此前 excludeTurns:false 会让引擎把几千个回合整个序列化回来、然后 turns/list 又取
-   *  一遍——「切会话慢」的数据侧主因（渲染侧已窗口化）。 */
-  async function resumeThreadLight(params: { threadId: string; sandbox?: string; approvalPolicy?: string }, turnBudget = 200): Promise<any> {
-    const result = await window.codex.request("thread/resume", { threadId: params.threadId, excludeTurns: true, sandbox: params.sandbox, approvalPolicy: params.approvalPolicy });
+   *  一遍——「切会话慢」的数据侧主因（渲染侧已窗口化）。
+   *  extra 透传（如 dynamicTools）：引擎 resume 的 schema 实证接受 dynamicTools，
+   *  每次恢复都重注册当前工具面——旧会话也能用上新增的动态工具。 */
+  async function resumeThreadLight(params: { threadId: string; sandbox?: string; approvalPolicy?: string; dynamicTools?: any[] }, turnBudget = 200): Promise<any> {
+    const result = await window.codex.request("thread/resume", { threadId: params.threadId, excludeTurns: true, sandbox: params.sandbox, approvalPolicy: params.approvalPolicy, ...(Array.isArray(params.dynamicTools) && params.dynamicTools.length ? { dynamicTools: params.dynamicTools } : {}) });
     const thread = result?.thread;
     if (thread && !(Array.isArray(thread.turns) && thread.turns.length)) {
       try {
@@ -12578,7 +12580,10 @@ const commandMatches = useMemo(() => {
         : (localStorage.getItem("default-approval") ?? "never");
       // 轻量 resume（excludeTurns:true + 最新一页回合）：不再让引擎全量水合几千个回合——
       // 这是切会话慢的数据侧主因；更早的历史由「显示更早的消息」按需续拉
-      const result = await resumeThreadLight({ threadId: id, sandbox: resumeSandbox, approvalPolicy: resumeApproval });
+      // resume 必带当前动态工具面：引擎 resume schema 接受 dynamicTools，恢复会话时
+      // 重注册——旧会话（创建于新工具上线前）也能用上 skill_search 等新增工具
+      const dynamicTools = await buildDynamicTools();
+      const result = await resumeThreadLight({ threadId: id, sandbox: resumeSandbox, approvalPolicy: resumeApproval, dynamicTools });
       if (seq !== switchSeqRef.current) return; // 已切到别的会话，丢弃本次结果
       recentResumeAtRef.current.set(id, Date.now());
       // 残留运行态归一化（详见 normalizeLoadedThread）：旧会话丢过 turn/completed 的
@@ -12806,9 +12811,12 @@ const commandMatches = useMemo(() => {
     if (projectFilter === cwd) setProjectFilter(null);
   }
 
-  async function createEmptyThread(): Promise<Thread | null> {
+  /** 动态工具面（thread/start 与 thread/resume 共用）：引擎 resume 的 schema 实证也接受
+   *  dynamicTools——不带上 = 旧会话恢复的是创建时的工具快照，新工具（如技能纪律四件套）
+   *  永远进不去（Codex 反馈「我工具列表里没有 skill_search」的根因）。 */
+  const buildDynamicTools = useCallback(async (): Promise<any[]> => {
     const builtinCfg = await window.codex.readBuiltinPlugins().catch(() => null);
-    const dynamicTools = [
+    return [
       ...(builtinCfg?.image?.enabled !== false && builtinCfg?.image?.baseUrl ? [{
         type: "function",
         name: "generate_image",
@@ -12838,6 +12846,10 @@ const commandMatches = useMemo(() => {
       { type: "function", name: "connector_search", description: "列出内置 MCP 连接器模板与已配置状态（浏览器自动化、桌面自动化、GitHub 等）。需要某种外部服务能力但当前没有对应工具时调用。", inputSchema: { type: "object", properties: { query: { type: "string", description: "过滤关键词，可省略" } } } },
       { type: "function", name: "connector_install", description: "安装一个 MCP 连接器模板（写入配置并重启引擎，会中断当前回合）。必须先用 agent_ask 征得用户同意才能调用；安装后提醒用户重新发一条消息继续。", inputSchema: { type: "object", properties: { templateId: { type: "string", description: "connector_search 结果里的模板 id" } }, required: ["templateId"] } },
     ];
+  }, [memoryEnabled, subAgents]);
+
+  async function createEmptyThread(): Promise<Thread | null> {
+    const dynamicTools = await buildDynamicTools();
     // 首次对话身份引导：**只在「从没打过招呼」时注入一次**（09-12 用户反馈修正）。
     // 旧判定用 `onboarded`（用户真的回答了才为 true）→ 不回答的用户每个新会话都被
     // 强制引导一遍。现在只要问过一次就落 `greeted=true`，后续新会话一律不带引导，
