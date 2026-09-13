@@ -1648,23 +1648,29 @@ function QueuedMessageList({ entries, onOpenFile, onQuote, onDelete, onStart, on
   dragIndex: number | null;
   setDragIndex: (index: number | null) => void;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
+  // 折叠语义（用户 09-13 定稿）：「排队消息只贴在输入框上面展示」+「超过 2 条可以折叠」。
+  // 所以：≤2 条全展示、不显示折叠控件；>2 条**默认只展示最新 2 条**，展开/收起由用户控制。
+  // （原来 n>=2 就给个手动开关、默认全展示，条数一多就把输入框顶上去。）
+  const [expanded, setExpanded] = useState(false);
   if (!entries.length) return null;
   // 新消息往上叠加：渲染倒序（数组末尾的最新消息显示在最顶部）。拖拽 index 是显示序，需镜像回原数组序。
   const reversed = [...entries].reverse();
   const n = entries.length;
+  const collapsible = n > 2;
+  const visible = collapsible && !expanded ? reversed.slice(0, 2) : reversed;
+  const hiddenCount = n - visible.length;
   const mapIndex = (displayIndex: number) => n - 1 - displayIndex;
   return (
-    <div className={`queued-messages ${collapsed ? "is-collapsed" : ""}`}>
-      {n >= 2 && (
-        <button type="button" className="queued-collapse-toggle" onClick={() => setCollapsed((value) => !value)} title={collapsed ? "展开排队消息" : "折叠排队消息"}>
-          {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+    <div className="queued-messages">
+      {collapsible && (
+        <button type="button" className="queued-collapse-toggle" onClick={() => setExpanded((value) => !value)} title={expanded ? "只看最新 2 条" : `展开全部 ${n} 条`}>
+          {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           <span className="queued-collapse-label">排队消息</span>
           <span className="queued-collapse-count">{n}</span>
-          <span className="queued-collapse-hint">{collapsed ? "展开" : "折叠"}</span>
+          <span className="queued-collapse-hint">{expanded ? "收起" : `展开全部 ${n} 条（还有 ${hiddenCount} 条）`}</span>
         </button>
       )}
-      {!collapsed && reversed.map((entry, displayIndex) => <QueuedMessageItem key={entry.id} entry={entry} index={displayIndex} total={entries.length} onOpenFile={onOpenFile} onQuote={onQuote} onDelete={onDelete} onStart={onStart} onSave={onSave} onReorder={(from, to) => onReorder(mapIndex(from), mapIndex(to))} dragIndex={dragIndex} setDragIndex={setDragIndex} />)}
+      {visible.map((entry, displayIndex) => <QueuedMessageItem key={entry.id} entry={entry} index={displayIndex} total={entries.length} onOpenFile={onOpenFile} onQuote={onQuote} onDelete={onDelete} onStart={onStart} onSave={onSave} onReorder={(from, to) => onReorder(mapIndex(from), mapIndex(to))} dragIndex={dragIndex} setDragIndex={setDragIndex} />)}
     </div>
   );
 }
@@ -13655,21 +13661,10 @@ const commandMatches = useMemo(() => {
               ⚠️ 留白**不参与落点计算**：contentBottomOf 会扣掉它的高度（见该函数注释）。 */}
           {(activeTurnId || sending || (optimisticInput && !optimisticConfirmed)) ? <div className="timeline-bottom-spacer compact" ref={compactSpacerRef} aria-hidden />
             : null}
-          {/* 排队消息的对话区反馈（用户要求：把发出去排队的内容正常展示出来）：
-              排队中的消息在输入框上方有管理卡，但**对话区里完全看不到** —— 发完消息
-              却像什么都没发生。这里在时间线末尾按队列顺序渲染成浅色气泡，带「排队中 n」
-              角标；只在当前会话运行中、队列非空时出现，不干扰正在流式的正文。
-              点击气泡 = 立即注入（等价输入框上方卡片的「立即」）。 */}
-          {queue.length > 0 && (
-            <div className="timeline-queue" data-queue-count={queue.length}>
-              {queue.map((entry: QueueItem, index: number) => (
-                <div className="timeline-queue-item" key={entry.id} onClick={() => void startQueued(entry.id)} title="点击立即注入思路（不打断当前任务）">
-                  <span className="timeline-queue-badge"><Clock3 size={11} />排队中 {index + 1}/{queue.length}</span>
-                  <span className="timeline-queue-text">{inputText(entry.input) || "（图片/附件）"}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          {/* ⛔ 排队消息**不再**在对话区里渲染（用户 09-13 定稿：「排队消息只贴在输入框上面展示就行」）。
+              原来这里还有一份 `.timeline-queue` 浅色气泡，与输入框上方那张管理卡是**同一份数据的两处展示**
+              —— 既是重复展示的来源（引擎把它变成真实气泡后本地没摘干净就并存两份），
+              也让队列管理有两个入口。队列只有输入框上方一处（QueuedMessageList，>2 条自动折叠）。 */}
           {/* 锚顶留白（高度由钉顶逻辑按「视口高 − 锚点高」动态设置）：
               让短消息下方也有一屏空间，scrollTop 才够得着锚点、消息才能钉在顶部。
               非钉顶时高度为 0（inline style 控制），不占位、不影响贴底。
