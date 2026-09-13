@@ -12,7 +12,7 @@ import { DEFAULT_EFFORT, pickDefaultEffort, CUSTOM_MODEL_EFFORTS, normalizeEffor
 import { matchModelSpec, loadExternalSpecs } from "./lib/model-specs";
 import { resolveModelForOpen, shouldSyncOpenThread } from "./lib/model-scope.mjs";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "./lib/session-scope.mjs";
-import { LEGACY_PREFIX, emptyRuntime, legacyMirror, migrateRuntime, normalizeRuntime, patchRuntime, runtimeKey, runtimeSignature } from "./lib/thread-runtime.mjs";
+import { LEGACY_PREFIX, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "./lib/thread-runtime.mjs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
 import { resolveSkillVisual, type SkillVisual } from "./lib/skill-icon";
 import { translateEngineNotice } from "./lib/engine-notices-zh";
@@ -1857,6 +1857,7 @@ function saveThreadRuntime(id: string, patch: Partial<ReturnType<typeof emptyRun
     const { runtime, changed } = patchRuntime({ ...loadThreadRuntimeRaw(id), rev: baseRev }, patch);
     if (!changed) return;
     writeThreadRuntimeMirror(id, runtime);
+    rememberOwnWrite(ownRuntimeWrites, id, runtime); // 认出即将广播回来的那次回声
     void window.codex?.patchThreadRuntime?.({ threadId: id, patch, baseRev })
       .then((result: any) => { if (result?.runtime) admitThreadRuntimeRef.current?.(id, result.runtime, { conflict: Boolean(result.conflict) }); })
       .catch(() => { /* 主进程不可用：退回纯 localStorage 行为（旧版本/测试环境） */ });
@@ -1866,6 +1867,14 @@ function saveThreadRuntime(id: string, patch: Partial<ReturnType<typeof emptyRun
 /** saveThreadRuntime 是模块级函数、拿不到组件内的 setState —— 由组件在渲染时把
  *  admitThreadRuntime 挂到这个 ref 上（主进程返回值与广播两条路径共用同一个收敛函数）。 */
 const admitThreadRuntimeRef: { current: ((id: string, runtime: unknown, opts?: { conflict?: boolean; fromRemote?: boolean }) => void) | null } = { current: null };
+
+/** 本窗口最近写出去的会话运行时（回声表）。判定规则本身在 `src/lib/thread-runtime.mjs`
+ *  的 `isOwnEcho` / `rememberOwnWrite`（纯函数，预检里有确定性断言——这段时序竞态在 e2e 里
+ *  复现不了，只能靠纯函数把规则钉死）。
+ *  ⛔ 主进程把变更广播给**所有**窗口（含写入者自己），而广播可能在 React 提交 state 之前到达——
+ *  那一刻 `runtimeStateRef` 还是旧值，会被误判成「另一个窗口改了」，于是用户自己切个模型就弹
+ *  「另一个窗口更新了…」（09-14 用户实测的误报）。 */
+const ownRuntimeWrites = new Map<string, { signature: string; at: number }>();
 
 function loadThreadPermissions(id: string): { sandbox?: string; approval?: string } {
   const r = loadThreadRuntime(id);
@@ -11378,15 +11387,28 @@ const commandMatches = useMemo(() => {
    *  注册的，直接闭包捕获 state 会拿到首帧的旧值（"", "never"…），导致「值没变也判成变了」。 */
   const runtimeStateRef = useRef({ model: "", effort: "", sandbox: "", approval: "" });
   runtimeStateRef.current = { model: modelId, effort, sandbox, approval: approvalPolicy };
+  /** 每个会话「已采纳过」的最大 rev：迟到的响应/广播（rev 更小）一律丢弃，避免回退到中间态。 */
+  const adoptedRevRef = useRef<Record<string, number>>({});
 
   /** 主进程权威值的唯一收敛点（两条来源共用：patch 的返回值、跨窗口广播）。
    *  ① 写本地镜像 → 同步读路径立刻看到新值；② 若是当前打开的会话 → 同步 React 状态。
-   *  只在**值确实与当前状态不同**时才 setState + 提示，这样本窗口自己的写入广播回来是空操作
-   *  （用户动作早已 setState），只有**别的窗口**的改动才会真正落到界面上。 */
+   *  只在**值确实与当前状态不同**时才 setState；提示只给「确实来自别的窗口」的改动——
+   *  自己的写入会被主进程原样广播回来，那条回声必须被认出来丢掉（否则用户自己切个模型
+   *  就会看到「另一个窗口更新了…」，09-14 实测的误报）。 */
   function admitThreadRuntime(id: string, runtime: unknown, opts?: { conflict?: boolean; fromRemote?: boolean }) {
     if (!id || !runtime) return;
     const next = normalizeRuntime(runtime);
+    // ⛔ 迟到的响应/广播不许把镜像**回退**到更旧的版本：连写两次（切模型会同时写模型与档位）时，
+    //    第一次的响应常在第二次写入之后才回来，照写会把镜像里的模型改回旧值。rev 单调，只升不降。
+    const knownRev = Math.max(normalizeRuntime(loadThreadRuntimeRaw(id)).rev, adoptedRevRef.current[id] ?? 0);
+    // 迟到者一律丢弃：连写两次（切模型先写档位、再写模型）时，先写的那次响应/广播常常后到，
+    // 照收会把界面与镜像一起回退成中间态（用户看到模型自己跳回去）。
+    if (next.rev > 0 && next.rev < knownRev) return;
+    if (next.rev > 0) adoptedRevRef.current[id] = next.rev;
     writeThreadRuntimeMirror(id, next);
+    // 自己刚写出去、又原样广播回来的那一份：镜像已写好（rev 跟主进程对齐），
+    // 但**不许**当成「别的窗口改的」——用户自己切模型不该弹「另一个窗口更新了…」。
+    if (isOwnEcho(ownRuntimeWrites, id, next)) return;
     if (threadRef.current?.id !== id) return;
     const cur = runtimeStateRef.current;
     const changed = (next.model && next.model !== cur.model) || (next.effort && next.effort !== cur.effort)
@@ -11395,8 +11417,12 @@ const commandMatches = useMemo(() => {
     if (next.effort && next.effort !== cur.effort) setEffort(next.effort);
     if (next.sandbox && next.sandbox !== cur.sandbox) setSandbox(next.sandbox);
     if (next.approval && next.approval !== cur.approval) setApprovalPolicy(next.approval);
-    if (changed && (opts?.fromRemote || opts?.conflict)) {
-      showToast("会话配置已同步", opts?.conflict ? "另一个窗口刚改过这个会话，已合并到当前界面" : "另一个窗口更新了这个会话的模型/档位/权限");
+    // ⛔ 只有「广播来的、且不是自己回声」的改动才提示（09-14 用户实测的误报）：
+    //    patch 返回的 conflict 只说明「你的 baseRev 过期了」——**过期可能是自己上一次写入造成的**
+    //    （切模型同时写模型+档位 = 两次 patch），拿它当「另一个窗口改的」就会自己吓自己。
+    //    真·别的窗口的改动一定有广播，这条通道足够，conflict 一律静默合并。
+    if (changed && opts?.fromRemote) {
+      showToast("会话配置已同步", "这个会话的配置在另一个窗口被改过，已更新为最新");
     }
   }
   admitThreadRuntimeRef.current = admitThreadRuntime;

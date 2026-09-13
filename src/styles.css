@@ -2418,17 +2418,28 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
    收起态 = 图标 + 标题 + 一句话预览 + 允许/拒绝；点摘要才展开正文（命令全文 / 改动原因 / 权限）。
    多条统一收进 .approval-stack：整体限高 + 滚动，条数再多也不推挤输入框。
    ⛔ 要用户填东西的两类（问问题 / MCP elicitation）由组件默认展开——那不是审美问题，是可用性。 */
+/* ⛔ 窄窗口自适应的真根因（09-14 用户截图「审批卡片没有自适应大小」）：
+   `.composer-wrap` 是 `.workspace` 的 **grid item**，而 grid/flex item 的默认
+   `min-width: auto` = **内容的 min-content**。摘要行里的命令是 `white-space: nowrap`，
+   于是「一条长路径/长命令」会把整个输入区撑到 1150px（实测窄窗口 520px 时），
+   表现为内容横向溢出、右侧「允许/拒绝」被挤出可视区 —— 卡片看起来「不会自适应」。
+   `min-width: 0` 让输入区回到轨道宽度，超长内容在盒子内截断（摘要行本来就是 ellipsis）。 */
+.workspace > .composer-wrap {
+  min-width: 0;
+}
 .approval-stack {
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin: 0 0 10px;
+  min-width: 0;
   max-height: min(232px, 38vh);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 .composer-wrap .approval-stack .approval-card {
   margin: 0;
+  min-width: 0;
   max-height: none;
   overflow: visible;
   box-shadow: 0 2px 10px rgba(0, 0, 0, .06);

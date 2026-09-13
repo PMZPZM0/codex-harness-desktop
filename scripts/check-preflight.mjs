@@ -13,7 +13,7 @@ import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, rmSync } fr
 import { spawnSync } from "node:child_process";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../src/lib/model-scope.mjs";
 import { SESSION_SCOPE_HEADING, composeScopeInstructions, sessionScopeBlock, sessionScopeSignature, stripScopeBlock } from "../src/lib/session-scope.mjs";
-import { emptyRuntime, legacyMirror, migrateRuntime, normalizeRuntime, patchRuntime, runtimeSignature } from "../src/lib/thread-runtime.mjs";
+import { OWN_WRITE_TTL_MS, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeSignature } from "../src/lib/thread-runtime.mjs";
 import { planCompletedFold } from "../src/lib/turn-fold-plan.mjs";
 import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../src/lib/voice-aec.mjs";
 import { createSpeakFilter, normalizeNumbers, numberToChinese, toSpeakableText } from "../src/lib/speak-text.mjs";
@@ -572,6 +572,75 @@ console.log(C.bold("\n【4a-4】多窗口并发保护（会话运行时配置由
   }
 }
 
+// ---------- 4a-4b. 回声识别：自己写的改动广播回来不许提示「另一个窗口改了」 ----------
+
+console.log(C.bold("\n【4a-4b】会话运行时写入的「回声识别」（自己切模型不该提示别的窗口改了）"));
+
+{
+  const mine = { model: "custom:custom906:glm-5.3-flash", effort: "high", sandbox: "danger-full-access", approval: "never", rev: 3 };
+  const store = new Map();
+  const T0 = 1_000_000;
+  rememberOwnWrite(store, "thread-1", mine, T0);
+
+  // ① 同签名、TTL 内 = 自己的回声（主进程把自己的写入原样广播回来，且常早于 React 提交 state）
+  isOwnEcho(store, "thread-1", { ...mine, rev: 4 }, T0 + 120)
+    ? ok("自己刚写出去的运行时（同签名）在 TTL 内被判为回声 → 不提示「另一个窗口改了」")
+    : fail("回声没被认出来——用户自己切模型会弹「另一个窗口更新了…」（09-14 实测误报）");
+
+  // ② rev 不参与签名：主进程回填自己的 rev 后仍要认出回声（否则误报会复发）
+  const sigIgnored = runtimeSignature({ ...mine, rev: 999 }) === runtimeSignature({ ...mine, rev: 0 });
+  sigIgnored && isOwnEcho(store, "thread-1", { ...mine, rev: 999 }, T0 + 200)
+    ? ok("签名忽略 rev（主进程的版本号不参与回声判定）")
+    : fail("签名把 rev 算进去了——主进程回填 rev 后回声判不出来，误报会复发");
+
+  // ③ 别的窗口改的是**别的值** → 不是回声（必须提示 + 同步界面）
+  isOwnEcho(store, "thread-1", { ...mine, model: "custom:custom906:deepseek-v4-flash" }, T0 + 300)
+    ? fail("不同取值也被当成自己的回声——别的窗口的改动会被静默吞掉（用户看不到同步提示）")
+    : ok("别的窗口改成不同取值 → 不是回声（会提示并同步界面）");
+
+  // ④ 别的会话的同值写入不能算本会话的回声（key 必须带 threadId）
+  isOwnEcho(store, "thread-2", mine, T0 + 300)
+    ? fail("回声表没按会话区分——A 会话的写入会把 B 会话的改动误判成回声")
+    : ok("回声表按会话区分（threadId 参与 key）");
+
+  // ⑤ TTL 过期后不再算回声（表不会长期污染判定）
+  isOwnEcho(store, "thread-1", mine, T0 + OWN_WRITE_TTL_MS + 1)
+    ? fail("TTL 失效后仍判为回声——表会长期把真事件吞掉")
+    : ok(`超过 ${OWN_WRITE_TTL_MS}ms 的回声记录自动失效`);
+
+  // ⑥ **只认最近一次写入**：一次用户动作可能连写多次（切模型先写档位、再写模型），
+  //    中间态不能被当成「自己的回声」——否则另一个窗口恰好把值改回那个中间态时会被静默吞掉
+  //    （实测：多窗口场景 ② 就是这么假红的）。
+  const multi = new Map();
+  const step1 = { ...mine, effort: "medium" };                       // 中间态（先写档位）
+  const step2 = { ...step1, model: "custom:custom906:deepseek-v4-flash" }; // 再写模型
+  rememberOwnWrite(multi, "thread-1", step1, T0);
+  rememberOwnWrite(multi, "thread-1", step2, T0 + 10);
+  isOwnEcho(multi, "thread-1", step2, T0 + 20)
+    ? ok("最近一次写入仍被判为回声")
+    : fail("最近一次写入没被判为回声——自己的回声会漏出去当提示");
+  isOwnEcho(multi, "thread-1", step1, T0 + 30)
+    ? fail("中间态仍被当成回声——另一个窗口把值改回中间态时会被静默吞掉（多窗口场景 ② 实测假红）")
+    : ok("中间态不再算回声（只认最近一次写入）");
+
+  // ⑦ 每会话只留一条记录（不随写入次数增长）
+  const perThread = new Map();
+  for (let i = 0; i < 50; i += 1) rememberOwnWrite(perThread, "thread-1", { ...mine, effort: `e${i}` }, T0 + i);
+  perThread.size === 1
+    ? ok("回声表每会话只留一条（不随写入次数增长）")
+    : fail(`回声表按次增长：size=${perThread.size}`);
+
+  // 接线守卫：渲染层必须真的用这两个纯函数，且广播分支要跳过提示
+  const rtSrc = existsSync(join(ROOT, "src", "App.tsx")) ? readFileSync(join(ROOT, "src", "App.tsx"), "utf8") : "";
+  if (!rtSrc) {
+    warn("找不到 src/App.tsx，跳过回声接线守卫");
+  } else {
+    /rememberOwnWrite\(ownRuntimeWrites, id, runtime\)/.test(rtSrc) && /isOwnEcho\(ownRuntimeWrites, id, next\)/.test(rtSrc)
+      ? ok("App.tsx 用纯函数做回声判定（写入时登记、广播时比对）")
+      : fail("App.tsx 没有接回声判定——自己切模型仍会误报「另一个窗口改了」");
+  }
+}
+
 // ---------- 4a-5. 审批卡形态：输入框上一行 + 点开预览（09-14 用户「卡片太大」） ----------
 
 console.log(C.bold("\n【4a-5】审批卡：一行摘要 + 点开预览（多条不占满输入框）"));
@@ -613,6 +682,57 @@ console.log(C.bold("\n【4a-5】审批卡：一行摘要 + 点开预览（多条
     /\.approval-card\.compact \.approval-peek\s*\{[^}]*text-overflow:\s*ellipsis/.test(cssSrc)
       ? ok("CSS：摘要行超长省略（长命令不把按钮挤出可视区）")
       : fail("CSS：摘要行没有省略号——长命令会撑破一行布局");
+    // ⑨ 窄窗口自适应：`.composer-wrap` 是 .workspace 的 grid item，默认 min-width:auto
+    // = 内容 min-content → 一行 nowrap 长命令会把整列撑到 1150px（实测），按钮被挤出可视区。
+    /\.workspace\s*>\s*\.composer-wrap\s*\{[^}]*min-width:\s*0/.test(cssSrc)
+      ? ok("CSS：输入区作为 grid item 已 min-width:0（窄窗口不被长命令撑宽）")
+      : fail("CSS：缺少 `.workspace > .composer-wrap { min-width: 0 }`——窄窗口下审批行会被长命令撑到视口外，允许/拒绝看不见（反证 F6 实测 stackW=1150 / actionsRight=1153）");
+  }
+}
+
+// ---------- 4a-6. 弹窗/浮层窄窗口自适应（静态守卫：覆盖 e2e 打不开的那些） ----------
+
+console.log(C.bold("\n【4a-6】弹窗/浮层窄窗口自适应（固定宽度必须有视口夹取）"));
+
+{
+  const cssSrc2 = existsSync(join(ROOT, "src", "styles.css")) ? readFileSync(join(ROOT, "src", "styles.css"), "utf8") : "";
+  if (!cssSrc2) {
+    warn("找不到 src/styles.css，跳过弹窗自适应静态守卫");
+  } else {
+    // 弹窗/菜单/浮层的类名特征（与 e2e narrow-dialogs 场景覆盖的是同一批组件）
+    const DIALOG = /modal|dialog|popup|palette|pop-|sheet|overlay|drawer|picker|dropdown|agent-ask|approval|goals-pop|thread-row-menu/;
+    const blocks = [...cssSrc2.matchAll(/([^{}]+)\{([^}]*)\}/g)];
+    const offenders = [];
+    for (const m of blocks) {
+      const sel = m[1].split("\n").pop().trim();
+      if (!DIALOG.test(sel)) continue;
+      const body = m[2];
+      const fixedWidth = Number((body.match(/(?:^|[;{\s])width\s*:\s*(\d{3,4})px\s*;/) || [])[1] || 0);
+      if (!fixedWidth || fixedWidth < 340) continue;
+      // 同一 block 里必须有视口相对夹取（max-width: 92vw / min(...vw) / calc(100vw - x) / 100%）
+      const clamped = /max-width\s*:[^;]*(vw|100%|calc\()/.test(body) || /width\s*:\s*min\(/.test(body);
+      if (!clamped) offenders.push({ sel, fixedWidth });
+    }
+    offenders.length === 0
+      ? ok(`固定宽度 ≥340px 的弹窗都有视口夹取（检查了 ${blocks.filter((m) => DIALOG.test(m[1].split("\n").pop().trim())).length} 个弹窗/浮层规则）`)
+      : fail(`这些弹窗是固定宽度且没有视口夹取，窄窗口会被裁到视口外：${offenders.map((o) => `${o.sel}(${o.fixedWidth}px)`).join("、")}——改为 width: min(${offenders[0].fixedWidth}px, 100%) 或补 max-width: 92vw`);
+
+    // 输入框浮层用「贴住输入区左右边」的定位，天然自适应；两条都丢才会撑出视口
+    const paletteRule = cssSrc2.match(/\.command-palette,\s*\.context-picker\s*\{[^}]*\}/)?.[0] ?? "";
+    /left:\s*0/.test(paletteRule) && /right:\s*0/.test(paletteRule)
+      ? ok("输入框浮层（# / @ / 命令面板）用 left:0 + right:0 贴住输入区（天然自适应）")
+      : fail("输入框浮层不再贴左右边——窄窗口下会溢出视口（改回了固定宽度？）");
+    // ⛔ 选择器要带词边界：`\.info-modal` 会先匹配到 `.info-modal-mask`，把掩罩的规则当成弹窗本体
+    // （实测这条写松了会假红——掩罩本来就不该有宽度约束）。
+    const ruleOf = (name) => cssSrc2.match(new RegExp(`\\.${name}(?![\\w-])[^{]*\\{[^}]*\\}`))?.[0] ?? "";
+    const applyModals = ["connector-setup-modal", "expert-team-editor-modal", "subagent-editor-modal", "command-editor-modal", "memory-config-modal", "info-modal"];
+    const missingClamp = applyModals.filter((name) => {
+      const rule = ruleOf(name);
+      return !rule || !/min\(|max-width|100vw|width:\s*100%/.test(rule);
+    });
+    missingClamp.length === 0
+      ? ok("编辑器类弹窗（连接器 / 专家团队 / 子代理 / 命令 / 记忆 / 信息）都有视口或百分比约束")
+      : fail(`编辑器弹窗缺少宽度约束：${missingClamp.join("、")}`);
   }
 }
 
