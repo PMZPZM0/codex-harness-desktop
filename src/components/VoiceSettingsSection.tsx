@@ -29,9 +29,9 @@ type Meta = {
   modelHosts: Record<string, string>;
 };
 
-/** 试听时把 samples 播出来（独立于通话的播放链路，用最简单的 AudioContext） */
-async function playSamples(samples: Float32Array | undefined, sampleRate: number | undefined) {
-  if (!samples || !sampleRate) return;
+/** 试听播放：播放中可停止；done 在自然播完或手动停止时 resolve。 */
+async function playSamples(samples: Float32Array | undefined, sampleRate: number | undefined): Promise<{ stop: () => void; done: Promise<void> }> {
+  if (!samples || !sampleRate) throw new Error("没有音频数据");
   const ctx = new AudioContext();
   if (ctx.state === "suspended") await ctx.resume().catch(() => undefined);
   const buffer = ctx.createBuffer(1, samples.length, sampleRate);
@@ -39,8 +39,22 @@ async function playSamples(samples: Float32Array | undefined, sampleRate: number
   const src = ctx.createBufferSource();
   src.buffer = buffer;
   src.connect(ctx.destination);
-  src.onended = () => { void ctx.close().catch(() => undefined); };
+  let onEnded: () => void = () => undefined;
+  const done = new Promise<void>((resolve) => { onEnded = resolve; });
+  let stopped = false;
+  src.onended = () => {
+    if (!stopped) { void ctx.close().catch(() => undefined); onEnded(); }
+  };
   src.start();
+  return {
+    stop: () => {
+      stopped = true;
+      try { src.stop(); } catch { /* 已结束 */ }
+      void ctx.close().catch(() => undefined);
+      onEnded();
+    },
+    done,
+  };
 }
 
 export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: string) => void }) {
@@ -49,8 +63,11 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
 
-  // 试听
-  const [auditioning, setAuditioning] = useState(false);
+  // 试听：三态反馈（合成中 → 播放中 → 空闲），播放中再点一次 = 停止。
+  // 旧实现只有「合成中…」一行字、没有播放态也不能停 = 用户反馈「没有试听播放反馈」。
+  const playCtlRef = useRef<{ stop: () => void } | null>(null);
+  const [auditionPhase, setAuditionPhase] = useState<"idle" | "synth" | "playing">("idle");
+  const [profilePreview, setProfilePreview] = useState<{ id: string; phase: "synth" | "playing" } | null>(null);
   // 麦克风列表 + 电平测试
   const [mics, setMics] = useState<{ deviceId: string; label: string }[]>([]);
   const [micTesting, setMicTesting] = useState(false);
@@ -198,26 +215,31 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
   }, [onNotice, reloadProfiles]);
 
   const previewProfile = useCallback(async (id: string) => {
-    setProfileBusy("正在合成试听…");
+    // 播放中再点同一行 = 停止
+    if (playCtlRef.current && profilePreview?.id === id && profilePreview?.phase === "playing") {
+      playCtlRef.current.stop();
+      return;
+    }
+    // 换一个试听：先停掉正在播的
+    playCtlRef.current?.stop();
+    playCtlRef.current = null;
+    setProfilePreview({ id, phase: "synth" });
     try {
       const r = await window.codex.voiceProfilesPreview({ id });
       if (!r?.ok) { onNotice(`试听失败：${r?.error ?? "未知"}`); return; }
       const samples = decodeFloat32Base64(r.audioBase64);
       if (!samples.length) { onNotice("试听失败：没有音频数据"); return; }
-      const ctx = new AudioContext({ sampleRate: r.sampleRate || 22050 });
-      const buffer = ctx.createBuffer(1, samples.length, r.sampleRate || 22050);
-      buffer.copyToChannel(Float32Array.from(samples), 0);
-      const node = ctx.createBufferSource();
-      node.buffer = buffer;
-      node.connect(ctx.destination);
-      node.start();
-      node.onended = () => { void ctx.close(); };
+      const ctl = await playSamples(samples, r.sampleRate || 22050);
+      playCtlRef.current = ctl;
+      setProfilePreview({ id, phase: "playing" });
+      await ctl.done;
     } catch (e: any) {
       onNotice(`试听失败：${e?.message ?? e}`);
     } finally {
-      setProfileBusy("");
+      playCtlRef.current = null;
+      setProfilePreview(null);
     }
-  }, [onNotice]);
+  }, [onNotice, profilePreview]);
 
   /** 设置从主进程读回来后，同步一次唤醒词草稿 */
   const wakePhraseSyncedRef = useRef(false);
@@ -302,20 +324,29 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
   }, [settings, onNotice]);
 
   const audition = useCallback(async () => {
-    if (!settings || auditioning) return;
-    setAuditioning(true);
+    if (!settings) return;
+    // 播放中再点一次 = 停止播放
+    if (playCtlRef.current) {
+      playCtlRef.current.stop();
+      return;
+    }
+    setAuditionPhase("synth");
     try {
       const r = await window.codex.voicePreviewVoice({ sid: settings.tts.sid, speed: settings.tts.speed });
       if (!r.ok) { onNotice(`试听失败：${r.error ?? "未知"}`); return; }
       const samples = decodeFloat32Base64(r.audioBase64);
       if (!samples.length) { onNotice("试听失败：合成结果没有音频数据"); return; }
-      await playSamples(samples, r.sampleRate);
+      const ctl = await playSamples(samples, r.sampleRate);
+      playCtlRef.current = ctl;
+      setAuditionPhase("playing");
+      await ctl.done;
     } catch (e: any) {
       onNotice(`试听失败：${e?.message ?? e}`);
     } finally {
-      setAuditioning(false);
+      playCtlRef.current = null;
+      setAuditionPhase("idle");
     }
-  }, [settings, auditioning, onNotice]);
+  }, [settings, onNotice]);
 
   const toggleMicTest = useCallback(async () => {
     if (micTesting) {
@@ -477,11 +508,13 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
                 <option key={v.value} value={v.value}>{v.label}</option>
               ))}
             </select>
-            <button className="secondary-setting voice-audition" onClick={() => void audition()} disabled={auditioning || saving}>
-              <Play size={13} />{auditioning ? "合成中…" : "试听"}
+            <button className="secondary-setting voice-audition" onClick={() => void audition()} disabled={auditionPhase === "synth" || saving}>
+              {auditionPhase === "synth" ? <><Square size={13} />合成中…</> : auditionPhase === "playing" ? <><Square size={13} />停止</> : <><Play size={13} />试听</>}
             </button>
           </div>
-          <div className="voice-card-hint">点「试听」会用当前音色和语速念一句示例话，用来对比哪个声音合适。</div>
+          <div className="voice-card-hint">
+            点「试听」用当前音色和语速念一句示例话（首次要加载模型，稍等；之后再点就是秒出）。播放中再点一次即停止。
+          </div>
         </div>
       </div>
 
@@ -542,7 +575,10 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
 
           {profiles.length > 0 && (
             <div className="voice-profile-list">
-              {profiles.map((p) => (
+              {profiles.map((p) => {
+                const pv = profilePreview;
+                const previewPhase = pv && pv.id === p.id ? pv.phase : null;
+                return (
                 <div key={p.id} className="voice-profile-item">
                   <label className="voice-profile-pick">
                     <input
@@ -554,10 +590,21 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
                     <span>{p.name}</span>
                     <em>{p.durationSec}s</em>
                   </label>
-                  <button className="secondary-setting" onClick={() => void previewProfile(p.id)} disabled={Boolean(profileBusy)}><Play size={12} />试听</button>
+                  <button
+                    className="secondary-setting"
+                    onClick={() => void previewProfile(p.id)}
+                    disabled={previewPhase === "synth" && previewPhase !== null}
+                  >
+                    {previewPhase === "synth"
+                      ? <><Square size={12} />合成中…</>
+                      : previewPhase === "playing"
+                        ? <><Square size={12} />停止</>
+                        : <><Play size={12} />试听</>}
+                  </button>
                   <button className="secondary-setting" onClick={() => void removeProfile(p.id)}><Trash2 size={12} />删除</button>
                 </div>
-              ))}
+                );
+              })}
               {(settings?.tts?.profileId ?? "") && (
                 <button className="secondary-setting" onClick={() => void selectProfile("")}>改回内置音色</button>
               )}

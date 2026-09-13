@@ -1,18 +1,26 @@
 [
   {
-    "id": "taiwan-female",
-    "name": "台湾腔 · 小美",
-    "desc": "温柔台湾腔女声（zh-TW 晓臻音色合成参考）",
+    "id": "cosyvoice-female-zh",
+    "name": "温柔女声 · 晓晨",
+    "desc": "清甜温柔女声（音源：CosyVoice 官方示例 · FunAudioLLM）",
     "lang": "zh",
-    "wav": "taiwan-female.wav",
-    "refText": "哈囉，我是你的語音助理小美。很高興認識你，今天想聽我陪你聊聊天，還是幫你處理事情呢？"
+    "wav": "cosyvoice-female-zh.wav",
+    "refText": "希望你以后能够做的比我还好呦。"
   },
   {
-    "id": "jarvis-butler",
-    "name": "AI 管家 · 贾维斯风",
-    "desc": "沉稳英伦男声（en-GB Ryan 音色合成参考），中英文都能讲",
+    "id": "firered-male-zh",
+    "name": "沉稳男声 · 阿远",
+    "desc": "自然口语男声（音源：FireRedTTS2 官方样本 · FireRedTeam）",
+    "lang": "zh",
+    "wav": "firered-male-zh.wav",
+    "refText": "啊，可能说更适合美国市场应该是什么样子。那这这个可能说当然如果说有有机会能亲身的去考察去了解一下，那当然是有更好的帮助。"
+  },
+  {
+    "id": "f5-male-en",
+    "name": "磁性英文男声 · Nature",
+    "desc": "低沉磁性英文男声（音源：F5-TTS 官方示例 · SWivid）",
     "lang": "en",
-    "wav": "jarvis-butler.wav",
-    "refText": "Good afternoon, sir. All systems are online and running at peak efficiency. How may I be of service to you today?"
+    "wav": "f5-male-en.wav",
+    "refText": "Some call me nature, others call me mother nature."
   }
 ]

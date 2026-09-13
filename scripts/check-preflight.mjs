@@ -1084,6 +1084,46 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
 }
 
 
+// ---------- 【4h】内置音色与试听反馈（09-13：换开源预设 + 试听提速可停止） ----------
+{
+  // 预设清单：旧的两个预设已下线；新预设必须「wav + 精确参考文本」成对且文件随包存在
+  //（ZipVoice 铁律：文本对不上音质明显劣化，所以每个预设都必须有官方成对转写）。
+  try {
+    const raw = JSON.parse(readFileSync(join(ROOT, "resources", "voice-presets", "presets.json"), "utf8"));
+    const list = Array.isArray(raw) ? raw : [];
+    const ids = list.map((p) => p.id);
+    list.length >= 2 ? ok(`随包内置音色预设 ${list.length} 个（开源项目官方成对样本）`) : fail("内置音色预设少于 2 个 —— presets.json 可能被清空");
+    !ids.includes("taiwan-female") && !ids.includes("jarvis-butler")
+      ? ok("已下线预设（台湾腔小美/贾维斯风）不再随包提供")
+      : fail("下线预设又回来了 —— taiwan-female / jarvis-butler 必须移除");
+    const missingPair = list.filter((p) => !p.wav || !p.refText || !existsSync(join(ROOT, "resources", "voice-presets", String(p.wav))));
+    missingPair.length === 0
+      ? ok("全部预设「wav + 参考文本」成对且音频文件存在")
+      : fail(`预设缺 wav/参考文本或音频文件缺失：${missingPair.map((p) => p.id).join(", ")}`);
+  } catch (error) {
+    fail(`voice-presets/presets.json 不可读：${error.message}`);
+  }
+
+  // 试听提速：previewVoice 必须复用缓存的 worker（旧实现 finally 里 terminate = 每次冷启动）
+  const voiceSrc = readFileSync(join(ROOT, "electron", "voice", "voice-service.ts"), "utf8");
+  const previewStart = voiceSrc.indexOf("async previewVoice(");
+  const previewEnd = voiceSrc.indexOf("schedulePreviewDispose(): void", previewStart);
+  const previewBody = previewStart >= 0 && previewEnd > previewStart ? voiceSrc.slice(previewStart, previewEnd) : "";
+  previewBody.includes("this.previewTts") && previewBody.includes("this.previewTtsKey")
+    ? ok("音色试听复用缓存的预览 worker（模型常驻，第二次试听秒出）")
+    : fail("previewVoice 又改成每次新建 worker —— 试听会退回「半天才出声」");
+  !/finally\s*\{[^}]*terminate/.test(previewBody)
+    ? ok("试听结束不再立刻销毁 worker（空闲 5 分钟才回收）")
+    : fail("previewVoice 在 finally 里 terminate —— 缓存被每次清掉");
+
+  // 试听反馈：设置页必须有「合成中 → 播放中（可停止）」三态
+  const settingsSrc = readFileSync(join(ROOT, "src", "components", "VoiceSettingsSection.tsx"), "utf8");
+  settingsSrc.includes("playCtlRef") && settingsSrc.includes('"playing"')
+    ? ok("试听有播放态反馈且播放中可停止")
+    : fail("试听反馈缺失 —— 只有合成中、没有播放态/停止按钮");
+}
+
+
 console.log(C.bold("\n【5】启动链健壮性（boot 副作用不得裸 await）"));
 {
   // 为什么是硬失败：主进程 boot 是 `app.whenReady().then(async () => { … })`——里面任何一处
