@@ -148,6 +148,8 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **独立会话弹窗（09-13）**：会话可开成**独立 BrowserWindow**（主窗口之外多个同时存在、互不干扰），三种打开方式——① 顶栏 📁 左边「独立会话弹窗」按钮；② 侧栏会话行**长按 600ms 拖出**（拖出态行高亮 + 浮动 ghost 提示，松手即弹窗）；③ 同一会话重复弹窗 → 聚焦已有窗口。主进程 `electron/main.ts`：`popoutWindows` Set + `createPopoutWindow()`（同款 hidden titleBar + overlay 43px，可拖出应用外）+ `window:popout-thread` / `window:popout-close` / `window:popout-id` 三个 IPC；`codex:event` 改 `broadcastCodexEvent`（主窗口 + 全部弹窗）；**主窗口 closed → 弹窗跟随关闭**；`theme:apply` 遍历所有窗口。渲染层 `src/App.tsx`：弹窗窗口 = **完整主界面克隆**（侧栏/顶栏全保留，可自由切会话），boot 前探测 `popoutThreadId` 并锁定初始会话（不读 last-thread）；弹窗顶栏同位置变「返回主应用」按钮（`popoutClose` → 主进程关弹窗 + 发 `harness:event {type:"popout-return"}` → 主窗口 `openThread` 带回）。preload/vite-env 三方法对齐（check 预检【2】IPC 一致性守卫覆盖）。验收：`--only popout-window`（7 断言：按钮存在/引擎侧取 id/IPC 受理/主窗口非弹窗/返回通道可达）+ 弹窗窗口 CDP 全链路实测（会话锁定一致/返回按钮/侧栏 22 行/截图）。
+
 - **手机远控二次加固：6 位配对码 + 电脑端审批（09-13）**：手机扫码/打开链接后不再「连上即控」。新流程 = 输入电脑端显示的 **6 位配对码**（5 分钟有效、错 10 次作废、可刷新）→ 挂起等电脑端在「手机远控」面板点**允许/拒绝**（请求到达时面板自动弹到前台 + toast 提醒；2 分钟没人理自动过期）→ 通过后以 HttpOnly cookie 下发凭据（`harness_remote` + `harness_device`，https 场景带 Secure）。**已批准设备持久化**（`userData/remote-devices.json`），再连直接进、可单独移除。**二维码/配对链接不再夹带 `?k=` 凭据**（能力式 URL 会随链接/截图/历史/隧道日志外泄）；`authorize()` 只认「凭据 cookie + 已批准设备」，未配对访问 API/WS 一律 401、页面落到配对页；fail-open（token 为空全放行）已删。实现：`electron/remote.ts`（pairing/pairRequests/approved + `/api/pair`、`/api/pair-status`）+ main.ts IPC（`remote:pair-state/approve/deny/revoke/pair-rotate`）+ App.tsx 面板（配对码大字/审批卡/已批准设备列表）。回归：`scripts/accept.mjs --only remote-auth`（14 断言：无凭据 401/配对页/错码拒绝/对码挂起/审批前仍 401/审批卡/点允许/cookie 下发/带凭据 200/已批准直连）；预检【11】新增静态守卫（配对地址不得夹带 accessToken、必须有配对码+审批入口）。
 
 
