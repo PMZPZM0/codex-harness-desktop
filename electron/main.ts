@@ -577,6 +577,21 @@ const voiceService = new VoiceService({
   emit: (event) => sendToWindow("voice:event", event),
 });
 
+// 09-13：下线的内置音色预设（台湾腔·小美 / AI管家·贾维斯风）——把它们在用户档案里
+// 已创建的同名克隆档案一并清掉，否则「内置音色」列表没了、
+// 「我的音色」里还挂着两个来源不明的条目。
+void (async () => {
+  const removed = ["台湾腔 · 小美", "AI 管家 · 贾维斯风"];
+  try {
+    for (const profile of await voiceProfiles.listProfiles(app.getPath("userData"))) {
+      if (removed.includes(profile.name)) {
+        await voiceProfiles.deleteProfile(app.getPath("userData"), profile.id);
+        console.log(`[voice] 已清理下线预设的音色档案：${profile.name}`);
+      }
+    }
+  } catch { /* 清理失败不阻塞启动 */ }
+})();
+
 /** 语音模型安装的并发与取消由 voiceService 内部管（installController），主进程不再包一层。 */
 ipcMain.handle("voice:status", () => voiceService.status());
 

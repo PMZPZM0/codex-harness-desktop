@@ -920,14 +920,18 @@ const CHECKS = [
 
   {
     id: "voice-presets",
-    name: "内置音色预设：台湾腔/贾维斯风一键建档启用（结束还原原音色设置）",
+    name: "内置音色预设：随包预设一键建档启用（结束还原原音色设置）",
     run: async (h) => {
       await enterMain(h);
-      const presets = await h.eval(`window.codex.voicePresetList().then((r) => JSON.stringify(r.presets.map((p) => p.id)))`);
-      const ids = JSON.parse(presets);
-      h.check("随包预设目录可读（台湾腔 + 贾维斯风）", ids.includes("taiwan-female") && ids.includes("jarvis-butler"), presets);
+      const presets = await h.eval(`window.codex.voicePresetList().then((r) => JSON.stringify(r.presets))`);
+      const list = JSON.parse(presets);
+      h.check("随包预设目录可读（至少 2 个预设，来源为开源项目官方示例）", Array.isArray(list) && list.length >= 2, `共 ${Array.isArray(list) ? list.length : 0} 个`);
+      // 09-13：旧的两个预设（taiwan-female / jarvis-butler）已下线，不许再出现
+      const ids = list.map((p) => p.id);
+      h.check("已下线预设不再提供（台湾腔/贾维斯风已移除）", !ids.includes("taiwan-female") && !ids.includes("jarvis-butler"), JSON.stringify(ids));
+      const first = list[0];
       const before = await h.eval(`window.codex.voiceSettingsGet().then((res) => JSON.stringify(res.settings.tts.profileId ?? ""))`);
-      const applied = await h.eval(`window.codex.voicePresetApply("taiwan-female").then((r) => JSON.stringify({ ok: r.ok, id: r.profile?.id, existed: r.existed, error: r.error }))`);
+      const applied = await h.eval(`window.codex.voicePresetApply(${JSON.stringify(first.id)}).then((r) => JSON.stringify({ ok: r.ok, id: r.profile?.id, existed: r.existed, name: r.profile?.name, error: r.error }))`);
       const r = JSON.parse(applied);
       h.check("一键建档成功（参考文本随包，无需转写）", r.ok === true && Boolean(r.id), applied);
       const selRaw = await h.eval(`window.codex.voiceProfilesSelect(${JSON.stringify(r.id)}).then((s) => JSON.stringify(s)).catch((e) => "SELECT-ERR:" + e.message)`);
@@ -940,6 +944,7 @@ const CHECKS = [
       h.check("原音色设置已还原", restored === before, `before=${before} after=${restored}`);
     },
   },
+
 
   {
     id: "clean",

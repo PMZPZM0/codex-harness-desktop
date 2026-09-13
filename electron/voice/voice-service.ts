@@ -594,11 +594,14 @@ export class VoiceService {
   }
 
   /**
-   * 音色试听：不依赖通话态——没有活跃 TTS 时临时起一个 worker，合成完即销毁。
-   * 这样在设置页（没在通话）也能点「试听」听到某个音色/语速的效果。
+   * 音色试听：不依赖通话态——没有活跃 TTS 时用**缓存的试听 worker**合成。
+   * 旧实现每次试听都新建 worker、合成完立刻销毁：ZipVoice/VITS 模型每次都要
+   * 重新加载（数秒到十几秒）= 用户反馈「试听要半天」。现在 worker 常驻复用，
+   * 首次慢、之后秒出；空闲 5 分钟自动销毁回收内存。
+   * 试听克隆音色（profileId）时不能用通话里的 TTS worker（配置不同），
+   * 单独走这套缓存。
    */
   async previewVoice(input?: { sid?: number; speed?: number; text?: string; profileId?: string }): Promise<VoiceSpeakResult> {
-    // 指定 profileId = 试听某个音色档案：即使通话中也要单独开一个临时线程，不能用正在用的那个
     if (this.tts && !input?.profileId) {
       return this.speak(input?.text ?? VOICE_SAMPLE_TEXT, { sid: input?.sid, speed: input?.speed });
     }
@@ -607,26 +610,43 @@ export class VoiceService {
     if (!(await this.refreshModelsReady())) {
       return { ok: false, error: "语音模型未下载完整，请先到「开发工具 → 语音模型」下载" };
     }
-    let client: VoiceWorkerClient | null = null;
-    try {
-      client = new VoiceWorkerClient(
+    // worker 配置 key：克隆音色 / 识别线程数变化时才重建
+    const key = `${input?.profileId ?? ""}|${this.currentSettings.asr.numThreads}`;
+    if (!this.previewTts || !this.previewTts.alive || this.previewTtsKey !== key) {
+      await this.previewTts?.terminate().catch(() => undefined);
+      this.previewTts = new VoiceWorkerClient(
         "语音试听",
         TTS_WORKER_SOURCE,
         // 跟正式通话对齐（之前用 1 偶尔触发 sherpa-onnx 的不同代码路径）
         await this.ttsWorkerData(sherpaPath, this.currentSettings.asr.numThreads, input?.profileId),
         () => undefined
       );
-      const result = await client.request("speak", {
+      this.previewTtsKey = key;
+    }
+    this.schedulePreviewDispose();
+    try {
+      const result = await this.previewTts.request("speak", {
         text: String(input?.text ?? VOICE_SAMPLE_TEXT),
         sid: input?.sid ?? this.currentSettings.tts.sid,
         speed: input?.speed ?? this.currentSettings.tts.speed,
       });
       return { ok: true, sampleRate: Number(result.sampleRate ?? 22050), samples: result.samples };
     } catch (error: any) {
+      // worker 出错时下次重建（坏 worker 不复用）
+      this.previewTts = null;
       return { ok: false, error: String(error?.message ?? error) };
-    } finally {
-      void client?.terminate?.().catch?.(() => undefined);
     }
+  }
+
+  /** 试听 worker 空闲自动销毁：试听是低频操作，不该常驻占内存。 */
+  private schedulePreviewDispose(): void {
+    if (this.previewDisposeTimer) clearTimeout(this.previewDisposeTimer);
+    this.previewDisposeTimer = setTimeout(() => {
+      void this.previewTts?.terminate().catch(() => undefined);
+      this.previewTts = null;
+      this.previewTtsKey = "";
+      this.previewDisposeTimer = null;
+    }, 5 * 60 * 1000);
   }
 
   // ── 语音唤醒（持续聆听，只用 ASR、不开引擎回合）──
@@ -642,8 +662,12 @@ export class VoiceService {
   //   ③ 每次端点必须复位识别流（旧实现从不复位 → 识别文本跨句无限累积，
   //      每块还要把整坨文本回传渲染层）。
 
-  /** 唤醒匹配器（唤醒词或同音表变了要重建）—— 仅 ASR 回退模式使用 */
+  /** 唤醒匹配器（唤醒词/同音表变了要重建）—— 仅 ASR 回退模式使用 */
   private wakeMatcher: WakeMatcher | null = null;
+  /** 试听专用 worker 缓存（previewVoice 复用；配置 key 变了才重建） */
+  private previewTts: VoiceWorkerClient | null = null;
+  private previewTtsKey = "";
+  private previewDisposeTimer: any = null;
   /** 唤醒引擎：kws=关键词模型（首选）；asr=通用识别 + 同音容错（回退） */
   private wakeEngine: "kws" | "asr" | "" = "";
   /** 同音表缓存（lexicon.txt 只解析一次，实测 175ms / 2 万字） */
