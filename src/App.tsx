@@ -8003,11 +8003,6 @@ export default function App() {
   };
   const [bots, setBots] = useState<{ id: string; name: string; channel: string; enabled: boolean }[]>(() => { try { return JSON.parse(localStorage.getItem("bots") ?? "[]"); } catch { return []; } });
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
-  // 机器人管理面板打开时拉一次配对状态（6 位码 + 待审批）——配对卡就显示在面板里
-  useEffect(() => {
-    if (!botManagerOpen) return;
-    void window.codex.remotePairState?.().then((s) => { setPairCode(s.code); setPairPending(s.pending); setPairApproved(s.approved); }).catch(() => undefined);
-  }, [botManagerOpen]);
   // 打开机器人管理弹窗默认选中已配置的机器人（优先已启用的），不再显示空详情页
   useEffect(() => {
     if (!botManagerOpen) return;
@@ -8036,6 +8031,37 @@ export default function App() {
   const [pairCode, setPairCode] = useState("");
   const [pairPending, setPairPending] = useState<any[]>([]);
   const [pairApproved, setPairApproved] = useState<any[]>([]);
+  // 统一拉取配对状态（手机远控 + Bot Channel 两个真相源）：approved 取并集、pending 按 rid 去重。
+  // 旧实现只拉 remotePairState —— Bot Channel（微信等）批准的设备存在 bot-pairing.json，
+  // 打开面板时看不到，直到下一次配对事件触发合并才冒出来（09-13 用户反馈「批准过不常驻展示」）。
+  const loadPairStates = useCallback(async () => {
+    try {
+      const [remote, bot] = await Promise.all([
+        window.codex.remotePairState?.() ?? Promise.resolve(null),
+        window.codex.botPairState?.() ?? Promise.resolve(null),
+      ]);
+      if (remote) { setPairCode(remote.code); setPairPending(remote.pending ?? []); }
+      const remoteApproved: any[] = remote?.approved ?? [];
+      const botApproved: any[] = (bot?.approved ?? [])
+        .map((a: any) => ({ deviceId: String(a.key ?? ""), name: String(a.name ?? ""), approvedAt: Number(a.approvedAt ?? 0), source: "bot" }))
+        .filter((d: any) => d.deviceId);
+      setPairPending((prev) => {
+        const merged: any[] = [...(remote?.pending ?? [])];
+        const seen = new Set(merged.map((m) => m.rid));
+        for (const r of prev) if (!seen.has(r.rid)) { merged.push(r); seen.add(r.rid); }
+        for (const b of (bot?.pending ?? []).map((r: any) => ({ rid: r.rid, name: r.name, createdAt: r.createdAt }))) {
+          if (!seen.has(b.rid)) { merged.push(b); seen.add(b.rid); }
+        }
+        return merged;
+      });
+      setPairApproved([...remoteApproved, ...botApproved.filter((b: any) => !remoteApproved.some((r: any) => r.deviceId === b.deviceId))]);
+    } catch { /* 拉取失败保持现状 */ }
+  }, []);
+  // 机器人管理面板打开时拉一次配对状态（6 位码 + 待审批 + 已批准）——配对卡就显示在面板里
+  useEffect(() => {
+    if (!botManagerOpen) return;
+    void loadPairStates();
+  }, [botManagerOpen, loadPairStates]);
   const [userDataPath, setUserDataPath] = useState("");
   const [taskMenuOpen, setTaskMenuOpen] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
@@ -9496,14 +9522,14 @@ const commandMatches = useMemo(() => {
       // 审批只能在「手机远控」面板里做，而用户此刻大概率没开着它 —— 请求一到就把
       // 面板顶到前台并刷新状态，否则请求会在 2 分钟后静默超时（等于"手机连不上"）。
       if (!botManagerOpenRef.current) setMobileRemoteOpen(true);
-      void window.codex.remotePairState().then((s) => { setPairCode(s.code); setPairPending(s.pending); setPairApproved(s.approved); }).catch(() => undefined);
+      void loadPairStates();
       showToast("手机请求连接", `${request.name}：请${botManagerOpenRef.current ? "在本面板" : "在弹出的面板"}点允许或拒绝`);
     });
     // Bot Channel（微信/QQ/飞书/钉钉/Telegram）聊天里发来 6 位授权码 → 同一张审批卡（rid 以 bp- 开头）
     const offBotPair = window.codex.onBotPairRequest((request) => {
       setPairPending((current) => current.some((r) => r.rid === request.rid) ? current : [...current, { rid: request.rid, name: request.name, createdAt: Date.now() }]);
       if (!botManagerOpenRef.current) setMobileRemoteOpen(true);
-      void window.codex.botPairState().then((s) => { setPairPending(s.pending.map((r) => ({ rid: r.rid, name: r.name, createdAt: r.createdAt }))); setPairApproved(s.approved.map((a) => ({ deviceId: a.key, name: a.name, approvedAt: a.approvedAt }))); }).catch(() => undefined);
+      void loadPairStates();
       showToast("机器人请求配对", `${request.name}：请${botManagerOpenRef.current ? "在本面板" : "在弹出的面板"}点允许或拒绝`);
     });
     return () => { offPair(); offBotPair(); };
@@ -13740,7 +13766,7 @@ const commandMatches = useMemo(() => {
               </>}
             </div>
           )}
-          <button className="account-icon" title="移动端远程控制" onClick={() => { setMobileRemoteOpen(true); void window.codex.remoteStart().then((r) => setRemoteUrl(r.url)).catch(() => undefined); void window.codex.remoteStatus().then((s) => { setRemoteStatus(s.status); setRemoteDevices(s.devices); setRemoteUrl(s.url); }).catch(() => undefined); void window.codex.remoteQrcode().then((svg) => setRemoteQr(svg)).catch(() => undefined); void window.codex.remotePairState().then((s) => { setPairCode(s.code); setPairPending(s.pending); setPairApproved(s.approved); }).catch(() => undefined); }}><Smartphone size={15} /></button>
+          <button className="account-icon" title="移动端远程控制" onClick={() => { setMobileRemoteOpen(true); void window.codex.remoteStart().then((r) => setRemoteUrl(r.url)).catch(() => undefined); void window.codex.remoteStatus().then((s) => { setRemoteStatus(s.status); setRemoteDevices(s.devices); setRemoteUrl(s.url); }).catch(() => undefined); void window.codex.remoteQrcode().then((svg) => setRemoteQr(svg)).catch(() => undefined); void loadPairStates(); }}><Smartphone size={15} /></button>
           <button className="sidebar-settings" title="设置" onClick={() => { setSettingsPage("appearance"); setSettingsOpen(true); setMobileNav(false); }}><Settings2 size={16} /></button>
         </div>
       </aside>
@@ -14329,7 +14355,7 @@ const commandMatches = useMemo(() => {
                   <div className="remote-approve-row" key={request.rid} data-pair-row={request.rid}>
                     <div className="remote-approve-info"><strong>{request.name}</strong><small>请求连接这台电脑的工作区</small></div>
                     <div className="remote-approve-actions">
-                      <button className="remote-allow-btn" onClick={() => { const done = request.rid.startsWith("bp-") ? window.codex.botApprove(request.rid) : window.codex.remoteApprove(request.rid); void done.then(() => { setPairPending((c) => c.filter((r) => r.rid !== request.rid)); void window.codex.remotePairState().then((s) => setPairApproved(s.approved)).catch(() => undefined); void window.codex.botPairState().then((s) => setPairApproved((prev) => [...s.approved.map((a) => ({ deviceId: a.key, name: a.name, approvedAt: a.approvedAt })), ...prev.filter((p) => !s.approved.some((q) => q.key === p.deviceId))])).catch(() => undefined); }).catch(() => undefined); }}>允许</button>
+                      <button className="remote-allow-btn" onClick={() => { const done = request.rid.startsWith("bp-") ? window.codex.botApprove(request.rid) : window.codex.remoteApprove(request.rid); void done.then(() => { setPairPending((c) => c.filter((r) => r.rid !== request.rid)); void loadPairStates(); }).catch(() => undefined); }}>允许</button>
                       <button className="remote-deny-btn" onClick={() => { const done = request.rid.startsWith("bp-") ? window.codex.botDeny(request.rid) : window.codex.remoteDeny(request.rid); void done.then(() => setPairPending((c) => c.filter((r) => r.rid !== request.rid))).catch(() => undefined); }}>拒绝</button>
                     </div>
                   </div>
@@ -14342,7 +14368,9 @@ const commandMatches = useMemo(() => {
                 {pairApproved.map((device) => (
                   <div className="remote-approved-row" key={device.deviceId}>
                     <span>{device.name}</span>
-                    <button className="remote-mini-btn" title="撤销，下次重新配对" onClick={() => void window.codex.remoteRevoke(device.deviceId).then(() => setPairApproved((c) => c.filter((d) => d.deviceId !== device.deviceId))).catch(() => undefined)}>移除</button>
+                    {/* Bot Channel 批准的设备（source=bot，deviceId 形如 wechat:xxx）要走 botRevoke，
+                        remoteRevoke 对它无效 —— 之前点「移除」没反应就是这里没分流 */}
+                    <button className="remote-mini-btn" title="撤销，下次重新配对" onClick={() => { const done = device.source === "bot" ? window.codex.botRevoke(device.deviceId) : window.codex.remoteRevoke(device.deviceId); void done.then(() => void loadPairStates()).catch(() => undefined); }}>移除</button>
                   </div>
                 ))}
               </div>
@@ -14405,7 +14433,7 @@ const commandMatches = useMemo(() => {
                   <div className="remote-approve-row" key={request.rid} data-pair-row={request.rid}>
                     <div className="remote-approve-info"><strong>{request.name}</strong><small>等待电脑端批准</small></div>
                     <div className="remote-approve-actions">
-                      <button className="remote-allow-btn" onClick={() => { const done = request.rid.startsWith("bp-") ? window.codex.botApprove(request.rid) : window.codex.remoteApprove(request.rid); void done.then(() => { setPairPending((c) => c.filter((r) => r.rid !== request.rid)); void window.codex.remotePairState().then((s) => setPairApproved(s.approved)).catch(() => undefined); void window.codex.botPairState().then((s) => setPairApproved((prev) => [...s.approved.map((a) => ({ deviceId: a.key, name: a.name, approvedAt: a.approvedAt })), ...prev.filter((p) => !s.approved.some((q) => q.key === p.deviceId))])).catch(() => undefined); }).catch(() => undefined); }}>允许</button>
+                      <button className="remote-allow-btn" onClick={() => { const done = request.rid.startsWith("bp-") ? window.codex.botApprove(request.rid) : window.codex.remoteApprove(request.rid); void done.then(() => { setPairPending((c) => c.filter((r) => r.rid !== request.rid)); void loadPairStates(); }).catch(() => undefined); }}>允许</button>
                       <button className="remote-deny-btn" onClick={() => { const done = request.rid.startsWith("bp-") ? window.codex.botDeny(request.rid) : window.codex.remoteDeny(request.rid); void done.then(() => setPairPending((c) => c.filter((r) => r.rid !== request.rid))).catch(() => undefined); }}>拒绝</button>
                     </div>
                   </div>
