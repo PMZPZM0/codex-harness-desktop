@@ -1013,22 +1013,25 @@ const CHECKS = [
       h.check("[前置] 思考卡出现并处于直播态（.reasoning-card.live）", live);
       if (!live) { await h.screenshot("思考跟随-无live卡"); return; }
 
-      // 采样思考卡内部滚动状态：直到思考卡离开 live（回合推进）为止
-      // 思考卡正文有 max-height:260px + overflow-y:auto（styles.css .reasoning-body），
-      // 内容超过 260px 后内部滚动条才出现 → dist 才有意义；内容不足时 dist 恒 0，恒过。
+      // 采样思考卡内部滚动状态。⛔ 前置条件依赖「模型当轮思考足够长」，而思考长度
+      // 不受控（实测 sh=22 / sh=109 / sh=416 都有）——所以采样必须覆盖整个思考生命周期。
+      // ⛔ 单次 eval 内完成「读卡 + 读回合状态」两件事：循环里嵌套第二个 CDP eval
+      // 会被引擎流式输出拖到 Runtime.evaluate 超时（实测 342s 后炸掉），勿拆开。
       const samples = [];
-      for (let i = 0; i < 400; i++) {
+      for (let i = 0; i < 1200; i++) {
         const v = await h.eval(`(() => {
           const card = document.querySelector(".reasoning-card.live");
-          if (!card) return null;
-          const body = card.querySelector(".reasoning-body");
-          if (!body) return [0, 0];
-          return [Math.round(body.scrollHeight - body.scrollTop - body.clientHeight), Math.round(body.scrollHeight)];
-        })()`);
-        if (!Array.isArray(v)) break;               // live 卡消失（思考结束/回合推进）→ 采样结束
-        samples.push(v);
+          const body = card ? card.querySelector(".reasoning-body") : null;
+          const turnDone = !document.querySelector(".timeline-bottom-spacer.compact");
+          return [body ? Math.round(body.scrollHeight - body.scrollTop - body.clientHeight) : 0,
+                  body ? Math.round(body.scrollHeight) : 0,
+                  turnDone ? 1 : 0];
+        })()`, { timeoutMs: 15000 }).catch(() => null);
+        if (Array.isArray(v)) samples.push([v[0], v[1]]);
+        // 出口：回合跑完（思考已完整呈现）或超时
+        if (Array.isArray(v) && v[2] === 1 && samples.length >= 5) break;
+        if (i > 0 && i % 50 === 0) console.log(`  [思考跟随] 采样中… ${i / 10}s（样本 ${samples.length}）`);
         await wait(100);
-        if (samples.length >= 400) break;
       }
       const withScroll = samples.filter(([d, sh]) => sh > 300);   // 只有内部滚动条出现后的样本才有意义
       const maxDist = withScroll.length ? Math.max(...withScroll.map(([d]) => d)) : 0;
@@ -1037,8 +1040,8 @@ const CHECKS = [
       console.log(`  [思考跟随] dist 轨迹(前 24): ${JSON.stringify(samples.slice(0, 24).map(([d]) => d))}`);
       h.check("[前置] 思考内容确实长到出了内部滚动条（断言才有效）", withScroll.length > 0, `scrollable=${withScroll.length} sh=${tail?.[1] ?? "?"}`);
       // 核心断言：跟随正常时 dist 始终有界（≤ 80px ≈ 2 行）；旧逻辑下整段交付那一帧
-      // 起跟随死亡，dist 会一路涨到几百 px → 这里必红（反证已做实：把接管判据改回
-      // 「>40 不跟」并给思考正文整段注入时，maxDist 显著超阈）。
+      // 起跟随死亡，dist 会一路涨到几百 px → 这里必红（反证已做实：旧判据下 maxDist=153，
+      // dist 轨迹 0→43→87→131 单调涨）。
       h.check("思考流式期间最新内容始终可见（视口外 ≤ 80px）", maxDist <= 80, `maxDist=${maxDist}px withScroll=${withScroll.length}`);
       await h.screenshot("思考跟随");
     },
