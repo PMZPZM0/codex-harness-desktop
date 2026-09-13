@@ -11198,8 +11198,11 @@ const commandMatches = useMemo(() => {
     const nextEffort = savedEffortFor(next?.model) || threadEffort || pickDefaultEffort(next?.supportedReasoningEfforts, next?.defaultReasoningEffort);
     setEffort(nextEffort);
     if (nextEffort) {
-      localStorage.setItem("default-effort", nextEffort);
+      // ⛔ 多会话/多窗口作用域（09-13）：有会话只落会话级（thread-effort-<id>），
+      // 不写 default-effort 全局默认——A 会话切模型连带切档位，会把 B 会话的
+      // 重启兜底/新会话默认一起改掉。无会话时选的才是全局默认。
       if (currentThreadId) saveThreadEffort(currentThreadId, nextEffort);
+      else localStorage.setItem("default-effort", nextEffort);
     }
     saveSelection(value);
 
@@ -11378,9 +11381,15 @@ const commandMatches = useMemo(() => {
 
   function changeApproval(value: string) {
     setApprovalPolicy(value);
-    localStorage.setItem("default-approval", value);
-    if (threadRef.current) saveThreadPermissions(threadRef.current.id, sandbox, value);
-    void pushThreadPermissions(threadRef.current?.id ?? "", sandbox, value);
+    // ⛔ 多会话/多窗口作用域（09-13）：有会话只落该会话，无会话才写全局默认
+    // （changeSandbox 同款修法——原实现开着会话也写 default-approval，A 会话切审批
+    // 会污染 B 会话的重启兜底与新会话默认）
+    if (threadRef.current) {
+      saveThreadPermissions(threadRef.current.id, sandbox, value);
+      void pushThreadPermissions(threadRef.current.id, sandbox, value);
+    } else {
+      localStorage.setItem("default-approval", value);
+    }
   }
 
   /** 权限胶囊的组合档位切换：完全访问 = danger-full-access + never；其余档位 = workspace-write + 对应审批。
@@ -11391,10 +11400,14 @@ const commandMatches = useMemo(() => {
     const approvalValue = value === "never" ? "never" : value;
     setSandbox(sandboxValue);
     setApprovalPolicy(approvalValue);
-    if (threadRef.current) saveThreadPermissions(threadRef.current.id, sandboxValue, approvalValue);
-    localStorage.setItem("default-sandbox", sandboxValue);
-    localStorage.setItem("default-approval", approvalValue);
-    void pushThreadPermissions(threadRef.current?.id ?? "", sandboxValue, approvalValue);
+    // ⛔ 同上：有会话只落会话级（胶囊本就写会话记录），全局默认仅在无会话时更新
+    if (threadRef.current) {
+      saveThreadPermissions(threadRef.current.id, sandboxValue, approvalValue);
+      void pushThreadPermissions(threadRef.current.id, sandboxValue, approvalValue);
+    } else {
+      localStorage.setItem("default-sandbox", sandboxValue);
+      localStorage.setItem("default-approval", approvalValue);
+    }
   }
 
   // 设置页全局审批权限的展示值（与 localStorage 双写，进页面读一次）
@@ -11443,10 +11456,11 @@ const commandMatches = useMemo(() => {
   /** 只切档位、不碰模型声明（供菜单选择/命令与「声明被取消后回落」分别使用） */
   function applyEffort(value: string) {
     setEffort(value);
-    localStorage.setItem("default-effort", value);
-    rememberEffortFor(selectedModel?.model ?? modelName(modelId), value);
-    // 思考等级按会话独立：当前有会话就记到会话上（切回来自动恢复），无会话才只是全局默认
+    // ⛔ 多会话/多窗口作用域（09-13）：有会话只落会话级，无会话才写全局默认
+    // （原实现无条件写 default-effort，A 会话切档位污染 B 会话的重启兜底/新会话默认）
     if (threadRef.current?.id) saveThreadEffort(threadRef.current.id, value);
+    else localStorage.setItem("default-effort", value);
+    rememberEffortFor(selectedModel?.model ?? modelName(modelId), value);
     void updateThreadSettings({ effort: value });
     // ⛔ 多窗口作用域（09-13）：有会话时**不再**写全局档案（custom-model.json 顶层 /
     // config.toml 顶层 model_reasoning_effort）——那是全应用共享的，A 窗口会话改档位
@@ -13143,7 +13157,17 @@ const commandMatches = useMemo(() => {
     const active = started.thread as Thread;
     threadRef.current = active;
     setThread(active);
-    if (started?.thread?.id) saveThreadPermissions(started.thread.id, sandbox, approvalPolicy);
+    if (started?.thread?.id) {
+      // ⛔ 多会话/多窗口作用域（09-13 收尾）：新建会话时把「创建那一刻的全局默认」
+      // **烙成该会话自己的初始记录**（模型/effort/权限）。此后该会话的回填与重启兜底
+      // 全部走会话级键，不再读全局——彻底切断「其他会话后来改全局默认」的污染路径。
+      // （thread/start 传入的 model/effort/sandbox/approval 就是这些全局值，烙进去与
+      //   引擎侧会话创建时的真实状态一致。）
+      const tid = started.thread.id;
+      if (!loadThreadModel(tid)) saveThreadModel(tid, modelId);
+      if (!loadThreadEffort(tid) && effort) saveThreadEffort(tid, effort);
+      saveThreadPermissions(tid, sandbox, approvalPolicy);
+    }
     return active;
   }
 
