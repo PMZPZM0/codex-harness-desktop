@@ -66,6 +66,8 @@ contextBridge.exposeInMainWorld("codex", {
   wecomWebhookLogout: () => ipcRenderer.invoke("wecom-webhook:logout") as Promise<{ ok: boolean }>,
   wecomWebhookTest: (text?: string) => ipcRenderer.invoke("wecom-webhook:test", text) as Promise<{ ok: boolean; error?: string }>,
   botBindingGet: () => ipcRenderer.invoke("bot-binding:get") as Promise<{ wechat: { threadId: string; title: string; updatedAt: number } | null; telegram: { threadId: string; title: string; updatedAt: number } | null }>,
+  botsGet: () => ipcRenderer.invoke("bots:get") as Promise<any[]>,
+  botsSet: (list: any[]) => ipcRenderer.invoke("bots:set", list) as Promise<{ ok: boolean; count: number }>,
   botBindingSet: (input: { channel: string; threadId: string | null; title?: string }) => ipcRenderer.invoke("bot-binding:set", input) as Promise<{ threadId: string; title: string; updatedAt: number } | null>,
   homeDir: () => ipcRenderer.invoke("app:home-dir") as Promise<string>,
   botStreamGet: () => ipcRenderer.invoke("bot-stream:get") as Promise<{ enabled: boolean; thinking: boolean; tools: boolean }>,

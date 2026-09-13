@@ -976,6 +976,10 @@ const CHECKS = [
       // 渠道状态键映射：主进程回 weixin，机器人档案存 wechat —— 渲染层必须做映射
       const statusKeys = await h.eval(`window.codex.channelsStatus().then((s) => JSON.stringify(Object.keys(s)))`);
       h.check("主进程状态含 weixin 键（徽章映射的源头）", statusKeys.includes("weixin"), statusKeys);
+      // 机器人档案持久化（09-13：此前只存 localStorage，用户实丢过一次整单机器人）
+      const roundTrip = await h.eval(`(async () => { await window.codex.botsSet([{ id: "accept-bot", name: "accept", channel: "wechat", enabled: false }]); const got = await window.codex.botsGet(); return JSON.stringify(got); })()`);
+      h.check("机器人档案持久化到主进程（bots.json 写读往返）", roundTrip.includes("accept-bot"), roundTrip.slice(0, 160));
+      await h.eval(`window.codex.botsSet([])`);
       await h.screenshot("机器人面板-配对码");
       await h.eval(`window.codex.remoteStop().catch(() => undefined)`);
     },

@@ -8001,8 +8001,35 @@ export default function App() {
       showToast("绑定已更新", threadId ? "机器人后续消息将在所选会话中继续" : "机器人已解绑，下一条消息将开启新会话");
     } catch { showToast("绑定失败", "请稍后重试"); }
   };
-  const [bots, setBots] = useState<{ id: string; name: string; channel: string; enabled: boolean }[]>(() => { try { return JSON.parse(localStorage.getItem("bots") ?? "[]"); } catch { return []; } });
+  // 机器人档案：**持久化在主进程**（userData/bots.json，09-13 迁移）。此前只存 localStorage，
+  // 清缓存/换实例整单丢失（用户实丢过一次）。首次加载时若主进程为空而 localStorage 有旧
+  // 数据，自动上交迁移；此后每次改动同步写主进程（不再写 localStorage）。
+  type BotEntry = { id: string; name: string; channel: string; enabled: boolean; [key: string]: unknown };
+  const [bots, setBots] = useState<BotEntry[]>([]);
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
+  const setBotsPersist = useCallback((updater: BotEntry[] | ((cur: BotEntry[]) => BotEntry[])) => {
+    setBots((cur) => {
+      const next = typeof updater === "function" ? (updater as (c: BotEntry[]) => BotEntry[])(cur) : updater;
+      void window.codex.botsSet?.(next).catch(() => undefined);
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    void window.codex.botsGet?.().then(async (persisted) => {
+      if (!alive) return;
+      let legacy: BotEntry[] = [];
+      try { legacy = JSON.parse(localStorage.getItem("bots") ?? "[]"); } catch { legacy = []; }
+      if (Array.isArray(persisted) && persisted.length) {
+        setBots(persisted);
+      } else if (legacy.length) {
+        // 迁移：主进程为空 + localStorage 有旧档案 → 上交（localStorage 保留一份作备份，不再作为真相源）
+        setBots(legacy);
+        void window.codex.botsSet?.(legacy).catch(() => undefined);
+      }
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
   // 打开机器人管理弹窗默认选中已配置的机器人（优先已启用的），不再显示空详情页
   useEffect(() => {
     if (!botManagerOpen) return;
@@ -14417,7 +14444,7 @@ const commandMatches = useMemo(() => {
       </div>}
       {botManagerOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setBotManagerOpen(false); }}>
         <div className="bot-manager" role="dialog" aria-label="机器人">
-          <header><div className="bot-head-left"><Link2 size={17} /><strong>机器人</strong><small>把外部聊天工具和 Webhook 接入 ZCode 机器人。</small></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setBotManagerOpen(false)}><X size={17} /></button></header>
+          <header><div className="bot-head-left"><Link2 size={17} /><strong>机器人</strong><small>把外部聊天工具和 Webhook 接入为你的聊天机器人。</small></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setBotManagerOpen(false)}><X size={17} /></button></header>
           {/* 09-13：首次连接的 6 位配对码与待审批请求直接在这里展示——
               否则用户得叉掉面板回「手机远控」看码，来回跳（用户反馈「不方便」） */}
           <div className="bot-pair-banner">
@@ -14443,7 +14470,7 @@ const commandMatches = useMemo(() => {
           </div>
           <div className="bot-columns">
             <div className="bot-side">
-              <button className="bot-new-btn" onClick={() => { const id = crypto.randomUUID(); setBots((cur) => { const next = [...cur, { id, name: "新机器人", channel: "", enabled: false }]; localStorage.setItem("bots", JSON.stringify(next)); return next; }); setActiveBotId(id); setBotChannelPick(null); showToast("机器人已创建", "选择渠道并扫码绑定后即可使用"); }}><Plus size={14} />新建机器人</button>
+              <button className="bot-new-btn" onClick={() => { const id = crypto.randomUUID(); setBotsPersist((cur) => { const next = [...cur, { id, name: "新机器人", channel: "", enabled: false }]; return next; }); setActiveBotId(id); setBotChannelPick(null); showToast("机器人已创建", "选择渠道并扫码绑定后即可使用"); }}><Plus size={14} />新建机器人</button>
               <div className="bot-list">
                 {bots.map((bot) => {
                   const online = botOnlineOf(bot, channelOnline);
@@ -14462,7 +14489,7 @@ const commandMatches = useMemo(() => {
               {(() => { const activeBot = bots.find((b) => b.id === activeBotId); if (!activeBot) return <div className="bot-empty"><p className="muted">从左侧选择一个机器人，或新建一个。</p></div>; return (<>
                 <div className="bot-detail-head">
                   <div><strong>{activeBot.name}</strong></div>
-                  <label className="bot-switch"><input type="checkbox" checked={activeBot.enabled} onChange={() => setBots((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, enabled: !b.enabled } : b); localStorage.setItem("bots", JSON.stringify(next)); return next; })} /><span /></label>
+                  <label className="bot-switch"><input type="checkbox" checked={activeBot.enabled} onChange={() => setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, enabled: !b.enabled } : b); return next; })} /><span /></label>
                 </div>
                 {(() => { const online = Boolean(activeBot.channel) && botOnlineOf(activeBot, channelOnline); return (<>
                 <p className={"bot-status-line" + (online ? " online" : "")}>{online ? "● 已连接" : activeBot.enabled ? "● 已启用" : "○ 未启用"}</p>
@@ -14477,13 +14504,13 @@ const commandMatches = useMemo(() => {
                 ) : (<>
                 <div className="bot-channel-grid">
                   {([["wechat", "微信", "手机微信扫码登录，在微信里直接聊。", "中国"], ["telegram", "Telegram", "填 Bot Token 连接（@BotFather 创建）。", ""], ["feishu", "飞书", "填 App ID/Secret，群里 @机器人对话。", "中国"], ["dingtalk", "钉钉", "填 Client ID/Secret，群内 @机器人。", "中国"], ["qq", "QQ 机器人", "填 AppID/Secret（q.qq.com 实名创建）。", "中国"], ["wecom-webhook", "企微推送", "群机器人 Webhook，推送任务通知。", "中国"]] as const).map(([key, name, desc, region]) => (
-                    <button key={key} className={"bot-channel-opt " + (botChannelPick === key ? "picked" : "")} onClick={() => { setBotChannelPick(key); setBots((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, channel: key } : b); localStorage.setItem("bots", JSON.stringify(next)); return next; }); }}>
+                    <button key={key} className={"bot-channel-opt " + (botChannelPick === key ? "picked" : "")} onClick={() => { setBotChannelPick(key); setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, channel: key } : b); return next; }); }}>
                       <strong>{name}{region ? <span className="bot-region">{region}</span> : null}</strong>
                       <small>{desc}</small>
                     </button>
                   ))}
                 </div>
-                {botChannelPick && <BotBindCard bot={activeBot} onBound={(deviceName) => { setBots((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, enabled: true } : b); localStorage.setItem("bots", JSON.stringify(next)); return next; }); void window.codex.channelsStatus?.().then(setChannelOnline).catch(() => undefined); showToast("机器人已连接", `${activeBot.name} 已通过 ${deviceName} 连接`); }} />}
+                {botChannelPick && <BotBindCard bot={activeBot} onBound={(deviceName) => { setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, enabled: true } : b); return next; }); void window.codex.channelsStatus?.().then(setChannelOnline).catch(() => undefined); showToast("机器人已连接", `${activeBot.name} 已通过 ${deviceName} 连接`); }} />}
                 </>)}
                 </>); })()}
                 {(Boolean(activeBot.channel) && ["wechat", "telegram", "feishu", "dingtalk", "qq"].includes(activeBot.channel)) && (() => { // 绑定会话：创建时即可配置（连上后锁定；企微推送为单向通知无会话）
@@ -14513,7 +14540,7 @@ const commandMatches = useMemo(() => {
                   );
                 })()}                <div className="bot-detail-row">
                   <div><strong>机器人回复粒度</strong><small>回复助手正文和文件变更，隐藏工具调用过程。</small></div>
-                  <select className="bot-select" value={(activeBot as any).granularity ?? "standard"} onChange={(event) => setBots((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, granularity: event.target.value } : b); localStorage.setItem("bots", JSON.stringify(next)); return next; })}>
+                  <select className="bot-select" value={(activeBot as any).granularity ?? "standard"} onChange={(event) => setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, granularity: event.target.value } : b); return next; })}>
                     <option value="standard">标准回复</option>
                     <option value="concise">简洁回复</option>
                     <option value="verbose">详细回复</option>
@@ -14535,7 +14562,7 @@ const commandMatches = useMemo(() => {
                 </>)}
                 <div className="bot-detail-row">
                   <div><strong>工作区访问范围</strong><small>这个机器人可以使用所有已配置的工作区。</small></div>
-                  <select className="bot-select" value={(activeBot as any).scope ?? "all"} onChange={(event) => setBots((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, scope: event.target.value } : b); localStorage.setItem("bots", JSON.stringify(next)); return next; })}>
+                  <select className="bot-select" value={(activeBot as any).scope ?? "all"} onChange={(event) => setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, scope: event.target.value } : b); return next; })}>
                     <option value="all">所有工作区</option>
                     <option value="current">仅当前工作区</option>
                   </select>
@@ -14548,7 +14575,7 @@ const commandMatches = useMemo(() => {
                     if (activeBot.channel === "telegram") await window.codex.telegramLogout();
                     void window.codex.channelsStatus?.().then(setChannelOnline).catch(() => undefined);
                   } catch { /* 断开失败不阻塞删除 */ }
-                  setBots((cur) => { const next = cur.filter((b) => b.id !== activeBot.id); localStorage.setItem("bots", JSON.stringify(next)); return next; }); setActiveBotId(null); showToast("机器人已删除", "渠道连接已断开，可随时重新新建并绑定");
+                  setBotsPersist((cur) => { const next = cur.filter((b) => b.id !== activeBot.id); return next; }); setActiveBotId(null); showToast("机器人已删除", "渠道连接已断开，可随时重新新建并绑定");
                 }}><Trash2 size={13} />删除机器人</button></div>
               </>); })()}
             </div>
