@@ -133,7 +133,31 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   const [phase, setPhase] = useState<VoicePhase>("idle");
   const [state, setState] = useState<VoiceState>("listening");
   const [expanded, setExpanded] = useState(false);
-  const [level, setLevel] = useState(0);
+
+  // 电平 ref：通话界面呼吸/发光用（每帧写 CSS 变量，不经 state，避免重渲染打断音频链路）
+  const levelRef = useRef(0);
+  // 通话界面的根元素（--voice-level 由电平循环直接写 DOM，不走 React state——
+  // 09-13 审视：此前 level 走 useState 每块音频全量重渲 VoiceCallFloat + 全屏界面，
+  // 通话期间每秒几十次。悬浮球早已用 ref+CSS 变量，这里统一成同一套写法）
+  const screenElRef = useRef<HTMLElement | null>(null);
+  const applyLevel = useCallback((v: number) => {
+    levelRef.current = v;
+    // 写 body 级 CSS 变量：悬浮球、通话界面、电平条都是 body 后代，继承即生效，
+    // 一处写全生效（screen/ball 各写一份的旧方案已废弃）
+    document.body.style.setProperty("--voice-level", v.toFixed(3));
+  }, []);
+  // 静音（通话界面按钮）：静音时不喂识别、电平归零
+  const [muted, setMuted] = useState(false);
+  const mutedRef = useRef(false);
+  const toggleMute = useCallback(() => {
+    mutedRef.current = !mutedRef.current;
+    setMuted(mutedRef.current);
+    if (mutedRef.current) applyLevel(0);
+  }, [applyLevel]);
+  // 通话字幕回看（你说/回复的最近若干条；只在 final/turnDone 时机追加）
+  const [transcript, setTranscript] = useState<{ role: "user" | "agent"; text: string; at: number }[]>([]);
+  // 通话开始时间（界面显示时长用；挂断置 null）
+  const [callStartedAt, setCallStartedAt] = useState<number | null>(null);
   const [userText, setUserText] = useState("");
   const [agentText, setAgentText] = useState("");
   // 悬浮球显隐（设置里可关）+ 随机提示气泡
@@ -301,6 +325,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
         setUserText(event.text);
         setAgentText("");
         agentTextRef.current = "";
+        pushTranscript("user", String(event.text ?? ""));
         patchVoiceStage({ userText: String(event.text ?? ""), agentText: "" });
         return;
       }
@@ -328,8 +353,10 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
         // 被打断/失败的回合：断句器里的半句与在途合成全部作废，不 flush（审计 ①）
         if (event.aborted) {
           bumpSpeechEpoch();
+          if (String(agentTextRef.current ?? "").trim()) pushTranscript("agent", agentTextRef.current);
           return;
         }
+        pushTranscript("agent", agentTextRef.current);
         void flushSpeech();
         return;
       }
@@ -421,7 +448,6 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       const rms = Math.sqrt(sum / scopeData.length);
       const level = Math.min(1, rms * 6);
       levelRef.current = level;
-      ballRef.current?.style.setProperty("--voice-level", level.toFixed(3));
       setVoiceLevel(level, "speaking");
     }, 60);
 
@@ -488,6 +514,19 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     speakingRef.current = false;
     gateRef.current?.reset();
   }, [bumpSpeechEpoch]);
+
+  /** 跳过当前正在播报的这一段（09-13）：与「打断」的区别是**不动世代号**——
+   *  TTS 线程里还在合成的后续内容照常回来播，只丢弃眼下排队的这些。
+   *  长回复里"这段不用念了，往下说"用这个，不想全打断。 */
+  const skipCurrent = useCallback(() => {
+    for (const source of playQueueRef.current) {
+      try { source.stop(); } catch { /* 已停止 */ }
+    }
+    playQueueRef.current = [];
+    playingCountRef.current = 0;
+    speakingRef.current = false;
+    gateRef.current?.reset();
+  }, []);
 
   // ---- 断句 → 合成 → 播放 ----
   const speakDelta = useCallback(
@@ -616,6 +655,8 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     node.port.onmessage = (event: MessageEvent) => {
       const raw = event.data as Float32Array;
       if (!raw || !raw.length) return;
+      // 静音（09-13）：不喂识别、不进门控/端点判定，电平归零（界面明确显示已静音）
+      if (mutedRef.current) { applyLevel(0); return; }
       if (phaseRef.current !== "active") {
         // ★ 先开麦暂存（审计 ③）：识别工作线程还在加载（154MB 模型，1~3 秒），
         //   但用户按下就说 —— 这段时间的音频先攒着，ASR 就绪后由 startCall 按序回灌，
@@ -627,9 +668,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
           for (const block of buf) total += block.length;
           while (total > PREBUFFER_MAX_SAMPLES && buf.length > 1) total -= buf.shift()!.length;
           const level = Math.min(1, rmsOf(raw) * 12);
-          levelRef.current = level;
-          setLevel(level);
-          ballRef.current?.style.setProperty("--voice-level", level.toFixed(3));
+          applyLevel(level);
         }
         return;
       }
@@ -650,10 +689,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
         : raw;
       const rms = rmsOf(cleaned);
       const nextLevel = Math.min(1, rms * 12);
-      levelRef.current = nextLevel;
-      setLevel(nextLevel);
-      // 悬浮球跟着音量呼吸（写 CSS 变量，不用 state，避免每帧重渲染）
-      ballRef.current?.style.setProperty("--voice-level", nextLevel.toFixed(3));
+      applyLevel(nextLevel);
       // 广播给输入框上方的波浪（播报时不抢 Codex 的电平，避免两边互相抖动）
       if (!speakingRef.current) setVoiceLevel(nextLevel, "listening");
 
@@ -744,6 +780,10 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       liveRef.current = true;
       prebufferRef.current = null;
       setPhase("active");
+      // 通话开始：时长从这里起算；字幕回看清零（新的一通电话）
+      setCallStartedAt(Date.now());
+      setTranscript([]);
+      setMuted(false); mutedRef.current = false;
       // 输入框听写不弹右下角通话面板；只显示 composer 上方实时字幕。
       setExpanded(mode === "conversation");
       // 通话接通即进「通话界面」（像接电话一样）；可收起，收起不挂断
@@ -768,15 +808,16 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     await teardown();
     await window.codex.voiceStop().catch(() => undefined);
     setState("listening");
-    setLevel(0);
-    levelRef.current = 0;
-    ballRef.current?.style.setProperty("--voice-level", "0");
+    applyLevel(0);
     setExpanded(false);
+    setCallStartedAt(null);
+    setTranscript([]);
+    setMuted(false); mutedRef.current = false;
     // 通话界面随挂断一起退出
     setCallScreen(false);
     // 波浪/字幕随之收起
     resetVoiceStage();
-  }, [teardown]);
+  }, [teardown, applyLevel]);
 
   // 波浪舞台上的「结束通话」按钮调的是这里（注册进 store，跨组件调用）
   useEffect(() => {
@@ -829,9 +870,11 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     const off = window.codex.onVoiceHotkey(() => callToggleRef.current());
     return off;
   }, []);
-
-  // 电平 ref：通话界面呼吸/发光用（每帧写 CSS 变量，不经 state，避免重渲染打断音频链路）
-  const levelRef = useRef(0);
+  const pushTranscript = useCallback((role: "user" | "agent", text: string) => {
+    const t = String(text ?? "").trim();
+    if (!t) return;
+    setTranscript((prev) => [...prev.slice(-29), { role, text: t, at: Date.now() }]);
+  }, []);
 
   // ── 语音唤醒：持续聆听 + 匹配唤醒词（会常驻占用 CPU，默认关）──
   /**
@@ -1062,11 +1105,15 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
         <VoiceCallScreen
           phase={phase}
           state={state}
-          level={level}
           userText={userText}
           agentText={agentText}
           notice={notice}
           modelsReady={modelsReady}
+          muted={muted}
+          startedAt={callStartedAt}
+          transcript={transcript}
+          onToggleMute={toggleMute}
+          onSkip={() => skipCurrent()}
           onStart={() => void startCall()}
           onBarge={() => {
             stopPlayback();
@@ -1092,8 +1139,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
               <div className="voice-level" aria-hidden>
                 {Array.from({ length: 22 }).map((_, index) => {
                   const threshold = (index % 11) / 11;
-                  const on = level > threshold * 0.9;
-                  return <i key={index} className={on ? "on" : ""} style={{ height: `${6 + (index % 6) * 3}px` }} />;
+                  return <i key={index} style={{ height: `${6 + (index % 6) * 3}px`, "--t": String(threshold) } as any} />;
                 })}
               </div>
               <div className="voice-caption">
