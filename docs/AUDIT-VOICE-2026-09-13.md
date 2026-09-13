@@ -5,7 +5,23 @@
 > ASR/TTS 全在 `worker_threads`；通话轮 `effort=low`），但缺两样东西：**量化**与**给人听的文本层**。
 > 下面按「用户可感知收益」排序，每条带证据、机制、收益、风险、最小改法。
 
-## ✅ 第二轮（用户 09-13：「12345 全部按你说的优化一下」+「引擎要能区分语音消息」）已实施
+## 反证清单（09-13 第二轮，逐条改回 → 确认预检【4c】变红 → 恢复）
+
+「永远绿的断言等于没有断言」（AGENTS.md 铁律 4）。本轮 6 条接线守卫 + AEC 用例逐条反证过：
+
+| 改回什么 | 预期变红的断言 | 实测输出 |
+|---|---|---|
+| `if (event.aborted) {` → `if (false) {` | ① 打断链路 | `aborted=false` 红 |
+| 把 `await startCapture();` 挪到 `voiceStart` 之后 | ③ 开麦顺序 | `capture=27825 voiceStart=27791` 红 |
+| 删掉回灌循环（`for (const block of pending) …`） | ③ 暂存/回灌 | `prebufferRef / liveRef / 回灌循环` 红 |
+| `rule2: 0.8` → `rule2: 1.2` | ④ 延迟（默认值 + 迁移） | `rule2=false` 红 |
+| `aecRef.current = useSelfAec` → `= true` | ⑤ 不叠加 NLMS | `noDouble=false` 红 |
+| `text: \`${VOICE_MESSAGE_PREFIX}${text}\`` → `text: text` | ⑥ 来源标记 | `use=false` 红 |
+| AEC 用例把噪声换回正弦（或故意不 `setDelay`） | ⑤ AEC 对齐 | 噪声+不校正：ERLE **−0.4dB**（校正 102.8dB）；正弦下错配也能「压 150dB」→ 用例作废 |
+
+反证后已重新构建再跑正式那轮（`check` 0 硬失败 + `--only boot-history` 4/4）。
+新增/改动断言的位置：`scripts/check-preflight.mjs` 的【4c】与【4b】首句阈值两条。
+
 
 | 项 | 改动 | 证据 |
 |---|---|---|
