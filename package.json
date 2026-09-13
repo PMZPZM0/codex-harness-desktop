@@ -1,6 +1,6 @@
 {
   "name": "codex-harness-desktop",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "private": true,
   "description": "Independent desktop harness for OpenAI Codex",
   "main": "dist-electron/main.js",
@@ -144,6 +144,14 @@
       {
         "from": "resources/tools/automation-tools.zip",
         "to": "tools/automation-tools.zip"
+      },
+      {
+        "from": "resources/tools/cloak-cache",
+        "to": "tools/cloak-cache"
+      },
+      {
+        "from": "resources/tools/pw-browsers",
+        "to": "tools/pw-browsers"
       },
       {
         "from": "scripts/install-runtimes.cjs",
