@@ -18,6 +18,7 @@ import { MemoryStore, Scheduler, type MemoryCategory, type MemoryRemoteConfig } 
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { MemoryLayers } from "./memory-layers";
 import { RpaStore, type RpaRecipe } from "./rpa-store";
+import { ThreadRuntimeStore } from "./thread-runtime-store";
 import { TerminalService } from "./terminal";
 import { RemoteControlService } from "./remote";
 import QRCode from "qrcode";
@@ -325,6 +326,38 @@ function sendToWindow(channel: string, payload: unknown) {
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
   mainWindow.webContents.send(channel, payload);
 }
+/** harness:event 广播到**所有**窗口（主窗口 + 独立会话弹窗）。会话运行时配置是跨窗口共享的：
+ *  一个窗口改了，另一个窗口必须看到，否则它下次「读-改-写」会拿旧值写回（丢更新）。 */
+function broadcastHarnessEvent(payload: Record<string, unknown>) {
+  for (const win of [mainWindow, ...popoutWindows]) {
+    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) continue;
+    try { win.webContents.send("harness:event", payload); } catch { /* 窗口在关闭过程中，忽略 */ }
+  }
+}
+
+// ── 会话运行时配置（模型 / 思考档位 / 权限）的主进程权威存放处 + 多窗口并发保护（09-14） ──
+// 渲染层用 localStorage 作**同步读缓存**（大量同步读不能全改异步 IPC），权威值在这里：
+//   · 写入天然串行（主进程单点），字段级合并不丢更新；
+//   · baseRev 与当前 rev 不等 = 另一个窗口在你读之后改过 → 回报 conflict，渲染层据此刷新界面；
+//   · 每次变更广播给所有窗口 → 其它窗口的镜像与 React 状态跟着更新。
+const threadRuntimeFile = path.join(app.getPath("userData"), "thread-runtime.json");
+const threadRuntimeStore = new ThreadRuntimeStore(threadRuntimeFile);
+ipcMain.handle("thread-runtime:get", async (_event, threadId: string) => threadRuntimeStore.get(String(threadId ?? "")));
+ipcMain.handle("thread-runtime:list", async () => threadRuntimeStore.list());
+ipcMain.handle("thread-runtime:seed", async (_event, input: { threadId?: string; runtime?: unknown }) => {
+  const threadId = String(input?.threadId ?? "");
+  if (!threadId) return null;
+  return threadRuntimeStore.seed(threadId, input?.runtime);
+});
+ipcMain.handle("thread-runtime:patch", async (_event, input: { threadId?: string; patch?: unknown; baseRev?: number }) => {
+  const threadId = String(input?.threadId ?? "");
+  if (!threadId) throw new Error("threadId 不能为空");
+  const result = await threadRuntimeStore.patch(threadId, input?.patch, typeof input?.baseRev === "number" ? input.baseRev : undefined);
+  if (result.changed) {
+    broadcastHarnessEvent({ type: "thread-runtime", threadId, runtime: result.runtime, at: Date.now() });
+  }
+  return result;
+});
 const terminals = new Map<string, TerminalService>();
 function terminalFor(id: string) {
   let service = terminals.get(id);

@@ -390,6 +390,10 @@ interface Window {
     selectCustomModel(providerId: string): Promise<CustomModelState>;
     setProviderModel(input: { provider: string; model: string; apply?: boolean; restart?: boolean }): Promise<CustomModelState>;
     setProviderEffort(input: { provider: string; model: string; effort: string }): Promise<CustomModelState>;
+    getThreadRuntime(threadId: string): Promise<{ model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number } | null>;
+    listThreadRuntimes(): Promise<Record<string, { model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }>>;
+    seedThreadRuntime(input: { threadId: string; runtime: unknown }): Promise<{ model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }>;
+    patchThreadRuntime(input: { threadId: string; patch: unknown; baseRev?: number }): Promise<{ runtime: { model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }; conflict: boolean; changed: boolean }>;
     writeClipboard(text: string): Promise<boolean>;
     createScratchDir(): Promise<string>;
     saveIdentity(input: { assistantName?: string; userName?: string; about?: string }): Promise<unknown>;

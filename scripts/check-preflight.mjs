@@ -534,6 +534,44 @@ console.log(C.bold("\n【4a-3】会话运行时配置（模型/档位/权限收�
   }
 }
 
+// ---------- 4a-4. 多窗口并发保护（主进程权威 + 广播）接线守卫 ----------
+
+console.log(C.bold("\n【4a-4】多窗口并发保护（会话运行时配置由主进程权威落盘 + 跨窗口广播）"));
+
+{
+  const readMaybe = (rel) => (existsSync(join(ROOT, rel)) ? readFileSync(join(ROOT, rel), "utf8") : "");
+  const mainSrc = readMaybe("electron/main.ts");
+  const preloadSrc = readMaybe("electron/preload.ts");
+  const storeSrc = readMaybe("electron/thread-runtime-store.ts");
+  const appSrc2 = readMaybe("src/App.tsx");
+
+  if (!storeSrc || !mainSrc || !preloadSrc || !appSrc2) {
+    warn("找不到主进程/渲染层源文件，跳过多窗口接线守卫");
+  } else {
+    storeSrc.includes("字段级合并") || /\.\.\.current,\s*\.\.\.fields/.test(storeSrc)
+      ? ok("主进程 store 是字段级合并（不是整对象覆盖）——两个窗口改不同字段时不丢更新")
+      : fail("主进程 store 疑似整对象覆盖：并发写不同字段会互相抹掉（04 断言会红）");
+    /baseRev\s*!==\s*current\.rev/.test(storeSrc)
+      ? ok("主进程按 baseRev 做冲突检测（等价 ZCode 的 revision）")
+      : fail("主进程没有 baseRev 冲突检测——过期写入会静默覆盖别人的改动");
+    /thread-runtime:patch/.test(mainSrc) && /thread-runtime:seed/.test(mainSrc) && /thread-runtime:get/.test(mainSrc)
+      ? ok("三个 IPC 通道齐备（get / seed / patch）")
+      : fail("IPC 通道不全（get/seed/patch 缺一）——渲染层对不上主进程");
+    /broadcastHarnessEvent\(\{ type: "thread-runtime"/.test(mainSrc)
+      ? ok("变更后广播到所有窗口（多窗口界面才能跟着变）")
+      : fail("主进程改了却没广播——另一个窗口界面不会更新，下次写入会拿旧值覆盖回去");
+    /patchThreadRuntime:\s*\(input/.test(preloadSrc) && /getThreadRuntime:/.test(preloadSrc)
+      ? ok("preload 已透出 getThreadRuntime / patchThreadRuntime")
+      : fail("preload 没透出会话运行时通道");
+    /event\.type === "thread-runtime"/.test(appSrc2) && /admitThreadRuntime\(tid, \(event as any\)\.runtime, \{ fromRemote: true \}\)/.test(appSrc2)
+      ? ok("渲染层订阅了 thread-runtime 广播并收敛到界面（admitThreadRuntime）")
+      : fail("渲染层没订阅广播——跨窗口改动不会反映到界面");
+    /void syncThreadRuntimeWithMain\(id\)/.test(appSrc2)
+      ? ok("打开会话时与主进程对齐（无记录则播种、有记录以主进程为准）")
+      : fail("openThread 没有与主进程对齐——本地镜像与权威值会各说各话");
+  }
+}
+
 // ---------- 4b. 语音通话纯逻辑（回声消除 / 门控 / 断句） ----------
 
 console.log(C.bold("\n【4b】语音通话纯逻辑（回声消除 / 回声门控 / 断句）"));

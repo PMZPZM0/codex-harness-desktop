@@ -310,6 +310,14 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   **回归**：预检【4a-3】14 条纯逻辑断言（迁移优先级 / 空补丁不抹值 / rev / 镜像派生 / 接线守卫「旧键字面量写入归零」）+ `accept.mjs` 的 `thread-runtime` 场景（切模型→切档位→切权限各改一处不冲掉别处、旧键镜像一致、删新键后按旧键迁移重建、**把旧键写成伪造值也不影响取值**）。
   **反证（两条独立的证伪，必须都做）**：F1 去掉迁移回退（`return emptyRuntime()`）→ ⑤ 红；F2 让旧键优先读取 → ⑥ 红（伪造模型浮出来）。**教训**：⑤ 最初写成「重新打开会话触发迁移」，恒假红——`openThread` 有 30 秒秒开快路径会提前 `return`（`recentResumeAtRef`），根本不读 localStorage；触发读取要用**确定的用户动作**（这里用切权限）。⑥ 最初写成「删掉旧键后值不变」，也没鉴别力——那段流程里可能压根没有读取动作；改成「旧键写入伪造值」才可证伪。
 
+- **多窗口并发保护：会话运行时配置改由主进程权威（09-14，`electron/thread-runtime-store.ts`）**：
+  风险面：popout 独立窗口与主窗口是**两个渲染进程**，共享同一份 localStorage（所以存储本身一致），但各自 React 状态是旧的、写入是「读-改-写」三步 → 两个窗口改同一会话会互相看不见、丢更新（各自读到 rev=N，各写回 rev=N+1，后写的把前者的字段抹掉）。
+  修法（对齐 ZCode 的 revision 思路，但适配我们「单主进程多渲染进程」的形态）：**主进程做权威存放处** `<userData>/thread-runtime.json`——写入天然串行、**字段级合并**（`{ ...current, ...fields }`，两个窗口各改一个字段都不丢）、按 `baseRev !== current.rev` 判冲突（冲突不拒绝写入：用户动作该赢自己那几个字段，只回报 conflict 供界面刷新）、落盘做 120ms 合并、改完 `broadcastHarnessEvent({ type:"thread-runtime" })` 广播给**所有**窗口。渲染层 localStorage 降为**同步读缓存**（大量同步 `loadThread*` 不能改成异步 IPC），主进程值经 `admitThreadRuntime`（组件内唯一收敛点）写回镜像并按需同步 React 状态 + toast；`openThread` 里 `syncThreadRuntimeWithMain`：主进程无记录则播种本地值（迁移），有记录则以主进程为准（**不 await**，切会话是热路径）。IPC：`thread-runtime:get / seed / patch`（preload `getThreadRuntime / seedThreadRuntime / patchThreadRuntime`）。
+  **⛔ 一个必须记住的坑**：`syncThreadRuntimeWithMain` 是 fire-and-forget，openThread 后面**不能复用**早先捕获的 `storedModel`（会拿本地旧值把主进程的权威值覆盖回去）——已改为 `loadThreadModel(id) || storedModel || …`。
+  **回归**：`accept.mjs` 的 `thread-runtime-multiwin`（11 断言：真 UI 动作落盘主进程 / 跨窗口广播驱动界面 / 过期 rev 报冲突 / 字段级合并不丢更新 / rev 单调）+ 预检【4a-4】7 条接线守卫。
+  **两条反证**：F3 摘掉广播 → ② 红（界面不跟随）；F4 把字段级合并改成整对象覆盖 → ④ 红（sandbox 被抹成空）。
+  **场景设计教训**：给会话级字段写「测试值」必须用**合法枚举**或**真实存在的模型**（且同供应商，否则 `allModels` 兜底 effect 会回落），否则应用自己会把测试写入纠正掉、把断言带红——先用真 UI 动作走一遍链路，再模拟另一窗口。
+
 - **【定论·勿回退】旧会话供应商由 config.toml 决定，不由会话决定**（09-10 跨引擎生命周期探针实证，用户「新会话能用、旧会话不行」）：真实 app-server + 两个假模型端点实测——①只改会话存档 `session_meta.model_provider` → 重启引擎后**无效**；②只改 config.toml 里该 id 的 `base_url` → 重启后**生效**。即：会话存档只记「供应商名字(id)」，请求地址永远取自 config.toml 该 id 的段；且单进程内改任何地方都无效（线程常驻引擎内存），**必须重启引擎重新加载会话**。因此 `migrateThreadToProvider` 的 `thread/resume + modelProvider + 内联 config` 与 `thread/settings/update` 都**改不掉后续 turn 的供应商**（后者不给 `capabilities.experimentalApi=true` 还会被 -32600 拒绝；变体扫描 9 种全失败）——这两条已确认是装样子，别再依赖。
   **落定修法（`applyCustomModel`）**：config.toml 里**每个** `[model_providers.*]` 段一律写「当前生效供应商的 base_url + wire_api」（保留各自 id/name 以便展示与兼容引用）；`collectSessionProviderIds()` 扫 `codex-home/sessions/**/*.jsonl` 首行收集历史引用过的 id，把**已删除供应商的 id 补成别名段**（同上指向当前生效地址），避免 `Model provider not found`。依据：引擎进程只有一把全局 Key（= 当前生效供应商的 Key），故「所有 id 指向当前生效端点」是唯一自洽形态——任何历史会话都必然走当前供应商。**用户明确拒绝 fork/新建分支方案，必须在原会话可用。** 回归脚本 `.workbuddy/verify-provider-alias.cjs`（11 项断言）。
 

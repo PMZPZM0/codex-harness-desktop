@@ -1834,20 +1834,38 @@ function loadThreadRuntime(id: string): ReturnType<typeof emptyRuntime> {
   return runtime;
 }
 
-/** 写会话运行时配置：一次读、一次合并、一次落盘（外加旧键镜像）。空补丁不落盘。 */
-function saveThreadRuntime(id: string, patch: Partial<ReturnType<typeof emptyRuntime>>) {
+/** 写本地镜像（新键 + 派生旧键）。**权威值在主进程**，这里只让同步读路径（大量 loadThread*）看得见。 */
+function writeThreadRuntimeMirror(id: string, runtime: unknown) {
   if (!id) return;
   try {
-    const { runtime, changed } = patchRuntime(loadThreadRuntimeRaw(id), patch);
-    if (!changed) return;
-    localStorage.setItem(runtimeKey(id), JSON.stringify(runtime));
-    // 旧键镜像（派生值，给已发布的旧版本读；读取路径永不从旧键取值）
-    const mirror = legacyMirror(runtime);
+    const next = normalizeRuntime(runtime);
+    localStorage.setItem(runtimeKey(id), JSON.stringify(next));
+    const mirror = legacyMirror(next);
     if (mirror.model) localStorage.setItem(LEGACY_PREFIX.model + id, mirror.model);
     if (mirror.effort) localStorage.setItem(LEGACY_PREFIX.effort + id, mirror.effort);
     localStorage.setItem(LEGACY_PREFIX.permissions + id, mirror.permissions);
   } catch { /* ignore */ }
 }
+
+/** 写会话运行时配置：本地镜像立即生效（同步读路径不能等 IPC），再推给主进程做权威落盘 + 广播。
+ *  多窗口并发保护（09-14）：baseRev = 本地镜像里上次从主进程同步到的 rev，主进程据此判冲突；
+ *  主进程回来的权威值交给 admitThreadRuntime（组件内）写回镜像并同步 React 状态。 */
+function saveThreadRuntime(id: string, patch: Partial<ReturnType<typeof emptyRuntime>>) {
+  if (!id) return;
+  try {
+    const baseRev = normalizeRuntime(loadThreadRuntimeRaw(id)).rev;
+    const { runtime, changed } = patchRuntime({ ...loadThreadRuntimeRaw(id), rev: baseRev }, patch);
+    if (!changed) return;
+    writeThreadRuntimeMirror(id, runtime);
+    void window.codex?.patchThreadRuntime?.({ threadId: id, patch, baseRev })
+      .then((result: any) => { if (result?.runtime) admitThreadRuntimeRef.current?.(id, result.runtime, { conflict: Boolean(result.conflict) }); })
+      .catch(() => { /* 主进程不可用：退回纯 localStorage 行为（旧版本/测试环境） */ });
+  } catch { /* ignore */ }
+}
+
+/** saveThreadRuntime 是模块级函数、拿不到组件内的 setState —— 由组件在渲染时把
+ *  admitThreadRuntime 挂到这个 ref 上（主进程返回值与广播两条路径共用同一个收敛函数）。 */
+const admitThreadRuntimeRef: { current: ((id: string, runtime: unknown, opts?: { conflict?: boolean; fromRemote?: boolean }) => void) | null } = { current: null };
 
 function loadThreadPermissions(id: string): { sandbox?: string; approval?: string } {
   const r = loadThreadRuntime(id);
@@ -10996,6 +11014,12 @@ const commandMatches = useMemo(() => {
         // 重拉保证收敛到主进程的真实弹窗列表。
         refreshPoppedOut();
       }
+      if (event.type === "thread-runtime") {
+        // 另一个窗口改了某个会话的模型/档位/权限（主进程广播）：写镜像；若正是本窗口打开的
+        // 会话，界面也要跟着变——否则本窗口会用旧值把对方的改动覆盖回去（丢更新）。
+        const tid = String((event as any).threadId ?? "");
+        if (tid) admitThreadRuntime(tid, (event as any).runtime, { fromRemote: true });
+      }
       if (event.type === "scheduler") showToast("定时任务", event.message);
       if (event.type === "memory") showToast("记忆", event.message);
       if (event.type === "skill-install") {
@@ -11192,6 +11216,49 @@ const commandMatches = useMemo(() => {
   const baseInstructionsRef = useRef("");
   /** 每个会话最近一次下发的作用域签名：同签名不重发，避免反复打开会话刷 RPC。 */
   const scopeSigRef = useRef<Record<string, string>>({});
+
+  // ── 多窗口一致性（09-14）：主进程回来的权威运行时 → 镜像 + React 状态 ─────────────────
+  /** 当前 React 状态里的四项会话级取值。**必须走 ref**：onHarnessEvent 的监听是在挂载时
+   *  注册的，直接闭包捕获 state 会拿到首帧的旧值（"", "never"…），导致「值没变也判成变了」。 */
+  const runtimeStateRef = useRef({ model: "", effort: "", sandbox: "", approval: "" });
+  runtimeStateRef.current = { model: modelId, effort, sandbox, approval: approvalPolicy };
+
+  /** 主进程权威值的唯一收敛点（两条来源共用：patch 的返回值、跨窗口广播）。
+   *  ① 写本地镜像 → 同步读路径立刻看到新值；② 若是当前打开的会话 → 同步 React 状态。
+   *  只在**值确实与当前状态不同**时才 setState + 提示，这样本窗口自己的写入广播回来是空操作
+   *  （用户动作早已 setState），只有**别的窗口**的改动才会真正落到界面上。 */
+  function admitThreadRuntime(id: string, runtime: unknown, opts?: { conflict?: boolean; fromRemote?: boolean }) {
+    if (!id || !runtime) return;
+    const next = normalizeRuntime(runtime);
+    writeThreadRuntimeMirror(id, next);
+    if (threadRef.current?.id !== id) return;
+    const cur = runtimeStateRef.current;
+    const changed = (next.model && next.model !== cur.model) || (next.effort && next.effort !== cur.effort)
+      || (next.sandbox && next.sandbox !== cur.sandbox) || (next.approval && next.approval !== cur.approval);
+    if (next.model && next.model !== cur.model) setModelId(next.model);
+    if (next.effort && next.effort !== cur.effort) setEffort(next.effort);
+    if (next.sandbox && next.sandbox !== cur.sandbox) setSandbox(next.sandbox);
+    if (next.approval && next.approval !== cur.approval) setApprovalPolicy(next.approval);
+    if (changed && (opts?.fromRemote || opts?.conflict)) {
+      showToast("会话配置已同步", opts?.conflict ? "另一个窗口刚改过这个会话，已合并到当前界面" : "另一个窗口更新了这个会话的模型/档位/权限");
+    }
+  }
+  admitThreadRuntimeRef.current = admitThreadRuntime;
+
+  /** 打开会话时与主进程对齐：主进程没有记录 → 把本地（含旧键迁移）值播种上去；
+   *  主进程有记录 → 以主进程为准（它才是多窗口下的权威）。 */
+  async function syncThreadRuntimeWithMain(id: string) {
+    if (!id) return;
+    try {
+      const main = await window.codex?.getThreadRuntime?.(id);
+      if (main && main.rev > 0) { admitThreadRuntime(id, main); return; }
+      const local = loadThreadRuntime(id);
+      if (runtimeSignature(local) !== "|||") {
+        const seeded = await window.codex?.seedThreadRuntime?.({ threadId: id, runtime: local });
+        if (seeded) admitThreadRuntime(id, seeded);
+      }
+    } catch { /* 主进程不可用：本地镜像继续独立工作 */ }
+  }
 
   async function loadBaseInstructions(): Promise<string> {
     if (baseInstructionsRef.current) return baseInstructionsRef.current;
@@ -12868,6 +12935,10 @@ const commandMatches = useMemo(() => {
     // 兜底 = 还留着一根被「其他会话改全局默认」污染的口子）。首次打开时把当时的生效值
     // 烙成它自己的记录，此后该会话与新会话一样完全走会话级。
     if (!storedModel) saveThreadModel(id, modelId);
+    // 与主进程对齐（多窗口并发保护，09-14）：主进程有记录则以它为准（含 rev），没有就把本地值播种上去。
+    // 不 await：切会话是热路径（秒开），一次 IPC 往返不值得塞进等待链；主进程值晚到一拍时由
+    // admitThreadRuntime 收敛界面与镜像。
+    void syncThreadRuntimeWithMain(id);
     // 切会话过渡遮罩：只在「没有缓存、需要真正加载」时显示（首次打开的长会话）。
     // 缓存秒开的会话不再强制遮罩——WorkBuddy 式直切（缓存直渲 + 后台 resume 对齐），
     // 每次切换都白遮 ~200ms 是「切换不够丝滑」的直接观感来源。
@@ -13024,7 +13095,9 @@ const commandMatches = useMemo(() => {
       // 记录会话真实绑定的供应商（迁移成功后 migrateThreadToProvider 会覆盖为新值）
       threadProviderRef.current.set(id, resultProvider);
       const resultModel = String(result.model ?? "").trim();
-      const restoredModel = storedModel || (resultModel ? `custom:${resultProvider}:${resultModel}` : modelId || localStorage.getItem("default-model") || "");
+      // ⛔ 先读一次镜像（而不是复用上面捕获的 storedModel）：syncThreadRuntimeWithMain 可能刚
+      // 把主进程的权威值写进镜像，复用旧变量会用本地旧值把对方的改动覆盖回去（丢更新）。
+      const restoredModel = loadThreadModel(id) || storedModel || (resultModel ? `custom:${resultProvider}:${resultModel}` : modelId || localStorage.getItem("default-model") || "");
       if (restoredModel) {
         setModelId(restoredModel);
         saveThreadModel(id, restoredModel);

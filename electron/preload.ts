@@ -187,6 +187,11 @@ contextBridge.exposeInMainWorld("codex", {
   selectCustomModel: (providerId: string) => ipcRenderer.invoke("custom-model:select", providerId),
   setProviderModel: (input: { provider: string; model: string; apply?: boolean; restart?: boolean }) => ipcRenderer.invoke("custom-model:set-model", input),
   setProviderEffort: (input: { provider: string; model: string; effort: string }) => ipcRenderer.invoke("custom-model:set-effort", input),
+  // 会话运行时配置（模型/档位/权限）：主进程权威存放处 + 多窗口并发保护（09-14）
+  getThreadRuntime: (threadId: string) => ipcRenderer.invoke("thread-runtime:get", threadId),
+  listThreadRuntimes: () => ipcRenderer.invoke("thread-runtime:list"),
+  seedThreadRuntime: (input: { threadId: string; runtime: unknown }) => ipcRenderer.invoke("thread-runtime:seed", input),
+  patchThreadRuntime: (input: { threadId: string; patch: unknown; baseRev?: number }) => ipcRenderer.invoke("thread-runtime:patch", input),
   writeClipboard: (text: string) => ipcRenderer.invoke("clipboard:write", text),
   createScratchDir: () => ipcRenderer.invoke("scratch:create"),
   saveIdentity: (input: Record<string, string>) => ipcRenderer.invoke("personalization:save-identity", input),
