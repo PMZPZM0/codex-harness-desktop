@@ -12,6 +12,7 @@
 import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../src/lib/model-scope.mjs";
+import { SESSION_SCOPE_HEADING, composeScopeInstructions, sessionScopeBlock, sessionScopeSignature, stripScopeBlock } from "../src/lib/session-scope.mjs";
 import { planCompletedFold } from "../src/lib/turn-fold-plan.mjs";
 import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../src/lib/voice-aec.mjs";
 import { createSpeakFilter, normalizeNumbers, numberToChinese, toSpeakableText } from "../src/lib/speak-text.mjs";
@@ -368,6 +369,86 @@ if (typeof resolveModelForOpen !== "function") {
     helperUsesScope
       ? ok("applyGlobalModelChoice 按 shouldSyncOpenThread 决定是否同步当前会话")
       : fail("applyGlobalModelChoice 没走 shouldSyncOpenThread —— 改全局默认会波及别的会话");
+  }
+}
+
+// ---------- 4a-2. 会话作用域块（模型自报「我是谁」必须读到会话级配置） ----------
+
+console.log(C.bold("\n【4a-2】会话作用域块（会话级配置下发到会话自己的 instructions）"));
+
+{
+  const base = "You are a fully capable autonomous engineering agent. LANGUAGE: 简体中文。";
+  const scope = {
+    threadId: "01a09cb0-f2f8-7fb3-9de0-1b3bd5238a07",
+    model: "glm-5.3-flash",
+    provider: "custom906",
+    effort: "ultra",
+    sandbox: "danger-full-access",
+    approval: "never",
+    workspace: "D:\\生图专用文件",
+  };
+
+  // ① 块里必须真的写出四项会话级取值（缺一项模型就答不全，09-14 体检实测的坑）
+  const block = sessionScopeBlock(scope);
+  const wantLines = [`模型：${scope.model}`, `思考档位：${scope.effort}`, `执行权限：${scope.sandbox}`, `审批 ${scope.approval}`, `工作区：${scope.workspace}`];
+  const missing = wantLines.filter((line) => !block.includes(line));
+  missing.length === 0
+    ? ok("作用域块含 模型/档位/权限/工作区 四项会话级取值")
+    : fail(`作用域块缺项：${missing.join(" / ")}`);
+
+  // ② 必须显式否定「全局顶层 = 当前配置」——这正是模型报错模型的原因
+  const deniesGlobal = block.includes("不代表当前会话") && block.includes("一律以本节为准");
+  deniesGlobal
+    ? ok("作用域块显式声明全局顶层 model/effort 不代表当前会话")
+    : fail("作用域块没说清「全局顶层 ≠ 当前会话」——模型会继续读 config.toml 顶部自报旧模型");
+
+  // ③ 签名：模型/档位/权限变了必须变（否则不会重新下发）；工作区变了不必重发
+  const sig = sessionScopeSignature(scope);
+  const sameSig = sessionScopeSignature({ ...scope, workspace: "D:\\other", threadId: "other" });
+  sig === sameSig ? ok("签名只看 模型/供应商/档位/权限（工作区变动不触发重发）") : fail("签名把工作区/会话 ID 也算进去了——会无谓重发");
+  const modelChanged = sessionScopeSignature({ ...scope, model: "deepseek-v4-flash" });
+  modelChanged !== sig ? ok("签名随模型变化（切模型后必定重新下发作用域）") : fail("换模型后签名不变 → 切了模型模型仍自报旧模型");
+  const effortChanged = sessionScopeSignature({ ...scope, effort: "high" });
+  effortChanged !== sig ? ok("签名随思考档位变化") : fail("换档位后签名不变 → 体检的档位项会读到旧值");
+
+  // ④ 组合：基线原样在前（否则作用域块会把语言/工具/自动化说明顶掉），块在后
+  const composed = composeScopeInstructions(base, block);
+  composed.startsWith(base) ? ok("组合结果以全局基线开头（不顶掉 nuphus-call / 语言 / 自动化说明）") : fail("组合结果丢掉了基线——模型会不知道内置工具怎么用");
+  composed.indexOf(SESSION_SCOPE_HEADING) > composed.indexOf(base) ? ok("作用域块拼在基线之后") : fail("作用域块位置不对");
+
+  // ⑤ 幂等：反复下发不许叠加（每次改档位都发一次，叠加会长到失控）
+  const twice = composeScopeInstructions(composed, sessionScopeBlock({ ...scope, effort: "high" }));
+  const headings = twice.split(SESSION_SCOPE_HEADING).length - 1;
+  headings === 1 ? ok("反复下发幂等（作用域块只有一份）") : fail(`反复下发后作用域块出现 ${headings} 份——历史块没被剥离`);
+  twice.includes("思考档位：high") ? ok("幂等组合保留了最新档位") : fail("幂等组合把最新档位弄丢了");
+  stripScopeBlock(composed) === base ? ok("strip 能还原出原始基线") : fail("strip 不能还原基线（幂等剥离有偏差）");
+
+  // ⑥ 缺项防护：不能拼出 undefined / null（旧会话可能没有工作区等字段）
+  const sparse = sessionScopeBlock({ threadId: "t", model: "glm-5.3-flash" });
+  !/undefined|null/.test(sparse) ? ok("缺项回落为占位符，不拼出 undefined/null") : fail("缺项拼出了 undefined/null");
+  composeScopeInstructions("", block) === block ? ok("无基线时只下发作用域块") : fail("无基线时组合结果异常");
+
+  // 接线守卫：App.tsx 必须真的把作用域塞进会话级 instructions（否则纯函数再对也没生效）
+  const scopeSrc = existsSync(join(ROOT, "src", "App.tsx")) ? readFileSync(join(ROOT, "src", "App.tsx"), "utf8") : "";
+  if (!scopeSrc) {
+    warn("找不到 src/App.tsx，跳过会话作用域接线守卫");
+  } else {
+    const imported = /from "\.\/lib\/session-scope\.mjs"/.test(scopeSrc);
+    // 下发点：collaborationMode 块里必须真的带上 developer_instructions（不能只 import 不用）
+    const wired = /collaborationMode:\s*\{[\s\S]{0,400}?developer_instructions:\s*composeScopeInstructions\(/.test(scopeSrc);
+    // 覆盖三条路径：新建会话（thread/start 注入 + pushSessionScope）、打开旧会话、设置变更
+    const covered = /pushSessionScope\(/.test(scopeSrc) && /buildSessionScope\(/.test(scopeSrc) && /thread\/settings\/update", \{ threadId: thread\.id, \.\.\.values/.test(scopeSrc);
+    imported && wired && covered
+      ? ok("会话作用域已接进 thread/settings/update 的 collaborationMode.settings.developer_instructions")
+      : fail(`会话作用域未接上（import=${imported} wire=${wired} covered=${covered}）——模型仍会去读全局 config.toml 顶层自报模型`);
+
+    // 反泄漏守卫（09-14 用户实测「模型还是串全局」的次因）：档案对账（setProviderModel apply:true
+    // 会改写 custom-model.json / config.toml 顶层 model）**必须**先判「当前有没有打开的会话」，
+    // 否则切会话模型会把全局档案写成该会话的模型 → 别的会话自查读全局就报成别人的模型。
+    const archiveGuarded = /if \(threadRef\.current\?\.id\) return;[\s\S]{0,600}?setProviderModel\(\{ provider, model: match\[2\], apply: true/.test(scopeSrc);
+    archiveGuarded
+      ? ok("全局档案对账已加「无会话才写」守卫（切会话模型不再改写全局档案）")
+      : fail("全局档案对账缺少会话守卫——切会话模型会把 custom-model.json / config.toml 顶层 model 改成该会话的模型");
   }
 }
 

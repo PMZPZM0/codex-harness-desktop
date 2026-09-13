@@ -23,7 +23,8 @@ import http from "node:http";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ElectronHarness } from "./e2e/lib/harness.mjs";
-import { greetingInjected } from "./e2e/lib/rollout-inspect.mjs";
+import { developerMessages, greetingInjected, threadScopeInstructions } from "./e2e/lib/rollout-inspect.mjs";
+import { SESSION_SCOPE_HEADING } from "../src/lib/session-scope.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -48,13 +49,31 @@ const BODY_LEN = `(() => {
 })()`;
 
 /** 点侧栏第 i 个会话行（只用旧会话） */
-const clickRow = (h, i) => h.eval(`(() => {
-  const list = [...document.querySelectorAll(".thread-row")];
+const clickRow = (h, i) => h.eval(`(() => {  const list = [...document.querySelectorAll(".thread-row")];
   const btn = list[${i}] && list[${i}].querySelector("button");
   if (!btn) return false;
   btn.click();
   return true;
 })()`);
+
+/** 全局档案的「当前模型」——也就是用户做配置体检时模型**真正读到**的那两份文件：
+ *  `custom-model.json` 顶层 model + `config.toml` 顶层 model。
+ *  会话级作用域修好之后，切会话模型**不许**再改写它们（09-14 用户实测「模型还是串全局」的根源）。 */
+const globalArchiveOf = (h) => {
+  let archive = "";
+  let provider = "";
+  try {
+    const j = JSON.parse(readFileSync(join(h.userDataDir, "custom-model.json"), "utf8"));
+    archive = String(j.model ?? "");
+    provider = String(j.provider ?? "");
+  } catch { /* 文件不在就留空 */ }
+  let toml = "";
+  try {
+    const top = readFileSync(join(h.userDataDir, "codex-home", "config.toml"), "utf8").split(/\n(?=\[)/)[0];
+    toml = (top.match(/^\s*model\s*=\s*"([^"]*)"/m) ?? [])[1] ?? "";
+  } catch { /* 同上 */ }
+  return { archive, provider, toml };
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 本轮验收项（**每次改动只改这一段**；不再对应的旧项直接删掉，别攒着）
@@ -1137,6 +1156,108 @@ const CHECKS = [
   },
 
   {
+    id: "session-scope",
+    name: "⑭ 会话作用域：模型自报「我是谁」读会话级配置，不再读全局档案（09-14 用户实测「模型还是串全局的」）",
+    run: async (h) => {
+      // 用户 09-14 实测：在某会话里切到 glm-5.3-flash 后做配置体检，模型自报 deepseek-v4-flash。
+      // rollout 取证（turn_context.model）证明会话**真的**跑在 glm 上 —— 缺陷不在「会话级没生效」，
+      // 而在「模型没有任何会话级出口可读」：它能读的只有全局 config.toml / custom-model.json
+      // 的顶层 model，那是「新建会话时的默认值」。修法 = 把会话作用域写进**会话自己的**
+      // instructions（引擎 thread settings 的 collaboration_mode.settings.developer_instructions）。
+      const rows = Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0;
+      h.check("[前置] 有旧会话可开（≥1）", rows >= 1, `thread-row=${rows}`);
+      // ⛔ 全局档案的基准快照必须在「打开会话」**之前**取：泄漏（若存在）就发生在打开会话 /
+      // 切模型的那一瞬间，打开之后再快照就永远看不见它 —— 上一版 ⑦ 恒绿（反证时不红）正是
+      // 这个原因。基准往前挪，⑦ 才是一条能翻红的断言。
+      const archiveEntry = globalArchiveOf(h);
+      console.log(`  [作用域] 进入场景时（打开会话前）的全局档案 = ${JSON.stringify(archiveEntry)}`);
+      await clickRow(h, 0);
+      await wait(2000);
+      const tid = String(await h.eval(`window.codex.request("thread/list", { limit: 5, sortKey: "updated_at", sortDirection: "desc", archived: false }).then((r) => r.data?.[0]?.id ?? "").catch(() => "")`));
+      h.check("[前置] 拿到会话 id（引擎侧取，不依赖 localStorage 键名）", Boolean(tid), `tid=${tid}`);
+      if (!tid) return;
+      // 注意：这里**不**断言「打开会话前后档案不变」——应用启动时泄漏（若存在）早就在快照
+      // 之前发生了，这条恒绿、没有鉴别力（反证时实测：摘掉守卫它照样绿）。真正能翻红的是
+      // 下面的 ⑦（切模型）与 ⑧（切走再切回＝重新打开）：它们都在基准快照**之后**触发。
+      const archiveBefore = globalArchiveOf(h);
+      console.log(`  [作用域] 全局档案（模型体检真正读的那两份）= ${JSON.stringify(archiveBefore)}`);
+
+      // ① 用真菜单把会话切到「与全局档案不同」的那个模型：会话级要跟着变，
+      //    而全局档案必须**一动不动**（用户要的「只读会话级」）
+      const switched = await h.eval(`(async () => {
+        const menu = [...document.querySelectorAll(".model-controls .composer-menu")].find((m) => m.querySelector("button.composer-setting")?.title === "模型");
+        if (!menu) return "ERR:no-model-menu";
+        const before = menu.querySelector("button.composer-setting span")?.textContent ?? "";
+        menu.querySelector("button.composer-setting").click();
+        await new Promise((r) => setTimeout(r, 400));
+        const opts = [...document.querySelectorAll(".composer-menu-pop button[role=option]")].filter((b) => !/更多设置/.test(b.innerText || ""));
+        const archive = ${JSON.stringify(archiveBefore.archive)};
+        const pick = opts.find((b) => { const t = b.querySelector("strong")?.textContent ?? ""; return t && !t.includes(archive); }) ?? null;
+        if (!pick) return JSON.stringify({ error: "no-target", before, archive, options: opts.length });
+        const title = pick.querySelector("strong")?.textContent ?? "";
+        pick.click();
+        await new Promise((r) => setTimeout(r, 1500));
+        return JSON.stringify({ before, picked: title, archive, options: opts.length });
+      })()`);
+      console.log(`  [作用域] 模型菜单切换 → ${switched}`);
+      let switchedInfo = {};
+      try { switchedInfo = JSON.parse(switched); } catch { /* 保持空对象 */ }
+      h.check("[前置] 模型菜单可切到另一个模型（本项需要会话级与全局不同）", Boolean(switchedInfo.picked), switched);
+
+      // ② 发一条极短回合，逼引擎把会话级设置 + developer 指令落进 rollout（rollout 只在回合时写）
+      const turnsBefore = h.engineModelOf(tid).turns;
+      await h.clearInput(".composer-editor");
+      await h.typeInto(".composer-editor", "只回复两个字：收到");
+      await wait(250);
+      await h.click(".send-button");
+      let info = h.engineModelOf(tid);
+      for (let i = 0; i < 90 && info.turns <= turnsBefore; i++) {
+        await wait(1000);
+        info = h.engineModelOf(tid);
+      }
+      h.check("[前置] 本轮回合已被引擎执行（rollout 多了一条 turn_context）", info.turns > turnsBefore, `turns ${turnsBefore} → ${info.turns}`);
+      const text = info.file ? readFileSync(info.file, "utf8") : "";
+      const devs = developerMessages(text);
+      // ⛔ 必须取**最新一轮**的 developer 消息：持久 profile 里这个会话已经跑过多轮，
+      // rollout 里堆着前几轮的作用域块（旧模型），取第一条会拿上一轮的块去比当前
+      // turn_context.model —— 反证时 ②⑥ 因此假红（与被测行为无关）。
+      const scopeDocs = devs.filter((t) => t.includes(SESSION_SCOPE_HEADING));
+      const scopeDoc = scopeDocs[scopeDocs.length - 1] ?? "";
+      h.check("① 会话作用域进了会话**自己的** developer 指令（引擎侧 developer 消息，非全局档案）", Boolean(scopeDoc), `developer 消息 ${devs.length} 条，命中=${Boolean(scopeDoc)}`);
+      h.check("② 块里的模型 = 该会话引擎侧实际跑的模型（turn_context.model）", Boolean(scopeDoc) && Boolean(info.turnModel) && scopeDoc.includes(`当前模型：${info.turnModel}`), `turnModel=${info.turnModel}`);
+      h.check("③ 全局基线没被顶掉（语言/内置工具说明仍在，作用域块拼在其后）", Boolean(scopeDoc) && /nuphus-call|playwright-cli|generate_image/.test(scopeDoc) && scopeDoc.indexOf(SESSION_SCOPE_HEADING) > 0, `len=${scopeDoc.length}`);
+      h.check("④ 块里显式否定「全局顶层 = 当前配置」（模型自报错模型的直接原因）", Boolean(scopeDoc) && scopeDoc.includes("不代表当前会话"));
+      const persisted = threadScopeInstructions(text) ?? "";
+      h.check("⑤ 引擎已持久该会话的会话级 instructions（rollout thread_settings_applied 非空）", persisted.includes(SESSION_SCOPE_HEADING), `len=${persisted.length}`);
+      // ⑥ 抗全局：作用域块里写的必须是**该会话**的模型，不是全局档案里那份
+      const archiveModel = archiveBefore.archive;
+      if (info.turnModel && archiveModel && info.turnModel !== archiveModel) {
+        h.check("⑥ 作用域块写的是会话级模型，与全局档案的模型不同（不是串全局）", scopeDoc.includes(`当前模型：${info.turnModel}`) && !scopeDoc.includes(`当前模型：${archiveModel}`), `会话=${info.turnModel} 档案=${archiveModel}`);
+      } else {
+        console.log(`  \x1b[33m⚠️ 会话模型与全局档案相同（会话=${info.turnModel} 档案=${archiveModel}）——⑥ 无法区分，跳过\x1b[0m`);
+      }
+      // ⑦ 硬闸门：切会话模型**不得**改写全局档案（custom-model.json / config.toml 顶层 model）。
+      //    这是用户「模型还是串全局」的第二条泄漏路径：会话模型一变，全局档案被就地写齐，
+      //    模型下次自查读全局 → 报成别的会话的模型。
+      const archiveAfter = globalArchiveOf(h);
+      h.check("⑦ 切会话模型没有改写全局档案（custom-model.json / config.toml 顶层 model 原样）", archiveAfter.archive === archiveBefore.archive && archiveAfter.toml === archiveBefore.toml, `切前=${JSON.stringify(archiveBefore)} 切后=${JSON.stringify(archiveAfter)}`);
+      // ⑧ 再切一次会话往返（切到别的会话再切回本会话）：此刻本会话的模型已与档案不同，
+      //    「重新打开」是最容易触发回写的路径 —— 打开即写全局，别的会话自报就串。
+      if (rows >= 2) {
+        await clickRow(h, 1);
+        await wait(1200);
+        await clickRow(h, 0);
+        await wait(2000);
+        const archiveReopen = globalArchiveOf(h);
+        h.check("⑧ 重新打开该会话（会话模型 ≠ 档案）也没有回写全局档案", archiveReopen.archive === archiveEntry.archive && archiveReopen.toml === archiveEntry.toml, `基准=${JSON.stringify(archiveEntry)} 往返后=${JSON.stringify(archiveReopen)}`);
+      } else {
+        console.log(`  \x1b[33m⚠️ 只有一个会话，⑧（切走再切回）无法区分，跳过\x1b[0m`);
+      }
+      await h.screenshot("会话作用域-会话级开发者指令");
+    },
+  },
+
+  {
     id: "clean",
     name: "⑦ 渲染层无 console.error",
     run: async (h) => {
@@ -1172,7 +1293,7 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "09-13";
+const LATEST_ROUND = "09-14";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
   "boot-history": "09-12",
@@ -1196,6 +1317,7 @@ const ROUND_OF = {
   "bot-pair-banner": "09-13",
   "zhiwei-expert": "09-13",
   "popout-window": "09-13",
+  "session-scope": "09-14",
 };
 const roundOf = (id) => ROUND_OF[id] ?? "(未登记)";
 
