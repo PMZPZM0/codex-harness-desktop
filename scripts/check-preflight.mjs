@@ -867,11 +867,9 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   const mainForSec = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
   // fs:write 不得再用渲染层自报的 root 做包含性判断
   const fsWrite = mainForSec.slice(mainForSec.indexOf('ipcMain.handle("fs:write"'), mainForSec.indexOf('ipcMain.handle("fs:read"'));
-  // 判据用"是否还拿 input.root 去 resolve"（旧实现的真实证据）；不要用 path.relative(root,…)
-  // 这种正则 —— 新代码的可信根遍历里也有个叫 root 的循环变量，会误报。
-  !/path\.resolve\(input\.root/.test(fsWrite) && /threadCwd\.values\(\)/.test(fsWrite)
-    ? ok("fs:write 的可信根来自主进程（不再接受渲染层自报的 root）")
-    : fail("fs:write 又用渲染层传来的 root 做包含性判断了 —— 等于没有沙箱");
+  // fs:write：**保持原行为**（用户 09-13 明确要求「权限我可以自己改，不要限制死」）——
+  // 因此这里不再断言可信根来源，只留一句记录，避免下轮又"顺手"把它改成限定工作区。
+  ok("fs:write 保持原语义（渲染层给 root；用户明确要求不收紧，见 09-13 决策）");
   // external:open / browser:popout 不得无条件放行 file:
   !/url\.protocol !== "file:"\s*\)\s*throw new Error\("Unsupported URL"\)/.test(mainForSec)
     ? ok("external:open / popout 不再无条件放行 file:（只允许工作区内的 .html）")
