@@ -1033,6 +1033,57 @@ console.log(C.bold("\n【4f】麦克风错误翻译（唤醒/通话共用）+ �
   }
 }
 
+// ---------- 【4g】Bot Channel 配对门卫（09-13：聊天里发 6 位授权码 + 电脑端审批） ----------
+// 这条守卫跑编译产物 electron/bot-pairing.ts → dist-electron/bot-pairing.js 的**真实现**：
+// 未批准聊天发普通消息只收到配对引导；发对授权码挂起等审批；审批通过才放行；
+// 连续错 5 次触发冷却。改坏配对门卫 = 机器人聊天对全网裸奔，所以钉在预检里。
+console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端审批，跑编译产物真实现）"));
+{
+  const botPairPath = join(ROOT, "dist-electron", "bot-pairing.js");
+  let BotPairingService = null;
+  try { BotPairingService = (await import("file://" + botPairPath.replace(/\\/g, "/"))).BotPairingService; }
+  catch { fail(`bot-pairing 编译产物读不到（先 npm run build）`); }
+  if (BotPairingService) {
+    const notifications = [];
+    const gate = new BotPairingService(() => "135790", (req) => notifications.push(req), () => undefined);
+    // ① 未批准聊天 + 普通消息 → 只收到配对引导（消息不会到达引擎）
+    const guide = gate.onChannelMessage("qq", "chat-1", "QQ 测试", "帮我看看这个报错");
+    guide.action === "guide" && /配对码/.test(guide.message)
+      ? ok("未批准聊天：普通消息只收到配对引导（不执行）")
+      : fail(`未批准聊天没有引导或直接放行（${JSON.stringify(guide).slice(0, 80)}）`);
+    // ② 配对码错误 → 仍引导（且不产生审批请求）
+    gate.onChannelMessage("qq", "chat-1", "QQ 测试", "000000");
+    notifications.length === 0
+      ? ok("配对码错误不会进入审批队列")
+      : fail("错码也触发了审批请求 —— 输码校验失效");
+    // ③ 授权码正确 → 挂起等电脑端审批（此刻消息仍不放行）
+    const wait = gate.onChannelMessage("qq", "chat-1", "QQ 测试", "135790");
+    wait.action === "wait" && Boolean(wait.rid)
+      ? ok("授权码正确 → 挂起等电脑端审批（给出 rid）")
+      : fail(`授权码正确却没挂起（${JSON.stringify(wait).slice(0, 80)}）`);
+    const stillGuide = gate.onChannelMessage("qq", "chat-1", "QQ 测试", "还没批准呢再发一条");
+    stillGuide.action === "guide"
+      ? ok("审批通过前该聊天仍被拦截")
+      : fail("审批还没通过消息就放行了 —— 门卫失效");
+    // ④ 电脑端批准 → 同聊天放行
+    gate.approve(wait.rid) ? null : fail("approve(rid) 返回失败 —— 审批流转断了");
+    const allowed = gate.onChannelMessage("qq", "chat-1", "QQ 测试", "再发一条正常消息");
+    allowed.action === "allow" ? ok("电脑端批准后同聊天放行") : fail("批准后仍被拦截 —— 批准没写进已批准表");
+    // ⑤ 冷却：连续错 5 次触发锁定（挡暴力试码）
+    const gate2 = new BotPairingService(() => "246810", () => undefined, () => undefined);
+    let locked = null;
+    for (let i = 0; i < 6; i++) locked = gate2.onChannelMessage("wx", "chat-2", "微信", "111111");
+    locked.action === "guide" && /锁定/.test(locked.message)
+      ? ok("连续错 5 次触发冷却锁定（挡暴力试码）")
+      : fail(`错码没有冷却锁定（最后一次 ${JSON.stringify(locked).slice(0, 80)}）`);
+    // ⑥ 反证：门卫形同虚设的情形 = 所有消息都 allow —— 这里用"已批准表"对照证明 ① 的拦截真的由批准状态驱动
+    gate.revoke("qq", "chat-1");
+    const afterRevoke = gate.onChannelMessage("qq", "chat-1", "QQ 测试", "撤销后再发一条");
+    afterRevoke.action === "guide" ? ok("撤销已批准聊天后重新回到拦截（revoke 生效）") : fail("撤销后仍放行 —— revoke 没删批准表");
+  }
+}
+
+
 console.log(C.bold("\n【5】启动链健壮性（boot 副作用不得裸 await）"));
 {
   // 为什么是硬失败：主进程 boot 是 `app.whenReady().then(async () => { … })`——里面任何一处
@@ -1378,6 +1429,24 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   /rotatePairingCode\(/.test(remoteSrc) && /checkPairingCode\(/.test(remoteSrc) && /approvePair\(/.test(remoteSrc) && /onPairRequest/.test(remoteSrc)
     ? ok("首次连接走「6 位配对码 + 电脑端审批」（配对码可轮换、审批有批准入口）")
     : fail("远控缺配对码或电脑端审批入口 —— 又退回成「扫码即控制」");
+
+  // ③-c 09-13 语音通话审视的防回退：电平不进 state / 外发光不逐帧 paint blur / 静音拦截在喂识别之前
+  const floatSrc = readFileSync(join(ROOT, "src", "components", "VoiceCallFloat.tsx"), "utf8");
+  const cssSrc = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+  !/setLevel\(/.test(floatSrc)
+    ? ok("语音电平不进 React state（走 ref + body 级 CSS 变量，通话中不再每块音频全量重渲）")
+    : fail("VoiceCallFloat 又用 setLevel() 驱动电平了 —— 每块音频全量重渲通话 UI");
+  const avatarBlock = cssSrc.slice(cssSrc.indexOf(".voice-call-avatar {"), cssSrc.indexOf(".voice-call-avatar::before"));
+  const orbBlock = cssSrc.slice(cssSrc.indexOf(".voice-mascot-orb {"), cssSrc.indexOf(".voice-mascot-orb::before"));
+  const ballBlock = cssSrc.slice(cssSrc.indexOf(".voice-ball {"), cssSrc.indexOf(".voice-ball::before"));
+  // 只查 box-shadow **声明**（transform/opacity 里的 var(--voice-level) 是合成器友好的合法用法）
+  const blurGlow = (block) => (block.match(/box-shadow\s*:[^;]*;/g) ?? []).some((decl) => /var\(--voice-level/.test(decl));
+  !blurGlow(avatarBlock) && !blurGlow(orbBlock) && !blurGlow(ballBlock)
+    ? ok("外发光不再用 box-shadow blur 逐帧 paint（已改 ::before 光晕层 opacity/scale）")
+    : fail("avatar/orb/悬浮球的外发光又回到 box-shadow blur —— 全屏遮罩上逐帧 paint，通话全程掉帧");
+  /mutedRef\.current\).*?return;/.test(floatSrc.replace(/\r?\n\s*/g, " ")) || /if \(mutedRef\.current\) \{ applyLevel\(0\); return; \}/.test(floatSrc)
+    ? ok("静音在喂识别之前拦截（voiceAudio 不收静音期的音频）")
+    : fail("静音没有在喂识别之前拦截 —— 静音期间麦克风还在往识别送音频");
 
   // ④ 引擎 thread.status 是对象，不许再按字符串比较（否则"在跑"判据恒假）
   !/params\.status !== "inProgress"/.test(appSrc) && !/input\.status === "inProgress"/.test(readFileSync(join(ROOT, "src", "lib", "turn-fold.ts"), "utf8"))

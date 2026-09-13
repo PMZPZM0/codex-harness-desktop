@@ -20283,10 +20283,10 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   touch-action: none;
   color: transparent;
   background: transparent;
-  box-shadow:
-    0 0 calc(8px + var(--voice-level) * 30px) color-mix(in srgb, #ff9a4a calc(18% + var(--voice-level) * 60%), transparent);
+  /* 09-13 性能：发光改 ::before 光晕层（opacity/scale 合成器处理），不再 box-shadow blur */
+  isolation: isolate;
   transform: scale(calc(1 + var(--voice-level) * 0.08));
-  transition: transform .12s ease-out, box-shadow .12s ease-out, filter .16s ease;
+  transition: transform .12s ease-out, filter .16s ease;
   border: 0;
   padding: 0;
   /* 彻底清除浏览器/Electron 对 button 的默认外观：避免白底/默认边框/焦点高亮 */
@@ -20295,6 +20295,19 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   background-color: transparent;
   outline: none;
 }
+/* 09-13：悬浮球外发光 = ::before 光晕层（opacity/scale 随 --voice-level，合成器处理） */
+.voice-ball::before {
+  content: "";
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(251, 146, 60, .42) 0%, rgba(167, 139, 250, .16) 48%, rgba(167, 139, 250, 0) 72%);
+  opacity: calc(.3 + var(--voice-level) * .7);
+  transform: scale(calc(1 + var(--voice-level) * .18));
+  z-index: -1;
+  pointer-events: none;
+}
+
 .voice-ball:hover { filter: brightness(1.05) drop-shadow(0 0 6px color-mix(in srgb, #ff9a4a 35%, transparent)); }
 .voice-ball:active { transform: scale(.95); }
 
@@ -20396,10 +20409,17 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   width: 3px;
   border-radius: 2px;
   background: var(--line);
-  transition: background .12s ease;
+  position: relative;
+  overflow: hidden;
 }
-.voice-level i.on {
+/* 09-13：点亮不再走 React（level state）——每根柱的 --t 是自己的阈值，
+   亮层 opacity 由全局 --voice-level 与阈值之差 clamp 出来（合成器路径） */
+.voice-level i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   background: var(--accent);
+  opacity: clamp(0, calc((var(--voice-level, 0) - var(--t, 1)) * 12), 1);
 }
 
 .voice-caption {
@@ -21312,9 +21332,10 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   box-shadow:
     /* 内部"打光"：左上高光 + 右下阴影 = 球体光感 */
     inset 4px 6px 14px color-mix(in srgb, #ffffff 60%, transparent),
-    inset -5px -6px 14px color-mix(in srgb, #1e1b4b 35%, transparent),
-    /* 外发光：随 --voice-level 变强 */
-    0 0 calc(8px + var(--voice-level) * 32px) color-mix(in srgb, #a78bfa calc(20% + var(--voice-level) * 60%), transparent);
+    inset -5px -6px 14px color-mix(in srgb, #1e1b4b 35%, transparent);
+  /* 09-13 性能：外发光改 ::before 光晕层（opacity/scale 合成器处理），不再用
+     box-shadow blur 逐帧 paint（见 .voice-call-avatar 的同款改造） */
+  isolation: isolate;
   /* 整体缓慢旋转 = 渐变色彩在球面流动（不靠 @property，靠整球 transform） */
   animation: orb-spin 9s linear infinite;
   will-change: transform;
@@ -21344,6 +21365,26 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 @keyframes orb-pulse {
   0%, 100% { transform: rotate(0deg) scale(1); }
   50%      { transform: rotate(180deg) scale(calc(1 + var(--voice-level, 0) * 0.06)); }
+}
+
+/* orb 外发光：radial 光晕层替代 box-shadow blur（只动 opacity/scale = 合成器处理）。
+   悬浮球/通话界面共用一个 --voice-level（由最近的设置者决定）。 */
+.voice-mascot-orb::before {
+  content: "";
+  position: absolute;
+  inset: -22%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(167, 139, 250, .45) 0%, rgba(167, 139, 250, .14) 50%, rgba(167, 139, 250, 0) 72%);
+  opacity: calc(.35 + var(--voice-level, 0) * .65);
+  transform: scale(calc(1 + var(--voice-level, 0) * .3));
+  z-index: -1;
+  pointer-events: none;
+}
+.voice-mascot-listening::before {
+  background: radial-gradient(circle, rgba(34, 211, 238, .4) 0%, rgba(34, 211, 238, .12) 50%, rgba(34, 211, 238, 0) 72%);
+}
+.voice-mascot-speaking::before {
+  background: radial-gradient(circle, rgba(251, 146, 60, .48) 0%, rgba(251, 146, 60, .16) 50%, rgba(251, 146, 60, 0) 72%);
 }
 
 /* 眼睛：两颗白色发光点（"灵魂"），不旋转（外层旋转不影响） */
@@ -21517,8 +21558,54 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   display: grid;
   place-items: center;
   background: radial-gradient(circle at 50% 38%, #3b4780 0%, #262e56 62%, #1b2140 100%);
-  box-shadow: 0 0 calc(28px + var(--voice-level, 0) * 70px) rgba(122, 148, 255, calc(.28 + var(--voice-level, 0) * .5));
-  transition: box-shadow .12s ease;
+  /* 09-13 性能：外发光不再用 box-shadow blur（逐帧 paint，全屏遮罩上代价高）——
+     改为 ::before 的 radial-gradient 光晕层，只动 opacity/scale（合成器处理）。
+     level 由父组件电平循环直接写根元素 CSS 变量，本组件不因音量重渲染。 */
+  isolation: isolate;
+}
+.voice-call-avatar::before {
+  content: "";
+  position: absolute;
+  inset: -26px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(122, 148, 255, .5) 0%, rgba(122, 148, 255, .16) 46%, rgba(122, 148, 255, 0) 72%);
+  opacity: calc(.3 + var(--voice-level, 0) * .7);
+  transform: scale(calc(1 + var(--voice-level, 0) * .22));
+  z-index: -1;
+  transition: opacity .12s ease, transform .12s ease;
+  pointer-events: none;
+}
+.voice-call-avatar.is-muted::before { opacity: .12; }
+.voice-call-top {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 2;
+}
+.voice-call-duration {
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: #cdd6ff;
+  background: #ffffff14;
+  border: 1px solid #ffffff22;
+  border-radius: 10px;
+  padding: 3px 10px;
+}
+.voice-call-muted-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #c0392b;
+  color: #fff;
+  box-shadow: 0 2px 10px #00000055;
 }
 .voice-call-ring {
   position: absolute;
@@ -21557,7 +21644,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 /* 字幕：半透明卡片，限高滚动 */
 .voice-call-captions {
   width: min(560px, 92%);
-  max-height: 168px;
+  max-height: 240px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -21567,6 +21654,29 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   border-radius: 14px;
   padding: 12px 14px;
 }
+/* 字幕回看（09-13）：历史区可滚动，自动停在最新一条 */
+.voice-call-history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 132px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.voice-call-history-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.voice-call-history-row p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #c9cfe8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.voice-call-history-row.is-agent p { color: #9fb2ff; }
 .voice-call-caption-row {
   display: flex;
   gap: 8px;
