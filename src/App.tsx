@@ -11427,10 +11427,17 @@ const commandMatches = useMemo(() => {
     const nextApproval = value === "danger-full-access" ? "never" : approvalPolicy === "never" ? "on-request" : approvalPolicy;
     setSandbox(value);
     setApprovalPolicy(nextApproval);
-    if (threadRef.current) saveThreadPermissions(threadRef.current.id, value, nextApproval);
-    localStorage.setItem("default-sandbox", value);
-    localStorage.setItem("default-approval", nextApproval);
-    void pushThreadPermissions(threadRef.current?.id ?? "", value, nextApproval);
+    // ⛔ 多窗口作用域（09-13，对齐模型/effort 的修法）：有会话时权限只落到**该会话**
+    // （saveThreadPermissions + pushThreadPermissions 双通道钉住引擎侧），不再写全局
+    // default-sandbox/default-approval——那是全应用共享的，A 窗口切权限会把 B 窗口
+    // 会话的重启兜底/新会话默认一起改掉（用户实测权限串扰）。无会话时选的才是全局默认。
+    if (threadRef.current) {
+      saveThreadPermissions(threadRef.current.id, value, nextApproval);
+      void pushThreadPermissions(threadRef.current.id, value, nextApproval);
+    } else {
+      localStorage.setItem("default-sandbox", value);
+      localStorage.setItem("default-approval", nextApproval);
+    }
   }
 
   /** 只切档位、不碰模型声明（供菜单选择/命令与「声明被取消后回落」分别使用） */
@@ -14043,7 +14050,8 @@ const commandMatches = useMemo(() => {
               <i className="compact-divider-line" aria-hidden />
             </div>
           )}
-          {pending.filter((request) => !request.params?.threadId || request.params.threadId === thread?.id).map((request) => <RequestCard request={request} key={request.id} onDone={() => setPending((current) => current.filter((entry) => entry.id !== request.id))} />)}
+          {/* ⛔ 审批卡已迁到 composer-wrap（贴输入框上方，09-13 用户定稿：原消息流内的大卡
+              太占屏、弹窗窗口里也看不到——贴输入框的卡片与 agent-ask 同款布局，主窗/弹窗一致） */}
           {activityLabel && <div className={`working-indicator ${waitingForApproval || waitingForInput ? "paused" : ""}`}>
             {activeMember
               ? <span className="expert-working-avatar" style={{ background: AVATAR_GRADIENTS[avatarToneOf(activeMember.id || activeMember.name)] }} aria-hidden="true">{expertRoleLabel(activeMember, activeMember.id === activeMemberTeam?.lead.id).slice(0, 1)}</span>
@@ -14166,6 +14174,10 @@ const commandMatches = useMemo(() => {
               )}
             </div>
           )}
+          {/* 审批卡：贴输入框上方（与 agent-ask 同款布局，09-13 从消息流大卡迁来）。
+              主窗口与独立会话窗口走同一渲染逻辑——各自的 pending 里属于本窗口当前会话的
+              请求都会在这里出现，弹窗里也能审批。 */}
+          {pending.filter((request) => !request.params?.threadId || request.params.threadId === thread?.id).map((request) => <RequestCard request={request} key={request.id} onDone={() => setPending((current) => current.filter((entry) => entry.id !== request.id))} />)}
           {notice && createPortal(
             (() => {
               const tone = noticeTone(notice);
