@@ -15319,6 +15319,141 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
+/* ── 09-13 专家团卡片视觉精修（仅作用域到专家团页，不影响子智能体页共用样式） ── */
+.expert-team-center .expert-team-grid-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.expert-team-center .subagent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: 14px;
+  padding: 14px 16px;
+  transition: border-color .12s ease, box-shadow .12s ease, transform .12s ease;
+}
+.expert-team-center .subagent-card:hover {
+  border-color: var(--accent, #7a94ff);
+  box-shadow: 0 4px 18px rgba(122, 148, 255, .12);
+  transform: translateY(-1px);
+}
+.expert-team-center .subagent-card-head {
+  align-items: center;
+}
+.expert-team-center .expert-team-avatar {
+  background: linear-gradient(135deg, #7a94ff, #a78bfa);
+  color: #fff;
+  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+}
+.expert-team-center .subagent-name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .2px;
+}
+.expert-team-center .subagent-desc {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+  margin: 0;
+}
+.expert-team-center .subagent-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.expert-team-center .subagent-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted, #888) 10%, transparent);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.expert-team-center .expert-team-tag {
+  background: color-mix(in srgb, var(--accent, #7a94ff) 12%, transparent);
+  color: var(--accent, #7a94ff);
+}
+.expert-team-center .expert-team-member-chips {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.expert-team-center .subagent-card-actions {
+  margin-top: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-top: 4px;
+  border-top: 1px dashed var(--line, rgba(127, 127, 127, 0.2));
+}
+.expert-team-center .subagent-card-actions .icon-button {
+  margin-left: auto;
+}
+/* 09-13 专家中心：智能体团队 hub 页的单专家卡片区（每团队 lead+members 铺开） */
+.expert-center-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+.expert-center-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.25));
+  border-radius: 12px;
+  background: var(--panel, #fff);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .12s ease, background .12s ease;
+}
+.expert-center-card:hover {
+  border-color: var(--accent, #7a94ff);
+  background: color-mix(in srgb, var(--accent, #7a94ff) 6%, transparent);
+}
+.expert-center-avatar {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #7a94ff, #a78bfa);
+}
+.expert-center-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.expert-center-main strong {
+  font-size: 13px;
+  color: var(--text);
+}
+.expert-center-main small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.expert-center-main em {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .expert-team-member-chip {
   display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%;
   padding: 3px 9px 3px 4px; border-radius: 999px;
