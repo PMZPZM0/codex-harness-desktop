@@ -1961,7 +1961,18 @@ function stableItem(existing: ThreadItem, next: ThreadItem): ThreadItem {
   }
   const keys = new Set([...Object.keys(existing), ...Object.keys(next)]);
   for (const key of keys) {
-    if (JSON.stringify((existing as any)[key]) !== JSON.stringify((next as any)[key])) return next;
+    const a = (existing as any)[key];
+    const b = (next as any)[key];
+    if (a === b) continue;                       // 引用/值相同：先短路（绝大多数 key 走这条）
+    // ⛔ 大字符串字段**不做 JSON.stringify**（09-13 性能）：agentMessage 每来一条 delta 都会
+    // 拿累计正文（可达数万字）走这里，stringify 两次 = 每条 delta 白烧几十万字符的拷贝与临时串
+    // （2 万字回复 ≈ 2000 条 delta ≈ 4000 万字符），主线程被占住就是「出字卡顿」。
+    // 长度不同 → 一定变了；长度相同 → 再比一次内容（字符串比较是 O(n) 但**不分配**，比 stringify 便宜得多）。
+    if (typeof a === "string" && typeof b === "string") {
+      if (a.length !== b.length || a !== b) return next;
+      continue;
+    }
+    if (JSON.stringify(a) !== JSON.stringify(b)) return next;   // 其它字段（数组/对象）保持原语义
   }
   return existing;
 }
@@ -8983,6 +8994,13 @@ const commandMatches = useMemo(() => {
     () => (prompt.startsWith("#") && !prompt.includes(" ") ? matchSkillCatalog(mergedSkillCatalog, prompt.slice(1)) : []),
     [prompt, mergedSkillCatalog],
   );
+  /** ★ 流式性能（09-13）：给「只在内容结构性变化时才需要重算」的 useMemo 用的**稳定键**。
+   *  为什么需要它：`thread` 每条 delta 都换引用（mergeItem/mergeTurn 都是不可变更新），
+   *  而下面几个 useMemo 会 `flatMap` **全部回合 × 全部 items**、还要对每条消息跑引用解析正则
+   *  —— 依赖 `[thread]` 就等于**每帧全量扫描**（5000 回合的会话 = 每帧上万次正则）。
+   *  它们的产物只在「会话换了 / 回合数变了 / 末尾条目变了」时才真正需要更新，
+   *  所以键取这三样（`turns.length` 覆盖新回合，末尾 item id 覆盖同一回合内的新条目）。 */
+  const threadMemoKey = thread ? `${thread.id}:${thread.turns.length}:${thread.turns[thread.turns.length - 1]?.items.at(-1)?.id ?? ""}` : "";
   const availableContextItems = useMemo(() => {
     if (!thread) return [];
     const query = contextQuery.trim().toLowerCase();
@@ -8993,7 +9011,7 @@ const commandMatches = useMemo(() => {
     return entries.filter((item) => !contextItems.some((selected) => selected.id === item.id))
       .filter((item) => !query || item.text.toLowerCase().includes(query))
       .slice(-16).reverse();
-  }, [thread, contextItems, contextQuery]);
+  }, [threadMemoKey, contextItems, contextQuery]);
 
   // 「引用对话中的文件」候选：当前会话所有消息里出现过的文件/图片路径（附件段、localImage、文本中的绝对路径）
   const threadFileCandidates = useMemo(() => {
@@ -9026,7 +9044,7 @@ const commandMatches = useMemo(() => {
       }
     }
     return found.reverse(); // 最新的在前
-  }, [thread]);
+  }, [threadMemoKey]);
 
   function addSystemEvent(title: string, text: string, tone: SystemEvent["tone"] = "info") {
     setSystemEvents((current) => [...current, { id: crypto.randomUUID(), title, text, tone }]);
@@ -13373,7 +13391,7 @@ const commandMatches = useMemo(() => {
   const lastUsage = tokenUsage?.last ?? usage;
   // 记忆化理由同 paletteSections：原来每次 App 渲染都新建数组（O(回合数)），
   // 而 onEvent 高频 setState 会让它每帧都跑一遍。
-  const completedTurns = useMemo(() => thread?.turns.filter((turn) => turn.status !== "inProgress") ?? [], [thread?.turns]);
+  const completedTurns = useMemo(() => thread?.turns.filter((turn) => turn.status !== "inProgress") ?? [], [threadMemoKey]);
   const latestCompletedTurn = completedTurns.at(-1);
   const stats = usageStats;
   const activeFlags: string[] = thread?.status?.activeFlags ?? [];
@@ -13397,7 +13415,7 @@ const commandMatches = useMemo(() => {
       if (turns[i].items?.some((item) => item.type === "contextCompaction")) return turns.length - 1 - i < 3;
     }
     return false;
-  }, [thread]);
+  }, [threadMemoKey]);
   const saveInlineRename = () => {
     const next = renameDraft.trim();
     if (next && thread) void renameThread(thread.id, next);
