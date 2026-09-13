@@ -8026,6 +8026,22 @@ export default function App() {
         // 迁移：主进程为空 + localStorage 有旧档案 → 上交（localStorage 保留一份作备份，不再作为真相源）
         setBots(legacy);
         void window.codex.botsSet?.(legacy).catch(() => undefined);
+      } else {
+        // 档案与旧数据都为空：从持久化的渠道登录态**自动恢复**机器人卡片。
+        // 微信登录凭据/配对/绑定都在主进程，唯独卡片记录丢了会让"已连接的机器人"
+        // 在面板里隐身（09-13 用户反馈「已连接机器人没显示出来」）——已连接的渠道必须可见。
+        const status: Record<string, boolean | undefined> = await (window.codex.channelsStatus?.() ?? Promise.resolve({}));
+        const names: Record<string, string> = { wechat: "微信机器人", telegram: "Telegram 机器人", feishu: "飞书机器人", dingtalk: "钉钉机器人", qq: "QQ 机器人", "wecom-webhook": "企微推送" };
+        const restored: BotEntry[] = Object.entries(status)
+          .filter(([, on]) => Boolean(on))
+          .map(([ch]) => {
+            const channel = ch === "weixin" ? "wechat" : ch;
+            return { id: `restored-${ch}-${Date.now().toString(36)}`, name: names[channel] ?? `${channel} 机器人`, channel, enabled: true };
+          });
+        if (restored.length) {
+          setBots(restored);
+          void window.codex.botsSet?.(restored).catch(() => undefined);
+        }
       }
     }).catch(() => undefined);
     return () => { alive = false; };
