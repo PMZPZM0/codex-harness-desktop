@@ -947,6 +947,31 @@ const CHECKS = [
 
 
   {
+    id: "bot-pair-banner",
+    name: "⑩ 机器人管理面板：配对码横条展示 + 状态键映射（09-13）",
+    run: async (h) => {
+      // 09-13 用户反馈：①微信连上后徽章一直「未连接」（根因：主进程状态键 weixin vs
+      // 机器人档案键 wechat 不匹配）；②配对码要去「手机远控」面板看，来回跳不方便。
+      // 这条验收走真实 UI：远控面板 → 机器人管理 → 断言配对码横条。
+      await enterMain(h);
+      // 配对码由远控服务生成：先起服务（远控面板的码与机器人共用同一个）
+      await h.eval(`(() => { window.__remoteProbe = null; window.codex.remoteStart().then((r) => { window.__remoteProbe = r; }).catch((e) => { window.__remoteProbe = { error: String(e) }; }); return true; })()`);
+      await h.waitFor(`!!window.__remoteProbe`, { label: "远控启动返回", timeoutMs: 20000 }).catch(() => undefined);
+      await h.eval(`(() => { const btn = document.querySelector('.account-icon[title="移动端远程控制"]'); if (btn) btn.click(); return Boolean(btn); })()`).then((r) => h.check("[前置] 侧栏入口可打开手机远控面板", r === true));
+      await h.waitFor(`!!document.querySelector(".remote-manage-btn")`, { label: "远控面板出现", timeoutMs: 10000 }).catch(() => undefined);
+      await h.eval(`(() => { const btn = document.querySelector(".remote-manage-btn"); if (btn) btn.click(); return Boolean(btn); })()`).then((r) => h.check("[前置] 可进入机器人管理面板", r === true));
+      // 配对码横条：6 位数字（格式化成 3+3）
+      const codeOk = await h.waitFor(`(() => { const el = document.querySelector(".bot-pair-banner [data-pair-code]"); return Boolean(el && /^\\d{3} \\d{3}$/.test(el.textContent || "")); })()`, { label: "配对码横条显示 6 位码", timeoutMs: 10000 }).then(() => true).catch(() => false);
+      h.check("机器人管理面板直接显示 6 位配对码（不用回手机远控看）", codeOk);
+      // 渠道状态键映射：主进程回 weixin，机器人档案存 wechat —— 渲染层必须做映射
+      const statusKeys = await h.eval(`window.codex.channelsStatus().then((s) => JSON.stringify(Object.keys(s)))`);
+      h.check("主进程状态含 weixin 键（徽章映射的源头）", statusKeys.includes("weixin"), statusKeys);
+      await h.screenshot("机器人面板-配对码");
+      await h.eval(`window.codex.remoteStop().catch(() => undefined)`);
+    },
+  },
+
+  {
     id: "clean",
     name: "⑦ 渲染层无 console.error",
     run: async (h) => {
