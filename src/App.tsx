@@ -10239,14 +10239,16 @@ const commandMatches = useMemo(() => {
           // （短会话正是靠这一屏留白才够得着 54px）→ 画面无故跳一下且不恢复。
           if (params.threadId === threadRef.current?.id) clearAnchorPad();
         } else if (method0 === "thread/status/changed") {
-          // 侧边栏每个会话的运行状态：即使不是当前会话也要更新，保证切走后转圈还在原会话
-          setThreads((current) => current.map((entry) => entry.id === params.threadId ? { ...entry, status: params.status } : entry));
-          // 状态明确非运行（completed 等）时兜底熄灭转圈，防 turn/completed 事件丢失导致卡转
-          if (params.status !== "inProgress" && params.status !== "running") {
-            markThreadStopped(params.threadId);
-          } else {
-            markThreadRunning(params.threadId);
-          }
+          // ⛔ 引擎的 `thread.status` 是**对象** `{type:"notLoaded"|"idle"|"systemError"|"active", activeFlags}`
+          // （只有 TurnStatus 才是字符串，见 .workbuddy/codex-schema/*.schemas.json）。
+          // 早期这里按字符串比较 → 对象恒不等于 "inProgress"/"running" ⇒ **永远走 markThreadStopped、
+          // 永远不可能 markThreadRunning**：在跑会话收到 status/changed（引擎等审批/等输入时会推
+          // {type:"active",activeFlags:[...]}）就当场被判成已停止 → 后台会话侧栏转圈中途消失、
+          // 切回或渲染层重载后真正的运行回合被归一化成 completed（停止键消失、后续消息绕过排队）。
+          const statusType = (params.status as any)?.type ?? params.status;
+          setThreads((current) => current.map((entry) => entry.id === params.threadId ? { ...entry, status: statusType } : entry));
+          if (statusType === "active") markThreadRunning(params.threadId);
+          else markThreadStopped(params.threadId);
         }
         // 渠道机器人等后台会话的 start/stop：走不到下面的当前会话事件流（threadId 过滤会拦掉），
         // 新建的机器人会话永远进不了侧栏 → 防抖刷新一次 thread/list
@@ -13006,6 +13008,16 @@ const commandMatches = useMemo(() => {
         markThreadRunning(active.id, hydratedTurn.id);
         saveThreadModel(active.id, modelId);
         setThread((current) => {
+          // ⛔ 跨会话污染守卫（09-13 审计 P0）：`turn/start` 是 await 的，用户完全可能在
+          // 这几秒里切到另一个会话（供应商迁移重启时窗口更长）。此时 `current` 已经是**别的**
+          // 会话了，无条件 mergeTurn 会把 A 的用户消息追加进 B 的时间线（mergeTurn 对未知回合
+          // 是追加），而 B 永远收不到 A 的 turn/completed → B 那一轮永久"运行中"，
+          // 只有重开应用才干净。改：会话已经不是发起会话时只更新缓存、不动当前渲染状态。
+          if (current && current.id !== active.id) {
+            const cached = threadCacheRef.current.get(active.id);
+            if (cached) threadCacheRef.current.set(active.id, mergeTurn(cached, hydratedTurn) ?? cached);
+            return current;
+          }
           const next = mergeTurn(current, hydratedTurn);
           threadRef.current = next;
           return next;
@@ -13020,7 +13032,7 @@ const commandMatches = useMemo(() => {
     } catch (error: any) {
       // turn/start RPC 直接以限流失败：安排应用层自动重试（10 次退避）
       if (isRateLimitError(error?.message)) {
-        const retryThreadId = createdThreadId ?? threadRef.current?.id;
+        const retryThreadId = createdThreadId ?? optimisticBaselineRef.current.threadId ?? threadRef.current?.id;
         if (retryThreadId) {
           setSending(false);
           setInterrupting(false);
@@ -13051,7 +13063,21 @@ const commandMatches = useMemo(() => {
       }
       setSending(false);
       setActiveTurnId(null);
-      markThreadStopped(threadRef.current?.id);
+      // ⛔ 必须按**发起会话**清运行态（09-13 审计 P0）：用户在 await 期间很可能已经切到别的
+      // 会话，而 `threadRef.current` 是"此刻屏幕上的会话"——在 A 发消息后立刻切到 B，一旦 A 上
+      // 失败（401/超时），用 threadRef 会把 **B** 标记成停止、把 A 永久留在运行态：
+      // A 侧栏一直转圈、composer 显示"停止"但 interrupt() 因 runningTurnIds 已清而无声失效、
+      // 之后在 A 发的消息全进排队且永不启动 → 该会话不可用，只能重开应用。
+      // 发起会话 id 取 `createdThreadId`（新建时）或 `optimisticBaselineRef`（发送开始时记下的目标）。
+      markThreadStopped(createdThreadId ?? optimisticBaselineRef.current.threadId ?? threadRef.current?.id);
+      // 失败时把乐观气泡收回去（09-13 审计：气泡不回收 + 提示 2.6 秒后消失 = 看起来像已发出），
+      // 并把正文还给输入框，用户可以改一下重发。
+      const failedText = (Array.isArray(sendInput) ? sendInput : [])
+        .filter((part: any) => part?.type === "text")
+        .map((part: any) => String(part.text ?? ""))
+        .join("");
+      setOptimisticInput(null);
+      if (failedText) setPrompt((current) => (String(current ?? "").trim() ? current : failedText));
       setInterrupting(false);
       setWorkStartedAt(null);
       setNotice(error.message);
