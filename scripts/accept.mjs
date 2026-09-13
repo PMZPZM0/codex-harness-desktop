@@ -650,40 +650,30 @@ const CHECKS = [
 
   {
     id: "queue-immediate",
-    name: "⑩ 排队消息点「立即」按正常消息展示（钉在顶上 + 气泡回收）",
+    name: "⑩ 排队消息点「立即」：弹提醒 + 从队列摘掉（定案：不再尝试聊天区展示）",
     run: async (h) => {
-      // 用户要求：「排队消息点那个立即发送按键发出去的时候，能不能跟正常消息一样在聊天框展示出来」。
-      // 判据：① 点「立即」后聊天区立刻出现这条正文的用户气泡（此前要等引擎回推，位置不定）；
-      //       ② 它钉在对话区顶部附近（gap ≈ 54）；③ 回合结束后乐观气泡被安全阀回收，不残留。
+      // 定案（用户 09-13）：「恢复成原来那种，排队消息点立即发出去后，弹窗提醒」。
+      // 曾经试过「点立即就在聊天区当普通消息展示（乐观气泡+钉顶）」，被用户否掉：
+      // 那条走 turn/steer，消息是插进**正在跑的回合**里的，渲染层硬做定位反而与引擎流打架。
+      // 现在只断言两件事：① 有提醒（toast）；② 这条从队列卡片里消失（不残留、不重复展示）。
       const before = await h.eval(`(() => {
-        const tl = document.querySelector(".timeline");
-        return { text: tl ? (tl.innerText || "") : "", items: document.querySelectorAll(".queued-messages .queued-message").length };
+        const card = document.querySelector(".queued-messages");
+        return { items: document.querySelectorAll(".queued-messages .queued-message").length, text: card ? card.innerText : "" };
       })()`);
       h.check("[前置] 队列里还有排队消息可点「立即」", Number(before?.items) >= 1, `items=${before?.items}`);
       await h.click(".queued-messages .queued-message .queued-action");
-      await wait(900);
-      const shown = await h.eval(`(() => {
-        const tl = document.querySelector(".timeline");
-        if (!tl) return { error: "no-timeline" };
-        const users = [...tl.querySelectorAll(".user-message")];
-        const last = users[users.length - 1];
-        return {
-          count: users.length,
-          gap: last ? Math.round(last.getBoundingClientRect().top - tl.getBoundingClientRect().top) : null,
-          alpha: (tl.innerText || "").includes("排队甲") || (tl.innerText || "").includes("排队乙") || (tl.innerText || "").includes("排队丙"),
-          anchor: !!document.getElementById("chat-anchor"),
-        };
-      })()`);
-      console.log(`  [立即] ${JSON.stringify(shown).slice(0, 200)}`);
-      h.check("点「立即」后聊天区立刻出现该消息的用户气泡", Number(shown?.count) > 0 && shown?.alpha === true, JSON.stringify(shown));
-      h.check("这条消息钉在对话区顶部附近（gap 0~130px）", Number(shown?.gap) >= 0 && Number(shown?.gap) <= 130, `gap=${shown?.gap}`);
-      // 安全阀：回合跑完后乐观气泡必须被回收（steer 路径不产生新回合，确认逻辑匹配不到）
-      const idle = await h.waitFor(`!document.querySelector(".timeline-bottom-spacer.compact")`, { label: "回合结束", timeoutMs: 180000 }).then(() => true).catch(() => false);
-      await wait(1500);
-      const after = await h.eval(`(() => ({ anchor: !!document.getElementById("chat-anchor") }))()`);
-      console.log(`  [立即] 回合结束=${idle}；残留乐观气泡=${after?.anchor}`);
-      h.check("回合结束后不残留乐观气泡（安全阀生效）", after?.anchor === false, JSON.stringify(after));
-      await h.screenshot("立即发送展示");
+      await wait(1200);
+      const after = await h.eval(`(() => ({
+        items: document.querySelectorAll(".queued-messages .queued-message").length,
+        toast: (document.querySelector(".toast, .notice, .app-toast")?.innerText || "").replace(/\\s+/g, " ").trim(),
+        body: (document.body.innerText || "").includes("已发送") || (document.body.innerText || "").includes("已并入当前任务"),
+      }))()`);
+      console.log(`  [立即] 点击前 ${before?.items} 条 → 点击后 ${after?.items} 条；提醒=「${String(after?.toast).slice(0, 40)}」`);
+      h.check("点「立即」后有提醒反馈", after?.body === true, JSON.stringify(after).slice(0, 200));
+      h.check("这条已从队列卡片里摘掉（不残留）", Number(after?.items) === Number(before?.items) - 1, `before=${before?.items} after=${after?.items}`);
+      h.check("聊天区里没有第二份排队展示（.timeline-queue 恒为 0）",
+        Number(await h.eval(`document.querySelectorAll(".timeline-queue").length`)) === 0);
+      await h.screenshot("立即发送提醒");
     },
   },
 

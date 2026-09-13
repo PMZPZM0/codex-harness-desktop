@@ -9724,51 +9724,25 @@ const commandMatches = useMemo(() => {
     }
   }
 
-  /** 排队消息「立即」的本地呈现：与正常发送**同一套**（乐观气泡 + 钉顶 + 跟随）。
-   *  为什么需要它（用户实测：「点立即发送的时候，能不能跟正常消息一样在聊天框展示出来」）：
-   *  「立即」走的是 `turn/steer`（把这条输入补进**正在跑的那个回合**，既不触发 turn/started
-   *  也不产生新回合），空闲时才走 `thread/queue/start` —— 两条路渲染层此前都**什么都不做**，
-   *  于是消息看起来"不是一条正常消息"，只能等引擎回推的 item 自己冒出来。
-   *  真实 item 到达后由 `optimisticConfirmed` 接管换掉气泡（位置不动）；若该回合跑完都没接管
-   *  （steer 把消息补进已有回合、现有确认逻辑只认新回合），则由确认 effect 里的安全阀回收。 */
-  function armQueuedDisplay(entry: QueueItem) {
-    const optimisticId = `queued-${entry.id}`;
-    justSentIds.add(optimisticId);
-    optimisticTurnIdRef.current = null;
-    optimisticBaselineRef.current = {
-      threadId: threadRef.current?.id ?? null,
-      turnIds: new Set(((threadRef.current?.turns ?? []) as Turn[]).map((turn) => turn.id)),
-    };
-    setOptimisticInput({ id: optimisticId, type: "userMessage", content: entry.input } as ThreadItem);
-    stickToBottomRef.current = false;
-    anchorTopRef.current = true;
-    anchorTurnIdRef.current = null;
-    dbg("send-arm-queued");
-  }
-
   async function startQueued(id?: string) {
     if (!thread) return;
     const entry = id ? queue.find((q) => q.id === id) : undefined;
-    // 「立即」= **先打断上面那一段，再把这条当新任务在下面跑**（用户 09-13 定稿）：
-    //   「排队消息发出去立即打断，这样配合才行，不打断的话流式消息还在这个立即发出去的
-    //    排队消息上面运行；打断不是直接让开始这个新任务，而是先完成上面，再完成下面的新任务」。
-    // 为什么不能再用 `turn/steer`：steer 是把输入**补进正在跑的那个回合**里，引擎的后续输出
-    // 也追加进同一个回合组 —— 而那个组在用户消息**上方**，于是永远表现为"回复在我的消息上面运行"
-    // （用户截图实锤）。打断后这条变成**新回合**：上面那段就地收尾，新消息在它下面，输出在它下面流。
+    // 「立即」= 把这条消息交给引擎插进当前回合（`turn/steer`，**不打断**当前任务）。
+    // 定案（用户 09-13）：「恢复成原来那种，排队消息点立即发出去后，弹窗提醒」——
+    // 所以这里**不再**尝试在聊天区把它当普通消息展示（那套实验引入了回归，已撤）：
+    // 消息由引擎插进正在跑的回合流里，界面按引擎回推的 item 正常渲染；
+    // 用户消息不会被折叠进过程组（见 src/lib/turn-fold-plan.mjs 的 isAnchor 第 ① 条）。
     if (activeTurnId && entry) {
       try {
-        showToast("已打断上面那一段", "正在收尾，随后执行这条排队消息");
-        await interrupt();   // 复用停止键那套（含「你在 X 秒后停止了」状态复位）
-        // 必须等引擎真的空闲再启动：否则 queue/start 会被当成"仍在运行"而只是把它排到最前
-        for (let i = 0; i < 40 && runningThreadIdsRef.current.has(thread.id); i++) {
-          await new Promise((resolve) => setTimeout(resolve, 250));
-        }
-        await window.codex.request("thread/queue/start", { threadId: thread.id, queuedSubmissionId: entry.id });
-        // 这一次它会是**新回合** → 乐观气泡按正常消息展示（钉顶 + 跟随），且能被真实消息正常接管
-        armQueuedDisplay(entry);
-        setQueue((current) => current.filter((item) => item.id !== entry.id));
+        await window.codex.request("turn/steer", {
+          threadId: thread.id,
+          expectedTurnId: activeTurnId,
+          input: entry.input,
+          ...(entry.clientUserMessageId ? { clientUserMessageId: entry.clientUserMessageId } : {}),
+        });
+        await deleteQueued(entry.id);
         void refreshQueue(thread.id);
-        showToast("发送成功", "排队消息已作为新任务开始");
+        showToast("已发送", "这条排队消息已并入当前任务");
       } catch (error: any) {
         showToast("发送失败", error.message);
       }
@@ -9776,11 +9750,10 @@ const commandMatches = useMemo(() => {
     }
     try {
       await window.codex.request("thread/queue/start", { threadId: thread.id, ...(id ? { queuedSubmissionId: id } : {}) });
-      if (entry) armQueuedDisplay(entry);
       // 同「回合结束自动启动」：先本地摘掉，避免与真实气泡并存（否则会短暂重复展示）
       if (id) setQueue((current) => current.filter((entry) => entry.id !== id));
       void refreshQueue(thread.id);
-      showToast("发送成功", "排队消息已开始执行");
+      showToast("已发送", "排队消息已开始执行");
     } catch (error: any) {
       showToast("发送失败", error.message);
     }

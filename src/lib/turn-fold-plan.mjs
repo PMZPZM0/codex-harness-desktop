@@ -29,13 +29,18 @@ function bodyTextOf(item) {
  *   { kind: "fold", units } —— 连续的过程单元 → 收进一个折叠组
  *   { kind: "body", unit }  —— 正文锚点 → 内联常驻在折叠组外
  *
- * 正文锚点的判据（两条，任一命中即锚点）：
- *   ① 就是最终答复（finalAgentId）—— 哪怕它很短，收尾那一条也要看得见；
- *   ② 正文长度 ≥ FOLD_BODY_ANCHOR_CHARS —— 长正文本身就是结论/汇报，不该被折叠吞掉。
+ * 正文锚点的判据（三条，任一命中即锚点）：
+ *   ① **就是用户消息**（userMessage）—— 用户中途插进来的消息（队列「立即」/ steer）必须原样
+ *      留在外面、按流序显示。用户 09-13 定稿：「折叠还是一样的原理，过程都折叠，展示总结，
+ *      用户中间发的消息不折叠进去」：折叠只收过程（工具/思考/过渡正文），用户消息永远不是过程；
+ *   ② 就是最终答复（finalAgentId）—— 哪怕它很短，收尾那一条也要看得见；
+ *   ③ 正文长度 ≥ FOLD_BODY_ANCHOR_CHARS —— 长正文本身就是结论/汇报，不该被折叠吞掉。
  */
 export function planCompletedFold(units, finalAgentId) {
   const list = Array.isArray(units) ? units : [];
   const isAnchor = (unit) => {
+    // ① 用户消息永不折叠
+    if (unit?.item?.type === "userMessage") return true;
     if (!unit || unit.item?.type !== "agentMessage") return false;
     if (finalAgentId && unit.item.id === finalAgentId) return true;
     return bodyTextOf(unit.item).length >= FOLD_BODY_ANCHOR_CHARS;

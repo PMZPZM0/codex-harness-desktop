@@ -756,6 +756,21 @@ console.log(C.bold("\n【9】过程折叠不得吞掉正文（长正文/最终�
   folded.includes("tool1") && folded.includes("thinking1") && folded.includes("tool2")
     ? ok("工具与思考仍照常收进过程组（折叠能力没被削弱）")
     : fail(`过程单元没被收进去（folded=${folded.join(",")}）—— 折叠功能被改坏了`);
+
+  // ★ 用户中途插进来的消息（队列「立即」/ steer）不许被折进过程组（用户 09-13 定稿：
+  //   「折叠还是一样的原理，过程都折叠，展示总结，用户中间发的消息不折叠进去」）。
+  const midUnits = [
+    unit("toolA", "commandExecution"),
+    unit("userMid", "userMessage", "跑10轮"),
+    unit("thinkingA", "reasoning"),
+    unit("agentEnd", "agentMessage", "收".repeat(80)),
+  ];
+  const midPlan = planCompletedFold(midUnits, "agentEnd");
+  const midBodies = midPlan.filter((p) => p.kind === "body").map((p) => p.unit.item.id);
+  const midFolded = midPlan.filter((p) => p.kind === "fold").flatMap((p) => p.units.map((u) => u.item.id));
+  midBodies.includes("userMid")
+    ? ok("用户中途插入的消息留在折叠组外（不会被过程折叠吞掉）")
+    : fail(`用户消息被折进过程组了（folded=${midFolded.join(",")}）—— 用户明确要求不折叠进去`);
 }
 
 // ---------- 【10】滚动/锚定状态的单一 owner（09-13 审计加的结构守卫） ----------
