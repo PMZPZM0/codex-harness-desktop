@@ -8063,7 +8063,7 @@ export default function App() {
    *  上游渲染时序也会变，任何一次算错的落点如果没人纠正就会一直错下去（这就是这一天
    *  反复出现"位置不对"的机制）。这里每次调用都量一次实际 gap，偏差 > 4px 才一次性
    *  修正；正常情况下偏差为 0，校验不触发，所以不会跟跟随打架。 */
-  const pinSentMessage = useCallback((el: HTMLElement) => {
+  const pinSentMessage = useCallback((el: HTMLElement, threadId?: string | null) => {
     // 锚点 = 最后一个回合组里的真实用户消息（前提：这个回合是本次发送新建的，
     // 即不在发送前的回合基线里）；还没有真实消息时退回乐观气泡。
     const groups = document.querySelectorAll<HTMLElement>(".turn-group");
@@ -8074,7 +8074,7 @@ export default function App() {
     let anchor: HTMLElement | null = null;
     if (isNewTurn) anchor = lastGroup.querySelector<HTMLElement>(".user-message");
     if (!anchor) anchor = document.getElementById("chat-anchor");
-    if (!anchor || !anchor.isConnected) { dbg("pin-miss", { isNewTurn }); return; }
+    if (!anchor || !anchor.isConnected) { dbg("pin-miss", { isNewTurn }); return false; }
     const anchorH = anchor.getBoundingClientRect().height;
     // 用户消息自身超过一屏 → 钉顶没有意义（整条装不下），直接让用户看到回复
     if (anchorH > el.clientHeight) {
@@ -8085,7 +8085,7 @@ export default function App() {
       selfScrollUntilRef.current = Date.now() + 80;
       scrollToOffsetInstant(el, contentTailTarget(el));
       pinnedScrollTopRef.current = el.scrollTop;
-      return;
+      return true;
     }
     // 留白固定给**一整屏**：保证「锚点滚到顶部」这个目标永远可达（不依赖锚点高度，
     // 也就不用随锚高反复改高度 → 没有新的 scrollHeight 突变源）。
@@ -8093,8 +8093,19 @@ export default function App() {
     if (pad && pad.style.height !== `${el.clientHeight}px`) pad.style.height = `${el.clientHeight}px`;
     const key = isNewTurn ? `turn-${lastId}` : "opt";
     const gapErr = (anchor.getBoundingClientRect().top - el.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
-    const first = pinnedAnchorKeyRef.current !== key;
+    // 「刚切回自己这条会话」= 休眠钉顶的复活：必须**当first处理**（立即落位、解除超屏锁）。
+    // 否则会走下面的延帧纠偏，而切回来这一帧的几何是"脏"的（留白刚重新撑起来、scrollTop
+    // 还是上一会话的），中间那一帧足以让跟随先按 dist 把视口推到内容底部 —— 实测打点：
+    // pin-fix{err:214} 与跟随抢同一帧，最后停在 gap=481（用户看到的就是"切回来钉顶没了"）。
+    const returned = pinDormantSeenRef.current;
+    if (returned) { pinDormantSeenRef.current = false; pinGapLockedRef.current = null; }
+    const first = pinnedAnchorKeyRef.current !== key || returned;
     pinnedAnchorKeyRef.current = key;
+    // 记下"这个钉顶属于哪个会话"：切走再切回**同一条**会话时，位置要由钉顶恢复，
+    // 而不是被开会话时的状态清零抹掉（用户实测：「切换会话，钉顶没了」）。
+    // ⚠️ 必须用调用方传入的 threadId，不能用 threadRef.current —— 它是被动 effect 里
+    // 更新的，布局 effect 期间还停留在上一个会话，会记错归属。
+    pinThreadIdRef.current = threadId ?? null;
     // ⛔ 基线**只在真正钉顶/修正时**刷新，位置已经对了就一个字都不要碰它。
     // 这是「自动跟随又没了」的根因（09-13 用户截图：消息钉在顶上，正文却一路流出
     // 输入框外、最新一行永远看不到）：本函数每次 thread 更新都会被调用，若每次都把
@@ -8110,7 +8121,7 @@ export default function App() {
       selfScrollUntilRef.current = Date.now() + 80;
       scrollToOffsetInstant(el, el.scrollTop + gapErr);
       pinnedScrollTopRef.current = el.scrollTop;
-      return;
+      return true;
     }
     // ★ 交棒规则（09-13 定稿，修「来回拉扯」的真正来源）：
     //   「消息稳在 54px」与「最新一行永远可见」在回复长过视口时**必然矛盾**——
@@ -8120,9 +8131,9 @@ export default function App() {
     //   消息自然往上走 —— 这正是用户要的「agent 消息很丝滑往下流、自动跟随」。
     //   短回复（未超屏）时继续纠偏，消息就稳稳待在 54px。
     const overflow = contentBottomOf(el) - el.scrollTop - el.clientHeight;
-    if (overflow > 4) { pinGapLockedRef.current = key; return; }
-    if (pinGapLockedRef.current === key) return;
-    if (Math.abs(gapErr) <= 8) return;
+    if (overflow > 4) { pinGapLockedRef.current = key; return true; }
+    if (pinGapLockedRef.current === key) return true;
+    if (Math.abs(gapErr) <= 8) return true;
     anchorHeightBaselineRef.current = contentBottomOf(el);
     if (pinFixRef.current) cancelAnimationFrame(pinFixRef.current);
     selfScrollUntilRef.current = Date.now() + 200;
@@ -8137,6 +8148,7 @@ export default function App() {
       scrollToOffsetInstant(el, el.scrollTop + err);
       pinnedScrollTopRef.current = el.scrollTop;
     });
+    return true;
   }, [clearAnchorPad, contentBottomOf, contentTailTarget]);
   /** 最近一次钉顶实际落到的 scrollTop。用于区分「程序滚动」与「用户滚到底」：
       锚顶时若锚点下方内容不足，scrollTop 会被浏览器钳到 maxScroll（= 贴底位置），
@@ -8145,6 +8157,10 @@ export default function App() {
   const pinnedScrollTopRef = useRef(-1);
   /** 内容已长出视口后，这个锚点不再做 gap 纠偏（交棒给跟随，避免两个 owner 互拉）。 */
   const pinGapLockedRef = useRef<string | null>(null);
+  /** 当前钉顶属于哪个会话：切走再切回**同一条**会话时要靠它决定"保留还是清掉"锚定状态。 */
+  const pinThreadIdRef = useRef<string | null>(null);
+  /** 钉顶曾经"休眠"过（切到了别的会话）—— 回来那一次必须**立即**落位，见 pinSentMessage。 */
+  const pinDormantSeenRef = useRef(false);
   /** 落点复核修正的 rAF id（延一帧去抖，见 pinSentMessage）。 */
   const pinFixRef = useRef(0);
   /** 已经钉过的锚点标识（`turn:<id>` / `opt:<id>`）。**只钉一次**：同一个锚点后续的
@@ -9058,6 +9074,9 @@ const commandMatches = useMemo(() => {
     if (!scroller) return;
     let lastTop = scroller.scrollTop; // 供 update 识别「指针拖拽期间的位置变化」
     let pointerDown = false;
+    // 本 effect 与 [thread?.id, scrollRef] 绑定，所以这里捕获的就是"当前显示的会话"：
+    // 钉顶休眠在别的会话上时，跟随/贴底都按普通模式走（见 update 里的 gate）。
+    const myThreadId = thread?.id ?? null;
     /** 用户接管视口：钉顶与贴底一起让位，并撤掉锚顶留白。
      *  **只能被真实用户输入调用**（滚轮/触摸/键盘翻页/指针拖拽）——这是设计上的唯一解除信号。 */
     const releaseToUser = (why: string) => {
@@ -9084,7 +9103,9 @@ const commandMatches = useMemo(() => {
       //   用户看到的就是「长消息换行跟自动跟随在抢，整个内容上下跳动」（09-13 用户实测）。
       //   攒够一段再**整体**跟一次，两次之间视口完全静止——最新内容最多滞后 48px（约两行）。
       const FOLLOW_STEP_PX = 48;
-      if (anchorTopRef.current) {
+      // 只在自己这条会话上跟随：钉顶可能正"休眠"在另一条会话上（切走又没切回来），
+      // 那种情况下这里必须走常规贴底逻辑，不能拿别人的锚定模式去动当前视口。
+      if (anchorTopRef.current && pinThreadIdRef.current === myThreadId) {
         if (dist > FOLLOW_STEP_PX) {
           selfScrollUntilRef.current = Date.now() + 80;
           scrollToOffsetInstant(scroller, scroller.scrollTop + dist);
@@ -9214,19 +9235,29 @@ const commandMatches = useMemo(() => {
     // 见 switchJumpRef 声明处）。这里**不再**附加 `!anchorTopRef.current`：
     // 锚定状态的清零已经归 openThread 管（见那里的注释），在这里再挡一下只会让
     // "定位 + 清留白"被整段跳过 —— 实测后果就是切回来 pad 残留一整屏、定位错乱。
+    // ★ 唯一 owner：把本次发送的用户消息钉在顶部（自带几何校验，见 pinSentMessage）。
+    // **必须排在"切会话瞬时定位"之前**：切回自己那条仍被钉着的会话时，位置要由钉顶
+    // 恢复，而不是被贴底逻辑掀掉（用户实测：「切换会话，钉顶没了」）。
+    // pinSentMessage 返回 false（锚点不在当前渲染窗口里）才继续往下走贴底逻辑。
+    // `pinDormant` = 钉顶属于**别的**会话（切走期间的休眠态）：此时它既不生效，
+    // 也不能被下面的贴底分支销毁 —— 否则切回来就恢复不了了。
+    const pinDormant = anchorTopRef.current && pinThreadIdRef.current !== thread?.id;
+    if (pinDormant) pinDormantSeenRef.current = true;   // 记下"休眠过"，回来时立即落位
+    if (anchorTopRef.current && !pinDormant && !STICKY_USER_SLOT && pinSentMessage(el, thread?.id)) return;
     if (switchJumpRef.current && switchJumpRef.current.id === thread?.id && switchJumpPending()) {
       switchJumpRef.current = null;
       dbg("clear-anchor", { at: "switch-jump" });
-      // 切会话 = 全新定位（贴底看最新），不携带上一个会话遗留的锚定模式
-      anchorTopRef.current = false;
-      pinnedAnchorKeyRef.current = null;   // 新会话的锚点要能重新钉
-      clearAnchorPad();   // 上一个会话的锚顶留白不能带到新会话（否则新会话底部一大段空白）
+      // 切到**别的**会话 = 全新定位（贴底看最新）。休眠中的钉顶不属于这里，不能顺手清掉。
+      if (!pinDormant) {
+        anchorTopRef.current = false;
+        pinnedAnchorKeyRef.current = null;
+        pinGapLockedRef.current = null;
+      }
+      clearAnchorPad();   // 锚顶留白不能串到另一条会话（切回来时钉顶会重新撑起来）
       stickToBottomRef.current = true;
       jumpToBottom(el, undefined, contentTailTarget);
       return;
     }
-      // ★ 唯一 owner：把本次发送的用户消息钉在顶部（自带几何校验，见 pinSentMessage）
-      if (anchorTopRef.current && !STICKY_USER_SLOT) { pinSentMessage(el); return; }
     if (!stickToBottomRef.current) return;
     selfScrollUntilRef.current = Date.now() + 80;
     dbg("stick-jump", { from: Math.round(el.scrollTop), to: Math.round(contentTailTarget(el)) });
@@ -9243,7 +9274,7 @@ const commandMatches = useMemo(() => {
     if (!el) return;
     // 乐观气泡刚挂上就先钉一次（此时真实回合可能还没建出来）；之后每次 thread 更新
     // 都由 [thread] 布局 effect 调同一个 pinSentMessage 复核并纠正。
-    pinSentMessage(el);
+    pinSentMessage(el, thread?.id);
   }, [optimisticInput, pinSentMessage]);  useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("theme", theme);
@@ -12246,16 +12277,13 @@ const commandMatches = useMemo(() => {
     setDiff("");
     setSystemEvents([]);
     setOptimisticInput(null);
-    // ★ 切会话 = 锚定状态**就地清零**（09-13 用户截图：运行中切走再切回，对话区整个空白）。
-    // 以前这套重置写在 [thread] 布局 effect 的"切换瞬时定位"分支里，而那一段一旦被
-    // 任何条件挡掉（当时写的是 `!anchorTopRef.current`，而上一会话的发送钉顶可能仍是
-    // armed），重置就**一起被跳过**：锚顶留白残留一整屏、钉顶 key 指向别的会话的回合，
-    // 于是切回来的定位完全错乱（实测 pad=622 一直没被清掉）。
-    // 结论：状态重置必须挂在"打开会话"这个动作上，不能挂在某条渲染分支上。
-    anchorTopRef.current = false;
-    pinnedAnchorKeyRef.current = null;
-    pinGapLockedRef.current = null;
-    pinnedScrollTopRef.current = -1;
+    // ★ 切会话时的锚定状态处理（09-13 用户实测：「切换会话，钉顶没了」）。
+    //   钉顶**跟着它所属的会话活着**：切到别的会话时它只是"休眠"（不生效、也不销毁），
+    //   切回来时由 pinSentMessage 复核并恢复落点；清空只发生在用户接管 / 新的一次发送。
+    //   这里只需要把留白归零：别的会话不该看到这条会话的锚顶留白，而切回来时
+    //   pinSentMessage 会按需重新撑起来。
+    //   （曾经在这里无条件清 anchorTopRef —— 于是"切出去看一眼再切回来"钉顶就没了、
+    //    视口掉到底部，正是用户报的这个现象。）
     clearAnchorPad();
     const knownRunning = runningThreadIdsRef.current.has(id);
     setSending(knownRunning);

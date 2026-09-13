@@ -383,6 +383,47 @@ const CHECKS = [
         h.check(`[${label}] 视口没被贴底接管（钉顶而非贴底）`, m?.atBottom === false, `scrollTop=${m?.scrollTop} max=${m?.max}`);
       }
 
+      // ── 切出去再切回来：钉顶必须还在 ──
+      // 用户实测（09-13）：「切换会话，钉顶没了」——运行中切走看一眼再切回来，
+      // 消息不再停在顶上、直接掉到底部。判据：切回来 gap 仍是 ~54。
+      // ⚠️ 必须按**会话标题**切，不能按行索引：侧栏按最近活动排序，刚发过消息的会话会
+      // 跳到最前，索引在来回切的过程中会指到别的会话上去（实测切回来"钉顶没了"其实是
+      // 点开了另一条会话 —— 用索引测出来的假红）。
+      const rowTitle = (i) => `String(([...document.querySelectorAll(".thread-row")][${i}]?.querySelector("button")?.innerText || "").split("\\n")[0].trim())`;
+      const hereTitle = String(await h.eval(`(() => { const active = document.querySelector(".thread-row.active"); const rows = [...document.querySelectorAll(".thread-row")]; return active ? active.querySelector("button").innerText.split("\\n")[0].trim() : rows[0].querySelector("button").innerText.split("\\n")[0].trim(); })()`));
+      const awayTitle = String(await h.eval(`(() => { const rows = [...document.querySelectorAll(".thread-row")]; const active = document.querySelector(".thread-row.active"); const other = rows.find((r) => r !== active); return other ? other.querySelector("button").innerText.split("\\n")[0].trim() : ""; })()`));
+      const clickByTitle = (t) => h.eval(`(() => { const hit = [...document.querySelectorAll(".thread-row")].find((r) => r.querySelector("button").innerText.split("\\n")[0].trim() === ${JSON.stringify(t)}); if (!hit) return false; hit.querySelector("button").click(); return true; })()`);
+      const pinBefore = await h.eval(measure);
+      await clickByTitle(awayTitle);
+      await wait(1800);
+      await clickByTitle(hereTitle);
+      await wait(2200);
+      const pinAfter = await h.eval(measure);
+      const afterTrail = await h.eval(adbgDump);
+      console.log(`  [切回钉顶] 切走前 gap=${pinBefore?.gap} → 切回后 gap=${pinAfter?.gap}（「${hereTitle}」↔「${awayTitle}」）`);
+      console.log(`  [切回钉顶] 打点：${JSON.stringify(afterTrail)}`);
+      const afterHidden = Number(await h.eval(`(() => {
+        const tl = document.querySelector(".timeline");
+        if (!tl) return 9999;
+        const blankOf = (sel) => { const n = document.querySelector(sel); return n ? n.offsetHeight : 0; };
+        const bottom = tl.scrollHeight - blankOf(".timeline-bottom-spacer.anchor-pad") - blankOf(".timeline-bottom-spacer.compact");
+        return Math.round(bottom - tl.scrollTop - tl.clientHeight);
+      })()`));
+      h.check("[切回钉顶] 前置：切走前确实是钉顶状态（gap ≈ 54）",
+        Math.abs(Number(pinBefore?.gap) - 54) <= 40, `before=${pinBefore?.gap}`);
+      // 切回来之后"位置"有两种合法结局，取决于回复有没有长过一屏（与流式期间同一套语义）：
+      //   · 回复没超屏 → 消息仍在 54px（钉顶恢复）；
+      //   · 回复超屏   → 位置交给跟随，最新内容贴在视口底（消息自然往上走）。
+      // 不允许的是"钉顶机制整条死掉"：所以同时断言**钉顶打点确实又跑过**
+      // （pin-apply / pin-fix / pin-miss 之一），这正是用户报的「切换会话，钉顶没了」。
+      const pinnedAgain = Array.isArray(afterTrail) && afterTrail.some((e) => ["pin-apply", "pin-fix"].includes(e.r));
+      const backToTop = Math.abs(Number(pinAfter?.gap) - 54) <= 40;
+      const latestVisible = afterHidden <= 120;
+      console.log(`  [切回钉顶] 恢复落点=${backToTop ? "钉在 54px" : `跟随（视口外 ${afterHidden}px）`}；钉顶打点复跑=${pinnedAgain}`);
+      h.check("切出去再切回来，钉顶机制没死（位置被重新接管）", pinnedAgain, JSON.stringify((afterTrail || []).slice(-4)));
+      h.check("切回来看到的是最新内容（钉在 54px 或最新正文可见）",
+        backToTop || latestVisible, `gap=${pinAfter?.gap} hidden=${afterHidden}`);
+
       // ── 弹跳判据（09-12 用户反馈「钉顶想往上、跟随想往下，来回拉扯、上下弹跳」）──
       // 采样整段流式期间的 scrollTop：钉顶与跟随如果各抢一次，就会出现**方向反转**。
       // 判据：相邻采样的最大跳变有界；方向反转次数极少（正常跟随是单向递增）。
