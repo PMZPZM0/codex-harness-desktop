@@ -622,18 +622,53 @@ async function enterMain(h) {
   await wait(1500);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 验收范围：**默认只跑「本轮」的项**（2026-09-13 用户严令后的流程改写）
+//   用户原话：「验收流程是死的嘛，你不会重新写嘛」「只能测试最新改动，不要浪费我token」。
+//   所以范围不再是"靠自觉加 --only"，而是**流程默认就只跑最新一轮**：
+//     · 默认（不带参数）→ 只跑 LATEST_ROUND 那一轮；
+//     · `--only <id>`    → 只跑指定项（本轮的项要反复迭代时用）；
+//     · `--all`          → 全量（**发版/里程碑闸门**，平时不要用；跑之前先说明理由）；
+//     · `--list`         → 列出全部项并标注所属轮次。
+//   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
+//   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
+// ─────────────────────────────────────────────────────────────────────────────
+const LATEST_ROUND = "09-13";
+/** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
+const ROUND_OF = {
+  "boot-history": "09-12",
+  "switch-speed": "09-12",
+  "reveal-on-switch": "09-12",
+  "greet-once": "09-12",
+  "concurrency": "09-12",
+  "fold-anchor": "09-12",
+  "send-anchor": "09-13",
+  "switch-running": "09-13",
+  "remote-auth": "09-13",
+  "clean": "09-13",
+};
+const roundOf = (id) => ROUND_OF[id] ?? "(未登记)";
+
 if (flag("list")) {
-  console.log("验收项：");
-  for (const c of CHECKS) console.log(`  ${c.id.padEnd(18)} ${c.name}`);
+  console.log(`验收项（默认只跑最新一轮 ${LATEST_ROUND}；--all 才全量）：`);
+  for (const c of CHECKS) console.log(`  [${roundOf(c.id).padEnd(7)}] ${c.id.padEnd(18)} ${c.name}`);
   process.exit(0);
 }
 
 const only = value("only", "");
-const selected = only ? CHECKS.filter((c) => c.id.includes(only)) : CHECKS;
+const all = flag("all");
+const selected = only
+  ? CHECKS.filter((c) => c.id.includes(only))
+  : all
+    ? CHECKS
+    : CHECKS.filter((c) => roundOf(c.id) === LATEST_ROUND);
 if (!selected.length) {
   console.error(`没有匹配 --only ${only} 的验收项；可用：${CHECKS.map((c) => c.id).join(", ")}`);
   process.exit(1);
 }
+const unscoped = selected.filter((c) => roundOf(c.id) === "(未登记)").map((c) => c.id);
+if (unscoped.length) console.log(`\x1b[33m⚠️ 这些验收项没登记轮次，不会被默认跑到：${unscoped.join(", ")}（请加进 ROUND_OF）\x1b[0m`);
+console.log(`\x1b[90m验收范围：${only ? `--only ${only}` : all ? "全量（--all，发版闸门）" : `最新一轮 ${LATEST_ROUND}`}（${selected.length} 项：${selected.map((c) => c.id).join(", ")}）\x1b[0m`);
 
 const missing = [
   ["dist/index.html", "npm run build:vite"],
