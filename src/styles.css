@@ -9893,7 +9893,7 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   }
 }
 /* ⛔ 窗口缩小时顶栏按钮分级自动隐藏（09-13 用户反馈：缩到最小按键一直挤在、不跟随隐藏）。
-   顺序 = 从次要到主要：右栏开关/新建终端 → ⋯ 任务菜单 → 工作区 📁。
+   顺序 = 从次要到主要：右栏开关/新建终端 → ⋯ 任务菜单 → 工作区 📁 → 独立弹窗/返回。
    ⚠️ 用专用 class 匹配，不要用 [title*="中文"] 属性选择器——lightningcss minify 会剥掉
    属性值的引号，非 ASCII 值没引号是非法选择器，整条规则被静默丢弃（实测踩坑）。 */
 @media (width<=980px) {
@@ -9908,7 +9908,10 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   }
 }
 @media (width<=760px) {
-  .topbar-actions .tb-workspace {
+  /* 最窄：全部顶栏按键隐藏（含独立弹窗/返回，09-13 用户定稿「放大缩小按键也跟着隐藏」） */
+  .topbar-actions .tb-workspace,
+  .topbar-actions .popout-open-btn,
+  .topbar-actions .popout-return-btn {
     display: none;
   }
 }
