@@ -19,6 +19,7 @@
 // 被测 profile：`.e2e-profile/<name>/`（已 gitignore，含真实对话内容，勿入库）
 
 import { existsSync, readFileSync, statSync } from "node:fs";
+import http from "node:http";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ElectronHarness } from "./e2e/lib/harness.mjs";
@@ -556,6 +557,43 @@ const CHECKS = [
       for (const f of found.slice(0, 3)) console.log(`  [折叠]   会话#${f.row}: ${JSON.stringify(f.folded)}`);
       h.check("没有任何折叠组吞掉长正文（≥200 字的汇报必须留在外面）", found.length === 0, JSON.stringify(found.slice(0, 2)));
       await h.screenshot("折叠检查");
+    },
+  },
+
+  {
+    id: "remote-auth",
+    name: "⑧ 手机远控面必须鉴权（无凭据 401 / 带凭据 200）",
+    run: async (h) => {
+      // 09-13 审计 P0：远控控制面此前**没有任何凭据校验**，而它监听全网卡、自动放行防火墙、
+      // 还能起公网隧道，开的会话又是 danger-full-access + 从不询问 → 同网段任何人无需配对
+      // 即可在用户机器上执行任意命令。这条断言就是那个洞的回归守卫。
+      // 用「先发起、再轮询全局变量」的写法：不依赖 harness 是否 await 返回值（promise 会让 eval 卡住）
+      await h.eval(`(() => { window.__remoteProbe = null; window.codex.remoteStart().then((r) => { window.__remoteProbe = r; }).catch((e) => { window.__remoteProbe = { error: String(e?.message ?? e) }; }); return true; })()`);
+      await h.waitFor(`!!window.__remoteProbe`, { label: "远控启动返回", timeoutMs: 20000 }).catch(() => undefined);
+      const info = await h.eval(`JSON.stringify(window.__remoteProbe ?? null)`);
+      let parsed = null;
+      try { parsed = JSON.parse(info); } catch { /* eval 出错会返回字符串 */ }
+      h.check("[前置] 远控服务已启动并给出配对地址", Boolean(parsed?.port && parsed?.url), String(info).slice(0, 200));
+      const port = Number(parsed?.port);
+      const token = String(parsed?.url ?? "").match(/[?&]k=([a-f0-9]+)/)?.[1] ?? "";
+      h.check("[前置] 配对地址里带一次性凭据", Boolean(token), String(parsed?.url ?? "").slice(0, 120));
+      const get = (path) => new Promise((resolve) => {
+        const req = http.request({ host: "127.0.0.1", port, path, method: "GET", timeout: 4000 }, (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        });
+        req.on("error", () => resolve(-1));
+        req.on("timeout", () => { req.destroy(); resolve(-1); });
+        req.end();
+      });
+      const anon = await get("/api/status");
+      const authed = await get(`/api/status?k=${token}`);
+      const anonPage = await get("/");
+      console.log(`  [远控鉴权] 无凭据 /api/status=${anon}；带凭据=${authed}；无凭据 / =${anonPage}`);
+      h.check("无凭据访问控制面被拒（401）", anon === 401, `status=${anon}`);
+      h.check("无凭据访问配对页被拒（401）", anonPage === 401, `status=${anonPage}`);
+      h.check("带一次性凭据可正常访问（200）", authed === 200, `status=${authed}`);
+      await h.eval(`window.codex.remoteStop().catch(() => undefined)`);
     },
   },
 

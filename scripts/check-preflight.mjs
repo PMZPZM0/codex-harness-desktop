@@ -807,6 +807,52 @@ console.log(C.bold("\n【10】滚动与锚定状态：单一 owner + 默认值�
     : fail("「回到底部」按钮没有走 releaseToUser —— 直写标志会漏掉 pinGapLocked/pinFix 等复位");
 }
 
+// ---------- 【11】09-13 应用级审计的 P0 修复：不许回退 ----------
+// 这几条都是"一退就出大事"的结构（退出时把引擎重新拉起、配置写坏就再也打不开窗口、
+// 远控面没有鉴权、权限判据静默提权）。它们都不适合用 CDP 验收（要重启/断网/多网段），
+// 所以钉在预检里：改坏了 build 阶段就红。
+console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命周期 / 启动链容错 / 远控鉴权 / 权限不提权）"));
+
+{
+  const serverSrc = readFileSync(join(ROOT, "electron", "codex-server.ts"), "utf8");
+  const mainSrc = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  const remoteSrc = readFileSync(join(ROOT, "electron", "remote.ts"), "utf8");
+  const appSrc = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+
+  // ① 主动停止时不许自动拉起引擎（否则退出/更新过程中会重新 spawn 孤儿 codex.exe，抢 codex.exe 占用）
+  const stopBody = serverSrc.slice(serverSrc.indexOf("  stop() {"), serverSrc.indexOf("  private write("));
+  /this\.stopping = true/.test(stopBody) && /removeAllListeners\("exit"\)/.test(stopBody)
+    ? ok("引擎 stop() 置 stopping 标志并摘掉 exit 监听（不会被自己的 exit→fail→restart 拉起）")
+    : fail("stop() 没有置 stopping 或没摘 exit 监听 —— 退出时会把引擎重新 spawn 出来");
+  /if \(this\.stopping\) \{/.test(serverSrc)
+    ? ok("fail() 在主动停止时直接返回（不再无条件 restart）")
+    : fail("fail() 缺少 stopping 判断 —— 主动停止会被自动重启反转");
+
+  // ② 配置文件损坏不能让启动链断掉（曾导致"窗口根本不创建"，且进程持单实例锁，双击永远秒退）
+  const readCustom = mainSrc.slice(mainSrc.indexOf("async function readCustomModel()"), mainSrc.indexOf("async function readCustomModels()"));
+  !/throw error;/.test(readCustom)
+    ? ok("readCustomModel 解析失败不再 throw（坏配置改名备份后按空配置继续启动）")
+    : fail("readCustomModel 又抛异常了 —— 配置写坏一次就会永远打不开窗口");
+
+  // ③ 远控控制面必须有鉴权，且不得再自动改系统防火墙策略
+  /private authorize\(/.test(remoteSrc) && /if \(!this\.authorize\(req, res, url\)\) return;/.test(remoteSrc)
+    ? ok("远控所有路由（含 WS 升级）统一走 authorize 鉴权")
+    : fail("remote.ts 缺少统一鉴权入口 —— 控制面会再次对局域网裸奔");
+  !/advfirewall", \["firewall", "add"/.test(remoteSrc)
+    ? ok("远控不再自动添加防火墙放行规则（改由用户显式放行）")
+    : fail("remote.ts 又在自动改系统防火墙策略了");
+
+  // ④ 引擎 thread.status 是对象，不许再按字符串比较（否则"在跑"判据恒假）
+  !/params\.status !== "inProgress"/.test(appSrc) && !/input\.status === "inProgress"/.test(readFileSync(join(ROOT, "src", "lib", "turn-fold.ts"), "utf8"))
+    ? ok("运行态判据按 status?.type 判定（不会再因对象/字符串比较而恒假）")
+    : fail("又有地方按字符串比较 engine thread.status —— 在跑会话会被判成已停止");
+
+  // ⑤ 权限判据不得再"怀疑污染就落到全局默认"（曾把用户选的只读静默提成完全访问）
+  !/const recordTrusted =/.test(appSrc) && /saferSandbox\(/.test(appSrc)
+    ? ok("会话权限取「记录 / 全局默认」中更保守的一方（不会静默提权）")
+    : fail("权限判据又回到「记录==引擎值即污染 → 落全局默认」—— 那会把只读会话悄悄变成完全访问");
+}
+
 // ---------- 汇总 ----------
 
 console.log("");

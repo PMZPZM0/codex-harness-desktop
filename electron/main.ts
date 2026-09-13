@@ -3773,14 +3773,16 @@ ipcMain.handle("plugin:validate", async (_event, input: { path?: string }) => {
   if (!inventory.skills && !inventory.commands && !inventory.agents && !inventory.hooks) issues.push("插件没有任何能力目录（skills / commands / agents / hooks）");
   return { ok: issues.length === 0, root, manifestPath, issues, inventory, name: manifest?.name ?? "" };
 });
-ipcMain.handle("remote:start", () => { const port = remote.start(); return { port, url: remote.pairUrl() }; });
-ipcMain.handle("remote:status", () => ({ status: "idle", devices: remote.listDevices(), url: remote.pairUrl() }));
+// ⚠️ 必须 await：`remote.start()` 是 async，不 await 时 port 是个 Promise 对象（渲染层拿到
+// `{}`、二维码地址也可能在 token 生成前取），这正是 09-13 冒烟测试第一次跑就超时的原因。
+ipcMain.handle("remote:start", async () => { const port = await remote.start(); return { port, url: remote.pairUrlAuth() }; });
+ipcMain.handle("remote:status", () => ({ status: "idle", devices: remote.listDevices(), url: remote.pairUrlAuth() }));
 ipcMain.handle("remote:devices", () => remote.listDevices());
 ipcMain.handle("remote:send", (_event, cmd: string) => { mainWindow?.webContents.send("remote:command", { command: String(cmd), device: { id: "local", name: "本机" } }); return { ok: true }; });
 ipcMain.handle("remote:stop", () => { remote.stop(); return { ok: true }; });
 ipcMain.handle("remote:qrcode", async (_event, botId?: string) => {
-  const base = remote.pairUrl();
-  return qrSvg(botId ? `${base}?bot=${encodeURIComponent(botId)}` : base);
+  // 服务端拼 URL（含一次性凭据），避免调用方把 `?`/`&` 拼错 —— 拼错的后果是扫码后 401
+  return qrSvg(remote.pairUrlFor(botId));
 });
 // 机器人扫码绑定：创建绑定会话二维码 + 渲染层轮询状态
 let lastBindSession = "";

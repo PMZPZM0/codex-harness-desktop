@@ -81,6 +81,12 @@ export class RemoteControlService {
 
   async start(port = 0) {
     if (this.server) return this.port;
+    // ★ 控制面凭据（09-13 审计 P0：此前 remote 全文件**没有任何鉴权代码**，而它监听全网卡、
+    // 自动放行防火墙、还能起公网隧道，开的会话又是 danger-full-access + 从不询问 →
+    // 同网段任何人无需配对即可在你机器上执行任意命令）。现在每次启动生成一次性 token，
+    // 由扫码打开的配对 URL（`?k=`）带来，校验通过后种 HttpOnly cookie，
+    // 之后手机页面的 fetch 与 WebSocket 自动携带 —— **不需要改手机页面**。
+    this.accessToken = require("node:crypto").randomBytes(16).toString("hex");
     this.port = port;
     this.server = http.createServer((req, res) => this.route(req, res));
     await new Promise<void>((resolve) => {
@@ -92,7 +98,9 @@ export class RemoteControlService {
         resolve();
       });
     });
-    this.ensureFirewall();
+    // ⛔ 不再自动添加防火墙放行规则（09-13 审计：静默改动系统网络策略，是这次"零鉴权暴露在
+    // 局域网上"的一环）。规则已存在则续用；不存在只记日志 + 在页面给出提示，由用户显式放行。
+    this.reportFirewallState();
     this.startTunnel();
     // 订阅引擎流式事件 → 推给手机对话页（含轮询缓冲）
     this.events.onThreadEvent?.((event) => this.broadcastThreadEvent(event));
@@ -144,16 +152,21 @@ export class RemoteControlService {
     return "";
   }
 
-  /** Windows 防火墙放行本端口（幂等；失败不影响配对，只是同一网络可能被拦） */
-  private ensureFirewall() {
+  /** 控制面一次性凭据（每次启动重新生成，见 start()）。 */
+  private accessToken = "";
+
+  /** 防火墙状态检查（**只查不改**）：规则已存在就续用；不存在只记日志，
+   *  不再自动 `netsh advfirewall add rule`（09-13 审计：静默改动系统网络策略是
+   *  "零鉴权暴露在局域网"的一环；现在改由用户显式放行，界面/配对页会给提示）。 */
+  private reportFirewallState() {
     if (process.platform !== "win32") return;
     const { spawn } = require("node:child_process") as typeof import("node:child_process");
     const rule = "CodexHarness-Remote";
     const check = spawn("netsh", ["advfirewall", "firewall", "show", "rule", `name=${rule}`], { windowsHide: true });
     check.on("exit", (code) => {
-      if (code === 0) return;
-      const add = spawn("netsh", ["advfirewall", "firewall", "add", "rule", `name=${rule}`, "dir=in", "action=allow", "protocol=TCP", `localport=${this.port}`], { windowsHide: true });
-      add.on("error", () => { /* 无管理员权限时静默；用户可手动放行 */ });
+      if (code !== 0) {
+        console.warn(`[remote] 未发现防火墙放行规则「${rule}」：手机若连不上，请在 Windows 防火墙手动放行 TCP ${this.port}（应用不再自动改系统策略）`);
+      }
     });
     check.on("error", () => { /* netsh 不可用 */ });
   }
@@ -420,11 +433,20 @@ pollLoop();
 
   private route(req: http.IncomingMessage, res: http.ServerResponse) {
     const url = req.url ?? "/";
+    // ★ 控制面鉴权（09-13 审计 P0，**所有路由的统一入口**，含 /api/rpc、/r/* 与 WebSocket 升级）：
+    //   此前这一层完全不存在，于是"监听全网卡 + 自动放行防火墙 + 可起公网隧道"就等于把一台
+    //   以 danger-full-access / 从不询问运行的 agent 挂到了网络上。
+    //   凭据来源（按序）：URL 里的 `k` 参数（扫码打开的配对链接自带）→ `Authorization: Bearer`
+    //   → HttpOnly cookie（首次带 k 访问时种下，之后页面自己的 fetch 与 WS 自动携带，
+    //   **因此手机页面代码无需改动**）。校验失败一律 401，不再继续任何业务分支。
+    if (!this.authorize(req, res, url)) return;
     // WebSocket upgrade
     if (url.startsWith("/ws/") && req.headers.upgrade?.toLowerCase() === "websocket") {
       return this.handleWs(req, res);
     }
-    if (url === "/api/status") {
+    // ⚠️ 匹配必须**忽略查询串**：配对链接自带 `?k=<凭据>`，用 `url === "/api/status"`
+    // 精确比较会因为查询串而 404（09-13 冒烟测试第一次跑就复现：带凭据反而 404）。
+    if (url === "/api/status" || url.startsWith("/api/status?")) {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ status: this.events.getStatus?.() ?? "", devices: this.listDevices() }));
       return;
@@ -626,7 +648,8 @@ pollLoop();
     this.bindSessions.set(code, { botId, code, status: "waiting", createdAt: Date.now() });
     // 清理过期会话
     for (const [key, session] of this.bindSessions) if (Date.now() - session.createdAt > 10 * 60_000) this.bindSessions.delete(key);
-    return `${this.pairUrl()}/r/${code}?bot=${encodeURIComponent(botId)}&name=${encodeURIComponent(botName)}`;
+    // 机器人绑定二维码：路径在前、参数在后，并带上一次性凭据（鉴权见 authorize）
+    return `${this.pairUrl()}/r/${code}?bot=${encodeURIComponent(botId)}&name=${encodeURIComponent(botName)}&k=${this.accessToken}`;
   }
 
   /** 查询绑定会话状态：waiting / confirmed / expired（找不到即 expired） */
@@ -653,14 +676,59 @@ pollLoop();
     });
   }
 
+  /** 控制面鉴权：校验 URL `k` / Bearer / cookie 三者之一，通过则种 cookie 并放行。
+   *  失败给 401（/api/* 与 WS 返回 JSON，页面访问返回一段可读提示，告诉用户重新扫码）。 */
+  private authorize(req: http.IncomingMessage, res: http.ServerResponse, url: string): boolean {
+    if (!this.accessToken) return true;   // 未初始化（理论上不会发生）：不拦，避免把功能锁死
+    let provided = "";
+    try { provided = new URL(url, "http://x").searchParams.get("k") ?? ""; } catch { /* 相对/畸形 URL */ }
+    if (!provided) {
+      const auth = String(req.headers.authorization ?? "");
+      if (auth.toLowerCase().startsWith("bearer ")) provided = auth.slice(7).trim();
+    }
+    if (!provided) {
+      const cookie = String(req.headers.cookie ?? "");
+      const hit = cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith("harness_remote="));
+      if (hit) provided = hit.slice("harness_remote=".length);
+    }
+    if (provided && provided === this.accessToken) {
+      // 首次带 k 访问：种 HttpOnly cookie，后续请求（含同源 WebSocket）自动带凭据
+      res.setHeader("set-cookie", `harness_remote=${this.accessToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`);
+      return true;
+    }
+    const isUpgrade = req.headers.upgrade?.toLowerCase() === "websocket";
+    if (url.startsWith("/api/") || isUpgrade) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "unauthorized", hint: "请从应用里重新扫码配对" }));
+    } else {
+      res.writeHead(401, { "content-type": "text/html; charset=utf-8" });
+      res.end(`<!doctype html><meta charset="utf-8"><title>需要配对</title><body style="font:15px/1.7 system-ui;padding:40px;max-width:520px;margin:auto"><h2>需要配对</h2><p>这个地址需要配对码才能访问。请回到 Codex Harness 桌面端，点「手机远控」重新扫码（配对链接里带有一次性凭据），或在地址后补上 <code>?k=你的配对码</code>。</p></body>`);
+    }
+    return false;
+  }
+
   private json(response: http.ServerResponse, status: number, value: unknown) {
     response.writeHead(status, { "content-type": "application/json" });
     response.end(JSON.stringify(value));
   }
 
   pairUrl() {
-    // 优先 https 隧道域名（微信可直接打开），回退公网 IPv6 / 局域网 IPv4
+    // 纯基址（**不带查询串**）：调用方会自己往后拼路径与参数（如 `/r/<code>?bot=…`），
+    // 这里若带上 `?k=` 会把 URL 拼坏 —— 需要凭据的场景用下面的 pairUrlAuth / pairUrlFor。
     return this.externalBase();
+  }
+
+  /** 带一次性凭据的配对地址（界面展示 / 复制的链接用）：扫码或点开即可通过鉴权。 */
+  pairUrlAuth() {
+    const base = this.externalBase();
+    return base ? `${base}?k=${this.accessToken}` : base;
+  }
+
+  /** 带凭据 + 可选机器人参数的二维码地址。**由服务端拼**，调用方不要再手工拼 `?`/`&`。 */
+  pairUrlFor(botId?: string) {
+    const base = this.externalBase();
+    if (!base) return base;
+    return `${base}?${botId ? `bot=${encodeURIComponent(botId)}&` : ""}k=${this.accessToken}`;
   }
 
   stop() {
