@@ -1425,6 +1425,119 @@ const CHECKS = [
   },
 
   {
+    id: "thread-runtime-multiwin",
+    name: "⑯ 多窗口并发保护：会话运行时配置由主进程权威落盘 + 跨窗口广播（09-14）",
+    run: async (h) => {
+      // 背景：popout 独立窗口与主窗口是两个渲染进程，共享同一份 localStorage（存储一致），
+      // 但各自 React 状态是旧的、且写入是「读-改-写」——两个窗口改同一会话会互相看不见、
+      // 丢更新（都读 rev=N，各写回 rev=N+1，后者把前者的字段抹掉）。
+      // 修法：主进程做**权威存放处**（单点串行 + 字段级合并 + 改完广播），渲染层 localStorage
+      // 降为同步读缓存；`rev` 作冲突判据（等价 ZCode 的 revision）。
+      const rows = Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0;
+      h.check("[前置] 有旧会话可开（≥1）", rows >= 1, `thread-row=${rows}`);
+      await clickRow(h, 0);
+      await wait(1500);
+      const tid = String(await h.eval(`window.codex.request("thread/list", { limit: 5, sortKey: "updated_at", sortDirection: "desc", archived: false }).then((r) => r.data?.[0]?.id ?? "").catch(() => "")`));
+      h.check("[前置] 拿到会话 id", Boolean(tid), `tid=${tid}`);
+      if (!tid) return;
+      const K = JSON.stringify(tid);
+      const runtimeFile = join(h.userDataDir, "thread-runtime.json");
+      const readFileRuntime = () => { try { return JSON.parse(readFileSync(runtimeFile, "utf8"))?.[tid] ?? null; } catch { return null; } };
+      const readMirror = async () => { try { return JSON.parse((await h.eval(`localStorage.getItem("thread-runtime-" + ${K})`)) ?? "null"); } catch { return null; } };
+      const patch = (body) => h.eval(`window.codex.patchThreadRuntime(${JSON.stringify({ threadId: tid, ...body })}).then((r) => JSON.stringify(r)).catch((e) => "ERR:" + e.message)`);
+      const chipText = () => h.eval(`(() => { const menu = [...document.querySelectorAll(".model-controls .composer-menu")].find((m) => (m.querySelector("button.composer-setting")?.title ?? "").startsWith("请求思考强度")); return menu?.querySelector("button.composer-setting span")?.textContent ?? ""; })()`);
+
+      const rt0 = await readMirror();
+      const rev0 = Number(rt0?.rev) || 0;
+      h.check("[前置] 本地镜像有 rev 可作冲突判据", rev0 >= 0, `rev=${rev0} mirror=${JSON.stringify(rt0)}`);
+      const modelChip = () => h.eval(`(() => { const menu = [...document.querySelectorAll(".model-controls .composer-menu")].find((m) => m.querySelector("button.composer-setting")?.title === "模型"); return menu?.querySelector("button.composer-setting span")?.textContent ?? ""; })()`);
+
+      // ① 真 UI 动作（切模型）走完整链路：渲染层写镜像 → 推主进程 → 磁盘权威文件同步。
+      //    ⛔ 不用「直接调 IPC 改档位」来测这一步：档位有**模型支持集**，写一个不支持的档位会被
+      //    应用自己的兜底 effect 纠正回去，把测试写入覆盖掉（实测 minimal 被改回 high）。
+      const modelSwitch = JSON.parse(await h.eval(`(async () => {
+        const menu = [...document.querySelectorAll(".model-controls .composer-menu")].find((m) => m.querySelector("button.composer-setting")?.title === "模型");
+        if (!menu) return JSON.stringify({ error: "no-model-menu" });
+        const before = (menu.querySelector("button.composer-setting span")?.textContent ?? "").split(" · ")[0].trim();
+        menu.querySelector("button.composer-setting").click();
+        await new Promise((r) => setTimeout(r, 400));
+        const opts = [...document.querySelectorAll(".composer-menu-pop button[role=option]")].filter((b) => !/更多设置/.test(b.innerText || ""));
+        const pick = opts.find((b) => (b.querySelector("strong")?.textContent ?? "") !== before) ?? null;
+        if (!pick) return JSON.stringify({ error: "no-target", before, options: opts.length });
+        const title = pick.querySelector("strong")?.textContent ?? "";
+        pick.click();
+        await new Promise((r) => setTimeout(r, 1200));
+        return JSON.stringify({ before, picked: title, options: opts.length });
+      })()`));
+      console.log(`  [多窗口] UI 切模型 → ${JSON.stringify(modelSwitch)}`);
+      h.check("[前置] 模型菜单可切换到另一个模型", Boolean(modelSwitch.picked), JSON.stringify(modelSwitch));
+      await wait(900); // 主进程写盘有 120ms 合并窗口
+      const onDisk1 = readFileRuntime();
+      const mirror1 = await readMirror();
+      h.check("① 真 UI 动作已由主进程权威落盘（thread-runtime.json 与镜像一致）", Boolean(onDisk1) && onDisk1.model === mirror1?.model && Number(onDisk1.rev) > rev0, `磁盘=${JSON.stringify(onDisk1)} 镜像=${JSON.stringify(mirror1)}`);
+
+      // ② 广播驱动界面：模拟「另一个窗口」改了同一个会话（绕过 React 直接调 IPC，等价于
+      //    另一个窗口的写入）→ 本窗口收到广播后界面必须跟着变，否则本窗口下次写入会拿
+      //    旧值把对方的改动覆盖回去。用**真实存在**的另一个模型（避免被兜底 effect 纠正）。
+      const altList = JSON.parse(await h.eval(`window.codex.listCustomModels().then((r) => {
+        const out = [];
+        for (const p of (r?.providers ?? [])) for (const m of (p.models ?? [])) out.push("custom:" + p.provider + ":" + m.id);
+        return JSON.stringify(out);
+      }).catch(() => "[]")`));
+      // ⛔ 必须是**当前供应商**下的模型：跨供应商的模型不在 allModels 里，会被兜底 effect
+      // 回落成别的（实测写 openai-official 的模型 → 胶囊回落到 deepseek-v4-flash）。
+      const curProvider = String(mirror1?.model ?? "").split(":")[1] ?? "";
+      const sameProvider = altList.filter((value) => value.startsWith(`custom:${curProvider}:`));
+      const altModel = sameProvider.find((value) => value !== mirror1?.model) ?? "";
+      h.check("[前置] 同供应商下有另一个可用模型（避免被兜底 effect 回落）", Boolean(altModel), `同供应商候选 ${sameProvider.length} 个，当前=${mirror1?.model}`);
+      if (!altModel) return;
+      const beforeChip = String(await modelChip());
+      const p2 = await patch({ patch: { model: altModel }, baseRev: Number(onDisk1?.rev ?? rev0) });
+      console.log(`  [多窗口] 窗口B 改模型（本窗口界面应跟随）→ ${p2}`);
+      await wait(1500);
+      const afterChip = String(await modelChip());
+      const mirrorNow = await readMirror();
+      h.check("② 另一个窗口的改动经广播同步到本窗口界面（模型胶囊已变）", afterChip !== beforeChip && afterChip.includes(String(altModel.split(":").pop())), `胶囊「${beforeChip}」→「${afterChip}」镜像 model=${mirrorNow?.model}`);
+
+      // ③ 冲突可检出：拿一个过期 rev 去写，主进程必须报 conflict（渲染层据此知道「有人先改过」）。
+      //    这里用沙箱档位——它是**枚举值、没有模型支持集约束**，写进去不会被应用纠正。
+      const staleRev = Math.max(0, Number(mirrorNow?.rev ?? 1) - 9);
+      const p3 = await patch({ patch: { sandbox: "read-only" }, baseRev: staleRev });
+      let info3 = {};
+      try { info3 = JSON.parse(p3); } catch { /* 保持空对象 */ }
+      h.check("③ 过期 rev 写入被识别为冲突（conflict=true）", info3?.conflict === true, p3);
+      await wait(700);
+      const onDisk3 = readFileRuntime();
+      h.check("③bis 权限胶囊随广播同步（会话沙箱已切到只读）", String(onDisk3?.sandbox) === "read-only" && String(await h.eval(`(() => { const menu = [...document.querySelectorAll(".composer-menu")].find((m) => m.querySelector("button.composer-setting")?.title === "权限模式"); return menu ? "ok" : "missing"; })()`)) === "ok", `磁盘 sandbox=${onDisk3?.sandbox}`);
+
+      // ④ 字段级合并不丢更新：窗口A 改 approval，窗口B 带**过期 rev** 再改 approval，
+      //    最后一次写入不得把窗口A 之前写进同一个对象的 sandbox 抹掉。
+      const baseRev4 = Number(info3?.runtime?.rev ?? 0);
+      const p4a = await patch({ patch: { approval: "on-request" }, baseRev: baseRev4 });
+      const p4b = await patch({ patch: { approval: "never" }, baseRev: Math.max(0, baseRev4 - 3) });
+      console.log(`  [多窗口] 窗口B 带过期 rev 改另一字段 → ${p4b}`);
+      await wait(700);
+      const merged = readFileRuntime();
+      h.check("④ 字段级合并不丢更新（带过期 rev 写 approval，earlier 的 sandbox 仍在）", merged?.sandbox === "read-only" && merged?.approval === "never", `磁盘=${JSON.stringify(merged)} A=${p4a.slice(0, 60)}`);
+      h.check("④bis 冲突时 rev 仍然单调递增（不倒退、不原地）", Number(merged?.rev) > baseRev4, `rev ${baseRev4} → ${merged?.rev}`);
+
+      // 收尾：把权限拨回「完全访问」（本轮改过沙箱，避免影响后续场景的权限前提）
+      await h.eval(`(async () => {
+        const menu = [...document.querySelectorAll(".composer-menu")].find((m) => m.querySelector("button.composer-setting")?.title === "权限模式");
+        if (!menu) return "no-menu";
+        menu.querySelector("button.composer-setting").click();
+        await new Promise((r) => setTimeout(r, 400));
+        const pick = [...document.querySelectorAll(".composer-menu-pop button[role=option]")].find((b) => (b.querySelector("strong")?.textContent ?? "") === "完全访问");
+        if (!pick) return "no-target";
+        pick.click();
+        await new Promise((r) => setTimeout(r, 1200));
+        return "ok";
+      })()`);
+      await h.screenshot("多窗口并发-主进程权威");
+    },
+  },
+
+  {
     id: "clean",
     name: "⑦ 渲染层无 console.error",
     run: async (h) => {
@@ -1486,6 +1599,7 @@ const ROUND_OF = {
   "popout-window": "09-13",
   "session-scope": "09-14",
   "thread-runtime": "09-14",
+  "thread-runtime-multiwin": "09-14",
 };
 const roundOf = (id) => ROUND_OF[id] ?? "(未登记)";
 
