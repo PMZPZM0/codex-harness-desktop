@@ -164,6 +164,22 @@ const CHECKS = [
       h.check("视口没有停在留白里（看得见的回合 ≥ 1）", Number(state?.visibleGroups) >= 1, JSON.stringify(state));
       h.check("切回来没有残留一屏锚顶留白（≤ 一屏）", Number(state?.pad) <= Number(state?.ch), `pad=${state?.pad} ch=${state?.ch}`);
       h.check("渲染层没有报错（否则整棵树会被卸载 = 空白）", h.consoleLog.length === 0, h.consoleLog.slice(0, 3).join(" ｜ "));
+      // ★ 用户实测（09-13 截图）：「切出去，会话直接中断了」——回来以后输入框是**发送箭头**
+      // 而不是停止键，界面认为回合已经停了。这是权威判据：`.send-button.is-pause` =
+      // 应用仍认为该会话在跑（发送键的形态由 activeThreadRunning 决定）。
+      const stillRunning = await h.eval(`!!document.querySelector(".send-button.is-pause")`);
+      const stillWorking = await h.eval(`(() => { const w = document.querySelector(".working-indicator"); return w ? (w.innerText || "").trim() : ""; })()`);
+      console.log(`  [运行中切回] 界面仍认为在跑=${!!stillRunning}；处理中行=「${stillWorking}」`);
+      h.check("切回来界面仍认为回合在跑（发送键保持停止形态）", !!stillRunning,
+        `is-pause=${!!stillRunning} working=${stillWorking}`);
+      // 再等一会儿看它是不是还在长（真的没被中断 = 后台继续产出）
+      const grownBefore = Number(await h.eval(`(() => { const g = [...document.querySelectorAll(".turn-group")]; const last = g[g.length - 1]; return last ? (last.textContent || "").length : 0; })()`));
+      await wait(10000);
+      const grownAfter = Number(await h.eval(`(() => { const g = [...document.querySelectorAll(".turn-group")]; const last = g[g.length - 1]; return last ? (last.textContent || "").length : 0; })()`));
+      const stillRunning2 = await h.eval(`!!document.querySelector(".send-button.is-pause")`);
+      console.log(`  [运行中切回] 10s 后：正文 ${grownBefore} → ${grownAfter}；仍在跑=${!!stillRunning2}`);
+      h.check("切回来后回合仍在后台继续产出（正文还在长）", grownAfter > grownBefore,
+        `before=${grownBefore} after=${grownAfter} running=${!!stillRunning2}`);
     },
   },
 
