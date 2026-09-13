@@ -9715,6 +9715,8 @@ const commandMatches = useMemo(() => {
     }
     try {
       await window.codex.request("thread/queue/start", { threadId: thread.id, ...(id ? { queuedSubmissionId: id } : {}) });
+      // 同「回合结束自动启动」：先本地摘掉，避免与真实气泡并存（否则会短暂重复展示）
+      if (id) setQueue((current) => current.filter((entry) => entry.id !== id));
       void refreshQueue(thread.id);
       showToast("发送成功", "排队消息已开始执行");
     } catch (error: any) {
@@ -10409,7 +10411,17 @@ const commandMatches = useMemo(() => {
             void window.codex.showNotification(params.turn.error?.message ? "任务失败" : "任务完成", `${name.slice(0, 40)} ${params.turn.error?.message ? "运行失败" : "已运行完成"}`);
           }
         } catch { /* 通知失败不影响主流程 */ }
-        void window.codex.request("thread/queue/list", { threadId: params.threadId, limit: 1 }).then((result) => result.data?.[0] && window.codex.request("thread/queue/start", { threadId: params.threadId, queuedSubmissionId: result.data[0].id })).catch((error) => showToast("队列启动失败", error.message));
+        // 回合结束 → 自动启动下一条排队消息。
+        // ⛔ 必须**立刻从本地队列摘掉这一条**（用户实测「排队消息在聊天框里重复展示」）：
+        // 引擎把它变成真实用户消息气泡后，不会再保证发 `thread/queue/changed`，
+        // 于是 `.timeline-queue` 里那条「排队中」气泡会与真实气泡**同时存在**——
+        // 同一条消息显示两次，直到用户切会话/再发一条才刷新掉。
+        void window.codex.request("thread/queue/list", { threadId: params.threadId, limit: 1 }).then((result) => {
+          const head = result?.data?.[0];
+          if (!head) return undefined;
+          setQueue((current) => current.filter((entry) => entry.id !== head.id));
+          return window.codex.request("thread/queue/start", { threadId: params.threadId, queuedSubmissionId: head.id });
+        }).catch((error) => showToast("队列启动失败", error.message));
         // 计划模式：方案回合正常结束 → 弹「开始执行」确认条；失败则静默复位（错误已 toast）
         if (planTurnRef.current && planTurnRef.current.threadId === params.threadId && planTurnRef.current.turnId === String(params.turn?.id ?? "")) {
           if (!params.turn.error?.message) {
