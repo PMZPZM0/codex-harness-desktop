@@ -33,6 +33,14 @@ contextBridge.exposeInMainWorld("codex", {
     ipcRenderer.on("remote:pair-request", (_event, request) => handler(request));
     return () => ipcRenderer.removeAllListeners("remote:pair-request");
   },
+  botPairState: () => ipcRenderer.invoke("bot:pair-state"),
+  botApprove: (rid: string) => ipcRenderer.invoke("bot:approve", rid),
+  botDeny: (rid: string) => ipcRenderer.invoke("bot:deny", rid),
+  botRevoke: (key: string) => ipcRenderer.invoke("bot:revoke", key),
+  onBotPairRequest: (handler: (request: { rid: string; channel: string; chatId: string; name: string }) => void) => {
+    ipcRenderer.on("bot:pair-request", (_event, request) => handler(request));
+    return () => ipcRenderer.removeAllListeners("bot:pair-request");
+  },
   botBindQrcode: (botId: string, botName: string) => ipcRenderer.invoke("bot:bind-qrcode", botId, botName),
   botBindStatus: (code: string) => ipcRenderer.invoke("bot:bind-status", code),
   botBindConsume: (code: string) => ipcRenderer.invoke("bot:bind-consume", code),

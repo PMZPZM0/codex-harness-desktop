@@ -9484,7 +9484,14 @@ const commandMatches = useMemo(() => {
       void window.codex.remotePairState().then((s) => { setPairCode(s.code); setPairPending(s.pending); setPairApproved(s.approved); }).catch(() => undefined);
       showToast("手机请求连接", `${request.name}：请在「手机远控」面板允许或拒绝`);
     });
-    return () => offPair();
+    // Bot Channel（微信/QQ/飞书/钉钉/Telegram）聊天里发来 6 位授权码 → 同一张审批卡（rid 以 bp- 开头）
+    const offBotPair = window.codex.onBotPairRequest((request) => {
+      setPairPending((current) => current.some((r) => r.rid === request.rid) ? current : [...current, { rid: request.rid, name: request.name, createdAt: Date.now() }]);
+      setMobileRemoteOpen(true);
+      void window.codex.botPairState().then((s) => { setPairPending(s.pending.map((r) => ({ rid: r.rid, name: r.name, createdAt: r.createdAt }))); setPairApproved(s.approved.map((a) => ({ deviceId: a.key, name: a.name, approvedAt: a.approvedAt }))); }).catch(() => undefined);
+      showToast("机器人请求配对", `${request.name}：请在「手机远控」面板允许或拒绝`);
+    });
+    return () => { offPair(); offBotPair(); };
   }, []);
   useEffect(() => {
     if (showLogin) return;
@@ -14237,8 +14244,8 @@ const commandMatches = useMemo(() => {
                   <div className="remote-approve-row" key={request.rid} data-pair-row={request.rid}>
                     <div className="remote-approve-info"><strong>{request.name}</strong><small>请求连接这台电脑的工作区</small></div>
                     <div className="remote-approve-actions">
-                      <button className="remote-allow-btn" onClick={() => { void window.codex.remoteApprove(request.rid).then(() => { setPairPending((c) => c.filter((r) => r.rid !== request.rid)); void window.codex.remotePairState().then((s) => setPairApproved(s.approved)).catch(() => undefined); }).catch(() => undefined); }}>允许</button>
-                      <button className="remote-deny-btn" onClick={() => { void window.codex.remoteDeny(request.rid).then(() => setPairPending((c) => c.filter((r) => r.rid !== request.rid))).catch(() => undefined); }}>拒绝</button>
+                      <button className="remote-allow-btn" onClick={() => { const done = request.rid.startsWith("bp-") ? window.codex.botApprove(request.rid) : window.codex.remoteApprove(request.rid); void done.then(() => { setPairPending((c) => c.filter((r) => r.rid !== request.rid)); void window.codex.remotePairState().then((s) => setPairApproved(s.approved)).catch(() => undefined); void window.codex.botPairState().then((s) => setPairApproved((prev) => [...s.approved.map((a) => ({ deviceId: a.key, name: a.name, approvedAt: a.approvedAt })), ...prev.filter((p) => !s.approved.some((q) => q.key === p.deviceId))])).catch(() => undefined); }).catch(() => undefined); }}>允许</button>
+                      <button className="remote-deny-btn" onClick={() => { const done = request.rid.startsWith("bp-") ? window.codex.botDeny(request.rid) : window.codex.remoteDeny(request.rid); void done.then(() => setPairPending((c) => c.filter((r) => r.rid !== request.rid))).catch(() => undefined); }}>拒绝</button>
                     </div>
                   </div>
                 ))}

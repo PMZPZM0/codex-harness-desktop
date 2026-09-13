@@ -11,6 +11,7 @@ import { pathToFileURL } from "node:url";
 import { ChannelBotService, type ChannelBotConfig } from "./channel-bot";
 import { BotStreamSession, readBotStreamSettings, readBotStreamSettingsSync, writeBotStreamSettings, type BotStreamSink, type BotStreamSettings } from "./bot-stream";
 import { CodexServer, codexBinaryPath } from "./codex-server";
+import { BotPairingService } from "./bot-pairing";
 import { collectMcpServerNames, extractMcpSection, preserveUserConfig } from "./config-toml";
 import { deleteCustomCommand, expandCommandTemplate, listCustomCommands, readCustomCommand, saveCustomCommand } from "./commands";
 import { MemoryStore, Scheduler, type MemoryCategory, type MemoryRemoteConfig } from "./harness-services";
@@ -2276,6 +2277,9 @@ ipcMain.handle("bot-stream:set", async (_event, input: BotStreamSettings) => {
 
 async function handleWeixinMessage(message: { from: string; text: string; contextToken: string }) {
   if (!weixinGateway) return;
+  // 配对门卫（09-13）：未批准的聊天只有发对 6 位授权码才放行，其余消息只收到配对引导
+  const gate = botPairing.onChannelMessage("wechat", message.from, `微信 ${message.from}`, message.text);
+  if (gate.action !== "allow") { await weixinGateway.sendText(message.from, gate.message).catch(() => undefined); return; }
   try {
     const model = await readCustomModel();
     if (!model) { await weixinGateway.sendText(message.from, "请先在应用里配置模型再使用微信机器人。"); return; }
@@ -2379,6 +2383,9 @@ const telegramGateway = new TelegramGateway({
 });
 const telegramBindings = new Map<string, number>();
 async function handleTelegramMessage(message: { from: string; chatId: number; text: string }) {
+  // 配对门卫（09-13）：同微信
+  const gate = botPairing.onChannelMessage("telegram", String(message.chatId), `Telegram ${message.from}`, message.text);
+  if (gate.action !== "allow") { await telegramGateway.sendText(message.chatId, gate.message).catch(() => undefined); return; }
   try {
     const model = await readCustomModel();
     if (!model) { await telegramGateway.sendText(message.chatId, "请先在应用里配置模型。"); return; }
@@ -2540,6 +2547,9 @@ async function handleChannelMessage(channel: "feishu" | "dingtalk" | "qq", from:
       channelLog("error", `${channel} 回复失败：${error?.message ?? error}`);
     }
   };
+  // 配对门卫（09-13）：未批准的聊天先发 6 位授权码配对（等电脑端允许），其余消息只收到配对引导
+  const gate = botPairing.onChannelMessage(channel, chatId, `${channel} ${from}`, text);
+  if (gate.action !== "allow") { await reply(gate.message); return; }
   try {
     const model = await readCustomModel();
     if (!model) { await reply("请先在应用里配置模型。"); return; }
@@ -3908,6 +3918,21 @@ ipcMain.handle("remote:send", (_event, cmd: string) => { mainWindow?.webContents
 ipcMain.handle("remote:stop", () => { remote.stop(); return { ok: true }; });
 // 配对码 + 审批（09-13 二次加固：手机首次连接 = 6 位配对码 + 电脑端点允许）
 ipcMain.handle("remote:pair-state", () => ({ code: remote.pairingCode(), pending: remote.pendingPairs(), approved: remote.approvedDevices() }));
+// ── Bot Channel 配对门卫（09-13：机器人聊天的首次使用 = 聊天里发 6 位授权码 + 电脑端点允许）──
+// 与「手机远控」共用同一个 6 位码（电脑端只显示一个数字）；approved 持久化到 userData/bot-pairing.json
+const botPairing = new BotPairingService(
+  () => remote.pairingCode(),
+  (request) => { try { mainWindow?.webContents.send("bot:pair-request", request); } catch { /* ignore */ } },
+  (approved) => { void fs.writeFile(path.join(app.getPath("userData"), "bot-pairing.json"), JSON.stringify(approved, null, 2), "utf8").catch(() => undefined); },
+);
+try {
+  const saved = JSON.parse(readFileSync(path.join(app.getPath("userData"), "bot-pairing.json"), "utf8")) as Record<string, unknown>;
+  botPairing.restoreApproved(saved ?? {});
+} catch { /* 首次运行无文件 */ }
+ipcMain.handle("bot:pair-state", () => botPairing.state());
+ipcMain.handle("bot:approve", (_event, rid: string) => ({ ok: botPairing.approve(String(rid)) }));
+ipcMain.handle("bot:deny", (_event, rid: string) => ({ ok: botPairing.deny(String(rid)) }));
+ipcMain.handle("bot:revoke", (_event, key: string) => { const [channel, ...rest] = String(key).split(":"); return { ok: botPairing.revoke(channel, rest.join(":")) }; });
 ipcMain.handle("remote:pair-rotate", () => ({ code: remote.rotatePairingCode() }));
 ipcMain.handle("remote:approve", (_event, rid: string) => ({ ok: remote.approvePair(String(rid)) }));
 ipcMain.handle("remote:deny", (_event, rid: string) => ({ ok: remote.denyPair(String(rid)) }));
