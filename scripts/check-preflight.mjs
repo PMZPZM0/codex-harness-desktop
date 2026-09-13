@@ -863,6 +863,32 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
     ? ok("引擎更新默认校验 TLS 证书（自签名场景需显式 CODEX_HARNESS_INSECURE_TLS=1）")
     : fail("engine-updater.ts 又无条件关闭 TLS 校验 —— 下载物会被当场执行（--version 探针）");
 
+  // ⑦ 渲染层入参校验层（09-13 审计 S5）：不许再把渲染层给的路径/根当文件系统与 shell 目标
+  const mainForSec = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  // fs:write 不得再用渲染层自报的 root 做包含性判断
+  const fsWrite = mainForSec.slice(mainForSec.indexOf('ipcMain.handle("fs:write"'), mainForSec.indexOf('ipcMain.handle("fs:read"'));
+  // 判据用"是否还拿 input.root 去 resolve"（旧实现的真实证据）；不要用 path.relative(root,…)
+  // 这种正则 —— 新代码的可信根遍历里也有个叫 root 的循环变量，会误报。
+  !/path\.resolve\(input\.root/.test(fsWrite) && /threadCwd\.values\(\)/.test(fsWrite)
+    ? ok("fs:write 的可信根来自主进程（不再接受渲染层自报的 root）")
+    : fail("fs:write 又用渲染层传来的 root 做包含性判断了 —— 等于没有沙箱");
+  // external:open / browser:popout 不得无条件放行 file:
+  !/url\.protocol !== "file:"\s*\)\s*throw new Error\("Unsupported URL"\)/.test(mainForSec)
+    ? ok("external:open / popout 不再无条件放行 file:（只允许工作区内的 .html）")
+    : fail("external:open 又放行任意 file: 了 —— 渲染层可让系统执行任意本地程序");
+  // harness-image 必须收敛路径
+  /protocol\.handle\("harness-image"[\s\S]{0,1200}?Forbidden/.test(mainForSec)
+    ? ok("harness-image 协议收敛到图片 + 可信根内（不再任意读文件）")
+    : fail("harness-image 协议没有路径收敛 —— 它是默认 session 上的任意文件读取原语");
+  // 导航与新窗口收敛必须有
+  /will-navigate/.test(mainForSec) && /setWindowOpenHandler/.test(mainForSec) && /will-attach-webview/.test(mainForSec)
+    ? ok("主窗口导航 / 新窗口 / webview 挂载都有收敛（此前全仓零命中）")
+    : fail("缺少 will-navigate / setWindowOpenHandler / will-attach-webview 收敛");
+  // commands:delete 必须限定在命令目录内
+  /只能删除自定义命令目录内的文件/.test(mainForSec)
+    ? ok("commands:delete 限定在自定义命令目录内（deleteCustomCommand 是裸 fs.rm）")
+    : fail("commands:delete 又变成任意路径删除了");
+
   // ⑤ 权限判据不得再"怀疑污染就落到全局默认"（曾把用户选的只读静默提成完全访问）
   !/const recordTrusted =/.test(appSrc) && /saferSandbox\(/.test(appSrc)
     ? ok("会话权限取「记录 / 全局默认」中更保守的一方（不会静默提权）")

@@ -1808,6 +1808,28 @@ function createWindow() {
       webviewTag: true,
     },
   });
+  // ⛔ 导航与新窗口收敛（09-13 审计 S5）：全仓此前 `will-navigate` / `setWindowOpenHandler`
+  // **零命中** —— 主窗口加载了任意页面（模型输出里的链接、拖入的本地 html）就能在当前
+  // webContents 里换掉整个应用界面，而它带着 `harness-image://` 与全部 IPC 桥。
+  // 规则：**主窗口自身永不导航**（应用只从 dist/devServer 加载），新窗口一律拒绝并转系统浏览器。
+  mainWindow.webContents.on("will-navigate", (event, target) => {
+    const devUrl = process.env.VITE_DEV_SERVER_URL ?? "";
+    if (devUrl && target.startsWith(devUrl)) return;   // 开发期 HMR reload 放行
+    if (target.startsWith("file://") && target.includes("/dist/index.html")) return;
+    event.preventDefault();
+    if (/^https?:/i.test(target)) void shell.openExternal(target).catch(() => undefined);
+  });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) void shell.openExternal(url).catch(() => undefined);
+    return { action: "deny" };
+  });
+  // <webview> guest 只允许 http(s) 且禁弹窗；不给它任何宿主权限（分区隔离见 BrowserPane）。
+  mainWindow.webContents.on("will-attach-webview", (_event, webPreferences, params) => {
+    delete (webPreferences as any).preload;
+    (webPreferences as any).nodeIntegration = false;
+    (webPreferences as any).contextIsolation = true;
+    if (!/^https?:/i.test(String(params.src ?? ""))) delete (params as any).src;
+  });
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) void mainWindow.loadURL(devUrl);
   else void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
@@ -1882,6 +1904,23 @@ app.whenReady().then(async () => {
     // 盘符/根路径形态，再手动解一层（兼容旧的单编码 URL）。
     if (!/^[a-zA-Z]:[\\/]/.test(imagePath) && !imagePath.startsWith("/")) {
       try { imagePath = decodeURIComponent(imagePath); } catch { /* 原样使用 */ }
+    }
+    // ⛔ 收敛到「图片 + 可信根内」（09-13 审计 S5）：这个协议注册在**默认 session** 上，
+    // 而渲染层要渲染模型输出 / 内置浏览器里的网页 / 渠道消息 —— 不收敛就等于给它们一个
+    // `harness-image://img/?path=C:/任意文件` 的任意文件读取原语。
+    // 允许：常见图片扩展名，且落在 userData / images 缓存目录 / 任一已知会话工作目录内。
+    if (!/\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(imagePath)) {
+      return new Response("Unsupported media type", { status: 415 });
+    }
+    {
+      const resolved = path.resolve(imagePath);
+      const roots = [app.getPath("userData"), ...threadCwd.values()].filter(Boolean).map((root) => path.resolve(String(root)));
+      const inside = roots.some((root) => {
+        const rel = path.relative(root, resolved);
+        return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+      });
+      if (!inside) return new Response("Forbidden", { status: 403 });
+      imagePath = resolved;
     }
     // 斜杠方向兜底：引擎/宿主写入的路径斜杠方向可能不一致
     if (!existsSync(imagePath)) {
@@ -4155,9 +4194,16 @@ ipcMain.handle("git:diff", (_event, input: { cwd: string; scope: string }) => ne
 }));
 ipcMain.handle("fs:write", async (_event, input: { path: string; content: string; root: string }) => {
   const resolved = path.resolve(input.path);
-  const root = path.resolve(input.root || resolved);
-  const relative = path.relative(root, resolved);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("仅允许保存工作区内的文件");
+  // ⛔ 不再接受渲染层自报的根（09-13 审计 S5）：`root` 由被约束方自己声明，等于没有沙箱 ——
+  // 渲染层传 `root = 目标自己` 就恒过包含性判断（旧代码在 root 为空时正是这么退化的）。
+  // 可信根 = 主进程自己记着的会话工作目录 + userData。
+  const roots = [...threadCwd.values()].filter(Boolean).map((root) => path.resolve(String(root)));
+  roots.push(path.resolve(app.getPath("userData")));
+  const inside = roots.some((root) => {
+    const relative = path.relative(root, resolved);
+    return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+  });
+  if (!inside) throw new Error("仅允许保存会话工作区内的文件");
   await fs.writeFile(resolved, input.content, "utf8");
   return { ok: true };
 });
@@ -5274,6 +5320,20 @@ ipcMain.handle("commands:read", async (_event, input: { filePath?: unknown; cwd?
 });
 ipcMain.handle("commands:save", async (_event, input: any) => saveCustomCommand({ ...input, codexHome }));
 ipcMain.handle("commands:delete", async (_event, filePath: string) => {
+  // ⛔ 收敛到「自定义命令目录内」（09-13 审计 S5）：`deleteCustomCommand` 内部就是裸 `fs.rm`
+  // 且**没有任何包含性校验**，而这条链由渲染层任意字符串直达 —— 一个 `fs.rm` 原语。
+  {
+    const target = path.resolve(String(filePath ?? ""));
+    // 自定义命令有两个来源目录（见 commands.ts）：全局 `<codexHome>/commands` 与
+    // 项目级 `<cwd>/.codex/commands` —— 两个都要放行，否则删项目命令会误报。
+    const bases = [path.join(codexHome, "commands"), ...[...threadCwd.values()].filter(Boolean).map((cwd) => path.join(String(cwd), ".codex", "commands"))]
+      .map((base) => path.resolve(base));
+    const inside = Boolean(target) && bases.some((base) => {
+      const relative = path.relative(base, target);
+      return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+    });
+    if (!inside) throw new Error("只能删除自定义命令目录内的文件");
+  }
   await deleteCustomCommand(String(filePath ?? ""));
   return { ok: true };
 });
@@ -5655,16 +5715,31 @@ ipcMain.handle("clipboard:image", async () => {
   await fs.writeFile(file, buffer);
   return file;
 });
+// ⛔ `file:` 只在**工作区内的 .html** 上放行（09-13 审计 S5）：这条链是
+// `shell.openExternal` = 交给系统默认程序执行 —— 放行任意 `file:` 意味着渲染层（它要渲染
+// 模型输出 / 市场条目描述 / 内置浏览器里的网页）可以 `file:///C:/.../x.exe` 让系统去跑它。
+// 本地预览只需要工作区里的 html，其余一律拒。
+const filePreviewAllowed = (target: URL) => {
+  if (target.protocol !== "file:") return false;
+  let p = "";
+  try { p = require("node:url").fileURLToPath(target); } catch { return false; }
+  if (!/\.html?$/i.test(p)) return false;
+  // 可信根 = 主进程自己记着的各会话工作目录（**不接受渲染层传根**，见 S5 的 fs:write 反面教材）
+  const roots = [...threadCwd.values()].filter(Boolean).map((root) => path.resolve(String(root)));
+  return roots.some((root) => {
+    const rel = path.relative(root, path.resolve(p));
+    return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+  });
+};
 ipcMain.handle("external:open", async (_event, value: string) => {
   const url = new URL(value);
-  // file: 放行——本地 HTML 预览「在系统浏览器打开」走 file:// 协议，只认 http/https 会静默失败
-  if (url.protocol !== "https:" && url.protocol !== "http:" && url.protocol !== "file:") throw new Error("Unsupported URL");
+  if (url.protocol !== "https:" && url.protocol !== "http:" && !filePreviewAllowed(url)) throw new Error("Unsupported URL");
   await shell.openExternal(url.toString());
 });
 // 放大查看：独立 BrowserWindow 弹出预览（右栏 BrowserPane 太窄时用），宽高可自由调整
 ipcMain.handle("browser:popout", async (_event, value: string) => {
   const url = new URL(value);
-  if (url.protocol !== "https:" && url.protocol !== "http:" && url.protocol !== "file:") throw new Error("Unsupported URL");
+  if (url.protocol !== "https:" && url.protocol !== "http:" && !filePreviewAllowed(url)) throw new Error("Unsupported URL");
   const pop = new BrowserWindow({
     width: 1180,
     height: 800,
