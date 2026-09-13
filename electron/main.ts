@@ -2025,7 +2025,9 @@ function createPopoutWindow(threadId: string) {
     process.platform === "win32" ? "icon.ico" : "icon.png",
   );
   const win = new BrowserWindow({
-    width: 1080,
+    // 1120 而非 1080：主布局在 ≤1080px 时隐藏消息刻度尺（media query），弹窗初始宽度
+    // 必须避开这个断点，否则弹窗里看不到刻度线（用户截图反馈）。
+    width: 1120,
     height: 760,
     minWidth: 520,
     minHeight: 420,
