@@ -2414,6 +2414,105 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   min-height: 42px;
   padding: 6px 10px;
 }
+/* ── 审批：一行一条（09-14 用户「审批弹窗有点丑，卡片太大，两个卡片直接占满」） ──────────
+   收起态 = 图标 + 标题 + 一句话预览 + 允许/拒绝；点摘要才展开正文（命令全文 / 改动原因 / 权限）。
+   多条统一收进 .approval-stack：整体限高 + 滚动，条数再多也不推挤输入框。
+   ⛔ 要用户填东西的两类（问问题 / MCP elicitation）由组件默认展开——那不是审美问题，是可用性。 */
+.approval-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 10px;
+  max-height: min(232px, 38vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.composer-wrap .approval-stack .approval-card {
+  margin: 0;
+  max-height: none;
+  overflow: visible;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .06);
+  /* ⛔ flex 列默认会让子项**压缩**（flex-shrink:1）来塞进限高容器：行高会被压到 24px，
+     而且永远不溢出 → 滚动条永远不出现（实测 8 条时 stackHeight=232、scrollable=false）。
+     必须是「行高固定 + 容器滚动」。 */
+  flex: none;
+}
+.approval-card.compact > header.approval-line {
+  color: var(--text);
+  height: 36px;
+  min-height: 36px;
+  padding: 0 6px 0 10px;
+  gap: 8px;
+  border-bottom: 1px solid transparent;
+}
+.approval-card.compact.expanded > header.approval-line {
+  border-bottom-color: #f2e4c8;
+}
+.approval-card.compact .approval-summary {
+  /* 显式声明布局：底层 `.approval-card button` 是 inline-flex + justify-content:center，
+     摘要行要的是左对齐 + 让预览文字吃掉剩余宽度（否则长命令会把按钮挤出去） */
+  display: inline-flex;
+  justify-content: flex-start;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: none;
+  padding: 0;
+  gap: 7px;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+}
+.approval-card.compact .approval-summary > svg:first-child {
+  flex: none;
+  color: var(--orange);
+}
+.approval-card.compact .approval-summary strong {
+  flex: none;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.approval-card.compact .approval-peek {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+.approval-card.compact .approval-peek.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.approval-card.compact .approval-caret {
+  flex: none;
+  color: var(--muted);
+  transition: transform .18s ease;
+}
+.approval-card.compact.expanded .approval-caret {
+  transform: rotate(180deg);
+}
+.approval-card.compact .approval-actions {
+  flex: none;
+  gap: 6px;
+}
+.approval-card.compact .approval-actions button {
+  min-height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+.approval-card.compact .approval-detail {
+  min-height: 0;
+}
+.approval-card.compact .approval-detail > p {
+  margin: 8px 12px;
+  line-height: 1.5;
+}
+.approval-card.compact footer {
+  min-height: 38px;
+  padding: 6px 10px;
+}
 .tool-block summary {
   cursor: pointer;
   min-height: 40px;

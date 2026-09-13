@@ -5927,6 +5927,25 @@ function RequestCard({ request, onDone }: { request: PendingRequest; onDone: () 
   const allowOnce = legacyApproval ? "approved" : "accept";
   const allowSession = legacyApproval ? "approved_for_session" : "acceptForSession";
   const decline = legacyApproval ? { denied: { rejection: "User denied request" } } : "decline";
+  const isUserInput = request.method === "item/tool/requestUserInput";
+  const isElicitation = request.method === "mcpServer/elicitation/request";
+  // 09-14 用户反馈「审批弹窗有点丑，卡片太大了，两个卡片直接占满」→ 改成**输入框上一行**：
+  // 收起态只占一行（图标 + 一句话摘要 + 允许/拒绝），点摘要才展开预览正文。
+  // ⛔ 例外：要用户**填东西**的两类（问问题 / MCP elicitation）必须默认展开——收起了就没法填，
+  // 那不是审美问题是不可用；它们本来就只需要一行标题 + 表单。
+  const [expanded, setExpanded] = useState(() => isUserInput || isElicitation);
+  const command = String(params.command ?? "");
+  const title = isUserInput
+    ? "Codex 需要你的输入"
+    : isElicitation
+      ? `${params.serverName ?? "MCP"} 请求确认`
+      : request.method.includes("fileChange") ? "批准文件改动" : request.method.includes("permissions") ? "批准额外权限" : "批准命令执行";
+  /** 收起态露出的那一眼信息：命令取首个非空行，其余取原因 / 问题标题 / 服务端消息 */
+  const peek = isUserInput
+    ? String(questions[0]?.header || questions[0]?.question || "")
+    : isElicitation ? String(params.message ?? "")
+      : command ? (command.split("\n").find((line: string) => line.trim()) ?? "") : String(params.reason ?? params.grantRoot ?? "");
+  const RequestIcon = isUserInput ? MessageSquarePlus : isElicitation ? Wrench : ShieldCheck;
 
   async function reply(result: unknown) {
     setSubmitting(true);
@@ -5941,56 +5960,74 @@ function RequestCard({ request, onDone }: { request: PendingRequest; onDone: () 
     }
   }
 
-  if (request.method === "item/tool/requestUserInput") {
-    return (
-      <section className="approval-card">
-        <header><MessageSquarePlus size={16} /><strong>Codex 需要你的输入</strong></header>
-        {questions.map((question: any) => (
-          <label className="question" key={question.id}>
-            <span>{question.header || question.question}</span>
-            {question.header && <small>{question.question}</small>}
-            {question.options ? (
-              <select value={answers[question.id] ?? ""} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })}>
-                <option value="">请选择</option>
-                {question.options.map((option: any) => <option key={option.label} value={option.label}>{option.label} - {option.description}</option>)}
-              </select>
-            ) : (
-              <input type={question.isSecret ? "password" : "text"} value={answers[question.id] ?? ""} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })} />
-            )}
-          </label>
-        ))}
-        <footer><button className="primary" disabled={submitting} onClick={() => void reply({ answers: Object.fromEntries(questions.map((q: any) => [q.id, { answers: [answers[q.id] ?? ""] }])) })}><Check size={15} />提交</button></footer>
-      </section>
-    );
-  }
-
-  if (request.method === "mcpServer/elicitation/request") {
-    const properties = params.requestedSchema?.properties ?? {};
-    const content = Object.fromEntries(Object.keys(properties).map((key) => [key, answers[key] ?? ""]));
-    return (
-      <section className="approval-card">
-        <header><Wrench size={16} /><strong>{params.serverName} 请求确认</strong></header>
-        <p>{params.message}</p>
-        {params.mode === "url" && <button onClick={() => void window.codex.openExternal(params.url)}>在浏览器中打开</button>}
-        {params.mode !== "url" && Object.entries(properties).map(([key, schema]: [string, any]) => <label className="question" key={key}><span>{schema.title ?? key}</span>{schema.description && <small>{schema.description}</small>}{schema.enum ? <select value={answers[key] ?? ""} onChange={(event) => setAnswers({ ...answers, [key]: event.target.value })}><option value="">请选择</option>{schema.enum.map((value: string) => <option value={value} key={value}>{value}</option>)}</select> : <input type={schema.type === "number" || schema.type === "integer" ? "number" : "text"} value={answers[key] ?? ""} onChange={(event) => setAnswers({ ...answers, [key]: event.target.value })} />}</label>)}
-        {replyError && <p className="request-error">{replyError}</p>}
-        <footer><button disabled={submitting} onClick={() => void reply({ action: "decline", content: null, _meta: params._meta ?? null })}>拒绝</button><button className="primary" disabled={submitting} onClick={() => void reply({ action: "accept", content: params.mode === "url" ? null : content, _meta: params._meta ?? null })}><Check size={14} />确认</button></footer>
-      </section>
-    );
-  }
+  const elicitationProperties = params.requestedSchema?.properties ?? {};
+  const elicitationContent = Object.fromEntries(Object.keys(elicitationProperties).map((key) => [key, answers[key] ?? ""]));
 
   return (
-    <section className="approval-card">
-      <header><ShieldCheck size={16} /><strong>{request.method.includes("fileChange") ? "批准文件改动" : request.method.includes("permissions") ? "批准额外权限" : "批准命令执行"}</strong></header>
-      {params.reason && <p>{params.reason}</p>}
-      {params.command && <pre>{params.command}</pre>}
-      {params.cwd && <div className="tool-meta">{params.cwd}</div>}
-      {replyError && <p className="request-error">{replyError}</p>}
-      <footer>
-        <button disabled={submitting} onClick={() => void reply(commandLike ? { decision: decline } : { permissions: {}, scope: "turn" })}>拒绝</button>
-        <button className="primary" disabled={submitting} onClick={() => void reply(commandLike ? { decision: allowOnce } : { permissions: Object.fromEntries(Object.entries(params.permissions ?? {}).filter(([, value]) => value != null)), scope: "turn" })}><Play size={14} />本次允许</button>
-        {commandLike && (!available.length || available.includes(allowSession)) && <button disabled={submitting} onClick={() => void reply({ decision: allowSession })}>本会话允许</button>}
-      </footer>
+    <section className={`approval-card compact ${expanded ? "expanded" : ""}`}>
+      <header className="approval-line">
+        <button
+          type="button"
+          className="approval-summary"
+          aria-expanded={expanded}
+          title={command || peek || title}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <RequestIcon size={14} />
+          <strong>{title}</strong>
+          {peek && <span className={`approval-peek ${command ? "mono" : ""}`}>{peek}</span>}
+          <ChevronDown size={13} className="approval-caret" />
+        </button>
+        {/* 审批类：收起状态也要能直接允许/拒绝（点开只为看内容，不是操作前置） */}
+        {!isUserInput && !isElicitation && (
+          <div className="approval-actions">
+            <button disabled={submitting} onClick={() => void reply(commandLike ? { decision: decline } : { permissions: {}, scope: "turn" })}>拒绝</button>
+            <button className="primary" disabled={submitting} onClick={() => void reply(commandLike ? { decision: allowOnce } : { permissions: Object.fromEntries(Object.entries(params.permissions ?? {}).filter(([, value]) => value != null)), scope: "turn" })}><Play size={13} />允许</button>
+          </div>
+        )}
+      </header>
+
+      {expanded && (
+        <div className="approval-detail">
+          {isUserInput && questions.map((question: any) => (
+            <label className="question" key={question.id}>
+              <span>{question.header || question.question}</span>
+              {question.header && <small>{question.question}</small>}
+              {question.options ? (
+                <select value={answers[question.id] ?? ""} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })}>
+                  <option value="">请选择</option>
+                  {question.options.map((option: any) => <option key={option.label} value={option.label}>{option.label} - {option.description}</option>)}
+                </select>
+              ) : (
+                <input type={question.isSecret ? "password" : "text"} value={answers[question.id] ?? ""} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })} />
+              )}
+            </label>
+          ))}
+          {isElicitation && <>
+            {params.message && <p>{params.message}</p>}
+            {params.mode === "url" && <button onClick={() => void window.codex.openExternal(params.url)}>在浏览器中打开</button>}
+            {params.mode !== "url" && Object.entries(elicitationProperties).map(([key, schema]: [string, any]) => <label className="question" key={key}><span>{schema.title ?? key}</span>{schema.description && <small>{schema.description}</small>}{schema.enum ? <select value={answers[key] ?? ""} onChange={(event) => setAnswers({ ...answers, [key]: event.target.value })}><option value="">请选择</option>{schema.enum.map((value: string) => <option value={value} key={value}>{value}</option>)}</select> : <input type={schema.type === "number" || schema.type === "integer" ? "number" : "text"} value={answers[key] ?? ""} onChange={(event) => setAnswers({ ...answers, [key]: event.target.value })} />}</label>)}
+          </>}
+          {!isUserInput && !isElicitation && <>
+            {params.reason && <p>{params.reason}</p>}
+            {command && <pre>{command}</pre>}
+            {params.cwd && <div className="tool-meta">{params.cwd}</div>}
+            {!commandLike && Object.keys(params.permissions ?? {}).length > 0 && <pre>{JSON.stringify(params.permissions, null, 2)}</pre>}
+          </>}
+          {replyError && <p className="request-error">{replyError}</p>}
+        </div>
+      )}
+
+      {expanded && (isUserInput || isElicitation) && (
+        <footer>
+          {isUserInput
+            ? <button className="primary" disabled={submitting} onClick={() => void reply({ answers: Object.fromEntries(questions.map((q: any) => [q.id, { answers: [answers[q.id] ?? ""] }])) })}><Check size={15} />提交</button>
+            : <><button disabled={submitting} onClick={() => void reply({ action: "decline", content: null, _meta: params._meta ?? null })}>拒绝</button><button className="primary" disabled={submitting} onClick={() => void reply({ action: "accept", content: params.mode === "url" ? null : elicitationContent, _meta: params._meta ?? null })}><Check size={14} />确认</button></>}
+        </footer>
+      )}
+      {expanded && !isUserInput && !isElicitation && commandLike && (!available.length || available.includes(allowSession)) && (
+        <footer><button disabled={submitting} onClick={() => void reply({ decision: allowSession })}>本会话允许</button></footer>
+      )}
     </section>
   );
 }
@@ -7052,6 +7089,21 @@ export default function App() {
   }, [optimisticConfirmed, optimisticInput, thread]);
   const [openingThread, setOpeningThread] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingRequest[]>([]);
+  // e2e UI 场景入口（与 window.__adbg 同款测试钩子，只改内存、不碰引擎）：审批卡的形态
+  // （一行摘要 + 点开预览 + 多条不占满）在 e2e 里没法从真实引擎触发——e2e profile 跑在
+  // danger-full-access 下永不询问审批——所以留一个塞合成请求的口子，供截图与断言。
+  useEffect(() => {
+    const host = window as unknown as { __harnessApprovals?: { push: (input: { id?: string; method?: string; params?: Record<string, unknown> }) => string; clear: () => void } };
+    host.__harnessApprovals = {
+      push: (input) => {
+        const id = String(input?.id ?? `harness-approval-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
+        setPending((current) => [...current, { id, method: String(input?.method ?? "item/commandExecution/requestApproval"), params: input?.params ?? {} }]);
+        return id;
+      },
+      clear: () => setPending([]),
+    };
+    return () => { delete host.__harnessApprovals; };
+  }, []);
   const [diff, setDiff] = useState("");
   const [tokenUsage, setTokenUsage] = useState<any>(null);
   const tokenUsageRef = useRef<any>(null);
@@ -14596,7 +14648,17 @@ const commandMatches = useMemo(() => {
           {/* 审批卡：贴输入框上方（与 agent-ask 同款布局，09-13 从消息流大卡迁来）。
               主窗口与独立会话窗口走同一渲染逻辑——各自的 pending 里属于本窗口当前会话的
               请求都会在这里出现，弹窗里也能审批。 */}
-          {pending.filter((request) => !request.params?.threadId || request.params.threadId === thread?.id).map((request) => <RequestCard request={request} key={request.id} onDone={() => setPending((current) => current.filter((entry) => entry.id !== request.id))} />)}
+          {/* 09-14：多条审批收进 `.approval-stack`（整体限高 + 滚动）——以前每条都是一张
+              大卡直接往下堆，两条就把输入框上方占满；现在一条只占一行，点摘要才展开看内容。 */}
+          {(() => {
+            const mine = pending.filter((request) => !request.params?.threadId || request.params.threadId === thread?.id);
+            if (!mine.length) return null;
+            return (
+              <div className="approval-stack" data-count={mine.length}>
+                {mine.map((request) => <RequestCard request={request} key={request.id} onDone={() => setPending((current) => current.filter((entry) => entry.id !== request.id))} />)}
+              </div>
+            );
+          })()}
           {notice && createPortal(
             (() => {
               const tone = noticeTone(notice);
