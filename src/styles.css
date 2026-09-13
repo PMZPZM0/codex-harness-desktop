@@ -12821,7 +12821,7 @@ button.search-box:hover {
   background: var(--panel, #fff);
   border-radius: 12px;
   padding: 14px 16px;
-  margin: 0 0 14px;
+  margin: 0;
 }
 .remote-pair-head {
   display: flex;
@@ -12851,7 +12851,7 @@ button.search-box:hover {
   background: #e8b34b12;
   border-radius: 12px;
   padding: 12px 14px;
-  margin: 0 0 14px;
+  margin: 0;
 }
 .remote-approve-head {
   display: flex;
@@ -12896,7 +12896,7 @@ button.search-box:hover {
   background: var(--panel, #fff);
   border-radius: 12px;
   padding: 12px 14px;
-  margin: 0 0 14px;
+  margin: 0;
 }
 .remote-approved-row {
   display: flex;
@@ -12921,11 +12921,26 @@ button.search-box:hover {
   display: block;
 }
 .remote-columns {
-  grid-template-columns: 1fr 1fr;
-  gap: 18px;
+  /* 09-13 布局重排：自动流网格会把左列「配对码卡」拉高去对齐右列的二维码
+     （下半截全空）、右下格整个空着。改为左右两个显式纵向栈，各自撑满。 */
+  display: flex;
+  gap: 16px;
   padding: 18px 20px;
-  display: grid;
   overflow-y: auto;
+  align-items: stretch;
+}
+.remote-side {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* 左栈：配对码/审批/已批准紧凑排，Bot Channel 撑满剩余高度；
+   右栈：扫码列撑满（二维码盒内垂直居中） */
+.remote-side .remote-col,
+.remote-side-qr .remote-qr-box {
+  flex: 1;
 }
 .remote-col {
   border: 1px solid var(--line-soft);

@@ -14284,6 +14284,9 @@ const commandMatches = useMemo(() => {
         <div className="remote-panel2" role="dialog" aria-label="移动端远程控制">
           <header><div className="remote-head-left"><Smartphone size={19} /><div><strong>移动端远程控制</strong><small>扫码或在手机上打开链接，即可远程控制当前工作区。</small></div></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setMobileRemoteOpen(false)}><X size={17} /></button></header>
           <div className="remote-columns">
+            {/* 左右两个显式纵向栈：左 = 配对码/审批/已批准/Bot，右 = 扫码。此前是自动流网格，
+                配对码卡会被拉高去对齐右列的二维码（下半截全空）、右下格整个空着 = 大片空白 */}
+            <div className="remote-side">
             {/* 6 位配对码：手机扫码后要输它，之后还要在下面这张卡里点「允许」 */}
             <div className="remote-pair-card">
               <div className="remote-pair-head"><KeyRound size={15} /><strong>首次连接需要配对码</strong>
@@ -14317,6 +14320,22 @@ const commandMatches = useMemo(() => {
                 ))}
               </div>
             )}
+              <div className="remote-col remote-bot-col">
+                <div className="remote-col-title"><Link2 size={15} /><strong>使用 Bot Channel</strong></div>
+                <p className="remote-col-desc">连接聊天 Bot，适合更长时间的移动端访问。</p>
+                {[["微信", "", "从微信会话打开这个工作区。"], ["飞书", "中国", "在飞书群里 @机器人 打开这个工作区。"]].map(([name, region, desc]: any) => (
+                  <div className="bot-channel-card" key={name}>
+                    <div className="bot-channel-head">
+                      <strong>{name}{region && <span className="bot-region">{region}</span>}</strong>
+                      <button className="bot-config-link" onClick={() => { setMobileRemoteOpen(false); setBotManagerOpen(true); }}>去配置</button>
+                    </div>
+                    <small>{desc}</small>
+                  </div>
+                ))}
+                <button className="remote-manage-btn" onClick={() => setBotManagerOpen(true)}><Link2 size={13} />机器人管理</button>
+              </div>
+            </div>
+            <div className="remote-side remote-side-qr">
             <div className="remote-col">
               <div className="remote-col-title"><Smartphone size={15} /><strong>手机扫码连接</strong></div>
               <p className="remote-col-desc">用手机<b>相机</b>扫一扫（若扫码识别成文本，请选「打开链接」）。{remoteUrl?.startsWith("https") ? "手机无需与电脑同一 Wi-Fi。" : "手机需与电脑同一 Wi-Fi。"}</p>
@@ -14337,19 +14356,6 @@ const commandMatches = useMemo(() => {
                 </div>
               )}
             </div>
-            <div className="remote-col">
-              <div className="remote-col-title"><Link2 size={15} /><strong>使用 Bot Channel</strong></div>
-              <p className="remote-col-desc">连接聊天 Bot，适合更长时间的移动端访问。</p>
-              {[["微信", "", "从微信会话打开这个工作区。"], ["飞书", "中国", "在飞书群里 @机器人 打开这个工作区。"]].map(([name, region, desc]: any) => (
-                <div className="bot-channel-card" key={name}>
-                  <div className="bot-channel-head">
-                    <strong>{name}{region && <span className="bot-region">{region}</span>}</strong>
-                    <button className="bot-config-link" onClick={() => { setMobileRemoteOpen(false); setBotManagerOpen(true); }}>去配置</button>
-                  </div>
-                  <small>{desc}</small>
-                </div>
-              ))}
-              <button className="remote-manage-btn" onClick={() => setBotManagerOpen(true)}><Link2 size={13} />机器人管理</button>
             </div>
           </div>
         </div>
