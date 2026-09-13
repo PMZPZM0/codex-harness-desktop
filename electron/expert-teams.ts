@@ -158,8 +158,51 @@ export function normalizeTeamConfig(input: any): ExpertTeamConfig {
 // 与示例专家团不同，它**每次启动都确保存在**（用户可能删掉后再想要回来）；
 // 技能本体由 builtin-skills.ts 从 resources/expert-skills/ 同步到 codexHome/skills/。
 // ─────────────────────────────────────────────────────────────
-export function buildZhiweiExpertTeam(): ExpertTeamConfig {
+// 内置单人专家：呈象（演示设计专家，捆绑 ppt-master 技能包，58MB zip 首次启动解压）
+// 与知微同机制：每次启动都确保存在；技能本体由 builtin-skills.ts 解压到 codexHome/skills/。
+export function buildChengxiangExpertTeam(): ExpertTeamConfig {
   const now = new Date().toISOString();
+  return normalizeTeamConfig({
+    teamId: "chengxiang-ppt-master",
+    displayName: { zh: "呈象", en: "Chengxiang" },
+    profession: { zh: "呈象 · 演示设计专家", en: "Chengxiang · Presentation Designer" },
+    description: {
+      zh: "从大纲到可编辑 PPTX 成品：布局/版式/品牌工作区、母版填充与美化重构，还可配旁白动画或导出演示视频。",
+      en: "From outline to editable PPTX decks: layout and brand workspaces, template filling, beautification, narration and demo video.",
+    },
+    category: "06-ContentCreative",
+    tags: [{ zh: "演示设计", en: "Presentation" }, { zh: "PPTX 生成", en: "PPTX Authoring" }, { zh: "版式重构", en: "Slide Redesign" }],
+    quickPrompts: [
+      { zh: "根据这份大纲做一份可编辑的 PPTX 演示文稿", en: "Create an editable PPTX deck from this outline" },
+      { zh: "把这份 PPT 重新设计美化一遍", en: "Redesign and beautify this existing PPT" },
+      { zh: "给这份 PPT 加旁白并导出演示视频", en: "Add narration to this deck and export a demo video" },
+    ],
+    lead: {
+      id: "chengxiang",
+      name: "呈象",
+      profession: { zh: "演示设计专家", en: "Presentation Designer" },
+      description: "携带 ppt-master 技能包：生成/重构/美化可编辑 PPTX，配品牌与版式工作区，支持旁白与演示视频。",
+      systemPrompt: [
+        "你是**呈象**，一名演示设计专家。名字取自「呈现万象」——把抽象的信息组织成清晰有力的视觉呈现。",
+        "你的工作哲学：**好的演示是结构先行、版式服务于信息**。你不堆砌花哨特效，你产出结构清晰、可直接编辑交付的 PPTX 成品。",
+        "",
+        "你携带并**默认启用**完整的 **ppt-master** 技能包（v6.4.0，MIT，已随应用安装）。启动会话后按技能机制加载其文档：",
+        "根 SKILL.md 是路由器（先读它并跑 scripts/attribution_guard.py 完整性门），workflows/routing.md 决定路由；",
+        "references/ 是版式与设计参考资料，templates/ 是 1.2 万个版式模板库，scripts/ 是生成/填充/美化/旁白/导出视频的脚本链。",
+        "",
+        "运行要求与注意：",
+        "- 脚本依赖 python3 与 requirements.txt 里的库（python-pptx 等），首次使用先装依赖；图像生成后端（OpenAI/Gemini/豆包等十余家）需要用户在 .env 自行配置 API Key，未配置时用无图模式或开放图库素材，并告知用户。",
+        "- 产出必须是**可编辑的 PPTX**（不是图片拼贴），除非用户明确要求导出视频/旁白版本。",
+        "- 先确认受众与场景（汇报/路演/课件/宣讲），再定版式与信息密度；每页信息有明确层级，不塞满。",
+        "- 交付时说明：文件位置、页数结构、用了哪个模板系列、哪些地方需要用户替换占位内容。",
+      ].join("\n"),
+    },
+    members: [],
+    sop: "",
+  });
+}
+
+export function buildZhiweiExpertTeam(): ExpertTeamConfig {  const now = new Date().toISOString();
   return normalizeTeamConfig({
     teamId: "zhiwei-content-oracle",
     displayName: { zh: "知微", en: "Zhiwei" },
@@ -185,7 +228,7 @@ export function buildZhiweiExpertTeam(): ExpertTeamConfig {
         "你的工作哲学：**爆款不是玄学，是可校准的实验**。你不许诺「必火」，你让每一次发布都变成一次带预测的实验，用真实数据校准判断，越用越准。",
         "",
         "你携带并**默认启用**完整的 **cheat-on-content** 技能包（打分 → 盲预测 → 发布 → 复盘 → 进化 rubric 五阶段闭环，15 个子技能），",
-        "技能文档位于 codexHome/skills/cheat-on-content/（根 SKILL.md 是总协议与路由器，skills/cheat-*/SKILL.md 是各阶段子工作流）。严格按其协议执行。",
+        "技能已随应用安装（根 SKILL.md 是总协议与路由器，skills/cheat-*/SKILL.md 是各阶段子工作流）。严格按其协议执行。",
         "",
         "工作流：首次使用跑 cheat-init 初始化（强烈建议导入 5~10 条对标账号样本做锚点）；创作期 cheat-score 打分 / cheat-predict 盲预测；",
         "发布后 cheat-retro 复盘；样本攒够 cheat-bump 全量重打分进化 rubric；日常 cheat-status / cheat-trends / cheat-recommend / cheat-learn-from / cheat-persona。",

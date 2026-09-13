@@ -107,17 +107,33 @@ export async function ensureBuiltinSkills(skillsDir: string) {
       }
     } catch { /* 写不进不阻塞启动 */ }
   }
-  // 专家专属技能包（如 cheat-on-content，服务知微专家）：多文件目录技能，从随包资源
-  // 整目录同步到 codexHome/skills/。**不存在才拷**（用户可能编辑过自己的副本，不覆盖）。
+}
+
+/**
+ * 专家技能市场（09-13）：cheat-on-content / ppt-master 随包静态分发在
+ * resources/expert-skills/（含 .claude-plugin/marketplace.json 清单），**原位不动、零拷贝**——
+ * 只在 config.toml 幂等注册 [marketplaces.expert-skills]（source_type=local 指向该目录），
+ * 引擎 plugin/list 直接从原目录发现技能，装好即用。
+ * 该段不在 HARNESS_CONFIG_SECTIONS，harness 整份重写 config 时由 preserveUserConfig 原样保留。
+ */
+export async function ensureExpertSkillsMarketplace(codexHome: string): Promise<void> {
+  const marketDir = expertSkillsSourceDir();
+  const configPath = path.join(codexHome, "config.toml");
   try {
-    const sourceRoot = expertSkillsSourceDir();
-    for (const name of await fs.readdir(sourceRoot).catch(() => [] as string[])) {
-      const target = path.join(skillsDir, name);
-      const marker = path.join(target, "SKILL.md");
-      if (await fs.readFile(marker, "utf8").then(() => true).catch(() => false)) continue;
-      await fs.cp(path.join(sourceRoot, name), target, { recursive: true });
+    const existing = await fs.readFile(configPath, "utf8").catch(() => "");
+    if (!/\[marketplaces\.expert-skills\]/.test(existing)) {
+      const section = [
+        "[marketplaces.expert-skills]",
+        'source_type = "local"',
+        `source = "${marketDir.replaceAll("\\", "/")}"`,
+        "",
+      ].join("\n");
+      const next = existing.trim() ? existing.trimEnd() + "\n\n" + section + "\n" : section + "\n";
+      await fs.writeFile(configPath, next, "utf8");
     }
-  } catch { /* 资源缺失不阻塞启动 */ }
+  } catch (error) {
+    console.warn("seed expert-skills marketplace section failed:", error);
+  }
 }
 
 /** 专家技能包源目录：开发版用项目 resources/，打包版用 process.resourcesPath（与 voicePresetsDir 同规则）。 */
