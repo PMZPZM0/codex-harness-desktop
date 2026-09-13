@@ -156,6 +156,10 @@
       {
         "from": "resources/tools/ponytail-plugin",
         "to": "tools/ponytail-plugin"
+      },
+      {
+        "from": "resources/voice-presets",
+        "to": "voice-presets"
       }
     ],
     "asarUnpack": [

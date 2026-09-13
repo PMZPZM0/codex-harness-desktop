@@ -1,0 +1,18 @@
+[
+  {
+    "id": "taiwan-female",
+    "name": "台湾腔 · 小美",
+    "desc": "温柔台湾腔女声（zh-TW 晓臻音色合成参考）",
+    "lang": "zh",
+    "wav": "taiwan-female.wav",
+    "refText": "哈囉，我是你的語音助理小美。很高興認識你，今天想聽我陪你聊聊天，還是幫你處理事情呢？"
+  },
+  {
+    "id": "jarvis-butler",
+    "name": "AI 管家 · 贾维斯风",
+    "desc": "沉稳英伦男声（en-GB Ryan 音色合成参考），中英文都能讲",
+    "lang": "en",
+    "wav": "jarvis-butler.wav",
+    "refText": "Good afternoon, sir. All systems are online and running at peak efficiency. How may I be of service to you today?"
+  }
+]

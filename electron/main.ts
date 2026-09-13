@@ -816,6 +816,51 @@ ipcMain.handle("voice:profiles-list", async () => ({
   zipvoiceReady: zipvoiceReady(voiceModelsRoot),
 }));
 
+/** 内置音色预设（合成音源的克隆预设）：wav+参考文本随包分发，一键创建档案。
+ *  目录解析与 resolveFfmpegPath 同规则：开发版用项目 resources/，打包版用 process.resourcesPath/。 */
+function voicePresetsDir(): string {
+  const dev = path.join(process.cwd(), "resources", "voice-presets");
+  if (existsSync(dev)) return dev;
+  return path.join(process.resourcesPath ?? process.cwd(), "voice-presets");
+}
+
+ipcMain.handle("voice:preset-list", async () => {
+  try {
+    const raw = JSON.parse(await fs.readFile(path.join(voicePresetsDir(), "presets.json"), "utf8"));
+    const profiles = await voiceProfiles.listProfiles(app.getPath("userData"));
+    const presets = (Array.isArray(raw) ? raw : []).map((p: any) => ({
+      id: String(p.id ?? ""),
+      name: String(p.name ?? ""),
+      desc: String(p.desc ?? ""),
+      lang: String(p.lang ?? "zh"),
+      applied: profiles.some((profile) => profile.name === String(p.name ?? "")),
+    }));
+    return { presets };
+  } catch { return { presets: [] }; }
+});
+
+ipcMain.handle("voice:preset-apply", async (_event, presetId: string) => {
+  try {
+    const raw = JSON.parse(await fs.readFile(path.join(voicePresetsDir(), "presets.json"), "utf8"));
+    const preset = (Array.isArray(raw) ? raw : []).find((p: any) => p.id === String(presetId ?? ""));
+    if (!preset) return { ok: false, error: "内置音色不存在" };
+    const parsed = voiceProfiles.readWav(await fs.readFile(path.join(voicePresetsDir(), String(preset.wav ?? ""))));
+    if (!parsed) return { ok: false, error: "预设音频缺失或格式不对" };
+    const existing = await voiceProfiles.listProfiles(app.getPath("userData"));
+    const already = existing.find((profile) => profile.name === String(preset.name ?? ""));
+    if (already) return { ok: true, profile: already, existed: true };
+    const profile = await voiceProfiles.createProfile(app.getPath("userData"), {
+      name: String(preset.name ?? ""),
+      refText: String(preset.refText ?? ""),
+      samples: parsed.samples,
+      sampleRate: parsed.sampleRate,
+    });
+    return { ok: true, profile };
+  } catch (error: any) {
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+});
+
 ipcMain.handle("voice:profiles-import", async () => {
   const picked = await dialog.showOpenDialog({
     title: "选择一段参考音频（16-bit PCM wav，10 秒左右效果最好）",
