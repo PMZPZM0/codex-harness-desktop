@@ -847,6 +847,22 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
     ? ok("运行态判据按 status?.type 判定（不会再因对象/字符串比较而恒假）")
     : fail("又有地方按字符串比较 engine thread.status —— 在跑会话会被判成已停止");
 
+  // ⑥ 更新链必须有完整性校验，且安装路径不得由渲染层决定（否则 = 任意 exe 落盘并执行）
+  const updSrc = readFileSync(join(ROOT, "electron", "updates.ts"), "utf8");
+  const engineUpdSrc = readFileSync(join(ROOT, "electron", "engine-updater.ts"), "utf8");
+  /sha256OfFile\(/.test(updSrc) && /expectedSha256/.test(updSrc)
+    ? ok("应用更新包下载后比对 sha256（不匹配即删除并报错）")
+    : fail("updates.ts 又不校验 sha256 了 —— 发布站被换掉就会静默装上攻击者的包");
+  /更新包地址必须是 https/.test(updSrc)
+    ? ok("应用更新包只允许 https（挡住明文替换）")
+    : fail("updates.ts 又允许 http 明文下载安装包");
+  /lastVerifiedUpdatePath/.test(mainSrc) && /path_not_verified/.test(mainSrc)
+    ? ok("updates:install 只接受刚校验通过的那个文件（渲染层给不了任意路径）")
+    : fail("updates:install 又能被渲染层指定任意安装路径了");
+  !/rejectUnauthorized: false/.test(engineUpdSrc)
+    ? ok("引擎更新默认校验 TLS 证书（自签名场景需显式 CODEX_HARNESS_INSECURE_TLS=1）")
+    : fail("engine-updater.ts 又无条件关闭 TLS 校验 —— 下载物会被当场执行（--version 探针）");
+
   // ⑤ 权限判据不得再"怀疑污染就落到全局默认"（曾把用户选的只读静默提成完全访问）
   !/const recordTrusted =/.test(appSrc) && /saferSandbox\(/.test(appSrc)
     ? ok("会话权限取「记录 / 全局默认」中更保守的一方（不会静默提权）")

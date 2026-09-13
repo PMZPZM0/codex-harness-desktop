@@ -3713,30 +3713,42 @@ ipcMain.handle("prompt:enhance", async (_event, input: { text: string }) => {
 
 ipcMain.handle("terminal:list", () => [...terminals.entries()].map(([id, service]) => ({ id, alive: service.alive, cwd: service.dir })));
 
+// ★ 更新链的主进程侧权威（09-13 审计 P0）：下载地址与安装路径**不再由渲染层决定**。
+//   `updates:check` 拿到的 info 存在这里，下载用它自己的 downloadUrl + sha256 校验，
+//   安装只接受"刚刚校验通过的那个文件"——渲染层即使被注入也换不掉安装包。
+let lastUpdateInfo: { downloadUrl?: string; sha256?: string; version?: string; filename?: string } | null = null;
+let lastVerifiedUpdatePath = "";
+
 ipcMain.handle("updates:check", async (_event, input?: { source?: "web" | "github" }) => {
   try {
     const currentVersion = String(app.getVersion() || "0.0.0");
     const source = input?.source ?? "web";
     const info = await checkLatestUpdate(currentVersion, source, process.platform, process.arch);
+    lastUpdateInfo = info ? { downloadUrl: (info as any).downloadUrl, sha256: (info as any).sha256, version: (info as any).version, filename: (info as any).filename } : null;
     return { ok: true, info, currentVersion, serverUrl: UPDATE_SERVER_URL, channel: UPDATE_CHANNEL, source };
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) };
   }
 });
-ipcMain.handle("updates:download", async (event, input: { downloadUrl: string; filename?: string }) => {
+ipcMain.handle("updates:download", async (event, input: { downloadUrl?: string; filename?: string }) => {
   try {
+    // 有"刚检查到的官方地址"就用它；渲染层传的地址只在没有检查结果时才作为兜底，
+    // 而且无论如何都会被 downloadUpdate 的 https + sha256 双重校验挡住。
+    const url = lastUpdateInfo?.downloadUrl || input?.downloadUrl;
+    if (!url) return { ok: false, error: "没有可用的更新地址（请先检查更新）" };
     const dir = defaultDownloadDir(app.getPath("downloads"));
-    const safeName = (input.filename || "codex-harness-update.bin").replace(/[\\/:*?"<>|]/g, "_");
+    const safeName = String(input?.filename || lastUpdateInfo?.filename || "codex-harness-update.bin").replace(/[\\/:*?"<>|]/g, "_");
     const dest = path.join(dir, safeName);
     let lastPushed = -1;
-    const info = await downloadUpdate(input.downloadUrl, dest, ({ percent }) => {
+    const info = await downloadUpdate(url, dest, ({ percent }) => {
       const pct = Math.round(percent * 100);
       // 每 2% 推一次（+ 必定推 100%），避免高频 IPC 刷屏
       if (pct !== lastPushed && (pct - lastPushed >= 2 || pct >= 100)) {
         lastPushed = pct;
         event.sender.send("updates:download-progress", percent);
       }
-    });
+    }, lastUpdateInfo?.sha256);
+    lastVerifiedUpdatePath = info.path;   // 只有校验通过才会走到这里
     return { ok: true, path: info.path, bytes: info.bytes };
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) };
@@ -3748,9 +3760,15 @@ ipcMain.handle("updates:reveal", async (_event, filePath: string) => {
   return { ok: true };
 });
 // 下载完成后运行安装包：交给系统默认程序打开（Windows 下即启动安装向导）
+// ⛔ 只接受**刚刚下载并通过 sha256 校验的那个文件**（09-13 审计 P0）：此前渲染层可以传任意
+// 路径进来，配合"下载地址也由渲染层给"就构成"任意 exe 落盘并执行"。渲染层被注入时也换不掉。
 ipcMain.handle("updates:install", async (_event, filePath: string) => {
-  if (!filePath || !fileExists(filePath)) return { ok: false, error: "file_not_found" };
-  const started = await installUpdate(filePath);
+  if (!lastVerifiedUpdatePath) return { ok: false, error: "no_verified_update" };
+  if (path.resolve(String(filePath ?? "")) !== path.resolve(lastVerifiedUpdatePath)) {
+    return { ok: false, error: "path_not_verified" };
+  }
+  if (!fileExists(lastVerifiedUpdatePath)) return { ok: false, error: "file_not_found" };
+  const started = await installUpdate(lastVerifiedUpdatePath);
   return { ok: started, error: started ? undefined : "open_failed" };
 });
 

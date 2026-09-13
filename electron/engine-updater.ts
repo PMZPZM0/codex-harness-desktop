@@ -74,7 +74,7 @@ async function fetchText(url: string, proxyUrl?: string, timeoutMs = 20000): Pro
     socket = net.connect({ host: parsed.hostname, port });
   }
   if (isHttps) {
-    socket = tls.connect({ socket, servername: parsed.hostname, rejectUnauthorized: false }) as unknown as net.Socket;
+    socket = tls.connect({ socket, servername: parsed.hostname, rejectUnauthorized: !allowInsecureTls() }) as unknown as net.Socket;
   }
   return new Promise((resolve, reject) => {
     socket.setTimeout(timeoutMs, () => { socket.destroy(); reject(new Error("请求超时")); });
@@ -120,7 +120,7 @@ export async function downloadTo(
     socket = net.connect({ host: parsed.hostname, port });
   }
   if (isHttps) {
-    socket = tls.connect({ socket, servername: parsed.hostname, rejectUnauthorized: false }) as unknown as net.Socket;
+    socket = tls.connect({ socket, servername: parsed.hostname, rejectUnauthorized: !allowInsecureTls() }) as unknown as net.Socket;
   }
   await new Promise<void>((resolve, reject) => {
     socket.setTimeout(timeoutMs, () => { socket.destroy(); reject(new Error("下载超时")); });
@@ -348,4 +348,14 @@ export async function performEngineUpdate(
   } finally {
     await fs.rm(workRoot, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+/** TLS 校验开关（09-13 审计 P0）：默认**校验证书**。旧实现无条件 `rejectUnauthorized:false`，
+ *  等于给企业代理/公共 Wi-Fi/被污染的 DNS 开了"把引擎包换成攻击者包"的窗口，而引擎包解压后
+ *  会被当场执行（`runCommand(newBin, ["--version"])`）—— 比"下载被换"更靠前。
+ *  自签名代理场景显式设 CODEX_HARNESS_INSECURE_TLS=1 才放行（并在日志里明确警告）。 */
+function allowInsecureTls(): boolean {
+  const on = process.env.CODEX_HARNESS_INSECURE_TLS === "1";
+  if (on) console.warn("[updater] 已按 CODEX_HARNESS_INSECURE_TLS=1 关闭 TLS 证书校验（仅限自签名代理场景）");
+  return on;
 }
