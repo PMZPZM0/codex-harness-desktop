@@ -108,6 +108,16 @@ const CHECKS = [
         return card ? card.innerText : "";
       })()`) ?? "");
       h.check("卡片说明了同音容错匹配", /同音/.test(cardText), `card="${cardText.slice(0, 60)}…"`);
+      // ⑤ 关键词唤醒模型（KWS）没装时，卡片上要有一键下载入口（装了才是「只认读音、不误唤醒」那条路）。
+      //    隔离 profile 里一定没装 → 这条断言在 e2e 环境是确定的。
+      const kwsButton = String(await h.eval(`(() => {
+        const line = document.querySelector("[data-voice-wake-status]");
+        const card = line && line.closest(".voice-card");
+        const btn = card ? [...card.querySelectorAll("button")].find((b) => /唤醒模型/.test(b.innerText || "")) : null;
+        return btn ? btn.innerText.trim() : "";
+      })()`) ?? "");
+      console.log(`  [唤醒模型入口] 「${kwsButton}」`);
+      h.check("未装关键词模型时给出下载入口（约 31MB）", /唤醒模型/.test(kwsButton) && /31MB/.test(kwsButton), `btn=「${kwsButton}」`);
       await h.screenshot("语音唤醒设置卡片");
       await h.eval(`(() => { const b = document.querySelector(".settings-modal .relay-modal-close"); if (b) b.click(); return true; })()`);
       await wait(300);

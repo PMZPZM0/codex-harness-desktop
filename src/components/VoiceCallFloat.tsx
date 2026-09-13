@@ -908,7 +908,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     };
 
     (async () => {
-      const started: { ok: boolean; error?: string; phrase?: string; hint?: string } =
+      const started: { ok: boolean; error?: string; phrase?: string; hint?: string; engine?: "kws" | "asr" } =
         await window.codex.voiceWakeStart().catch((error: any) => ({ ok: false, error: String(error?.message ?? error) }));
       if (disposed) return;
       if (!started?.ok) {
@@ -916,7 +916,13 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
         patchWakeState({ listening: false, error: String(started?.error ?? "语音唤醒启动失败") });
         return;
       }
-      patchWakeState({ listening: true, error: "", hint: String(started?.hint ?? ""), phrase: String(started?.phrase ?? wakeCfg.phrase) });
+      patchWakeState({
+        listening: true,
+        error: "",
+        hint: String(started?.hint ?? ""),
+        phrase: String(started?.phrase ?? wakeCfg.phrase),
+        engine: started?.engine ?? "",
+      });
 
       stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },

@@ -15,6 +15,8 @@ export type WakeState = {
   listening: boolean;
   /** 当前生效的唤醒词 */
   phrase: string;
+  /** 正在用哪个引擎：kws=关键词模型（只认读音、不误唤醒）；asr=通用识别 + 同音容错回退 */
+  engine: "kws" | "asr" | "";
   /** 词表可达性提示（唤醒词里有模型词表外的字时给出） */
   hint: string;
   /** 最近听到的一句（诊断） */
@@ -30,6 +32,7 @@ type Listener = (state: WakeState) => void;
 const initial: WakeState = {
   listening: false,
   phrase: "",
+  engine: "",
   hint: "",
   heard: "",
   matched: false,
@@ -51,6 +54,7 @@ export function patchWakeState(patch: Partial<WakeState>): void {
   if (
     next.listening === current.listening &&
     next.phrase === current.phrase &&
+    next.engine === current.engine &&
     next.hint === current.hint &&
     next.heard === current.heard &&
     next.matched === current.matched &&

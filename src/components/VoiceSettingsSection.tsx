@@ -62,6 +62,9 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
   /** 唤醒运行态（是否在听 / 最近听到什么 / 词表提示）——由 VoiceCallFloat 经 store 广播过来 */
   const [wakeState, setWakeState] = useState(getWakeState());
   useEffect(() => subscribeWakeState(setWakeState), []);
+  /** 关键词唤醒模型（KWS）状态与下载进度：装了唤醒走「读音匹配」，不装回退识别模型 */
+  const [kws, setKws] = useState<{ ready: boolean } | null>(null);
+  const [kwsDownload, setKwsDownload] = useState<{ percent: number; message: string } | null>(null);
   const micTestRef = useRef<{ stop: () => void } | null>(null);
   // ── 我的音色（音色克隆 ZipVoice）──导入/录制参考音频 → 自动转写原文 → 保存为专属音色
   const [profiles, setProfiles] = useState<any[]>([]);
@@ -214,6 +217,42 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       })
       .catch(() => undefined);
     return () => { alive = false; };
+  }, [onNotice]);
+
+  // 关键词唤醒模型（KWS）状态 + 下载进度：进度从主进程的 voice:event（target="kws"）来
+  useEffect(() => {
+    let alive = true;
+    const loadKws = () => {
+      void window.codex.voiceModelsStatus()
+        .then((s: any) => { if (alive && s?.kws) setKws({ ready: Boolean(s.kws.ready) }); })
+        .catch(() => undefined);
+    };
+    loadKws();
+    const off = window.codex.onVoiceEvent((event: any) => {
+      if (event?.target !== "kws") return;
+      if (event.type === "download") setKwsDownload({ percent: Number(event.percent ?? -1), message: String(event.message ?? "") });
+      if (event.type === "downloadDone") {
+        setKwsDownload(null);
+        if (!event.ok && event.error) onNotice(`唤醒模型安装失败：${event.error}`);
+        loadKws();
+      }
+    });
+    return () => { alive = false; off?.(); };
+  }, [onNotice]);
+
+  const installKws = useCallback(async () => {
+    setKwsDownload({ percent: 0, message: "准备下载…" });
+    try {
+      const result = await window.codex.voiceKwsInstall();
+      if (!result?.ok) onNotice(`唤醒模型安装失败：${result?.error ?? "未知错误"}`);
+    } catch (error: any) {
+      onNotice(`唤醒模型安装失败：${error?.message ?? error}`);
+    } finally {
+      setKwsDownload(null);
+      void window.codex.voiceModelsStatus()
+        .then((s: any) => { if (s?.kws) setKws({ ready: Boolean(s.kws.ready) }); })
+        .catch(() => undefined);
+    }
   }, [onNotice]);
 
   // 卸载时停掉电平测试
@@ -858,12 +897,29 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
             {wakeState.error
               ? `唤醒未启动：${wakeState.error}`
               : wakeState.listening
-                ? `正在聆听「${wakeState.phrase}」${wakeState.heard ? `｜最近听到：${wakeState.heard}${wakeState.matched ? " ✅ 已命中" : "（未命中）"}` : "｜（还没听到说话）"}`
+                ? `正在聆听「${wakeState.phrase}」（${wakeState.engine === "kws" ? "关键词模型：只认读音、不误唤醒" : "识别模型匹配"}）${wakeState.heard ? `｜最近听到：${wakeState.heard}${wakeState.matched ? " ✅ 已命中" : ""}` : ""}`
                 : settings.wake.enabled
                   ? "已开启：通话中会暂停聆听，挂断后自动恢复"
                   : "唤醒未开启（打开上面的开关并保持应用运行即可）"}
           </div>
           {wakeState.hint && <div className="voice-card-hint">⚠️ {wakeState.hint}</div>}
+          {/* 关键词模型（KWS）：装了才是「只认读音、不误唤醒、CPU 低」的那条路 */}
+          {kws && !kws.ready && (
+            <div className="voice-row">
+              <button className="secondary-setting" onClick={() => void installKws()} disabled={Boolean(kwsDownload)}>
+                {kwsDownload ? `下载中 ${kwsDownload.percent >= 0 ? kwsDownload.percent + "%" : "…"}` : "下载唤醒模型（约 31MB，推荐）"}
+              </button>
+              <span className="voice-card-hint">不装也能用：会回退到识别模型匹配（更易误唤醒、更费 CPU）</span>
+            </div>
+          )}
+          {kwsDownload && (
+            <div className="voice-progress">
+              <div className="voice-progress-bar">
+                <span style={{ width: `${kwsDownload.percent >= 0 ? kwsDownload.percent : 5}%` }} />
+              </div>
+              <small>{kwsDownload.message}</small>
+            </div>
+          )}
         </div>
       </div>
 

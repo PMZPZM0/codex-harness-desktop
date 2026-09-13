@@ -92,8 +92,74 @@ parentPort.on("message", (msg) => {
 });
 `;
 
-export const TTS_WORKER_SOURCE = `
+/**
+ * 关键词唤醒（KWS）工作线程：3.3M 参数的 zipformer 关键词模型，只认注册过的词。
+ * 与识别线程的区别：`feed` 不返回文本，只返回命中的关键词名（空 = 没命中），
+ * 命中后**必须** reset（否则同一句会被反复命中）。
+ */
+export const KWS_WORKER_SOURCE = `
 const { parentPort, workerData } = require("worker_threads");
+let spotter = null;
+let stream = null;
+let sherpa = null;
+
+function ensure() {
+  if (!sherpa) sherpa = require(workerData.sherpaPath);
+  if (!spotter) {
+    spotter = new sherpa.KeywordSpotter({
+      featConfig: { sampleRate: workerData.sampleRate, featureDim: 80 },
+      modelConfig: {
+        transducer: {
+          encoder: workerData.encoder,
+          decoder: workerData.decoder,
+          joiner: workerData.joiner,
+        },
+        tokens: workerData.tokens,
+        numThreads: workerData.numThreads,
+        provider: "cpu",
+        debug: 0,
+      },
+      keywordsFile: workerData.keywordsFile,
+      keywordsScore: workerData.keywordsScore,
+      keywordsThreshold: workerData.keywordsThreshold,
+      maxActivePaths: workerData.maxActivePaths,
+      numTrailingBlanks: workerData.numTrailingBlanks,
+    });
+  }
+  if (!stream) stream = spotter.createStream();
+}
+
+parentPort.on("message", (msg) => {
+  try {
+    if (msg.op === "create") {
+      ensure();
+      parentPort.postMessage({ id: msg.id, ok: true });
+      return;
+    }
+    if (msg.op === "feed") {
+      ensure();
+      stream.acceptWaveform({ samples: msg.samples, sampleRate: workerData.sampleRate });
+      while (spotter.isReady(stream)) spotter.decode(stream);
+      const result = spotter.getResult(stream) || {};
+      const keyword = String(result.keyword || "");
+      if (keyword) spotter.reset(stream);
+      parentPort.postMessage({ id: msg.id, ok: true, keyword: keyword });
+      return;
+    }
+    if (msg.op === "reset") {
+      ensure();
+      spotter.reset(stream);
+      parentPort.postMessage({ id: msg.id, ok: true });
+      return;
+    }
+    parentPort.postMessage({ id: msg.id, ok: false, error: "unknown op: " + msg.op });
+  } catch (e) {
+    parentPort.postMessage({ id: msg.id, ok: false, error: String((e && e.message) || e) });
+  }
+});
+`;
+
+export const TTS_WORKER_SOURCE = `const { parentPort, workerData } = require("worker_threads");
 const fs = require("node:fs");
 let tts = null;
 let sherpa = null;
