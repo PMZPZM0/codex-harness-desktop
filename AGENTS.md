@@ -239,6 +239,11 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   - 效果（真模型）：说「小柯小柯」命中、同音变体「小科小科」也命中（按读音匹配，不再依赖同音兜底）、3 句日常话零误触发、跨关键词不触发；**改唤醒词后自动重建 worker**（keywordsFile 是启动参数），新词命中、旧词不再命中。
   - **KWS 不进 `ALL_VOICE_REPOS`**：它只服务唤醒，没装不该把通话/听写判成「模型未下载完整」；转不出拼音的唤醒词（生僻字）自动回退识别模型并在卡片说明原因。
   - 回归：预检【4e】（生成器对照模型样例 + 6 条接线守卫，逐条反证过）；验收项 `wake-settings`（唤醒卡片状态行 + 同音说明 + 下载入口，7/7）。
+- **模型下载提速 + 可取消 + 语音来源标记（09-13，DeepSeek 会话收尾的三项，已提交 `3a73e7b` 等）**：
+  - **提速**：候选镜像按「首字节延迟」实测排序后再下（`orderCandidatesByLatency`，`Range: bytes=0-1` 探测），**实测 55.7s → 11.2s**；探测超时 6s → 2s（点下载后不再"几秒没反应"）；连接超时 + 速度下限自动换源（还有备选时才换，避免把自己掐死）。
+  - **可取消**：`downloadUrlToFile` / `downloadOnce` 全程接受 `AbortSignal`，取消时**保留 `.part` 断点**并回 `已取消（已下载 xMB，下次点「下载」会接着传）`；续传走 `Range` 206，镜像忽略 Range 返回 200 时从头写（不会写花）。IPC：`voice:kws-install/cancel/status`。
+  - **进度不刷爆 IPC**：`downloadOnce` 每 **2MB** 才报一次进度（单流 16~64KB 分片 → 原本可达每秒数百次 IPC + React 更新）。
+  - **语音来源标记**：语音发起的消息带 `[语音]` 文本前缀，且 `turn/start` 与排队两条路径都带 `turnTrigger=voice`，引擎侧可区分「语音说的」与「手打的」。回归：预检【4c】⑥ +【4f】（下载可取消/换源提速）。
 - **实时语音三修（09-12 用户实测反馈；其中 ② `firstMaxChars=18` 已被 09-13 的 10 取代）**：① 回声门控 `createEchoGate` 起播首块不再直接当回声地板（旧实现地板≈0 → 下一秒必然超阈 → **自己打断自己的播报**，用户原话「我没说话它也断」）：新增 `seedBlocks=8` 学习期、`minFloor=0.004` 绝对地板、`holdBlocks=6` 连续超阈去抖。② 断句 `createSentenceChunker` 新增 `firstMaxChars`——模型开头几十字常无标点，旧阈值 `maxChars=60` 会憋到很晚才出声（用户「语音跟不上正文」）。③ 字幕浮窗 `.voice-stage` 由「composer 上沿 absolute + 半透明毛玻璃」改为「position:fixed 顶部 84px 居中 + var(--bg) 实心白底 + max-height」，脱离输入区文档流（顺带消除运行中的上下文跳动）。preflight 新增 3 条断言，**已逐条反证会红**。
 - **崩溃取证 + 渲染进程自愈（09-12）**：`app.on("render-process-gone")` 在非 e2e 模式也落盘 `userData/voice-crash.log`（reason/exitCode）并**自动 reload**。旧行为：渲染进程一死 → 窗口关闭 → `window-all-closed` → `app.quit()`，用户看到「闪退」且零证据。另接 `process.on("uncaughtException"/"unhandledRejection")` 落盘。**注：ASR/TTS 原生推理已用独立探针压测 4 分钟（`.e2e-artifacts/voice-crash-probe.mjs`，连续 feed+speak，RSS 稳定 530MB、干净退出）→ ONNX 路径不是闪退元凶**，别再从这里查。
 - **打包钩子 `build.beforePack`（09-12）**：`scripts/before-pack.cjs` 打包前确保 `resources/tools/automation-tools.zip` 存在（有 npm-global/node_modules 时按 mtime 决定是否重建，失败即**中止打包**）。根因：`resources/tools/*` 全在 .gitignore，zip 必须现造，而 electron-builder 对**缺失的 extraResources 静默跳过** → 装出来的应用点「桌面与浏览器自动化」必报缺 zip。mac 不走此路（mac 配置 extraResources 为空 + `build/copy-mac-tools.cjs` 直接把 npm-global 铺进 Resources/tools，所以 mac 开箱即用）。
