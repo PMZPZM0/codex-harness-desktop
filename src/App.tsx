@@ -12495,11 +12495,21 @@ const commandMatches = useMemo(() => {
       // 优先级（09-10 修正「重启后审批档变成变更前确认」）：**用户当前的全局选择权威**。
       // 引擎 resume 返回的是会话创建时的旧档位（resumed），此前被排在全局默认前面——
       // 会话建在「变更前确认」上，就永远回不到用户后来选的档位。
-      // 本地每会话记录仅应在用户于该会话显式改过权限时生效；旧版本会在打开时把 resumed
-      // 回写进记录（污染），识别特征 = 记录 == 引擎值 且 ≠ 全局默认 → 视为污染忽略。
-      const recordTrusted = (value?: string | null) => Boolean(value) && !(value && resumedSandbox && value === resumedSandbox && value !== savedDefault) && !(value && resumedApproval && value === resumedApproval && value !== savedDefaultApproval);
-      const nextSandbox = (recordTrusted(localPerms.sandbox) ? validSandbox(localPerms.sandbox) : null) ?? savedDefault;
-      const nextApproval = (recordTrusted(localPerms.approval) ? validApproval(localPerms.approval) : null) ?? savedDefaultApproval;
+      // ⛔ 「记录 == 引擎值 且 ≠ 全局默认 ⇒ 判定污染」这个启发式**必须消失**（09-13 审计 P0）：
+      // resume 时正是拿本地记录当参数发给引擎，引擎必然原样回带 ⇒ 判据恒真 ⇒ `nextSandbox`
+      // 落到全局默认，而首启默认是 `danger-full-access`/`never` —— 于是**用户为某会话显式选的
+      // 只读被静默改成完全访问**（反向亦然）。这是安全方向上的静默降级，比"档位不够宽松"严重得多。
+      // 现在的规则：**取两者中更保守的一个**。
+      //   · 记录是用户显式选的只读（本次默认是全权）→ 只读 ✓；
+      //   · 记录被旧版本污染成全权（本次默认是只读）→ 只读 ✓（用户的新默认也生效）；
+      //   · 用户显式选全权但全局默认是只读 → 得到只读（**代价是这次的显式选择不生效**，
+      //     但失败方向是"更严"而不是"更松"——权限类问题一律往安全侧倒）。
+      const SANDBOX_SAFETY: Record<string, number> = { "read-only": 0, "workspace-write": 1, "danger-full-access": 2 };
+      const APPROVAL_SAFETY: Record<string, number> = { untrusted: 0, "on-request": 1, never: 2 };
+      const saferSandbox = (a: string | null, b: string) => (a && SANDBOX_SAFETY[a] != null && SANDBOX_SAFETY[a] < (SANDBOX_SAFETY[b] ?? 2)) ? a : b;
+      const saferApproval = (a: string | null, b: string) => (a && APPROVAL_SAFETY[a] != null && APPROVAL_SAFETY[a] < (APPROVAL_SAFETY[b] ?? 2)) ? a : b;
+      const nextSandbox = saferSandbox(validSandbox(localPerms.sandbox), savedDefault);
+      const nextApproval = saferApproval(validApproval(localPerms.approval), savedDefaultApproval);
       setSandbox(nextSandbox);
       setApprovalPolicy(nextApproval);
       // 不再把解析结果回写本地记录：回写会把引擎旧值烙进记录，导致用户之后改全局默认
