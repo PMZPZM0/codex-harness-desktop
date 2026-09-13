@@ -2,7 +2,32 @@
 
 > 依据：`docs/2026-09-14-workbuddy-session-switch-report.md`（WorkBuddy 桌面端 asar 逆向）
 > 原则：**先量基线，再做改动；每项都要有能变红的断言，且不牺牲正确性换取流畅**
-> 状态：待实施（本文只做方案，未改代码）
+
+---
+
+## ✅ 实施结果（2026-09-14 已落地并实测，commit 02ccecd）
+
+| 项 | 状态 | 说明 |
+|---|---|---|
+| P2-1 基线埋点 | ✅ 完成 | `__adbg` 记录补 `mode(cached/fresh)` + 回合数；新增 `window.__switchPerfStats()`；`accept switch-speed` 扩展为**按组**断言 |
+| P0-1 diff 行级虚拟化 | ✅ 完成 | `VirtualDiffLines`（overscan 40、行高 20px 与 CSS 严格一致、`contain: content`），仅 diff 且 > 400 行且未折行且非流式追字时启用 |
+| P0-2 按会话裁剪事件 | ✅ 完成 | 从「只记账放行」改为**真的裁**；每窗口独立记 active thread（修掉弹窗/主窗共用全局变量互相覆盖的隐患）+ 30s 新鲜度 + 弹窗豁免 + null 判空 + `HARNESS_EVENT_FILTER=off` 逃生阀 |
+| P1-1 窗口/位置记忆 | ✅ 完成 | 命中缓存的切换保留已展开窗口；离开记「距底偏移」、切回还原；两者 8 条 LRU |
+| P1-2 冷加载骨架 | ✅ 完成（骨架） | 遮罩里先画出目标会话的名称/预览；**空闲预取未做**——`resume` 会带会话级作用域下发与动态工具注册等副作用，需单独一轮验证，不做半成品 |
+| P0-3 流式直写 DOM | ⛔ 不实施 | 核查发现**我们早已按 rAF 合帧** delta（`pendingDeltaRef` + 首字即时路径，App.tsx:10734-10741）——WorkBuddy 那条收益我们已拿到；再做 DOM 直写只增一致性风险。其 `directDomUpdates` 是自维护 fork，不照抄 |
+
+### 实测数据（`accept --only switch-speed`，23 个真实历史会话的持久 profile）
+
+```
+命中缓存（cached）: P50 20ms  · P95 182ms · max 182ms
+冷加载  （fresh） : P50 206ms · P95 623ms · max 623ms
+主进程事件裁剪   : 实测真的裁掉 38 条无关会话事件（droppedForInactiveSession=38）
+resume 侧        : 均值 100ms / 最大 211ms，其中 rollout 增强均值仅 12ms
+```
+
+安全反证（`accept --only switch-running`，20 条断言）：切走期间正文 1230 → 1500 继续产出、切回非空白、仍在运行 —— 证明**启用事件裁剪没有打断任何会话的流式**。
+
+> P1-1 的窗口记忆断言在本轮 profile 上被跳过（当前会话没有更早消息可展开 → 无前置条件时不产生假绿），已在场景里显式打印跳过原因。
 
 ---
 
