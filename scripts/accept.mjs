@@ -707,6 +707,16 @@ const CHECKS = [
       // ⑦ 已批准过的设备再次连接 → 直接放行（不用再输码、不用再审批）
       const again = jsonOf((await req("POST", "/api/pair", { code: "000000", deviceId, deviceName: "测试手机" })).text);
       h.check("已批准设备再次连接直接放行（不再走审批）", again.ok === true && again.approved === true, `resp=${JSON.stringify(again).slice(0, 120)}`);
+
+      // ⑧ 批准过的设备要「常驻展示」（09-13 用户反馈：刚批准过，打开面板没显示，
+      //    等下一次配对才冒出来）——打开面板必须直接看到，不等任何事件。
+      const opened = await h.eval(`(() => { const btn = document.querySelector('.account-icon[title="移动端远程控制"]'); if (btn) btn.click(); return Boolean(btn); })()`);
+      h.check("[前置] 可打开手机远控面板", opened === true);
+      // 断言不写死数量：持久 profile 会累积历史批准设备（截图实测已 5 台），
+      // 只要求本轮批准的「测试手机」必须出现在列表里
+      const approvedShown = await h.waitFor(`(() => { const card = document.querySelector(".remote-approved-card"); return Boolean(card && /已批准的设备（\\d+）/.test(card.textContent || "") && (card.textContent || "").includes("测试手机")); })()`, { label: "已批准设备卡常驻显示", timeoutMs: 10000 }).then(() => true).catch(() => false);
+      h.check("批准过的设备打开面板即常驻展示（含本轮批准的设备）", approvedShown);
+      await h.screenshot("手机远控-已批准常驻");
       await h.eval(`window.codex.remoteStop().catch(() => undefined)`);
     },
   },
