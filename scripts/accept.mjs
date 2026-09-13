@@ -793,6 +793,111 @@ const CHECKS = [
   },
 
   {
+    id: "relay-subscription",
+    name: "内置付费订阅：套餐目录可拉取 + 置顶订阅卡随真实账户渲染（只读，不动真实账号）",
+    run: async (h) => {
+      await enterMain(h);
+      // 打开 设置 → 中转站（弹窗是异步渲染的：先点，再等导航出现）
+      await h.eval(`document.querySelector(".sidebar-settings")?.click()`);
+      await h.waitFor(`!!document.querySelector(".settings-nav")`, { label: "设置弹窗", timeoutMs: 20000 });
+      const nav = await h.eval(`(() => {
+        for (const btn of document.querySelectorAll(".settings-nav button")) {
+          if ((btn.textContent || "").includes("中转站")) { btn.click(); return true; }
+        }
+        return false;
+      })()`);
+      if (!nav) throw new Error("设置导航里没有「中转站」");
+      await h.waitFor(`!!document.querySelector(".relay-sub-banner")`, { label: "订阅置顶卡", timeoutMs: 30000 });
+      const banner = await h.eval(`(() => { const el = document.querySelector(".relay-sub-banner"); return JSON.stringify({ state: el?.getAttribute("data-state"), text: (el?.innerText || "").slice(0, 80) }); })()`);
+      const b = JSON.parse(banner);
+      h.check("置顶订阅卡已渲染", Boolean(b.state), banner);
+      if (b.state === "guest") {
+        h.check("未登录：置顶卡提供「登录 / 注册」入口", (b.text || "").includes("登录"), b.text);
+      } else {
+        h.check("已登录：置顶卡展示订阅/余额状态", ["active", "expiring", "expired", "empty", "watching"].includes(b.state), b.state);
+      }
+      // 套餐市场数据（只读 GET）：已登录 → 拉站方 for_sale 套餐；未登录 → 必须给出明确错误（而不是崩溃/空列表）
+      const plans = await h.eval(`window.codex.relayPaymentPlans().then((r) => JSON.stringify({ n: (r || []).length, first: r?.[0]?.name ?? "" })).catch((e) => "ERR:" + e.message)`);
+      if (b.state === "guest") {
+        h.check("未登录：套餐目录返回明确错误（尚未登录）", String(plans).includes("尚未登录"), plans);
+      } else if (String(plans).startsWith("ERR")) {
+        h.check("已登录但套餐目录拉取失败（站点不可达，属环境因素）", false, plans);
+      } else {
+        const p = JSON.parse(plans);
+        h.check(p.n > 0 ? "套餐市场目录可拉取（真实站方数据）" : "站点未上架套餐（for_sale=0，属站方状态）", true, plans);
+      }
+      await h.screenshot("relay-subscription");
+    },
+  },
+
+  {
+    id: "openai-import",
+    name: "OpenAI 导入账号文件：四种格式解析 + JWT 身份 + vault 入库（不碰 auth.json / 供应商）",
+    run: async (h) => {
+      await enterMain(h);
+      // 本地伪造 JWT（payload 合法即可，应用不验签）
+      const b64u = (obj) => Buffer.from(JSON.stringify(obj)).toString("base64url");
+      const nowSec = Math.floor(Date.now() / 1000);
+      const idToken = b64u({ alg: "none", typ: "JWT" }) + "." + b64u({
+        sub: "user-accept-abc", email: "accept-import@test.local", exp: nowSec + 86400,
+        "https://api.openai.com/auth": { chatgpt_account_id: "acct-accept-1", chatgpt_plan_type: "plus", chatgpt_subscription_active_until: "2027-01-01T00:00:00Z" },
+      }) + ".sig";
+      const accessToken = b64u({ alg: "none" }) + "." + b64u({ exp: nowSec + 3600 }) + ".sig";
+      // 四种形态混在两个"文件"里：auth.json 整档 + NDJSON（裸 token / auth.json 形 / 扁平 JSON）
+      const authJson = JSON.stringify({ OPENAI_API_KEY: null, tokens: { id_token: idToken, access_token: accessToken, refresh_token: "refresh-accept-1", account_id: "acct-accept-1" }, last_refresh: new Date().toISOString() });
+      const mixed = [
+        "sk-accept-bare-token",
+        JSON.stringify({ tokens: { access_token: accessToken, refresh_token: "refresh-accept-2", id_token: idToken } }),
+        JSON.stringify({ accessToken, refreshToken: "refresh-accept-3", email: "accept-flat@test.local" }),
+      ].join("\n");
+      const result = await h.eval(`window.codex.openaiImportFile({ contents: [${JSON.stringify(authJson)}, ${JSON.stringify(mixed)}] }).then((r) => JSON.stringify(r)).catch((e) => "ERR:" + e.message)`);
+      if (String(result).startsWith("ERR")) throw new Error(result);
+      const r = JSON.parse(result);
+      h.check("四形态共 4 条全部入库（auth.json 形按 identity 去重）", r.total === 4 && r.failed === 0, JSON.stringify({ total: r.total, imported: r.imported, updated: r.updated, failed: r.failed }));
+      const accounts = await h.eval(`window.codex.openaiAccounts().then((list) => JSON.stringify(list.map((a) => ({ id: a.email || a.id, planType: a.planType, sub: a.subscriptionUntil }))))`);
+      const list = JSON.parse(accounts);
+      const byId = (id) => list.find((a) => a.id === id);
+      const bareItem = r.items.find((item) => item.action !== "failed" && !item.email && String(item.id ?? "").startsWith("import-"));
+      const mainItem = r.items.find((item) => item.email === "accept-import@test.local");
+      const flatItem = r.items.find((item) => item.email === "accept-flat@test.local");
+      h.check("JWT 身份解出：email / plus 档位 / 订阅期", mainItem && byId(mainItem.id)?.planType === "plus" && String(byId(mainItem.id)?.sub).startsWith("2027-01-01"), accounts);
+      h.check("扁平 JSON 的 email 字段入账", Boolean(flatItem && byId(flatItem.id)), accounts);
+      h.check("裸 token 落兜底 id（只入 vault 不作登录目标）", Boolean(bareItem), JSON.stringify(r.items.map((i) => ({ id: i.id, action: i.action }))));
+      // 清理：按导入结果的具体 id 逐个移除（不碰真实账号），不动 auth.json / 供应商生效状态
+      for (const item of r.items) {
+        if (item.id) await h.eval(`window.codex.openaiAccountRemove(${JSON.stringify(item.id)})`).catch(() => undefined);
+      }
+      // 兜底清扫历史遗留的兜底 id（此前清理过滤漏掉过它们）
+      await h.eval(`window.codex.openaiAccounts().then((list) => Promise.all(list.filter((a) => !a.email && String(a.id).startsWith("import-")).map((a) => window.codex.openaiAccountRemove(a.id))))`).catch(() => undefined);
+      const after = await h.eval(`window.codex.openaiAccounts().then((list) => JSON.stringify(list.filter((a) => (a.email || a.id).includes("accept") || (!a.email && String(a.id).startsWith("import-"))).length))`);
+      h.check("验收数据已清理（持久 profile 不留测试账号）", after === "0", after);
+    },
+  },
+
+  {
+    id: "voice-presets",
+    name: "内置音色预设：台湾腔/贾维斯风一键建档启用（结束还原原音色设置）",
+    run: async (h) => {
+      await enterMain(h);
+      const presets = await h.eval(`window.codex.voicePresetList().then((r) => JSON.stringify(r.presets.map((p) => p.id)))`);
+      const ids = JSON.parse(presets);
+      h.check("随包预设目录可读（台湾腔 + 贾维斯风）", ids.includes("taiwan-female") && ids.includes("jarvis-butler"), presets);
+      const before = await h.eval(`window.codex.voiceSettingsGet().then((res) => JSON.stringify(res.settings.tts.profileId ?? ""))`);
+      const applied = await h.eval(`window.codex.voicePresetApply("taiwan-female").then((r) => JSON.stringify({ ok: r.ok, id: r.profile?.id, existed: r.existed, error: r.error }))`);
+      const r = JSON.parse(applied);
+      h.check("一键建档成功（参考文本随包，无需转写）", r.ok === true && Boolean(r.id), applied);
+      const selRaw = await h.eval(`window.codex.voiceProfilesSelect(${JSON.stringify(r.id)}).then((s) => JSON.stringify(s)).catch((e) => "SELECT-ERR:" + e.message)`);
+      console.log(`  \x1b[90m(诊断 select：${selRaw})\x1b[0m`);
+      const sel = await h.eval(`window.codex.voiceSettingsGet().then((res) => res.settings.tts.profileId)`);
+      h.check("选用写入语音设置", sel === r.id, `profileId=${sel}`);
+      // 还原：把语音音色设置恢复成验收前的值（持久 profile 不留痕）
+      await h.eval(`window.codex.voiceProfilesSelect(${before})`);
+      const restored = await h.eval(`window.codex.voiceSettingsGet().then((res) => JSON.stringify(res.settings.tts.profileId ?? ""))`);
+      h.check("原音色设置已还原", restored === before, `before=${before} after=${restored}`);
+    },
+  },
+
+  {
     id: "clean",
     name: "⑦ 渲染层无 console.error",
     run: async (h) => {
@@ -844,6 +949,9 @@ const ROUND_OF = {
   "queue-immediate": "09-13",
   "clean": "09-13",
   "wake-settings": "09-13",
+  "relay-subscription": "09-13",
+  "openai-import": "09-13",
+  "voice-presets": "09-13",
 };
 const roundOf = (id) => ROUND_OF[id] ?? "(未登记)";
 

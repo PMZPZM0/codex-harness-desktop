@@ -174,6 +174,29 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
     await reloadProfiles();
   }, [reloadProfiles]);
 
+  // ── 内置音色预设（台湾腔小美 / 贾维斯风管家）：一键创建档案并启用（参考文本随包，无需转写）──
+  const [presets, setPresets] = useState<{ id: string; name: string; desc: string; lang: string; applied: boolean }[]>([]);
+  useEffect(() => {
+    window.codex.voicePresetList().then((r) => setPresets(r?.presets ?? [])).catch(() => undefined);
+  }, []);
+  const applyPreset = useCallback(async (presetId: string) => {
+    setProfileBusy("正在创建内置音色…");
+    try {
+      const r = await window.codex.voicePresetApply(presetId);
+      if (!r?.ok) { onNotice(`内置音色创建失败：${r?.error ?? "未知"}`); return; }
+      await reloadProfiles();
+      await window.codex.voiceProfilesSelect(r.profile.id).catch(() => undefined);
+      const fresh = await window.codex.voiceSettingsGet().catch(() => null);
+      if (fresh) setSettings(fresh.settings as Settings);
+      window.codex.voicePresetList().then((pr) => setPresets(pr?.presets ?? [])).catch(() => undefined);
+      onNotice(`内置音色「${r.profile.name}」已启用，点试听即可预览${r.existed ? "（已存在，直接复用）" : ""}`);
+    } catch (e: any) {
+      onNotice(`内置音色创建失败：${e?.message ?? e}`);
+    } finally {
+      setProfileBusy("");
+    }
+  }, [onNotice, reloadProfiles]);
+
   const previewProfile = useCallback(async (id: string) => {
     setProfileBusy("正在合成试听…");
     try {
@@ -501,6 +524,21 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
           )}
 
           {profileBusy && <div className="voice-card-hint">{profileBusy}</div>}
+
+          {/* 内置音色预设：一键创建 + 启用（需要已安装音色克隆模型） */}
+          {zipReady && presets.length > 0 && (
+            <div className="voice-profile-list">
+              <div className="voice-card-hint">内置音色（一键启用）：</div>
+              {presets.map((preset) => (
+                <div key={preset.id} className="voice-profile-item">
+                  <span className="voice-profile-pick"><span>{preset.name}</span><em>{preset.lang === "zh" ? "中" : "英"}</em></span>
+                  <button className="secondary-setting" title={preset.desc} onClick={() => void applyPreset(preset.id)} disabled={Boolean(profileBusy)}>
+                    {preset.applied ? "复用" : "启用"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
           {profiles.length > 0 && (
             <div className="voice-profile-list">

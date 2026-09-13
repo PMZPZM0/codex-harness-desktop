@@ -532,6 +532,8 @@ interface Window {
     voiceProfilesRecord(input: { samples: number[]; sampleRate: number }): Promise<any>;
     voiceProfilesSave(input: { draftFile: string; name: string; refText: string }): Promise<any>;
     voiceProfilesDelete(id: string): Promise<{ ok: boolean }>;
+    voicePresetList(): Promise<{ presets: { id: string; name: string; desc: string; lang: string; applied: boolean }[] }>;
+    voicePresetApply(presetId: string): Promise<{ ok: boolean; profile?: any; existed?: boolean; error?: string }>;
     voiceProfilesSelect(id: string): Promise<{ ok: boolean; profileId: string }>;
     voiceProfilesPreview(input: { id?: string; text?: string }): Promise<any>;
     voiceBarge(): Promise<{ ok: boolean }>;

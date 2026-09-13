@@ -336,6 +336,8 @@ contextBridge.exposeInMainWorld("codex", {
   voiceProfilesRecord: (input: { samples: number[]; sampleRate: number }) => ipcRenderer.invoke("voice:profiles-record", input) as Promise<any>,
   voiceProfilesSave: (input: { draftFile: string; name: string; refText: string }) => ipcRenderer.invoke("voice:profiles-save", input) as Promise<any>,
   voiceProfilesDelete: (id: string) => ipcRenderer.invoke("voice:profiles-delete", id) as Promise<{ ok: boolean }>,
+  voicePresetList: () => ipcRenderer.invoke("voice:preset-list") as Promise<{ presets: { id: string; name: string; desc: string; lang: string; applied: boolean }[] }>,
+  voicePresetApply: (presetId: string) => ipcRenderer.invoke("voice:preset-apply", presetId) as Promise<{ ok: boolean; profile?: any; existed?: boolean; error?: string }>,
   voiceProfilesSelect: (id: string) => ipcRenderer.invoke("voice:profiles-select", id) as Promise<{ ok: boolean; profileId: string }>,
   voiceProfilesPreview: (input: { id?: string; text?: string }) => ipcRenderer.invoke("voice:profiles-preview", input) as Promise<any>,
   voiceBarge: () => ipcRenderer.invoke("voice:barge") as Promise<{ ok: boolean }>,

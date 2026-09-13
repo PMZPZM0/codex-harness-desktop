@@ -164,6 +164,9 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
       sid: clampInt(tts.sid, 0, 4, d.tts.sid),
       speed: clampNum(tts.speed, 0.5, 2.0, d.tts.speed),
       volume: clampNum(tts.volume, 0, 2.0, d.tts.volume),
+      // profileId 必须显式透传：这里是显式字段映射，漏写 = 「选用克隆音色后设置不持久，
+      // 通话一直用内置音色」（09-12「显式字段映射吞新字段」同款坑，voice-presets 验收抓到）
+      ...(typeof tts.profileId === "string" ? { profileId: tts.profileId } : {}),
     },
     asr: {
       rule1: clampNum(asr.rule1, 0.4, 6.0, d.asr.rule1),
