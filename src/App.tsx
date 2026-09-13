@@ -57,7 +57,10 @@ import {
   Link2,
   ListFilter,
   Maximize2,
+  Megaphone,
   Menu,
+  BarChart3,
+  PenTool,
   MessageSquare,
   MessageSquarePlus,
   Monitor,
@@ -66,6 +69,7 @@ import {
   Plus,
   Quote,
   Paperclip,
+  PanelLeftClose,
   PanelRightClose,
   PanelRightOpen,
   PenLine,
@@ -133,6 +137,14 @@ import {
   Mic,
   Pause,
   FileQuestion,
+  ClipboardList,
+  DraftingCompass,
+  FlaskConical,
+  Crown,
+  TrendingUp,
+  Microscope,
+  Calculator,
+  Telescope,
 } from "lucide-react";
 import { useMemory, type MemoryGatewayState, type MemoryGroup, type MemoryPriority, type MemoryRecord, groupMemoriesByThread } from "./hooks/useMemory";
 import UsagePanel from "./components/UsagePanel";
@@ -375,7 +387,7 @@ import { GlobalSearchView } from "./components/IndexLibrary";
 import BrowserPane from "./components/BrowserPane";
 import type { SearchPreviewTarget } from "./components/IndexLibrary";
 import ArchivePage from "./components/ArchivePage";
-import { jumpToBottom } from "./components/scroll-utils";
+import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant } from "./components/scroll-utils";
 import { FlowDiagram } from "./components/FlowDiagram";
 import { MermaidDiagram } from "./components/MermaidDiagram";
 import { currentStreak, dayKey, formatTokens, lastDays, readUsageStats, recordTurnUsage, resetUsageStats, totalTokens } from "./lib/usage-stats";
@@ -384,6 +396,7 @@ import { useChannelBot, type ChannelDraft } from "./hooks/useChannelBot";
 import { useModelProviders } from "./hooks/useModelProviders";
 import { useFilePreview } from "./hooks/useFilePreview";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "./lib/turn-fold";
+import { planCompletedFold } from "./lib/turn-fold-plan.mjs";
 import { WidgetCard } from "./components/GenerativeWidget";
 import { hasWidgetFence, extractStreamingWidget, type ShowWidgetData } from "./lib/generative-widget";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "./lib/user-refs";
@@ -1074,6 +1087,33 @@ function expertRoleLabel(member: ExpertTeamMember, isLead = false) {
   return member.profession.zh?.trim() || (isLead ? "主理人" : "团队成员");
 }
 
+/** 按职业头衔/名字映射专家头像图标（专家中心卡与成员 chip 共用，替代千篇一律的首字色块） */
+function expertIconOf(member: ExpertTeamMember) {
+  const p = `${member.profession.zh}${member.name}`;
+  if (/产品/.test(p)) return ClipboardList;
+  if (/架构/.test(p)) return DraftingCompass;
+  if (/测试|验收|质量|过关/.test(p)) return FlaskConical;
+  if (/开发|豆码/.test(p)) return Code2;
+  if (/总监|主理|交付|活林/.test(p)) return Crown;
+  if (/资金|流向|行情/.test(p)) return TrendingUp;
+  if (/基本面|研究/.test(p)) return Microscope;
+  if (/估值|定价/.test(p)) return Calculator;
+  if (/风控|安全/.test(p)) return Shield;
+  if (/策略|预测|知微|慎思/.test(p)) return Telescope;
+  return Bot;
+}
+
+/** 专家中心分类：按领域分组陈列，让用户一眼看清每个专家是干嘛的；未归类的团队落「更多专家」。 */
+const EXPERT_CATEGORY_DEFS = [
+  { title: "研发交付", blurb: "需求 → 架构 → 编码 → 测试，全流程软件交付", icon: Code2, teamIds: ["software-dev-team"] },
+  { title: "投资交易", blurb: "行情策略、资金分析、估值定价与风控", icon: TrendingUp, teamIds: ["trading-analysis-team"] },
+  { title: "内容创作", blurb: "文案策划、编辑润色、视觉设计与校对质检", icon: PenTool, teamIds: ["content-creation-team"] },
+  { title: "数据分析", blurb: "数据工程、统计分析、可视化与业务洞察", icon: BarChart3, teamIds: ["data-analysis-team"] },
+  { title: "市场增长", blurb: "市场策略、内容营销、投放优化与增长分析", icon: Megaphone, teamIds: ["marketing-growth-team"] },
+  { title: "产品设计", blurb: "用户研究、产品策略与 UI/UX 设计", icon: DraftingCompass, teamIds: ["product-design-team"] },
+  { title: "专项专家", blurb: "开箱即用的独立单人专家", icon: Sparkles, teamIds: ["zhiwei-content-oracle", "chengxiang-ppt-master"] },
+];
+
 const MEMORY_CATEGORIES = [
   { name: "用户偏好", icon: User, hint: "用户风格、口味、习惯、长期偏好" },
   { name: "项目背景", icon: BookOpen, hint: "项目定位、模块、关键约束" },
@@ -1112,14 +1152,14 @@ const cronTemplates = [
   { name: "发布简报", desc: "整理本周合并的 PR 和 commit，按功能、修复、体验及工程改进分类，同时生成团队版和面向用户的精简发布说明。", time: "每周五 16:00", intervalMinutes: 10080, icon: "📝" },
   { name: "文档同步检查", desc: "对照最近 7 天的代码、配置、接口与文档变更，识别已改变公开行为但文档尚未同步的高置信差异，并附文件路径和修复建议。", time: "每周三 15:00", intervalMinutes: 10080, icon: "📄" },
 ];
-type SettingsPage = "user" | "general" | "devtools" | "appearance" | "personalization" | "model" | "relay" | "openai" | "browser" | "computer" | "memory" | "agents" | "teams" | "plugins" | "mcp" | "ssh" | "skills" | "commands" | "hooks" | "usage" | "channel" | "schedule" | "rpa" | "archive" | "backup" | "storage" | "automation" | "agentteam" | "voice";
+type SettingsPage = "user" | "general" | "devtools" | "appearance" | "personalization" | "model" | "relay" | "openai" | "browser" | "computer" | "memory" | "agents" | "teams" | "expert-center" | "plugins" | "mcp" | "ssh" | "skills" | "commands" | "hooks" | "usage" | "channel" | "schedule" | "rpa" | "archive" | "backup" | "storage" | "automation" | "agentteam" | "voice";
 // 导航分组：常用项置顶（技能/插件紧挨），自动化三合一、智能体+专家团合并为二级页。
 // "browser"/"computer"/"rpa"/"agents"/"teams" 保留在类型里（历史跳转兼容），但不再出现在导航。
 const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
   { group: "账户", items: [["user", "用户中心", UserRound], ["model", "模型", Bot], ["relay", "中转站", Wallet], ["openai", "OpenAI 订阅", CircleGauge]] },
   { group: "常用", items: [["general", "控制台", Settings2], ["appearance", "外观", Sun], ["personalization", "个性化", Sparkles], ["voice", "语音通话", Headphones], ["skills", "技能", Zap], ["plugins", "插件", Store], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare]] },
+  { group: "智能体", items: [["agentteam", "专家/专家团", Users]] },
   { group: "自动化与能力", items: [["automation", "自动化", Workflow], ["mcp", "MCP", Wifi], ["schedule", "定时任务", Clock3], ["hooks", "钩子", Wrench], ["ssh", "SSH 服务器", Server]] },
-  { group: "智能体", items: [["agentteam", "智能体团队", Users]] },
   { group: "数据与统计", items: [["usage", "使用统计", CircleGauge], ["storage", "数据管理", Database], ["backup", "会话备份", Download], ["archive", "归档管理", Archive]] },
   { group: "开发工具", items: [["devtools", "开发工具", TerminalSquare]] },
 ];
@@ -1386,10 +1426,14 @@ function botChannelName(channel: string) {
   return channel === "wechat" ? "微信" : channel === "feishu" ? "飞书" : channel === "telegram" ? "Telegram" : channel === "dingtalk" ? "钉钉" : channel === "wecom-webhook" ? "企微推送" : channel === "qq" ? "QQ 机器人" : "";
 }
 
-/** 机器人是否在线：所有渠道都看网关真实连接状态 */
+/** 机器人是否在线：所有渠道都看网关真实连接状态。
+ *  ⚠️ 键名映射：主进程 channels:status 的微信键是 **weixin**，而机器人档案里存的是
+ *  **wechat** —— 不映射的话扫码成功后状态永远 undefined，徽章永远「未连接」
+ * （09-08 加轮询、09-13 用户再反馈后才定位到是这个键名不匹配）。 */
+const CHANNEL_STATUS_KEY: Record<string, string> = { wechat: "weixin" };
 function botOnlineOf(bot: { channel: string; enabled: boolean }, channelOnline: Record<string, boolean | undefined>) {
   if (!bot.channel) return false;
-  return Boolean(channelOnline[bot.channel]);
+  return Boolean(channelOnline[CHANNEL_STATUS_KEY[bot.channel] ?? bot.channel]);
 }
 
 function formatDuration(value: unknown) {
@@ -1647,23 +1691,29 @@ function QueuedMessageList({ entries, onOpenFile, onQuote, onDelete, onStart, on
   dragIndex: number | null;
   setDragIndex: (index: number | null) => void;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
+  // 折叠语义（用户 09-13 定稿）：「排队消息只贴在输入框上面展示」+「超过 2 条可以折叠」。
+  // 所以：≤2 条全展示、不显示折叠控件；>2 条**默认只展示最新 2 条**，展开/收起由用户控制。
+  // （原来 n>=2 就给个手动开关、默认全展示，条数一多就把输入框顶上去。）
+  const [expanded, setExpanded] = useState(false);
   if (!entries.length) return null;
   // 新消息往上叠加：渲染倒序（数组末尾的最新消息显示在最顶部）。拖拽 index 是显示序，需镜像回原数组序。
   const reversed = [...entries].reverse();
   const n = entries.length;
+  const collapsible = n > 2;
+  const visible = collapsible && !expanded ? reversed.slice(0, 2) : reversed;
+  const hiddenCount = n - visible.length;
   const mapIndex = (displayIndex: number) => n - 1 - displayIndex;
   return (
-    <div className={`queued-messages ${collapsed ? "is-collapsed" : ""}`}>
-      {n >= 2 && (
-        <button type="button" className="queued-collapse-toggle" onClick={() => setCollapsed((value) => !value)} title={collapsed ? "展开排队消息" : "折叠排队消息"}>
-          {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+    <div className="queued-messages">
+      {collapsible && (
+        <button type="button" className="queued-collapse-toggle" onClick={() => setExpanded((value) => !value)} title={expanded ? "只看最新 2 条" : `展开全部 ${n} 条`}>
+          {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           <span className="queued-collapse-label">排队消息</span>
           <span className="queued-collapse-count">{n}</span>
-          <span className="queued-collapse-hint">{collapsed ? "展开" : "折叠"}</span>
+          <span className="queued-collapse-hint">{expanded ? "收起" : `展开全部 ${n} 条（还有 ${hiddenCount} 条）`}</span>
         </button>
       )}
-      {!collapsed && reversed.map((entry, displayIndex) => <QueuedMessageItem key={entry.id} entry={entry} index={displayIndex} total={entries.length} onOpenFile={onOpenFile} onQuote={onQuote} onDelete={onDelete} onStart={onStart} onSave={onSave} onReorder={(from, to) => onReorder(mapIndex(from), mapIndex(to))} dragIndex={dragIndex} setDragIndex={setDragIndex} />)}
+      {visible.map((entry, displayIndex) => <QueuedMessageItem key={entry.id} entry={entry} index={displayIndex} total={entries.length} onOpenFile={onOpenFile} onQuote={onQuote} onDelete={onDelete} onStart={onStart} onSave={onSave} onReorder={(from, to) => onReorder(mapIndex(from), mapIndex(to))} dragIndex={dragIndex} setDragIndex={setDragIndex} />)}
     </div>
   );
 }
@@ -1822,32 +1872,43 @@ function threadContentChanged(a: Thread | null, b: Thread | null): boolean {
 
 /** 运行中会话切回时的 resume 合并：快照可能落后于本地流式积累（切走期间 delta 仍在更新内存）。
  *  逐 item 取文本更长的一方（agentMessage 正文 / reasoning 摘要与内容），避免正文回退后
- *  delta 从快照点重新追加 = 已渲染内容「重新走一遍出字动画」（09-08 反馈）。 */
+ *  delta 从快照点重新追加 = 已渲染内容「重新走一遍出字动画」（09-08 反馈）。
+ *  ⛔ 并且必须做**并集**：resume 快照常常只带部分 items（运行中的回合尤其明显），
+ *  早期实现只遍历快照的 items，于是"缓存里有、快照里没有"的条目**整条消失** ——
+ *  用户实测「运行中切出去、切回来整个不展示」（同一时间线 textContent 39341 → 6107，
+ *  而最长的那条正文还在，正因为丢的是"快照没带回来的那部分"）。
+ *  以**缓存的顺序**为骨架（缓存是本地一直累积的那份，最全），快照里新增的追加到末尾。 */
 function mergeLongerStreams(cached: Thread, loaded: Thread): Thread {
-  return {
-    ...loaded,
-    turns: loaded.turns.map((turn) => {
-      const oldTurn = cached.turns.find((entry) => entry.id === turn.id);
-      if (!oldTurn) return turn;
-      return {
-        ...turn,
-        items: turn.items.map((item) => {
-          const prev = oldTurn.items.find((entry) => entry.id === item.id);
-          if (!prev) return item;
-          if (item.type === "agentMessage" && typeof item.text === "string" && typeof prev.text === "string" && prev.text.length > item.text.length) {
-            return { ...item, text: prev.text };
-          }
-          if (item.type === "reasoning") {
-            const longer = (arr: any[] | undefined, cur: any[] | undefined) => (Array.isArray(arr) && (cur?.length ?? 0) < arr.length ? arr : cur);
-            const summary = longer(prev.summary as any[], item.summary as any[]);
-            const content = longer(prev.content as any[], item.content as any[]);
-            if (summary !== item.summary || content !== item.content) return { ...item, summary, content };
-          }
-          return item;
-        }),
-      };
-    }),
+  const mergeItems = (oldItems: ThreadItem[], newItems: ThreadItem[]): ThreadItem[] => {
+    const newById = new Map(newItems.map((entry) => [entry.id, entry] as const));
+    const oldById = new Map(oldItems.map((entry) => [entry.id, entry] as const));
+    const pick = (item: ThreadItem): ThreadItem => {
+      const prev = oldById.get(item.id);
+      if (!prev) return item;
+      if (item.type === "agentMessage" && typeof item.text === "string" && typeof prev.text === "string" && prev.text.length > item.text.length) {
+        return { ...item, text: prev.text };
+      }
+      if (item.type === "reasoning") {
+        const longer = (arr: any[] | undefined, cur: any[] | undefined) => (Array.isArray(arr) && (cur?.length ?? 0) < arr.length ? arr : cur);
+        const summary = longer(prev.summary as any[], item.summary as any[]);
+        const content = longer(prev.content as any[], item.content as any[]);
+        if (summary !== item.summary || content !== item.content) return { ...item, summary, content };
+      }
+      return item;
+    };
+    const out = oldItems.map((item) => pick(newById.get(item.id) ?? item));
+    for (const item of newItems) if (!oldById.has(item.id)) out.push(item);
+    return out;
   };
+  const mergedTurns = loaded.turns.map((turn) => {
+    const oldTurn = cached.turns.find((entry) => entry.id === turn.id);
+    if (!oldTurn) return turn;
+    return { ...turn, items: mergeItems(oldTurn.items, turn.items) };
+  });
+  // 快照整段没带回来的回合同样不能丢
+  const loadedIds = new Set(loaded.turns.map((turn) => turn.id));
+  const extraTurns = cached.turns.filter((turn) => !loadedIds.has(turn.id));
+  return { ...loaded, turns: [...extraTurns, ...mergedTurns] };
 }
 
 function mergeTurn(thread: Thread | null, nextTurn: Turn) {
@@ -1943,7 +2004,18 @@ function stableItem(existing: ThreadItem, next: ThreadItem): ThreadItem {
   }
   const keys = new Set([...Object.keys(existing), ...Object.keys(next)]);
   for (const key of keys) {
-    if (JSON.stringify((existing as any)[key]) !== JSON.stringify((next as any)[key])) return next;
+    const a = (existing as any)[key];
+    const b = (next as any)[key];
+    if (a === b) continue;                       // 引用/值相同：先短路（绝大多数 key 走这条）
+    // ⛔ 大字符串字段**不做 JSON.stringify**（09-13 性能）：agentMessage 每来一条 delta 都会
+    // 拿累计正文（可达数万字）走这里，stringify 两次 = 每条 delta 白烧几十万字符的拷贝与临时串
+    // （2 万字回复 ≈ 2000 条 delta ≈ 4000 万字符），主线程被占住就是「出字卡顿」。
+    // 长度不同 → 一定变了；长度相同 → 再比一次内容（字符串比较是 O(n) 但**不分配**，比 stringify 便宜得多）。
+    if (typeof a === "string" && typeof b === "string") {
+      if (a.length !== b.length || a !== b) return next;
+      continue;
+    }
+    if (JSON.stringify(a) !== JSON.stringify(b)) return next;   // 其它字段（数组/对象）保持原语义
   }
   return existing;
 }
@@ -2466,11 +2538,18 @@ function CommandExecutionCard({ item, waitingForApproval, turnActive }: { item: 
   const { displayed: displayedOutput, revealing: outputRevealing } = usePacketRevealText(String(item.id), tailOutput, Boolean(turnActive), bufferedToolRevealStarts, 48);
   const contentRef = useRef<HTMLDivElement | null>(null);
   // 流式输出时贴底滚动（对齐 ReasoningCard 的 rAF 合帧方案）
+  // ⚠️ 必须有「用户接管」守卫（09-13 审计）：原来无条件贴底，用户往上翻看这段长输出时，
+  // 下一个 delta 就把他拽回底部 —— 和主时间线当初那个 bug 同类。判据用经典口径：
+  // **只有本来就在底部附近才继续跟**（用户滚上去就不再动他的视口），不需要额外监听输入。
   useEffect(() => {
     if (!running && !outputRevealing) return;
     const el = contentRef.current;
     if (!el) return;
-    const raf = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > 40) return;   // 用户已上滚：不抢
+    const raf = requestAnimationFrame(() => {
+      if (el.scrollHeight - el.scrollTop - el.clientHeight > 40) return; // 帧内二次确认
+      el.scrollTop = el.scrollHeight;
+    });
     return () => cancelAnimationFrame(raf);
   }, [displayedOutput, running, outputRevealing]);
   const verb = waitingForApproval && running ? "等待批准" : running ? "正在运行" : failed ? "运行失败" : "已运行";
@@ -2964,22 +3043,31 @@ function TurnFoldStream({ items, turn, running, fallbackWindow, waitingForApprov
     }
   }
   const finalUnit = finalUnitIndex >= 0 ? units[finalUnitIndex] : undefined;
-  const completedProcess = finalUnit ? units.filter((_, index) => index !== finalUnitIndex) : [];
-  // 历史会话常只保留 reasoning + 中间 agentMessage，工具 item 可能没有进入快照。
-  // 不能继续只按连续工具段折叠：最后一条正文是结果，其前面的全部内容都是过程。
-  if (finalUnit && completedProcess.length > 0) {
-    return <>
-      <FoldGroup
-        key={`fold-completed-${turn.id}`}
-        variant="completed"
-        title={completedTitle}
-        leadGroup={topToolGroup(completedProcess)}
-        failedCount={failedCountOf(completedProcess) || undefined}
-      >
-        <CappedToolSequence units={completedProcess} renderUnit={(unit) => renderItem(unit, unit.item.type === "agentMessage" ? true : undefined)} />
-      </FoldGroup>
-      {renderItem(finalUnit, true)}
-    </>;
+  // ⛔ 长正文不许进折叠组（09-12 用户反馈「折叠消息把 codex 最后汇报的也折叠进去了」）。
+  // 实测该会话 rollout 的条目序列：… AgentMessage(712字) → DynamicToolCall → Reasoning
+  // → AgentMessage(80字)。「最终答复 = 最后一条有正文的消息」只挑中那条 80 字收尾，
+  // 于是 712 字的**汇报本身**被当成过程收进了「耗时」折叠组（要点开才看得到）。
+  // 现在按 planCompletedFold 排：长正文（≥ FOLD_BODY_ANCHOR_CHARS）与最终答复留在外面，
+  // 只有夹在它们之间的过程（工具/思考/一句话过渡）才收进折叠组。
+  if (finalUnit && units.length > 1) {
+    const plan = planCompletedFold(units, finalUnit.item.id);
+    if (plan.some((entry) => entry.kind === "fold")) {
+      return <>
+        {plan.map((entry, index) => entry.kind === "fold"
+          ? (
+            <FoldGroup
+              key={`fold-completed-${turn.id}-${index}`}
+              variant="completed"
+              title={completedTitle}
+              leadGroup={topToolGroup(entry.units)}
+              failedCount={failedCountOf(entry.units) || undefined}
+            >
+              <CappedToolSequence units={entry.units} renderUnit={(unit) => renderItem(unit, unit.item.type === "agentMessage" ? true : undefined)} />
+            </FoldGroup>
+          )
+          : renderItem(entry.unit, true))}
+      </>;
+    }
   }
   const out: React.ReactNode[] = [];
   let bodySeen = false;
@@ -4875,13 +4963,15 @@ function revealStepFor(remaining: number) {
   if (remaining > 300) return 4;     // 中段：平稳流出（约 250 字符/秒）
   return 2;                          // 尾段：精细逐字（约 125 字符/秒，打字感）
 }
-// 深度思考正文比主出字慢一档（约一半速）：思考内容长、信息密度低，
-// 同速流出根本读不清。16ms 帧下：长文 ~312 字符/秒、中段 ~125、尾段逐字 ~62。
+// 深度思考正文的流出速率（09-12 用户反馈「思考出字怎么这么慢，拉快一点」）。
+// 旧实现刻意压到主正文的**一半速**（长文 ~312 字符/秒、尾段逐字 ~62），实测在思考摘要
+// 动辄上千字时就是「看得见地慢」，像卡住。现在与主正文同级（16ms 帧下）：
+// 巨量 ≈1.3s 追完、长文 ~1000 字符/秒、中段 ~500、尾段 ~187（保留一点打字感，不再拖沓）。
 function revealStepForReasoning(remaining: number) {
-  if (remaining > 3600) return Math.max(16, Math.ceil(remaining / 180));
-  if (remaining > 1200) return 5;
-  if (remaining > 300) return 2;
-  return 1;
+  if (remaining > 3600) return Math.max(40, Math.ceil(remaining / 80));
+  if (remaining > 1200) return 16;
+  if (remaining > 300) return 8;
+  return 3;
 }
 // 播放进度表（模块级，跨组件卸载存活）：key -> 已播放到的正文前缀。
 // 运行中的回合切去别的会话再切回来，组件会卸载重建（state 全丢）——没有这张表，
@@ -4898,16 +4988,19 @@ function usePacketRevealText(
 ) {
   const initial = (() => {
     const marked = markerStore?.get(key);
+    // ⛔ 只有「一次性整包交付」的 marker 才允许起播动画；其余情况（**含切会话回来**）
+    // 一律直接显示到当前实时进度 —— 用户定稿：「实时进度在哪里，进来就在哪里」，
+    // 任何形式的存量复播都不允许（旧实现会从 `slice(0,10)` 起播 = 整段重播）。
     if (marked != null && text.startsWith(marked)) return marked;
-    const progressed = revealProgressStore.get(key);
-    if (progressed != null && text.startsWith(progressed)) return progressed;
-    if (active && text.length >= threshold) return text.slice(0, Math.min(10, text.length));
     return text;
   })();
   const [displayed, setDisplayed] = useState(initial);
   const [revealing, setRevealing] = useState(initial.length < text.length);
   const displayedRef = useRef(displayed);
   const revealingRef = useRef(revealing);
+  // 本组件实例是否是「第一次跑揭示 effect」（= 刚挂载）。用来区分「重挂载补齐存量」与
+  // 「挂载后新到的增量」——只有前者必须一次性显示（见 isStockOnMount）。
+  const firstRunRef = useRef(true);
   useEffect(() => { displayedRef.current = displayed; }, [displayed]);
   useEffect(() => { revealingRef.current = revealing; }, [revealing]);
   useEffect(() => {
@@ -4926,6 +5019,22 @@ function usePacketRevealText(
       displayedRef.current = start;
       setDisplayed(start);
     }
+    // ⛔ 单调保证（09-12 用户「重放还是有」实测定位，**别删**）：同一个 key 的揭示位置
+    // **只能前进、不能后退**。实测切回会话时，同一条消息先按存量续播（`{from:178,to:232}`），
+    // 紧接着又冒出一批 `{from:2,to:4}` 的揭示——把已经显示过的 170 多字重播了一遍，
+    // 用户看到的就是「正文先缩回去再重新出字」（DOM 采样 172→59→125→…→391）。
+    // 这里给 start 加一条**硬下限**：不得小于进度表里已播长度所对应的前缀。
+    // 注意**不要求** `text.startsWith(stored)`：内容被替换 / 快照落后时 startsWith 会失败，
+    // 而那条路径正是 from 回退到 2 的来源（回退本身就是重播）。
+    {
+      const storedRaw = revealProgressStore.get(key);
+      const storedLen = storedRaw != null ? Math.min(storedRaw.length, text.length) : 0;
+      if (storedLen > start.length) {
+        start = text.slice(0, storedLen);
+        displayedRef.current = start;
+        setDisplayed(start);
+      }
+    }
     if (!text.startsWith(start)) {
       displayedRef.current = text;
       setDisplayed(text);
@@ -4941,7 +5050,25 @@ function usePacketRevealText(
     }
     // active（流式运行中）：内容在增长就平滑续字，不要求大跳才追——小增量也逐字流出。
     // 非 active 或一次性整包交付（marker）也追，避免整段瞬间出现；纯历史不做动画。
-    const shouldReveal = revealingRef.current || active || marked != null;
+    //
+    // ⚠️ 但**存量正文必须一次性显示**（09-12 用户实测实锤）：流式中切走再切回时，
+    // 进度表里存的是切走那一刻的位置（如 244 字），而正文已经长到 1078 字——
+    // 若照旧揭示，就会把 834 个字的**存量**从头播一遍，表现为「切过去正文重新出字」。
+    // 判据：待播字数远超单帧/单批的正常增量（> REVEAL_INSTANT_JUMP）时，判定为
+    // 「重挂载后补齐存量」而非「新到的增量」→ 直接显示，不做动画。
+    // ⛔ 存量必须一次性显示（09-12 用户「切换一下就重复播放一次」的**真根因**）：
+    // 判据不是「待播字数多大」，而是「**这次是不是重挂载后第一次跑、且已经有存量**」。
+    // 实测反例：切走时 173 字，切回后存量涨到 532 字 → remaining=334 < 400 的旧阈值，
+    // 于是把这 334 个**已经显示过的**字又逐字播了一遍（reveal 打点 `animated:334`），
+    // 用户看到的就是「切一下就重播一次」。凡是挂载时就有存量（start 明显不止初始 10 字），
+    // 一律整段直接显示；**之后新到的增量**才走打字机。
+    const isStockOnMount = firstRunRef.current && remaining > 0 && marked == null;
+    firstRunRef.current = false;
+    const REVEAL_INSTANT_JUMP = 400;
+    const allowReveal = isStockOnMount
+      ? false                                    // 挂载时就有待播内容 = 存量 → 一次性显示
+      : (revealingRef.current || active || marked != null);
+    const shouldReveal = allowReveal && remaining <= REVEAL_INSTANT_JUMP;
     if (!shouldReveal) {
       displayedRef.current = text;
       setDisplayed(text);
@@ -4949,6 +5076,13 @@ function usePacketRevealText(
       return;
     }
     setRevealing(true);
+    // 诊断（09-12）：记录「这次揭示要播多少字」。切会话若出现异常大的 animated 值
+    // （接近全文长度），就是「正文重复播放」的实锤——e2e 读 window.__adbg 核对。
+    try {
+      const w = window as any;
+      if (!w.__adbg) w.__adbg = [];
+      w.__adbg.push({ r: "reveal", key: String(key).slice(0, 12), from: start.length, to: text.length, animated: remaining });
+    } catch { /* 诊断失败不影响功能 */ }
     // 速率按剩余量自适应：尾段逐字精雕（打字感），长文自动提速不拖沓。
     const step = Math.max(1, Math.min(revealStepFor(remaining), Math.ceil(remaining / 3)));
     let end = start.length;
@@ -4992,7 +5126,11 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
     const marked = bufferedReasoningRevealStarts.get(String(item.id));
     if (marked != null && text.startsWith(marked)) return marked;
     const progressed = revealReasoningProgress.get(String(item.id));
-    if (progressed != null && text.startsWith(progressed)) return progressed;
+    // 单调下限（09-12 用户「切换一下就重复播放一次」）：进度表里只要有记录，就**取它**，
+    // 不再要求 `text.startsWith(progressed)`——思考正文在 resume/流式合并后可能不是严格
+    // 前缀（末尾被修订），旧条件一旦不成立就掉回下面的 `slice(0,10)` 分支 =
+    // **整段思考从头重播**。位置只许前进，这是唯一正确的语义。
+    if (progressed != null) return text.slice(0, Math.min(progressed.length, text.length));
     if (turnActive && text.length >= 24) return text.slice(0, Math.min(10, text.length));
     return text;
   }, [item.id]);
@@ -5008,10 +5146,11 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
       displayedRef.current = start;
       setDisplayed(start);
     }
-    // 进度表对齐：跨卸载重建后从上次播放进度续追，不从头重播（同 revealProgressStore）
+    // 进度表对齐：跨卸载重建后从上次播放进度续追，不从头重播（同 revealProgressStore）。
+    // 同样**不要求** startsWith：位置只能前进（见上面 initialReveal 的说明）。
     const progressed = revealReasoningProgress.get(String(item.id));
-    if (progressed != null && text.startsWith(progressed) && start.length < progressed.length) {
-      start = progressed;
+    if (progressed != null && start.length < progressed.length) {
+      start = text.slice(0, Math.min(progressed.length, text.length));
       displayedRef.current = start;
       setDisplayed(start);
     }
@@ -5049,7 +5188,8 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
       return;
     }
     setRevealing(true);
-    // 思考正文专用慢速自适应（revealStepForReasoning，约为主正文一半速）。
+    // 思考正文速率自适应（revealStepForReasoning；09-12 已提到与主正文同级，
+    // 用户原话「思考出字怎么这么慢，拉快一点」——不要再调慢回去）。
     const step = Math.max(1, Math.min(revealStepForReasoning(remaining), Math.ceil(remaining / 3)));
     let end = start.length;
     const timer = window.setInterval(() => {
@@ -5077,13 +5217,52 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
   // 回合运行期间只要该 reasoning item 已进入事件流，就先保留它的标题节点；
   // 某些中转会先发 completed/started，再稍后补正文 delta，不能把后续思考误当空占位丢掉。
   useEffect(() => { if (running || turnActive) seenLiveRef.current = true; }, [running, turnActive]);
+  // 新一块思考开始直播时重置跟随：上一块被用户接管过（reasoningFollowRef=false）不该
+  // 殃及下一块——每块思考开始时用户都在看最新内容，默认应该跟。
+  useEffect(() => { if (running) reasoningFollowRef.current = true; }, [running]);
   // 思考进行中：新内容到达时自动贴底滚动。
-  // 用 rAF 合并：一帧内可能来好几个 delta，直接滚会读 scrollHeight 触发多次强制同步布局。
+  // ⛔ 用户接管判定必须挂在真实用户输入上，不能用「距底>40 就不跟」（09-13 用户反馈
+  // 「思考内容不自动跟随」真根因）：思考正文经常整段大块交付、追字步长大，一帧内
+  // dist 直接跳过 40px，旧判据把它当成「用户上滚」→ 从此永远不再跟随。
+  // 与外层时间线同一哲学：滚轮/触摸/按住滚动条拖动 = 接管；滚回距底 ≤8px = 重新跟随。
+  const reasoningFollowRef = useRef(true);
+  const reasoningBodyPointerDownRef = useRef(false);
+  const reasoningBodyMounted = Boolean(displayed);
   useEffect(() => {
-    if (!running || manualOpen === false) return;
     const el = bodyRef.current;
     if (!el) return;
-    const raf = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+    const dist = () => el.scrollHeight - el.scrollTop - el.clientHeight;
+    const onWheel = () => { reasoningFollowRef.current = false; };
+    const onTouchMove = () => { reasoningFollowRef.current = false; };
+    const onScroll = () => {
+      if (dist() <= 8) reasoningFollowRef.current = true;
+      else if (reasoningBodyPointerDownRef.current) reasoningFollowRef.current = false;
+    };
+    const onPointerDown = () => { reasoningBodyPointerDownRef.current = true; };
+    const onPointerUp = () => { reasoningBodyPointerDownRef.current = false; };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+    };
+    // 监听器只在正文元素首次挂载时装一次（displayed 从空到有）；逐字追字期间不重装。
+  }, [reasoningBodyMounted]);
+  useEffect(() => {
+    if (!running || manualOpen === false) return;
+    if (!reasoningFollowRef.current) return;
+    const raf = requestAnimationFrame(() => {
+      const el = bodyRef.current;
+      if (el && reasoningFollowRef.current) el.scrollTop = el.scrollHeight;
+    });
     return () => cancelAnimationFrame(raf);
   }, [displayed, running, manualOpen]);
   // 没现场出现过且无内容的（历史加载的空占位）才不渲染；现场出现过的保留标题行常驻
@@ -5292,7 +5471,7 @@ function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval,
     : turn.durationMs ? `已用 ${formatDuration(turn.durationMs)}` : "已完成";
   const hookBadge = hooks && hooks.length > 0 ? <HookBadge hooks={hooks} /> : undefined;
   return (
-    <div className={`turn-group ${running ? "running" : turn.error ? "error" : "completed"}`} id={`turn-${turn.id}`}>
+    <div className={`turn-group ${running ? "running" : turn.error ? "error" : "completed"}`} id={`turn-${turn.id}`} data-current-turn={isLastTurn ? "true" : undefined}>
       {userItems.map((item) => <MemoUserMessageView item={item} turn={turn} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} key={item.id} />)}
       <div className="turn-card">
         {/* 占位头必须等回合内已有 userMessage：turn/started 先建回合、userMessage item 晚到，
@@ -6346,6 +6525,17 @@ function VoiceSettingsBridge({ onOpen }: { onOpen: () => void }): null {
 
 export default function App() {
   const [serverStatus, setServerStatus] = useState("starting");
+  /** 独立会话弹窗模式（09-13）：非空 = 本窗口是弹窗，值 = 弹窗锁定的会话 id。
+   *  弹窗窗口与主窗口同构（完整侧边栏/顶栏都带着），只多一个「返回主应用」按钮；
+   *  初始打开 popout 指定的会话而不是 last-thread。 */
+  const [popoutThreadId, setPopoutThreadId] = useState<string | null>(null);
+  /** 主窗口侧：被弹窗锁定的会话 id 集合。弹窗窗口里渲染同一会话会与主窗口重复
+   *  （两份渲染层各自维护 thread 状态，事件竞争/状态不同步），用户 09-13 明确要求
+   *  「原界面侧边栏把弹窗出去的会话直接隐藏」。弹窗关闭后（popout-closed 事件）移出。 */
+  const [poppedOutThreadIds, setPoppedOutThreadIds] = useState<Set<string>>(() => new Set());
+  const refreshPoppedOut = useCallback(() => {
+    void window.codex.popoutList().then((ids) => setPoppedOutThreadIds(new Set(ids ?? []))).catch(() => undefined);
+  }, []);
   // null=首次使用/明确退出，true=跳过登录，false=已成功登录。
   // 旧逻辑把 false 也解释成“显示登录页”，导致每次重启都要重新输入已安全保存的 API Key。
   const [showLogin, setShowLogin] = useState(() => {
@@ -6359,7 +6549,16 @@ export default function App() {
   const [effort, setEffort] = useState(() => normalizeEffort(localStorage.getItem("default-effort")) || DEFAULT_EFFORT);
   const [threads, setThreads] = useState<Thread[]>([]);
   const [thread, setThread] = useState<Thread | null>(null);
+  /** 会话切换耗时诊断（09-12 压测）：openThread 落笔，thread 真正换上去时结算并写入
+       window.__adbg。这是「点一下到内容可见」的真实值——比 e2e 里轮询文本可靠得多
+       （会话内容相同时文本不变，轮询会一直等到超时）。 */
+  const switchStartRef = useRef(0);
   const threadRef = useRef<Thread | null>(null);
+  /** 弹窗锁定会话 id 的 ref 形态：boot effect（[] 空依赖）闭包里要读到它，
+   *  用 state 会在首次渲染拿到 null（popoutThreadId 是异步探测的）。 */
+  const popoutThreadIdRef = useRef<string | null>(null);
+  /** threads 列表的 ref 镜像：harness:event 处理函数（闭包）里同步查会话是否存在。 */
+  const threadsRef = useRef<Thread[]>([]);
   // 心跳监控联动：记录「引擎无响应→自动重启」标记，ready 时自动恢复当前线程；
   // 以及发送/运行态的快照 ref，供 status:error 分支复位（避免闭包读到旧 state）。
   const engineRestartedRef = useRef(false);
@@ -6374,21 +6573,27 @@ export default function App() {
   const runningStartedAtRef = useRef<Map<string, number>>(new Map());
   const markThreadRunning = useCallback((threadId: string, turnId?: string, startedAt = Date.now()) => {
     if (!threadId) return;
+    if (turnId) runningTurnIdsRef.current.set(threadId, turnId);
+    if (!runningStartedAtRef.current.has(threadId)) runningStartedAtRef.current.set(threadId, startedAt);
+    // 值判短路（09-12 多会话性能）：引擎会为**每个**会话反复推 thread/status/changed +
+    // turn/started，旧实现无条件 `new Set` + setState → 每来一条就整棵 App 重渲染一次
+    // （多会话时事件数 × N，而 App 是 1.1MB 单组件）。id 已在集合里就什么都不做。
+    if (runningThreadIdsRef.current.has(threadId)) return;
     const next = new Set(runningThreadIdsRef.current);
     next.add(threadId);
     runningThreadIdsRef.current = next;
     setRunningThreadIds(next);
-    if (turnId) runningTurnIdsRef.current.set(threadId, turnId);
-    if (!runningStartedAtRef.current.has(threadId)) runningStartedAtRef.current.set(threadId, startedAt);
   }, []);
   const markThreadStopped = useCallback((threadId?: string) => {
     if (!threadId) return;
+    runningTurnIdsRef.current.delete(threadId);
+    runningStartedAtRef.current.delete(threadId);
+    // 同上：本来就不在集合里（重复的 turn/completed、或从未标记过）→ 不 setState
+    if (!runningThreadIdsRef.current.has(threadId)) return;
     const next = new Set(runningThreadIdsRef.current);
     next.delete(threadId);
     runningThreadIdsRef.current = next;
     setRunningThreadIds(next);
-    runningTurnIdsRef.current.delete(threadId);
-    runningStartedAtRef.current.delete(threadId);
   }, []);
   const clearRunningThreads = useCallback(() => {
     runningThreadIdsRef.current = new Set();
@@ -6691,10 +6896,32 @@ export default function App() {
     }));
   }, [optimisticInput, thread]);
   useEffect(() => {
+    // ★ 乐观气泡**安全阀**（09-13）：回合已经跑完、气泡却始终没被真实消息接管 → 回收。
+    // 触发场景：排队消息点「立即」走 `turn/steer` 把输入补进**已有回合**（不产生新回合），
+    // 而下面的确认逻辑只认「新回合里的用户消息」→ 永远匹配不到，气泡会一直赖在聊天区。
+    // 有它兜底，最坏情况也只是"这一轮跑完时气泡消失"，绝不会跨回合残留。
+    // 正常发送不受影响：真实消息在回合进行中就接管了（turn 还在 running 时这里不会触发）。
+    if (optimisticInput && !optimisticConfirmed && !(thread?.turns ?? []).some((turn) => isTurnRunning(turn))) {
+      dbg("confirm-timeout", { inp: String(optimisticInput.id).slice(0, 12) });
+      setOptimisticInput(null);
+      return;
+    }
     if (!optimisticInput || !optimisticConfirmed) return;
+    dbg("confirm-fired", { inp: !!optimisticInput });
+    // 锚定模式：真实回合接管临时气泡的瞬间，把锚点平滑换到真实回合——
+    // 乐观气泡挂在回合列表末尾、真实 turn 在其前一位，位置相邻但不重合，
+    // 不重锚的话「消息钉在顶部」会在确认瞬间跳一下（锚定模式的核心承诺就是不跳）。
+    // 确认瞬间**不再自己做一次重锚**（09-12：两处各自钉一次 = 互相抢 = 抖）。
+    // 位置统一由 [thread] 布局 effect 里的 pinSentMessage 按"真实消息元素"实测维持：
+    // 真实回合一接管，它量到 gap 变了就一次性纠正，量到没变就什么都不做。
+    if (anchorTopRef.current) {
+      const baseline = optimisticBaselineRef.current;
+      const newTurn = thread?.turns.find((turn) => !(baseline.threadId === thread?.id && baseline.turnIds.has(turn.id)));
+      if (newTurn) anchorTurnIdRef.current = newTurn.id;
+    }
     optimisticTurnIdRef.current = null;
     setOptimisticInput(null);
-  }, [optimisticConfirmed, optimisticInput]);
+  }, [optimisticConfirmed, optimisticInput, thread]);
   const [openingThread, setOpeningThread] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingRequest[]>([]);
   const [diff, setDiff] = useState("");
@@ -7343,13 +7570,20 @@ export default function App() {
     if (agentAsk) setLabel(agentAsk.threadId, "需选择");
     return map;
   }, [pending, agentAsk]);
+  // 侧栏「长按拖出为独立窗口」已删（09-13 用户定稿：入口只留顶栏的独立/返回按钮）。
   const renderThreadRow = (entry: Thread) => {
     const running = runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running";
     const attentionLabel = threadAttention.get(entry.id);
     const attentionTone = attentionLabel === "需审批" ? "approval" : attentionLabel === "需选择" ? "choice" : "confirm";
+    // 被弹窗锁定的会话：侧栏置灰不可点（会话已在独立窗口里渲染，点击会造成双窗口重复渲染），
+    // 行仍保留在原位置（用户 09-13 定稿：隐藏改为置灰）。弹窗关闭后自动恢复可点。
+    const poppedOut = poppedOutThreadIds.has(entry.id);
     return (
-    <div className={`thread-row ${thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${threadRowMenu?.id === entry.id ? "menu-open" : ""}`} key={entry.id}>
-      <button title={runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : "双击修改任务名称"} onClick={() => void openThread(entry.id)}>
+    <div
+      className={`thread-row ${thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${threadRowMenu?.id === entry.id ? "menu-open" : ""} ${poppedOut ? "popped-out" : ""}`}
+      key={entry.id}
+    >
+      <button title={poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : "双击修改任务名称"} onClick={() => { if (poppedOut) { showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } void openThread(entry.id); }}>
         <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void renameThread(entry.id, next); }); }}><span>{cleanThreadDisplayTitle(entry.name, { preview: entry.preview })}</span>{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
       </button>
       <div className="thread-actions">
@@ -7456,17 +7690,30 @@ export default function App() {
   const [welcomeCwdMenuOpen, setWelcomeCwdMenuOpen] = useState(false);
   // 首次对话身份引导：null=档案未拉取，false=未引导（新会话注入引导指令+工具），
   // true=已完成（不再引导）。保存后立即置 true，本机后续所有新会话都不再出现。
-  const [identityOnboarded, setIdentityOnboarded] = useState<boolean | null>(null);
+  /** 身份引导状态：只认第一印象——**问过一次就不再问**（09-12 用户反馈
+      「怎么每次新会话都强制引导呢，改成一次打招呼才需要引导，其他情况下直接开始干活」）。
+      与旧的 `onboarded`（用户真的回答了并落盘）区分开：那个不改，新会话仍会反复引导。 */
+  const [identityGreeted, setIdentityGreeted] = useState<boolean | null>(null);
   useEffect(() => {
-    void window.codex.readPersonalization().then((config) => setIdentityOnboarded(config.onboarded === true)).catch(() => setIdentityOnboarded(true));
+    void window.codex.readPersonalization()
+      .then((config) => setIdentityGreeted(config.greeted === true || config.onboarded === true))
+      .catch(() => setIdentityGreeted(true)); // 读不到档案就按「已问候」处理：宁可不引导，也不打扰
   }, []);
   // 写代码模式（ponytail）开关状态：默认开启，与「常规」页的总闸联动
   const [ponytailOn, setPonytailOn] = useState(true);
   // 各渠道真实连接状态（微信/Telegram 网关是否在线）
   const [channelOnline, setChannelOnline] = useState<Record<string, boolean | undefined>>({ weixin: false, telegram: false, feishu: false, dingtalk: false, qq: false, "wecom-webhook": false });
   useEffect(() => { void window.codex.channelsStatus?.().then(setChannelOnline).catch(() => undefined); }, []);
-  // 刚切换会话：首跳用瞬时滚动（auto），之后的流式跟随仍用平滑
-  const switchJumpRef = useRef(false);
+  // 刚切换会话：首跳用瞬时滚动（auto），之后的流式跟随仍用平滑。
+  // ⛔ 必须是「会话 id + 时间戳」而不是裸布尔（09-12 根因修复）：裸布尔的实测后果是
+  // **下一次任意 thread 更新**都会把它消费掉 —— 打开会话时置位、若那次没有紧跟一次
+  // thread 变更（缓存秒开/同一对象重提交流程），标志就一直挂着，直到发送消息触发的
+  // 那次更新把它吃掉：于是「切会话瞬时定位」的分支在发送时执行 → 解除钉顶 + 留白归零
+  // + 贴底 → 用户看到「发送后消息不在那个位置」「上下弹跳」。绑 id 后只有该会话自己的
+  // 那次渲染能消费它，并且钉顶进行中一律不许被覆盖。
+  const switchJumpRef = useRef<{ id: string; at: number } | null>(null);
+  /** 切换瞬时定位是否仍然有效（绑定会话 id + 15s 过期，防陈旧标志永久阻塞向上续载） */
+  const switchJumpPending = () => Boolean(switchJumpRef.current && Date.now() - switchJumpRef.current.at < 15000);
   // 会话消息缓存（复刻 WorkBuddy 切换体验）：打开过的会话缓存 thread，切回时秒开渲染，
   // 后台 thread/resume 刷新；有实质变化才替换，避免无感闪烁。
   const threadCacheRef = useRef(new Map<string, Thread>());
@@ -7815,14 +8062,17 @@ export default function App() {
   }, [username]);
   const [mobileRemoteOpen, setMobileRemoteOpen] = useState(false);
   const [botManagerOpen, setBotManagerOpen] = useState(false);
+  // botManagerOpen 的 ref 镜像：配对请求到达时判断用户是否正开着机器人面板（决定弹不弹远控面板）
+  const botManagerOpenRef = useRef(false);
   // 机器人管理弹窗打开期间轮询渠道在线状态（5s）：扫码绑定成功/断开时左侧徽章即时跟上，
-  // 不依赖网关 log 事件转发链路（09-08 反馈：扫码连接成功但状态一直「未连接」）
+  // 不依赖网关 log 事件转发链路（09-08 反馈：扫码连接成功但状态一直「未连接」）。
+  // 09-13 改为**常驻**轮询：用户经常叉掉面板再回来看，关闭期间停轮询会导致重开瞬间
+  // 状态还是旧的（弹窗内 5s 才追上）；5s 一次 IPC 成本可忽略。
   useEffect(() => {
-    if (!botManagerOpen) return;
     void window.codex.channelsStatus?.().then(setChannelOnline).catch(() => undefined);
     const timer = window.setInterval(() => { void window.codex.channelsStatus?.().then(setChannelOnline).catch(() => undefined); }, 5000);
     return () => window.clearInterval(timer);
-  }, [botManagerOpen]);
+  }, []);
   // 频道机器人流式回复设置（全局，主进程 bot-stream.json）：弹窗打开时加载
   const [botStream, setBotStream] = useState<{ enabled: boolean; thinking: boolean; tools: boolean }>({ enabled: true, thinking: true, tools: true });
   useEffect(() => {
@@ -7846,8 +8096,51 @@ export default function App() {
       showToast("绑定已更新", threadId ? "机器人后续消息将在所选会话中继续" : "机器人已解绑，下一条消息将开启新会话");
     } catch { showToast("绑定失败", "请稍后重试"); }
   };
-  const [bots, setBots] = useState<{ id: string; name: string; channel: string; enabled: boolean }[]>(() => { try { return JSON.parse(localStorage.getItem("bots") ?? "[]"); } catch { return []; } });
+  // 机器人档案：**持久化在主进程**（userData/bots.json，09-13 迁移）。此前只存 localStorage，
+  // 清缓存/换实例整单丢失（用户实丢过一次）。首次加载时若主进程为空而 localStorage 有旧
+  // 数据，自动上交迁移；此后每次改动同步写主进程（不再写 localStorage）。
+  type BotEntry = { id: string; name: string; channel: string; enabled: boolean; [key: string]: unknown };
+  const [bots, setBots] = useState<BotEntry[]>([]);
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
+  const setBotsPersist = useCallback((updater: BotEntry[] | ((cur: BotEntry[]) => BotEntry[])) => {
+    setBots((cur) => {
+      const next = typeof updater === "function" ? (updater as (c: BotEntry[]) => BotEntry[])(cur) : updater;
+      void window.codex.botsSet?.(next).catch(() => undefined);
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    void window.codex.botsGet?.().then(async (persisted) => {
+      if (!alive) return;
+      let legacy: BotEntry[] = [];
+      try { legacy = JSON.parse(localStorage.getItem("bots") ?? "[]"); } catch { legacy = []; }
+      if (Array.isArray(persisted) && persisted.length) {
+        setBots(persisted);
+      } else if (legacy.length) {
+        // 迁移：主进程为空 + localStorage 有旧档案 → 上交（localStorage 保留一份作备份，不再作为真相源）
+        setBots(legacy);
+        void window.codex.botsSet?.(legacy).catch(() => undefined);
+      } else {
+        // 档案与旧数据都为空：从持久化的渠道登录态**自动恢复**机器人卡片。
+        // 微信登录凭据/配对/绑定都在主进程，唯独卡片记录丢了会让"已连接的机器人"
+        // 在面板里隐身（09-13 用户反馈「已连接机器人没显示出来」）——已连接的渠道必须可见。
+        const status: Record<string, boolean | undefined> = await (window.codex.channelsStatus?.() ?? Promise.resolve({}));
+        const names: Record<string, string> = { wechat: "微信机器人", telegram: "Telegram 机器人", feishu: "飞书机器人", dingtalk: "钉钉机器人", qq: "QQ 机器人", "wecom-webhook": "企微推送" };
+        const restored: BotEntry[] = Object.entries(status)
+          .filter(([, on]) => Boolean(on))
+          .map(([ch]) => {
+            const channel = ch === "weixin" ? "wechat" : ch;
+            return { id: `restored-${ch}-${Date.now().toString(36)}`, name: names[channel] ?? `${channel} 机器人`, channel, enabled: true };
+          });
+        if (restored.length) {
+          setBots(restored);
+          void window.codex.botsSet?.(restored).catch(() => undefined);
+        }
+      }
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
   // 打开机器人管理弹窗默认选中已配置的机器人（优先已启用的），不再显示空详情页
   useEffect(() => {
     if (!botManagerOpen) return;
@@ -7872,6 +8165,41 @@ export default function App() {
   const [remoteLog, setRemoteLog] = useState<string[]>([]);
   void remoteDevices; void remoteCmd; void remoteLog; void setRemoteCmd; void setRemoteLog; /* WIP: 用户远控面板尚未接线，先占位防 noUnusedLocals */
   const [remoteQr, setRemoteQr] = useState("");
+  // 配对码 + 电脑端审批（09-13 二次加固：手机首次连接要过这两关）
+  const [pairCode, setPairCode] = useState("");
+  const [pairPending, setPairPending] = useState<any[]>([]);
+  const [pairApproved, setPairApproved] = useState<any[]>([]);
+  // 统一拉取配对状态（手机远控 + Bot Channel 两个真相源）：approved 取并集、pending 按 rid 去重。
+  // 旧实现只拉 remotePairState —— Bot Channel（微信等）批准的设备存在 bot-pairing.json，
+  // 打开面板时看不到，直到下一次配对事件触发合并才冒出来（09-13 用户反馈「批准过不常驻展示」）。
+  const loadPairStates = useCallback(async () => {
+    try {
+      const [remote, bot] = await Promise.all([
+        window.codex.remotePairState?.() ?? Promise.resolve(null),
+        window.codex.botPairState?.() ?? Promise.resolve(null),
+      ]);
+      if (remote) { setPairCode(remote.code); setPairPending(remote.pending ?? []); }
+      const remoteApproved: any[] = remote?.approved ?? [];
+      const botApproved: any[] = (bot?.approved ?? [])
+        .map((a: any) => ({ deviceId: String(a.key ?? ""), name: String(a.name ?? ""), approvedAt: Number(a.approvedAt ?? 0), source: "bot" }))
+        .filter((d: any) => d.deviceId);
+      setPairPending((prev) => {
+        const merged: any[] = [...(remote?.pending ?? [])];
+        const seen = new Set(merged.map((m) => m.rid));
+        for (const r of prev) if (!seen.has(r.rid)) { merged.push(r); seen.add(r.rid); }
+        for (const b of (bot?.pending ?? []).map((r: any) => ({ rid: r.rid, name: r.name, createdAt: r.createdAt }))) {
+          if (!seen.has(b.rid)) { merged.push(b); seen.add(b.rid); }
+        }
+        return merged;
+      });
+      setPairApproved([...remoteApproved, ...botApproved.filter((b: any) => !remoteApproved.some((r: any) => r.deviceId === b.deviceId))]);
+    } catch { /* 拉取失败保持现状 */ }
+  }, []);
+  // 机器人管理面板打开时拉一次配对状态（6 位码 + 待审批 + 已批准）——配对卡就显示在面板里
+  useEffect(() => {
+    if (!botManagerOpen) return;
+    void loadPairStates();
+  }, [botManagerOpen, loadPairStates]);
   const [userDataPath, setUserDataPath] = useState("");
   const [taskMenuOpen, setTaskMenuOpen] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
@@ -7883,8 +8211,235 @@ export default function App() {
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   // 流式跟随：用户滚到底时为 true（持续自动跟 agent 最新内容），向上滚看历史时为 false
   const stickToBottomRef = useRef(true);
+  // ── 发送锚顶（对齐 WorkBuddy，09-12 用户反馈「正文出字上下跳动/来回闪」）──
+  // **每次**发送都把新消息钉在对话区顶部：回复向下方的空白处流式展开，视口
+  // 全程稳定（用户明确要求「每次发新消息都要在那个位置」）。不自动转贴底——
+  // 旧贴底跟随每字推屏+占位头塌陷猛坠 = 跳动，smooth 动画与内容增长互相
+  // retarget = 闪烁。长回复超屏后由「回到底部」按钮 / 用户滚到底（dist≤4
+  // 重开跟随并解除钉顶）接管；向上滚动随时解除钉顶自由翻阅。
+  const anchorTopRef = useRef(false);
+  // TEMP-DEBUG2
+  if (!(window as any).__adbg) (window as any).__adbg = [];
+  /** 诊断打点：只保留最近 2000 条。揭示动画是每帧 push 的（≈60 条/秒），无上限的话
+   *  长时间跑长回复能累积到几十 MB 且被 window 强引用无法回收（09-13 性能审计）。 */
+  const dbg = (r: string, extra: any = {}) => { try { const log = (window as any).__adbg; log.push({ r, t: Date.now() % 100000, ...extra }); if (log.length > 2000) log.splice(0, log.length - 2000); } catch {} };  /** 程序滚动抑制窗：钉顶/贴底的瞬时滚动会把 scrollTop 拨来拨去，scroll 事件
+      异步到达时若被 update() 当成用户滚动做方向判定，就会误解除钉顶（实测：
+      钉顶 1ms 后被 cancel:up-scroll 杀掉）。程序滚动后 80ms 内的 scroll 事件
+      只刷新基线、不做判定。 */
+  const selfScrollUntilRef = useRef(0);
+  /** 锚元素（乐观气泡或确认后的真实回合），流式跟随钉顶时实时取坐标用 */
+  const anchorElRef = useRef<HTMLElement | null>(null);
+  /** 确认后的真实回合 id：钉顶时动态按 id 查元素——回合元素可能比确认信号晚一帧挂载，
+      一次性换锚会错过它（实测钉到已卸载的乐观气泡坐标上，gap -506） */
+  const anchorTurnIdRef = useRef<string | null>(null);
+  /** 锚元素的内容坐标兜底值（锚元素已卸载时用） */
+  const contentAnchorTopRef = useRef(0);
+  /** 锚点顶端**未减去偏移**的内容坐标：用来判断内容是否已长过一屏。
+      超出「锚点顶端 + 视口高」就说明回复已经被推到屏幕外，必须交回跟随，
+      否则视口钉在原地、正文一路流出屏幕（用户实测：大片空白、看不到最新内容）。 */
+  const anchorTopOffsetRef = useRef(0);
+  /** 钉顶时的内容高度基线：回复每长出一段，就按**增长量**把视口往下推同样多，
+      既保证新内容始终可见（用户要的自动跟随），又不会像旧版那样每个字重推整屏
+      （那正是「出字上下跳动」的来源）。 */
+  const anchorHeightBaselineRef = useRef(0);
+  /** 锚顶专用底部留白：把「锚点下方」补足到一整屏，让短消息也能钉到顶部。
+      几何原因（09-12 实测探针实锤）：视口高 622px、短消息只有 72px，若下方没有
+      内容顶着，scrollTop 会被浏览器钳在 maxScroll → 消息停在视口中间，随后被贴底
+      接管（away=0）。第一条长消息能成，正是因为它自己就撑满了一屏。
+      高度必须随锚点高度自适应（= clientHeight - 锚高），否则大留白会把下一个
+      新消息的坐标一起撑大（实测 want 因此比 maxScroll 还大）。 */
+  const anchorSpacerRef = useRef<HTMLDivElement | null>(null);
+  /** 解除锚顶/贴底接管时的收尾：把锚顶留白归零，否则会残留一屏空白。 */
+  const clearAnchorPad = useCallback(() => {
+    const pad = anchorSpacerRef.current;
+    if (pad) pad.style.height = "0px";
+  }, []);
+  /** 内容底部（详见 `contentBottomOf`）：所有"滚到底 / 跟随到最新"的基准，**不含尾部留白**。
+   *  用 `scrollHeight` 会把 compact / anchor-pad 留白算成内容 → "到底"= 滚进留白 →
+   *  切回会话时用户消息被切在视口顶、下方一大片空白（09-12 用户截图实锤）。 */
+  const compactSpacerRef = useRef<HTMLDivElement | null>(null);
+  /** 内容底部的滚动坐标（**不含**尾部留白）。留白高度一变（回合结束撤 compact、
+   *  钉顶撑 anchor-pad）都不影响它，所以它才是稳定的"最新内容在哪"。
+   *  算法 = `scrollHeight − Σ 留白高度`：两个留白都是**纯空白**元素，扣掉它们的总高度
+   *  正好得到最后一个真实元素（回合 / 排队气泡 / 处理中行）的底边；不需要额外插哨兵节点，
+   *  也就不必改 `.timeline` 的子元素顺序。 */
+  const contentBottomOf = useCallback((el: HTMLElement) => {
+    const blank = (compactSpacerRef.current?.offsetHeight ?? 0) + (anchorSpacerRef.current?.offsetHeight ?? 0);
+    return el.scrollHeight - blank;
+  }, []);
+  /** 「最新内容」应有的 scrollTop：内容底部贴到视口底，再留 CONTENT_TAIL_GAP_PX 呼吸位。 */
+  const contentTailTarget = useCallback((el: HTMLElement) => {
+    const max = Math.max(0, el.scrollHeight - el.clientHeight);
+    return Math.max(0, Math.min(contentBottomOf(el) - el.clientHeight + CONTENT_TAIL_GAP_PX, max));
+  }, [contentBottomOf]);
+  /** ★ 发送锚顶的唯一 owner：把「本次发送的那条用户消息」放到对话区顶部往下
+   *  ANCHOR_TOP_OFFSET_PX 处，并让它一直待在那儿（位置由本函数 + update() 的
+   *  增量跟随共同维持，二者不会互相抢：跟随只补增长量，gap 因此恒等于 54）。
+   *
+   *  为什么锚点取**真实 `.user-message` 元素**而不是 `#chat-anchor`（09-12 根因）：
+   *  `#chat-anchor` 挂在回合列表**末尾**（在真实回合组之后），它的 top 并不等于用户
+   *  消息的 top —— 一旦真实回合组里已经有内容，按它钉出来就是错的（实测连发第 2 条
+   *  gap=418）。真实消息元素才是"那条消息"本身。
+   *
+   *  为什么要**实测校验**（`gapErr`）而不是只信一次计算：锚点会从乐观气泡换成真实消息、
+   *  上游渲染时序也会变，任何一次算错的落点如果没人纠正就会一直错下去（这就是这一天
+   *  反复出现"位置不对"的机制）。这里每次调用都量一次实际 gap，偏差 > 4px 才一次性
+   *  修正；正常情况下偏差为 0，校验不触发，所以不会跟跟随打架。 */
+  const pinSentMessage = useCallback((el: HTMLElement, threadId?: string | null) => {
+    // 锚点 = 最后一个回合组里的真实用户消息（前提：这个回合是本次发送新建的，
+    // 即不在发送前的回合基线里）；还没有真实消息时退回乐观气泡。
+    const groups = el.querySelectorAll<HTMLElement>(".turn-group");   // 只在时间线子树里查（全文档查一次几万节点）
+    const lastGroup = groups[groups.length - 1];
+    const baseline = optimisticBaselineRef.current;
+    const lastId = lastGroup?.id?.startsWith("turn-") ? lastGroup.id.slice(5) : "";
+    const isNewTurn = Boolean(lastId) && !(baseline.threadId && baseline.turnIds.has(lastId));
+    let anchor: HTMLElement | null = null;
+    // ⛔ 锚点必须是「**本次发送的那条真实消息**」，不能退回挂在时间线**末尾**的乐观气泡。
+    // 为什么（用户实测：「我排队消息点立即发出去了，Codex发出来的消息还在我消息上面运行呢」）：
+    // 「立即」走 `turn/steer`，引擎的后续输出是**追加进那个已有回合组**里的，而乐观气泡在
+    // 所有回合组**之后** —— 钉住气泡就等于把视口钉在"回合内容的后面"，于是后续输出出现在
+    // 气泡（= 用户消息）**上方**。取组内**最后一条** `.user-message` 才是刚发的那条：
+    //   · 正常发送 → isNewTurn 为真，组里只有这一条，取最后一条 = 同一条；
+    //   · steer    → 不是新回合，但组里有多条 user message，最后一条正是刚注入的这条。
+    const userMessages = lastGroup ? [...lastGroup.querySelectorAll<HTMLElement>(".user-message")] : [];
+    const lastUserMessage = userMessages[userMessages.length - 1] ?? null;
+    // 取真实消息的三个条件（任一成立即可，互为兜底）：
+    //  ① isNewTurn —— 正常发送：这个回合是本次新建的；
+    //  ② userMessages.length > 1 —— steer 把消息补进已有回合（组里有多条）；
+    //  ③ 气泡已经不在 —— 兜底：此时再退回 `#chat-anchor` 必然 `pin-miss`，视口会掉回贴底
+    //     （实测「打断 + 新回合」路径：queue/start 已经建好新回合、thread 先更新，基线因此
+    //      包含了它 → ① 判假；组里又只有一条 → ② 判假；气泡已被确认卸载 → 掉回贴底 gap=359）。
+    const bubble = document.getElementById("chat-anchor");
+    if (lastUserMessage && (isNewTurn || userMessages.length > 1 || !bubble)) anchor = lastUserMessage;
+    if (!anchor) anchor = bubble;
+    if (!anchor || !anchor.isConnected) { dbg("pin-miss", { isNewTurn, users: userMessages.length }); return false; }
+    const anchorH = anchor.getBoundingClientRect().height;
+    // 用户消息自身超过一屏 → 钉顶没有意义（整条装不下），直接让用户看到回复
+    if (anchorH > el.clientHeight) {
+      dbg("clear-anchor", { at: "long:msg", h: Math.round(anchorH), ch: el.clientHeight });
+      anchorTopRef.current = false;
+      clearAnchorPad();
+      stickToBottomRef.current = true;
+      selfScrollUntilRef.current = Date.now() + 80;
+      scrollToOffsetInstant(el, contentTailTarget(el));
+      pinnedScrollTopRef.current = el.scrollTop;
+      return true;
+    }
+    // 留白固定给**一整屏**：保证「锚点滚到顶部」这个目标永远可达（不依赖锚点高度，
+    // 也就不用随锚高反复改高度 → 没有新的 scrollHeight 突变源）。
+    const pad = anchorSpacerRef.current;
+    if (pad && pad.style.height !== `${el.clientHeight}px`) pad.style.height = `${el.clientHeight}px`;
+    const key = isNewTurn ? `turn-${lastId}` : "opt";
+    const gapErr = (anchor.getBoundingClientRect().top - el.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
+    // 「刚切回自己这条会话」= 休眠钉顶的复活：必须**当first处理**（立即落位、解除超屏锁）。
+    // 否则会走下面的延帧纠偏，而切回来这一帧的几何是"脏"的（留白刚重新撑起来、scrollTop
+    // 还是上一会话的），中间那一帧足以让跟随先按 dist 把视口推到内容底部 —— 实测打点：
+    // pin-fix{err:214} 与跟随抢同一帧，最后停在 gap=481（用户看到的就是"切回来钉顶没了"）。
+    const returned = pinDormantSeenRef.current;
+    if (returned) { pinDormantSeenRef.current = false; pinGapLockedRef.current = null; }
+    const first = pinnedAnchorKeyRef.current !== key || returned;
+    pinnedAnchorKeyRef.current = key;
+    // 记下"这个钉顶属于哪个会话"：切走再切回**同一条**会话时，位置要由钉顶恢复，
+    // 而不是被开会话时的状态清零抹掉（用户实测：「切换会话，钉顶没了」）。
+    // ⚠️ 必须用调用方传入的 threadId，不能用 threadRef.current —— 它是被动 effect 里
+    // 更新的，布局 effect 期间还停留在上一个会话，会记错归属。
+    pinThreadIdRef.current = threadId ?? null;
+    // ⛔ 基线**只在真正钉顶/修正时**刷新，位置已经对了就一个字都不要碰它。
+    // 这是「自动跟随又没了」的根因（09-13 用户截图：消息钉在顶上，正文却一路流出
+    // 输入框外、最新一行永远看不到）：本函数每次 thread 更新都会被调用，若每次都把
+    // 基线刷成当前内容底部，update() 里的 `growth = 内容底部 − 基线` 永远 ≈ 0，
+    // 攒不到 FOLLOW_STEP_PX(60) → 跟随一次都不触发。基线必须让增长量**累积**。
+    // 首次落位**立即**执行（用户要的第一时间就在那个位置）；之后的复核若发现偏差，
+    // 延到下一帧再量一次才改：本帧布局常常还在收敛（content-visibility 提交、
+    // 代码高亮/字体完成），照当帧 gap 直接改 scrollTop 会过冲（实测 332 → −226 → −32
+    // 三次来回）。下一帧仍偏才修，一次到位。
+    if (first) {
+      anchorHeightBaselineRef.current = contentBottomOf(el);
+      dbg("pin-apply", { key, gapErr: Math.round(gapErr), top: Math.round(el.scrollTop) });
+      selfScrollUntilRef.current = Date.now() + 80;
+      scrollToOffsetInstant(el, el.scrollTop + gapErr);
+      pinnedScrollTopRef.current = el.scrollTop;
+      return true;
+    }
+    // ★ 交棒规则（09-13 定稿，修「来回拉扯」的真正来源）：
+    //   「消息稳在 54px」与「最新一行永远可见」在回复长过视口时**必然矛盾**——
+    //   跟随为了露出新内容要把视口往下推，钉顶为了让 gap 恒等于 54 又要把它拉回来，
+    //   两个 owner 每 60px 打一轮（实测打点：follow-grow{+65} → pin-fix{−65} 循环），
+    //   用户看到的就是抖。所以：内容一旦长出视口，**钉顶停止纠偏**、位置交给跟随，
+    //   消息自然往上走 —— 这正是用户要的「agent 消息很丝滑往下流、自动跟随」。
+    //   短回复（未超屏）时继续纠偏，消息就稳稳待在 54px。
+    const overflow = contentBottomOf(el) - el.scrollTop - el.clientHeight;
+    if (overflow > 4) { pinGapLockedRef.current = key; return true; }
+    if (pinGapLockedRef.current === key) return true;
+    if (Math.abs(gapErr) <= 8) return true;
+    anchorHeightBaselineRef.current = contentBottomOf(el);
+    if (pinFixRef.current) cancelAnimationFrame(pinFixRef.current);
+    selfScrollUntilRef.current = Date.now() + 200;
+    pinFixRef.current = requestAnimationFrame(() => {
+      pinFixRef.current = 0;
+      if (!anchorTopRef.current) return;
+      // ⚠️ 归属校验（09-13 审计）：这个 rAF 可以从上一个会话挂到下一次渲染才执行，
+      // 而 `el` 是跨会话不重建的 .timeline、`#chat-anchor` 此时已是**新会话**渲染的元素 ——
+      // 不校验就会在新会话第一帧莫名滚一下，还会把落点记账写成别的会话的值。
+      if (pinThreadIdRef.current !== (threadId ?? null)) return;
+      const now = (anchor.isConnected ? anchor : document.getElementById("chat-anchor")) as HTMLElement | null;
+      if (!now) return;
+      const err = (now.getBoundingClientRect().top - el.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
+      if (Math.abs(err) <= 4) return;
+      dbg("pin-fix", { key, err: Math.round(err), top: Math.round(el.scrollTop) });
+      scrollToOffsetInstant(el, el.scrollTop + err);
+      pinnedScrollTopRef.current = el.scrollTop;
+    });
+    return true;
+  }, [clearAnchorPad, contentBottomOf, contentTailTarget]);
+  /** 最近一次钉顶实际落到的 scrollTop。用于区分「程序滚动」与「用户滚到底」：
+      锚顶时若锚点下方内容不足，scrollTop 会被浏览器钳到 maxScroll（= 贴底位置），
+      这个「非用户意愿」的增大若被 update() 当成用户滚到底就会解除钉顶（09-12
+      实测：连发第二/三条正是这样退回贴底）。 */
+  const pinnedScrollTopRef = useRef(-1);
+  /** 内容已长出视口后，这个锚点不再做 gap 纠偏（交棒给跟随，避免两个 owner 互拉）。 */
+  const pinGapLockedRef = useRef<string | null>(null);
+  /** 当前钉顶属于哪个会话：切走再切回**同一条**会话时要靠它决定"保留还是清掉"锚定状态。 */
+  const pinThreadIdRef = useRef<string | null>(null);
+  /** 钉顶曾经"休眠"过（切到了别的会话）—— 回来那一次必须**立即**落位，见 pinSentMessage。 */
+  const pinDormantSeenRef = useRef(false);
+  /** 落点复核修正的 rAF id（延一帧去抖，见 pinSentMessage）。 */
+  const pinFixRef = useRef(0);
+  /** 已经钉过的锚点标识（`turn:<id>` / `opt:<id>`）。**只钉一次**：同一个锚点后续的
+      thread 更新只刷新基线，滚动完全交给 update() 里的增量跟随。
+      为什么必须有这个（09-12 用户反馈「钉顶和最新跟随来回拉扯、上下弹跳」）：
+      此前钉顶 effect 在**每次**流式更新都按绝对坐标重新钉回去（= 往上滚），而
+      update() 又按增长量往下推（= 往下滚）—— 两个 owner 反方向抢，就有了弹跳。 */
+  const pinnedAnchorKeyRef = useRef<string | null>(null);
+  /** 钉顶过渡动画的 rAF id（同一个锚点只播一次入场动画；新动画开始前先取消旧的）。 */
+  const anchorGlideRef = useRef(0);
+  /** 钉顶入场：短距离用 ~180ms easeOut 滑过去（用户要的「丝滑过渡」），长距离直接瞬移
+      （切会话/首次定位）。**只用于钉顶落位这一次**，流式跟随永远瞬时——
+      跟随若带动画，动画中途内容继续增高会互相 retarget，就是历史上那个抖动。 */
+  const glideTo = useCallback((el: HTMLElement, target: number) => {
+    const from = el.scrollTop;
+    const delta = target - from;
+    if (anchorGlideRef.current) cancelAnimationFrame(anchorGlideRef.current);
+    if (!Number.isFinite(delta) || Math.abs(delta) < 2 || Math.abs(delta) > 240) {
+      el.scrollTop = target;
+      anchorGlideRef.current = 0;
+      return;
+    }
+    const t0 = performance.now();
+    const DURATION = 180;
+    const step = (now: number) => {
+      const p = Math.min(1, (now - t0) / DURATION);
+      const eased = 1 - Math.pow(1 - p, 3);
+      el.scrollTop = from + delta * eased;
+      anchorGlideRef.current = p < 1 ? requestAnimationFrame(step) : 0;
+    };
+    anchorGlideRef.current = requestAnimationFrame(step);
+  }, []);
   const [workStartedAt, setWorkStartedAt] = useState<number | null>(null);
-  const [nowTick, setNowTick] = useState(() => Date.now());
+  // 注意：这里曾有一个 `nowTick` 每秒 setState（原意给「已工作 X 秒」计时），但那个指示
+  // 已删除、App 层再无任何读取点 → 唯一效果是**每秒强制 App 全量重渲染一次**
+  // （App 是 1.1MB 单组件，多会话时 workStartedAt 几乎长期非空 = 常驻开销）。
+  // 相对时间的显示由各子组件自持的 30s tick 负责，App 层不再需要。
   const scrollRef = useRef<HTMLDivElement>(null);
   const timelineWrapRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -7907,10 +8462,13 @@ export default function App() {
       if (!stickToBottomRef.current) return;
       const el = scrollRef.current;
       if (!el) return;
-      // .timeline 有 scroll-behavior:smooth，直接赋值 scrollTop 会触发平滑动画导致跟随滞后，须瞬时贴底
-      el.style.scrollBehavior = "auto";
-      el.scrollTop = el.scrollHeight;
-      el.style.scrollBehavior = "";
+      // ⛔ 落点必须走 contentTailTarget（= 内容底部，**不含**尾部留白），绝不能写 scrollHeight。
+      // 这里是第二个 scrollTop owner，曾经踩实：钉顶期间用户多打一行（输入框撑高）→
+      // 这个观察器按 scrollHeight 把视口推下去 64px~一整屏（推进留白），下一帧钉顶的
+      // 几何纠偏又把它拉回 54px → 用户看到的就是**"下跳一下再上跳一下"**（09-13 审计确认）。
+      // 钉顶进行中一律不碰滚动条：位置由 pinSentMessage 负责，这里插手就是抢 owner。
+      if (anchorTopRef.current) return;
+      scrollToOffsetInstant(el, contentTailTarget(el));
     });
     ro.observe(wrap);
     return () => ro.disconnect();
@@ -8563,6 +9121,26 @@ export default function App() {
 /** 长会话首屏最多渲染的回合数：软件渲染下全量挂载几千个回合是「切会话慢」的主因，
  *  默认只渲染最近这么多回合，更早的由「显示更早的 N 条消息」按需展开。 */
 const TURN_WINDOW = 40;
+/** 发送锚顶的落点偏移：钉顶时让锚点顶部再**下移**这么多像素，而不是紧贴视口上沿。
+ *  用户反馈（09-12 晚，附截图）：「太高了，往下放两行」——原来只上移 6px，消息首行
+ *  几乎贴着对话区上边缘，`已深度思考` 之类的头部也被顶到视口最上沿。
+ *  取两行正文的高度：正文 14px × line-height 1.72 ≈ 24px/行 → 两行 ≈ 48px，
+ *  外加原有 6px 余量 = 54。改这个值即可整体上下平移钉顶位置。 */
+const ANCHOR_TOP_OFFSET_PX = 54;
+/** 用户消息固定槽位（09-12 架构改，**已关**）：曾经想用 CSS `position: sticky` 让位置
+ *  由布局保证、彻底不碰滚动条。实测不成立——sticky 只能在**包含块内部**位移，而用户消息的
+ *  包含块是 `.turn-group`：刚发消息时那个组里只有这条消息（~72px），下方没有空间可借，
+ *  sticky 根本钉不住（实测连发第 2 条 gap=396），而把留白放到 `.timeline` 末尾是**兄弟节点**、
+ *  扩不了包含块。除非给回合组塞一个动态高度的尾巴（高度一变就是新的 scrollHeight 突变源），
+ *  否则 sticky 在这个结构里无解。故回到「滚动式锚顶」：钉一次 + 按增长量跟随（见下方注释），
+ *  位置观感等价，且没有包含块限制。 */
+const STICKY_USER_SLOT = false;
+/** 尾部留白（`.timeline-bottom-spacer*`）**不参与**「跟到哪」的计算：
+ *  所有"到底部"的目标一律取**内容底部**（`#timeline-content-end` 哨兵）而不是 `scrollHeight`。
+ *  这是 09-12 那次「切走再切回：用户消息被切在视口顶 + 下方一大片空白」的根因——
+ *  紧随留白一起滚到底 = 滚进留白里。留白只负责给锚点腾出可滚空间，绝不改变落点。
+ *  取 0 = 内容底部正好贴住视口底沿（留白仍在下方、看不见）。 */
+const CONTENT_TAIL_GAP_PX = 0;
 /** 常用命令置顶顺序（用户高频：模型/思考/计划/目标/压缩优先） */
 const COMMON_COMMAND_ORDER = ["plan", "goal", "model", "effort", "compact", "new", "resume", "review", "status", "help"];
 const commandMatches = useMemo(() => {
@@ -8596,6 +9174,13 @@ const commandMatches = useMemo(() => {
     () => (prompt.startsWith("#") && !prompt.includes(" ") ? matchSkillCatalog(mergedSkillCatalog, prompt.slice(1)) : []),
     [prompt, mergedSkillCatalog],
   );
+  /** ★ 流式性能（09-13）：给「只在内容结构性变化时才需要重算」的 useMemo 用的**稳定键**。
+   *  为什么需要它：`thread` 每条 delta 都换引用（mergeItem/mergeTurn 都是不可变更新），
+   *  而下面几个 useMemo 会 `flatMap` **全部回合 × 全部 items**、还要对每条消息跑引用解析正则
+   *  —— 依赖 `[thread]` 就等于**每帧全量扫描**（5000 回合的会话 = 每帧上万次正则）。
+   *  它们的产物只在「会话换了 / 回合数变了 / 末尾条目变了」时才真正需要更新，
+   *  所以键取这三样（`turns.length` 覆盖新回合，末尾 item id 覆盖同一回合内的新条目）。 */
+  const threadMemoKey = thread ? `${thread.id}:${thread.turns.length}:${thread.turns[thread.turns.length - 1]?.items.at(-1)?.id ?? ""}` : "";
   const availableContextItems = useMemo(() => {
     if (!thread) return [];
     const query = contextQuery.trim().toLowerCase();
@@ -8606,7 +9191,7 @@ const commandMatches = useMemo(() => {
     return entries.filter((item) => !contextItems.some((selected) => selected.id === item.id))
       .filter((item) => !query || item.text.toLowerCase().includes(query))
       .slice(-16).reverse();
-  }, [thread, contextItems, contextQuery]);
+  }, [threadMemoKey, contextItems, contextQuery]);
 
   // 「引用对话中的文件」候选：当前会话所有消息里出现过的文件/图片路径（附件段、localImage、文本中的绝对路径）
   const threadFileCandidates = useMemo(() => {
@@ -8639,7 +9224,7 @@ const commandMatches = useMemo(() => {
       }
     }
     return found.reverse(); // 最新的在前
-  }, [thread]);
+  }, [threadMemoKey]);
 
   function addSystemEvent(title: string, text: string, tone: SystemEvent["tone"] = "info") {
     setSystemEvents((current) => [...current, { id: crypto.randomUUID(), title, text, tone }]);
@@ -8736,32 +9321,96 @@ const commandMatches = useMemo(() => {
   // 回到底部按钮：内容可滚动且当前视口距底部超过一屏的 25% 时出现
   // 缓存 update，供「内容变化」时直接调用而不必重建监听器
   const updateBottomStateRef = useRef<() => void>(() => {});
+  /** 「用户接管视口」的统一入口（由 update effect 里的 `releaseToUser` 注入）。
+   *  给 JSX 侧用：任何要打断钉顶/跟随的按钮都必须走它，**不许直接写 anchorTopRef** ——
+   *  直接写会漏掉 pinGapLocked / pinFix / pinThreadId / pinDormantSeen 的复位，
+   *  留下"半死"的锚定状态（09-13 审计发现「回到底部」按钮就是这么写的）。 */
+  const releaseToUserRef = useRef<(why: string) => void>(() => {});
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return;
+    let lastTop = scroller.scrollTop; // 供 update 识别「指针拖拽期间的位置变化」
+    let pointerDown = false;
+    // 本 effect 与 [thread?.id, scrollRef] 绑定，所以这里捕获的就是"当前显示的会话"：
+    // 钉顶休眠在别的会话上时，跟随/贴底都按普通模式走（见 update 里的 gate）。
+    const myThreadId = thread?.id ?? null;
+    /** 用户接管视口：钉顶与贴底一起让位，并撤掉锚顶留白。
+     *  **只能被真实用户输入调用**（滚轮/触摸/键盘翻页/指针拖拽）——这是设计上的唯一解除信号。 */
+    const releaseToUser = (why: string) => {
+      dbg("release:" + why, { top: Math.round(scroller.scrollTop), was: anchorTopRef.current ? "pin" : stickToBottomRef.current ? "stick" : "none" });
+      if (!anchorTopRef.current && !stickToBottomRef.current) return;
+      stickToBottomRef.current = false;
+      anchorTopRef.current = false;
+      pinnedScrollTopRef.current = -1;
+      clearAnchorPad();
+    };
+    // ⚠️ 距底一律按**内容底部**算（不含尾部留白）：若用 scrollHeight，钉顶/跟随把视口停在
+    // 内容底部时 dist 仍等于留白高度（compact 64px）→「到底了」判定永远不成立，
+    // 贴底跟随再也开不回来（09-12：切换会话后跟随失效就是这么来的）。
+    const contentBottom = () => contentBottomOf(scroller);
     const update = () => {
-      const dist = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      const dist = contentBottom() - scroller.scrollTop - scroller.clientHeight;
+      // ── 钉顶期间的自动跟随：**一条规则 + 一个步长**（09-13 定稿）──
+      //   规则：「内容超出视口多少，就把视口往下补多少」——
+      //     · 没超出（短回复）→ 一动不动，消息稳在 54px；
+      //     · 超出了（长回复）→ 补到最新一行贴着视口底 = 自动跟随。
+      //   同一时刻只有一条成立，所以**结构上不可能**出现"跟随往下推、钉顶往回拉"的互拉。
+      //   步长：**攒够约两行（48px）才跟一次**，不是每帧都跟。打字机是逐字揭示的，
+      //   末行会随字数不断重排（换行位置一格一格往后挪），逐帧跟随 = 视口每帧都在动，
+      //   用户看到的就是「长消息换行跟自动跟随在抢，整个内容上下跳动」（09-13 用户实测）。
+      //   攒够一段再**整体**跟一次，两次之间视口完全静止——最新内容最多滞后 48px（约两行）。
+      const FOLLOW_STEP_PX = 48;
+      // 只在自己这条会话上跟随：钉顶可能正"休眠"在另一条会话上（切走又没切回来），
+      // 那种情况下这里必须走常规贴底逻辑，不能拿别人的锚定模式去动当前视口。
+      if (anchorTopRef.current && pinThreadIdRef.current === myThreadId) {
+        if (dist > FOLLOW_STEP_PX) {
+          selfScrollUntilRef.current = Date.now() + 80;
+          scrollToOffsetInstant(scroller, scroller.scrollTop + dist);
+          pinnedScrollTopRef.current = scroller.scrollTop;
+          lastTop = scroller.scrollTop;
+          return;
+        }
+      }
+      // 程序滚动的抑制窗内：只刷新基线，不做方向判定（否则自己的钉顶/贴底
+      // 会被当成用户滚动，误解除钉顶——09-12 调试探针实锤）
+      if (Date.now() < selfScrollUntilRef.current) { lastTop = scroller.scrollTop; return; }
       setAwayFromBottom(dist > scroller.clientHeight * 0.25);
-      // 向上滚动立即解除跟随（不等 25% 迟滞阈值）：wheel 只覆盖滚轮/触摸板，
-      // 拖滚动条、键盘 PageUp/方向键只产生 scroll 事件——靠"scrollTop 变小"识别向上。
-      // 没有这条，流式期间用户在迟滞区（4px~25% 视口）内往上拖会被下一帧拉回底部，
-      // 即"往上看回答会自动下滑直到回答给完"。
-      if (scroller.scrollTop < lastTop - 2 && dist > 4) stickToBottomRef.current = false;
       // 迟滞：距底 ≤4px 重新开启跟随；>25% 视口才关闭。中间地带保持原状，
       // 避免流式内容增高时 stick 反复翻转（此前 smooth 滚动动画的中间滚动事件
       // 会误关跟随，导致"消息发了不显示、停止后才出现"）。
-      if (dist <= 4) stickToBottomRef.current = true;
+      // ⚠️ 钉顶进行中不许把 stick 置真（09-13 审计）：(anchor=true, stick=true) 会同时成立，
+      // 而不同消费者对这对标志的解释不一致（有的看 `stick && !anchor`、有的只看 stick）
+      // → 同一状态在不同路径行为不同 = "有时跳有时不跳"，调阈值救不了。
+      if (dist <= 4 && !anchorTopRef.current) stickToBottomRef.current = true;
       else if (dist > scroller.clientHeight * 0.25) stickToBottomRef.current = false;
+      // ⛔ 这里**不再**用「scrollTop 方向」猜用户意图（09-12 拆除，勿加回来）。
+      // 那套启发式的实测结局：钉顶落点与记录值差 13px（浏览器 clamp / 内容重排造成，
+      // 不是用户操作）→ byUs 判定失败 → 紧接着流式内容长高让 scrollTop 增大 → 被当成
+      // 「用户滚到底」→ 钉顶自杀、留白归零、视口掉回内容底部。用户看到的就是
+      // 「发送后消息不在那个位置」「上下弹跳」。判据本身不可靠，任何阈值都救不了。
+      // 现在只有**真实用户输入**（滚轮 / 触摸 / 拖拽 / 键盘翻页）能解除，见下方监听器。
+      // 拖拽/框选（指针按下期间产生的滚动）也算用户操作：
+      if (pointerDown && Math.abs(scroller.scrollTop - lastTop) > 2) releaseToUser("drag");
       lastTop = scroller.scrollTop;
     };
-    // 向上滚轮 = 用户主动浏览，立即停止底部跟随（不等 25% 阈值，防止跟流式滚动打架）。
+    // ── 唯一 owner 的解除信号：真实用户输入 ──
+    // 为什么必须按输入事件判而不是按 scroll 事件判：流式内容增长、浏览器 clamp、
+    // content-visibility 重排都会让 scrollTop 自己动，从 scroll 事件里无法区分
+    // 「用户滚的」和「内容/浏览器弄的」。输入事件没有这个问题。
     const onWheel = (event: WheelEvent) => {
-      if (event.deltaY < 0) stickToBottomRef.current = false;
+      if (event.deltaY < 0) releaseToUser("wheel-up");
     };
+    const onTouchMove = () => releaseToUser("touch");
+    const onKeyDown = (event: Event) => {
+      const key = (event as unknown as { key?: string }).key ?? "";
+      if (["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown", " "].includes(key)) releaseToUser("key");
+    };
+    const onPointerDown = () => { pointerDown = true; };
+    const onPointerUp = () => { pointerDown = false; };
     updateBottomStateRef.current = update;
+    releaseToUserRef.current = releaseToUser;
     // rAF 节流：scroll 事件密集时 update 会读 scrollHeight/scrollTop 强制同步布局
     let raf = 0;
-    let lastTop = scroller.scrollTop; // 供 update 识别"向上滚动"（拖滚动条/键盘）
     const schedule = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; update(); }); };
     update();
     // 绑定只跟会话走：若依赖 thread，流式出字每帧都会销毁重建 ResizeObserver + 监听器，
@@ -8770,9 +9419,23 @@ const commandMatches = useMemo(() => {
     observer.observe(scroller);
     scroller.addEventListener("scroll", schedule, { passive: true });
     scroller.addEventListener("wheel", onWheel, { passive: true });
+    scroller.addEventListener("touchmove", onTouchMove, { passive: true });
+    scroller.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+    scroller.addEventListener("keydown", onKeyDown);
     const onPacketReveal = () => requestAnimationFrame(() => {
       update();
-      if (stickToBottomRef.current) scroller.scrollTo({ top: scroller.scrollHeight, behavior: "auto" });
+      // 钉顶模式下绝不抢滚动条：打字机揭示每帧都触发这里，若此时还贴底跟随，
+      // 两个滚动驱动互相拉扯 = 出字来回闪（09-12 调试探针实锤）
+      if (stickToBottomRef.current && !anchorTopRef.current) {
+        // 瞬时贴底（behavior:"auto" 会被 .timeline 的 CSS smooth 变成动画，与下次
+        // 揭示互相 retarget = 出字闪烁）；钉顶模式下 stick=false 不会进这里
+        selfScrollUntilRef.current = Date.now() + 80;
+        scroller.style.scrollBehavior = "auto";
+        scroller.scrollTop = contentTailTarget(scroller);
+        scroller.style.scrollBehavior = "";
+      }
     });
     window.addEventListener("codex:packet-reveal", onPacketReveal);
     return () => {
@@ -8780,9 +9443,40 @@ const commandMatches = useMemo(() => {
       observer.disconnect();
       scroller.removeEventListener("scroll", schedule);
       scroller.removeEventListener("wheel", onWheel);
+      scroller.removeEventListener("touchmove", onTouchMove);
+      scroller.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+      scroller.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("codex:packet-reveal", onPacketReveal);
     };
   }, [thread?.id, scrollRef]);
+  // 锚顶留白只在「当前会话的钉顶期间」有效：会话一变立刻归零，
+  // 否则切走再切回会在底部留一大段空白（用户实测「流动空间太大」）。
+  useEffect(() => {
+    clearAnchorPad();
+  }, [thread?.id, clearAnchorPad]);
+
+  // 会话切换耗时诊断（09-12 压测用）：openThread 落笔 switchStartRef，这里在 **DOM 已提交**
+  // 之后结算一次——这才是用户真正感知的「点一下到看见内容」的时间。
+  // 写进 window.__adbg（e2e 场景会 dump），不参与任何业务逻辑。
+  useLayoutEffect(() => {
+    if (!thread?.id || !switchStartRef.current) return;
+    const ms = Math.round(performance.now() - switchStartRef.current);
+    switchStartRef.current = 0;
+    try {
+      const w = window as any;
+      if (!w.__adbg) w.__adbg = [];
+      w.__adbg.push({ r: "thread-switch", id: String(thread.id).slice(0, 8), ms });
+    } catch { /* 诊断失败不影响功能 */ }
+  }, [thread?.id]);
+  // 多会话性能（09-12 P1）：把「当前正在查看哪个会话」上报主进程，主进程据此只把
+  // 该会话的高频事件（各种 delta / item 全文 / outputDelta）转发给渲染层——
+  // 后台会话的流式事件不再白白序列化跨进程、到了再被丢掉（N 会话 = N 倍无用开销）。
+  // 只订阅 thread?.id：覆盖 openThread / 新建会话 / 删除后回退 / 启动恢复全部路径。
+  useEffect(() => {
+    void window.codex.setActiveThread?.(thread?.id ?? null).catch(() => undefined);
+  }, [thread?.id]);
   // 流式出字时 scrollHeight 在涨，但既不触发 resize 也不触发 scroll，
   // 必须主动刷一次，否则「回到底部」按钮的出现时机是错的。
   useEffect(() => { updateBottomStateRef.current(); }, [thread]);
@@ -8796,16 +9490,53 @@ const commandMatches = useMemo(() => {
     // 必须瞬时：.timeline 的 CSS scroll-behavior:smooth 会让 scrollTo 走平滑动画，
     // 表现为"从上往下滚动"，且动画目标基于发起时的 scrollHeight，内容随后增高会停在半路。
     // 这里消费后立即重置，之后的流式更新走常规 stick 跟随（smooth 跟手）。
-    if (switchJumpRef.current) {
-      switchJumpRef.current = false;
+    // 切会话瞬时定位**只对刚打开的那个会话、且当前没有钉顶**时生效。
+    // 见 switchJumpRef 声明处：裸布尔会被后续任意更新消费，把发送钉顶掀掉。
+    // 切会话瞬时定位**只对刚打开的那个会话**生效（裸布尔会被后续任意更新消费，
+    // 见 switchJumpRef 声明处）。这里**不再**附加 `!anchorTopRef.current`：
+    // 锚定状态的清零已经归 openThread 管（见那里的注释），在这里再挡一下只会让
+    // "定位 + 清留白"被整段跳过 —— 实测后果就是切回来 pad 残留一整屏、定位错乱。
+    // ★ 唯一 owner：把本次发送的用户消息钉在顶部（自带几何校验，见 pinSentMessage）。
+    // **必须排在"切会话瞬时定位"之前**：切回自己那条仍被钉着的会话时，位置要由钉顶
+    // 恢复，而不是被贴底逻辑掀掉（用户实测：「切换会话，钉顶没了」）。
+    // pinSentMessage 返回 false（锚点不在当前渲染窗口里）才继续往下走贴底逻辑。
+    // `pinDormant` = 钉顶属于**别的**会话（切走期间的休眠态）：此时它既不生效，
+    // 也不能被下面的贴底分支销毁 —— 否则切回来就恢复不了了。
+    const pinDormant = anchorTopRef.current && pinThreadIdRef.current !== thread?.id;
+    if (pinDormant) pinDormantSeenRef.current = true;   // 记下"休眠过"，回来时立即落位
+    if (anchorTopRef.current && !pinDormant && !STICKY_USER_SLOT && pinSentMessage(el, thread?.id)) return;
+    if (switchJumpRef.current && switchJumpRef.current.id === thread?.id && switchJumpPending()) {
+      switchJumpRef.current = null;
+      dbg("clear-anchor", { at: "switch-jump" });
+      // 切到**别的**会话 = 全新定位（贴底看最新）。休眠中的钉顶不属于这里，不能顺手清掉。
+      if (!pinDormant) {
+        anchorTopRef.current = false;
+        pinnedAnchorKeyRef.current = null;
+        pinGapLockedRef.current = null;
+      }
+      clearAnchorPad();   // 锚顶留白不能串到另一条会话（切回来时钉顶会重新撑起来）
       stickToBottomRef.current = true;
-      jumpToBottom(el);
+      jumpToBottom(el, undefined, contentTailTarget);
       return;
     }
     if (!stickToBottomRef.current) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
+    selfScrollUntilRef.current = Date.now() + 80;
+    dbg("stick-jump", { from: Math.round(el.scrollTop), to: Math.round(contentTailTarget(el)) });
+    // 贴底跟随必须瞬时：.timeline 的 CSS scroll-behavior:smooth 会让
+    // behavior:"auto" 也走平滑动画，动画与下一次内容增长互相 retarget = 抖动
+    scrollToOffsetInstant(el, contentTailTarget(el));
   }, [thread]);
-  useEffect(() => {
+  // 锚顶滚动：乐观气泡挂载后把这条新消息顶到对话区顶部（WorkBuddy 观感）。
+  // 必须瞬时（scrollToOffsetInstant）：.timeline 的 CSS scroll-behavior:smooth 会让
+  // scrollTo({behavior:"auto"}) 也走平滑动画，动画中途与流式跟随互相打架。
+  useLayoutEffect(() => {
+    if (!optimisticInput || !anchorTopRef.current) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    // 乐观气泡刚挂上就先钉一次（此时真实回合可能还没建出来）；之后每次 thread 更新
+    // 都由 [thread] 布局 effect 调同一个 pinSentMessage 复核并纠正。
+    pinSentMessage(el, thread?.id);
+  }, [optimisticInput, pinSentMessage]);  useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("theme", theme);
     // 同步窗口外观：深色模式下标题栏 overlay 与背景跟随主题（不再残留浅色外框）
@@ -8919,6 +9650,28 @@ const commandMatches = useMemo(() => {
     });
     return () => { offDevice(); offCommand(); };
   }, []);
+  // 手机提交了正确的 6 位配对码 → 这里收到挂起请求，弹审批卡等用户点「允许/拒绝」
+  // 09-13：机器人管理面板里也有配对卡了——若用户正开着它，请求直接在面板里审批，
+  // 不再叠弹「手机远控」面板（两层弹窗很割裂）。
+  useEffect(() => { botManagerOpenRef.current = botManagerOpen; }, [botManagerOpen]);
+  useEffect(() => {
+    const offPair = window.codex.onRemotePairRequest((request) => {
+      setPairPending((current) => current.some((r) => r.rid === request.rid) ? current : [...current, request]);
+      // 审批只能在「手机远控」面板里做，而用户此刻大概率没开着它 —— 请求一到就把
+      // 面板顶到前台并刷新状态，否则请求会在 2 分钟后静默超时（等于"手机连不上"）。
+      if (!botManagerOpenRef.current) setMobileRemoteOpen(true);
+      void loadPairStates();
+      showToast("手机请求连接", `${request.name}：请${botManagerOpenRef.current ? "在本面板" : "在弹出的面板"}点允许或拒绝`);
+    });
+    // Bot Channel（微信/QQ/飞书/钉钉/Telegram）聊天里发来 6 位授权码 → 同一张审批卡（rid 以 bp- 开头）
+    const offBotPair = window.codex.onBotPairRequest((request) => {
+      setPairPending((current) => current.some((r) => r.rid === request.rid) ? current : [...current, { rid: request.rid, name: request.name, createdAt: Date.now() }]);
+      if (!botManagerOpenRef.current) setMobileRemoteOpen(true);
+      void loadPairStates();
+      showToast("机器人请求配对", `${request.name}：请${botManagerOpenRef.current ? "在本面板" : "在弹出的面板"}点允许或拒绝`);
+    });
+    return () => { offPair(); offBotPair(); };
+  }, []);
   useEffect(() => {
     if (showLogin) return;
     function onKey(event: globalThis.KeyboardEvent) {
@@ -9001,16 +9754,14 @@ const commandMatches = useMemo(() => {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [showLogin, skillInstall, skillRemove, agentAsk, appConfirm, appPrompt, memoryPreview, searchPreview, filePreview, lightbox, modelEditor, connectorEditorOpen, connectorTemplateModal, commandEditor, subAgentEditorOpen, expertTeamEditorOpen, goalsOpen, memoryCenterOpen, memoryConfigOpen, infoModal, reviewReport, settingsOpen, shortcutsOpen, paletteOpen, skillMenuOpen, connectorMenuOpen, attachmentMenuOpen, contextOpen, switcherOpen, mobileNav, sidebarFlyout, autoFormVisible, taskMenuOpen, botManagerOpen, mobileRemoteOpen, ctxMenuOpen, accountMenuOpen, rightOpen]);
-  useEffect(() => {
-    if (workStartedAt == null) return;
-    const timer = window.setInterval(() => setNowTick(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [workStartedAt]);
+  // （原 App 层每秒 nowTick 定时器已移除：无读取点，纯重渲染开销，见 nowTick 处注释。）
 
   async function refreshThreads() {
     // 主侧栏只展示未归档会话；归档记录由「设置 → 归档管理」单独查看、恢复或删除。
     const result = await window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc", archived: false });
-    setThreads(result.data ?? []);
+    const list = result.data ?? [];
+    setThreads(list);
+    threadsRef.current = list;
   }
 
   // 后台会话（渠道机器人/手机端等在主进程创建的线程）不进当前会话事件流，
@@ -9198,8 +9949,11 @@ const commandMatches = useMemo(() => {
   async function startQueued(id?: string) {
     if (!thread) return;
     const entry = id ? queue.find((q) => q.id === id) : undefined;
-    // 「立即」= 提供思路：有活跃回合时用 turn/steer 把这条消息追加到当前回合（不打断，让任务继续跑）；
-    // 空闲时才把它启动成一个新回合。turn/steer 不触发 turn/started，只是给正在跑的回合补一段用户输入。
+    // 「立即」= 把这条消息交给引擎插进当前回合（`turn/steer`，**不打断**当前任务）。
+    // 定案（用户 09-13）：「恢复成原来那种，排队消息点立即发出去后，弹窗提醒」——
+    // 所以这里**不再**尝试在聊天区把它当普通消息展示（那套实验引入了回归，已撤）：
+    // 消息由引擎插进正在跑的回合流里，界面按引擎回推的 item 正常渲染；
+    // 用户消息不会被折叠进过程组（见 src/lib/turn-fold-plan.mjs 的 isAnchor 第 ① 条）。
     if (activeTurnId && entry) {
       try {
         await window.codex.request("turn/steer", {
@@ -9210,7 +9964,7 @@ const commandMatches = useMemo(() => {
         });
         await deleteQueued(entry.id);
         void refreshQueue(thread.id);
-        showToast("发送成功", "排队消息已提供给当前任务");
+        showToast("已发送", "这条排队消息已并入当前任务");
       } catch (error: any) {
         showToast("发送失败", error.message);
       }
@@ -9218,8 +9972,10 @@ const commandMatches = useMemo(() => {
     }
     try {
       await window.codex.request("thread/queue/start", { threadId: thread.id, ...(id ? { queuedSubmissionId: id } : {}) });
+      // 同「回合结束自动启动」：先本地摘掉，避免与真实气泡并存（否则会短暂重复展示）
+      if (id) setQueue((current) => current.filter((entry) => entry.id !== id));
       void refreshQueue(thread.id);
-      showToast("发送成功", "排队消息已开始执行");
+      showToast("已发送", "排队消息已开始执行");
     } catch (error: any) {
       showToast("发送失败", error.message);
     }
@@ -9600,7 +10356,7 @@ const commandMatches = useMemo(() => {
                     interests: String(args.interests ?? "").trim(),
                     habits: String(args.habits ?? "").trim(),
                   });
-                  setIdentityOnboarded(true);
+                  setIdentityGreeted(true);
                   showToast(assistantName ? `你好，${assistantName}！` : "用户中心已建立", assistantName ? "这个名字已经正式归你啦，以后新会话都会用它" : "初次见面档案已保存，后续新会话不再出现");
                   await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: "用户中心档案已保存并全局生效（含称呼/场景/风格/爱好等维度）。请热情确认一句后结束引导。" }], success: true });
                 } catch (error: any) {
@@ -9710,6 +10466,56 @@ const commandMatches = useMemo(() => {
                 const answer = await new Promise<string>((resolve) => setAgentAsk({ threadId: askThreadId, question, options, recommended: options[0] ?? null, allowFree: args.allowFree !== false, resolve }));
                 // ESC 关闭问答卡时 answer 为空串：明确告知引擎用户跳过了选择，避免它等一个不存在的选项
                 await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: answer ? `[用户选择] ${answer}` : "[用户取消了选择] 请继续其它工作，或稍后换一种方式再问。" }], success: true });
+              } else if (event.params?.tool === "skill_search") {
+                const query = String(args.query ?? "").trim();
+                const [market, local] = await Promise.all([
+                  window.codex.listMarketSkills({ query }).catch(() => null),
+                  window.codex.listLocalSkills().catch(() => []),
+                ]);
+                const installedNames = new Set((local as any[]).map((s: any) => normSkillName(s.name)));
+                const rows = (market?.items ?? []).slice(0, 6).map((s: any) => `- ${s.name}｜${String(s.description ?? "").slice(0, 80)}｜${installedNames.has(normSkillName(s.name)) ? "已安装" : "未安装"}`);
+                const text = rows.length
+                  ? `技能市场「${query}」搜索结果：\n${rows.join("\n")}\n要装哪条就调 skill_install 并把 query 传它的准确名称。`
+                  : `技能市场没有搜到「${query}」相关技能。请手工完成本任务，并在回复末尾加一行「💡 未找到合适技能：${query}」。`;
+                await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text }], success: true });
+              } else if (event.params?.tool === "skill_install") {
+                const query = String(args.query ?? "").trim();
+                const market = await window.codex.listMarketSkills({ query }).catch(() => null);
+                const target = (market?.items ?? []).find((s: any) => normSkillName(s.name) === normSkillName(query)) ?? (market?.items ?? [])[0];
+                if (!target) {
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `技能市场没有「${query}」的匹配技能。请手工完成本任务，并在回复末尾加一行「💡 未找到合适技能：${query}」。` }], success: true });
+                } else {
+                  const r = await window.codex.installMarketSkillLight(target);
+                  showToast("技能已自主安装", `${r.name}（${r.discovered ? "引擎已发现" : "下回合生效"}）`);
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `技能「${r.name}」已安装（市场来源，已通过安全校验）。${r.engineCheckMessage}。现在请先读它的 SKILL.md（skills 目录下同名文件夹），严格按说明书使用。` }], success: true });
+                }
+              } else if (event.params?.tool === "connector_search") {
+                const query = String(args.query ?? "").trim();
+                const [templates, configured] = await Promise.all([
+                  window.codex.listConnectorTemplates(),
+                  window.codex.listConnectors().catch(() => []),
+                ]);
+                const configuredIds = new Set((configured as any[]).map((c: any) => c.id));
+                const rows = (templates as any[])
+                  .filter((t: any) => !query || `${t.name}${t.summary}`.toLowerCase().includes(query.toLowerCase()))
+                  .slice(0, 8)
+                  .map((t: any) => `- ${t.id}｜${t.name}｜${String(t.summary ?? "").slice(0, 70)}｜${configuredIds.has(t.id) ? "已配置" : "未配置"}${(t.fields ?? []).some((f: any) => f.secret) ? "（需凭据）" : ""}`);
+                const text = rows.length
+                  ? `内置 MCP 连接器模板：\n${rows.join("\n")}\n要装某条：先用 agent_ask 征得用户同意，再调 connector_install 传它的 id（安装会重启引擎并中断当前回合）。`
+                  : "没有匹配的内置连接器模板。请手工完成，或建议用户在 设置 → 连接器 里自定义。";
+                await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text }], success: true });
+              } else if (event.params?.tool === "connector_install") {
+                const templateId = String(args.templateId ?? "").trim();
+                const templates = await window.codex.listConnectorTemplates();
+                const template = templates.find((t: any) => t.id === templateId);
+                if (!template) {
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `没有 id 为「${templateId}」的连接器模板。请先调 connector_search 查询。` }], success: false });
+                } else {
+                  const draft: ConnectorDraft = { id: template.id, name: template.name, transport: template.transport, command: template.command, args: template.args, url: template.url };
+                  await window.codex.saveConnector(draft);
+                  showToast("连接器已安装", template.name);
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `MCP 连接器「${template.name}」已配置并生效（引擎已重启，当前回合已中断）。请告诉用户：重新发一条消息即可继续，该连接器的工具已可直接使用。` }], success: true });
+                }
               } else {
                 await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `Dynamic tool ${event.params?.tool ?? "unknown"} is not registered by this harness.` }], success: false });
               }
@@ -9734,15 +10540,24 @@ const commandMatches = useMemo(() => {
           markThreadRunning(params.threadId, params.turn?.id ?? params.turnId);
         } else if (method0 === "turn/completed") {
           markThreadStopped(params.threadId);
+          // 回合结束：锚顶留白归零。它只在「钉顶期间」为让锚点滚得上去而存在，
+          // 回合结束后继续留着就会在底部残留一大段空白（用户实测「流动空间太大，
+          // 汇总时上面消息都看不到」）。
+          // ⚠️ 必须限定**当前会话**（09-13 审计发现）：留白是当前会话的几何依赖，
+          // 后台会话跑完就跑完，顺手清掉当前会话的留白会让被 clamp 的 scrollTop 掉下来
+          // （短会话正是靠这一屏留白才够得着 54px）→ 画面无故跳一下且不恢复。
+          if (params.threadId === threadRef.current?.id) clearAnchorPad();
         } else if (method0 === "thread/status/changed") {
-          // 侧边栏每个会话的运行状态：即使不是当前会话也要更新，保证切走后转圈还在原会话
-          setThreads((current) => current.map((entry) => entry.id === params.threadId ? { ...entry, status: params.status } : entry));
-          // 状态明确非运行（completed 等）时兜底熄灭转圈，防 turn/completed 事件丢失导致卡转
-          if (params.status !== "inProgress" && params.status !== "running") {
-            markThreadStopped(params.threadId);
-          } else {
-            markThreadRunning(params.threadId);
-          }
+          // ⛔ 引擎的 `thread.status` 是**对象** `{type:"notLoaded"|"idle"|"systemError"|"active", activeFlags}`
+          // （只有 TurnStatus 才是字符串，见 .workbuddy/codex-schema/*.schemas.json）。
+          // 早期这里按字符串比较 → 对象恒不等于 "inProgress"/"running" ⇒ **永远走 markThreadStopped、
+          // 永远不可能 markThreadRunning**：在跑会话收到 status/changed（引擎等审批/等输入时会推
+          // {type:"active",activeFlags:[...]}）就当场被判成已停止 → 后台会话侧栏转圈中途消失、
+          // 切回或渲染层重载后真正的运行回合被归一化成 completed（停止键消失、后续消息绕过排队）。
+          const statusType = (params.status as any)?.type ?? params.status;
+          setThreads((current) => current.map((entry) => entry.id === params.threadId ? { ...entry, status: statusType } : entry));
+          if (statusType === "active") markThreadRunning(params.threadId);
+          else markThreadStopped(params.threadId);
         }
         // 渠道机器人等后台会话的 start/stop：走不到下面的当前会话事件流（threadId 过滤会拦掉），
         // 新建的机器人会话永远进不了侧栏 → 防抖刷新一次 thread/list
@@ -9903,7 +10718,17 @@ const commandMatches = useMemo(() => {
             void window.codex.showNotification(params.turn.error?.message ? "任务失败" : "任务完成", `${name.slice(0, 40)} ${params.turn.error?.message ? "运行失败" : "已运行完成"}`);
           }
         } catch { /* 通知失败不影响主流程 */ }
-        void window.codex.request("thread/queue/list", { threadId: params.threadId, limit: 1 }).then((result) => result.data?.[0] && window.codex.request("thread/queue/start", { threadId: params.threadId, queuedSubmissionId: result.data[0].id })).catch((error) => showToast("队列启动失败", error.message));
+        // 回合结束 → 自动启动下一条排队消息。
+        // ⛔ 必须**立刻从本地队列摘掉这一条**（用户实测「排队消息在聊天框里重复展示」）：
+        // 引擎把它变成真实用户消息气泡后，不会再保证发 `thread/queue/changed`，
+        // 于是 `.timeline-queue` 里那条「排队中」气泡会与真实气泡**同时存在**——
+        // 同一条消息显示两次，直到用户切会话/再发一条才刷新掉。
+        void window.codex.request("thread/queue/list", { threadId: params.threadId, limit: 1 }).then((result) => {
+          const head = result?.data?.[0];
+          if (!head) return undefined;
+          setQueue((current) => current.filter((entry) => entry.id !== head.id));
+          return window.codex.request("thread/queue/start", { threadId: params.threadId, queuedSubmissionId: head.id });
+        }).catch((error) => showToast("队列启动失败", error.message));
         // 计划模式：方案回合正常结束 → 弹「开始执行」确认条；失败则静默复位（错误已 toast）
         if (planTurnRef.current && planTurnRef.current.threadId === params.threadId && planTurnRef.current.turnId === String(params.turn?.id ?? "")) {
           if (!params.turn.error?.message) {
@@ -9914,7 +10739,37 @@ const commandMatches = useMemo(() => {
           planTurnRef.current = null;
           setPlanRunning(false);
         }
-        void refreshThreads();
+        // 多会话性能（09-12）：这里原本**每个回合结束都打一发全量 thread/list**，
+        // N 个会话并行就是 N 发（每次都要主进程扫 rollout 兜底）。而这次 turn/completed
+        // 事件本身就带了完整 turn —— 本地就能把侧栏那一项更新到位：
+        //   ① 先把本条 turn 合并进当前会话缓存（前端纯函数，零 RPC）；
+        //   ② 侧栏只把这一项的状态/时间戳就地改掉；
+        //   ③ 仍在跑或还没记录过的会话，才走一次去抖刷新兜底（渠道机器人等后台会话
+        //      不在当前事件流里，靠 scheduleSidebarRefresh 那条路径）。
+        {
+          const tid = String(params.threadId ?? "");
+          const doneTurn = params.turn;
+          if (tid && doneTurn?.id) {
+            const cached = threadCacheRef.current.get(tid);
+            if (cached) {
+              const merged = mergeTurn(cached, doneTurn);
+              if (merged && merged !== cached) {
+                threadCacheRef.current.set(tid, merged);
+                if (threadRef.current?.id === tid) {
+                  threadRef.current = merged;
+                  setThread(merged);
+                }
+              }
+            }
+            setThreads((current) => current.map((entry) => entry.id === tid
+              ? { ...entry, updatedAt: Math.floor(Date.now() / 1000), status: doneTurn.status ?? entry.status }
+              : entry));
+          }
+          // 兜底：当前会话刚结束却没有缓存（罕见），或者还有别的会话在跑 → 去抖刷新一次
+          if (!tid || !threadCacheRef.current.has(tid) || runningThreadIdsRef.current.size > 0) {
+            scheduleSidebarRefresh();
+          }
+        }
       } else if (method === "item/started" || method === "item/completed") {
         // 不在这里清空 optimisticInput：清除时机交给渲染端的文本去重，
         // 否则 item/started 与 setThread 的批处理时序差异会让用户消息瞬间消失。
@@ -10064,6 +10919,24 @@ const commandMatches = useMemo(() => {
       if (/微信|Telegram/.test(event.message)) void window.codex.channelsStatus?.().then(setChannelOnline).catch(() => undefined);
     });
     const offHarness = window.codex.onHarnessEvent((event) => {
+      if (event.type === "popout-return") {
+        // 弹窗「返回主应用」：主窗口收到后跳到弹窗里的那个会话（弹窗已由主进程关闭）
+        const tid = String((event as any).threadId ?? "");
+        if (tid) {
+          setPopoutThreadId(null);
+          popoutThreadIdRef.current = null;
+          if (threadsRef.current.some((entry: any) => entry.id === tid)) void openThread(tid);
+          else void window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc", archived: false }).then((r) => {
+            if ((r.data ?? []).some((entry: any) => entry.id === tid)) void openThread(tid);
+          }).catch(() => undefined);
+        }
+      }
+      if (event.type === "popout-closed") {
+        // 弹窗被关闭（点 X / 返回主应用 / 主窗口联动）：被隐藏的会话回到侧栏。
+        // 全量重拉（而非只删单条）：弹窗异常退出时主进程已移除、渲染层状态可能残留，
+        // 重拉保证收敛到主进程的真实弹窗列表。
+        refreshPoppedOut();
+      }
       if (event.type === "scheduler") showToast("定时任务", event.message);
       if (event.type === "memory") showToast("记忆", event.message);
       if (event.type === "skill-install") {
@@ -10104,16 +10977,46 @@ const commandMatches = useMemo(() => {
       .then((threadResult) => {
         const list = threadResult.data ?? [];
         setThreads(list);
+        threadsRef.current = list;
         setServerStatus("ready");
-        // 启动恢复上次会话：不恢复会停在欢迎页，用户一发消息就新建空会话——
-        // 表现为「重启后莫名其妙多出一个分支」，而原对话其实还在列表里（09-10 反馈）。
+        // ⛔ 独立会话弹窗：本窗口锁定 popout 会话（不读 last-thread、不走全局恢复）。
+        // 弹窗启动即打开指定会话，侧栏仍完整可用（可再切到其他会话——弹窗是完整界面）。
         const lastId = (() => { try { return localStorage.getItem("last-thread"); } catch { return null; } })();
-        if (lastId && list.some((entry: any) => entry.id === lastId)) void openThread(lastId);
+        const targetId = popoutThreadIdRef.current || lastId;
+        if (targetId && list.some((entry: any) => entry.id === targetId)) void openThread(targetId);
       })
       .catch(() => setServerStatus("error"))
       .finally(() => setLoading(false));
     return () => { off(); offChannel(); offHarness(); };
   }, []);
+
+  // 独立会话弹窗探测：**同步读 URL query**（弹窗 URL 固定带 ?popout=<id>，首帧即可确定，
+  // 不必等 IPC 往返——异步探测会让弹窗先按主界面布局渲染一帧：timeline 820 居中 + 侧栏
+  // 列占位 → 用户看到的就是「打开弹窗右边一大片空白，要加载一会儿才没」）。
+  // IPC 探测保留作兜底（某些加载路径 query 可能被剥离），但状态在首帧同步置好。
+  const popoutFromQuery = useMemo(() => {
+    try {
+      const q = new URLSearchParams(window.location.search).get("popout");
+      return q ? String(q) : null;
+    } catch { return null; }
+  }, []);
+  useEffect(() => {
+    if (popoutFromQuery) {
+      popoutThreadIdRef.current = popoutFromQuery;
+      setPopoutThreadId(popoutFromQuery);
+      try { document.title = `Codex Harness — 独立会话`; } catch { /* 忽略 */ }
+      return;
+    }
+    void window.codex.popoutThreadId().then((id) => {
+      if (id) {
+        popoutThreadIdRef.current = id;
+        setPopoutThreadId(id);
+        try { document.title = `Codex Harness — 独立会话`; } catch { /* 忽略 */ }
+      }
+    }).catch(() => undefined);
+    // 主窗口侧：启动时同步一次「哪些会话已被弹窗」→ 侧栏隐藏它们
+    if (!popoutFromQuery) refreshPoppedOut();
+  }, [popoutFromQuery, refreshPoppedOut]);
 
   useEffect(() => { if (!loading) void refreshThreads(); }, [loading]);
 
@@ -10295,8 +11198,11 @@ const commandMatches = useMemo(() => {
     const nextEffort = savedEffortFor(next?.model) || threadEffort || pickDefaultEffort(next?.supportedReasoningEfforts, next?.defaultReasoningEffort);
     setEffort(nextEffort);
     if (nextEffort) {
-      localStorage.setItem("default-effort", nextEffort);
+      // ⛔ 多会话/多窗口作用域（09-13）：有会话只落会话级（thread-effort-<id>），
+      // 不写 default-effort 全局默认——A 会话切模型连带切档位，会把 B 会话的
+      // 重启兜底/新会话默认一起改掉。无会话时选的才是全局默认。
       if (currentThreadId) saveThreadEffort(currentThreadId, nextEffort);
+      else localStorage.setItem("default-effort", nextEffort);
     }
     saveSelection(value);
 
@@ -10304,11 +11210,17 @@ const commandMatches = useMemo(() => {
     if (provider && customModel && provider === customModel.provider) {
       try {
         await updateThreadSettings({ model, model_provider: provider, effort: nextEffort || null });
-        // 100% 同步（09-11 用户要求）：一次性写齐 custom-model.json 顶层 model（模型自查
-        // 「我是什么模型」读的就是它）+ config.toml 顶层 model + catalog 上下文窗口。
-        // restart:false 很关键——applyCustomModel 默认以 server.restart() 收尾，
-        // 那会打断所有在跑的回合（实测 ⑦ 全红：回合被杀、渲染层 20s 超时）。
-        void window.codex.setProviderModel({ provider, model, apply: true, restart: false }).catch(() => {});
+        // ⛔ 多窗口模型作用域（09-13）：这里**不再**调 setProviderModel({apply:true}) 写全局
+        // —— 它会改写 custom-model.json 顶层 model + config.toml 顶层 `model = "..."`，
+        // 那是全应用共享的一份磁盘配置。单窗口时代「当前会话=全局」没毛病；两个独立会话
+        // 窗口后互相污染：A 窗口切模型 → B 窗口会话自查「我是谁」读 config 顶层 → 报成
+        // A 的模型（用户实测 glm/deepseek 错位）。会话级模型靠 updateThreadSettings +
+        // 每轮 turn/start 的 model 参数（权威判据 = rollout turn_context.model），全局
+        // 落盘只在「无会话选默认」/「跨供应商切换」两条路径发生。
+        if (!currentThreadId) {
+          // 无会话时选的才是「新会话默认」：写全局档案（apply:false 只落盘不动引擎）
+          void window.codex.setProviderModel({ provider, model, apply: false }).catch(() => {});
+        }
         setNotice(`${threadRef.current ? "当前会话" : "新会话默认"}已选择：${customModel.name} · ${model}`);
         return;
       } catch (error: any) {
@@ -10469,9 +11381,15 @@ const commandMatches = useMemo(() => {
 
   function changeApproval(value: string) {
     setApprovalPolicy(value);
-    localStorage.setItem("default-approval", value);
-    if (threadRef.current) saveThreadPermissions(threadRef.current.id, sandbox, value);
-    void pushThreadPermissions(threadRef.current?.id ?? "", sandbox, value);
+    // ⛔ 多会话/多窗口作用域（09-13）：有会话只落该会话，无会话才写全局默认
+    // （changeSandbox 同款修法——原实现开着会话也写 default-approval，A 会话切审批
+    // 会污染 B 会话的重启兜底与新会话默认）
+    if (threadRef.current) {
+      saveThreadPermissions(threadRef.current.id, sandbox, value);
+      void pushThreadPermissions(threadRef.current.id, sandbox, value);
+    } else {
+      localStorage.setItem("default-approval", value);
+    }
   }
 
   /** 权限胶囊的组合档位切换：完全访问 = danger-full-access + never；其余档位 = workspace-write + 对应审批。
@@ -10482,10 +11400,14 @@ const commandMatches = useMemo(() => {
     const approvalValue = value === "never" ? "never" : value;
     setSandbox(sandboxValue);
     setApprovalPolicy(approvalValue);
-    if (threadRef.current) saveThreadPermissions(threadRef.current.id, sandboxValue, approvalValue);
-    localStorage.setItem("default-sandbox", sandboxValue);
-    localStorage.setItem("default-approval", approvalValue);
-    void pushThreadPermissions(threadRef.current?.id ?? "", sandboxValue, approvalValue);
+    // ⛔ 同上：有会话只落会话级（胶囊本就写会话记录），全局默认仅在无会话时更新
+    if (threadRef.current) {
+      saveThreadPermissions(threadRef.current.id, sandboxValue, approvalValue);
+      void pushThreadPermissions(threadRef.current.id, sandboxValue, approvalValue);
+    } else {
+      localStorage.setItem("default-sandbox", sandboxValue);
+      localStorage.setItem("default-approval", approvalValue);
+    }
   }
 
   // 设置页全局审批权限的展示值（与 localStorage 双写，进页面读一次）
@@ -10518,27 +11440,33 @@ const commandMatches = useMemo(() => {
     const nextApproval = value === "danger-full-access" ? "never" : approvalPolicy === "never" ? "on-request" : approvalPolicy;
     setSandbox(value);
     setApprovalPolicy(nextApproval);
-    if (threadRef.current) saveThreadPermissions(threadRef.current.id, value, nextApproval);
-    localStorage.setItem("default-sandbox", value);
-    localStorage.setItem("default-approval", nextApproval);
-    void pushThreadPermissions(threadRef.current?.id ?? "", value, nextApproval);
+    // ⛔ 多窗口作用域（09-13，对齐模型/effort 的修法）：有会话时权限只落到**该会话**
+    // （saveThreadPermissions + pushThreadPermissions 双通道钉住引擎侧），不再写全局
+    // default-sandbox/default-approval——那是全应用共享的，A 窗口切权限会把 B 窗口
+    // 会话的重启兜底/新会话默认一起改掉（用户实测权限串扰）。无会话时选的才是全局默认。
+    if (threadRef.current) {
+      saveThreadPermissions(threadRef.current.id, value, nextApproval);
+      void pushThreadPermissions(threadRef.current.id, value, nextApproval);
+    } else {
+      localStorage.setItem("default-sandbox", value);
+      localStorage.setItem("default-approval", nextApproval);
+    }
   }
 
   /** 只切档位、不碰模型声明（供菜单选择/命令与「声明被取消后回落」分别使用） */
   function applyEffort(value: string) {
     setEffort(value);
-    localStorage.setItem("default-effort", value);
-    rememberEffortFor(selectedModel?.model ?? modelName(modelId), value);
-    // 思考等级按会话独立：当前有会话就记到会话上（切回来自动恢复），无会话才只是全局默认
+    // ⛔ 多会话/多窗口作用域（09-13）：有会话只落会话级，无会话才写全局默认
+    // （原实现无条件写 default-effort，A 会话切档位污染 B 会话的重启兜底/新会话默认）
     if (threadRef.current?.id) saveThreadEffort(threadRef.current.id, value);
+    else localStorage.setItem("default-effort", value);
+    rememberEffortFor(selectedModel?.model ?? modelName(modelId), value);
     void updateThreadSettings({ effort: value });
-    // 档案 100% 同步（对齐「模型自报」案）：写进 custom-model.json（models[].effort +
-    // 顶层 effort）与 config.toml 顶层 model_reasoning_effort，切供应商/重装不丢、
-    // 重启后 resume 的老会话也有兜底默认。restart:false 不打断在跑回合。
-    // 归档键必须是档案里的「当前生效模型」（customModel.model），不能用会话级
-    // selectedModel —— 两者在「会话选了别的模型」时不是同一个 id，用会话的会把
-    // 档位写到另一个模型条目上，顶层与 models[] 就此分叉。
-    if (customModel?.provider && customModel.model) {
+    // ⛔ 多窗口作用域（09-13）：有会话时**不再**写全局档案（custom-model.json 顶层 /
+    // config.toml 顶层 model_reasoning_effort）——那是全应用共享的，A 窗口会话改档位
+    // 会污染 B 窗口重启后的兜底默认。会话内档位由每轮 turn/start 的 effort 下发（权威），
+    // 只有「无会话选默认」才落全局档案。
+    if (!threadRef.current?.id && customModel?.provider && customModel.model) {
       void window.codex.setProviderEffort({ provider: customModel.provider, model: customModel.model, effort: value })
         .then((next) => setCustomModel(next))
         .catch(() => undefined);
@@ -10678,8 +11606,11 @@ const commandMatches = useMemo(() => {
       const optimisticId = `local-${Date.now()}`;
       justSentIds.add(optimisticId);
       setOptimisticInput({ id: optimisticId, type: "userMessage", content: input });
-      // 发送即贴底跟随最新：agent 回复从底部展开，始终自动滚到最新内容
-      stickToBottomRef.current = true;
+      // 编辑分支发送同样锚顶（与主发送一致，见 anchorTopRef 注释）
+      stickToBottomRef.current = false;
+      anchorTopRef.current = true;
+      anchorTurnIdRef.current = null;
+      dbg("send-arm-fork");
       activeModelRef.current = selectedModel?.model ?? modelName(modelId);
       const result = await window.codex.request("turn/start", {
         threadId: forked.thread.id,
@@ -10935,7 +11866,16 @@ const commandMatches = useMemo(() => {
       else if (name === "help") setInfoModal({ title: "可用命令", body: builtinCommandCatalog.map((cmd) => `/${cmd.name}${cmd.hint ? " " + cmd.hint : ""} — ${cmd.description}`).join("\n") });
       else if (name === "context") setInfoModal({ title: "上下文占用", body: contextUsageText() });
       else if (name === "clear") {
-        await clearCurrentConversation();
+        // ⛔ 必须确认（09-13 审计）：`clearCurrentConversation` 是 `thread/delete` + 从侧栏移除
+        // = **永久删除**，而命令目录里把它描述成「清空上下文…旧会话保留在历史里」，
+        // 文案与行为相反 → 用户按文案理解就会不可逆地删掉整个会话（含工具记录）。
+        // 同族的 /delete 一直有确认，这条漏了。
+        const confirmed = await openAppConfirm(
+          "永久删除当前会话？",
+          `「${cleanThreadDisplayTitle(thread?.name, { preview: thread?.preview }) || "当前会话"}」的消息与工具记录会被删除，且无法恢复。\n（只是想清空上下文继续聊，请用 /compact 或直接新建会话。）`,
+          "永久删除",
+        );
+        if (confirmed) await clearCurrentConversation();
       }
       else if (name === "copy") { const last = thread?.turns.flatMap((turn) => turn.items).filter((item) => item.type === "agentMessage").at(-1); await copyMessage(itemText(last ?? ({} as ThreadItem))); }
       else if (name === "memory") { setSettingsOpen(true); setSettingsPage("memory"); }
@@ -11658,9 +12598,11 @@ const commandMatches = useMemo(() => {
   /** 轻量 resume：excludeTurns:true 只取会话元数据（引擎不再全量水合历史），
    *  另按 desc 取最新一页回合供首屏——配合回合窗口化，打开成本与会话长度无关。
    *  此前 excludeTurns:false 会让引擎把几千个回合整个序列化回来、然后 turns/list 又取
-   *  一遍——「切会话慢」的数据侧主因（渲染侧已窗口化）。 */
-  async function resumeThreadLight(params: { threadId: string; sandbox?: string; approvalPolicy?: string }, turnBudget = 200): Promise<any> {
-    const result = await window.codex.request("thread/resume", { threadId: params.threadId, excludeTurns: true, sandbox: params.sandbox, approvalPolicy: params.approvalPolicy });
+   *  一遍——「切会话慢」的数据侧主因（渲染侧已窗口化）。
+   *  extra 透传（如 dynamicTools）：引擎 resume 的 schema 实证接受 dynamicTools，
+   *  每次恢复都重注册当前工具面——旧会话也能用上新增的动态工具。 */
+  async function resumeThreadLight(params: { threadId: string; sandbox?: string; approvalPolicy?: string; dynamicTools?: any[] }, turnBudget = 200): Promise<any> {
+    const result = await window.codex.request("thread/resume", { threadId: params.threadId, excludeTurns: true, sandbox: params.sandbox, approvalPolicy: params.approvalPolicy, ...(Array.isArray(params.dynamicTools) && params.dynamicTools.length ? { dynamicTools: params.dynamicTools } : {}) });
     const thread = result?.thread;
     if (thread && !(Array.isArray(thread.turns) && thread.turns.length)) {
       try {
@@ -11732,7 +12674,7 @@ const commandMatches = useMemo(() => {
    *  scrollTop 补偿）；贴近顶部时每向上滚一屏加载一页，离开顶部自然停止。 */
   function onTimelineScroll(event: React.UIEvent<HTMLDivElement>) {
     const el = event.currentTarget;
-    if (el.scrollTop > 480 || switchJumpRef.current) return;
+    if (el.scrollTop > 480 || switchJumpPending()) return;
     const id = threadRef.current?.id;
     if (id) void loadEarlierTurns(id);
   }
@@ -11753,7 +12695,30 @@ const commandMatches = useMemo(() => {
     requestAnimationFrame(() => requestAnimationFrame(() => jumpToTurn(turnId)));
   }, []);
 
-  async function openThread(id: string, freshThread?: Thread | null) {
+  /** 独立会话弹窗：把会话开到新窗口。focused=true 表示该会话已有弹窗（已聚焦旧窗口）。 */
+  async function popoutCurrentThread(threadId: string) {
+    try {
+      const result = await window.codex.popoutThread(threadId);
+      if (result?.focused) {
+        showToast("独立窗口已打开", "该会话已有独立窗口，已聚焦到它");
+      } else {
+        showToast("已弹出独立窗口", "会话可拖出应用外，多个弹窗可同时存在");
+      }
+      refreshPoppedOut();
+      // 主窗口当前正在看的会话被弹窗出去 → 自动离开它（避免双窗口重复渲染）：
+      // 切到侧栏第一个「未被弹窗」的会话；全都弹出去了 → 回欢迎页（用户 09-13 定稿）。
+      // poppedOutThreadIds 可能还没含刚弹窗的这个（refreshPoppedOut 异步），用 threadId 显式排除。
+      if (threadRef.current?.id === threadId) {
+        const firstAvailable = listThreads.find((entry) => entry.id !== threadId && !poppedOutThreadIds.has(entry.id));
+        if (firstAvailable) void openThread(firstAvailable.id);
+        else setThread(null);
+      }
+    } catch (error: any) {
+      setNotice(`打开独立窗口失败：${error?.message ?? String(error)}`);
+    }
+  }
+
+  async function openThread(id: string, freshThread?: Thread | null) {    switchStartRef.current = performance.now();
     setChatSearchOpen(false);
     // 快速连点防竞态：只有最新一次切换的 resume 响应才允许落地渲染
     const seq = ++switchSeqRef.current;
@@ -11765,6 +12730,10 @@ const commandMatches = useMemo(() => {
     // 改全局默认也只影响新会话与**当时打开的那一个**会话（规则见 src/lib/model-scope.mjs）。
     const storedModel = resolveThreadModel(id);
     if (storedModel) setModelId(storedModel);
+    // ⛔ 旧会话种子烙印（09-13）：改动前的旧会话没有 thread-model-<id> 记录（回填走全局
+    // 兜底 = 还留着一根被「其他会话改全局默认」污染的口子）。首次打开时把当时的生效值
+    // 烙成它自己的记录，此后该会话与新会话一样完全走会话级。
+    if (!storedModel) saveThreadModel(id, modelId);
     // 切会话过渡遮罩：只在「没有缓存、需要真正加载」时显示（首次打开的长会话）。
     // 缓存秒开的会话不再强制遮罩——WorkBuddy 式直切（缓存直渲 + 后台 resume 对齐），
     // 每次切换都白遮 ~200ms 是「切换不够丝滑」的直接观感来源。
@@ -11773,13 +12742,21 @@ const commandMatches = useMemo(() => {
     setDiff("");
     setSystemEvents([]);
     setOptimisticInput(null);
+    // ★ 切会话时的锚定状态处理（09-13 用户实测：「切换会话，钉顶没了」）。
+    //   钉顶**跟着它所属的会话活着**：切到别的会话时它只是"休眠"（不生效、也不销毁），
+    //   切回来时由 pinSentMessage 复核并恢复落点；清空只发生在用户接管 / 新的一次发送。
+    //   这里只需要把留白归零：别的会话不该看到这条会话的锚顶留白，而切回来时
+    //   pinSentMessage 会按需重新撑起来。
+    //   （曾经在这里无条件清 anchorTopRef —— 于是"切出去看一眼再切回来"钉顶就没了、
+    //    视口掉到底部，正是用户报的这个现象。）
+    clearAnchorPad();
     const knownRunning = runningThreadIdsRef.current.has(id);
     setSending(knownRunning);
     setActiveTurnId(knownRunning ? (runningTurnIdsRef.current.get(id) ?? null) : null);
     setWorkStartedAt(knownRunning ? (runningStartedAtRef.current.get(id) ?? Date.now()) : null);
     setInterrupting(false);
     // 切会话后滚动位置属于旧会话，不能带过来；等新内容渲染后直接跳到最新消息。
-    switchJumpRef.current = true;
+    switchJumpRef.current = { id, at: Date.now() };
     // 渲染窗口一并重置：切换成本与会话历史长度、上次翻页深度无关（切回即锚定最新一屏）。
     // 游标保留在 turnsCursorRef，向上滚动时按需继续增量加载。
     if ((turnWindowRef.current[id] ?? TURN_WINDOW) !== TURN_WINDOW) {
@@ -11825,7 +12802,7 @@ const commandMatches = useMemo(() => {
         setModelId(initialModel);
         saveThreadModel(id, initialModel);
       }
-      switchJumpRef.current = true;
+      switchJumpRef.current = { id, at: Date.now() };
       // 线程已按当前用户偏好建好（调用方传入 sandbox/approvalPolicy），直接固化本地权限记录
       setSandbox(sandbox);
       setApprovalPolicy(approvalPolicy);
@@ -11839,7 +12816,7 @@ const commandMatches = useMemo(() => {
       // 工作区与线程一致（团队卡片可指定独立项目地址）
       if (freshThread.cwd) setWorkspace(freshThread.cwd);
       // 内容渲染完成后瞬时定位到最新消息（两帧重试；带 settled 回调确保遮罩等渲染稳定）
-      requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled)));
+      requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled, contentTailTarget)));
       setOpeningThread(null);
       markSettled();
       return;
@@ -11860,7 +12837,7 @@ const commandMatches = useMemo(() => {
       if (cachedRunningTurn) markThreadRunning(id, cachedRunningTurn.id);
       // layout effect 会消费 switchJumpRef 瞬时滚到底；这里再兜底一次（带 settled 回调），
       // 防 markdown/图片在首帧后增高导致没贴底
-      requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled));
+      requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled, contentTailTarget));
     }
     // 频繁切换优化：缓存已秒开、该会话不在运行、且 30 秒内刚完整 resume 过 → 跳过这轮
     // resume。反复切换时每次都全量加载是卡顿主因；非运行会话期间无事件流，内容不可能变化。
@@ -11883,7 +12860,10 @@ const commandMatches = useMemo(() => {
         : (localStorage.getItem("default-approval") ?? "never");
       // 轻量 resume（excludeTurns:true + 最新一页回合）：不再让引擎全量水合几千个回合——
       // 这是切会话慢的数据侧主因；更早的历史由「显示更早的消息」按需续拉
-      const result = await resumeThreadLight({ threadId: id, sandbox: resumeSandbox, approvalPolicy: resumeApproval });
+      // resume 必带当前动态工具面：引擎 resume schema 接受 dynamicTools，恢复会话时
+      // 重注册——旧会话（创建于新工具上线前）也能用上 skill_search 等新增工具
+      const dynamicTools = await buildDynamicTools();
+      const result = await resumeThreadLight({ threadId: id, sandbox: resumeSandbox, approvalPolicy: resumeApproval, dynamicTools });
       if (seq !== switchSeqRef.current) return; // 已切到别的会话，丢弃本次结果
       recentResumeAtRef.current.set(id, Date.now());
       // 残留运行态归一化（详见 normalizeLoadedThread）：旧会话丢过 turn/completed 的
@@ -11899,13 +12879,13 @@ const commandMatches = useMemo(() => {
       if (changed) {
         // 内容补齐会再次渲染：重设 switchJump，让这次渲染也瞬时定位（否则 smooth 动画
         // 又会从中间滑到底部，且动画目标基于渲染瞬间的 scrollHeight，易停在半路）
-        switchJumpRef.current = true;
+        switchJumpRef.current = { id, at: Date.now() };
       }
       // 历史内容即使没有数据变化，也重新提交一次，让旧会话应用当前折叠标题与样式。
       setThread(mergedLoaded);
       // 内容渲染完成后再次瞬时定位到最新消息（两帧重试，等 React 提交 DOM；带 settled
       // 回调——markSettled 会重置 fade-out timer，确保遮罩等到所有路径都跳完才淡出）
-      requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled)));
+      requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled, contentTailTarget)));
       const resultProvider = String(result.modelProvider ?? result.model_provider ?? customModel?.provider ?? "custom");
       // 记录会话真实绑定的供应商（迁移成功后 migrateThreadToProvider 会覆盖为新值）
       threadProviderRef.current.set(id, resultProvider);
@@ -11923,6 +12903,12 @@ const commandMatches = useMemo(() => {
         if (localEffort) setEffort(localEffort);
         else if (!result.reasoningEffort) setEffort(normalizeEffort(localStorage.getItem("default-effort")) || "");
         saveThreadEffort(id, localEffort || result.reasoningEffort || effort || "");
+        // ⛔ 旧会话种子烙印（09-13）：本地没有记录且引擎也没带时，把刚回填的生效值烙成
+        // 该会话自己的记录——旧会话与新会话一样，此后不再读全局默认。
+        if (!localEffort && !result.reasoningEffort) {
+          const seeded = loadThreadEffort(id);
+          if (!seeded && effort) saveThreadEffort(id, effort);
+        }
       }
       // 打开会话后工作区跟随该会话的 cwd（会话创建时锁定的项目目录）。
       setWorkspace(result.cwd);
@@ -11938,11 +12924,21 @@ const commandMatches = useMemo(() => {
       // 优先级（09-10 修正「重启后审批档变成变更前确认」）：**用户当前的全局选择权威**。
       // 引擎 resume 返回的是会话创建时的旧档位（resumed），此前被排在全局默认前面——
       // 会话建在「变更前确认」上，就永远回不到用户后来选的档位。
-      // 本地每会话记录仅应在用户于该会话显式改过权限时生效；旧版本会在打开时把 resumed
-      // 回写进记录（污染），识别特征 = 记录 == 引擎值 且 ≠ 全局默认 → 视为污染忽略。
-      const recordTrusted = (value?: string | null) => Boolean(value) && !(value && resumedSandbox && value === resumedSandbox && value !== savedDefault) && !(value && resumedApproval && value === resumedApproval && value !== savedDefaultApproval);
-      const nextSandbox = (recordTrusted(localPerms.sandbox) ? validSandbox(localPerms.sandbox) : null) ?? savedDefault;
-      const nextApproval = (recordTrusted(localPerms.approval) ? validApproval(localPerms.approval) : null) ?? savedDefaultApproval;
+      // ⛔ 「记录 == 引擎值 且 ≠ 全局默认 ⇒ 判定污染」这个启发式**必须消失**（09-13 审计 P0）：
+      // resume 时正是拿本地记录当参数发给引擎，引擎必然原样回带 ⇒ 判据恒真 ⇒ `nextSandbox`
+      // 落到全局默认，而首启默认是 `danger-full-access`/`never` —— 于是**用户为某会话显式选的
+      // 只读被静默改成完全访问**（反向亦然）。这是安全方向上的静默降级，比"档位不够宽松"严重得多。
+      // 现在的规则：**取两者中更保守的一个**。
+      //   · 记录是用户显式选的只读（本次默认是全权）→ 只读 ✓；
+      //   · 记录被旧版本污染成全权（本次默认是只读）→ 只读 ✓（用户的新默认也生效）；
+      //   · 用户显式选全权但全局默认是只读 → 得到只读（**代价是这次的显式选择不生效**，
+      //     但失败方向是"更严"而不是"更松"——权限类问题一律往安全侧倒）。
+      const SANDBOX_SAFETY: Record<string, number> = { "read-only": 0, "workspace-write": 1, "danger-full-access": 2 };
+      const APPROVAL_SAFETY: Record<string, number> = { untrusted: 0, "on-request": 1, never: 2 };
+      const saferSandbox = (a: string | null, b: string) => (a && SANDBOX_SAFETY[a] != null && SANDBOX_SAFETY[a] < (SANDBOX_SAFETY[b] ?? 2)) ? a : b;
+      const saferApproval = (a: string | null, b: string) => (a && APPROVAL_SAFETY[a] != null && APPROVAL_SAFETY[a] < (APPROVAL_SAFETY[b] ?? 2)) ? a : b;
+      const nextSandbox = saferSandbox(validSandbox(localPerms.sandbox), savedDefault);
+      const nextApproval = saferApproval(validApproval(localPerms.approval), savedDefaultApproval);
       setSandbox(nextSandbox);
       setApprovalPolicy(nextApproval);
       // 不再把解析结果回写本地记录：回写会把引擎旧值烙进记录，导致用户之后改全局默认
@@ -11975,7 +12971,7 @@ const commandMatches = useMemo(() => {
           setActiveTurnId(null);
           setWorkStartedAt(null);
           markThreadStopped(id);
-          requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled)));
+          requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled, contentTailTarget)));
           requestAnimationFrame(() => composerInputRef.current?.focus());
           return;
         }
@@ -12101,9 +13097,12 @@ const commandMatches = useMemo(() => {
     if (projectFilter === cwd) setProjectFilter(null);
   }
 
-  async function createEmptyThread(): Promise<Thread | null> {
+  /** 动态工具面（thread/start 与 thread/resume 共用）：引擎 resume 的 schema 实证也接受
+   *  dynamicTools——不带上 = 旧会话恢复的是创建时的工具快照，新工具（如技能纪律四件套）
+   *  永远进不去（Codex 反馈「我工具列表里没有 skill_search」的根因）。 */
+  const buildDynamicTools = useCallback(async (): Promise<any[]> => {
     const builtinCfg = await window.codex.readBuiltinPlugins().catch(() => null);
-    const dynamicTools = [
+    return [
       ...(builtinCfg?.image?.enabled !== false && builtinCfg?.image?.baseUrl ? [{
         type: "function",
         name: "generate_image",
@@ -12127,12 +13126,29 @@ const commandMatches = useMemo(() => {
       { type: "function", name: "task_add", description: "把一条任务加入用户的任务清单。", inputSchema: { type: "object", properties: { text: { type: "string" }, priority: { type: "string", enum: ["low", "medium", "high"] } }, required: ["text"] } },
       { type: "function", name: "task_update", description: "更新任务清单：列出全部任务（不传任何参数）、改状态或删除。status 只有 todo/doing/done。", inputSchema: { type: "object", properties: { id: { type: "string" }, status: { type: "string", enum: ["todo", "doing", "done"] }, text: { type: "string" }, priority: { type: "string", enum: ["low", "medium", "high"] }, done: { type: "boolean", description: "删除任务" } } } },
       { type: "function", name: "agent_ask", description: "在对话里向用户展示一组选项并等待选择（提问时必须给出选项）。options 里第一项会作为推荐项高亮，也可以留空让用户自由输入。", inputSchema: { type: "object", properties: { question: { type: "string", description: "要问用户的问题" }, options: { type: "array", items: { type: "string" }, description: "2-4 个候选选项，第一项为推荐" }, allowFree: { type: "boolean", description: "是否允许自由输入，默认允许" } }, required: ["question", "options"] } },
+      // 技能运用纪律：缺技能自主搜市场/安装，缺连接器先查模板（安装前必须 agent_ask 征得同意）
+      { type: "function", name: "skill_search", description: "在内置技能市场按关键词搜索技能（返回名称/简介/安装状态）。当任务没有合适技能、你想找现成技能提效时调用。", inputSchema: { type: "object", properties: { query: { type: "string", description: "关键词，如 excel、爬虫、pdf" } }, required: ["query"] } },
+      { type: "function", name: "skill_install", description: "从技能市场安装一个技能（不重启应用，下一回合即可用）。传 query 自动匹配最相似的技能；装完先读它的 SKILL.md 再按说明书使用。", inputSchema: { type: "object", properties: { query: { type: "string", description: "技能名或关键词，优先用 skill_search 结果里的准确名称" } }, required: ["query"] } },
+      { type: "function", name: "connector_search", description: "列出内置 MCP 连接器模板与已配置状态（浏览器自动化、桌面自动化、GitHub 等）。需要某种外部服务能力但当前没有对应工具时调用。", inputSchema: { type: "object", properties: { query: { type: "string", description: "过滤关键词，可省略" } } } },
+      { type: "function", name: "connector_install", description: "安装一个 MCP 连接器模板（写入配置并重启引擎，会中断当前回合）。必须先用 agent_ask 征得用户同意才能调用；安装后提醒用户重新发一条消息继续。", inputSchema: { type: "object", properties: { templateId: { type: "string", description: "connector_search 结果里的模板 id" } }, required: ["templateId"] } },
     ];
-    // 首次对话身份引导：未完成引导的新会话注入引导指令 + identity_onboard 工具；
-    // 已引导（onboarded）的会话两者都不带——「已配置过就不再引导」。
-    if (identityOnboarded === false) dynamicTools.push(IDENTITY_ONBOARD_TOOL as unknown as (typeof dynamicTools)[number]);
+  }, [memoryEnabled, subAgents]);
+
+  async function createEmptyThread(): Promise<Thread | null> {
+    const dynamicTools = await buildDynamicTools();
+    // 首次对话身份引导：**只在「从没打过招呼」时注入一次**（09-12 用户反馈修正）。
+    // 旧判定用 `onboarded`（用户真的回答了才为 true）→ 不回答的用户每个新会话都被
+    // 强制引导一遍。现在只要问过一次就落 `greeted=true`，后续新会话一律不带引导，
+    // 直接开始干活。
+    const shouldGreet = identityGreeted === false;
+    if (shouldGreet) {
+      dynamicTools.push(IDENTITY_ONBOARD_TOOL as unknown as (typeof dynamicTools)[number]);
+      // 落标记：本轮之后的新会话不再引导。失败也不影响本次发送（内存里也置 true）。
+      void window.codex.markIdentityGreeted?.().catch(() => undefined);
+      setIdentityGreeted(true);
+    }
     const memoryTools = dynamicTools.length ? { dynamicTools } : {};
-    const onboardingInstructions = identityOnboarded === false ? IDENTITY_ONBOARD_INSTRUCTIONS : null;
+    const onboardingInstructions = shouldGreet ? IDENTITY_ONBOARD_INSTRUCTIONS : null;
     const started = await window.codex.request("thread/start", {
       model: selectedModel?.model ?? modelName(modelId),
       // 欢迎页「无项目」模式：本会话用自动创建的独立临时目录（每个会话单独一个）；
@@ -12151,7 +13167,17 @@ const commandMatches = useMemo(() => {
     const active = started.thread as Thread;
     threadRef.current = active;
     setThread(active);
-    if (started?.thread?.id) saveThreadPermissions(started.thread.id, sandbox, approvalPolicy);
+    if (started?.thread?.id) {
+      // ⛔ 多会话/多窗口作用域（09-13 收尾）：新建会话时把「创建那一刻的全局默认」
+      // **烙成该会话自己的初始记录**（模型/effort/权限）。此后该会话的回填与重启兜底
+      // 全部走会话级键，不再读全局——彻底切断「其他会话后来改全局默认」的污染路径。
+      // （thread/start 传入的 model/effort/sandbox/approval 就是这些全局值，烙进去与
+      //   引擎侧会话创建时的真实状态一致。）
+      const tid = started.thread.id;
+      if (!loadThreadModel(tid)) saveThreadModel(tid, modelId);
+      if (!loadThreadEffort(tid) && effort) saveThreadEffort(tid, effort);
+      saveThreadPermissions(tid, sandbox, approvalPolicy);
+    }
     return active;
   }
 
@@ -12343,8 +13369,12 @@ const commandMatches = useMemo(() => {
     const optimisticId = `local-${Date.now()}`;
     justSentIds.add(optimisticId);
     setOptimisticInput({ id: optimisticId, type: "userMessage", content: sendInput });
-    // 发送即贴底跟随最新：agent 回复从底部展开，始终自动滚到最新内容
-    stickToBottomRef.current = true;
+    // 发送后锚顶：新消息顶到对话区顶部，回复向下展开（对齐 WorkBuddy；贴底跟随
+    // 在回复长超一屏后由 anchor 分支自动接管）
+    stickToBottomRef.current = false;
+    anchorTopRef.current = true;
+    anchorTurnIdRef.current = null;
+    dbg("send-arm-main");
     let createdThreadId: string | null = null;
     try {
       const startTurn = async (target: Thread) => window.codex.request("turn/start", {
@@ -12439,6 +13469,16 @@ const commandMatches = useMemo(() => {
         markThreadRunning(active.id, hydratedTurn.id);
         saveThreadModel(active.id, modelId);
         setThread((current) => {
+          // ⛔ 跨会话污染守卫（09-13 审计 P0）：`turn/start` 是 await 的，用户完全可能在
+          // 这几秒里切到另一个会话（供应商迁移重启时窗口更长）。此时 `current` 已经是**别的**
+          // 会话了，无条件 mergeTurn 会把 A 的用户消息追加进 B 的时间线（mergeTurn 对未知回合
+          // 是追加），而 B 永远收不到 A 的 turn/completed → B 那一轮永久"运行中"，
+          // 只有重开应用才干净。改：会话已经不是发起会话时只更新缓存、不动当前渲染状态。
+          if (current && current.id !== active.id) {
+            const cached = threadCacheRef.current.get(active.id);
+            if (cached) threadCacheRef.current.set(active.id, mergeTurn(cached, hydratedTurn) ?? cached);
+            return current;
+          }
           const next = mergeTurn(current, hydratedTurn);
           threadRef.current = next;
           return next;
@@ -12453,7 +13493,7 @@ const commandMatches = useMemo(() => {
     } catch (error: any) {
       // turn/start RPC 直接以限流失败：安排应用层自动重试（10 次退避）
       if (isRateLimitError(error?.message)) {
-        const retryThreadId = createdThreadId ?? threadRef.current?.id;
+        const retryThreadId = createdThreadId ?? optimisticBaselineRef.current.threadId ?? threadRef.current?.id;
         if (retryThreadId) {
           setSending(false);
           setInterrupting(false);
@@ -12484,7 +13524,21 @@ const commandMatches = useMemo(() => {
       }
       setSending(false);
       setActiveTurnId(null);
-      markThreadStopped(threadRef.current?.id);
+      // ⛔ 必须按**发起会话**清运行态（09-13 审计 P0）：用户在 await 期间很可能已经切到别的
+      // 会话，而 `threadRef.current` 是"此刻屏幕上的会话"——在 A 发消息后立刻切到 B，一旦 A 上
+      // 失败（401/超时），用 threadRef 会把 **B** 标记成停止、把 A 永久留在运行态：
+      // A 侧栏一直转圈、composer 显示"停止"但 interrupt() 因 runningTurnIds 已清而无声失效、
+      // 之后在 A 发的消息全进排队且永不启动 → 该会话不可用，只能重开应用。
+      // 发起会话 id 取 `createdThreadId`（新建时）或 `optimisticBaselineRef`（发送开始时记下的目标）。
+      markThreadStopped(createdThreadId ?? optimisticBaselineRef.current.threadId ?? threadRef.current?.id);
+      // 失败时把乐观气泡收回去（09-13 审计：气泡不回收 + 提示 2.6 秒后消失 = 看起来像已发出），
+      // 并把正文还给输入框，用户可以改一下重发。
+      const failedText = (Array.isArray(sendInput) ? sendInput : [])
+        .filter((part: any) => part?.type === "text")
+        .map((part: any) => String(part.text ?? ""))
+        .join("");
+      setOptimisticInput(null);
+      if (failedText) setPrompt((current) => (String(current ?? "").trim() ? current : failedText));
       setInterrupting(false);
       setWorkStartedAt(null);
       setNotice(error.message);
@@ -12683,25 +13737,32 @@ const commandMatches = useMemo(() => {
   // 无缓存切换会话期间（thread 尚未恢复），顶部标题先用列表里的名称，避免闪「新任务」
   const switchingMeta = switchingThreadId ? threads.find((entry) => entry.id === switchingThreadId) : null;
 
-  const paletteSections = (() => {
+  // 命令面板条目（09-12 多会话性能）：原来是未 memo 的 IIFE，**每次 App 渲染**都要
+  // 过滤 threads + 整棵项目树、构造十几个带闭包的对象——而 onEvent 里的 setState
+  // 会让 App 高频重渲染（多会话时更密）。这里只对「数据」做记忆化：函数们不是
+  // useCallback（不在依赖里，否则每次渲染都变、memo 形同虚设），统一走 ref 取最新值。
+  const paletteHandlersRef = useRef({ startNewThread, chooseWorkspace, setSettingsPage, setSettingsOpen, setRightOpen, openPanelTab, openThread, openFile });
+  paletteHandlersRef.current = { startNewThread, chooseWorkspace, setSettingsPage, setSettingsOpen, setRightOpen, openPanelTab, openThread, openFile };
+  const paletteSections = useMemo(() => {
+    const H = paletteHandlersRef.current;
     const q = paletteQuery.toLowerCase();
     const match = (label: string) => label.toLowerCase().includes(q);
     const ops = [
-      { group: "建议", label: "新任务", shortcut: "Ctrl+N", icon: MessageSquarePlus, run: () => startNewThread() },
-      { group: "建议", label: "打开工作区", shortcut: "Ctrl+O", icon: FolderOpen, run: () => void chooseWorkspace() },
-      { group: "建议", label: "设置", icon: Settings2, run: () => { setSettingsPage("general"); setSettingsOpen(true); } },
-      { group: "面板", label: "切换侧边栏", shortcut: "Ctrl+B", icon: PanelRightOpen, run: () => setRightOpen((current) => !current) },
-      { group: "面板", label: "切换终端", shortcut: "Ctrl+J", icon: TerminalSquare, run: () => openPanelTab("terminal", workspace ? basename(workspace) : "终端") },
-      { group: "面板", label: "切换预览", icon: Globe2, run: () => openPanelTab("browser", "浏览器") },
-      { group: "面板", label: "打开变更视图", icon: GitBranch, run: () => openPanelTab("review", "变更") },
-      { group: "面板", label: "添加项目树标签", icon: FolderTree, run: () => openPanelTab("tree", "项目树") },
-      { group: "配置", label: "自动化", icon: Clock3, run: () => { setSettingsPage("schedule"); setSettingsOpen(true); } },
-      { group: "配置", label: "模型设置", icon: Bot, run: () => { setSettingsPage("model"); setSettingsOpen(true); } },
-      { group: "配置", label: "插件", icon: Store, run: () => { setSettingsPage("plugins"); setSettingsOpen(true); } },
-      { group: "配置", label: "记忆", icon: Archive, run: () => { setSettingsPage("memory"); setSettingsOpen(true); } },
+      { group: "建议", label: "新任务", shortcut: "Ctrl+N", icon: MessageSquarePlus, run: () => H.startNewThread() },
+      { group: "建议", label: "打开工作区", shortcut: "Ctrl+O", icon: FolderOpen, run: () => void H.chooseWorkspace() },
+      { group: "建议", label: "设置", icon: Settings2, run: () => { H.setSettingsPage("general"); H.setSettingsOpen(true); } },
+      { group: "面板", label: "切换侧边栏", shortcut: "Ctrl+B", icon: PanelRightOpen, run: () => H.setRightOpen((current) => !current) },
+      { group: "面板", label: "切换终端", shortcut: "Ctrl+J", icon: TerminalSquare, run: () => H.openPanelTab("terminal", workspace ? basename(workspace) : "终端") },
+      { group: "面板", label: "切换预览", icon: Globe2, run: () => H.openPanelTab("browser", "浏览器") },
+      { group: "面板", label: "打开变更视图", icon: GitBranch, run: () => H.openPanelTab("review", "变更") },
+      { group: "面板", label: "添加项目树标签", icon: FolderTree, run: () => H.openPanelTab("tree", "项目树") },
+      { group: "配置", label: "自动化", icon: Clock3, run: () => { H.setSettingsPage("schedule"); H.setSettingsOpen(true); } },
+      { group: "配置", label: "模型设置", icon: Bot, run: () => { H.setSettingsPage("model"); H.setSettingsOpen(true); } },
+      { group: "配置", label: "插件", icon: Store, run: () => { H.setSettingsPage("plugins"); H.setSettingsOpen(true); } },
+      { group: "配置", label: "记忆", icon: Archive, run: () => { H.setSettingsPage("memory"); H.setSettingsOpen(true); } },
     ].filter((row) => match(row.label));
-    const tasks = threads.filter((entry) => (entry.name ?? "").toLowerCase().includes(q) || (entry.preview ?? "").toLowerCase().includes(q)).map((entry) => ({ group: "任务", label: cleanThreadDisplayTitle(entry.name, { preview: entry.preview }), icon: MessageSquare, run: () => void openThread(entry.id) }));
-    const files = treeEntries.filter((entry) => !entry.isDirectory && entry.fileName.toLowerCase().includes(q)).map((entry) => ({ group: "文件", label: entry.fileName, icon: FileCode2, run: () => void openFile(`${treePath || workspace}${treePath || workspace ? (treePath.includes("\\") ? "\\" : "/") : ""}${entry.fileName}`) }));
+    const tasks = threads.filter((entry) => (entry.name ?? "").toLowerCase().includes(q) || (entry.preview ?? "").toLowerCase().includes(q)).map((entry) => ({ group: "任务", label: cleanThreadDisplayTitle(entry.name, { preview: entry.preview }), icon: MessageSquare, run: () => void H.openThread(entry.id) }));
+    const files = treeEntries.filter((entry) => !entry.isDirectory && entry.fileName.toLowerCase().includes(q)).map((entry) => ({ group: "文件", label: entry.fileName, icon: FileCode2, run: () => void H.openFile(`${treePath || workspace}${treePath || workspace ? (treePath.includes("\\") ? "\\" : "/") : ""}${entry.fileName}`) }));
     const sections: { group: string; rows: any[] }[] = [];
     if (paletteTab === "all" || paletteTab === "ops") for (const group of ["建议", "面板", "配置"]) {
       const rows = ops.filter((row) => row.group === group);
@@ -12710,11 +13771,13 @@ const commandMatches = useMemo(() => {
     if ((paletteTab === "all" || paletteTab === "tasks") && tasks.length) sections.push({ group: "任务", rows: tasks });
     if ((paletteTab === "all" || paletteTab === "files") && files.length) sections.push({ group: "文件", rows: files });
     return sections;
-  })();
+  }, [paletteQuery, paletteTab, threads, treeEntries, treePath, workspace]);
   const fileTruncated = filePreview?.kind === "text" && filePreview.content.length >= 200_000;
   const usage = tokenUsage?.total ?? tokenUsage?.last ?? tokenUsage;
   const lastUsage = tokenUsage?.last ?? usage;
-  const completedTurns = thread?.turns.filter((turn) => turn.status !== "inProgress") ?? [];
+  // 记忆化理由同 paletteSections：原来每次 App 渲染都新建数组（O(回合数)），
+  // 而 onEvent 高频 setState 会让它每帧都跑一遍。
+  const completedTurns = useMemo(() => thread?.turns.filter((turn) => turn.status !== "inProgress") ?? [], [threadMemoKey]);
   const latestCompletedTurn = completedTurns.at(-1);
   const stats = usageStats;
   const activeFlags: string[] = thread?.status?.activeFlags ?? [];
@@ -12726,7 +13789,9 @@ const commandMatches = useMemo(() => {
   const activeThreadMemberRunning = expertTeamMemberRunning && thread && expertTeamMemberRunning.teamId === (teamThreadMapRef.current.get(thread.id) || teamThreadConfigRef.current.get(thread.id)?.teamId) ? expertTeamMemberRunning : null;
   const activeMemberTeam = activeThreadMemberRunning ? expertTeams.find((team) => team.teamId === activeThreadMemberRunning.teamId) ?? null : null;
   const activeMember = activeMemberTeam && activeThreadMemberRunning ? [activeMemberTeam.lead, ...activeMemberTeam.members].find((member) => member.id === activeThreadMemberRunning.memberName) ?? null : null;
-  const activityLabel = interrupting ? "正在停止" : waitingForApproval ? "等待你的确认" : waitingForInput ? "等待你的输入" : activeMember ? `专家「${activeMember.profession.zh || activeMember.name}」执行中` : subAgentRunning ? `子智能体「${subAgentRunning}」执行中` : activeThreadRunning ? (workStartedAt != null ? `已工作 ${Math.max(1, Math.round((nowTick - workStartedAt) / 1000))} 秒` : "Codex 正在处理") : "";
+  // 09-12 用户要求：去掉「已工作 X 秒」耗时指示（上方回合头部已有处理时间，重复且
+  // 在流式期间跟着内容上下跳）；只保留真正有信息量的状态（停止中/等确认/等输入/专家/子智能体）
+  const activityLabel = interrupting ? "正在停止" : waitingForApproval ? "等待你的确认" : waitingForInput ? "等待你的输入" : activeMember ? `专家「${activeMember.profession.zh || activeMember.name}」执行中` : subAgentRunning ? `子智能体「${subAgentRunning}」执行中` : "";
   // 上下文压缩后的缓存重建窗口：压缩重写了提示词前缀，上游缓存命中需要 1~3 轮才恢复
   // （rollout 实测：压缩后 last.cached=0 连续 2 轮，第 3 轮回到 98%）。窗口内 0% 不是 bug。
   const recentCompaction = useMemo(() => {
@@ -12736,7 +13801,7 @@ const commandMatches = useMemo(() => {
       if (turns[i].items?.some((item) => item.type === "contextCompaction")) return turns.length - 1 - i < 3;
     }
     return false;
-  }, [thread]);
+  }, [threadMemoKey]);
   const saveInlineRename = () => {
     const next = renameDraft.trim();
     if (next && thread) void renameThread(thread.id, next);
@@ -12755,8 +13820,13 @@ const commandMatches = useMemo(() => {
   // 拖拽容器的【子元素】（no-drag 豁免），fixed 悬浮层会被拖拽区吞掉点击（实测）。
   const topbarActionsNode = (
     <>
+                {popoutThreadId ? (
+        <button className="icon-button popout-return-btn" title="返回主应用（关闭本独立窗口）" onClick={() => void window.codex.popoutClose(thread?.id ?? null)}><Minimize2 size={16} /></button>
+      ) : (
+        <button className="icon-button popout-open-btn" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!thread} onClick={() => { if (thread) void popoutCurrentThread(thread.id); }}><Maximize2 size={16} /></button>
+      )}
                 <div className="ctx-picker">
-          <button className="icon-button ctx-picker-btn" title="工作区上下文（当前会话使用的项目目录）" onClick={() => setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
+          <button className="icon-button ctx-picker-btn tb-workspace" title="工作区上下文（当前会话使用的项目目录）" onClick={() => setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
           {ctxMenuOpen && <>
             <div className="menu-backdrop" onClick={() => setCtxMenuOpen(false)} />
             <div className="task-menu ctx-menu">
@@ -12766,7 +13836,7 @@ const commandMatches = useMemo(() => {
           </>}
         </div>
         <div className="task-menu-wrap">
-          <button className="icon-button" title="当前任务操作" onClick={() => setTaskMenuOpen((current) => !current)}><MoreHorizontal size={18} /></button>
+          <button className="icon-button tb-task-menu" title="当前任务操作" onClick={() => setTaskMenuOpen((current) => !current)}><MoreHorizontal size={18} /></button>
           {taskMenuOpen && <>
             <div className="menu-backdrop" onClick={closeTaskMenu} />
             <div className="task-menu" role="menu">
@@ -12786,19 +13856,19 @@ const commandMatches = useMemo(() => {
             </div>
           </>}
         </div>
-        <button className="icon-button" title="新建终端标签页" onClick={() => { setRightOpen(true); setRightTab("terminal"); }}><TerminalSquare size={16} /></button>
-        <button className="icon-button" title={rightOpen ? "收起右侧面板" : "展开右侧面板"} onClick={() => setRightOpen(!rightOpen)}>{rightOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button>
+        <button className="icon-button tb-terminal" title="新建终端标签页" onClick={() => { setRightOpen(true); setRightTab("terminal"); }}><TerminalSquare size={16} /></button>
+        <button className="icon-button tb-right-panel" title={rightOpen ? "收起右侧面板" : "展开右侧面板"} onClick={() => setRightOpen(!rightOpen)}>{rightOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button>
     </>
   );
   return (
     <div
       ref={shellRef}
-      className={`app-shell ${rightOpen ? "with-context" : ""} ${sidebarCollapsed ? "side-collapsed" : ""} ${narrow ? "narrow" : ""}`}
+      className={`app-shell ${rightOpen ? "with-context" : ""} ${sidebarCollapsed ? "side-collapsed" : ""} ${narrow ? "narrow" : ""} ${popoutThreadId ? "popout-shell" : ""}`}
       // 右侧上下文面板仅在用户显式开启后参与网格；收起左栏时不能塞入一个 0px 首列，
       // 否则 CSS Grid 会保留隐式轨道，把 workspace 挤到最右侧。
-      style={rightOpen ? { gridTemplateColumns: sidebarCollapsed ? `minmax(0, 1fr) 1px ${panelWidth}px` : `256px minmax(0, 1fr) 1px ${panelWidth}px` } : undefined}
+      style={rightOpen ? { gridTemplateColumns: popoutThreadId ? `minmax(0, 1fr) 1px ${panelWidth}px` : sidebarCollapsed ? `minmax(0, 1fr) 1px ${panelWidth}px` : `256px minmax(0, 1fr) 1px ${panelWidth}px` } : undefined}
     >
-      {sidebarCollapsed && <div className="sidebar-hotzone" aria-hidden onMouseEnter={() => setSidebarFlyout(true)} />}
+      {!popoutThreadId && sidebarCollapsed && <div className="sidebar-hotzone" aria-hidden onMouseEnter={() => setSidebarFlyout(true)} />}
         <header className="topbar">
         {sidebarCollapsed && !narrow && <button className="icon-button sidebar-reveal" title="展开侧边栏" onClick={() => { setSidebarCollapsed(false); setSidebarFlyout(false); localStorage.setItem("sidebar-collapsed", "false"); }}><Menu size={18} /></button>}
         <button className="icon-button mobile-menu" title="打开导航" onClick={() => setMobileNav(!mobileNav)}><Menu size={18} /></button>
@@ -12809,8 +13879,7 @@ const commandMatches = useMemo(() => {
         </div>
         <div className="topbar-actions">{topbarActionsNode}</div>
       </header>
-      <aside className={`sidebar ${mobileNav ? "mobile-open" : ""} ${sidebarFlyout ? "flyout-open" : ""}`} onMouseEnter={() => sidebarCollapsed && setSidebarFlyout(true)} onMouseLeave={() => sidebarCollapsed && setSidebarFlyout(false)}>
-        <div className="brand-row">
+      {!popoutThreadId && <aside className={`sidebar ${mobileNav ? "mobile-open" : ""} ${sidebarFlyout ? "flyout-open" : ""}`} onMouseEnter={() => sidebarCollapsed && setSidebarFlyout(true)} onMouseLeave={() => sidebarCollapsed && setSidebarFlyout(false)}>        <div className="brand-row">
           <button className={`brand-mark sidebar-toggle ${sidebarCollapsed ? "is-collapsed" : "is-expanded"}`} aria-label={narrow ? "Codex Harness" : sidebarCollapsed ? "展开侧栏" : "收起侧栏"} title={narrow ? "Codex Harness" : sidebarCollapsed ? "展开侧栏" : "收起侧栏"} onClick={() => { if (narrow) return; const next = !sidebarCollapsed; setSidebarCollapsed(next); localStorage.setItem("sidebar-collapsed", String(next)); }}>
             <span className="ch-logo" aria-hidden="true"><i>C</i><i>H</i></span>
             <span className="sidebar-toggle-arrow"><ArrowLeft size={13} strokeWidth={2.4} /></span>
@@ -12822,7 +13891,7 @@ const commandMatches = useMemo(() => {
           <button className="sidebar-tab" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}><Clock3 size={15} /><span>自动化</span></button>
           <button className="sidebar-tab" onClick={() => { setSettingsPage("skills"); setSettingsOpen(true); setMobileNav(false); }}><Zap size={15} /><span>技能中心</span></button>
           <button className="sidebar-tab" onClick={() => { setSettingsPage("plugins"); setSettingsOpen(true); setMobileNav(false); }}><Store size={15} /><span>插件市场</span></button>
-          <button className="sidebar-tab" onClick={() => { setSettingsPage("teams"); setSettingsOpen(true); setMobileNav(false); }}><Users size={15} /><span>专家团</span></button>
+          <button className="sidebar-tab" onClick={() => { setSettingsPage("agentteam"); setSettingsOpen(true); setMobileNav(false); }}><Users size={15} /><span>专家/专家团</span></button>
           <button className="sidebar-tab" onClick={() => { setSettingsPage("backup"); setSettingsOpen(true); setMobileNav(false); }}><Download size={15} /><span>会话备份</span></button>
         </div>
         <button className="search-box" title="搜索任务与操作（Ctrl+K）" onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={15} /><span>搜索任务</span><kbd>Ctrl K</kbd></button>
@@ -12956,10 +14025,11 @@ const commandMatches = useMemo(() => {
               </>}
             </div>
           )}
-          <button className="account-icon" title="移动端远程控制" onClick={() => { setMobileRemoteOpen(true); void window.codex.remoteStart().then((r) => setRemoteUrl(r.url)).catch(() => undefined); void window.codex.remoteStatus().then((s) => { setRemoteStatus(s.status); setRemoteDevices(s.devices); setRemoteUrl(s.url); }).catch(() => undefined); void window.codex.remoteQrcode().then((svg) => setRemoteQr(svg)).catch(() => undefined); }}><Smartphone size={15} /></button>
+          <button className="account-icon" title="移动端远程控制" onClick={() => { setMobileRemoteOpen(true); void window.codex.remoteStart().then((r) => setRemoteUrl(r.url)).catch(() => undefined); void window.codex.remoteStatus().then((s) => { setRemoteStatus(s.status); setRemoteDevices(s.devices); setRemoteUrl(s.url); }).catch(() => undefined); void window.codex.remoteQrcode().then((svg) => setRemoteQr(svg)).catch(() => undefined); void loadPairStates(); }}><Smartphone size={15} /></button>
           <button className="sidebar-settings" title="设置" onClick={() => { setSettingsPage("appearance"); setSettingsOpen(true); setMobileNav(false); }}><Settings2 size={16} /></button>
         </div>
-      </aside>
+      </aside>}
+      {popoutThreadId && <div className="popout-sidebar-gap" aria-hidden />}
 
       <main className="workspace">
 
@@ -12986,8 +14056,8 @@ const commandMatches = useMemo(() => {
               <small>向上滚动到此也会自动继续加载</small>
             </button>
           )}
-          {thread?.turns.slice(Math.max(0, thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW))).map((turn) => <MemoTurnView turn={turn} isLastTurn={turn.id === thread.turns[thread.turns.length - 1]?.id} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={tokenUsage} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />)}
-          {optimisticInput && !optimisticConfirmed && <ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} />}
+          {thread?.turns.slice(Math.max(0, thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW))).map((turn) => <MemoTurnView turn={turn} isLastTurn={turn.id === thread.turns[thread.turns.length - 1]?.id} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={turn.id === latestCompletedTurn?.id || turn.id === activeTurnId ? tokenUsage : null} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />)}
+          {optimisticInput && !optimisticConfirmed && <div id="chat-anchor"><ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} /></div>}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
           {systemEvents.map((event) => <div className={`system-event ${event.tone ?? "info"}`} key={event.id}><strong>{event.tone === "success" ? <CircleCheck size={13} className="system-event-icon" /> : null}{event.title}</strong><Markdown>{event.text}</Markdown></div>)}
           {/* 上下文压缩分隔线：两边虚线 + 中间文字，状态切换带过渡；success/error 常驻可手动关闭，
@@ -13014,7 +14084,8 @@ const commandMatches = useMemo(() => {
               <i className="compact-divider-line" aria-hidden />
             </div>
           )}
-          {pending.filter((request) => !request.params?.threadId || request.params.threadId === thread?.id).map((request) => <RequestCard request={request} key={request.id} onDone={() => setPending((current) => current.filter((entry) => entry.id !== request.id))} />)}
+          {/* ⛔ 审批卡已迁到 composer-wrap（贴输入框上方，09-13 用户定稿：原消息流内的大卡
+              太占屏、弹窗窗口里也看不到——贴输入框的卡片与 agent-ask 同款布局，主窗/弹窗一致） */}
           {activityLabel && <div className={`working-indicator ${waitingForApproval || waitingForInput ? "paused" : ""}`}>
             {activeMember
               ? <span className="expert-working-avatar" style={{ background: AVATAR_GRADIENTS[avatarToneOf(activeMember.id || activeMember.name)] }} aria-hidden="true">{expertRoleLabel(activeMember, activeMember.id === activeMemberTeam?.lead.id).slice(0, 1)}</span>
@@ -13025,9 +14096,19 @@ const commandMatches = useMemo(() => {
             <span>{activityLabel}</span>
           </div>}
           {/* 底部留白只按回合状态：活跃回合给 compact 跟随留白；空闲态一律不留空白。
-              乐观气泡不再触发大缓冲（它会在服务端消息确认后消失，大缓冲会残留成空白）。 */}
-          {(activeTurnId || sending || (optimisticInput && !optimisticConfirmed)) ? <div className="timeline-bottom-spacer compact" aria-hidden />
+              乐观气泡不再触发大缓冲（它会在服务端消息确认后消失，大缓冲会残留成空白）。
+              ⚠️ 留白**不参与落点计算**：contentBottomOf 会扣掉它的高度（见该函数注释）。 */}
+          {(activeTurnId || sending || (optimisticInput && !optimisticConfirmed)) ? <div className="timeline-bottom-spacer compact" ref={compactSpacerRef} aria-hidden />
             : null}
+          {/* ⛔ 排队消息**不再**在对话区里渲染（用户 09-13 定稿：「排队消息只贴在输入框上面展示就行」）。
+              原来这里还有一份 `.timeline-queue` 浅色气泡，与输入框上方那张管理卡是**同一份数据的两处展示**
+              —— 既是重复展示的来源（引擎把它变成真实气泡后本地没摘干净就并存两份），
+              也让队列管理有两个入口。队列只有输入框上方一处（QueuedMessageList，>2 条自动折叠）。 */}
+          {/* 锚顶留白（高度由钉顶逻辑按「视口高 − 锚点高」动态设置）：
+              让短消息下方也有一屏空间，scrollTop 才够得着锚点、消息才能钉在顶部。
+              非钉顶时高度为 0（inline style 控制），不占位、不影响贴底。
+              注意它必须排在 #chat-anchor（乐观气泡）之后。 */}
+          <div className="timeline-bottom-spacer anchor-pad" ref={anchorSpacerRef} style={{ height: 0 }} aria-hidden />
         </div>
           {switchingThreadId && (
             <div className={`thread-switch-overlay ${switchingFading ? "fading" : ""}`} role="status"><Spinner /><span>正在恢复会话…</span></div>
@@ -13036,7 +14117,7 @@ const commandMatches = useMemo(() => {
             <button
               className="jump-bottom"
               title="回到底部"
-              onClick={() => { stickToBottomRef.current = true; const el = scrollRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }); }}
+              onClick={() => { releaseToUserRef.current("button"); stickToBottomRef.current = true; const el = scrollRef.current; if (el) scrollToOffsetInstant(el, contentTailTarget(el)); }}
             ><ArrowDown size={16} /></button>
           )}
         </div>
@@ -13127,6 +14208,10 @@ const commandMatches = useMemo(() => {
               )}
             </div>
           )}
+          {/* 审批卡：贴输入框上方（与 agent-ask 同款布局，09-13 从消息流大卡迁来）。
+              主窗口与独立会话窗口走同一渲染逻辑——各自的 pending 里属于本窗口当前会话的
+              请求都会在这里出现，弹窗里也能审批。 */}
+          {pending.filter((request) => !request.params?.threadId || request.params.threadId === thread?.id).map((request) => <RequestCard request={request} key={request.id} onDone={() => setPending((current) => current.filter((entry) => entry.id !== request.id))} />)}
           {notice && createPortal(
             (() => {
               const tone = noticeTone(notice);
@@ -13517,6 +14602,60 @@ const commandMatches = useMemo(() => {
         <div className="remote-panel2" role="dialog" aria-label="移动端远程控制">
           <header><div className="remote-head-left"><Smartphone size={19} /><div><strong>移动端远程控制</strong><small>扫码或在手机上打开链接，即可远程控制当前工作区。</small></div></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setMobileRemoteOpen(false)}><X size={17} /></button></header>
           <div className="remote-columns">
+            {/* 左右两个显式纵向栈：左 = 配对码/审批/已批准/Bot，右 = 扫码。此前是自动流网格，
+                配对码卡会被拉高去对齐右列的二维码（下半截全空）、右下格整个空着 = 大片空白 */}
+            <div className="remote-side">
+            {/* 6 位配对码：手机扫码后要输它，之后还要在下面这张卡里点「允许」 */}
+            <div className="remote-pair-card">
+              <div className="remote-pair-head"><KeyRound size={15} /><strong>首次连接需要配对码</strong>
+                <button className="remote-mini-btn" title="换一个配对码" onClick={() => void window.codex.remotePairRotate().then((r) => setPairCode(r.code)).catch(() => undefined)}><RefreshCw size={13} />刷新</button>
+              </div>
+              <div className="remote-pair-code" data-pair-code>{pairCode ? pairCode.replace(/(\d{3})(\d{3})/, "$1 $2") : "······"}</div>
+              <small>手机扫码后输入这 6 位数字，再回到这里点「允许」。配对码 5 分钟内有效，错 10 次自动作废。</small>
+            </div>
+            {pairPending.length > 0 && (
+              <div className="remote-approve-card" data-pair-pending>
+                <div className="remote-approve-head"><ShieldCheck size={15} /><strong>有 {pairPending.length} 台手机等待批准</strong></div>
+                {pairPending.map((request) => (
+                  <div className="remote-approve-row" key={request.rid} data-pair-row={request.rid}>
+                    <div className="remote-approve-info"><strong>{request.name}</strong><small>请求连接这台电脑的工作区</small></div>
+                    <div className="remote-approve-actions">
+                      <button className="remote-allow-btn" onClick={() => { const done = request.rid.startsWith("bp-") ? window.codex.botApprove(request.rid) : window.codex.remoteApprove(request.rid); void done.then(() => { setPairPending((c) => c.filter((r) => r.rid !== request.rid)); void loadPairStates(); }).catch(() => undefined); }}>允许</button>
+                      <button className="remote-deny-btn" onClick={() => { const done = request.rid.startsWith("bp-") ? window.codex.botDeny(request.rid) : window.codex.remoteDeny(request.rid); void done.then(() => setPairPending((c) => c.filter((r) => r.rid !== request.rid))).catch(() => undefined); }}>拒绝</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {pairApproved.length > 0 && (
+              <div className="remote-approved-card">
+                <div className="remote-approve-head"><Smartphone size={15} /><strong>已批准的设备（{pairApproved.length}）</strong></div>
+                {pairApproved.map((device) => (
+                  <div className="remote-approved-row" key={device.deviceId}>
+                    <span>{device.name}</span>
+                    {/* Bot Channel 批准的设备（source=bot，deviceId 形如 wechat:xxx）要走 botRevoke，
+                        remoteRevoke 对它无效 —— 之前点「移除」没反应就是这里没分流 */}
+                    <button className="remote-mini-btn" title="撤销，下次重新配对" onClick={() => { const done = device.source === "bot" ? window.codex.botRevoke(device.deviceId) : window.codex.remoteRevoke(device.deviceId); void done.then(() => void loadPairStates()).catch(() => undefined); }}>移除</button>
+                  </div>
+                ))}
+              </div>
+            )}
+              <div className="remote-col remote-bot-col">
+                <div className="remote-col-title"><Link2 size={15} /><strong>使用 Bot Channel</strong></div>
+                <p className="remote-col-desc">连接聊天 Bot，适合更长时间的移动端访问。</p>
+                {[["微信", "", "从微信会话打开这个工作区。"], ["飞书", "中国", "在飞书群里 @机器人 打开这个工作区。"]].map(([name, region, desc]: any) => (
+                  <div className="bot-channel-card" key={name}>
+                    <div className="bot-channel-head">
+                      <strong>{name}{region && <span className="bot-region">{region}</span>}</strong>
+                      <button className="bot-config-link" onClick={() => { setMobileRemoteOpen(false); setBotManagerOpen(true); }}>去配置</button>
+                    </div>
+                    <small>{desc}</small>
+                  </div>
+                ))}
+                <button className="remote-manage-btn" onClick={() => setBotManagerOpen(true)}><Link2 size={13} />机器人管理</button>
+              </div>
+            </div>
+            <div className="remote-side remote-side-qr">
             <div className="remote-col">
               <div className="remote-col-title"><Smartphone size={15} /><strong>手机扫码连接</strong></div>
               <p className="remote-col-desc">用手机<b>相机</b>扫一扫（若扫码识别成文本，请选「打开链接」）。{remoteUrl?.startsWith("https") ? "手机无需与电脑同一 Wi-Fi。" : "手机需与电脑同一 Wi-Fi。"}</p>
@@ -13537,29 +14676,39 @@ const commandMatches = useMemo(() => {
                 </div>
               )}
             </div>
-            <div className="remote-col">
-              <div className="remote-col-title"><Link2 size={15} /><strong>使用 Bot Channel</strong></div>
-              <p className="remote-col-desc">连接聊天 Bot，适合更长时间的移动端访问。</p>
-              {[["微信", "", "从微信会话打开这个工作区。"], ["飞书", "中国", "在飞书群里 @机器人 打开这个工作区。"]].map(([name, region, desc]: any) => (
-                <div className="bot-channel-card" key={name}>
-                  <div className="bot-channel-head">
-                    <strong>{name}{region && <span className="bot-region">{region}</span>}</strong>
-                    <button className="bot-config-link" onClick={() => { setMobileRemoteOpen(false); setBotManagerOpen(true); }}>去配置</button>
-                  </div>
-                  <small>{desc}</small>
-                </div>
-              ))}
-              <button className="remote-manage-btn" onClick={() => setBotManagerOpen(true)}><Link2 size={13} />机器人管理</button>
             </div>
           </div>
         </div>
       </div>}
       {botManagerOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setBotManagerOpen(false); }}>
         <div className="bot-manager" role="dialog" aria-label="机器人">
-          <header><div className="bot-head-left"><Link2 size={17} /><strong>机器人</strong><small>把外部聊天工具和 Webhook 接入 ZCode 机器人。</small></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setBotManagerOpen(false)}><X size={17} /></button></header>
+          <header><div className="bot-head-left"><Link2 size={17} /><strong>机器人</strong><small>把外部聊天工具和 Webhook 接入为你的聊天机器人。</small></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setBotManagerOpen(false)}><X size={17} /></button></header>
+          {/* 09-13：首次连接的 6 位配对码与待审批请求直接在这里展示——
+              否则用户得叉掉面板回「手机远控」看码，来回跳（用户反馈「不方便」） */}
+          <div className="bot-pair-banner">
+            <div className="bot-pair-main">
+              <span className="bot-pair-label">首次连接配对码</span>
+              <strong className="bot-pair-code" data-pair-code>{pairCode ? pairCode.replace(/(\d{3})(\d{3})/, "$1 $2") : "······"}</strong>
+              <button className="remote-mini-btn" title="换一个配对码" onClick={() => void window.codex.remotePairRotate().then((r) => setPairCode(r.code)).catch(() => undefined)}><RefreshCw size={12} />刷新</button>
+            </div>
+            <small className="bot-pair-hint">机器人首次对话时，在聊天里发这个 6 位码（5 分钟内有效）；收到「等待批准」后回到这里点允许。</small>
+            {pairPending.length > 0 && (
+              <div className="bot-pair-pending">
+                {pairPending.map((request) => (
+                  <div className="remote-approve-row" key={request.rid} data-pair-row={request.rid}>
+                    <div className="remote-approve-info"><strong>{request.name}</strong><small>等待电脑端批准</small></div>
+                    <div className="remote-approve-actions">
+                      <button className="remote-allow-btn" onClick={() => { const done = request.rid.startsWith("bp-") ? window.codex.botApprove(request.rid) : window.codex.remoteApprove(request.rid); void done.then(() => { setPairPending((c) => c.filter((r) => r.rid !== request.rid)); void loadPairStates(); }).catch(() => undefined); }}>允许</button>
+                      <button className="remote-deny-btn" onClick={() => { const done = request.rid.startsWith("bp-") ? window.codex.botDeny(request.rid) : window.codex.remoteDeny(request.rid); void done.then(() => setPairPending((c) => c.filter((r) => r.rid !== request.rid))).catch(() => undefined); }}>拒绝</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="bot-columns">
             <div className="bot-side">
-              <button className="bot-new-btn" onClick={() => { const id = crypto.randomUUID(); setBots((cur) => { const next = [...cur, { id, name: "新机器人", channel: "", enabled: false }]; localStorage.setItem("bots", JSON.stringify(next)); return next; }); setActiveBotId(id); setBotChannelPick(null); showToast("机器人已创建", "选择渠道并扫码绑定后即可使用"); }}><Plus size={14} />新建机器人</button>
+              <button className="bot-new-btn" onClick={() => { const id = crypto.randomUUID(); setBotsPersist((cur) => { const next = [...cur, { id, name: "新机器人", channel: "", enabled: false }]; return next; }); setActiveBotId(id); setBotChannelPick(null); showToast("机器人已创建", "选择渠道并扫码绑定后即可使用"); }}><Plus size={14} />新建机器人</button>
               <div className="bot-list">
                 {bots.map((bot) => {
                   const online = botOnlineOf(bot, channelOnline);
@@ -13578,7 +14727,7 @@ const commandMatches = useMemo(() => {
               {(() => { const activeBot = bots.find((b) => b.id === activeBotId); if (!activeBot) return <div className="bot-empty"><p className="muted">从左侧选择一个机器人，或新建一个。</p></div>; return (<>
                 <div className="bot-detail-head">
                   <div><strong>{activeBot.name}</strong></div>
-                  <label className="bot-switch"><input type="checkbox" checked={activeBot.enabled} onChange={() => setBots((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, enabled: !b.enabled } : b); localStorage.setItem("bots", JSON.stringify(next)); return next; })} /><span /></label>
+                  <label className="bot-switch"><input type="checkbox" checked={activeBot.enabled} onChange={() => setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, enabled: !b.enabled } : b); return next; })} /><span /></label>
                 </div>
                 {(() => { const online = Boolean(activeBot.channel) && botOnlineOf(activeBot, channelOnline); return (<>
                 <p className={"bot-status-line" + (online ? " online" : "")}>{online ? "● 已连接" : activeBot.enabled ? "● 已启用" : "○ 未启用"}</p>
@@ -13593,13 +14742,13 @@ const commandMatches = useMemo(() => {
                 ) : (<>
                 <div className="bot-channel-grid">
                   {([["wechat", "微信", "手机微信扫码登录，在微信里直接聊。", "中国"], ["telegram", "Telegram", "填 Bot Token 连接（@BotFather 创建）。", ""], ["feishu", "飞书", "填 App ID/Secret，群里 @机器人对话。", "中国"], ["dingtalk", "钉钉", "填 Client ID/Secret，群内 @机器人。", "中国"], ["qq", "QQ 机器人", "填 AppID/Secret（q.qq.com 实名创建）。", "中国"], ["wecom-webhook", "企微推送", "群机器人 Webhook，推送任务通知。", "中国"]] as const).map(([key, name, desc, region]) => (
-                    <button key={key} className={"bot-channel-opt " + (botChannelPick === key ? "picked" : "")} onClick={() => { setBotChannelPick(key); setBots((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, channel: key } : b); localStorage.setItem("bots", JSON.stringify(next)); return next; }); }}>
+                    <button key={key} className={"bot-channel-opt " + (botChannelPick === key ? "picked" : "")} onClick={() => { setBotChannelPick(key); setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, channel: key } : b); return next; }); }}>
                       <strong>{name}{region ? <span className="bot-region">{region}</span> : null}</strong>
                       <small>{desc}</small>
                     </button>
                   ))}
                 </div>
-                {botChannelPick && <BotBindCard bot={activeBot} onBound={(deviceName) => { setBots((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, enabled: true } : b); localStorage.setItem("bots", JSON.stringify(next)); return next; }); void window.codex.channelsStatus?.().then(setChannelOnline).catch(() => undefined); showToast("机器人已连接", `${activeBot.name} 已通过 ${deviceName} 连接`); }} />}
+                {botChannelPick && <BotBindCard bot={activeBot} onBound={(deviceName) => { setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, enabled: true } : b); return next; }); void window.codex.channelsStatus?.().then(setChannelOnline).catch(() => undefined); showToast("机器人已连接", `${activeBot.name} 已通过 ${deviceName} 连接`); }} />}
                 </>)}
                 </>); })()}
                 {(Boolean(activeBot.channel) && ["wechat", "telegram", "feishu", "dingtalk", "qq"].includes(activeBot.channel)) && (() => { // 绑定会话：创建时即可配置（连上后锁定；企微推送为单向通知无会话）
@@ -13629,7 +14778,7 @@ const commandMatches = useMemo(() => {
                   );
                 })()}                <div className="bot-detail-row">
                   <div><strong>机器人回复粒度</strong><small>回复助手正文和文件变更，隐藏工具调用过程。</small></div>
-                  <select className="bot-select" value={(activeBot as any).granularity ?? "standard"} onChange={(event) => setBots((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, granularity: event.target.value } : b); localStorage.setItem("bots", JSON.stringify(next)); return next; })}>
+                  <select className="bot-select" value={(activeBot as any).granularity ?? "standard"} onChange={(event) => setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, granularity: event.target.value } : b); return next; })}>
                     <option value="standard">标准回复</option>
                     <option value="concise">简洁回复</option>
                     <option value="verbose">详细回复</option>
@@ -13651,7 +14800,7 @@ const commandMatches = useMemo(() => {
                 </>)}
                 <div className="bot-detail-row">
                   <div><strong>工作区访问范围</strong><small>这个机器人可以使用所有已配置的工作区。</small></div>
-                  <select className="bot-select" value={(activeBot as any).scope ?? "all"} onChange={(event) => setBots((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, scope: event.target.value } : b); localStorage.setItem("bots", JSON.stringify(next)); return next; })}>
+                  <select className="bot-select" value={(activeBot as any).scope ?? "all"} onChange={(event) => setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, scope: event.target.value } : b); return next; })}>
                     <option value="all">所有工作区</option>
                     <option value="current">仅当前工作区</option>
                   </select>
@@ -13659,12 +14808,14 @@ const commandMatches = useMemo(() => {
                 <div className="bot-delete-row"><div><strong>删除机器人</strong><small>移除这个机器人，并断开其渠道连接（微信/Telegram 需重新扫码绑定）。</small></div><button className="bot-delete-btn" onClick={async () => {
                   // 删除必须同步断开渠道会话：网关凭据（微信 token/Telegram token）是主进程全局的，
                   // 只删 UI 记录的话同渠道新建会被判定「已连接」直接复用旧会话，扫码入口都不出现
+                  // ⚠️ 清凭据不可逆（微信要重新扫码），必须二次确认——此前无确认，误点一下登录态就没了
+                  if (!window.confirm(`删除机器人「${activeBot.name}」？\n\n将同时断开${botChannelName(activeBot.channel) || "渠道"}连接并清除登录凭据（微信/Telegram 需重新扫码），机器人卡片不会自动恢复。`)) return;
                   try {
                     if (activeBot.channel === "wechat") await window.codex.weixinLogout();
                     if (activeBot.channel === "telegram") await window.codex.telegramLogout();
                     void window.codex.channelsStatus?.().then(setChannelOnline).catch(() => undefined);
                   } catch { /* 断开失败不阻塞删除 */ }
-                  setBots((cur) => { const next = cur.filter((b) => b.id !== activeBot.id); localStorage.setItem("bots", JSON.stringify(next)); return next; }); setActiveBotId(null); showToast("机器人已删除", "渠道连接已断开，可随时重新新建并绑定");
+                  setBotsPersist((cur) => { const next = cur.filter((b) => b.id !== activeBot.id); return next; }); setActiveBotId(null); showToast("机器人已删除", "渠道连接已断开，可随时重新新建并绑定");
                 }}><Trash2 size={13} />删除机器人</button></div>
               </>); })()}
             </div>
@@ -13962,12 +15113,17 @@ const commandMatches = useMemo(() => {
             )}
             {settingsPage === "agentteam" && (
               <section className="settings-section stack hub-page">
-                <div className="settings-copy"><h2>智能体团队</h2><p>子智能体与专家团的总入口。</p></div>
-                <div className="hub-card-grid">
+                <div className="settings-copy"><h2>专家和专家团</h2><p>单体专家与多角色团队的总入口。</p></div>
+                <div className="hub-card-grid hub-card-grid-3">
                   <button className="hub-card" onClick={() => setSettingsPage("agents")}>
                     <span className="hub-card-icon"><Bot size={20} /></span>
                     <strong>子智能体</strong>
                     <p>自定义角色，注册为 subagent_invoke 函数，Codex 在对话中直接调用。</p>
+                  </button>
+                  <button className="hub-card" onClick={() => setSettingsPage("expert-center")}>
+                    <span className="hub-card-icon"><LayoutGrid size={20} /></span>
+                    <strong>专家中心</strong>
+                    <p>全部专家按领域分类陈列，一眼看清谁能干什么；点卡直达一对一会话。</p>
                   </button>
                   <button className="hub-card" onClick={() => setSettingsPage("teams")}>
                     <span className="hub-card-icon"><Users size={20} /></span>
@@ -13977,9 +15133,53 @@ const commandMatches = useMemo(() => {
                 </div>
               </section>
             )}
-            {(settingsPage === "browser" || settingsPage === "computer" || settingsPage === "rpa" || settingsPage === "agents" || settingsPage === "teams") && (
-              <button className="settings-back-row" onClick={() => setSettingsPage(settingsPage === "agents" || settingsPage === "teams" ? "agentteam" : "automation")}>
-                <ArrowLeft size={14} />{settingsPage === "agents" || settingsPage === "teams" ? "返回智能体团队" : "返回自动化"}
+            {settingsPage === "expert-center" && (() => {
+              // 专家中心：全部专家按领域分类陈列，点卡直达单人会话；
+              // 内置团队按 EXPERT_CATEGORY_DEFS 归类，自定义团队落「更多专家」。
+              const expertCards = expertTeams.flatMap((team) => [team.lead, ...team.members].map((member) => ({ team, member, isLead: member.id === team.lead.id })));
+              const groups = EXPERT_CATEGORY_DEFS.map(({ title, blurb, icon, teamIds }) => ({ title, blurb, icon, cards: expertCards.filter((c) => teamIds.includes(c.team.teamId)) })).filter((g) => g.cards.length);
+              const known = new Set(EXPERT_CATEGORY_DEFS.flatMap((d) => d.teamIds));
+              const rest = expertCards.filter((c) => !known.has(c.team.teamId));
+              if (rest.length) groups.push({ title: "更多专家", blurb: "自定义团队与外部导入的专家", icon: Users, cards: rest });
+              return (
+              <section className="settings-section stack hub-page expert-center-page">
+                <div className="settings-copy"><h2>专家中心</h2><p>按领域分类的全部专家——点击任意专家卡片，直接进入与 TA 的一对一会话。</p></div>
+                {groups.map((g) => (
+                  <div className="expert-category" key={g.title}>
+                    <div className="expert-category-head">
+                      <span className="expert-category-icon"><g.icon size={15} /></span>
+                      <strong>{g.title}</strong>
+                      <small>{g.blurb}</small>
+                      <em>{g.cards.length} 位</em>
+                    </div>
+                    <div className="expert-center-grid">
+                      {g.cards.map(({ team, member, isLead }) => {
+                        const Icon = expertIconOf(member);
+                        return (
+                        <button key={team.teamId + ":" + member.id} className={`expert-center-card${expertTeamMemberDirect === `${team.teamId}:${member.id}` ? " is-working" : ""}`}
+                          title={member.description || member.profession.zh}
+                          disabled={expertTeamMemberDirect === `${team.teamId}:${member.id}`}
+                          onClick={() => void startMemberDirectSession(team, member)}>
+                          <span className="expert-center-avatar" style={isLead ? undefined : { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] }}><Icon size={17} /></span>
+                          <span className="expert-center-main">
+                            <strong>{member.name}{isLead && <i className="expert-lead-badge">主理人</i>}</strong>
+                            <small>{member.profession.zh}</small>
+                            <em>{member.description || team.displayName.zh}</em>
+                          </span>
+                          {expertTeamMemberDirect === `${team.teamId}:${member.id}` ? <Spinner /> : <ArrowRight size={14} />}
+                        </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+                {!expertCards.length && <p className="muted">还没有专家——先在「专家团」里创建。</p>}
+              </section>
+              );
+            })()}
+            {(settingsPage === "browser" || settingsPage === "computer" || settingsPage === "rpa" || settingsPage === "agents" || settingsPage === "teams" || settingsPage === "expert-center") && (
+              <button className="settings-back-row" onClick={() => setSettingsPage(settingsPage === "agents" || settingsPage === "teams" || settingsPage === "expert-center" ? "agentteam" : "automation")}>
+                <ArrowLeft size={14} />{settingsPage === "agents" || settingsPage === "teams" || settingsPage === "expert-center" ? "返回智能体团队" : "返回自动化"}
               </button>
             )}
             {settingsPage === "user" && <UserCenterSection username={username} onUsernameChange={(name) => { setUsername(name); }} personality={personality} onPersonalityChange={(v) => changePersonality(v)} onNotice={(m) => setNotice(m)} onProfileChange={(p) => setUserAvatar(p.avatarType && p.avatar ? { type: p.avatarType, value: p.avatar } : null)} onLogout={handleLogout} />}
@@ -15077,7 +16277,7 @@ const commandMatches = useMemo(() => {
               <div className="subagent-banner"><Users size={16} /><div><strong>让 Codex 真正会带团队协作</strong><p>发起会话后，主理人（lead）会在独立会话中通过 <code>team_member_invoke(memberId, query)</code> 按 SOP 调度成员，成员独立产出后回传，主理人最终汇总交付。</p></div></div>
 
               <div className="expert-team-grid-list">{expertTeams.map((team) => <article className={`subagent-card ${team.enabled ? "enabled" : "disabled"}`} key={team.teamId}>
-                <div className="subagent-card-head"><span className="subagent-avatar"><Users size={16} /></span><label className="channel-enable" title={team.enabled ? "停用" : "启用"}><input type="checkbox" checked={team.enabled} onChange={() => void toggleExpertTeamEnabled(team)} /><span>{team.enabled ? "已启用" : "已停用"}</span></label></div>
+                <div className="subagent-card-head"><span className="subagent-avatar expert-team-avatar"><Users size={16} /></span><label className="channel-enable" title={team.enabled ? "停用" : "启用"}><input type="checkbox" checked={team.enabled} onChange={() => void toggleExpertTeamEnabled(team)} /><span>{team.enabled ? "已启用" : "已停用"}</span></label></div>
                 <strong className="subagent-name">{team.profession.zh || team.displayName.zh}</strong>
                 <p className="subagent-desc">{team.description.zh || "暂无描述"}</p>
                 <div className="subagent-meta">
@@ -15087,17 +16287,20 @@ const commandMatches = useMemo(() => {
                 </div>
                 <div className="subagent-meta"><span title="SOP"><Workflow size={11} />{team.sop ? "已配置 SOP" : "未配置 SOP"}</span></div>
                 <div className="expert-team-member-chips" title="点击角色可进入单独会话">
-                  {[team.lead, ...team.members].map((member) => (
+                  {[team.lead, ...team.members].map((member) => {
+                    const ChipIcon = expertIconOf(member);
+                    return (
                     <button key={member.id} className={`expert-team-member-chip${member.id === team.lead.id ? " is-lead" : ""}${expertTeamMemberRunning?.teamId === team.teamId && expertTeamMemberRunning.memberName === member.id ? " is-working" : ""}`}
                       title={`${expertRoleLabel(member, member.id === team.lead.id)}${member.description ? `：${member.description}` : ""}`}
                       disabled={expertTeamMemberDirect === `${team.teamId}:${member.id}`}
                       onClick={() => void startMemberDirectSession(team, member)}>
-                      <span className="expert-team-member-chip-avatar" aria-hidden="true" style={member.id === team.lead.id ? undefined : { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] }}>{expertRoleLabel(member, member.id === team.lead.id).slice(0, 1)}</span>
+                      <span className="expert-team-member-chip-avatar" aria-hidden="true" style={member.id === team.lead.id ? undefined : { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] }}><ChipIcon size={12} /></span>
                       <span className="expert-team-member-chip-name">{expertRoleLabel(member, member.id === team.lead.id)}</span>
                       {expertTeamMemberDirect === `${team.teamId}:${member.id}` ? <Spinner /> : null}
                       {expertTeamMemberRunning?.teamId === team.teamId && expertTeamMemberRunning.memberName === member.id ? <span className="expert-member-working-dot" title="该成员正在执行子任务" /> : null}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="expert-team-cwd" title={teamCwdMap[team.teamId] ?? workspace ?? "未选择项目"}>
                   <FolderOpen size={12} />

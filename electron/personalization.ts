@@ -31,6 +31,13 @@ export type PersonalizationConfig = {
   userContext?: string;
   /** 首次对话身份引导是否已完成：完成后新会话不再注入引导指令 */
   onboarded?: boolean;
+  /** 引导**是否已经打过招呼**（09-12 用户反馈「怎么每次新会话都强制引导」）。
+      只认第一印象：第一次对话引导过后就置 true，之后无论用户有没有回答那套提问，
+      新会话都不再重复引导，直接开始干活。
+      与 `onboarded` 的区别：`onboarded` = 用户**真的回答了**并落盘了信息；
+      `greeted` = 只是**问过一次**。之前只判 `onboarded`，导致不回答的用户每个新会话
+      都被强制引导一遍。 */
+  greeted?: boolean;
 };
 
 // 注意：不能在模块顶层调用 app.getPath("userData") —— 模块在主进程 whenReady 之前就被
@@ -57,6 +64,7 @@ export async function readPersonalization(): Promise<PersonalizationConfig> {
       habits: str(stored?.habits),
       userContext: str(stored?.userContext),
       onboarded: stored?.onboarded === true,
+      greeted: stored?.greeted === true,
     };
   } catch {
     return {};
@@ -82,9 +90,58 @@ export async function writePersonalization(input: Record<string, unknown>): Prom
     habits: pick("habits", 600),
     userContext: pick("userContext", 2000),
     onboarded: input.onboarded === undefined ? current.onboarded : input.onboarded === true,
+    greeted: input.greeted === undefined ? current.greeted : input.greeted === true,
   };
   await fs.writeFile(getPersonalizationFile(), JSON.stringify(config, null, 2), "utf8");
   return config;
+}
+
+/** 该 profile 里有没有**任何**历史会话（rollout 文件）。只探到第一个就返回，避免整目录遍历。 */
+async function hasAnySession(codexHome: string): Promise<boolean> {
+  const walk = async (dir: string, depth: number): Promise<boolean> => {
+    if (depth > 4) return false;
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    for (const entry of entries) {
+      if (entry.isFile() && /^rollout-.*\.jsonl$/.test(entry.name)) return true;
+      if (entry.isDirectory()) {
+        if (await walk(path.join(dir, entry.name), depth + 1)) return true;
+      }
+    }
+    return false;
+  };
+  return walk(path.join(codexHome, "sessions"), 0);
+}
+
+/**
+ * 存量用户迁移：老版本档案里**没有** `greeted` 字段，而 `onboarded` 只在用户真的回答了
+ * 那套提问后才为 true —— 结果「装了很久、聊了很多次但没回答过引导提问」的用户，
+ * 升级后还会被当成第一次见面、再引导一遍（09-12 用户原话：
+ * 「初次打招呼才需要那样引导，正常不要刻意引导，直接开始干活」）。
+ *
+ * 判定：档案里没有 greeted 时，只要**这个 profile 已经有历史会话**，就认定「早就打过招呼了」，
+ * 直接落 greeted=true —— 谈过话就不必再做初次见面引导。全新用户（零会话）不写，
+ * 保留一次引导。
+ *
+ * 只在启动时调用一次（引擎启动前），不在 codex:request 链上，不阻塞任何会话；
+ * 调用方负责 try/catch（见 preflight【5】：boot 副作用不得裸 await）。
+ */
+export async function migrateGreetedForExistingUsers(codexHome: string): Promise<boolean> {
+  let raw: Record<string, unknown> | null = null;
+  try {
+    raw = JSON.parse(await fs.readFile(getPersonalizationFile(), "utf8"));
+  } catch {
+    raw = null; // 还没有档案 = 全新用户，不写
+  }
+  if (raw && raw.greeted !== undefined) return false;      // 已迁移过
+  if (raw?.onboarded === true) return false;               // 已完整引导过（渲染层按 onboarded 也判已问候）
+  if (!(await hasAnySession(codexHome))) return false;     // 零会话 = 真·全新用户，保留一次引导
+  await writePersonalization({ greeted: true });
+  return true;
 }
 
 /**

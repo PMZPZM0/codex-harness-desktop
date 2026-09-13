@@ -18,6 +18,8 @@ type Status = {
   bytes: number;
   root: string;
   repos: { id: string; lastSegment: string }[];
+  /** 音色克隆模型（ZipVoice）就绪状态——主进程新增字段必须在这里带出来，否则 UI 永远显示未安装 */
+  zipvoice?: { ready: boolean; bytes?: number; dir?: string };
 };
 type DownloadState = { percent: number; message: string; mode: "download" | "import" } | null;
 
@@ -36,6 +38,9 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
         bytes: s.bytes ?? 0,
         root: s.root,
         repos: Array.isArray(s.repos) ? s.repos : [],
+        // ⚠️ 这里是**显式字段映射**，主进程新增的字段必须在这里带出来，
+        // 否则表现为「装完了状态一直显示未安装」（09-12 用户实测踩过：zipvoice 被丢掉）。
+        zipvoice: s.zipvoice,
       }))
       .catch((e: any) => onNotice(`读取语音模型状态失败：${e?.message ?? e}`));
   }, [onNotice]);

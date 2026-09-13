@@ -120,7 +120,7 @@ type PluginMarketEntry = {
 };
 type PluginMarketInstallResult = { id: string; name: string; path: string; version: string; description: string; marketId: string; sourceUrl: string; engineRegistered?: boolean; engineCheckMessage?: string };
 type LocalSkillEntry = { name: string; folder?: string; path: string; description: string; descriptionZh?: string; marketId?: string; pluginId?: string; sourceUrl?: string; installedAt?: string; engineRegistered?: boolean; engineCheckMessage?: string; source?: "cocoloop" | "skillhub" | "local"; enabled?: boolean; allowedTools?: string[]; icon?: string; category?: string };
-type PersonalizationConfig = { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean };
+type PersonalizationConfig = { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean; greeted?: boolean };
 
 /** SSH 跳板机（ProxyJump）配置 */
 type SshJumpHost = {
@@ -232,6 +232,17 @@ interface Window {
     remoteSend(cmd: string): Promise<{ ok: boolean }>;
     remoteStop(): Promise<{ ok: boolean }>;
     remoteQrcode(botId?: string): Promise<string>;
+    remotePairState(): Promise<{ code: string; pending: { rid: string; deviceId: string; name: string; createdAt: number }[]; approved: { deviceId: string; name: string; approvedAt: number; lastSeen: number }[] }>;
+    remotePairRotate(): Promise<{ code: string }>;
+    remoteApprove(rid: string): Promise<{ ok: boolean }>;
+    remoteDeny(rid: string): Promise<{ ok: boolean }>;
+    remoteRevoke(deviceId: string): Promise<{ ok: boolean }>;
+    onRemotePairRequest(handler: (request: { rid: string; deviceId: string; name: string }) => void): () => void;
+    botPairState(): Promise<{ code: string; pending: { rid: string; channel: string; chatId: string; name: string; createdAt: number }[]; approved: { key: string; channel: string; chatId: string; name: string; approvedAt: number }[] }>;
+    botApprove(rid: string): Promise<{ ok: boolean }>;
+    botDeny(rid: string): Promise<{ ok: boolean }>;
+    botRevoke(key: string): Promise<{ ok: boolean }>;
+    onBotPairRequest(handler: (request: { rid: string; channel: string; chatId: string; name: string }) => void): () => void;
     botBindQrcode(botId: string, botName: string): Promise<{ qr: string; url: string; code: string }>;
     botBindStatus(code: string): Promise<"waiting" | "confirmed" | "expired">;
     botBindConsume(code: string): Promise<{ botId: string; deviceName?: string } | null>;
@@ -257,6 +268,8 @@ interface Window {
     wecomWebhookLogout(): Promise<{ ok: boolean }>;
     wecomWebhookTest(text?: string): Promise<{ ok: boolean; error?: string }>;
     botBindingGet(): Promise<{ wechat: { threadId: string; title: string; updatedAt: number } | null; telegram: { threadId: string; title: string; updatedAt: number } | null }>;
+    botsGet(): Promise<any[]>;
+    botsSet(list: any[]): Promise<{ ok: boolean; count: number }>;
     botBindingSet(input: { channel: string; threadId: string | null; title?: string }): Promise<{ threadId: string; title: string; updatedAt: number } | null>;
     homeDir(): Promise<string>;
     onBotBindingChanged(handler: (bindings: unknown) => void): () => void;
@@ -278,6 +291,8 @@ interface Window {
     importSkill(): Promise<{ name: string; path: string; source: string; content: string } | null>;
     listMarketSkills(input?: { category?: string; page?: number; pageSize?: number; query?: string }): Promise<{ items: MarketSkillEntry[]; total: number; page: number; pageSize: number }>;
     installMarketSkill(skill: MarketSkillEntry): Promise<LocalSkillEntry>;
+    installMarketSkillLight(skill: unknown): Promise<{ name: string; discovered: boolean; engineCheckMessage: string }>;
+    skillDisciplineGet(): Promise<{ present: boolean; section: string }>;
     listMarketPlugins(input?: { category?: string; query?: string; page?: number; pageSize?: number }): Promise<{ items: PluginMarketEntry[]; total: number; page: number; pageSize: number }>;
     installMarketPlugin(plugin: PluginMarketEntry): Promise<PluginMarketInstallResult>;
     listLocalSkills(): Promise<LocalSkillEntry[]>;
@@ -306,7 +321,9 @@ interface Window {
     /** 设置/清除某个 MCP 工具的权限档位；mode 传 null 清除。改动后引擎重启生效 */
     setMcpToolPermission(server: string, tool: string, mode: "deny" | "ask" | "allow" | null): Promise<{ ok: boolean; updated: boolean; reason?: string }>;
     readPersonalization(): Promise<PersonalizationConfig>;
-    savePersonalization(input: { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean }): Promise<PersonalizationConfig>;
+    savePersonalization(input: { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean; greeted?: boolean }): Promise<PersonalizationConfig>;
+    /** 标记身份引导已打过招呼（此后新会话不再引导、直接干活） */
+    markIdentityGreeted(): Promise<PersonalizationConfig>;
     saveIdentity(input: Record<string, string>): Promise<unknown>;
     /** 应用级运行时开关（联网搜索等） */
     readAppSettings(): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off" }>;
@@ -450,6 +467,18 @@ interface Window {
       logFile: { path: string; size: number; modifiedAt: number } | null;
       databases: { name: string; size: number }[]; sessions: number; archived: number;
     }>;
+    /** 多会话性能诊断计数：rollout 兜底扫描次数（应为 0）与被按会话过滤掉的事件数 */
+    perfCounters(): Promise<{ rolloutFallbackScans: number; droppedForInactiveSession: number; threadListRequests: number }>;
+    /** 上报当前正在查看的会话：主进程据此只转发该会话的高频事件（多会话性能） */
+    setActiveThread(threadId: string | null): Promise<{ ok: boolean }>;
+    /** 独立会话弹窗：把会话开到新窗口（focused=true 表示该会话已有弹窗，聚焦了旧窗口） */
+    popoutThread(threadId: string): Promise<{ ok: boolean; focused?: boolean }>;
+    /** 弹窗返回主应用：关闭本弹窗并把主窗口带到指定会话 */
+    popoutClose(threadId: string | null): Promise<{ ok: boolean }>;
+    /** 当前窗口是否为独立会话弹窗（返回弹窗锁定的会话 id，非弹窗返回 null） */
+    popoutThreadId(): Promise<string | null>;
+    /** 所有弹窗锁定的会话 id 列表（主窗口侧栏据此隐藏，避免重复渲染） */
+    popoutList(): Promise<string[]>;
     /** 数据管理：各数据目录占用（bytes）与是否可清理 */
     storageInfo(): Promise<{
       items: { key: string; label: string; bytes: number; deletable: boolean }[];
@@ -504,10 +533,21 @@ interface Window {
     voiceStatus(): Promise<{ active: boolean; state: string; runtimeReady: boolean; modelsReady: boolean; threadId: string; lastError: string }>;
     voiceStart(threadId: string, options?: { mode?: "conversation" | "dictation" }): Promise<{ ok: boolean; error?: string; status: unknown }>;
     voiceDictationFinish(): Promise<{ ok: boolean; text?: string; error?: string }>;
+    /** 提前端点：识别文本已收尾 + 停口 ~0.5s 时调用，立即提交这一句（不等 rule2 静音） */
+    voiceEndpointNow(): Promise<{ ok: boolean; text?: string }>;
     voiceStop(): Promise<{ ok: boolean }>;
     voiceAudio(samples: Float32Array): void;
     voiceSpeak(text: string, options?: { sid?: number; speed?: number }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
     voicePreviewVoice(input?: { sid?: number; speed?: number; text?: string }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
+    voiceProfilesList(): Promise<{ profiles: any[]; zipvoiceReady: boolean }>;
+    voiceProfilesImport(): Promise<any>;
+    voiceProfilesRecord(input: { samples: number[]; sampleRate: number }): Promise<any>;
+    voiceProfilesSave(input: { draftFile: string; name: string; refText: string }): Promise<any>;
+    voiceProfilesDelete(id: string): Promise<{ ok: boolean }>;
+    voicePresetList(): Promise<{ presets: { id: string; name: string; desc: string; lang: string; applied: boolean }[] }>;
+    voicePresetApply(presetId: string): Promise<{ ok: boolean; profile?: any; existed?: boolean; error?: string }>;
+    voiceProfilesSelect(id: string): Promise<{ ok: boolean; profileId: string }>;
+    voiceProfilesPreview(input: { id?: string; text?: string }): Promise<any>;
     voiceBarge(): Promise<{ ok: boolean }>;
     voicePlaybackDone(): Promise<{ ok: boolean }>;
     voiceModelsStatus(): Promise<{
@@ -515,6 +555,7 @@ interface Window {
       bytes: number; root: string;
       repos: { id: string; lastSegment: string }[];
       zipvoice?: { ready: boolean; bytes: number; dir: string };
+      kws?: { ready: boolean; bytes: number; dir: string };
     }>;
     voiceModelsInstall(): Promise<{ ok: boolean; error?: string }>;
     voiceZipvoiceInstall(): Promise<{ ok: boolean; error?: string }>;
@@ -530,6 +571,7 @@ interface Window {
         asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
         mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
         barge: { gateDb: number; mode: "auto" | "manual" };
+        aec?: { mode: "auto" | "on" | "off" };
         modelHost: "auto" | "huggingface" | "hf-mirror";
         hotkey: { enabled: boolean; accelerator: string };
         dictationHotkey: { enabled: boolean; accelerator: string };
@@ -544,6 +586,7 @@ interface Window {
       asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
       mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
       barge: { gateDb: number; mode: "auto" | "manual" };
+      aec?: { mode: "auto" | "on" | "off" };
       modelHost: "auto" | "huggingface" | "hf-mirror";
       hotkey: { enabled: boolean; accelerator: string };
       dictationHotkey: { enabled: boolean; accelerator: string };
@@ -553,10 +596,15 @@ interface Window {
     voiceHotkeySet(input: { accelerator: string; enabled?: boolean }): Promise<{ ok: boolean; error?: string }>;
     voiceHotkeyGet(): Promise<{ registered: string }>;
     onVoiceHotkey(listener: (event: { accelerator: string }) => void): () => void;
-    voiceWakeStart(): Promise<{ ok: boolean; error?: string }>;
-    voiceWakeAudio(samples: Float32Array): Promise<{ text: string }>;
+    voiceWakeStart(): Promise<{ ok: boolean; error?: string; phrase?: string; hint?: string }>;
+    /** 只回「命中没命中」：识别文本与匹配都在主进程做 */
+    voiceWakeAudio(samples: Float32Array): Promise<{ ok: boolean; matched: boolean }>;
     voiceWakeReset(): Promise<{ ok: boolean }>;
     voiceWakeStop(): Promise<{ ok: boolean }>;
+    /** 关键词唤醒模型（KWS，31MB 归档）：装完唤醒自动切到「读音匹配」引擎 */
+    voiceKwsInstall(): Promise<{ ok: boolean; error?: string }>;
+    voiceKwsCancel(): Promise<{ ok: boolean }>;
+    voiceKwsStatus(): Promise<{ ready: boolean }>;
     // 自更新：网页源（发布站）/ GitHub Releases 双源可切换
     updateCheck(input?: { source?: "web" | "github" }): Promise<{ ok: boolean; info?: { hasUpdate: boolean; reason: string; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string }; currentVersion?: string; serverUrl?: string; source?: string; error?: string }>;
     updateDownload(input: { downloadUrl: string; filename?: string }): Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;

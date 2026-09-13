@@ -1422,7 +1422,14 @@ button {
   overflow: hidden;
 }
 .timeline {
-  scroll-behavior: smooth;
+  /* ⛔ 这里**不要**写 `scroll-behavior: smooth`（09-13 拆除）：
+     它只作用于**程序滚动**，而聊天区的程序滚动几乎全部要求"瞬时到位"——留白/跟随/钉顶
+     都必须一帧到位，动画中途内容还会继续长高 → retarget → 出字抖动、互相拉扯。
+     一行 CSS 曾逼出代码里 8 处 `style.scrollBehavior = "auto"` 的临时改写与还原，
+     还有 3 处 `scrollIntoView({behavior:"smooth"})` 根本没绕过（刻度尺跳转/搜索跳转）。
+     需要动画的地方**显式**写 `behavior: "smooth"`（少数几处跳转），默认保持瞬时。
+     注：`scroll-behavior` 不影响用户手动滚轮/拖拽，所以拆掉它不会让手动滚动变生硬。 */
+  overflow-anchor: none; /* 浏览器滚动锚定会跟手动滚动打架（思考卡折叠等内容高度突变时自行补偿 scrollTop）= 出字来回闪，09-12 实测 */
   flex: 1 1 0;
   width: 0;
   min-width: 0;
@@ -1442,6 +1449,12 @@ button {
    （仍保留约一张小卡片的余量，贴底跟随时不至于顶死）。 */
 .timeline-bottom-spacer.compact {
   height: 64px;
+}
+/* 锚顶专用留白（09-12）：高度由 App.tsx 钉顶逻辑按「视口高 − 锚点高」写成
+   inline style。这里只负责把默认的 max(360px, 100vh-360px) 归零，避免非钉顶
+   状态下凭空多出一屏空白。 */
+.timeline-bottom-spacer.anchor-pad {
+  height: 0;
 }
 .jump-bottom {
   border: 1px solid var(--line);
@@ -1877,6 +1890,12 @@ html[data-ui-font="large"] .action-content pre {
   width: 100%;
   margin-bottom: 0;
 }
+/* ⛔ 用户消息固定槽位（sticky）已废弃 —— 09-12 实测此路不通，勿再打开：
+   sticky 只能在**包含块内部**位移，而 `.user-message-stack` 的包含块是 `.turn-group`。
+   刚发消息时该组里只有这一条消息（~72px），下方无空间可借 → sticky 钉不住（实测连发
+   第 2 条 gap=396）；把留白放到 `.timeline` 末尾是**兄弟节点**，扩不了包含块。
+   位置改回「滚动式锚顶」：钉一次 + 按增长量跟随（App.tsx 的 anchorTopRef 分支）。
+   `data-current-turn` 仍然保留（其余按当前回合生效的样式在用）。 */
 .user-attach-row {
   margin-bottom: 0;
 }
@@ -2364,6 +2383,36 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   border-radius: 10px;
   margin: 0 0 18px;
   font-size: 12.5px;
+}
+/* ⛔ 贴输入框上方的审批卡（09-13 从消息流大卡迁来，用户反馈「审批弹窗太大」）：
+   与 agent-ask-inline 同款容器定位，整体限高（命令预览最多 8 行滚动），紧凑行距。
+   主窗口与独立会话窗口共用同一组件，弹窗里同样贴输入框展示。 */
+.composer-wrap .approval-card {
+  margin: 0 0 10px;
+  max-height: min(320px, 45vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .1);
+}
+.composer-wrap .approval-card > p {
+  margin: 8px 12px;
+  line-height: 1.45;
+}
+.composer-wrap .approval-card pre {
+  max-height: 9.5em;   /* ≈8 行命令，超出滚动，不再撑起 360px 大块 */
+  min-height: 0;
+  padding: 8px 12px;
+}
+.composer-wrap .approval-card .question {
+  margin: 6px 12px;
+}
+.composer-wrap .approval-card .tool-meta {
+  padding: 4px 12px;
+}
+.composer-wrap .approval-card footer {
+  min-height: 42px;
+  padding: 6px 10px;
 }
 .tool-block summary {
   cursor: pointer;
@@ -9873,6 +9922,29 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
     width: 260px;
   }
 }
+/* ⛔ 窗口缩小时顶栏按钮分级自动隐藏（09-13 用户反馈：缩到最小按键一直挤在、不跟随隐藏）。
+   顺序 = 从次要到主要：右栏开关/新建终端 → ⋯ 任务菜单 → 工作区 📁 → 独立弹窗/返回。
+   ⚠️ 用专用 class 匹配，不要用 [title*="中文"] 属性选择器——lightningcss minify 会剥掉
+   属性值的引号，非 ASCII 值没引号是非法选择器，整条规则被静默丢弃（实测踩坑）。 */
+@media (width<=980px) {
+  .topbar-actions .tb-right-panel,
+  .topbar-actions .tb-terminal {
+    display: none;
+  }
+}
+@media (width<=860px) {
+  .topbar-actions .tb-task-menu {
+    display: none;
+  }
+}
+@media (width<=760px) {
+  /* 最窄：全部顶栏按键隐藏（含独立弹窗/返回，09-13 用户定稿「放大缩小按键也跟着隐藏」） */
+  .topbar-actions .tb-workspace,
+  .topbar-actions .popout-open-btn,
+  .topbar-actions .popout-return-btn {
+    display: none;
+  }
+}
 @media (width<=760px) {
   .app-shell,
   .app-shell.with-context,
@@ -12795,6 +12867,98 @@ button.search-box:hover {
   padding: 0 20px;
   display: flex;
 }
+/* ── 首次连接：6 位配对码 + 电脑端审批（09-13 二次加固）──
+   配对码要一眼能读出来（手机照着输），审批卡要有明确的允许/拒绝动作。 */
+.remote-pair-card {
+  border: 1px solid var(--line);
+  background: var(--panel, #fff);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin: 0;
+}
+.remote-pair-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.remote-pair-head strong { flex: 1; }
+.remote-pair-code {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 6px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  padding: 10px 0 12px;
+  color: var(--text);
+}
+.remote-pair-card small {
+  display: block;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+.remote-approve-card {
+  border: 1px solid #e8b34b66;
+  background: #e8b34b12;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0;
+}
+.remote-approve-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.remote-approve-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px dashed #e8b34b55;
+}
+.remote-approve-info { flex: 1; min-width: 0; }
+.remote-approve-info strong { font-size: 13px; display: block; }
+.remote-approve-info small { color: var(--muted); font-size: 11.5px; }
+.remote-approve-actions { display: flex; gap: 8px; flex: none; }
+.remote-allow-btn {
+  border: 0;
+  border-radius: 9px;
+  padding: 7px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  background: #1a7f37;
+  color: #fff;
+}
+.remote-allow-btn:hover { background: #166a2d; }
+.remote-deny-btn {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  background: var(--bg);
+  color: var(--text);
+}
+.remote-deny-btn:hover { background: #c0392b18; }
+.remote-approved-card {
+  border: 1px solid var(--line);
+  background: var(--panel, #fff);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0;
+}
+.remote-approved-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 12.5px;
+}
 .remote-head-left {
   align-items: center;
   gap: 10px;
@@ -12810,11 +12974,26 @@ button.search-box:hover {
   display: block;
 }
 .remote-columns {
-  grid-template-columns: 1fr 1fr;
-  gap: 18px;
+  /* 09-13 布局重排：自动流网格会把左列「配对码卡」拉高去对齐右列的二维码
+     （下半截全空）、右下格整个空着。改为左右两个显式纵向栈，各自撑满。 */
+  display: flex;
+  gap: 16px;
   padding: 18px 20px;
-  display: grid;
   overflow-y: auto;
+  align-items: stretch;
+}
+.remote-side {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* 左栈：配对码/审批/已批准紧凑排，Bot Channel 撑满剩余高度；
+   右栈：扫码列撑满（二维码盒内垂直居中） */
+.remote-side .remote-col,
+.remote-side-qr .remote-qr-box {
+  flex: 1;
 }
 .remote-col {
   border: 1px solid var(--line-soft);
@@ -13008,7 +13187,8 @@ button.search-box:hover {
   border: 1px solid var(--line);
   background: var(--bg);
   border-radius: 14px;
-  grid-template-rows: 60px minmax(0, 1fr);
+  /* header / 配对码横条 / 内容三行（09-13 配对卡进面板） */
+  grid-template-rows: 60px auto minmax(0, 1fr);
   width: min(920px, 100%);
   height: min(680px, 100vh - 48px);
   display: grid;
@@ -13034,6 +13214,46 @@ button.search-box:hover {
   color: var(--faint);
   font-size: 12px;
 }
+/* 09-13：机器人管理面板里的配对码横条（码 + 待审批，免去回「手机远控」看码） */
+
+.bot-pair-banner {
+  border-bottom: 1px solid var(--line);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+.bot-pair-main {
+  align-items: center;
+  gap: 10px;
+  display: flex;
+}
+.bot-pair-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+.bot-pair-code {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.bot-pair-hint {
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.5;
+  flex: 1 1 240px;
+}
+.bot-pair-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 260px;
+}
+
 .bot-columns {
   grid-template-columns: 240px minmax(0, 1fr);
   gap: 16px;
@@ -15152,6 +15372,198 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
+/* ── 09-13 专家团卡片视觉精修（仅作用域到专家团页，不影响子智能体页共用样式） ── */
+.expert-team-center .expert-team-grid-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.expert-team-center .subagent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: 14px;
+  padding: 14px 16px;
+  transition: border-color .12s ease, box-shadow .12s ease, transform .12s ease;
+}
+.expert-team-center .subagent-card:hover {
+  border-color: var(--accent, #7a94ff);
+  box-shadow: 0 4px 18px rgba(122, 148, 255, .12);
+  transform: translateY(-1px);
+}
+.expert-team-center .subagent-card-head {
+  align-items: center;
+}
+.expert-team-center .expert-team-avatar {
+  background: linear-gradient(135deg, #7a94ff, #a78bfa);
+  color: #fff;
+  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+}
+.expert-team-center .subagent-name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .2px;
+}
+.expert-team-center .subagent-desc {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+  margin: 0;
+}
+.expert-team-center .subagent-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.expert-team-center .subagent-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted, #888) 10%, transparent);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.expert-team-center .expert-team-tag {
+  background: color-mix(in srgb, var(--accent, #7a94ff) 12%, transparent);
+  color: var(--accent, #7a94ff);
+}
+.expert-team-center .expert-team-member-chips {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.expert-team-center .subagent-card-actions {
+  margin-top: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-top: 4px;
+  border-top: 1px dashed var(--line, rgba(127, 127, 127, 0.2));
+}
+.expert-team-center .subagent-card-actions .icon-button {
+  margin-left: auto;
+}
+/* 09-13 专家中心：智能体团队 hub 页的单专家卡片区（每团队 lead+members 铺开） */
+.expert-center-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+.expert-center-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.25));
+  border-radius: 12px;
+  background: var(--panel, #fff);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .12s ease, background .12s ease;
+}
+.expert-center-card:hover {
+  border-color: var(--accent, #7a94ff);
+  background: color-mix(in srgb, var(--accent, #7a94ff) 6%, transparent);
+}
+.expert-center-avatar {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #7a94ff, #a78bfa);
+}
+.expert-center-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.expert-center-main strong {
+  font-size: 13px;
+  color: var(--text);
+}
+.expert-center-main small {
+  font-size: 11px;
+  color: var(--link, #2f6bdd);
+}
+.expert-center-main em {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 专家中心页（09-13）：按领域分类陈列 + 主理人徽标 */
+.hub-card-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.expert-category {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.expert-category + .expert-category {
+  margin-top: 14px;
+}
+.expert-category-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 2px;
+}
+.expert-category-icon {
+  align-self: center;
+  display: inline-flex;
+  color: var(--accent, #7a94ff);
+}
+.expert-category-head strong {
+  font-size: 13.5px;
+  color: var(--text);
+}
+.expert-category-head small {
+  font-size: 11.5px;
+  color: var(--muted);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.expert-category-head em {
+  margin-left: auto;
+  flex: none;
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--muted);
+  background: var(--panel-2, rgba(127, 127, 127, 0.08));
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.2));
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.expert-lead-badge {
+  font-style: normal;
+  font-size: 9.5px;
+  line-height: 1;
+  color: var(--accent, #7a94ff);
+  background: color-mix(in srgb, var(--accent, #7a94ff) 12%, transparent);
+  border-radius: 999px;
+  padding: 2px 6px;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
 .expert-team-member-chip {
   display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%;
   padding: 3px 9px 3px 4px; border-radius: 999px;
@@ -15886,10 +16298,8 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   opacity: 0.7;
   font-weight: 500;
 }
-/* 折叠态：隐藏消息列表，仅保留开关 */
-.queued-messages.is-collapsed {
-  gap: 0;
-}
+/* 折叠态样式已随语义变更移除（09-13）：折叠 = 只显示最新 2 条，不是把所有条目藏起来，
+   所以不能再把 gap 归零 —— 那会让剩下两条贴在一起。 */
 /* 拖动手柄：常驻半透明显示（提示可拖动排序），悬停/拖拽时高亮 */
 .queued-grip {
   flex: none;
@@ -15949,8 +16359,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text);
+  white-space: nowrap;  color: var(--text);
 }
 .queued-actions {
   flex: none;
@@ -20162,8 +20571,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 /* 悬浮球：渐变 + 发光 + 跟着音量呼吸的脉冲环（--voice-level 由 JS 每帧写入 0..1） */
 /* 悬浮球：不再画"圈+底色"——动物本身就是 3D 玻璃挂件（透明小狐狸）。
    这里只剩"位置 + 交互 + 跟音量的发光"：背景透明，发光跟随 --voice-level。 */
-.voice-ball {
-  --voice-level: 0;
+.voice-ball {  --voice-level: 0;
   position: relative;
   width: 52px;
   height: 52px;
@@ -20175,10 +20583,10 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   touch-action: none;
   color: transparent;
   background: transparent;
-  box-shadow:
-    0 0 calc(8px + var(--voice-level) * 30px) color-mix(in srgb, #ff9a4a calc(18% + var(--voice-level) * 60%), transparent);
+  /* 09-13 性能：发光改 ::before 光晕层（opacity/scale 合成器处理），不再 box-shadow blur */
+  isolation: isolate;
   transform: scale(calc(1 + var(--voice-level) * 0.08));
-  transition: transform .12s ease-out, box-shadow .12s ease-out, filter .16s ease;
+  transition: transform .12s ease-out, filter .16s ease;
   border: 0;
   padding: 0;
   /* 彻底清除浏览器/Electron 对 button 的默认外观：避免白底/默认边框/焦点高亮 */
@@ -20187,6 +20595,31 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   background-color: transparent;
   outline: none;
 }
+/* 跨窗口通话互斥（09-13）：其他窗口通话中，本窗口悬浮球置灰（挂断后轮询自动恢复）。
+   只降透明度 + 禁光晕脉冲，不移除组件（挂断后要恢复）。注意必须压过上面的
+   transform/hover 亮度（同特异性后来居上，放在 .voice-ball 定义之后即可）。 */
+.voice-ball.is-busy-elsewhere {
+  opacity: 0.38;
+  filter: grayscale(0.9);
+  cursor: not-allowed;
+}
+.voice-ball.is-busy-elsewhere .voice-ball-ring {
+  animation: none;
+  opacity: 0;
+}
+/* 09-13：悬浮球外发光 = ::before 光晕层（opacity/scale 随 --voice-level，合成器处理） */
+.voice-ball::before {
+  content: "";
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(251, 146, 60, .42) 0%, rgba(167, 139, 250, .16) 48%, rgba(167, 139, 250, 0) 72%);
+  opacity: calc(.3 + var(--voice-level) * .7);
+  transform: scale(calc(1 + var(--voice-level) * .18));
+  z-index: -1;
+  pointer-events: none;
+}
+
 .voice-ball:hover { filter: brightness(1.05) drop-shadow(0 0 6px color-mix(in srgb, #ff9a4a 35%, transparent)); }
 .voice-ball:active { transform: scale(.95); }
 
@@ -20288,10 +20721,17 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   width: 3px;
   border-radius: 2px;
   background: var(--line);
-  transition: background .12s ease;
+  position: relative;
+  overflow: hidden;
 }
-.voice-level i.on {
+/* 09-13：点亮不再走 React（level state）——每根柱的 --t 是自己的阈值，
+   亮层 opacity 由全局 --voice-level 与阈值之差 clamp 出来（合成器路径） */
+.voice-level i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   background: var(--accent);
+  opacity: clamp(0, calc((var(--voice-level, 0) - var(--t, 1)) * 12), 1);
 }
 
 .voice-caption {
@@ -20375,6 +20815,13 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   font-size: 12px;
   line-height: 1.6;
   color: var(--muted);
+}
+/* 通话中显示「说完停顿多久就回话」（端点静音阈值，设置里可调） */
+.voice-latency-hint {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
 }
 .voice-models {
   font-size: 11.5px;
@@ -20737,30 +21184,31 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 
 /* ===== 实时语音舞台：输入框上方的彩色波浪 + 字幕 ===== */
 /* 语音舞台：透明毛玻璃弹窗，浮在对话框上半区（absolute，不挤压输入框布局） */
+/* 语音舞台：**实心白底**浮在对话区**上半部**（09-12 用户要求）。
+   旧版贴 composer 上沿（下半部）且半透明+毛玻璃，后面的消息会透上来和字幕重影；
+   另外它挂在 composer-wrap 里，输入区任何变化都会带着它一起动（「上下文跳动」）。
+   现在 position:fixed 脱离输入区文档流：位置固定、不参与重排、不再跳动。 */
 .voice-stage {
-  position: absolute;
-  /* 贴在 composer-wrap 上沿之外 = 对话区上半部，浮在消息之上 */
-  bottom: 100%;
-  left: 0;
-  right: 0;
-  margin-bottom: 12px;
-  padding: 10px 14px 12px;
+  position: fixed;
+  top: 84px;
+  left: 50%;
+  transform: translate(-50%, 0);
+  width: min(760px, calc(100vw - 420px));
+  min-width: 320px;
+  max-height: min(46vh, 360px);
+  overflow: hidden;
+  z-index: 60;
+  padding: 12px 14px 12px;
   border-radius: 14px;
-  z-index: 40;
-  /* 透明 + 毛玻璃：能看到后面的消息 */
-  background: color-mix(in srgb, var(--panel) 42%, transparent);
-  border: 1px solid color-mix(in srgb, #fff 22%, transparent);
-  backdrop-filter: blur(16px) saturate(150%);
-  -webkit-backdrop-filter: blur(16px) saturate(150%);
-  box-shadow:
-    0 10px 34px color-mix(in srgb, #000 14%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 46px color-mix(in srgb, #000 26%, transparent);
   display: flex; flex-direction: column; gap: 6px;
   animation: voice-stage-in .22s cubic-bezier(.2,.8,.25,1);
 }
 @keyframes voice-stage-in {
-  from { opacity: 0; transform: translateY(10px) scale(.98); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translate(-50%, 10px) scale(.98); }
+  to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 .voice-stage-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -21164,15 +21612,9 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 
 
-/* 透明弹窗上的文字可读性（毛玻璃背景 + 轻微文字阴影） */
-.voice-stage .voice-stage-mode,
-.voice-stage .voice-subtitle-text {
-  text-shadow: 0 1px 2px color-mix(in srgb, #000 25%, transparent);
-}
+/* 实心白底弹窗：不再需要文字阴影与半透明按钮（09-12 改白底后一并清掉） */
 .voice-stage .voice-stage-stop {
-  background: color-mix(in srgb, var(--bg) 70%, transparent);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: var(--bg);
 }
 .voice-stage .voice-subtitle-who {
   backdrop-filter: blur(6px);
@@ -21202,9 +21644,10 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   box-shadow:
     /* 内部"打光"：左上高光 + 右下阴影 = 球体光感 */
     inset 4px 6px 14px color-mix(in srgb, #ffffff 60%, transparent),
-    inset -5px -6px 14px color-mix(in srgb, #1e1b4b 35%, transparent),
-    /* 外发光：随 --voice-level 变强 */
-    0 0 calc(8px + var(--voice-level) * 32px) color-mix(in srgb, #a78bfa calc(20% + var(--voice-level) * 60%), transparent);
+    inset -5px -6px 14px color-mix(in srgb, #1e1b4b 35%, transparent);
+  /* 09-13 性能：外发光改 ::before 光晕层（opacity/scale 合成器处理），不再用
+     box-shadow blur 逐帧 paint（见 .voice-call-avatar 的同款改造） */
+  isolation: isolate;
   /* 整体缓慢旋转 = 渐变色彩在球面流动（不靠 @property，靠整球 transform） */
   animation: orb-spin 9s linear infinite;
   will-change: transform;
@@ -21234,6 +21677,26 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 @keyframes orb-pulse {
   0%, 100% { transform: rotate(0deg) scale(1); }
   50%      { transform: rotate(180deg) scale(calc(1 + var(--voice-level, 0) * 0.06)); }
+}
+
+/* orb 外发光：radial 光晕层替代 box-shadow blur（只动 opacity/scale = 合成器处理）。
+   悬浮球/通话界面共用一个 --voice-level（由最近的设置者决定）。 */
+.voice-mascot-orb::before {
+  content: "";
+  position: absolute;
+  inset: -22%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(167, 139, 250, .45) 0%, rgba(167, 139, 250, .14) 50%, rgba(167, 139, 250, 0) 72%);
+  opacity: calc(.35 + var(--voice-level, 0) * .65);
+  transform: scale(calc(1 + var(--voice-level, 0) * .3));
+  z-index: -1;
+  pointer-events: none;
+}
+.voice-mascot-listening::before {
+  background: radial-gradient(circle, rgba(34, 211, 238, .4) 0%, rgba(34, 211, 238, .12) 50%, rgba(34, 211, 238, 0) 72%);
+}
+.voice-mascot-speaking::before {
+  background: radial-gradient(circle, rgba(251, 146, 60, .48) 0%, rgba(251, 146, 60, .16) 50%, rgba(251, 146, 60, 0) 72%);
 }
 
 /* 眼睛：两颗白色发光点（"灵魂"），不旋转（外层旋转不影响） */
@@ -21333,3 +21796,363 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   font-size: 12.5px; text-align: left; cursor: pointer;
 }
 .voice-ball-menu button:hover { background: color-mix(in srgb, var(--link) 12%, transparent); }
+
+/* ── 我的音色（音色克隆）列表与草稿编辑器 ── */
+.voice-profile-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.voice-profile-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 8px;
+  border: 1px solid var(--line);
+}
+.voice-profile-item > button { flex-shrink: 0; }
+.voice-profile-pick {
+  display: flex; align-items: center; gap: 6px;
+  flex: 1; min-width: 0; cursor: pointer; font-size: 12px;
+}
+.voice-profile-pick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voice-profile-pick em { color: var(--muted); font-style: normal; font-size: 11px; flex-shrink: 0; }
+.voice-profile-draft { display: flex; flex-direction: column; gap: 8px; }
+.voice-profile-draft textarea { width: 100%; resize: vertical; font-family: inherit; }
+.voice-profile-draft .voice-input { min-width: 0; flex: 1; }
+
+/* ── 应用内实时通话界面（手机来电式全屏遮罩；收起 ≠ 挂断）──
+   深色底是通话界面的行业惯例（微信/电话都如此），与主题无关——
+   头像呼吸/发光幅度跟 --voice-level 走，声音越大越亮。 */
+.voice-call-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 28px 24px;
+  background: radial-gradient(120% 90% at 50% 0%, #232a4d 0%, #141828 52%, #0c0f1a 100%);
+  color: #f2f3f8;
+  animation: voice-call-in .18s ease-out;
+}
+@keyframes voice-call-in {
+  /* 只动 transform、不动 opacity：GPU 合成/遮挡节流下动画可能冻在第一帧，
+     opacity:0 起点会把整个通话界面冻成「透明」——用户看到的就是主界面
+     上浮着几个看不清的字。transform 冻住顶多差 1.5%，无感知。 */
+  from { transform: scale(1.015); }
+  to { transform: none; }
+}
+.voice-call-min {
+  position: absolute;
+  /* 顶到 top:56px：系统标题栏 overlay（叉掉/最小化钮，高 43px）画在右上角，
+     收起钮放 14px 会跟叉掉钮叠在一起（用户截图实锤）——挪到按钮区下方 */
+  top: 56px;
+  right: 14px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  background: rgba(255, 255, 255, .06);
+  color: rgba(255, 255, 255, .82);
+  cursor: pointer;
+  padding: 7px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+}
+.voice-call-min:hover { background: rgba(255, 255, 255, .14); color: #fff; }
+
+.voice-call-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.voice-call-avatar {
+  position: relative;
+  width: 176px;
+  height: 176px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 38%, #3b4780 0%, #262e56 62%, #1b2140 100%);
+  /* 09-13 性能：外发光不再用 box-shadow blur（逐帧 paint，全屏遮罩上代价高）——
+     改为 ::before 的 radial-gradient 光晕层，只动 opacity/scale（合成器处理）。
+     level 由父组件电平循环直接写根元素 CSS 变量，本组件不因音量重渲染。 */
+  isolation: isolate;
+}
+.voice-call-avatar::before {
+  content: "";
+  position: absolute;
+  inset: -26px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(122, 148, 255, .5) 0%, rgba(122, 148, 255, .16) 46%, rgba(122, 148, 255, 0) 72%);
+  opacity: calc(.3 + var(--voice-level, 0) * .7);
+  transform: scale(calc(1 + var(--voice-level, 0) * .22));
+  z-index: -1;
+  transition: opacity .12s ease, transform .12s ease;
+  pointer-events: none;
+}
+.voice-call-avatar.is-muted::before { opacity: .12; }
+.voice-call-top {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 2;
+}
+.voice-call-duration {
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: #cdd6ff;
+  background: #ffffff14;
+  border: 1px solid #ffffff22;
+  border-radius: 10px;
+  padding: 3px 10px;
+}
+.voice-call-muted-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #c0392b;
+  color: #fff;
+  box-shadow: 0 2px 10px #00000055;
+}
+.voice-call-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(140, 165, 255, .55);
+  pointer-events: none;
+  opacity: 0;
+}
+.voice-call-avatar.is-listening .voice-call-ring,
+.voice-call-avatar.is-speaking .voice-call-ring {
+  animation: voice-call-pulse 1.6s ease-out infinite;
+}
+.voice-call-ring:nth-child(2) { animation-delay: .8s; }
+@keyframes voice-call-pulse {
+  0%   { opacity: calc(.3 + var(--voice-level, 0) * .6); transform: scale(1); }
+  100% { opacity: 0; transform: scale(calc(1.55 + var(--voice-level, 0) * .7)); }
+}
+.voice-call-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #cdd6ff;
+}
+.voice-call-state {
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: .5px;
+}
+.voice-call-sub {
+  font-size: 12px;
+  color: rgba(242, 243, 248, .55);
+}
+
+/* 字幕：半透明卡片，限高滚动 */
+.voice-call-captions {
+  width: min(560px, 92%);
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(255, 255, 255, .055);
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+/* 字幕回看（09-13）：历史区可滚动，自动停在最新一条 */
+.voice-call-history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 132px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.voice-call-history-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.voice-call-history-row p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #c9cfe8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.voice-call-history-row.is-agent p { color: #9fb2ff; }
+.voice-call-caption-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.voice-call-caption-row p {
+  margin: 0;
+  color: #eef0f8;
+  word-break: break-word;
+}
+.voice-call-caption-row.agent p { color: rgba(238, 240, 248, .72); }
+.voice-call-caption-tag {
+  flex: none;
+  font-size: 11px;
+  color: rgba(242, 243, 248, .65);
+  background: rgba(255, 255, 255, .09);
+  border-radius: 5px;
+  padding: 1px 7px;
+  margin-top: 2px;
+}
+
+/* 底部大圆钮：打断（次级）/ 挂断（红色大钮）/ 开始（绿色大钮） */
+.voice-call-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 46px;
+  margin-top: 4px;
+}
+.voice-call-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+.voice-call-action span {
+  font-size: 12px;
+  color: rgba(242, 243, 248, .62);
+}
+.voice-call-btn {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: rgba(255, 255, 255, .13);
+  transition: transform .12s ease, background .12s ease;
+}
+.voice-call-btn:hover { transform: scale(1.05); background: rgba(255, 255, 255, .2); }
+.voice-call-btn:active { transform: scale(.97); }
+.voice-call-btn:disabled { opacity: .5; cursor: default; }
+.voice-call-btn.is-hangup {
+  width: 72px;
+  height: 72px;
+  background: linear-gradient(180deg, #ff5f57 0%, #e5484d 100%);
+  box-shadow: 0 6px 22px rgba(229, 72, 77, .4);
+}
+.voice-call-btn.is-hangup:hover { background: linear-gradient(180deg, #ff6b63 0%, #ef5055 100%); }
+.voice-call-btn.is-start {
+  width: 72px;
+  height: 72px;
+  background: linear-gradient(180deg, #43d17c 0%, #2fae64 100%);
+  box-shadow: 0 6px 22px rgba(47, 174, 100, .4);
+}
+.voice-call-btn.is-start:hover { background: linear-gradient(180deg, #4cd984 0%, #35b96c 100%); }
+.voice-call-btn.is-quiet { background: rgba(255, 255, 255, .09); }
+
+.voice-call-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 76%;
+  font-size: 12.5px;
+  color: #ffb4ae;
+  background: rgba(229, 72, 77, .12);
+  border: 1px solid rgba(229, 72, 77, .3);
+  border-radius: 9px;
+  padding: 7px 11px;
+}
+
+/* .timeline-queue* 样式已删除（09-13 用户定稿）：排队消息只在输入框上方展示，
+   不再在对话区里再渲染一份 —— 同一份数据两处展示既重复又难保持同步。 */
+
+/* ── 独立会话弹窗（09-13）：顶栏按钮 + 侧栏长按拖出 ── */
+.popout-open-btn:not(:disabled) .popout-open-icon {
+  /* 与右栏开关同尺寸，视觉对称 */
+}
+.popout-open-btn:not(:disabled):hover {
+  color: var(--accent, #4f7cff);
+}
+.popout-return-btn {
+  color: var(--accent, #4f7cff);
+}
+.popout-return-btn:hover {
+  filter: brightness(1.15);
+}
+/* 侧栏会话行被弹窗锁定：置灰不可点（行保留原位，弹窗关闭自动恢复；用户 09-13 定稿
+   「隐藏改为置灰」）。标题/摘要降透明度，hover 不变色，光标 not-allowed。 */
+.thread-row.popped-out {
+  opacity: 0.45;
+  pointer-events: auto;
+}
+.thread-row.popped-out .thread-row-title-line {
+  color: var(--muted);
+}
+.thread-row.popped-out button {
+  cursor: not-allowed;
+}
+.thread-row.popped-out:hover {
+  background: transparent;
+}
+/* 弹窗窗口本体：与主窗口同构（同款顶栏/侧栏），无需额外布局类；
+   顶栏右侧的操作簇按钮在弹窗里同样可用（右栏开关等）。 */
+/* ── 独立会话弹窗布局（09-13 用户定稿：弹窗只带对话区，不要左侧会话列表侧栏）──
+   弹窗窗口 = 顶栏（含返回/右栏按钮）+ 对话区 + 可展开的右栏面板。
+   grid 模板不含 256px 侧栏列；右栏项目树展开时也只占 1px 分隔 + 面板宽，
+   对话区始终拿满剩余宽度、随窗口缩放自适应（不再被侧栏列挤扁/变透明）。 */
+.app-shell.popout-shell {
+  grid-template-columns: minmax(0, 1fr);
+}
+.app-shell.popout-shell.with-context {
+  grid-template-columns: minmax(0, 1fr) 1px 308px;
+}
+.app-shell.popout-shell .sidebar {
+  display: none;
+}
+.app-shell.popout-shell .sidebar-hotzone {
+  display: none;
+}
+/* 顶栏在弹窗里也去掉「展开侧栏」按钮与移动端菜单（没有侧栏可展开） */
+.app-shell.popout-shell .sidebar-reveal,
+.app-shell.popout-shell .mobile-menu {
+  display: none;
+}
+/* 弹窗里任务标题占满顶栏（不再为侧栏按钮留位） */
+.app-shell.popout-shell .task-title {
+  margin-left: 4px;
+}
+/* ⛔ 弹窗 grid 修正：主布局里 .topbar 固定 grid-column:2/-1（给 256px 侧栏列让位），
+   .sidebar 占 1 列。弹窗没有侧栏 → grid 收成 1~3 列，必须把 topbar 拉回第 1 列、
+   workspace 落到第 1 列，否则 topbar 被推到隐式第 2 列、对话区被挤到右边半屏
+   （用户截图实锤：消息列只占左侧 450px，右侧全空）。
+   ⚠️ 消息列宽度**不改**：.timeline 自带的 `50% - 410px` 内边距让内容 820px 居中，
+   与底部输入框同列对齐 —— 曾试过 padding:28px 26px 全宽铺开，结果消息列贴边、
+   输入框居中，两者错位 = 用户说的「中间内容歪了」。 */
+.app-shell.popout-shell .topbar {
+  grid-column: 1 / -1;
+}
+.app-shell.popout-shell > main.workspace {
+  grid-column: 1;
+  grid-row: 2;
+}
+.app-shell.popout-shell.with-context > main.workspace {
+  grid-column: 1;
+}
+.app-shell.popout-shell > .panel-divider {
+  grid-column: 2;
+  grid-row: 2;
+}
+.app-shell.popout-shell > .context-panel {
+  grid-column: 3;
+  grid-row: 2;
+}

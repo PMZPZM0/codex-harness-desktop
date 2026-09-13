@@ -12,9 +12,9 @@
 import { createHash } from "crypto";
 import { spawn } from "node:child_process";
 import { createReadStream, createWriteStream, existsSync, statSync } from "fs";
-import { copyFile, mkdir, open, rename, stat, unlink } from "fs/promises";
+import { copyFile, mkdir, open, readFile, rename, stat, unlink } from "fs/promises";
 import { basename, dirname, join } from "path";
-import { MODEL_HOSTS, modelUrl, type VoiceModelFile, type VoiceModelRepo, ZIPVOICE_DIR, ZIPVOICE_ARCHIVE, zipvoiceReady } from "./model-manifest";
+import { MODEL_HOSTS, modelUrl, type VoiceModelFile, type VoiceModelRepo, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_DIR, ZIPVOICE_ARCHIVE, zipvoiceReady } from "./model-manifest";
 
 export type VoiceDownloadProgress = {
   /** 当前仓库 id */
@@ -583,6 +583,153 @@ export function modelsSizeOnDisk(modelsRoot: string): number {
 // 按需下载，不进安装包（与其它语音模型一致）。
 
 /** 单流下载到文件（带进度与 SHA256 校验）。GitHub release 场景不需要多段并发。 */
+/**
+ * GitHub Release 的下载加速前缀（直连不通/被限速时依次回落）。均为「前缀 + 原始 URL」形式，
+ * 实测对 sherpa-onnx release 资产返回 206 且支持 Range（可续传）。
+ */
+const GITHUB_MIRROR_PREFIXES = ["https://ghfast.top/", "https://gh-proxy.com/"];
+
+/** 单次下载（可续传）。网络中断**保留**已下部分供下次续传；只有 SHA256 不符才删除。 */
+async function downloadOnce(
+  url: string,
+  destPath: string,
+  sha256: string,
+  bytes: number,
+  onBytes?: (received: number, total: number) => void,
+  signal?: AbortSignal,
+  options?: { headersTimeoutMs?: number; minSpeedBytesPerSec?: number },
+): Promise<{ ok: true } | { ok: false; error: string; fatal?: boolean; cancelled?: boolean }> {
+  let received = 0;
+  /** 用户取消 ≠ 失败：取消要**保留**已下载的部分，下次点「下载」能接着传 */
+  const cancelled = () => ({ ok: false as const, error: "已取消", cancelled: true as const });
+  try {
+    await mkdir(dirname(destPath), { recursive: true });
+    received = existsSync(destPath) ? statSync(destPath).size : 0;
+    const headers: Record<string, string> = {};
+    if (received > 0) headers.Range = "bytes=" + received + "-";
+    // ⚠️ fetch 自身没有超时：直连地址挂起时 TCP 连接会一直等下去（实测「下载很慢」的真凶之一）。
+    //    这里给「拿到响应头」单独设一个短超时，超时就换下一个镜像。
+    const headersTimeoutMs = options?.headersTimeoutMs ?? 12000;
+    const timeoutCtl = new AbortController();
+    const headersTimer = setTimeout(() => timeoutCtl.abort(), headersTimeoutMs);
+    const combinedSignal = signal
+      ? (typeof (AbortSignal as any).any === "function" ? (AbortSignal as any).any([signal, timeoutCtl.signal]) : signal)
+      : timeoutCtl.signal;
+    let response: Response;
+    try {
+      response = await fetch(url, { redirect: "follow", headers, signal: combinedSignal as any });
+    } catch (error: any) {
+      if (signal?.aborted) return cancelled();
+      return { ok: false, error: `连接超时（${headersTimeoutMs / 1000}s 无响应）` };
+    } finally {
+      clearTimeout(headersTimer);
+    }
+    // 服务器不支持续传（回 200 而不是 206）：丢弃残file 从头来，避免拼出坏文件
+    if (received > 0 && response.status !== 206) received = 0;
+    if (!response.ok || !response.body) return { ok: false, error: "下载失败 HTTP " + response.status };
+
+    const total = (Number(response.headers.get("content-length") ?? 0) || 0) + received || bytes;
+    const hash = createHash("sha256");
+    // 续传时先把已有部分喂进哈希，最后才能对整文件校验
+    if (received > 0 && received < total) hash.update(await readFile(destPath));
+    const outStream = createWriteStream(destPath, received > 0 && received < total ? { flags: "a" } : {});
+    const reader = (response.body as any).getReader();
+    let stallTimer: NodeJS.Timeout | null = null;
+    const readChunk = () =>
+      Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => {
+          // 卡死保护：45 秒没有任何数据就当作断流，让上层换镜像/续传（而不是永远转圈）
+          stallTimer = setTimeout(() => reject(new Error("下载中断（45 秒无数据）")), 45000);
+        }),
+      ]).finally(() => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; } });
+
+    // 速度下限：慢到离谱时宁可换镜像（只在还有别的候选时生效，否则会把自己的下载掐死）
+    const startAt = Date.now();
+    const startBytes = received;
+    let speedCheckedAt = startAt;
+    let lastCheckedBytes = received;
+
+    for (;;) {
+      const { done, value } = await readChunk();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      received += chunk.length;
+      hash.update(chunk);
+      if (!outStream.write(chunk)) await new Promise<void>((resolve) => outStream.once("drain", () => resolve()));
+      onBytes?.(received, total);
+      if (signal?.aborted) { outStream.destroy(); return cancelled(); }
+      const now = Date.now();
+      if (options?.minSpeedBytesPerSec && now - speedCheckedAt > 5000 && received < total) {
+        const speed = (received - lastCheckedBytes) / ((now - speedCheckedAt) / 1000);
+        speedCheckedAt = now;
+        lastCheckedBytes = received;
+        if (speed < options.minSpeedBytesPerSec) {
+          outStream.destroy();
+          const mbps = (speed / 1048576).toFixed(2);
+          const overall = ((received - startBytes) / 1048576 / ((now - startAt) / 1000)).toFixed(2);
+          return { ok: false, error: `当前镜像太慢（${mbps}MB/s，平均 ${overall}MB/s），换一个` };
+        }
+      }
+    }
+    await new Promise<void>((resolve, reject) => outStream.end(() => resolve()).on("error", reject));
+    if (sha256 && hash.digest("hex") !== sha256) {
+      await unlink(destPath).catch(() => undefined);
+      return { ok: false, error: "SHA256 校验失败（下载损坏），已清理，请重试", fatal: true };
+    }
+    return { ok: true };
+  } catch (error: any) {
+    if (signal?.aborted) return cancelled();
+    if (error?.fatal) {
+      await unlink(destPath).catch(() => undefined);
+      return { ok: false, error: String(error?.message ?? error), fatal: true };
+    }
+    // 网络类失败：保留残file，供下一次续传
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+}
+
+/**
+ * 候选地址按**实测首字节耗时**排序。
+ *
+ * 为什么必须探测：候选里有直连 github.com 与两个国内镜像，实测三者速度差一个数量级
+ * （同一文件：直连曾整体失败、ghfast 0.56MB/s、gh-proxy 5.2MB/s），而旧实现是**按固定顺序
+ * 逐个试**——第一个挂起就要白等（连接超时前什么都不发生）。并发探测后从最快的开始，
+ * 慢/挂的直接排到最后，用户体感差别是「几十秒」级别的。
+ */
+async function orderCandidatesByLatency(candidates: string[], signal?: AbortSignal): Promise<string[]> {
+  const probe = async (url: string) => {
+    const t0 = Date.now();
+    const ctl = new AbortController();
+    // 探测超时压到 2s：这是在**下载开始之前**的纯等待（原来 6s → 用户点下载后几秒毫无动静，
+    // 体感就是「又慢又没反应」）。实测最快的候选 ~0.9s 就回了，2s 足够排名。
+    const timer = setTimeout(() => ctl.abort(), 2000);
+    try {
+      const probeSignal = signal && typeof (AbortSignal as any).any === "function" ? (AbortSignal as any).any([signal, ctl.signal]) : ctl.signal;
+      const res = await fetch(url, { headers: { Range: "bytes=0-1" }, redirect: "follow", signal: probeSignal as any });
+      if (!res.ok) return { url, ok: false, ms: Date.now() - t0 };
+      await res.arrayBuffer().catch(() => undefined);
+      return { url, ok: true, ms: Date.now() - t0 };
+    } catch {
+      return { url, ok: false, ms: Date.now() - t0 };
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const probed = await Promise.all(candidates.map(probe));
+  const fast = probed.filter((p) => p.ok).sort((a, b) => a.ms - b.ms).map((p) => p.url);
+  const slow = probed.filter((p) => !p.ok).map((p) => p.url);
+  return [...fast, ...slow];
+}
+
+/**
+ * 下载到文件：**先探测各候选地址的首字节耗时，再从最快的开始**（直连 + 镜像，每个地址两轮，
+ * 第二轮断点续传）。
+ *
+ * 旧实现一次 fetch 定生死、失败即删残file → 大文件在抖动网络下几乎必失败（09-12 用户实测
+ * 「54M 的声码器下载不了」，同一链路 109MB 主包却侥幸成功 = 纯运气问题）。
+ * 09-13 追加：① 连接超时（挂起的地址不再无限等）② 速度下限换源 ③ 用户取消保留断点。
+ */
 async function downloadUrlToFile(
   url: string,
   destPath: string,
@@ -590,36 +737,34 @@ async function downloadUrlToFile(
   bytes: number,
   onBytes?: (received: number, total: number) => void,
   signal?: AbortSignal,
+  mirrors: string[] = [],
+  options?: { minSpeedBytesPerSec?: number; headersTimeoutMs?: number },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  try {
-    await mkdir(dirname(destPath), { recursive: true });
-    const response = await fetch(url, { redirect: "follow", signal: signal as any });
-    if (!response.ok || !response.body) return { ok: false, error: "下载失败 HTTP " + response.status };
-    const total = Number(response.headers.get("content-length") ?? 0) || bytes;
-    const hash = createHash("sha256");
-    const out = createWriteStream(destPath);
-    let received = 0;
-    const reader = (response.body as any).getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = Buffer.from(value);
-      received += chunk.length;
-      hash.update(chunk);
-      if (!out.write(chunk)) await new Promise<void>((resolve) => out.once("drain", () => resolve()));
-      onBytes?.(received, total);
-      if (signal?.aborted) throw new Error("已取消");
+  const candidates = mirrors.length ? [url, ...mirrors.map((prefix) => prefix + url)] : [url];
+  const ordered = candidates.length > 1 ? await orderCandidatesByLatency(candidates, signal) : candidates;
+  if (signal?.aborted) return { ok: false, error: "已取消" };
+  let lastError = "";
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (let i = 0; i < ordered.length; i += 1) {
+      if (signal?.aborted) return { ok: false, error: "已取消" };
+      // 只有在「还有别的候选没试」时才允许因为慢而换源，否则会把自己彻底掐死
+      const alternativesLeft = ordered.length - 1 - i;
+      const result = await downloadOnce(ordered[i], destPath, sha256, bytes, onBytes, signal, {
+        headersTimeoutMs: options?.headersTimeoutMs,
+        minSpeedBytesPerSec: alternativesLeft > 0 ? (options?.minSpeedBytesPerSec ?? 120 * 1024) : 0,
+      });
+      if (result.ok) return result;
+      if (result.cancelled) {
+        // 取消：**保留**已下载的部分，下次点下载从这里续传
+        const partial = existsSync(destPath) ? statSync(destPath).size : 0;
+        const mb = (partial / 1048576).toFixed(1);
+        return { ok: false, error: partial > 0 ? `已取消（已下载 ${mb}MB，下次点「下载」会接着传）` : "已取消" };
+      }
+      if (result.fatal) return { ok: false, error: result.error };
+      lastError = result.error;
     }
-    await new Promise<void>((resolve, reject) => out.end(() => resolve()).on("error", reject));
-    if (sha256 && hash.digest("hex") !== sha256) {
-      await unlink(destPath).catch(() => undefined);
-      return { ok: false, error: "SHA256 校验失败（下载损坏），请重试" };
-    }
-    return { ok: true };
-  } catch (error: any) {
-    await unlink(destPath).catch(() => undefined);
-    return { ok: false, error: String(error?.message ?? error) };
   }
+  return { ok: false, error: lastError || "下载失败" };
 }
 
 /** 解压 tar.bz2：**优先随包 Python**（`tarfile` + `_bz2.pyd` 原生支持，跨平台一致）。
@@ -690,6 +835,7 @@ export async function ensureZipvoice(
         (received, total) => report("模型包", total ? Math.round((received / total) * 100) : -1,
           "正在下载音色克隆模型 " + (received / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + "MB", 0, 2),
         signal,
+        GITHUB_MIRROR_PREFIXES,
       );
       if (!downloaded.ok) return downloaded;
     }
@@ -709,10 +855,69 @@ export async function ensureZipvoice(
       (received, total) => report(ZIPVOICE_ARCHIVE.vocoder.name, total ? Math.round((received / total) * 100) : -1,
         "正在下载声码器 " + (received / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + "MB", 1, 2),
       signal,
+      GITHUB_MIRROR_PREFIXES,
     );
     if (!result.ok) return result;
   }
 
   report("完成", 100, "音色克隆模型就绪", 2, 2);
+  return { ok: true };
+}
+
+/**
+ * 安装/补齐**语音唤醒关键词模型**（KWS，归档型，31MB）。已就绪时直接返回。
+ * 与 zipvoice 同一条路：整包下载（含 GitHub 镜像前缀）→ SHA256 → 随包 Python 解压 → 校验关键文件。
+ */
+export async function ensureKws(
+  modelsRoot: string,
+  resourcesToolsDir: string,
+  onProgress?: (p: VoiceDownloadProgress) => void,
+  signal?: AbortSignal,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (kwsReady(modelsRoot)) return { ok: true };
+  const report = (percent: number, message: string) =>
+    onProgress?.({ repo: KWS_DIR, file: "唤醒模型", doneFiles: 0, totalFiles: 1, percent, message });
+
+  const archivePath = join(modelsRoot, ".cache", KWS_DIR + ".tar.bz2");
+  const cached = existsSync(archivePath)
+    ? await sha256File(archivePath).then((h) => h === KWS_ARCHIVE.sha256).catch(() => false)
+    : false;
+  if (!cached) {
+    report(0, "正在下载语音唤醒模型（约 31MB）…");
+    // 速度按**瞬时**算（滚动窗口）：候选地址探测要花一两秒，用「总字节/总时长」会把开头几秒算成
+    // 「0.02MB/s」，用户看到的正是「怎么这么慢」。换源时瞬时速度会短暂掉到 0，也是实情。
+    // 同时**节流广播**：下载回调是按网络块触发的（每秒几十上百次），每次都 sendToWindow 会把
+    // 渲染层刷爆（进度条抖动 + 白付 IPC）。250ms 一次足够顺滑。
+    let lastAt = Date.now();
+    let lastBytes = 0;
+    let lastReportAt = 0;
+    const downloaded = await downloadUrlToFile(
+      KWS_ARCHIVE.url, archivePath, KWS_ARCHIVE.sha256, KWS_ARCHIVE.bytes,
+      (received, total) => {
+        const now = Date.now();
+        const dt = (now - lastAt) / 1000;
+        let speed = dt > 0.2 ? (received - lastBytes) / 1048576 / dt : 0;
+        if (dt > 0.2) { lastAt = now; lastBytes = received; }
+        if (!speed) speed = received / 1048576 / Math.max(1, (now - lastAt + 1000) / 1000);
+        if (now - lastReportAt < 250 && received < (total || KWS_ARCHIVE.bytes)) return;
+        lastReportAt = now;
+        report(
+          total ? Math.round((received / total) * 100) : -1,
+          `正在下载语音唤醒模型 ${(received / 1048576).toFixed(1)}/${(total / 1048576).toFixed(0)}MB · ${speed.toFixed(2)}MB/s`,
+        );
+      },
+      signal,
+      GITHUB_MIRROR_PREFIXES,
+    );
+    if (!downloaded.ok) return downloaded;
+  }
+  report(100, "正在解压语音唤醒模型…");
+  const extracted = await extractTarBz2(archivePath, modelsRoot, resourcesToolsDir);
+  if (!extracted.ok) return extracted;
+  await unlink(archivePath).catch(() => undefined);
+  if (!kwsReady(modelsRoot)) {
+    return { ok: false, error: "解压后仍缺少关键词模型文件（归档结构可能变了）" };
+  }
+  report(100, "语音唤醒模型就绪");
   return { ok: true };
 }

@@ -11,11 +11,15 @@
  * 挂断后不残留任何常驻监听、线程或麦克风占用。
  */
 
-import { ASR_REPO, TTS_REPO, VAD_REPO } from "./model-manifest";
+import { ASR_REPO, KWS_ARCHIVE, TTS_REPO, VAD_REPO, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, kwsDir, kwsReady, zipvoiceReady } from "./model-manifest";
 import { ensureRepo, isRepoReady, modelFilePath, probeHosts, repoDir } from "./model-store";
 import { DEFAULT_VOICE_SETTINGS, MODEL_HOST_PRESETS, VOICE_SAMPLE_TEXT, loadVoiceSettings, type VoiceSettings } from "./voice-settings";
-import { ASR_WORKER_SOURCE, TTS_WORKER_SOURCE, VoiceWorkerClient, resolveSherpaPath } from "./workers";
+import { ASR_WORKER_SOURCE, KWS_WORKER_SOURCE, TTS_WORKER_SOURCE, VoiceWorkerClient, resolveSherpaPath } from "./workers";
+import { buildHomophoneMap, createWakeMatcher, phraseVocabHint, type WakeMatcher } from "./wake-match";
+import { buildKeywordLines, parseLexiconReadings } from "./kws-keywords";
 import fsPromises from "node:fs/promises";
+import path from "node:path";
+import { listProfiles, profileAudioPath, type VoiceProfile } from "./voice-profiles";
 
 /** 把 16k 单声道 PCM16 wav 解成 Float32（渠道语音经 ffmpeg 归一后的标准形态）。
  *  只做块级遍历找 data 块，不做任何重采样/多声道混缩——格式归一是上游 ffmpeg 的职责。 */
@@ -42,6 +46,24 @@ const SAMPLE_RATE = 16000;
 /** 语音轮的推理档位：通话场景优先低延迟（自定义模型档位是 low/medium/high）。 */
 const VOICE_EFFORT = "low";
 
+/**
+ * ★ 语音消息标记（2026-09-13 用户要求：引擎要能区分「语音消息」和「打字消息」）。
+ *
+ * 引擎协议里**没有**「这条输入来自语音」的字段（`TurnStartParams` 的 22 个字段逐个查过，
+ * 只有 `turnTrigger` 是「调用方来源分类」，且它只进遥测、模型看不到），所以标记只能落在
+ * 文本上 —— 这与本项目既有做法一致：飞书渠道就是 `[飞书用户 xxx]\n正文`。
+ * 前缀进 rollout 后：① 模型/引擎能分辨来源（可以据此调整回答风格）；② 界面上一眼能认出
+ * 这条是语音说的。副作用是用户消息文本会带这个前缀（长度 4 字符，可接受）。
+ */
+export const VOICE_MESSAGE_PREFIX = "[语音] ";
+
+/** `turnTrigger`：引擎侧的来源分类（遥测维度，不改变模型行为） */
+const VOICE_TURN_TRIGGER = "voice";
+
+/** 挂断后工作线程的保活时长（毫秒）。模型加载 1~3 秒，连着说第二句不该重来一遍；
+ *  到期自动销毁，内存回到挂断前的水平。 */
+const WORKER_KEEPALIVE_MS = 90_000;
+
 export type VoiceState = "idle" | "listening" | "thinking" | "speaking";
 
 export type VoiceEvent =
@@ -49,7 +71,13 @@ export type VoiceEvent =
   | { type: "partial"; text: string }
   | { type: "final"; text: string }
   | { type: "delta"; text: string }
-  | { type: "turnDone"; text: string }
+  /** `aborted` = 这一轮是「被打断/失败」结束的：渲染层必须丢弃断句器里的半句与在途合成，
+   *  不能再 flush 出来念（否则用户插话后，它会把打断前那半句继续念完）。 */
+  | { type: "turnDone"; text: string; aborted?: boolean }
+  /** 唤醒词命中（渲染层据此开始通话）。匹配在主进程做：唤醒词、同音表、模型词表都在这一侧 */
+  | { type: "wake"; text: string }
+  /** 唤醒诊断：最近听到的一句（节流），给设置页显示「为什么没唤醒」用 */
+  | { type: "wakeHeard"; text: string; matched: boolean }
   | { type: "error"; message: string }
   | { type: "download"; repo?: string; file?: string; repoIndex?: number; repoTotal?: number; percent: number; message: string }
   | { type: "downloadDone"; ok: boolean; error?: string };
@@ -97,6 +125,12 @@ export class VoiceService {
   private turnText = "";
   /** 本回合是否已经提交过一次识别结果（避免同一句重复提交） */
   private submittedThisUtterance = false;
+  /** 挂断后寄存的工作线程（保活复用，见 parkIdle/takeIdle） */
+  private idleAsr: { client: VoiceWorkerClient; key: string; timer: NodeJS.Timeout } | null = null;
+  private idleTts: { client: VoiceWorkerClient; key: string; timer: NodeJS.Timeout } | null = null;
+  /** 本次通话工作线程的配置指纹（设置一变就不能复用旧线程） */
+  private asrKey = "";
+  private ttsKey = "";
 
   constructor(private readonly deps: Deps) {}
 
@@ -167,45 +201,42 @@ export class VoiceService {
     this.threadId = input.threadId;
     // 识别参数来自设置：线程数 + 端点检测三规则（说完静音多久算一句结束）
     const numThreads = this.currentSettings.asr.numThreads;
+    // 松手 flush 的补静音时长 = 端点阈值 + 0.3s（不要写死 3 秒，见 workers.ts 注释）
+    const finishSilenceSec = Number(this.currentSettings.asr.rule2 ?? 0.8) + 0.3;
     try {
-      this.asr = new VoiceWorkerClient(
-        "语音识别",
-        ASR_WORKER_SOURCE,
-        {
-          sherpaPath,
-          sampleRate: SAMPLE_RATE,
-          encoder: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "encoder.int8.onnx"),
-          decoder: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "decoder.onnx"),
-          joiner: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "joiner.int8.onnx"),
-          tokens: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "tokens.txt"),
-          numThreads,
-          rule1: this.currentSettings.asr.rule1,
-          rule2: this.currentSettings.asr.rule2,
-          rule3: this.currentSettings.asr.rule3,
-        },
-        () => {
-          if (this.active) this.fail("语音识别线程意外退出，请重新开始通话");
-        }
-      );
+      const asrData = {
+        sherpaPath,
+        sampleRate: SAMPLE_RATE,
+        encoder: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "encoder.int8.onnx"),
+        decoder: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "decoder.onnx"),
+        joiner: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "joiner.int8.onnx"),
+        tokens: modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "tokens.txt"),
+        numThreads,
+        rule1: this.currentSettings.asr.rule1,
+        rule2: this.currentSettings.asr.rule2,
+        rule3: this.currentSettings.asr.rule3,
+        finishSilenceSec,
+      };
+      this.asrKey = JSON.stringify(asrData);
+      // ★ 复用刚挂断时寄存的识别线程（审计 ③）：省掉 154MB 模型的 1~3 秒加载，
+      //   「连着问第二句」和「再按一次听写」立刻可用。配置不一致则丢弃重建。
+      const reusedAsr = this.takeIdle("asr", this.asrKey);
+      this.asr = reusedAsr ?? new VoiceWorkerClient("语音识别", ASR_WORKER_SOURCE, asrData, () => {
+        if (this.active) this.fail("语音识别线程意外退出，请重新开始通话");
+      });
       // 听写只需要 ASR，不创建 TTS（更快、更省内存）；通话模式才创建合成线程。
       if (this.mode === "conversation") {
-        this.tts = new VoiceWorkerClient(
-          "语音合成",
-          TTS_WORKER_SOURCE,
-          {
-            sherpaPath,
-            model: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "model.onnx"),
-            lexicon: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "lexicon.txt"),
-            tokens: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "tokens.txt"),
-            numThreads,
-          },
-          () => {
-            if (this.active) this.fail("语音合成线程意外退出，请重新开始通话");
-          }
-        );
+        const ttsData = await this.ttsWorkerData(sherpaPath, numThreads);
+        this.ttsKey = JSON.stringify(ttsData);
+        const reusedTts = this.takeIdle("tts", this.ttsKey);
+        this.tts = reusedTts ?? new VoiceWorkerClient("语音合成", TTS_WORKER_SOURCE, ttsData, () => {
+          if (this.active) this.fail("语音合成线程意外退出，请重新开始通话");
+        });
       }
       // 先建起来，把模型加载的耗时挡在通话之前（失败会在下面被捕获）
       await this.asr.request("create");
+      // 复用来的线程里可能还留着上一句的流，必须清掉（否则新话会接在旧话后面）
+      if (reusedAsr) await this.asr.request("reset");
       if (this.tts) await this.tts.request("create");
     } catch (error: any) {
       await this.stop();
@@ -221,10 +252,11 @@ export class VoiceService {
     return { ok: true };
   }
 
-  /** 结束通话：释放工作线程与全部状态。 */
+  /** 结束通话：释放麦克风/状态；工作线程**寄存保活**一段时间（见 WORKER_KEEPALIVE_MS）。 */
   async stop(): Promise<void> {
     const asr = this.asr;
     const tts = this.tts;
+    const wasActive = this.active;
     this.asr = null;
     this.tts = null;
     this.active = false;
@@ -234,7 +266,58 @@ export class VoiceService {
     this.threadId = "";
     this.mode = "conversation";
     this.setState("idle");
+    if (wasActive) {
+      // 正常挂断 → 寄存（下次 start 复用）；启动失败等异常路径 → 直接销毁
+      this.parkIdle("asr", asr, this.asrKey);
+      this.parkIdle("tts", tts, this.ttsKey);
+      return;
+    }
     await Promise.allSettled([asr?.terminate(), tts?.terminate()]);
+  }
+
+  // ── 工作线程保活（审计 ③）───────────────────────────────────────────────
+  // 挂断即 terminate 的代价是「每次按下都要重新加载 154MB 模型」，听写场景尤其明显。
+  // 寄存到 idle 槽 + 超时自动销毁：既快，也不会有进程长期占着内存。
+
+  /** 取出可复用的寄存线程；配置指纹不一致或线程已死则丢弃。 */
+  private takeIdle(slot: "asr" | "tts", key: string): VoiceWorkerClient | null {
+    const idle = slot === "asr" ? this.idleAsr : this.idleTts;
+    if (!idle) return null;
+    if (slot === "asr") this.idleAsr = null;
+    else this.idleTts = null;
+    clearTimeout(idle.timer);
+    if (idle.key !== key || !idle.client.alive) {
+      void idle.client.terminate().catch(() => undefined);
+      return null;
+    }
+    this.deps.log("info", `${slot === "asr" ? "语音识别" : "语音合成"}线程复用（省掉模型重新加载）`);
+    return idle.client;
+  }
+
+  /** 把线程寄存进 idle 槽，超时自动销毁。 */
+  private parkIdle(slot: "asr" | "tts", client: VoiceWorkerClient | null, key: string): void {
+    if (!client) return;
+    const timer = setTimeout(() => {
+      const idle = slot === "asr" ? this.idleAsr : this.idleTts;
+      if (slot === "asr") this.idleAsr = null;
+      else this.idleTts = null;
+      if (idle?.client === client) void client.terminate().catch(() => undefined);
+    }, WORKER_KEEPALIVE_MS);
+    (timer as any).unref?.();
+    if (slot === "asr") this.idleAsr = { client, key, timer };
+    else this.idleTts = { client, key, timer };
+  }
+
+  /** 立刻销毁寄存的线程（卸载模型 / 应用退出前调用：别让占着模型文件的线程挡住删除）。 */
+  disposeIdleWorkers(): void {
+    const slots = [this.idleAsr, this.idleTts];
+    this.idleAsr = null;
+    this.idleTts = null;
+    for (const idle of slots) {
+      if (!idle) continue;
+      clearTimeout(idle.timer);
+      void idle.client.terminate().catch(() => undefined);
+    }
   }
 
   /**
@@ -271,6 +354,25 @@ export class VoiceService {
     }
   }
 
+  /**
+   * ★ 提前端点（审计 ④）：渲染层发现「识别文本已以句末标点收尾 + 用户停口 ~0.5s」时调用。
+   * 复用 `finish` op（补一小段静音把尾句解完 + 复位流），拿到文本就直接提交，
+   * 不必再干等 `rule2`（默认 0.8s）——这是端到端延迟里唯一纯粹的等待。
+   */
+  async endpointNow(): Promise<{ ok: boolean; text?: string }> {
+    if (!this.active || !this.asr) return { ok: false };
+    try {
+      const result = await this.asr.request("finish", {});
+      const text = String(result?.text ?? "").trim();
+      if (!text) return { ok: true, text: "" };
+      await this.finishUtterance(text);
+      return { ok: true, text };
+    } catch (error: any) {
+      this.deps.log("error", `提前端点失败：${error?.message ?? error}`);
+      return { ok: false };
+    }
+  }
+
   /** 独立转写一个 16k 单声道 PCM wav 文件（渠道语音消息：上游 ffmpeg 已归一格式）。
    *  临时建 ASR worker，转写完立即销毁——不影响正在进行的通话/听写。 */
   async transcribeAudioFile(wavPath: string): Promise<{ ok: boolean; text?: string; error?: string }> {
@@ -294,6 +396,8 @@ export class VoiceService {
           rule1: settings.asr.rule1,
           rule2: settings.asr.rule2,
           rule3: settings.asr.rule3,
+          // 整段 wav 一次喂完，尾部补的静音只要够解出最后一个字
+          finishSilenceSec: Number(settings.asr.rule2 ?? 0.8) + 0.3,
         },
         () => { /* 临时 worker，短命，无需失败回调 */ },
       );
@@ -343,7 +447,9 @@ export class VoiceService {
     if (!model) throw new Error("尚未配置模型，无法对话");
     const threadId = this.threadId;
     if (!threadId) throw new Error("通话未绑定会话");
-    const input = [{ type: "text", text, text_elements: [] }];
+    // ★ 标记来源（见 VOICE_MESSAGE_PREFIX 注释）：文本前缀让模型/引擎能分辨语音消息，
+    //   排队路径与直接 start 路径都要带，否则「引擎时而不认识」。
+    const input = [{ type: "text", text: `${VOICE_MESSAGE_PREFIX}${text}`, text_elements: [] }];
 
     this.setState("thinking");
     this.turnText = "";
@@ -363,6 +469,8 @@ export class VoiceService {
       model: model.model,
       effort: VOICE_EFFORT,
       personality: "pragmatic",
+      // 引擎侧来源分类（遥测维度；模型看的是上面那个文本前缀）
+      turnTrigger: VOICE_TURN_TRIGGER,
     });
     this.deps.log("info", "语音消息已提交给引擎");
   }
@@ -393,9 +501,53 @@ export class VoiceService {
         [...(params?.turn?.items ?? [])].reverse().find((item: any) => item.type === "agentMessage")?.text ??
         this.turnText;
       this.turnText = "";
-      this.deps.emit({ type: "turnDone", text: String(finalText ?? "") });
+      // ★ 必须看 turn.status（审计 ①）：`turn/interrupt` 之后引擎回的也是 turn/completed，
+      //   不看状态就会把「打断」当正常结束 → 渲染层把断句器里的半句继续念完。
+      const status = String(params?.turn?.status ?? "");
+      const aborted = status === "interrupted" || status === "failed";
+      this.deps.emit({ type: "turnDone", text: String(finalText ?? ""), aborted });
+      // 被打断的回合：断句器等渲染层一起清（这里只能清服务端侧的记账）
+      if (aborted) this.submittedThisUtterance = false;
       if (this.active) this.setState("listening");
     }
+  }
+
+  /**
+   * 组装 TTS 工作线程的初始化数据：
+   * 选了「我的音色」且克隆模型已就绪 → zipvoice 克隆模式（参考音频 + 参考文本成对传）；
+   * 否则沿用内置 vits（预置 5 个音色）。参考文本为空时不走克隆——文本对不上音质会明显劣化。
+   */
+  private async ttsWorkerData(sherpaPath: string, numThreads: number, profileId?: string): Promise<Record<string, unknown>> {
+    const wanted = String(profileId ?? this.currentSettings?.tts?.profileId ?? "").trim();
+    if (wanted && zipvoiceReady(this.deps.modelsRoot)) {
+      const profile = (await listProfiles(this.deps.userDataDir)).find((p: VoiceProfile) => p.id === wanted);
+      if (profile?.refText?.trim()) {
+        const dir = path.join(this.deps.modelsRoot, ZIPVOICE_DIR);
+        return {
+          mode: "zipvoice",
+          sherpaPath,
+          numThreads,
+          referenceAudioPath: profileAudioPath(this.deps.userDataDir, profile),
+          referenceText: profile.refText.trim(),
+          zipvoice: {
+            tokens: path.join(dir, "tokens.txt"),
+            encoder: path.join(dir, "encoder.int8.onnx"),
+            decoder: path.join(dir, "decoder.int8.onnx"),
+            vocoder: path.join(dir, ZIPVOICE_ARCHIVE.vocoder.name),
+            dataDir: path.join(dir, "espeak-ng-data"),
+            lexicon: path.join(dir, "lexicon.txt"),
+          },
+        };
+      }
+    }
+    return {
+      mode: "vits",
+      sherpaPath,
+      numThreads,
+      model: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "model.onnx"),
+      lexicon: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "lexicon.txt"),
+      tokens: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "tokens.txt"),
+    };
   }
 
   /** 合成一句话（渲染层按句调用，实现边生成边播）。 */
@@ -442,11 +594,15 @@ export class VoiceService {
   }
 
   /**
-   * 音色试听：不依赖通话态——没有活跃 TTS 时临时起一个 worker，合成完即销毁。
-   * 这样在设置页（没在通话）也能点「试听」听到某个音色/语速的效果。
+   * 音色试听：不依赖通话态——没有活跃 TTS 时用**缓存的试听 worker**合成。
+   * 旧实现每次试听都新建 worker、合成完立刻销毁：ZipVoice/VITS 模型每次都要
+   * 重新加载（数秒到十几秒）= 用户反馈「试听要半天」。现在 worker 常驻复用，
+   * 首次慢、之后秒出；空闲 5 分钟自动销毁回收内存。
+   * 试听克隆音色（profileId）时不能用通话里的 TTS worker（配置不同），
+   * 单独走这套缓存。
    */
-  async previewVoice(input?: { sid?: number; speed?: number; text?: string }): Promise<VoiceSpeakResult> {
-    if (this.tts) {
+  async previewVoice(input?: { sid?: number; speed?: number; text?: string; profileId?: string }): Promise<VoiceSpeakResult> {
+    if (this.tts && !input?.profileId) {
       return this.speak(input?.text ?? VOICE_SAMPLE_TEXT, { sid: input?.sid, speed: input?.speed });
     }
     const sherpaPath = resolveSherpaPath();
@@ -454,43 +610,207 @@ export class VoiceService {
     if (!(await this.refreshModelsReady())) {
       return { ok: false, error: "语音模型未下载完整，请先到「开发工具 → 语音模型」下载" };
     }
-    let client: VoiceWorkerClient | null = null;
-    try {
-      client = new VoiceWorkerClient(
+    // worker 配置 key：克隆音色 / 识别线程数变化时才重建
+    const key = `${input?.profileId ?? ""}|${this.currentSettings.asr.numThreads}`;
+    if (!this.previewTts || !this.previewTts.alive || this.previewTtsKey !== key) {
+      await this.previewTts?.terminate().catch(() => undefined);
+      this.previewTts = new VoiceWorkerClient(
         "语音试听",
         TTS_WORKER_SOURCE,
-        {
-          sherpaPath,
-          model: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "model.onnx"),
-          lexicon: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "lexicon.txt"),
-          tokens: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "tokens.txt"),
-          // 跟正式通话对齐（之前用 1 偶尔触发 sherpa-onnx 的不同代码路径）
-          numThreads: this.currentSettings.asr.numThreads,
-        },
+        // 跟正式通话对齐（之前用 1 偶尔触发 sherpa-onnx 的不同代码路径）
+        await this.ttsWorkerData(sherpaPath, this.currentSettings.asr.numThreads, input?.profileId),
         () => undefined
       );
-      const result = await client.request("speak", {
+      this.previewTtsKey = key;
+    }
+    this.schedulePreviewDispose();
+    try {
+      const result = await this.previewTts.request("speak", {
         text: String(input?.text ?? VOICE_SAMPLE_TEXT),
         sid: input?.sid ?? this.currentSettings.tts.sid,
         speed: input?.speed ?? this.currentSettings.tts.speed,
       });
       return { ok: true, sampleRate: Number(result.sampleRate ?? 22050), samples: result.samples };
     } catch (error: any) {
+      // worker 出错时下次重建（坏 worker 不复用）
+      this.previewTts = null;
       return { ok: false, error: String(error?.message ?? error) };
-    } finally {
-      void client?.terminate?.().catch?.(() => undefined);
     }
+  }
+
+  /** 试听 worker 空闲自动销毁：试听是低频操作，不该常驻占内存。 */
+  private schedulePreviewDispose(): void {
+    if (this.previewDisposeTimer) clearTimeout(this.previewDisposeTimer);
+    this.previewDisposeTimer = setTimeout(() => {
+      void this.previewTts?.terminate().catch(() => undefined);
+      this.previewTts = null;
+      this.previewTtsKey = "";
+      this.previewDisposeTimer = null;
+    }, 5 * 60 * 1000);
   }
 
   // ── 语音唤醒（持续聆听，只用 ASR、不开引擎回合）──
   // 说明：这里复用的是**已有的流式识别模型**（不是专门的 KWS 关键词模型），
   // 所以会持续占用 CPU。专门的唤醒模型更省电，但需要额外下载一个模型仓库；
   // 当前实现的好处是「装上就能用」，代价是 standby 时 CPU 有常驻开销（UI 里已明确提示）。
+  //
+  // ⚠️ 09-13 取证修正（改这块先读 `src/lib/wake-match.mjs` 顶部注释）：
+  //   通用模型的输出**不等于**唤醒词本身——默认词「小柯小柯」实测会被识别成
+  //   「小柯小柯 / 小哥小哥」，说「小科小科」时又常被写成「小柯小柯」。
+  //   所以：① 匹配必须同音容错（同音表取自音色模型自带的 lexicon.txt，零新依赖）；
+  //   ② 匹配放在主进程（唤醒词/同音表/词表都在这边），渲染层只收事件；
+  //   ③ 每次端点必须复位识别流（旧实现从不复位 → 识别文本跨句无限累积，
+  //      每块还要把整坨文本回传渲染层）。
 
-  async startWakeListener(): Promise<{ ok: boolean; error?: string }> {
-    if (this.wakeAsr) return { ok: true };
+  /** 唤醒匹配器（唤醒词/同音表变了要重建）—— 仅 ASR 回退模式使用 */
+  private wakeMatcher: WakeMatcher | null = null;
+  /** 试听专用 worker 缓存（previewVoice 复用；配置 key 变了才重建） */
+  private previewTts: VoiceWorkerClient | null = null;
+  private previewTtsKey = "";
+  private previewDisposeTimer: any = null;
+  /** 唤醒引擎：kws=关键词模型（首选）；asr=通用识别 + 同音容错（回退） */
+  private wakeEngine: "kws" | "asr" | "" = "";
+  /** 同音表缓存（lexicon.txt 只解析一次，实测 175ms / 2 万字） */
+  private wakeHomophones: Map<string, Set<string>> | null = null;
+  private wakeHomophonesLoaded = false;
+  /** 诊断节流：最近一次上报「听到什么」的时间与文本 */
+  private wakeHeardAt = 0;
+  private wakeHeardText = "";
+  /** 关键词模型用的 keywords.txt（写在 userData 下，进程内记路径便于重建） */
+  private wakeKeywordsFile = "";
+  /** 当前 keywords.txt 对应的唤醒词（改词判定用） */
+  private wakeKeywordsPhrase = "";
+
+  /** 同音表：从音色模型的 lexicon.txt 构建（取不到就退化成精确匹配，不报错） */
+  private async loadWakeHomophones(): Promise<Map<string, Set<string>> | null> {
+    if (this.wakeHomophonesLoaded) return this.wakeHomophones;
+    this.wakeHomophonesLoaded = true;
+    try {
+      const lexiconPath = modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "lexicon.txt");
+      const text = await fsPromises.readFile(lexiconPath, "utf8");
+      const map = buildHomophoneMap(text);
+      this.wakeHomophones = map.size ? map : null;
+      this.deps.log("info", `唤醒同音表已加载（${map.size} 个字）`);
+    } catch (error: any) {
+      this.wakeHomophones = null;
+      this.deps.log("info", `唤醒同音表不可用（${error?.message ?? error}），本次只做精确匹配`);
+    }
+    return this.wakeHomophones;
+  }
+
+  private async rebuildWakeMatcher(phrase: string): Promise<void> {
+    const homophones = await this.loadWakeHomophones();
+    this.wakeMatcher = createWakeMatcher({ phrase, homophones });
+    this.deps.log(
+      "info",
+      `唤醒词「${this.wakeMatcher.phrase}」就绪（同音等价类 ${this.wakeMatcher.homophoneGroups} 组` +
+        `${homophones ? "" : "，未启用同音容错"}）`
+    );
+  }
+
+  /**
+   * 关键词模型所需的 keywords.txt：中文唤醒词 → 拼音 token 行。
+   * 写在 userData 下（模型目录只读语义，别往里塞用户数据）。
+   * 返回可用行；一行都没有（字不在音色词典 / token 表里）时返回空数组，由调用方回退到 ASR。
+   */
+  private async writeKwsKeywords(phrase: string): Promise<{ lines: string[]; hint: string }> {
+    const lexiconPath = modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "lexicon.txt");
+    const tokensPath = `${kwsDir(this.deps.modelsRoot)}${path.sep}${KWS_ARCHIVE.model.tokens}`;
+    const [lexiconText, tokensText] = await Promise.all([
+      fsPromises.readFile(lexiconPath, "utf8"),
+      fsPromises.readFile(tokensPath, "utf8").catch(() => ""),
+    ]);
+    const tokens = new Set(tokensText.split("\n").map((line) => line.split(" ")[0]).filter(Boolean));
+    const readings = parseLexiconReadings(lexiconText);
+    const built = buildKeywordLines({ phrase, readings, tokens: tokens.size ? tokens : undefined });
+    const usable = built.lines.filter((line) => line.missing.length === 0);
+    if (!usable.length) {
+      const hint = built.unknownChars.length
+        ? `唤醒词里的「${built.unknownChars.join("")}」在本机音色词典里查不到读音，无法生成关键词（换个常见字的词更稳）`
+        : `唤醒词的读音里有本关键词模型不支持的音节（${built.lines[0]?.missing.join("、") ?? ""}），已改用识别模型匹配`;
+      return { lines: [], hint };
+    }
+    const dir = path.join(this.deps.userDataDir, "voice-kws");
+    await fsPromises.mkdir(dir, { recursive: true });
+    const file = path.join(dir, "keywords.txt");
+    await fsPromises.writeFile(file, usable.map((line) => line.line).join("\n") + "\n", "utf8");
+    this.wakeKeywordsFile = file;
+    this.wakeKeywordsPhrase = phrase;
+    return { lines: usable.map((line) => line.line), hint: "" };
+  }
+
+  /**
+   * 启动唤醒监听。**优先用关键词模型**（读音匹配、不误唤醒、CPU 低）；
+   * 没装关键词模型 / 唤醒词无法转成拼音 token 时回退到「通用识别 + 同音容错」。
+   */
+  async startWakeListener(): Promise<{ ok: boolean; error?: string; phrase?: string; hint?: string; engine?: "kws" | "asr" }> {
+    if (this.wakeAsr) {
+      return { ok: true, phrase: this.wakeMatcher?.phrase ?? String(this.getSettings().wake?.phrase ?? ""), engine: this.wakeEngine || undefined };
+    }
     const sherpaPath = resolveSherpaPath();
     if (!sherpaPath) return { ok: false, error: "语音运行时未就绪（sherpa-onnx 未安装）" };
+    const settings = loadVoiceSettings(this.deps.userDataDir);
+    const phrase = String(settings.wake?.phrase ?? "").trim();
+    if (!phrase) return { ok: false, error: "唤醒词为空，请先在「设置 → 语音通话 → 语音唤醒」里填写" };
+
+    // ── 首选：关键词模型（KWS）──
+    if (kwsReady(this.deps.modelsRoot)) {
+      try {
+        const built = await this.writeKwsKeywords(phrase);
+        if (built.lines.length) {
+          this.wakeAsr = new VoiceWorkerClient(
+            "语音唤醒",
+            KWS_WORKER_SOURCE,
+            {
+              sherpaPath,
+              sampleRate: SAMPLE_RATE,
+              encoder: path.join(kwsDir(this.deps.modelsRoot), KWS_ARCHIVE.model.encoder),
+              decoder: path.join(kwsDir(this.deps.modelsRoot), KWS_ARCHIVE.model.decoder),
+              joiner: path.join(kwsDir(this.deps.modelsRoot), KWS_ARCHIVE.model.joiner),
+              tokens: path.join(kwsDir(this.deps.modelsRoot), KWS_ARCHIVE.model.tokens),
+              numThreads: 1,
+              keywordsFile: this.wakeKeywordsFile,
+              keywordsScore: 1.0,
+              // 阈值越低越灵敏（越容易误唤醒）。0.25 是 sherpa-onnx 文档给出的默认档，
+              // 实测：目标词 3/4 命中、三句日常话与跨关键词均不误触发。
+              keywordsThreshold: 0.25,
+              maxActivePaths: 4,
+              numTrailingBlanks: 1,
+            },
+            () => { this.wakeAsr = null; }
+          );
+          await this.wakeAsr.request("create");
+          this.wakeEngine = "kws";
+          this.wakeMatcher = null;
+          this.wakeHeardText = "";
+          this.wakeHeardAt = 0;
+          this.deps.log("info", `唤醒已启动（关键词模型）：${built.lines.join(" | ")}`);
+          return { ok: true, phrase, engine: "kws", hint: "" };
+        }
+        this.deps.log("info", `关键词模型不可用于该唤醒词：${built.hint}`);
+        // 继续走下面的 ASR 回退
+        return await this.startWakeAsrFallback(sherpaPath, phrase, built.hint);
+      } catch (error: any) {
+        await this.stopWakeListener();
+        this.deps.log("error", `关键词模型启动失败（回退识别模型）：${error?.message ?? error}`);
+        return await this.startWakeAsrFallback(sherpaPath, phrase, "");
+      }
+    }
+
+    // ── 回退：通用识别模型 + 同音容错 ──
+    const noKwsHint = "未安装语音唤醒关键词模型（约 31MB），当前用识别模型匹配（会误唤醒、也更费 CPU）——可在「设置 → 语音通话 → 语音唤醒」里一键下载";
+    if (!(await this.refreshModelsReady())) {
+      return { ok: false, error: "语音模型未下载完整，请先到「开发工具 → 语音模型」下载" };
+    }
+    return await this.startWakeAsrFallback(sherpaPath, phrase, noKwsHint);
+  }
+
+  /** 回退路径：通用识别模型 + 同音容错匹配（09-13 第二轮实现，仍保留兜底） */
+  private async startWakeAsrFallback(
+    sherpaPath: string,
+    phrase: string,
+    hint: string,
+  ): Promise<{ ok: boolean; error?: string; phrase?: string; hint?: string; engine?: "kws" | "asr" }> {
     if (!(await this.refreshModelsReady())) {
       return { ok: false, error: "语音模型未下载完整，请先到「开发工具 → 语音模型」下载" };
     }
@@ -513,20 +833,75 @@ export class VoiceService {
         },
         () => { this.wakeAsr = null; }
       );
-      return { ok: true };
+      // ★ 预热：旧实现不预热，154MB 模型加载被拖到**第一块音频**上（1~3 秒），
+      //   那段时间的音频全排在链上 → 唤醒要等好几秒才可能响应。
+      await this.wakeAsr.request("create");
+      this.wakeEngine = "asr";
+      await this.rebuildWakeMatcher(phrase);
+      let vocabHint = "";
+      try {
+        const tokens = await fsPromises.readFile(modelFilePath(this.deps.modelsRoot, ASR_REPO.repo, "tokens.txt"), "utf8");
+        vocabHint = phraseVocabHint(phrase, tokens);
+      } catch { /* 词表读不到就不提示 */ }
+      this.wakeHeardText = "";
+      this.wakeHeardAt = 0;
+      return { ok: true, phrase, hint };
     } catch (error: any) {
+      await this.stopWakeListener();
       return { ok: false, error: String(error?.message ?? error) };
     }
   }
 
-  /** 喂一帧音频给唤醒识别器，返回当前累计文本。 */
-  async feedWakeAudio(samples: Float32Array): Promise<{ text: string }> {
-    if (!this.wakeAsr) return { text: "" };
+  /**
+   * 喂一帧音频给唤醒识别器。
+   * 匹配、复位、诊断都在这里完成；返回值**不带文本**（旧实现每块回传整坨累积文本 = O(n²) IPC）。
+   */
+  async feedWakeAudio(samples: Float32Array): Promise<{ ok: boolean; matched: boolean }> {
+    const client = this.wakeAsr;
+    if (!client) return { ok: false, matched: false };
     try {
-      const r = await this.wakeAsr.request("feed", { samples });
-      return { text: String(r?.text ?? "") };
-    } catch {
-      return { text: "" };
+      // ── 关键词模型：只回「命中了哪个关键词」，没有整句文本 ──
+      if (this.wakeEngine === "kws") {
+        const r = await client.request("feed", { samples });
+        const keyword = String(r?.keyword ?? "");
+        if (keyword) {
+          // 线程侧已 reset；这里只需上报。命名里带了词，多个关键词时也能分辨。
+          this.deps.log("info", `唤醒词命中（关键词模型：「${keyword}」）`);
+          this.deps.emit({ type: "wake", text: keyword });
+          return { ok: true, matched: true };
+        }
+        return { ok: true, matched: false };
+      }
+
+      const r = await client.request("feed", { samples });
+      const text = String(r?.text ?? "");
+      const endpoint = Boolean(r?.endpoint);
+      const matched = Boolean(text) && Boolean(this.wakeMatcher?.match(text));
+      if (matched) {
+        // 命中即复位：不清的话下一句话会接在唤醒词后面继续累积
+        await client.request("reset", {});
+        this.wakeHeardText = "";
+        this.deps.log("info", `唤醒词命中（识别为「${text}」）`);
+        this.deps.emit({ type: "wake", text });
+        return { ok: true, matched: true };
+      }
+      if (endpoint) {
+        // ★ 端点即复位（09-13 修复）：sherpa 的 isEndpoint 只是查询，**不会**自动复位流；
+        //   不复位则文本跨句无限累积（实测三轮下来变成一整坨），匹配窗口也就不受控了。
+        await client.request("reset", {});
+        this.wakeHeardText = "";
+        return { ok: true, matched: false };
+      }
+      // 诊断：文本变了才报（节流 500ms），设置页据此显示「最近听到」
+      if (text && text !== this.wakeHeardText && Date.now() - this.wakeHeardAt > 500) {
+        this.wakeHeardAt = Date.now();
+        this.wakeHeardText = text;
+        this.deps.emit({ type: "wakeHeard", text, matched: false });
+      }
+      return { ok: true, matched: false };
+    } catch (error: any) {
+      this.deps.log("error", `唤醒识别失败：${error?.message ?? error}`);
+      return { ok: false, matched: false };
     }
   }
 
@@ -539,7 +914,22 @@ export class VoiceService {
   async stopWakeListener(): Promise<void> {
     const client = this.wakeAsr;
     this.wakeAsr = null;
+    this.wakeMatcher = null;
+    this.wakeEngine = "";
+    this.wakeKeywordsFile = "";
+    this.wakeHeardText = "";
+    this.wakeHeardAt = 0;
     await client?.terminate?.().catch?.(() => undefined);
+  }
+
+  /** 唤醒监听是否正在跑（下载完关键词模型后据此决定要不要重挂）。 */
+  wakeListening(): boolean {
+    return Boolean(this.wakeAsr);
+  }
+
+  /** 唤醒引擎：kws=关键词模型；asr=通用识别回退；空串=没在跑。 */
+  wakeEngineName(): "kws" | "asr" | "" {
+    return this.wakeEngine;
   }
 
   /** 模型目录（供 UI 显示）。 */
@@ -556,7 +946,21 @@ export class VoiceService {
   updateSettings(patch: Partial<VoiceSettings>): VoiceSettings {
     const next = loadVoiceSettings(this.deps.userDataDir);
     this.currentSettings = { ...next, ...patch };
-    // 落盘由 main.ts 统一负责（IPC handler 调 saveVoiceSettings），这里只同步内存
+    // 落盘由 main.ts 统一负责（IPC handler 调 saveVoiceSettings），这里只同步内存。
+    // ★ 唤醒词改了要**立刻**重建：唤醒是常驻监听，等下次 start 才生效 =
+    //   「改了唤醒词它还在等旧词」（与「开关改了不生效」同一类 bug）。
+    if (this.wakeAsr) {
+      const phrase = String(this.currentSettings.wake?.phrase ?? "").trim();
+      const activePhrase = this.wakeEngine === "kws" ? this.wakeKeywordsPhrase : (this.wakeMatcher?.phrase ?? "");
+      if (phrase && phrase !== activePhrase) {
+        if (this.wakeEngine === "kws") {
+          // keywordsFile 是 worker 启动参数，改词必须重建 worker（顺带重新生成 keywords.txt）
+          void this.stopWakeListener().then(() => this.startWakeListener());
+        } else {
+          void this.rebuildWakeMatcher(phrase);
+        }
+      }
+    }
     return this.currentSettings;
   }
 
