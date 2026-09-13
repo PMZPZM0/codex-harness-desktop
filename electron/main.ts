@@ -655,8 +655,17 @@ ipcMain.handle("voice:settings-set", async (_event, patch: any) => {
   return next;
 });
 
-ipcMain.handle("voice:start", async (_event, threadId: string, options?: { mode?: "conversation" | "dictation" }) => {
-  const result = await voiceService.start({ threadId: String(threadId ?? ""), mode: options?.mode });
+ipcMain.handle("voice:start", async (event, threadId: string, options?: { mode?: "conversation" | "dictation" }) => {
+  // ⛔ 全局互斥（09-13 用户要求）：语音通话是**全应用唯一**的（麦克风/ASR/TTS 线程只有一份），
+  // 多窗口下每个窗口都渲染了自己的悬浮球——A 窗口通话中，B 窗口再点会被 voiceService
+  // 静默复用（`if (this.active) return ok`），把 B 的会话绑不上、音频还全喂给了 A 的通话。
+  // 规则：同一会话重复 start = 恢复语义放行；不同会话 → 明确拒绝，前端据此把悬浮球置灰。
+  const status = voiceService.status();
+  const requestedThread = String(threadId ?? "");
+  if (status.active && status.threadId && requestedThread && status.threadId !== requestedThread) {
+    return { ok: false, busy: true, error: "另一个窗口正在语音通话中，请先挂断那边的通话再试" };
+  }
+  const result = await voiceService.start({ threadId: requestedThread, mode: options?.mode });
   return { ...result, status: voiceService.status() };
 });
 

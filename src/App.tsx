@@ -13781,7 +13781,7 @@ const commandMatches = useMemo(() => {
         <button className="icon-button popout-open-btn" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!thread} onClick={() => { if (thread) void popoutCurrentThread(thread.id); }}><Maximize2 size={16} /></button>
       )}
                 <div className="ctx-picker">
-          <button className="icon-button ctx-picker-btn" title="工作区上下文（当前会话使用的项目目录）" onClick={() => setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
+          <button className="icon-button ctx-picker-btn tb-workspace" title="工作区上下文（当前会话使用的项目目录）" onClick={() => setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
           {ctxMenuOpen && <>
             <div className="menu-backdrop" onClick={() => setCtxMenuOpen(false)} />
             <div className="task-menu ctx-menu">
@@ -13791,7 +13791,7 @@ const commandMatches = useMemo(() => {
           </>}
         </div>
         <div className="task-menu-wrap">
-          <button className="icon-button" title="当前任务操作" onClick={() => setTaskMenuOpen((current) => !current)}><MoreHorizontal size={18} /></button>
+          <button className="icon-button tb-task-menu" title="当前任务操作" onClick={() => setTaskMenuOpen((current) => !current)}><MoreHorizontal size={18} /></button>
           {taskMenuOpen && <>
             <div className="menu-backdrop" onClick={closeTaskMenu} />
             <div className="task-menu" role="menu">
@@ -13811,8 +13811,8 @@ const commandMatches = useMemo(() => {
             </div>
           </>}
         </div>
-        <button className="icon-button" title="新建终端标签页" onClick={() => { setRightOpen(true); setRightTab("terminal"); }}><TerminalSquare size={16} /></button>
-        <button className="icon-button" title={rightOpen ? "收起右侧面板" : "展开右侧面板"} onClick={() => setRightOpen(!rightOpen)}>{rightOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button>
+        <button className="icon-button tb-terminal" title="新建终端标签页" onClick={() => { setRightOpen(true); setRightTab("terminal"); }}><TerminalSquare size={16} /></button>
+        <button className="icon-button tb-right-panel" title={rightOpen ? "收起右侧面板" : "展开右侧面板"} onClick={() => setRightOpen(!rightOpen)}>{rightOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button>
     </>
   );
   return (

@@ -245,6 +245,25 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     void refreshModels();
   }, [refreshModels]);
 
+  // ---- 跨窗口通话互斥（09-13）----
+  // 语音通话引擎全应用只有一份（麦克风/ASR/TTS 线程唯一），多窗口下每个窗口都有自己的
+  // 悬浮球。别的窗口正在通话时，本窗口的悬浮球置灰禁点（轮询 voice:status，2s 轻量 IPC）；
+  // 那边挂断后自动恢复。本窗口自己的通话不算占用（phase active 时不再轮询置灰）。
+  const [busyElsewhere, setBusyElsewhere] = useState(false);
+  useEffect(() => {
+    if (phase !== "idle") { setBusyElsewhere(false); return; }
+    let alive = true;
+    const check = async () => {
+      try {
+        const st = await window.codex.voiceStatus();
+        if (alive) setBusyElsewhere(Boolean(st?.active && st?.threadId && threadId && st.threadId !== threadId));
+      } catch { /* IPC 不可用时维持原状 */ }
+    };
+    void check();
+    const timer = window.setInterval(check, 2000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [phase, threadId]);
+
   // 读悬浮球显隐 + 气泡开关（设置页改完即时生效）
   useEffect(() => {
     void window.codex.voiceSettingsGet().then((s: any) => {
@@ -761,6 +780,16 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       setExpanded(true);
       return;
     }
+    // 跨窗口互斥：别的窗口通话中 → 明确提示（悬浮球平时已置灰，这里是竞态兜底：
+    // 刚置灰检查完、那边的通话恰好开始）
+    try {
+      const st = await window.codex.voiceStatus();
+      if (st?.active && st?.threadId && threadId && st.threadId !== threadId) {
+        setNotice("另一个窗口正在语音通话中，请先挂断那边的通话再试");
+        setExpanded(true);
+        return;
+      }
+    } catch { /* 查不到就按原流程走，主进程侧还有第二道拦截 */ }
     voiceModeRef.current = mode;
     setPhase("starting");
     prebufferRef.current = [];
@@ -1082,6 +1111,13 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
       draggedRef.current = false;
       return;
     }
+    // 跨窗口互斥：别的窗口通话中 → 置灰态，点了只提示不动手（09-13 用户要求：
+    // 「独立会话窗口只能有一个窗口用这个，开了一个另外一个就灰掉，挂掉之后再恢复」）
+    if (phaseRef.current === "idle" && busyElsewhere) {
+      setNotice("另一个窗口正在语音通话中，请先挂断那边的通话再试");
+      setExpanded(true);
+      return;
+    }
     if (phaseRef.current === "active") setExpanded((prev) => !prev);
     else void startCall();
   };
@@ -1096,7 +1132,8 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
           : "播报中";
 
   const modelsReady = models?.ready ?? false;
-  const ballClass = `voice-ball ${phase === "active" ? `is-${state}` : ""} ${phase === "starting" ? "is-starting" : ""}`;
+  // 他窗口通话中 → 球置灰（视觉 + 语义），挂断后轮询自动恢复
+  const ballClass = `voice-ball ${phase === "active" ? `is-${state}` : ""} ${phase === "starting" ? "is-starting" : ""} ${busyElsewhere && phase === "idle" ? "is-busy-elsewhere" : ""}`;
 
   return createPortal(
     <>
@@ -1234,7 +1271,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
           <button
             ref={ballRef}
             className={ballClass}
-            title={phase === "active" ? "语音通话进行中（点击展开/收起，右键更多）" : "语音通话（本机离线，右键更多）"}
+            title={phase === "active" ? "语音通话进行中（点击展开/收起，右键更多）" : busyElsewhere ? "其他窗口正在语音通话中（挂断后此处恢复）" : "语音通话（本机离线，右键更多）"}
             aria-label={phase === "active" ? "语音通话进行中" : "开始语音通话"}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}

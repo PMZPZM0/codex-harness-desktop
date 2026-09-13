@@ -9892,6 +9892,26 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
     width: 260px;
   }
 }
+/* ⛔ 窗口缩小时顶栏按钮分级自动隐藏（09-13 用户反馈：缩到最小按键一直挤在、不跟随隐藏）。
+   顺序 = 从次要到主要：右栏开关/新建终端 → ⋯ 任务菜单 → 工作区 📁。
+   ⚠️ 用专用 class 匹配，不要用 [title*="中文"] 属性选择器——lightningcss minify 会剥掉
+   属性值的引号，非 ASCII 值没引号是非法选择器，整条规则被静默丢弃（实测踩坑）。 */
+@media (width<=980px) {
+  .topbar-actions .tb-right-panel,
+  .topbar-actions .tb-terminal {
+    display: none;
+  }
+}
+@media (width<=860px) {
+  .topbar-actions .tb-task-menu {
+    display: none;
+  }
+}
+@media (width<=760px) {
+  .topbar-actions .tb-workspace {
+    display: none;
+  }
+}
 @media (width<=760px) {
   .app-shell,
   .app-shell.with-context,
@@ -20518,8 +20538,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 /* 悬浮球：渐变 + 发光 + 跟着音量呼吸的脉冲环（--voice-level 由 JS 每帧写入 0..1） */
 /* 悬浮球：不再画"圈+底色"——动物本身就是 3D 玻璃挂件（透明小狐狸）。
    这里只剩"位置 + 交互 + 跟音量的发光"：背景透明，发光跟随 --voice-level。 */
-.voice-ball {
-  --voice-level: 0;
+.voice-ball {  --voice-level: 0;
   position: relative;
   width: 52px;
   height: 52px;
@@ -20542,6 +20561,18 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   -webkit-appearance: none;
   background-color: transparent;
   outline: none;
+}
+/* 跨窗口通话互斥（09-13）：其他窗口通话中，本窗口悬浮球置灰（挂断后轮询自动恢复）。
+   只降透明度 + 禁光晕脉冲，不移除组件（挂断后要恢复）。注意必须压过上面的
+   transform/hover 亮度（同特异性后来居上，放在 .voice-ball 定义之后即可）。 */
+.voice-ball.is-busy-elsewhere {
+  opacity: 0.38;
+  filter: grayscale(0.9);
+  cursor: not-allowed;
+}
+.voice-ball.is-busy-elsewhere .voice-ball-ring {
+  animation: none;
+  opacity: 0;
 }
 /* 09-13：悬浮球外发光 = ::before 光晕层（opacity/scale 随 --voice-level，合成器处理） */
 .voice-ball::before {
