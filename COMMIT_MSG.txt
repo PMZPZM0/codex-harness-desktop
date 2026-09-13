@@ -1,7 +1,3 @@
-Release v0.0.14: 专家中心/笔名/PPT 专家 + 安全与语音加固 + 随包浏览器内核
+pack(mac): 补 expert-skills / voice-presets 进 mac 包
 
-- 应用内专家中心（按领域分类陈列 32 位专家）+ 全员笔名 + 内置 PPT 专家「呈象」(ppt-master)
-- 技能分发改零拷贝市场注册（config.toml 注册本地市场，引擎原位发现）
-- 手机远控/机器人渠道双重配对鉴权、渲染层入参校验、更新链 sha256 校验
-- 语音：唤醒关键词模型、音色克隆、通话渲染三层优化、跨窗口互斥
-- 打包：extraResources 补随包浏览器内核（pw-browsers / cloak-cache），修 v0.0.13 漏包问题
+mac 的 extraResources 为空数组、只 copy 了 resources/tools，导致专家技能包与内置音色没进包；copy-mac-tools.cjs 现补拷这两个目录并在缺源时中止打包。
