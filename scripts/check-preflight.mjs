@@ -2087,6 +2087,16 @@ console.log(C.bold("\n【14】历史分页懒加载（首屏一页 / 滚一屏�
   /setEarlierLoadingId\(null\)/.test(appSrc4)
     ? ok("切换会话时清掉提示（不留上一次的加载态）")
     : fail("切换会话没清提示 —— 会串会话残留");
+  // 滚回最新必须把往上滚展开的渲染窗口收回来（用户 09-14：「滚上去看历史、再滚下来，
+  // 切换会话回来它还在渲染，不方便」）；⛔ 只收窗口、不动数据（否则再看历史要重新请求）。
+  const collapseFn = appSrc4.slice(appSrc4.indexOf("function collapseTurnWindow"), appSrc4.indexOf("function collapseTurnWindow") + 700);
+  /TURN_WINDOW/.test(collapseFn) && !/turns:/.test(collapseFn) && !/setThread/.test(collapseFn)
+    ? ok("★ 窗口回收只重置渲染窗口（不动 thread.turns / 不触发拉取）")
+    : fail("窗口回收动了数据 —— 收起后再看历史得重新请求，且可能与引擎状态打架");
+  const scrollFn2 = appSrc4.slice(appSrc4.indexOf("function onTimelineScroll"), appSrc4.indexOf("function onTimelineScroll") + 900);
+  /collapseTurnWindow\(id\)/.test(scrollFn2) && /clientHeight/.test(scrollFn2)
+    ? ok("★ 滚回最新（贴底）即收回窗口，切会话回来是初始态")
+    : fail("没有「贴底即收回窗口」—— 展开过的历史会一直撑着渲染");
 }
 // ---------- 汇总 ----------
 

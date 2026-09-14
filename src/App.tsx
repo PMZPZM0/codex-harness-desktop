@@ -13668,12 +13668,19 @@ const commandMatches = useMemo(() => {
    *  scrollTop 补偿）；贴近顶部时每向上滚一屏加载一页，离开顶部自然停止。 */
   function onTimelineScroll(event: React.UIEvent<HTMLDivElement>) {
     const el = event.currentTarget;
-    // 只有用户真的滚过才自动续载：程序化滚动（打开时跳底、插入内容后的位置补偿）也会把
+    // 只有用户真的滚过才响应：程序化滚动（打开时跳底、插入内容后的位置补偿）也会把
     // scrollTop 扫过近顶区间，据此加载就成了「没滚也加载」。
     if (!userScrolledRef.current) return;
-    if (el.scrollTop > 720 || switchJumpPending()) return;
     const id = threadRef.current?.id;
-    if (id) void loadEarlierTurns(id);
+    if (!id || switchJumpPending()) return;
+    // 回到最新（贴底）：把往上滚期间展开的历史窗口收回基线（用户 09-14：滚下来后不该
+    // 一直撑着渲染；切会话回来也应是初始态）。只收窗口，不动数据。
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) {
+      collapseTurnWindow(id);
+      return;
+    }
+    if (el.scrollTop > 720) return;
+    void loadEarlierTurns(id);
   }
 
   /** 刻度尺跳转：目标回合可能还在渲染窗口之外（元素未挂载，scrollIntoView 找不到目标）。
@@ -14894,6 +14901,16 @@ const commandMatches = useMemo(() => {
   }, []);
   function expandTurnWindow(id: string, count: number) {
     const next = { ...turnWindowRef.current, [id]: (turnWindowRef.current[id] ?? TURN_WINDOW) + count };
+    turnWindowRef.current = next;
+    setTurnWindow(next);
+  }
+  /** 回到最新（贴底）后把渲染窗口**收回基线**：往上滚看过的历史不必一直渲染——用户实测
+   *  「滚上去看了历史消息、再滚下来，切换会话回来它还在渲染，不方便」。
+   *  ⛔ 只收「渲染窗口」，不动 thread.turns（数据仍在内存：再往上滚先本地展开、不重新请求），
+   *  引擎侧上下文更不受影响；窗口记忆也回到基线，所以切走再切回同样是初始态。 */
+  function collapseTurnWindow(id: string) {
+    if ((turnWindowRef.current[id] ?? TURN_WINDOW) === TURN_WINDOW) return;
+    const next = touchTurnWindow(id, { ...turnWindowRef.current, [id]: TURN_WINDOW });
     turnWindowRef.current = next;
     setTurnWindow(next);
   }
