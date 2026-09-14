@@ -6880,6 +6880,10 @@ async function resumeThreadWithTurns(params: { threadId: string; excludeTurns?: 
     }
     turns.reverse(); // desc 取的倒序翻回时间正序
     if (turns.length) thread.turns = turns;
+    // ⛔ 游标必须带出去：本函数是模块级的、拿不到组件的 turnsCursorRef，故挂在线程对象上
+    // 作兜底（loadEarlierTurns 读 ref 未命中时用它）。否则「往上滚到底」会用空游标重拉
+    // 最新一页 → 界面出现重复回合、游标原地打转。
+    (thread as any).__turnsCursor = cursor;
   } catch { /* 分页失败维持原结果，不影响会话打开 */ }
   return result;
 }
@@ -9769,9 +9773,13 @@ export default function App() {
   const toggleAllSidebarSections = viewTab === "groups" ? toggleAllGroups : toggleAllProjects;
   // 「清空当前视图」批量删除按钮已下架（2026-09-04 反馈：侧栏顶部太容易误触）。
   // purgeCurrentTab / currentTabIds 一并移除；批量删除能力保留在单条任务右键/菜单里。
-/** 长会话首屏最多渲染的回合数：软件渲染下全量挂载几千个回合是「切会话慢」的主因，
- *  默认只渲染最近这么多回合，更早的由「显示更早的 N 条消息」按需展开。 */
-const TURN_WINDOW = 40;
+/** 长会话首屏最多渲染的回合数（1 回合 = 一次用户输入 + 一次回复，即一个对话来回）：
+ *  软件渲染下全量挂载几千个回合是「切会话慢」的主因，默认只渲染最近这么多回合
+ *  （≈10 个对话来回，用户 09-14 口径），更早的由「往上滚自动续载」/「显示更早」按需展开。 */
+const TURN_WINDOW = 20;
+/** 每次续载的回合数（首屏取数 / 本地展开 / 网络分页共用）：与 TURN_WINDOW 同量级，
+ *  保证「滚一屏补一批」的节奏，单次请求的数据量也最小（首屏与续载都快）。 */
+const TURNS_PAGE = 20;
 
 /** 窗口状态（每个会话展开了多少回合）最多记忆多少个会话：超出的按「最久未访问」淘汰。
  *  这是内存保护——记忆本身是 09-14 为「切回长会话不缩水」加的，但不能无限涨。 */
@@ -13562,7 +13570,7 @@ const commandMatches = useMemo(() => {
    *  一遍——「切会话慢」的数据侧主因（渲染侧已窗口化）。
    *  extra 透传（如 dynamicTools）：引擎 resume 的 schema 实证接受 dynamicTools，
    *  每次恢复都重注册当前工具面——旧会话也能用上新增的动态工具。 */
-  async function resumeThreadLight(params: { threadId: string; sandbox?: string; approvalPolicy?: string; dynamicTools?: any[] }, turnBudget = 200): Promise<any> {
+  async function resumeThreadLight(params: { threadId: string; sandbox?: string; approvalPolicy?: string; dynamicTools?: any[] }, turnBudget = TURNS_PAGE): Promise<any> {
     const result = await window.codex.request("thread/resume", { threadId: params.threadId, excludeTurns: true, sandbox: params.sandbox, approvalPolicy: params.approvalPolicy, ...(Array.isArray(params.dynamicTools) && params.dynamicTools.length ? { dynamicTools: params.dynamicTools } : {}) });
     const thread = result?.thread;
     if (thread && !(Array.isArray(thread.turns) && thread.turns.length)) {
@@ -13588,19 +13596,21 @@ const commandMatches = useMemo(() => {
     if (!current || current.id !== id) return;
     const rendered = turnWindowRef.current[id] ?? TURN_WINDOW;
     const hidden = current.turns.length - rendered;
-    const cursor = turnsCursorRef.current.get(id) ?? null;
+    // ref 优先（本次会话内已更新过），否则读线程对象上的兜底游标（见 resumeThreadWithTurns）。
+    const cursor = turnsCursorRef.current.get(id) ?? ((current as any).__turnsCursor ?? null);
     if (hidden <= 0 && !cursor) return;
     loadingEarlierRef.current.add(id);
+    setEarlierLoadingId(id);
     try {
       const el0 = scrollRef.current;
       const beforeTop = el0?.scrollTop ?? 0;
       const beforeHeight = el0?.scrollHeight ?? 0;
       let grow = 0;
       if (hidden > 0) {
-        grow = Math.min(hidden, 200); // 本地展开一屏的量，翻老历史不产生网络请求
+        grow = Math.min(hidden, TURNS_PAGE); // 本地展开一批的量，翻老历史不产生网络请求
       } else if (cursor) {
         try {
-          const result: any = await window.codex.request("thread/turns/list", { threadId: id, limit: 200, sortDirection: "desc", itemsView: "full", cursor });
+          const result: any = await window.codex.request("thread/turns/list", { threadId: id, limit: TURNS_PAGE, sortDirection: "desc", itemsView: "full", cursor });
           const data = Array.isArray(result?.data) ? result.data : [];
           if (result?.nextCursor) turnsCursorRef.current.set(id, result.nextCursor);
           else turnsCursorRef.current.delete(id);
@@ -13627,15 +13637,16 @@ const commandMatches = useMemo(() => {
       }
     } finally {
       loadingEarlierRef.current.delete(id);
+      setEarlierLoadingId((current) => (current === id ? null : current));
     }
   }
 
-  /** 时间线滚动近顶（<480px）自动续载更早的历史（ZCode 式）：
+  /** 时间线滚动近顶（<720px ≈ 一屏）自动续载更早的历史（ZCode 式）：
    *  loadEarlierTurns 内部防重入 + 切换动画期间跳过（switchJumpRef，避免对旧 DOM 做
    *  scrollTop 补偿）；贴近顶部时每向上滚一屏加载一页，离开顶部自然停止。 */
   function onTimelineScroll(event: React.UIEvent<HTMLDivElement>) {
     const el = event.currentTarget;
-    if (el.scrollTop > 480 || switchJumpPending()) return;
+    if (el.scrollTop > 720 || switchJumpPending()) return;
     const id = threadRef.current?.id;
     if (id) void loadEarlierTurns(id);
   }
@@ -14376,6 +14387,57 @@ const commandMatches = useMemo(() => {
     if (thread) markThreadRunning(thread.id);
     setNotice("");
     setWorkStartedAt(Date.now());
+    // ★ 乐观气泡**立刻**上屏（09-14 用户反馈：消息发出去要等一会才看到）。
+    //   原先 setOptimisticInput 排在两段记忆 IPC 之后（readMemoryContext + recallMemory
+    //   串行 await），记忆召回慢时用户盯着空输入框发呆。这里在引用解析完、记忆还没开始
+    //   之前就用「用户实际输入」占位——显示层本来就会剥掉 SYSTEM TASK / 导入记录包装，
+    //   所见即所打；下方算出真正要发给引擎的 sendInput 后再**原位替换**（同一个 id），
+    //   乐观/真实的文本去重匹配（userMessageMatchesInput）不受影响。
+    //   输入框同步清空，失败路径由下方 failedText 逻辑原样恢复（与原行为一致）。
+    const quotePrefix = quoteItem ? `> ${quoteItem.text.split("\n").join("\n> ")}\n\n` : "";
+    const contextPrefix = contextItems.length ? `\n\n[用户指定的对话上下文]\n${contextItems.map((item, index) => `(${index + 1}) ${item.role}：${item.text}`).join("\n\n")}\n[上下文结束]\n` : "";
+    const skillPrefix = selectedSkills.length ? `\n\n[本轮已引用技能]\n${selectedSkills.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
+    const filePrefix = files.length ? `\n\n[附件文件]\n${files.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
+    // 专家/团队成员 defer 空会话的首条消息：发送前把用户文本包装成 SYSTEM TASK 段注入角色
+    // 系统提示（渲染端按既有约定折叠为「需求已发起」卡片，气泡/引用/复制只暴露用户原文）。
+    // 仅在「当前线程还没有任何回合」时生效——包装过一次后线程已非空，后续轮次走普通消息。
+    const expertRole = thread && !(thread.turns ?? []).length ? readStoredExpertRole(thread.id) : undefined;
+    // 导入会话记录新建的空会话：首条消息同样在「线程无回合」时把外部记录整段附在消息前
+    // （渲染端折叠成可展开的「导入的会话记录」卡），发出后标记即清除。与专家角色互斥。
+    const pendingImport = thread && !(thread.turns ?? []).length && !expertRole ? readStoredPendingImport(thread.id) : undefined;
+    // ★ 乐观气泡**立刻**上屏（09-14 用户反馈：消息发出去要等一会才看到）。
+    //   原先 setOptimisticInput 排在两段记忆 IPC 之后（readMemoryContext + recallMemory
+    //   串行 await），记忆召回慢时用户盯着空输入框发呆。记忆前缀不参与可见正文
+    //   （userDisplayText 会剥掉），所以这里可以先不带记忆上屏。
+    //   ⛔ 约束一：钉顶旗标（anchorTopRef 等）必须与 setOptimisticInput 在**同一个同步块**
+    //   置位 —— 乐观气泡挂载时 useLayoutEffect 读它决定要不要钉，中间插 await（React 会在
+    //   此提交渲染）就会空跑一帧 → 新消息不钉顶（实测 gap=594）。
+    //   ⛔ 约束二：只 arm **一次**、之后不改 content —— 两次 setState 会让钉顶/跟随在中间态
+    //   上复核（实测视口来回拉扯 bigReversals=5）。
+    //   专家/导入首条消息要走 SYSTEM TASK 包装（依赖记忆段），走下方慢路径（低频，可接受）。
+    const fastArm = !expertRole && !pendingImport;
+    const optimisticId = `local-${Date.now()}`;
+    if (fastArm) {
+      justSentIds.add(optimisticId);
+      optimisticTurnIdRef.current = null;
+      optimisticBaselineRef.current = { threadId: thread?.id ?? null, turnIds: new Set((thread?.turns ?? []).map((entry) => entry.id)) };
+      setOptimisticInput({ id: optimisticId, type: "userMessage", content: [
+        ...((messageText || threadReferenceBlocks || files.length || quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
+        ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
+        ...images.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
+      ] });
+      stickToBottomRef.current = false;
+      anchorTopRef.current = true;
+      anchorTurnIdRef.current = null;
+      setPrompt("");
+      setQuoteItem(null);
+      setContextItems([]);
+      setImages([]);
+      dbg("send-arm-early");
+    }
+    // 记忆段耗时打点：乐观气泡已上屏，这段只影响「发给引擎的内容」何时就绪。
+    // 若用户仍觉得慢，__adbg 里这行直接给出是记忆慢还是别的慢（记忆已不在关键路径上）。
+    const memoryStartedAt = performance.now();
     let memoryPrefix = "";
     if (memoryEnabled && messageText) {
       // 常驻层无条件前置：L0 用户档案 + L1 项目记忆 + L2 近 3 天日志。
@@ -14392,22 +14454,12 @@ const commandMatches = useMemo(() => {
         } catch (error: any) { setMemoryStatus(`记忆召回失败：${error.message}`); }
       }
     }
-    const quotePrefix = quoteItem ? `> ${quoteItem.text.split("\n").join("\n> ")}\n\n` : "";
-    const contextPrefix = contextItems.length ? `\n\n[用户指定的对话上下文]\n${contextItems.map((item, index) => `(${index + 1}) ${item.role}：${item.text}`).join("\n\n")}\n[上下文结束]\n` : "";
-    const skillPrefix = selectedSkills.length ? `\n\n[本轮已引用技能]\n${selectedSkills.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
-    const filePrefix = files.length ? `\n\n[附件文件]\n${files.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
+    dbg("send-memory", { ms: Math.round(performance.now() - memoryStartedAt) });
     const input = [
       ...((messageText || threadReferenceBlocks || files.length || quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${memoryPrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
       ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
       ...images.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
     ];
-    // 专家/团队成员 defer 空会话的首条消息：发送前把用户文本包装成 SYSTEM TASK 段注入角色
-    // 系统提示（渲染端按既有约定折叠为「需求已发起」卡片，气泡/引用/复制只暴露用户原文）。
-    // 仅在「当前线程还没有任何回合」时生效——包装过一次后线程已非空，后续轮次走普通消息。
-    const expertRole = thread && !(thread.turns ?? []).length ? readStoredExpertRole(thread.id) : undefined;
-    // 导入会话记录新建的空会话：首条消息同样在「线程无回合」时把外部记录整段附在消息前
-    // （渲染端折叠成可展开的「导入的会话记录」卡），发出后标记即清除。与专家角色互斥。
-    const pendingImport = thread && !(thread.turns ?? []).length && !expertRole ? readStoredPendingImport(thread.id) : undefined;
     let sendInput = input;
     if (expertRole) {
       const userText = input.filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n").trim();
@@ -14424,17 +14476,21 @@ const commandMatches = useMemo(() => {
         sendInput = [{ type: "text", text, text_elements: [] }, ...inlineImagePaths.map((path) => ({ type: "localImage", path })), ...images.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path }))];
       }
     }
-    optimisticTurnIdRef.current = null;
-    optimisticBaselineRef.current = { threadId: thread?.id ?? null, turnIds: new Set((thread?.turns ?? []).map((entry) => entry.id)) };
-    const optimisticId = `local-${Date.now()}`;
-    justSentIds.add(optimisticId);
-    setOptimisticInput({ id: optimisticId, type: "userMessage", content: sendInput });
-    // 发送后锚顶：新消息顶到对话区顶部，回复向下展开（对齐 WorkBuddy；贴底跟随
-    // 在回复长超一屏后由 anchor 分支自动接管）
-    stickToBottomRef.current = false;
-    anchorTopRef.current = true;
-    anchorTurnIdRef.current = null;
-    dbg("send-arm-main");
+    if (!fastArm) {
+      // 专家/导入首条消息：SYSTEM TASK 包装依赖记忆段（记忆在 userText 内），只能在这之后上屏
+      justSentIds.add(optimisticId);
+      optimisticTurnIdRef.current = null;
+      optimisticBaselineRef.current = { threadId: thread?.id ?? null, turnIds: new Set((thread?.turns ?? []).map((entry) => entry.id)) };
+      setOptimisticInput({ id: optimisticId, type: "userMessage", content: sendInput });
+      stickToBottomRef.current = false;
+      anchorTopRef.current = true;
+      anchorTurnIdRef.current = null;
+      setPrompt("");
+      setQuoteItem(null);
+      setContextItems([]);
+      setImages([]);
+    }
+    // （fastArm 路径的乐观气泡已在上方上屏；两种路径都只 arm 一次，之后不改 content）
     let createdThreadId: string | null = null;
     try {
       const startTurn = async (target: Thread) => window.codex.request("turn/start", {
@@ -14779,6 +14835,9 @@ const commandMatches = useMemo(() => {
   const [turnWindow, setTurnWindow] = useState<Record<string, number>>({});
   const turnWindowRef = useRef<Record<string, number>>({});
   const loadingEarlierRef = useRef<Set<string>>(new Set());
+  /** 正在续载更早历史的会话 id：ref 只用于防重入（不触发渲染），这个 state 驱动顶部提示
+   *  ——此前自动加载是「静默」的，用户不知道正在加载。 */
+  const [earlierLoadingId, setEarlierLoadingId] = useState<string | null>(null);
   function expandTurnWindow(id: string, count: number) {
     const next = { ...turnWindowRef.current, [id]: (turnWindowRef.current[id] ?? TURN_WINDOW) + count };
     turnWindowRef.current = next;
@@ -15128,10 +15187,13 @@ const commandMatches = useMemo(() => {
             <button type="button" className="load-earlier-turns" onClick={() => void loadEarlierTurns(thread.id)}>
               <ChevronDown size={13} style={{ transform: "rotate(180deg)" }} />
               {thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW) > 0
-                ? `显示更早的 ${Math.min(thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW), 200)} 条消息`
+                ? `显示更早的 ${Math.min(thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW), TURNS_PAGE * 5)} 条消息`
                 : "加载更早的消息"}
               <small>向上滚动到此也会自动继续加载</small>
             </button>
+          )}
+          {thread && earlierLoadingId === thread.id && (
+            <div className="load-earlier-hint" role="status">正在载入更早的消息…</div>
           )}
           {thread?.turns.slice(Math.max(0, thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW))).map((turn) => <MemoTurnView turn={turn} isLastTurn={turn.id === thread.turns[thread.turns.length - 1]?.id} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={turn.id === latestCompletedTurn?.id || turn.id === activeTurnId ? tokenUsage : null} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />)}
           {optimisticInput && !optimisticConfirmed && <div id="chat-anchor"><ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} /></div>}
