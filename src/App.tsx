@@ -8056,6 +8056,53 @@ export default function App() {
     </div>
   );
   };
+  /** 一批会话的聚簇切分（分组视图/项目视图共用）。
+   *  09-14 用户实测：聚簇只在「分组」视图生效，「项目」视图下成员会话仍各自占一行 —— 抽成共用逻辑。 */
+  const clusterSplit = (entries: Thread[]) => {
+    const teamIds = new Set<string>();
+    for (const entry of entries) { const teamId = teamThreadsIndex[entry.id]; if (teamId) teamIds.add(teamId); }
+    const clusters = clusteredSidebar.clusters.filter((c) => teamIds.has(c.teamId));
+    const singles = entries.filter((entry) => !clusteredSidebar.memberIds.has(entry.id));
+    return { clusters, singles };
+  };
+  /** 聚簇行：主会话名 + 「N 会话」徽标 + 展开箭头（展开出主会话/成员会话分节）。 */
+  const renderClusterRow = (cluster: { teamId: string; lead: Thread | null; members: Thread[] }) => {
+    const rep = cluster.lead ?? cluster.members[0];
+    if (!rep) return null;
+    const expanded = expandedTeamClusters.has(cluster.teamId);
+    const anyRunning = cluster.members.some((m) => runningThreadIds.has(m.id)) || Boolean(cluster.lead && runningThreadIds.has(cluster.lead.id));
+    const attention = cluster.members.map((m) => threadAttention.get(m.id)).find(Boolean);
+    const clusterTotal = cluster.members.length + (cluster.lead ? 1 : 0);
+    return (
+      <div key={`cluster-${cluster.teamId}`} className={`team-cluster ${expanded ? "expanded" : ""}`}>
+        <div className={`thread-row ${thread?.id === rep.id ? "active" : ""} ${anyRunning ? "running" : "ready"}`}>
+          <button title={expanded ? "收起成员会话" : `展开 ${clusterTotal} 个会话`} onClick={() => { if (cluster.lead) void openThread(cluster.lead.id); }}>
+            <span className="thread-row-title-line"><span>{cleanThreadDisplayTitle(rep.name, { preview: rep.preview })}</span><span className="team-cluster-badge" title="专家团会话已合并，点箭头展开">{clusterTotal} 会话</span>{attention && <span className="thread-attention-badge tone-confirm">{attention}</span>}</span>
+            <small>{basename(rep.cwd)} · {timeAgo(rep.updatedAt)}</small>
+          </button>
+          <div className="thread-actions">
+            <button className="thread-cluster-toggle" title={expanded ? "收起成员会话" : "展开成员会话"} onClick={(event) => { event.stopPropagation(); toggleTeamCluster(cluster.teamId); }}>
+              <ChevronDown size={14} className={expanded ? "open" : ""} />
+            </button>
+            {openingThread === rep.id ? <Spinner /> : anyRunning ? <span className="thread-running-indicator" title="任务运行中"><i /><i /><i /></span> : null}
+          </div>
+          {expanded && (
+            <div className="team-cluster-body">
+              {cluster.lead && <div className="team-cluster-label">主会话</div>}
+              {cluster.lead && renderThreadRow(cluster.lead)}
+              {cluster.members.length > 0 && <div className="team-cluster-label">成员会话 · {cluster.members.length}</div>}
+              {cluster.members.map((entry) => renderThreadRow(entry))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+  /** 一批会话的列表渲染：聚簇行在前，其余行按原顺序。 */
+  const renderClusterList = (entries: Thread[]) => {
+    const { clusters, singles } = clusterSplit(entries);
+    return <>{clusters.map(renderClusterRow)}{singles.map(renderThreadRow)}</>;
+  };
   const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < 900);
   useEffect(() => {
     const onResize = () => setNarrow(window.innerWidth < 900);
@@ -14788,7 +14835,7 @@ const commandMatches = useMemo(() => {
                         <button className="danger" onClick={() => { setProjectMenu(null); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />移除（删除全部对话）</button>
                       </div>}
                     </div>
-                    {expanded && <div className="project-item-body">{[...items].sort((a, b) => Number(pinnedThreads.includes(b.id)) - Number(pinnedThreads.includes(a.id)) || b.updatedAt - a.updatedAt).map(renderThreadRow)}</div>}
+                    {expanded && <div className="project-item-body">{renderClusterList([...items].sort((a, b) => Number(pinnedThreads.includes(b.id)) - Number(pinnedThreads.includes(a.id)) || b.updatedAt - a.updatedAt))}</div>}
                   </div>
                 );
               }) : <div className="empty-list">暂无项目</div>}
@@ -14796,61 +14843,18 @@ const commandMatches = useMemo(() => {
           ) : listThreads.length ? (
             <>
               {groupedThreads.map((g) => {
-                // 专家团聚簇：成员会话行从时间分组里抽走；该分组内出现过的 team 集中成簇行插在组首
-                const visible = g.items.filter((entry) => !clusteredSidebar.memberIds.has(entry.id));
-                const teamIdsHere = new Set<string>();
-                for (const entry of g.items) {
-                  const teamId = teamThreadsIndex[entry.id];
-                  if (teamId) teamIdsHere.add(teamId);
-                }
-                const clustersHere = clusteredSidebar.clusters.filter((c) => teamIdsHere.has(c.teamId));
+                const { clusters, singles } = clusterSplit(g.items);
                 return (
                 <section className="conv-section" key={g.key}>
                   <button className="conv-section-label" title="折叠/展开分组" onClick={() => toggleSection(g.key)}>
                     <ChevronDown size={12} className={`conv-section-chevron ${collapsedSections.has(g.key) ? "" : "open"}`} />
-                    <span>{g.label}</span><em>{visible.length + clustersHere.length}</em>
+                    <span>{g.label}</span><em>{clusters.length + singles.length}</em>
                   </button>
-                  {!collapsedSections.has(g.key) && (
-                    <div className="conv-section-body">
-                      {clustersHere.map((cluster) => {
-                        const rep = cluster.lead ?? cluster.members[0];
-                        if (!rep) return null;
-                        const expanded = expandedTeamClusters.has(cluster.teamId);
-                        const anyRunning = cluster.members.some((m) => runningThreadIds.has(m.id)) || (cluster.lead && runningThreadIds.has(cluster.lead.id));
-                        const attention = cluster.members.map((m) => threadAttention.get(m.id)).find(Boolean);
-                        const clusterTotal = cluster.members.length + (cluster.lead ? 1 : 0);
-                        return (
-                          <div key={`cluster-${cluster.teamId}`} className={`team-cluster ${expanded ? "expanded" : ""}`}>
-                            <div className={`thread-row ${thread?.id === rep.id ? "active" : ""} ${anyRunning ? "running" : "ready"}`}>
-                              <button title={expanded ? "收起成员会话" : `展开 ${cluster.members.length} 个成员会话`} onClick={() => { if (cluster.lead) void openThread(cluster.lead.id); }}>
-                                <span className="thread-row-title-line" onClick={(event) => { if (expanded) return; event.preventDefault(); }}><span>{cleanThreadDisplayTitle(rep.name, { preview: rep.preview })}</span><span className="team-cluster-badge" title="成员会话已合并，点击箭头展开">{clusterTotal} 会话</span>{attention && <span className="thread-attention-badge tone-confirm">{attention}</span>}</span>
-                                <small>{basename(rep.cwd)} · {timeAgo(rep.updatedAt)}</small>
-                              </button>
-                              <div className="thread-actions">
-                                <button className="thread-cluster-toggle" title={expanded ? "收起成员会话" : "展开成员会话"} onClick={(event) => { event.stopPropagation(); toggleTeamCluster(cluster.teamId); }}>
-                                  <ChevronDown size={14} className={expanded ? "open" : ""} />
-                                </button>
-                                {openingThread === rep.id ? <Spinner /> : anyRunning ? <span className="thread-running-indicator" title="任务运行中"><i /><i /><i /></span> : null}
-                              </div>
-                              {expanded && (
-                                <div className="team-cluster-body">
-                                  {cluster.lead && <div className="team-cluster-label">主会话</div>}
-                                  {cluster.lead && renderThreadRow(cluster.lead)}
-                                  {cluster.members.length > 0 && <div className="team-cluster-label">成员会话 · {cluster.members.length}</div>}
-                                  {cluster.members.map((entry) => renderThreadRow(entry))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {visible.map(renderThreadRow)}
-                    </div>
-                  )}
+                  {!collapsedSections.has(g.key) && <div className="conv-section-body">{renderClusterList(g.items)}</div>}
                 </section>
                 );
               })}
-            </>
+                        </>
           ) : <div className="empty-list">{threads.length ? "当前筛选下暂无任务" : "暂无任务"}</div>}
         </div>
         <div className="account-row">
