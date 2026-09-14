@@ -93,6 +93,24 @@ type PendingImportPayload = {
   at: string;
 };
 
+/** 专家团一次成员委托的运行记录（主进程落盘，见 electron/team-runs.ts）。 */
+type TeamMemberRunRecord = {
+  runId: string;
+  leadThreadId: string;
+  teamId: string;
+  memberId: string;
+  memberName: string;
+  profession: string;
+  role: "lead" | "member";
+  memberThreadId: string;
+  query: string;
+  output: string;
+  status: "running" | "done" | "failed";
+  startedAt: number;
+  endedAt?: number;
+  error?: string;
+};
+
 type ExpertTeamConfig = {
   teamId: string;
   displayName: { zh: string; en: string };
@@ -445,7 +463,11 @@ interface Window {
     getTeamTools(teamId: string): Promise<{ tools: { id: string; name: string; profession: string; description: string }[]; teamSystemPrompt: string; teamTool: any }>;
     getTeamSessionConfig(teamId: string): Promise<{ team: ExpertTeamConfig; systemPrompt: string; teamTool: any }>;
     startTeamSession(input: { teamId: string; task?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null; defer?: boolean }): Promise<{ thread: any; turnId: string | null; role?: ExpertPendingRole | null }>;    startTeamMemberSession(input: { teamId: string; memberId: string; task?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null; defer?: boolean }): Promise<{ thread: any; turnId: string | null; member: { id: string; name: string; profession: string }; role?: ExpertPendingRole | null }>;
-    invokeTeamMember(input: { teamId: string; memberId: string; query: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ threadId: string; turnId?: string; teamId: string; memberId: string; name: string; profession: string; output: string }>;
+    invokeTeamMember(input: { teamId: string; memberId: string; query: string; leadThreadId?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ threadId: string; turnId?: string; teamId: string; memberId: string; name: string; profession: string; output: string; runId?: string; reused?: boolean }>;
+    /** 专家团历史委托记录（成员历史工作记录面板；主进程落盘，跨窗口一致） */
+    listTeamRuns(threadId: string): Promise<TeamMemberRunRecord[]>;
+    teamThreadsMap(): Promise<{ threads: Record<string, string>; members: Record<string, string> }>;
+    teamOfThread(threadId: string): Promise<string>;
     terminalInput(id: string, data: string): Promise<void>;
     terminalResize(id: string, cols: number, rows: number): Promise<void>;
     restartTerminal(id: string, cwd?: string): Promise<void>;
