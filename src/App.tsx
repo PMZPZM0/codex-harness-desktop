@@ -8260,6 +8260,8 @@ export default function App() {
   // 「会话绑定的供应商 ≠ 当前激活供应商」→ 自动迁移，防止引擎全局 Key 换了而旧会话还
   // 向旧供应商发请求（401 无限重连）。不依赖 UI 下拉框（下拉可能已被切换动作改掉）。
   const threadProviderRef = useRef(new Map<string, string>());
+  /** 401 自动迁移的防重集：每会话只自动迁一次（迁完引擎重连自然接上新绑定；失败循环时不再重复迁移）。 */
+  const autoMigratedRef = useRef(new Set<string>());
   // 无缓存切换时的恢复遮罩：盖住旧内容直到新会话渲染完成（不再让旧内容残留+跳顶）；
   // 缓存秒开也走遮罩——给"刚切过去就在最新消息位置"的视觉过渡，避免内容直接落底的突兀
   const [switchingThreadId, setSwitchingThreadId] = useState<string | null>(null);
@@ -9228,6 +9230,12 @@ export default function App() {
     // 设置页保存等路径已触发引擎重启生效：清掉「待重启生效」banner，避免残留误导
     onEngineApplied: () => setPendingRestart(null),
   });
+
+  /** 当前激活供应商的 ref 镜像：流事件处理器（401 自动迁移）是常驻闭包，直接取 state 会拿旧值。 */
+  const activeProviderRef = useRef<{ provider: string; model: string; name: string; baseUrl: string; wireApi?: string } | null>(null);
+  useEffect(() => {
+    activeProviderRef.current = customModel ? { provider: customModel.provider, model: customModel.model, name: customModel.name, baseUrl: customModel.baseUrl, wireApi: customModel.wireApi } : null;
+  }, [customModel]);
   // 进入中转站/官方订阅/模型页时刷新生效供应商：这些页的互斥判断依赖 customModel，
   // 状态过期（如另一处刚停用/启用）会导致「明明没有生效供应商却全灰」的死锁
   useEffect(() => {
@@ -11488,9 +11496,26 @@ const commandMatches = useMemo(() => {
         // 401=Key 错配（供应商切换后旧会话），流中断=网关不稳（pptoken 常见），均会自动重试。
         const reconnectMatch = rawError.match(/^Reconnecting\.\.\.\s*(\d+)\/(\d+)/);
         let errorMessage = rawError;
-        if (reconnectMatch) {
-          const no = reconnectMatch[1], total = reconnectMatch[2];
-          if (details.includes("401")) errorMessage = `第 ${no}/${total} 次自动重试：供应商认证失败（API Key 不匹配）。若刚切换过供应商，请停止后重发以自动迁移会话；仍失败请检查该供应商的 Key`;
+      if (reconnectMatch) {
+        const no = reconnectMatch[1], total = reconnectMatch[2];
+        if (details.includes("401")) {
+          errorMessage = `第 ${no}/${total} 次自动重试：供应商认证失败（API Key 不匹配）。若刚切换过供应商，请停止后重发以自动迁移会话；仍失败请检查该供应商的 Key`;
+          // ★ 401 = 会话绑定的供应商 ≠ 当前激活（Key 换了）→ 自动迁移一次，等价「停止后重发」
+          //   的迁移，但不需要用户停止：resume 重绑定后引擎重连自然接上新供应商。
+          //   触发动机必须在这里兜住：**上下文压缩是引擎自发行为，不走发送路径的迁移检查**，
+          //   压缩 401 时用户根本没有「重发」可点（09-14 用户实测：切供应商后旧会话压缩 401 循环）。
+          //   每会话只自动迁一次（autoMigratedRef），防 Key 真错时的无限迁移循环。
+          const errTid = String(params.threadId ?? "");
+          const boundProvider = errTid ? threadProviderRef.current.get(errTid) : undefined;
+          const active = activeProviderRef.current;
+          if (errTid && boundProvider && active?.provider && boundProvider !== active.provider && !autoMigratedRef.current.has(errTid)) {
+            autoMigratedRef.current.add(errTid);
+            showToast("检测到供应商已切换，正在自动迁移该会话…");
+            void migrateThreadToProvider(errTid, { provider: active.provider, model: active.model, name: active.name, baseUrl: active.baseUrl, wireApi: active.wireApi })
+              .then((ok) => { if (ok) showToast("会话已迁移到当前供应商，稍候自动恢复"); else autoMigratedRef.current.delete(errTid); })
+              .catch(() => autoMigratedRef.current.delete(errTid));
+          }
+        }
           else if (/stream (dis)?connected|closed before/i.test(details) || details.includes("httpStatusCode\":null")) errorMessage = `第 ${no}/${total} 次自动重试：上游网关响应中断（模型服务不稳）。引擎正在自动重连，多数情况下稍等即可恢复；持续失败建议换模型或换供应商`;
           else errorMessage = `第 ${no}/${total} 次自动重试：连接中断，引擎正在自动恢复……`;
         } else if (details.includes("401") && /API key format is incorrect/i.test(details)) {
