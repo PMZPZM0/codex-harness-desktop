@@ -20037,8 +20037,8 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .welcome-cwd-picker { position: absolute; bottom: calc(100% + 5px); left: 12px; z-index: 6; }
 .welcome-cwd-chip {
   display: inline-flex; align-items: center; gap: 6px;
-  max-width: 60vw; padding: 3px 9px 3px 8px; border-radius: 999px;
-  font-size: 11px; line-height: 1.5; cursor: pointer;
+  max-width: 60vw; padding: 5px 12px; border-radius: 999px;
+  font-size: 12.5px; line-height: 1.5; cursor: pointer;
   color: var(--text-secondary, #666);
   background: var(--color-background-primary, #fff);
   border: 1px solid color-mix(in srgb, var(--text-primary, #111) 16%, transparent);
@@ -20061,23 +20061,23 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .welcome-cwd-chip.scratch:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
 .welcome-cwd-menu {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
-  min-width: 300px; padding: 4px;
+  min-width: 340px; padding: 6px;
   border-radius: 12px;
   background: var(--color-background-primary, #fff);
   border: 1px solid var(--color-border-tertiary, rgba(0,0,0,0.12));
   box-shadow: 0 10px 30px rgba(0,0,0,0.14);
 }
 .welcome-cwd-menu button {
-  display: flex; align-items: flex-start; gap: 9px; width: 100%;
-  padding: 8px 10px; border: 0; border-radius: 8px; background: transparent;
-  color: var(--color-text-primary, #111); text-align: left; cursor: pointer; font-size: 12px;
+  display: flex; align-items: flex-start; gap: 10px; width: 100%;
+  padding: 12px 14px; border: 0; border-radius: 10px; background: transparent;
+  color: var(--color-text-primary, #111); text-align: left; cursor: pointer; font-size: 13.5px;
 }
 .welcome-cwd-menu button:hover { background: color-mix(in srgb, var(--color-text-primary, #111) 7%, transparent); }
 .welcome-cwd-menu button.active { background: color-mix(in srgb, var(--blue, #3b82f6) 10%, transparent); }
 .welcome-cwd-menu button svg { flex-shrink: 0; margin-top: 2px; color: var(--text-secondary, #666); }
 .welcome-cwd-menu button.active svg { color: var(--blue, #3b82f6); }
-.welcome-cwd-menu button span { display: flex; flex-direction: column; gap: 2px; font-weight: 500; }
-.welcome-cwd-menu button small { color: var(--color-text-tertiary, #888); font-size: 11px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+.welcome-cwd-menu button span { display: flex; flex-direction: column; gap: 3px; font-weight: 600; }
+.welcome-cwd-menu button small { color: var(--color-text-tertiary, #888); font-size: 12px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
 
 /* ── /plan 方案审阅卡（agent-ask 同族，蓝色调）：预览摘要 + 执行/意见迭代 ── */
 .agent-ask-inline.plan-review { border-color: color-mix(in srgb, var(--blue, #3b82f6) 45%, var(--line)); }
