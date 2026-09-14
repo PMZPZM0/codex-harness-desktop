@@ -11,6 +11,7 @@ import { codeFontSize, useCodeSettings } from "./lib/code-settings";
 import { DEFAULT_EFFORT, pickDefaultEffort, CUSTOM_MODEL_EFFORTS, normalizeEffort, ALL_EFFORTS } from "./lib/effort";
 import { matchModelSpec, loadExternalSpecs } from "./lib/model-specs";
 import { resolveModelForOpen, shouldSyncOpenThread } from "./lib/model-scope.mjs";
+import { ALIGN_RESULT, CONTINUITY_TEXT, shouldAlignProvider } from "./lib/provider-continuity.mjs";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "./lib/session-scope.mjs";
 import { LEGACY_PREFIX, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "./lib/thread-runtime.mjs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
@@ -6879,6 +6880,10 @@ async function resumeThreadWithTurns(params: { threadId: string; excludeTurns?: 
     }
     turns.reverse(); // desc 取的倒序翻回时间正序
     if (turns.length) thread.turns = turns;
+    // ⛔ 游标必须带出去：本函数是模块级的、拿不到组件的 turnsCursorRef，故挂在线程对象上
+    // 作兜底（loadEarlierTurns 读 ref 未命中时用它）。否则「往上滚到底」会用空游标重拉
+    // 最新一页 → 界面出现重复回合、游标原地打转。
+    (thread as any).__turnsCursor = cursor;
   } catch { /* 分页失败维持原结果，不影响会话打开 */ }
   return result;
 }
@@ -9768,9 +9773,13 @@ export default function App() {
   const toggleAllSidebarSections = viewTab === "groups" ? toggleAllGroups : toggleAllProjects;
   // 「清空当前视图」批量删除按钮已下架（2026-09-04 反馈：侧栏顶部太容易误触）。
   // purgeCurrentTab / currentTabIds 一并移除；批量删除能力保留在单条任务右键/菜单里。
-/** 长会话首屏最多渲染的回合数：软件渲染下全量挂载几千个回合是「切会话慢」的主因，
- *  默认只渲染最近这么多回合，更早的由「显示更早的 N 条消息」按需展开。 */
-const TURN_WINDOW = 40;
+/** 长会话首屏最多渲染的回合数（1 回合 = 一次用户输入 + 一次回复，即一个对话来回）：
+ *  软件渲染下全量挂载几千个回合是「切会话慢」的主因，默认只渲染最近这么多回合
+ *  （≈10 个对话来回，用户 09-14 口径），更早的由「往上滚自动续载」/「显示更早」按需展开。 */
+const TURN_WINDOW = 20;
+/** 每次续载的回合数（首屏取数 / 本地展开 / 网络分页共用）：与 TURN_WINDOW 同量级，
+ *  保证「滚一屏补一批」的节奏，单次请求的数据量也最小（首屏与续载都快）。 */
+const TURNS_PAGE = 20;
 
 /** 窗口状态（每个会话展开了多少回合）最多记忆多少个会话：超出的按「最久未访问」淘汰。
  *  这是内存保护——记忆本身是 09-14 为「切回长会话不缩水」加的，但不能无限涨。 */
@@ -11510,9 +11519,10 @@ const commandMatches = useMemo(() => {
           const active = activeProviderRef.current;
           if (errTid && boundProvider && active?.provider && boundProvider !== active.provider && !autoMigratedRef.current.has(errTid)) {
             autoMigratedRef.current.add(errTid);
-            showToast("检测到供应商已切换，正在自动迁移该会话…");
-            void migrateThreadToProvider(errTid, { provider: active.provider, model: active.model, name: active.name, baseUrl: active.baseUrl, wireApi: active.wireApi })
-              .then((ok) => { if (ok) showToast("会话已迁移到当前供应商，稍候自动恢复"); else autoMigratedRef.current.delete(errTid); })
+            // 文案与「自动接力」统一（09-14 用户定稿）：401、打开会话、切换供应商三种场景
+            // 走同一入口、同一套说法（自动接力 / 历史上下文与聊天记录完整保留）。
+            void alignThreadToProvider(errTid, { provider: active.provider, model: active.model, name: active.name, baseUrl: active.baseUrl, wireApi: active.wireApi }, { reason: "error" })
+              .then((r) => { if (r === ALIGN_RESULT.failed) autoMigratedRef.current.delete(errTid); })
               .catch(() => autoMigratedRef.current.delete(errTid));
           }
         }
@@ -12162,6 +12172,49 @@ const commandMatches = useMemo(() => {
     } catch { return false; }
   }
 
+  /** 会话「自动接力」到当前激活供应商（09-14 用户定稿：切换供应商后旧会话要能直接继续用）。
+   *  统一入口——打开会话 / 发送前 / 401 兜底 / 切换供应商 全部走这里，行为与文案一致：
+   *   ① 原地迁移优先：thread/resume 重绑定（threadId 不变 → 历史、消息、侧栏位置全不动，用户无感）
+   *   ② 原地失败（极老会话/无 rollout）→ 接力：thread/fork 建带完整历史的新会话，旧会话自动归档
+   *  ⛔ 旧会话不可删：接力也保留历史（fork 自带），归档只是收起来，不丢数据。
+   *  返回 "same"（无需迁移）/ "migrated"（原地）/ "relayed"（接力）/ "failed"（都失败）。 */
+  async function alignThreadToProvider(
+    threadId: string,
+    target: { provider: string; model: string; name: string; baseUrl: string; wireApi?: string },
+    opts?: { reason?: "open" | "send" | "error" | "switch"; silent?: boolean },
+  ): Promise<"same" | "migrated" | "relayed" | "failed"> {
+    const bound = threadProviderRef.current.get(threadId);
+    // 判定收在纯模块里（可离线断言）：绑定未知（本次启动未 resume 过）不迁——不猜。
+    if (!shouldAlignProvider(bound, target.provider)) return ALIGN_RESULT.same;
+    const label = `${target.name} · ${target.model}`;
+    if (!opts?.silent) showToast("正在自动接力", CONTINUITY_TEXT.aligning(label));
+    // ① 原地迁移（首选）：threadId 不变，历史与侧栏位置全不动，用户完全感知不到
+    const migrated = await migrateThreadToProvider(threadId, target);
+    if (migrated) {
+      saveThreadModel(threadId, `custom:${target.provider}:${target.model}`);
+      if (!opts?.silent) showToast("已自动接力", CONTINUITY_TEXT.migrated(label));
+      return ALIGN_RESULT.migrated;
+    }
+    // ② 原地失败 → fork 接力：新会话带完整历史，旧会话自动归档（侧栏不留两坨）
+    try {
+      const forked = await window.codex.request("thread/fork", { threadId, excludeTurns: false });
+      const next = (forked as any)?.thread;
+      if (!next?.id) throw new Error("引擎未返回新分支");
+      const relayed = await migrateThreadToProvider(next.id, target);
+      if (!relayed) throw new Error("接力会话绑定失败");
+      saveThreadModel(next.id, `custom:${target.provider}:${target.model}`);
+      threadProviderRef.current.set(next.id, target.provider);
+      await refreshThreads();
+      await openThread(next.id, next);
+      // 旧会话自动归档：接力已成功，旧的收进归档（历史仍在归档里，可随时恢复）
+      if (threadRef.current?.id !== threadId) await archiveThread(threadId);
+      showToast("已自动接力", CONTINUITY_TEXT.relayed(label));
+      return ALIGN_RESULT.relayed;
+    } catch {
+      showToast("自动接力失败", CONTINUITY_TEXT.failed(label));
+      return ALIGN_RESULT.failed;
+    }
+  }
   /** 供应商切换「重启生效」：重启引擎使新供应商配置生效，成功后迁移当前会话并刷新 UI 状态。
    *  手动点击 banner 时读 state；引擎空闲自动生效时由 chooseModel 直接传入 pending 对象。 */
   async function applyPendingRestart(pendingOverride?: { provider: string; model: string; label: string; prevProvider: string; prevModel: string } | null) {
@@ -12172,18 +12225,12 @@ const commandMatches = useMemo(() => {
       setCustomModel(updated);
       setModelId(`custom:${updated.provider}:${updated.model}`);
       applyGlobalModelChoice(`custom:${updated.provider}:${updated.model}`);
-      // 会话跨供应商迁移（复用 migrateThreadToProvider：resume 后会话即绑定新供应商，
-      // 历史完整保留，原会话数据不丢）。
+      // 会话跨供应商迁移 = 自动接力（统一入口 alignThreadToProvider：原地迁移优先——threadId
+      // 不变、历史与侧栏位置全不动；原地失败则 fork 接力并自动归档旧会话）。
       if (threadRef.current?.id) {
-        const migrated = await migrateThreadToProvider(threadRef.current.id, {
+        await alignThreadToProvider(threadRef.current.id, {
           provider: updated.provider, model: updated.model, name: updated.name, baseUrl: updated.baseUrl, wireApi: updated.wireApi,
-        });
-        if (migrated) {
-          showToast("已切换供应商", `当前会话已迁移到 ${updated.name} · ${updated.model}，历史完整保留`);
-        } else {
-          // 迁移失败（如极老会话）退回接力方案：新会话带上下文
-          showToast("已切换供应商", `新会话将使用 ${updated.name} · ${updated.model}（当前会话迁移失败，历史保留在原会话）`);
-        }
+        }, { reason: "switch" });
       } else {
         await updateThreadSettings({ model: updated.model, ...(updated.provider === "openai-official" ? {} : { model_provider: updated.provider }), effort: null });
       }
@@ -13523,7 +13570,7 @@ const commandMatches = useMemo(() => {
    *  一遍——「切会话慢」的数据侧主因（渲染侧已窗口化）。
    *  extra 透传（如 dynamicTools）：引擎 resume 的 schema 实证接受 dynamicTools，
    *  每次恢复都重注册当前工具面——旧会话也能用上新增的动态工具。 */
-  async function resumeThreadLight(params: { threadId: string; sandbox?: string; approvalPolicy?: string; dynamicTools?: any[] }, turnBudget = 200): Promise<any> {
+  async function resumeThreadLight(params: { threadId: string; sandbox?: string; approvalPolicy?: string; dynamicTools?: any[] }, turnBudget = TURNS_PAGE): Promise<any> {
     const result = await window.codex.request("thread/resume", { threadId: params.threadId, excludeTurns: true, sandbox: params.sandbox, approvalPolicy: params.approvalPolicy, ...(Array.isArray(params.dynamicTools) && params.dynamicTools.length ? { dynamicTools: params.dynamicTools } : {}) });
     const thread = result?.thread;
     if (thread && !(Array.isArray(thread.turns) && thread.turns.length)) {
@@ -13549,19 +13596,26 @@ const commandMatches = useMemo(() => {
     if (!current || current.id !== id) return;
     const rendered = turnWindowRef.current[id] ?? TURN_WINDOW;
     const hidden = current.turns.length - rendered;
-    const cursor = turnsCursorRef.current.get(id) ?? null;
+    // ref 优先（本次会话内已更新过），否则读线程对象上的兜底游标（见 resumeThreadWithTurns）。
+    const cursor = turnsCursorRef.current.get(id) ?? ((current as any).__turnsCursor ?? null);
     if (hidden <= 0 && !cursor) return;
     loadingEarlierRef.current.add(id);
+    setEarlierLoadingId(id);
     try {
       const el0 = scrollRef.current;
       const beforeTop = el0?.scrollTop ?? 0;
       const beforeHeight = el0?.scrollHeight ?? 0;
+      // 位置补偿用「锚点元素」而不是 scrollHeight 增量：content-visibility: auto 下离屏回合的
+      // 高度是估算值、scrollHeight 会滞后 → 补偿不足，用户看到内容被顶飞（实测位移 4.3k px）。
+      // 记下「当前视口内第一条回合」相对视口的 top，插入后按它的位移把 scrollTop 补回去。
+      const anchorNode = [...(el0?.querySelectorAll(".turn-group") ?? [])].find((node) => node.getBoundingClientRect().bottom > 0) as HTMLElement | undefined;
+      const anchorTopBefore = anchorNode ? anchorNode.getBoundingClientRect().top : 0;
       let grow = 0;
       if (hidden > 0) {
-        grow = Math.min(hidden, 200); // 本地展开一屏的量，翻老历史不产生网络请求
+        grow = Math.min(hidden, TURNS_PAGE); // 本地展开一批的量，翻老历史不产生网络请求
       } else if (cursor) {
         try {
-          const result: any = await window.codex.request("thread/turns/list", { threadId: id, limit: 200, sortDirection: "desc", itemsView: "full", cursor });
+          const result: any = await window.codex.request("thread/turns/list", { threadId: id, limit: TURNS_PAGE, sortDirection: "desc", itemsView: "full", cursor });
           const data = Array.isArray(result?.data) ? result.data : [];
           if (result?.nextCursor) turnsCursorRef.current.set(id, result.nextCursor);
           else turnsCursorRef.current.delete(id);
@@ -13580,23 +13634,33 @@ const commandMatches = useMemo(() => {
       }
       if (grow > 0) {
         expandTurnWindow(id, grow);
-        // 双 rAF 等 React 提交 DOM 后按高度增量把视口钉回原内容（上方插入了新渲染的回合）
+        // 双 rAF 等 React 提交 DOM 后把视口钉回原内容（上方插入了新渲染的回合）：
+        // 优先用锚点元素位移（对 content-visibility 免疫），锚点已卸载才退回 scrollHeight 增量。
         requestAnimationFrame(() => requestAnimationFrame(() => {
           const el = scrollRef.current;
-          if (el) el.scrollTop = beforeTop + Math.max(0, el.scrollHeight - beforeHeight);
+          if (!el) return;
+          if (anchorNode && anchorNode.isConnected) {
+            el.scrollTop += anchorNode.getBoundingClientRect().top - anchorTopBefore;
+          } else {
+            el.scrollTop = beforeTop + Math.max(0, el.scrollHeight - beforeHeight);
+          }
         }));
       }
     } finally {
       loadingEarlierRef.current.delete(id);
+      setEarlierLoadingId((current) => (current === id ? null : current));
     }
   }
 
-  /** 时间线滚动近顶（<480px）自动续载更早的历史（ZCode 式）：
+  /** 时间线滚动近顶（<720px ≈ 一屏）自动续载更早的历史（ZCode 式）：
    *  loadEarlierTurns 内部防重入 + 切换动画期间跳过（switchJumpRef，避免对旧 DOM 做
    *  scrollTop 补偿）；贴近顶部时每向上滚一屏加载一页，离开顶部自然停止。 */
   function onTimelineScroll(event: React.UIEvent<HTMLDivElement>) {
     const el = event.currentTarget;
-    if (el.scrollTop > 480 || switchJumpPending()) return;
+    // 只有用户真的滚过才自动续载：程序化滚动（打开时跳底、插入内容后的位置补偿）也会把
+    // scrollTop 扫过近顶区间，据此加载就成了「没滚也加载」。
+    if (!userScrolledRef.current) return;
+    if (el.scrollTop > 720 || switchJumpPending()) return;
     const id = threadRef.current?.id;
     if (id) void loadEarlierTurns(id);
   }
@@ -13665,7 +13729,10 @@ const commandMatches = useMemo(() => {
     return value;
   }
 
-  async function openThread(id: string, freshThread?: Thread | null) {    switchStartRef.current = performance.now();
+  async function openThread(id: string, freshThread?: Thread | null) {
+    switchStartRef.current = performance.now();
+    // 新会话：重新等待「真实用户滚动」才允许自动续载（见 userScrolledRef）
+    userScrolledRef.current = false;
     setChatSearchOpen(false);
     // 快速连点防竞态：只有最新一次切换的 resume 响应才允许落地渲染
     const seq = ++switchSeqRef.current;
@@ -13850,10 +13917,32 @@ const commandMatches = useMemo(() => {
       const resultProvider = String(result.modelProvider ?? result.model_provider ?? customModel?.provider ?? "custom");
       // 记录会话真实绑定的供应商（迁移成功后 migrateThreadToProvider 会覆盖为新值）
       threadProviderRef.current.set(id, resultProvider);
+      // 09-14 用户定稿（打开即自动对齐 / 「自动接力」）：引擎自发的上下文压缩、重连都不等
+      // 发送动作 —— 只在发送前迁移的话，旧绑定会在用户刚打开会话时就撞 401（用户实测
+      // 「切供应商后旧会话用不了」）。打开瞬间即对齐，之后一切（含引擎自发行为）都走新供应商。
+      // 不 await：打开动作不被迁移阻塞；绑定已一致时零开销。
+      const activeNow = activeProviderRef.current ?? (customModel
+        ? { provider: customModel.provider, model: customModel.model, name: customModel.name, baseUrl: customModel.baseUrl, wireApi: customModel.wireApi }
+        : null);
+      // 即将自动接力（会话绑定 ≠ 当前激活）：下面对齐要用，模型回填也要用（见 restoredModel）。
+      const willRealign = shouldAlignProvider(resultProvider, activeNow?.provider);
+      {
+        // 运行中的会话不打断：它刚跑起来，绑定的就是当前供应商。
+        if (willRealign && activeNow && !autoMigratedRef.current.has(id) && !runningThreadIdsRef.current.has(id)) {
+          autoMigratedRef.current.add(id);
+          void alignThreadToProvider(id, { provider: activeNow.provider, model: activeNow.model, name: activeNow.name, baseUrl: activeNow.baseUrl, wireApi: activeNow.wireApi }, { reason: "open" })
+            .then((r) => { if (r === ALIGN_RESULT.failed) autoMigratedRef.current.delete(id); })
+            .catch(() => autoMigratedRef.current.delete(id));
+        }
+      }
       const resultModel = String(result.model ?? "").trim();
       // ⛔ 先读一次镜像（而不是复用上面捕获的 storedModel）：syncThreadRuntimeWithMain 可能刚
       // 把主进程的权威值写进镜像，复用旧变量会用本地旧值把对方的改动覆盖回去（丢更新）。
-      const restoredModel = loadThreadModel(id) || storedModel || (resultModel ? `custom:${resultProvider}:${resultModel}` : modelId || localStorage.getItem("default-model") || "");
+      // 即将自动接力时，模型回填直接取激活模型：该会话记录马上就要被迁移改写成新供应商模型，
+      // 这里若先写回旧记录，异步迁移完成后会被旧值覆盖回去（丢更新）。
+      const restoredModel = willRealign && activeNow
+        ? `custom:${activeNow.provider}:${activeNow.model}`
+        : (loadThreadModel(id) || storedModel || (resultModel ? `custom:${resultProvider}:${resultModel}` : modelId || localStorage.getItem("default-model") || ""));
       if (restoredModel) {
         setModelId(restoredModel);
         saveThreadModel(id, restoredModel);
@@ -14235,16 +14324,16 @@ const commandMatches = useMemo(() => {
         try {
           const updated = await window.codex.setProviderModel({ provider: customModel.provider, model: customModel.model });
           setCustomModel(updated);
-          const migrated = await migrateThreadToProvider(currentThread.id, customModel);
-          if (!migrated) {
-            showToast("已切换供应商", `已切换到 ${updated.name} 并重启生效；该会话未能迁移，请新建会话`);
+          const aligned = await alignThreadToProvider(currentThread.id, customModel, { reason: "send" });
+          if (aligned === ALIGN_RESULT.failed) {
+            showToast("已切换供应商", `已切换到 ${updated.name} 并重启生效；该会话未能自动接力，请新建会话`);
             return;
           }
           const selectedId = `custom:${updated.provider}:${updated.model}`;
           setModelId(selectedId);
           // 该会话刚迁移成功：全局默认 + 这个会话一起换（其它会话不动）
           applyGlobalModelChoice(selectedId);
-          showToast("会话已迁移", `引擎已按 ${updated.name} 的 Key 重启，该会话已切换到 ${updated.model}，可正常发送`);
+          showToast("已自动接力", `引擎已按 ${updated.name} 的 Key 重启，该会话已自动接力到 ${updated.model}（历史上下文与聊天记录完整保留），可正常发送`);
         } catch (error: any) {
           showToast("暂时不能发送", `迁移失败：${String(error?.message ?? error).slice(0, 80)}`);
           return;
@@ -14315,6 +14404,57 @@ const commandMatches = useMemo(() => {
     if (thread) markThreadRunning(thread.id);
     setNotice("");
     setWorkStartedAt(Date.now());
+    // ★ 乐观气泡**立刻**上屏（09-14 用户反馈：消息发出去要等一会才看到）。
+    //   原先 setOptimisticInput 排在两段记忆 IPC 之后（readMemoryContext + recallMemory
+    //   串行 await），记忆召回慢时用户盯着空输入框发呆。这里在引用解析完、记忆还没开始
+    //   之前就用「用户实际输入」占位——显示层本来就会剥掉 SYSTEM TASK / 导入记录包装，
+    //   所见即所打；下方算出真正要发给引擎的 sendInput 后再**原位替换**（同一个 id），
+    //   乐观/真实的文本去重匹配（userMessageMatchesInput）不受影响。
+    //   输入框同步清空，失败路径由下方 failedText 逻辑原样恢复（与原行为一致）。
+    const quotePrefix = quoteItem ? `> ${quoteItem.text.split("\n").join("\n> ")}\n\n` : "";
+    const contextPrefix = contextItems.length ? `\n\n[用户指定的对话上下文]\n${contextItems.map((item, index) => `(${index + 1}) ${item.role}：${item.text}`).join("\n\n")}\n[上下文结束]\n` : "";
+    const skillPrefix = selectedSkills.length ? `\n\n[本轮已引用技能]\n${selectedSkills.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
+    const filePrefix = files.length ? `\n\n[附件文件]\n${files.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
+    // 专家/团队成员 defer 空会话的首条消息：发送前把用户文本包装成 SYSTEM TASK 段注入角色
+    // 系统提示（渲染端按既有约定折叠为「需求已发起」卡片，气泡/引用/复制只暴露用户原文）。
+    // 仅在「当前线程还没有任何回合」时生效——包装过一次后线程已非空，后续轮次走普通消息。
+    const expertRole = thread && !(thread.turns ?? []).length ? readStoredExpertRole(thread.id) : undefined;
+    // 导入会话记录新建的空会话：首条消息同样在「线程无回合」时把外部记录整段附在消息前
+    // （渲染端折叠成可展开的「导入的会话记录」卡），发出后标记即清除。与专家角色互斥。
+    const pendingImport = thread && !(thread.turns ?? []).length && !expertRole ? readStoredPendingImport(thread.id) : undefined;
+    // ★ 乐观气泡**立刻**上屏（09-14 用户反馈：消息发出去要等一会才看到）。
+    //   原先 setOptimisticInput 排在两段记忆 IPC 之后（readMemoryContext + recallMemory
+    //   串行 await），记忆召回慢时用户盯着空输入框发呆。记忆前缀不参与可见正文
+    //   （userDisplayText 会剥掉），所以这里可以先不带记忆上屏。
+    //   ⛔ 约束一：钉顶旗标（anchorTopRef 等）必须与 setOptimisticInput 在**同一个同步块**
+    //   置位 —— 乐观气泡挂载时 useLayoutEffect 读它决定要不要钉，中间插 await（React 会在
+    //   此提交渲染）就会空跑一帧 → 新消息不钉顶（实测 gap=594）。
+    //   ⛔ 约束二：只 arm **一次**、之后不改 content —— 两次 setState 会让钉顶/跟随在中间态
+    //   上复核（实测视口来回拉扯 bigReversals=5）。
+    //   专家/导入首条消息要走 SYSTEM TASK 包装（依赖记忆段），走下方慢路径（低频，可接受）。
+    const fastArm = !expertRole && !pendingImport;
+    const optimisticId = `local-${Date.now()}`;
+    if (fastArm) {
+      justSentIds.add(optimisticId);
+      optimisticTurnIdRef.current = null;
+      optimisticBaselineRef.current = { threadId: thread?.id ?? null, turnIds: new Set((thread?.turns ?? []).map((entry) => entry.id)) };
+      setOptimisticInput({ id: optimisticId, type: "userMessage", content: [
+        ...((messageText || threadReferenceBlocks || files.length || quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
+        ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
+        ...images.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
+      ] });
+      stickToBottomRef.current = false;
+      anchorTopRef.current = true;
+      anchorTurnIdRef.current = null;
+      setPrompt("");
+      setQuoteItem(null);
+      setContextItems([]);
+      setImages([]);
+      dbg("send-arm-early");
+    }
+    // 记忆段耗时打点：乐观气泡已上屏，这段只影响「发给引擎的内容」何时就绪。
+    // 若用户仍觉得慢，__adbg 里这行直接给出是记忆慢还是别的慢（记忆已不在关键路径上）。
+    const memoryStartedAt = performance.now();
     let memoryPrefix = "";
     if (memoryEnabled && messageText) {
       // 常驻层无条件前置：L0 用户档案 + L1 项目记忆 + L2 近 3 天日志。
@@ -14331,22 +14471,12 @@ const commandMatches = useMemo(() => {
         } catch (error: any) { setMemoryStatus(`记忆召回失败：${error.message}`); }
       }
     }
-    const quotePrefix = quoteItem ? `> ${quoteItem.text.split("\n").join("\n> ")}\n\n` : "";
-    const contextPrefix = contextItems.length ? `\n\n[用户指定的对话上下文]\n${contextItems.map((item, index) => `(${index + 1}) ${item.role}：${item.text}`).join("\n\n")}\n[上下文结束]\n` : "";
-    const skillPrefix = selectedSkills.length ? `\n\n[本轮已引用技能]\n${selectedSkills.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
-    const filePrefix = files.length ? `\n\n[附件文件]\n${files.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
+    dbg("send-memory", { ms: Math.round(performance.now() - memoryStartedAt) });
     const input = [
       ...((messageText || threadReferenceBlocks || files.length || quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${memoryPrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
       ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
       ...images.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
     ];
-    // 专家/团队成员 defer 空会话的首条消息：发送前把用户文本包装成 SYSTEM TASK 段注入角色
-    // 系统提示（渲染端按既有约定折叠为「需求已发起」卡片，气泡/引用/复制只暴露用户原文）。
-    // 仅在「当前线程还没有任何回合」时生效——包装过一次后线程已非空，后续轮次走普通消息。
-    const expertRole = thread && !(thread.turns ?? []).length ? readStoredExpertRole(thread.id) : undefined;
-    // 导入会话记录新建的空会话：首条消息同样在「线程无回合」时把外部记录整段附在消息前
-    // （渲染端折叠成可展开的「导入的会话记录」卡），发出后标记即清除。与专家角色互斥。
-    const pendingImport = thread && !(thread.turns ?? []).length && !expertRole ? readStoredPendingImport(thread.id) : undefined;
     let sendInput = input;
     if (expertRole) {
       const userText = input.filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n").trim();
@@ -14363,17 +14493,21 @@ const commandMatches = useMemo(() => {
         sendInput = [{ type: "text", text, text_elements: [] }, ...inlineImagePaths.map((path) => ({ type: "localImage", path })), ...images.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path }))];
       }
     }
-    optimisticTurnIdRef.current = null;
-    optimisticBaselineRef.current = { threadId: thread?.id ?? null, turnIds: new Set((thread?.turns ?? []).map((entry) => entry.id)) };
-    const optimisticId = `local-${Date.now()}`;
-    justSentIds.add(optimisticId);
-    setOptimisticInput({ id: optimisticId, type: "userMessage", content: sendInput });
-    // 发送后锚顶：新消息顶到对话区顶部，回复向下展开（对齐 WorkBuddy；贴底跟随
-    // 在回复长超一屏后由 anchor 分支自动接管）
-    stickToBottomRef.current = false;
-    anchorTopRef.current = true;
-    anchorTurnIdRef.current = null;
-    dbg("send-arm-main");
+    if (!fastArm) {
+      // 专家/导入首条消息：SYSTEM TASK 包装依赖记忆段（记忆在 userText 内），只能在这之后上屏
+      justSentIds.add(optimisticId);
+      optimisticTurnIdRef.current = null;
+      optimisticBaselineRef.current = { threadId: thread?.id ?? null, turnIds: new Set((thread?.turns ?? []).map((entry) => entry.id)) };
+      setOptimisticInput({ id: optimisticId, type: "userMessage", content: sendInput });
+      stickToBottomRef.current = false;
+      anchorTopRef.current = true;
+      anchorTurnIdRef.current = null;
+      setPrompt("");
+      setQuoteItem(null);
+      setContextItems([]);
+      setImages([]);
+    }
+    // （fastArm 路径的乐观气泡已在上方上屏；两种路径都只 arm 一次，之后不改 content）
     let createdThreadId: string | null = null;
     try {
       const startTurn = async (target: Thread) => window.codex.request("turn/start", {
@@ -14718,6 +14852,34 @@ const commandMatches = useMemo(() => {
   const [turnWindow, setTurnWindow] = useState<Record<string, number>>({});
   const turnWindowRef = useRef<Record<string, number>>({});
   const loadingEarlierRef = useRef<Set<string>>(new Set());
+  /** 正在续载更早历史的会话 id：ref 只用于防重入（不触发渲染），这个 state 驱动顶部提示
+   *  ——此前自动加载是「静默」的，用户不知道正在加载。 */
+  const [earlierLoadingId, setEarlierLoadingId] = useState<string | null>(null);
+  /** 真实用户滚动信号：只有用户自己滚（滚轮 / 触摸 / 翻页键 / 拖滚动条）才允许「滚动近顶自动续载」。
+   *  ⛔ 不能用 scrollTop 位置反推用户意图（项目既有铁律）：打开会话时 jumpToBottom 的程序化滚动、
+   *  上方插入内容后的位置补偿，都会把 scrollTop 扫过「近顶」区间——据此续载会「用户没滚也跟着加载」
+   *  （实测首屏白加载一页：3 → 6 回合）。 */
+  const userScrolledRef = useRef(false);
+  useEffect(() => {
+    const mark = () => { userScrolledRef.current = true; };
+    // 形参用 Event + 断言：直接标 KeyboardEvent 会让 addEventListener("keydown") 的重载匹配失败
+    const onKey = (event: Event) => {
+      const tag = (event.target as HTMLElement | null)?.tagName ?? "";
+      if (tag === "INPUT" || tag === "TEXTAREA") return; // 输入框里打字不算滚动
+      const key = String((event as unknown as { key?: string }).key ?? "");
+      if (["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown", " "].includes(key)) mark();
+    };
+    window.addEventListener("wheel", mark, { passive: true });
+    window.addEventListener("touchmove", mark, { passive: true });
+    window.addEventListener("pointerdown", mark);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("wheel", mark);
+      window.removeEventListener("touchmove", mark);
+      window.removeEventListener("pointerdown", mark);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
   function expandTurnWindow(id: string, count: number) {
     const next = { ...turnWindowRef.current, [id]: (turnWindowRef.current[id] ?? TURN_WINDOW) + count };
     turnWindowRef.current = next;
@@ -15067,10 +15229,13 @@ const commandMatches = useMemo(() => {
             <button type="button" className="load-earlier-turns" onClick={() => void loadEarlierTurns(thread.id)}>
               <ChevronDown size={13} style={{ transform: "rotate(180deg)" }} />
               {thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW) > 0
-                ? `显示更早的 ${Math.min(thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW), 200)} 条消息`
+                ? `显示更早的 ${Math.min(thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW), TURNS_PAGE * 5)} 条消息`
                 : "加载更早的消息"}
               <small>向上滚动到此也会自动继续加载</small>
             </button>
+          )}
+          {thread && earlierLoadingId === thread.id && (
+            <div className="load-earlier-hint" role="status">正在载入更早的消息…</div>
           )}
           {thread?.turns.slice(Math.max(0, thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW))).map((turn) => <MemoTurnView turn={turn} isLastTurn={turn.id === thread.turns[thread.turns.length - 1]?.id} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={turn.id === latestCompletedTurn?.id || turn.id === activeTurnId ? tokenUsage : null} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />)}
           {optimisticInput && !optimisticConfirmed && <div id="chat-anchor"><ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} /></div>}
