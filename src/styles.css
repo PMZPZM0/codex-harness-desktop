@@ -10909,7 +10909,7 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   flex-direction: column;
   justify-content: center;
   align-items: flex-start;
-  gap: 4px;
+  gap: var(--ruler-gap, 4px);
   display: flex;
   position: absolute;
   inset: 0;
@@ -10926,7 +10926,7 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   width: 12px;
   height: 2px;
   margin-left: 12px;
-  padding: 4px 0;
+  padding: var(--ruler-pad, 4px) 0;
   transition:
     width 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
     margin-left 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
