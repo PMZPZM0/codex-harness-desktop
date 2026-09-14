@@ -23,7 +23,8 @@ import http from "node:http";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ElectronHarness } from "./e2e/lib/harness.mjs";
-import { greetingInjected } from "./e2e/lib/rollout-inspect.mjs";
+import { developerMessages, greetingInjected, threadScopeInstructions } from "./e2e/lib/rollout-inspect.mjs";
+import { SESSION_SCOPE_HEADING } from "../src/lib/session-scope.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -48,13 +49,31 @@ const BODY_LEN = `(() => {
 })()`;
 
 /** 点侧栏第 i 个会话行（只用旧会话） */
-const clickRow = (h, i) => h.eval(`(() => {
-  const list = [...document.querySelectorAll(".thread-row")];
+const clickRow = (h, i) => h.eval(`(() => {  const list = [...document.querySelectorAll(".thread-row")];
   const btn = list[${i}] && list[${i}].querySelector("button");
   if (!btn) return false;
   btn.click();
   return true;
 })()`);
+
+/** 全局档案的「当前模型」——也就是用户做配置体检时模型**真正读到**的那两份文件：
+ *  `custom-model.json` 顶层 model + `config.toml` 顶层 model。
+ *  会话级作用域修好之后，切会话模型**不许**再改写它们（09-14 用户实测「模型还是串全局」的根源）。 */
+const globalArchiveOf = (h) => {
+  let archive = "";
+  let provider = "";
+  try {
+    const j = JSON.parse(readFileSync(join(h.userDataDir, "custom-model.json"), "utf8"));
+    archive = String(j.model ?? "");
+    provider = String(j.provider ?? "");
+  } catch { /* 文件不在就留空 */ }
+  let toml = "";
+  try {
+    const top = readFileSync(join(h.userDataDir, "codex-home", "config.toml"), "utf8").split(/\n(?=\[)/)[0];
+    toml = (top.match(/^\s*model\s*=\s*"([^"]*)"/m) ?? [])[1] ?? "";
+  } catch { /* 同上 */ }
+  return { archive, provider, toml };
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 本轮验收项（**每次改动只改这一段**；不再对应的旧项直接删掉，别攒着）
@@ -284,6 +303,42 @@ const CHECKS = [
       h.check("首次打开 < 1500ms（含引擎 resume + 首屏渲染）", firstMax > 0 && firstMax < 1500, `firstMax=${firstMax}ms`);
       h.check("再次切回中位数 < 200ms（反复切会话的体感，走本地缓存）", rMed > 0 && rMed < 200, `median=${rMed}ms ${JSON.stringify(rMs)}`);
       h.check("再次切回最多 1 个慢样本（系统性缓存失效会每个都慢）", rMs.filter((v) => v >= 200).length <= 1, JSON.stringify(rMs));
+      // ── 09-14 扩充（学 WorkBuddy 的丝滑化改造，逐项都要有可证伪的断言） ──
+      // ① 切换诊断按 cached/fresh 分组：原先只有一个混在一起的 P95，看不出优化作用在哪一拨。
+      const perf = JSON.parse(await h.eval(`JSON.stringify((window.__switchPerfStats && window.__switchPerfStats()) || null)`));
+      h.check("[诊断] 切换耗时已按 cached/fresh 分组", !!(perf && perf.cached && perf.fresh), JSON.stringify(perf));
+      h.check("[诊断] 记到了 ≥3 个「命中缓存」样本（否则下面的断言是空的）", !!perf && perf.cached && perf.cached.n >= 3, `cached.n=${perf && perf.cached ? perf.cached.n : "?"}`);
+      h.check("[P1-1] 命中缓存的切换 P95 < 300ms（秒开）", !!perf && perf.cached && perf.cached.p95 !== null && perf.cached.p95 < 300, `cached=${JSON.stringify(perf && perf.cached)}`);
+      // ② 主进程按会话裁剪事件必须真的启用（不是"碰巧没事件"）——09-12 曾因不同步回退为放行。
+      const counters = JSON.parse(await h.eval(`(async () => JSON.stringify(await window.codex.perfCounters()))()`));
+      h.check("[P0-2] 按会话事件裁剪已启用（filterForRenderer 不再无条件放行）", counters.eventFilterEnabled === true, JSON.stringify(counters));
+      // ③ P1-1 窗口记忆：切回命中缓存的会话时，展开过的渲染窗口不能被缩回默认。
+      //    仅在「目标会话确实长到需要展开」时才有可证伪性（否则按钮不存在，跳过并说明）。
+      const windowMemo = JSON.parse(await h.eval(`(async () => {
+        const moreBtn = [...document.querySelectorAll("button")].find((b) => /显示更早/.test(b.textContent || ""));
+        if (!moreBtn) return JSON.stringify({ applicable: false, reason: "当前会话没有更早的消息可展开" });
+        const count = () => document.querySelectorAll(".turn-group").length;
+        const before = count();
+        moreBtn.click();
+        await new Promise((r) => setTimeout(r, 600));
+        const expanded = count();
+        const rows = [...document.querySelectorAll(".thread-row")];
+        const other = rows.find((row) => !row.classList.contains("active"));
+        if (!other) return JSON.stringify({ applicable: false, reason: "没有别的会话可切" });
+        other.querySelector("button")?.click();
+        await new Promise((r) => setTimeout(r, 900));
+        const back = rows.find((row) => !row.classList.contains("active")) || rows[0];
+        back.querySelector("button")?.click();
+        await new Promise((r) => setTimeout(r, 900));
+        return JSON.stringify({ applicable: true, before, expanded, after: count() });
+      })()`));
+      if (windowMemo.applicable) {
+        h.check("[P1-1] 展开过的窗口在切走再切回后仍保留（本轮窗口记忆）",
+          windowMemo.after >= windowMemo.expanded && windowMemo.expanded > windowMemo.before,
+          JSON.stringify(windowMemo));
+      } else {
+        console.log(`  [P1-1] 跳过窗口记忆断言：${windowMemo.reason}`);
+      }
       await h.screenshot("旧会话切换");
     },
   },
@@ -1135,6 +1190,11 @@ const CHECKS = [
       await h.screenshot("独立会话弹窗-顶栏按钮");
     },
   },
+
+
+
+
+
 
   {
     id: "clean",

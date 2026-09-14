@@ -12,6 +12,8 @@
 import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../src/lib/model-scope.mjs";
+import { SESSION_SCOPE_HEADING, composeScopeInstructions, sessionScopeBlock, sessionScopeSignature, stripScopeBlock } from "../src/lib/session-scope.mjs";
+import { OWN_WRITE_TTL_MS, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeSignature } from "../src/lib/thread-runtime.mjs";
 import { planCompletedFold } from "../src/lib/turn-fold-plan.mjs";
 import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../src/lib/voice-aec.mjs";
 import { createSpeakFilter, normalizeNumbers, numberToChinese, toSpeakableText } from "../src/lib/speak-text.mjs";
@@ -368,6 +370,369 @@ if (typeof resolveModelForOpen !== "function") {
     helperUsesScope
       ? ok("applyGlobalModelChoice 按 shouldSyncOpenThread 决定是否同步当前会话")
       : fail("applyGlobalModelChoice 没走 shouldSyncOpenThread —— 改全局默认会波及别的会话");
+  }
+}
+
+// ---------- 4a-2. 会话作用域块（模型自报「我是谁」必须读到会话级配置） ----------
+
+console.log(C.bold("\n【4a-2】会话作用域块（会话级配置下发到会话自己的 instructions）"));
+
+{
+  const base = "You are a fully capable autonomous engineering agent. LANGUAGE: 简体中文。";
+  const scope = {
+    threadId: "01a09cb0-f2f8-7fb3-9de0-1b3bd5238a07",
+    model: "glm-5.3-flash",
+    provider: "custom906",
+    effort: "ultra",
+    sandbox: "danger-full-access",
+    approval: "never",
+    workspace: "D:\\生图专用文件",
+  };
+
+  // ① 块里必须真的写出四项会话级取值（缺一项模型就答不全，09-14 体检实测的坑）
+  const block = sessionScopeBlock(scope);
+  const wantLines = [`模型：${scope.model}`, `思考档位：${scope.effort}`, `执行权限：${scope.sandbox}`, `审批 ${scope.approval}`, `工作区：${scope.workspace}`];
+  const missing = wantLines.filter((line) => !block.includes(line));
+  missing.length === 0
+    ? ok("作用域块含 模型/档位/权限/工作区 四项会话级取值")
+    : fail(`作用域块缺项：${missing.join(" / ")}`);
+
+  // ② 必须显式否定「全局顶层 = 当前配置」——这正是模型报错模型的原因
+  const deniesGlobal = block.includes("不代表当前会话") && block.includes("一律以本节为准");
+  deniesGlobal
+    ? ok("作用域块显式声明全局顶层 model/effort 不代表当前会话")
+    : fail("作用域块没说清「全局顶层 ≠ 当前会话」——模型会继续读 config.toml 顶部自报旧模型");
+
+  // ③ 签名：模型/档位/权限变了必须变（否则不会重新下发）；工作区变了不必重发
+  const sig = sessionScopeSignature(scope);
+  const sameSig = sessionScopeSignature({ ...scope, workspace: "D:\\other", threadId: "other" });
+  sig === sameSig ? ok("签名只看 模型/供应商/档位/权限（工作区变动不触发重发）") : fail("签名把工作区/会话 ID 也算进去了——会无谓重发");
+  const modelChanged = sessionScopeSignature({ ...scope, model: "deepseek-v4-flash" });
+  modelChanged !== sig ? ok("签名随模型变化（切模型后必定重新下发作用域）") : fail("换模型后签名不变 → 切了模型模型仍自报旧模型");
+  const effortChanged = sessionScopeSignature({ ...scope, effort: "high" });
+  effortChanged !== sig ? ok("签名随思考档位变化") : fail("换档位后签名不变 → 体检的档位项会读到旧值");
+
+  // ④ 组合：基线原样在前（否则作用域块会把语言/工具/自动化说明顶掉），块在后
+  const composed = composeScopeInstructions(base, block);
+  composed.startsWith(base) ? ok("组合结果以全局基线开头（不顶掉 nuphus-call / 语言 / 自动化说明）") : fail("组合结果丢掉了基线——模型会不知道内置工具怎么用");
+  composed.indexOf(SESSION_SCOPE_HEADING) > composed.indexOf(base) ? ok("作用域块拼在基线之后") : fail("作用域块位置不对");
+
+  // ⑤ 幂等：反复下发不许叠加（每次改档位都发一次，叠加会长到失控）
+  const twice = composeScopeInstructions(composed, sessionScopeBlock({ ...scope, effort: "high" }));
+  const headings = twice.split(SESSION_SCOPE_HEADING).length - 1;
+  headings === 1 ? ok("反复下发幂等（作用域块只有一份）") : fail(`反复下发后作用域块出现 ${headings} 份——历史块没被剥离`);
+  twice.includes("思考档位：high") ? ok("幂等组合保留了最新档位") : fail("幂等组合把最新档位弄丢了");
+  stripScopeBlock(composed) === base ? ok("strip 能还原出原始基线") : fail("strip 不能还原基线（幂等剥离有偏差）");
+
+  // ⑥ 缺项防护：不能拼出 undefined / null（旧会话可能没有工作区等字段）
+  const sparse = sessionScopeBlock({ threadId: "t", model: "glm-5.3-flash" });
+  !/undefined|null/.test(sparse) ? ok("缺项回落为占位符，不拼出 undefined/null") : fail("缺项拼出了 undefined/null");
+  composeScopeInstructions("", block) === block ? ok("无基线时只下发作用域块") : fail("无基线时组合结果异常");
+
+  // 接线守卫：App.tsx 必须真的把作用域塞进会话级 instructions（否则纯函数再对也没生效）
+  const scopeSrc = existsSync(join(ROOT, "src", "App.tsx")) ? readFileSync(join(ROOT, "src", "App.tsx"), "utf8") : "";
+  if (!scopeSrc) {
+    warn("找不到 src/App.tsx，跳过会话作用域接线守卫");
+  } else {
+    const imported = /from "\.\/lib\/session-scope\.mjs"/.test(scopeSrc);
+    // 下发点：collaborationMode 块里必须真的带上 developer_instructions（不能只 import 不用）
+    const wired = /collaborationMode:\s*\{[\s\S]{0,400}?developer_instructions:\s*composeScopeInstructions\(/.test(scopeSrc);
+    // 覆盖三条路径：新建会话（thread/start 注入 + pushSessionScope）、打开旧会话、设置变更
+    const covered = /pushSessionScope\(/.test(scopeSrc) && /buildSessionScope\(/.test(scopeSrc) && /thread\/settings\/update", \{ threadId: thread\.id, \.\.\.values/.test(scopeSrc);
+    imported && wired && covered
+      ? ok("会话作用域已接进 thread/settings/update 的 collaborationMode.settings.developer_instructions")
+      : fail(`会话作用域未接上（import=${imported} wire=${wired} covered=${covered}）——模型仍会去读全局 config.toml 顶层自报模型`);
+
+    // 反泄漏守卫（09-14 用户实测「模型还是串全局」的次因）：档案对账（setProviderModel apply:true
+    // 会改写 custom-model.json / config.toml 顶层 model）**必须**先判「当前有没有打开的会话」，
+    // 否则切会话模型会把全局档案写成该会话的模型 → 别的会话自查读全局就报成别人的模型。
+    const archiveGuarded = /if \(threadRef\.current\?\.id\) return;[\s\S]{0,600}?setProviderModel\(\{ provider, model: match\[2\], apply: true/.test(scopeSrc);
+    archiveGuarded
+      ? ok("全局档案对账已加「无会话才写」守卫（切会话模型不再改写全局档案）")
+      : fail("全局档案对账缺少会话守卫——切会话模型会把 custom-model.json / config.toml 顶层 model 改成该会话的模型");
+  }
+}
+
+// ---------- 4a-3. 会话运行时配置：单一存放处（09-14 向 ZCode 形态收敛） ----------
+
+console.log(C.bold("\n【4a-3】会话运行时配置（模型/档位/权限收敛到一个对象）"));
+
+{
+  const rtSrc = existsSync(join(ROOT, "src", "App.tsx")) ? readFileSync(join(ROOT, "src", "App.tsx"), "utf8") : "";
+
+  // ① 空态：字段恒在（不然后面的对账逻辑又要到处 ?? ""）
+  const empty = emptyRuntime();
+  const hasAllFields = ["model", "effort", "sandbox", "approval"].every((k) => k in empty) && empty.rev === 0;
+  hasAllFields ? ok("空运行时四个字段恒在（rev 从 0 起）") : fail(`空运行时字段不全：${JSON.stringify(empty)}`);
+
+  // ② 归一化：坏 JSON / 缺字段 / 类型不对都不能炸，也不能吐 undefined
+  const messy = normalizeRuntime({ model: undefined, effort: 5, sandbox: null, approval: "never" });
+  messy.model === "" && messy.effort === "5" && messy.sandbox === "" && messy.approval === "never"
+    ? ok("归一化：缺项回落空串、非字符串转字符串，不吐 undefined/null")
+    : fail(`归一化结果异常：${JSON.stringify(messy)}`);
+  normalizeRuntime("not-an-object").model === "" ? ok("归一化：非对象输入回落到空运行时") : fail("归一化：非对象输入没有兜住");
+
+  // ③ 迁移：旧三键族只在「新键没有值」时说话（这是旧键唯一还能生效的时刻）
+  const fromLegacy = migrateRuntime({ model: "custom:custom906:glm-5.3-flash", effort: "ultra", permissions: { sandbox: "danger-full-access", approval: "never" } });
+  fromLegacy.model === "custom:custom906:glm-5.3-flash" && fromLegacy.effort === "ultra" && fromLegacy.sandbox === "danger-full-access" && fromLegacy.approval === "never"
+    ? ok("迁移：新键缺失时从旧三键族补齐（含权限对象）")
+    : fail(`迁移没补齐旧值：${JSON.stringify(fromLegacy)}`);
+  const stringPerms = migrateRuntime({ permissions: JSON.stringify({ sandbox: "read-only", approval: "on-request" }) });
+  stringPerms.sandbox === "read-only" ? ok("迁移：permissions 为 JSON 字符串也能解析") : fail("迁移：permissions 字符串形态解析失败");
+
+  // ④ 新键优先：新键有值时旧键**一律忽略**（否则又变成两处权威，回到分叉老路）
+  const newWins = migrateRuntime({ runtime: { model: "custom:custom906:deepseek-v4-flash", effort: "high" }, model: "custom:custom906:glm-5.3-flash", effort: "ultra" });
+  newWins.model === "custom:custom906:deepseek-v4-flash" && newWins.effort === "high"
+    ? ok("迁移：新键有值时旧键一律忽略（旧键只是镜像，不具权威性）")
+    : fail(`迁移让旧值盖掉了新值：${JSON.stringify(newWins)}`);
+
+  // ⑤ 打补丁：只改传入的字段，其余原样保留（以前三键族分家最容易互相踩空）
+  const patched = patchRuntime(fromLegacy, { effort: "low" });
+  patched.changed && patched.runtime.effort === "low" && patched.runtime.model === fromLegacy.model && patched.runtime.sandbox === fromLegacy.sandbox
+    ? ok("打补丁：只覆盖传入字段，其余原样保留")
+    : fail(`打补丁污染了其它字段：${JSON.stringify(patched.runtime)}`);
+
+  // ⑥ 空值不抹掉已有值（等价旧 helper 的「空值直接 return」——对账逻辑不许把选择清成空）
+  const noop = patchRuntime(fromLegacy, { model: "", effort: undefined });
+  noop.changed === false && noop.runtime.model === fromLegacy.model
+    ? ok("打补丁：空串/undefined 不抹掉已有值（changed=false，不落盘）")
+    : fail("打补丁把已有值清成了空——对账逻辑会误伤用户的选择");
+
+  // ⑦ rev 递增：只有真变化才 +1（给后续多窗口并发保护留的钩子）
+  patchRuntime(fromLegacy, { model: "custom:custom906:deepseek-v4-flash" }).runtime.rev === fromLegacy.rev + 1
+    ? ok("rev 只在真变化时递增（多窗口互踩可据此判定）")
+    : fail("rev 没有按变化递增");
+
+  // ⑧ 签名：四项齐全才变，用于「要不要重新下发给引擎」的去重
+  runtimeSignature(fromLegacy) !== runtimeSignature({ ...fromLegacy, approval: "on-request" })
+    ? ok("签名覆盖 模型/档位/沙箱/审批 四项")
+    : fail("签名漏掉了权限项——改权限后不会重新下发作用域");
+
+  // ⑨ 镜像是派生值：只写不读（读取路径若再从旧键取值，等于把三处存放又救活了）
+  const mirror = legacyMirror(fromLegacy);
+  mirror.model === fromLegacy.model && JSON.parse(mirror.permissions).sandbox === fromLegacy.sandbox
+    ? ok("旧键镜像是派生值（模型/权限与新键一致）")
+    : fail(`旧键镜像与新键不一致：${JSON.stringify(mirror)}`);
+
+  // ⑩ 接线守卫：App.tsx 里六个 helper 必须全部走单一对象，不许再有裸的旧键 setItem
+  if (!rtSrc) {
+    warn("找不到 src/App.tsx，跳过会话运行时接线守卫");
+  } else {
+    const legacyWrites = (rtSrc.match(/setItem\(\s*(?:"|`)(?:thread-model-|thread-effort-|thread-permissions-)/g) ?? []).length;
+    // 镜像写的是 `LEGACY_PREFIX.model + id`（常量拼接），所以**字面量**前缀的写入应当归零
+    legacyWrites === 0
+      ? ok("旧三键族已无散落写入（镜像统一经 LEGACY_PREFIX 常量派生）")
+      : fail(`旧三键族仍有 ${legacyWrites} 处字面量写入——应全部经 saveThreadRuntime 派生`);
+    const helpersGoThroughRuntime = /function saveThreadModel\([^)]*\)\s*\{\s*saveThreadRuntime\(/.test(rtSrc)
+      && /function saveThreadEffort\([^)]*\)\s*\{\s*saveThreadRuntime\(/.test(rtSrc)
+      && /function saveThreadPermissions\([^)]*\)\s*\{\s*saveThreadRuntime\(/.test(rtSrc);
+    helpersGoThroughRuntime
+      ? ok("模型/档位/权限三个 save helper 全部走 saveThreadRuntime 单一入口")
+      : fail("还有 helper 在直接写旧键——三处存放没真正收敛");
+    const readsGoThroughRuntime = /function loadThreadModel\(id: string\): string \{\s*return loadThreadRuntime\(id\)\.model;/.test(rtSrc);
+    readsGoThroughRuntime ? ok("读取也统一走 loadThreadRuntime（旧键只在迁移时被读）") : fail("读取路径仍在直接读旧键");
+  }
+}
+
+// ---------- 4a-4. 多窗口并发保护（主进程权威 + 广播）接线守卫 ----------
+
+console.log(C.bold("\n【4a-4】多窗口并发保护（会话运行时配置由主进程权威落盘 + 跨窗口广播）"));
+
+{
+  const readMaybe = (rel) => (existsSync(join(ROOT, rel)) ? readFileSync(join(ROOT, rel), "utf8") : "");
+  const mainSrc = readMaybe("electron/main.ts");
+  const preloadSrc = readMaybe("electron/preload.ts");
+  const storeSrc = readMaybe("electron/thread-runtime-store.ts");
+  const appSrc2 = readMaybe("src/App.tsx");
+
+  if (!storeSrc || !mainSrc || !preloadSrc || !appSrc2) {
+    warn("找不到主进程/渲染层源文件，跳过多窗口接线守卫");
+  } else {
+    storeSrc.includes("字段级合并") || /\.\.\.current,\s*\.\.\.fields/.test(storeSrc)
+      ? ok("主进程 store 是字段级合并（不是整对象覆盖）——两个窗口改不同字段时不丢更新")
+      : fail("主进程 store 疑似整对象覆盖：并发写不同字段会互相抹掉（04 断言会红）");
+    /baseRev\s*!==\s*current\.rev/.test(storeSrc)
+      ? ok("主进程按 baseRev 做冲突检测（等价 ZCode 的 revision）")
+      : fail("主进程没有 baseRev 冲突检测——过期写入会静默覆盖别人的改动");
+    /thread-runtime:patch/.test(mainSrc) && /thread-runtime:seed/.test(mainSrc) && /thread-runtime:get/.test(mainSrc)
+      ? ok("三个 IPC 通道齐备（get / seed / patch）")
+      : fail("IPC 通道不全（get/seed/patch 缺一）——渲染层对不上主进程");
+    /broadcastHarnessEvent\(\{ type: "thread-runtime"/.test(mainSrc)
+      ? ok("变更后广播到所有窗口（多窗口界面才能跟着变）")
+      : fail("主进程改了却没广播——另一个窗口界面不会更新，下次写入会拿旧值覆盖回去");
+    /patchThreadRuntime:\s*\(input/.test(preloadSrc) && /getThreadRuntime:/.test(preloadSrc)
+      ? ok("preload 已透出 getThreadRuntime / patchThreadRuntime")
+      : fail("preload 没透出会话运行时通道");
+    /event\.type === "thread-runtime"/.test(appSrc2) && /admitThreadRuntime\(tid, \(event as any\)\.runtime, \{ fromRemote: true \}\)/.test(appSrc2)
+      ? ok("渲染层订阅了 thread-runtime 广播并收敛到界面（admitThreadRuntime）")
+      : fail("渲染层没订阅广播——跨窗口改动不会反映到界面");
+    /void syncThreadRuntimeWithMain\(id\)/.test(appSrc2)
+      ? ok("打开会话时与主进程对齐（无记录则播种、有记录以主进程为准）")
+      : fail("openThread 没有与主进程对齐——本地镜像与权威值会各说各话");
+  }
+}
+
+// ---------- 4a-4b. 回声识别：自己写的改动广播回来不许提示「另一个窗口改了」 ----------
+
+console.log(C.bold("\n【4a-4b】会话运行时写入的「回声识别」（自己切模型不该提示别的窗口改了）"));
+
+{
+  const mine = { model: "custom:custom906:glm-5.3-flash", effort: "high", sandbox: "danger-full-access", approval: "never", rev: 3 };
+  const store = new Map();
+  const T0 = 1_000_000;
+  rememberOwnWrite(store, "thread-1", mine, T0);
+
+  // ① 同签名、TTL 内 = 自己的回声（主进程把自己的写入原样广播回来，且常早于 React 提交 state）
+  isOwnEcho(store, "thread-1", { ...mine, rev: 4 }, T0 + 120)
+    ? ok("自己刚写出去的运行时（同签名）在 TTL 内被判为回声 → 不提示「另一个窗口改了」")
+    : fail("回声没被认出来——用户自己切模型会弹「另一个窗口更新了…」（09-14 实测误报）");
+
+  // ② rev 不参与签名：主进程回填自己的 rev 后仍要认出回声（否则误报会复发）
+  const sigIgnored = runtimeSignature({ ...mine, rev: 999 }) === runtimeSignature({ ...mine, rev: 0 });
+  sigIgnored && isOwnEcho(store, "thread-1", { ...mine, rev: 999 }, T0 + 200)
+    ? ok("签名忽略 rev（主进程的版本号不参与回声判定）")
+    : fail("签名把 rev 算进去了——主进程回填 rev 后回声判不出来，误报会复发");
+
+  // ③ 别的窗口改的是**别的值** → 不是回声（必须提示 + 同步界面）
+  isOwnEcho(store, "thread-1", { ...mine, model: "custom:custom906:deepseek-v4-flash" }, T0 + 300)
+    ? fail("不同取值也被当成自己的回声——别的窗口的改动会被静默吞掉（用户看不到同步提示）")
+    : ok("别的窗口改成不同取值 → 不是回声（会提示并同步界面）");
+
+  // ④ 别的会话的同值写入不能算本会话的回声（key 必须带 threadId）
+  isOwnEcho(store, "thread-2", mine, T0 + 300)
+    ? fail("回声表没按会话区分——A 会话的写入会把 B 会话的改动误判成回声")
+    : ok("回声表按会话区分（threadId 参与 key）");
+
+  // ⑤ TTL 过期后不再算回声（表不会长期污染判定）
+  isOwnEcho(store, "thread-1", mine, T0 + OWN_WRITE_TTL_MS + 1)
+    ? fail("TTL 失效后仍判为回声——表会长期把真事件吞掉")
+    : ok(`超过 ${OWN_WRITE_TTL_MS}ms 的回声记录自动失效`);
+
+  // ⑥ **只认最近一次写入**：一次用户动作可能连写多次（切模型先写档位、再写模型），
+  //    中间态不能被当成「自己的回声」——否则另一个窗口恰好把值改回那个中间态时会被静默吞掉
+  //    （实测：多窗口场景 ② 就是这么假红的）。
+  const multi = new Map();
+  const step1 = { ...mine, effort: "medium" };                       // 中间态（先写档位）
+  const step2 = { ...step1, model: "custom:custom906:deepseek-v4-flash" }; // 再写模型
+  rememberOwnWrite(multi, "thread-1", step1, T0);
+  rememberOwnWrite(multi, "thread-1", step2, T0 + 10);
+  isOwnEcho(multi, "thread-1", step2, T0 + 20)
+    ? ok("最近一次写入仍被判为回声")
+    : fail("最近一次写入没被判为回声——自己的回声会漏出去当提示");
+  isOwnEcho(multi, "thread-1", step1, T0 + 30)
+    ? fail("中间态仍被当成回声——另一个窗口把值改回中间态时会被静默吞掉（多窗口场景 ② 实测假红）")
+    : ok("中间态不再算回声（只认最近一次写入）");
+
+  // ⑦ 每会话只留一条记录（不随写入次数增长）
+  const perThread = new Map();
+  for (let i = 0; i < 50; i += 1) rememberOwnWrite(perThread, "thread-1", { ...mine, effort: `e${i}` }, T0 + i);
+  perThread.size === 1
+    ? ok("回声表每会话只留一条（不随写入次数增长）")
+    : fail(`回声表按次增长：size=${perThread.size}`);
+
+  // 接线守卫：渲染层必须真的用这两个纯函数，且广播分支要跳过提示
+  const rtSrc = existsSync(join(ROOT, "src", "App.tsx")) ? readFileSync(join(ROOT, "src", "App.tsx"), "utf8") : "";
+  if (!rtSrc) {
+    warn("找不到 src/App.tsx，跳过回声接线守卫");
+  } else {
+    /rememberOwnWrite\(ownRuntimeWrites, id, runtime\)/.test(rtSrc) && /isOwnEcho\(ownRuntimeWrites, id, next\)/.test(rtSrc)
+      ? ok("App.tsx 用纯函数做回声判定（写入时登记、广播时比对）")
+      : fail("App.tsx 没有接回声判定——自己切模型仍会误报「另一个窗口改了」");
+  }
+}
+
+// ---------- 4a-5. 审批卡形态：输入框上一行 + 点开预览（09-14 用户「卡片太大」） ----------
+
+console.log(C.bold("\n【4a-5】审批卡：一行摘要 + 点开预览（多条不占满输入框）"));
+
+{
+  const uiSrc = existsSync(join(ROOT, "src", "App.tsx")) ? readFileSync(join(ROOT, "src", "App.tsx"), "utf8") : "";
+  const cssSrc = existsSync(join(ROOT, "src", "styles.css")) ? readFileSync(join(ROOT, "src", "styles.css"), "utf8") : "";
+
+  if (!uiSrc || !cssSrc) {
+    warn("找不到 src/App.tsx 或 src/styles.css，跳过审批卡形态守卫");
+  } else {
+    // ① 形态：一行条（compact）+ 摘要按钮 + 可展开细节
+    /className=\{`approval-card compact \$\{expanded \? "expanded" : ""\}`\}/.test(uiSrc)
+      ? ok("审批卡用 compact 形态（收起态只占一行）")
+      : fail("审批卡不是 compact 形态——会退回「每条一张大卡」（两条就占满输入框上方）");
+    /className="approval-summary"/.test(uiSrc) && /setExpanded\(/.test(uiSrc)
+      ? ok("摘要行可点开/收起（点一下预览正文）")
+      : fail("摘要行不可展开——用户要的「可以预览审批内容」没实现");
+    /\{expanded && \(/.test(uiSrc)
+      ? ok("正文只在展开时渲染（DOM 里不常驻大块内容）")
+      : fail("正文无条件渲染——收起态也会被撑成大卡（反证 F5 实测 heights 148/73/108）");
+    // ② 要用户填东西的两类必须默认展开（收起了没法填）
+    /useState\(\(\) => isUserInput \|\| isElicitation\)/.test(uiSrc)
+      ? ok("问问题 / MCP elicitation 默认展开（不展开就没法填，属可用性）")
+      : fail("需要输入的两类没有默认展开——收起了用户没法填");
+    // ③ 多条统一收进限高容器
+    /className="approval-stack" data-count=\{mine\.length\}/.test(uiSrc)
+      ? ok("多条审批收进 .approval-stack（整体限高，条数再多也不推挤输入框）")
+      : fail("审批卡没有统一容器——多条会一路往下堆");
+    // ④ CSS：容器滚动 + 行高不压缩 + 摘要省略号
+    const stackRule = cssSrc.match(/\.approval-stack\s*\{[^}]*\}/)?.[0] ?? "";
+    /max-height:/.test(stackRule) && /overflow-y:\s*auto/.test(stackRule)
+      ? ok("CSS：stack 限高 + overflow-y auto（多条出滚动条）")
+      : fail("CSS：stack 没限高/没滚动——多条会把输入框顶出视口");
+    // flex 列默认压缩子项（flex-shrink:1），行高会被压到 24px 且永不溢出 → 必须 flex: none
+    /\.composer-wrap \.approval-stack \.approval-card\s*\{[^}]*flex:\s*none/.test(cssSrc)
+      ? ok("CSS：行不参与压缩（flex:none，否则行高被压、滚动条永不出现）")
+      : fail("CSS：缺少 flex:none——flex 列会把每行压扁且不产生滚动（实测 8 条时 scrollable=false）");
+    /\.approval-card\.compact \.approval-peek\s*\{[^}]*text-overflow:\s*ellipsis/.test(cssSrc)
+      ? ok("CSS：摘要行超长省略（长命令不把按钮挤出可视区）")
+      : fail("CSS：摘要行没有省略号——长命令会撑破一行布局");
+    // ⑨ 窄窗口自适应：`.composer-wrap` 是 .workspace 的 grid item，默认 min-width:auto
+    // = 内容 min-content → 一行 nowrap 长命令会把整列撑到 1150px（实测），按钮被挤出可视区。
+    /\.workspace\s*>\s*\.composer-wrap\s*\{[^}]*min-width:\s*0/.test(cssSrc)
+      ? ok("CSS：输入区作为 grid item 已 min-width:0（窄窗口不被长命令撑宽）")
+      : fail("CSS：缺少 `.workspace > .composer-wrap { min-width: 0 }`——窄窗口下审批行会被长命令撑到视口外，允许/拒绝看不见（反证 F6 实测 stackW=1150 / actionsRight=1153）");
+  }
+}
+
+// ---------- 4a-6. 弹窗/浮层窄窗口自适应（静态守卫：覆盖 e2e 打不开的那些） ----------
+
+console.log(C.bold("\n【4a-6】弹窗/浮层窄窗口自适应（固定宽度必须有视口夹取）"));
+
+{
+  const cssSrc2 = existsSync(join(ROOT, "src", "styles.css")) ? readFileSync(join(ROOT, "src", "styles.css"), "utf8") : "";
+  if (!cssSrc2) {
+    warn("找不到 src/styles.css，跳过弹窗自适应静态守卫");
+  } else {
+    // 弹窗/菜单/浮层的类名特征（与 e2e narrow-dialogs 场景覆盖的是同一批组件）
+    const DIALOG = /modal|dialog|popup|palette|pop-|sheet|overlay|drawer|picker|dropdown|agent-ask|approval|goals-pop|thread-row-menu/;
+    const blocks = [...cssSrc2.matchAll(/([^{}]+)\{([^}]*)\}/g)];
+    const offenders = [];
+    for (const m of blocks) {
+      const sel = m[1].split("\n").pop().trim();
+      if (!DIALOG.test(sel)) continue;
+      const body = m[2];
+      const fixedWidth = Number((body.match(/(?:^|[;{\s])width\s*:\s*(\d{3,4})px\s*;/) || [])[1] || 0);
+      if (!fixedWidth || fixedWidth < 340) continue;
+      // 同一 block 里必须有视口相对夹取（max-width: 92vw / min(...vw) / calc(100vw - x) / 100%）
+      const clamped = /max-width\s*:[^;]*(vw|100%|calc\()/.test(body) || /width\s*:\s*min\(/.test(body);
+      if (!clamped) offenders.push({ sel, fixedWidth });
+    }
+    offenders.length === 0
+      ? ok(`固定宽度 ≥340px 的弹窗都有视口夹取（检查了 ${blocks.filter((m) => DIALOG.test(m[1].split("\n").pop().trim())).length} 个弹窗/浮层规则）`)
+      : fail(`这些弹窗是固定宽度且没有视口夹取，窄窗口会被裁到视口外：${offenders.map((o) => `${o.sel}(${o.fixedWidth}px)`).join("、")}——改为 width: min(${offenders[0].fixedWidth}px, 100%) 或补 max-width: 92vw`);
+
+    // 输入框浮层用「贴住输入区左右边」的定位，天然自适应；两条都丢才会撑出视口
+    const paletteRule = cssSrc2.match(/\.command-palette,\s*\.context-picker\s*\{[^}]*\}/)?.[0] ?? "";
+    /left:\s*0/.test(paletteRule) && /right:\s*0/.test(paletteRule)
+      ? ok("输入框浮层（# / @ / 命令面板）用 left:0 + right:0 贴住输入区（天然自适应）")
+      : fail("输入框浮层不再贴左右边——窄窗口下会溢出视口（改回了固定宽度？）");
+    // ⛔ 选择器要带词边界：`\.info-modal` 会先匹配到 `.info-modal-mask`，把掩罩的规则当成弹窗本体
+    // （实测这条写松了会假红——掩罩本来就不该有宽度约束）。
+    const ruleOf = (name) => cssSrc2.match(new RegExp(`\\.${name}(?![\\w-])[^{]*\\{[^}]*\\}`))?.[0] ?? "";
+    const applyModals = ["connector-setup-modal", "expert-team-editor-modal", "subagent-editor-modal", "command-editor-modal", "memory-config-modal", "info-modal"];
+    const missingClamp = applyModals.filter((name) => {
+      const rule = ruleOf(name);
+      return !rule || !/min\(|max-width|100vw|width:\s*100%/.test(rule);
+    });
+    missingClamp.length === 0
+      ? ok("编辑器类弹窗（连接器 / 专家团队 / 子代理 / 命令 / 记忆 / 信息）都有视口或百分比约束")
+      : fail(`编辑器弹窗缺少宽度约束：${missingClamp.join("、")}`);
   }
 }
 
@@ -1555,6 +1920,60 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   !/const recordTrusted =/.test(appSrc) && /saferSandbox\(/.test(appSrc)
     ? ok("会话权限取「记录 / 全局默认」中更保守的一方（不会静默提权）")
     : fail("权限判据又回到「记录==引擎值即污染 → 落全局默认」—— 那会把只读会话悄悄变成完全访问");
+}
+
+// ---------- 【12】09-14 会话切换丝滑化（学 WorkBuddy）的结构守卫 ----------
+// 这四条都是"改了但没接线 / 接错线"才会出问题的结构，光看 UI 是绿的：
+// 虚拟化组件写了却没接进代码块渲染器、过滤器写了却仍无条件放行、窗口记忆被下一次重构顺手删掉。
+console.log(C.bold("\n【12】09-14 切换丝滑化不得回退（diff 行级虚拟化 / 按会话事件裁剪 / 窗口与位置记忆）"));
+
+{
+  const appSrc2 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const mainSrc2 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  const cssSrc = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+
+  // ① 大 diff 行级虚拟化：组件存在 + 真的接进 ToolCodeBlock + 几何常量与 CSS 行高一致
+  const hasVirtualComponent = /const VirtualDiffLines = memo\(/.test(appSrc2);
+  const wiredInToolCode = /virtualizable\s*\n?\s*\?\s*<VirtualDiffLines/.test(appSrc2) || /<VirtualDiffLines text=\{text\}/.test(appSrc2);
+  hasVirtualComponent && wiredInToolCode
+    ? ok("大 diff 行级虚拟化已接线（VirtualDiffLines 在 ToolCodeBlock 内生效）")
+    : fail("VirtualDiffLines 没接线到 ToolCodeBlock —— 写了不用等于没写");
+  const lineHeightMatch = /const DIFF_LINE_HEIGHT = (\d+)/.exec(appSrc2);
+  const cssLineHeight = /\.virtual-diff-line \{[^}]*height: (\d+)px/.exec(cssSrc);
+  lineHeightMatch && cssLineHeight && lineHeightMatch[1] === cssLineHeight[1]
+    ? ok(`虚拟化行高与 CSS 一致（${lineHeightMatch[1]}px）`)
+    : fail(`虚拟化行高与 CSS 不一致（js=${lineHeightMatch?.[1] ?? "?"} css=${cssLineHeight?.[1] ?? "?"}）—— 会导致滚动错位`);
+  // 只在 diff + 行数超阈值 + 未折行 + 非追字时启用（否则会破坏折行/流式）
+  /language === "diff" && !revealing && !settings\.wrap && lineCount > DIFF_VIRTUAL_THRESHOLD/.test(appSrc2)
+    ? ok("虚拟化启用条件收窄（仅 diff / 大文件 / 不折行 / 非流式追字）")
+    : fail("虚拟化启用条件放宽了 —— 折行或流式追字场景会错位");
+
+  // ② 按会话事件裁剪：必须真的 return null（而不是继续记账放行），且保留逃生阀与空事件保护
+  const filterBody = mainSrc2.slice(mainSrc2.indexOf("function filterForRenderer"), mainSrc2.indexOf("function filterForRenderer") + 1200);
+  /return null;/.test(filterBody)
+    ? ok("按会话事件裁剪真的在裁（filterForRenderer 命中即 return null）")
+    : fail("filterForRenderer 又变成无条件放行了 —— 多会话时 N 倍无用事件照旧跨进程");
+  /HARNESS_EVENT_FILTER !== "off"/.test(mainSrc2)
+    ? ok("裁剪保留逃生阀（HARNESS_EVENT_FILTER=off 一键回放行）")
+    : fail("裁剪没有逃生阀 —— 线上出问题时无法不改代码回退");
+  /watchedThreadIds\(\)/.test(mainSrc2) && /popoutThreadIds\.values\(\)/.test(mainSrc2)
+    ? ok("裁剪把「独立弹窗锁定的会话」也算作必须放行（否则弹窗会永久转圈）")
+    : fail("裁剪没考虑弹窗锁定会话 —— 弹窗会收不到自己的事件");
+  const forwardedGuard = mainSrc2.slice(mainSrc2.indexOf('server.on("event"'), mainSrc2.indexOf('server.on("event"') + 400);
+  /const forwarded = filterForRenderer\(event\);\s*if \(forwarded\) broadcastCodexEvent\(forwarded\)/.test(forwardedGuard)
+    ? ok("裁剪结果先判空再广播（null 不会当成空事件发给渲染层）")
+    : fail("裁剪后没有判空就广播 —— 渲染层会收到空事件");
+
+  // ③ 窗口与阅读位置记忆：切回命中缓存时必须保留（不能被下一次重构顺手改回无条件重置）
+  /const keepWindow = Boolean\(threadCacheRef\.current\.get\(id\)\)/.test(appSrc2)
+    ? ok("命中缓存的切换会保留展开的渲染窗口")
+    : fail("openThread 又无条件把渲染窗口重置成 TURN_WINDOW —— 切回长会话内容会缩水");
+  /function recallScrollOffset/.test(appSrc2) && /rememberScrollPosition\(threadRef\.current\?\.id/.test(appSrc2)
+    ? ok("离开时记阅读位置、切回时还原（贴底会话不记忆）")
+    : fail("阅读位置记忆链断了一环（记或还原缺一）");
+  /function touchTurnWindow/.test(appSrc2) && /TURN_WINDOW_MEMORY_KEEP/.test(appSrc2)
+    ? ok("窗口记忆有 LRU 上限（长跑不会无界增长）")
+    : fail("窗口记忆没有淘汰上限 —— 会话多了会一直涨");
 }
 
 // ---------- 汇总 ----------

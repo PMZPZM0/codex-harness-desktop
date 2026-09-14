@@ -11,6 +11,8 @@ import { codeFontSize, useCodeSettings } from "./lib/code-settings";
 import { DEFAULT_EFFORT, pickDefaultEffort, CUSTOM_MODEL_EFFORTS, normalizeEffort, ALL_EFFORTS } from "./lib/effort";
 import { matchModelSpec, loadExternalSpecs } from "./lib/model-specs";
 import { resolveModelForOpen, shouldSyncOpenThread } from "./lib/model-scope.mjs";
+import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "./lib/session-scope.mjs";
+import { LEGACY_PREFIX, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "./lib/thread-runtime.mjs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
 import { resolveSkillVisual, type SkillVisual } from "./lib/skill-icon";
 import { translateEngineNotice } from "./lib/engine-notices-zh";
@@ -1797,20 +1799,97 @@ function reasoningTextOf(item: ThreadItem): string {
 const deltaMethods = new Set(["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded", "item/reasoning/textDelta", "item/commandExecution/outputDelta"]);
 const isDeltaMethod = (method: string) => deltaMethods.has(method);
 
+// ── 会话运行时配置：单一存放处（09-14 收敛，见 src/lib/thread-runtime.mjs） ──────────────
+// 以前模型/档位/权限是 `thread-model-*` / `thread-effort-*` / `thread-permissions-*` 三套键族
+// 各自读写（约 20 处写、15 处读），对账逻辑对着三处写，互相踩踏过两回（档案与会话记录分叉、
+// 兜底 effect 把用户刚选的模型冲掉）。现在**只有一个对象** `thread-runtime-<id>`：
+// 读 = 新键优先、缺项从旧键迁移一次；写 = 写新键 + 派生镜像到旧键（旧键从此只是镜像，
+// 读取路径一律不再从旧键取值）。下面六个 helper 保留原签名，只是全部改为走这个对象，
+// 所以所有调用点（chooseModel / openThread / 权限切换 / fork / 迁移）自动收敛到一处。
+function loadThreadRuntimeRaw(id: string): ReturnType<typeof emptyRuntime> {
+  if (!id) return emptyRuntime();
+  try {
+    const raw = localStorage.getItem(runtimeKey(id));
+    if (raw) return normalizeRuntime(JSON.parse(raw));
+  } catch { /* 坏 JSON 视为没有，走下面的迁移 */ }
+  // 首次读取：从旧三键族迁移（旧键**唯一**还能说话的时刻）
+  let legacyModel = "";
+  let legacyEffort = "";
+  let legacyPerms: unknown = {};
+  try {
+    legacyModel = localStorage.getItem(LEGACY_PREFIX.model + id) ?? "";
+    legacyEffort = localStorage.getItem(LEGACY_PREFIX.effort + id) ?? "";
+    legacyPerms = JSON.parse(localStorage.getItem(LEGACY_PREFIX.permissions + id) ?? "{}");
+  } catch { /* ignore */ }
+  return migrateRuntime({ model: legacyModel, effort: legacyEffort, permissions: legacyPerms });
+}
+
+/** 读会话运行时配置（含旧键自动迁移）。**只有明确的用户动作才调 save，effect 请勿落盘。** */
+function loadThreadRuntime(id: string): ReturnType<typeof emptyRuntime> {
+  const runtime = loadThreadRuntimeRaw(id);
+  // 迁移落盘：旧键里有值、而新键还没有 → 补写一次，之后旧键只作镜像
+  if (id && !localStorage.getItem(runtimeKey(id)) && runtimeSignature(runtime) !== "|||") {
+    saveThreadRuntime(id, runtime);
+  }
+  return runtime;
+}
+
+/** 写本地镜像（新键 + 派生旧键）。**权威值在主进程**，这里只让同步读路径（大量 loadThread*）看得见。 */
+function writeThreadRuntimeMirror(id: string, runtime: unknown) {
+  if (!id) return;
+  try {
+    const next = normalizeRuntime(runtime);
+    localStorage.setItem(runtimeKey(id), JSON.stringify(next));
+    const mirror = legacyMirror(next);
+    if (mirror.model) localStorage.setItem(LEGACY_PREFIX.model + id, mirror.model);
+    if (mirror.effort) localStorage.setItem(LEGACY_PREFIX.effort + id, mirror.effort);
+    localStorage.setItem(LEGACY_PREFIX.permissions + id, mirror.permissions);
+  } catch { /* ignore */ }
+}
+
+/** 写会话运行时配置：本地镜像立即生效（同步读路径不能等 IPC），再推给主进程做权威落盘 + 广播。
+ *  多窗口并发保护（09-14）：baseRev = 本地镜像里上次从主进程同步到的 rev，主进程据此判冲突；
+ *  主进程回来的权威值交给 admitThreadRuntime（组件内）写回镜像并同步 React 状态。 */
+function saveThreadRuntime(id: string, patch: Partial<ReturnType<typeof emptyRuntime>>) {
+  if (!id) return;
+  try {
+    const baseRev = normalizeRuntime(loadThreadRuntimeRaw(id)).rev;
+    const { runtime, changed } = patchRuntime({ ...loadThreadRuntimeRaw(id), rev: baseRev }, patch);
+    if (!changed) return;
+    writeThreadRuntimeMirror(id, runtime);
+    rememberOwnWrite(ownRuntimeWrites, id, runtime); // 认出即将广播回来的那次回声
+    void window.codex?.patchThreadRuntime?.({ threadId: id, patch, baseRev })
+      .then((result: any) => { if (result?.runtime) admitThreadRuntimeRef.current?.(id, result.runtime, { conflict: Boolean(result.conflict) }); })
+      .catch(() => { /* 主进程不可用：退回纯 localStorage 行为（旧版本/测试环境） */ });
+  } catch { /* ignore */ }
+}
+
+/** saveThreadRuntime 是模块级函数、拿不到组件内的 setState —— 由组件在渲染时把
+ *  admitThreadRuntime 挂到这个 ref 上（主进程返回值与广播两条路径共用同一个收敛函数）。 */
+const admitThreadRuntimeRef: { current: ((id: string, runtime: unknown, opts?: { conflict?: boolean; fromRemote?: boolean }) => void) | null } = { current: null };
+
+/** 本窗口最近写出去的会话运行时（回声表）。判定规则本身在 `src/lib/thread-runtime.mjs`
+ *  的 `isOwnEcho` / `rememberOwnWrite`（纯函数，预检里有确定性断言——这段时序竞态在 e2e 里
+ *  复现不了，只能靠纯函数把规则钉死）。
+ *  ⛔ 主进程把变更广播给**所有**窗口（含写入者自己），而广播可能在 React 提交 state 之前到达——
+ *  那一刻 `runtimeStateRef` 还是旧值，会被误判成「另一个窗口改了」，于是用户自己切个模型就弹
+ *  「另一个窗口更新了…」（09-14 用户实测的误报）。 */
+const ownRuntimeWrites = new Map<string, { signature: string; at: number }>();
+
 function loadThreadPermissions(id: string): { sandbox?: string; approval?: string } {
-  try { return JSON.parse(localStorage.getItem("thread-permissions-" + id) ?? "{}"); } catch { return {}; }
+  const r = loadThreadRuntime(id);
+  return { sandbox: r.sandbox, approval: r.approval };
 }
 function saveThreadPermissions(id: string, sandbox: string, approval: string) {
-  localStorage.setItem("thread-permissions-" + id, JSON.stringify({ sandbox, approval }));
+  saveThreadRuntime(id, { sandbox, approval });
 }
 
 function loadThreadModel(id: string): string {
-  try { return localStorage.getItem("thread-model-" + id) ?? ""; } catch { return ""; }
+  return loadThreadRuntime(id).model;
 }
 
 function saveThreadModel(id: string, modelId: string) {
-  if (!id || !modelId) return;
-  try { localStorage.setItem("thread-model-" + id, modelId); } catch { /* ignore */ }
+  saveThreadRuntime(id, { model: modelId });
 }
 
 /** 打开会话时的模型回填：**该会话自己的记录优先**，它还没有记录（新建/从没选过）才用全局默认。
@@ -1823,12 +1902,11 @@ function resolveThreadModel(id: string): string {
 
 /** 每会话独立的思考等级：切会话互不串扰（对齐 thread-model 的按会话存储模式）。 */
 function loadThreadEffort(id: string): string {
-  try { return localStorage.getItem("thread-effort-" + id) ?? ""; } catch { return ""; }
+  return loadThreadRuntime(id).effort;
 }
 
 function saveThreadEffort(id: string, effort: string) {
-  if (!id || !effort) return;
-  try { localStorage.setItem("thread-effort-" + id, effort); } catch { /* ignore */ }
+  saveThreadRuntime(id, { effort });
 }
 
 function sandboxPolicy(mode: string, cwd: string) {
@@ -2491,6 +2569,47 @@ function payloadLanguage(text: string): string {
   return "text";
 }
 
+/** 行级虚拟化的阈值与几何常量（必须与 .virtual-diff-line 的 line-height 一致，否则滚动会跳）。 */
+const DIFF_VIRTUAL_THRESHOLD = 400;
+const DIFF_LINE_HEIGHT = 20;
+const DIFF_OVERSCAN = 40;
+
+/** 大 diff 的行级虚拟化（09-14，学 WorkBuddy 的 tool-diff 行虚拟化）：只挂可视区 ± overscan 的行。
+ *  diff 每行自带 +/- 前缀，逐行判定着色是准确的、不需要跨行语法上下文——
+ *  这正是它比「虚拟化整个代码块」安全的原因（后者要靠 SyntaxHighlighter 的跨行状态）。
+ *  ⚠️ 虚拟化后 DOM 里只有可视行：Ctrl+F / 全选复制拿不到屏幕外的行，所以只在 diff 且行数 > 阈值时启用。 */
+const VirtualDiffLines = memo(function VirtualDiffLines({ text, maxHeight, fontSize, fontFamily }: { text: string; maxHeight: number; fontSize: number | string; fontFamily: string }) {
+  const lines = useMemo(() => text.split("\n"), [text]);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [range, setRange] = useState(() => ({ start: 0, end: Math.min(lines.length, 120) }));
+  const recompute = useCallback(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const first = Math.max(0, Math.floor(el.scrollTop / DIFF_LINE_HEIGHT) - DIFF_OVERSCAN);
+    const count = Math.ceil((el.clientHeight || maxHeight) / DIFF_LINE_HEIGHT) + DIFF_OVERSCAN * 2;
+    const end = Math.min(lines.length, first + count);
+    setRange((current) => (current.start === first && current.end === end ? current : { start: first, end }));
+  }, [lines.length, maxHeight]);
+  useLayoutEffect(() => { recompute(); }, [recompute]);
+  const rows = [];
+  for (let i = range.start; i < range.end; i++) {
+    const line = lines[i] ?? "";
+    const kind = /^(\+\+\+|---)/.test(line) ? "meta" : line.startsWith("@@") ? "hunk" : line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "ctx";
+    rows.push(<div key={i} className={`virtual-diff-line ${kind}`} style={{ transform: `translateY(${i * DIFF_LINE_HEIGHT}px)` }}>{line || " "}</div>);
+  }
+  return (
+    <div
+      ref={boxRef}
+      className="virtual-diff tool-code-pre"
+      style={{ maxHeight, fontSize, fontFamily }}
+      onScroll={recompute}
+      data-total-lines={lines.length}
+    >
+      <div className="virtual-diff-inner" style={{ height: lines.length * DIFF_LINE_HEIGHT }}>{rows}</div>
+    </div>
+  );
+});
+
 const ToolCodeBlock = memo(function ToolCodeBlock({ language, text, revealing, className, maxHeight = 260 }: {
   language: string;
   text: string;
@@ -2499,24 +2618,34 @@ const ToolCodeBlock = memo(function ToolCodeBlock({ language, text, revealing, c
   maxHeight?: number;
 }) {
   const settings = useCodeSettings();
+  // 大 diff 走行级虚拟化（09-14，学 WorkBuddy 的 tool-diff 行虚拟化）：
+  // 一个几千行的 diff 真建几千个行节点 + 语法高亮，是「切会话/展开编辑卡就卡」的主要来源。
+  // 只在「diff + 行数够多 + 未开启折行（行高恒定）+ 不在流式追字」时启用——流水追字期间文本还在长，
+  // 虚拟化会与逐字追字互相打架；折行会让行高不固定，测不准。其余情况仍走 SyntaxHighlighter。
+  const lineCount = useMemo(() => (text ? text.split("\n").length : 0), [text]);
+  const virtualizable = language === "diff" && !revealing && !settings.wrap && lineCount > DIFF_VIRTUAL_THRESHOLD;
   return (
     <div className={`tool-code-block ${className ?? ""} ${revealing ? "packet-revealing" : ""}`.trim()}>
-      <SyntaxHighlighter
-        language={language}
-        style={codeThemeStyle(settings.theme)}
-        PreTag="pre"
-        CodeTag="code"
-        className="tool-code-pre code-highlight"
-        showLineNumbers={settings.lineNumbers}
-        wrapLongLines={settings.wrap}
-        customStyle={{
-          fontSize: codeFontSize(settings.fontScale),
-          fontFamily: codeFontStack(settings.font),
-          lineHeight: 1.55,
-          maxHeight,
-          margin: 0,
-        }}
-      >{text || " "}</SyntaxHighlighter>
+      {virtualizable
+        ? <VirtualDiffLines text={text} maxHeight={maxHeight} fontSize={codeFontSize(settings.fontScale)} fontFamily={codeFontStack(settings.font)} />
+        : (
+          <SyntaxHighlighter
+            language={language}
+            style={codeThemeStyle(settings.theme)}
+            PreTag="pre"
+            CodeTag="code"
+            className="tool-code-pre code-highlight"
+            showLineNumbers={settings.lineNumbers}
+            wrapLongLines={settings.wrap}
+            customStyle={{
+              fontSize: codeFontSize(settings.fontScale),
+              fontFamily: codeFontStack(settings.font),
+              lineHeight: 1.55,
+              maxHeight,
+              margin: 0,
+            }}
+          >{text || " "}</SyntaxHighlighter>
+        )}
       {revealing ? <span className="packet-stream-cursor tool-code-cursor" aria-hidden /> : null}
     </div>
   );
@@ -5807,6 +5936,25 @@ function RequestCard({ request, onDone }: { request: PendingRequest; onDone: () 
   const allowOnce = legacyApproval ? "approved" : "accept";
   const allowSession = legacyApproval ? "approved_for_session" : "acceptForSession";
   const decline = legacyApproval ? { denied: { rejection: "User denied request" } } : "decline";
+  const isUserInput = request.method === "item/tool/requestUserInput";
+  const isElicitation = request.method === "mcpServer/elicitation/request";
+  // 09-14 用户反馈「审批弹窗有点丑，卡片太大了，两个卡片直接占满」→ 改成**输入框上一行**：
+  // 收起态只占一行（图标 + 一句话摘要 + 允许/拒绝），点摘要才展开预览正文。
+  // ⛔ 例外：要用户**填东西**的两类（问问题 / MCP elicitation）必须默认展开——收起了就没法填，
+  // 那不是审美问题是不可用；它们本来就只需要一行标题 + 表单。
+  const [expanded, setExpanded] = useState(() => isUserInput || isElicitation);
+  const command = String(params.command ?? "");
+  const title = isUserInput
+    ? "Codex 需要你的输入"
+    : isElicitation
+      ? `${params.serverName ?? "MCP"} 请求确认`
+      : request.method.includes("fileChange") ? "批准文件改动" : request.method.includes("permissions") ? "批准额外权限" : "批准命令执行";
+  /** 收起态露出的那一眼信息：命令取首个非空行，其余取原因 / 问题标题 / 服务端消息 */
+  const peek = isUserInput
+    ? String(questions[0]?.header || questions[0]?.question || "")
+    : isElicitation ? String(params.message ?? "")
+      : command ? (command.split("\n").find((line: string) => line.trim()) ?? "") : String(params.reason ?? params.grantRoot ?? "");
+  const RequestIcon = isUserInput ? MessageSquarePlus : isElicitation ? Wrench : ShieldCheck;
 
   async function reply(result: unknown) {
     setSubmitting(true);
@@ -5821,56 +5969,74 @@ function RequestCard({ request, onDone }: { request: PendingRequest; onDone: () 
     }
   }
 
-  if (request.method === "item/tool/requestUserInput") {
-    return (
-      <section className="approval-card">
-        <header><MessageSquarePlus size={16} /><strong>Codex 需要你的输入</strong></header>
-        {questions.map((question: any) => (
-          <label className="question" key={question.id}>
-            <span>{question.header || question.question}</span>
-            {question.header && <small>{question.question}</small>}
-            {question.options ? (
-              <select value={answers[question.id] ?? ""} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })}>
-                <option value="">请选择</option>
-                {question.options.map((option: any) => <option key={option.label} value={option.label}>{option.label} - {option.description}</option>)}
-              </select>
-            ) : (
-              <input type={question.isSecret ? "password" : "text"} value={answers[question.id] ?? ""} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })} />
-            )}
-          </label>
-        ))}
-        <footer><button className="primary" disabled={submitting} onClick={() => void reply({ answers: Object.fromEntries(questions.map((q: any) => [q.id, { answers: [answers[q.id] ?? ""] }])) })}><Check size={15} />提交</button></footer>
-      </section>
-    );
-  }
-
-  if (request.method === "mcpServer/elicitation/request") {
-    const properties = params.requestedSchema?.properties ?? {};
-    const content = Object.fromEntries(Object.keys(properties).map((key) => [key, answers[key] ?? ""]));
-    return (
-      <section className="approval-card">
-        <header><Wrench size={16} /><strong>{params.serverName} 请求确认</strong></header>
-        <p>{params.message}</p>
-        {params.mode === "url" && <button onClick={() => void window.codex.openExternal(params.url)}>在浏览器中打开</button>}
-        {params.mode !== "url" && Object.entries(properties).map(([key, schema]: [string, any]) => <label className="question" key={key}><span>{schema.title ?? key}</span>{schema.description && <small>{schema.description}</small>}{schema.enum ? <select value={answers[key] ?? ""} onChange={(event) => setAnswers({ ...answers, [key]: event.target.value })}><option value="">请选择</option>{schema.enum.map((value: string) => <option value={value} key={value}>{value}</option>)}</select> : <input type={schema.type === "number" || schema.type === "integer" ? "number" : "text"} value={answers[key] ?? ""} onChange={(event) => setAnswers({ ...answers, [key]: event.target.value })} />}</label>)}
-        {replyError && <p className="request-error">{replyError}</p>}
-        <footer><button disabled={submitting} onClick={() => void reply({ action: "decline", content: null, _meta: params._meta ?? null })}>拒绝</button><button className="primary" disabled={submitting} onClick={() => void reply({ action: "accept", content: params.mode === "url" ? null : content, _meta: params._meta ?? null })}><Check size={14} />确认</button></footer>
-      </section>
-    );
-  }
+  const elicitationProperties = params.requestedSchema?.properties ?? {};
+  const elicitationContent = Object.fromEntries(Object.keys(elicitationProperties).map((key) => [key, answers[key] ?? ""]));
 
   return (
-    <section className="approval-card">
-      <header><ShieldCheck size={16} /><strong>{request.method.includes("fileChange") ? "批准文件改动" : request.method.includes("permissions") ? "批准额外权限" : "批准命令执行"}</strong></header>
-      {params.reason && <p>{params.reason}</p>}
-      {params.command && <pre>{params.command}</pre>}
-      {params.cwd && <div className="tool-meta">{params.cwd}</div>}
-      {replyError && <p className="request-error">{replyError}</p>}
-      <footer>
-        <button disabled={submitting} onClick={() => void reply(commandLike ? { decision: decline } : { permissions: {}, scope: "turn" })}>拒绝</button>
-        <button className="primary" disabled={submitting} onClick={() => void reply(commandLike ? { decision: allowOnce } : { permissions: Object.fromEntries(Object.entries(params.permissions ?? {}).filter(([, value]) => value != null)), scope: "turn" })}><Play size={14} />本次允许</button>
-        {commandLike && (!available.length || available.includes(allowSession)) && <button disabled={submitting} onClick={() => void reply({ decision: allowSession })}>本会话允许</button>}
-      </footer>
+    <section className={`approval-card compact ${expanded ? "expanded" : ""}`}>
+      <header className="approval-line">
+        <button
+          type="button"
+          className="approval-summary"
+          aria-expanded={expanded}
+          title={command || peek || title}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <RequestIcon size={14} />
+          <strong>{title}</strong>
+          {peek && <span className={`approval-peek ${command ? "mono" : ""}`}>{peek}</span>}
+          <ChevronDown size={13} className="approval-caret" />
+        </button>
+        {/* 审批类：收起状态也要能直接允许/拒绝（点开只为看内容，不是操作前置） */}
+        {!isUserInput && !isElicitation && (
+          <div className="approval-actions">
+            <button disabled={submitting} onClick={() => void reply(commandLike ? { decision: decline } : { permissions: {}, scope: "turn" })}>拒绝</button>
+            <button className="primary" disabled={submitting} onClick={() => void reply(commandLike ? { decision: allowOnce } : { permissions: Object.fromEntries(Object.entries(params.permissions ?? {}).filter(([, value]) => value != null)), scope: "turn" })}><Play size={13} />允许</button>
+          </div>
+        )}
+      </header>
+
+      {expanded && (
+        <div className="approval-detail">
+          {isUserInput && questions.map((question: any) => (
+            <label className="question" key={question.id}>
+              <span>{question.header || question.question}</span>
+              {question.header && <small>{question.question}</small>}
+              {question.options ? (
+                <select value={answers[question.id] ?? ""} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })}>
+                  <option value="">请选择</option>
+                  {question.options.map((option: any) => <option key={option.label} value={option.label}>{option.label} - {option.description}</option>)}
+                </select>
+              ) : (
+                <input type={question.isSecret ? "password" : "text"} value={answers[question.id] ?? ""} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })} />
+              )}
+            </label>
+          ))}
+          {isElicitation && <>
+            {params.message && <p>{params.message}</p>}
+            {params.mode === "url" && <button onClick={() => void window.codex.openExternal(params.url)}>在浏览器中打开</button>}
+            {params.mode !== "url" && Object.entries(elicitationProperties).map(([key, schema]: [string, any]) => <label className="question" key={key}><span>{schema.title ?? key}</span>{schema.description && <small>{schema.description}</small>}{schema.enum ? <select value={answers[key] ?? ""} onChange={(event) => setAnswers({ ...answers, [key]: event.target.value })}><option value="">请选择</option>{schema.enum.map((value: string) => <option value={value} key={value}>{value}</option>)}</select> : <input type={schema.type === "number" || schema.type === "integer" ? "number" : "text"} value={answers[key] ?? ""} onChange={(event) => setAnswers({ ...answers, [key]: event.target.value })} />}</label>)}
+          </>}
+          {!isUserInput && !isElicitation && <>
+            {params.reason && <p>{params.reason}</p>}
+            {command && <pre>{command}</pre>}
+            {params.cwd && <div className="tool-meta">{params.cwd}</div>}
+            {!commandLike && Object.keys(params.permissions ?? {}).length > 0 && <pre>{JSON.stringify(params.permissions, null, 2)}</pre>}
+          </>}
+          {replyError && <p className="request-error">{replyError}</p>}
+        </div>
+      )}
+
+      {expanded && (isUserInput || isElicitation) && (
+        <footer>
+          {isUserInput
+            ? <button className="primary" disabled={submitting} onClick={() => void reply({ answers: Object.fromEntries(questions.map((q: any) => [q.id, { answers: [answers[q.id] ?? ""] }])) })}><Check size={15} />提交</button>
+            : <><button disabled={submitting} onClick={() => void reply({ action: "decline", content: null, _meta: params._meta ?? null })}>拒绝</button><button className="primary" disabled={submitting} onClick={() => void reply({ action: "accept", content: params.mode === "url" ? null : elicitationContent, _meta: params._meta ?? null })}><Check size={14} />确认</button></>}
+        </footer>
+      )}
+      {expanded && !isUserInput && !isElicitation && commandLike && (!available.length || available.includes(allowSession)) && (
+        <footer><button disabled={submitting} onClick={() => void reply({ decision: allowSession })}>本会话允许</button></footer>
+      )}
     </section>
   );
 }
@@ -6245,6 +6411,173 @@ function SubAgentEditorModal({ draft, onChange, onClose, onSave }: { draft: SubA
   );
 }
 
+/** 把浮层锚到某个成员头像上：竖向居中对齐，成员切换时 top 有过渡 → 面板会**平滑滑到**
+ *  下一个干活的人身上，而不是永远钉在右上角（09-14 用户实测反馈）。
+ *  返回 null 表示拿不到锚点（头像轨被自适应隐藏 / 该成员不在轨上）——此时退回默认悬浮位。 */
+function useAvatarAnchor(memberId: string): number | null {
+  const [top, setTop] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const wrap = document.querySelector(".timeline-wrap");
+    if (!wrap || !memberId) { setTop(null); return; }
+    const measure = () => {
+      const node = document.querySelector(`.team-rail-node[data-member-id="${memberId}"]`);
+      if (!node) { setTop(null); return; }
+      const wrapRect = wrap.getBoundingClientRect();
+      const nodeRect = node.getBoundingClientRect();
+      const center = nodeRect.top - wrapRect.top + nodeRect.height / 2;
+      // 夹取一下：面板是 translateY(-50%) 定位的，锚点太靠边会被 timeline-wrap 的 overflow 裁掉
+      const margin = Math.min(150, wrapRect.height / 2);
+      setTop(Math.round(Math.min(Math.max(center, margin), Math.max(margin, wrapRect.height - margin))));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(wrap);
+    const track = document.querySelector(".team-rail-track");
+    if (track) observer.observe(track);
+    window.addEventListener("resize", measure);
+    const timer = window.setTimeout(measure, 380); // 头像轨有 0.3s 入场动画，落定后再量一次
+    return () => { observer.disconnect(); window.removeEventListener("resize", measure); window.clearTimeout(timer); };
+  }, [memberId]);
+  return top;
+}
+
+/** 专家团成员头像轨（09-14 用户要求）：挂在消息区右侧空白处。
+ *  主理人在上、成员在下，一条灰线穿过所有头像把它们串起来；正在干活的成员头像亮起 + 呼吸环，
+ *  空闲的灰掉，跑完打勾；工作交接时线上的流光顺着走。
+ *  自适应：自身是 `.timeline-wrap` 的 flex 子项，用 ResizeObserver 盯容器宽度逐级收起
+ *  （full → compact → hidden），所以「窗口缩小 / 侧栏展开 / 右侧面板打开」都会自动让位，
+ *  不靠硬编码媒体查询，popout 独立窗口同理。 */
+function TeamMemberRail({ team, containerRef, runningByMember, lastByMember, activeMemberId, onOpenMember }: {
+  team: ExpertTeamConfig;
+  containerRef: useRefObject;
+  runningByMember: Record<string, TeamMemberRunRecord>;
+  lastByMember: Record<string, TeamMemberRunRecord>;
+  activeMemberId: string;
+  onOpenMember: (memberId: string) => void;
+}) {
+  const [mode, setMode] = useState<"full" | "compact" | "hidden">("full");
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const check = () => {
+      const width = container.clientWidth;
+      // 900/1120 是「消息区还读得下去」的经验下限：低于 900 时头像轨会让正文可读性变差
+      setMode(width >= 1120 ? "full" : width >= 900 ? "compact" : "hidden");
+    };
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [containerRef]);
+  if (mode === "hidden") return null;
+  const roster: { member: ExpertTeamMember; isLead: boolean }[] = [{ member: team.lead, isLead: true }, ...team.members.map((member) => ({ member, isLead: false }))];
+  const anyRunning = roster.some(({ member }) => Boolean(runningByMember[member.id]));
+  return (
+    <aside className={`team-rail mode-${mode}${anyRunning ? " is-flowing" : ""}`} aria-label="专家团成员">
+      <div className="team-rail-track">
+        <i className="team-rail-line" aria-hidden />
+        {roster.map(({ member, isLead }) => {
+          const running = runningByMember[member.id];
+          const last = lastByMember[member.id];
+          const state = running ? "running" : last ? (last.status === "failed" ? "failed" : "done") : "idle";
+          const Icon = expertIconOf(member);
+          const label = expertRoleLabel(member, isLead);
+          return (
+            <button key={member.id} type="button" data-member-id={member.id} className={`team-rail-node is-${state}${isLead ? " is-lead" : ""}${activeMemberId === member.id ? " is-active" : ""}`}
+              title={`${label}${running ? "（执行中）" : last ? (last.status === "done" ? "（已完成最近一次委托）" : "（最近一次失败）") : "（尚未接过活）"}｜点击查看工作记录`}
+              onClick={() => onOpenMember(member.id)}>
+              <span className="team-rail-avatar" style={isLead ? undefined : { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] }}><Icon size={14} /></span>
+              {running ? <i className="team-rail-ring" aria-hidden /> : null}
+              {!running && state === "done" ? <span className="team-rail-badge" aria-hidden><Check size={9} /></span> : null}
+              {state === "failed" ? <span className="team-rail-badge is-failed" aria-hidden><X size={9} /></span> : null}
+              <span className="team-rail-name">{label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+/** 成员工作弹窗：成员一开始干活就自动弹出它的真实产出流（主进程转发该成员线程的文本增量），
+ *  委托结束自动收起（见自动关闭 effect）。不遮输入框——定位在消息区右上、限高内滚。 */
+function TeamRunPopup({ team, run, onClose, onOpenHistory }: {
+  team: ExpertTeamConfig;
+  run: TeamMemberRunRecord;
+  onClose: () => void;
+  onOpenHistory: (memberId: string) => void;
+}) {
+  const member = [team.lead, ...team.members].find((entry) => entry.id === run.memberId) ?? null;
+  const isLead = Boolean(member && member.id === team.lead.id);
+  const label = member ? expertRoleLabel(member, isLead) : run.profession || run.memberName;
+  const Icon = member ? expertIconOf(member) : Bot;
+  const running = run.status === "running";
+  const anchorTop = useAvatarAnchor(run.memberId);
+  return (
+    <div className={`team-panel-anchor${anchorTop == null ? " is-floating" : ""}`} style={anchorTop == null ? undefined : { top: anchorTop }}>
+    <section className={`team-run-popup${running ? " is-running" : run.status === "failed" ? " is-failed" : " is-settled"}`} role="dialog" aria-label={`成员 ${label} 的工作会话`}>
+      <header>
+        <span className="team-run-popup-avatar" style={member && !isLead ? { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] } : undefined}><Icon size={13} /></span>
+        <div className="team-run-popup-title"><strong>{label}</strong><small>{running ? "正在执行子任务…" : run.status === "done" ? "子任务已完成" : "子任务失败"}</small></div>
+        <button type="button" className="icon-button" title="查看该成员的历史工作记录" onClick={() => onOpenHistory(run.memberId)}><Clock3 size={13} /></button>
+        <button type="button" className="icon-button" title="关闭" onClick={onClose}><X size={14} /></button>
+      </header>
+      <div className="team-run-popup-query"><span>子任务</span><p>{run.query}</p></div>
+      <div className="team-run-popup-body">
+        {run.output
+          ? <div className="team-run-popup-text">{run.output}</div>
+          : <div className="team-run-popup-empty"><LoaderCircle size={14} className="spin" />等待成员产出…</div>}
+      </div>
+      {run.error ? <p className="request-error">{run.error}</p> : null}
+    </section>
+    </div>
+  );
+}
+
+/** 成员历史工作记录：点头像打开，按委托时间倒序列出「子任务 + 产出全文」（主进程落盘）。 */
+function TeamMemberHistory({ team, memberId, runs, onClose }: {
+  team: ExpertTeamConfig;
+  memberId: string;
+  runs: TeamMemberRunRecord[];
+  onClose: () => void;
+}) {
+  const member = [team.lead, ...team.members].find((entry) => entry.id === memberId) ?? null;
+  const isLead = Boolean(member && member.id === team.lead.id);
+  const label = member ? expertRoleLabel(member, isLead) : memberId;
+  const Icon = member ? expertIconOf(member) : Bot;
+  const anchorTop = useAvatarAnchor(memberId);
+  return (
+    <div className={`team-panel-anchor${anchorTop == null ? " is-floating" : ""}`} style={anchorTop == null ? undefined : { top: anchorTop }}>
+    <section className="team-run-popup team-history" role="dialog" aria-label={`${label} 的历史工作记录`}>
+      <header>
+        <span className="team-run-popup-avatar" style={member && !isLead ? { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] } : undefined}><Icon size={13} /></span>
+        <div className="team-run-popup-title"><strong>{label}</strong><small>{runs.length ? `历史工作记录 · 共 ${runs.length} 次委托` : "还没有接过活"}</small></div>
+        <button type="button" className="icon-button" title="关闭" onClick={onClose}><X size={14} /></button>
+      </header>
+      <div className="team-history-list">
+        {runs.map((run, index) => {
+          const seconds = Math.max(0, Math.round((((run.endedAt || Date.now()) - (run.startedAt || Date.now())) / 1000)));
+          return (
+            <details key={run.runId} className="team-history-item" open={index === 0}>
+              <summary>
+                <span className={`team-history-dot is-${run.status}`} aria-hidden />
+                <strong>{new Date(run.startedAt).toLocaleString("zh-CN", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</strong>
+                <small>{run.status === "done" ? `完成 · ${seconds}s` : run.status === "failed" ? "失败" : "进行中"}</small>
+              </summary>
+              <div className="team-history-label">子任务</div>
+              <div className="team-history-query">{run.query}</div>
+              <div className="team-history-label">产出</div>
+              <div className="team-run-popup-text">{run.output || "（无产出）"}</div>
+            </details>
+          );
+        })}
+        {!runs.length && <p className="team-history-empty">该成员还没有历史工作记录。</p>}
+      </div>
+    </section>
+    </div>
+  );
+}
+
 function ExpertTeamEditorModal({ draft, onChange, onClose, onSave }: { draft: ExpertTeamConfig; onChange: (draft: ExpertTeamConfig) => void; onClose: () => void; onSave: (draft: ExpertTeamConfig) => void }) {
   const valid = Boolean(draft.displayName.zh.trim() && draft.lead.name.trim() && draft.lead.systemPrompt.trim());
   const setLead = (patch: Partial<ExpertTeamMember>) => onChange({ ...draft, lead: { ...draft.lead, ...patch } });
@@ -6553,6 +6886,14 @@ export default function App() {
        window.__adbg。这是「点一下到内容可见」的真实值——比 e2e 里轮询文本可靠得多
        （会话内容相同时文本不变，轮询会一直等到超时）。 */
   const switchStartRef = useRef(0);
+  /** 本次切换是「命中缓存秒开」还是「冷加载」—— 结算时一起记进 __adbg，
+      否则 P95 里两拨数据混在一起，看不出优化到底作用在哪一拨（09-14）。 */
+  const switchModeRef = useRef<"cached" | "fresh">("fresh");
+  /** 本次切换开始时该会话已渲染的回合数（验收用：证明"秒开"是真的有内容，不是空壳）。 */
+  const switchTurnsRef = useRef(0);
+  /** 每个会话离开时的阅读位置（距底像素）。命中缓存切回时还原——09-14：
+   *  原先无条件跳底，用户「切出去看一眼再切回来」会丢掉正在读的位置。 */
+  const scrollMemoRef = useRef<Map<string, number>>(new Map());
   const threadRef = useRef<Thread | null>(null);
   /** 弹窗锁定会话 id 的 ref 形态：boot effect（[] 空依赖）闭包里要读到它，
    *  用 state 会在首次渲染拿到 null（popoutThreadId 是异步探测的）。 */
@@ -6924,6 +7265,21 @@ export default function App() {
   }, [optimisticConfirmed, optimisticInput, thread]);
   const [openingThread, setOpeningThread] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingRequest[]>([]);
+  // e2e UI 场景入口（与 window.__adbg 同款测试钩子，只改内存、不碰引擎）：审批卡的形态
+  // （一行摘要 + 点开预览 + 多条不占满）在 e2e 里没法从真实引擎触发——e2e profile 跑在
+  // danger-full-access 下永不询问审批——所以留一个塞合成请求的口子，供截图与断言。
+  useEffect(() => {
+    const host = window as unknown as { __harnessApprovals?: { push: (input: { id?: string; method?: string; params?: Record<string, unknown> }) => string; clear: () => void } };
+    host.__harnessApprovals = {
+      push: (input) => {
+        const id = String(input?.id ?? `harness-approval-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
+        setPending((current) => [...current, { id, method: String(input?.method ?? "item/commandExecution/requestApproval"), params: input?.params ?? {} }]);
+        return id;
+      },
+      clear: () => setPending([]),
+    };
+    return () => { delete host.__harnessApprovals; };
+  }, []);
   const [diff, setDiff] = useState("");
   const [tokenUsage, setTokenUsage] = useState<any>(null);
   const tokenUsageRef = useRef<any>(null);
@@ -7361,6 +7717,66 @@ export default function App() {
   const [expertTeamEditorOpen, setExpertTeamEditorOpen] = useState(false);
   const [expertTeamRunning, setExpertTeamRunning] = useState<string | null>(null);
   const [expertTeamMemberRunning, setExpertTeamMemberRunning] = useState<{ teamId: string; memberName: string } | null>(null);
+  // ── 专家团运行记录（09-14）：成员头像轨 / 成员工作弹窗 / 成员历史工作记录的**唯一数据源** ──
+  // 权威在主进程（electron/team-runs.ts），经 harness:event 的 team-run 广播给所有窗口，
+  // 所以 popout 独立窗口看到的状态与主窗口一致。
+  const [teamRuns, setTeamRuns] = useState<Record<string, TeamMemberRunRecord>>({});
+  /** 正在展示工作弹窗的那次委托（空串 = 不展示） */
+  const [teamPopupRunId, setTeamPopupRunId] = useState("");
+  /** 正在查看历史工作记录的成员 id（空串 = 不展示） */
+  const [teamHistoryMember, setTeamHistoryMember] = useState("");
+  /** 当前打开的会话属于哪个专家团。popout 窗口没有 teamThreadMapRef，靠主进程映射解析。 */
+  const [threadTeamId, setThreadTeamId] = useState("");
+  const [teamHistoryRuns, setTeamHistoryRuns] = useState<TeamMemberRunRecord[]>([]);
+  const teamRunsRef = useRef<Record<string, TeamMemberRunRecord>>({});
+  teamRunsRef.current = teamRuns;
+  const teamDeltaRef = useRef<Map<string, string>>(new Map());
+  const teamFlushRef = useRef<number | null>(null);
+  /** 正在跑的成员委托数（并行阶段会 >1）：活动指示器按计数收敛，不能在单个任务结束时清空 */
+  const teamRunningCountRef = useRef(0);
+  // 打开会话时把主进程的 threadId→teamId 映射读回来：popout 独立窗口的团队映射表是空的，
+  // 只有主进程那份落盘映射才知道「这个会话属于哪个团」。
+  useEffect(() => {
+    const id = thread?.id ?? "";
+    if (!id) { setThreadTeamId(""); return; }
+    setThreadTeamId(teamThreadMapRef.current.get(id) ?? "");
+    let alive = true;
+    void window.codex.teamOfThread?.(id).then((teamId) => {
+      if (alive && teamId) setThreadTeamId(String(teamId));
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [thread?.id]);
+  // 打开某会话时把该团队的**历史委托记录**载进来（头像轨据此显示「谁干过活、最近一次什么结果」）
+  useEffect(() => {
+    const id = thread?.id ?? "";
+    if (!id) return;
+    let alive = true;
+    void window.codex.listTeamRuns?.(id).then((runs) => {
+      if (!alive || !Array.isArray(runs) || !runs.length) return;
+      setTeamRuns((prev) => {
+        const next = { ...prev };
+        for (const run of runs) if (run?.runId && !next[run.runId]) next[run.runId] = run;
+        return next;
+      });
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [thread?.id]);
+  // 成员工作弹窗：委托一结束就自动收起（留 2.4s 让用户看完「已完成」与产出尾巴）
+  useEffect(() => {
+    if (!teamPopupRunId) return;
+    const run = teamRunsRef.current[teamPopupRunId];
+    if (!run || run.status === "running") return;
+    const timer = setTimeout(() => setTeamPopupRunId((current) => (current === teamPopupRunId ? "" : current)), 2400);
+    return () => clearTimeout(timer);
+  }, [teamPopupRunId, teamRuns]);
+  // 打开某成员的「历史工作记录」时，从主进程读该团队会话的全部委托记录
+  useEffect(() => {
+    const id = thread?.id ?? "";
+    if (!teamHistoryMember || !id) { setTeamHistoryRuns([]); return; }
+    let alive = true;
+    void window.codex.listTeamRuns?.(id).then((runs) => { if (alive) setTeamHistoryRuns(Array.isArray(runs) ? runs : []); }).catch(() => { if (alive) setTeamHistoryRuns([]); });
+    return () => { alive = false; };
+  }, [teamHistoryMember, thread?.id, teamRuns]);
   // 每张专家团卡片独立选择的项目地址（teamId -> cwd）；未选择时用全局 workspace
   const [teamCwdMap, setTeamCwdMap] = useState<Record<string, string>>({});  // 成员直达会话进行中标记（key = teamId:memberId），用于成员 chip 的 loading 态
   const [expertTeamMemberDirect, setExpertTeamMemberDirect] = useState<string | null>(null);
@@ -8327,6 +8743,12 @@ export default function App() {
     }
     // 留白固定给**一整屏**：保证「锚点滚到顶部」这个目标永远可达（不依赖锚点高度，
     // 也就不用随锚高反复改高度 → 没有新的 scrollHeight 突变源）。
+    // ⛔ 09-14 三次尝试把它改成条件式（内容不满一屏就归零 / 只给最小量），全部被
+    //    send-anchor 验收打回：① 按 scrollHeight 判 → 滚动容器被 clientHeight 托底，
+    //    判定恒真 → 留白 0↔一屏振荡（maxUp=1250 / grew=-192）；② 按 offsetTop 判 →
+    //    跨越一屏阈值那一刻留白 0→一屏，scrollMax 突增 622，钉顶一次性追跳 841px
+    //    （阈值 60）；③ 按需给最小量 → 「钉在顶上」在数值上等于「贴底」，判据失效。
+    //    结论：**钉顶（消息固定在顶部）与「短会话没有大空白」互斥**，见 09-14 会话记录。
     const pad = anchorSpacerRef.current;
     if (pad && pad.style.height !== `${el.clientHeight}px`) pad.style.height = `${el.clientHeight}px`;
     const key = isNewTurn ? `turn-${lastId}` : "opt";
@@ -8948,6 +9370,14 @@ export default function App() {
   // 防止与 chooseModel 里的直接写重复落盘。
   const archiveSyncRef = useRef<string>("");
   useEffect(() => {
+    // ⛔ 多会话/多窗口作用域（09-14 用户实测「模型还是串全局的」的**次因**）：
+    // 有会话打开时 `modelId` 是**该会话自己**的模型，绝不能拿它去写全局档案
+    // （setProviderModel 会就地改写 custom-model.json 顶层 model + config.toml 顶层 model +
+    //  model-catalog.json）。而「模型自查我是谁」读的正是这两处 → 写进去之后，别的会话
+    // （或另一个弹窗）自报的模型就变成这个会话的模型，两个窗口还会互相覆盖。
+    // 用户定稿的规则：全局档案只在「无会话时选默认」「跨供应商切换」两条路径上更新。
+    // 这条对账从此只负责**无会话时的遗留漂移修正**（modelId 此时就等于全局默认）。
+    if (threadRef.current?.id) return;
     const provider = customModel?.provider;
     if (!provider || !customModel?.model) return;
     const match = modelId.match(/^custom:([^:]+):(.+)$/);
@@ -8958,7 +9388,7 @@ export default function App() {
     void window.codex
       .setProviderModel({ provider, model: match[2], apply: true, restart: false })
       .catch(() => { archiveSyncRef.current = ""; });
-  }, [customModel, modelId]);
+  }, [customModel, modelId, thread?.id]);
   // 思考等级对账（与上面模型对账同型）：档案里记了当前生效模型的档位、而当前上下文
   // 没有更具体的显式值（会话无 thread-effort 记录）→ 应用档案档位。用户在会话里显式
   // 选过档位时以会话记录为准（每会话独立优先级，与 model 的规则一致）。
@@ -9121,6 +9551,21 @@ export default function App() {
 /** 长会话首屏最多渲染的回合数：软件渲染下全量挂载几千个回合是「切会话慢」的主因，
  *  默认只渲染最近这么多回合，更早的由「显示更早的 N 条消息」按需展开。 */
 const TURN_WINDOW = 40;
+
+/** 窗口状态（每个会话展开了多少回合）最多记忆多少个会话：超出的按「最久未访问」淘汰。
+ *  这是内存保护——记忆本身是 09-14 为「切回长会话不缩水」加的，但不能无限涨。 */
+const TURN_WINDOW_MEMORY_KEEP = 8;
+
+/** 把某会话的窗口状态「提到最新」，并淘汰最久未访问的条目（对象键序 = 访问序）。 */
+function touchTurnWindow(id: string, map: Record<string, number>): Record<string, number> {
+  const value = map[id];
+  const rest: Record<string, number> = {};
+  for (const key of Object.keys(map)) if (key !== id) rest[key] = map[key];
+  const merged = value === undefined ? rest : { ...rest, [id]: value };
+  const keys = Object.keys(merged);
+  for (const key of keys.slice(0, Math.max(0, keys.length - TURN_WINDOW_MEMORY_KEEP))) delete merged[key];
+  return merged;
+}
 /** 发送锚顶的落点偏移：钉顶时让锚点顶部再**下移**这么多像素，而不是紧贴视口上沿。
  *  用户反馈（09-12 晚，附截图）：「太高了，往下放两行」——原来只上移 6px，消息首行
  *  几乎贴着对话区上边缘，`已深度思考` 之类的头部也被顶到视口最上沿。
@@ -9460,6 +9905,8 @@ const commandMatches = useMemo(() => {
   // 会话切换耗时诊断（09-12 压测用）：openThread 落笔 switchStartRef，这里在 **DOM 已提交**
   // 之后结算一次——这才是用户真正感知的「点一下到看见内容」的时间。
   // 写进 window.__adbg（e2e 场景会 dump），不参与任何业务逻辑。
+  // 09-14 扩充：带上 mode(cached/fresh) 与回合数，并提供 window.__switchPerfStats() 算分位数，
+  // 供 accept switch-perf 场景直接断言「命中缓存的切换」与「冷加载」两条曲线。
   useLayoutEffect(() => {
     if (!thread?.id || !switchStartRef.current) return;
     const ms = Math.round(performance.now() - switchStartRef.current);
@@ -9467,9 +9914,28 @@ const commandMatches = useMemo(() => {
     try {
       const w = window as any;
       if (!w.__adbg) w.__adbg = [];
-      w.__adbg.push({ r: "thread-switch", id: String(thread.id).slice(0, 8), ms });
+      w.__adbg.push({ r: "thread-switch", id: String(thread.id).slice(0, 8), ms, mode: switchModeRef.current, turns: switchTurnsRef.current });
+      if (w.__adbg.length > 400) w.__adbg.splice(0, w.__adbg.length - 400);
     } catch { /* 诊断失败不影响功能 */ }
+    switchModeRef.current = "fresh";
   }, [thread?.id]);
+
+  /** accept switch-perf 场景的读数口：把 __adbg 里的 thread-switch 记录算成分位数，
+   *  并按 cached / fresh 分组——否则「命中缓存秒开」与「冷加载」两拨数据混在一个 P95 里，
+   *  优化了哪一拨根本看不出来（09-14）。纯诊断，不参与业务。 */
+  useEffect(() => {
+    const w = window as any;
+    w.__switchPerfStats = () => {
+      const rows = (w.__adbg ?? []).filter((x: any) => x.r === "thread-switch");
+      const pct = (arr: number[], p: number) => (arr.length ? [...arr].sort((a, b) => a - b)[Math.min(arr.length - 1, Math.floor(arr.length * p))] : null);
+      const group = (mode: "cached" | "fresh" | null) => {
+        const arr = rows.filter((r: any) => (mode ? r.mode === mode : true)).map((r: any) => r.ms);
+        return { n: arr.length, p50: pct(arr, 0.5), p95: pct(arr, 0.95), max: arr.length ? Math.max(...arr) : null };
+      };
+      return { all: group(null), cached: group("cached"), fresh: group("fresh") };
+    };
+    return () => { try { delete (window as any).__switchPerfStats; } catch { /* ignore */ } };
+  }, []);
   // 多会话性能（09-12 P1）：把「当前正在查看哪个会话」上报主进程，主进程据此只把
   // 该会话的高频事件（各种 delta / item 全文 / outputDelta）转发给渲染层——
   // 后台会话的流式事件不再白白序列化跨进程、到了再被丢掉（N 会话 = N 倍无用开销）。
@@ -9515,6 +9981,15 @@ const commandMatches = useMemo(() => {
         pinGapLockedRef.current = null;
       }
       clearAnchorPad();   // 锚顶留白不能串到另一条会话（切回来时钉顶会重新撑起来）
+      // ★ 09-14：切回**命中过缓存**的会话且用户当时在读历史 → 还原距底偏移，不贴底。
+      //   recallScrollOffset 取一次即消费；没有记忆（一直贴底/首次打开）才走下面的贴底。
+      const remembered = recallScrollOffset(thread?.id ?? "");
+      if (remembered !== null) {
+        stickToBottomRef.current = false;
+        scrollToOffsetInstant(el, Math.max(0, el.scrollHeight - el.clientHeight - remembered));
+        updateBottomStateRef.current?.();
+        return;
+      }
       stickToBottomRef.current = true;
       jumpToBottom(el, undefined, contentTailTarget);
       return;
@@ -10380,6 +10855,9 @@ const commandMatches = useMemo(() => {
                 }
               } else if (event.params?.tool === "team_member_invoke") {
                 await invokeTeamMember(args, String(event.params?.threadId ?? ""), event.id!);
+              } else if (event.params?.tool === "team_phase_invoke") {
+                // 并行阶段：一次提交多名成员，宿主并发执行（Promise.all 同时发起）后一起返回
+                await invokeTeamPhase(Array.isArray(args.tasks) ? args.tasks : [], String(event.params?.threadId ?? ""), event.id!);
               } else if (event.params?.tool === "generate_image") {
                 const cfg: any = await window.codex.readBuiltinPlugins().catch(() => null);
                 const c = cfg?.image;
@@ -10937,6 +11415,49 @@ const commandMatches = useMemo(() => {
         // 重拉保证收敛到主进程的真实弹窗列表。
         refreshPoppedOut();
       }
+      if (event.type === "thread-runtime") {
+        // 另一个窗口改了某个会话的模型/档位/权限（主进程广播）：写镜像；若正是本窗口打开的
+        // 会话，界面也要跟着变——否则本窗口会用旧值把对方的改动覆盖回去（丢更新）。
+        const tid = String((event as any).threadId ?? "");
+        if (tid) admitThreadRuntime(tid, (event as any).runtime, { fromRemote: true });
+      }
+      if (event.type === "team-run") {
+        // 专家团成员委托的运行状态（主进程广播给所有窗口）：头像轨的亮灭流转、成员工作弹窗的
+        // 实时内容、历史记录都基于这一份数据。popout 独立窗口收到的与主窗口完全一致
+        // ——不需要每个窗口各自维护，也不会因为窗口自己的 React 状态滞后而错位。
+        const phase = String((event as any).phase ?? "");
+        const run = (event as any).run as TeamMemberRunRecord | undefined;
+        if (phase === "started" && run?.runId) {
+          setTeamRuns((prev) => ({ ...prev, [run.runId]: { ...run, output: run.output ?? "" } }));
+          setTeamPopupRunId(run.runId); // 成员开始干活 → 自动打开它的工作弹窗
+        } else if (phase === "delta") {
+          const runId = String((event as any).runId ?? "");
+          const chunk = String((event as any).text ?? "");
+          if (runId && chunk) {
+            // 增量高频（每字一条）→ rAF 合帧再 setState，避免流式把渲染打爆
+            teamDeltaRef.current.set(runId, `${teamDeltaRef.current.get(runId) ?? ""}${chunk}`);
+            if (teamFlushRef.current === null) {
+              teamFlushRef.current = requestAnimationFrame(() => {
+                teamFlushRef.current = null;
+                const buffer = teamDeltaRef.current;
+                teamDeltaRef.current = new Map();
+                setTeamRuns((prev) => {
+                  const next = { ...prev };
+                  for (const [id, text] of buffer) {
+                    const entry = next[id];
+                    if (!entry) continue;
+                    next[id] = { ...entry, output: `${entry.output ?? ""}${text}` };
+                  }
+                  return next;
+                });
+              });
+            }
+          }
+        } else if (phase === "finished" && run?.runId) {
+          teamDeltaRef.current.delete(run.runId);
+          setTeamRuns((prev) => ({ ...prev, [run.runId]: run }));
+        }
+      }
       if (event.type === "scheduler") showToast("定时任务", event.message);
       if (event.type === "memory") showToast("记忆", event.message);
       if (event.type === "skill-install") {
@@ -11126,6 +11647,132 @@ const commandMatches = useMemo(() => {
 
   // （已删除重复的 smooth 跟随 effect：sticky layout effect 已在 [thread] 变化时
   // 用 behavior:auto 同步跳底，smooth 版本会在长会话切换时产生数秒的滚动动画。）
+
+  /** 全局基线 developer instructions（config.toml 顶层那段：语言 / 内置工具 / 自动化说明）。
+   *  会话作用域块必须**拼在它之后**一起下发——只发作用域块会把基线顶掉，模型就不知道
+   *  nuphus-call / playwright-cli / generate_image 这些内置工具怎么用了。读一次缓存住。 */
+  const baseInstructionsRef = useRef("");
+  /** 每个会话最近一次下发的作用域签名：同签名不重发，避免反复打开会话刷 RPC。 */
+  const scopeSigRef = useRef<Record<string, string>>({});
+
+  // ── 多窗口一致性（09-14）：主进程回来的权威运行时 → 镜像 + React 状态 ─────────────────
+  /** 当前 React 状态里的四项会话级取值。**必须走 ref**：onHarnessEvent 的监听是在挂载时
+   *  注册的，直接闭包捕获 state 会拿到首帧的旧值（"", "never"…），导致「值没变也判成变了」。 */
+  const runtimeStateRef = useRef({ model: "", effort: "", sandbox: "", approval: "" });
+  runtimeStateRef.current = { model: modelId, effort, sandbox, approval: approvalPolicy };
+  /** 每个会话「已采纳过」的最大 rev：迟到的响应/广播（rev 更小）一律丢弃，避免回退到中间态。 */
+  const adoptedRevRef = useRef<Record<string, number>>({});
+
+  /** 主进程权威值的唯一收敛点（两条来源共用：patch 的返回值、跨窗口广播）。
+   *  ① 写本地镜像 → 同步读路径立刻看到新值；② 若是当前打开的会话 → 同步 React 状态。
+   *  只在**值确实与当前状态不同**时才 setState；提示只给「确实来自别的窗口」的改动——
+   *  自己的写入会被主进程原样广播回来，那条回声必须被认出来丢掉（否则用户自己切个模型
+   *  就会看到「另一个窗口更新了…」，09-14 实测的误报）。 */
+  function admitThreadRuntime(id: string, runtime: unknown, opts?: { conflict?: boolean; fromRemote?: boolean }) {
+    if (!id || !runtime) return;
+    const next = normalizeRuntime(runtime);
+    // ⛔ 迟到的响应/广播不许把镜像**回退**到更旧的版本：连写两次（切模型会同时写模型与档位）时，
+    //    第一次的响应常在第二次写入之后才回来，照写会把镜像里的模型改回旧值。rev 单调，只升不降。
+    const knownRev = Math.max(normalizeRuntime(loadThreadRuntimeRaw(id)).rev, adoptedRevRef.current[id] ?? 0);
+    // 迟到者一律丢弃：连写两次（切模型先写档位、再写模型）时，先写的那次响应/广播常常后到，
+    // 照收会把界面与镜像一起回退成中间态（用户看到模型自己跳回去）。
+    if (next.rev > 0 && next.rev < knownRev) return;
+    if (next.rev > 0) adoptedRevRef.current[id] = next.rev;
+    writeThreadRuntimeMirror(id, next);
+    // 自己刚写出去、又原样广播回来的那一份：镜像已写好（rev 跟主进程对齐），
+    // 但**不许**当成「别的窗口改的」——用户自己切模型不该弹「另一个窗口更新了…」。
+    if (isOwnEcho(ownRuntimeWrites, id, next)) return;
+    if (threadRef.current?.id !== id) return;
+    const cur = runtimeStateRef.current;
+    const changed = (next.model && next.model !== cur.model) || (next.effort && next.effort !== cur.effort)
+      || (next.sandbox && next.sandbox !== cur.sandbox) || (next.approval && next.approval !== cur.approval);
+    if (next.model && next.model !== cur.model) setModelId(next.model);
+    if (next.effort && next.effort !== cur.effort) setEffort(next.effort);
+    if (next.sandbox && next.sandbox !== cur.sandbox) setSandbox(next.sandbox);
+    if (next.approval && next.approval !== cur.approval) setApprovalPolicy(next.approval);
+    // ⛔ 只有「广播来的、且不是自己回声」的改动才提示（09-14 用户实测的误报）：
+    //    patch 返回的 conflict 只说明「你的 baseRev 过期了」——**过期可能是自己上一次写入造成的**
+    //    （切模型同时写模型+档位 = 两次 patch），拿它当「另一个窗口改的」就会自己吓自己。
+    //    真·别的窗口的改动一定有广播，这条通道足够，conflict 一律静默合并。
+    if (changed && opts?.fromRemote) {
+      showToast("会话配置已同步", "这个会话的配置在另一个窗口被改过，已更新为最新");
+    }
+  }
+  admitThreadRuntimeRef.current = admitThreadRuntime;
+
+  /** 打开会话时与主进程对齐：主进程没有记录 → 把本地（含旧键迁移）值播种上去；
+   *  主进程有记录 → 以主进程为准（它才是多窗口下的权威）。 */
+  async function syncThreadRuntimeWithMain(id: string) {
+    if (!id) return;
+    try {
+      const main = await window.codex?.getThreadRuntime?.(id);
+      if (main && main.rev > 0) { admitThreadRuntime(id, main); return; }
+      const local = loadThreadRuntime(id);
+      if (runtimeSignature(local) !== "|||") {
+        const seeded = await window.codex?.seedThreadRuntime?.({ threadId: id, runtime: local });
+        if (seeded) admitThreadRuntime(id, seeded);
+      }
+    } catch { /* 主进程不可用：本地镜像继续独立工作 */ }
+  }
+
+  async function loadBaseInstructions(): Promise<string> {
+    if (baseInstructionsRef.current) return baseInstructionsRef.current;
+    try {
+      const read: any = await window.codex.request("config/read", {});
+      baseInstructionsRef.current = String(read?.config?.developer_instructions ?? "");
+    } catch { /* 读不到就只发作用域块（降级不致命） */ }
+    return baseInstructionsRef.current;
+  }
+
+  /** 组装「会话作用域」下发体。引擎把 collaboration_mode.settings.developer_instructions
+   *  **持久在该会话自己的 thread settings 里**（rollout 的 `thread_settings_applied` 可回读），
+   *  天然按会话隔离——A 会话切模型不会改写 B 会话模型能读到的配置。
+   *  09-14 用户实测的根因：会话实际跑 glm-5.3-flash（rollout `turn_context.model` 实证），
+   *  但模型没有任何「会话级出口」能回答「我是什么模型」，只能去读全局 config.toml /
+   *  custom-model.json 的顶层 model（那只是「新建会话的默认值」），于是自报 deepseek-v4-flash
+   *  → 用户看到的「模型还是串全局的」。修法 = 把会话级取值写进会话自己的 instructions。 */
+  async function buildSessionScope(threadId: string, override?: { model?: unknown; effort?: unknown; sandbox?: unknown; approval?: unknown; provider?: unknown }): Promise<{ signature: string; collaborationMode: Record<string, unknown> } | null> {
+    if (!threadId) return null;
+    const model = String(override?.model ?? selectedModel?.model ?? modelName(modelId) ?? "").trim();
+    if (!model) return null;
+    const effortValue = override && "effort" in override ? String(override.effort ?? "") : String(effort ?? "");
+    const values = {
+      threadId,
+      model,
+      provider: String(override?.provider ?? customModel?.provider ?? ""),
+      effort: effortValue,
+      // 权限取本轮即将生效的值（调用方刚 setSandbox 时 React 状态还没刷新，必须由 override 传）
+      sandbox: String(override?.sandbox ?? sandbox ?? ""),
+      approval: String(override?.approval ?? approvalPolicy ?? ""),
+      workspace: String(workspace ?? ""),
+    };
+    const base = await loadBaseInstructions();
+    return {
+      signature: sessionScopeSignature(values),
+      collaborationMode: {
+        // 本应用引擎侧的会话协作模式恒为 default（rollout `task_started.collaboration_mode_kind`
+        // 实证）；「计划模式」由 /plan 旗标 + turn/start 实现，不走引擎的 collaboration mode。
+        mode: "default",
+        settings: {
+          model,
+          reasoning_effort: effortValue || null,
+          developer_instructions: composeScopeInstructions(base, sessionScopeBlock(values)),
+        },
+      },
+    };
+  }
+
+  /** 把会话作用域下发到引擎（协议通道 = thread/settings/update；空会话无 rollout 时失败可忽略）。 */
+  async function pushSessionScope(threadId: string, override?: { model?: unknown; effort?: unknown; sandbox?: unknown; approval?: unknown; provider?: unknown }) {
+    if (!threadId) return;
+    const built = await buildSessionScope(threadId, override);
+    if (!built) return;
+    if (scopeSigRef.current[threadId] === built.signature) return;
+    try {
+      await window.codex.request("thread/settings/update", { threadId, collaborationMode: built.collaborationMode });
+      scopeSigRef.current[threadId] = built.signature;
+    } catch { /* 空会话还没落 rollout / 引擎重启中：留给下一次下发 */ }
+  }
 
   /** 改「全局默认模型」的**唯一入口**（设置页「生效模型」/ 一键切中转站 / 启用官方订阅 /
    *  登录导入 / 供应商重启生效落定 / 无会话时在输入框选模型）。
@@ -11322,9 +11969,14 @@ const commandMatches = useMemo(() => {
 
   async function updateThreadSettings(values: Record<string, unknown>) {
     if (!thread) return;
+    // 会话作用域（模型/档位/权限）随每次设置变更一并下发：模型自报「我是谁」必须读会话级，
+    // 不能读全局 config.toml 顶层（那是新会话默认值）。取值以本次 values 为准（改档位时
+    // 引擎与模型要同时看到新档位）。签名未变时不重复下发（见 pushSessionScope）。
+    const scope = await buildSessionScope(thread.id, { ...("model" in values ? { model: values.model } : {}), ...("effort" in values ? { effort: values.effort } : {}) });
+    if (scope) scopeSigRef.current[thread.id] = scope.signature;
     // codex app-server 偶尔会重启（切换供应商/启用禁用），重启后内存里没有旧任务，
     // 直接 thread/settings/update 会报 "thread not found"。自动 re-resume 一次再重试。
-    const call = () => window.codex.request("thread/settings/update", { threadId: thread.id, ...values });
+    const call = () => window.codex.request("thread/settings/update", { threadId: thread.id, ...values, ...(scope ? { collaborationMode: scope.collaborationMode } : {}) });
     const resume = () => resumeThreadWithTurns({ threadId: thread.id, excludeTurns: false });
     try {
       await call();
@@ -11366,7 +12018,11 @@ const commandMatches = useMemo(() => {
     // 重启后首个 turn 权限被重置成 workspace-write，settings/update 推了也没生效）——
     // resume 通道才真正接受 sandbox 字符串（schema 实证）。所以补一发带沙箱的 resume
     // 钉住权限（excludeTurns:true 不拉历史，开销极小）。
-    const call = () => window.codex.request("thread/settings/update", { threadId: id, approvalPolicy: approvalValue, sandboxPolicy: sandboxPolicy(sandboxValue, workspace) });
+    const call = () => window.codex.request("thread/settings/update", { threadId: id, approvalPolicy: approvalValue, sandboxPolicy: sandboxPolicy(sandboxValue, workspace), ...(scope ? { collaborationMode: scope.collaborationMode } : {}) });
+    // 权限也是会话级配置的一部分：改权限后模型读到的「执行权限」必须是新的（override 传值，
+    // 此刻 React 状态还是旧档位）
+    const scope = await buildSessionScope(id, { sandbox: sandboxValue, approval: approvalValue });
+    if (scope) scopeSigRef.current[id] = scope.signature;
     try {
       await call();
       await window.codex.request("thread/resume", { threadId: id, excludeTurns: true, sandbox: sandboxValue, approvalPolicy: approvalValue });
@@ -12427,6 +13083,7 @@ const commandMatches = useMemo(() => {
         defer: true,
       });
       teamThreadMapRef.current.set(result.thread.id, team.teamId);
+      setThreadTeamId(team.teamId);
       teamThreadConfigRef.current.set(result.thread.id, {
         teamId: team.teamId,
         cwd: teamCwd,
@@ -12448,28 +13105,50 @@ const commandMatches = useMemo(() => {
     } catch (error: any) { setNotice(`发起专家团会话失败：${error.message}`); }
     finally { setExpertTeamRunning(null); }
   }
-  /** 在团队会话中调度一个成员（team_member_invoke 工具回调） */
-  async function invokeTeamMember(toolArgs: any, threadId: string, respondEventId: number | string) {
-    const parentConfig = teamThreadConfigRef.current.get(threadId);
-    const teamId = parentConfig?.teamId || teamThreadMapRef.current.get(threadId) || "";
-    setExpertTeamMemberRunning({ teamId, memberName: String(toolArgs.memberId ?? "") });
+  /** 执行一次成员委托（不含对引擎的应答）：单成员调用与并行阶段共用同一段实现。
+   *  并行时会有多个同时跑 —— 活动指示用计数控制，不能在 finally 里无条件清空。 */
+  async function runTeamMember(toolArgs: any, leadThreadId: string): Promise<{ ok: boolean; name: string; profession: string; output: string }> {
+    const parentConfig = teamThreadConfigRef.current.get(leadThreadId);
+    const teamId = parentConfig?.teamId || teamThreadMapRef.current.get(leadThreadId) || "";
+    teamRunningCountRef.current += 1;
+    setExpertTeamMemberRunning({ teamId, memberName: String(toolArgs?.memberId ?? "") });
     try {
       const result = await window.codex.invokeTeamMember({
         teamId,
-        memberId: String(toolArgs.memberId ?? ""),
-        query: String(toolArgs.query ?? ""),
+        memberId: String(toolArgs?.memberId ?? ""),
+        query: String(toolArgs?.query ?? ""),
+        leadThreadId,
         cwd: parentConfig?.cwd || workspace || undefined,
         model: parentConfig?.model || selectedModel?.model || modelName(modelId),
         effort: parentConfig?.effort || effort || undefined,
         sandbox: parentConfig?.sandbox || sandbox,
         approvalPolicy: parentConfig?.approvalPolicy || approvalPolicy,
       });
-      await window.codex.respond(respondEventId, { contentItems: [{ type: "inputText", text: `[专家团成员 ${result.profession || result.name} 的执行结果]\n${result.output}` }], success: true });
+      return { ok: true, name: result.name, profession: result.profession, output: result.output };
     } catch (error: any) {
-      await window.codex.respond(respondEventId, { contentItems: [{ type: "inputText", text: `[成员调度失败]\n${error.message}` }], success: false });
+      return { ok: false, name: String(toolArgs?.memberId ?? ""), profession: "", output: `[成员调度失败]\n${error.message}` };
     } finally {
-      setExpertTeamMemberRunning(null);
+      teamRunningCountRef.current -= 1;
+      if (teamRunningCountRef.current <= 0) { teamRunningCountRef.current = 0; setExpertTeamMemberRunning(null); }
     }
+  }
+  /** 在团队会话中调度一个成员（team_member_invoke 工具回调） */
+  async function invokeTeamMember(toolArgs: any, threadId: string, respondEventId: number | string) {
+    const result = await runTeamMember(toolArgs, threadId);
+    await window.codex.respond(respondEventId, { contentItems: [{ type: "inputText", text: result.ok ? `[专家团成员 ${result.profession || result.name} 的执行结果]\n${result.output}` : result.output }], success: result.ok });
+  }
+  /** 并行阶段（team_phase_invoke 工具回调）：一次提交多名成员，宿主**并发**执行后一起返回。
+   *  ⛔ 这是「SOP 写着并行、实际却串行」的正解 —— 并行由宿主保证，不靠模型自觉
+   *  （09-14 实测：只改提示词让它「一个回合发多个调用」无效）。 */
+  async function invokeTeamPhase(tasks: any[], threadId: string, respondEventId: number | string) {
+    const list = tasks.filter((task) => task && String(task.memberId ?? "").trim());
+    if (!list.length) {
+      await window.codex.respond(respondEventId, { contentItems: [{ type: "inputText", text: "team_phase_invoke 需要至少一个成员任务（tasks 为空）" }], success: false });
+      return;
+    }
+    const results = await Promise.all(list.map((task) => runTeamMember(task, threadId)));
+    const text = results.map((entry) => `[专家团成员 ${entry.profession || entry.name} 的执行结果]\n${entry.output}`).join("\n\n---\n\n");
+    await window.codex.respond(respondEventId, { contentItems: [{ type: "inputText", text }], success: results.some((entry) => entry.ok) });
   }
 
   async function importSkill() {
@@ -12718,6 +13397,31 @@ const commandMatches = useMemo(() => {
     }
   }
 
+  /** 离开某会话前记下阅读位置：只在「用户确实往上翻了」时记（距底 > 40px），
+   *  贴在底部的会话不需要记忆（切回来本来就该贴底）。 */
+  function rememberScrollPosition(id: string) {
+    if (!id) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (fromBottom > 40) scrollMemoRef.current.set(id, fromBottom);
+    else scrollMemoRef.current.delete(id);
+    // 与窗口记忆同量级的 LRU 上限，避免长跑进程里无界增长
+    if (scrollMemoRef.current.size > TURN_WINDOW_MEMORY_KEEP) {
+      const first = scrollMemoRef.current.keys().next().value;
+      if (first !== undefined) scrollMemoRef.current.delete(first);
+    }
+  }
+
+  /** 取回某会话的阅读位置；没有记忆（或已贴在底部）返回 null → 调用方走原来的贴底逻辑。 */
+  function recallScrollOffset(id: string): number | null {
+    if (!id) return null;
+    const value = scrollMemoRef.current.get(id);
+    if (value === undefined) return null;
+    scrollMemoRef.current.delete(id); // 用一次即消费，避免后续无关渲染反复跳位
+    return value;
+  }
+
   async function openThread(id: string, freshThread?: Thread | null) {    switchStartRef.current = performance.now();
     setChatSearchOpen(false);
     // 快速连点防竞态：只有最新一次切换的 resume 响应才允许落地渲染
@@ -12734,10 +13438,18 @@ const commandMatches = useMemo(() => {
     // 兜底 = 还留着一根被「其他会话改全局默认」污染的口子）。首次打开时把当时的生效值
     // 烙成它自己的记录，此后该会话与新会话一样完全走会话级。
     if (!storedModel) saveThreadModel(id, modelId);
+    // 与主进程对齐（多窗口并发保护，09-14）：主进程有记录则以它为准（含 rev），没有就把本地值播种上去。
+    // 不 await：切会话是热路径（秒开），一次 IPC 往返不值得塞进等待链；主进程值晚到一拍时由
+    // admitThreadRuntime 收敛界面与镜像。
+    void syncThreadRuntimeWithMain(id);
     // 切会话过渡遮罩：只在「没有缓存、需要真正加载」时显示（首次打开的长会话）。
     // 缓存秒开的会话不再强制遮罩——WorkBuddy 式直切（缓存直渲 + 后台 resume 对齐），
     // 每次切换都白遮 ~200ms 是「切换不够丝滑」的直接观感来源。
     if (!threadCacheRef.current.get(id)) setSwitchingThreadId(id);
+    // 切换诊断（09-14）：这一笔是「冷加载」还是「命中缓存」，以及缓存里有几轮内容——
+    // 结算时一并写进 __adbg，accept switch-perf 靠它区分两条曲线。
+    switchModeRef.current = threadCacheRef.current.get(id) ? "cached" : "fresh";
+    switchTurnsRef.current = threadCacheRef.current.get(id)?.turns.length ?? 0;
     setMobileNav(false);
     setDiff("");
     setSystemEvents([]);
@@ -12756,12 +13468,18 @@ const commandMatches = useMemo(() => {
     setWorkStartedAt(knownRunning ? (runningStartedAtRef.current.get(id) ?? Date.now()) : null);
     setInterrupting(false);
     // 切会话后滚动位置属于旧会话，不能带过来；等新内容渲染后直接跳到最新消息。
+    // ★ 09-14：离开前先把「旧会话的阅读位置」记下来（距底偏移），命中缓存切回时据此还原——
+    //   原先无条件跳底，用户切出去看一眼再切回来会丢掉正在读的位置（WorkBuddy 靠缓存保住它）。
+    rememberScrollPosition(threadRef.current?.id ?? "");
     switchJumpRef.current = { id, at: Date.now() };
-    // 渲染窗口一并重置：切换成本与会话历史长度、上次翻页深度无关（切回即锚定最新一屏）。
-    // 游标保留在 turnsCursorRef，向上滚动时按需继续增量加载。
-    if ((turnWindowRef.current[id] ?? TURN_WINDOW) !== TURN_WINDOW) {
-      turnWindowRef.current = { ...turnWindowRef.current, [id]: TURN_WINDOW };
+    // 渲染窗口：**命中缓存则保留上次展开的深度**（切回刚看过的长会话不该把内容缩回去），
+    // 冷加载才重置——重置的意义是「切换成本与会话历史长度无关」，冷加载本来就没内容。
+    const keepWindow = Boolean(threadCacheRef.current.get(id));
+    if (!keepWindow && (turnWindowRef.current[id] ?? TURN_WINDOW) !== TURN_WINDOW) {
+      turnWindowRef.current = touchTurnWindow(id, { ...turnWindowRef.current, [id]: TURN_WINDOW });
       setTurnWindow(turnWindowRef.current);
+    } else {
+      turnWindowRef.current = touchTurnWindow(id, turnWindowRef.current);
     }
     closeTaskMenu();
     setReviewBusy(false);
@@ -12890,7 +13608,9 @@ const commandMatches = useMemo(() => {
       // 记录会话真实绑定的供应商（迁移成功后 migrateThreadToProvider 会覆盖为新值）
       threadProviderRef.current.set(id, resultProvider);
       const resultModel = String(result.model ?? "").trim();
-      const restoredModel = storedModel || (resultModel ? `custom:${resultProvider}:${resultModel}` : modelId || localStorage.getItem("default-model") || "");
+      // ⛔ 先读一次镜像（而不是复用上面捕获的 storedModel）：syncThreadRuntimeWithMain 可能刚
+      // 把主进程的权威值写进镜像，复用旧变量会用本地旧值把对方的改动覆盖回去（丢更新）。
+      const restoredModel = loadThreadModel(id) || storedModel || (resultModel ? `custom:${resultProvider}:${resultModel}` : modelId || localStorage.getItem("default-model") || "");
       if (restoredModel) {
         setModelId(restoredModel);
         saveThreadModel(id, restoredModel);
@@ -12947,6 +13667,17 @@ const commandMatches = useMemo(() => {
       if ((resumedSandbox && nextSandbox !== resumedSandbox) || (resumedApproval && nextApproval !== resumedApproval)) {
         void pushThreadPermissions(id, nextSandbox, nextApproval).catch(() => undefined);
       }
+      // 会话作用域下发（09-14）：把本会话**解析后的**会话级取值写进会话自己的 instructions，
+      // 让会话里的模型能回答「我当前是什么模型 / 档位 / 权限」。必须显式传值——此刻
+      // setModelId/setEffort/setSandbox 都还没提交，直接读 React 状态会拿到**上一个会话**的值
+      // （那会把 A 的模型烙进刚打开的 B，正是要根治的串扰）。
+      void pushSessionScope(id, {
+        model: modelName(restoredModel) || modelName(modelId),
+        provider: restoredModel.startsWith("custom:") ? restoredModel.split(":")[1] : resultProvider,
+        effort: loadThreadEffort(id) || String(result.reasoningEffort ?? "") || effort || "",
+        sandbox: nextSandbox,
+        approval: nextApproval,
+      });
       const resumedRunningTurn = loaded.turns.find((turn: Turn) => isTurnRunning(turn));
       setActiveTurnId(resumedRunningTurn?.id ?? null);
       setSending(Boolean(resumedRunningTurn));
@@ -13149,6 +13880,19 @@ const commandMatches = useMemo(() => {
     }
     const memoryTools = dynamicTools.length ? { dynamicTools } : {};
     const onboardingInstructions = shouldGreet ? IDENTITY_ONBOARD_INSTRUCTIONS : null;
+    // 新建会话即刻带上「会话作用域」（此时会话 ID 还没生成 → 块里标「未登记」，
+    // thread/start 成功后由 pushSessionScope 用真实 ID 再补一发）。三段共存：全局基线 +
+    // 会话作用域 + 引导语，顺序固定，避免把语言/内置工具说明或引导语顶掉。
+    const scopeSeed = composeScopeInstructions(await loadBaseInstructions(), sessionScopeBlock({
+      threadId: "",
+      model: selectedModel?.model ?? modelName(modelId) ?? "",
+      provider: String(customModel?.provider ?? ""),
+      effort: String(effort ?? ""),
+      sandbox: String(sandbox ?? ""),
+      approval: String(approvalPolicy ?? ""),
+      workspace: String(welcomeScratchDir ?? workspace ?? ""),
+    }));
+    const developerInstructions = [scopeSeed, onboardingInstructions].filter(Boolean).join("\n\n");
     const started = await window.codex.request("thread/start", {
       model: selectedModel?.model ?? modelName(modelId),
       // 欢迎页「无项目」模式：本会话用自动创建的独立临时目录（每个会话单独一个）；
@@ -13159,7 +13903,7 @@ const commandMatches = useMemo(() => {
       sandbox,
       sandboxPolicy: sandboxPolicy(sandbox, welcomeScratchDir ?? workspace),
       personality: selectedModel?.supportsPersonality ? personality : null,
-      developerInstructions: onboardingInstructions,
+      developerInstructions,
       ...providerConfig,
       ...memoryTools,
     });
@@ -13177,6 +13921,9 @@ const commandMatches = useMemo(() => {
       if (!loadThreadModel(tid)) saveThreadModel(tid, modelId);
       if (!loadThreadEffort(tid) && effort) saveThreadEffort(tid, effort);
       saveThreadPermissions(tid, sandbox, approvalPolicy);
+      // 会话作用域用真实会话 ID 补发一发（thread/start 那发块里会话 ID 只能标「未登记」）：
+      // 空会话此刻可能还没有 rollout，失败也无所谓——首次发消息时 updateThreadSettings 会再补。
+      void pushSessionScope(tid);
     }
     return active;
   }
@@ -13792,6 +14539,20 @@ const commandMatches = useMemo(() => {
   // 09-12 用户要求：去掉「已工作 X 秒」耗时指示（上方回合头部已有处理时间，重复且
   // 在流式期间跟着内容上下跳）；只保留真正有信息量的状态（停止中/等确认/等输入/专家/子智能体）
   const activityLabel = interrupting ? "正在停止" : waitingForApproval ? "等待你的确认" : waitingForInput ? "等待你的输入" : activeMember ? `专家「${activeMember.profession.zh || activeMember.name}」执行中` : subAgentRunning ? `子智能体「${subAgentRunning}」执行中` : "";
+  // ── 成员头像轨 / 成员工作弹窗 / 历史记录（09-14 用户要求） ────────────────────
+  /** 当前会话所属团队。优先主进程映射 —— popout 独立窗口没有本地 teamThreadMapRef。 */
+  const railTeamId = threadTeamId || (thread ? teamThreadMapRef.current.get(thread.id) ?? "" : "");
+  const railTeam = railTeamId ? expertTeams.find((team) => team.teamId === railTeamId) ?? null : null;
+  /** 本会话的委托记录，最新在前 */
+  const railRuns = Object.values(teamRuns).filter((run) => run.leadThreadId === thread?.id).sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
+  /** 每个成员「正在跑」的那次委托 —— 并行阶段可能多个成员同时亮 */
+  const railRunningByMember: Record<string, TeamMemberRunRecord> = {};
+  for (const run of railRuns) if (run.status === "running" && !railRunningByMember[run.memberId]) railRunningByMember[run.memberId] = run;
+  /** 每个成员最近一次委托（头像的亮 / 灰 / 完成态据此判定） */
+  const railLastByMember: Record<string, TeamMemberRunRecord> = {};
+  for (const run of railRuns) if (!railLastByMember[run.memberId]) railLastByMember[run.memberId] = run;
+  const popupRun = teamPopupRunId ? teamRuns[teamPopupRunId] ?? null : null;
+  const historyMemberRuns = teamHistoryMember ? teamHistoryRuns.filter((run) => run.memberId === teamHistoryMember) : [];
   // 上下文压缩后的缓存重建窗口：压缩重写了提示词前缀，上游缓存命中需要 1~3 轮才恢复
   // （rollout 实测：压缩后 last.cached=0 连续 2 轮，第 3 轮回到 98%）。窗口内 0% 不是 bug。
   const recentCompaction = useMemo(() => {
@@ -14111,7 +14872,19 @@ const commandMatches = useMemo(() => {
           <div className="timeline-bottom-spacer anchor-pad" ref={anchorSpacerRef} style={{ height: 0 }} aria-hidden />
         </div>
           {switchingThreadId && (
-            <div className={`thread-switch-overlay ${switchingFading ? "fading" : ""}`} role="status"><Spinner /><span>正在恢复会话…</span></div>
+            <div className={`thread-switch-overlay ${switchingFading ? "fading" : ""}`} role="status">
+              <Spinner /><span>正在恢复会话…</span>
+              {/* 09-14（学 WorkBuddy 骨架优先）：冷加载时先把这个会话的形态画出来——
+                  列表里已有的名称与预览先行占位，用户立刻知道"打开的是哪个会话"，
+                  而不是盯着一句「正在恢复会话…」的纯等待。真实内容到达后整体替换。 */}
+              {switchingMeta && (
+                <div className="thread-switch-skeleton" aria-hidden="true">
+                  {switchingMeta.name ? <div className="skeleton-line title">{switchingMeta.name}</div> : null}
+                  {switchingMeta.preview ? <div className="skeleton-line">{switchingMeta.preview.slice(0, 120)}</div> : null}
+                  <div className="skeleton-line short" />
+                </div>
+              )}
+            </div>
           )}
           {awayFromBottom && (
             <button
@@ -14119,6 +14892,35 @@ const commandMatches = useMemo(() => {
               title="回到底部"
               onClick={() => { releaseToUserRef.current("button"); stickToBottomRef.current = true; const el = scrollRef.current; if (el) scrollToOffsetInstant(el, contentTailTarget(el)); }}
             ><ArrowDown size={16} /></button>
+          )}
+          {/* 专家团成员头像轨 + 成员工作弹窗 + 历史记录（09-14 用户要求）。
+              头像轨是 timeline-wrap 的 flex 子项（占 92px / 紧凑 52px，容器窄了自动收起）；
+              两个面板绝对定位浮在消息区上，不遮输入框。 */}
+          {railTeam && (
+            <TeamMemberRail
+              team={railTeam}
+              containerRef={timelineWrapRef}
+              runningByMember={railRunningByMember}
+              lastByMember={railLastByMember}
+              activeMemberId={teamHistoryMember || popupRun?.memberId || ""}
+              onOpenMember={(memberId) => { setTeamPopupRunId(""); setTeamHistoryMember(memberId); }}
+            />
+          )}
+          {railTeam && popupRun && (
+            <TeamRunPopup
+              team={railTeam}
+              run={popupRun}
+              onClose={() => setTeamPopupRunId("")}
+              onOpenHistory={(memberId) => { setTeamPopupRunId(""); setTeamHistoryMember(memberId); }}
+            />
+          )}
+          {railTeam && teamHistoryMember && (
+            <TeamMemberHistory
+              team={railTeam}
+              memberId={teamHistoryMember}
+              runs={historyMemberRuns}
+              onClose={() => setTeamHistoryMember("")}
+            />
           )}
         </div>
 
@@ -14211,7 +15013,17 @@ const commandMatches = useMemo(() => {
           {/* 审批卡：贴输入框上方（与 agent-ask 同款布局，09-13 从消息流大卡迁来）。
               主窗口与独立会话窗口走同一渲染逻辑——各自的 pending 里属于本窗口当前会话的
               请求都会在这里出现，弹窗里也能审批。 */}
-          {pending.filter((request) => !request.params?.threadId || request.params.threadId === thread?.id).map((request) => <RequestCard request={request} key={request.id} onDone={() => setPending((current) => current.filter((entry) => entry.id !== request.id))} />)}
+          {/* 09-14：多条审批收进 `.approval-stack`（整体限高 + 滚动）——以前每条都是一张
+              大卡直接往下堆，两条就把输入框上方占满；现在一条只占一行，点摘要才展开看内容。 */}
+          {(() => {
+            const mine = pending.filter((request) => !request.params?.threadId || request.params.threadId === thread?.id);
+            if (!mine.length) return null;
+            return (
+              <div className="approval-stack" data-count={mine.length}>
+                {mine.map((request) => <RequestCard request={request} key={request.id} onDone={() => setPending((current) => current.filter((entry) => entry.id !== request.id))} />)}
+              </div>
+            );
+          })()}
           {notice && createPortal(
             (() => {
               const tone = noticeTone(notice);
