@@ -45,6 +45,7 @@ import {
   FileText,
   FileWarning,
   FolderOpen,
+  FolderPlus,
   FolderTree,
   ImagePlus,
   Image,
@@ -15130,13 +15131,27 @@ const commandMatches = useMemo(() => {
                 </button>
                 {welcomeCwdMenuOpen && (
                   <div className="welcome-cwd-menu" role="menu">
-                    <button type="button" role="menuitem" className={!welcomeScratchDir ? "active" : ""} onClick={async () => {
+                    {/* 09-14 用户反馈改版：三段式 + 重排——历史项目地址（有才显示）→ 新项目地址 → 不使用项目地址。
+                        「新项目地址」副文案**不得透出历史路径**（旧版显示 D:\test1 让用户误会点进去就是它）；
+                        「历史项目地址」副文案才显示当前 workspace 路径。 */}
+                    {workspace && (
+                      <button type="button" role="menuitem" className={!welcomeScratchDir ? "active" : ""} onClick={async () => {
+                        setWelcomeCwdMenuOpen(false);
+                        setWelcomeScratchDir(null);
+                        // 已有历史项目地址：直接沿用（不再弹选择框）
+                        showToast("已使用历史项目地址", workspace);
+                      }}>
+                        <FolderOpen size={15} />
+                        <span>历史项目地址<small>{workspace}</small></span>
+                      </button>
+                    )}
+                    <button type="button" role="menuitem" className={!workspace && !welcomeScratchDir ? "active" : ""} onClick={async () => {
                       setWelcomeCwdMenuOpen(false);
                       setWelcomeScratchDir(null);
                       await chooseWorkspace();
                     }}>
-                      <FolderOpen size={13} />
-                      <span>使用项目地址<small>{workspace || "当前未选择，点击选择目录"}</small></span>
+                      <FolderPlus size={15} />
+                      <span>新项目地址<small>{workspace ? "另选一个目录作为本次的项目地址" : "选择一个目录作为本次的项目地址"}</small></span>
                     </button>
                     <button type="button" role="menuitem" className={welcomeScratchDir ? "active" : ""} onClick={async () => {
                       setWelcomeCwdMenuOpen(false);
@@ -15147,7 +15162,7 @@ const commandMatches = useMemo(() => {
                         showToast("无项目模式", "本次会话将使用自动创建的独立临时目录");
                       } catch (error: any) { setNotice(`临时目录创建失败：${error.message}`); }
                     }}>
-                      <FileQuestion size={13} />
+                      <FileQuestion size={15} />
                       <span>不使用项目地址<small>自动创建独立临时目录（每个会话单独一个）</small></span>
                     </button>
                   </div>
