@@ -14,15 +14,15 @@ const PLATFORMS = [
     platform: "mac-arm64",
     filename: `Codex Harness Desktop-${VERSION}-arm64-mac.zip (Apple 芯片 M 系列)`,
     external_url: `https://github.com/PMZPZM0/codex-harness-desktop/releases/download/v${VERSION}/Codex.Harness.Desktop-${VERSION}-arm64-mac.zip`,
-    size: 0,
-    sha256: "",
+    size: 1007397239,
+    sha256: "1e0d0f9d4034814f5cab30efb8b23c2da8be4facd592343afc3afcefb8cd0e2f",
   },
   {
     platform: "mac-x64",
     filename: `Codex Harness Desktop-${VERSION}-x64-mac.zip (Intel 芯片)`,
     external_url: `https://github.com/PMZPZM0/codex-harness-desktop/releases/download/v${VERSION}/Codex.Harness.Desktop-${VERSION}-x64-mac.zip`,
-    size: 0,
-    sha256: "",
+    size: 1041326628,
+    sha256: "d90a86b4d8313f79f5399c43970762b88a2b6952c265e67686a1c2bba6032851",
   },
 ];
 
