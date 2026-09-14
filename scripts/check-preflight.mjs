@@ -2042,6 +2042,41 @@ console.log(C.bold("\n【13】供应商自动接力（切换供应商后旧会�
     ? ok("接力后的新会话登记了真实绑定（下次发送不再重复迁移）")
     : fail("接力后没登记新绑定 —— 每次发送都会再迁一次");
 }
+// ---------- 【14】历史分页懒加载（切会话成本与会话长度无关；不得回退） ----------
+
+console.log(C.bold("\n【14】历史分页懒加载（首屏一页 / 滚一屏补一页 / 上下文不受影响）"));
+{
+  const appSrc4 = readFileSync(join(ROOT, "src/App.tsx"), "utf8");
+  const win = Number((appSrc4.match(/const TURN_WINDOW = (\d+);/) ?? [])[1] ?? NaN);
+  Number.isFinite(win) && win > 0 && win <= 30
+    ? ok(`首屏窗口 = ${win} 回合（≈10 个对话来回；超大会话不再全量挂载）`)
+    : fail(`TURN_WINDOW = ${win} —— 窗口被改回全量/超大值，长会话首屏又会卡`);
+  const page = Number((appSrc4.match(/const TURNS_PAGE = (\d+);/) ?? [])[1] ?? NaN);
+  Number.isFinite(page) && page > 0 && page <= 40
+    ? ok(`续载页大小 = ${page} 回合（一页一页，单次请求数据量有上限）`)
+    : fail(`TURNS_PAGE = ${page} —— 页大小失控`);
+  const lightSig = appSrc4.slice(appSrc4.indexOf("async function resumeThreadLight"), appSrc4.indexOf("async function resumeThreadLight") + 2200);
+  /turnBudget = TURNS_PAGE/.test(lightSig)
+    ? ok("打开会话只取一页（resume 不再让引擎水合全部历史）")
+    : fail("resumeThreadLight 的取数预算不再是 TURNS_PAGE —— 首屏数据量又回到全量");
+  /turnsCursorRef\.current\.set/.test(lightSig)
+    ? ok("取页同时记下游标（往上滚能续到更早，不会重拉最新页）")
+    : fail("取页没有记游标 —— 续拉会重复拉最新一页");
+  const scrollFn = appSrc4.slice(appSrc4.indexOf("function onTimelineScroll"), appSrc4.indexOf("function onTimelineScroll") + 700);
+  /userScrolledRef\.current/.test(scrollFn)
+    ? ok("★ 自动续载只认「真实用户滚动」（滚轮/触摸/翻页键/拖滚动条）")
+    : fail("自动续载又只看 scrollTop —— 打开会话的程序化滚动会让「用户没滚也加载」");
+  const anchorFn = appSrc4.slice(appSrc4.indexOf("async function loadEarlierTurns"), appSrc4.indexOf("async function loadEarlierTurns") + 4200);
+  /anchorTopBefore/.test(anchorFn) && /isConnected/.test(anchorFn)
+    ? ok("★ 位置补偿用锚点元素位移（content-visibility 下 scrollHeight 不可靠）")
+    : fail("位置补偿退回 scrollHeight 增量 —— 上方插入内容会把用户看的内容顶飞");
+  /setEarlierLoadingId/.test(anchorFn) && /load-earlier-hint/.test(appSrc4)
+    ? ok("续载有可见提示（不再是静默加载）")
+    : fail("续载没有载入提示");
+  /userScrolledRef\.current = false/.test(appSrc4)
+    ? ok("切换会话时重置「用户滚过」标记（新会话需重新滚才自动续载）")
+    : fail("切换会话没重置用户滚动标记 —— 切过去没滚也会自动加载");
+}
 // ---------- 汇总 ----------
 
 console.log("");

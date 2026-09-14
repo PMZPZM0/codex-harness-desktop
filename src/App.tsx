@@ -13605,6 +13605,11 @@ const commandMatches = useMemo(() => {
       const el0 = scrollRef.current;
       const beforeTop = el0?.scrollTop ?? 0;
       const beforeHeight = el0?.scrollHeight ?? 0;
+      // 位置补偿用「锚点元素」而不是 scrollHeight 增量：content-visibility: auto 下离屏回合的
+      // 高度是估算值、scrollHeight 会滞后 → 补偿不足，用户看到内容被顶飞（实测位移 4.3k px）。
+      // 记下「当前视口内第一条回合」相对视口的 top，插入后按它的位移把 scrollTop 补回去。
+      const anchorNode = [...(el0?.querySelectorAll(".turn-group") ?? [])].find((node) => node.getBoundingClientRect().bottom > 0) as HTMLElement | undefined;
+      const anchorTopBefore = anchorNode ? anchorNode.getBoundingClientRect().top : 0;
       let grow = 0;
       if (hidden > 0) {
         grow = Math.min(hidden, TURNS_PAGE); // 本地展开一批的量，翻老历史不产生网络请求
@@ -13629,10 +13634,16 @@ const commandMatches = useMemo(() => {
       }
       if (grow > 0) {
         expandTurnWindow(id, grow);
-        // 双 rAF 等 React 提交 DOM 后按高度增量把视口钉回原内容（上方插入了新渲染的回合）
+        // 双 rAF 等 React 提交 DOM 后把视口钉回原内容（上方插入了新渲染的回合）：
+        // 优先用锚点元素位移（对 content-visibility 免疫），锚点已卸载才退回 scrollHeight 增量。
         requestAnimationFrame(() => requestAnimationFrame(() => {
           const el = scrollRef.current;
-          if (el) el.scrollTop = beforeTop + Math.max(0, el.scrollHeight - beforeHeight);
+          if (!el) return;
+          if (anchorNode && anchorNode.isConnected) {
+            el.scrollTop += anchorNode.getBoundingClientRect().top - anchorTopBefore;
+          } else {
+            el.scrollTop = beforeTop + Math.max(0, el.scrollHeight - beforeHeight);
+          }
         }));
       }
     } finally {
@@ -13646,6 +13657,9 @@ const commandMatches = useMemo(() => {
    *  scrollTop 补偿）；贴近顶部时每向上滚一屏加载一页，离开顶部自然停止。 */
   function onTimelineScroll(event: React.UIEvent<HTMLDivElement>) {
     const el = event.currentTarget;
+    // 只有用户真的滚过才自动续载：程序化滚动（打开时跳底、插入内容后的位置补偿）也会把
+    // scrollTop 扫过近顶区间，据此加载就成了「没滚也加载」。
+    if (!userScrolledRef.current) return;
     if (el.scrollTop > 720 || switchJumpPending()) return;
     const id = threadRef.current?.id;
     if (id) void loadEarlierTurns(id);
@@ -13715,7 +13729,10 @@ const commandMatches = useMemo(() => {
     return value;
   }
 
-  async function openThread(id: string, freshThread?: Thread | null) {    switchStartRef.current = performance.now();
+  async function openThread(id: string, freshThread?: Thread | null) {
+    switchStartRef.current = performance.now();
+    // 新会话：重新等待「真实用户滚动」才允许自动续载（见 userScrolledRef）
+    userScrolledRef.current = false;
     setChatSearchOpen(false);
     // 快速连点防竞态：只有最新一次切换的 resume 响应才允许落地渲染
     const seq = ++switchSeqRef.current;
@@ -14838,6 +14855,31 @@ const commandMatches = useMemo(() => {
   /** 正在续载更早历史的会话 id：ref 只用于防重入（不触发渲染），这个 state 驱动顶部提示
    *  ——此前自动加载是「静默」的，用户不知道正在加载。 */
   const [earlierLoadingId, setEarlierLoadingId] = useState<string | null>(null);
+  /** 真实用户滚动信号：只有用户自己滚（滚轮 / 触摸 / 翻页键 / 拖滚动条）才允许「滚动近顶自动续载」。
+   *  ⛔ 不能用 scrollTop 位置反推用户意图（项目既有铁律）：打开会话时 jumpToBottom 的程序化滚动、
+   *  上方插入内容后的位置补偿，都会把 scrollTop 扫过「近顶」区间——据此续载会「用户没滚也跟着加载」
+   *  （实测首屏白加载一页：3 → 6 回合）。 */
+  const userScrolledRef = useRef(false);
+  useEffect(() => {
+    const mark = () => { userScrolledRef.current = true; };
+    // 形参用 Event + 断言：直接标 KeyboardEvent 会让 addEventListener("keydown") 的重载匹配失败
+    const onKey = (event: Event) => {
+      const tag = (event.target as HTMLElement | null)?.tagName ?? "";
+      if (tag === "INPUT" || tag === "TEXTAREA") return; // 输入框里打字不算滚动
+      const key = String((event as unknown as { key?: string }).key ?? "");
+      if (["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown", " "].includes(key)) mark();
+    };
+    window.addEventListener("wheel", mark, { passive: true });
+    window.addEventListener("touchmove", mark, { passive: true });
+    window.addEventListener("pointerdown", mark);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("wheel", mark);
+      window.removeEventListener("touchmove", mark);
+      window.removeEventListener("pointerdown", mark);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
   function expandTurnWindow(id: string, count: number) {
     const next = { ...turnWindowRef.current, [id]: (turnWindowRef.current[id] ?? TURN_WINDOW) + count };
     turnWindowRef.current = next;
