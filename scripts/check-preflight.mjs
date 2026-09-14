@@ -12,6 +12,7 @@
 import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../src/lib/model-scope.mjs";
+import { ALIGN_RESULT, CONTINUITY_TEXT, shouldAlignProvider } from "../src/lib/provider-continuity.mjs";
 import { SESSION_SCOPE_HEADING, composeScopeInstructions, sessionScopeBlock, sessionScopeSignature, stripScopeBlock } from "../src/lib/session-scope.mjs";
 import { OWN_WRITE_TTL_MS, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeSignature } from "../src/lib/thread-runtime.mjs";
 import { planCompletedFold } from "../src/lib/turn-fold-plan.mjs";
@@ -1976,6 +1977,71 @@ console.log(C.bold("\n【12】09-14 切换丝滑化不得回退（diff 行级虚
     : fail("窗口记忆没有淘汰上限 —— 会话多了会一直涨");
 }
 
+// ---------- 【13】供应商自动接力：切换供应商后旧会话必须能直接继续用（09-14 用户定稿） ----------
+
+console.log(C.bold("\n【13】供应商自动接力（切换供应商后旧会话直接用：原地迁移优先 + fork 接力兜底）"));
+{
+  // ① 判定纯函数：绑定未知一律不迁（不猜引擎绑定），绑定相同不迁，绑定不同才迁
+  shouldAlignProvider("ppz123", "ppz456") === true
+    ? ok("绑定 ≠ 激活 → 需要对齐")
+    : fail("绑定 ≠ 激活却判定不需要对齐 —— 切换供应商后旧会话会继续用旧 Key 撞 401");
+  shouldAlignProvider("ppz123", "ppz123") === false
+    ? ok("绑定 = 激活 → 不需要对齐（打开会话零开销）")
+    : fail("绑定相同时也判定要迁 —— 每次打开会话都会白跑一次 resume");
+  shouldAlignProvider(undefined, "ppz123") === false && shouldAlignProvider("", "ppz123") === false
+    ? ok("★ 绑定未知 → 不迁移（引擎是绑定的唯一权威，拿不到就不猜）")
+    : fail("绑定未知就迁移 —— 会误迁（旧行为只在已确认绑定差异时才迁）");
+  shouldAlignProvider("ppz123", "") === false
+    ? ok("激活未知 → 不迁移")
+    : fail("激活供应商未知就迁移 —— 迁到空目标会把会话弄坏");
+
+  // ② 结果语义 + 文案（用户可感知的三个点：接力 / 历史没丢 / 旧会话已归档）
+  const rs = Object.values(ALIGN_RESULT).join(",");
+  rs === "same,migrated,relayed,failed"
+    ? ok("结果语义齐全（same/migrated/relayed/failed）")
+    : fail("ALIGN_RESULT 语义变了：" + rs);
+  const txts = Object.values(CONTINUITY_TEXT).map((f) => f("甲 · m1")).join(" | ");
+  /自动接力/.test(txts)
+    ? ok("文案点明「自动接力」（用户要知道这是接力不是新开）")
+    : fail("文案没提自动接力");
+  /历史上下文与聊天记录完整保留/.test(txts)
+    ? ok("★ 文案点明「历史上下文与聊天记录完整保留」（用户最关心的）")
+    : fail("文案没有说明历史没丢 —— 用户会以为聊天记录没了");
+  /原会话已归档/.test(CONTINUITY_TEXT.relayed("甲 · m1"))
+    ? ok("接力文案点明「原会话已归档」（侧栏不留两坨）")
+    : fail("接力文案没提旧会话归档");
+
+  // ③ 接线守卫：统一入口 + 四个场景都走它
+  const appSrc3 = readFileSync(join(ROOT, "src/App.tsx"), "utf8");
+  /async function alignThreadToProvider\(/.test(appSrc3)
+    ? ok("存在统一入口 alignThreadToProvider（四个场景共用一套行为与文案）")
+    : fail("找不到 alignThreadToProvider —— 迁移逻辑又散回各处了");
+  const alignCalls = (appSrc3.match(/alignThreadToProvider\(/g) ?? []).length;
+  alignCalls >= 5
+    ? ok(`四个场景都接了统一入口（打开/发送/401/切换，共 ${alignCalls} 处）`)
+    : fail(`只有 ${alignCalls} 处引用 —— 有场景还在直接调 migrateThreadToProvider`);
+  {
+    const openPart = appSrc3.slice(appSrc3.indexOf("const willRealign"), appSrc3.indexOf("const willRealign") + 1400);
+    /void alignThreadToProvider\(/.test(openPart)
+      ? ok("打开会话即对齐且不阻塞打开（void，不 await）")
+      : fail("打开会话的对齐是 await 的 —— 打开动作会被迁移卡住");
+    /runningThreadIdsRef\.current\.has\(id\)/.test(openPart)
+      ? ok("打开即对齐带「运行中不打断」守卫")
+      : fail("打开即对齐没有运行中守卫 —— 可能打断正在跑的会话");
+    /shouldAlignProvider\(resultProvider, activeNow\?\.provider\)/.test(openPart)
+      ? ok("打开即对齐的判定走纯函数（绑定未知不迁）")
+      : fail("打开即对齐自己写了一套判定 —— 与纯函数口径可能不一致");
+  }
+  /willRealign && activeNow\s*$/m.test(appSrc3) || /willRealign && activeNow\n\s*\?/.test(appSrc3)
+    ? ok("★ 即将接力的会话，模型回填取激活模型（不让旧记录把迁移结果覆盖回去）")
+    : fail("模型回填没考虑即将接力 —— 迁移写入会被 openThread 的旧值覆盖（丢更新）");
+  /thread\/fork/.test(appSrc3) && /await archiveThread\(threadId\)/.test(appSrc3)
+    ? ok("原地失败 → fork 接力（带完整历史）并把旧会话自动归档")
+    : fail("接力兜底缺一环（fork 或 旧会话归档）—— 侧栏会留两坨/历史会丢");
+  /threadProviderRef\.current\.set\(next\.id, target\.provider\)/.test(appSrc3)
+    ? ok("接力后的新会话登记了真实绑定（下次发送不再重复迁移）")
+    : fail("接力后没登记新绑定 —— 每次发送都会再迁一次");
+}
 // ---------- 汇总 ----------
 
 console.log("");
