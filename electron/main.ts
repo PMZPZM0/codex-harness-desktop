@@ -1446,6 +1446,24 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
   // 自动化三件套不再注册为 MCP 常驻服务器：35 个工具 schema 会把每轮 prompt 撑大十几 KB，
   // 拖慢所有对话。改为按需命令行调用（nuphus-call / playwright-cli / cloakbrowser，
   // 用法见 developer_instructions），工具能力不变，上下文零占用。
+  // ⛔ 统一内置 provider id 段（09-14 用户定稿）：新建会话一律绑 harness，它**永远指向当前生效
+  // 供应商** —— 切供应商只重写这一段 + 重启引擎注入新 Key，所有会话零迁移直接可用。
+  // 用户配置的真实 id 段（providerToml）与历史 id 别名段（aliasToml）都保留：前者给显示/兼容，
+  // 后者给「旧会话 rollout 里记的老 id」兜底。官方订阅模式不写（走引擎内置 openai 通道）。
+  const harnessToml = isOfficialProvider ? [] : [
+    "",
+    "[model_providers.harness]",
+    'name = "内置统一通道（当前生效供应商）"',
+    `base_url = "${escapeToml(activeBaseUrl)}"`,
+    'env_key = "CODEX_HARNESS_API_KEY"',
+    `wire_api = "${activeWireApi}"`,
+    "requires_openai_auth = false",
+    "request_max_retries = 10",
+    "stream_max_retries = 10",
+    "stream_idle_timeout_ms = 600000",
+    `model_auto_compact_token_limit = ${Math.round(activeContext * (appSettings.autoCompactRatio ?? 0.8))}`,
+    'model_auto_compact_token_limit_scope = "model"',
+  ];
   await fs.writeFile(path.join(codexHome, "config.toml"), [
     `model = "${escapeToml(entry.model)}"`,
     `model_context_window = ${effectiveContextWindow}`,
@@ -1457,7 +1475,9 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
       return effort ? [`model_reasoning_effort = "${escapeToml(effort)}"`] : [];
     })()),
     // 官方订阅：不写 model_provider（引擎默认 openai），声明优先用 ChatGPT 登录凭据
-    ...(isOfficialProvider ? ['preferred_auth_method = "chatgpt"'] : [`model_provider = "${escapeToml(entry.provider)}"`]),
+    // 非官方模式：顶层默认也指向统一内置 id —— 任何「没显式传 modelProvider」的建会话路径
+    // （渠道机器人 / 远控 / 其它入口）都自动落到当前生效供应商，不再产生新的绑定差异。
+    ...(isOfficialProvider ? ['preferred_auth_method = "chatgpt"'] : ['model_provider = "harness"']),
     ...(catalogToml ? [catalogToml] : []),
     // 完全自主工程模式 + 已装自动化工具使用说明（个性化走 $CODEX_HOME/AGENTS.md 原生机制）。
     // 桌面/浏览器自动化开关关掉时，对应段说明不注入，模型不会被引导去调用它们。
@@ -1465,6 +1485,7 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
     developerInstructionsLine({ desktop: desktopAuto, browser: browserAuto, imagePlugin: imagePluginOn, visionPlugin: visionPluginOn, mediaCommand }),
     ...connectorToml(connectors),
     ...providerToml,
+    ...harnessToml,
     ...aliasToml,
     "",
     // Windows 原生沙箱：elevated 模式需要一次性管理员安装（建沙箱用户/防火墙规则），

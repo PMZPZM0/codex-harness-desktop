@@ -148,6 +148,11 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **统一内置 provider id（09-14 用户定稿「做固定供应商 ID」，改这块先读这一段）**：新建会话一律绑 `HARNESS_PROVIDER_ID = "harness"`（纯模块 `src/lib/provider-continuity.mjs` 单一来源）——该 id 在 config.toml 里**恒写**且**永远指向当前生效供应商**（`harnessToml`；官方订阅模式不写，走引擎内置 openai 通道），顶层 `model_provider` 也指向它（覆盖「没显式传 provider」的建会话路径：渠道机器人 / 远控等）。→ 切供应商只需重写这一段 + 重启引擎注入新 Key，**所有会话零迁移直接可用**。
+  **判定联动**：`shouldAlignProvider` 对 `bound === HARNESS_PROVIDER_ID` **短路返回 false**（天然对齐）；迁移路径（`migrateThreadToProvider`）也把会话改绑 harness 并写入绑定登记表 → **迁移过一次的会话永久对齐**，不再重复迁移。历史会话（rollout 里记着老 id）继续由**别名段**（`collectSessionProviderIds` 扫会话存档补段）+ 打开时的**静默对齐**兜底。
+  ⛔ **打开会话的对齐必须静默**（`{ reason: "open", silent: true }`）：引擎侧会话绑定是创建时固定的，切过一次供应商后每个旧会话都「绑定 ≠ 激活」，若每次打开都弹「已自动接力」就变成「点一次会话提醒一次」（用户 09-14 实测）。提示只留给用户真有动作/真出问题的路径：**切换供应商 / 发送前发现异常 / 引擎 401**。
+  验收：e2e 6/6 —— 造「绑定 ≠ 激活」（改激活供应商名，地址 Key 不变）后连点 3 个会话**零提示**且历史正常渲染；`thread/start` 用 harness **成功建会话**且返回绑定 = `harness`；config.toml 有 harness 段 + 顶层 `model_provider = "harness"`。预检【16】5 条守卫，反证成立（providerConfig 绑回真实 id → 立刻红）。
+
 - **历史分页懒加载（09-14 用户口径，改这块先读这一段）**：用户要「历史切成一页一页、滚轮最多 10 轮、懒加载、不往上滚不渲染其他页，但**模型上下文不能丢**」。现有三件事已具备（窗口化 / `content-visibility` / 滚到近顶续载），这轮按口径调参并修掉三处真实缺陷：
   ① **首屏一页**：`TURN_WINDOW = 5` / `TURNS_PAGE = 5`（用户 09-14 定稿：只挂最近 5 个回合，越少越快；模块级 `RULER_PAGE = 5` 供刻度尺用，改页大小时两处一起改）（首屏取数 / 本地展开 / 网络分页共用）；`resumeThreadLight(turnBudget = TURNS_PAGE)` 打开会话只取一页 → 首屏成本 = 1 次 `thread/turns/list`。续载预取阈值 480 → 720px。
   ② ⛔ **自动续载只认「真实用户滚动」**（`userScrolledRef`：滚轮 / 触摸 / 翻页键 / 拖滚动条，`openThread` 里重置）：此前只看 `scrollTop < 720`，而打开会话的 `jumpToBottom`、插入内容后的位置补偿都会把 `scrollTop` 扫过近顶区间 → **「用户没滚也跟着加载」**（实测首屏白加载一页 3 → 6）。与既有铁律「绝不用 scrollTop 反推用户意图」一致。

@@ -11,7 +11,7 @@ import { codeFontSize, useCodeSettings } from "./lib/code-settings";
 import { DEFAULT_EFFORT, pickDefaultEffort, CUSTOM_MODEL_EFFORTS, normalizeEffort, ALL_EFFORTS } from "./lib/effort";
 import { matchModelSpec, loadExternalSpecs } from "./lib/model-specs";
 import { resolveModelForOpen, shouldSyncOpenThread } from "./lib/model-scope.mjs";
-import { ALIGN_RESULT, CONTINUITY_TEXT, shouldAlignProvider } from "./lib/provider-continuity.mjs";
+import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "./lib/provider-continuity.mjs";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "./lib/session-scope.mjs";
 import { LEGACY_PREFIX, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "./lib/thread-runtime.mjs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
@@ -9616,11 +9616,14 @@ export default function App() {
   // 引擎走内置 openai 通道 + auth.json ChatGPT 登录凭据，与实测通过的协议复现完全一致；
   // 任何内联 provider 定义（哪怕 requires_openai_auth=true）都会触发 CODEX_HARNESS_API_KEY 校验导致报错（实证）。
   const providerConfig = useMemo(() => usingCustomModel && customModel && customModel.provider !== "openai-official" ? {
-    modelProvider: customModel.provider,
+    // ⛔ 统一内置 provider id（09-14 用户定稿）：新建会话一律绑 HARNESS_PROVIDER_ID ——
+    // 它永远指向「当前生效供应商」（config.toml 恒写该段）→ 切供应商时**无需任何会话迁移**。
+    // 用户配置的真实 id 只用于显示与旧会话别名段（见 electron/main.ts 的 harness 段）。
+    modelProvider: HARNESS_PROVIDER_ID,
     config: {
-      model_provider: customModel.provider,
+      model_provider: HARNESS_PROVIDER_ID,
       model_providers: {
-        [customModel.provider]: {
+        [HARNESS_PROVIDER_ID]: {
           name: customModel.name,
           base_url: customModel.baseUrl,
           env_key: "CODEX_HARNESS_API_KEY",
@@ -12168,11 +12171,12 @@ const commandMatches = useMemo(() => {
         // 官方订阅走引擎内置 openai 通道：不传 modelProvider/config（实证：传了即触发
         // CODEX_HARNESS_API_KEY 校验导致流断）；其他供应商内联完整定义
         ...(officialTarget ? {} : {
-          modelProvider: target.provider,
+          // 迁移后也绑**统一内置 id**：这个会话从此永久对齐（下次不用再迁）。
+          modelProvider: HARNESS_PROVIDER_ID,
           config: {
-            model_provider: target.provider,
+            model_provider: HARNESS_PROVIDER_ID,
             model_providers: {
-              [target.provider]: {
+              [HARNESS_PROVIDER_ID]: {
                 name: target.name,
                 base_url: target.baseUrl,
                 env_key: "CODEX_HARNESS_API_KEY",
@@ -12184,9 +12188,9 @@ const commandMatches = useMemo(() => {
         }),
       };
       await window.codex.request("thread/resume", resumeParams);
-      await updateThreadSettings({ model: target.model, ...(officialTarget ? {} : { model_provider: target.provider }), effort: null });
+      await updateThreadSettings({ model: target.model, ...(officialTarget ? {} : { model_provider: HARNESS_PROVIDER_ID }), effort: null });
       // 迁移成功：更新会话绑定供应商登记表（发送前检测依赖此表）
-      threadProviderRef.current.set(threadId, target.provider);
+      threadProviderRef.current.set(threadId, HARNESS_PROVIDER_ID);
       return true;
     } catch { return false; }
   }
@@ -12222,7 +12226,7 @@ const commandMatches = useMemo(() => {
       const relayed = await migrateThreadToProvider(next.id, target);
       if (!relayed) throw new Error("接力会话绑定失败");
       saveThreadModel(next.id, `custom:${target.provider}:${target.model}`);
-      threadProviderRef.current.set(next.id, target.provider);
+      threadProviderRef.current.set(next.id, HARNESS_PROVIDER_ID);
       await refreshThreads();
       await openThread(next.id, next);
       // 旧会话自动归档：接力已成功，旧的收进归档（历史仍在归档里，可随时恢复）
@@ -13968,7 +13972,10 @@ const commandMatches = useMemo(() => {
         // 运行中的会话不打断：它刚跑起来，绑定的就是当前供应商。
         if (willRealign && activeNow && !autoMigratedRef.current.has(id) && !runningThreadIdsRef.current.has(id)) {
           autoMigratedRef.current.add(id);
-          void alignThreadToProvider(id, { provider: activeNow.provider, model: activeNow.model, name: activeNow.name, baseUrl: activeNow.baseUrl, wireApi: activeNow.wireApi }, { reason: "open" })
+          // ⛔ silent：打开会话时的对齐**不提示**——引擎侧会话绑定是创建时固定的，切过一次供应商后
+          // 每个旧会话都会「绑定 ≠ 激活」，若每次都弹「已自动接力」就成了「点一次会话提醒一次」
+          // （用户 09-14 实测）。提示只留给用户真有动作/真出问题的路径（切换供应商 / 发送 / 引擎 401）。
+          void alignThreadToProvider(id, { provider: activeNow.provider, model: activeNow.model, name: activeNow.name, baseUrl: activeNow.baseUrl, wireApi: activeNow.wireApi }, { reason: "open", silent: true })
             .then((r) => { if (r === ALIGN_RESULT.failed) autoMigratedRef.current.delete(id); })
             .catch(() => autoMigratedRef.current.delete(id));
         }

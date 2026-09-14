@@ -2133,6 +2133,32 @@ console.log(C.bold("\n【15】供应商列表：点开关（启用/停用）右�
     ? ok("开关的 onClick 里确实切了编辑对象（setEditingProvider）")
     : fail("开关 onClick 里没有切编辑对象 —— 详情不会跟随");
 }
+// ---------- 【16】统一内置 provider id（切供应商零迁移；用户 09-14「做固定供应商 ID」） ----------
+
+console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harness，切供应商无需会话迁移）"));
+{
+  const libSrc = readFileSync(join(ROOT, "src/lib/provider-continuity.mjs"), "utf8");
+  /export const HARNESS_PROVIDER_ID = "harness"/.test(libSrc)
+    ? ok("纯模块导出统一 id 常量（harness）")
+    : fail("没有统一 id 常量 —— 新会话又会绑用户配置的真实 id，切供应商还是要迁移");
+  const judge = libSrc.slice(libSrc.indexOf("export function shouldAlignProvider"));
+  /if \(bound === HARNESS_PROVIDER_ID\) return false;/.test(judge)
+    ? ok("★ 绑定统一 id 视为天然对齐（不会再触发迁移/提示）")
+    : fail("判定没短路统一 id —— 每次打开会话都会判定「绑定 ≠ 激活」");
+  const appSrc6 = readFileSync(join(ROOT, "src/App.tsx"), "utf8");
+  const pc = appSrc6.slice(appSrc6.indexOf("const providerConfig = useMemo"), appSrc6.indexOf("const providerConfig = useMemo") + 1200);
+  /modelProvider: HARNESS_PROVIDER_ID/.test(pc) && /model_provider: HARNESS_PROVIDER_ID/.test(pc) && /\[HARNESS_PROVIDER_ID\]: \{/.test(pc)
+    ? ok("新建会话的使用点绑 HARNESS_PROVIDER_ID（三处：modelProvider / model_provider / providers 键）")
+    : fail("providerConfig 又绑回 customModel.provider —— 新会话会产生新的绑定差异");
+  const mig = appSrc6.slice(appSrc6.indexOf("async function migrateThreadToProvider"), appSrc6.indexOf("async function alignThreadToProvider"));
+  /modelProvider: HARNESS_PROVIDER_ID/.test(mig) && /threadProviderRef\.current\.set\(threadId, HARNESS_PROVIDER_ID\)/.test(mig)
+    ? ok("迁移过的会话也绑统一 id（从此永久对齐，不再迁移）")
+    : fail("迁移后仍绑真实 id —— 同一个会话会被反复迁移");
+  const mainSrc6 = readFileSync(join(ROOT, "electron/main.ts"), "utf8");
+  /\[model_providers\.harness\]/.test(mainSrc6) && /model_provider = "harness"/.test(mainSrc6)
+    ? ok("config.toml 恒写 harness 段 + 顶层 model_provider 指向它（永远指向当前生效供应商）")
+    : fail("config.toml 没有 harness 段 —— 引擎解析不到统一 id");
+}
 // ---------- 汇总 ----------
 
 console.log("");
