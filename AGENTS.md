@@ -149,11 +149,12 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
 - **历史分页懒加载（09-14 用户口径，改这块先读这一段）**：用户要「历史切成一页一页、滚轮最多 10 轮、懒加载、不往上滚不渲染其他页，但**模型上下文不能丢**」。现有三件事已具备（窗口化 / `content-visibility` / 滚到近顶续载），这轮按口径调参并修掉三处真实缺陷：
-  ① **首屏一页**：`TURN_WINDOW = 20`（≈10 个对话来回）+ 新增 `TURNS_PAGE = 20`（首屏取数 / 本地展开 / 网络分页共用）；`resumeThreadLight(turnBudget = TURNS_PAGE)` 打开会话只取一页 → 首屏成本 = 1 次 `thread/turns/list`。续载预取阈值 480 → 720px。
+  ① **首屏一页**：`TURN_WINDOW = 5` / `TURNS_PAGE = 5`（用户 09-14 定稿：只挂最近 5 个回合，越少越快；模块级 `RULER_PAGE = 5` 供刻度尺用，改页大小时两处一起改）（首屏取数 / 本地展开 / 网络分页共用）；`resumeThreadLight(turnBudget = TURNS_PAGE)` 打开会话只取一页 → 首屏成本 = 1 次 `thread/turns/list`。续载预取阈值 480 → 720px。
   ② ⛔ **自动续载只认「真实用户滚动」**（`userScrolledRef`：滚轮 / 触摸 / 翻页键 / 拖滚动条，`openThread` 里重置）：此前只看 `scrollTop < 720`，而打开会话的 `jumpToBottom`、插入内容后的位置补偿都会把 `scrollTop` 扫过近顶区间 → **「用户没滚也跟着加载」**（实测首屏白加载一页 3 → 6）。与既有铁律「绝不用 scrollTop 反推用户意图」一致。
   ③ ⛔ **位置补偿用锚点元素位移**，不用 `scrollHeight` 增量：`content-visibility: auto` 下离屏回合高度是估算值、`scrollHeight` 滞后 → 补偿不足、内容被顶飞（实测位移 4.3k px → 改用锚点后 385px）。做法：插入前记下「视口内第一条回合相对视口的 top」，插入后 `scrollTop += 新 top − 旧 top`；锚点已卸载才退回增量法。
   **上下文不受影响（用户最担心的点）**：分页只影响渲染与读取，引擎侧 rollout / auto-compact 自管；e2e 用「全部 rollout 的 `task_started` 总数在操作前后不变」证明（前端只渲染 9，引擎侧仍 304）。另修 `resumeThreadWithTurns` 多页取完后未交出游标的问题（会导致「往上滚到底」重拉最新一页、出现重复回合）。
-  验收：预检【14】8 条静态守卫（含反证 3/3：窗口改回 400 / 去掉用户滚动判据 / 补偿退回 scrollHeight → 立刻红）；e2e 把 `TURN_WINDOW`/`TURNS_PAGE` **临时调小到 3** 逐步观察（8/8：没滚过 = 恰好一页 / 滚到顶 +3 / 按钮加载 +3 且位移 385px / 载入提示 / 引擎侧总数不变），跑完恢复 20 并重建。
+  **刻度尺同步（同轮定稿）**：MessageRuler 的刻度按 `turns` 派生（只取用户消息）→ 续载后自动补刻度；**刻度间距走 CSS 变量 `--ruler-pad/--ruler-gap` 自适应压缩**（已加载刻度多时变短变密，极端多才退回滑动窗口）；刻度选区只在 `currentIndex` 变化时归位（加载新页不会把选区拽回最新）；滚轮一次滑 `RULER_PAGE`（= 一页）。
+  验收：预检【14】11 条静态守卫（含反证 3/3：窗口改回 400 / 去掉用户滚动判据 / 补偿退回 scrollHeight → 立刻红）；e2e 把 `TURN_WINDOW`/`TURNS_PAGE` **临时调小到 3** 逐步观察（8/8：没滚过 = 恰好一页 / 滚到顶 +3 / 按钮加载 +3 且位移 385px / 载入提示 / 引擎侧总数不变），跑完恢复 20 并重建。
 
 - **✅ 切换供应商不断档：会话「自动接力」（09-14 用户定稿，改这块先读这一段）**：用户口径是「切供应商，原会话还能继续用」「提醒用户是自动接力、历史没丢，旧会话自动归档，让用户感知不出来」。统一入口 `App.tsx` 的 `alignThreadToProvider(threadId, target, { reason })`——四个场景**只走它**（打开会话 / 发送前 / 引擎 401 / 切换供应商），文案与行为一套：
   ① **原地迁移优先**（`migrateThreadToProvider`：`thread/resume{ model, modelProvider, config, sandbox, approvalPolicy }` 重绑定）——**threadId 不变**，聊天记录、侧栏位置、缓存全不动，用户完全无感；引擎侧一个线程一个 provider，settings/update 换 provider 会被拒，resume 是唯一官方通道。
