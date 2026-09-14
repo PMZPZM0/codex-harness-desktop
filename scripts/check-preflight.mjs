@@ -2049,7 +2049,7 @@ console.log(C.bold("\n【14】历史分页懒加载（首屏一页 / 滚一屏�
   const appSrc4 = readFileSync(join(ROOT, "src/App.tsx"), "utf8");
   const win = Number((appSrc4.match(/const TURN_WINDOW = (\d+);/) ?? [])[1] ?? NaN);
   Number.isFinite(win) && win > 0 && win <= 30
-    ? ok(`首屏窗口 = ${win} 回合（≈10 个对话来回；超大会话不再全量挂载）`)
+    ? ok(`首屏窗口 = ${win} 回合（用户 09-14 定稿：只挂最近 5 个回合，越少越快）`)
     : fail(`TURN_WINDOW = ${win} —— 窗口被改回全量/超大值，长会话首屏又会卡`);
   const page = Number((appSrc4.match(/const TURNS_PAGE = (\d+);/) ?? [])[1] ?? NaN);
   Number.isFinite(page) && page > 0 && page <= 40
@@ -2076,6 +2076,60 @@ console.log(C.bold("\n【14】历史分页懒加载（首屏一页 / 滚一屏�
   /userScrolledRef\.current = false/.test(appSrc4)
     ? ok("切换会话时重置「用户滚过」标记（新会话需重新滚才自动续载）")
     : fail("切换会话没重置用户滚动标记 —— 切过去没滚也会自动加载");
+  // 载入提示不许常驻（用户 09-14 实测「一直常驻，切会话都在」：续载请求挂起会让提示与
+  // 防重入锁一起卡住，该会话再也加载不了更早历史）。三重保护缺一不可：
+  /turns\/list timeout/.test(anchorFn) && /Promise\.race/.test(anchorFn)
+    ? ok("续载请求有超时保护（引擎慢/挂起时不会卡住加载状态）")
+    : fail("续载请求没有超时保护 —— 请求挂起会让「正在载入」常驻");
+  /hintTimer = window\.setTimeout/.test(anchorFn) && /clearTimeout\(hintTimer\)/.test(anchorFn)
+    ? ok("提示有兜底计时器（异常路径也会自动清除）")
+    : fail("提示没有兜底清除 —— 任何异常路径都会留下常驻提示");
+  /setEarlierLoadingId\(null\)/.test(appSrc4)
+    ? ok("切换会话时清掉提示（不留上一次的加载态）")
+    : fail("切换会话没清提示 —— 会串会话残留");
+  // 滚回最新必须把往上滚展开的渲染窗口收回来（用户 09-14：「滚上去看历史、再滚下来，
+  // 切换会话回来它还在渲染，不方便」）；⛔ 只收窗口、不动数据（否则再看历史要重新请求）。
+  const collapseFn = appSrc4.slice(appSrc4.indexOf("function collapseTurnWindow"), appSrc4.indexOf("function collapseTurnWindow") + 700);
+  /TURN_WINDOW/.test(collapseFn) && !/turns:/.test(collapseFn) && !/setThread/.test(collapseFn)
+    ? ok("★ 窗口回收只重置渲染窗口（不动 thread.turns / 不触发拉取）")
+    : fail("窗口回收动了数据 —— 收起后再看历史得重新请求，且可能与引擎状态打架");
+  const scrollFn2 = appSrc4.slice(appSrc4.indexOf("function onTimelineScroll"), appSrc4.indexOf("function onTimelineScroll") + 900);
+  /collapseTurnWindow\(id\)/.test(scrollFn2) && /clientHeight/.test(scrollFn2)
+    ? ok("★ 滚回最新（贴底）即收回窗口，切会话回来是初始态")
+    : fail("没有「贴底即收回窗口」—— 展开过的历史会一直撑着渲染");
+  // 刻度尺必须与分页口径对齐（用户 09-14：「滚轮也要同步最新每页」「加一页就短一点」）
+  const rulerPage = Number((appSrc4.match(/const RULER_PAGE = (\d+);/) ?? [])[1] ?? NaN);
+  rulerPage === page
+    ? ok(`刻度尺滚轮步长 = 一页（RULER_PAGE=${rulerPage} = TURNS_PAGE）`)
+    : fail(`刻度尺滚轮步长(${rulerPage})与页大小(${page})不一致 —— 滚轮不会按页滑动`);
+  // ⛔ 只查常量值没有鉴别力：必须查**使用点**是否真的绑了 RULER_PAGE（反证过：把使用点改回
+  //    固定格数，常量断言照样绿）。
+  /direction \* RULER_PAGE/.test(appSrc4)
+    ? ok("滚轮使用点真的按页滑（direction * RULER_PAGE）")
+    : fail("滚轮使用点没绑 RULER_PAGE —— 又回到固定格数地滑");
+  const cssSrc = readFileSync(join(ROOT, "src/styles.css"), "utf8");
+  /--ruler-pad/.test(appSrc4) && /var\(--ruler-pad/.test(cssSrc)
+    ? ok("刻度间距走 CSS 变量（已加载刻度多时自动压缩：加一页就短一点）")
+    : fail("刻度间距是写死的 —— 刻度多了只能靠滑动窗口藏起来");
+  /setWindowOffset\(0\); \}, \[currentIndex\]\)/.test(appSrc4)
+    ? ok("刻度选区只在阅读位置变化时归位（加载新页不会把选区拽走）")
+    : fail("加载新页会把刻度选区拽回最新 —— 往上滚看历史时选区会乱跳");
+}
+// ---------- 【15】供应商列表交互（点开关要切详情，不许只拦冒泡） ----------
+
+console.log(C.bold("\n【15】供应商列表：点开关（启用/停用）右侧详情必须跟随"));
+{
+  const appSrc5 = readFileSync(join(ROOT, "src/App.tsx"), "utf8");
+  // ⛔ 用户 09-14 实测：点开关（开启某个供应商）后右侧还停在上一个供应商的界面 ——
+  //    因为开关的 onClick 只 stopPropagation()，把行点击（切详情）也拦掉了。
+  !/onClick=\{\(event\) => event\.stopPropagation\(\)\}/.test(appSrc5)
+    ? ok("供应商开关不再裸 stopPropagation（拦冒泡时同时把详情切过去）")
+    : fail("供应商开关又是裸 stopPropagation —— 点开关后右侧会停在旧界面");
+  const swIdx = appSrc5.indexOf("provider-switch-ui");
+  const swBlock = appSrc5.slice(Math.max(0, swIdx - 2600), swIdx);
+  /setEditingProvider\(p\.provider\)/.test(swBlock)
+    ? ok("开关的 onClick 里确实切了编辑对象（setEditingProvider）")
+    : fail("开关 onClick 里没有切编辑对象 —— 详情不会跟随");
 }
 // ---------- 汇总 ----------
 

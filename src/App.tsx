@@ -4895,6 +4895,9 @@ function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote,
   );
 }
 
+/** 刻度尺滚轮一次滑动多少刻度 = 消息懒加载的一页（与 TURNS_PAGE 同值；MessageRuler 是
+ *  模块级组件、取不到 App 内的常量，故此处再声明一份，改懒加载页大小时两处一起改）。 */
+const RULER_PAGE = 5;
 type RulerMark = { id: string; turnId: string; itemId: string; type: "user" | "agent"; label: string };
 
 /** 刻度数 = 有内容的消息数（一条消息一个刻度），窗口固定 50 条，随滚动位置滑动 */
@@ -4943,26 +4946,37 @@ function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[
   // 刻度尺独立滚轮：悬停刻度尺时滚轮滑动选区的窗口起点（不滚对话内容）；
   // 滚动对话内容或跳转时偏移自动归零，回到跟随模式
   const [windowOffset, setWindowOffset] = useState(0);
-  useEffect(() => { setWindowOffset(0); }, [currentIndex, allMarks.length]);
+  // 只在「阅读位置（currentIndex）」变化时把选区滑回跟随模式：加载新页（allMarks 变多）
+  // 不该把刻度选区拽回最新——用户往上滚看历史时，新加载的页要出现在他正看的那一段。
+  useEffect(() => { setWindowOffset(0); }, [currentIndex]);
 
   // 可视容量：轨道高度能容纳多少刻度就显示多少（动态测量）；
   // 超出的用独立滚轮滑窗口。没有"最多 N 条"的硬规则。
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [visibleCount, setVisibleCount] = useState(0);
+  /** 刻度内边距/间距（CSS 变量下发）：已加载的用户消息越多，刻度越短越密——
+   *  用户 09-14 口径「加一页就短一点」，目标是**已加载的刻度全部留在尺子上**，
+   *  只有极端多时才退回滑动窗口。单刻度高 = 线 2px + 2×pad，再加 gap pad → 2 + 3×pad。 */
+  const [slotPad, setSlotPad] = useState(4);
   useEffect(() => {
     if (!scrollable) return;
     const measure = () => {
       const track = trackRef.current;
       if (!track) return;
-      // 单刻度占位 = 线高 2px + 上下 padding 8px + gap 4px（与 CSS 保持一致）
-      const slot = 14;
-      setVisibleCount(Math.max(4, Math.floor(track.clientHeight / slot) - 1));
+      const h = track.clientHeight;
+      const total = Math.max(1, allMarks.length);
+      // 先按「全部放得下」反解 pad（上限 4 = 原样式，下限 0 = 最密），再据此算可视容量
+      const pad = Math.max(0, Math.min(4, (h / total - 2) / 3));
+      const rounded = Number.isFinite(pad) ? Math.round(pad * 10) / 10 : 4;
+      setSlotPad(rounded);
+      const slot = 2 + 3 * rounded;
+      setVisibleCount(Math.max(4, Math.floor(h / Math.max(3, slot))));
     };
     measure();
     const observer = new ResizeObserver(measure);
     if (trackRef.current) observer.observe(trackRef.current);
     return () => observer.disconnect();
-  }, [scrollable]);
+  }, [scrollable, allMarks.length]);
 
   const windowSize = visibleCount > 0 ? visibleCount : RULER_MAX;
   const marks = useMemo(() => {
@@ -5023,6 +5037,7 @@ function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[
     <div className="message-ruler" role="navigation" aria-label="消息定位">
       <div
         className="ruler-track"
+        style={{ "--ruler-gap": `${slotPad}px`, "--ruler-pad": `${slotPad}px` } as React.CSSProperties}
         ref={(node) => {
           trackRef.current = node;
           // 独立滚轮：悬停刻度尺时滚轮只滑刻度选区（原生非 passive 监听才能 preventDefault），
@@ -5035,7 +5050,9 @@ function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[
             if (allMarks.length <= windowSize) return;
             const direction = event.deltaY > 0 ? 1 : -1;
             const maxOffset = allMarks.length - windowSize - currentIndex;
-            setWindowOffset((current) => Math.max(-currentIndex, Math.min(maxOffset, current + direction * 4)));
+            // 滚轮一次滑**一页**（与消息懒加载的每页 TURNS_PAGE 个用户消息对齐，
+            // 用户 09-14：「滚轮也要同步最新每页」）。
+            setWindowOffset((current) => Math.max(-currentIndex, Math.min(maxOffset, current + direction * RULER_PAGE)));
           }, { passive: false });
         }}
         onMouseLeave={() => { setHoverIndex(null); setTip(null); }}
@@ -9774,12 +9791,14 @@ export default function App() {
   // 「清空当前视图」批量删除按钮已下架（2026-09-04 反馈：侧栏顶部太容易误触）。
   // purgeCurrentTab / currentTabIds 一并移除；批量删除能力保留在单条任务右键/菜单里。
 /** 长会话首屏最多渲染的回合数（1 回合 = 一次用户输入 + 一次回复，即一个对话来回）：
- *  软件渲染下全量挂载几千个回合是「切会话慢」的主因，默认只渲染最近这么多回合
- *  （≈10 个对话来回，用户 09-14 口径），更早的由「往上滚自动续载」/「显示更早」按需展开。 */
-const TURN_WINDOW = 20;
-/** 每次续载的回合数（首屏取数 / 本地展开 / 网络分页共用）：与 TURN_WINDOW 同量级，
- *  保证「滚一屏补一批」的节奏，单次请求的数据量也最小（首屏与续载都快）。 */
-const TURNS_PAGE = 20;
+ *  软件渲染下全量挂载几千个回合是「切会话慢」的主因。**用户 09-14 定稿：只渲染最近 5 回合，
+ *  把懒加载做到极致**（切换会话只挂 5 个回合，越快越好）；更早的由「往上滚自动续载」按需展开，
+ *  滚回最新（贴底）再收回来，所以切走切回都是这个成本。 */
+const TURN_WINDOW = 5;
+/** 每次续载的回合数（首屏取数 / 本地展开 / 网络分页共用）= 一页 5 个用户消息：
+ *  与 TURN_WINDOW 一致，滚一屏补一批，单次请求的数据量最小（首屏与续载都最快）。
+ *  消息刻度尺（MessageRuler）按 turns 派生刻度，所以续载后刻度会同步变多。 */
+const TURNS_PAGE = 5;
 
 /** 窗口状态（每个会话展开了多少回合）最多记忆多少个会话：超出的按「最久未访问」淘汰。
  *  这是内存保护——记忆本身是 09-14 为「切回长会话不缩水」加的，但不能无限涨。 */
@@ -13601,6 +13620,12 @@ const commandMatches = useMemo(() => {
     if (hidden <= 0 && !cursor) return;
     loadingEarlierRef.current.add(id);
     setEarlierLoadingId(id);
+    // ⛔ 兜底：任何异常路径都不许让「正在载入」与防重入锁长期持有——实测续载请求挂起时，
+    // 提示会一直挂在会话顶部、且该会话再也加载不了更早历史（用户实测「一直常驻，切会话都在」）。
+    const hintTimer = window.setTimeout(() => {
+      loadingEarlierRef.current.delete(id);
+      setEarlierLoadingId((current) => (current === id ? null : current));
+    }, 8000);
     try {
       const el0 = scrollRef.current;
       const beforeTop = el0?.scrollTop ?? 0;
@@ -13615,7 +13640,11 @@ const commandMatches = useMemo(() => {
         grow = Math.min(hidden, TURNS_PAGE); // 本地展开一批的量，翻老历史不产生网络请求
       } else if (cursor) {
         try {
-          const result: any = await window.codex.request("thread/turns/list", { threadId: id, limit: TURNS_PAGE, sortDirection: "desc", itemsView: "full", cursor });
+          // 超时保护：引擎偶发慢/挂起时不能让加载状态卡死（超时按失败处理，游标保留，下次滚动重试）
+          const result: any = await Promise.race([
+            window.codex.request("thread/turns/list", { threadId: id, limit: TURNS_PAGE, sortDirection: "desc", itemsView: "full", cursor }),
+            new Promise((_, reject) => window.setTimeout(() => reject(new Error("turns/list timeout")), 8000)),
+          ]);
           const data = Array.isArray(result?.data) ? result.data : [];
           if (result?.nextCursor) turnsCursorRef.current.set(id, result.nextCursor);
           else turnsCursorRef.current.delete(id);
@@ -13647,6 +13676,7 @@ const commandMatches = useMemo(() => {
         }));
       }
     } finally {
+      window.clearTimeout(hintTimer);
       loadingEarlierRef.current.delete(id);
       setEarlierLoadingId((current) => (current === id ? null : current));
     }
@@ -13657,12 +13687,19 @@ const commandMatches = useMemo(() => {
    *  scrollTop 补偿）；贴近顶部时每向上滚一屏加载一页，离开顶部自然停止。 */
   function onTimelineScroll(event: React.UIEvent<HTMLDivElement>) {
     const el = event.currentTarget;
-    // 只有用户真的滚过才自动续载：程序化滚动（打开时跳底、插入内容后的位置补偿）也会把
+    // 只有用户真的滚过才响应：程序化滚动（打开时跳底、插入内容后的位置补偿）也会把
     // scrollTop 扫过近顶区间，据此加载就成了「没滚也加载」。
     if (!userScrolledRef.current) return;
-    if (el.scrollTop > 720 || switchJumpPending()) return;
     const id = threadRef.current?.id;
-    if (id) void loadEarlierTurns(id);
+    if (!id || switchJumpPending()) return;
+    // 回到最新（贴底）：把往上滚期间展开的历史窗口收回基线（用户 09-14：滚下来后不该
+    // 一直撑着渲染；切会话回来也应是初始态）。只收窗口，不动数据。
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) {
+      collapseTurnWindow(id);
+      return;
+    }
+    if (el.scrollTop > 720) return;
+    void loadEarlierTurns(id);
   }
 
   /** 刻度尺跳转：目标回合可能还在渲染窗口之外（元素未挂载，scrollIntoView 找不到目标）。
@@ -13733,6 +13770,7 @@ const commandMatches = useMemo(() => {
     switchStartRef.current = performance.now();
     // 新会话：重新等待「真实用户滚动」才允许自动续载（见 userScrolledRef）
     userScrolledRef.current = false;
+    setEarlierLoadingId(null); // 切会话不留上一次的「正在载入更早」提示
     setChatSearchOpen(false);
     // 快速连点防竞态：只有最新一次切换的 resume 响应才允许落地渲染
     const seq = ++switchSeqRef.current;
@@ -14882,6 +14920,16 @@ const commandMatches = useMemo(() => {
   }, []);
   function expandTurnWindow(id: string, count: number) {
     const next = { ...turnWindowRef.current, [id]: (turnWindowRef.current[id] ?? TURN_WINDOW) + count };
+    turnWindowRef.current = next;
+    setTurnWindow(next);
+  }
+  /** 回到最新（贴底）后把渲染窗口**收回基线**：往上滚看过的历史不必一直渲染——用户实测
+   *  「滚上去看了历史消息、再滚下来，切换会话回来它还在渲染，不方便」。
+   *  ⛔ 只收「渲染窗口」，不动 thread.turns（数据仍在内存：再往上滚先本地展开、不重新请求），
+   *  引擎侧上下文更不受影响；窗口记忆也回到基线，所以切走再切回同样是初始态。 */
+  function collapseTurnWindow(id: string) {
+    if ((turnWindowRef.current[id] ?? TURN_WINDOW) === TURN_WINDOW) return;
+    const next = touchTurnWindow(id, { ...turnWindowRef.current, [id]: TURN_WINDOW });
     turnWindowRef.current = next;
     setTurnWindow(next);
   }
@@ -16777,7 +16825,21 @@ const commandMatches = useMemo(() => {
                         <label
                           className={`provider-switch ${p.enabled === false ? "off" : ""}`}
                           title={isPseudoPptoken ? (pseudoOff ? "推荐卡已停用 · 点击恢复展示" : "停用 PPtoken 推荐卡展示") : (p.enabled !== false ? "已启用 · 点击禁用" : (customModel && customModel.provider !== p.provider ? `已有供应商「${customModel.name}」生效，一次只能启用一个——先停用它再启用这个` : "已禁用 · 点击启用"))}
-                          onClick={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            // 启用/停用时**同步把右侧详情切到这个供应商**：原先开关只 stopPropagation，
+                            // 行点击被拦住 → 用户点了开关（开启某个供应商）右侧还停在上一个的界面
+                            // （用户 09-14 实测截图）。逻辑与行点击保持一致。
+                            if (isPseudoPptoken) {
+                              setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
+                              setEditingProvider(null);
+                              setEditingName(false);
+                            } else {
+                              setEditingProvider(p.provider);
+                              setEditingName(false);
+                              setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true });
+                            }
+                          }}
                         >
                           <input type="checkbox" checked={isPseudoPptoken ? !pseudoOff : p.enabled !== false} disabled={!isPseudoPptoken && p.enabled === false && customModel != null && customModel.provider !== p.provider} onChange={(event) => { if (isPseudoPptoken) setPptokenCardOff(!event.target.checked); else void setProviderEnabled(p.provider, event.target.checked); }} />
                           <span className="provider-switch-ui" />
