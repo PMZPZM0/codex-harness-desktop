@@ -22345,16 +22345,33 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .thread-cluster-toggle svg { transition: transform 0.18s ease; }
 .thread-cluster-toggle svg.open { transform: rotate(180deg); }
 .team-cluster-body {
-  margin: 4px 0 6px 14px;
-  padding-left: 10px;
-  border-left: 2px solid color-mix(in srgb, var(--text-primary, #111) 10%, transparent);
-  display: flex; flex-direction: column; gap: 2px;
-  /* 09-14 用户反馈：展开要适配——成员多/侧栏窄时生硬堆出会展示不全。
-     限高 + 内部滚动，溢出不撑爆侧栏，滚动时不再穿透外层列表。 */
+  /* 09-14 用户二次反馈：左边空白太多、hover 按钮挤占标题导致点不了会话、不好看。
+     改动：缩进 26px→12px、竖线 2px 实线→1px 淡线、行紧凑、子行只留必要按钮。 */
+  margin: 2px 0 4px 6px;
+  padding: 2px 0 2px 6px;
+  border-left: 1px solid color-mix(in srgb, var(--text-primary, #111) 9%, transparent);
+  display: flex; flex-direction: column; gap: 0;
+  /* 成员多/侧栏窄时限高滚动：不生硬堆出、不撑爆侧栏、不穿透外层列表 */
   max-height: min(48vh, 320px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+/* 展开体内的分节标签更紧凑 */
+.team-cluster-body .team-cluster-label { margin: 4px 0 1px 2px; font-size: 10px; }
+/* 子行紧凑化：行高 46→34，字号与内边距同步收 */
+.team-cluster-body .thread-row { min-height: 34px; border-radius: 6px; }
+.team-cluster-body .thread-row > button:first-child { padding: 4px 4px 4px 4px; gap: 0; }
+.team-cluster-body .thread-row-title-line { font-size: 12px; }
+.team-cluster-body .thread-row small { font-size: 10px; }
+/* ⛔ 成员会话由程序创建/管理，「置顶」无意义 —— hover 时少一个按钮，把宽度还给标题 */
+.team-cluster-body .thread-pin-button { display: none; }
+/* 归档/更多按钮 24→20px：hover 时总占用从 78px 降到 ~44px，标题不再被挤到点不中 */
+.team-cluster-body .thread-more-button,
+.team-cluster-body .thread-archive-button { width: 20px; height: 20px; }
+.team-cluster-body .thread-row:hover .thread-more-button,
+.team-cluster-body .thread-more-button[aria-expanded="true"],
+.team-cluster-body .thread-row:hover .thread-archive-button { width: 20px; margin: 0 1px; }
+.team-cluster-body .thread-actions { min-width: 22px; }
 .team-cluster-label {
   margin: 6px 0 2px;
   font-size: 10.5px; font-weight: 600;
