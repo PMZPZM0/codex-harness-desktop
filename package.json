@@ -1,0 +1,192 @@
+{
+  "name": "codex-harness-desktop",
+  "version": "0.0.16",
+  "private": true,
+  "description": "Independent desktop harness for OpenAI Codex",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "npm run build:electron && concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "prebuild": "tsc -b",
+    "build:electron": "node scripts/gen-rollout-worker.mjs && tsc -p electron/tsconfig.json",
+    "build:vite": "cross-env CODEBUDDY_SAFE_DELETE_ENABLED=0 vite build",
+    "build": "npm run build:electron && npm run build:vite",
+    "check": "npm run build && node scripts/check-preflight.mjs",
+    "accept": "node scripts/accept.mjs",
+    "accept:list": "node scripts/accept.mjs --list",
+    "e2e": "node scripts/accept.mjs",
+    "e2e:list": "node scripts/accept.mjs --list",
+    "verify": "npm run check && npm run accept",
+    "verify:reasoning": "node scripts/verify-reasoning-transport.cjs",
+    "verify:image-plugin": "node scripts/verify-image-plugin.mjs",
+    "verify:packaged-tools": "node scripts/verify-packaged-tools.cjs",
+    "voice:models": "node scripts/install-voice-models.cjs",
+    "engine:upgrade": "node scripts/upgrade-codex-engine.cjs",
+    "engine:verify": "node scripts/upgrade-codex-engine.cjs --verify-only",
+    "start": "electron .",
+    "dist": "npm run build && electron-builder --win nsis"
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.73.3",
+    "@lydell/node-pty": "^1.2.0-beta.15",
+    "@openai/codex": "^0.153.4",
+    "@types/react-syntax-highlighter": "^15.5.13",
+    "@types/ws": "^8.18.1",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "dingtalk-stream": "^2.1.6-beta.1",
+    "lucide-react": "^0.468.0",
+    "mermaid": "^11.17.2",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0",
+    "react-syntax-highlighter": "^16.1.1",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
+    "sherpa-onnx-node": "^1.13.8",
+    "ssh2": "^1.17.0",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.7",
+    "@types/ssh2": "^1.15.6",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5.9.3",
+    "vite": "^8.2.2",
+    "wait-on": "^9.0.3"
+  },
+  "build": {
+    "appId": "com.codexharness.desktop",
+    "productName": "Codex Harness Desktop",
+    "npmRebuild": false,
+    "beforePack": "scripts/before-pack.cjs",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "!dist-electron/**/*.tsbuildinfo",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/tools/node",
+        "to": "tools/node"
+      },
+      {
+        "from": "resources/tools/pwsh",
+        "to": "tools/pwsh"
+      },
+      {
+        "from": "resources/tools/pwsh-headless",
+        "to": "tools/pwsh-headless"
+      },
+      {
+        "from": "resources/tools/git",
+        "to": "tools/git"
+      },
+      {
+        "from": "resources/tools/python",
+        "to": "tools/python"
+      },
+      {
+        "from": "resources/tools/vscode-cli",
+        "to": "tools/vscode-cli"
+      },
+      {
+        "from": "resources/tools/rg",
+        "to": "tools/rg"
+      },
+      {
+        "from": "resources/tools/uv",
+        "to": "tools/uv"
+      },
+      {
+        "from": "resources/tools/cmake",
+        "to": "tools/cmake"
+      },
+      {
+        "from": "resources/tools/ninja",
+        "to": "tools/ninja"
+      },
+      {
+        "from": "resources/tools/sevenzip",
+        "to": "tools/sevenzip"
+      },
+      {
+        "from": "resources/tools/jq",
+        "to": "tools/jq"
+      },
+      {
+        "from": "resources/tools/cloudflared.exe",
+        "to": "tools/cloudflared.exe"
+      },
+      {
+        "from": "resources/tools/nuphus-call.mjs",
+        "to": "tools/nuphus-call.mjs"
+      },
+      {
+        "from": "resources/tools/harness-media.mjs",
+        "to": "tools/harness-media.mjs"
+      },
+      {
+        "from": "resources/tools/cloak-open.mjs",
+        "to": "tools/cloak-open.mjs"
+      },
+      {
+        "from": "resources/tools/automation-tools.zip",
+        "to": "tools/automation-tools.zip"
+      },
+      {
+        "from": "resources/tools/cloak-cache",
+        "to": "tools/cloak-cache"
+      },
+      {
+        "from": "resources/tools/pw-browsers",
+        "to": "tools/pw-browsers"
+      },
+      {
+        "from": "scripts/install-runtimes.cjs",
+        "to": "tools/install-runtimes.cjs"
+      },
+      {
+        "from": "scripts/install-automation.cjs",
+        "to": "tools/install-automation.cjs"
+      },
+      {
+        "from": "resources/tools/ponytail-plugin",
+        "to": "tools/ponytail-plugin"
+      },
+      {
+        "from": "resources/voice-presets",
+        "to": "voice-presets"
+      },
+      {
+        "from": "resources/expert-skills",
+        "to": "expert-skills"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/@openai/codex-*/vendor/**",
+      "node_modules/@lydell/node-pty/**",
+      "node_modules/sherpa-onnx-*/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh"
+    }
+  }
+}
