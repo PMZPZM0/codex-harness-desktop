@@ -14098,7 +14098,26 @@ const commandMatches = useMemo(() => {
     }
   }
 
+  /** 归档/删除团队主会话时**级联**处理同簇成员会话（09-14 用户：主会话归档/删除了，侧栏团队条还在）。
+   *  根因：成员子线程是主理人调度时新建的长期会话，主会话没了就成了孤儿，聚簇兜底会继续
+   *  把它们归在团队名下 → 团队条永远不消失。逐个容错，单个失败不阻塞其余。 */
+  const cascadeTeamCluster = async (id: string, action: "archive" | "delete") => {
+    const cluster = clusteredSidebar.clusters.find((entry) => entry.lead?.id === id);
+    if (!cluster?.members.length) return 0;
+    let done = 0;
+    for (const member of cluster.members) {
+      try {
+        await window.codex.request(action === "archive" ? "thread/archive" : "thread/delete", { threadId: member.id });
+        threadCacheRef.current.delete(member.id);
+        done += 1;
+      } catch { /* 单个失败不阻塞其余 */ }
+    }
+    if (done) setThreads((current) => current.filter((entry) => !cluster.members.some((m) => m.id === entry.id)));
+    return done;
+  };
+
   async function archiveThread(id: string) {
+    await cascadeTeamCluster(id, "archive");
     await window.codex.request("thread/archive", { threadId: id });
     setThreads((current) => current.filter((entry) => entry.id !== id));
     threadCacheRef.current.delete(id);
@@ -14154,9 +14173,13 @@ const commandMatches = useMemo(() => {
   }
 
   async function deleteThread(id: string) {
-    if (!await openAppConfirm("删除会话", "当前会话及其中的消息、工具记录将被永久删除，此操作无法撤销。", "永久删除")) return;
+    const cluster = clusteredSidebar.clusters.find((entry) => entry.lead?.id === id);
+    const memberCount = cluster?.members.length ?? 0;
+    const extra = memberCount ? `\n\n这是「专家团」主会话，将同时永久删除其 ${memberCount} 条成员会话。` : "";
+    if (!await openAppConfirm("删除会话", `当前会话及其中的消息、工具记录将被永久删除，此操作无法撤销。${extra}`, "永久删除")) return;
     setOpeningThread(id);
     try {
+      await cascadeTeamCluster(id, "delete");
       await window.codex.request("thread/delete", { threadId: id });
       threadCacheRef.current.delete(id);
       setThreads((current) => current.filter((entry) => entry.id !== id));
