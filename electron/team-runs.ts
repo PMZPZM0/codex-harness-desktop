@@ -276,19 +276,30 @@ export class TeamRunStore {
     return [...this.activeRuns.values()];
   }
 
-  /** 读该团队会话的历史委托记录（成员历史工作记录面板用）。 */
+  /** 读该团队会话的历史委托记录（成员历史工作记录面板用）。
+   *  ⛔ 09-14 用户实测 bug：活跃中的委托只进内存（activeRuns），落盘发生在结束时——
+   *  用户在成员运行中关掉工作弹窗再点开历史，listRuns 只读落盘文档 → 显示「还没有
+   *  历史工作记录」，跑完才出现。这里把同会话的活跃 run（含实时 output）一并合并返回。 */
   async listRuns(leadThreadId: string): Promise<TeamMemberRun[]> {
     if (!leadThreadId) return [];
+    const activeHere = [...this.activeRuns.values()].filter((run) => run.leadThreadId === leadThreadId);
     const cached = this.runsCache.get(leadThreadId);
-    if (cached) return cached.runs;
+    if (cached) {
+      // 活跃 run 覆盖同 id 的已落盘条目（运行中又 finishing 的时序缝隙），其余照旧
+      const byId = new Map(cached.runs.map((run) => [run.runId, run]));
+      for (const run of activeHere) byId.set(run.runId, run);
+      return [...byId.values()].sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
+    }
     try {
       const parsed = JSON.parse(await fsp.readFile(this.runsFile(leadThreadId), "utf8"));
-      const runs = Array.isArray(parsed?.runs) ? parsed.runs : [];
+      const runs: TeamMemberRun[] = Array.isArray(parsed?.runs) ? parsed.runs : [];
       this.runsCache.set(leadThreadId, { leadThreadId, teamId: parsed?.teamId ?? "", updatedAt: parsed?.updatedAt ?? 0, runs });
-      return runs;
+      const byId = new Map(runs.map((run) => [run.runId, run]));
+      for (const run of activeHere) byId.set(run.runId, run);
+      return [...byId.values()].sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
     } catch {
       this.runsCache.set(leadThreadId, { leadThreadId, teamId: "", updatedAt: 0, runs: [] });
-      return [];
+      return [...activeHere].sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
     }
   }
 }
