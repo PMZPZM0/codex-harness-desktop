@@ -1464,6 +1464,20 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
     `model_auto_compact_token_limit = ${Math.round(activeContext * (appSettings.autoCompactRatio ?? 0.8))}`,
     'model_auto_compact_token_limit_scope = "model"',
   ];
+  // ⛔ 防重护栏（09-15 真实事故）：档案里若混入 id=harness 的供应商条目，providerToml 会
+  //    再写一个 [model_providers.harness] 段，与下方 harnessToml 重复 → TOML duplicate key，
+  //    引擎加载配置直接失败 = 应用全瘫。harness 段的**唯一权威**是 harnessToml，其余来源
+  //    （用户档案/别名段）一律整段剔除。
+  const stripHarnessTable = (lines: string[]) => {
+    const out: string[] = [];
+    let skipping = false;
+    for (const line of lines) {
+      if (/^\[model_providers\.harness\]/.test(line)) { skipping = true; continue; }
+      if (skipping) { if (/^\[/.test(line)) { skipping = false; out.push(line); } continue; }
+      out.push(line);
+    }
+    return out;
+  };
   await fs.writeFile(path.join(codexHome, "config.toml"), [
     `model = "${escapeToml(entry.model)}"`,
     `model_context_window = ${effectiveContextWindow}`,
@@ -1484,9 +1498,9 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
     // 生图/视觉插件配置后才注入对应段——引擎据此知道能力存在并通过命令行真实调用。
     developerInstructionsLine({ desktop: desktopAuto, browser: browserAuto, imagePlugin: imagePluginOn, visionPlugin: visionPluginOn, mediaCommand }),
     ...connectorToml(connectors),
-    ...providerToml,
+    ...stripHarnessTable(providerToml),
     ...harnessToml,
-    ...aliasToml,
+    ...stripHarnessTable(aliasToml),
     "",
     // Windows 原生沙箱：elevated 模式需要一次性管理员安装（建沙箱用户/防火墙规则），
     // harness 静默 spawn 装不了，会导致所有 exec_command "blocked by policy"。
