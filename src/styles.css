@@ -22347,8 +22347,8 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .team-cluster-body {
   /* 09-14 用户二次反馈：左边空白太多、hover 按钮挤占标题导致点不了会话、不好看。
      改动：缩进 26px→12px、竖线 2px 实线→1px 淡线、行紧凑、子行只留必要按钮。 */
-  margin: 2px 0 4px 6px;
-  padding: 2px 0 2px 6px;
+  margin: 2px 0 4px 4px;
+  padding: 2px 0 2px 4px;
   border-left: 1px solid color-mix(in srgb, var(--text-primary, #111) 9%, transparent);
   display: flex; flex-direction: column; gap: 0;
   /* 成员多/侧栏窄时限高滚动：不生硬堆出、不撑爆侧栏、不穿透外层列表 */
@@ -22363,8 +22363,21 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .team-cluster-body .thread-row > button:first-child { padding: 4px 4px 4px 4px; gap: 0; }
 .team-cluster-body .thread-row-title-line { font-size: 12px; }
 .team-cluster-body .thread-row small { font-size: 10px; }
-/* ⛔ 成员会话由程序创建/管理，「置顶」无意义 —— hover 时少一个按钮，把宽度还给标题 */
-.team-cluster-body .thread-pin-button { display: none; }
+/* ⛔ 成员会话行（is-member-row）：程序管理的子会话，不给归档/置顶/更多 —— 宽度全留给标题。
+   用户 09-14 反馈：「主会话右边才亮图标的啊」「右边还是空白太多了」。 */
+.team-cluster-body .thread-row.is-member-row .thread-pin-button,
+.team-cluster-body .thread-row.is-member-row .thread-archive-button,
+.team-cluster-body .thread-row.is-member-row .thread-more-button { display: none; }
+.team-cluster-body .thread-row.is-member-row .thread-actions { min-width: 0; gap: 0; }
+/* 主会话行（展开体里非成员的那条）：加粗 + 主色，一眼分出主次 */
+.team-cluster-body .thread-row:not(.is-member-row) .thread-row-title-line > span:first-child {
+  font-weight: 600; color: var(--color-text-primary, var(--text, #111));
+}
+/* 成员会话行：次要层级（更小更淡，退后一层） */
+.team-cluster-body .thread-row.is-member-row .thread-row-title-line > span:first-child {
+  font-weight: 400; color: var(--text-secondary, #666);
+}
+.team-cluster-body .thread-row.is-member-row small { opacity: 0.75; }
 /* 归档/更多按钮 24→20px：hover 时总占用从 78px 降到 ~44px，标题不再被挤到点不中 */
 .team-cluster-body .thread-more-button,
 .team-cluster-body .thread-archive-button { width: 20px; height: 20px; }

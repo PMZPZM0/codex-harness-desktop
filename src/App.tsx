@@ -8021,7 +8021,10 @@ export default function App() {
     return map;
   }, [pending, agentAsk]);
   // 侧栏「长按拖出为独立窗口」已删（09-13 用户定稿：入口只留顶栏的独立/返回按钮）。
-  const renderThreadRow = (entry: Thread) => {
+  /** variant="member"：专家团成员会话行（次要层级）。09-14 用户反馈「会话主次明显不对，
+   *  主会话右边才亮图标」——成员会话是程序管理的子会话，不给归档/置顶/更多按钮，
+   *  宽度留给标题（否则标题被挤成「交易分析专家团…」分不清谁是谁）。样式差异全在 CSS。 */
+  const renderThreadRow = (entry: Thread, variant?: "member") => {
     const running = runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running";
     const attentionLabel = threadAttention.get(entry.id);
     const attentionTone = attentionLabel === "需审批" ? "approval" : attentionLabel === "需选择" ? "choice" : "confirm";
@@ -8030,7 +8033,7 @@ export default function App() {
     const poppedOut = poppedOutThreadIds.has(entry.id);
     return (
     <div
-      className={`thread-row ${thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${threadRowMenu?.id === entry.id ? "menu-open" : ""} ${poppedOut ? "popped-out" : ""}`}
+      className={`thread-row ${thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${threadRowMenu?.id === entry.id ? "menu-open" : ""} ${poppedOut ? "popped-out" : ""}${variant === "member" ? " is-member-row" : ""}`}
       key={entry.id}
     >
       <button title={poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : "双击修改任务名称"} onClick={() => { if (poppedOut) { showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } void openThread(entry.id); }}>
@@ -8091,7 +8094,7 @@ export default function App() {
               {cluster.lead && <div className="team-cluster-label">主会话</div>}
               {cluster.lead && renderThreadRow(cluster.lead)}
               {cluster.members.length > 0 && <div className="team-cluster-label">成员会话 · {cluster.members.length}</div>}
-              {cluster.members.map((entry) => renderThreadRow(entry))}
+              {cluster.members.map((entry) => renderThreadRow(entry, "member"))}
             </div>
           )}
         </div>
@@ -8101,7 +8104,7 @@ export default function App() {
   /** 一批会话的列表渲染：聚簇行在前，其余行按原顺序。 */
   const renderClusterList = (entries: Thread[]) => {
     const { clusters, singles } = clusterSplit(entries);
-    return <>{clusters.map(renderClusterRow)}{singles.map(renderThreadRow)}</>;
+    return <>{clusters.map(renderClusterRow)}{singles.map((entry) => renderThreadRow(entry))}</>;
   };
   const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < 900);
   useEffect(() => {
