@@ -2115,6 +2115,22 @@ console.log(C.bold("\n【14】历史分页懒加载（首屏一页 / 滚一屏�
     ? ok("刻度选区只在阅读位置变化时归位（加载新页不会把选区拽走）")
     : fail("加载新页会把刻度选区拽回最新 —— 往上滚看历史时选区会乱跳");
 }
+// ---------- 【15】供应商列表交互（点开关要切详情，不许只拦冒泡） ----------
+
+console.log(C.bold("\n【15】供应商列表：点开关（启用/停用）右侧详情必须跟随"));
+{
+  const appSrc5 = readFileSync(join(ROOT, "src/App.tsx"), "utf8");
+  // ⛔ 用户 09-14 实测：点开关（开启某个供应商）后右侧还停在上一个供应商的界面 ——
+  //    因为开关的 onClick 只 stopPropagation()，把行点击（切详情）也拦掉了。
+  !/onClick=\{\(event\) => event\.stopPropagation\(\)\}/.test(appSrc5)
+    ? ok("供应商开关不再裸 stopPropagation（拦冒泡时同时把详情切过去）")
+    : fail("供应商开关又是裸 stopPropagation —— 点开关后右侧会停在旧界面");
+  const swIdx = appSrc5.indexOf("provider-switch-ui");
+  const swBlock = appSrc5.slice(Math.max(0, swIdx - 2600), swIdx);
+  /setEditingProvider\(p\.provider\)/.test(swBlock)
+    ? ok("开关的 onClick 里确实切了编辑对象（setEditingProvider）")
+    : fail("开关 onClick 里没有切编辑对象 —— 详情不会跟随");
+}
 // ---------- 汇总 ----------
 
 console.log("");

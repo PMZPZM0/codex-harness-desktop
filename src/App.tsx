@@ -16825,7 +16825,21 @@ const commandMatches = useMemo(() => {
                         <label
                           className={`provider-switch ${p.enabled === false ? "off" : ""}`}
                           title={isPseudoPptoken ? (pseudoOff ? "推荐卡已停用 · 点击恢复展示" : "停用 PPtoken 推荐卡展示") : (p.enabled !== false ? "已启用 · 点击禁用" : (customModel && customModel.provider !== p.provider ? `已有供应商「${customModel.name}」生效，一次只能启用一个——先停用它再启用这个` : "已禁用 · 点击启用"))}
-                          onClick={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            // 启用/停用时**同步把右侧详情切到这个供应商**：原先开关只 stopPropagation，
+                            // 行点击被拦住 → 用户点了开关（开启某个供应商）右侧还停在上一个的界面
+                            // （用户 09-14 实测截图）。逻辑与行点击保持一致。
+                            if (isPseudoPptoken) {
+                              setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
+                              setEditingProvider(null);
+                              setEditingName(false);
+                            } else {
+                              setEditingProvider(p.provider);
+                              setEditingName(false);
+                              setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true });
+                            }
+                          }}
                         >
                           <input type="checkbox" checked={isPseudoPptoken ? !pseudoOff : p.enabled !== false} disabled={!isPseudoPptoken && p.enabled === false && customModel != null && customModel.provider !== p.provider} onChange={(event) => { if (isPseudoPptoken) setPptokenCardOff(!event.target.checked); else void setProviderEnabled(p.provider, event.target.checked); }} />
                           <span className="provider-switch-ui" />
