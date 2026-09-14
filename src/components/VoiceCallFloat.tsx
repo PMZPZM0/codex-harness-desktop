@@ -330,6 +330,17 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
   useEffect(() => {
     const off = window.codex.onVoiceEvent((event: any) => {
       if (!event || typeof event !== "object") return;
+      if (event.type === "settings") {
+        // ★ 设置页改语音设置 → 悬浮球显隐立刻跟随（用户 09-14 严重反馈：右键隐藏悬浮球后，
+        //   设置页勾「显示悬浮球」点了也不恢复 —— 根因是组件只在挂载时读一次设置，
+        //   主进程广播的 settings 事件这里没人接，勾选只落了盘、UI 永远不跟着变）。
+        const b = event.settings?.ball;
+        if (b) {
+          setBallVisible(b.visible !== false);
+          setHintsEnabled(b.hints !== false);
+        }
+        return;
+      }
       if (event.type === "state") {
         setState(event.state);
         // 舞台模式跟随通话状态（聆听/思考/播报）
