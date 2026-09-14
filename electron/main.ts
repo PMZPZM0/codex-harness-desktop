@@ -1383,7 +1383,10 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
   // 名字保留用于展示/兼容引用。这样任何历史会话都必然走当前供应商，切换后原会话直接可用。
   const activeNormalized = normalizeProvider(entry);
   const activeBaseUrl = activeNormalized.baseUrl;
-  const activeWireApi = activeNormalized.wireApi === "chat" ? "chat" as const : "responses" as const;
+  // ⛔ 恒为 responses：新版引擎对 `wire_api = "chat"` 是**硬拒载**（整份 config.toml 加载失败
+  // → 应用所有 codex:request 全部报错，09-14 用户实测截图）。历史上这里会透传用户档案里的
+  // chat（旧版本可写入），一旦档案里有 chat 就写坏配置把应用打死。
+  const activeWireApi = "responses" as const;
   const activeContext = activeNormalized.models?.find((model) => model.id === activeNormalized.model)?.contextWindow ?? activeNormalized.contextWindow ?? 128000;
   // 历史会话引用过、但已从供应商列表删除的 id（如重装供应商后 id 变化）→ 补成别名段，
   // 否则引擎解析不到会报 "Model provider not found"，会话同样打不开。
@@ -1395,7 +1398,8 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
     const maxOut = normalized.models?.find((model) => model.id === normalized.model)?.maxOutputTokens;
     // 非官方模式下所有段共用当前生效供应商的地址/协议（见上方实证说明）；官方模式保持各自原值
     const baseUrl = isOfficialProvider ? normalized.baseUrl : activeBaseUrl;
-    const wireApi = isOfficialProvider ? (normalized.wireApi === "chat" ? "chat" : "responses") : activeWireApi;
+    // ⛔ 恒 responses（官方段也不透传 chat）——引擎已不支持 chat，写了会整份配置拒载
+    const wireApi = "responses";
     return [
       ...(index ? [""] : []),
       `[model_providers.${escapeToml(normalized.provider)}]`,
@@ -2358,6 +2362,19 @@ app.whenReady().then(async () => {
         server.setExternalEnv(officialEnv);
       }
     }
+    // ⛔ 启动自愈（必须赶在 server.start 之前）：存量 config.toml 里的 `wire_api = "chat"`
+    // 会让新版引擎**整份配置拒载** —— 症状是应用起来后所有 codex:request 都报
+    // 「failed to load configuration ... wire_api = "chat" is no longer supported」（09-14
+    // 用户实测截图，来自另一位用户的机器）。生成侧已改为恒写 responses，这里兜住老文件。
+    try {
+      const configPath = path.join(codexHome, "config.toml");
+      const raw = await fs.readFile(configPath, "utf8").catch(() => "");
+      if (/wire_api\s*=\s*"chat"/.test(raw)) {
+        await fs.writeFile(`${configPath}.chat-bak`, raw, "utf8").catch(() => undefined);
+        await fs.writeFile(configPath, raw.replace(/wire_api\s*=\s*"chat"/g, 'wire_api = "responses"'), "utf8");
+        console.log('[config] 已把 wire_api="chat" 迁移为 "responses"（原文件备份为 config.toml.chat-bak）');
+      }
+    } catch (error) { console.warn("wire_api repair failed:", error); }
     await server.start();
   } catch (error) {
     broadcastCodexEvent({ kind: "status", status: "error", message: String(error) });
