@@ -1790,6 +1790,12 @@ html[data-ui-font="large"] .action-content pre {
   margin-bottom: 0;
 }
 /* 长会话窗口化入口：默认只渲染最近若干回合，点这里加载更早的历史 */
+/* 续载更早历史时的行内提示（此前自动加载是静默的，用户不知道在加载） */
+.load-earlier-hint {
+  display: flex; align-items: center; justify-content: center;
+  padding: 8px 0 2px; font-size: 12px;
+  color: var(--text-secondary, #888);
+}
 .load-earlier-turns {
   width: 100%;
   color: var(--muted);
@@ -22706,3 +22712,17 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .team-history-label { margin: 8px 0 3px; font-size: 10px; color: var(--faint); }
 .team-history-query { font-size: 11px; line-height: 1.55; color: var(--muted); white-space: pre-wrap; word-break: break-word; max-height: 96px; overflow: auto; }
 .team-history-empty { margin: 12px; font-size: 11.5px; color: var(--muted); }
+
+/* 用户消息乐观上屏的入场过渡（09-14 用户要求「加上动画过渡」）。
+   ⛔ 只做透明度、不做 transform/位移 —— #chat-anchor 是钉顶逻辑量几何的节点
+   （anchor.getBoundingClientRect），动画期间的位移会让 gapErr 带上误差。 */
+#chat-anchor {
+  animation: optimisticIn 0.16s ease-out both;
+}
+@keyframes optimisticIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #chat-anchor { animation: none; }
+}
