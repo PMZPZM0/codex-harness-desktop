@@ -11,6 +11,7 @@ import { codeFontSize, useCodeSettings } from "./lib/code-settings";
 import { DEFAULT_EFFORT, pickDefaultEffort, CUSTOM_MODEL_EFFORTS, normalizeEffort, ALL_EFFORTS } from "./lib/effort";
 import { matchModelSpec, loadExternalSpecs } from "./lib/model-specs";
 import { resolveModelForOpen, shouldSyncOpenThread } from "./lib/model-scope.mjs";
+import { ALIGN_RESULT, CONTINUITY_TEXT, shouldAlignProvider } from "./lib/provider-continuity.mjs";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "./lib/session-scope.mjs";
 import { LEGACY_PREFIX, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "./lib/thread-runtime.mjs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
@@ -11510,9 +11511,10 @@ const commandMatches = useMemo(() => {
           const active = activeProviderRef.current;
           if (errTid && boundProvider && active?.provider && boundProvider !== active.provider && !autoMigratedRef.current.has(errTid)) {
             autoMigratedRef.current.add(errTid);
-            showToast("检测到供应商已切换，正在自动迁移该会话…");
-            void migrateThreadToProvider(errTid, { provider: active.provider, model: active.model, name: active.name, baseUrl: active.baseUrl, wireApi: active.wireApi })
-              .then((ok) => { if (ok) showToast("会话已迁移到当前供应商，稍候自动恢复"); else autoMigratedRef.current.delete(errTid); })
+            // 文案与「自动接力」统一（09-14 用户定稿）：401、打开会话、切换供应商三种场景
+            // 走同一入口、同一套说法（自动接力 / 历史上下文与聊天记录完整保留）。
+            void alignThreadToProvider(errTid, { provider: active.provider, model: active.model, name: active.name, baseUrl: active.baseUrl, wireApi: active.wireApi }, { reason: "error" })
+              .then((r) => { if (r === ALIGN_RESULT.failed) autoMigratedRef.current.delete(errTid); })
               .catch(() => autoMigratedRef.current.delete(errTid));
           }
         }
@@ -12162,6 +12164,49 @@ const commandMatches = useMemo(() => {
     } catch { return false; }
   }
 
+  /** 会话「自动接力」到当前激活供应商（09-14 用户定稿：切换供应商后旧会话要能直接继续用）。
+   *  统一入口——打开会话 / 发送前 / 401 兜底 / 切换供应商 全部走这里，行为与文案一致：
+   *   ① 原地迁移优先：thread/resume 重绑定（threadId 不变 → 历史、消息、侧栏位置全不动，用户无感）
+   *   ② 原地失败（极老会话/无 rollout）→ 接力：thread/fork 建带完整历史的新会话，旧会话自动归档
+   *  ⛔ 旧会话不可删：接力也保留历史（fork 自带），归档只是收起来，不丢数据。
+   *  返回 "same"（无需迁移）/ "migrated"（原地）/ "relayed"（接力）/ "failed"（都失败）。 */
+  async function alignThreadToProvider(
+    threadId: string,
+    target: { provider: string; model: string; name: string; baseUrl: string; wireApi?: string },
+    opts?: { reason?: "open" | "send" | "error" | "switch"; silent?: boolean },
+  ): Promise<"same" | "migrated" | "relayed" | "failed"> {
+    const bound = threadProviderRef.current.get(threadId);
+    // 判定收在纯模块里（可离线断言）：绑定未知（本次启动未 resume 过）不迁——不猜。
+    if (!shouldAlignProvider(bound, target.provider)) return ALIGN_RESULT.same;
+    const label = `${target.name} · ${target.model}`;
+    if (!opts?.silent) showToast("正在自动接力", CONTINUITY_TEXT.aligning(label));
+    // ① 原地迁移（首选）：threadId 不变，历史与侧栏位置全不动，用户完全感知不到
+    const migrated = await migrateThreadToProvider(threadId, target);
+    if (migrated) {
+      saveThreadModel(threadId, `custom:${target.provider}:${target.model}`);
+      if (!opts?.silent) showToast("已自动接力", CONTINUITY_TEXT.migrated(label));
+      return ALIGN_RESULT.migrated;
+    }
+    // ② 原地失败 → fork 接力：新会话带完整历史，旧会话自动归档（侧栏不留两坨）
+    try {
+      const forked = await window.codex.request("thread/fork", { threadId, excludeTurns: false });
+      const next = (forked as any)?.thread;
+      if (!next?.id) throw new Error("引擎未返回新分支");
+      const relayed = await migrateThreadToProvider(next.id, target);
+      if (!relayed) throw new Error("接力会话绑定失败");
+      saveThreadModel(next.id, `custom:${target.provider}:${target.model}`);
+      threadProviderRef.current.set(next.id, target.provider);
+      await refreshThreads();
+      await openThread(next.id, next);
+      // 旧会话自动归档：接力已成功，旧的收进归档（历史仍在归档里，可随时恢复）
+      if (threadRef.current?.id !== threadId) await archiveThread(threadId);
+      showToast("已自动接力", CONTINUITY_TEXT.relayed(label));
+      return ALIGN_RESULT.relayed;
+    } catch {
+      showToast("自动接力失败", CONTINUITY_TEXT.failed(label));
+      return ALIGN_RESULT.failed;
+    }
+  }
   /** 供应商切换「重启生效」：重启引擎使新供应商配置生效，成功后迁移当前会话并刷新 UI 状态。
    *  手动点击 banner 时读 state；引擎空闲自动生效时由 chooseModel 直接传入 pending 对象。 */
   async function applyPendingRestart(pendingOverride?: { provider: string; model: string; label: string; prevProvider: string; prevModel: string } | null) {
@@ -12172,18 +12217,12 @@ const commandMatches = useMemo(() => {
       setCustomModel(updated);
       setModelId(`custom:${updated.provider}:${updated.model}`);
       applyGlobalModelChoice(`custom:${updated.provider}:${updated.model}`);
-      // 会话跨供应商迁移（复用 migrateThreadToProvider：resume 后会话即绑定新供应商，
-      // 历史完整保留，原会话数据不丢）。
+      // 会话跨供应商迁移 = 自动接力（统一入口 alignThreadToProvider：原地迁移优先——threadId
+      // 不变、历史与侧栏位置全不动；原地失败则 fork 接力并自动归档旧会话）。
       if (threadRef.current?.id) {
-        const migrated = await migrateThreadToProvider(threadRef.current.id, {
+        await alignThreadToProvider(threadRef.current.id, {
           provider: updated.provider, model: updated.model, name: updated.name, baseUrl: updated.baseUrl, wireApi: updated.wireApi,
-        });
-        if (migrated) {
-          showToast("已切换供应商", `当前会话已迁移到 ${updated.name} · ${updated.model}，历史完整保留`);
-        } else {
-          // 迁移失败（如极老会话）退回接力方案：新会话带上下文
-          showToast("已切换供应商", `新会话将使用 ${updated.name} · ${updated.model}（当前会话迁移失败，历史保留在原会话）`);
-        }
+        }, { reason: "switch" });
       } else {
         await updateThreadSettings({ model: updated.model, ...(updated.provider === "openai-official" ? {} : { model_provider: updated.provider }), effort: null });
       }
@@ -13850,10 +13889,32 @@ const commandMatches = useMemo(() => {
       const resultProvider = String(result.modelProvider ?? result.model_provider ?? customModel?.provider ?? "custom");
       // 记录会话真实绑定的供应商（迁移成功后 migrateThreadToProvider 会覆盖为新值）
       threadProviderRef.current.set(id, resultProvider);
+      // 09-14 用户定稿（打开即自动对齐 / 「自动接力」）：引擎自发的上下文压缩、重连都不等
+      // 发送动作 —— 只在发送前迁移的话，旧绑定会在用户刚打开会话时就撞 401（用户实测
+      // 「切供应商后旧会话用不了」）。打开瞬间即对齐，之后一切（含引擎自发行为）都走新供应商。
+      // 不 await：打开动作不被迁移阻塞；绑定已一致时零开销。
+      const activeNow = activeProviderRef.current ?? (customModel
+        ? { provider: customModel.provider, model: customModel.model, name: customModel.name, baseUrl: customModel.baseUrl, wireApi: customModel.wireApi }
+        : null);
+      // 即将自动接力（会话绑定 ≠ 当前激活）：下面对齐要用，模型回填也要用（见 restoredModel）。
+      const willRealign = shouldAlignProvider(resultProvider, activeNow?.provider);
+      {
+        // 运行中的会话不打断：它刚跑起来，绑定的就是当前供应商。
+        if (willRealign && activeNow && !autoMigratedRef.current.has(id) && !runningThreadIdsRef.current.has(id)) {
+          autoMigratedRef.current.add(id);
+          void alignThreadToProvider(id, { provider: activeNow.provider, model: activeNow.model, name: activeNow.name, baseUrl: activeNow.baseUrl, wireApi: activeNow.wireApi }, { reason: "open" })
+            .then((r) => { if (r === ALIGN_RESULT.failed) autoMigratedRef.current.delete(id); })
+            .catch(() => autoMigratedRef.current.delete(id));
+        }
+      }
       const resultModel = String(result.model ?? "").trim();
       // ⛔ 先读一次镜像（而不是复用上面捕获的 storedModel）：syncThreadRuntimeWithMain 可能刚
       // 把主进程的权威值写进镜像，复用旧变量会用本地旧值把对方的改动覆盖回去（丢更新）。
-      const restoredModel = loadThreadModel(id) || storedModel || (resultModel ? `custom:${resultProvider}:${resultModel}` : modelId || localStorage.getItem("default-model") || "");
+      // 即将自动接力时，模型回填直接取激活模型：该会话记录马上就要被迁移改写成新供应商模型，
+      // 这里若先写回旧记录，异步迁移完成后会被旧值覆盖回去（丢更新）。
+      const restoredModel = willRealign && activeNow
+        ? `custom:${activeNow.provider}:${activeNow.model}`
+        : (loadThreadModel(id) || storedModel || (resultModel ? `custom:${resultProvider}:${resultModel}` : modelId || localStorage.getItem("default-model") || ""));
       if (restoredModel) {
         setModelId(restoredModel);
         saveThreadModel(id, restoredModel);
@@ -14235,16 +14296,16 @@ const commandMatches = useMemo(() => {
         try {
           const updated = await window.codex.setProviderModel({ provider: customModel.provider, model: customModel.model });
           setCustomModel(updated);
-          const migrated = await migrateThreadToProvider(currentThread.id, customModel);
-          if (!migrated) {
-            showToast("已切换供应商", `已切换到 ${updated.name} 并重启生效；该会话未能迁移，请新建会话`);
+          const aligned = await alignThreadToProvider(currentThread.id, customModel, { reason: "send" });
+          if (aligned === ALIGN_RESULT.failed) {
+            showToast("已切换供应商", `已切换到 ${updated.name} 并重启生效；该会话未能自动接力，请新建会话`);
             return;
           }
           const selectedId = `custom:${updated.provider}:${updated.model}`;
           setModelId(selectedId);
           // 该会话刚迁移成功：全局默认 + 这个会话一起换（其它会话不动）
           applyGlobalModelChoice(selectedId);
-          showToast("会话已迁移", `引擎已按 ${updated.name} 的 Key 重启，该会话已切换到 ${updated.model}，可正常发送`);
+          showToast("已自动接力", `引擎已按 ${updated.name} 的 Key 重启，该会话已自动接力到 ${updated.model}（历史上下文与聊天记录完整保留），可正常发送`);
         } catch (error: any) {
           showToast("暂时不能发送", `迁移失败：${String(error?.message ?? error).slice(0, 80)}`);
           return;

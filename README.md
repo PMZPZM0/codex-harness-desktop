@@ -31,6 +31,7 @@
 - **多任务并行**：侧栏按分组/项目管理会话，支持置顶、归档、重命名、分支、批量操作
 - **消息排队**：任务运行中继续输入，消息自动排队依次发送；排队 ≥2 条时列表顶部出现「排队消息 N」折叠开关（默认展开，手动折叠）；每条左侧拖动手柄可拖动调整发送顺序
 - **超长上下文 / 重负载优化**：时间线对视口外回合启用 `content-visibility: auto`，几个 G 的会话历史也能流畅滚动；**长会话窗口化加载**——打开会话只挂载最近 40 回合，向上滚动或点「显示更早」按页增量补齐（滚动位置不跳），切回会话首屏成本恒定；上下文环在占用 ≥80% 变橙、≥95% 变红预警，≥70% 时弹出「压缩上下文」一键释放空间；设置 → 数据管理 可查看各数据目录占用并清理安全缓存（引擎日志 / 图片缩略图 / 内存会话恢复缓存），会话历史不在清理范围
+- **切换供应商不断档（会话自动接力）**：换了供应商后旧会话打开即用——打开会话的瞬间自动把它对齐到当前供应商（原地重绑定，**会话 ID、聊天记录、侧栏位置全不变**），引擎自发的上下文压缩/重连不会再撞 401；该会话原模型若不在新供应商里，自动落到当前激活模型。原地重绑定失败（极老会话）时自动 fork 出一个带完整历史的新会话，并把旧会话自动归档，侧栏不留两坨。全程提示「已自动接力，历史上下文与聊天记录完整保留」
 - **会话备份与导出**：本地 Markdown 导出、跨设备恢复
 - **移动远程接入**：手机扫码远程连接工作台；机器人频道消息驱动任务——**微信**（手机扫码登录，真实 iLink 网关）、**Telegram**（@BotFather Bot Token）、**飞书**（开放平台 App ID/Secret + 官方长连接，免公网 IP，群里 @机器人 对话）、**钉钉**（开放平台 Client ID/Secret + 官方 Stream 模式，免公网 IP）、**QQ 机器人**（支持官方**扫码连接**：桌面出二维码 → 手机 QQ 扫码确认 → 凭据自动回传，无需手敲；也可手动填 AppID/Secret + 官方 WebSocket 网关）；**企业微信群机器人**为推送型通道（Webhook，推送任务结果/通知到群，腾讯限制不支持收消息对话）。每个渠道都是真实网关，凭据持久化、重启自动恢复，消息统一走 Codex 会话管线并支持会话绑定
 
@@ -179,7 +180,7 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac zip --arm64   # 或
 > npm run verify   # = npm run check && npm run e2e
 > ```
 >
-> **只跑一半不算验收**；改了哪个模块，就给哪个模块补 `scripts/e2e/scenarios/` 里的场景（`npm run e2e` 不带参数即跑**全部**场景，新场景自动进门槛），或给 `check-preflight.mjs` 加检查项，让这次验证沉淀成下次的自动回归。
+> **只跑一半不算验收**；改了哪个模块，就给 `scripts/check-preflight.mjs` 加**可保留的检查项**（静态守卫 + 纯函数断言，毫秒级、不起应用，让这次验证沉淀成下次的自动回归）；需要真链路证据的场景**每轮现写、跑完即删**——不往常驻套件里沉淀、也不重复跑已经验过的流程（用户 09-14 口径）。断言要**当场反证**一次（把修复摘掉确认会变红），UI 改动必须看截图。
 
 改完代码不必手点一遍，两条命令覆盖：
 
@@ -189,12 +190,12 @@ npm run e2e     # UI 场景（默认全部）：自动拉起已构建的应用�
 ```
 
 - `npm run e2e` 跑完在 `.e2e-artifacts/shots/` 留下**每步截图**（文件名带场景前缀），扫一眼就知道有没有破相；退出码非 0 即有断言失败。
-- 场景脚本在 `scripts/e2e/scenarios/`，新增场景只需导出一个 `steps` 数组；框架零新依赖（复用 `ws`），经主进程自带的 `CODEX_HARNESS_USER_DATA` / `CODEX_HARNESS_DEBUG_PORT` 开关在**隔离的临时 profile** 里跑，绝不碰你的真实会话与配置。现存场景：`smoke`（主界面骨架与主干交互）、`model-scope`（每个会话独立选模型）、`voice-call`（语音悬浮入口 + 既有输入链路零回归守卫）。
+- 需要真链路证据时，按本轮改动**现写**一个 CDP 脚本（复用 `scripts/e2e/lib/harness.mjs`：`launch` / `eval` / `waitFor` / `click` / `screenshot` / `close`），跑在**跨轮次复用的持久 profile**（`.e2e-profile/<name>/`，含真实会话历史）上，**优先操作既有会话**（不新建、不发新消息）；跑完即删，需要历史证据时从 git 里找。跨轮次复用的常驻验收项集中在 `scripts/accept.mjs`（`npm run accept -- --list` 可看清单）。 + 既有输入链路零回归守卫）。
 - **无 GPU 的机器 / CI 也能跑**：Chromium 的 GPU 子进程在无显卡环境里会反复起不来并最终 FATAL 自杀（表现为「CDP 超时」，实测连零项目代码的最小 Electron 应用也一样），框架会带上 `CODEX_HARNESS_IN_PROCESS_GPU` 开关把 GPU 进程合并进主进程——该开关**只对测试实例生效**，不影响你日常使用。
 - **测试实例的工作区固定为项目根目录**：隔离 profile 是一张白纸，界面本来会停在「尚未选择工作区」（部分路径下发送会被拦）。框架现在会把 `workspace` 注入成项目根并重载一次，所以截图里顶栏显示的就是本仓库路径。
 - **隔离 profile 会带上你的真实模型配置**（`custom-model.json` / `custom-models.json` / `codex-home/{config.toml,model-catalog.json}`，外加 `Local State`，并**保留密钥密文**）：否则选择器里一个模型都没有，「切换模型到底生效没、会话之间是否独立」这类断言只能拿假 id 糊弄，**等于没测**。保留真 Key（本机 safeStorage 密文 + 同机 `Local State` 的 DPAPI 密钥材料即可解出）是为了让断言打到**真实后端**——真实网关真的回包才算数；只想跑「无 Key」的纯逻辑断言可设 `CODEX_HARNESS_KEEP_SECRETS=0`。改过供应商/模型配置后，这些场景测的就是你的真实环境。
-- **「生效没生效」查到引擎侧、并且要查到后端**：涉及下发给引擎的开关（模型、权限等）只断言 localStorage / UI 文案不够——框架提供 `h.engineModelOf(threadId)` 直读该会话 rollout：`turn_context.model` = 引擎**真正跑**的模型，`token_usage_record.response_id` = **真实网关真的回了包**（没有它只能证明「引擎接了参数」，09-11 用户指正过这点）。`model-scope` 用前者证明「A 会话跑 deepseek、B 会话跑 glm，互不串扰」，用后者证明这几轮都是真实后端回的话。
-- **Codex 引擎自己也能跑**（无需 npm）：`resources/tools/node/node.exe scripts/e2e/run.mjs`。E2E 拉的是隔离实例，与应用内常驻的引擎互不干扰。
+- **「生效没生效」查到引擎侧、并且要查到后端**：涉及下发给引擎的开关（模型、权限等）只断言 localStorage / UI 文案不够——框架提供 `h.engineModelOf(threadId)` 直读该会话 rollout：`turn_context.model` = 引擎**真正跑**的模型，`token_usage_record.response_id` = **真实网关真的回了包**（没有它只能证明「引擎接了参数」，09-11 用户指正过这点）。常驻验收项用前者证明「A 会话跑 deepseek、B 会话跑 glm，互不串扰」，用后者证明这几轮都是真实后端回的话。
+- **Codex 引擎自己也能跑**（无需 npm）：`resources/tools/node/node.exe scripts/accept.mjs`。E2E 拉的是隔离实例，与应用内常驻的引擎互不干扰。
 - 打包发布前的门槛验收用 `npm run verify:packaged-tools`。
 
 详见 [`docs/TESTING.md`](docs/TESTING.md)。
