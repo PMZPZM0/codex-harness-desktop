@@ -1251,6 +1251,14 @@ function timeAgo(timestamp: number) {
 
 /** 会话列表按本地日历日分组（WorkBuddy conversation-section 风格） */
 /** 按「具体日期」对对话分组（今天 / 昨天用口语，其余用具体月日），每组一个可折叠 section */
+/** 识别「历史成员会话」：早期后台调度（team_member_invoke）没登记映射，也没设线程名，
+ *  标题就是首条用户消息里的 `[专家团「X」成员 Y（Z）]` 角色头（09-14 用户实测截图）。
+ *  渲染层据此把它们归回所属团队的簇、并把标题清洗成职能名，避免散落在外面「看起来重复」。 */
+function parseTeamMemberTitle(name: string): { teamName: string; memberName: string; profession: string } | null {
+  const m = String(name ?? "").match(/\[专家团「(.+?)」\s*(?:主理人|成员)\s+(.+?)（(.+?)）\]/);
+  return m ? { teamName: m[1], memberName: m[2], profession: m[3] } : null;
+}
+
 function groupThreadsByTime(threads: Thread[]): { key: string; label: string; items: Thread[] }[] {
   const groups = new Map<string, { key: string; label: string; items: Thread[] }>();
   const now = new Date();
@@ -8024,7 +8032,7 @@ export default function App() {
   /** variant="member"：专家团成员会话行（次要层级）。09-14 用户反馈「会话主次明显不对，
    *  主会话右边才亮图标」——成员会话是程序管理的子会话，不给归档/置顶/更多按钮，
    *  宽度留给标题（否则标题被挤成「交易分析专家团…」分不清谁是谁）。样式差异全在 CSS。 */
-  const renderThreadRow = (entry: Thread, variant?: "member" | "lead") => {
+  const renderThreadRow = (entry: Thread, variant?: "member" | "lead", extras?: { actions?: any; badge?: any }) => {
     const running = runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running";
     const attentionLabel = threadAttention.get(entry.id);
     const attentionTone = attentionLabel === "需审批" ? "approval" : attentionLabel === "需选择" ? "choice" : "confirm";
@@ -8034,19 +8042,23 @@ export default function App() {
     /** 成员会话标题：剥掉重复的「团队名 · 」前缀，只留职能名（用户反馈「为啥都要重复前缀」）。
      *  仅成员行生效；重命名弹窗仍用完整名（那里需要全名）。 */
     const rawTitle = cleanThreadDisplayTitle(entry.name, { preview: entry.preview });
-    const displayTitle = variant === "member" ? (rawTitle.match(/^.*?·\s*(.+)$/)?.[1]?.trim() || rawTitle) : rawTitle;
+    const parsedMember = variant === "member" ? parseTeamMemberTitle(rawTitle) : null;
+    const displayTitle = variant === "member"
+      ? (parsedMember?.profession || rawTitle.match(/^.*?·\s*(.+)$/)?.[1]?.trim() || rawTitle)
+      : rawTitle;
     return (
     <div
       className={`thread-row ${thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${threadRowMenu?.id === entry.id ? "menu-open" : ""} ${poppedOut ? "popped-out" : ""}${variant === "member" ? " is-member-row" : ""}`}
       key={entry.id}
     >
       <button title={poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : "双击修改任务名称"} onClick={() => { if (poppedOut) { showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } void openThread(entry.id); }}>
-        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void renameThread(entry.id, next); }); }}><span title={rawTitle}>{displayTitle}</span>{variant === "lead" && <span className="team-cluster-role">主会话</span>}{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
+        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void renameThread(entry.id, next); }); }}><span title={rawTitle}>{displayTitle}</span>{extras?.badge}{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
       </button>
       <div className="thread-actions">
         <button className={`thread-pin-button ${pinnedThreads.includes(entry.id) ? "pinned" : ""}`} title={pinnedThreads.includes(entry.id) ? "取消置顶" : "置顶会话"} onClick={(event) => { event.stopPropagation(); togglePinThread(entry.id); }}><Pin size={13} /></button>
         <button className="thread-archive-button" title="归档会话" onClick={(event) => { event.stopPropagation(); void archiveThread(entry.id); }}><Archive size={13} /></button>
         <button className="thread-more-button" title="会话操作" aria-expanded={threadRowMenu?.id === entry.id} onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); const menuHeight = 250; setThreadRowMenu((current) => current?.id === entry.id ? null : { id: entry.id, top: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - menuHeight - 8)), right: Math.max(8, window.innerWidth - rect.right) }); }}><MoreHorizontal size={14} /></button>
+        {extras?.actions}
         {openingThread === entry.id ? <Spinner /> : running ? <span className="thread-running-indicator" title="任务运行中"><i /><i /><i /></span> : null}
         {threadRowMenu?.id === entry.id && createPortal(<>
           <button className="thread-row-menu-backdrop" aria-label="关闭会话菜单" onClick={() => setThreadRowMenu(null)} />
@@ -8069,7 +8081,11 @@ export default function App() {
     const teamIds = new Set<string>();
     for (const entry of entries) { const teamId = teamThreadsIndex[entry.id]; if (teamId) teamIds.add(teamId); }
     const clusters = clusteredSidebar.clusters.filter((c) => teamIds.has(c.teamId));
-    const singles = entries.filter((entry) => !clusteredSidebar.memberIds.has(entry.id));
+    // ⛔ singles 必须同时排除「成员」和「各簇的主会话」——memberIds 只含成员，
+    // 主会话若不一并排除会既作聚簇行渲染、又落进 singles 再渲染一次（用户实测「展示两次」）。
+    const leadIds = new Set<string>();
+    for (const c of clusters) if (c.lead) leadIds.add(c.lead.id);
+    const singles = entries.filter((entry) => !clusteredSidebar.memberIds.has(entry.id) && !leadIds.has(entry.id));
     return { clusters, singles };
   };
   /** 聚簇行：主会话名 + 「N 会话」徽标 + 展开箭头（展开出主会话/成员会话分节）。 */
@@ -8089,22 +8105,34 @@ export default function App() {
     const teamName = expertTeams.find((t) => t.teamId === cluster.teamId)?.displayName?.zh || rawLeadTitle.replace(/\s*[·・].*$/, "");
     return (
       <div key={`cluster-${cluster.teamId}`} className={`team-cluster ${expanded ? "expanded" : ""}`}>
-        {/* 团队条：分组头（不是一个会话）。整行点击=展开/收起，避免误开会话 */}
-        <div className={`thread-row team-cluster-head ${anyRunning ? "running" : "ready"}`}>
-          <button title={expanded ? "收起成员会话" : `展开 ${clusterTotal} 个会话`} onClick={(event) => { event.stopPropagation(); toggleTeamCluster(cluster.teamId); }}>
-            <span className="thread-row-title-line"><span>{teamName}</span><span className="team-cluster-badge" title="该专家团的会话数">{clusterTotal} 会话</span>{attention && <span className="thread-attention-badge tone-confirm">{attention}</span>}</span>
-            <small>{basename(rep.cwd)} · {timeAgo(rep.updatedAt)}</small>
-          </button>
-          <div className="thread-actions">
-            <button className="thread-cluster-toggle" title={expanded ? "收起成员会话" : "展开成员会话"} onClick={(event) => { event.stopPropagation(); toggleTeamCluster(cluster.teamId); }}>
+        {/* 折叠态显示的就是**主会话行**（用户 09-14：「默认折叠状态，只展示一个专家团的主会话就行」
+            +「归档和三个点是在主会话上，子会话不用」）。
+            直接复用 renderThreadRow，主会话自带归档/更多/菜单；额外挂一个展开箭头；
+            展开体只补成员会话，不重复主会话。 */}
+        {cluster.lead ? renderThreadRow(cluster.lead, "lead", {
+          actions: (
+            <button className="thread-cluster-toggle" title={expanded ? "收起成员会话" : `展开 ${clusterTotal} 个会话`} onClick={(event) => { event.stopPropagation(); toggleTeamCluster(cluster.teamId); }}>
               <ChevronDown size={14} className={expanded ? "open" : ""} />
             </button>
-            {anyRunning ? <span className="thread-running-indicator" title="任务运行中"><i /><i /><i /></span> : null}
+          ),
+        }) : (
+          // 主会话缺失（映射不全/被删）：退化为一枚可展开的分组条
+          <div className={`thread-row team-cluster-head ${anyRunning ? "running" : "ready"}`}>
+            <button title={`展开 ${clusterTotal} 个会话`} onClick={() => toggleTeamCluster(cluster.teamId)}>
+              <span className="thread-row-title-line"><span>{teamName}</span></span>
+              <small>{basename(rep.cwd)} · {timeAgo(rep.updatedAt)}</small>
+            </button>
+            <div className="thread-actions">
+              <button className="thread-cluster-toggle" title={expanded ? "收起成员会话" : "展开成员会话"} onClick={(event) => { event.stopPropagation(); toggleTeamCluster(cluster.teamId); }}>
+                <ChevronDown size={14} className={expanded ? "open" : ""} />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
         {expanded && (
           <div className="team-cluster-body">
-            {cluster.lead && renderThreadRow(cluster.lead, "lead")}
+            {/* 主会话不在这里重复渲染 —— 折叠态的团队条本身就是主会话行（可点进）。
+                展开体只补成员会话（职能名，无团队前缀）。 */}
             {cluster.members.length > 0 && <div className="team-cluster-label">成员会话 · {cluster.members.length}</div>}
             {cluster.members.map((entry) => renderThreadRow(entry, "member"))}
           </div>
@@ -9689,6 +9717,20 @@ export default function App() {
       if (teamMemberThreadIds.has(entry.id)) { cluster.members.push(entry); memberIds.add(entry.id); }
       else if (!cluster.lead) cluster.lead = entry;
     }
+    // ★ 兜底：映射里没有、但标题带 `[专家团「X」成员 Y（Z）]` 的历史成员会话 ——
+    //   按团队名匹配专家团配置，归入同一个簇（否则它们散在外面，与簇内同职能成员「看起来重复」）。
+    for (const entry of listThreads) {
+      if (teamThreadsIndex[entry.id]) continue;
+      const raw = `${entry.name ?? ""}${entry.preview ?? ""}`;
+      const parsed = parseTeamMemberTitle(raw);
+      if (!parsed) continue;
+      const team = expertTeams.find((t) => t.displayName.zh === parsed.teamName);
+      if (!team) continue;
+      let cluster = clusters.get(team.teamId);
+      if (!cluster) { cluster = { teamId: team.teamId, lead: null, members: [] }; clusters.set(team.teamId, cluster); }
+      cluster.members.push(entry);
+      memberIds.add(entry.id);
+    }
     for (const cluster of clusters.values()) {
       cluster.members.sort((a, b) => b.updatedAt - a.updatedAt);
       if (!cluster.lead) {
@@ -9701,7 +9743,7 @@ export default function App() {
       }
     }
     return { memberIds, clusters: [...clusters.values()] };
-  }, [listThreads, teamThreadsIndex, teamMemberThreadIds]);
+  }, [listThreads, teamThreadsIndex, teamMemberThreadIds, expertTeams]);
   const toggleAllGroups = useCallback(() => {
     setCollapsedSections((previous) => {
       const next = new Set(previous);
