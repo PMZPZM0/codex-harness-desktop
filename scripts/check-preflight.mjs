@@ -2049,7 +2049,7 @@ console.log(C.bold("\n【14】历史分页懒加载（首屏一页 / 滚一屏�
   const appSrc4 = readFileSync(join(ROOT, "src/App.tsx"), "utf8");
   const win = Number((appSrc4.match(/const TURN_WINDOW = (\d+);/) ?? [])[1] ?? NaN);
   Number.isFinite(win) && win > 0 && win <= 30
-    ? ok(`首屏窗口 = ${win} 回合（≈10 个对话来回；超大会话不再全量挂载）`)
+    ? ok(`首屏窗口 = ${win} 回合（用户 09-14 定稿：只挂最近 5 个回合，越少越快）`)
     : fail(`TURN_WINDOW = ${win} —— 窗口被改回全量/超大值，长会话首屏又会卡`);
   const page = Number((appSrc4.match(/const TURNS_PAGE = (\d+);/) ?? [])[1] ?? NaN);
   Number.isFinite(page) && page > 0 && page <= 40
@@ -2097,6 +2097,18 @@ console.log(C.bold("\n【14】历史分页懒加载（首屏一页 / 滚一屏�
   /collapseTurnWindow\(id\)/.test(scrollFn2) && /clientHeight/.test(scrollFn2)
     ? ok("★ 滚回最新（贴底）即收回窗口，切会话回来是初始态")
     : fail("没有「贴底即收回窗口」—— 展开过的历史会一直撑着渲染");
+  // 刻度尺必须与分页口径对齐（用户 09-14：「滚轮也要同步最新每页」「加一页就短一点」）
+  const rulerPage = Number((appSrc4.match(/const RULER_PAGE = (\d+);/) ?? [])[1] ?? NaN);
+  rulerPage === page
+    ? ok(`刻度尺滚轮步长 = 一页（RULER_PAGE=${rulerPage} = TURNS_PAGE）`)
+    : fail(`刻度尺滚轮步长(${rulerPage})与页大小(${page})不一致 —— 滚轮不会按页滑动`);
+  const cssSrc = readFileSync(join(ROOT, "src/styles.css"), "utf8");
+  /--ruler-pad/.test(appSrc4) && /var\(--ruler-pad/.test(cssSrc)
+    ? ok("刻度间距走 CSS 变量（已加载刻度多时自动压缩：加一页就短一点）")
+    : fail("刻度间距是写死的 —— 刻度多了只能靠滑动窗口藏起来");
+  /setWindowOffset\(0\); \}, \[currentIndex\]\)/.test(appSrc4)
+    ? ok("刻度选区只在阅读位置变化时归位（加载新页不会把选区拽走）")
+    : fail("加载新页会把刻度选区拽回最新 —— 往上滚看历史时选区会乱跳");
 }
 // ---------- 汇总 ----------
 
