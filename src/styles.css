@@ -847,9 +847,7 @@ button {
   background: var(--blue, #3b82f6);
 }
 /* 展开体里的主会话行：明确「主」的身份（左色条 + 深色标题） */
-.team-cluster-body .thread-row:not(.is-member-row) {
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--blue, #3b82f6) 40%, transparent);
-}
+
 .thread-row > button:first-child {
   text-align: left;
   cursor: pointer;
@@ -22407,12 +22405,13 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .team-cluster-body .thread-row.is-member-row .thread-archive-button,
 .team-cluster-body .thread-row.is-member-row .thread-more-button { display: none; }
 .team-cluster-body .thread-row.is-member-row .thread-actions { min-width: 0; gap: 0; }
-/* 主会话行（展开体里非成员的那条）：加粗 + 主色，一眼分出主次 */
-.team-cluster-body .thread-row:not(.is-member-row) .thread-row-title-line > span:first-child {
+/* 聚簇行 = 主会话行（展开体里不再重复渲染它）：加粗主色 + 左侧身份色条，一眼分出主次 */
+.team-cluster > .thread-row .thread-row-title-line > span:first-child {
   font-weight: 600; color: var(--color-text-primary, var(--text, #111));
 }
-/* 主会话行左侧让出 3px 给身份色条 */
-.team-cluster-body .thread-row:not(.is-member-row) > button:first-child { padding-left: 8px; }
+.team-cluster > .thread-row { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--blue, #3b82f6) 40%, transparent); }
+/* 给身份色条留出 3px */
+.team-cluster > .thread-row > button:first-child { padding-left: 8px; }
 /* 成员会话行：次要层级（更小更淡，退后一层） */
 .team-cluster-body .thread-row.is-member-row .thread-row-title-line > span:first-child {
   font-weight: 400; color: var(--text-secondary, #666);

@@ -8077,6 +8077,9 @@ export default function App() {
     const rep = cluster.lead ?? cluster.members[0];
     if (!rep) return null;
     const expanded = expandedTeamClusters.has(cluster.teamId);
+    /** 展开体里要列的成员：lead 存在时就是 members；lead 缺失时代表行（members[0]）已被
+     *  聚簇行占用，需从成员列表里排除，否则同一个会话会渲染两次（用户实测「重复两个」）。 */
+    const memberRows = cluster.lead ? cluster.members : cluster.members.filter((entry) => entry.id !== rep.id);
     const anyRunning = cluster.members.some((m) => runningThreadIds.has(m.id)) || Boolean(cluster.lead && runningThreadIds.has(cluster.lead.id));
     const attention = cluster.members.map((m) => threadAttention.get(m.id)).find(Boolean);
     const clusterTotal = cluster.members.length + (cluster.lead ? 1 : 0);
@@ -8095,10 +8098,11 @@ export default function App() {
           </div>
           {expanded && (
             <div className="team-cluster-body">
-              {cluster.lead && <div className="team-cluster-label">主会话</div>}
-              {cluster.lead && renderThreadRow(cluster.lead)}
-              {cluster.members.length > 0 && <div className="team-cluster-label">成员会话 · {cluster.members.length}</div>}
-              {cluster.members.map((entry) => renderThreadRow(entry, "member"))}
+              {/* ⛔ 不要在这里再渲染一次主会话（用户 09-14 实测：「重复两个啥意思」）——
+                  聚簇行本身就是主会话行（点它即打开主会话），展开体只列成员会话。
+                  lead 缺失（映射不全）时代表行取 members[0]，那行也要从成员列表里排除。 */}
+              {memberRows.length > 0 && <div className="team-cluster-label">成员会话 · {memberRows.length}</div>}
+              {memberRows.map((entry) => renderThreadRow(entry, "member"))}
             </div>
           )}
         </div>
