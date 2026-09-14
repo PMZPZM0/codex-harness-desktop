@@ -22483,6 +22483,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   transition: top 0.36s cubic-bezier(0.22, 1, 0.36, 1);
   z-index: 6;
   pointer-events: none;
+  overscroll-behavior: contain;
 }
 .team-panel-anchor.is-floating { top: 72px; right: 16px; transform: none; }
 .team-panel-anchor > * { pointer-events: auto; }
@@ -22545,10 +22546,10 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 .team-run-popup-query > span { flex: none; font-size: 10px; color: var(--faint); padding-top: 2px; }
 .team-run-popup-query > p { margin: 0; font-size: 11px; line-height: 1.5; color: var(--muted); max-height: 54px; overflow: auto; }
-.team-run-popup-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px; }
+.team-run-popup-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 10px; }
 .team-run-popup-text { font-size: 11.5px; line-height: 1.62; color: var(--text); white-space: pre-wrap; word-break: break-word; }
 .team-run-popup-empty { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
-.team-history-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 6px; }
+.team-history-list { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 6px; }
 .team-history-item { border-radius: 8px; padding: 6px 8px; }
 .team-history-item + .team-history-item { margin-top: 4px; }
 .team-history-item[open] { background: var(--panel-2); }

@@ -95,6 +95,18 @@ export function parseUserRefs(text: string): ParsedUserRefs {
       requirement: teamTaskMatch[2].trim(),
     };
   }
+  // 09-14 兜底：**无壳旧格式**。后台调度成员/子智能体（team_member_invoke 路径）曾经
+  // 不包 SYSTEM TASK 壳，直接以「[专家团「…」成员 …（…）]\n<角色提示词>\n\n主理人分配的子任务：…」
+  // 或「[子智能体 …] …用户任务：…」作为首条 userMessage——用户打开这类旧会话时整段
+  // 提示词裸露在气泡里（用户实测反馈）。这里识别这两种开头并把角色段折叠，
+  // 需求取「主理人分配的子任务：/用户任务：」之后的部分。
+  if (!teamTaskMatch) {
+    const legacy = clean.match(/^\[专家团「[^」]+」(主理人|成员)[^\]]*\]\n[\s\S]*?(?:主理人分配的子任务|用户任务)：\s*\n?([\s\S]*$)/);
+    if (legacy) {
+      clean = "";
+      teamTask = { kind: "member", requirement: legacy[2].trim() };
+    }
+  }
   return { cleanText: clean.replace(/\n{3,}/g, "\n\n").trim(), files, skills, contexts, teamTask, imported, threadReferences };
 }
 

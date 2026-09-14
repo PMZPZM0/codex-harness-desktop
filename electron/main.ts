@@ -5978,7 +5978,8 @@ ipcMain.handle("subagents:invoke", async (_event, input: { id?: string; name?: s
     config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
   });
   const systemPrefix = `[子智能体 ${agent.name}] ${agent.systemPrompt}\n\n`;
-  const finalQuery = `${systemPrefix}用户任务：${input.query}\n\n完成后请输出结构化结果（关键结论 + 行动步骤 + 任何上下文）；不要主动发起破坏性操作。`;
+  // 09-14：同样包 SYSTEM TASK 壳（子智能体会话首条气泡也不再裸露角色提示词）
+  const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n用户任务：${input.query}\n=== END ===\n\n${systemPrefix}完成后请输出结构化结果（关键结论 + 行动步骤 + 任何上下文）；不要主动发起破坏性操作。`;
   const turn: any = await server.request("turn/start", {
     threadId: started.thread.id,
     input: [{ type: "text", text: finalQuery, text_elements: [] }],
@@ -6128,7 +6129,7 @@ ipcMain.handle("teams:member-session", async (_event, input: { teamId: string; m
   }
   const firstTask = String(input.task ?? "").trim();
   if (!firstTask) throw new Error(`请先在对话框描述你的需求`);
-  const finalQuery = `${systemPrefix}[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n${firstTask}\n=== END ===\n\n${MEMBER_TASK_INSTRUCTION}`;
+  const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n${firstTask}\n=== END ===\n\n${systemPrefix}${MEMBER_TASK_INSTRUCTION}`;
   const turn: any = await server.request("turn/start", {
     threadId: started.thread.id,
     input: [{ type: "text", text: finalQuery, text_elements: [] }],
@@ -6197,7 +6198,9 @@ ipcMain.handle("teams:invoke-member", async (_event, input: { teamId: string; me
   // ③ 修掉死指令：成员线程**没有**挂任何 dynamicTools，不存在 SendMessage 之类的回传工具。
   //    真实回传路径是同步的：宿主等这个回合跑完，把最终文本当 team_member_invoke 的返回值
   //    交回主理人。旧文案叫模型「通过 SendMessage 回传」，它可能白花 token 去调不存在的工具。
-  const finalQuery = `${systemPrefix}主理人分配的子任务：${input.query}\n\n请直接给出你的专业产出（关键结论 + 依据 + 建议）。你的最终回答文本会被完整回传给主理人，无需调用任何回传工具。不要发起破坏性操作。`;
+  // 09-14：包上 [SYSTEM TASK · 成员会话] 壳——渲染端 userDisplayText 只认这个壳，
+  // 不包壳的话用户打开成员会话时整段角色提示词会裸露在首条气泡里（用户实测反馈）。
+  const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n主理人分配的子任务：${input.query}\n=== END ===\n\n${systemPrefix}请直接给出你的专业产出（关键结论 + 依据 + 建议）。你的最终回答文本会被完整回传给主理人，无需调用任何回传工具。不要发起破坏性操作。`;
   try {
     const turn: any = await server.request("turn/start", {
       threadId: memberThreadId,
