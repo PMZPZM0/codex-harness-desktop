@@ -22382,8 +22382,8 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .team-cluster-body {
   /* 09-14 用户二次反馈：左边空白太多、hover 按钮挤占标题导致点不了会话、不好看。
      改动：缩进 26px→12px、竖线 2px 实线→1px 淡线、行紧凑、子行只留必要按钮。 */
-  margin: 2px 0 4px 4px;
-  padding: 2px 0 2px 4px;
+  margin: 2px 0 4px 12px;
+  padding: 2px 0 2px 8px;
   border-left: 1px solid color-mix(in srgb, var(--text-primary, #111) 9%, transparent);
   display: flex; flex-direction: column; gap: 0;
   /* 成员多/侧栏窄时限高滚动：不生硬堆出、不撑爆侧栏、不穿透外层列表 */
@@ -22405,13 +22405,30 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .team-cluster-body .thread-row.is-member-row .thread-archive-button,
 .team-cluster-body .thread-row.is-member-row .thread-more-button { display: none; }
 .team-cluster-body .thread-row.is-member-row .thread-actions { min-width: 0; gap: 0; }
-/* 聚簇行 = 主会话行（展开体里不再重复渲染它）：加粗主色 + 左侧身份色条，一眼分出主次 */
-.team-cluster > .thread-row .thread-row-title-line > span:first-child {
+/* 团队条（.team-cluster-head）= 分组头，不是一个会话（用户 09-14 草稿）：
+   淡底 + 描边把它与会话行区分开，团名加粗；点整行只展开/收起，不会误开会话。 */
+.team-cluster-head {
+  background: color-mix(in srgb, var(--text-primary, #111) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-primary, #111) 8%, transparent);
+  cursor: pointer;
+}
+.team-cluster-head:hover { background: color-mix(in srgb, var(--text-primary, #111) 8%, transparent); }
+.team-cluster-head .thread-row-title-line > span:first-child {
   font-weight: 600; color: var(--color-text-primary, var(--text, #111));
 }
-.team-cluster > .thread-row { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--blue, #3b82f6) 40%, transparent); }
-/* 给身份色条留出 3px */
-.team-cluster > .thread-row > button:first-child { padding-left: 8px; }
+/* 组内主会话行：左侧细色条标识身份 + 「主会话」小标签 */
+.team-cluster-body .thread-row:not(.is-member-row) {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--blue, #3b82f6) 45%, transparent);
+}
+.team-cluster-role {
+  display: inline-flex; align-items: center;
+  margin-left: 6px; padding: 0 6px;
+  height: 15px; border-radius: 999px;
+  font-size: 10px; font-weight: 500;
+  color: var(--blue, #3b82f6);
+  background: color-mix(in srgb, var(--blue, #3b82f6) 12%, transparent);
+  white-space: nowrap;
+}
 /* 成员会话行：次要层级（更小更淡，退后一层） */
 .team-cluster-body .thread-row.is-member-row .thread-row-title-line > span:first-child {
   font-weight: 400; color: var(--text-secondary, #666);
