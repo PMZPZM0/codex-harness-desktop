@@ -13601,6 +13601,12 @@ const commandMatches = useMemo(() => {
     if (hidden <= 0 && !cursor) return;
     loadingEarlierRef.current.add(id);
     setEarlierLoadingId(id);
+    // ⛔ 兜底：任何异常路径都不许让「正在载入」与防重入锁长期持有——实测续载请求挂起时，
+    // 提示会一直挂在会话顶部、且该会话再也加载不了更早历史（用户实测「一直常驻，切会话都在」）。
+    const hintTimer = window.setTimeout(() => {
+      loadingEarlierRef.current.delete(id);
+      setEarlierLoadingId((current) => (current === id ? null : current));
+    }, 8000);
     try {
       const el0 = scrollRef.current;
       const beforeTop = el0?.scrollTop ?? 0;
@@ -13615,7 +13621,11 @@ const commandMatches = useMemo(() => {
         grow = Math.min(hidden, TURNS_PAGE); // 本地展开一批的量，翻老历史不产生网络请求
       } else if (cursor) {
         try {
-          const result: any = await window.codex.request("thread/turns/list", { threadId: id, limit: TURNS_PAGE, sortDirection: "desc", itemsView: "full", cursor });
+          // 超时保护：引擎偶发慢/挂起时不能让加载状态卡死（超时按失败处理，游标保留，下次滚动重试）
+          const result: any = await Promise.race([
+            window.codex.request("thread/turns/list", { threadId: id, limit: TURNS_PAGE, sortDirection: "desc", itemsView: "full", cursor }),
+            new Promise((_, reject) => window.setTimeout(() => reject(new Error("turns/list timeout")), 8000)),
+          ]);
           const data = Array.isArray(result?.data) ? result.data : [];
           if (result?.nextCursor) turnsCursorRef.current.set(id, result.nextCursor);
           else turnsCursorRef.current.delete(id);
@@ -13647,6 +13657,7 @@ const commandMatches = useMemo(() => {
         }));
       }
     } finally {
+      window.clearTimeout(hintTimer);
       loadingEarlierRef.current.delete(id);
       setEarlierLoadingId((current) => (current === id ? null : current));
     }
@@ -13733,6 +13744,7 @@ const commandMatches = useMemo(() => {
     switchStartRef.current = performance.now();
     // 新会话：重新等待「真实用户滚动」才允许自动续载（见 userScrolledRef）
     userScrolledRef.current = false;
+    setEarlierLoadingId(null); // 切会话不留上一次的「正在载入更早」提示
     setChatSearchOpen(false);
     // 快速连点防竞态：只有最新一次切换的 resume 响应才允许落地渲染
     const seq = ++switchSeqRef.current;

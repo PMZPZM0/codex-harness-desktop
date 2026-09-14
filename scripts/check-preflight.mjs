@@ -2076,6 +2076,17 @@ console.log(C.bold("\n【14】历史分页懒加载（首屏一页 / 滚一屏�
   /userScrolledRef\.current = false/.test(appSrc4)
     ? ok("切换会话时重置「用户滚过」标记（新会话需重新滚才自动续载）")
     : fail("切换会话没重置用户滚动标记 —— 切过去没滚也会自动加载");
+  // 载入提示不许常驻（用户 09-14 实测「一直常驻，切会话都在」：续载请求挂起会让提示与
+  // 防重入锁一起卡住，该会话再也加载不了更早历史）。三重保护缺一不可：
+  /turns\/list timeout/.test(anchorFn) && /Promise\.race/.test(anchorFn)
+    ? ok("续载请求有超时保护（引擎慢/挂起时不会卡住加载状态）")
+    : fail("续载请求没有超时保护 —— 请求挂起会让「正在载入」常驻");
+  /hintTimer = window\.setTimeout/.test(anchorFn) && /clearTimeout\(hintTimer\)/.test(anchorFn)
+    ? ok("提示有兜底计时器（异常路径也会自动清除）")
+    : fail("提示没有兜底清除 —— 任何异常路径都会留下常驻提示");
+  /setEarlierLoadingId\(null\)/.test(appSrc4)
+    ? ok("切换会话时清掉提示（不留上一次的加载态）")
+    : fail("切换会话没清提示 —— 会串会话残留");
 }
 // ---------- 汇总 ----------
 
