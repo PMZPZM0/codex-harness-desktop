@@ -8031,13 +8031,17 @@ export default function App() {
     // 被弹窗锁定的会话：侧栏置灰不可点（会话已在独立窗口里渲染，点击会造成双窗口重复渲染），
     // 行仍保留在原位置（用户 09-13 定稿：隐藏改为置灰）。弹窗关闭后自动恢复可点。
     const poppedOut = poppedOutThreadIds.has(entry.id);
+    /** 成员会话标题：剥掉重复的「团队名 · 」前缀，只留职能名（用户反馈「为啥都要重复前缀」）。
+     *  仅成员行生效；重命名弹窗仍用完整名（那里需要全名）。 */
+    const rawTitle = cleanThreadDisplayTitle(entry.name, { preview: entry.preview });
+    const displayTitle = variant === "member" ? (rawTitle.match(/^.*?·\s*(.+)$/)?.[1]?.trim() || rawTitle) : rawTitle;
     return (
     <div
       className={`thread-row ${thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${threadRowMenu?.id === entry.id ? "menu-open" : ""} ${poppedOut ? "popped-out" : ""}${variant === "member" ? " is-member-row" : ""}`}
       key={entry.id}
     >
       <button title={poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : "双击修改任务名称"} onClick={() => { if (poppedOut) { showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } void openThread(entry.id); }}>
-        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void renameThread(entry.id, next); }); }}><span>{cleanThreadDisplayTitle(entry.name, { preview: entry.preview })}</span>{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
+        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void renameThread(entry.id, next); }); }}><span title={rawTitle}>{displayTitle}</span>{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
       </button>
       <div className="thread-actions">
         <button className={`thread-pin-button ${pinnedThreads.includes(entry.id) ? "pinned" : ""}`} title={pinnedThreads.includes(entry.id) ? "取消置顶" : "置顶会话"} onClick={(event) => { event.stopPropagation(); togglePinThread(entry.id); }}><Pin size={13} /></button>
@@ -9620,9 +9624,17 @@ export default function App() {
   // 把成员会话合并进主会话行下、默认折叠，点「成员会话」展开。
   // threadId → teamId 的权威映射在主进程（team-threads.json），启动时拉一次 + team-run 广播时刷新。
   const [teamThreadsIndex, setTeamThreadsIndex] = useState<Record<string, string>>({});
+  /** ★ 主进程 members 映射的值 = **成员会话线程** id。threads 表里主会话也在，
+   *  区分主/成员只能靠这份 members（用户 09-14 纠正「交易分析团是主会话，你别搞错了」——
+   *  此前靠标题猜「不带 · 的是主会话」，标题被截断/改名/preview 兜底时会认错）。 */
+  const [teamMemberThreadIds, setTeamMemberThreadIds] = useState<Set<string>>(new Set());
   useEffect(() => {
     let alive = true;
-    void window.codex.teamThreadsMap?.().then((doc) => { if (alive && doc?.threads) setTeamThreadsIndex(doc.threads); }).catch(() => undefined);
+    void window.codex.teamThreadsMap?.().then((doc) => {
+      if (!alive) return;
+      if (doc?.threads) setTeamThreadsIndex(doc.threads);
+      if (doc?.members) setTeamMemberThreadIds(new Set(Object.values(doc.members)));
+    }).catch(() => undefined);
     return () => { alive = false; };
   }, []);
   useEffect(() => {
@@ -9639,6 +9651,15 @@ export default function App() {
   }, []);
   /** 展开的专家团簇（teamId 集合）。默认全部折叠（用户定稿：默认合并）。 */
   const [expandedTeamClusters, setExpandedTeamClusters] = useState<Set<string>>(new Set());
+  /** 展开某个簇后，把当前打开的会话行滚入视野（用户反馈「我选择下面会话都没有反馈，
+   *  都不知道选择了那个」——展开体限高滚动时选中行可能在视野外）。 */
+  useEffect(() => {
+    if (!expandedTeamClusters.size) return;
+    const raf = requestAnimationFrame(() => {
+      document.querySelector(".team-cluster-body .thread-row.active")?.scrollIntoView({ block: "nearest" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [expandedTeamClusters, thread?.id]);
   const toggleTeamCluster = useCallback((teamId: string) => {
     setExpandedTeamClusters((prev) => {
       const next = new Set(prev);
@@ -9655,10 +9676,11 @@ export default function App() {
     for (const entry of listThreads) {
       const teamId = teamThreadsIndex[entry.id];
       if (!teamId) continue;
-      memberIds.add(entry.id);
       let cluster = clusters.get(teamId);
       if (!cluster) { cluster = { teamId, lead: null, members: [] }; clusters.set(teamId, cluster); }
-      cluster.members.push(entry);
+      // ★ 权威判定：members 映射里的 = 成员会话；同团队里不在其中的 = **主会话**（团队名那条）
+      if (teamMemberThreadIds.has(entry.id)) { cluster.members.push(entry); memberIds.add(entry.id); }
+      else if (!cluster.lead) cluster.lead = entry;
     }
     for (const cluster of clusters.values()) {
       cluster.members.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -9672,7 +9694,7 @@ export default function App() {
       }
     }
     return { memberIds, clusters: [...clusters.values()] };
-  }, [listThreads, teamThreadsIndex]);
+  }, [listThreads, teamThreadsIndex, teamMemberThreadIds]);
   const toggleAllGroups = useCallback(() => {
     setCollapsedSections((previous) => {
       const next = new Set(previous);
@@ -11572,6 +11594,9 @@ const commandMatches = useMemo(() => {
           setTeamRuns((prev) => ({ ...prev, [run.runId]: { ...run, output: run.output ?? "" } }));
           // 侧栏聚簇索引同步：leadThreadId → teamId（run 里权威携带，不用等 teamThreadsMap 重拉）
           if (run.leadThreadId && run.teamId) setTeamThreadsIndex((prev) => (prev[run.leadThreadId] === run.teamId ? prev : { ...prev, [run.leadThreadId]: run.teamId }));
+          // 成员线程 id 一并登记（新委托产生的成员会话立即按成员层级渲染）
+          const memberTid = String(run.memberThreadId ?? "");
+          if (memberTid) setTeamMemberThreadIds((prev) => (prev.has(memberTid) ? prev : new Set(prev).add(memberTid)));
           setTeamPopupRunId(run.runId); // 成员开始干活 → 自动打开它的工作弹窗
         } else if (phase === "delta") {
           const runId = String((event as any).runId ?? "");
