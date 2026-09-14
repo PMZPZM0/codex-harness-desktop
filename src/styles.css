@@ -22329,17 +22329,22 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
    头像轨是 .timeline-wrap 的 flex 子项（参与布局，容器被压窄时 App 侧 ResizeObserver
    会先切 compact 再隐藏）；两个面板绝对定位浮在消息区右上，不占位、不遮输入框。 */
 .team-rail {
-  flex: 0 0 auto;
+  /* 09-14 用户反馈：rail 作为占位 flex 子项会在消息区右侧留一条空白列（成员会话窄窗尤其明显）， */
+  /* 且把用户气泡与输入框右缘隔开。改为绝对定位浮层——不参与布局，只悬浮在消息区右上。 */
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
   width: 92px;
-  align-self: stretch;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 22px 0;
-  position: relative;
   z-index: 2;
+  pointer-events: none; /* 轨道本体不挡视线，头像节点单独恢复可点 */
   animation: teamRailIn 0.3s ease both;
 }
+.team-rail .team-rail-node { pointer-events: auto; }
 .team-rail.mode-compact {
   width: 52px;
 }
