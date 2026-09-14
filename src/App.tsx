@@ -12229,8 +12229,16 @@ const commandMatches = useMemo(() => {
       threadProviderRef.current.set(next.id, HARNESS_PROVIDER_ID);
       await refreshThreads();
       await openThread(next.id, next);
-      // 旧会话自动归档：接力已成功，旧的收进归档（历史仍在归档里，可随时恢复）
-      if (threadRef.current?.id !== threadId) await archiveThread(threadId);
+      // 旧会话自动清除（09-15 用户定稿：接力成功后**只保留新的**）：fork 已带完整历史，
+      // 旧会话没有保留价值——只归档还会在归档管理留一坨，用户明确要的是「旧的不在了」。
+      // 若旧会话是团队主会话，级联规则会一并清掉成员会话。
+      if (threadRef.current?.id !== threadId) {
+        await cascadeTeamCluster(threadId, "delete");
+        try { await window.codex.request("thread/delete", { threadId }); } catch { /* 已不存在则跳过 */ }
+        threadCacheRef.current.delete(threadId);
+        setThreads((current) => current.filter((entry) => entry.id !== threadId));
+        markThreadStopped(threadId);
+      }
       showToast("已自动接力", CONTINUITY_TEXT.relayed(label));
       return ALIGN_RESULT.relayed;
     } catch {

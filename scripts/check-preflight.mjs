@@ -2035,9 +2035,9 @@ console.log(C.bold("\n【13】供应商自动接力（切换供应商后旧会�
   /willRealign && activeNow\s*$/m.test(appSrc3) || /willRealign && activeNow\n\s*\?/.test(appSrc3)
     ? ok("★ 即将接力的会话，模型回填取激活模型（不让旧记录把迁移结果覆盖回去）")
     : fail("模型回填没考虑即将接力 —— 迁移写入会被 openThread 的旧值覆盖（丢更新）");
-  /thread\/fork/.test(appSrc3) && /await archiveThread\(threadId\)/.test(appSrc3)
-    ? ok("原地失败 → fork 接力（带完整历史）并把旧会话自动归档")
-    : fail("接力兜底缺一环（fork 或 旧会话归档）—— 侧栏会留两坨/历史会丢");
+  /thread\/fork/.test(appSrc3) && /thread\/delete", \{ threadId \}/.test(appSrc3) && !/await archiveThread\(threadId\)/.test(appSrc3)
+    ? ok("接力成功后旧会话自动删除（09-15 用户定稿：只保留新的，fork 自带完整历史）")
+    : fail("接力兜底缺一环（fork 或 旧会话删除）—— 侧栏会留两坨/历史会丢");
   // 09-14 统一 provider id：接力后登记的是统一 id（HARNESS_PROVIDER_ID），不再登记 target.provider
   /threadProviderRef\.current\.set\(next\.id, (?:target\.provider|HARNESS_PROVIDER_ID)\)/.test(appSrc3)
     ? ok("接力后的新会话登记了真实绑定（下次发送不再重复迁移）")
