@@ -2122,11 +2122,13 @@ console.log(C.bold("\n【15】供应商列表：点开关（启用/停用）右�
   const appSrc5 = readFileSync(join(ROOT, "src/App.tsx"), "utf8");
   // ⛔ 用户 09-14 实测：点开关（开启某个供应商）后右侧还停在上一个供应商的界面 ——
   //    因为开关的 onClick 只 stopPropagation()，把行点击（切详情）也拦掉了。
-  !/onClick=\{\(event\) => event\.stopPropagation\(\)\}/.test(appSrc5)
-    ? ok("供应商开关不再裸 stopPropagation（拦冒泡时同时把详情切过去）")
-    : fail("供应商开关又是裸 stopPropagation —— 点开关后右侧会停在旧界面");
+  // ⛔ 检查窗口必须限定在「开关」各自的上下文里：裸 stopPropagation 这个模式在文件别处也有，
+  //    全文件扫会假红（本轮踩过）。取每个 .provider-switch 出现点之前的 2600 字符做上下文。
   const swIdx = appSrc5.indexOf("provider-switch-ui");
   const swBlock = appSrc5.slice(Math.max(0, swIdx - 2600), swIdx);
+  !/onClick=\{\(event\) => event\.stopPropagation\(\)\}/.test(swBlock)
+    ? ok("供应商开关不再裸 stopPropagation（拦冒泡时同时把详情切过去）")
+    : fail("供应商开关又是裸 stopPropagation —— 点开关后右侧会停在旧界面");
   /setEditingProvider\(p\.provider\)/.test(swBlock)
     ? ok("开关的 onClick 里确实切了编辑对象（setEditingProvider）")
     : fail("开关 onClick 里没有切编辑对象 —— 详情不会跟随");
