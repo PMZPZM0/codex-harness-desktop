@@ -2102,6 +2102,11 @@ console.log(C.bold("\n【14】历史分页懒加载（首屏一页 / 滚一屏�
   rulerPage === page
     ? ok(`刻度尺滚轮步长 = 一页（RULER_PAGE=${rulerPage} = TURNS_PAGE）`)
     : fail(`刻度尺滚轮步长(${rulerPage})与页大小(${page})不一致 —— 滚轮不会按页滑动`);
+  // ⛔ 只查常量值没有鉴别力：必须查**使用点**是否真的绑了 RULER_PAGE（反证过：把使用点改回
+  //    固定格数，常量断言照样绿）。
+  /direction \* RULER_PAGE/.test(appSrc4)
+    ? ok("滚轮使用点真的按页滑（direction * RULER_PAGE）")
+    : fail("滚轮使用点没绑 RULER_PAGE —— 又回到固定格数地滑");
   const cssSrc = readFileSync(join(ROOT, "src/styles.css"), "utf8");
   /--ruler-pad/.test(appSrc4) && /var\(--ruler-pad/.test(cssSrc)
     ? ok("刻度间距走 CSS 变量（已加载刻度多时自动压缩：加一页就短一点）")
