@@ -1,3 +1,0 @@
-pack(mac): 补 expert-skills / voice-presets 进 mac 包
-
-mac 的 extraResources 为空数组、只 copy 了 resources/tools，导致专家技能包与内置音色没进包；copy-mac-tools.cjs 现补拷这两个目录并在缺源时中止打包。

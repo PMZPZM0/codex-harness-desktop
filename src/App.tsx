@@ -6943,6 +6943,9 @@ export default function App() {
     setRunningThreadIds(new Set());
   }, []);
   const [workspace, setWorkspace] = useState(localStorage.getItem("workspace") ?? "");
+  /** workspace 的 ref 镜像：send 里弹目录选择框后要立刻读到刚选的值
+   *  （setState 异步，直接读 `workspace` 闭包变量还是旧值），09-14。 */
+  const workspaceRef = useRef(workspace);
   const [prompt, setPrompt] = useState("");
   // 输入框语音听写状态：partial/final 中文字幕实时回填到 composer，不自动发送。
   const [voiceDictating, setVoiceDictating] = useState(false);
@@ -12680,6 +12683,7 @@ const commandMatches = useMemo(() => {
     const value = await window.codex.chooseDirectory();
     if (!value) return;
     setWorkspace(value);
+    workspaceRef.current = value; // ref 同步：send 弹窗选完要立刻读到（state 是异步的）
     localStorage.setItem("workspace", value);
     if (thread) {
       const settings = sandbox === "workspace-write" ? { cwd: value, sandboxPolicy: sandboxPolicy(sandbox, value) } : { cwd: value };
@@ -14011,10 +14015,19 @@ const commandMatches = useMemo(() => {
     if (!workspace) {
       planOnceRef.current = false; // /plan 旗标不跨发送泄漏：发送失败即复位
       setPlanArmed(false);
-      {
-        await chooseWorkspace();
-        return;
-      }
+      // ★ 09-14 用户反馈修复：欢迎页选过「不使用项目地址」（scratch 指示器挂着）时，
+      //   这里 `!workspace` 成立（scratch ≠ workspace）→ 弹目录选择框。旧行为有两个坑：
+      //   ① 选完直接 return —— **用户这条消息被静默丢弃**，要再发一次；
+      //   ② 用户在弹窗里明确选了项目目录，但欢迎页的 scratch 选择**没被清掉**，
+      //      下一次发送 createEmptyThread 里 `cwd: welcomeScratchDir ?? workspace`
+      //      仍命中 scratch → **会话建进临时目录，而不是用户刚选的项目**（正是用户
+      //      报的「选了 A 却建了 B」）。修法：选完不 return（继续发送），并清掉
+      //      scratch——用户在发送路径选目录这个动作本身就是「改用项目地址」。
+      if (welcomeScratchDir) setWelcomeScratchDir(null);
+      await chooseWorkspace();
+      if (!workspaceRef.current) return; // 用户取消了选择：留在输入框，消息不丢
+      // 选好了 → 不 return，继续走下面的正常发送流程（用刚选的目录建会话）
+      // 选好了 → 不 return，继续走下面的正常发送流程（用刚选的目录建会话）
     }
     let messageText = value;
     let threadReferenceBlocks = "";
