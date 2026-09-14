@@ -22325,6 +22325,44 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   grid-row: 2;
 }
 
+/* ── 侧栏专家团聚簇（09-14 用户反馈）：主会话 + 成员会话合并为一行，默认折叠 ── */
+.team-cluster > .thread-row { position: relative; }
+.team-cluster-badge {
+  display: inline-flex; align-items: center;
+  margin-left: 6px; padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px; font-weight: 500;
+  color: var(--text-secondary, #666);
+  background: color-mix(in srgb, var(--text-primary, #111) 7%, transparent);
+  white-space: nowrap;
+}
+.thread-cluster-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--text-secondary, #666); cursor: pointer;
+}
+.thread-cluster-toggle:hover { background: color-mix(in srgb, var(--text-primary, #111) 8%, transparent); }
+.thread-cluster-toggle svg { transition: transform 0.18s ease; }
+.thread-cluster-toggle svg.open { transform: rotate(180deg); }
+.team-cluster-body {
+  margin: 4px 0 6px 14px;
+  padding-left: 10px;
+  border-left: 2px solid color-mix(in srgb, var(--text-primary, #111) 10%, transparent);
+  display: flex; flex-direction: column; gap: 2px;
+  /* 09-14 用户反馈：展开要适配——成员多/侧栏窄时生硬堆出会展示不全。
+     限高 + 内部滚动，溢出不撑爆侧栏，滚动时不再穿透外层列表。 */
+  max-height: min(48vh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.team-cluster-label {
+  margin: 6px 0 2px;
+  font-size: 10.5px; font-weight: 600;
+  color: var(--text-tertiary, #999);
+  letter-spacing: 0.04em;
+}
+.team-cluster-body .thread-row { padding-left: 2px; }
+
 /* ── 专家团成员头像轨 + 成员工作弹窗 + 历史记录（09-14 用户要求） ──────────────
    头像轨是 .timeline-wrap 的 flex 子项（参与布局，容器被压窄时 App 侧 ResizeObserver
    会先切 compact 再隐藏）；两个面板绝对定位浮在消息区右上，不占位、不遮输入框。 */
