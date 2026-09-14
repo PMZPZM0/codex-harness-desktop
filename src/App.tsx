@@ -6501,7 +6501,8 @@ function TeamMemberRail({ team, containerRef, runningByMember, lastByMember, act
 }
 
 /** 成员工作弹窗：成员一开始干活就自动弹出它的真实产出流（主进程转发该成员线程的文本增量），
- *  委托结束自动收起（见自动关闭 effect）。不遮输入框——定位在消息区右上、限高内滚。 */
+ *  委托结束自动收起（见自动关闭 effect）。不遮输入框——定位在消息区右上、限高内滚。
+ *  09-14 用户反馈：产出内容变长后视口停在旧位置，看不到最新输出 → 底部跟随（用户上滑即让位）。 */
 function TeamRunPopup({ team, run, onClose, onOpenHistory }: {
   team: ExpertTeamConfig;
   run: TeamMemberRunRecord;
@@ -6514,6 +6515,35 @@ function TeamRunPopup({ team, run, onClose, onOpenHistory }: {
   const Icon = member ? expertIconOf(member) : Bot;
   const running = run.status === "running";
   const anchorTop = useAvatarAnchor(run.memberId);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // 底部跟随：产出增长时若用户本来就在底部（或从未滚过），贴到最新；上滑即让位，回底恢复
+  const followRef = useRef(true);
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const onWheel = () => { followRef.current = false; };
+    const onTouchMove = () => { followRef.current = false; };
+    const onScroll = () => {
+      if (el.scrollHeight - el.scrollTop - el.clientHeight <= 12) followRef.current = true;
+    };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("scroll", onScroll);
+    };
+  }, []);
+  // 产出变化时跟随（rAF 对齐帧：等 DOM 提交后再量 scrollHeight）
+  useEffect(() => {
+    if (!followRef.current) return;
+    const raf = requestAnimationFrame(() => {
+      const el = bodyRef.current;
+      if (el && followRef.current) el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [run.output]);
   return (
     <div className={`team-panel-anchor${anchorTop == null ? " is-floating" : ""}`} style={anchorTop == null ? undefined : { top: anchorTop }}>
     <section className={`team-run-popup${running ? " is-running" : run.status === "failed" ? " is-failed" : " is-settled"}`} role="dialog" aria-label={`成员 ${label} 的工作会话`}>
@@ -6524,7 +6554,7 @@ function TeamRunPopup({ team, run, onClose, onOpenHistory }: {
         <button type="button" className="icon-button" title="关闭" onClick={onClose}><X size={14} /></button>
       </header>
       <div className="team-run-popup-query"><span>子任务</span><p>{run.query}</p></div>
-      <div className="team-run-popup-body">
+      <div className="team-run-popup-body" ref={bodyRef}>
         {run.output
           ? <div className="team-run-popup-text">{run.output}</div>
           : <div className="team-run-popup-empty"><LoaderCircle size={14} className="spin" />等待成员产出…</div>}
