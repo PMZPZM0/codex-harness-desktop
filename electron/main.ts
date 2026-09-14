@@ -1162,7 +1162,10 @@ async function upsertCustomModel(value: CustomModelFile) {
 function normalizeProvider(entry: CustomModelFile): CustomModelFile {
   const models = (entry.models ?? []).map((raw: any): ProviderModel => typeof raw === "string" ? { id: raw, contextWindow: entry.contextWindow, enabled: true } : { ...raw, enabled: raw?.enabled !== false }).filter((m) => m && typeof m.id === "string" && m.id);
   if (entry.model && !models.some((m) => m.id === entry.model)) models.unshift({ id: entry.model, contextWindow: entry.contextWindow, enabled: true });
-  return { ...entry, models };
+  // ⛔ wire_api 归一化：新版引擎对 "chat" **硬拒载**。档案（custom-model.json）里残留的 chat
+  // 必须在这里就消掉 —— 否则「删掉供应商、重新配置」也清不掉它，每次写 config.toml 都会把
+  // 坏值带回去（09-14 用户实测：删了重配仍报同一条错）。这里归一化后，写入侧恒为 responses。
+  return { ...entry, models, wireApi: "responses" };
 }
 
 /** 合并去重保序，model 始终在列表最前 */
