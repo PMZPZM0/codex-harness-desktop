@@ -18,6 +18,8 @@ import { MemoryStore, Scheduler, type MemoryCategory, type MemoryRemoteConfig } 
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { MemoryLayers } from "./memory-layers";
 import { RpaStore, type RpaRecipe } from "./rpa-store";
+import { TeamRunStore, memberThreadName } from "./team-runs";
+import { ThreadRuntimeStore } from "./thread-runtime-store";
 import { TerminalService } from "./terminal";
 import { RemoteControlService } from "./remote";
 import QRCode from "qrcode";
@@ -73,6 +75,8 @@ function enrichScanCountSnapshot() {
   return {
     rolloutFallbackScans: rolloutFallbackScanCount,
     droppedForInactiveSession: rendererDroppedEventCount,
+    // 09-14：裁剪是否真的在生效（accept 断言用它区分「真的裁了」与「碰巧没事件」）。
+    eventFilterEnabled: EVENT_FILTER_ENABLED,
     threadListRequests: threadListRequestCount,
     resumeCount,
     resumeAvgMs: resumeCount ? Math.round(resumeTotalMs / resumeCount) : 0,
@@ -113,24 +117,51 @@ function eventThreadId(params: any): string {
   return String(params.threadId ?? params.thread_id ?? params.conversationId ?? "");
 }
 
+/** 每个窗口各自上报的「我在看哪个会话」——**必须按窗口分别记**。
+ *  09-12 那次事故的根因就在这里：主窗口与独立弹窗共用同一个全局变量，
+ *  后上报的窗口会覆盖前一个 → 另一个窗口正在看的会话被裁掉事件 → 永久转圈。 */
+const rendererActiveByWindow = new Map<number, { threadId: string; at: number }>();
+/** 上报新鲜度窗口：超过这个时间没再上报，就认为「不知道它在看什么」，一律放行（宁多不漏）。 */
+const ACTIVE_THREAD_FRESH_MS = 30_000;
+/** 逃生阀：HARNESS_EVENT_FILTER=off 一键回到全量放行（改代码之外的回退路径）。 */
+const EVENT_FILTER_ENABLED = process.env.HARNESS_EVENT_FILTER !== "off";
+
+/** 当前「必须收到事件」的会话集合 = 各窗口新鲜的活跃会话 ∪ 独立弹窗锁定的会话。
+ *  返回 null 表示「信息不可信」——此时调用方必须全量放行。 */
+function watchedThreadIds(): Set<string> | null {
+  const now = Date.now();
+  const ids = new Set<string>();
+  let trusted = false;
+  for (const entry of rendererActiveByWindow.values()) {
+    if (now - entry.at <= ACTIVE_THREAD_FRESH_MS) {
+      trusted = true;
+      if (entry.threadId) ids.add(entry.threadId);
+    }
+  }
+  // 弹窗锁定的会话：即使主窗口已经切走，也必须继续收到它自己的流式事件
+  for (const tid of popoutThreadIds.values()) if (tid) { ids.add(tid); trusted = true; }
+  return trusted ? ids : null;
+}
+
 function filterForRenderer(event: any) {
+  if (!EVENT_FILTER_ENABLED) return event;
   if (event?.kind !== "notification") return event;
   const method = String(event?.method ?? "");
   if (RENDERER_CROSS_SESSION_METHODS.has(method)) return event;
   const tid = eventThreadId(event?.params);
   if (!tid) return event;
-  if (!rendererActiveThreadId || tid === rendererActiveThreadId) return event;
-  // ⚠️ 2026-09-12 临时回退为「放行」：按会话过滤一旦与渲染层的 activeThreadId 上报不同步，
-  // 正在跑的会话就会收不到自己的事件 → 永久转圈（用户实测「另一个会话宕机」）。
-  // 先只记账、证明收益与安全性，再决定是否真正启用裁剪（把下面改成 return null 即可）。
+  const watched = watchedThreadIds();
+  if (!watched) return event;          // 不知道任何窗口在看什么 → 放行
+  if (watched.has(tid)) return event;  // 正在被看着 → 放行
+  // 真的可以裁掉：只有渲染层当前不看的会话的高频事件（各种 delta / item 全文 / outputDelta）。
   rendererDroppedEventCount += 1;
-  return event;
+  return null;
 }
 
 
 import { applySessionsBackup, backupFromRolloutFile, buildMarkdownExport, buildSessionsBackup, buildThreadPreview, parseMarkdownConversation, BACKUP_FORMAT, BACKUP_VERSION } from "./thread-backup";
 import {
-  buildChengxiangExpertTeam, buildDefaultExpertTeams, buildTeamSystemPrompt, buildTeamTools, buildZhiweiExpertTeam, normalizeTeamConfig,
+  buildChengxiangExpertTeam, buildDefaultExpertTeams, buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, buildZhiweiExpertTeam, normalizeTeamConfig,
   readExpertTeams, setExpertTeamsFile, writeExpertTeams, type ExpertTeamConfig, type ExpertTeamMember,
 } from "./expert-teams";
 
@@ -325,6 +356,46 @@ function sendToWindow(channel: string, payload: unknown) {
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
   mainWindow.webContents.send(channel, payload);
 }
+/** harness:event 广播到**所有**窗口（主窗口 + 独立会话弹窗）。会话运行时配置是跨窗口共享的：
+ *  一个窗口改了，另一个窗口必须看到，否则它下次「读-改-写」会拿旧值写回（丢更新）。 */
+function broadcastHarnessEvent(payload: Record<string, unknown>) {
+  for (const win of [mainWindow, ...popoutWindows]) {
+    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) continue;
+    try { win.webContents.send("harness:event", payload); } catch { /* 窗口在关闭过程中，忽略 */ }
+  }
+}
+
+// ── 专家团运行记录（09-14）：成员线程复用映射 / 委托记录落盘 / 运行期流式增量广播 ──
+// 权威必须在主进程 —— 成员线程的流式事件只有这里看得到，而且 popout 独立窗口的
+// 渲染层没有 teamThreadMapRef，只能靠这份映射才知道自己打开的会话属于哪个团。
+const teamRunStore = new TeamRunStore(app.getPath("userData"), (payload) => broadcastHarnessEvent(payload as Record<string, unknown>));
+ipcMain.handle("team-runs:list", async (_event, threadId: string) => teamRunStore.listRuns(String(threadId ?? "")));
+ipcMain.handle("team-threads:map", async () => teamRunStore.listThreads());
+ipcMain.handle("team-threads:team-of", async (_event, threadId: string) => teamRunStore.teamOfThread(String(threadId ?? "")));
+
+// ── 会话运行时配置（模型 / 思考档位 / 权限）的主进程权威存放处 + 多窗口并发保护（09-14） ──
+// 渲染层用 localStorage 作**同步读缓存**（大量同步读不能全改异步 IPC），权威值在这里：
+//   · 写入天然串行（主进程单点），字段级合并不丢更新；
+//   · baseRev 与当前 rev 不等 = 另一个窗口在你读之后改过 → 回报 conflict，渲染层据此刷新界面；
+//   · 每次变更广播给所有窗口 → 其它窗口的镜像与 React 状态跟着更新。
+const threadRuntimeFile = path.join(app.getPath("userData"), "thread-runtime.json");
+const threadRuntimeStore = new ThreadRuntimeStore(threadRuntimeFile);
+ipcMain.handle("thread-runtime:get", async (_event, threadId: string) => threadRuntimeStore.get(String(threadId ?? "")));
+ipcMain.handle("thread-runtime:list", async () => threadRuntimeStore.list());
+ipcMain.handle("thread-runtime:seed", async (_event, input: { threadId?: string; runtime?: unknown }) => {
+  const threadId = String(input?.threadId ?? "");
+  if (!threadId) return null;
+  return threadRuntimeStore.seed(threadId, input?.runtime);
+});
+ipcMain.handle("thread-runtime:patch", async (_event, input: { threadId?: string; patch?: unknown; baseRev?: number }) => {
+  const threadId = String(input?.threadId ?? "");
+  if (!threadId) throw new Error("threadId 不能为空");
+  const result = await threadRuntimeStore.patch(threadId, input?.patch, typeof input?.baseRev === "number" ? input.baseRev : undefined);
+  if (result.changed) {
+    broadcastHarnessEvent({ type: "thread-runtime", threadId, runtime: result.runtime, at: Date.now() });
+  }
+  return result;
+});
 const terminals = new Map<string, TerminalService>();
 function terminalFor(id: string) {
   let service = terminals.get(id);
@@ -2205,7 +2276,10 @@ app.whenReady().then(async () => {
   }
   createWindow();
   server.on("event", (event) => {
-    broadcastCodexEvent(filterForRenderer(event));
+    // 裁剪后可能为 null（09-14 启用按会话过滤）——null 绝不能进 broadcastCodexEvent，
+    // 否则渲染层收到一条空事件。channelBot / voiceService 拿的是未裁剪的原始事件。
+    const forwarded = filterForRenderer(event);
+    if (forwarded) broadcastCodexEvent(forwarded);
     channelBot.handleCodexEvent(event);
     // 语音通话：只旁听事件（正文增量 / 回合生命周期），不改变事件本身的任何流向
     voiceService.handleCodexEvent(event);
@@ -2213,6 +2287,9 @@ app.whenReady().then(async () => {
     if (event.kind === "status" && event.status === "ready") void syncEngineWatchdog();
     // 手机对话页实时同步：流式增量 / 用户消息 / 回合完成
     if (event.kind === "notification") {
+      // 专家团成员线程的流式文本 → 广播给所有窗口（成员工作弹窗实时渲染）。
+      // 只认「正在跑的成员线程」，其它会话的增量一律不碰。
+      teamRunStore.handleEngineEvent(event);
       const p = event.params as any;
       if (event.method === "turn/started" && p?.turn?.id) engineActiveTurnIds.add(String(p.turn.id));
       if (event.method === "turn/completed" && p?.turn?.id) engineActiveTurnIds.delete(String(p.turn.id));
@@ -3108,8 +3185,14 @@ ipcMain.handle("app:storage-clear", async (_event, target: "engine-log" | "image
 
 ipcMain.handle("app:perf-counters", () => enrichScanCountSnapshot());
 /** 渲染层上报「当前正在查看哪个会话」：主进程据此只转发该会话的高频事件（P1）。 */
-ipcMain.handle("codex:set-active-thread", (_event, threadId: unknown) => {
-  rendererActiveThreadId = threadId == null ? "" : String(threadId);
+ipcMain.handle("codex:set-active-thread", (event, threadId: unknown) => {
+  const id = threadId == null ? "" : String(threadId);
+  rendererActiveThreadId = id;
+  try { rendererActiveByWindow.set(event.sender.id, { threadId: id, at: Date.now() }); } catch { /* 窗口已销毁：忽略 */ }
+  // 窗口销毁时清掉记录：否则一个已关闭窗口的旧值会在新鲜度窗口内继续放行它的会话事件
+  try {
+    event.sender.once("destroyed", () => rendererActiveByWindow.delete(event.sender.id));
+  } catch { /* ignore */ }
   return { ok: true };
 });
 /** 当前窗口是否为独立会话弹窗：优先读登记表，URL query 兜底。 */
@@ -5968,6 +6051,9 @@ ipcMain.handle("teams:start-session", async (_event, input: { teamId: string; ta
   const effectiveModel = input.model || customModel?.model;
   if (!effectiveModel) throw new Error("尚未配置自定义模型，无法启动专家团会话");
   const teamTool = buildTeamTools(team);
+  // 并行阶段工具：SOP 标「并行」的阶段由它一次性提交，宿主并发执行 —— 不依赖模型自觉
+  // （09-14 实测：只改提示词让它「一次发多个调用」无效，模型照样逐个发 → 退化成串行）
+  const teamPhaseTool = buildTeamPhaseTool(team);
   const started: any = await server.request("thread/start", {
     model: effectiveModel,
     cwd: input.cwd || process.cwd(),
@@ -5976,8 +6062,10 @@ ipcMain.handle("teams:start-session", async (_event, input: { teamId: string; ta
     modelProvider: provider,
     personality: input.personality || null,
     config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
-    dynamicTools: [teamTool],
+    dynamicTools: [teamTool, teamPhaseTool],
   });
+  // 线程 → 团队映射落主进程并持久化：任何窗口（含 popout）据此才知道这个会话属于哪个团
+  teamRunStore.setThreadTeam(started.thread.id, team.teamId);
   if (input.defer) {
     const threadName = team.displayName.zh;
     try { await server.request("thread/name/set", { threadId: started.thread.id, name: threadName }); } catch { /* 命名失败不阻塞进入会话 */ }
@@ -6026,6 +6114,7 @@ ipcMain.handle("teams:member-session", async (_event, input: { teamId: string; m
     config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
   });
   const systemPrefix = `[专家团「${team.displayName.zh}」${isLead ? "主理人" : "成员"} ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`;
+  teamRunStore.setThreadTeam(started.thread.id, team.teamId);
   if (input.defer) {
     // 会话标题只展示角色职能，不把成员真实姓名带到用户界面。
     const threadName = `${team.displayName.zh} · ${member.profession.zh || "成员"}`;
@@ -6049,7 +6138,7 @@ ipcMain.handle("teams:member-session", async (_event, input: { teamId: string; m
   return { thread: started.thread, turnId: turn.turn?.id ?? null, member: { id: member.id, name: member.name, profession: member.profession.zh } };
 });
 /** 调度一个团队成员在独立会话执行子任务并返回结构化结果（供 team_member_invoke 工具调用） */
-ipcMain.handle("teams:invoke-member", async (_event, input: { teamId: string; memberId: string; query: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }) => {
+ipcMain.handle("teams:invoke-member", async (_event, input: { teamId: string; memberId: string; query: string; leadThreadId?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }) => {
   const list = await readExpertTeams();
   const team = list.find((entry) => entry.teamId === String(input.teamId ?? ""));
   if (!team) throw new Error(`专家团「${input.teamId}」不存在`);
@@ -6065,31 +6154,72 @@ ipcMain.handle("teams:invoke-member", async (_event, input: { teamId: string; me
   if (apiKey) server.setApiKey(apiKey);
   const effectiveModel = input.model || member.model || customModel?.model;
   if (!effectiveModel) throw new Error("尚未配置自定义模型，无法调度团队成员");
-  const started: any = await server.request("thread/start", {
-    model: effectiveModel,
-    cwd: input.cwd || process.cwd(),
-    approvalPolicy: member.approvalPolicy || input.approvalPolicy || "never",
-    sandbox: member.sandbox || input.sandbox || "workspace-write",
-    modelProvider: provider,
-    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+
+  // ① 成员线程复用：同一 (团队, 成员) 始终沿用同一个线程，成员因此记得自己之前做过什么。
+  //    旧行为每次委托都新建线程 —— 同一成员被调两次是两个互不知情的会话，跨阶段上下文
+  //    只能靠主理人把结论内联进 query。
+  const existingThreadId = teamRunStore.memberThreadOf(team.teamId, member.id);
+  let memberThreadId = "";
+  if (existingThreadId) {
+    const resumed: any = await server.request("thread/resume", { threadId: existingThreadId, excludeTurns: false }).catch(() => null);
+    if (resumed?.thread?.id) memberThreadId = String(resumed.thread.id);
+  }
+  if (!memberThreadId) {
+    const started: any = await server.request("thread/start", {
+      model: effectiveModel,
+      cwd: input.cwd || process.cwd(),
+      approvalPolicy: member.approvalPolicy || input.approvalPolicy || "never",
+      sandbox: member.sandbox || input.sandbox || "workspace-write",
+      modelProvider: provider,
+      config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+    });
+    memberThreadId = String(started.thread.id);
+    // ② 成员线程标题：`团名·角色`。不设名字时引擎拿首条用户消息（角色提示词全文）当标题，
+    //    侧栏里会显示成一整坨提示词（09-14 实测截图）。
+    try { await server.request("thread/name/set", { threadId: memberThreadId, name: memberThreadName(team.displayName.zh, member.profession.zh || member.name) }); } catch { /* 命名失败不阻塞调度 */ }
+  }
+  teamRunStore.rememberMemberThread(team.teamId, member.id, memberThreadId);
+  teamRunStore.setThreadTeam(memberThreadId, team.teamId);
+
+  // 运行记录：开始时广播 started（界面点亮头像 + 自动打开成员工作弹窗），
+  // 跑的过程由 teamRunStore.handleEngineEvent 转发流式增量，结束时落盘并广播 finished。
+  const run = teamRunStore.beginRun({
+    leadThreadId: String(input.leadThreadId ?? ""),
+    teamId: team.teamId,
+    memberId: member.id,
+    memberName: member.name,
+    profession: member.profession.zh,
+    role: "member",
+    memberThreadId,
+    query: String(input.query ?? ""),
   });
   const systemPrefix = `[专家团「${team.displayName.zh}」成员 ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`;
-  const finalQuery = `${systemPrefix}主理人分配的子任务：${input.query}\n\n请按你的角色给出专业产出（关键结论 + 依据 + 建议）；完成后通过 SendMessage 将完整结果回传给主理人。不要发起破坏性操作。`;
-  const turn: any = await server.request("turn/start", {
-    threadId: started.thread.id,
-    input: [{ type: "text", text: finalQuery, text_elements: [] }],
-    model: effectiveModel,
-    effort: input.effort || member.effort || "high",
-  });
-  const turnId = turn.turn?.id;
-  if (!turnId) throw new Error("成员调度失败：未返回 turnId");
-  const completed = await waitForTurnCompletion(started.thread.id, turnId);
-  let output = turnOutputText(completed);
-  if (!output) {
-    const resumed: any = await server.request("thread/resume", { threadId: started.thread.id, excludeTurns: false }).catch(() => null);
-    output = turnOutputText(resumed?.thread?.turns?.find((entry: any) => entry.id === turnId));
+  // ③ 修掉死指令：成员线程**没有**挂任何 dynamicTools，不存在 SendMessage 之类的回传工具。
+  //    真实回传路径是同步的：宿主等这个回合跑完，把最终文本当 team_member_invoke 的返回值
+  //    交回主理人。旧文案叫模型「通过 SendMessage 回传」，它可能白花 token 去调不存在的工具。
+  const finalQuery = `${systemPrefix}主理人分配的子任务：${input.query}\n\n请直接给出你的专业产出（关键结论 + 依据 + 建议）。你的最终回答文本会被完整回传给主理人，无需调用任何回传工具。不要发起破坏性操作。`;
+  try {
+    const turn: any = await server.request("turn/start", {
+      threadId: memberThreadId,
+      input: [{ type: "text", text: finalQuery, text_elements: [] }],
+      model: effectiveModel,
+      effort: input.effort || member.effort || "high",
+    });
+    const turnId = turn.turn?.id;
+    if (!turnId) throw new Error("成员调度失败：未返回 turnId");
+    const completed = await waitForTurnCompletion(memberThreadId, turnId);
+    let output = turnOutputText(completed);
+    if (!output) {
+      const resumed: any = await server.request("thread/resume", { threadId: memberThreadId, excludeTurns: false }).catch(() => null);
+      output = turnOutputText(resumed?.thread?.turns?.find((entry: any) => entry.id === turnId));
+    }
+    const text = output || `（成员 ${member.name} 未返回文本内容）`;
+    teamRunStore.finishRun(run.runId, { status: "done", output: text });
+    return { threadId: memberThreadId, turnId, teamId: team.teamId, memberId: member.id, name: member.name, profession: member.profession.zh, output: text, runId: run.runId, reused: Boolean(existingThreadId) };
+  } catch (error: any) {
+    teamRunStore.finishRun(run.runId, { status: "failed", output: run.output, error: error?.message ?? String(error) });
+    throw error;
   }
-  return { threadId: started.thread.id, turnId, teamId: team.teamId, memberId: member.id, name: member.name, profession: member.profession.zh, output: output || `（成员 ${member.name} 未返回文本内容）` };
 });
 
 ipcMain.handle("clipboard:image", async () => {
