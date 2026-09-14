@@ -22407,11 +22407,17 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .team-cluster-body .thread-row.is-member-row .thread-actions { min-width: 0; gap: 0; }
 /* 团队条（.team-cluster-head）= 分组头，不是一个会话（用户 09-14 草稿）：
    淡底 + 描边把它与会话行区分开，团名加粗；点整行只展开/收起，不会误开会话。 */
+/* 折叠态那一行 = 主会话行（= 团队条）：淡蓝底 + 描边 + 左侧身份色条，
+   点行体进主会话，行体自带归档/更多按钮，箭头额外挂在 actions 里。 */
+.team-cluster > .thread-row,
 .team-cluster-head {
-  background: color-mix(in srgb, var(--text-primary, #111) 5%, transparent);
-  border: 1px solid color-mix(in srgb, var(--text-primary, #111) 8%, transparent);
-  cursor: pointer;
+  background: color-mix(in srgb, var(--blue, #3b82f6) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--blue, #3b82f6) 18%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--blue, #3b82f6) 55%, transparent);
 }
+/* 展开箭头：圆形描边按钮，hover 变蓝（与归档/更多区分开） */
+.team-cluster > .thread-row .thread-cluster-toggle,
+.team-cluster-head .thread-cluster-toggle { margin-right: 2px; }
 .team-cluster-head:hover { background: color-mix(in srgb, var(--text-primary, #111) 8%, transparent); }
 .team-cluster-head .thread-row-title-line > span:first-child {
   font-weight: 600; color: var(--color-text-primary, var(--text, #111));
