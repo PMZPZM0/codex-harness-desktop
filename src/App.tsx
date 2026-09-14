@@ -8024,7 +8024,7 @@ export default function App() {
   /** variant="member"：专家团成员会话行（次要层级）。09-14 用户反馈「会话主次明显不对，
    *  主会话右边才亮图标」——成员会话是程序管理的子会话，不给归档/置顶/更多按钮，
    *  宽度留给标题（否则标题被挤成「交易分析专家团…」分不清谁是谁）。样式差异全在 CSS。 */
-  const renderThreadRow = (entry: Thread, variant?: "member") => {
+  const renderThreadRow = (entry: Thread, variant?: "member" | "lead") => {
     const running = runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running";
     const attentionLabel = threadAttention.get(entry.id);
     const attentionTone = attentionLabel === "需审批" ? "approval" : attentionLabel === "需选择" ? "choice" : "confirm";
@@ -8041,7 +8041,7 @@ export default function App() {
       key={entry.id}
     >
       <button title={poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : "双击修改任务名称"} onClick={() => { if (poppedOut) { showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } void openThread(entry.id); }}>
-        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void renameThread(entry.id, next); }); }}><span title={rawTitle}>{displayTitle}</span>{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
+        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void renameThread(entry.id, next); }); }}><span title={rawTitle}>{displayTitle}</span>{variant === "lead" && <span className="team-cluster-role">主会话</span>}{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
       </button>
       <div className="thread-actions">
         <button className={`thread-pin-button ${pinnedThreads.includes(entry.id) ? "pinned" : ""}`} title={pinnedThreads.includes(entry.id) ? "取消置顶" : "置顶会话"} onClick={(event) => { event.stopPropagation(); togglePinThread(entry.id); }}><Pin size={13} /></button>
@@ -8073,39 +8073,42 @@ export default function App() {
     return { clusters, singles };
   };
   /** 聚簇行：主会话名 + 「N 会话」徽标 + 展开箭头（展开出主会话/成员会话分节）。 */
+  /** 专家团聚簇行 = **团队条**（用户 09-14 草稿定稿）：
+   *  折叠时只显示「团名 + N 会话 + 展开箭头」——它是一个分组头，不是某个会话，点它只展开/收起；
+   *  展开后组内第一条是**主会话行**（标注「主会话」），其余是成员行（只写职能名、不带团队前缀）。
+   *  这样团队名只作为分组出现一次，不会像早先那样把主会话渲染两遍。 */
   const renderClusterRow = (cluster: { teamId: string; lead: Thread | null; members: Thread[] }) => {
     const rep = cluster.lead ?? cluster.members[0];
     if (!rep) return null;
     const expanded = expandedTeamClusters.has(cluster.teamId);
-    /** 展开体里要列的成员：lead 存在时就是 members；lead 缺失时代表行（members[0]）已被
-     *  聚簇行占用，需从成员列表里排除，否则同一个会话会渲染两次（用户实测「重复两个」）。 */
-    const memberRows = cluster.lead ? cluster.members : cluster.members.filter((entry) => entry.id !== rep.id);
     const anyRunning = cluster.members.some((m) => runningThreadIds.has(m.id)) || Boolean(cluster.lead && runningThreadIds.has(cluster.lead.id));
     const attention = cluster.members.map((m) => threadAttention.get(m.id)).find(Boolean);
     const clusterTotal = cluster.members.length + (cluster.lead ? 1 : 0);
+    // 团队名优先取专家团配置；取不到则从主会话标题里剥掉「· 职能」后缀
+    const rawLeadTitle = cleanThreadDisplayTitle((cluster.lead ?? rep).name, { preview: (cluster.lead ?? rep).preview });
+    const teamName = expertTeams.find((t) => t.teamId === cluster.teamId)?.displayName?.zh || rawLeadTitle.replace(/\s*[·・].*$/, "");
     return (
       <div key={`cluster-${cluster.teamId}`} className={`team-cluster ${expanded ? "expanded" : ""}`}>
-        <div className={`thread-row ${thread?.id === rep.id ? "active" : ""} ${anyRunning ? "running" : "ready"}`}>
-          <button title={expanded ? "收起成员会话" : `展开 ${clusterTotal} 个会话`} onClick={() => { if (cluster.lead) void openThread(cluster.lead.id); }}>
-            <span className="thread-row-title-line"><span>{cleanThreadDisplayTitle(rep.name, { preview: rep.preview })}</span><span className="team-cluster-badge" title="专家团会话已合并，点箭头展开">{clusterTotal} 会话</span>{attention && <span className="thread-attention-badge tone-confirm">{attention}</span>}</span>
+        {/* 团队条：分组头（不是一个会话）。整行点击=展开/收起，避免误开会话 */}
+        <div className={`thread-row team-cluster-head ${anyRunning ? "running" : "ready"}`}>
+          <button title={expanded ? "收起成员会话" : `展开 ${clusterTotal} 个会话`} onClick={(event) => { event.stopPropagation(); toggleTeamCluster(cluster.teamId); }}>
+            <span className="thread-row-title-line"><span>{teamName}</span><span className="team-cluster-badge" title="该专家团的会话数">{clusterTotal} 会话</span>{attention && <span className="thread-attention-badge tone-confirm">{attention}</span>}</span>
             <small>{basename(rep.cwd)} · {timeAgo(rep.updatedAt)}</small>
           </button>
           <div className="thread-actions">
             <button className="thread-cluster-toggle" title={expanded ? "收起成员会话" : "展开成员会话"} onClick={(event) => { event.stopPropagation(); toggleTeamCluster(cluster.teamId); }}>
               <ChevronDown size={14} className={expanded ? "open" : ""} />
             </button>
-            {openingThread === rep.id ? <Spinner /> : anyRunning ? <span className="thread-running-indicator" title="任务运行中"><i /><i /><i /></span> : null}
+            {anyRunning ? <span className="thread-running-indicator" title="任务运行中"><i /><i /><i /></span> : null}
           </div>
-          {expanded && (
-            <div className="team-cluster-body">
-              {/* ⛔ 不要在这里再渲染一次主会话（用户 09-14 实测：「重复两个啥意思」）——
-                  聚簇行本身就是主会话行（点它即打开主会话），展开体只列成员会话。
-                  lead 缺失（映射不全）时代表行取 members[0]，那行也要从成员列表里排除。 */}
-              {memberRows.length > 0 && <div className="team-cluster-label">成员会话 · {memberRows.length}</div>}
-              {memberRows.map((entry) => renderThreadRow(entry, "member"))}
-            </div>
-          )}
         </div>
+        {expanded && (
+          <div className="team-cluster-body">
+            {cluster.lead && renderThreadRow(cluster.lead, "lead")}
+            {cluster.members.length > 0 && <div className="team-cluster-label">成员会话 · {cluster.members.length}</div>}
+            {cluster.members.map((entry) => renderThreadRow(entry, "member"))}
+          </div>
+        )}
       </div>
     );
   };
