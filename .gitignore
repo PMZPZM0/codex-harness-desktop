@@ -104,3 +104,6 @@ mermaid-e2e-test.html
 .tmp/
 images/
 .workbuddy-ai/
+
+# 编辑器/工具批量操作残留的临时合并文件（09-14 实测 7439 个 SVG 临时文件塞满项目根）
+.merge_file_*
