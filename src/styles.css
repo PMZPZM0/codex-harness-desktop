@@ -22324,3 +22324,249 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   grid-column: 3;
   grid-row: 2;
 }
+
+/* ── 专家团成员头像轨 + 成员工作弹窗 + 历史记录（09-14 用户要求） ──────────────
+   头像轨是 .timeline-wrap 的 flex 子项（参与布局，容器被压窄时 App 侧 ResizeObserver
+   会先切 compact 再隐藏）；两个面板绝对定位浮在消息区右上，不占位、不遮输入框。 */
+.team-rail {
+  flex: 0 0 auto;
+  width: 92px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px 0;
+  position: relative;
+  z-index: 2;
+  animation: teamRailIn 0.3s ease both;
+}
+.team-rail.mode-compact {
+  width: 52px;
+}
+@keyframes teamRailIn {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: none; }
+}
+.team-rail-track {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+/* 灰线：穿过所有头像中心，把主理人与成员串起来 */
+.team-rail-line {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  bottom: 16px;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--line);
+  border-radius: 1px;
+  overflow: hidden;
+}
+/* 流转动画：有人干活时，线上有一段流光自上而下走 */
+.team-rail.is-flowing .team-rail-line::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 42%;
+  background: linear-gradient(180deg, transparent, var(--accent), transparent);
+  animation: teamRailFlow 1.9s linear infinite;
+}
+@keyframes teamRailFlow {
+  from { top: -42%; }
+  to { top: 100%; }
+}
+.team-rail-node {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--muted);
+  transition: color 0.22s ease, transform 0.22s ease;
+}
+.team-rail-node:hover { color: var(--text); }
+.team-rail-avatar {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: var(--panel-2);
+  border: 1.5px solid var(--line);
+  box-shadow: 0 1px 3px #00000012;
+  transition: filter 0.3s ease, opacity 0.3s ease, transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+/* 没接过活的成员：灰掉 */
+.team-rail-node.is-idle .team-rail-avatar { filter: grayscale(1); opacity: 0.42; }
+.team-rail-node.is-idle:hover .team-rail-avatar { opacity: 0.7; }
+/* 干完活的成员：恢复本色 + 完成勾 */
+.team-rail-node.is-done .team-rail-avatar { filter: none; opacity: 1; }
+.team-rail-node.is-failed .team-rail-avatar { filter: grayscale(0.6); opacity: 0.85; border-color: var(--red); }
+/* 正在干活：亮起 + 抬一下 + 呼吸环 */
+.team-rail-node.is-running .team-rail-avatar {
+  filter: none;
+  opacity: 1;
+  transform: scale(1.1);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 2px 8px #0000001f;
+}
+.team-rail-node.is-active .team-rail-avatar { box-shadow: 0 0 0 3px var(--accent-soft); }
+.team-rail-ring {
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  margin-left: -20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  animation: teamRailPulse 1.6s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes teamRailPulse {
+  from { opacity: 0.55; transform: scale(0.86); }
+  to { opacity: 0; transform: scale(1.28); }
+}
+.team-rail-badge {
+  position: absolute;
+  top: -1px;
+  right: 18%;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--ok);
+  color: #fff;
+  border: 1.5px solid var(--bg);
+  animation: teamRailBadgeIn 0.24s ease both;
+}
+.team-rail-badge.is-failed { background: var(--red); }
+@keyframes teamRailBadgeIn {
+  from { opacity: 0; transform: scale(0.5); }
+  to { opacity: 1; transform: none; }
+}
+.team-rail-name {
+  max-width: 100%;
+  font-size: 10px;
+  line-height: 1.25;
+  text-align: center;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.team-rail.mode-compact .team-rail-name { display: none; }
+
+/* 成员工作弹窗 / 历史记录：锚在**对应成员头像**旁边（useAvatarAnchor 量出竖向中心），
+   成员换人时 top 有过渡 → 面板平滑滑到下一个干活的人身上。 */
+.team-panel-anchor {
+  position: absolute;
+  left: 0;
+  right: 108px;
+  display: flex;
+  justify-content: flex-end;
+  transform: translateY(-50%);
+  transition: top 0.36s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 6;
+  pointer-events: none;
+}
+.team-panel-anchor.is-floating { top: 72px; right: 16px; transform: none; }
+.team-panel-anchor > * { pointer-events: auto; }
+/* 连向头像的短线：一眼看出「这块内容是谁在产出」 */
+.team-panel-anchor::after {
+  content: "";
+  position: absolute;
+  right: -16px;
+  top: 50%;
+  width: 16px;
+  height: 1px;
+  background: var(--line);
+}
+.team-panel-anchor:has(.team-run-popup.is-running)::after { background: var(--accent); }
+.team-panel-anchor.is-floating::after { display: none; }
+.team-run-popup {
+  width: min(430px, 100%);
+  max-height: min(52vh, 460px);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  animation: teamPopupIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes teamPopupIn {
+  from { opacity: 0; transform: translateY(-10px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+.team-run-popup > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.team-run-popup-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: #fff;
+  background: var(--panel-2);
+}
+.team-run-popup-title { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.team-run-popup-title strong { font-size: 12px; font-weight: 500; color: var(--text); }
+.team-run-popup-title small { font-size: 11px; color: var(--muted); }
+.team-run-popup.is-running .team-run-popup-title small { color: var(--accent); }
+.team-run-popup.is-failed .team-run-popup-title small { color: var(--red); }
+.team-run-popup-query {
+  display: flex;
+  gap: 7px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--panel-2);
+}
+.team-run-popup-query > span { flex: none; font-size: 10px; color: var(--faint); padding-top: 2px; }
+.team-run-popup-query > p { margin: 0; font-size: 11px; line-height: 1.5; color: var(--muted); max-height: 54px; overflow: auto; }
+.team-run-popup-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px; }
+.team-run-popup-text { font-size: 11.5px; line-height: 1.62; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.team-run-popup-empty { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+.team-history-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 6px; }
+.team-history-item { border-radius: 8px; padding: 6px 8px; }
+.team-history-item + .team-history-item { margin-top: 4px; }
+.team-history-item[open] { background: var(--panel-2); }
+.team-history-item > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 11px;
+  color: var(--muted);
+}
+.team-history-item > summary::-webkit-details-marker { display: none; }
+.team-history-item > summary strong { font-size: 11.5px; font-weight: 500; color: var(--text); }
+.team-history-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+.team-history-dot.is-running { background: var(--accent); animation: teamRailPulse 1.6s ease-out infinite; }
+.team-history-dot.is-done { background: var(--ok); }
+.team-history-dot.is-failed { background: var(--red); }
+.team-history-label { margin: 8px 0 3px; font-size: 10px; color: var(--faint); }
+.team-history-query { font-size: 11px; line-height: 1.55; color: var(--muted); white-space: pre-wrap; word-break: break-word; max-height: 96px; overflow: auto; }
+.team-history-empty { margin: 12px; font-size: 11.5px; color: var(--muted); }

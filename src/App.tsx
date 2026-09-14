@@ -6411,6 +6411,173 @@ function SubAgentEditorModal({ draft, onChange, onClose, onSave }: { draft: SubA
   );
 }
 
+/** 把浮层锚到某个成员头像上：竖向居中对齐，成员切换时 top 有过渡 → 面板会**平滑滑到**
+ *  下一个干活的人身上，而不是永远钉在右上角（09-14 用户实测反馈）。
+ *  返回 null 表示拿不到锚点（头像轨被自适应隐藏 / 该成员不在轨上）——此时退回默认悬浮位。 */
+function useAvatarAnchor(memberId: string): number | null {
+  const [top, setTop] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const wrap = document.querySelector(".timeline-wrap");
+    if (!wrap || !memberId) { setTop(null); return; }
+    const measure = () => {
+      const node = document.querySelector(`.team-rail-node[data-member-id="${memberId}"]`);
+      if (!node) { setTop(null); return; }
+      const wrapRect = wrap.getBoundingClientRect();
+      const nodeRect = node.getBoundingClientRect();
+      const center = nodeRect.top - wrapRect.top + nodeRect.height / 2;
+      // 夹取一下：面板是 translateY(-50%) 定位的，锚点太靠边会被 timeline-wrap 的 overflow 裁掉
+      const margin = Math.min(150, wrapRect.height / 2);
+      setTop(Math.round(Math.min(Math.max(center, margin), Math.max(margin, wrapRect.height - margin))));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(wrap);
+    const track = document.querySelector(".team-rail-track");
+    if (track) observer.observe(track);
+    window.addEventListener("resize", measure);
+    const timer = window.setTimeout(measure, 380); // 头像轨有 0.3s 入场动画，落定后再量一次
+    return () => { observer.disconnect(); window.removeEventListener("resize", measure); window.clearTimeout(timer); };
+  }, [memberId]);
+  return top;
+}
+
+/** 专家团成员头像轨（09-14 用户要求）：挂在消息区右侧空白处。
+ *  主理人在上、成员在下，一条灰线穿过所有头像把它们串起来；正在干活的成员头像亮起 + 呼吸环，
+ *  空闲的灰掉，跑完打勾；工作交接时线上的流光顺着走。
+ *  自适应：自身是 `.timeline-wrap` 的 flex 子项，用 ResizeObserver 盯容器宽度逐级收起
+ *  （full → compact → hidden），所以「窗口缩小 / 侧栏展开 / 右侧面板打开」都会自动让位，
+ *  不靠硬编码媒体查询，popout 独立窗口同理。 */
+function TeamMemberRail({ team, containerRef, runningByMember, lastByMember, activeMemberId, onOpenMember }: {
+  team: ExpertTeamConfig;
+  containerRef: useRefObject;
+  runningByMember: Record<string, TeamMemberRunRecord>;
+  lastByMember: Record<string, TeamMemberRunRecord>;
+  activeMemberId: string;
+  onOpenMember: (memberId: string) => void;
+}) {
+  const [mode, setMode] = useState<"full" | "compact" | "hidden">("full");
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const check = () => {
+      const width = container.clientWidth;
+      // 900/1120 是「消息区还读得下去」的经验下限：低于 900 时头像轨会让正文可读性变差
+      setMode(width >= 1120 ? "full" : width >= 900 ? "compact" : "hidden");
+    };
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [containerRef]);
+  if (mode === "hidden") return null;
+  const roster: { member: ExpertTeamMember; isLead: boolean }[] = [{ member: team.lead, isLead: true }, ...team.members.map((member) => ({ member, isLead: false }))];
+  const anyRunning = roster.some(({ member }) => Boolean(runningByMember[member.id]));
+  return (
+    <aside className={`team-rail mode-${mode}${anyRunning ? " is-flowing" : ""}`} aria-label="专家团成员">
+      <div className="team-rail-track">
+        <i className="team-rail-line" aria-hidden />
+        {roster.map(({ member, isLead }) => {
+          const running = runningByMember[member.id];
+          const last = lastByMember[member.id];
+          const state = running ? "running" : last ? (last.status === "failed" ? "failed" : "done") : "idle";
+          const Icon = expertIconOf(member);
+          const label = expertRoleLabel(member, isLead);
+          return (
+            <button key={member.id} type="button" data-member-id={member.id} className={`team-rail-node is-${state}${isLead ? " is-lead" : ""}${activeMemberId === member.id ? " is-active" : ""}`}
+              title={`${label}${running ? "（执行中）" : last ? (last.status === "done" ? "（已完成最近一次委托）" : "（最近一次失败）") : "（尚未接过活）"}｜点击查看工作记录`}
+              onClick={() => onOpenMember(member.id)}>
+              <span className="team-rail-avatar" style={isLead ? undefined : { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] }}><Icon size={14} /></span>
+              {running ? <i className="team-rail-ring" aria-hidden /> : null}
+              {!running && state === "done" ? <span className="team-rail-badge" aria-hidden><Check size={9} /></span> : null}
+              {state === "failed" ? <span className="team-rail-badge is-failed" aria-hidden><X size={9} /></span> : null}
+              <span className="team-rail-name">{label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+/** 成员工作弹窗：成员一开始干活就自动弹出它的真实产出流（主进程转发该成员线程的文本增量），
+ *  委托结束自动收起（见自动关闭 effect）。不遮输入框——定位在消息区右上、限高内滚。 */
+function TeamRunPopup({ team, run, onClose, onOpenHistory }: {
+  team: ExpertTeamConfig;
+  run: TeamMemberRunRecord;
+  onClose: () => void;
+  onOpenHistory: (memberId: string) => void;
+}) {
+  const member = [team.lead, ...team.members].find((entry) => entry.id === run.memberId) ?? null;
+  const isLead = Boolean(member && member.id === team.lead.id);
+  const label = member ? expertRoleLabel(member, isLead) : run.profession || run.memberName;
+  const Icon = member ? expertIconOf(member) : Bot;
+  const running = run.status === "running";
+  const anchorTop = useAvatarAnchor(run.memberId);
+  return (
+    <div className={`team-panel-anchor${anchorTop == null ? " is-floating" : ""}`} style={anchorTop == null ? undefined : { top: anchorTop }}>
+    <section className={`team-run-popup${running ? " is-running" : run.status === "failed" ? " is-failed" : " is-settled"}`} role="dialog" aria-label={`成员 ${label} 的工作会话`}>
+      <header>
+        <span className="team-run-popup-avatar" style={member && !isLead ? { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] } : undefined}><Icon size={13} /></span>
+        <div className="team-run-popup-title"><strong>{label}</strong><small>{running ? "正在执行子任务…" : run.status === "done" ? "子任务已完成" : "子任务失败"}</small></div>
+        <button type="button" className="icon-button" title="查看该成员的历史工作记录" onClick={() => onOpenHistory(run.memberId)}><Clock3 size={13} /></button>
+        <button type="button" className="icon-button" title="关闭" onClick={onClose}><X size={14} /></button>
+      </header>
+      <div className="team-run-popup-query"><span>子任务</span><p>{run.query}</p></div>
+      <div className="team-run-popup-body">
+        {run.output
+          ? <div className="team-run-popup-text">{run.output}</div>
+          : <div className="team-run-popup-empty"><LoaderCircle size={14} className="spin" />等待成员产出…</div>}
+      </div>
+      {run.error ? <p className="request-error">{run.error}</p> : null}
+    </section>
+    </div>
+  );
+}
+
+/** 成员历史工作记录：点头像打开，按委托时间倒序列出「子任务 + 产出全文」（主进程落盘）。 */
+function TeamMemberHistory({ team, memberId, runs, onClose }: {
+  team: ExpertTeamConfig;
+  memberId: string;
+  runs: TeamMemberRunRecord[];
+  onClose: () => void;
+}) {
+  const member = [team.lead, ...team.members].find((entry) => entry.id === memberId) ?? null;
+  const isLead = Boolean(member && member.id === team.lead.id);
+  const label = member ? expertRoleLabel(member, isLead) : memberId;
+  const Icon = member ? expertIconOf(member) : Bot;
+  const anchorTop = useAvatarAnchor(memberId);
+  return (
+    <div className={`team-panel-anchor${anchorTop == null ? " is-floating" : ""}`} style={anchorTop == null ? undefined : { top: anchorTop }}>
+    <section className="team-run-popup team-history" role="dialog" aria-label={`${label} 的历史工作记录`}>
+      <header>
+        <span className="team-run-popup-avatar" style={member && !isLead ? { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] } : undefined}><Icon size={13} /></span>
+        <div className="team-run-popup-title"><strong>{label}</strong><small>{runs.length ? `历史工作记录 · 共 ${runs.length} 次委托` : "还没有接过活"}</small></div>
+        <button type="button" className="icon-button" title="关闭" onClick={onClose}><X size={14} /></button>
+      </header>
+      <div className="team-history-list">
+        {runs.map((run, index) => {
+          const seconds = Math.max(0, Math.round((((run.endedAt || Date.now()) - (run.startedAt || Date.now())) / 1000)));
+          return (
+            <details key={run.runId} className="team-history-item" open={index === 0}>
+              <summary>
+                <span className={`team-history-dot is-${run.status}`} aria-hidden />
+                <strong>{new Date(run.startedAt).toLocaleString("zh-CN", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</strong>
+                <small>{run.status === "done" ? `完成 · ${seconds}s` : run.status === "failed" ? "失败" : "进行中"}</small>
+              </summary>
+              <div className="team-history-label">子任务</div>
+              <div className="team-history-query">{run.query}</div>
+              <div className="team-history-label">产出</div>
+              <div className="team-run-popup-text">{run.output || "（无产出）"}</div>
+            </details>
+          );
+        })}
+        {!runs.length && <p className="team-history-empty">该成员还没有历史工作记录。</p>}
+      </div>
+    </section>
+    </div>
+  );
+}
+
 function ExpertTeamEditorModal({ draft, onChange, onClose, onSave }: { draft: ExpertTeamConfig; onChange: (draft: ExpertTeamConfig) => void; onClose: () => void; onSave: (draft: ExpertTeamConfig) => void }) {
   const valid = Boolean(draft.displayName.zh.trim() && draft.lead.name.trim() && draft.lead.systemPrompt.trim());
   const setLead = (patch: Partial<ExpertTeamMember>) => onChange({ ...draft, lead: { ...draft.lead, ...patch } });
@@ -7550,6 +7717,66 @@ export default function App() {
   const [expertTeamEditorOpen, setExpertTeamEditorOpen] = useState(false);
   const [expertTeamRunning, setExpertTeamRunning] = useState<string | null>(null);
   const [expertTeamMemberRunning, setExpertTeamMemberRunning] = useState<{ teamId: string; memberName: string } | null>(null);
+  // ── 专家团运行记录（09-14）：成员头像轨 / 成员工作弹窗 / 成员历史工作记录的**唯一数据源** ──
+  // 权威在主进程（electron/team-runs.ts），经 harness:event 的 team-run 广播给所有窗口，
+  // 所以 popout 独立窗口看到的状态与主窗口一致。
+  const [teamRuns, setTeamRuns] = useState<Record<string, TeamMemberRunRecord>>({});
+  /** 正在展示工作弹窗的那次委托（空串 = 不展示） */
+  const [teamPopupRunId, setTeamPopupRunId] = useState("");
+  /** 正在查看历史工作记录的成员 id（空串 = 不展示） */
+  const [teamHistoryMember, setTeamHistoryMember] = useState("");
+  /** 当前打开的会话属于哪个专家团。popout 窗口没有 teamThreadMapRef，靠主进程映射解析。 */
+  const [threadTeamId, setThreadTeamId] = useState("");
+  const [teamHistoryRuns, setTeamHistoryRuns] = useState<TeamMemberRunRecord[]>([]);
+  const teamRunsRef = useRef<Record<string, TeamMemberRunRecord>>({});
+  teamRunsRef.current = teamRuns;
+  const teamDeltaRef = useRef<Map<string, string>>(new Map());
+  const teamFlushRef = useRef<number | null>(null);
+  /** 正在跑的成员委托数（并行阶段会 >1）：活动指示器按计数收敛，不能在单个任务结束时清空 */
+  const teamRunningCountRef = useRef(0);
+  // 打开会话时把主进程的 threadId→teamId 映射读回来：popout 独立窗口的团队映射表是空的，
+  // 只有主进程那份落盘映射才知道「这个会话属于哪个团」。
+  useEffect(() => {
+    const id = thread?.id ?? "";
+    if (!id) { setThreadTeamId(""); return; }
+    setThreadTeamId(teamThreadMapRef.current.get(id) ?? "");
+    let alive = true;
+    void window.codex.teamOfThread?.(id).then((teamId) => {
+      if (alive && teamId) setThreadTeamId(String(teamId));
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [thread?.id]);
+  // 打开某会话时把该团队的**历史委托记录**载进来（头像轨据此显示「谁干过活、最近一次什么结果」）
+  useEffect(() => {
+    const id = thread?.id ?? "";
+    if (!id) return;
+    let alive = true;
+    void window.codex.listTeamRuns?.(id).then((runs) => {
+      if (!alive || !Array.isArray(runs) || !runs.length) return;
+      setTeamRuns((prev) => {
+        const next = { ...prev };
+        for (const run of runs) if (run?.runId && !next[run.runId]) next[run.runId] = run;
+        return next;
+      });
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [thread?.id]);
+  // 成员工作弹窗：委托一结束就自动收起（留 2.4s 让用户看完「已完成」与产出尾巴）
+  useEffect(() => {
+    if (!teamPopupRunId) return;
+    const run = teamRunsRef.current[teamPopupRunId];
+    if (!run || run.status === "running") return;
+    const timer = setTimeout(() => setTeamPopupRunId((current) => (current === teamPopupRunId ? "" : current)), 2400);
+    return () => clearTimeout(timer);
+  }, [teamPopupRunId, teamRuns]);
+  // 打开某成员的「历史工作记录」时，从主进程读该团队会话的全部委托记录
+  useEffect(() => {
+    const id = thread?.id ?? "";
+    if (!teamHistoryMember || !id) { setTeamHistoryRuns([]); return; }
+    let alive = true;
+    void window.codex.listTeamRuns?.(id).then((runs) => { if (alive) setTeamHistoryRuns(Array.isArray(runs) ? runs : []); }).catch(() => { if (alive) setTeamHistoryRuns([]); });
+    return () => { alive = false; };
+  }, [teamHistoryMember, thread?.id, teamRuns]);
   // 每张专家团卡片独立选择的项目地址（teamId -> cwd）；未选择时用全局 workspace
   const [teamCwdMap, setTeamCwdMap] = useState<Record<string, string>>({});  // 成员直达会话进行中标记（key = teamId:memberId），用于成员 chip 的 loading 态
   const [expertTeamMemberDirect, setExpertTeamMemberDirect] = useState<string | null>(null);
@@ -8516,6 +8743,12 @@ export default function App() {
     }
     // 留白固定给**一整屏**：保证「锚点滚到顶部」这个目标永远可达（不依赖锚点高度，
     // 也就不用随锚高反复改高度 → 没有新的 scrollHeight 突变源）。
+    // ⛔ 09-14 三次尝试把它改成条件式（内容不满一屏就归零 / 只给最小量），全部被
+    //    send-anchor 验收打回：① 按 scrollHeight 判 → 滚动容器被 clientHeight 托底，
+    //    判定恒真 → 留白 0↔一屏振荡（maxUp=1250 / grew=-192）；② 按 offsetTop 判 →
+    //    跨越一屏阈值那一刻留白 0→一屏，scrollMax 突增 622，钉顶一次性追跳 841px
+    //    （阈值 60）；③ 按需给最小量 → 「钉在顶上」在数值上等于「贴底」，判据失效。
+    //    结论：**钉顶（消息固定在顶部）与「短会话没有大空白」互斥**，见 09-14 会话记录。
     const pad = anchorSpacerRef.current;
     if (pad && pad.style.height !== `${el.clientHeight}px`) pad.style.height = `${el.clientHeight}px`;
     const key = isNewTurn ? `turn-${lastId}` : "opt";
@@ -10622,6 +10855,9 @@ const commandMatches = useMemo(() => {
                 }
               } else if (event.params?.tool === "team_member_invoke") {
                 await invokeTeamMember(args, String(event.params?.threadId ?? ""), event.id!);
+              } else if (event.params?.tool === "team_phase_invoke") {
+                // 并行阶段：一次提交多名成员，宿主并发执行（Promise.all 同时发起）后一起返回
+                await invokeTeamPhase(Array.isArray(args.tasks) ? args.tasks : [], String(event.params?.threadId ?? ""), event.id!);
               } else if (event.params?.tool === "generate_image") {
                 const cfg: any = await window.codex.readBuiltinPlugins().catch(() => null);
                 const c = cfg?.image;
@@ -11184,6 +11420,43 @@ const commandMatches = useMemo(() => {
         // 会话，界面也要跟着变——否则本窗口会用旧值把对方的改动覆盖回去（丢更新）。
         const tid = String((event as any).threadId ?? "");
         if (tid) admitThreadRuntime(tid, (event as any).runtime, { fromRemote: true });
+      }
+      if (event.type === "team-run") {
+        // 专家团成员委托的运行状态（主进程广播给所有窗口）：头像轨的亮灭流转、成员工作弹窗的
+        // 实时内容、历史记录都基于这一份数据。popout 独立窗口收到的与主窗口完全一致
+        // ——不需要每个窗口各自维护，也不会因为窗口自己的 React 状态滞后而错位。
+        const phase = String((event as any).phase ?? "");
+        const run = (event as any).run as TeamMemberRunRecord | undefined;
+        if (phase === "started" && run?.runId) {
+          setTeamRuns((prev) => ({ ...prev, [run.runId]: { ...run, output: run.output ?? "" } }));
+          setTeamPopupRunId(run.runId); // 成员开始干活 → 自动打开它的工作弹窗
+        } else if (phase === "delta") {
+          const runId = String((event as any).runId ?? "");
+          const chunk = String((event as any).text ?? "");
+          if (runId && chunk) {
+            // 增量高频（每字一条）→ rAF 合帧再 setState，避免流式把渲染打爆
+            teamDeltaRef.current.set(runId, `${teamDeltaRef.current.get(runId) ?? ""}${chunk}`);
+            if (teamFlushRef.current === null) {
+              teamFlushRef.current = requestAnimationFrame(() => {
+                teamFlushRef.current = null;
+                const buffer = teamDeltaRef.current;
+                teamDeltaRef.current = new Map();
+                setTeamRuns((prev) => {
+                  const next = { ...prev };
+                  for (const [id, text] of buffer) {
+                    const entry = next[id];
+                    if (!entry) continue;
+                    next[id] = { ...entry, output: `${entry.output ?? ""}${text}` };
+                  }
+                  return next;
+                });
+              });
+            }
+          }
+        } else if (phase === "finished" && run?.runId) {
+          teamDeltaRef.current.delete(run.runId);
+          setTeamRuns((prev) => ({ ...prev, [run.runId]: run }));
+        }
       }
       if (event.type === "scheduler") showToast("定时任务", event.message);
       if (event.type === "memory") showToast("记忆", event.message);
@@ -12810,6 +13083,7 @@ const commandMatches = useMemo(() => {
         defer: true,
       });
       teamThreadMapRef.current.set(result.thread.id, team.teamId);
+      setThreadTeamId(team.teamId);
       teamThreadConfigRef.current.set(result.thread.id, {
         teamId: team.teamId,
         cwd: teamCwd,
@@ -12831,28 +13105,50 @@ const commandMatches = useMemo(() => {
     } catch (error: any) { setNotice(`发起专家团会话失败：${error.message}`); }
     finally { setExpertTeamRunning(null); }
   }
-  /** 在团队会话中调度一个成员（team_member_invoke 工具回调） */
-  async function invokeTeamMember(toolArgs: any, threadId: string, respondEventId: number | string) {
-    const parentConfig = teamThreadConfigRef.current.get(threadId);
-    const teamId = parentConfig?.teamId || teamThreadMapRef.current.get(threadId) || "";
-    setExpertTeamMemberRunning({ teamId, memberName: String(toolArgs.memberId ?? "") });
+  /** 执行一次成员委托（不含对引擎的应答）：单成员调用与并行阶段共用同一段实现。
+   *  并行时会有多个同时跑 —— 活动指示用计数控制，不能在 finally 里无条件清空。 */
+  async function runTeamMember(toolArgs: any, leadThreadId: string): Promise<{ ok: boolean; name: string; profession: string; output: string }> {
+    const parentConfig = teamThreadConfigRef.current.get(leadThreadId);
+    const teamId = parentConfig?.teamId || teamThreadMapRef.current.get(leadThreadId) || "";
+    teamRunningCountRef.current += 1;
+    setExpertTeamMemberRunning({ teamId, memberName: String(toolArgs?.memberId ?? "") });
     try {
       const result = await window.codex.invokeTeamMember({
         teamId,
-        memberId: String(toolArgs.memberId ?? ""),
-        query: String(toolArgs.query ?? ""),
+        memberId: String(toolArgs?.memberId ?? ""),
+        query: String(toolArgs?.query ?? ""),
+        leadThreadId,
         cwd: parentConfig?.cwd || workspace || undefined,
         model: parentConfig?.model || selectedModel?.model || modelName(modelId),
         effort: parentConfig?.effort || effort || undefined,
         sandbox: parentConfig?.sandbox || sandbox,
         approvalPolicy: parentConfig?.approvalPolicy || approvalPolicy,
       });
-      await window.codex.respond(respondEventId, { contentItems: [{ type: "inputText", text: `[专家团成员 ${result.profession || result.name} 的执行结果]\n${result.output}` }], success: true });
+      return { ok: true, name: result.name, profession: result.profession, output: result.output };
     } catch (error: any) {
-      await window.codex.respond(respondEventId, { contentItems: [{ type: "inputText", text: `[成员调度失败]\n${error.message}` }], success: false });
+      return { ok: false, name: String(toolArgs?.memberId ?? ""), profession: "", output: `[成员调度失败]\n${error.message}` };
     } finally {
-      setExpertTeamMemberRunning(null);
+      teamRunningCountRef.current -= 1;
+      if (teamRunningCountRef.current <= 0) { teamRunningCountRef.current = 0; setExpertTeamMemberRunning(null); }
     }
+  }
+  /** 在团队会话中调度一个成员（team_member_invoke 工具回调） */
+  async function invokeTeamMember(toolArgs: any, threadId: string, respondEventId: number | string) {
+    const result = await runTeamMember(toolArgs, threadId);
+    await window.codex.respond(respondEventId, { contentItems: [{ type: "inputText", text: result.ok ? `[专家团成员 ${result.profession || result.name} 的执行结果]\n${result.output}` : result.output }], success: result.ok });
+  }
+  /** 并行阶段（team_phase_invoke 工具回调）：一次提交多名成员，宿主**并发**执行后一起返回。
+   *  ⛔ 这是「SOP 写着并行、实际却串行」的正解 —— 并行由宿主保证，不靠模型自觉
+   *  （09-14 实测：只改提示词让它「一个回合发多个调用」无效）。 */
+  async function invokeTeamPhase(tasks: any[], threadId: string, respondEventId: number | string) {
+    const list = tasks.filter((task) => task && String(task.memberId ?? "").trim());
+    if (!list.length) {
+      await window.codex.respond(respondEventId, { contentItems: [{ type: "inputText", text: "team_phase_invoke 需要至少一个成员任务（tasks 为空）" }], success: false });
+      return;
+    }
+    const results = await Promise.all(list.map((task) => runTeamMember(task, threadId)));
+    const text = results.map((entry) => `[专家团成员 ${entry.profession || entry.name} 的执行结果]\n${entry.output}`).join("\n\n---\n\n");
+    await window.codex.respond(respondEventId, { contentItems: [{ type: "inputText", text }], success: results.some((entry) => entry.ok) });
   }
 
   async function importSkill() {
@@ -14243,6 +14539,20 @@ const commandMatches = useMemo(() => {
   // 09-12 用户要求：去掉「已工作 X 秒」耗时指示（上方回合头部已有处理时间，重复且
   // 在流式期间跟着内容上下跳）；只保留真正有信息量的状态（停止中/等确认/等输入/专家/子智能体）
   const activityLabel = interrupting ? "正在停止" : waitingForApproval ? "等待你的确认" : waitingForInput ? "等待你的输入" : activeMember ? `专家「${activeMember.profession.zh || activeMember.name}」执行中` : subAgentRunning ? `子智能体「${subAgentRunning}」执行中` : "";
+  // ── 成员头像轨 / 成员工作弹窗 / 历史记录（09-14 用户要求） ────────────────────
+  /** 当前会话所属团队。优先主进程映射 —— popout 独立窗口没有本地 teamThreadMapRef。 */
+  const railTeamId = threadTeamId || (thread ? teamThreadMapRef.current.get(thread.id) ?? "" : "");
+  const railTeam = railTeamId ? expertTeams.find((team) => team.teamId === railTeamId) ?? null : null;
+  /** 本会话的委托记录，最新在前 */
+  const railRuns = Object.values(teamRuns).filter((run) => run.leadThreadId === thread?.id).sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
+  /** 每个成员「正在跑」的那次委托 —— 并行阶段可能多个成员同时亮 */
+  const railRunningByMember: Record<string, TeamMemberRunRecord> = {};
+  for (const run of railRuns) if (run.status === "running" && !railRunningByMember[run.memberId]) railRunningByMember[run.memberId] = run;
+  /** 每个成员最近一次委托（头像的亮 / 灰 / 完成态据此判定） */
+  const railLastByMember: Record<string, TeamMemberRunRecord> = {};
+  for (const run of railRuns) if (!railLastByMember[run.memberId]) railLastByMember[run.memberId] = run;
+  const popupRun = teamPopupRunId ? teamRuns[teamPopupRunId] ?? null : null;
+  const historyMemberRuns = teamHistoryMember ? teamHistoryRuns.filter((run) => run.memberId === teamHistoryMember) : [];
   // 上下文压缩后的缓存重建窗口：压缩重写了提示词前缀，上游缓存命中需要 1~3 轮才恢复
   // （rollout 实测：压缩后 last.cached=0 连续 2 轮，第 3 轮回到 98%）。窗口内 0% 不是 bug。
   const recentCompaction = useMemo(() => {
@@ -14582,6 +14892,35 @@ const commandMatches = useMemo(() => {
               title="回到底部"
               onClick={() => { releaseToUserRef.current("button"); stickToBottomRef.current = true; const el = scrollRef.current; if (el) scrollToOffsetInstant(el, contentTailTarget(el)); }}
             ><ArrowDown size={16} /></button>
+          )}
+          {/* 专家团成员头像轨 + 成员工作弹窗 + 历史记录（09-14 用户要求）。
+              头像轨是 timeline-wrap 的 flex 子项（占 92px / 紧凑 52px，容器窄了自动收起）；
+              两个面板绝对定位浮在消息区上，不遮输入框。 */}
+          {railTeam && (
+            <TeamMemberRail
+              team={railTeam}
+              containerRef={timelineWrapRef}
+              runningByMember={railRunningByMember}
+              lastByMember={railLastByMember}
+              activeMemberId={teamHistoryMember || popupRun?.memberId || ""}
+              onOpenMember={(memberId) => { setTeamPopupRunId(""); setTeamHistoryMember(memberId); }}
+            />
+          )}
+          {railTeam && popupRun && (
+            <TeamRunPopup
+              team={railTeam}
+              run={popupRun}
+              onClose={() => setTeamPopupRunId("")}
+              onOpenHistory={(memberId) => { setTeamPopupRunId(""); setTeamHistoryMember(memberId); }}
+            />
+          )}
+          {railTeam && teamHistoryMember && (
+            <TeamMemberHistory
+              team={railTeam}
+              memberId={teamHistoryMember}
+              runs={historyMemberRuns}
+              onClose={() => setTeamHistoryMember("")}
+            />
           )}
         </div>
 
