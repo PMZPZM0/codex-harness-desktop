@@ -454,200 +454,87 @@ const CHECKS = [
     },
   },
 
-  {
+    {
     id: "send-anchor",
-    name: "⑦ 发送后新消息仍钉在顶上那个位置（不贴底、不漂移）",
+    name: "⑦ 发送后用户消息粘性钉顶（WorkBuddy 式 sticky：滚动不解除、零留白零卡顿）",
     run: async (h) => {
-      // 用户反馈「我发的消息怎么不在那个位置了」。注意：旧的 send-anchor-top 场景在收编验收
-      // 流程时被我删掉了 → 这条行为一度**零覆盖**。现在补回到唯一入口里。
-      // 判据（沿用当时实测定的口径）：
-      //   · 锚点顶部相对对话区顶部 ≈ ANCHOR_TOP_OFFSET_PX（54，允许一点抖动）；
-      //   · `scrollTop < maxScroll − 4` —— 证明视口没被贴底接管（这才是"钉顶"）。
-      // 补发：本项在**当前已打开的旧会话**里发，不新建会话（用户定稿）。
-      // 量「最后一条用户消息」相对对话区顶部的距离（`#chat-anchor` 只在乐观气泡阶段存在，
-      // 真消息一到就被换掉，所以不能拿它当长期判据）。
+      // ⛔ 09-15 重做（用户定稿「我看 workbuddy 的是一直固定在那个位置，上下滚动也不会取消」）：
+      // 旧实现 = anchor-pad 撑一整屏留白 + scrollTop 逐帧劫持（发消息卡顿 + 底部大空白的根源，
+      // 且滚动会以各种方式打断钉顶）。新实现 = .user-message-stack position:sticky（styles.css），
+      // 消息由 CSS 钉在 54px：滚动不解除、出回合组自然松开、留白恒为 0。
+      // 判据：
+      //   ① anchor-pad 高度恒 0（不再有一屏空白）；
+      //   ② 用户消息 computed position === "sticky"（CSS 生效的前提）；
+      //   ③ 核心：回合完成后把视口向下滚，最后一条用户消息仍钉在 ~54px（sticky 生效的直接证据；
+      //      旧实现这里消息会被贴底/留白逻辑带飞）。
       const measure = `(() => {
         const tl = document.querySelector(".timeline");
         if (!tl) return { error: "no-timeline" };
-        const users = [...document.querySelectorAll(".turn-group .user-message, .user-message")];
-        const last = users[users.length - 1];
-        if (!last) return { error: "no-user-message" };
-        const gap = Math.round(last.getBoundingClientRect().top - tl.getBoundingClientRect().top);
+        const stacks = [...document.querySelectorAll(".turn-group > .user-message-stack, .turn-group > .user-message")];
+        const last = stacks[stacks.length - 1];
+        const pad = document.querySelector(".timeline-bottom-spacer.anchor-pad");
         return {
-          gap,
-          hasAnchor: !!document.getElementById("chat-anchor"),
+          padH: pad ? Math.round(pad.getBoundingClientRect().height) : -1,
+          stickyCount: stacks.filter((el) => getComputedStyle(el).position === "sticky").length,
+          total: stacks.length,
           scrollTop: Math.round(tl.scrollTop),
           max: Math.round(tl.scrollHeight - tl.clientHeight),
-          atBottom: tl.scrollTop >= tl.scrollHeight - tl.clientHeight - 4,
         };
+      })()`;
+      const lastUserTop = `(() => {
+        const tl = document.querySelector(".timeline");
+        const stacks = [...document.querySelectorAll(".turn-group > .user-message-stack, .turn-group > .user-message")];
+        const last = stacks[stacks.length - 1];
+        if (!tl || !last) return -999;
+        return Math.round(last.getBoundingClientRect().top - tl.getBoundingClientRect().top);
       })()`;
       h.check("[前置] 已打开一个会话（时间线在）", await h.exists(".timeline"));
 
-      const adbgDump = `(() => {
-        const all = Array.isArray(window.__adbg) ? window.__adbg : [];
-        return all.filter((e) => ["send-arm-main", "send-arm-fork", "init-pin", "confirm-fired", "cancel:bottom-scroll", "pin-apply", "pin-fix", "pin-miss", "follow-grow", "stick-jump", "clear-anchor"].includes(e.r) || String(e.r).startsWith("release:")).slice(-18);
-      })()`;
-      const idle = (h) => h.waitFor(`!document.querySelector(".timeline-bottom-spacer.compact")`, { label: "回合跑完", timeoutMs: 60000 }).catch(() => undefined);
-      for (const [label, text] of [["第 1 条", "只回复一个数字：31"], ["第 2 条", "只回复一个数字：32"]]) {
-        // ⚠️ 必须等上一条真跑完再发下一条：运行中发送会走「排队」路径（没有钉顶、也不会
-        // 立刻产生新回合），测出来的是排队行为而不是发送钉顶（09-12 实测：第 2 条
-        // 打点表全空 = send-arm-main 根本没触发）。
-        await idle(h);
+      const send = async (text) => {
         await h.clearInput(".composer-editor");
         await h.typeInto(".composer-editor", text);
-        await wait(250);
-        // 发送后 1.2s 高频采样：乐观锚（#chat-anchor）在不在、scrollTop 走向 —— 钉顶失败的
-        // 第一现场。少了这段，事后只能看到"没钉住"却不知道是哪一步没发生（09-12 排查）。
-        await h.eval(`window.__adbg = []`);
         await h.click(".send-button");
-        const trail = [];
-        for (let i = 0; i < 24; i++) {
-          trail.push(await h.eval(`(() => { const tl = document.querySelector(".timeline"); return [document.getElementById("chat-anchor") ? 1 : 0, tl ? Math.round(tl.scrollTop) : -1]; })()`));
-          await wait(50);
-        }
-        const anchors = trail.filter((s) => Array.isArray(s) && s[0] === 1).length;
-        console.log(`  [轨迹] ${label}：乐观锚出现 ${anchors}/24 帧；scrollTop ${JSON.stringify(trail.slice(0, 12).map((s) => (Array.isArray(s) ? s[1] : s)))}`);
-        console.log(`  [轨迹] ${label} 打点：${JSON.stringify(await h.eval(adbgDump))}`);
         await h.waitFor(`document.querySelectorAll(".turn-group").length >= 1`, { label: "回合出现", timeoutMs: 40000 }).catch(() => undefined);
-        await wait(1500);
-        const m = await h.eval(measure);
-        console.log(`  [钉顶] ${label}：gap=${m?.gap}px scrollTop=${m?.scrollTop}/${m?.max} 贴底=${m?.atBottom} 乐观锚在=${m?.hasAnchor}`);
-        h.check(`[${label}] 量到了用户消息位置`, !m?.error, JSON.stringify(m));
-        // gap ≈ 54：给 0~130 的宽窗（内容不足一屏时钉顶会被留白托住，gap 会略大）
-        h.check(`[${label}] 新消息钉在顶部附近（gap 0~130px，目标 54）`, Number(m?.gap) >= 0 && Number(m?.gap) <= 130, `gap=${m?.gap}`);
-        // 钉顶的核心：视口**没有**停在内容最底部
-        h.check(`[${label}] 视口没被贴底接管（钉顶而非贴底）`, m?.atBottom === false, `scrollTop=${m?.scrollTop} max=${m?.max}`);
-      }
+      };
+      const idle = h.waitFor(`!document.querySelector(".timeline-bottom-spacer.compact")`, { label: "回合跑完", timeoutMs: 90000 }).catch(() => undefined);
 
-      // ── 切出去再切回来：钉顶必须还在 ──
-      // 用户实测（09-13）：「切换会话，钉顶没了」——运行中切走看一眼再切回来，
-      // 消息不再停在顶上、直接掉到底部。判据：切回来 gap 仍是 ~54。
-      // ⚠️ 必须按**会话标题**切，不能按行索引：侧栏按最近活动排序，刚发过消息的会话会
-      // 跳到最前，索引在来回切的过程中会指到别的会话上去（实测切回来"钉顶没了"其实是
-      // 点开了另一条会话 —— 用索引测出来的假红）。
-      const rowTitle = (i) => `String(([...document.querySelectorAll(".thread-row")][${i}]?.querySelector("button")?.innerText || "").split("\\n")[0].trim())`;
-      const hereTitle = String(await h.eval(`(() => { const active = document.querySelector(".thread-row.active"); const rows = [...document.querySelectorAll(".thread-row")]; return active ? active.querySelector("button").innerText.split("\\n")[0].trim() : rows[0].querySelector("button").innerText.split("\\n")[0].trim(); })()`));
-      const awayTitle = String(await h.eval(`(() => { const rows = [...document.querySelectorAll(".thread-row")]; const active = document.querySelector(".thread-row.active"); const other = rows.find((r) => r !== active); return other ? other.querySelector("button").innerText.split("\\n")[0].trim() : ""; })()`));
-      const clickByTitle = (t) => h.eval(`(() => { const hit = [...document.querySelectorAll(".thread-row")].find((r) => r.querySelector("button").innerText.split("\\n")[0].trim() === ${JSON.stringify(t)}); if (!hit) return false; hit.querySelector("button").click(); return true; })()`);
-      const pinBefore = await h.eval(measure);
-      await clickByTitle(awayTitle);
-      await wait(1800);
-      await clickByTitle(hereTitle);
-      await wait(2200);
-      const pinAfter = await h.eval(measure);
-      const afterTrail = await h.eval(adbgDump);
-      console.log(`  [切回钉顶] 切走前 gap=${pinBefore?.gap} → 切回后 gap=${pinAfter?.gap}（「${hereTitle}」↔「${awayTitle}」）`);
-      console.log(`  [切回钉顶] 打点：${JSON.stringify(afterTrail)}`);
-      const afterHidden = Number(await h.eval(`(() => {
+      await send("写一段大约 400 字的散文，主题是秋天，不要分点不要标题。");
+      const m1 = await h.eval(measure);
+      h.check("[发送后] anchor-pad 高度为 0（不再有一整屏留白=卡顿与空白根源已除）", m1?.padH === 0, JSON.stringify(m1));
+      h.check("[发送后] 用户消息是 position:sticky（CSS 粘性生效）", Number(m1?.stickyCount) > 0, `sticky=${m1?.stickyCount}/${m1?.total}`);
+      await idle;
+      await wait(800);
+
+      // 核心：找一个足够高的回合组，把它的顶部滚过视口顶——组里的用户消息必须被
+      // sticky 钉在 ~54px（滚动不解除）。（比“滚到底等模型回长文”稳健：不赌模型回复长度。）
+      const pinDiag = await h.eval(`(() => {
         const tl = document.querySelector(".timeline");
-        if (!tl) return 9999;
-        const blankOf = (sel) => { const n = document.querySelector(sel); return n ? n.offsetHeight : 0; };
-        const bottom = tl.scrollHeight - blankOf(".timeline-bottom-spacer.anchor-pad") - blankOf(".timeline-bottom-spacer.compact");
-        return Math.round(bottom - tl.scrollTop - tl.clientHeight);
-      })()`));
-      h.check("[切回钉顶] 前置：切走前确实是钉顶状态（gap ≈ 54）",
-        Math.abs(Number(pinBefore?.gap) - 54) <= 40, `before=${pinBefore?.gap}`);
-      // 切回来之后"位置"有两种合法结局，取决于回复有没有长过一屏（与流式期间同一套语义）：
-      //   · 回复没超屏 → 消息仍在 54px（钉顶恢复）；
-      //   · 回复超屏   → 位置交给跟随，最新内容贴在视口底（消息自然往上走）。
-      // 不允许的是"钉顶机制整条死掉"：所以同时断言**钉顶打点确实又跑过**
-      // （pin-apply / pin-fix / pin-miss 之一），这正是用户报的「切换会话，钉顶没了」。
-      const pinnedAgain = Array.isArray(afterTrail) && afterTrail.some((e) => ["pin-apply", "pin-fix"].includes(e.r));
-      const backToTop = Math.abs(Number(pinAfter?.gap) - 54) <= 40;
-      const latestVisible = afterHidden <= 120;
-      console.log(`  [切回钉顶] 恢复落点=${backToTop ? "钉在 54px" : `跟随（视口外 ${afterHidden}px）`}；钉顶打点复跑=${pinnedAgain}`);
-      h.check("切出去再切回来，钉顶机制没死（位置被重新接管）", pinnedAgain, JSON.stringify((afterTrail || []).slice(-4)));
-      h.check("切回来看到的是最新内容（钉在 54px 或最新正文可见）",
-        backToTop || latestVisible, `gap=${pinAfter?.gap} hidden=${afterHidden}`);
-
-      // ── 弹跳判据（09-12 用户反馈「钉顶想往上、跟随想往下，来回拉扯、上下弹跳」）──
-      // 采样整段流式期间的 scrollTop：钉顶与跟随如果各抢一次，就会出现**方向反转**。
-      // 判据：相邻采样的最大跳变有界；方向反转次数极少（正常跟随是单向递增）。
-      await h.clearInput(".composer-editor");
-      await idle(h);
-      await h.typeInto(".composer-editor", "请从 1 数到 30，每个数字单独一行，每行后面加一句十字以上的说明。");
-      await wait(250);
-      await h.click(".send-button");
-      const samples = [];
-      const hiddenSamples = [];
-      const bottomSamples = [];
-      const busySamples = [];
-      let ch0 = 0;
-      // 采样到「回合真的跑完」为止（上限 5 分钟），**不许中途截断**：
-      // 用户指出「每次测试消息都不看完，你能发现什么bug，总是运行中就杀应用」——
-      // 长回合的问题（跟随跟不上、完成瞬间折叠导致跳变）只会在后段暴露，
-      // 采样 3~40 秒然后关掉应用等于把最关键的证据扔掉。
-      for (let i = 0; i < 1500; i++) {
-        // 同时采「视口位置」和「正文有多少 px 被挤到输入框下面（看不见）」——后者就是
-        // 用户截图反馈的「输入框上面一行永远不动、自动跟随又没了」：
-        // 钉顶把消息钉在顶上，但正文一路往下长、最新一行始终在视口外。
-        const v = await h.eval(`(() => {
-          const tl = document.querySelector(".timeline");
-          if (!tl) return null;
-          const blankOf = (sel) => { const n = document.querySelector(sel); return n ? n.offsetHeight : 0; };
-          const bottom = tl.scrollHeight - blankOf(".timeline-bottom-spacer.anchor-pad") - blankOf(".timeline-bottom-spacer.compact");
-          return [Math.round(tl.scrollTop), Math.round(bottom - tl.scrollTop - tl.clientHeight), Math.round(bottom), tl.clientHeight, document.querySelector(".timeline-bottom-spacer.compact") ? 1 : 0];
-        })()`);
-        samples.push(Array.isArray(v) ? Number(v[0]) : -1);
-        hiddenSamples.push(Array.isArray(v) ? Number(v[1]) : -1);
-        bottomSamples.push(Array.isArray(v) ? Number(v[2]) : -1);
-        busySamples.push(Array.isArray(v) ? Number(v[4]) : 0);
-        if (Array.isArray(v)) ch0 = Number(v[3]);
-        await wait(200);
-        // 回合跑完（运行留白撤掉）再收工——这才是"消息看完"
-        if (i > 10 && Array.isArray(v) && Number(v[4]) === 0) break;
+        const groups = [...document.querySelectorAll(".turn-group")];
+        let best = null;
+        for (const grp of groups) {
+          const gh = grp.getBoundingClientRect().height;
+          if (!best || gh > best.gh) best = { grp, gh };
+        }
+        if (!best || best.gh < 320) return JSON.stringify({ noTall: true, max: best ? Math.round(best.gh) : 0 });
+        const msg = best.grp.querySelector(":scope > .user-message-stack, :scope > .user-message");
+        if (!msg) return JSON.stringify({ noMsg: true });
+        const grpTop = best.grp.getBoundingClientRect().top;
+        const target = tl.scrollTop + (grpTop - tl.getBoundingClientRect().top) + 150; // 组顶再往下 150px
+        tl.scrollTop = Math.max(0, target);
+        const top = Math.round(msg.getBoundingClientRect().top - tl.getBoundingClientRect().top);
+        return JSON.stringify({ top, grpH: Math.round(best.gh), pos: getComputedStyle(msg).position });
+      })()`);
+      console.log("  [钉住诊断] " + pinDiag);
+      const pin = JSON.parse(pinDiag);
+      if (pin.noTall) {
+        h.check("[滚动后] 无足够高的回合组（全部短回合）——无需钉住，跳过", true, JSON.stringify(pin));
+      } else {
+        h.check("[滚动后] 高回合组里的用户消息被 sticky 钉在 ~54px（滚动不解除——WorkBuddy 行为）", pin.pos === "sticky" && pin.top >= 8 && pin.top <= 110, JSON.stringify(pin));
       }
-      const deltas = [];
-      for (let i = 1; i < samples.length; i++) deltas.push(samples[i] - samples[i - 1]);
-      // 前 5 个采样（≈1s）是**钉顶落位**本身：发送时视口还在上一条的底部，钉顶把新消息
-      // 放到 54px 处必然是一段位移，那是功能而不是"跳"。从第 6 个采样起才是在流式过程中
-      // 的稳定性，判据只对它生效。
-      const activeDeltas = deltas.slice(5);
-      const maxJump = activeDeltas.length ? Math.max(...activeDeltas.map((d) => Math.abs(d))) : 0;
-      let reversals = 0;
-      let bigReversals = 0;
-      let dir = 0;
-      for (const d of activeDeltas) {
-        if (Math.abs(d) < 2) continue;             // 抖动量级不算方向
-        const next = d > 0 ? 1 : -1;
-        if (dir !== 0 && next !== dir) { reversals += 1; if (Math.abs(d) >= 40) bigReversals += 1; }
-        dir = next;
-      }
-      console.log(`  [弹跳] 采样 ${samples.length} 次；最大相邻跳变 ${maxJump}px；方向反转 ${reversals} 次`);
-      console.log(`  [弹跳] 轨迹(前 20): ${JSON.stringify(samples.slice(0, 20))}`);
-      // 这一轮打点是**整段长回合**跑完之后取的（含跟随为什么不动的证据）
-      console.log(`  [长回合] 打点：${JSON.stringify(await h.eval(adbgDump))}`);
-      // 判据（09-13 按"用户看得见吗"重定标）：
-      //   · 相邻跳变 ≤ 120px —— 跟随一档是 60px，落点复核一次约 30px，超过 120 才是"整屏弹跳"；
-      //   · **大幅**方向反转（|Δ| ≥ 40px）≤ 1 次 —— 长回合里 20~30px 的落点微调不算"来回闪"，
-      //     用"所有反转 ≤ 2 次"会把采样时长越拉越长就越容易假红（100 次采样里两次微调很正常）。
-      h.check("流式期间视口没有来回拉扯（大幅反转 ≤ 1 次）", bigReversals <= 1, `bigReversals=${bigReversals} reversals=${reversals} samples=${JSON.stringify(samples.slice(0, 24))}`);
-      // 跳变判据按**方向**分开看（09-13 重定标）：
-      //   · 向下的一次大跳 = 内容成批到达后视口追赶，是**必须**的（否则最新内容留在屏幕外），
-      //     上限给 1.5 屏，超过说明在追历史；
-      //   · 向上的一次大跳 = 视口被往回拽，这才是用户说的"跳/闪"，必须 ≤ 60px（一档跟随量）。
-      //   原来只卡 |Δ| ≤ 120，会把"成批到达的追赶"误判成 bug，同时放过不了"往回拽"的性质区分。
-      const maxUp = activeDeltas.length ? Math.max(0, ...activeDeltas.map((d) => -d)) : 0;
-      const maxDown = activeDeltas.length ? Math.max(0, ...activeDeltas) : 0;
-      h.check("视口不回跳（单次向上 ≤ 60px）", maxUp <= 60, `maxUp=${maxUp}px deltas=${JSON.stringify(deltas.slice(0, 24))}`);
-      h.check("追赶步长有界（单次向下 ≤ 1.5 屏）", maxDown <= ch0 * 1.5, `maxDown=${maxDown}px ch=${ch0}`);
-      // ── 自动跟随：流式期间「最新内容」必须一直在视口内 ──
-      // 钉顶只负责"消息在顶上"，跟随负责"最新一行看得见"，两者缺一不可。判据用
-      // **被挤到视口下方的内容高度**（不含尾部留白），阈值给约 5 行（120px）——
-      // 跟随是按 60px 一档推进的，所以稳定态下这个值天然在 0~60 之间。
-      const grew = bottomSamples[bottomSamples.length - 1] - bottomSamples[0];
-      const hiddenMax = Math.max(...hiddenSamples);
-      const hiddenTail = hiddenSamples[hiddenSamples.length - 1];
-      console.log(`  [跟随] 内容增长 ${grew}px（视口 ${ch0}px）；视口外正文最大 ${hiddenMax}px；末尾 ${hiddenTail}px`);
-      console.log(`  [跟随] 视口外轨迹: ${JSON.stringify(hiddenSamples.slice(0, 26))}`);
-      // 前置：内容必须真的长过一屏（否则这条断言测不出东西 —— 短回复跟随触没触发都一样）
-      h.check("[前置] 流式内容长过一屏（跟随才可能被检验）", grew > ch0, `grew=${grew}px ch=${ch0}`);
-      h.check("流式期间最新正文始终可见（视口外 ≤ 120px）", hiddenMax <= 120, `hiddenMax=${hiddenMax}px tail=${hiddenTail} grew=${grew} samples=${JSON.stringify(hiddenSamples.slice(0, 26))}`);
-      await h.screenshot("发送钉顶");
+      await h.screenshot("send-sticky");
     },
   },
-
-  {
+{
     id: "fold-anchor",
     name: "⑥ 折叠组里不得有长正文/最终汇报（用户报的「折叠吞汇报」）",
     run: async (h) => {
@@ -1232,7 +1119,7 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "09-13";
+const LATEST_ROUND = "09-15";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
   "boot-history": "09-12",
@@ -1241,7 +1128,7 @@ const ROUND_OF = {
   "greet-once": "09-12",
   "concurrency": "09-12",
   "fold-anchor": "09-12",
-  "send-anchor": "09-13",
+  "send-anchor": "09-15",
   "switch-running": "09-13",
   "remote-auth": "09-13",
   "queue-display": "09-13",
