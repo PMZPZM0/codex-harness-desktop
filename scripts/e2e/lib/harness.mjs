@@ -360,6 +360,12 @@ export class ElectronHarness {
         const m = JSON.parse(data.toString());
         if (m.method === "Runtime.consoleAPICalled" && m.params?.type === "error") {
           this.consoleLog.push((m.params.args || []).map((a) => a.value ?? a.description ?? "").join(" "));
+        } else if (m.method === "Runtime.exceptionThrown") {
+          // ⛔ 09-15 补：此前只收 console 的 error，**未捕获异常（React 渲染崩溃 = 白屏）一条都收不到**，
+          //    导致「应用白屏但测试脚本无任何线索」，只能靠猜。这条必须留。
+          const d = m.params?.exceptionDetails;
+          const text = d?.exception?.description || d?.exception?.value || d?.text || "(未知异常)";
+          this.consoleLog.push("[未捕获异常] " + String(text).split("\n").slice(0, 8).join(" ⏎ "));
         }
       } catch {}
     });

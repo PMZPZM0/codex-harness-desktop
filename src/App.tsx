@@ -7974,26 +7974,26 @@ export default function App() {
   // ── /goal 目标模式（引擎原生 thread goal：自动 continuation，模型用 update_goal 判定达成）──
   // goalStatus: active/paused/blocked/usageLimited/budgetLimited/complete（引擎 ThreadGoalStatus）
   const [goalStatus, setGoalStatus] = useState<string | null>(null);
-  // 目标卡生命周期：任务运行结束 → 清单自动收纳 → 20s 后卡片自动消失；
-  // 新任务开始（或压缩/plan 更新带来的运行态回升）立即恢复显示并清掉倒计时。
+  // 目标卡生命周期（09-15 用户定稿）：任务跑完 → **立即隐藏**；新任务开始立即恢复显示。
+  // ⛔ 旧实现是「收纳后 20s 才消失」—— 用户反馈「任务完成了就该隐藏掉，没必要还保留」，
+  //    且 20s 这个时机既打扰（还想看时它没了）又拖沓（不想看时它还占着）。
+  //    现在改为下降沿立刻隐藏（完成即走），并由工具栏的常驻入口随时叫回（见 goalsHandle）。
   const [goalsAutoGone, setGoalsAutoGone] = useState(false);
-  const goalsAutoGoneTimerRef = useRef<number | null>(null);
   const goalsPrevRunningRef = useRef(false);
   const goalsTaskRunning = Boolean(sending || activeTurnId);
   useEffect(() => {
     const wasRunning = goalsPrevRunningRef.current;
     goalsPrevRunningRef.current = goalsTaskRunning;
     if (goalsTaskRunning) {
-      // 新任务开始：恢复显示、清掉未到期的消失倒计时
-      if (goalsAutoGoneTimerRef.current) { window.clearTimeout(goalsAutoGoneTimerRef.current); goalsAutoGoneTimerRef.current = null; }
+      // 新任务开始：恢复显示（并把「用户手动关掉」的状态也一并复位，任务来了就该看见）
       setGoalsAutoGone(false);
+      setGoalsOpen(true);
       return;
     }
     // 只在运行 → 空闲的下降沿触发（挂载时本就空闲不动作）
     if (!wasRunning) return;
     setGoalsExpanded(false);
-    goalsAutoGoneTimerRef.current = window.setTimeout(() => { setGoalsAutoGone(true); goalsAutoGoneTimerRef.current = null; }, 20000);
-    return () => { if (goalsAutoGoneTimerRef.current) { window.clearTimeout(goalsAutoGoneTimerRef.current); goalsAutoGoneTimerRef.current = null; } };
+    setGoalsAutoGone(true);
   }, [goalsTaskRunning]);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewReport, setReviewReport] = useState("");
@@ -11273,14 +11273,19 @@ const commandMatches = useMemo(() => {
               } else if (event.params?.tool === "task_add") {
                 const task = await window.codex.addTask({ text: String(args.text ?? ""), priority: String(args.priority ?? "medium") });
                 showToast("已加入任务清单", task.text);
+                // ⛔ 必须同步渲染层状态：taskList 原本只在应用启动时拉一次（useEffect []），
+                //    agent 建完清单前端完全不知道 → 「让 Codex 创建任务清单也没展示出来」（09-15 实测）
+                void window.codex.listTasks().then(setTaskList).catch(() => undefined);
                 await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `已加入任务清单：${task.text}（优先级：${task.priority}）` }], success: true });
               } else if (event.params?.tool === "task_update") {
                 if (!args.id && args.status === undefined && args.text === undefined && !args.done) {
                   const tasks = await window.codex.listTasks();
+                  setTaskList(tasks);
                   const text = tasks.length ? tasks.map((t: any) => `- [${t.status === "done" ? "x" : " "}] ${t.text}（${t.priority}${t.status === "doing" ? "，进行中" : t.status === "done" ? "，已完成" : ""}）id:${t.id}`).join("\n") : "任务清单为空。";
                   await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `[任务清单]\n${text}` }], success: true });
                 } else if (args.done) {
                   await window.codex.deleteTask(String(args.id));
+                  void window.codex.listTasks().then(setTaskList).catch(() => undefined);
                   await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: "任务已删除。" }], success: true });
                 } else {
                   const patch: any = {};
@@ -11288,6 +11293,7 @@ const commandMatches = useMemo(() => {
                   if (args.text) patch.text = String(args.text);
                   if (args.priority) patch.priority = String(args.priority);
                   const task = await window.codex.updateTask({ id: String(args.id), patch });
+                  void window.codex.listTasks().then(setTaskList).catch(() => undefined);
                   await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `任务已更新：${task.text} → ${task.status}` }], success: true });
                 }
               } else if (event.params?.tool === "agent_ask") {
@@ -15234,6 +15240,19 @@ const commandMatches = useMemo(() => {
           </>}
         </div>
         <div className="task-menu-wrap">
+          {/* ★ 常驻入口（09-15 用户要求 D）：面板被自动隐藏或手动关掉后，仍能从这里叫回。
+              只在「确实有内容」时出现（有执行计划 / 有目标 / 有待办），避免无意义占位。
+              点击 = 复位 goalsAutoGone（跑完自动隐藏的标记）+ 打开面板 + 展开内容。 */}
+          {(planSteps.length > 0 || goalText || taskList.length > 0) && (
+            <button
+              className="icon-button tb-goals-entry"
+              title="目标与进程（执行计划 / 待办事项）"
+              onClick={() => { setGoalsAutoGone(false); setGoalsOpen(true); setGoalsExpanded(true); setGoalsDocked(false); }}
+            >
+              <Target size={17} />
+              <span className="tb-goals-badge">{planSteps.filter((s) => s.status === "completed").length}/{planSteps.length}</span>
+            </button>
+          )}
           <button className="icon-button tb-task-menu" title="当前任务操作" onClick={() => setTaskMenuOpen((current) => !current)}><MoreHorizontal size={18} /></button>
           {taskMenuOpen && <>
             <div className="menu-backdrop" onClick={closeTaskMenu} />
@@ -15569,7 +15588,10 @@ const commandMatches = useMemo(() => {
           )}
         </div>
 
-        {goalsOpen && !goalsAutoGone && thread && (goalText || planSteps.length > 0) && (
+        {/* ⛔ 显示条件（09-15 放宽）：原条件只认 planSteps/goalText → 用 task_add 建的待办
+            永远唤不出面板（用户实测「让 Codex 创建任务清单也没有展示出来」）。现在 taskList
+            也算「有内容」。goalsOpen 仍由用户手动关闭，工具栏常驻入口可随时叫回。 */}
+        {goalsOpen && !goalsAutoGone && thread && (goalText || planSteps.length > 0 || taskList.length > 0) && (
           <>
             <div className={`goals-pop ${goalsDocked ? "docked" : ""}`}>
               <div className="goals-header-row">
@@ -15587,17 +15609,45 @@ const commandMatches = useMemo(() => {
                 </div>
               </div>
               {goalsExpanded && <div className="goals-body">
-                <div className="goal-line">{goalText || "尚未设置目标"}</div>
-                {planSteps.length > 0 && <FlowDiagram steps={planSteps} />}
-                {planSteps.length > 0 && <div className="plan-steps-body">
-                  {planSteps.filter((s) => s.status !== "completed").map((step, index) => <div key={index} className={`plan-step ${step.status === "inProgress" ? "doing" : ""}`}><span className="plan-dot" />{step.step}</div>)}
-                  {planSteps.some((s) => s.status === "completed") && (
-                    <details className="plan-done" open={doneExpanded} onToggle={(event) => setDoneExpanded(event.currentTarget.open)}>
-                      <summary>已完成 {planSteps.filter((s) => s.status === "completed").length} 项<ChevronDown size={12} /></summary>
-                      {planSteps.filter((s) => s.status === "completed").map((step, index) => <div key={index} className="plan-step done"><Check size={12} className="plan-check" />{step.step}</div>)}
-                    </details>
-                  )}
-                </div>}
+                {/* ── 分区一：执行计划（引擎 plan 模式 / 目标模式）── */}
+                <div className="goals-section">
+                  <div className="goals-section-title"><Target size={12} />执行计划</div>
+                  <div className="goal-line">{goalText || "尚未设置目标"}</div>
+                  {planSteps.length > 0 && <FlowDiagram steps={planSteps} />}
+                  {planSteps.length > 0 && <div className="plan-steps-body">
+                    {planSteps.filter((s) => s.status !== "completed").map((step, index) => <div key={index} className={`plan-step ${step.status === "inProgress" ? "doing" : ""}`}><span className="plan-dot" />{step.step}</div>)}
+                    {planSteps.some((s) => s.status === "completed") && (
+                      <details className="plan-done" open={doneExpanded} onToggle={(event) => setDoneExpanded(event.currentTarget.open)}>
+                        <summary>已完成 {planSteps.filter((s) => s.status === "completed").length} 项<ChevronDown size={12} /></summary>
+                        {planSteps.filter((s) => s.status === "completed").map((step, index) => <div key={index} className="plan-step done"><Check size={12} className="plan-check" />{step.step}</div>)}
+                      </details>
+                    )}
+                  </div>}
+                  {planSteps.length === 0 && !goalText && <div className="goals-empty">用 /plan 或设置目标后，这里会显示执行计划</div>}
+                </div>
+                {/* ── 分区二：待办事项（agent 通过 task_add / task_update 维护）──
+                    ⛔ 与「执行计划」是**两份独立数据**（planSteps 来自引擎 plan 事件，
+                    taskList 来自 task_add 工具），语义与状态数都不同，故分区渲染、各自计数，
+                    不混在一个列表里（09-15 用户选定 C2）。 */}
+                <div className="goals-section">
+                  <div className="goals-section-title">
+                    <ListChecks size={12} />待办事项
+                    <span className="goals-count">{taskList.filter((t: any) => t.status === "done").length}/{taskList.length}</span>
+                  </div>
+                  {taskList.length > 0 ? (
+                    <ul className="rpa-task-list goals-task-list">
+                      {taskList.map((task: any) => (
+                        <li key={task.id} className={task.status === "done" ? "done" : ""}>
+                          <label className="auto-switch" title={task.status === "done" ? "标记待办" : "标记完成"}>
+                            <input type="checkbox" checked={task.status === "done"} onChange={() => { const next = task.status === "done" ? "todo" : "done"; void window.codex.updateTask({ id: task.id, patch: { status: next } }).then(() => setTaskList((current: any[]) => current.map((t: any) => (t.id === task.id ? { ...t, status: next } : t)))); }} />
+                          </label>
+                          <span className="rpa-task-text">{task.text}</span>
+                          <button className="icon-button" title="删除" onClick={() => { void window.codex.deleteTask(task.id).then(() => setTaskList((current: any[]) => current.filter((t: any) => t.id !== task.id))); }}><X size={12} /></button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <div className="goals-empty">让 Codex 安排待办时（task_add），会自动出现在这里</div>}
+                </div>
               </div>}
             </div>
             {/* 收纳后露出的窄标签：点击展开面板 */}
