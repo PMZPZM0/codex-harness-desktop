@@ -240,6 +240,7 @@ contextBridge.exposeInMainWorld("codex", {
   listDispatchCatalog: () => ipcRenderer.invoke("agents:catalog"),
   dispatchToolDescription: () => ipcRenderer.invoke("agents:tool-description"),
   dispatchNotice: () => ipcRenderer.invoke("agents:notice"),
+  dispatchOffNotice: () => ipcRenderer.invoke("agents:off-notice"),
   listDelegates: () => ipcRenderer.invoke("agents:delegated"),
   listDelegatesOf: (originThreadId: string) => ipcRenderer.invoke("agents:delegated-of", originThreadId),
   invokeAgent: (input: unknown) => ipcRenderer.invoke("agents:invoke", input),
