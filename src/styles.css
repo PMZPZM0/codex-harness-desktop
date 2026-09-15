@@ -15919,6 +15919,68 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   display: flex;
   flex-direction: column;
 }
+/* ── 面板分区（09-15 C2：「执行计划」与「待办事项」两份独立数据，分区渲染各自计数）── */
+.goals-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.goals-section + .goals-section {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+}
+.goals-section-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  opacity: .8;
+}
+.goals-section-title .goals-count {
+  margin-left: auto;
+}
+.goals-empty {
+  color: var(--faint);
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+/* 待办列表复用在面板里：更紧凑，且行内带勾选/删除 */
+.goals-task-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.goals-task-list .rpa-task-text {
+  flex: 1;
+  min-width: 0;
+}
+.goals-task-list .icon-button {
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+.goals-task-list li:hover .icon-button {
+  opacity: .7;
+}
+/* 工具栏「目标与进程」常驻入口：有内容时才出现；带完成进度小徽标 */
+.tb-goals-entry {
+  position: relative;
+}
+.tb-goals-badge {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  font-size: 8.5px;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  pointer-events: none;
+}
 /* 远程连接等待卡片左侧文案块 */
 .remote-conn-left {
   gap: 5px;
