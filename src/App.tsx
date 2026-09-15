@@ -8829,10 +8829,16 @@ export default function App() {
       高度必须随锚点高度自适应（= clientHeight - 锚高），否则大留白会把下一个
       新消息的坐标一起撑大（实测 want 因此比 maxScroll 还大）。 */
   const anchorSpacerRef = useRef<HTMLDivElement | null>(null);
+  /** 已下发过的留白高度（px）。`null` = 当前没有锚定留白。
+   *  收缩必须是**单向的**（只减不增）：内容只会越来越长，留白只需越来越小；
+   *  若允许回增，就会变成新的 scrollHeight 突变源（与闪烁同类问题）。
+   *  （锚点元素复用上方既有的 `anchorElRef`，它已经会跟到确认后的真实回合。） */
+  const anchorPadAppliedRef = useRef<number | null>(null);
   /** 解除锚顶/贴底接管时的收尾：把锚顶留白归零，否则会残留一屏空白。 */
   const clearAnchorPad = useCallback(() => {
     const pad = anchorSpacerRef.current;
     if (pad) pad.style.height = "0px";
+    anchorPadAppliedRef.current = null;
   }, []);
   /** 内容底部（详见 `contentBottomOf`）：所有"滚到底 / 跟随到最新"的基准，**不含尾部留白**。
    *  用 `scrollHeight` 会把 compact / anchor-pad 留白算成内容 → "到底"= 滚进留白 →
@@ -8913,11 +8919,15 @@ export default function App() {
     //    跨越一屏阈值那一刻留白 0→一屏，scrollMax 突增 622，钉顶一次性追跳 841px
     //    （阈值 60）；③ 按需给最小量 → 「钉在顶上」在数值上等于「贴底」，判据失效。
     //    结论：**钉顶（消息固定在顶部）与「短会话没有大空白」互斥**，见 09-14 会话记录。
-    // ⛔ 09-15 撤销 sticky 方案后恢复：这里必须**撑满一屏留白**，新消息才能被顶到落点。
-    //    （sticky 期间被改成「恒 0」，撤 sticky 时漏还原 → 消息顶不上去、只能被钳在滚动底部，
-    //     用户看到的就是「新消息还在下面、到不了我要的位置」。见 bf53b81 的教训。）
-    const pad = anchorSpacerRef.current;
-    if (pad && pad.style.height !== `${el.clientHeight}px`) pad.style.height = `${el.clientHeight}px`;
+    // ⛔ 09-15 撤销 sticky 后按用户反馈改成「**只补缺口**」（用户实测「留白时滚轮没贴底、
+    //    还能往下滚 → 留多了」）。无脑撑满一屏（pad = clientHeight）会让滚动范围多出一屏。
+    //    正解 = 只补足「锚点顶不到落点」缺的那部分：
+    //      留白 = 视口高 − 落点偏移 − 锚点高 − 锚点下方残留内容高
+    //    推导：`.timeline` 的 padding-bottom 在滚动内容底部**之后**（不计入 scrollHeight），
+    //    故滚到底（scrollTop = maxScroll）时锚点视口偏移 = clientHeight − pad − 锚点以下内容高；
+    //    令它 == ANCHOR_TOP_OFFSET_PX 即得上式 —— **滚到底就是落点，零多余可滚空间**。
+    //    ⚠️ 只在 first 分支算一次：本函数每次 thread 更新都会调用，若每帧重算，流式期间
+    //    pad 高度持续变化 = 新的 scrollHeight 突变源（会抖）。归零交给 clearAnchorPad。
     const key = isNewTurn ? `turn-${lastId}` : "opt";
     const gapErr = (anchor.getBoundingClientRect().top - el.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
     // 「刚切回自己这条会话」= 休眠钉顶的复活：必须**当first处理**（立即落位、解除超屏锁）。
@@ -8943,10 +8953,30 @@ export default function App() {
     // 代码高亮/字体完成），照当帧 gap 直接改 scrollTop 会过冲（实测 332 → −226 → −32
     // 三次来回）。下一帧仍偏才修，一次到位。
     if (first) {
+      // ★ 留白 = 只补缺口（见上文推导）：过小则顶不到落点，过大则滚轮多出一截可滚空间。
+      //   目标：**滚到底时锚点正好落在 ANCHOR_TOP_OFFSET_PX**。
+      //   设 anchorTopScroll = 锚点顶在滚动坐标里的位置，scrollHeightNoPad = 当前
+      //   scrollHeight 扣掉本留白（＝"没有留白时会怎样"）。滚到底时
+      //     gap = anchorTopScroll − (scrollHeightNoPad + pad − clientHeight)
+      //   令其 == 偏移量，解出 pad。padding / 兄弟留白 / 锚点高全部自动吸收。
+      //   ⚠️ 后续收缩在 update() 里做（见 `shrinkAnchorPad`），这里只负责首帧落位。
+      const pad = anchorSpacerRef.current;
+      if (pad) {
+        const anchorTopScroll = anchor.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+        const scrollHeightNoPad = el.scrollHeight - pad.offsetHeight;
+        const need = Math.max(0, Math.round(anchorTopScroll - scrollHeightNoPad + el.clientHeight - ANCHOR_TOP_OFFSET_PX));
+        const px = need + "px";
+        if (pad.style.height !== px) pad.style.height = px;
+        anchorPadAppliedRef.current = need;
+        anchorElRef.current = anchor;
+      }
+      // ⚠️ 改完 pad 必须**重量一次** gapErr 再落位：pad 变化直接改变 scrollHeight，
+      //    用改前的 gapErr 落位会偏（这是「留白改完位置反而不对」的坑）。
+      const gapErrNow = (anchor.getBoundingClientRect().top - el.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
       anchorHeightBaselineRef.current = contentBottomOf(el);
-      dbg("pin-apply", { key, gapErr: Math.round(gapErr), top: Math.round(el.scrollTop) });
+      dbg("pin-apply", { key, gapErr: Math.round(gapErrNow), pad: pad ? pad.style.height : "-", top: Math.round(el.scrollTop) });
       selfScrollUntilRef.current = Date.now() + 80;
-      scrollToOffsetInstant(el, el.scrollTop + gapErr);
+      scrollToOffsetInstant(el, el.scrollTop + gapErrNow);
       pinnedScrollTopRef.current = el.scrollTop;
       return true;
     }
@@ -10084,25 +10114,62 @@ const commandMatches = useMemo(() => {
     // 内容底部时 dist 仍等于留白高度（compact 64px）→「到底了」判定永远不成立，
     // 贴底跟随再也开不回来（09-12：切换会话后跟随失效就是这么来的）。
     const contentBottom = () => contentBottomOf(scroller);
+    /** ★ 锚定留白收缩（09-15）：内容越长，留白越小，**只减不增**。
+     *  为什么需要：首帧算出的留白是「让锚点能落到 36px」所需的量；agent 回复长起来后，
+     *  内容本身就撑出了可滚空间 —— 此时若留白不变，底部就会多出一大段空白，
+     *  用户「怎么滚都没到真底」（实测反馈）。收缩后：留白只补"还不够滚"的缺口，
+     *  滚到底 = 内容底部贴住视口底 = **真底**，下方只剩 .timeline 自己的 padding。
+     *  为什么只减不增：内容只会变长（收缩方向单一），回增就等于制造新的 scrollHeight
+     *  突变源（与 content-visibility 那个闪烁同类）。
+     *  收缩目标与首帧同一公式：pad 使「滚到底时 gap == ANCHOR_TOP_OFFSET_PX」成立。 */
+    const shrinkAnchorPad = () => {
+      const pad = anchorSpacerRef.current;
+      const anchorEl = anchorElRef.current;
+      const applied = anchorPadAppliedRef.current;
+      if (!pad || !anchorEl || applied == null) return;
+      if (!anchorEl.isConnected) return;
+      const anchorTopScroll = anchorEl.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+      const scrollHeightNoPad = scroller.scrollHeight - pad.offsetHeight;
+      const need = Math.max(0, Math.round(anchorTopScroll - scrollHeightNoPad + scroller.clientHeight - ANCHOR_TOP_OFFSET_PX));
+      if (need >= applied) return;              // 只减不增
+      const px = need + "px";
+      if (pad.style.height !== px) pad.style.height = px;
+      anchorPadAppliedRef.current = need;
+      // 留白变小会改变 scrollHeight → 重新量一次钉顶落点，保证 gap 仍等于 36。
+      // 注意：必须走 selfScrollUntil 抑制窗，否则这次程序滚动会被当成"用户滚动"。
+      const gapErr = (anchorEl.getBoundingClientRect().top - scroller.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
+      if (Math.abs(gapErr) > 1) {
+        selfScrollUntilRef.current = Date.now() + 80;
+        scrollToOffsetInstant(scroller, scroller.scrollTop + gapErr);
+        pinnedScrollTopRef.current = scroller.scrollTop;
+      }
+    };
     const update = () => {
+      shrinkAnchorPad();
       const dist = contentBottom() - scroller.scrollTop - scroller.clientHeight;
-      // ── 钉顶期间的自动跟随：**一条规则 + 一个步长**（09-13 定稿）──
+      // ── 钉顶期间的自动跟随：**一条规则 + 一个步长**（09-13 定稿，09-15 调门槛）──
       //   规则：「内容超出视口多少，就把视口往下补多少」——
-      //     · 没超出（短回复）→ 一动不动，消息稳在 54px；
-      //     · 超出了（长回复）→ 补到最新一行贴着视口底 = 自动跟随。
+      //     · 没超出（短回复）→ 一动不动，消息稳在落点；
+      //     · 接近/超出视口底 → 补到最新一行贴着视口底 = 自动跟随。
       //   同一时刻只有一条成立，所以**结构上不可能**出现"跟随往下推、钉顶往回拉"的互拉。
-      //   步长：**攒够约两行（48px）才跟一次**，不是每帧都跟。打字机是逐字揭示的，
-      //   末行会随字数不断重排（换行位置一格一格往后挪），逐帧跟随 = 视口每帧都在动，
-      //   用户看到的就是「长消息换行跟自动跟随在抢，整个内容上下跳动」（09-13 用户实测）。
-      //   攒够一段再**整体**跟一次，两次之间视口完全静止——最新内容最多滞后 48px（约两行）。
+      //   ⛔ 门槛（09-15 用户口径「长消息没到输入框上面两行就不要触发跟随」）：
+      //   原实现是 `dist > 48`（要**超出**底部 48px 才跟）→ 最新一行先被挡住两行才追，
+      //   表现为"触发晚了"。现在改为 `dist > -48`：**距底还有两行（48px）就开始跟**，
+      //   让最新一行始终不被输入框附近遮住。
+      //   步长仍是 48px：打字机末行逐字重排，逐帧跟随会让视口每帧都动（09-13 实测
+      //   「长消息换行跟自动跟随在抢」）；攒够约两行再整体跟一次，两次之间视口完全静止。
       const FOLLOW_STEP_PX = 48;
       // 只在自己这条会话上跟随：钉顶可能正"休眠"在另一条会话上（切走又没切回来），
       // 那种情况下这里必须走常规贴底逻辑，不能拿别人的锚定模式去动当前视口。
       if (anchorTopRef.current && pinThreadIdRef.current === myThreadId) {
-        if (dist > FOLLOW_STEP_PX) {
-          selfScrollUntilRef.current = Date.now() + 80;
-          scrollToOffsetInstant(scroller, scroller.scrollTop + dist);
-          pinnedScrollTopRef.current = scroller.scrollTop;
+        if (dist > -FOLLOW_STEP_PX) {
+          // 目标：把「内容底部」补到视口底（dist 归 0），而不是把内容整体推上去。
+          // dist ≤ 0（还有余量）时不动，避免短回复也被推。
+          if (dist > 0) {
+            selfScrollUntilRef.current = Date.now() + 80;
+            scrollToOffsetInstant(scroller, scroller.scrollTop + dist);
+            pinnedScrollTopRef.current = scroller.scrollTop;
+          }
           lastTop = scroller.scrollTop;
           return;
         }
