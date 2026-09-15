@@ -1617,6 +1617,26 @@ button {
 .turn-group:hover .turn-card {
   border-color: #0000;
 }
+/* ⛔ 09-15 修「agent 消息滚过时闪一下 / 内容被硬挤上去」：真凶是 content-visibility:auto
+   配合 contain-intrinsic-size 的**估算高度**。实测几何时间线（40ms 采样，一次发送后）：
+     t=9476  scrollHeight=1073  最后一组高 80（真实）
+     t=9502  scrollHeight= 993  ← -80
+     t=9539  scrollHeight=1213  最后一组高 **300** ← 换成估算值（+220）
+     t=9583  scrollHeight= 913  最后一组高 **0**   ← 塌成 0（-300）
+   26ms 内 scrollHeight 在 1073/993/1213/913 之间反复跳、scrollTop 跟着跳 160px →
+   用户看到「闪一下 + 内容被硬挤上去」。
+   修法：**正在流式的回合**（.running）内容就在视口内、每帧都在长，跳过布局只会让高度
+   在真实值/估算值之间翻转 —— 对它在流式期间关掉 content-visibility，用真实高度。
+   流式结束后（去掉 .running）自动恢复优化，长历史仍走 content-visibility。
+   同理保护**最后一个回合**（data-current-turn）：它是刚发送的那条，正被视口跟随。 */
+.turn-group.running,
+.turn-group[data-current-turn="true"] {
+  content-visibility: visible;
+}
+.turn-group.running > .turn-card,
+.turn-group[data-current-turn="true"] > .turn-card {
+  content-visibility: visible;
+}
 .turn-group.running .turn-card,
 .turn-group.error .turn-card {
   box-shadow: none;

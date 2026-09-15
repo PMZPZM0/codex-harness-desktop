@@ -2250,21 +2250,23 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     ? ok("用户气泡不使用「悬浮 + 不透明底 + z-index」组合（不会遮挡后代内容）")
     : fail("用户气泡是悬浮遮罩，会盖住同回合的助手消息：\n        " + offenders.join("\n        "));
 
-  // 退化的另一种写法：给当前回合组塞可见性/裁剪规则来配合 sticky
-  /data-current-turn[^{}]*\{[^{}]*content-visibility/.test(css)
-    ? fail("styles.css 仍在给当前回合组改 content-visibility —— 那是 sticky 方案的配套，应一并撤销")
-    : ok("没有为 sticky 方案保留 content-visibility 配套规则");
+  // 09-15 反转：当前回合/流式回合**必须**用真实高度（content-visibility: visible），
+  // 否则高度会在「真实值 / 估算值 300px / 0」之间塌陷 → 用户看到「消息滚过时闪一下」。
+  // 实测：26ms 内 scrollHeight 在 1073/993/1213/913 之间反复跳。
+  /\.turn-group\.running[^{}]*\{[^{}]*content-visibility:\s*visible/.test(css)
+    ? ok("流式回合用真实高度（content-visibility: visible）—— 不会高度塌陷闪烁")
+    : fail("流式回合没关掉 content-visibility —— 内容高度会在真实值/估算值间塌陷，滚动时闪一下");
 
-  // App 侧开关必须处于关闭态（true 会把 anchor-pad 短路成恒 0，与文档流留白逻辑打架）
   const app = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
   // 09-15：sticky 方案已彻底删除（连开关一起），不许再以任何形式回来
   /STICKY_USER_SLOT/.test(app)
     ? fail("STICKY_USER_SLOT 又出现了 —— sticky 方案已整体撤销，不要再引入")
     : ok("sticky 方案已彻底移除（无 STICKY_USER_SLOT 残留）");
-  // 固定落点方案：留白必须真的撑起来，否则新消息顶不到落点、只能被钳在滚动底部
-  /pad\.style\.height !== `\$\{el\.clientHeight\}px`/.test(app)
-    ? ok("发送锚定撑满一屏留白（新消息能被顶到固定落点）")
-    : fail("发送锚定没有撑留白 —— 新消息会停在滚动底部、到不了落点（bf53b81 踩过）");
+  // 09-15 新方案：留白「只补缺口 + 内容增长时单向收缩到 0」。
+  // 撑满一屏（clientHeight）会让滚动范围多出一屏（用户实测「怎么滚都没到真底」），已废弃。
+  /const shrinkAnchorPad = /.test(app) && /anchorPadAppliedRef/.test(app)
+    ? ok("发送锚定留白会随内容收缩（滚到底 = 真底，无多余空间）")
+    : fail("留白没有收缩逻辑 —— 内容长起来后底部会多出一大段空白，滚不到真底");
 }
 
 // ---------- 【19】just-sent 必须挂在 .user-message 上（09-15 实测「发消息没有过渡动画」） ----------
