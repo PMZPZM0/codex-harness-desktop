@@ -3191,15 +3191,22 @@ function TurnFoldStream({ items, turn, running, fallbackWindow, waitingForApprov
   if (finalUnit && units.length > 1) {
     const plan = planCompletedFold(units, finalUnit.item.id);
     if (plan.some((entry) => entry.kind === "fold")) {
+      // ⛔ 09-15 修复「耗时折叠头重复」：任务回合（长正文把过程切成多段）原来**每个** fold 段
+      // 都挂 completedTitle，实测一回合出现两个「耗时 4m49s · 2 项失败」——一个在过程开头、
+      // 一个紧跟最终答复，用户当成「又在底部重新渲染了一遍/时长在变大」（相邻任务回合时长
+      // 4m49s 与 4m55s 被误认成同一条在增长）。设计意图（见上方注释）是**每回合只有一个**
+      // 收尾标记：第一个过程段（lead）挂回合收尾皮肤 + 回合总失败数，其余段用意图摘要标题。
+      const leadFoldIndex = plan.findIndex((entry) => entry.kind === "fold");
+      const turnFailedTotal = failedCountOf(units);
       return <>
         {plan.map((entry, index) => entry.kind === "fold"
           ? (
             <FoldGroup
               key={`fold-completed-${turn.id}-${index}`}
-              variant="completed"
-              title={completedTitle}
+              variant={index === leadFoldIndex ? "completed" : "summary"}
+              title={index === leadFoldIndex ? completedTitle : computeFoldSummary(entry.units, false, waitingForApproval)}
               leadGroup={topToolGroup(entry.units)}
-              failedCount={failedCountOf(entry.units) || undefined}
+              failedCount={(index === leadFoldIndex ? turnFailedTotal : failedCountOf(entry.units)) || undefined}
             >
               <CappedToolSequence units={entry.units} renderUnit={(unit) => renderItem(unit, unit.item.type === "agentMessage" ? true : undefined)} />
             </FoldGroup>
