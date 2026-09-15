@@ -8313,6 +8313,13 @@ export default function App() {
   const fadeOutTimerRef = useRef<number | null>(null);
   // 冷加载遮罩的硬超时句柄：jumpToBottom 长时间不 settled 时强制关遮罩（防全白卡死）
   const switchHardTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const ro = turnResizeObserverRef.current;
+    const el = scrollRef.current;
+    if (!ro || !el) return;
+    el.querySelectorAll(".turn-group").forEach((g) => ro.observe(g));
+  }, [thread]);
   useEffect(() => { void window.codex.ponytailModeGet?.().then((mode) => setPonytailOn(mode !== "off")).catch(() => undefined); }, []);
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") ?? "light");
   // 账户菜单（点左下角头像/名字弹出）：界面语言 / 界面主题 / 界面缩放 / 使用统计 / 用户中心 / 退出登录
@@ -10027,6 +10034,22 @@ const commandMatches = useMemo(() => {
   // 回到底部按钮：内容可滚动且当前视口距底部超过一屏的 25% 时出现
   // 缓存 update，供「内容变化」时直接调用而不必重建监听器
   const updateBottomStateRef = useRef<() => void>(() => {});
+  // ⛔ 全白第二根因（09-15 截图3：滚到底后整片白）：冷加载时 content-visibility 的回合段
+  // 初始 0 高，滚到底 = 视口停在「空白扩展区」；随后各段回填真实高度，内容全在视口上方。
+  // ResizeObserver 必须盯**各回合组**（盯 .timeline 自身无效——scrollHeight 变化不触发它）：
+  // 回填时组盒子高度突变会触发 RO，贴底模式下把视口拉回新的内容底部。钉顶模式不干预。
+  const turnResizeObserverRef = useRef<ResizeObserver | null>(null);
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      const el = scrollRef.current;
+      if (!el || anchorTopRef.current || !stickToBottomRef.current) return;
+      el.scrollTop = contentTailTarget(el);
+    });
+    turnResizeObserverRef.current = ro;
+    return () => { ro.disconnect(); turnResizeObserverRef.current = null; };
+  }, [scrollRef, contentTailTarget]);
+
   /** 「用户接管视口」的统一入口（由 update effect 里的 `releaseToUser` 注入）。
    *  给 JSX 侧用：任何要打断钉顶/跟随的按钮都必须走它，**不许直接写 anchorTopRef** ——
    *  直接写会漏掉 pinGapLocked / pinFix / pinThreadId / pinDormantSeen 的复位，
