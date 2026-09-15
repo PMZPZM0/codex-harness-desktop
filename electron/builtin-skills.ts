@@ -136,8 +136,12 @@ export async function ensureExpertSkillsMarketplace(codexHome: string): Promise<
   }
 }
 
-/** 专家技能包源目录：开发版用项目 resources/，打包版用 process.resourcesPath（与 voicePresetsDir 同规则）。 */
-function expertSkillsSourceDir(): string {
+/** 专家技能包源目录：开发版用项目 resources/，打包版用 process.resourcesPath（与 voicePresetsDir 同规则）。
+ *  ⚠️ 导出给 expert-teams 用：内置专家要把「技能包绝对路径」写进 systemPrompt 做兜底 ——
+ *  `[marketplaces.expert-skills]` 只是让技能**可被发现**，用户没装就不可用
+ *  （实测 codex-home/plugins/cache 下没有 expert-skills 条目）。路径写死进提示词，
+ *  专家才能用文件工具直接读到规则集，闭环不依赖「用户是否去技能中心装过」。 */
+export function expertSkillsSourceDir(): string {
   const dev = path.join(process.cwd(), "resources", "expert-skills");
   if (existsSync(dev)) return dev;
   return path.join(process.resourcesPath ?? process.cwd(), "expert-skills");

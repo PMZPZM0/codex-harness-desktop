@@ -13,6 +13,11 @@
       "name": "ppt-master",
       "source": "./ppt-master",
       "description": "AI 演示工作流：生成/重构/美化可编辑 PPTX，品牌与版式工作区，旁白与演示视频（呈象专家专用）"
+    },
+    {
+      "name": "dongming-code-review",
+      "source": "./dongming-code-review",
+      "description": "代码审查方法论与规则集：52 份语言级规则 + 去误报协议 + 六步闭环（洞明专家专用，源自 alibaba/open-code-review）"
     }
   ]
 }
