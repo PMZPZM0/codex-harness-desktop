@@ -2192,6 +2192,47 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     ? ok("mergeLongerStreams 与 loadEarlierTurns 都走去重时序合并（事故源头收口）")
     : fail("回合合并仍有盲目前插/拼接 —— 顺序错乱源头未收口");
 }
+// ---------- 【18】用户气泡不得悬浮遮挡后代内容（09-15 实测事故） ----------
+// 事故：为了「发送后钉住用户消息、消掉一屏留白」，给当前回合的用户气泡加了
+//   position: sticky; top: 54px; z-index: 5; background: var(--bg);
+// 结果气泡变成不透明白底浮层，盖住同回合内从 top:170 起的助手消息（实测重叠 [170,204]），
+// 表现是「消息中间几行被竖着切断」。2026-09-15 已撤销，回归文档流。
+// 判据：用户气泡（.user-message / .user-message-stack）**不得**同时具备
+//   ① 脱离文档流的定位（sticky/fixed/absolute）② 不透明底色 ③ 正向 z-index
+// 三者同时命中即「会遮挡后代内容」，构建期直接拦下。
+{
+  const css = readFileSync(join(ROOT, "src/styles.css"), "utf8");
+  // 抓所有以 .user-message 开头（含 .user-message-stack）的选择器块
+  const blocks = [];
+  const re = /([^{}]*\.user-message(?:-stack)?[^{}]*)\{([^{}]*)\}/g;
+  let m;
+  while ((m = re.exec(css))) blocks.push({ sel: m[1].trim(), body: m[2] });
+  const offenders = [];
+  for (const b of blocks) {
+    const floats = /position\s*:\s*(sticky|fixed|absolute)/.test(b.body);
+    // 不透明底色：background / background-color 且不是 transparent / rgba(x,x,x,0)
+    const bgRaw = (b.body.match(/background(?:-color)?\s*:\s*([^;]+)/) || [])[1] || "";
+    const solid = !!bgRaw && !/transparent|rgba\([^)]*,\s*0\s*\)|none/.test(bgRaw);
+    const z = Number((b.body.match(/z-index\s*:\s*(-?\d+)/) || [])[1] ?? 0);
+    if (floats && solid && z > 0) offenders.push(b.sel + "  →  " + bgRaw.trim());
+  }
+  offenders.length === 0
+    ? ok("用户气泡不使用「悬浮 + 不透明底 + z-index」组合（不会遮挡后代内容）")
+    : fail("用户气泡是悬浮遮罩，会盖住同回合的助手消息：\n        " + offenders.join("\n        "));
+
+  // 退化的另一种写法：给当前回合组塞可见性/裁剪规则来配合 sticky
+  /data-current-turn[^{}]*\{[^{}]*content-visibility/.test(css)
+    ? fail("styles.css 仍在给当前回合组改 content-visibility —— 那是 sticky 方案的配套，应一并撤销")
+    : ok("没有为 sticky 方案保留 content-visibility 配套规则");
+
+  // App 侧开关必须处于关闭态（true 会把 anchor-pad 短路成恒 0，与文档流留白逻辑打架）
+  const app = readFileSync(join(ROOT, "src/App.tsx"), "utf8");
+  const flag = (app.match(/const STICKY_USER_SLOT = (true|false);/) || [])[1];
+  flag === "false"
+    ? ok("STICKY_USER_SLOT = false（CSS 与 JS 侧一致，无中间态）")
+    : fail("STICKY_USER_SLOT = " + flag + " —— 与已撤销的 CSS 不一致，会出现「有留白但无钉顶」的中间态");
+}
+
 // ---------- 汇总 ----------
 
 console.log("");

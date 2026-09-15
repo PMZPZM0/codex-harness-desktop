@@ -1898,22 +1898,15 @@ html[data-ui-font="large"] .action-content pre {
 }
 .perm-seg-btn.on strong { color: var(--ok); }
 .perm-seg-btn.on small { color: var(--muted); }
-/* ⛔ 第三次重做 sticky（09-15，前置坑已修）：之前两次失效的真凶是 .turn-group 的
-   content-visibility:auto（Chromium 已知会让内部 sticky 完全失效）。本次同时改两处：
-   ① 当前回合组 content-visibility: visible；② 用户气泡 sticky top:54px。
-   消息粘住不占滚动空间 → 无需一屏留白（anchor-pad 归零），发送后无空白、滚动不解除；
-   sticky 活动范围被回合组盒子约束，滚出组自然松开，浏览历史不受影响。 */
-.turn-group[data-current-turn="true"] {
-  content-visibility: visible;
-}
-.turn-group[data-current-turn="true"] > .user-message-stack,
-.turn-group[data-current-turn="true"] > .user-message {
-  position: sticky;
-  top: 54px;
-  z-index: 5;
-  background: var(--bg);
-  box-shadow: 0 -10px 0 0 var(--bg), 0 10px 0 0 var(--bg);
-}
+/* ⛔ 09-15 撤销「sticky 钉顶」第三次尝试（用户实测截图：助手消息被拦腰切断）。
+   真因不是 content-visibility（上一版注释误判为此），而是**气泡本身是不透明白底**：
+   实测几何 —— 气泡 position:sticky/top:54px/z-index:5/background:rgb(255,255,255)，
+   落在 top:132~204；组内助手消息从 top:170 就开始，与气泡竖直交叠 [170,204] →
+   重叠区文字被白底抹掉，表现为「消息中间几行被竖着切掉」。
+   而钉顶（消息固定悬停）与「不占滚动空间、不遮挡后代内容」在文档流里无法兼得：
+   要么留白（占用空间、可真空白），要么悬浮（遮住下面）。本项目此前两次尝试
+   （见 App.tsx 的 STICKY_USER_SLOT 注释）已实测「sticky 在这个结构里无解」。
+   故回归文档流：气泡正常跟随滚动，不做钉顶悬浮。 */
 
 .user-message {
   grid-template-columns: minmax(0, 1fr);
