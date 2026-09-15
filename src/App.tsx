@@ -8311,6 +8311,8 @@ export default function App() {
   // 一次稳定后才真正卸载
   const [switchingFading, setSwitchingFading] = useState(false);
   const fadeOutTimerRef = useRef<number | null>(null);
+  // 冷加载遮罩的硬超时句柄：jumpToBottom 长时间不 settled 时强制关遮罩（防全白卡死）
+  const switchHardTimerRef = useRef<number | null>(null);
   useEffect(() => { void window.codex.ponytailModeGet?.().then((mode) => setPonytailOn(mode !== "off")).catch(() => undefined); }, []);
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") ?? "light");
   // 账户菜单（点左下角头像/名字弹出）：界面语言 / 界面主题 / 界面缩放 / 使用统计 / 用户中心 / 退出登录
@@ -13867,6 +13869,18 @@ const commandMatches = useMemo(() => {
     // 淡出；多次调用重置 timer，保证只有"所有路径的 jumpToBottom 都稳定"后才真正卸载，
     // 避免切到长会话时遮罩提前消失、内容继续增高导致"切过去在中间"。
     const markSettled = () => {
+      // ⛔ 15 秒硬超时兜底（09-15 用户实测「打开会话全白」）：遮罩的消失完全依赖
+      // markSettled→jumpToBottom→「scrollHeight 连续两帧不变」。大会话（25 回合）冷加载时
+      // content-visibility 逐段回填高度、或后台流式让高度持续变化，jumpToBottom 可能长时间
+      // 不 settled → 遮罩永久挂住 = 整片白屏。无论如何 15 秒后强制淡出（内容随后自己就位）。
+      if (switchHardTimerRef.current == null) {
+        switchHardTimerRef.current = window.setTimeout(() => {
+          switchHardTimerRef.current = null;
+          if (seq !== switchSeqRef.current) return;
+          setSwitchingThreadId((current) => (current === id ? null : current));
+          setSwitchingFading(false);
+        }, 15000);
+      }
       if (seq !== switchSeqRef.current) return;
       if (fadeOutTimerRef.current != null) window.clearTimeout(fadeOutTimerRef.current);
       setSwitchingFading(true);
@@ -13875,6 +13889,7 @@ const commandMatches = useMemo(() => {
         setSwitchingThreadId((current) => (current === id ? null : current));
         setSwitchingFading(false);
         fadeOutTimerRef.current = null;
+        if (switchHardTimerRef.current != null) { window.clearTimeout(switchHardTimerRef.current); switchHardTimerRef.current = null; }
       }, 180);
     };
     // 新建线程（主进程已 thread/start + turn/start）：本地直接落地，不走 resume——
