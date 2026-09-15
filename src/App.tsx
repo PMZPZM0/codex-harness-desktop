@@ -2608,6 +2608,21 @@ function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topbar }: {
   );
 }
 
+/** 运行状态行的个性化话语池（09-16，学 WorkBuddy）：每次任务开始随机锁定一句，
+ *  运行期间不换（每秒换会闹腾），任务结束即随状态行一起消失。 */
+const RUN_PHRASES = [
+  "正在努力成为此刻最有用的存在",
+  "键盘敲得比思考还快",
+  "代码在跑，咖啡在凉",
+  "正在把复杂的事情做简单",
+  "稍等，正在翻遍整个项目",
+  "每个细节都值得多看一眼",
+  "正在认真干活，请勿打扰",
+  "这一步想清楚，后面就顺了",
+  "正在和 bug 斗智斗勇",
+  "稳住，马上就好",
+];
+
 /** 侧栏里的「调度会话」徽标：标明这个会话是 Codex 调度出来的，以及它当前的状态。
  *  这类会话由调度产生、任务完成后**保留**（不自动归档），由 Codex 询问用户后再归档。 */
 function DispatchBadge({ record }: { record: DelegateRecordEntry }) {
@@ -12326,6 +12341,36 @@ const commandMatches = useMemo(() => {
     [thread?.id, dispatchTick],
   );
 
+  // ── 运行动态状态行（09-16，学 WorkBuddy 消息底部那个）─────────────────────────
+  // 状态 = 当前会话**最后一个进行中的 item** 的类型（执行命令/编辑文件/思考…），
+  // 找不到进行中 item 时兜底「正在生成回复」；话语 = 任务开始时随机锁定一句，运行期不换。
+  const taskRunning = Boolean(sending || activeTurnId);
+  const runActivity = useMemo(() => {
+    if (!taskRunning || !thread) return "";
+    const turns = thread.turns ?? [];
+    for (let i = turns.length - 1; i >= 0; i--) {
+      const items = turns[i].items ?? [];
+      for (let j = items.length - 1; j >= 0; j--) {
+        const item = items[j] as any;
+        if (item?.status !== "inProgress" && item?.status !== "running") continue;
+        switch (item.type) {
+          case "commandExecution": return "正在执行命令";
+          case "fileChange": return "正在编辑文件";
+          case "reasoning": return "正在深度思考";
+          case "webSearch": return "正在搜索网页";
+          case "mcpToolCall": return "正在调用工具";
+        }
+      }
+    }
+    return "正在生成回复";
+  }, [taskRunning, thread]);
+
+  const [runPhrase, setRunPhrase] = useState("");
+  useEffect(() => {
+    if (taskRunning && !runPhrase) setRunPhrase(RUN_PHRASES[Math.floor(Math.random() * RUN_PHRASES.length)]);
+    else if (!taskRunning && runPhrase) setRunPhrase("");
+  }, [taskRunning, runPhrase]);
+
   /** 应用调度开关：落盘 → 重算界面 → 从「关」变「开」时自动往对话框发一条告知消息。
    *  刻意用普通函数而不是 useCallback —— 它要调 send()，闭包必须是最新一次渲染的。 */
   async function applyDispatch(next: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean }) {
@@ -15796,6 +15841,13 @@ const commandMatches = useMemo(() => {
             const lastId = String(ordered[ordered.length - 1]?.id ?? "");
             return visible.map((turn) => <MemoTurnView turn={turn} isLastTurn={String(turn.id) === lastId} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={turn.id === latestCompletedTurn?.id || turn.id === activeTurnId ? tokenUsage : null} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />);
           })()}
+          {runActivity && (
+            <div className="run-activity-bar" role="status" aria-live="polite">
+              <span className="run-activity-spinner" aria-hidden><i /><i /><i /></span>
+              <span className="run-activity-text shimmer-text" key={runActivity}>{runActivity}</span>
+              {runPhrase && <span className="run-activity-phrase">· {runPhrase}</span>}
+            </div>
+          )}
           {optimisticInput && !optimisticConfirmed && <div id="chat-anchor"><ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} /></div>}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
           {systemEvents.map((event) => <div className={`system-event ${event.tone ?? "info"}`} key={event.id}><strong>{event.tone === "success" ? <CircleCheck size={13} className="system-event-icon" /> : null}{event.title}</strong><Markdown>{event.text}</Markdown></div>)}
