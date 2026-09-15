@@ -2332,6 +2332,88 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     : fail(".user-message.just-sent 选择器缺失 —— 动画匹配不上");
 }
 
+// ---------- 【20】调度（09-15）：Codex 调度 专家/专家团/子智能体 干活的四层防护 ----------
+{
+  const { createRequire } = await import("node:module");
+  const req = createRequire(import.meta.url);
+  let dp = null;
+  try { dp = req(join(ROOT, "dist-electron/dispatch.js")); } catch { dp = null; }
+  const mainSrc9 = readFileSync(join(ROOT, "electron/main.ts"), "utf8");
+  const appSrc9 = readFileSync(join(ROOT, "src/App.tsx"), "utf8");
+  if (!dp || typeof dp.canDispatchFrom !== "function") {
+    fail("dist-electron/dispatch.js 缺 canDispatchFrom —— 调度硬闸无法断言");
+  } else {
+    // L3 执行侧硬闸（不靠提示词、不靠注册侧，给了工具也不认）
+    const blocked = dp.canDispatchFrom({ isDelegated: true });
+    !blocked.ok && /委派会话/.test(String(blocked.reason ?? ""))
+      ? ok("★ L3 硬闸：被委派会话再发起调度被拒（防套娃的最后一道）")
+      : fail("被委派会话没被拦住 —— 专家调专家会无限套娃");
+    dp.canDispatchFrom({ isDelegated: false, depth: 0 }).ok
+      ? ok("L3 硬闸放行用户直连会话（depth=0）")
+      : fail("正常会话被误拦 —— 调度根本用不起来");
+    !dp.canDispatchFrom({ depth: dp.MAX_DEPTH }).ok
+      ? ok(`L3 深度闸：depth >= MAX_DEPTH(${dp.MAX_DEPTH}) 拒绝`)
+      : fail("深度闸失效 —— 调用链可以无限延长");
+    // L4 并发闸
+    !dp.admitDispatch({ running: dp.MAX_CONCURRENT_DISPATCH }).ok
+      ? ok(`L4 并发闸：running >= ${dp.MAX_CONCURRENT_DISPATCH} 时拒绝`)
+      : fail("并发闸失效 —— 模型一口气发十几个会把引擎压垮");
+    const clipped = dp.clipDispatchOutput("x".repeat(dp.MAX_OUTPUT_CHARS + 500), "th-1");
+    clipped.length <= dp.MAX_OUTPUT_CHARS && /th-1/.test(clipped)
+      ? ok("回传输出超长被截断且指向完整会话（不撑爆调用方上下文）")
+      : fail("输出没有截断 —— 长产出会撑爆调用方上下文");
+    // 目录 / 开关
+    const targets9 = [
+      { kind: "expert", key: "a", name: "甲", profession: "", description: "" },
+      { kind: "team", key: "b", name: "乙", profession: "", description: "" },
+      { kind: "subagent", key: "c", name: "丙", profession: "", description: "" },
+    ];
+    dp.filterTargetsBySwitch(targets9, { enabled: false }).length === 0
+      ? ok("总开关关闭时不暴露任何可调度对象")
+      : fail("总开关关了仍能看到可调度对象");
+    const onlyTeam = dp.filterTargetsBySwitch(targets9, { enabled: true, expert: false, team: true, subagent: false });
+    onlyTeam.length === 1 && onlyTeam[0].kind === "team"
+      ? ok("三类勾选分别生效（取消专家/子智能体后只剩专家团）")
+      : fail("勾选过滤不生效");
+    dp.resolveDispatchTarget(targets9, { kind: "expert", name: "a" }).target?.name === "甲"
+      && dp.resolveDispatchTarget(targets9, { kind: "expert", name: "甲" }).target?.key === "a"
+      ? ok("目标解析同时认 key 与显示名（模型传中文名也能命中）")
+      : fail("目标解析只认一种写法 —— 模型传中文名就会失败");
+    !dp.resolveDispatchTarget(targets9, { kind: "expert", name: "不存在" }).target
+      ? ok("目标不存在时返回可读错误（含当前可用清单）")
+      : fail("目标解析对不存在的名字不报错");
+    // L1 提示词层（软防护，但必须覆盖三类对象且措辞不能误伤本职能力）
+    const teamBlock = dp.delegateScopeBlock({ kind: "team", name: "研发交付团" });
+    /只能调度\*\*本团队/.test(teamBlock) && /不要调用其他专家团/.test(teamBlock)
+      ? ok("★ L1 文案：专家团主理人只许调度本团成员、不许跨团/跨类型")
+      : fail("专家团约束文案缺失 —— 主理人会跨团或跨类型乱调");
+    /不要调用其他专家、专家团或子智能体/.test(dp.delegateScopeBlock({ kind: "expert", name: "洞明" }))
+      ? ok("★ L1 文案：被委派的专家/子智能体直接干活、不许转派")
+      : fail("被委派者没被禁止转派 —— 提示词层防护缺失");
+    /不要委派给任何人/.test(dp.delegateScopeBlock({ kind: "member", name: "承枢" }))
+      ? ok("L1 文案：团队成员直接干活不转派")
+      : fail("团队成员约束文案缺失");
+    // L2 注册侧（渲染层不给工具）
+    /dispatchIsDelegated \? \[\] : subAgentTools/.test(appSrc9)
+      ? ok("★ L2 注册侧：委派会话不注册 subAgentTools")
+      : fail("委派会话仍会拿到 subAgentTools —— 套娃入口没关");
+    /dispatchToolList\(\{ enabled: dispatchSwitch\.enabled === true, isDelegated: dispatchIsDelegated/.test(appSrc9)
+      ? ok("★ L2 注册侧：agent_invoke 只在「开关打开 + 非委派会话」时注册")
+      : fail("agent_invoke 注册条件不完整 —— 开关或身份判断缺失");
+    /canDispatchFrom\(/.test(mainSrc9) && /delegateRegistry\.register/.test(mainSrc9)
+      ? ok("主进程调度入口接了硬闸与登记表")
+      : fail("主进程没接硬闸 —— 只靠提示词拦不住");
+    /\.\.\.\(teamTools\.length \? \{ dynamicTools: teamTools \} : \{\}\)/.test(mainSrc9)
+      ? ok("dynamicTools 只给专家团主理人会话（其余被调会话一律不带调度工具）")
+      : fail("dynamicTools 传参条件变了 —— 确认没有给执行型会话挂调度工具");
+    // .d.mts 同步守卫（09-15 踩坑：allowJs=false，改了 .mjs 不改 .d.mts 会报 has no exported member）
+    const dmts9 = readFileSync(join(ROOT, "src/lib/thread-runtime.d.mts"), "utf8");
+    /dispatch: DispatchConfig/.test(dmts9) && /emptyDispatch\(\): DispatchConfig/.test(dmts9) && /dispatchSignature\(raw: unknown\): string/.test(dmts9)
+      ? ok("thread-runtime.d.mts 已同步 dispatch 声明（.mjs 导出必须有配套 .d.mts）")
+      : fail("thread-runtime.d.mts 缺 dispatch 声明 —— TS 会报 has no exported member");
+  }
+}
+
 // ---------- 汇总 ----------
 
 console.log("");

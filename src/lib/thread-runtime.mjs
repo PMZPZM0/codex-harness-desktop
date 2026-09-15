@@ -34,15 +34,40 @@ export function runtimeKey(threadId) {
   return `${RUNTIME_PREFIX}${String(threadId ?? "")}`;
 }
 
+/** 调度配置（09-15 加入运行时）：当前会话允许 Codex 调度哪些对象干活。
+ *  与模型/档位/权限同源同存放处 —— 会话级、各自独立、多窗口同步走同一条链路。 */
+export function emptyDispatch() {
+  return { enabled: false, expert: true, team: true, subagent: true };
+}
+
+const bool = (v, fallback) => (typeof v === "boolean" ? v : fallback);
+
+/** 归一化调度配置（坏值/缺字段一律回落默认：总开关关，三类勾选开） */
+export function normalizeDispatch(raw) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  return {
+    enabled: src.enabled === true,
+    expert: bool(src.expert, true),
+    team: bool(src.team, true),
+    subagent: bool(src.subagent, true),
+  };
+}
+
+/** 调度配置签名：用于变更判定与多窗口回声比对 */
+export function dispatchSignature(raw) {
+  const d = normalizeDispatch(raw);
+  return [d.enabled, d.expert, d.team, d.subagent].map((v) => (v ? "1" : "0")).join("");
+}
+
 /** 空运行时（字段恒在，避免各处 `?? ""`） */
 export function emptyRuntime() {
-  return { model: "", effort: "", sandbox: "", approval: "", rev: 0 };
+  return { model: "", effort: "", sandbox: "", approval: "", dispatch: emptyDispatch(), rev: 0 };
 }
 
 const str = (v) => (typeof v === "string" ? v : v === undefined || v === null ? "" : String(v));
 
 /** 归一化任意输入（坏 JSON / 缺字段 / 字段类型不对）→ 完整对象
- *  @param {unknown} raw @returns {{model:string, effort:string, sandbox:string, approval:string, rev:number}} */
+ *  @param {unknown} raw */
 export function normalizeRuntime(raw) {
   const src = raw && typeof raw === "object" ? raw : {};
   const rev = Number(src.rev);
@@ -51,6 +76,7 @@ export function normalizeRuntime(raw) {
     effort: str(src.effort),
     sandbox: str(src.sandbox),
     approval: str(src.approval),
+    dispatch: normalizeDispatch(src.dispatch),
     rev: Number.isFinite(rev) && rev > 0 ? Math.floor(rev) : 0,
   };
 }
@@ -76,6 +102,8 @@ export function migrateRuntime(input) {
     effort: base.effort || str(input?.effort),
     sandbox: base.sandbox || str(perms.sandbox),
     approval: base.approval || str(perms.approval),
+    // 调度是 09-15 新增的会话级字段，旧三键族里不存在这个概念 —— 一律取新键（缺则默认关闭）
+    dispatch: base.dispatch,
     rev: base.rev,
   };
 }
@@ -93,7 +121,11 @@ export function patchRuntime(current, patch) {
     const value = str(src[key]);
     if (value) next[key] = value;
   }
-  const changed = ["model", "effort", "sandbox", "approval"].some((k) => next[k] !== base[k]);
+  // 调度配置是**对象**，不走「非空字符串覆盖」那一套：传了就是一次完整提交（UI 是整体确认后才提交的）
+  const touchesDispatch = src.dispatch !== undefined && src.dispatch !== null && typeof src.dispatch === "object";
+  if (touchesDispatch) next.dispatch = normalizeDispatch(src.dispatch);
+  const changed = ["model", "effort", "sandbox", "approval"].some((k) => next[k] !== base[k])
+    || (touchesDispatch && dispatchSignature(next.dispatch) !== dispatchSignature(base.dispatch));
   if (!changed) return { runtime: base, changed: false };
   return { runtime: { ...next, rev: base.rev + 1 }, changed: true };
 }
@@ -101,7 +133,8 @@ export function patchRuntime(current, patch) {
 /** 签名：用于「这次改了没有 / 要不要重新下发给引擎」的去重判据 */
 export function runtimeSignature(runtime) {
   const r = normalizeRuntime(runtime);
-  return [r.model, r.effort, r.sandbox, r.approval].join("|");
+  // ⛔ 调度必须进签名：回声判定与去重都靠它 —— 漏了会导致「另一个窗口只改了调度开关」被判成没变
+  return [r.model, r.effort, r.sandbox, r.approval, dispatchSignature(r.dispatch)].join("|");
 }
 
 /** 回声表的 TTL：主进程广播几毫秒内就到，5 秒足够宽松，又不会把「几秒后另一个窗口恰好

@@ -1,11 +1,16 @@
 import fs from "node:fs/promises";
 
+/** 调度配置（与渲染层 `emptyDispatch()` 同形）：当前会话允许 Codex 调度哪些对象干活 */
+export type DispatchConfig = { enabled: boolean; expert: boolean; team: boolean; subagent: boolean };
+
 /** 会话运行时配置记录（与渲染层 `src/lib/thread-runtime.mjs` 同形，多一个 updatedAt） */
 export type ThreadRuntimeRecord = {
   model: string;
   effort: string;
   sandbox: string;
   approval: string;
+  /** 调度开关（09-15 新增；与模型/权限同源同存放处，会话级） */
+  dispatch: DispatchConfig;
   /** 版本号：只在**真的变了**时 +1，用作并发冲突判据（等价 ZCode 的 revision） */
   rev: number;
   updatedAt: number;
@@ -14,7 +19,27 @@ export type ThreadRuntimeRecord = {
 const FIELDS = ["model", "effort", "sandbox", "approval"] as const;
 export type ThreadRuntimeField = (typeof FIELDS)[number];
 
-const emptyRecord = (): ThreadRuntimeRecord => ({ model: "", effort: "", sandbox: "", approval: "", rev: 0, updatedAt: 0 });
+const emptyDispatchConfig = (): DispatchConfig => ({ enabled: false, expert: true, team: true, subagent: true });
+
+/** 归一化调度配置（坏值/缺字段一律回落默认：总开关关、三类勾选开） */
+export function normalizeDispatchConfig(input: unknown): DispatchConfig {
+  const src = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
+  return {
+    enabled: src.enabled === true,
+    expert: bool(src.expert, true),
+    team: bool(src.team, true),
+    subagent: bool(src.subagent, true),
+  };
+}
+
+/** 调度配置签名（与渲染层 `dispatchSignature()` 同算法，多窗口回声判定要用同一套） */
+export function dispatchSignatureOf(input: unknown): string {
+  const d = normalizeDispatchConfig(input);
+  return [d.enabled, d.expert, d.team, d.subagent].map((v) => (v ? "1" : "0")).join("");
+}
+
+const emptyRecord = (): ThreadRuntimeRecord => ({ model: "", effort: "", sandbox: "", approval: "", dispatch: emptyDispatchConfig(), rev: 0, updatedAt: 0 });
 
 const str = (value: unknown) => (typeof value === "string" ? value : value === undefined || value === null ? "" : String(value));
 
@@ -26,6 +51,13 @@ function sanitizeFields(input: unknown): Partial<Record<ThreadRuntimeField, stri
     if (value) out[key] = value;
   }
   return out;
+}
+
+/** 从 patch/记录里取调度配置；不是对象就返回 null（表示「这次不动调度」） */
+function pickDispatch(input: unknown): DispatchConfig | null {
+  const src = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const value = src.dispatch;
+  return value && typeof value === "object" ? normalizeDispatchConfig(value) : null;
 }
 
 /**
@@ -53,7 +85,15 @@ export class ThreadRuntimeStore {
     this.loaded = true;
     try {
       const raw: unknown = JSON.parse(await fs.readFile(this.file, "utf8"));
-      if (raw && typeof raw === "object" && !Array.isArray(raw)) this.map = raw as Record<string, ThreadRuntimeRecord>;
+      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+        // 老文件里的记录没有 dispatch 字段（09-15 才加的）—— 读进来就补齐默认值：
+        // 否则下游到处要判 undefined，`patch` 的 changed 判定也会把「补默认」误认成一次修改。
+        const table: Record<string, ThreadRuntimeRecord> = {};
+        for (const [key, value] of Object.entries(raw as Record<string, ThreadRuntimeRecord>)) {
+          table[key] = { ...emptyRecord(), ...(value ?? {}), dispatch: normalizeDispatchConfig((value as any)?.dispatch) };
+        }
+        this.map = table;
+      }
     } catch { /* 首次运行没有文件：按空表起步 */ }
   }
 
@@ -86,9 +126,11 @@ export class ThreadRuntimeStore {
     const current = this.map[threadId] ?? emptyRecord();
     const conflict = typeof baseRev === "number" && Number.isFinite(baseRev) && baseRev !== current.rev;
     const fields = sanitizeFields(patch);
-    const changed = FIELDS.some((key) => fields[key] !== undefined && fields[key] !== current[key]);
+    const dispatch = pickDispatch(patch);
+    const changed = FIELDS.some((key) => fields[key] !== undefined && fields[key] !== current[key])
+      || (dispatch !== null && dispatchSignatureOf(dispatch) !== dispatchSignatureOf(current.dispatch));
     if (!changed) return { runtime: current, conflict, changed: false };
-    const next: ThreadRuntimeRecord = { ...current, ...fields, rev: current.rev + 1, updatedAt: Date.now() };
+    const next: ThreadRuntimeRecord = { ...current, ...fields, ...(dispatch ? { dispatch } : {}), rev: current.rev + 1, updatedAt: Date.now() };
     this.map[threadId] = next;
     this.scheduleSave();
     return { runtime: next, conflict, changed: true };
@@ -100,7 +142,8 @@ export class ThreadRuntimeStore {
     const existing = this.map[threadId];
     if (existing && existing.rev > 0) return existing;
     const fields = sanitizeFields(runtime);
-    const next: ThreadRuntimeRecord = { ...emptyRecord(), ...fields, rev: Object.keys(fields).length ? 1 : 0, updatedAt: Date.now() };
+    const dispatch = pickDispatch(runtime);
+    const next: ThreadRuntimeRecord = { ...emptyRecord(), ...fields, ...(dispatch ? { dispatch } : {}), rev: Object.keys(fields).length || dispatch ? 1 : 0, updatedAt: Date.now() };
     if (next.rev > 0) { this.map[threadId] = next; this.scheduleSave(); }
     return next;
   }

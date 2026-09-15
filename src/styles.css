@@ -22818,3 +22818,59 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 @media (prefers-reduced-motion: reduce) {
   #chat-anchor { animation: none; }
 }
+
+/* ── 调度（09-15）：输入框的调度开关 + 侧栏「被调度的临时会话」标记 ─────────────── */
+.dispatch-menu .composer-setting.dispatch-on { color: var(--accent-text); border-color: var(--accent); }
+.dispatch-pop {
+  width: 272px;
+  max-width: min(304px, calc(100vw - 48px));
+  max-height: none;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dispatch-master {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: var(--bg);
+  cursor: pointer;
+}
+.dispatch-master input { margin-top: 2px; flex: none; }
+.dispatch-master-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dispatch-master-text strong { font-size: 12.5px; font-weight: 600; }
+.dispatch-master-text small { font-size: 11px; color: var(--muted); line-height: 1.45; }
+.dispatch-rows { display: flex; flex-direction: column; gap: 2px; padding: 0 2px; }
+.dispatch-rows.is-off { opacity: 0.45; }
+.dispatch-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px; border-radius: 7px; cursor: pointer; }
+.dispatch-row:hover { background: var(--bg); }
+.dispatch-row input { margin-top: 2px; flex: none; }
+.dispatch-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dispatch-row-text strong { font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+.dispatch-row-text strong em { font-style: normal; font-size: 10.5px; font-weight: 600; color: var(--muted); background: var(--line-soft); border-radius: 20px; padding: 1px 6px; }
+.dispatch-row-text small { font-size: 11px; color: var(--muted); line-height: 1.45; }
+.dispatch-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 6px 2px; border-top: 1px solid var(--line-soft); }
+.dispatch-scope { font-size: 10.5px; color: var(--faint); }
+.dispatch-actions { display: flex; gap: 6px; }
+.dispatch-actions button { font-size: 11.5px; padding: 4px 10px; border-radius: 7px; border: 1px solid var(--line); background: 0 0; color: inherit; cursor: pointer; }
+.dispatch-actions button.primary { background: var(--accent); border-color: transparent; color: #fff; }
+.dispatch-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.thread-row.is-delegated-row { box-shadow: inset 2px 0 0 var(--accent); }
+.thread-dispatch-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 600;
+  padding: 3px 6px;
+  border-radius: 20px;
+  margin-left: 6px;
+}
+.thread-dispatch-badge.tone-run { color: var(--accent-text); background: var(--accent-soft); border: 1px solid var(--line); animation: attention-pulse 1.6s ease-in-out infinite; }
+.thread-dispatch-badge.tone-done { color: var(--muted); background: var(--line-soft); border: 1px solid var(--line-soft); }
+.thread-dispatch-badge.tone-fail { color: var(--red); background: var(--line-soft); border: 1px solid var(--red); }

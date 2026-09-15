@@ -127,6 +127,31 @@ type ExpertTeamConfig = {
   updatedAt: string;
 };
 
+/** 可被 Codex 调度的对象（专家 / 专家团 / 团队成员 / 子智能体） */
+type DispatchTargetEntry = {
+  kind: "expert" | "team" | "member" | "subagent";
+  key: string;
+  name: string;
+  profession: string;
+  description: string;
+  teamId?: string;
+  memberId?: string;
+};
+
+/** 被调度产生的临时会话登记记录（侧栏标记 / 归档都读它） */
+type DelegateRecordEntry = {
+  threadId: string;
+  originThreadId: string;
+  kind: "expert" | "team" | "member" | "subagent";
+  name: string;
+  depth: number;
+  status: "running" | "done" | "failed";
+  startedAt: number;
+  endedAt?: number;
+  archived?: boolean;
+  error?: string;
+};
+
 type MarketSkillEntry = {
   id: string; name: string; description: string; category: string; subCategory?: string; icon: string; author: string;
   securityLevel: string; sourceCredibility: string; downloads: string; favorites: string; downloadUrl: string; detailUrl: string;
@@ -456,6 +481,14 @@ interface Window {
     saveSubAgent(input: unknown): Promise<SubAgentEntry>;
     removeSubAgent(id: string): Promise<{ ok: boolean }>;
     invokeSubAgent(input: { id?: string; name?: string; query: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ threadId: string; turnId?: string; name: string; output: string }>;
+    /** 调度（09-15）：可被 Codex 调度的对象目录 */
+    listDispatchCatalog(): Promise<{ targets: DispatchTargetEntry[] }>;
+    dispatchToolDescription(): Promise<{ description: string }>;
+    dispatchNotice(): Promise<{ text: string }>;
+    listDelegates(): Promise<{ records: DelegateRecordEntry[] }>;
+    listDelegatesOf(originThreadId: string): Promise<{ records: DelegateRecordEntry[] }>;
+    invokeAgent(input: { kind: "expert" | "team" | "member" | "subagent"; name: string; query: string; originThreadId: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string }>;
+    archiveDelegates(input: { threadIds?: string[]; originThreadId?: string }): Promise<{ archived: number; failed: string[] }>;
     listExpertTeams(): Promise<ExpertTeamConfig[]>;
     saveExpertTeam(input: unknown): Promise<ExpertTeamConfig>;
     removeExpertTeam(teamId: string): Promise<{ ok: boolean }>;
