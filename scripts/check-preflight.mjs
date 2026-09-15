@@ -2160,6 +2160,38 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     ? ok("config.toml 恒写 harness 段 + 顶层 model_provider 指向它（永远指向当前生效供应商）")
     : fail("config.toml 没有 harness 段 —— 引擎解析不到统一 id");
 }
+
+// ---------- 【17】回合时序规范化（09-15「更早消息按钮与内容对不上」修复的纯逻辑守卫） ----------
+{
+  const { orderTurnsByTime, mergeTurnListsById, visibleTurnWindow } = await import("../src/lib/turn-order.mjs");
+  const appSrc7 = readFileSync(join(ROOT, "src/App.tsx"), "utf8");
+  const mk = (id, startedAt) => ({ id, startedAt, items: [], status: "completed" });
+  // 用户真实事故形状：mergeLongerStreams 盲目前插部分快照 → [3..8, 1, 2]（最旧的贴到末尾）
+  const corrupted = [3, 4, 5, 6, 7, 8, 1, 2].map((n) => mk(`t${n}`, 1000 + n));
+  const fixed = orderTurnsByTime(corrupted);
+  fixed.map((t) => t.id).join(",") === "t1,t2,t3,t4,t5,t6,t7,t8"
+    ? ok("orderTurnsByTime 把乱序回合按 startedAt 规范化（用户事故形状 [3..8,1,2] → [1..8]）")
+    : fail("orderTurnsByTime 排序不正确 —— 回合顺序错乱会再次出现");
+  const missing = mergeTurnListsById([mk("t3", 1003), mk("t4", 1004)], [mk("t1", 1001)]);
+  missing.length === 3 && missing[0].id === "t1"
+    ? ok("mergeTurnListsById 去重合并 + 时序收口（部分快照不再盲目前插）")
+    : fail("mergeTurnListsById 合并结果不对 —— 乱序/重复回合会再次进入状态");
+  const dup = mergeTurnListsById([mk("t1", 1001), mk("t2", 1002)], [mk("t2", 1002), mk("t3", 1003)]);
+  dup.length === 3
+    ? ok("mergeTurnListsById 同 id 去重（游标翻页不再产生重复回合）")
+    : fail("mergeTurnListsById 没去重 —— 「游标原地打转」的重复回合会回来");
+  const live = [mk("old", 5000), mk("streaming")]; // 直播回合无 startedAt → 视为最新，排在最后
+  const win = visibleTurnWindow(live, 5);
+  win.ordered[win.ordered.length - 1]?.id === "streaming" && win.visible.length === 2
+    ? ok("visibleTurnWindow：无 startedAt 的直播回合排最后 + 窗口切片正确")
+    : fail("visibleTurnWindow 对直播回合/窗口切片的处理不对 —— 正在进行的回合可能被挤丢");
+  /visibleTurnWindow\(thread\?\.turns/.test(appSrc7)
+    ? ok("时间线渲染入口走 visibleTurnWindow（渲染前时序规范化）")
+    : fail("时间线渲染没有走时序规范化 —— 状态乱序会直接画到界面上");
+  /mergeTurnListsById\(mergedTurns, extraTurns\)/.test(appSrc7) && /mergeTurnListsById\(c\.turns \?\? \[\], earlier\)/.test(appSrc7)
+    ? ok("mergeLongerStreams 与 loadEarlierTurns 都走去重时序合并（事故源头收口）")
+    : fail("回合合并仍有盲目前插/拼接 —— 顺序错乱源头未收口");
+}
 // ---------- 汇总 ----------
 
 console.log("");
