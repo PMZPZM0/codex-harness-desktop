@@ -485,6 +485,7 @@ interface Window {
     listDispatchCatalog(): Promise<{ targets: DispatchTargetEntry[] }>;
     dispatchToolDescription(): Promise<{ description: string }>;
     dispatchNotice(): Promise<{ text: string }>;
+    dispatchOffNotice(): Promise<{ text: string }>;
     listDelegates(): Promise<{ records: DelegateRecordEntry[] }>;
     listDelegatesOf(originThreadId: string): Promise<{ records: DelegateRecordEntry[] }>;
     invokeAgent(input: { kind: "expert" | "team" | "member" | "subagent"; name: string; query: string; originThreadId: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string }>;

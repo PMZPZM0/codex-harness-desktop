@@ -12381,6 +12381,11 @@ const commandMatches = useMemo(() => {
     try {
       saveThreadRuntime(id, { dispatch: normalizeDispatch(next) });
       setDispatchTick((tick) => tick + 1);
+      // ⛔ 工具面同步（09-16 用户实测「Codex 说没有调度入口」的根因）：
+      // dynamicTools 只在 thread/start / thread/resume 生效，turn/start **不带工具** ——
+      // 用户开启开关时往往停留在已打开的旧会话（resume 发生在开关打开之前），不同步的话
+      // Codex 的工具面永远是旧的。这里立即重放一次**轻量 resume**（不发回合、幂等）把新工具面推下去。
+      try { await resumeThreadLight({ threadId: id, dynamicTools: await buildDynamicTools() }); } catch { /* 运行中可能失败：下次打开会话时也会同步 */ }
       if (next.enabled && !before.enabled) {
         try {
           const notice: any = await window.codex.dispatchNotice();
@@ -12388,6 +12393,13 @@ const commandMatches = useMemo(() => {
           // 走 pendingCommandTextRef：send() 会优先消费它，跳过 / 与 # 解析，正好适合系统告知
           if (text) { pendingCommandTextRef.current = text; void send(); }
         } catch { /* 告知失败不影响开关本身已生效 */ }
+      } else if (!next.enabled && before.enabled) {
+        // 关闭也要告知：让 Codex 立刻知道权限被收回，别白费回合去试
+        try {
+          const off: any = await window.codex.dispatchOffNotice();
+          const text = String(off?.text ?? "");
+          if (text) { pendingCommandTextRef.current = text; void send(); }
+        } catch { /* 同上 */ }
       }
     } finally {
       setDispatchBusy(false);

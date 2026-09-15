@@ -164,8 +164,7 @@ export function dispatchToolDescription(targets: DispatchTarget[]): string {
 }
 
 /** 开启调度开关时，自动发往对话框的那条「告知」消息。 */
-export function dispatchNoticeText(targets: DispatchTarget[]): string {
-  const list = Array.isArray(targets) ? targets : [];
+export function dispatchNoticeText(targets: DispatchTarget[]): string {  const list = Array.isArray(targets) ? targets : [];
   const byKind = new Map<DispatchKind, string[]>();
   for (const target of list) {
     const arr = byKind.get(target.kind) ?? [];
@@ -182,6 +181,15 @@ export function dispatchNoticeText(targets: DispatchTarget[]): string {
     `你可以在需要时调度这些对象替你干活：${what}。`,
     "原则：**适合独立完成、需要专门角色、或会大量读取上下文而不该污染本会话的子任务，优先调度它们来做**，而不是自己硬做；琐碎的一两行改动、需要来回确认的活，自己做完更快。",
     "调度它们会产生临时会话并出现在左侧侧栏；一个任务整体做完后，主动问用户是否归档这些临时会话。",
+    "收到请只回复「收到」两个字，不要展开。",
+  ].join("\n");
+}
+
+/** 关闭调度开关时，自动发往对话框的告知（让 Codex 立刻知道权限被收回了）。 */
+export function dispatchOffNoticeText(): string {
+  return [
+    "【调度已关闭】本会话已停用「调度」能力。",
+    "之后的任务都由你自己完成；即使你再尝试调度专家 / 专家团 / 子智能体，调用也会被拒绝——不要白费回合去试。",
     "收到请只回复「收到」两个字，不要展开。",
   ].join("\n");
 }
