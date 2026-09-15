@@ -8896,24 +8896,40 @@ export default function App() {
       pinnedScrollTopRef.current = el.scrollTop;
       return true;
     }
-    // ⛔ WorkBuddy 式粘性锚定（09-15 重做）：`.user-message-stack` 已 position:sticky（styles.css），
-    // 「消息钉在 54px、上下滚动不解除」由 CSS 承担——sticky 的活动范围被回合组盒子天然约束，
-    // 只在本回合回复区间内钉住，出界自动松开。因此：
-    //   · 不再给 anchor-pad 撑一整屏留白（那是发消息卡顿 + 底部大空白的根源，09-14 三次修复
-    //     未果的「钉顶 vs 短会话空白」互斥问题就此消解——留白恒为 0）；
-    //   · 不再做逐帧 gapErr 纠偏（sticky 恒等于 54px，纠偏反而与跟随打架）；
-    //   · JS 只保留：① 首次落位把锚点一次性滚到 54px；② 超长消息直接看回复（原逻辑）。
+    // 留白固定给**一整屏**：保证「锚点滚到顶部」这个目标永远可达（不依赖锚点高度，
+    // 也就不用随锚高反复改高度 → 没有新的 scrollHeight 突变源）。
+    // ⛔ 09-14 三次尝试把它改成条件式（内容不满一屏就归零 / 只给最小量），全部被
+    //    send-anchor 验收打回：① 按 scrollHeight 判 → 滚动容器被 clientHeight 托底，
+    //    判定恒真 → 留白 0↔一屏振荡（maxUp=1250 / grew=-192）；② 按 offsetTop 判 →
+    //    跨越一屏阈值那一刻留白 0→一屏，scrollMax 突增 622，钉顶一次性追跳 841px
+    //    （阈值 60）；③ 按需给最小量 → 「钉在顶上」在数值上等于「贴底」，判据失效。
+    //    结论：**钉顶（消息固定在顶部）与「短会话没有大空白」互斥**，见 09-14 会话记录。
     const pad = anchorSpacerRef.current;
-    if (pad && pad.style.height !== "0px") pad.style.height = "0px";
+    if (pad && pad.style.height !== `${el.clientHeight}px`) pad.style.height = `${el.clientHeight}px`;
     const key = isNewTurn ? `turn-${lastId}` : "opt";
     const gapErr = (anchor.getBoundingClientRect().top - el.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
-    // 「刚切回自己这条会话」= 立即落位（几何是脏的，必须当帧处理，见 09-13 打点记录）。
+    // 「刚切回自己这条会话」= 休眠钉顶的复活：必须**当first处理**（立即落位、解除超屏锁）。
+    // 否则会走下面的延帧纠偏，而切回来这一帧的几何是"脏"的（留白刚重新撑起来、scrollTop
+    // 还是上一会话的），中间那一帧足以让跟随先按 dist 把视口推到内容底部 —— 实测打点：
+    // pin-fix{err:214} 与跟随抢同一帧，最后停在 gap=481（用户看到的就是"切回来钉顶没了"）。
     const returned = pinDormantSeenRef.current;
     if (returned) { pinDormantSeenRef.current = false; pinGapLockedRef.current = null; }
     const first = pinnedAnchorKeyRef.current !== key || returned;
     pinnedAnchorKeyRef.current = key;
-    // 记归属：切走再切回同一条会话时由钉顶恢复位置（不能用 threadRef.current，见 09-13 注）。
+    // 记下"这个钉顶属于哪个会话"：切走再切回**同一条**会话时，位置要由钉顶恢复，
+    // 而不是被开会话时的状态清零抹掉（用户实测：「切换会话，钉顶没了」）。
+    // ⚠️ 必须用调用方传入的 threadId，不能用 threadRef.current —— 它是被动 effect 里
+    // 更新的，布局 effect 期间还停留在上一个会话，会记错归属。
     pinThreadIdRef.current = threadId ?? null;
+    // ⛔ 基线**只在真正钉顶/修正时**刷新，位置已经对了就一个字都不要碰它。
+    // 这是「自动跟随又没了」的根因（09-13 用户截图：消息钉在顶上，正文却一路流出
+    // 输入框外、最新一行永远看不到）：本函数每次 thread 更新都会被调用，若每次都把
+    // 基线刷成当前内容底部，update() 里的 `growth = 内容底部 − 基线` 永远 ≈ 0，
+    // 攒不到 FOLLOW_STEP_PX(60) → 跟随一次都不触发。基线必须让增长量**累积**。
+    // 首次落位**立即**执行（用户要的第一时间就在那个位置）；之后的复核若发现偏差，
+    // 延到下一帧再量一次才改：本帧布局常常还在收敛（content-visibility 提交、
+    // 代码高亮/字体完成），照当帧 gap 直接改 scrollTop 会过冲（实测 332 → −226 → −32
+    // 三次来回）。下一帧仍偏才修，一次到位。
     if (first) {
       anchorHeightBaselineRef.current = contentBottomOf(el);
       dbg("pin-apply", { key, gapErr: Math.round(gapErr), top: Math.round(el.scrollTop) });
@@ -8922,7 +8938,35 @@ export default function App() {
       pinnedScrollTopRef.current = el.scrollTop;
       return true;
     }
-    // 后续更新零干预：sticky 恒钉 54px；贴底跟随（update）只在 stick 模式工作，两者不再抢视口。
+    // ★ 交棒规则（09-13 定稿，修「来回拉扯」的真正来源）：
+    //   「消息稳在 54px」与「最新一行永远可见」在回复长过视口时**必然矛盾**——
+    //   跟随为了露出新内容要把视口往下推，钉顶为了让 gap 恒等于 54 又要把它拉回来，
+    //   两个 owner 每 60px 打一轮（实测打点：follow-grow{+65} → pin-fix{−65} 循环），
+    //   用户看到的就是抖。所以：内容一旦长出视口，**钉顶停止纠偏**、位置交给跟随，
+    //   消息自然往上走 —— 这正是用户要的「agent 消息很丝滑往下流、自动跟随」。
+    //   短回复（未超屏）时继续纠偏，消息就稳稳待在 54px。
+    const overflow = contentBottomOf(el) - el.scrollTop - el.clientHeight;
+    if (overflow > 4) { pinGapLockedRef.current = key; return true; }
+    if (pinGapLockedRef.current === key) return true;
+    if (Math.abs(gapErr) <= 8) return true;
+    anchorHeightBaselineRef.current = contentBottomOf(el);
+    if (pinFixRef.current) cancelAnimationFrame(pinFixRef.current);
+    selfScrollUntilRef.current = Date.now() + 200;
+    pinFixRef.current = requestAnimationFrame(() => {
+      pinFixRef.current = 0;
+      if (!anchorTopRef.current) return;
+      // ⚠️ 归属校验（09-13 审计）：这个 rAF 可以从上一个会话挂到下一次渲染才执行，
+      // 而 `el` 是跨会话不重建的 .timeline、`#chat-anchor` 此时已是**新会话**渲染的元素 ——
+      // 不校验就会在新会话第一帧莫名滚一下，还会把落点记账写成别的会话的值。
+      if (pinThreadIdRef.current !== (threadId ?? null)) return;
+      const now = (anchor.isConnected ? anchor : document.getElementById("chat-anchor")) as HTMLElement | null;
+      if (!now) return;
+      const err = (now.getBoundingClientRect().top - el.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
+      if (Math.abs(err) <= 4) return;
+      dbg("pin-fix", { key, err: Math.round(err), top: Math.round(el.scrollTop) });
+      scrollToOffsetInstant(el, el.scrollTop + err);
+      pinnedScrollTopRef.current = el.scrollTop;
+    });
     return true;
   }, [clearAnchorPad, contentBottomOf, contentTailTarget]);
   /** 最近一次钉顶实际落到的 scrollTop。用于区分「程序滚动」与「用户滚到底」：

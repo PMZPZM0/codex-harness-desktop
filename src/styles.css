@@ -1917,30 +1917,6 @@ html[data-ui-font="large"] .action-content pre {
   flex-direction: column;
   gap: 5px;
 }
-/* ⛔ WorkBuddy 式粘性锚定（09-15，替代「一整屏留白 + scrollTop 劫持」钉顶）：
-.   用户消息 position:sticky 钉在视口顶部 54px——回复增长、用户上下滚动都不解除。
-.   sticky 的活动范围被回合组盒子天然约束：只在本回合的回复区间内钉住，滚出去
-.   自然松开，无需任何 JS 纠偏/留白（发消息卡顿 + 底部一屏大空白的根源就此消除，
-.   anchor-pad 恒为 0）。::before 铺不透明底防止流式内容从气泡两侧透出。 */
-.turn-group > .user-message-stack,
-.turn-group > .user-message {
-  position: sticky;
-  top: 54px;
-  z-index: 6;
-}
-.turn-group > .user-message-stack::before,
-.turn-group > .user-message::before {
-  content: "";
-  position: absolute;
-  left: -24px;
-  right: -24px;
-  top: -6px;
-  bottom: -6px;
-  background: var(--bg);
-  z-index: -1;
-  border-radius: 8px;
-  pointer-events: none;
-}
 .user-message-stack > .message.user-message {
   width: 100%;
   margin-bottom: 0;
