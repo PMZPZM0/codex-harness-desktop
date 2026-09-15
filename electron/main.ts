@@ -19,6 +19,12 @@ import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { MemoryLayers } from "./memory-layers";
 import { RpaStore, type RpaRecipe } from "./rpa-store";
 import { TeamRunStore, memberThreadName } from "./team-runs";
+import { DelegateRegistry } from "./delegate-registry";
+import {
+  admitDispatch, canDispatchFrom, clipDispatchOutput, delegateScopeBlock,
+  dispatchNoticeText, dispatchToolDescription, filterTargetsBySwitch, kindLabel, resolveDispatchTarget,
+  type DispatchKind, type DispatchTarget,
+} from "./dispatch";
 import { ThreadRuntimeStore } from "./thread-runtime-store";
 import { TerminalService } from "./terminal";
 import { RemoteControlService } from "./remote";
@@ -385,6 +391,8 @@ function broadcastHarnessEvent(payload: Record<string, unknown>) {
 // 权威必须在主进程 —— 成员线程的流式事件只有这里看得到，而且 popout 独立窗口的
 // 渲染层没有 teamThreadMapRef，只能靠这份映射才知道自己打开的会话属于哪个团。
 const teamRunStore = new TeamRunStore(app.getPath("userData"), (payload) => broadcastHarnessEvent(payload as Record<string, unknown>));
+/** 被调度的临时会话登记表（09-15）：侧栏标记 / L3 硬闸 / 任务完成后询问归档都靠它 */
+const delegateRegistry = new DelegateRegistry(path.join(app.getPath("userData"), "delegate-threads.json"));
 ipcMain.handle("team-runs:list", async (_event, threadId: string) => teamRunStore.listRuns(String(threadId ?? "")));
 ipcMain.handle("team-threads:map", async () => teamRunStore.listThreads());
 ipcMain.handle("team-threads:team-of", async (_event, threadId: string) => teamRunStore.teamOfThread(String(threadId ?? "")));
@@ -6294,6 +6302,208 @@ ipcMain.handle("teams:invoke-member", async (_event, input: { teamId: string; me
     teamRunStore.finishRun(run.runId, { status: "failed", output: run.output, error: error?.message ?? String(error) });
     throw error;
   }
+});
+
+// ── 调度（09-15）：让 Codex 在任意会话里调度 专家 / 专家团 / 子智能体 干活 ─────────────
+// 四层防护里主进程负责的部分：L3 执行侧硬闸、L4 并发/深度闸、L1 持久指令。
+// L2（注册侧不给工具）在渲染层，但那一层防不住「线程复用 / 竞态 / 以后有人改错注册点」——
+// 所以真正的安全边界是下面这行 canDispatchFrom：**给了工具也不认**。
+
+/** 组装「可调度对象目录」（只含已启用的；单人专家 = 只有 lead 的团队，结构同型） */
+async function buildDispatchCatalog(): Promise<DispatchTarget[]> {
+  const [teams, subs] = await Promise.all([readExpertTeams(), readSubAgents()]);
+  const targets: DispatchTarget[] = [];
+  for (const team of teams) {
+    if (!team.enabled) continue;
+    if (!team.members?.length) {
+      targets.push({
+        kind: "expert",
+        key: team.teamId,
+        name: team.displayName.zh,
+        profession: team.lead?.profession?.zh ?? "",
+        description: team.lead?.description ?? team.description?.zh ?? "",
+        teamId: team.teamId,
+        memberId: team.lead?.id,
+      });
+    } else {
+      targets.push({
+        kind: "team",
+        key: team.teamId,
+        name: team.displayName.zh,
+        profession: `${team.members.length} 位成员`,
+        description: team.description?.zh ?? "",
+        teamId: team.teamId,
+      });
+    }
+  }
+  for (const sub of subs) {
+    if (!sub.enabled) continue;
+    targets.push({ kind: "subagent", key: sub.id, name: sub.name, profession: "", description: sub.description ?? "" });
+  }
+  return targets;
+}
+
+/** 起一个「被调度的会话」并把任务跑完，返回它的最终产出。三类对象共用这一条链路。 */
+async function runDelegatedTask(input: {
+  kind: DispatchKind; name: string; query: string; originThreadId: string;
+  cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string;
+}): Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string }> {
+  const origin = String(input.originThreadId ?? "");
+  // ── L3 硬闸：发起方本身是被委派产生的会话 → 一律拒绝（防套娃的最后一道，注册侧漏了也拦住）
+  const originRecord = origin ? await delegateRegistry.infoOf(origin) : null;
+  const gate = canDispatchFrom({ isDelegated: Boolean(originRecord), depth: originRecord?.depth ?? 0 });
+  if (!gate.ok) return { ok: false, output: "", error: gate.reason };
+  const admit = admitDispatch({ running: await delegateRegistry.runningCount() });
+  if (!admit.ok) return { ok: false, output: "", error: admit.reason };
+
+  const targets = await buildDispatchCatalog();
+  const found = resolveDispatchTarget(targets, { kind: input.kind, name: input.name });
+  if (!found.target) return { ok: false, output: "", error: found.error };
+  const target = found.target;
+
+  // 解析角色提示词与（团队才有的）调度工具
+  let rolePrompt = "";
+  let displayName = target.name;
+  let teamTools: unknown[] = [];
+  if (target.kind === "subagent") {
+    const subs = await readSubAgents();
+    const sub = subs.find((entry) => entry.id === target.key);
+    if (!sub) return { ok: false, output: "", error: `子智能体「${input.name}」不存在` };
+    rolePrompt = sub.systemPrompt ?? "";
+  } else {
+    const teams = await readExpertTeams();
+    const team = teams.find((entry) => entry.teamId === target.teamId);
+    if (!team) return { ok: false, output: "", error: `专家「${input.name}」不存在` };
+    if (target.kind === "team") {
+      rolePrompt = buildTeamSystemPrompt(team);
+      // 主理人靠这两个工具管**本团成员**（团队内部机制，不是对外委派，故不受 L3 限制）
+      teamTools = [buildTeamTools(team), buildTeamPhaseTool(team)];
+    } else {
+      const member = [team.lead, ...team.members].find((m) => m.id === target.memberId);
+      if (!member) return { ok: false, output: "", error: `成员「${input.name}」不在专家团里` };
+      rolePrompt = member.systemPrompt ?? "";
+      displayName = target.kind === "expert" ? team.displayName.zh : `${team.displayName.zh}·${member.name}`;
+    }
+  }
+
+  const customModel = await readCustomModel();
+  const provider = customModel?.provider ?? "openai";
+  const baseUrl = customModel?.baseUrl;
+  const providerName = customModel?.name ?? provider;
+  const apiKey = customModel?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
+  if (apiKey) server.setApiKey(apiKey);
+  const effectiveModel = input.model || customModel?.model;
+  if (!effectiveModel) return { ok: false, output: "", error: "尚未配置模型，无法发起调度" };
+
+  const started: any = await server.request("thread/start", {
+    model: effectiveModel,
+    cwd: input.cwd || process.cwd(),
+    approvalPolicy: input.approvalPolicy || "never",
+    sandbox: input.sandbox || "workspace-write",
+    modelProvider: provider,
+    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name: providerName, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+    ...(teamTools.length ? { dynamicTools: teamTools } : {}),
+  });
+  const threadId = String(started?.thread?.id ?? "");
+  if (!threadId) return { ok: false, output: "", error: "调度会话创建失败（未返回 threadId）" };
+  try { await server.request("thread/name/set", { threadId, name: `调度·${displayName}`.slice(0, 40) }); } catch { /* 命名失败不阻塞 */ }
+
+  // ── L1：给被委派会话下发**会话级持久指令**（直接干活、不要转派）。
+  //    刻意走持久指令而不是塞在首条消息里：成员会话/被调会话可能被复用、也可能被用户点开继续问，
+  //    写在单条消息里会被历史淹没、压缩后丢失。
+  try {
+    const baseRead: any = await server.request("config/read", {}).catch(() => null);
+    const baseInstructions = String(baseRead?.config?.developer_instructions ?? "");
+    const block = delegateScopeBlock({ kind: target.kind, name: displayName, origin });
+    const merged = baseInstructions ? `${baseInstructions}\n\n---\n\n${block}` : block;
+    await server.request("thread/settings/update", {
+      threadId,
+      collaborationMode: { mode: "default", settings: { model: effectiveModel, developer_instructions: merged } },
+    }).catch(() => undefined);
+  } catch { /* 下发失败不阻塞执行：L3 硬闸仍在主进程把关 */ }
+
+  await delegateRegistry.register({ threadId, originThreadId: origin, kind: target.kind, name: displayName, depth: (originRecord?.depth ?? 0) + 1 });
+  broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
+
+  const finalQuery = [
+    "[SYSTEM TASK · 调度会话]",
+    "=== 用户需求 ===",
+    `发起方交给你的任务：${String(input.query ?? "").trim()}`,
+    "=== END ===",
+    "",
+    `[角色：${kindLabel(target.kind)} ${displayName}]`,
+    rolePrompt,
+    "",
+    "直接执行上面的任务并给出最终产出（关键结论 + 依据 + 建议）。你的最终回答文本会被完整回传给发起方，无需调用任何回传工具。不要发起破坏性操作。",
+  ].join("\n");
+
+  try {
+    const turn: any = await server.request("turn/start", {
+      threadId,
+      input: [{ type: "text", text: finalQuery, text_elements: [] }],
+      model: effectiveModel,
+      effort: input.effort || undefined,
+    });
+    const turnId = turn?.turn?.id;
+    if (!turnId) throw new Error("调度失败：未返回 turnId");
+    const completed = await waitForTurnCompletion(threadId, turnId);
+    let output = turnOutputText(completed);
+    if (!output) {
+      const resumed: any = await server.request("thread/resume", { threadId, excludeTurns: false }).catch(() => null);
+      output = turnOutputText(resumed?.thread?.turns?.find((entry: any) => entry.id === turnId));
+    }
+    const text = clipDispatchOutput(output || `（${displayName} 没有返回文本内容）`, threadId);
+    // 标题在 turn 之后**再设一次**：首条消息会覆盖会话标题（引擎拿首条用户消息当 title），
+    // 只在 turn 之前设的话侧栏会显示成 `[SYSTEM TASK · 调度会话]` 那一坨（09-15 验收实测）。
+    try { await server.request("thread/name/set", { threadId, name: `调度·${displayName}`.slice(0, 40) }); } catch { /* 命名失败不影响产出回传 */ }
+    await delegateRegistry.markStatus(threadId, "done");
+    broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
+    return { ok: true, threadId, name: displayName, output: text };
+  } catch (error: any) {
+    const message = error?.message ?? String(error);
+    await delegateRegistry.markStatus(threadId, "failed", { error: message }).catch(() => undefined);
+    broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
+    return { ok: false, threadId, name: displayName, output: "", error: message };
+  }
+}
+
+ipcMain.handle("agents:catalog", async () => ({ targets: await buildDispatchCatalog() }));
+
+/** 工具说明书：目录 + 用法（模型据此知道「有什么可调」——这是闭环的前提） */
+ipcMain.handle("agents:tool-description", async () => ({ description: dispatchToolDescription(await buildDispatchCatalog()) }));
+
+/** 本会话要下发给 Codex 的调度提示词（开启开关时自动发的那条告知消息） */
+ipcMain.handle("agents:notice", async () => ({ text: dispatchNoticeText(await buildDispatchCatalog()) }));
+
+/** 全部「被调度的临时会话」——渲染层据此做注册侧过滤（L2）与侧栏标记 */
+ipcMain.handle("agents:delegated", async () => ({ records: await delegateRegistry.listAll() }));
+
+/** 某个会话调度出来的临时会话（任务完成后询问归档时用） */
+ipcMain.handle("agents:delegated-of", async (_event, originThreadId: string) => ({
+  records: await delegateRegistry.listByOrigin(String(originThreadId ?? "")),
+}));
+
+/** 统一调度入口：kind 决定调谁 */
+ipcMain.handle("agents:invoke", async (_event, input: any) => runDelegatedTask(input ?? ({} as any)));
+
+/** 归档被调度的临时会话（用户在 Codex 询问后确认 → Codex 调它） */
+ipcMain.handle("agents:archive", async (_event, input: { threadIds?: string[]; originThreadId?: string }) => {
+  const ids = Array.isArray(input?.threadIds) && input.threadIds.length
+    ? input.threadIds.map(String)
+    : (await delegateRegistry.listByOrigin(String(input?.originThreadId ?? ""))).map((record) => record.threadId);
+  let archived = 0;
+  const failed: string[] = [];
+  for (const id of ids) {
+    try {
+      const record = await delegateRegistry.infoOf(id);
+      if (!record || record.archived) continue;
+      await server.request("thread/archive", { threadId: id }).catch(() => undefined);
+      await delegateRegistry.markArchived([id]);
+      archived += 1;
+    } catch { failed.push(id); }
+  }
+  broadcastHarnessEvent({ type: "delegates-changed" } as any);
+  return { archived, failed };
 });
 
 ipcMain.handle("clipboard:image", async () => {

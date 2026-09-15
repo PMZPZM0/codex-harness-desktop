@@ -13,7 +13,7 @@ import { matchModelSpec, loadExternalSpecs } from "./lib/model-specs";
 import { resolveModelForOpen, shouldSyncOpenThread } from "./lib/model-scope.mjs";
 import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "./lib/provider-continuity.mjs";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "./lib/session-scope.mjs";
-import { LEGACY_PREFIX, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "./lib/thread-runtime.mjs";
+import { LEGACY_PREFIX, dispatchSignature, emptyDispatch, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeDispatch, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "./lib/thread-runtime.mjs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
 import { resolveSkillVisual, type SkillVisual } from "./lib/skill-icon";
 import { translateEngineNotice } from "./lib/engine-notices-zh";
@@ -1144,6 +1144,40 @@ function subAgentTools(agents: SubAgentEntry[]) {
       required: ["name", "query"],
     },
   }];
+}
+
+/** 把「可被调度的对象」登记成 Codex 可直接调用的动态工具（09-15）。
+ *  ⛔ **只在「用户直连会话」注册它**：被调度产生的会话若也拿到这个工具 = 无限套娃。
+ *     这是四层防护里的 L2（注册侧，尽量不给）；主进程还有 L3 硬闸兜底（给了也不认）。 */
+function dispatchToolList(input: { enabled: boolean; isDelegated: boolean; description: string }) {
+  if (!input.enabled || input.isDelegated || !input.description) return [];
+  return [
+    {
+      type: "function",
+      name: "agent_invoke",
+      description: input.description,
+      inputSchema: {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: ["expert", "team", "member", "subagent"], description: "要调度的对象类型，必须与上面列出的对象一致" },
+          name: { type: "string", description: "对象名称或 id（用上面列出的值）" },
+          query: { type: "string", description: "交给它的完整任务描述：做什么、验收标准、相关文件与背景。它看不到你和用户的对话。" },
+        },
+        required: ["kind", "name", "query"],
+      },
+    },
+    {
+      type: "function",
+      name: "agent_archive_sessions",
+      description: "归档本会话此前调度产生的临时会话（会出现在左侧侧栏）。**先问用户、得到同意后再调用**；不传 threadIds 则归档本会话调度出来的全部临时会话。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          threadIds: { type: "array", items: { type: "string" }, description: "要归档的会话 id；省略 = 归档本会话调度出来的全部临时会话" },
+        },
+      },
+    },
+  ];
 }
 
 const idleTemplates = [
@@ -2455,6 +2489,99 @@ const approvalMenuOptions = (fullAccess: boolean) => fullAccess ? [
   { value: "untrusted", title: "自动编辑", desc: "自动编辑文件。" },
   { value: "never", title: "完全访问", desc: "减少确认次数。" },
 ];
+
+/** 调度开关面板（09-15）：「当前对话框」允许 Codex 调度哪些对象干活。
+ *  会话级配置 —— 落 thread-runtime 的 `dispatch` 字段（与模型/权限同源同存放处）。
+ *  点「确认」才生效；从「关」变「开」时自动往对话框发一条告知消息，让 Codex 知道自己有这个能力。 */
+function DispatchMenu({ dispatch, targets, onChange, disabled, busy }: {
+  dispatch: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean };
+  targets: DispatchTargetEntry[];
+  onChange: (next: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean }) => void;
+  disabled?: boolean;
+  busy?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(dispatch);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  // 每次打开都从「当前生效值」起算：上一次没点确认就关掉时，草稿不该残留
+  useEffect(() => { if (open) setDraft(dispatch); }, [open, dispatch]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) setOpen(false); };
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+  }, [open]);
+  const countOf = (kind: DispatchTargetEntry["kind"]) => targets.filter((target) => target.kind === kind).length;
+  const rows: { key: "expert" | "team" | "subagent"; title: string; hint: string; n: number }[] = [
+    { key: "expert", title: "专家", hint: "代码审查 / 内容创作 / 演示文稿等单人专家", n: countOf("expert") },
+    { key: "team", title: "专家团", hint: "由主理人按 SOP 调度多名成员协作", n: countOf("team") },
+    { key: "subagent", title: "子智能体", hint: "你在设置里配置的自定义角色", n: countOf("subagent") },
+  ];
+  const dirty = JSON.stringify(draft) !== JSON.stringify(dispatch);
+  return (
+    <div className={`composer-menu dispatch-menu ${open ? "open" : ""}`} ref={wrapRef}>
+      <button
+        type="button"
+        className={`composer-setting ${dispatch.enabled ? "dispatch-on" : ""}`}
+        disabled={disabled}
+        title={dispatch.enabled ? "本会话已开启调度：Codex 可把合适的子任务交给专家 / 专家团 / 子智能体" : "调度：让 Codex 把合适的独立子任务交给专家 / 专家团 / 子智能体"}
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Users size={14} />
+        <span>调度{dispatch.enabled ? " · 开" : ""}</span>
+        <ChevronDown size={12} className={`menu-caret ${open ? "up" : ""}`} />
+      </button>
+      {open && (
+        <div className="composer-menu-pop dispatch-pop" role="dialog" aria-label="调度设置">
+          <label className="dispatch-master">
+            <input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />
+            <span className="dispatch-master-text">
+              <strong>允许本会话调度</strong>
+              <small>开启后，Codex 会把合适的独立子任务交给下面的对象去做</small>
+            </span>
+          </label>
+          <div className={`dispatch-rows ${draft.enabled ? "" : "is-off"}`}>
+            {rows.map((row) => (
+              <label key={row.key} className="dispatch-row">
+                <input
+                  type="checkbox"
+                  disabled={!draft.enabled || row.n === 0}
+                  checked={draft[row.key]}
+                  onChange={(event) => setDraft({ ...draft, [row.key]: event.target.checked })}
+                />
+                <span className="dispatch-row-text">
+                  <strong>{row.title}{row.n ? <em>{row.n}</em> : null}</strong>
+                  <small>{row.n ? row.hint : "当前没有已启用的对象"}</small>
+                </span>
+              </label>
+            ))}
+          </div>
+          <div className="dispatch-foot">
+            <small className="dispatch-scope">仅对当前会话生效</small>
+            <div className="dispatch-actions">
+              <button type="button" onClick={() => setOpen(false)}>取消</button>
+              <button type="button" className="primary" disabled={!dirty || busy} onClick={() => { onChange(draft); setOpen(false); }}>
+                {busy ? "应用中…" : "确认"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 侧栏里的「调度会话」徽标：标明这个会话是 Codex 调度出来的，以及它当前的状态。
+ *  这类会话由调度产生、任务完成后**保留**（不自动归档），由 Codex 询问用户后再归档。 */
+function DispatchBadge({ record }: { record: DelegateRecordEntry }) {
+  const tone = record.status === "running" ? "run" : record.status === "failed" ? "fail" : "done";
+  const label = record.status === "running" ? "调度中" : record.status === "failed" ? "调度失败" : "调度";
+  const note = record.status === "running" ? "执行中" : record.status === "failed" ? "执行失败" : "已完成";
+  return <span className={`thread-dispatch-badge tone-${tone}`} title={`调度会话：${record.name}（${note}）`}>{label}</span>;
+}
 
 // SkillHub showcase 四榜单（对应 skills:market-list 的 section 映射）
 const skillHubCategories = ["总排行", "近期最热", "最新上传", "官方精选"];
@@ -8091,11 +8218,11 @@ export default function App() {
       : rawTitle;
     return (
     <div
-      className={`thread-row ${thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${threadRowMenu?.id === entry.id ? "menu-open" : ""} ${poppedOut ? "popped-out" : ""}${variant === "member" ? " is-member-row" : ""}`}
+      className={`thread-row ${thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${threadRowMenu?.id === entry.id ? "menu-open" : ""} ${poppedOut ? "popped-out" : ""}${variant === "member" ? " is-member-row" : ""}${delegateRecords[entry.id] ? " is-delegated-row" : ""}`}
       key={entry.id}
     >
       <button title={poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : "双击修改任务名称"} onClick={() => { if (poppedOut) { showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } void openThread(entry.id); }}>
-        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void renameThread(entry.id, next); }); }}><span title={rawTitle}>{displayTitle}</span>{extras?.badge}{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
+        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void renameThread(entry.id, next); }); }}><span title={rawTitle}>{displayTitle}</span>{delegateRecords[entry.id] ? <DispatchBadge record={delegateRecords[entry.id]} /> : null}{extras?.badge}{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
       </button>
       <div className="thread-actions">
         <button className={`thread-pin-button ${pinnedThreads.includes(entry.id) ? "pinned" : ""}`} title={pinnedThreads.includes(entry.id) ? "取消置顶" : "置顶会话"} onClick={(event) => { event.stopPropagation(); togglePinThread(entry.id); }}><Pin size={13} /></button>
@@ -9767,6 +9894,13 @@ export default function App() {
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       const data: any = event.data;
+      // 调度登记变化（发起 / 结束 / 归档）→ 刷新「被调度的临时会话」：驱动侧栏标记与注册侧过滤
+      if (data?.channel === "harness:event" && data?.event?.type === "delegates-changed") {
+        void refreshDelegateRecords();
+        // 调度会**新建会话**：只刷登记表不够，侧栏列表也必须跟着拉一次，
+        // 否则新会话根本不在 threads 里 → 用户看不到刚被调度的临时会话（09-15 验收实测踩到）。
+        void refreshThreads();
+      }
       if (data?.channel === "harness:event" && data?.event?.type === "team-run") setTeamThreadsIndex((prev) => {
         const run = data.event.run;
         if (!run?.leadThreadId || !run?.teamId || prev[run.leadThreadId] === run.teamId) return prev;
@@ -11220,6 +11354,49 @@ const commandMatches = useMemo(() => {
                 } finally {
                   setSubAgentRunning(null);
                 }
+              } else if (event.params?.tool === "agent_invoke") {
+                // 调度：把子任务交给专家 / 专家团 / 子智能体，等它跑完把产出回传本会话
+                try {
+                  const result: any = await window.codex.invokeAgent({
+                    kind: String(args.kind ?? "") as "expert" | "team" | "member" | "subagent",
+                    name: String(args.name ?? ""),
+                    query: String(args.query ?? ""),
+                    originThreadId: String(event.params?.threadId ?? threadRef.current?.id ?? ""),
+                    cwd: workspace || undefined,
+                    model: selectedModel?.model ?? modelName(modelId),
+                    effort: effort || undefined,
+                    sandbox,
+                    approvalPolicy,
+                  });
+                  void refreshDelegateRecords();
+                  await window.codex.respond(event.id!, {
+                    contentItems: [{
+                      type: "inputText",
+                      text: result?.ok
+                        ? `[${result.name ?? "调度对象"} 的产出]\n${result.output}`
+                        : `调度未执行：${result?.error ?? "未知原因"}`,
+                    }],
+                    success: Boolean(result?.ok),
+                  });
+                } catch (error: any) {
+                  void refreshDelegateRecords();
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `调度失败：${error.message}` }], success: false });
+                }
+              } else if (event.params?.tool === "agent_archive_sessions") {
+                // 归档本次任务调度出来的临时会话（Codex 已按提示词先问过用户）
+                try {
+                  const res: any = await window.codex.archiveDelegates({
+                    threadIds: Array.isArray(args.threadIds) ? args.threadIds.map(String) : undefined,
+                    originThreadId: String(event.params?.threadId ?? threadRef.current?.id ?? ""),
+                  });
+                  void refreshDelegateRecords();
+                  await window.codex.respond(event.id!, {
+                    contentItems: [{ type: "inputText", text: `已归档 ${res?.archived ?? 0} 个调度会话${Array.isArray(res?.failed) && res.failed.length ? `（${res.failed.length} 个失败）` : ""}。` }],
+                    success: true,
+                  });
+                } catch (error: any) {
+                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `归档失败：${error.message}` }], success: false });
+                }
               } else if (event.params?.tool === "team_member_invoke") {
                 await invokeTeamMember(args, String(event.params?.threadId ?? ""), event.id!);
               } else if (event.params?.tool === "team_phase_invoke") {
@@ -11792,6 +11969,13 @@ const commandMatches = useMemo(() => {
       if (/微信|Telegram/.test(event.message)) void window.codex.channelsStatus?.().then(setChannelOnline).catch(() => undefined);
     });
     const offHarness = window.codex.onHarnessEvent((event) => {
+      if (event.type === "delegates-changed") {
+        // 调度登记变化（发起 / 结束 / 归档）→ 刷新登记表 + 侧栏列表。
+        // ⛔ 必须走 onHarnessEvent：主进程 broadcastHarnessEvent 的 payload 是**裸的** `{ type }`，
+        //    不是包了 channel 的 MessageEvent —— 09-15 验收实测踩过这个坑（badge 一直不出现）。
+        void refreshDelegateRecords();
+        void refreshThreads();
+      }
       if (event.type === "popout-return") {
         // 弹窗「返回主应用」：主窗口收到后跳到弹窗里的那个会话（弹窗已由主进程关闭）
         const tid = String((event as any).threadId ?? "");
@@ -12062,6 +12246,75 @@ const commandMatches = useMemo(() => {
   runtimeStateRef.current = { model: modelId, effort, sandbox, approval: approvalPolicy };
   /** 每个会话「已采纳过」的最大 rev：迟到的响应/广播（rev 更小）一律丢弃，避免回退到中间态。 */
   const adoptedRevRef = useRef<Record<string, number>>({});
+
+  // ── 调度（09-15）：可调度对象目录 / 被调度的临时会话 ─────────────────────────────
+  const [dispatchInfo, setDispatchInfo] = useState<{ description: string; targets: DispatchTargetEntry[] }>({ description: "", targets: [] });
+  /** 被调度产生的临时会话（threadId → 记录）：侧栏标记 + 注册侧过滤（L2）都读它 */
+  const [delegateRecords, setDelegateRecords] = useState<Record<string, DelegateRecordEntry>>({});
+
+  // buildDynamicTools 是 useCallback（依赖只有 memoryEnabled/subAgents），闭包里的 thread 是旧的
+  // —— 所以调度判定一律走 ref 镜像读「此刻」的真实状态，不依赖闭包。
+  const delegateRecordsRef = useRef<Record<string, DelegateRecordEntry>>({});
+  const dispatchInfoRef = useRef<{ description: string; targets: DispatchTargetEntry[] }>({ description: "", targets: [] });
+
+  const refreshDispatchInfo = useCallback(async () => {
+    try {
+      const [desc, cat] = await Promise.all([window.codex.dispatchToolDescription(), window.codex.listDispatchCatalog()]);
+      const next = {
+        description: String((desc as any)?.description ?? ""),
+        targets: Array.isArray((cat as any)?.targets) ? (cat as any).targets : [],
+      };
+      dispatchInfoRef.current = next;
+      setDispatchInfo(next);
+    } catch { /* 拿不到目录就不注册工具：宁可没有，也不要一个描述空的工具让模型乱猜 */ }
+  }, []);
+
+  const refreshDelegateRecords = useCallback(async () => {
+    try {
+      const res: any = await window.codex.listDelegates();
+      const map: Record<string, DelegateRecordEntry> = {};
+      for (const record of (Array.isArray(res?.records) ? res.records : [])) map[String(record.threadId)] = record;
+      delegateRecordsRef.current = map;
+      setDelegateRecords(map);
+    } catch { /* 忽略：拿不到就按「没有调度会话」渲染 */ }
+  }, []);
+
+  // 可调度对象会随专家/子智能体的启用状态变化 → 工具说明书跟着刷新；
+  // 调度记录启动拉一次，之后由 harness 广播的 delegates-changed 增量刷新。
+  useEffect(() => { void refreshDispatchInfo(); }, [refreshDispatchInfo, expertTeams, subAgents]);
+  useEffect(() => { void refreshDelegateRecords(); }, [refreshDelegateRecords]);
+
+  const [dispatchBusy, setDispatchBusy] = useState(false);
+  /** 调度开关存在会话运行时（localStorage）里，React 感知不到变化 → 用一个 tick 触发重算 */
+  const [dispatchTick, setDispatchTick] = useState(0);
+  const activeDispatch = useMemo(
+    () => (thread?.id ? loadThreadRuntime(thread.id).dispatch : emptyDispatch()),
+    [thread?.id, dispatchTick],
+  );
+
+  /** 应用调度开关：落盘 → 重算界面 → 从「关」变「开」时自动往对话框发一条告知消息。
+   *  刻意用普通函数而不是 useCallback —— 它要调 send()，闭包必须是最新一次渲染的。 */
+  async function applyDispatch(next: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean }) {
+    const id = threadRef.current?.id;
+    if (!id) { showToast("先打开一个会话", "调度开关是会话级的，每个会话各自独立"); return; }
+    const before = loadThreadRuntime(id).dispatch;
+    setDispatchBusy(true);
+    try {
+      saveThreadRuntime(id, { dispatch: normalizeDispatch(next) });
+      setDispatchTick((tick) => tick + 1);
+      if (next.enabled && !before.enabled) {
+        try {
+          const notice: any = await window.codex.dispatchNotice();
+          const text = String(notice?.text ?? "");
+          // 走 pendingCommandTextRef：send() 会优先消费它，跳过 / 与 # 解析，正好适合系统告知
+          if (text) { pendingCommandTextRef.current = text; void send(); }
+        } catch { /* 告知失败不影响开关本身已生效 */ }
+      }
+    } finally {
+      setDispatchBusy(false);
+    }
+  }
+
 
   /** 主进程权威值的唯一收敛点（两条来源共用：patch 的返回值、跨窗口广播）。
    *  ① 写本地镜像 → 同步读路径立刻看到新值；② 若是当前打开的会话 → 同步 React 状态。
@@ -14381,6 +14634,11 @@ const commandMatches = useMemo(() => {
    *  永远进不去（Codex 反馈「我工具列表里没有 skill_search」的根因）。 */
   const buildDynamicTools = useCallback(async (): Promise<any[]> => {
     const builtinCfg = await window.codex.readBuiltinPlugins().catch(() => null);
+    // 调度（L2 注册侧）：只有「用户直连会话」才拿到 agent_invoke —— 被调度出来的会话再拿到它
+    // 就会套娃。主进程另有 L3 硬闸兜底（给了也不认），这里只是不给，少给模型一次犯错机会。
+    const dispatchThreadId = threadRef.current?.id ?? "";
+    const dispatchIsDelegated = Boolean(dispatchThreadId && delegateRecordsRef.current[dispatchThreadId]);
+    const dispatchSwitch = dispatchThreadId ? loadThreadRuntime(dispatchThreadId).dispatch : emptyDispatch();
     return [
       ...(builtinCfg?.image?.enabled !== false && builtinCfg?.image?.baseUrl ? [{
         type: "function",
@@ -14398,7 +14656,10 @@ const commandMatches = useMemo(() => {
         { type: "function", name: "memory_recall", description: "按当前任务查询相关的分类记忆。", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
         { type: "function", name: "memory_save", description: "保存可复用的项目事实，必须选择分类。", inputSchema: { type: "object", properties: { category: { type: "string", enum: ["用户偏好", "项目背景", "工作流/SOP", "任务经验", "临时上下文"] }, content: { type: "string" } }, required: ["category", "content"] } },
       ] : []),
-      ...subAgentTools(subAgents),
+      // 子智能体：委派会话不注册（它自己就是被调起来的，再往下调就是套娃）
+      ...(dispatchIsDelegated ? [] : subAgentTools(subAgents)),
+      // 调度工具：开关打开且本会话不是委派会话时注册
+      ...dispatchToolList({ enabled: dispatchSwitch.enabled === true, isDelegated: dispatchIsDelegated, description: dispatchInfoRef.current.description }),
       // RPA 配方与任务清单：让 agent 能存配方/跑配方/维护清单/向用户提问
       { type: "function", name: "rpa_save", description: "把刚跑通的一条自动化流程保存为 RPA 配方，下次可直接复用执行。steps 按顺序写清每一步（网址/点击/输入/桌面操作等），kind 选 browser（浏览器）/desktop（桌面）/mixed。", inputSchema: { type: "object", properties: { name: { type: "string", description: "配方名称，如「每天导出日报」" }, desc: { type: "string", description: "一句话说明用途" }, kind: { type: "string", enum: ["browser", "desktop", "mixed"] }, steps: { type: "array", items: { type: "string" }, description: "按顺序的执行步骤" }, target: { type: "string", description: "起始网址或目标程序，可省略" } }, required: ["name", "steps", "kind"] } },
       { type: "function", name: "rpa_run", description: "列出已保存的 RPA 配方（不传 name），或按名称执行某条配方。执行时按 steps 逐步复现自动化流程。", inputSchema: { type: "object", properties: { name: { type: "string", description: "要执行的配方名称；省略则返回全部配方清单" } } } },
@@ -15963,6 +16224,13 @@ const commandMatches = useMemo(() => {
               </div>
               <div className="composer-right">
                 <div className="model-controls composer-model-controls">
+                  <DispatchMenu
+                    dispatch={activeDispatch}
+                    targets={dispatchInfo.targets}
+                    disabled={!thread?.id}
+                    busy={dispatchBusy}
+                    onChange={(next) => { void applyDispatch(next); }}
+                  />
                   {relayActive && customModel?.provider === relayActive.provider && <RelayBalanceBadge active={relayActive} />}
                   {customModel?.provider === "openai-official" && <OpenaiBalanceBadge accountKey={openaiActiveAcct ?? "openai-official"} />}
                   <ContextUsageBadge tokenUsage={tokenUsage} fallbackWindow={customModel?.models?.find((m) => m.id === customModel?.model)?.contextWindow ?? customModel?.contextWindow} recentCompaction={recentCompaction} onCompact={() => { if (thread?.id) { compactPendingRef.current.add(thread.id); setCompactEventState("running"); window.codex.request("thread/compact/start", { threadId: thread.id }).catch((error: any) => { compactPendingRef.current.delete(thread.id); setCompactEventState("error", error.message); }); } }} />
