@@ -8913,10 +8913,11 @@ export default function App() {
     //    跨越一屏阈值那一刻留白 0→一屏，scrollMax 突增 622，钉顶一次性追跳 841px
     //    （阈值 60）；③ 按需给最小量 → 「钉在顶上」在数值上等于「贴底」，判据失效。
     //    结论：**钉顶（消息固定在顶部）与「短会话没有大空白」互斥**，见 09-14 会话记录。
-    // ⛔ STICKY_USER_SLOT：消息由 CSS sticky 钉住（见 styles.css 当前回合规则），JS 不再
-    // 撑一屏留白、不做逐帧纠偏——留白恒 0（无空白），滚动不解除（sticky 天然行为）。
+    // ⛔ 09-15 撤销 sticky 方案后恢复：这里必须**撑满一屏留白**，新消息才能被顶到落点。
+    //    （sticky 期间被改成「恒 0」，撤 sticky 时漏还原 → 消息顶不上去、只能被钳在滚动底部，
+    //     用户看到的就是「新消息还在下面、到不了我要的位置」。见 bf53b81 的教训。）
     const pad = anchorSpacerRef.current;
-    if (pad && pad.style.height !== "0px") pad.style.height = "0px";
+    if (pad && pad.style.height !== `${el.clientHeight}px`) pad.style.height = `${el.clientHeight}px`;
     const key = isNewTurn ? `turn-${lastId}` : "opt";
     const gapErr = (anchor.getBoundingClientRect().top - el.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
     // 「刚切回自己这条会话」= 休眠钉顶的复活：必须**当first处理**（立即落位、解除超屏锁）。
@@ -9836,20 +9837,24 @@ function touchTurnWindow(id: string, map: Record<string, number>): Record<string
   for (const key of keys.slice(0, Math.max(0, keys.length - TURN_WINDOW_MEMORY_KEEP))) delete merged[key];
   return merged;
 }
-/** 发送锚顶的落点偏移：钉顶时让锚点顶部再**下移**这么多像素，而不是紧贴视口上沿。
- *  用户反馈（09-12 晚，附截图）：「太高了，往下放两行」——原来只上移 6px，消息首行
- *  几乎贴着对话区上边缘，`已深度思考` 之类的头部也被顶到视口最上沿。
- *  取两行正文的高度：正文 14px × line-height 1.72 ≈ 24px/行 → 两行 ≈ 48px，
- *  外加原有 6px 余量 = 54。改这个值即可整体上下平移钉顶位置。 */
-const ANCHOR_TOP_OFFSET_PX = 54;
-/** 用户消息固定槽位（09-12 架构改，**已关**）：曾经想用 CSS `position: sticky` 让位置
- *  由布局保证、彻底不碰滚动条。实测不成立——sticky 只能在**包含块内部**位移，而用户消息的
- *  包含块是 `.turn-group`：刚发消息时那个组里只有这条消息（~72px），下方没有空间可借，
- *  sticky 根本钉不住（实测连发第 2 条 gap=396），而把留白放到 `.timeline` 末尾是**兄弟节点**、
- *  扩不了包含块。除非给回合组塞一个动态高度的尾巴（高度一变就是新的 scrollHeight 突变源），
- *  否则 sticky 在这个结构里无解。故回到「滚动式锚顶」：钉一次 + 按增长量跟随（见下方注释），
- *  位置观感等价，且没有包含块限制。 */
-const STICKY_USER_SLOT = false;
+/** 发送锚定的落点偏移：新消息顶部落在「对话区上边框往下」这么多像素处。
+ *  用户口径（09-15 定稿，附截图框选位置）：「就顶边框往下一行半就行」。
+ *  正文 14px × line-height 1.72 ≈ 24px/行 → 一行半 ≈ 36px。
+ *  ⛔ 这不是「钉顶」（悬浮），是**固定落点**——消息落在文档流里、由尾部留白托住，
+ *     agent 回复从它下方长出来，因此不可能遮挡内容（对比 sticky 方案的事故）。
+ *  改这个值即可整体上下平移落点。 */
+const ANCHOR_TOP_OFFSET_PX = 36;
+/** ⛔ 历史教训（09-15 三次尝试，勿再走这条路）：曾想用 CSS `position: sticky` 让用户消息
+ *  的位置由布局保证、彻底不碰滚动条。三次全部失败，根因是**结构性的**：
+ *  ① sticky 只能在**包含块内部**位移，而用户消息的包含块是 `.turn-group`——刚发消息时那个组
+ *     里只有这一条消息（~72px），下方没有空间可借 → 钉不住（实测连发第 2 条 gap=396）；
+ *  ② 把留白放到 `.timeline` 末尾是**兄弟节点**、扩不了包含块；
+ *  ③ 09-15 把它修「生效」之后（原先真因是 `.turn-group` 的 content-visibility 让 sticky 失效），
+ *     气泡变成不透明白底浮层，**实测盖住同回合的助手消息**（bubble 132~204 vs text 170~959）→
+ *     用户看到「消息中间几行被竖着切掉」。
+ *  结论：**悬浮（sticky）与「不占空间且不遮挡后代」在文档流里无法兼得**。
+ *  现行方案 = 上方 `ANCHOR_TOP_OFFSET_PX`（固定落点）+ 尾部留白托住：消息待在文档流里、
+ *  agent 回复从它下方长出来，结构上不可能遮挡内容。 */
 /** 尾部留白（`.timeline-bottom-spacer*`）**不参与**「跟到哪」的计算：
  *  所有"到底部"的目标一律取**内容底部**（`#timeline-content-end` 哨兵）而不是 `scrollHeight`。
  *  这是 09-12 那次「切走再切回：用户消息被切在视口顶 + 下方一大片空白」的根因——
@@ -10256,7 +10261,7 @@ const commandMatches = useMemo(() => {
     // 也不能被下面的贴底分支销毁 —— 否则切回来就恢复不了了。
     const pinDormant = anchorTopRef.current && pinThreadIdRef.current !== thread?.id;
     if (pinDormant) pinDormantSeenRef.current = true;   // 记下"休眠过"，回来时立即落位
-    if (anchorTopRef.current && !pinDormant && !STICKY_USER_SLOT && pinSentMessage(el, thread?.id)) return;
+    if (anchorTopRef.current && !pinDormant && pinSentMessage(el, thread?.id)) return;
     if (switchJumpRef.current && switchJumpRef.current.id === thread?.id && switchJumpPending()) {
       switchJumpRef.current = null;
       dbg("clear-anchor", { at: "switch-jump" });
