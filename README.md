@@ -252,7 +252,7 @@ npm run e2e     # UI 场景（默认全部）：自动拉起已构建的应用�
 |---|---|---|
 | 🐛 GitHub Issues | [提交 Bug / 建议](../../issues) | 带结构化表单，方便快速定位 |
 | 💬 官网反馈页 | [www.jvszzp.ltd/feedback.html](https://www.jvszzp.ltd/feedback.html) | 支持截图上传，无需 GitHub 账号 |
-| 📦 下载与更新 | [www.jvszzp.ltd](https://www.jvszzp.ltd) | 最新版本与更新日志 |
+| 📦 下载与更新 | [GitHub Releases](../../releases) | 唯一更新源（09-15 起）：应用内「检查更新」直连 GitHub；官网只做应用介绍与反馈，不再分发安装包 |
 
 ## ⚠️ 免责声明
 

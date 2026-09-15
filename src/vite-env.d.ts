@@ -632,7 +632,7 @@ interface Window {
     voiceKwsCancel(): Promise<{ ok: boolean }>;
     voiceKwsStatus(): Promise<{ ready: boolean }>;
     // 自更新：网页源（发布站）/ GitHub Releases 双源可切换
-    updateCheck(input?: { source?: "web" | "github" }): Promise<{ ok: boolean; info?: { hasUpdate: boolean; reason: string; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string }; currentVersion?: string; serverUrl?: string; source?: string; error?: string }>;
+    updateCheck(): Promise<{ ok: boolean; info?: { hasUpdate: boolean; reason: string; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string }; currentVersion?: string; source?: string; error?: string }>;
     updateDownload(input: { downloadUrl: string; filename?: string }): Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;
     updateInstall(filePath: string): Promise<{ ok: boolean; error?: string }>;
     updateReveal(filePath: string): Promise<{ ok: boolean }>;
