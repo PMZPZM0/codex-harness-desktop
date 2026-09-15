@@ -2240,11 +2240,15 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     : ok("没有为 sticky 方案保留 content-visibility 配套规则");
 
   // App 侧开关必须处于关闭态（true 会把 anchor-pad 短路成恒 0，与文档流留白逻辑打架）
-  const app = readFileSync(join(ROOT, "src/App.tsx"), "utf8");
-  const flag = (app.match(/const STICKY_USER_SLOT = (true|false);/) || [])[1];
-  flag === "false"
-    ? ok("STICKY_USER_SLOT = false（CSS 与 JS 侧一致，无中间态）")
-    : fail("STICKY_USER_SLOT = " + flag + " —— 与已撤销的 CSS 不一致，会出现「有留白但无钉顶」的中间态");
+  const app = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  // 09-15：sticky 方案已彻底删除（连开关一起），不许再以任何形式回来
+  /STICKY_USER_SLOT/.test(app)
+    ? fail("STICKY_USER_SLOT 又出现了 —— sticky 方案已整体撤销，不要再引入")
+    : ok("sticky 方案已彻底移除（无 STICKY_USER_SLOT 残留）");
+  // 固定落点方案：留白必须真的撑起来，否则新消息顶不到落点、只能被钳在滚动底部
+  /pad\.style\.height !== `\$\{el\.clientHeight\}px`/.test(app)
+    ? ok("发送锚定撑满一屏留白（新消息能被顶到固定落点）")
+    : fail("发送锚定没有撑留白 —— 新消息会停在滚动底部、到不了落点（bf53b81 踩过）");
 }
 
 // ---------- 【19】just-sent 必须挂在 .user-message 上（09-15 实测「发消息没有过渡动画」） ----------
