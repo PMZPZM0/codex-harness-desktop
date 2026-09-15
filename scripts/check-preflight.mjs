@@ -2042,6 +2042,20 @@ console.log(C.bold("\n【13】供应商自动接力（切换供应商后旧会�
   /threadProviderRef\.current\.set\(next\.id, (?:target\.provider|HARNESS_PROVIDER_ID)\)/.test(appSrc3)
     ? ok("接力后的新会话登记了真实绑定（下次发送不再重复迁移）")
     : fail("接力后没登记新绑定 —— 每次发送都会再迁一次");
+
+  // ⛔ 09-15「新增的模型选不了」回归守卫：调用方**禁止**拿引擎真实绑定直接跟供应商 id 裸比较。
+  //    统一内置 provider id（harness）之后，会话绑定恒为 `harness`、生效供应商是 `custom906`，
+  //    裸比较恒为真 → 每次发送都误判「供应商变了」：① setProviderModel 默认 restart，每次发送
+  //    都重启引擎；② setModelId(updated.model) 把用户刚选的模型改回供应商顶层 model（用户看到
+  //    「选完一发消息就弹回旧模型」）。判定必须一律走 shouldAlignProvider（它明确「绑 harness
+  //    = 天然对齐」）。断言按「裸比较的调用点」计数：只允许出现在纯模块内部。
+  {
+    const rawComparisons = appSrc3.match(/boundProvider\s*!==\s*(?:customModel\.provider|active\.provider|active\?\.provider)/g) ?? [];
+    rawComparisons.length === 0
+      ? ok("★ 供应商对齐判定全走 shouldAlignProvider（无裸比较：绑 harness 天然对齐）")
+      : fail(`检测到 ${rawComparisons.length} 处裸比较 \`boundProvider !== <供应商id>\` —— ` +
+             `统一 provider id 后恒为真，会导致每次发送重启引擎 + 用户选的模型被改回去（09-15 用户实测）`);
+  }
 }
 // ---------- 【14】历史分页懒加载（切会话成本与会话长度无关；不得回退） ----------
 

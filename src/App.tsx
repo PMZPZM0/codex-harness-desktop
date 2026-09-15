@@ -11574,7 +11574,11 @@ const commandMatches = useMemo(() => {
           const errTid = String(params.threadId ?? "");
           const boundProvider = errTid ? threadProviderRef.current.get(errTid) : undefined;
           const active = activeProviderRef.current;
-          if (errTid && boundProvider && active?.provider && boundProvider !== active.provider && !autoMigratedRef.current.has(errTid)) {
+          // ⛔ 判定同样必须走 shouldAlignProvider：统一内置 provider id（harness）之后，
+          // 会话绑定恒为 `harness`、生效供应商是 `custom906` —— 裸比较恒为真，会让每次 401
+          // 都把 errTid 记进 autoMigratedRef（「已迁移」是假的，真实迁移没发生），
+          // 万一真的需要迁移时反而被这条标记拦住。规则见 src/lib/provider-continuity.mjs。
+          if (errTid && boundProvider && active?.provider && shouldAlignProvider(boundProvider, active.provider) && !autoMigratedRef.current.has(errTid)) {
             autoMigratedRef.current.add(errTid);
             // 文案与「自动接力」统一（09-14 用户定稿）：401、打开会话、切换供应商三种场景
             // 走同一入口、同一套说法（自动接力 / 历史上下文与聊天记录完整保留）。
@@ -14504,7 +14508,14 @@ const commandMatches = useMemo(() => {
           if (probed) { threadProviderRef.current.set(currentThread.id, probed); boundProvider = probed; }
         } catch { /* 探测失败按无绑定处理，走正常发送 */ }
       }
-      if (boundProvider && customModel && boundProvider !== customModel.provider && currentThread?.id) {
+      // ⛔ 必须走 shouldAlignProvider 判定，不能拿引擎真实绑定直接跟供应商 id 比：
+      // 统一内置 provider id（harness）之后，会话绑定恒为 `harness`、而生效供应商是
+      // `custom906` / `relay-*`，裸比较**恒为真** → 每次发送都误判成「供应商变了」：
+      //   ① setProviderModel 默认 restart → **每次发送都重启引擎**（日志里一串 [spawn]）；
+      //   ② setModelId(updated.model) 把用户刚选的模型改回供应商顶层 model
+      //      （09-15 用户实测「新增的模型选不了」：选完一发消息胶囊就弹回旧模型）。
+      // 判定规则收在纯模块 src/lib/provider-continuity.mjs（那里明确「绑 harness = 天然对齐」）。
+      if (boundProvider && customModel && shouldAlignProvider(boundProvider, customModel.provider) && currentThread?.id) {
         // 关键：引擎进程是「一个全局 Key」（spawn 时注入 CODEX_HARNESS_API_KEY）。
         // 只 resume 换 base_url 不换 Key → 目标供应商收到旧 Key → INVALID_API_KEY 401
         // （实测：激活 ppz123 后旧 pptoken 会话迁移后仍 401，重启引擎才注入 ppz123 的 Key）。
