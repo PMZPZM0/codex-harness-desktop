@@ -8913,8 +8913,10 @@ export default function App() {
     //    跨越一屏阈值那一刻留白 0→一屏，scrollMax 突增 622，钉顶一次性追跳 841px
     //    （阈值 60）；③ 按需给最小量 → 「钉在顶上」在数值上等于「贴底」，判据失效。
     //    结论：**钉顶（消息固定在顶部）与「短会话没有大空白」互斥**，见 09-14 会话记录。
+    // ⛔ STICKY_USER_SLOT：消息由 CSS sticky 钉住（见 styles.css 当前回合规则），JS 不再
+    // 撑一屏留白、不做逐帧纠偏——留白恒 0（无空白），滚动不解除（sticky 天然行为）。
     const pad = anchorSpacerRef.current;
-    if (pad && pad.style.height !== `${el.clientHeight}px`) pad.style.height = `${el.clientHeight}px`;
+    if (pad && pad.style.height !== "0px") pad.style.height = "0px";
     const key = isNewTurn ? `turn-${lastId}` : "opt";
     const gapErr = (anchor.getBoundingClientRect().top - el.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
     // 「刚切回自己这条会话」= 休眠钉顶的复活：必须**当first处理**（立即落位、解除超屏锁）。
@@ -9847,7 +9849,7 @@ const ANCHOR_TOP_OFFSET_PX = 54;
  *  扩不了包含块。除非给回合组塞一个动态高度的尾巴（高度一变就是新的 scrollHeight 突变源），
  *  否则 sticky 在这个结构里无解。故回到「滚动式锚顶」：钉一次 + 按增长量跟随（见下方注释），
  *  位置观感等价，且没有包含块限制。 */
-const STICKY_USER_SLOT = false;
+const STICKY_USER_SLOT = true;
 /** 尾部留白（`.timeline-bottom-spacer*`）**不参与**「跟到哪」的计算：
  *  所有"到底部"的目标一律取**内容底部**（`#timeline-content-end` 哨兵）而不是 `scrollHeight`。
  *  这是 09-12 那次「切走再切回：用户消息被切在视口顶 + 下方一大片空白」的根因——
