@@ -2247,6 +2247,35 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     : fail("STICKY_USER_SLOT = " + flag + " —— 与已撤销的 CSS 不一致，会出现「有留白但无钉顶」的中间态");
 }
 
+// ---------- 【19】just-sent 必须挂在 .user-message 上（09-15 实测「发消息没有过渡动画」） ----------
+// 事故：入场动画的 CSS 选择器是 `.user-message.just-sent`（要求同一元素同时具备两个类），
+// 但代码把 just-sent 挂在**外层** .user-message-stack 上 → 选择器永不匹配。
+// 实测：stack 的 animationName = "none"；把类挂到 .user-message 上立刻得到
+//   "user-msg-send-in / 0.55s"。用户观感 = 「发消息没有过渡动画」。
+{
+  const app = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const css = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+
+  // ① 类必须挂在内层 .user-message 的 className 里
+  const innerOk = /message user-message[\s\S]{0,160}?justSent \? " just-sent"/.test(app);
+  innerOk
+    ? ok("just-sent 挂在 .user-message（与 CSS 选择器同元素）")
+    : fail("just-sent 没有挂在 .user-message 上 —— CSS 是 .user-message.just-sent，挂外层不生效（发消息无入场动画）");
+
+  // ② 不许再往 .user-message-stack 上挂（那是错的元素）
+  /user-message-stack\$\{justSent/.test(app)
+    ? fail("just-sent 又被挂回 .user-message-stack —— 该元素没有任何 just-sent 样式，动画不会播")
+    : ok("just-sent 没挂在 .user-message-stack（不会再挂错元素）");
+
+  // ③ 动画规则与光斑规则仍在（防止有人「修」成删 CSS）
+  /@keyframes user-msg-send-in/.test(css)
+    ? ok("入场动画 @keyframes user-msg-send-in 在（动画不会被误删）")
+    : fail("@keyframes user-msg-send-in 缺失 —— 入场动画丢了");
+  /\.user-message\.just-sent\s*\{/.test(css)
+    ? ok("动画选择器 .user-message.just-sent 在（与挂载元素一致）")
+    : fail(".user-message.just-sent 选择器缺失 —— 动画匹配不上");
+}
+
 // ---------- 汇总 ----------
 
 console.log("");
