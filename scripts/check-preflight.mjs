@@ -2422,6 +2422,18 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     /agents:off-notice/.test(mainSrc9) && /dispatchOffNotice\(/.test(appSrc9)
       ? ok("关闭告知的 IPC 链路在（main handler + 渲染层调用）")
       : fail("关闭告知链路缺失");
+    // 运行状态行的词库（09-16 扩充）：规模、按活动分、不得照搬竞品原文
+    const phraseBlock = /const RUN_PHRASES = \[([\s\S]*?)\];/.exec(appSrc9)?.[1] ?? "";
+    const phraseCount = (phraseBlock.match(/^\s*"/gm) || []).length;
+    phraseCount >= 30
+      ? ok(`话语池 ${phraseCount} 条（够丰富，不容易撞句）`)
+      : fail(`话语池只有 ${phraseCount} 条 —— 用户很快就会看到重复`);
+    /RUN_PHRASES_BY_ACTIVITY/.test(appSrc9) && /function pickRunPhrase/.test(appSrc9)
+      ? ok("按活动类型各有专属话语 + 通用池兜底")
+      : fail("话语没有按活动分 —— 全是通用句，不够贴切");
+    !/WorkBuddy|Claude|Cursor|Copilot|GPT/.test(phraseBlock)
+      ? ok("★ 话语池不含竞品品牌名（自创文案，不照搬）")
+      : fail("话语池混进了竞品品牌名 —— 必须自创");
   }
 }
 

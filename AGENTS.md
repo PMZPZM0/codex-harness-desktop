@@ -468,3 +468,9 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
     - **⛔ 两个坑（09-15 实测）**：① **广播通道**——`broadcastHarnessEvent` 的 payload 是**裸的 `{ type }`**，渲染层必须用 `window.codex.onHarnessEvent`（preload 直连 IPC）接，用 `MessageEvent` 那条路的 `data.event.type` 判会永远不匹配（badge 死活不出现，我改了 3 轮才定位）。② **`src/lib/*.mjs` 改了导出/字段必须同步 `同目录同名.d.mts`**：`tsconfig.app.json` 的 `allowJs: false`，TS 只认手写声明，漏改就报 `has no exported member`（不是缓存问题，清 tsbuildinfo 无效）。
     - **回归**：预检【20】15 条（L3/L4 行为断言走 `dist-electron/dispatch.js` + L1 文案 + L2 注册条件 + `.d.mts` 同步 + dynamicTools 传参守卫）；一次性脚本 14 断言（开关落盘 / 告知消息 / 真调专家起会话回产出 / 登记 / **用委派会话当发起方再调必被拒** / 侧栏徽标 / 归档与落盘），已当场反证（摘掉 `canDispatchFrom` 判断 → 预检 2 项硬失败）。
     - **已知瑕疵（未修）**：被调度会话的侧栏标题显示为首条消息壳（`[SYSTEM TASK · 调度会话]`）而非 `调度·<名字>` —— `thread/name/set` 在 turn 前后各调一次仍未生效，待查引擎侧会话名时机；不影响闭环（会话在侧栏可见且带调度徽标）。
+  - **运行动态状态行（09-16，学 WorkBuddy）**：任务运行中在消息流末尾显示「状态 · 一句话」，跑完即消失。
+    - **状态**＝当前会话**最后一个进行中的 turn item** 的类型：`commandExecution`→正在执行命令 / `fileChange`→正在编辑文件 / `reasoning`→正在深度思考 / `webSearch`→正在搜索网页 / `mcpToolCall`→正在调用工具；没有进行中 item 兜底「正在生成回复」。
+    - **话语**：`RUN_PHRASES`（40 条通用）+ `RUN_PHRASES_BY_ACTIVITY`（6 组活动专属共 21 句）→ `pickRunPhrase(activity)` **专属在前、通用兜底**（专属句少，所以自然以通用句为主）。任务开始时随机锁一句，运行期**不换**（每秒换会闹腾），结束随状态行一起消失。
+    - 位置：所有 turn 之后、乐观消息之前；动效三点跳动 + 状态文字 `shimmer-text`，切换文案用 `key` 重挂载触发淡入。
+    - 预检【20】3 条守卫：通用池 ≥ 30 条 / `RUN_PHRASES_BY_ACTIVITY` 存在且按活动分 / **不含竞品品牌名**（WorkBuddy 等 —— 照搬会被视作抄袭，文案一律自创）。
+    - ⛔ e2e 发消息**必须用 CDP 真输入** `h.pressKey("Enter")`：合成 `new KeyboardEvent` 的 `isTrusted=false` 会被 composer 忽略，消息压根没发出去 → 状态行不出现，**极易误判成功能 bug**。
