@@ -4872,9 +4872,9 @@ function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote,
     </div>
   ) : null;
   return (
-    <div className={`user-message-stack${justSent ? " just-sent" : ""}`}>
+    <div className="user-message-stack">
       {attachRow}
-      <div className={`message user-message${pending ? " pending" : ""}`} data-ruler-mark="user" data-turn-id={turn?.id} data-item-id={item.id}>
+      <div className={`message user-message${pending ? " pending" : ""}${justSent ? " just-sent" : ""}`} data-ruler-mark="user" data-turn-id={turn?.id} data-item-id={item.id}>
         <div className="avatar"><User size={15} /></div>
         <div className="message-body">
           <UserRefsRow refs={refs} onOpenFile={onOpenFile} onQuote={onQuote} hideFiles />
