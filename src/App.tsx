@@ -401,6 +401,7 @@ import { useModelProviders } from "./hooks/useModelProviders";
 import { useFilePreview } from "./hooks/useFilePreview";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "./lib/turn-fold";
 import { planCompletedFold } from "./lib/turn-fold-plan.mjs";
+import { visibleTurnWindow, mergeTurnListsById } from "./lib/turn-order.mjs";
 import { WidgetCard } from "./components/GenerativeWidget";
 import { hasWidgetFence, extractStreamingWidget, type ShowWidgetData } from "./lib/generative-widget";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "./lib/user-refs";
@@ -1996,7 +1997,11 @@ function mergeLongerStreams(cached: Thread, loaded: Thread): Thread {
   // 快照整段没带回来的回合同样不能丢
   const loadedIds = new Set(loaded.turns.map((turn) => turn.id));
   const extraTurns = cached.turns.filter((turn) => !loadedIds.has(turn.id));
-  return { ...loaded, turns: [...extraTurns, ...mergedTurns] };
+  // ⛔ 09-15 修复「回合顺序错乱/更早按钮对不上」：extraTurns 原来**盲目前插**——某次 resume
+  // 快照只带回部分回合（如最旧的 [1,2]）时，状态变成 [3..8,1,2]：最旧的贴到末尾、中间回合
+  // 看似失踪、「显示更早的 N 条」与渲染对不上（用户实测截图）。现在按 id 去重合并 + 按回合
+  // startedAt 时序规范化，乱序输入在唯一出口处被修正（纯逻辑在 src/lib/turn-order.mjs，预检有行为断言）。
+  return { ...loaded, turns: mergeTurnListsById(mergedTurns, extraTurns) };
 }
 
 function mergeTurn(thread: Thread | null, nextTurn: Turn) {
@@ -13668,7 +13673,8 @@ const commandMatches = useMemo(() => {
             const earlier = [...data].reverse();
             setThread((c) => {
               if (!c || c.id !== id) return c;
-              const next = { ...c, turns: [...earlier, ...(c.turns ?? [])] };
+              // ⛔ 09-15：按 id 去重 + 时序规范化（旧实现在游标异常时会原样前插 → 重复回合/顺序错乱）
+              const next = { ...c, turns: mergeTurnListsById(c.turns ?? [], earlier) };
               threadRef.current = next;
               threadCacheRef.current.set(id, next);
               return next;
@@ -15322,7 +15328,13 @@ const commandMatches = useMemo(() => {
           {thread && earlierLoadingId === thread.id && (
             <div className="load-earlier-hint" role="status">正在载入更早的消息…</div>
           )}
-          {thread?.turns.slice(Math.max(0, thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW))).map((turn) => <MemoTurnView turn={turn} isLastTurn={turn.id === thread.turns[thread.turns.length - 1]?.id} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={turn.id === latestCompletedTurn?.id || turn.id === activeTurnId ? tokenUsage : null} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />)}
+          {(() => {
+            // ⛔ 09-15：渲染前按时序规范化（防合并乱序——「更早消息按钮与内容对不上」的兜底），
+            // isLastTurn / 窗口切片都以规范序列为准
+            const { ordered, visible } = visibleTurnWindow(thread?.turns, thread ? (turnWindow[thread.id] ?? TURN_WINDOW) : TURN_WINDOW);
+            const lastId = String(ordered[ordered.length - 1]?.id ?? "");
+            return visible.map((turn) => <MemoTurnView turn={turn} isLastTurn={String(turn.id) === lastId} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={turn.id === latestCompletedTurn?.id || turn.id === activeTurnId ? tokenUsage : null} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />);
+          })()}
           {optimisticInput && !optimisticConfirmed && <div id="chat-anchor"><ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} /></div>}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
           {systemEvents.map((event) => <div className={`system-event ${event.tone ?? "info"}`} key={event.id}><strong>{event.tone === "success" ? <CircleCheck size={13} className="system-event-icon" /> : null}{event.title}</strong><Markdown>{event.text}</Markdown></div>)}
