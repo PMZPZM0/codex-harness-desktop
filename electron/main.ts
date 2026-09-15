@@ -53,7 +53,7 @@ import { installCocoLoopSkill, listCocoLoopSkills, listSkillHubSkills, repairSki
 import { upsertSkillDiscipline, DISCIPLINE_START, DISCIPLINE_END } from "./skill-discipline";
 import { ensureCodexMarketplaceSection, installCodexMarketPlugin, listCodexMarketPlugins, type CodexMarketPlugin } from "./codex-market";
 import { augmentedPath, bundledGit, bundledNode, bundledPython, cloakCacheDir, cloakOpenHelper, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "./toolchain";
-import { ensureBuiltinSkills, ensureExpertSkillsMarketplace } from "./builtin-skills";
+import { ensureBuiltinSkills, ensureExpertSkillsMarketplace, expertSkillsSourceDir } from "./builtin-skills";
 import { ensurePonytailPlugin } from "./ponytail-plugin";
 import { getPonytailMode, setPonytailMode } from "./ponytail-mode";
 import { mergeThreadList } from "./session-tools";
@@ -161,7 +161,7 @@ function filterForRenderer(event: any) {
 
 import { applySessionsBackup, backupFromRolloutFile, buildMarkdownExport, buildSessionsBackup, buildThreadPreview, parseMarkdownConversation, BACKUP_FORMAT, BACKUP_VERSION } from "./thread-backup";
 import {
-  buildChengxiangExpertTeam, buildDefaultExpertTeams, buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, buildZhiweiExpertTeam, normalizeTeamConfig,
+  buildChengxiangExpertTeam, buildDefaultExpertTeams, buildDongmingExpertTeam, buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, buildZhiweiExpertTeam, normalizeTeamConfig,
   readExpertTeams, setExpertTeamsFile, writeExpertTeams, type ExpertTeamConfig, type ExpertTeamMember,
 } from "./expert-teams";
 
@@ -292,9 +292,15 @@ void (async () => {
   try {
     const existing = await readExpertTeams();
     if (!existing.length) await writeExpertTeams(buildDefaultExpertTeams());
-    // 内置单人专家（知微/呈象）每次启动都确保存在：用户可能删掉后再想要回来，随包分发不该一次性的
-    const builtinSoloTeams = [buildZhiweiExpertTeam(), buildChengxiangExpertTeam()];
+    // 内置单人专家（知微/呈象/洞明）每次启动都确保存在：用户可能删掉后再想要回来，随包分发不该一次性的
+    // 洞明要带「技能包绝对路径」兜底（见 expert-teams.ts 里 skillsDir 的说明）
+    const builtinSoloTeams = [buildZhiweiExpertTeam(), buildChengxiangExpertTeam(), buildDongmingExpertTeam(expertSkillsSourceDir())];
     let teams = existing.length ? existing : await readExpertTeams();
+    // 一次性清理：审查专家曾用过 `mingjian-code-review` 这个临时 id（未随包发布，改名窗口内
+    // 启动过的 profile 可能把它播进去）。留着会在专家中心多出一张「明鉴」孤儿卡，删掉。
+    const LEGACY_SOLO_TEAM_IDS = ["mingjian-code-review"];
+    const kept = teams.filter((entry) => !LEGACY_SOLO_TEAM_IDS.includes(entry.teamId));
+    if (kept.length !== teams.length) { teams = kept; await writeExpertTeams(teams); }
     for (const solo of builtinSoloTeams) {
       if (!teams.some((entry) => entry.teamId === solo.teamId)) {
         teams = [...teams, solo];
