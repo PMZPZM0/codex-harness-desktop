@@ -14384,47 +14384,6 @@ const commandMatches = useMemo(() => {
       setSettingsOpen(true);
       return;
     }
-    // 打开一个使用其他供应商的历史会话时，仅恢复下拉框选择，不立刻重启引擎。
-    // 真正发送前：若会话真实绑定的供应商 ≠ 当前激活供应商（引擎全局 Key 已换），
-    // 直接发会因 Key 错配 401 无限重连——自动把会话迁移到当前激活供应商。
-    // 判定依据是 threadProviderRef 登记表（resume 时记录的线程真实绑定），
-    // 不是 UI 下拉框（下拉可能已被切换动作改成新供应商，比不出差异）。
-    {
-      const currentThread = thread;
-      let boundProvider = currentThread?.id ? threadProviderRef.current.get(currentThread.id) : undefined;
-      // 登记表无记录（本次启动还没 resume 过该会话）：轻量 resume（不带历史）问引擎要真实绑定，
-      // 防止「切换供应商后不重开会话直接发」漏检——引擎是绑定的唯一权威。
-      if (currentThread?.id && !boundProvider) {
-        try {
-          const probe = await window.codex.request("thread/resume", { threadId: currentThread.id, excludeTurns: true });
-          const probed = String(probe?.modelProvider ?? probe?.model_provider ?? "").trim();
-          if (probed) { threadProviderRef.current.set(currentThread.id, probed); boundProvider = probed; }
-        } catch { /* 探测失败按无绑定处理，走正常发送 */ }
-      }
-      if (boundProvider && customModel && boundProvider !== customModel.provider && currentThread?.id) {
-        // 关键：引擎进程是「一个全局 Key」（spawn 时注入 CODEX_HARNESS_API_KEY）。
-        // 只 resume 换 base_url 不换 Key → 目标供应商收到旧 Key → INVALID_API_KEY 401
-        // （实测：激活 ppz123 后旧 pptoken 会话迁移后仍 401，重启引擎才注入 ppz123 的 Key）。
-        // 所以迁移必须走完整切换：写激活 + applyCustomModel 重启引擎（注入新 Key）+ resume。
-        try {
-          const updated = await window.codex.setProviderModel({ provider: customModel.provider, model: customModel.model });
-          setCustomModel(updated);
-          const aligned = await alignThreadToProvider(currentThread.id, customModel, { reason: "send" });
-          if (aligned === ALIGN_RESULT.failed) {
-            showToast("已切换供应商", `已切换到 ${updated.name} 并重启生效；该会话未能自动接力，请新建会话`);
-            return;
-          }
-          const selectedId = `custom:${updated.provider}:${updated.model}`;
-          setModelId(selectedId);
-          // 该会话刚迁移成功：全局默认 + 这个会话一起换（其它会话不动）
-          applyGlobalModelChoice(selectedId);
-          showToast("已自动接力", `引擎已按 ${updated.name} 的 Key 重启，该会话已自动接力到 ${updated.model}（历史上下文与聊天记录完整保留），可正常发送`);
-        } catch (error: any) {
-          showToast("暂时不能发送", `迁移失败：${String(error?.message ?? error).slice(0, 80)}`);
-          return;
-        }
-      }
-    }
     if (!workspace) {
       planOnceRef.current = false; // /plan 旗标不跨发送泄漏：发送失败即复位
       setPlanArmed(false);
@@ -14482,6 +14441,52 @@ const commandMatches = useMemo(() => {
         setNotice(error.message);
       }
       return;
+    }
+    // ⛔ 09-15：供应商对齐必须放在「排队分支」之后——会话正在跑时用户发消息走的是
+    // thread/queue/add（不重启引擎、不换绑定），消息入队即可；而下面的对齐会触发
+    // setProviderModel（重启引擎注入新 Key）+ thread/resume 迁移，排在前面会吞掉排队消息、
+    // 还弹「已自动接力」（用户实测：排队消息直接发出去 + 弹迁移提示）。只有空闲会话真正
+    // 走 turn/start 的发送才需要先对齐供应商。
+    // 打开一个使用其他供应商的历史会话时，仅恢复下拉框选择，不立刻重启引擎。
+    // 真正发送前：若会话真实绑定的供应商 ≠ 当前激活供应商（引擎全局 Key 已换），
+    // 直接发会因 Key 错配 401 无限重连——自动把会话迁移到当前激活供应商。
+    // 判定依据是 threadProviderRef 登记表（resume 时记录的线程真实绑定），
+    // 不是 UI 下拉框（下拉可能已被切换动作改成新供应商，比不出差异）。
+    {
+      const currentThread = thread;
+      let boundProvider = currentThread?.id ? threadProviderRef.current.get(currentThread.id) : undefined;
+      // 登记表无记录（本次启动还没 resume 过该会话）：轻量 resume（不带历史）问引擎要真实绑定，
+      // 防止「切换供应商后不重开会话直接发」漏检——引擎是绑定的唯一权威。
+      if (currentThread?.id && !boundProvider) {
+        try {
+          const probe = await window.codex.request("thread/resume", { threadId: currentThread.id, excludeTurns: true });
+          const probed = String(probe?.modelProvider ?? probe?.model_provider ?? "").trim();
+          if (probed) { threadProviderRef.current.set(currentThread.id, probed); boundProvider = probed; }
+        } catch { /* 探测失败按无绑定处理，走正常发送 */ }
+      }
+      if (boundProvider && customModel && boundProvider !== customModel.provider && currentThread?.id) {
+        // 关键：引擎进程是「一个全局 Key」（spawn 时注入 CODEX_HARNESS_API_KEY）。
+        // 只 resume 换 base_url 不换 Key → 目标供应商收到旧 Key → INVALID_API_KEY 401
+        // （实测：激活 ppz123 后旧 pptoken 会话迁移后仍 401，重启引擎才注入 ppz123 的 Key）。
+        // 所以迁移必须走完整切换：写激活 + applyCustomModel 重启引擎（注入新 Key）+ resume。
+        try {
+          const updated = await window.codex.setProviderModel({ provider: customModel.provider, model: customModel.model });
+          setCustomModel(updated);
+          const aligned = await alignThreadToProvider(currentThread.id, customModel, { reason: "send" });
+          if (aligned === ALIGN_RESULT.failed) {
+            showToast("已切换供应商", `已切换到 ${updated.name} 并重启生效；该会话未能自动接力，请新建会话`);
+            return;
+          }
+          const selectedId = `custom:${updated.provider}:${updated.model}`;
+          setModelId(selectedId);
+          // 该会话刚迁移成功：全局默认 + 这个会话一起换（其它会话不动）
+          applyGlobalModelChoice(selectedId);
+          showToast("已自动接力", `引擎已按 ${updated.name} 的 Key 重启，该会话已自动接力到 ${updated.model}（历史上下文与聊天记录完整保留），可正常发送`);
+        } catch (error: any) {
+          showToast("暂时不能发送", `迁移失败：${String(error?.message ?? error).slice(0, 80)}`);
+          return;
+        }
+      }
     }
     setSending(true);
     // 立即点亮侧边栏转圈（turn/start 返回前也转）：复用当前会话时立刻标记运行中；
