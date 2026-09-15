@@ -2173,6 +2173,22 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   /\[model_providers\.harness\]/.test(mainSrc6) && /model_provider = "harness"/.test(mainSrc6)
     ? ok("config.toml 恒写 harness 段 + 顶层 model_provider 指向它（永远指向当前生效供应商）")
     : fail("config.toml 没有 harness 段 —— 引擎解析不到统一 id");
+
+  // ⛔ 09-15 实测验证：新增/删除供应商后，**旧会话仍必须可用**（用户问「会不会又卡 BUG」）。
+  //    两条机制缺一不可：
+  //    ① 历史 id 别名段（aliasToml）——旧版本创建的会话 rollout 里记的是具体 provider id
+  //       （pttoken / relay-* / 用户自定义 id）。该 id 从供应商列表删掉后，引擎若无对应段
+  //       会报 "Model provider not found"、会话打不开。别名段把它指向当前生效供应商兜底。
+  //       实测：复制真实 rollout、只改 session_meta.model_provider=已删除 id → 启动即补别名段，
+  //       打开该会话 26 条历史正常渲染、发消息写回该会话本身、零错误。
+  //    ② harness 防重护栏（stripHarnessTable）——档案里若混入 id=harness 的条目，
+  //       会与恒写的 harness 段重复 → TOML duplicate key → 引擎拒载整份配置 = 应用全瘫。
+  /collectSessionProviderIds/.test(mainSrc6) && /aliasIds/.test(mainSrc6) && /历史会话别名 → 当前生效供应商/.test(mainSrc6)
+    ? ok("★ 历史 id 别名段机制在（旧会话引用的已删除供应商 id 仍能解析，会话打不开=灾难）")
+    : fail("别名段机制缺失 —— 删掉/改名供应商后，引用它的旧会话会报 provider not found 打不开");
+  /stripHarnessTable/.test(mainSrc6) && /model_providers\.harness/.test(mainSrc6)
+    ? ok("★ harness 段防重护栏在（档案里混入 id=harness 不会产生 duplicate key 全瘫）")
+    : fail("防重护栏缺失 —— 档案混入 harness 条目会写出重复 TOML 段，引擎拒载配置=应用全瘫");
 }
 
 // ---------- 【17】回合时序规范化（09-15「更早消息按钮与内容对不上」修复的纯逻辑守卫） ----------
