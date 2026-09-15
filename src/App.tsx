@@ -1103,7 +1103,7 @@ function expertIconOf(member: ExpertTeamMember) {
   if (/资金|流向|行情/.test(p)) return TrendingUp;
   if (/基本面|研究/.test(p)) return Microscope;
   if (/估值|定价/.test(p)) return Calculator;
-  if (/风控|安全/.test(p)) return Shield;
+  if (/风控|安全|审查|审计/.test(p)) return Shield;
   if (/策略|预测|知微|慎思/.test(p)) return Telescope;
   return Bot;
 }
@@ -1116,7 +1116,7 @@ const EXPERT_CATEGORY_DEFS = [
   { title: "数据分析", blurb: "数据工程、统计分析、可视化与业务洞察", icon: BarChart3, teamIds: ["data-analysis-team"] },
   { title: "市场增长", blurb: "市场策略、内容营销、投放优化与增长分析", icon: Megaphone, teamIds: ["marketing-growth-team"] },
   { title: "产品设计", blurb: "用户研究、产品策略与 UI/UX 设计", icon: DraftingCompass, teamIds: ["product-design-team"] },
-  { title: "专项专家", blurb: "开箱即用的独立单人专家", icon: Sparkles, teamIds: ["zhiwei-content-oracle", "chengxiang-ppt-master"] },
+  { title: "专项专家", blurb: "开箱即用的独立单人专家", icon: Sparkles, teamIds: ["zhiwei-content-oracle", "chengxiang-ppt-master", "dongming-code-review"] },
 ];
 
 const MEMORY_CATEGORIES = [
@@ -4976,6 +4976,11 @@ function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[
       const track = trackRef.current;
       if (!track) return;
       const h = track.clientHeight;
+      // ⛔ 高度为 0 = 此刻根本不可见（视口 ≤1080 时 CSS 媒体查询把刻度尺 display:none，
+      //    ResizeObserver 会**如实上报 0**）。若照单写入，pad 会被污染成 0、`--ruler-pad`
+      //    与 `--ruler-gap` 双双变 0px → 所有刻度紧贴成一团方块。
+      //    09-15 用户实测：「手动放大缩小后刻度线变成一个方块」（实测 5 条 tick 挤成 12×10）。
+      if (!h) return;
       const total = Math.max(1, allMarks.length);
       // 先按「全部放得下」反解 pad（上限 4 = 原样式，下限 0 = 最密），再据此算可视容量
       const pad = Math.max(0, Math.min(4, (h / total - 2) / 3));
@@ -4988,7 +4993,11 @@ function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[
     const observer = new ResizeObserver(measure);
     if (trackRef.current) observer.observe(trackRef.current);
     return () => observer.disconnect();
-  }, [scrollable, allMarks.length]);
+    // ⛔ 依赖必须含 containerNarrow（09-15 实测修正）：容器太窄时组件 `return null`，
+    //    刻度尺 DOM 被**卸载**；恢复宽度后 React **重建新节点**，而 ResizeObserver 仍绑在
+    //    那个已卸载的旧节点上 —— 不重跑本 effect 就永远不会再观察新节点，measure 此后再不
+    //    执行，`slotPad` 永久停在旧值（实测缩放跨阈值回来 padVar 一直 0px = 上面那个方块）。
+  }, [scrollable, allMarks.length, containerNarrow]);
 
   const windowSize = visibleCount > 0 ? visibleCount : RULER_MAX;
   const marks = useMemo(() => {
