@@ -155,6 +155,14 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **模型上下文「只生效默认那个模型」修复（09-16 用户实测，致命 bug）**：
+  **现象**：模型编辑器里给不同模型配了不同上下文（128000 / 1000000），但**只有默认那个模型生效**。
+  **真因**：`config.toml` 顶层的 `model_context_window` 是**引擎的全局单值**，过去取「写配置那一刻生效模型」的 contextWindow 写下去 → 一旦落下就是**全局覆盖**：切到别的模型仍是旧值。实测铁证：同一模型 `deepseek-v4-1-flash` 在**同一会话**里，rollout 上报的 `model_context_window` 从 1000000 变成 128000（模型没变），而它配的是 1M —— UI 显示的正是这个引擎上报值。
+  **探针实证**（`scripts/probe-context-window.cjs`：独立 CODEX_HOME + mock 模型 API + 真实 app-server，跑真实 turn 后读引擎自己写的 rollout）：写顶层 128000 时，模型 A(128000)→128000、模型 B(1000000)→**128000（被压掉）**；**不写顶层**时，A→128000、B→**1000000** ✓。
+  **修法四处（缺一会残留或复发）**：① `applyCustomModel` **不再生成**顶层该键 —— 上下文只由 `model_catalog_json` 里每个模型自己的 `context_window` 决定（官方订阅走引擎内置模型目录，同样不需要）；② **新增废止键残留检查** `legacyContextKey`：「不写」≠「清掉已经写下的值」，用户机器上存着旧值，靠它触发一次整份重写清掉（`preserveUserConfig` 会丢弃该键，因此幂等）；③ 自愈判定删掉 `written !== wanted` —— 不写该键后这个条件**恒为真**（written 恒 0、wanted 恒正数），会每次启动都整份重写；④ `electron/config-toml.ts` 的 `HARNESS_CONFIG_KEYS` **必须保留** `model_context_window`（该集合的作用就是丢弃 harness 管的键，留着才能清掉旧值；移出会让旧值被原样拼回）。
+  **验收**：探针两场景对照 + 端到端（篡改隔离 profile 的 config.toml 再启动，断言旧键被清 / model 未被误改 / catalog 仍在）= 4/4 通过；预检【21】4 条守卫，**反证逐条成立**（删残留检查、改回旧判定、加回生成行各精确红 1 条）。
+  **⛔ 断言写法两个坑（本轮踩到）**：预检的 `ok()` / `fail()` **只接受一个消息参数**，写成 `ok(msg, cond)` 会**恒绿**（条件被静默忽略）—— 必须写 `(cond ? ok : fail)(msg)`；另外**模式别用会被自己注释命中的字符串**（`/written !== wanted/` 被注释里同名文字匹配 → 恒红），要匹配 `if (written !== wanted`、`const legacyContextKey =` 这类**代码形式**。
+
 - **刻度尺「缩放后塌成方块」修复（09-15 用户实测，含一条通用架构陷阱）**：用户手动放大缩小窗口后，对话区左侧的消息刻度线变成一个方块。**根因是「不可见态污染状态」+「ResizeObserver 绑在已卸载节点上」**：
   ① 视口 ≤1080px 时 CSS 媒体查询把 `.message-ruler` 置 `display:none`，而 **ResizeObserver 会如实上报高度 0** → `measure()` 照单执行 → `setSlotPad(0)`，`--ruler-pad` 与 `--ruler-gap` 双双变 `0px`；
   ② 视口更窄时 JS 判定容器 <720px → 组件 `return null`，刻度尺 DOM **被卸载**；恢复宽度后 React **重建新节点**，但该 effect 依赖是 `[scrollable, allMarks.length]` 未变 → **不重跑 → ResizeObserver 仍绑在旧节点上 → `measure()` 此后再不执行**；

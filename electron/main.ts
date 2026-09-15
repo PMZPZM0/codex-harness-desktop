@@ -22,7 +22,7 @@ import { TeamRunStore, memberThreadName } from "./team-runs";
 import { DelegateRegistry } from "./delegate-registry";
 import {
   admitDispatch, canDispatchFrom, clipDispatchOutput, delegateScopeBlock,
-  dispatchNoticeText, dispatchToolDescription, filterTargetsBySwitch, kindLabel, resolveDispatchTarget,
+  dispatchNoticeText, dispatchOffNoticeText, dispatchToolDescription, filterTargetsBySwitch, kindLabel, resolveDispatchTarget,
   type DispatchKind, type DispatchTarget,
 } from "./dispatch";
 import { ThreadRuntimeStore } from "./thread-runtime-store";
@@ -1242,10 +1242,15 @@ async function syncEngineWatchdog() {
  * 引擎支持 model_catalog_json 指向一个自定义模型目录 JSON，加载后引擎认识这些模型
  * （实测 0.150.1 接受精简格式，Unknown model 警告消失）。
  *
- * ⚠️ 早期注释曾写「config.toml 顶层的 model_context_window 会被引擎无视」—— 该结论对当前
- * 引擎版本**不成立**：引擎实际使用的就是顶层那个值（UI 显示的 12.8 万正是它，与 catalog
- * 里写的 1M 不一致时以顶层为准）。故顶层与 catalog 两处必须用同一个值，
- * 见 applyCustomModel 里的 effectiveContextWindow。
+ * ⛔ 09-16 修正（用户实测「模型上下文只生效默认那个」后查清）：顶层 model_context_window
+ * **一律不写**。它是引擎的**全局单值**，过去取「写配置那一刻的生效模型」的 contextWindow，
+ * 而模型上下文是**每模型**的 → 顶层一落下就是全局覆盖：切到别的模型仍是旧值。
+ * 探针实证（scripts/probe-context-window.cjs，mock API + 真实 app-server 跑真实 turn，
+ * 读引擎自己写的 rollout 里上报的 model_context_window）：
+ *   · 写顶层 128000：模型 A(128000)→128000、模型 B(1000000)→**128000**（被压掉）；
+ *   · 不写顶层：  模型 A→128000、模型 B→**1000000**（引擎按当前模型取 catalog 的值）。
+ * 故上下文只由 catalog 的每模型 context_window 决定（buildModelCatalog 已写入）。
+ * 官方订阅走引擎内置模型目录，同样不需要顶层值。
  *
  * 这里为供应商下每个模型生成一条 catalog 记录，contextWindow 取模型自己的
  * contextWindow（缺省用供应商级 entry.contextWindow）。
@@ -1389,12 +1394,10 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
   // 用户设置的 1M 上下文不生效）。无模型时返回空串不写该行。官方订阅走引擎内置模型目录，不需要。
   const isOfficialProvider = entry.provider === "openai-official";
   const catalogToml = isOfficialProvider ? "" : await writeModelCatalogToml(entry);
-  // 顶层 model_context_window 才是引擎真正使用的上下文上限。必须取「当前生效模型自己」的
-  // contextWindow —— 用户在模型编辑器里改的 1M 存在 entry.models[].contextWindow，
-  // 而 entry.contextWindow 只是供应商级默认值（128000）。写默认值会让用户设的 1M 完全不生效，
-  // 表现为 UI 一直显示 12.8 万。与 buildModelCatalog 的取值口径保持一致。
+  // 当前生效模型（catalog 里那条）：下面的 effort 兜底默认要用它。
+  // ⛔ 上下文上限**不在这里算、也不写顶层** —— 顶层单值会覆盖每模型上下文，
+  //    改为只靠 catalog 的每模型 context_window（见上方 09-16 修正说明）。
   const currentCatalogModel = (normalizeProvider(entry).models ?? []).find((m) => m.id === entry.model);
-  const effectiveContextWindow = currentCatalogModel?.contextWindow ?? entry.contextWindow ?? 128000;
   const savedProviders = await readCustomModels();
   // 全部已保存供应商都写进引擎配置（含禁用的）：旧线程的 rollout 里记录着创建时的
   // model_provider，抹掉 provider 段会让这些历史会话 resume 直接失败
@@ -1504,7 +1507,9 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
   };
   await fs.writeFile(path.join(codexHome, "config.toml"), [
     `model = "${escapeToml(entry.model)}"`,
-    `model_context_window = ${effectiveContextWindow}`,
+    // （顶层 model_context_window 已按 09-16 修正移除：全局单值会压掉 catalog 里每模型的
+    //   上下文；`model_context_window` 仍留在 config-toml.ts 的 HARNESS_CONFIG_KEYS 里，
+    //   以便 preserveUserConfig 把老版本写下的旧值一并丢弃，不留残留。）
     // 思考档位兜底默认（当前生效模型档案里记的档）：会话内显式值由每轮 turn/start
     // 的 effort 覆盖，这里只管「重启后 resume 的老会话没显式值时」的默认落点，
     // 与 custom-model.json 的 effort 字段同源。模型没记档位时不写，引擎用内置默认。
@@ -2441,19 +2446,25 @@ app.whenReady().then(async () => {
   } catch (error) {
     broadcastCodexEvent({ kind: "status", status: "error", message: String(error) });
   }
-  // 自愈：config.toml 顶层的 model_context_window 才是引擎真正使用的上下文上限。
-  // 旧版本把它写成供应商级默认值（128000），用户在模型编辑器里改的 1M 只进了 models[] 与
-  // model-catalog.json → UI 一直显示 12.8 万。检测到漂移就重写一次（幂等：一致则跳过）。
+  // 自愈：catalog 每次启动都重写（幂等），确保包含所有启用供应商的模型。
+  // ⛔ 09-16：**不再检查、也不再写顶层 model_context_window**（该键已废弃 —— 它是引擎的全局
+  // 单值，会覆盖 catalog 里每个模型各自的 context_window，表现为「只有默认那个模型的上下文
+  // 生效」，用户实测）。**别恢复这个检查**：删掉写入后 `written !== wanted` 会恒为真
+  // （written 恒 0、wanted 恒正数）→ 每次启动都整份重写 config.toml。
   if (custom) {
     try {
       // catalog 每次启动都重写（幂等）：确保包含所有启用供应商的模型——
       // 旧会话切换到任何供应商的模型时引擎都查得到，不会报「不支持」。
       await writeModelCatalogToml(custom);
       const configText = await fs.readFile(path.join(codexHome, "config.toml"), "utf8").catch(() => "");
-      const written = Number(/^\s*model_context_window\s*=\s*(\d+)\s*$/m.exec(configText)?.[1] ?? 0);
-      const wanted = (normalizeProvider(custom).models ?? []).find((candidate) => candidate.id === custom.model)?.contextWindow ?? custom.contextWindow ?? 128000;
       const environmentOutdated = !configText.includes("[shell_environment_policy.set]") || !configText.includes("PYTHON_EXECUTABLE");
       const instructionsOutdated = !configText.includes("Never infer Python availability");
+      // ⛔ 09-16：废止键残留检查 —— 老版本把顶层 model_context_window 写成全局单值（会覆盖
+      //    catalog 里每模型的上下文）。升级后必须**主动清掉已写下的旧值**：preserveUserConfig
+      //    会丢弃该键，所以整份重写一次它就消失、下次启动不再触发（幂等）。
+      //    没这个检查时，若其它漂移条件恰好都不满足就不会重写 → 旧值一直生效，用户重启后 bug 依旧
+      //    （教训：「删掉写入」不等于「清掉已写下的值」）。
+      const legacyContextKey = /^\s*model_context_window\s*=/m.test(configText);
       // 供应商/模型漂移：custom-model.json（当前激活）与 config.toml 顶层 model / model_provider 不一致时重写。
       // 场景：UI 切换供应商只保存配置（延迟生效），用户没点「重启生效」就退出应用——下次启动必须
       // 按新配置生效，否则引擎继续跑旧供应商（self-heal 原只查 context_window，查不出这种漂移）。
@@ -2464,12 +2475,12 @@ app.whenReady().then(async () => {
       // model_provider 加载配置，段被移除会报 "Model provider `X` not found" → 会话内容全空。
       // 旧版本 applyCustomModel 写配置时过滤了禁用供应商——检测到缺失就整份重写补回。
       const disabledMissing = (await readCustomModels()).some((candidate) => candidate.enabled === false && !configText.includes(`[model_providers.${candidate.provider}]`));
-      if (written !== wanted || providerOutdated || environmentOutdated || instructionsOutdated || disabledMissing) {
-        console.warn(`[custom-model] config drift: context=${written}/${wanted}, providerOutdated=${providerOutdated}, environment=${environmentOutdated}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}; rewriting`);
+      if (legacyContextKey || providerOutdated || environmentOutdated || instructionsOutdated || disabledMissing) {
+        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}; rewriting`);
         await applyCustomModel(custom);
       }
     } catch (error) {
-      console.warn("[custom-model] context window self-heal failed:", error);
+      console.warn("[custom-model] config self-heal failed:", error);
     }
   }
   // 启动副作用一律「尽力而为」：这里任何一处抛出都会让 whenReady 的 promise 变成
@@ -6474,6 +6485,9 @@ ipcMain.handle("agents:tool-description", async () => ({ description: dispatchTo
 
 /** 本会话要下发给 Codex 的调度提示词（开启开关时自动发的那条告知消息） */
 ipcMain.handle("agents:notice", async () => ({ text: dispatchNoticeText(await buildDispatchCatalog()) }));
+
+/** 关闭开关时的告知消息（让 Codex 立刻知道权限被收回了） */
+ipcMain.handle("agents:off-notice", async () => ({ text: dispatchOffNoticeText() }));
 
 /** 全部「被调度的临时会话」——渲染层据此做注册侧过滤（L2）与侧栏标记 */
 ipcMain.handle("agents:delegated", async () => ({ records: await delegateRegistry.listAll() }));
