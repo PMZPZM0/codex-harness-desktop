@@ -162,7 +162,7 @@ function filterForRenderer(event: any) {
 import { applySessionsBackup, backupFromRolloutFile, buildMarkdownExport, buildSessionsBackup, buildThreadPreview, parseMarkdownConversation, BACKUP_FORMAT, BACKUP_VERSION } from "./thread-backup";
 import {
   buildChengxiangExpertTeam, buildDefaultExpertTeams, buildDongmingExpertTeam, buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, buildZhiweiExpertTeam, normalizeTeamConfig,
-  readExpertTeams, setExpertTeamsFile, writeExpertTeams, type ExpertTeamConfig, type ExpertTeamMember,
+  readExpertTeams, setExpertTeamsFile, syncSkillsPathInTeam, writeExpertTeams, type ExpertTeamConfig, type ExpertTeamMember,
 } from "./expert-teams";
 
 protocol.registerSchemesAsPrivileged([{ scheme: "harness-image", privileges: { secure: true, supportFetchAPI: true } }]);
@@ -302,8 +302,18 @@ void (async () => {
     const kept = teams.filter((entry) => !LEGACY_SOLO_TEAM_IDS.includes(entry.teamId));
     if (kept.length !== teams.length) { teams = kept; await writeExpertTeams(teams); }
     for (const solo of builtinSoloTeams) {
-      if (!teams.some((entry) => entry.teamId === solo.teamId)) {
+      const stored = teams.find((entry) => entry.teamId === solo.teamId);
+      if (!stored) {
         teams = [...teams, solo];
+        await writeExpertTeams(teams);
+        continue;
+      }
+      // 已存在 ≠ 已最新：洞明的 systemPrompt 里带技能包**绝对路径**，安装位置一变（开发版 ↔ 打包版、
+      // 项目目录改名/搬家）存档里那条旧路径就失效 —— 而专家读不到技能包时**不报错、静默降级**
+      // （表现为「洞明突然不读规则集了」）。这里只同步路径那一行，其余内容逐字保留；没变则不写盘。
+      const refreshed = syncSkillsPathInTeam(stored, solo);
+      if (refreshed) {
+        teams = teams.map((entry) => (entry.teamId === solo.teamId ? refreshed : entry));
         await writeExpertTeams(teams);
       }
     }

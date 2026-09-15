@@ -2189,6 +2189,40 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   /stripHarnessTable/.test(mainSrc6) && /model_providers\.harness/.test(mainSrc6)
     ? ok("★ harness 段防重护栏在（档案里混入 id=harness 不会产生 duplicate key 全瘫）")
     : fail("防重护栏缺失 —— 档案混入 harness 条目会写出重复 TOML 段，引擎拒载配置=应用全瘫");
+  // 洞明的 systemPrompt 带技能包**绝对路径**，而内置专家 ensure 是「按 teamId 存在即不更新」——
+  // 安装位置一变（开发版 ↔ 打包版、项目目录改名/搬家），存档里的旧路径就失效，而专家读不到
+  // 技能包时**不报错、静默降级**。下面用**编译产物**跑真行为断言（真实现，不是文本匹配）。
+  const { createRequire } = await import("node:module");
+  const req = createRequire(import.meta.url);
+  let et = null;
+  try { et = req(join(ROOT, "dist-electron/expert-teams.js")); } catch { et = null; }
+  if (!et || typeof et.syncSkillsPath !== "function" || typeof et.syncSkillsPathInTeam !== "function") {
+    fail("dist-electron/expert-teams.js 缺 syncSkillsPath / syncSkillsPathInTeam —— 技能包路径无法随安装位置自愈");
+  } else {
+    // 注意：buildDongmingExpertTeam 收的是**技能库根目录**，它自己会拼 `/dongming-code-review`。
+    // 所以「当前真实路径」必须从它生成的提示词里读回来，不能手写 —— 手写会多拼一层子目录，断言假红。
+    const base = et.buildDongmingExpertTeam("D:/old-place/resources/expert-skills").lead.systemPrompt;
+    const OLD = et.readSkillsPath(base);
+    const NEW = et.readSkillsPath(et.buildDongmingExpertTeam("E:/new-place/resources/expert-skills").lead.systemPrompt);
+    const next = et.syncSkillsPath(base, NEW);
+    next && next.includes(NEW) && !next.includes(OLD) && next.split(NEW).join(OLD) === base
+      ? ok("★ 技能包路径变了只换那一段（其余内容逐字保留）")
+      : fail("路径同步改动了路径之外的内容，或没替换成功");
+    et.syncSkillsPath(base, OLD) === null
+      ? ok("路径没变时返回 null（不写盘、不刷时间戳）")
+      : fail("路径没变仍返回新值 —— 每次启动都会重写专家档案，掩盖真实变更");
+    const stripped = base.split("\n").filter((l) => !l.includes(et.SKILLS_PATH_MARK) && !l.includes("都在这个目录下") && !l.includes("技能列表里没有")).join("\n");
+    const refilled = et.syncSkillsPath(stripped, NEW);
+    refilled && refilled.includes(NEW) && refilled.includes(et.SKILLS_PATH_MARK)
+      ? ok("老播种 / 路径行被删 → 自动补回兜底段")
+      : fail("缺路径行时不补回 —— 老存档里的洞明永远读不到技能包");
+    et.syncSkillsPathInTeam(et.buildZhiweiExpertTeam(), et.buildDongmingExpertTeam(NEW)) === null
+      ? ok("teamId 不匹配时不动手（不会把洞明的路径写到别的专家上）")
+      : fail("teamId 校验缺失 —— 可能误改其它专家配置");
+    /syncSkillsPathInTeam\(stored, solo\)/.test(mainSrc6)
+      ? ok("启动 ensure 已接入路径同步（已存在 ≠ 已最新）")
+      : fail("main.ts 没接入 syncSkillsPathInTeam —— 安装位置一变，洞明静默读不到技能包");
+  }
 }
 
 // ---------- 【17】回合时序规范化（09-15「更早消息按钮与内容对不上」修复的纯逻辑守卫） ----------
