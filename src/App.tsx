@@ -9849,7 +9849,7 @@ const ANCHOR_TOP_OFFSET_PX = 54;
  *  扩不了包含块。除非给回合组塞一个动态高度的尾巴（高度一变就是新的 scrollHeight 突变源），
  *  否则 sticky 在这个结构里无解。故回到「滚动式锚顶」：钉一次 + 按增长量跟随（见下方注释），
  *  位置观感等价，且没有包含块限制。 */
-const STICKY_USER_SLOT = true;
+const STICKY_USER_SLOT = false;
 /** 尾部留白（`.timeline-bottom-spacer*`）**不参与**「跟到哪」的计算：
  *  所有"到底部"的目标一律取**内容底部**（`#timeline-content-end` 哨兵）而不是 `scrollHeight`。
  *  这是 09-12 那次「切走再切回：用户消息被切在视口顶 + 下方一大片空白」的根因——
