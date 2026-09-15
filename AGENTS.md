@@ -155,6 +155,15 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **刻度尺「缩放后塌成方块」修复（09-15 用户实测，含一条通用架构陷阱）**：用户手动放大缩小窗口后，对话区左侧的消息刻度线变成一个方块。**根因是「不可见态污染状态」+「ResizeObserver 绑在已卸载节点上」**：
+  ① 视口 ≤1080px 时 CSS 媒体查询把 `.message-ruler` 置 `display:none`，而 **ResizeObserver 会如实上报高度 0** → `measure()` 照单执行 → `setSlotPad(0)`，`--ruler-pad` 与 `--ruler-gap` 双双变 `0px`；
+  ② 视口更窄时 JS 判定容器 <720px → 组件 `return null`，刻度尺 DOM **被卸载**；恢复宽度后 React **重建新节点**，但该 effect 依赖是 `[scrollable, allMarks.length]` 未变 → **不重跑 → ResizeObserver 仍绑在旧节点上 → `measure()` 此后再不执行**；
+  ③ 于是 `pad=0` 永不被修正 → 所有刻度紧贴成 12×10 的一块 = 用户看到的「方块」。
+  **修法两处（缺一不可）**：`measure()` 开头 `if (!h) return`（不可见态不采样）；effect 依赖加入 `containerNarrow`（节点重建时重新 `observe`）。
+  **验收**：同一脚本跨阈值缩放（1280→900→1280）后 `padVar/gap/tickH` 与初始完全一致（`4px / 4px / 10`，刻度坐标 322/336 不变）；修复前同一脚本读数为 `0px / 0px / 2`；console 错误 0。
+  **⛔ 通用教训（写任何 observer 前先看这条）**：只要「被 `ResizeObserver`/`IntersectionObserver` 观察的节点会被条件渲染卸载重建」，那个条件就必须出现在 effect 依赖里 —— 否则恢复后观察器**静默失效**，状态永久卡在最后一次读到的坏值。另：**`display:none` 期间 RO 会报 0，测量函数必须把 0 当「无效」而不是「真实值」**。
+  **复现要点**：刻度尺需要「**≥5 回合的长会话**」才出现（内容不满一屏时 `scrollable` 为假、刻度尺不渲染）——隔离 profile 里点侧栏**最底部**那条（最老会话），或按会话名匹配，别点最新那条短会话。
+
 - **「目标与进程」面板改造（09-15 用户定稿 A+B+C2+D）**：右上角悬浮面板（`.goals-pop`）此前只认 `planSteps`/`goalText`（引擎 plan / 目标事件），用 `task_add` 建的待办**永远唤不出它**（用户实测「让 Codex 创建任务清单也没有展示出来」）。四项改动：**① 数据实时同步**——`task_add`/`task_update` 处理点补 `listTasks().then(setTaskList)`（此前 `taskList` 只在挂载时拉一次，agent 建完前端完全不知道）；**② 完成即隐藏**——旧版是「跑完收纳 + 20s 后消失」，改为**空闲下降沿立刻隐藏**（用户口径「任务完成了就该隐藏掉，没必要还保留」），由常驻入口叫回；**③ 分区渲染（C2）**——`.goals-section` 两块：「执行计划」（planSteps）与「待办事项」（taskList），**两份独立数据、各自计数，不混列表**（语义与状态数都不同：一个有 pending/inProgress/completed 三态 + 流程图，一个只有 done/未做）；**④ 工具栏常驻入口** `.tb-goals-entry`——面板消失后唯一能叫回它的地方，带 `已完成/总数` 徽标，仅在有内容时出现。
   **⛔ 白屏事故的真因不是这段代码（09-15，查清后勿再误判）**：改完构建通过、但用户启动即白屏，一度怀疑面板 JSX。**真因是「单实例锁 + 构建窗口」**：① `electron/main.ts:2222` 有 `requestSingleInstanceLock`，**新实例拿不到锁就 `app.quit()`、已有实例被聚焦唤起** → 用户「重启」看到的永远是同一个旧窗口；② Vite 构建会**先清空 `dist/`**，用户若在这几秒内启动 → 加载到空/半写页面 → 渲染进程不崩所以窗口留成白屏。**两个条件叠加 = 怎么重建 dist 都没用，用户只能看到白屏**。处置：`taskkill /F /PID <主进程> /T` 清掉残留实例树后重新启动。**纪律：改 dist 的构建不要和用户启动应用并发**（要构建先问一句，或构建完主动告知「可以重启了」）。
   **验收方法（本轮踩坑后定）**：面板显示条件含 `thread`，而**乐观气泡不设 thread** → 停在首页/刚发消息时面板根本不渲染，「脚本跑通」是假绿（新代码一次没执行）。必须**打开历史会话**（点侧栏 `.thread-row` 内按钮）让 `goals-pop` 稳定出现，再点 `.goals-summary` 展开才覆盖到分区渲染。实测：`goalsSection: 2`、`goalsTaskList: 1`、`titles: ["执行计划","待办事项 0/1"]`、**console 错误 0**、截图 `.e2e-artifacts/shots/pw7-01-pw7-panel-body.png`。
