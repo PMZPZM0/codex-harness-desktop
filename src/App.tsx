@@ -2493,12 +2493,14 @@ const approvalMenuOptions = (fullAccess: boolean) => fullAccess ? [
 /** 调度开关面板（09-15）：「当前对话框」允许 Codex 调度哪些对象干活。
  *  会话级配置 —— 落 thread-runtime 的 `dispatch` 字段（与模型/权限同源同存放处）。
  *  点「确认」才生效；从「关」变「开」时自动往对话框发一条告知消息，让 Codex 知道自己有这个能力。 */
-function DispatchMenu({ dispatch, targets, onChange, disabled, busy }: {
+function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topbar }: {
   dispatch: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean };
   targets: DispatchTargetEntry[];
   onChange: (next: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean }) => void;
   disabled?: boolean;
   busy?: boolean;
+  /** 顶栏形态：纯图标按钮 + 弹层向下弹（顶栏一排都是小图标，带文字的 composer 形态放不进去） */
+  topbar?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(dispatch);
@@ -2514,50 +2516,82 @@ function DispatchMenu({ dispatch, targets, onChange, disabled, busy }: {
     return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
   }, [open]);
   const countOf = (kind: DispatchTargetEntry["kind"]) => targets.filter((target) => target.kind === kind).length;
-  const rows: { key: "expert" | "team" | "subagent"; title: string; hint: string; n: number }[] = [
-    { key: "expert", title: "专家", hint: "代码审查 / 内容创作 / 演示文稿等单人专家", n: countOf("expert") },
-    { key: "team", title: "专家团", hint: "由主理人按 SOP 调度多名成员协作", n: countOf("team") },
-    { key: "subagent", title: "子智能体", hint: "你在设置里配置的自定义角色", n: countOf("subagent") },
+  const rows: { key: "expert" | "team" | "subagent"; title: string; hint: string; n: number; icon: any }[] = [
+    { key: "expert", title: "专家", hint: "代码审查 / 内容创作 / 演示文稿等单人专家", n: countOf("expert"), icon: Sparkles },
+    { key: "team", title: "专家团", hint: "由主理人按 SOP 调度多名成员协作", n: countOf("team"), icon: Users },
+    { key: "subagent", title: "子智能体", hint: "你在设置里配置的自定义角色", n: countOf("subagent"), icon: Bot },
   ];
   const dirty = JSON.stringify(draft) !== JSON.stringify(dispatch);
   return (
     <div className={`composer-menu dispatch-menu ${open ? "open" : ""}`} ref={wrapRef}>
-      <button
-        type="button"
-        className={`composer-setting ${dispatch.enabled ? "dispatch-on" : ""}`}
-        disabled={disabled}
-        title={dispatch.enabled ? "本会话已开启调度：Codex 可把合适的子任务交给专家 / 专家团 / 子智能体" : "调度：让 Codex 把合适的独立子任务交给专家 / 专家团 / 子智能体"}
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <Users size={14} />
-        <span>调度{dispatch.enabled ? " · 开" : ""}</span>
-        <ChevronDown size={12} className={`menu-caret ${open ? "up" : ""}`} />
-      </button>
+      {topbar ? (
+        <button
+          type="button"
+          className={`icon-button dispatch-topbar-btn ${dispatch.enabled ? "dispatch-on" : ""}`}
+          disabled={disabled}
+          title={dispatch.enabled ? "调度（已开启）：本会话 Codex 可把子任务交给专家 / 专家团 / 子智能体" : "调度：让 Codex 把合适的独立子任务交给专家 / 专家团 / 子智能体"}
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <Users size={16} />
+          {dispatch.enabled && <i className="dispatch-dot" aria-hidden />}
+        </button>
+      ) : (
+        <button
+          type="button"
+          className={`composer-setting ${dispatch.enabled ? "dispatch-on" : ""}`}
+          disabled={disabled}
+          title="调度设置"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <Users size={14} />
+          <span>调度{dispatch.enabled ? " · 开" : ""}</span>
+          <ChevronDown size={12} className={`menu-caret ${open ? "up" : ""}`} />
+        </button>
+      )}
       {open && (
-        <div className="composer-menu-pop dispatch-pop" role="dialog" aria-label="调度设置">
-          <label className="dispatch-master">
-            <input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />
+        <div className={`composer-menu-pop dispatch-pop ${topbar ? "dispatch-pop-down" : ""}`} role="dialog" aria-label="调度设置">
+          <div className="dispatch-head">
+            <strong>调度</strong>
+            <small>把合适的独立子任务交给专门的角色去做，产出回传本会话</small>
+          </div>
+          {/* 总开关做成整行可点的 switch：比裸勾选框直观，状态文案跟着变 */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={draft.enabled}
+            className={`dispatch-master ${draft.enabled ? "on" : ""}`}
+            onClick={() => setDraft({ ...draft, enabled: !draft.enabled })}
+          >
             <span className="dispatch-master-text">
               <strong>允许本会话调度</strong>
-              <small>开启后，Codex 会把合适的独立子任务交给下面的对象去做</small>
+              <small>{draft.enabled ? "已开启：Codex 可以派人干活了" : "关闭中：Codex 所有事都自己干"}</small>
             </span>
-          </label>
+            <span className="dispatch-toggle" aria-hidden><i /></span>
+          </button>
           <div className={`dispatch-rows ${draft.enabled ? "" : "is-off"}`}>
-            {rows.map((row) => (
-              <label key={row.key} className="dispatch-row">
-                <input
-                  type="checkbox"
-                  disabled={!draft.enabled || row.n === 0}
-                  checked={draft[row.key]}
-                  onChange={(event) => setDraft({ ...draft, [row.key]: event.target.checked })}
-                />
-                <span className="dispatch-row-text">
-                  <strong>{row.title}{row.n ? <em>{row.n}</em> : null}</strong>
-                  <small>{row.n ? row.hint : "当前没有已启用的对象"}</small>
-                </span>
-              </label>
-            ))}
+            {rows.map((row) => {
+              const Icon = row.icon;
+              const lockedOff = !draft.enabled || row.n === 0;
+              return (
+                <button
+                  type="button"
+                  key={row.key}
+                  className={`dispatch-row ${draft[row.key] && !lockedOff ? "checked" : ""}`}
+                  disabled={lockedOff}
+                  title={row.n === 0 ? "当前没有已启用的对象" : undefined}
+                  onClick={() => setDraft({ ...draft, [row.key]: !draft[row.key] })}
+                >
+                  <span className="dispatch-row-icon"><Icon size={14} /></span>
+                  <span className="dispatch-row-text">
+                    <strong>{row.title}{row.n ? <em>{row.n}</em> : null}</strong>
+                    <small>{row.n ? row.hint : "当前没有已启用的对象"}</small>
+                  </span>
+                  <span className="dispatch-row-check">{draft[row.key] && !lockedOff ? <CircleCheck size={15} /> : null}</span>
+                </button>
+              );
+            })}
           </div>
           <div className="dispatch-foot">
             <small className="dispatch-scope">仅对当前会话生效</small>
@@ -15497,7 +15531,17 @@ const commandMatches = useMemo(() => {
                 {popoutThreadId ? (
         <button className="icon-button popout-return-btn" title="返回主应用（关闭本独立窗口）" onClick={() => void window.codex.popoutClose(thread?.id ?? null)}><Minimize2 size={16} /></button>
       ) : (
-        <button className="icon-button popout-open-btn" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!thread} onClick={() => { if (thread) void popoutCurrentThread(thread.id); }}><Maximize2 size={16} /></button>
+        <>
+          <DispatchMenu
+            topbar
+            dispatch={activeDispatch}
+            targets={dispatchInfo.targets}
+            disabled={!thread?.id}
+            busy={dispatchBusy}
+            onChange={(next) => { void applyDispatch(next); }}
+          />
+          <button className="icon-button popout-open-btn" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!thread} onClick={() => { if (thread) void popoutCurrentThread(thread.id); }}><Maximize2 size={16} /></button>
+        </>
       )}
                 <div className="ctx-picker">
           <button className="icon-button ctx-picker-btn tb-workspace" title="工作区上下文（当前会话使用的项目目录）" onClick={() => setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
@@ -16224,13 +16268,6 @@ const commandMatches = useMemo(() => {
               </div>
               <div className="composer-right">
                 <div className="model-controls composer-model-controls">
-                  <DispatchMenu
-                    dispatch={activeDispatch}
-                    targets={dispatchInfo.targets}
-                    disabled={!thread?.id}
-                    busy={dispatchBusy}
-                    onChange={(next) => { void applyDispatch(next); }}
-                  />
                   {relayActive && customModel?.provider === relayActive.provider && <RelayBalanceBadge active={relayActive} />}
                   {customModel?.provider === "openai-official" && <OpenaiBalanceBadge accountKey={openaiActiveAcct ?? "openai-official"} />}
                   <ContextUsageBadge tokenUsage={tokenUsage} fallbackWindow={customModel?.models?.find((m) => m.id === customModel?.model)?.contextWindow ?? customModel?.contextWindow} recentCompaction={recentCompaction} onCompact={() => { if (thread?.id) { compactPendingRef.current.add(thread.id); setCompactEventState("running"); window.codex.request("thread/compact/start", { threadId: thread.id }).catch((error: any) => { compactPendingRef.current.delete(thread.id); setCompactEventState("error", error.message); }); } }} />
