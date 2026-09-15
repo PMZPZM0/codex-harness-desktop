@@ -2411,7 +2411,36 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     /dispatch: DispatchConfig/.test(dmts9) && /emptyDispatch\(\): DispatchConfig/.test(dmts9) && /dispatchSignature\(raw: unknown\): string/.test(dmts9)
       ? ok("thread-runtime.d.mts 已同步 dispatch 声明（.mjs 导出必须有配套 .d.mts）")
       : fail("thread-runtime.d.mts 缺 dispatch 声明 —— TS 会报 has no exported member");
+    // 工具面同步（09-16 用户实测「Codex 说没有调度入口」：dynamicTools 只在 thread/start /
+    // thread/resume 生效，turn/start 不带工具 —— 开关确认后必须重放轻量 resume）
+    /resumeThreadLight\(\{ threadId: id, dynamicTools: await buildDynamicTools\(\) \}\)/.test(appSrc9)
+      ? ok("★ 开关确认后立即重放轻量 resume 同步工具面（旧会话不同步 = Codex 永远拿不到工具）")
+      : fail("applyDispatch 没有 resume 同步 —— 开关开了 Codex 也拿不到 agent_invoke");
+    typeof dp.dispatchOffNoticeText === "function" && /调度已关闭/.test(dp.dispatchOffNoticeText())
+      ? ok("关闭开关也有告知文案（权限收回要立刻让对方知道）")
+      : fail("缺关闭告知文案");
+    /agents:off-notice/.test(mainSrc9) && /dispatchOffNotice\(/.test(appSrc9)
+      ? ok("关闭告知的 IPC 链路在（main handler + 渲染层调用）")
+      : fail("关闭告知链路缺失");
   }
+}
+
+// 【21】模型上下文：顶层 model_context_window 必须保持「不生成 + 主动清理」（09-16 用户实测 bug）
+//  背景：它是引擎的**全局单值**，一旦写下就覆盖 catalog 里每个模型各自的 context_window →
+//  只有「写配置那一刻生效的模型」的上下文是对的，切到别的模型仍是旧值（UI 显示的就是它）。
+//  探针实证：scripts/probe-context-window.cjs（写顶层：模型 B 的 1M 被压成 128000；不写：B → 1000000）。
+//  ⚠️ 断言必须用 (cond ? ok : fail) 形式：ok()/fail() 只接受一个消息参数，写成 ok(msg, cond) 会恒绿。
+{
+  const mainSrc = readFileSync(join(ROOT, "electron/main.ts"), "utf8");
+  const noGen = !/`model_context_window\s*=\s*\$\{/.test(mainSrc);
+  (noGen ? ok : fail)("【21】applyCustomModel 不再生成顶层 model_context_window（生成即全局覆盖每模型上下文）");
+  const hasLegacy = /const legacyContextKey\s*=/.test(mainSrc);
+  (hasLegacy ? ok : fail)("【21】保留废止键残留检查 legacyContextKey（老版本写下的旧值必须主动清掉）");
+  const noOldCond = !/if \(written\s*!==\s*wanted/.test(mainSrc);
+  (noOldCond ? ok : fail)("【21】自愈不再用 written !== wanted 判定（不写该键后该条件恒真，会每次启动整份重写）");
+  const tomlLib = readFileSync(join(ROOT, "electron/config-toml.ts"), "utf8");
+  const keyKept = /HARNESS_CONFIG_KEYS\s*=\s*new Set\(\[[^\]]*"model_context_window"/.test(tomlLib);
+  (keyKept ? ok : fail)("【21】HARNESS_CONFIG_KEYS 仍含 model_context_window（留着才能丢弃旧值，移出会原样拼回）");
 }
 
 // ---------- 汇总 ----------

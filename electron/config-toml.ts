@@ -6,7 +6,12 @@
  * 必须集中在一处，并且能被 scripts/check-config-toml.cjs 单独跑测试。
  */
 
-/** harness 自己会重新生成的顶层键 */
+/** harness 自己会重新生成的顶层键 —— 同时也是**必须主动丢弃**的废止键集合。
+ *  ⚠️ `model_context_window` 属于后者（09-16 改）：harness 已**不再生成**它（顶层是引擎的全局
+ *  单值，会覆盖 catalog 里每个模型各自的 context_window → 表现为「只有默认那个模型的上下文
+ *  生效」，用户实测）。但**必须把它留在这个集合里**：本集合的作用正是「拼回用户段时丢弃
+ *  harness 管的键」，留着才能把老版本写下的旧值一并清掉。一旦移出，旧值会被
+ *  `preserveUserConfig` 原样拼回新配置 → bug 立刻复现。 */
 export const HARNESS_CONFIG_KEYS = new Set(["model", "model_context_window", "model_provider", "preferred_auth_method", "developer_instructions", "model_catalog_json", "model_reasoning_effort"]);
 
 /** harness 自己会整段重写的表；其余段落（用户手工配置的 projects / marketplaces / plugins 等）原样保留 */
