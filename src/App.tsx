@@ -8311,12 +8311,7 @@ export default function App() {
   // 账户菜单（点左下角头像/名字弹出）：界面语言 / 界面主题 / 界面缩放 / 使用统计 / 用户中心 / 退出登录
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [accountMenuSub, setAccountMenuSub] = useState<"lang" | "theme" | "zoom" | "update" | null>(null);
-  // 自更新：网页源（发布站）/ GitHub Releases 双源可切换，源选择持久化 localStorage
-  const [updateSource, setUpdateSourceState] = useState<"web" | "github">(() => (localStorage.getItem("update-source") === "github" ? "github" : "web"));
-  const setUpdateSource = (source: "web" | "github") => {
-    setUpdateSourceState(source);
-    localStorage.setItem("update-source", source);
-  };
+  // 自更新：更新源固定 GitHub Releases（09-15 用户定稿：发布站不再分发安装包，网页源已删除）
   const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string; reason?: string } | null>(null);
   const [updateCurrentVersion, setUpdateCurrentVersion] = useState<string>("");
   const [updateChecking, setUpdateChecking] = useState(false);
@@ -8337,7 +8332,7 @@ export default function App() {
     let cancelled = false;
     void (async () => {
       try {
-        const r = await window.codex.updateCheck?.({ source: updateSource });
+        const r = await window.codex.updateCheck?.();
         if (cancelled || !r?.ok) return;
         setUpdateInfo(r.info ?? null);
         setUpdateCurrentVersion(r.currentVersion ?? "");
@@ -8362,7 +8357,7 @@ export default function App() {
     setUpdateChecking(true);
     setUpdateError("");
     try {
-      const r = await window.codex.updateCheck?.({ source: updateSource });
+      const r = await window.codex.updateCheck?.();
       if (!r) throw new Error("IPC 不可用");
       if (!r.ok) throw new Error(r.error || "检查失败");
       setUpdateInfo(r.info ?? null);
@@ -8400,7 +8395,8 @@ export default function App() {
       setUpdateProgress(0);
     }
   };
-  // 打开网站反馈页：带上当前版本与系统信息（管理员可据此复现）；URL 跟随用户配置的更新服务器
+  // 打开网站反馈页：带上当前版本与系统信息（管理员可据此复现）
+  // 发布站 09-15 起不再分发安装包，只负责应用介绍与问题反馈——反馈页地址保持不变
   const openFeedbackPage = () => {
     const ua = navigator.userAgent;
     const os = /Windows NT 10/.test(ua) ? "Windows 10/11"
@@ -8411,7 +8407,7 @@ export default function App() {
     const qs = new URLSearchParams();
     if (updateCurrentVersion) qs.set("v", updateCurrentVersion);
     if (os) qs.set("os", os);
-    // 发布中心地址固定（与更新源同一站点），用户无需配置
+    // 发布中心地址固定（应用介绍 + 问题反馈），用户无需配置
     const base = "https://www.jvszzp.ltd";
     const url = `${base}/feedback.html${qs.toString() ? `?${qs.toString()}` : ""}`;
     setAccountMenuOpen(false);
@@ -15263,11 +15259,7 @@ const commandMatches = useMemo(() => {
                 <button className="account-menu-item account-menu-back" onClick={() => setAccountMenuSub(null)}><ChevronLeft size={14} /><span>检查更新</span></button>
                 <div className="account-menu-section">
                   <div className="account-menu-row"><span className="account-menu-label">当前版本</span><span className="account-menu-value mono">v{updateCurrentVersion || "—"}</span></div>
-                  <div className="account-menu-row"><span className="account-menu-label">更新地址</span><span className="account-menu-value">{updateSource === "github" ? "GitHub Releases" : "官方发布站"}</span></div>
-                  <div className="account-menu-toggle-row">
-                    <button type="button" className={`account-menu-toggle ${updateSource === "web" ? "active" : ""}`} title="自建发布站（国内下载较快）" onClick={() => { setUpdateSource("web"); setUpdateInfo(null); }}>网页</button>
-                    <button type="button" className={`account-menu-toggle ${updateSource === "github" ? "active" : ""}`} title="GitHub Releases（开源仓库）" onClick={() => { setUpdateSource("github"); setUpdateInfo(null); }}>GitHub</button>
-                  </div>
+                  <div className="account-menu-row"><span className="account-menu-label">更新地址</span><span className="account-menu-value">GitHub Releases</span></div>
                 </div>
                 <button className="account-menu-item" onClick={() => void runUpdateCheck()} disabled={updateChecking}>
                   <RefreshCw size={15} className={updateChecking ? "spin" : ""} />

@@ -132,7 +132,7 @@ contextBridge.exposeInMainWorld("codex", {
   readAppSettings: () => ipcRenderer.invoke("appSettings:read"),  saveAppSettings: (patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean }) => ipcRenderer.invoke("appSettings:save", patch),
   themeApply: (theme: string) => ipcRenderer.invoke("theme:apply", theme),
   // 自更新：网页源（https://www.jvszzp.ltd 发布站）/ GitHub Releases 双源可切换，stable 通道
-  updateCheck: (input?: { source?: "web" | "github" }) => ipcRenderer.invoke("updates:check", input) as Promise<{ ok: boolean; info?: { hasUpdate: boolean; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string; reason?: string }; currentVersion?: string; serverUrl?: string; source?: string; error?: string }>,
+  updateCheck: () => ipcRenderer.invoke("updates:check") as Promise<{ ok: boolean; info?: { hasUpdate: boolean; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string; reason?: string }; currentVersion?: string; source?: string; error?: string }>,
   updateDownload: (input: { downloadUrl: string; filename?: string }) => ipcRenderer.invoke("updates:download", input) as Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>,
   updateInstall: (filePath: string) => ipcRenderer.invoke("updates:install", filePath) as Promise<{ ok: boolean; error?: string }>,
   updateReveal: (filePath: string) => ipcRenderer.invoke("updates:reveal", filePath) as Promise<{ ok: boolean }>,

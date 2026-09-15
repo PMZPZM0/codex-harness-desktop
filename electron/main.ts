@@ -34,7 +34,7 @@ import { WecomWebhookGateway } from "./wecom-webhook-gateway";
 import { readPersonalization, writePersonalization, applyPersonalizationToAgentsMd, buildAgentsMd, migrateGreetedForExistingUsers } from "./personalization";
 import { developerInstructionsLine } from "./developer-instructions";
 import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings } from "./app-settings";
-import { checkLatestUpdate, defaultDownloadDir, downloadUpdate, fileExists, installUpdate, UPDATE_CHANNEL, UPDATE_SERVER_URL, GITHUB_REPO } from "./updates";
+import { checkLatestUpdate, defaultDownloadDir, downloadUpdate, fileExists, installUpdate, UPDATE_CHANNEL } from "./updates";
 import { checkEngineUpdate, performEngineUpdate } from "./engine-updater";
 import { VoiceService } from "./voice/voice-service";
 import * as voiceProfiles from "./voice/voice-profiles";
@@ -4223,13 +4223,13 @@ ipcMain.handle("terminal:list", () => [...terminals.entries()].map(([id, service
 let lastUpdateInfo: { downloadUrl?: string; sha256?: string; version?: string; filename?: string } | null = null;
 let lastVerifiedUpdatePath = "";
 
-ipcMain.handle("updates:check", async (_event, input?: { source?: "web" | "github" }) => {
+ipcMain.handle("updates:check", async () => {
   try {
     const currentVersion = String(app.getVersion() || "0.0.0");
-    const source = input?.source ?? "web";
-    const info = await checkLatestUpdate(currentVersion, source, process.platform, process.arch);
+    // ⛔ 09-15 用户定稿：更新源只剩 GitHub Releases（发布站不再分发安装包）
+    const info = await checkLatestUpdate(currentVersion, process.platform, process.arch);
     lastUpdateInfo = info ? { downloadUrl: (info as any).downloadUrl, sha256: (info as any).sha256, version: (info as any).version, filename: (info as any).filename } : null;
-    return { ok: true, info, currentVersion, serverUrl: UPDATE_SERVER_URL, channel: UPDATE_CHANNEL, source };
+    return { ok: true, info, currentVersion, channel: UPDATE_CHANNEL, source: "github" as const };
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) };
   }

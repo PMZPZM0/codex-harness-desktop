@@ -1,31 +1,25 @@
 /**
- * Codex Harness 自更新（client side）—— 简化版
+ * Codex Harness 自更新（client side）—— GitHub 单源版
  *
  * 设计原则：更新源固定，用户零配置。
- *   - 发布站地址硬编码（UPDATE_SERVER_URL），不再读 update-config.json
- *   - channel 固定 stable，不再暴露 beta/canary 选项
+ *   - ⛔ 09-15 用户定稿：更新源**只剩 GitHub Releases**，自建发布站不再分发安装包
+ *     （发布站只负责应用介绍与问题反馈），web 更新源代码整段删除
+ *   - channel 固定 stable，不暴露 beta/canary 选项
  *   - 桌面端只有一个动作：检查更新 → 有新版本 → 下载并打开安装程序
  *
- * 流程：checkLatestUpdate() 拉 /api/latest → downloadUpdate() 流式落盘 → installUpdate() 运行安装包
+ * 流程：checkLatestUpdate() 拉 GitHub Releases API → downloadUpdate() 流式落盘（https+sha256）→ installUpdate() 运行安装包
  */
 import fs from "node:fs/promises";
 import { existsSync, createWriteStream, createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import https from "node:https";
-import http from "node:http";
 import { shell } from "electron";
 import { URL } from "node:url";
 
-/** 发布中心地址（网页源，自建发布站） */
-export const UPDATE_SERVER_URL = "https://www.jvszzp.ltd";
-
-/** GitHub 开源仓库（GitHub 源，走 Releases API） */
+/** GitHub 开源仓库（唯一更新源，走 Releases API） */
 export const GITHUB_REPO = "PMZPZM0/codex-harness-desktop";
 export const GITHUB_RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
-
-/** 更新源类型：web = 自建发布站；github = GitHub Releases */
-export type UpdateSource = "web" | "github";
 
 /** 订阅通道（固定 stable） */
 export const UPDATE_CHANNEL = "stable";
@@ -45,6 +39,7 @@ export type LatestInfo = {
 };
 
 // ============== HTTP 工具（不走 axios / fetch，保持零依赖） ==============
+// 唯一调用方是 GitHub Releases API（恒 https），不再需要 http 分支
 function requestJson(
   url: string,
   timeoutMs = 8000
@@ -57,19 +52,18 @@ function requestJson(
       reject(new Error("invalid_url"));
       return;
     }
-    const lib = parsed.protocol === "https:" ? https : http;
-    const req = lib.request(
+    const req = https.request(
       {
         method: "GET",
         hostname: parsed.hostname,
-        port: parsed.port || (parsed.protocol === "https:" ? 443 : 80),
+        port: parsed.port || 443,
         path: parsed.pathname + parsed.search,
         timeout: timeoutMs,
         headers: { "User-Agent": "CodexHarness/0.1" },
       },
       (res) => {
         const chunks: Buffer[] = [];
-        res.on("data", (c) => chunks.push(c));
+        res.on("data", (c: Buffer) => chunks.push(c));
         res.on("end", () =>
           resolve({
             status: res.statusCode ?? 0,
@@ -87,48 +81,17 @@ function requestJson(
   });
 }
 
-/** 把服务端返回的相对 downloadUrl 补全为绝对地址 */
-function absolutize(downloadUrl: string): string {
-  if (/^https?:\/\//i.test(downloadUrl)) return downloadUrl;
-  return new URL(downloadUrl, UPDATE_SERVER_URL).toString();
-}
-
 /**
- * 检查更新（可切换网页源 / GitHub 源）
+ * 检查更新（GitHub Releases，唯一源）
  * @param currentVersion 当前应用版本（形如 0.4.1，可带 v 前缀）
- * @param source 更新源（默认 web，自建发布站）
- * @param platform 当前平台（github 源按平台挑资产：win32→exe，darwin→mac zip）
- * @param arch 当前架构（github 源 mac 下区分 x64/arm64）
+ * @param platform 按平台挑资产：win32→exe，darwin→mac zip
+ * @param arch mac 下区分 x64/arm64
  */
 export async function checkLatestUpdate(
   currentVersion: string,
-  source: UpdateSource = "web",
   platform: NodeJS.Platform = process.platform,
   arch = process.arch,
 ): Promise<LatestInfo> {
-  if (source === "github") return checkGitHubUpdate(currentVersion, platform, arch);
-
-  const u = new URL("/api/latest", UPDATE_SERVER_URL);
-  u.searchParams.set("channel", UPDATE_CHANNEL);
-  u.searchParams.set("platform", platform === "darwin" ? `mac-${arch}` : "windows");
-  if (currentVersion) u.searchParams.set("current", currentVersion);
-  const res = await requestJson(u.toString());
-  if (res.status < 200 || res.status >= 300) {
-    throw new Error(`HTTP ${res.status}`);
-  }
-  let info: LatestInfo;
-  try {
-    info = JSON.parse(res.body) as LatestInfo;
-  } catch {
-    throw new Error("invalid_json");
-  }
-  // 服务端给的是 /api/releases/:id/download 相对路径，桌面端需要绝对地址
-  if (info.downloadUrl) info.downloadUrl = absolutize(info.downloadUrl);
-  return info;
-}
-
-/** GitHub Releases 源：拉 latest release，按平台/架构挑资产 */
-async function checkGitHubUpdate(currentVersion: string, platform: NodeJS.Platform, arch: string): Promise<LatestInfo> {
   const res = await requestJson(GITHUB_RELEASES_API);
   if (res.status < 200 || res.status >= 300) {
     throw new Error(`HTTP ${res.status}`);
@@ -178,7 +141,7 @@ export async function downloadUpdate(
   onProgress?: DownloadProgress,
   expectedSha256?: string,
 ): Promise<{ path: string; bytes: number }> {
-  const parsed = new URL(absolutize(releaseUrl));
+  const parsed = new URL(releaseUrl);
   // ⛔ 只允许 https（09-13 审计 P0）：这条链的产物会被 `shell.openPath` 当安装包执行，
   // 明文 http 给中间的代理/DNS/公共 Wi-Fi 留了一个"把安装包换掉"的窗口。
   if (parsed.protocol !== "https:") throw new Error(`更新包地址必须是 https（收到 ${parsed.protocol}）`);
