@@ -1887,6 +1887,20 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   /更新包地址必须是 https/.test(updSrc)
     ? ok("应用更新包只允许 https（挡住明文替换）")
     : fail("updates.ts 又允许 http 明文下载安装包");
+  // ⛔ 09-16 实测：GitHub 的 browser_download_url 是 **302** 到 release-assets.githubusercontent.com，
+  //    而 downloadUpdate 过去是裸 request + `status >= 300 reject`，不跟随重定向 ⇒ 用户点「下载并安装」
+  //    直接报 HTTP 302。这个坑直到 v0.0.18 才暴露（09-15 才切 GitHub 单源，而当时仓库 0 个 release，
+  //    检查更新拿不到东西，从没走到下载这步）。守卫锚定「确实存在跟随重定向的分支」。
+  //    反证（本地 HTTPS mock，不依赖外网）：摘掉该分支 → 下载报 HTTP 302，见 tmp 验收脚本。
+  (/res\.headers\.location/.test(updSrc) && /MAX_REDIRECTS/.test(updSrc) && /new URL\(res\.headers\.location, url\)/.test(updSrc) ? ok : fail)(
+    "updates.ts 下载跟随重定向（GitHub 资产是 302 → release-assets.githubusercontent.com）"
+  );
+  // ⛔ 第二条必须锚定「重定向分支**内部**确实调用了 hop（即下一跳会重新过协议校验）」——
+  //    第一版只查 `const hop = async (url: string, depth: number)` 与 https 抛错两段文本存在，
+  //    把整个重定向分支摘掉后这两段仍在，守卫照样绿（反证时发现的假绿）。
+  (/hop\(next, depth \+ 1\)\.then\(resolve, reject\);/.test(updSrc) && /const hop = async \(url: string, depth: number\)/.test(updSrc) && /if \(parsed\.protocol !== "https:"\) throw/.test(updSrc) ? ok : fail)(
+    "updates.ts 重定向逐跳校验 https（下一跳走 hop 重新校验，防降级到明文替换安装包）"
+  );
   /lastVerifiedUpdatePath/.test(mainSrc) && /path_not_verified/.test(mainSrc)
     ? ok("updates:install 只接受刚校验通过的那个文件（渲染层给不了任意路径）")
     : fail("updates:install 又能被渲染层指定任意安装路径了");
