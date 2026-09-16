@@ -30,6 +30,33 @@ const rolloutListCache = new Map();   // 路径 -> { mtimeMs, size, entry }
 const rolloutPathCache = new Map();   // threadId -> rollout 路径
 const rolloutParseCache = new Map();  // 路径 -> 增强解析结果（含增量游标）
 
+/** 剥离 harness 首条消息的任务包装（[SYSTEM TASK …]/=== 用户需求 ===/=== END === 模板），还原用户原文。
+ *  ⛔ 09-16 修 Bug 14：与 electron/thread-backup.ts 的 stripSystemTaskWrapper **必须同源**。
+ *  旧实现（这里只做 text.startsWith 三个前缀的判断、完全不剥注入块）与 thread-backup.ts
+ *  的 extractMeta 漂移了：同一份 rollout，侧栏标题显示「# 交易分析专家团\n你是本专家团的主理人…」
+ *  这种**机器编排提示词**，而备份/导出显示的是用户真正输入的那句话（实测 36 条里 4 条不一致）。
+ *  两个文件都写着「同口径」，所以注释不能当证据 —— 改一处必须改另一处。 */
+function stripSystemTaskWrapper(text) {
+  const match = text.match(/\[SYSTEM TASK[^\]]*\]\s*=== 用户需求 ===\s*\n?([\s\S]*?)\s*\n=== END ===/);
+  if (match && match[1].trim()) return match[1].trim();
+  return text;
+}
+
+/** harness 发送管线注入的机器可读块：记忆召回 / 技能引用。剥离后还原用户真实输入。 */
+function stripHarnessBlocks(text) {
+  let out = stripSystemTaskWrapper(text);
+  out = out.replace(/\[Harness 相关记忆，仅供参考\][\s\S]*?\[记忆结束\]/g, "");
+  out = out.replace(/\[本轮已引用技能\][\s\S]*?\[请按上述技能工作流执行\]/g, "");
+  return out.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** 仍然算「注入」的消息前缀（与 thread-backup.ts 的 MD_INJECT_PREFIXES 同源） */
+const INJECT_PREFIXES = ["# AGENTS.md", "<INSTRUCTIONS>", "<environment_context>", "<filesystem>", "<danger-zone>", "<approval>"];
+function looksInjected(text) {
+  const trimmed = String(text).trimStart();
+  return INJECT_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
+}
+
 /** 解析单个 rollout 文件、取出侧栏需要的元数据。按 mtime+size 缓存。 */
 function readRolloutListEntry(full, id, archived) {
   let stat;
@@ -50,16 +77,16 @@ function readRolloutListEntry(full, id, archived) {
       if (row.type === "session_meta" && payload.cwd) cwd = cwd || String(payload.cwd);
       if (row.type === "turn_context" && payload.cwd) cwd = cwd || String(payload.cwd);
       if (payload.type === "message" && payload.role === "user") {
-        const text = (payload.content || [])
+        // 先剥 harness 注入块再判定/取标题（与 thread-backup.ts 的 extractMeta 同口径，见上方说明）
+        const cleaned = stripHarnessBlocks((payload.content || [])
           .filter((part) => part && part.type === "input_text")
           .map((part) => String(part.text || ""))
           .join("\n")
-          .trim();
-        const injected = text.startsWith("# AGENTS.md") || text.startsWith("<environment_context>") || text.startsWith("<filesystem>");
+          .trim());
         const isUserPrompt = (meta && meta.content_item_kinds && meta.content_item_kinds.includes && meta.content_item_kinds.includes("user.text")) || !(meta && meta.content_item_kinds);
-        if (text && isUserPrompt && !injected) {
-          if (!title) title = text.slice(0, 80);
-          preview = text.slice(0, 160);
+        if (cleaned && isUserPrompt && !looksInjected(cleaned)) {
+          if (!title) title = cleaned.slice(0, 80);
+          preview = cleaned.slice(0, 160);
         }
         cwd = cwd || String((meta && meta.cwd) || "");
       }

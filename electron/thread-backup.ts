@@ -106,6 +106,57 @@ export function buildSessionsBackup(codexHome: string, threadIds?: string[]): Se
   return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), threads };
 }
 
+/**
+ * 引擎要求的 rollout 文件名形态：`rollout-<YYYY-MM-DDTHH-MM-SS>-<uuid>.jsonl`。
+ *
+ * ⛔ 09-16 修 Bug 13（真实引擎实证）：文件名**不是**这个形态时 `thread/resume` 直接拒 ——
+ * `paginated rollout path ... does not have a canonical rollout filename`
+ * （引擎侧出处 `thread-store/src/local/thread_history_materialization.rs`），
+ * 而 harness 的兜底扫描**照样**会把这个文件列进侧栏 ⇒ 用户看到「导入成功 1 条」、
+ * 侧栏立刻出现该会话、点开报错。目录无所谓（实测 `sessions/imported/` 可用），**只有文件名重要**。
+ * 实测矩阵：`rollout-2026-09-12T09-27-09-<uuid>.jsonl` ✓ ／ 时间戳换别的日期也 ✓（只校验格式）
+ * ／ 缺时间戳段 ✗ ／ 前缀不是 `rollout` ✗ ／ 多一段（`rollout-imported-<uuid>`）✗。
+ */
+const CANONICAL_ROLLOUT_NAME = /^rollout-(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
+
+function two(value: number) { return String(value).padStart(2, "0"); }
+
+/** 毫秒 → canonical 时间戳片段（引擎自己写的文件名用的就是会话开始的本地时间） */
+export function canonicalStamp(ms: number): string {
+  const date = new Date(Number.isFinite(ms) && ms > 0 ? ms : Date.now());
+  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}T${two(date.getHours())}-${two(date.getMinutes())}-${two(date.getSeconds())}`;
+}
+
+/** 从 UUIDv7 前 48 位还原会话创建时间（引擎的线程 id 就是时间有序的 v7）。
+ *  认不出来（不是 v7 / 时间不合理）就返回 0，交给调用方回落。 */
+export function stampFromThreadId(id: string): number {
+  const hex = id.replace(/-/g, "").slice(0, 12);
+  if (!/^[0-9a-f]{12}$/i.test(hex) || id.replace(/-/g, "")[12]?.toLowerCase() !== "7") return 0;
+  const ms = Number.parseInt(hex, 16);
+  // 2020-01-01 ~ 2100-01-01 之外视为不可信（避免把随机 id 当成时间用）
+  return ms > 1_577_836_800_000 && ms < 4_102_444_800_000 ? ms : 0;
+}
+
+/** 把任意来源的会话 id + 回落时间拼成 canonical 文件名 */
+export function canonicalRolloutName(id: string, fallbackMs: number): string {
+  const ms = stampFromThreadId(id) || fallbackMs;
+  return `rollout-${canonicalStamp(ms)}-${id.toLowerCase()}.jsonl`;
+}
+
+/** 把 rel 规范成 canonical 文件名（保留目录，只改文件名）。
+ *  旧版本导出的备份里存的是 `rollout-imported-<uuid>.jsonl`，再导入进来就是坏文件 —— 顺手修好。 */
+export function canonicalizeRel(rel: string, fallbackMs = Date.now()): string | null {
+  const normalized = path.normalize(rel).replace(/\\/g, "/");
+  if (!normalized.endsWith(".jsonl")) return null;
+  const dir = normalized.slice(0, normalized.lastIndexOf("/") + 1);
+  const base = normalized.slice(normalized.lastIndexOf("/") + 1);
+  if (CANONICAL_ROLLOUT_NAME.test(base)) return normalized;
+  const match = base.match(UUID_RE) ?? base.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+  const id = match?.[1];
+  if (!id) return null;
+  return `${dir}${canonicalRolloutName(id, fallbackMs)}`;
+}
+
 /** 把单个原生 Codex rollout（.jsonl）文件转成会话备份包，供 threads:import 直接导入。
  *  线程 id 优先取文件名 UUID（原生命名 rollout-<时间戳>-<uuid>.jsonl），取不到再读 session_meta 的 id 字段
  *  （聚合键口径与 scanSessionFiles / listRolloutThreads 一致）。 */
@@ -133,8 +184,10 @@ export function backupFromRolloutFile(filePath: string): SessionsBackup {
   }
   id = id.toLowerCase();
   const mtimeMs = statSync(filePath).mtimeMs;
-  // 写回路径约束：必须在 sessions/ 下且文件名以 -<uuid>.jsonl 结尾（scanSessionFiles 按 UUID_RE 聚合）
-  const rel = `sessions/imported/rollout-imported-${id}.jsonl`;
+  // ⛔ 文件名必须 canonical（见 CANONICAL_ROLLOUT_NAME 上方说明）：旧实现写的是
+  // `sessions/imported/rollout-imported-<uuid>.jsonl` → 导入报成功、侧栏可见、**点开报错**。
+  // 时间戳优先用 UUIDv7 里编码的会话创建时间，取不到再退回文件 mtime。
+  const rel = `sessions/imported/${canonicalRolloutName(id, startedAt || mtimeMs)}`;
   const meta = extractMeta(id, [{ rel, abs: filePath, mtimeMs }], false);
   if (startedAt) meta.updatedAt = Math.max(meta.updatedAt, startedAt);
   return {
@@ -396,7 +449,10 @@ export function applySessionsBackup(codexHome: string, payload: any): ImportResu
     let threadOk = false;
     let sawConflict = false;
     for (const file of thread.files) {
-      const rel = safeRel(file?.rel);
+      // 旧备份 / 手工拼的 payload 里可能是非 canonical 文件名（老版本导入器写的就是
+      // `rollout-imported-<uuid>.jsonl`）→ 这里统一规范成引擎认的形态，否则写进去也是打不开的
+      // 死文件（修 Bug 13）。规范化只改文件名，目录原样保留。
+      const rel = canonicalizeRel(safeRel(file?.rel) ?? "");
       if (!rel || typeof file.text !== "string") continue;
       const target = path.join(codexHome, ...rel.split("/"));
       let status: "ok" | "duplicate" | "conflict";

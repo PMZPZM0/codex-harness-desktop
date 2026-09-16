@@ -2641,7 +2641,7 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   (exported ? ok : fail)("effort.ts 可被 Node type-stripping 直接加载（守卫跑的是真代码，不是字符串）");
   if (exported) {
     (JSON.stringify(exported.custom) === JSON.stringify(["low", "medium", "high", "xhigh"]) ? ok : fail)("默认档位 = 低/中/高/极高（用户定稿，不再是旧三档）");
-    (JSON.stringify(exported.all) === JSON.stringify(["minimal", "low", "medium", "high", "ultra", "xhigh"]) ? ok : fail)("菜单顺序 = 极简,低,中,高,最高,极高（ultra 在 xhigh 前）");
+    (JSON.stringify(exported.all) === JSON.stringify(["minimal", "low", "medium", "high", "ultra", "xhigh", "max"]) ? ok : fail)("菜单顺序 = 极简,低,中,高,最高,极高,（max 追加在末尾）（ultra 在 xhigh 前；max 是 09-16 补的引擎内置档，追加不打乱已定稿顺序）");
     (JSON.stringify(exported.und) === JSON.stringify(["low", "medium", "high", "xhigh"]) && JSON.stringify(exported.empty) === JSON.stringify(exported.und) ? ok : fail)("未声明档位（含探测合并的空数组）→ 回退新默认四档");
     (JSON.stringify(exported.legacy) === JSON.stringify(["low", "medium", "high", "xhigh"]) ? ok : fail)("旧版默认三档声明自动补「极高」（老档案升版后菜单不少档、引擎 catalog 不缺档）");
     (JSON.stringify(exported.legacyUltra) === JSON.stringify(["low", "medium", "high", "ultra", "xhigh"]) ? ok : fail)("旧版自动生成的三档+最高声明也补「极高」（真机档案实测的存量形态）；菜单正好=低中高最高极高");
@@ -2659,8 +2659,8 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   (appTs.includes("极高: \"xhigh\"") ? ok : fail)("/effort 命令别名含「极高」");
 
   const mainTs = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
-  (mainTs.includes('m.efforts?.length ? m.efforts : ["minimal", "low", "medium", "high", "ultra", "xhigh"]') ? ok : fail)("catalog：空数组声明也回退全档位（探测合并会写 efforts: []，旧实现会声明出空档位表）");
-  (mainTs.includes('["low", "medium", "high"].every((e) => efforts.includes') ? ok : fail)("catalog：旧版三档声明同步补「极高」（与 UI 同规则，否则 UI 能选、引擎拒绝）");
+  (mainTs.includes('m.efforts?.length ? m.efforts : ["minimal", "low", "medium", "high", "ultra", "xhigh", "max"]') ? ok : fail)("catalog：空数组声明也回退全档位（探测合并会写 efforts: []，旧实现会声明出空档位表）");
+  (mainTs.includes('["low", "medium", "high"].every((e) => efforts.includes') ? ok : fail)("catalog：旧版三档声明同步补「极高」（与 UI 同规则）");
 
   const bridgeTs = readFileSync(join(ROOT, "electron", "responses-bridge.ts"), "utf8");
   (bridgeTs.includes('effort === "xhigh" || effort === "ultra" ? "high" : effort') ? ok : fail)("桥：chat 上游把 xhigh/ultra 压到 high（网关不认扩展档）");
@@ -2816,6 +2816,214 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   (!macPrepare.includes('"cloakbrowser@') ? ok : fail)("mac prepare-mac-tools：不再安装 cloakbrowser（与 Windows 同源）");
   const verifyPackaged = readFileSync(join(ROOT, "scripts", "verify-packaged-tools.cjs"), "utf8");
   (verifyPackaged.includes("未随包内置") ? ok : fail)("verify-packaged-tools：CloakBrowser 缺席不再判失败（按需下载是预期形态）");
+}
+
+// ---------- 【28】config.toml 写入面 + 会话/rollout 面（09-16 审计 14 个 bug 的回归网） ----------
+//
+// 这一节存在的理由：`config.toml` 写错一个字节引擎就起不来，而此前的预检**没有任何**
+// 真解析（那些 permissions / mcp_servers 命中都是源码文本断言，挡不住语法/语义错）。
+// 这里：① 用内置 python 的 tomllib 真解析一份「按生成逻辑拼出来的样例」；
+//      ② 直接 require dist-electron 的纯函数跑真行为（比 grep 源码强一个量级）。
+{
+  console.log(C.bold("\n【28】config.toml 写入面 + 会话/rollout 面（09-16 审计修复的回归网）"));
+  const req = createRequire(import.meta.url);
+  const cfg = req(join(ROOT, "dist-electron", "config-toml.js"));
+  const backup = req(join(ROOT, "dist-electron", "thread-backup.js"));
+  const mainTs = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  const workerSrc = readFileSync(join(ROOT, "electron", "rollout-worker.cjs"), "utf8");
+  const workerGen = readFileSync(join(ROOT, "electron", "rollout-worker-source.ts"), "utf8");
+  const backupTs = readFileSync(join(ROOT, "electron", "thread-backup.ts"), "utf8");
+
+  // ── Bug 5：TOML 字符串转义必须处理换行/控制字符（粘贴带尾换行就能写坏整份配置） ──
+  const esc = cfg.escapeTomlString;
+  (esc("a\nb") === "a\\nb" ? ok : fail)("【28】escapeTomlString：内嵌换行转成 \\n（TOML 单行字符串里裸换行非法）");
+  (esc("a\rb\tc") === "a\\rb\\tc" ? ok : fail)("【28】escapeTomlString：回车/制表一并转义");
+  (esc('a"b\\c') === 'a\\"b\\\\c' ? ok : fail)("【28】escapeTomlString：引号与反斜杠仍按原语义转义");
+  (!/[\u0000-\u001f\u007f]/.test(esc("a\u0000b\u0007c\u007fd")) ? ok : fail)("【28】escapeTomlString：其余控制字符被剔除");
+
+  // ── Bug 9：MCP 段名解析要支持引号（含空格/中文/@ : +），否则用户段被静默删除 ──
+  const hdr = (line) => JSON.stringify(cfg.parseTableHeader(line));
+  (hdr('[mcp_servers."my server"]') === '["mcp_servers","my server"]' ? ok : fail)("【28】parseTableHeader：带空格的引号段名");
+  (hdr("[mcp_servers.'我的服务']") === '["mcp_servers","我的服务"]' ? ok : fail)("【28】parseTableHeader：中文引号段名");
+  (hdr('[mcp_servers."@scope/pkg"]') === '["mcp_servers","@scope/pkg"]' ? ok : fail)("【28】parseTableHeader：@ 与 / 段名");
+  (hdr("[projects.'d:\\2']") === '["projects","d:\\\\2"]' ? ok : fail)("【28】parseTableHeader：带盘符/反斜杠的字面量段名");
+  (cfg.parseTableHeader("exclude = [") === null ? ok : fail)("【28】parseTableHeader：值行不是段头");
+  const names9 = cfg.collectMcpServerNames(['[mcp_servers.files]', '[mcp_servers."my server"]', '[mcp_servers."我的服务"]', '[mcp_servers."@scope/pkg"]', '[mcp_servers."a:b"]'].join("\n"));
+  (["files", "my server", "我的服务", "@scope/pkg", "a:b"].every((n) => names9.includes(n)) ? ok : fail)("【28】collectMcpServerNames：裸名与引号名全采到（旧实现漏掉带空格/中文/@/: 的那类）");
+
+  // ── Bug 1：harness 不再写 [permissions.*]（引擎没有工具映射，且缺 default_permissions 会废掉整份配置） ──
+  (cfg.HARNESS_CONFIG_SECTIONS.has("permissions") === false ? ok : fail)("【28】permissions 已从 HARNESS_CONFIG_SECTIONS 移出（用户自己的档位不再被删）");
+  (!/function permissionsToml/.test(mainTs) ? ok : fail)("【28】permissionsToml 已删除（不再写出非法 permissions 段）");
+  (mainTs.includes("injectMcpToolRules(") && mainTs.includes("mcpToolRulesOf(") ? ok : fail)("【28】工具级权限改走 injectMcpToolRules / mcpToolRulesOf（引擎真支持的键）");
+
+  // ── Bug 10：数值键强校验（裸插值 = 本地配置文件到任意命令执行） ──
+  (!/model_max_output_tokens = \$\{maxOut\}/.test(mainTs) && /Number\.isFinite\(maxOut\)/.test(mainTs) ? ok : fail)("【28】model_max_output_tokens 经 Number.isFinite 校验（不再裸插值）");
+
+  // ── Bug 7：设置页「会话记录」占用量的必须是真实 rollout 目录 ──
+  (!/path\.join\(codexHome, "rollouts"\)/.test(mainTs) ? ok : fail)("【28】storage-info 不再量不存在的 codexHome/rollouts");
+  (/archived_sessions"\)\]/.test(mainTs) && /path\.join\(codexHome, "sessions"\)/.test(mainTs) ? ok : fail)("【28】storage-info 量 sessions + archived_sessions（真实落点）");
+
+  // ── Bug 8：provider id 取引擎权威索引；会话「记录已丢失」要有标记 ──
+  {
+    const st = req(join(ROOT, "dist-electron", "session-tools.js"));
+    const missingCase = st.markMissingRollouts(
+      [{ id: "T1", path: "sessions/x/rollout-2026-09-16T00-00-00-01a09d64-23c8-7e80-9215-58ad1a647868.jsonl" }, { id: "T2", path: "p2" }, { id: "T3" }],
+      new Set(["t2"]),
+    );
+    (missingCase[0].rolloutMissing === true ? ok : fail)("【28】markMissingRollouts：索引有 path、兜底扫描没找到 → 标记录丢失");
+    (missingCase[1].rolloutMissing === undefined ? ok : fail)("【28】markMissingRollouts：磁盘上真存在的不标（避免误报）");
+    (missingCase[2].rolloutMissing === undefined ? ok : fail)("【28】markMissingRollouts：没有 path 的条目不标（兜底独有项/极简索引）");
+  }
+  (mainTs.includes("markMissingRollouts(merged, present)") ? ok : fail)("【28】thread/list 调用 markMissingRollouts（点开前就能发现记录已丢）");
+  (mainTs.includes('await server.request("thread/list", { limit: 200, archived') ? ok : fail)("【28】collectSessionProviderIds 以引擎线程索引为权威源（不看 rollout 文件内容，含归档会话）");
+  ((await import("node:fs")).existsSync(join(ROOT, "src", "App.tsx")) && readFileSync(join(ROOT, "src", "App.tsx"), "utf8").includes("entry.rolloutMissing") ? ok : fail)("【28】渲染层用 rolloutMissing 拦下点击并显示「记录丢失」徽标");
+
+  // ── Bug 13：导入的会话文件名必须 canonical（否则侧栏可见、点开报错） ──
+  (!/rel = `sessions\/imported\/rollout-imported-\$\{id\}/.test(backupTs) && backupTs.includes("canonicalRolloutName(id,") ? ok : fail)("【28】thread-backup 写出的是 canonical 文件名（旧实现写 rollout-imported-<uuid> → 导入后打不开）");
+  const CANON = /^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$/;
+  const uuid13 = "01a09d64-23c8-7e80-9215-58ad1a647868";
+  (CANON.test(backup.canonicalRolloutName(uuid13, Date.UTC(2026, 8, 16))) ? ok : fail)("【28】canonicalRolloutName 产出引擎认的文件名形态");
+  const fixed13 = backup.canonicalizeRel(`sessions/imported/rollout-imported-${uuid13}.jsonl`);
+  (typeof fixed13 === "string" && CANON.test(fixed13.split("/").pop()) ? ok : fail)("【28】canonicalizeRel 把老备份里的非 canonical 名就地修好（旧文件导入也能打开）");
+  (backup.canonicalizeRel("sessions/x/notarollout.jsonl") === null ? ok : fail)("【28】canonicalizeRel 对没有线程 id 的文件名返回 null（宁可跳过也不写死文件）");
+
+  // ── Bug 14：侧栏标题必须剥 harness 注入块（与 thread-backup 同口径） ──
+  (workerSrc.includes("stripHarnessBlocks") && workerSrc.includes("looksInjected") ? ok : fail)("【28】rollout-worker 也剥注入块 / 用同一份前缀表");
+  (workerGen.includes("stripHarnessBlocks") ? ok : fail)("【28】内联产物 rollout-worker-source.ts 已同步（生成物不能落后于 worker 源码）");
+  {
+    // 真跑一次 worker：首条用户消息是 [SYSTEM TASK] 包装 + AGENTS.md 注入，标题必须是包装里的用户原文
+    const probe = spawnSync(process.execPath, ["-e", `
+const fs=require("fs"),os=require("os"),path=require("path");
+const {Worker}=require("worker_threads");
+const root=fs.mkdtempSync(path.join(os.tmpdir(),"pw28-"));
+const dir=path.join(root,"sessions","2026","09","16");
+fs.mkdirSync(dir,{recursive:true});
+const rows=[
+ {type:"session_meta",payload:{cwd:"D:/x"}},
+ {type:"response_item",payload:{type:"message",role:"user",content:[{type:"input_text",text:"# AGENTS.md instructions\\n\\n<INSTRUCTIONS>\\nxxx"}],internal_chat_message_metadata_passthrough:{content_item_kinds:["agents_md.instructions"]}}},
+ {type:"response_item",payload:{type:"message",role:"user",content:[{type:"input_text",text:"[Harness 相关记忆，仅供参考]\\n记点东西\\n[记忆结束]\\n\\n[SYSTEM TASK abc] === 用户需求 ===\\n真实问题：帮我看看这个\\n=== END ==="}],internal_chat_message_metadata_passthrough:{content_item_kinds:["user.text"]}}},
+];
+fs.writeFileSync(path.join(dir,"rollout-2026-09-16T00-00-00-01a09d64-23c8-7e80-9215-58ad1a647868.jsonl"), rows.map(r=>JSON.stringify(r)).join("\\n")+"\\n");
+const w=new Worker(${JSON.stringify(join(ROOT, "electron", "rollout-worker.cjs"))});
+const done=(o)=>{process.stdout.write(JSON.stringify(o));try{w.terminate();}catch{}};
+w.on("message",(m)=>done(m)); w.on("error",(e)=>done({err:String(e&&e.message)}));
+w.postMessage({id:1,op:"list",root});
+`], { encoding: "utf8", windowsHide: true, timeout: 60_000 });
+    let parsed14 = null;
+    try { parsed14 = JSON.parse(probe.stdout || "null"); } catch { parsed14 = null; }
+    const title14 = String(parsed14?.data?.[0]?.name ?? "");
+    (title14 === "真实问题：帮我看看这个" ? ok : fail)(`【28】侧栏标题取到包装里的用户原文（实得：${JSON.stringify(title14.slice(0, 40))}）`);
+  }
+
+  // ── Bug 3 / 6 / 1 / 2：拼一份「按生成逻辑来的」样例配置，用 tomllib 真解析 ──
+  const existing = [
+    'model = "old-model"',
+    'approval_policy = "never"',
+    "default_permissions = \":workspace\"",
+    "[model_providers.mine]",
+    'name = "Mine"',
+    '[features]',
+    "browser_use = false",
+    "memories = true",
+    "[otel]",
+    'exporter = "none"',
+    'trace_exporter = "none"',
+    "[permissions.my-profile]",
+    'description = "我自己写的档位"',
+    '[mcp_servers."我的服务"]',
+    'command = "x"',
+  ].join("\n");
+  const preserved = cfg.preserveUserConfig(existing);
+  (preserved.topLevel.includes("approval_policy") ? ok : fail)("【28】用户顶层键归入 topLevel（必须输出在第一个段头之前）");
+  (!preserved.sections.includes("approval_policy") ? ok : fail)("【28】用户顶层键不再混进「用户段」文本（旧实现被拼到文件尾部 → 被 MCP 段吞掉）");
+  (preserved.sections.includes("[permissions.my-profile]") ? ok : fail)("【28】用户自己的 [permissions.*] 档位整段保留");
+  (preserved.sectionExtras["features"]?.includes("memories = true") ? ok : fail)("【28】段级共享表里用户的子键进 sectionExtras（features.memories）");
+  (preserved.sectionExtras["otel"]?.some((line) => line.startsWith("trace_exporter")) ? ok : fail)("【28】段级共享表里用户的子键进 sectionExtras（otel.trace_exporter）");
+  (!Object.values(preserved.sectionExtras).flat().some((line) => /^browser_use/.test(line)) ? ok : fail)("【28】harness 自己的子键不被当成用户键留下（features.browser_use）");
+
+  const configText = [
+    'model = "glm-5.3-flash"',
+    'model_provider = "harness"',
+    'developer_instructions = """',
+    "line1",
+    '"""',
+    ...(preserved.topLevel ? [preserved.topLevel] : []),
+    "[model_providers.harness]",
+    'name = "内置统一通道"',
+    `base_url = "${esc("https://x.example/v1\n")}"`,
+    'env_key = "CODEX_HARNESS_API_KEY"',
+    'wire_api = "responses"',
+    "requires_openai_auth = false",
+    "model_max_output_tokens = 393216",
+    "[windows]",
+    'sandbox = "unelevated"',
+    "[tools]",
+    "web_search = true",
+    "[otel]",
+    'exporter = "none"',
+    "[sandbox_workspace_write]",
+    "network_access = true",
+    "[shell_environment_policy]",
+    'inherit = "all"',
+    "[shell_environment_policy.set]",
+    'PATH = "C:\\\\x"',
+    "[features]",
+    "browser_use = true",
+    "[mcp_servers.nuphus]",
+    'command = "C:\\\\nuphus.exe"',
+    "args = []",
+    "startup_timeout_sec = 20",
+    ...(preserved.sections ? [preserved.sections, ""] : []),
+  ].join("\n");
+  const finalText = cfg.injectMcpToolRules(
+    cfg.injectSectionExtras(configText, preserved.sectionExtras),
+    { nuphus: { deny: ["desktop_shell"], ask: ["desktop_mouse"], allow: ["desktop_screenshot"] } },
+  );
+  const PY28 = join(ROOT, "resources", "tools", "python", "python.exe");
+  if (!existsSync(PY28)) {
+    fail("【28】内置 python 缺席，无法做 config.toml 的 tomllib 真解析门禁");
+  } else {
+    const b64 = Buffer.from(finalText, "utf8").toString("base64");
+    const run = spawnSync(PY28, ["-c", "import sys,base64,tomllib,json;print(json.dumps(tomllib.loads(base64.b64decode(sys.argv[1]).decode('utf-8'))))", b64], { encoding: "utf8", windowsHide: true });
+    let doc = null;
+    try { doc = JSON.parse(run.stdout || "null"); } catch { doc = null; }
+    (doc ? ok : fail)(`【28】样例 config.toml 被 tomllib 真解析通过${doc ? "" : `（${String(run.stderr || "").trim().split("\n").pop()?.slice(0, 120)}）`}`);
+    // ⚠️ 这里刻意**不用 `if (doc)` 包住**（09-16 反证时发现的设计缺陷）：解析失败时被包住的断言会
+    // 「整块跳过」——报告里一条红都没有，看起来像全绿。改成逐条断言（`doc?.`），解析失败就让
+    // 每一条都红，红得显眼。
+    (doc?.approval_policy === "never" ? ok : fail)("【28】tomllib：用户顶层键**在顶层**（不再落进 mcp_servers 段 —— 修 Bug 3）");
+    (doc?.default_permissions === ":workspace" ? ok : fail)("【28】tomllib：用户 default_permissions 保住（harness 不再写 permissions）");
+    (doc?.permissions?.["my-profile"]?.description === "我自己写的档位" ? ok : fail)("【28】tomllib：用户自定义权限档位保住");
+    (doc?.features?.browser_use === true && doc?.features?.memories === true ? ok : fail)("【28】tomllib：features 段 harness 子键 + 用户子键共存（修 Bug 6）");
+    (doc?.otel?.exporter === "none" && doc?.otel?.trace_exporter === "none" ? ok : fail)("【28】tomllib：otel 段同理（用户 trace_exporter 不被删）");
+    (JSON.stringify(doc?.mcp_servers?.nuphus?.disabled_tools) === '["desktop_shell"]' ? ok : fail)("【28】tomllib：deny 落到 disabled_tools（工具从引擎工具表移除 = 真阻断）");
+    (doc?.mcp_servers?.nuphus?.tools?.desktop_mouse?.approval_mode === "prompt" ? ok : fail)("【28】tomllib：ask 落到 [mcp_servers.X.tools.<名>] approval_mode = prompt");
+    (doc?.mcp_servers?.nuphus?.tools?.desktop_screenshot?.approval_mode === "auto" ? ok : fail)("【28】tomllib：allow 落到 approval_mode = auto");
+    (typeof doc?.model_providers?.harness?.base_url === "string" && doc.model_providers.harness.base_url.includes("\n") ? ok : fail)("【28】tomllib：带换行的 base_url 转义后既合法又能往返（修 Bug 5）");
+    (!Object.keys(doc?.permissions ?? {}).some((key) => key.startsWith("mcp__")) ? ok : fail)("【28】tomllib：harness 不再产出任何 mcp__ 工具权限键");
+  }
+
+  // ── Bug 12：max 档不再被静默丢弃/替换（用真实 effort.ts 编译后执行） ──
+  try {
+    const ts = req("typescript");
+    const js = ts.transpileModule(readFileSync(join(ROOT, "src", "lib", "effort.ts"), "utf8"), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+    }).outputText;
+    const mod = { exports: {} };
+    new Function("module", "exports", js)(mod, mod.exports);
+    const declared = mod.exports.declaredModelEfforts;
+    (declared(["max"]).includes("max") ? ok : fail)("【28】effort：只声明 max 时不再回落成整套默认档（修 Bug 12）");
+    (declared(["low", "medium", "high", "max"]).includes("max") ? ok : fail)("【28】effort：声明 max 的模型在 UI 里有 max 可选");
+    (mod.exports.ALL_EFFORTS.includes("max") ? ok : fail)("【28】effort：ALL_EFFORTS 含 max（引擎内置 gpt-6-astra 就声明了它）");
+    (declared(["low", "medium", "high"]).includes("xhigh") ? ok : fail)("【28】effort：旧的自动三档仍补极高（产品行为不得回退）");
+  } catch (error) {
+    fail(`【28】effort.ts 行为断言跑不起来：${String(error?.message ?? error).slice(0, 120)}`);
+  }
+
+  // ── Bug 11：被证伪的声明不得复活（引擎**不校验** effort） ──
+  const effortTs = readFileSync(join(ROOT, "src", "lib", "effort.ts"), "utf8");
+  (!/否则 turn\/start 被拒/.test(mainTs) && !/否则 turn\/start 被拒/.test(effortTs) ? ok : fail)("【28】不再声称「引擎按 catalog 校验 effort，否则 turn/start 被拒」（已证伪）");
+  (mainTs.includes("引擎根本不校验") || mainTs.includes("不校验档位") ? ok : fail)("【28】main.ts 注释记录了实证结论（引擎读了 catalog 但不校验档位）");
 }
 
 // ---------- 汇总 ----------
