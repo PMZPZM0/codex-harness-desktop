@@ -150,6 +150,8 @@ type DelegateRecordEntry = {
   endedAt?: number;
   archived?: boolean;
   error?: string;
+  /** 实时产出（调度头像弹窗用；跑完是完整产出） */
+  output?: string;
 };
 
 type MarketSkillEntry = {
@@ -436,7 +438,9 @@ interface Window {
     getThreadRuntime(threadId: string): Promise<{ model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number } | null>;
     listThreadRuntimes(): Promise<Record<string, { model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }>>;
     seedThreadRuntime(input: { threadId: string; runtime: unknown }): Promise<{ model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }>;
-    patchThreadRuntime(input: { threadId: string; patch: unknown; baseRev?: number }): Promise<{ runtime: { model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }; conflict: boolean; changed: boolean }>;
+    patchThreadRuntime(input: { threadId: string; patch: unknown; baseRev?: number; takeover?: boolean }): Promise<{ runtime: { model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }; conflict: boolean; changed: boolean; blockedBy?: string; tookOverFrom?: string; restrictedBy?: string }>;
+    dispatchOwner(): Promise<{ threadId: string | null }>;
+    threadRole(threadId: string): Promise<{ restricted: boolean; label?: string }>;
     writeClipboard(text: string): Promise<boolean>;
     createScratchDir(): Promise<string>;
     saveIdentity(input: { assistantName?: string; userName?: string; about?: string }): Promise<unknown>;

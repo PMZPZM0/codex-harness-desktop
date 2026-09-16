@@ -78,14 +78,38 @@ export const MAX_DEPTH = 1;
  * @param input.isDelegated 发起方会话本身是不是「被委派产生的会话」
  * @param input.depth 发起方处在调用链的第几层（用户直连会话 = 0）
  */
-export function canDispatchFrom(input: { isDelegated?: boolean; depth?: number }): { ok: boolean; reason?: string } {
+export function canDispatchFrom(input: { isDelegated?: boolean; depth?: number; holdsLock?: boolean; restricted?: boolean; restrictedLabel?: string }): { ok: boolean; reason?: string } {
   const depth = Number.isFinite(Number(input?.depth)) ? Number(input?.depth) : 0;
+  // 身份闸（09-16 用户要求）：专家会话 / 专家团会话（含成员会话）**一律不允许对外调度**。
+  // 理由：它们有自己的团内协作通道（team_member_invoke，不受此处限制）；对外再派人会
+  // 让「谁在干活」失控。UI 上这些会话的调度开关直接禁用（灰掉），这里是硬闸兜底。
+  if (input?.restricted) {
+    return {
+      ok: false,
+      reason:
+        `本会话是**${input.restrictedLabel || "专家 / 专家团"}会话**，不允许对外调度人员。` +
+        "请直接在本会话把活干完；专家团需要成员协作用团内的调度工具（那套不受此限制），" +
+        "确需外部协作的部分写进产出，由发起方决定。",
+    };
+  }
   if (input?.isDelegated || depth >= MAX_DEPTH) {
     return {
       ok: false,
       reason:
         "本次调用来自一个**被委派的会话** —— 委派会话不允许再向下委派（防套娃）。" +
         "请直接在当前会话把活干完；确实需要他人协作的部分，在产出里说明清楚，由发起方决定。",
+    };
+  }
+  // 独占锁（09-16 用户要求「同一时间只能一个会话开调度，避免同时调用」）：
+  // 只有**当前持有者**的调用才作数。会话被别的会话接管、或开关被关掉之后，
+  // 残留的工具面/在途调用一律不认 —— 这是发出去之后唯一还能刹住的地方。
+  // ⚠️ 只在显式给 false 时拦（undefined = 老调用点没传，保持向后兼容，不误伤）。
+  if (input?.holdsLock === false) {
+    return {
+      ok: false,
+      reason:
+        "本会话当前**不持有调度权限**（同一时间只允许一个会话调度，可能已被另一个会话接管，或开关被关掉了）。" +
+        "请直接在当前会话把活干完，并把需要在别处协作的部分写清楚；需要恢复权限时请用户在输入框的调度开关里重新开启。",
     };
   }
   return { ok: true };
