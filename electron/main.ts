@@ -1192,6 +1192,12 @@ async function readCustomModels(): Promise<CustomModelFile[]> {
 }
 
 async function writeCustomModels(list: CustomModelFile[]) {
+  // 写前备份（09-16）：档案清单出现过整份清空（custom-models.json → []）且无法从代码路径定责，
+  // 留一份上一版内容随时可手工回滚——备份本身幂等，只在上一版非空时覆盖。
+  try {
+    const previous = await fs.readFile(customModelsFile, "utf8");
+    if (previous.trim() && previous.trim() !== "[]") await fs.writeFile(`${customModelsFile}.bak`, previous, "utf8");
+  } catch { /* 首次写入没有旧文件，跳过 */ }
   await fs.writeFile(customModelsFile, JSON.stringify(list, null, 2), "utf8");
 }
 
@@ -6781,7 +6787,7 @@ ipcMain.handle("custom-model:save", async (_event, input: { provider: string; na
   }
   const enabledModels = mergedModels.filter((entry) => entry.enabled !== false);
   const model = requestedModel || enabledModels[0]?.id || "";
-  if (!model) throw new Error("至少勾选一个生效模型");
+  if (!model) throw new Error("请先在「模型列表」添加并勾选至少一个生效模型，再保存");
   const saved = withModels({ provider, name, model, baseUrl, contextWindow, wireApi, encryptedKey, enabled: input.enabled ?? existing?.enabled ?? true, models: mergedModels }, model);
   await upsertCustomModel(saved);
   const current = await readCustomModel();

@@ -22965,6 +22965,10 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   font-size: 12px;
   animation: run-activity-in 0.25s ease;
 }
+/* 状态行上方不留白（09-16 用户反馈）：状态行只在运行态出现且紧跟最后一个回合，
+   该回合的 32px 底边距会与状态行叠出一行空白。用 :has 反向选中「紧贴状态行
+   的那个回合」，把边距压掉；空闲态（无状态行）间距保持不变。 */
+.timeline > .turn-group:has(+ .run-activity-bar) { margin-bottom: 4px; }
 .run-activity-spinner { display: inline-flex; gap: 3px; flex: none; }
 .run-activity-spinner i {
   width: 4px;
