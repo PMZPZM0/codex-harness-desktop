@@ -184,8 +184,9 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   的签名地址，实测第一跳就是这个）。`electron/updates.ts` 的 `downloadUpdate` 过去是裸 `https.request`
   + `status >= 300 reject` ⇒ **用户点「下载并安装」直接报 HTTP 302，更新走不完**。
   为什么一直没暴露：09-15 才收敛成 GitHub 单源，而当时仓库**0 个 Release**，`checkLatestUpdate` 拿不到东西，
-  从没走到下载这步；v0.0.18 是首个 Release 才第一次踩到 ⇒ **已发 0.0.19 修**（不删 0.0.18：它的
-  `download_count` 已非 0，删了会让已装用户拿不到新版）。
+  从没走到下载这步；v0.0.18 是首个 Release 才第一次踩到 ⇒ 当日以 **0.0.19** 修复；同晚应用户要求
+  **撤掉线上 0.0.18/0.0.19 两个 Release 与 tag，统一重发为 0.0.18**（已升 0.0.19 的用户不会被
+  应用内更新提示到，需手动下载覆盖安装——发布当晚临时版本，接受此影响）。
   修法：`hop(url, depth)` 递归跟随（≤5 跳，`new URL(location, url)` 解析相对跳），**每一跳重新校验 https**
   （防止降级到明文——安装包下载完会被 `shell.openPath` 直接执行）+ 原有 sha256 完整性校验不变。
   守卫：预检⑥组两条（锚定真实分支与 `hop(next, depth+1)` 调用，不是查标识符存在），
