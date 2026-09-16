@@ -113,7 +113,27 @@
       },
       {
         "from": "resources/tools/npm-global",
-        "to": "tools/npm-global"
+        "to": "tools/npm-global",
+        "filter": [
+          "**/*",
+          "!node_modules",
+          "!node_modules/**/*",
+          "!cloakbrowser",
+          "!cloakbrowser.cmd",
+          "!cloakbrowser.ps1"
+        ]
+      },
+      {
+        "from": "resources/tools/npm-global/node_modules",
+        "to": "tools/npm-global/node_modules",
+        "filter": [
+          "**/*",
+          "!cloakbrowser",
+          "!cloakbrowser/**/*",
+          "!.bin/cloakbrowser",
+          "!.bin/cloakbrowser.cmd",
+          "!.bin/cloakbrowser.ps1"
+        ]
       },
       {
         "from": "scripts/install-runtimes.cjs",

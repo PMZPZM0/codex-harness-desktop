@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 // 桌面与浏览器自动化工具链安装：从 automation-tools.zip 解压即用（不再 npm install）。
-//   zip 内含 nuphus-mcp（桌面自动化 MCP）+ @playwright/cli + cloakbrowser + playwright-core，
+//   zip 内含 nuphus-mcp（桌面自动化 MCP）+ @playwright/cli + playwright-core，
 //   顶层为 npm-global/，解压到 resources/tools/npm-global。
+//
+// ⛔ 09-16：zip **不含 cloakbrowser**（CloakBrowser 已从随包剥离，改「开发工具」页按需 npm 下载）。
+//    所以本脚本只负责恢复 nuphus / playwright-cli 两项内置能力；
+//    CloakBrowser 与两类浏览器内核都由「开发工具」页单独下载。
 // 用法：
 //   node scripts/install-automation.cjs                 # 用随包 zip（tools/automation-tools.zip）
 //   node scripts/install-automation.cjs --zip=<路径>    # 指定 zip 路径
 //   node scripts/install-automation.cjs --url=<URL>     # 从线上下载 zip 再解压
-// 说明：浏览器内核（Playwright Chromium / Cloak 指纹内核）不随包，由「开发工具」页分别下载。
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -63,7 +66,7 @@ if (!ok) {
   process.exit(1);
 }
 
-console.log("[2/3] 校验通过（nuphus-mcp / playwright-cli / cloakbrowser 已就位）");
+console.log("[2/3] 校验通过（nuphus-mcp / playwright-cli 已就位）");
 console.log("[3/3] 完成。重启应用后：");
 console.log("  - Codex 引擎的 config.toml 会注册 nuphus MCP 服务器（重选一次供应商触发 applyCustomModel）");
-console.log("  - 浏览器内核请到「开发工具」页分别下载：Playwright Chromium、Cloak 指纹内核");
+console.log("  - CloakBrowser 与浏览器内核请到「开发工具」页分别下载：CloakBrowser、Playwright 内核、Cloak 内核");

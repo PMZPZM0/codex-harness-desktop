@@ -8349,8 +8349,10 @@ export default function App() {
   const [browserHome, setBrowserHome] = useState(() => localStorage.getItem("browser-home") ?? "https://github.com/openai/codex");
   const [browserUrl, setBrowserUrl] = useState("");
   const [browserDraft, setBrowserDraft] = useState("");
-  // 浏览器面板默认就是 CloakBrowser 指纹模式：不再提供切换 UI；保留字段以兼容既有渲染分支
-  const [browserMode] = useState<"cloak" | "internal">("cloak");
+  // 09-16：默认用**内置浏览器视图**（右栏 BrowserPane = 内置 Chromium webview）；CloakBrowser 改为
+  // 按需下载的可选增强（需要过反爬站点时才用）。这里的 mode 是旧版 App 级浏览器面板的遗留字段
+  // （面板已由 components/BrowserPane 取代），仅用于兼容既有渲染分支，默认值也必须跟「默认内置」一致。
+  const [browserMode] = useState<"cloak" | "internal">("internal");
   const [cloakPage, setCloakPage] = useState("");
   const [cloakStatus, setCloakStatus] = useState("");
   // 浏览器收藏夹 + 历史（localStorage 持久化）
@@ -17512,14 +17514,17 @@ const commandMatches = useMemo(() => {
               </div>
             </section>}
             {settingsPage === "devtools" && <section className="settings-section stack devtools-page">
-              <div className="settings-copy"><h2>开发工具</h2><p>引擎与 Node 运行时随应用内置；其余工具链与浏览器内核均按需下载（国内镜像加速，失败自动回落官方源），安装后自动加入 Codex 环境（不改系统 PATH）。</p></div>
+              <div className="settings-copy"><h2>开发工具</h2><p>桌面与浏览器自动化（Nuphus / Playwright CLI）与写代码模式插件随应用内置、开箱即用；CloakBrowser 指纹浏览器、两类浏览器内核与其余工具链按需下载（国内镜像加速，失败自动回落官方源），安装后自动加入 Codex 环境（不改系统 PATH）。</p></div>
               <div className="settings-subhead"><Download size={13} />语音模型<span className="settings-subhead-hint">sherpa-onnx · 本机推理 · 按需下载</span></div>
               <VoiceDevToolsSection onNotice={setNotice} />
               {(() => {
-                const autoIds = ["automation", "playwright-browsers", "cloak-browsers", "ponytail"];
+                // 09-16 用户「自动化工具拆开，拆详细一点」：不再一张「桌面与浏览器自动化」大卡，
+                // 拆成逐条能力卡（Nuphus / Playwright CLI / CloakBrowser / 两类内核 / ponytail）。
+                // bundled=true 的卡片显示「内置」（随包预装，无需安装；缺失时给「修复安装」）。
+                const autoIds = ["nuphus", "playwright-cli", "cloakbrowser", "playwright-browsers", "cloak-browsers", "ponytail"];
                 const groups = [
                   { key: "base", title: "基础运行时", hint: "随应用内置，离线可用", icon: <Wrench size={13} />, filter: (r: any) => r.builtIn },
-                  { key: "auto", title: "自动化工具包", hint: "下载解压即用，安装后自动激活桌面/浏览器自动化", icon: <TerminalSquare size={13} />, filter: (r: any) => autoIds.includes(r.id) },
+                  { key: "auto", title: "桌面与浏览器自动化", hint: "Nuphus / Playwright CLI 随包内置，CloakBrowser 与浏览器内核按需下载", icon: <TerminalSquare size={13} />, filter: (r: any) => autoIds.includes(r.id) },
                   { key: "ondemand", title: "按需下载", hint: "联网下载安装", icon: <Download size={13} />, filter: (r: any) => !r.builtIn && r.kind !== "guide" && !autoIds.includes(r.id) },
                   { key: "system", title: "系统级安装", hint: "打开官网手动安装", icon: <Globe2 size={13} />, filter: (r: any) => r.kind === "guide" },
                 ];
@@ -17533,25 +17538,30 @@ const commandMatches = useMemo(() => {
                         const busy = runtimeInstalling === runtime.id || runtime.installing;
                         const isDone = runtime.installed || runtime.installedBySystem;
                         const isGuide = runtime.kind === "guide";
+                        const builtinBadge = runtime.builtIn || (runtime.bundled && isDone);
                         return <div className={`runtime-row ${isDone ? "installed" : "missing"} ${busy ? "busy" : ""}`} key={runtime.id}>
                           <span className="runtime-icon">{busy ? <Spinner /> : isDone ? <CircleCheck size={16} /> : <TerminalSquare size={16} />}</span>
                           <span className="runtime-copy"><strong>{runtime.name}</strong><small>{runtime.description}</small>
                             {busy && runtimeProgress[runtime.id] ? <em className="runtime-progress">{runtimeProgress[runtime.id]}</em>
-                              : !isDone && runtime.id === "automation" ? <em className="runtime-hint">解压即用 · 含 nuphus + playwright-cli + cloakbrowser</em> : null}
+                              : !isDone && runtime.bundled ? <em className="runtime-hint">随包内置能力缺失时可点「修复安装」从包内恢复</em>
+                              : !isDone && runtime.id === "cloakbrowser" ? <em className="runtime-hint">按需下载 · 不装也能用内置浏览器与 playwright-cli</em>
+                              : null}
                           </span>
                           <span className="runtime-size">{runtime.size}</span>
                           <div className="runtime-actions">
-                            {runtime.builtIn ? <span className="runtime-badge">内置</span>
-                              : isDone ? <>
-                                  <span className="runtime-badge installed">{runtime.installedBySystem ? "系统已装" : "已安装"}</span>
-                                  {/* 随包内置资源（automation 的 zip、ponytail 插件）不支持卸载——删了没有可靠重取途径 */}
-                                  {!runtime.installedBySystem && !runtime.noUninstall && (
-                                    <button className="secondary-setting runtime-uninstall" disabled={Boolean(runtimeInstalling)} onClick={() => void uninstallDevRuntime(runtime.id)}>卸载</button>
-                                  )}
-                                </>
-                                : isGuide
-                                  ? <button className="secondary-setting runtime-install" onClick={() => void installDevRuntime(runtime.id)}><ExternalLink size={13} />去官网安装</button>
-                                  : <button className="primary-setting runtime-install" disabled={Boolean(runtimeInstalling)} onClick={() => void installDevRuntime(runtime.id)}>{busy ? <Spinner /> : <ArrowDown size={14} />}下载</button>}
+                            {builtinBadge ? <span className="runtime-badge">内置</span>
+                              : runtime.bundled
+                                ? <button className="primary-setting runtime-install" disabled={Boolean(runtimeInstalling)} onClick={() => void installDevRuntime(runtime.id)}>{busy ? <Spinner /> : <ArrowDown size={14} />}修复安装</button>
+                                : isDone ? <>
+                                    <span className="runtime-badge installed">{runtime.installedBySystem ? "系统已装" : "已安装"}</span>
+                                    {/* 随包内置资源（zip / 插件目录）不支持卸载——删了没有可靠重取途径 */}
+                                    {!runtime.installedBySystem && !runtime.noUninstall && (
+                                      <button className="secondary-setting runtime-uninstall" disabled={Boolean(runtimeInstalling)} onClick={() => void uninstallDevRuntime(runtime.id)}>卸载</button>
+                                    )}
+                                  </>
+                                  : isGuide
+                                    ? <button className="secondary-setting runtime-install" onClick={() => void installDevRuntime(runtime.id)}><ExternalLink size={13} />去官网安装</button>
+                                    : <button className="primary-setting runtime-install" disabled={Boolean(runtimeInstalling)} onClick={() => void installDevRuntime(runtime.id)}>{busy ? <Spinner /> : <ArrowDown size={14} />}下载</button>}
                           </div>
                         </div>;
                       })}
@@ -17567,7 +17577,7 @@ const commandMatches = useMemo(() => {
                   <button className="secondary-setting" onClick={() => { void copyTextToClipboard(devRuntimes.map((r: any) => `# ${r.name}\n${r.description}\n${r.installed || r.builtIn ? "状态：已就绪" : "状态：未安装"}\n`).join("\n")); setNotice("工具清单已复制"); }}><Copy size={13} />复制清单</button>
                 </div>
               </details>
-              <p className="settings-card-hint">引擎与 Node 随应用内置；「桌面与浏览器自动化」（Nuphus + Playwright CLI + CloakBrowser）与 ponytail 写代码模式插件随包预装、开箱即用；Python、Git、PowerShell、ripgrep、uv、CMake、7-Zip、jq、Ninja 与两类浏览器内核均按需下载（npmmirror / gh 加速，失败自动回落官方源），首次启动检测到缺 Git 会自动补装；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）；引擎在会话里自行安装工具时，此页状态也会自动刷新。</p>
+              <p className="settings-card-hint">随应用内置：引擎、Node、VS Code CLI、Nuphus 桌面自动化、Playwright 浏览器自动化（CLI）、ponytail 写代码模式插件；按需下载：CloakBrowser 指纹浏览器（npm 国内镜像）、Playwright / Cloak 两类浏览器内核，以及 Python、Git、PowerShell、ripgrep、uv、CMake、7-Zip、jq、Ninja（npmmirror / gh 加速，失败自动回落官方源），首次启动检测到缺 Git 会自动补装；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。日常浏览用内置浏览器视图，CloakBrowser 只在需要过反爬站点时按需下载。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）；引擎在会话里自行安装工具时，此页状态也会自动刷新。</p>
             </section>}
 
             {/* 开发工具 安装/卸载 实时进度弹窗（替代 window.confirm——后者会抢焦点 + 打断输入框） */}
@@ -17607,13 +17617,13 @@ const commandMatches = useMemo(() => {
               <div className="settings-grid">
                 <label className="wide"><span>默认起始页</span><div className="input-button"><input value={browserHome} onChange={(event) => setBrowserHome(event.target.value)} placeholder="https://" /><button className="secondary-setting" onClick={() => { localStorage.setItem("browser-home", browserHome.trim()); setBrowserDraft(browserHome.trim()); setNotice("浏览器默认页已保存"); }}><Check size={14} />保存</button></div></label>
               </div>
-              <div className="settings-actions"><span>面板空态会使用默认起始页作为建议地址；右侧浏览器面板默认以 CloakBrowser 指纹模式打开（不再提供切换回内置视图的开关）。</span></div>
+              <div className="settings-actions"><span>面板空态会使用默认起始页作为建议地址；右侧浏览器面板默认使用内置浏览器视图（Chromium），需要过反爬站点时可用工具栏的隐身浏览按钮打开 CloakBrowser（未安装会提示到「开发工具」按需下载）。</span></div>
               <div className="settings-subhead"><Globe2 size={13} />浏览器自动化工具<span className="settings-subhead-hint">Codex 引擎可直接调用，PATH 与 NODE_PATH 已注入</span></div>
               <div className="tool-card-grid">
                 {toolsStatus.filter((tool) => tool.scope === "browser").map((tool) => <ToolCard tool={tool} key={tool.id} />)}
                 {!toolsStatus.length && <p className="muted">正在读取工具状态…</p>}
               </div>
-              <p className="muted">普通网页用 <code>playwright-cli</code>（open → snapshot → click/type）；有反爬/验证码的站点用 CloakBrowser（<code>require("cloakbrowser")</code>，humanize + geoip）。引擎已内置这两条路径的使用说明。</p>
+              <p className="muted">默认用内置浏览器视图与 <code>playwright-cli</code>（open → snapshot → click/type）；有反爬/验证码的站点才用 CloakBrowser（<code>CLOAKBROWSER_ENTRY</code> 动态 import，humanize + geoip），它不随应用内置，需在「开发工具」页按需下载。引擎已内置这两条路径的使用说明。</p>
             </section>}
             {settingsPage === "appearance" && <section className="settings-section stack appearance-page">
               <div className="settings-copy"><h2>外观</h2><p>主题、字号与代码显示，即时生效并保存在本机。</p></div>

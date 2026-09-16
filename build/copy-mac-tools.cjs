@@ -7,6 +7,13 @@ const { existsSync } = require("node:fs");
 // 开发机 resources/tools 里这两个目录照常保留，只是复制进 .app 时跳过。
 const NOT_BUNDLED = new Set(["pw-browsers", "cloak-cache"]);
 
+// 09-16 用户「CloakBrowser 不用内置，按需下载就行」：cloakbrowser 的 npm 包体与 shell shim
+// 同样不进包（Windows 侧是 package.json extraResources 的 filter，两处必须同源）。
+// 用 basename 匹配，覆盖 bin/cloakbrowser、node_modules/cloakbrowser、node_modules/.bin/cloakbrowser。
+function isCloakPackage(entry) {
+  return /^cloakbrowser(\.cmd|\.ps1)?$/.test(path.basename(entry));
+}
+
 module.exports = async function afterPack(context) {
   const resources = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, "Contents/Resources");
   const source = path.join(context.packager.projectDir, "resources/tools");
@@ -14,7 +21,7 @@ module.exports = async function afterPack(context) {
   // Copy the complete, target-native tool closure, preserving Unix executable bits.
   await fs.cp(source, path.join(resources, "tools"), {
     recursive: true, verbatimSymlinks: true, preserveTimestamps: true,
-    filter: (entry) => !NOT_BUNDLED.has(path.basename(entry)),
+    filter: (entry) => !NOT_BUNDLED.has(path.basename(entry)) && !isCloakPackage(entry),
   });
 
   // 09-13 v0.0.14 补漏：mac 的 extraResources 是空数组（避免 builder 过滤 node_modules），

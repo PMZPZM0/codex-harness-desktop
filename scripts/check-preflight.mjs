@@ -2723,6 +2723,101 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   }
 }
 
+// ---------- 【27】自动化工具拆细 + CloakBrowser 剥离随包（09-16 下午） ----------
+// 用户四句话定下的形态：
+//   ① 「这三个内置」——Nuphus / Playwright CLI / ponytail 写代码模式插件随包；
+//   ② 「CloakBrowser 不用内置，按需下载就行」——从包里剥离，走 npm 国内镜像按需装；
+//   ③ 「默认用内置浏览器」——默认通道是内置浏览器视图 + playwright-cli，Cloak 只在需要时用；
+//   ④ 「自动化工具拆开，拆详细一点」——开发工具页从一张大卡拆成逐条能力卡。
+// 每条都同时守「实现」与「给模型的指令/给用户的文案」：只改一半就会出现
+// 「包里已经没有它，指令却还说它内置」的错配（模型会去调一个不存在的模块）。
+{
+  const pkg27 = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+  const extraResources27 = pkg27.build?.extraResources ?? [];
+  const npmGlobalSet = extraResources27.find((entry) => entry?.from === "resources/tools/npm-global");
+  const npmFilter = Array.isArray(npmGlobalSet?.filter) ? npmGlobalSet.filter.map(String) : [];
+  (npmFilter.some((pattern) => /^!node_modules(\/\*\*\/\*)?$/.test(pattern)) ? ok : fail)("package.json：npm-global 根级映射显式排除 node_modules（该层交给下面那条独立映射）");
+  (npmFilter.some((pattern) => /^!cloakbrowser(\.cmd|\.ps1)?$/.test(pattern)) ? ok : fail)("package.json：filter 同时排除 npm-global 根下的 cloakbrowser shim");
+  // ⛔ 09-16 实测踩坑（打包验证才暴露）：electron-builder 的 copyDir **无条件丢弃 extraResources `from`
+  //    根级的 node_modules**（app-builder-lib/out/util/filter.js 写死 `if (relative === "node_modules") return false`，
+  //    且 walk() 在目录节点被过滤时整棵剪掉）。所以只写一条 from=npm-global 的映射时，包里只有根级 shim，
+  //    node_modules 是空的 → 装出来的应用 nuphus/playwright-cli 两张卡都显示「未安装」，得让用户点一次
+  //    「修复安装」解 zip，与「随包内置、开箱即用」的承诺不符。
+  //    必须**另加一条** from=.../npm-global/node_modules 的映射（那一层的相对路径不叫 node_modules，绕过剪枝）。
+  const nodeModulesSet = extraResources27.find((entry) => entry?.from === "resources/tools/npm-global/node_modules");
+  (nodeModulesSet && nodeModulesSet.to === "tools/npm-global/node_modules" ? ok : fail)("package.json：单独一条 from=resources/tools/npm-global/node_modules → tools/npm-global/node_modules 的映射（缺了它 builder 会把 node_modules 整个剪掉，「随包内置」落空）");
+  const nodeModulesFilter = Array.isArray(nodeModulesSet?.filter) ? nodeModulesSet.filter.map(String) : [];
+  (nodeModulesFilter.some((pattern) => /^!cloakbrowser(\/\*\*\/\*)?$/.test(pattern)) && nodeModulesFilter.some((pattern) => pattern.startsWith("!.bin/cloakbrowser")) ? ok : fail)("package.json：node_modules 映射同样排除 cloakbrowser 包体与 .bin shim");
+
+  const packAutomation = readFileSync(join(ROOT, "scripts", "pack-automation.cjs"), "utf8");
+  (packAutomation.includes('parts[1].startswith("cloakbrowser")') && packAutomation.includes('parts[2] == "cloakbrowser"') ? ok : fail)("pack-automation：打 zip 时排除 cloakbrowser（否则「修复安装」把它又装回包里）");
+
+  const beforePack = readFileSync(join(ROOT, "scripts", "before-pack.cjs"), "utf8");
+  (beforePack.includes("requiredShipped") && beforePack.includes('["@nuphus", "nuphus-mcp", "package.json"]') && beforePack.includes('["@playwright", "cli", "package.json"]') ? ok : fail)("before-pack：硬校验随包 npm-global 含 nuphus-mcp + @playwright/cli（坏包守卫盯着随包内容本身）");
+  // ⛔ 断言的是**比较表达式本身**（去空白后匹配），不是两个松散标识符：
+  //    反证实测过一次假绿——只留 const packScript/newestSource 的声明、把 Math.max(...) 摘掉，
+  //    旧写法照样命中，守卫恒绿。这类守卫必须锚在真正的逻辑上。
+  const bpFlat = beforePack.replace(/\s+/g, "");
+  (bpFlat.includes("constnewestSource=Math.max(fs.statSync(modules).mtimeMs,fs.statSync(packScript).mtimeMs)") ? ok : fail)("before-pack：zip 新鲜度同时比对打包脚本 mtime（改了排除清单不会静默复用旧 zip）");
+  // 产物层守卫：verify-packaged-tools 必须对「包体真的进包了」下断言（它是最靠近产物的那道网）。
+  const verifyPackagedTools = readFileSync(join(ROOT, "scripts", "verify-packaged-tools.cjs"), "utf8");
+  (verifyPackagedTools.includes("@nuphus/nuphus-mcp/package.json") && verifyPackagedTools.includes("@playwright/cli/package.json") && /from=resources\/tools\/npm-global\/node_modules/.test(verifyPackagedTools) ? ok : fail)("verify-packaged-tools：断言产物里真的有 nuphus-mcp 与 @playwright/cli（node_modules 没被打进包就红）");
+  // 行为探针（不只看字符串）：给一个「有 npm-global 但没有那两个包」的假 tools 根，
+  // 断言 before-pack 真的中止打包并点名缺什么；逃生阀仍可放行。
+  {
+    const probeRoot = join(ROOT, ".e2e-artifacts", "missing-shipped-probe");
+    try { rmSync(probeRoot, { recursive: true, force: true }); } catch { /* 忽略 */ }
+    mkdirSync(join(probeRoot, "npm-global", "node_modules"), { recursive: true });
+    const invoke = `require(${JSON.stringify(join(ROOT, "scripts", "before-pack.cjs"))})().then(() => process.exit(0), (e) => { console.error(String((e && e.message) || e)); process.exit(1); });`;
+    const strict = spawnSync(process.execPath, ["-e", invoke], {
+      encoding: "utf8",
+      env: { ...process.env, AUTOMATION_TOOLS_ROOT: probeRoot, AUTOMATION_ZIP_OPTIONAL: "" },
+    });
+    const relaxed = spawnSync(process.execPath, ["-e", invoke], {
+      encoding: "utf8",
+      env: { ...process.env, AUTOMATION_TOOLS_ROOT: probeRoot, AUTOMATION_ZIP_OPTIONAL: "1" },
+    });
+    try { rmSync(probeRoot, { recursive: true, force: true }); } catch { /* 忽略 */ }
+    (strict.status !== 0 && /随包 npm-global 缺少/.test(String(strict.stderr || "")) ? ok : fail)("before-pack：npm-global 缺 nuphus/playwright-cli 时**中止打包**并点名缺哪个");
+    (relaxed.status === 0 ? ok : fail)("before-pack：AUTOMATION_ZIP_OPTIONAL=1 仍可显式放行（发布链路不被卡死）");
+  }
+
+  const mainTs27 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  const idLine = /type DevRuntimeId = ([^;]+);/.exec(mainTs27)?.[1] ?? "";
+  (!/\bautomation\b/.test(idLine) ? ok : fail)("main.ts：开发工具 id 里不再有合并的 automation 大卡");
+  (idLine.includes('"nuphus"') && idLine.includes('"playwright-cli"') && idLine.includes('"cloakbrowser"') ? ok : fail)("main.ts：拆成 nuphus / playwright-cli / cloakbrowser 三条独立条目");
+  (mainTs27.includes('nuphus: { name: "Nuphus 桌面自动化"') && mainTs27.includes('"playwright-cli": { name: "Playwright 浏览器自动化"') ? ok : fail)("main.ts：Nuphus / Playwright CLI 两条内置卡片在位");
+  (mainTs27.includes('marker: "npm-global\\\\node_modules\\\\@nuphus\\\\nuphus-mcp\\\\package.json", bundled: true') && mainTs27.includes('marker: "npm-global\\\\node_modules\\\\@playwright\\\\cli\\\\package.json", bundled: true') ? ok : fail)("main.ts：两条内置卡片标为 bundled（界面显示「内置」，缺失才给「修复安装」）");
+  (mainTs27.includes('marker: "ponytail-plugin", kind: "plugin", bundled: true, noUninstall: true') ? ok : fail)("main.ts：ponytail 也是 bundled（随包内置；缺失走「重种插件」，绝不能落进解压 zip 的分支）");
+  (mainTs27.includes('cloakbrowser: { name: "CloakBrowser 指纹浏览器"') && !/cloakbrowser: \{[^}]*bundled: true/.test(mainTs27) ? ok : fail)("main.ts：CloakBrowser 是独立的按需下载卡片（不是 bundled）");
+  (mainTs27.includes("async function runNpmInstall(") && mainTs27.includes('await runNpmInstall(id, "cloakbrowser", "CloakBrowser")') ? ok : fail)("main.ts：CloakBrowser 走 runNpmInstall（用内置 node 自带 npm，不依赖用户环境）");
+  (mainTs27.includes('const registries = userRegistry ? [userRegistry] : [CHINA_NPM_REGISTRY, ""];') ? ok : fail)("main.ts：npm 安装是国内镜像优先 + 官方源回落（用户自设源时不覆盖）");
+  (mainTs27.includes('if (id === "cloakbrowser") return path.join(npmGlobalRoot(), "cloakbrowser");') ? ok : fail)("main.ts：卸载 CloakBrowser 只删包体目录（按 marker 首段删会连 nuphus/playwright-cli 一起删光）");
+  (mainTs27.includes('npmShimPaths("cloakbrowser")') ? ok : fail)("main.ts：卸载后清掉 npm shim（否则 PATH 留着指向空目录的 cloakbrowser.cmd）");
+  (mainTs27.includes('if (spec.bundled) throw new Error("该工具随应用内置') ? ok : fail)("main.ts：bundled 条目拒绝卸载（删了没有可靠重取途径）");
+  (mainTs27.includes("if (spec.bundled && runtimeInstalled(id, spec)) return { ok: true, runtimes: runtimeList() };") ? ok : fail)("main.ts：bundled 条目已就位时「修复安装」是幂等空操作（判定与清单同源 runtimeInstalled）");
+  const toolchainTs27 = readFileSync(join(ROOT, "electron", "toolchain.ts"), "utf8");
+  (toolchainTs27.includes('export const CHINA_NPM_REGISTRY = "https://registry.npmmirror.com";') ? ok : fail)("toolchain：npm 国内镜像常量在位（registry.npmmirror.com）");
+
+  // 「默认用内置浏览器」：指令 / 技能 / 渲染层三处必须同向
+  const devInstr = readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8");
+  (devInstr.includes("DEFAULT browser channel") && devInstr.includes("CLOAKBROWSER_ENTRY") ? ok : fail)("developer_instructions：playwright-cli 是默认通道，cloakbrowser 要先探 CLOAKBROWSER_ENTRY");
+  (!/The in-app browser panel is CloakBrowser/.test(devInstr) ? ok : fail)("developer_instructions：不再声称应用内面板就是 CloakBrowser（默认是内置浏览器视图）");
+  const skillsTs = readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8");
+  (!/本机内置的浏览器就是 CloakBrowser/.test(skillsTs) && skillsTs.includes("## 0. 默认用内置浏览器") ? ok : fail)("browser-automation 技能：默认用内置浏览器（CloakBrowser 仅在已安装且需过反爬时用）");
+  const appTs = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  (appTs.includes('const [browserMode] = useState<"cloak" | "internal">("internal")') ? ok : fail)("App.tsx：浏览器模式默认内置视图（不再是 cloak）");
+  (appTs.includes('const autoIds = ["nuphus", "playwright-cli", "cloakbrowser", "playwright-browsers", "cloak-browsers", "ponytail"]') ? ok : fail)("App.tsx：开发工具分组按拆分后的条目 id 归类");
+
+  // mac 侧两条链路与 Windows 同源（否则 mac 包又把 CloakBrowser 带回来）
+  const macCopy = readFileSync(join(ROOT, "build", "copy-mac-tools.cjs"), "utf8");
+  (macCopy.includes("isCloakPackage") && macCopy.includes("!isCloakPackage(entry)") ? ok : fail)("mac copy-mac-tools：复制 npm-global 时同样排除 cloakbrowser");
+  const macPrepare = readFileSync(join(ROOT, "scripts", "prepare-mac-tools.cjs"), "utf8");
+  (!macPrepare.includes('"cloakbrowser@') ? ok : fail)("mac prepare-mac-tools：不再安装 cloakbrowser（与 Windows 同源）");
+  const verifyPackaged = readFileSync(join(ROOT, "scripts", "verify-packaged-tools.cjs"), "utf8");
+  (verifyPackaged.includes("未随包内置") ? ok : fail)("verify-packaged-tools：CloakBrowser 缺席不再判失败（按需下载是预期形态）");
+}
+
 // ---------- 汇总 ----------
 
 console.log("");

@@ -1,7 +1,11 @@
 #!/usr/bin/env node
-// 把 resources/tools/npm-global（nuphus-mcp / @playwright/cli / cloakbrowser / playwright-core）
-// 打成 automation-tools.zip，供发布下载源分发；应用内「开发工具 → 桌面与浏览器自动化」
-// 下载后解压即用（不再随安装包内置展开的 66MB + 两个浏览器内核 1.2GB）。
+// 把 resources/tools/npm-global（nuphus-mcp / @playwright/cli）打成 automation-tools.zip，
+// 供「开发工具」页的「修复安装」重新解压恢复。
+//
+// ⛔ 09-16（用户「CloakBrowser 不用内置，按需下载就行」）：zip **不含 cloakbrowser**。
+//    它与 npm-global 的 extraResources filter（package.json）是同一份排除清单的两处落点：
+//    zip 漏了这条排除 → 用户点一次「修复安装」就把 CloakBrowser 又装回包里。
+//    CloakBrowser 现在走「开发工具」页按需 npm 安装（npmmirror 源）。
 //
 // 用法：node scripts/pack-automation.cjs [输出目录]
 // 输出：<tools>/automation-tools.zip（zip 内顶层为 npm-global/）
@@ -45,19 +49,32 @@ const pyScript = `
 import zipfile, os, sys
 src = r"${globalDir.replace(/\\/g, "\\\\")}"
 out = r"${outZip.replace(/\\/g, "\\\\")}"
+skipped = 0
+total = 0
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
     for cur, dirs, files in os.walk(src):
         for f in files:
             fp = os.path.join(cur, f)
             rel = os.path.relpath(fp, os.path.dirname(src))  # 顶层 npm-global/
-            z.write(fp, rel.replace("\\\\", "/"))
-print("done")
+            arc = rel.replace("\\\\", "/")
+            parts = arc.split("/")
+            # 排除 CloakBrowser（顶层 shim + node_modules 包体 + .bin shim）——按需下载，不随包
+            if len(parts) >= 2 and parts[1].startswith("cloakbrowser"):
+                skipped += 1
+                continue
+            if len(parts) >= 3 and parts[1] == "node_modules" and (parts[2] == "cloakbrowser" or (parts[2] == ".bin" and parts[-1].startswith("cloakbrowser"))):
+                skipped += 1
+                continue
+            z.write(fp, arc)
+            total += 1
+print("done files=%d skipped_cloak=%d" % (total, skipped))
 `;
 const res = spawnSync(py, ["-c", pyScript], { stdio: "pipe", encoding: "utf8" });
 if (res.status !== 0) {
   console.error("python 打包失败:", res.stderr || res.stdout);
   process.exit(1);
 }
+console.log((res.stdout || "").trim());
 
 const size = fs.statSync(outZip).size;
 console.log(`OK ${outZip}  ${(size / 1048576).toFixed(1)} MB`);

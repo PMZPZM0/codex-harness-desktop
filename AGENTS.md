@@ -108,15 +108,17 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 工具链清单
 
-**随包内置（离线可用，勿重复下载）**：Node（安装器引导）、VS Code CLI、**桌面与浏览器自动化包体**（`tools/npm-global` 预解压，18MB 压缩 / 64MB 原始：Nuphus 29.6 + Playwright CLI 18.1 + CloakBrowser 3.6 + 依赖）、**ponytail 插件源**（`tools/ponytail-plugin` 1.6MB）。其余（Python/Git/PowerShell/rg/uv/CMake/Ninja/7-Zip/jq）09-16 起不随包，走「开发工具」页按需下载；**首次启动检测到缺 Git 会自动后台补装**（`autoInstallGitIfNeeded`：仅 Windows、与手动安装互斥、装完 `restartServerWhenIdle` 刷新引擎、失败广播 done 事件不悬挂安装态，下次启动仍缺会再试）。**ponytail 首启自动种**（见【26】）：`config.toml` 里**没有** `ponytail@ponytail` 段时才动手，卸载过（段在、enabled=false）永不重装。
+**随包内置（离线可用，勿重复下载）**：Node（安装器引导）、VS Code CLI、**Nuphus 桌面自动化 + Playwright 浏览器自动化 CLI**（`tools/npm-global` 预解压，≈48MB 原始；09-16 起 **CloakBrowser 已从包里剥离**，extraResources `filter` / `pack-automation.cjs` / mac `copy-mac-tools.cjs` 三处同源排除。⛔ **必须两条 extraResources 映射**：`from=resources/tools/npm-global`（根级 shim）+ `from=resources/tools/npm-global/node_modules`（包体本身）——electron-builder 会**无条件丢弃 `from` 根级的 `node_modules`**，只写一条映射的话包里只剩 shim、包体全无）、**ponytail 插件源**（`tools/ponytail-plugin` 1.6MB）。其余（Python/Git/PowerShell/rg/uv/CMake/Ninja/7-Zip/jq）09-16 起不随包，走「开发工具」页按需下载；**首次启动检测到缺 Git 会自动后台补装**（`autoInstallGitIfNeeded`：仅 Windows、与手动安装互斥、装完 `restartServerWhenIdle` 刷新引擎、失败广播 done 事件不悬挂安装态，下次启动仍缺会再试）。**ponytail 首启自动种**（见【26】）：`config.toml` 里**没有** `ponytail@ponytail` 段时才动手，卸载过（段在、enabled=false）永不重装。
 
 **按需安装（应用内「开发工具」页 或 手动）**：
 
 | 工具 | 大小 | 安装方式 | 装完效果 |
 |---|---|---|---|
-| 桌面与浏览器自动化（nuphus + playwright-cli + cloakbrowser 包体） | 随包 18MB（已预解压） | **随包直出、开箱即用**（清单直接显示「已安装」，无需点安装）；按钮分支仅作修复用（重新解压 zip 到 `tools/npm-global/` + 激活联动开关 + 引擎重启） | nuphus MCP 注册 35+ 工具；playwright-cli / cloakbrowser 可用 |
-| Playwright 浏览器内核 | ~170MB | 开发工具页「下载」（需先装自动化包） | playwright-cli 首次 open 不再提示缺内核 |
-| Cloak 指纹浏览器内核 | ~200MB | 开发工具页「下载」（需先装自动化包） | cloakbrowser 可开反检测窗口 |
+| Nuphus 桌面自动化 | 随包 30MB | **随包直出**，卡片显示「内置」；目录损坏时点「修复安装」（重新解压 zip 到 `tools/npm-global/` + 激活联动开关 + 引擎重启） | nuphus MCP 注册 35+ 桌面工具（经 nuphus-call 按需调用） |
+| Playwright 浏览器自动化（CLI） | 随包 18MB | 同上（随包直出 / 可修复安装） | playwright-cli 可用（**默认浏览器通道**） |
+| CloakBrowser 指纹浏览器（npm 包） | ~4MB | 开发工具页「下载」（`runNpmInstall`：内置 node 自带 npm + registry.npmmirror.com，失败回落官方源；用户自设 registry 时不覆盖） | `CLOAKBROWSER_ENTRY` 生效，可过 Cloudflare/reCAPTCHA；**不装不影响日常浏览**（默认走内置浏览器视图 + playwright-cli） |
+| Playwright 浏览器内核 | ~170MB | 开发工具页「下载」（需先有 Playwright CLI） | playwright-cli 首次 open 不再提示缺内核 |
+| Cloak 指纹浏览器内核 | ~200MB | 开发工具页「下载」（需先装 CloakBrowser npm 包） | cloakbrowser 可开反检测窗口 |
 | ponytail 写代码模式插件 | 随包 2MB | **首启自动种入**（cache + 注册段 + 钩子信任），无需点安装；按钮分支仅作修复用 | 会话钩子 + 6 个 ponytail-* 技能 |
 | FFmpeg / yt-dlp / Miniconda / MinGW | 各 20~300MB | 开发工具页「下载」（联网） | 对应命令可用 |
 | Docker Desktop / OpenSSL | — | 系统级安装（开发工具页打开官网） | 系统命令 |
@@ -125,13 +127,14 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 ## 安装操作（引擎缺工具时怎么自助装）
 
 1. **优先看 `tools/` 目录**：`resources/tools/npm-global` 存在 = 自动化工具已装；`tools/{node,python,git,...}` 存在 = 基础运行时已装。
-2. **缺自动化工具包**：调用应用内 `runtime:install`（id=`automation`），或手动：
+2. **缺 Nuphus / Playwright CLI（随包内置能力缺失）**：调用应用内 `runtime:install`（id=`nuphus` / `playwright-cli`，从随包 zip 修复解压），或手动：
    - 解压随包 `tools/automation-tools.zip` 到 `tools/`（内置 python：`python -c "import zipfile; zipfile.ZipFile('automation-tools.zip').extractall('tools')"`），结果得到 `tools/npm-global/`。
    - 重启引擎（或重选一次供应商触发 `applyCustomModel`）→ nuphus MCP 段写入 config.toml。
-3. **缺 Playwright / Cloak 内核**：`runtime:install`（id=`playwright-browsers` / `cloak-browsers`），会分别调 `playwright install chromium` 与 `cloakbrowser install`。
-4. **缺 ponytail 插件**：正常情况**不用管**（首启自动种）；真要重种：`runtime:install`（id=`ponytail`），随包安装源 `tools/ponytail-plugin` 种到 `codex-home/plugins/cache` + 写 `[marketplaces.ponytail]` / `[plugins."ponytail@ponytail"]` / 钩子信任。
-5. **装完统一**：重启引擎生效；插件/技能/钩子状态从 `plugin/list`、`skills/list`、`hooks/list` 读。
-6. ⛔ **写 config.toml 的键值走 `config/value/write` 时必带 `mergeStrategy: "replace"`**（引擎必填；缺了整条请求被拒 `Invalid request: missing field mergeStrategy`，而这些调用普遍 `.catch(() => undefined)` 静默吞掉 → 表现成「开关点了没生效」）。预检【26】有结构守卫：每处调用 600 字符内必须出现该字段。09-16 实测：ponytail 卸载/装回的 enabled 写入漏了它，长期没生效。
+3. **缺 CloakBrowser npm 包**：`runtime:install`（id=`cloakbrowser`，走 npmmirror npm 源）。
+4. **缺 Playwright / Cloak 内核**：`runtime:install`（id=`playwright-browsers` / `cloak-browsers`），会分别调 `playwright install chromium` 与 `cloakbrowser install`（后者需先装 CloakBrowser 包）。
+5. **缺 ponytail 插件**：正常情况**不用管**（首启自动种）；真要重种：`runtime:install`（id=`ponytail`），随包安装源 `tools/ponytail-plugin` 种到 `codex-home/plugins/cache` + 写 `[marketplaces.ponytail]` / `[plugins."ponytail@ponytail"]` / 钩子信任。
+6. **装完统一**：重启引擎生效；插件/技能/钩子状态从 `plugin/list`、`skills/list`、`hooks/list` 读。
+7. ⛔ **写 config.toml 的键值走 `config/value/write` 时必带 `mergeStrategy: "replace"`**（引擎必填；缺了整条请求被拒 `Invalid request: missing field mergeStrategy`，而这些调用普遍 `.catch(() => undefined)` 静默吞掉 → 表现成「开关点了没生效」）。预检【26】有结构守卫：每处调用 600 字符内必须出现该字段。09-16 实测：ponytail 卸载/装回的 enabled 写入漏了它，长期没生效。
 
 ## 验证基建实现细节（配合开头的「验收铁律」看）
 
@@ -166,7 +169,17 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   - **国内加速**：`scripts/install-runtimes.cjs` 的 download() 通道序 = npmmirror 镜像（node/python/git-for-windows 有同步）→ 本机代理（仅显式设 PROXY 时）→ 直连 → gh-proxy（GitHub 资源兜底）；pip/conda 早已走清华源。内核下载在 `electron/main.ts runBrowserDownload`：镜像优先（toolchain.ts `CHINA_MIRROR_ENV`：PLAYWRIGHT_DOWNLOAD_HOST=npmmirror、CLOAKBROWSER_DOWNLOAD_URL=gh 代理前缀——归档与 SHA256SUMS 同源校验不受影响），失败自动回落官方源；用户自设同名变量时不覆盖。
   - **界面自动刷新**：主进程 `watchFs(toolsRoot(), {recursive})` 去抖 1.5s 广播 `runtime:progress {auto:true,done:true}`，渲染层收到即刷新开发工具清单与工具状态——引擎在会话里自己装了工具，设置页不用重开。
   - **坑**：① 给「开发工具」新加的 install 分支若直接 spawn 官方源 = 绕过加速，必须走 runBrowserDownload/install-runtimes 的通道逻辑（预检【26】守）；② 变异 package.json 做反证要用 JSON-aware 方式（字符串拼接双逗号会把 JSON 弄非法 → 预检崩在解析上，守卫「恒绿」假象）；③ 反证触过的源码 mtime 变新，恢复后必须重建再终验。
-  - **用户须知（文案已同步）**：新装机用户先在开发工具装 **Git**（引擎执行 shell 命令依赖）与所需工具链；自动化的安装顺序仍是「桌面与浏览器自动化 → 内核」。
+  - **用户须知（文案已同步）**：新装机用户先在开发工具装 **Git**（引擎执行 shell 命令依赖）与所需工具链；自动化能力（Nuphus / Playwright CLI / ponytail）随包直出、无需安装，需要过反爬站点时再到开发工具下载 **CloakBrowser** 与对应内核。
+
+- **自动化工具拆细 + CloakBrowser 剥离随包 + 默认内置浏览器（09-16 下午，用户「这三个内置，CloakBrowser 不用内置按需下载，默认用内置浏览器；自动化工具拆开拆详细一点」）**：
+  - **开发工具页拆卡**：原「桌面与浏览器自动化」一张大卡（`automation` 合并 id）拆成逐条能力卡——`nuphus`（Nuphus 桌面自动化）/ `playwright-cli`（Playwright 浏览器自动化）/ `cloakbrowser`（CloakBrowser 指纹浏览器）/ `playwright-browsers` / `cloak-browsers`（两类内核）/ `ponytail`（写代码模式插件），各自独立显示状态、大小与安装动作；`automation` 这个合并 id 已删除。
+  - **bundled 语义**（DevRuntimeSpec 新字段，区别于 builtIn「基础运行时」分组）：随包内置来源 → 界面显示「内置」徽标、拒绝卸载；缺失时给「修复安装」（nuphus/playwright-cli = 重新解压随包 zip，ponytail = 重种插件）；已就位时再点安装是幂等空操作（判定统一走 `runtimeInstalled`，与清单同源——ponytail 的 marker 在引擎侧 cache，不在 tools 目录）。⛔ ponytail 的 install 分支必须排在 `spec.bundled` **之前**，否则「修复 ponytail」会去解压 automation zip。
+  - **CloakBrowser 按需下载**：`runNpmInstall`（main.ts）用**内置 node 自带 npm**（不依赖用户装没装 node/npm）+ registry.npmmirror.com 优先、官方源回落（用户自设 `npm_config_registry` 时不覆盖）；卸载只删包体目录（⛔ 绝不能按 marker 首段推导——那是 npm-global 根，会把 nuphus / playwright-cli 一起删光）并清掉 npm shim（根目录三件套 + `node_modules/.bin` 三件套，不清则 PATH 上留着指向空目录的 `cloakbrowser.cmd`）。
+  - **出包排除（三处同源，缺一不可）**：package.json extraResources 里 npm-global 的 `filter`（排除 cloakbrowser 包体与 shim）、`pack-automation.cjs`（zip 同样排除——否则「修复安装」把它又装回包里）、mac `copy-mac-tools.cjs` 的 `isCloakPackage` 过滤 + `prepare-mac-tools.cjs`（不再安装 cloakbrowser@）。`before-pack.cjs` 的坏包守卫同步升级：从「zip 存在与否」改为**直接校验随包内容**——npm-global 里必须有 `@nuphus/nuphus-mcp` 与 `@playwright/cli`（zip 只是修复备用，不再是唯一保障）。
+  - ⛔ **electron-builder 会丢弃 `from` 根级的 `node_modules`（09-16 打包验证才暴露，一直没被发现）**：`copyDir` 的 walk() 对每个条目先过 filter，而 filter（app-builder-lib/out/util/filter.js `createFilter`）里写死了 `if (relative === "node_modules") return false`，**且目录节点被过滤时整棵子树不遍历**。所以「一条 `from=resources/tools/npm-global` 映射 = 预解压开箱即用」是**假的**：包里只有根级 shim（`nuphus-mcp.cmd` 等），`npm-global/node_modules` 根本没进包 → 装完 nuphus / playwright-cli 两张卡都是「未安装」，用户得点一次「修复安装」解 zip 才可用。修法 = **另加一条 `from=resources/tools/npm-global/node_modules` → `to=tools/npm-global/node_modules` 的映射**（那一层相对路径不叫 `node_modules`，绕开剪枝；`copyDir` 只 mkdir+拷贝、不清目标，两条映射并发写同一父目录安全）。守卫：预检【27】断言两条映射都在 + 新映射里同样排除 cloakbrowser，`verify-packaged-tools.cjs` 在产物层断言 `@nuphus/nuphus-mcp/package.json` 与 `@playwright/cli/package.json` 真的在包里。（mac 侧不受影响：`copy-mac-tools.cjs` 用 `fs.cp`，没有这条剪枝。）
+  - **zip 新鲜度也要看脚本**：`before-pack.cjs` 原来只比 zip 与 `npm-global` 目录的 mtime → 「只改了 `pack-automation.cjs` 的排除清单、没动目录」时会静默复用旧 zip（日志还说「已是最新，跳过」），用户点一次「修复安装」就把已剥离的包装回去。现在 zip mtime 要同时新于源目录**与打包脚本**。
+  - **默认内置浏览器**：developer_instructions（`BROWSER_INSTRUCTIONS`）与 `browser-automation` 技能改为「默认通道 = 内置浏览器视图（右栏 Chromium webview）+ playwright-cli；cloakbrowser 是可选增强，先探 `CLOAKBROWSER_ENTRY`，为空即未安装——不要自己安装、不要当故障上报，提示用户到开发工具下载」；App.tsx 的 `browserMode` 遗留字段默认值改 internal；设置页「浏览器控制」「开发工具」与 `tools:status` 文案同步。⛔ 旧文案「本机内置的浏览器就是 CloakBrowser」在剥离后是**错误指令**（模型会去 import 一个不存在的模块）。
+  - 验证：预检新增【27】22 条守卫 + 21 条变异反证全红；`npm run check` 全绿；隔离 profile 真机验收 29 断言（IPC 拆卡 / bundled 标记 / 内置项拒绝卸载 / config.toml 与技能文件里真实落地的指令文案 / 开发工具页卡片与徽标 + 截图）；`electron-builder --dir` 真打包核对产物里 npm-global 已无 cloakbrowser 且 nuphus / playwright-cli 在位。
   - **Git 首启自动补装（09-16 下午，用户拍板「首次启动自动安装行」）**：`autoInstallGitIfNeeded`（main.ts，挂 whenReady 链 remote.start 之后）——仅 Windows（mac 包仍内置 git）、marker（`git\cmd\git.exe`）已存在就跳过、`runtimeInstalls` 互斥防与手动安装撞车；复用按钮安装同一条 install-runtimes.cjs 链（npmmirror 优先），装完 `restartServerWhenIdle` 让引擎新 PATH 生效；失败广播 `done` 事件（不悬挂安装态），下次启动仍缺会再试（自愈）。渲染层 App.tsx 对 `id=git && message 含"自动"` 的 done 事件弹 notice（手动安装的「安装完成」不含「自动」二字，不受影响）。 ⛔ 启动时机必须在 `server.start()` **之后**（restart 语义是杀掉现有引擎重 spawn，太早挂会跟首启 spawn 撞车）。
   - 预检【26】守卫 + 13 条变异反证全红；构建三关全绿。
 

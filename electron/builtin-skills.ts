@@ -40,14 +40,18 @@ description: 用 nuphus-mcp 的 desktop_* 工具操控本机桌面：截屏、�
 
 const BROWSER_SKILL = `---
 name: browser-automation
-description: 浏览器自动化工具链：playwright-cli（快速网页操作/抓取）与 CloakBrowser（反检测指纹浏览器，过 Cloudflare/reCAPTCHA 等）。任务需要打开网页、抓取、自动填表或对抗反爬时使用。
+description: 浏览器自动化工具链：playwright-cli（默认通道，快速网页操作/抓取）与 CloakBrowser（可选的反检测指纹浏览器，过 Cloudflare/reCAPTCHA 等，按需下载）。任务需要打开网页、抓取、自动填表时使用。
 ---
 
 # 浏览器自动化
 
-本机内置两套浏览器自动化，按目标网站防御强度选择：
+## 0. 默认用内置浏览器（先读这条）
 
-## 1. playwright-cli（首选，快）
+日常浏览/抓取**一律走内置通道**：应用内置的浏览器视图（右栏面板，Chromium）+ \`playwright-cli\`。
+不要默认去用 CloakBrowser —— 它**不随应用内置**（需在「设置 → 开发工具」按需下载），
+且只有过反爬站点时才需要。判断它装没装：\`process.env.CLOAKBROWSER_ENTRY\` 为空即未安装。
+
+## 1. playwright-cli（默认，快）
 
 命令行工具，已在 PATH。适合普通网站的操作与抓取：
 
@@ -62,12 +66,13 @@ playwright-cli close                       # 关闭
 
 - 会话隔离：\`-s=名字\` 可同时开多个独立浏览器
 - 页面快照是 token 友好的文本，优先用 snapshot 而不是截图
+- 浏览器内核由用户在本应用「开发工具」页下载（国内镜像）；未下载时首次 open 会提示
 
-## 2. CloakBrowser（指纹浏览器，过反爬）
+## 2. CloakBrowser（可选增强：指纹浏览器，过反爬）
 
-**本机内置的浏览器就是 CloakBrowser 指纹浏览器**（Chromium 146，源码级反检测补丁，可通过 Cloudflare Turnstile / reCAPTCHA / FingerprintJS）。应用内「浏览器」面板打开的网页也走它。
-
-目标站有验证码/登录墙/反爬时，写 Node 脚本（应用子进程环境已配好 \`CLOAKBROWSER_ENTRY\`）：
+**按需下载项，可能未安装**（「设置 → 开发工具 → CloakBrowser 指纹浏览器」，约 4 MB；内核另需下载）。
+先探 \`process.env.CLOAKBROWSER_ENTRY\`：为空说明没装，**直接改用 playwright-cli**，
+不要自己跑安装命令，也不要把它当故障上报（可以把下载入口告诉用户）。装了之后写 Node 脚本：
 
 \`\`\`javascript
 // bot-check.mjs —— node bot-check.mjs 运行
@@ -80,14 +85,16 @@ await browser.close();
 \`\`\`
 
 - \`headless: true\` 也能过大部分检测；需要人机交互时用 false
-- 内核已预装（CLOAKBROWSER_CACHE_DIR 已配好），**不要**运行 \`cloakbrowser install\`
+- 内核缓存目录是 CLOAKBROWSER_CACHE_DIR；内核由应用「开发工具」页负责下载，**不要**自己跑 \`cloakbrowser install\`
+- 它是独立窗口，和应用内置浏览器视图（右栏面板）是两回事
 
 ## 选择规则
 
 | 场景 | 用什么 |
 |---|---|
-| 打开网页/抓内容/填表单 | playwright-cli |
-| Cloudflare/验证码/登录墙/风控站 | CloakBrowser |
+| 打开网页/抓内容/填表单（默认） | 内置浏览器视图 / playwright-cli |
+| 需要用户看着打开的页面 | 应用右栏内置浏览器面板 |
+| Cloudflare/验证码/登录墙/风控站（且 CloakBrowser 已装） | CloakBrowser |
 | 操作已打开的 Chrome 窗口 | nuphus 的 browser_* 工具 |
 `;
 
