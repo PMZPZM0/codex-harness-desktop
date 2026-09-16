@@ -2418,6 +2418,15 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     /ownedMcpServers\.has\(ownedBase\)/.test(mainSrc9)
       ? ok("★ MCP 子段按 base 名归属（harness-dispatch.env 不再被当用户段拼回 → 重复键）")
       : fail("MCP 子段归属判定缺失 —— config.toml 会写出重复段，引擎拒载整份配置");
+    // 09-16 用户实测「Codex 说归档了但侧栏还在」：MCP 归档端必须真调引擎 thread/archive，
+    // 只标登记表的话侧栏（archived:false 过滤）不生效。
+    /agent_archive_sessions/.test(mainSrc9) && /server\.request\("thread\/archive"/.test(mainSrc9)
+      ? ok("★ 调度归档真调引擎 thread/archive（只标登记表 → 侧栏不消失）")
+      : fail("归档只标登记表 —— 侧栏会话不会消失（09-16 用户实测踩过）");
+    // 09-16 用户要求「调度完头像停留 20 秒，方便用户查看内容」
+    /DELEGATE_RAIL_LINGER_MS/.test(appSrc9) && /20\d\d\d/.test(appSrc9)
+      ? ok("★ 调度头像轨跑完停留 20 秒（用户要求：方便查看内容）")
+      : fail("头像跑完立刻消失 —— 用户没时间看内容");
     /dispatchMcpCount !== 1/.test(mainSrc9)
       ? ok("★ 启动自愈检测调度 MCP 段缺失/重复（老配置自动重写）")
       : fail("启动自愈不检测调度 MCP 段 —— 老配置永远不会被修复");

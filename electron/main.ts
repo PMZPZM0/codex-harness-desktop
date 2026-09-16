@@ -6606,9 +6606,23 @@ async function dispatchRpcCall(name: unknown, args: Record<string, unknown>): Pr
   }
   if (name === "agent_archive_sessions") {
     const ids = Array.isArray(args.threadIds) ? args.threadIds.map(String) : [];
-    const count = await delegateRegistry.markArchived(ids);
+    // ⛔ 必须真调引擎的 thread/archive（09-16 用户实测：只标登记表的话侧栏会话不消失）。
+    // 与 agents:archive IPC 同一条链路：引擎归档 + 登记表标记 + 广播刷新。
+    let archived = 0;
+    const failed: string[] = [];
+    for (const id of ids) {
+      try {
+        const record = await delegateRegistry.infoOf(id);
+        if (!record || record.archived) continue;
+        await server.request("thread/archive", { threadId: id });
+        await delegateRegistry.markArchived([id]);
+        archived += 1;
+      } catch { failed.push(id); }
+    }
+    const remaining = await delegateRegistry.listByOrigin(String(args.originThreadId ?? "")).catch(() => []);
     broadcastHarnessEvent({ type: "delegates-changed" } as any);
-    return { ok: true, output: `已归档 ${count} 个调度会话。` };
+    const hint = failed.length ? `（${failed.length} 个失败）` : remaining.length ? `（还有 ${remaining.length} 个未归档）` : "";
+    return { ok: true, output: `已归档 ${archived} 个调度会话${hint}。` };
   }
   return { ok: false, error: `未知工具：${String(name)}` };
 }
