@@ -118,6 +118,25 @@ export function nuphusCallHelper() {
   }
 }
 
+// 国内下载加速（09-16 打包瘦身配套）：浏览器内核不随包，按需下载时默认走国内镜像。
+// ① Playwright 内核：npmmirror 的 binaries 镜像（淘宝系，国内直连快）；
+// ② CloakBrowser 内核：官方只发 GitHub Releases，国内直连慢/不稳，走 gh 代理前缀
+//    （代理只做路径前缀替换，归档与 SHA256SUMS 校验文件同源，完整性校验不受影响）。
+// 用户自己设了同名变量时不覆盖；镜像下载失败时主进程会自动回落官方源重试。
+export const CHINA_MIRROR_ENV: Record<string, string> = {
+  PLAYWRIGHT_DOWNLOAD_HOST: "https://cdn.npmmirror.com/binaries/playwright",
+  CLOAKBROWSER_DOWNLOAD_URL: "https://ghfast.top/https://github.com/CloakHQ/cloakbrowser/releases/download",
+};
+
+/** 内核下载用环境：toolchainEnv + 未被用户覆盖的国内镜像变量。 */
+export function downloadEnv() {
+  const env = toolchainEnv();
+  for (const [key, value] of Object.entries(CHINA_MIRROR_ENV)) {
+    if (!process.env[key]) env[key] = value;
+  }
+  return env;
+}
+
 // Codex 子进程的完整环境：PATH + NODE_PATH，让引擎能直接使用已装自动化工具。
 // 同时把 CloakBrowser/playwright 的缓存指向应用内置目录，打包后随应用走。
 export function toolchainEnv() {
@@ -146,7 +165,7 @@ export function toolchainEnv() {
   return env;
 }
 
-// CloakBrowser Chromium 内核缓存目录（resources/tools/cloak-cache，随应用打包）。
+// CloakBrowser Chromium 内核缓存目录（resources/tools/cloak-cache；09-16 起内核不随包，按需下载到此目录）。
 export function cloakCacheDir() {
   const tools = toolsRoot();
   return tools ? path.join(tools, "cloak-cache") : "";

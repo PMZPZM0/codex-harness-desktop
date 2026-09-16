@@ -8794,6 +8794,9 @@ export default function App() {
   const [runtimeModal, setRuntimeModal] = useState<{ id: string; name: string; mode: "install" | "uninstall"; done: boolean; failed: boolean } | null>(null);
   const refreshDevRuntimes = () => { window.codex.listRuntimes().then(setDevRuntimes).catch(() => setDevRuntimes([])); };
   useEffect(() => window.codex.onRuntimeProgress((event) => {
+    // auto = 主进程监视到 tools 目录变化（引擎自己装了工具）→ 静默刷新清单与状态，
+    // 不动「正在安装」指示（那是按钮安装路径的专属状态）
+    if (event.auto) { refreshDevRuntimes(); refreshToolsStatus(); return; }
     setRuntimeProgress((current) => ({ ...current, [event.id]: event.message.split(/\r?\n/).at(-1) || event.message }));
     if (event.done) { setRuntimeInstalling(null); refreshDevRuntimes(); }
   }), []);
@@ -17505,7 +17508,7 @@ const commandMatches = useMemo(() => {
               </div>
             </section>}
             {settingsPage === "devtools" && <section className="settings-section stack devtools-page">
-              <div className="settings-copy"><h2>开发工具</h2><p>引擎原生基础运行时随应用内置；自动化工具与浏览器内核按需下载，安装后自动加入 Codex 环境（不改系统 PATH）。</p></div>
+              <div className="settings-copy"><h2>开发工具</h2><p>引擎与 Node 运行时随应用内置；其余工具链与浏览器内核均按需下载（国内镜像加速，失败自动回落官方源），安装后自动加入 Codex 环境（不改系统 PATH）。</p></div>
               <div className="settings-subhead"><Download size={13} />语音模型<span className="settings-subhead-hint">sherpa-onnx · 本机推理 · 按需下载</span></div>
               <VoiceDevToolsSection onNotice={setNotice} />
               {(() => {
@@ -17560,7 +17563,7 @@ const commandMatches = useMemo(() => {
                   <button className="secondary-setting" onClick={() => { void copyTextToClipboard(devRuntimes.map((r: any) => `# ${r.name}\n${r.description}\n${r.installed || r.builtIn ? "状态：已就绪" : "状态：未安装"}\n`).join("\n")); setNotice("工具清单已复制"); }}><Copy size={13} />复制清单</button>
                 </div>
               </details>
-              <p className="settings-card-hint">Node、Python（含 Tkinter、requests/httpx/flask/fastapi/playwright）、Git、PowerShell、ripgrep、uv、CMake、7-Zip、jq、Ninja 已内置随应用提供。桌面/浏览器自动化（nuphus + playwright-cli + cloakbrowser）与浏览器内核按需下载；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）。</p>
+              <p className="settings-card-hint">引擎与 Node 随应用内置；Python（含 Tkinter、requests/httpx/flask/fastapi/playwright）、Git、PowerShell、ripgrep、uv、CMake、7-Zip、jq、Ninja 与两类浏览器内核均按需下载（npmmirror / gh 加速，失败自动回落官方源）；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）；引擎在会话里自行安装工具时，此页状态也会自动刷新。建议装机后先装 Git（引擎执行 shell 命令依赖它）。</p>
             </section>}
 
             {/* 开发工具 安装/卸载 实时进度弹窗（替代 window.confirm——后者会抢焦点 + 打断输入框） */}

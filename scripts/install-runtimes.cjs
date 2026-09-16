@@ -60,33 +60,39 @@ const DIRECT = process.argv.includes("--direct");
 // bsdtar 支持 zip 和 Windows 反斜杠路径；Git Bash 的 GNU tar 两者都不行
 const BSDTAR = fs.existsSync("C:\\Windows\\System32\\tar.exe") ? "C:\\Windows\\System32\\tar.exe" : "tar";
 
-// 代理：默认用 Clash Verge 混合端口 7897（verge-mihomo），可用 PROXY 环境变量覆盖
-const PROXY = process.env.PROXY || "http://127.0.0.1:7897";
+// 代理：仅当显式设置 PROXY 环境变量时才走本机代理（开发机可用）。
+// 09-16 起安装包不带工具链，普通用户机器上没有 7897 —— 默认空，避免每个文件白等 30s 连接超时。
+const PROXY = process.env.PROXY || "";
 
-function download(url, file) {
-  return new Promise((resolve, reject) => {
-    const common = `curl -L --fail --silent --show-error --retry 3 --retry-all-errors --connect-timeout 30 --continue-at - -o "${file}" "${url}"`;
-    const viaProxy = `curl -L --fail --silent --show-error --retry 3 --retry-all-errors --connect-timeout 30 --continue-at - --proxy "${PROXY}" -o "${file}" "${url}"`;
-    if (DIRECT) {
-      try { resolve(execSync(common, { stdio: "inherit", timeout: 900000 })); }
-      catch (error) { reject(error); }
-      return;
-    }
-    // 通道 1：本机代理（若有）。通道 2：直连。通道 3：gh-proxy 加速（GitHub 资源兜底）。
+// 国内镜像加速（09-16）：有镜像源的先走镜像，失败再按 直连 → gh-proxy 逐通道回落。
+// npmmirror 同步了 nodejs.org、python.org/ftp 与 git-for-windows 的 releases 资产。
+function chinaMirrorUrl(url) {
+  if (url.startsWith("https://nodejs.org/dist/")) return url.replace("https://nodejs.org/dist/", "https://cdn.npmmirror.com/binaries/node/");
+  if (url.startsWith("https://www.python.org/ftp/python/")) return url.replace("https://www.python.org/ftp/python/", "https://cdn.npmmirror.com/binaries/python/");
+  if (url.startsWith("https://github.com/git-for-windows/git/releases/download/")) return url.replace("https://github.com/git-for-windows/git/releases/download/", "https://cdn.npmmirror.com/binaries/git-for-windows/");
+  return null;
+}
+
+async function download(url, file) {
+  const base = `curl -L --fail --silent --show-error --retry 3 --retry-all-errors --connect-timeout 30 --continue-at - -o "${file}"`;
+  const attempts = [];
+  const mirror = chinaMirrorUrl(url);
+  if (mirror) attempts.push([`国内镜像 npmmirror`, `${base} "${mirror}"`, mirror]);
+  if (PROXY) attempts.push([`本机代理 ${PROXY}`, `${base} --proxy "${PROXY}" "${url}"`, url]);
+  attempts.push(["直连", `${base} "${url}"`, url]);
+  if (url.includes("github.com")) attempts.push(["gh-proxy 加速", `${base} "${GHPROXY}${url}"`, GHPROXY + url]);
+  let lastError;
+  for (const [label, command, effectiveUrl] of attempts) {
     try {
-      console.log(`[download] via proxy ${PROXY}`);
-      resolve(execSync(viaProxy, { stdio: "inherit", timeout: 900000 }));
-    } catch {
-      try {
-        console.log("[download] proxy failed, retrying direct");
-        resolve(execSync(common, { stdio: "inherit", timeout: 900000 }));
-      } catch {
-        if (!url.includes("github.com") && !url.includes("7-zip.org")) { reject(new Error("download failed")); return; }
-        console.log("[download] direct failed, retrying via gh-proxy");
-        resolve(execSync(common.replace(url, GHPROXY + url), { stdio: "inherit", timeout: 900000 }));
-      }
+      console.log(`[download] via ${label}: ${effectiveUrl}`);
+      execSync(command, { stdio: "inherit", timeout: 900000 });
+      return;
+    } catch (error) {
+      lastError = error;
+      console.log(`[download] ${label} 失败，换下一通道`);
     }
-  });
+  }
+  throw lastError ?? new Error("download failed: " + url);
 }
 
 function archiveReady(file) {
