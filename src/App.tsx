@@ -6879,6 +6879,10 @@ function TeamMemberHistory({ team, memberId, runs, onClose }: {
   );
 }
 
+/** 调度头像轨：跑完后的停留时长（用户 09-16：「调度完头像停留 20 秒，方便用户查看内容」）。
+ *  停留期间头像切完成态（呼吸环停、回正），20 秒后自动摘掉、弹窗收起。 */
+const DELEGATE_RAIL_LINGER_MS = 20000;
+
 /** 调度头像轨（09-16 用户要求「跟专家团那个展示一样」）：本会话派出去的专家 / 专家团 / 子智能体，
  *  运行中在消息区右侧亮头像 + 呼吸环（点击看实时工作内容），**跑完即从轨上消失**。
  *  复用 team-rail 的样式与锚点定位（弹窗也复用 team-run-popup），但数据源是调度登记表（delegate-run 广播），
@@ -6909,13 +6913,15 @@ function DelegatedRail({ containerRef, runs, onOpen, activeId }: {
         <i className="team-rail-line" aria-hidden />
         {runs.map((run) => {
           const Icon = kindIcon(run.kind);
+          const state = run.status === "running" ? "running" : run.status === "failed" ? "failed" : "done";
+          const stateHint = state === "running" ? "执行中" : state === "failed" ? "执行失败" : "已完成";
           return (
             <button
               key={run.threadId}
               type="button"
               data-member-id={run.threadId}
-              className={`team-rail-node is-${run.status === "failed" ? "failed" : "running"}${activeId === run.threadId ? " is-active" : ""}`}
-              title={`${kindLabel(run.kind)} · ${run.name}（执行中）｜点击查看工作内容`}
+              className={`team-rail-node is-${state}${activeId === run.threadId ? " is-active" : ""}`}
+              title={`${kindLabel(run.kind)} · ${run.name}（${stateHint}）｜点击查看工作内容`}
               onClick={() => onOpen(run.threadId)}
             >
               <span className="team-rail-avatar"><Icon size={14} /></span>
@@ -12156,15 +12162,28 @@ const commandMatches = useMemo(() => {
             return { ...prev, [String(payload.threadId)]: { ...current, output: (current.output ?? "") + String(payload.text ?? "") } };
           });
         } else if (payload.phase === "finished" && payload.threadId) {
+          const finishedId = String(payload.threadId);
           setDelegateLiveRuns((prev) => {
-            const current = prev[String(payload.threadId)];
+            const current = prev[finishedId];
             if (!current) return prev;
+            // 头像**不立刻消失**（用户 09-16：「调度完头像停留 20 秒，方便用户查看内容」）：
+            // 先切成完成态（呼吸环停、头像回正），20 秒后再从轨上摘掉。
             return {
               ...prev,
-              [String(payload.threadId)]: { ...current, status: payload.status === "failed" ? "failed" : "done", output: String(payload.output ?? current.output ?? ""), error: payload.error, endedAt: Date.now() },
+              [finishedId]: { ...current, status: payload.status === "failed" ? "failed" : "done", output: String(payload.output ?? current.output ?? ""), error: payload.error, endedAt: Date.now() },
             };
           });
-          setDelegatedPopupId((id) => (id === String(payload.threadId) ? "" : id)); // 调用完弹窗收起、头像消失
+          if (delegateRailTimersRef.current.has(finishedId)) clearTimeout(delegateRailTimersRef.current.get(finishedId)!);
+          delegateRailTimersRef.current.set(finishedId, setTimeout(() => {
+            delegateRailTimersRef.current.delete(finishedId);
+            setDelegateLiveRuns((prev) => {
+              if (!prev[finishedId]) return prev;
+              const next = { ...prev };
+              delete next[finishedId];
+              return next;
+            });
+            setDelegatedPopupId((id) => (id === finishedId ? "" : id));
+          }, DELEGATE_RAIL_LINGER_MS));
         }
       }
       if (event.type === "popout-return") {
@@ -12489,7 +12508,8 @@ const commandMatches = useMemo(() => {
       delegateRecordsRef.current = map;
       setDelegateRecords(map);
       // 调度头像轨的数据源（窗口中途打开/重开也要能看到正在跑的）：
-      // 以登记表为准 —— running 的补进 live 表，非 running 的从 live 表摘掉（「跑完就消失」）
+      // 以登记表为准 —— running 的补进 live 表；非 running 的**不立刻摘**（那是「停留 20 秒」的职责，
+      // 由 finished 广播的计时器负责），只在它压根不在表里时也不补（已结束的没必要复活）。
       setDelegateLiveRuns((prev) => {
         const next = { ...prev };
         for (const record of Object.values(map)) {
@@ -12498,8 +12518,6 @@ const commandMatches = useMemo(() => {
               threadId: record.threadId, originThreadId: record.originThreadId, kind: record.kind,
               name: record.name, status: "running", output: record.output ?? "", startedAt: record.startedAt,
             };
-          } else {
-            delete next[record.threadId];
           }
         }
         return next;
@@ -12513,10 +12531,13 @@ const commandMatches = useMemo(() => {
   useEffect(() => { void refreshDelegateRecords(); }, [refreshDelegateRecords]);
 
   const [dispatchBusy, setDispatchBusy] = useState(false);
-  /** 调度头像轨的 live 表（09-16）：只含**正在跑**的委派会话；跑完即从表里摘掉 → 头像消失。
+  /** 调度头像轨的 live 表（09-16）：含**正在跑**与**刚跑完停留中**的委派会话。
    *  事件源 = 主进程 delegate-run 广播（started / delta / finished），种子 = listDelegates。 */
   const [delegateLiveRuns, setDelegateLiveRuns] = useState<Record<string, DelegateRecordEntry>>({});
   const [delegatedPopupId, setDelegatedPopupId] = useState("");
+  /** 跑完后的停留计时器（用户 09-16：头像停留 20 秒，方便查看内容）；卸载时统一清理 */
+  const delegateRailTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  useEffect(() => () => { for (const timer of delegateRailTimersRef.current.values()) clearTimeout(timer); delegateRailTimersRef.current.clear(); }, []);
   /** 调度开关存在会话运行时（localStorage）里，React 感知不到变化 → 用一个 tick 触发重算 */
   const [dispatchTick, setDispatchTick] = useState(0);
   const activeDispatch = useMemo(
@@ -15780,9 +15801,10 @@ const commandMatches = useMemo(() => {
   for (const run of railRuns) if (!railLastByMember[run.memberId]) railLastByMember[run.memberId] = run;
   const popupRun = teamPopupRunId ? teamRuns[teamPopupRunId] ?? null : null;
   const historyMemberRuns = teamHistoryMember ? teamHistoryRuns.filter((run) => run.memberId === teamHistoryMember) : [];
-  /** 调度头像轨（09-16）：本会话派出去、**正在跑**的委派会话（跑完即消失）。 */
+  /** 调度头像轨（09-16）：本会话派出去的委派会话。**跑完停留 20 秒**（用户要求「方便查看内容」），
+   *  完成态头像回正、呼吸环停；20 秒后自动从轨上摘掉。 */
   const delegatedRailRuns = Object.values(delegateLiveRuns)
-    .filter((run) => run.originThreadId === thread?.id && run.status === "running")
+    .filter((run) => run.originThreadId === thread?.id)
     .sort((a, b) => a.startedAt - b.startedAt);
   const delegatedPopupRun = delegatedPopupId ? delegateLiveRuns[delegatedPopupId] ?? null : null;
   // 上下文压缩后的缓存重建窗口：压缩重写了提示词前缀，上游缓存命中需要 1~3 轮才恢复

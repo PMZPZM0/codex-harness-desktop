@@ -22662,6 +22662,9 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .team-rail-node.is-idle:hover .team-rail-avatar { opacity: 0.7; }
 /* 干完活的成员：恢复本色 + 完成勾 */
 .team-rail-node.is-done .team-rail-avatar { filter: none; opacity: 1; }
+/* 调度头像轨的完成态（09-16：跑完停留 20 秒供查看）：呼吸环停掉，头像回正 */
+.team-rail-node.is-done .team-rail-ring { display: none; }
+.team-rail-node.is-done .team-rail-avatar { transform: none; box-shadow: none; }
 .team-rail-node.is-failed .team-rail-avatar { filter: grayscale(0.6); opacity: 0.85; border-color: var(--red); }
 /* 正在干活：亮起 + 抬一下 + 呼吸环 */
 .team-rail-node.is-running .team-rail-avatar {
