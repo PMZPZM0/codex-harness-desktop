@@ -2397,9 +2397,29 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     /dispatchIsDelegated \? \[\] : subAgentTools/.test(appSrc9)
       ? ok("★ L2 注册侧：委派会话不注册 subAgentTools")
       : fail("委派会话仍会拿到 subAgentTools —— 套娃入口没关");
-    /dispatchToolList\(\{ enabled: dispatchSwitch\.enabled === true, isDelegated: dispatchIsDelegated/.test(appSrc9)
-      ? ok("★ L2 注册侧：agent_invoke 只在「开关打开 + 非委派会话」时注册")
-      : fail("agent_invoke 注册条件不完整 —— 开关或身份判断缺失");
+    // ⛔ 09-16 起调度工具改走内置 MCP（引擎硬约束：dynamicTools 只在 thread/start 生效，
+    // resume/fork/turn/start 全部不认 —— 渲染层 dynamic 注册对老会话永远不可见）
+    !/name: "agent_invoke"/.test(appSrc9)
+      ? ok("★ 渲染层不再用 dynamicTools 注册 agent_invoke（对老会话无效，改走 MCP）")
+      : fail("App.tsx 仍存在 dynamic agent_invoke 注册 —— 与 MCP 双通道会让模型混乱");
+    /mcp_servers\.harness-dispatch/.test(mainSrc9) && /dispatchMcpTools\(\)/.test(mainSrc9) && /ensureDispatchHttp/.test(mainSrc9)
+      ? ok("★ 内置调度 MCP 已接线（HTTP 直连 + /mcp 端点 + config.toml 注入）")
+      : fail("调度 MCP 通道缺失 —— 老会话永远拿不到调度工具");
+    // MCP 协议三件套：POST（JSON-RPC）+ GET（SSE 长连接，引擎 rmcp 客户端必开，缺了报
+    // "fail to get common stream: Unexpected content type: None"）+ DELETE（会话终止）
+    /text\/event-stream/.test(mainSrc9) && /req\.method === "GET"/.test(mainSrc9)
+      ? ok("★ /mcp 端点提供 SSE 长连接（引擎 streamable-http 客户端必需）")
+      : fail("缺 SSE 端点 —— 引擎连上也会立刻报 content type 错误");
+    // 固定端口 + 令牌持久化：url 跨运行必须稳定，否则引擎连上一次运行的死端口
+    /DISPATCH_FIXED_PORT/.test(mainSrc9) && /dispatch-token\.txt/.test(mainSrc9)
+      ? ok("★ 调度 MCP 端口固定 + 令牌持久化（config 的 url 跨运行稳定）")
+      : fail("端口/令牌每次变化 —— 引擎会连死端口，工具注册不上");
+    /ownedMcpServers\.has\(ownedBase\)/.test(mainSrc9)
+      ? ok("★ MCP 子段按 base 名归属（harness-dispatch.env 不再被当用户段拼回 → 重复键）")
+      : fail("MCP 子段归属判定缺失 —— config.toml 会写出重复段，引擎拒载整份配置");
+    /dispatchMcpCount !== 1/.test(mainSrc9)
+      ? ok("★ 启动自愈检测调度 MCP 段缺失/重复（老配置自动重写）")
+      : fail("启动自愈不检测调度 MCP 段 —— 老配置永远不会被修复");
     /canDispatchFrom\(/.test(mainSrc9) && /delegateRegistry\.register/.test(mainSrc9)
       ? ok("主进程调度入口接了硬闸与登记表")
       : fail("主进程没接硬闸 —— 只靠提示词拦不住");
@@ -2411,11 +2431,12 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     /dispatch: DispatchConfig/.test(dmts9) && /emptyDispatch\(\): DispatchConfig/.test(dmts9) && /dispatchSignature\(raw: unknown\): string/.test(dmts9)
       ? ok("thread-runtime.d.mts 已同步 dispatch 声明（.mjs 导出必须有配套 .d.mts）")
       : fail("thread-runtime.d.mts 缺 dispatch 声明 —— TS 会报 has no exported member");
-    // 工具面同步（09-16 用户实测「Codex 说没有调度入口」：dynamicTools 只在 thread/start /
-    // thread/resume 生效，turn/start 不带工具 —— 开关确认后必须重放轻量 resume）
-    /resumeThreadLight\(\{ threadId: id, dynamicTools: await buildDynamicTools\(\) \}\)/.test(appSrc9)
-      ? ok("★ 开关确认后立即重放轻量 resume 同步工具面（旧会话不同步 = Codex 永远拿不到工具）")
-      : fail("applyDispatch 没有 resume 同步 —— 开关开了 Codex 也拿不到 agent_invoke");
+    // ⛔ 「开关确认后重放 resume 同步工具面」是假绿（09-16 四个决定性实验：resume/fork/
+    // turn/start/queue/start 都不认 dynamicTools，引擎只在 thread/start 收）—— 已改为 MCP 通道。
+    // 这里钉住教训：applyDispatch 里不允许再出现「resume 补注册工具」的复活。
+    !/resumeThreadLight\(\{ threadId: id, dynamicTools/.test(appSrc9)
+      ? ok("★ 已移除无效的 resume 重放（dynamicTools 只在 thread/start 生效，引擎硬约束）")
+      : fail("applyDispatch 又出现了 resume 重放 —— 那条路是假绿（引擎不认）");
     typeof dp.dispatchOffNoticeText === "function" && /调度已关闭/.test(dp.dispatchOffNoticeText())
       ? ok("关闭开关也有告知文案（权限收回要立刻让对方知道）")
       : fail("缺关闭告知文案");

@@ -1215,6 +1215,10 @@ function normalizeProvider(entry: CustomModelFile): CustomModelFile {
   // ⛔ wire_api 归一化：新版引擎对 "chat" **硬拒载**。档案（custom-model.json）里残留的 chat
   // 必须在这里就消掉 —— 否则「删掉供应商、重新配置」也清不掉它，每次写 config.toml 都会把
   // 坏值带回去（09-14 用户实测：删了重配仍报同一条错）。这里归一化后，写入侧恒为 responses。
+  // 09-16 用独立 CODEX_HOME + 真实 app-server 复核过（scripts/probe-wire-api.cjs）：config.toml
+  // 写 chat 时 initialize 能过、**turn/start 必报** `wire_api = "chat"` is no longer supported.
+  // How to fix: set `wire_api = "responses"` in your provider config. → 每个请求都失败。
+  // 所以归一化不是「顺手做的」，是保命逻辑；UI 侧对应地把 Chat Completions 选项撤掉。
   return { ...entry, models, wireApi: "responses" };
 }
 
@@ -1244,7 +1248,10 @@ async function readUserConfigSplit(ownedMcpServers: Set<string>, overrides: McpO
   const kept = preserveUserConfig(raw);
   const found: Record<string, string> = {};
   for (const name of new Set([...collectMcpServerNames(raw), ...Object.keys(overrides)])) {
-    if (ownedMcpServers.has(name)) continue;
+    // ⛔ 子段也算 owned：`[mcp_servers.harness-dispatch.env]` 的名字是 "harness-dispatch.env"，
+    // 精确匹配会漏 → 被当成用户段拼回 → 与新生成的段重复（09-16 实测 duplicate key，MCP 全灭）。
+    const ownedBase = name.split(".")[0];
+    if (ownedMcpServers.has(name) || ownedMcpServers.has(ownedBase)) continue;
     const text = extractMcpSection(raw, name) || overrides[name]?.toml || "";
     if (!text) { delete overrides[name]; continue; } // 原文已丢且没存档，清掉这条死记录
     overrides[name] = { enabled: overrides[name]?.enabled !== false, toml: text, permissions: overrides[name]?.permissions };
@@ -1406,7 +1413,10 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
     ? `"${bundledNodePath}" "${mediaHelper}"`
     : `node "${mediaHelper}"`;
   // 内置 nuphus 与所有连接器都由 harness 重新生成，用户手工写的 MCP 段交给覆盖表
-  const ownedMcpServers = new Set(["nuphus", ...connectors.map((connector) => safeConnectorId(connector.id))]);
+  // harness-dispatch（09-16 调度 MCP）同样是 harness 自己生成的段：不进保留清单，
+  // 否则「保留旧段 +新生成段」会在 config.toml 里写出重复的 [mcp_servers.harness-dispatch]，
+  // MCP 服务器起不来（实测：模型看不到任何 mcp__ 工具）。
+  const ownedMcpServers = new Set(["nuphus", "harness-dispatch", ...connectors.map((connector) => safeConnectorId(connector.id))]);
   const { kept: preservedConfig, mcpExtra } = await readUserConfigSplit(ownedMcpServers, mcpOverrides);
   await writeMcpOverrides(mcpOverrides);
   const connectorEnvValue = connectorEnv(connectors);
@@ -1603,6 +1613,25 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
     // 引擎用 [permissions.allow/ask/deny] + `mcp__server__tool` 命名约定原生表达；
     // 无规则时这一段为空，不产生任何影响。
     ...permissionsToml(mcpOverrides),
+    // 内置调度 MCP（09-16）：agent_invoke 走引擎级 MCP 注入 —— dynamicTools 只在 thread/start
+    // 生效（引擎硬约束），MCP 是唯一能覆盖**所有会话（含老会话）**的注册通道。执行闸在主进程。
+    ...(await (async () => {
+      try {
+        await ensureDispatchHttp();
+        if (!dispatchHttpPort) return [];
+        // 直连 HTTP 传输（引擎原生支持 url）：无子进程冷启动 —— stdio 走 electron.exe 实测要
+        // 28s 才握手完，超过 startup_timeout 会被引擎判死，工具根本不注册（09-16 踩过）。
+        return [
+          "[mcp_servers.harness-dispatch]",
+          `url = "http://127.0.0.1:${dispatchHttpPort}/mcp?token=${dispatchToken}"`,
+          "startup_timeout_sec = 60",
+          "",
+        ];
+      } catch (error: any) {
+        console.warn("[dispatch] MCP 段写入失败：", error?.message ?? error);
+        return [];
+      }
+    })()),
     // 内置桌面自动化 MCP：受覆盖表 + 桌面自动化开关双重控制，任一关闭则整段不写入。
     // 全量注册 35 个工具，schema 虽占 ~10k 前缀，但作为 prompt 常量前缀可被上游缓存，
     // 引擎工具列表完整暴露 desktop_*/browser_*，能力不阉割。
@@ -2395,6 +2424,19 @@ app.whenReady().then(async () => {
       // （09-16 用户要求：调度时右侧显示专家头像 + 点开看工作内容，跟专家团一致）。
       const delegated = delegateRegistry.handleEngineEvent(event);
       if (delegated) broadcastHarnessEvent({ type: "delegate-run", phase: "delta", threadId: delegated.threadId, text: delegated.text, chars: delegated.chars, at: Date.now() });
+      // 调度 MCP 旁证：item/started 事件携带**真实调用者线程**，参数指纹 → threadId
+      // （HTTP 执行端据此对号入座，模型谎报 originThreadId 也绕不过独占锁/身份闸）。
+      if (event.method === "item/started") {
+        const item: any = (event.params as any)?.item ?? {};
+        if (item?.type === "mcpToolCall" && /harness-dispatch/.test(String(item.server ?? item.serverName ?? item.server_tool ?? item.tool ?? ""))) {
+          dispatchProbes.push({ threadId: String((event.params as any)?.threadId ?? ""), argsKey: stableKey(item.arguments ?? {}), at: Date.now() });
+          if (dispatchProbes.length > 100) dispatchProbes.shift();
+        }
+      }
+      // ⛔ 临时诊断（验证完删）：抓 MCP 服务器启动状态与工具调用事件
+      if (/^mcpServer\//.test(event.method ?? "") || /mcpToolCall/.test(String((event.params as any)?.item?.type ?? "")) || /mcpToolCall/.test(event.method ?? "")) {
+        console.warn("[mcp-diag]", event.method, JSON.stringify((event.params as any)?.item ?? event.params ?? {}).slice(0, 400));
+      }
       const p = event.params as any;
       if (event.method === "turn/started" && p?.turn?.id) engineActiveTurnIds.add(String(p.turn.id));
       if (event.method === "turn/completed" && p?.turn?.id) engineActiveTurnIds.delete(String(p.turn.id));
@@ -2480,6 +2522,9 @@ app.whenReady().then(async () => {
   } catch (error) {
     broadcastCodexEvent({ kind: "status", status: "error", message: String(error) });
   }
+  // ⛔ 调度 MCP 的 HTTP 执行端必须**无条件**启动（不依赖是否配了自定义模型）：
+  //    它是 /mcp 端点的宿主，引擎按 config.toml 的 url 连的就是它；没起 = 工具永远注册不上。
+  void ensureDispatchHttp();
   // 自愈：catalog 每次启动都重写（幂等），确保包含所有启用供应商的模型。
   // ⛔ 09-16：**不再检查、也不再写顶层 model_context_window**（该键已废弃 —— 它是引擎的全局
   // 单值，会覆盖 catalog 里每个模型各自的 context_window，表现为「只有默认那个模型的上下文
@@ -2509,12 +2554,34 @@ app.whenReady().then(async () => {
       // model_provider 加载配置，段被移除会报 "Model provider `X` not found" → 会话内容全空。
       // 旧版本 applyCustomModel 写配置时过滤了禁用供应商——检测到缺失就整份重写补回。
       const disabledMissing = (await readCustomModels()).some((candidate) => candidate.enabled === false && !configText.includes(`[model_providers.${candidate.provider}]`));
-      if (legacyContextKey || providerOutdated || environmentOutdated || instructionsOutdated || disabledMissing) {
-        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}; rewriting`);
+      // 调度 MCP（harness-dispatch）：段缺失（老配置）/ 重复（09-16 保留机制漏排除的历史文件）
+      // 都触发重写。⛔ 端口已固定、令牌已持久化 → url 跨运行稳定，不再有「每次启动都过期」的问题；
+      // 但仍要校验端口/令牌真的对得上（旧版本写过随机端口的历史文件必须被纠正）。
+      const dispatchMcpCount = (configText.match(/\[mcp_servers\.harness-dispatch\]/g) || []).length;
+      await ensureDispatchToken(); // 令牌持久化在文件里，这里读出来才能比对配置是否过期
+      const dispatchMcpBad = dispatchMcpCount !== 1 || !configText.includes(`:${DISPATCH_FIXED_PORT}/mcp`) || !configText.includes(dispatchToken);
+      if (legacyContextKey || providerOutdated || environmentOutdated || instructionsOutdated || disabledMissing || dispatchMcpBad) {
+        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}; rewriting`);
         await applyCustomModel(custom);
       }
     } catch (error) {
       console.warn("[custom-model] config self-heal failed:", error);
+    }
+  } else {
+    // 没配自定义模型（如被清空/首次运行）：config.toml 也要保证有调度 MCP 段，
+    // 否则引擎起来后连不上 → 工具永远注册不上。直接做一次最小重写。
+    try {
+      await ensureDispatchToken();
+      const cfgPath = path.join(codexHome, "config.toml");
+      const existing = await fs.readFile(cfgPath, "utf8").catch(() => "");
+      const block = `[mcp_servers.harness-dispatch]\nurl = "http://127.0.0.1:${DISPATCH_FIXED_PORT}/mcp?token=${dispatchToken}"\nstartup_timeout_sec = 60\n`;
+      const count = (existing.match(/\[mcp_servers\.harness-dispatch\]/g) || []).length;
+      if (count !== 1 || !existing.includes(`:${DISPATCH_FIXED_PORT}/mcp`) || !existing.includes(dispatchToken)) {
+        const cleaned = existing.replace(/\[mcp_servers\.harness-dispatch\][^\[]*/g, "").replace(/\[mcp_servers\.harness-dispatch\.env\][^\[]*/g, "");
+        await fs.writeFile(cfgPath, cleaned.trimEnd() + "\n\n" + block, "utf8");
+      }
+    } catch (error) {
+      console.warn("[dispatch] MCP 段兜底写入失败：", error);
     }
   }
   // 启动副作用一律「尽力而为」：这里任何一处抛出都会让 whenReady 的 promise 变成
@@ -3067,9 +3134,13 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
       const alias = missing[1];
       const configText = await fs.readFile(path.join(codexHome, "config.toml"), "utf8").catch(() => "");
       if (configText.includes(`[model_providers.${alias}]`)) throw error;
-      const savedWire = (await readCustomModels()).find((c) => c.provider === alias)?.wireApi;
-      const wireApi = savedWire === "chat" ? "chat" : active.wireApi === "chat" ? "chat" : "responses";
-      await fs.appendFile(path.join(codexHome, "config.toml"), `\n[model_providers.${alias}]\nname = "${alias}"\nbase_url = "${active.baseUrl}"\nenv_key = "CODEX_HARNESS_API_KEY"\nwire_api = "${wireApi}"\n`);
+      // ⛔ 恒 responses（09-16 真实引擎探针实证，见 scripts/probe-wire-api.cjs）：引擎对
+      // `wire_api = "chat"` 是**整份配置拒载**（原文：`wire_api = "chat"` is no longer supported.
+      // How to fix: set `wire_api = "responses"`），所有请求随之失败。这里原先把档案里的
+      // savedWire / 生效供应商的 chat 透传进 config.toml —— 而 active 来自 readCustomModel()，
+      // 那个函数**不经过 normalizeProvider**，档案里一旦有 chat 残留就会把应用写死。别名段
+      // 的唯一合法值就是 responses。
+      await fs.appendFile(path.join(codexHome, "config.toml"), `\n[model_providers.${alias}]\nname = "${alias}"\nbase_url = "${active.baseUrl}"\nenv_key = "CODEX_HARNESS_API_KEY"\nwire_api = "responses"\n`);
       await server.restart();
       result = await server.request(method, params);
     }
@@ -6364,6 +6435,214 @@ async function restrictedThreadRole(threadId: string): Promise<{ restricted: boo
   if (teamRunStore.teamOfThread(threadId)) return { restricted: true, label: "专家 / 专家团" };
   return { restricted: false };
 }
+
+// ⛔ 09-16 重大修正（引擎硬约束，四个决定性实验实测）：dynamicTools **只在 thread/start 生效**——
+// resume / fork / turn/start / queue/start 一律不认（引擎二进制里也只有 thread/start.dynamicTools）。
+// 这意味着渲染层 dynamicTools 注册的 agent_invoke 对**老会话永远不可见**，之前「开关确认后重放
+// resume」的修法是假绿（断言正则匹配到了提问里的「有没有」）。唯一能覆盖所有会话（含老会话）的
+// 通道是 **MCP**：引擎级注入，工具对所有线程可见。故 agent_invoke 改走内置 MCP 服务器（下方
+// dispatchMcpScript），安全闸全部收敛到主进程 HTTP 端 + 引擎事件旁证（谁调的、有没有权限）。
+
+/** 内置调度 MCP 服务器（HTTP 直连）。⛔ 端口必须**固定**、令牌必须**持久化**：
+ *  config.toml 里的 url 是引擎启动时读的，若每次运行都变（随机端口/随机令牌），
+ *  引擎就会连到**上一次运行的死端口** → 工具永远注册不上（09-16 实测踩坑）。 */
+const DISPATCH_FIXED_PORT = 47120;
+let dispatchToken = ""; // 由 ensureDispatchToken() 从文件读/生成
+let dispatchHttpPort = DISPATCH_FIXED_PORT;
+type DispatchProbe = { threadId: string; argsKey: string; at: number };
+const dispatchProbes: DispatchProbe[] = [];
+
+/** 读取（或首次生成并持久化）调度令牌：跨运行稳定，config.toml 无需每次重写。 */
+async function ensureDispatchToken(): Promise<string> {
+  if (dispatchToken) return dispatchToken;
+  const file = path.join(app.getPath("userData"), "dispatch-token.txt");
+  try {
+    const saved = (await fs.readFile(file, "utf8")).trim();
+    if (saved.length >= 16) { dispatchToken = saved; return dispatchToken; }
+  } catch { /* 首次运行没有文件 */ }
+  dispatchToken = crypto.randomUUID().replace(/-/g, "");
+  try { await fs.writeFile(file, dispatchToken, "utf8"); } catch { /* 写失败不致命：本次会话仍可用 */ }
+  return dispatchToken;
+}
+
+/** 稳定序列化（键排序）：把「item/started 事件里的 arguments」与「MCP 服务器收到的 arguments」对上号 */
+function stableKey(value: unknown): string {
+  const walk = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === "object") {
+      const obj = v as Record<string, unknown>;
+      return Object.keys(obj).sort().map((k) => `${k}:${JSON.stringify(walk(obj[k]))}`).join("|");
+    }
+    return String(JSON.stringify(v) ?? "null");
+  };
+  return String(walk(value)).slice(0, 4000);
+}
+
+/** 调度工具的 schema（MCP tools/list 与 stdio 通道共用）。 */
+function dispatchMcpTools(): unknown[] {
+  return [
+    {
+      name: "agent_invoke",
+      description: "调度专家 / 专家团 / 子智能体 执行一个独立子任务并拿回产出（仅在会话开启调度时可用）。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: ["expert", "team", "member", "subagent"], description: "expert=单个专家, team=专家团(主理人按SOP调度), member=专家团某成员, subagent=子智能体" },
+          name: { type: "string", description: "对象名称（专家名 / 团名 / 子智能体名）" },
+          member: { type: "string", description: "kind=member 时的成员名" },
+          query: { type: "string", description: "交给它的任务描述（要自包含：对方看不到本会话上下文）" },
+        },
+        required: ["kind", "name", "query"],
+      },
+    },
+    {
+      name: "agent_archive_sessions",
+      description: "征得用户同意后，归档本次调度产生的临时会话。",
+      inputSchema: {
+        type: "object",
+        properties: { threadIds: { type: "array", items: { type: "string" }, description: "要归档的调度会话 id 列表" } },
+        required: ["threadIds"],
+      },
+    },
+  ];
+}
+
+/** 调度工具的统一执行入口（MCP /mcp 与 stdio /rpc 共用）——安全闸全部在这里。 */
+async function dispatchRpcCall(name: unknown, args: Record<string, unknown>): Promise<{ ok: boolean; output?: string; error?: string }> {
+  // ── 旁证：引擎把调用转发给 MCP 服务器的同一时刻会发 item/started 事件（含真实 threadId）。
+  // 用「参数指纹」对上号，拿到的才是**引擎认定的调用者**——模型谎报身份也绕不过。
+  const argsKey = stableKey(args);
+  const deadline = Date.now() + 10000;
+  let callerThreadId = "";
+  while (Date.now() < deadline) {
+    const hit = [...dispatchProbes].reverse().find((probe) => probe.argsKey === argsKey && Date.now() - probe.at < 120_000);
+    if (hit) { callerThreadId = hit.threadId; break; }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  if (!callerThreadId) return { ok: false, error: "安全校验失败：引擎事件里找不到这次调用" };
+
+  if (name === "agent_invoke") {
+    const originDispatch = (await threadRuntimeStore.get(callerThreadId))?.dispatch;
+    const restrict = await restrictedThreadRole(callerThreadId);
+    const originRecord = await delegateRegistry.infoOf(callerThreadId);
+    const gate = canDispatchFrom({
+      isDelegated: Boolean(originRecord),
+      depth: originRecord?.depth ?? 0,
+      holdsLock: originDispatch?.enabled === true,
+      restricted: restrict.restricted,
+      restrictedLabel: restrict.label,
+    });
+    if (!gate.ok) return { ok: false, error: gate.reason };
+    const result = await runDelegatedTask({
+      kind: String(args.kind ?? "") as DispatchKind,
+      name: String(args.name ?? ""),
+      query: String(args.query ?? ""),
+      originThreadId: callerThreadId,
+      cwd: args.cwd ? String(args.cwd) : undefined,
+      model: args.model ? String(args.model) : undefined,
+      effort: args.effort ? String(args.effort) : undefined,
+      sandbox: args.sandbox ? String(args.sandbox) : undefined,
+      approvalPolicy: args.approvalPolicy ? String(args.approvalPolicy) : undefined,
+    });
+    return result.ok ? { ok: true, output: result.output } : { ok: false, error: result.error ?? "调度失败" };
+  }
+  if (name === "agent_archive_sessions") {
+    const ids = Array.isArray(args.threadIds) ? args.threadIds.map(String) : [];
+    const count = await delegateRegistry.markArchived(ids);
+    broadcastHarnessEvent({ type: "delegates-changed" } as any);
+    return { ok: true, output: `已归档 ${count} 个调度会话。` };
+  }
+  return { ok: false, error: `未知工具：${String(name)}` };
+}
+
+/** 内置 MCP 的执行端：只在 127.0.0.1 监听，token 校验 + 「引擎事件里确实有这条调用」旁证。
+ *  端口固定（DISPATCH_FIXED_PORT）→ config.toml 的 url 跨运行稳定，引擎重启也能连上。 */
+let dispatchHttpReady: Promise<void> | null = null;
+async function ensureDispatchHttp(): Promise<void> {
+  if (dispatchHttpReady) return dispatchHttpReady;
+  await ensureDispatchToken(); // 令牌先就绪：/mcp 端点与 config.toml 都要用它
+  dispatchHttpReady = new Promise<void>((resolve) => {
+    const server = http.createServer((req, res) => {
+      res.setHeader("content-type", "application/json; charset=utf-8");
+      // ── MCP 协议端点（/mcp，09-16）：引擎用 url 直连（无子进程冷启动，避免 stdio 的
+      //    electron 启动 28s > startup_timeout 被判死导致工具不注册）。Streamable HTTP：
+      //    POST = JSON-RPC 请求/响应；**GET = SSE 长连接**（引擎 rmcp 客户端必开，缺了会报
+      //    "fail to get common stream: Unexpected content type: None"）；DELETE = 会话终止。 ──
+      if (req.url?.startsWith("/mcp") && (req.method === "GET" || req.method === "DELETE")) {
+        const token = new URL(req.url, "http://x").searchParams.get("token");
+        if (token !== dispatchToken) { res.statusCode = 403; res.end(); return; }
+        if (req.method === "DELETE") { res.statusCode = 200; res.end(); return; }
+        // SSE 流：保持连接（引擎用它收服务端主动消息），定期心跳防中间层断连
+        res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive", "mcp-session-id": "harness-dispatch" });
+        res.write(": connected\n\n");
+        const keep = setInterval(() => { try { res.write(": ping\n\n"); } catch { /* 连接已断 */ } }, 25000);
+        req.on("close", () => clearInterval(keep));
+        return;
+      }
+      if (req.method === "POST" && req.url?.startsWith("/mcp")) {
+        const token = new URL(req.url, "http://x").searchParams.get("token");
+        if (token !== dispatchToken) { res.end(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "token 校验失败" } })); return; }
+        let body = "";
+        req.on("data", (chunk) => { body += chunk; if (body.length > 2_000_000) req.destroy(); });
+        req.on("end", async () => {
+          let msg: any = null;
+          try { msg = JSON.parse(body); } catch { res.end(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } })); return; }
+          res.setHeader("mcp-session-id", "harness-dispatch");
+          const reply = (result: any) => res.end(JSON.stringify({ jsonrpc: "2.0", id: msg?.id ?? null, result }));
+          const fail = (message: string) => res.end(JSON.stringify({ jsonrpc: "2.0", id: msg?.id ?? null, error: { code: -32000, message } }));
+          if (msg?.id === undefined || msg?.id === null) { res.statusCode = 202; res.end(""); return; } // notification
+          try {
+            if (msg.method === "initialize") {
+              reply({ protocolVersion: msg.params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "harness-dispatch", version: "1.0.0" } });
+              return;
+            }
+            if (msg.method === "tools/list") { reply({ tools: dispatchMcpTools() }); return; }
+            if (msg.method === "ping") { reply({}); return; }
+            if (msg.method === "tools/call") {
+              const out = await dispatchRpcCall(msg.params?.name, msg.params?.arguments ?? {});
+              reply({ content: [{ type: "text", text: out.ok ? String(out.output ?? "") : "调用被拒绝：" + String(out.error ?? "未知原因") }], isError: !out.ok });
+              return;
+            }
+            fail("method not found: " + String(msg.method));
+          } catch (error: any) {
+            fail(String(error?.message ?? error).slice(0, 300));
+          }
+        });
+        return;
+      }
+      if (req.method !== "POST" || !req.url?.startsWith("/rpc")) { res.statusCode = 404; res.end(JSON.stringify({ ok: false, error: "not found" })); return; }
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; if (body.length > 1_000_000) req.destroy(); });
+      req.on("end", async () => {
+        try {
+          const payload = JSON.parse(body) as { token?: string; name?: string; args?: Record<string, unknown> };
+          if (!payload.token || payload.token !== dispatchToken) { res.end(JSON.stringify({ ok: false, error: "token 校验失败" })); return; }
+          res.end(JSON.stringify(await dispatchRpcCall(payload.name, payload.args ?? {})));
+        } catch (error: any) {
+          res.end(JSON.stringify({ ok: false, error: String(error?.message ?? error).slice(0, 300) }));
+        }
+      });
+    });
+    server.listen(DISPATCH_FIXED_PORT, "127.0.0.1", () => {
+      dispatchHttpPort = DISPATCH_FIXED_PORT;
+      resolve();
+    });
+    // 端口被占（可能另一个实例/残留进程）：退回相邻端口并记录，config 会用实际端口重写
+    server.on("error", () => {
+      const fallback = http.createServer(server.listeners("request")[0] as any);
+      fallback.listen(0, "127.0.0.1", () => {
+        const addr = fallback.address();
+        if (addr && typeof addr === "object") dispatchHttpPort = addr.port;
+        resolve();
+      });
+    });
+    // 立即 resolve 兜底：listen 异常时不能卡死 config 写入（宁可这轮没有 MCP 段）
+    setTimeout(resolve, 2000);
+  });
+  return dispatchHttpReady;
+}
+
+
 
 /** 组装「可调度对象目录」（只含已启用的；单人专家 = 只有 lead 的团队，结构同型） */
 async function buildDispatchCatalog(): Promise<DispatchTarget[]> {  const [teams, subs] = await Promise.all([readExpertTeams(), readSubAgents()]);

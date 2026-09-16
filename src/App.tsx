@@ -109,6 +109,7 @@ import {
   BookOpen,
   BookmarkPlus,
   Home,
+  Lock,
   CircleCheck,
   CircleX,
   ZoomIn,
@@ -1146,39 +1147,10 @@ function subAgentTools(agents: SubAgentEntry[]) {
   }];
 }
 
-/** 把「可被调度的对象」登记成 Codex 可直接调用的动态工具（09-15）。
- *  ⛔ **只在「用户直连会话」注册它**：被调度产生的会话若也拿到这个工具 = 无限套娃。
- *     这是四层防护里的 L2（注册侧，尽量不给）；主进程还有 L3 硬闸兜底（给了也不认）。 */
-function dispatchToolList(input: { enabled: boolean; isDelegated: boolean; description: string }) {
-  if (!input.enabled || input.isDelegated || !input.description) return [];
-  return [
-    {
-      type: "function",
-      name: "agent_invoke",
-      description: input.description,
-      inputSchema: {
-        type: "object",
-        properties: {
-          kind: { type: "string", enum: ["expert", "team", "member", "subagent"], description: "要调度的对象类型，必须与上面列出的对象一致" },
-          name: { type: "string", description: "对象名称或 id（用上面列出的值）" },
-          query: { type: "string", description: "交给它的完整任务描述：做什么、验收标准、相关文件与背景。它看不到你和用户的对话。" },
-        },
-        required: ["kind", "name", "query"],
-      },
-    },
-    {
-      type: "function",
-      name: "agent_archive_sessions",
-      description: "归档本会话此前调度产生的临时会话（会出现在左侧侧栏）。**先问用户、得到同意后再调用**；不传 threadIds 则归档本会话调度出来的全部临时会话。",
-      inputSchema: {
-        type: "object",
-        properties: {
-          threadIds: { type: "array", items: { type: "string" }, description: "要归档的会话 id；省略 = 归档本会话调度出来的全部临时会话" },
-        },
-      },
-    },
-  ];
-}
+// ⛔ agent_invoke / agent_archive_sessions 已改走内置 MCP 服务器 harness-dispatch（09-16）：
+// 引擎硬约束 —— dynamicTools 只在 thread/start 生效（resume/fork/turn/start 全部不认），
+// 对老会话永远不可见；MCP 引擎级注入覆盖所有会话。工具定义见 electron/main.ts dispatchMcpScript()，
+// 安全闸（独占锁 / 身份 / 深度 / 并发）全部收敛在主进程 HTTP 执行端。
 
 const idleTemplates = [
   { name: "Git 周会摘要", desc: "汇总本周 Git 活动，生成周五会话摘要：列出重要提交、已合并 PR 及主要变更，并保持简洁。", prompt: "汇总本周 Git 活动，生成周五会话摘要：列出重要提交、已合并 PR 及主要变更，并保持简洁。" },
@@ -1895,18 +1867,23 @@ function writeThreadRuntimeMirror(id: string, runtime: unknown) {
 /** 写会话运行时配置：本地镜像立即生效（同步读路径不能等 IPC），再推给主进程做权威落盘 + 广播。
  *  多窗口并发保护（09-14）：baseRev = 本地镜像里上次从主进程同步到的 rev，主进程据此判冲突；
  *  主进程回来的权威值交给 admitThreadRuntime（组件内）写回镜像并同步 React 状态。 */
-function saveThreadRuntime(id: string, patch: Partial<ReturnType<typeof emptyRuntime>>) {
-  if (!id) return;
+function saveThreadRuntime(id: string, patch: Partial<ReturnType<typeof emptyRuntime>>, opts?: { takeover?: boolean }) {
+  if (!id) return null;
   try {
     const baseRev = normalizeRuntime(loadThreadRuntimeRaw(id)).rev;
     const { runtime, changed } = patchRuntime({ ...loadThreadRuntimeRaw(id), rev: baseRev }, patch);
-    if (!changed) return;
+    if (!changed) return null;
     writeThreadRuntimeMirror(id, runtime);
     rememberOwnWrite(ownRuntimeWrites, id, runtime); // 认出即将广播回来的那次回声
-    void window.codex?.patchThreadRuntime?.({ threadId: id, patch, baseRev })
-      .then((result: any) => { if (result?.runtime) admitThreadRuntimeRef.current?.(id, result.runtime, { conflict: Boolean(result.conflict) }); })
-      .catch(() => { /* 主进程不可用：退回纯 localStorage 行为（旧版本/测试环境） */ });
-  } catch { /* ignore */ }
+    const request = window.codex?.patchThreadRuntime?.({ threadId: id, patch, baseRev, ...(opts?.takeover ? { takeover: true } : {}) });
+    if (!request) return null;
+    return request
+      .then((result: any) => {
+        if (result?.runtime) admitThreadRuntimeRef.current?.(id, result.runtime, { conflict: Boolean(result.conflict) });
+        return result;
+      })
+      .catch(() => null); // 主进程不可用：退回纯 localStorage 行为（旧版本/测试环境）
+  } catch { return null; }
 }
 
 /** saveThreadRuntime 是模块级函数、拿不到组件内的 setState —— 由组件在渲染时把
@@ -2493,14 +2470,19 @@ const approvalMenuOptions = (fullAccess: boolean) => fullAccess ? [
 /** 调度开关面板（09-15）：「当前对话框」允许 Codex 调度哪些对象干活。
  *  会话级配置 —— 落 thread-runtime 的 `dispatch` 字段（与模型/权限同源同存放处）。
  *  点「确认」才生效；从「关」变「开」时自动往对话框发一条告知消息，让 Codex 知道自己有这个能力。 */
-function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topbar }: {
+function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topbar, lockedBy, restrictedLabel }: {
   dispatch: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean };
   targets: DispatchTargetEntry[];
-  onChange: (next: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean }) => void;
+  onChange: (next: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean }, opts?: { takeOver?: boolean }) => void;
   disabled?: boolean;
   busy?: boolean;
   /** 顶栏形态：纯图标按钮 + 弹层向下弹（顶栏一排都是小图标，带文字的 composer 形态放不进去） */
   topbar?: boolean;
+  /** 另一个会话正持有调度独占锁时传它的显示名（本会话是持有者/没人在用时传 null）。
+   *  同一时间只允许一个会话调度 —— 这里把开关置为「锁定」态并给出接管入口。 */
+  lockedBy?: string | null;
+  /** 受保护会话（专家 / 专家团 / 被调度会话）时传标签 —— 按钮直接禁用，不让开。 */
+  restrictedLabel?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(dispatch);
@@ -2527,13 +2509,15 @@ function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topbar }: {
       {topbar ? (
         <button
           type="button"
-          className={`icon-button dispatch-topbar-btn ${dispatch.enabled ? "dispatch-on" : ""}`}
-          disabled={disabled}
-          title={dispatch.enabled ? "调度（已开启）：本会话 Codex 可把子任务交给专家 / 专家团 / 子智能体" : "调度：让 Codex 把合适的独立子任务交给专家 / 专家团 / 子智能体"}
+          className={`icon-button dispatch-topbar-btn ${dispatch.enabled ? "dispatch-on" : ""} ${restrictedLabel ? "is-restricted" : ""}`}
+          disabled={disabled || Boolean(restrictedLabel)}
+          title={restrictedLabel
+            ? `本会话是${restrictedLabel}会话，不开放调度 —— 专家 / 专家团有自己的团内协作，对外派人会让「谁在干活」失控`
+            : (dispatch.enabled ? "调度（已开启）：本会话 Codex 可把子任务交给专家 / 专家团 / 子智能体" : "调度：让 Codex 把合适的独立子任务交给专家 / 专家团 / 子智能体")}
           aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
         >
-          <Users size={16} />
+          {restrictedLabel ? <Lock size={16} /> : <Users size={16} />}
           {dispatch.enabled && <i className="dispatch-dot" aria-hidden />}
         </button>
       ) : (
@@ -2556,6 +2540,16 @@ function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topbar }: {
             <strong>调度</strong>
             <small>把合适的独立子任务交给专门的角色去做，产出回传本会话</small>
           </div>
+          {/* 独占锁提示：同一时间只允许一个会话调度（用户 09-16 要求「其他灰掉，避免同时调用」） */}
+          {lockedBy && (
+            <div className={`dispatch-lock ${draft.enabled ? "takeover" : ""}`}>
+              <Lock size={13} />
+              <span>
+                <strong>已被「{lockedBy}」占用</strong>
+                <small>{draft.enabled ? "确认后会把调度权限移到本会话，原会话的开关自动关闭" : "同一时间只允许一个会话调度；开启即从它那里接管"}</small>
+              </span>
+            </div>
+          )}
           {/* 总开关做成整行可点的 switch：比裸勾选框直观，状态文案跟着变 */}
           <button
             type="button"
@@ -2566,7 +2560,9 @@ function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topbar }: {
           >
             <span className="dispatch-master-text">
               <strong>允许本会话调度</strong>
-              <small>{draft.enabled ? "已开启：Codex 可以派人干活了" : "关闭中：Codex 所有事都自己干"}</small>
+              <small>{draft.enabled
+                ? (lockedBy ? `接管中：将关掉「${lockedBy}」的调度` : "已开启：Codex 可以派人干活了")
+                : (lockedBy ? "已锁定：权限在别的会话手里" : "关闭中：Codex 所有事都自己干")}</small>
             </span>
             <span className="dispatch-toggle" aria-hidden><i /></span>
           </button>
@@ -2597,8 +2593,13 @@ function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topbar }: {
             <small className="dispatch-scope">仅对当前会话生效</small>
             <div className="dispatch-actions">
               <button type="button" onClick={() => setOpen(false)}>取消</button>
-              <button type="button" className="primary" disabled={!dirty || busy} onClick={() => { onChange(draft); setOpen(false); }}>
-                {busy ? "应用中…" : "确认"}
+              <button
+                type="button"
+                className="primary"
+                disabled={!dirty || busy}
+                onClick={() => { onChange(draft, { takeOver: Boolean(lockedBy) && draft.enabled }); setOpen(false); }}
+              >
+                {busy ? "应用中…" : (lockedBy && draft.enabled ? "接管并开启" : "确认")}
               </button>
             </div>
           </div>
@@ -6874,6 +6875,109 @@ function TeamMemberHistory({ team, memberId, runs, onClose }: {
         {!runs.length && <p className="team-history-empty">该成员还没有历史工作记录。</p>}
       </div>
     </section>
+    </div>
+  );
+}
+
+/** 调度头像轨（09-16 用户要求「跟专家团那个展示一样」）：本会话派出去的专家 / 专家团 / 子智能体，
+ *  运行中在消息区右侧亮头像 + 呼吸环（点击看实时工作内容），**跑完即从轨上消失**。
+ *  复用 team-rail 的样式与锚点定位（弹窗也复用 team-run-popup），但数据源是调度登记表（delegate-run 广播），
+ *  与专家团那条互不相干。 */
+function DelegatedRail({ containerRef, runs, onOpen, activeId }: {
+  containerRef: useRefObject;
+  runs: { threadId: string; kind: string; name: string; status: "running" | "done" | "failed" }[];
+  onOpen: (threadId: string) => void;
+  activeId: string;
+}) {
+  const [mode, setMode] = useState<"full" | "compact" | "hidden">("full");
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    // 与 TeamMemberRail 同一套自适应阈值（900/1120）：窗口窄了自动收起，不遮正文
+    const check = () => setMode(container.clientWidth >= 1120 ? "full" : container.clientWidth >= 900 ? "compact" : "hidden");
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [containerRef]);
+  if (mode === "hidden" || !runs.length) return null;
+  const kindIcon = (kind: string) => (kind === "team" ? Users : kind === "subagent" ? Bot : Sparkles);
+  const kindLabel = (kind: string) => (kind === "team" ? "专家团" : kind === "subagent" ? "子智能体" : "专家");
+  return (
+    <aside className="team-rail mode-full is-flowing" aria-label="调度中的对象">
+      <div className="team-rail-track">
+        <i className="team-rail-line" aria-hidden />
+        {runs.map((run) => {
+          const Icon = kindIcon(run.kind);
+          return (
+            <button
+              key={run.threadId}
+              type="button"
+              data-member-id={run.threadId}
+              className={`team-rail-node is-${run.status === "failed" ? "failed" : "running"}${activeId === run.threadId ? " is-active" : ""}`}
+              title={`${kindLabel(run.kind)} · ${run.name}（执行中）｜点击查看工作内容`}
+              onClick={() => onOpen(run.threadId)}
+            >
+              <span className="team-rail-avatar"><Icon size={14} /></span>
+              <i className="team-rail-ring" aria-hidden />
+              <span className="team-rail-name">{run.name}</span>
+            </button>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+/** 调度工作内容弹窗：被调度会话的实时产出流（主进程转发该线程的文本增量），
+ *  调用结束自动收起（phase=finished 时上层清掉 popupId）。底部跟随与 TeamRunPopup 同款。 */
+function DelegatedRunPopup({ run, onClose }: {
+  run: { threadId: string; kind: string; name: string; status: "running" | "done" | "failed"; output?: string; error?: string };
+  onClose: () => void;
+}) {
+  const anchorTop = useAvatarAnchor(run.threadId);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const followRef = useRef(true);
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const onWheel = () => { followRef.current = false; };
+    const onTouchMove = () => { followRef.current = false; };
+    const onScroll = () => { if (el.scrollHeight - el.scrollTop - el.clientHeight <= 12) followRef.current = true; };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("scroll", onScroll);
+    };
+  }, []);
+  useEffect(() => {
+    if (!followRef.current) return;
+    const raf = requestAnimationFrame(() => {
+      const el = bodyRef.current;
+      if (el && followRef.current) el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [run.output]);
+  const Icon = run.kind === "team" ? Users : run.kind === "subagent" ? Bot : Sparkles;
+  const running = run.status === "running";
+  return (
+    <div className={`team-panel-anchor${anchorTop == null ? " is-floating" : ""}`} style={anchorTop == null ? undefined : { top: anchorTop }}>
+      <section className={`team-run-popup${running ? " is-running" : run.status === "failed" ? " is-failed" : " is-settled"}`} role="dialog" aria-label={`调度 ${run.name} 的工作会话`}>
+        <header>
+          <span className="team-run-popup-avatar"><Icon size={13} /></span>
+          <div className="team-run-popup-title"><strong>{run.name}</strong><small>{running ? "正在执行委派任务…" : run.status === "failed" ? "委派任务失败" : "委派任务完成"}</small></div>
+          <button type="button" className="icon-button" title="关闭" onClick={onClose}><X size={14} /></button>
+        </header>
+        <div className="team-run-popup-body" ref={bodyRef}>
+          {run.output
+            ? <div className="team-run-popup-text">{run.output}</div>
+            : <div className="team-run-popup-empty"><LoaderCircle size={14} className="spin" />等待产出…</div>}
+        </div>
+        {run.error ? <p className="request-error">{run.error}</p> : null}
+      </section>
     </div>
   );
 }
@@ -11449,50 +11553,11 @@ const commandMatches = useMemo(() => {
                 } finally {
                   setSubAgentRunning(null);
                 }
-              } else if (event.params?.tool === "agent_invoke") {
-                // 调度：把子任务交给专家 / 专家团 / 子智能体，等它跑完把产出回传本会话
-                try {
-                  const result: any = await window.codex.invokeAgent({
-                    kind: String(args.kind ?? "") as "expert" | "team" | "member" | "subagent",
-                    name: String(args.name ?? ""),
-                    query: String(args.query ?? ""),
-                    originThreadId: String(event.params?.threadId ?? threadRef.current?.id ?? ""),
-                    cwd: workspace || undefined,
-                    model: selectedModel?.model ?? modelName(modelId),
-                    effort: effort || undefined,
-                    sandbox,
-                    approvalPolicy,
-                  });
-                  void refreshDelegateRecords();
-                  await window.codex.respond(event.id!, {
-                    contentItems: [{
-                      type: "inputText",
-                      text: result?.ok
-                        ? `[${result.name ?? "调度对象"} 的产出]\n${result.output}`
-                        : `调度未执行：${result?.error ?? "未知原因"}`,
-                    }],
-                    success: Boolean(result?.ok),
-                  });
-                } catch (error: any) {
-                  void refreshDelegateRecords();
-                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `调度失败：${error.message}` }], success: false });
-                }
-              } else if (event.params?.tool === "agent_archive_sessions") {
-                // 归档本次任务调度出来的临时会话（Codex 已按提示词先问过用户）
-                try {
-                  const res: any = await window.codex.archiveDelegates({
-                    threadIds: Array.isArray(args.threadIds) ? args.threadIds.map(String) : undefined,
-                    originThreadId: String(event.params?.threadId ?? threadRef.current?.id ?? ""),
-                  });
-                  void refreshDelegateRecords();
-                  await window.codex.respond(event.id!, {
-                    contentItems: [{ type: "inputText", text: `已归档 ${res?.archived ?? 0} 个调度会话${Array.isArray(res?.failed) && res.failed.length ? `（${res.failed.length} 个失败）` : ""}。` }],
-                    success: true,
-                  });
-                } catch (error: any) {
-                  await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: `归档失败：${error.message}` }], success: false });
-                }
-              } else if (event.params?.tool === "team_member_invoke") {
+              }
+              // ⛔ agent_invoke / agent_archive_sessions 的动态工具分支已删（09-16）：
+              //    两者改走内置 MCP（harness-dispatch），调用由主进程 HTTP 执行端直接处理，
+              //    不再经渲染层 dynamicToolCall 事件回流。
+              else if (event.params?.tool === "team_member_invoke") {
                 await invokeTeamMember(args, String(event.params?.threadId ?? ""), event.id!);
               } else if (event.params?.tool === "team_phase_invoke") {
                 // 并行阶段：一次提交多名成员，宿主并发执行（Promise.all 同时发起）后一起返回
@@ -12071,6 +12136,37 @@ const commandMatches = useMemo(() => {
         void refreshDelegateRecords();
         void refreshThreads();
       }
+      if (event.type === "delegate-run") {
+        // 调度头像轨（09-16）：started 点亮头像 + 自动弹工作内容；delta 流式追加；finished 摘掉头像。
+        const payload: any = event;
+        if (payload.phase === "started" && payload.record?.threadId) {
+          const r = payload.record;
+          setDelegateLiveRuns((prev) => ({
+            ...prev,
+            [r.threadId]: {
+              threadId: String(r.threadId), originThreadId: String(r.originThreadId ?? ""), kind: r.kind,
+              name: String(r.name ?? ""), status: "running", output: String(r.output ?? ""), startedAt: Number(r.startedAt ?? Date.now()),
+            },
+          }));
+          setDelegatedPopupId(String(r.threadId)); // 与专家团一致：一开始干活就自动弹出工作内容
+        } else if (payload.phase === "delta" && payload.threadId) {
+          setDelegateLiveRuns((prev) => {
+            const current = prev[String(payload.threadId)];
+            if (!current) return prev;
+            return { ...prev, [String(payload.threadId)]: { ...current, output: (current.output ?? "") + String(payload.text ?? "") } };
+          });
+        } else if (payload.phase === "finished" && payload.threadId) {
+          setDelegateLiveRuns((prev) => {
+            const current = prev[String(payload.threadId)];
+            if (!current) return prev;
+            return {
+              ...prev,
+              [String(payload.threadId)]: { ...current, status: payload.status === "failed" ? "failed" : "done", output: String(payload.output ?? current.output ?? ""), error: payload.error, endedAt: Date.now() },
+            };
+          });
+          setDelegatedPopupId((id) => (id === String(payload.threadId) ? "" : id)); // 调用完弹窗收起、头像消失
+        }
+      }
       if (event.type === "popout-return") {
         // 弹窗「返回主应用」：主窗口收到后跳到弹窗里的那个会话（弹窗已由主进程关闭）
         const tid = String((event as any).threadId ?? "");
@@ -12094,6 +12190,9 @@ const commandMatches = useMemo(() => {
         // 会话，界面也要跟着变——否则本窗口会用旧值把对方的改动覆盖回去（丢更新）。
         const tid = String((event as any).threadId ?? "");
         if (tid) admitThreadRuntime(tid, (event as any).runtime, { fromRemote: true });
+        // 调度独占锁可能刚被别的窗口/别的会话挪走 → 本窗口的「谁占用」提示要跟着变，
+        // 否则会显示过期占用者（用户看到「被 A 占用」而 A 其实已经关了）。
+        if ((event as any).runtime?.dispatch) void refreshDispatchOwner();
       }
       if (event.type === "team-run") {
         // 专家团成员委托的运行状态（主进程广播给所有窗口）：头像轨的亮灭流转、成员工作弹窗的
@@ -12346,6 +12445,24 @@ const commandMatches = useMemo(() => {
   const [dispatchInfo, setDispatchInfo] = useState<{ description: string; targets: DispatchTargetEntry[] }>({ description: "", targets: [] });
   /** 被调度产生的临时会话（threadId → 记录）：侧栏标记 + 注册侧过滤（L2）都读它 */
   const [delegateRecords, setDelegateRecords] = useState<Record<string, DelegateRecordEntry>>({});
+  // 调度独占锁的当前持有者（全局唯一，权威值在主进程）。非持有会话的开关要灰掉并显示占用者。
+  const [dispatchOwnerId, setDispatchOwnerId] = useState<string | null>(null);
+  const refreshDispatchOwner = useCallback(async () => {
+    try {
+      const res: any = await window.codex.dispatchOwner();
+      setDispatchOwnerId(res?.threadId ? String(res.threadId) : null);
+    } catch { /* 拿不到就按「没有持有者」渲染，写入时主进程仍会拦 */ }
+  }, []);
+  // 受保护会话（专家 / 专家团 / 被调度的临时会话）：调度按钮直接禁用 ——
+  // 这些会话有自己的团内协作通道，对外派人会让「谁在干活」失控（用户 09-16 明确要求）。
+  const [threadRole, setThreadRole] = useState<{ restricted: boolean; label?: string }>({ restricted: false });
+  const refreshThreadRole = useCallback(async (threadId?: string) => {
+    if (!threadId) { setThreadRole({ restricted: false }); return; }
+    try {
+      const res: any = await window.codex.threadRole(threadId);
+      setThreadRole(res?.restricted ? { restricted: true, label: String(res.label ?? "专家 / 专家团") } : { restricted: false });
+    } catch { setThreadRole({ restricted: false }); /* 拿不到不误禁（主进程硬闸仍在） */ }
+  }, []);
 
   // buildDynamicTools 是 useCallback（依赖只有 memoryEnabled/subAgents），闭包里的 thread 是旧的
   // —— 所以调度判定一律走 ref 镜像读「此刻」的真实状态，不依赖闭包。
@@ -12371,6 +12488,22 @@ const commandMatches = useMemo(() => {
       for (const record of (Array.isArray(res?.records) ? res.records : [])) map[String(record.threadId)] = record;
       delegateRecordsRef.current = map;
       setDelegateRecords(map);
+      // 调度头像轨的数据源（窗口中途打开/重开也要能看到正在跑的）：
+      // 以登记表为准 —— running 的补进 live 表，非 running 的从 live 表摘掉（「跑完就消失」）
+      setDelegateLiveRuns((prev) => {
+        const next = { ...prev };
+        for (const record of Object.values(map)) {
+          if (record.status === "running") {
+            next[record.threadId] = next[record.threadId] ?? {
+              threadId: record.threadId, originThreadId: record.originThreadId, kind: record.kind,
+              name: record.name, status: "running", output: record.output ?? "", startedAt: record.startedAt,
+            };
+          } else {
+            delete next[record.threadId];
+          }
+        }
+        return next;
+      });
     } catch { /* 忽略：拿不到就按「没有调度会话」渲染 */ }
   }, []);
 
@@ -12380,12 +12513,23 @@ const commandMatches = useMemo(() => {
   useEffect(() => { void refreshDelegateRecords(); }, [refreshDelegateRecords]);
 
   const [dispatchBusy, setDispatchBusy] = useState(false);
+  /** 调度头像轨的 live 表（09-16）：只含**正在跑**的委派会话；跑完即从表里摘掉 → 头像消失。
+   *  事件源 = 主进程 delegate-run 广播（started / delta / finished），种子 = listDelegates。 */
+  const [delegateLiveRuns, setDelegateLiveRuns] = useState<Record<string, DelegateRecordEntry>>({});
+  const [delegatedPopupId, setDelegatedPopupId] = useState("");
   /** 调度开关存在会话运行时（localStorage）里，React 感知不到变化 → 用一个 tick 触发重算 */
   const [dispatchTick, setDispatchTick] = useState(0);
   const activeDispatch = useMemo(
     () => (thread?.id ? loadThreadRuntime(thread.id).dispatch : emptyDispatch()),
     [thread?.id, dispatchTick],
   );
+  /** 调度独占锁被**别的会话**持有时显示它的名字（本会话是持有者则 null）。 */
+  const dispatchHolderName = useMemo(() => {
+    if (!dispatchOwnerId || dispatchOwnerId === thread?.id) return null;
+    const found = threads.find((entry) => entry.id === dispatchOwnerId);
+    const label = found ? cleanThreadDisplayTitle(found.name, { preview: found.preview }) : "";
+    return label?.trim() || "另一个会话";
+  }, [dispatchOwnerId, thread?.id, threads]);
 
   // ── 运行动态状态行（09-16，学 WorkBuddy 消息底部那个）─────────────────────────
   // 状态 = 当前会话**最后一个进行中的 item** 的类型（执行命令/编辑文件/思考…），
@@ -12421,21 +12565,48 @@ const commandMatches = useMemo(() => {
     else if (!taskRunning && runPhrase) setRunPhrase("");
   }, [taskRunning, runPhrase]);
 
+  // ⛔ 这两个 hook 必须放在 refreshDispatchOwner / refreshThreadRole 的 useCallback **之后**
+  //    （放在事件订阅那段会撞 TDZ：block-scoped variable used before its declaration）。
+  useEffect(() => { void refreshDispatchOwner(); }, [refreshDispatchOwner, thread?.id]);
+  useEffect(() => { void refreshThreadRole(thread?.id); }, [refreshThreadRole, thread?.id]);
+
   /** 应用调度开关：落盘 → 重算界面 → 从「关」变「开」时自动往对话框发一条告知消息。
    *  刻意用普通函数而不是 useCallback —— 它要调 send()，闭包必须是最新一次渲染的。 */
-  async function applyDispatch(next: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean }) {
+  async function applyDispatch(next: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean }, opts?: { takeOver?: boolean }) {
     const id = threadRef.current?.id;
     if (!id) { showToast("先打开一个会话", "调度开关是会话级的，每个会话各自独立"); return; }
     const before = loadThreadRuntime(id).dispatch;
     setDispatchBusy(true);
     try {
-      saveThreadRuntime(id, { dispatch: normalizeDispatch(next) });
+      // 独占锁（09-16 用户要求「同一时间只能一个会话开」）：冲突时主进程**不改动任何东西**并回传
+      // blockedBy；用户明确接管（takeover）才在同一笔写入里把原持有者关掉 —— 原子，不会有中间态。
+      const result: any = await saveThreadRuntime(id, { dispatch: normalizeDispatch(next) }, { takeover: opts?.takeOver === true });
+      if (result?.restrictedBy) {
+        // 主进程身份闸拒绝（专家 / 专家团 / 被调度会话不许开调度）：把本地乐观写入纠正回去，
+        // 否则界面会显示成「已开启」而实际没生效（本地镜像先写、权威值后到）。
+        writeThreadRuntimeMirror(id, { ...loadThreadRuntimeRaw(id), dispatch: emptyDispatch() });
+        setDispatchTick((tick) => tick + 1);
+        showToast(`本会话是${result.restrictedBy}会话，不开放调度`, "专家 / 专家团在团内自有协作通道；这些会话对外派人会让「谁在干活」失控");
+        return;
+      }
+      if (result?.blockedBy) {
+        setDispatchOwnerId(String(result.blockedBy));
+        showToast("同一时间只能一个会话调度", "权限在另一个会话手里；确认面板里的「接管并开启」可以把它移到本会话");
+        return;
+      }
       setDispatchTick((tick) => tick + 1);
-      // ⛔ 工具面同步（09-16 用户实测「Codex 说没有调度入口」的根因）：
-      // dynamicTools 只在 thread/start / thread/resume 生效，turn/start **不带工具** ——
-      // 用户开启开关时往往停留在已打开的旧会话（resume 发生在开关打开之前），不同步的话
-      // Codex 的工具面永远是旧的。这里立即重放一次**轻量 resume**（不发回合、幂等）把新工具面推下去。
-      try { await resumeThreadLight({ threadId: id, dynamicTools: await buildDynamicTools() }); } catch { /* 运行中可能失败：下次打开会话时也会同步 */ }
+      if (result?.tookOverFrom) {
+        setDispatchOwnerId(id);
+        showToast("调度权限已移到本会话", "同一时间只允许一个会话调度，原会话的开关已自动关闭");
+      } else if (next.enabled) {
+        setDispatchOwnerId(id);
+      } else {
+        void refreshDispatchOwner();
+      }
+      // ⛔ 工具面注册已改走内置 MCP（09-16 引擎硬约束：dynamicTools 只在 thread/start 生效，
+      // resume/fork/turn/start 一律不认 —— 对已存在的会话没有任何「补注册」通道）。
+      // MCP 工具对**所有会话**可见（含老会话），开关的闸在主进程执行端（holdsLock / 身份闸）。
+      // 这里只落盘开关 + 发告知消息，不再重放 resume（那条路是假绿，实测模型答「没有」）。
       if (next.enabled && !before.enabled) {
         try {
           const notice: any = await window.codex.dispatchNotice();
@@ -14799,8 +14970,9 @@ const commandMatches = useMemo(() => {
       ] : []),
       // 子智能体：委派会话不注册（它自己就是被调起来的，再往下调就是套娃）
       ...(dispatchIsDelegated ? [] : subAgentTools(subAgents)),
-      // 调度工具：开关打开且本会话不是委派会话时注册
-      ...dispatchToolList({ enabled: dispatchSwitch.enabled === true, isDelegated: dispatchIsDelegated, description: dispatchInfoRef.current.description }),
+      // ⛔ 调度工具（agent_invoke / agent_archive_sessions）已改走内置 MCP（harness-dispatch）：
+      //    dynamicTools 只在 thread/start 生效（引擎硬约束），对老会话永远不可见；MCP 引擎级注入
+      //    覆盖所有会话，闸收敛到主进程执行端。这里不再注册，避免同名双工具让模型混乱。
       // RPA 配方与任务清单：让 agent 能存配方/跑配方/维护清单/向用户提问
       { type: "function", name: "rpa_save", description: "把刚跑通的一条自动化流程保存为 RPA 配方，下次可直接复用执行。steps 按顺序写清每一步（网址/点击/输入/桌面操作等），kind 选 browser（浏览器）/desktop（桌面）/mixed。", inputSchema: { type: "object", properties: { name: { type: "string", description: "配方名称，如「每天导出日报」" }, desc: { type: "string", description: "一句话说明用途" }, kind: { type: "string", enum: ["browser", "desktop", "mixed"] }, steps: { type: "array", items: { type: "string" }, description: "按顺序的执行步骤" }, target: { type: "string", description: "起始网址或目标程序，可省略" } }, required: ["name", "steps", "kind"] } },
       { type: "function", name: "rpa_run", description: "列出已保存的 RPA 配方（不传 name），或按名称执行某条配方。执行时按 steps 逐步复现自动化流程。", inputSchema: { type: "object", properties: { name: { type: "string", description: "要执行的配方名称；省略则返回全部配方清单" } } } },
@@ -14814,7 +14986,6 @@ const commandMatches = useMemo(() => {
       { type: "function", name: "connector_install", description: "安装一个 MCP 连接器模板（写入配置并重启引擎，会中断当前回合）。必须先用 agent_ask 征得用户同意才能调用；安装后提醒用户重新发一条消息继续。", inputSchema: { type: "object", properties: { templateId: { type: "string", description: "connector_search 结果里的模板 id" } }, required: ["templateId"] } },
     ];
   }, [memoryEnabled, subAgents]);
-
   async function createEmptyThread(): Promise<Thread | null> {
     const dynamicTools = await buildDynamicTools();
     // 首次对话身份引导：**只在「从没打过招呼」时注入一次**（09-12 用户反馈修正）。
@@ -15607,6 +15778,11 @@ const commandMatches = useMemo(() => {
   for (const run of railRuns) if (!railLastByMember[run.memberId]) railLastByMember[run.memberId] = run;
   const popupRun = teamPopupRunId ? teamRuns[teamPopupRunId] ?? null : null;
   const historyMemberRuns = teamHistoryMember ? teamHistoryRuns.filter((run) => run.memberId === teamHistoryMember) : [];
+  /** 调度头像轨（09-16）：本会话派出去、**正在跑**的委派会话（跑完即消失）。 */
+  const delegatedRailRuns = Object.values(delegateLiveRuns)
+    .filter((run) => run.originThreadId === thread?.id && run.status === "running")
+    .sort((a, b) => a.startedAt - b.startedAt);
+  const delegatedPopupRun = delegatedPopupId ? delegateLiveRuns[delegatedPopupId] ?? null : null;
   // 上下文压缩后的缓存重建窗口：压缩重写了提示词前缀，上游缓存命中需要 1~3 轮才恢复
   // （rollout 实测：压缩后 last.cached=0 连续 2 轮，第 3 轮回到 98%）。窗口内 0% 不是 bug。
   const recentCompaction = useMemo(() => {
@@ -15638,17 +15814,7 @@ const commandMatches = useMemo(() => {
                 {popoutThreadId ? (
         <button className="icon-button popout-return-btn" title="返回主应用（关闭本独立窗口）" onClick={() => void window.codex.popoutClose(thread?.id ?? null)}><Minimize2 size={16} /></button>
       ) : (
-        <>
-          <DispatchMenu
-            topbar
-            dispatch={activeDispatch}
-            targets={dispatchInfo.targets}
-            disabled={!thread?.id}
-            busy={dispatchBusy}
-            onChange={(next) => { void applyDispatch(next); }}
-          />
-          <button className="icon-button popout-open-btn" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!thread} onClick={() => { if (thread) void popoutCurrentThread(thread.id); }}><Maximize2 size={16} /></button>
-        </>
+        <button className="icon-button popout-open-btn" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!thread} onClick={() => { if (thread) void popoutCurrentThread(thread.id); }}><Maximize2 size={16} /></button>
       )}
                 <div className="ctx-picker">
           <button className="icon-button ctx-picker-btn tb-workspace" title="工作区上下文（当前会话使用的项目目录）" onClick={() => setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
@@ -15696,6 +15862,17 @@ const commandMatches = useMemo(() => {
         </div>
         <button className="icon-button tb-terminal" title="新建终端标签页" onClick={() => { setRightOpen(true); setRightTab("terminal"); }}><TerminalSquare size={16} /></button>
         <button className="icon-button tb-right-panel" title={rightOpen ? "收起右侧面板" : "展开右侧面板"} onClick={() => setRightOpen(!rightOpen)}>{rightOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button>
+        {/* 调度开关放顶栏最右（09-16 用户要求：挨着最小化按钮） */}
+        <DispatchMenu
+          topbar
+          dispatch={activeDispatch}
+          targets={dispatchInfo.targets}
+          disabled={!thread?.id}
+          busy={dispatchBusy}
+          lockedBy={dispatchHolderName}
+          restrictedLabel={threadRole.restricted ? (threadRole.label ?? "专家 / 专家团") : null}
+          onChange={(next, opts) => { void applyDispatch(next, opts); }}
+        />
     </>
   );
   return (
@@ -16013,6 +16190,19 @@ const commandMatches = useMemo(() => {
               runs={historyMemberRuns}
               onClose={() => setTeamHistoryMember("")}
             />
+          )}
+          {/* 调度头像轨 + 工作内容弹窗（09-16，与专家团一致）：运行中亮头像，跑完即消失。
+              专家团会话不会走到这里（railTeam 优先且受限会话根本开不了调度），两者不重叠。 */}
+          {delegatedRailRuns.length > 0 && (
+            <DelegatedRail
+              containerRef={timelineWrapRef}
+              runs={delegatedRailRuns}
+              activeId={delegatedPopupId}
+              onOpen={(tid) => setDelegatedPopupId(tid)}
+            />
+          )}
+          {delegatedPopupRun && delegatedPopupRun.originThreadId === thread?.id && (
+            <DelegatedRunPopup run={delegatedPopupRun} onClose={() => setDelegatedPopupId("")} />
           )}
         </div>
 

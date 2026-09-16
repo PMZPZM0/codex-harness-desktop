@@ -22989,3 +22989,24 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }
 }
+
+/* ── 调度独占锁（09-16 用户要求：同一时间只能一个会话调度，其他灰掉）───────────────── */
+.dispatch-lock {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--line-soft);
+  color: var(--muted);
+  line-height: 1.45;
+}
+.dispatch-lock > svg { flex: none; margin-top: 2px; }
+.dispatch-lock span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dispatch-lock strong { font-size: 12px; font-weight: 600; }
+.dispatch-lock small { font-size: 11px; }
+.dispatch-lock.takeover { background: var(--accent-soft); color: var(--accent-text); }
+.dispatch-lock.takeover strong { color: var(--accent-text); }
+
+/* 受保护会话（专家 / 专家团 / 被调度会话）：按钮禁用并换成锁图标 */
+.dispatch-topbar-btn.is-restricted:disabled { opacity: 0.4; cursor: not-allowed; }

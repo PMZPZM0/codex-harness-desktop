@@ -31,6 +31,8 @@ export type DelegateRecord = {
   archived?: boolean;
   /** 失败原因（status=failed 时） */
   error?: string;
+  /** 实时产出（流式累积；跑完是完整产出）。只用于右侧头像弹窗的实时展示与收尾展示。 */
+  output?: string;
 };
 
 /** 超过这个时间的已完成记录会被清理（避免文件无限增长）；运行中的永不清理。 */
@@ -40,6 +42,8 @@ export class DelegateRegistry {
   private map: Record<string, DelegateRecord> = {};
   private loaded = false;
   private saveTimer: NodeJS.Timeout | null = null;
+  /** 运行中的委派线程 → threadId（流式文本累积用；跑完即清） */
+  private activeThreads = new Set<string>();
 
   constructor(private readonly file: string) {}
 
@@ -64,10 +68,38 @@ export class DelegateRegistry {
 
   async register(input: Omit<DelegateRecord, "status" | "startedAt" | "endedAt"> & { startedAt?: number }): Promise<DelegateRecord> {
     await this.load();
-    const record: DelegateRecord = { ...input, status: "running", startedAt: input.startedAt ?? Date.now() };
+    const record: DelegateRecord = { ...input, status: "running", startedAt: input.startedAt ?? Date.now(), output: "" };
     this.map[record.threadId] = record;
+    this.activeThreads.add(record.threadId);
     this.scheduleSave();
     return record;
+  }
+
+  /** 运行中委派会话的流式文本（09-16 用户要求：调度时右侧也要像专家团一样有头像 + 工作内容）。
+   *  与 TeamRunStore.handleEngineEvent 同套路 —— 只认「正在跑的委派线程」，其它会话的增量一律不碰。
+   *  返回要广播的增量（广播由调用方做，保持与 team-runs 一致的分工）。 */
+  handleEngineEvent(event: any): { threadId: string; text: string; chars: number } | null {
+    if (!event || event.kind !== "notification" || event.method !== "item/agentMessage/delta") return null;
+    const threadId = String(event.params?.threadId ?? "");
+    if (!threadId || !this.activeThreads.has(threadId)) return null;
+    const text = String(event.params?.delta ?? "");
+    if (!text) return null;
+    const record = this.map[threadId];
+    if (!record) return null;
+    record.output = (record.output ?? "") + text;
+    return { threadId, text, chars: record.output.length };
+  }
+
+  /** 结束/失败时把最终产出写进记录（弹窗关掉前还能看到全文；不额外落盘配置）。 */
+  async setOutput(threadId: string, output: string): Promise<void> {
+    await this.load();
+    const record = this.map[threadId];
+    if (record) record.output = output;
+  }
+
+  /** 该线程当前是否正在被委派执行（渲染层兜底判定用） */
+  isRunningThread(threadId: string): boolean {
+    return this.activeThreads.has(String(threadId ?? ""));
   }
 
   async infoOf(threadId: string): Promise<DelegateRecord | null> {
@@ -102,6 +134,8 @@ export class DelegateRegistry {
     const current = this.map[key];
     if (!current) return;
     this.map[key] = { ...current, status, endedAt: status === "running" ? undefined : Date.now(), ...(extra.error ? { error: extra.error } : {}) };
+    // 跑完就不再接收流式增量（右侧头像也随之消失）
+    if (status !== "running") this.activeThreads.delete(key);
     this.scheduleSave();
   }
 

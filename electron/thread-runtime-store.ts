@@ -120,20 +120,65 @@ export class ThreadRuntimeStore {
   /**
    * 打补丁（字段级合并）。
    * @param baseRev 渲染层读到的 rev；传了就做冲突检测（不等即 conflict=true），不传则不检测。
+   * @param opts.takeover 独占冲突时是否原子接管（见下）。
+   *
+   * ⛔ 调度独占（09-16 用户要求「同一时间只能一个会话开，其他灰掉，避免同时调用」）：
+   * 开关是**会话级**的，但「谁有权调度」是**全局唯一**的。持有者不单独存字段，
+   * 而是从记录里**派生**（第一个 dispatch.enabled 的线程）—— 这样删除/归档线程、
+   * 记录被清掉时锁会自动释放，不会留下死锁。
+   * 冲突时默认**不改动任何东西**（changed:false + blockedBy），由 UI 决定是否接管；
+   * takeover=true 才在同一笔写入里把原持有者的开关关掉（原子，两个窗口同时操作也不会
+   * 出现「两个都开着」的中间态）。
    */
-  async patch(threadId: string, patch: unknown, baseRev?: number): Promise<{ runtime: ThreadRuntimeRecord; conflict: boolean; changed: boolean }> {
+  async patch(
+    threadId: string,
+    patch: unknown,
+    baseRev?: number,
+    opts?: { takeover?: boolean },
+  ): Promise<{ runtime: ThreadRuntimeRecord; conflict: boolean; changed: boolean; blockedBy?: string; tookOverFrom?: string }> {
     await this.load();
     const current = this.map[threadId] ?? emptyRecord();
     const conflict = typeof baseRev === "number" && Number.isFinite(baseRev) && baseRev !== current.rev;
     const fields = sanitizeFields(patch);
     const dispatch = pickDispatch(patch);
+    // ── 独占检查：本笔要把 enabled 置真、而锁在别人手里 ──
+    let tookOverFrom: string | undefined;
+    if (dispatch?.enabled === true) {
+      const owner = this.dispatchOwnerFromMap(threadId);
+      if (owner) {
+        if (!opts?.takeover) return { runtime: current, conflict, changed: false, blockedBy: owner };
+        tookOverFrom = owner;
+        const held = this.map[owner];
+        if (held) {
+          this.map[owner] = { ...held, dispatch: { ...held.dispatch, enabled: false }, rev: held.rev + 1, updatedAt: Date.now() };
+        }
+      }
+    }
     const changed = FIELDS.some((key) => fields[key] !== undefined && fields[key] !== current[key])
       || (dispatch !== null && dispatchSignatureOf(dispatch) !== dispatchSignatureOf(current.dispatch));
-    if (!changed) return { runtime: current, conflict, changed: false };
+    if (!changed) {
+      // 接管动作本身没有改变本线程配置（本来就是开的）时，也要把锁从上家摘下来
+      if (tookOverFrom) { this.scheduleSave(); return { runtime: current, conflict, changed: false, tookOverFrom }; }
+      return { runtime: current, conflict, changed: false };
+    }
     const next: ThreadRuntimeRecord = { ...current, ...fields, ...(dispatch ? { dispatch } : {}), rev: current.rev + 1, updatedAt: Date.now() };
     this.map[threadId] = next;
     this.scheduleSave();
-    return { runtime: next, conflict, changed: true };
+    return { runtime: next, conflict, changed: true, ...(tookOverFrom ? { tookOverFrom } : {}) };
+  }
+
+  /** 当前调度持有者（全局唯一）。exclude 用来看「除了我以外还有谁开着」。 */
+  async dispatchOwner(excludeThreadId?: string): Promise<string | null> {
+    await this.load();
+    return this.dispatchOwnerFromMap(excludeThreadId);
+  }
+
+  private dispatchOwnerFromMap(excludeThreadId?: string): string | null {
+    for (const [id, record] of Object.entries(this.map)) {
+      if (excludeThreadId && id === excludeThreadId) continue;
+      if (record?.dispatch?.enabled) return id;
+    }
+    return null;
   }
 
   /** 迁移：渲染层 localStorage 里已有值、而主进程这份还是空的时候灌进来；已有记录一律不覆盖 */
