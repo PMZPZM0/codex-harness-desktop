@@ -20,7 +20,7 @@ import { planCompletedFold } from "../src/lib/turn-fold-plan.mjs";
 import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../src/lib/voice-aec.mjs";
 import { createSpeakFilter, normalizeNumbers, numberToChinese, toSpeakableText } from "../src/lib/speak-text.mjs";
 import { join, dirname, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -2611,6 +2611,59 @@ console.log(C.bold("\n【24】协议桥：引擎只发 Responses，chat-only 网
     const json = chatJsonToResponses({ choices: [{ message: { content: "hi" } }], usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 } }, "m");
     (json.output?.[0]?.content?.[0]?.text === "hi" ? ok : fail)("回流：非流式 chat 响应也能转成 responses 输出项");
   }
+}
+
+// ---------- 【25】思考等级（09-16 用户定稿）：低/中/高/最高/极高 + 跟着模型保存 ----------
+
+console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，默认 低/中/高/极高，档案随模型持久化"));
+{
+  // 背景：用户实测两件事——① 菜单名要改成「低 中 高 最高 极高」，一般模型默认就是
+  // 低/中/高/极高；② 档位「不是跟着模型保存生效的，每次都要二次保存」：过去只有无会话时
+  // 才写档案，会话里选的档位新会话弹回旧值。守两头：档位规则（真跑 effort.ts 的导出函数，
+  // Node 自带 type-stripping 毫秒级）+ 接线（applyEffort 无条件写档案、chooseModel 读档案、
+  // 主进程 catalog 与 UI 同规则、桥对 chat 上游压档）。
+  const effortSrc = join(ROOT, "src", "lib", "effort.ts");
+  const effortUrl = pathToFileURL(effortSrc).href;
+  let exported = null;
+  try {
+    const probe = spawnSync(process.execPath, [
+      "--experimental-strip-types", "--no-warnings", "--input-type=module", "-e",
+      `import * as e from ${JSON.stringify(effortUrl)}; console.log(JSON.stringify({` +
+      ` custom: e.CUSTOM_MODEL_EFFORTS, all: e.ALL_EFFORTS,` +
+      ` und: e.declaredModelEfforts(undefined), empty: e.declaredModelEfforts([]),` +
+      ` legacy: e.declaredModelEfforts(["low", "medium", "high"]),` +
+      ` legacyUltra: e.declaredModelEfforts(["low", "medium", "high", "ultra"]),` +
+      ` untouched: e.declaredModelEfforts(["high"]),` +
+      ` norm: e.normalizeEffort("xhigh") }));`,
+    ], { encoding: "utf8" });
+    exported = JSON.parse(probe.stdout.trim().split("\n").at(-1));
+  } catch { /* 下面统一判红 */ }
+  (exported ? ok : fail)("effort.ts 可被 Node type-stripping 直接加载（守卫跑的是真代码，不是字符串）");
+  if (exported) {
+    (JSON.stringify(exported.custom) === JSON.stringify(["low", "medium", "high", "xhigh"]) ? ok : fail)("默认档位 = 低/中/高/极高（用户定稿，不再是旧三档）");
+    (JSON.stringify(exported.all) === JSON.stringify(["minimal", "low", "medium", "high", "ultra", "xhigh"]) ? ok : fail)("菜单顺序 = 极简,低,中,高,最高,极高（ultra 在 xhigh 前）");
+    (JSON.stringify(exported.und) === JSON.stringify(["low", "medium", "high", "xhigh"]) && JSON.stringify(exported.empty) === JSON.stringify(exported.und) ? ok : fail)("未声明档位（含探测合并的空数组）→ 回退新默认四档");
+    (JSON.stringify(exported.legacy) === JSON.stringify(["low", "medium", "high", "xhigh"]) ? ok : fail)("旧版默认三档声明自动补「极高」（老档案升版后菜单不少档、引擎 catalog 不缺档）");
+    (JSON.stringify(exported.legacyUltra) === JSON.stringify(["low", "medium", "high", "ultra", "xhigh"]) ? ok : fail)("旧版自动生成的三档+最高声明也补「极高」（真机档案实测的存量形态）；菜单正好=低中高最高极高");
+    (JSON.stringify(exported.untouched) === JSON.stringify(["high"]) ? ok : fail)("用户显式声明的档位列表不被迁移污染");
+    (exported.norm === "xhigh" ? ok : fail)("normalizeEffort 认识新档位值");
+  }
+
+  const appTs = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const applyEffortBody = appTs.slice(appTs.indexOf("function applyEffort"), appTs.indexOf("function changeEffort"));
+  (applyEffortBody.includes("setProviderEffort") ? ok : fail)("applyEffort 会把档位写进档案（跟着模型保存的写入端）");
+  (!applyEffortBody.includes("!threadRef.current?.id && customModel") ? ok : fail)("写档案不再被「无会话」条件挡住（旧守卫 = 二次保存 bug 的根源）");
+  (appTs.includes("const archiveEffort = (customModel?.models ?? []).find((m) => m.id === next?.model)?.effort") ? ok : fail)("chooseModel 切模型时读档案 models[].effort（读取端）");
+  (appTs.includes("efforts: [...(current.efforts ?? []), value], effort: value") ? ok : fail)("changeEffort 补声明时显式携带新档位（current 是过期闭包，不带会被 upsert 把档案写回旧值——09-16 真机定位的第二个档案回退根源）");
+  (appTs.includes('xhigh: "极高"') && appTs.includes('ultra: "最高"') && appTs.includes('low: "低"') && appTs.includes('medium: "中"') && appTs.includes('high: "高"') ? ok : fail)("展示名：低/中/高/最高/极高（极高=xhigh 顶格档，最高=ultra 扩展档）");
+  (appTs.includes("极高: \"xhigh\"") ? ok : fail)("/effort 命令别名含「极高」");
+
+  const mainTs = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  (mainTs.includes('m.efforts?.length ? m.efforts : ["minimal", "low", "medium", "high", "ultra", "xhigh"]') ? ok : fail)("catalog：空数组声明也回退全档位（探测合并会写 efforts: []，旧实现会声明出空档位表）");
+  (mainTs.includes('["low", "medium", "high"].every((e) => efforts.includes') ? ok : fail)("catalog：旧版三档声明同步补「极高」（与 UI 同规则，否则 UI 能选、引擎拒绝）");
+
+  const bridgeTs = readFileSync(join(ROOT, "electron", "responses-bridge.ts"), "utf8");
+  (bridgeTs.includes('effort === "xhigh" || effort === "ultra" ? "high" : effort') ? ok : fail)("桥：chat 上游把 xhigh/ultra 压到 high（网关不认扩展档）");
 }
 
 // ---------- 汇总 ----------

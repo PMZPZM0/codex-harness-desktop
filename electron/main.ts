@@ -1347,11 +1347,18 @@ function buildModelCatalog(entry: CustomModelFile) {
     seen.add(m.id);
     const contextWindow = m.contextWindow ?? fallbackWindow;
     if (!contextWindow) continue;
-    // 该模型显式声明的思考档位（GPT 系可声明 minimal/xhigh/ultra 等）；未声明默认全档位——
-    // 复刻 ZCode：思考等级下拉选什么都能用，用户无需理解"档位声明"；显式勾选用于收窄。
-    // 引擎按 catalog 的 supported_reasoning_levels 校验 effort，UI 也按它显示选项，
-    // 两处必须同源——只在这里收口，UI 从 catalog 读。
-    const efforts = (m.efforts ?? ["minimal", "low", "medium", "high", "xhigh", "ultra"]).filter((effort): effort is string => typeof effort === "string" && ["minimal", "low", "medium", "high", "xhigh", "ultra"].includes(effort));
+    // 该模型显式声明的思考档位（GPT 系可声明 minimal/ultra 等）；未声明（含空数组——
+    // 探测合并会写入 efforts: []）默认全档位——复刻 ZCode：思考等级下拉选什么都能用。
+    // 引擎按 catalog 的 supported_reasoning_levels 校验 effort，UI 也按它显示选项。
+    // ⛔ 与渲染层 declaredModelEfforts（src/lib/effort.ts）同规则：未声明回退、旧版默认
+    // 三档 low/medium/high 自动补「极高」——UI 能选的档 catalog 必须声明，否则 turn/start 被拒。
+    const EFFORT_WHITELIST = ["minimal", "low", "medium", "high", "xhigh", "ultra"] as const;
+    const rawEfforts = m.efforts?.length ? m.efforts : ["minimal", "low", "medium", "high", "ultra", "xhigh"];
+    let efforts = rawEfforts.filter((effort): effort is typeof EFFORT_WHITELIST[number] => (EFFORT_WHITELIST as readonly string[]).includes(effort));
+    // 旧版自动生成的声明（低/中/高 三档或 +最高，且没有极高）补「极高」——与渲染层 declaredModelEfforts 同规则
+    const hasBase = ["low", "medium", "high"].every((e) => efforts.includes(e as any));
+    const legacyAuto = hasBase && !efforts.includes("xhigh") && efforts.every((e) => ["low", "medium", "high", "ultra"].includes(e));
+    if (legacyAuto) efforts = [...efforts, "xhigh"] as typeof efforts;
     const effortDescriptions: Record<string, string> = {
       minimal: "Minimal reasoning, fastest responses",
       low: "Fast responses with lighter reasoning",

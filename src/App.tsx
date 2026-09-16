@@ -8,7 +8,7 @@ import remarkBreaks from "remark-breaks";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { codeFontStack, codeFonts, codePreviewSnippet, codeThemeStyle, codeThemes } from "./lib/code-themes";
 import { codeFontSize, useCodeSettings } from "./lib/code-settings";
-import { DEFAULT_EFFORT, pickDefaultEffort, CUSTOM_MODEL_EFFORTS, normalizeEffort, ALL_EFFORTS } from "./lib/effort";
+import { DEFAULT_EFFORT, pickDefaultEffort, normalizeEffort, ALL_EFFORTS, declaredModelEfforts } from "./lib/effort";
 import { matchModelSpec, loadExternalSpecs } from "./lib/model-specs";
 import { resolveModelForOpen, shouldSyncOpenThread } from "./lib/model-scope.mjs";
 import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "./lib/provider-continuity.mjs";
@@ -921,7 +921,7 @@ const builtinCommandCatalog: BuiltinCommandDef[] = [
   { name: "goal", description: "目标模式：朝目标自动持续推进直至达成", hint: "<目标 | clear>", category: "运行控制" },
   // 模型与权限
   { name: "model", description: "模型与思考设置", category: "模型与权限" },
-  { name: "effort", description: "切换真实思考强度", hint: "[极少|低|中|高|max|最高]", category: "模型与权限" },
+  { name: "effort", description: "切换真实思考强度", hint: "[极简|低|中|高|最高|极高]", category: "模型与权限" },
   { name: "personality", description: "切换回复风格", hint: "[务实|友好|默认]", category: "模型与权限" },
   { name: "permissions", description: "运行权限设置", category: "模型与权限" },
   { name: "sandbox", description: "切换沙箱执行范围", hint: "[只读|工作区可写|完全访问]", category: "模型与权限" },
@@ -1070,14 +1070,16 @@ const IDENTITY_ONBOARD_TOOL = {
   },
 };
 
+// 09-16 用户定稿：展示名改为「低 中 高 最高 极高」（最高=ultra 扩展档、极高=xhigh 顶格档）。
+// 与 /effort 别名表、模型编辑器勾选共用；desc 见 effortMenuOptions。
 const effortLabels: Record<string, string> = {
-  none: "关闭思考",
-  minimal: "极简思考",
-  low: "轻量思考",
-  medium: "均衡思考",
-  high: "标准思考",
-  xhigh: "深度思考",
-  ultra: "极限思考",
+  none: "关闭",
+  minimal: "极简",
+  low: "低",
+  medium: "中",
+  high: "高",
+  xhigh: "极高",
+  ultra: "最高",
 };
 
 /** 行业分类 ID → 中文名（与专家团编辑器一致） */
@@ -2747,7 +2749,7 @@ const pluginMarketCategoryTabs: [string, string][] = [["全部", "全部"], ["�
 const effortMenuOptions = ALL_EFFORTS.map((value) => ({
   value,
   title: effortLabels[value] ?? value,
-  desc: { minimal: "最快响应，几乎不思考。", low: "轻量思考。", medium: "平衡速度与质量。", high: "更严谨，适合复杂任务。", xhigh: "请求 xhigh 强度，需供应商支持。", ultra: "引擎扩展档，实际请求强度按模型映射。" }[value] ?? "",
+  desc: { minimal: "最快响应，几乎不思考。", low: "最快出结果，轻量思考。", medium: "平衡速度与质量。", high: "更严谨，适合复杂任务。", ultra: "引擎扩展档（最高），实际请求强度按模型映射。", xhigh: "极高思考，顶格档，需模型支持。" }[value] ?? "",
 }));
 
 /** 高度动画折叠原语（对齐 WorkBuddy cr-collapse：0.28s 高度 + 内容 opacity/位移过渡）
@@ -9826,14 +9828,13 @@ export default function App() {
     return rawOpenFile(resolved);
   }, [rawOpenFile, workspace, treePath]);
 
-  // 该模型声明支持的思考档位：优先读模型条目 efforts，缺省用 CUSTOM_MODEL_EFFORTS。
-  // 与主进程 buildModelCatalog 同源（那边 filter 白名单也是这几个档位），保证 UI 选项 = 引擎真实支持。
-  const customModelEfforts = useMemo(() => {
-    const declared = (customModel?.models ?? []).find((m) => m.id === customModel?.model)?.efforts ?? [];
-    const allowed = ALL_EFFORTS as readonly string[];
-    const cleaned = declared.filter((effort): effort is string => allowed.includes(effort));
-    return cleaned.length ? cleaned : [...CUSTOM_MODEL_EFFORTS];
-  }, [customModel?.model, customModel?.models]);
+  // 该模型声明支持的思考档位：优先读模型条目 efforts（旧版默认三档自动补「极高」），
+  // 未声明用新默认四档 低/中/高/极高。与主进程 buildModelCatalog 同用 declaredModelEfforts
+  // 规则（src/lib/effort.ts），保证 UI 选项 = 引擎真实支持。
+  const customModelEfforts = useMemo(
+    () => declaredModelEfforts((customModel?.models ?? []).find((m) => m.id === customModel?.model)?.efforts),
+    [customModel?.model, customModel?.models],
+  );
   const customModelOption: Model | null = customModel ? {
     id: `custom:${customModel.provider}:${customModel.model}`,
     model: customModel.model,
@@ -9852,11 +9853,8 @@ export default function App() {
     const out: Model[] = [];
     const seen = new Set<string>();
     const effortsOf = (providerModels: ProviderModelConfig[] | undefined, modelId: string): { reasoningEffort: string; description: string }[] => {
-      const declared = (providerModels ?? []).find((m) => m.id === modelId)?.efforts ?? [];
-      const allowed = ALL_EFFORTS as readonly string[];
-      const cleaned = declared.filter((effort): effort is string => allowed.includes(effort));
-      const list = cleaned.length ? cleaned : [...CUSTOM_MODEL_EFFORTS];
-      return list.map((reasoningEffort) => ({ reasoningEffort, description: effortLabels[reasoningEffort] ?? reasoningEffort }));
+      return declaredModelEfforts((providerModels ?? []).find((m) => m.id === modelId)?.efforts)
+        .map((reasoningEffort) => ({ reasoningEffort, description: effortLabels[reasoningEffort] ?? reasoningEffort }));
     };
     const pushModels = (provider: string, providerName: string, providerModels: ProviderModelConfig[] | undefined, modelIds: (string | undefined)[], isActive: boolean) => {
       for (const model of modelIds) {
@@ -12825,10 +12823,13 @@ const commandMatches = useMemo(() => {
     }
     // 用户主动切模型时给一条会话内提醒（与引擎 sideband 的模型切换事件互为补充）
     if (nextLabel && prevLabel && nextLabel !== prevLabel) showToast("模型已切换", `${prevLabel} → ${nextLabel}`);
-    // 切模型的 effort 选择：该模型记过档位用之；否则当前会话已有档位保持不变（会话内不突袭改档）；
-    // 都没有才落到模型默认档
+    // 切模型的 effort 选择：该模型记过档位用之（本地 map 或档案 models[].effort——后者
+    // 跨窗口/重装都在，「跟着模型保存」的读取端）；否则当前会话已有档位保持不变（会话内
+    // 不突袭改档）；都没有才落到模型默认档
     const threadEffort = currentThreadId ? loadThreadEffort(currentThreadId) : "";
-    const nextEffort = savedEffortFor(next?.model) || threadEffort || pickDefaultEffort(next?.supportedReasoningEfforts, next?.defaultReasoningEffort);
+    const archiveEffort = (customModel?.models ?? []).find((m) => m.id === next?.model)?.effort
+      ?? (next?.model === customModel?.model ? customModel?.effort ?? "" : "");
+    const nextEffort = savedEffortFor(next?.model) || archiveEffort || threadEffort || pickDefaultEffort(next?.supportedReasoningEfforts, next?.defaultReasoningEffort);
     setEffort(nextEffort);
     if (nextEffort) {
       // ⛔ 多会话/多窗口作用域（09-13）：有会话只落会话级（thread-effort-<id>），
@@ -13152,12 +13153,15 @@ const commandMatches = useMemo(() => {
     else localStorage.setItem("default-effort", value);
     rememberEffortFor(selectedModel?.model ?? modelName(modelId), value);
     void updateThreadSettings({ effort: value });
-    // ⛔ 多窗口作用域（09-13）：有会话时**不再**写全局档案（custom-model.json 顶层 /
-    // config.toml 顶层 model_reasoning_effort）——那是全应用共享的，A 窗口会话改档位
-    // 会污染 B 窗口重启后的兜底默认。会话内档位由每轮 turn/start 的 effort 下发（权威），
-    // 只有「无会话选默认」才落全局档案。
-    if (!threadRef.current?.id && customModel?.provider && customModel.model) {
-      void window.codex.setProviderEffort({ provider: customModel.provider, model: customModel.model, effort: value })
+    // ⛔ 跟着模型保存（09-16 用户实测「思考等级不是跟着模型保存生效的，每次都要二次保存」）：
+    // 过去只有「无会话」时才写档案，会话里选的档位只活在会话记录里 → 新会话/切回模型时
+    // 走档案对账弹回旧档位，用户必须重选一次。现在无论有无会话都把档位写进档案
+    // models[].effort（该模型自己的字段，不是全局共享），新会话自动跟随最后选择的档位。
+    // 会话内仍由每轮 turn/start 的 effort 下发（权威），档案值只作新会话兜底默认。
+    const provider = customModel?.provider;
+    const archivedModel = selectedModel?.model ?? customModel?.model;
+    if (provider && archivedModel) {
+      void window.codex.setProviderEffort({ provider, model: archivedModel, effort: value })
         .then((next) => setCustomModel(next))
         .catch(() => undefined);
     }
@@ -13172,7 +13176,10 @@ const commandMatches = useMemo(() => {
     const targetModelId = selectedModel?.model ?? customModel?.model;
     const current = (customModel?.models ?? []).find((m) => m.id === targetModelId);
     if (provider && current && !(current.efforts ?? []).includes(value)) {
-      const patched = { ...current, efforts: [...(current.efforts ?? []), value] };
+      // ⛔ effort: value 必须显式带上（09-16 真机验收抓到）：current 是过期闭包，
+      // 里面的 effort 还是旧档位——upsert 落库时会把 applyEffort 刚写进档案的新档位
+      // 覆盖回去，表现为「选了极高，重开又是旧档」（跟着模型保存失效的第二个根源）。
+      const patched = { ...current, efforts: [...(current.efforts ?? []), value], effort: value };
       const patchModels = (models: any) => (models ?? []).map((m: any) => m.id === patched.id ? patched : m);
       setCustomModel((c: any) => c ? { ...c, models: patchModels(c.models) } : c);
       setCustomDraft((c: any) => ({ ...c, models: patchModels(c.models) }));
@@ -13570,11 +13577,11 @@ const commandMatches = useMemo(() => {
       else if (name === "copy") { const last = thread?.turns.flatMap((turn) => turn.items).filter((item) => item.type === "agentMessage").at(-1); await copyMessage(itemText(last ?? ({} as ThreadItem))); }
       else if (name === "memory") { setSettingsOpen(true); setSettingsPage("memory"); }
       else if (name === "effort") {
-        if (!argument) showToast("用法", "/effort 极简|轻量|均衡|标准|深度|极限|max");
+        if (!argument) showToast("用法", "/effort 极简|低|中|高|最高|极高|max");
         else {
-          const alias: Record<string, string> = { 极简: "minimal", 轻量: "low", 均衡: "medium", 标准: "high", 深度: "xhigh", 极限: "ultra", 极少: "minimal", 低: "low", 中: "medium", 高: "high", max: "xhigh", 最高: "ultra", minimal: "minimal", low: "low", medium: "medium", high: "high", xhigh: "xhigh", ultra: "ultra" };
+          const alias: Record<string, string> = { 极简: "minimal", 低: "low", 中: "medium", 高: "high", 最高: "ultra", 极高: "xhigh", 极限: "ultra", 深度: "xhigh", 极少: "minimal", 轻量: "low", 均衡: "medium", 标准: "high", max: "xhigh", minimal: "minimal", low: "low", medium: "medium", high: "high", xhigh: "xhigh", ultra: "ultra" };
           const target = alias[argument];
-          if (!target) showToast("不支持的思考强度", "可选：极简 / 轻量 / 均衡 / 标准 / 深度 / 极限");
+          if (!target) showToast("不支持的思考强度", "可选：极简 / 低 / 中 / 高 / 最高 / 极高");
           else { changeEffort(target); showToast("思考强度已更新", effortLabels[target] ?? target); }
         }
       } else if (name === "personality") {
@@ -15835,7 +15842,7 @@ const commandMatches = useMemo(() => {
   // 拖拽容器的【子元素】（no-drag 豁免），fixed 悬浮层会被拖拽区吞掉点击（实测）。
   const topbarActionsNode = (
     <>
-                {popoutThreadId ? (
+      {popoutThreadId ? (
         <button className="icon-button popout-return-btn" title="返回主应用（关闭本独立窗口）" onClick={() => void window.codex.popoutClose(thread?.id ?? null)}><Minimize2 size={16} /></button>
       ) : (
         <>
@@ -17888,7 +17895,7 @@ const commandMatches = useMemo(() => {
                       </label>
                     ))}</div>
                   </div>
-                  <div className="type-chip-group"><span>思考档位 <small>按模型 API 实际支持勾选；GPT 系可勾选 max/最高</small></span>
+                  <div className="type-chip-group"><span>思考档位 <small>按模型 API 实际支持勾选；未勾选默认 低/中/高/极高</small></span>
                     <div className="type-chips">{ALL_EFFORTS.map((t) => (
                       <label key={t} className={`type-chip ${modelEditor.draft.efforts.includes(t) ? "on" : ""}`}>
                         <input type="checkbox" checked={modelEditor.draft.efforts.includes(t)} onChange={(event) => setModelEditor({ ...modelEditor, paramsDirty: true, draft: { ...modelEditor.draft, efforts: event.target.checked ? [...modelEditor.draft.efforts, t] : modelEditor.draft.efforts.filter((x) => x !== t) } })} />

@@ -131,8 +131,9 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
         setCustomModel(result);
         setCustomDraft({ ...result, contextWindow: String(result.contextWindow ?? 128000), wireApi: result.wireApi ?? "responses", apiKey: "", models: result.models ?? (result.model ? [{ id: result.model }] : []), enabled: result.enabled ?? true });
         setProviderModels((current) => current.includes(result.model) ? current : [result.model, ...current]);
-        // 默认 high 而不是顶格：ultra 档的推理 token 会让上游多花数秒才吐首字
-        onAutoSelect(`custom:${result.provider}:${result.model}`, savedEffortFor(result.model) || DEFAULT_EFFORT);
+        // 默认 high 而不是顶格：ultra 档的推理 token 会让上游多花数秒才吐首字。
+        // 档案 models[].effort（跟着模型保存的档位）优先于全局默认——启动即跟随模型。
+        onAutoSelect(`custom:${result.provider}:${result.model}`, savedEffortFor(result.model) || result.models?.find((m) => m.id === result.model)?.effort || DEFAULT_EFFORT);
         void window.codex.probeCustomModel(result).then((probe) => setProviderModels(probe.models)).catch(() => undefined);
       })
       .catch(() => undefined);

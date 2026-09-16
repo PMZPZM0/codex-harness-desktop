@@ -129,7 +129,8 @@ export function toChatRequest(body: any): any {
   }
   // xhigh 是 Codex 特有档位，Chat 网关普遍只认 minimal/low/medium/high —— 降一档比 400 好
   const effort = body?.reasoning?.effort;
-  if (effort) chat.reasoning_effort = effort === "xhigh" ? "high" : effort;
+  // chat 上游一般只认标准档：xhigh/ultra（UI 的「极高/最高」）压到 high，其余原样
+  if (effort) chat.reasoning_effort = effort === "xhigh" || effort === "ultra" ? "high" : effort;
   if (body?.max_output_tokens) chat.max_tokens = body.max_output_tokens;
   if (body?.temperature !== undefined) chat.temperature = body.temperature;
   if (body?.top_p !== undefined) chat.top_p = body.top_p;

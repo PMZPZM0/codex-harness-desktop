@@ -155,6 +155,14 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **思考等级：低/中/高/最高/极高 + 跟着模型保存（09-16，用户「不是跟着模型保存生效的，每次都要二次保存」）**：
+  - **展示名定稿**：`effortLabels` 改短名——low=低 medium=中 high=高 **ultra=最高（引擎扩展档，按模型映射实际强度）xhigh=极高（顶格档）** minimal=极简；菜单顺序 = `ALL_EFFORTS` 序（去掉 minimal 正好是用户要的「低中高最高极高」）；`/effort` 别名表加「极高」。
+  - **默认档位**：`CUSTOM_MODEL_EFFORTS` 改为 `["low","medium","high","xhigh"]`（旧三档 → 四档）；**存量声明迁移** `declaredModelEfforts`（src/lib/effort.ts）：未声明（含探测合并的空数组）回退四档；旧版自动生成的「低中高」或「低中高+最高」声明自动补 xhigh；其余显式声明原样尊重。**主进程 `buildModelCatalog` 必须同规则**（两处各自实现，注释互指）——UI 能选的档 catalog 缺声明会被引擎拒。
+  - **跟模型保存（二次保存 bug 的两个根源）**：① `applyEffort` 过去只在**无会话**时写档案 `setProviderEffort`（models[].effort + 顶层 + config.toml 兜底），会话里选的档位新会话弹回旧值——现在**无条件写**（档案值只作新会话兜底，会话内权威仍是每轮 turn/start 的 effort）；② `changeEffort` 补声明时 `patched` 带过期闭包里的旧 effort，upsert 会把刚写的档案覆盖回去——补声明必须显式带 `effort: value`。
+  - **读取端**：`chooseModel` 切模型优先级 = 本地 model-efforts map → 档案 `models[].effort` → 会话记录 → 模型默认档；启动 `useModelProviders` 的 onAutoSelect 也读档案。
+  - **验收坑（09-16 实录）**：e2e 档案是持久 profile——第一轮成功验收会把 xhigh 落盘，之后的反证（摘修复）永远绿。断言必须**两步自含**：先选「高」归零基准，再选「极高」验跟随；档位断言要断到主进程落盘的 `custom-model.json`，只看内存/界面会假绿。
+  - 预检【25】16 条断言：档位规则用 **Node `--experimental-strip-types` 直接 import effort.ts 真代码**（不是字符串匹配）；7 条变异反证全红。桥对 chat 上游把 xhigh/ultra 压到 high。
+
 - **本地协议桥：chat-only 网关可以直接用了（09-16，用户拍板「加代理功能，换别的电脑也要能用」）**：
   引擎只会发 Responses（POST /v1/responses），而火山 coding / Kimi Coding 等网关只有 /v1/chat/completions——过去这类网关「连接测试通过、对话全废」。新增 `electron/responses-bridge.ts`：主进程内监听 `127.0.0.1:47121`（被占退回随机端口），引擎照常按 Responses 调用，桥按上游实际能力**透传（支持 responses 时零转换）或双向转换成 Chat Completions**（流式文本 / 工具调用分片 / usage 映射 / reasoning_content→summary 事件，推理内容已实证会落进 rollout）。凭据由引擎带入 `Authorization` 原样透传，桥不留存任何密钥 → **换电脑只需重填一次 Key，行为与设备无关**；代码随主进程编译进 dist-electron，无外部依赖、无安装步骤。
   - **接线（全部单点/兜底）**：`applyCustomModel` 的 `activeBaseUrl` 走 `bridgeDial`（provider/别名/harness 三段共用）；`codex:request` 入口 `bridgeRewriteProviderConfig` 统一改写渲染层自带的内联 config；桥未启动自动降级直连（行为同旧版）。
