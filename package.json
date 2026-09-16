@@ -34,6 +34,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "dingtalk-stream": "^2.1.6-beta.1",
+    "koffi": "^3.3.0",
     "lucide-react": "^0.468.0",
     "mermaid": "^11.17.2",
     "qrcode": "^1.5.4",
@@ -177,7 +178,9 @@
     "asarUnpack": [
       "node_modules/@openai/codex-*/vendor/**",
       "node_modules/@lydell/node-pty/**",
-      "node_modules/sherpa-onnx-*/**"
+      "node_modules/sherpa-onnx-*/**",
+      "node_modules/koffi/**",
+      "node_modules/@koromix/**"
     ],
     "win": {
       "target": "nsis",
