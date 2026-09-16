@@ -154,7 +154,9 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
       // 配置界面不展示“默认模型”；引擎仍需要一个当前模型作为启动入口，
       // 有勾选模型时仅在保存时内部选择第一项；允许供应商暂时没有模型。
       const effectiveModel = enabled.length === 0 ? "" : enabled.some((model: any) => model.id === dedupedDraft.model) ? dedupedDraft.model : enabled[0].id;
-      const saved = await window.codex.saveCustomModel({ ...dedupedDraft, model: effectiveModel });
+      // 引擎只支持 Responses（写 chat 会整份配置拒载，09-16 真实引擎探针实证）：
+      // 保存时恒归一，避免草稿里残留的历史 chat 被写进 config.toml 把应用写死。
+      const saved = await window.codex.saveCustomModel({ ...dedupedDraft, model: effectiveModel, wireApi: "responses" });
       adoptSavedProvider(saved);
       onEngineApplied?.();
       onNotice(saved.enabled === false ? "供应商已保存（保持禁用）" : "自定义模型已保存，Codex 服务已重新加载");
@@ -172,9 +174,14 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
     setProviderStatus("");
     try {
       const result = await window.codex.probeCustomModel({ ...customDraft, model: customDraft.model, wireApi: customDraft.wireApi ?? "responses" });
-      // 自动跟随上游：探测确定实际协议后回写草稿（下拉从「自动」变为实际值），保存即落定
+      // ⛔ 探测协议不再回写草稿（09-16）：引擎只支持 Responses、UI 的协议下拉已撤掉，回写只会
+      // 制造「探测说 chat、保存变 responses」的自相矛盾（用户原话「保存的时候总是自动跳转到
+      // re 开头的协议」）。但实测协议里藏着一个必须曝光的诊断——
       const wireUsed = (result as any).wireUsed as "responses" | "chat" | undefined;
-      if (customDraft.wireApi === "auto" && wireUsed) setCustomDraft((current) => ({ ...current, wireApi: wireUsed }));
+      // 仅当 responses 被拒、只有 chat 实测能通（via==="stream"）时，才说明该网关不兼容
+      // Responses：连接测试会通过，但引擎（只会发 /responses）根本用不了它。用户此前只会
+      // 看到「配好了却用不了」，无从判断原因。
+      const chatOnly = result.via === "stream" && wireUsed === "chat";
       if (result.models?.length) {
         // 拉全量 /models 时整体替换（避免上一家供应商的模型混进来）；只测单个模型时并入列表
         setProviderModels((current) => customDraft.model ? [...new Set([...result.models, ...current])] : [...new Set(result.models)]);
@@ -217,14 +224,21 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
         }
       }
       const viaNote = result.via === "official" ? "（已从 OpenAI 官方目录获取最新清单）" : result.via === "official-fallback" ? "（官方目录获取失败，当前为内置兜底清单）" : result.via === "builtin" ? "（该网关不提供列表接口，已加载内置推荐清单，可手动增删）" : result.via === "stream" ? "（网关未提供 /models，已实测模型连通）" : "";
-      setProviderStatus(mode === "test" ? `连接成功 · HTTP ${result.status} · ${result.latencyMs} ms · ${result.models.length} 个模型` : `已获取 ${result.models.length} 个模型${viaNote}，勾选要生效的模型后保存`);
-      // 成功弹 toast 醒目提醒（状态行小字保留作留痕）
-      onProbeSuccess?.(
-        mode === "test" ? "连接成功" : "模型列表已获取",
-        mode === "test"
-          ? `${customDraft.name || customDraft.provider} · HTTP ${result.status} · ${result.latencyMs} ms · ${result.models.length} 个模型可用`
-          : `${customDraft.name || customDraft.provider} · ${result.models.length} 个模型${viaNote}，勾选要生效的模型后保存`,
-      );
+      if (chatOnly) {
+        // 抢眼提示：默认的「连接成功」文案会掩盖「引擎用不了它」这个致命事实
+        const warning = "该网关只支持 Chat Completions，而引擎仅支持 Responses 协议——连接测试虽然通过，实际对话无法使用，请换用兼容 Responses 的网关";
+        setProviderStatus(`⚠️ ${warning}`);
+        onProbeSuccess?.("协议不兼容，无法用于对话", `${customDraft.name || customDraft.provider} · ${warning}`);
+      } else {
+        setProviderStatus(mode === "test" ? `连接成功 · HTTP ${result.status} · ${result.latencyMs} ms · ${result.models.length} 个模型` : `已获取 ${result.models.length} 个模型${viaNote}，勾选要生效的模型后保存`);
+        // 成功弹 toast 醒目提醒（状态行小字保留作留痕）
+        onProbeSuccess?.(
+          mode === "test" ? "连接成功" : "模型列表已获取",
+          mode === "test"
+            ? `${customDraft.name || customDraft.provider} · HTTP ${result.status} · ${result.latencyMs} ms · ${result.models.length} 个模型可用`
+            : `${customDraft.name || customDraft.provider} · ${result.models.length} 个模型${viaNote}，勾选要生效的模型后保存`,
+        );
+      }
     } catch (error: any) {
       // 失败也要醒目弹提示：状态行是行内小字，容易被忽略——用户看到的只是「换了供应商还是用不了」。
       const failure = classifyProviderProbeFailure(String(error?.message ?? error));

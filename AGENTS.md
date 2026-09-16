@@ -155,6 +155,13 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **API 协议选择被静默改写（09-16 用户实测：「协议保存的时候总是自动跳转到 re 开头的协议，我选的是 CH 开头协议」）**：
+  **先立实证**：`scripts/probe-wire-api.cjs`（独立 CODEX_HOME + 真实 app-server + mock 模型 API）跑两组对照——`wire_api = "responses"` 时 initialize/turn 全通、上游收到 `POST /v1/responses`；`wire_api = "chat"` 时 **initialize 能过但 `turn/start` 必报** `` `wire_api = "chat"` is no longer supported. How to fix: set `wire_api = "responses"` `` → 之后每个请求都失败（等同应用全瘫）。**结论：chat 是引擎侧硬拒载，不是我们没实现。**
+  **真问题不是归一化，是它改得太安静 + UI 提供了永远无法生效的选项**：设置页「API 格式」下拉给了 Responses/Chat 两项，用户选 Chat → 保存时 `normalizeProvider` 把它改回 responses → 界面跳回，用户只看到「协议自己跳走了」。且探测侧还在推波助澜：`KNOWN_GATEWAY_MODELS` 把火山方舟（`volces.com`，用户唯一供应商）标成 `wire:"chat"`，`probeProvider` 又把 `wireUsed` **回写**进草稿 → 出现「探测说 chat、保存变 responses」的自相矛盾。
+  **修法四处**：① `App.tsx` 撤掉「API 格式」下拉，改为如实说明（`provider-form-hint`）；② `probeProvider` 不再回写 `wireApi`，改为曝光致命诊断——实测只有 chat 能通时明确提示「该网关只支持 Chat Completions，引擎仅支持 Responses，连接测试能过但无法用于实际对话」（此前用户只会看到「配好了却用不了」）；③ `main.ts:7041` 保存入口与 3137 别名段、`App.tsx:12876` 会话接力内联 config 全部**显式恒 responses**，不再依赖下游 `normalizeProvider` 兜底（别名段那处尤其危险：`active` 来自 `readCustomModel()`，那个函数**不经过 normalize**，档案里一旦有 chat 残留就会把应用写死）；④ `saveCustomDraft` 保存时显式传 `wireApi:"responses"`。
+  **防回归**：预检【23】8 条断言（5 条负向「坏串必判红」+ 3 条正向「保命逻辑别删」），**已逐条合成反证**（把坏串拼进文本确认判红，见 `recheck-wire-guard.mjs` 的做法）；`normalizeProvider` 的归一化与启动自愈里的 `chat → responses` 改写**必须保留**（清存量坏值）。
+- **三连修复（09-16 用户实测）**：
+
 - **三连修复（09-16 用户实测）**：
   ① **运行状态行上方整行留白**：真因是最后一个回合 `.turn-group` 的 `margin-bottom:32px` 紧贴 `.run-activity-bar` 叠出一行空白（上次修的 markdown 光标是**另一处**、位置找错了）。修法：`.timeline > .turn-group:has(+ .run-activity-bar) { margin-bottom:4px }`（`:has` 反向选中紧贴状态行的回合，空闲态间距不变）。离屏探针实测间距 32px → **2px**。
   ② **「保存供应商」失败也重启**（新增供应商保存重启后找不到的直接原因）：`saveCustomDraft` 内部吞错只写内联 notice，而「保存」按钮**无论成败都弹「已保存」并 relaunch**——校验失败（最常见：模型列表为空，主进程抛「至少勾选一个生效模型」）也重启，错误提示随重启消失。修法：`saveCustomDraft`/`saveCustomModel` **返回保存结果**，按钮失败时弹「保存失败，应用未重启」toast、不重启；主进程错误文案改为「请先在『模型列表』添加并勾选至少一个生效模型，再保存」。⛔ 通用教训：**catch 吞错的持久化函数必须把成败返回给调用方**，「成功才允许重启」这类后续动作不能建立在"没抛异常"上。

@@ -12871,7 +12871,9 @@ const commandMatches = useMemo(() => {
                 name: target.name,
                 base_url: target.baseUrl,
                 env_key: "CODEX_HARNESS_API_KEY",
-                wire_api: (target.wireApi === "chat" ? "chat" : "responses"),
+                // ⛔ 恒 responses：引擎对 wire_api = "chat" 是整份配置拒载（09-16 探针实证），
+                // 透传 chat 会让这个会话（及后续所有请求）直接打不开。
+                wire_api: "responses",
                 requires_openai_auth: false,
               },
             },
@@ -17727,7 +17729,12 @@ const commandMatches = useMemo(() => {
                 )}
                 <p className="provider-id-line">供应商 ID：{customDraft.provider}</p>
                 <label className="provider-field"><span>Base URL</span><input value={customDraft.baseUrl} onChange={(event) => setCustomDraft({ ...customDraft, baseUrl: event.target.value })} placeholder="https://example.com/v1" /></label>
-                <label className="provider-field"><span>API 格式</span><select value={customDraft.wireApi ?? "auto"} onChange={(event) => { const v = event.target.value; setCustomDraft({ ...customDraft, wireApi: v === "chat" ? "chat" : v === "responses" ? "responses" : "auto" }); }}><option value="auto">自动跟随上游（探测后自动确定）</option><option value="responses">Responses (/responses)</option><option value="chat">Chat Completions (/chat/completions)</option></select></label>
+                {/* ⛔ 不再提供「API 格式」下拉（09-16）：引擎已移除 Chat Completions 支持，
+                    写 wire_api = "chat" 会让整份 config.toml 拒载、所有请求失败（真实引擎探针
+                    实证：`wire_api = "chat"` is no longer supported）。原先的下拉给出一个
+                    永远无法生效的选项，用户选了「Chat Completions」保存时又被静默改回
+                    Responses —— 表现为「协议总是自己跳回 re 开头」。这里改为如实说明。 */}
+                <p className="provider-form-hint">API 格式固定为 <b>Responses（/responses）</b>：引擎已移除 Chat Completions 支持，配置里写 <code>wire_api = "chat"</code> 会导致整份配置加载失败、所有请求报错，因此不再提供协议选择。</p>
                 <label className="provider-field"><span>API Key</span>
                   <span className="key-input">
                     <input type={showApiKey ? "text" : "password"} value={customDraft.apiKey} onChange={(event) => setCustomDraft({ ...customDraft, apiKey: event.target.value })} placeholder={customModel?.hasKey ? "已安全保存，留空则不修改" : "可留空用于本地服务"} />
