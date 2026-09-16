@@ -155,6 +155,15 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **打包瘦身：有国内加速源的工具链/内核全部不随包，开发工具页按需下载（09-16，用户「有国内加速的都不用内置，全部放到开发工具里面让用户自己下载；引擎自己下载了界面自动更新」）**：
+  - **为什么**：安装包 ~900MB（压缩）/ ~3.2GB（原始），大头是两套 Chromium 内核（pw-browsers ~700MB + cloak-cache ~536MB）与语言运行时全家桶（python 424MB、pwsh 282MB、git 90MB、cmake 69MB、uv 58MB…），应用本体只有几十 MB。
+  - **不随包清单**：pw-browsers、cloak-cache、pwsh、git、python、rg、uv、cmake、ninja、sevenzip、jq（package.json extraResources 移除 + mac copy-mac-tools.cjs 的 NOT_BUNDLED 过滤）；**node 仍内置**——它是安装器引导（install-runtimes.cjs 靠内置 node 跑），asar 同时排除 mermaid sourcemap（-25MB）。开发机 `resources/tools/*` 本地目录保留不动，只是不进包。
+  - **国内加速**：`scripts/install-runtimes.cjs` 的 download() 通道序 = npmmirror 镜像（node/python/git-for-windows 有同步）→ 本机代理（仅显式设 PROXY 时）→ 直连 → gh-proxy（GitHub 资源兜底）；pip/conda 早已走清华源。内核下载在 `electron/main.ts runBrowserDownload`：镜像优先（toolchain.ts `CHINA_MIRROR_ENV`：PLAYWRIGHT_DOWNLOAD_HOST=npmmirror、CLOAKBROWSER_DOWNLOAD_URL=gh 代理前缀——归档与 SHA256SUMS 同源校验不受影响），失败自动回落官方源；用户自设同名变量时不覆盖。
+  - **界面自动刷新**：主进程 `watchFs(toolsRoot(), {recursive})` 去抖 1.5s 广播 `runtime:progress {auto:true,done:true}`，渲染层收到即刷新开发工具清单与工具状态——引擎在会话里自己装了工具，设置页不用重开。
+  - **坑**：① 给「开发工具」新加的 install 分支若直接 spawn 官方源 = 绕过加速，必须走 runBrowserDownload/install-runtimes 的通道逻辑（预检【26】守）；② 变异 package.json 做反证要用 JSON-aware 方式（字符串拼接双逗号会把 JSON 弄非法 → 预检崩在解析上，守卫「恒绿」假象）；③ 反证触过的源码 mtime 变新，恢复后必须重建再终验。
+  - **用户须知（文案已同步）**：新装机用户先在开发工具装 **Git**（引擎执行 shell 命令依赖）与所需工具链；自动化的安装顺序仍是「桌面与浏览器自动化 → 内核」。
+  - 预检【26】守卫 + 13 条变异反证全红；构建三关全绿。
+
 - **思考等级：低/中/高/最高/极高 + 跟着模型保存（09-16，用户「不是跟着模型保存生效的，每次都要二次保存」）**：
   - **展示名定稿**：`effortLabels` 改短名——low=低 medium=中 high=高 **ultra=最高（引擎扩展档，按模型映射实际强度）xhigh=极高（顶格档）** minimal=极简；菜单顺序 = `ALL_EFFORTS` 序（去掉 minimal 正好是用户要的「低中高最高极高」）；`/effort` 别名表加「极高」。
   - **默认档位**：`CUSTOM_MODEL_EFFORTS` 改为 `["low","medium","high","xhigh"]`（旧三档 → 四档）；**存量声明迁移** `declaredModelEfforts`（src/lib/effort.ts）：未声明（含探测合并的空数组）回退四档；旧版自动生成的「低中高」或「低中高+最高」声明自动补 xhigh；其余显式声明原样尊重。**主进程 `buildModelCatalog` 必须同规则**（两处各自实现，注释互指）——UI 能选的档 catalog 缺声明会被引擎拒。

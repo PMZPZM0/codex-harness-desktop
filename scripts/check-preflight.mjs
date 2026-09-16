@@ -2666,6 +2666,45 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   (bridgeTs.includes('effort === "xhigh" || effort === "ultra" ? "high" : effort') ? ok : fail)("桥：chat 上游把 xhigh/ultra 压到 high（网关不认扩展档）");
 }
 
+// ---------- 【26】打包瘦身：浏览器内核不随包 + 国内镜像按需下载 ----------
+// 背景：安装包 900MB 的头号元凶是随包内置的两套 Chromium 内核（pw-browsers ~700MB +
+// cloak-cache ~536MB 原始体积），而应用本来就有「开发工具」页的按需下载入口。
+// 09-16 起内核不再打进包，改为下载时默认走国内镜像、失败回落官方源。这里守三件事：
+// ① extraResources / mac copy 不得把内核目录又塞回包里（体积回潮守卫）；
+// ② 镜像常量必须在（没有它，国内用户下载会退回龟速官方源）；
+// ③ 主进程两条下载分支都必须走 runBrowserDownload（镜像优先 + 官方源回落），
+//    谁直接 spawn 官方源 = 绕过加速，同样算回归。
+{
+  const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+  const extraFrom = (pkg.build?.extraResources ?? []).map((entry) => entry.from ?? entry);
+  const unbundled = [
+    "resources/tools/pw-browsers", "resources/tools/cloak-cache",
+    "resources/tools/pwsh", "resources/tools/git", "resources/tools/python",
+    "resources/tools/rg", "resources/tools/uv", "resources/tools/cmake",
+    "resources/tools/ninja", "resources/tools/sevenzip", "resources/tools/jq",
+  ];
+  for (const source of unbundled) {
+    (!extraFrom.includes(source) ? ok : fail)(`package.json extraResources 不随包内置 ${source.replace("resources/tools/", "")}（体积回潮守卫）`);
+  }
+  (extraFrom.includes("resources/tools/node") ? ok : fail)("node 仍随包内置（安装器引导运行时，缺了其余工具都装不了）");
+  (Array.isArray(pkg.build?.files) && pkg.build.files.some((pattern) => String(pattern).includes("mermaid") && String(pattern).endsWith(".map")) ? ok : fail)("asar 打包排除 mermaid 的 sourcemap（-25MB 纯赚）");
+  const copyMac = readFileSync(join(ROOT, "build", "copy-mac-tools.cjs"), "utf8");
+  (copyMac.includes('NOT_BUNDLED = new Set(["pw-browsers", "cloak-cache"])') && copyMac.includes("NOT_BUNDLED.has(path.basename(entry))") ? ok : fail)("mac copy-mac-tools 复制 tools 时跳过两个内核目录");
+  const toolchainTs = readFileSync(join(ROOT, "electron", "toolchain.ts"), "utf8");
+  (toolchainTs.includes('PLAYWRIGHT_DOWNLOAD_HOST: "https://cdn.npmmirror.com/binaries/playwright"') ? ok : fail)("toolchain：Playwright 内核国内镜像源已配置（npmmirror binaries）");
+  (toolchainTs.includes('CLOAKBROWSER_DOWNLOAD_URL: "https://ghfast.top/https://github.com/CloakHQ/cloakbrowser/releases/download"') ? ok : fail)("toolchain：CloakBrowser 内核走 gh 代理（归档与 SHA256SUMS 同源，校验不受影响）");
+  (toolchainTs.includes("if (!process.env[key]) env[key] = value;") ? ok : fail)("toolchain：用户自设的下载源变量优先于镜像（不覆盖用户配置）");
+  const mainTs26 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  (mainTs26.includes("attempts = mirrorKeys.length ? [mirrored, official] : [official]") ? ok : fail)("main.ts：内核下载是镜像优先 + 官方源回落的双轮尝试");
+  (mainTs26.includes('await runBrowserDownload(id, node, cli, ["install", "chromium"], "浏览器内核")') ? ok : fail)("main.ts：Playwright 内核下载走 runBrowserDownload（不直接 spawn 官方源）");
+  (mainTs26.includes('await runBrowserDownload(id, node, cli, ["install"], "Cloak 内核")') ? ok : fail)("main.ts：Cloak 内核下载走 runBrowserDownload（不直接 spawn 官方源）");
+  (mainTs26.includes("devRuntimeSpecs") && !/pwsh: \{[^}]*builtIn: true/.test(mainTs26) && !/git: \{[^}]*builtIn: true/.test(mainTs26) && !/python: \{[^}]*builtIn: true/.test(mainTs26) ? ok : fail)("main.ts：pwsh/git/python 已转为按需下载（不再是 builtIn）");
+  (mainTs26.includes("watchFs(toolsRoot(), { recursive: true }") && mainTs26.includes('message: "开发工具目录已更新", auto: true') ? ok : fail)("main.ts：tools 目录监视 → 引擎自己装工具后界面自动刷新");
+  const installRuntimes = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
+  (installRuntimes.includes("https://cdn.npmmirror.com/binaries/node/") && installRuntimes.includes("https://cdn.npmmirror.com/binaries/python/") && installRuntimes.includes("https://cdn.npmmirror.com/binaries/git-for-windows/") ? ok : fail)("install-runtimes：node/python/git 走 npmmirror 国内镜像（有镜像源的不该是龟速官方源）");
+  (installRuntimes.includes("if (mirror) attempts.push") && installRuntimes.includes("if (url.includes(\"github.com\")) attempts.push") ? ok : fail)("install-runtimes：下载通道 = 镜像 → (代理) → 直连 → gh-proxy 逐级回落");
+}
+
 // ---------- 汇总 ----------
 
 console.log("");

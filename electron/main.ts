@@ -3,7 +3,7 @@ import os from "node:os";
 import nodeNet from "node:net";
 import { execSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs/promises";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, watch as watchFs, writeFileSync } from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
@@ -60,7 +60,7 @@ function qrSvg(text: string) {
 import { installCocoLoopSkill, listCocoLoopSkills, listSkillHubSkills, repairSkillBomScan, stripSkillBom, type InstalledMarketSkill, type MarketSkill } from "./skills-market";
 import { upsertSkillDiscipline, DISCIPLINE_START, DISCIPLINE_END } from "./skill-discipline";
 import { ensureCodexMarketplaceSection, installCodexMarketPlugin, listCodexMarketPlugins, type CodexMarketPlugin } from "./codex-market";
-import { augmentedPath, bundledGit, bundledNode, bundledPython, cloakCacheDir, cloakOpenHelper, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "./toolchain";
+import { augmentedPath, bundledGit, bundledNode, bundledPython, cloakCacheDir, cloakOpenHelper, downloadEnv, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "./toolchain";
 import { ensureBuiltinSkills, ensureExpertSkillsMarketplace, expertSkillsSourceDir } from "./builtin-skills";
 import { ensurePonytailPlugin } from "./ponytail-plugin";
 import { getPonytailMode, setPonytailMode } from "./ponytail-mode";
@@ -4592,7 +4592,7 @@ ipcMain.handle("tools:status", () => {
       version: modules ? readVersion(path.join(modules, "cloakbrowser", "package.json")) : "",
       installed: modules ? existsSync(path.join(modules, "cloakbrowser", "package.json")) : false,
       binaryReady: cloakBinary,
-      detail: cloakBinary ? "反检测 Chromium 内核已就绪（resources/tools/cloak-cache，随应用内置）" : "npm 包已装，Chromium 内核未下载（node scripts/download-cloak.cjs）",
+      detail: cloakBinary ? "反检测 Chromium 内核已就绪（tools/cloak-cache）" : "npm 包已装，Chromium 内核未下载（开发工具页点「安装」按需下载）",
       command: "cloakbrowser",
     },
   ];
@@ -4600,25 +4600,28 @@ ipcMain.handle("tools:status", () => {
 
 type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "automation" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl";
 type DevRuntimeSpec = { name: string; description: string; size: string; marker: string; builtIn?: boolean; kind?: "download" | "browsers" | "guide" | "plugin"; noUninstall?: boolean };
+// 09-16 打包瘦身：凡是有国内加速下载源的运行时一律不随包（Windows 包从 ~3.2GB 原始降到 ~1.9GB），
+// 由「开发工具」页按需下载（install-runtimes.cjs：npmmirror/gh-proxy 镜像优先，失败回落官方源）。
+// 只有 node 保留内置 —— 它是安装器引导（install-runtimes 本身靠内置 node 跑），没有它其余都装不了。
 const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
-  python: { name: "Python + Tkinter + pip", description: "Python 项目、数据处理、GUI 脚本和 Python MCP（含 Tkinter、requests/httpx/flask/fastapi/playwright）", size: "约 40 MB + 依赖", marker: "python\\python.exe", builtIn: true },
-  node: { name: "Node.js + npm", description: "JavaScript / TypeScript 项目和 npm 工具", size: "约 101 MB", marker: "node\\node.exe", builtIn: true },
-  pwsh: { name: "PowerShell 7", description: "现代 PowerShell 脚本与跨平台命令", size: "约 282 MB", marker: "pwsh\\pwsh.exe", builtIn: true },
-  git: { name: "Git", description: "Diff、分支、提交、历史和仓库操作", size: "约 90 MB", marker: "git\\cmd\\git.exe", builtIn: true },
+  python: { name: "Python + Tkinter + pip", description: "Python 项目、数据处理、GUI 脚本和 Python MCP（含 Tkinter、requests/httpx/flask/fastapi/playwright）；npmmirror 镜像下载 + 清华 pip 源", size: "约 40 MB + 依赖", marker: "python\\python.exe" },
+  node: { name: "Node.js + npm", description: "JavaScript / TypeScript 项目和 npm 工具（安装器引导运行时，随应用内置）", size: "约 101 MB", marker: "node\\node.exe", builtIn: true },
+  pwsh: { name: "PowerShell 7", description: "现代 PowerShell 脚本与跨平台命令；gh 加速下载", size: "约 282 MB", marker: "pwsh\\pwsh.exe" },
+  git: { name: "Git", description: "Diff、分支、提交、历史和仓库操作；引擎执行 shell 命令依赖它，建议装机后首先安装；npmmirror 镜像下载", size: "约 90 MB", marker: "git\\cmd\\git.exe" },
   ffmpeg: { name: "FFmpeg", description: "音视频转码、抽帧、探测与媒体处理", size: "约 307 MB", marker: "ffmpeg\\bin\\ffmpeg.exe" },
   "vscode-cli": { name: "VS Code CLI", description: "通过 code 命令打开文件与工作区", size: "约 28 MB", marker: "vscode-cli\\code.exe", builtIn: true },
   // noUninstall：来源是**随包内置资源**（zip / 插件目录）而不是联网下载 —— 删掉后没有
 // 可靠的重取途径（压缩包本体随应用分发、不单独缓存），用户误删很难找回，因此不支持卸载。
   automation: { name: "桌面与浏览器自动化", description: "Nuphus（桌面 MCP）+ Playwright CLI + CloakBrowser 包本体，下载压缩包解压即用（不含浏览器内核）", size: "压缩包 18 MB", marker: "npm-global\\node_modules\\@nuphus\\nuphus-mcp\\package.json", noUninstall: true },
-  jq: { name: "jq", description: "命令行查询、筛选和转换 JSON", size: "约 1 MB", marker: "jq\\jq.exe", builtIn: true },
-  ninja: { name: "Ninja", description: "高速构建工具，常与 CMake 配合", size: "约 1 MB", marker: "ninja\\ninja.exe", builtIn: true },
-  sevenzip: { name: "7-Zip CLI", description: "解压和创建 7z、zip、tar 等归档", size: "约 1 MB", marker: "sevenzip\\7z.exe", builtIn: true },
+  jq: { name: "jq", description: "命令行查询、筛选和转换 JSON；gh 加速下载", size: "约 1 MB", marker: "jq\\jq.exe" },
+  ninja: { name: "Ninja", description: "高速构建工具，常与 CMake 配合；gh 加速下载", size: "约 1 MB", marker: "ninja\\ninja.exe" },
+  sevenzip: { name: "7-Zip CLI", description: "解压和创建 7z、zip、tar 等归档；gh 加速下载", size: "约 1 MB", marker: "sevenzip\\7z.exe" },
   "yt-dlp": { name: "yt-dlp", description: "下载和分析在线视频与音频资源", size: "约 20 MB", marker: "yt-dlp\\yt-dlp.exe" },
-  rg: { name: "ripgrep (rg)", description: "极速代码搜索，Codex 检索代码库的主力工具", size: "约 5 MB", marker: "rg\\rg.exe", builtIn: true },
-  uv: { name: "uv", description: "极速 Python 包管理器（pip/venv 替代）", size: "约 12 MB", marker: "uv\\uv.exe", builtIn: true },
-  cmake: { name: "CMake", description: "C/C++ 构建系统生成器（配合 Ninja）", size: "约 45 MB", marker: "cmake\\bin\\cmake.exe", builtIn: true },
-  "playwright-browsers": { name: "Playwright 浏览器内核", description: "Chromium 等浏览器内核，浏览器自动化 CLI 首次运行所需，联网下载", size: "约 170 MB", marker: "pw-browsers", kind: "browsers" },
-  "cloak-browsers": { name: "Cloak 指纹浏览器内核", description: "反检测 Chromium 内核（Cloudflare/reCAPTCHA 站点用），CloakBrowser 运行所需，联网下载", size: "约 200 MB", marker: "cloak-cache" },
+  rg: { name: "ripgrep (rg)", description: "极速代码搜索，Codex 检索代码库的主力工具；gh 加速下载", size: "约 5 MB", marker: "rg\\rg.exe" },
+  uv: { name: "uv", description: "极速 Python 包管理器（pip/venv 替代）；gh 加速下载", size: "约 12 MB", marker: "uv\\uv.exe" },
+  cmake: { name: "CMake", description: "C/C++ 构建系统生成器（配合 Ninja）；gh 加速下载", size: "约 45 MB", marker: "cmake\\bin\\cmake.exe" },
+  "playwright-browsers": { name: "Playwright 浏览器内核", description: "Chromium 等浏览器内核，浏览器自动化 CLI 首次运行所需；按需下载（国内镜像优先，失败自动回落官方源）", size: "约 170 MB", marker: "pw-browsers", kind: "browsers" },
+  "cloak-browsers": { name: "Cloak 指纹浏览器内核", description: "反检测 Chromium 内核（Cloudflare/reCAPTCHA 站点用），CloakBrowser 运行所需；按需下载（国内镜像优先，失败自动回落官方源）", size: "约 200 MB", marker: "cloak-cache" },
   conda: { name: "Miniconda", description: "Python 环境管理器（conda 命令，科学计算/环境隔离）", size: "约 100 MB", marker: "miniconda\\Scripts\\conda.exe", kind: "download" },
   docker: { name: "Docker Desktop", description: "容器运行时，需要系统级安装（管理员权限 + 重启 + 登录）", size: "约 500 MB", marker: "docker\\docker.exe", kind: "guide" },
   mingw: { name: "MinGW-w64 (gcc/g++/make)", description: "C/C++ 编译器工具链，含 gcc、g++、make、gdb", size: "约 267 MB", marker: "mingw\\mingw64\\bin\\g++.exe", kind: "download" },
@@ -4682,6 +4685,24 @@ async function restartServerWhenIdle(id: DevRuntimeId) {
 
 ipcMain.handle("runtime:list", () => runtimeList());
 
+// 开发工具目录监视（09-16）：内核/运行时不随包后，除了「开发工具」页的按钮安装，
+// 引擎（用户让 Codex 自己装工具）也可能往 tools/ 里写东西。目录一变就广播 auto 事件，
+// 渲染层收到后自动刷新开发工具清单与工具状态 —— 界面永远反映真实安装状态，不用手动重开设置。
+let toolsWatchDebounce: NodeJS.Timeout | null = null;
+try {
+  watchFs(toolsRoot(), { recursive: true }, () => {
+    if (toolsWatchDebounce) clearTimeout(toolsWatchDebounce);
+    // 去抖 1.5s：安装是「下载 zip → 解压很多文件」的高频写入，等写入稳定后再刷新一次
+    toolsWatchDebounce = setTimeout(() => {
+      toolsWatchDebounce = null;
+      sendToWindow("runtime:progress", { id: "__auto__", message: "开发工具目录已更新", auto: true, done: true });
+    }, 1500);
+  });
+} catch (error) {
+  // 监视失败只影响「自动刷新」，按钮安装路径仍会主动推 done 事件，不影响功能
+  console.warn("[runtime] tools 目录监视失败（自动刷新不可用）:", error);
+}
+
 /** 运行时卸载：删除安装根目录（不是单个 marker），状态回退为"未下载" */
 function runtimeUninstallPath(id: DevRuntimeId, spec: DevRuntimeSpec): string {
   // 引擎侧安装：ponytail 在 codex-home/plugins/cache/ponytail
@@ -4724,6 +4745,47 @@ if (id === "ponytail") {
 }
   return { ok: true, runtimes: runtimeList() };
 });
+
+/** 浏览器内核按需下载（09-16 起内核不再随包）：先走国内镜像，失败回落官方源直连。
+ *  用户自设了 PLAYWRIGHT_DOWNLOAD_HOST / CLOAKBROWSER_DOWNLOAD_URL 时尊重用户配置，
+ *  此时第一轮已是用户指定的源，回落轮仍是官方源。进度实时推给设置页。 */
+async function runBrowserDownload(
+  id: DevRuntimeId, node: string, cli: string, args: string[], label: string,
+): Promise<void> {
+  const mirrored = downloadEnv();
+  const mirrorKeys = ["PLAYWRIGHT_DOWNLOAD_HOST", "CLOAKBROWSER_DOWNLOAD_URL"].filter((key) => mirrored[key]);
+  const official = { ...mirrored };
+  for (const key of mirrorKeys) delete official[key];
+  const attempts = mirrorKeys.length ? [mirrored, official] : [official];
+  let lastError: Error | null = null;
+  for (let index = 0; index < attempts.length; index++) {
+    const via = index === 0 && mirrorKeys.length ? "国内镜像" : "官方源";
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(node, [cli, ...args], { windowsHide: true, env: attempts[index] });
+        let tail = "";
+        const report = (chunk: Buffer | string) => {
+          const message = String(chunk).trim();
+          if (!message) return;
+          tail = `${tail}\n${message}`.slice(-4000);
+          sendToWindow("runtime:progress", { id, message: `（${via}）${message}` });
+        };
+        child.stdout?.on("data", report);
+        child.stderr?.on("data", report);
+        child.on("error", reject);
+        child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim() || `${label}下载失败（${code}）`)));
+      });
+      return;
+    } catch (error) {
+      lastError = error as Error;
+      if (index < attempts.length - 1) {
+        sendToWindow("runtime:progress", { id, message: `${label}国内镜像下载失败，改用官方源重试…` });
+      }
+    }
+  }
+  throw lastError ?? new Error(`${label}下载失败`);
+}
+
 ipcMain.handle("runtime:install", async (_event, idValue: string) => {
   const id = idValue as DevRuntimeId;
   if (!devRuntimeSpecs[id]) throw new Error("未知开发工具");
@@ -4759,49 +4821,19 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
       // 解压安装成功后自动激活「桌面自动化」「浏览器自动化」联动开关（nuphus MCP 注册 + 技能启用）
       await saveAppSettings(app.getPath("userData"), { desktopAutomation: true, browserAutomation: true });
     } else if (id === "playwright-browsers") {
-      // 用内置 Python 的 playwright 下载 Chromium 到 pw-browsers（toolchainEnv 已注入 PLAYWRIGHT_BROWSERS_PATH）
+      // 用内置的 playwright CLI 下载 Chromium 到 pw-browsers（toolchainEnv 已注入 PLAYWRIGHT_BROWSERS_PATH；
+      // 09-16 起内核不随包，这里按需下载：国内镜像优先、失败回落官方源）
       const node = bundledNode();
       const cli = path.join(npmGlobalRoot(), "@playwright", "cli", "node_modules", "playwright", "cli.js");
       if (!node || !existsSync(cli)) throw new Error("缺少 Playwright CLI，请先在「开发工具」安装「桌面与浏览器自动化」");
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn(node, [cli, "install", "chromium"], {
-          windowsHide: true,
-          env: toolchainEnv(),
-        });
-        let tail = "";
-        const report = (chunk: Buffer | string) => {
-          const message = String(chunk).trim();
-          if (!message) return;
-          tail = `${tail}\n${message}`.slice(-4000);
-          sendToWindow("runtime:progress", { id, message });
-        };
-        child.stdout?.on("data", report);
-        child.stderr?.on("data", report);
-        child.on("error", reject);
-        child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim() || `浏览器内核下载失败（${code}）`)));
-      });
+      await runBrowserDownload(id, node, cli, ["install", "chromium"], "浏览器内核");
     } else if (id === "cloak-browsers") {
-      // CloakBrowser 反检测 Chromium 内核下载到 tools/cloak-cache（toolchainEnv 已注入 CLOAKBROWSER_CACHE_DIR）
+      // CloakBrowser 反检测 Chromium 内核下载到 tools/cloak-cache（toolchainEnv 已注入 CLOAKBROWSER_CACHE_DIR；
+      // 09-16 起内核不随包，这里按需下载：国内镜像优先、失败回落官方源）
       const node = bundledNode();
       const cli = path.join(npmGlobalRoot(), "cloakbrowser", "dist", "cli.js");
       if (!node || !existsSync(cli)) throw new Error("缺少 CloakBrowser，请先在「开发工具」安装「桌面与浏览器自动化」");
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn(node, [cli, "install"], {
-          windowsHide: true,
-          env: toolchainEnv(),
-        });
-        let tail = "";
-        const report = (chunk: Buffer | string) => {
-          const message = String(chunk).trim();
-          if (!message) return;
-          tail = `${tail}\n${message}`.slice(-4000);
-          sendToWindow("runtime:progress", { id, message });
-        };
-        child.stdout?.on("data", report);
-        child.stderr?.on("data", report);
-        child.on("error", reject);
-        child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim() || `Cloak 内核下载失败（${code}）`)));
-      });
+      await runBrowserDownload(id, node, cli, ["install"], "Cloak 内核");
     } else if (id === "ponytail") {
       // ponytail 写代码模式插件：从随包安装源种到引擎（plugins cache + config 注册段），技能随 cache 自动列出
       await ensurePonytailPlugin(codexHome, path.join(toolsRoot(), "ponytail-plugin"));

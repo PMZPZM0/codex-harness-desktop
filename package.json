@@ -75,7 +75,8 @@
       "dist/**",
       "dist-electron/**",
       "!dist-electron/**/*.tsbuildinfo",
-      "package.json"
+      "package.json",
+      "!node_modules/mermaid/dist/*.map"
     ],
     "extraResources": [
       {
@@ -83,48 +84,12 @@
         "to": "tools/node"
       },
       {
-        "from": "resources/tools/pwsh",
-        "to": "tools/pwsh"
-      },
-      {
         "from": "resources/tools/pwsh-headless",
         "to": "tools/pwsh-headless"
       },
       {
-        "from": "resources/tools/git",
-        "to": "tools/git"
-      },
-      {
-        "from": "resources/tools/python",
-        "to": "tools/python"
-      },
-      {
         "from": "resources/tools/vscode-cli",
         "to": "tools/vscode-cli"
-      },
-      {
-        "from": "resources/tools/rg",
-        "to": "tools/rg"
-      },
-      {
-        "from": "resources/tools/uv",
-        "to": "tools/uv"
-      },
-      {
-        "from": "resources/tools/cmake",
-        "to": "tools/cmake"
-      },
-      {
-        "from": "resources/tools/ninja",
-        "to": "tools/ninja"
-      },
-      {
-        "from": "resources/tools/sevenzip",
-        "to": "tools/sevenzip"
-      },
-      {
-        "from": "resources/tools/jq",
-        "to": "tools/jq"
       },
       {
         "from": "resources/tools/cloudflared.exe",
@@ -145,14 +110,6 @@
       {
         "from": "resources/tools/automation-tools.zip",
         "to": "tools/automation-tools.zip"
-      },
-      {
-        "from": "resources/tools/cloak-cache",
-        "to": "tools/cloak-cache"
-      },
-      {
-        "from": "resources/tools/pw-browsers",
-        "to": "tools/pw-browsers"
       },
       {
         "from": "scripts/install-runtimes.cjs",
