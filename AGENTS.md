@@ -108,16 +108,16 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 工具链清单
 
-**随包内置（离线可用，勿重复下载）**：Node（安装器引导）、VS Code CLI。其余（Python/Git/PowerShell/rg/uv/CMake/Ninja/7-Zip/jq）09-16 起不随包，走「开发工具」页按需下载；**首次启动检测到缺 Git 会自动后台补装**（`autoInstallGitIfNeeded`：仅 Windows、与手动安装互斥、装完 `restartServerWhenIdle` 刷新引擎、失败广播 done 事件不悬挂安装态，下次启动仍缺会再试）。
+**随包内置（离线可用，勿重复下载）**：Node（安装器引导）、VS Code CLI、**桌面与浏览器自动化包体**（`tools/npm-global` 预解压，18MB 压缩 / 64MB 原始：Nuphus 29.6 + Playwright CLI 18.1 + CloakBrowser 3.6 + 依赖）、**ponytail 插件源**（`tools/ponytail-plugin` 1.6MB）。其余（Python/Git/PowerShell/rg/uv/CMake/Ninja/7-Zip/jq）09-16 起不随包，走「开发工具」页按需下载；**首次启动检测到缺 Git 会自动后台补装**（`autoInstallGitIfNeeded`：仅 Windows、与手动安装互斥、装完 `restartServerWhenIdle` 刷新引擎、失败广播 done 事件不悬挂安装态，下次启动仍缺会再试）。**ponytail 首启自动种**（见【26】）：`config.toml` 里**没有** `ponytail@ponytail` 段时才动手，卸载过（段在、enabled=false）永不重装。
 
 **按需安装（应用内「开发工具」页 或 手动）**：
 
 | 工具 | 大小 | 安装方式 | 装完效果 |
 |---|---|---|---|
-| 桌面与浏览器自动化（nuphus + playwright-cli + cloakbrowser 包体） | zip 18MB | 开发工具页点「下载」→ 自动解压 zip 到 `tools/npm-global/` → 自动激活桌面/浏览器自动化联动开关 → 引擎重启生效 | nuphus MCP 注册 35+ 工具；playwright-cli / cloakbrowser 可用 |
+| 桌面与浏览器自动化（nuphus + playwright-cli + cloakbrowser 包体） | 随包 18MB（已预解压） | **随包直出、开箱即用**（清单直接显示「已安装」，无需点安装）；按钮分支仅作修复用（重新解压 zip 到 `tools/npm-global/` + 激活联动开关 + 引擎重启） | nuphus MCP 注册 35+ 工具；playwright-cli / cloakbrowser 可用 |
 | Playwright 浏览器内核 | ~170MB | 开发工具页「下载」（需先装自动化包） | playwright-cli 首次 open 不再提示缺内核 |
 | Cloak 指纹浏览器内核 | ~200MB | 开发工具页「下载」（需先装自动化包） | cloakbrowser 可开反检测窗口 |
-| ponytail 写代码模式插件 | 随包 2MB | 开发工具页「下载」→ 种到引擎插件 cache + 注册段 | 会话钩子 + 6 个 ponytail-* 技能 |
+| ponytail 写代码模式插件 | 随包 2MB | **首启自动种入**（cache + 注册段 + 钩子信任），无需点安装；按钮分支仅作修复用 | 会话钩子 + 6 个 ponytail-* 技能 |
 | FFmpeg / yt-dlp / Miniconda / MinGW | 各 20~300MB | 开发工具页「下载」（联网） | 对应命令可用 |
 | Docker Desktop / OpenSSL | — | 系统级安装（开发工具页打开官网） | 系统命令 |
 | 语音模型（sherpa-onnx 三件套，识别+端点检测+合成） | 总 ~270MB | 开发工具页「下载模型」或「本地导入」（开发版专用：识别 4 种常见目录布局，SHA256 校验后落盘到 `<userData>/voice-models/`） | **生产构建不打包**——`package.json` 的 `asarUnpack` 只解 `sherpa-onnx-*/**`（原生 addon），模型数据走 userData 按需下载 |
@@ -129,8 +129,9 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
    - 解压随包 `tools/automation-tools.zip` 到 `tools/`（内置 python：`python -c "import zipfile; zipfile.ZipFile('automation-tools.zip').extractall('tools')"`），结果得到 `tools/npm-global/`。
    - 重启引擎（或重选一次供应商触发 `applyCustomModel`）→ nuphus MCP 段写入 config.toml。
 3. **缺 Playwright / Cloak 内核**：`runtime:install`（id=`playwright-browsers` / `cloak-browsers`），会分别调 `playwright install chromium` 与 `cloakbrowser install`。
-4. **缺 ponytail 插件**：`runtime:install`（id=`ponytail`），随包安装源 `tools/ponytail-plugin` 种到 `codex-home/plugins/cache` + 写 `[marketplaces.ponytail]` / `[plugins."ponytail@ponytail"]` / 钩子信任。
+4. **缺 ponytail 插件**：正常情况**不用管**（首启自动种）；真要重种：`runtime:install`（id=`ponytail`），随包安装源 `tools/ponytail-plugin` 种到 `codex-home/plugins/cache` + 写 `[marketplaces.ponytail]` / `[plugins."ponytail@ponytail"]` / 钩子信任。
 5. **装完统一**：重启引擎生效；插件/技能/钩子状态从 `plugin/list`、`skills/list`、`hooks/list` 读。
+6. ⛔ **写 config.toml 的键值走 `config/value/write` 时必带 `mergeStrategy: "replace"`**（引擎必填；缺了整条请求被拒 `Invalid request: missing field mergeStrategy`，而这些调用普遍 `.catch(() => undefined)` 静默吞掉 → 表现成「开关点了没生效」）。预检【26】有结构守卫：每处调用 600 字符内必须出现该字段。09-16 实测：ponytail 卸载/装回的 enabled 写入漏了它，长期没生效。
 
 ## 验证基建实现细节（配合开头的「验收铁律」看）
 
@@ -156,6 +157,10 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
 - **打包瘦身：有国内加速源的工具链/内核全部不随包，开发工具页按需下载（09-16，用户「有国内加速的都不用内置，全部放到开发工具里面让用户自己下载；引擎自己下载了界面自动更新」）**：
+  - **（09-16 下午追加）自动化包与 ponytail 改「随包直装」**（用户「那这两个就直接内置，就不用解压啥的了」）：`resources/tools/npm-global` 进 extraResources（预解压，18MB 压缩 / 64MB 原始——Nuphus 29.6 + Playwright CLI 18.1 + CloakBrowser 3.6）+ 保留 automation-tools.zip 作修复备用；ponytail 由 `tools/ponytail-plugin` 源在**首启自动种**。效果：装完即「已安装」，nuphus/playwright-cli/cloakbrowser/6 个 ponytail 技能开箱可用，用户不用点安装解压。**为什么这两项能内置**：它们只有 GitHub/npm 源、无国内镜像，且线上回落地址实测不存在（见下），故必须随包；反之有镜像的（python/git/内核…）一律不随包。
+  - **ponytail 自动种的三条硬约束**：① 只在 `config.toml` **没有** `ponytail@ponytail` 段时执行（有段=已装或用户卸载过，绝不重装——否则卸载失效）；② 挂在 `server.start()` **之后**（要写 config.toml）；③ 失败只 warn 降级，开发工具页按钮仍可手动种。
+  - **⛔ 实测新坑：`config/value/write` 必带 `mergeStrategy: "replace"`**。引擎对该请求必填（缺了整条被拒 `Invalid request: missing field mergeStrategy`），而这类调用普遍 `.catch(() => undefined)` 静默吞掉 → 症状是「开关点了没生效」。本轮就是这样才发现：ponytail 卸载/装回的 `enabled` 写入**长期没生效**（写 false 时插件其实还 enabled）。预检【26】新增结构守卫：正则只匹配真正的调用点 `config/value/write", {`…`})`，逐个体内必须有 mergeStrategy（注释里提到该字符串的段落不算，否则误判），反证：抹掉字段 → missing>0 变红。
+  - **现象记录（既有行为，别误判成本轮 bug）**：卸载 ponytail（cache 删除 + `enabled=false`，市场段仍在）后重启，**引擎会按已注册的本地市场自行同步插件文件回 cache**（实测拿回的是上游最新版 4.10.0、带 `.git`，不是随包的 4.9.0），但 `enabled=false` 仍是停用态、我的自动种没有参与（主进程无 seed 日志）。所以「卸载」在功能上成立、磁盘上会有 cache 文件。
   - **为什么**：安装包 ~900MB（压缩）/ ~3.2GB（原始），大头是两套 Chromium 内核（pw-browsers ~700MB + cloak-cache ~536MB）与语言运行时全家桶（python 424MB、pwsh 282MB、git 90MB、cmake 69MB、uv 58MB…），应用本体只有几十 MB。
   - **不随包清单**：pw-browsers、cloak-cache、pwsh、git、python、rg、uv、cmake、ninja、sevenzip、jq（package.json extraResources 移除 + mac copy-mac-tools.cjs 的 NOT_BUNDLED 过滤）；**node 仍内置**——它是安装器引导（install-runtimes.cjs 靠内置 node 跑），asar 同时排除 mermaid sourcemap（-25MB）。开发机 `resources/tools/*` 本地目录保留不动，只是不进包。
   - **国内加速**：`scripts/install-runtimes.cjs` 的 download() 通道序 = npmmirror 镜像（node/python/git-for-windows 有同步）→ 本机代理（仅显式设 PROXY 时）→ 直连 → gh-proxy（GitHub 资源兜底）；pip/conda 早已走清华源。内核下载在 `electron/main.ts runBrowserDownload`：镜像优先（toolchain.ts `CHINA_MIRROR_ENV`：PLAYWRIGHT_DOWNLOAD_HOST=npmmirror、CLOAKBROWSER_DOWNLOAD_URL=gh 代理前缀——归档与 SHA256SUMS 同源校验不受影响），失败自动回落官方源；用户自设同名变量时不覆盖。
