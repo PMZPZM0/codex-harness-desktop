@@ -2496,6 +2496,27 @@ console.log(C.bold("\n【22】Windows 原生圆角：koffi 依赖与打包就位
   }
 }
 
+console.log(C.bold("\n【23】API 协议：引擎只支持 Responses，chat 不得从任何路径写进配置"));
+
+{
+  // 09-16 真实引擎探针实证（scripts/probe-wire-api.cjs，独立 CODEX_HOME + app-server）：
+  // config.toml 写 `wire_api = "chat"` 时 initialize 能过，但 **turn/start 必报**
+  //   `wire_api = "chat"` is no longer supported. How to fix: set `wire_api = "responses"`
+  // → 之后每一个请求都失败（等同应用全瘫）。所以：① 写配置一律恒 responses；
+  // ② UI 不得再提供这个永远无法生效的选项（否则用户选了保存时被静默改回，表现为「协议自己跳回 re 开头」）。
+  const mainTs = readFileSync(join(ROOT, "electron/main.ts"), "utf8");
+  const appTsx = readFileSync(join(ROOT, "src/App.tsx"), "utf8");
+  const hookTs = readFileSync(join(ROOT, "src/hooks/useModelProviders.ts"), "utf8");
+  (!appTsx.includes('<option value="chat">') ? ok : fail)("App.tsx 不再提供「Chat Completions」协议选项（引擎不支持，选了也白选）");
+  (!appTsx.includes('target.wireApi === "chat"') ? ok : fail)("App.tsx 会话接力内联 config 不把 chat 透传给引擎");
+  (!mainTs.includes('savedWire === "chat" ? "chat"') ? ok : fail)("main.ts 历史会话别名段不把 chat 透传进 config.toml");
+  (!mainTs.includes('input.wireApi === "chat" ? "chat"') ? ok : fail)("main.ts 保存入口恒 responses，不透传用户选的 chat（不依赖下游归一兜底）");
+  (!hookTs.includes("wireApi: wireUsed") ? ok : fail)("useModelProviders 探测不再把实测协议回写草稿（避免「探测说 chat、保存变 responses」自相矛盾）");
+  (mainTs.includes('wireApi: "responses" }') ? ok : fail)("main.ts normalizeProvider 仍在读入侧归一化 chat（保命逻辑，别删）");
+  (mainTs.includes('const activeWireApi = "responses"') ? ok : fail)("main.ts applyCustomModel 生成的 provider 段恒为 responses");
+  (hookTs.includes('wireApi: "responses" }') ? ok : fail)("保存路径显式归一 wireApi（草稿里的历史 chat 写不进配置）");
+}
+
 // ---------- 汇总 ----------
 
 console.log("");

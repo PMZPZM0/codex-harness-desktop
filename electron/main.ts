@@ -7038,7 +7038,9 @@ ipcMain.handle("custom-model:save", async (_event, input: { provider: string; na
     if (!safeStorage.isEncryptionAvailable()) throw new Error("当前系统无法安全保存 API Key");
     encryptedKey = safeStorage.encryptString(input.apiKey).toString("base64");
   }
-  const wireApi = input.wireApi === "chat" ? "chat" : "responses"; // auto 已在前端探测时落定为实际协议；兜底 responses
+  // ⛔ 恒 responses（09-16 真实引擎探针实证：写 chat 会让整份 config.toml 拒载、所有请求失败）。
+  // 前端也不再传 chat（UI 已撤掉协议选项），这里保留入参只为兼容旧渲染层，统一归一。
+  const wireApi = "responses" as const;
   // 官方订阅：chatgpt 后端只认 ChatGPT 登录凭据，绝不能把任何 API Key 带上（含「留空沿用上一供应商」的复用逻辑）
   // 带上会 401 "api_key_not_supported" → 流无限重连（实证）
   if (provider === "openai-official") encryptedKey = undefined;
