@@ -13,7 +13,7 @@ import { BotStreamSession, readBotStreamSettings, readBotStreamSettingsSync, wri
 import { CodexServer, codexBinaryPath } from "./codex-server";
 import { ResponsesBridge } from "./responses-bridge";
 import { BotPairingService } from "./bot-pairing";
-import { collectMcpServerNames, extractMcpSection, preserveUserConfig } from "./config-toml";
+import { collectMcpServerNames, escapeTomlString, extractMcpSection, injectMcpToolRules, injectSectionExtras, preserveUserConfig, tomlBareKey, type McpToolRules } from "./config-toml";
 import { applyRoundedCorners } from "./win-rounded-corners";
 import { deleteCustomCommand, expandCommandTemplate, listCustomCommands, readCustomCommand, saveCustomCommand } from "./commands";
 import { MemoryStore, Scheduler, type MemoryCategory, type MemoryRemoteConfig } from "./harness-services";
@@ -64,7 +64,7 @@ import { augmentedPath, bundledGit, bundledNode, bundledPython, CHINA_NPM_REGIST
 import { ensureBuiltinSkills, ensureExpertSkillsMarketplace, expertSkillsSourceDir } from "./builtin-skills";
 import { ensurePonytailPlugin } from "./ponytail-plugin";
 import { getPonytailMode, setPonytailMode } from "./ponytail-mode";
-import { mergeThreadList } from "./session-tools";
+import { markMissingRollouts, mergeThreadList } from "./session-tools";
 import { enrichThreadWithRolloutToolsAsync, listRolloutThreadsAsync } from "./rollout-pool";
 /** 诊断计数（09-12 多会话性能）：thread/list 走了几次「rollout 全量兜底扫描」。
     旧实现每次必扫（渲染层每个回合结束都打一发 → O(N²)）；现在只在引擎索引为空时扫。
@@ -1288,7 +1288,7 @@ async function readUserConfigSplit(ownedMcpServers: Set<string>, overrides: McpO
   let raw = "";
   try { raw = await fs.readFile(path.join(codexHome, "config.toml"), "utf8"); }
   catch (error: any) { if (error.code !== "ENOENT") throw error; }
-  const kept = preserveUserConfig(raw);
+  const preserved = preserveUserConfig(raw);
   const found: Record<string, string> = {};
   for (const name of new Set([...collectMcpServerNames(raw), ...Object.keys(overrides)])) {
     // ⛔ 子段也算 owned：`[mcp_servers.harness-dispatch.env]` 的名字是 "harness-dispatch.env"，
@@ -1300,7 +1300,7 @@ async function readUserConfigSplit(ownedMcpServers: Set<string>, overrides: McpO
     overrides[name] = { enabled: overrides[name]?.enabled !== false, toml: text, permissions: overrides[name]?.permissions };
     if (overrides[name].enabled) found[name] = text;
   }
-  return { kept, mcpExtra: Object.values(found) };
+  return { preserved, mcpExtra: Object.values(found) };
 }
 
 
@@ -1347,13 +1347,21 @@ function buildModelCatalog(entry: CustomModelFile) {
     seen.add(m.id);
     const contextWindow = m.contextWindow ?? fallbackWindow;
     if (!contextWindow) continue;
-    // 该模型显式声明的思考档位（GPT 系可声明 minimal/ultra 等）；未声明（含空数组——
+    // 该模型显式声明的思考档位（GPT 系可声明 minimal/max/ultra 等）；未声明（含空数组——
     // 探测合并会写入 efforts: []）默认全档位——复刻 ZCode：思考等级下拉选什么都能用。
-    // 引擎按 catalog 的 supported_reasoning_levels 校验 effort，UI 也按它显示选项。
-    // ⛔ 与渲染层 declaredModelEfforts（src/lib/effort.ts）同规则：未声明回退、旧版默认
-    // 三档 low/medium/high 自动补「极高」——UI 能选的档 catalog 必须声明，否则 turn/start 被拒。
-    const EFFORT_WHITELIST = ["minimal", "low", "medium", "high", "xhigh", "ultra"] as const;
-    const rawEfforts = m.efforts?.length ? m.efforts : ["minimal", "low", "medium", "high", "ultra", "xhigh"];
+    // ⛔ 09-16 修正两处旧认知（修 Bug 11/12）：
+    //  ① 旧注释称「引擎会按 catalog 的 supported_reasoning_levels 校验档位，catalog 没声明的档会被拒」
+    //     ——**被真实引擎证伪**：自定义模型与**内置模型**的 `effort="minimal"` / `"bogus-level"`
+    //     都被照单全收、turn 正常完成。先排除了「catalog 没被读到」这个替代解释（把 catalog 的
+    //     context_window 改成哨兵 555000，引擎写进 rollout 的 model_context_window 就是 555000
+    //     ⇒ catalog 确实生效），然后才下的结论：**读了 catalog，但不校验档位**。
+    //     ⇒ 这个白名单只决定「catalog 声明什么 / UI 能选什么」，不是安全边界。
+    //  ② 旧白名单漏了 `max`，而引擎内置 gpt-6-astra 就声明了 max（low/medium/high/xhigh/max/ultra）
+    //     ⇒ 声明 max 的模型 UI 里反而没 max；「只声明 max」更糟：过滤后为空会回落成整套默认档，
+    //     等于替用户换了一套他没声明的档位。`max` 追加在末尾，不动已定稿的展示顺序。
+    // ⛔ 与渲染层 declaredModelEfforts（src/lib/effort.ts）同规则，两处必须同源。
+    const EFFORT_WHITELIST = ["minimal", "low", "medium", "high", "xhigh", "ultra", "max"] as const;
+    const rawEfforts = m.efforts?.length ? m.efforts : ["minimal", "low", "medium", "high", "ultra", "xhigh", "max"];
     let efforts = rawEfforts.filter((effort): effort is typeof EFFORT_WHITELIST[number] => (EFFORT_WHITELIST as readonly string[]).includes(effort));
     // 旧版自动生成的声明（低/中/高 三档或 +最高，且没有极高）补「极高」——与渲染层 declaredModelEfforts 同规则
     const hasBase = ["low", "medium", "high"].every((e) => efforts.includes(e as any));
@@ -1366,6 +1374,7 @@ function buildModelCatalog(entry: CustomModelFile) {
       high: "Deep reasoning",
       xhigh: "Very deep reasoning, slower responses",
       ultra: "Maximum reasoning depth",
+      max: "Top reasoning tier (engine extension; declared by some built-in models)",
     };
     catalogModels.push({
       slug: m.id,
@@ -1406,16 +1415,43 @@ async function writeModelCatalogToml(entry: CustomModelFile): Promise<string> {
   return `model_catalog_json = "${escapeToml(modelCatalogFile)}"`;
 }
 
-/** 把某个供应商配置写进 codex-home/config.toml 并重启 Codex 服务 */
-/** 扫描历史会话存档，收集所有被引用过的 model_provider id。
- *  用途：这些 id 必须继续在 config.toml 里有段（否则旧会话 resume 报 "Model provider not found"），
- *  且必须指向当前生效供应商——见 applyCustomModel 里「旧会话永远走当前供应商」的实证说明。
- *  只读每个 rollout 的首行（session_meta），损坏文件静默跳过；结果缓存 60s，避免每次切换都全盘扫描。 */
+/** 收集所有被历史会话引用过的 `model_provider` id。
+ *  用途：这些 id 必须继续在 config.toml 里有段（否则旧会话 resume 报
+ *  `failed to load configuration: Model provider \`X\` not found`），且必须指向当前生效供应商
+ *  —— 见 applyCustomModel 里「旧会话永远走当前供应商」的实证说明。
+ *
+ *  ⛔ 09-16 修 Bug 8（口径要准确，别夸大）：旧实现**只**扫 `sessions/**\/*.jsonl` 首行取
+ *  `model_provider`。两个真实缺陷：① 只覆盖 `sessions/`，**归档会话**（rollout 已移到
+ *  `archived_sessions/`）一律漏掉；② 依赖 rollout 文件内容，文件被清理/迁移/损坏就静默返回空集
+ *  （用户机上实测 4/4 线程的 rollout 全没了，而引擎索引里仍记着 `custom906`）。
+ *  现在以引擎自己的线程索引为**权威源**（`thread/list` 的 `modelProvider`，含归档态、
+ *  不解析任何文件内容），rollout 扫描降级为补充源（覆盖索引里已不存在的极老会话）。
+ *  ⚠️ 这不解决「rollout 已经丢光」的会话：实测引擎会把 rollout 丢失的线程**从 `thread/list`
+ *  隐藏**，所以那类会话任何来源都拿不到 provider id —— 它们本来也打不开
+ *  （`thread/resume` 报 `no rollout found for thread id ...`），与 provider 段无关。
+ *  结果缓存 60s，避免每次切换供应商都打一遍 RPC / 全盘扫描。 */
 let sessionProviderIdsCache: { at: number; ids: Set<string> } | null = null;
 async function collectSessionProviderIds(): Promise<Set<string>> {
   const now = Date.now();
   if (sessionProviderIdsCache && now - sessionProviderIdsCache.at < 60_000) return sessionProviderIdsCache.ids;
   const ids = new Set<string>();
+  // ① 权威源：引擎线程索引。引擎未就绪（启动期/重启中）就静默跳过，退回 ②。
+  try {
+    for (const archived of [false, true]) {
+      let cursor = "";
+      for (let page = 0; page < 5; page += 1) {
+        const response: any = await server.request("thread/list", { limit: 200, archived, ...(cursor ? { cursor } : {}) });
+        for (const entry of response?.data ?? []) {
+          const id = typeof entry?.modelProvider === "string" ? entry.modelProvider.trim() : "";
+          if (id) ids.add(id);
+        }
+        const next = typeof response?.nextCursor === "string" ? response.nextCursor : "";
+        if (!next || next === cursor) break;
+        cursor = next;
+      }
+    }
+  } catch { /* 引擎没起来：跳过，下面用 rollout 兜底 */ }
+  // ② 补充源：rollout 首行（session_meta）的 model_provider
   const stack = [path.join(codexHome, "sessions")];
   let visited = 0;
   while (stack.length && visited < 4000) {
@@ -1467,7 +1503,10 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
   // 否则「保留旧段 +新生成段」会在 config.toml 里写出重复的 [mcp_servers.harness-dispatch]，
   // MCP 服务器起不来（实测：模型看不到任何 mcp__ 工具）。
   const ownedMcpServers = new Set(["nuphus", "harness-dispatch", ...connectors.map((connector) => safeConnectorId(connector.id))]);
-  const { kept: preservedConfig, mcpExtra } = await readUserConfigSplit(ownedMcpServers, mcpOverrides);
+  const { preserved, mcpExtra } = await readUserConfigSplit(ownedMcpServers, mcpOverrides);
+  // 工具级权限规则（deny/ask/allow）→ 引擎真正支持的键（disabled_tools / approval_mode）。
+  // 见 mcpToolRulesOf 上方 09-16 实证说明：旧实现写 [permissions.*] 既无效又会把整份配置打废。
+  const mcpToolRules = mcpToolRulesOf(mcpOverrides);
   await writeMcpOverrides(mcpOverrides);
   const connectorEnvValue = connectorEnv(connectors);
   // 官方订阅走 chatgpt.com 后端（区域受限）：引擎也要走用户配置的代理，否则 Cloudflare 403/直连超时
@@ -1514,14 +1553,22 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
   const providerToml = providerEntries.flatMap((provider, index) => {
     const normalized = normalizeProvider(provider);
     const context = normalized.models?.find((model) => model.id === normalized.model)?.contextWindow ?? normalized.contextWindow ?? 128000;
-    const maxOut = normalized.models?.find((model) => model.id === normalized.model)?.maxOutputTokens;
+    // ⛔ 数值键必须**强校验**（09-16 修 Bug 10，RCE 级）：`maxOutputTokens` 类型上写 number，
+    //    运行时却可能来自用户可编辑的 `userData/model-specs.json`（setExternalSpecs 只校验
+    //    `contextWindow > 0`，这个字段原样透传）/ `custom-models.json` / IPC `custom-model:save`。
+    //    此前是**裸插值** —— 既没有 Number() 也没有转义。实测：值里塞
+    //    `393216\n[mcp_servers.pwn]\ncommand="…"` 能拼出一个**合法**的新段（它是 provider 段的
+    //    最后一行，后面紧跟的段头本身就是合法表声明），真引擎 `thread/start` 时**真的 spawn 了**
+    //    注入的命令。⇒ 本地配置文件到代码执行的越权边界，四环（渲染层 JSON → IPC →
+    //    custom-models.json → config.toml）全都没校验，这里兜住最后一道。
+    const maxOut = Number(normalized.models?.find((model) => model.id === normalized.model)?.maxOutputTokens);
     // 非官方模式下所有段共用当前生效供应商的地址/协议（见上方实证说明）；官方模式保持各自原值
     const baseUrl = isOfficialProvider ? normalized.baseUrl : activeBaseUrl;
     // ⛔ 恒 responses（官方段也不透传 chat）——引擎已不支持 chat，写了会整份配置拒载
     const wireApi = "responses";
     return [
       ...(index ? [""] : []),
-      `[model_providers.${escapeToml(normalized.provider)}]`,
+      `[model_providers.${tomlBareKey(normalized.provider)}]`,
       `name = "${escapeToml(normalized.name)}"`,
       `base_url = "${escapeToml(baseUrl)}"`,
       'env_key = "CODEX_HARNESS_API_KEY"',
@@ -1541,13 +1588,13 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
       // model_max_output_tokens 是引擎认可的 provider 段顶层键，config/read 能读回；
       // catalog JSON 里的 max_output_tokens 字段会被引擎忽略——写这里才生效）。
       // 防止超长输出把上下文窗口撑爆卡死。未填时不写（引擎按模型自身上限）。
-      ...(maxOut ? [`model_max_output_tokens = ${maxOut}`] : []),
+      ...(Number.isFinite(maxOut) && maxOut > 0 ? [`model_max_output_tokens = ${Math.floor(maxOut)}`] : []),
     ];
   });
   // 已删除供应商 id 的别名段：名字沿用原名（不可考），其余与当前生效供应商完全一致
   const aliasToml = aliasIds.flatMap((aliasId) => [
     "",
-    `[model_providers.${escapeToml(aliasId)}]`,
+    `[model_providers.${tomlBareKey(aliasId)}]`,
     `name = "${escapeToml(aliasId)}（历史会话别名 → 当前生效供应商）"`,
     `base_url = "${escapeToml(activeBaseUrl)}"`,
     'env_key = "CODEX_HARNESS_API_KEY"',
@@ -1594,7 +1641,7 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
     }
     return out;
   };
-  await fs.writeFile(path.join(codexHome, "config.toml"), [
+  const configText = [
     `model = "${escapeToml(entry.model)}"`,
     // （顶层 model_context_window 已按 09-16 修正移除：全局单值会压掉 catalog 里每模型的
     //   上下文；`model_context_window` 仍留在 config-toml.ts 的 HARNESS_CONFIG_KEYS 里，
@@ -1615,6 +1662,12 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
     // 桌面/浏览器自动化开关关掉时，对应段说明不注入，模型不会被引导去调用它们。
     // 生图/视觉插件配置后才注入对应段——引擎据此知道能力存在并通过命令行真实调用。
     developerInstructionsLine({ desktop: desktopAuto, browser: browserAuto, imagePlugin: imagePluginOn, visionPlugin: visionPluginOn, mediaCommand }),
+    // ⛔ 用户自己的顶层键必须在**第一个段头之前**（09-16 修 Bug 3）：旧实现把它们连同用户段
+    //    一起拼在文件**末尾**，而末尾紧接 `[mcp_servers.*]` —— TOML 语义上这些键就成了那个段的
+    //    键，引擎根本读不到（实测 `approval_policy = "never"` 变成 `mcp_servers.nuphus.approval_policy`，
+    //    顶层设置静默失效）。放在这里（developer_instructions 块字符串之后、第一个段头之前）才安全：
+    //    再往前会被多行字符串吞掉，往后会被段落吞掉。
+    ...(preserved.topLevel ? [preserved.topLevel] : []),
     ...connectorToml(connectors),
     ...stripHarnessTable(providerToml),
     ...harnessToml,
@@ -1663,10 +1716,11 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
       "browser_use = true",
       "",
     ] : []),
-    // 各 MCP 服务器的按工具权限规则（deny/ask/allow），复刻 WorkBuddy 工具级权限模型。
-    // 引擎用 [permissions.allow/ask/deny] + `mcp__server__tool` 命名约定原生表达；
-    // 无规则时这一段为空，不产生任何影响。
-    ...permissionsToml(mcpOverrides),
+    // ⛔ 工具级权限规则**不在这里写**（09-16 修 Bug 1/2）：旧实现把 deny/ask/allow 写成
+    // `[permissions.allow/ask/deny]` + `"mcp__server__tool" = true`，既不被引擎解析（该 struct
+    // 没有工具映射字段），又因为缺 `default_permissions` 让整份配置非法。
+    // 现在由文件末尾的 injectMcpToolRules 把规则落到 `disabled_tools` / `[mcp_servers.X.tools.<名>]`
+    // 这两个**引擎真正支持**的键上（见 mcpToolRulesOf 上方实证记录）。
     // 内置调度 MCP（09-16）：agent_invoke 走引擎级 MCP 注入 —— dynamicTools 只在 thread/start
     // 生效（引擎硬约束），MCP 是唯一能覆盖**所有会话（含老会话）**的注册通道。执行闸在主进程。
     ...(await (async () => {
@@ -1698,10 +1752,18 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
     ] : []),
     // 用户手工写进 config.toml 的 MCP 段：启用中的原样拼回，停用的保留原文但不输出
     ...mcpExtra.flatMap((section) => [section, ""]),
-    // 用户自行管理的段落（projects / marketplaces / plugins 等）原样拼回，
+    // 用户自行管理的段落（projects / marketplaces / plugins / hooks / permissions 等）原样拼回，
     // 避免保存模型时把已安装插件的注册信息抹掉。
-    ...(preservedConfig ? [preservedConfig, ""] : []),
-  ].join("\n"), "utf8");
+    ...(preserved.sections ? [preserved.sections, ""] : []),
+  ].join("\n");
+  // 两处**后置注入**（都在 config-toml.ts，纯函数、可被预检直接测）：
+  //  ① injectSectionExtras：把用户在段级共享表里手写的额外子键插回对应段末尾（修 Bug 6）
+  //  ② injectMcpToolRules：把 per-tool 权限落到 disabled_tools / approval_mode（修 Bug 1/2）
+  await fs.writeFile(
+    path.join(codexHome, "config.toml"),
+    injectMcpToolRules(injectSectionExtras(configText, preserved.sectionExtras), mcpToolRules),
+    "utf8",
+  );
   // 官方订阅绝不能带 API Key：chatgpt 后端只认 ChatGPT 登录凭据，
   // 带上陈旧 sk- key 会 401 "api_key_not_supported" → 流无限重连（实证）。
   // 顺手把存档里的陈旧密钥清掉。
@@ -1796,7 +1858,11 @@ function decryptSecret(value?: string) {
   return value && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(value, "base64")) : "";
 }
 
-function escapeToml(value: string) { return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"'); }
+/** TOML 字符串转义：实现统一收口在 config-toml.ts（预检能 require 编译产物直接测它）。
+ *  ⛔ 09-16 修 Bug 5：旧实现只转义 `\` 与 `"`，换行/制表/控制字符原样落盘 →
+ *  粘贴一个带尾换行的 base_url 就能让引擎整份配置拒载。 */
+const escapeToml = escapeTomlString;
+/** 表头里的键名：TOML 裸键只允许 `A-Za-z0-9_-`，别的字符一律剔除（写进去只会让整份配置非法）。 */
 function safeConnectorId(value: string) { return value.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64); }
 function publicConnector(value: ConnectorConfig): PublicConnectorConfig {
   const { headers, env, encryptedSecrets, ...rest } = value;
@@ -1815,17 +1881,26 @@ async function writeConnectors(list: ConnectorConfig[]) { await fs.writeFile(con
 // 以及引擎直管的服务器（内置 nuphus、用户手工写进 config.toml 的段落）。
 // 后者没有连接器记录，用这张表记住启用/停用，写 config.toml 时按它决定是否输出该段。
 //
-// 除了服务器级启停，还支持按工具的权限规则（deny/ask/allow）——复刻 WorkBuddy 的
-// 工具级权限模型。引擎原生用 [permissions.allow/ask/deny] + `mcp__server__tool` 命名
-// 约定表达（已用 permissionProfile/list 对真实引擎验证：该格式会解析出 allow/ask 档位，
-// 而 `[permissions]` 直接写成 `"mcp__x__y" = "ask"` 会报 PermissionProfileToml 类型错误）。
-/** 单工具的审批档位；值语义对齐 Codex 权限档位 */
+// 除了服务器级启停，还支持按工具的权限规则（deny/ask/allow）。
+// ⛔ 09-16 实证纠正（原实现整个走错了路）：引擎**没有** per-tool 的「工具 → deny/ask/allow」
+// 配置机制。旧实现把规则写成 `[permissions.allow]` + `"mcp__x__y" = true`，两个后果都致命：
+//   ① 引擎的 `PermissionProfileToml` 只有 description/extends/workspace_roots/filesystem/network
+//      五个字段 → 工具规则被**静默丢弃**（档位名会出现在 permissionProfile/list 里，那只是
+//      「段头名」，与段内容无关 —— 旧注释据此误判成「格式正确」）；
+//   ② 只写 `[permissions.*]` 而不写顶层 `default_permissions` → 引擎判定**整份配置非法**
+//      （stderr `Invalid configuration; using defaults`；`config/read` / `mcpServerStatus/list`
+//      随后全挂），而 harness 从来不写 default_permissions ⇒ 点一下权限格就把配置打废。
+// 现在改走引擎真正支持的键（真实 app-server + 最小 stdio MCP 实证）：
+//   deny  → `disabled_tools = [...]`：工具从引擎工具表里消失（模型看不到 = 真阻断）
+//   ask   → `[mcp_servers.X.tools.<工具>] approval_mode = "prompt"`（引擎侧审批档位）
+//   allow → 同上的 `approval_mode = "auto"`
+/** 单工具的权限档位；deny = 不暴露给模型，ask = 引擎侧要审批，allow = 直接放行 */
 type McpToolPermission = "deny" | "ask" | "allow";
 type McpOverrideEntry = {
   enabled: boolean;
   /** 停用前的整段 config.toml 原文；只有用户手工写进 config.toml 的 MCP 才需要 */
   toml?: string;
-  /** 按工具名的权限规则（deny 硬拒绝 / ask 每次询问 / allow 直接放行） */
+  /** 按工具名的权限规则（deny 硬阻断 / ask 需审批 / allow 直接放行） */
   permissions?: Record<string, McpToolPermission>;
 };
 type McpOverrides = Record<string, McpOverrideEntry>;
@@ -1839,31 +1914,20 @@ async function writeMcpOverrides(value: McpOverrides) { await fs.writeFile(mcpOv
 /** 没记过的一律视为启用，只有显式写了 false 才算停用 */
 function mcpOverrideEnabled(overrides: McpOverrides, id: string) { return overrides[id]?.enabled !== false; }
 
-/**
- * 把各 MCP 服务器的 per-tool 权限规则聚合输出为 [permissions.allow/ask/deny] 段。
- * 引擎原生读这套表（`mcp__server__tool` 标识符），复刻 WorkBuddy 的 deny/ask/allow 模型。
- * 只输出真的配了规则的档位，避免写空段。
- */
-function permissionsToml(overrides: McpOverrides): string[] {
-  const buckets: Record<Exclude<McpToolPermission, "deny">, string[]> = { allow: [], ask: [] };
-  const deny: string[] = [];
+/** 把覆盖表里的 per-tool 规则整理成 `服务器名 → {deny,ask,allow}`，交给
+ *  `injectMcpToolRules` 落到 config.toml 里引擎真正认的键上（见上方 09-16 实证说明）。 */
+function mcpToolRulesOf(overrides: McpOverrides): Record<string, McpToolRules> {
+  const rules: Record<string, McpToolRules> = {};
   for (const [server, entry] of Object.entries(overrides)) {
     if (!entry?.permissions) continue;
+    const bucket: McpToolRules = { deny: [], ask: [], allow: [] };
     for (const [tool, mode] of Object.entries(entry.permissions)) {
-      const key = `"mcp__${server}__${tool}"`;
-      if (mode === "deny") deny.push(key);
-      else buckets[mode].push(key);
+      if (!tool || (mode !== "deny" && mode !== "ask" && mode !== "allow")) continue;
+      bucket[mode].push(tool);
     }
+    if (bucket.deny.length || bucket.ask.length || bucket.allow.length) rules[server] = bucket;
   }
-  const out: string[] = [];
-  for (const mode of ["allow", "ask", "deny"] as const) {
-    const keys = mode === "deny" ? deny : buckets[mode];
-    if (!keys.length) continue;
-    out.push(`[permissions.${mode}]`);
-    for (const key of keys.sort()) out.push(`${key} = true`);
-    out.push("");
-  }
-  return out;
+  return rules;
 }
 function connectorEnv(list: ConnectorConfig[]) {
   const result: Record<string, string> = {};
@@ -1889,7 +1953,10 @@ function connectorToml(list: ConnectorConfig[]) {
       if (!connector.command) continue;
       lines.push(`command = "${escapeToml(connector.command)}"`);
       if (connector.args?.length) lines.push(`args = [${connector.args.map((arg) => `"${escapeToml(arg)}"`).join(", ")}]`);
-      if (Object.keys(connector.env ?? {}).length) lines.push(`env = { ${Object.entries(connector.env ?? {}).map(([key, value]) => `${key} = "${escapeToml(String(value))}"`).join(", ")} }`);
+      // env 的**键**也必须转义加引号（09-16，Bug 5 同族）：键名来自用户输入，此前是裸插值
+      // → 键里带 `"` 或 `}` 就能闭合内联表往外注入内容（同段里的 env_http_headers 早就转义了，
+      //    两处不一致本身就是漏）。
+      if (Object.keys(connector.env ?? {}).length) lines.push(`env = { ${Object.entries(connector.env ?? {}).map(([key, value]) => `"${escapeToml(key)}" = "${escapeToml(String(value))}"`).join(", ")} }`);
     } else {
       if (!connector.url) continue;
       lines.push(`url = "${escapeToml(connector.url)}"`);
@@ -3243,7 +3310,13 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
     rolloutFallbackScanCount += 1;
     try {
       const fallback = await listRolloutThreadsAsync(codexHome);
-      result = { ...response, data: mergeThreadList(indexed, fallback, archiveFilter, Number((params as any)?.limit ?? 100)) };
+      const merged = mergeThreadList(indexed, fallback, archiveFilter, Number((params as any)?.limit ?? 100));
+      // 「记录已丢失」标记：判据与实测口径见 session-tools.ts 的 markMissingRollouts 注释
+      // （白拿兜底扫描结果，不额外做同步磁盘 I/O；本机引擎会隐藏 rollout 丢失的线程，
+      //  所以这是防御性标记 —— 用户侧真实症状是会话静默消失，见该函数注释）。
+      const present = new Set(fallback.map((entry: any) => String(entry?.id ?? "").toLowerCase()));
+      markMissingRollouts(merged, present);
+      result = { ...response, data: merged };
     } catch (error: any) {
       console.warn("[thread/list] rollout 兜底扫描（worker）失败，本次仅返回引擎索引：", error?.message);
     }
@@ -3432,11 +3505,16 @@ ipcMain.handle("app:storage-info", async () => {
   const ud = app.getPath("userData");
   const imagesDir = path.join(ud, "images");
   const engineLog = path.join(ud, "engine-debug.log");
-  const rolloutsDir = path.join(codexHome, "rollouts");
+  // ⛔ 09-16 修 Bug 7：真实 rollout 落在 `codexHome/sessions/` + `archived_sessions/`
+  //    （`threads.rollout_path` 就是 `<CH>/sessions/2026/09/14/rollout-*.jsonl`）。
+  //    旧实现量的是 `codexHome/rollouts` —— 那个目录**根本不存在**，`dirSize` 对不存在的目录
+  //    catch 后返回 0 ⇒ 设置页「会话记录」占用**结构上不可能正确**（恒为 0）。
+  //    同项目的 thread-backup.ts 用的就是正确路径，这里是笔误不是有意。
+  const rolloutDirs = [path.join(codexHome, "sessions"), path.join(codexHome, "archived_sessions")];
   const [imagesBytes, engineLogBytes, rolloutsBytes] = await Promise.all([
     dirSize(imagesDir),
     (async () => { try { return (await fs.stat(engineLog)).size; } catch { return 0; } })(),
-    dirSize(rolloutsDir),
+    Promise.all(rolloutDirs.map((dir) => dirSize(dir))).then((parts) => parts.reduce((sum, part) => sum + part, 0)),
   ]);
   return {
     items: [
