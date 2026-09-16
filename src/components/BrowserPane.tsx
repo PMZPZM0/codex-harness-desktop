@@ -7,7 +7,8 @@ import { ArrowLeft, ArrowRight, ChevronDown, ExternalLink, Globe2, Maximize2, Mo
  *
  * 渲染内核：Electron <webview>（宿主窗口 webPreferences.webviewTag 已开启）。
  * guest 内容是独立 webContents，拿不到 preload / node API，只用于渲染。
- * 「隐身浏览」走 cloak-browsers，属第二阶段（先占位禁用）。
+ * 这就是「内置浏览器」（09-16 用户「默认用内置浏览器」）——默认浏览通道。
+ * 「隐身浏览」按钮走 CloakBrowser（按需下载的可选增强，独立窗口；未安装时提示下载入口）。
  */
 type BrowserTab = { id: string; url: string; title: string; loading: boolean };
 
@@ -47,13 +48,14 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
 
   const active = tabs.find((entry) => entry.id === activeId) ?? tabs[0];
 
-  // 隐身浏览：调 cloak-browsers 指纹内核（外部窗口），当前页 URL 为空时开空白页
+  // 隐身浏览：调 CloakBrowser 指纹内核（外部窗口，按需下载的可选增强）。
+  // 未安装时 open-cloak 会返回带下载入口的提示，这里原样展示给用户（不再引导去跑脚本）。
   const openCloak = useCallback(() => {
     void (async () => {
       const target = active.url || "about:blank";
       try {
         const result = await window.codex.openInCloakBrowser(target);
-        setStealthHint(result.ok ? `已在指纹浏览器（cloak-browsers）中打开：${target}` : result.detail);
+        setStealthHint(result.ok ? `已在 CloakBrowser 指纹浏览器中打开：${target}` : result.detail);
       } catch (error: any) {
         setStealthHint(error?.message ?? "调用指纹浏览器失败");
       }
@@ -201,7 +203,7 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
         <button className={`icon-button ${bookmarked ? "active-tool" : ""}`} title={bookmarked ? "取消收藏" : "收藏此页"} onClick={toggleBookmark}><Star size={15} /></button>
         <button
           className="icon-button"
-          title="隐身浏览（cloak-browsers 指纹内核，独立窗口）"
+          title="隐身浏览（CloakBrowser 指纹内核，独立窗口；需在「开发工具」按需下载）"
           onClick={openCloak}
         ><ShieldCheck size={15} /></button>
         <div className="browser-pane-menu-wrap">

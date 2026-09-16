@@ -60,7 +60,7 @@ function qrSvg(text: string) {
 import { installCocoLoopSkill, listCocoLoopSkills, listSkillHubSkills, repairSkillBomScan, stripSkillBom, type InstalledMarketSkill, type MarketSkill } from "./skills-market";
 import { upsertSkillDiscipline, DISCIPLINE_START, DISCIPLINE_END } from "./skill-discipline";
 import { ensureCodexMarketplaceSection, installCodexMarketPlugin, listCodexMarketPlugins, type CodexMarketPlugin } from "./codex-market";
-import { augmentedPath, bundledGit, bundledNode, bundledPython, cloakCacheDir, cloakOpenHelper, downloadEnv, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "./toolchain";
+import { augmentedPath, bundledGit, bundledNode, bundledPython, CHINA_NPM_REGISTRY, cloakCacheDir, cloakOpenHelper, downloadEnv, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "./toolchain";
 import { ensureBuiltinSkills, ensureExpertSkillsMarketplace, expertSkillsSourceDir } from "./builtin-skills";
 import { ensurePonytailPlugin } from "./ponytail-plugin";
 import { getPonytailMode, setPonytailMode } from "./ponytail-mode";
@@ -1655,7 +1655,8 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
       `PYTHONHOME = "${escapeToml(path.dirname(bundledPython()))}"`,
     ] : []),
     "",
-    // 内置浏览器 = CloakBrowser 指纹浏览器（见 developer_instructions 的浏览器能力段）。
+    // 默认浏览器 = **内置浏览器视图**（右栏 Chromium webview）+ playwright-cli；CloakBrowser 是
+    // 按需下载的可选增强（见 developer_instructions 的浏览器能力段）。
     // 浏览器自动化开关关掉后不开启 features.browser_use，模型不再被引导操作浏览器。
     ...(browserAuto ? [
       "[features]",
@@ -4596,7 +4597,7 @@ ipcMain.handle("tools:status", () => {
       id: "nuphus-mcp", name: "Nuphus 桌面自动化", scope: "computer",
       version: modules ? readVersion(path.join(modules, "@nuphus", "nuphus-mcp", "package.json")) : "",
       installed: Boolean(nuphusBin), binaryReady: Boolean(nuphusBin),
-      detail: nuphusBin ? "35 个桌面/浏览器自动化工具就绪（屏幕、窗口、键鼠、剪贴板、OCR、Chrome CDP），经 nuphus-call 按需调用，不占模型上下文" : "未安装：运行 scripts/install-automation.cjs",
+      detail: nuphusBin ? "35 个桌面/浏览器自动化工具就绪（屏幕、窗口、键鼠、剪贴板、OCR、Chrome CDP），经 nuphus-call 按需调用，不占模型上下文" : "未安装：到「开发工具」页对「Nuphus 桌面自动化」点一次「修复安装」",
       command: nuphusBin,
     },
     {
@@ -4604,7 +4605,7 @@ ipcMain.handle("tools:status", () => {
       version: modules ? readVersion(path.join(modules, "@playwright", "cli", "package.json")) : "",
       installed: modules ? existsSync(path.join(modules, "@playwright", "cli", "package.json")) : false,
       binaryReady: existsSync(path.join(root, "pw-browsers")) && readdirSync(path.join(root, "pw-browsers")).some((entry) => entry.startsWith("chromium-")),
-      detail: "命令行浏览器自动化：open / snapshot / click / type / screenshot，首次 open 时自动下载浏览器内核",
+      detail: "命令行浏览器自动化：open / snapshot / click / type / screenshot；默认浏览器通道，内核可在「开发工具」页下载（国内镜像）",
       command: "playwright-cli",
     },
     {
@@ -4612,17 +4613,30 @@ ipcMain.handle("tools:status", () => {
       version: modules ? readVersion(path.join(modules, "cloakbrowser", "package.json")) : "",
       installed: modules ? existsSync(path.join(modules, "cloakbrowser", "package.json")) : false,
       binaryReady: cloakBinary,
-      detail: cloakBinary ? "反检测 Chromium 内核已就绪（tools/cloak-cache）" : "npm 包已装，Chromium 内核未下载（开发工具页点「安装」按需下载）",
+      // 三态（09-16 起 CloakBrowser 不随包，默认浏览器是内置视图 / playwright-cli）：
+      // 未装包 → 提示可按需下载；装了包没内核 → 提示点内核卡片下载；都在 → 就绪。
+      detail: !(modules && existsSync(path.join(modules, "cloakbrowser", "package.json")))
+        ? "未安装（按需使用：需要过反爬站点时再到「开发工具」页下载，约 4 MB）"
+        : cloakBinary
+          ? "反检测 Chromium 内核已就绪（tools/cloak-cache）"
+          : "npm 包已装，Chromium 内核未下载（「开发工具」页点「Cloak 指纹浏览器内核」下载）",
       command: "cloakbrowser",
     },
   ];
 });
 
-type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "automation" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl";
-type DevRuntimeSpec = { name: string; description: string; size: string; marker: string; builtIn?: boolean; kind?: "download" | "browsers" | "guide" | "plugin"; noUninstall?: boolean };
+type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "playwright-cli" | "cloakbrowser" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl";
+// bundled：随包内置（zip / 预解压目录是来源，不是联网下载）。界面显示「内置」徽标；
+// 缺失时允许「修复安装」（从随包 zip 重新解压），但不允许卸载（删了没有可靠重取途径）。
+type DevRuntimeSpec = { name: string; description: string; size: string; marker: string; builtIn?: boolean; bundled?: boolean; kind?: "download" | "browsers" | "guide" | "plugin"; noUninstall?: boolean };
 // 09-16 打包瘦身：凡是有国内加速下载源的运行时一律不随包（Windows 包从 ~3.2GB 原始降到 ~1.9GB），
 // 由「开发工具」页按需下载（install-runtimes.cjs：npmmirror/gh-proxy 镜像优先，失败回落官方源）。
-// 只有 node 保留内置 —— 它是安装器引导（install-runtimes 本身靠内置 node 跑），没有它其余都装不了。
+// 例外（用户明确要求内置）：
+//   · node —— 安装器引导运行时（install-runtimes 本身靠内置 node 跑），没有它其余都装不了；
+//   · vscode-cli —— 体积小、无国内镜像；
+//   · nuphus / playwright-cli —— 桌面与浏览器自动化的两条默认通道，只发在 npm 上、
+//     国内没有独立的"加速直链"（详见下方 bundled 注释与 package.json 的 filter）。
+// ⛔ CloakBrowser 不在此列：09-16 起剥离出包，按需下载（开发工具页 → npm 国内镜像）。
 const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   python: { name: "Python + Tkinter + pip", description: "Python 项目、数据处理、GUI 脚本和 Python MCP（含 Tkinter、requests/httpx/flask/fastapi/playwright）；npmmirror 镜像下载 + 清华 pip 源", size: "约 40 MB + 依赖", marker: "python\\python.exe" },
   node: { name: "Node.js + npm", description: "JavaScript / TypeScript 项目和 npm 工具（安装器引导运行时，随应用内置）", size: "约 101 MB", marker: "node\\node.exe", builtIn: true },
@@ -4632,7 +4646,14 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   "vscode-cli": { name: "VS Code CLI", description: "通过 code 命令打开文件与工作区", size: "约 28 MB", marker: "vscode-cli\\code.exe", builtIn: true },
   // noUninstall：来源是**随包内置资源**（zip / 插件目录）而不是联网下载 —— 删掉后没有
 // 可靠的重取途径（压缩包本体随应用分发、不单独缓存），用户误删很难找回，因此不支持卸载。
-  automation: { name: "桌面与浏览器自动化", description: "Nuphus（桌面 MCP）+ Playwright CLI + CloakBrowser 包本体，随应用预解压内置、开箱即用（不含浏览器内核；zip 仅作修复备用）", size: "随包约 18 MB（已预解压）", marker: "npm-global\\node_modules\\@nuphus\\nuphus-mcp\\package.json", noUninstall: true },
+  // 09-16 用户「自动化工具拆开，拆详细一点」：原来一张「桌面与浏览器自动化」大卡（把三个 npm 包
+  // 混在一起、装没装只能看一个 marker）拆成逐条能力卡，每条各自可查状态、可单独恢复。
+  // 同时按用户「这三个内置，CloakBrowser 不用内置，按需下载就行」定下分工：
+  //   nuphus / playwright-cli —— 随包预解压内置（bundled，开箱即用；缺了可从随包 zip 修复）；
+  //   cloakbrowser —— 从包里剥离，走 npm 国内镜像按需下载（默认浏览器用内置视图 / playwright-cli）。
+  nuphus: { name: "Nuphus 桌面自动化", description: "35 个桌面自动化工具（屏幕截取、窗口控制、键鼠输入、剪贴板、OCR 感知），经 nuphus-call 按需调用，不占模型上下文；随包内置，开箱即用", size: "随包 30 MB", marker: "npm-global\\node_modules\\@nuphus\\nuphus-mcp\\package.json", bundled: true, noUninstall: true },
+  "playwright-cli": { name: "Playwright 浏览器自动化", description: "命令行浏览器自动化 CLI（open / snapshot / click / type / screenshot），浏览器内核单独按需下载；随包内置，开箱即用", size: "随包 18 MB", marker: "npm-global\\node_modules\\@playwright\\cli\\package.json", bundled: true, noUninstall: true },
+  cloakbrowser: { name: "CloakBrowser 指纹浏览器", description: "反检测指纹浏览器 npm 包（过 Cloudflare Turnstile / reCAPTCHA / FingerprintJS），默认不用、需要时再装；npm 国内镜像下载，失败自动回落官方源", size: "约 4 MB", marker: "npm-global\\node_modules\\cloakbrowser\\package.json" },
   jq: { name: "jq", description: "命令行查询、筛选和转换 JSON；gh 加速下载", size: "约 1 MB", marker: "jq\\jq.exe" },
   ninja: { name: "Ninja", description: "高速构建工具，常与 CMake 配合；gh 加速下载", size: "约 1 MB", marker: "ninja\\ninja.exe" },
   sevenzip: { name: "7-Zip CLI", description: "解压和创建 7z、zip、tar 等归档；gh 加速下载", size: "约 1 MB", marker: "sevenzip\\7z.exe" },
@@ -4646,18 +4667,24 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   docker: { name: "Docker Desktop", description: "容器运行时，需要系统级安装（管理员权限 + 重启 + 登录）", size: "约 500 MB", marker: "docker\\docker.exe", kind: "guide" },
   mingw: { name: "MinGW-w64 (gcc/g++/make)", description: "C/C++ 编译器工具链，含 gcc、g++、make、gdb", size: "约 267 MB", marker: "mingw\\mingw64\\bin\\g++.exe", kind: "download" },
   openssl: { name: "OpenSSL", description: "加密/证书命令行工具（openssl 命令），系统级安装", size: "约 25 MB", marker: "openssl\\openssl.exe", kind: "guide" },
-  ponytail: { name: "ponytail 写代码模式插件", description: "Codex 写代码模式（会话钩子 + 6 个技能），随包启动时自动种入，开箱即用", size: "随包 2 MB", marker: "ponytail-plugin", kind: "plugin", noUninstall: true },
+  ponytail: { name: "ponytail 写代码模式插件", description: "Codex 写代码模式（会话钩子 + 6 个技能），随包启动时自动种入，开箱即用", size: "随包 2 MB", marker: "ponytail-plugin", kind: "plugin", bundled: true, noUninstall: true },
 };
 const runtimeInstalls = new Map<DevRuntimeId, Promise<void>>();
+
+/** 「装没装」的唯一判定（runtimeList 与「修复安装」幂等早退共用，别各写一份）：
+ *  ponytail 装在引擎侧 codex-home/plugins/cache，不走 tools 目录 marker；
+ *  其余按 tools 目录里的 marker 文件判断。 */
+function runtimeInstalled(id: DevRuntimeId, spec: DevRuntimeSpec): boolean {
+  if (id === "ponytail") return existsSync(path.join(codexHome, "plugins", "cache", "ponytail"));
+  const root = toolsRoot();
+  return Boolean(root) && existsSync(path.join(root, spec.marker));
+}
 
 function runtimeList() {
   const root = toolsRoot();
   return (Object.entries(devRuntimeSpecs) as [DevRuntimeId, DevRuntimeSpec][]).map(([id, spec]) => ({
     id, ...spec,
-    // ponytail 插件装在引擎侧 codex-home/plugins/cache，不走 tools 目录 marker
-    installed: id === "ponytail"
-      ? existsSync(path.join(codexHome, "plugins", "cache", "ponytail"))
-      : Boolean(root) && existsSync(path.join(root, spec.marker)),
+    installed: runtimeInstalled(id, spec),
     // docker 是系统级安装：未在工具目录时也探测系统 PATH 上的 docker.exe（已装则视为完成）
     installedBySystem: id === "docker" ? !!(process.env.PATH ?? "").split(";").some((dir) => dir && existsSync(path.join(dir.trim(), "docker.exe"))) : false,
     installing: runtimeInstalls.has(id),
@@ -4727,8 +4754,24 @@ try {
 function runtimeUninstallPath(id: DevRuntimeId, spec: DevRuntimeSpec): string {
   // 引擎侧安装：ponytail 在 codex-home/plugins/cache/ponytail
   if (id === "ponytail") return path.join(codexHome, "plugins", "cache", "ponytail");
-  // 工具侧：安装根 = marker 路径的第一段（automation -> npm-global / playwright-browsers -> pw-browsers / etc）
+  // ⛔ npm 包（cloakbrowser）：只能删**包体目录本身**。按 marker 首段推导会得到 npm-global ——
+  //    那是 nuphus / playwright-cli 的共同家目录，卸载 CloakBrowser 会把两个内置能力一起删光。
+  if (id === "cloakbrowser") return path.join(npmGlobalRoot(), "cloakbrowser");
+  // 工具侧：安装根 = marker 路径的第一段（playwright-browsers -> pw-browsers / git -> git / …）
   return path.join(toolsRoot(), spec.marker.split(/[\\/]/)[0]);
+}
+
+/** npm 包在 npm-global 根与 node_modules/.bin 下留的 shim（cloakbrowser / .cmd / .ps1） */
+function npmShimPaths(pkg: string): string[] {
+  const globalDir = path.join(toolsRoot(), "npm-global");
+  return [
+    path.join(globalDir, pkg),
+    path.join(globalDir, `${pkg}.cmd`),
+    path.join(globalDir, `${pkg}.ps1`),
+    path.join(globalDir, "node_modules", ".bin", pkg),
+    path.join(globalDir, "node_modules", ".bin", `${pkg}.cmd`),
+    path.join(globalDir, "node_modules", ".bin", `${pkg}.ps1`),
+  ];
 }
 
 ipcMain.handle("runtime:uninstall", async (_event, idValue: string) => {
@@ -4737,6 +4780,8 @@ ipcMain.handle("runtime:uninstall", async (_event, idValue: string) => {
   if (!spec) throw new Error("未知开发工具");
   if (spec.builtIn) throw new Error("内置工具不可卸载");
   if (spec.kind === "guide") throw new Error("该工具是系统级安装，请到系统的「应用与功能」里卸载");
+  // 随包内置能力（nuphus / playwright-cli / ponytail 插件），不是联网下载 —— 删了没有可靠的重取途径
+  if (spec.bundled) throw new Error("该工具随应用内置，删除后只能从随包资源恢复，因此不支持卸载");
   // 随包内置资源（zip / 插件目录），不是联网下载 —— 删了没有可靠的重取途径，直接拒绝
   if (spec.noUninstall) throw new Error("该工具来自随包内置资源，删除后难以恢复，因此不支持卸载");
   const target = runtimeUninstallPath(id, spec);
@@ -4751,6 +4796,11 @@ ipcMain.handle("runtime:uninstall", async (_event, idValue: string) => {
   }
   // 一些 marker 是文件而不是目录（如 npm-global/.../package.json）—— 删父目录的安装根即可
   await fs.rm(target, { recursive: true, force: true });
+  // npm 包卸载后清掉残留 shim：不清的话卡片显示「未安装」，但 PATH 上还留着指向已删目录的
+  // cloakbrowser.cmd，引擎调用会报模块找不到（比「没装」更难诊断）。
+  if (id === "cloakbrowser") {
+    await Promise.all(npmShimPaths("cloakbrowser").map((file) => fs.rm(file, { force: true }).catch(() => undefined)));
+  }
 // ponytail 卸载后要显式关掉 config.toml 里的注册段（否则引擎重启找不到已删的 cache）：
 // 插件 key 是 **"ponytail@ponytail"**（见 ponytail-plugin.ts 的 MARKETPLACE_SECTION），
 // 写成 "ponytail-plugin" 会静默无效。
@@ -4809,6 +4859,58 @@ async function runBrowserDownload(
   throw lastError ?? new Error(`${label}下载失败`);
 }
 
+/**
+ * npm 包按需安装（09-16：CloakBrowser 从随包剥离后按需下载）。
+ *  · 用**内置 node 自带的 npm**——开发工具页的安装链路不能依赖用户机器装没装 node/npm；
+ *  · registry 国内镜像优先（npmmirror），失败回落官方源（不设 registry = npm 默认源）；
+ *  · 用户自设了 npm_config_registry 时尊重用户配置，只跑一轮（不擅自改用户指定的源）。
+ */
+async function runNpmInstall(id: DevRuntimeId, pkg: string, label: string): Promise<void> {
+  const node = bundledNode();
+  if (!node) throw new Error(`缺少内置 Node，无法安装 ${label}`);
+  const npmCli = path.join(toolsRoot(), "node", "node_modules", "npm", "bin", "npm-cli.js");
+  if (!existsSync(npmCli)) throw new Error(`内置 Node 缺少 npm（${npmCli}），无法安装 ${label}`);
+  const globalDir = path.join(toolsRoot(), "npm-global");
+  await fs.mkdir(globalDir, { recursive: true });
+  const userRegistry = process.env.npm_config_registry || process.env.NPM_CONFIG_REGISTRY || "";
+  const registries = userRegistry ? [userRegistry] : [CHINA_NPM_REGISTRY, ""];
+  let lastError: Error | null = null;
+  for (const registry of registries) {
+    const via = registry ? (userRegistry ? "用户配置的源" : "国内镜像") : "官方源";
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const env: Record<string, string> = {
+          ...toolchainEnv(),
+          npm_config_audit: "false",
+          npm_config_fund: "false",
+          npm_config_loglevel: "error",
+          npm_config_update_notifier: "false",
+          NO_UPDATE_NOTIFIER: "1",
+        };
+        // 空串 = 不设 registry，npm 回落到官方源
+        if (registry) env.npm_config_registry = registry;
+        const child = spawn(node, [npmCli, "install", "--global", "--prefix", globalDir, pkg, "--no-audit", "--no-fund"], { windowsHide: true, env });
+        let tail = "";
+        const report = (chunk: Buffer | string) => {
+          const message = String(chunk).trim();
+          if (!message) return;
+          tail = `${tail}\n${message}`.slice(-4000);
+          sendToWindow("runtime:progress", { id, message: `（${via}）${message}` });
+        };
+        child.stdout?.on("data", report);
+        child.stderr?.on("data", report);
+        child.on("error", reject);
+        child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim() || `${label} 安装失败（${code}）`)));
+      });
+      return;
+    } catch (error) {
+      lastError = error as Error;
+      if (registry) sendToWindow("runtime:progress", { id, message: `${label} 从${via}安装失败，改用官方源重试…` });
+    }
+  }
+  throw lastError ?? new Error(`${label} 安装失败`);
+}
+
 ipcMain.handle("runtime:install", async (_event, idValue: string) => {
   const id = idValue as DevRuntimeId;
   if (!devRuntimeSpecs[id]) throw new Error("未知开发工具");
@@ -4823,42 +4925,14 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
     await shell.openExternal(url);
     return { ok: true, guide: url, runtimes: runtimeList() };
   }
+  // 随包内置且已就位：无需「修复」。再解压/重种一遍只会覆盖同名文件（无收益，还多一次引擎重启）。
+  // 判定用 runtimeInstalled（与清单同一份逻辑）——ponytail 的 marker 在引擎侧 cache，不在 tools 目录。
+  if (spec.bundled && runtimeInstalled(id, spec)) return { ok: true, runtimes: runtimeList() };
   const task = (async () => {
-    if (id === "automation") {
-      if (!bundledNode()) await runRuntimeInstaller("node", runtimeInstaller("install-runtimes.cjs"), ["node"]);
-      // ⛔ 只认随包 zip（解压安装），**不再回落在线下载**（09-12 用户实测发布包故障）：
-      //   旧实现找不到 zip 就去拉 GitHub Release 的 automation-tools.zip —— 而那个资产
-      //   **根本不存在**（实测 v0.0.13 的 release 只有两个 mac zip），于是用户看到的是
-      //   「直接下载失败」，且浏览器自动化/内核两个（依赖这个包里的 playwright-cli /
-      //   cloakbrowser）跟着一起装不了。既然装不上就当场说清楚，别去撞一个死地址。
-      //   保证「包里一定有 zip」是打包链路的责任：scripts/before-pack.cjs 现在**硬失败**
-      //   （不再 warn 后静默放过），宁可不打包也不发坏包。
-      const bundledAutomationZip = path.join(toolsRoot(), "automation-tools.zip");
-      if (!existsSync(bundledAutomationZip)) {
-        throw new Error(
-          "随包缺少 tools/automation-tools.zip —— 这一版安装包不完整，装不了「桌面与浏览器自动化」。"
-          + "请更新到带该文件的版本；自建包时先在本机装一次自动化工具链再执行打包。"
-        );
-      }
-      await runRuntimeInstaller(id, runtimeInstaller("install-automation.cjs"), [], bundledNode());
-      // 解压安装成功后自动激活「桌面自动化」「浏览器自动化」联动开关（nuphus MCP 注册 + 技能启用）
-      await saveAppSettings(app.getPath("userData"), { desktopAutomation: true, browserAutomation: true });
-    } else if (id === "playwright-browsers") {
-      // 用内置的 playwright CLI 下载 Chromium 到 pw-browsers（toolchainEnv 已注入 PLAYWRIGHT_BROWSERS_PATH；
-      // 09-16 起内核不随包，这里按需下载：国内镜像优先、失败回落官方源）
-      const node = bundledNode();
-      const cli = path.join(npmGlobalRoot(), "@playwright", "cli", "node_modules", "playwright", "cli.js");
-      if (!node || !existsSync(cli)) throw new Error("缺少 Playwright CLI，请先在「开发工具」安装「桌面与浏览器自动化」");
-      await runBrowserDownload(id, node, cli, ["install", "chromium"], "浏览器内核");
-    } else if (id === "cloak-browsers") {
-      // CloakBrowser 反检测 Chromium 内核下载到 tools/cloak-cache（toolchainEnv 已注入 CLOAKBROWSER_CACHE_DIR；
-      // 09-16 起内核不随包，这里按需下载：国内镜像优先、失败回落官方源）
-      const node = bundledNode();
-      const cli = path.join(npmGlobalRoot(), "cloakbrowser", "dist", "cli.js");
-      if (!node || !existsSync(cli)) throw new Error("缺少 CloakBrowser，请先在「开发工具」安装「桌面与浏览器自动化」");
-      await runBrowserDownload(id, node, cli, ["install"], "Cloak 内核");
-    } else if (id === "ponytail") {
-      // ponytail 写代码模式插件：从随包安装源种到引擎（plugins cache + config 注册段），技能随 cache 自动列出
+    if (id === "ponytail") {
+      // ponytail 写代码模式插件（bundled）：从随包安装源种到引擎（plugins cache + config 注册段），技能随 cache 自动列出。
+      // ⛔ 必须排在 spec.bundled 分支**之前**：ponytail 也是 bundled，但它的修复路径是「重种插件」
+      //    而不是「解压 automation-tools.zip」——漏了会让「修复安装 ponytail」把 zip 解到 npm-global。
       await ensurePonytailPlugin(codexHome, path.join(toolsRoot(), "ponytail-plugin"));
       // 卸载时把注册段置成了 false，这里必须显式置回 true —— seedConfigSections 是
       // 「段已存在就幂等跳过」，不会自己翻回 true，漏了会导致「卸载→重装」后插件永久不可用。
@@ -4870,6 +4944,46 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
         //    漏了会让「卸载→重装」后插件永久 disabled（seedConfigSections 幂等不回滚 enabled）。
         mergeStrategy: "replace",
       }).catch(() => undefined);
+    } else if (spec.bundled) {
+      // 随包内置能力的「修复安装」（nuphus / playwright-cli）：从随包 zip 重新解压。
+      // 正常情况下卡片直接显示「内置」，界面不给按钮；只有目录被误删/损坏时才会走到这里。
+      // 内置 node 是解压器的引导运行时（install-automation.cjs 依赖它跑 python/7z）。
+      if (!bundledNode()) await runRuntimeInstaller("node", runtimeInstaller("install-runtimes.cjs"), ["node"]);
+      // ⛔ 只认随包 zip（解压安装），**不再回落在线下载**（09-12 用户实测发布包故障）：
+      //   旧实现找不到 zip 就去拉 GitHub Release 的 automation-tools.zip —— 而那个资产
+      //   **根本不存在**（实测 v0.0.13 的 release 只有两个 mac zip），于是用户看到的是
+      //   「直接下载失败」。既然装不上就当场说清楚，别去撞一个死地址。
+      //   保证「包里一定有 zip」是打包链路的责任：scripts/before-pack.cjs 现在**硬失败**
+      //   （并且直接校验随包 npm-global 里 nuphus / playwright-cli 是否在位），宁可不打包也不发坏包。
+      const bundledAutomationZip = path.join(toolsRoot(), "automation-tools.zip");
+      if (!existsSync(bundledAutomationZip)) {
+        throw new Error(
+          `随包缺少 tools/automation-tools.zip —— 这一版安装包不完整，装不了「${spec.name}」。`
+          + "请更新到带该文件的版本；自建包时先在本机装一次自动化工具链再执行打包。"
+        );
+      }
+      await runRuntimeInstaller(id, runtimeInstaller("install-automation.cjs"), [], bundledNode());
+      // 解压安装成功后自动激活「桌面自动化」「浏览器自动化」联动开关（nuphus MCP 注册 + 技能启用）
+      await saveAppSettings(app.getPath("userData"), { desktopAutomation: true, browserAutomation: true });
+    } else if (id === "cloakbrowser") {
+      // CloakBrowser npm 包（09-16 起不随包）：npm 国内镜像优先、失败回落官方源。
+      // 装完 CLOAKBROWSER_ENTRY 才会指向它（toolchainEnv 按标记文件存在与否注入），
+      // 在此之前引擎侧看不到它 —— 默认浏览器用内置视图 / playwright-cli，不受影响。
+      await runNpmInstall(id, "cloakbrowser", "CloakBrowser");
+    } else if (id === "playwright-browsers") {
+      // 用内置的 playwright CLI 下载 Chromium 到 pw-browsers（toolchainEnv 已注入 PLAYWRIGHT_BROWSERS_PATH；
+      // 09-16 起内核不随包，这里按需下载：国内镜像优先、失败回落官方源）
+      const node = bundledNode();
+      const cli = path.join(npmGlobalRoot(), "@playwright", "cli", "node_modules", "playwright", "cli.js");
+      if (!node || !existsSync(cli)) throw new Error("缺少 Playwright CLI，请先在「开发工具」安装「Playwright 浏览器自动化」");
+      await runBrowserDownload(id, node, cli, ["install", "chromium"], "浏览器内核");
+    } else if (id === "cloak-browsers") {
+      // CloakBrowser 反检测 Chromium 内核下载到 tools/cloak-cache（toolchainEnv 已注入 CLOAKBROWSER_CACHE_DIR；
+      // 09-16 起内核不随包，这里按需下载：国内镜像优先、失败回落官方源）
+      const node = bundledNode();
+      const cli = path.join(npmGlobalRoot(), "cloakbrowser", "dist", "cli.js");
+      if (!node || !existsSync(cli)) throw new Error("缺少 CloakBrowser，请先在「开发工具」安装「CloakBrowser 指纹浏览器」（约 4 MB）");
+      await runBrowserDownload(id, node, cli, ["install"], "Cloak 内核");
     } else {
       await runRuntimeInstaller(id, runtimeInstaller("install-runtimes.cjs"), [id]);
     }
@@ -4921,7 +5035,7 @@ let cloakStatus: { event?: string; message?: string; url?: string; title?: strin
 ipcMain.handle("browser:open-cloak", (_event, url: string) => {
   const modules = npmGlobalRoot();
   if (!modules || !existsSync(path.join(modules, "cloakbrowser", "package.json"))) {
-    return { ok: false, detail: "CloakBrowser 未安装：运行 scripts/install-automation.cjs" };
+    return { ok: false, detail: "CloakBrowser 未安装（按需下载）：到「设置 → 开发工具」下载「CloakBrowser 指纹浏览器」（约 4 MB）后再用；日常浏览走内置浏览器视图" };
   }
   if (!cloakProc || cloakProc.exitCode !== null) {
     const helper = cloakOpenHelper();

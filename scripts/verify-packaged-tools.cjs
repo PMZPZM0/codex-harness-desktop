@@ -6,6 +6,18 @@ const assert = require("node:assert/strict");
 
 const root = path.resolve(process.argv[2] || "resources/tools");
 const modules = path.join(root, "npm-global", "node_modules");
+// ⛔ 09-16 实测踩坑：electron-builder 的 copyDir 会**无条件丢弃 extraResources `from` 根级的
+//    node_modules**（app-builder-lib/out/util/filter.js 里写死的 `if (relative === "node_modules") return false`，
+//    且 walk() 在目录节点被过滤时整棵剪掉）。所以「npm-global 预解压」这条映射**从来只拷到了根级 shim**，
+//    node_modules 是空的 —— 装出来的应用 nuphus/playwright-cli 两张卡都显示「未安装」，要用户点一次
+//    「修复安装」解 zip 才可用，与「随包内置、开箱即用」的承诺不符。
+//    修法：package.json 里另加一条 from=resources/tools/npm-global/node_modules 的映射（那层不叫 node_modules，绕过剪枝）。
+//    下面两条断言把这件事钉死在产物层：谁把那条映射删了/写歪了，这里立刻红。
+for (const marker of ["@nuphus/nuphus-mcp/package.json", "@playwright/cli/package.json"]) {
+  assert.ok(fs.existsSync(path.join(modules, marker)),
+    `随包缺少 ${marker} —— npm-global/node_modules 没打进包。检查 package.json extraResources 里那条 ` +
+    "from=resources/tools/npm-global/node_modules 的映射（electron-builder 会丢弃 from 根级的 node_modules）。");
+}
 const platform = process.platform === "darwin" ? "osx" : process.platform;
 const suffix = process.platform === "win32" ? ".exe" : "";
 const nativeName = `nuphus-mcp-${platform}-${process.arch}`;
@@ -82,12 +94,19 @@ async function main() {
   });
   assert.equal(cli.status, 0, `Playwright CLI failed: ${cli.error?.message || cli.stderr}`);
   console.log("Playwright CLI: OK");
-  const entry = pathToFileURL(path.join(modules, "cloakbrowser", "dist", "index.js")).href;
-  const source = `const {launch}=await import(${JSON.stringify(entry)});const b=await launch({headless:true});try{const p=await b.newPage();await p.goto('data:text/html,<title>packaged-smoke</title><h1>OK</h1>',{waitUntil:'domcontentloaded'});if(await p.title()!=='packaged-smoke')throw Error('Bad page');console.log('CloakBrowser: OK')}finally{await b.close()}`;
-  const browser = spawnSync(node, ["--input-type=module", "-e", source], {
-    env, encoding: "utf8", windowsHide: true, timeout: 90000,
-  });
-  assert.equal(browser.status, 0, `CloakBrowser failed: ${browser.error?.message || browser.stderr}`);
-  console.log(browser.stdout.trim());
+  // CloakBrowser（09-16 起从随包剥离 → 「开发工具」页按需 npm 下载）：不再是断言项。
+  // 包里有就顺手验一次（自测包/手工塞过），没有才是发布包的正常形态 —— 不能因为「没内置」判失败。
+  const cloakEntry = path.join(modules, "cloakbrowser", "dist", "index.js");
+  if (!fs.existsSync(cloakEntry)) {
+    console.log("CloakBrowser: 未随包内置（按需下载，符合 09-16 起的打包策略）");
+  } else {
+    const entry = pathToFileURL(cloakEntry).href;
+    const source = `const {launch}=await import(${JSON.stringify(entry)});const b=await launch({headless:true});try{const p=await b.newPage();await p.goto('data:text/html,<title>packaged-smoke</title><h1>OK</h1>',{waitUntil:'domcontentloaded'});if(await p.title()!=='packaged-smoke')throw Error('Bad page');console.log('CloakBrowser: OK')}finally{await b.close()}`;
+    const browser = spawnSync(node, ["--input-type=module", "-e", source], {
+      env, encoding: "utf8", windowsHide: true, timeout: 90000,
+    });
+    assert.equal(browser.status, 0, `CloakBrowser failed: ${browser.error?.message || browser.stderr}`);
+    console.log(browser.stdout.trim());
+  }
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

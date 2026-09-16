@@ -49,14 +49,15 @@ async function main() {
   const npmFlags = arch === "x64"
     ? ["--ignore-scripts"]
     : ["--allow-scripts=@nuphus/nuphus-mcp"];
+  // ⛔ 09-16 用户「CloakBrowser 不用内置，按需下载就行」：这里**不再**装 cloakbrowser，
+  //    它由应用「开发工具」页按需 npm 下载（npmmirror）。内核（cloak-cache）本来就不随包。
   run(node, [npm, "install", "-g", "--prefix", prefix, "--registry=https://registry.npmjs.org",
     ...npmFlags, "@nuphus/nuphus-mcp@0.2.2", "@playwright/cli@0.1.18",
-    "cloakbrowser@0.5.9", "playwright-core@1.58.2"], env);
+    "playwright-core@1.58.2"], env);
   const modules = path.join(prefix, "lib/node_modules");
   // Keep the same module layout as the Windows distribution.
   fs.renameSync(modules, path.join(prefix, "node_modules"));
   fs.symlinkSync("../node_modules", modules);
-  run(node, [path.join(prefix, "node_modules/cloakbrowser/dist/cli.js"), "install"], env);
   run(node, [path.join(prefix, "node_modules/@playwright/cli/node_modules/playwright/cli.js"), "install", "chromium"], env);
 
   if (arch === "x64") {
@@ -95,7 +96,8 @@ async function main() {
   tar("https://github.com/DietrichGebert/ponytail/archive/refs/tags/v4.9.0.tar.gz",
     "ponytail.tar.gz", path.join(tools, "ponytail-plugin"), true);
   fs.writeFileSync(path.join(tools, "mac-runtime-manifest.json"), JSON.stringify({
-    platform: process.platform, arch, node: nodeVersion, nuphus: "0.2.2", cloakbrowser: "0.5.9",
+    platform: process.platform, arch, node: nodeVersion, nuphus: "0.2.2",
+    // cloakbrowser 09-16 起不随包（按需下载），故不再记入随包清单
     playwrightCli: "0.1.18", python: pythonAsset.name, source: process.env.GITHUB_SHA || "",
     helperSha256: crypto.createHash("sha256").update(fs.readFileSync(path.join(tools, "nuphus-call.mjs"))).digest("hex"),
   }, null, 2));

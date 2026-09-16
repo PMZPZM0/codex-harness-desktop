@@ -24,9 +24,15 @@ const LANGUAGE_INSTRUCTIONS =
 const DESKTOP_INSTRUCTIONS =
   "\n\nAUTOMATION TOOLKIT (pre-installed, on PATH; invoke ONLY when the task actually needs them — they are NOT loaded into your context by default):\n1) nuphus-call — on-demand CLI bridge to desktop automation tools. Usage: `nuphus-call <tool> key=value ...` (e.g. `nuphus-call desktop_screenshot`, `nuphus-call desktop_mouse action=click x=500 y=300 confirm=true`, `nuphus-call desktop_windows_list`). Run `nuphus-call` with no args to list all tools and their parameters. Covers: screen capture, window control (list/activate/move/resize), mouse/keyboard, clipboard, OCR perceive, vision describe. Write operations need confirm=true.";
 
-/** 浏览器自动化说明（playwright-cli / cloakbrowser + 内置浏览器面板） */
+/**
+ * 浏览器自动化说明。
+ * 09-16 用户定调（「CloakBrowser 不用内置，按需下载就行，默认用内置浏览器」）：
+ *  - 默认通道 = playwright-cli + 应用内置的浏览器视图（右栏 Chromium webview）；
+ *  - cloakbrowser 是**可选增强**，可能根本没装 —— 指令里必须让模型先看环境变量再决定，
+ *    否则模型会去调一个不存在的模块，把「没装」误判成「坏了」。
+ */
 const BROWSER_INSTRUCTIONS =
-  "\n2) playwright-cli — token-efficient browser automation CLI. Workflow: `playwright-cli open <url>` → `playwright-cli snapshot` to get element refs → `playwright-cli click e12` / `type` / `fill` / `press` / `screenshot` / `pdf`. Named sessions with -s=name; consult `playwright-cli --help`.\n3) cloakbrowser — anti-detection fingerprint Chromium, drop-in Playwright replacement (passes Cloudflare Turnstile, reCAPTCHA, FingerprintJS). Use ONLY for bot-protected sites: import via env entry — `const { launch } = await import(process.env.CLOAKBROWSER_ENTRY)` — then `await launch({ headless: false, humanize: true })` and drive pages with the standard Playwright API. Kernel pre-installed; never run `cloakbrowser install`.\nThe in-app browser panel is CloakBrowser (fingerprint Chromium) - pages opened there share its anti-detect profile. Full usage guides are in your skills desktop-automation and browser-automation. Prefer playwright-cli for quick browsing; cloakbrowser for anti-bot sites.";
+  "\n2) playwright-cli — token-efficient browser automation CLI and the DEFAULT browser channel (installed). Workflow: `playwright-cli open <url>` → `playwright-cli snapshot` to get element refs → `playwright-cli click e12` / `type` / `fill` / `press` / `screenshot` / `pdf`. Named sessions with -s=name; consult `playwright-cli --help`.\n3) cloakbrowser — OPTIONAL anti-detection fingerprint Chromium (drop-in Playwright replacement that passes Cloudflare Turnstile, reCAPTCHA, FingerprintJS). It is downloadable on demand and may NOT be installed: check `process.env.CLOAKBROWSER_ENTRY` first. If it is unset, cloakbrowser is not installed — do NOT try to install it and do NOT treat it as broken; use playwright-cli instead and tell the user it can be downloaded from Settings → Developer Tools. When it is set: `const { launch } = await import(process.env.CLOAKBROWSER_ENTRY)` then `await launch({ headless: false, humanize: true })`, driven with the standard Playwright API. Use it ONLY for bot-protected sites.\nBROWSERS: the default browsing surface is the app's BUILT-IN browser view (right-side Chromium panel) plus playwright-cli; CloakBrowser only opens its own separate fingerprint window. Full usage guides are in your skills desktop-automation and browser-automation. Default to playwright-cli; reach for cloakbrowser only for anti-bot sites and only when installed.";
 
 /**
  * 内置媒体插件说明（生图 / 视觉辅助）。只在用户配置并启用对应插件后注入——

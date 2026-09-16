@@ -128,6 +128,13 @@ export const CHINA_MIRROR_ENV: Record<string, string> = {
   CLOAKBROWSER_DOWNLOAD_URL: "https://ghfast.top/https://github.com/CloakHQ/cloakbrowser/releases/download",
 };
 
+/**
+ * npm 包按需安装用的国内镜像 registry（09-16：CloakBrowser 等 npm 包从包里剥离后按需下载）。
+ * 用 registry.npmmirror.com（淘宝 npm 镜像）而不是 gh 代理：npm 元数据 + tarball 都在同源镜像上，
+ * 一次解析就可拿到全部依赖，不用逐包拼 URL。用户自设 npm_config_registry 时不覆盖。
+ */
+export const CHINA_NPM_REGISTRY = "https://registry.npmmirror.com";
+
 /** 内核下载用环境：toolchainEnv + 未被用户覆盖的国内镜像变量。 */
 export function downloadEnv() {
   const env = toolchainEnv();
