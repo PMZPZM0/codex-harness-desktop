@@ -159,6 +159,18 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **发版链路搬到 GitHub Actions：推 tag = 发布（09-16，用户「用 GitHub ssh 发布，版本号 0.0.18，Windows mac 双芯片，只在 GitHub 上发布」）**：
+  - **前提（决定整条设计）**：本机远端是 SSH（deploy key `~/.ssh/codex_gh_release`，`ssh -T` 能认证），而 **SSH 只能推代码/标签**——既不能创建 Release 也不能上传资产；本机也没有 `gh` CLI、没有任何 API token（`scripts/gh-api.cjs` 那套「从 `remote.origin.url` 抠内嵌 token」的旧流程因此整体失效）。⇒「用 SSH 发版」的唯一可行形态 = **推 tag → Actions 用仓库自带 GITHUB_TOKEN 构建三端包并发布**。
+  - **流水线**：`.github/workflows/release.yml`（`on: push: tags: v*`，`permissions: {contents: write, actions: read}`）复用 `build-mac.yml`（新增 `workflow_call`）与**新增的** `build-win.yml`；`publish` job `needs: [mac, win]`（**三端不齐不发版**）→ 按版本号精确匹配产物（artifact 里可能混旧版本）→ 规范化资产名 → 校验 tag 与 `package.json` 版本一致 → 校验 `docs/releases/v<版本>.md` 存在 → `gh release create` + `gh release upload --clobber`（幂等可重跑）→ 打印线上 size/digest。构建步骤只此一份（两个 build 工作流被复用），避免「同口径两处实现漂移」。
+  - **Windows 包现在也能在 CI 造**（此前只能在开发机上打）：`resources/tools/*` 被 gitignore ⇒ 干净检出里 `extraResources` 的源**全缺**，而 electron-builder 对缺源是**静默跳过**（= 发坏包）。新增 `scripts/prepare-windows-tools.cjs`（对标 `prepare-mac-tools.cjs`）现造：`node`（v24.19.0，与 mac 同版本）、`npm-global`（内置 node 自带 npm + `npm i -g --prefix`：`@nuphus/nuphus-mcp@0.2.2` / `@playwright/cli@0.1.18` / `playwright-core@1.62.1`，**不装 CloakBrowser**）、`vscode-cli`、`cloudflared.exe`、`ponytail-plugin`、`pwsh-headless`，末尾硬校验七项 marker；`build-win.yml` 在打包**前后**各跑一次 `verify-packaged-tools.cjs`（真 MCP 握手）。
+  - **三个 `.mjs` 助手无需现造**：`nuphus-call.mjs` / `harness-media.mjs` / `cloak-open.mjs` 在 gitignore 规则之前就已纳入版本控制（干净检出里就有）；`automation-tools.zip` 仍由 `before-pack.cjs` 从 npm-global 现造。
+  - **`pwsh-headless` 源码入库**：它是自编的 C# 转发壳（`/target:winexe` + stdio 透传 = 「无窗口桥」的全部含义，源码内 `CODEX_REAL_PWSH` 可指向真实 pwsh）；过去只有开发机有编译产物，CI 造不出来。已用 `.gitignore` 特批（`!resources/tools/pwsh-headless/PwshHeadless.cs`）入库，CI 用 .NET Framework 的 `csc.exe` 现场编译。
+  - **两个实测坑**：① **npm 11 起默认不跑依赖的 install 脚本**（只打 `npm warn allow-scripts`），`@nuphus/nuphus-mcp` 的 postinstall（`bin/check.js`，校验平台原生二进制）会被静默跳过 ⇒ 必须显式 `--allow-scripts=@nuphus/nuphus-mcp`（mac 侧对 arm64 本来就显式放行）；② GitHub 资产直连在国内常被掐（实测 `curl: (52) Empty reply from server`）⇒ 下载做成「直连 → gh-proxy 加速 → 本机代理」回落链（CI runner 直连就是最优路径，不需要代理）。
+  - **资产命名 = 应用侧更新器契约**（`electron/updates.ts`）：Windows 取 `*.exe`；mac 必须同时含 `mac` + `.zip` + 架构名（`arm64`/`x64`）。⛔ electron-builder 在 mac **x64** 上产出的是 `…-<版本>-mac.zip`（**不带 x64**）→ publish job 强制改名成 `Codex.Harness.Desktop-<版本>-x64-mac.zip`；**名字错了用户端静默显示「已是最新」，不报任何错**。
+  - **重跑姿势**：CI 失败就修好再 `git push origin :refs/tags/v<版本>` 删 tag、重新推同一 tag（`gh run rerun` 需要 API，本机不可用）。
+  - **本机打包只用于自测**：正式包一律 CI 产出 —— 本机打出来的包**没有任何上传通道**（没 token），别把「本机打好了」当发版完成。
+  - 守卫：预检【29】19 条（tag 触发 / `contents: write` / 两个构建被复用 / `needs` 三端 / artifact 名在构建与发布两侧一致 / 更新器匹配规则仍在 / 三个资产名合规 / 更新说明在位 / tag 与版本一致 / Windows 现造链与打包前后握手 / `extraResources` 每条源都有出处 / pwsh 源码入库）。
+
 - **打包瘦身：有国内加速源的工具链/内核全部不随包，开发工具页按需下载（09-16，用户「有国内加速的都不用内置，全部放到开发工具里面让用户自己下载；引擎自己下载了界面自动更新」）**：
   - **（09-16 下午追加）自动化包与 ponytail 改「随包直装」**（用户「那这两个就直接内置，就不用解压啥的了」）：`resources/tools/npm-global` 进 extraResources（预解压，18MB 压缩 / 64MB 原始——Nuphus 29.6 + Playwright CLI 18.1 + CloakBrowser 3.6）+ 保留 automation-tools.zip 作修复备用；ponytail 由 `tools/ponytail-plugin` 源在**首启自动种**。效果：装完即「已安装」，nuphus/playwright-cli/cloakbrowser/6 个 ponytail 技能开箱可用，用户不用点安装解压。**为什么这两项能内置**：它们只有 GitHub/npm 源、无国内镜像，且线上回落地址实测不存在（见下），故必须随包；反之有镜像的（python/git/内核…）一律不随包。
   - **ponytail 自动种的三条硬约束**：① 只在 `config.toml` **没有** `ponytail@ponytail` 段时执行（有段=已装或用户卸载过，绝不重装——否则卸载失效）；② 挂在 `server.start()` **之后**（要写 config.toml）；③ 失败只 warn 降级，开发工具页按钮仍可手动种。

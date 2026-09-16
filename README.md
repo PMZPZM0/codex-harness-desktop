@@ -128,7 +128,7 @@
 - **会话记录完整性（09-16 校正口径）**：历史记录文件（rollout）丢失的会话，引擎会把整条线程**从列表里隐藏**——实测「跑过一回合的会话删掉 rollout 后，`thread/list` 不再返回它、按 id `thread/resume` 报 `no rollout found`」，所以用户看到的是**会话静默消失**（旧文档写成「侧栏可见但点开报错」不准确）。harness 侧补齐了两件事：**历史会话的 provider 别名段改以引擎线程索引（`thread/list` 的 `modelProvider`）为权威源**（含归档会话、不解析文件内容，旧实现只扫 `sessions/` 首行且文件一坏就静默返回空集），以及**防御性的 `rolloutMissing` 标记**（若某版引擎仍返回带 `path` 的条目，侧栏会显示「记录丢失」徽标并拦下点击，而不是点开才吃引擎原始报错）
 - **归档管理**：会话归档集中管理，恢复/永久删除，恢复后内容完整可直接续聊
 - **账户中心**：头像昵称、使用统计一站式菜单；界面主题为一级菜单项，内置浅色/深色两个并排按钮一键切换，语言/缩放菜单项直达
-- **应用内自更新**：内置版本发布中心对接，检查/下载/安装一体化
+- **应用内自更新**：GitHub Releases 单源（09-15 起），检查/下载/安装一体化；发版由 **tag 触发 GitHub Actions** 构建三端包并发布（见「发版」一节）
 
 <p align="center">
   <img src="docs/screenshots/main-dark.png" width="410" alt="深色主题" />
@@ -141,7 +141,7 @@
 
 | 平台 | 文件 | 说明 |
 |---|---|---|
-| Windows 10/11 x64 | `CodexHarness-Desktop-<版本>-Setup-x64.exe` | NSIS 安装向导，可选安装目录 |
+| Windows 10/11 x64 | `Codex.Harness.Desktop-<版本>-win-x64.exe` | NSIS 安装向导，可选安装目录 |
 | macOS Intel | `Codex.Harness.Desktop-<版本>-x64-mac.zip` | 解压后拖入「应用程序」 |
 | macOS Apple Silicon (M1/M2/M3/M4) | `Codex.Harness.Desktop-<版本>-arm64-mac.zip` | 解压后拖入「应用程序」 |
 
@@ -177,7 +177,34 @@ npm run dist
 CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac zip --arm64   # 或 --x64
 ```
 
-内置工具链随 extraResources 整目录打包。
+内置工具链随 extraResources 整目录打包。⚠️ 但 `resources/tools/*` **不在 git 里**（大体积二进制，
+`.gitignore` 排除），干净检出里是空的 —— 构建前由 `scripts/prepare-windows-tools.cjs`（Windows）或
+`scripts/prepare-mac-tools.cjs`（macOS）现造；CI 走的是同一条链（见「发版」）。electron-builder 对
+**缺失的 extraResources 源是静默跳过**，所以装出来的包可能少了随包能力却不报错 —— 打包后必须
+`node scripts/verify-packaged-tools.cjs <产物 tools 目录>` 做真 MCP 握手验收。
+
+## 🚀 发版（推 tag 即发布）
+
+发布渠道只有 GitHub Releases，且**构建与发布全部在 CI 完成**：本机远端是 SSH（deploy key），
+SSH 只能推代码/标签，既不能创建 Release 也不能上传资产，本机也没有 `gh` 与任何 API token。
+所以发版动作 = **推一个 tag**，其余交给流水线。
+
+```bash
+# ① 版本对齐三处：package.json / package-lock.json（顶部 + packages[""]）/ electron/codex-server.ts 的 clientInfo
+# ② 写更新说明：docs/releases/v<版本>.md（应用内「发现新版本」弹窗展示的内容，缺失会让发布 job 直接失败）
+npm run check                          # ③ 离线预检必须全绿
+git push origin HEAD:refs/heads/main   # ④ 推代码
+git push origin v0.0.18                # ⑤ 推 tag → 触发 .github/workflows/release.yml
+```
+
+`release.yml` 依次做：复用 `build-mac.yml`（arm64 + x64 双芯片）与 `build-win.yml`（Windows，含随包
+工具链现造）→ **三端产物齐了才发布** → 规范化资产名 → `gh release create` + `gh release upload --clobber`。
+
+资产命名是应用侧更新器的匹配契约（`electron/updates.ts`）：Windows 取 `*.exe`；macOS 必须同时含
+`mac`、`.zip` 与架构名。⚠️ macOS x64 的 electron-builder 原生产物**不带 `x64`**（叫 `…-mac.zip`），
+流水线会强制改名成 `…-x64-mac.zip` —— 名字错了用户端**静默**显示「已是最新」，不会报任何错。
+
+CI 失败要重跑：修好后删 tag 重推（`git push origin :refs/tags/v<版本>` 再推一次）。
 
 ## 🧪 验证与测试
 

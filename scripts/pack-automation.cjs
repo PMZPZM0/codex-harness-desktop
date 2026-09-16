@@ -25,27 +25,40 @@ if (!fs.existsSync(path.join(globalDir, "node_modules"))) {
   process.exit(1);
 }
 
-// 优先内置 7z，其次系统 7z，最后 python zipfile
-const sevenCandidates = [
-  path.join(toolsRoot, "sevenzip", "7z.exe"),
-  "C:\\Program Files\\7-Zip\\7z.exe",
-  "7z",
+/**
+ * 打 zip 的执行体，按可用性依次回落。
+ *
+ * ⛔ 09-16 修：原实现**只**用 python，而 CI 的干净检出里没有随包 python
+ *    （09-16 安装包瘦身把 python 移出随包，资源目录被 gitignore）——`before-pack` → 本脚本
+ *    在 GitHub Actions 上会直接失败，整条 tag 触发的发布流水线跑不起来。
+ *    现在优先 **bsdtar**（Windows 自带 `%WINDIR%\System32\tar.exe`，支持 `-a` 按扩展名选 zip
+ *    与 `--exclude`；Linux/macOS runner 上系统 tar 同样是 bsdtar/支持 zip），
+ *    python 与 7z 降级为备用。
+ *
+ * 排除清单在这里、package.json 的 extraResources filter、mac 的 copy-mac-tools.cjs
+ * 三处必须同源 —— 漏一处，用户点一次「修复安装」就把已剥离的 CloakBrowser 装回包里。
+ */
+const CLAUB_EXCLUDES = [
+  "npm-global/cloakbrowser",
+  "npm-global/cloakbrowser.cmd",
+  "npm-global/cloakbrowser.ps1",
+  "npm-global/node_modules/cloakbrowser",
+  "npm-global/node_modules/.bin/cloakbrowser",
+  "npm-global/node_modules/.bin/cloakbrowser.cmd",
+  "npm-global/node_modules/.bin/cloakbrowser.ps1",
 ];
-let seven = sevenCandidates.find((c) => {
-  if (c.includes("\\")) return fs.existsSync(c);
-  try { spawnSync(c, ["-h"], { stdio: "ignore" }); return true; } catch { return false; }
-});
 
-if (fs.existsSync(outZip)) fs.rmSync(outZip, { force: true });
+/** 用 bsdtar 打包：顶层为 npm-global/，与 python/7z 两条实现一致 */
+function packWithTar(bin) {
+  const args = ["-a", "-c", "-f", outZip, "-C", toolsRoot, ...CLAUB_EXCLUDES.map((e) => "--exclude=" + e), "npm-global"];
+  const res = spawnSync(bin, args, { stdio: "pipe", encoding: "utf8" });
+  if (res.status !== 0) throw new Error(`tar 打包失败(${bin}): ${(res.stderr || res.stdout || "").slice(-500)}`);
+  console.log(`tar 打包完成（${bin}）`);
+}
 
-// 用 python zipfile 打 zip（比 7z 稳，内置 python 必在）
-const pyCandidates = [
-  path.join(toolsRoot, "python", "python.exe"),
-  path.join(toolsRoot, "python", "python3.exe"),
-  "python",
-];
-const py = pyCandidates.find((c) => c.includes("\\") ? fs.existsSync(c) : true);
-const pyScript = `
+/** 用内置 python zipfile 打包（备用；CI 上通常没有随包 python） */
+function packWithPython(python) {
+  const pyScript = `
 import zipfile, os, sys
 src = r"${globalDir.replace(/\\/g, "\\\\")}"
 out = r"${outZip.replace(/\\/g, "\\\\")}"
@@ -69,12 +82,40 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
             total += 1
 print("done files=%d skipped_cloak=%d" % (total, skipped))
 `;
-const res = spawnSync(py, ["-c", pyScript], { stdio: "pipe", encoding: "utf8" });
-if (res.status !== 0) {
-  console.error("python 打包失败:", res.stderr || res.stdout);
+  const res = spawnSync(python, ["-c", pyScript], { stdio: "pipe", encoding: "utf8" });
+  if (res.status !== 0) throw new Error("python 打包失败: " + (res.stderr || res.stdout || "").slice(-500));
+  console.log((res.stdout || "").trim());
+}
+
+// 选打包方式：bsdtar（跨平台、系统自带）→ 内置 7z → 内置 python
+const windir = process.env.WINDIR || process.env.SystemRoot || "C:\\Windows";
+const tarCandidates = [
+  path.join(windir, "System32", "tar.exe"),
+  "/usr/bin/tar",
+  "/bin/tar",
+  "tar",
+];
+const tarBin = tarCandidates.find((c) => (c.includes("/") || c.includes("\\") ? fs.existsSync(c) : true));
+const pyCandidates = [
+  path.join(toolsRoot, "python", "python.exe"),
+  path.join(toolsRoot, "python", "python3.exe"),
+  "python3",
+  "python",
+];
+const pyBin = pyCandidates.find((c) => (c.includes("\\") ? fs.existsSync(c) : true));
+
+let packed = false;
+const failures = [];
+if (tarBin) {
+  try { packWithTar(tarBin); packed = true; } catch (error) { failures.push(error.message); console.warn("[warn] " + error.message); }
+}
+if (!packed && pyBin) {
+  try { packWithPython(pyBin); packed = true; } catch (error) { failures.push(error.message); console.warn("[warn] " + error.message); }
+}
+if (!packed) {
+  console.error("打包失败：bsdtar / python 都不可用或失败。\n  " + failures.join("\n  "));
   process.exit(1);
 }
-console.log((res.stdout || "").trim());
 
 const size = fs.statSync(outZip).size;
 console.log(`OK ${outZip}  ${(size / 1048576).toFixed(1)} MB`);

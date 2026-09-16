@@ -10,20 +10,28 @@
 
 ## 一、随包内置（离线可用）
 
+⚠️ **这些文件不在 git 里**（`resources/tools/*` 被 `.gitignore` 排除，大体积二进制）。构建前必须**现造**：
+Windows 用 `node scripts/prepare-windows-tools.cjs`、macOS 用 `node scripts/prepare-mac-tools.cjs`
+（CI 走同一条链，见 `.github/workflows/build-win.yml` / `build-mac.yml`）。脚本都支持
+`TOOLS_ROOT=<目录>` 覆盖落地位置（验收隔离用）。
+
+⛔ electron-builder 对 **缺失的 extraResources 源是静默跳过** —— 打包后必须
+`node scripts/verify-packaged-tools.cjs <产物 tools 目录>` 做真 MCP 握手验收，别只看打包成功。
+
 | 工具 | 路径（tools/ 下） | 典型用途 |
 |---|---|---|
-| Node.js + npm | `node/` | JS/TS 项目、npm 工具、引擎脚本 |
-| Python 3（含 Tkinter、requests/httpx/flask/fastapi/playwright） | `python/` | 数据处理、GUI、Python MCP |
-| Git | `git/` | diff/分支/提交/克隆 |
-| PowerShell 7 | `pwsh/`（`pwsh-headless/` 为无窗口桥） | 现代 shell 脚本 |
+| Node.js + npm | `node/` | JS/TS 项目、npm 工具、引擎脚本（也是安装器引导） |
+| PowerShell 7 无窗口桥 | `pwsh-headless/` | 转发给 `pwsh/`（完整 PowerShell 按需下载），不弹控制台窗口 |
 | VS Code CLI | `vscode-cli/` | `code` 命令打开文件/工作区 |
-| ripgrep | `rg/` | 极速代码搜索（Codex 主力） |
-| uv | `uv/` | Python 包/venv 管理 |
-| CMake | `cmake/` | C/C++ 构建生成器 |
-| Ninja | `ninja/` | 高速构建 |
-| 7-Zip | `sevenzip/` | 归档（注意：`7z.exe` 无 `7z.dll` 不能独立解压，解压请用内置 python） |
-| jq | `jq/` | JSON 查询 |
 | cloudflared | `cloudflared.exe` | Cloudflare Tunnel（远程接入） |
+| 桌面 / 浏览器自动化 | `npm-global/` | Nuphus MCP + Playwright CLI（见第二节 1） |
+| ponytail 插件源 | `ponytail-plugin/` | 写代码模式插件（首启自动种进引擎） |
+
+> **09-16 安装包瘦身**：Python 3 / Git / ripgrep / uv / CMake / Ninja / 7-Zip / jq / 完整 PowerShell
+> **都不再随包**（它们有国内镜像源），改由「开发工具」页按需下载（`scripts/install-runtimes.cjs`，
+> npmmirror/gh 加速优先、失败回落官方源）；Git 在 Windows 上缺时会**首次启动自动补装**。
+> Node 保留随包，因为安装器引导本身就依赖它。
+
 
 ## 二、按需安装的拓展工具
 
