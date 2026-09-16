@@ -17597,11 +17597,15 @@ const commandMatches = useMemo(() => {
                     // 用户要求：保存模型配置后重启整个应用（引擎 Key 全新注入，状态彻底归位）
                     if (!(await openAppConfirm("保存供应商", "保存后应用将自动重启使配置完全生效。\n是否继续？", "保存并重启应用"))) return;
                     try {
-                      await saveCustomModel();
+                      const saved = await saveCustomModel();
+                      // ⛔ saveCustomDraft 内部吞错（只写内联 notice），失败绝不能弹「已保存」+重启——
+                      // 否则校验失败（最常见：还没添加并勾选模型）也重启，用户重启后找不到新供应商（09-16 实测）。
+                      if (!saved) { showToast("保存失败，应用未重启", "最常见原因：「模型列表」为空。请先添加模型并勾选至少一个生效模型，再点保存"); return; }
                       showToast("已保存", "应用即将重启以完全生效……");
                       setTimeout(() => { void window.codex.relaunchApp(); }, 800);
                     } catch (error: any) {
                       setNotice(`保存失败：${error.message}`);
+                      showToast("保存失败，应用未重启", error.message);
                     }
                   })()}>{savingSettings ? <Spinner /> : <Check size={15} />}保存</button>
                 </div>

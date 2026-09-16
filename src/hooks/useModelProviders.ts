@@ -139,11 +139,13 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
   }, []);
 
   async function saveCustomModel() {
-    await saveCustomDraft();
+    return await saveCustomDraft();
   }
 
-  /** 保存：不传参用当前 customDraft；模型编辑器"一次保存直生效"场景传入合并后的完整草稿（规避 setState 异步读旧值） */
-  async function saveCustomDraft(override?: any) {
+  /** 保存：不传参用当前 customDraft；模型编辑器"一次保存直生效"场景传入合并后的完整草稿（规避 setState 异步读旧值）。
+   *  返回保存结果供调用方判断成败——⛔ 绝不能让调用方在失败时也走「已保存+重启」流程（09-16 实测：校验失败
+   *  也重启，错误提示随重启消失，用户重启后找不到新供应商）。 */
+  async function saveCustomDraft(override?: any): Promise<any | null> {
     setSavingSettings(true);
     try {
       const source = override ?? customDraft;
@@ -156,8 +158,10 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
       adoptSavedProvider(saved);
       onEngineApplied?.();
       onNotice(saved.enabled === false ? "供应商已保存（保持禁用）" : "自定义模型已保存，Codex 服务已重新加载");
+      return saved;
     } catch (error: any) {
       onNotice(error.message);
+      return null;
     } finally {
       setSavingSettings(false);
     }

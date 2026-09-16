@@ -155,6 +155,12 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **三连修复（09-16 用户实测）**：
+  ① **运行状态行上方整行留白**：真因是最后一个回合 `.turn-group` 的 `margin-bottom:32px` 紧贴 `.run-activity-bar` 叠出一行空白（上次修的 markdown 光标是**另一处**、位置找错了）。修法：`.timeline > .turn-group:has(+ .run-activity-bar) { margin-bottom:4px }`（`:has` 反向选中紧贴状态行的回合，空闲态间距不变）。离屏探针实测间距 32px → **2px**。
+  ② **「保存供应商」失败也重启**（新增供应商保存重启后找不到的直接原因）：`saveCustomDraft` 内部吞错只写内联 notice，而「保存」按钮**无论成败都弹「已保存」并 relaunch**——校验失败（最常见：模型列表为空，主进程抛「至少勾选一个生效模型」）也重启，错误提示随重启消失。修法：`saveCustomDraft`/`saveCustomModel` **返回保存结果**，按钮失败时弹「保存失败，应用未重启」toast、不重启；主进程错误文案改为「请先在『模型列表』添加并勾选至少一个生效模型，再保存」。⛔ 通用教训：**catch 吞错的持久化函数必须把成败返回给调用方**，「成功才允许重启」这类后续动作不能建立在"没抛异常"上。
+  ③ **档案清单防清空**：`custom-models.json` 曾被整份清空成 `[]`（伴随 relay 账号停用/删除操作，具体元凶未定）。`writeCustomModels` 现在写前备份上一版到 `custom-models.json.bak`（幂等，空/`[]` 不覆盖），任何清空都可手工回滚。
+  另：用户机器上被清空的 5 条供应商档案已从 `config.toml` 的 `[model_providers.*]` 段重建（全部 `enabled:false`、`models:[]`，模型需重新勾选；引擎侧 base_url/env_key/统一通道未受影响）。
+
 - **正文流式光标「占一整行」留白修复（09-16 用户截图实测）**：
   **现象**：助手回复最后一段与下方「正在深度思考 · …」运行状态行之间有一条空行留白。
   **真因**：`ProgressiveAgentBody` 把流式光标写成 `.message-body.markdown` 的**平级兄弟** `<span class="packet-stream-cursor">`；markdown 末块是**块级 `<p>`**，兄弟 span 被挤到下一行独占一个行盒（14px），且因 span 成为 box 内最后一个元素，`.message-body > p:last-child{margin-bottom:0}` **失效**、段落还留着 8px 底边距 —— 实测尾部死空间合计 **32.08px**。
