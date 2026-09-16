@@ -17729,12 +17729,12 @@ const commandMatches = useMemo(() => {
                 )}
                 <p className="provider-id-line">供应商 ID：{customDraft.provider}</p>
                 <label className="provider-field"><span>Base URL</span><input value={customDraft.baseUrl} onChange={(event) => setCustomDraft({ ...customDraft, baseUrl: event.target.value })} placeholder="https://example.com/v1" /></label>
-                {/* ⛔ 不再提供「API 格式」下拉（09-16）：引擎已移除 Chat Completions 支持，
-                    写 wire_api = "chat" 会让整份 config.toml 拒载、所有请求失败（真实引擎探针
-                    实证：`wire_api = "chat"` is no longer supported）。原先的下拉给出一个
-                    永远无法生效的选项，用户选了「Chat Completions」保存时又被静默改回
-                    Responses —— 表现为「协议总是自己跳回 re 开头」。这里改为如实说明。 */}
-                <p className="provider-form-hint">API 格式固定为 <b>Responses（/responses）</b>：引擎已移除 Chat Completions 支持，配置里写 <code>wire_api = "chat"</code> 会导致整份配置加载失败、所有请求报错，因此不再提供协议选择。</p>
+                {/* ⛔ 不提供「API 格式」下拉（09-16）：引擎只会发 Responses，写 wire_api = "chat"
+                    会让整份 config.toml 拒载、所有请求失败（真实引擎实证：`wire_api = "chat"` is no
+                    longer supported）。协议改由**本地协议桥**自动适配（electron/responses-bridge.ts）：
+                    引擎照常按 Responses 调用，桥按上游实际能力透传或转成 Chat Completions，
+                    用户不再需要理解、也无法选错。 */}
+                <p className="provider-form-hint">协议自动适配，无需选择：引擎按 <b>Responses（/responses）</b> 请求；若该网关只提供 <b>Chat Completions</b>，本机协议桥会自动双向转换（流式、工具调用、思考过程一并保留），照常可用。</p>
                 <label className="provider-field"><span>API Key</span>
                   <span className="key-input">
                     <input type={showApiKey ? "text" : "password"} value={customDraft.apiKey} onChange={(event) => setCustomDraft({ ...customDraft, apiKey: event.target.value })} placeholder={customModel?.hasKey ? "已安全保存，留空则不修改" : "可留空用于本地服务"} />

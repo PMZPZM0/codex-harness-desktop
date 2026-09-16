@@ -428,6 +428,8 @@ interface Window {
     deleteCommand(filePath: string): Promise<{ ok: boolean }>;
     expandCommand(input: { filePath: string; argument?: string; cwd?: string }): Promise<{ text: string }>;
     getCustomModel(): Promise<CustomModelState | null>;
+    /** 本地协议桥状态：引擎只发 Responses，上游只支持 Chat 时由桥转换（port/running/各 provider 实际协议） */
+    bridgeStatus(): Promise<{ running: boolean; port: number; targets: number; requests: number; converted: number; forwarded: number; failures: number; modes: Record<string, "responses" | "chat"> }>;
     probeCustomModel(config: unknown): Promise<{ status: number; latencyMs: number; models: string[]; model?: string; ok?: boolean; via?: "models" | "stream" | "builtin" | "official" | "official-fallback"; wireUsed?: "responses" | "chat" }>;
     readModelSpecs(): Promise<unknown[] | null>;
     saveCustomModel(config: unknown): Promise<CustomModelState>;
