@@ -128,7 +128,7 @@
 - **会话记录完整性（09-16 校正口径）**：历史记录文件（rollout）丢失的会话，引擎会把整条线程**从列表里隐藏**——实测「跑过一回合的会话删掉 rollout 后，`thread/list` 不再返回它、按 id `thread/resume` 报 `no rollout found`」，所以用户看到的是**会话静默消失**（旧文档写成「侧栏可见但点开报错」不准确）。harness 侧补齐了两件事：**历史会话的 provider 别名段改以引擎线程索引（`thread/list` 的 `modelProvider`）为权威源**（含归档会话、不解析文件内容，旧实现只扫 `sessions/` 首行且文件一坏就静默返回空集），以及**防御性的 `rolloutMissing` 标记**（若某版引擎仍返回带 `path` 的条目，侧栏会显示「记录丢失」徽标并拦下点击，而不是点开才吃引擎原始报错）
 - **归档管理**：会话归档集中管理，恢复/永久删除，恢复后内容完整可直接续聊
 - **账户中心**：头像昵称、使用统计一站式菜单；界面主题为一级菜单项，内置浅色/深色两个并排按钮一键切换，语言/缩放菜单项直达
-- **应用内自更新**：GitHub Releases 单源（09-15 起），检查/下载/安装一体化；发版由 **tag 触发 GitHub Actions** 构建三端包并发布（见「发版」一节）
+- **应用内自更新**：GitHub Releases 单源（09-15 起），检查/下载/安装一体化；发版由 **tag 触发 GitHub Actions** 构建三端包并发布（见「发版」一节）。下载器会跟随 GitHub 资产的 **302 重定向**（`release-assets.githubusercontent.com`）并逐跳校验 https
 
 <p align="center">
   <img src="docs/screenshots/main-dark.png" width="410" alt="深色主题" />

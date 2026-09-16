@@ -141,51 +141,77 @@ export async function downloadUpdate(
   onProgress?: DownloadProgress,
   expectedSha256?: string,
 ): Promise<{ path: string; bytes: number }> {
-  const parsed = new URL(releaseUrl);
-  // ⛔ 只允许 https（09-13 审计 P0）：这条链的产物会被 `shell.openPath` 当安装包执行，
-  // 明文 http 给中间的代理/DNS/公共 Wi-Fi 留了一个"把安装包换掉"的窗口。
-  if (parsed.protocol !== "https:") throw new Error(`更新包地址必须是 https（收到 ${parsed.protocol}）`);
-  const lib = https;
-  await fs.mkdir(path.dirname(destPath), { recursive: true });
-  const result = await new Promise<{ path: string; bytes: number }>((resolve, reject) => {
-    const req = lib.request(
-      {
-        method: "GET",
-        hostname: parsed.hostname,
-        port: parsed.port || (parsed.protocol === "https:" ? 443 : 80),
-        path: parsed.pathname + parsed.search,
-        headers: { "User-Agent": "CodexHarness/0.1" },
-      },
-      (res) => {
-        const status = res.statusCode ?? 0;
-        if (status < 200 || status >= 300) {
-          res.resume();
-          reject(new Error(`HTTP ${status}`));
-          return;
-        }
-        const total = parseInt(String(res.headers["content-length"] ?? "0"), 10) || 0;
-        const out = createWriteStream(destPath);
-        let received = 0;
-        res.on("data", (chunk: Buffer) => {
-          received += chunk.length;
-          if (onProgress) {
-            onProgress({
-              receivedBytes: received,
-              totalBytes: total,
-              percent: total ? received / total : 0,
-            });
+  // ⛔ 09-16 实测：GitHub 的 `browser_download_url` **不是**资源本身，而是 302 到
+  //    `release-assets.githubusercontent.com`（带签名的临时地址）。这里过去是裸 https.request +
+  //    `status >= 300 就 reject`，**不跟随重定向** ⇒ 用户点「下载并安装」直接报 `HTTP 302`。
+  //    这个坑直到 v0.0.18 才暴露：09-15 才把更新源切成 GitHub 单源，而当时仓库 0 个 release，
+  //    检查更新拿不到东西，从来没走到过下载这一步。现在跟随最多 5 跳。
+  const MAX_REDIRECTS = 5;
+  const hop = async (url: string, depth: number): Promise<{ path: string; bytes: number }> => {
+    const parsed = new URL(url);
+    // ⛔ 只允许 https（09-13 审计 P0）：这条链的产物会被 `shell.openPath` 当安装包执行，
+    // 明文 http 给中间的代理/DNS/公共 Wi-Fi 留了一个"把安装包换掉"的窗口。
+    // 重定向的每一跳都要重新校验，防止从 https 掉到 http。
+    if (parsed.protocol !== "https:") throw new Error(`更新包地址必须是 https（收到 ${parsed.protocol}）`);
+    return await new Promise<{ path: string; bytes: number }>((resolve, reject) => {
+      const req = https.request(
+        {
+          method: "GET",
+          hostname: parsed.hostname,
+          port: parsed.port || 443,
+          path: parsed.pathname + parsed.search,
+          headers: { "User-Agent": "CodexHarness/0.1" },
+        },
+        (res) => {
+          const status = res.statusCode ?? 0;
+          // 重定向：跟随（GitHub → release-assets.githubusercontent.com）
+          if (status >= 300 && status < 400 && res.headers.location) {
+            res.resume();
+            if (depth >= MAX_REDIRECTS) {
+              reject(new Error(`更新包地址重定向次数过多（>${MAX_REDIRECTS}）`));
+              return;
+            }
+            let next: string;
+            try {
+              next = new URL(res.headers.location, url).toString();
+            } catch {
+              reject(new Error(`更新包地址重定向目标非法：${String(res.headers.location).slice(0, 120)}`));
+              return;
+            }
+            hop(next, depth + 1).then(resolve, reject);
+            return;
           }
-        });
-        res.pipe(out);
-        out.on("finish", () => {
-          out.close(() => resolve({ path: destPath, bytes: received }));
-        });
-        out.on("error", reject);
-      }
-    );
-    req.on("error", reject);
-    req.end();
-  });
+          if (status < 200 || status >= 300) {
+            res.resume();
+            reject(new Error(`HTTP ${status}`));
+            return;
+          }
+          const total = parseInt(String(res.headers["content-length"] ?? "0"), 10) || 0;
+          const out = createWriteStream(destPath);
+          let received = 0;
+          res.on("data", (chunk: Buffer) => {
+            received += chunk.length;
+            if (onProgress) {
+              onProgress({
+                receivedBytes: received,
+                totalBytes: total,
+                percent: total ? received / total : 0,
+              });
+            }
+          });
+          res.pipe(out);
+          out.on("finish", () => {
+            out.close(() => resolve({ path: destPath, bytes: received }));
+          });
+          out.on("error", reject);
+        }
+      );
+      req.on("error", reject);
+      req.end();
+    });
+  };
+  await fs.mkdir(path.dirname(destPath), { recursive: true });
+  const result = await hop(releaseUrl, 0);
 
   // ⛔ 完整性校验（09-13 审计 P0）：`sha256` 字段以前从下发到使用**全链路没人比对** ——
   // 下载 → `shell.openPath()` 直接执行，等于"发布站被换掉就静默装上攻击者的包"。

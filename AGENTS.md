@@ -64,7 +64,18 @@ npm run verify     # 等价于 npm run check && npm run e2e
    还在、删主会话后成员成孤儿、统一 id 后 config 出现重复段。修 bug 时同样要问：
    **同类场景还有哪些没覆盖？旧的引用还在不在？清理动作要不要级联？**
 
-**为什么验收跑在持久 profile 上（09-12 用户定，别再改回临时目录）**：临时 profile 每轮都是白纸 —— 侧栏零会话，「切会话重播 / 首轮不出字 / 会话一多互相拖慢」这类问题**只在有历史时才现形**，空目录里测等于没测（用户原话：「为啥你每次拉起来的应用都没有历史记录，那测试有什么意义呢」）。现在首次建 profile 时会把**真实 profile 的会话历史**（`codex-home/sessions/**`）搬进来，之后一轮轮叠加；断言「本轮数据」时用 `h._rolloutFiles({ since: h.launchedAt })`，别让历史文件把断言顶成假绿。profile 在 `.e2e-profile/<name>/`（已 gitignore，含真实对话内容与 Key 密文，**绝不入库**）；想重来就删目录，想重灌真实配置/历史用 `CODEX_HARNESS_RESEED=1`。
+11. **⛔ 探针方法论（09-16 发版当天踩出来的三条，省下的是错误结论而不只是时间）**：
+   - **Node 的 `https.request` 不读 `HTTP(S)_PROXY` 环境变量**（只有 `curl` 之类会读）。所以「清掉代理变量
+     再直连」对 Node 探针**等于没清**，而直连 GitHub 在国内时通时不通 ⇒ 同一脚本这次 533KB、下次 0 字节，
+     判据随机。**凡是测网络行为的断言，要么用本地 mock，要么走 curl。**
+   - **外网不可当判据**：`downloadUpdate` 那类「跟随重定向」的行为，用真 GitHub 验证会被 ECONNRESET /
+     0 字节干扰（还容易被误读成代码有问题）。**正解 = 本地 HTTPS mock**：openssl 自签证书（`-subj /CN=127.0.0.1`
+     且 `-addext subjectAltName=IP:127.0.0.1`，否则 Node 不认）× `https.createServer` 一个
+     `/redirect → 302 → /payload → 200`，进程内 `NODE_TLS_REJECT_UNAUTHORIZED=0` 放行自签。
+     确定性判据 = **下载字节数 + 载荷 sha256 与源一致**；反证 = 摘掉重定向分支 → 必然报 `HTTP 302`。
+   - **`(cond ? ok : fail)("消息")` 不能写成 `cond ? ok : fail("消息")`**：后者在 `cond` 为真时**根本不调用 `ok`**，
+     于是该断言**一行都不打印、静默漏检**（我这两条新守卫第一版就是这样，预检 526 条"全绿"却查不到它们）。
+     写完新守卫先确认**它在输出里出现了**。：临时 profile 每轮都是白纸 —— 侧栏零会话，「切会话重播 / 首轮不出字 / 会话一多互相拖慢」这类问题**只在有历史时才现形**，空目录里测等于没测（用户原话：「为啥你每次拉起来的应用都没有历史记录，那测试有什么意义呢」）。现在首次建 profile 时会把**真实 profile 的会话历史**（`codex-home/sessions/**`）搬进来，之后一轮轮叠加；断言「本轮数据」时用 `h._rolloutFiles({ since: h.launchedAt })`，别让历史文件把断言顶成假绿。profile 在 `.e2e-profile/<name>/`（已 gitignore，含真实对话内容与 Key 密文，**绝不入库**）；想重来就删目录，想重灌真实配置/历史用 `CODEX_HARNESS_RESEED=1`。
 
 GUI 起不来时，最低限度跑 `check`（离线可用），并在提交信息里写明 `accept` 未跑的原因。手册见 `docs/TESTING.md`。
 
@@ -158,6 +169,18 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 - **指纹内核（cloak-browsers）仅用于自动化场景**（模型经 `cloakbrowser` CLI 调用）；浏览器视图的「隐身浏览」按钮为预留位，尚未接入 CDP 嵌入。
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
+
+- **⛔ 应用内下载必须跟随重定向（09-16 发 v0.0.18 当天实测，属 09-15 换 GitHub 单源时埋下的坑）**：
+  GitHub Release 的 `browser_download_url` **不是文件本身，而是 302**（跳到 `release-assets.githubusercontent.com`
+  的签名地址，实测第一跳就是这个）。`electron/updates.ts` 的 `downloadUpdate` 过去是裸 `https.request`
+  + `status >= 300 reject` ⇒ **用户点「下载并安装」直接报 HTTP 302，更新走不完**。
+  为什么一直没暴露：09-15 才收敛成 GitHub 单源，而当时仓库**0 个 Release**，`checkLatestUpdate` 拿不到东西，
+  从没走到下载这步；v0.0.18 是首个 Release 才第一次踩到 ⇒ **已发 0.0.19 修**（不删 0.0.18：它的
+  `download_count` 已非 0，删了会让已装用户拿不到新版）。
+  修法：`hop(url, depth)` 递归跟随（≤5 跳，`new URL(location, url)` 解析相对跳），**每一跳重新校验 https**
+  （防止降级到明文——安装包下载完会被 `shell.openPath` 直接执行）+ 原有 sha256 完整性校验不变。
+  守卫：预检⑥组两条（锚定真实分支与 `hop(next, depth+1)` 调用，不是查标识符存在），
+  **验收方式 = 本地 HTTPS mock 302 → 200**（见下方「探针方法论坑」）。
 
 - **发版链路搬到 GitHub Actions：推 tag = 发布（09-16，用户「用 GitHub ssh 发布，版本号 0.0.18，Windows mac 双芯片，只在 GitHub 上发布」）**：
   - **前提（决定整条设计）**：本机远端是 SSH（deploy key `~/.ssh/codex_gh_release`，`ssh -T` 能认证），而 **SSH 只能推代码/标签**——既不能创建 Release 也不能上传资产；本机也没有 `gh` CLI、没有任何 API token（`scripts/gh-api.cjs` 那套「从 `remote.origin.url` 抠内嵌 token」的旧流程因此整体失效）。⇒「用 SSH 发版」的唯一可行形态 = **推 tag → Actions 用仓库自带 GITHUB_TOKEN 构建三端包并发布**。
