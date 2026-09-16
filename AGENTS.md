@@ -155,6 +155,14 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **本地协议桥：chat-only 网关可以直接用了（09-16，用户拍板「加代理功能，换别的电脑也要能用」）**：
+  引擎只会发 Responses（POST /v1/responses），而火山 coding / Kimi Coding 等网关只有 /v1/chat/completions——过去这类网关「连接测试通过、对话全废」。新增 `electron/responses-bridge.ts`：主进程内监听 `127.0.0.1:47121`（被占退回随机端口），引擎照常按 Responses 调用，桥按上游实际能力**透传（支持 responses 时零转换）或双向转换成 Chat Completions**（流式文本 / 工具调用分片 / usage 映射 / reasoning_content→summary 事件，推理内容已实证会落进 rollout）。凭据由引擎带入 `Authorization` 原样透传，桥不留存任何密钥 → **换电脑只需重填一次 Key，行为与设备无关**；代码随主进程编译进 dist-electron，无外部依赖、无安装步骤。
+  - **接线（全部单点/兜底）**：`applyCustomModel` 的 `activeBaseUrl` 走 `bridgeDial`（provider/别名/harness 三段共用）；`codex:request` 入口 `bridgeRewriteProviderConfig` 统一改写渲染层自带的内联 config；桥未启动自动降级直连（行为同旧版）。
+  - **auto 模式**：上游对 /responses 回 404/405/501 时自动切 chat 并缓存结论；引擎对探测 404 **无感知**（桥不把探测响应写回）。
+  - **实证**：`scripts/probe-responses-contract.cjs`（录引擎真实请求：路径/头/工具扁平形状/input 元素）+ `scripts/probe-bridge.cjs`（mock chat-only 网关 + 真实 app-server 端到端：文本、工具往返 tool_call_id 对回、推理无解析错、auto 路由，两种模式 PASS）。
+  - **防回归**：预检【24】26 条断言（接线 10 条 + 跑编译产物真实转换 16 条），已逐条合成反证（19 个变异全部可红）；真机验收（accept --only bridge-live，验完已删）8/8：桥 running、引擎 config.toml 7 段 base_url 全指向桥、端口真实监听、设置页新文案可见。
+  - UI：设置页不再有协议下拉，改为「协议自动适配」说明；「测试连接」对 chat-only 网关改为成功提示（仅桥未运行时才警告）。
+
 - **API 协议选择被静默改写（09-16 用户实测：「协议保存的时候总是自动跳转到 re 开头的协议，我选的是 CH 开头协议」）**：
   **先立实证**：`scripts/probe-wire-api.cjs`（独立 CODEX_HOME + 真实 app-server + mock 模型 API）跑两组对照——`wire_api = "responses"` 时 initialize/turn 全通、上游收到 `POST /v1/responses`；`wire_api = "chat"` 时 **initialize 能过但 `turn/start` 必报** `` `wire_api = "chat"` is no longer supported. How to fix: set `wire_api = "responses"` `` → 之后每个请求都失败（等同应用全瘫）。**结论：chat 是引擎侧硬拒载，不是我们没实现。**
   **真问题不是归一化，是它改得太安静 + UI 提供了永远无法生效的选项**：设置页「API 格式」下拉给了 Responses/Chat 两项，用户选 Chat → 保存时 `normalizeProvider` 把它改回 responses → 界面跳回，用户只看到「协议自己跳走了」。且探测侧还在推波助澜：`KNOWN_GATEWAY_MODELS` 把火山方舟（`volces.com`，用户唯一供应商）标成 `wire:"chat"`，`probeProvider` 又把 `wireUsed` **回写**进草稿 → 出现「探测说 chat、保存变 responses」的自相矛盾。

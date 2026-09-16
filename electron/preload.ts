@@ -180,6 +180,8 @@ contextBridge.exposeInMainWorld("codex", {
   deleteCommand: (filePath: string) => ipcRenderer.invoke("commands:delete", filePath),
   expandCommand: (input: { filePath: string; argument?: string; cwd?: string }) => ipcRenderer.invoke("commands:expand", input),
   getCustomModel: () => ipcRenderer.invoke("custom-model:read"),
+  // 协议桥状态：引擎只发 Responses，若上游只支持 Chat Completions 则由桥本地转换（详见 electron/responses-bridge.ts）
+  bridgeStatus: () => ipcRenderer.invoke("bridge:status"),
   probeCustomModel: (config: unknown) => ipcRenderer.invoke("custom-model:probe", config),
   readModelSpecs: () => ipcRenderer.invoke("model-specs:read"),
   saveCustomModel: (config: unknown) => ipcRenderer.invoke("custom-model:save", config),

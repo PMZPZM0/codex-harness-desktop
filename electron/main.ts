@@ -11,6 +11,7 @@ import { pathToFileURL } from "node:url";
 import { ChannelBotService, type ChannelBotConfig } from "./channel-bot";
 import { BotStreamSession, readBotStreamSettings, readBotStreamSettingsSync, writeBotStreamSettings, type BotStreamSink, type BotStreamSettings } from "./bot-stream";
 import { CodexServer, codexBinaryPath } from "./codex-server";
+import { ResponsesBridge } from "./responses-bridge";
 import { BotPairingService } from "./bot-pairing";
 import { collectMcpServerNames, extractMcpSection, preserveUserConfig } from "./config-toml";
 import { applyRoundedCorners } from "./win-rounded-corners";
@@ -352,6 +353,48 @@ function placeholderPngResponse(): Response {
   });
 }
 const server = new CodexServer(codexHome);
+/**
+ * 本地协议桥（09-16）：引擎只会发 Responses（POST /v1/responses），而不少第三方网关
+ * 只提供 /v1/chat/completions —— 这类网关过去「连接测试通过、实际对话全废」。
+ * 桥让引擎照常按 Responses 调用它，由它按上游**实际能力**转发：支持 responses 就原样透传，
+ * 只支持 chat 就把请求体/流双向转换（详见 electron/responses-bridge.ts，契约来自真实引擎实证）。
+ *
+ * 端口固定 47121（与内置调度 MCP 47120 同族）以便跨运行稳定；被占用则退回随机端口。
+ * 桥只在主进程内监听 127.0.0.1，没有外部依赖、不留存密钥（凭据由引擎带、桥原样透传）
+ * —— 所以换电脑只需重填一次 Key，行为与设备无关。
+ */
+const responsesBridge = new ResponsesBridge({ preferredPort: 47121, log: (line) => console.log(line) });
+
+/**
+ * 生成「下发给引擎」的 base_url：桥已启动时换成桥地址并登记上游目标；
+ * 桥未启动（启动失败等）时原样返回 → 直连，行为与旧版本完全一致（降级安全）。
+ */
+function bridgeDial(id: string, upstreamBaseUrl: string | undefined): string | undefined {
+  if (!upstreamBaseUrl) return upstreamBaseUrl;
+  const dialed = responsesBridge.urlFor(id);
+  if (!dialed) return upstreamBaseUrl;
+  responsesBridge.register(id, { baseUrl: upstreamBaseUrl, mode: "auto", label: id });
+  return dialed;
+}
+
+/**
+ * 兜底收口：把 «任意来源» 的内联 provider 配置改成走桥。
+ *
+ * 渲染层有若干处会自带 config（会话接力、导入会话、会话内切模型…），里面的 base_url 是真实上游
+ * 地址；将来新增下发点也未必想到桥。所以在 codex:request 这一个入口处统一改写 —— 判据是
+ * 「params.config.model_providers 里出现了 base_url」，与具体方法名无关，覆盖所有线程生命周期调用。
+ * 桥未启动时 bridgeDial 原样返回，等于不改（直连）。
+ */
+function bridgeRewriteProviderConfig(params: any) {
+  const providers = params?.config?.model_providers;
+  if (!providers || typeof providers !== "object") return;
+  for (const [id, entry] of Object.entries<any>(providers)) {
+    if (entry && typeof entry.base_url === "string" && entry.base_url) {
+      entry.base_url = bridgeDial(id, entry.base_url) ?? entry.base_url;
+    }
+  }
+}
+
 const engineActiveTurnIds = new Set<string>();
 /** 关窗确认只问一次（用户点过「仍然关闭」后不再拦）。 */
 let closeConfirmed = false;
@@ -1448,7 +1491,10 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
   // 正确形态：所有 id（含已删除供应商的历史 id）一律指向**当前生效供应商的地址与协议**，
   // 名字保留用于展示/兼容引用。这样任何历史会话都必然走当前供应商，切换后原会话直接可用。
   const activeNormalized = normalizeProvider(entry);
-  const activeBaseUrl = activeNormalized.baseUrl;
+  // 下发地址统一走本地协议桥（见 responsesBridge 定义处）：非官方模式下**所有** provider 段、
+  // 历史别名段、统一 harness 段都共用这一个地址，所以这里是全链路的单点接入——只此一处，
+  // 别再在下游分散判断。桥未启动时 bridgeDial 原样返回 → 直连（旧行为）。
+  const activeBaseUrl = bridgeDial(activeNormalized.provider, activeNormalized.baseUrl) ?? activeNormalized.baseUrl;
   // ⛔ 恒为 responses：新版引擎对 `wire_api = "chat"` 是**硬拒载**（整份 config.toml 加载失败
   // → 应用所有 codex:request 全部报错，09-14 用户实测截图）。历史上这里会透传用户档案里的
   // chat（旧版本可写入），一旦档案里有 chat 就写坏配置把应用打死。
@@ -2320,6 +2366,15 @@ app.on("second-instance", () => {
 
 app.whenReady().then(async () => {
   await fs.mkdir(codexHome, { recursive: true });
+  // ⛔ 协议桥必须赶在**任何 config.toml 写入之前**起来：写配置时 base_url 要换成桥地址，
+  //    桥没起来就只能直连（chat-only 网关由此不可用）。启动失败不致命：bridgeDial 自动降级直连，
+  //    与旧版本行为一致；同样必须包 try/catch —— 裸 await 抛出会掐死整条启动链（界面能开、引擎不 spawn）。
+  try {
+    const bridgePort = await responsesBridge.start();
+    console.log(`[bridge] 本地协议桥监听 http://127.0.0.1:${bridgePort}（引擎按 Responses 调用，桥上按上游实际协议转发）`);
+  } catch (error) {
+    console.warn("[bridge] 启动失败，本次运行直连上游：", error);
+  }
   // 专家技能市场（cheat-on-content / ppt-master）原位注册，零拷贝——见 ensureExpertSkillsMarketplace
   await ensureExpertSkillsMarketplace(codexHome);
   await ensureBuiltinSkills(userSkillsDir);
@@ -3108,6 +3163,9 @@ ipcMain.handle("ponytail:mode:set", async (_event, mode: string) => { await setP
 ipcMain.handle("codex:request", async (_event, method: string, params: unknown) => {
   let result: unknown;
   const __reqT0 = performance.now();
+  // 协议桥兜底收口（09-16）：渲染层自带的内联 provider 配置在这里统一换成桥地址，
+  // 保证「引擎发出的每个请求都经过桥」，不依赖各下发点自觉（见 bridgeRewriteProviderConfig）。
+  bridgeRewriteProviderConfig(params);
   try {
     result = await server.request(method, params);
   } catch (error: any) {
@@ -3140,7 +3198,7 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
       // savedWire / 生效供应商的 chat 透传进 config.toml —— 而 active 来自 readCustomModel()，
       // 那个函数**不经过 normalizeProvider**，档案里一旦有 chat 残留就会把应用写死。别名段
       // 的唯一合法值就是 responses。
-      await fs.appendFile(path.join(codexHome, "config.toml"), `\n[model_providers.${alias}]\nname = "${alias}"\nbase_url = "${active.baseUrl}"\nenv_key = "CODEX_HARNESS_API_KEY"\nwire_api = "responses"\n`);
+      await fs.appendFile(path.join(codexHome, "config.toml"), `\n[model_providers.${alias}]\nname = "${alias}"\nbase_url = "${bridgeDial(alias, active.baseUrl)}"\nenv_key = "CODEX_HARNESS_API_KEY"\nwire_api = "responses"\n`);
       await server.restart();
       result = await server.request(method, params);
     }
@@ -5915,7 +5973,7 @@ ipcMain.handle("threads:import-conversation", async (_event, input?: { cwd?: str
     sandbox: input?.sandbox || "workspace-write",
     modelProvider: provider,
     personality: input?.personality || null,
-    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
   });
   const threadName = `导入：${parsed.title || path.basename(filePath, path.extname(filePath))}`.slice(0, 80);
   try { await server.request("thread/name/set", { threadId: started.thread.id, name: threadName }); } catch { /* 命名失败不阻塞进入会话 */ }
@@ -6129,7 +6187,7 @@ async function distillSummarize(prompt: string, body: string): Promise<string> {
     sandbox: "read-only",
     modelProvider: provider,
     config: model?.baseUrl
-      ? { model_provider: provider, model_providers: { [provider]: { name: model?.name ?? provider, base_url: model.baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } }
+      ? { model_provider: provider, model_providers: { [provider]: { name: model?.name ?? provider, base_url: bridgeDial(provider, model.baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } }
       : undefined,
   });
   const threadId = started.thread.id;
@@ -6170,7 +6228,7 @@ ipcMain.handle("subagents:invoke", async (_event, input: { id?: string; name?: s
     approvalPolicy: agent.inheritApproval ? (input.approvalPolicy ?? "never") : agent.approvalPolicy,
     sandbox: agent.inheritSandbox ? (input.sandbox ?? "workspace-write") : agent.sandbox,
     modelProvider: provider,
-    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
   });
   const systemPrefix = `[子智能体 ${agent.name}] ${agent.systemPrompt}\n\n`;
   // 09-14：同样包 SYSTEM TASK 壳（子智能体会话首条气泡也不再裸露角色提示词）
@@ -6257,7 +6315,7 @@ ipcMain.handle("teams:start-session", async (_event, input: { teamId: string; ta
     sandbox: input.sandbox || "workspace-write",
     modelProvider: provider,
     personality: input.personality || null,
-    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
     dynamicTools: [teamTool, teamPhaseTool],
   });
   // 线程 → 团队映射落主进程并持久化：任何窗口（含 popout）据此才知道这个会话属于哪个团
@@ -6307,7 +6365,7 @@ ipcMain.handle("teams:member-session", async (_event, input: { teamId: string; m
     sandbox: member.sandbox || input.sandbox || "workspace-write",
     modelProvider: provider,
     personality: input.personality || null,
-    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
   });
   const systemPrefix = `[专家团「${team.displayName.zh}」${isLead ? "主理人" : "成员"} ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`;
   teamRunStore.setThreadTeam(started.thread.id, team.teamId);
@@ -6367,7 +6425,7 @@ ipcMain.handle("teams:invoke-member", async (_event, input: { teamId: string; me
       approvalPolicy: member.approvalPolicy || input.approvalPolicy || "never",
       sandbox: member.sandbox || input.sandbox || "workspace-write",
       modelProvider: provider,
-      config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+      config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
     });
     memberThreadId = String(started.thread.id);
     // ② 成员线程标题：`团名·角色`。不设名字时引擎拿首条用户消息（角色提示词全文）当标题，
@@ -6746,7 +6804,7 @@ async function runDelegatedTask(input: {
     approvalPolicy: input.approvalPolicy || "never",
     sandbox: input.sandbox || "workspace-write",
     modelProvider: provider,
-    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name: providerName, base_url: baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name: providerName, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
     ...(teamTools.length ? { dynamicTools: teamTools } : {}),
   });
   const threadId = String(started?.thread?.id ?? "");
@@ -7090,6 +7148,11 @@ ipcMain.handle("custom-model:save", async (_event, input: { provider: string; na
   broadcastProviderActivated(provider);
   return publicCustomModel(saved);
 });
+// 协议桥状态：设置页展示「引擎的请求实际怎么走」（直通 / 转换），也是排查 chat-only 网关的依据。
+ipcMain.handle("bridge:status", async () => ({
+  ...responsesBridge.status(),
+  modes: responsesBridge.modesSnapshot(),
+}));
 ipcMain.handle("custom-model:list", async () => {
   const list = await readCustomModels();
   const current = await readCustomModel();

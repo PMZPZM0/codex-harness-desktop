@@ -225,10 +225,19 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
       }
       const viaNote = result.via === "official" ? "（已从 OpenAI 官方目录获取最新清单）" : result.via === "official-fallback" ? "（官方目录获取失败，当前为内置兜底清单）" : result.via === "builtin" ? "（该网关不提供列表接口，已加载内置推荐清单，可手动增删）" : result.via === "stream" ? "（网关未提供 /models，已实测模型连通）" : "";
       if (chatOnly) {
-        // 抢眼提示：默认的「连接成功」文案会掩盖「引擎用不了它」这个致命事实
-        const warning = "该网关只支持 Chat Completions，而引擎仅支持 Responses 协议——连接测试虽然通过，实际对话无法使用，请换用兼容 Responses 的网关";
-        setProviderStatus(`⚠️ ${warning}`);
-        onProbeSuccess?.("协议不兼容，无法用于对话", `${customDraft.name || customDraft.provider} · ${warning}`);
+        // 09-16 起 chat-only 网关**不再是死路**：本机协议桥（electron/responses-bridge.ts）会
+        // 把引擎的 Responses 请求双向转成 Chat Completions。唯一还不可用的情形是桥没起来
+        // （启动失败会降级直连）——那时候必须如实警告，不能让用户配完才发现不能用。
+        const bridge = await window.codex.bridgeStatus().catch(() => null);
+        if (bridge?.running) {
+          const note = "该网关只支持 Chat Completions（引擎只发 Responses）——已由本机协议桥自动转换，可正常对话，流式输出 / 工具调用 / 思考过程均保留";
+          setProviderStatus(`✓ ${note}`);
+          onProbeSuccess?.("连接成功（协议已自动适配）", `${customDraft.name || customDraft.provider} · ${note}`);
+        } else {
+          const warning = "该网关只支持 Chat Completions，而本机协议桥未运行（引擎只发 Responses），实际对话将失败——请重启应用以启用协议桥";
+          setProviderStatus(`⚠️ ${warning}`);
+          onProbeSuccess?.("协议桥未运行，暂时无法对话", `${customDraft.name || customDraft.provider} · ${warning}`);
+        }
       } else {
         setProviderStatus(mode === "test" ? `连接成功 · HTTP ${result.status} · ${result.latencyMs} ms · ${result.models.length} 个模型` : `已获取 ${result.models.length} 个模型${viaNote}，勾选要生效的模型后保存`);
         // 成功弹 toast 醒目提醒（状态行小字保留作留痕）

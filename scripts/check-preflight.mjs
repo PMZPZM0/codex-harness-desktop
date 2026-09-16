@@ -11,6 +11,7 @@
 
 import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../src/lib/model-scope.mjs";
 import { ALIGN_RESULT, CONTINUITY_TEXT, shouldAlignProvider } from "../src/lib/provider-continuity.mjs";
 import { SESSION_SCOPE_HEADING, composeScopeInstructions, sessionScopeBlock, sessionScopeSignature, stripScopeBlock } from "../src/lib/session-scope.mjs";
@@ -2515,6 +2516,92 @@ console.log(C.bold("\n【23】API 协议：引擎只支持 Responses，chat 不�
   (mainTs.includes('wireApi: "responses" }') ? ok : fail)("main.ts normalizeProvider 仍在读入侧归一化 chat（保命逻辑，别删）");
   (mainTs.includes('const activeWireApi = "responses"') ? ok : fail)("main.ts applyCustomModel 生成的 provider 段恒为 responses");
   (hookTs.includes('wireApi: "responses" }') ? ok : fail)("保存路径显式归一 wireApi（草稿里的历史 chat 写不进配置）");
+}
+
+// ---------- 【24】协议桥（09-16）：chat-only 网关必须能真正用起来 ----------
+
+console.log(C.bold("\n【24】协议桥：引擎只发 Responses，chat-only 网关由本地桥转换接入"));
+
+{
+  // 背景：引擎只会 POST /responses；只提供 /v1/chat/completions 的网关（火山 coding、Kimi Coding 等）
+  // 过去「连接测试通过、对话全废」。桥上按上游实际能力转发/转换（双向转换契约来自真实引擎实证：
+  // scripts/probe-responses-contract.cjs 录契约、scripts/probe-bridge.cjs 跑端到端）。
+  // 这里守两件事：① 接线不得被绕过（任何下发点漏了桥 = chat-only 网关静默不可用）；
+  // ② 转换行为不得回退（直接跑编译产物的真实转换函数，毫秒级）。
+  const bridgeSrc = existsSync(join(ROOT, "electron/responses-bridge.ts"))
+    ? readFileSync(join(ROOT, "electron/responses-bridge.ts"), "utf8") : "";
+  const mainTs = readFileSync(join(ROOT, "electron/main.ts"), "utf8");
+  const preloadTs = readFileSync(join(ROOT, "electron/preload.ts"), "utf8");
+  const typesSrc = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
+  const hookTs = readFileSync(join(ROOT, "src/hooks/useModelProviders.ts"), "utf8");
+
+  (bridgeSrc.includes("export class ResponsesBridge") ? ok : fail)("electron/responses-bridge.ts 存在且导出 ResponsesBridge");
+  (mainTs.includes("new ResponsesBridge(") ? ok : fail)("main.ts 实例化协议桥单例");
+  (mainTs.includes("await responsesBridge.start()") ? ok : fail)("启动链拉起协议桥（失败必须降级直连，不掐死启动）");
+  (mainTs.includes("bridgeRewriteProviderConfig(params)") ? ok : fail)("codex:request 统一兜底：渲染层自带的内联 provider 配置也走桥");
+  (mainTs.includes("bridgeDial(activeNormalized.provider, activeNormalized.baseUrl)") ? ok : fail)("applyCustomModel 的 config.toml 地址走桥（provider/别名/harness 三段的单点来源）");
+  (mainTs.includes('base_url = "${bridgeDial(alias, active.baseUrl)}"') ? ok : fail)("历史会话别名段的 base_url 也走桥");
+  (!/base_url: baseUrl\b/.test(mainTs) ? ok : fail)("main.ts 不留任何直连 base_url 的内联配置（漏一处 = chat-only 网关静默不可用）");
+  const dialedCount = (mainTs.match(/base_url: bridgeDial\(/g) ?? []).length;
+  (dialedCount >= 7 ? ok : fail)(`main.ts 内联 provider 配置已桥化（实测 ${dialedCount} 处）`);
+  (preloadTs.includes('"bridge:status"') && typesSrc.includes("bridgeStatus") ? ok : fail)("桥状态 IPC 在 preload 与类型声明里对齐");
+  (hookTs.includes("本机协议桥") ? ok : fail)("useModelProviders 明确告知 chat-only 网关已由协议桥接管（不再说「无法使用」）");
+
+  // ── 行为级：直接跑编译产物的真实转换函数 ──
+  const compiled = join(ROOT, "dist-electron", "responses-bridge.js");
+  const compiledOk = existsSync(compiled);
+  (compiledOk ? ok : fail)("协议桥已编译进 dist-electron（随主进程一起打包，不依赖额外运行时文件）");
+  if (compiledOk) {
+    const requireBridge = createRequire(import.meta.url);
+    const { toChatRequest, ChatStreamTranslator, chatJsonToResponses } = requireBridge(compiled);
+
+    const chat = toChatRequest({
+      model: "m", instructions: "SYS",
+      input: [
+        { type: "message", role: "developer", content: [{ type: "input_text", text: "DEV" }] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "HI" }] },
+        { type: "function_call", name: "exec_command", arguments: '{"cmd":"x"}', call_id: "c1" },
+        { type: "function_call_output", call_id: "c1", output: "done" },
+        { type: "reasoning", summary: [] },
+      ],
+      tools: [
+        { type: "function", name: "exec_command", description: "d", parameters: { type: "object" } },
+        { type: "web_search" },
+      ],
+      tool_choice: "auto", reasoning: { effort: "xhigh", summary: "auto" },
+      stream: true, store: false, include: ["reasoning.encrypted_content"], prompt_cache_key: "k",
+    });
+    (chat.messages[0]?.role === "system" && chat.messages[0]?.content === "SYS" ? ok : fail)("转换：instructions → 首条 system 消息");
+    (chat.messages[1]?.role === "system" ? ok : fail)("转换：developer 角色降级为 system（多数学网关不认 developer）");
+    (chat.messages[2]?.role === "user" ? ok : fail)("转换：用户消息原样保留");
+    (chat.messages[3]?.tool_calls?.[0]?.function?.name === "exec_command" ? ok : fail)("转换：function_call → assistant.tool_calls");
+    (chat.messages[4]?.role === "tool" && chat.messages[4]?.tool_call_id === "c1" ? ok : fail)("转换：function_call_output → role:tool（call_id 必须对得上）");
+    (chat.tools?.length === 1 && chat.tools[0].function?.name === "exec_command" ? ok : fail)("转换：tools 变 chat 嵌套形状，非 function 工具（web_search）剔除");
+    (chat.reasoning_effort === "high" ? ok : fail)("转换：xhigh 降档 high（Chat 网关不认 xhigh）");
+    (chat.stream_options?.include_usage === true ? ok : fail)("转换：流式请求要求 usage（引擎 token 统计依赖它）");
+    (!("store" in chat) && !("prompt_cache_key" in chat) && !("include" in chat) ? ok : fail)("转换：Responses 专有字段不得泄漏给 chat 上游");
+
+    const textTranslator = new ChatStreamTranslator("m");
+    let textOut = textTranslator.push({ choices: [{ delta: { content: "he" } }] });
+    textOut += textTranslator.push({ choices: [{ delta: { content: "llo" } }] });
+    textOut += textTranslator.push({ choices: [{ delta: {} }], usage: { prompt_tokens: 4, completion_tokens: 5, total_tokens: 9 } });
+    textOut += textTranslator.finish();
+    (textOut.includes("response.created") && textOut.includes("response.output_item.added") && textOut.includes("response.output_text.delta") ? ok : fail)("回流：文本增量转成引擎消费的事件序列（实证过的最小集）");
+    (textOut.includes('"text":"hello"') ? ok : fail)("回流：收尾事件里文本已合并完整");
+    (textOut.includes("response.completed") && textOut.includes('"input_tokens":4') ? ok : fail)("回流：completed 事件带 usage 映射（prompt→input）");
+
+    const toolTranslator = new ChatStreamTranslator("m");
+    let toolOut = toolTranslator.push({ choices: [{ delta: { tool_calls: [{ index: 0, id: "c9", type: "function", function: { name: "exec_command", arguments: "" } }] } }] });
+    toolOut += toolTranslator.push({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"a":' } }] } }] });
+    toolOut += toolTranslator.push({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: "1}" } }] } }] });
+    toolOut += toolTranslator.finish();
+    (toolOut.includes("response.function_call_arguments.delta") ? ok : fail)("回流：工具参数分片转成 function_call_arguments.delta");
+    (toolOut.includes('"arguments":"{\\"a\\":1}"') ? ok : fail)("回流：收尾时工具参数拼接完整（引擎据此执行）");
+    (toolOut.includes('"call_id":"c9"') ? ok : fail)("回流：工具 call_id 原样保留（下一轮 function_call_output 要对回它）");
+
+    const json = chatJsonToResponses({ choices: [{ message: { content: "hi" } }], usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 } }, "m");
+    (json.output?.[0]?.content?.[0]?.text === "hi" ? ok : fail)("回流：非流式 chat 响应也能转成 responses 输出项");
+  }
 }
 
 // ---------- 汇总 ----------
