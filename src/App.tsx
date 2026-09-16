@@ -15838,7 +15838,20 @@ const commandMatches = useMemo(() => {
                 {popoutThreadId ? (
         <button className="icon-button popout-return-btn" title="返回主应用（关闭本独立窗口）" onClick={() => void window.codex.popoutClose(thread?.id ?? null)}><Minimize2 size={16} /></button>
       ) : (
-        <button className="icon-button popout-open-btn" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!thread} onClick={() => { if (thread) void popoutCurrentThread(thread.id); }}><Maximize2 size={16} /></button>
+        <>
+          {/* 调度开关放独立窗口图标左边（09-16 用户要求） */}
+          <DispatchMenu
+            topbar
+            dispatch={activeDispatch}
+            targets={dispatchInfo.targets}
+            disabled={!thread?.id}
+            busy={dispatchBusy}
+            lockedBy={dispatchHolderName}
+            restrictedLabel={threadRole.restricted ? (threadRole.label ?? "专家 / 专家团") : null}
+            onChange={(next, opts) => { void applyDispatch(next, opts); }}
+          />
+          <button className="icon-button popout-open-btn" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!thread} onClick={() => { if (thread) void popoutCurrentThread(thread.id); }}><Maximize2 size={16} /></button>
+        </>
       )}
                 <div className="ctx-picker">
           <button className="icon-button ctx-picker-btn tb-workspace" title="工作区上下文（当前会话使用的项目目录）" onClick={() => setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
@@ -15886,17 +15899,6 @@ const commandMatches = useMemo(() => {
         </div>
         <button className="icon-button tb-terminal" title="新建终端标签页" onClick={() => { setRightOpen(true); setRightTab("terminal"); }}><TerminalSquare size={16} /></button>
         <button className="icon-button tb-right-panel" title={rightOpen ? "收起右侧面板" : "展开右侧面板"} onClick={() => setRightOpen(!rightOpen)}>{rightOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button>
-        {/* 调度开关放顶栏最右（09-16 用户要求：挨着最小化按钮） */}
-        <DispatchMenu
-          topbar
-          dispatch={activeDispatch}
-          targets={dispatchInfo.targets}
-          disabled={!thread?.id}
-          busy={dispatchBusy}
-          lockedBy={dispatchHolderName}
-          restrictedLabel={threadRole.restricted ? (threadRole.label ?? "专家 / 专家团") : null}
-          onChange={(next, opts) => { void applyDispatch(next, opts); }}
-        />
     </>
   );
   return (
