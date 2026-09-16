@@ -4109,6 +4109,11 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
 }
 .composer-quick-pop > button > span {
   flex: 1;
+  /* 09-17：菜单项装的是动态名（专家/技能/连接器/文件名），长名省略不撑破 218px 面板 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .composer-quick-pop > button > svg:last-child {
   color: var(--faint);
@@ -7386,7 +7391,10 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   z-index: 12;
   border: 1px solid var(--line);
   background: var(--bg);
-  width: 300px;
+  /* 09-17 自适应：300px 固定宽会被 nowrap 长待办撑破（grid 子项默认 min-width:auto，
+     min-content=整句长度 → 行溢出面板被裁）。改为窄屏收缩、宽屏加宽，横向禁滚。 */
+  width: clamp(300px, 24vw, 400px);
+  max-width: calc(100% - 24px);
   max-height: 60vh;
   box-shadow: var(--shadow);
   border-radius: 12px;
@@ -7396,8 +7404,12 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   position: absolute;
   top: 60px;
   right: 18px;
-  overflow-y: auto;
+  overflow: hidden auto;
   transition: transform .25s ease, opacity .2s ease;
+}
+/* grid 子项允许收缩到轨道宽以内（否则 min-content 把 300px 轨道撑破） */
+.goals-pop > * {
+  min-width: 0;
 }
 .goals-pop.docked {
   transform: translateX(calc(100% + 18px));
@@ -7553,6 +7565,7 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   font-size: 12.5px;
   line-height: 1.5;
   display: flex;
+  overflow-wrap: anywhere;
 }
 .plan-step.doing {
   background: var(--panel);
@@ -12256,6 +12269,8 @@ button.search-box:hover {
   color: var(--faint);
   font-size: 11px;
   margin-top: 3px;
+  /* 09-17：sub 行装的是邮箱/报错等动态串，长串换行不撑破 268px 面板 */
+  overflow-wrap: anywhere;
 }
 .ctx-pop-bar {
   background: var(--panel-2);
@@ -14457,8 +14472,8 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .browser-drawer-list { flex: 1; overflow-y: auto; padding: 6px; }
 .browser-drawer-row { display: block; width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
 .browser-drawer-row:hover { background: var(--panel-2); }
-.browser-drawer-row b { display: block; font-size: 12.5px; color: var(--text); }
-.browser-drawer-row small { color: var(--muted); font-size: 11px; }
+.browser-drawer-row b { display: block; font-size: 12.5px; color: var(--text); overflow-wrap: anywhere; }
+.browser-drawer-row small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .active-tool { background: var(--panel-2); color: var(--text); }
 
 /* ===== 勾选框与全选条：批量操作只作用于勾选的条目 ===== */
@@ -16021,6 +16036,9 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .goals-task-list .rpa-task-text {
   flex: 1;
   min-width: 0;
+  /* 09-17 自适应：面板内待办换行完整展示（不再是 nowrap 省略——那在固定宽面板里会被裁） */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .goals-task-list .icon-button {
   opacity: 0;

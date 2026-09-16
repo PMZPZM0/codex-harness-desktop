@@ -170,6 +170,8 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **弹窗自适应修复（09-17，用户实测「执行计划」清单右边被切掉）**：`.goals-pop` 是 `display:grid; width:300px`，而 grid 子项默认 `min-width:auto`——待办文本 `nowrap` 时 min-content=整句长度，把行撑出面板被裁。修：面板宽 `clamp(300px,24vw,400px)` + `max-width` 上限 + `overflow:hidden auto`（横向禁滚）+ **`.goals-pop > * { min-width:0 }`**（grid 子项允许收缩，这是根因修复）+ 面板内待办/计划步骤文本改 `white-space:normal; overflow-wrap:anywhere`（完整换行展示而非裁切）。同类弹窗全库审计后一并防护：`.composer-quick-pop > button > span`（专家/技能/连接器动态名加省略）、`.browser-drawer-row b/small`（文件名换行）、`.ctx-pop-sub`（邮箱/报错串换行）。`.tab-switcher` 无 JSX 引用（死规则）未动。验收：真启动合成 DOM 几何断言 7 条（含运行时反证：摘掉 `min-width:0` 守卫同样内容横向爆到 1366px）全绿即删。
+
 - **mac 全面适配第一轮（09-16 晚，用户实测 v0.0.19 mac 版报「开发工具全部装不上 / 动画全静止 / 红绿灯没适配 / 语音闪退 / 换供应商旧会话死」，并要求「全方面适配一个都不能漏」）**：
   - **开发工具全灭的两个根因**：① mac 包 `extraResources` 是空数组、全靠 `copy-mac-tools.cjs` 从 `resources/tools` 复制，而 CI 只现造 node/npm-global/python/pwsh/ponytail ⇒ **`install-runtimes.cjs`/`install-automation.cjs` 根本不在包里**，点安装 = spawn 不存在的脚本瞬间失败（copy-mac-tools 现已硬性补拷，缺了中止打包）；② `install-runtimes.cjs` 是纯 Windows 脚本（全部 win-x64 资产 + `.exe` marker + `C:\Windows\System32\tar.exe`）。现已按平台分叉：darwin 资产（node-darwin、powershell-osx、python-build-standalone、evermeet ffmpeg、jq/ninja/rg/uv/cmake/7zz/yt-dlp 的 mac 构建、Miniconda MacOSX sh 静默装），解压后统一 **chmod +x**（zip 不保 Unix 位），git 走系统 CLT。**spec marker 平台展开**收进 `main.ts` 的 `DARWIN_MARKERS`（`markerRel()` 是「装没装」唯一入口）+ `DARWIN_HIDDEN`（mingw）；git/openssl 在 darwin 走系统探测（installedBySystem）。
   - **动画全静止**：macOS 系统级「减少动态效果」命中 styles.css 的 `prefers-reduced-motion: reduce` 全局 `*` 块。现在所有静音块都带 `html:not([data-motion="force"])` 前缀，App 默认写 `data-motion="force"`（强制动画；以后要做「跟随系统」再摘属性）。
