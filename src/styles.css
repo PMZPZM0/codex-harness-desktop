@@ -14381,6 +14381,21 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   display: inline-block;
   animation: reasoning-cursor-blink 0.72s steps(2, jump-none) infinite;
 }
+/* 09-16：正文流式光标不再用平级兄弟 span —— Markdown 末块是块级 <p>，
+   兄弟 span 会被挤到段落下一行独占一整行，看起来就是正文和运行状态行之间
+   一条留白（光标只有 1.5px 宽且在闪烁低透明度相位时几乎不可见）。
+   改挂在末块 ::after 上，内联跟在最后一行文字后面。 */
+.message-body.markdown.packet-revealing > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 1.5px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.12em;
+  background: var(--accent);
+  opacity: 0.68;
+  animation: reasoning-cursor-blink 0.72s steps(2, jump-none) infinite;
+}
 .cmd-output-text.packet-revealing,
 .action-content .packet-revealing {
   overflow-wrap: anywhere;

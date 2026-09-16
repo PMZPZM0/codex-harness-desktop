@@ -155,6 +155,12 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **正文流式光标「占一整行」留白修复（09-16 用户截图实测）**：
+  **现象**：助手回复最后一段与下方「正在深度思考 · …」运行状态行之间有一条空行留白。
+  **真因**：`ProgressiveAgentBody` 把流式光标写成 `.message-body.markdown` 的**平级兄弟** `<span class="packet-stream-cursor">`；markdown 末块是**块级 `<p>`**，兄弟 span 被挤到下一行独占一个行盒（14px），且因 span 成为 box 内最后一个元素，`.message-body > p:last-child{margin-bottom:0}` **失效**、段落还留着 8px 底边距 —— 实测尾部死空间合计 **32.08px**。
+  **修法**：删除该兄弟 span，改由 CSS `.message-body.markdown.packet-revealing > :last-child::after` 提供光标（内联跟在最后一行文字后）。工具代码块（`ToolCodeBlock`）的同类 span 是 `position:absolute`、不占布局，**保留不动**（`.packet-stream-cursor` 基类仍在）。
+  **验收**：真实构建 CSS + 真实 DOM 结构跑对照，尾部空隙 32.08px → **0px**（基准组 0px，修复前组含 span 14px + 段距 8px + 基线偏移 9.67px）；截图肉眼确认光标由「独占一行」变为「内联句尾」。⚠️ 教训：**流式光标这类装饰性行内元素别写成块级容器的兄弟节点**——它会撑出一个真实行盒，且顺带破坏 `:last-child` 系样式。
+
 - **模型上下文「只生效默认那个模型」修复（09-16 用户实测，致命 bug）**：
   **现象**：模型编辑器里给不同模型配了不同上下文（128000 / 1000000），但**只有默认那个模型生效**。
   **真因**：`config.toml` 顶层的 `model_context_window` 是**引擎的全局单值**，过去取「写配置那一刻生效模型」的 contextWindow 写下去 → 一旦落下就是**全局覆盖**：切到别的模型仍是旧值。实测铁证：同一模型 `deepseek-v4-1-flash` 在**同一会话**里，rollout 上报的 `model_context_window` 从 1000000 变成 128000（模型没变），而它配的是 1M —— UI 显示的正是这个引擎上报值。
