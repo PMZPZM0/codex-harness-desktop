@@ -2265,17 +2265,24 @@ function createWindow() {
     title: "Codex Harness Desktop",
     icon: existsSync(windowIcon) ? windowIcon : undefined,
     autoHideMenuBar: true,
-    // 无边框标题栏：系统标题栏隐藏，应用 topbar 顶到窗口边缘（省 ~32px 高度），
-    // 右上角保留系统窗口控制钮（贴靠/双击最大化等原生行为不变），颜色随主题由 theme:apply 更新。
-    titleBarStyle: "hidden",
-    titleBarOverlay: {
-      // 让 `.topbar { background: var(--bg) }` 自己穿过来——钮不再"浮在自己的色条上"，
-      // 也无需枚举每个主题调色；亮/暗主题都能干净。符号色在 theme:apply 里跟着主题切。
-      color: "#00000000",
-      symbolColor: "#1b1b1a",
-      // 43 而非 44：底下留 1px 给 .topbar::after 分隔线，线可贯通窗口钮下方
-      height: 43,
-    },
+    // 无边框标题栏：系统标题栏隐藏，应用 topbar 顶到窗口边缘（省 ~32px 高度）。
+    // ⛔ 平台分叉（09-16 mac 适配）：titleBarOverlay 的窗口控制钮是 **Windows 专属**
+    // （右上角贴靠/双击最大化等原生行为）；mac 上硬传只是被忽略，红绿灯仍画在左上角，
+    // 而渲染层按 Windows 预留的右上 145px 空白就成了纯浪费。mac 走 hiddenInset——
+    // 红绿灯按系统标准内缩，渲染层用 [data-os="darwin"] 把顶行内容让开（styles.css）。
+    ...(process.platform === "win32"
+      ? {
+        titleBarStyle: "hidden" as const,
+        titleBarOverlay: {
+          // 让 `.topbar { background: var(--bg) }` 自己穿过来——钮不再"浮在自己的色条上"，
+          // 也无需枚举每个主题调色；亮/暗主题都能干净。符号色在 theme:apply 里跟着主题切。
+          color: "#00000000",
+          symbolColor: "#1b1b1a",
+          // 43 而非 44：底下留 1px 给 .topbar::after 分隔线，线可贯通窗口钮下方
+          height: 43,
+        },
+      }
+      : { titleBarStyle: "hiddenInset" as const }),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -2364,12 +2371,13 @@ function createPopoutWindow(threadId: string) {
     title: "Codex Harness Desktop — 独立会话",
     icon: existsSync(windowIcon) ? windowIcon : undefined,
     autoHideMenuBar: true,
-    titleBarStyle: "hidden",
-    titleBarOverlay: {
-      color: "#00000000",
-      symbolColor: "#1b1b1a",
-      height: 43,
-    },
+    // 独立弹窗同款平台分叉（mac hiddenInset / win overlay），理由见 createWindow
+    ...(process.platform === "win32"
+      ? {
+        titleBarStyle: "hidden" as const,
+        titleBarOverlay: { color: "#00000000", symbolColor: "#1b1b1a", height: 43 },
+      }
+      : { titleBarStyle: "hiddenInset" as const }),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -4749,24 +4757,66 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
 };
 const runtimeInstalls = new Map<DevRuntimeId, Promise<void>>();
 
+// ⛔ mac 适配（09-16）：上面 specs 的 marker 全按 Windows 布局写（反斜杠 + .exe）。
+// darwin 的目录布局不同（node/bin/node、python/bin/python3、pwsh/pwsh、CMake.app 包…），
+// 这里集中覆盖；未列出的按「分隔符替换」兜底（npm-global 这类本身就是 posix 兼容布局）。
+const IS_MAC = process.platform === "darwin";
+const DARWIN_MARKERS: Partial<Record<DevRuntimeId, string>> = {
+  python: "python/bin/python3",
+  node: "node/bin/node",
+  pwsh: "pwsh/pwsh",
+  git: "git/bin/git",
+  ffmpeg: "ffmpeg/bin/ffmpeg",
+  "vscode-cli": "vscode-cli/code",
+  jq: "jq/jq",
+  ninja: "ninja/ninja",
+  sevenzip: "sevenzip/7zz",
+  "yt-dlp": "yt-dlp/yt-dlp",
+  rg: "rg/rg",
+  uv: "uv/uv",
+  cmake: "cmake/CMake.app/Contents/bin/cmake",
+  conda: "miniconda/bin/conda",
+  docker: "docker/docker",
+};
+// darwin 上无意义 / 系统自带的工具：不显示安装卡（mingw 是 Windows 编译器；mac 用系统 clang）
+const DARWIN_HIDDEN = new Set<DevRuntimeId>(["mingw"]);
+
+/** marker 的平台展开（装没装判定的唯一入口，别再各自 path.join(spec.marker)）。 */
+function markerRel(id: DevRuntimeId, spec: DevRuntimeSpec): string {
+  if (!IS_MAC) return spec.marker;
+  return DARWIN_MARKERS[id] ?? spec.marker.replace(/\\/g, "/");
+}
+
+/** 系统级已装探测（不落 tools 目录也算装好）：win 只认 docker 在 PATH；darwin 认系统自带件。 */
+function runtimeInstalledBySystem(id: DevRuntimeId): boolean {
+  if (IS_MAC) {
+    if (id === "git") return ["/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git"].some((p) => existsSync(p));
+    if (id === "openssl") return existsSync("/usr/bin/openssl");
+    return false;
+  }
+  // docker 是系统级安装：未在工具目录时也探测系统 PATH 上的 docker.exe（已装则视为完成）
+  return id === "docker" ? !!(process.env.PATH ?? "").split(";").some((dir) => dir && existsSync(path.join(dir.trim(), "docker.exe"))) : false;
+}
+
 /** 「装没装」的唯一判定（runtimeList 与「修复安装」幂等早退共用，别各写一份）：
  *  ponytail 装在引擎侧 codex-home/plugins/cache，不走 tools 目录 marker；
  *  其余按 tools 目录里的 marker 文件判断。 */
 function runtimeInstalled(id: DevRuntimeId, spec: DevRuntimeSpec): boolean {
   if (id === "ponytail") return existsSync(path.join(codexHome, "plugins", "cache", "ponytail"));
   const root = toolsRoot();
-  return Boolean(root) && existsSync(path.join(root, spec.marker));
+  return Boolean(root) && existsSync(path.join(root, markerRel(id, spec)));
 }
 
 function runtimeList() {
   const root = toolsRoot();
-  return (Object.entries(devRuntimeSpecs) as [DevRuntimeId, DevRuntimeSpec][]).map(([id, spec]) => ({
-    id, ...spec,
-    installed: runtimeInstalled(id, spec),
-    // docker 是系统级安装：未在工具目录时也探测系统 PATH 上的 docker.exe（已装则视为完成）
-    installedBySystem: id === "docker" ? !!(process.env.PATH ?? "").split(";").some((dir) => dir && existsSync(path.join(dir.trim(), "docker.exe"))) : false,
-    installing: runtimeInstalls.has(id),
-  }));
+  return (Object.entries(devRuntimeSpecs) as [DevRuntimeId, DevRuntimeSpec][])
+    .filter(([id]) => !(IS_MAC && DARWIN_HIDDEN.has(id)))
+    .map(([id, spec]) => ({
+      id, ...spec,
+      installed: runtimeInstalled(id, spec),
+      installedBySystem: runtimeInstalledBySystem(id),
+      installing: runtimeInstalls.has(id),
+    }));
 }
 
 /**
@@ -4778,7 +4828,12 @@ function runtimeList() {
  */
 
 function runtimeInstaller(name: string) {
-  return app.isPackaged ? path.join(toolsRoot(), name) : path.join(app.getAppPath(), "scripts", name);
+  const packaged = app.isPackaged ? path.join(toolsRoot(), name) : "";
+  if (packaged && existsSync(packaged)) return packaged;
+  // 打包态兜底：mac 包此前漏拷安装脚本（copy-mac-tools 已修），缺了就回落到 asar 外的源码目录
+  const fallback = path.join(app.getAppPath(), "scripts", name);
+  if (existsSync(fallback)) return fallback;
+  return packaged || fallback;
 }
 
 function runRuntimeInstaller(id: DevRuntimeId, script: string, args: string[], node = process.execPath) {

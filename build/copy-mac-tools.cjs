@@ -35,4 +35,16 @@ module.exports = async function afterPack(context) {
     }
     await fs.cp(from, path.join(resources, name), { recursive: true, verbatimSymlinks: true, preserveTimestamps: true });
   }
+
+  // ⛔ mac 适配（09-16）：Windows 包靠 package.json extraResources 把安装脚本带进 tools/，
+  // mac 的 extraResources 是空数组 → 打出来的包 tools/ 里**没有 install-runtimes.cjs /
+  // install-automation.cjs**，应用内点任何「安装」= spawn 不存在的脚本 = 瞬间失败
+  // （「开发工具全部安装失败」的另一半根因）。Windows 侧从 scripts/ 复制，这里同源补齐。
+  for (const name of ["install-runtimes.cjs", "install-automation.cjs"]) {
+    const from = path.join(context.packager.projectDir, "scripts", name);
+    if (!existsSync(from)) {
+      throw new Error(`[copy-mac-tools] 缺少 scripts/${name} —— mac 包「开发工具」页的安装动作会全部失败，中止打包`);
+    }
+    await fs.cp(from, path.join(resources, "tools", name), { preserveTimestamps: true });
+  }
 };

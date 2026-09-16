@@ -170,6 +170,15 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **mac 全面适配第一轮（09-16 晚，用户实测 v0.0.19 mac 版报「开发工具全部装不上 / 动画全静止 / 红绿灯没适配 / 语音闪退 / 换供应商旧会话死」，并要求「全方面适配一个都不能漏」）**：
+  - **开发工具全灭的两个根因**：① mac 包 `extraResources` 是空数组、全靠 `copy-mac-tools.cjs` 从 `resources/tools` 复制，而 CI 只现造 node/npm-global/python/pwsh/ponytail ⇒ **`install-runtimes.cjs`/`install-automation.cjs` 根本不在包里**，点安装 = spawn 不存在的脚本瞬间失败（copy-mac-tools 现已硬性补拷，缺了中止打包）；② `install-runtimes.cjs` 是纯 Windows 脚本（全部 win-x64 资产 + `.exe` marker + `C:\Windows\System32\tar.exe`）。现已按平台分叉：darwin 资产（node-darwin、powershell-osx、python-build-standalone、evermeet ffmpeg、jq/ninja/rg/uv/cmake/7zz/yt-dlp 的 mac 构建、Miniconda MacOSX sh 静默装），解压后统一 **chmod +x**（zip 不保 Unix 位），git 走系统 CLT。**spec marker 平台展开**收进 `main.ts` 的 `DARWIN_MARKERS`（`markerRel()` 是「装没装」唯一入口）+ `DARWIN_HIDDEN`（mingw）；git/openssl 在 darwin 走系统探测（installedBySystem）。
+  - **动画全静止**：macOS 系统级「减少动态效果」命中 styles.css 的 `prefers-reduced-motion: reduce` 全局 `*` 块。现在所有静音块都带 `html:not([data-motion="force"])` 前缀，App 默认写 `data-motion="force"`（强制动画；以后要做「跟随系统」再摘属性）。
+  - **窗口控制键**：`titleBarOverlay` 的窗口钮是 Windows 专属；darwin 改 `hiddenInset`（红绿灯左上内缩），preload 新增 `codex.platform`，App 写 `<html data-os>`，styles.css 按 `[data-os="darwin"]` 让位（右上 145px 预留区归还内容；顶行跨全宽/侧栏 brand-row 左让红绿灯）。
+  - **实时语音闪退（Windows 也有，用户实测两平台都崩）**：sherpa-onnx 的 native 层在 worker_threads 里 abort/段错误会**带死整个进程**，JS 层全拦不住。`VoiceWorkerClient` 底座从 worker_threads 换成 **utilityProcess 独立子进程**（worker 源码零改动：引导文件 `userData/voice-worker-bootstrap.cjs` 用 require shim 供给 `worker_threads` 语义），native 崩溃只死子进程，主进程报「语音引擎进程退出」并可重开。
+  - **换供应商旧会话死掉**：症状 = 原地迁移失败每次都走 fork 接力。旧实现把 `thread/resume` 的真实报错吞成 `return false`，无法定位——`migrateThreadToProvider` 现在返回 `{ok, error}`，失败 toast 带引擎原始报错（mac 上再复发时用户能直接看到原因）。
+  - **顶栏「目标」钮与「⋯」钮竖排挤在一起（Windows 截图实测）**：`.topbar-actions` 总宽超限时 flex 压缩 `.task-menu-wrap` → 内部两个按钮换行竖排。修复 = 簇内 `> * { flex: none }` + `.task-menu-wrap` 横排 flex；宽度不足由 `.task-title`（min-width:0 + ellipsis）吸收。
+  - 验收：本轮现写脚本 33 断言（真启动 CDP：平台标记/动画开关/操作簇几何；离线：bootstrap、darwin 资产名按 GitHub API 实测值、marker 覆盖、CSS 前缀）全绿后即删；预检保持全绿。mac 真机行为待用户验证。
+
 - **⛔ 应用内下载必须跟随重定向（09-16 发 v0.0.18 当天实测，属 09-15 换 GitHub 单源时埋下的坑）**：
   GitHub Release 的 `browser_download_url` **不是文件本身，而是 302**（跳到 `release-assets.githubusercontent.com`
   的签名地址，实测第一跳就是这个）。`electron/updates.ts` 的 `downloadUpdate` 过去是裸 `https.request`

@@ -27,7 +27,11 @@ export function augmentedPath() {
   if (process.platform !== "win32") {
     const directories = [
       "node/bin", "pwsh", "npm-global/bin", "bin", "git/bin", "python/bin",
-      "vscode-cli", "rg", "uv", "cmake/bin", "jq", "ninja",
+      "vscode-cli", "rg", "uv", "cmake/bin",
+      // ⛔ mac 适配（09-16）：darwin 侧 install-runtimes 会把这些也装进 tools/，
+      // PATH 不带上 = 装了引擎也看不见（ffmpeg/yt-dlp/7zz/cmake.app 包布局/conda）。
+      "ffmpeg/bin", "yt-dlp", "sevenzip", "cmake/CMake.app/Contents/bin", "miniconda/bin",
+      "jq", "ninja",
     ].map((directory) => path.join(tools, directory)).filter(fs.existsSync);
     return [...new Set([...directories, ...system, "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"])].join(path.delimiter);
   }

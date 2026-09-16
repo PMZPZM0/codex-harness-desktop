@@ -462,9 +462,9 @@ button {
   transform: translate(0) scale(1);
 }
 @media (prefers-reduced-motion: reduce) {
-  .brand-mark,
-  .brand-mark *,
-  .sidebar-toggle-arrow {
+  html:not([data-motion="force"]) .brand-mark,
+  html:not([data-motion="force"]) .brand-mark *,
+  html:not([data-motion="force"]) .sidebar-toggle-arrow {
     transition: none !important;
   }
 }
@@ -1127,6 +1127,17 @@ button {
   gap: 2px;
   -webkit-app-region: no-drag;
 }
+/* ⛔ 修复「目标钮和⋯钮竖着挤在一起」（09-16 用户截图）：操作簇总宽超出可用空间时，
+   flex 默认压缩 .task-menu-wrap 这类 div 子项 → 里面的两个 inline 按钮被迫换行竖排。
+   簇内一律禁止收缩换行；宽度不够时由 .task-title（flex:1 + min-width:0 + ellipsis）吸收。 */
+.topbar-actions > * {
+  flex: none;
+}
+.task-menu-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
 .topbar {
   grid-column: 2 / -1;
   grid-row: 1;
@@ -1148,6 +1159,20 @@ button {
 .app-shell.side-collapsed:not(.narrow) .topbar,
 .app-shell.narrow .topbar {
   grid-column: 1 / -1;
+}
+/* ⛔ mac 适配（09-16）：窗口控制键（红绿灯）在左上角、没有 Windows 的右上 WCO——
+   ① 右上 145px 的系统钮预留区在 mac 上是纯空白，全部还给内容；
+   ② 顶行跨全宽（折叠侧栏/窄屏/独立弹窗）或侧栏 logo 行时，左侧要给红绿灯让位。 */
+[data-os="darwin"] .topbar {
+  padding-right: 16px;
+}
+[data-os="darwin"] .app-shell.side-collapsed:not(.narrow) .topbar,
+[data-os="darwin"] .app-shell.narrow .topbar,
+[data-os="darwin"] .app-shell.popout-shell .topbar {
+  padding-left: 80px;
+}
+[data-os="darwin"] .sidebar .brand-row {
+  padding-left: 68px;
 }
 /* 底部分隔线止于窗口钮左侧——原生 overlay 区域画不进线，避免「线断一截」 */
 .topbar::after {
@@ -1175,6 +1200,12 @@ button {
   gap: 8px;
   min-width: 0;
   display: flex;
+}
+/* 工作区路径与子智能体徽标：空间不足时让出宽度（路径省略号收尾），保操作簇不换行 */
+.task-title > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .build-stamp {
   color: var(--faint);
@@ -1273,9 +1304,6 @@ button {
 }
 .mobile-menu {
   display: none;
-}
-.task-menu-wrap {
-  position: relative;
 }
 .menu-backdrop {
   z-index: 20;
@@ -1794,9 +1822,9 @@ html[data-ui-font="large"] .action-content pre {
   font-size: 13px;
 }
 @media (prefers-reduced-motion: reduce) {
-  *,
-  :before,
-  :after {
+  html:not([data-motion="force"]) *,
+  html:not([data-motion="force"]) :before,
+  html:not([data-motion="force"]) :after {
     transition-duration: 0.001ms !important;
     animation-duration: 0.001ms !important;
   }
@@ -13996,7 +14024,9 @@ button.search-box:hover {
 /* 任何聚焦于可输入元素的页面，ESC 直接交回 blur 而不弹窗 */
 textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--green); }
 @media (max-width: 720px) { .skill-card-grid.compact { grid-template-columns: 1fr; } .skill-card-compact-actions { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .skill-card-compact, .skill-card-compact-head { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="force"]) .skill-card-compact,
+  html:not([data-motion="force"]) .skill-card-compact-head { transition: none; } }
 
 /* ===== 设置页通用控件（插件页 / 技能页共用） ===== */
 .resource-toolbar {
@@ -14720,16 +14750,21 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   flex: 0 0 auto;
 }
 @media (prefers-reduced-motion: reduce) {
-  .codex-turn .message, .wb-fold-body .message, .reasoning-card, .action-card,
-  .message-body > p, .message-body .markdown > p, .reasoning-body, .action-card pre {
+  html:not([data-motion="force"]) .codex-turn .message,
+  html:not([data-motion="force"]) .wb-fold-body .message,
+  html:not([data-motion="force"]) .reasoning-card,
+  html:not([data-motion="force"]) .action-card,
+  html:not([data-motion="force"]) .message-body > p,
+  html:not([data-motion="force"]) .message-body .markdown > p,
+  html:not([data-motion="force"]) .reasoning-body,
+  html:not([data-motion="force"]) .action-card pre {
     animation: none;
   }
-  .turn-group .assistant-message .message-body.markdown > * {
+  html:not([data-motion="force"]) .turn-group .assistant-message .message-body.markdown > * {
     transition: none;
   }
-  /* 关闭动效时正文仍保持正常颜色。 */
-  .turn-group.running .assistant-message .message-body.markdown > :not(.message-footer):last-child,
-  .turn-group.running .assistant-message .message-body.markdown > :not(.message-footer):has(+ .message-footer:last-child) {
+  html:not([data-motion="force"]) /* 关闭动效时正文仍保持正常颜色。 */ .turn-group.running .assistant-message .message-body.markdown > :not(.message-footer):last-child,
+  html:not([data-motion="force"]) .turn-group.running .assistant-message .message-body.markdown > :not(.message-footer):has(+ .message-footer:last-child) {
     opacity: 1;
   }
 }
@@ -15481,12 +15516,12 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .code-theme-card:hover,
-  .code-font-card:hover,
-  .index-tile:hover,
-  .personalization-style-card:hover,
-  .subagent-card:hover,
-  .memory-card:hover {
+  html:not([data-motion="force"]) .code-theme-card:hover,
+  html:not([data-motion="force"]) .code-font-card:hover,
+  html:not([data-motion="force"]) .index-tile:hover,
+  html:not([data-motion="force"]) .personalization-style-card:hover,
+  html:not([data-motion="force"]) .subagent-card:hover,
+  html:not([data-motion="force"]) .memory-card:hover {
     transform: none;
   }
 }
@@ -18570,34 +18605,34 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   color: var(--muted);
 }
 @media (prefers-reduced-motion: reduce) {
-  .welcome-state .welcome-greet,
-  .welcome-state .welcome-sub {
+  html:not([data-motion="force"]) .welcome-state .welcome-greet,
+  html:not([data-motion="force"]) .welcome-state .welcome-sub {
     animation: none;
     opacity: 1;
     translate: none;
   }
-  .demo-modal-backdrop,
-  .demo-modal {
+  html:not([data-motion="force"]) .demo-modal-backdrop,
+  html:not([data-motion="force"]) .demo-modal {
     animation: none;
   }
-  .sd-user,
-  .sd-activity,
-  .sd-step,
-  .sd-tool,
-  .sd-text,
-  .sd-report,
-  .sd-spin,
-  .sd-caret {
+  html:not([data-motion="force"]) .sd-user,
+  html:not([data-motion="force"]) .sd-activity,
+  html:not([data-motion="force"]) .sd-step,
+  html:not([data-motion="force"]) .sd-tool,
+  html:not([data-motion="force"]) .sd-text,
+  html:not([data-motion="force"]) .sd-report,
+  html:not([data-motion="force"]) .sd-spin,
+  html:not([data-motion="force"]) .sd-caret {
     animation: none;
   }
-  .sd-report li,
-  .sd-conclusion,
-  .sd-file {
+  html:not([data-motion="force"]) .sd-report li,
+  html:not([data-motion="force"]) .sd-conclusion,
+  html:not([data-motion="force"]) .sd-file {
     opacity: 1;
     translate: none;
     transition: none;
   }
-  .inline-file-cards .inline-file-card {
+  html:not([data-motion="force"]) .inline-file-cards .inline-file-card {
     animation: none;
   }
 }
@@ -20742,7 +20777,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   to { opacity: 1; transform: translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .capped-tool-latest > * { animation: none; }
+  html:not([data-motion="force"]) .capped-tool-latest > * { animation: none; }
 }
 
 
@@ -21189,10 +21224,10 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .voice-ball,
-  .voice-ball-ring,
-  .voice-level i,
-  .voice-progress-bar span {
+  html:not([data-motion="force"]) .voice-ball,
+  html:not([data-motion="force"]) .voice-ball-ring,
+  html:not([data-motion="force"]) .voice-level i,
+  html:not([data-motion="force"]) .voice-progress-bar span {
     animation: none !important;
     transition: none !important;
   }
@@ -22849,7 +22884,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   to { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  #chat-anchor { animation: none; }
+  html:not([data-motion="force"]) #chat-anchor { animation: none; }
 }
 
 /* ── 调度（09-15）：输入框的调度开关 + 侧栏「被调度的临时会话」标记 ─────────────── */
