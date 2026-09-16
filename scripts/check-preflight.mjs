@@ -2703,6 +2703,24 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   const installRuntimes = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
   (installRuntimes.includes("https://cdn.npmmirror.com/binaries/node/") && installRuntimes.includes("https://cdn.npmmirror.com/binaries/python/") && installRuntimes.includes("https://cdn.npmmirror.com/binaries/git-for-windows/") ? ok : fail)("install-runtimes：node/python/git 走 npmmirror 国内镜像（有镜像源的不该是龟速官方源）");
   (installRuntimes.includes("if (mirror) attempts.push") && installRuntimes.includes("if (url.includes(\"github.com\")) attempts.push") ? ok : fail)("install-runtimes：下载通道 = 镜像 → (代理) → 直连 → gh-proxy 逐级回落");
+  // 09-16 下午：自动化包与 ponytail 改为「随包预解压直装」（用户「直接内置，不用解压啥的」）——
+  // npm-global 必须进 extraResources（缺了等于回到「要点安装才解压」），zip 保留作修复备用；
+  // ponytail 启动自动种只在 config **没有**注册段时动手（否则用户卸载后下次启动又装回来，卸载失效）。
+  (extraFrom.includes("resources/tools/npm-global") ? ok : fail)("package.json extraResources 随包预解压 npm-global（自动化包开箱即用，不用点安装解压）");
+  (extraFrom.includes("resources/tools/automation-tools.zip") ? ok : fail)("automation-tools.zip 仍随包（修复备用：重新解压即可恢复）");
+  (extraFrom.includes("resources/tools/ponytail-plugin") ? ok : fail)("ponytail-plugin 随包（启动自动种入引擎插件 cache）");
+  (mainTs26.includes('!configText.includes(\'ponytail@ponytail\')') ? ok : fail)("ponytail 自动种只在 config 无注册段时执行（不破坏「卸载后不再自动装回」语义）");
+  (mainTs26.includes("void ensurePonytailPlugin(codexHome, bundledPonytail)") ? ok : fail)("ponytail 启动自动种调 ensurePonytailPlugin（幂等，失败降级）");
+  // ⛔ 09-16 实测教训：引擎对 config/value/write 要求**必填** mergeStrategy，缺了整条请求被拒
+  //    （Invalid request: missing field `mergeStrategy`）。这些调用普遍带 .catch(() => undefined)
+  //    静默吞掉 → 表现成「开关点了没生效」。这里按结构守：**只认真正的调用点**
+  //    （`config/value/write", {` … `})`），注释里提到这个字符串的段落不算（否则误判）。
+  {
+    const callRe = /config\/value\/write",\s*\{([\s\S]*?)\n\s*\}\)/g;
+    const bodies = [...mainTs26.matchAll(callRe)].map((m) => m[1]);
+    const missing = bodies.filter((body) => !body.includes("mergeStrategy"));
+    (!missing.length && bodies.length > 0 ? ok : fail)(`main.ts：全部 ${bodies.length} 处 config/value/write 调用都带 mergeStrategy（引擎必填，缺了静默失败）`);
+  }
 }
 
 // ---------- 汇总 ----------

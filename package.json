@@ -112,6 +112,10 @@
         "to": "tools/automation-tools.zip"
       },
       {
+        "from": "resources/tools/npm-global",
+        "to": "tools/npm-global"
+      },
+      {
         "from": "scripts/install-runtimes.cjs",
         "to": "tools/install-runtimes.cjs"
       },

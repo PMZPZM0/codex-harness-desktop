@@ -2660,6 +2660,23 @@ app.whenReady().then(async () => {
   // Git 自动安装（后台、不阻塞）：瘦身版不再内置 git，引擎 shell 依赖它，缺就静默补装
   // （函数内部自带 catch 与 done 事件广播，不会冒泡成 unhandled rejection）
   void autoInstallGitIfNeeded();
+  // ponytail 写代码模式插件随包直装（09-16 用户「直接内置，不用解压啥的」）：生产包必有
+  // tools/ponytail-plugin。只在 config.toml **完全没有** ponytail 注册段时自动种（全新安装）；
+  // 段已存在（已装/用户显式卸载置 false）就不再动 —— 否则卸载后下次启动又给装回来，卸载失效。
+  // 失败降级不阻塞启动，开发工具页按钮仍可手动种。必须在 server.start() 之后——要写 config.toml。
+  try {
+    const bundledPonytail = path.join(toolsRoot(), "ponytail-plugin");
+    const ponytailCache = path.join(codexHome, "plugins", "cache", "ponytail");
+    if (bundledPonytail && existsSync(bundledPonytail) && !existsSync(ponytailCache)) {
+      const configText = await fs.readFile(path.join(codexHome, "config.toml"), "utf8").catch(() => "");
+      if (!configText.includes('ponytail@ponytail')) {
+        // ensurePonytailPlugin 自己就把注册段（含 enabled = true）写进 config.toml，这里不再额外
+        // 走 config/value/write —— 引擎要求该请求必带 mergeStrategy，多于一次写只是多一个失败点。
+        void ensurePonytailPlugin(codexHome, bundledPonytail)
+          .catch((error) => console.warn("[boot] ponytail auto-seed failed (降级继续):", error));
+      }
+    }
+  } catch (error) { console.warn("[boot] ponytail auto-seed failed (降级继续):", error); }
   // 微信机器人网关：扫码登录 → 微信消息 → Codex 会话处理 → 回复发回微信
   weixinGateway = new WeixinGateway(path.join(app.getPath("userData"), "weixin-accounts"), {
     onMessage: (message) => void handleWeixinMessage(message),
@@ -4615,7 +4632,7 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   "vscode-cli": { name: "VS Code CLI", description: "通过 code 命令打开文件与工作区", size: "约 28 MB", marker: "vscode-cli\\code.exe", builtIn: true },
   // noUninstall：来源是**随包内置资源**（zip / 插件目录）而不是联网下载 —— 删掉后没有
 // 可靠的重取途径（压缩包本体随应用分发、不单独缓存），用户误删很难找回，因此不支持卸载。
-  automation: { name: "桌面与浏览器自动化", description: "Nuphus（桌面 MCP）+ Playwright CLI + CloakBrowser 包本体，下载压缩包解压即用（不含浏览器内核）", size: "压缩包 18 MB", marker: "npm-global\\node_modules\\@nuphus\\nuphus-mcp\\package.json", noUninstall: true },
+  automation: { name: "桌面与浏览器自动化", description: "Nuphus（桌面 MCP）+ Playwright CLI + CloakBrowser 包本体，随应用预解压内置、开箱即用（不含浏览器内核；zip 仅作修复备用）", size: "随包约 18 MB（已预解压）", marker: "npm-global\\node_modules\\@nuphus\\nuphus-mcp\\package.json", noUninstall: true },
   jq: { name: "jq", description: "命令行查询、筛选和转换 JSON；gh 加速下载", size: "约 1 MB", marker: "jq\\jq.exe" },
   ninja: { name: "Ninja", description: "高速构建工具，常与 CMake 配合；gh 加速下载", size: "约 1 MB", marker: "ninja\\ninja.exe" },
   sevenzip: { name: "7-Zip CLI", description: "解压和创建 7z、zip、tar 等归档；gh 加速下载", size: "约 1 MB", marker: "sevenzip\\7z.exe" },
@@ -4629,7 +4646,7 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   docker: { name: "Docker Desktop", description: "容器运行时，需要系统级安装（管理员权限 + 重启 + 登录）", size: "约 500 MB", marker: "docker\\docker.exe", kind: "guide" },
   mingw: { name: "MinGW-w64 (gcc/g++/make)", description: "C/C++ 编译器工具链，含 gcc、g++、make、gdb", size: "约 267 MB", marker: "mingw\\mingw64\\bin\\g++.exe", kind: "download" },
   openssl: { name: "OpenSSL", description: "加密/证书命令行工具（openssl 命令），系统级安装", size: "约 25 MB", marker: "openssl\\openssl.exe", kind: "guide" },
-  ponytail: { name: "ponytail 写代码模式插件", description: "Codex 写代码模式（会话钩子 + 6 个技能），安装后开箱即用", size: "随包 2 MB", marker: "ponytail-plugin", kind: "plugin", noUninstall: true },
+  ponytail: { name: "ponytail 写代码模式插件", description: "Codex 写代码模式（会话钩子 + 6 个技能），随包启动时自动种入，开箱即用", size: "随包 2 MB", marker: "ponytail-plugin", kind: "plugin", noUninstall: true },
 };
 const runtimeInstalls = new Map<DevRuntimeId, Promise<void>>();
 
@@ -4744,6 +4761,9 @@ if (id === "ponytail") {
     filePath: path.join(codexHome, "config.toml"),
     keyPath: 'plugins."ponytail@ponytail".enabled',
     value: false,
+    // ⛔ 引擎必填：缺了整条请求被判 Invalid request: missing field `mergeStrategy`，
+    //    而这里是 .catch(() => undefined) 静默吞掉 —— 表现为「卸载了但 enabled 还是 true」。
+    mergeStrategy: "replace",
   }).catch(() => undefined);
 }
   return { ok: true, runtimes: runtimeList() };
@@ -4846,6 +4866,9 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
         filePath: path.join(codexHome, "config.toml"),
         keyPath: 'plugins."ponytail@ponytail".enabled',
         value: true,
+        // ⛔ 同卸载分支：引擎必填 mergeStrategy（缺了整条请求被拒且此处 catch 吞掉），
+        //    漏了会让「卸载→重装」后插件永久 disabled（seedConfigSections 幂等不回滚 enabled）。
+        mergeStrategy: "replace",
       }).catch(() => undefined);
     } else {
       await runRuntimeInstaller(id, runtimeInstaller("install-runtimes.cjs"), [id]);

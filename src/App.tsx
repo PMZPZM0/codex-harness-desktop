@@ -17567,7 +17567,7 @@ const commandMatches = useMemo(() => {
                   <button className="secondary-setting" onClick={() => { void copyTextToClipboard(devRuntimes.map((r: any) => `# ${r.name}\n${r.description}\n${r.installed || r.builtIn ? "状态：已就绪" : "状态：未安装"}\n`).join("\n")); setNotice("工具清单已复制"); }}><Copy size={13} />复制清单</button>
                 </div>
               </details>
-              <p className="settings-card-hint">引擎与 Node 随应用内置；Python（含 Tkinter、requests/httpx/flask/fastapi/playwright）、Git、PowerShell、ripgrep、uv、CMake、7-Zip、jq、Ninja 与两类浏览器内核均按需下载（npmmirror / gh 加速，失败自动回落官方源）；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）；引擎在会话里自行安装工具时，此页状态也会自动刷新。建议装机后先装 Git（引擎执行 shell 命令依赖它）。</p>
+              <p className="settings-card-hint">引擎与 Node 随应用内置；「桌面与浏览器自动化」（Nuphus + Playwright CLI + CloakBrowser）与 ponytail 写代码模式插件随包预装、开箱即用；Python、Git、PowerShell、ripgrep、uv、CMake、7-Zip、jq、Ninja 与两类浏览器内核均按需下载（npmmirror / gh 加速，失败自动回落官方源），首次启动检测到缺 Git 会自动补装；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）；引擎在会话里自行安装工具时，此页状态也会自动刷新。</p>
             </section>}
 
             {/* 开发工具 安装/卸载 实时进度弹窗（替代 window.confirm——后者会抢焦点 + 打断输入框） */}
