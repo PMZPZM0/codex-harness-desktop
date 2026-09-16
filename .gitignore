@@ -56,6 +56,10 @@ dist-new/
 # 大体积二进制运行时（不纳入 git，首次启动由 install-runtimes.cjs 按需下载）
 resources/tools/*
 !resources/tools/harness-media.mjs
+# pwsh 无窗口桥的编译源码（产物 pwsh.exe 由 CI 在 runner 上现编，见 scripts/prepare-windows-tools.cjs）
+!resources/tools/pwsh-headless/
+resources/tools/pwsh-headless/*
+!resources/tools/pwsh-headless/PwshHeadless.cs
 
 # 本地留存的已发布安装包（数百 MB 二进制，发布站/GitHub 才是权威分发处）
 installers-archive/

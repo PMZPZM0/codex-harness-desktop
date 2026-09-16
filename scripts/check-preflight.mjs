@@ -3026,6 +3026,106 @@ w.postMessage({id:1,op:"list",root});
   (mainTs.includes("引擎根本不校验") || mainTs.includes("不校验档位") ? ok : fail)("【28】main.ts 注释记录了实证结论（引擎读了 catalog 但不校验档位）");
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// 【29】SSH-only 发布流水线（09-16）
+// 背景：本机远端是 SSH（deploy key），SSH 只能推代码/标签 —— 既不能建 Release 也不能传资产，
+// 本机也没有 gh CLI / API token。所以「用 SSH 发版」的唯一形态是：推 tag → Actions 用仓库自带的
+// GITHUB_TOKEN 构建三端包并发布。这里把这条链的契约钉死：任何一处漂移都会让用户端**静默**收不到
+// 更新（更新器按资产名匹配，名字错了不报错、只显示「已是最新」）。
+// ═══════════════════════════════════════════════════════════════════
+{
+  const wfDir = join(ROOT, ".github", "workflows");
+  const release = readFileSync(join(wfDir, "release.yml"), "utf8");
+  const buildMac = readFileSync(join(wfDir, "build-mac.yml"), "utf8");
+  const buildWin = readFileSync(join(wfDir, "build-win.yml"), "utf8");
+  const prepWin = readFileSync(join(ROOT, "scripts", "prepare-windows-tools.cjs"), "utf8");
+  const updates = readFileSync(join(ROOT, "electron", "updates.ts"), "utf8");
+  const pkg29 = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+
+  (/\n\s+push:\s*\n\s+tags:\s*\n\s+- "v\*"/.test(release) ? ok : fail)("【29】release.yml 由 tag 推送触发（SSH 推 tag 即完成发版）");
+  (/permissions:\s*\n\s+contents: write/.test(release) ? ok : fail)("【29】release.yml 声明 contents: write（建 Release / 传资产必需，默认只读）");
+  (release.includes("uses: ./.github/workflows/build-mac.yml") && release.includes("uses: ./.github/workflows/build-win.yml") ? ok : fail)("【29】release.yml 复用两个构建工作流（构建步骤只此一份，避免同口径漂移）");
+  (/^\s*workflow_call:/m.test(buildMac) && /^\s*workflow_call:/m.test(buildWin) ? ok : fail)("【29】build-mac.yml / build-win.yml 都声明 workflow_call（可被 release 复用）");
+  ((/needs:\s*\[mac,\s*win\]/.test(release) || /needs:\s*\[win,\s*mac\]/.test(release)) ? ok : fail)("【29】publish 依赖 mac + win 两个 job（三端不齐不发版）");
+
+  // 构建侧 artifact 名 ⇄ 发布侧取件目录：改名不同步 = 发布 job 找不到文件（最易漂移处）
+  (buildWin.includes("name: win-x64") && release.includes("pick artifacts/win-x64") ? ok : fail)("【29】Windows artifact 名（win-x64）在构建与发布两侧一致");
+  (buildMac.includes("name: mac-${{ matrix.mac_target }}") && buildMac.includes("mac_target: arm64") && buildMac.includes("mac_target: x64") ? ok : fail)("【29】mac artifact 名由 matrix 产生（mac-arm64 / mac-x64）");
+  (release.includes("pick artifacts/mac-arm64") && release.includes("pick artifacts/mac-x64") ? ok : fail)("【29】发布侧按 mac-arm64 / mac-x64 取件（与构建侧 matrix 对应）");
+
+  // 资产命名 = 更新器的匹配契约（electron/updates.ts）：名字错 → 用户静默收不到更新
+  (updates.includes('a.name.includes("mac") && a.name.endsWith(".zip") && a.name.includes(arch)') && updates.includes('a.name.endsWith(".exe")') ? ok : fail)("【29】更新器匹配规则仍是「Windows 认 .exe / mac 认 mac+.zip+架构名」");
+  (release.includes("-win-x64.exe") && release.includes("-arm64-mac.zip") && release.includes("-x64-mac.zip") ? ok : fail)("【29】三个资产名同时满足更新器（mac x64 强制带架构名 —— electron-builder 原生产物不带 x64）");
+  (release.includes("--clobber") ? ok : fail)("【29】资产上传用 --clobber（重跑失败 job 不会因子资产重名而失败）");
+
+  // 更新说明：应用内「发现新版本」弹窗的内容来源，缺了必须直接失败
+  (release.includes("docs/releases/v${VERSION}.md") && release.includes("缺少更新说明") ? ok : fail)("【29】release.yml 强制要求 docs/releases/v<版本>.md（缺则发布失败，不当静默无说明发布）");
+  const currentNotes = join(ROOT, "docs", "releases", `v${pkg29.version}.md`);
+  (existsSync(currentNotes) ? ok : fail)(`【29】当前版本 ${pkg29.version} 的更新说明已在位（docs/releases/v${pkg29.version}.md）`);
+
+  // tag ⇄ 版本号：错配会让 Release 的 tag 与包内容对不上（用户装了 0.0.19 却被提示 0.0.18）。
+  // ⛔ 同样锚定实际条件表达式（第一版只查 GITHUB_REF_NAME 与 `!= "v${VERSION}"` 两个片段，
+  //    把条件首项改成 `"never"` 就恒假、守卫照样绿）。
+  (/if \[ "\$\{GITHUB_REF_TYPE\}" = "tag" \] && \[ "\$\{GITHUB_REF_NAME\}" != "v\$\{VERSION\}" \]; then/.test(release) ? ok : fail)("【29】推送的 tag 必须与 package.json 版本一致（错配直接失败）");
+
+  // Windows 随包工具链：CI 干净检出里 resources/tools/* 是空的（被 gitignore），必须能由脚本现造
+  (buildWin.includes("node scripts/prepare-windows-tools.cjs") ? ok : fail)("【29】Windows job 会现造随包工具链（CI 检出里 resources/tools/* 为空）");
+  (buildWin.includes("node scripts/verify-packaged-tools.cjs resources/tools") && buildWin.includes("node scripts/verify-packaged-tools.cjs release/win-unpacked/resources/tools") ? ok : fail)("【29】Windows job 打包前后都跑真 MCP 握手验收（缺随包能力=坏包）");
+  const prepMarkers = [
+    "npm-global/node_modules/@nuphus/nuphus-mcp/package.json",
+    "npm-global/node_modules/@playwright/cli/package.json",
+    // 引擎按 `nuphus-call …` 命令行调用桌面工具（35 个 schema 不进上下文）⇒ 这个桥必须在 PATH 上。
+    // 它不是任何 npm 包的 bin（npm 不会生成），mac 侧由 prepare-mac-tools 写 bin/nuphus-call，
+    // Windows 侧必须由本脚本写 npm-global/nuphus-call.cmd —— 漏了就是「README 有、用户用不了」。
+    "npm-global/nuphus-call.cmd",
+    "vscode-cli/code.exe",
+    "cloudflared.exe",
+    "ponytail-plugin/.codex-plugin",
+    "pwsh-headless/pwsh.exe",
+  ];
+  const missingPrep = prepMarkers.filter((m) => !prepWin.includes(m));
+  (missingPrep.length === 0 ? ok : fail)(`【29】prepare-windows-tools 硬校验覆盖随包能力${missingPrep.length ? "（缺：" + missingPrep.join(", ") + "）" : ""}`);
+  // ⛔ 只查 marker 字符串不够：把 `writeNuphusCallShim(prefix)` / `buildHeadlessBridge()` 注释掉，
+  //    marker 列表还在、硬校验反而会**正确地报缺**……但在「只注释调用、没跑脚本」的情形下预检
+  //    照样绿（假绿）。这里锚定两个**副作用调用本身**必须出现在 main 流程里。
+  (/^\s+writeNuphusCallShim\(prefix\);\s*$/m.test(prepWin) ? ok : fail)("【29】prepare-windows-tools 真的会写 nuphus-call 命令行桥（不是只在注释/校验表里提它）");
+  (/^\s+buildHeadlessBridge\(\);\s*$/m.test(prepWin) && /csc\.exe/.test(prepWin) && /target:winexe/.test(prepWin) ? ok : fail)("【29】prepare-windows-tools 真的会编译 pwsh 无窗口桥（csc /target:winexe）");
+
+  // extraResources 里每条 resources/tools 源，要么 prep 脚本能造、要么有明确出处
+  // extraResources 里每条 resources/tools 源，要么 prep 脚本能造、要么有明确出处：
+  //   - automation-tools.zip：before-pack.cjs 由 npm-global 现造
+  //   - 三个 .mjs 助手：在 .gitignore 规则之前就已纳入版本控制，干净检出里就有
+  const BY_DESIGN = new Set([
+    "resources/tools/automation-tools.zip",
+    "resources/tools/nuphus-call.mjs",
+    "resources/tools/harness-media.mjs",
+    "resources/tools/cloak-open.mjs",
+  ]);
+  const uncovered = [];
+  for (const entry of pkg29.build?.extraResources ?? []) {
+    const from = typeof entry === "string" ? entry : entry?.from;
+    if (!from || !from.startsWith("resources/tools/")) continue;
+    if (BY_DESIGN.has(from)) continue;
+    const seg = from.slice("resources/tools/".length);
+    if (!prepWin.includes(seg)) uncovered.push(from);
+  }
+  (uncovered.length === 0 ? ok : fail)(`【29】Windows 随包源全部可由 CI 现造${uncovered.length ? "（未覆盖：" + uncovered.join(", ") + "）" : ""}`);
+
+  // pwsh 无窗口桥的源码必须在版本控制里（否则 CI 编译不出 pwsh-headless/pwsh.exe）
+  const gitignore29 = readFileSync(join(ROOT, ".gitignore"), "utf8");
+  (gitignore29.includes("!resources/tools/pwsh-headless/PwshHeadless.cs") && existsSync(join(ROOT, "resources", "tools", "pwsh-headless", "PwshHeadless.cs")) ? ok : fail)("【29】pwsh-headless 源码已纳入版本控制（CI 现场编译）");
+
+  // ⛔ 打 zip 的执行体必须能独立于「随包 python」工作：09-16 安装包瘦身把 python 移出随包、
+  //    资源目录又被 gitignore ⇒ CI 干净检出里没有 python，而 before-pack → pack-automation 在
+  //    Windows job 里是打包前置步骤。只用 python 的实现会让整条发布流水线在 CI 上直接失败。
+  const packScript = readFileSync(join(ROOT, "scripts", "pack-automation.cjs"), "utf8");
+  // ⛔ 断言要锚定**实际分支条件**，不能只查标识符存在 —— 第一版只查 "System32"/packWithTar/--exclude
+  //    三个名字，把 `if (tarBin)` 改成 `if (false && tarBin)` 照样绿（假绿，反证时才发现）。
+  (/\nif \(tarBin\) \{\n {2}try \{ packWithTar\(tarBin\); packed = true; \}/.test(packScript) ? ok : fail)("【29】pack-automation 优先用 bsdtar（Windows 自带 tar.exe，CI 无随包 python 也能打 zip）");
+  (packScript.includes("npm-global/node_modules/cloakbrowser") && packScript.includes("npm-global/node_modules/.bin/cloakbrowser") ? ok : fail)("【29】bsdtar 分支的排除清单与 python 分支同源（含 .bin shim，否则「修复安装」把 CloakBrowser 装回来）");
+  (packScript.includes("npm-global/cloakbrowser.cmd") ? ok : fail)("【29】排除清单覆盖顶层 cloakbrowser shim 三件套");
+}
+
 // ---------- 汇总 ----------
 
 console.log("");

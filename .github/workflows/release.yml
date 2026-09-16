@@ -1,0 +1,99 @@
+name: Release
+
+# ⛔ 为什么发布要跑在 Actions 里而不是本机：
+#   本机的 GitHub 远端是 SSH（deploy key `~/.ssh/codex_gh_release`），SSH **只能推代码/标签**，
+#   既不能创建 Release 也不能上传资产；本机也没有 gh CLI 与任何 API token。
+#   所以「用 SSH 发版」的唯一可行形态就是：`git push origin v0.0.18` → 本工作流用仓库自带的
+#   GITHUB_TOKEN 构建三端包并发布。发版动作 = 推一个 tag，其余全在这里完成。
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+# 建 Release / 传资产需要写权限（默认只读）；actions: read 供 publish 取构建 artifact
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mac:
+    # 复用唯一的 mac 构建实现（arm64 + x64 双芯片）
+    uses: ./.github/workflows/build-mac.yml
+    secrets: inherit
+
+  win:
+    # 复用唯一的 Windows 构建实现（含随包工具链现造）
+    uses: ./.github/workflows/build-win.yml
+    secrets: inherit
+
+  publish:
+    needs: [mac, win]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 组装资产（版本号核对 + 规范化命名）
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "v${VERSION}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} 与 package.json 的版本 ${VERSION} 不一致——先对齐版本号再打 tag"
+            exit 1
+          fi
+          mkdir -p dist-assets
+          # 命名规则由应用侧更新器决定（electron/updates.ts）：
+          #   Windows 取第一个 *.exe；mac 必须同时含 "mac"、".zip" 与架构名（arm64 / x64）。
+          #   ⛔ electron-builder 在 mac x64 上产出的是 `…-0.0.18-mac.zip`（**不带 x64**），
+          #      直接用会导致 Intel 用户永远匹配不到资产——所以这里强制规范化成带架构的名字。
+          pick() {
+            local dir="$1" pattern="$2" out="$3"
+            local found=()
+            while IFS= read -r file; do found+=("$file"); done < <(find "$dir" -type f -name "$pattern" | sort)
+            if [ "${#found[@]}" -ne 1 ]; then
+              echo "::error::${dir} 下匹配 ${pattern} 的文件有 ${#found[@]} 个（应恰好 1 个，artifact 里可能混了旧版本）"
+              printf '  %s\n' "${found[@]}"
+              exit 1
+            fi
+            case "$(basename "${found[0]}")" in
+              *"${VERSION}"*) ;;
+              *) echo "::error::产物 ${found[0]} 文件名不含版本号 ${VERSION}"; exit 1 ;;
+            esac
+            cp "${found[0]}" "dist-assets/${out}"
+          }
+          pick artifacts/win-x64   '*.exe' "Codex.Harness.Desktop-${VERSION}-win-x64.exe"
+          pick artifacts/mac-arm64 '*.zip' "Codex.Harness.Desktop-${VERSION}-arm64-mac.zip"
+          pick artifacts/mac-x64   '*.zip' "Codex.Harness.Desktop-${VERSION}-x64-mac.zip"
+          echo "=== 待发布资产 ==="
+          (cd dist-assets && sha256sum ./* | tee ../assets-sha256.txt && ls -l)
+
+      - name: 创建或更新 Release 并上传资产
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          NOTES="docs/releases/v${VERSION}.md"
+          if [ ! -f "${NOTES}" ]; then
+            echo "::error::缺少更新说明 ${NOTES}（每次发版都要写，它是应用内「发现新版本」弹窗展示的内容）"
+            exit 1
+          fi
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            echo "release v${VERSION} 已存在 → 更新资产（可重跑）"
+          else
+            gh release create "v${VERSION}" --title "v${VERSION}" --notes-file "${NOTES}"
+          fi
+          gh release upload "v${VERSION}" dist-assets/* --clobber
+          echo "=== 线上资产核对（size 应与上面 sha256sum 那步的 ls 一致；digest 是 GitHub 侧实算） ==="
+          gh release view "v${VERSION}" --json tagName,url,assets \
+            --jq '.url, (.assets[] | "  \(.name)  \(.size) B  \(.digest // "(digest 待生成)")")'

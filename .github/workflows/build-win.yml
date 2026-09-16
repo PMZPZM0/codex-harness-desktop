@@ -1,0 +1,55 @@
+name: Build Windows
+
+# 为什么要这条流水线：package.json 的 extraResources 指向 resources/tools/*，而它被 .gitignore 排除
+# （大体积二进制），CI 的干净检出里什么都没有。mac 一直有 prepare-mac-tools.cjs 现造，Windows 过去
+# 只能在开发机上手工打 —— 于是「SSH 推 tag 自动发版」覆盖不了 Windows。这里补上：
+#   prepare-windows-tools.cjs 现造随包工具链 → 打包 → 用 verify-packaged-tools.cjs 真 MCP 握手验收。
+on:
+  # 被 release.yml 复用：唯一的 Windows 构建实现只此一处
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare bundled toolchain (node / npm-global / vscode-cli / cloudflared / ponytail / pwsh-headless)
+        run: node scripts/prepare-windows-tools.cjs
+
+      - name: Verify bundled toolchain before packaging
+        run: node scripts/verify-packaged-tools.cjs resources/tools
+
+      - name: Build renderer & main
+        run: npm run build
+
+      - name: Pack Windows installer
+        # ⛔ 不用 npx：本机踩过「PowerShell 执行策略挡 npx.ps1」，直接调 cli.js 无此依赖
+        run: node node_modules/electron-builder/cli.js --win nsis --publish never
+        env:
+          # 未配置签名证书（本地自用包）；关掉自动发现可跳过 winCodeSign 的签名步骤
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify packaged toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d release/win-unpacked/resources/tools
+          node scripts/verify-packaged-tools.cjs release/win-unpacked/resources/tools
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: win-x64
+          path: release/*.exe
+          if-no-files-found: error

@@ -1,6 +1,8 @@
 name: Build macOS
 
 on:
+  # 被 release.yml 复用：唯一的 mac 构建实现只此一处，避免两处步骤漂移
+  workflow_call:
   workflow_dispatch:
     inputs:
       version:
