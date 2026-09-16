@@ -162,6 +162,7 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   - **读取端**：`chooseModel` 切模型优先级 = 本地 model-efforts map → 档案 `models[].effort` → 会话记录 → 模型默认档；启动 `useModelProviders` 的 onAutoSelect 也读档案。
   - **验收坑（09-16 实录）**：e2e 档案是持久 profile——第一轮成功验收会把 xhigh 落盘，之后的反证（摘修复）永远绿。断言必须**两步自含**：先选「高」归零基准，再选「极高」验跟随；档位断言要断到主进程落盘的 `custom-model.json`，只看内存/界面会假绿。
   - 预检【25】16 条断言：档位规则用 **Node `--experimental-strip-types` 直接 import effort.ts 真代码**（不是字符串匹配）；7 条变异反证全红。桥对 chat 上游把 xhigh/ultra 压到 high。
+  - **紧凑化 + 两端同步（09-16 追加，用户「注释删了，紧凑简洁展示；这两边能不能实时同步」）**：思考菜单每档下面的说明小字全部删掉（`effortMenuOptions` 不再有 desc，deepseek 特例一并撤）；tooltip 缩短为「思考强度」。模型编辑器「思考档位」勾选 chips 上加 **「当前」徽标**（`.type-chip.is-current` + `.chip-current`，与 composer 共用 `effort` 状态——composer 选档、编辑器徽标即时跟移；反向：编辑器取消勾选当前档由回落 effect 兜底）。
 
 - **本地协议桥：chat-only 网关可以直接用了（09-16，用户拍板「加代理功能，换别的电脑也要能用」）**：
   引擎只会发 Responses（POST /v1/responses），而火山 coding / Kimi Coding 等网关只有 /v1/chat/completions——过去这类网关「连接测试通过、对话全废」。新增 `electron/responses-bridge.ts`：主进程内监听 `127.0.0.1:47121`（被占退回随机端口），引擎照常按 Responses 调用，桥按上游实际能力**透传（支持 responses 时零转换）或双向转换成 Chat Completions**（流式文本 / 工具调用分片 / usage 映射 / reasoning_content→summary 事件，推理内容已实证会落进 rollout）。凭据由引擎带入 `Authorization` 原样透传，桥不留存任何密钥 → **换电脑只需重填一次 Key，行为与设备无关**；代码随主进程编译进 dist-electron，无外部依赖、无安装步骤。
