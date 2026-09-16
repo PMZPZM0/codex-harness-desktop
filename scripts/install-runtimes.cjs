@@ -1,17 +1,27 @@
 /* 把 Node.js LTS + PowerShell 7 LTS 内置到应用 resources/tools/
- * node  -> resources/tools/node/node.exe
- * pwsh  -> resources/tools/pwsh/pwsh.exe
- * 用法: node scripts/install-runtimes.cjs
- * 说明: 用 Windows 自带 bsdtar (System32\tar.exe) 解压 zip（Git Bash 的 GNU tar 不行）。
+ * Windows: node -> resources/tools/node/node.exe, pwsh -> resources/tools/pwsh/pwsh.exe
+ *          用 Windows 自带 bsdtar (System32\tar.exe) 解压 zip（Git Bash 的 GNU tar 不行）。
+ * macOS  ⛔（09-16 适配）：此前本脚本只有 win-x64 资产，mac 上点「安装」下载的全是
+ *          Windows 二进制（装了也不能跑）＝「开发工具全部安装失败」的根因之一。
+ *          现按平台分叉：darwin 资产（node-darwin-arm64/x64、powershell-osx、
+ *          python-build-standalone、evermeet ffmpeg、jq/ninja/rg/uv/cmake 的 mac 构建），
+ *          解压后统一 chmod +x（mac 无执行位 = permission denied）。
+ * 用法: node scripts/install-runtimes.cjs [id...]
  */
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { execSync } = require("child_process");
 
+const IS_MAC = process.platform === "darwin";
 const NODE_VERSION = "v24.19.0";
-const NODE_URL = `https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-win-x64.zip`;
+const NODE_URL = IS_MAC
+  ? `https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-darwin-${process.arch === "arm64" ? "arm64" : "x64"}.tar.gz`
+  : `https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-win-x64.zip`;
 const PS7_VERSION = "7.6.4";
-const PS7_URL = `https://github.com/PowerShell/PowerShell/releases/download/v${PS7_VERSION}/PowerShell-${PS7_VERSION}-win-x64.zip`;
+const PS7_URL = IS_MAC
+  ? `https://github.com/PowerShell/PowerShell/releases/download/v${PS7_VERSION}/powershell-${PS7_VERSION}-osx-${process.arch === "arm64" ? "arm64" : "x64"}.tar.gz`
+  : `https://github.com/PowerShell/PowerShell/releases/download/v${PS7_VERSION}/PowerShell-${PS7_VERSION}-win-x64.zip`;
 // Portable runtimes: no registry changes and no dependency on a system-wide install.
 // MinGit is the official Git for Windows command-line bundle. Python uses the
 // embeddable distribution plus the matching official Tcl/Tk components so GUI
@@ -52,13 +62,32 @@ const WINLIBS_ZIP = "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r1
 const WINLIBS_URL = `https://github.com/brechtsanders/winlibs_mingw/releases/download/${WINLIBS_VERSION}/${WINLIBS_ZIP}`;
 
 const TOOLS = process.env.TOOLS_ROOT || path.join(__dirname, "..", "resources", "tools");
-const TMP = process.env.TEMP || "C:\\Windows\\Temp";
+const TMP = process.env.TEMP || process.env.TMP || os.tmpdir();
 const requested = new Set(process.argv.slice(2).filter((arg) => !arg.startsWith("--")));
 const want = (id) => requested.size === 0 || requested.has(id);
 const DIRECT = process.argv.includes("--direct");
 
-// bsdtar 支持 zip 和 Windows 反斜杠路径；Git Bash 的 GNU tar 两者都不行
-const BSDTAR = fs.existsSync("C:\\Windows\\System32\\tar.exe") ? "C:\\Windows\\System32\\tar.exe" : "tar";
+// 解压器：Windows 用 System32 bsdtar；mac 系统自带 bsdtar（/usr/bin/tar，zip/tar.gz/tar.xz 通吃）
+const BSDTAR = IS_MAC ? "/usr/bin/tar" : (fs.existsSync("C:\\Windows\\System32\\tar.exe") ? "C:\\Windows\\System32\\tar.exe" : "tar");
+
+// ⛔ mac：无执行位 = permission denied。解压/单文件落地后统一补 +x（zip 不保 Unix 位）。
+function chmodExec(target) {
+  if (!IS_MAC) return;
+  const walk = (p) => {
+    let entries = [];
+    try { entries = fs.readdirSync(p, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const full = path.join(p, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile()) { try { fs.chmodSync(full, 0o755); } catch { /* 只读等场景跳过 */ } }
+    }
+  };
+  try {
+    const stat = fs.statSync(target);
+    if (stat.isDirectory()) walk(target);
+    else fs.chmodSync(target, 0o755);
+  } catch { /* 目标不存在时由调用方报错 */ }
+}
 
 // 代理：仅当显式设置 PROXY 环境变量时才走本机代理（开发机可用）。
 // 09-16 起安装包不带工具链，普通用户机器上没有 7897 —— 默认空，避免每个文件白等 30s 连接超时。
@@ -115,6 +144,7 @@ async function install(label, url, destDir, opts = {}) {
   fs.mkdirSync(destDir, { recursive: true });
   const stripArg = opts.strip ? " --strip-components=1" : "";
   execSync(`"${BSDTAR}" -xf "${zip}" -C "${destDir}"${stripArg}`, { stdio: "inherit" });
+  chmodExec(destDir);
   console.log(`[${label}] extracted to ${destDir}`);
 }
 
@@ -124,6 +154,7 @@ async function installFile(label, url, destDir, fileName) {
   fs.mkdirSync(destDir, { recursive: true });
   console.log(`[${label}] downloading ${url}`);
   await download(url, target);
+  chmodExec(target);
   console.log(`[${label}] installed to ${target}`);
 }
 
@@ -283,4 +314,73 @@ async function main() {
   console.log("[done] tools installed at " + TOOLS);
 }
 
-main().catch((e) => { console.error("[fail] " + e.message); process.exit(1); });
+/** ⛔ mac 分支（09-16）：此前 mac 上跑的也是下面的 Windows 安装表——下载 win-x64 资产、
+ *  marker 全是 .exe，装完根本跑不起来。darwin 资产集中在这里（与 main.ts 的
+ *  DARWIN_MARKERS 一一对应，改一处必须同步另一处）。 */
+async function mainMac() {
+  const arch = process.arch === "arm64" ? "arm64" : "x64";
+  const jqArch = process.arch === "arm64" ? "arm64" : "amd64";
+  const rgArch = process.arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin";
+  if (want("node")) await install("node", NODE_URL, path.join(TOOLS, "node"), { marker: "bin/node", strip: true });
+  if (want("pwsh")) await install("ps7", PS7_URL, path.join(TOOLS, "pwsh"), { marker: "pwsh", strip: false });
+  if (want("git")) {
+    // mac 不单独装 git：系统 git（/usr/bin/git）随 Xcode CLT 提供，装不装由系统弹窗引导。
+    // 已有系统 git（homebrew 同样算）→ 直接算已装；没有就触发 CLT 安装对话框。
+    const candidates = ["/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git"];
+    if (candidates.some((p) => fs.existsSync(p))) {
+      console.log("[skip] git (system) available");
+    } else {
+      console.log("[git] no system git — launching Xcode Command Line Tools installer…");
+      try { execSync("xcode-select --install", { stdio: "ignore", timeout: 60000 }); } catch { /* 已装/已请求时非零 */ }
+      console.log("[git] 若系统弹窗未出现，请手动执行: xcode-select --install");
+    }
+  }
+  if (want("python")) {
+    // python-build-standalone（uv 官方构建）：install_only 包解到 TOOLS 根 → python/bin/python3
+    const dir = TOOLS;
+    if (fs.existsSync(path.join(dir, "python", "bin", "python3"))) {
+      console.log(`[skip] python already at ${dir}`);
+    } else {
+      const release = JSON.parse(execSync(`curl -sL --fail --max-time 60 "https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest"`, { encoding: "utf8", maxBuffer: 1 << 26 }));
+      const triple = process.arch === "arm64" ? "aarch64" : "x86_64";
+      const asset = (release.assets || []).find((a) => a.name.startsWith("cpython-3.13.") && a.name.endsWith(`${triple}-apple-darwin-install_only.tar.gz`));
+      if (!asset) throw new Error("No macOS Python 3.13 standalone runtime asset");
+      await install("python", asset.browser_download_url, dir, { marker: "python/bin/python3", strip: false, archiveName: asset.name });
+    }
+    const python = path.join(TOOLS, "python", "bin", "python3");
+    if (want("python") && fs.existsSync(python)) {
+      try {
+        execSync(`"${python}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${PIP_PACKAGES}`, { stdio: "inherit", timeout: 900000 });
+      } catch (error) { console.log("[pip-packages] failed (optional): " + String(error.message).split("\n")[0]); }
+    }
+  }
+  // evermeet.cx 的 mac 单文件构建（官方 gyan.dev 只有 Windows 包）
+  if (want("ffmpeg")) {
+    await installFile("ffmpeg", "https://evermeet.cx/ffmpeg/get/ffmpeg/zip", path.join(TOOLS, "ffmpeg", "bin"), "ffmpeg");
+    await installFile("ffprobe", "https://evermeet.cx/ffmpeg/get/ffprobe/zip", path.join(TOOLS, "ffmpeg", "bin"), "ffprobe");
+  }
+  if (want("vscode-cli")) await install("vscode-cli", `https://update.code.visualstudio.com/latest/cli-darwin-${arch}/stable`, path.join(TOOLS, "vscode-cli"), { marker: "code", strip: false, archiveName: `vscode-cli-darwin-${arch}.zip` });
+  if (want("jq")) await installFile("jq", `https://github.com/jqlang/jq/releases/latest/download/jq-macos-${jqArch}`, path.join(TOOLS, "jq"), "jq");
+  if (want("ninja")) await install("ninja", "https://github.com/ninja-build/ninja/releases/latest/download/ninja-mac.zip", path.join(TOOLS, "ninja"), { marker: "ninja", strip: false, archiveName: "ninja-mac.zip" });
+  if (want("sevenzip")) await install("7zip", "https://github.com/ip7z/7zip/releases/download/25.01/7z2501-mac.tar.xz", path.join(TOOLS, "sevenzip"), { marker: "7zz", strip: false });
+  if (want("yt-dlp")) await installFile("yt-dlp", "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos", path.join(TOOLS, "yt-dlp"), "yt-dlp");
+  if (want("rg")) await install("rg", `https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/ripgrep-${RG_VERSION}-${rgArch}.tar.gz`, path.join(TOOLS, "rg"), { marker: "rg", strip: true });
+  if (want("uv")) await install("uv", `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${rgArch}.tar.gz`, path.join(TOOLS, "uv"), { marker: "uv", strip: false });
+  if (want("cmake")) await install("cmake", `https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-macos-universal.tar.gz`, path.join(TOOLS, "cmake"), { marker: "CMake.app/Contents/bin/cmake", strip: false });
+  if (want("conda")) {
+    const condaDir = path.join(TOOLS, "miniconda");
+    if (fs.existsSync(path.join(condaDir, "bin", "conda"))) { console.log(`[skip] miniconda already at ${condaDir}`); }
+    else {
+      const installer = path.join(TMP, `Miniconda3-py312_25.1.1-2-MacOSX-${arch === "arm64" ? "arm64" : "x86_64"}.sh`);
+      await download(`https://repo.anaconda.com/miniconda/Miniconda3-py312_25.1.1-2-MacOSX-${arch === "arm64" ? "arm64" : "x86_64"}.sh`, installer);
+      fs.mkdirSync(condaDir, { recursive: true });
+      console.log(`[miniconda] batch installing to ${condaDir}`);
+      execSync(`bash "${installer}" -b -p "${condaDir}"`, { stdio: "inherit", timeout: 900000 });
+      console.log("[miniconda] installed to " + condaDir);
+    }
+  }
+  console.log("[done] tools installed at " + TOOLS);
+}
+
+if (IS_MAC) mainMac().catch((e) => { console.error("[fail] " + e.message); process.exit(1); });
+else main().catch((e) => { console.error("[fail] " + e.message); process.exit(1); });

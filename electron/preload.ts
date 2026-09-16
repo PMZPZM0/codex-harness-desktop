@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("codex", {
+  // ⛔ mac 适配（09-16）：渲染层此前完全不知道自己跑在什么平台——窗口控制键让位、
+  // 平台差异 UI 全靠这个字段。sandboxed preload 里 process.platform 可用。
+  platform: process.platform,
   request: (method: string, params: unknown = {}) => ipcRenderer.invoke("codex:request", method, params),
   respond: (id: string | number, result: unknown) => ipcRenderer.invoke("codex:respond", id, result),
   getUsername: () => ipcRenderer.invoke("user:name"),

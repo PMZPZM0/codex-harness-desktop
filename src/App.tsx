@@ -8775,6 +8775,17 @@ export default function App() {
     void window.codex.openExternal(url);
   };
   const [uiLang, setUiLang] = useState(() => localStorage.getItem("ui-lang") ?? "zh");
+  // ⛔ mac 适配（09-16）：把平台写进 <html data-os>，styles.css 用 [data-os="darwin"] 分叉
+  // 窗口控制键让位（右上 145px 是 Windows WCO 专属预留，mac 上是纯空白）。
+  // data-motion="force"（默认）：无视 macOS 系统级「减少动态效果」——styles.css 里所有
+  // prefers-reduced-motion 静音块都加了 html:not([data-motion="force"]) 前缀，用户实测
+  // mac 上动画全静止就是系统这个开关命中了全局 `*` 块。以后要做「跟随系统」再摘属性。
+  useEffect(() => {
+    const p = (window as any).codex?.platform
+      || (navigator.platform?.toLowerCase().includes("mac") ? "darwin" : "win32");
+    document.documentElement.dataset.os = p;
+    document.documentElement.dataset.motion = "force";
+  }, []);
   const [uiZoom, setUiZoom] = useState(() => Number(localStorage.getItem("ui-zoom") ?? "1"));
   useEffect(() => { document.documentElement.dataset.uiLang = uiLang; localStorage.setItem("ui-lang", uiLang); }, [uiLang]);
   useEffect(() => { (document.body.style as any).zoom = String(uiZoom); localStorage.setItem("ui-zoom", String(uiZoom)); }, [uiZoom]);
@@ -12880,7 +12891,7 @@ const commandMatches = useMemo(() => {
   /** 会话跨供应商迁移：引擎线程绑定创建时的 provider，settings/update 换 provider 会被拒。
    *  唯一官方通道 = thread/resume { modelProvider, config, model }（schema 实证 resume 接受
    *  这三个覆盖参数）——resume 后会话即绑定新供应商，历史完整保留，原会话数据不丢。 */
-  async function migrateThreadToProvider(threadId: string, target: { provider: string; model: string; name: string; baseUrl: string; wireApi?: string }): Promise<boolean> {
+  async function migrateThreadToProvider(threadId: string, target: { provider: string; model: string; name: string; baseUrl: string; wireApi?: string }): Promise<{ ok: boolean; error?: string }> {
     try {
       const officialTarget = target.provider === "openai-official";
       const resumeParams: Record<string, unknown> = {
@@ -12917,8 +12928,14 @@ const commandMatches = useMemo(() => {
       await updateThreadSettings({ model: target.model, ...(officialTarget ? {} : { model_provider: HARNESS_PROVIDER_ID }), effort: null });
       // 迁移成功：更新会话绑定供应商登记表（发送前检测依赖此表）
       threadProviderRef.current.set(threadId, HARNESS_PROVIDER_ID);
-      return true;
-    } catch { return false; }
+      return { ok: true };
+    } catch (error: any) {
+      // ⛔ mac 上用户报「换供应商自动新建会话、旧会话死掉」＝原地迁移失败后每次都走 fork
+      // 接力。旧实现把引擎的真实报错吞成 return false，根本没法定位——这里把原因带上。
+      const message = String(error?.message ?? error ?? "resume 失败");
+      console.warn("[align] thread/resume 迁移失败", threadId, target.provider, message);
+      return { ok: false, error: message };
+    }
   }
 
   /** 会话「自动接力」到当前激活供应商（09-14 用户定稿：切换供应商后旧会话要能直接继续用）。
@@ -12939,7 +12956,7 @@ const commandMatches = useMemo(() => {
     if (!opts?.silent) showToast("正在自动接力", CONTINUITY_TEXT.aligning(label));
     // ① 原地迁移（首选）：threadId 不变，历史与侧栏位置全不动，用户完全感知不到
     const migrated = await migrateThreadToProvider(threadId, target);
-    if (migrated) {
+    if (migrated.ok) {
       saveThreadModel(threadId, `custom:${target.provider}:${target.model}`);
       if (!opts?.silent) showToast("已自动接力", CONTINUITY_TEXT.migrated(label));
       return ALIGN_RESULT.migrated;
@@ -12950,7 +12967,7 @@ const commandMatches = useMemo(() => {
       const next = (forked as any)?.thread;
       if (!next?.id) throw new Error("引擎未返回新分支");
       const relayed = await migrateThreadToProvider(next.id, target);
-      if (!relayed) throw new Error("接力会话绑定失败");
+      if (!relayed.ok) throw new Error(relayed.error || "接力会话绑定失败");
       saveThreadModel(next.id, `custom:${target.provider}:${target.model}`);
       threadProviderRef.current.set(next.id, HARNESS_PROVIDER_ID);
       await refreshThreads();
@@ -12967,8 +12984,10 @@ const commandMatches = useMemo(() => {
       }
       showToast("已自动接力", CONTINUITY_TEXT.relayed(label));
       return ALIGN_RESULT.relayed;
-    } catch {
-      showToast("自动接力失败", CONTINUITY_TEXT.failed(label));
+    } catch (error: any) {
+      // ⛔ 失败必带原因（09-16）：裸文案用户只能截图没法报障，带上引擎真实报错才可定位
+      const detail = error?.message ? `（${String(error.message).slice(0, 160)}）` : "";
+      showToast("自动接力失败", CONTINUITY_TEXT.failed(label) + detail);
       return ALIGN_RESULT.failed;
     }
   }
