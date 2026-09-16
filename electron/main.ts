@@ -2657,6 +2657,9 @@ app.whenReady().then(async () => {
   catch (error) { console.warn("[boot] scheduler.start failed (降级继续):", error); }
   try { await remote.start(); }
   catch (error) { console.warn("[boot] remote.start failed (降级继续):", error); }
+  // Git 自动安装（后台、不阻塞）：瘦身版不再内置 git，引擎 shell 依赖它，缺就静默补装
+  // （函数内部自带 catch 与 done 事件广播，不会冒泡成 unhandled rejection）
+  void autoInstallGitIfNeeded();
   // 微信机器人网关：扫码登录 → 微信消息 → Codex 会话处理 → 回复发回微信
   weixinGateway = new WeixinGateway(path.join(app.getPath("userData"), "weixin-accounts"), {
     onMessage: (message) => void handleWeixinMessage(message),
@@ -4858,6 +4861,34 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
     runtimeInstalls.delete(id);
   }
 });
+
+// 首次启动自动安装 Git（09-16 瘦身后续）：git 不再随包，但引擎执行 shell 命令依赖它，
+// 用户不点安装的话引擎跑终端命令全是失败。启动时检测到缺失就后台自动装一次
+// （install-runtimes.cjs：npmmirror 镜像优先、失败回落官方源），失败不阻塞启动，
+// 用户仍可到「开发工具」页手动装；下次启动若仍缺会再试（自愈）。
+// 仅 Windows：mac 包仍内置 git（copy-mac-tools 只排除 pw-browsers/cloak-cache），不需要装。
+let gitAutoInstallStarted = false;
+async function autoInstallGitIfNeeded(): Promise<void> {
+  if (process.platform !== "win32" || gitAutoInstallStarted) return;
+  const root = toolsRoot();
+  if (!root || runtimeInstalls.has("git")) return;
+  if (existsSync(path.join(root, devRuntimeSpecs.git.marker))) return;
+  gitAutoInstallStarted = true;
+  sendToWindow("runtime:progress", { id: "git", message: "检测到未安装 Git，正在后台自动安装（镜像优先，约 90 MB）…" });
+  const task = (async () => {
+    await runRuntimeInstaller("git", runtimeInstaller("install-runtimes.cjs"), ["git"]);
+    await restartServerWhenIdle("git");
+  })();
+  runtimeInstalls.set("git", task);
+  try {
+    await task;
+    sendToWindow("runtime:progress", { id: "git", message: "Git 自动安装完成，引擎已刷新", done: true });
+  } catch (error) {
+    sendToWindow("runtime:progress", { id: "git", message: `Git 自动安装失败：${String(error)}（可稍后在「开发工具」页手动安装）`, done: true });
+  } finally {
+    runtimeInstalls.delete("git");
+  }
+}
 
 // CloakBrowser 常驻助手：单个 node 进程托管指纹浏览器窗口（headed + humanize），
 // stdin 逐行喂 URL；stdout 回传 JSON 事件（boot / launching / ready / opened / error / closed）。

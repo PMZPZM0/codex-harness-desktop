@@ -90,7 +90,7 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 | 能力 | 入口 | 说明 |
 |---|---|---|
 | 引擎本体 | `app-server --listen stdio://` | 会话、工具、插件、钩子、技能全部走它 |
-| 基础运行时 | `resources/tools/{node,python,git,pwsh,vscode-cli,rg,uv,cmake,ninja,sevenzip,jq}` | 已内置随包，**不要**再联网装 |
+| 基础运行时 | `resources/tools/{node,python,git,pwsh,vscode-cli,rg,uv,cmake,ninja,sevenzip,jq}` | 开发机本地保留；**打包后仅 node/vscode-cli 内置**，其余开发工具页按需下载（缺 Git 启动自动补装） |
 | 桌面自动化 MCP | `tools/npm-global` 里的 `nuphus`（MCP 服务器名） | 需先装「自动化工具包」，工具前缀 `desktop_*` / `browser_*` |
 | 浏览器自动化 CLI | `tools/npm-global/playwright-cli` | 需先装「自动化工具包」，首次 open 会提示装内核 |
 | 指纹浏览器 | `require("cloakbrowser")` / `tools/npm-global/cloakbrowser` | 需先装「自动化工具包」+「Cloak 内核」 |
@@ -108,7 +108,7 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 工具链清单
 
-**随包内置（离线可用，勿重复下载）**：Node、Python（含 Tkinter/requests/flask/fastapi/playwright）、Git、PowerShell 7、VS Code CLI、ripgrep、uv、CMake、Ninja、7-Zip、jq。
+**随包内置（离线可用，勿重复下载）**：Node（安装器引导）、VS Code CLI。其余（Python/Git/PowerShell/rg/uv/CMake/Ninja/7-Zip/jq）09-16 起不随包，走「开发工具」页按需下载；**首次启动检测到缺 Git 会自动后台补装**（`autoInstallGitIfNeeded`：仅 Windows、与手动安装互斥、装完 `restartServerWhenIdle` 刷新引擎、失败广播 done 事件不悬挂安装态，下次启动仍缺会再试）。
 
 **按需安装（应用内「开发工具」页 或 手动）**：
 
@@ -162,6 +162,7 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   - **界面自动刷新**：主进程 `watchFs(toolsRoot(), {recursive})` 去抖 1.5s 广播 `runtime:progress {auto:true,done:true}`，渲染层收到即刷新开发工具清单与工具状态——引擎在会话里自己装了工具，设置页不用重开。
   - **坑**：① 给「开发工具」新加的 install 分支若直接 spawn 官方源 = 绕过加速，必须走 runBrowserDownload/install-runtimes 的通道逻辑（预检【26】守）；② 变异 package.json 做反证要用 JSON-aware 方式（字符串拼接双逗号会把 JSON 弄非法 → 预检崩在解析上，守卫「恒绿」假象）；③ 反证触过的源码 mtime 变新，恢复后必须重建再终验。
   - **用户须知（文案已同步）**：新装机用户先在开发工具装 **Git**（引擎执行 shell 命令依赖）与所需工具链；自动化的安装顺序仍是「桌面与浏览器自动化 → 内核」。
+  - **Git 首启自动补装（09-16 下午，用户拍板「首次启动自动安装行」）**：`autoInstallGitIfNeeded`（main.ts，挂 whenReady 链 remote.start 之后）——仅 Windows（mac 包仍内置 git）、marker（`git\cmd\git.exe`）已存在就跳过、`runtimeInstalls` 互斥防与手动安装撞车；复用按钮安装同一条 install-runtimes.cjs 链（npmmirror 优先），装完 `restartServerWhenIdle` 让引擎新 PATH 生效；失败广播 `done` 事件（不悬挂安装态），下次启动仍缺会再试（自愈）。渲染层 App.tsx 对 `id=git && message 含"自动"` 的 done 事件弹 notice（手动安装的「安装完成」不含「自动」二字，不受影响）。 ⛔ 启动时机必须在 `server.start()` **之后**（restart 语义是杀掉现有引擎重 spawn，太早挂会跟首启 spawn 撞车）。
   - 预检【26】守卫 + 13 条变异反证全红；构建三关全绿。
 
 - **思考等级：低/中/高/最高/极高 + 跟着模型保存（09-16，用户「不是跟着模型保存生效的，每次都要二次保存」）**：

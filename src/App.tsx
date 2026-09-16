@@ -8798,7 +8798,11 @@ export default function App() {
     // 不动「正在安装」指示（那是按钮安装路径的专属状态）
     if (event.auto) { refreshDevRuntimes(); refreshToolsStatus(); return; }
     setRuntimeProgress((current) => ({ ...current, [event.id]: event.message.split(/\r?\n/).at(-1) || event.message }));
-    if (event.done) { setRuntimeInstalling(null); refreshDevRuntimes(); }
+    if (event.done) {
+      setRuntimeInstalling(null); refreshDevRuntimes();
+      // 首次启动的 Git 自动安装（后台跑的，用户可能没开开发工具页）：完成/失败都弹一条通知
+      if (event.id === "git" && event.message.includes("自动")) setNotice(event.message);
+    }
   }), []);
   async function installDevRuntime(id: string) {
     setRuntimeInstalling(id);
