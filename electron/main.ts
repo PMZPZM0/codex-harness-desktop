@@ -13,6 +13,7 @@ import { BotStreamSession, readBotStreamSettings, readBotStreamSettingsSync, wri
 import { CodexServer, codexBinaryPath } from "./codex-server";
 import { BotPairingService } from "./bot-pairing";
 import { collectMcpServerNames, extractMcpSection, preserveUserConfig } from "./config-toml";
+import { applyRoundedCorners } from "./win-rounded-corners";
 import { deleteCustomCommand, expandCommandTemplate, listCustomCommands, readCustomCommand, saveCustomCommand } from "./commands";
 import { MemoryStore, Scheduler, type MemoryCategory, type MemoryRemoteConfig } from "./harness-services";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
@@ -411,15 +412,34 @@ ipcMain.handle("thread-runtime:seed", async (_event, input: { threadId?: string;
   if (!threadId) return null;
   return threadRuntimeStore.seed(threadId, input?.runtime);
 });
-ipcMain.handle("thread-runtime:patch", async (_event, input: { threadId?: string; patch?: unknown; baseRev?: number }) => {
+ipcMain.handle("thread-runtime:patch", async (_event, input: { threadId?: string; patch?: unknown; baseRev?: number; takeover?: boolean }) => {
   const threadId = String(input?.threadId ?? "");
   if (!threadId) throw new Error("threadId 不能为空");
-  const result = await threadRuntimeStore.patch(threadId, input?.patch, typeof input?.baseRev === "number" ? input.baseRev : undefined);
+  // 身份闸（09-16 用户要求「专家会话、专家团会话也要禁用掉」）：这些会话一律不许开调度。
+  // UI 已经把按钮禁用了，这里再挡一道 —— 快捷键/多窗口/旧版本渲染层都绕不过去。
+  if ((input?.patch as any)?.dispatch?.enabled === true) {
+    const role = await restrictedThreadRole(threadId);
+    if (role.restricted) {
+      const current = await threadRuntimeStore.get(threadId);
+      return { runtime: current, conflict: false, changed: false, restrictedBy: role.label };
+    }
+  }
+  const result = await threadRuntimeStore.patch(threadId, input?.patch, typeof input?.baseRev === "number" ? input.baseRev : undefined, { takeover: input?.takeover === true });
   if (result.changed) {
     broadcastHarnessEvent({ type: "thread-runtime", threadId, runtime: result.runtime, at: Date.now() });
   }
+  // 独占接管：被摘掉锁的那个线程也要广播出去，否则别的窗口/别的会话还挂着「调度中」的旧状态
+  if (result.tookOverFrom) {
+    const released = await threadRuntimeStore.get(result.tookOverFrom);
+    if (released) broadcastHarnessEvent({ type: "thread-runtime", threadId: result.tookOverFrom, runtime: released, at: Date.now() });
+  }
   return result;
 });
+// 调度独占锁的当前持有者（全局唯一）。渲染层用它把非持有会话的开关灰掉并显示占用者。
+ipcMain.handle("thread-runtime:dispatch-owner", async () => ({ threadId: await threadRuntimeStore.dispatchOwner() }));
+// 该会话是否属于「不允许开调度」的受保护会话（专家 / 专家团 / 被调度的临时会话）——
+// 渲染层据此**禁用**调度按钮；真正作准的是下面 patch 里的硬闸。
+ipcMain.handle("agents:thread-role", async (_event, threadId: string) => await restrictedThreadRole(String(threadId ?? "")));
 const terminals = new Map<string, TerminalService>();
 function terminalFor(id: string) {
   let service = terminals.get(id);
@@ -2111,6 +2131,8 @@ function createWindow() {
       webviewTag: true,
     },
   });
+  // Windows 11 原生圆角（仅 win32；其余平台函数内静默跳过）。
+  applyRoundedCorners(mainWindow);
   // ⛔ 导航与新窗口收敛（09-13 审计 S5）：全仓此前 `will-navigate` / `setWindowOpenHandler`
   // **零命中** —— 主窗口加载了任意页面（模型输出里的链接、拖入的本地 html）就能在当前
   // webContents 里换掉整个应用界面，而它带着 `harness-image://` 与全部 IPC 桥。
@@ -2201,6 +2223,8 @@ function createPopoutWindow(threadId: string) {
       webviewTag: false,
     },
   });
+  // Windows 11 原生圆角（仅 win32；其余平台函数内静默跳过）。
+  applyRoundedCorners(win);
   // ⛔ 导航收敛与主窗口同规则：弹窗永不导航，新窗口一律拒绝并转系统浏览器。
   win.webContents.on("will-navigate", (event, target) => {
     const devUrl = process.env.VITE_DEV_SERVER_URL ?? "";
@@ -2361,6 +2385,10 @@ app.whenReady().then(async () => {
       // 专家团成员线程的流式文本 → 广播给所有窗口（成员工作弹窗实时渲染）。
       // 只认「正在跑的成员线程」，其它会话的增量一律不碰。
       teamRunStore.handleEngineEvent(event);
+      // 被调度的临时会话：同样把流式文本广播出去 —— 右侧「调度头像轨」的实时工作内容靠它
+      // （09-16 用户要求：调度时右侧显示专家头像 + 点开看工作内容，跟专家团一致）。
+      const delegated = delegateRegistry.handleEngineEvent(event);
+      if (delegated) broadcastHarnessEvent({ type: "delegate-run", phase: "delta", threadId: delegated.threadId, text: delegated.text, chars: delegated.chars, at: Date.now() });
       const p = event.params as any;
       if (event.method === "turn/started" && p?.turn?.id) engineActiveTurnIds.add(String(p.turn.id));
       if (event.method === "turn/completed" && p?.turn?.id) engineActiveTurnIds.delete(String(p.turn.id));
@@ -6320,9 +6348,19 @@ ipcMain.handle("teams:invoke-member", async (_event, input: { teamId: string; me
 // L2（注册侧不给工具）在渲染层，但那一层防不住「线程复用 / 竞态 / 以后有人改错注册点」——
 // 所以真正的安全边界是下面这行 canDispatchFrom：**给了工具也不认**。
 
+/** 「不允许开调度」的会话识别（09-16 用户要求：专家会话 / 专家团会话也要禁用掉）。
+ *  覆盖三类：① 被调度产生的临时会话（delegateRegistry）② 专家团会话（主理人 + 成员）
+ *  ③ 单人专家的直达会话 —— ③ 走的是同一条 member-session 链路（单人专家 = 只有 lead 的团队），
+ *  所以 teamRunStore 里的 thread→team 映射一并覆盖。 */
+async function restrictedThreadRole(threadId: string): Promise<{ restricted: boolean; label?: string }> {
+  if (!threadId) return { restricted: false };
+  if (await delegateRegistry.infoOf(threadId)) return { restricted: true, label: "被调度的临时会话" };
+  if (teamRunStore.teamOfThread(threadId)) return { restricted: true, label: "专家 / 专家团" };
+  return { restricted: false };
+}
+
 /** 组装「可调度对象目录」（只含已启用的；单人专家 = 只有 lead 的团队，结构同型） */
-async function buildDispatchCatalog(): Promise<DispatchTarget[]> {
-  const [teams, subs] = await Promise.all([readExpertTeams(), readSubAgents()]);
+async function buildDispatchCatalog(): Promise<DispatchTarget[]> {  const [teams, subs] = await Promise.all([readExpertTeams(), readSubAgents()]);
   const targets: DispatchTarget[] = [];
   for (const team of teams) {
     if (!team.enabled) continue;
@@ -6362,7 +6400,18 @@ async function runDelegatedTask(input: {
   const origin = String(input.originThreadId ?? "");
   // ── L3 硬闸：发起方本身是被委派产生的会话 → 一律拒绝（防套娃的最后一道，注册侧漏了也拦住）
   const originRecord = origin ? await delegateRegistry.infoOf(origin) : null;
-  const gate = canDispatchFrom({ isDelegated: Boolean(originRecord), depth: originRecord?.depth ?? 0 });
+  // ── 独占锁校验（同一时间只允许一个会话调度）：注册侧不给工具只是「少给一次机会」，
+  //    这里才作准 —— 会话被接管、开关被关掉之后，残留的工具调用一律不认。 ──
+  const originDispatch = origin ? (await threadRuntimeStore.get(origin))?.dispatch : null;
+  // 身份闸：专家 / 专家团 / 被调度的会话一律不许**对外**派人（团内协作走 teams:invoke-member，不受此限）
+  const originRestrict = origin ? await restrictedThreadRole(origin) : { restricted: false };
+  const gate = canDispatchFrom({
+    isDelegated: Boolean(originRecord),
+    depth: originRecord?.depth ?? 0,
+    holdsLock: originDispatch?.enabled === true,
+    restricted: originRestrict.restricted,
+    restrictedLabel: originRestrict.label,
+  });
   if (!gate.ok) return { ok: false, output: "", error: gate.reason };
   const admit = admitDispatch({ running: await delegateRegistry.runningCount() });
   if (!admit.ok) return { ok: false, output: "", error: admit.reason };
@@ -6433,8 +6482,10 @@ async function runDelegatedTask(input: {
     }).catch(() => undefined);
   } catch { /* 下发失败不阻塞执行：L3 硬闸仍在主进程把关 */ }
 
-  await delegateRegistry.register({ threadId, originThreadId: origin, kind: target.kind, name: displayName, depth: (originRecord?.depth ?? 0) + 1 });
+  const record = await delegateRegistry.register({ threadId, originThreadId: origin, kind: target.kind, name: displayName, depth: (originRecord?.depth ?? 0) + 1 });
   broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
+  // 右侧「调度头像轨」：开始即点亮头像（弹窗打开后能看到实时产出流）
+  broadcastHarnessEvent({ type: "delegate-run", phase: "started", threadId, record, at: Date.now() } as any);
 
   const finalQuery = [
     "[SYSTEM TASK · 调度会话]",
@@ -6467,13 +6518,18 @@ async function runDelegatedTask(input: {
     // 标题在 turn 之后**再设一次**：首条消息会覆盖会话标题（引擎拿首条用户消息当 title），
     // 只在 turn 之前设的话侧栏会显示成 `[SYSTEM TASK · 调度会话]` 那一坨（09-15 验收实测）。
     try { await server.request("thread/name/set", { threadId, name: `调度·${displayName}`.slice(0, 40) }); } catch { /* 命名失败不影响产出回传 */ }
+    await delegateRegistry.setOutput(threadId, text);
     await delegateRegistry.markStatus(threadId, "done");
     broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
+    // 头像轨收场：跑完即从右侧消失（用户 09-16：「调用完就不展示头像了」）；广播终态供弹窗收起与兜底渲染
+    broadcastHarnessEvent({ type: "delegate-run", phase: "finished", threadId, status: "done", output: text, at: Date.now() } as any);
     return { ok: true, threadId, name: displayName, output: text };
   } catch (error: any) {
     const message = error?.message ?? String(error);
+    await delegateRegistry.setOutput(threadId, "").catch(() => undefined);
     await delegateRegistry.markStatus(threadId, "failed", { error: message }).catch(() => undefined);
     broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
+    broadcastHarnessEvent({ type: "delegate-run", phase: "finished", threadId, status: "failed", error: message, at: Date.now() } as any);
     return { ok: false, threadId, name: displayName, output: "", error: message };
   }
 }
