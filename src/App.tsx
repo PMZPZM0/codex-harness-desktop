@@ -2749,7 +2749,6 @@ const pluginMarketCategoryTabs: [string, string][] = [["全部", "全部"], ["�
 const effortMenuOptions = ALL_EFFORTS.map((value) => ({
   value,
   title: effortLabels[value] ?? value,
-  desc: { minimal: "最快响应，几乎不思考。", low: "最快出结果，轻量思考。", medium: "平衡速度与质量。", high: "更严谨，适合复杂任务。", ultra: "引擎扩展档（最高），实际请求强度按模型映射。", xhigh: "极高思考，顶格档，需模型支持。" }[value] ?? "",
 }));
 
 /** 高度动画折叠原语（对齐 WorkBuddy cr-collapse：0.28s 高度 + 内容 opacity/位移过渡）
@@ -16617,7 +16616,7 @@ const commandMatches = useMemo(() => {
                     if (value === "__model_settings__") { setSettingsPage("model"); setSettingsOpen(true); const live = customModel?.models?.find((m) => m.id === customModel?.model); if (live) openModelEditor(live); return; }
                     chooseModel(value);
                   }} />
-                  <ComposerMenu icon={Zap} label="思考" title="请求思考强度（由引擎与供应商决定实际支持）" value={effort} options={[...effortMenuOptions.filter((option) => !currentEffortOptions.length || currentEffortOptions.includes(option.value)).map((option) => option.value === "ultra" && (selectedModel?.model ?? modelName(modelId)) === "deepseek-v4-flash" ? { ...option, desc: "当前引擎实际发送 high，与标准档相同。" } : option), { value: "__model_settings__", title: "更多档位…", desc: "打开模型配置，管理各模型档位勾选" }]} onChange={(value) => {
+                  <ComposerMenu icon={Zap} label="思考" title="思考强度" value={effort} options={[...effortMenuOptions.filter((option) => !currentEffortOptions.length || currentEffortOptions.includes(option.value)), { value: "__model_settings__", title: "更多档位…", desc: "打开模型配置，管理各模型档位勾选" }]} onChange={(value) => {
                     if (value === "__model_settings__") { setSettingsPage("model"); setSettingsOpen(true); const live = customModel?.models?.find((m) => m.id === customModel?.model); if (live) openModelEditor(live); return; }
                     changeEffort(value);
                   }} />
@@ -17897,12 +17896,12 @@ const commandMatches = useMemo(() => {
                   </div>
                   <div className="type-chip-group"><span>思考档位 <small>按模型 API 实际支持勾选；未勾选默认 低/中/高/极高</small></span>
                     <div className="type-chips">{ALL_EFFORTS.map((t) => (
-                      <label key={t} className={`type-chip ${modelEditor.draft.efforts.includes(t) ? "on" : ""}`}>
+                      <label key={t} className={`type-chip ${modelEditor.draft.efforts.includes(t) ? "on" : ""} ${effort === t ? "is-current" : ""}`}>
                         <input type="checkbox" checked={modelEditor.draft.efforts.includes(t)} onChange={(event) => setModelEditor({ ...modelEditor, paramsDirty: true, draft: { ...modelEditor.draft, efforts: event.target.checked ? [...modelEditor.draft.efforts, t] : modelEditor.draft.efforts.filter((x) => x !== t) } })} />
-                        <span>{effortLabels[t] ?? t}</span>
+                        <span>{effortLabels[t] ?? t}{effort === t && <i className="chip-current">当前</i>}</span>
                       </label>
                     ))}</div>
-                    <small className="provider-field-hint">只勾选模型 API 真正支持的档位；思考等级菜单会按此显示。</small>
+                    <small className="provider-field-hint">带「当前」的是输入框正生效的档位，与思考菜单实时同步。</small>
                   </div>
                   <footer><button className="secondary-setting" onClick={() => setModelEditor(null)}>取消</button><button className="primary-setting" disabled={!modelEditor.draft.id.trim()} onClick={() => void saveModelEditor()}><Check size={14} />保存</button></footer>
                 </div>

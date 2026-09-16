@@ -11727,6 +11727,21 @@ button.search-box:hover {
   color: var(--text);
   background: var(--panel-2);
 }
+/* 模型编辑器档位勾选上的「当前生效档」标记（与 composer 思考菜单同一状态源，实时同步） */
+.type-chip.is-current {
+  border-color: var(--accent, var(--text));
+  box-shadow: 0 0 0 1px var(--accent, var(--text));
+}
+.chip-current {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 6px;
+  margin-left: 2px;
+  color: var(--accent, var(--text));
+  border: 1px solid currentColor;
+}
 .schedule-kind {
   gap: 6px;
   display: flex;
