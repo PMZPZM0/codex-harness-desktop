@@ -7685,6 +7685,8 @@ export default function App() {
   const [optimisticInput, setOptimisticInput] = useState<ThreadItem | null>(null);
   const optimisticTurnIdRef = useRef<string | null>(null);
   const optimisticBaselineRef = useRef<{ threadId: string | null; turnIds: Set<string> }>({ threadId: null, turnIds: new Set() });
+  // 09-17：本轮是否**确实出现过**运行中的回合 —— 乐观气泡安全阀的判据（见下方 effect 注释）。
+  const sawRunningTurnRef = useRef(false);
   // 只有目标回合里出现了非空 userMessage，才说明临时气泡已经被真实消息接管。
   // “新增了一个 turn”不够，因为 turn/started 的 userMessage 经常只有 id、content 为空。
   // 心跳监控联动：sending/activeTurnId 的快照 ref（status:error 复位时用最新值）
@@ -7708,11 +7710,28 @@ export default function App() {
     // 触发场景：排队消息点「立即」走 `turn/steer` 把输入补进**已有回合**（不产生新回合），
     // 而下面的确认逻辑只认「新回合里的用户消息」→ 永远匹配不到，气泡会一直赖在聊天区。
     // 有它兜底，最坏情况也只是"这一轮跑完时气泡消失"，绝不会跨回合残留。
-    // 正常发送不受影响：真实消息在回合进行中就接管了（turn 还在 running 时这里不会触发）。
-    if (optimisticInput && !optimisticConfirmed && !(thread?.turns ?? []).some((turn) => isTurnRunning(turn))) {
-      dbg("confirm-timeout", { inp: String(optimisticInput.id).slice(0, 12) });
-      setOptimisticInput(null);
-      return;
+    // ⛔ 原判据「当前没有任何 running 回合」在**正常发送**时同样成立（09-17 实测）：
+    //   气泡上屏（t+552ms）→ 本轮 turn 还没建（要等 turn/start 往返 + 记忆召回）→ 条件命中 →
+    //   气泡 **8ms 就被回收**，而真实消息 3.3s 才到 ⇒ 用户自己的消息有 2.7 秒完全不在界面上，
+    //   只剩一条「正在生成回复」状态条（用户截图里"中间那个"就是它）。
+    //   所以判据改成：**本轮确实出现过运行中回合**（发送真的跑起来了）之后回合结束，才回收。
+    const running = (thread?.turns ?? []).some((turn) => isTurnRunning(turn));
+    if (running) sawRunningTurnRef.current = true;
+    if (optimisticInput && !optimisticConfirmed) {
+      if (!running && sawRunningTurnRef.current) {
+        dbg("confirm-timeout", { inp: String(optimisticInput.id).slice(0, 12) });
+        sawRunningTurnRef.current = false;
+        setOptimisticInput(null);
+        return;
+      }
+      // 超时兜底：气泡存活期间 15s 内既没被真实消息接管、也没有过运行中回合 → 认定本轮没起来，回收。
+      const timer = window.setTimeout(() => {
+        if (!(threadRef.current?.turns ?? []).some((turn) => isTurnRunning(turn))) {
+          sawRunningTurnRef.current = false;
+          setOptimisticInput(null);
+        }
+      }, 15_000);
+      return () => window.clearTimeout(timer);
     }
     if (!optimisticInput || !optimisticConfirmed) return;
     dbg("confirm-fired", { inp: !!optimisticInput });
@@ -15367,6 +15386,7 @@ const commandMatches = useMemo(() => {
       justSentIds.add(optimisticId);
       armSendAnimationClaim(messageText);   // 真实消息挂载时认领入场动画（见 claimSendAnimation）
       optimisticTurnIdRef.current = null;
+      sawRunningTurnRef.current = false;   // 新一轮发送：重置安全阀判据（见该 effect 的 09-17 注释）
       optimisticBaselineRef.current = { threadId: thread?.id ?? null, turnIds: new Set((thread?.turns ?? []).map((entry) => entry.id)) };
       setOptimisticInput({ id: optimisticId, type: "userMessage", content: [
         ...((messageText || threadReferenceBlocks || files.length || quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
@@ -15428,6 +15448,7 @@ const commandMatches = useMemo(() => {
       justSentIds.add(optimisticId);
       armSendAnimationClaim(messageText);   // 真实消息挂载时认领入场动画
       optimisticTurnIdRef.current = null;
+      sawRunningTurnRef.current = false;   // 新一轮发送：重置安全阀判据（见该 effect 的 09-17 注释）
       optimisticBaselineRef.current = { threadId: thread?.id ?? null, turnIds: new Set((thread?.turns ?? []).map((entry) => entry.id)) };
       setOptimisticInput({ id: optimisticId, type: "userMessage", content: sendInput });
       stickToBottomRef.current = false;
