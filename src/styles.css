@@ -10271,7 +10271,8 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
     position: static;
   }
   .composer-menu-pop {
-    width: auto;
+    /* ⛔ !important 压过 inline width：模型菜单现在带 width={330}，窄窗口不压回会溢出视口 */
+    width: auto !important;
     min-width: 0;
     max-width: none;
     position: fixed;
@@ -16210,137 +16211,188 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .user-avatar-initial {
   font-weight: 600;
 }
-/* ── 思考强度：底栏按钮 +「宽彩色动态条」弹窗（09-17 用户两次要求：
-   「改成彩色横向拖动进度条，每个等级颜色都不一样」→「弹窗拖动，不是输入框直接一个长条，
-   gpt 那种宽的彩色动态条」）。
-   底栏只留一个按钮（图标与档位名都染上当前档位色）；点开是宽条弹窗：分段彩色（每档一色，
-   色带由 EffortPicker 内联生成、色值按档位名固定）、流光动画（背景缓慢平移 —— 静止时也在动）、
-   滑块下方的光晕跟随、档位标签按当前档染色且可直接点选。 */
+/* ── 思考强度：底栏按钮 +「滑块」弹窗（09-18 用户定稿）──────────────────────
+   「前面一个⚪点滑动滑到哪里；⚪鼠标放上去再展示；默认展示一条线；已选的后面彩色
+   动态液体流动加灯带；没拉到的地方空着；拉满后一个燃烧特效」。
+   对应实现：轨道=2px 细线；已选段=按档位分色的渐变（铺满整条再裁，颜色对齐档位）
+   ＋流光＋外发光＋前沿亮珠；⚪默认 opacity:0，hover/聚焦/拖动才出现（原生 input 的
+   拇指保持透明但可拖，拖动/键盘/触摸全复用原生行为）；最高档加火焰层＋轨道转橙红。
+   档位标签保留（可点/可键盘），但不再是「点哪里亮哪里」的高亮胶囊。 */
 .effort-trigger {
-  display: flex;
+  height: 26px;
   align-items: center;
   gap: 5px;
-  height: 26px;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--bg);
-  font-size: 11.5px;
+  padding: 0 8px 0 7px;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  color: var(--effort-color, var(--accent));
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
   cursor: pointer;
-  user-select: none;
 }
-.effort-trigger:hover {
-  border-color: var(--effort-color, var(--accent));
+.effort-trigger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--effort-color, var(--accent)) 12%, transparent);
 }
 .effort-trigger:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
 }
-.effort-trigger-icon,
-.effort-trigger-label {
-  color: var(--effort-color, var(--accent));
-  flex: none;
+.effort-trigger-icon, .effort-trigger-label {
+  color: inherit;
 }
 .effort-trigger-label {
-  font-weight: 600;
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .effort-trigger-caret {
-  color: var(--faint);
-  flex: none;
+  color: inherit;
+  opacity: 0.7;
 }
-/* 弹窗：fixed 定位（portal 到 body）—— 底栏在滚动容器里，absolute 浮层会被裁掉上半截 */
 .effort-picker-pop {
   position: fixed;
   z-index: 220;
-  /* 视口夹取：固定宽度在窄窗口会被裁到视口外（预检守卫按结构扫所有弹窗类样式） */
   width: min(340px, calc(100vw - 24px));
-  padding: 16px 16px 12px;
+  padding: 13px 14px 9px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--panel);
-  box-shadow: 0 20px 52px #0000003d;
-  animation: effort-pop-in 0.18s ease both;
+  box-shadow: 0 18px 48px #00000038;
+  animation: 0.16s ease both effort-pop-in;
 }
 @keyframes effort-pop-in {
-  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }
 }
 .effort-picker-head {
-  display: flex;
   align-items: baseline;
   gap: 8px;
   margin-bottom: 10px;
+  display: flex;
 }
 .effort-picker-head strong {
-  font-size: 13px;
   color: var(--text);
+  font-size: 13px;
 }
 .effort-picker-head span {
-  font-size: 11px;
   color: var(--faint);
+  font-size: 11px;
 }
+/* ── 滑块本体 ── */
 .effort-picker-bar {
   position: relative;
-  height: 34px; /* 宽条：比底栏那种细条厚得多，拖动更好点中、色彩也更铺得开 */
-  margin: 0 4px;
+  height: 30px;
+  margin: 0 2px;
+  cursor: pointer;
 }
-.effort-picker-bands {
+/* 未选段：一条 2px 细线（默认形态就是「一条线」） */
+.effort-picker-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 16%, transparent);
+}
+/* 已选段：外发光放 wrapper（fill 自身 overflow:hidden 会裁掉自己的 box-shadow） */
+.effort-picker-fillwrap {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 8px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  overflow: hidden;
+  pointer-events: none;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--fill-color) 55%, transparent);
+  transition: width 0.12s ease, box-shadow 0.2s ease;
+}
+.effort-picker-fill {
   position: absolute;
   inset: 0;
-  border-radius: 17px;
-  overflow: hidden; /* 扫光不外溢 */
-  /* ⛔ 不能用 background-size 放大 + background-position 平移来做流光：那样色带被拉伸，
-     看到的只是其中一段，颜色与档位位置**错位**、分段也被抹成渐变（第一版实测踩到，
-     用户要的「每个等级颜色都不一样」反而看不清了）。分段保持 100% 硬边。 */
-  background-size: 100% 100%;
-  box-shadow: inset 0 0 0 1px #00000014, inset 0 1px 0 #ffffff40;
+  border-radius: 999px;
+  background-repeat: no-repeat;
+  box-shadow: inset 0 1px 0 #ffffff59;
 }
-/* 流光：一层斜向高光缓慢扫过（独立伪元素，不动色带本身） */
-.effort-picker-bands::after {
+/* 灯带的流光：一条高光周期性扫过（液体流动感） */
+.effort-picker-fill::after {
   content: "";
   position: absolute;
-  inset: 0;
-  background: linear-gradient(105deg, transparent 32%, #ffffff5e 50%, transparent 68%);
-  transform: translateX(-100%);
-  animation: effort-sheen 3.8s ease-in-out infinite;
+  top: 0;
+  bottom: 0;
+  left: -45%;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, #ffffffcc 45%, #ffffff66 60%, transparent);
+  animation: 2.8s ease-in-out infinite effort-sheen;
 }
 @keyframes effort-sheen {
-  0% { transform: translateX(-100%); }
-  55% { transform: translateX(100%); }
-  100% { transform: translateX(100%); }
+  0% { transform: translateX(0); }
+  60%, 100% { transform: translateX(320%); }
 }
-/* 滑块下方的光晕：跟着当前档位走（拖动时也跟手） */
-.effort-picker-glow {
+/* 液体前沿的亮珠 */
+.effort-picker-bead {
   position: absolute;
   top: 50%;
-  width: 62px;
-  height: 62px;
-  border-radius: 50%;
+  width: 8px;
+  height: 8px;
   transform: translate(-50%, -50%);
-  filter: blur(13px);
-  opacity: 0.55;
+  border-radius: 50%;
+  background: var(--fill-color);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--fill-color) 80%, transparent), 0 0 18px color-mix(in srgb, var(--fill-color) 45%, transparent);
   pointer-events: none;
-  transition: left 0.14s ease, background 0.18s ease;
+  transition: left 0.12s ease, opacity 0.15s ease;
 }
-/* 每档一个定位点（当前档那颗被滑块盖住，其余就是分段刻度） */
+/* ⚪ 圆点滑块：默认隐藏，hover / 聚焦 / 拖动才出现 */
+.effort-picker-thumb {
+  position: absolute;
+  top: 50%;
+  width: 15px;
+  height: 15px;
+  transform: translate(-50%, -50%) scale(0.5);
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2.5px solid var(--fill-color);
+  box-shadow: 0 1px 6px #00000059, 0 0 0 5px color-mix(in srgb, var(--fill-color) 22%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.effort-picker-bar:hover .effort-picker-thumb,
+.effort-picker-bar:focus-within .effort-picker-thumb {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+.effort-picker-bar:hover .effort-picker-bead {
+  opacity: 0; /* 圆点出现后亮珠让位（两者同位置） */
+}
+/* 档位刻度点：贴轨道的低存在感小点 */
 .effort-picker-dots {
   position: absolute;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 0;
   pointer-events: none;
 }
 .effort-picker-dots i {
   position: absolute;
-  top: 50%;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
+  top: 0;
+  width: 3px;
+  height: 3px;
   transform: translate(-50%, -50%);
-  box-shadow: 0 0 0 1.5px #ffffff9e;
-  opacity: 0.85;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 30%, transparent);
 }
 .effort-picker-dots i.on {
-  opacity: 0;
+  background: var(--fill-color);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--fill-color) 70%, transparent);
 }
+/* 原生 input：铺满轨道提供拖动/键盘/触摸；视觉全部由上面元素承担（拇指透明但可拖） */
 .effort-picker-range {
   position: absolute;
   inset: 0;
@@ -16353,107 +16405,162 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   cursor: pointer;
 }
 .effort-picker-range::-webkit-slider-runnable-track {
-  height: 34px;
-  border-radius: 17px;
+  height: 30px;
+  border-radius: 15px;
   background: transparent;
 }
 .effort-picker-range::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 26px;
-  height: 26px;
-  margin-top: 4px; /* (轨道 34 - 拇指 26) / 2 */
-  border: 3px solid #ffffff;
+  width: 22px;
+  height: 22px;
+  margin-top: 4px;
+  border: 0;
   border-radius: 50%;
-  background: var(--effort-color, var(--accent));
-  box-shadow: 0 2px 12px #00000059, 0 0 0 1px #0000001a;
-  transition: background 0.16s ease, transform 0.12s ease;
-}
-.effort-picker-range:active::-webkit-slider-thumb {
-  transform: scale(1.12);
+  background: transparent;
+  opacity: 0;
 }
 .effort-picker-range:focus-visible {
   outline: none;
 }
 .effort-picker-range:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--effort-color, var(--accent)) 40%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fill-color) 35%, transparent);
 }
+/* 拖动中：圆点放大、灯带更亮 */
+.effort-picker-bar:has(.effort-picker-range:active) .effort-picker-thumb {
+  transform: translate(-50%, -50%) scale(1.25);
+}
+.effort-picker-bar:has(.effort-picker-range:active) .effort-picker-fillwrap {
+  box-shadow: 0 0 16px color-mix(in srgb, var(--fill-color) 78%, transparent);
+}
+/* ── 拉满：燃烧特效 ── 填充切火焰配色、流光加速，右端三簇火苗＋整条轨道泛橙红 */
+.effort-picker-bar.burn .effort-picker-fill {
+  background-image: linear-gradient(90deg, #fbbf24, #f97316 45%, #ef4444 80%, #dc2626) !important;
+  box-shadow: inset 0 1px 0 #ffffff66;
+}
+.effort-picker-bar.burn .effort-picker-fill::after {
+  animation-duration: 1.6s;
+}
+.effort-picker-bar.burn .effort-picker-fillwrap {
+  box-shadow: 0 0 14px #f9731688, 0 0 30px #ef44444d;
+}
+.effort-picker-bar.burn .effort-picker-track {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--text) 14%, transparent), #f9731655);
+}
+.effort-picker-bar.burn .effort-picker-thumb {
+  border-color: #f97316;
+  box-shadow: 0 0 10px #f97316aa, 0 0 0 5px #f9731633;
+}
+.effort-picker-flames {
+  position: absolute;
+  right: -3px;
+  top: 50%;
+  width: 34px;
+  height: 30px;
+  transform: translateY(-58%);
+  pointer-events: none;
+}
+.effort-picker-flames i {
+  position: absolute;
+  bottom: 2px;
+  left: 2px;
+  width: 9px;
+  height: 15px;
+  border-radius: 50% 50% 42% 42%;
+  background: radial-gradient(55% 65% at 50% 78%, #ffe9a8 0%, #ffb84d 38%, #ff7a1f 68%, rgba(255, 90, 31, 0) 100%);
+  filter: blur(1.2px);
+  opacity: 0.9;
+  transform-origin: 50% 100%;
+  animation: 1.05s ease-in-out infinite effort-flame;
+}
+.effort-picker-flames i:nth-child(2) {
+  left: 11px;
+  width: 12px;
+  height: 20px;
+  animation: 0.86s ease-in-out infinite effort-flame;
+  animation-delay: 0.14s;
+}
+.effort-picker-flames i:nth-child(3) {
+  left: 22px;
+  width: 8px;
+  height: 13px;
+  opacity: 0.75;
+  animation: 1.2s ease-in-out infinite effort-flame;
+  animation-delay: 0.3s;
+}
+@keyframes effort-flame {
+  0%, 100% { transform: scaleY(0.8) translateY(1px); opacity: 0.7; }
+  50% { transform: scaleY(1.15) translateY(-2px); opacity: 1; }
+}
+/* 档位标签：可点/可键盘；「当前档」用颜色 + 加粗标识，不再做高亮胶囊 */
 .effort-picker-ticks {
+  gap: 2px;
+  margin-top: 8px;
   display: flex;
-  gap: 4px;
-  margin-top: 10px;
 }
 .effort-tick {
   flex: 1;
-  padding: 4px 0;
+  padding: 3px 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: 6px;
   background: transparent;
   color: var(--faint);
   font-size: 11px;
   cursor: pointer;
-  transition: background 0.14s ease, color 0.14s ease;
 }
 .effort-tick:hover {
-  background: var(--panel-2);
   color: var(--text);
 }
 .effort-tick.on {
   font-weight: 700;
-  background: color-mix(in srgb, var(--tick-color) 14%, transparent);
 }
-/* 当前档位 + 一句用途（随拖动实时更新）—— 对齐 Codex 原生 slider 的信息结构 */
+.effort-tick.blocked {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
 .effort-picker-hint {
-  display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 9px;
-  padding-top: 9px;
-  border-top: 1px solid var(--line);
+  margin-top: 8px;
+  min-height: 16px;
   font-size: 11.5px;
-  color: var(--faint);
+  display: flex;
 }
 .effort-picker-hint i {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex: none;
+  box-shadow: 0 0 6px currentColor;
 }
 .effort-picker-hint span {
-  font-weight: 600;
-  flex: none;
+  font-weight: 700;
 }
 .effort-picker-hint em {
   font-style: normal;
+  color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 档位「已被该模型报不支持」：标灰 + 划掉，但**不禁用**（网关后来支持了仍可强制选） */
-.effort-tick.blocked {
-  opacity: 0.55;
-  text-decoration: line-through;
-}
-.effort-tick.blocked.on {
-  opacity: 0.8;
-}
-/* 弹窗底部：档位按会话记忆 + 该模型已学会的"不支持"清单 */
 .effort-picker-foot {
-  display: flex;
   flex-direction: column;
-  gap: 3px;
-  margin-top: 7px;
-  font-size: 11px;
+  gap: 2px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--line);
   color: var(--faint);
-  line-height: 1.5;
+  font-size: 10.5px;
+  display: flex;
 }
 .effort-picker-blocked {
-  color: var(--orange);
+  color: #e8830c;
 }
 .effort-picker-blocked em {
   font-style: normal;
-  opacity: 0.85;
+  opacity: 0.8;
 }
-/* 正文只包一层 flex column：保留 .assistant-col 以免动到滚动锚点依赖的既有结构 */
+
+
 .assistant-col {
   min-width: 0;
   display: flex;
@@ -24406,3 +24513,155 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 
 /* 受保护会话（专家 / 专家团 / 被调度会话）：按钮禁用并换成锁图标 */
 .dispatch-topbar-btn.is-restricted:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── 模型 ID 输入框：Tab 补全（09-18 用户「模型额度和上下文输出根据模型名字自动填写内置参数，
+   方便新手快速配置」）── 候选 = 内置规格表 + 供应商探测到的模型；每行带参数徽标。 */
+.model-id-field {
+  position: relative;
+}
+.model-id-field input {
+  width: 100%;
+}
+.model-id-pop {
+  position: absolute;
+  z-index: 260;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel);
+  box-shadow: 0 14px 38px #00000038;
+}
+.model-id-item {
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  display: block;
+}
+.model-id-item.on {
+  background: var(--panel-2);
+}
+.model-id-item.on .model-id-check {
+  color: var(--accent);
+}
+.model-id-main {
+  align-items: baseline;
+  gap: 6px;
+  display: flex;
+  min-width: 0;
+}
+.model-id-main b {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-id-main i {
+  flex: none;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-style: normal;
+}
+.model-id-main i.probed {
+  color: var(--accent);
+}
+.model-id-badges {
+  gap: 4px;
+  margin-top: 3px;
+  display: flex;
+  flex-wrap: wrap;
+}
+.model-id-badges em {
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  display: inline-flex;
+}
+.model-id-badges em.badge-vision {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.model-id-badges em.badge-video {
+  background: color-mix(in srgb, #7048e8 16%, transparent);
+  color: #7048e8;
+  font-weight: 600;
+}
+.model-id-check {
+  margin-left: auto;
+  flex: none;
+}
+.model-id-foot {
+  align-items: center;
+  gap: 5px;
+  padding: 6px 9px 4px;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 10.5px;
+  display: flex;
+}
+.model-id-foot b {
+  color: var(--muted);
+}
+.model-id-foot span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 对话框模型下拉：徽标化（09-18 用户「选择样式还可以优化一下，现在不好看」）──
+   名称一行 + 参数徽标（图片/视频/上下文/输出），当前项勾选挪到最右侧，
+   左侧图标位让给供应商色调圆点 —— 跨供应商的模型一眼看出是哪家。 */
+.composer-menu-pop .menu-item-badges {
+  gap: 4px;
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 150px;
+}
+.composer-menu-pop .menu-item-badges em {
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  white-space: nowrap;
+  display: inline-flex;
+}
+.composer-menu-pop .menu-item-badges em.badge-vision {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.composer-menu-pop .menu-item-badges em.badge-video {
+  background: color-mix(in srgb, #7048e8 16%, transparent);
+  color: #7048e8;
+  font-weight: 600;
+}
+.composer-menu-pop .menu-item-check {
+  color: var(--accent);
+  flex: none;
+}
+.composer-menu-pop button.active {
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel-2));
+}
