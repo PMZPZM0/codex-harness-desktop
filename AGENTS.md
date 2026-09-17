@@ -427,6 +427,15 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   没变成守卫）→ 预检【32】⑱ 现在按结构扫所有 `src/lib/*.mjs`，7 条判红 + 3 条不误报的反证全成立
   （反证过程中修掉守卫自身 2 处漏检：`const y: number` 的声明前缀、泛型正则被箭头函数 `=>` 的 `>` 截断）。
 
+- **用户头像类型链：回调别放宽联合类型（09-18 维护）**：`UserCenter.tsx` 的 `onProfileChange` 曾把
+  `avatarType` 声明成 `string`（内部 `UserProfile.avatarType` 本来是 `"emoji" | "image" | "none"`），
+  于是 App 侧只能 `userAvatar.type as UserAvatarSpec["type"]` 硬转回来 —— **两种写法都能编译**，
+  但 cast 掩盖了「`string` 脏值（例如 localStorage 被手改成别的值）直接进 `setUserIdentity`」这个洞。
+  已改成：回调签名保留 `UserProfile["avatarType"]`、App 侧 state 直接用 `UserAvatarSpec` 联合类型、cast 清零。
+  预检 ⑰e【33】两条守卫钉住它（反证：签名改回 `string` → 守卫变红 + `tsc` 报 TS2345）。
+  ⚠️ 注意 `npm run check` 的前端构建**不做 tsc**（只有 electron 侧有），所以这类类型洞必须在预检里靠
+  源码结构断言兜住，或手动 `npx tsc -p tsconfig.app.json --noEmit`。
+
 - **模型配置引导弹窗（09-17 用户要求：首次启动给新手引导）**：`src/components/ModelSetupGuide.tsx`，
   只在**没有生效模型**时弹（用户确认的条件：配好即永不再弹）；两条路直达（官方订阅登录 / 添加供应商）。
   **⛔ 判据是"没有生效模型"而不是"供应商列表为空"**——有供应商但没勾模型同样发不出消息。

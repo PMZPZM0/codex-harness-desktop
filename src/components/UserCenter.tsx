@@ -38,7 +38,9 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
   personality: string;
   onPersonalityChange: (v: string) => void;
   onNotice: (m: string) => void;
-  onProfileChange?: (p: { avatarType: string; avatar: string }) => void;
+  /** ⛔ 这里必须是 UserProfile["avatarType"]（联合类型），不能放宽成 string ——
+   *  放宽后 App 侧 setUserIdentity 只能靠 `as` 硬转回来（09-18 修：cast 会掩盖类型洞）。 */
+  onProfileChange?: (p: { avatarType: UserProfile["avatarType"]; avatar: string }) => void;
   onLogout?: () => void;
   /** Codex 自己的名字（09-17 用户要求）：默认 Codex，改名后显示在每条回复上方。 */
   assistantName?: string;

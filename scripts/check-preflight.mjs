@@ -4122,6 +4122,20 @@ w.postMessage({id:1,op:"list",root});
       : fail("【32】optout 标记没被读 —— 用户勾了「不再提示」还会每次被弹");
   }
 
+  // ⑰e 用户头像类型链（09-18）：UserCenter 的回调把 avatarType 放宽成 string，会逼 App 侧用
+  //   `as UserAvatarSpec["type"]` 硬转回来 —— cast 一多，`string` 类型的脏值就静默进了 setUserIdentity。
+  //   两种写法都"能编译"，所以只能靠守卫钉住「源头不收窄就别想绿」；反证：把签名改回 string → 变红。
+  {
+    const userCenter = readFileSync(join(ROOT, "src", "components", "UserCenter.tsx"), "utf8");
+    const appAvatar = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+    (/onProfileChange\?: \(p: \{ avatarType: UserProfile\["avatarType"\]; avatar: string \}\) => void;/.test(userCenter))
+      ? ok("【33】UserCenter 回调保留 avatarType 联合类型（不放宽成 string）")
+      : fail("【33】UserCenter 回调又把 avatarType 放宽成 string —— App 侧会被迫用 as 硬转");
+    (!/as UserAvatarSpec/.test(appAvatar) && /useState<UserAvatarSpec \| null>/.test(appAvatar))
+      ? ok("【33】App 侧头像 state 直接用 UserAvatarSpec（无 as 硬转）")
+      : fail("【33】App 侧又出现 as UserAvatarSpec 硬转 —— 类型洞回来了");
+  }
+
   // ⑰d 引导弹窗的「出场时机」（09-17 用户明确定规则：「只在进入主界面的时候才弹配置引导和
   //   工具安装检测自动安装；如果已经配置模型，就不引导模型配置，直接做开发工具检测安装」）。
   //   三种失效形态都**静默**（不报错，只是该弹的不弹 / 不该弹的弹了）：
