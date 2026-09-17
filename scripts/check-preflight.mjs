@@ -3340,6 +3340,23 @@ w.postMessage({id:1,op:"list",root});
       ? ok("【30】快捷键一览 + 命令面板都走 hk()（不再是写死的 Ctrl 文案）")
       : fail("【30】有展示点没走 hk() —— mac 上仍会看到 Ctrl 文案");
   }
+
+  // ⑨ 产物可启动性（09-17 用户报「启动就白屏」后补的网）
+  //   用户白屏时我做的第一件事是「回退源码重建」——说明**产物层面**也要能自证：
+  //   构建被打断 / 被别的进程占用时，会留下「index.html 引用不存在的 chunk」或
+  //   「0 字节的 main.js」，这两种都会让应用**白屏**，而源码侧完全看不出来。
+  //   ⛔ 排查经验：白屏时 CDP 求值/截图会**整体超时**，别据此断言「代码坏了」——
+  //   正确姿势是 `electron --enable-logging <appDir>` 抓渲染层 console，或换隔离 profile 复测。
+  {
+    const distHtml = join(ROOT, "dist", "index.html");
+    const html = existsSync(distHtml) ? readFileSync(distHtml, "utf8") : "";
+    const refs = [...html.matchAll(/(?:src|href)="([^"]+)"/g)].map((m) => m[1]).filter((r) => !/^(https?:|data:)/.test(r));
+    const missing = refs.filter((r) => !existsSync(join(ROOT, "dist", r.replace(/^\.?\//, ""))));
+    (missing.length === 0 ? ok : fail)(`【31】dist/index.html 引用的 ${refs.length} 个资源都在${missing.length ? "（缺：" + missing.join(", ") + "）" : ""}`);
+    const artifacts = ["dist-electron/main.js", "dist-electron/preload.js", ...refs.map((r) => join("dist", r.replace(/^\.?\//, "")))];
+    const bad = artifacts.filter((p) => { try { return readFileSync(join(ROOT, p)).length < 64; } catch { return true; } });
+    (bad.length === 0 ? ok : fail)(`【31】关键产物非空且可读（${artifacts.length} 个）${bad.length ? "（异常：" + bad.join(", ") + "）" : ""}`);
+  }
 }
 
 console.log("");
