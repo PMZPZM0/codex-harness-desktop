@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Zap } from "lucide-react";
+import { blockedEffortsOf } from "../lib/effort-support";
 
 /** 每个档位一个固定色（由低到高：冷 → 暖）。
  *  用户 09-17：「每个等级颜色都不一样」。颜色按**档位名**取而不是按位置下标 ——
@@ -49,14 +50,20 @@ export function effortColor(level: string, index = 0): string {
  *  · **动态**：色带用 220% 宽背景 + 缓慢平移做流光，滑块下方一团跟随的光晕，
  *    档位标签随当前档位染色 —— 静止时也在动，拖动时跟手。
  *  · 原生 `input[type=range]` 提供拖动/键盘（←→）/触摸/无障碍，不自己写指针逻辑。 */
-export function EffortPicker({ levels, value, labels, disabled, onCommit }: {
+export function EffortPicker({ levels, value, labels, disabled, modelId, onCommit }: {
   levels: string[];
   value: string;
   labels: Record<string, string>;
   disabled?: boolean;
+  /** 当前模型 id —— 「该模型已知不支持的档位」按模型记（发送失败时自动学会，
+   *  见 src/lib/effort-support.ts）。⚠️ 每次**打开弹窗时重读**一次而不是靠父组件 state：
+   *  降档可能发生在别的窗口、也可能刚被记下，打开时读才一定是最新的。 */
+  modelId?: string;
   onCommit: (next: string) => void;
 }) {
   const index = Math.max(0, levels.indexOf(value));
+  const [blocked, setBlocked] = useState<string[]>(() => blockedEffortsOf(modelId));
+  const blockedSet = new Set(blocked);
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<{ right: number; bottom: number } | null>(null);
   const [draft, setDraft] = useState(index);
@@ -70,6 +77,7 @@ export function EffortPicker({ levels, value, labels, disabled, onCommit }: {
     if (!rect) return;
     setAnchor({ right: Math.max(12, window.innerWidth - rect.right), bottom: window.innerHeight - rect.top + 8 });
     setDraft(index);
+    setBlocked(blockedEffortsOf(modelId)); // 打开时重读：刚被降档记下的、别的窗口记的，都立刻可见
     setOpen(true);
   };
   // 点外部 / Esc 关闭（portal 在 body 上，必须同时排除弹窗与触发按钮）
@@ -165,8 +173,9 @@ export function EffortPicker({ levels, value, labels, disabled, onCommit }: {
                 <button
                   key={level}
                   type="button"
-                  className={`effort-tick${on ? " on" : ""}`}
+                  className={`effort-tick${on ? " on" : ""}${blockedSet.has(level) ? " blocked" : ""}`}
                   style={on ? ({ color: c, "--tick-color": c } as CSSProperties) : undefined}
+                  title={blockedSet.has(level) ? `该模型上次报「不支持」这一档 —— 选它会报错并自动降档` : undefined}
                   onClick={() => { setDraft(i); commit(level); }}
                 >
                   {labels[level] ?? level}
@@ -181,6 +190,17 @@ export function EffortPicker({ levels, value, labels, disabled, onCommit }: {
             <i style={{ background: color }} aria-hidden />
             <span style={{ color }}>{labels[shown] ?? shown}</span>
             <em>{EFFORT_HINTS[shown] ?? ""}</em>
+          </div>
+          {/* 09-18：档位是**会话级**的（每个会话各自记住自己选的档位）；模型真不支持某档时
+              发送会失败 → 自动降档重发，并把该档记进这个模型（下面这行就是它的反馈）。 */}
+          <div className="effort-picker-foot">
+            <span>按会话各自记忆 · 切会话互不影响</span>
+            {blockedSet.size > 0 && (
+              <span className="effort-picker-blocked">
+                该模型不支持：{[...blockedSet].map((b) => labels[b] ?? b).join("、")}
+                <em>（选了会自动改用相邻档位）</em>
+              </span>
+            )}
           </div>
         </div>,
         document.body

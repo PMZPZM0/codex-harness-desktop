@@ -2663,12 +2663,52 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
     (exported.norm === "xhigh" ? ok : fail)("normalizeEffort 认识新档位值");
   }
 
+  // ---- 09-18「档位不被支持」的自动兜底：真跑 effort-support.ts 的纯函数（node type-stripping） ----
+  {
+    const supportSrc = join(ROOT, "src", "lib", "effort-support.ts");
+    const supportUrl = pathToFileURL(supportSrc).href;
+    let s = null;
+    try {
+      const probe = spawnSync(process.execPath, [
+        "--experimental-strip-types", "--no-warnings", "--input-type=module", "-e",
+        `import * as m from ${JSON.stringify(supportUrl)}; console.log(JSON.stringify({` +
+        ` pos1: m.isUnsupportedEffortError("unsupported value for reasoning_effort: max"),` +
+        ` pos2: m.isUnsupportedEffortError("Invalid value 'max' for 'reasoning_effort'"),` +
+        ` pos3: m.isUnsupportedEffortError("不支持该思考档位"),` +
+        ` neg1: m.isUnsupportedEffortError("Invalid API key provided"),` +
+        ` neg2: m.isUnsupportedEffortError("rate limit exceeded"),` +
+        ` neg3: m.isUnsupportedEffortError(""),` +
+        ` fbMax: m.pickEffortFallback("max", []),` +
+        ` fbXhigh: m.pickEffortFallback("xhigh", []),` +
+        ` fbHigh: m.pickEffortFallback("high", []),` +
+        ` fbMin: m.pickEffortFallback("minimal", []),` +
+        ` fbUnknown: m.pickEffortFallback("bogus", []),` +
+        ` fbSkipBlocked: m.pickEffortFallback("max", ["xhigh", "ultra"]),` +
+        ` fbAllBlocked: m.pickEffortFallback("high", ["medium", "low", "minimal"]) }));`,
+      ], { encoding: "utf8" });
+      s = JSON.parse(probe.stdout.trim().split("\n").at(-1));
+    } catch { /* 下面统一判红 */ }
+    (s ? ok : fail)("effort-support.ts 可被 Node type-stripping 直接加载（守卫跑的是真代码）");
+    if (s) {
+      (s.pos1 && s.pos2 && s.pos3 ? ok : fail)("档位不支持类错误能识别（英文 unsupported / invalid value / 中文「不支持」）");
+      (!s.neg1 && !s.neg2 && !s.neg3 ? ok : fail)("非档位错误不误判（invalid api key / 限流 / 空串 都不能触发降档重发）");
+      (s.fbMax === "xhigh" && s.fbXhigh === "ultra" && s.fbHigh === "medium" ? ok : fail)("降档链：max→极高、极高→最高、高→中（逐级保守）");
+      (s.fbMin === null ? ok : fail)("已是最低档 → 返回 null（不再重发，改为提示用户手动选）");
+      (s.fbUnknown === "high" ? ok : fail)("未知档位 → 回落安全档 high");
+      (s.fbSkipBlocked === "high" ? ok : fail)("降档会跳过该模型已标记不支持的档位（max→跳过极高/最高→高）");
+      (s.fbAllBlocked === null ? ok : fail)("更低档全被标记时返回 null（不会无限降）");
+    }
+  }
+
   const appTs = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
   const applyEffortBody = appTs.slice(appTs.indexOf("function applyEffort"), appTs.indexOf("function changeEffort"));
   (applyEffortBody.includes("setProviderEffort") ? ok : fail)("applyEffort 会把档位写进档案（跟着模型保存的写入端）");
   (!applyEffortBody.includes("!threadRef.current?.id && customModel") ? ok : fail)("写档案不再被「无会话」条件挡住（旧守卫 = 二次保存 bug 的根源）");
   (appTs.includes("const archiveEffort = (customModel?.models ?? []).find((m) => m.id === next?.model)?.effort") ? ok : fail)("chooseModel 切模型时读档案 models[].effort（读取端）");
-  (appTs.includes("efforts: [...(current.efforts ?? []), value], effort: value") ? ok : fail)("changeEffort 补声明时显式携带新档位（current 是过期闭包，不带会被 upsert 把档案写回旧值——09-16 真机定位的第二个档案回退根源）");
+  // 09-18：模型档位声明（models[].efforts）随模型配置里的勾选区一起删除 —— 档位是**会话级**选择，
+  // 不再 upsert 补声明。副作用要守：旧实现每次选到"未声明档位"都重写 model-catalog.json，
+  // 而 current 是过期闭包（09-16 真机定位的档案回退第二个根源）——现在整段逻辑没了，反而更安全。
+  (!appTs.includes("efforts: [...(current.efforts ?? []), value]") ? ok : fail)("changeEffort 不再 upsert 补档位声明（09-18：档位不是模型属性，选不了就直接自动降档）");
   (appTs.includes('xhigh: "极高"') && appTs.includes('ultra: "最高"') && appTs.includes('low: "低"') && appTs.includes('medium: "中"') && appTs.includes('high: "高"') ? ok : fail)("展示名：低/中/高/最高/极高（极高=xhigh 顶格档，最高=ultra 扩展档）");
   (appTs.includes("极高: \"xhigh\"") ? ok : fail)("/effort 命令别名含「极高」");
 
@@ -3910,30 +3950,45 @@ w.postMessage({id:1,op:"list",root});
     (/\.effort-trigger\s*\{/.test(cssNC) && /\.effort-picker-bands\s*\{/.test(cssNC) && /\.effort-picker-range/.test(cssNC))
       ? ok("【32】样式齐（触发按钮 / 分段色带 / 拖动条 / 档位标签）")
       : fail("【32】拖动条样式缺 —— 色带或滑块不会显示");
-    // 模型编辑器「思考档位」默认**全选**（09-17 用户：「新建供应商和修改模型，这个都全选吧，可以勾掉」）：
-    //   三种失效形态都静默 —— ① 回到「沿用已存声明的几档」→ 改模型时得手动补勾；
-    //   ② 输入模型 ID 时按规格表收窄 → 刚输完 ID 就被勾掉几档（用户碰到的正是这个）；
-    //   ③ 新建条目的兜底回到死写三档 低/中/高 → 新供应商的模型只有三档可选。
+    // 09-18 新形态（用户：「把模型配置里面思考选择删了，每个独立会话选择那个就生效那个」）：
+    //   档位**不再是模型条目的属性** —— 模型配置里没有勾选区，菜单恒为全集，
+    //   选哪个只落**当前会话**；模型/网关真不支持某档 → 发送失败自动学会 + 降档重发。
+    //   三种回潮形态：① 模型配置里又长出档位勾选；② 菜单又按模型声明过滤（用户选不到想选的档）；
+    //   ③ 选档又写全局默认（A 会话的选择污染 B 会话）。
     const modelEditorC = appNC.slice(appNC.indexOf("const openModelEditor"), appNC.indexOf("const targetProviderHint"));
-    (/efforts:\s*\[\.\.\.ALL_EFFORTS\]/.test(modelEditorC))
-      ? ok("【32】模型编辑器思考档位默认全选（新建/修改都是）")
-      : fail("【32】openModelEditor 的档位默认不是全集 —— 改模型时用户得手动补勾（用户报过）");
-    (!/efforts:\s*m\?\.efforts\?\.length/.test(modelEditorC))
-      ? ok("【32】不再沿用「已存声明几档就勾几档」")
-      : fail("【32】档位默认又回落到沿用已存声明 —— 存了 5 档就只勾 5 档");
-    (!/maxOutputTokens: spec\.maxOutputTokens \? String\(spec\.maxOutputTokens\) : "",\s*efforts:\s*\[\.\.\.spec\.efforts\]/.test(appNC))
-      ? ok("【32】输入模型 ID 自动回填时不收窄档位（规格表只管上下文/输出/模态）")
-      : fail("【32】输入模型 ID 时又按规格表勾掉档位了 —— 刚输完 ID 档位就少几档（用户报过）");
-    (!/efforts:\s*spec\?\.efforts\s*\?\?\s*\["low",\s*"medium",\s*"high"\]/.test(appNC))
-      ? ok("【32】新建模型条目的档位兜底不再是死写三档")
-      : fail("【32】兜底又回到只有‘low/medium/high’三档 —— 新供应商的模型只有三档可选");
-    const provHookC = readFileSync(join(ROOT, "src", "hooks", "useModelProviders.ts"), "utf8");
-    (!/efforts:\s*spec\s*\?\s*\[\.\.\.spec\.efforts\]\s*:\s*undefined/.test(provHookC))
-      ? ok("【32】供应商表单里探测出的新模型条目也兜底全档")
-      : fail("【32】探测新建的模型条目档位是 undefined —— 菜单只剩四档默认");
-    (/默认全选；供应商不支持的勾掉即可/.test(appNC))
-      ? ok("【32】档位提示文案说明「默认全选、可勾掉」")
-      : fail("【32】档位提示文案没说要默认为全选 —— 用户不知道可以勾掉");
+    // ⛔ 判据要**精确**：只看模型编辑器弹窗 JSX 那一小段（从 .model-editor-modal 到它的 footer），
+    //   并且**块注释与行注释都要剥** —— 全局搜「efforts」会命中别处的档案字段，而注释里
+    //   提一句「思考档位」也会被判成回潮（09-18 连踩两次：先假红于行注释，再假红于全局搜）。
+    const appCode = appNC.replace(/^\s*\/\/.*$/gm, "");
+    const editorStart = appCode.indexOf("model-editor-modal");
+    const editorJsx = editorStart < 0 ? "" : appCode.slice(editorStart, appCode.indexOf("</footer>", editorStart));
+    (editorJsx.length > 0 ? ok : fail)("模型编辑器弹窗 JSX 可定位（守卫判据有效）");
+    (!/思考档位/.test(editorJsx) && !/modelEditor\.draft\.efforts/.test(editorJsx))
+      ? ok("【32】模型编辑器里没有档位勾选区（档位不是模型属性）")
+      : fail("【32】模型配置里又出现档位勾选 —— 用户明确要求删掉（档位应纯会话级）");
+    (!/勾选思考档位/.test(appNC))
+      ? ok("【32】没有指向已删除勾选区的过时文案（模型下拉的「更多设置…」）")
+      : fail("【32】有文案还让用户去模型配置「勾选思考档位」—— 入口已经不存在了");
+    (/levels=\{\[\.\.\.ALL_EFFORTS\]\}/.test(appNC))
+      ? ok("【32】思考菜单档位恒为全集（不再按模型声明过滤）")
+      : fail("【32】菜单档位又按模型声明过滤了 —— 用户会选不到想选的档（09-18 已删除声明机制）");
+    const applyBody = appNC.slice(appNC.indexOf("function applyEffort"), appNC.indexOf("function changeEffort"));
+    (/if \(threadRef\.current\?\.id\) saveThreadEffort\(threadRef\.current\.id, value\)/.test(applyBody)
+      && /else localStorage\.setItem\("default-effort", value\)/.test(applyBody)
+      && /void updateThreadSettings\(\{ effort: value \}\)/.test(applyBody))
+      ? ok("【32】选档位只落**当前会话**（有会话写 thread-runtime，无会话才写全局默认）")
+      : fail("【32】选档位的作用域被改了 —— 会跨会话互相污染（09-13 修过的老坑）");
+    (/if \(isUnsupportedEffortError\(error\?\.message\) && effort\)/.test(appNC)
+      && /markEffortUnsupported\(/.test(appNC)
+      && /executeEffortFallbackRetry\(\)/.test(appNC))
+      ? ok("【32】档位不被支持时自动降档重发（删掉手动声明后的兜底）")
+      : fail("【32】没有「档位不支持 → 自动降档重发」的兜底 —— 用户选到不支持的档位只能干瞪眼");
+    (/modelId=\{currentModelId\}/.test(appNC)
+      && /blockedEffortsOf\(modelId\)/.test(effortPickerC)
+      && /effort-tick\$\{on \? " on" : ""\}\$\{blockedSet\.has\(level\) \? " blocked" : ""\}/.test(effortPickerC)
+      && /\.effort-tick\.blocked\s*\{/.test(cssNC))
+      ? ok("【32】菜单把「该模型不支持」的档位标灰，且**每次打开弹窗重读**（刚降档的立刻可见）")
+      : fail("【32】已知不支持的档位没有标记或不是打开时读 —— 用户会反复踩同一档");
     (!/\.(?:codex-turn|process-content) \.assistant-message \.avatar[\s\S]{0,140}?display:\s*none/.test(cssNC))
       ? ok("【32】没有规则把 assistant 头像 display:none 掉")
       : fail("【32】有规则把 assistant 头像 display:none 了 —— 用户只会看到名字");

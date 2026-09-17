@@ -16428,6 +16428,31 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 档位「已被该模型报不支持」：标灰 + 划掉，但**不禁用**（网关后来支持了仍可强制选） */
+.effort-tick.blocked {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+.effort-tick.blocked.on {
+  opacity: 0.8;
+}
+/* 弹窗底部：档位按会话记忆 + 该模型已学会的"不支持"清单 */
+.effort-picker-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 7px;
+  font-size: 11px;
+  color: var(--faint);
+  line-height: 1.5;
+}
+.effort-picker-blocked {
+  color: var(--orange);
+}
+.effort-picker-blocked em {
+  font-style: normal;
+  opacity: 0.85;
+}
 /* 正文只包一层 flex column：保留 .assistant-col 以免动到滚动锚点依赖的既有结构 */
 .assistant-col {
   min-width: 0;
