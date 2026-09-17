@@ -15,6 +15,89 @@ export type HelpKey = "model" | "plugins" | "skills" | "mcp" | "agentteam" | "vo
 type HelpSection = { title: string; steps: string[] };
 export type HelpContent = { title: string; intro: string; sections: HelpSection[]; tips: string[] };
 
+/** 设置总览：按导航分组给出「这一组干什么、新手先看哪几个」。
+ *
+ *  与逐页帮助的分工：逐页帮助是"这一页怎么操作"（步骤级），总览是"整个设置里有什么、我先动哪个"
+ *  （地图级）。新手最容易卡住的不是不会点按钮，而是**不知道该去哪一页**——所以总览以
+ *  「我想做 X → 去 Y 页」的动线组织，而不是照抄导航列表。
+ */
+export type OverviewGroup = {
+  group: string;
+  purpose: string;
+  items: { page: string; what: string; when: string }[];
+  /** 该组里新手最该先看的一页（会标出来）。 */
+  startHere?: string;
+};
+
+export const OVERVIEW_GROUPS: OverviewGroup[] = [
+  {
+    group: "账户",
+    purpose: "决定 Codex 用哪个「大脑」——要么登录官方账号，要么填第三方供应商的 Key。",
+    startHere: "模型",
+    items: [
+      { page: "用户中心", what: "你的昵称、头像、个性和使用偏好", when: "想让 Codex 认识你、说话更合口味时" },
+      { page: "模型", what: "供应商与模型的添加、测试、切换", when: "第一次用必须配（否则发不出消息）" },
+      { page: "中转站", what: "一键接入常见中转服务", when: "手上有中转站账号、不想手填地址时" },
+      { page: "OpenAI 订阅", what: "登录 ChatGPT 账号用官方额度", when: "有订阅、想直接用官方模型时" },
+    ],
+  },
+  {
+    group: "常用",
+    purpose: "日常最常改的几项——界面长什么样、Codex 听谁的、装了哪些能力。",
+    items: [
+      { page: "控制台", what: "总开关与运行状态", when: "想确认引擎是否正常、调基础开关时" },
+      { page: "外观", what: "白天/黑夜主题、消息字号、代码高亮配色", when: "觉得字小/刺眼，或想换配色时" },
+      { page: "个性化", what: "称呼、回复风格、自定义指令（决定 Codex 怎么跟你说话）", when: "希望它说话更简短/更详细、别老客套时" },
+      { page: "语音通话", what: "本机离线语音识别与合成、音色", when: "想用嘴跟它聊、或让它读出来时" },
+      { page: "技能", what: "领域知识包（写 PPT、查数据库等）", when: "同类任务反复教它、想让它一次做对时" },
+      { page: "插件", what: "从市场装插件，扩展指令/技能/钩子", when: "想要别人做好的整套能力时" },
+      { page: "记忆", what: "Codex 记住的偏好与项目背景，可编辑可删", when: "发现它记错了、或想主动告诉它背景时" },
+      { page: "命令", what: "自定义快捷命令（输入 / 触发）", when: "有反复要输入的模板话术时" },
+    ],
+  },
+  {
+    group: "智能体",
+    purpose: "让 Codex 扮演专业角色或多角色协作，处理需要专业方法论的任务。",
+    startHere: "专家/专家团",
+    items: [
+      { page: "专家/专家团", what: "专家中心（单个角色）与专家团（多角色协作）", when: "做投资分析、法律审查、竞品研究这类需要专业流程的活时" },
+    ],
+  },
+  {
+    group: "自动化与能力",
+    purpose: "让 Codex 能操作你的电脑、连外部系统、按时间自己跑。",
+    items: [
+      { page: "自动化", what: "浏览器自动化、桌面自动化、RPA 配方", when: "要它帮你点网页、操作软件、复现固定流程时" },
+      { page: "MCP", what: "连接器：连数据库、网盘、企业系统", when: "要它读你某个系统里的数据时" },
+      { page: "定时任务", what: "让它按时间自动跑（每天/每周）", when: "有规律性的活（日报、巡检）时" },
+      { page: "钩子", what: "在特定事件上自动执行脚本", when: "要在它干活前后加自动化动作时" },
+      { page: "SSH 服务器", what: "管理远程连接", when: "要它连你的服务器操作时" },
+    ],
+  },
+  {
+    group: "数据与统计",
+    purpose: "看用量、管占用、备份恢复、清理归档。",
+    items: [
+      { page: "使用统计", what: "token 用量与花费趋势", when: "想控制成本、看哪个模型烧得快时" },
+      { page: "数据管理", what: "占用空间与清理", when: "磁盘紧张、想清旧数据时" },
+      { page: "会话备份", what: "备份与恢复会话历史", when: "要换机器或怕丢历史时" },
+      { page: "归档管理", what: "已归档会话的查看、恢复、删除", when: "侧栏看不到某个旧会话时来这儿找" },
+    ],
+  },
+  {
+    group: "开发工具",
+    purpose: "Codex 干活要用的工具链（Python、Git、浏览器内核等按需下载）。",
+    startHere: "开发工具",
+    items: [
+      { page: "开发工具", what: "工具安装状态与一键下载", when: "某个任务提示缺工具时来这里装" },
+    ],
+  },
+];
+
+export type HelpTopic = HelpKey | "overview";
+
+type HelpSectionRaw = { title: string; steps: string[] };
+
 export const HELP_CONTENT: Record<HelpKey, HelpContent> = {
   model: {
     title: "模型配置 · 新手帮助",
@@ -212,8 +295,9 @@ export const HELP_CONTENT: Record<HelpKey, HelpContent> = {
   },
 };
 
-/** 帮助弹窗：受控组件，`helpKey` 为 null 时不渲染。 */
-export function HelpDialog({ helpKey, onClose }: { helpKey: HelpKey | null; onClose: () => void }) {
+/** 帮助弹窗：受控组件，`helpKey` 为 null 时不渲染。
+ *  `overview` 是设置总览（分组地图 + 动线），其余是逐页操作帮助。 */
+export function HelpDialog({ helpKey, onClose, onNavigate }: { helpKey: HelpTopic | null; onClose: () => void; onNavigate?: (page: string) => void }) {
   useEffect(() => {
     if (!helpKey) return;
     const onKey = (event: KeyboardEvent) => {
@@ -227,6 +311,62 @@ export function HelpDialog({ helpKey, onClose }: { helpKey: HelpKey | null; onCl
   }, [helpKey, onClose]);
 
   if (!helpKey) return null;
+
+  if (helpKey === "overview") {
+    return createPortal(
+      <div className="modal-backdrop help-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+        <section className="help-modal help-modal-wide" role="dialog" aria-modal="true" aria-label="设置总览">
+          <header>
+            <div className="help-title"><span><BookOpen size={17} /></span><strong>设置总览 · 不知道去哪一页就先看这里</strong></div>
+            <button className="icon-button" title="关闭（Esc）" onClick={onClose}><X size={16} /></button>
+          </header>
+          <div className="help-body">
+            <p className="help-intro">{renderRich(`设置分 ${OVERVIEW_GROUPS.length} 组、共 ${OVERVIEW_GROUPS.reduce((n, g) => n + g.items.length, 0)} 页。**新手只需先配「模型」**，其余按需——下面每页写了「它是干什么的」和「什么时候会用到它」，点页名可直接跳过去。`)}</p>
+            {OVERVIEW_GROUPS.map((group) => (
+              <div className="help-group" key={group.group}>
+                <div className="help-group-head">
+                  <h3>{group.group}</h3>
+                  <span>{renderRich(group.purpose)}</span>
+                </div>
+                <div className="help-page-list">
+                  {group.items.map((item) => {
+                    const isStart = group.startHere === item.page;
+                    return (
+                      <button
+                        type="button"
+                        className={`help-page-row${isStart ? " start-here" : ""}`}
+                        key={item.page}
+                        onClick={() => { onNavigate?.(item.page); onClose(); }}
+                        title={onNavigate ? `跳到「${item.page}」` : undefined}
+                      >
+                        <span className="help-page-name">
+                          {item.page}
+                          {isStart && <em>新手先看</em>}
+                        </span>
+                        <span className="help-page-what">{renderRich(item.what)}</span>
+                        <span className="help-page-when">{renderRich(item.when)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            <div className="help-tips">
+              <h3>第一次使用的最短路径</h3>
+              <ul>
+                <li>{renderRich("**① 模型**：登录官方账号，或添加一个供应商并填 Key（不配这条发不出消息）")}</li>
+                <li>{renderRich("**② 个性化**：填你的称呼与偏好，让它说话合你口味")}</li>
+                <li>{renderRich("**③ 外观**：太刺眼就切黑夜主题，觉得字小改「大字」")}</li>
+                <li>{renderRich("之后用到什么再回来配什么——技能、MCP、自动化都不影响你先把对话用起来")}</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+      </div>,
+      document.body,
+    );
+  }
+
   const content = HELP_CONTENT[helpKey];
 
   return createPortal(

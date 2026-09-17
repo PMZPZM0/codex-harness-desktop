@@ -390,7 +390,7 @@ import { SKILLHUB_MCP_CATALOG, SKILLHUB_MCP_CATEGORIES, skillhubMcpDetailUrl, ty
 import { PersonalizationPage } from "./components/PersonalizationPage";
 import VoiceSettingsSection from "./components/VoiceSettingsSection";
 import { BootSplash, type BootStage } from "./components/BootSplash";
-import { HelpDialog, type HelpKey } from "./components/HelpDialog";
+import { HelpDialog, type HelpKey, type HelpTopic } from "./components/HelpDialog";
 import VoiceWaveform from "./components/VoiceWaveform";
 import VoiceDevToolsSection from "./components/VoiceDevToolsSection";
 import { GlobalSearchView } from "./components/IndexLibrary";
@@ -8918,8 +8918,8 @@ export default function App() {
   const [settingsPage, setSettingsPage] = useState<SettingsPage>("general");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   /** 设置页「使用帮助」弹窗（09-17 用户要求：模型/插件/技能/MCP/专家团/语音/开发工具都要有）。
-   *  null = 不显示；由各页标题右侧的帮助按钮写入对应的 HelpKey。 */
-  const [helpKey, setHelpKey] = useState<HelpKey | null>(null);
+   *  null = 不显示；`overview` 是设置总览（标题栏那枚按钮），其余由各页帮助按钮写入 HelpKey。 */
+  const [helpKey, setHelpKey] = useState<HelpTopic | null>(null);
   const [toolsStatus, setToolsStatus] = useState<{ id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>([]);
   const refreshToolsStatus = () => { window.codex.toolStatus().then(setToolsStatus).catch(() => setToolsStatus([])); };
   const [devRuntimes, setDevRuntimes] = useState<DevRuntimeEntry[]>([]);
@@ -16378,8 +16378,16 @@ const commandMatches = useMemo(() => {
             </div>
           )}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
-          {/* 设置页使用帮助（09-17 用户要求）：模型/插件/技能/MCP/专家团/语音/开发工具 */}
-          <HelpDialog helpKey={helpKey} onClose={() => setHelpKey(null)} />
+          {/* 设置页使用帮助（09-17 用户要求）：模型/插件/技能/MCP/专家团/语音/开发工具 + 设置总览 */}
+          <HelpDialog
+            helpKey={helpKey}
+            onClose={() => setHelpKey(null)}
+            onNavigate={(page) => {
+              // 总览里的页名 = settingsNav 的展示文案，反查回页面 key 后跳转
+              const hit = settingsNav.flatMap((group) => group.items).find(([, label]) => label === page);
+              if (hit) setSettingsPage(hit[0]);
+            }}
+          />
           {/* 启动加载页（渲染层接手段）：挂载瞬间从 index.html 那份手里接过来，
               盖到首屏会话数据到达（或需要登录）才淡出。实测挂载后还要等 1.3~2.1s，
               此前这段界面上什么反馈都没有。阶段由真实状态驱动，不是放假进度条。 */}
@@ -17510,7 +17518,7 @@ const commandMatches = useMemo(() => {
       </div>}
       {settingsOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
         <div className="settings-modal" role="dialog" aria-modal="true" aria-label="设置">
-          <header><div><Settings2 size={18} /><strong>设置</strong><span className="esc-hint" title="按 ESC 关闭弹窗">ESC</span></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setSettingsOpen(false)}><X size={18} /></button></header>
+          <header><div><Settings2 size={18} /><strong>设置</strong><span className="esc-hint" title="按 ESC 关闭弹窗">ESC</span></div><div className="settings-header-actions"><button type="button" className="help-entry" title="设置总览：每页是干什么的、新手该先看哪几个" onClick={() => setHelpKey("overview")}><CircleHelp size={14} />设置总览</button><button className="icon-button relay-modal-close" title="关闭" onClick={() => setSettingsOpen(false)}><X size={18} /></button></div></header>
           <div className="settings-layout">
             <nav className="settings-nav" aria-label="设置分类">
               {settingsNav.map((group) => (

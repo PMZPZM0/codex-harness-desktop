@@ -3618,7 +3618,7 @@ w.postMessage({id:1,op:"list",root});
     (helpButtons >= 5)
       ? ok(`【32】设置页挂了 ${helpButtons} 处帮助入口（≥5，另有语音页在子组件）`)
       : fail(`【32】帮助入口只有 ${helpButtons} 处 —— 有页面漏挂（每页各写按钮最容易漏）`);
-    (/<HelpDialog helpKey=\{helpKey\}/.test(appC))
+    (/<HelpDialog\b/.test(appC))
       ? ok("【32】HelpDialog 挂在渲染树里（弹窗能真正打开）")
       : fail("【32】HelpDialog 没挂到渲染树 —— 点帮助不会有任何反应");
     (/onOpenHelp/.test(voiceC) && /help-entry/.test(voiceC))
@@ -3634,6 +3634,36 @@ w.postMessage({id:1,op:"list",root});
     (thin.length === 0)
       ? ok("【32】每个帮助主题都有 ≥3 条操作步骤（不是概念说明）")
       : fail(`【32】这些主题的步骤太少（不足 3 条）：${thin.join(", ")}`);
+
+    // ⑯ 设置总览（09-17 用户要求：标题栏加「设置总览」，让新手快速熟悉整个设置界面）
+    //   最容易复发的失效形态：**新增设置页但总览没同步**——新手照总览找不到那页，比没有总览更糟。
+    //   所以核心断言是「总览页名集合 ⊇ settingsNav 的展示文案集合」。
+    const overviewAt = helpC.indexOf("export const OVERVIEW_GROUPS");
+    const overviewBlock = overviewAt < 0 ? "" : helpC.slice(overviewAt, helpC.indexOf("\n];", overviewAt));
+    const navBlock = (() => {
+      const at = appC.indexOf("const settingsNav");
+      return at < 0 ? "" : appC.slice(at, appC.indexOf("\n];", at));
+    })();
+    const overviewPages = [...overviewBlock.matchAll(/page:\s*"([^"]+)"/g)].map((m) => m[1]);
+    const navLabels = [...navBlock.matchAll(/\["[a-z]+",\s*"([^"]+)"/g)].map((m) => m[1]);
+    (overviewPages.length > 0)
+      ? (() => {
+        const missing = navLabels.filter((label) => !overviewPages.includes(label));
+        missing.length === 0
+          ? ok(`【32】设置总览覆盖导航全部 ${navLabels.length} 页（无遗漏）`)
+          : fail(`【32】总览漏了这些设置页：${missing.join("、")} —— 新手照总览找不到它们`);
+      })()
+      : fail("【32】OVERVIEW_GROUPS 为空 —— 设置总览没有内容");
+    (/<HelpDialog[\s\S]{0,400}?onNavigate=/.test(appC) && /settingsNav\.flatMap/.test(appC))
+      ? ok("【32】总览页名可点击跳转（页名 → settingsNav 反查页面 key）")
+      : fail("【32】总览的 onNavigate 缺失 —— 页名点不动，总览只能看不能用");
+    (/className="settings-header-actions"/.test(appC) && /setHelpKey\("overview"\)/.test(appC))
+      ? ok("【32】设置标题栏有「设置总览」入口")
+      : fail("【32】设置弹窗标题栏缺总览入口 —— 用户看不到这个帮助");
+    // 简介里的「共 N 页」若写成固定数字，新增页后会与事实不符；必须是动态计算
+    (/共 \$\{OVERVIEW_GROUPS\.reduce/.test(helpC))
+      ? ok("【32】总览页数是动态计算的（新增页不会与简介数字打架）")
+      : fail("【32】总览简介里的页数写成了固定数字 —— 新增设置页后会误导用户");
   }
 }
 
