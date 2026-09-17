@@ -1791,7 +1791,11 @@ button.brand-mark.sidebar-toggle:hover {
   position: relative;
 }
 .codex-turn .assistant-message {
-  grid-template-columns: minmax(0, 1fr);
+  /* ⛔ 09-17：消息头改成「头像 + 名字」后，头像列必须留着 —— 这里原本是**单列**
+     （老设计：assistant 消息左侧不放图标），配合下面那条把 .avatar 整个隐掉。
+     用户报「头像我也没看展示出来」就是这两条历史遗留造成的：名字在、头像被 display:none。 */
+  grid-template-columns: 22px minmax(0, 1fr);
+  column-gap: 8px;
   justify-self: start;
   width: min(88%, 720px);
   min-width: 0;
@@ -1799,9 +1803,10 @@ button.brand-mark.sidebar-toggle:hover {
   margin-right: auto;
   padding-left: 0;
 }
+/* 头像恢复显示（.avatar 基础样式本身就是 grid + place-items:center） */
 .codex-turn .assistant-message .avatar,
 .process-content .assistant-message .avatar {
-  display: none;
+  display: grid;
 }
 .codex-turn .assistant-message .message-body,
 .process-content .assistant-message .message-body {
@@ -15990,41 +15995,93 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   font-weight: 500;
 }
 
-/* ── 用户中心「Codex 的身份」卡（09-17）：名字输入 + 头像上传/重置 ── */
-.codex-avatar-cell {
-  position: relative;
+/* ── 用户中心「Codex 的身份」卡（09-17）：名字输入 + 头像上传/重置 ──
+   ⛔ 全部走 codex-id-* 独立类名，**不复用**上面「你自己」那张卡的 .uc-*：
+   `.uc-presets button{width:30px}` 会把「用默认名」压成 30px 宽 → 文字竖排断行（用户截图实测）；
+   `.uc-avatar` 的圆形底 + 尺寸会把方形默认头像裁圆。 */
+.codex-id-head {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
 }
-.codex-avatar-cell > .codex-avatar-default,
-.codex-avatar-cell > img {
+.codex-id-avatar {
+  position: relative;
+  flex: none;
+  width: 56px;
+  height: 56px;
+}
+.codex-id-avatar > .codex-avatar-default,
+.codex-id-avatar > img {
   width: 56px;
   height: 56px;
   border-radius: 15px;
   object-fit: cover;
   display: block;
 }
-/* 恢复默认头像：贴在头像左下角（与右下角的"上传"按钮错开，避免互相遮挡） */
-.uc-avatar-reset {
+/* 上传/恢复按钮：压在头像下缘的两角（圆底 + 描边 + 投影，不遮头像主体；两枚左右错开） */
+.codex-id-avatar-btn {
   position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 22px;
-  height: 22px;
+  bottom: -5px;
+  right: -5px;
+  z-index: 2;
   display: grid;
   place-items: center;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 50%;
   background: var(--panel);
   color: var(--muted);
   cursor: pointer;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 15%);
 }
-.uc-avatar-reset:hover {
+.codex-id-avatar-btn.reset {
+  right: auto;
+  left: -5px;
+}
+.codex-id-avatar-btn:hover {
   color: var(--text);
   border-color: var(--accent);
 }
+.codex-id-info {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.codex-id-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+}
+.codex-id-desc {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.codex-id-label {
+  margin: 12px 0 5px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.codex-id-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.codex-id-hint {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--faint);
+}
 .codex-name-input {
   height: 30px;
-  width: 180px;
+  width: 200px;
+  max-width: 100%;
   padding: 0 9px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -16037,6 +16094,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   border-color: var(--accent);
 }
 .codex-name-reset {
+  flex: none;
   height: 30px;
   padding: 0 10px;
   border: 1px solid var(--line);
@@ -16044,6 +16102,8 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   background: var(--bg);
   color: var(--muted);
   font-size: 12px;
+  /* ⛔ white-space:nowrap 是关键：早期版本被 .uc-presets button 的 30px 宽压成竖排断行 */
+  white-space: nowrap;
   cursor: pointer;
 }
 .codex-name-reset:hover {
