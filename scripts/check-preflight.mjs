@@ -3260,6 +3260,22 @@ w.postMessage({id:1,op:"list",root});
       ? ok("【29】判据在两处回收 + 两处发送点都复位（走旧值会让本轮气泡活不下来）")
       : fail("【29】sawRunningTurnRef 复位点不足 —— 上一轮的置位会污染本轮");
   }
+
+  // ⑥ 生成状态条的渲染顺序（09-17 用户实测：「这个怎么到这个位置了」）
+  //   事故：run-activity-bar 排在 #chat-anchor（乐观气泡）**之前** → 发送后那段「消息已上屏、
+  //   引擎还没回声」的窗口里，状态条显示在刚发出的消息**上方**。
+  //   运行时反证：改回原顺序 → 气泡 top=80 / 状态条 top=51，与用户截图的比例一致。
+  //   ⛔ 必须按**源码顺序**断言（indexOf 比较），只查「两个类名都存在」等于没查。
+  {
+    const anchorIdx = appCode.indexOf('id="chat-anchor"');
+    const barIdx = appCode.indexOf('className="run-activity-bar"');
+    (anchorIdx >= 0 && barIdx >= 0 && anchorIdx < barIdx)
+      ? ok("【29】生成状态条排在乐观气泡**之后**（不会显示在你的消息上方）")
+      : fail("【29】run-activity-bar 排在 #chat-anchor 之前 —— 发送后状态条会出现在你消息的上方（用户实测）");
+    ((appCode.match(/className="run-activity-bar"/g) || []).length === 1)
+      ? ok("【29】状态条只渲染一处（多份会让它上下各出现一次）")
+      : fail("【29】run-activity-bar 渲染点不唯一");
+  }
 }
 
 console.log("");
