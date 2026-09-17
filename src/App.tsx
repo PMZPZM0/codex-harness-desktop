@@ -401,7 +401,7 @@ import { CodexAvatar, useCodexName } from "./components/CodexAvatar";
 import { UserAvatar, useUserName } from "./components/UserAvatar";
 import { EffortPicker } from "./components/EffortPicker";
 import { ModelIdInput } from "./components/ModelIdInput";
-import { setUserIdentity } from "./lib/user-identity.mjs";
+import { setUserIdentity, type UserAvatarSpec } from "./lib/user-identity.mjs";
 import { readStoredCodexAvatar, storeCodexAvatar, setCodexIdentity, getCodexIdentity, subscribeCodexIdentity, CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "./lib/codex-identity.mjs";
 import { pickEnhanceHint, shouldShowHintThisRun, markHintShownThisRun, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_MS, HINT_AUTO_HIDE_MS } from "./lib/enhance-hints.mjs";
 import VoiceWaveform from "./components/VoiceWaveform";
@@ -9209,7 +9209,7 @@ export default function App() {
   const [linkedBusy, setLinkedBusy] = useState<string | null>(null);
   const [projectFilter, setProjectFilter] = useState<string | null>(null);
   const [username, setUsername] = useState(() => localStorage.getItem("username") || "Codex 用户");
-  const [userAvatar, setUserAvatar] = useState<{ type: string; value: string } | null>(() => { try { const p = JSON.parse(localStorage.getItem("user-profile") || "{}"); return p.avatarType && p.avatar ? { type: p.avatarType, value: p.avatar } : null; } catch { return null; } });
+  const [userAvatar, setUserAvatar] = useState<UserAvatarSpec | null>(() => { try { const p = JSON.parse(localStorage.getItem("user-profile") || "{}"); return p.avatarType && p.avatar ? { type: p.avatarType, value: p.avatar } : null; } catch { return null; } });
   // 用户名权威源是个性化 nickname（存 userData/personalization.json，重启不丢）：
   // 启动时异步回读并覆盖 localStorage 缓存（localStorage 在应用退出瞬间可能没 flush，导致"重启恢复默认"）。
   useEffect(() => {
