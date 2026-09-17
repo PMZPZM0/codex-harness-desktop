@@ -20581,49 +20581,85 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   min-height: auto;
   padding-top: 8px;
 }
-.builtin-plugin-actions {
+/* 内置插件（09-18 排版重做：标题/说明/保存按钮分两行，能力改成卡片行，不再把状态塞进按钮文字）
+   ⛔ 旧版用 `.channel-heading`（align-items:center）把 4 行长文案和三个按钮挤在同一 flex 行里
+   → 段落末行飘到按钮下方（用户截图反馈「上面那一块排版没优化」）。 */
+.builtin-plugins-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.builtin-plugins-head .settings-copy p { max-width: 62ch; }
+.builtin-plugins-head > .primary-setting { flex: none; }
+.builtin-plugin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+/* 整张卡是按钮：图标 + 名称/说明 + 状态徽标 + 箭头 */
+.builtin-plugin-card {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex: none;
-  flex-wrap: nowrap;
-}
-.builtin-plugin-quick {
-  min-height: 34px;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 12px;
   border: 1px solid var(--line);
+  border-radius: 10px;
   background: var(--bg);
   color: var(--text);
-  border-radius: 8px;
-  padding: 0 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
-  font-size: 12px;
-  transition: border-color .15s ease, background .15s ease, color .15s ease;
+  transition: border-color .15s ease, background .15s ease;
 }
-.builtin-plugin-quick:hover { border-color: var(--muted); background: var(--panel-2); }
-.builtin-plugin-quick.configured {
-  border-color: color-mix(in srgb, var(--green) 55%, var(--line));
-  background: color-mix(in srgb, var(--green) 9%, var(--bg));
-  color: var(--green);
-}
+.builtin-plugin-card:hover { border-color: var(--muted); background: var(--panel-2); }
+.builtin-plugin-card:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+.builtin-plugin-card.configured { border-color: color-mix(in srgb, var(--green) 40%, var(--line)); }
 /* 已配置但被停用：琥珀色系（与启用绿强区分，09-17 用户反馈「启停一个状态没颜色区分」） */
-.builtin-plugin-quick.off {
-  border-color: color-mix(in srgb, var(--amber, #d97706) 45%, var(--line));
-  background: color-mix(in srgb, var(--amber, #d97706) 7%, var(--bg));
-  color: color-mix(in srgb, var(--amber, #d97706) 78%, var(--muted));
+.builtin-plugin-card.off { border-color: color-mix(in srgb, var(--amber, #d97706) 42%, var(--line)); }
+.builtin-plugin-icon {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--text);
 }
-.builtin-plugin-quick em {
+.builtin-plugin-title { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.builtin-plugin-title strong { font-size: 12.5px; color: var(--text); }
+.builtin-plugin-title small { color: var(--faint); font-size: 11px; line-height: 1.4; }
+.builtin-plugin-state {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding-left: 6px;
-  border-left: 1px solid color-mix(in srgb, currentColor 35%, transparent);
-  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 10.5px;
   font-style: normal;
   white-space: nowrap;
+}
+.builtin-plugin-card.configured .builtin-plugin-state {
+  border-color: color-mix(in srgb, var(--green) 45%, var(--line));
+  background: color-mix(in srgb, var(--green) 10%, var(--bg));
+  color: var(--green);
+}
+.builtin-plugin-card.off .builtin-plugin-state {
+  border-color: color-mix(in srgb, var(--amber, #d97706) 40%, var(--line));
+  background: color-mix(in srgb, var(--amber, #d97706) 8%, var(--bg));
+  color: color-mix(in srgb, var(--amber, #d97706) 78%, var(--muted));
+}
+.builtin-plugin-chevron { flex: none; color: var(--faint); }
+@media (max-width: 760px) {
+  .builtin-plugins-head { flex-direction: column; align-items: stretch; gap: 10px; }
+  .builtin-plugins-head > .primary-setting { align-self: flex-start; }
 }
 .builtin-plugin-backdrop { z-index: 95; }
 .builtin-plugin-modal { width: min(520px, calc(100vw - 32px)); }
@@ -20658,23 +20694,8 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .builtin-plugin-enable-row > div { display: flex; flex: 1; flex-direction: column; gap: 2px; }
 .builtin-plugin-enable-row strong { font-size: 12px; color: var(--text); }
 .builtin-plugin-enable-row small { font-size: 10.5px; color: var(--muted); }
-@media (max-width: 760px) {
-  .builtin-plugin-actions { justify-content: flex-start; margin-top: 10px; }
-  .builtin-plugins .channel-heading { align-items: flex-start; flex-direction: column; }
-}
-.builtin-plugin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.builtin-plugin-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); transition: border-color .16s ease, box-shadow .16s ease; }
-.builtin-plugin-card.enabled { border-color: color-mix(in srgb, var(--green) 40%, var(--line)); }
-.builtin-plugin-head { display: flex; align-items: center; gap: 10px; }
-.builtin-plugin-icon { width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; border-radius: 9px; background: var(--panel-2); color: var(--text); }
-.builtin-plugin-title { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
-.builtin-plugin-title strong { font-size: 13.5px; color: var(--text); }
-.builtin-plugin-title small { color: var(--faint); font-size: 11px; line-height: 1.45; }
-.builtin-plugin-body { display: flex; flex-direction: column; gap: 9px; }
-.builtin-plugin-body .se-field { display: flex; flex-direction: column; gap: 4px; }
-.builtin-plugin-body .se-field > span { font-size: 11.5px; color: var(--muted); }
-.builtin-plugin-body .se-field input { height: 34px; border: 1px solid var(--line); border-radius: 8px; padding: 0 9px; background: var(--panel); color: var(--text); font-size: 12.5px; outline: 0; }
-.builtin-plugin-body .se-field input:focus { border-color: var(--muted); }
+/* 旧版 chip 布局残留规则已随 09-18 排版重做删除（-quick / -actions / -head / -body 四组，
+   TSX 里零引用；卡片样式在上面的 .builtin-plugin-card 一组里）。 */
 .builtin-model-row { display: flex; gap: 6px; }
 .builtin-model-row input { flex: 1; }
 .builtin-model-row .secondary-setting { flex: 0 0 auto; }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ImagePlus, Eye, RefreshCw, Play, Save, X, CircleCheck, CircleOff } from "lucide-react";
+import { ImagePlus, Eye, RefreshCw, Play, Save, X, CircleCheck, CircleOff, ChevronRight } from "lucide-react";
 
 type PluginKind = "image" | "vision";
 type PluginConfig = { enabled?: boolean; baseUrl: string; apiKey: string; model: string };
@@ -76,17 +76,24 @@ export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => v
     finally { setBusy(false); }
   };
 
-  const quickButton = (kind: PluginKind) => {
-    const { title, Icon } = meta(kind);
+  /** 能力卡（09-18 排版重做）：整张卡是按钮，图标 + 名称/一句话 + 右侧状态徽标 + 箭头。
+   *  ⛔ 旧版把「按钮」和「状态」挤在同一个 chip 里（`生图插件 | 已停用`），既像按钮又像徽标；
+   *  且与左侧 4 行长文案在同一 flex 行里垂直居中 → 段落末行飘到按钮下面（用户截图反馈）。 */
+  const pluginCard = (kind: PluginKind) => {
+    const { title, desc, Icon } = meta(kind);
     const saved = savedCfg[kind];
     const ready = configured(kind);
     // 三态可视化（09-17 用户反馈「启用跟禁用一个状态，没有颜色区分」）：
     // 绿 = 已配置且启用；琥珀 = 已配置但被停用（enabled === false）；中性 = 未配置。
-    // 状态取 savedCfg（保存后的权威值），编辑中的改动保存后才反映到按钮。
+    // 状态取 savedCfg（保存后的权威值），编辑中的改动保存后才反映到卡上。
     const off = ready && saved?.enabled === false;
     const stateClass = !ready ? "" : off ? " off" : " configured";
-    return <button type="button" className={`builtin-plugin-quick${stateClass}`} onClick={() => setActive(kind)}>
-      <Icon size={14} /><span>{title}</span>{ready && <em>{off ? <CircleOff size={12} /> : <CircleCheck size={12} />}{off ? "已停用" : "已启用"}</em>}
+    const stateText = !ready ? "未配置" : off ? "已停用" : "已启用";
+    return <button type="button" className={`builtin-plugin-card${stateClass}`} onClick={() => setActive(kind)}>
+      <span className="builtin-plugin-icon"><Icon size={16} /></span>
+      <span className="builtin-plugin-title"><strong>{title}</strong><small>{desc}</small></span>
+      <em className="builtin-plugin-state">{ready ? (off ? <CircleOff size={12} /> : <CircleCheck size={12} />) : null}{stateText}</em>
+      <ChevronRight size={14} className="builtin-plugin-chevron" />
     </button>;
   };
 
@@ -110,5 +117,15 @@ export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => v
     );
   })() : null;
 
-  return <section className="settings-section stack builtin-plugins"><div className="settings-copy channel-heading"><div><h2>内置插件</h2><p>开箱即用的能力，点击按钮完成独立配置。保存后引擎会自动重载：Codex 在所有会话（含已打开的）里都能看到并自主调用生图 / 识图能力。</p></div><div className="builtin-plugin-actions">{quickButton("image")}{quickButton("vision")}<button className="primary-setting" disabled={busy} onClick={() => void save()}>{busy ? <RefreshCw size={14} className="spin" /> : <Save size={14} />}保存配置</button></div></div>{editor}</section>;
+  return <section className="settings-section stack builtin-plugins">
+    <div className="builtin-plugins-head">
+      <div className="settings-copy">
+        <h2>内置插件</h2>
+        <p>生图 / 识图能力；保存后引擎自动重载，所有会话（含已打开的）都能调用。</p>
+      </div>
+      <button className="primary-setting" disabled={busy} onClick={() => void save()}>{busy ? <RefreshCw size={14} className="spin" /> : <Save size={14} />}保存配置</button>
+    </div>
+    <div className="builtin-plugin-grid">{pluginCard("image")}{pluginCard("vision")}</div>
+    {editor}
+  </section>;
 }
