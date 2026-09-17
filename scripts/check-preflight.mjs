@@ -3575,6 +3575,32 @@ w.postMessage({id:1,op:"list",root});
       ? ok(`【32】--green 是真绿（${greens.join(" / ")}；影响 ${uses} 处成功态视觉）`)
       : fail(`【32】--green 回归成中性色（当前：${greens.join(" / ") || "未找到"}）—— ${uses} 处成功态视觉全部失效`);
   }
+
+  // ⑭ 启动加载页（09-17）：实测挂载后还要 1.3~2.1s 才拿到首屏数据，此前无任何反馈。
+  //   三条硬约束：① 覆盖层必须活到数据就绪（React 一挂载就消失 = 回到空窗）
+  //              ② 样式定义在 index.html（JS 未加载时也要能显示）+ 图标用蓝色原版
+  //              ③ 背景跟主题（固定深黑会在亮色主题下黑闪）
+  {
+    const boot = readFileSync(join(ROOT, "src", "components", "BootSplash.tsx"), "utf8");
+    const bootCode = boot.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const html = readFileSync(join(ROOT, "index.html"), "utf8");
+    const appBoot = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+    (/export function BootSplash/.test(bootCode) && /done\b/.test(bootCode) && /boot-splash-leaving/.test(bootCode))
+      ? ok("【32】启动加载页存在且带淡出（BootSplash + boot-splash-leaving）")
+      : fail("【32】BootSplash 缺失或没有淡出 —— 启动空窗回归（挂载后有 1.3~2.1s 无反馈）");
+    (/<BootSplash/.test(appBoot) && /done=\{bootReady \|\| Boolean\(showLogin\)\}/.test(appBoot))
+      ? ok("【32】启动页活到首屏数据就绪才退场（done=bootReady，不是挂载即退）")
+      : fail("【32】BootSplash 的 done 没绑首屏数据 —— 挂载即退场，等于没做");
+    (/\.boot-splash\s*\{/.test(html) && /data-theme="dark"\]\s*\.boot-splash/.test(html) && /boot-splash-logo/.test(html) && /icon\.png/.test(html))
+      ? ok("【32】启动页样式内联在 index.html（含主题分叉 + 蓝图标）")
+      : fail("【32】index.html 缺启动页内联样式/主题分叉/蓝图标 —— 首帧会黑闪或用错图标");
+    (!/boot-splash-logo">CH</.test(html) && !/>CH<\/div>/.test(html))
+      ? ok("【32】启动页不再用 CH 黑块（与侧栏徽标一致改为蓝图标）")
+      : fail("【32】启动页仍是 CH 黑块 —— 与侧栏已改的蓝图标不一致");
+    (/performance\.now\(\) >= MIN_SHOW_MS/.test(bootCode))
+      ? ok("【32】启动过快时跳过启动页（避免一闪而过）")
+      : fail("【32】缺少最短显示阈值判定 —— 快机器上会闪一下");
+  }
 }
 
 console.log("");

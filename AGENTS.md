@@ -170,6 +170,23 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **⛔ 启动加载页（09-17 先测后定）**：用户要「做一个启动加载动画」，按用户选择先量化再定方案。
+  **实测构成（3 轮采样）**：Electron 冷启动 245~396ms → 页面加载+React 挂载 **1.6~2.1s**
+  → 等首屏会话数据 **1.3~2.1s**，总计点到有内容 **3.0~3.8s**。两个结论都推翻了预设：
+  ① **白窗期实测 ≈ 0ms**（窗口创建→page-start-loading：−5/−2/−1ms）⇒ 原生 splash 窗口（方案 A）
+  要解决的问题不存在，**不采用**（而它的焦点抢占/多实例/退出残留风险是实打实的）；
+  ② 真正的空白在**挂载之后**——index.html 那份内联 splash 在 `createRoot().render()` 时被整块替换，
+  而首屏数据还要 1.3~2.1s 才到，这段界面上毫无反馈（这才是用户"没看到启动动画"的真因）。
+  **落地 B+**：`src/components/BootSplash.tsx` 用同一套 `.boot-splash` 类名在挂载瞬间接手，盖到
+  `done`（首屏会话数据到达 / 需要登录）再淡出 280ms；阶段由真实状态驱动（starting→engine→threads→ready，
+  见 `window.__boot.stages`）；启动 <300ms 直接不显示（避免一闪而过）。样式**必须内联在 index.html**
+  （JS 未加载时也要能显示）且**必须跟主题**（固定深黑在亮色主题下黑闪）；index.html 顶部同步 script
+  把 localStorage "theme" 写进 `<html data-theme>` 防止首帧主题闪烁。
+  **保留的测量设施**：`electron/boot-timing.ts` → `userData/boot-timing.json`（各阶段毫秒，留最近 20 次）
+  + 渲染层 `window.__boot`（mount/firstData/stages）。**怀疑"启动变慢"先读它，别猜。**
+  **已知未做（用户未选）**：首屏主 JS **1.86MB** 是第二段 1.6s 的成因，动画只掩盖不解问题，
+  真正的解法是按需拆包。预检【32】⑭ 五条守卫 + 7 条反证全成立。
+
 - **⛔ 状态色必须真绿（09-17，用户「启用跟禁用一个状态，没有颜色区分」）**：`--green` 曾被写成
   `#1e1e1c`（近黑，暗色主题 `#ececea` 近白）——**不是绿**。全系统 299 处「成功/激活/已安装」视觉
   （内置插件已配置徽标、开发工具已安装、记忆激活、技能完成、子代理徽标、紧凑分割线 success……）

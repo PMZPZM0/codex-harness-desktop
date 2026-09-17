@@ -44,6 +44,7 @@ import { developerInstructionsLine } from "./developer-instructions";
 import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings } from "./app-settings";
 import { checkLatestUpdate, defaultDownloadDir, downloadUpdate, fileExists, installUpdate, UPDATE_CHANNEL } from "./updates";
 import { checkEngineUpdate, performEngineUpdate } from "./engine-updater";
+import { flushBootTiming, markBoot } from "./boot-timing";
 import { VoiceService } from "./voice/voice-service";
 import * as voiceProfiles from "./voice/voice-profiles";
 import { ALL_VOICE_REPOS, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "./voice/model-manifest";
@@ -2367,6 +2368,9 @@ function createWindow() {
   mainWindow.on("closed", () => {
     for (const win of popoutWindows) { if (!win.isDestroyed()) win.close(); }
   });
+  const contents = mainWindow.webContents;
+  contents.on("did-start-loading", () => markBoot("page-start-loading"));
+  contents.on("did-finish-load", () => { markBoot("page-finish-load"); flushBootTiming(); });
   if (devUrl) void mainWindow.loadURL(devUrl);
   else void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   installContextMenu(mainWindow);
@@ -2471,6 +2475,7 @@ app.on("second-instance", () => {
 });
 
 app.whenReady().then(async () => {
+  markBoot("app-ready");   // 启动耗时测量（见 electron/boot-timing.ts）
   await fs.mkdir(codexHome, { recursive: true });
   // ⛔ 协议桥必须赶在**任何 config.toml 写入之前**起来：写配置时 base_url 要换成桥地址，
   //    桥没起来就只能直连（chat-only 网关由此不可用）。启动失败不致命：bridgeDial 自动降级直连，
@@ -2565,7 +2570,9 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.warn("voice permission handler failed:", error);
   }
+  markBoot("pre-create-window");
   createWindow();
+  markBoot("window-created");
   server.on("event", (event) => {
     // 裁剪后可能为 null（09-14 启用按会话过滤）——null 绝不能进 broadcastCodexEvent，
     // 否则渲染层收到一条空事件。channelBot / voiceService 拿的是未裁剪的原始事件。
