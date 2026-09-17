@@ -184,6 +184,23 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   与截图比例一致；修好后 = 消息 top=80 → 状态条 top=163（钉顶生效）。气泡阶段时间线里只有
   「你的消息 + 状态条」，顺序应与真实阶段「回合内容 → 状态条」一致。
   预检【29】⑥ 两条守卫按**源码顺序**断言（indexOf 比较 + 渲染点唯一 —— 只查两个类名都存在等于没查）。
+- **⛔ mac「不使用项目地址」的三个独立死因（09-17 用户报「mac 的不使用项目地址功能用不了，没有适配」）**：
+  ① **功能**：欢迎页发送路径条件写成裸 `!workspace` —— mac 全新机器从没设过项目地址，于是用户
+     明确选了「不使用项目地址」也照样进那个分支：**scratch 被清掉 + 强制弹目录选择框**，该选项等于无效
+     （Windows 老机器早就有 workspace 了，所以这个 bug 一直没暴露）。判据改为 `!workspace && !welcomeScratchDir`。
+     运行时证据：以 `workspace: null` 启动（**harness 默认会把项目目录写进 localStorage.workspace，
+     不传 null 根本复现不出来**；`last-thread` 也要清，否则启动恢复会话会把该会话 cwd 回填成 workspace）
+     → 选「不使用项目地址」→ 发送：修复后消息正常上屏 + 磁盘上真建出 `scratch/chat-<今天>-*`；
+     反证退回旧条件 → 发送被目录框拦住、消息永不上屏（= 用户现象）。
+  ② **快捷键**：全局 keydown 写死 `if (!event.ctrlKey || event.altKey || event.metaKey) return;` ——
+     mac 的命令键是 ⌘(metaKey)，这句把 mac 的**所有**快捷键 return 掉（⌘O 打开工作区、⌘N 新建、⌘K 命令面板…）。
+     改为平台分叉：`const mod = mac ? event.metaKey : event.ctrlKey;` + 成对的 `otherMod`。
+  ③ **scratch 目录**：原优先写 app 安装目录 —— mac 上那是 `X.app/Contents/MacOS`，写进去会破坏代码签名
+     （且 /Applications 通常不可写、被 Gatekeeper translocate 时整个路径是只读卷）⇒ darwin 直接落 userData。
+  **展示层**：快捷键提示统一走 `hk()`（规则在 `src/lib/hotkey.mjs` 纯函数里）—— 本机是 Windows 跑不到
+  mac 分支，只有把转换规则做成纯函数，预检才能对「mac 上显示成 ⌘⇧F」给出确定性断言而不是靠猜。
+  预检【30】段 9 条守卫 + 7 条变异反证；其中一条反证抓出守卫**假绿**（只匹配旧字面串会被等价写法绕过），
+  已改成结构性判据「handler 里 `event.metaKey` 恰好出现 2 次 = 成对分叉」。
 
 - **发送动画「两步/卡顿」的相位续播（09-17 第三轮，用户原话「还是两步，卡顿」）**：
   - 上一轮让真实消息「认领」动画解决了「动画被腰斩」，但认领是**从 0% 重新起手** —— 气泡先自己动了约 30ms，接管时又归零重播，视觉上仍有"顿一下再飞"。

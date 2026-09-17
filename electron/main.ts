@@ -7377,8 +7377,12 @@ ipcMain.handle("clipboard:write", async (_event, text: string) => {
   return true;
 });
 /** 欢迎页「无项目」会话的临时工作目录：每次调用在基础目录下新建一个独立子目录。
- *  基础目录优先应用安装目录（便携安装可写，用户要求"安装目录下"）；装在系统盘
- *  Program Files 等不可写位置时回落 userData（%APPDATA%\Codex Harness Desktop）。 */
+ *  Windows：优先应用安装目录（便携安装可写，用户要求"安装目录下"）；装在系统盘
+ *  Program Files 等不可写位置时回落 userData（%APPDATA%\Codex Harness Desktop）。
+ *  ⛔ mac（09-17 mac 适配）：**绝不写进 .app bundle** —— `path.dirname(app.getPath("exe"))`
+ *  指向 `X.app/Contents/MacOS`，在那里建目录会破坏代码签名，且 /Applications 通常不可写、
+ *  被 Gatekeeper translocate 时整个路径还是只读卷 ⇒ darwin 直接落 userData
+ *  （~/Library/Application Support/Codex Harness Desktop/scratch）。 */
 ipcMain.handle("scratch:create", async () => {
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const name = `chat-${stamp}-${Date.now().toString(36)}`;
@@ -7387,6 +7391,7 @@ ipcMain.handle("scratch:create", async () => {
     await fs.mkdir(dir, { recursive: true });
     return dir;
   };
+  if (process.platform === "darwin") return make(app.getPath("userData"));
   try {
     return await make(path.dirname(app.getPath("exe")));
   } catch {

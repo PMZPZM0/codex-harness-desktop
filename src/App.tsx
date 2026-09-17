@@ -16,6 +16,7 @@ import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } fr
 import { LEGACY_PREFIX, dispatchSignature, emptyDispatch, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeDispatch, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "./lib/thread-runtime.mjs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
 import { createSendAnimClaim, armSendAnimationClaim as armSendAnimationClaimLib, claimSendAnimation as claimSendAnimationLib } from "./lib/send-anim.mjs";
+import { macHotkeyLabel } from "./lib/hotkey.mjs";
 import { resolveSkillVisual, type SkillVisual } from "./lib/skill-icon";
 import { translateEngineNotice } from "./lib/engine-notices-zh";
 import { resolveRelayAutoTarget, resolveRelayTarget, resolveRelayKeyTarget, writeRelayActive, readRelayActive, type RelayActive } from "./lib/relay";
@@ -1230,7 +1231,10 @@ const SHORTCUT_GROUPS: { group: string; shortcuts: { keys: string[]; desc: strin
       { keys: ["Ctrl+Z / Ctrl+Y"], desc: "撤销 / 重做（编辑框内）" },
     ],
   },
-];
+]
+  // 显示层平台化（09-17 mac 适配）：mac 上把 Ctrl+ 显示为 ⌘、Shift+ 显示为 ⇧。
+  // 只改**展示**——实际按键判断在全局 keydown 处理器里由 isMacPlatform() 分叉（⌘ 才是命令键）。
+  .map((group) => ({ ...group, shortcuts: group.shortcuts.map((item) => ({ ...item, keys: item.keys.map(hk), desc: hk(item.desc) })) }));
 
 function imageUrl(path: string) {
   // 双重编码：Chromium 对自定义协议 URL 会自行解一层 percent 编码，路径里的 %5C（反斜杠）
@@ -1935,6 +1939,22 @@ function loadThreadEffort(id: string): string {
 
 function saveThreadEffort(id: string, effort: string) {
   saveThreadRuntime(id, { effort });
+}
+
+/** 当前是否 macOS：优先 preload 暴露的 process.platform（打包/开发态都可靠），回退 navigator。
+ *  09-17 mac 适配：全库快捷键原先只认 `event.ctrlKey`，而 mac 的「命令键」是 ⌘（metaKey）——
+ *  旧判断里那句 `|| event.metaKey` 直接把 mac 的所有快捷键 return 掉：⌘O 打开工作区、
+ *  ⌘N 新建任务、⌘K 命令面板、⌘, 设置……**在 mac 上全部无效**（用户报「项目地址功能用不了」）。 */
+function isMacPlatform(): boolean {
+  const fromPreload = (window as unknown as { codex?: { platform?: string } })?.codex?.platform;
+  if (typeof fromPreload === "string" && fromPreload) return fromPreload === "darwin";
+  return /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent || "");
+}
+/** 平台化的快捷键标签（只影响**显示**，不改变按键判断）：mac 上 Ctrl→⌘、Shift→⇧、Alt→⌥。
+ *  转换规则在 src/lib/hotkey.mjs 里（纯函数 —— 本机是 Windows 跑不到 mac 分支，只有把它做成
+ *  纯函数，预检才能对「mac 上显示成什么」给出确定性断言）。 */
+function hk(label: string): string {
+  return isMacPlatform() ? macHotkeyLabel(label) : String(label ?? "");
 }
 
 function sandboxPolicy(mode: string, cwd: string) {
@@ -4954,7 +4974,7 @@ function UserMessageEditor({ initial, onCancel, onSubmit }: { initial: string; o
     <div className="edit-message">
       <textarea value={draft} autoFocus onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") onCancel(); else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) onSubmit(draft); }} placeholder="编辑消息内容" />
       <div className="edit-actions">
-        <span>Ctrl+Enter 发送 · Esc 取消</span>
+        <span>{hk("Ctrl+Enter")} 发送 · Esc 取消</span>
         <button className="ghost" onClick={onCancel}>取消</button>
         <button disabled={!draft.trim()} onClick={() => onSubmit(draft)}>保存并重新发送</button>
       </div>
@@ -6153,7 +6173,7 @@ function SshExecModal({ server, onClose }: { server: SshServer; onClose: () => v
           <button className="icon-button relay-modal-close" title="关闭" onClick={onClose}><X size={16} /></button>
         </header>
         <div className="connector-form">
-          <label><span>命令 <small>Ctrl+Enter 运行</small></span>
+          <label><span>命令 <small>{hk("Ctrl+Enter")} 运行</small></span>
             <textarea rows={3} value={command} spellCheck={false} placeholder="例如：uname -a && df -h" onChange={(event) => setCommand(event.target.value)}
               onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void run(); } }} />
           </label>
@@ -10941,7 +10961,12 @@ const commandMatches = useMemo(() => {
   useEffect(() => {
     if (showLogin) return;
     function onKey(event: globalThis.KeyboardEvent) {
-      if (!event.ctrlKey || event.altKey || event.metaKey) return;
+      // mac 的「命令键」是 ⌘（metaKey），Windows/Linux 才是 Ctrl —— 平台分叉判断（见 isMacPlatform 注释：
+      // 旧版写死 `!event.ctrlKey || event.metaKey`，mac 上所有快捷键都被这里 return 掉了）。
+      const mac = isMacPlatform();
+      const mod = mac ? event.metaKey : event.ctrlKey;
+      const otherMod = mac ? event.ctrlKey : event.metaKey;
+      if (!mod || event.altKey || otherMod) return;
       const key = event.key.toLowerCase();
       if (event.shiftKey) {
         if (key === "f") { event.preventDefault(); setChatSearchOpen(true); queueMicrotask(() => chatSearchRef.current?.focus()); }
@@ -15235,21 +15260,19 @@ const commandMatches = useMemo(() => {
       setSettingsOpen(true);
       return;
     }
-    if (!workspace) {
+    // ⛔ 09-17 mac 实测（用户报「不使用项目地址功能用不了」）：只有「**既没有项目地址、
+    //   也没有选『不使用项目地址』**」才该弹目录选择框。旧条件是裸 `!workspace` ——
+    //   mac 全新机器从来没设过项目地址，于是用户在欢迎页明确选了「不使用项目地址」也照样
+    //   进这里：**scratch 被清掉 + 强制弹框** ⇒ 该选项等于完全无效。
+    //   Windows 上之所以看不出这个 bug，是因为老机器早就有 workspace 了。
+    //   09-14 那次的坑（在弹窗里选了目录却仍建进 scratch）现在由「本分支只在没有 scratch
+    //   时进入」天然避免：用户明确选了 scratch 就走 scratch，不会再弹框、也不会被清掉
+    //   （scratch 的清空时机仍留在 thread/start 成功之后，保证「每次新建单独目录」）。
+    if (!workspace && !welcomeScratchDir) {
       planOnceRef.current = false; // /plan 旗标不跨发送泄漏：发送失败即复位
       setPlanArmed(false);
-      // ★ 09-14 用户反馈修复：欢迎页选过「不使用项目地址」（scratch 指示器挂着）时，
-      //   这里 `!workspace` 成立（scratch ≠ workspace）→ 弹目录选择框。旧行为有两个坑：
-      //   ① 选完直接 return —— **用户这条消息被静默丢弃**，要再发一次；
-      //   ② 用户在弹窗里明确选了项目目录，但欢迎页的 scratch 选择**没被清掉**，
-      //      下一次发送 createEmptyThread 里 `cwd: welcomeScratchDir ?? workspace`
-      //      仍命中 scratch → **会话建进临时目录，而不是用户刚选的项目**（正是用户
-      //      报的「选了 A 却建了 B」）。修法：选完不 return（继续发送），并清掉
-      //      scratch——用户在发送路径选目录这个动作本身就是「改用项目地址」。
-      if (welcomeScratchDir) setWelcomeScratchDir(null);
       await chooseWorkspace();
       if (!workspaceRef.current) return; // 用户取消了选择：留在输入框，消息不丢
-      // 选好了 → 不 return，继续走下面的正常发送流程（用刚选的目录建会话）
       // 选好了 → 不 return，继续走下面的正常发送流程（用刚选的目录建会话）
     }
     let messageText = value;
@@ -16057,14 +16080,14 @@ const commandMatches = useMemo(() => {
           {!sidebarCollapsed && <div><strong>Codex Harness</strong><span>Desktop</span></div>}
         </div>
         <div className="sidebar-tabs" role="tablist" aria-label="导航">
-          <button className="sidebar-tab" onClick={() => { startNewThread(); }}><MessageSquarePlus size={15} /><span>新建任务</span><kbd>Ctrl N</kbd></button>
+          <button className="sidebar-tab" onClick={() => { startNewThread(); }}><MessageSquarePlus size={15} /><span>新建任务</span><kbd>{hk("Ctrl+N")}</kbd></button>
           <button className="sidebar-tab" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}><Clock3 size={15} /><span>自动化</span></button>
           <button className="sidebar-tab" onClick={() => { setSettingsPage("skills"); setSettingsOpen(true); setMobileNav(false); }}><Zap size={15} /><span>技能中心</span></button>
           <button className="sidebar-tab" onClick={() => { setSettingsPage("plugins"); setSettingsOpen(true); setMobileNav(false); }}><Store size={15} /><span>插件市场</span></button>
           <button className="sidebar-tab" onClick={() => { setSettingsPage("agentteam"); setSettingsOpen(true); setMobileNav(false); }}><Users size={15} /><span>专家/专家团</span></button>
           <button className="sidebar-tab" onClick={() => { setSettingsPage("backup"); setSettingsOpen(true); setMobileNav(false); }}><Download size={15} /><span>会话备份</span></button>
         </div>
-        <button className="search-box" title="搜索任务与操作（Ctrl+K）" onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={15} /><span>搜索任务</span><kbd>Ctrl K</kbd></button>
+        <button className="search-box" title={`搜索任务与操作（${hk("Ctrl+K")}）`} onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={15} /><span>搜索任务</span><kbd>{hk("Ctrl+K")}</kbd></button>
         {projectFilter && <button className="filter-chip" title="清除项目筛选" onClick={() => setProjectFilter(null)}><FolderOpen size={12} />{basename(projectFilter)}<X size={12} /></button>}
         <div className="view-tabs" role="tablist" aria-label="视图">
           <button className={`view-tab ${viewTab === "groups" ? "active" : ""}`} onClick={() => setViewTab("groups")} title="按时间分组"><Hash size={14} /><span>分组</span></button>
@@ -16893,7 +16916,7 @@ const commandMatches = useMemo(() => {
               <button className="palette-row" key={row.label} onClick={() => { setPaletteOpen(false); row.run(); }}>
                 <Icon size={14} />
                 <span className="palette-label">{row.label}</span>
-                {row.shortcut && <kbd>{row.shortcut}</kbd>}
+                {row.shortcut && <kbd>{hk(row.shortcut)}</kbd>}
               </button>
             ); })}
           </div>)}
