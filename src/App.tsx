@@ -388,6 +388,7 @@ import { CODEX_MARKET_ZH, zhCategory } from "./lib/codex-market-zh";
 import { SKILLHUB_MCP_CATALOG, SKILLHUB_MCP_CATEGORIES, skillhubMcpDetailUrl, type SkillHubMcpEntry } from "./lib/skillhub-mcp";
 import { PersonalizationPage } from "./components/PersonalizationPage";
 import VoiceSettingsSection from "./components/VoiceSettingsSection";
+import { BootSplash, type BootStage } from "./components/BootSplash";
 import VoiceWaveform from "./components/VoiceWaveform";
 import VoiceDevToolsSection from "./components/VoiceDevToolsSection";
 import { GlobalSearchView } from "./components/IndexLibrary";
@@ -7379,6 +7380,10 @@ export default function App() {
   const [modelId, setModelId] = useState(() => localStorage.getItem("default-model") ?? "");
   // 历史遗留兜底：旧版本可能存过 minimal/xhigh/ultra，读取时归一化到引擎真实支持的档位
   const [effort, setEffort] = useState(() => normalizeEffort(localStorage.getItem("default-effort")) || DEFAULT_EFFORT);
+  /** 启动加载页（09-17）：首屏会话列表到达前一直盖着，避免"看着像好了但没内容"的空窗。
+   *  实测启动到有内容 3.0~3.8s，其中挂载后还要等 1.3~2.1s —— 那段此前没有任何反馈。 */
+  const [bootReady, setBootReady] = useState(false);
+  const [threadsLoading, setThreadsLoading] = useState(true);
   const [threads, setThreads] = useState<Thread[]>([]);
   const [thread, setThread] = useState<Thread | null>(null);
   /** 会话切换耗时诊断（09-12 压测）：openThread 落笔，thread 真正换上去时结算并写入
@@ -11065,10 +11070,19 @@ const commandMatches = useMemo(() => {
 
   async function refreshThreads() {
     // 主侧栏只展示未归档会话；归档记录由「设置 → 归档管理」单独查看、恢复或删除。
-    const result = await window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc", archived: false });
-    const list = result.data ?? [];
-    setThreads(list);
-    threadsRef.current = list;
+    setThreadsLoading(true);
+    try {
+      const result = await window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc", archived: false });
+      const list = result.data ?? [];
+      setThreads(list);
+      // 启动耗时测量（09-17）：首屏会话列表到达 = 界面第一次有真实内容，splash 可以退场
+      const boot = (window as unknown as { __boot?: Record<string, number> }).__boot;
+      if (boot && boot.firstData === undefined) boot.firstData = performance.now();
+      threadsRef.current = list;
+    } finally {
+      setThreadsLoading(false);
+      setBootReady(true);
+    }
   }
 
   // 后台会话（渠道机器人/手机端等在主进程创建的线程）不进当前会话事件流，
@@ -16351,6 +16365,13 @@ const commandMatches = useMemo(() => {
             </div>
           )}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
+          {/* 启动加载页（渲染层接手段）：挂载瞬间从 index.html 那份手里接过来，
+              盖到首屏会话数据到达（或需要登录）才淡出。实测挂载后还要等 1.3~2.1s，
+              此前这段界面上什么反馈都没有。阶段由真实状态驱动，不是放假进度条。 */}
+          <BootSplash
+            stage={!serverStatus || serverStatus === "starting" ? "starting" : serverStatus !== "ready" ? "engine" : threadsLoading ? "threads" : "ready"}
+            done={bootReady || Boolean(showLogin)}
+          />
           {systemEvents.map((event) => <div className={`system-event ${event.tone ?? "info"}`} key={event.id}><strong>{event.tone === "success" ? <CircleCheck size={13} className="system-event-icon" /> : null}{event.title}</strong><Markdown>{event.text}</Markdown></div>)}
           {/* 上下文压缩分隔线：两边虚线 + 中间文字，状态切换带过渡；success/error 常驻可手动关闭，
               只属于发起压缩的会话。成功态若时间线里已有 contextCompaction 项（同样渲染为成功分隔线），
