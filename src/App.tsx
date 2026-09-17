@@ -1186,9 +1186,6 @@ const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
   { group: "开发工具", items: [["devtools", "开发工具", TerminalSquare]] },
 ];
 
-/** 读「增强提示是否已弹过」：**每次启动重置**（模块级变量随应用启动归零），不落盘。
- *  见 enhance-hints.mjs 的说明——用户要的是"每次启动后第一次输入必弹"。 */
-
 /** 设置页「使用帮助」按钮（09-17）：统一外观与行为，各页只传 HelpKey。
  *  放在 App.tsx 内而不是 HelpDialog.tsx：它要用 App 的 setHelpKey，做成组件反而要传回调。 */
 function HelpButton({ helpKey, onOpen, label }: { helpKey: HelpKey; onOpen: (key: HelpKey) => void; label?: string }) {
@@ -7591,7 +7588,7 @@ export default function App() {
   const enhanceRunIdRef = useRef(0);
   const [hasEnhanceBackup, setHasEnhanceBackup] = useState(false);
   /** 增强按钮的提示气泡（09-17 用户要求：「输入文字后在图标上方小气泡提醒，词库丰富、个性一点」）。
-   *  触发条件三者叠加（用户定稿）：① 首次启动第一次输入必弹 ② 之后每 5 次发送弹一次 ③ 输入长需求时弹。
+   *  触发条件三者叠加（用户定稿）：① **每次启动后**第一次输入必弹 ② 之后每 5 次发送弹一次 ③ 输入长需求时弹。
    *  ⛔ 展示时机必须挂在 enhanceAnchorVisible 上（= 气泡所依附的按钮真的渲染出来了）：
    *  发送后/回合运行中输入时按钮不渲染，此时展示等于用户永远看不到（实测踩到）。 */
   const [enhanceHint, setEnhanceHint] = useState<string | null>(null);
@@ -14457,7 +14454,7 @@ const commandMatches = useMemo(() => {
   /** 触发提示词增强：原文备份 → 调主进程 LLM 润色 → 替换输入框文本。
    *  增强后按钮进入撤销模式（再点还原原文）；用户改动文本即清除备份（WorkBuddy 同款）。 */
   /** 展示增强提示气泡（6 秒后自动消失）。
-   *  展示即视为"看过"并落盘 —— 之后无论用户是点了、关了还是让它自己消失，都不再出现。 */
+   *  **只标记"本次启动已弹过"（模块级内存，不落盘）** —— 下次启动仍会为第一次输入弹出。 */
   function showEnhanceHint() {
     setEnhanceHint(pickEnhanceHint(lastEnhanceHintRef.current));
     enhanceHintFiredAtRef.current = Date.now();
