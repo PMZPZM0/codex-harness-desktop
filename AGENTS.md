@@ -170,6 +170,12 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **发送消息的入场动画不再被腰斩（09-17，用户实测「发出去的消息没有动画到位置，先展示上面消息、没有过渡」）**：
+  - **实测根因**（按帧打点）：动画只登记在**乐观气泡**上（`justSentIds`），而引擎回声的真实消息几十毫秒内就接管、气泡随之卸载 —— 实测 t+13ms opacity 0.24（刚起头）→ t+34ms 节点已消失，动画被打断，消息"啪"地跳到最终位置；同时钉顶在接管瞬间重锚，滚动出现 2048→2381→2075 的两步跳。
+  - **修法**：`armSendAnimationClaim(text)` 发送时登记正文，真实消息**挂载那一刻**（`UserMessageView` 的 lazy `useState`）用 `claimSendAnimation()` 认领（一次性、10s TTL、前缀匹配防误认领）→ `just-sent` 与节点同帧出现，结构上不可能被接管打断；乐观气泡（`pending`）仍走原 `justSentIds`。
+  - **踩过的弯路（重要）**：① 先试图「把动画补挂到接管它的真实节点」，在 4 处接管路径上补 —— 打点显示那些分支**根本没被走到**（`__animHandover` 全程 null），且真实节点比气泡隐藏更早挂载（同帧并存），补挂必然晚一步；② 中途一次"反证运行"显示全绿，实为**构建失败（TS18047 `'claim' is possibly 'null'`，`return false` 让后续收窄失效）导致 bundle 没更新** —— 教训：反证/验证前必须**同时核对构建退出码与产物 mtime/hash**，只看旧日志文件会拿到上一轮的退出码。
+  - 验收：真启动发送消息 + 100ms 定点采样 7 条断言全绿（`just-sent` 在真实节点、`getAnimations` 含 `user-msg-send-in`、opacity 0→1、位移 552→488 落地）；反证 = 关掉认领（`if (SEND_CLAIM_TTL_MS > 0) return false;`）后同类 4 条变红。
+
 - **429 限流重试条自适应（09-17，用户实测「重试弹窗展示没有自适应」）**：`.rate-limit-retry-text` 原本是 `nowrap + overflow:hidden + ellipsis` —— 窄窗下整句被截断（视觉上就是「没自适应」）。改为 `white-space: normal; overflow-wrap: anywhere; flex: 1 1 auto; min-width: 0`（长文案换行完整展示），容器 `inline-flex` → `flex` + `width: fit-content; max-width: min(100%, 720px)`（跟内容但永不越界）。同类弹窗复查：`.notice` 已有 `max-width: min(480px, calc(100vw - 36px))`、`.resource-error` 已有 `overflow-wrap:anywhere + min-width:0`，均完好未动。验收：真启动合成 DOM 几何断言 7 条（窄窗 320px 无横向溢出 + 文案不截断 + 确实换行；反证：改回 nowrap 后文字 scroll 294→641 被截断）全绿即删。
 
 - **弹窗自适应修复（09-17，用户实测「执行计划」清单右边被切掉）**：`.goals-pop` 是 `display:grid; width:300px`，而 grid 子项默认 `min-width:auto`——待办文本 `nowrap` 时 min-content=整句长度，把行撑出面板被裁。修：面板宽 `clamp(300px,24vw,400px)` + `max-width` 上限 + `overflow:hidden auto`（横向禁滚）+ **`.goals-pop > * { min-width:0 }`**（grid 子项允许收缩，这是根因修复）+ 面板内待办/计划步骤文本改 `white-space:normal; overflow-wrap:anywhere`（完整换行展示而非裁切）。同类弹窗全库审计后一并防护：`.composer-quick-pop > button > span`（专家/技能/连接器动态名加省略）、`.browser-drawer-row b/small`（文件名换行）、`.ctx-pop-sub`（邮箱/报错串换行）。`.tab-switcher` 无 JSX 引用（死规则）未动。验收：真启动合成 DOM 几何断言 7 条（含运行时反证：摘掉 `min-width:0` 守卫同样内容横向爆到 1366px）全绿即删。
