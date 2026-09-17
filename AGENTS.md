@@ -558,6 +558,24 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   ⛔ 判据纪律：本机是 Windows ⇒ 所有 mac 分支**只能靠结构性断言 + 纯函数行为断言**锁定（【32】⑫ 就是
   `macHotkeyLabel` 的 5 条真值表），产物层另有 mac CI 的 `verify-packaged-tools.cjs` 兜底。
 
+- **「开发工具」双平台覆盖核查（09-18 用户问「工具有没有考虑 Windows 和 mac 两种版本」）**：
+  逐层查完，**下载链路是分叉的**（`install-runtimes.cjs` 顶部 `IS_MAC` + `mainMac()` 一整套 darwin 资产：
+  node/python/pwsh/ffmpeg/vscode-cli/jq/ninja/7zip/yt-dlp/rg/uv/cmake/conda 各有 mac 构建，git 走系统
+  Xcode CLT 引导，`chmod +x` 统一补执行位；「装没装」判定走 `DARWIN_MARKERS` + `runtimeInstalledBySystem`
+  的系统探测（git/openssl/docker）；mingw 在 mac 隐藏）。**查出一处真缺口并修掉**：
+  `scripts/install-automation.cjs`（随包内置能力的「修复安装」回退，`build/copy-mac-tools.cjs` **明确把它
+  拷进 mac 包**）只认 Windows 的 `python.exe` / `7z.exe` 两个解压器 ⇒ mac 上点「修复安装」必然报
+  「缺少 python 与 7z，无法解压」——**把平台缺口说成缺依赖**。修：抽 `pickExtractor(platform, exists)`，
+  darwin 走 `ditto`（保留 symlink/执行位，npm 包里有 symlink）→ 内置 `python/bin/python3` → `/usr/bin/unzip`
+  三级回落；Windows 路径与参数**逐字保持不变**；加 `require.main` 守卫（被 require 时不执行主流程）。
+  预检【34】三条：① 两平台安装表 id 集合一致（仅 mingw 例外，与 `DARWIN_HIDDEN` 同源）
+  ② `require.main` 守卫在 ③ **行为断言**（require 真模块跑 `pickExtractor`，mac 三档 + 「不再选中 Windows `.exe`」+ Windows 三档）。
+  ⛔ 教训：守卫③第一版写的是文本匹配（只查文件里有没有 `/usr/bin/ditto` 字样），**把 `darwin` 改成任意
+  字符串它照样绿** —— 反证 F 当场抓到；改成 require 真实现跑纯函数才立住。**能 require 的模块一律用行为断言，
+  文本匹配只配当"结构存在性"的最后兜底。**
+  另：反证脚本自身也踩了「匹配旧 fail 文案」的坑（守卫改了文案、反证还在找老字符串 → 报"没红"的假结论），
+  改文案时必须同步改反证匹配串。
+
 - **⛔ 调度独占锁的「孤儿持有者」（09-17 用户实测：「都关掉了，怎么还提示被锁住了」）+ 一键释放**：
   锁的持有者是**从 `thread-runtime` 记录派生**的（第一个 `dispatch.enabled` 的线程），而**会话被归档/删除时
   没有任何地方清这条记录** —— `thread-runtime-store.ts` 里那句注释「删除/归档线程、记录被清掉时锁会自动
