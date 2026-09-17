@@ -152,6 +152,7 @@ import {
   Microscope,
   Calculator,
   Telescope,
+  CircleHelp,
 } from "lucide-react";
 import { useMemory, type MemoryGatewayState, type MemoryGroup, type MemoryPriority, type MemoryRecord, groupMemoriesByThread } from "./hooks/useMemory";
 import UsagePanel from "./components/UsagePanel";
@@ -389,6 +390,7 @@ import { SKILLHUB_MCP_CATALOG, SKILLHUB_MCP_CATEGORIES, skillhubMcpDetailUrl, ty
 import { PersonalizationPage } from "./components/PersonalizationPage";
 import VoiceSettingsSection from "./components/VoiceSettingsSection";
 import { BootSplash, type BootStage } from "./components/BootSplash";
+import { HelpDialog, type HelpKey } from "./components/HelpDialog";
 import VoiceWaveform from "./components/VoiceWaveform";
 import VoiceDevToolsSection from "./components/VoiceDevToolsSection";
 import { GlobalSearchView } from "./components/IndexLibrary";
@@ -1182,6 +1184,14 @@ const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
   { group: "数据与统计", items: [["usage", "使用统计", CircleGauge], ["storage", "数据管理", Database], ["backup", "会话备份", Download], ["archive", "归档管理", Archive]] },
   { group: "开发工具", items: [["devtools", "开发工具", TerminalSquare]] },
 ];
+
+/** 设置页「使用帮助」按钮（09-17）：统一外观与行为，各页只传 HelpKey。
+ *  放在 App.tsx 内而不是 HelpDialog.tsx：它要用 App 的 setHelpKey，做成组件反而要传回调。 */
+function HelpButton({ helpKey, onOpen, label }: { helpKey: HelpKey; onOpen: (key: HelpKey) => void; label?: string }) {
+  return <button type="button" className="help-entry" title={label ? `${label}使用帮助` : "使用帮助"} onClick={() => onOpen(helpKey)}>
+    <CircleHelp size={14} />帮助
+  </button>;
+}
 
 /** 能力总闸各子项在提示文案里的展示名（describePartial / 部分启用提示用）。 */
 const MEMBER_LABELS: Partial<Record<MemberKey, string>> = {
@@ -8907,6 +8917,9 @@ export default function App() {
   useEffect(() => { try { localStorage.setItem("pptoken-card-off", pptokenCardOff ? "1" : "0"); } catch { /* ignore */ } }, [pptokenCardOff]);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>("general");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  /** 设置页「使用帮助」弹窗（09-17 用户要求：模型/插件/技能/MCP/专家团/语音/开发工具都要有）。
+   *  null = 不显示；由各页标题右侧的帮助按钮写入对应的 HelpKey。 */
+  const [helpKey, setHelpKey] = useState<HelpKey | null>(null);
   const [toolsStatus, setToolsStatus] = useState<{ id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>([]);
   const refreshToolsStatus = () => { window.codex.toolStatus().then(setToolsStatus).catch(() => setToolsStatus([])); };
   const [devRuntimes, setDevRuntimes] = useState<DevRuntimeEntry[]>([]);
@@ -16365,6 +16378,8 @@ const commandMatches = useMemo(() => {
             </div>
           )}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
+          {/* 设置页使用帮助（09-17 用户要求）：模型/插件/技能/MCP/专家团/语音/开发工具 */}
+          <HelpDialog helpKey={helpKey} onClose={() => setHelpKey(null)} />
           {/* 启动加载页（渲染层接手段）：挂载瞬间从 index.html 那份手里接过来，
               盖到首屏会话数据到达（或需要登录）才淡出。实测挂载后还要等 1.3~2.1s，
               此前这段界面上什么反馈都没有。阶段由真实状态驱动，不是放假进度条。 */}
@@ -17535,7 +17550,7 @@ const commandMatches = useMemo(() => {
             )}
             {settingsPage === "agentteam" && (
               <section className="settings-section stack hub-page">
-                <div className="settings-copy"><h2>专家和专家团</h2><p>单体专家与多角色团队的总入口。</p></div>
+                <div className="settings-copy"><h2>专家和专家团</h2><p>单体专家与多角色团队的总入口。</p><HelpButton helpKey="agentteam" onOpen={setHelpKey} label="专家/专家团" /></div>
                 <div className="hub-card-grid hub-card-grid-3">
                   <button className="hub-card" onClick={() => setSettingsPage("agents")}>
                     <span className="hub-card-icon"><Bot size={20} /></span>
@@ -17565,7 +17580,7 @@ const commandMatches = useMemo(() => {
               if (rest.length) groups.push({ title: "更多专家", blurb: "自定义团队与外部导入的专家", icon: Users, cards: rest });
               return (
               <section className="settings-section stack hub-page expert-center-page">
-                <div className="settings-copy"><h2>专家中心</h2><p>按领域分类的全部专家——点击任意专家卡片，直接进入与 TA 的一对一会话。</p></div>
+                <div className="settings-copy"><h2>专家中心</h2><p>按领域分类的全部专家——点击任意专家卡片，直接进入与 TA 的一对一会话。</p><HelpButton helpKey="agentteam" onOpen={setHelpKey} label="专家/专家团" /></div>
                 {groups.map((g) => (
                   <div className="expert-category" key={g.title}>
                     <div className="expert-category-head">
@@ -17756,7 +17771,7 @@ const commandMatches = useMemo(() => {
               </div>
             </section>}
             {settingsPage === "devtools" && <section className="settings-section stack devtools-page">
-              <div className="settings-copy"><h2>开发工具</h2><p>桌面与浏览器自动化（Nuphus / Playwright CLI）与写代码模式插件随应用内置、开箱即用；CloakBrowser 指纹浏览器、两类浏览器内核与其余工具链按需下载（国内镜像加速，失败自动回落官方源），安装后自动加入 Codex 环境（不改系统 PATH）。</p></div>
+              <div className="settings-copy"><h2>开发工具</h2><p>桌面与浏览器自动化（Nuphus / Playwright CLI）与写代码模式插件随应用内置、开箱即用；CloakBrowser 指纹浏览器、两类浏览器内核与其余工具链按需下载（国内镜像加速，失败自动回落官方源），安装后自动加入 Codex 环境（不改系统 PATH）。</p><HelpButton helpKey="devtools" onOpen={setHelpKey} label="开发工具" /></div>
               <div className="settings-subhead"><Download size={13} />语音模型<span className="settings-subhead-hint">sherpa-onnx · 本机推理 · 按需下载</span></div>
               <VoiceDevToolsSection onNotice={setNotice} />
               {(() => {
@@ -17901,7 +17916,7 @@ const commandMatches = useMemo(() => {
               <CodeAppearanceSection />
             </section>}
             {settingsPage === "personalization" && <PersonalizationPage personality={personality} onPersonalityChange={changePersonality} onNotice={setNotice} />}
-            {settingsPage === "voice" && <VoiceSettingsSection onNotice={setNotice} />}
+            {settingsPage === "voice" && <VoiceSettingsSection onNotice={setNotice} onOpenHelp={() => setHelpKey("voice")} />}
             {settingsPage === "relay" && <RelayCenterPage busy={relayBusy} activeProvider={customModel?.provider} onActivate={relayActivate} onNotice={setNotice} onOpenModelSettings={() => { setSettingsPage("model"); }} />}
             {settingsPage === "openai" && <OpenaiSubscriptionPage activeProvider={customModel?.provider} onActivate={(models) => activateOfficialProvider(models)} onNotice={setNotice} onActiveChange={setOpenaiActiveAcct} onRefreshActive={() => refreshActive()} />}
             {settingsPage === "model" && <section className="settings-model-layout">
@@ -17915,7 +17930,7 @@ const commandMatches = useMemo(() => {
                 </div>
               </div>
               <div className="provider-list">
-                <div className="provider-list-head"><h2>模型供应商</h2></div>
+                <div className="provider-list-head"><h2>模型供应商</h2><HelpButton helpKey="model" onOpen={setHelpKey} label="模型配置" /></div>
                 {(() => {
                   // PPtoken 赞助商卡常驻置顶：真实配置存在时用真实数据参与排序，否则显示未配置引导卡
                   const realPptoken = providersList.some((p) => p.provider === "pptoken");
@@ -18312,7 +18327,7 @@ const commandMatches = useMemo(() => {
               };
               const togglePluginChecked = (id: string) => setPluginChecked((current) => current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]);
               return <section className="settings-section stack plugin-center">
-                <div className="settings-copy channel-heading"><div><h2>插件</h2><p>上方卡片来自 Codex Plugin Marketplace（codex-marketplace.com），一键安装写入本地插件目录，无需 ChatGPT 登录；下方为已安装插件管理，停用后 Codex 不再加载该插件提供的指令、技能与钩子。</p></div><div className="settings-heading-actions"><button className="secondary-setting" title="打开 Codex Plugin Marketplace 在线市场" onClick={() => void window.codex.openExternal("https://www.codex-marketplace.com/plugins")}><ArrowUpRight size={14} />在线市场</button><button className="icon-button" title="刷新插件" onClick={() => void refreshSettingsResources()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+                <div className="settings-copy channel-heading"><div><h2>插件</h2><p>上方卡片来自 Codex Plugin Marketplace（codex-marketplace.com），一键安装写入本地插件目录，无需 ChatGPT 登录；下方为已安装插件管理，停用后 Codex 不再加载该插件提供的指令、技能与钩子。</p></div><div className="settings-heading-actions"><HelpButton helpKey="plugins" onOpen={setHelpKey} label="插件" /><button className="secondary-setting" title="打开 Codex Plugin Marketplace 在线市场" onClick={() => void window.codex.openExternal("https://www.codex-marketplace.com/plugins")}><ArrowUpRight size={14} />在线市场</button><button className="icon-button" title="刷新插件" onClick={() => void refreshSettingsResources()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
                 <div className="plugin-market-block">
                   <div className="plugin-market-title">插件市场<small>来自 Codex Plugin Marketplace · 一键安装无需登录</small></div>
@@ -18418,7 +18433,7 @@ const commandMatches = useMemo(() => {
               </section>;
             })()}
             {settingsPage === "skills" && <section className="settings-section stack skill-center">
-              <div className="settings-copy channel-heading"><div><h2>技能中心</h2><p>技能清单来自腾讯 SkillHub 市场（skillhub.cn），一键安装自动写入 <code>{userDataPath ? `${userDataPath}\\codex-home\\skills` : "Codex 技能目录"}</code>，更新来源清单并重启引擎确认可用。</p></div><div className="settings-heading-actions"><button className={skillsManageOnly ? "active-manage" : "secondary-setting"} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={14} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button><button className="secondary-setting" onClick={() => void importSkill()}><Paperclip size={14} />从本地添加技能</button><button className="secondary-setting" title="打开腾讯 SkillHub 技能市场" onClick={() => void window.codex.openExternal("https://skillhub.tencent.com/")}><ArrowUpRight size={14} />SkillHub 市场</button><button className="icon-button" title="刷新技能市场" onClick={() => void refreshMarketSkills(skillHubCategory, skillHubSearch, marketPage)}>{marketLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+              <div className="settings-copy channel-heading"><div><h2>技能中心</h2><p>技能清单来自腾讯 SkillHub 市场（skillhub.cn），一键安装自动写入 <code>{userDataPath ? `${userDataPath}\\codex-home\\skills` : "Codex 技能目录"}</code>，更新来源清单并重启引擎确认可用。</p></div><div className="settings-heading-actions"><HelpButton helpKey="skills" onOpen={setHelpKey} label="技能中心" /><button className={skillsManageOnly ? "active-manage" : "secondary-setting"} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={14} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button><button className="secondary-setting" onClick={() => void importSkill()}><Paperclip size={14} />从本地添加技能</button><button className="secondary-setting" title="打开腾讯 SkillHub 技能市场" onClick={() => void window.codex.openExternal("https://skillhub.tencent.com/")}><ArrowUpRight size={14} />SkillHub 市场</button><button className="icon-button" title="刷新技能市场" onClick={() => void refreshMarketSkills(skillHubCategory, skillHubSearch, marketPage)}>{marketLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
               <div className="resource-toolbar">
                 {!skillsManageOnly && <div className="skill-tabs">{skillHubCategories.map((category) => <button key={category} className={skillHubCategory === category ? "active" : ""} onClick={() => { setSkillHubCategory(category); setMarketPage(1); setSkillsManageOnly(false); }}>{category}</button>)}</div>}
                 <SearchField
@@ -18725,7 +18740,7 @@ const commandMatches = useMemo(() => {
               {subAgentEditorOpen && subAgentDraft && <SubAgentEditorModal draft={subAgentDraft} onChange={setSubAgentDraft} onClose={() => { setSubAgentEditorOpen(false); setSubAgentDraft(null); }} onSave={(draft) => void saveSubAgent(draft)} />}
             </section>}
             {settingsPage === "teams" && <section className="settings-section stack expert-team-center">
-              <div className="settings-copy channel-heading"><div><h2>专家团</h2><p>复刻 WorkBuddy 团队协作：主理人编排，成员按 SOP 分阶段独立产出，最终汇总交付。</p></div><div className="settings-heading-actions"><button className="primary-setting" onClick={openNewExpertTeam}><Plus size={14} />新建专家团</button><button className="secondary-setting" onClick={() => void resetExpertTeams()}><RotateCcw size={13} />恢复内置</button><button className="icon-button" title="刷新专家团" onClick={() => void refreshExpertTeams()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+              <div className="settings-copy channel-heading"><div><h2>专家团</h2><p>复刻 WorkBuddy 团队协作：主理人编排，成员按 SOP 分阶段独立产出，最终汇总交付。</p></div><div className="settings-heading-actions"><HelpButton helpKey="agentteam" onOpen={setHelpKey} label="专家团" /><button className="primary-setting" onClick={openNewExpertTeam}><Plus size={14} />新建专家团</button><button className="secondary-setting" onClick={() => void resetExpertTeams()}><RotateCcw size={13} />恢复内置</button><button className="icon-button" title="刷新专家团" onClick={() => void refreshExpertTeams()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
               <div className="subagent-banner"><Users size={16} /><div><strong>让 Codex 真正会带团队协作</strong><p>发起会话后，主理人（lead）会在独立会话中通过 <code>team_member_invoke(memberId, query)</code> 按 SOP 调度成员，成员独立产出后回传，主理人最终汇总交付。</p></div></div>
 
@@ -18815,7 +18830,7 @@ const commandMatches = useMemo(() => {
               const toggleMcpChecked = (id: string) => setMcpServerChecked((current) => current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]);
               return (
               <section className="settings-section stack connector-center">
-              <div className="settings-copy channel-heading"><div><h2>MCP</h2><p>上方卡片来自 SkillHub MCP 工具广场（skillhub.cn/mcp），点卡片看详情、带接入模板的可一键写入连接器；下方为已接入管理：保存后写入 Codex 配置、加密保存密钥并重启引擎，支持批量启用/停用。“可用”以 app-server 返回的运行/认证状态为准。</p></div><div className="settings-heading-actions"><button className="secondary-setting" onClick={() => { setConnectorSecret(""); setConnectorDraft({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} }); setConnectorEditorOpen(true); }}><Plus size={14} />添加 MCP</button><button className="secondary-setting" title="打开 SkillHub MCP 工具广场" onClick={() => void window.codex.openExternal("https://skillhub.cn/mcp")}><ArrowUpRight size={14} />SkillHub MCP 广场</button><button className="secondary-setting" title="打开 AIbase MCP 广场找服务" onClick={() => void window.codex.openExternal("https://mcp.aibase.com/zh/explore")}><ArrowUpRight size={14} />AIbase 广场</button><button className="icon-button" title="刷新 MCP 状态" onClick={() => void refreshSettingsResources()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+              <div className="settings-copy channel-heading"><div><h2>MCP</h2><p>上方卡片来自 SkillHub MCP 工具广场（skillhub.cn/mcp），点卡片看详情、带接入模板的可一键写入连接器；下方为已接入管理：保存后写入 Codex 配置、加密保存密钥并重启引擎，支持批量启用/停用。“可用”以 app-server 返回的运行/认证状态为准。</p></div><div className="settings-heading-actions"><HelpButton helpKey="mcp" onOpen={setHelpKey} label="MCP" /><button className="secondary-setting" onClick={() => { setConnectorSecret(""); setConnectorDraft({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} }); setConnectorEditorOpen(true); }}><Plus size={14} />添加 MCP</button><button className="secondary-setting" title="打开 SkillHub MCP 工具广场" onClick={() => void window.codex.openExternal("https://skillhub.cn/mcp")}><ArrowUpRight size={14} />SkillHub MCP 广场</button><button className="secondary-setting" title="打开 AIbase MCP 广场找服务" onClick={() => void window.codex.openExternal("https://mcp.aibase.com/zh/explore")}><ArrowUpRight size={14} />AIbase 广场</button><button className="icon-button" title="刷新 MCP 状态" onClick={() => void refreshSettingsResources()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
                 <div className="plugin-market-block">
                   <div className="plugin-market-title">MCP 市场<small>SkillHub MCP 工具广场 · 27 个服务 · 带模板一键接入 / 其余直达官网</small></div>
                   <div className="resource-toolbar">
