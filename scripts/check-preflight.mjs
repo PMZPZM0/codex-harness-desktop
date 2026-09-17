@@ -3831,6 +3831,34 @@ w.postMessage({id:1,op:"list",root});
       : fail("【32】optout 标记没被读 —— 用户勾了「不再提示」还会每次被弹");
   }
 
+  // ⑰d 引导弹窗的「出场时机」（09-17 用户明确定规则：「只在进入主界面的时候才弹配置引导和
+  //   工具安装检测自动安装；如果已经配置模型，就不引导模型配置，直接做开发工具检测安装」）。
+  //   三种失效形态都**静默**（不报错，只是该弹的不弹 / 不该弹的弹了）：
+  //   ① 登录页期间弹 → 打断登录（那是用户看到的第一屏）
+  //   ② 已配模型还引导 → 每次启动都被"教"一遍怎么配模型
+  //   ③ 体检被模型引导永久挡住 → 没配模型的用户关掉引导后永远看不到体检（直到重启）
+  {
+    const appEnv = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+    // 按注释锚点切出两个 effect 的块：在全文里裸正则容易误命中别处的同名字符串
+    const guideStart = appEnv.indexOf("模型配置引导（09-17 用户要求）");
+    const envStart = appEnv.indexOf("体检项（必备：模型");
+    const envEnd = appEnv.indexOf("设置弹窗「骨架先行」");
+    const guideBlock = guideStart >= 0 && envStart > guideStart ? appEnv.slice(guideStart, envStart) : "";
+    const envBlock = envStart >= 0 && envEnd > envStart ? appEnv.slice(envStart, envEnd) : "";
+    (guideBlock && /if \(showLogin\) return;/.test(guideBlock))
+      ? ok("【32】模型引导在登录页不弹（只在主界面弹）")
+      : fail("【32】模型引导没有登录页判断 —— 登录时会被引导打断");
+    (/if \(!customModel\) setShowModelGuide\(true\)/.test(guideBlock))
+      ? ok("【32】已配模型时不弹模型引导（直接走工具检测）")
+      : fail("【32】模型引导的判据变了 —— 已配好模型的用户会被再引导一遍");
+    (envBlock && /\[threadsLoading, showLogin, showModelGuide, customModel, workspace\]/.test(envBlock))
+      ? ok("【32】体检依赖含 showModelGuide —— 模型引导关掉后体检会补上")
+      : fail("【32】体检 effect 依赖里没有 showModelGuide —— 没配模型时关掉引导后体检永远不弹");
+    (/setEnvCheckOpen\(false\);[\s\S]{0,60}?setShowModelGuide\(false\);[\s\S]{0,60}?setShowLogin\(true\);/.test(appEnv))
+      ? ok("【32】登出时两个引导弹窗一起收起（重登不重现）")
+      : fail("【32】登出没收起引导弹窗 —— 重新登录后旧弹窗会突然冒出来");
+  }
+
   // ⑱ src/lib/*.mjs 是**纯 JS**（node 直接 import 执行），不得出现 TS 语法。
   //    ⛔ 这条守卫的由来：`export type X = …` / `(a: string): void` 这类标注会让 rolldown 直接
   //    PARSE_ERROR 构建失败，而我在 09-17 的 enhance-hints.mjs 与 codex-identity.mjs 上**各踩一次**

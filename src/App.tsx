@@ -16017,6 +16017,11 @@ const commandMatches = useMemo(() => {
     accountSwitchThreadRef.current = threadRef.current?.id ?? null;
     localStorage.setItem("login-skipped", "logout");
     // 明确保留 thread、threads、threadCacheRef 和 codex-home/sessions，不因切换账号丢失历史。
+    // 两个引导弹窗必须一起收起：登录页是**提前 return 的渲染分支**（`if (showLogin) return <LoginScreen/>`），
+    // 弹窗留在打开状态时登录页看不到，等重新登录回到主界面又突然冒出来 —— 用户会以为是新弹的。
+    // ⛔ 但**不复位** done 标记：工具装没装跟账号无关，复位会让「刚点过稍后再说」的体检再弹一次。
+    setEnvCheckOpen(false);
+    setShowModelGuide(false);
     setShowLogin(true);
   }
 
