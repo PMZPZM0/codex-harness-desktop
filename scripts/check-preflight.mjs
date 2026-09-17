@@ -3796,6 +3796,10 @@ w.postMessage({id:1,op:"list",root});
   {
     const cssNC = readFileSync(join(ROOT, "src", "styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
     const appC3 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+    // 结构判据要**先剥注释**再判：注释里也写着 turn-head-avatar 这类字面量（不剥会假绿）；
+    // 而注释还占满了窗口长度（不剥又会假红 —— 09-17 实测「乐观阶段也有回合头」那条：
+    // 原始距离 753 > 窗口 700，剥注释后只有 367。窗口是给代码留的，不是给注释留的）。
+    const appNC = appC3.replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
     // 头像+名字的最终形态：**回合级一份**（.turn-head），不再是「每条 agent 消息一份」
     const turnHead = appC3.slice(appC3.indexOf("回合标识：一轮会话只有一份"), appC3.indexOf("占位头必须等回合内已有 userMessage"));
     (/className="turn-head-avatar"/.test(turnHead) && /<CodexAvatar size=\{22\} \/>/.test(turnHead))
@@ -3804,7 +3808,7 @@ w.postMessage({id:1,op:"list",root});
     (/userItems\.length > 0 && \(running \|\| responseItems\.length > 0\)/.test(turnHead))
       ? ok("【32】回合头不依赖首个 token（用户气泡上屏即出现）")
       : fail("【32】回合头的显示条件变了 —— 可能又回到「名字头像没第一时间出来」");
-    (!/className="message assistant-message"[\s\S]{0,220}className="avatar agent"/.test(appC3))
+    (!/className="message assistant-message"[\s\S]{0,220}className="avatar agent"/.test(appNC))
       ? ok("【32】agent 消息里不再带头像（一轮不会重复多份）")
       : fail("【32】agent 消息里又长出头像 —— 一轮多段回复会重复多份（用户要求「就一个」）");
     (/\.turn-head\s*\{/.test(cssNC) && /\.turn-head-avatar\s*\{/.test(cssNC) && /\.turn-head-name\s*\{/.test(cssNC))
@@ -3818,7 +3822,7 @@ w.postMessage({id:1,op:"list",root});
     (procIdx > 0 && cardIdx > 0 && procIdx < cardIdx)
       ? ok("【32】顺序：正在处理 + 灰线在「生成中」之上（用户 09-17 明确定的顺序）")
       : fail("【32】「生成中」跑到灰线上面了 —— 用户明确否过这个顺序「你这顺序不对吧」");
-    (/\{optimisticInput && !optimisticConfirmed && <>[\s\S]{0,700}?turn-head-avatar/.test(appC3))
+    (/\{optimisticInput && !optimisticConfirmed && <>[\s\S]{0,700}?turn-head-avatar/.test(appNC))
       ? ok("【32】乐观阶段也渲染回合头（引擎回声前就有头像 + 名字）")
       : fail("【32】乐观阶段没有回合头 —— 头像名字要等引擎回声（正是用户报的「没第一时间出来」）");
     // 「你」（用户）的头部（09-17 用户「人也要有名字和头像，位置跟 Codex 一样」）
@@ -3846,6 +3850,26 @@ w.postMessage({id:1,op:"list",root});
     ((userCenterC.match(/fileToAvatarDataUrl\(file\)/g) || []).length === 2)
       ? ok("【32】两处头像上传都走 128×128 压缩（防写不进 localStorage → 重启丢头像）")
       : fail("【32】头像上传没走压缩 —— 大图 base64 静默写不进 localStorage，重启后头像丢失");
+    // 默认头像的**第二种**「凭空消失」（09-17 用户二次反馈「运行完成，头像又不见了，运行的时候还有」）：
+    // 底色原先用 SVG `<linearGradient id="codex-avatar-bg">` + `url(#codex-avatar-bg)` ——
+    // SVG 引用是**文档级**的：同页每个头像实例都带一份同 id defs（回合头 + 乐观头 + 各历史回合的头），
+    // 引用只解析到文档里**第一个**；它一旦落在 `content-visibility: auto` 被跳过的子树里
+    // （.turn-group / .turn-card 都带这条：视口外回合跳过布局与绘制）或已被卸载，就解析不到
+    // paint server → **整块渲染成空白**；而尺寸 / display / visibility / opacity 全都正常，
+    // 从 DOM 上根本查不出来（上一轮就是这么误判成"一切正常"的）。
+    // 改成 CSS 渐变后每个实例自给自足。⛔ 同样先剥注释再判（注释里就写着 `url(#id)`）。
+    const defAv = readFileSync(join(ROOT, "src", "components", "DefaultCodexAvatar.tsx"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    (!/linearGradient|radialGradient|url\(#/.test(defAv))
+      ? ok("【32】默认头像不带 SVG url(#id) 引用（多实例撞 id 时会整块渲染成空白）")
+      : fail("【32】默认头像又用回 SVG 渐变引用了 —— 同页多实例撞 id 时头像会凭空消失");
+    (/\.codex-avatar-default\s*\{[\s\S]{0,320}?linear-gradient/.test(cssNC))
+      ? ok("【32】.codex-avatar-default 用 CSS 渐变作底色（实例各自独立，引用失效不影响）")
+      : fail("【32】.codex-avatar-default 缺 CSS 渐变 —— 默认头像会渲染成一块空白");
+    (!/id="codex-avatar/.test(codexAv + defAv + userAvC))
+      ? ok("【32】头像组件里没有 id=\"codex-avatar…\"（不存在跨实例引用）")
+      : fail("【32】头像组件里出现 id —— 多实例会撞 id，引用可能解析失败（渲染成空白）");
     // 思考强度：底栏按钮 +「宽彩色动态条」弹窗（09-17 用户两次要求：先「改成彩色横向拖动进度条，
     // 每个等级颜色都不一样」，再「弹窗拖动，不是输入框直接一个长条，gpt 那种宽的彩色动态条」）
     const effortPickerC = readFileSync(join(ROOT, "src", "components", "EffortPicker.tsx"), "utf8");

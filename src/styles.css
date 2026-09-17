@@ -16137,11 +16137,38 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   white-space: nowrap;
 }
 /* 头像：圆角方形（与应用图标同体系，且与用户头像的圆形区分开） */
-.codex-avatar-img,
-.codex-avatar-default {
+.codex-avatar-img {
   display: block;
   border-radius: 7px;
   flex: none;
+}
+/* 默认头像的底色走 **CSS 渐变**：⛔ 不能用 SVG `<linearGradient id>` + `url(#id)` ——
+   那是文档级引用，同页多个实例（回合头 / 乐观头 / 各历史回合的头）共用同一个 id，
+   引用会解析到文档里第一个同 id 元素；它一旦落在 `content-visibility: auto` 被跳过的
+   子树里（.turn-group / .turn-card：视口外回合跳过绘制）就解析不到 → **整块渲染成空白**，
+   而 DOM 上尺寸/display/opacity 全正常（09-17 用户两次报「头像不见了」的真因，
+   细节见 DefaultCodexAvatar.tsx）。 */
+.codex-avatar-default {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  border-radius: 7px;
+  flex: none;
+  background-image: linear-gradient(135deg, #4f6bff 0%, #6a54e8 55%, #8b53d8 100%);
+}
+.codex-avatar-default::after {
+  /* 右上一点柔光：让纯色块看起来有体积，不至于像占位图 */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: radial-gradient(60% 60% at 78% 22%, #ffffff5c, #ffffff00);
+  pointer-events: none;
+}
+.codex-avatar-spark {
+  display: block;
+  position: relative;
+  z-index: 1;
 }
 /* ── 「你」的回合头：名字 + 头像（09-17 用户「人也要有名字和头像，位置跟 Codex 一样」）──
    与 Codex 的 `.turn-head` 镜像：他那边「头像 + 名字」左对齐，这边「名字 + 头像」右对齐。

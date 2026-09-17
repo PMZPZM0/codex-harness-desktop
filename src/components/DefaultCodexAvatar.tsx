@@ -8,38 +8,37 @@
  *  - **四角星（spark）**：比字母更耐看、不绑定名字；也避免与用户取名后的首字母头像逻辑打架。
  *  - 右上角一点柔光：让纯色块看起来有体积，不至于像占位图。
  *
- *  用户上传自定义头像后这个组件不再使用（由 <img> 接管）。
+ *  ⛔ **底色必须是 CSS 渐变，绝不能用 SVG `<linearGradient id="…">`**（09-17 用户第二次报
+ *  「Codex 头像又不见了，运行完成就没了」的真因）：
+ *  SVG 的 `url(#id)` 是**文档级**引用 —— 同页每出现一个头像实例就多一份同 id 的 defs
+ *  （回合头 + 乐观区块的头 + 各历史回合的头），引用只会解析到**文档里第一个**同 id 元素。
+ *  那个元素一旦落在 `content-visibility: auto` 被跳过的子树里（`.turn-group` / `.turn-card`
+ *  都带这条：视口外回合跳过布局与绘制），或已被卸载，**引用就解析不到 paint server →
+ *  整块渲染成空白**。此时 DOM 上尺寸 / display / visibility / opacity 全都正常，
+ *  肉眼只能看到「头像凭空消失」—— 上一轮我只查这些属性，所以误判成"一切正常"。
+ *  测量方式：截「头像那块区域」的像素数颜色（只有一种颜色 = 根本没画），见预检的头像守卫。
+ *  CSS 渐变没有这个引用问题：每个实例自给自足。
+ *
+ *  用户上传自定义头像后这个组件不再使用（由 <img> 接管，失败时回退到这里）。
  */
 export function DefaultCodexAvatar({ size = 24 }: { size?: number }) {
   return (
-    <svg
+    <span
       className="codex-avatar-default"
-      width={size}
-      height={size}
-      viewBox="0 0 32 32"
+      style={{ width: size, height: size }}
       role="img"
       aria-label="Codex 默认头像"
     >
-      <defs>
-        <linearGradient id="codex-avatar-bg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#4f6bff" />
-          <stop offset="55%" stopColor="#6a54e8" />
-          <stop offset="100%" stopColor="#8b53d8" />
-        </linearGradient>
-        <radialGradient id="codex-avatar-glow" cx="0.78" cy="0.22" r="0.6">
-          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.38" />
-          <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      <rect x="0" y="0" width="32" height="32" rx="9" fill="url(#codex-avatar-bg)" />
-      <rect x="0" y="0" width="32" height="32" rx="9" fill="url(#codex-avatar-glow)" />
-      {/* 四角星：细长十字 + 中心实心，比纯十字更有"闪光"感 */}
-      <path
-        d="M16 6.4c.5 3.6 1.4 5.4 2.6 6.6 1.2 1.2 3 2.1 6 2.9-3 .8-4.8 1.7-6 2.9-1.2 1.2-2.1 3-2.6 6.6-.5-3.6-1.4-5.4-2.6-6.6-1.2-1.2-3-2.1-6-2.9 3-.8 4.8-1.7 6-2.9 1.2-1.2 2.1-3 2.6-6.6z"
-        fill="#ffffff"
-        fillOpacity="0.95"
-      />
-      <circle cx="24.5" cy="8.5" r="1.35" fill="#ffffff" fillOpacity="0.85" />
-    </svg>
+      {/* 只画白色图形，不带任何 id / url(#…) 引用 */}
+      <svg className="codex-avatar-spark" viewBox="0 0 32 32" width="100%" height="100%" aria-hidden="true">
+        {/* 四角星：细长十字 + 中心实心，比纯十字更有"闪光"感 */}
+        <path
+          d="M16 6.4c.5 3.6 1.4 5.4 2.6 6.6 1.2 1.2 3 2.1 6 2.9-3 .8-4.8 1.7-6 2.9-1.2 1.2-2.1 3-2.6 6.6-.5-3.6-1.4-5.4-2.6-6.6-1.2-1.2-3-2.1-6-2.9 3-.8 4.8-1.7 6-2.9 1.2-1.2 2.1-3 2.6-6.6z"
+          fill="#ffffff"
+          fillOpacity="0.95"
+        />
+        <circle cx="24.5" cy="8.5" r="1.35" fill="#ffffff" fillOpacity="0.85" />
+      </svg>
+    </span>
   );
 }
