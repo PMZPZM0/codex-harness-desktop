@@ -124,8 +124,11 @@ export class ThreadRuntimeStore {
    *
    * ⛔ 调度独占（09-16 用户要求「同一时间只能一个会话开，其他灰掉，避免同时调用」）：
    * 开关是**会话级**的，但「谁有权调度」是**全局唯一**的。持有者不单独存字段，
-   * 而是从记录里**派生**（第一个 dispatch.enabled 的线程）—— 这样删除/归档线程、
-   * 记录被清掉时锁会自动释放，不会留下死锁。
+   * 而是从记录里**派生**（第一个 dispatch.enabled 的线程）—— 但「记录会被清掉」这件事必须真的发生：
+   * 09-17 修（用户实测「都关掉了，怎么还提示被锁住了」）：归档 → `releaseDispatch`、删除 → `remove`，
+   * 调用点在 main.ts 对 `thread/archived` / `thread/deleted` 的事件清理 + 渲染层自愈。
+   * ⛔ 旧版只有这句设想、**没有任何调用点**（本类连 remove 都没有）⇒ 会话被归档/删除后记录仍在，
+   * 孤儿记录永久占着全局唯一的调度权，而它在侧栏已找不到、用户无法关闭 —— 永久死锁。
    * 冲突时默认**不改动任何东西**（changed:false + blockedBy），由 UI 决定是否接管；
    * takeover=true 才在同一笔写入里把原持有者的开关关掉（原子，两个窗口同时操作也不会
    * 出现「两个都开着」的中间态）。
@@ -165,6 +168,41 @@ export class ThreadRuntimeStore {
     this.map[threadId] = next;
     this.scheduleSave();
     return { runtime: next, conflict, changed: true, ...(tookOverFrom ? { tookOverFrom } : {}) };
+  }
+
+  /**
+   * 释放该会话的调度独占锁：**只**把 `dispatch.enabled` 置假，其它字段（模型 / 思考档位 / 权限 /
+   * 专家·专家团·子智能体开关）原样保留 —— 归档的会话被恢复后配置不丢。
+   *
+   * ⛔ 为什么必须显式释放（09-17 用户实测：「都关掉了，怎么还提示被锁住了」）：
+   *   持有者是**从记录派生**的（第一个 `dispatch.enabled` 的线程），而**归档 / 删除会话时
+   *   没有任何地方清这条记录** —— `patch()` 里那句注释「删除/归档线程、记录被清掉时锁会自动
+   *   释放」当年只是设想，实现里既没有 `remove` 也没有任何调用点。
+   *   ⇒ 孤儿记录永久占着全局唯一的调度权，而那个会话在侧栏上已经找不到，
+   *     用户**没有任何入口**能关掉它。实测证据：用户 `thread-runtime.json` 里有 1 条 enabled，
+   *     其 threadId 在引擎 `state_5.sqlite` 的 threads 表里已不存在。
+   */
+  async releaseDispatch(threadId: string): Promise<boolean> {
+    await this.load();
+    const current = this.map[threadId];
+    if (!current || current.dispatch?.enabled !== true) return false;
+    this.map[threadId] = {
+      ...current,
+      dispatch: { ...current.dispatch, enabled: false },
+      rev: current.rev + 1,
+      updatedAt: Date.now(),
+    };
+    this.scheduleSave();
+    return true;
+  }
+
+  /** 彻底删除该会话的运行时记录（会话被**删除**时用；归档请用 `releaseDispatch` 保留配置）。 */
+  async remove(threadId: string): Promise<boolean> {
+    await this.load();
+    if (!this.map[threadId]) return false;
+    delete this.map[threadId];
+    this.scheduleSave();
+    return true;
   }
 
   /** 当前调度持有者（全局唯一）。exclude 用来看「除了我以外还有谁开着」。 */

@@ -480,6 +480,20 @@ ipcMain.handle("thread-runtime:patch", async (_event, input: { threadId?: string
 });
 // 调度独占锁的当前持有者（全局唯一）。渲染层用它把非持有会话的开关灰掉并显示占用者。
 ipcMain.handle("thread-runtime:dispatch-owner", async () => ({ threadId: await threadRuntimeStore.dispatchOwner() }));
+// 释放某个会话的调度独占锁（会话被归档/删除后的兜底 + 渲染层自愈调用入口）。
+// ⛔ 09-17 用户实测「都关掉了还提示被另一个会话占用」：锁的持有者是从记录派生的，而归档/删除
+//   会话时历史上**没有任何地方清这条记录** ⇒ 孤儿记录永久占锁，且该会话在侧栏已找不到，
+//   用户没有任何入口能关它。这里提供显式释放 + 下面的引擎事件清理。
+ipcMain.handle("thread-runtime:release-dispatch", async (_event, threadId: string) => {
+  const id = String(threadId ?? "");
+  if (!id) return { released: false };
+  const released = await threadRuntimeStore.releaseDispatch(id);
+  if (released) {
+    const runtime = await threadRuntimeStore.get(id);
+    broadcastHarnessEvent({ type: "thread-runtime", threadId: id, runtime, at: Date.now() });
+  }
+  return { released };
+});
 // 该会话是否属于「不允许开调度」的受保护会话（专家 / 专家团 / 被调度的临时会话）——
 // 渲染层据此**禁用**调度按钮；真正作准的是下面 patch 里的硬闸。
 ipcMain.handle("agents:thread-role", async (_event, threadId: string) => await restrictedThreadRole(String(threadId ?? "")));
@@ -2555,6 +2569,26 @@ app.whenReady().then(async () => {
     if (event.kind === "status" && event.status === "ready") void syncEngineWatchdog();
     // 手机对话页实时同步：流式增量 / 用户消息 / 回合完成
     if (event.kind === "notification") {
+      // ⛔ 调度独占锁的孤儿记录清理（09-17 用户实测「都关掉了，怎么还提示被锁住了」）：
+      //   锁的持有者是从 thread-runtime 记录**派生**的（第一个 dispatch.enabled 的线程），而会话被
+      //   **归档 / 删除**时历史上没有任何地方清这条记录 ⇒ 孤儿记录永久占着全局唯一的调度权，
+      //   且该会话在侧栏上已经找不到，用户**没有任何入口**能关它。
+      //   实测证据：用户 thread-runtime.json 有 1 条 enabled，其 threadId 在引擎 state 库里已不存在。
+      //   归档 → 只关开关（保留模型/权限等配置，恢复会话后不丢）；删除 → 整条移除。
+      if (event.method === "thread/archived" || event.method === "thread/deleted") {
+        const goneId = eventThreadId(event.params);
+        if (goneId) {
+          void (async () => {
+            const changed = event.method === "thread/deleted"
+              ? await threadRuntimeStore.remove(goneId)
+              : await threadRuntimeStore.releaseDispatch(goneId);
+            if (changed) {
+              const runtime = await threadRuntimeStore.get(goneId);
+              broadcastHarnessEvent({ type: "thread-runtime", threadId: goneId, runtime, at: Date.now() });
+            }
+          })().catch(() => undefined);
+        }
+      }
       // 专家团成员线程的流式文本 → 广播给所有窗口（成员工作弹窗实时渲染）。
       // 只认「正在跑的成员线程」，其它会话的增量一律不碰。
       teamRunStore.handleEngineEvent(event);
