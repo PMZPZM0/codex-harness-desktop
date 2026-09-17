@@ -5020,12 +5020,49 @@ function PendingImportSlot({ threadId, onDiscard }: { threadId: string; onDiscar
  *  重挂载不会误播，乐观消息被服务端消息替换后（id 不同）也不会重复播放。 */
 const justSentIds = new Set<string>();
 
+/** 09-17 修复「发送动画被腰斩、消息没有过渡到落点」：真实消息**自己认领**入场动画。
+ *
+ *  背景（实测）：动画原本只登记在乐观气泡上，而真实消息几十毫秒内就接管、气泡随之卸载 ——
+ *  动画刚起头就断了（实测 t+13ms opacity 0.24 → t+34ms 节点已消失），用户看到消息"啪"
+ *  一下跳到最终位置，没有过渡。
+ *
+ *  为什么不是「把动画补挂到真实节点」：接管路径有六七处（事件路径 / 启动回填 / 排队立即 /
+ *  超时兜底……），逐个补挂既漏又难维护 —— 第一版就是这么写的，实测那条补挂分支根本没被走到
+ *  （打点 __animHandover 全程为 null）。
+ *
+ *  现在：发送时登记正文与时刻（arm），真实消息**挂载的那一刻**（lazy useState 初始值）认领，
+ *  命中即带 just-sent 从首帧入场 —— 动画与节点同帧开始，结构上不可能被接管打断。
+ *  乐观气泡（pending）仍走原 justSentIds 路径，两条互不干扰。 */
+let recentSendClaim: { text: string; at: number } | null = null;
+const SEND_CLAIM_TTL_MS = 10_000;
+
+/** 发送时登记待认领的入场动画（存可见正文；引擎侧正文会额外拼记忆/技能/引用段）。 */
+function armSendAnimationClaim(messageText: string) {
+  const text = String(messageText ?? "").replace(/\s+/g, " ").trim();
+  if (text) recentSendClaim = { text, at: Date.now() };
+}
+
+/** 真实消息挂载时认领入场动画：命中即消费（一次性）；过期或对不上则不认领。 */
+function claimSendAnimation(messageText: string): boolean {
+  const claim = recentSendClaim;
+  if (!claim) return false;
+  if (Date.now() - claim.at > SEND_CLAIM_TTL_MS) { recentSendClaim = null; return false; }
+  const text = String(messageText ?? "").replace(/\s+/g, " ").trim();
+  if (!text.includes(claim.text.slice(0, 12))) return false;   // 前缀匹配：真实正文可能带引用/记忆前缀
+  recentSendClaim = null;
+  return true;
+}
+
 function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote, onImageCopy, onEditSubmit, onOpenFile, onOpenThread }: { item: ThreadItem; turn?: Turn; fallbackWindow?: number; pending?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void }) {
   const [editing, setEditing] = useState(false);
   // 首帧同步判定（useState 惰性初始化）：just-sent class 随首帧 DOM 一起出现，入场动画
   // 必定从挂载瞬间播放。旧版在 effect 里补 class：晚一帧、且与钉顶程序化滚动同帧，
   // 动画被滚动/重排吞掉——表现为「发消息没有过渡动画」（09-05 反馈）。
-  const [justSent] = useState(() => justSentIds.has(String(item.id ?? "")));
+  // ⛔ 09-17：乐观气泡（pending）看 justSentIds；**真实消息自己认领**本次发送的动画
+  //   （否则气泡消失瞬间动画被腰斩，见 claimSendAnimation 注释）。两条路互斥、互不干扰。
+  const [justSent] = useState(() => (pending
+    ? justSentIds.has(String(item.id ?? ""))
+    : claimSendAnimation(itemText(item))));
   useEffect(() => {
     // 播过即清登记，历史消息/切会话重挂载不会误播
     if (justSent) justSentIds.delete(String(item.id ?? ""));
@@ -7647,14 +7684,15 @@ export default function App() {
   useEffect(() => { activeTurnIdRef.current = activeTurnId; }, [activeTurnId]);
   const optimisticConfirmed = useMemo(() => {
     if (!optimisticInput) return false;
+    const content = optimisticInput.content ?? [];
     const target = optimisticTurnIdRef.current ? thread?.turns.find((turn) => turn.id === optimisticTurnIdRef.current) : null;
-    if (target?.items.some((item) => item.type === "userMessage" && userMessageMatchesInput(item, optimisticInput.content ?? []))) return true;
+    if (target?.items.some((item) => item.type === "userMessage" && userMessageMatchesInput(item, content))) return true;
     // 兜底：事件可能先于 turn/start 响应到达。只检查本次发送后新增的回合，
     // 并按用户可见正文匹配，避免隐藏的记忆/技能/引用段导致真实消息与乐观消息无法去重。
     const baseline = optimisticBaselineRef.current;
     return Boolean(thread?.turns.some((turn) => {
       if (baseline.threadId === thread.id && baseline.turnIds.has(turn.id)) return false;
-      return turn.items.some((item) => item.type === "userMessage" && userMessageMatchesInput(item, optimisticInput.content ?? []));
+      return turn.items.some((item) => item.type === "userMessage" && userMessageMatchesInput(item, content));
     }));
   }, [optimisticInput, thread]);
   useEffect(() => {
@@ -11914,7 +11952,8 @@ const commandMatches = useMemo(() => {
         }
         // 只有服务端回合里的 userMessage 文本和乐观消息匹配才清；
         // 否则保留——清早了而服务端消息又没渲染出来，用户消息就"消失"了
-        if (optimisticInput && (params.turn?.items ?? []).some((entry: ThreadItem) => entry.type === "userMessage" && userMessageMatchesInput(entry, optimisticInput.content ?? []))) setOptimisticInput(null);
+        const takeoverItem = (params.turn?.items ?? []).find((entry: ThreadItem) => entry.type === "userMessage" && userMessageMatchesInput(entry, optimisticInput?.content ?? []));
+        if (optimisticInput && takeoverItem) setOptimisticInput(null);
         if (params.turn.error?.message) showToast("任务失败", params.turn.error.message);
         // 限流失败 → 自动重试（10 次退避）。仅当失败回合属于最近一次发送的线程才接管
         if (params.turn.error?.message && isRateLimitError(params.turn.error.message) && retryContextRef.current?.threadId === params.threadId) {
@@ -13332,6 +13371,7 @@ const commandMatches = useMemo(() => {
       optimisticBaselineRef.current = { threadId: forked.thread.id, turnIds: new Set((forked.thread.turns ?? []).map((entry: Turn) => entry.id)) };
       const optimisticId = `local-${Date.now()}`;
       justSentIds.add(optimisticId);
+      armSendAnimationClaim(text);   // 编辑重发同样让真实消息认领入场动画
       setOptimisticInput({ id: optimisticId, type: "userMessage", content: input });
       // 编辑分支发送同样锚顶（与主发送一致，见 anchorTopRef 注释）
       stickToBottomRef.current = false;
@@ -13356,7 +13396,8 @@ const commandMatches = useMemo(() => {
         markThreadRunning(forked.thread.id, hydratedTurn.id);
         saveThreadModel(forked.thread.id, modelId);
         setThread((current) => { const next = mergeTurn(current, hydratedTurn); threadRef.current = next; return next; });
-        if (hydratedTurn.items.some((entry) => entry.type === "userMessage" && userMessageMatchesInput(entry, input))) setOptimisticInput(null);
+        const forkHit = hydratedTurn.items.find((entry) => entry.type === "userMessage" && userMessageMatchesInput(entry, input));
+        if (forkHit) setOptimisticInput(null);
       }
       void refreshThreads();
       showToast("已编辑重发", "已创建分支并重新发送");
@@ -15297,6 +15338,7 @@ const commandMatches = useMemo(() => {
     const optimisticId = `local-${Date.now()}`;
     if (fastArm) {
       justSentIds.add(optimisticId);
+      armSendAnimationClaim(messageText);   // 真实消息挂载时认领入场动画（见 claimSendAnimation）
       optimisticTurnIdRef.current = null;
       optimisticBaselineRef.current = { threadId: thread?.id ?? null, turnIds: new Set((thread?.turns ?? []).map((entry) => entry.id)) };
       setOptimisticInput({ id: optimisticId, type: "userMessage", content: [
@@ -15357,6 +15399,7 @@ const commandMatches = useMemo(() => {
     if (!fastArm) {
       // 专家/导入首条消息：SYSTEM TASK 包装依赖记忆段（记忆在 userText 内），只能在这之后上屏
       justSentIds.add(optimisticId);
+      armSendAnimationClaim(messageText);   // 真实消息挂载时认领入场动画
       optimisticTurnIdRef.current = null;
       optimisticBaselineRef.current = { threadId: thread?.id ?? null, turnIds: new Set((thread?.turns ?? []).map((entry) => entry.id)) };
       setOptimisticInput({ id: optimisticId, type: "userMessage", content: sendInput });
@@ -15477,7 +15520,8 @@ const commandMatches = useMemo(() => {
           threadRef.current = next;
           return next;
         });
-        if (hydratedTurn.items.some((entry) => entry.type === "userMessage" && userMessageMatchesInput(entry, sendInput))) setOptimisticInput(null);
+        const hydratedHit = hydratedTurn.items.find((entry) => entry.type === "userMessage" && userMessageMatchesInput(entry, sendInput));
+        if (hydratedHit) setOptimisticInput(null);
       }
       if (expertRole) forgetExpertRole(active.id);
       // 首条已发出：无论包装是否带上了记录（如只发图没文字），该线程已非空、记录永远附不上了，
