@@ -198,6 +198,7 @@ contextBridge.exposeInMainWorld("codex", {
   seedThreadRuntime: (input: { threadId: string; runtime: unknown }) => ipcRenderer.invoke("thread-runtime:seed", input),
   patchThreadRuntime: (input: { threadId: string; patch: unknown; baseRev?: number; takeover?: boolean }) => ipcRenderer.invoke("thread-runtime:patch", input),
   dispatchOwner: () => ipcRenderer.invoke("thread-runtime:dispatch-owner"),
+  releaseDispatch: (threadId: string) => ipcRenderer.invoke("thread-runtime:release-dispatch", threadId),
   threadRole: (threadId: string) => ipcRenderer.invoke("agents:thread-role", threadId),
   writeClipboard: (text: string) => ipcRenderer.invoke("clipboard:write", text),
   createScratchDir: () => ipcRenderer.invoke("scratch:create"),

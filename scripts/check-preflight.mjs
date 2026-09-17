@@ -3357,6 +3357,68 @@ w.postMessage({id:1,op:"list",root});
     const bad = artifacts.filter((p) => { try { return readFileSync(join(ROOT, p)).length < 64; } catch { return true; } });
     (bad.length === 0 ? ok : fail)(`【31】关键产物非空且可读（${artifacts.length} 个）${bad.length ? "（异常：" + bad.join(", ") + "）" : ""}`);
   }
+
+  // ⑩ 调度锁「孤儿持有者」+ 一键释放（09-17 用户实测「都关掉了，怎么还提示被锁住了」）
+  //    事故：锁持有者是**从 thread-runtime 记录派生的**（第一个 dispatch.enabled 的线程），而会话被
+  //    归档/删除时**没有任何地方清这条记录** —— store 里那句「记录被清掉时锁会自动释放」当年只是设想，
+  //    实现里连 remove 都没有 ⇒ 孤儿记录永久占着全局唯一的调度权，而那条会话在侧栏上已找不到，
+  //    用户**没有任何入口**能关它（实测：记录里 enabled=true，其 threadId 在引擎 state 库里已不存在）。
+  {
+    const mainCode = stripComments(readFileSync(join(ROOT, "electron", "main.ts"), "utf8"));
+    const storeCode = stripComments(readFileSync(join(ROOT, "electron", "thread-runtime-store.ts"), "utf8"));
+
+    // 防线一：主进程必须真的有清理**调用点**（有方法不等于有人调，这正是当初的坑）
+    (/threadRuntimeStore\.remove\(/.test(mainCode) && /threadRuntimeStore\.releaseDispatch\(/.test(mainCode))
+      ? ok("【29】主进程有调度记录清理调用点（remove / releaseDispatch）")
+      : fail("【29】没有任何地方清调度记录 —— 归档/删除会话会留下孤儿记录永久占锁");
+
+    // 防线二：清理挂在引擎 thread/archived | thread/deleted 事件上（覆盖所有删除/归档路径，不靠 UI 自觉）
+    const evIdx = mainCode.indexOf('event.method === "thread/archived"');
+    const evSlice = evIdx < 0 ? "" : mainCode.slice(evIdx, evIdx + 900);
+    (evIdx >= 0 && /thread\/deleted/.test(evSlice) && /threadRuntimeStore\.(remove|releaseDispatch)\(/.test(evSlice))
+      ? ok("【29】归档/删除事件触发记录清理（覆盖所有路径）")
+      : fail("【29】thread/archived|deleted 事件没接记录清理 —— 会话消失后锁仍被占");
+
+    // 防线三：store 真的实现了这两个方法（旧版连 remove 都没有）
+    (/async releaseDispatch\(threadId: string\): Promise<boolean>/.test(storeCode) && /async remove\(threadId: string\): Promise<boolean>/.test(storeCode))
+      ? ok("【29】store 实现 releaseDispatch / remove")
+      : fail("【29】store 缺 releaseDispatch/remove —— 清理调用点会全部落空");
+
+    // 防线四：渲染层自愈 —— 持有者不在会话列表里就自动释放（覆盖历史坏数据，用户不必手改 json）
+    const healIdx = appCode.indexOf("window.codex.releaseDispatch(");
+    const healSlice = healIdx < 0 ? "" : appCode.slice(Math.max(0, healIdx - 700), healIdx + 220);
+    (/threads\.some\(\(entry\) => entry\.id === dispatchOwnerId\)/.test(healSlice) && /if \(!dispatchOwnerId \|\| threads\.length === 0\) return;/.test(healSlice))
+      ? ok("【29】渲染层自愈：持有者不在会话列表时自动释放（历史坏数据也能解）")
+      : fail("【29】缺少「持有者已消失」自愈 —— 孤儿锁只能靠用户手改 json");
+
+    // 防线五：一键释放（用户 09-17 要求「在调度里面加一个主动释放功能，一键释放后删除旧的调度会话」）
+    const releaseIdx = appCode.indexOf("async function releaseDispatchHolder()");
+    const releaseFn = releaseIdx < 0 ? "" : appCode.slice(releaseIdx, releaseIdx + 2200);
+    (/openAppConfirm\(/.test(releaseFn) && /window\.codex\.releaseDispatch\(holderId\)/.test(releaseFn) && /deleteThreadCore\(holderId\)/.test(releaseFn))
+      ? ok("【29】一键释放：确认 → 释放锁 → 删除旧会话（三步齐）")
+      : fail("【29】一键释放不完整（缺确认 / 缺释放 / 缺删除）");
+    // 顺序必须是「先释放、后删除」：删失败时用户至少已经拿回调度权
+    (releaseFn.indexOf("window.codex.releaseDispatch(holderId)") > -1
+      && releaseFn.indexOf("window.codex.releaseDispatch(holderId)") < releaseFn.indexOf("deleteThreadCore(holderId)"))
+      ? ok("【29】一键释放顺序 = 先释放、后删除（删除失败也不丢调度权）")
+      : fail("【29】一键释放顺序反了或缺失 —— 删除失败会把调度权一起卡住");
+
+    // 防线六：删除只有一条内核（普通删除与一键释放共用）——别处再写简版删除必漏衍生状态
+    const coreIdx = appCode.indexOf("async function deleteThreadCore(id: string)");
+    const coreFn = coreIdx < 0 ? "" : appCode.slice(coreIdx, coreIdx + 900);
+    const coreCallers = (appCode.match(/await deleteThreadCore\(/g) || []).length;
+    (coreIdx >= 0 && coreCallers >= 2)
+      ? ok("【29】删除会话走唯一内核 deleteThreadCore（普通删除 / 一键释放共用）")
+      : fail(`【29】deleteThreadCore 缺失或调用点不足（${coreCallers} 处）—— 会出现漏清衍生状态的简版删除`);
+    (/threadCacheRef\.current\.delete\(id\)/.test(coreFn) && /threadProviderRef\.current\.delete\(id\)/.test(coreFn))
+      ? ok("【29】删除内核清理衍生状态（会话缓存 + 供应商登记）")
+      : fail("【29】删除内核漏清衍生状态（会话缓存 / 供应商登记）");
+
+    // 接线：按钮在面板里，父组件把回调传了下去
+    (/className="dispatch-release"/.test(appCode) && /onReleaseHolder=\{/.test(appCode) && /onReleaseHolder\?: \(\) => void;/.test(appCode))
+      ? ok("【29】面板里有「释放并删除该会话」按钮且已接线（onReleaseHolder）")
+      : fail("【29】一键释放按钮缺失或没接线（onReleaseHolder）");
+  }
 }
 
 console.log("");

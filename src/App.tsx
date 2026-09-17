@@ -2496,7 +2496,7 @@ const approvalMenuOptions = (fullAccess: boolean) => fullAccess ? [
 /** 调度开关面板（09-15）：「当前对话框」允许 Codex 调度哪些对象干活。
  *  会话级配置 —— 落 thread-runtime 的 `dispatch` 字段（与模型/权限同源同存放处）。
  *  点「确认」才生效；从「关」变「开」时自动往对话框发一条告知消息，让 Codex 知道自己有这个能力。 */
-function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topbar, lockedBy, restrictedLabel }: {
+function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topbar, lockedBy, onReleaseHolder, restrictedLabel }: {
   dispatch: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean };
   targets: DispatchTargetEntry[];
   onChange: (next: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean }, opts?: { takeOver?: boolean }) => void;
@@ -2507,6 +2507,9 @@ function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topbar, loc
   /** 另一个会话正持有调度独占锁时传它的显示名（本会话是持有者/没人在用时传 null）。
    *  同一时间只允许一个会话调度 —— 这里把开关置为「锁定」态并给出接管入口。 */
   lockedBy?: string | null;
+  /** ⛔ 一键释放（用户 09-17 要求「在调度里面加一个主动释放功能，一键释放后删除旧的调度会话」）：
+   *  把调度权从旧持有者手里收回，并删除那条旧调度会话。父组件负责确认与级联删除。 */
+  onReleaseHolder?: () => void;
   /** 受保护会话（专家 / 专家团 / 被调度会话）时传标签 —— 按钮直接禁用，不让开。 */
   restrictedLabel?: string | null;
 }) {
@@ -2573,6 +2576,19 @@ function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topbar, loc
               <span>
                 <strong>已被「{lockedBy}」占用</strong>
                 <small>{draft.enabled ? "确认后会把调度权限移到本会话，原会话的开关自动关闭" : "同一时间只允许一个会话调度；开启即从它那里接管"}</small>
+                {/* ⛔ 一键释放（用户 09-17 要求）：把调度权从旧会话手里收回，并删除那条旧调度会话。
+                    为什么必须有这个显式入口：持有者是从 thread-runtime 记录**派生**的，而会话被
+                    归档/删除时历史上没人清记录 ⇒ 孤儿记录永久占着全局唯一的调度权；那条会话还可能
+                    根本不在侧栏里（用户找不到、也就关不掉）。自动自愈只管「持有者已不在列表」，
+                    持有者还在列表里、用户就是想清掉它时，靠这个按钮。 */}
+                <button
+                  type="button"
+                  className="dispatch-release"
+                  disabled={busy}
+                  onClick={() => { setOpen(false); onReleaseHolder?.(); }}
+                >
+                  <Trash2 size={12} />释放并删除该会话
+                </button>
               </span>
             </div>
           )}
@@ -12719,6 +12735,16 @@ const commandMatches = useMemo(() => {
   // ⛔ 这两个 hook 必须放在 refreshDispatchOwner / refreshThreadRole 的 useCallback **之后**
   //    （放在事件订阅那段会撞 TDZ：block-scoped variable used before its declaration）。
   useEffect(() => { void refreshDispatchOwner(); }, [refreshDispatchOwner, thread?.id]);
+  // ⛔ 调度锁「孤儿持有者」自愈（09-17 用户实测「都关掉了，怎么还提示被锁住了」）：
+  //   锁的持有者是从 thread-runtime 记录**派生**的，而会话被归档/删除时历史上没有清记录
+  //   ⇒ 持有者可能已经不在会话列表里，那种情况下用户**没有任何入口**能关掉它（侧栏找不到它）。
+  //   这里发现持有者不在 threads 里就请主进程释放 —— 与主进程的 thread/archived|deleted 事件清理
+  //   构成两道防线（事件清理覆盖所有路径，这里是历史坏数据的自愈）。
+  useEffect(() => {
+    if (!dispatchOwnerId || threads.length === 0) return;
+    if (threads.some((entry) => entry.id === dispatchOwnerId)) return;
+    void window.codex.releaseDispatch(dispatchOwnerId).then(() => refreshDispatchOwner()).catch(() => undefined);
+  }, [dispatchOwnerId, threads, refreshDispatchOwner]);
   useEffect(() => { void refreshThreadRole(thread?.id); }, [refreshThreadRole, thread?.id]);
 
   /** 应用调度开关：落盘 → 重算界面 → 从「关」变「开」时自动往对话框发一条告知消息。
@@ -15057,6 +15083,29 @@ const commandMatches = useMemo(() => {
     setThreads((current) => current.filter((entry) => entry.id !== id));
   }
 
+  /** 删除会话的**无确认内核**：级联成员会话 + 引擎删除 + 本地缓存/侧栏清理 + 当前会话状态复位。
+   *  拆出来是为了让「一键释放调度」（它有自己的确认文案）复用同一条级联链路 —— 删一个会话
+   *  必须把它的**衍生状态**一起带走：专家团成员会话、会话缓存、供应商登记、当前会话的
+   *  运行/计划/目标状态。⛔ 别在别处再写一份简版删除（漏一项就是孤儿）。 */
+  async function deleteThreadCore(id: string) {
+    await cascadeTeamCluster(id, "delete");
+    await window.codex.request("thread/delete", { threadId: id });
+    threadCacheRef.current.delete(id);
+    threadProviderRef.current.delete(id);
+    setThreads((current) => current.filter((entry) => entry.id !== id));
+    if (threadRef.current?.id === id) {
+      threadRef.current = null;
+      setThread(null);
+      setOptimisticInput(null);
+      setActiveTurnId(null);
+      markThreadStopped(id);
+      setWorkStartedAt(null);
+      setSystemEvents([]);
+      setPlanSteps([]);
+      setGoalText("");
+    }
+  }
+
   async function deleteThread(id: string) {
     const cluster = clusteredSidebar.clusters.find((entry) => entry.lead?.id === id);
     const memberCount = cluster?.members.length ?? 0;
@@ -15064,25 +15113,51 @@ const commandMatches = useMemo(() => {
     if (!await openAppConfirm("删除会话", `当前会话及其中的消息、工具记录将被永久删除，此操作无法撤销。${extra}`, "永久删除")) return;
     setOpeningThread(id);
     try {
-      await cascadeTeamCluster(id, "delete");
-      await window.codex.request("thread/delete", { threadId: id });
-      threadCacheRef.current.delete(id);
-      setThreads((current) => current.filter((entry) => entry.id !== id));
-      if (threadRef.current?.id === id) {
-        threadRef.current = null;
-        setThread(null);
-        setOptimisticInput(null);
-        setActiveTurnId(null);
-        markThreadStopped(id);
-        setWorkStartedAt(null);
-        setSystemEvents([]);
-        setPlanSteps([]);
-        setGoalText("");
-      }
+      await deleteThreadCore(id);
     } catch (error: any) {
       setNotice(`删除任务失败：${error.message}`);
     } finally {
       setOpeningThread(null);
+    }
+  }
+
+  /** ⛔ 一键释放调度（用户 09-17 要求：「在调度里面加一个主动释放功能，一键释放后删除旧的调度会话」）:
+   *  把全局唯一的调度权从旧持有者手里**收回**，并**删除那条旧调度会话**（级联走 deleteThreadCore）。
+   *
+   *  为什么需要这个显式入口：持有者是从 thread-runtime 记录**派生**的（第一个 dispatch.enabled 的
+   *  线程），而会话被归档/删除时历史上没有任何地方清这条记录 ⇒ 孤儿记录永久占着全局唯一的调度权，
+   *  且那条会话往往在侧栏上已经找不到（用户原话：「都关掉了，怎么还提示被锁住了」）。
+   *  自动自愈只覆盖「持有者已不在会话列表」的情形；持有者仍在侧栏、用户就是想把它清掉时靠这里。
+   *
+   *  顺序刻意是「**先释放、后删除**」：万一删除失败（比如引擎那边正在跑），用户至少已经拿回了调度权。
+   *  这条路径也会连带清掉 thread-runtime 记录（主进程 thread/deleted 事件 → remove），不再留孤儿。 */
+  async function releaseDispatchHolder() {
+    const holderId = dispatchOwnerId;
+    if (!holderId) return;
+    const holder = threads.find((entry) => entry.id === holderId);
+    const name = holder ? (cleanThreadDisplayTitle(holder.name, { preview: holder.preview })?.trim() || "另一个会话") : "";
+    const who = holder ? `「${name}」` : "那条已不在列表里的旧会话";
+    const note = holder ? "" : "（它已不在会话列表里，这里只会清掉残留的调度占用）";
+    if (!await openAppConfirm(
+      "释放并删除调度会话",
+      `将收回调度权限，并永久删除占用者${who}及其全部消息与工具记录 —— 此操作无法撤销。${note}`,
+      "释放并删除",
+    )) return;
+    setDispatchBusy(true);
+    try {
+      await window.codex.releaseDispatch(holderId);   // ① 先夺回调度权（即使②失败也已解锁）
+      if (holder) await deleteThreadCore(holderId);   // ② 再把旧会话连同衍生态一起删掉
+      else {
+        threadCacheRef.current.delete(holderId);
+        setThreads((current) => current.filter((entry) => entry.id !== holderId));
+      }
+      showToast("调度已释放", holder ? `「${name}」已删除，现在可以在本会话开启调度` : "残留的调度占用已清掉");
+    } catch (error: any) {
+      setNotice(`释放调度失败：${error.message ?? error}`);
+    } finally {
+      setDispatchBusy(false);
+      await refreshDispatchOwner().catch(() => undefined);
+      void refreshThreads();
     }
   }
 
@@ -15999,6 +16074,7 @@ const commandMatches = useMemo(() => {
             disabled={!thread?.id}
             busy={dispatchBusy}
             lockedBy={dispatchHolderName}
+            onReleaseHolder={() => { void releaseDispatchHolder(); }}
             restrictedLabel={threadRole.restricted ? (threadRole.label ?? "专家 / 专家团") : null}
             onChange={(next, opts) => { void applyDispatch(next, opts); }}
           />
