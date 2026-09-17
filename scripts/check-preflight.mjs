@@ -3666,39 +3666,72 @@ w.postMessage({id:1,op:"list",root});
       : fail("【32】总览简介里的页数写成了固定数字 —— 新增设置页后会误导用户");
   }
 
-  // ⑰ 增强按钮提示气泡（09-17 用户要求：输入内容后在图标上方小气泡，词库 15~20 条、每 5 次、
-  //   6 秒自动消失）。真发 5 条消息跑一次要几分钟且污染会话历史，所以节奏与词库走离线断言，
-  //   只把「真实性」留给一次性 CDP 验收（已跑，12 条全绿）。
+  // ⑰ 增强按钮提示气泡（09-17 用户要求：输入内容后在图标上方小气泡，词库 15~20 条；
+  //   触发条件三条叠加：① 每次启动后第一次输入必弹 ② 每 5 次发送 ③ 输入长需求）。
   {
     const hints = await import("../src/lib/enhance-hints.mjs");
-    const { ENHANCE_HINTS, pickEnhanceHint, shouldShowHint, HINT_EVERY_N_SENDS, HINT_AUTO_HIDE_MS } = hints;
+    const { ENHANCE_HINTS, pickEnhanceHint, shouldShowHintThisRun, markHintShownThisRun, shouldShowHintAfterSends, isLongPrompt, HINT_AUTO_HIDE_MS } = hints;
     (ENHANCE_HINTS.length >= 15 && ENHANCE_HINTS.length <= 25)
       ? ok(`【32】增强提示词库 ${ENHANCE_HINTS.length} 条（用户要求 15~20）`)
       : fail(`【32】提示词库 ${ENHANCE_HINTS.length} 条，超出 15~25 区间`);
     (ENHANCE_HINTS.every((hint) => typeof hint === "string" && hint.trim().length >= 8 && hint.length <= 30))
       ? ok("【32】每条提示都是 8~30 字的完整句子（气泡宽度可控）")
       : fail("【32】有提示过短/过长 —— 过短没信息量，过长气泡会换行成块");
-    (HINT_EVERY_N_SENDS === 5 && HINT_AUTO_HIDE_MS === 6000)
-      ? ok("【32】节奏 = 每 5 次发送 / 6 秒自动消失（用户指定）")
-      : fail(`【32】节奏被改动：N=${HINT_EVERY_N_SENDS}、超时=${HINT_AUTO_HIDE_MS}ms`);
-    const rhythm = [[0, false], [4, false], [5, true], [6, false], [10, true], [15, true], [-5, false], [2.5, false]];
-    const badRhythm = rhythm.filter(([n, expect]) => shouldShowHint(n) !== expect);
-    (badRhythm.length === 0)
-      ? ok(`【32】节奏判定正确（${rhythm.length} 用例：5/10/15 展示，0/负数/小数不展示）`)
-      : fail(`【32】节奏判定错误：${JSON.stringify(badRhythm)}`);
+    // 条件①：语义是「本次启动内弹一次」——纯函数侧只能验它成对变化（启动归零靠模块级变量，
+    // 用 localStorage 就违背了"每次启动都弹"，所以额外断言不落盘）
+    const runSemantics = (() => {
+      const before = shouldShowHintThisRun();
+      markHintShownThisRun();
+      const after = shouldShowHintThisRun();
+      return before === true && after === false;
+    })();
+    (runSemantics)
+      ? ok("【32】条件①：本次启动弹一次（弹前可真、弹后转假）")
+      : fail("【32】条件①判定异常 —— 会导致要么每次输入都弹、要么永远不弹");
+    const hintSrcRaw = readFileSync(join(ROOT, "src", "lib", "enhance-hints.mjs"), "utf8");
+    const hintSrc = hintSrcRaw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    (!/localStorage/.test(hintSrc) && /let shownThisRun = false/.test(hintSrc))
+      ? ok("【32】条件①用模块级变量（每次启动归零），不落盘")
+      : fail("【32】条件①落了盘 —— 用户要的是「每次启动后第一次输入必弹」，落盘会让老用户永远看不到");
+    // 条件②③
+    (shouldShowHintAfterSends(5) === true && shouldShowHintAfterSends(10) === true && shouldShowHintAfterSends(4) === false && shouldShowHintAfterSends(0) === false)
+      ? ok("【32】条件②：每 5 次发送弹一次（5/10 真，4/0 假）")
+      : fail("【32】条件②节奏判定错误");
+    // 条件③：必须是**精确阈值** 50 —— 只测「50 字真、3 字假」测不出阈值被改成 10（50 仍 ≥ 10），
+    // 所以补 49/50 的边界（反证时发现的守卫弱点，见 memory 09-17）。
+    (isLongPrompt("甲".repeat(50)) === true && isLongPrompt("甲".repeat(49)) === false && isLongPrompt("短需求") === false)
+      ? ok("【32】条件③：长输入阈值为 50 字（含 49/50 边界）")
+      : fail("【32】长输入阈值不是 50（或边界判定错）—— 长需求提醒会失效或误触发");
+    (HINT_AUTO_HIDE_MS === 6000)
+      ? ok("【32】气泡 6 秒自动消失（用户指定）")
+      : fail(`【32】自动消失时间被改动：${HINT_AUTO_HIDE_MS}ms`);
     let dup = 0, last;
     for (let i = 0; i < 300; i++) { const next = pickEnhanceHint(last); if (next === last) dup++; last = next; }
     (dup === 0)
       ? ok("【32】连续两次不会抽到同一条（300 次抽样 0 重复）")
       : fail(`【32】提示会连续重复（300 次里 ${dup} 次）—— 词库小更要避免原地重复`);
-    // 结构性守卫：展示条件必须与锚点按钮的渲染条件一致（否则 hintDue 被白消费，气泡永远看不见）
+    // 结构性守卫：展示条件必须与锚点按钮的渲染条件一致（否则 pending 被白清，气泡永远看不见）
     const appC2 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
     (/const enhanceAnchorVisible = Boolean\(prompt\.trim\(\) \|\| hasEnhanceBackup\) && !activeThreadRunning;/.test(appC2))
-      ? ok("【32】气泡展示条件与锚点按钮渲染条件一致（防 hintDue 白消费）")
-      : fail("【32】enhanceAnchorVisible 缺失或与按钮条件不一致 —— 回合运行中会白消费这次提示");
-    (/enhanceHintDueRef\.current = true/.test(appC2) && /if \(shouldShowHint\(enhanceSendCountRef\.current\)\)/.test(appC2))
-      ? ok("【32】计数挂在发送成功之后（命令/引用/失败不计入节奏）")
-      : fail("【32】计数点缺失或位置错误 —— 节奏会被非发送动作消耗");
+      ? ok("【32】气泡展示条件与锚点按钮渲染条件一致（防 pending 白清）")
+      : fail("【32】enhanceAnchorVisible 缺失或与按钮条件不一致 —— 回合运行中会白清掉这次提示");
+    // 长输入节流必须与标记**耦合**在同一个表达式里 —— 只查两处文本各自存在，
+    // 测不出 `&& !enhanceLongFiredRef.current` 被摘掉（反证发现的守卫弱点）。
+    (/const longPromptDue = isLongPrompt\(prompt\) && !enhanceLongFiredRef\.current;/.test(appC2))
+      ? ok("【32】长输入提醒按「编辑会话」节流（清空后重置，不会边打字边弹）")
+      : fail("【32】长输入缺少节流 —— 每敲一个字都可能弹，会变成骚扰");
+    (/Date\.now\(\) - enhanceHintFiredAtRef\.current < HINT_COOLDOWN_MS/.test(appC2))
+      ? ok("【32】多条件叠加时有冷却窗口（防连弹）")
+      : fail("【32】缺少冷却 —— 三条触发条件叠在一起时会连弹");
+    // 增强结果可撤销：取消令牌 + 还原原文（用户 09-17 明确要求"支持取消增强，返回原输入"）
+    // ⛔ 判据必须锚在**成功路径上紧跟请求之后**的校验：只查 `runId !== ...` 文本存在测不出
+    //    成功路径那处被删（catch 里还有一处同名判断，会顶成假绿 —— 反证发现的守卫弱点）。
+    (/await window\.codex\.enhancePrompt\(raw\);[\s\S]{0,240}?if \(runId !== enhanceRunIdRef\.current\) return;/.test(appC2))
+      ? ok("【32】增强中取消会作废在飞请求（结果回来后先验令牌再写输入框）")
+      : fail("【32】成功路径没有验取消令牌 —— 用户取消后内容仍会被替换（真 bug）");
+    (/cancelPromptEnhance\(\)/.test(appC2) && /setPrompt\(enhanceBackupRef\.current\)/.test(appC2))
+      ? ok("【32】增强结果可还原为原文（revert 路径在）")
+      : fail("【32】还原原文路径缺失 —— 用户对增强结果不满意就回不去了");
     // 气泡宽度：绝对定位在窄容器里 shrink-to-fit 会压成竖排窄条（截图实测踩到）
     // ⛔ 必须先去注释再判 —— 注释里也提到了这个属性名，直接正则会被注释顶成假绿（本轮踩到）。
     const cssC2 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
