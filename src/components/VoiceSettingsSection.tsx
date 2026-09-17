@@ -12,6 +12,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Trash2, Upload, Headphones, Keyboard, Mic, Play, Radio, ShieldAlert, Sparkles, Square, Zap } from "lucide-react";
 import { decodeFloat32Base64 } from "../voice/audio-transport";
 import { getWakeState, subscribeWakeState } from "../voice/wake-state";
+import { hotkeyLabel } from "../lib/hotkey.mjs";
+
+/** 渲染层平台（preload 透出的 process.platform，navigator 兜底）——
+ *  语音快捷键的**录入**（⌘ 记 Command 还是 Super）与**显示**（⌘⇧M 还是 Ctrl+Shift+M）都按它分叉。
+ *  ⛔ 09-17 审计：此前录入一律把 metaKey 记成 "Super"、显示直接打印 accelerator 原文，
+ *  mac 用户看到的是 "Super+Shift+M" 这种没人认识的东西。 */
+const IS_MAC_UI = (() => {
+  const fromPreload = (window as any).codex?.platform;
+  if (typeof fromPreload === "string" && fromPreload) return fromPreload === "darwin";
+  return typeof navigator !== "undefined" && (navigator.platform?.toLowerCase().includes("mac") ?? false);
+})();
+
+/** 快捷键展示：accelerator 原文 → 当前平台习惯写法（mac：⌘⇧M）。 */
+const showHotkey = (accelerator: string) => hotkeyLabel(accelerator, IS_MAC_UI ? "darwin" : "other");
 
 type Settings = {
   tts: { sid: number; speed: number; volume: number; profileId?: string };
@@ -426,8 +440,10 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       if (e.key === "Escape") { cleanup(); return; }
       // 必须带修饰键（单键会吞掉正常输入，不收）；还没按到修饰键时静默等待
       const mods: string[] = [];
+      // ⌘ 在 mac 上就是那个主修饰键 → accelerator 记 "Command"；Windows 上 metaKey 是 Win 键 → 记 "Super"。
+      // Electron 两者都认，但记错了在 mac 设置页里会显示成没人认识的 "Super"。
       if (e.ctrlKey) mods.push("Ctrl");
-      if (e.metaKey) mods.push("Super"); // Win/Cmd 是独立修饰键，此前冒充 Ctrl 会导致注册的键与按的键对不上
+      if (e.metaKey) mods.push(IS_MAC_UI ? "Command" : "Super"); // Win/Cmd 是独立修饰键，此前冒充 Ctrl 会导致注册的键与按的键对不上
       if (e.shiftKey) mods.push("Shift");
       if (e.altKey) mods.push("Alt");
       if (!mods.length) return;
@@ -898,7 +914,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
             <button className="secondary-setting" onClick={() => captureHotkey("call")} disabled={Boolean(capturing)}>
               {capturing === "call" ? "请按下组合键…（Esc 取消）" : "录入快捷键"}
             </button>
-            <code className="voice-kbd">{settings.hotkey.accelerator || "未设置"}</code>
+            <code className="voice-kbd">{showHotkey(settings.hotkey.accelerator) || "未设置"}</code>
             <label className="voice-toggle">
               <input
                 type="checkbox"
@@ -920,7 +936,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
             </label>
           </div>
           <div className="voice-card-hint">
-            系统级快捷键，按一下开始、再按一下结束。需要至少带一个修饰键（Ctrl / Shift / Alt），避免吞掉正常输入。
+            系统级快捷键，按一下开始、再按一下结束。需要至少带一个修饰键（{IS_MAC_UI ? "⌘ / ⇧ / ⌥" : "Ctrl / Shift / Alt"}），避免吞掉正常输入。
           </div>
         </div>
       </div>
@@ -933,7 +949,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
             <button className="secondary-setting" onClick={() => captureHotkey("dictation")} disabled={Boolean(capturing)}>
               {capturing === "dictation" ? "请按下组合键…（Esc 取消）" : "录入长按快捷键"}
             </button>
-            <code className="voice-kbd">{settings.dictationHotkey.accelerator || "未设置"}</code>
+            <code className="voice-kbd">{showHotkey(settings.dictationHotkey.accelerator) || "未设置"}</code>
             <label className="voice-toggle">
               <input
                 type="checkbox"

@@ -3421,6 +3421,146 @@ w.postMessage({id:1,op:"list",root});
   }
 }
 
+// ---------- 【32】mac 全面适配（09-17 审计：15 项真缺失的回归网） ----------
+//  用户原话「MAC 的适配要做全，全方面适配」。这里每条都对应一个**实测过的真问题**，
+//  且都是 Windows 上跑预检看不到的（本机是 Windows ⇒ 只能靠结构性断言锁定，靠 mac CI 出包时兜底）。
+{
+  const stripC = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const mainC = stripC(readFileSync(join(ROOT, "electron", "main.ts"), "utf8"));
+  const toolchainC = stripC(readFileSync(join(ROOT, "electron", "toolchain.ts"), "utf8"));
+  const terminalC = stripC(readFileSync(join(ROOT, "electron", "terminal.ts"), "utf8"));
+  const remoteC = stripC(readFileSync(join(ROOT, "electron", "remote.ts"), "utf8"));
+  const updaterC = stripC(readFileSync(join(ROOT, "electron", "engine-updater.ts"), "utf8"));
+  const voiceSettingsC = stripC(readFileSync(join(ROOT, "electron", "voice", "voice-settings.ts"), "utf8"));
+  const voiceSectionC = stripC(readFileSync(join(ROOT, "src", "components", "VoiceSettingsSection.tsx"), "utf8"));
+  const hotkeyMatchC = stripC(readFileSync(join(ROOT, "src", "voice", "hotkey-match.ts"), "utf8"));
+  const macCfg = readFileSync(join(ROOT, "build", "electron-builder.mac.cjs"), "utf8");
+  const prepMac = readFileSync(join(ROOT, "scripts", "prepare-mac-tools.cjs"), "utf8");
+  const verifyTools = readFileSync(join(ROOT, "scripts", "verify-packaged-tools.cjs"), "utf8");
+  const sliceFn = (src, needle, len) => { const i = src.indexOf(needle); return i < 0 ? "" : src.slice(i, i + len); };
+
+  // ① 麦克风用途声明：macOS 缺这条不是「弹不出授权框」，是**进程被系统直接杀掉**（取麦即闪退）
+  /NSMicrophoneUsageDescription/.test(macCfg)
+    ? ok("【32】mac Info.plist 声明麦克风用途（缺了语音首次取麦必闪退）")
+    : fail("【32】electron-builder.mac.cjs 缺 NSMicrophoneUsageDescription —— mac 上语音通话/听写取麦即被系统杀进程");
+
+  // ② mac 关窗 ≠ 退出：window-all-closed 里若照 Windows 清理服务，点 Dock 重开得到「窗口在、功能全哑」
+  {
+    const body = sliceFn(mainC, 'app.on("window-all-closed"', 520);
+    (/process\.platform === "darwin"\) return;/.test(body) && /cleanupAll\(\)/.test(body) && /app\.quit\(\)/.test(body))
+      ? ok("【32】window-all-closed 在 mac 上保留服务（关窗后 Dock 重开仍可用）")
+      : fail("【32】window-all-closed 没做 darwin 分叉 —— mac 关窗后重开窗口引擎/服务/调度器全哑");
+    // 但要确认清理没被整体删掉：before-quit 仍必须 cleanupAll（否则 mac 永不清理）
+    const quitBody = sliceFn(mainC, 'app.on("before-quit"', 420);
+    /cleanupAll\(\)/.test(quitBody)
+      ? ok("【32】before-quit 仍然 cleanupAll（mac 上服务保活但不泄漏）")
+      : fail("【32】before-quit 不再 cleanupAll —— mac 关窗保活后永远不释放引擎/端口");
+  }
+
+  // ③ cloudflared（手机配对的公网隧道）：路径必须走内置工具目录 + 平台化文件名，且 mac 包要真的带上
+  {
+    const fnBody = sliceFn(remoteC, "function resolveCloudflaredBin", 760);
+    // 判据必须精确：Windows 分支**本来就该**叫 cloudflared.exe（不能笼统禁止 .exe），
+    // 要锁的是「mac 也有对应布局」+「解析基于内置工具目录而不是 process.cwd()」。
+    (fnBody && /toolsRoot\(\)/.test(fnBody) && /\["cloudflared", "cloudflared"\]/.test(fnBody) && !/\.cwd\(\)/.test(fnBody))
+      ? ok("【32】cloudflared 走 toolsRoot + 平台化文件名（不再写死 cwd/…exe）")
+      : fail("【32】remote.ts 的 cloudflared 解析仍依赖 process.cwd / 缺 mac 布局 —— mac 上手机配对隧道永不启动");
+    /cloudflared-darwin-\$\{arch === "arm64" \? "arm64" : "amd64"\}\.tgz/.test(prepMac)
+      ? ok("【32】prepare-mac-tools 现造 cloudflared(darwin) 并补执行位")
+      : fail("【32】prepare-mac-tools 不造 cloudflared —— mac 包里没有隧道二进制");
+    /path\.join\(root, "cloudflared", "cloudflared"\)/.test(verifyTools)
+      ? ok("【32】mac 产物校验断言 cloudflared 存在且有执行位")
+      : fail("【32】mac 产物校验没有 cloudflared 断言 —— 缺了要到用户那儿才发现");
+  }
+
+  // ④ ffmpeg：渠道语音转码依赖它，mac 布局是 tools/ffmpeg/bin/ffmpeg（无后缀），旧实现只找 .exe + 用 cwd
+  {
+    const fnBody = sliceFn(mainC, "function resolveFfmpegPath", 800);
+    (/process\.platform === "win32" \? \["ffmpeg", "ffmpeg\.exe"\] : \["ffmpeg", "bin", "ffmpeg"\]/.test(fnBody) && !/\.cwd\(\)/.test(fnBody))
+      ? ok("【32】ffmpeg 路径平台化（mac = tools/ffmpeg/bin/ffmpeg，不依赖 cwd）")
+      : fail("【32】resolveFfmpegPath 仍只找 ffmpeg.exe / 依赖 cwd —— mac 上渠道语音转码必失败");
+  }
+
+  // ⑤ 系统级探测：mac 上 Docker Desktop 装在 /Applications，CLI 在 /usr/local|/opt/homebrew；PATH 分隔符也不能写死
+  {
+    const fnBody = sliceFn(mainC, "function runtimeInstalledBySystem", 1400);
+    (/\/Applications\/Docker\.app/.test(fnBody) && /opt\/homebrew\/bin\/docker/.test(fnBody))
+      ? ok("【32】mac 上探测 Docker Desktop（装了不再显示「未安装」）")
+      : fail("【32】darwin 分支没有 docker 探测 —— mac 装了 Docker 也一直显示「未安装」");
+    /split\(path\.delimiter\)/.test(fnBody)
+      ? ok("【32】docker 的 PATH 探测用 path.delimiter（不再写死「;」）")
+      : fail("【32】docker 的 PATH 探测写死「;」 —— POSIX 上永远探不到");
+  }
+
+  // ⑥ npm 全局 shim 清理：POSIX 落在 <prefix>/bin/<pkg>，旧清单只有 Windows 的 .cmd/.ps1
+  {
+    const fnBody = sliceFn(mainC, "function npmShimPaths", 800);
+    /path\.join\(globalDir, "bin", pkg\)/.test(fnBody)
+      ? ok("【32】npm 全局 shim 清理覆盖 POSIX 的 bin/<pkg>")
+      : fail("【32】npmShimPaths 缺 bin/<pkg> —— mac 上卸载 npm 包后 shim 残留指向空目录");
+  }
+
+  // ⑦ CODEX_REAL_PWSH：mac 的 pwsh 无 .exe，写死路径会让这个环境变量永不设置
+  {
+    const fnBody = sliceFn(toolchainC, "export function toolchainEnv", 1400);
+    (/const realPwsh = bundledPwsh\(\);/.test(fnBody) && !/pwsh", "pwsh\.exe"/.test(fnBody))
+      ? ok("【32】CODEX_REAL_PWSH 走 bundledPwsh()（平台解析）")
+      : fail("【32】toolchainEnv 仍写死 pwsh.exe —— mac 上 CODEX_REAL_PWSH 永不设置");
+  }
+
+  // ⑧ 引擎更新用 tar：darwin 给绝对路径（GUI 进程 PATH 是 launchd 最小集）
+  {
+    const fnBody = sliceFn(updaterC, "function tarExecutable", 420);
+    /\/usr\/bin\/tar/.test(fnBody)
+      ? ok("【32】engine-updater 在 darwin 用 /usr/bin/tar")
+      : fail("【32】engine-updater 的 tarExecutable 没有 darwin 分支 —— mac 上靠裸名 tar，PATH 被改过就落空");
+  }
+
+  // ⑨ 终端面板：PATH 分隔符 / 路径拼接 / 自绘提示符 三处都得平台化
+  {
+    (/split\(path\.delimiter\)/.test(terminalC) && /path\.join\(dir, name\)/.test(terminalC) && !/split\(";"\)/.test(terminalC))
+      ? ok("【32】终端查找用 path.delimiter + path.join（不再反斜杠拼接 / 写死「;」）")
+      : fail("【32】terminal.ts 仍用反斜杠拼接或 split(\";\") —— POSIX 上候选目录解析全错");
+    /process\.platform === "win32" \? `PS \$\{this\.cwd\}> ` : `\$\{this\.cwd\} \$ `/.test(terminalC)
+      ? ok("【32】自绘提示符平台化（mac 不再显示 PowerShell 风格的「PS …>」）")
+      : fail("【32】终端提示符没平台化 —— mac 上显示「PS /Users/x>」");
+  }
+
+  // ⑩ 语音快捷键：默认键用 CommandOrControl；匹配与录入/显示都要按平台分叉
+  {
+    /accelerator: "CommandOrControl\+Shift\+M"/.test(voiceSettingsC)
+      ? ok("【32】默认呼叫快捷键 = CommandOrControl+Shift+M（Windows 仍是 Ctrl，mac 是 ⌘）")
+      : fail("【32】默认呼叫键写死 Ctrl+… —— mac 上不符合直觉（且不该记成 Super）");
+    (/const cmdOrCtrl = parts\.includes\("cmdorctrl"\);/.test(hotkeyMatchC) && /needsCtrl = cmdOrCtrl \? !mac/.test(hotkeyMatchC))
+      ? ok("【32】hotkey-match 按平台解析 CommandOrControl（mac → metaKey）")
+      : fail("【32】hotkey-match 把 CommandOrControl 一律当 ctrlKey —— mac 上 ⌘⇧M 永远匹配不上");
+    (/IS_MAC_UI \? "Command" : "Super"/.test(voiceSectionC) && /showHotkey\(/.test(voiceSectionC))
+      ? ok("【32】语音快捷键录入/显示平台化（mac 记 Command、显示 ⌘⇧M）")
+      : fail("【32】语音快捷键仍一律记 Super / 原样打印 accelerator —— mac 用户看到「Super+Shift+M」");
+  }
+
+  // ⑪ 开发工具卡文案：specs 是按 Windows 写的，mac 上「装 Git 约 90 MB」这类说法会误导
+  {
+    (/const DARWIN_SPEC_TEXT/.test(mainC) && /specFor\(id, spec\)/.test(mainC))
+      ? ok("【32】开发工具卡文案按平台覆盖（git/openssl/docker 在 mac 上不再照搬 Windows 口径）")
+      : fail("【32】缺少 DARWIN_SPEC_TEXT/specFor —— mac 上开发工具卡仍在说「装 Git / 约 90 MB」");
+  }
+
+  // ⑫ 行为断言：accelerator 原文 → mac 写法（纯函数，与平台探测解耦；mac 上显示什么这里说了算）
+  {
+    const { macHotkeyLabel } = await import("../src/lib/hotkey.mjs");
+    const rows = [
+      ["CommandOrControl+Shift+M", "⌘⇧M"],
+      ["Command+Shift+M", "⌘⇧M"],
+      ["Super+Space", "⌘Space"],
+      ["Option+Space", "⌥Space"],
+      ["Ctrl+Shift+F", "⌘⇧F"],
+    ];
+    const bad = rows.filter(([input, expected]) => macHotkeyLabel(input) !== expected);
+    (bad.length === 0 ? ok : fail)(`【32】accelerator → mac 写法（${rows.length} 条${bad.length ? "，错：" + bad.map(([i, e]) => `${i}→${macHotkeyLabel(i)}(期望${e})`).join(",") : ""}）`);
+  }
+}
+
 console.log("");
 if (hardFails === 0) {
   console.log(C.green(`预检通过${warns ? `（${warns} 条告警，见上）` : ""}`));

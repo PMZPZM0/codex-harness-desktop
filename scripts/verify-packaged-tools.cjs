@@ -27,6 +27,17 @@ const native = [
   path.join(root, "nuphus", `nuphus-mcp${suffix}`),
 ].find(fs.existsSync);
 const node = path.join(root, "node", ...(process.platform === "win32" ? ["node.exe"] : ["bin", "node"]));
+// ⛔ 09-17：mac 侧必须带上 cloudflared（无后缀单文件，prepare-mac-tools 现造）——
+//    缺了它「手机扫码配对」的公网隧道静默不启动（remote.ts 找不到可执行文件就降级到局域网），
+//    而这是产物层才看得出来的事（源码/预检都在 Windows 上跑，看不到 mac 包）。
+if (process.platform === "darwin") {
+  const cloudflared = path.join(root, "cloudflared", "cloudflared");
+  assert.ok(fs.existsSync(cloudflared),
+    "mac 包缺少 tools/cloudflared/cloudflared —— 检查 prepare-mac-tools.cjs 的 cloudflared 步骤" +
+    "（remote.ts 的手机配对隧道依赖它）。");
+  assert.ok((fs.statSync(cloudflared).mode & 0o111) !== 0,
+    "tools/cloudflared/cloudflared 没有执行位 —— .app 里 spawn 会 EACCES。");
+}
 const env = {
   ...process.env,
   PATH: [path.dirname(node), path.join(root, "npm-global"), path.join(root, "npm-global", "bin"), process.env.PATH].join(path.delimiter),
