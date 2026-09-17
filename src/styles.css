@@ -15968,6 +15968,10 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   align-items: center;
   gap: 6px;
   display: flex;
+  /* 窄窗口下按钮换行，而不是把标题挤扁或溢出容器（09-17：说明收进 ? 后头部只有一行，
+     按钮成为这一行唯一的宽度压力来源） */
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 /* ── 供应商名称必填标记（09-17：名字从顶部挪到表单后，新增时必须填） ── */
 .provider-required {
@@ -16370,6 +16374,87 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   from { opacity: 0; transform: translateY(5px) scale(0.96); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
+/* 标题与 ? 同行居中（09-17）：说明收进 ? 后，标题这一行就是头部的全部文字内容。
+   ? 直接内联在 <h2> 里 —— 不改各页 JSX 结构，也不必逐页改成新组件（改动面最小）。 */
+.settings-copy h2,
+.provider-list-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* ── 设置页「?」说明气泡（09-17 用户：「文字赘述过多，都改成 ? 号，鼠标放上去展示」） ──
+   原先每页在标题下铺一段说明文字（MCP / 技能中心 / SSH 服务器长到 5 行），把动作按钮挤到
+   右边、整页首屏全是字。现在头部恒为一行：**标题 + ? + 动作按钮**。
+   ? 同时是该页「完整帮助」的入口 —— 于是每页少一个占位的「帮助」按钮（用户同时抱怨
+   「帮助展示的位置放的都不好看」，两个问题一个解法）。
+   ⛔ 各页的 ? 是内联在 <h2> 里的（见 App.tsx），所以只有 .page-info* 这一组样式，
+      没有"头部容器"样式 —— 不引入一层只为排版的 div。 */
+.page-info {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--faint);
+  cursor: help;
+  transition: color 0.15s, border-color 0.15s;
+}
+.page-info:hover,
+.page-info:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+  outline: none;
+}
+/* ⛔ position:fixed（不是 absolute）：设置内容是滚动容器，absolute 浮层会被裁掉下半截 */
+.page-info-pop {
+  position: fixed;
+  z-index: 300;
+  padding: 10px 12px 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.62;
+  animation: page-info-in 0.14s ease-out;
+}
+.page-info-text code {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  font-size: 11.5px;
+}
+.page-info-text strong,
+.page-info-text b {
+  color: var(--text);
+  font-weight: 600;
+}
+.page-info-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+}
+.page-info-more:hover {
+  text-decoration: underline;
+}
+@keyframes page-info-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
 /* ── 设置页「使用帮助」（09-17 用户要求：新手帮助，弹窗展示） ── */
 .help-entry {
   display: inline-flex;
@@ -16391,9 +16476,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   color: var(--accent);
 }
 /* 标题旁排（模型/专家中心/开发工具这类没有 actions 容器的页面）：跟在 h2 后、间距 10px */
-.settings-copy > .help-entry {
-  margin-top: 10px;
-}
+/* .settings-copy > .help-entry 已随各页「帮助」按钮退休（09-17：并进标题旁的 ?） */
 .help-backdrop {
   z-index: 96;
 }
@@ -21915,7 +21998,13 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 /* ===== 语音通话设置页：每条设置一张卡片 ===== */
 .voice-settings { display:flex; flex-direction:column; gap:12px; }
 .voice-settings-loading { padding:18px; color: var(--muted); font-size:12px; }
-.voice-settings .settings-section-title { margin:0; }
+.voice-settings .settings-section-title {
+  /* ? 与标题同行（09-17）：该页说明也收进了 ? */
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+}
 .voice-settings .settings-section-desc { margin-top:-4px; color: var(--muted); font-size:12px; line-height:1.5; }
 .voice-settings .settings-section-desc code {
   background: color-mix(in srgb, var(--muted) 12%, transparent);

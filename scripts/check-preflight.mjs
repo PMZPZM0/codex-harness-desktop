@@ -3614,16 +3614,56 @@ w.postMessage({id:1,op:"list",root});
     (missingKeys.length === 0)
       ? ok(`【32】帮助内容库覆盖 ${HELP_KEYS.length} 个主题（模型/插件/技能/MCP/专家团/语音/开发工具）`)
       : fail(`【32】帮助内容库缺主题：${missingKeys.join(", ")} —— 对应页面点帮助会打不开或空白`);
-    const helpButtons = (appC.match(/<HelpButton helpKey=/g) || []).length;
-    (helpButtons >= 5)
-      ? ok(`【32】设置页挂了 ${helpButtons} 处帮助入口（≥5，另有语音页在子组件）`)
-      : fail(`【32】帮助入口只有 ${helpButtons} 处 —— 有页面漏挂（每页各写按钮最容易漏）`);
+    // ? 号（09-17 用户：「文字赘述过多，都改成 ? 号，鼠标放上去展示」「帮助展示的位置放的
+    // 都不好看」）：各页那个占位的「帮助」按钮已退休、长说明收进标题旁的 ?。所以断言从
+    // "帮助按钮数"改成三层：① ? 挂载数 ② 兼作帮助入口的 ? 数 ③ 「赘述回潮」判据。
+    const hintCount = (appC.match(/<PageInfo\b/g) || []).length;
+    (hintCount >= 15)
+      ? ok(`【32】设置页挂了 ${hintCount} 处 ? 号（说明收进 ?，头部恒为一行）`)
+      : fail(`【32】? 号只有 ${hintCount} 处 —— 说明又被摊回标题下了（赘述回潮）`);
+    const keyedHints = (appC.match(/helpKey="/g) || []).length;
+    (keyedHints >= 6)
+      ? ok(`【32】${keyedHints} 处 ? 兼作「完整帮助」入口（HelpButton 退休后入口没丢）`)
+      : fail(`【32】兼帮助入口的 ? 只有 ${keyedHints} 处 —— 有页面的完整帮助从此打不开`);
+    // ⛔ 比"数量够"更强的判据：**每个帮助主题都必须有 ? 入口**。数量达标不代表没有孤儿 ——
+    //    「模型」页（标题是 provider-list-head、不是 settings-copy）与「专家和专家团」页
+    //    （说明只有一句短话、不在收编名单里）的入口就真被漏掉了：内容库还在，用户点不到。
+    //    这正是本条守卫要防的形态（本轮 code review 抓到的两个真问题之一）。
+    const orphanKeys = HELP_KEYS.filter((key) => !new RegExp(`helpKey="${key}"`).test(appC + voiceC));
+    (orphanKeys.length === 0)
+      ? ok(`【32】${HELP_KEYS.length} 个帮助主题都有 ? 入口（无"内容库在、入口丢了"的孤儿）`)
+      : fail(`【32】这些主题的帮助入口丢了：${orphanKeys.join(", ")} —— 内容库还在，但用户点不到`);
+    // ⛔ 赘述回潮的可证伪判据：settings-copy 区块里不该再有 >40 字的内联段落。
+    //    短句（≤40 字）允许内联 —— 它只占一行，硬收进 ? 反而让用户多点一次。
+    const longCopies = appC.split(/\r?\n/)
+      .filter((line) => line.includes("settings-copy"))
+      .map((line) => {
+        const m = line.match(/<p>([\s\S]*?)<\/p>/);
+        return m ? m[1].replace(/<[^>]+>/g, "").replace(/\{[^}]*\}/g, "").length : 0;
+      })
+      .filter((n) => n > 40);
+    (longCopies.length === 0)
+      ? ok("【32】设置页说明都已收进 ?（settings-copy 里没有 >40 字的内联段落）")
+      : fail(`【32】有 ${longCopies.length} 处说明又摊回标题下（${longCopies.join("/")} 字）—— 应收进 ?`);
     (/<HelpDialog\b/.test(appC))
       ? ok("【32】HelpDialog 挂在渲染树里（弹窗能真正打开）")
       : fail("【32】HelpDialog 没挂到渲染树 —— 点帮助不会有任何反应");
-    (/onOpenHelp/.test(voiceC) && /help-entry/.test(voiceC))
-      ? ok("【32】语音页帮助入口在（子组件走 onOpenHelp prop）")
-      : fail("【32】语音页缺帮助入口 —— 用户报的页面之一是它");
+    // ⛔ ? 里的「查看完整帮助」靠 context 拿 setHelpKey：没注入 = 点了没反应，且是静默失效
+    (/HelpOpenContext\.Provider/.test(appC) && /value=\{setHelpKey\}/.test(appC))
+      ? ok("【32】? 的帮助出口已注入（HelpOpenContext.Provider value=setHelpKey）")
+      : fail("【32】HelpOpenContext 没注入 —— ? 里点「查看完整帮助」没有任何反应");
+    (/PageInfo[\s\S]{0,220}?helpKey="voice"/.test(voiceC))
+      ? ok("【32】语音页 ? 在（在子组件里，最容易漏改的一页）")
+      : fail("【32】语音页缺 ? 入口 —— 用户点名的页面之一是它");
+    // ? 的气泡必须 portal + fixed：设置内容是滚动容器，absolute 浮层会被裁掉下半截
+    const headC = readFileSync(join(ROOT, "src", "components", "SettingsHead.tsx"), "utf8");
+    const cssAll = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+    (/\.page-info-pop[\s\S]{0,220}?position:\s*fixed/.test(cssAll))
+      ? ok("【32】? 气泡 fixed 定位（不会被设置页滚动容器裁切）")
+      : fail("【32】? 气泡不是 fixed 定位 —— 会被滚动容器裁掉下半截（内容读不全）");
+    (/createPortal/.test(headC) && /getBoundingClientRect/.test(headC))
+      ? ok("【32】? 气泡走 portal + 实测定位（宽气泡不会溢出屏幕右侧）")
+      : fail("【32】? 气泡没走 portal —— 会被祖先容器的 overflow 裁切");
     // 新手帮助必须写清「怎么开始」，不能只有概念说明
     const thin = HELP_KEYS.filter((key) => {
       const at = helpC.indexOf(`${key}: {`);
