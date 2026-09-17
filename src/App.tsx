@@ -391,7 +391,7 @@ import { PersonalizationPage } from "./components/PersonalizationPage";
 import VoiceSettingsSection from "./components/VoiceSettingsSection";
 import { BootSplash, type BootStage } from "./components/BootSplash";
 import { HelpDialog, type HelpKey, type HelpTopic } from "./components/HelpDialog";
-import { pickEnhanceHint, shouldShowHint, HINT_AUTO_HIDE_MS } from "./lib/enhance-hints.mjs";
+import { pickEnhanceHint, shouldShowHintThisRun, markHintShownThisRun, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_MS, HINT_AUTO_HIDE_MS } from "./lib/enhance-hints.mjs";
 import VoiceWaveform from "./components/VoiceWaveform";
 import VoiceDevToolsSection from "./components/VoiceDevToolsSection";
 import { GlobalSearchView } from "./components/IndexLibrary";
@@ -1185,6 +1185,9 @@ const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
   { group: "数据与统计", items: [["usage", "使用统计", CircleGauge], ["storage", "数据管理", Database], ["backup", "会话备份", Download], ["archive", "归档管理", Archive]] },
   { group: "开发工具", items: [["devtools", "开发工具", TerminalSquare]] },
 ];
+
+/** 读「增强提示是否已弹过」：**每次启动重置**（模块级变量随应用启动归零），不落盘。
+ *  见 enhance-hints.mjs 的说明——用户要的是"每次启动后第一次输入必弹"。 */
 
 /** 设置页「使用帮助」按钮（09-17）：统一外观与行为，各页只传 HelpKey。
  *  放在 App.tsx 内而不是 HelpDialog.tsx：它要用 App 的 setHelpKey，做成组件反而要传回调。 */
@@ -7584,18 +7587,26 @@ export default function App() {
   // 输入框提示词增强（WorkBuddy enhance 按钮复刻）：enhancing = 请求中可取消；backup = 增强成功后的原文（点按钮还原）
   const [enhanceBusy, setEnhanceBusy] = useState(false);
   const enhanceBackupRef = useRef<string | null>(null);
+  /** 增强请求的取消令牌（见 runPromptEnhance / cancelPromptEnhance）。 */
+  const enhanceRunIdRef = useRef(0);
   const [hasEnhanceBackup, setHasEnhanceBackup] = useState(false);
   /** 增强按钮的提示气泡（09-17 用户要求：「输入文字后在图标上方小气泡提醒，词库丰富、个性一点」）。
-   *  节奏（用户指定）：**每 5 次发送**为一个周期，周期到了之后**在下一次输入时**提示，约 6 秒自动消失。
-   *  ⛔ 为什么不是"发送成功当场显示"：发送成功时输入框已清空、回合正在跑，增强按钮本身
-   *  （`prompt.trim() || hasEnhanceBackup`）根本不渲染 —— 气泡没有任何可依附的位置，等于永不出现。
-   *  真实链路上这一点是实测踩出来的（见 memory 2026-09-17）。 */
+   *  触发条件三者叠加（用户定稿）：① 首次启动第一次输入必弹 ② 之后每 5 次发送弹一次 ③ 输入长需求时弹。
+   *  ⛔ 展示时机必须挂在 enhanceAnchorVisible 上（= 气泡所依附的按钮真的渲染出来了）：
+   *  发送后/回合运行中输入时按钮不渲染，此时展示等于用户永远看不到（实测踩到）。 */
   const [enhanceHint, setEnhanceHint] = useState<string | null>(null);
-  const enhanceSendCountRef = useRef(0);
-  /** 周期到了但还没提示（等用户下次开始输入再弹，见上方注释）。 */
-  const enhanceHintDueRef = useRef(false);
   const enhanceHintTimerRef = useRef<number | null>(null);
   const lastEnhanceHintRef = useRef<string | undefined>(undefined);
+  /** 条件① 待弹：**每次启动后**第一次输入必弹（用户定稿），启动时重置、本次内只弹一次。 */
+  const enhanceHintThisRunRef = useRef(shouldShowHintThisRun());
+  /** 条件② 发送计数（内存计数，重启归零；定位是"偶尔提醒"，不做持久化）。 */
+  const enhanceSendCountRef = useRef(0);
+  /** 条件② 待弹（周期到了）。 */
+  const enhanceHintAfterSendRef = useRef(false);
+  /** 条件③ 本次"编辑会话"内长输入是否已触发（输入清空时重置，所以写第二条长需求还能提醒）。 */
+  const enhanceLongFiredRef = useRef(false);
+  /** 冷却时间戳：条件叠加时防止连弹（首次不受限，因为初值为 0）。 */
+  const enhanceHintFiredAtRef = useRef(0);
   const [files, setFiles] = useState<string[]>([]);
   const [skillMenuOpen, setSkillMenuOpen] = useState(false);
   const [skillQuery, setSkillQuery] = useState("");
@@ -14445,9 +14456,12 @@ const commandMatches = useMemo(() => {
 
   /** 触发提示词增强：原文备份 → 调主进程 LLM 润色 → 替换输入框文本。
    *  增强后按钮进入撤销模式（再点还原原文）；用户改动文本即清除备份（WorkBuddy 同款）。 */
-  /** 展示增强提示气泡（6 秒后自动消失）。调用点：每 N 次发送后。 */
+  /** 展示增强提示气泡（6 秒后自动消失）。
+   *  展示即视为"看过"并落盘 —— 之后无论用户是点了、关了还是让它自己消失，都不再出现。 */
   function showEnhanceHint() {
     setEnhanceHint(pickEnhanceHint(lastEnhanceHintRef.current));
+    enhanceHintFiredAtRef.current = Date.now();
+    markHintShownThisRun();   // 本次启动已弹过（不落盘：下次启动要重新弹，见模块注释）
     if (enhanceHintTimerRef.current != null) window.clearTimeout(enhanceHintTimerRef.current);
     enhanceHintTimerRef.current = window.setTimeout(() => {
       setEnhanceHint(null);
@@ -14469,13 +14483,19 @@ const commandMatches = useMemo(() => {
       setPrompt(enhanceBackupRef.current);
       enhanceBackupRef.current = null;
       setHasEnhanceBackup(false);
+      setNotice("已还原为你原来的输入");
       return;
     }
     const raw = stripImageTokens(prompt).trim();
     if (!raw || enhanceBusy) return;
+    // ⛔ 取消令牌（09-17）：原先"取消"只把 loading 关掉，`enhancePrompt` 的请求仍在飞，
+    // 返回后照样 `setPrompt(增强结果)` 盖掉用户输入 —— 用户以为取消了、内容还是被换了。
+    // 每次发起取一个 runId，回来时对不上就整个丢弃（不写输入框、不置 backup、不改状态）。
+    const runId = ++enhanceRunIdRef.current;
     setEnhanceBusy(true);
     try {
       const result = await window.codex.enhancePrompt(raw);
+      if (runId !== enhanceRunIdRef.current) return;   // 已被取消：静默丢弃
       if (!result.ok || !result.text) {
         setNotice(result.error || "增强失败，请重试");
         return;
@@ -14490,10 +14510,18 @@ const commandMatches = useMemo(() => {
       });
       setNotice("提示词已增强，再次点击可还原原文");
     } catch (error: any) {
+      if (runId !== enhanceRunIdRef.current) return;
       setNotice(`增强失败：${error.message ?? error}`);
     } finally {
-      setEnhanceBusy(false);
+      if (runId === enhanceRunIdRef.current) setEnhanceBusy(false);
     }
+  }
+
+  /** 取消正在进行的增强：作废在飞的请求，输入内容保持原样。 */
+  function cancelPromptEnhance() {
+    enhanceRunIdRef.current += 1;   // 让在飞请求的结果失效（见 runPromptEnhance 注释）
+    setEnhanceBusy(false);
+    setNotice("已取消增强，输入内容保持原样");
   }
 
   // 用户修改文本后备份失效（WorkBuddy：内容发散即清 backup，防止误还原覆盖用户输入）
@@ -15730,11 +15758,10 @@ const commandMatches = useMemo(() => {
       // 首条已发出：无论包装是否带上了记录（如只发图没文字），该线程已非空、记录永远附不上了，
       // 清除待发送标记（含 localStorage），避免残留卡在重启后误显示。
       if (readStoredPendingImport(active.id)) forgetPendingImport(active.id);
-      // 增强提示气泡节奏（09-17 用户指定）：每 5 次**成功发送**为一个周期。
-      // 只置 pending，真正的展示等用户下次输入时（那时增强按钮才渲染出来，见 enhanceHintDueRef 注释）。
-      // 放在发送成功之后计数：命令面板/技能引用/发送失败都不该算进这个节奏里。
+      // 气泡条件②（09-17）：每 5 次**成功发送**为一个周期。只置 pending，
+      // 真正的展示等用户下次输入时（那时按钮才渲染出来，见 enhanceAnchorVisible 注释）。
       enhanceSendCountRef.current += 1;
-      if (shouldShowHint(enhanceSendCountRef.current)) enhanceHintDueRef.current = true;
+      if (shouldShowHintAfterSends(enhanceSendCountRef.current)) enhanceHintAfterSendRef.current = true;
       void refreshThreads();
     } catch (error: any) {
       // turn/start RPC 直接以限流失败：安排应用层自动重试（10 次退避）
@@ -16069,17 +16096,23 @@ const commandMatches = useMemo(() => {
   const waitingForInput = activeFlags.includes("waitingOnUserInput");
   // 当前会话只读取自己的运行状态；其他后台任务继续在侧栏独立显示，不影响本会话按钮。
   const activeThreadRunning = Boolean(thread && (runningThreadIds.has(thread.id) || thread.turns.some((turn) => isTurnRunning(turn))));
-  // 增强提示气泡的展示时机（09-17）：周期到了（每 5 次发送）+ 按钮真的渲染出来 → 才弹。
-  // ⛔ 条件必须与下方 enhance-button 的 JSX 条件一致：回合运行中输入内容时按钮并不渲染，
-  //    若此时就把 hintDue 消费掉，气泡既看不见、这次提示又白给了（真实链路实测踩到）。
-  //    放在这里（而不是 enhance 相关逻辑旁）是因为要读 activeThreadRunning。
+  // 输入被清空 → 重置"长输入已触发"标记（所以下一条长需求还能提醒一次）
+  useEffect(() => { if (!prompt.trim()) enhanceLongFiredRef.current = false; }, [prompt]);
+
+  // 三条件叠加 + 冷却；展示条件必须与下方 enhance-button 的 JSX 条件一致（见 enhanceAnchorVisible 注释）
   const enhanceAnchorVisible = Boolean(prompt.trim() || hasEnhanceBackup) && !activeThreadRunning;
   useEffect(() => {
-    if (!enhanceHintDueRef.current || enhanceHint) return;
-    if (!enhanceAnchorVisible) return;   // 不消费，等按钮真的渲染出来
-    enhanceHintDueRef.current = false;
+    if (enhanceHint) return;
+    if (!enhanceAnchorVisible) return;   // 条件不满足时**不清任何 pending**，等按钮真的渲染出来
+    const longPromptDue = isLongPrompt(prompt) && !enhanceLongFiredRef.current;
+    const due = enhanceHintThisRunRef.current || enhanceHintAfterSendRef.current || longPromptDue;
+    if (!due) return;
+    if (Date.now() - enhanceHintFiredAtRef.current < HINT_COOLDOWN_MS) return;   // 防连弹；启动后首次不受限（初值 0）
+    enhanceHintThisRunRef.current = false;
+    enhanceHintAfterSendRef.current = false;
+    if (longPromptDue) enhanceLongFiredRef.current = true;
     showEnhanceHint();
-  }, [enhanceAnchorVisible, enhanceHint]);
+  }, [enhanceAnchorVisible, enhanceHint, prompt]);
   // 团队会话里正在被调度的成员（主理人通过 team_member_invoke 分发子任务时点亮其头像）
   const activeThreadMemberRunning = expertTeamMemberRunning && thread && expertTeamMemberRunning.teamId === (teamThreadMapRef.current.get(thread.id) || teamThreadConfigRef.current.get(thread.id)?.teamId) ? expertTeamMemberRunning : null;
   const activeMemberTeam = activeThreadMemberRunning ? expertTeams.find((team) => team.teamId === activeThreadMemberRunning.teamId) ?? null : null;
@@ -16966,7 +16999,7 @@ const commandMatches = useMemo(() => {
                       disabled={enhanceBusy ? false : !prompt.trim()}
                       onClick={() => {
                         dismissEnhanceHint();   // 用户已经知道这个按钮是干什么的了，不必再提醒
-                        if (enhanceBusy) { setEnhanceBusy(false); setNotice("已取消增强"); return; }
+                        if (enhanceBusy) { cancelPromptEnhance(); return; }
                         void runPromptEnhance();
                       }}
                     >

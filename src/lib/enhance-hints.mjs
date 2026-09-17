@@ -42,15 +42,45 @@ export function pickEnhanceHint(previous) {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-/** 每多少次「发送/提交输入」展示一次气泡（用户指定 09-17：每 5 次展示一次）。
- *  计数在渲染层内存里，不落盘 —— 重启后重新数，符合"偶尔提示一下"的定位。 */
-export const HINT_EVERY_N_SENDS = 5;
+/** 提示的三种触发条件（用户 09-17 定稿，三者**叠加**）：
+ *  ① **每次启动应用后的第一次输入** —— 必弹（用户原话：「每次启动应用后的第一次输入必须弹出」）
+ *  ② 之后每 5 次发送 —— 弹一次（偶尔提醒，别让人忘了这个按钮）
+ *  ③ 输入很长的需求 —— 弹一次（长需求最值得优化；按"编辑会话"节流，见 App 侧 enhanceLongFiredRef）
+ *
+ *  ⛔ ①的"每次启动"是**刻意**的，不是状态没存住：应用一启动、用户刚开始打字，
+ *  正是最需要知道这个按钮存在的时候；且只在**本次运行内**弹一次，不会边打字边骚扰。
+ *  所以判定用**模块级变量**而非 localStorage —— 应用每次启动都会重新加载 JS，变量自然归零；
+ *  落盘反而会让老用户永远看不到（这是第一版的错，被用户纠正）。
+ *
+ *  ⛔ 为什么条件③要有节流和冷却：边打字边弹会变成骚扰（每敲一个字都判定一次），
+ *  刚弹过又弹同样烦。所以长输入只在"本次编辑"内弹一次，且所有触发共享一个冷却窗口。
+ */
 
-/** 第 n 次发送后是否该展示气泡。
- *  抽成纯函数是为了能离线断言节奏（真发 5 条消息会跑引擎、几分钟且污染会话历史）。 */
-export function shouldShowHint(sendCount) {
-  return Number.isInteger(sendCount) && sendCount > 0 && sendCount % HINT_EVERY_N_SENDS === 0;
+/** 两次提示之间的最小间隔，防止多条触发条件叠加时连弹。 */
+export const HINT_COOLDOWN_MS = 60000;
+
+/** 本次启动内是否已弹过（模块级 = 随应用启动归零，不落盘）。 */
+let shownThisRun = false;
+
+/** 触发条件①：本次启动还没弹过 → 该弹。 */
+export function shouldShowHintThisRun() {
+  return !shownThisRun;
 }
 
-/** 气泡自动消失时间（用户指定：约 6 秒）。 */
+/** 记下"本次启动已弹过"（展示时调用）。 */
+export function markHintShownThisRun() {
+  shownThisRun = true;
+}
+
+/** 触发条件②：第 n 次**成功发送**后该弹（5、10、15…）。 */
+export function shouldShowHintAfterSends(sendCount) {
+  return Number.isInteger(sendCount) && sendCount > 0 && sendCount % 5 === 0;
+}
+
+/** 触发条件③：输入长度达到"长需求"门槛（按去掉首尾空白后的字符数算）。 */
+export function isLongPrompt(text) {
+  return typeof text === "string" && text.trim().length >= 50;
+}
+
+/** 气泡自动消失时间（约 6 秒）。 */
 export const HINT_AUTO_HIDE_MS = 6000;
