@@ -6,9 +6,6 @@ dist/
 dist-electron/
 release/
 release-*/
-# 桌面快捷键专用图标副本（09-17：与 build/icon.ico 同内容但独立路径，用于绕开 Windows
-# 图标缓存旧条目导致的白图标；不入库，缺了可 `cp build/icon.ico build/icon-desktop.ico` 重建）
-build/icon-desktop.ico
 # 发布站源码纳入版本控制（.env 与数据文件由 release-site/.gitignore 排除）
 !release-site/
 *.tsbuildinfo
