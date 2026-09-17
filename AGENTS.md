@@ -170,6 +170,8 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **429 限流重试条自适应（09-17，用户实测「重试弹窗展示没有自适应」）**：`.rate-limit-retry-text` 原本是 `nowrap + overflow:hidden + ellipsis` —— 窄窗下整句被截断（视觉上就是「没自适应」）。改为 `white-space: normal; overflow-wrap: anywhere; flex: 1 1 auto; min-width: 0`（长文案换行完整展示），容器 `inline-flex` → `flex` + `width: fit-content; max-width: min(100%, 720px)`（跟内容但永不越界）。同类弹窗复查：`.notice` 已有 `max-width: min(480px, calc(100vw - 36px))`、`.resource-error` 已有 `overflow-wrap:anywhere + min-width:0`，均完好未动。验收：真启动合成 DOM 几何断言 7 条（窄窗 320px 无横向溢出 + 文案不截断 + 确实换行；反证：改回 nowrap 后文字 scroll 294→641 被截断）全绿即删。
+
 - **弹窗自适应修复（09-17，用户实测「执行计划」清单右边被切掉）**：`.goals-pop` 是 `display:grid; width:300px`，而 grid 子项默认 `min-width:auto`——待办文本 `nowrap` 时 min-content=整句长度，把行撑出面板被裁。修：面板宽 `clamp(300px,24vw,400px)` + `max-width` 上限 + `overflow:hidden auto`（横向禁滚）+ **`.goals-pop > * { min-width:0 }`**（grid 子项允许收缩，这是根因修复）+ 面板内待办/计划步骤文本改 `white-space:normal; overflow-wrap:anywhere`（完整换行展示而非裁切）。同类弹窗全库审计后一并防护：`.composer-quick-pop > button > span`（专家/技能/连接器动态名加省略）、`.browser-drawer-row b/small`（文件名换行）、`.ctx-pop-sub`（邮箱/报错串换行）。`.tab-switcher` 无 JSX 引用（死规则）未动。验收：真启动合成 DOM 几何断言 7 条（含运行时反证：摘掉 `min-width:0` 守卫同样内容横向爆到 1366px）全绿即删。
 
 - **mac 全面适配第一轮（09-16 晚，用户实测 v0.0.19 mac 版报「开发工具全部装不上 / 动画全静止 / 红绿灯没适配 / 语音闪退 / 换供应商旧会话死」，并要求「全方面适配一个都不能漏」）**：
