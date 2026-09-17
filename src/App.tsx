@@ -15,6 +15,7 @@ import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "./lib/session-scope.mjs";
 import { LEGACY_PREFIX, dispatchSignature, emptyDispatch, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeDispatch, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "./lib/thread-runtime.mjs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
+import { isUnsupportedEffortError, pickEffortFallback, blockedEffortsOf, markEffortUnsupported } from "./lib/effort-support";
 import { createSendAnimClaim, armSendAnimationClaim as armSendAnimationClaimLib, claimSendAnimation as claimSendAnimationLib } from "./lib/send-anim.mjs";
 import { macHotkeyLabel } from "./lib/hotkey.mjs";
 import { resolveSkillVisual, type SkillVisual } from "./lib/skill-icon";
@@ -7766,6 +7767,40 @@ export default function App() {
     }
   }
 
+  /**
+   * 档位不被支持时的**降档重发**（09-18：模型配置里的档位声明删掉之后的兜底）。
+   * 与限流重试的区别：不退避（档位错误不是"等等就好"）、只试一次、成功后 toast 说明换了档。
+   * 上下文里已经是降过档的 effort（由调用方写好 retryContextRef）。
+   */
+  async function executeEffortFallbackRetry() {
+    const ctx = retryContextRef.current;
+    if (!ctx) return;
+    setSending(true);
+    setInterrupting(false);
+    setWorkStartedAt(Date.now());
+    markThreadRunning(ctx.threadId);
+    try {
+      const result: any = await window.codex.request("turn/start", {
+        threadId: ctx.threadId,
+        input: ctx.input,
+        model: ctx.model,
+        effort: ctx.effort,
+        personality: ctx.personality,
+        sandboxPolicy: sandboxPolicy(sandbox, threadRef.current?.cwd ?? workspace ?? ""),
+      });
+      if (result?.turn?.id) {
+        setActiveTurnId(result.turn.id);
+        markThreadRunning(ctx.threadId, result.turn.id);
+      }
+      showToast("已换档重发", `改用「${effortLabels[ctx.effort ?? ""] ?? ctx.effort}」重新发送`);
+    } catch (error: any) {
+      setSending(false);
+      markThreadStopped(ctx.threadId);
+      setWorkStartedAt(null);
+      setNotice(error?.message ?? "换档重发失败");
+    }
+  }
+
   function scheduleRateLimitRetry(attempt: number) {
     const ctx = retryContextRef.current;
     if (!ctx) return;
@@ -10051,13 +10086,11 @@ export default function App() {
     return rawOpenFile(resolved);
   }, [rawOpenFile, workspace, treePath]);
 
-  // 该模型声明支持的思考档位：优先读模型条目 efforts（旧版默认三档自动补「极高」），
-  // 未声明用新默认四档 低/中/高/极高。与主进程 buildModelCatalog 同用 declaredModelEfforts
-  // 规则（src/lib/effort.ts），保证 UI 选项 = 引擎真实支持。
-  const customModelEfforts = useMemo(
-    () => declaredModelEfforts((customModel?.models ?? []).find((m) => m.id === customModel?.model)?.efforts),
-    [customModel?.model, customModel?.models],
-  );
+  // 档位一律**全集**（09-18 用户：「把模型配置里面思考选择删了，每个独立会话选择那个就生效那个」）：
+  // 不再按模型条目声明过滤菜单 —— 档位是**会话级**选择，选哪个落到当前会话；
+  // 模型/网关真不支持某档时由发送失败自动学会并降档（src/lib/effort-support.ts），
+  // 而不是让用户先去模型配置里勾掉。
+  const customModelEfforts: string[] = [...ALL_EFFORTS];
   const customModelOption: Model | null = customModel ? {
     id: `custom:${customModel.provider}:${customModel.model}`,
     model: customModel.model,
@@ -10168,12 +10201,12 @@ export default function App() {
   // probe 拉到的可用模型只属于探测时的那家供应商，换供应商后不再用于补全
   const modelSuggestions = modelSourceProvider === customDraft.provider ? (providerModels ?? []) : [];
   // —— 模型设置页（图一/图二排版）状态 ——
-  const [modelEditor, setModelEditor] = useState<{ mode: "add" | "edit"; originalId: string | null; paramsDirty?: boolean; draft: { id: string; contextWindow: string; maxOutputTokens: string; inputTypes: ("text" | "image" | "video")[]; outputTypes: ("text" | "image" | "video")[]; efforts: string[] } } | null>(null);
+  const [modelEditor, setModelEditor] = useState<{ mode: "add" | "edit"; originalId: string | null; paramsDirty?: boolean; draft: { id: string; contextWindow: string; maxOutputTokens: string; inputTypes: ("text" | "image" | "video")[]; outputTypes: ("text" | "image" | "video")[] } } | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
   // ⛔ 这里曾有一个 editingName state（顶部重命名供应商用）；09-17 名字挪到表单字段后它没用了。
   //    注意：editingProvider/setEditingProvider 是**从上面的 useCustomProviders() 解构来的**，
   //    不要在这个位置再 useState 定义一次（会重复声明）。
-  const openModelEditor = (m?: { id: string; contextWindow?: number; maxOutputTokens?: number; inputTypes?: ("text" | "image" | "video")[]; outputTypes?: ("text" | "image" | "video")[]; efforts?: string[] }) => setModelEditor({
+  const openModelEditor = (m?: { id: string; contextWindow?: number; maxOutputTokens?: number; inputTypes?: ("text" | "image" | "video")[]; outputTypes?: ("text" | "image" | "video")[] }) => setModelEditor({
     mode: m ? "edit" : "add",
     originalId: m?.id ?? null,
     paramsDirty: false,
@@ -10183,10 +10216,7 @@ export default function App() {
       maxOutputTokens: m?.maxOutputTokens ? String(m.maxOutputTokens) : "",
       inputTypes: m?.inputTypes ?? ["text"],
       outputTypes: m?.outputTypes ?? ["text"],
-      // 思考档位默认**全选**（09-17 用户：「新建供应商和修改模型，这个都全选吧，可以勾掉」）：
-      // 引擎不校验档位（见 effort.ts 的实证说明），所以默认给全档、用户按自家供应商实际支持勾掉；
-      // 旧规则「模型条目里存的是几档就只勾几档」会让每次改模型都得手动补勾（用户报的就是这个）。
-      efforts: [...ALL_EFFORTS],
+      // 档位不再属于模型条目（09-18：档位纯会话级，见 EffortPicker）——这里不要再加 efforts
     },
   });
   // 编辑器标题里显示的供应商名：编辑已存供应商时显示它的名字，防止同名模型改错供应商
@@ -10207,7 +10237,7 @@ export default function App() {
         maxOutputTokens: Number(modelEditor.draft.maxOutputTokens) || undefined,
         inputTypes: modelEditor.draft.inputTypes,
         outputTypes: modelEditor.draft.outputTypes,
-        efforts: modelEditor.draft.efforts.length ? modelEditor.draft.efforts : undefined,
+        // ⛔ 不再写 efforts（09-18：档位不再是模型条目的属性，纯会话级）
       });
       setModelEditor(null);
       return;
@@ -10220,7 +10250,8 @@ export default function App() {
       maxOutputTokens: Number(modelEditor.draft.maxOutputTokens) || undefined,
       inputTypes: modelEditor.draft.inputTypes,
       outputTypes: modelEditor.draft.outputTypes,
-      efforts: modelEditor.draft.efforts.length ? modelEditor.draft.efforts : undefined,
+      // ⛔ 不再写 efforts（09-18：档位不再是模型条目的属性，纯会话级；
+      //    模型不支持的档位由发送失败时自动学习，见 src/lib/effort-support.mjs）
     };
     const mergedDraft = { ...customDraft, models: [...(customDraft.models ?? []).filter((m) => m.id !== modelEditor.originalId), model] };
     setCustomDraft(mergedDraft);
@@ -10228,6 +10259,9 @@ export default function App() {
     void saveCustomDraft(mergedDraft);
   };
   const selectedModel = allModels.find((entry) => entry.id === modelId || entry.model === modelId);
+  // 该模型/网关**已知不支持**的档位由 EffortPicker 每次打开时自己读
+  // （src/lib/effort-support.ts）—— 这里只把模型 id 给它。
+  const currentModelId = selectedModel?.model ?? modelName(modelId);
   const usingCustomModel = Boolean(customModel && modelId);
   // 官方订阅：thread/start 什么都不传（无 modelProvider、无内联 config）——
   // 引擎走内置 openai 通道 + auth.json ChatGPT 登录凭据，与实测通过的协议复现完全一致；
@@ -13538,37 +13572,13 @@ const commandMatches = useMemo(() => {
   }
 
   function changeEffort(value: string) {
+    // 档位声明（models[].efforts）已随模型配置里的勾选区一起删除（09-18）——
+    // 这里不再 upsert 补声明：档位是纯会话级选择，不被支持时由发送失败自动降档兜底。
     applyEffort(value);
-    // 菜单/命令选到模型未声明的档位时自动补声明：引擎按 catalog 的 supported_reasoning_levels
-    // 校验 effort，未声明会被拒。乐观更新生效配置与设置页草稿两份状态（防弹回竞态、保证
-    // 思考菜单与模型设置页始终一致）+ 落库（upsertProviderModel 重写 model-catalog.json）。
-    const provider = customModel?.provider;
-    const targetModelId = selectedModel?.model ?? customModel?.model;
-    const current = (customModel?.models ?? []).find((m) => m.id === targetModelId);
-    if (provider && current && !(current.efforts ?? []).includes(value)) {
-      // ⛔ effort: value 必须显式带上（09-16 真机验收抓到）：current 是过期闭包，
-      // 里面的 effort 还是旧档位——upsert 落库时会把 applyEffort 刚写进档案的新档位
-      // 覆盖回去，表现为「选了极高，重开又是旧档」（跟着模型保存失效的第二个根源）。
-      const patched = { ...current, efforts: [...(current.efforts ?? []), value], effort: value };
-      const patchModels = (models: any) => (models ?? []).map((m: any) => m.id === patched.id ? patched : m);
-      setCustomModel((c: any) => c ? { ...c, models: patchModels(c.models) } : c);
-      setCustomDraft((c: any) => ({ ...c, models: patchModels(c.models) }));
-      void upsertProviderModel(provider, patched);
-    }
   }
 
-  /** 当前模型「已声明」的档位——思考菜单与模型配置勾选的唯一数据源（双向同步）。 */
-  const currentEffortOptions = useMemo(() => {
-    const declared = (selectedModel?.supportedReasoningEfforts ?? []).map((entry) => entry.reasoningEffort);
-    return declared.length ? declared : (customModel ? customModelEfforts : []);
-  }, [selectedModel, customModel, customModelEfforts]);
-
-  // 模型配置里取消勾选某档位后，若它正好是当前生效档位，自动回落——否则会把
-  // 未声明档位继续发给引擎（引擎按 catalog 校验会拒）。
-  useEffect(() => {
-    if (!customModel || !currentEffortOptions.length) return;
-    if (effort && !currentEffortOptions.includes(effort)) applyEffort(pickDefaultEffort(currentEffortOptions));
-  }, [customModel, currentEffortOptions, effort]);
+  // ⛔「声明被取消后回落」的补正 effect 已删除（09-18）：模型档位声明不存在了，
+  //   菜单恒为全集，任何档位都是合法选择 —— 不支持的档位交给发送时的自动降档兜底。
 
   function changePersonality(value: string) {
     setPersonality(value);
@@ -15956,6 +15966,41 @@ const commandMatches = useMemo(() => {
           return;
         }
       }
+      // 档位不被该模型/网关支持（09-18：档位声明 UI 删掉之后的兜底 —— 选到不支持的档位
+      // 不再让用户提前勾掉，而是**报错时自动学会**：记住这一档 + 自动降一档重发一次）。
+      // 判定要"档位语义 + 否定语义"双命中，否则 invalid api key 之类会被误判（见 effort-support.ts）。
+      if (isUnsupportedEffortError(error?.message) && effort) {
+        const fallbackModelId = selectedModel?.model ?? modelName(modelId);
+        const fallback = pickEffortFallback(effort, blockedEffortsOf(fallbackModelId));
+        const retryThreadId = createdThreadId ?? optimisticBaselineRef.current.threadId ?? threadRef.current?.id;
+        if (fallback && fallback !== effort && retryThreadId) {
+          markEffortUnsupported(fallbackModelId, effort);
+          // 落会话级（有会话）或全局默认（无会话）——与用户手动选档同一条链路，切会话各自独立
+          // （菜单里的"该模型不支持"标记由 EffortPicker 打开时重读，不需要这里同步 state）
+          applyEffort(fallback);
+          setSending(false);
+          setInterrupting(false);
+          setWorkStartedAt(null);
+          markThreadStopped(retryThreadId);
+          retryContextRef.current = {
+            threadId: retryThreadId,
+            input: sendInput,
+            model: fallbackModelId,
+            effort: fallback,
+            personality: selectedModel?.supportsPersonality ? personality : null,
+          };
+          showToast(
+            `「${effortLabels[effort] ?? effort}」不被支持`,
+            `已自动改用「${effortLabels[fallback] ?? fallback}」重发；这个模型以后会跳过该档位`,
+          );
+          window.setTimeout(() => void executeEffortFallbackRetry(), 400);
+          return;
+        }
+        // 已经是最保守的一档（或所有更低档都被标记过）→ 不重发，如实告诉用户
+        if (!fallback) {
+          setNotice(`该模型不支持「${effortLabels[effort] ?? effort}」档位，且没有更低的档位可降级 —— 请在思考强度里手动选一档`);
+        }
+      }
       // 彻底失败也必须复位运行态，否则停止按钮一直转、composer 一直锁
       setPlanRunning(false);
       if (createdThreadId && !runningThreadIdsRef.current.has(createdThreadId)) {
@@ -17193,18 +17238,20 @@ const commandMatches = useMemo(() => {
                     title: (model.inputTypes ?? []).some((t) => t === "image" || t === "video") ? `${model.model} · 视觉` : model.model,
                     // 当前供应商不需要重复说明；跨供应商模型只补充供应商名称用于区分。
                     desc: model.isActive ? "" : model.providerName,
-                  })), { value: "__model_settings__", title: "更多设置…", desc: "打开模型配置，勾选思考档位" }]} toneOf={(option) => option.value === "__model_settings__" ? undefined : avatarToneOf(option.desc || option.title)} onChange={(value) => {
+                  })), { value: "__model_settings__", title: "更多设置…", desc: "打开模型配置（档位在输入框底栏的「思考强度」里选，按会话各自记忆）" }]} toneOf={(option) => option.value === "__model_settings__" ? undefined : avatarToneOf(option.desc || option.title)} onChange={(value) => {
                     if (value === "__model_settings__") { setSettingsPage("model"); setSettingsOpen(true); const live = customModel?.models?.find((m) => m.id === customModel?.model); if (live) openModelEditor(live); return; }
                     chooseModel(value);
                   }} />
                   {/* 思考强度：底栏一个档位按钮，点开是**宽彩色动态条**的弹窗（09-17 用户两次要求：
                       「改成彩色横向拖动进度条，每个等级颜色都不一样」→「弹窗拖动，不是输入框直接
-                      一个长条，gpt 那种宽的彩色动态条」）。档位来源不变 —— 模型声明的档位，
-                      没声明时回落全套。拖动中只跟手、释放才提交，原因见 EffortPicker 注释。 */}
+                      一个长条，gpt 那种宽的彩色动态条」）。档位**恒为全集**（09-18 起不再按模型
+                      声明过滤 —— 档位是会话级选择），不支持的档位由发送失败自动降档兜底
+                      （effort-support.ts）。拖动中只跟手、释放才提交，原因见 EffortPicker 注释。 */}
                   <EffortPicker
-                    levels={currentEffortOptions.length ? currentEffortOptions : [...ALL_EFFORTS]}
+                    levels={[...ALL_EFFORTS]}
                     value={effort}
                     labels={effortLabels}
+                    modelId={currentModelId}
                     onCommit={changeEffort}
                   />
                 </div>
@@ -18475,8 +18522,8 @@ const commandMatches = useMemo(() => {
                     // 已知模型（GPT 系/主流国模）按内置规格自动回填全部推荐参数。
                     // 改名即重评估：只要参数字段没被手动改过（paramsDirty=false），就按新 ID 的规格整体重填——
                     // 第一次填错型号也能改回来；手动改过的字段绝不重置。
-                    // ⛔ 思考档位不参与重评估（09-17 用户要求档位默认全选）：规格表收窄会把刚输入
-                    //    ID 后本就全勾的档位又勾掉几档（用户碰到的正是这个），档位一律保持用户当前勾选。
+                    // ⛔ 思考档位不参与重评估（09-18：档位不是模型属性，纯会话级 —— 见 EffortPicker）；
+                    //   这里只重填上下文 / 最大输出 / 输入输出模态，规格表的 efforts 一律不读。
                     const spec = matchModelSpec(id);
                     if (spec && !modelEditor.paramsDirty) {
                       setModelEditor({ ...modelEditor, draft: { ...modelEditor.draft, id, contextWindow: String(spec.contextWindow), maxOutputTokens: spec.maxOutputTokens ? String(spec.maxOutputTokens) : "", inputTypes: [...(spec.inputTypes ?? ["text"])], outputTypes: [...(spec.outputTypes ?? ["text"])] } });
@@ -18526,15 +18573,10 @@ const commandMatches = useMemo(() => {
                       </label>
                     ))}</div>
                   </div>
-                  <div className="type-chip-group"><span>思考档位 <small>默认全选；供应商不支持的勾掉即可（一个都不勾则回落 低/中/高/极高）</small></span>
-                    <div className="type-chips">{ALL_EFFORTS.map((t) => (
-                      <label key={t} className={`type-chip ${modelEditor.draft.efforts.includes(t) ? "on" : ""} ${effort === t ? "is-current" : ""}`}>
-                        <input type="checkbox" checked={modelEditor.draft.efforts.includes(t)} onChange={(event) => setModelEditor({ ...modelEditor, paramsDirty: true, draft: { ...modelEditor.draft, efforts: event.target.checked ? [...modelEditor.draft.efforts, t] : modelEditor.draft.efforts.filter((x) => x !== t) } })} />
-                        <span>{effortLabels[t] ?? t}{effort === t && <i className="chip-current">当前</i>}</span>
-                      </label>
-                    ))}</div>
-                    <small className="provider-field-hint">带「当前」的是输入框正生效的档位，与思考菜单实时同步。</small>
-                  </div>
+                  {/* ⛔ 思考档位勾选区已删除（09-18 用户：「把模型配置里面思考选择删了，
+                      每个独立会话选择那个就生效那个」）。档位不再由**模型条目声明**决定：
+                      菜单一律全集，选了哪个就落到**当前会话**（thread-runtime 的 effort 字段，
+                      切会话各自回填，互不干扰）。入口只剩输入框底栏那个思考强度滑块。 */}
                   <footer><button className="secondary-setting" onClick={() => setModelEditor(null)}>取消</button><button className="primary-setting" disabled={!modelEditor.draft.id.trim()} onClick={() => void saveModelEditor()}><Check size={14} />保存</button></footer>
                 </div>
               </div>}
