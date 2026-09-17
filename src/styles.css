@@ -428,6 +428,21 @@ button {
 .ch-logo i + i {
   margin-left: 0;
 }
+/* 侧栏徽标改用应用图标（用户指定 09-17）：平时透明底显示蓝色 icon，hover 浮现黑底让白色箭头可读
+ * （收起/展开交互完整保留：图标淡出 → 箭头浮现）。只限定侧栏 toggle，登录页 brand-mark 不受影响。 */
+.ch-logo-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  object-fit: cover;
+  display: block;
+}
+button.brand-mark.sidebar-toggle {
+  background: transparent;
+}
+button.brand-mark.sidebar-toggle:hover {
+  background: linear-gradient(155deg, #26282c 0%, #101113 70%, #0a0b0c 100%);
+}
 .sidebar-toggle-arrow {
   z-index: 2;
   color: #fff;
@@ -1053,7 +1068,8 @@ button {
   z-index: 6;
 }
 .account-avatar {
-  background: var(--green);
+  /* 用户指定（09-17）：头像底色透明，不再显示绿色圆底 */
+  background: transparent;
   width: 26px;
   height: 26px;
   color: var(--accent-text);
