@@ -3677,17 +3677,18 @@ w.postMessage({id:1,op:"list",root});
     (ENHANCE_HINTS.every((hint) => typeof hint === "string" && hint.trim().length >= 8 && hint.length <= 30))
       ? ok("【32】每条提示都是 8~30 字的完整句子（气泡宽度可控）")
       : fail("【32】有提示过短/过长 —— 过短没信息量，过长气泡会换行成块");
-    // 条件①：语义是「本次启动内弹一次」——纯函数侧只能验它成对变化（启动归零靠模块级变量，
-    // 用 localStorage 就违背了"每次启动都弹"，所以额外断言不落盘）
+    // 条件①：语义是「本次启动内弹一次」——启动归零靠模块级变量，用 localStorage 就违背了
+    // "每次启动都弹"，所以额外断言不落盘（下面那条静态守卫负责"初值 = 未弹过"）。
+    // ⛔ 断言必须**幂等**：它内部要调 markHintShownThisRun（改模块状态），若同一进程里被执行
+    //    第二次，`before` 就会是 false。所以**只验"标记之后必须为假"**，不去比较 before
+    //    （写成 `before===true || before===false` 是恒真、等于废掉断言）。
     const runSemantics = (() => {
-      const before = shouldShowHintThisRun();
       markHintShownThisRun();
-      const after = shouldShowHintThisRun();
-      return before === true && after === false;
+      return shouldShowHintThisRun() === false;
     })();
     (runSemantics)
-      ? ok("【32】条件①：本次启动弹一次（弹前可真、弹后转假）")
-      : fail("【32】条件①判定异常 —— 会导致要么每次输入都弹、要么永远不弹");
+      ? ok("【32】条件①：标记后转假（幂等，重复执行不假红）")
+      : fail("【32】markHintShownThisRun 没生效 —— 会导致每次输入都弹");
     const hintSrcRaw = readFileSync(join(ROOT, "src", "lib", "enhance-hints.mjs"), "utf8");
     const hintSrc = hintSrcRaw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     (!/localStorage/.test(hintSrc) && /let shownThisRun = false/.test(hintSrc))
