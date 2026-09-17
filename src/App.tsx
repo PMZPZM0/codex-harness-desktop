@@ -396,6 +396,8 @@ import { ArchiveToast } from "./components/ArchiveToast";
 import { ModelSetupGuide } from "./components/ModelSetupGuide";
 import { EnvCheckDialog, ENV_CHECK_SPEC, ENV_CHECK_OPTOUT_KEY, type EnvCheckState } from "./components/EnvCheckDialog";
 import { CodexAvatar, useCodexName } from "./components/CodexAvatar";
+import { UserAvatar, useUserName } from "./components/UserAvatar";
+import { setUserIdentity } from "./lib/user-identity.mjs";
 import { readStoredCodexAvatar, storeCodexAvatar, setCodexIdentity, getCodexIdentity, subscribeCodexIdentity, CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "./lib/codex-identity.mjs";
 import { pickEnhanceHint, shouldShowHintThisRun, markHintShownThisRun, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_MS, HINT_AUTO_HIDE_MS } from "./lib/enhance-hints.mjs";
 import VoiceWaveform from "./components/VoiceWaveform";
@@ -5096,6 +5098,9 @@ function claimSendAnimation(messageText: string): number | null {
 }
 
 function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote, onImageCopy, onEditSubmit, onOpenFile, onOpenThread }: { item: ThreadItem; turn?: Turn; fallbackWindow?: number; pending?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void }) {
+  // 「你」的名字（09-17 用户「人也要有名字和头像，位置跟 Codex 一样」）：走外部 store，
+  // 与 Codex 名字同一套机制。⛔ 必须与其它 hook 一起放在 early return 之前（注释见下）。
+  const userName = useUserName();
   const [editing, setEditing] = useState(false);
   // 首帧同步判定（useState 惰性初始化）：just-sent class 随首帧 DOM 一起出现，入场动画
   // 必定从挂载瞬间播放。旧版在 effect 里补 class：晚一帧、且与钉顶程序化滚动同帧，
@@ -5184,6 +5189,14 @@ function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote,
   return (
     <div className="user-message-stack">
       {attachRow}
+      {/* 「你」的头部：名字 + 头像（09-17 用户「人也要有名字和头像，位置跟 Codex 一样」）。
+          右对齐、头像在名字**右边** —— 与 Codex 的「头像 + 名字」（左对齐）镜像对称；
+          头像用圆形（Codex 是圆角方形）以示区分。气泡内的 .avatar 本就是 display:none
+          的布局占位，所以这里不会重复出头像。 */}
+      <div className="user-head">
+        <span className="user-head-name">{userName}</span>
+        <UserAvatar size={22} />
+      </div>
       <div
         className={`message user-message${pending ? " pending" : ""}${justSent ? " just-sent" : ""}`}
         data-ruler-mark="user"
@@ -5786,9 +5799,6 @@ function ProgressiveToolPayload({ itemId, text, active, className, language }: {
 }
 
 function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWindow, hideFooter, waitingForApproval, onCopy, onQuote, onFork, onImageCopy, onEditSubmit, onOpenFile, onOpenThread, pending }: { item: ThreadItem; turn?: Turn; turnActive?: boolean; usage?: any; tokenUsage?: any; fallbackWindow?: number; hideFooter?: boolean; waitingForApproval?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void; pending?: boolean }) {
-  // Codex 的名字（09-17）：用户在用户中心取的；走外部 store 而不是逐层传 props
-  // —— 这条调用链上每条消息都要用，透传会污染十几个组件签名（见 codex-identity.mjs）。
-  const codexName = useCodexName();
   if (item.type === "userMessage") {
     return <UserMessageView item={item} turn={turn} pending={pending} onCopy={onCopy} onQuote={onQuote} onImageCopy={onImageCopy} onEditSubmit={onEditSubmit} onOpenFile={onOpenFile} onOpenThread={onOpenThread} />;
   }
@@ -5801,12 +5811,12 @@ function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWindow, h
     return (
       <div className="message assistant-message" data-ruler-mark="agent" data-turn-id={turn?.id} data-item-id={item.id}>
         {/* 头像 + 名字（09-17 用户要求："给 codex 消息上面加一个名字和头像"）。
-            名字取用户在用户中心给 Codex 取的名字，默认 Codex；头像可用用户上传的，默认内置矢量头像。
-            结构上仍是 .message 的两列 grid（第一列头像、第二列内容），名字放在内容列顶部——
-            不新增列，避免影响滚动锚点与刻度尺依赖的既有结构。 */}
-        <div className="avatar agent"><CodexAvatar size={22} /></div>
+            头像 + 名字已**提到回合级**（TurnView 的 `.turn-head`，一轮只渲染一份）—— 09-17 用户
+            「一轮会话就一个 Codex 名字和 Codex 头像就行，就在会话上面就行」。
+            ⛔ 别在这里加回来：一个回合可能有多段 agentMessage，加回来就是一份一份地重复；
+            而且头部长在这里要等首 token（空 text 被上面那条 `return null` 挡掉），
+            症状正是用户报的「名字和头像没有第一时间出来」。 */}
         <div className="assistant-col">
-          <div className="assistant-name">{codexName}</div>
           {/* 流式与完成态同一条 Markdown 渲染路径（raf 合帧保证流畅；remark-breaks 保真单换行），
               完成瞬间不再切换渲染方式，消除“回复完闪一下变样” */}
           <ProgressiveAgentBody
@@ -5939,6 +5949,9 @@ const MemoItemView = memo(ItemView, (prev, next) =>
 );
 
 function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn }: { turn: Turn; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean }) {
+  // Codex 的名字（09-17）：用户在用户中心取的；走外部 store 而不是逐层传 props
+  // —— 回合标识（.turn-head）在 TurnView 渲染，这里取一次（见 codex-identity.mjs）。
+  const codexName = useCodexName();
   const completedTask = turn.status === "completed" && isTaskTurn(turn);
   // 回合已结束（含 completed/interrupted/failed）——普通聊天回合没有文件改动（不满足 isTaskTurn），
   // 但只要回合已收尾就该展示自己的操作栏（复制/分支/统计），避免被 task 限定卡掉。
@@ -5979,6 +5992,27 @@ function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval,
     <div className={`turn-group ${running ? "running" : turn.error ? "error" : "completed"}`} id={`turn-${turn.id}`} data-current-turn={isLastTurn ? "true" : undefined}>
       {userItems.map((item) => <MemoUserMessageView item={item} turn={turn} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} key={item.id} />)}
       <div className="turn-card">
+        {/* 回合标识：一轮会话只有一份「头像 + 名字」（09-17 用户「一轮会话就一个 Codex 名字和
+            Codex 头像就行，就在会话上面就行」）。放在回合最上面，且**回合一建立就渲染** ——
+            用户气泡一上屏就有，不用等引擎首个 token（原来长在 agentMessage 里，空 text 被
+            「空文本不渲染」挡掉，症状正是「名字和头像没第一时间出来」）。
+            条件与下面的占位头一致（userItems 已上屏）；回合结束后只有真产出过内容才留头。 */}
+        {userItems.length > 0 && (running || responseItems.length > 0) && (
+          <div className="turn-head">
+            <span className="turn-head-avatar"><CodexAvatar size={22} /></span>
+            <span className="turn-head-name">{codexName}</span>
+          </div>
+        )}
+        {/* 「正在处理 N 秒」+ 它下面那条灰线（border-bottom）：09-17 用户「那个正在处理和那条
+            灰线也没有在发送消息后第一时间出来」。原条件是 `running && isTaskTurn(turn)`，而
+            isTaskTurn 要求回合内**出现过工具调用** —— 纯聊天或刚发出消息时压根不渲染。
+            放宽成 `running`，但**仍要等回合内已有 userMessage**：turn/started 先建回合、
+            userMessage item 晚到，而乐观气泡排在 timeline **之后**，中间那段窗口里计时会顶到
+            用户消息**上方**（09-17 用户报过同款错位「这个怎么到这个位置了」，实测 1002ms 复现）。
+            ⛔ 位置必须在「生成中」**之上**（09-17 用户「你这顺序不对吧，生成中怎么能放灰线上面呢」）：
+            计时 + 分隔线属于**回合头信息**（紧接口回合标识），状态词属于内容区 —— 灰线是两者的分界。
+            「发送后立刻」的反馈由乐观区块的 .turn-head 负责（见下方 chat-anchor 处）。 */}
+        {running && userItems.length > 0 && <RunningProcessTime />}
         {/* 占位头必须等回合内已有 userMessage：turn/started 先建回合、userMessage item 晚到，
             若不等就会渲染在乐观用户气泡上方（切会话后首条消息时肉眼可见错位，09-04 反馈）。
             空窗期反馈由乐观气泡 + 底部 working-indicator 覆盖。 */}
@@ -5989,7 +6023,6 @@ function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval,
         <div className="turn-card-body">
           <div className="codex-turn">
           {stoppedWithoutReply && <div className="interrupted-turn"><CircleStop size={15} /><div><strong>你在 {elapsedSeconds ?? 0} 秒后停止了</strong><span>Codex 尚未开始回复，因此没有生成内容。</span></div></div>}
-          {running && isTaskTurn(turn) && <RunningProcessTime />}
           {/* inner 永远不渲染 finalAgent 的 footer（避免 running 时每个新 body 短暂成为 finalAgent 挂按钮 + 避免与外层 2129 行双排）。外层 turnFinished 决定最终是否独占渲染一份。CompletedChanges 仍需 completedTask（聊天回合没文件改动可显）。 */}
           <TurnFoldStream items={responseItems} turn={turn} running={running} fallbackWindow={fallbackWindow} waitingForApproval={waitingForApproval} handlers={handlers} finalAgentId={finalAgent?.id} usage={usage} tokenUsage={tokenUsage} />
           {completedTask && <CompletedChanges turn={turn} />}
@@ -9134,6 +9167,15 @@ export default function App() {
       setCodexIdentity({ name: cfg?.assistantName || CODEX_DEFAULT_NAME, avatar: readStoredCodexAvatar() });
     }).catch(() => undefined);
   }, []);
+  // 「你」（用户）的身份同样灌进外部 store（09-17 用户「人也要有名字和头像，位置跟 Codex 一样」）：
+  // 用户消息的头部要用它 —— 与 Codex 侧同一套机制，免得在消息渲染链上逐层传 props。
+  // 名字的权威源是上面异步回读的 personalization.nickname（会覆盖 localStorage），所以这里跟着走。
+  useEffect(() => {
+    setUserIdentity({
+      name: username,
+      avatar: userAvatar ? { type: userAvatar.type, value: userAvatar.value } : { type: "none", value: "" },
+    });
+  }, [username, userAvatar]);
   // 左下角账户名：点击进入行内编辑，Enter/失焦保存、Esc 取消
   const [accountEditing, setAccountEditing] = useState(false);
   const [accountDraft, setAccountDraft] = useState("");
@@ -16583,7 +16625,19 @@ const commandMatches = useMemo(() => {
               「这个怎么到这个位置了」）：原先它排在最前面，于是「发送后 · 引擎回声前」这段时间里，
               状态条显示在刚发出的那条消息**上方**；而气泡阶段时间线里只有「你的消息 + 状态条」，
               正确顺序应当是 消息 → 状态条（与真实阶段的「回合内容 → 状态条」一致）。见下方插入处。 */}
-          {optimisticInput && !optimisticConfirmed && <div id="chat-anchor"><ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} /></div>}
+          {optimisticInput && !optimisticConfirmed && <>
+            <div id="chat-anchor"><ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} /></div>
+            {/* 乐观回合标识：引擎回声前就先把 Codex 的「头像 + 名字」摆出来 —— 09-17 用户
+                「Codex 名字和头像没有第一时间出来」。引擎要 1~2s 才 turn/started + userMessage 落地
+                （实测：1002ms 回合已在跑、1904ms userMessage 才到），这段窗口原先只有气泡和状态条。
+                与 TurnView 的 .turn-head 同构同位置，回声后由真实回合接管，视觉上不跳。
+                ⛔ 这里**不放**「正在处理 N 秒」：那段计时归真实回合的 .running-process-time，
+                两处都挂会各自从 0 计时、接管时数字跳回去。 */}
+            <div className="turn-head">
+              <span className="turn-head-avatar"><CodexAvatar size={22} /></span>
+              <span className="turn-head-name">{codexIdentity.name}</span>
+            </div>
+          </>}
           {/* 生成过程状态条：**必须排在乐观气泡之后**（09-17 用户实测「这个怎么到这个位置了」）——
               排在前面时，发送后那段「你的消息已上屏、引擎还没回声」的窗口里状态条会显示在消息**上方**；
               气泡阶段时间线里只有「你的消息 + 状态条」，顺序应与真实阶段「回合内容 → 状态条」一致。

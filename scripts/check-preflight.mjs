@@ -3789,14 +3789,50 @@ w.postMessage({id:1,op:"list",root});
   //   `.avatar{display:none}` 是为"assistant 消息左侧不放图标"的老设计服务的 —— 加了名字之后，
   //   它把整个头像列隐掉，用户只看得到名字。改消息头样式时极容易再踩回去。
   //   ⛔ 判 CSS 前先剥注释：注释里也写着 display:none，不剥会被顶成假绿（本项目老坑）。
+  //   ③ 09-17 二次反馈后的**最终形态**：「一轮会话就一个 Codex 名字和 Codex 头像就行，就在会话
+  //      上面就行」+「名字和头像没有第一时间出来」→ 头从「每条 agent 消息一份」提到**回合级一份**
+  //      （`.turn-head`，TurnView 渲染），且回合建立即渲染（不等首个 token）。
+  //      三种失效形态都静默：回合头没了 / 消息里又长出头像（一轮重复多份）/ 回合头退回"等有内容"。
   {
     const cssNC = readFileSync(join(ROOT, "src", "styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-    const headBlock = cssNC.slice(cssNC.indexOf(".codex-turn .assistant-message {"), cssNC.indexOf(".message-body {"));
-    (/grid-template-columns:\s*22px minmax\(0, 1fr\)/.test(headBlock))
-      ? ok("【32】assistant 消息头留着头像列（22px + 内容列）")
-      : fail("【32】assistant 消息头没有头像列 —— 头像不会显示（用户报过「只有名字没头像」）");
+    const appC3 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+    // 头像+名字的最终形态：**回合级一份**（.turn-head），不再是「每条 agent 消息一份」
+    const turnHead = appC3.slice(appC3.indexOf("回合标识：一轮会话只有一份"), appC3.indexOf("占位头必须等回合内已有 userMessage"));
+    (/className="turn-head-avatar"/.test(turnHead) && /<CodexAvatar size=\{22\} \/>/.test(turnHead))
+      ? ok("【32】回合级渲染「头像 + 名字」（.turn-head，一轮只一份）")
+      : fail("【32】回合级头没了 —— 用户看不到 Codex 名字头像");
+    (/userItems\.length > 0 && \(running \|\| responseItems\.length > 0\)/.test(turnHead))
+      ? ok("【32】回合头不依赖首个 token（用户气泡上屏即出现）")
+      : fail("【32】回合头的显示条件变了 —— 可能又回到「名字头像没第一时间出来」");
+    (!/className="message assistant-message"[\s\S]{0,220}className="avatar agent"/.test(appC3))
+      ? ok("【32】agent 消息里不再带头像（一轮不会重复多份）")
+      : fail("【32】agent 消息里又长出头像 —— 一轮多段回复会重复多份（用户要求「就一个」）");
+    (/\.turn-head\s*\{/.test(cssNC) && /\.turn-head-avatar\s*\{/.test(cssNC) && /\.turn-head-name\s*\{/.test(cssNC))
+      ? ok("【32】.turn-head / 头像 / 名字三条样式都在")
+      : fail("【32】.turn-head 样式缺 —— 回合头会没尺寸或没对齐");
+    const procIdx = appC3.indexOf("{running && userItems.length > 0 && <RunningProcessTime />}");
+    const cardIdx = appC3.indexOf('{running && !hasVisible && userItems.length > 0 && <header className="turn-card-header">');
+    (procIdx > 0)
+      ? ok("【32】「正在处理 N 秒 + 灰线」不再依赖工具调用（回合内 userMessage 一到就显示）")
+      : fail("【32】RunningProcessTime 的条件又被改掉（缺 userItems 会顶到用户消息上方；挂回 isTaskTurn 则纯聊天看不到）");
+    (procIdx > 0 && cardIdx > 0 && procIdx < cardIdx)
+      ? ok("【32】顺序：正在处理 + 灰线在「生成中」之上（用户 09-17 明确定的顺序）")
+      : fail("【32】「生成中」跑到灰线上面了 —— 用户明确否过这个顺序「你这顺序不对吧」");
+    (/\{optimisticInput && !optimisticConfirmed && <>[\s\S]{0,700}?turn-head-avatar/.test(appC3))
+      ? ok("【32】乐观阶段也渲染回合头（引擎回声前就有头像 + 名字）")
+      : fail("【32】乐观阶段没有回合头 —— 头像名字要等引擎回声（正是用户报的「没第一时间出来」）");
+    // 「你」（用户）的头部（09-17 用户「人也要有名字和头像，位置跟 Codex 一样」）
+    (/className="user-head"/.test(appC3) && /<UserAvatar size=\{22\} \/>/.test(appC3))
+      ? ok("【32】用户消息也有「名字 + 头像」头（.user-head）")
+      : fail("【32】用户消息缺名字 + 头像 —— 用户要求「人也要有名字和头像」");
+    (/setUserIdentity\(\{[\s\S]{0,260}?\}, \[username, userAvatar\]\)/.test(appC3))
+      ? ok("【32】用户身份灌进外部 store（消息头取得到，不必逐层传 props）")
+      : fail("【32】用户身份没灌进 store —— 用户消息头拿不到名字/头像");
+    (/\.user-head\s*\{/.test(cssNC) && /\.user-head-name\s*\{/.test(cssNC) && /\.user-avatar\s*\{/.test(cssNC))
+      ? ok("【32】.user-head / 名字 / 头像三条样式都在")
+      : fail("【32】.user-head 样式缺 —— 名字头像行会没对齐");
     (!/\.(?:codex-turn|process-content) \.assistant-message \.avatar[\s\S]{0,140}?display:\s*none/.test(cssNC))
-      ? ok("【32】没有规则再隐藏 assistant 头像（display:none 已清除）")
+      ? ok("【32】没有规则把 assistant 头像 display:none 掉")
       : fail("【32】有规则把 assistant 头像 display:none 了 —— 用户只会看到名字");
   }
 
