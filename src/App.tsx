@@ -15,7 +15,7 @@ import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "./lib/session-scope.mjs";
 import { LEGACY_PREFIX, dispatchSignature, emptyDispatch, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeDispatch, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "./lib/thread-runtime.mjs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
-import { isUnsupportedEffortError, pickEffortFallback, blockedEffortsOf, markEffortUnsupported } from "./lib/effort-support";
+import { isUnsupportedEffortError, pickEffortFallback, blockedEffortsOf, markEffortUnsupported, clearEffortUnsupported } from "./lib/effort-support";
 import { createSendAnimClaim, armSendAnimationClaim as armSendAnimationClaimLib, claimSendAnimation as claimSendAnimationLib } from "./lib/send-anim.mjs";
 import { macHotkeyLabel } from "./lib/hotkey.mjs";
 import { resolveSkillVisual, type SkillVisual } from "./lib/skill-icon";
@@ -15946,6 +15946,9 @@ const commandMatches = useMemo(() => {
       enhanceSendCountRef.current += 1;
       if (shouldShowHintAfterSends(enhanceSendCountRef.current)) enhanceHintAfterSendRef.current = true;
       void refreshThreads();
+      // **自愈**（09-18）：这次用当前档位发送**成功**了 → 清掉「该档位不被支持」的记录。
+      // 没有这一步，用户强制选回被标灰的档位、或网关后来放开了，标记会永久留着（一直标灰）。
+      if (effort) clearEffortUnsupported(selectedModel?.model ?? modelName(modelId), effort);
     } catch (error: any) {
       // turn/start RPC 直接以限流失败：安排应用层自动重试（10 次退避）
       if (isRateLimitError(error?.message)) {
