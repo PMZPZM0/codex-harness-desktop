@@ -391,6 +391,7 @@ import { PersonalizationPage } from "./components/PersonalizationPage";
 import VoiceSettingsSection from "./components/VoiceSettingsSection";
 import { BootSplash, type BootStage } from "./components/BootSplash";
 import { HelpDialog, type HelpKey, type HelpTopic } from "./components/HelpDialog";
+import { ArchiveToast } from "./components/ArchiveToast";
 import { pickEnhanceHint, shouldShowHintThisRun, markHintShownThisRun, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_MS, HINT_AUTO_HIDE_MS } from "./lib/enhance-hints.mjs";
 import VoiceWaveform from "./components/VoiceWaveform";
 import VoiceDevToolsSection from "./components/VoiceDevToolsSection";
@@ -8940,6 +8941,8 @@ export default function App() {
   /** 设置页「使用帮助」弹窗（09-17 用户要求：模型/插件/技能/MCP/专家团/语音/开发工具都要有）。
    *  null = 不显示；`overview` 是设置总览（标题栏那枚按钮），其余由各页帮助按钮写入 HelpKey。 */
   const [helpKey, setHelpKey] = useState<HelpTopic | null>(null);
+  /** 归档后提示浮层（09-17）：token 用于重置倒计时，name 是刚归档的会话名。 */
+  const [archiveToast, setArchiveToast] = useState<{ name: string; token: number } | null>(null);
   const [toolsStatus, setToolsStatus] = useState<{ id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>([]);
   const refreshToolsStatus = () => { window.codex.toolStatus().then(setToolsStatus).catch(() => setToolsStatus([])); };
   const [devRuntimes, setDevRuntimes] = useState<DevRuntimeEntry[]>([]);
@@ -9827,7 +9830,6 @@ export default function App() {
     if (!target) return;
     providerAutoOpenRef.current = true;
     setEditingProvider(target.provider);
-    setEditingName(false);
     setCustomDraft({ provider: target.provider, name: target.name, model: target.model, baseUrl: target.baseUrl, contextWindow: String(target.contextWindow ?? 128000), wireApi: target.wireApi ?? "responses", apiKey: "", models: target.models ?? (target.model ? [{ id: target.model }] : []), enabled: target.enabled ?? true });
   }, [settingsOpen, settingsPage, customModel, providersList, editingProvider]);
   // 供应商切换「待重启生效」：切换只保存配置不重启引擎（不打断正在运行的会话），
@@ -10108,7 +10110,9 @@ export default function App() {
   // —— 模型设置页（图一/图二排版）状态 ——
   const [modelEditor, setModelEditor] = useState<{ mode: "add" | "edit"; originalId: string | null; paramsDirty?: boolean; draft: { id: string; contextWindow: string; maxOutputTokens: string; inputTypes: ("text" | "image" | "video")[]; outputTypes: ("text" | "image" | "video")[]; efforts: string[] } } | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
-  const [editingName, setEditingName] = useState(false);
+  // ⛔ 这里曾有一个 editingName state（顶部重命名供应商用）；09-17 名字挪到表单字段后它没用了。
+  //    注意：editingProvider/setEditingProvider 是**从上面的 useCustomProviders() 解构来的**，
+  //    不要在这个位置再 useState 定义一次（会重复声明）。
   const openModelEditor = (m?: { id: string; contextWindow?: number; maxOutputTokens?: number; inputTypes?: ("text" | "image" | "video")[]; outputTypes?: ("text" | "image" | "video")[]; efforts?: string[] }) => setModelEditor({
     mode: m ? "edit" : "add",
     originalId: m?.id ?? null,
@@ -15110,6 +15114,10 @@ const commandMatches = useMemo(() => {
   };
 
   async function archiveThread(id: string) {
+    // 归档后提示（09-17 用户要求）：先取名字（归档后列表里就查不到了）
+    const archivedName = threadsRef.current.find((entry) => entry.id === id)?.name
+      || threadCacheRef.current.get(id)?.name
+      || "当前会话";
     await cascadeTeamCluster(id, "archive");
     await window.codex.request("thread/archive", { threadId: id });
     setThreads((current) => current.filter((entry) => entry.id !== id));
@@ -15121,6 +15129,8 @@ const commandMatches = useMemo(() => {
       startNewThread();
       requestAnimationFrame(() => composerInputRef.current?.focus());
     }
+    // 提示浮层（可跳归档管理 / 5 秒自动消失 / 可手动关）；token 递增保证连续归档都拿到完整 5 秒
+    setArchiveToast((current) => ({ name: archivedName, token: (current?.token ?? 0) + 1 }));
   }
 
   async function renameThread(id: string, value: string) {
@@ -16455,8 +16465,16 @@ const commandMatches = useMemo(() => {
           )}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
           {/* 设置页使用帮助（09-17 用户要求）：模型/插件/技能/MCP/专家团/语音/开发工具 + 设置总览 */}
-          <HelpDialog
-            helpKey={helpKey}
+          {/* 归档后提示浮层（09-17 用户要求）：5 秒自动消失、可手动关、点「查看归档」跳归档管理页 */}
+          {archiveToast && (
+            <ArchiveToast
+              token={archiveToast.token}
+              threadName={archiveToast.name}
+              onOpenArchive={() => { setSettingsPage("archive"); setSettingsOpen(true); }}
+              onClose={() => setArchiveToast(null)}
+            />
+          )}
+          <HelpDialog helpKey={helpKey}
             onClose={() => setHelpKey(null)}
             onNavigate={(page) => {
               // 总览里的页名 = settingsNav 的展示文案，反查回页面 key 后跳转
@@ -18051,10 +18069,9 @@ const commandMatches = useMemo(() => {
                             // 未配置的常驻赞助商卡：进表单预填 PPtoken 端点，填密钥保存即可用；启用态与卡片开关联动
                             setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
                             setEditingProvider(null);
-                            setEditingName(false);
                             return;
                           }
-                          setEditingProvider(p.provider); setEditingName(false); setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true });
+                          setEditingProvider(p.provider); setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true });
                         }}
                       >
                         <span
@@ -18086,10 +18103,8 @@ const commandMatches = useMemo(() => {
                             if (isPseudoPptoken) {
                               setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
                               setEditingProvider(null);
-                              setEditingName(false);
                             } else {
                               setEditingProvider(p.provider);
-                              setEditingName(false);
                               setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true });
                             }
                           }}
@@ -18105,14 +18120,12 @@ const commandMatches = useMemo(() => {
                 {/* 不打开编辑器也能测当前生效供应商：切换/保存后最常用的自检动作。
                     失败会弹带排查清单的中文提示，认证类错误保留供应商原文。 */}
                 {customModel && <button className="add-provider-btn" title={`测试当前生效供应商：${customModel.name} · ${customModel.model}`} disabled={!!probingProvider} onClick={() => void probeActiveProvider()}>{probingProvider === "test" ? <Spinner /> : <RefreshCw size={13} />}测试当前供应商</button>}
-                <button className="add-provider-btn" onClick={() => { providerAutoOpenRef.current = true; setCustomDraft({ provider: "custom" + (Date.now() % 1000), name: "自定义供应商", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true }); setEditingProvider(null); setEditingName(false); }}><Plus size={13} />添加供应商</button>
+                <button className="add-provider-btn" onClick={() => { providerAutoOpenRef.current = true; setCustomDraft({ provider: "custom" + (Date.now() % 1000), name: "", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true }); setEditingProvider(null); }}><Plus size={13} />添加供应商</button>
               </div>
               <div className="provider-form">
                 <div className="provider-detail-head">
-                  {editingName ? (
-                    <input className="provider-name-input" value={customDraft.name} autoFocus onChange={(event) => setCustomDraft({ ...customDraft, name: event.target.value })} onBlur={() => setEditingName(false)} onKeyDown={(event) => { if (event.key === "Enter") setEditingName(false); }} placeholder="供应商名称" />
-                  ) : <strong onClick={() => setEditingName(true)} title="点击重命名">{customDraft.name || "未命名供应商"}</strong>}
-                  <button className="icon-button" title="重命名" onClick={() => setEditingName((v) => !v)}><PenLine size={13} /></button>
+                  {/* 供应商名字**不在顶部**（09-17 用户要求）：挪到下方表单当普通字段，
+                      顶部只留状态与操作，避开"标题栏里塞输入框"的别扭观感。 */}
                   {(() => {
                     // 未配置的 PPtoken 推荐卡：表单头部启用态与左侧卡片开关同一数据源（pptokenCardOff），双向联动
                     const pseudoPptokenForm = customDraft.provider === "pptoken" && !providersList.some((p) => p.provider === "pptoken");
@@ -18133,6 +18146,9 @@ const commandMatches = useMemo(() => {
                 {customDraft.provider === "pptoken" && !providersList.some((p) => p.provider === "pptoken") && (
                   <p className="provider-form-hint">只需下方填入 API Key 即可使用；<a href="https://api.pptoken.cc/register?aff=X82JSNVC3W3S" onClick={(event) => { event.preventDefault(); void window.codex.openExternal("https://api.pptoken.cc/register?aff=X82JSNVC3W3S"); }}>注册 PPtoken 领取体验额度 ↗</a></p>
                 )}
+                {/* 供应商名称（09-17 用户要求从顶部挪到这里）：多个供应商重名时无法区分，
+                    所以新增时必填（保存按钮会校验）。 */}
+                <label className="provider-field"><span>供应商名称 <i className="provider-required">必填</i></span><input value={customDraft.name} onChange={(event) => setCustomDraft({ ...customDraft, name: event.target.value })} placeholder="例如：OpenAI 官方 / 公司网关（用于区分多个供应商）" /></label>
                 <p className="provider-id-line">供应商 ID：{customDraft.provider}</p>
                 <label className="provider-field"><span>Base URL</span><input value={customDraft.baseUrl} onChange={(event) => setCustomDraft({ ...customDraft, baseUrl: event.target.value })} placeholder="https://example.com/v1" /></label>
                 {/* ⛔ 不提供「API 格式」下拉（09-16）：引擎只会发 Responses，写 wire_api = "chat"
@@ -18195,8 +18211,11 @@ const commandMatches = useMemo(() => {
                   <button className="add-model-btn" onClick={() => openModelEditor()}><Plus size={13} />添加模型</button>
                   {providerStatus && <p className={`model-probe-status ${providerStatus.startsWith("连接失败") || providerStatus.includes("连接失败") ? "bad" : "ok"}`}>{providerStatus}</p>}
                 </div>
-                <div className="settings-actions"><span>配置后可在聊天时选择使用。带 ⚡ 可测试模型连通。</span>
-                  <button className="primary-setting" disabled={savingSettings || !customDraft.baseUrl} onClick={() => void (async () => {
+                <div className="settings-actions"><span>{!customDraft.name.trim() ? <b className="provider-required-hint">请先填写「供应商名称」——多个供应商重名时无法区分</b> : "配置后可在聊天时选择使用。带 ⚡ 可测试模型连通。"}</span>
+                  <button className="primary-setting" disabled={savingSettings || !customDraft.baseUrl || !customDraft.name.trim()} onClick={() => void (async () => {
+                    // 供应商名称必填（09-17 用户要求）：空名字会让多个供应商无法区分。
+                    // 按钮虽已禁用，这里再兜一层（键盘回车等路径不会绕过 disabled，但语义上要明确）。
+                    if (!customDraft.name.trim()) { showToast("请填写供应商名称", "建议用服务商名或用途命名，例如「OpenAI 官方」「公司网关」"); return; }
                     // 用户要求：保存模型配置后重启整个应用（引擎 Key 全新注入，状态彻底归位）
                     if (!(await openAppConfirm("保存供应商", "保存后应用将自动重启使配置完全生效。\n是否继续？", "保存并重启应用"))) return;
                     try {
