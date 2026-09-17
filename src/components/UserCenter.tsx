@@ -84,17 +84,48 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
 
   const pickEmoji = (emoji: string) => setProfile((p) => ({ ...p, avatar: emoji, avatarType: "emoji" }));
 
+  /** 头像统一压到 128×128（居中裁正方形）再转 dataURL。
+   *  ⛔ 为什么必须压：原来直接 readAsDataURL 原图 —— 用户传一张 3MB 照片就是 4MB+ 的 base64，
+   *  localStorage 配额（通常 5MB）很容易写失败，而 storeCodeAvatar / user-profile 的写入是
+   *  **静默** catch 的：当次会话看着正常、重启后头像没了 —— 09-17 用户报「Codex 头像又不见了」
+   *  正是这条链路（磁盘上根本没有 codex-avatar 键）。压完通常只剩几十 KB，写得进、渲染也快。
+   *  解码失败就返回原始 dataURL —— 渲染侧（CodexAvatar / UserAvatar）有 onError 兜回默认头像。 */
+  const fileToAvatarDataUrl = async (file: File, size = 128): Promise<string> => {
+    const raw = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("读取文件失败"));
+      reader.readAsDataURL(file);
+    });
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error("图片解码失败"));
+        el.src = raw;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return raw;
+      // 居中裁正方形：头像容器是正方形，直接拉伸会把人脸/图标压变形
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+      return canvas.toDataURL("image/png");
+    } catch {
+      return raw;
+    }
+  };
+
   const onAvatarFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setProfile((p) => ({ ...p, avatar: String(reader.result), avatarType: "image" }));
-      onProfileChange?.({ avatarType: "image", avatar: String(reader.result) });
-      onNotice("头像已更新");
-    };
-    reader.readAsDataURL(file);
-    e.target.value = "";
+    e.target.value = "";   // 先清：下面 await 之后 file input 可能已被复用
+    const dataUrl = await fileToAvatarDataUrl(file);
+    setProfile((p) => ({ ...p, avatar: dataUrl, avatarType: "image" }));
+    onProfileChange?.({ avatarType: "image", avatar: dataUrl });
+    onNotice("头像已更新");
   };
 
   // ── Codex 的身份（09-17 用户要求）：名字 + 头像 ──
@@ -114,16 +145,13 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
     onAssistantNameChange?.(next);
     onNotice(`Codex 的名字已改为「${next}」，之后的回复都会用它`);
   };
-  const onCodexAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onCodexAvatarFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      onCodexAvatarChange?.({ type: "image", value: String(reader.result) });
-      onNotice("Codex 头像已更新");
-    };
-    reader.readAsDataURL(file);
-    e.target.value = "";
+    e.target.value = "";   // 先清：下面 await 之后 file input 可能已被复用
+    const dataUrl = await fileToAvatarDataUrl(file);
+    onCodexAvatarChange?.({ type: "image", value: dataUrl });
+    onNotice("Codex 头像已更新");
   };
 
   const avatarRender = profile.avatarType === "image" && profile.avatar

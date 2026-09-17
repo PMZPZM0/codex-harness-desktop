@@ -3831,6 +3831,21 @@ w.postMessage({id:1,op:"list",root});
     (/\.user-head\s*\{/.test(cssNC) && /\.user-head-name\s*\{/.test(cssNC) && /\.user-avatar\s*\{/.test(cssNC))
       ? ok("【32】.user-head / 名字 / 头像三条样式都在")
       : fail("【32】.user-head 样式缺 —— 名字头像行会没对齐");
+    // 头像健壮性（09-17 用户报「Codex 头像又不见了」）：这个症状**在 DOM 上看不出来** ——
+    // <img> 加载失败时尺寸/可见性/透明度全正常，就是没有像素。三种来源都要兜住：
+    // 坏 base64 / 上传太大写不进 localStorage / 用户传了坏图。判据 = 必须有 onError 回退。
+    const codexAv = readFileSync(join(ROOT, "src", "components", "CodexAvatar.tsx"), "utf8");
+    const userAvC = readFileSync(join(ROOT, "src", "components", "UserAvatar.tsx"), "utf8");
+    const userCenterC = readFileSync(join(ROOT, "src", "components", "UserCenter.tsx"), "utf8");
+    (/onError=\{\(\) => setBroken\(true\)\}/.test(codexAv) && /DefaultCodexAvatar size=\{size\}/.test(codexAv))
+      ? ok("【32】Codex 头像加载失败回退默认头像（不留空白）")
+      : fail("【32】Codex 头像没有 onError 回退 —— 坏图渲染成一片空白，用户只会说「头像不见了」");
+    (/onError=\{\(\) => setBroken\(true\)\}/.test(userAvC))
+      ? ok("【32】用户头像加载失败回退名字首字")
+      : fail("【32】用户头像没有 onError 回退 —— 坏图渲染成一片空白");
+    ((userCenterC.match(/fileToAvatarDataUrl\(file\)/g) || []).length === 2)
+      ? ok("【32】两处头像上传都走 128×128 压缩（防写不进 localStorage → 重启丢头像）")
+      : fail("【32】头像上传没走压缩 —— 大图 base64 静默写不进 localStorage，重启后头像丢失");
     (!/\.(?:codex-turn|process-content) \.assistant-message \.avatar[\s\S]{0,140}?display:\s*none/.test(cssNC))
       ? ok("【32】没有规则把 assistant 头像 display:none 掉")
       : fail("【32】有规则把 assistant 头像 display:none 了 —— 用户只会看到名字");
