@@ -3276,6 +3276,70 @@ w.postMessage({id:1,op:"list",root});
       ? ok("【29】状态条只渲染一处（多份会让它上下各出现一次）")
       : fail("【29】run-activity-bar 渲染点不唯一");
   }
+
+  // ⑦ mac「不使用项目地址」+ 快捷键平台分叉（09-17 用户报：「mac 的不使用项目地址功能用不了，没有适配」）
+  //   三个独立死因（任一都足以让 mac 用不了）：
+  //   ① 发送路径条件是裸 `!workspace` —— mac 全新机器从没设过项目地址，于是用户明确选了
+  //      「不使用项目地址」也照样被清掉 + 强制弹目录选择框（运行时反证：消息被目录框拦住、永不上屏）。
+  //   ② 全局 keydown 写死 `!event.ctrlKey || … || event.metaKey` —— mac 的命令键是 ⌘，
+  //      这句把 mac 的**所有**快捷键 return 掉（⌘O 打开工作区就在其中）。
+  //   ③ scratch 目录优先写 app 安装目录 —— mac 上那是 .app/Contents/MacOS，写进去破坏代码签名。
+  {
+    const mainSrc = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+    /if \(!workspace && !welcomeScratchDir\) \{/.test(appCode)
+      ? ok("【30】欢迎页发送路径：有 scratch 时不弹目录选择框（mac 上该选项才真的能用）")
+      : fail("【30】发送路径条件缺 !welcomeScratchDir —— mac 全新机器上「不使用项目地址」会被清掉并弹框");
+    /if \(welcomeScratchDir\) setWelcomeScratchDir\(null\);\s*\n\s*await chooseWorkspace\(\)/.test(appCode)
+      ? fail("【30】旧写法回归 —— 发送时会把用户刚选的临时目录清掉")
+      : ok("【30】已无「无条件清 scratch 再弹框」的旧写法");
+
+    /const mod = mac \? event\.metaKey : event\.ctrlKey;/.test(appCode)
+      ? ok("【30】快捷键命令键按平台分叉（mac = ⌘）")
+      : fail("【30】快捷键写死 ctrlKey —— mac 上所有快捷键失效（⌘O 打开工作区也废）");
+    // ⛔ 不能只匹配旧字面串（`!event.ctrlKey || … || event.metaKey`）—— 换成等价的
+    //    `!mod || event.altKey || event.metaKey` 就漏检（反证实测为假绿）。改为**结构性**判据：
+    //    分叉是**成对**的两行（mod / otherMod），所以 handler 体里 `event.metaKey` 恰好出现 2 次；
+    //    再把它当干扰键拦一次（旧写法）就会变成 3 次，守卫立刻红。
+    {
+      const onKeyIdx = appCode.indexOf("function onKey(event: globalThis.KeyboardEvent) {");
+      const onKeyBody = onKeyIdx < 0 ? "" : appCode.slice(onKeyIdx, onKeyIdx + 1200);
+      const metaCount = (onKeyBody.match(/event\.metaKey/g) || []).length;
+      (/const mod = mac \? event\.metaKey : event\.ctrlKey;/.test(onKeyBody)
+        && /const otherMod = mac \? event\.ctrlKey : event\.metaKey;/.test(onKeyBody)
+        && metaCount === 2)
+        ? ok("【30】handler 里 metaKey 只用于成对平台分叉（没被当干扰键拦掉）")
+        : fail(`【30】metaKey 用法异常（分叉缺失或出现 ${metaCount} 次）—— mac 的 ⌘ 会被 return 掉`);
+    }
+
+    /if \(process\.platform === "darwin"\) return make\(app\.getPath\("userData"\)\)/.test(mainSrc)
+      ? ok("【30】scratch:create 在 mac 上落 userData（不写 .app bundle）")
+      : fail("【30】scratch:create 无 darwin 分支 —— mac 上会去写 .app（破坏签名 / 只读卷）");
+
+    // 展示层：快捷键标签平台化必须走 src/lib/hotkey.mjs 的纯函数（本机是 Windows 跑不到 mac 分支，
+    // 只有纯函数断言能证明「mac 上显示成 ⌘」而不是靠猜）
+    /import \{ macHotkeyLabel \} from "\.\/lib\/hotkey\.mjs";/.test(appCode)
+      ? ok("【30】App 已接线 macHotkeyLabel（标签平台化）")
+      : fail("【30】App 没有接 macHotkeyLabel —— 快捷键提示在 mac 上仍显示 Ctrl");
+  }
+
+  // ⑧ 快捷键标签转换的**行为**断言（纯函数，与平台探测解耦）
+  {
+    const { macHotkeyLabel, hotkeyLabel } = await import("../src/lib/hotkey.mjs");
+    const rows = [
+      ["Ctrl+Shift+F", "⌘⇧F"],
+      ["Ctrl+O", "⌘O"],
+      ["Shift+Enter", "⇧Enter"],
+      ["Ctrl+Z / Ctrl+Y", "⌘Z / ⌘Y"],
+      ["Esc", "Esc"],
+    ];
+    const bad = rows.filter(([input, expected]) => macHotkeyLabel(input) !== expected);
+    (bad.length === 0 ? ok : fail)(`【30】mac 标签转换规则正确（${rows.length} 条${bad.length ? "，错：" + bad.map(([i]) => i).join(",") : ""}）`);
+    (hotkeyLabel("Ctrl+O", "win32") === "Ctrl+O" && hotkeyLabel("Ctrl+O", "darwin") === "⌘O" ? ok : fail)("【30】Windows 侧标签原样不变（只 mac 转换）");
+    // 接线：快捷键一览与命令面板都过 hk()
+    (/keys: item\.keys\.map\(hk\)/.test(appCode) && /\{row\.shortcut && <kbd>\{hk\(row\.shortcut\)\}<\/kbd>\}/.test(appCode))
+      ? ok("【30】快捷键一览 + 命令面板都走 hk()（不再是写死的 Ctrl 文案）")
+      : fail("【30】有展示点没走 hk() —— mac 上仍会看到 Ctrl 文案");
+  }
 }
 
 console.log("");
