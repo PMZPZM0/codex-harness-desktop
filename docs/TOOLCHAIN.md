@@ -31,6 +31,18 @@ Windows 用 `node scripts/prepare-windows-tools.cjs`、macOS 用 `node scripts/p
 > **都不再随包**（它们有国内镜像源），改由「开发工具」页按需下载（`scripts/install-runtimes.cjs`，
 > npmmirror/gh 加速优先、失败回落官方源）；Git 在 Windows 上缺时会**首次启动自动补装**。
 > Node 保留随包，因为安装器引导本身就依赖它。
+>
+> **⛔ 双平台纪律（09-18）**：下载链路在 `install-runtimes.cjs` 顶部按 `IS_MAC` 分叉，两套表必须**同 id 集合**
+> （唯一例外 `mingw`：Windows 编译器，mac 用系统 clang，已在 `DARWIN_HIDDEN` 里隐藏）；
+> 「装没装」判定走 `main.ts` 的 `DARWIN_MARKERS` + `runtimeInstalledBySystem()` 系统探测（mac 的
+> git/openssl/docker）。**新增一个工具要三处同改**：Windows 表、`mainMac()` 表、`DARWIN_MARKERS`。
+> 漏改的后果是静默的：mac 上点安装时安装器对未知 id 什么都不做、**退出 0**（界面显示"装好了"）。
+> 预检【34】会比对两张表的 id 集合，缺一边就红。
+>
+> 随包内置能力的「修复安装」走 `scripts/install-automation.cjs`（mac 包由 `build/copy-mac-tools.cjs` 拷入），
+> 它**按平台挑解压器**：mac → `/usr/bin/ditto`（保留符号链接与执行位）→ 内置 `python/bin/python3` → `/usr/bin/unzip`；
+> Windows → 内置 `python.exe` → `sevenzip/7z.exe`。预检【34】用行为断言锁这条链（反证：删掉 darwin 分支 → 红）。
+
 
 
 ## 二、按需安装的拓展工具

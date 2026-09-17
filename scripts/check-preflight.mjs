@@ -4136,6 +4136,60 @@ w.postMessage({id:1,op:"list",root});
       : fail("【33】App 侧又出现 as UserAvatarSpec 硬转 —— 类型洞回来了");
   }
 
+  // ⑰f 开发工具的**双平台覆盖**（09-18 用户问「开发工具有没有考虑 Windows 和 mac 两种版本」时查出来的两处静默失效）：
+  //   ① 新工具只加进 Windows 安装表 → mac 上点安装时脚本对未知 id 什么都不做、**退出 0**（界面显示"装好了"）；
+  //   ② install-automation.cjs（随包内置能力的「修复安装」，build/copy-mac-tools.cjs 明确拷进 mac 包）
+  //      只认 Windows 的 python.exe / 7z.exe → mac 上必然报「缺少 python 与 7z」，把平台缺口说成缺依赖。
+  //   反证：Windows 表里塞一个假 id → ①红；删掉 darwin 解压分支 → ②红。
+  {
+    const installer = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
+    const automation = readFileSync(join(ROOT, "scripts", "install-automation.cjs"), "utf8");
+    const idsIn = (block) => [...new Set([...block.matchAll(/want\("([^"]+)"\)/g)].map((m) => m[1]))].sort();
+    const winStart = installer.indexOf("async function main()");
+    const macStart = installer.indexOf("async function mainMac()");
+    // ⛔ 锚点必须在，否则切片退化成空串 → 两边都"空" → 下面的比较**假绿**（函数一改名就静默失效）
+    if (winStart < 0 || macStart < 0 || macStart < winStart) {
+      fail("【34】install-runtimes.cjs 里找不到 main() / mainMac() 这两个平台入口 —— 双平台一致性检查已失效（改名请同步本守卫）");
+    }
+    const winIds = idsIn(installer.slice(winStart, macStart));
+    const macIds = idsIn(installer.slice(macStart, installer.indexOf("if (IS_MAC) mainMac()")));
+    // darwin 上无意义 / 系统自带的工具（与 main.ts 的 DARWIN_HIDDEN 同源），允许只出现在 Windows 表
+    const WIN_ONLY_OK = ["mingw"];
+    const onlyWin = winIds.filter((id) => !macIds.includes(id) && !WIN_ONLY_OK.includes(id));
+    const onlyMac = macIds.filter((id) => !winIds.includes(id));
+    (!onlyWin.length && !onlyMac.length)
+      ? ok(`【34】开发工具安装表双平台一致（各 ${macIds.length} 项；仅 mingw 为 Windows 独有且在 mac 隐藏）`)
+      : fail(`【34】安装表两平台不一致 —— 只在 Windows: [${onlyWin}] / 只在 mac: [${onlyMac}]（另一平台点安装会静默装不上）`);
+    (/require\.main === module/.test(automation))
+      ? ok("【34】install-automation 主流程只在直接执行时跑（require 无副作用，可被探针复用）")
+      : fail("【34】install-automation 缺 require.main 守卫 —— 被 require 时会真的去解压");
+    // ⛔ 行为断言，不是文本匹配（第一版只查文本里有没有 "/usr/bin/ditto" 字样，把 `darwin`
+    //    改成任意字符串它照样绿 —— 反证 F 当场抓到）。这里 require 真模块跑 pickExtractor。
+    try {
+      const req = createRequire(import.meta.url);
+      const { pickExtractor } = req(join(ROOT, "scripts", "install-automation.cjs"));
+      // 按 basename 造探针，避免和 toolsRoot 布局耦合
+      const has = (...names) => (p) => names.includes(join(p).split(/[\\/]/).pop());
+      const kind = (platform, names) => {
+        const picked = pickExtractor(platform, has(...names));
+        return picked ? picked.kind : null;
+      };
+      const darwinOk = kind("darwin", ["ditto", "python.exe", "7z.exe"]) === "ditto"
+        && kind("darwin", ["python3", "python.exe", "7z.exe"]) === "python3"
+        && kind("darwin", ["unzip", "python.exe", "7z.exe"]) === "unzip"
+        // 老 bug 的反证：darwin 只有 Windows 那两个解压器时必须判定"无解压器"，而不是选中 .exe
+        && kind("darwin", ["python.exe", "7z.exe"]) === null;
+      const winOk = kind("win32", ["python.exe", "7z.exe"]) === "python"
+        && kind("win32", ["7z.exe"]) === "7z"
+        && kind("win32", []) === null;
+      (darwinOk && winOk)
+        ? ok("【34】解压器选择行为正确（mac：ditto→python3→unzip，且不再选中 Windows .exe；Windows 行为不变）")
+        : fail(`【34】解压器选择行为不对 —— mac 链=${darwinOk} win 链=${winOk}（mac 点「修复安装」会失败或选错工具）`);
+    } catch (error) {
+      fail(`【34】pickExtractor 行为断言跑不起来：${String(error?.message ?? error).split("\n")[0]}`);
+    }
+  }
+
   // ⑰d 引导弹窗的「出场时机」（09-17 用户明确定规则：「只在进入主界面的时候才弹配置引导和
   //   工具安装检测自动安装；如果已经配置模型，就不引导模型配置，直接做开发工具检测安装」）。
   //   三种失效形态都**静默**（不报错，只是该弹的不弹 / 不该弹的弹了）：
