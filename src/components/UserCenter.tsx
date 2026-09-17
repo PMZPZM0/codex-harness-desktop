@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, UserRound, Briefcase, GraduationCap, Clock3, Heart, Languages, Lightbulb, Save, Wand2, LogOut } from "lucide-react";
+import { Camera, UserRound, Briefcase, GraduationCap, Clock3, Heart, Languages, Lightbulb, Save, Wand2, LogOut, RotateCcw } from "lucide-react";
+import { DefaultCodexAvatar } from "./DefaultCodexAvatar";
+import { CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "../lib/codex-identity.mjs";
 
 export type UserProfile = {
   nickname: string;
@@ -30,7 +32,7 @@ const STYLE_OPTIONS = [
   { value: "none", label: "默认" },
 ];
 
-export function UserCenterSection({ username, onUsernameChange, personality, onPersonalityChange, onNotice, onProfileChange, onLogout }: {
+export function UserCenterSection({ username, onUsernameChange, personality, onPersonalityChange, onNotice, onProfileChange, onLogout, assistantName = CODEX_DEFAULT_NAME, onAssistantNameChange, codexAvatar, onCodexAvatarChange }: {
   username: string;
   onUsernameChange: (name: string) => void;
   personality: string;
@@ -38,6 +40,12 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
   onNotice: (m: string) => void;
   onProfileChange?: (p: { avatarType: string; avatar: string }) => void;
   onLogout?: () => void;
+  /** Codex 自己的名字（09-17 用户要求）：默认 Codex，改名后显示在每条回复上方。 */
+  assistantName?: string;
+  onAssistantNameChange?: (name: string) => void;
+  /** Codex 的头像：默认内置矢量头像，可上传替换。 */
+  codexAvatar?: CodexAvatarSpec;
+  onCodexAvatarChange?: (spec: CodexAvatarSpec) => void;
 }) {
   const [profile, setProfile] = useState<UserProfile>(() => {
     try {
@@ -89,6 +97,35 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
     e.target.value = "";
   };
 
+  // ── Codex 的身份（09-17 用户要求）：名字 + 头像 ──
+  // 名字走「失焦/回车即时保存」（与左下角账户名同一交互），不依赖下方"保存资料"按钮
+  // —— 否则用户改完名字没点保存就会以为设置成功了。
+  const codexFileRef = useRef<HTMLInputElement>(null);
+  const [assistantDraft, setAssistantDraft] = useState(assistantName);
+  useEffect(() => { setAssistantDraft(assistantName); }, [assistantName]);
+  /** Esc 取消编辑时必须**跳过**随后的 blur 提交 —— blur 里读到的 assistantDraft 还是编辑中的值
+   *  （setState 异步、DOM 事件同步），否则"取消"反而会把改动存下去（code review 发现）。 */
+  const skipNameCommitRef = useRef(false);
+  const commitAssistantName = () => {
+    if (skipNameCommitRef.current) { skipNameCommitRef.current = false; return; }
+    const next = assistantDraft.trim() || CODEX_DEFAULT_NAME;
+    setAssistantDraft(next);
+    if (next === assistantName) return;
+    onAssistantNameChange?.(next);
+    onNotice(`Codex 的名字已改为「${next}」，之后的回复都会用它`);
+  };
+  const onCodexAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      onCodexAvatarChange?.({ type: "image", value: String(reader.result) });
+      onNotice("Codex 头像已更新");
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
   const avatarRender = profile.avatarType === "image" && profile.avatar
     ? <img src={profile.avatar} alt="头像" />
     : profile.avatarType === "emoji" && profile.avatar
@@ -134,6 +171,42 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
         <div className="uc-actions">
           <button className="primary-setting" onClick={save}><Save size={14} />保存资料</button>
           {onLogout && <button className="danger-setting" onClick={onLogout}><LogOut size={14} />退出登录</button>}
+        </div>
+      </div>
+
+      {/* Codex 的身份（09-17 用户要求）：名字 + 头像。与上方"你自己"的资料分开成卡，避免混淆 */}
+      <div className="uc-card">
+        <div className="uc-head">
+          <div className="uc-avatar codex-avatar-cell">
+            {codexAvatar?.type === "image" && codexAvatar.value
+              ? <img src={codexAvatar.value} alt="Codex 头像" />
+              : <DefaultCodexAvatar size={56} />}
+            <button className="uc-avatar-edit" title="上传 Codex 头像" onClick={() => codexFileRef.current?.click()}><Camera size={13} /></button>
+            {codexAvatar?.type === "image" && (
+              <button className="uc-avatar-reset" title="恢复到默认头像" onClick={() => { onCodexAvatarChange?.({ type: "default", value: "" }); onNotice("已恢复默认头像"); }}><RotateCcw size={12} /></button>
+            )}
+            <input ref={codexFileRef} type="file" accept="image/*" hidden onChange={onCodexAvatarFile} />
+          </div>
+          <div className="uc-head-info">
+            <div className="uc-name">Codex 的身份</div>
+            <div className="uc-meta">这里的名字与头像会显示在每条回复的上方</div>
+            <div className="uc-preset-hint">它的名字（回车或点别处保存）：</div>
+            <div className="uc-presets">
+              <input
+                className="codex-name-input"
+                value={assistantDraft}
+                maxLength={24}
+                placeholder={CODEX_DEFAULT_NAME}
+                onChange={(e) => setAssistantDraft(e.target.value)}
+                onBlur={commitAssistantName}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); }
+                  if (e.key === "Escape") { skipNameCommitRef.current = true; setAssistantDraft(assistantName); e.currentTarget.blur(); }
+                }}
+              />
+              <button className="codex-name-reset" onClick={() => { setAssistantDraft(CODEX_DEFAULT_NAME); onAssistantNameChange?.(CODEX_DEFAULT_NAME); onNotice("名字已恢复为 Codex"); }}>用默认名</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>

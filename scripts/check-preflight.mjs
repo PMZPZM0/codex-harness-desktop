@@ -3743,6 +3743,35 @@ w.postMessage({id:1,op:"list",root});
       ? ok("【32】气泡有 width:max-content（防被压成竖排窄条）")
       : fail("【32】.enhance-hint 缺 width:max-content —— 绝对定位在 32px 窄容器里会被压成竖排");
   }
+
+  // ⑱ src/lib/*.mjs 是**纯 JS**（node 直接 import 执行），不得出现 TS 语法。
+  //    ⛔ 这条守卫的由来：`export type X = …` / `(a: string): void` 这类标注会让 rolldown 直接
+  //    PARSE_ERROR 构建失败，而我在 09-17 的 enhance-hints.mjs 与 codex-identity.mjs 上**各踩一次**
+  //    （第二次是因为第一次的教训只写进了记忆、没变成守卫）。类型一律放同目录 .d.mts。
+  {
+    const libDir = join(ROOT, "src", "lib");
+    const mjsFiles = readdirSync(libDir).filter((f) => f.endsWith(".mjs"));
+    const offenders = [];
+    for (const file of mjsFiles) {
+      const code = readFileSync(join(libDir, file), "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      const hits = [];
+      if (/export\s+type\s/.test(code)) hits.push("export type");
+      // 参数/变量类型标注。⛔ 前缀要覆盖 const/let/var —— 只写 `^|,|(` 会漏掉 `const y: number`
+      // （反证时发现的漏检）。
+      if (/(?:^|[,(]\s*|\b(?:const|let|var)\s+)\w+\s*:\s*(?:string|number|boolean|void|unknown|any)\b/m.test(code)) hits.push("类型标注");
+      if (/\)\s*:\s*(?:string|number|boolean|void|unknown|any|\w+\[\])\s*\{/.test(code)) hits.push("返回类型标注");
+      if (/\bas\s+\{/.test(code)) hits.push("as 断言");
+      // 泛型也是 TS 专有：new Set<() => void>() 会被 JS 当成比较运算
+      // ⛔ 不能写 `[^>]*` —— 箭头函数的 `=>` 里就有 `>`，正则会提前截断（反证时发现的漏检）。
+      if (/new\s+\w+\s*</.test(code)) hits.push("泛型语法");
+      if (hits.length) offenders.push(`${file}(${hits.join("/")})`);
+    }
+    (offenders.length === 0)
+      ? ok(`【32】src/lib 下 ${mjsFiles.length} 个 .mjs 均为纯 JS（无 TS 语法，类型在 .d.mts）`)
+      : fail(`【32】这些 .mjs 含 TS 语法会直接构建失败：${offenders.join("、")} —— 类型请移到同目录 .d.mts`);
+  }
 }
 
 console.log("");

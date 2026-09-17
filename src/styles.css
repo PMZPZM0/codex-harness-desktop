@@ -15986,6 +15986,237 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   font-weight: 500;
 }
 
+/* ── 用户中心「Codex 的身份」卡（09-17）：名字输入 + 头像上传/重置 ── */
+.codex-avatar-cell {
+  position: relative;
+}
+.codex-avatar-cell > .codex-avatar-default,
+.codex-avatar-cell > img {
+  width: 56px;
+  height: 56px;
+  border-radius: 15px;
+  object-fit: cover;
+  display: block;
+}
+/* 恢复默认头像：贴在头像左下角（与右下角的"上传"按钮错开，避免互相遮挡） */
+.uc-avatar-reset {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+.uc-avatar-reset:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.codex-name-input {
+  height: 30px;
+  width: 180px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12.5px;
+}
+.codex-name-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.codex-name-reset {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.codex-name-reset:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ── Codex 消息头：头像 + 名字（09-17 用户要求） ── */
+/* 内容列包一层：名字在正文上方，保持 .message 原本的两列 grid 不变（不动滚动锚点依赖的结构） */
+.assistant-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.assistant-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--muted);
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 头像：圆角方形（与应用图标同体系，且与用户头像的圆形区分开） */
+.codex-avatar-img,
+.codex-avatar-default {
+  display: block;
+  border-radius: 7px;
+  flex: none;
+}
+.assistant-message > .avatar.agent {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+}
+
+/* ── 模型配置引导弹窗（09-17）：只在没有生效模型时出现 ── */
+.model-guide-backdrop {
+  z-index: 97;
+}
+.model-guide {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 16px;
+  width: min(560px, calc(100vw - 48px));
+  max-height: min(760px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 72px #0000003d;
+}
+.model-guide > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  flex: none;
+}
+.model-guide-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.model-guide-title > span {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel-2));
+  color: var(--accent);
+}
+.model-guide-title strong {
+  font-size: 13.5px;
+  color: var(--text);
+}
+.model-guide-body {
+  padding: 16px 18px 4px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.model-guide-lead {
+  margin: 0 0 2px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.model-guide-path {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  text-align: left;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--panel-2);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.model-guide-path:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel-2));
+}
+.model-guide-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+}
+.model-guide-icon.sub {
+  background: color-mix(in srgb, var(--green, #1a7f37) 14%, transparent);
+  color: var(--green, #1a7f37);
+}
+.model-guide-icon.key {
+  background: color-mix(in srgb, #7048e8 14%, transparent);
+  color: #7048e8;
+}
+.model-guide-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+.model-guide-text strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.model-guide-text em {
+  font-style: normal;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--faint);
+}
+.model-guide-go {
+  flex: none;
+  font-size: 12px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.model-guide-tips {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.model-guide-tips p {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--faint);
+}
+.model-guide > footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 18px 16px;
+  flex: none;
+}
+
 /* ── 归档后提示浮层（09-17）：右上角浮出，5 秒自动消失；悬停暂停倒计时 ── */
 .archive-toast {
   position: fixed;
