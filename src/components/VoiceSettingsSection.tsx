@@ -9,7 +9,8 @@
  * 改值后立即同步到主进程，**下一次**开始通话时生效（音色试听是即时的）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Trash2, Upload, Headphones, Keyboard, Mic, Play, Radio, ShieldAlert, Sparkles, Square, Zap, CircleHelp } from "lucide-react";
+import { Trash2, Upload, Headphones, Keyboard, Mic, Play, Radio, ShieldAlert, Sparkles, Square, Zap } from "lucide-react";
+import { PageInfo } from "./SettingsHead";
 import { decodeFloat32Base64 } from "../voice/audio-transport";
 import { getWakeState, subscribeWakeState } from "../voice/wake-state";
 import { hotkeyLabel } from "../lib/hotkey.mjs";
@@ -71,7 +72,7 @@ async function playSamples(samples: Float32Array | undefined, sampleRate: number
   };
 }
 
-export default function VoiceSettingsSection({ onNotice, onOpenHelp = () => undefined }: { onNotice: (m: string) => void; onOpenHelp?: () => void }) {
+export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: string) => void }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [saving, setSaving] = useState(false);
@@ -506,12 +507,11 @@ export default function VoiceSettingsSection({ onNotice, onOpenHelp = () => unde
     <section className="settings-section stack voice-settings">
       <div className="settings-section-title">
         语音通话
-        <button type="button" className="help-entry" title="语音通话使用帮助" onClick={onOpenHelp}>
-          <CircleHelp size={14} />帮助
-        </button>
-      </div>
-      <div className="settings-section-desc">
-        本机离线识别与合成（<code>sherpa-onnx</code>）。点右下角悬浮球开始通话；改值后下次通话生效（试听即时）。
+        <PageInfo
+          label="语音通话"
+          helpKey="voice"
+          text={<>本机离线识别与合成（<code>sherpa-onnx</code>）。点右下角悬浮球开始通话；改值后下次通话生效（试听即时）。</>}
+        />
       </div>
 
       {/* 音色 + 试听 */}

@@ -390,7 +390,8 @@ import { SKILLHUB_MCP_CATALOG, SKILLHUB_MCP_CATEGORIES, skillhubMcpDetailUrl, ty
 import { PersonalizationPage } from "./components/PersonalizationPage";
 import VoiceSettingsSection from "./components/VoiceSettingsSection";
 import { BootSplash, type BootStage } from "./components/BootSplash";
-import { HelpDialog, type HelpKey, type HelpTopic } from "./components/HelpDialog";
+import { HelpDialog, type HelpTopic } from "./components/HelpDialog";
+import { PageInfo, HelpOpenContext } from "./components/SettingsHead";
 import { ArchiveToast } from "./components/ArchiveToast";
 import { ModelSetupGuide } from "./components/ModelSetupGuide";
 import { CodexAvatar, useCodexName } from "./components/CodexAvatar";
@@ -1189,14 +1190,6 @@ const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
   { group: "数据与统计", items: [["usage", "使用统计", CircleGauge], ["storage", "数据管理", Database], ["backup", "会话备份", Download], ["archive", "归档管理", Archive]] },
   { group: "开发工具", items: [["devtools", "开发工具", TerminalSquare]] },
 ];
-
-/** 设置页「使用帮助」按钮（09-17）：统一外观与行为，各页只传 HelpKey。
- *  放在 App.tsx 内而不是 HelpDialog.tsx：它要用 App 的 setHelpKey，做成组件反而要传回调。 */
-function HelpButton({ helpKey, onOpen, label }: { helpKey: HelpKey; onOpen: (key: HelpKey) => void; label?: string }) {
-  return <button type="button" className="help-entry" title={label ? `${label}使用帮助` : "使用帮助"} onClick={() => onOpen(helpKey)}>
-    <CircleHelp size={14} />帮助
-  </button>;
-}
 
 /** 能力总闸各子项在提示文案里的展示名（describePartial / 部分启用提示用）。 */
 const MEMBER_LABELS: Partial<Record<MemberKey, string>> = {
@@ -3577,7 +3570,7 @@ function StorageSection({ onNotice, onClearMemoryCache, openAppConfirm }: {
   };
   return (
     <section className="settings-section stack">
-      <div className="settings-copy"><h2>数据管理</h2><p>查看各数据目录占用，并清理可安全的缓存。会话历史（rollout 原档）是你的全部对话记录，<strong>不在清理范围内</strong>，请通过归档 / 备份管理。</p></div>
+      <div className="settings-copy"><h2>数据管理<PageInfo text={<>查看各数据目录占用，并清理可安全的缓存。会话历史（rollout 原档）是你的全部对话记录，<strong>不在清理范围内</strong>，请通过归档 / 备份管理。</>} /></h2></div>
       <div className="storage-list">
         {info?.items.map((item) => (
           <div className="storage-row" key={item.key}>
@@ -4039,7 +4032,7 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActive
   };
   return (
     <section className="settings-section stack relay-center openai-center">
-      <div className="settings-copy channel-heading"><div><h2>OpenAI 订阅监控</h2><p>多账号统一监控：每张卡片实时显示订阅档位、有效期与额度用量；切换账号即写入引擎并重启生效。登录与额度查询需要可访问 OpenAI 的网络（代理）。</p></div></div>
+      <div className="settings-copy channel-heading"><div><h2>OpenAI 订阅监控<PageInfo text={<>多账号统一监控：每张卡片实时显示订阅档位、有效期与额度用量；切换账号即写入引擎并重启生效。登录与额度查询需要可访问 OpenAI 的网络（代理）。</>} /></h2></div></div>
       {err && <p className="relay-account-err"><AlertTriangle size={13} />{err}</p>}
       <div className="relay-plan-grid openai-account-grid">
         {accounts.map((a) => {
@@ -4584,7 +4577,7 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
   const maskKey = (key: string) => key.length > 14 ? `${key.slice(0, 10)}••••••••${key.slice(-4)}` : key;
   return (
     <section className="settings-section stack relay-center">
-      <div className="settings-copy channel-heading"><div><h2>中转站</h2><p>每个中转站账号一张卡片：点卡片进入该账号的管理面板（余额总览、订阅套餐、密钥管理），所有操作即时生效；聊天输入框旁会实时显示当前余量。</p></div></div>
+      <div className="settings-copy channel-heading"><div><h2>中转站<PageInfo text={<>每个中转站账号一张卡片：点卡片进入该账号的管理面板（余额总览、订阅套餐、密钥管理），所有操作即时生效；聊天输入框旁会实时显示当前余量。</>} /></h2></div></div>
       {(() => {
         // 置顶付费订阅长条卡：展示当前生效订阅（正向：付款后自动更新；反向：手动切换自动跟上）
         const selected = account && overview?.selectedMode === "plan" && overview?.selectedGroupId != null
@@ -8952,7 +8945,7 @@ export default function App() {
   const [settingsPage, setSettingsPage] = useState<SettingsPage>("general");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   /** 设置页「使用帮助」弹窗（09-17 用户要求：模型/插件/技能/MCP/专家团/语音/开发工具都要有）。
-   *  null = 不显示；`overview` 是设置总览（标题栏那枚按钮），其余由各页帮助按钮写入 HelpKey。 */
+   *  null = 不显示；`overview` 是设置总览（标题栏那枚按钮），其余由各页标题旁的 ? 写入（HelpTopic）。 */
   const [helpKey, setHelpKey] = useState<HelpTopic | null>(null);
   /** 归档后提示浮层（09-17）：token 用于重置倒计时，name 是刚归档的会话名。 */
   const [archiveToast, setArchiveToast] = useState<{ name: string; token: number } | null>(null);
@@ -14971,16 +14964,29 @@ const commandMatches = useMemo(() => {
       // 重注册——旧会话（创建于新工具上线前）也能用上 skill_search 等新增工具
       const dynamicTools = await buildDynamicTools();
       const result = await resumeThreadLight({ threadId: id, sandbox: resumeSandbox, approvalPolicy: resumeApproval, dynamicTools });
-      if (seq !== switchSeqRef.current) return; // 已切到别的会话，丢弃本次结果
-      recentResumeAtRef.current.set(id, Date.now());
       // 残留运行态归一化（详见 normalizeLoadedThread）：旧会话丢过 turn/completed 的
       // 回合不能带着 inProgress 进渲染，否则永远走流式分支、展示回退到旧效果。
       const loaded = runningThreadIdsRef.current.has(id) ? result.thread : normalizeLoadedThread(result.thread);
       // 运行中会话：resume 快照可能落后于本地流式积累（切走期间 delta 仍在更新内存）。
       // 整体替换会让正文回退、随后 delta 从快照点重新追加 = 出字动画重放。逐 item 取更长的流式文本。
       const mergedLoaded = cached && loaded ? mergeLongerStreams(cached, loaded) : loaded;
-      threadRef.current = mergedLoaded;
+      // ★ 缓存**先写、再判 seq**（09-17 修「切换会话卡顿」）：
+      //   ⛔ 原先 seq 校验排在写缓存之前 —— 用户快速连切 A→B→C 时，A、B 的 resume 结果
+      //   在「已切走」这行被整个丢弃，缓存里一个都没留下，于是**下次切回仍是冷加载**。
+      //   实测（switch-speed 场景）：4 次「再切回」里只有 1 次命中缓存，cached.n=1 / fresh=8；
+      //   而命中缓存只需 9ms、冷加载 200ms —— 这正是用户说的「切换会话卡顿一下」。
+      //   结果已到手就该留下：切走了只是不许它动视图，不是不许它进缓存。
+      if (seq !== switchSeqRef.current) {
+        // 已切走：视图不动，但结果入缓存（否则下次切回仍是冷加载）。
+        // 加固：与缓存里已有的那份再合一次（mergeLongerStreams 取更长的流式文本）——
+        // 同一会话并发两次 resume 时，后到的旧结果不会把已存的新内容顶短。
+        const existing = threadCacheRef.current.get(id);
+        threadCacheRef.current.set(id, existing && existing !== mergedLoaded ? mergeLongerStreams(existing, mergedLoaded) : mergedLoaded);
+        return;
+      }
+      recentResumeAtRef.current.set(id, Date.now());
       threadCacheRef.current.set(id, mergedLoaded);
+      threadRef.current = mergedLoaded;
       // 秒开后 resume 无实质变化时不替换（避免闪烁）；有变化（后台继续跑/消息补齐）才更新
       const changed = !cached || threadContentChanged(cached, mergedLoaded);
       if (changed) {
@@ -16283,6 +16289,9 @@ const commandMatches = useMemo(() => {
     </>
   );
   return (
+    // 设置页的「?」要能打开完整帮助弹窗（气泡里的「查看完整帮助」）：用 context 注入 setHelpKey。
+    // 不走逐页 prop —— 二十多个设置页头部每处都传一遍回调，漏传的那个会静默点不开。
+    <HelpOpenContext.Provider value={setHelpKey}>
     <div
       ref={shellRef}
       className={`app-shell ${rightOpen ? "with-context" : ""} ${sidebarCollapsed ? "side-collapsed" : ""} ${narrow ? "narrow" : ""} ${popoutThreadId ? "popout-shell" : ""}`}
@@ -17718,7 +17727,7 @@ const commandMatches = useMemo(() => {
             )}
             {settingsPage === "agentteam" && (
               <section className="settings-section stack hub-page">
-                <div className="settings-copy"><h2>专家和专家团</h2><p>单体专家与多角色团队的总入口。</p><HelpButton helpKey="agentteam" onOpen={setHelpKey} label="专家/专家团" /></div>
+                <div className="settings-copy"><h2>专家和专家团<PageInfo text={<>单体专家与多角色团队的总入口。</>} helpKey="agentteam" label="专家/专家团" /></h2></div>
                 <div className="hub-card-grid hub-card-grid-3">
                   <button className="hub-card" onClick={() => setSettingsPage("agents")}>
                     <span className="hub-card-icon"><Bot size={20} /></span>
@@ -17748,7 +17757,7 @@ const commandMatches = useMemo(() => {
               if (rest.length) groups.push({ title: "更多专家", blurb: "自定义团队与外部导入的专家", icon: Users, cards: rest });
               return (
               <section className="settings-section stack hub-page expert-center-page">
-                <div className="settings-copy"><h2>专家中心</h2><p>按领域分类的全部专家——点击任意专家卡片，直接进入与 TA 的一对一会话。</p><HelpButton helpKey="agentteam" onOpen={setHelpKey} label="专家/专家团" /></div>
+                <div className="settings-copy"><h2>专家中心<PageInfo text={<>按领域分类的全部专家——点击任意专家卡片，直接进入与 TA 的一对一会话。</>} helpKey="agentteam" label="专家中心" /></h2></div>
                 {groups.map((g) => (
                   <div className="expert-category" key={g.title}>
                     <div className="expert-category-head">
@@ -17955,7 +17964,7 @@ const commandMatches = useMemo(() => {
               </div>
             </section>}
             {settingsPage === "devtools" && <section className="settings-section stack devtools-page">
-              <div className="settings-copy"><h2>开发工具</h2><p>桌面与浏览器自动化（Nuphus / Playwright CLI）与写代码模式插件随应用内置、开箱即用；CloakBrowser 指纹浏览器、两类浏览器内核与其余工具链按需下载（国内镜像加速，失败自动回落官方源），安装后自动加入 Codex 环境（不改系统 PATH）。</p><HelpButton helpKey="devtools" onOpen={setHelpKey} label="开发工具" /></div>
+              <div className="settings-copy"><h2>开发工具<PageInfo text={<>桌面与浏览器自动化（Nuphus / Playwright CLI）与写代码模式插件随应用内置、开箱即用；CloakBrowser 指纹浏览器、两类浏览器内核与其余工具链按需下载（国内镜像加速，失败自动回落官方源），安装后自动加入 Codex 环境（不改系统 PATH）。</>} helpKey="devtools" label="开发工具" /></h2></div>
               <div className="settings-subhead"><Download size={13} />语音模型<span className="settings-subhead-hint">sherpa-onnx · 本机推理 · 按需下载</span></div>
               <VoiceDevToolsSection onNotice={setNotice} />
               {(() => {
@@ -18100,7 +18109,7 @@ const commandMatches = useMemo(() => {
               <CodeAppearanceSection />
             </section>}
             {settingsPage === "personalization" && <PersonalizationPage personality={personality} onPersonalityChange={changePersonality} onNotice={setNotice} />}
-            {settingsPage === "voice" && <VoiceSettingsSection onNotice={setNotice} onOpenHelp={() => setHelpKey("voice")} />}
+            {settingsPage === "voice" && <VoiceSettingsSection onNotice={setNotice} />}
             {settingsPage === "relay" && <RelayCenterPage busy={relayBusy} activeProvider={customModel?.provider} onActivate={relayActivate} onNotice={setNotice} onOpenModelSettings={() => { setSettingsPage("model"); }} />}
             {settingsPage === "openai" && <OpenaiSubscriptionPage activeProvider={customModel?.provider} onActivate={(models) => activateOfficialProvider(models)} onNotice={setNotice} onActiveChange={setOpenaiActiveAcct} onRefreshActive={() => refreshActive()} />}
             {settingsPage === "model" && <section className="settings-model-layout">
@@ -18114,7 +18123,7 @@ const commandMatches = useMemo(() => {
                 </div>
               </div>
               <div className="provider-list">
-                <div className="provider-list-head"><h2>模型供应商</h2><HelpButton helpKey="model" onOpen={setHelpKey} label="模型配置" /></div>
+                <div className="provider-list-head"><h2>模型供应商<PageInfo text={<>两种方式二选一：登录 ChatGPT 订阅账号，或添加第三方供应商并填入密钥。配好后再选模型——两者齐了才能发消息。</>} helpKey="model" label="模型配置" /></h2></div>
                 {(() => {
                   // PPtoken 赞助商卡常驻置顶：真实配置存在时用真实数据参与排序，否则显示未配置引导卡
                   const realPptoken = providersList.some((p) => p.provider === "pptoken");
@@ -18367,7 +18376,7 @@ const commandMatches = useMemo(() => {
               </div>}
             </section>}
 {settingsPage === "memory" && <section className="settings-section stack memory-center">
-              <div className="settings-copy channel-heading"><div><h2>记忆</h2><p>记忆分「常驻记忆」与「记忆条目」两部分：常驻记忆每轮对话自动注入；条目按需召回，按重要度分 P0–P3 管理。</p></div><label className="channel-enable"><input type="checkbox" checked={memoryEnabled} onChange={(event) => void setMemoryEnabled(event.target.checked)} /><span>{memoryEnabled ? "已启用" : "已停用"}</span></label></div>
+              <div className="settings-copy channel-heading"><div><h2>记忆<PageInfo text={<>记忆分「常驻记忆」与「记忆条目」两部分：常驻记忆每轮对话自动注入；条目按需召回，按重要度分 P0–P3 管理。</>} /></h2></div><label className="channel-enable"><input type="checkbox" checked={memoryEnabled} onChange={(event) => void setMemoryEnabled(event.target.checked)} /><span>{memoryEnabled ? "已启用" : "已停用"}</span></label></div>
 
               <div className="memory-overview">
                 <button className="memory-overview-card" onClick={() => { setMemoryCenterTab("library"); setMemoryCenterOpen(true); }} title="浏览记忆条目">
@@ -18442,7 +18451,7 @@ const commandMatches = useMemo(() => {
               
             </section>}
             {settingsPage === "rpa" && <section className="settings-section stack">
-              <div className="settings-copy channel-heading"><div><h2>RPA 自动化</h2><p>Codex 引擎自主跑通一条流程后，会自动把步骤沉淀为配方；下次让 Codex 直接复现即可。</p></div></div>
+              <div className="settings-copy channel-heading"><div><h2>RPA 自动化<PageInfo text={<>Codex 引擎自主跑通一条流程后，会自动把步骤沉淀为配方；下次让 Codex 直接复现即可。</>} /></h2></div></div>
               <div className="auto-card">
                 {rpaRecipes.length === 0 ? (
                   <div className="auto-empty"><p className="muted">还没有 RPA 配方。让 Codex 自主跑通一条流程后，它会自动把步骤沉淀成配方，无需手动创建。</p></div>
@@ -18512,7 +18521,7 @@ const commandMatches = useMemo(() => {
               };
               const togglePluginChecked = (id: string) => setPluginChecked((current) => current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]);
               return <section className="settings-section stack plugin-center">
-                <div className="settings-copy channel-heading"><div><h2>插件</h2><p>上方卡片来自 Codex Plugin Marketplace（codex-marketplace.com），一键安装写入本地插件目录，无需 ChatGPT 登录；下方为已安装插件管理，停用后 Codex 不再加载该插件提供的指令、技能与钩子。</p></div><div className="settings-heading-actions"><HelpButton helpKey="plugins" onOpen={setHelpKey} label="插件" /><button className="secondary-setting" title="打开 Codex Plugin Marketplace 在线市场" onClick={() => void window.codex.openExternal("https://www.codex-marketplace.com/plugins")}><ArrowUpRight size={14} />在线市场</button><button className="icon-button" title="刷新插件" onClick={() => void refreshSettingsResources()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+                <div className="settings-copy channel-heading"><div><h2>插件<PageInfo text={<>上方卡片来自 Codex Plugin Marketplace（codex-marketplace.com），一键安装写入本地插件目录，无需 ChatGPT 登录；下方为已安装插件管理，停用后 Codex 不再加载该插件提供的指令、技能与钩子。</>} helpKey="plugins" label="插件" /></h2></div><div className="settings-heading-actions"><button className="secondary-setting" title="打开 Codex Plugin Marketplace 在线市场" onClick={() => void window.codex.openExternal("https://www.codex-marketplace.com/plugins")}><ArrowUpRight size={14} />在线市场</button><button className="icon-button" title="刷新插件" onClick={() => void refreshSettingsResources()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
                 <div className="plugin-market-block">
                   <div className="plugin-market-title">插件市场<small>来自 Codex Plugin Marketplace · 一键安装无需登录</small></div>
@@ -18618,7 +18627,7 @@ const commandMatches = useMemo(() => {
               </section>;
             })()}
             {settingsPage === "skills" && <section className="settings-section stack skill-center">
-              <div className="settings-copy channel-heading"><div><h2>技能中心</h2><p>技能清单来自腾讯 SkillHub 市场（skillhub.cn），一键安装自动写入 <code>{userDataPath ? `${userDataPath}\\codex-home\\skills` : "Codex 技能目录"}</code>，更新来源清单并重启引擎确认可用。</p></div><div className="settings-heading-actions"><HelpButton helpKey="skills" onOpen={setHelpKey} label="技能中心" /><button className={skillsManageOnly ? "active-manage" : "secondary-setting"} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={14} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button><button className="secondary-setting" onClick={() => void importSkill()}><Paperclip size={14} />从本地添加技能</button><button className="secondary-setting" title="打开腾讯 SkillHub 技能市场" onClick={() => void window.codex.openExternal("https://skillhub.tencent.com/")}><ArrowUpRight size={14} />SkillHub 市场</button><button className="icon-button" title="刷新技能市场" onClick={() => void refreshMarketSkills(skillHubCategory, skillHubSearch, marketPage)}>{marketLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+              <div className="settings-copy channel-heading"><div><h2>技能中心<PageInfo text={<>技能清单来自腾讯 SkillHub 市场（skillhub.cn），一键安装自动写入 <code>{userDataPath ? `${userDataPath}\\codex-home\\skills` : "Codex 技能目录"}</code>，更新来源清单并重启引擎确认可用。</>} helpKey="skills" label="技能中心" /></h2></div><div className="settings-heading-actions"><button className={skillsManageOnly ? "active-manage" : "secondary-setting"} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={14} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button><button className="secondary-setting" onClick={() => void importSkill()}><Paperclip size={14} />从本地添加技能</button><button className="secondary-setting" title="打开腾讯 SkillHub 技能市场" onClick={() => void window.codex.openExternal("https://skillhub.tencent.com/")}><ArrowUpRight size={14} />SkillHub 市场</button><button className="icon-button" title="刷新技能市场" onClick={() => void refreshMarketSkills(skillHubCategory, skillHubSearch, marketPage)}>{marketLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
               <div className="resource-toolbar">
                 {!skillsManageOnly && <div className="skill-tabs">{skillHubCategories.map((category) => <button key={category} className={skillHubCategory === category ? "active" : ""} onClick={() => { setSkillHubCategory(category); setMarketPage(1); setSkillsManageOnly(false); }}>{category}</button>)}</div>}
                 <SearchField
@@ -18759,7 +18768,7 @@ const commandMatches = useMemo(() => {
               const openNewCommand = () => setCommandEditor({ mode: "new", name: "", source: workspace ? "project" : "global", description: "", argumentHint: "", allowedTools: "", model: "", body: "" });
               const openEditCommand = (entry: CustomCommandEntry) => setCommandEditor({ mode: "edit", name: entry.name, source: entry.source, description: entry.description, argumentHint: entry.argumentHint, allowedTools: entry.allowedTools, model: entry.model, body: entry.body, prevFilePath: entry.filePath });
               return <section className="settings-section stack command-center">
-                <div className="settings-copy channel-heading"><div><h2>命令</h2><p>复用常用操作与自定义工作流。输入框输入 <code>/</code> 会弹出命令补全，点击下方命令可直接填入；自定义命令以 <code>commands/*.md</code> 保存，支持参数与文件引用。</p></div><div className="settings-heading-actions"><button className="secondary-setting" onClick={openNewCommand}><Plus size={14} />新建命令</button><button className="icon-button" title="刷新命令" onClick={() => void refreshCommands()}>{commandBusy ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+                <div className="settings-copy channel-heading"><div><h2>命令<PageInfo text={<>复用常用操作与自定义工作流。输入框输入 <code>/</code> 会弹出命令补全，点击下方命令可直接填入；自定义命令以 <code>commands/*.md</code> 保存，支持参数与文件引用。</>} /></h2></div><div className="settings-heading-actions"><button className="secondary-setting" onClick={openNewCommand}><Plus size={14} />新建命令</button><button className="icon-button" title="刷新命令" onClick={() => void refreshCommands()}>{commandBusy ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
                 <div className="command-toolbar">
                   <label className="skill-search command-search"><Search size={14} /><input value={commandSearch} onChange={(event) => setCommandSearch(event.target.value)} placeholder="搜索命令名称或描述…" /></label>
                   <div className="command-stats"><span>内置 <b>{builtinCommandCatalog.length}</b></span><span>自定义 <b>{customCommands.length}</b></span><span>技能 <b>{skillCommands.length}</b></span></div>
@@ -18838,7 +18847,7 @@ const commandMatches = useMemo(() => {
               // 插件组的开关状态由插件本身决定（钩子列表可能为空），自定义组则由钩子决定
               const groupEnabled = (group: typeof groups[number]) => group.pluginId ? group.pluginEnabled !== false : group.hooks.some((hook: any) => hook.enabled !== false);
               return <section className="settings-section stack hook-center">
-                <div className="settings-copy channel-heading"><div><h2>钩子</h2><p>钩子的启停会<b>联动所属插件与它提供的技能</b>。另外 Codex <b>不会执行未信任的钩子</b>——新装后必须点一次「信任」，否则装了等于没装。</p></div><div className="settings-heading-actions">{untrusted.length > 0 && <button className="primary-setting" disabled={hookTrusting} onClick={() => void trustAllHooks()}>{hookTrusting ? <Spinner /> : <ShieldCheck size={14} />}信任全部 {untrusted.length}</button>}<button className="icon-button" title="刷新钩子" onClick={() => void refreshSettingsResources()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+                <div className="settings-copy channel-heading"><div><h2>钩子<PageInfo text={<>钩子的启停会<b>联动所属插件与它提供的技能</b>。另外 Codex <b>不会执行未信任的钩子</b>——新装后必须点一次「信任」，否则装了等于没装。</>} /></h2></div><div className="settings-heading-actions">{untrusted.length > 0 && <button className="primary-setting" disabled={hookTrusting} onClick={() => void trustAllHooks()}>{hookTrusting ? <Spinner /> : <ShieldCheck size={14} />}信任全部 {untrusted.length}</button>}<button className="icon-button" title="刷新钩子" onClick={() => void refreshSettingsResources()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
                 <div className="hook-stats">
                   <div className="hook-stat"><span>钩子总数</span><strong>{hooks.length}</strong></div>
@@ -18902,7 +18911,7 @@ const commandMatches = useMemo(() => {
               </section>;
             })()}
             {settingsPage === "agents" && <section className="settings-section stack subagent-center">
-              <div className="settings-copy channel-heading"><div><h2>子智能体</h2><p>用户自定义角色；Codex 可以通过 <code>subagent_invoke</code> 真正调用它们完成子任务。</p></div><div className="settings-heading-actions"><button className="primary-setting" onClick={openNewSubAgent}><Plus size={14} />新建子智能体</button><button className="icon-button" title="刷新子智能体" onClick={() => void refreshSubAgents()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+              <div className="settings-copy channel-heading"><div><h2>子智能体<PageInfo text={<>用户自定义角色；Codex 可以通过 <code>subagent_invoke</code> 真正调用它们完成子任务。</>} /></h2></div><div className="settings-heading-actions"><button className="primary-setting" onClick={openNewSubAgent}><Plus size={14} />新建子智能体</button><button className="icon-button" title="刷新子智能体" onClick={() => void refreshSubAgents()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
               <div className="subagent-banner"><Sparkles size={16} /><div><strong>让 Codex 真正会叫子智能体干活</strong><p>每个子智能体保存后，会被注册为 <code>subagent_invoke(name, query)</code> 函数；Codex 在主对话中可以直接调用，返回结构化结果。</p></div></div>
 
@@ -18925,7 +18934,7 @@ const commandMatches = useMemo(() => {
               {subAgentEditorOpen && subAgentDraft && <SubAgentEditorModal draft={subAgentDraft} onChange={setSubAgentDraft} onClose={() => { setSubAgentEditorOpen(false); setSubAgentDraft(null); }} onSave={(draft) => void saveSubAgent(draft)} />}
             </section>}
             {settingsPage === "teams" && <section className="settings-section stack expert-team-center">
-              <div className="settings-copy channel-heading"><div><h2>专家团</h2><p>复刻 WorkBuddy 团队协作：主理人编排，成员按 SOP 分阶段独立产出，最终汇总交付。</p></div><div className="settings-heading-actions"><HelpButton helpKey="agentteam" onOpen={setHelpKey} label="专家团" /><button className="primary-setting" onClick={openNewExpertTeam}><Plus size={14} />新建专家团</button><button className="secondary-setting" onClick={() => void resetExpertTeams()}><RotateCcw size={13} />恢复内置</button><button className="icon-button" title="刷新专家团" onClick={() => void refreshExpertTeams()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+              <div className="settings-copy channel-heading"><div><h2>专家团<PageInfo text={<>复刻 WorkBuddy 团队协作：主理人编排，成员按 SOP 分阶段独立产出，最终汇总交付。</>} helpKey="agentteam" label="专家团" /></h2></div><div className="settings-heading-actions"><button className="primary-setting" onClick={openNewExpertTeam}><Plus size={14} />新建专家团</button><button className="secondary-setting" onClick={() => void resetExpertTeams()}><RotateCcw size={13} />恢复内置</button><button className="icon-button" title="刷新专家团" onClick={() => void refreshExpertTeams()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
               <div className="subagent-banner"><Users size={16} /><div><strong>让 Codex 真正会带团队协作</strong><p>发起会话后，主理人（lead）会在独立会话中通过 <code>team_member_invoke(memberId, query)</code> 按 SOP 调度成员，成员独立产出后回传，主理人最终汇总交付。</p></div></div>
 
@@ -19015,7 +19024,7 @@ const commandMatches = useMemo(() => {
               const toggleMcpChecked = (id: string) => setMcpServerChecked((current) => current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]);
               return (
               <section className="settings-section stack connector-center">
-              <div className="settings-copy channel-heading"><div><h2>MCP</h2><p>上方卡片来自 SkillHub MCP 工具广场（skillhub.cn/mcp），点卡片看详情、带接入模板的可一键写入连接器；下方为已接入管理：保存后写入 Codex 配置、加密保存密钥并重启引擎，支持批量启用/停用。“可用”以 app-server 返回的运行/认证状态为准。</p></div><div className="settings-heading-actions"><HelpButton helpKey="mcp" onOpen={setHelpKey} label="MCP" /><button className="secondary-setting" onClick={() => { setConnectorSecret(""); setConnectorDraft({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} }); setConnectorEditorOpen(true); }}><Plus size={14} />添加 MCP</button><button className="secondary-setting" title="打开 SkillHub MCP 工具广场" onClick={() => void window.codex.openExternal("https://skillhub.cn/mcp")}><ArrowUpRight size={14} />SkillHub MCP 广场</button><button className="secondary-setting" title="打开 AIbase MCP 广场找服务" onClick={() => void window.codex.openExternal("https://mcp.aibase.com/zh/explore")}><ArrowUpRight size={14} />AIbase 广场</button><button className="icon-button" title="刷新 MCP 状态" onClick={() => void refreshSettingsResources()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+              <div className="settings-copy channel-heading"><div><h2>MCP<PageInfo text={<>上方卡片来自 SkillHub MCP 工具广场（skillhub.cn/mcp），点卡片看详情、带接入模板的可一键写入连接器；下方为已接入管理：保存后写入 Codex 配置、加密保存密钥并重启引擎，支持批量启用/停用。“可用”以 app-server 返回的运行/认证状态为准。</>} helpKey="mcp" label="MCP" /></h2></div><div className="settings-heading-actions"><button className="secondary-setting" onClick={() => { setConnectorSecret(""); setConnectorDraft({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} }); setConnectorEditorOpen(true); }}><Plus size={14} />添加 MCP</button><button className="secondary-setting" title="打开 SkillHub MCP 工具广场" onClick={() => void window.codex.openExternal("https://skillhub.cn/mcp")}><ArrowUpRight size={14} />SkillHub MCP 广场</button><button className="secondary-setting" title="打开 AIbase MCP 广场找服务" onClick={() => void window.codex.openExternal("https://mcp.aibase.com/zh/explore")}><ArrowUpRight size={14} />AIbase 广场</button><button className="icon-button" title="刷新 MCP 状态" onClick={() => void refreshSettingsResources()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
                 <div className="plugin-market-block">
                   <div className="plugin-market-title">MCP 市场<small>SkillHub MCP 工具广场 · 27 个服务 · 带模板一键接入 / 其余直达官网</small></div>
                   <div className="resource-toolbar">
@@ -19145,8 +19154,7 @@ const commandMatches = useMemo(() => {
             {settingsPage === "ssh" && <section className="settings-section stack ssh-page">
               <div className="settings-copy channel-heading">
                 <div>
-                  <h2>SSH 服务器</h2>
-                  <p>集中管理远程主机：保存连接与凭据，分组打标签，配置跳板机与登录后命令；可逐台或批量启用/停用、测试连通性、直接开终端或下发一次性命令。凭据仅保存在本机配置目录（ssh-servers.json）。</p>
+                  <h2>SSH 服务器<PageInfo text={<>集中管理远程主机：保存连接与凭据，分组打标签，配置跳板机与登录后命令；可逐台或批量启用/停用、测试连通性、直接开终端或下发一次性命令。凭据仅保存在本机配置目录（ssh-servers.json）。</>} /></h2>
                 </div>
                 <div className="settings-heading-actions">
                   <button className="primary-setting" onClick={() => { setSshEditorTest(null); setSshDraft(emptySshDraft()); }}><Plus size={14} />新建连接</button>
@@ -19368,7 +19376,7 @@ const commandMatches = useMemo(() => {
               onReset={() => { resetUsageStats(); setUsageStats(readUsageStats()); setNotice("使用统计已清空"); }}
             />}
             {settingsPage === "backup" && <section className="settings-section stack backup-page">
-              <div className="settings-copy"><h2>会话备份</h2><p>Markdown 用于阅读和交给其他 AI；JSON 用于完整迁移与恢复。</p></div>
+              <div className="settings-copy"><h2>会话备份<PageInfo text={<>Markdown 用于阅读和交给其他 AI；JSON 用于完整迁移与恢复。</>} /></h2></div>
               <div className="backup-grid">
                 <article className="backup-card backup-card--current">
                   <div className="backup-card-head"><span><MessageSquare size={16} /></span><div><strong>当前会话</strong><small>{thread ? cleanThreadDisplayTitle(thread.name, { preview: thread.preview }) : "尚未打开会话"}</small></div></div>
@@ -19417,7 +19425,7 @@ const commandMatches = useMemo(() => {
               onClearMemoryCache={() => { threadCacheRef.current.clear(); void refreshThreads().catch(() => undefined); }}
             />}
             {settingsPage === "computer" && <section className="settings-section stack">
-              <div className="settings-copy"><h2>电脑控制</h2><p>审批与沙箱决定 Codex 能对这台电脑做什么；完全访问会关闭审批询问。</p></div>
+              <div className="settings-copy"><h2>电脑控制<PageInfo text={<>审批与沙箱决定 Codex 能对这台电脑做什么；完全访问会关闭审批询问。</>} /></h2></div>
               <div className="settings-grid three">
                 <label><span>审批</span><select value={approvalPolicy} disabled={sandbox === "danger-full-access"} onChange={(event) => changeApproval(event.target.value)}><option value="on-request">按需询问</option><option value="untrusted">仅可信命令</option><option value="never">从不询问</option></select></label>
                 <label><span>沙箱</span><select value={sandbox} onChange={(event) => changeSandbox(event.target.value)}><option value="workspace-write">工作区可写</option><option value="read-only">只读</option><option value="danger-full-access">完全访问</option></select></label>
@@ -19486,5 +19494,6 @@ const commandMatches = useMemo(() => {
       <VoiceCallFloat threadId={thread?.id ?? ""} />
       <VoiceSettingsBridge onOpen={() => { setSettingsPage("voice"); setSettingsOpen(true); }} />
     </div>
+    </HelpOpenContext.Provider>
   );
 }
