@@ -16235,6 +16235,15 @@ const commandMatches = useMemo(() => {
             const lastId = String(ordered[ordered.length - 1]?.id ?? "");
             return visible.map((turn) => <MemoTurnView turn={turn} isLastTurn={String(turn.id) === lastId} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={turn.id === latestCompletedTurn?.id || turn.id === activeTurnId ? tokenUsage : null} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />);
           })()}
+          {/* ⛔ 状态条（run-activity-bar）必须排在 #chat-anchor（乐观气泡）**之后**（09-17 用户实测
+              「这个怎么到这个位置了」）：原先它排在最前面，于是「发送后 · 引擎回声前」这段时间里，
+              状态条显示在刚发出的那条消息**上方**；而气泡阶段时间线里只有「你的消息 + 状态条」，
+              正确顺序应当是 消息 → 状态条（与真实阶段的「回合内容 → 状态条」一致）。见下方插入处。 */}
+          {optimisticInput && !optimisticConfirmed && <div id="chat-anchor"><ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} /></div>}
+          {/* 生成过程状态条：**必须排在乐观气泡之后**（09-17 用户实测「这个怎么到这个位置了」）——
+              排在前面时，发送后那段「你的消息已上屏、引擎还没回声」的窗口里状态条会显示在消息**上方**；
+              气泡阶段时间线里只有「你的消息 + 状态条」，顺序应与真实阶段「回合内容 → 状态条」一致。
+              运行时反证：改回原顺序 → 气泡 top=80 / 状态条 top=51（正是用户截图的比例）。 */}
           {runActivity && (
             <div className="run-activity-bar" role="status" aria-live="polite">
               <span className="run-activity-spinner" aria-hidden><i /><i /><i /></span>
@@ -16242,7 +16251,6 @@ const commandMatches = useMemo(() => {
               {runPhrase && <span className="run-activity-phrase">· {runPhrase}</span>}
             </div>
           )}
-          {optimisticInput && !optimisticConfirmed && <div id="chat-anchor"><ItemView item={optimisticInput} pending onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} onImageCopy={messageHandlers.onImageCopy} onOpenFile={messageHandlers.onOpenFile} /></div>}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
           {systemEvents.map((event) => <div className={`system-event ${event.tone ?? "info"}`} key={event.id}><strong>{event.tone === "success" ? <CircleCheck size={13} className="system-event-icon" /> : null}{event.title}</strong><Markdown>{event.text}</Markdown></div>)}
           {/* 上下文压缩分隔线：两边虚线 + 中间文字，状态切换带过渡；success/error 常驻可手动关闭，
