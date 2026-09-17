@@ -177,6 +177,37 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **消息头改「回合级一份」+ 两处反馈提速（09-17 用户第三次反馈：「一轮会话就一个 Codex 名字和
+  Codex 头像就行，就在会话上面就行」+「Codex 名字和头像没有第一时间出来，那个正在处理和那条
+  灰线也没有在发送消息后第一时间出来」）**：
+  - 头像 + 名字从**每条 agent 消息一份**提到**回合级一份**（`.turn-head`，TurnView 渲染）——
+    一个回合可能有多段 agentMessage（工具调用前后各一段），原来会一份一份地重复长出来。
+  - **「没第一时间出来」的真因**：头长在 agentMessage 内部，而 `if (!text.trim()) return null`
+    （空片段不渲染，防空 div 撑出滚动条）会把整个消息头一起挡掉 —— 引擎建好 item 到首 token
+    之间 text 是空的，所以名字头像要等第一个字才出现。提到回合级后**用户气泡一上屏就渲染**。
+  - 「正在处理 N 秒 + 下面那条灰线」（`.running-process-time` 的 border-bottom）原条件是
+    `running && isTaskTurn(turn)`，而 `isTaskTurn` 要求回合内出现过**工具调用** → 纯聊天或刚发出
+    消息时压根不渲染。放宽成 `running && userItems.length > 0` —— ⛔ **不能只要 `running`**：
+    turn/started 先建回合、userMessage 晚到，而乐观气泡排在 timeline **之后**，那段窗口里计时会
+    顶到用户消息**上方**（09-17 实测 1002ms 复现，正是用户报过的同款错位「这个怎么到这个位置了」）。
+  - ⛔ **顺序**（09-17 用户第三次反馈「你这顺序不对吧，生成中怎么能放灰线上面呢」）：
+    **回合头 → 正在处理 + 灰线 → 生成中 → 正文**。计时 + 分隔线属回合头信息，状态词属内容区，
+    灰线是这两者的分界。守卫 ⑰b 按源码顺序判（三者在同一个 `.turn-card` 内，源码序 = DOM 序）。
+  - 「发送后**立刻**」的反馈由**乐观区块**的 `.turn-head` 负责：引擎要 1~2s 才有真回合
+    （实测乐观气泡 552ms 上屏、真实 userMessage 3.3s 才到），这段窗口提前摆出「头像 + 名字」，
+    回声后由 TurnView 接管（同构同位置 → 不断档）。⛔ 乐观区**不放**「正在处理 N 秒」：
+    两处各挂一份会各自从 0 计时，接管那一刻数字跳回去。
+  - 「你」（用户）的消息也有同款头（`.user-head`：名字 + 头像，**右对齐、头像圆形**，与 Codex 的
+    左对齐 + 圆角方形镜像 —— 用户 09-17「人也要有名字和头像，位置跟 Codex 一样」）。名字来自
+    `personalization.nickname`（App 的 `username` state，重启异步回读覆盖缓存），头像来自
+    localStorage `user-profile` 的 `{ avatarType, avatar }`；经 `src/lib/user-identity.mjs`
+    （与 `codex-identity.mjs` 同构的外部 store）分发，消息渲染链上不逐层传 props，
+    `components/UserAvatar.tsx` 提供 `useUserName()` / `UserAvatar`（三态：图片 / 表情 / 名字首字）。
+    气泡内那个 `.user-message .avatar` 本就是 `display:none` 的布局占位，不会与新头重复。
+  - `.codex-turn .assistant-message` 回到**单列**（不再为头像留 22px 列，否则每段回复都自带一份
+    头像、正文还被挤到右边）；`.avatar.agent` 仍被工具卡（imageView / imageGeneration）使用，
+    别顺手删。守卫 ⑰b 已改成「回合级唯一头 + 消息内不得再有头像」的判据。
+
 - **首次启动「环境体检」+ 一键补齐基础工具（09-17 用户：「很多新用户上来，工具都不会装，也不知道要装哪些，
   不装 Codex 啥也干不了」）**：`src/components/EnvCheckDialog.tsx` —— 首屏就绪后检测一次，**必备 4 项**
   （模型 / 工作区 / Git / ripgrep）缺任一项就弹；**常用 3 项**（Python / jq / 7-Zip）列出但只提示不阻断。

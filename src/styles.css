@@ -1791,22 +1791,18 @@ button.brand-mark.sidebar-toggle:hover {
   position: relative;
 }
 .codex-turn .assistant-message {
-  /* ⛔ 09-17：消息头改成「头像 + 名字」后，头像列必须留着 —— 这里原本是**单列**
-     （老设计：assistant 消息左侧不放图标），配合下面那条把 .avatar 整个隐掉。
-     用户报「头像我也没看展示出来」就是这两条历史遗留造成的：名字在、头像被 display:none。 */
-  grid-template-columns: 22px minmax(0, 1fr);
-  column-gap: 8px;
+  /* 09-17 二改（用户「一轮会话就一个 Codex 名字和头像就行，就在会话上面就行」）：
+     头像+名字已提到**回合级**（`.turn-head`）只渲染一份，这里回**单列** —— 正文全宽，
+     不再为头像留 22px 列（留着的话每段回复都自带一份头像，正文还会被挤到右边）。
+     ⛔ 但别把 `.avatar { display:none }` 加回来：那是老设计「assistant 左侧不放图标」的遗留，
+     用户为它报过一次「头像我也没看展示出来」；现在正文里本就不渲染头像。 */
+  grid-template-columns: minmax(0, 1fr);
   justify-self: start;
   width: min(88%, 720px);
   min-width: 0;
   margin-left: 0;
   margin-right: auto;
   padding-left: 0;
-}
-/* 头像恢复显示（.avatar 基础样式本身就是 grid + place-items:center） */
-.codex-turn .assistant-message .avatar,
-.process-content .assistant-message .avatar {
-  display: grid;
 }
 .codex-turn .assistant-message .message-body,
 .process-content .assistant-message .message-body {
@@ -16111,19 +16107,31 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   border-color: var(--accent);
 }
 
-/* ── Codex 消息头：头像 + 名字（09-17 用户要求） ── */
-/* 内容列包一层：名字在正文上方，保持 .message 原本的两列 grid 不变（不动滚动锚点依赖的结构） */
-.assistant-col {
-  min-width: 0;
+/* ── Codex 回合标识：头像 + 名字（09-17 用户两次要求） ──
+   ① 「给 codex 消息上面加一个名字和头像」→ 有了；
+   ② 「一轮会话就一个 Codex 名字和 Codex 头像就行，就在会话上面就行」→ 从每条 agent 消息里
+      **提到回合级**（`.turn-head`，TurnView 渲染且只渲染一份）。
+   顺带修掉「名字头像没第一时间出来」：原来头部长在 agentMessage 内部，而引擎建好 item 到
+   首 token 之间 text 为空、被「空文本不渲染」整条挡掉 —— 要等第一个字才见到头像和名字。
+   现在是回合级渲染，用户气泡一上屏就出现，与首 token 无关。 */
+.turn-head {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 1px 0 5px;
 }
-.assistant-name {
-  font-size: 11.5px;
+.turn-head-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+}
+.turn-head-name {
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.4;
-  color: var(--muted);
-  margin-bottom: 2px;
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -16135,13 +16143,51 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   border-radius: 7px;
   flex: none;
 }
-.assistant-message > .avatar.agent {
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
-  border: 0;
-  background: transparent;
-  border-radius: 7px;
+/* ── 「你」的回合头：名字 + 头像（09-17 用户「人也要有名字和头像，位置跟 Codex 一样」）──
+   与 Codex 的 `.turn-head` 镜像：他那边「头像 + 名字」左对齐，这边「名字 + 头像」右对齐。
+   头像圆形（Codex 是圆角方形，见 .codex-avatar-img），三态渲染见 UserAvatar.tsx。 */
+.user-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 1px 0 5px;
+}
+.user-head-name {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel-2);
+  color: var(--muted);
+  line-height: 1;
+  overflow: hidden;
+  user-select: none;
+}
+.user-avatar > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.user-avatar-initial {
+  font-weight: 600;
+}
+/* 正文只包一层 flex column：保留 .assistant-col 以免动到滚动锚点依赖的既有结构 */
+.assistant-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── 首次启动「环境体检」（09-17 用户：新用户不知道该装什么，不装 Codex 啥也干不了） ──
