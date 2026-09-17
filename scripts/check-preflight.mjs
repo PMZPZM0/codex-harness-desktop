@@ -3800,6 +3800,37 @@ w.postMessage({id:1,op:"list",root});
       : fail("【32】有规则把 assistant 头像 display:none 了 —— 用户只会看到名字");
   }
 
+  // ⑰c 首次启动「环境体检」（09-17 用户：「新用户不知道该装什么，不装 Codex 啥也干不了」）。
+  //   最容易复发的四种失效形态（全部有可证伪的静态判据）：
+  //   ① 体检项被悄悄改少（用户拍板的是「必备 4 + 常用 3」共 7 项）
+  //   ② 弹窗没挂进渲染树 → 缺工具的新用户永远等不到提示（功能等于没做）
+  //   ③「一键安装」没接 installRuntime → 按钮是摆设
+  //   ④ installableIds 把 model/workspace 也当成可安装项 → 调 installRuntime("model") 必失败
+  {
+    const envC = readFileSync(join(ROOT, "src", "components", "EnvCheckDialog.tsx"), "utf8");
+    const appEnv = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+    const specCount = (envC.match(/\{ id: "(?:model|workspace|git|rg|python|jq|sevenzip)"/g) || []).length;
+    (specCount === 7)
+      ? ok("【32】环境体检 7 项齐全（模型/工作区/Git/ripgrep + Python/jq/7-Zip）")
+      : fail(`【32】体检项变成 ${specCount} 项 —— 用户拍板的是「必备 4 + 常用 3」`);
+    const coreCount = (envC.match(/core: true/g) || []).length;
+    (coreCount === 4)
+      ? ok("【32】必备项 4 项（缺了干不了活的那批）")
+      : fail(`【32】必备项变成 ${coreCount} 项 —— 弹窗触发条件会跟着偏`);
+    (/<EnvCheckDialog/.test(appEnv))
+      ? ok("【32】体检弹窗挂在渲染树里（缺工具时真的会弹）")
+      : fail("【32】体检弹窗没挂进渲染树 —— 缺工具的新用户永远等不到提示");
+    (/await window\.codex\.installRuntime\(id\)/.test(appEnv))
+      ? ok("【32】「一键安装」真的调了 installRuntime")
+      : fail("【32】一键安装没接 installRuntime —— 按钮是摆设");
+    (/const MANUAL_IDS = new Set\(\["model", "workspace"\]\)/.test(envC))
+      ? ok("【32】installableIds 排除了 model/workspace（它们不是可安装的运行时）")
+      : fail("【32】installableIds 没排除 model/workspace —— 一键安装会拿它们调 installRuntime 并失败");
+    (/ENV_CHECK_OPTOUT_KEY/.test(envC) && /localStorage\.getItem\(ENV_CHECK_OPTOUT_KEY\)/.test(appEnv))
+      ? ok("【32】「不再提示」真的被读（勾了就不再弹）")
+      : fail("【32】optout 标记没被读 —— 用户勾了「不再提示」还会每次被弹");
+  }
+
   // ⑱ src/lib/*.mjs 是**纯 JS**（node 直接 import 执行），不得出现 TS 语法。
   //    ⛔ 这条守卫的由来：`export type X = …` / `(a: string): void` 这类标注会让 rolldown 直接
   //    PARSE_ERROR 构建失败，而我在 09-17 的 enhance-hints.mjs 与 codex-identity.mjs 上**各踩一次**

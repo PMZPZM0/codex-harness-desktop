@@ -177,6 +177,26 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **首次启动「环境体检」+ 一键补齐基础工具（09-17 用户：「很多新用户上来，工具都不会装，也不知道要装哪些，
+  不装 Codex 啥也干不了」）**：`src/components/EnvCheckDialog.tsx` —— 首屏就绪后检测一次，**必备 4 项**
+  （模型 / 工作区 / Git / ripgrep）缺任一项就弹；**常用 3 项**（Python / jq / 7-Zip）列出但只提示不阻断。
+  底部「一键安装 N 项」串行调 `installRuntime`（复用主进程 `runtime:progress` 进度），
+  另有「不再提示」（localStorage `env-check-optout`）。复用既有能力（`listRuntimes` / `installRuntime` /
+  `runtime:progress` 都已存在），**没有新增主进程 IPC**。
+  - 用户拍板三条：**7 项**（不是 22 项全列——新用户列满只会更迷茫）/ **弹窗确认后才下载**
+    （Git 90MB 量级，静默装会突然吃带宽）/ **保留 Git 的后台静默自愈**（引擎跑命令的硬依赖，
+    `autoInstallGitIfNeeded` 原样不动）。
+  - ⛔ **`envCheckDoneRef` 这类「已执行」标记必须在真正执行处置位，不能放在 effect 开头** ——
+    effect 依赖里有 `workspace` / `customModel`，启动过程必然变化 → effect 重建 → cleanup 清掉 timer，
+    而标记已 true → 新 effect 直接 return → **timer 永不执行、体检永不弹**。
+    09-17 真启动实测踩到（移走 `rg.exe` 模拟缺工具，弹窗依然不出现）；靠 `window.__envCheckDbg`
+    埋点定位（`effectRan: true` 但没有 `timerFired`）。**该埋点保留**，用户再报「没弹」可直接看它。
+  - 验证：真启动端到端 9 条全绿 —— 临时移走 `resources/tools/rg/rg.exe` 模拟缺失 → 弹窗出现
+    （7 项 + 必备/常用两组 + 缺失项琥珀高亮 + 体积文案）→ **真点一次一键安装，22 秒装回 ripgrep**
+    （`installed=true`）→ finally 恢复文件（try/finally 保证）。
+  - 预检 ⑰c 守卫 6 条（7 项齐全 / 必备 4 项 / 弹窗在渲染树 / 一键安装真接 `installRuntime` /
+    `installableIds` 排除 model+workspace / optout 真被读），反证成立（改坏 `MANUAL_IDS` → 变红）。
+
 - **Codex 身份两处显示 bug（09-17，用户「排版严谨一点」+「头像我也没看展示出来」）**：
   ① **消息头只剩名字、头像整个不见了**：真因是历史遗留的两条规则 ——
   `.codex-turn .assistant-message { grid-template-columns: minmax(0, 1fr) }`（单列）
