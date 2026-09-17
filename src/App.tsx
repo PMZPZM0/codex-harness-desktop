@@ -11193,21 +11193,40 @@ const commandMatches = useMemo(() => {
     // 所以这里**不再**尝试在聊天区把它当普通消息展示（那套实验引入了回归，已撤）：
     // 消息由引擎插进正在跑的回合流里，界面按引擎回推的 item 正常渲染；
     // 用户消息不会被折叠进过程组（见 src/lib/turn-fold-plan.mjs 的 isAnchor 第 ① 条）。
-    if (activeTurnId && entry) {
+    //
+    // ⛔ 09-17 修复「插队消息每次都报错」（用户实测；引擎原文 = `no active turn to steer`）：
+    //   原实现只认 `activeTurnId`（应用侧状态）。但上一轮 **429 限流失败 / 被中断 / 已跑完** 之后，
+    //   它仍可能是**上一回合的旧值**，而引擎那边早已没有活动回合 → steer 必然失败，且失败后
+    //   只弹一句报错、消息还留在队列里，用户重试多少次都一样。
+    //   现在两层防：
+    //   ① 先按「**真的有回合在跑**」判断（`isTurnRunning`），activeTurnId 命中运行中回合才用它；
+    //   ② 引擎仍回 `no active turn` 时**退化为开始新回合**（下面 `thread/queue/start`），
+    //      并清掉应用侧的陈旧运行态，而不是把消息卡死在队列里。
+    const runningTurnId = (thread.turns ?? []).find((turn) => isTurnRunning(turn))?.id ?? null;
+    const steerTurnId = activeTurnId && activeTurnId === runningTurnId ? activeTurnId : runningTurnId;
+    if (steerTurnId && entry) {
       try {
         await window.codex.request("turn/steer", {
           threadId: thread.id,
-          expectedTurnId: activeTurnId,
+          expectedTurnId: steerTurnId,
           input: entry.input,
           ...(entry.clientUserMessageId ? { clientUserMessageId: entry.clientUserMessageId } : {}),
         });
         await deleteQueued(entry.id);
         void refreshQueue(thread.id);
         showToast("已发送", "这条排队消息已并入当前任务");
+        return;
       } catch (error: any) {
-        showToast("发送失败", error.message);
+        const message = String(error?.message ?? error ?? "");
+        if (!/no active turn/i.test(message)) {
+          showToast("发送失败", message);
+          return;
+        }
+        // 陈旧运行态：清掉后按「新回合」发出去（不再卡在队列里）
+        markThreadStopped(thread.id);
+        setActiveTurnId(null);
+        dbg("steer-stale-fallback", {});
       }
-      return;
     }
     try {
       await window.codex.request("thread/queue/start", { threadId: thread.id, ...(id ? { queuedSubmissionId: id } : {}) });

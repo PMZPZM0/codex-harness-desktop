@@ -3142,6 +3142,57 @@ w.postMessage({id:1,op:"list",root});
 
 // ---------- 汇总 ----------
 
+// ---------- 【29】发送动画交接 + 浮层动画位移 + 插队退化（09-17 三起实测事故的回归网） ----------
+{
+  const app = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const css = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+  // ⛔ 必须剥注释再断言：本轮首版守卫就被自己的**注释**喂成假绿 —— `no active turn`、
+  //    `compact-toast-in` 这些词在解释性注释里也会出现，只查字符串存在等于没查（AGENTS.md 已点名）。
+  const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const appCode = stripComments(app);
+  const cssCode = stripComments(css);
+
+  // ① 入场动画必须由真实消息「认领」
+  //   事故：动画只登记在乐观气泡上，真实消息几十毫秒内接管、气泡卸载 → 动画被腰斩
+  //   （实测 t+13ms opacity 0.24 → t+34ms 节点已消失），消息"啪"地跳到位、没有过渡。
+  /function claimSendAnimation\(/.test(appCode) && /function armSendAnimationClaim\(/.test(appCode)
+    ? ok("发送入场动画交接机制在（armSendAnimationClaim / claimSendAnimation 成对）")
+    : fail("缺少 arm/claimSendAnimation —— 真实消息接管时动画被腰斩（消息没有过渡到落点）");
+  /claimSendAnimation\(itemText\(item\)\)/.test(appCode)
+    ? ok("真实消息挂载时认领动画（UserMessageView lazy 初始化里）")
+    : fail("UserMessageView 没有认领动画 —— 乐观气泡卸载后动画不会接手");
+  (/armSendAnimationClaim\(messageText\)/.test(appCode) && /armSendAnimationClaim\(text\)/.test(appCode))
+    ? ok("发送处（普通发送 + 编辑重发）都登记了待认领动画")
+    : fail("发送处缺少 armSendAnimationClaim —— 认领永远不命中，动画又会被腰斩");
+
+  // ② 带 translate(-50%) 的入场动画只能给「left:50% 居中定位」的元素用
+  //   事故：限流条借用 compact-toast-in → 整体左移自身宽度一半（实测 tx=-237px = 474.8/2），
+  //   表现为「靠左、越出输入框左缘、右边被切」。
+  const toastAt = cssCode.indexOf("@keyframes compact-toast-in");
+  const toastBlock = toastAt < 0 ? "" : cssCode.slice(toastAt, toastAt + 400);
+  /translate\(\s*-50%/.test(toastBlock)
+    ? (/\.rate-limit-retry-bar\s*\{[^}]*compact-toast-in/.test(cssCode)
+        ? fail("限流条又借用了 compact-toast-in（含 translate(-50%)）—— 会左移半个宽度、越出输入框被切")
+        : ok("限流条没有借用带 -50% 位移的动画（不会整体左移）"))
+    : ok("compact-toast-in 不含横向位移（借用安全）");
+  /@keyframes\s+rate-limit-bar-in/.test(cssCode)
+    ? ok("限流条专用入场动画 rate-limit-bar-in 在")
+    : fail("rate-limit-bar-in 缺失 —— 限流条入场动画会被换回带位移的那套");
+
+  // ③ 插队（turn/steer）必须先判定「真的有回合在跑」，并在引擎回 no active turn 时退化
+  //   事故（用户实测「插队消息每次都报错」）：原实现只认 activeTurnId，上一轮 429/中断/跑完后
+  //   它仍是旧值 → 引擎回 `no active turn to steer`，消息卡在队列里永远发不出去。
+  const startIdx = appCode.indexOf("async function startQueued");
+  const queuedFn = startIdx < 0 ? "" : appCode.slice(startIdx, startIdx + 3200);
+  // 锚定「运行中回合」判定必须由 isTurnRunning 驱动、且 steer 用的是这个结果（不是裸 activeTurnId）
+  (/const runningTurnId = [^\n]*isTurnRunning\(turn\)/.test(queuedFn) && /expectedTurnId: steerTurnId/.test(queuedFn))
+    ? ok("插队前按 isTurnRunning 判定运行中回合（不再只看陈旧的 activeTurnId）")
+    : fail("插队只看 activeTurnId —— 上一轮结束后插队必报 no active turn（用户实测「每次都报错」）");
+  (/if \(!\/no active turn\/i\.test\(message\)\)/.test(queuedFn) && /thread\/queue\/start/.test(queuedFn))
+    ? ok("引擎回 no active turn 时退化为开始新回合（消息不会卡在队列里）")
+    : fail("no active turn 没有退化路径 —— 排队消息会卡在队列里发不出去");
+}
+
 console.log("");
 if (hardFails === 0) {
   console.log(C.green(`预检通过${warns ? `（${warns} 条告警，见上）` : ""}`));

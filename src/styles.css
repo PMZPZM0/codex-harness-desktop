@@ -20036,6 +20036,15 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .index-group-body .index-result { grid-template-columns: 26px minmax(0, 1fr) auto; }
 
 /* ── 429 限流自动重试状态条（composer 上方，与 compact-toast 同风格） ── */
+/* ⛔ 09-17：入场动画必须用**不带 translateX(-50%)** 的那套。
+   原来借用 compact-toast-in，而它的 0%/100% 都是 translate(-50%, …) —— 那是给
+   「left:50% 居中定位的 toast」配的；限流条是 static 定位，被整体左移了自身宽度的
+   一半（实测 transform 残留 -237.383px = 宽度 474.8/2），于是"靠左、越出输入框左缘、
+   右边被切"。 */
+@keyframes rate-limit-bar-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .rate-limit-retry-bar {
   display: flex;
   align-items: center;
@@ -20049,7 +20058,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   color: var(--text);
   font-size: 12.5px;
   line-height: 1;
-  animation: compact-toast-in 0.18s ease both;
+  animation: rate-limit-bar-in 0.18s ease both;
   /* 09-17 自适应：宽度跟内容但不超过容器；窄窗由 flex-wrap 换行，不再撑破/截断 */
   width: fit-content;
   max-width: min(100%, 720px);

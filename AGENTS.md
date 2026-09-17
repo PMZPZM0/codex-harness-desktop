@@ -170,6 +170,15 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **插队（排队消息点「立即」）每次都报错（09-17 用户实测）**：
+  - **引擎原文**（直接用真实 threadId + 过期回合调 `turn/steer` 逼出来）：`no active turn to steer`。另外确认 `expectedTurnId` 是**必填**（缺了回 `missing field \`expectedTurnId\``），所以应用传参没写错。
+  - **真因**：`startQueued` 只看 `activeTurnId`（应用侧状态）。上一轮 **429 限流失败 / 被中断 / 已跑完**之后它仍是旧值，引擎那边早已没有活动回合 → steer 必失败；失败只弹一句报错、消息仍留在队列里，用户重试几次都一样。
+  - **修法**：① 先按「**真的有回合在跑**」判断 —— `isTurnRunning` 找到运行中回合，`activeTurnId` 命中它才用作 `expectedTurnId`；② 引擎仍回 `no active turn` 时**退化为开始新回合**（走 `thread/queue/start`）并清掉陈旧运行态（`markThreadStopped` + `setActiveTurnId(null)`），不再把消息卡死在队列里。
+- **429 限流重试条「靠左、越出输入框左缘、右边被切」（09-17，上一轮只改了宽度、没修定位）**：
+  - **真因（实测 computed style）**：它借用了 `@keyframes compact-toast-in`，而那套关键帧的 **0%/100% 都带 `translate(-50%, …)`**（本来是给 `left:50%` 居中定位的 toast 用的）。限流条是 static 定位 → 被整体左移**自身宽度的一半**（实测 `transform` 残留 `-237.383px`，宽度 474.8/2；表现为条中心 403 vs 输入框中心 640）。
+  - **修法**：新增 `@keyframes rate-limit-bar-in`（只做 `translateY(-6px) → 0` + 淡入），限流条改用它。⛔ 通用教训：**带 `translate(-50%)` 的入场动画只能给「left:50% 居中定位」的元素用**，借用前先看关键帧里有没有位移。
+  - 预检守卫【29】：注释剥离后断言「限流条没有借用带 -50% 位移的动画 + `rate-limit-bar-in` 在」，反证（换回 compact-toast-in）成立。
+
 - **发送消息的入场动画不再被腰斩（09-17，用户实测「发出去的消息没有动画到位置，先展示上面消息、没有过渡」）**：
   - **实测根因**（按帧打点）：动画只登记在**乐观气泡**上（`justSentIds`），而引擎回声的真实消息几十毫秒内就接管、气泡随之卸载 —— 实测 t+13ms opacity 0.24（刚起头）→ t+34ms 节点已消失，动画被打断，消息"啪"地跳到最终位置；同时钉顶在接管瞬间重锚，滚动出现 2048→2381→2075 的两步跳。
   - **修法**：`armSendAnimationClaim(text)` 发送时登记正文，真实消息**挂载那一刻**（`UserMessageView` 的 lazy `useState`）用 `claimSendAnimation()` 认领（一次性、10s TTL、前缀匹配防误认领）→ `just-sent` 与节点同帧出现，结构上不可能被接管打断；乐观气泡（`pending`）仍走原 `justSentIds`。
