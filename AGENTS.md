@@ -337,12 +337,14 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
     别顺手删。守卫 ⑰b 已改成「回合级唯一头 + 消息内不得再有头像」的判据。
 
 - **首次启动「环境体检」+ 一键补齐基础工具（09-17 用户：「很多新用户上来，工具都不会装，也不知道要装哪些，
-  不装 Codex 啥也干不了」）**：`src/components/EnvCheckDialog.tsx` —— 首屏就绪后检测一次，**必备 4 项**
-  （模型 / 工作区 / Git / ripgrep）缺任一项就弹；**常用 3 项**（Python / jq / 7-Zip）列出但只提示不阻断。
+  不装 Codex 啥也干不了」）**：`src/components/EnvCheckDialog.tsx` —— 首屏就绪后检测一次，**必备 5 项**
+  （模型 / 工作区 / Git / ripgrep / **PowerShell 7**——09-18 用户点名「终端必要的工具」，缺失时终端退回 5.1）缺任一项就弹；
+  **常用 3 项**（Python / jq / 7-Zip）列出但只提示不阻断。
   底部「一键安装 N 项」串行调 `installRuntime`（复用主进程 `runtime:progress` 进度），
   另有「不再提示」（localStorage `env-check-optout`）。复用既有能力（`listRuntimes` / `installRuntime` /
   `runtime:progress` 都已存在），**没有新增主进程 IPC**。
-  - 用户拍板三条：**7 项**（不是 22 项全列——新用户列满只会更迷茫）/ **弹窗确认后才下载**
+  - 用户拍板三条：**8 项**（不是 22 项全列——新用户列满只会更迷茫；09-18 补 PowerShell 7 到 8 项）/
+    **弹窗确认后才下载**
     （Git 90MB 量级，静默装会突然吃带宽）/ **保留 Git 的后台静默自愈**（引擎跑命令的硬依赖，
     `autoInstallGitIfNeeded` 原样不动）。
   - ⛔ **`envCheckDoneRef` 这类「已执行」标记必须在真正执行处置位，不能放在 effect 开头** ——
@@ -351,10 +353,11 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
     09-17 真启动实测踩到（移走 `rg.exe` 模拟缺工具，弹窗依然不出现）；靠 `window.__envCheckDbg`
     埋点定位（`effectRan: true` 但没有 `timerFired`）。**该埋点保留**，用户再报「没弹」可直接看它。
   - 验证：真启动端到端 9 条全绿 —— 临时移走 `resources/tools/rg/rg.exe` 模拟缺失 → 弹窗出现
-    （7 项 + 必备/常用两组 + 缺失项琥珀高亮 + 体积文案）→ **真点一次一键安装，22 秒装回 ripgrep**
+    （8 项 + 必备/常用两组 + 缺失项琥珀高亮 + 体积文案）→ **真点一次一键安装，22 秒装回 ripgrep**
     （`installed=true`）→ finally 恢复文件（try/finally 保证）。
-  - 预检 ⑰c 守卫 6 条（7 项齐全 / 必备 4 项 / 弹窗在渲染树 / 一键安装真接 `installRuntime` /
-    `installableIds` 排除 model+workspace / optout 真被读），反证成立（改坏 `MANUAL_IDS` → 变红）。
+  - 预检 ⑰c 守卫 8 条（8 项齐全 / 必备 5 项 / pwsh 在必备组 / **pwsh 平台门控——mac 终端用系统 shell
+    不标必备** / 弹窗在渲染树 / 一键安装真接 `installRuntime` /
+    `installableIds` 排除 model+workspace / optout 真被读），反证成立（抹掉 pwsh 项 → 3 条红；抹掉平台门控 → 变红）。
   - **出场时机（09-17 用户二次明确：「只在进入主界面的时候才弹配置引导和工具安装检测自动安装；
     如果已经配置模型，就不引导模型配置，直接做开发工具检测安装」）**：两个引导都靠 `showLogin`
     挡在登录页之外（登录页是**提前 return 的渲染分支**，弹窗挂在那之后，物理上也弹不出来）；

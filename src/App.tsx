@@ -12703,14 +12703,18 @@ const commandMatches = useMemo(() => {
     return () => window.clearTimeout(timer);
   }, [threadsLoading, showLogin, customModel]);
 
-  /** 体检项（必备：模型 / 工作区 / Git / ripgrep；常用：Python / jq / 7-Zip）。
+  /** 体检项按平台过滤：PowerShell 7 只在 Windows 是必备——mac 终端用的是系统 shell
+   *  （terminal.ts 非 win32 分支取 SHELL，默认 zsh），不依赖 pwsh，标成「缺了干不了活」反而误导；
+   *  pwsh 在 mac 仍可从「开发工具」页按需装。 */
+  const envSpecs = useMemo(() => ENV_CHECK_SPEC.filter((spec) => spec.id !== "pwsh" || !isMacPlatform()), []);
+  /** 体检项（必备：模型 / 工作区 / Git / ripgrep / PowerShell 7(仅 Windows)；常用：Python / jq / 7-Zip）。
    *  运行时的显示名与体积取自 devRuntimes —— 与「开发工具」页同一份数据，不会两处打架。 */
-  const envItems: EnvCheckState[] = useMemo(() => ENV_CHECK_SPEC.map((spec) => {
+  const envItems: EnvCheckState[] = useMemo(() => envSpecs.map((spec) => {
     if (spec.id === "model") return { id: "model", name: spec.fallbackName, why: spec.why, size: "", core: true, ok: Boolean(customModel), go: "model" as const };
     if (spec.id === "workspace") return { id: "workspace", name: spec.fallbackName, why: spec.why, size: "", core: true, ok: Boolean(workspace), go: "workspace" as const };
     const runtime = devRuntimes.find((entry) => entry.id === spec.id);
     return { id: spec.id, name: runtime?.name ?? spec.fallbackName, why: spec.why, size: runtime?.size ?? "", core: spec.core, ok: Boolean(runtime?.installed) };
-  }), [devRuntimes, workspace, customModel]);
+  }), [devRuntimes, workspace, customModel, envSpecs]);
 
   /** 一键安装体检缺项。⛔ 串行而不是并行：并行会多个安装进程同时抢同一份 npm 缓存目录。 */
   async function installEnvMissing(ids: string[]) {
@@ -12756,9 +12760,9 @@ const commandMatches = useMemo(() => {
         if (dbg.optout === "1") return;
         const list = await window.codex.listRuntimes();
         setDevRuntimes(list);
-        dbg.listRuntimes = list.filter((entry) => ["git", "rg", "python", "jq", "sevenzip"].includes(entry.id))
+        dbg.listRuntimes = list.filter((entry) => ["git", "rg", "pwsh", "python", "jq", "sevenzip"].includes(entry.id))
           .map((entry) => `${entry.id}:${entry.installed ? "ok" : "missing"}`);
-        const missingCore = ENV_CHECK_SPEC.filter((spec) => spec.core).filter((spec) => {
+        const missingCore = envSpecs.filter((spec) => spec.core).filter((spec) => {
           if (spec.id === "model") return !customModel;
           if (spec.id === "workspace") return !workspace;
           return !list.find((entry) => entry.id === spec.id)?.installed;
@@ -12773,7 +12777,7 @@ const commandMatches = useMemo(() => {
     }, 1400);
     return () => window.clearTimeout(timer);
     // customModel / workspace 变化会重建本 effect（清掉旧计时器）→ 1.4s 后读到的一定是最新值
-  }, [threadsLoading, showLogin, showModelGuide, customModel, workspace]);
+  }, [threadsLoading, showLogin, showModelGuide, customModel, workspace, envSpecs]);
 
   // 设置弹窗「骨架先行」：点击入口先画弹窗框架与 loading，重内容与引擎 RPC 延后一帧。
   // 软件渲染（无 GPU 加速）机器上弹窗内容大，同步挂载会造成「点了没反应」的冻结感。
