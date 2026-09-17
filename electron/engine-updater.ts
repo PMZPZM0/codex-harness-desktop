@@ -225,6 +225,11 @@ function runCommand(bin: string, args: string[], timeoutMs = 15000): Promise<{ o
 }
 
 function tarExecutable(): string {
+  // ⛔ mac 适配（09-17 审计）：darwin 用系统 bsdtar（/usr/bin/tar）。GUI 启动的进程 PATH 是
+  // launchd 给的最小集，裸名 "tar" 在 PATH 被改过的环境里可能落空；能给绝对路径就给。
+  if (process.platform === "darwin") {
+    return existsSync("/usr/bin/tar") ? "/usr/bin/tar" : "tar";
+  }
   const sysTar = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe");
   return existsSync(sysTar) ? sysTar : "tar";
 }

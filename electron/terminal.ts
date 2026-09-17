@@ -4,6 +4,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import { augmentedPath, bundledPwsh } from "./toolchain";
 
 let ptyModule: any = null;
@@ -17,14 +18,16 @@ if (process.env.CODEX_HARNESS_PTY === "1") {
 
 function findFile(candidates: string[], name: string) {
   for (const dir of candidates) {
-    const full = `${dir}\\${name}`;
+    // ⛔ 平台化（09-17 审计）：原来用模板串硬拼 `\\`，POSIX 上会拼出 `/a/b\pwsh.exe` 这种四不像；
+    // 候选目录来自 augmentedPath()，POSIX 的分隔符是 `:`（path.delimiter），不是 `;`。
+    const full = path.join(dir, name);
     try { if (fs.existsSync(full)) return full; } catch { /* skip */ }
   }
   return name;
 }
 
-const pathDirs = augmentedPath().split(";");
-const pwshPath = findFile(pathDirs, "pwsh.exe");
+// pwsh 的候选文件按平台取（Windows 是 pwsh.exe；mac/Linux 是无后缀的 pwsh）。仅 Windows 分支用到它。
+const pwshPath = findFile(augmentedPath().split(path.delimiter), process.platform === "win32" ? "pwsh.exe" : "pwsh");
 
 export class TerminalService {
   private proc: any = null;
@@ -59,7 +62,9 @@ export class TerminalService {
   }
 
   private prompt() {
-    this.emit(`PS ${this.cwd}> `);
+    // 管道模式下应用自绘提示符：Windows 用 PowerShell 风格（PS <cwd>>），
+    // ⛔ mac/Linux 用 shell 风格（<cwd> $）—— 在 mac 上显示 "PS /Users/x>" 会让人以为是 PowerShell。
+    this.emit(process.platform === "win32" ? `PS ${this.cwd}> ` : `${this.cwd} $ `);
   }
 
   // 命令输出停止 350ms 后补一个提示符，避免用户盲打

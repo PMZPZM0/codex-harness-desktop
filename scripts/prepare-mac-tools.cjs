@@ -93,12 +93,34 @@ async function main() {
   tar(`https://github.com/PowerShell/PowerShell/releases/download/v7.6.4/powershell-7.6.4-osx-${arch}.tar.gz`,
     "pwsh.tar.gz", path.join(tools, "pwsh"));
   fs.chmodSync(path.join(tools, "pwsh/pwsh"), 0o755);
+
+  // ⛔ cloudflared（手机配对的公网隧道）。Windows 侧由 prepare-windows-tools 下载 cloudflared.exe；
+  //    mac 侧此前**完全没有**，而 remote.ts 又写死了 `…/tools/cloudflared.exe` ⇒ mac 上隧道从不启动，
+  //    扫码配对只能走局域网（用户报「mac 上手机连不上」类问题的根因之一）。09-17 补齐。
+  //    资产：cloudflared-darwin-{amd64|arm64}.tgz，解出来就是单个无后缀二进制，必须补执行位。
+  const cfRelease = await json("https://api.github.com/repos/cloudflare/cloudflared/releases/latest");
+  const cfAssetName = `cloudflared-darwin-${arch === "arm64" ? "arm64" : "amd64"}.tgz`;
+  const cfAsset = cfRelease.assets.find((asset) => asset.name === cfAssetName);
+  if (!cfAsset) throw new Error(`cloudflared latest 里没有 ${cfAssetName}`);
+  const cloudflaredDir = path.join(tools, "cloudflared");
+  tar(cfAsset.browser_download_url, cfAssetName, cloudflaredDir);
+  // 归档内层结构若变了（套了一层目录），在解压结果里找回真正的二进制再补执行位
+  const cfBinary = path.join(cloudflaredDir, "cloudflared");
+  if (!fs.existsSync(cfBinary)) {
+    const found = fs.readdirSync(cloudflaredDir, { withFileTypes: true })
+      .map((entry) => entry.isDirectory() ? path.join(cloudflaredDir, entry.name, "cloudflared") : "")
+      .find((candidate) => candidate && fs.existsSync(candidate));
+    if (!found) throw new Error(`cloudflared 解压后找不到可执行文件（${cloudflaredDir}）`);
+    fs.renameSync(found, cfBinary);
+  }
+  fs.chmodSync(cfBinary, 0o755);
+  console.log(`[cloudflared] ${cfRelease.tag_name} → ${cfBinary}`);
   tar("https://github.com/DietrichGebert/ponytail/archive/refs/tags/v4.9.0.tar.gz",
     "ponytail.tar.gz", path.join(tools, "ponytail-plugin"), true);
   fs.writeFileSync(path.join(tools, "mac-runtime-manifest.json"), JSON.stringify({
     platform: process.platform, arch, node: nodeVersion, nuphus: "0.2.2",
     // cloakbrowser 09-16 起不随包（按需下载），故不再记入随包清单
-    playwrightCli: "0.1.18", python: pythonAsset.name, source: process.env.GITHUB_SHA || "",
+    playwrightCli: "0.1.18", python: pythonAsset.name, cloudflared: cfRelease.tag_name, source: process.env.GITHUB_SHA || "",
     helperSha256: crypto.createHash("sha256").update(fs.readFileSync(path.join(tools, "nuphus-call.mjs"))).digest("hex"),
   }, null, 2));
 }

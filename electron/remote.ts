@@ -5,6 +5,28 @@ import crypto from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { toolsRoot } from "./toolchain";
+
+/** cloudflared 可执行文件（手机配对的公网隧道）。
+ *  ⛔ mac 适配（09-17 审计）：旧实现写死 `path.join(process.cwd(), "resources", "tools", "cloudflared.exe")` ——
+ *  ① 用**进程当前目录**而不是应用资源目录：打包后能不能命中全靠「启动目录碰巧是安装目录」，
+ *     mac 上（cwd 通常是 .app/Contents/MacOS）必然落空；
+ *  ② 名字带 .exe：darwin 侧随包的是无后缀单文件二进制（prepare-mac-tools 下载
+ *     cloudflared-darwin-<arch>.tgz）⇒ mac 上公网隧道从不启动，扫码只能局域网。
+ *  按平台 + 内置工具目录统一解析，找不到返回空串（调用方已按「隧道不可用」降级到局域网）。 */
+function resolveCloudflaredBin(): string {
+  const isWin = process.platform === "win32";
+  const tools = toolsRoot();
+  const candidates = [
+    ...(tools ? [path.join(tools, ...(isWin ? ["cloudflared.exe"] : ["cloudflared", "cloudflared"]))] : []),
+    // mac 上用户自己 brew 装的那份也认（随包缺失时的兜底）
+    ...(isWin ? [] : ["/opt/homebrew/bin/cloudflared", "/usr/local/bin/cloudflared"]),
+  ];
+  for (const candidate of candidates) {
+    try { if (fs.existsSync(candidate)) return candidate; } catch { /* 继续下一个 */ }
+  }
+  return "";
+}
 
 type RemoteEvents = {
   getStatus?: () => string;
@@ -162,8 +184,8 @@ export class RemoteControlService {
   /** Cloudflare 快速隧道（零注册）：给配对服务一个 https://xxx.trycloudflare.com 公网域名，
    * 微信/相机扫码可直接打开。失败静默回退本机地址。 */
   private startTunnel() {
-    const bin = path.join(process.cwd(), "resources", "tools", "cloudflared.exe");
-    if (!fs.existsSync(bin)) return;
+    const bin = resolveCloudflaredBin();
+    if (!bin) return;
     try { this.tunnelProc?.kill(); } catch { /* not running */ }
     const child = spawn(bin, ["tunnel", "--url", `http://127.0.0.1:${this.port}`, "--edge-ip-version", "auto"], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     this.tunnelProc = child;

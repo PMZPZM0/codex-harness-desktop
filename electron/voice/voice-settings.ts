@@ -56,7 +56,10 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   barge: { gateDb: 6, mode: "auto" },
   aec: { mode: "auto" },
   modelHost: "auto",
-  hotkey: { enabled: false, accelerator: "Ctrl+Shift+M" },
+  // ⛔ mac 适配（09-17 审计）：默认呼叫键原来写死 "Ctrl+Shift+M"。Electron 的 accelerator 里
+  //    CommandOrControl 在 Windows/Linux = Ctrl（与旧行为完全一致）、在 macOS = ⌘ —— mac 用户
+  //    按 ⌘⇧M 才符合直觉，写死 Ctrl 等于给 mac 用户埋一个「默认键按不出来」的坑。
+  hotkey: { enabled: false, accelerator: "CommandOrControl+Shift+M" },
   dictationHotkey: { enabled: false, accelerator: "Alt+Space" },
   wake: { enabled: false, phrase: "小柯小柯" },
   ball: { visible: true, hints: true },

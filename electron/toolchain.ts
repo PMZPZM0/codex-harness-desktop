@@ -156,8 +156,10 @@ export function toolchainEnv() {
   if (nodePath) env.NODE_PATH = nodePath;
   const tools = toolsRoot();
   if (tools) {
-    const realPwsh = path.join(tools, "pwsh", "pwsh.exe");
-    if (fs.existsSync(realPwsh)) env.CODEX_REAL_PWSH = realPwsh;
+    // ⛔ mac 适配（09-17 审计）：这里原写死 `tools/pwsh/pwsh.exe`，darwin 侧随包的是 `tools/pwsh/pwsh`
+    //    （无后缀）⇒ mac 上 CODEX_REAL_PWSH 永远不设置。改用 bundledPwsh() 统一平台解析。
+    const realPwsh = bundledPwsh();
+    if (realPwsh) env.CODEX_REAL_PWSH = realPwsh;
     env.CLOAKBROWSER_CACHE_DIR = path.join(tools, "cloak-cache");
     env.CLOAKBROWSER_AUTO_UPDATE = "false";
     env.PLAYWRIGHT_BROWSERS_PATH = path.join(tools, "pw-browsers");

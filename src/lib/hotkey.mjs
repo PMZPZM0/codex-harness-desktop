@@ -17,9 +17,19 @@
 /** 把 Windows 风格的快捷键标签转成 macOS 写法：
  *  - `Ctrl+Shift+F` → `⌘⇧F`（Apple 惯例：修饰键连写，不带 `+`）
  *  - 单独出现的 `Ctrl`（自然语言里的「Ctrl + 逗号」）也一起换
- *  - `Enter` / `Esc` / `,` 等键名不变 */
+ *  - `Enter` / `Esc` / `,` 等键名不变
+ *
+ *  ⛔ 09-17 审计补充：语音快捷键存的是 **Electron accelerator 原文**（如 `CommandOrControl+Shift+M`），
+ *  在 mac 上也得显示成 `⌘⇧M`。所以这里先吃掉 `CommandOrControl` / `CmdOrCtrl` 这类**整词**，
+ *  再映射 `Command|Cmd|Super|Meta` → ⌘、`Option` → ⌥。顺序不能反：`/Ctrl\+?/` 会先匹配到
+ *  `CommandOrControl+` 里的 `Ctrl+`，把整词切碎成 `CommandOr⌘`。 */
 export function macHotkeyLabel(label) {
   return String(label ?? "")
+    // ⛔ 修饰键替换必须**连它后面的 `+` 一起吃**：只换名字会留下「⌘+⇧M」这种半成品
+    //    （accelerator 原文是 `CommandOrControl+Shift+M`）。
+    .replace(/(?:CommandOrControl|CmdOrCtrl)\+?/gi, "⌘")
+    .replace(/(?:Command|Cmd|Super|Meta)\+?/gi, "⌘")
+    .replace(/Option\+?/gi, "⌥")
     .replace(/Ctrl\+?/g, "⌘")
     .replace(/Shift\+?/g, "⇧")
     .replace(/Alt\+?/g, "⌥");

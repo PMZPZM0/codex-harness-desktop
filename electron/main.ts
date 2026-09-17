@@ -265,12 +265,21 @@ function gitBin(): string {
   if (gitBinCache) return gitBinCache;
   // 系统 PATH 里通常没有 git（GUI 进程继承的注册表 PATH 无 Git Bash 注入）——
   // 按候选顺序解析：应用自带便携版 → 常见安装位置 → 最后才赌 PATH
-  const candidates = [
-    path.join(appSourceRoot(), "resources", "tools", "git", "cmd", "git.exe"),
-    path.join(process.resourcesPath || app.getAppPath(), "tools", "git", "cmd", "git.exe"),
-    "C:\\Program Files\\Git\\cmd\\git.exe",
-    path.join(process.env.LOCALAPPDATA || "", "Programs", "Git", "cmd", "git.exe"),
-  ];
+  // ⛔ mac 适配（09-17 审计）：darwin 没有便携 git，用系统那份；且 GUI 进程的 PATH 是 launchd
+  //    给的最小集，/usr/bin/git 是 Xcode 命令行工具提供的 shim，homebrew 在 /opt/homebrew/bin。
+  const candidates = process.platform === "darwin"
+    ? [
+        "/usr/bin/git",
+        "/opt/homebrew/bin/git",
+        "/usr/local/bin/git",
+        path.join(toolsRoot(), "git", "bin", "git"),
+      ]
+    : [
+        path.join(appSourceRoot(), "resources", "tools", "git", "cmd", "git.exe"),
+        path.join(process.resourcesPath || app.getAppPath(), "tools", "git", "cmd", "git.exe"),
+        "C:\\Program Files\\Git\\cmd\\git.exe",
+        path.join(process.env.LOCALAPPDATA || "", "Programs", "Git", "cmd", "git.exe"),
+      ];
   gitBinCache = candidates.find((c) => c && existsSync(c)) ?? "git";
   return gitBinCache;
 }
@@ -3116,11 +3125,18 @@ const feishuGateway = new FeishuGateway({
   log: channelLog,
 });
 
-/** ffmpeg 可执行文件：随包按需安装（开发工具页），装过就在 tools/ffmpeg 下；都没装则期望 PATH 里有。 */
+/** ffmpeg 可执行文件：随包按需安装（开发工具页），装过就在 tools/ffmpeg 下；都没装则期望 PATH 里有。
+ *  ⛔ mac 适配（09-17 审计）：darwin 侧 install-runtimes 把 ffmpeg/ffprobe 放在 `tools/ffmpeg/bin/`，
+ *  文件名**不带 .exe**（evermeet 单文件构建）；旧实现只找 `ffmpeg.exe` ⇒ mac 上永远回落到裸名 "ffmpeg"，
+ *  而 GUI 启动的进程 PATH 里通常没有它 ⇒ 渠道语音消息（飞书 opus 转 16k wav）在 mac 上必失败。 */
 function resolveFfmpegPath(): string {
+  const rel = process.platform === "win32" ? ["ffmpeg", "ffmpeg.exe"] : ["ffmpeg", "bin", "ffmpeg"];
   const candidates = [
-    path.join(process.resourcesPath ?? "", "tools", "ffmpeg", "ffmpeg.exe"),
-    path.join(process.cwd(), "tools", "ffmpeg", "ffmpeg.exe"),
+    path.join(process.resourcesPath ?? "", "tools", ...rel),
+    path.join(appSourceRoot(), "resources", "tools", ...rel),
+    path.join(appSourceRoot(), "tools", ...rel),
+    // 内置工具目录里的 ffmpeg 直接可用（不论它是随包还是开发工具页装的）
+    ...(toolsRoot() ? [path.join(toolsRoot(), ...rel)] : []),
   ];
   for (const candidate of candidates) {
     try { if (existsSync(candidate)) return candidate; } catch { /* 忽略路径异常，继续下一个 */ }
@@ -4814,6 +4830,19 @@ const DARWIN_MARKERS: Partial<Record<DevRuntimeId, string>> = {
 };
 // darwin 上无意义 / 系统自带的工具：不显示安装卡（mingw 是 Windows 编译器；mac 用系统 clang）
 const DARWIN_HIDDEN = new Set<DevRuntimeId>(["mingw"]);
+/** ⛔ mac 适配（09-17 审计）：上面 specs 的**文案**是按 Windows 侧写的，mac 上照搬会误导
+ *  （例如让用户「装 Git 约 90 MB」，而 darwin 根本不下载 git —— 用的是系统自带那份）。
+ *  这里只覆盖 mac 上说法确实会错的那几条，未列出的沿用原文（体积本就是量级提示）。 */
+const DARWIN_SPEC_TEXT: Partial<Record<DevRuntimeId, { name?: string; description?: string; size?: string }>> = {
+  git: {
+    description: "Diff、分支、提交、历史和仓库操作；引擎执行 shell 命令依赖它。macOS 使用系统自带的 git（随 Xcode 命令行工具提供），无需下载；点安装会调起系统的命令行工具安装程序",
+    size: "系统自带",
+  },
+  openssl: { description: "加密/证书命令行工具（openssl 命令）；macOS 系统自带（LibreSSL），无需安装", size: "系统自带" },
+  docker: { description: "容器运行时，需要系统级安装：下载并打开 Docker Desktop.dmg，装完首次启动需要授权", size: "约 600 MB" },
+  ffmpeg: { description: "音视频转码、抽帧、探测与媒体处理（macOS 单文件构建，装在 tools/ffmpeg/bin）", size: "约 78 MB" },
+  conda: { description: "Python 环境管理器（conda 命令，科学计算/环境隔离）；macOS 走官方 shell 安装器静默装到 tools/miniconda", size: "约 130 MB" },
+};
 
 /** marker 的平台展开（装没装判定的唯一入口，别再各自 path.join(spec.marker)）。 */
 function markerRel(id: DevRuntimeId, spec: DevRuntimeSpec): string {
@@ -4821,15 +4850,28 @@ function markerRel(id: DevRuntimeId, spec: DevRuntimeSpec): string {
   return DARWIN_MARKERS[id] ?? spec.marker.replace(/\\/g, "/");
 }
 
+/** spec 的平台展开（文案与体积；marker 走 markerRel）。 */
+function specFor(id: DevRuntimeId, spec: DevRuntimeSpec): DevRuntimeSpec {
+  if (!IS_MAC) return spec;
+  const override = DARWIN_SPEC_TEXT[id];
+  return override ? { ...spec, ...override } : spec;
+}
+
 /** 系统级已装探测（不落 tools 目录也算装好）：win 只认 docker 在 PATH；darwin 认系统自带件。 */
 function runtimeInstalledBySystem(id: DevRuntimeId): boolean {
   if (IS_MAC) {
     if (id === "git") return ["/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git"].some((p) => existsSync(p));
     if (id === "openssl") return existsSync("/usr/bin/openssl");
+    // ⛔ mac 适配（09-17 审计）：Docker Desktop for Mac 装完是 /Applications/Docker.app，
+    //    CLI 落在 /usr/local/bin/docker（或 Apple Silicon 的 /opt/homebrew/bin/docker）。
+    //    旧实现只探测 Windows 的 docker.exe，mac 用户装好 Docker 也一直显示「未安装」。
+    if (id === "docker") {
+      return ["/usr/local/bin/docker", "/opt/homebrew/bin/docker", "/Applications/Docker.app"].some((p) => existsSync(p));
+    }
     return false;
   }
   // docker 是系统级安装：未在工具目录时也探测系统 PATH 上的 docker.exe（已装则视为完成）
-  return id === "docker" ? !!(process.env.PATH ?? "").split(";").some((dir) => dir && existsSync(path.join(dir.trim(), "docker.exe"))) : false;
+  return id === "docker" ? !!(process.env.PATH ?? "").split(path.delimiter).some((dir) => dir && existsSync(path.join(dir.trim(), "docker.exe"))) : false;
 }
 
 /** 「装没装」的唯一判定（runtimeList 与「修复安装」幂等早退共用，别各写一份）：
@@ -4842,11 +4884,10 @@ function runtimeInstalled(id: DevRuntimeId, spec: DevRuntimeSpec): boolean {
 }
 
 function runtimeList() {
-  const root = toolsRoot();
   return (Object.entries(devRuntimeSpecs) as [DevRuntimeId, DevRuntimeSpec][])
     .filter(([id]) => !(IS_MAC && DARWIN_HIDDEN.has(id)))
     .map(([id, spec]) => ({
-      id, ...spec,
+      id, ...specFor(id, spec),
       installed: runtimeInstalled(id, spec),
       installedBySystem: runtimeInstalledBySystem(id),
       installing: runtimeInstalls.has(id),
@@ -4933,6 +4974,10 @@ function npmShimPaths(pkg: string): string[] {
   const globalDir = path.join(toolsRoot(), "npm-global");
   return [
     path.join(globalDir, pkg),
+    // ⛔ mac 适配（09-17 审计）：POSIX 的 npm 全局 shim 落在 `<prefix>/bin/<pkg>`（不带后缀、
+    //    symlink 到包内 bin），prepare-mac-tools 正是这么写的（npm-global/bin/nuphus-call）。
+    //    旧清单只有 Windows 的 .cmd/.ps1 ⇒ mac 上卸载包后 shim 残留，PATH 里继续指向空目录。
+    path.join(globalDir, "bin", pkg),
     path.join(globalDir, `${pkg}.cmd`),
     path.join(globalDir, `${pkg}.ps1`),
     path.join(globalDir, "node_modules", ".bin", pkg),
@@ -7867,8 +7912,14 @@ function cleanupAll() {
 }
 
 app.on("window-all-closed", () => {
+  // ⛔ mac 适配（09-17 审计）：macOS 上「关掉窗口」不等于「退出应用」——红点关窗后应用仍在 Dock 里，
+  // 点 Dock 图标会走 activate → createWindow 重开窗口。这里若照 Windows 那样 cleanupAll()，
+  // 引擎子进程 / 本地 HTTP 服务 / 调度器 / 渠道机器人全被停掉，重开的窗口就是**「窗口在、功能全哑」**
+  // （发不出消息、调度不跑、手机端连不上），用户只能退出应用重新打开。mac 上保持服务存活，
+  // 真正的清理交给 before-quit（那里也会调用 cleanupAll，cleanupDone 保证幂等）。
+  if (process.platform === "darwin") return;
   cleanupAll();
-  if (process.platform !== "darwin") app.quit();
+  app.quit();
 });
 app.on("before-quit", () => {
   // 兜底：无论窗口事件如何，退出前都清理一次（幂等，cleanupDone 去重）

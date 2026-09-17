@@ -170,6 +170,27 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **⛔ mac 全面适配第二轮（09-17，用户「MAC 的适配要做全，全方面适配」）**：一轮全库审计（215 个源文件，
+  逐条判读平台分支与 Windows 假设）挖出 15 处真缺失，全部修掉并进预检【32】19 条守卫。按影响排序：
+  ① **mac 取麦会被系统杀进程**：`electron-builder.mac.cjs` 的 extendInfo 缺 `NSMicrophoneUsageDescription`
+  —— macOS 的 TCC 对缺声明的 App **不是拒绝授权、而是直接终止进程**，语音通话/听写首次取麦即闪退；
+  ② **关窗后重开 = 功能全哑**：mac 上「关窗 ≠ 退出」（红点关窗后应用留在 Dock），而 `window-all-closed`
+  照 Windows 那样 `cleanupAll()` 把引擎/本地服务/调度器/渠道机器人全停了，点 Dock 重开只有空壳窗口
+  ⇒ darwin 下跳过清理，真正清理交给 `before-quit`（cleanupDone 幂等）；
+  ③ **手机配对隧道在 mac 上从不启动**：`remote.ts` 写死 `path.join(process.cwd(), "resources", "tools", "cloudflared.exe")`
+  —— 既依赖 cwd（mac 上是 .app/Contents/MacOS，必落空）又写死 .exe；改为 `toolsRoot()` + 平台布局，
+  并让 `prepare-mac-tools.cjs` 现造 `cloudflared-darwin-<arch>.tgz`（mac 包此前**根本没有**隧道二进制），
+  `verify-packaged-tools.cjs` 加 mac 断言（存在 + 有执行位）；
+  ④ **ffmpeg 在 mac 上找不到**：`resolveFfmpegPath` 只找 `ffmpeg.exe` 且用 cwd ⇒ 渠道语音（飞书 opus→16k wav）必失败；
+  ⑤ 其余：docker 系统探测补 darwin（`/Applications/Docker.app`、`/opt/homebrew/bin/docker`）、
+  `npmShimPaths` 补 POSIX 的 `bin/<pkg>`、`CODEX_REAL_PWSH` 走 `bundledPwsh()`、`tarExecutable` darwin 用
+  `/usr/bin/tar`、终端面板的 PATH 分隔符/路径拼接/自绘提示符平台化、语音默认呼叫键改
+  `CommandOrControl+Shift+M`（Windows 仍是 Ctrl）、`hotkey-match` 按平台解析 `CommandOrControl`、
+  语音设置面板录入记 `Command` 且显示 ⌘⇧M、`gitBin()` 补 darwin 候选（GUI 进程 PATH 是 launchd 最小集）、
+  开发工具卡文案按平台覆盖（`DARWIN_SPEC_TEXT`，不再让 mac 用户看到「装 Git 约 90 MB」）。
+  ⛔ 判据纪律：本机是 Windows ⇒ 所有 mac 分支**只能靠结构性断言 + 纯函数行为断言**锁定（【32】⑫ 就是
+  `macHotkeyLabel` 的 5 条真值表），产物层另有 mac CI 的 `verify-packaged-tools.cjs` 兜底。
+
 - **⛔ 调度独占锁的「孤儿持有者」（09-17 用户实测：「都关掉了，怎么还提示被锁住了」）+ 一键释放**：
   锁的持有者是**从 `thread-runtime` 记录派生**的（第一个 `dispatch.enabled` 的线程），而**会话被归档/删除时
   没有任何地方清这条记录** —— `thread-runtime-store.ts` 里那句注释「删除/归档线程、记录被清掉时锁会自动
