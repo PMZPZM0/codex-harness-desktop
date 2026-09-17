@@ -397,6 +397,7 @@ import { ModelSetupGuide } from "./components/ModelSetupGuide";
 import { EnvCheckDialog, ENV_CHECK_SPEC, ENV_CHECK_OPTOUT_KEY, type EnvCheckState } from "./components/EnvCheckDialog";
 import { CodexAvatar, useCodexName } from "./components/CodexAvatar";
 import { UserAvatar, useUserName } from "./components/UserAvatar";
+import { EffortPicker } from "./components/EffortPicker";
 import { setUserIdentity } from "./lib/user-identity.mjs";
 import { readStoredCodexAvatar, storeCodexAvatar, setCodexIdentity, getCodexIdentity, subscribeCodexIdentity, CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "./lib/codex-identity.mjs";
 import { pickEnhanceHint, shouldShowHintThisRun, markHintShownThisRun, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_MS, HINT_AUTO_HIDE_MS } from "./lib/enhance-hints.mjs";
@@ -1088,7 +1089,7 @@ const IDENTITY_ONBOARD_TOOL = {
 };
 
 // 09-16 用户定稿：展示名改为「低 中 高 最高 极高」（最高=ultra 扩展档、极高=xhigh 顶格档）。
-// 与 /effort 别名表、模型编辑器勾选共用；desc 见 effortMenuOptions。
+// 与 /effort 别名表、模型编辑器勾选、思考强度拖动条共用。
 const effortLabels: Record<string, string> = {
   none: "关闭",
   minimal: "极简",
@@ -2794,14 +2795,6 @@ function MarketPreviewModal({ state, onClose }: { state: MarketPreviewState; onC
 }
 // 插件市场（codex-marketplace.com）分类 tab：中文标签 → API 英文分类值
 const pluginMarketCategoryTabs: [string, string][] = [["全部", "全部"], ["编码", "Coding"], ["效率", "Productivity"], ["实用工具", "Utilities"], ["AI 与智能体", "AI & Agents"], ["设计", "Design"], ["数据", "Data"], ["开发", "Development"]];
-
-/** 思考档位菜单（minimal~ultra）。单一数据源 = 模型配置里的档位声明：
- *  配置勾了才显示、取消勾选就从菜单消失（currentEffortOptions 与引擎 catalog 同源）；
- *  菜单选中未声明档位（含 /effort 命令）时自动回写声明落库。 */
-const effortMenuOptions = ALL_EFFORTS.map((value) => ({
-  value,
-  title: effortLabels[value] ?? value,
-}));
 
 /** 高度动画折叠原语（对齐 WorkBuddy cr-collapse：0.28s 高度 + 内容 opacity/位移过渡）
  * bare=true 时只输出 content/inner 两层，由外层容器提供 wb-fold 状态类（避免嵌套叠加过渡时长） */
@@ -17197,10 +17190,16 @@ const commandMatches = useMemo(() => {
                     if (value === "__model_settings__") { setSettingsPage("model"); setSettingsOpen(true); const live = customModel?.models?.find((m) => m.id === customModel?.model); if (live) openModelEditor(live); return; }
                     chooseModel(value);
                   }} />
-                  <ComposerMenu icon={Zap} label="思考" title="思考强度" value={effort} options={[...effortMenuOptions.filter((option) => !currentEffortOptions.length || currentEffortOptions.includes(option.value)), { value: "__model_settings__", title: "更多档位…", desc: "打开模型配置，管理各模型档位勾选" }]} onChange={(value) => {
-                    if (value === "__model_settings__") { setSettingsPage("model"); setSettingsOpen(true); const live = customModel?.models?.find((m) => m.id === customModel?.model); if (live) openModelEditor(live); return; }
-                    changeEffort(value);
-                  }} />
+                  {/* 思考强度：底栏一个档位按钮，点开是**宽彩色动态条**的弹窗（09-17 用户两次要求：
+                      「改成彩色横向拖动进度条，每个等级颜色都不一样」→「弹窗拖动，不是输入框直接
+                      一个长条，gpt 那种宽的彩色动态条」）。档位来源不变 —— 模型声明的档位，
+                      没声明时回落全套。拖动中只跟手、释放才提交，原因见 EffortPicker 注释。 */}
+                  <EffortPicker
+                    levels={currentEffortOptions.length ? currentEffortOptions : [...ALL_EFFORTS]}
+                    value={effort}
+                    labels={effortLabels}
+                    onCommit={changeEffort}
+                  />
                 </div>
                 {(prompt.trim() || hasEnhanceBackup) && !activeThreadRunning && (
                   <div className="enhance-wrap">

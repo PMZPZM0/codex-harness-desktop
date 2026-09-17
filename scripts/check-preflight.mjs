@@ -3846,6 +3846,46 @@ w.postMessage({id:1,op:"list",root});
     ((userCenterC.match(/fileToAvatarDataUrl\(file\)/g) || []).length === 2)
       ? ok("【32】两处头像上传都走 128×128 压缩（防写不进 localStorage → 重启丢头像）")
       : fail("【32】头像上传没走压缩 —— 大图 base64 静默写不进 localStorage，重启后头像丢失");
+    // 思考强度：底栏按钮 +「宽彩色动态条」弹窗（09-17 用户两次要求：先「改成彩色横向拖动进度条，
+    // 每个等级颜色都不一样」，再「弹窗拖动，不是输入框直接一个长条，gpt 那种宽的彩色动态条」）
+    const effortPickerC = readFileSync(join(ROOT, "src", "components", "EffortPicker.tsx"), "utf8");
+    (/<EffortPicker\b/.test(appC3))
+      ? ok("【32】思考强度用「底栏按钮 + 弹窗宽条」渲染")
+      : fail("【32】composer 底栏没有 EffortPicker —— 思考强度没做成弹窗拖动条");
+    (!/<ComposerMenu icon=\{Zap\} label="思考"/.test(appC3))
+      ? ok("【32】旧的「思考」下拉已移除（不会并存两份）")
+      : fail("【32】旧的「思考」下拉又回来了 —— 会与拖动条并存两份");
+    (!/EffortSlider/.test(appC3) && !existsSync(join(ROOT, "src", "components", "EffortSlider.tsx")))
+      ? ok("【32】上一版的底栏细长条已彻底移除（不留死组件）")
+      : fail("【32】EffortSlider 还在（组件或引用）—— 用户明确否掉了「输入框直接一个长条」");
+    // ⛔ 用户要的是「每个等级颜色都不一样」：色值必须两两不同，不能有重复
+    const effortColors = [...effortPickerC.matchAll(/\w+:\s*"(#[0-9a-fA-F]{6})"/g)].map((m) => m[1].toLowerCase());
+    (effortColors.length >= 5 && new Set(effortColors).size === effortColors.length)
+      ? ok(`【32】每档颜色互不相同（${effortColors.length} 档 / ${new Set(effortColors).size} 种色）`)
+      : fail(`【32】档位颜色有重复或不足（${effortColors.length} 档 / ${new Set(effortColors).size} 种色）—— 用户要「每个等级颜色都不一样」`);
+    // 拖动中绝不落库：changeEffort 会 upsertProviderModel（IPC + 重写 catalog），
+    // 挂在 onChange 上会在拖动经过中间档位时反复触发、还会把选中的档位覆盖回去。
+    (/onPointerUp=\{\(\) => commit\(\)\}/.test(effortPickerC) && /onChange=\{\(event\) => setDraft\(Number\(event\.target\.value\)\)\}/.test(effortPickerC))
+      ? ok("【32】拖动中只跟手、释放才提交（onChange 不落库）")
+      : fail("【32】EffortPicker 的 onChange 直接提交了 —— 拖动经过中间档位会反复 upsert 落库");
+    // 弹窗必须 portal + fixed：底栏在滚动容器里，absolute 浮层会被裁掉上半截（设置页气泡踩过同款）
+    const popBlock = cssNC.slice(cssNC.indexOf(".effort-picker-pop {"), cssNC.indexOf("@keyframes effort-pop-in"));
+    (/createPortal\(/.test(effortPickerC) && /position:\s*fixed/.test(popBlock))
+      ? ok("【32】思考强度弹窗用 portal + fixed（不会被底栏容器裁掉）")
+      : fail("【32】思考强度弹窗不是 portal + fixed —— 底栏滚动容器会把上半截裁掉");
+    // 「动态条」要真的在动：扫光 + 光晕跟随
+    (/@keyframes effort-sheen/.test(cssNC) && /animation:\s*effort-sheen/.test(cssNC) && /\.effort-picker-glow\s*\{/.test(cssNC))
+      ? ok("【32】宽条有流光扫过 + 光晕跟随（用户要的「动态」）")
+      : fail("【32】宽条没有流光/光晕 —— 只是静态条，用户要「动态」的");
+    // ⛔ 色带不许放大：background-size > 100% 会让看到的部分与档位位置错位、分段被抹成渐变
+    //    （第一版用 220% + 平移做流光，实测就是这个症状 —— 反而看不清「每档一色」）
+    const bandBlock = cssNC.slice(cssNC.indexOf(".effort-picker-bands {"), cssNC.indexOf(".effort-picker-glow {"));
+    (/background-size:\s*100%\s+100%/.test(bandBlock) && !/background-size:\s*(?:1[1-9]\d|2\d\d)%/.test(bandBlock))
+      ? ok("【32】分段色带保持 100%（颜色与档位位置不错位）")
+      : fail("【32】色带被放大了 —— 各档颜色与位置会错位、看起来变渐变（实测踩过）");
+    (/\.effort-trigger\s*\{/.test(cssNC) && /\.effort-picker-bands\s*\{/.test(cssNC) && /\.effort-picker-range/.test(cssNC))
+      ? ok("【32】样式齐（触发按钮 / 分段色带 / 拖动条 / 档位标签）")
+      : fail("【32】拖动条样式缺 —— 色带或滑块不会显示");
     (!/\.(?:codex-turn|process-content) \.assistant-message \.avatar[\s\S]{0,140}?display:\s*none/.test(cssNC))
       ? ok("【32】没有规则把 assistant 头像 display:none 掉")
       : fail("【32】有规则把 assistant 头像 display:none 了 —— 用户只会看到名字");
