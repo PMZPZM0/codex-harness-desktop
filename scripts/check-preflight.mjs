@@ -3601,6 +3601,40 @@ w.postMessage({id:1,op:"list",root});
       ? ok("【32】启动过快时跳过启动页（避免一闪而过）")
       : fail("【32】缺少最短显示阈值判定 —— 快机器上会闪一下");
   }
+
+  // ⑮ 设置页「使用帮助」（09-17 用户要求：模型/插件/技能/MCP/专家团/语音/开发工具面向新手）。
+  //   痛点：帮助是"加了但挂错页/少挂一页"最容易复发的问题（每页各写一个按钮，删改时容易漏）。
+  //   所以断言分两层：内容库 key 齐全 + 页面挂载数量达标 + 弹窗真的在渲染树里。
+  {
+    const helpC = readFileSync(join(ROOT, "src", "components", "HelpDialog.tsx"), "utf8");
+    const appC = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+    const voiceC = readFileSync(join(ROOT, "src", "components", "VoiceSettingsSection.tsx"), "utf8");
+    const HELP_KEYS = ["model", "plugins", "skills", "mcp", "agentteam", "voice", "devtools"];
+    const missingKeys = HELP_KEYS.filter((key) => !new RegExp(`\\b${key}:\\s*\\{`).test(helpC));
+    (missingKeys.length === 0)
+      ? ok(`【32】帮助内容库覆盖 ${HELP_KEYS.length} 个主题（模型/插件/技能/MCP/专家团/语音/开发工具）`)
+      : fail(`【32】帮助内容库缺主题：${missingKeys.join(", ")} —— 对应页面点帮助会打不开或空白`);
+    const helpButtons = (appC.match(/<HelpButton helpKey=/g) || []).length;
+    (helpButtons >= 5)
+      ? ok(`【32】设置页挂了 ${helpButtons} 处帮助入口（≥5，另有语音页在子组件）`)
+      : fail(`【32】帮助入口只有 ${helpButtons} 处 —— 有页面漏挂（每页各写按钮最容易漏）`);
+    (/<HelpDialog helpKey=\{helpKey\}/.test(appC))
+      ? ok("【32】HelpDialog 挂在渲染树里（弹窗能真正打开）")
+      : fail("【32】HelpDialog 没挂到渲染树 —— 点帮助不会有任何反应");
+    (/onOpenHelp/.test(voiceC) && /help-entry/.test(voiceC))
+      ? ok("【32】语音页帮助入口在（子组件走 onOpenHelp prop）")
+      : fail("【32】语音页缺帮助入口 —— 用户报的页面之一是它");
+    // 新手帮助必须写清「怎么开始」，不能只有概念说明
+    const thin = HELP_KEYS.filter((key) => {
+      const at = helpC.indexOf(`${key}: {`);
+      if (at < 0) return true;
+      const block = helpC.slice(at, helpC.indexOf("\n  },", at));
+      return (block.match(/^\s{10}"/gm) || []).length < 3;
+    });
+    (thin.length === 0)
+      ? ok("【32】每个帮助主题都有 ≥3 条操作步骤（不是概念说明）")
+      : fail(`【32】这些主题的步骤太少（不足 3 条）：${thin.join(", ")}`);
+  }
 }
 
 console.log("");
