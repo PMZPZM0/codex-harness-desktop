@@ -3191,6 +3191,52 @@ w.postMessage({id:1,op:"list",root});
   (/if \(!\/no active turn\/i\.test\(message\)\)/.test(queuedFn) && /thread\/queue\/start/.test(queuedFn))
     ? ok("引擎回 no active turn 时退化为开始新回合（消息不会卡在队列里）")
     : fail("no active turn 没有退化路径 —— 排队消息会卡在队列里发不出去");
+
+  // ④ 相位续播：这是「不再两步」的核心时序判定（纯函数在 src/lib/send-anim.mjs）
+  {
+    const { createSendAnimClaim, armSendAnimationClaim, claimSendAnimation, SEND_ANIM_DURATION_MS, SEND_CLAIM_TTL_MS } = await import("../src/lib/send-anim.mjs");
+    const T0 = 1_000_000;
+    const TEXT = "你好世界这是一条测试消息";
+    const run = (elapsed, realText = TEXT) => {
+      const store = createSendAnimClaim();
+      armSendAnimationClaim(store, TEXT, T0);
+      return claimSendAnimation(store, realText, T0 + elapsed);
+    };
+    const fast = run(30);
+    (fast.kind === "continue" && fast.delayMs === 30)
+      ? ok("快回声（30ms）：认领并给出续播相位 30ms（真实节点不再从 0% 重起）")
+      : fail(`快回声应续播 30ms，实际 ${JSON.stringify(fast)}`);
+    const slow = run(SEND_ANIM_DURATION_MS + 50);
+    slow.kind === "skip"
+      ? ok("慢回声（≥动画时长）：跳过补播（消息早已在屏上，不再「飞」一下）")
+      : fail(`慢回声应 skip，实际 ${JSON.stringify(slow)}`);
+    const prefixed = run(40, `[记忆] ${TEXT} 补充说明`);
+    prefixed.kind === "continue"
+      ? ok("真实正文带记忆/引用前缀仍能认领（前缀匹配）")
+      : fail(`带前缀应 continue，实际 ${JSON.stringify(prefixed)}`);
+    const wrong = run(40, "完全不相干的内容");
+    wrong.kind === "none"
+      ? ok("文本对不上不认领（历史/其它消息不会误播）")
+      : fail(`文本不匹配应 none，实际 ${JSON.stringify(wrong)}`);
+    const expired = run(SEND_CLAIM_TTL_MS + 1);
+    expired.kind === "none"
+      ? ok("超过 TTL 不认领（切会话重挂载不误播）")
+      : fail(`超时应 none，实际 ${JSON.stringify(expired)}`);
+    const onceStore = createSendAnimClaim();
+    armSendAnimationClaim(onceStore, TEXT, T0);
+    const first = claimSendAnimation(onceStore, TEXT, T0 + 10);
+    const second = claimSendAnimation(onceStore, TEXT, T0 + 20);
+    (first.kind === "continue" && second.kind === "none")
+      ? ok("认领是一次性的（第二次不再播）")
+      : fail(`认领应一次性，实际 ${first.kind} / ${second.kind}`);
+    claimSendAnimation(createSendAnimClaim(), TEXT, T0).kind === "none"
+      ? ok("没有登记时不认领（不凭空播动画）")
+      : fail("没登记也认领了 —— 会凭空播动画");
+    // 接线：delayMs 必须真的落到 DOM 的 inline animation-delay
+    /style=\{sendAnimDelay \? \{ animationDelay: `-\$\{sendAnimDelay\}ms` \} : undefined\}/.test(app)
+      ? ok("续播相位落到 DOM（inline animation-delay 接线在）")
+      : fail("App.tsx 没有把续播相位写成 inline animation-delay —— 认领到的相位被丢掉，仍会从 0% 重起");
+  }
 }
 
 console.log("");

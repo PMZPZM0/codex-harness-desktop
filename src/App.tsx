@@ -15,6 +15,7 @@ import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "./lib/session-scope.mjs";
 import { LEGACY_PREFIX, dispatchSignature, emptyDispatch, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeDispatch, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "./lib/thread-runtime.mjs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
+import { createSendAnimClaim, armSendAnimationClaim as armSendAnimationClaimLib, claimSendAnimation as claimSendAnimationLib } from "./lib/send-anim.mjs";
 import { resolveSkillVisual, type SkillVisual } from "./lib/skill-icon";
 import { translateEngineNotice } from "./lib/engine-notices-zh";
 import { resolveRelayAutoTarget, resolveRelayTarget, resolveRelayKeyTarget, writeRelayActive, readRelayActive, type RelayActive } from "./lib/relay";
@@ -5033,24 +5034,19 @@ const justSentIds = new Set<string>();
  *  现在：发送时登记正文与时刻（arm），真实消息**挂载的那一刻**（lazy useState 初始值）认领，
  *  命中即带 just-sent 从首帧入场 —— 动画与节点同帧开始，结构上不可能被接管打断。
  *  乐观气泡（pending）仍走原 justSentIds 路径，两条互不干扰。 */
-let recentSendClaim: { text: string; at: number } | null = null;
-const SEND_CLAIM_TTL_MS = 10_000;
+// 相位续播的时序判定收在 src/lib/send-anim.mjs（纯函数，预检有行为断言）；这里只做 DOM 侧接线。
+const sendAnimStore = createSendAnimClaim();
 
 /** 发送时登记待认领的入场动画（存可见正文；引擎侧正文会额外拼记忆/技能/引用段）。 */
 function armSendAnimationClaim(messageText: string) {
-  const text = String(messageText ?? "").replace(/\s+/g, " ").trim();
-  if (text) recentSendClaim = { text, at: Date.now() };
+  armSendAnimationClaimLib(sendAnimStore, messageText, Date.now());
 }
 
-/** 真实消息挂载时认领入场动画：命中即消费（一次性）；过期或对不上则不认领。 */
-function claimSendAnimation(messageText: string): boolean {
-  const claim = recentSendClaim;
-  if (!claim) return false;
-  if (Date.now() - claim.at > SEND_CLAIM_TTL_MS) { recentSendClaim = null; return false; }
-  const text = String(messageText ?? "").replace(/\s+/g, " ").trim();
-  if (!text.includes(claim.text.slice(0, 12))) return false;   // 前缀匹配：真实正文可能带引用/记忆前缀
-  recentSendClaim = null;
-  return true;
+/** 真实消息挂载时认领入场动画：返回**距发送已流逝的毫秒数**（供负 animation-delay 续播相位），
+ *  不认领/该跳过时返回 null。详见 src/lib/send-anim.mjs 的说明。 */
+function claimSendAnimation(messageText: string): number | null {
+  const result = claimSendAnimationLib(sendAnimStore, messageText, Date.now());
+  return result.kind === "continue" ? result.delayMs : null;
 }
 
 function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote, onImageCopy, onEditSubmit, onOpenFile, onOpenThread }: { item: ThreadItem; turn?: Turn; fallbackWindow?: number; pending?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void }) {
@@ -5059,13 +5055,17 @@ function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote,
   // 必定从挂载瞬间播放。旧版在 effect 里补 class：晚一帧、且与钉顶程序化滚动同帧，
   // 动画被滚动/重排吞掉——表现为「发消息没有过渡动画」（09-05 反馈）。
   // ⛔ 09-17：乐观气泡（pending）看 justSentIds；**真实消息自己认领**本次发送的动画
-  //   （否则气泡消失瞬间动画被腰斩，见 claimSendAnimation 注释）。两条路互斥、互不干扰。
-  const [justSent] = useState(() => (pending
-    ? justSentIds.has(String(item.id ?? ""))
+  //   （否则气泡消失瞬间动画被腰斩，见 claimSendAnimation 注释）。
+  //   认领拿到的不是布尔而是「距发送已流逝的毫秒」，下面用它做负 animation-delay **续播相位**，
+  //   这样气泡那一段与真实节点这一段首尾相接，不会"顿一下再从 0% 重飞"。
+  //   两条路互斥、互不干扰。
+  const [sendAnimDelay] = useState<number | null>(() => (pending
+    ? (justSentIds.has(String(item.id ?? "")) ? 0 : null)
     : claimSendAnimation(itemText(item))));
+  const justSent = sendAnimDelay != null;
   useEffect(() => {
     // 播过即清登记，历史消息/切会话重挂载不会误播
-    if (justSent) justSentIds.delete(String(item.id ?? ""));
+    if (justSent && pending) justSentIds.delete(String(item.id ?? ""));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // hooks 必须在 early return 之前按固定顺序调用，否则编辑时 hook 数量变化会触发 React error #300
@@ -5138,7 +5138,15 @@ function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote,
   return (
     <div className="user-message-stack">
       {attachRow}
-      <div className={`message user-message${pending ? " pending" : ""}${justSent ? " just-sent" : ""}`} data-ruler-mark="user" data-turn-id={turn?.id} data-item-id={item.id}>
+      <div
+        className={`message user-message${pending ? " pending" : ""}${justSent ? " just-sent" : ""}`}
+        data-ruler-mark="user"
+        data-turn-id={turn?.id}
+        data-item-id={item.id}
+        // 负延迟 = 从「气泡已经播到的相位」接着播（见 claimSendAnimation 注释）；
+        // 0（气泡自身）不加延迟，从 0% 正常入场。
+        style={sendAnimDelay ? { animationDelay: `-${sendAnimDelay}ms` } : undefined}
+      >
         <div className="avatar"><User size={15} /></div>
         <div className="message-body">
           <UserRefsRow refs={refs} onOpenFile={onOpenFile} onQuote={onQuote} hideFiles />
