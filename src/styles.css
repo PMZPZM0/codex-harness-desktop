@@ -15969,6 +15969,76 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   gap: 6px;
   display: flex;
 }
+/* ── 增强提示气泡（09-17 用户要求：输入后在图标上方小气泡提醒，词库 15~20 条轮换） ── */
+.enhance-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.enhance-hint {
+  position: absolute;
+  bottom: calc(100% + 9px);
+  right: 0;
+  z-index: 40;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 7px;
+  /* ⛔ width:max-content 必需：绝对定位元素在 32px 宽的按钮容器里会 shrink-to-fit，
+     没有这行气泡会被压成竖排窄条（一个字一行，完全不可读）——截图实测踩到。 */
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 9px 8px 11px;
+  border: 1px solid color-mix(in srgb, #7048e8 32%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, #7048e8 8%, var(--panel));
+  color: var(--text);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  text-align: left;
+  animation: enhance-hint-in 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.enhance-hint:hover {
+  border-color: color-mix(in srgb, #7048e8 55%, var(--line));
+  background: color-mix(in srgb, #7048e8 13%, var(--panel));
+}
+/* 指向按钮的小箭头（纯色三角，避免用滤镜） */
+.enhance-hint::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 13px;
+  border: 5px solid transparent;
+  border-top-color: color-mix(in srgb, #7048e8 32%, var(--line));
+  margin-top: -1px;
+}
+.enhance-hint-text {
+  font-size: 12px;
+  line-height: 1.55;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.enhance-hint-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+.enhance-hint-close:hover {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text);
+}
+@keyframes enhance-hint-in {
+  from { opacity: 0; transform: translateY(5px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 /* ── 设置页「使用帮助」（09-17 用户要求：新手帮助，弹窗展示） ── */
 .help-entry {
   display: inline-flex;

@@ -391,6 +391,7 @@ import { PersonalizationPage } from "./components/PersonalizationPage";
 import VoiceSettingsSection from "./components/VoiceSettingsSection";
 import { BootSplash, type BootStage } from "./components/BootSplash";
 import { HelpDialog, type HelpKey, type HelpTopic } from "./components/HelpDialog";
+import { pickEnhanceHint, shouldShowHint, HINT_AUTO_HIDE_MS } from "./lib/enhance-hints.mjs";
 import VoiceWaveform from "./components/VoiceWaveform";
 import VoiceDevToolsSection from "./components/VoiceDevToolsSection";
 import { GlobalSearchView } from "./components/IndexLibrary";
@@ -7584,6 +7585,17 @@ export default function App() {
   const [enhanceBusy, setEnhanceBusy] = useState(false);
   const enhanceBackupRef = useRef<string | null>(null);
   const [hasEnhanceBackup, setHasEnhanceBackup] = useState(false);
+  /** 增强按钮的提示气泡（09-17 用户要求：「输入文字后在图标上方小气泡提醒，词库丰富、个性一点」）。
+   *  节奏（用户指定）：**每 5 次发送**为一个周期，周期到了之后**在下一次输入时**提示，约 6 秒自动消失。
+   *  ⛔ 为什么不是"发送成功当场显示"：发送成功时输入框已清空、回合正在跑，增强按钮本身
+   *  （`prompt.trim() || hasEnhanceBackup`）根本不渲染 —— 气泡没有任何可依附的位置，等于永不出现。
+   *  真实链路上这一点是实测踩出来的（见 memory 2026-09-17）。 */
+  const [enhanceHint, setEnhanceHint] = useState<string | null>(null);
+  const enhanceSendCountRef = useRef(0);
+  /** 周期到了但还没提示（等用户下次开始输入再弹，见上方注释）。 */
+  const enhanceHintDueRef = useRef(false);
+  const enhanceHintTimerRef = useRef<number | null>(null);
+  const lastEnhanceHintRef = useRef<string | undefined>(undefined);
   const [files, setFiles] = useState<string[]>([]);
   const [skillMenuOpen, setSkillMenuOpen] = useState(false);
   const [skillQuery, setSkillQuery] = useState("");
@@ -14433,6 +14445,24 @@ const commandMatches = useMemo(() => {
 
   /** 触发提示词增强：原文备份 → 调主进程 LLM 润色 → 替换输入框文本。
    *  增强后按钮进入撤销模式（再点还原原文）；用户改动文本即清除备份（WorkBuddy 同款）。 */
+  /** 展示增强提示气泡（6 秒后自动消失）。调用点：每 N 次发送后。 */
+  function showEnhanceHint() {
+    setEnhanceHint(pickEnhanceHint(lastEnhanceHintRef.current));
+    if (enhanceHintTimerRef.current != null) window.clearTimeout(enhanceHintTimerRef.current);
+    enhanceHintTimerRef.current = window.setTimeout(() => {
+      setEnhanceHint(null);
+      enhanceHintTimerRef.current = null;
+    }, HINT_AUTO_HIDE_MS);
+  }
+  function dismissEnhanceHint() {
+    if (enhanceHintTimerRef.current != null) { window.clearTimeout(enhanceHintTimerRef.current); enhanceHintTimerRef.current = null; }
+    setEnhanceHint(null);
+  }
+  // 卸载时清定时器，避免在已卸载组件上 setState
+  useEffect(() => () => { if (enhanceHintTimerRef.current != null) window.clearTimeout(enhanceHintTimerRef.current); }, []);
+  // 记录上一条提示，避免连续两次重复
+  useEffect(() => { if (enhanceHint) lastEnhanceHintRef.current = enhanceHint; }, [enhanceHint]);
+
   async function runPromptEnhance() {
     // 撤销模式：还原备份原文
     if (!enhanceBusy && hasEnhanceBackup && enhanceBackupRef.current != null) {
@@ -15700,6 +15730,11 @@ const commandMatches = useMemo(() => {
       // 首条已发出：无论包装是否带上了记录（如只发图没文字），该线程已非空、记录永远附不上了，
       // 清除待发送标记（含 localStorage），避免残留卡在重启后误显示。
       if (readStoredPendingImport(active.id)) forgetPendingImport(active.id);
+      // 增强提示气泡节奏（09-17 用户指定）：每 5 次**成功发送**为一个周期。
+      // 只置 pending，真正的展示等用户下次输入时（那时增强按钮才渲染出来，见 enhanceHintDueRef 注释）。
+      // 放在发送成功之后计数：命令面板/技能引用/发送失败都不该算进这个节奏里。
+      enhanceSendCountRef.current += 1;
+      if (shouldShowHint(enhanceSendCountRef.current)) enhanceHintDueRef.current = true;
       void refreshThreads();
     } catch (error: any) {
       // turn/start RPC 直接以限流失败：安排应用层自动重试（10 次退避）
@@ -16034,6 +16069,17 @@ const commandMatches = useMemo(() => {
   const waitingForInput = activeFlags.includes("waitingOnUserInput");
   // 当前会话只读取自己的运行状态；其他后台任务继续在侧栏独立显示，不影响本会话按钮。
   const activeThreadRunning = Boolean(thread && (runningThreadIds.has(thread.id) || thread.turns.some((turn) => isTurnRunning(turn))));
+  // 增强提示气泡的展示时机（09-17）：周期到了（每 5 次发送）+ 按钮真的渲染出来 → 才弹。
+  // ⛔ 条件必须与下方 enhance-button 的 JSX 条件一致：回合运行中输入内容时按钮并不渲染，
+  //    若此时就把 hintDue 消费掉，气泡既看不见、这次提示又白给了（真实链路实测踩到）。
+  //    放在这里（而不是 enhance 相关逻辑旁）是因为要读 activeThreadRunning。
+  const enhanceAnchorVisible = Boolean(prompt.trim() || hasEnhanceBackup) && !activeThreadRunning;
+  useEffect(() => {
+    if (!enhanceHintDueRef.current || enhanceHint) return;
+    if (!enhanceAnchorVisible) return;   // 不消费，等按钮真的渲染出来
+    enhanceHintDueRef.current = false;
+    showEnhanceHint();
+  }, [enhanceAnchorVisible, enhanceHint]);
   // 团队会话里正在被调度的成员（主理人通过 team_member_invoke 分发子任务时点亮其头像）
   const activeThreadMemberRunning = expertTeamMemberRunning && thread && expertTeamMemberRunning.teamId === (teamThreadMapRef.current.get(thread.id) || teamThreadConfigRef.current.get(thread.id)?.teamId) ? expertTeamMemberRunning : null;
   const activeMemberTeam = activeThreadMemberRunning ? expertTeams.find((team) => team.teamId === activeThreadMemberRunning.teamId) ?? null : null;
@@ -16896,19 +16942,37 @@ const commandMatches = useMemo(() => {
                   }} />
                 </div>
                 {(prompt.trim() || hasEnhanceBackup) && !activeThreadRunning && (
-                  <button
-                    type="button"
-                    className={`enhance-button ${enhanceBusy ? "loading" : ""} ${hasEnhanceBackup && !enhanceBusy ? "revert" : ""}`}
-                    title={enhanceBusy ? "增强中，点击取消" : hasEnhanceBackup ? "还原为原文" : "AI 优化提示词"}
-                    aria-label={enhanceBusy ? "增强中，点击取消" : hasEnhanceBackup ? "还原为原文" : "AI 优化提示词"}
-                    disabled={enhanceBusy ? false : !prompt.trim()}
-                    onClick={() => {
-                      if (enhanceBusy) { setEnhanceBusy(false); setNotice("已取消增强"); return; }
-                      void runPromptEnhance();
-                    }}
-                  >
-                    {enhanceBusy ? <Spinner /> : hasEnhanceBackup ? <RotateCcw size={16} /> : <Sparkles size={16} />}
-                  </button>
+                  <div className="enhance-wrap">
+                    {enhanceHint && (
+                      /* 气泡本体是 div 而非 button：内部还要放一个关闭按钮，
+                         button 里嵌 button 是无效的嵌套交互元素（键盘与读屏都会乱）。 */
+                      <div
+                        className="enhance-hint"
+                        role="button"
+                        tabIndex={0}
+                        title="点击开始优化"
+                        onClick={() => { dismissEnhanceHint(); void runPromptEnhance(); }}
+                        onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); dismissEnhanceHint(); void runPromptEnhance(); } }}
+                      >
+                        <span className="enhance-hint-text">{enhanceHint}</span>
+                        <button type="button" className="enhance-hint-close" aria-label="不再提示" title="关掉这条提示" onClick={(event) => { event.stopPropagation(); dismissEnhanceHint(); }}><X size={11} /></button>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className={`enhance-button ${enhanceBusy ? "loading" : ""} ${hasEnhanceBackup && !enhanceBusy ? "revert" : ""}`}
+                      title={enhanceBusy ? "增强中，点击取消" : hasEnhanceBackup ? "还原为原文" : "AI 优化提示词"}
+                      aria-label={enhanceBusy ? "增强中，点击取消" : hasEnhanceBackup ? "还原为原文" : "AI 优化提示词"}
+                      disabled={enhanceBusy ? false : !prompt.trim()}
+                      onClick={() => {
+                        dismissEnhanceHint();   // 用户已经知道这个按钮是干什么的了，不必再提醒
+                        if (enhanceBusy) { setEnhanceBusy(false); setNotice("已取消增强"); return; }
+                        void runPromptEnhance();
+                      }}
+                    >
+                      {enhanceBusy ? <Spinner /> : hasEnhanceBackup ? <RotateCcw size={16} /> : <Sparkles size={16} />}
+                    </button>
+                  </div>
                 )}
                 {/* 输入框语音听写：只展示图标。点击一次开始/停止，识别字幕实时回填 composer。 */}
                 <button

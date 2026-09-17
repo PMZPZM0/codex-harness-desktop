@@ -3665,6 +3665,50 @@ w.postMessage({id:1,op:"list",root});
       ? ok("【32】总览页数是动态计算的（新增页不会与简介数字打架）")
       : fail("【32】总览简介里的页数写成了固定数字 —— 新增设置页后会误导用户");
   }
+
+  // ⑰ 增强按钮提示气泡（09-17 用户要求：输入内容后在图标上方小气泡，词库 15~20 条、每 5 次、
+  //   6 秒自动消失）。真发 5 条消息跑一次要几分钟且污染会话历史，所以节奏与词库走离线断言，
+  //   只把「真实性」留给一次性 CDP 验收（已跑，12 条全绿）。
+  {
+    const hints = await import("../src/lib/enhance-hints.mjs");
+    const { ENHANCE_HINTS, pickEnhanceHint, shouldShowHint, HINT_EVERY_N_SENDS, HINT_AUTO_HIDE_MS } = hints;
+    (ENHANCE_HINTS.length >= 15 && ENHANCE_HINTS.length <= 25)
+      ? ok(`【32】增强提示词库 ${ENHANCE_HINTS.length} 条（用户要求 15~20）`)
+      : fail(`【32】提示词库 ${ENHANCE_HINTS.length} 条，超出 15~25 区间`);
+    (ENHANCE_HINTS.every((hint) => typeof hint === "string" && hint.trim().length >= 8 && hint.length <= 30))
+      ? ok("【32】每条提示都是 8~30 字的完整句子（气泡宽度可控）")
+      : fail("【32】有提示过短/过长 —— 过短没信息量，过长气泡会换行成块");
+    (HINT_EVERY_N_SENDS === 5 && HINT_AUTO_HIDE_MS === 6000)
+      ? ok("【32】节奏 = 每 5 次发送 / 6 秒自动消失（用户指定）")
+      : fail(`【32】节奏被改动：N=${HINT_EVERY_N_SENDS}、超时=${HINT_AUTO_HIDE_MS}ms`);
+    const rhythm = [[0, false], [4, false], [5, true], [6, false], [10, true], [15, true], [-5, false], [2.5, false]];
+    const badRhythm = rhythm.filter(([n, expect]) => shouldShowHint(n) !== expect);
+    (badRhythm.length === 0)
+      ? ok(`【32】节奏判定正确（${rhythm.length} 用例：5/10/15 展示，0/负数/小数不展示）`)
+      : fail(`【32】节奏判定错误：${JSON.stringify(badRhythm)}`);
+    let dup = 0, last;
+    for (let i = 0; i < 300; i++) { const next = pickEnhanceHint(last); if (next === last) dup++; last = next; }
+    (dup === 0)
+      ? ok("【32】连续两次不会抽到同一条（300 次抽样 0 重复）")
+      : fail(`【32】提示会连续重复（300 次里 ${dup} 次）—— 词库小更要避免原地重复`);
+    // 结构性守卫：展示条件必须与锚点按钮的渲染条件一致（否则 hintDue 被白消费，气泡永远看不见）
+    const appC2 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+    (/const enhanceAnchorVisible = Boolean\(prompt\.trim\(\) \|\| hasEnhanceBackup\) && !activeThreadRunning;/.test(appC2))
+      ? ok("【32】气泡展示条件与锚点按钮渲染条件一致（防 hintDue 白消费）")
+      : fail("【32】enhanceAnchorVisible 缺失或与按钮条件不一致 —— 回合运行中会白消费这次提示");
+    (/enhanceHintDueRef\.current = true/.test(appC2) && /if \(shouldShowHint\(enhanceSendCountRef\.current\)\)/.test(appC2))
+      ? ok("【32】计数挂在发送成功之后（命令/引用/失败不计入节奏）")
+      : fail("【32】计数点缺失或位置错误 —— 节奏会被非发送动作消耗");
+    // 气泡宽度：绝对定位在窄容器里 shrink-to-fit 会压成竖排窄条（截图实测踩到）
+    // ⛔ 必须先去注释再判 —— 注释里也提到了这个属性名，直接正则会被注释顶成假绿（本轮踩到）。
+    const cssC2 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+    const hintBlock = cssC2
+      .slice(cssC2.indexOf(".enhance-hint {"), cssC2.indexOf(".enhance-hint:hover"))
+      .replace(/\/\*[\s\S]*?\*\//g, "");
+    (/width:\s*max-content/.test(hintBlock))
+      ? ok("【32】气泡有 width:max-content（防被压成竖排窄条）")
+      : fail("【32】.enhance-hint 缺 width:max-content —— 绝对定位在 32px 窄容器里会被压成竖排");
+  }
 }
 
 console.log("");
