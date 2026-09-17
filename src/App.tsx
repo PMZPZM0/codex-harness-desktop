@@ -394,6 +394,7 @@ import { HelpDialog, type HelpTopic } from "./components/HelpDialog";
 import { PageInfo, HelpOpenContext } from "./components/SettingsHead";
 import { ArchiveToast } from "./components/ArchiveToast";
 import { ModelSetupGuide } from "./components/ModelSetupGuide";
+import { EnvCheckDialog, ENV_CHECK_SPEC, ENV_CHECK_OPTOUT_KEY, type EnvCheckState } from "./components/EnvCheckDialog";
 import { CodexAvatar, useCodexName } from "./components/CodexAvatar";
 import { readStoredCodexAvatar, storeCodexAvatar, setCodexIdentity, getCodexIdentity, subscribeCodexIdentity, CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "./lib/codex-identity.mjs";
 import { pickEnhanceHint, shouldShowHintThisRun, markHintShownThisRun, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_MS, HINT_AUTO_HIDE_MS } from "./lib/enhance-hints.mjs";
@@ -8953,6 +8954,11 @@ export default function App() {
    *  scope 是本次启动（关掉后本次不再弹；重启仍未配置则再提示一次）。 */
   const [showModelGuide, setShowModelGuide] = useState(false);
   const modelGuideDoneRef = useRef(false);
+  /** 首次启动「环境体检」（09-17 用户：「新用户不知道该装什么，不装 Codex 啥也干不了」）。
+   *  必备 4 项（模型 / 工作区 / Git / ripgrep）缺任一项就弹；装了或用户关掉都算本次完事。 */
+  const [envCheckOpen, setEnvCheckOpen] = useState(false);
+  const [envInstalling, setEnvInstalling] = useState(false);
+  const envCheckDoneRef = useRef(false);
   /** Codex 的身份（名字+头像）：订阅外部 store，改设置时消息头会立刻跟着变。 */
   const codexIdentity = useSyncExternalStore(subscribeCodexIdentity, getCodexIdentity, getCodexIdentity);
   const [toolsStatus, setToolsStatus] = useState<{ id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>([]);
@@ -12567,6 +12573,78 @@ const commandMatches = useMemo(() => {
     }, 1200);
     return () => window.clearTimeout(timer);
   }, [threadsLoading, showLogin, customModel]);
+
+  /** 体检项（必备：模型 / 工作区 / Git / ripgrep；常用：Python / jq / 7-Zip）。
+   *  运行时的显示名与体积取自 devRuntimes —— 与「开发工具」页同一份数据，不会两处打架。 */
+  const envItems: EnvCheckState[] = useMemo(() => ENV_CHECK_SPEC.map((spec) => {
+    if (spec.id === "model") return { id: "model", name: spec.fallbackName, why: spec.why, size: "", core: true, ok: Boolean(customModel), go: "model" as const };
+    if (spec.id === "workspace") return { id: "workspace", name: spec.fallbackName, why: spec.why, size: "", core: true, ok: Boolean(workspace), go: "workspace" as const };
+    const runtime = devRuntimes.find((entry) => entry.id === spec.id);
+    return { id: spec.id, name: runtime?.name ?? spec.fallbackName, why: spec.why, size: runtime?.size ?? "", core: spec.core, ok: Boolean(runtime?.installed) };
+  }), [devRuntimes, workspace, customModel]);
+
+  /** 一键安装体检缺项。⛔ 串行而不是并行：并行会多个安装进程同时抢同一份 npm 缓存目录。 */
+  async function installEnvMissing(ids: string[]) {
+    if (ids.length === 0) return;
+    setEnvInstalling(true);
+    try {
+      for (const id of ids) {
+        const result = await window.codex.installRuntime(id);
+        if (result?.runtimes) setDevRuntimes(result.runtimes);
+      }
+      setNotice(`已装好 ${ids.length} 项，Codex 可以正常干活了`);
+      setEnvCheckOpen(false);
+    } catch (error: any) {
+      setNotice(`安装失败：${error?.message ?? error}（可在「设置 → 开发工具」重试）`);
+    } finally {
+      setEnvInstalling(false);
+    }
+  }
+  /** 安装进度文案（复用主进程推来的 runtime:progress，取最后一条）。 */
+  const envProgress = envInstalling ? (Object.entries(runtimeProgress).slice(-1)[0]?.[1] ?? "") : "";
+
+  // 首次启动「环境体检」（09-17）：等首屏数据与模型引导判断都落定后再检测，避免两个弹窗抢屏。
+  // ⛔ 只判一次（envCheckDoneRef）——否则下面 setDevRuntimes 刷新会把它反复触发。
+  // ⛔ 模型引导正在弹时不检测：没配模型是"发不出消息"级硬阻断，优先处理它；等它关掉本 effect 会重建。
+  // ⛔ 读了「不再提示」直接跳过：那是用户在体检里主动勾的，不该每次启动再问一遍。
+  useEffect(() => {
+    if (envCheckDoneRef.current) return;
+    if (threadsLoading || showLogin || showModelGuide) return;
+    // 诊断埋点（保留）：用户报「缺工具但没弹体检」时，直接看 window.__envCheckDbg 就知道卡在哪一步
+    // （effect 有没有跑 / timer 有没有触发 / optout 有没有被读到 / listRuntimes 看到的工具状态）。
+    (window as any).__envCheckDbg = { effectRan: true, threadsLoading, showLogin, showModelGuide };
+    const timer = window.setTimeout(async () => {
+      // ⛔ done 标记必须在这里（**真正检查过**）才置位，绝不能放在 effect 开头。
+      //    effect 依赖里有 workspace / customModel，启动过程它们必然变化 → effect 重建 →
+      //    cleanup 把 timer 清掉；若 done 已被提前置 true，新 effect 会直接 return，
+      //    那个 timer 就永远不会执行 —— 体检永远不弹。
+      //    （09-17 真启动实测踩到：把 rg.exe 移走模拟缺工具，弹窗依然不出现。）
+      if (envCheckDoneRef.current) return;
+      envCheckDoneRef.current = true;
+      const dbg: Record<string, unknown> = { ...(window as any).__envCheckDbg, timerFired: true };
+      try {
+        dbg.optout = localStorage.getItem(ENV_CHECK_OPTOUT_KEY);
+        if (dbg.optout === "1") return;
+        const list = await window.codex.listRuntimes();
+        setDevRuntimes(list);
+        dbg.listRuntimes = list.filter((entry) => ["git", "rg", "python", "jq", "sevenzip"].includes(entry.id))
+          .map((entry) => `${entry.id}:${entry.installed ? "ok" : "missing"}`);
+        const missingCore = ENV_CHECK_SPEC.filter((spec) => spec.core).filter((spec) => {
+          if (spec.id === "model") return !customModel;
+          if (spec.id === "workspace") return !workspace;
+          return !list.find((entry) => entry.id === spec.id)?.installed;
+        });
+        dbg.missingCore = missingCore.map((spec) => spec.id);
+        if (missingCore.length > 0) setEnvCheckOpen(true);
+      } catch (error: any) {
+        dbg.error = String(error?.message ?? error);
+      } finally {
+        (window as any).__envCheckDbg = dbg;
+      }
+    }, 1400);
+    return () => window.clearTimeout(timer);
+    // customModel / workspace 变化会重建本 effect（清掉旧计时器）→ 1.4s 后读到的一定是最新值
+  }, [threadsLoading, showLogin, showModelGuide, customModel, workspace]);
 
   // 设置弹窗「骨架先行」：点击入口先画弹窗框架与 loading，重内容与引擎 RPC 延后一帧。
   // 软件渲染（无 GPU 加速）机器上弹窗内容大，同步挂载会造成「点了没反应」的冻结感。
@@ -16520,6 +16598,25 @@ const commandMatches = useMemo(() => {
               onGoModel={() => { setShowModelGuide(false); setSettingsPage("model"); setSettingsOpen(true); }}
               onGoSubscription={() => { setShowModelGuide(false); setSettingsPage("openai"); setSettingsOpen(true); }}
               onClose={() => setShowModelGuide(false)}
+            />
+          )}
+          {/* 首次启动「环境体检」（09-17 用户要求）：必备项缺失时列出「缺什么 / 为什么 / 多大」并一键补齐 */}
+          {envCheckOpen && (
+            <EnvCheckDialog
+              items={envItems}
+              installing={envInstalling}
+              progress={envProgress}
+              onInstall={(ids) => void installEnvMissing(ids)}
+              onGo={(target) => {
+                setEnvCheckOpen(false);
+                // 模型缺 → 去模型页；工作区缺 → 去「控制台」（该页管理"工作区、数据目录与应用行为"）
+                setSettingsPage(target === "model" ? "model" : "general");
+                setSettingsOpen(true);
+              }}
+              onClose={(dontAsk) => {
+                if (dontAsk) { try { localStorage.setItem(ENV_CHECK_OPTOUT_KEY, "1"); } catch { /* 隐私模式等写入失败不影响关闭 */ } }
+                setEnvCheckOpen(false);
+              }}
             />
           )}
           {/* 归档后提示浮层（09-17 用户要求）：5 秒自动消失、可手动关、点「查看归档」跳归档管理页 */}

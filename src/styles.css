@@ -16144,6 +16144,186 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   border-radius: 7px;
 }
 
+/* ── 首次启动「环境体检」（09-17 用户：新用户不知道该装什么，不装 Codex 啥也干不了） ──
+   7 项（必备：模型 / 工作区 / Git / ripgrep；常用：Python / jq / 7-Zip），缺项可一键补齐。
+   视觉与 .help-modal、模型引导同族（圆角 16 / 面板底 / 同一套阴影），避免"三套弹窗三种长相"。 */
+.env-check-backdrop {
+  z-index: 260;
+}
+.env-check-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(600px, calc(100vw - 48px));
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 24px 72px #0000003d;
+}
+.env-check-modal > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.env-check-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text);
+}
+.env-check-title > span {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.env-check-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 16px;
+}
+.env-check-intro {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.env-check-intro b {
+  color: var(--text);
+}
+.env-check-group {
+  margin-bottom: 14px;
+}
+.env-check-group-title {
+  margin-bottom: 6px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--faint);
+}
+.env-check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.env-check-row + .env-check-row {
+  margin-top: 6px;
+}
+/* 缺失的必备项用琥珀色描边 + 浅底强调（不能靠颜色单独表意，行内还有「待安装」徽标与文案） */
+.env-check-row.missing {
+  border-color: color-mix(in srgb, var(--orange) 45%, var(--line));
+  background: color-mix(in srgb, var(--orange) 6%, var(--bg));
+}
+.env-check-row.ok {
+  opacity: 0.72;
+}
+.env-check-dot {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--green);
+}
+.env-check-row.ok .env-check-dot {
+  border-color: color-mix(in srgb, var(--green) 55%, var(--line));
+}
+.env-check-text {
+  flex: 1;
+  min-width: 0;
+}
+.env-check-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.env-check-name em {
+  font-style: normal;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--faint);
+}
+.env-check-why {
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.env-check-badge {
+  flex: none;
+  align-self: center;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--orange) 16%, transparent);
+  color: var(--orange);
+  font-size: 10.5px;
+}
+.env-check-badge.soft {
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  color: var(--muted);
+}
+.env-check-go {
+  flex: none;
+  align-self: center;
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+.env-check-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11.5px;
+}
+.env-check-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+}
+.env-check-optout {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.env-check-optout input {
+  margin: 0;
+}
+.env-check-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
 /* ── 模型配置引导弹窗（09-17）：只在没有生效模型时出现 ── */
 .model-guide-backdrop {
   z-index: 97;
