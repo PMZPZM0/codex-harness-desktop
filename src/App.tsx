@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import "@xterm/xterm/css/xterm.css";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -392,6 +392,9 @@ import VoiceSettingsSection from "./components/VoiceSettingsSection";
 import { BootSplash, type BootStage } from "./components/BootSplash";
 import { HelpDialog, type HelpKey, type HelpTopic } from "./components/HelpDialog";
 import { ArchiveToast } from "./components/ArchiveToast";
+import { ModelSetupGuide } from "./components/ModelSetupGuide";
+import { CodexAvatar, useCodexName } from "./components/CodexAvatar";
+import { readStoredCodexAvatar, storeCodexAvatar, setCodexIdentity, getCodexIdentity, subscribeCodexIdentity, CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "./lib/codex-identity.mjs";
 import { pickEnhanceHint, shouldShowHintThisRun, markHintShownThisRun, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_MS, HINT_AUTO_HIDE_MS } from "./lib/enhance-hints.mjs";
 import VoiceWaveform from "./components/VoiceWaveform";
 import VoiceDevToolsSection from "./components/VoiceDevToolsSection";
@@ -5789,6 +5792,9 @@ function ProgressiveToolPayload({ itemId, text, active, className, language }: {
 }
 
 function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWindow, hideFooter, waitingForApproval, onCopy, onQuote, onFork, onImageCopy, onEditSubmit, onOpenFile, onOpenThread, pending }: { item: ThreadItem; turn?: Turn; turnActive?: boolean; usage?: any; tokenUsage?: any; fallbackWindow?: number; hideFooter?: boolean; waitingForApproval?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void; pending?: boolean }) {
+  // Codex 的名字（09-17）：用户在用户中心取的；走外部 store 而不是逐层传 props
+  // —— 这条调用链上每条消息都要用，透传会污染十几个组件签名（见 codex-identity.mjs）。
+  const codexName = useCodexName();
   if (item.type === "userMessage") {
     return <UserMessageView item={item} turn={turn} pending={pending} onCopy={onCopy} onQuote={onQuote} onImageCopy={onImageCopy} onEditSubmit={onEditSubmit} onOpenFile={onOpenFile} onOpenThread={onOpenThread} />;
   }
@@ -5800,16 +5806,23 @@ function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWindow, h
     const assistantText = String(item.text ?? "").replace(/\s+$/u, "");
     return (
       <div className="message assistant-message" data-ruler-mark="agent" data-turn-id={turn?.id} data-item-id={item.id}>
-        <div className="avatar agent"><Bot size={16} /></div>
-        {/* 流式与完成态同一条 Markdown 渲染路径（raf 合帧保证流畅；remark-breaks 保真单换行），
-            完成瞬间不再切换渲染方式，消除“回复完闪一下变样” */}
-        <ProgressiveAgentBody
-          itemId={item.id}
-          text={assistantText}
-          active={turnActive}
-          onOpenFile={onOpenFile}
-          footer={!hideFooter ? <MessageFooter item={item} turn={turn} usage={usage} tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} onCopy={onCopy} onQuote={onQuote} onFork={onFork} /> : undefined}
-        />
+        {/* 头像 + 名字（09-17 用户要求："给 codex 消息上面加一个名字和头像"）。
+            名字取用户在用户中心给 Codex 取的名字，默认 Codex；头像可用用户上传的，默认内置矢量头像。
+            结构上仍是 .message 的两列 grid（第一列头像、第二列内容），名字放在内容列顶部——
+            不新增列，避免影响滚动锚点与刻度尺依赖的既有结构。 */}
+        <div className="avatar agent"><CodexAvatar size={22} /></div>
+        <div className="assistant-col">
+          <div className="assistant-name">{codexName}</div>
+          {/* 流式与完成态同一条 Markdown 渲染路径（raf 合帧保证流畅；remark-breaks 保真单换行），
+              完成瞬间不再切换渲染方式，消除“回复完闪一下变样” */}
+          <ProgressiveAgentBody
+            itemId={item.id}
+            text={assistantText}
+            active={turnActive}
+            onOpenFile={onOpenFile}
+            footer={!hideFooter ? <MessageFooter item={item} turn={turn} usage={usage} tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} onCopy={onCopy} onQuote={onQuote} onFork={onFork} /> : undefined}
+          />
+        </div>
       </div>
     );
   }
@@ -8943,6 +8956,12 @@ export default function App() {
   const [helpKey, setHelpKey] = useState<HelpTopic | null>(null);
   /** 归档后提示浮层（09-17）：token 用于重置倒计时，name 是刚归档的会话名。 */
   const [archiveToast, setArchiveToast] = useState<{ name: string; token: number } | null>(null);
+  /** 模型配置引导（09-17 用户要求）：只在**没有生效模型**时弹，配好后永不再弹。
+   *  scope 是本次启动（关掉后本次不再弹；重启仍未配置则再提示一次）。 */
+  const [showModelGuide, setShowModelGuide] = useState(false);
+  const modelGuideDoneRef = useRef(false);
+  /** Codex 的身份（名字+头像）：订阅外部 store，改设置时消息头会立刻跟着变。 */
+  const codexIdentity = useSyncExternalStore(subscribeCodexIdentity, getCodexIdentity, getCodexIdentity);
   const [toolsStatus, setToolsStatus] = useState<{ id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>([]);
   const refreshToolsStatus = () => { window.codex.toolStatus().then(setToolsStatus).catch(() => setToolsStatus([])); };
   const [devRuntimes, setDevRuntimes] = useState<DevRuntimeEntry[]>([]);
@@ -9111,6 +9130,9 @@ export default function App() {
   useEffect(() => {
     void window.codex.readPersonalization().then((cfg) => {
       if (cfg?.nickname) { setUsername(cfg.nickname); localStorage.setItem("username", cfg.nickname); }
+      // Codex 的名字与头像（09-17）：一处读取、灌进外部 store，消息头与用户中心共用
+      // （名字在 personalization.json，头像是 base64 图片所以放 localStorage，见 codex-identity.mjs）
+      setCodexIdentity({ name: cfg?.assistantName || CODEX_DEFAULT_NAME, avatar: readStoredCodexAvatar() });
     }).catch(() => undefined);
   }, []);
   // 左下角账户名：点击进入行内编辑，Enter/失焦保存、Esc 取消
@@ -12534,6 +12556,24 @@ const commandMatches = useMemo(() => {
   }, [popoutFromQuery, refreshPoppedOut]);
 
   useEffect(() => { if (!loading) void refreshThreads(); }, [loading]);
+
+  // 模型配置引导（09-17 用户要求）：只在**没有生效模型**时弹（配好即永不再弹，用户确认的条件）。
+  // ⛔ 必须等首屏数据到位再判断：启动过程中 customModel 还是初始空值，直接判断会误弹给已配好的用户。
+  // ⛔ 判据是"没有生效模型"而不是"供应商列表为空"——有供应商但没勾选模型同样发不出消息。
+  useEffect(() => {
+    if (modelGuideDoneRef.current) return;
+    if (threadsLoading) return;
+    if (showLogin) return;              // 登录页先不谈配置
+    // ⛔ 再等一拍：threadsLoading 结束只说明会话查完了，供应商配置是**另一路**加载。
+    //    不等这一下，配置正常的老用户会看到「先配一个模型」的误弹（code review 发现）。
+    //    customModel 变化会重建本 effect（清掉旧计时器），所以 1.2s 后读到的一定是最新值。
+    const timer = window.setTimeout(() => {
+      if (modelGuideDoneRef.current) return;
+      modelGuideDoneRef.current = true;   // 本次启动只判断一次（关掉后不再弹）
+      if (!customModel) setShowModelGuide(true);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [threadsLoading, showLogin, customModel]);
 
   // 设置弹窗「骨架先行」：点击入口先画弹窗框架与 loading，重内容与引擎 RPC 延后一帧。
   // 软件渲染（无 GPU 加速）机器上弹窗内容大，同步挂载会造成「点了没反应」的冻结感。
@@ -16465,6 +16505,14 @@ const commandMatches = useMemo(() => {
           )}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
           {/* 设置页使用帮助（09-17 用户要求）：模型/插件/技能/MCP/专家团/语音/开发工具 + 设置总览 */}
+          {/* 模型配置引导（09-17）：只在没有生效模型时出现，配好即不再弹 */}
+          {showModelGuide && (
+            <ModelSetupGuide
+              onGoModel={() => { setShowModelGuide(false); setSettingsPage("model"); setSettingsOpen(true); }}
+              onGoSubscription={() => { setShowModelGuide(false); setSettingsPage("openai"); setSettingsOpen(true); }}
+              onClose={() => setShowModelGuide(false)}
+            />
+          )}
           {/* 归档后提示浮层（09-17 用户要求）：5 秒自动消失、可手动关、点「查看归档」跳归档管理页 */}
           {archiveToast && (
             <ArchiveToast
@@ -17739,7 +17787,23 @@ const commandMatches = useMemo(() => {
                 <ArrowLeft size={14} />{settingsPage === "agents" || settingsPage === "teams" || settingsPage === "expert-center" ? "返回智能体团队" : "返回自动化"}
               </button>
             )}
-            {settingsPage === "user" && <UserCenterSection username={username} onUsernameChange={(name) => { setUsername(name); }} personality={personality} onPersonalityChange={(v) => changePersonality(v)} onNotice={(m) => setNotice(m)} onProfileChange={(p) => setUserAvatar(p.avatarType && p.avatar ? { type: p.avatarType, value: p.avatar } : null)} onLogout={handleLogout} />}
+            {settingsPage === "user" && <UserCenterSection
+              username={username}
+              onUsernameChange={(name) => { setUsername(name); }}
+              personality={personality}
+              onPersonalityChange={(v) => changePersonality(v)}
+              onNotice={(m) => setNotice(m)}
+              onProfileChange={(p) => setUserAvatar(p.avatarType && p.avatar ? { type: p.avatarType, value: p.avatar } : null)}
+              onLogout={handleLogout}
+              assistantName={codexIdentity.name}
+              onAssistantNameChange={(name) => {
+                // 名字落 personalization（引擎侧也会知道自己叫什么：applyPersonalizationToAgentsMd 会写进 AGENTS.md）
+                setCodexIdentity({ name });
+                void window.codex.saveIdentity({ assistantName: name }).catch(() => undefined);
+              }}
+              codexAvatar={codexIdentity.avatar}
+              onCodexAvatarChange={(spec) => { storeCodexAvatar(spec); setCodexIdentity({ avatar: spec }); }}
+            />}
 
             {settingsPage === "general" && <section className="settings-section stack general-page">
               <div className="settings-copy"><h2>控制台</h2><p>管理工作区、数据目录与应用行为。</p></div>

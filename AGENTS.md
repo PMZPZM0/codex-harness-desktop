@@ -177,6 +177,37 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **Codex 身份：名字 + 头像（09-17，用户「给 codex 消息上面加名字和头像、按用户取的名字展示、默认 codex、
+  还要能上传头像、默认头像设计好看点」）**：assistant 消息头部由单个 Bot 图标改为**头像 + 名字一行**
+  （名字取用户取的，默认 `Codex`）；用户中心新增「Codex 的身份」卡（改名 + 上传头像 + 用默认名/头像）。
+  **单一真相源 = `src/lib/codex-identity.mjs`**（模块级 store + `useSyncExternalStore`）：
+  assistant 消息渲染在 `ItemView`/`renderItem` 那条链上，逐层透传会污染十几个组件签名，而它只在改设置时变一次。
+  **落盘分工**：名字 → `personalization.assistantName`（主进程落盘，且 `applyPersonalizationToAgentsMd`
+  会写进 AGENTS.md，**引擎也知道自己叫什么**）；头像 → `localStorage`（base64 图片，放进那个 JSON 会撑大几十倍）。
+  **默认头像**：`src/components/DefaultCodexAvatar.tsx`（圆角方形 + 靛蓝→紫渐变 + 四角星）——
+  用圆角方而非圆形是为了与侧栏应用图标成体系、并与"用户头像（圆形）"一眼区分。
+  **⛔ `src/lib/*.mjs` 是纯 JS**：`export type` / 参数类型标注 / `new Set<() => void>()` 都会让 rolldown
+  直接 PARSE_ERROR。我在 enhance-hints.mjs 与 codex-identity.mjs 上**各踩一次**（第二次是因为教训只写进记忆
+  没变成守卫）→ 预检【32】⑱ 现在按结构扫所有 `src/lib/*.mjs`，7 条判红 + 3 条不误报的反证全成立
+  （反证过程中修掉守卫自身 2 处漏检：`const y: number` 的声明前缀、泛型正则被箭头函数 `=>` 的 `>` 截断）。
+
+- **模型配置引导弹窗（09-17 用户要求：首次启动给新手引导）**：`src/components/ModelSetupGuide.tsx`，
+  只在**没有生效模型**时弹（用户确认的条件：配好即永不再弹）；两条路直达（官方订阅登录 / 添加供应商）。
+  **⛔ 判据是"没有生效模型"而不是"供应商列表为空"**——有供应商但没勾模型同样发不出消息。
+  **⛔ 判断时机**：等首屏数据到位**再等 1.2s**（`threadsLoading` 结束只说明会话查完了，供应商配置是另一路加载；
+  不等这一下配置正常的老用户会被误弹 —— code review 发现）。关闭后本次启动不再弹。
+
+- **归档后提示浮层（09-17 用户要求：归档后弹窗 + 可跳归档页 + 5 秒 + 可叉掉）**：
+  `src/components/ArchiveToast.tsx`，右上角浮出，点「查看归档」跳设置→归档管理；悬停暂停倒计时。
+  **⛔ 回调必须用 ref 持有、effect 只依赖 token** —— 调用方传内联箭头函数时，若依赖里带回调，
+  每次父渲染都会重置计时器，提示**永远不会自己消失**。
+
+- **供应商名字下移 + 必填（09-17 用户要求）**：从编辑区顶部挪到表单字段；新增必填（原先默认"自定义供应商"，
+  多个重名无法区分）；保存按钮据此禁用并在左侧直接写明原因。
+  **⛔ 坑**：`editingProvider/setEditingProvider` 是从 `useCustomProviders()` **解构**来的，
+  在该位置再 `useState` 一次即重复声明；同时 `editingName` 有 5 处调用（切换供应商时退出重命名态），
+  名字挪走后整个状态与调用要一并清除。
+
 - **增强按钮提示气泡（09-17，用户「输入内容后那个亮起来的功能，加个小气泡提醒，词库丰富个性一点」）**：
   输入框右侧的 AI 优化按钮（`.enhance-button`，紫色星星）上方浮出小气泡，文案取自
   `src/lib/enhance-hints.mjs` 的 18 条词库（随机且不与上一条重复）。**触发条件三条叠加**（用户定稿）：
