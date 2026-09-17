@@ -4094,14 +4094,20 @@ w.postMessage({id:1,op:"list",root});
   {
     const envC = readFileSync(join(ROOT, "src", "components", "EnvCheckDialog.tsx"), "utf8");
     const appEnv = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
-    const specCount = (envC.match(/\{ id: "(?:model|workspace|git|rg|python|jq|sevenzip)"/g) || []).length;
-    (specCount === 7)
-      ? ok("【32】环境体检 7 项齐全（模型/工作区/Git/ripgrep + Python/jq/7-Zip）")
-      : fail(`【32】体检项变成 ${specCount} 项 —— 用户拍板的是「必备 4 + 常用 3」`);
+    const specCount = (envC.match(/\{ id: "(?:model|workspace|git|rg|pwsh|python|jq|sevenzip)"/g) || []).length;
+    (specCount === 8)
+      ? ok("【32】环境体检 8 项齐全（模型/工作区/Git/ripgrep/PowerShell 7 + Python/jq/7-Zip）")
+      : fail(`【32】体检项变成 ${specCount} 项 —— 用户拍板的是「必备 5 + 常用 3」（09-18 点名补 PowerShell 7）`);
     const coreCount = (envC.match(/core: true/g) || []).length;
-    (coreCount === 4)
-      ? ok("【32】必备项 4 项（缺了干不了活的那批）")
+    (coreCount === 5)
+      ? ok("【32】必备项 5 项（缺了干不了活的那批，含终端要用的 PowerShell 7）")
       : fail(`【32】必备项变成 ${coreCount} 项 —— 弹窗触发条件会跟着偏`);
+    (/id: "pwsh", fallbackName: "PowerShell 7", core: true/.test(envC))
+      ? ok("【32】PowerShell 7 在体检必备组（终端默认 shell，缺失会退回 5.1）")
+      : fail("【32】PowerShell 7 不在体检必备组 —— 新用户终端会静默退回 PowerShell 5.1");
+    (/spec\.id !== "pwsh" \|\| !isMacPlatform\(\)/.test(appEnv) && /envSpecs\.filter\(\(spec\) => spec\.core\)/.test(appEnv))
+      ? ok("【32】pwsh 体检项按平台门控（mac 终端用系统 shell，不把 pwsh 标成必备）")
+      : fail("【32】pwsh 体检项没做平台门控 —— mac 用户会被误导去装一个终端用不到的东西");
     (/<EnvCheckDialog/.test(appEnv))
       ? ok("【32】体检弹窗挂在渲染树里（缺工具时真的会弹）")
       : fail("【32】体检弹窗没挂进渲染树 —— 缺工具的新用户永远等不到提示");
@@ -4136,8 +4142,8 @@ w.postMessage({id:1,op:"list",root});
     (/if \(!customModel\) setShowModelGuide\(true\)/.test(guideBlock))
       ? ok("【32】已配模型时不弹模型引导（直接走工具检测）")
       : fail("【32】模型引导的判据变了 —— 已配好模型的用户会被再引导一遍");
-    (envBlock && /\[threadsLoading, showLogin, showModelGuide, customModel, workspace\]/.test(envBlock))
-      ? ok("【32】体检依赖含 showModelGuide —— 模型引导关掉后体检会补上")
+    (envBlock && /\[threadsLoading, showLogin, showModelGuide, customModel, workspace(?:, [A-Za-z]+)*\]/.test(envBlock))
+      ? ok("【32】体检依赖含 showModelGuide —— 模型引导关掉后体检会补上（允许追加依赖，不许删它）")
       : fail("【32】体检 effect 依赖里没有 showModelGuide —— 没配模型时关掉引导后体检永远不弹");
     (/setEnvCheckOpen\(false\);[\s\S]{0,60}?setShowModelGuide\(false\);[\s\S]{0,60}?setShowLogin\(true\);/.test(appEnv))
       ? ok("【32】登出时两个引导弹窗一起收起（重登不重现）")

@@ -7,10 +7,11 @@ import { Check, Download, FolderOpen, Sparkles, Wrench, X } from "lucide-react";
  *  痛点原话：「很多新用户上来，工具都不会装，也不知道要装哪些，不装 Codex 啥也干不了」。
  *  所以这里只做两件事：**把"缺什么、为什么缺了不行"讲清楚**，以及**一键补齐**。
  *
- *  为什么是这 7 项（用户 09-17 拍板「必备 + 常用 7 项」）：
- *   - 必备 4 项（模型 / 工作区 / Git / ripgrep）—— 缺任何一项，Codex 都"干不了活"：
+ *  为什么是这 8 项（用户 09-17 拍板「必备 + 常用」，09-18 点名补 PowerShell 7——"这个是终端必要的工具"）：
+ *   - 必备 5 项（模型 / 工作区 / Git / ripgrep / PowerShell 7）—— 缺任何一项，Codex 都"干不好活"：
  *     没模型发不出消息；没工作区不知道改哪个目录；Git 是引擎跑命令/看 diff/提交的硬依赖；
- *     ripgrep 是代码检索主力（缺它搜代码会慢一个数量级）。
+ *     ripgrep 是代码检索主力（缺它搜代码会慢一个数量级）；终端默认 shell 优先用 pwsh 7，
+ *     缺了只能退回系统自带的 PowerShell 5.1（模块与脚本兼容性差一截）。
  *   - 常用 3 项（Python / jq / 7-Zip）—— 按需，缺了只是"某些活干不了"，不阻断。
  *   ⛔ 不把 22 个运行时全列出来：新用户的注意力有限，列满只会让他更迷茫（这正是用户遇到的问题）。
  *     其余的仍在「设置 → 开发工具」页按需下载。
@@ -41,6 +42,7 @@ export const ENV_CHECK_SPEC: { id: string; why: string; core: boolean; go?: "mod
   { id: "workspace", fallbackName: "工作区", core: true, go: "workspace", why: "Codex 干活的项目目录——没选它不知道去改哪里" },
   { id: "git", fallbackName: "Git", core: true, why: "引擎执行命令、看 diff、提交、读历史都依赖它" },
   { id: "rg", fallbackName: "ripgrep 代码检索", core: true, why: "Codex 搜代码库的主力工具——缺它检索会慢一个数量级" },
+  { id: "pwsh", fallbackName: "PowerShell 7", core: true, why: "内置终端的默认 shell——缺了终端只能退回老旧的 PowerShell 5.1" },
   { id: "python", fallbackName: "Python", core: false, why: "跑 Python 项目、脚本，以及部分 Python 类 MCP" },
   { id: "jq", fallbackName: "jq", core: false, why: "命令行查询、筛选、转换 JSON" },
   { id: "sevenzip", fallbackName: "7-Zip CLI", core: false, why: "解压 zip / 7z / tar 等归档" },
