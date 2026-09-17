@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { DEFAULT_EFFORT } from "../lib/effort";
+import { DEFAULT_EFFORT, ALL_EFFORTS } from "../lib/effort";
 import { matchModelSpec } from "../lib/model-specs";
 
 export type ProviderModel = { id: string; enabled?: boolean; contextWindow?: number; maxOutputTokens?: number; inputTypes?: ("text" | "image" | "video")[]; outputTypes?: ("text" | "image" | "video")[]; efforts?: string[]; effort?: string };
@@ -201,7 +201,9 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
                   enabled: false,
                   contextWindow: spec?.contextWindow ?? (Number(current.contextWindow) || undefined),
                   maxOutputTokens: spec?.maxOutputTokens,
-                  efforts: spec ? [...spec.efforts] : undefined,
+                  // 思考档位：规格表**明确声明过**的按声明，没声明的一律全档
+                  // （09-17 用户「新建供应商…都模型全选吧，可以勾掉」；旧行为是 undefined → 菜单只剩 4 档默认）
+                  efforts: spec?.efforts?.length ? [...spec.efforts] : [...ALL_EFFORTS],
                   inputTypes: spec?.inputTypes ? [...spec.inputTypes] : ["text"],
                   outputTypes: spec?.outputTypes ? [...spec.outputTypes] : ["text"],
                 });
@@ -213,7 +215,9 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
                   ...cur,
                   contextWindow: cur.contextWindow ?? spec.contextWindow,
                   maxOutputTokens: cur.maxOutputTokens ?? spec.maxOutputTokens,
-                  efforts: cur.efforts?.length ? cur.efforts : [...spec.efforts],
+                  // 刷新即校准：存量条目缺参数字段的按内置规格补齐（用户显式改过的字段不动）。
+                  // 档位同规则：规格表声明过按声明，否则全档 —— 与上面新建条目保持一致。
+                  efforts: cur.efforts?.length ? cur.efforts : (spec.efforts?.length ? [...spec.efforts] : [...ALL_EFFORTS]),
                   inputTypes: cur.inputTypes?.length ? cur.inputTypes : [...(spec.inputTypes ?? ["text"])],
                   outputTypes: cur.outputTypes?.length ? cur.outputTypes : [...(spec.outputTypes ?? ["text"])],
                 };

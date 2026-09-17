@@ -3910,6 +3910,30 @@ w.postMessage({id:1,op:"list",root});
     (/\.effort-trigger\s*\{/.test(cssNC) && /\.effort-picker-bands\s*\{/.test(cssNC) && /\.effort-picker-range/.test(cssNC))
       ? ok("【32】样式齐（触发按钮 / 分段色带 / 拖动条 / 档位标签）")
       : fail("【32】拖动条样式缺 —— 色带或滑块不会显示");
+    // 模型编辑器「思考档位」默认**全选**（09-17 用户：「新建供应商和修改模型，这个都全选吧，可以勾掉」）：
+    //   三种失效形态都静默 —— ① 回到「沿用已存声明的几档」→ 改模型时得手动补勾；
+    //   ② 输入模型 ID 时按规格表收窄 → 刚输完 ID 就被勾掉几档（用户碰到的正是这个）；
+    //   ③ 新建条目的兜底回到死写三档 低/中/高 → 新供应商的模型只有三档可选。
+    const modelEditorC = appNC.slice(appNC.indexOf("const openModelEditor"), appNC.indexOf("const targetProviderHint"));
+    (/efforts:\s*\[\.\.\.ALL_EFFORTS\]/.test(modelEditorC))
+      ? ok("【32】模型编辑器思考档位默认全选（新建/修改都是）")
+      : fail("【32】openModelEditor 的档位默认不是全集 —— 改模型时用户得手动补勾（用户报过）");
+    (!/efforts:\s*m\?\.efforts\?\.length/.test(modelEditorC))
+      ? ok("【32】不再沿用「已存声明几档就勾几档」")
+      : fail("【32】档位默认又回落到沿用已存声明 —— 存了 5 档就只勾 5 档");
+    (!/maxOutputTokens: spec\.maxOutputTokens \? String\(spec\.maxOutputTokens\) : "",\s*efforts:\s*\[\.\.\.spec\.efforts\]/.test(appNC))
+      ? ok("【32】输入模型 ID 自动回填时不收窄档位（规格表只管上下文/输出/模态）")
+      : fail("【32】输入模型 ID 时又按规格表勾掉档位了 —— 刚输完 ID 档位就少几档（用户报过）");
+    (!/efforts:\s*spec\?\.efforts\s*\?\?\s*\["low",\s*"medium",\s*"high"\]/.test(appNC))
+      ? ok("【32】新建模型条目的档位兜底不再是死写三档")
+      : fail("【32】兜底又回到只有‘low/medium/high’三档 —— 新供应商的模型只有三档可选");
+    const provHookC = readFileSync(join(ROOT, "src", "hooks", "useModelProviders.ts"), "utf8");
+    (!/efforts:\s*spec\s*\?\s*\[\.\.\.spec\.efforts\]\s*:\s*undefined/.test(provHookC))
+      ? ok("【32】供应商表单里探测出的新模型条目也兜底全档")
+      : fail("【32】探测新建的模型条目档位是 undefined —— 菜单只剩四档默认");
+    (/默认全选；供应商不支持的勾掉即可/.test(appNC))
+      ? ok("【32】档位提示文案说明「默认全选、可勾掉」")
+      : fail("【32】档位提示文案没说要默认为全选 —— 用户不知道可以勾掉");
     (!/\.(?:codex-turn|process-content) \.assistant-message \.avatar[\s\S]{0,140}?display:\s*none/.test(cssNC))
       ? ok("【32】没有规则把 assistant 头像 display:none 掉")
       : fail("【32】有规则把 assistant 头像 display:none 了 —— 用户只会看到名字");

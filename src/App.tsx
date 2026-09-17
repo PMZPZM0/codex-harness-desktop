@@ -9923,7 +9923,10 @@ export default function App() {
               id: mid,
               contextWindow: spec?.contextWindow ?? 256000,
               maxOutputTokens: spec?.maxOutputTokens,
-              efforts: spec?.efforts ?? ["low", "medium", "high"],
+              // 思考档位：规格表**明确声明过**的按声明（官方支持范围），没声明的一律**全档**
+              // （09-17 用户：「新建供应商…都模型全选吧，可以勾掉」）。旧兜底是死写三档
+              // 低/中/高，新建出来的模型只有三档可选，用户得逐个进编辑器补勾。
+              efforts: spec?.efforts?.length ? [...spec.efforts] : [...ALL_EFFORTS],
               inputTypes: spec?.inputTypes ?? (["text"] as ("text" | "image" | "video")[]),
               outputTypes: spec?.outputTypes ?? (["text"] as ("text" | "image" | "video")[]),
             };
@@ -9988,7 +9991,8 @@ export default function App() {
           id: mid,
           contextWindow: spec?.contextWindow ?? 400_000,
           maxOutputTokens: spec?.maxOutputTokens,
-          efforts: spec?.efforts ?? ["low", "medium", "high"],
+          // 同上一处：规格表明确声明过按声明，没声明的一律全档（09-17 用户「都模型全选吧，可以勾掉」）
+          efforts: spec?.efforts?.length ? [...spec.efforts] : [...ALL_EFFORTS],
           inputTypes: spec?.inputTypes ?? (["text"] as ("text" | "image" | "video")[]),
           outputTypes: ["text"] as ("text" | "image" | "video")[],
         };
@@ -10179,7 +10183,10 @@ export default function App() {
       maxOutputTokens: m?.maxOutputTokens ? String(m.maxOutputTokens) : "",
       inputTypes: m?.inputTypes ?? ["text"],
       outputTypes: m?.outputTypes ?? ["text"],
-      efforts: m?.efforts?.length ? m.efforts : [...ALL_EFFORTS],
+      // 思考档位默认**全选**（09-17 用户：「新建供应商和修改模型，这个都全选吧，可以勾掉」）：
+      // 引擎不校验档位（见 effort.ts 的实证说明），所以默认给全档、用户按自家供应商实际支持勾掉；
+      // 旧规则「模型条目里存的是几档就只勾几档」会让每次改模型都得手动补勾（用户报的就是这个）。
+      efforts: [...ALL_EFFORTS],
     },
   });
   // 编辑器标题里显示的供应商名：编辑已存供应商时显示它的名字，防止同名模型改错供应商
@@ -16007,7 +16014,7 @@ const commandMatches = useMemo(() => {
       }
       // 2) 第一个非多媒体模型生效；已知模型按规格表回填上下文/最大输出/思考档位
       const defaultModel = info.model || models.find((id: string) => !/image|embedding|moderation|audio|tts|whisper|auto-review/i.test(id)) || models[0];
-      const allModels = models.map((id: string) => { const spec = matchModelSpec(id); return { id, contextWindow: spec?.contextWindow ?? 256000, maxOutputTokens: spec?.maxOutputTokens, efforts: spec ? [...spec.efforts] : undefined, inputTypes: spec?.inputTypes ? [...spec.inputTypes] : ["text"] as ("text" | "image" | "video")[], outputTypes: ["text"] as ("text" | "image" | "video")[] }; });
+      const allModels = models.map((id: string) => { const spec = matchModelSpec(id); return { id, contextWindow: spec?.contextWindow ?? 256000, maxOutputTokens: spec?.maxOutputTokens, efforts: spec?.efforts?.length ? [...spec.efforts] : [...ALL_EFFORTS], inputTypes: spec?.inputTypes ? [...spec.inputTypes] : ["text"] as ("text" | "image" | "video")[], outputTypes: ["text"] as ("text" | "image" | "video")[] }; });
       const saved = await window.codex.saveCustomModel({
         provider: info.provider,
         name: info.name,
@@ -18468,9 +18475,11 @@ const commandMatches = useMemo(() => {
                     // 已知模型（GPT 系/主流国模）按内置规格自动回填全部推荐参数。
                     // 改名即重评估：只要参数字段没被手动改过（paramsDirty=false），就按新 ID 的规格整体重填——
                     // 第一次填错型号也能改回来；手动改过的字段绝不重置。
+                    // ⛔ 思考档位不参与重评估（09-17 用户要求档位默认全选）：规格表收窄会把刚输入
+                    //    ID 后本就全勾的档位又勾掉几档（用户碰到的正是这个），档位一律保持用户当前勾选。
                     const spec = matchModelSpec(id);
                     if (spec && !modelEditor.paramsDirty) {
-                      setModelEditor({ ...modelEditor, draft: { ...modelEditor.draft, id, contextWindow: String(spec.contextWindow), maxOutputTokens: spec.maxOutputTokens ? String(spec.maxOutputTokens) : "", efforts: [...spec.efforts], inputTypes: [...(spec.inputTypes ?? ["text"])], outputTypes: [...(spec.outputTypes ?? ["text"])] } });
+                      setModelEditor({ ...modelEditor, draft: { ...modelEditor.draft, id, contextWindow: String(spec.contextWindow), maxOutputTokens: spec.maxOutputTokens ? String(spec.maxOutputTokens) : "", inputTypes: [...(spec.inputTypes ?? ["text"])], outputTypes: [...(spec.outputTypes ?? ["text"])] } });
                       return;
                     }
                     setModelEditor({ ...modelEditor, draft: { ...modelEditor.draft, id } });
@@ -18517,7 +18526,7 @@ const commandMatches = useMemo(() => {
                       </label>
                     ))}</div>
                   </div>
-                  <div className="type-chip-group"><span>思考档位 <small>按模型 API 实际支持勾选；未勾选默认 低/中/高/极高</small></span>
+                  <div className="type-chip-group"><span>思考档位 <small>默认全选；供应商不支持的勾掉即可（一个都不勾则回落 低/中/高/极高）</small></span>
                     <div className="type-chips">{ALL_EFFORTS.map((t) => (
                       <label key={t} className={`type-chip ${modelEditor.draft.efforts.includes(t) ? "on" : ""} ${effort === t ? "is-current" : ""}`}>
                         <input type="checkbox" checked={modelEditor.draft.efforts.includes(t)} onChange={(event) => setModelEditor({ ...modelEditor, paramsDirty: true, draft: { ...modelEditor.draft, efforts: event.target.checked ? [...modelEditor.draft.efforts, t] : modelEditor.draft.efforts.filter((x) => x !== t) } })} />
