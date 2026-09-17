@@ -204,6 +204,14 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
     （与 `codex-identity.mjs` 同构的外部 store）分发，消息渲染链上不逐层传 props，
     `components/UserAvatar.tsx` 提供 `useUserName()` / `UserAvatar`（三态：图片 / 表情 / 名字首字）。
     气泡内那个 `.user-message .avatar` 本就是 `display:none` 的布局占位，不会与新头重复。
+  - ⛔ **头像健壮性**（09-17 用户报「Codex 头像又不见了」）：这个症状**在 DOM 上看不出来** ——
+    `<img>` 加载失败时尺寸 / 可见性 / 透明度全正常，就是没有像素（探针实测 22×22、visible、
+    opacity 1，而截图里是空白；磁盘上连 `codex-avatar` 键都没有）。三个来源都要兜住：
+    坏 base64 / 上传的图太大写不进 localStorage（`storeCodeAvatar` 是**静默** catch）/
+    用户传了坏图。修法：① `CodexAvatar` 的 img 加 `onError` → 回退 `DefaultCodexAvatar`
+    （即用户说的"测试里那个"紫色渐变头像）；② `UserAvatar` 同理回退名字首字；
+    ③ 上传统一走 `fileToAvatarDataUrl`（canvas 居中裁 128×128），几 MB base64 不再撞配额。
+    守卫 ⑰b 加了 3 条（两条 onError 回退 + 两处上传都走压缩）。
   - `.codex-turn .assistant-message` 回到**单列**（不再为头像留 22px 列，否则每段回复都自带一份
     头像、正文还被挤到右边）；`.avatar.agent` 仍被工具卡（imageView / imageGeneration）使用，
     别顺手删。守卫 ⑰b 已改成「回合级唯一头 + 消息内不得再有头像」的判据。
