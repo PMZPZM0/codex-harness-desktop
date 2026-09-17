@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ImagePlus, Eye, RefreshCw, Play, Save, X, CircleCheck } from "lucide-react";
+import { ImagePlus, Eye, RefreshCw, Play, Save, X, CircleCheck, CircleOff } from "lucide-react";
 
 type PluginKind = "image" | "vision";
 type PluginConfig = { enabled?: boolean; baseUrl: string; apiKey: string; model: string };
@@ -78,9 +78,15 @@ export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => v
 
   const quickButton = (kind: PluginKind) => {
     const { title, Icon } = meta(kind);
+    const saved = savedCfg[kind];
     const ready = configured(kind);
-    return <button type="button" className={`builtin-plugin-quick${ready ? " configured" : ""}`} onClick={() => setActive(kind)}>
-      <Icon size={14} /><span>{title}</span>{ready && <em><CircleCheck size={12} />已配置</em>}
+    // 三态可视化（09-17 用户反馈「启用跟禁用一个状态，没有颜色区分」）：
+    // 绿 = 已配置且启用；琥珀 = 已配置但被停用（enabled === false）；中性 = 未配置。
+    // 状态取 savedCfg（保存后的权威值），编辑中的改动保存后才反映到按钮。
+    const off = ready && saved?.enabled === false;
+    const stateClass = !ready ? "" : off ? " off" : " configured";
+    return <button type="button" className={`builtin-plugin-quick${stateClass}`} onClick={() => setActive(kind)}>
+      <Icon size={14} /><span>{title}</span>{ready && <em>{off ? <CircleOff size={12} /> : <CircleCheck size={12} />}{off ? "已停用" : "已启用"}</em>}
     </button>;
   };
 

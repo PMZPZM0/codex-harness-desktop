@@ -239,7 +239,7 @@
   --text: #23231f;
   --muted: #6f6f69;
   --faint: #9b9b95;
-  --green: #1e1e1c;
+  --green: #1a7f37;
   --green-dark: #ebebe8;
   --accent-text: #fff;
   --accent: #2f6bdd;
@@ -268,7 +268,7 @@
   --text: #ececea;
   --muted: #a6a6a1;
   --faint: #7d7d78;
-  --green: #ececea;
+  --green: #4ec27a;
   --green-dark: #383836;
   --accent-text: #161615;
   --accent: #7cabf8;
@@ -19227,6 +19227,12 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   border-color: color-mix(in srgb, var(--green) 55%, var(--line));
   background: color-mix(in srgb, var(--green) 9%, var(--bg));
   color: var(--green);
+}
+/* 已配置但被停用：琥珀色系（与启用绿强区分，09-17 用户反馈「启停一个状态没颜色区分」） */
+.builtin-plugin-quick.off {
+  border-color: color-mix(in srgb, var(--amber, #d97706) 45%, var(--line));
+  background: color-mix(in srgb, var(--amber, #d97706) 7%, var(--bg));
+  color: color-mix(in srgb, var(--amber, #d97706) 78%, var(--muted));
 }
 .builtin-plugin-quick em {
   display: inline-flex;

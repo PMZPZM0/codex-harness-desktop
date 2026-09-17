@@ -3559,6 +3559,22 @@ w.postMessage({id:1,op:"list",root});
     const bad = rows.filter(([input, expected]) => macHotkeyLabel(input) !== expected);
     (bad.length === 0 ? ok : fail)(`【32】accelerator → mac 写法（${rows.length} 条${bad.length ? "，错：" + bad.map(([i, e]) => `${i}→${macHotkeyLabel(i)}(期望${e})`).join(",") : ""}）`);
   }
+
+  // ⑬ 「成功绿」必须是真绿：--green 曾被写成 #1e1e1c（近黑），导致全系统 299 处成功态视觉
+  //   全部失效成中性色（用户实测「内置插件启用跟禁用一个状态，没有颜色区分」的根因之一）。
+  //   判定：两套主题的 --green 其 G 通道必须显著高于 R/B（中性色三通道几乎相等）。
+  {
+    const cssC = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+    const greens = [...cssC.matchAll(/--green:\s*(#[0-9a-fA-F]{6})/g)].map((m) => m[1]);
+    const isGreen = (hex) => {
+      const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+      return g - Math.max(r, b) >= 40;   // G 通道至少高出 40 才算绿
+    };
+    const uses = (cssC.match(/var\(--green\)/g) || []).length;
+    (greens.length >= 2 && greens.every(isGreen))
+      ? ok(`【32】--green 是真绿（${greens.join(" / ")}；影响 ${uses} 处成功态视觉）`)
+      : fail(`【32】--green 回归成中性色（当前：${greens.join(" / ") || "未找到"}）—— ${uses} 处成功态视觉全部失效`);
+  }
 }
 
 console.log("");
