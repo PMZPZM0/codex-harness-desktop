@@ -62,14 +62,20 @@ export function markEffortUnsupported(modelId: string | undefined | null, effort
   return next;
 }
 
-/** 清掉某模型的全部「不支持」记录（用户在菜单里强制选回时用）。 */
-export function clearBlockedEfforts(modelId: string | undefined | null): void {
+/** 清掉某模型某个档位的「不支持」记录（**自愈**：用户强制选该档位且这次发送成功了，
+ *  说明上次失败另有原因（或网关后来放开了），不该永久标灰）。
+ *  清到空数组时连键一起删，避免 localStorage 里攒一堆空壳。 */
+export function clearEffortUnsupported(modelId: string | undefined | null, effort: string): void {
   const id = String(modelId ?? "").trim();
-  if (!id) return;
+  const level = String(effort ?? "").trim();
+  if (!id || !level) return;
   let map: Record<string, unknown> = {};
   try { map = JSON.parse(localStorage.getItem(STORE_KEY) ?? "{}") as Record<string, unknown>; } catch { map = {}; }
-  if (!(id in map)) return;
-  delete map[id];
+  const cur = Array.isArray(map[id]) ? (map[id] as unknown[]).filter((x): x is string => typeof x === "string") : [];
+  if (!cur.includes(level)) return;
+  const next = cur.filter((x) => x !== level);
+  if (next.length) map[id] = next;
+  else delete map[id];
   try { localStorage.setItem(STORE_KEY, JSON.stringify(map)); } catch { /* 同上 */ }
 }
 

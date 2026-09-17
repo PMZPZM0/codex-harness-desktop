@@ -2671,6 +2671,8 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
     try {
       const probe = spawnSync(process.execPath, [
         "--experimental-strip-types", "--no-warnings", "--input-type=module", "-e",
+        // localStorage 在 Node 里没有 —— 先塞一个内存版（模块只在函数体里访问它）
+        `globalThis.localStorage = { _d: {}, getItem(k) { return k in this._d ? this._d[k] : null; }, setItem(k, v) { this._d[k] = String(v); }, removeItem(k) { delete this._d[k]; } };` +
         `import * as m from ${JSON.stringify(supportUrl)}; console.log(JSON.stringify({` +
         ` pos1: m.isUnsupportedEffortError("unsupported value for reasoning_effort: max"),` +
         ` pos2: m.isUnsupportedEffortError("Invalid value 'max' for 'reasoning_effort'"),` +
@@ -2684,7 +2686,13 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
         ` fbMin: m.pickEffortFallback("minimal", []),` +
         ` fbUnknown: m.pickEffortFallback("bogus", []),` +
         ` fbSkipBlocked: m.pickEffortFallback("max", ["xhigh", "ultra"]),` +
-        ` fbAllBlocked: m.pickEffortFallback("high", ["medium", "low", "minimal"]) }));`,
+        ` fbAllBlocked: m.pickEffortFallback("high", ["medium", "low", "minimal"]),` +
+        ` store0: m.blockedEffortsOf("m1"),` +
+        ` afterMark: m.markEffortUnsupported("m1", "max"),` +
+        ` store1: m.blockedEffortsOf("m1"),` +
+        ` otherModel: m.blockedEffortsOf("m2"),` +
+        ` afterClear: (m.clearEffortUnsupported("m1", "max"), m.blockedEffortsOf("m1")),` +
+        ` }));`,
       ], { encoding: "utf8" });
       s = JSON.parse(probe.stdout.trim().split("\n").at(-1));
     } catch { /* 下面统一判红 */ }
@@ -2697,6 +2705,9 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
       (s.fbUnknown === "high" ? ok : fail)("未知档位 → 回落安全档 high");
       (s.fbSkipBlocked === "high" ? ok : fail)("降档会跳过该模型已标记不支持的档位（max→跳过极高/最高→高）");
       (s.fbAllBlocked === null ? ok : fail)("更低档全被标记时返回 null（不会无限降）");
+      (JSON.stringify(s.store0) === "[]" && JSON.stringify(s.afterMark) === '["max"]' && JSON.stringify(s.store1) === '["max"]' ? ok : fail)("「不支持」的记录按模型 id 分组落盘（mark 幂等、读回一致）");
+      (JSON.stringify(s.otherModel) === "[]" ? ok : fail)("记录按模型隔离（别的模型不受影响）");
+      (JSON.stringify(s.afterClear) === "[]" ? ok : fail)("clearEffortUnsupported：该档位发送成功后能清掉记录（自愈，避免永久标灰）");
     }
   }
 
@@ -3983,6 +3994,9 @@ w.postMessage({id:1,op:"list",root});
       && /executeEffortFallbackRetry\(\)/.test(appNC))
       ? ok("【32】档位不被支持时自动降档重发（删掉手动声明后的兜底）")
       : fail("【32】没有「档位不支持 → 自动降档重发」的兜底 —— 用户选到不支持的档位只能干瞪眼");
+    (/clearEffortUnsupported\(selectedModel\?\.model \?\? modelName\(modelId\), effort\)/.test(appNC))
+      ? ok("【32】发送成功即清掉该档位的「不支持」记录（自愈，不永久标灰）")
+      : fail("【32】没有自愈：一次失败会把档位永久标灰，用户强制选回成功也抹不掉");
     (/modelId=\{currentModelId\}/.test(appNC)
       && /blockedEffortsOf\(modelId\)/.test(effortPickerC)
       && /effort-tick\$\{on \? " on" : ""\}\$\{blockedSet\.has\(level\) \? " blocked" : ""\}/.test(effortPickerC)
