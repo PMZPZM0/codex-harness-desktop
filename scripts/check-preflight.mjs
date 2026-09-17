@@ -3237,6 +3237,29 @@ w.postMessage({id:1,op:"list",root});
       ? ok("续播相位落到 DOM（inline animation-delay 接线在）")
       : fail("App.tsx 没有把续播相位写成 inline animation-delay —— 认领到的相位被丢掉，仍会从 0% 重起");
   }
+
+  // ⑤ 乐观气泡安全阀的判据（09-17 用户实测：「消息发出去，先是旧内容+生成条，过一会才看到我的消息」）
+  //   事故：原判据「当前没有任何 running 回合」在**正常发送**时同样成立 —— 气泡上屏后本轮 turn 还没建
+  //   （要等 turn/start 往返 + 记忆召回），条件立刻命中 → 探针实测气泡**只活 6~8ms**，而真实消息
+  //   1.7~3.3s 才到 ⇒ 用户自己的消息有 2~3 秒**完全不在界面上**（只剩「正在生成回复」状态条，
+  //   也就是用户截图里问的"中间那个"）。修好后同一探针：气泡存活 1344ms、直到真实消息接管才消失。
+  {
+    /const sawRunningTurnRef = useRef\(false\)/.test(appCode)
+      ? ok("【29】乐观气泡安全阀有「本轮曾出现过运行中回合」判据（sawRunningTurnRef）")
+      : fail("【29】安全阀没有 sawRunningTurnRef —— 气泡会在本轮 turn 建立前被误回收（消息消失 2~3 秒）");
+    /if \(running\) sawRunningTurnRef\.current = true;/.test(appCode)
+      ? ok("【29】检测到运行中回合时置位判据（回合结束后才允许回收）")
+      : fail("【29】判据没有被置位 —— 回收条件永远不成立 / 或气泡会赖着");
+    /if \(!running && sawRunningTurnRef\.current\)/.test(appCode)
+      ? ok("【29】回收条件要求「曾出现过运行中回合」（不再是裸 !running）")
+      : fail("【29】回收条件仍是裸 !running —— 正常发送时气泡被秒回收（实测 6~8ms）");
+    /setTimeout\(\(\) => \{[\s\S]{0,220}isTurnRunning\(turn\)[\s\S]{0,140}\}, 15_000\)/.test(appCode)
+      ? ok("【29】有 15s 超时兜底（引擎始终不回时气泡不会一直赖在聊天区）")
+      : fail("【29】缺超时兜底 —— 引擎不回应时气泡会永久赖在聊天区（09-13 修过的老问题）");
+    ((appCode.match(/sawRunningTurnRef\.current = false;/g) || []).length >= 4)
+      ? ok("【29】判据在两处回收 + 两处发送点都复位（走旧值会让本轮气泡活不下来）")
+      : fail("【29】sawRunningTurnRef 复位点不足 —— 上一轮的置位会污染本轮");
+  }
 }
 
 console.log("");
