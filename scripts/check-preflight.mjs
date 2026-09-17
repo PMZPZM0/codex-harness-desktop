@@ -2711,6 +2711,52 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
     }
   }
 
+  // ---- 09-18 内置规格表更新 + 模型 ID 补全：真跑 model-specs.ts（node type-stripping） ----
+  {
+    const specsUrl = pathToFileURL(join(ROOT, "src", "lib", "model-specs.ts")).href;
+    let sp = null;
+    try {
+      const probe = spawnSync(process.execPath, [
+        "--experimental-strip-types", "--no-warnings", "--input-type=module", "-e",
+        `import * as m from ${JSON.stringify(specsUrl)}; const V = (id) => { const s = m.matchModelSpec(id); return s ? (s.inputTypes || []).includes("image") : null; }; console.log(JSON.stringify({` +
+        ` gpt6: m.matchModelSpec("gpt-6-astra").contextWindow, gpt6Vis: V("gpt-6-astra"), gpt6Out: m.matchModelSpec("gpt-6-astra").maxOutputTokens,` +
+        ` gpt56: m.matchModelSpec("gpt-5.6-terra").contextWindow, gpt55: m.matchModelSpec("gpt-5.5").contextWindow, gpt51: m.matchModelSpec("gpt-5.1").contextWindow,` +
+        ` fable: m.matchModelSpec("claude-fable-5").contextWindow, fableVis: V("claude-fable-5"), claudeOld: m.matchModelSpec("claude-sonnet-4-5").contextWindow,` +
+        ` gemini: m.matchModelSpec("gemini-3.5-flash").contextWindow, geminiOut: m.matchModelSpec("gemini-3.5-flash").maxOutputTokens, geminiVis: V("gemini-3.5-flash"),` +
+        ` dsV4: m.matchModelSpec("deepseek-v4-flash-ga-260731").contextWindow, dsV4Out: m.matchModelSpec("deepseek-v4-flash-ga-260731").maxOutputTokens, dsV4Vis: V("deepseek-v4-flash-ga-260731"),` +
+        ` k3: m.matchModelSpec("kimi-k3").contextWindow, k3Vis: V("kimi-k3"), k3256: m.matchModelSpec("kimi-k3-256k").contextWindow,` +
+        ` glm53: m.matchModelSpec("glm-5.3").contextWindow, glm53Vis: V("glm-5.3"), glm53fVis: V("glm-5.3-flash"),` +
+        ` qwen38: m.matchModelSpec("qwen3.8-max").contextWindow, qwen38Video: (m.matchModelSpec("qwen3.8-max").inputTypes || []).includes("video"),` +
+        ` nova: m.matchModelSpec("sensenova-v6.5-pro").contextWindow, novaVis: V("sensenova-v6.5-pro"),` +
+        ` unknown: m.matchModelSpec("totally-unknown-xyz"),` +
+        ` sugGpt56: m.suggestModelIds("gpt-5.6").slice(0, 2).map((e) => e.id),` +
+        ` sugEmpty: m.suggestModelIds("").length,` +
+        ` sugDeepseek: m.suggestModelIds("deepseek")[0].id,` +
+        ` fmt: m.formatTokenCount(1050000) + "/" + m.formatTokenCount(262144),` +
+        ` }));`,
+      ], { encoding: "utf8" });
+      sp = JSON.parse(probe.stdout.trim().split("\n").at(-1));
+    } catch { /* 下面统一判红 */ }
+    (sp ? ok : fail)("model-specs.ts 可被 Node type-stripping 直接加载（规格守卫跑的是真表）");
+    if (sp) {
+      (sp.gpt6 === 1050000 && sp.gpt6Vis === true && sp.gpt6Out === 128000 ? ok : fail)("GPT-6 Astra：1.05M 上下文 / 128K 输出 / 视觉（09-03 发布）");
+      (sp.gpt56 === 1050000 && sp.gpt55 === 1000000 && sp.gpt51 === 400000 ? ok : fail)("GPT-5.6=1.05M、5.4/5.5=1M、5.0/5.1=400K（按世代分开，不再一刀切 400K）");
+      (sp.fable === 1000000 && sp.fableVis === true ? ok : fail)("Claude Fable 5 / Opus 4.8：1M / 128K / 视觉（新旗舰）");
+      (sp.claudeOld === 200000 ? ok : fail)("早期 Claude 仍是 200K —— 不能把整个家族都标成 1M（虚标会被供应商拒）");
+      (sp.gemini === 1048576 && sp.geminiOut === 65536 && sp.geminiVis === true ? ok : fail)("Gemini 3.x：1,048,576 / 65,536 / 多模态（Google 官方模型指南）");
+      (sp.dsV4 === 1000000 && sp.dsV4Out === 393216 && sp.dsV4Vis === false ? ok : fail)("DeepSeek V4：1M / 384K 且**纯文本**（官方明确无视觉 —— 漏标虚标都害人）");
+      (sp.k3 === 1000000 && sp.k3Vis === true && sp.k3256 === 262144 ? ok : fail)("Kimi K3：1M + **原生视觉**（K3 首次支持）；K3-256k 省额度档 262K");
+      (sp.glm53Vis === false && sp.glm53fVis === true ? ok : fail)("GLM-5.3 纯文本、只有 GLM-5.3-Flash 是原生多模态（别把整个家族标成视觉）");
+      (sp.qwen38 === 1000000 && sp.qwen38Video === true ? ok : fail)("Qwen3.8-Max：约 1M / 文本+图像+视频");
+      (sp.nova === 131072 && sp.novaVis === true ? ok : fail)("日日新 SenseNova 6.5：128K / 图文视频输入（用户自己的供应商也在表里）");
+      (sp.unknown === null ? ok : fail)("未收录的模型返回 null（拿不准就不编 —— 用户手填 + 外部 JSON 可覆盖）");
+      (Array.isArray(sp.sugGpt56) && sp.sugGpt56[0] === "gpt-5.6" && sp.sugGpt56.includes("gpt-5.6-sol") ? ok : fail)("补全：完全相等优先（打 gpt-5.6 先出别名本身，再出 Sol/Terra/Luna）");
+      (sp.sugEmpty >= 5 ? ok : fail)("补全：空输入给当前主流型号（新手上来不用背名字）");
+      (sp.sugDeepseek === "deepseek-v4-pro" ? ok : fail)("补全：表内顺序 = 新旗舰在前（打 deepseek 先看到 v4-pro 而不是旧 chat）");
+      (sp.fmt === "1.05M/262K" ? ok : fail)("formatTokenCount：1.05M / 262K（徽标文案）");
+    }
+  }
+
   const appTs = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
   const applyEffortBody = appTs.slice(appTs.indexOf("function applyEffort"), appTs.indexOf("function changeEffort"));
   (applyEffortBody.includes("setProviderEffort") ? ok : fail)("applyEffort 会把档位写进档案（跟着模型保存的写入端）");
@@ -3948,19 +3994,50 @@ w.postMessage({id:1,op:"list",root});
     (/createPortal\(/.test(effortPickerC) && /position:\s*fixed/.test(popBlock))
       ? ok("【32】思考强度弹窗用 portal + fixed（不会被底栏容器裁掉）")
       : fail("【32】思考强度弹窗不是 portal + fixed —— 底栏滚动容器会把上半截裁掉");
-    // 「动态条」要真的在动：扫光 + 光晕跟随
-    (/@keyframes effort-sheen/.test(cssNC) && /animation:\s*effort-sheen/.test(cssNC) && /\.effort-picker-glow\s*\{/.test(cssNC))
-      ? ok("【32】宽条有流光扫过 + 光晕跟随（用户要的「动态」）")
-      : fail("【32】宽条没有流光/光晕 —— 只是静态条，用户要「动态」的");
-    // ⛔ 色带不许放大：background-size > 100% 会让看到的部分与档位位置错位、分段被抹成渐变
-    //    （第一版用 220% + 平移做流光，实测就是这个症状 —— 反而看不清「每档一色」）
-    const bandBlock = cssNC.slice(cssNC.indexOf(".effort-picker-bands {"), cssNC.indexOf(".effort-picker-glow {"));
-    (/background-size:\s*100%\s+100%/.test(bandBlock) && !/background-size:\s*(?:1[1-9]\d|2\d\d)%/.test(bandBlock))
-      ? ok("【32】分段色带保持 100%（颜色与档位位置不错位）")
-      : fail("【32】色带被放大了 —— 各档颜色与位置会错位、看起来变渐变（实测踩过）");
-    (/\.effort-trigger\s*\{/.test(cssNC) && /\.effort-picker-bands\s*\{/.test(cssNC) && /\.effort-picker-range/.test(cssNC))
-      ? ok("【32】样式齐（触发按钮 / 分段色带 / 拖动条 / 档位标签）")
-      : fail("【32】拖动条样式缺 —— 色带或滑块不会显示");
+    // 09-18 滑块新形态（用户定稿）：「⚪点滑动，鼠标放上去再展示；默认一条线；已选的后面
+    // 彩色液体流动加灯带；没拉到的地方空着；拉满后一个燃烧特效」。
+    // 已选段有「液体流动 + 灯带」：流光（fill::after）+ 外发光。⛔ 外发光必须放 fillwrap ——
+    // fill 自身 overflow:hidden 会把 box-shadow 裁掉；渐变必须在 JSX 里按整条轨道铺（fillScale），
+    // 否则已选段的颜色与档位位置错位、被压成看不清分段的渐变（两处都实测踩过）。
+    // ⛔ 外发光的判据必须圈在 fillwrap 自己的规则里：全文件搜 box-shadow 会命中相邻的
+    //    .effort-picker-fill 的 inset 高光，造成假绿（09-18 反证抓到）。
+    const fillwrapBlock = cssNC.slice(cssNC.indexOf(".effort-picker-fillwrap {"), cssNC.indexOf(".effort-picker-fill {"));
+    // ⛔ 判据要匹配「真的有发光声明」（box-shadow: 0 0 …）而不是裸提 box-shadow ——
+    //    fillwrap 的 transition 里也写着 box-shadow 字样，裸查会假绿（09-18 反证抓到）。
+    (/@keyframes effort-sheen/.test(cssNC) && /\.effort-picker-fill::after/.test(cssNC) && /box-shadow:\s*0 0 10px/.test(fillwrapBlock) && /backgroundSize:\s*fillScale/.test(effortPickerC))
+      ? ok("【32】已选段液体流动 + 灯带（流光/外发光在 wrapper/渐变按整条轨道铺）")
+      : fail("【32】已选段缺液体灯带或渐变错位 —— 颜色与档位位置对不上（实测踩过）");
+    // ⚪ 默认隐藏：thumb 块 opacity:0 + scale(0.5)，hover/focus-within 才出现
+    const thumbBlock = cssNC.slice(cssNC.indexOf(".effort-picker-thumb {"), cssNC.indexOf(".effort-picker-bar:hover .effort-picker-thumb"));
+    (/opacity:\s*0/.test(thumbBlock) && /scale\(0\.5\)/.test(thumbBlock) && /\.effort-picker-bar:hover \.effort-picker-thumb/.test(cssNC))
+      ? ok("【32】⚪滑块默认隐藏、hover/聚焦才出现（用户定稿「默认一条线」）")
+      : fail("【32】⚪滑块常驻显示 —— 用户要的是「默认一条线，鼠标放上去再展示」");
+    // 结构齐：轨道（未选=一条线）/ 液体填充 / 前沿亮珠 / 拉满燃烧（burn 类 + 火苗层 + 火焰动画）
+    (cssNC.includes(".effort-picker-track {") && cssNC.includes(".effort-picker-fillwrap {") && cssNC.includes(".effort-picker-bead {")
+      && /\.effort-picker-bar\.burn/.test(cssNC) && /\.effort-picker-flames/.test(cssNC) && /@keyframes effort-flame/.test(cssNC)
+      // ⛔ burn 必须**由 isMax 驱动**（精确到 className 模板与计算式）：只查 CSS 类存在的话，
+      //    把 JSX 里的条件摘掉它也照样绿（09-18 反证抓到）。
+      && /effort-picker-bar\$\{isMax \? " burn" : ""\}/.test(effortPickerC) && /isMax = draft >= levels\.length - 1/.test(effortPickerC))
+      ? ok("【32】滑块结构齐（一条线轨道 / 液体填充 / 亮珠 / 拉满燃烧火焰层）")
+      : fail("【32】滑块结构缺件 —— 一条线 / 液体灯带 / 燃烧特效至少缺一个");
+    (/\.effort-trigger\s*\{/.test(cssNC) && /\.effort-picker-range/.test(cssNC) && /-webkit-slider-thumb/.test(cssNC))
+      ? ok("【32】样式齐（触发按钮 / 原生 range 手柄 / 档位标签）")
+      : fail("【32】拖动条样式缺 —— 滑块不会显示");
+    // 模型 ID Tab 补全（09-18 用户：「加一个 tab 补全功能……方便新手快速配置」）
+    const modelIdC = readFileSync(join(ROOT, "src", "components", "ModelIdInput.tsx"), "utf8");
+    (/<ModelIdInput\b/.test(appC3) && /applyModelIdInput/.test(appC3))
+      ? ok("【32】模型 ID 输入框接了 Tab 补全（ModelIdInput + 规格自动回填）")
+      : fail("【32】模型 ID 没有 Tab 补全 —— 新手只能背模型名（用户点名要）");
+    (!/provider-model-options/.test(appC3))
+      ? ok("【32】原生 datalist 已移除（换成了能显示参数徽标、支持 Tab 的 ModelIdInput）")
+      : fail("【32】datalist 又回来了 —— 没有 Tab 补全也看不到参数徽标");
+    (/setModelEditor\(\(editor\) => \{/.test(appC3) && /paramsDirty/.test(appC3))
+      ? ok("【32】补全后的参数回填走函数式 setState + 尊重 paramsDirty（手改过不覆盖）")
+      : fail("【32】参数回填用过期闭包或无视手改 —— 补全后参数可能没回填/被覆盖");
+    // 模型下拉徽标化（09-18 用户「选择样式还可以优化一下，现在不好看」）
+    (/function modelBadges\(/.test(appC3) && /badges: modelBadges\(model\)/.test(appC3) && /\.menu-item-badges/.test(cssNC) && /\.menu-item-check/.test(cssNC))
+      ? ok("【32】模型下拉每行带「图片/视频/上下文/输出」徽标 + 当前项右侧勾选")
+      : fail("【32】模型下拉没有参数徽标 —— 用户嫌「不好看」的那版");
     // 09-18 新形态（用户：「把模型配置里面思考选择删了，每个独立会话选择那个就生效那个」）：
     //   档位**不再是模型条目的属性** —— 模型配置里没有勾选区，菜单恒为全集，
     //   选哪个只落**当前会话**；模型/网关真不支持某档 → 发送失败自动学会 + 降档重发。

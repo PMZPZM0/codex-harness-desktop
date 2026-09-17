@@ -9,7 +9,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { codeFontStack, codeFonts, codePreviewSnippet, codeThemeStyle, codeThemes } from "./lib/code-themes";
 import { codeFontSize, useCodeSettings } from "./lib/code-settings";
 import { DEFAULT_EFFORT, pickDefaultEffort, normalizeEffort, ALL_EFFORTS, declaredModelEfforts } from "./lib/effort";
-import { matchModelSpec, loadExternalSpecs } from "./lib/model-specs";
+import { matchModelSpec, loadExternalSpecs, formatTokenCount } from "./lib/model-specs";
 import { resolveModelForOpen, shouldSyncOpenThread } from "./lib/model-scope.mjs";
 import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "./lib/provider-continuity.mjs";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "./lib/session-scope.mjs";
@@ -154,6 +154,7 @@ import {
   Calculator,
   Telescope,
   CircleHelp,
+  Video,
 } from "lucide-react";
 import { useMemory, type MemoryGatewayState, type MemoryGroup, type MemoryPriority, type MemoryRecord, groupMemoriesByThread } from "./hooks/useMemory";
 import UsagePanel from "./components/UsagePanel";
@@ -399,6 +400,7 @@ import { EnvCheckDialog, ENV_CHECK_SPEC, ENV_CHECK_OPTOUT_KEY, type EnvCheckStat
 import { CodexAvatar, useCodexName } from "./components/CodexAvatar";
 import { UserAvatar, useUserName } from "./components/UserAvatar";
 import { EffortPicker } from "./components/EffortPicker";
+import { ModelIdInput } from "./components/ModelIdInput";
 import { setUserIdentity } from "./lib/user-identity.mjs";
 import { readStoredCodexAvatar, storeCodexAvatar, setCodexIdentity, getCodexIdentity, subscribeCodexIdentity, CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "./lib/codex-identity.mjs";
 import { pickEnhanceHint, shouldShowHintThisRun, markHintShownThisRun, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_MS, HINT_AUTO_HIDE_MS } from "./lib/enhance-hints.mjs";
@@ -444,8 +446,11 @@ type Model = {
   provider?: string;
   providerName?: string;
   isActive?: boolean;
-  /** 模型输入模态（含 image/video 时下拉显示「视觉」） */
+  /** 模型输入模态（含 image/video 时下拉显示徽标） */
   inputTypes?: ("text" | "image" | "video")[];
+  /** 生效的上下文 / 最大输出（下拉徽标用；用户配置值优先，规格表兜底） */
+  contextWindow?: number;
+  maxOutputTokens?: number;
 };
 type ThreadItem = { id: string; type: string; [key: string]: any };
 type Turn = { id: string; status: string; items: ThreadItem[]; error?: { message?: string } | null; durationMs?: number | null; startedAt?: number | null; completedAt?: number | null; usage?: any };
@@ -2460,7 +2465,10 @@ function createInlineImageChip(path: string, onRemove: (path: string) => void, o
   return chip;
 }
 
-function ComposerMenu({ icon, label, options, value, onChange, disabled, title, width, tone, toneOf }: { icon: any; label: string; options: { value: string; title: string; desc?: string }[]; value: string; onChange: (value: string) => void; disabled?: boolean; title?: string; width?: number; tone?: "danger"; toneOf?: (option: { value: string; title: string; desc?: string }) => string | undefined }) {
+/** 下拉菜单一行：title 主文案、desc 次要说明、badges 右侧徽标（模型菜单标 图片/视频/额度）。 */
+type ComposerMenuOption = { value: string; title: string; desc?: string; badges?: { text: string; kind?: "vision" | "video" }[] };
+
+function ComposerMenu({ icon, label, options, value, onChange, disabled, title, width, tone, toneOf }: { icon: any; label: string; options: ComposerMenuOption[]; value: string; onChange: (value: string) => void; disabled?: boolean; title?: string; width?: number; tone?: "danger"; toneOf?: (option: ComposerMenuOption) => string | undefined }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -2486,8 +2494,11 @@ function ComposerMenu({ icon, label, options, value, onChange, disabled, title, 
             const itemTone = toneOf?.(option);
             return (
               <button type="button" role="option" aria-selected={option.value === value} key={option.value} className={option.value === value ? "active" : ""} onClick={() => { onChange(option.value); setOpen(false); }}>
-                <span className={`menu-item-icon${itemTone ? ` tone-dot tone-${itemTone}` : ""}`}>{option.value === value ? <CircleCheck size={15} /> : null}</span>
+                <span className={`menu-item-icon${itemTone ? ` tone-dot tone-${itemTone}` : ""}`} />
                 <span className="menu-item-text"><strong>{option.title}</strong>{option.desc && option.desc !== option.title ? <small>{option.desc}</small> : null}</span>
+                {option.badges?.length ? <span className="menu-item-badges">{option.badges.map((badge) => <em key={badge.text} className={badge.kind ? `badge-${badge.kind}` : undefined}>{badge.kind === "vision" ? <Eye size={10} /> : badge.kind === "video" ? <Video size={10} /> : null}{badge.text}</em>)}</span> : null}
+                {/* 勾选挪到最右侧：左侧图标位让给「供应商色调圆点」，跨供应商的模型一眼看出是哪家 */}
+                {option.value === value ? <CircleCheck size={14} className="menu-item-check" aria-hidden /> : null}
               </button>
             );
           })}
@@ -2495,6 +2506,20 @@ function ComposerMenu({ icon, label, options, value, onChange, disabled, title, 
       )}
     </div>
   );
+}
+
+/** 模型下拉右侧徽标：图片/视频（能不能看图）+ 上下文 + 输出。数据取该模型生效值。 */
+function modelBadges(model: Model): { text: string; kind?: "vision" | "video" }[] {
+  const spec = matchModelSpec(model.model);
+  const inputs = model.inputTypes ?? spec?.inputTypes ?? [];
+  const ctx = model.contextWindow ?? spec?.contextWindow;
+  const out = model.maxOutputTokens ?? spec?.maxOutputTokens;
+  const badges: { text: string; kind?: "vision" | "video" }[] = [];
+  if (inputs.includes("image")) badges.push({ text: "图片", kind: "vision" });
+  if (inputs.includes("video")) badges.push({ text: "视频", kind: "video" });
+  if (ctx) badges.push({ text: `${formatTokenCount(ctx)} 上下文` });
+  if (out) badges.push({ text: `出 ${formatTokenCount(out)}` });
+  return badges;
 }
 
 const approvalMenuOptions = (fullAccess: boolean) => fullAccess ? [
@@ -10117,6 +10142,7 @@ export default function App() {
         if (!model || seen.has(model)) continue;
         seen.add(model);
         const modelMeta = (providerModels ?? []).find((m) => m.id === model);
+        const spec4Badges = matchModelSpec(model);
         out.push({
           ...(customModelOption ?? { id: "", displayName: "", description: "", supportsPersonality: true, isDefault: false }),
           id: `custom:${provider}:${model}`,
@@ -10128,7 +10154,9 @@ export default function App() {
           description: providerName + (isActive ? "" : "（非当前供应商）"),
           supportedReasoningEfforts: effortsOf(providerModels, model),
           defaultReasoningEffort: customModelOption?.defaultReasoningEffort ?? DEFAULT_EFFORT,
-          inputTypes: modelMeta?.inputTypes,
+          inputTypes: modelMeta?.inputTypes ?? spec4Badges?.inputTypes,
+          contextWindow: modelMeta?.contextWindow ?? spec4Badges?.contextWindow,
+          maxOutputTokens: modelMeta?.maxOutputTokens ?? spec4Badges?.maxOutputTokens,
         });
       }
     };
@@ -10206,6 +10234,31 @@ export default function App() {
   // ⛔ 这里曾有一个 editingName state（顶部重命名供应商用）；09-17 名字挪到表单字段后它没用了。
   //    注意：editingProvider/setEditingProvider 是**从上面的 useCustomProviders() 解构来的**，
   //    不要在这个位置再 useState 定义一次（会重复声明）。
+  /** 模型 ID 变化 → 按内置规格回填上下文 / 最大输出 / 输入输出模态。
+   *  ⛔ 用函数式 setState：Tab 补全会让 id 一次跳一长串，若沿用闭包里的 modelEditor，
+   *    同一 tick 内落地的两次更新会互相覆盖（补全后参数没回填就是这么来的）。
+   *  ⛔ 用户手动改过参数（paramsDirty）就不再自动覆盖，第一次填错型号也能改回来。
+   *  ⛔ 不动思考档位：档位纯会话级（09-18），规格表里的 efforts 一律不读。 */
+  const applyModelIdInput = (id: string) => {
+    setModelEditor((editor) => {
+      if (!editor) return editor;
+      const spec = matchModelSpec(id);
+      if (spec && !editor.paramsDirty) {
+        return {
+          ...editor,
+          draft: {
+            ...editor.draft,
+            id,
+            contextWindow: String(spec.contextWindow),
+            maxOutputTokens: spec.maxOutputTokens ? String(spec.maxOutputTokens) : "",
+            inputTypes: [...(spec.inputTypes ?? ["text"])],
+            outputTypes: [...(spec.outputTypes ?? ["text"])],
+          },
+        };
+      }
+      return { ...editor, draft: { ...editor.draft, id } };
+    });
+  };
   const openModelEditor = (m?: { id: string; contextWindow?: number; maxOutputTokens?: number; inputTypes?: ("text" | "image" | "video")[]; outputTypes?: ("text" | "image" | "video")[] }) => setModelEditor({
     mode: m ? "edit" : "add",
     originalId: m?.id ?? null,
@@ -17236,11 +17289,13 @@ const commandMatches = useMemo(() => {
                   {relayActive && customModel?.provider === relayActive.provider && <RelayBalanceBadge active={relayActive} />}
                   {customModel?.provider === "openai-official" && <OpenaiBalanceBadge accountKey={openaiActiveAcct ?? "openai-official"} />}
                   <ContextUsageBadge tokenUsage={tokenUsage} fallbackWindow={customModel?.models?.find((m) => m.id === customModel?.model)?.contextWindow ?? customModel?.contextWindow} recentCompaction={recentCompaction} onCompact={() => { if (thread?.id) { compactPendingRef.current.add(thread.id); setCompactEventState("running"); window.codex.request("thread/compact/start", { threadId: thread.id }).catch((error: any) => { compactPendingRef.current.delete(thread.id); setCompactEventState("error", error.message); }); } }} />
-                  <ComposerMenu icon={Bot} label="模型" title="模型" disabled={!customModel} value={modelId} options={[...allModels.map((model) => ({
+                  <ComposerMenu icon={Bot} label="模型" title="模型" disabled={!customModel} value={modelId} width={330} options={[...allModels.map((model) => ({
                     value: model.id,
-                    title: (model.inputTypes ?? []).some((t) => t === "image" || t === "video") ? `${model.model} · 视觉` : model.model,
+                    title: model.model,
                     // 当前供应商不需要重复说明；跨供应商模型只补充供应商名称用于区分。
                     desc: model.isActive ? "" : model.providerName,
+                    // 徽标顺序刻意「能不能看图 → 能吞多少」：新用户最关心的两件事排前两位
+                    badges: modelBadges(model),
                   })), { value: "__model_settings__", title: "更多设置…", desc: "打开模型配置（档位在输入框底栏的「思考强度」里选，按会话各自记忆）" }]} toneOf={(option) => option.value === "__model_settings__" ? undefined : avatarToneOf(option.desc || option.title)} onChange={(value) => {
                     if (value === "__model_settings__") { setSettingsPage("model"); setSettingsOpen(true); const live = customModel?.models?.find((m) => m.id === customModel?.model); if (live) openModelEditor(live); return; }
                     chooseModel(value);
@@ -18520,21 +18575,13 @@ const commandMatches = useMemo(() => {
               {modelEditor && <div className="modal-backdrop model-editor-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setModelEditor(null); }}>
                 <div className="model-editor-modal">
                   <header><strong>{modelEditor.mode === "edit" ? "编辑模型配置" : "添加模型"}{editingProvider || targetProviderHint ? ` · ${customDraft.name || editingProvider || targetProviderHint}` : ""}</strong><button className="icon-button" onClick={() => setModelEditor(null)}><X size={15} /></button></header>
-                  <label className="provider-field"><span>模型 ID</span><input list="provider-model-options" autoFocus value={modelEditor.draft.id} onChange={(event) => {
-                    const id = event.target.value;
-                    // 已知模型（GPT 系/主流国模）按内置规格自动回填全部推荐参数。
-                    // 改名即重评估：只要参数字段没被手动改过（paramsDirty=false），就按新 ID 的规格整体重填——
-                    // 第一次填错型号也能改回来；手动改过的字段绝不重置。
-                    // ⛔ 思考档位不参与重评估（09-18：档位不是模型属性，纯会话级 —— 见 EffortPicker）；
-                    //   这里只重填上下文 / 最大输出 / 输入输出模态，规格表的 efforts 一律不读。
-                    const spec = matchModelSpec(id);
-                    if (spec && !modelEditor.paramsDirty) {
-                      setModelEditor({ ...modelEditor, draft: { ...modelEditor.draft, id, contextWindow: String(spec.contextWindow), maxOutputTokens: spec.maxOutputTokens ? String(spec.maxOutputTokens) : "", inputTypes: [...(spec.inputTypes ?? ["text"])], outputTypes: [...(spec.outputTypes ?? ["text"])] } });
-                      return;
-                    }
-                    setModelEditor({ ...modelEditor, draft: { ...modelEditor.draft, id } });
-                  } } placeholder="deepseek-v4-flash" /></label>
-                  <datalist id="provider-model-options">{modelSuggestions.map((option) => <option key={option} value={option} />)}</datalist>
+                  <label className="provider-field"><span>模型 ID</span><ModelIdInput
+                    autoFocus
+                    value={modelEditor.draft.id}
+                    onChange={applyModelIdInput}
+                    extraIds={modelSuggestions}
+                    placeholder="deepseek-v4-flash"
+                  /></label>
                   <label className="provider-field"><span>上下文窗口</span><input type="number" min="1024" step="1024" value={modelEditor.draft.contextWindow} onChange={(event) => setModelEditor({ ...modelEditor, paramsDirty: true, draft: { ...modelEditor.draft, contextWindow: event.target.value } })} placeholder="1000000" /></label>
                   <label className="provider-field"><span>最大输出 Token</span><input type="number" min="1" value={modelEditor.draft.maxOutputTokens} onChange={(event) => setModelEditor({ ...modelEditor, paramsDirty: true, draft: { ...modelEditor.draft, maxOutputTokens: event.target.value } })} placeholder="384000" /></label>
                   {(() => {

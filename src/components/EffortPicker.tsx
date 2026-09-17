@@ -20,8 +20,7 @@ const SPARE_COLORS = ["#14b8a6", "#8b5cf6", "#f97316", "#06b6d4"];
 const FALLBACK_COLOR = "#94a3b8";
 
 /** 每档的用途说明（09-17 参考 Codex 原生的 effort slider：它把档位做成
- *  Light / Standard / Extended / Max 这种**带语义的档位 + 一句用途**，而不是光秃秃的 low/high）。
- *  文案取自官方对各档的定位：简单编辑 → 日常 → 多文件重构 → 研究级难题。 */
+ *  Light / Standard / Extended / Max 这种**带语义的档位 + 一句用途**，而不是光秃秃的 low/high）。 */
 export const EFFORT_HINTS: Record<string, string> = {
   minimal: "一行小问题、格式化、改个名字",
   low: "小修复、简单重构，要快",
@@ -37,19 +36,24 @@ export function effortColor(level: string, index = 0): string {
   return EFFORT_COLORS[level] ?? SPARE_COLORS[index % SPARE_COLORS.length] ?? FALLBACK_COLOR;
 }
 
-/** 思考强度：底栏一个档位按钮，点开是**宽彩色动态条**的弹窗（09-17 用户第二次要求：
- *  「弹窗拖动，不是输入框直接一个长条，gpt 那种宽的彩色动态条」）。
+/** 思考强度：底栏一个档位按钮，点开是**滑块**弹窗（09-18 用户定稿的形态）：
+ *  「前面一个⚪点滑动滑到哪里；⚪鼠标放上去再展示；默认展示一条线；已选的后面
+ *   彩色动态液体流动 + 灯带；没拉到的地方空着；拉满后一个燃烧特效」。
  *
- *  几个刻意的取舍：
- *  · **弹窗用 createPortal + fixed**：底栏在滚动容器里，absolute 浮层会被裁掉上半截
- *    （设置页的 `?` 气泡踩过同一个坑），所以按触发按钮的视口坐标定位、往上弹。
- *  · **拖动中绝不提交**：`changeEffort` 在档位未被模型声明时会 `upsertProviderModel` 落库
- *    （IPC + 重写 model-catalog.json），拖动经过中间档位会反复触发；它还读过期闭包，
- *    连发多次会把刚选中的档位覆盖回去（09-16 真机踩过）。所以拖动只改本地 draft，
- *    **pointerup / keyup 才提交一次**；点档位标签则是立即提交。
- *  · **动态**：色带用 220% 宽背景 + 缓慢平移做流光，滑块下方一团跟随的光晕，
- *    档位标签随当前档位染色 —— 静止时也在动，拖动时跟手。
- *  · 原生 `input[type=range]` 提供拖动/键盘（←→）/触摸/无障碍，不自己写指针逻辑。 */
+ *  实现（对应关系）：
+ *  · **默认一条线**：`.effort-picker-track`（2px 细线），没拉到的地方就只有它；
+ *  · **已选段液体 + 灯带**：`.effort-picker-fillwrap`（按档位分色的渐变，用 overflow 裁到
+ *    已选宽度 —— 颜色与档位位置始终对齐）+ `::after` 流光扫过 + 外发光（box-shadow 在
+ *    wrapper 上，否则会被自己的 overflow:hidden 裁掉）+ 前沿亮珠（液体头）；
+ *  · **⚪默认隐藏**：`.effort-picker-thumb` opacity:0，bar hover / focus-within 才出现；
+ *    原生 `input[type=range]` 的拇指**保持透明但可拖** —— 拖动/键盘（←→）/触摸/无障碍
+ *    全部复用原生行为，视觉全部由上面的元素承担；
+ *  · **拉满燃烧**：`.burn` 填充切火焰配色 + 流光加速 + 三簇火苗（.effort-picker-flames）。
+ *
+ *  不变的纪律：
+ *  · **拖动中绝不提交**：释放（pointerup/keyup）才 onCommit —— 提交会落库（IPC），拖动经过
+ *    中间档位会反复触发、还会把选中的档位覆盖回去（09-16 真机踩过）；点标签则立即提交。
+ *  · 弹窗 createPortal + fixed：底栏在滚动容器里，absolute 浮层会被裁掉（09-17 踩过）。 */
 export function EffortPicker({ levels, value, labels, disabled, modelId, onCommit }: {
   levels: string[];
   value: string;
@@ -69,7 +73,7 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, onCommi
   const [draft, setDraft] = useState(index);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
-  // 外部值变化（菜单/命令切换、切会话、模型声明变化）要同步回滑块
+  // 外部值变化（菜单/命令切换、切会话）要同步回滑块
   useEffect(() => { setDraft(index); }, [index]);
 
   const openPanel = () => {
@@ -102,12 +106,15 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, onCommi
     const next = level ?? levels[draft];
     if (next && next !== value) onCommit(next);
   };
-  // 分段色带：每档一段纯色，左→右 = 低→高
+  const isMax = draft >= levels.length - 1;
+  // 分段色带：每档一段纯色，左→右 = 低→高（铺满整条轨道，再由 fillwrap 裁到已选宽度）
   const bands = `linear-gradient(90deg, ${levels.map((level, i) => {
     const c = effortColor(level, i);
     return `${c} ${(i / levels.length) * 100}%, ${c} ${((i + 1) / levels.length) * 100}%`;
   }).join(", ")})`;
   const pct = levels.length > 1 ? (draft / (levels.length - 1)) * 100 : 0;
+  // 渐变按「整条轨道」铺：已选段越窄，背景就要放得越大，颜色才与档位位置对齐
+  const fillScale = pct > 0 ? (100 / pct) * 100 : undefined;
 
   return (
     <>
@@ -132,25 +139,34 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, onCommi
           className="effort-picker-pop"
           role="dialog"
           aria-label="思考强度"
-          style={{ right: anchor.right, bottom: anchor.bottom, "--effort-color": color } as CSSProperties}
+          style={{ right: anchor.right, bottom: anchor.bottom, "--fill-color": color } as CSSProperties}
         >
           <div className="effort-picker-head">
             <strong>思考强度</strong>
             <span>越往右，Codex 想得越久、越细</span>
           </div>
-          <div className="effort-picker-bar">
-            <div className="effort-picker-bands" style={{ backgroundImage: bands }} aria-hidden />
-            <div className="effort-picker-glow" style={{ left: `${pct}%`, background: color }} aria-hidden />
-            {/* 每档位置一个定位点（当前档那个被滑块盖住，剩下的就是分段刻度） */}
+          <div className={`effort-picker-bar${isMax ? " burn" : ""}`}>
+            {/* 未选段 = 一条线 */}
+            <div className="effort-picker-track" aria-hidden />
+            {/* 已选段 = 液体 + 灯带（宽度=已选比例；渐变铺满整条再裁，颜色对齐档位） */}
+            <div className="effort-picker-fillwrap" style={{ width: `${pct}%` }} aria-hidden>
+              <div className="effort-picker-fill" style={{ backgroundImage: bands, backgroundSize: fillScale ? `${fillScale}%` : undefined }} />
+            </div>
+            {/* 档位刻度点（贴轨道，低存在感；当前档被滑块盖住） */}
             <div className="effort-picker-dots" aria-hidden>
               {levels.map((level, i) => (
                 <i
                   key={level}
                   className={i === draft ? "on" : ""}
-                  style={{ left: `${levels.length > 1 ? (i / (levels.length - 1)) * 100 : 0}%`, background: effortColor(level, i) }}
+                  style={{ left: `${levels.length > 1 ? (i / (levels.length - 1)) * 100 : 0}%`, "--fill-color": effortColor(level, i) } as CSSProperties}
                 />
               ))}
             </div>
+            {/* 液体前沿的亮珠 */}
+            <div className="effort-picker-bead" style={{ left: `${pct}%` }} aria-hidden />
+            {/* ⚪ 滑块：默认隐藏，hover / 聚焦 / 拖动才出现 */}
+            <div className="effort-picker-thumb" style={{ left: `${pct}%` }} aria-hidden />
+            {isMax && <div className="effort-picker-flames" aria-hidden><i /><i /><i /></div>}
             <input
               type="range"
               className="effort-picker-range"
@@ -174,7 +190,7 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, onCommi
                   key={level}
                   type="button"
                   className={`effort-tick${on ? " on" : ""}${blockedSet.has(level) ? " blocked" : ""}`}
-                  style={on ? ({ color: c, "--tick-color": c } as CSSProperties) : undefined}
+                  style={on ? ({ color: c } as CSSProperties) : undefined}
                   title={blockedSet.has(level) ? `该模型上次报「不支持」这一档 —— 选它会报错并自动降档` : undefined}
                   onClick={() => { setDraft(i); commit(level); }}
                 >
@@ -183,9 +199,7 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, onCommi
               );
             })}
           </div>
-          {/* 当前档位 + 一句用途（09-17 参考 Codex 原生 effort slider 的信息结构：它每档都带
-              语义名与用途，而不是只给个 low/high）。信息放在条下方一行、随拖动实时更新 ——
-              比把用途塞进 5 个窄标签里可读得多。 */}
+          {/* 当前档位 + 一句用途（随拖动实时更新） */}
           <div className="effort-picker-hint">
             <i style={{ background: color }} aria-hidden />
             <span style={{ color }}>{labels[shown] ?? shown}</span>
