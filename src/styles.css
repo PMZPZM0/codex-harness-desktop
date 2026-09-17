@@ -16089,6 +16089,104 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .help-tips h3 {
   color: var(--amber, #d97706);
 }
+/* ── 设置总览（标题栏「设置总览」按钮打开）：分组地图 + 页名可点跳转 ── */
+.settings-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.help-modal-wide {
+  width: min(760px, calc(100vw - 48px));
+}
+.help-group {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.help-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.help-group-head h3 {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  flex: none;
+}
+.help-group-head > span {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--faint);
+  min-width: 0;
+}
+.help-group-head b {
+  color: var(--muted);
+}
+.help-page-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.help-page-row {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: var(--panel-2);
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+.help-page-row:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel-2));
+}
+.help-page-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+.help-page-name em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--green, #1a7f37) 16%, transparent);
+  color: var(--green, #1a7f37);
+  white-space: nowrap;
+}
+.help-page-what {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.help-page-when {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--faint);
+  overflow-wrap: anywhere;
+}
+/* 窄窗：三列挤不下 → 堆叠 */
+@media (max-width: 640px) {
+  .help-page-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+}
 /* 定时任务空态的「添加任务」按钮行 */
 .auto-empty-actions {
   justify-content: center;
