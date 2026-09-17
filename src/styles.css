@@ -20037,7 +20037,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 
 /* ── 429 限流自动重试状态条（composer 上方，与 compact-toast 同风格） ── */
 .rate-limit-retry-bar {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   padding: 7px 12px;
@@ -20050,11 +20050,21 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   font-size: 12.5px;
   line-height: 1;
   animation: compact-toast-in 0.18s ease both;
-  max-width: 100%;
+  /* 09-17 自适应：宽度跟内容但不超过容器；窄窗由 flex-wrap 换行，不再撑破/截断 */
+  width: fit-content;
+  max-width: min(100%, 720px);
   flex-wrap: wrap;
 }
 .rate-limit-retry-bar .spin { color: var(--amber, #d97706); flex: none; }
-.rate-limit-retry-text { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rate-limit-retry-text {
+  font-weight: 500;
+  /* 09-17：允许换行完整展示（原来是 nowrap+ellipsis，窄窗下整句被截断） */
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
 .rate-limit-retry-bar b { color: var(--amber, #d97706); }
 .rate-limit-retry-bar button {
   border: 1px solid var(--line);
