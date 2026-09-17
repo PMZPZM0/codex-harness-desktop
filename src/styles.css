@@ -16183,6 +16183,224 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .user-avatar-initial {
   font-weight: 600;
 }
+/* ── 思考强度：底栏按钮 +「宽彩色动态条」弹窗（09-17 用户两次要求：
+   「改成彩色横向拖动进度条，每个等级颜色都不一样」→「弹窗拖动，不是输入框直接一个长条，
+   gpt 那种宽的彩色动态条」）。
+   底栏只留一个按钮（图标与档位名都染上当前档位色）；点开是宽条弹窗：分段彩色（每档一色，
+   色带由 EffortPicker 内联生成、色值按档位名固定）、流光动画（背景缓慢平移 —— 静止时也在动）、
+   滑块下方的光晕跟随、档位标签按当前档染色且可直接点选。 */
+.effort-trigger {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 11.5px;
+  cursor: pointer;
+  user-select: none;
+}
+.effort-trigger:hover {
+  border-color: var(--effort-color, var(--accent));
+}
+.effort-trigger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.effort-trigger-icon,
+.effort-trigger-label {
+  color: var(--effort-color, var(--accent));
+  flex: none;
+}
+.effort-trigger-label {
+  font-weight: 600;
+}
+.effort-trigger-caret {
+  color: var(--faint);
+  flex: none;
+}
+/* 弹窗：fixed 定位（portal 到 body）—— 底栏在滚动容器里，absolute 浮层会被裁掉上半截 */
+.effort-picker-pop {
+  position: fixed;
+  z-index: 220;
+  /* 视口夹取：固定宽度在窄窗口会被裁到视口外（预检守卫按结构扫所有弹窗类样式） */
+  width: min(340px, calc(100vw - 24px));
+  padding: 16px 16px 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 20px 52px #0000003d;
+  animation: effort-pop-in 0.18s ease both;
+}
+@keyframes effort-pop-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.effort-picker-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.effort-picker-head strong {
+  font-size: 13px;
+  color: var(--text);
+}
+.effort-picker-head span {
+  font-size: 11px;
+  color: var(--faint);
+}
+.effort-picker-bar {
+  position: relative;
+  height: 34px; /* 宽条：比底栏那种细条厚得多，拖动更好点中、色彩也更铺得开 */
+  margin: 0 4px;
+}
+.effort-picker-bands {
+  position: absolute;
+  inset: 0;
+  border-radius: 17px;
+  overflow: hidden; /* 扫光不外溢 */
+  /* ⛔ 不能用 background-size 放大 + background-position 平移来做流光：那样色带被拉伸，
+     看到的只是其中一段，颜色与档位位置**错位**、分段也被抹成渐变（第一版实测踩到，
+     用户要的「每个等级颜色都不一样」反而看不清了）。分段保持 100% 硬边。 */
+  background-size: 100% 100%;
+  box-shadow: inset 0 0 0 1px #00000014, inset 0 1px 0 #ffffff40;
+}
+/* 流光：一层斜向高光缓慢扫过（独立伪元素，不动色带本身） */
+.effort-picker-bands::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 32%, #ffffff5e 50%, transparent 68%);
+  transform: translateX(-100%);
+  animation: effort-sheen 3.8s ease-in-out infinite;
+}
+@keyframes effort-sheen {
+  0% { transform: translateX(-100%); }
+  55% { transform: translateX(100%); }
+  100% { transform: translateX(100%); }
+}
+/* 滑块下方的光晕：跟着当前档位走（拖动时也跟手） */
+.effort-picker-glow {
+  position: absolute;
+  top: 50%;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  filter: blur(13px);
+  opacity: 0.55;
+  pointer-events: none;
+  transition: left 0.14s ease, background 0.18s ease;
+}
+/* 每档一个定位点（当前档那颗被滑块盖住，其余就是分段刻度） */
+.effort-picker-dots {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.effort-picker-dots i {
+  position: absolute;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 1.5px #ffffff9e;
+  opacity: 0.85;
+}
+.effort-picker-dots i.on {
+  opacity: 0;
+}
+.effort-picker-range {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.effort-picker-range::-webkit-slider-runnable-track {
+  height: 34px;
+  border-radius: 17px;
+  background: transparent;
+}
+.effort-picker-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: 4px; /* (轨道 34 - 拇指 26) / 2 */
+  border: 3px solid #ffffff;
+  border-radius: 50%;
+  background: var(--effort-color, var(--accent));
+  box-shadow: 0 2px 12px #00000059, 0 0 0 1px #0000001a;
+  transition: background 0.16s ease, transform 0.12s ease;
+}
+.effort-picker-range:active::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+.effort-picker-range:focus-visible {
+  outline: none;
+}
+.effort-picker-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--effort-color, var(--accent)) 40%, transparent);
+}
+.effort-picker-ticks {
+  display: flex;
+  gap: 4px;
+  margin-top: 10px;
+}
+.effort-tick {
+  flex: 1;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--faint);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.effort-tick:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+.effort-tick.on {
+  font-weight: 700;
+  background: color-mix(in srgb, var(--tick-color) 14%, transparent);
+}
+/* 当前档位 + 一句用途（随拖动实时更新）—— 对齐 Codex 原生 slider 的信息结构 */
+.effort-picker-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--faint);
+}
+.effort-picker-hint i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+.effort-picker-hint span {
+  font-weight: 600;
+  flex: none;
+}
+.effort-picker-hint em {
+  font-style: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* 正文只包一层 flex column：保留 .assistant-col 以免动到滚动锚点依赖的既有结构 */
 .assistant-col {
   min-width: 0;
