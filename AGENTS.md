@@ -177,6 +177,22 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **Codex 身份两处显示 bug（09-17，用户「排版严谨一点」+「头像我也没看展示出来」）**：
+  ① **消息头只剩名字、头像整个不见了**：真因是历史遗留的两条规则 ——
+  `.codex-turn .assistant-message { grid-template-columns: minmax(0, 1fr) }`（单列）
+  ＋ `.codex-turn / .process-content .assistant-message .avatar { display: none }`，
+  它们是为「assistant 消息左侧不放图标」的老设计服务的。加「头像 + 名字」时没发现，
+  于是名字在、头像被 `display:none`（真启动断言实测 `cell:[0,0] / display:"none"`）。
+  修：恢复 22px 头像列 + `column-gap: 8px` + 取消 display:none。
+  **预检 ⑰b 守卫**（⛔ 判 CSS 前必须先剥注释，否则被注释里的 `display:none` 顶成假绿）。
+  ② **用户中心「Codex 的身份」卡排版错乱**：该卡复用了「你自己」资料卡的 `.uc-*` 类名，
+  其中 `.uc-presets button { width:30px; height:30px }`（表情头像选择器的方块样式）把
+  「用默认名」压成 30px 宽 → **文字竖排断行**；`.uc-name` 的 18px 让标题过大；
+  `.uc-avatar` 的圆形底把方形默认头像裁圆。修：改用独立 `codex-id-*` 类名 + 一整套样式
+  （标题 14px / 说明 12px / 名字行 input 200px + 按钮 `white-space:nowrap` / 头像 56px 圆角方 /
+  上传与恢复按钮贴两角错开）。**教训：复用别的卡片的类名 = 连带复用它的排版假设** ——
+  跨卡片复用要么只用纯外壳类，要么另起一套类名。
+
 - **切换会话卡顿：resume 结果被 seq 丢弃，缓存永远建不起来（09-17，用户「切换会话还是会卡顿一下，
   那个会话懒加载渲染没生效了吗」）**：实测（`accept --only switch-speed`）拿到两条曲线 ——
   **命中缓存 p50 = 9ms，冷加载 p50 = 200ms**，但 `cached.n=1 / fresh=8`：**秒开机制本身是好的，

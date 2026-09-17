@@ -3784,6 +3784,22 @@ w.postMessage({id:1,op:"list",root});
       : fail("【32】.enhance-hint 缺 width:max-content —— 绝对定位在 32px 窄容器里会被压成竖排");
   }
 
+  // ⑰b assistant 消息头的「头像 + 名字」必须真的显示（09-17 用户报「头像我也没看展示出来」）：
+  //   历史遗留的 `.codex-turn .assistant-message{grid-template-columns:minmax(0,1fr)}` +
+  //   `.avatar{display:none}` 是为"assistant 消息左侧不放图标"的老设计服务的 —— 加了名字之后，
+  //   它把整个头像列隐掉，用户只看得到名字。改消息头样式时极容易再踩回去。
+  //   ⛔ 判 CSS 前先剥注释：注释里也写着 display:none，不剥会被顶成假绿（本项目老坑）。
+  {
+    const cssNC = readFileSync(join(ROOT, "src", "styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const headBlock = cssNC.slice(cssNC.indexOf(".codex-turn .assistant-message {"), cssNC.indexOf(".message-body {"));
+    (/grid-template-columns:\s*22px minmax\(0, 1fr\)/.test(headBlock))
+      ? ok("【32】assistant 消息头留着头像列（22px + 内容列）")
+      : fail("【32】assistant 消息头没有头像列 —— 头像不会显示（用户报过「只有名字没头像」）");
+    (!/\.(?:codex-turn|process-content) \.assistant-message \.avatar[\s\S]{0,140}?display:\s*none/.test(cssNC))
+      ? ok("【32】没有规则再隐藏 assistant 头像（display:none 已清除）")
+      : fail("【32】有规则把 assistant 头像 display:none 了 —— 用户只会看到名字");
+  }
+
   // ⑱ src/lib/*.mjs 是**纯 JS**（node 直接 import 执行），不得出现 TS 语法。
   //    ⛔ 这条守卫的由来：`export type X = …` / `(a: string): void` 这类标注会让 rolldown 直接
   //    PARSE_ERROR 构建失败，而我在 09-17 的 enhance-hints.mjs 与 codex-identity.mjs 上**各踩一次**

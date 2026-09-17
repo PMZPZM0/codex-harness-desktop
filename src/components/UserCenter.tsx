@@ -174,25 +174,30 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
         </div>
       </div>
 
-      {/* Codex 的身份（09-17 用户要求）：名字 + 头像。与上方"你自己"的资料分开成卡，避免混淆 */}
-      <div className="uc-card">
-        <div className="uc-head">
-          <div className="uc-avatar codex-avatar-cell">
+      {/* Codex 的身份（09-17 用户要求）：名字 + 头像。与上方"你自己"的资料分开成卡，避免混淆。
+          ⛔ 这里必须用**独立类名**（codex-id-*），不能复用上面那些 .uc-*：
+          `.uc-presets` 是「表情头像选择器」的样式，里面有 `.uc-presets button { width:30px }` ——
+          复用它会把「用默认名」按钮压成 30px 宽、文字竖排断行（用户截图实测就是这么坏的）；
+          `.uc-avatar` 的圆形底 + overflow 还会把方形默认头像裁圆。 */}
+      <div className="uc-card codex-id-card">
+        <div className="codex-id-head">
+          <div className="codex-id-avatar">
             {codexAvatar?.type === "image" && codexAvatar.value
               ? <img src={codexAvatar.value} alt="Codex 头像" />
               : <DefaultCodexAvatar size={56} />}
-            <button className="uc-avatar-edit" title="上传 Codex 头像" onClick={() => codexFileRef.current?.click()}><Camera size={13} /></button>
+            <button className="codex-id-avatar-btn" title="上传 Codex 头像（建议用正方形图片）" onClick={() => codexFileRef.current?.click()}><Camera size={12} /></button>
             {codexAvatar?.type === "image" && (
-              <button className="uc-avatar-reset" title="恢复到默认头像" onClick={() => { onCodexAvatarChange?.({ type: "default", value: "" }); onNotice("已恢复默认头像"); }}><RotateCcw size={12} /></button>
+              <button className="codex-id-avatar-btn reset" title="恢复到默认头像" onClick={() => { onCodexAvatarChange?.({ type: "default", value: "" }); onNotice("已恢复默认头像"); }}><RotateCcw size={12} /></button>
             )}
             <input ref={codexFileRef} type="file" accept="image/*" hidden onChange={onCodexAvatarFile} />
           </div>
-          <div className="uc-head-info">
-            <div className="uc-name">Codex 的身份</div>
-            <div className="uc-meta">这里的名字与头像会显示在每条回复的上方</div>
-            <div className="uc-preset-hint">它的名字（回车或点别处保存）：</div>
-            <div className="uc-presets">
+          <div className="codex-id-info">
+            <div className="codex-id-title">Codex 的身份</div>
+            <div className="codex-id-desc">这里的名字与头像会显示在每条回复的上方</div>
+            <label className="codex-id-label" htmlFor="codex-name-input">它的名字</label>
+            <div className="codex-id-row">
               <input
+                id="codex-name-input"
                 className="codex-name-input"
                 value={assistantDraft}
                 maxLength={24}
@@ -206,6 +211,7 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
               />
               <button className="codex-name-reset" onClick={() => { setAssistantDraft(CODEX_DEFAULT_NAME); onAssistantNameChange?.(CODEX_DEFAULT_NAME); onNotice("名字已恢复为 Codex"); }}>用默认名</button>
             </div>
+            <div className="codex-id-hint">回车或点别处即时保存</div>
           </div>
         </div>
       </div>
