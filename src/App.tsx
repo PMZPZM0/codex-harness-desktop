@@ -3353,9 +3353,10 @@ function FoldGroup({ title, leadGroup, variant, running, defaultOpen = false, au
 }
 
 /** 运行中计时只使用本地秒表，不读取引擎时间戳，避免秒/毫秒单位混淆。
- *  finalizing（09-18）：正文已给完、上游迟迟不发结束信号 —— 计时要如实说
- *  「等待模型收尾」，别让用户以为还在生成（真机实测 gpt-5.6-sol 正文后 28 秒零事件）。 */
-function RunningProcessTime({ finalizing = false }: { finalizing?: boolean }) {
+ *  ⛔ 09-18 用户实测「这段文字会出现在『正在处理』后面，跟消息下面重复了」：
+ *  「正文已完整，等待模型收尾」这份状态**只在底部运行状态行说一次**（它有专属话语池），
+ *  计时条只管报时 —— 两边各说一遍就是同一屏里重复两处。 */
+function RunningProcessTime() {
   const startedRef = useRef(Date.now());
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -3365,7 +3366,7 @@ function RunningProcessTime({ finalizing = false }: { finalizing?: boolean }) {
   const totalSeconds = Math.max(0, Math.floor((now - startedRef.current) / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  return <div className="running-process-time">正在处理 {minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`}{finalizing ? " · 正文已完整，等待模型收尾" : ""}</div>;
+  return <div className="running-process-time">正在处理 {minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`}</div>;
 }
 
 /** 连续同类工具限流：默认只展示最新三条，旧条目留在原位置并可展开。 */
@@ -6046,7 +6047,7 @@ function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval,
             ⛔ 位置必须在「生成中」**之上**（09-17 用户「你这顺序不对吧，生成中怎么能放灰线上面呢」）：
             计时 + 分隔线属于**回合头信息**（紧接口回合标识），状态词属于内容区 —— 灰线是两者的分界。
             「发送后立刻」的反馈由乐观区块的 .turn-head 负责（见下方 chat-anchor 处）。 */}
-        {running && userItems.length > 0 && <RunningProcessTime finalizing={isAwaitingTurnClose(turn)} />}
+        {running && userItems.length > 0 && <RunningProcessTime />}
         {/* 占位头必须等回合内已有 userMessage：turn/started 先建回合、userMessage item 晚到，
             若不等就会渲染在乐观用户气泡上方（切会话后首条消息时肉眼可见错位，09-04 反馈）。
             空窗期反馈由乐观气泡 + 底部 working-indicator 覆盖。 */}
@@ -12787,24 +12788,33 @@ const commandMatches = useMemo(() => {
   }
   /** 安装进度文案（复用主进程推来的 runtime:progress，取最后一条）。 */
   const envProgress = envInstalling ? (Object.entries(runtimeProgress).slice(-1)[0]?.[1] ?? "") : "";
-
-  /** 当前生效模型是否声明了图片输入（自定义模型看该模型的 inputTypes；官方订阅/未声明 → 放行）。 */
-  const activeModelSupportsImage = (): boolean => {
-    const live = customModel;
-    if (!live) return true;
-    const model = (live.models ?? []).find((m) => m.id === live.model);
-    return !model || (model.inputTypes ?? []).includes("image");
-  };
+  // ⛔ 这里曾有 `activeModelSupportsImage()`（按模型 inputTypes 预判能否收图），09-18 随
+  //   「图片一律正常发送」一并删除：**判据不可靠**（本地元数据，模型其实支持视觉只是漏勾
+  //   「图片」时会把图白吞），而且它是「预判 → 吞图 → 注入说明文字」那条错路的入口 ——
+  //   留着只会被下一个改动顺手复用。真不支持时由引擎报错 → `healImageModalityIfUnsupported` 自愈。
 
   /** 图片模态自愈（09-18）：接入点明确报「不支持图片输入」且生效模型标了 image →
    *  自动摘掉 image 模态并保存（保存即重载引擎配置），toast 说明。只在错误原话点名时触发；
-   *  摘掉后不再命中（幂等），用户仍可在模型编辑器手动勾回。 */
+   *  摘掉后不再命中（幂等），用户仍可在模型编辑器手动勾回。
+   *  ⛔ 这是**唯一的**图片兜底路径（09-18 起）：不再按 inputTypes 预判吞图 —— 预判会误伤
+   *  「其实支持视觉、只是漏勾了图片」的模型（用户截图实证：图被吞掉，还往消息正文里塞了
+   *  一段面向用户的说教文字，模型照抄出来就是在气泡里对用户讲道理）。 */
   async function healImageModalityIfUnsupported(message: string | undefined) {
     if (!message || !/do not support image(?:s| input)?|not support image|不支持图片|不支持图像/i.test(message)) return;
     const live = customModel;
     if (!live?.baseUrl) return; // 官方订阅原生支持视觉，不涉及
     const model = (live.models ?? []).find((m) => m.id === live.model);
     if (!model || !(model.inputTypes ?? []).includes("image")) return;
+    // ⛔ 有回合正在跑时**绝不**自动写配置（09-18 用户实测「切到另一个会话，原来在跑的那个立马就断」）：
+    //   保存模型走 `custom-model:save → applyCustomModel() → server.restart()`，而引擎重启会
+    //   **打断所有正在跑的回合**（main.ts 注释原话：「重启会打断所有在跑回合（app-server restarted）」）。
+    //   自愈是个后台便利动作，可能由任意一次带图发送触发 —— 它没有资格杀掉用户别的会话里正在跑的任务。
+    //   跳过并说清楚，让人自己决定什么时候改（改完在下个回合生效）。
+    if (runningThreadIdsRef.current.size > 0) {
+      showToast("已跳过图片模态自动修正",
+        `「${live.model}」的接入点不支持图片，但当前有 ${runningThreadIdsRef.current.size} 个会话正在运行——自动改配置要重启引擎、会把它们全部打断。等任务跑完，或到「设置 → 模型」手动取消勾选「图片」。`);
+      return;
+    }
     // ⛔ 以「已保存的 live 配置」为基底合并，不能用 customDraft——草稿可能正开着另一个供应商的编辑态
     const merged = { ...live, models: (live.models ?? []).map((m) => m.id === live.model ? { ...m, inputTypes: (m.inputTypes ?? []).filter((t) => t !== "image") } : m) };
     const saved = await saveCustomDraft(merged);
@@ -15816,31 +15826,14 @@ const commandMatches = useMemo(() => {
     // 内联图片：占位符从文本剥离，图片按占位符出现顺序发送；不在占位符里的遗留附件照旧追加
     let inlineImagePaths = promptImagePaths(messageText);
     if (inlineImagePaths.length) messageText = stripImageTokens(messageText);
-    // 图片降级发送（09-18 用户：「带图发送直接报错、还不能正常对话了，设计不合理」）：
-    // 生效模型不支持图片输入时，不再让整回合 InvalidParameter 炸掉——把贴图转成路径注记：
-    //   视觉插件已配置 → 引导模型调 describe_image（识图由插件自己配的视觉模型完成，独立于聊天模型）；
-    //   未配置 → 注记告知模型看不了图，对话照常继续（比硬失败好）。
-    // ⛔ 转换必须在所有下游构造（乐观气泡 / 排队 / 专家包装 / 正式 input）之前做：
-    //    否则乐观气泡与真实消息内容不一致，userMessageMatchesInput 对不上 → 气泡重复。
-    let sendImages = images;
-    if (!activeModelSupportsImage() && (inlineImagePaths.length || images.length)) {
-      const paths = [...inlineImagePaths, ...sendImages.filter((path) => !inlineImagePaths.includes(path))];
-      let visionPluginReady = false;
-      try {
-        const plugins = await window.codex.readBuiltinPlugins();
-        const vision = plugins?.vision;
-        visionPluginReady = Boolean(vision && vision.enabled !== false && vision.baseUrl && vision.apiKey && vision.model);
-      } catch { /* 读不到按未配置处理 */ }
-      messageText += visionPluginReady
-        ? `\n\n[用户随消息附了图片。当前模型不支持直接读取图片内容——请按开发者指令里 harness-media vision 的用法调用 describe_image 查看下面的本地图片文件，拿到描述后再继续任务：\n${paths.join("\n")}\n]`
-        : `\n\n[用户随消息附了 ${paths.length} 张图片，但当前模型不支持图片输入且未配置视觉插件，图片内容无法查看。如需识图请告知用户配置视觉插件，或请用户提供图片路径后用 describe_image 查看。图片路径：\n${paths.join("\n")}\n]`;
-      inlineImagePaths = [];
-      sendImages = [];
-      showToast(visionPluginReady ? "图片已转视觉插件识图" : "图片已忽略（模型不支持图片）",
-        visionPluginReady
-          ? `「${customModel?.model ?? ""}」不支持图片输入；已把 ${paths.length} 张图转为 describe_image 调用，由视觉插件的模型识图后继续对话。`
-          : `「${customModel?.model ?? ""}」不支持图片输入且未配置视觉插件，本次发送不含图片、对话照常继续。配置视觉插件后，贴图会自动转为插件识图。`);
-    }
+    // 图片照常发送（09-18 用户：「不管支不支持识图，就可以发正常的图片……就正常发图就行」）。
+    // ⛔ 已移除「按模型 inputTypes 预判 → 把图吞掉换成一段啰嗦说明文字」的降级分支：
+    //   ① 预判依据是本地模型元数据，模型其实支持视觉却漏勾「图片」时，图会被白白吞掉；
+    //   ② 注入的那段文字是**面向用户**的（"请告知用户配置视觉插件…"），却拼进了用户消息正文，
+    //      模型照抄出来就等于在气泡里对用户说教，观感极差（用户截图实证）。
+    //   图片一律按 localImage 正常发；真遇到接入点不支持，引擎会报错，届时由
+    //   healImageModalityIfUnsupported（回合错误路径）自动摘掉该模型的图片模态并提示重发。
+    const sendImages = images;
     try {
       // 必须用剥离占位符后的 messageText：传原始 value 会把 [图片:...] 编码路径
       // 覆盖回发送文本（09-04 截图实证：气泡里出现整段乱码 token）
