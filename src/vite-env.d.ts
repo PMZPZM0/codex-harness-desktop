@@ -357,6 +357,13 @@ interface Window {
     cancelConnectorOAuth(templateId: string): Promise<{ ok: boolean }>;
     onConnectorOAuth(listener: (event: ConnectorOAuthEvent) => void): () => void;
     readClipboardImage(): Promise<string | null>;
+    /** 粘贴的长文本（超过阈值）落盘成 .txt，返回绝对路径；空文本返回 null。按内容哈希去重。 */
+    savePastedText(text: string): Promise<string | null>;
+    /** 读粘贴文本；editable=false 表示不是应用保存的粘贴文本（回退普通文件预览）。
+     *  content=null 表示文件已不存在。 */
+    readPastedText(path: string): Promise<{ editable: boolean; content?: string | null }>;
+    /** 保存编辑后的粘贴文本（仅限应用自己的粘贴文本目录，越界会抛错） */
+    updatePastedText(path: string, content: string): Promise<{ ok: boolean; size: number }>;
     /** app-server 直管 MCP 的启用覆盖表；没记过的一律视为启用 */
     readMcpServerOverrides(): Promise<Record<string, boolean>>;
     /** 统一入口：名字能匹配连接器的走连接器，其余走覆盖表；每次改动都会重启引擎 */

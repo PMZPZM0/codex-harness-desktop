@@ -4137,6 +4137,11 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   color: #b180d7;
   flex: none;
 }
+/* 文件 chip 与图片 chip **同款外形、不同图标色**（09-18：文件改为内联 chip，跟图片一样）。
+   保留紫色给图片，文件用主题链接色（蓝），与消息侧 FileText 的配色一致。 */
+.composer-image-chip-inline.composer-attach-chip-file .composer-image-chip-icon {
+  color: var(--link);
+}
 .composer-image-chip-inline .composer-image-chip-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4654,67 +4659,6 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
 @keyframes button-pop {
   from { transform: scale(0.86); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
-}
-.attachment-strip {
-  border: 1px solid var(--line);
-  background: var(--bg);
-  border-bottom: 0;
-  border-radius: 16px 16px 0 0;
-  gap: 8px;
-  padding: 8px;
-  display: flex;
-  overflow-x: auto;
-}
-.attachment-strip + .composer {
-  box-shadow: none;
-  border-radius: 0 0 16px 16px;
-}
-.attachment {
-  flex: 0 0 58px;
-  width: 58px;
-  height: 58px;
-  position: relative;
-}
-.attachment img {
-  object-fit: cover;
-  border-radius: 8px;
-  width: 100%;
-  height: 100%;
-}
-.file-attachment {
-  border: 1px solid var(--line);
-  background: var(--panel);
-  width: 128px;
-  height: 58px;
-  color: var(--muted);
-  border-radius: 8px;
-  align-items: center;
-  gap: 7px;
-  padding: 8px;
-  display: flex;
-  position: relative;
-}
-.file-attachment span {
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  overflow: hidden;
-}
-.file-attachment button,
-.attachment button {
-  border: 1px solid var(--line);
-  background: var(--bg);
-  cursor: pointer;
-  width: 19px;
-  height: 19px;
-  color: var(--muted);
-  border-radius: 50%;
-  place-items: center;
-  padding: 0;
-  display: grid;
-  position: absolute;
-  top: -5px;
-  right: -5px;
 }
 /* ── 通知 toast（富样式版）：顶部居中弹窗，4 种 tone 各有专属图标/配色/入场动画 ──
    success 绿色弹跳 + 对勾 / error 红色抖动 + 叉 / warning 橙色落下摆动 + 警告三角 / info 蓝色下滑 + i。
@@ -11022,6 +10966,102 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   display: flex;
   position: fixed;
   inset: 0;
+}
+/* 粘贴文本大窗口（预览 + 编辑）：与图片灯箱同族，但中间是可编辑的多行文本。
+   09-18 用户：「点击这个txt chip，要支持打开大窗口预览，而且要可以编辑，方便我修改」。 */
+.pasted-text-modal {
+  z-index: 91;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  background: #12120fd1;
+  display: grid;
+  place-items: center;
+  padding: 56px 24px 24px;   /* 上留白避开原生窗口钮区（与 .lightbox-toolbar 同理） */
+  position: fixed;
+  inset: 0;
+}
+.pasted-text-panel {
+  width: min(920px, 92vw);
+  height: min(78vh, 760px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
+  overflow: hidden;
+}
+.pasted-text-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.pasted-text-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.pasted-text-meta {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-left: auto;
+  white-space: nowrap;
+}
+.pasted-text-head button {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 8px;
+  height: 28px;
+  padding: 0 10px;
+  font: inherit;
+  display: inline-grid;
+  place-items: center;
+}
+.pasted-text-head button:hover { border-color: var(--link); }
+.pasted-text-save { font-size: 12px; font-weight: 600; }
+.pasted-text-save:disabled { opacity: 0.5; cursor: default; }
+.pasted-text-close { width: 30px; padding: 0; }
+.pasted-text-body {
+  flex: 1;
+  min-height: 0;             /* ⛔ 没有它 flex 子项不会收缩，textarea 会顶破面板高度 */
+  width: 100%;
+  resize: none;
+  border: 0;
+  outline: 0;
+  padding: 12px 14px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow: auto;
+}
+.pasted-text-error {
+  margin: 0;
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  flex: none;
+}
+.pasted-text-hint {
+  margin: 0;
+  padding: 8px 14px;
+  font-size: 11.5px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  flex: none;
 }
 .lightbox-toolbar {
   z-index: 2;

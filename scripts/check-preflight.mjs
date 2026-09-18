@@ -64,6 +64,24 @@ function warn(msg) {
   console.log(`  ${C.yellow("!")} ${msg}`);
 }
 
+/** 只留"真实代码"：剥掉 `//` 行注释、`/* *\/` 块注释、以及 JSX 的 `{/* … *\/}` 注释块。
+ *
+ *  ⛔ 为什么必须有它（09-18 同一天踩了三次）：结构守卫常写成「源码里不该再出现某个写法」，
+ *  而**注释里解释这个隐患时会原样写出那个字符串**（"原先那条 .attachment-strip 已删除，别再恢复"），
+ *  于是守卫报红、我去改本来正确的代码。
+ *  反面教材（当天三次）：`startsWith("http") ? … : imageUrl(…)`、`.attachment-strip`、
+ *  `getBoundingClientRect().top` —— 全是注释命中造成的假红/假绿。
+ *  **任何"不许出现 X"的结构断言，匹配前都要先过这一层。** */
+function codeOnly(source) {
+  return String(source)
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")     // JSX 注释块 {/* … */}
+    .replace(/\/\*[\s\S]*?\*\//g, "")          // 块注释 /* … */
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*\/\//.test(line))  // 整行 // 注释
+    .map((line) => line.replace(/\s\/\/[^'"`]*$/, ""))  // 行尾 // 注释（不碰字符串里的 //）
+    .join("\n");
+}
+
 // ---------- 工具 ----------
 
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "dist-electron", "release", ".e2e-artifacts"]);
@@ -4979,10 +4997,9 @@ w.postMessage({id:1,op:"list",root});
       (/const local = resolveImagePath\(path\);/.test(appSrc46) && /return local\s*\r?\n?\s*\? <button title="在文件夹中显示"/.test(appSrc46)
         ? ok : fail)("【47】灯箱「在文件夹中显示」以 resolveImagePath 的真返回值为准（data/http 不挂）");
       // ② 结构守卫：三个显示位点都必须用 imageDisplaySrc，且**不许**再出现旧的 http-only 三元
-      // ⛔ 只数"真实调用点"：注释里解释这个隐患时会写出同款字符串（本仓库就这么写的），
-      //    按原文匹配会把它算成一处残留 → 假红（09-18 实测，与「反证要匹配 fail 文案」同类坑）。
-      const codeLines47 = appSrc46.split(/\r?\n/).filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l));
-      const badTernary = codeLines47.filter((l) => /startsWith\("http"\) \? [^\n]*: imageUrl\(/.test(l)).length;
+      // ⛔ 用 codeOnly 剥掉注释：注释里解释这个隐患时会写出同款字符串（本仓库就这么写的），
+      //    按原文匹配会把它算成一处残留 → 假红（09-18 实测，见 codeOnly 的说明）。
+      const badTernary = codeOnly(appSrc46).split(/\r?\n/).filter((l) => /startsWith\("http"\) \? [^\n]*: imageUrl\(/.test(l)).length;
       (badTernary === 0 ? ok : fail)(`【47】没有残留「只看 http、其余当本地路径」的旧写法（实得 ${badTernary} 处，已排除注释）`);
       const displaySites = (appSrc46.match(/imageDisplaySrc\(/g) || []).length;
       (displaySites >= 3 ? ok : fail)(`【47】消息图片 / 灯箱 / 悬停预览都走 imageDisplaySrc（${displaySites} 处，含定义 1）`);
@@ -5031,6 +5048,121 @@ w.postMessage({id:1,op:"list",root});
         ? ok : fail)("【47】指针点击后释放焦点（Esc 关大图后小预览不会再冒出来）");
       (!/onClick=\{\(\) => \(image \? onOpenImage/.test(appSrc46)
         ? ok : fail)("【47】onClick 不再是一句话箭头函数（要拿 event 判断是否指针触发）");
+    }
+
+    console.log(C.bold("\n【48】输入框附件统一内联 chip + 粘贴长文本转 .txt + 文本编辑窗口"));
+    {
+      const att = await import("../src/lib/composer-attachments.mjs");
+      const {
+        attachmentToken, imageToken, fileToken, splitAttachmentSegments,
+        promptImagePaths, promptFilePaths, stripAttachmentTokens,
+        PASTED_TEXT_TO_FILE_THRESHOLD, shouldSavePastedTextAsFile,
+      } = att;
+      const css48 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+      const mainSrc = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+      const preloadSrc = readFileSync(join(ROOT, "electron", "preload.ts"), "utf8");
+      const dtsSrc = readFileSync(join(ROOT, "src", "vite-env.d.ts"), "utf8");
+      const IMGP = "C:\\a\\b\\图.png";
+      const TXTP = "D:\\work\\笔记 v2.txt";
+
+      // ── ① token 格式：图片那份**必须与历史逐字节一致**（老消息里存着它）
+      (imageToken(IMGP) === `[图片:${encodeURIComponent(IMGP)}]` ? ok : fail)("【48】图片 token 格式与历史一致（老消息仍能解析出图）");
+      (fileToken(TXTP) === `[文件:${encodeURIComponent(TXTP)}]` ? ok : fail)("【48】文件 token 形如 [文件:path]");
+      (attachmentToken("file", TXTP) === fileToken(TXTP) && attachmentToken("image", IMGP) === imageToken(IMGP) ? ok : fail)("【48】两种类型走同一个 attachmentToken");
+      let threw = false;
+      try { attachmentToken("video", "x"); } catch { threw = true; }
+      (threw ? ok : fail)("【48】未知类型直接抛错（不静默产出坏 token）");
+
+      // ── ② 消息渲染层只认图片：`[文件:…]` 必须**原样算文本**，不能被吞掉
+      //    （吞掉 = 用户正文里凭空少一段，且没人报错）
+      const mixed = `开头 ${imageToken(IMGP)} 中间 ${fileToken(TXTP)} 结尾`;
+      const imgOnly = splitAttachmentSegments(mixed, { kinds: ["image"] });
+      (imgOnly.some((s) => s.kind === "image") ? ok : fail)("【48】只认图片时仍能解析出图片段");
+      (imgOnly.every((s) => s.kind !== "file") && imgOnly.map((s) => (s.kind === "text" ? s.text : "IMG")).join("").includes(fileToken(TXTP))
+        ? ok : fail)("【48】`[文件:…]` 对消息渲染层原样保留为文本（不被吞掉）");
+      const both = splitAttachmentSegments(mixed);
+      (both.filter((s) => s.kind !== "text").map((s) => s.kind).join(",") === "image,file" ? ok : fail)("【48】两种都认时按出现顺序解析（image,file）");
+
+      // ── ③ 路径提取与去重
+      (promptFilePaths(`${fileToken(TXTP)} 和 ${fileToken(TXTP)}`).join("|") === TXTP ? ok : fail)("【48】文件路径去重且保序");
+      (promptImagePaths(mixed).join("|") === IMGP ? ok : fail)("【48】图片路径提取与历史行为一致");
+
+      // ── ④ 剥离：只剥文件时图片 token 必须留着（图片要靠它在正文里定位渲染）
+      const stripped = stripAttachmentTokens(mixed, ["file"]);
+      (stripped.includes(imageToken(IMGP)) && !stripped.includes(fileToken(TXTP)) ? ok : fail)("【48】只剥文件 token，图片 token 原样保留");
+      (!stripAttachmentTokens(mixed, ["image"]).includes(imageToken(IMGP)) ? ok : fail)("【48】可只剥图片 token（历史行为）");
+      (stripAttachmentTokens(`${fileToken(TXTP)}\n\n\n\n尾`, ["file"]) === "尾" ? ok : fail)("【48】剥完清理多余空行（不留一串空行）");
+
+      // ── ⑤ 长文本转文件：阈值与判据
+      (PASTED_TEXT_TO_FILE_THRESHOLD === 200 ? ok : fail)(`【48】阈值是 200 字（实得 ${PASTED_TEXT_TO_FILE_THRESHOLD}）`);
+      (shouldSavePastedTextAsFile("x".repeat(201)) && !shouldSavePastedTextAsFile("x".repeat(200)) ? ok : fail)("【48】正好 200 字不转、201 字转（边界）");
+      (!shouldSavePastedTextAsFile("   \n\t  ") && !shouldSavePastedTextAsFile("") && !shouldSavePastedTextAsFile(null) ? ok : fail)("【48】空白/空值不转文件（不生成空文件）");
+      // ⛔ 必须带"**超过阈值的**空白串"这一例：只测短空白串时，按原文长度判定也能通过
+      //    （7 个字本来就不到 200）——那样的断言区分不出 trim 有没有生效（09-18 反证 ④ 实测）。
+      (!shouldSavePastedTextAsFile(" ".repeat(PASTED_TEXT_TO_FILE_THRESHOLD + 50)) ? ok : fail)("【48】超阈值的纯空白也不转文件（复制一大段空行不该生成文件）");
+      (shouldSavePastedTextAsFile(`${"x".repeat(201)}   \n\n`) ? ok : fail)("【48】按 trim 后长度判定（尾随空白不改变结论）");
+
+      // ── ⑥ 输入框：删掉上方 strip、文件状态改为"从文本派生"
+      // ⛔ 匹配前必须剥注释：我在 App.tsx 里留了「原先那条 .attachment-strip 已删除」的说明，
+      //    按原文匹配会把这行注释算成"strip 还在"（同一个坑第三次踩到，见 codeOnly 注释）。
+      const appCode48 = codeOnly(appSrc46);
+      (!/attachment-strip/.test(appCode48) ? ok : fail)("【48】输入框上方那条附件 strip 已删除（用户要求文件也进输入框）");
+      (!/setFiles\(/.test(appCode48) ? ok : fail)("【48】composer 的 files 状态已移除（文件只以 [文件:path] 存在于文本）");
+      (/const attachedFiles = useMemo\(\(\) => promptFilePaths\(prompt\), \[prompt\]\)/.test(appSrc46) ? ok : fail)("【48】文件列表由 prompt 文本派生（不会与文本不同步）");
+      (!/\.attachment-strip|\.file-attachment/.test(css48) ? ok : fail)("【48】strip 的 CSS 已清除（不留复活入口）");
+      (/if \(seg\.kind !== "text"\) \{ root\.appendChild\(makeChip\(seg\.kind, seg\.path\)\); continue; \}/.test(appSrc46)
+        ? ok : fail)("【48】编辑器重建 DOM 时图片/文件都生成 chip");
+      (/const kind = el\.getAttribute\("data-attach-kind"\);/.test(appSrc46) && /el\.getAttribute\("data-attach-path"\)/.test(appSrc46)
+        ? ok : fail)("【48】序列化靠统一的 data-attach-kind/path 还原占位符（不再用 data-image-path）");
+      (!/getAttribute\("data-image-path"\)/.test(appSrc46) ? ok : fail)("【48】旧的 data-image-path 引用已清干净（不留两套属性各认一半）");
+      // 插入/删除 token 只允许一条路径：composer 走 insertComposerAttachments（插 chip），
+      // 旧的「直接往文本框拼 token」两个函数已无调用点，09-18 已删 —— 别让它们回来。
+      (!/export function insertImageToken|export function removeImageToken/.test(readFileSync(join(ROOT, "src", "lib", "prompt-images.ts"), "utf8"))
+        ? ok : fail)("【48】已删除两个历史死代码（insertImageToken / removeImageToken 无调用点）");
+      // 删 chip 要只吃掉"插入时补的那一个空格"：把两侧全吃或全不吃都会让正文少/多一个空格
+      {
+        const { removeAttachmentToken: rm } = await import("../src/lib/composer-attachments.mjs");
+        (rm(`看 readme ${fileToken(TXTP)} 很好`, "file", TXTP) === "看 readme 很好" ? ok : fail)("【48】删 chip 保留分词空格（不把两侧空格一起吃掉）");
+        (rm(`前${fileToken(TXTP)}后`, "file", TXTP) === "前 后" ? ok : fail)("【48】删 chip 若两侧无空格则补一个（不把两个词粘成一个）");
+      }
+
+      // ── ⑦ 发送管线：文件 token → 既有 [附件文件] 段（模型侧协议不变），且从正文剥离
+      (/const inlineFilePaths = promptFilePaths\(messageText\);/.test(appSrc46) ? ok : fail)("【48】发送前提取文件 token");
+      (/if \(inlineFilePaths\.length\) messageText = stripAttachmentTokens\(messageText, \["file"\]\);/.test(appSrc46)
+        ? ok : fail)("【48】文件 token 从正文剥离（不把 [文件:path] 当正文发给模型）");
+      (appSrc46.includes("[附件文件]") && /inlineFilePaths\.map\(\(path\) => `- \$\{path\}`\)/.test(appSrc46)
+        ? ok : fail)("【48】仍拼成 [附件文件] 段（引擎与渲染层解析的协议没变）");
+
+      // ── ⑧ 粘贴长文本 → txt：三件套齐全 + 安全校验
+      for (const [label, ch] of [["save", "pasted-text:save"], ["read", "pasted-text:read"], ["update", "pasted-text:update"]]) {
+        (mainSrc.includes(`"${ch}"`) && preloadSrc.includes(`"${ch}"`) ? ok : fail)(`【48】${label} 通道 main + preload 都有（${ch}）`);
+      }
+      (/savePastedText\(text: string\): Promise<string \| null>;/.test(dtsSrc) && /readPastedText\(path: string\)/.test(dtsSrc) && /updatePastedText\(path: string, content: string\)/.test(dtsSrc)
+        ? ok : fail)("【48】三个通道的类型声明齐全（渲染层才拿得到类型）");
+      (/function isInsidePastedTextDir\(target: string\)/.test(mainSrc) && /只允许编辑应用自己保存的粘贴文本/.test(mainSrc)
+        ? ok : fail)("【48】读/写做了目录内校验（否则等于给渲染层任意文件读写）");
+      (/crypto\.createHash\("sha1"\)\.update\(content, "utf8"\)\.digest\("hex"\)\.slice\(0, 8\)/.test(mainSrc)
+        ? ok : fail)("【48】文件名按内容哈希（同一段文本粘两次得到同一个文件）");
+      (!/codex-harness-\$\{Date\.now\(\)\}\.txt/.test(mainSrc) ? ok : fail)("【48】不用时间戳命名（否则同一内容会堆出无限副本）");
+      (/shouldSavePastedTextAsFile\(plain\)\) \{ onPasteLongText\(plain\); return; \}/.test(appSrc46)
+        ? ok : fail)("【48】编辑器在「插入纯文本」之前先判长文本（否则超长文本照旧内联铺满输入框）");
+
+      // ── ⑨ 文本编辑窗口：先问主进程再决定，且关窗即存
+      (/const info = await window\.codex\.readPastedText\(target\);/.test(appSrc46) && /if \(info\?\.editable\) \{ setPastedText\(\{ path: target, name: basename\(target\) \}\); return; \}/.test(appSrc46)
+        ? ok : fail)("【48】chip 点击先问主进程「是否可编辑」，再回退普通文件预览（不靠路径猜）");
+      (!/pasted-text(?:\\\\|\/)/.test(appSrc46.replace(/pastedTextDir/g, "")) ? ok : fail)("【48】渲染层不靠路径前缀识别粘贴文本");
+      (/^function PastedTextEditor\(/m.test(appSrc46) ? ok : fail)("【48】编辑器是模块级组件（内联箭头函数会每次 render 重挂）");
+      (/if \(state\.editable && dirty\) \{ await save\(state\.content, \{ silent: true \}\); showToastEverywhere/.test(appSrc46)
+        ? ok : fail)("【48】关窗自动保存（编辑的是应用自己的临时文本，丢改动比多存一次更糟）");
+      (/\.pasted-text-body \{[\s\S]{0,420}?min-height: 0;/.test(css48)
+        ? ok : fail)("【48】编辑区 min-height:0（flex 子项不收缩的话 textarea 会顶破面板）");
+      (/\.pasted-text-modal \{[\s\S]{0,320}?z-index: 91;/.test(css48) ? ok : fail)("【48】文本窗口层级高于图片灯箱（不会被盖住）");
+
+      // ── ⑩ 输入框自适应高度：有下限（够写）+ 有上限（不顶掉正文）+ 到顶内部滚动
+      const editorCss = (css48.match(/\.composer-editor \{[\s\S]*?\n\}/) || [""])[0];
+      (/min-height: \d+px/.test(editorCss) ? ok : fail)("【48】输入框有最小高度");
+      (/max-height: min\([^)]+\)/.test(editorCss) ? ok : fail)("【48】输入框有高度上限");
+      (/overflow-y: auto/.test(editorCss) ? ok : fail)("【48】到达上限后内部滚动（不会把上方正文顶出视野）");
     }
   }
 }

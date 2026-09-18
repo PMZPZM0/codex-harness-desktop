@@ -11,6 +11,9 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import createHighlightElement from "react-syntax-highlighter/dist/esm/create-element";
 import { createHighlightCache, highlightCacheKey } from "./lib/code-highlight-cache.mjs";
 import { attachChipName } from "./lib/attach-chip-name.mjs";
+// 附件占位符（图片 + 文件）公共机制：⛔ token 格式与解析只此一处（见模块注释）。
+// 图片走 [图片:path]、文件走 [文件:path]，都在输入框里渲染成同款内联 chip。
+import { attachmentToken, fileToken, promptFilePaths, shouldSavePastedTextAsFile, splitAttachmentSegments, stripAttachmentTokens } from "./lib/composer-attachments.mjs";
 // 图片显示 src 归一化：⛔ 不能写 `startsWith("http") ? src : imageUrl(src)` —— data URL 会被
 // 当成本地路径去拼协议 URL，灯箱与悬停预览都会打不开（09-18 代码审查发现，见模块注释）。
 import { imageDisplaySrc, localImageUrl } from "./lib/image-src.mjs";
@@ -2321,17 +2324,19 @@ function ThreadFilePicker({ query, onQuery, candidates, onPick, onClose }: { que
  *  （prompt-images.ts 管线与发送组装零改动），DOM 只是它的可编辑视图。
  *  非受控：仅当外部 value 与 DOM 序列化结果不一致（发送清空/切会话/增强/斜杠命令）
  *  才重建 DOM；用户输入只做 DOM→prompt 序列化回流，绝不反向覆盖正在编辑的 DOM。 */
-function ComposerEditor({ value, placeholder, editorRef, domValueRef, makeChip, onValueInput, onKeyDown, onBlur, onPasteImage, onPasteFiles }: {
+function ComposerEditor({ value, placeholder, editorRef, domValueRef, makeChip, onValueInput, onKeyDown, onBlur, onPasteImage, onPasteFiles, onPasteLongText }: {
   value: string;
   placeholder: string;
   editorRef: { current: HTMLDivElement | null };
   domValueRef: { current: string | null };
-  makeChip: (path: string) => HTMLElement;
+  makeChip: (kind: "image" | "file", path: string) => HTMLElement;
   onValueInput: (value: string) => void;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   onBlur: () => void;
   onPasteImage: (text: string) => void;
   onPasteFiles: (paths: string[]) => void;
+  /** 长文本粘贴：落盘成 .txt 再作为文件 chip 插入（阈值见 shouldSavePastedTextAsFile） */
+  onPasteLongText: (text: string) => void;
 }) {
   useLayoutEffect(() => {
     const el = editorRef.current;
@@ -2362,7 +2367,8 @@ function ComposerEditor({ value, placeholder, editorRef, domValueRef, makeChip, 
         const el = event.currentTarget;
         let next = serializeComposerDom(el);
         // 全删后可能残留孤立 <br>：清成真正 empty，让 :empty 占位符与发送守卫都成立
-        if (!next.trim() && !promptImagePaths(next).length) { el.innerHTML = ""; next = ""; }
+        // （图片与文件 chip 都算"有草稿"，两类都要看）
+        if (!next.trim() && !promptImagePaths(next).length && !promptFilePaths(next).length) { el.innerHTML = ""; next = ""; }
         domValueRef.current = next;
         onValueInput(next);
       }}
@@ -2409,6 +2415,9 @@ function ComposerEditor({ value, placeholder, editorRef, domValueRef, makeChip, 
           const plain = event.clipboardData.getData("text/plain");
           void window.codex.readClipboardFiles().then((paths) => {
             if (paths.length) { onPasteFiles(paths); return; }
+            // 长文本：落盘成 .txt 并显示为文件 chip（09-18 用户：「复制的内容超过 200 字的时候
+            // 把文本直接显示成一个 .txt 文件的方式」）。判据是纯函数，见 composer-attachments.mjs。
+            if (shouldSavePastedTextAsFile(plain)) { onPasteLongText(plain); return; }
             if (plain) {
               try { document.execCommand("insertText", false, plain); } catch { /* ignore */ }
               const el = editorRef.current;
@@ -2435,8 +2444,14 @@ function serializeComposerDom(root: HTMLElement): string {
     if (node.nodeType === Node.TEXT_NODE) { out += node.textContent ?? ""; return; }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const el = node as HTMLElement;
-    const imagePath = el.getAttribute("data-image-path");
-    if (imagePath != null) { out += imageToken(imagePath); return; }
+    // ⛔ 附件 chip 的往返：图片 → [图片:path]、文件 → [文件:path]（属性是统一的
+    //    data-attach-kind / data-attach-path，见 createInlineAttachmentChip）
+    const kind = el.getAttribute("data-attach-kind");
+    const attachPath = el.getAttribute("data-attach-path");
+    if (kind && attachPath != null) {
+      out += attachmentToken(kind === "file" ? "file" : "image", attachPath);
+      return;
+    }
     if (el.tagName === "BR") { out += "\n"; return; }
     for (const child of Array.from(el.childNodes)) walk(child);
     if (el.tagName === "DIV" || el.tagName === "P") out += "\n";
@@ -2445,11 +2460,11 @@ function serializeComposerDom(root: HTMLElement): string {
   return out.replace(/\n$/, "");
 }
 
-/** 从占位符字符串重建输入框 DOM：文本段按行拆 <br>，图片段生成内联 chip。 */
-function rebuildComposerDom(root: HTMLElement, value: string, makeChip: (path: string) => HTMLElement) {
+/** 从占位符字符串重建输入框 DOM：文本段按行拆 <br>，图片/文件段生成内联 chip。 */
+function rebuildComposerDom(root: HTMLElement, value: string, makeChip: (kind: "image" | "file", path: string) => HTMLElement) {
   root.textContent = "";
-  for (const seg of splitPromptSegments(value)) {
-    if (seg.kind === "image") { root.appendChild(makeChip(seg.path)); continue; }
+  for (const seg of splitAttachmentSegments(value)) {
+    if (seg.kind !== "text") { root.appendChild(makeChip(seg.kind, seg.path)); continue; }
     seg.text.split("\n").forEach((line, index) => {
       if (index > 0) root.appendChild(document.createElement("br"));
       if (line) root.appendChild(document.createTextNode(line));
@@ -2459,14 +2474,24 @@ function rebuildComposerDom(root: HTMLElement, value: string, makeChip: (path: s
 
 const COMPOSER_CHIP_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>';
 
-/** 生成内联图片 chip（contenteditable=false）：点主体预览，点 X 删除。
+/** 文件 chip 的图标（与消息侧 FileText 同形）。内联 SVG 常量：chip 是原生 DOM 拼的，不经 React。 */
+const COMPOSER_FILE_CHIP_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>';
+
+/** 生成内联附件 chip（contenteditable=false）：点主体打开/预览，点 X 删除。
+ *  图片与文件**同一套**（09-18 用户：「把文件展示不要在输入框上面了，改成在输入框里面的
+ *  chip，跟图片一样的展示」）——只有图标、title、点击语义三处按类型分叉。
  *  全部原生 DOM：输入框 DOM 由用户编辑与重建函数共同维护，不经 React 渲染。 */
-function createInlineImageChip(path: string, onRemove: (path: string) => void, onPreview: (path: string) => void, onChange: () => void): HTMLElement {
+function createInlineAttachmentChip(kind: "image" | "file", path: string, onRemove: (path: string) => void, onOpen: (path: string) => void, onChange: () => void): HTMLElement {
+  const image = kind === "image";
   const chip = document.createElement("span");
-  chip.className = "composer-image-chip-inline";
+  chip.className = `composer-image-chip-inline composer-attach-chip-${kind}`;
   chip.setAttribute("contenteditable", "false");
-  chip.setAttribute("data-image-path", path);
-  chip.innerHTML = `<span class="composer-image-chip-icon">${COMPOSER_CHIP_ICON}</span><span class="composer-image-chip-name"></span><button type="button" class="composer-image-chip-close" title="移除图片">×</button>`;
+  // ⛔ 统一的往返属性：serializeComposerDom 靠它把 DOM 还原成占位符文本。
+  //    旧的 `data-image-path` 已并入 `data-attach-kind` + `data-attach-path`（只有本文件的
+  //    两处引用，已一并改完；留旧属性会让新旧两种 chip 各认一半）。
+  chip.setAttribute("data-attach-kind", kind);
+  chip.setAttribute("data-attach-path", path);
+  chip.innerHTML = `<span class="composer-image-chip-icon">${image ? COMPOSER_CHIP_ICON : COMPOSER_FILE_CHIP_ICON}</span><span class="composer-image-chip-name"></span><button type="button" class="composer-image-chip-close" title="${image ? "移除图片" : "移除文件"}">×</button>`;
   chip.querySelector(".composer-image-chip-name")!.textContent = basename(path);
   // 阻止 mousedown 默认行为：点 chip 不丢编辑光标
   chip.addEventListener("mousedown", (event) => event.preventDefault());
@@ -2479,7 +2504,7 @@ function createInlineImageChip(path: string, onRemove: (path: string) => void, o
       onChange();
       return;
     }
-    onPreview(path);
+    onOpen(path);
   });
   return chip;
 }
@@ -3369,6 +3394,123 @@ function collectKnownPaths(source: unknown, map: Map<string, string>, depth = 0)
     const base = abs.split(/[\\/]/).pop()?.toLowerCase() ?? "";
     if (base) map.set(base, abs);
   }
+}
+
+/** 粘贴文本的大窗口预览 + 编辑（09-18 用户：「点击这个txt chip，要支持打开大窗口预览，
+ *  而且要可以编辑，方便我修改」）。
+ *
+ *  两条落盘纪律：
+ *  ① **只有应用自己保存的粘贴文本才可编辑**：内容由主进程 `pasted-text:read` 返回，
+ *     它带了"是否属应用目录"的判定（`editable`）——不靠渲染层拿路径去猜，否则用户自己目录里
+ *     同名的 .txt 也会被当成可编辑，一保存就改了他的文件。
+ *  ② **关窗即存**：Esc / 点遮罩 / 点关闭，只要内容被改过就自动保存（并提示），不弹"未保存"
+ *     确认框 —— 编辑的是应用自己的临时文本，丢改动比多存一次更糟。 */
+function PastedTextEditor({ path, name, onClose }: { path: string; name: string; onClose: () => void }) {
+  const [state, setState] = useState<{ loading: boolean; editable: boolean; content: string; error?: string }>({ loading: true, editable: false, content: "" });
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState(0);
+  const boxRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const result = await window.codex.readPastedText(path);
+        if (!alive) return;
+        if (!result?.editable) { setState({ loading: false, editable: false, content: "" }); return; }
+        const content = result.content ?? "";
+        setState({ loading: false, editable: true, content, ...(result.content == null ? { error: "文件已不存在（可能被清理）" } : {}) });
+        // 聚焦并全选不利于"接着改"，只把光标放到末尾
+        requestAnimationFrame(() => { const el = boxRef.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } });
+      } catch (error: any) {
+        if (alive) setState({ loading: false, editable: false, content: "", error: String(error?.message ?? error) });
+      }
+    })();
+    return () => { alive = false; };
+  }, [path]);
+
+  const save = useCallback(async (content: string, { silent = false } = {}) => {
+    setSaving(true);
+    try {
+      await window.codex.updatePastedText(path, content);
+      setDirty(false);
+      setSavedAt(Date.now());
+      if (!silent) showToastEverywhere("已保存修改", name);
+    } catch (error: any) {
+      showToastEverywhere("保存失败", String(error?.message ?? error));
+    } finally {
+      setSaving(false);
+    }
+  }, [path, name]);
+
+  const close = useCallback(() => { onClose(); }, [onClose]);
+
+  // 关窗前保存：把"最后一次内容"交给 save 用（闭包里的 content 是当前渲染值，够用）
+  const closeWithSave = useCallback(async () => {
+    if (state.editable && dirty) { await save(state.content, { silent: true }); showToastEverywhere("已保存修改", name); }
+    close();
+  }, [state.editable, state.content, dirty, save, close, name]);
+
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      // ⛔ Escape **不在这里处理**：本仓库有一个统一的全局 Escape 管线（App 里那份 closers 列表，
+      //    见「所有 overlay 的 Esc 关闭」），本窗口已注册进去（`requestClosePastedText`）。
+      //    自带一份会让两条链各关一次；而且实测"CDP 注入的按键在 textarea 聚焦时投递不可靠"，
+      //    走统一管线才能稳定被触发。这里只留 Ctrl/Cmd+S（保存不关窗）。
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); void save(state.content); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [save, state.content]);
+
+  // 交给全局 Escape 管线调用（关窗即存）。卸载时清掉，避免关闭后仍被回调。
+  useEffect(() => {
+    requestClosePastedText = () => { void closeWithSave(); };
+    return () => { requestClosePastedText = null; };
+  }, [closeWithSave]);
+
+  const lineCount = state.content ? state.content.split("\n").length : 0;
+  return (
+    <div className="pasted-text-modal" role="dialog" aria-label={name} onMouseDown={(event) => { if (event.target === event.currentTarget) void closeWithSave(); }}>
+      <div className="pasted-text-panel">
+        <div className="pasted-text-head">
+          <span className="pasted-text-title" title={path}>{name}</span>
+          <span className="pasted-text-meta">
+            {state.loading ? "读取中…" : `${lineCount} 行 · ${state.content.length} 字`}
+            {dirty ? " · 未保存" : savedAt ? " · 已保存" : ""}
+          </span>
+          <button type="button" className="pasted-text-save" disabled={saving || !state.editable} onClick={() => void save(state.content)}>
+            {saving ? "保存中…" : "保存"}
+          </button>
+          <button type="button" className="pasted-text-close" title="关闭 (Esc)" onClick={() => void closeWithSave()}><X size={15} /></button>
+        </div>
+        {state.error ? <p className="pasted-text-error">{state.error}</p> : null}
+        <textarea
+          ref={boxRef}
+          className="pasted-text-body"
+          value={state.content}
+          readOnly={!state.editable}
+          spellCheck={false}
+          onChange={(event) => { setState((current) => ({ ...current, content: event.target.value })); setDirty(true); }}
+          placeholder={state.loading ? "" : "（内容为空）"}
+        />
+        <p className="pasted-text-hint">
+          编辑后点「保存」或直接关闭窗口（会自动保存）。Ctrl/Cmd+S 保存不关窗，Esc 关闭。
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** 粘贴文本弹窗的开关（模块级 store：chip 在原生 DOM 里，拿不到 React 的上下文）。 */
+let openPastedTextEditor: ((path: string, name: string) => void) | null = null;
+/** 全局 Escape 管线点它来关窗（关窗即存）。由 PastedTextEditor 挂载时注册、卸载时清空。 */
+let requestClosePastedText: (() => void) | null = null;
+/** 模块级组件要弹 toast 时的通道（`showToast` 是组件内的函数，模块级拿不到）。 */
+let notifyToast: ((title: string, text?: string) => void) | null = null;
+function showToastEverywhere(title: string, text?: string) {
+  notifyToast?.(title, text);
 }
 
 function ImagePreview({ path, alt, onCopy }: { path: string; alt: string; onCopy?: () => void }) {
@@ -7909,7 +8051,10 @@ export default function App() {
   const enhanceLongFiredRef = useRef(false);
   /** 冷却时间戳：条件叠加时防止连弹（首次不受限，因为初值为 0）。 */
   const enhanceHintFiredAtRef = useRef(0);
-  const [files, setFiles] = useState<string[]>([]);
+  // 文件附件（09-18 改造）：**不再有独立状态** —— 文件只以 `[文件:path]` 占位符存在于
+  // 输入框文本里（与图片的 [图片:path] 同一套机制），需要时现算。
+  // 这样"输入框里看到的 chip"与"发送出去的附件"天然一致，不会出现状态与文本不同步。
+  const attachedFiles = useMemo(() => promptFilePaths(prompt), [prompt]);
   const [skillMenuOpen, setSkillMenuOpen] = useState(false);
   const [skillQuery, setSkillQuery] = useState("");
   const [selectedSkills, setSelectedSkills] = useState<{ name: string; description: string }[]>([]);
@@ -9075,6 +9220,8 @@ export default function App() {
   // 原先这里挂载即全量请求 SkillHub/插件市场，启动与每个搜索按键都会打远端接口
   const buildStamp = "20260831-1830";
   const [lightbox, setLightbox] = useState<{ path: string; alt: string } | null>(null);
+  /** 粘贴文本大窗口（预览 + 编辑），见 PastedTextEditor */
+  const [pastedText, setPastedText] = useState<{ path: string; name: string } | null>(null);
   const [systemEvents, setSystemEvents] = useState<SystemEvent[]>([]);
   // 本回合 hook 注入徽标（静默）：完成回复时展示在 footer 末尾
   const [hookPulse, setHookPulse] = useState<{ count: number; hooks: { name: string; label?: string; done: boolean }[]; at: number }>({ count: 0, hooks: [], at: 0 });
@@ -9961,15 +10108,31 @@ export default function App() {
     return () => ro.disconnect();
   }, []);
 
-  /** 生成内联图片 chip：删除→清 images；主体点击→预览；任何变更→DOM 序列化回流状态 */
-  const makeComposerChip = useCallback((path: string) => createInlineImageChip(
+  /** 生成内联附件 chip（图片 / 文件同款）：
+   *  删除→清对应状态；图片点主体→预览、文件点主体→打开文件；任何变更→DOM 序列化回流状态。
+   *  ⛔ 图片与文件共用这一个渲染器（用户要求"文件跟图片一样的展示"），别再分叉。 */
+  const makeComposerChip = useCallback((kind: "image" | "file", path: string) => createInlineAttachmentChip(
+    kind,
     path,
-    (target) => setImages((current) => current.filter((entry) => entry !== target)),
-    (target) => setLightbox({ path: target, alt: "待发送图片" }),
+    (target) => { if (kind === "image") setImages((current) => current.filter((entry) => entry !== target)); },
+    (target) => {
+      if (kind === "image") { setLightbox({ path: target, alt: "待发送图片" }); return; }
+      // 文件：**先问主进程"这是不是应用自己保存的粘贴文本"** —— 是就用可编辑的大窗口打开，
+      // 不是（用户自己的文件）则走普通文件预览。⛔ 不靠路径前缀猜：猜错会把用户自己的 .txt
+      // 当可编辑文件，一保存就改了他的文件。
+      void (async () => {
+        try {
+          const info = await window.codex.readPastedText(target);
+          if (info?.editable) { setPastedText({ path: target, name: basename(target) }); return; }
+        } catch { /* 判定失败就按普通文件处理 */ }
+        openFile(target);
+      })();
+    },
     () => syncComposerFromDom(),
   ), []);
 
-  /** 编辑框 DOM → 状态：序列化 prompt（images 跟随占位符，chip 被退格删除时同步收敛） */
+  /** 编辑框 DOM → 状态：序列化 prompt（images 跟随占位符，chip 被退格删除时同步收敛）。
+   *  文件不必镜像状态 —— 它只以 [文件:path] 占位符存在，需要时用 promptFilePaths 现算。 */
   function syncComposerFromDom() {
     const el = composerInputRef.current;
     if (!el) return;
@@ -11357,7 +11520,11 @@ const commandMatches = useMemo(() => {
   useEffect(() => { void window.codex.getUsername().then(setUsername).catch(() => undefined); }, []);
   useEffect(() => {
     openImageLightbox = (path: string, alt: string) => setLightbox({ path, alt });
-    return () => { openImageLightbox = null; };
+    // 粘贴文本 chip 的大窗口预览/编辑（与图片灯箱同款的模块级开关：chip 是原生 DOM，
+    // 拿不到 React 上下文）
+    openPastedTextEditor = (path: string, name: string) => setPastedText({ path, name });
+    notifyToast = (title: string, text?: string) => showToast(title, text);
+    return () => { openImageLightbox = null; openPastedTextEditor = null; notifyToast = null; };
   }, []);
   useEffect(() => {
     // 让模块级组件（InlineFileCards 缩略图等）能解析相对/裸路径 → 绝对路径
@@ -11478,6 +11645,9 @@ const commandMatches = useMemo(() => {
         () => { if (memoryPreview) { setMemoryPreview(null); return true; } return false; },
         () => { if (filePreview) { setFilePreview(null); return true; } return false; },
         () => { if (lightbox) { setLightbox(null); return true; } return false; },
+        // 粘贴文本大窗口：走统一管线（本组件自己也监听 Esc 会变成两条链各关一次）。
+        // 它需要"关窗前先保存"，所以回调走模块级 requestClosePastedText（组件内挂载时注册）。
+        () => { if (pastedText) { requestClosePastedText?.(); return true; } return false; },
         () => { if (modelEditor) { setModelEditor(null); return true; } return false; },
         () => { if (connectorEditorOpen) { setConnectorEditorOpen(false); return true; } return false; },
         () => { if (connectorTemplateModal) { setConnectorTemplateModal(null); return true; } return false; },
@@ -11513,7 +11683,7 @@ const commandMatches = useMemo(() => {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [showLogin, skillInstall, skillRemove, agentAsk, appConfirm, appPrompt, memoryPreview, searchPreview, filePreview, lightbox, modelEditor, connectorEditorOpen, connectorTemplateModal, commandEditor, subAgentEditorOpen, expertTeamEditorOpen, goalsOpen, memoryCenterOpen, memoryConfigOpen, infoModal, reviewReport, settingsOpen, shortcutsOpen, paletteOpen, skillMenuOpen, connectorMenuOpen, attachmentMenuOpen, contextOpen, switcherOpen, mobileNav, sidebarFlyout, autoFormVisible, taskMenuOpen, botManagerOpen, mobileRemoteOpen, ctxMenuOpen, accountMenuOpen, rightOpen]);
+  }, [showLogin, skillInstall, skillRemove, agentAsk, appConfirm, appPrompt, memoryPreview, searchPreview, filePreview, lightbox, pastedText, modelEditor, connectorEditorOpen, connectorTemplateModal, commandEditor, subAgentEditorOpen, expertTeamEditorOpen, goalsOpen, memoryCenterOpen, memoryConfigOpen, infoModal, reviewReport, settingsOpen, shortcutsOpen, paletteOpen, skillMenuOpen, connectorMenuOpen, attachmentMenuOpen, contextOpen, switcherOpen, mobileNav, sidebarFlyout, autoFormVisible, taskMenuOpen, botManagerOpen, mobileRemoteOpen, ctxMenuOpen, accountMenuOpen, rightOpen]);
   // （原 App 层每秒 nowTick 定时器已移除：无读取点，纯重渲染开销，见 nowTick 处注释。）
 
   async function refreshThreads() {
@@ -14539,7 +14709,8 @@ const commandMatches = useMemo(() => {
 
   async function chooseFiles() {
     const value = await window.codex.chooseFiles();
-    setFiles((current) => [...current, ...value]);
+    // 09-18：文件改为插进输入框的内联 chip（不再挂在输入框上方的 strip 里）
+    if (value?.length) insertComposerFiles(value);
   }
 
   async function refreshMarketSkills(category = skillHubCategory, query = skillHubSearch, page = marketPage) {
@@ -15137,20 +15308,20 @@ const commandMatches = useMemo(() => {
 
   /** WorkBuddy 式内联插入：在编辑框光标处直接插入图片 chip 节点（粘贴/选择图片共用），
    *  随后序列化回流 prompt/images——DOM 即时可见，不走重建（否则光标闪跳）。 */
-  function insertComposerImages(paths: string[]) {
+  /** 在光标处插入附件 chip（图片 / 文件同一套）。图片与文件只在 token 与图标上分叉。 */
+  function insertComposerAttachments(kind: "image" | "file", paths: string[]) {
     if (!paths.length) return;
-    // ⛔ 粘贴不再按模型模态硬拦（09-18 用户：「带图发送直接报错还不能对话，设计不合理」）：
-    // 图片照常进编辑框，发送时统一降级（见 sendMessage 里的「图片降级发送」）——
-    // 视觉插件已配置就自动转 describe_image 识图，没配置也只忽略图片、对话不中断。
     const el = composerInputRef.current;
     if (!el) {
-      setImages((current) => [...current, ...paths.filter((path) => !current.includes(path))]);
+      // 编辑器还没挂载（极早场景）：只回流状态，占位符文本照常带上
+      if (kind === "image") setImages((current) => [...current, ...paths.filter((path) => !current.includes(path))]);
+      else onPromptChange(`${prompt}${prompt && !prompt.endsWith(" ") ? " " : ""}${paths.map((path) => fileToken(path)).join(" ")}`);
       return;
     }
     el.focus();
     const selection = window.getSelection();
     for (const path of paths) {
-      const chip = makeComposerChip(path);
+      const chip = makeComposerChip(kind, path);
       const range = document.createRange();
       if (selection && selection.rangeCount > 0 && el.contains(selection.getRangeAt(0).startContainer)) {
         const current = selection.getRangeAt(0);
@@ -15166,6 +15337,32 @@ const commandMatches = useMemo(() => {
       selection?.addRange(range);
     }
     syncComposerFromDom();
+  }
+
+  function insertComposerImages(paths: string[]) {
+    // ⛔ 粘贴不再按模型模态硬拦（09-18 用户：「带图发送直接报错还不能对话，设计不合理」）：
+    // 图片照常进编辑框，发送时统一降级（见 sendMessage 里的「图片降级发送」）——
+    // 视觉插件已配置就自动转 describe_image 识图，没配置也只忽略图片、对话不中断。
+    insertComposerAttachments("image", paths);
+  }
+
+  /** 插入文件 chip（09-18：文件不再挂在输入框上方，改为跟图片一样的内联 chip）。 */
+  function insertComposerFiles(paths: string[]) {
+    insertComposerAttachments("file", paths);
+  }
+
+  /** 粘贴的纯文本太长 → 落盘成 .txt，再作为文件 chip 插入。
+   *  文本内容原样写进文件（不裁剪、不改写），模型侧照旧通过 [附件文件] 段拿到路径去读。 */
+  async function pasteLongText(text: string) {
+    if (!shouldSavePastedTextAsFile(text)) return;
+    try {
+      const path = await window.codex.savePastedText(text);
+      if (!path) return;
+      insertComposerFiles([path]);
+      setNotice(`长文本已存为文件：${basename(path)}（${text.length} 字）`);
+    } catch (error: any) {
+      setNotice(`长文本转文件失败：${error?.message ?? error}`);
+    }
   }
 
   /** 轻量 resume：excludeTurns:true 只取会话元数据（引擎不再全量水合历史），
@@ -16013,7 +16210,7 @@ const commandMatches = useMemo(() => {
     const value = (pendingText ?? prompt).trim();
     // 「#技能名」：与「/」命令面板同款——回车或点发送即引用该技能，不把 #查询词当正文发出去。
     // 未匹配到任何技能时按普通文本发送（用户可能真的想发以 # 开头的内容）。
-    if (pendingText == null && value.startsWith("#") && !value.includes(" ") && images.length === 0 && files.length === 0) {
+    if (pendingText == null && value.startsWith("#") && !value.includes(" ") && images.length === 0 && attachedFiles.length === 0) {
       const hit = matchSkillCatalog(mergedSkillCatalog, value.slice(1), 1)[0];
       if (hit) { addSkillReference(hit); return; }
     }
@@ -16025,7 +16222,7 @@ const commandMatches = useMemo(() => {
       }
       if (await runSlashCommand(value)) return;
     }
-    if (!value && images.length === 0 && files.length === 0) return;
+    if (!value && images.length === 0 && attachedFiles.length === 0) return;
     if (sendInFlightRef.current) return;
     // 用户手动发消息时取消等待中的 429 自动重试（手动发送优先，避免交错）
     if (rateLimitRetry || rateLimitTimerRef.current != null) cancelRateLimitRetry(true);
@@ -16058,6 +16255,10 @@ const commandMatches = useMemo(() => {
     // 内联图片：占位符从文本剥离，图片按占位符出现顺序发送；不在占位符里的遗留附件照旧追加
     let inlineImagePaths = promptImagePaths(messageText);
     if (inlineImagePaths.length) messageText = stripImageTokens(messageText);
+    // 内联文件：同样从正文剥离，改拼成既有的 [附件文件] 段（**模型侧协议不变** —— 引擎与
+    // 渲染层解析的一直是这一段；只把"用户看见的形态"从输入框上方的 strip 改成内联 chip）。
+    const inlineFilePaths = promptFilePaths(messageText);
+    if (inlineFilePaths.length) messageText = stripAttachmentTokens(messageText, ["file"]);
     // 图片照常发送（09-18 用户：「不管支不支持识图，就可以发正常的图片……就正常发图就行」）。
     // ⛔ 已移除「按模型 inputTypes 预判 → 把图吞掉换成一段啰嗦说明文字」的降级分支：
     //   ① 预判依据是本地模型元数据，模型其实支持视觉却漏勾「图片」时，图会被白白吞掉；
@@ -16082,9 +16283,9 @@ const commandMatches = useMemo(() => {
       const quotePrefix = quoteItem ? `> ${quoteItem.text.split("\n").join("\n> ")}\n\n` : "";
       const contextPrefix = contextItems.length ? `\n\n[用户指定的对话上下文]\n${contextItems.map((item, index) => `(${index + 1}) ${item.role}：${item.text}`).join("\n\n")}\n[上下文结束]\n` : "";
       const skillPrefix = selectedSkills.length ? `\n\n[本轮已引用技能]\n${selectedSkills.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
-      const filePrefix = files.length ? `\n\n[附件文件]\n${files.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
+      const filePrefix = inlineFilePaths.length ? `\n\n[附件文件]\n${inlineFilePaths.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
       const input = [
-        ...((messageText || threadReferenceBlocks || files.length || selectedSkills.length || contextItems.length || quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
+        ...((messageText || threadReferenceBlocks || inlineFilePaths.length || selectedSkills.length || contextItems.length || quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
         ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
         ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
       ];
@@ -16094,7 +16295,6 @@ const commandMatches = useMemo(() => {
         setQuoteItem(null);
         setContextItems([]);
         setSelectedSkills([]);
-        setFiles([]);
         setImages([]);
         void refreshQueue(thread.id);
       } catch (error: any) {
@@ -16171,7 +16371,7 @@ const commandMatches = useMemo(() => {
     const quotePrefix = quoteItem ? `> ${quoteItem.text.split("\n").join("\n> ")}\n\n` : "";
     const contextPrefix = contextItems.length ? `\n\n[用户指定的对话上下文]\n${contextItems.map((item, index) => `(${index + 1}) ${item.role}：${item.text}`).join("\n\n")}\n[上下文结束]\n` : "";
     const skillPrefix = selectedSkills.length ? `\n\n[本轮已引用技能]\n${selectedSkills.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
-    const filePrefix = files.length ? `\n\n[附件文件]\n${files.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
+    const filePrefix = inlineFilePaths.length ? `\n\n[附件文件]\n${inlineFilePaths.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
     // 专家/团队成员 defer 空会话的首条消息：发送前把用户文本包装成 SYSTEM TASK 段注入角色
     // 系统提示（渲染端按既有约定折叠为「需求已发起」卡片，气泡/引用/复制只暴露用户原文）。
     // 仅在「当前线程还没有任何回合」时生效——包装过一次后线程已非空，后续轮次走普通消息。
@@ -16198,7 +16398,7 @@ const commandMatches = useMemo(() => {
       sawRunningTurnRef.current = false;   // 新一轮发送：重置安全阀判据（见该 effect 的 09-17 注释）
       optimisticBaselineRef.current = { threadId: thread?.id ?? null, turnIds: new Set((thread?.turns ?? []).map((entry) => entry.id)) };
       setOptimisticInput({ id: optimisticId, type: "userMessage", content: [
-        ...((messageText || threadReferenceBlocks || files.length || quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
+        ...((messageText || threadReferenceBlocks || inlineFilePaths.length || quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
         ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
         ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
       ] });
@@ -16232,7 +16432,7 @@ const commandMatches = useMemo(() => {
     }
     dbg("send-memory", { ms: Math.round(performance.now() - memoryStartedAt) });
     const input = [
-      ...((messageText || threadReferenceBlocks || files.length || quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${memoryPrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
+      ...((messageText || threadReferenceBlocks || inlineFilePaths.length || quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${memoryPrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
       ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
       ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
     ];
@@ -16749,7 +16949,7 @@ const commandMatches = useMemo(() => {
       if (rows.length) sections.push({ group, rows });
     }
     if ((paletteTab === "all" || paletteTab === "tasks") && tasks.length) sections.push({ group: "任务", rows: tasks });
-    if ((paletteTab === "all" || paletteTab === "files") && files.length) sections.push({ group: "文件", rows: files });
+    if ((paletteTab === "all" || paletteTab === "files") && attachedFiles.length) sections.push({ group: "文件", rows: attachedFiles });
     return sections;
   }, [paletteQuery, paletteTab, threads, treeEntries, treePath, workspace]);
   const fileTruncated = filePreview?.kind === "text" && filePreview.content.length >= 200_000;
@@ -17141,6 +17341,7 @@ const commandMatches = useMemo(() => {
             </div>
           )}
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
+          {pastedText && <PastedTextEditor path={pastedText.path} name={pastedText.name} onClose={() => setPastedText(null)} />}
           {/* 设置页使用帮助（09-17 用户要求）：模型/插件/技能/MCP/专家团/语音/开发工具 + 设置总览 */}
           {/* 模型配置引导（09-17）：只在没有生效模型时出现，配好即不再弹 */}
           {showModelGuide && (
@@ -17508,8 +17709,9 @@ const commandMatches = useMemo(() => {
             </div>
           )}
           {thread && <QueuedMessageList entries={queue} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />}
-          {/* 图片以内联 chip 展示（composer-input-shell 内），此处只保留文件附件条 */}
-          {files.length > 0 && <div className="attachment-strip">{files.map((path) => <div className="file-attachment" key={path}><FileCode2 size={18} /><span>{basename(path)}</span><button title="移除" onClick={() => setFiles(files.filter((entry) => entry !== path))}><X size={13} /></button></div>)}</div>}
+          {/* 图片与文件都在输入框内联 chip 里展示（09-18 用户：「把文件展示不要在输入框上面了，
+              改成在输入框里面的 chip，跟图片一样的展示」）——原先这里那条 .attachment-strip
+              已删除，别再恢复。 */}
           {commandMatches.length > 0 && <div className="command-palette" role="listbox" aria-label="Codex 指令">{commandMatches.map(([name, description]) => <button type="button" role="option" key={name} onClick={() => { if (["rename", "review", "goal", "plan", "effort", "personality", "sandbox", "approval", "fork"].includes(name)) setPrompt(`/${name} `); else void runSlashCommand(`/${name}`); }}><code>/{name}</code><span className="command-desc">{description}</span></button>)}</div>}
           {/* 「#」技能面板：与「/」命令面板同款展示（等宽技能名 + 中文注释列），点击即引用该技能 */}
           {skillCommandMatches.length > 0 && <div className="command-palette skill-palette" role="listbox" aria-label="可用技能">{skillCommandMatches.map((skill) => <button type="button" role="option" key={skill.name} title={`${skill.name}：${skill.note}`} onClick={() => addSkillReference(skill)}><code>#{skill.name}</code><span className="command-desc">{skill.note}</span></button>)}</div>}
@@ -17592,12 +17794,12 @@ const commandMatches = useMemo(() => {
             <div className="composer-input-shell">
             {(planArmed || planRunning) && <button type="button" className={`mode-chip-float chip-plan ${planRunning ? "running" : ""}`} title={planRunning ? "计划模式 · 方案生成中（点击中断）" : "计划模式 · 下一条消息先出方案（点击退出）"} onClick={() => { if (planRunning) { void interrupt(); } else { planOnceRef.current = false; setPlanArmed(false); showToast("计划模式已退出", "下一条消息按普通模式执行"); } }}><ListChecks size={13} /></button>}
               {thread && goalText && goalStatus !== "complete" && <button type="button" className="mode-chip-float chip-goal" title="目标模式 · 自动推进中（点击停止）" onClick={stopGoalLoop}><Target size={13} /></button>}
-              <ComposerEditor value={prompt} placeholder="向 Codex 提问，使用 / 选择命令、@ 引用上下文、# 引用技能" editorRef={composerInputRef} domValueRef={composerDomValueRef} makeChip={makeComposerChip} onValueInput={onPromptChange} onKeyDown={(event) => { if (skillCommandMatches.length && event.key === "Enter") { event.preventDefault(); addSkillReference(skillCommandMatches[0]); return; } if (skillCommandMatches.length && event.key === "Escape") { event.preventDefault(); setPrompt(""); return; } if (contextOpen && event.key === "Enter" && availableContextItems[0]) { event.preventDefault(); addContextItem(availableContextItems[0]); return; } if (event.key === "Escape" && contextOpen) { event.preventDefault(); setContextOpen(false); return; } onComposerKeyDown(event); }} onBlur={() => setTimeout(() => setContextOpen(false), 120)} onPasteImage={(text) => void pasteImage(text)} onPasteFiles={(paths) => {
-                    const added = paths.filter((p) => !files.includes(p));
+              <ComposerEditor value={prompt} placeholder="向 Codex 提问，使用 / 选择命令、@ 引用上下文、# 引用技能" editorRef={composerInputRef} domValueRef={composerDomValueRef} makeChip={makeComposerChip} onValueInput={onPromptChange} onKeyDown={(event) => { if (skillCommandMatches.length && event.key === "Enter") { event.preventDefault(); addSkillReference(skillCommandMatches[0]); return; } if (skillCommandMatches.length && event.key === "Escape") { event.preventDefault(); setPrompt(""); return; } if (contextOpen && event.key === "Enter" && availableContextItems[0]) { event.preventDefault(); addContextItem(availableContextItems[0]); return; } if (event.key === "Escape" && contextOpen) { event.preventDefault(); setContextOpen(false); return; } onComposerKeyDown(event); }} onBlur={() => setTimeout(() => setContextOpen(false), 120)} onPasteImage={(text) => void pasteImage(text)}                   onPasteFiles={(paths) => {
+                    const added = paths.filter((p) => !attachedFiles.includes(p));
                     if (!added.length) return;
-                    setFiles((current) => [...new Set([...current, ...added])]);
+                    insertComposerFiles(added);
                     setNotice(`已粘贴 ${added.length} 个文件附件`);
-                  }} />
+                  }} onPasteLongText={(text) => void pasteLongText(text)} />
             </div>
             <div className="composer-actions">
               <div className="composer-left">
@@ -17635,7 +17837,7 @@ const commandMatches = useMemo(() => {
                     query={threadFileQuery}
                     onQuery={setThreadFileQuery}
                     candidates={threadFileCandidates}
-                    onPick={(path) => { setFiles((current) => current.includes(path) ? current : [...current, path]); setAttachmentMenuOpen(false); setAttachSubmenu("none"); setNotice(`已引用文件：${basename(path)}`); }}
+                    onPick={(path) => { if (!attachedFiles.includes(path)) insertComposerFiles([path]); setAttachmentMenuOpen(false); setAttachSubmenu("none"); setNotice(`已引用文件：${basename(path)}`); }}
                     onClose={() => { setAttachmentMenuOpen(false); setAttachSubmenu("none"); }}
                   />
                 </div>}
@@ -17768,7 +17970,7 @@ const commandMatches = useMemo(() => {
                     - 运行中输入了新内容：同一个按钮平滑过渡成发送图标，点击加入排队
                     - 排队发送后输入框清空：同一个按钮自动过渡回暂停图标 */}
                 {(() => {
-                  const hasDraft = Boolean(prompt.trim() || quoteItem || images.length || files.length);
+                  const hasDraft = Boolean(prompt.trim() || quoteItem || images.length || attachedFiles.length);
                   const runningCanQueue = activeThreadRunning && hasDraft;
                   const showPause = activeThreadRunning && !hasDraft;
                   return (
