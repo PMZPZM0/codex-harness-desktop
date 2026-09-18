@@ -421,6 +421,7 @@ import { useFilePreview } from "./hooks/useFilePreview";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "./lib/turn-fold";
 import { planCompletedFold } from "./lib/turn-fold-plan.mjs";
 import { visibleTurnWindow, mergeTurnListsById } from "./lib/turn-order.mjs";
+import { describeTurnStop, turnHeadline } from "./lib/turn-stop-reason.mjs";
 import { WidgetCard } from "./components/GenerativeWidget";
 import { hasWidgetFence, extractStreamingWidget, type ShowWidgetData } from "./lib/generative-widget";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "./lib/user-refs";
@@ -3466,7 +3467,14 @@ function TurnFoldStream({ items, turn, running, fallbackWindow, waitingForApprov
   //      运行状态展示，不再是一坨无结构的正文堆（旧版把正文+工具全塞进一个巨型已完成组）；
   //   2. 不播 autoFold：历史加载保持收起；刚完成的组在流式期已收起，无需重播。
   const duration = turn.durationMs ? formatDuration(turn.durationMs) : null;
-  const completedTitle = turn.error ? "处理出错" : duration ? `耗时 ${duration}` : "已处理";
+  // ⛔ 回合结束时必须说清「为什么结束」（09-18 用户实测「跑长任务老是中途自动停止」，
+  //   界面只有「处理出错」四个字，用户既不知道原因也不知道能不能接着跑）：
+  //   引擎把原因写在 `turn.error`（`codexErrorInfo` 是分类枚举：contextWindowExceeded /
+  //   sandboxError / rateLimitExceeded …）与 `status === "interrupted"`（真机实测
+  //   `{status:"interrupted", error:null}` —— 旧实现走「耗时 Xs」分支，完全看不出被中断）上。
+  //   分类标签进标题，完整原因（含处置建议）走下面的提示条 + 悬停。
+  const stopReason = describeTurnStop(turn);
+  const completedTitle = turnHeadline(turn, duration);
   // 完成事件并不总会给 agentMessage 带稳定 id（部分上游只在流式事件里有 id，
   // 最终快照会缺失或更换）。不能因此退回旧分段展示，否则思考和中间正文会全部
   // 暴露在“耗时”折叠外。优先匹配明确 id，匹配不到就以最后一条有正文的消息为总结。
@@ -5997,10 +6005,11 @@ function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval,
         : true,
   );
   const stoppedWithoutReply = Boolean(interruptedAt && userItems.length > 0 && !hasContent);
+  // 结束原因（纯函数，见 src/lib/turn-stop-reason.mjs）：running/completed 时 label 为空串
+  const stopReason = describeTurnStop(turn);
   const statusLabel = running
     ? (turn.items.some((item) => item.type === "reasoning" && (item.status === "inProgress" || item.status === "running" || (!item.status && !item.durationMs))) ? "思考中" : "生成中")
-    : turn.error ? "出错"
-    : turn.durationMs ? `已用 ${formatDuration(turn.durationMs)}` : "已完成";
+    : stopReason.label || (turn.durationMs ? `已用 ${formatDuration(turn.durationMs)}` : "已完成");
   const hookBadge = hooks && hooks.length > 0 ? <HookBadge hooks={hooks} /> : undefined;
   return (
     <div className={`turn-group ${running ? "running" : turn.error ? "error" : "completed"}`} id={`turn-${turn.id}`} data-current-turn={isLastTurn ? "true" : undefined}>
@@ -6037,6 +6046,19 @@ function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval,
         <div className="turn-card-body">
           <div className="codex-turn">
           {stoppedWithoutReply && <div className="interrupted-turn"><CircleStop size={15} /><div><strong>你在 {elapsedSeconds ?? 0} 秒后停止了</strong><span>Codex 尚未开始回复，因此没有生成内容。</span></div></div>}
+          {/* ⛔ 非正常结束的回合必须说清「为什么停」（09-18 用户实测「跑长任务老是中途自动停止」）：
+              旧实现只显示「处理出错」四个字，用户既不知道是上下文超限、沙箱拒绝还是被中断，
+              也不知道能不能接着跑。这里把引擎的分类（codexErrorInfo）与处置建议摆到明面上，
+              完整原文走 title 悬停。与上面 stoppedWithoutReply 互斥（那条已说明停止原因）。 */}
+          {!running && !stoppedWithoutReply && stopReason.label && (
+            <div className={`turn-stop-notice stop-${stopReason.kind}`} role="status" title={stopReason.detail}>
+              <AlertTriangle size={15} />
+              <div>
+                <strong>{turn.durationMs ? `${stopReason.label} · 耗时 ${formatDuration(turn.durationMs)}` : stopReason.label}</strong>
+                {stopReason.detail && <span>{stopReason.detail.split("\n")[0]}</span>}
+              </div>
+            </div>
+          )}
           {/* inner 永远不渲染 finalAgent 的 footer（避免 running 时每个新 body 短暂成为 finalAgent 挂按钮 + 避免与外层 2129 行双排）。外层 turnFinished 决定最终是否独占渲染一份。CompletedChanges 仍需 completedTask（聊天回合没文件改动可显）。 */}
           <TurnFoldStream items={responseItems} turn={turn} running={running} fallbackWindow={fallbackWindow} waitingForApproval={waitingForApproval} handlers={handlers} finalAgentId={finalAgent?.id} usage={usage} tokenUsage={tokenUsage} />
           {completedTask && <CompletedChanges turn={turn} />}

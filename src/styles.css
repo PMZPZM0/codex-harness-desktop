@@ -1770,6 +1770,46 @@ button.brand-mark.sidebar-toggle:hover {
   font-size: 11.5px;
   line-height: 1.45;
 }
+/* 回合「为什么停」提示条（09-18 用户实测「跑长任务老是中途自动停止」）：
+   旧实现只把「处理出错」四个字塞进折叠头，用户看不出是上下文超限 / 沙箱拒绝 / 被中断。
+   这里把引擎的分类 + 处置建议摆到明面（完整原文在 title 悬停里）。 */
+.turn-stop-notice {
+  border: 1px solid var(--line-soft);
+  border-left-width: 3px;
+  border-left-color: var(--red);
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  width: min(100%, 560px);
+  color: var(--faint);
+  border-radius: 10px;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 2px 0 10px;
+  padding: 10px 13px;
+  display: flex;
+}
+.turn-stop-notice > svg {
+  color: var(--muted);
+  flex: none;
+  margin-top: 2px;
+}
+.turn-stop-notice > div {
+  flex-direction: column;
+  gap: 3px;
+  display: flex;
+}
+.turn-stop-notice strong {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.turn-stop-notice span {
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+/* 被中断（用户/客户端中止）不是错误：用中性灰，别吓人 */
+.turn-stop-notice.stop-interrupted {
+  border-left-color: var(--muted);
+}
 @keyframes turn-dot-pulse {
   0%,
   to {
