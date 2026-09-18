@@ -1770,6 +1770,42 @@ button.brand-mark.sidebar-toggle:hover {
   font-size: 11.5px;
   line-height: 1.45;
 }
+/* 「用户已停止」标记（09-18 用户：「在最新内容后面加一个用户已停止」）：
+   位置在**最新内容之后**、操作栏之前；只陈述"停了 + 内容没丢可继续"两件事，
+   耗时由上方过程组标题负责，避免同屏两处说同一个数。 */
+.turn-user-stopped {
+  border: 1px solid var(--line-soft);
+  border-left-width: 3px;
+  border-left-color: var(--muted);
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  width: min(100%, 560px);
+  color: var(--faint);
+  border-radius: 10px;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 8px 0 10px;
+  padding: 9px 13px;
+  display: flex;
+}
+.turn-user-stopped > svg {
+  color: var(--muted);
+  flex: none;
+  margin-top: 2px;
+}
+.turn-user-stopped > div {
+  flex-direction: column;
+  gap: 3px;
+  display: flex;
+}
+.turn-user-stopped strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.turn-user-stopped span {
+  font-size: 11.5px;
+  line-height: 1.45;
+}
 /* 回合「为什么停」提示条（09-18 用户实测「跑长任务老是中途自动停止」）：
    旧实现只把「处理出错」四个字塞进折叠头，用户看不出是上下文超限 / 沙箱拒绝 / 被中断。
    这里把引擎的分类 + 处置建议摆到明面（完整原文在 title 悬停里）。 */

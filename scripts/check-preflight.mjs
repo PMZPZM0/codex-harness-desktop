@@ -5209,6 +5209,107 @@ w.postMessage({id:1,op:"list",root});
   (!/return \(\) => \{[^}]*RUN_CLOCK\.forget/.test(appCode49) ? ok : fail)("【49】不是「卸载时清理」（切会话正要靠这条记忆跨过卸载）");
 }
 
+// ── 50. 附件段解析：文件名含方括号不得泄漏协议标记（09-18 用户截图实证） ──
+{
+  // user-refs.ts 是 TS，预检（纯 node ESM）不能直接 import ⇒ **从源码里取出真实正则**再跑。
+  // 这样测的是仓库里那个正则本身，而不是抄一份到断言里（抄一份就会漂移，且抄错也照样绿）。
+  const refsSrc = readFileSync(join(ROOT, "src", "lib", "user-refs.ts"), "utf8");
+  const grabRe = (name) => {
+    const m = refsSrc.match(new RegExp(`const ${name} = clean\\.match\\((/.*?/)\\);`));
+    if (!m) return null;
+    const body = m[1];
+    const lastSlash = body.lastIndexOf("/");
+    try {
+      return new RegExp(body.slice(1, lastSlash), body.slice(lastSlash + 1));
+    } catch {
+      return null;
+    }
+  };
+  const fileSeg = grabRe("fileMatch");
+  const skillSeg = grabRe("skillMatch");
+  const ctxSeg = grabRe("ctxMatch");
+  (fileSeg && skillSeg && ctxSeg ? ok : fail)("【50】能从 user-refs.ts 取出三处段解析正则（取不到说明写法变了，下面的断言会失效）");
+
+  if (fileSeg) {
+    const parseAttach = (text) => {
+      const files = [];
+      const m = text.match(fileSeg);
+      let clean = text;
+      if (m) {
+        for (const line of m[1].split(/\r?\n/)) {
+          const mm = line.match(/^-\s+(.+)$/);
+          if (mm) files.push(mm[1].trim());
+        }
+        clean = text.replace(m[0], "");
+      }
+      return { files, clean: clean.replace(/\n{3,}/g, "\n\n").trim() };
+    };
+    const leak = (raw) => {
+      const r = parseAttach(raw);
+      return { leaked: /\[附件结束\]|\[附件文件\]/.test(r.clean), ...r };
+    };
+
+    // ⛔ 用户截图的原始场景：文件名含方括号 → 旧正则在行中间就把段截断，
+    //    残留 ".png" 与 "[附件结束]" 被当成用户正文显示。
+    const b = leak("看下图片\n\n[附件文件]\n- D:\\素材\\_a_曦_2026年9月6日_初评图片_1.jpg\n- D:\\素材\\22 钛光金 [最终版].png\n[附件结束]\n");
+    (b.leaked ? fail : ok)("【50】文件名含方括号不再泄漏协议标记（用户截图场景）");
+    (b.files.length === 2 && b.files[1] === "D:\\素材\\22 钛光金 [最终版].png" ? ok : fail)(`【50】含方括号的文件名完整解析（实得 ${b.files.length} 个：${b.files.join(" | ")}）`);
+
+    const c = leak("看下图片\n\n[附件文件]\n- D:\\素材\\图[1].jpg\n- D:\\素材\\b.png\n[附件结束]\n");
+    (c.leaked || c.files.length !== 2 ? fail : ok)("【50】路径里的方括号目录（素材[1]）同样不破坏解析");
+
+    // ⛔ CRLF 回归防线：本轮把结束标记改成「整行」后，\n 写死会让 CRLF 消息里最后一行的 \r
+    //    留在行尾 → 行正则失配 → **文件数变 0**（我第一版就是这样，靠这条断言才没漏出去）。
+    const d = leak("看下图片\r\n\r\n[附件文件]\r\n- D:\\素材\\22 钛光金 [最终版].png\r\n[附件结束]\r\n");
+    (!d.leaked && d.files.length === 1 ? ok : fail)(`【50】CRLF 行尾的消息也能解析出文件（实得 ${d.files.length} 个）`);
+
+    const e = leak("看下图片\n\n[附件文件]\n- D:\\素材\\a.png\n");
+    (!e.leaked && e.files.length === 1 ? ok : fail)("【50】没有结束标记的残缺段仍能解析出已列出的文件");
+
+    const f = leak("看下图片\n\n[附件文件]\n- D:\\素材\\b [2].png\n[附件结束]\n\n后面这句是我的正文");
+    (!f.leaked && f.clean.includes("后面这句是我的正文") ? ok : fail)("【50】段后的用户正文完整保留（不误吞）");
+  }
+
+  // 结构守卫：三处都必须要求「整行」结束标记（`\r?\n\[`），不许再有裸 `\[[^\]]+\]` 分支
+  // ⛔ 取「整行」时记得带上行尾的 `;`：写成 `.*$\)` 会因为末尾还剩一个 `;` 而匹配失败
+  //    （`.*` 回溯到 `)` 后 `$` 不是行尾）→ 列表恒空 → 后两条断言假红（本轮实测）。
+  const segRegExes = (refsSrc.match(/^.*const (?:fileMatch|skillMatch|ctxMatch) = clean\.match\(\/.*$/gm) || []);
+  (segRegExes.length === 3 ? ok : fail)(`【50】三处段解析正则都在（实得 ${segRegExes.length} 处）`);
+  const looseEnd = segRegExes.filter((l) => /\(\?:\\\[\[\^\\\]\]\+\\\]\|\$\)/.test(l)).length;
+  (looseEnd === 0 ? ok : fail)(`【50】三处段解析都不再用「行中任意方括号」当结束标记（实得 ${looseEnd} 处旧写法）`);
+  const lineAnchored = segRegExes.filter((l) => /\(\?:\\r\?\\n\\\[/.test(l)).length;
+  (lineAnchored === 3 ? ok : fail)(`【50】三处结束标记都要求整行 + 兼容 CRLF（实得 ${lineAnchored}/3）`);
+
+  // ── 停止后：过程保持展开 + 标记落在最新内容之后 ──
+  const appSrc50 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const appCode50 = codeOnly(appSrc50);
+  const css50 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+  (/\{userStopped && \(/.test(appCode50) ? ok : fail)("【50】有「用户已停止」标记");
+  // 判据：interruptedAt 只由本机 interrupt() 写入，用它区分"用户点的停止"
+  (/const userStopped = Boolean\(interruptedAt\)/.test(appCode50) ? ok : fail)("【50】用 interruptedAt 区分「用户点的停止」（语音/手机端/引擎中止不算）");
+  (/!running && !stoppedWithoutReply && !userStopped && stopReason\.label/.test(appCode50) ? ok : fail)("【50】用户点的停止不再同时弹顶部通用中断提示（避免同屏两处说停止）");
+  (/keepProcessOpen=\{userStopped\}/.test(appCode50) ? ok : fail)("【50】停止的回合把过程组摊开（keepProcessOpen 接上了）");
+  // ⛔ 必须数「≥2 处」：TurnFoldStream 有两条完成态渲染分支（planCompletedFold 分段 / 通用 segments），
+  //    只改一处的话另一条路径照样折着 —— 而"只查存在一处"的写法对这种情况恒绿（反证时实测到）。
+  {
+    const n = (appCode50.match(/defaultOpen=\{keepProcessOpen\}/g) || []).length;
+    (n >= 2 ? ok : fail)(`【50】两条完成态渲染分支都用了 defaultOpen（实得 ${n} 处，需 ≥2）`);
+  }
+  (/\{stoppedWithoutReply &&/.test(appCode50) ? ok : fail)("【50】「未开始回复就停止」的既有提示保留（零产出场景仍要说清）");
+  // ⛔ 防重复文案：标记里不许再报耗时（过程组标题已经写了「已停止 · 耗时 X」）
+  {
+    const at = appCode50.indexOf("{userStopped && (");
+    const marker = at >= 0 ? appCode50.slice(at, appCode50.indexOf("{turnFinished && finalAgent", at)) : "";
+    (!/elapsedSeconds|已处理\s*\$\{|耗时/.test(marker) ? ok : fail)("【50】停止标记不重复耗时（耗时由过程组标题负责，同一屏只说一次）");
+    // 顺序：内容 → 标记 → 操作栏
+    const foldIdx = appCode50.indexOf("<TurnFoldStream items={responseItems}");
+    const noticeIdx = appCode50.indexOf("{userStopped && (");
+    const footerIdx = appCode50.indexOf("{turnFinished && finalAgent");
+    (foldIdx > 0 && noticeIdx > foldIdx && footerIdx > noticeIdx ? ok : fail)("【50】标记落在「最新内容之后、操作栏之前」（用户明确要求的位置）");
+  }
+  (/\.turn-user-stopped \{[\s\S]{0,400}?display: flex;/.test(css50) ? ok : fail)("【50】停止标记有样式（不是裸文本）");
+}
+
 console.log("");
 console.log(C.gray(`已执行断言数：${checks}`));
 if (hardFails === 0) {

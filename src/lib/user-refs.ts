@@ -50,7 +50,11 @@ export function parseUserRefs(text: string): ParsedUserRefs {
     return "";
   });
   // 附件文件段：[附件文件]\n- path\n...\n[附件结束]
-  const fileMatch = clean.match(/\[附件文件\]\s*\n([\s\S]*?)(?:\[附件结束\]|\[[^\]]+\]|$)/);
+  // ⛔ 段结束标记必须**整行**（正则里写了 \n）——否则路径/描述里含方括号就会在**行中间**
+  //    提前截断：真机实测文件名「22 钛光金 [最终版].png」会把段切断在「[最终版]」处，
+  //    于是残留的 ".png" 与 "[附件结束]" 被当成用户正文显示在气泡里（用户 09-18 截图实证）。
+  //    附件列表每行都以 "- " 开头，真正的结束标记必然独占一行，所以要求 \n 既能修 bug 又不误伤。
+  const fileMatch = clean.match(/\[附件文件\]\s*\n([\s\S]*?)(?:\r?\n\[附件结束\]|\r?\n\[[^\]]+\]|$)/);
   if (fileMatch) {
     for (const line of fileMatch[1].split(/\r?\n/)) {
       const m = line.match(/^-\s+(.+)$/);
@@ -59,7 +63,7 @@ export function parseUserRefs(text: string): ParsedUserRefs {
     clean = clean.replace(fileMatch[0], "");
   }
   // 技能段：[本轮已引用技能]\n- name：desc\n...\n[请按上述技能工作流执行]
-  const skillMatch = clean.match(/\[本轮已引用技能\]\s*\n([\s\S]*?)(?:\[请按上述技能工作流执行\]|\[[^\]]+\]|$)/);
+  const skillMatch = clean.match(/\[本轮已引用技能\]\s*\n([\s\S]*?)(?:\r?\n\[请按上述技能工作流执行\]|\r?\n\[[^\]]+\]|$)/);
   if (skillMatch) {
     for (const line of skillMatch[1].split(/\r?\n/)) {
       const m = line.match(/^-\s+(.+)$/);
@@ -71,7 +75,7 @@ export function parseUserRefs(text: string): ParsedUserRefs {
     clean = clean.replace(skillMatch[0], "");
   }
   // 上下文段：[用户指定的对话上下文]\n(1) role：text\n...\n[上下文结束]
-  const ctxMatch = clean.match(/\[用户指定的对话上下文\]\s*\n([\s\S]*?)(?:\[上下文结束\]|\[[^\]]+\]|$)/);
+  const ctxMatch = clean.match(/\[用户指定的对话上下文\]\s*\n([\s\S]*?)(?:\r?\n\[上下文结束\]|\r?\n\[[^\]]+\]|$)/);
   if (ctxMatch) {
     for (const entry of ctxMatch[1].split(/\n\n+/)) {
       const m = entry.match(/^\((\d+)\)\s*(.+?)[：:]\s*([\s\S]*)$/);
