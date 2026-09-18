@@ -4628,6 +4628,59 @@ w.postMessage({id:1,op:"list",root});
       ? ok(`【32】src/lib 下 ${mjsFiles.length} 个 .mjs 均为纯 JS（无 TS 语法，类型在 .d.mts）`)
       : fail(`【32】这些 .mjs 含 TS 语法会直接构建失败：${offenders.join("、")} —— 类型请移到同目录 .d.mts`);
   }
+
+  // ── ⑲【43】永久删除必须连磁盘 rollout 一起清（09-18 用户实测「我删除了，重启又恢复了」）──
+  //    根因：引擎的 `thread/delete` 只把线程从**索引**里摘掉，磁盘上的 rollout 文件原样留着；
+  //    而 thread/list 的 rollout 兜底扫描把「索引里没有、磁盘上有」的会话当权威源合回侧栏
+  //    ⇒ 删掉的会话重启后又冒出来。用户机实测：索引 11 条 / 磁盘 18 个，其中 12 条是
+  //    「已从索引删除但文件还在」，侧栏那 7 个分组名与它们的 cwd 一一对应。
+  //    三层守卫：①行为（墓碑真排除，且**不传时不排除**）②接线（删除路径 / 列表 / 启动）③打包（内联产物）。
+  {
+    console.log(C.bold("\n【43】永久删除的磁盘收尾（删了就不能重启复活）"));
+    const req = createRequire(import.meta.url);
+    const st = req(join(ROOT, "dist-electron", "session-tools.js"));
+    const pool = req(join(ROOT, "dist-electron", "rollout-pool.js"));
+    const mainTs = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+    const workerSrc = readFileSync(join(ROOT, "electron", "rollout-worker.cjs"), "utf8");
+    const workerGen = readFileSync(join(ROOT, "electron", "rollout-worker-source.ts"), "utf8");
+
+    // ① 行为：墓碑（小写 id）必须把索引侧与兜底侧的同名会话都排掉
+    const indexed = [{ id: "KEEP-1", name: "留着", updatedAt: 2 }, { id: "GONE-1", name: "删掉了", updatedAt: 3 }];
+    const fallback = [{ id: "GONE-1", name: "删掉了（磁盘独有）", updatedAt: 4 }, { id: "GHOST-2", name: "兜底留着", updatedAt: 1 }];
+    const withTomb = st.mergeThreadList(indexed, fallback, false, 100, new Set(["gone-1"]));
+    (!withTomb.some((entry) => String(entry.id).toLowerCase() === "gone-1") ? ok : fail)("【43】mergeThreadList：墓碑把已删会话从合并结果里排掉（索引与兜底两侧同 id）");
+    (withTomb.length === 2 ? ok : fail)(`【43】mergeThreadList：其它会话不受影响（期望 2 条，实得 ${withTomb.length}）`);
+    const withoutTomb = st.mergeThreadList(indexed, fallback, false, 100);
+    (withoutTomb.length === 3 ? ok : fail)(`【43】mergeThreadList：不传墓碑时一条都不排（防实现退化成「无条件过滤」的假绿，期望 3 条，实得 ${withoutTomb.length}）`);
+    const caseFold = st.mergeThreadList([{ id: "AbC-9", updatedAt: 1 }], [], false, 100, new Set(["abc-9"]));
+    (caseFold.length === 0 ? ok : fail)("【43】mergeThreadList：墓碑匹配大小写不敏感（引擎 id 大小写未必与墓碑一致）");
+
+    // ② 接线：删除路径（请求 + 引擎事件）、列表合并、启动载入，缺一不可
+    (mainTs.includes('const purgeTarget = method === "thread/delete"') ? ok : fail)("【43】thread/delete 请求路径取出待清理的线程 id");
+    (mainTs.includes("if (purgeTarget) await purgeDeletedThread(purgeTarget);") ? ok : fail)("【43】thread/delete 请求路径真的清了磁盘 rollout 并记墓碑");
+    (mainTs.includes('if (event.method === "thread/deleted") void purgeDeletedThread(goneId)') ? ok : fail)("【43】引擎侧 thread/deleted 事件路径也走清理（不经渲染层的删除）");
+    (mainTs.includes("mergeThreadList(indexed, fallback, archiveFilter, Number((params as any)?.limit ?? 100), deletedThreadIds)") ? ok : fail)("【43】thread/list 合并时传入墓碑集合（否则兜底扫描依旧把删掉的会话捞回来）");
+    (mainTs.includes("await loadDeletedThreads();") ? ok : fail)("【43】启动时先载入墓碑（靠懒加载会让首屏出现幽灵会话）");
+    (mainTs.includes("deletedThreadIds.has(String(entry.id") ? ok : fail)("【43】手机端会话列表同样按墓碑过滤（那条链路直接打引擎、不过合并逻辑）");
+
+    // ③ 打包：worker 的清理能力必须进内联产物（生成物落后 = 打包后清理是空操作）
+    (workerSrc.includes('msg.op === "purge"') && workerSrc.includes("function purgeRolloutFiles(") ? ok : fail)("【43】worker 源码有 purge op 及其实现");
+    (workerGen.includes('msg.op === "purge"') && workerGen.includes("purgeRolloutFiles") ? ok : fail)("【43】内联产物 rollout-worker-source.ts 含 purge（落后于 .cjs 就重新生成）");
+    (typeof pool.purgeRolloutFilesAsync === "function" ? ok : fail)("【43】rollout-pool 暴露 purgeRolloutFilesAsync");
+
+    // ④ 语义：引擎对「索引里已无这条线程」的删除会报错（failed to read session metadata…），
+    //    而这类会话正是用户二次删除的幽灵 —— 本地残留已清、墓碑已记，必须按成功返回，
+    //    否则渲染层会弹「删除任务失败」，用户以为没删掉又会反复点。
+    //    断言钉住「条件 + 匹配串」两部分，只查标识符会被 `if (false)` 架空。
+    (/if \(purgeTarget && \/failed to delete thread\|failed to read session metadata\|no rollout found/.test(mainTs) ? ok : fail)("【43】幽灵会话的删除报错按成功处理（不然用户二次删除会看到「删除失败」）");
+    (mainTs.includes("localCleanupOnly") ? ok : fail)("【43】成功返回带上 localCleanupOnly 标记（便于将来排查「日志说成功、引擎侧没删」）");
+
+    // ⑤ 墓碑不能是**单向死锁**（code review 抓到的真缺口）：导入会话备份时
+    //    `applySessionsBackup` 原样复用备份里的 thread id，不清墓碑的话
+    //    「删除 → 再从备份导入」之后这条会话永远不显示，用户也查不出原因。
+    (/async function forgetDeletedThreads\(ids: string\[\]\)/.test(mainTs) && mainTs.includes("deletedThreadIds.delete(id)") ? ok : fail)("【43】墓碑可被摘除（forgetDeletedThreads 实现存在）");
+    (mainTs.includes("await forgetDeletedThreads(summary.threads.filter((entry: { status: string }) => entry.status === \"ok\")") ? ok : fail)("【43】导入备份写入成功即摘墓碑（只清 status===\"ok\"，duplicate/conflict 保留墓碑）");
+  }
 }
 
 console.log("");

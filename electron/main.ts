@@ -67,7 +67,7 @@ import { ensureBuiltinSkills, ensureExpertSkillsMarketplace, expertSkillsSourceD
 import { ensurePonytailPlugin } from "./ponytail-plugin";
 import { getPonytailMode, setPonytailMode } from "./ponytail-mode";
 import { markMissingRollouts, mergeThreadList } from "./session-tools";
-import { enrichThreadWithRolloutToolsAsync, listRolloutThreadsAsync } from "./rollout-pool";
+import { enrichThreadWithRolloutToolsAsync, listRolloutThreadsAsync, purgeRolloutFilesAsync } from "./rollout-pool";
 /** 诊断计数（09-12 多会话性能）：thread/list 走了几次「rollout 全量兜底扫描」。
     旧实现每次必扫（渲染层每个回合结束都打一发 → O(N²)）；现在只在引擎索引为空时扫。
     e2e 场景据此断言「跑 10 个会话时扫描次数为 0」，避免优化被悄悄改回去。 */
@@ -508,6 +508,91 @@ ipcMain.handle("thread-runtime:release-dispatch", async (_event, threadId: strin
 // 该会话是否属于「不允许开调度」的受保护会话（专家 / 专家团 / 被调度的临时会话）——
 // 渲染层据此**禁用**调度按钮；真正作准的是下面 patch 里的硬闸。
 ipcMain.handle("agents:thread-role", async (_event, threadId: string) => await restrictedThreadRole(String(threadId ?? "")));
+
+// ── 永久删除会话的**本地收尾**（09-18 用户实测：「我删除了，重启又恢复了」）────────────
+// ⛔ 根因：引擎的 `thread/delete` 只把线程从**索引**里摘掉，磁盘上的 rollout 文件原样留着；
+//   而 thread/list 带 rollout 兜底扫描（见下面的 thread/list 分支），它把「索引里没有、
+//   磁盘上有」的会话当权威源合回侧栏 ⇒ 删掉的会话重启后又冒出来。
+//   用户机实测：state 库 11 条、磁盘 18 个 rollout，其中 12 条「已从索引删除但文件还在」，
+//   侧栏那 7 个分组名与它们的 cwd 一一对应（D:\2 四条、D:\Codex Harness Desktop 五条…）。
+//
+//   收尾两件事，缺一不可：
+//     ① 删掉磁盘 rollout —— 真正的清理，不删就永远会复活；
+//     ② 记「墓碑」—— 文件被占用（正跑的会话）删不掉时的保险，也是唯一能压住兜底扫描的判据。
+//   落点刻意放在**两处**：
+//     · 请求路径（codex:request 里 method === "thread/delete"）覆盖渲染层全部删除入口
+//       （deleteThreadCore / 删整个项目 / 清空对话 / 级联删专家团成员…）；
+//     · 引擎事件（thread/deleted）覆盖不经渲染层的删除。
+//   ⛔ 别把这份收尾写到渲染层去：删除入口有 6+ 处，漏一处就是这个 bug 复发（本项目的旧坑形态）。
+const deletedThreadsFile = path.join(app.getPath("userData"), "deleted-threads.json");
+/** 墓碑上限：一条 36 字节，3000 条约 120KB —— 够用，且不能让文件无限长大 */
+const DELETED_THREADS_LIMIT = 3000;
+const deletedThreadIds = new Set<string>();   // 小写 id → thread/list 合并时按它排除
+let deletedThreadOrder: string[] = [];        // 与 Set 同步，用于 FIFO 截断
+let deletedThreadsLoaded = false;
+
+async function loadDeletedThreads() {
+  if (deletedThreadsLoaded) return;
+  deletedThreadsLoaded = true;
+  try {
+    const raw = JSON.parse(await fs.readFile(deletedThreadsFile, "utf8"));
+    const list = Array.isArray(raw) ? raw : [];
+    deletedThreadOrder = list.map((value) => String(value || "").toLowerCase()).filter(Boolean).slice(-DELETED_THREADS_LIMIT);
+    for (const value of deletedThreadOrder) deletedThreadIds.add(value);
+  } catch { /* 首次运行没有这个文件；损坏也按空处理（只是少了保险，不阻塞启动） */ }
+}
+
+async function rememberDeletedThread(threadId: string) {
+  const id = String(threadId || "").trim().toLowerCase();
+  if (!id) return;
+  await loadDeletedThreads();
+  if (!deletedThreadIds.has(id)) {
+    deletedThreadIds.add(id);
+    deletedThreadOrder.push(id);
+    if (deletedThreadOrder.length > DELETED_THREADS_LIMIT) {
+      const dropped = deletedThreadOrder.splice(0, deletedThreadOrder.length - DELETED_THREADS_LIMIT);
+      for (const value of dropped) deletedThreadIds.delete(value);
+    }
+  }
+  await fs.writeFile(deletedThreadsFile, JSON.stringify(deletedThreadOrder, null, 2), "utf8").catch(() => undefined);
+}
+
+/** 反向操作：把 id 从墓碑里摘掉。
+ *  ⛔ 只有「这条会话被重新写回磁盘」时才允许调用 —— 目前唯一入口是**导入会话备份**：
+ *  `applySessionsBackup` 会**原样复用备份里的 thread id**（canonical 文件名就是 `rollout-<时间戳>-<id>.jsonl`），
+ *  不摘墓碑的话「删除 → 再从备份导入」之后这条会话永远不会显示，用户也没有任何入口能发现原因。
+ *  只清「真正写入成功」的条目：duplicate/conflict 说明磁盘上那份还在（或内容冲突被跳过），
+ *  那种情况保留墓碑更安全（它就是删不掉的那份残留）。 */
+async function forgetDeletedThreads(ids: string[]) {
+  await loadDeletedThreads();
+  const targets = new Set(ids.map((value) => String(value || "").trim().toLowerCase()).filter(Boolean));
+  if (!targets.size) return;
+  let changed = false;
+  for (const id of targets) if (deletedThreadIds.delete(id)) changed = true;
+  if (!changed) return;
+  deletedThreadOrder = deletedThreadOrder.filter((value) => !targets.has(value));
+  await fs.writeFile(deletedThreadsFile, JSON.stringify(deletedThreadOrder, null, 2), "utf8").catch(() => undefined);
+}
+
+/** 永久删除的本地收尾：**同步**记墓碑（落盘后才返回）+ **后台**清磁盘 rollout。
+ *  ⛔ 顺序与同步性是刻意的（code review 后定的）：
+ *    · 墓碑必须在删除请求返回**之前**落盘 —— 它是「文件没删掉也不会复活」的唯一保证；
+ *    · 文件清理不阻塞删除响应：渲染层在 `await thread/delete` 之后才把该行从侧栏摘掉，
+ *      而 purge 走 worker 往返 —— worker 正忙于大目录兜底扫描时请求要排队（超时上限 15s），
+ *      用户会看到「点了删除，那行迟迟不消失」。放后台后删一个会话只等一次小文件写入。
+ *    · 真失败也不影响正确性：墓碑兜底，重启照样不复活。 */
+async function purgeDeletedThread(threadId: string) {
+  const id = String(threadId || "").trim();
+  if (!id) return;
+  await rememberDeletedThread(id);
+  void purgeRolloutFilesAsync(codexHome, [id]).then((result) => {
+    if (result?.removed?.length) console.log("[thread/delete] 已清理磁盘 rollout:", result.removed.length, "个");
+    if (result?.failed?.length) console.warn("[thread/delete] rollout 文件清理失败（已记墓碑，侧栏不会再显示）：", JSON.stringify(result.failed).slice(0, 300));
+  }).catch((error: any) => {
+    console.warn("[thread/delete] rollout 清理（worker）失败：", error?.message ?? error);
+  });
+}
+
 const terminals = new Map<string, TerminalService>();
 function terminalFor(id: string) {
   let service = terminals.get(id);
@@ -531,7 +616,11 @@ const remote = new RemoteControlService({
   // 手机对话 UI 的引擎桥：选会话 / 新建会话 / 发消息 / 实时收流式回复
   listThreads: async () => {
     const result = await server.request("thread/list", { limit: 30, sortKey: "updated_at", sortDirection: "desc", archived: false }) as any;
-    return (result.data ?? []).map((entry: any) => ({ id: entry.id, name: entry.name ?? null, preview: entry.preview ?? "", updatedAt: entry.updatedAt ?? 0 }));
+    // 已永久删除的会话不进手机端列表：这条链路直接打引擎（不过 thread/list 的合并逻辑），
+    // 不挡的话手机上会看到电脑端已经删掉的会话（见 purgeDeletedThread 注释）。
+    return (result.data ?? [])
+      .filter((entry: any) => !deletedThreadIds.has(String(entry.id ?? "").toLowerCase()))
+      .map((entry: any) => ({ id: entry.id, name: entry.name ?? null, preview: entry.preview ?? "", updatedAt: entry.updatedAt ?? 0 }));
   },
   getThreadMessages: async (threadId) => {
     const resumed = await server.request("thread/resume", { threadId, excludeTurns: false }) as any;
@@ -2524,6 +2613,9 @@ async function migrateLegacyRolloutHome(): Promise<void> {
 app.whenReady().then(async () => {
   markBoot("app-ready");   // 启动耗时测量（见 electron/boot-timing.ts）
   await fs.mkdir(codexHome, { recursive: true });
+  // 已删除会话的墓碑必须在**第一次 thread/list 之前**载入：渲染层启动就会拉列表，靠懒加载
+  // 会让首屏短暂出现幽灵会话（见 purgeDeletedThread 注释）。失败不阻塞启动。
+  try { await loadDeletedThreads(); } catch (error) { console.warn("deleted-threads 载入失败：", error); }
   // ⛔ 协议桥必须赶在**任何 config.toml 写入之前**起来：写配置时 base_url 要换成桥地址，
   //    桥没起来就只能直连（chat-only 网关由此不可用）。启动失败不致命：bridgeDial 自动降级直连，
   //    与旧版本行为一致；同样必须包 try/catch —— 裸 await 抛出会掐死整条启动链（界面能开、引擎不 spawn）。
@@ -2641,6 +2733,9 @@ app.whenReady().then(async () => {
       if (event.method === "thread/archived" || event.method === "thread/deleted") {
         const goneId = eventThreadId(event.params);
         if (goneId) {
+          // ⛔ 引擎侧发起的删除（不经渲染层 thread/delete 请求）同样要清磁盘残留 + 记墓碑，
+          //   否则侧栏的 rollout 兜底扫描在下次启动把它捞回来（见 purgeDeletedThread 注释）。
+          if (event.method === "thread/deleted") void purgeDeletedThread(goneId).catch(() => undefined);
           void (async () => {
             const changed = event.method === "thread/deleted"
               ? await threadRuntimeStore.remove(goneId)
@@ -3495,10 +3590,24 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
   // 协议桥兜底收口（09-16）：渲染层自带的内联 provider 配置在这里统一换成桥地址，
   // 保证「引擎发出的每个请求都经过桥」，不依赖各下发点自觉（见 bridgeRewriteProviderConfig）。
   bridgeRewriteProviderConfig(params);
+  // ⛔ 永久删除的本地收尾（09-18）：不论引擎返回成功还是抛错，都要把磁盘 rollout 与墓碑处理掉。
+  //   刻意用 finally 而不是「成功后才做」——引擎对「索引里本就不存在」的 id 会直接报错，
+  //   而那条会话恰恰最需要清理：它就是兜底扫描从磁盘捞回来的幽灵会话，引擎早已不认识它。
+  const purgeTarget = method === "thread/delete" ? String((params as any)?.threadId ?? "") : "";
   try {
     result = await server.request(method, params);
   } catch (error: any) {
     const firstMessage = String(error?.message ?? "");
+    // ⛔ 幽灵会话的删除按成功处理（09-18，与 purgeDeletedThread 同一根因）：
+    //   引擎索引里已经没有这条线程（用户删过一次、或它本就是磁盘残留被兜底扫描捞出来的），
+    //   `thread/delete` 会报 "failed to delete thread / failed to read session metadata"。
+    //   但这类会话的**本地残留已在 finally 里清掉、墓碑也记了**（列表不会再显示、重启不复活），
+    //   用户点「永久删除」的意图已经达成 —— 把这种错误抛回去只会让他以为没删掉、反复再点。
+    //   只吞「引擎确认删不掉」这一类；别的错误（含引擎重启窗口的瞬态）照旧走下面的分支。
+    if (purgeTarget && /failed to delete thread|failed to read session metadata|no rollout found|thread[^.]{0,40}not found/i.test(firstMessage)) {
+      console.warn("[thread/delete] 引擎侧删除失败，但本地残留已清理并按成功处理：", firstMessage.slice(0, 200));
+      return { ok: true, localCleanupOnly: true };
+    }
     // 保存/切换供应商会重启引擎：撞上重启窗口的在途请求被 reject「Codex app-server restarted」。
     // 这是瞬态错误（restart() 会 reject 全部 pending 再拉起新进程），等新引擎就绪后自动重试，
     // 不把吓人的报错甩给用户（设置页黄色横幅）。重试 2 次（1.2s / 2.4s），仍失败才抛出。
@@ -3531,6 +3640,9 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
       await server.restart();
       result = await server.request(method, params);
     }
+  } finally {
+    // 见 purgeDeletedThread 注释：删了会话就必须把磁盘残留一起带走，否则重启即复活
+    if (purgeTarget) await purgeDeletedThread(purgeTarget);
   }
   if (method === "thread/list") {
     threadListRequestCount += 1;
@@ -3544,7 +3656,10 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
     rolloutFallbackScanCount += 1;
     try {
       const fallback = await listRolloutThreadsAsync(codexHome);
-      const merged = mergeThreadList(indexed, fallback, archiveFilter, Number((params as any)?.limit ?? 100));
+      // ⛔ 合并阶段必须排除「已永久删除」的线程（墓碑集合）：兜底扫描只认磁盘文件，
+      //   而删掉的 rollout 可能还在（文件被占用删不掉、或旧版本删过留下的残留）——
+      //   不排除就会在下次启动把用户删掉的会话捞回侧栏（09-18 用户实测的「重启又恢复」）。
+      const merged = mergeThreadList(indexed, fallback, archiveFilter, Number((params as any)?.limit ?? 100), deletedThreadIds);
       // 「记录已丢失」标记：判据与实测口径见 session-tools.ts 的 markMissingRollouts 注释
       // （白拿兜底扫描结果，不额外做同步磁盘 I/O；本机引擎会隐藏 rollout 丢失的线程，
       //  所以这是防御性标记 —— 用户侧真实症状是会话静默消失，见该函数注释）。
@@ -6542,6 +6657,10 @@ ipcMain.handle("threads:import", async (): Promise<{ path: string; imported: num
   }
   if (!merged.threads.length) return { path: result.filePaths[0], imported: 0, skipped: 0, threads: [] };
   const summary = applySessionsBackup(codexHome, merged);
+  // ⛔ 导入成功 = 这条会话被重新写回磁盘 → 必须摘掉同名墓碑（见 forgetDeletedThreads 注释）：
+  //   不然用户「删掉 → 从备份恢复」后会看不到它，且无从发现原因。
+  //   只清 status === "ok"（真正写进去的）：duplicate / conflict 是磁盘上那份还在，保留墓碑更安全。
+  await forgetDeletedThreads(summary.threads.filter((entry: { status: string }) => entry.status === "ok").map((entry: { id: string }) => entry.id));
   return { path: result.filePaths[0], ...summary };
 });
 // 导入外部对话记录（主流 AI / 官方 Codex /export 导出的 .md/.txt 文本）→ 自动新建一个命名会话：
