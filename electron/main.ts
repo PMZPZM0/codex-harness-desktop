@@ -3,7 +3,7 @@ import os from "node:os";
 import nodeNet from "node:net";
 import { execSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs/promises";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, watch as watchFs, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, watch as watchFs, writeFileSync, type Dirent } from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
@@ -2483,6 +2483,43 @@ app.on("second-instance", () => {
   }
 });
 
+// ── 旧家 rollout 迁移（09-18 用户：「更新新版本…用户旧会话要能接着用」「复制ID，接力会话也不行」）──
+// 09-10 之前的老版本把引擎 CODEX_HOME 指在用户主目录 ~/.codex；现行版本为隔离切到
+// userData/codex-home。升级后老会话 rollout 留在旧家 ⇒ 三处全部失联：侧栏 thread/list 兜底扫描
+// 只扫新家、复制 ID 引用（buildThreadPreview 只扫新家）、thread/resume（引擎 CODEX_HOME=新家）。
+// 修法：把旧家 sessions/ 与 archived_sessions/ 里**新家没有的** rollout **拷贝**进新家——
+// ⛔ 只拷不删：~/.codex 可能仍被官方 Codex CLI 使用；文件名是 canonical 的
+// rollout-<ts>-<uuid>.jsonl（resume 对文件名有硬要求），同名即同会话，按名判重天然幂等；
+// 拷完 rollout 兜底扫描立即可见，resume / 复制 ID 引用随之恢复。
+async function migrateLegacyRolloutHome(): Promise<void> {
+  const legacyHome = path.join(os.homedir(), ".codex");
+  const roots: { from: string; to: string }[] = [
+    { from: path.join(legacyHome, "sessions"), to: path.join(codexHome, "sessions") },
+    { from: path.join(legacyHome, "archived_sessions"), to: path.join(codexHome, "archived_sessions") },
+  ];
+  let copied = 0;
+  for (const { from, to } of roots) {
+    if (!existsSync(from)) continue;
+    const stack = [from];
+    while (stack.length) {
+      const current = stack.pop()!;
+      let entries: Dirent[];
+      try { entries = readdirSync(current, { withFileTypes: true }); } catch { continue; }
+      for (const entry of entries) {
+        const abs = path.join(current, entry.name);
+        if (entry.isDirectory()) { stack.push(abs); continue; }
+        if (!entry.isFile() || !/-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$/i.test(entry.name)) continue;
+        const target = path.join(to, path.relative(from, abs));
+        if (existsSync(target)) continue; // 同名 = 同一会话，已在新家 → 幂等跳过
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        await fs.copyFile(abs, target);
+        copied += 1;
+      }
+    }
+  }
+  if (copied > 0) console.log(`[migration] 已从旧家 ${legacyHome} 拷入 ${copied} 个老会话 rollout（旧家文件保留不动，官方 CLI 不受影响）`);
+}
+
 app.whenReady().then(async () => {
   markBoot("app-ready");   // 启动耗时测量（见 electron/boot-timing.ts）
   await fs.mkdir(codexHome, { recursive: true });
@@ -2721,6 +2758,11 @@ app.whenReady().then(async () => {
         console.log('[config] 已把 wire_api="chat" 迁移为 "responses"（原文件备份为 config.toml.chat-bak）');
       }
     } catch (error) { console.warn("wire_api repair failed:", error); }
+    // 旧家 rollout 迁移（09-18）：必须在 server.start() 之前——引擎起来后侧栏第一次
+    // thread/list 就要扫到这些文件；失败只降级不阻塞启动（老会话晚点再迁也不丢）。
+    try {
+      await migrateLegacyRolloutHome();
+    } catch (error) { console.warn("legacy rollout migration failed:", error); }
     await server.start();
   } catch (error) {
     broadcastCodexEvent({ kind: "status", status: "error", message: String(error) });

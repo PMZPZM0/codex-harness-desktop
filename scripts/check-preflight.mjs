@@ -4359,6 +4359,29 @@ w.postMessage({id:1,op:"list",root});
       : fail("【39】粘贴入口又有硬拦截 —— 用户贴图被拒，降级链路被堵");
   }
 
+  // ⑰l 旧家 rollout 迁移（09-18 用户：「更新新版本…用户旧会话要能接着用」「复制ID，接力会话也不行」）：
+  //   09-10 前的老版本 CODEX_HOME 指在 ~/.codex；切到 userData/codex-home 后老会话三处全失联
+  //   （侧栏兜底扫描 / 复制 ID 引用 buildThreadPreview / thread/resume 都只认新家）。
+  //   修法 = 启动时把旧家 rollout **拷贝**（只拷不删——~/.codex 可能仍被官方 CLI 用）进新家，
+  //   按文件名判重天然幂等。真机验收：隔离 profile 起应用，13 个旧家 rollout 迁入后
+  //   侧栏 16 行可见、previewConversation 读旧会话 9 条消息、二次启动幂等零重复。
+  {
+    const mainMig = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+    const fnStart = mainMig.indexOf("async function migrateLegacyRolloutHome");
+    const fnBody = fnStart >= 0 ? mainMig.slice(fnStart, mainMig.indexOf("app.whenReady()", fnStart)) : "";
+    // ⛔ 用完整签名锚定（带 (): Promise<void> 收尾）：函数被改名成 …Disabled 之类的前缀碰撞骗不过
+    (fnStart >= 0 && /async function migrateLegacyRolloutHome\(\): Promise<void>/.test(mainMig) && /copyFile/.test(fnBody))
+      ? ok("【40】旧家 ~/.codex rollout 迁移存在（copyFile 进 codex-home，老会话升级后接着用）")
+      : fail("【40】旧家 rollout 迁移缺失 —— 老版本升级后老会话三处全失联（侧栏/引用/resume）");
+    (fnBody.length > 0 && !/rmSync|unlinkSync/.test(fnBody))
+      ? ok("【40】迁移只拷不删（~/.codex 可能仍被官方 Codex CLI 使用，绝不动旧家文件）")
+      : fail("【40】迁移里出现删除调用 —— 会破坏用户旧家的官方 Codex CLI 数据");
+    (mainMig.indexOf("await migrateLegacyRolloutHome();") >= 0
+      && mainMig.indexOf("await migrateLegacyRolloutHome();") < mainMig.indexOf("await server.start();"))
+      ? ok("【40】迁移挂在 server.start() 之前的启动链上（侧栏首次 thread/list 就能看到老会话）")
+      : fail("【40】迁移没接在 server.start() 之前的启动链上 —— 时机错了等于没迁");
+  }
+
   // ⑰d 引导弹窗的「出场时机」（09-17 用户明确定规则：「只在进入主界面的时候才弹配置引导和
   //   工具安装检测自动安装；如果已经配置模型，就不引导模型配置，直接做开发工具检测安装」）。
   //   三种失效形态都**静默**（不报错，只是该弹的不弹 / 不该弹的弹了）：
