@@ -10,6 +10,9 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 // 切换会话时消息列表重挂载会让它对每段代码重跑一遍（真机 profile 单函数 2251ms）。
 import createHighlightElement from "react-syntax-highlighter/dist/esm/create-element";
 import { createHighlightCache, highlightCacheKey } from "./lib/code-highlight-cache.mjs";
+// 懒高亮（09-18 用户：「我又没点开看代码高亮，为啥每次切换都重新加载一遍」）：
+// 只对"大块"启用——进视口邻近区之前渲染等价外观的纯文本，进区后才真高亮。
+import { deservesLazyHighlight, plainCodeStyles } from "./lib/lazy-highlight.mjs";
 import { codeFontStack, codeFonts, codePreviewSnippet, codeThemeStyle, codeThemes } from "./lib/code-themes";
 import { codeFontSize, useCodeSettings } from "./lib/code-settings";
 import { DEFAULT_EFFORT, pickDefaultEffort, normalizeEffort, ALL_EFFORTS, declaredModelEfforts } from "./lib/effort";
@@ -2962,6 +2965,21 @@ const ToolCodeBlock = memo(function ToolCodeBlock({ language, text, revealing, c
     if (revealing || virtualizable || !HIGHLIGHT_CACHE.shouldCache(text)) return undefined;
     return makeCachedHighlightRenderer(highlightCacheKey({ language, code: text, theme: settings.theme, lineNumbers: settings.lineNumbers, wrapLongLines: settings.wrap }));
   }, [revealing, virtualizable, text, language, settings.theme, settings.lineNumbers, settings.wrap]);
+  // 懒高亮（09-18）：命令输出/diff 常是几千行的大块，是"切换会话卡"的主要来源。
+  // ⛔ 逐字追字（revealing）期间不启用：那会儿文本每帧都在长，懒加载只会跟追字动画打架。
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const lazy = !revealing && !virtualizable && deservesLazyHighlight(text);
+  const nearViewport = useNearViewport(wrapRef, lazy);
+  if (lazy && !nearViewport) {
+    const styles = plainCodeStyles(codeThemeStyle(settings.theme));
+    return (
+      <div className={`tool-code-block ${className ?? ""}`.trim()}>
+        <div ref={wrapRef} className="tool-code-pre code-highlight code-highlight-lazy" data-lazy-highlight="pending">
+          <div style={{ ...styles.pre, fontSize: codeFontSize(settings.fontScale), fontFamily: codeFontStack(settings.font), lineHeight: 1.55, maxHeight, margin: 0, overflow: "auto" }}><code style={styles.code}>{text || " "}</code></div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={`tool-code-block ${className ?? ""} ${revealing ? "packet-revealing" : ""}`.trim()}>
       {virtualizable
@@ -3106,6 +3124,46 @@ function makeCachedHighlightRenderer(cacheKey: string) {
   };
 }
 
+// ── 懒高亮的视口邻近检测（09-18）──────────────────────────────────────────────
+// 共享**一个** IntersectionObserver（渲染层可能有几百个代码块，一人一个 observer 是灾难），
+// 返回后即 unobserve（一次性）。rootMargin 给足预载距离：切换/滚动到位的瞬间它早就高亮好了，
+// 用户看不到"从灰变彩"的过程。
+const highlightObserveCallbacks = new WeakMap<Element, () => void>();
+let sharedHighlightObserver: IntersectionObserver | null = null;
+function getHighlightObserver(): IntersectionObserver | null {
+  if (sharedHighlightObserver) return sharedHighlightObserver;
+  if (typeof IntersectionObserver !== "function") return null;
+  sharedHighlightObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const callback = highlightObserveCallbacks.get(entry.target);
+      highlightObserveCallbacks.delete(entry.target);
+      try { sharedHighlightObserver?.unobserve(entry.target); } catch { /* ignore */ }
+      callback?.();
+    }
+  }, { rootMargin: "1200px 0px" });   // 上下各预载 1200px
+  return sharedHighlightObserver;
+}
+
+/** 元素是否已进入「视口邻近区」。`enabled=false` 直接返回 true（不懒加载）。 */
+function useNearViewport(ref: React.RefObject<HTMLElement | null>, enabled: boolean): boolean {
+  const [near, setNear] = useState(!enabled);
+  useEffect(() => {
+    if (!enabled || near) return;
+    const el = ref.current;
+    if (!el) return;
+    const observer = getHighlightObserver();
+    if (!observer) { setNear(true); return; }   // 环境不支持（老浏览器/测试）：直接高亮
+    highlightObserveCallbacks.set(el, () => setNear(true));
+    observer.observe(el);
+    return () => {
+      highlightObserveCallbacks.delete(el);
+      try { observer.unobserve(el); } catch { /* ignore */ }
+    };
+  }, [enabled, near]);
+  return near || !enabled;
+}
+
 /** 代码块：必须是模块级稳定组件。主题/字体由代码设置驱动，组件内部自己订阅 store，
  * 这样切换主题只重渲染代码块本身，不会让 Markdown 整棵树重建（流式出字时也在复用节点）。 */
 const MdCode = memo(function MdCode({ className, children, ...props }: any) {
@@ -3121,9 +3179,23 @@ const MdCode = memo(function MdCode({ className, children, ...props }: any) {
   // ⛔ hooks 必须无条件调用（下面 !className / mermaid 会提前 return）
   const cacheKey = highlightCacheKey({ language: String(className ?? "").replace("language-", ""), code, theme: settings.theme, lineNumbers: settings.lineNumbers, wrapLongLines: settings.wrap });
   const renderer = useMemo(() => (!appended && HIGHLIGHT_CACHE.shouldCache(code) ? makeCachedHighlightRenderer(cacheKey) : undefined), [cacheKey, code, appended]);
+  // 懒高亮：只对"大块"启用（小块高亮本来就便宜，不值得冒颜色跳变的风险）
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const lazy = deservesLazyHighlight(code) && !appended;
+  const nearViewport = useNearViewport(wrapRef, lazy);
   if (!className) return <code {...props}>{children}</code>;
   const language = className.replace("language-", "");
   if (language === "mermaid") return <MermaidDiagram code={String(children)} />;
+  const fontSize = codeFontSize(settings.fontScale);
+  const fontFamily = codeFontStack(settings.font);
+  if (lazy && !nearViewport) {
+    const styles = plainCodeStyles(codeThemeStyle(settings.theme));
+    return (
+      <div ref={wrapRef} className="code-highlight code-highlight-lazy" data-lazy-highlight="pending">
+        <div style={{ ...styles.pre, fontSize, fontFamily, margin: 0 }}><code style={styles.code}>{code}</code></div>
+      </div>
+    );
+  }
   return (
     <SyntaxHighlighter
       language={language}
@@ -3133,7 +3205,7 @@ const MdCode = memo(function MdCode({ className, children, ...props }: any) {
       showLineNumbers={settings.lineNumbers}
       wrapLongLines={settings.wrap}
       renderer={renderer}
-      customStyle={{ fontSize: codeFontSize(settings.fontScale), fontFamily: codeFontStack(settings.font), margin: 0 }}
+      customStyle={{ fontSize, fontFamily, margin: 0 }}
     >{code}</SyntaxHighlighter>
   );
 });
@@ -3148,6 +3220,20 @@ const FilePreviewCode = memo(function FilePreviewCode({ language, content, trunc
     if (!HIGHLIGHT_CACHE.shouldCache(code)) return undefined;
     return makeCachedHighlightRenderer(highlightCacheKey({ language: normalized, code, theme: settings.theme, lineNumbers: true, wrapLongLines: settings.wrap }));
   }, [normalized, code, settings.theme, settings.wrap]);
+  // 懒高亮：文件预览常是"大文件整篇"，最该懒加载（没打开到视口就别算）
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const lazy = deservesLazyHighlight(code);
+  const nearViewport = useNearViewport(wrapRef, lazy);
+  const fontSize = codeFontSize(settings.fontScale);
+  const fontFamily = codeFontStack(settings.font);
+  if (lazy && !nearViewport) {
+    const styles = plainCodeStyles(codeThemeStyle(settings.theme));
+    return (
+      <div ref={wrapRef} className="file-preview-code code-highlight code-highlight-lazy" data-lazy-highlight="pending">
+        <div style={{ ...styles.pre, fontSize, fontFamily, margin: 0 }}><code style={styles.code}>{code}</code></div>
+      </div>
+    );
+  }
   return (
     <SyntaxHighlighter
       language={normalized}
@@ -3159,7 +3245,7 @@ const FilePreviewCode = memo(function FilePreviewCode({ language, content, trunc
       showLineNumbers
       wrapLongLines={settings.wrap}
       renderer={renderer}
-      customStyle={{ fontSize: codeFontSize(settings.fontScale), fontFamily: codeFontStack(settings.font), margin: 0 }}
+      customStyle={{ fontSize, fontFamily, margin: 0 }}
     >{code}</SyntaxHighlighter>
   );
 });
@@ -5264,6 +5350,13 @@ function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote,
       })}
     </>
   ) : null;
+  // 附件行（图片缩略图 + 文件卡）挂在**气泡下方**、仍不撑大气泡。
+  // ⛔ 09-18 用户实测：「用户发送图片和文件的时候，文件和图片会在用户名字上面」——
+  //    原先它排在 `.user-message-stack` 的**第一个**位置，于是渲染顺序是
+  //    附件 → 名字/头像 → 正文，附件跑到用户名上方去了。改成「名字/头像 → 正文 → 附件」。
+  // ⛔ 行内排版（09-18 用户：「都靠右，自适应排序啊，靠左多丑」）：
+  //    不做"图片一组 / 文件一组"的左右分区，**全部按原始顺序排列、整行靠右**，
+  //    空间不够时自动换行（CSS: flex-wrap + justify-content: flex-end）。
   const attachRow = refs.files.length || extraThumbs ? (
     <div className="msg-refs user-attach-row">
       {refs.files.map((path, index) => {
@@ -5274,7 +5367,6 @@ function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote,
             <button type="button" className="ref-file-card ref-image-card" title={name} onClick={() => openImageLightbox?.(path, name)} key={index}>
               <span className="ref-image-thumb">
                 <img src={src} alt={name} loading="lazy" />
-                <span className="ref-image-preview"><img src={src} alt={name} /></span>
               </span>
             </button>
           );
@@ -5291,7 +5383,6 @@ function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote,
   ) : null;
   return (
     <div className="user-message-stack">
-      {attachRow}
       {/* 「你」的头部：名字 + 头像（09-17 用户「人也要有名字和头像，位置跟 Codex 一样」）。
           右对齐、头像在名字**右边** —— 与 Codex 的「头像 + 名字」（左对齐）镜像对称；
           头像用圆形（Codex 是圆角方形）以示区分。气泡内的 .avatar 本就是 display:none
@@ -5337,6 +5428,8 @@ function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote,
           <MessageFooter item={item} turn={turn} fallbackWindow={fallbackWindow} onCopy={onCopy} onQuote={onQuote} onEdit={() => setEditing(true)} />
         </div>
       </div>
+      {/* 附件行在气泡**下方**（09-18 用户：「文件和图片会在用户名字上面」→ 见 attachRow 处注释） */}
+      {attachRow}
     </div>
   );
 }
@@ -10392,7 +10485,15 @@ export default function App() {
       // ⛔ 不再写 efforts（09-18：档位不再是模型条目的属性，纯会话级；
       //    模型不支持的档位由发送失败时自动学习，见 src/lib/effort-support.mjs）
     };
-    const mergedDraft = { ...customDraft, models: [...(customDraft.models ?? []).filter((m) => m.id !== modelEditor.originalId), model] };
+    // ⛔ 去重（09-18 用户实测「点删除删掉的是另一个」）：原实现只按 originalId 过滤，
+    //   于是「添加模型 / 把模型改名成一个已存在的 id」会在草稿里留下**两份同 id 条目**。
+    //   而列表渲染用的是去重后的数组（`unique`，只显示第一条），删除/批量删除却作用在
+    //   **全部同 id 副本**上 —— 你看到的那一行与实际被删的不是同一个东西（表现为
+    //   「没勾选的删不掉 / 删一次却把勾选的那个带走了」）。这里按 id 归一（同名覆盖），
+    //   与主进程 upsertProviderModel 的语义一致。
+    const duplicated = (customDraft.models ?? []).some((m) => m.id === id && m.id !== modelEditor.originalId);
+    if (duplicated) showToast("已按同名覆盖", `「${id}」已在模型列表中——本次保存会覆盖它（不会产生重复条目）。`);
+    const mergedDraft = { ...customDraft, models: [...(customDraft.models ?? []).filter((m) => m.id !== modelEditor.originalId && m.id !== id), model] };
     setCustomDraft(mergedDraft);
     setModelEditor(null);
     void saveCustomDraft(mergedDraft);

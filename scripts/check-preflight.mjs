@@ -4845,6 +4845,51 @@ w.postMessage({id:1,op:"list",root});
       && /useMemo\(\(\) => \(!appended && HIGHLIGHT_CACHE\.shouldCache\(code\)/.test(appSrc45)
       ? ok : fail)("【45】流式追字期间不写缓存（防中间态挤掉其它会话的缓存条目）");
   }
+
+  // ⑰o 懒高亮 + 图片项折叠 + 用户附件行位置（09-18 用户三条连报）
+  {
+    console.log(C.bold("\n【46】懒高亮 / 图片项折叠 / 附件行位置"));
+    const appSrc46 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+    const foldSrc = readFileSync(join(ROOT, "src", "lib", "turn-fold.ts"), "utf8");
+    const { deservesLazyHighlight, plainCodeStyles, LAZY_HIGHLIGHT_MIN_CHARS } = await import("../src/lib/lazy-highlight.mjs");
+
+    // ① 懒高亮阈值（纯函数直跑）
+    (LAZY_HIGHLIGHT_MIN_CHARS >= 1000 ? ok : fail)(`【46】懒加载只针对"大块"（阈值 ${LAZY_HIGHLIGHT_MIN_CHARS} 字符）`);
+    (deservesLazyHighlight("x".repeat(LAZY_HIGHLIGHT_MIN_CHARS)) && !deservesLazyHighlight("x".repeat(LAZY_HIGHLIGHT_MIN_CHARS - 1)) ? ok : fail)("【46】阈值边界正确（等于阈值懒加载、差一个字符不懒加载）");
+    (!deservesLazyHighlight(undefined) && !deservesLazyHighlight(null) ? ok : fail)("【46】空值不崩（undefined/null 当小块）");
+    // ② 兜底样式必须取自与高亮一致的键（否则未高亮时背景/文字色不同 = 白底闪一下）
+    {
+      const theme = { 'pre[class*="language-"]': { background: "bg" }, 'code[class*="language-"]': { color: "fg" } };
+      const s = plainCodeStyles(theme);
+      (s.pre.background === "bg" && s.code.color === "fg" ? ok : fail)("【46】未高亮兜底用主题的 pre/code 基样式（背景与文字色和高亮后一致，不闪白）");
+      (JSON.stringify(plainCodeStyles(null)) === JSON.stringify({ pre: {}, code: {} }) ? ok : fail)("【46】主题缺失时兜底为空对象（不崩）");
+    }
+    // ③ 接线：三处代码块都要接 + 共享单个 observer + 不支持时降级
+    const lazySites = (appSrc46.match(/useNearViewport\(/g) ?? []).length;
+    (lazySites >= 4 ? ok : fail)(`【46】三处代码块都接上懒高亮（useNearViewport 出现 ${lazySites} 次 = 定义 1 + 接线 3）`);
+    (/let sharedHighlightObserver/.test(appSrc46) && /new IntersectionObserver\(/.test(appSrc46) && /rootMargin: "1200px 0px"/.test(appSrc46)
+      ? ok : fail)("【46】共享单个 IntersectionObserver 且带预载 rootMargin（几百个代码块不各建一个）");
+    (/typeof IntersectionObserver !== "function"\) return null/.test(appSrc46) ? ok : fail)("【46】环境不支持 IntersectionObserver 时降级直接高亮（不空白）");
+    // ④ 图片项：查看 → foldable，生成 → 仍常驻
+    (/if \(item\.type === "plan" \|\| item\.type === "imageGeneration"\) return "keepVisible";/.test(foldSrc) ? ok : fail)("【46】plan 与生成图仍常驻外露");
+    (!/item\.type === "plan" \|\| item\.type === "imageView"/.test(foldSrc) ? ok : fail)("【46】imageView（查看图片）不再 keepVisible（不再一张一个大图铺满消息区）");
+    (/case "imageView": return \{ key: "image-view", label: "查看图片" \};/.test(foldSrc) ? ok : fail)("【46】imageView 有独立分组标签");
+    (/case "imageView":[\s\S]{0,140}group: "read"/.test(foldSrc) ? ok : fail)("【46】imageView 摘要归 read 组（显示「查看 xxx」而非「处理多个步骤」）");
+    // ⑤ 用户附件行：位置在气泡之后；图片在前文件在后；整行仍右对齐
+    {
+      const stackIdx = appSrc46.indexOf('<div className="user-message-stack">');
+      const headIdx = appSrc46.indexOf('<div className="user-head">', stackIdx);
+      const offset = appSrc46.indexOf("{attachRow}", stackIdx);
+      const footerIdx = appSrc46.indexOf('className="user-message-footer"', stackIdx);
+      (stackIdx > 0 && headIdx > stackIdx && offset > headIdx && offset > footerIdx
+        ? ok : fail)("【46】附件行排在「名字/头像 → 正文」之后（不再跑到用户名上面）");
+      // ⛔ 09-18 用户定稿：「都靠右，自适应排序啊，靠左多丑」——不分图片/文件两组做左右分区，
+      //    全部按原始顺序排列 + 整行右对齐 + 可换行。守卫要盯住"没有被误改成 flex-start 或左右分区"。
+      (!/refImageFiles|refPlainFiles/.test(appSrc46) ? ok : fail)("【46】附件行不做图片/文件左右分区（用户要的是统一靠右、自适应）");
+      (/\.msg-refs\.user-attach-row \{\s*\r?\n\s*justify-content: flex-end;[\s\S]{0,200}?flex-wrap: wrap;/.test(readFileSync(join(ROOT, "src", "styles.css"), "utf8"))
+        ? ok : fail)("【46】附件行靠右且可自适应换行（flex-end + flex-wrap）");
+    }
+  }
 }
 
 console.log("");
