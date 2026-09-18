@@ -94,9 +94,18 @@ const RULES: SpecRule[] = [
     ids: ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-3.1-flash-lite", "gemini-3-pro-preview"],
     spec: { contextWindow: 1_048_576, maxOutputTokens: 65_536, efforts: ["minimal", "low", "medium", "high"], inputTypes: VISVIDEO, outputTypes: OUT_TXT } },
 
-  // ── DeepSeek（1M / 384K；**纯文本，官方明确无视觉**）────────────────────
-  { match: /deepseek/, vendor: "DeepSeek", family: "DeepSeek V4",
-    ids: ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"],
+  // ── DeepSeek（1M / 384K）──────────────────────────────────────────────
+  // V4.1 Flash（09-10 发布）：**原生多模态**（文本+图像，官方特性表 Vision 支持）、
+  // 思考默认开启且强度可选 low/high/max（默认 high）、上下文 1M（1,048,576）/ 输出最大 384K。
+  // 官方 API 主 id = deepseek-flash；deepseek-v4.1-flash 为通用叫法；
+  // 旧名 deepseek-v4-flash(-vision-exp) 官方声明路由到 V4.1 Flash（按 V4.1 计价与规格）——
+  // 因此这几个 id 必须落在本条而不是下面的旧一代规则（规则按顺序匹配，本条在前）。
+  { match: /deepseek-(v4\.1|flash|v4-flash)/, vendor: "DeepSeek", family: "DeepSeek V4.1 Flash（多模态）",
+    ids: ["deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-flash"],
+    spec: { contextWindow: 1_048_576, maxOutputTokens: 393_216, efforts: ["low", "high", "max"], inputTypes: VIS, outputTypes: OUT_TXT } },
+  // 旧一代（V4-Pro 官方仍在售、独立计费，且官方明确**无视觉**；chat/reasoner 为更早命名）：
+  { match: /deepseek/, vendor: "DeepSeek", family: "DeepSeek V4（早期，纯文本）",
+    ids: ["deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"],
     spec: { contextWindow: 1_000_000, maxOutputTokens: 393_216, efforts: [], inputTypes: TXT, outputTypes: OUT_TXT } },
 
   // ── 月之暗面 Kimi（K3 = 1M 且**首次原生视觉**；K3-256k 省额度）──────────
@@ -223,7 +232,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = RULES.flatMap((rule) => rule.i
 
 /**
  * 模型 ID 补全：**完全相等 → 前缀命中 → 子串/厂商/系列命中**，同级内保持表内顺序
- * （表里新旗舰在前，所以打 "deepseek" 时 v4-pro 排在旧的 chat 之前）。
+ * （表里新旗舰在前，所以打 "deepseek" 时先看到 V4.1 Flash（deepseek-flash），再是 v4-pro 与旧 chat）。
  * 空输入返回前 `limit` 条（新手上来先看到当前主流型号）。
  */
 export function suggestModelIds(input: string, limit = 8): ModelCatalogEntry[] {
