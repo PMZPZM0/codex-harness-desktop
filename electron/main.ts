@@ -10,6 +10,7 @@ import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { ChannelBotService, type ChannelBotConfig } from "./channel-bot";
 import { BotStreamSession, readBotStreamSettings, readBotStreamSettingsSync, writeBotStreamSettings, type BotStreamBudget, type BotStreamSink, type BotStreamSettings } from "./bot-stream";
+import { wechatFriendlyText } from "./wechat-text";
 import { CodexServer, codexBinaryPath } from "./codex-server";
 import { ResponsesBridge } from "./responses-bridge";
 import { BotPairingService } from "./bot-pairing";
@@ -2904,10 +2905,28 @@ function weixinStreamSink(from: string): BotStreamSink {
   // 请求体字段不全，服务端静默丢弃）。真正的硬约束是**配额**（每用户消息 24h 内 10 条独立消息）——
   // 所以这里恢复追加语义，但靠 WEIXIN_STREAM_BUDGET 把条数压到 6 条以内，并保留失败降级：
   // append 连续失败 2 次即停用追加，收尾那次（state=2）把完整正文补发，正文永不丢。
+  // ⛔ 微信是**纯文本通道**（09-18 用户：「为啥不能跟汇总一样的格式同步过来」）：iLink 不渲染
+  // Markdown，桌面端的表格/标题/粗体原样发过去就是一堆竖线。发前统一走 wechatFriendlyText
+  // 转成手机可读排版。流式分片可能切在半行中间 → 先攒到**完整行**再转换发送（转换是逐行的，
+  // 分片安全）；carry 里的残留由收尾（finalizeAppend）补上，正文不丢。
+  let carry = "";
+  const sendChunk = (text: string, opts: { clientId?: string; state?: number }) =>
+    weixinGateway!.sendText(from, wechatFriendlyText(text), opts);
   return {
-    append: (delta, clientId) => weixinGateway!.sendText(from, delta, { clientId, state: 1 }),
-    finalizeAppend: (tail, clientId) => weixinGateway!.sendText(from, tail || "（已完成）", { clientId, state: 2 }),
-    send: (full) => weixinGateway!.sendText(from, full),
+    append: (delta, clientId) => {
+      carry += delta;
+      const cut = carry.lastIndexOf("\n");
+      if (cut < 0) return Promise.resolve(); // 还没有完整行：继续攒
+      const sendable = carry.slice(0, cut + 1);
+      carry = carry.slice(cut + 1);
+      return sendChunk(sendable, { clientId, state: 1 });
+    },
+    finalizeAppend: (tail, clientId) => {
+      const rest = carry + tail;
+      carry = "";
+      return weixinGateway!.sendText(from, wechatFriendlyText(rest) || "（已完成）", { clientId, state: 2 });
+    },
+    send: (full) => weixinGateway!.sendText(from, wechatFriendlyText(full)),
   };
 }
 

@@ -4294,9 +4294,9 @@ w.postMessage({id:1,op:"list",root});
     (budgetMatch && Number(budgetMatch[1]) >= 1 && Number(budgetMatch[1]) <= 6)
       ? ok(`【38】微信追加预算 ${budgetMatch[1]} 次（+收尾 1 条 ≤ iLink 的 10 条/24h 配额）`)
       : fail(`【38】微信追加预算 = ${budgetMatch ? budgetMatch[1] : "(未找到)"} —— 必须是 1~6（含收尾要在 10 条配额内，且留余量）`);
-    (/append: \(delta, clientId\) => weixinGateway!\.sendText\(from, delta, \{ clientId, state: 1 \}\)/.test(mainSrc)
-      && /finalizeAppend: \(tail, clientId\) => weixinGateway!\.sendText\(from, tail/.test(mainSrc))
-      ? ok("【38】微信 sink 提供 append/finalizeAppend（state=1 追加同气泡 / state=2 收尾）")
+    (/append: \(delta, clientId\) => \{/.test(mainSrc) && /sendChunk\(sendable, \{ clientId, state: 1 \}\)/.test(mainSrc)
+      && /finalizeAppend: \(tail, clientId\) => \{/.test(mainSrc) && /send: \(full\) => weixinGateway!\.sendText\(from, wechatFriendlyText\(full\)\)/.test(mainSrc))
+      ? ok("【38】微信 sink 提供 append/finalizeAppend（state=1 追加 / state=2 收尾），发送统一走排版转换")
       : fail("【38】微信 sink 又只剩 send —— 运行过程不会同步，用户只能看到最终汇总");
     (/new BotStreamSession\(plan\.sink, readBotStreamSettingsSync\(botStreamFile\), plan\.budget\)/.test(mainSrc))
       ? ok("【38】预算真的传给了流式会话（不是摆设常量）")
@@ -4318,6 +4318,39 @@ w.postMessage({id:1,op:"list",root});
     (/sendmessage ok state=/.test(gwSrc))
       ? ok("【38】sendmessage 成功也留痕（静默去重只能靠日志条数与实收对账定性）")
       : fail("【38】sendmessage 只记失败不记成功 —— 服务端静默去重时无从排查");
+    // 微信纯文本排版（09-18 用户：「为啥不能跟汇总一样的格式同步过来」——iLink 不渲染 Markdown，
+    // 表格/标题原样过去就是竖线堆）。直跑 wechat-text.ts 真实现做行为断言（node type-stripping）。
+    let wt = null;
+    try {
+      const wtUrl = pathToFileURL(join(ROOT, "electron", "wechat-text.ts")).href;
+      const wtProbe = spawnSync(process.execPath, [
+        "--experimental-strip-types", "--no-warnings", "--input-type=module", "-e",
+        `import { wechatFriendlyText as f } from ${JSON.stringify(wtUrl)}; console.log(JSON.stringify({` +
+        ` table: f("🔥 最劲爆\\n\\n| 方向 | 新闻 |\\n|---|---|\\n| 国内大模型 | 智谱 GLM 十万卡 |\\n| 融资 | Emulate 7 亿 |"),` +
+        ` head: f("## 行动向"), bold: f("**GPT-5.6** 的自我隐瞒"), link: f("[OpenAI](https://x.com/a) 公告"), bullet: f("- Figure 发 Helix"), hr: f("上文\\n---\\n下文") }));`,
+      ], { encoding: "utf8" });
+      wt = JSON.parse(wtProbe.stdout.trim().split("\n").at(-1));
+    } catch { /* 下面统一判红 */ }
+    (wt ? ok : fail)("wechat-text.ts 可被 Node type-stripping 直跑（排版守卫跑的是真实现）");
+    if (wt) {
+      (wt.table.includes("【方向】新闻") && wt.table.includes("【国内大模型】智谱 GLM 十万卡") && wt.table.includes("【融资】Emulate 7 亿") && !wt.table.includes("|"))
+        ? ok("【38】表格 → 【首列】其余列（分隔行丢弃），微信里不再是竖线堆")
+        : fail(`【38】表格排版转换不对：${JSON.stringify(wt.table)}`);
+      (wt.head === "【行动向】" && wt.bold === "GPT-5.6 的自我隐瞒" && wt.link === "OpenAI 公告")
+        ? ok("【38】标题 → 【】、粗体去符号、链接去 URL 留文字")
+        : fail(`【38】标题/粗体/链接转换不对：${JSON.stringify(wt)}`);
+      (wt.bullet === "• Figure 发 Helix" && wt.hr === "上文\n下文")
+        ? ok("【38】列表转 • 、水平线丢弃")
+        : fail(`【38】列表/水平线转换不对：${JSON.stringify(wt)}`);
+      // ⛔ 三个发送点（流式追加 / 收尾补发 / 一次性）各自必须带 wechatFriendlyText——
+      //    只查 import 或单个锚点会被「摘掉一处用法」的死代码骗绿（反证实测）。
+      (/sendChunk = \(text: string, opts: \{ clientId\?: string; state\?: number \}\) =>\s*weixinGateway!\.sendText\(from, wechatFriendlyText\(text\), opts\)/.test(mainSrc)
+        && /wechatFriendlyText\(rest\) \|\| "（已完成）"/.test(mainSrc)
+        && /send: \(full\) => weixinGateway!\.sendText\(from, wechatFriendlyText\(full\)\)/.test(mainSrc)
+        && /carry \+= delta/.test(mainSrc) && /lastIndexOf\("\\n"\)/.test(mainSrc))
+        ? ok("【38】微信发送前统一走排版转换（三个发送点全带；流式攒到完整行再发，分片不切坏表格）")
+        : fail("【38】微信 sink 没接排版转换/没做整行缓冲 —— Markdown 原样竖线堆会继续发到手机上");
+    }
   }
 
   // ⑰k 探针协议回落 + 图片模态自愈（09-18 用户反馈两张图：升级用户对火山 Coding Plan 类网关
