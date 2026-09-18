@@ -4054,7 +4054,10 @@ w.postMessage({id:1,op:"list",root});
     (/\.turn-head\s*\{/.test(cssNC) && /\.turn-head-avatar\s*\{/.test(cssNC) && /\.turn-head-name\s*\{/.test(cssNC))
       ? ok("【32】.turn-head / 头像 / 名字三条样式都在")
       : fail("【32】.turn-head 样式缺 —— 回合头会没尺寸或没对齐");
-    const procIdx = appC3.indexOf("{running && userItems.length > 0 && <RunningProcessTime />}");
+    // ⛔ 锚的是**条件语义**（running && userItems.length > 0），不锁整行 —— 09-18 给
+    // RunningProcessTime 加 finalizing prop 时整行字面量匹配不上，两条守卫当场假红。
+    const procCall = appC3.match(/\{running && userItems\.length > 0 && <RunningProcessTime[^>]*\/>/);
+    const procIdx = procCall ? appC3.indexOf(procCall[0]) : -1;
     const cardIdx = appC3.indexOf('{running && !hasVisible && userItems.length > 0 && <header className="turn-card-header">');
     (procIdx > 0)
       ? ok("【32】「正在处理 N 秒 + 灰线」不再依赖工具调用（回合内 userMessage 一到就显示）")
@@ -4689,7 +4692,7 @@ w.postMessage({id:1,op:"list",root});
   //    守卫三层：①纯函数行为（直跑 src/lib/turn-stop-reason.mjs）②界面接线 ③旧写法必须消失。
   {
     console.log(C.bold("\n【44】回合结束原因（为什么停 / 能不能接着跑）"));
-    const { describeTurnStop, turnHeadline } = await import("../src/lib/turn-stop-reason.mjs");
+    const { describeTurnStop, turnHeadline, isAwaitingTurnClose } = await import("../src/lib/turn-stop-reason.mjs");
     const appSrc = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
     const cssSrc = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
     const libSrc = readFileSync(join(ROOT, "src", "lib", "turn-stop-reason.mjs"), "utf8");
@@ -4721,6 +4724,32 @@ w.postMessage({id:1,op:"list",root});
     (!/turn\.error \? "出错"/.test(appSrc) ? ok : fail)("【44】回合状态词不再只写「出错」");
     (cssSrc.includes(".turn-stop-notice") && cssSrc.includes(".turn-stop-notice.stop-interrupted") ? ok : fail)("【44】提示条样式存在（被中断用中性色，不冒充错误）");
     (libSrc.length > 800 ? ok : fail)("【44】原因表在纯函数模块里（可直跑断言，不是散在 JSX 里的字面量）");
+
+    // ⑦ 「正文已完整，等待模型收尾」（09-18 用户实测「怎么回复完了还没结束」：gpt-5.6-sol
+    //    正文落盘后 28 秒零事件才 task_complete —— 引擎干等上游的流结束信号，不是 bug，
+    //    但界面还说「正在生成回复」就是误导）。
+    (isAwaitingTurnClose({ status: "inProgress", items: [{ type: "agentMessage", status: "completed", text: "答案" }] }) ? ok : fail)("【44】正文完成且无在跑 item → 收尾等待状态");
+    (!isAwaitingTurnClose({ status: "inProgress", items: [{ type: "agentMessage", status: "inProgress", text: "" }] }) ? ok : fail)("【44】正文还在流式输出 → 不算收尾等待（防误报）");
+    (isAwaitingTurnClose({ status: "inProgress", items: [{ type: "commandExecution", status: "completed" }, { type: "agentMessage", status: "completed", text: "答案" }] }) ? ok : fail)("【44】前面有已完成工具不影响判定（只看最后的有正文消息）");
+    (!isAwaitingTurnClose({ status: "inProgress", items: [{ type: "agentMessage", status: "completed", text: "答案" }, { type: "commandExecution", status: "inProgress" }] }) ? ok : fail)("【44】还有在跑的 item → 不算收尾等待");
+    (!isAwaitingTurnClose({ status: "completed", items: [{ type: "agentMessage", status: "completed", text: "答案" }] }) ? ok : fail)("【44】回合已结束 → 不算收尾等待");
+    // 09-18 收严：在跑的 item 要**扫全量**，不能只看到正文为止 —— 否则「正文已完成 +
+    // 后面还有一条在跑的命令」会同时显示「正在执行命令」和「正文已完整，等待模型收尾」。
+    (!isAwaitingTurnClose({ status: "inProgress", items: [{ type: "commandExecution", status: "inProgress" }, { type: "agentMessage", status: "completed", text: "答案" }] }) ? ok : fail)("【44】在跑的 item 哪怕排在正文之前也不算收尾等待（防状态行自相矛盾）");
+    // 界面接线：① 计时条拿 finalizing ② 状态行兜底**复用同一判据**（不许在组件里再抄一份，两份会漂移）。
+    //    锚用**结构正则**不锁整行字面量（09-18 教训：给组件加 prop 就会让整行锚假红）。
+    (/<RunningProcessTime[^>]*isAwaitingTurnClose\(turn\)/.test(appSrc) ? ok : fail)("【44】计时条在收尾等待时如实说明（RunningProcessTime 接线 finalizing）");
+    (/const turnFinalizing = Boolean\([^)]*isAwaitingTurnClose\(/.test(appSrc) ? ok : fail)("【44】收敛为一个布尔判据（状态行与短语共用，不各写一份）");
+    // ⛔ 反向守卫：判据**不许**写成 `runActivity === "某中文文案"` —— 文案一改就静默失效，
+    //   界面会悄悄退回「正在生成回复」，而预检照样全绿（09-18 审查抓出的隐患）。
+    //   ⛔ 必须先去掉注释再判：注释里解释这条隐患时也会出现同样的写法，直接正则会假红（本轮踩到）。
+    const appNoCmt = appSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    (!/runActivity\s*===\s*"/.test(appNoCmt) ? ok : fail)("【44】不用展示文案做状态判据（否则改文案 = 判据静默失效）");
+    // 收尾态的底部短语只能用**专属池**：过通用池会抽到「正在把改动收拢干净」这类干活句。
+    const exactIdx = appSrc.indexOf("function pickRunPhraseExact");
+    const exactWin = exactIdx >= 0 ? appSrc.slice(exactIdx, exactIdx + 260) : "";
+    (exactWin && /RUN_PHRASES_BY_ACTIVITY\[activity\]/.test(exactWin) && !/\.\.\.RUN_PHRASES\b/.test(exactWin) ? ok : fail)("【44】收尾态专属句不过通用池（pickRunPhraseExact 只取专属池）");
+    (/setRunPhrase\(turnFinalizing \? pickRunPhraseExact\(/.test(appSrc) ? ok : fail)("【44】收尾状态跨进/跨出各换一次句（只在跨界时换，不在「思考→命令」之间乱换）");
   }
 }
 
