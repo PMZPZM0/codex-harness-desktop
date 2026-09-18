@@ -11,6 +11,9 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import createHighlightElement from "react-syntax-highlighter/dist/esm/create-element";
 import { createHighlightCache, highlightCacheKey } from "./lib/code-highlight-cache.mjs";
 import { attachChipName } from "./lib/attach-chip-name.mjs";
+// 图片显示 src 归一化：⛔ 不能写 `startsWith("http") ? src : imageUrl(src)` —— data URL 会被
+// 当成本地路径去拼协议 URL，灯箱与悬停预览都会打不开（09-18 代码审查发现，见模块注释）。
+import { imageDisplaySrc, localImageUrl } from "./lib/image-src.mjs";
 // 懒高亮（09-18 用户：「我又没点开看代码高亮，为啥每次切换都重新加载一遍」）：
 // 只对"大块"启用——进视口邻近区之前渲染等价外观的纯文本，进区后才真高亮。
 import { deservesLazyHighlight, plainCodeStyles } from "./lib/lazy-highlight.mjs";
@@ -1265,10 +1268,8 @@ const SHORTCUT_GROUPS: { group: string; shortcuts: { keys: string[]; desc: strin
   .map((group) => ({ ...group, shortcuts: group.shortcuts.map((item) => ({ ...item, keys: item.keys.map(hk), desc: hk(item.desc) })) }));
 
 function imageUrl(path: string) {
-  // 双重编码：Chromium 对自定义协议 URL 会自行解一层 percent 编码，路径里的 %5C（反斜杠）
-  // 被还原成 \ 后在协议层丢失（实测 decoded 变成 C:UsersAdministrator... → existsSync false
-  // → 主进程返回 1x1 透明占位 → 用户看到「透明的图」）。双编码保证 handler 至少还剩一层可解。
-  return `harness-image://local?path=${encodeURIComponent(encodeURIComponent(path))}`;
+  // 双编码细节与理由见 src/lib/image-src.mjs（纯函数，可离线断言），此处只做转发
+  return localImageUrl(path);
 }
 
 /** 把图片显示源的 path 还原成本地文件路径；非本地（http/data/相对）返回 null。
@@ -1703,7 +1704,9 @@ function UserRefsRow({ refs, onOpenFile, onQuote, extraThumbs, hideFiles }: { re
       {visibleFiles.map((path, index) => {
         const name = basename(path) || path;
         if (isImagePath(path)) {
-          const src = path.startsWith("http") ? path : imageUrl(path);
+          // ⛔ 必须走 imageDisplaySrc：写 `startsWith("http") ? path : imageUrl(path)` 会让
+          //    data URL 被当成本地路径（09-18 守卫【47】抓到的残留，与灯箱同类缺陷）。
+          const src = imageDisplaySrc(path);
           return (
             <button type="button" className="ref-file-card ref-image-card" title={name} onClick={() => openImageLightbox?.(path, name)} key={index}>
               <span className="ref-image-thumb">
@@ -3369,7 +3372,7 @@ function collectKnownPaths(source: unknown, map: Map<string, string>, depth = 0)
 }
 
 function ImagePreview({ path, alt, onCopy }: { path: string; alt: string; onCopy?: () => void }) {
-  return <img className="message-image" src={path.startsWith("http") ? path : imageUrl(path)} alt={alt} onClick={() => openImageLightbox?.(path, alt)} onContextMenu={(event) => { if (!onCopy) return; event.preventDefault(); onCopy(); }} />;
+  return <img className="message-image" src={imageDisplaySrc(path)} alt={alt} onClick={() => openImageLightbox?.(path, alt)} onContextMenu={(event) => { if (!onCopy) return; event.preventDefault(); onCopy(); }} />;
 }
 
 function ImageLightbox({ path, alt, onClose, onCopy }: { path: string; alt: string; onClose: () => void; onCopy?: () => void }) {
@@ -3411,7 +3414,7 @@ function ImageLightbox({ path, alt, onClose, onCopy }: { path: string; alt: stri
         onMouseLeave={endDrag}
         onWheel={(event) => setZoom((current) => clampZoom(current * (event.deltaY < 0 ? 1.15 : 0.87)))}
       >
-        <img src={path.startsWith("http") ? path : imageUrl(path)} alt={alt} draggable={false} style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }} />
+        <img src={imageDisplaySrc(path)} alt={alt} draggable={false} style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }} />
       </div>
     </div>
   );
@@ -5287,6 +5290,72 @@ function claimSendAnimation(messageText: string): number | null {
   return result.kind === "continue" ? result.delayMs : null;
 }
 
+/** 消息里的内联附件 chip：外观与输入框**逐字一致**（同一个 `composer-image-chip-inline`），
+ *  另外加上两件输入框里不需要、但消息里需要的能力：
+ *   ① **点击** → 图片走大预览（灯箱）、文件走打开文件；
+ *   ② **悬停** → 图片弹出自适应小预览（`.message-attach-preview`，绝对定位浮层，不占布局）。
+ *  ⛔ 必须是**模块级**组件（写成内联箭头函数会每次 render 换身份 → 图片子树重挂、预览闪烁）。 */
+function MessageAttachChip({ name, source, image, onOpenImage, onOpenFile }: {
+  name: string;
+  source: string;
+  image: boolean;
+  onOpenImage?: (source: string, name: string) => void;
+  onOpenFile?: (path: string) => void;
+}) {
+  // 悬停预览的弹出方向：默认在上方（贴着文字流更自然），上方空间不够时翻到下方。
+  // ⛔ 必须翻：聊天区的滚动容器（`.timeline`）有 overflow 裁剪，靠近顶部的那条消息
+  //    如果硬往上弹，预览会被切掉上半截（09-18 真机实测 `top: -101`，等于看不见）。
+  const [previewBelow, setPreviewBelow] = useState(false);
+  const decideDirection = (el: HTMLElement) => {
+    const preview = el.querySelector(".message-attach-preview") as HTMLElement | null;
+    const img = preview?.querySelector("img");
+    // 所需高度：图片已加载就用实测高度，否则按 CSS 上限（240）留足余量，避免"先判定在上、
+    // 图片随后撑高 → 又被裁"的时序问题。
+    const measured = preview ? preview.getBoundingClientRect().height : 0;
+    const need = (img?.naturalWidth ? measured : 0) > 0 ? measured : 240;
+    const budget = need + 16;
+    // 以最近的滚动/裁剪容器为"可视上界"
+    let box: HTMLElement | null = el.parentElement;
+    while (box && box !== document.body) {
+      const s = getComputedStyle(box);
+      if (/(auto|scroll|hidden|clip)/.test(`${s.overflowY}${s.overflow}`)) break;
+      box = box.parentElement;
+    }
+    const limitTop = (box ?? document.documentElement).getBoundingClientRect().top;
+    setPreviewBelow(el.getBoundingClientRect().top - limitTop < budget);
+  };
+  return (
+    <button
+      type="button"
+      className={`composer-image-chip-inline message-attach-chip${image ? " is-image" : ""}${previewBelow ? " preview-below" : ""}`}
+      title={image ? `点击查看大图：${name}` : name}
+      onClick={(event) => {
+        // ⛔ 指针点击后要**释放焦点**：chip 一旦留着焦点，`:focus-visible` 会让预览继续挂着——
+        //    用户点开大图 → Esc 关掉 → 小预览却又自己冒出来（而且 Esc 属键盘操作，会把
+        //    Chromium 的焦点渲染切到"键盘模式"，让刚点过的按钮开始命中 :focus-visible）。
+        //    键盘激活（Enter/Space）的 click 事件 `detail === 0`，此时**保留焦点**给无障碍用。
+        if (event.detail > 0) event.currentTarget.blur();
+        if (image) onOpenImage?.(source, name);
+        else onOpenFile?.(source);
+      }}
+      onMouseEnter={(event) => decideDirection(event.currentTarget)}
+      onFocus={(event) => decideDirection(event.currentTarget)}
+    >
+      {image
+        ? <span className="composer-image-chip-icon" dangerouslySetInnerHTML={{ __html: COMPOSER_CHIP_ICON }} />
+        : <FileText size={13} style={{ color: "var(--link)", flex: "none" }} />}
+      <span className="composer-image-chip-name">{name}</span>
+      {/* 悬停小预览：只给图片。尺寸由 CSS 的 max-width/max-height + 浏览器保持原始宽高比决定，
+          所以"自适应"是天然的——不用按图片比例写任何分支。 */}
+      {image && (
+        <span className="message-attach-preview" aria-hidden="true">
+          <img src={imageDisplaySrc(source)} alt="" />
+        </span>
+      )}
+    </button>
+  );
+}
+
 function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote, onImageCopy, onEditSubmit, onOpenFile, onOpenThread }: { item: ThreadItem; turn?: Turn; fallbackWindow?: number; pending?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void }) {
   // 「你」的名字（09-17 用户「人也要有名字和头像，位置跟 Codex 一样」）：走外部 store，
   // 与 Codex 名字同一套机制。⛔ 必须与其它 hook 一起放在 early return 之前（注释见下）。
@@ -5401,25 +5470,24 @@ function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote,
             <p className="user-message-text">
               {splitPromptSegments(refs.cleanText ?? "").map((seg, index) => seg.kind === "text"
                 ? <span key={index}>{seg.text}</span>
-                : <button type="button" className="composer-image-chip-inline" key={index} title={`查看 ${basename(seg.path) || seg.path}`} onClick={() => openImageLightbox?.(seg.path, basename(seg.path) || seg.path)}>
-                    <span className="composer-image-chip-icon" dangerouslySetInnerHTML={{ __html: COMPOSER_CHIP_ICON }} />
-                    <span className="composer-image-chip-name">{basename(seg.path) || seg.path}</span>
-                  </button>)}
+                : <MessageAttachChip
+                    key={index}
+                    name={attachChipName({ path: seg.path }, seg.path)}
+                    source={seg.path}
+                    image
+                    onOpenImage={openImageLightbox ?? undefined}
+                  />)}
               {/* 附件 chip 内联在正文文字之后，与输入框同一个 `composer-image-chip-inline` —— 
                   「发送前看到的样子 == 发送后显示的样子」（09-18 用户定稿）。 */}
               {inlineAttachItems.map((att, index) => (
-                <button
-                  type="button"
-                  className="composer-image-chip-inline"
-                  title={att.name}
+                <MessageAttachChip
                   key={`att-${index}`}
-                  onClick={() => (att.image ? openImageLightbox?.(att.path, att.name) : onOpenFile?.(att.path))}
-                >
-                  {att.image
-                    ? <span className="composer-image-chip-icon" dangerouslySetInnerHTML={{ __html: COMPOSER_CHIP_ICON }} />
-                    : <FileText size={13} style={{ color: "var(--link)", flex: "none" }} />}
-                  <span className="composer-image-chip-name">{att.name}</span>
-                </button>
+                  name={att.name}
+                  source={att.path}
+                  image={att.image}
+                  onOpenImage={openImageLightbox ?? undefined}
+                  onOpenFile={onOpenFile}
+                />
               ))}
             </p>
           ) : null}

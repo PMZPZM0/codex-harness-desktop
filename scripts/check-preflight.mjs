@@ -34,15 +34,32 @@ const C = {
 
 let hardFails = 0;
 let warns = 0;
+let checks = 0;
+
+// ⛔ 崩溃必须显式报红（09-18 实测的假绿来源）：预检是"跑到哪算哪"的平坦脚本，中途一处
+//    ReferenceError 会让**后面所有断言静默不执行**，而进程只以 exit 1 退出；外部脚本若只
+//    过滤「✗ 行」就会得出"只有预期那几条红"的**错误结论**（当天就发生过：我删了一个局部变量
+//    的定义却漏改引用，【46】后半与整个【47】从未执行，却被我读成"除产物过期外全绿"）。
+//    兜底：① 捕获异常并打一条显式的 ✗；② 末尾打印断言计数，截断一眼可见。
+for (const ev of ["uncaughtException", "unhandledRejection"]) {
+  process.on(ev, (err) => {
+    console.log(`  \x1b[31m✗\x1b[0m 预检自身异常（断言未跑完，后面的检查项全部未执行）：${err && err.message ? err.message : String(err)}`);
+    console.log(`\x1b[90m已执行断言数：${checks}\x1b[0m`);
+    process.exit(1);
+  });
+}
 
 function ok(msg) {
+  checks++;
   console.log(`  ${C.green("✓")} ${msg}`);
 }
 function fail(msg) {
+  checks++;
   hardFails++;
   console.log(`  ${C.red("✗")} ${msg}`);
 }
 function warn(msg) {
+  checks++;
   warns++;
   console.log(`  ${C.yellow("!")} ${msg}`);
 }
@@ -4896,14 +4913,18 @@ w.postMessage({id:1,op:"list",root});
       (listIdx > 0 && pOpen > 0 && pClose > listIdx && pClose - listIdx < 2000
         ? ok : fail)("【46】附件 chip 内联在正文段落内（文字 + chip 同一文字流）");
       // 与输入框**字面同一个类名** —— 这是"发送前看到的样子 == 发送后显示的样子"的保证
-      const inlineBody = listIdx > 0 ? appSrc46.slice(listIdx, appSrc46.indexOf("</p>", listIdx)) : "";
-      (inlineBody.includes('className="composer-image-chip-inline"') && !/user-attach-chip|ref-image-card/.test(inlineBody)
+      // （09-18 起抽成模块级组件 `MessageAttachChip`，所以判据落在**组件定义**上）
+      const chipDef = (() => {
+        const i = appSrc46.indexOf("function MessageAttachChip(");
+        return i > 0 ? appSrc46.slice(i, appSrc46.indexOf("\n}\n", i)) : "";
+      })();
+      (chipDef.includes('className={`composer-image-chip-inline message-attach-chip') && !/user-attach-chip|ref-image-card/.test(chipDef)
         ? ok : fail)("【46】内联附件复用输入框的 composer-image-chip-inline（不自造 chip 样式）");
       // 文件与图片都要能内联（文件用 FileText 图标 + 文件名）
-      (inlineBody.includes("FileText") && inlineBody.includes("composer-image-chip-name")
+      (chipDef.includes("FileText") && chipDef.includes("composer-image-chip-name")
         ? ok : fail)("【46】文件与图片都内联（文件用 FileText 图标 + 文件名）");
       // 去重：已在文本占位符里渲染过的图片不重复出现（否则同一张图显示两份）
-      (inlineBody.length > 0 && /inlineImageSet\.has\(path\)/.test(appSrc46)
+      (chipDef.length > 0 && /inlineImageSet\.has\(path\)/.test(appSrc46)
         ? ok : fail)("【46】内联附件对占位符已渲染的图片去重（不出现两份）");
       // ⛔ 附件名必须是"像文件名"的字符串：data URL 直接取 basename 会得到 base64 尾巴
       //    （实测 `basename("data:image/png;base64,iVBOR…")` → `q842iQAAAABJRU5ErkJggg==`）。
@@ -4921,15 +4942,101 @@ w.postMessage({id:1,op:"list",root});
           ? ok : fail)("【46】http 图片名剥掉 query/hash");
         (attachChipName({}, "") === "图片" && attachChipName(null, null) === "图片"
           ? ok : fail)("【46】无来源时兜底为「图片」（不崩、不空）");
+        // ⛔ part.path 本身就是 data URL 的分支（真机验收抓到的 bug：lastSegment 先剥了前缀，
+        //    之后的 startsWith("data:") 永远为假 → 名字显示成 base64 尾巴）
+        (attachChipName({ type: "image", path: DATA }, DATA) === "粘贴的图片"
+          ? ok : fail)("【46】part.path 是 data URL 时也识别成「粘贴的图片」（先拦 data: 再取末段）");
         // 结构守卫：extraImages 的命名必须走纯函数，不许回退成裸 basename
         (!/const name = basename\(String\(part\?\.path \?\? src\)\)/.test(appSrc46) && /attachChipName\(part, src\)/.test(appSrc46)
           ? ok : fail)("【46】粘贴图片的名字经 attachChipName 归一（不许直接 basename(src)）");
+        // 文本占位符那支也必须走同一个纯函数：local path 结果相同，但 data URL 占位符
+        // 若走裸 basename 又会露出 base64 尾巴 —— 两处口径必须一致（09-18 守卫抓出的不一致）
+        (/name=\{attachChipName\(\{ path: seg\.path \}, seg\.path\)\}/.test(appSrc46) && !/name=\{basename\(seg\.path\) \|\| seg\.path\}/.test(appSrc46)
+          ? ok : fail)("【46】文本占位符图片的名字也走 attachChipName（两支口径一致）");
       }
+    }
+
+    console.log(C.bold("\n【47】内联图片：点击大预览 + 悬停自适应小预览"));
+    const { imageDisplaySrc, localImageUrl, LOCAL_IMAGE_SCHEME } = await import("../src/lib/image-src.mjs");
+    {
+      // ① 纯函数：src 归一化必须**认得出 data URL**，否则会被拼成本地协议 URL（灯箱/preview 全打不开）
+      const DATA = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
+      (imageDisplaySrc(DATA) === DATA ? ok : fail)(`【47】data URL 原样透传（实得 ${String(imageDisplaySrc(DATA)).slice(0, 42)}…）`);
+      (imageDisplaySrc("https://x.com/a.png") === "https://x.com/a.png" ? ok : fail)("【47】http(s) 原样透传");
+      (imageDisplaySrc("blob:http://x/1") === "blob:http://x/1" ? ok : fail)("【47】blob 原样透传");
+      (imageDisplaySrc("harness-image://local?path=x") === "harness-image://local?path=x" ? ok : fail)("【47】已是协议 URL 的不重复包装");
+      (imageDisplaySrc("") === "" && imageDisplaySrc(null) === "" ? ok : fail)("【47】空值返回空串（不崩）");
+      // 本地路径 → 协议 URL，且**必须双重编码**（单编码会让反斜杠在协议层丢失 → 透明占位图）
+      const win = "C:\\dir\\a b.png";
+      const want = LOCAL_IMAGE_SCHEME + encodeURIComponent(encodeURIComponent(win));
+      (localImageUrl(win) === want ? ok : fail)("【47】本地路径双重编码（改单编码会让图片变透明占位）");
+      (/%25/.test(localImageUrl(win)) ? ok : fail)("【47】确实编了两层（URL 里出现 %25）");
+      (imageDisplaySrc(win).startsWith(LOCAL_IMAGE_SCHEME) ? ok : fail)("【47】本地路径走自定义协议");
+      // ⛔ 灯箱的「在文件夹中显示」必须靠 resolveImagePath 的真返回值决定：它对 data URL / http
+      //    返回 null（那两个来源没有本机文件可定位）。断言这段结构，防"给 data URL 也挂一个
+      //    指向假路径的按钮"。曾写过一个 isLocalImageSource 纯函数，但它没有任何调用点
+      //    （resolveImagePath 已天然处理）→ 属死代码，已删（不再为无人使用的函数写断言）。
+      (/const local = resolveImagePath\(path\);/.test(appSrc46) && /return local\s*\r?\n?\s*\? <button title="在文件夹中显示"/.test(appSrc46)
+        ? ok : fail)("【47】灯箱「在文件夹中显示」以 resolveImagePath 的真返回值为准（data/http 不挂）");
+      // ② 结构守卫：三个显示位点都必须用 imageDisplaySrc，且**不许**再出现旧的 http-only 三元
+      // ⛔ 只数"真实调用点"：注释里解释这个隐患时会写出同款字符串（本仓库就这么写的），
+      //    按原文匹配会把它算成一处残留 → 假红（09-18 实测，与「反证要匹配 fail 文案」同类坑）。
+      const codeLines47 = appSrc46.split(/\r?\n/).filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l));
+      const badTernary = codeLines47.filter((l) => /startsWith\("http"\) \? [^\n]*: imageUrl\(/.test(l)).length;
+      (badTernary === 0 ? ok : fail)(`【47】没有残留「只看 http、其余当本地路径」的旧写法（实得 ${badTernary} 处，已排除注释）`);
+      const displaySites = (appSrc46.match(/imageDisplaySrc\(/g) || []).length;
+      (displaySites >= 3 ? ok : fail)(`【47】消息图片 / 灯箱 / 悬停预览都走 imageDisplaySrc（${displaySites} 处，含定义 1）`);
+      (/function imageUrl\(path: string\) \{\s*\r?\n\s*\/\/[^\n]*\r?\n\s*return localImageUrl\(path\);/.test(appSrc46)
+        ? ok : fail)("【47】imageUrl 转发到纯函数（行为不变、可离线断言）");
+      // ③ 组件必须是模块级的（内联箭头函数会每次 render 换身份 → 图片子树重挂、预览闪烁）
+      (/^function MessageAttachChip\(/m.test(appSrc46) ? ok : fail)("【47】内联附件 chip 是模块级组件（不在 render 里现造）");
+      (/<MessageAttachChip/.test(appSrc46) ? ok : fail)("【47】正文占位符图片与附件列表都复用它");
+      (/className="message-attach-preview"/.test(appSrc46) ? ok : fail)("【47】图片 chip 里带悬停预览浮层");
+      // ④ CSS：默认隐藏 + hover/focus 显示 + 两方向都限上限（自适应宽高比）+ 不挡自己的 hover
+      const css47 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+      (/\.message-attach-preview \{[\s\S]{0,420}?opacity: 0;[\s\S]{0,200}?visibility: hidden;/.test(css47)
+        ? ok : fail)("【47】预览默认隐藏（不占位、不挡视线）");
+      (/\.message-attach-chip:hover \.message-attach-preview,[\s\S]{0,120}?\.message-attach-chip:focus-visible \.message-attach-preview \{/.test(css47)
+        ? ok : fail)("【47】hover 与键盘 focus 都能唤出预览");
+      (/\.message-attach-preview img \{[\s\S]{0,300}?max-width:[^;]+;[\s\S]{0,160}?max-height: 240px;/.test(css47)
+        ? ok : fail)("【47】预览只给上限（宽高 auto ⇒ 自适应原始宽高比，不用按比例写分支）");
+      (/\.message-attach-preview \{[\s\S]{0,520}?pointer-events: none;/.test(css47)
+        ? ok : fail)("【47】预览不接收鼠标（否则会挡掉 chip 自身的 hover/click）");
+      (/\.message-attach-chip \{\s*\r?\n\s*position: relative;/.test(css47) ? ok : fail)("【47】chip 是定位上下文（浮层锚在它上方）");
+      (/\.message-attach-chip\.is-image \{\s*\r?\n\s*cursor: zoom-in;/.test(css47) ? ok : fail)("【47】图片 chip 用 zoom-in 光标提示可点开大图");
+      // ⑤ 浮层不能被祖先裁掉：气泡链路上不许有 overflow 裁剪
+      const clipAncestors = [".message-body", ".user-message .message-body", ".user-message-text"]
+        .filter((sel) => {
+          const re = new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " \\{[^}]*overflow: (hidden|clip)", "");
+          return re.test(css47);
+        });
+      (clipAncestors.length === 0 ? ok : fail)(`【47】气泡链路没有 overflow 裁剪（否则预览会被切掉）：${clipAncestors.join(", ") || "无"}`);
+      // ⑥ 上方空间不足要能翻到下方 —— 聊天区滚动容器有 overflow 裁剪，靠近顶部的消息
+      //    若硬往上弹会被切掉上半截（真机实测预览 top=-101，等于看不见）
+      (/setPreviewBelow\(/.test(appSrc46) && /preview-below/.test(appSrc46)
+        ? ok : fail)("【47】预览带方向判定（空间不足翻到下方）");
+      (/onMouseEnter=\{\(event\) => decideDirection\(event\.currentTarget\)\}/.test(appSrc46)
+        ? ok : fail)("【47】悬停时按实际几何决定方向（不是写死一个方向）");
+      (/\.message-attach-chip\.preview-below \.message-attach-preview \{[\s\S]{0,200}?top: calc\(100% \+ 8px\);[\s\S]{0,80}?bottom: auto;/.test(css47)
+        ? ok : fail)("【47】CSS 有「翻到下方」的对应变体（top 定位、bottom 复位）");
+      // ⑦ 决定方向要取"最近裁剪容器"的上沿，不能拿视口/0 当界。
+      // ⛔ 必须锚**那一行的实际表达式**：先前写成「文件里存在 getBoundingClientRect().top」
+      //    是假绿（同函数里 `el.getBoundingClientRect().top` 就满足它，反证 ⑬ 因此没变红）。
+      (/const limitTop = \(box \?\? document\.documentElement\)\.getBoundingClientRect\(\)\.top;/.test(appSrc46)
+        ? ok : fail)("【47】方向判定以最近裁剪容器为界（不是 window 顶部 / 写死 0）");
+      // ⑧ 指针点击后必须释放焦点：否则「点开大图 → Esc 关闭」后小预览会自己再冒出来
+      //    （:focus-visible 命中；Esc 属键盘操作会把 Chromium 切到键盘焦点渲染模式）。
+      //    判据要锚住 `detail > 0` 的条件与 blur() 调用，键盘激活（detail===0）必须保留焦点。
+      (/if \(event\.detail > 0\) event\.currentTarget\.blur\(\);/.test(appSrc46)
+        ? ok : fail)("【47】指针点击后释放焦点（Esc 关大图后小预览不会再冒出来）");
+      (!/onClick=\{\(\) => \(image \? onOpenImage/.test(appSrc46)
+        ? ok : fail)("【47】onClick 不再是一句话箭头函数（要拿 event 判断是否指针触发）");
     }
   }
 }
 
 console.log("");
+console.log(C.gray(`已执行断言数：${checks}`));
 if (hardFails === 0) {
   console.log(C.green(`预检通过${warns ? `（${warns} 条告警，见上）` : ""}`));
 } else {
