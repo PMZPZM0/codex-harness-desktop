@@ -4852,6 +4852,7 @@ w.postMessage({id:1,op:"list",root});
     const appSrc46 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
     const foldSrc = readFileSync(join(ROOT, "src", "lib", "turn-fold.ts"), "utf8");
     const { deservesLazyHighlight, plainCodeStyles, LAZY_HIGHLIGHT_MIN_CHARS } = await import("../src/lib/lazy-highlight.mjs");
+    const { attachChipName } = await import("../src/lib/attach-chip-name.mjs");
 
     // ① 懒高亮阈值（纯函数直跑）
     (LAZY_HIGHLIGHT_MIN_CHARS >= 1000 ? ok : fail)(`【46】懒加载只针对"大块"（阈值 ${LAZY_HIGHLIGHT_MIN_CHARS} 字符）`);
@@ -4875,19 +4876,55 @@ w.postMessage({id:1,op:"list",root});
     (!/item\.type === "plan" \|\| item\.type === "imageView"/.test(foldSrc) ? ok : fail)("【46】imageView（查看图片）不再 keepVisible（不再一张一个大图铺满消息区）");
     (/case "imageView": return \{ key: "image-view", label: "查看图片" \};/.test(foldSrc) ? ok : fail)("【46】imageView 有独立分组标签");
     (/case "imageView":[\s\S]{0,140}group: "read"/.test(foldSrc) ? ok : fail)("【46】imageView 摘要归 read 组（显示「查看 xxx」而非「处理多个步骤」）");
-    // ⑤ 用户附件行：位置在气泡之后；图片在前文件在后；整行仍右对齐
+    // ⑤ 用户附件：**内联在正文文字流里**，形态与输入框逐字一致（用户三次纠正后的定稿）
     {
-      const stackIdx = appSrc46.indexOf('<div className="user-message-stack">');
-      const headIdx = appSrc46.indexOf('<div className="user-head">', stackIdx);
-      const offset = appSrc46.indexOf("{attachRow}", stackIdx);
-      const footerIdx = appSrc46.indexOf('className="user-message-footer"', stackIdx);
-      (stackIdx > 0 && headIdx > stackIdx && offset > headIdx && offset > footerIdx
-        ? ok : fail)("【46】附件行排在「名字/头像 → 正文」之后（不再跑到用户名上面）");
-      // ⛔ 09-18 用户定稿：「都靠右，自适应排序啊，靠左多丑」——不分图片/文件两组做左右分区，
-      //    全部按原始顺序排列 + 整行右对齐 + 可换行。守卫要盯住"没有被误改成 flex-start 或左右分区"。
-      (!/refImageFiles|refPlainFiles/.test(appSrc46) ? ok : fail)("【46】附件行不做图片/文件左右分区（用户要的是统一靠右、自适应）");
-      (/\.msg-refs\.user-attach-row \{\s*\r?\n\s*justify-content: flex-end;[\s\S]{0,200}?flex-wrap: wrap;/.test(readFileSync(join(ROOT, "src", "styles.css"), "utf8"))
-        ? ok : fail)("【46】附件行靠右且可自适应换行（flex-end + flex-wrap）");
+      // ⛔ 定稿契约（09-18 用户：「谁让你单独一行靠右了，我要的是像输入框那样，内联在里面」）：
+      //    附件 chip 必须与输入框共用 `.composer-image-chip-inline`，且**不许**再有"气泡下方独立附件行"。
+      //    曾有两版被否决的实现（单独一行右对齐 / 方形缩略图），守卫要防它们复活。
+      const css46 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+      (appSrc46.includes("const inlineAttachItems") ? ok : fail)("【46】附件以 inlineAttachItems 组装（供内联渲染）");
+      (!/\{attachRow\}/.test(appSrc46) && !/const attachRow =/.test(appSrc46)
+        ? ok : fail)("【46】已删除气泡下方的独立附件行（附件不再另起一行）");
+      (!/\.msg-refs\.user-attach-row \{/.test(css46) && !/\.msg-refs \.user-attach-chip \{/.test(css46)
+        ? ok : fail)("【46】被否决的两版附件行样式已清除（不留复活入口）");
+      (!/refImageFiles|refPlainFiles/.test(appSrc46) ? ok : fail)("【46】附件不做图片/文件左右分区（用户要的是统一内联）");
+      // 内联 chip 必须在正文 <p class="user-message-text"> 之内（不是它的兄弟节点）
+      const bodyIdx = appSrc46.indexOf("const inlineAttachItems");
+      const listIdx = bodyIdx > 0 ? appSrc46.indexOf("{inlineAttachItems.map(", bodyIdx) : -1;
+      const pOpen = listIdx > 0 ? appSrc46.lastIndexOf('<p className="user-message-text">', listIdx) : -1;
+      const pClose = listIdx > 0 ? appSrc46.indexOf("</p>", listIdx) : -1;
+      (listIdx > 0 && pOpen > 0 && pClose > listIdx && pClose - listIdx < 2000
+        ? ok : fail)("【46】附件 chip 内联在正文段落内（文字 + chip 同一文字流）");
+      // 与输入框**字面同一个类名** —— 这是"发送前看到的样子 == 发送后显示的样子"的保证
+      const inlineBody = listIdx > 0 ? appSrc46.slice(listIdx, appSrc46.indexOf("</p>", listIdx)) : "";
+      (inlineBody.includes('className="composer-image-chip-inline"') && !/user-attach-chip|ref-image-card/.test(inlineBody)
+        ? ok : fail)("【46】内联附件复用输入框的 composer-image-chip-inline（不自造 chip 样式）");
+      // 文件与图片都要能内联（文件用 FileText 图标 + 文件名）
+      (inlineBody.includes("FileText") && inlineBody.includes("composer-image-chip-name")
+        ? ok : fail)("【46】文件与图片都内联（文件用 FileText 图标 + 文件名）");
+      // 去重：已在文本占位符里渲染过的图片不重复出现（否则同一张图显示两份）
+      (inlineBody.length > 0 && /inlineImageSet\.has\(path\)/.test(appSrc46)
+        ? ok : fail)("【46】内联附件对占位符已渲染的图片去重（不出现两份）");
+      // ⛔ 附件名必须是"像文件名"的字符串：data URL 直接取 basename 会得到 base64 尾巴
+      //    （实测 `basename("data:image/png;base64,iVBOR…")` → `q842iQAAAABJRU5ErkJggg==`）。
+      //    09-18 代码审查抓到的真缺陷，用纯函数钉死。
+      {
+        const DATA = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==";
+        const dataName = attachChipName({ type: "image", image_url: DATA }, DATA);
+        (/^(data:|=|.*base64)/.test(dataName) || dataName.length > 12
+          ? fail : ok)(`【46】data URL 图片的名字不是 base64 尾巴（实得「${dataName}」）`);
+        (attachChipName({ type: "localImage", path: "C:\\a\\b\\真图.png" }, "C:\\a\\b\\真图.png") === "真图.png"
+          ? ok : fail)("【46】有本地路径时用其文件名");
+        (attachChipName({ type: "localImage", path: "/tmp/x/y.jpg" }, "/tmp/x/y.jpg") === "y.jpg"
+          ? ok : fail)("【46】posix 路径同样取末段");
+        (attachChipName({ type: "image", image_url: "https://cdn.example.com/a/pic.png?v=2#x" }, "https://cdn.example.com/a/pic.png?v=2#x") === "pic.png"
+          ? ok : fail)("【46】http 图片名剥掉 query/hash");
+        (attachChipName({}, "") === "图片" && attachChipName(null, null) === "图片"
+          ? ok : fail)("【46】无来源时兜底为「图片」（不崩、不空）");
+        // 结构守卫：extraImages 的命名必须走纯函数，不许回退成裸 basename
+        (!/const name = basename\(String\(part\?\.path \?\? src\)\)/.test(appSrc46) && /attachChipName\(part, src\)/.test(appSrc46)
+          ? ok : fail)("【46】粘贴图片的名字经 attachChipName 归一（不许直接 basename(src)）");
+      }
     }
   }
 }

@@ -2042,15 +2042,14 @@ html[data-ui-font="large"] .action-content pre {
    第 2 条 gap=396）；把留白放到 `.timeline` 末尾是**兄弟节点**，扩不了包含块。
    位置改回「滚动式锚顶」：钉一次 + 按增长量跟随（App.tsx 的 anchorTopRef 分支）。
    `data-current-turn` 仍然保留（其余按当前回合生效的样式在用）。 */
-.user-attach-row {
-  margin-bottom: 0;
-}
-/* 双类名提高特异性：.msg-refs 的 flex-start 定义在文件更后，单类名会被覆盖（09-08 反馈「还在中间」） */
-.msg-refs.user-attach-row {
-  justify-content: flex-end;   /* 全部靠右（09-18 用户：「都靠右，自适应排序啊，靠左多丑」） */
-  flex-wrap: wrap;             /* 附件多了自动换行，不横向溢出、也不挤成一坨 */
-  row-gap: 6px;                /* 换行后的行间距（列间距沿用 .msg-refs 的 gap） */
-}
+/* ⛔ 09-18 附件行的三版尝试全部被否决，样式已随之删除，别再重建（用户三次纠正的原话）：
+   ① 单独一行、整行右对齐（`justify-content: flex-end` + `flex-wrap`）→「谁让你单独一行靠右了」；
+   ② 方形缩略图（64px）→「太丑了」；
+   ③ 自造长条 chip（`.user-attach-chip`）→ 仍属"另起一行"，形态与输入框不一致。
+   定稿：**附件 chip 内联在正文文字流里，直接复用输入框的 `.composer-image-chip-inline`**，
+   「发送前在输入框里看到的样子 == 发送后消息里显示的样子」。相关样式见该类的定义处。
+   顺带记一条实测坑：给附件行加 `margin-left: auto` 会让它在交叉轴上失去 stretch，
+   宽度从满宽塌成 fit-content（实测 720px → 415px），`flex-wrap` 便永远等不到换行时机。 */
 /* 乐观气泡（服务端未确认落地前）：仅浅一档区分，避免「消息直接闪出来」与已确认消息混淆。
    原先的「发送中…」角标已删（用户反馈：每次发消息下面都有个发送中闪一下，多余）——
    确认通常几百毫秒内完成，视觉上不需要状态说明。
