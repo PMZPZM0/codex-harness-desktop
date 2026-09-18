@@ -10,6 +10,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 // 切换会话时消息列表重挂载会让它对每段代码重跑一遍（真机 profile 单函数 2251ms）。
 import createHighlightElement from "react-syntax-highlighter/dist/esm/create-element";
 import { createHighlightCache, highlightCacheKey } from "./lib/code-highlight-cache.mjs";
+import { attachChipName } from "./lib/attach-chip-name.mjs";
 // 懒高亮（09-18 用户：「我又没点开看代码高亮，为啥每次切换都重新加载一遍」）：
 // 只对"大块"启用——进视口邻近区之前渲染等价外观的纯文本，进区后才真高亮。
 import { deservesLazyHighlight, plainCodeStyles } from "./lib/lazy-highlight.mjs";
@@ -5334,53 +5335,36 @@ function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote,
     );
   }
   const refsImagePaths = new Set(refs.files.filter(isImagePath));
-  // 文本占位符里出现过的图片以内联 chip 渲染在正文里，缩略图行去重避免双份
+  // 文本占位符里出现过的图片以内联 chip 渲染在正文里，附件列表去重避免双份
   const inlineImageSet = new Set(promptImagePaths(rawText));
   const extraImages = images.filter((part: any) => !refsImagePaths.has(part.path) && !inlineImageSet.has(part.path));
-  // 图片缩略图 + 附件文件卡统一挂在气泡边框外（上方悬浮行）：附件不再撑大气泡（09-08 反馈）
-  const extraThumbs = extraImages.length > 0 ? (
-    <>
-      {extraImages.map((part: any, index: number) => {
-        const src = imagePartSrc(part) ?? "";
-        return (
-          <button type="button" className="user-message-thumb" onClick={() => openImageLightbox?.(src, basename(src) || src)} key={index}>
-            <img src={src.startsWith("data:") || src.startsWith("http") ? src : imageUrl(src)} alt="" loading="lazy" />
-          </button>
-        );
-      })}
-    </>
-  ) : null;
-  // 附件行（图片缩略图 + 文件卡）挂在**气泡下方**、仍不撑大气泡。
-  // ⛔ 09-18 用户实测：「用户发送图片和文件的时候，文件和图片会在用户名字上面」——
-  //    原先它排在 `.user-message-stack` 的**第一个**位置，于是渲染顺序是
-  //    附件 → 名字/头像 → 正文，附件跑到用户名上方去了。改成「名字/头像 → 正文 → 附件」。
-  // ⛔ 行内排版（09-18 用户：「都靠右，自适应排序啊，靠左多丑」）：
-  //    不做"图片一组 / 文件一组"的左右分区，**全部按原始顺序排列、整行靠右**，
-  //    空间不够时自动换行（CSS: flex-wrap + justify-content: flex-end）。
-  const attachRow = refs.files.length || extraThumbs ? (
-    <div className="msg-refs user-attach-row">
-      {refs.files.map((path, index) => {
-        const name = basename(path) || path;
-        if (isImagePath(path)) {
-          const src = path.startsWith("http") ? path : imageUrl(path);
-          return (
-            <button type="button" className="ref-file-card ref-image-card" title={name} onClick={() => openImageLightbox?.(path, name)} key={index}>
-              <span className="ref-image-thumb">
-                <img src={src} alt={name} loading="lazy" />
-              </span>
-            </button>
-          );
-        }
-        return (
-          <button type="button" className="ref-file-card" title={name} onClick={() => onOpenFile?.(path)} key={index}>
-            <FileText size={14} />
-            <span className="ref-file-name">{name}</span>
-          </button>
-        );
-      })}
-      {extraThumbs}
-    </div>
-  ) : null;
+  // 附件 chip：**内联接在正文文字之后**，与输入框里「文字 + chip」的形态逐字一致。
+  // ⛔ 09-18 用户三次纠正后的定稿结论（别再走弯路）：
+  //    ① 「文件和图片会在用户名字上面」→ 附件不能在名字之前；
+  //    ② 「都靠右，自适应排序啊，靠左多丑」→ 不能分成图片/文件两组做左右分区；
+  //    ③ 「谁让你单独一行靠右了，我要的是像输入框那样，内联在里面」→ **不要另起一行**，
+  //       必须像输入框那样跟着文字走、粘贴在哪就排在哪（用同一个 `.composer-image-chip-inline`）。
+  //    曾试过"气泡下方单独一行、整行右对齐"以及"方形缩略图"两版，均被否决：
+  //    附件行一旦独立成行，就与用户输入时看到的形态不一致（输入框里它明明在文字流里）。
+  const inlineAttachItems: { path: string; name: string; image: boolean }[] = [];
+  {
+    const seen = new Set<string>();
+    for (const path of refs.files) {
+      // 已在文本占位符里内联渲染过的图片跳过（否则同一张图出现两次）
+      if (inlineImageSet.has(path) || seen.has(path)) continue;
+      seen.add(path);
+      inlineAttachItems.push({ path, name: basename(path) || path, image: isImagePath(path) });
+    }
+    for (const part of extraImages as any[]) {
+      const src = imagePartSrc(part) ?? "";
+      const key = String(part?.path ?? src);
+      if (!key || inlineImageSet.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      // 名字必须走 attachChipName：直接对 src 取 basename 时，data URL 形态会显示成
+      // `q842iQAAAABJRU5ErkJggg==` 这种 base64 尾巴（09-18 代码审查抓到的真缺陷）。
+      inlineAttachItems.push({ path: src, name: attachChipName(part, src), image: true });
+    }
+  }
   return (
     <div className="user-message-stack">
       {/* 「你」的头部：名字 + 头像（09-17 用户「人也要有名字和头像，位置跟 Codex 一样」）。
@@ -5413,14 +5397,30 @@ function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote,
               </div>
               <div className="user-message-team-task-body">{refs.teamTask.requirement}</div>
             </div>
-          ) : refs.cleanText ? (
+          ) : (refs.cleanText || inlineAttachItems.length) ? (
             <p className="user-message-text">
-              {splitPromptSegments(refs.cleanText).map((seg, index) => seg.kind === "text"
+              {splitPromptSegments(refs.cleanText ?? "").map((seg, index) => seg.kind === "text"
                 ? <span key={index}>{seg.text}</span>
                 : <button type="button" className="composer-image-chip-inline" key={index} title={`查看 ${basename(seg.path) || seg.path}`} onClick={() => openImageLightbox?.(seg.path, basename(seg.path) || seg.path)}>
                     <span className="composer-image-chip-icon" dangerouslySetInnerHTML={{ __html: COMPOSER_CHIP_ICON }} />
                     <span className="composer-image-chip-name">{basename(seg.path) || seg.path}</span>
                   </button>)}
+              {/* 附件 chip 内联在正文文字之后，与输入框同一个 `composer-image-chip-inline` —— 
+                  「发送前看到的样子 == 发送后显示的样子」（09-18 用户定稿）。 */}
+              {inlineAttachItems.map((att, index) => (
+                <button
+                  type="button"
+                  className="composer-image-chip-inline"
+                  title={att.name}
+                  key={`att-${index}`}
+                  onClick={() => (att.image ? openImageLightbox?.(att.path, att.name) : onOpenFile?.(att.path))}
+                >
+                  {att.image
+                    ? <span className="composer-image-chip-icon" dangerouslySetInnerHTML={{ __html: COMPOSER_CHIP_ICON }} />
+                    : <FileText size={13} style={{ color: "var(--link)", flex: "none" }} />}
+                  <span className="composer-image-chip-name">{att.name}</span>
+                </button>
+              ))}
             </p>
           ) : null}
         </div>
@@ -5428,8 +5428,6 @@ function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote,
           <MessageFooter item={item} turn={turn} fallbackWindow={fallbackWindow} onCopy={onCopy} onQuote={onQuote} onEdit={() => setEditing(true)} />
         </div>
       </div>
-      {/* 附件行在气泡**下方**（09-18 用户：「文件和图片会在用户名字上面」→ 见 attachRow 处注释） */}
-      {attachRow}
     </div>
   );
 }
