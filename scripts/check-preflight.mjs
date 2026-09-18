@@ -4190,6 +4190,24 @@ w.postMessage({id:1,op:"list",root});
     }
   }
 
+  // ⑰g 「插件」页的刷新入口唯一化（09-18 用户：「插件市场有两个刷新按键…保留上面的，里面不要」）。
+  //   原先标题行一颗（页面资源：技能/钩子/已装插件/记忆/任务/MCP）+ 市场工具栏一颗（列表，当前筛选），
+  //   两个同款 🔄 挨着放 → 用户分不清。合并成标题行那一颗，两处数据一起刷。
+  //   ⛔ 失效形态是静默的：合并时漏掉 refreshMarketPlugins → 市场列表再也刷不动，而界面无任何报错。
+  {
+    const appSrc = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+    const start = appSrc.indexOf('className="settings-section stack plugin-center"');
+    const end = appSrc.indexOf('settingsPage === "skills"', start);
+    const pluginSection = start >= 0 && end > start ? appSrc.slice(start, end) : "";
+    const refreshButtons = (pluginSection.match(/title="刷新[^"]*"/g) || []);
+    (pluginSection && refreshButtons.length === 1 && !/title="刷新插件市场"/.test(appSrc))
+      ? ok("【35】插件页只有一个刷新入口（市场工具栏那颗已去掉，不再是两个同款 🔄）")
+      : fail(`【35】插件页刷新入口数 = ${refreshButtons.length}（应为 1）：${refreshButtons.join(" / ") || "(section 没切出来)"}`);
+    (/async function refreshPluginsPage\(\)[\s\S]{0,240}?refreshSettingsResources\(\)[\s\S]{0,140}?refreshMarketPlugins\(/.test(appSrc))
+      ? ok("【35】那一个刷新确实两处都刷（页面资源 + 当前筛选的市场列表）")
+      : fail("【35】refreshPluginsPage 没同时刷市场列表 —— 合并后市场再也刷不动，且界面不报错");
+  }
+
   // ⑰d 引导弹窗的「出场时机」（09-17 用户明确定规则：「只在进入主界面的时候才弹配置引导和
   //   工具安装检测自动安装；如果已经配置模型，就不引导模型配置，直接做开发工具检测安装」）。
   //   三种失效形态都**静默**（不报错，只是该弹的不弹 / 不该弹的弹了）：

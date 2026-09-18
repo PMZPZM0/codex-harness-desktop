@@ -14201,6 +14201,17 @@ const commandMatches = useMemo(() => {
     finally { setPluginMarketLoading(false); }
   }
 
+  /** 「插件」页的**唯一**刷新入口（09-18 用户：「插件市场有两个刷新按键…保留上面的，里面不要」）。
+   *  原先两个同款 🔄 挨着放：标题行那个刷页面资源（技能/钩子/已装插件/记忆/任务/MCP），
+   *  市场工具栏那个只刷市场列表（当前分类/搜索/页码）——功能不重复但用户分不清。
+   *  合成一个：点一次，两处数据一起重取（市场沿用当前筛选与页码，与旧工具栏按钮行为一致）。 */
+  async function refreshPluginsPage() {
+    await Promise.all([
+      refreshSettingsResources(),
+      refreshMarketPlugins(pluginMarketCategory, pluginMarketSearch, pluginMarketPage),
+    ]);
+  }
+
   async function installMarketPlugin(plugin: PluginMarketEntry) {
     setInstallingMarketPlugin(plugin.slug);
     setPluginInstall({ plugin, current: 0 });
@@ -18781,14 +18792,13 @@ const commandMatches = useMemo(() => {
               };
               const togglePluginChecked = (id: string) => setPluginChecked((current) => current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]);
               return <section className="settings-section stack plugin-center">
-                <div className="settings-copy channel-heading"><div><h2>插件<PageInfo text={<>上方卡片来自 Codex Plugin Marketplace（codex-marketplace.com），一键安装写入本地插件目录，无需 ChatGPT 登录；下方为已安装插件管理，停用后 Codex 不再加载该插件提供的指令、技能与钩子。</>} helpKey="plugins" label="插件" /></h2></div><div className="settings-heading-actions"><button className="secondary-setting" title="打开 Codex Plugin Marketplace 在线市场" onClick={() => void window.codex.openExternal("https://www.codex-marketplace.com/plugins")}><ArrowUpRight size={14} />在线市场</button><button className="icon-button" title="刷新插件" onClick={() => void refreshSettingsResources()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+                <div className="settings-copy channel-heading"><div><h2>插件<PageInfo text={<>上方卡片来自 Codex Plugin Marketplace（codex-marketplace.com），一键安装写入本地插件目录，无需 ChatGPT 登录；下方为已安装插件管理，停用后 Codex 不再加载该插件提供的指令、技能与钩子。</>} helpKey="plugins" label="插件" /></h2></div><div className="settings-heading-actions"><button className="secondary-setting" title="打开 Codex Plugin Marketplace 在线市场" onClick={() => void window.codex.openExternal("https://www.codex-marketplace.com/plugins")}><ArrowUpRight size={14} />在线市场</button><button className="icon-button" title="刷新：已装插件 / 技能 / 钩子 / 记忆 / 任务 / MCP + 插件市场（沿用当前分类与搜索）" onClick={() => void refreshPluginsPage()}>{(resourceLoading || pluginMarketLoading) ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
                 <div className="plugin-market-block">
                   <div className="plugin-market-title">插件市场<small>来自 Codex Plugin Marketplace · 一键安装无需登录</small></div>
                   <div className="resource-toolbar">
                     <div className="skill-tabs">{pluginMarketCategoryTabs.map(([label, value]) => <button key={value} className={pluginMarketCategory === value ? "active" : ""} onClick={() => { setPluginMarketCategory(value); setPluginMarketPage(1); }}>{label}</button>)}</div>
                     <SearchField value={pluginMarketSearch} onChange={(next) => { setPluginMarketSearch(next); setPluginMarketPage(1); }} placeholder="搜索插件名称、简介或作者" />
-                    <button className="icon-button" title="刷新插件市场" onClick={() => void refreshMarketPlugins(pluginMarketCategory, pluginMarketSearch, pluginMarketPage)}>{pluginMarketLoading ? <Spinner /> : <RefreshCw size={14} />}</button>
                   </div>
                   {pluginMarketItems.length > 0 ? <div className="skill-card-grid">
                     {pluginMarketItems.map((plugin) => {
