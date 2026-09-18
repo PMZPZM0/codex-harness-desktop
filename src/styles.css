@@ -20590,7 +20590,10 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   justify-content: space-between;
   gap: 16px;
 }
-.builtin-plugins-head .settings-copy p { max-width: 62ch; }
+/* ⛔ 别给这段说明加 max-width：可达宽度本来够（保存按钮在右侧，文案区仍有 ~557px），
+   加 62ch 限宽会把 36 字挤成两行、"用。"单独占一行（用户 09-18 截图反馈「能一排写完为啥要换行」）。
+   只有窗口真正变窄时才允许换行。 */
+.builtin-plugins-head .settings-copy p { min-width: 0; }
 .builtin-plugins-head > .primary-setting { flex: none; }
 .builtin-plugin-grid {
   display: grid;
