@@ -421,7 +421,7 @@ import { useFilePreview } from "./hooks/useFilePreview";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "./lib/turn-fold";
 import { planCompletedFold } from "./lib/turn-fold-plan.mjs";
 import { visibleTurnWindow, mergeTurnListsById } from "./lib/turn-order.mjs";
-import { describeTurnStop, turnHeadline } from "./lib/turn-stop-reason.mjs";
+import { describeTurnStop, turnHeadline, isAwaitingTurnClose } from "./lib/turn-stop-reason.mjs";
 import { WidgetCard } from "./components/GenerativeWidget";
 import { hasWidgetFence, extractStreamingWidget, type ShowWidgetData } from "./lib/generative-widget";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "./lib/user-refs";
@@ -2751,12 +2751,21 @@ const RUN_PHRASES_BY_ACTIVITY: Record<string, string[]> = {
   "正在搜索网页": ["正在翻资料，挑靠谱的看", "网上信息杂，我先筛一遍", "正在查证，不轻信搜到的第一条"],
   "正在调用工具": ["正在借助外部工具推进", "工具已经上手，等它出结果"],
   "正在生成回复": ["答案已经有轮廓了", "正在组织语言，尽量说人话", "正在把结论写成你能直接用的形式"],
+  "正文已完整，等待模型收尾": ["答案已经在上面了，就差上游一个结束信号", "正文给完了，模型还在做收尾确认"],
 };
 
 /** 取一句：专属池在前、通用池兜底；专属句更少，所以自然以通用句为主。 */
 function pickRunPhrase(activity: string): string {
   const pool = [...(RUN_PHRASES_BY_ACTIVITY[activity] ?? []), ...RUN_PHRASES];
   return pool[Math.floor(Math.random() * pool.length)] ?? "";
+}
+
+/** 只从专属池取一句（**不过通用池**）：给语义必须精确的状态用 —— 通用池里有
+ *  「正在把改动收拢干净」「正在给答案做最后一遍质检」这类**干活句**，用在「正文已经
+ *  给完了，只是在等上游结束信号」上会让人以为还在干活（09-18 真机验收实测）。 */
+function pickRunPhraseExact(activity: string): string {
+  const pool = RUN_PHRASES_BY_ACTIVITY[activity] ?? [];
+  return pool[Math.floor(Math.random() * pool.length)] ?? activity;
 }
 
 /** 侧栏里的「调度会话」徽标：标明这个会话是 Codex 调度出来的，以及它当前的状态。
@@ -3343,8 +3352,10 @@ function FoldGroup({ title, leadGroup, variant, running, defaultOpen = false, au
   );
 }
 
-/** 运行中计时只使用本地秒表，不读取引擎时间戳，避免秒/毫秒单位混淆。 */
-function RunningProcessTime() {
+/** 运行中计时只使用本地秒表，不读取引擎时间戳，避免秒/毫秒单位混淆。
+ *  finalizing（09-18）：正文已给完、上游迟迟不发结束信号 —— 计时要如实说
+ *  「等待模型收尾」，别让用户以为还在生成（真机实测 gpt-5.6-sol 正文后 28 秒零事件）。 */
+function RunningProcessTime({ finalizing = false }: { finalizing?: boolean }) {
   const startedRef = useRef(Date.now());
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -3354,7 +3365,7 @@ function RunningProcessTime() {
   const totalSeconds = Math.max(0, Math.floor((now - startedRef.current) / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  return <div className="running-process-time">正在处理 {minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`}</div>;
+  return <div className="running-process-time">正在处理 {minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`}{finalizing ? " · 正文已完整，等待模型收尾" : ""}</div>;
 }
 
 /** 连续同类工具限流：默认只展示最新三条，旧条目留在原位置并可展开。 */
@@ -6035,7 +6046,7 @@ function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval,
             ⛔ 位置必须在「生成中」**之上**（09-17 用户「你这顺序不对吧，生成中怎么能放灰线上面呢」）：
             计时 + 分隔线属于**回合头信息**（紧接口回合标识），状态词属于内容区 —— 灰线是两者的分界。
             「发送后立刻」的反馈由乐观区块的 .turn-head 负责（见下方 chat-anchor 处）。 */}
-        {running && userItems.length > 0 && <RunningProcessTime />}
+        {running && userItems.length > 0 && <RunningProcessTime finalizing={isAwaitingTurnClose(turn)} />}
         {/* 占位头必须等回合内已有 userMessage：turn/started 先建回合、userMessage item 晚到，
             若不等就会渲染在乐观用户气泡上方（切会话后首条消息时肉眼可见错位，09-04 反馈）。
             空窗期反馈由乐观气泡 + 底部 working-indicator 覆盖。 */}
@@ -13064,6 +13075,11 @@ const commandMatches = useMemo(() => {
   // 状态 = 当前会话**最后一个进行中的 item** 的类型（执行命令/编辑文件/思考…），
   // 找不到进行中 item 时兜底「正在生成回复」；话语 = 任务开始时随机锁定一句，运行期不换。
   const taskRunning = Boolean(sending || activeTurnId);
+  // ⛔ 收尾等待（09-18）：判据独立成布尔量，**不要用展示文案做状态判断** ——
+  //   原先写成 `runActivity === "正文已完整，等待模型收尾"`，把可读文案当逻辑判据，
+  //   改一个字（文案优化）就会静默失效、退回「正在生成回复」而没人发现（审查抓出）。
+  const lastTurnOfThread = thread?.turns?.[thread.turns.length - 1];
+  const turnFinalizing = Boolean(taskRunning && isAwaitingTurnClose(lastTurnOfThread));
   const runActivity = useMemo(() => {
     if (!taskRunning || !thread) return "";
     const turns = thread.turns ?? [];
@@ -13081,8 +13097,13 @@ const commandMatches = useMemo(() => {
         }
       }
     }
-    return "正在生成回复";
-  }, [taskRunning, thread]);
+    // ⛔ 兜底要分两种（09-18 用户实测「回复完了还没结束，啥情况」）：GPT 系模型输出完正文后，
+    //   上游迟迟不发流结束信号（真机实测 gpt-5.6-sol 正文完成后 28 秒零事件才 task_complete），
+    //   此时说「正在生成回复」会让人以为还在憋正文 —— 如实说「正文已完整，等待模型收尾」。
+    //   判据**复用纯函数**，不在这里抄第二份（两份判定迟早漂移，且纯函数那份有行为断言守着）。
+    //   判据**复用纯函数**，不在这里抄第二份（两份判定迟早漂移，且纯函数那份有行为断言守着）。
+    return turnFinalizing ? "正文已完整，等待模型收尾" : "正在生成回复";
+  }, [taskRunning, thread, turnFinalizing]);
 
   const [runPhrase, setRunPhrase] = useState("");
   // 取词只做一次，用 ref 读「当时的活动」：不把 runActivity 放进依赖，
@@ -13093,6 +13114,19 @@ const commandMatches = useMemo(() => {
     if (taskRunning && !runPhrase) setRunPhrase(pickRunPhrase(runActivityRef.current || "正在生成回复"));
     else if (!taskRunning && runPhrase) setRunPhrase("");
   }, [taskRunning, runPhrase]);
+  // ⛔ 跨进/跨出「收尾等待」时换一次句子（09-18 用户实测「回复完了还没结束」）：
+  //   · 跨进 → 用**专属句**（pickRunPhraseExact，不过通用池）："正在把改动收拢干净" 这类
+  //     干活句会让人以为还在干活（真机采样抽到通用句就是这么发现的）。
+  //   · 跨出（模型又开始干活）→ 换回通用句，否则会出现「正在执行命令 · 就差上游一个结束信号」
+  //     这种自相矛盾的状态行。
+  //   只在**跨状态那一次**换（ref 记住当前是否处于收尾用语），「思考→命令→文件」之间不乱换。
+  const finalizePhraseRef = useRef(false);
+  useEffect(() => {
+    if (!taskRunning) { finalizePhraseRef.current = false; return; }
+    if (turnFinalizing === finalizePhraseRef.current) return;
+    finalizePhraseRef.current = turnFinalizing;
+    setRunPhrase(turnFinalizing ? pickRunPhraseExact("正文已完整，等待模型收尾") : pickRunPhrase(runActivity || "正在生成回复"));
+  }, [taskRunning, turnFinalizing, runActivity]);
 
   // ⛔ 这两个 hook 必须放在 refreshDispatchOwner / refreshThreadRole 的 useCallback **之后**
   //    （放在事件订阅那段会撞 TDZ：block-scoped variable used before its declaration）。

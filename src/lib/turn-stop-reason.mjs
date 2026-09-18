@@ -85,3 +85,33 @@ export function turnHeadline(turn, durationLabel) {
   if (stop.label) return durationLabel ? `${stop.label} · 耗时 ${durationLabel}` : stop.label;
   return durationLabel ? `耗时 ${durationLabel}` : "已处理";
 }
+
+/**
+ * 「正文已经给完了，回合却还没结束」—— GPT 系模型的收尾等待（09-18 用户实测：
+ * 「怎么回复完了还没结束」）。真机实测 gpt-5.6-sol：正文最后一条 message 落盘后
+ * **28 秒零事件**（无思考、无工具、无 delta），上游才发 usage/finish → task_complete。
+ * 引擎只能干等上游的流结束信号，这不是 bug；但界面在这个状态下还说「正在生成回复」
+ * 就是误导 —— 用户会以为正文还没写完。
+ *
+ * 判据（保守，宁可不显示也不能误报）：
+ *   ① 回合必须还在跑（已结束的回合不算「等待收尾」）；
+ *   ② 回合内**任何** item 还在跑 → false。这一条必须扫全量、不能只看到正文为止：
+ *      否则「正文已完成 + 后面还有一条在跑的命令」会同时显示「正在执行命令」和
+ *      「正文已完整，等待模型收尾」，两条自相矛盾。
+ *   ③ 倒序找最后一条**有正文的 agentMessage** 且它不在流式中 → true（正文给完了，就差结束信号）。
+ *      「不看有没有工具、只看最后那条正文」：正文之后的工具调用会由 ② 挡掉。
+ */
+export function isAwaitingTurnClose(turn) {
+  if (!turn || typeof turn !== "object") return false;
+  const status = String(turn.status ?? "");
+  if (status !== "inProgress" && status !== "running") return false;
+  const items = Array.isArray(turn.items) ? turn.items : [];
+  for (const item of items) {
+    if (item?.status === "inProgress" || item?.status === "running") return false;
+  }
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item?.type === "agentMessage" && String(item.text ?? "").trim()) return true;
+  }
+  return false;
+}
