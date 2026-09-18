@@ -10,7 +10,7 @@ import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { ChannelBotService, type ChannelBotConfig } from "./channel-bot";
 import { BotStreamSession, readBotStreamSettings, readBotStreamSettingsSync, writeBotStreamSettings, type BotStreamBudget, type BotStreamSink, type BotStreamSettings } from "./bot-stream";
-import { wechatFriendlyText } from "./wechat-text";
+import { plainTextForChannel } from "./channel-text";
 import { CodexServer, codexBinaryPath } from "./codex-server";
 import { ResponsesBridge } from "./responses-bridge";
 import { BotPairingService } from "./bot-pairing";
@@ -2906,12 +2906,13 @@ function weixinStreamSink(from: string): BotStreamSink {
   // 所以这里恢复追加语义，但靠 WEIXIN_STREAM_BUDGET 把条数压到 6 条以内，并保留失败降级：
   // append 连续失败 2 次即停用追加，收尾那次（state=2）把完整正文补发，正文永不丢。
   // ⛔ 微信是**纯文本通道**（09-18 用户：「为啥不能跟汇总一样的格式同步过来」）：iLink 不渲染
-  // Markdown，桌面端的表格/标题/粗体原样发过去就是一堆竖线。发前统一走 wechatFriendlyText
+  // Markdown，桌面端的表格/标题/粗体原样发过去就是一堆竖线。发前统一走 plainTextForChannel
   // 转成手机可读排版。流式分片可能切在半行中间 → 先攒到**完整行**再转换发送（转换是逐行的，
   // 分片安全）；carry 里的残留由收尾（finalizeAppend）补上，正文不丢。
+  // 同一转换也用于 Telegram 与飞书/钉钉/QQ（它们同是纯文本消息，见各发送点）。
   let carry = "";
   const sendChunk = (text: string, opts: { clientId?: string; state?: number }) =>
-    weixinGateway!.sendText(from, wechatFriendlyText(text), opts);
+    weixinGateway!.sendText(from, plainTextForChannel(text), opts);
   return {
     append: (delta, clientId) => {
       carry += delta;
@@ -2924,9 +2925,9 @@ function weixinStreamSink(from: string): BotStreamSink {
     finalizeAppend: (tail, clientId) => {
       const rest = carry + tail;
       carry = "";
-      return weixinGateway!.sendText(from, wechatFriendlyText(rest) || "（已完成）", { clientId, state: 2 });
+      return weixinGateway!.sendText(from, plainTextForChannel(rest) || "（已完成）", { clientId, state: 2 });
     },
-    send: (full) => weixinGateway!.sendText(from, wechatFriendlyText(full)),
+    send: (full) => weixinGateway!.sendText(from, plainTextForChannel(full)),
   };
 }
 
@@ -2945,25 +2946,30 @@ function stopWeixinTyping(threadId: string) {
 }
 
 function telegramStreamSink(chatId: number): BotStreamSink {
+  // 与微信同理（09-18 用户问「其他渠道是不是一样」）：Telegram 这里**没有 parse_mode**，
+  // Markdown 也是原样显示（`**粗体**`、`| 表格 |`），且 Telegram 本身不渲染表格 →
+  // 同样先过 plainTextForChannel，三个发送点全带。
   let messageId: number | null = null;
   return {
     replace: async (full) => {
+      const text = plainTextForChannel(full);
       if (messageId == null) {
-        messageId = await telegramGateway.streamBegin(chatId, full.slice(0, 3800));
+        messageId = await telegramGateway.streamBegin(chatId, text.slice(0, 3800));
         return messageId != null;
       }
-      return telegramGateway.streamEdit(chatId, messageId, full.slice(0, 3800));
+      return telegramGateway.streamEdit(chatId, messageId, text.slice(0, 3800));
     },
     finalizeReplace: async (full) => {
+      const text = plainTextForChannel(full);
       if (messageId != null) {
-        const head = full.slice(0, 4000);
+        const head = text.slice(0, 4000);
         const ok = await telegramGateway.streamEdit(chatId, messageId, head).catch(() => false);
         if (!ok) await telegramGateway.sendText(chatId, head).catch(() => undefined);
-        const rest = full.slice(4000);
+        const rest = text.slice(4000);
         if (rest) await telegramGateway.sendText(chatId, rest).catch(() => undefined);
-      } else if (full) await telegramGateway.sendText(chatId, full).catch(() => undefined);
+      } else if (text) await telegramGateway.sendText(chatId, text).catch(() => undefined);
     },
-    send: (full) => telegramGateway.sendText(chatId, full),
+    send: (full) => telegramGateway.sendText(chatId, plainTextForChannel(full)),
   };
 }
 
@@ -3316,14 +3322,17 @@ async function handleChannelMessage(channel: "feishu" | "dingtalk" | "qq", from:
   const gateway = { feishu: feishuGateway, dingtalk: dingtalkGateway, qq: qqGateway }[channel];
   const reply = async (content: string) => {
     try {
+      // 纯文本排版统一（09-18）：飞书 msg_type=text / 钉钉 msgtype=text / QQ msg_type=0
+      // 都是纯文本消息，Markdown 表格与粗体原样过去不可读——与微信同一套转换。
+      const text = plainTextForChannel(content);
       if (channel === "qq") {
         const ctx = qqReplyContexts.get(chatId);
         if (!ctx) throw new Error("缺少被动回复上下文（msg_id 5 分钟内有效），请重新 @机器人");
-        await qqGateway.sendMessage(chatId, content, ctx);
+        await qqGateway.sendMessage(chatId, text, ctx);
       } else if (channel === "feishu") {
-        await feishuGateway.sendMessage(chatId, content);
+        await feishuGateway.sendMessage(chatId, text);
       } else {
-        await dingtalkGateway.sendMessage(chatId, content);
+        await dingtalkGateway.sendMessage(chatId, text);
       }
     } catch (error: any) {
       channelLog("error", `${channel} 回复失败：${error?.message ?? error}`);

@@ -1125,13 +1125,18 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   weixin-gateway.ts 是 CRLF）→ 走"变异已落盘"前置断言 + EOL 自动重试；
   **断言期望值不能引用被测常量本身**（`x.length >= WEIXIN_BUDGET.minChars` 在预算被改小时恒真 = 自证式断言），
   必须写**设计值字面量**。
-  **微信排版转换（09-18 用户实测「表格同步到手机变竖线堆」）**：iLink 消息是**纯文本通道**，
-  不渲染 Markdown —— 原样转发必然不可读。`electron/wechat-text.ts` 的 `wechatFriendlyText()`
-  逐行转换：表格行 → `【首列】其余列`（分隔行丢弃）、标题 → `【】`、粗体/行内代码去符号、
-  链接去 URL 留文字、列表 → `•`、水平线丢弃；`weixinStreamSink` **三个发送点**（流式追加 /
-  收尾补发 / 一次性）全走它，流式**攒到完整行再发**（`carry` 缓冲：分片可能切在半行中间，
-  逐行转换因此分片安全；carry 残留由收尾补上，正文不丢）。预检【38】直跑真实现做行为断言 +
-  「三个发送点全带转换」结构断言（存在性断言会被死代码骗绿，反证实测）。
+  **渠道纯文本排版（09-18 用户实测「表格同步到手机变竖线堆」+ 追问「其他渠道是不是一样的效果」）**：
+  微信 iLink / Telegram（无 parse_mode）/ 飞书 `msg_type=text` / 钉钉 `msgtype=text` / QQ `msg_type=0`
+  **都是纯文本通道**，不渲染 Markdown —— 原样转发必然不可读（Telegram 还会露出 `**`）。
+  `electron/channel-text.ts` 的 `plainTextForChannel()` 逐行转换：表格行 → `【首列】其余列`
+  （分隔行丢弃）、标题 → `【】`、粗体/行内代码去符号、链接去 URL 留文字、列表 → `•`、水平线丢弃；
+  **所有渠道的发送点全走它**：`weixinStreamSink` 三个发送点、`telegramStreamSink` 三个发送点、
+  `handleChannelMessage` 的 reply 漏斗（飞书/钉钉/QQ）。微信额外**攒到完整行再发**（`carry` 缓冲：
+  分片可能切在半行中间，逐行转换因此分片安全；carry 残留由收尾补上，正文不丢）。
+  预检【38】直跑真实现做行为断言 + 「各渠道发送点全带转换」结构断言（存在性断言会被死代码骗绿，反证实测）。
+  ⚠️ 本轮两个坑：① 守卫锚点没算 TS 类型注解+换行（照抄真实源码形态才对）；② **type-stripping 行为断言
+  不查类型严格性** —— `[\s\1]` 里的 `\1` 被判八股转义（TS1536）时预检照样绿，只有 `tsc -p electron/tsconfig.json` 抓到。
+  ⚠️ 改文件名/函数名时，预检锚点与反证脚本要一起改（本轮改名 wechat-text→channel-text 时同步了 6 处）。
 - **频道机器人流式回复（bot-stream.ts）**（09-08 新增）：微信/Telegram 机器人回复支持流式——思考/工具/正文按引擎事件时间顺序实时推送。设置全局存 `userData/bot-stream.json`（IPC `bot-stream:get/set`，UI 在机器人管理弹窗：流式回复总开关 + 同步思考 + 同步工具，**回合开始时同步读，开关下一条消息即生效**）。两种传输语义：微信 iLink `message_state=1` 向同一 `client_id` 气泡增量追加、`state=2` 收尾（追加连续失败 2 次自动停用降级收集，收尾补发尾部；flush 节流 1.5s、上限 40 条防刷屏）；Telegram `sendMessage` 建气泡 + `editMessageText` 1.6s 节流整段改写，最终落定超 4000 字分片补发。事件源：`item/reasoning/*Delta`（💭 思考）、`item/started` commandExecution/mcpToolCall/fileChange/webSearch（🔧 工具，单命令输出截 400 字）、`item/agentMessage/delta`（正文）；`item/completed` 权威快照兜底补齐漏收 delta。会话按 threadId 挂在 `botStreamSessions`，turn/completed 后保留（handler 的 onDoneProxy 以 `botStreamSessions.has(threadId)` 判断是否兜底发最终正文，防双发）；Telegram 绑定靠 `telegramBindings`(threadId→chatId) 反查。
 - **GPU 渲染策略**（09-06 回退 → 09-09 改为用户可选开关）：默认保持 Chromium 默认（健康显卡自动硬件加速）。曾强推 `ignore-gpu-blocklist` 等四开关，健康显卡上用户实测点击延迟明显变高，已回退——**不要无脑强开**。但低配机（弱核显/黑名单显卡）默认软件渲染、这个 React 应用渲染重会卡，因此做了**设置 → 通用 → 显示与性能 → 硬件加速**三档下拉（`app-settings.hardwareAcceleration`：auto 默认 / force 忽略黑名单+强制 GPU 光栅化/零拷贝 / off 完全 CPU）。主进程在 **app ready 前同步读取并应用**（`readAppSettingsSync`，commandLine 开关只在启动早期生效），需重启生效。启动日志 `[gpu] feature status` 可诊断 GPU 状态；force 档位就是在软件渲染机器上把它改成 hardware 加速的诊断依据。
 - **中转站中心（sub2api 兼容，独立设置页 settingsPage="relay"）**（09-07）：宿主设置 → 账户 → 中转站 + 启动登录界面「中转站账户」tab。协议：POST /api/v1/auth/login、GET /api/v1/user/profile（balance=USD 余额）、GET /api/v1/subscriptions/summary（套餐绑定 group_id）、GET/POST /api/v1/keys（key 明文）。用户选「余额」或「套餐」= 选定 API key（套餐 key 绑对应 group_id，余额 key 无分组）→ 自动生成供应商（{site}/v1，OpenAI 兼容）并选中。**多账号**：userData/relay-store.json {activeId, accounts[]}（id=base|email，老 relay-account.json 首读自动迁移）；IPC relay:accounts/switch-account/remove-account；logout=移除当前账号；登录/切换后宿主自动重配模型（**首套餐优先→无订阅走余额**，无可复用 key 自动新建，逐模型 matchModelSpec 同步规格表）。**注意：部分站点（pptoken）强制 key 必须绑分组，无分组 key 网关 403——宿主自动改绑第一个订阅分组重试。** 侧栏账号区 RelayQuotaChip 与输入框 RelayBalanceBadge 显示当前生效套餐余量/余额（5 分钟轮询）。密码 safeStorage 加密，401 自动重登。公共逻辑在 src/lib/relay.ts。**切换账号强同步（09-08 修复）**：relay-active 增加 `switchedAt` 时间戳 + `email` 字段；RelayBalanceBadge 改为按 `provider|apiKey|mode|groupId|switchedAt` 指纹刷新——同网关不同账号复用同一 provider 字符串时也能立即重拉余额，不再卡在旧账号；displayName 含邮箱便于区分；OpenAI 官方面板切号时通过 `onActiveChange` 把当前账号 email 传给输入框徽标（accountKey），同样立即刷新额度。

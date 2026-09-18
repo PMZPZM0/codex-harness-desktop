@@ -4295,7 +4295,7 @@ w.postMessage({id:1,op:"list",root});
       ? ok(`【38】微信追加预算 ${budgetMatch[1]} 次（+收尾 1 条 ≤ iLink 的 10 条/24h 配额）`)
       : fail(`【38】微信追加预算 = ${budgetMatch ? budgetMatch[1] : "(未找到)"} —— 必须是 1~6（含收尾要在 10 条配额内，且留余量）`);
     (/append: \(delta, clientId\) => \{/.test(mainSrc) && /sendChunk\(sendable, \{ clientId, state: 1 \}\)/.test(mainSrc)
-      && /finalizeAppend: \(tail, clientId\) => \{/.test(mainSrc) && /send: \(full\) => weixinGateway!\.sendText\(from, wechatFriendlyText\(full\)\)/.test(mainSrc))
+      && /finalizeAppend: \(tail, clientId\) => \{/.test(mainSrc) && /send: \(full\) => weixinGateway!\.sendText\(from, plainTextForChannel\(full\)\)/.test(mainSrc))
       ? ok("【38】微信 sink 提供 append/finalizeAppend（state=1 追加 / state=2 收尾），发送统一走排版转换")
       : fail("【38】微信 sink 又只剩 send —— 运行过程不会同步，用户只能看到最终汇总");
     (/new BotStreamSession\(plan\.sink, readBotStreamSettingsSync\(botStreamFile\), plan\.budget\)/.test(mainSrc))
@@ -4319,19 +4319,19 @@ w.postMessage({id:1,op:"list",root});
       ? ok("【38】sendmessage 成功也留痕（静默去重只能靠日志条数与实收对账定性）")
       : fail("【38】sendmessage 只记失败不记成功 —— 服务端静默去重时无从排查");
     // 微信纯文本排版（09-18 用户：「为啥不能跟汇总一样的格式同步过来」——iLink 不渲染 Markdown，
-    // 表格/标题原样过去就是竖线堆）。直跑 wechat-text.ts 真实现做行为断言（node type-stripping）。
+    // 表格/标题原样过去就是竖线堆）。直跑 channel-text.ts 真实现做行为断言（node type-stripping）。
     let wt = null;
     try {
-      const wtUrl = pathToFileURL(join(ROOT, "electron", "wechat-text.ts")).href;
+      const wtUrl = pathToFileURL(join(ROOT, "electron", "channel-text.ts")).href;
       const wtProbe = spawnSync(process.execPath, [
         "--experimental-strip-types", "--no-warnings", "--input-type=module", "-e",
-        `import { wechatFriendlyText as f } from ${JSON.stringify(wtUrl)}; console.log(JSON.stringify({` +
+        `import { plainTextForChannel as f } from ${JSON.stringify(wtUrl)}; console.log(JSON.stringify({` +
         ` table: f("🔥 最劲爆\\n\\n| 方向 | 新闻 |\\n|---|---|\\n| 国内大模型 | 智谱 GLM 十万卡 |\\n| 融资 | Emulate 7 亿 |"),` +
         ` head: f("## 行动向"), bold: f("**GPT-5.6** 的自我隐瞒"), link: f("[OpenAI](https://x.com/a) 公告"), bullet: f("- Figure 发 Helix"), hr: f("上文\\n---\\n下文") }));`,
       ], { encoding: "utf8" });
       wt = JSON.parse(wtProbe.stdout.trim().split("\n").at(-1));
     } catch { /* 下面统一判红 */ }
-    (wt ? ok : fail)("wechat-text.ts 可被 Node type-stripping 直跑（排版守卫跑的是真实现）");
+    (wt ? ok : fail)("channel-text.ts 可被 Node type-stripping 直跑（排版守卫跑的是真实现）");
     if (wt) {
       (wt.table.includes("【方向】新闻") && wt.table.includes("【国内大模型】智谱 GLM 十万卡") && wt.table.includes("【融资】Emulate 7 亿") && !wt.table.includes("|"))
         ? ok("【38】表格 → 【首列】其余列（分隔行丢弃），微信里不再是竖线堆")
@@ -4342,14 +4342,27 @@ w.postMessage({id:1,op:"list",root});
       (wt.bullet === "• Figure 发 Helix" && wt.hr === "上文\n下文")
         ? ok("【38】列表转 • 、水平线丢弃")
         : fail(`【38】列表/水平线转换不对：${JSON.stringify(wt)}`);
-      // ⛔ 三个发送点（流式追加 / 收尾补发 / 一次性）各自必须带 wechatFriendlyText——
+      // ⛔ 三个发送点（流式追加 / 收尾补发 / 一次性）各自必须带 plainTextForChannel——
       //    只查 import 或单个锚点会被「摘掉一处用法」的死代码骗绿（反证实测）。
-      (/sendChunk = \(text: string, opts: \{ clientId\?: string; state\?: number \}\) =>\s*weixinGateway!\.sendText\(from, wechatFriendlyText\(text\), opts\)/.test(mainSrc)
-        && /wechatFriendlyText\(rest\) \|\| "（已完成）"/.test(mainSrc)
-        && /send: \(full\) => weixinGateway!\.sendText\(from, wechatFriendlyText\(full\)\)/.test(mainSrc)
+      (/sendChunk = \(text: string, opts: \{ clientId\?: string; state\?: number \}\) =>\s*weixinGateway!\.sendText\(from, plainTextForChannel\(text\), opts\)/.test(mainSrc)
+        && /plainTextForChannel\(rest\) \|\| "（已完成）"/.test(mainSrc)
+        && /send: \(full\) => weixinGateway!\.sendText\(from, plainTextForChannel\(full\)\)/.test(mainSrc)
         && /carry \+= delta/.test(mainSrc) && /lastIndexOf\("\\n"\)/.test(mainSrc))
         ? ok("【38】微信发送前统一走排版转换（三个发送点全带；流式攒到完整行再发，分片不切坏表格）")
         : fail("【38】微信 sink 没接排版转换/没做整行缓冲 —— Markdown 原样竖线堆会继续发到手机上");
+      // 渠道通用（09-18 用户：「其他机器人渠道消息是这个一样的效果不」）：Telegram 无 parse_mode、
+      // 飞书 msg_type=text、钉钉 msgtype=text、QQ msg_type=0 —— 全是纯文本，必须同走转换。
+      (/telegramStreamSink|const text = plainTextForChannel\(full\)/.test(mainSrc)
+        && (mainSrc.split("telegramStreamSink")[1] ?? "").split("function botStreamPlanFor")[0].split("plainTextForChannel").length - 1 >= 3
+        && /send: \(full\) => telegramGateway\.sendText\(chatId, plainTextForChannel\(full\)\)/.test(mainSrc))
+        ? ok("【38】Telegram 三个发送点也走排版转换（Telegram 无 parse_mode，表格/粗体同样会裸奔）")
+        : fail("【38】Telegram 没接排版转换 —— 用户会看到 `**粗体**` 与竖线表格");
+      (/const text = plainTextForChannel\(content\);/.test(mainSrc)
+        && /await feishuGateway\.sendMessage\(chatId, text\)/.test(mainSrc)
+        && /await dingtalkGateway\.sendMessage\(chatId, text\)/.test(mainSrc)
+        && /await qqGateway\.sendMessage\(chatId, text, ctx\)/.test(mainSrc))
+        ? ok("【38】飞书/钉钉/QQ 回复漏斗也走排版转换（三渠道都是纯文本消息类型）")
+        : fail("【38】飞书/钉钉/QQ 回复没走排版转换 —— 表格在这些渠道同样是竖线堆");
     }
   }
 
