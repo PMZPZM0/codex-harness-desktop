@@ -13768,6 +13768,9 @@ const commandMatches = useMemo(() => {
     if (!customModel || !selectedModel) { setNotice("请先配置并启用自定义模型"); setSettingsOpen(true); return; }
     const text = (item.content ?? []).filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n");
     if (!text.trim()) { setNotice("该消息没有可编辑的文本"); return; }
+    // fork 前的会话：turn/start 失败时要**回退**到它 —— 否则 fork 已经原回合从可见列表里拿掉，
+    // 新回合又没建起来，用户刚编辑的消息就永久消失了（09-18 用户反馈「编辑保存重发，消息不见了」）。
+    const before = threadRef.current;
     try {
       const forked = await window.codex.request("thread/fork", { threadId: thread.id, beforeTurnId: turnId, excludeTurns: false });
       if (!forked.thread) { setNotice("创建编辑分支失败"); return; }
@@ -13785,6 +13788,12 @@ const commandMatches = useMemo(() => {
       const optimisticId = `local-${Date.now()}`;
       justSentIds.add(optimisticId);
       armSendAnimationClaim(text);   // 编辑重发同样让真实消息认领入场动画
+      // ⛔ 必须重置安全阀判据（与两条普通发送路径同款，见该 effect 的 09-17 注释）：
+      //   编辑重发换了 thread（fork），旧 thread 的「曾出现过运行中回合」不适用；
+      //   不重置的话，fork 回来时新回合还没建（running=false）+ 上轮残留的 true ⇒
+      //   气泡**当帧就被回收**，用户编辑后的那 1~2 秒里自己的消息完全不在界面上
+      //   （09-18 实测埋点 confirm-timeout + pending 恒为 0）。
+      sawRunningTurnRef.current = false;
       setOptimisticInput({ id: optimisticId, type: "userMessage", content: input });
       // 编辑分支发送同样锚顶（与主发送一致，见 anchorTopRef 注释）
       stickToBottomRef.current = false;
@@ -13802,7 +13811,16 @@ const commandMatches = useMemo(() => {
         // 沙箱逐回合下发：fork 出的编辑分支同样按当前权限跑（见 send() 里的实证说明）
         sandboxPolicy: sandboxPolicy(sandbox, forked.thread.cwd ?? workspace ?? ""),
       });
-      if (result.turn?.id) {
+      if (!result.turn?.id) {
+        // 引擎返回了但没给回合（异常分支）：同样回退 —— 否则消息消失且没有任何补偿
+        if (before) { threadRef.current = before; setThread(before); }
+        setSending(false);
+        setWorkStartedAt(null);
+        setOptimisticInput(null);
+        setNotice("编辑重发失败：引擎没有返回新回合，已回到原来的消息");
+        return;
+      }
+      {
         const hydratedTurn = hydrateTurnUserMessage(result.turn, input);
         optimisticTurnIdRef.current = hydratedTurn.id;
         setActiveTurnId(hydratedTurn.id);
@@ -13815,10 +13833,13 @@ const commandMatches = useMemo(() => {
       void refreshThreads();
       showToast("已编辑重发", "已创建分支并重新发送");
     } catch (error: any) {
+      // ⛔ 失败必须回退到 fork 前的会话：fork 已经把原回合从列表里拿掉了，
+      //    不回退 = 用户刚编辑的那条消息凭空消失（且无任何可恢复的入口）。
+      if (before) { threadRef.current = before; setThread(before); }
       setSending(false);
       setWorkStartedAt(null);
       setOptimisticInput(null);
-      setNotice(`编辑重发失败：${error.message}`);
+      setNotice(`编辑重发失败：${error.message}（已回到原来的消息，可重试）`);
     }
   }
 
