@@ -4208,6 +4208,32 @@ w.postMessage({id:1,op:"list",root});
       : fail("【35】refreshPluginsPage 没同时刷市场列表 —— 合并后市场再也刷不动，且界面不报错");
   }
 
+  // ⑰h 渲染层「展示用路径」不许写死反斜杠（09-18 发版前的 mac 适配审计抓到的：技能中心说明把用户
+  //   数据目录拼成 `…\codex-home\skills`，mac 上会显示成 `/Users/…\codex-home\skills` 这种四不像）。
+  //   判据只能是源码级：本机是 Windows，渲染层的 mac 分支跑不到真机；注释先剥离（说明性文字里会出现反例）。
+  {
+    const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const targets = walk(join(ROOT, "src"), [".ts", ".tsx"]);
+    const offenders = [];
+    for (const entry of targets) {
+      strip(readFileSync(entry.path, "utf8")).split(/\r?\n/).forEach((line, i) => {
+        // ⛔ 1~2 个反斜杠都算：`\\codex-home`（源码里的转义形态，渲染出 `\codex-home`）与
+        //    `\codex-home`（模板串里会被 JS 当转义吃掉 → 分隔符直接消失）都是错的。
+        if (/\\{1,2}(codex-home|skills|sessions|plugins|commands|logs|pw-browsers|cloak-cache)/.test(line)) {
+          offenders.push(`${relative(ROOT, entry.path)}:${i + 1}`);
+        }
+      });
+    }
+    (!offenders.length)
+      ? ok(`【36】渲染层没有写死的反斜杠展示路径（扫 ${targets.length} 个 ts/tsx，注释已剥离）`)
+      : fail(`【36】渲染层出现写死反斜杠的展示路径：${offenders.slice(0, 4).join("、")} —— mac 上会显示成 /a\\b\\c`);
+    const appPath = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+    (/function displayPath\(base: string, \.\.\.parts: string\[\]\): string \{/.test(appPath)
+      && /displayPath\(userDataPath, "codex-home", "skills"\)/.test(appPath))
+      ? ok("【36】展示路径走 displayPath()（按平台选分隔符）")
+      : fail("【36】displayPath() 缺失或技能中心说明没走它 —— 分隔符又会被写死");
+  }
+
   // ⑰d 引导弹窗的「出场时机」（09-17 用户明确定规则：「只在进入主界面的时候才弹配置引导和
   //   工具安装检测自动安装；如果已经配置模型，就不引导模型配置，直接做开发工具检测安装」）。
   //   三种失效形态都**静默**（不报错，只是该弹的不弹 / 不该弹的弹了）：
