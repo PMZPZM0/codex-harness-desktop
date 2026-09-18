@@ -579,6 +579,26 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   （单列下两卡仍等宽）——它是"内容没把卡撑变形"的检查，反证时期望别写错。
   顺带清掉上一版遗留的**死 CSS**（`-quick/-actions/-head/-body`，TSX 零引用）。
 
+- **生图/视觉插件模型字段：内置热门生图模型参数 + Tab 补全（09-18 用户：「把目前市面上的热门生图模型
+  内置一下参数，跟模型配置里面一样，支持 tab 补全」）**：该字段原是原生 `<datalist>`（只能点击/方向键，
+  **Tab 补全做不到**，也看不到任何参数）。现换成 `ModelIdInput` 的 `variant="image"`：
+  - 规格表 `src/lib/image-model-specs.ts`：与聊天 `model-specs.ts` 同思路、**字段换成生图口径** ——
+    **尺寸**（常用像素值 / 分辨率档 / 自定义规则：步长·单边·总像素·比例）、**改图**（参考图张数）、
+    **质量档**（quality 取值）、单次张数、比例数。收录：GPT Image 2.5（Flare/Sunburst）、GPT Image 2、
+    Nano Banana 2/Pro、Imagen 4、FLUX.2、Seedream 5 Pro/Lite 与 4.5、Qwen-Image、WAN 2.7、Grok Imagine、
+    Ideogram V3、Recraft V4、Hunyuan Image 3、SD4。⛔ **拿不准的字段留空**（未收录模型 `matchImageSpec`
+    返回 null、界面不显示任何徽标 —— 少一个徽标胜过给一个错的参数）。
+  - 徽标 = 尺寸 / 改图≤N 张 / 质量档；选中后字段下方摊开 `imageSpecHint()` 一两行（含自定义尺寸硬规则，
+    与 `harness-media.mjs` 的 `checkSize`（16 倍数 / ≤3:1 / 面积 655360–8294400）同口径）。
+  - ⛔ **候选行构造抽成纯函数 `buildImageModelRows()`**：组件内分支只能用文本守卫，而文本守卫挡不住
+    `if (false)`（反证 G/F 当场抓到）——抽出来后预检能直跑真代码断言。
+  - ⛔ 浮层方向/高度：字段常在弹窗底部，弹窗 `overflow:auto` 会把向下弹的候选裁掉 ⇒ 按**最近裁剪祖先**
+    的可用空间决定上弹并封顶高度。只判方向的版本被真机验收抓到「上弹后顶出弹窗 7px、首行被切」。
+  - 预检 ⑰n【41】27 条（真表行为断言 + 结构断言），反证 7/7（`if(false)` 架空分支、候选返回空、
+    把 2.5 的质量档安到 2 代、给 Seedream 4.5 加官方明确不支持的 1K ……）。
+  - ⚠️ 教训：**`tsc -b`（`prebuild`，构建口径）与单跑 `tsc -p tsconfig.app.json --noEmit` 不是一回事** ——
+    本轮前者报 30+ 个语法错、后者报 0，差点把语法错误的代码放行。验证一律以 `npm run check` 为准。
+
 - **「插件」页刷新入口唯一化（09-18 用户：「插件市场有两个刷新按键…保留上面的，里面不要」）**：
   原先同一屏两颗同款 🔄 —— 标题行那颗刷**页面资源**（技能/钩子/已装插件/记忆/任务/MCP，
   `refreshSettingsResources`），市场工具栏那颗只刷**市场列表**（当前分类/搜索/页码，`refreshMarketPlugins`）。
