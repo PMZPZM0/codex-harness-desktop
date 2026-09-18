@@ -4292,6 +4292,13 @@ w.postMessage({id:1,op:"list",root});
     (/(minChars|maxFlushes|flushIntervalMs)/.test(streamSrc) && /this\.budget\.maxFlushes/.test(streamSrc) && /this\.budget\.minChars/.test(streamSrc))
       ? ok("【38】流式会话真的按预算节流（maxFlushes / minChars / flushIntervalMs 都参与判断）")
       : fail("【38】BotStreamBudget 定义了却没参与判断 —— 预算形同虚设");
+    (/private newMessageId\(\)/.test(streamSrc) && /this\.sink\.append\(pending, this\.newMessageId\(\)\)/.test(streamSrc)
+      && /this\.newMessageId\(\)/.test(streamSrc.split("finalizeAppend(")[1] ?? ""))
+      ? ok("【38】每条消息新 client_id（服务端按 id 去重：同一 id 连发只有首条落地，后续含收尾被静默丢弃）")
+      : fail("【38】流式追加/收尾复用同一个 client_id —— 服务端去重后正文丢失（09-12 与 09-18 两次实测同款症状）");
+    (/sendmessage ok state=/.test(gwSrc))
+      ? ok("【38】sendmessage 成功也留痕（静默去重只能靠日志条数与实收对账定性）")
+      : fail("【38】sendmessage 只记失败不记成功 —— 服务端静默去重时无从排查");
   }
 
   // ⑰d 引导弹窗的「出场时机」（09-17 用户明确定规则：「只在进入主界面的时候才弹配置引导和
