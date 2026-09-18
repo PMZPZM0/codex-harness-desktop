@@ -3712,7 +3712,7 @@ function CappedToolSequence({ units, renderUnit }: {
  * 完成：首段工具组换「已完成 · 用时 X」皮肤；其余工具段用意图摘要标题（收起态，可展开看过程）；
  *       正文（含中间解说）与深度思考卡、plan/图片卡按流序内联常显——思考卡全程保持同一 DOM 节点，
  *       live→done 的自动收起动画才能播出来（否则回合结束被吸进折叠组卸载重挂，表现就是「闪一下就没了」）。 */
-function TurnFoldStream({ items, turn, running, fallbackWindow, waitingForApproval, handlers, finalAgentId, usage, tokenUsage }: {
+function TurnFoldStream({ items, turn, running, fallbackWindow, waitingForApproval, handlers, finalAgentId, usage, tokenUsage, keepProcessOpen }: {
   items: ThreadItem[];
   turn: Turn;
   running: boolean;
@@ -3722,6 +3722,10 @@ function TurnFoldStream({ items, turn, running, fallbackWindow, waitingForApprov
   finalAgentId?: string;
   usage?: any;
   tokenUsage?: any;
+  /** 回合被用户主动停止时置真：过程组**默认展开**。
+   *  ⛔ 用户 09-18「点停止后运行过程和内容要保持在，方便继续任务」—— 折叠成一行虽然内容没丢，
+   *  但用户看不到"刚才做到哪了"，也没法顺着接着交代。所以停止的回合把过程摊开。 */
+  keepProcessOpen?: boolean;
 }) {
   const units = useMemo(() => items
     .filter((item) => !(item.type === "agentMessage" && !String(item.text ?? "").trim()))
@@ -3834,6 +3838,7 @@ function TurnFoldStream({ items, turn, running, fallbackWindow, waitingForApprov
               title={index === leadFoldIndex ? completedTitle : computeFoldSummary(entry.units, false, waitingForApproval)}
               leadGroup={topToolGroup(entry.units)}
               failedCount={(index === leadFoldIndex ? turnFailedTotal : failedCountOf(entry.units)) || undefined}
+              defaultOpen={keepProcessOpen}
             >
               <CappedToolSequence units={entry.units} renderUnit={(unit) => renderItem(unit, unit.item.type === "agentMessage" ? true : undefined)} />
             </FoldGroup>
@@ -3854,6 +3859,7 @@ function TurnFoldStream({ items, turn, running, fallbackWindow, waitingForApprov
           title={lead ? completedTitle : computeFoldSummary(seg.units, false, waitingForApproval)}
           leadGroup={topToolGroup(seg.units)}
           failedCount={failedCountOf(seg.units) || undefined}
+          defaultOpen={keepProcessOpen}
         >
           <CappedToolSequence units={seg.units} renderUnit={(unit) => renderItem(unit, unit.item.type === "agentMessage" ? true : undefined)} />
         </FoldGroup>,
@@ -6394,6 +6400,13 @@ function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval,
         : true,
   );
   const stoppedWithoutReply = Boolean(interruptedAt && userItems.length > 0 && !hasContent);
+  // 「用户主动点了停止」——`interruptedAt` 只由本机的 interrupt() 写入（语音插话/手机端停止/
+  // 引擎主动中止都不会写它），所以它是"这次是用户自己停的"的可靠判据。
+  // ⛔ 09-18 用户：「用户如果点了停止，运行过程和内容要保持在，方便用户继续任务，
+  //   在最新内容后面加一个用户已停止」→ ① 过程组默认展开（keepProcessOpen）；
+  //   ② 标记落在**内容之后**，不再用顶部那条通用中断提示（那条说"你点了停止/语音插话/手机端
+  //   停止"三种可能，用户自己点的却要读一段猜谜，且与末尾标记重复说同一件事）。
+  const userStopped = Boolean(interruptedAt);
   // 结束原因（纯函数，见 src/lib/turn-stop-reason.mjs）：running/completed 时 label 为空串
   const stopReason = describeTurnStop(turn);
   const statusLabel = running
@@ -6439,7 +6452,7 @@ function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval,
               旧实现只显示「处理出错」四个字，用户既不知道是上下文超限、沙箱拒绝还是被中断，
               也不知道能不能接着跑。这里把引擎的分类（codexErrorInfo）与处置建议摆到明面上，
               完整原文走 title 悬停。与上面 stoppedWithoutReply 互斥（那条已说明停止原因）。 */}
-          {!running && !stoppedWithoutReply && stopReason.label && (
+          {!running && !stoppedWithoutReply && !userStopped && stopReason.label && (
             <div className={`turn-stop-notice stop-${stopReason.kind}`} role="status" title={stopReason.detail}>
               <AlertTriangle size={15} />
               <div>
@@ -6449,8 +6462,21 @@ function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval,
             </div>
           )}
           {/* inner 永远不渲染 finalAgent 的 footer（避免 running 时每个新 body 短暂成为 finalAgent 挂按钮 + 避免与外层 2129 行双排）。外层 turnFinished 决定最终是否独占渲染一份。CompletedChanges 仍需 completedTask（聊天回合没文件改动可显）。 */}
-          <TurnFoldStream items={responseItems} turn={turn} running={running} fallbackWindow={fallbackWindow} waitingForApproval={waitingForApproval} handlers={handlers} finalAgentId={finalAgent?.id} usage={usage} tokenUsage={tokenUsage} />
+          <TurnFoldStream items={responseItems} turn={turn} running={running} fallbackWindow={fallbackWindow} waitingForApproval={waitingForApproval} handlers={handlers} finalAgentId={finalAgent?.id} usage={usage} tokenUsage={tokenUsage} keepProcessOpen={userStopped} />
           {completedTask && <CompletedChanges turn={turn} />}
+          {/* 「用户已停止」标记：落在**最新内容之后**（用户 09-18 明确定位）。
+              ⛔ 不重复耗时：上方过程组的标题已经写着「已停止 · 耗时 36 秒」，这里再说一遍就是
+              同屏两处（用户对重复文案零容忍，09-18 已因同类问题返工过一次）。这里只说
+              "发生了停止 + 内容没丢、可以接着来"这两件用户在意的信息。 */}
+          {userStopped && (
+            <div className="turn-user-stopped" role="status">
+              <CircleStop size={14} />
+              <div>
+                <strong>用户已停止</strong>
+                <span>运行过程与内容都已保留，接着发消息即可继续</span>
+              </div>
+            </div>
+          )}
           {turnFinished && finalAgent && <MessageFooter item={finalAgent} turn={turn} usage={usage} tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onFork={() => handlers.onFork(turn.id)} extraIcon={hookBadge} />}
           </div>
         </div>
