@@ -16720,6 +16720,43 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   color: var(--accent);
   font-size: 11.5px;
 }
+/* 后台安装角标（09-18 用户要求）：一键安装点下去弹窗收起，右下角只剩这枚小胶囊；
+   装完自动消失；点开回到弹窗。不能太抢眼——用户还要继续用应用。 */
+.env-install-pill {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 90; /* 低于弹窗层，避免角标与弹窗抢焦点 */
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 340px;
+  padding: 7px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11.5px;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 14%);
+  transition: border-color .15s ease, transform .15s ease;
+}
+.env-install-pill:hover { border-color: var(--accent); transform: translateY(-1px); }
+.env-install-pill .env-install-pill-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent);
+}
+.env-install-pill em {
+  flex: none;
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--muted);
+  border-left: 1px solid var(--line);
+  padding-left: 7px;
+}
 .env-check-foot {
   display: flex;
   align-items: center;

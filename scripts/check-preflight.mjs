@@ -2127,20 +2127,20 @@ console.log(C.bold("\n【14】历史分页懒加载（首屏一页 / 滚一屏�
   /collapseTurnWindow\(id\)/.test(scrollFn2) && /clientHeight/.test(scrollFn2)
     ? ok("★ 滚回最新（贴底）即收回窗口，切会话回来是初始态")
     : fail("没有「贴底即收回窗口」—— 展开过的历史会一直撑着渲染");
-  // 刻度尺必须与分页口径对齐（用户 09-14：「滚轮也要同步最新每页」「加一页就短一点」）
-  const rulerPage = Number((appSrc4.match(/const RULER_PAGE = (\d+);/) ?? [])[1] ?? NaN);
-  rulerPage === page
-    ? ok(`刻度尺滚轮步长 = 一页（RULER_PAGE=${rulerPage} = TURNS_PAGE）`)
-    : fail(`刻度尺滚轮步长(${rulerPage})与页大小(${page})不一致 —— 滚轮不会按页滑动`);
+  // 刻度尺窗口（用户 09-18 改口径：「跟着懒加载来 / 往上滚过一直透出不对，要滚动渲染刻度线」
+  // —— 09-14 的「已加载全部留在尺子上（pad 压缩）」在页数一多时会全量塞成密集柱，且与视口无关，
+  // 现改为**滑动窗口跟随滚动位置**，固定槽高、容量封顶）
+  (/\(h \/ total - 2\) \/ 3/.test(appSrc4))
+    ? fail("刻度尺还在按「全部塞上尺子」反解压缩 pad —— 用户 09-18 已改口径：滑动窗口跟滚动")
+    : ok("刻度尺不再全量塞刻度（pad 压缩反解已删，固定槽高 14px）");
+  (/windowSize = Math\.min\(Math\.max\(4, visibleCount\), RULER_MAX\)/.test(appSrc4))
+    ? ok("刻度窗口容量封顶（RULER_MAX）—— 已加载页数再多也不会全量透出")
+    : fail("刻度窗口没有上限 —— 又会随懒加载页数堆成密集柱");
   // ⛔ 只查常量值没有鉴别力：必须查**使用点**是否真的绑了 RULER_PAGE（反证过：把使用点改回
   //    固定格数，常量断言照样绿）。
   /direction \* RULER_PAGE/.test(appSrc4)
     ? ok("滚轮使用点真的按页滑（direction * RULER_PAGE）")
     : fail("滚轮使用点没绑 RULER_PAGE —— 又回到固定格数地滑");
-  const cssSrc = readFileSync(join(ROOT, "src/styles.css"), "utf8");
-  /--ruler-pad/.test(appSrc4) && /var\(--ruler-pad/.test(cssSrc)
-    ? ok("刻度间距走 CSS 变量（已加载刻度多时自动压缩：加一页就短一点）")
-    : fail("刻度间距是写死的 —— 刻度多了只能靠滑动窗口藏起来");
   /setWindowOffset\(0\); \}, \[currentIndex\]\)/.test(appSrc4)
     ? ok("刻度选区只在阅读位置变化时归位（加载新页不会把选区拽走）")
     : fail("加载新页会把刻度选区拽回最新 —— 往上滚看历史时选区会乱跳");
@@ -4126,6 +4126,20 @@ w.postMessage({id:1,op:"list",root});
     (/ENV_CHECK_OPTOUT_KEY/.test(envC) && /localStorage\.getItem\(ENV_CHECK_OPTOUT_KEY\)/.test(appEnv))
       ? ok("【32】「不再提示」真的被读（勾了就不再弹）")
       : fail("【32】optout 标记没被读 —— 用户勾了「不再提示」还会每次被弹");
+    // 后台安装（09-18 用户：「加一个后台安装功能，弹窗要知道缩小，安装完成自动消失」；
+    // 起因：Python 下载挂住时弹窗卡死、安装中禁一切关闭，用户只能重启）
+    (/setEnvCheckOpen\(false\); \/\/ 后台化/.test(appEnv))
+      ? ok("【32】一键安装点下去弹窗立刻收起（安装转后台，右下角角标接管进度）")
+      : fail("【32】一键安装还是阻塞式弹窗 —— 下载一挂住整个界面被卡死只能重启");
+    (/envInstalling && !envCheckOpen/.test(appEnv) && /env-install-pill/.test(appEnv))
+      ? ok("【32】后台安装角标在渲染树里（进度实时显示、点开回弹窗、装完自动消失）")
+      : fail("【32】后台安装角标没挂进渲染树 —— 收起后安装进度不可见");
+    (/setEnvCheckOpen\(true\); \/\/ 有失败/.test(appEnv))
+      ? ok("【32】安装有失败时自动展开回弹窗（角标报不了哪项失败、也没法重试）")
+      : fail("【32】安装失败后弹窗没有展开回来 —— 用户不知道哪项没装上");
+    (!/安装期间禁用一切关闭动作/.test(envC) && /关闭 ≠ 取消/.test(envC))
+      ? ok("【32】安装中允许关闭弹窗（关闭 = 转后台，不再卡死界面）")
+      : fail("【32】体检弹窗又改成安装中禁关 —— 下载挂住时只能重启");
   }
 
   // ⑰e 用户头像类型链（09-18）：UserCenter 的回调把 avatarType 放宽成 string，会逼 App 侧用

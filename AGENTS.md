@@ -343,6 +343,11 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   底部「一键安装 N 项」串行调 `installRuntime`（复用主进程 `runtime:progress` 进度），
   另有「不再提示」（localStorage `env-check-optout`）。复用既有能力（`listRuntimes` / `installRuntime` /
   `runtime:progress` 都已存在），**没有新增主进程 IPC**。
+  - **后台安装（09-18 用户：「加一个后台安装功能，弹窗要知道缩小，安装完成自动消失」；起因是
+    Python 下载挂住时弹窗卡死、安装中禁一切关闭，用户只能重启）**：点「一键安装」弹窗**立刻收起**，
+    右下角 `.env-install-pill` 角标接管（实时进度、点开回弹窗）；**安装中允许关弹窗（关闭 ≠ 取消）**；
+    全部装好角标自动消失，有失败自动展开回弹窗给重试入口。守卫【32】4 条（后台化收起 / 角标在
+    渲染树 / 失败展开 / 不许再禁关）。
   - 用户拍板三条：**8 项**（不是 22 项全列——新用户列满只会更迷茫；09-18 补 PowerShell 7 到 8 项）/
     **弹窗确认后才下载**
     （Git 90MB 量级，静默装会突然吃带宽）/ **保留 Git 的后台静默自愈**（引擎跑命令的硬依赖，
@@ -823,7 +828,7 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   ② ⛔ **自动续载只认「真实用户滚动」**（`userScrolledRef`：滚轮 / 触摸 / 翻页键 / 拖滚动条，`openThread` 里重置）：此前只看 `scrollTop < 720`，而打开会话的 `jumpToBottom`、插入内容后的位置补偿都会把 `scrollTop` 扫过近顶区间 → **「用户没滚也跟着加载」**（实测首屏白加载一页 3 → 6）。与既有铁律「绝不用 scrollTop 反推用户意图」一致。
   ③ ⛔ **位置补偿用锚点元素位移**，不用 `scrollHeight` 增量：`content-visibility: auto` 下离屏回合高度是估算值、`scrollHeight` 滞后 → 补偿不足、内容被顶飞（实测位移 4.3k px → 改用锚点后 385px）。做法：插入前记下「视口内第一条回合相对视口的 top」，插入后 `scrollTop += 新 top − 旧 top`；锚点已卸载才退回增量法。
   **上下文不受影响（用户最担心的点）**：分页只影响渲染与读取，引擎侧 rollout / auto-compact 自管；e2e 用「全部 rollout 的 `task_started` 总数在操作前后不变」证明（前端只渲染 9，引擎侧仍 304）。另修 `resumeThreadWithTurns` 多页取完后未交出游标的问题（会导致「往上滚到底」重拉最新一页、出现重复回合）。
-  **刻度尺同步（同轮定稿）**：MessageRuler 的刻度按 `turns` 派生（只取用户消息）→ 续载后自动补刻度；**刻度间距走 CSS 变量 `--ruler-pad/--ruler-gap` 自适应压缩**（已加载刻度多时变短变密，极端多才退回滑动窗口）；刻度选区只在 `currentIndex` 变化时归位（加载新页不会把选区拽回最新）；滚轮一次滑 `RULER_PAGE`（= 一页）。
+  **刻度尺同步（同轮定稿；⛔ 间距压缩部分已被 09-18 口径**取代**，见下）**：MessageRuler 的刻度按 `turns` 派生（只取用户消息）→ 续载后自动补刻度；~~刻度间距走 CSS 变量 `--ruler-pad/--ruler-gap` 自适应压缩~~（**09-18 用户改口径**：「往上滚过一直透出不对，要滚动渲染刻度线」——压缩塞全部在页数多时成一根密集柱、且与视口无关。现改为**固定槽高 14px + 滑动窗口跟随滚动位置**，容量 `min(visibleCount, RULER_MAX)` 封顶，窗口起点锚 `currentIndex`、滚轮 `RULER_PAGE` 翻窗不变）；刻度选区只在 `currentIndex` 变化时归位（加载新页不会把选区拽回最新）；滚轮一次滑 `RULER_PAGE`（= 一页）。
   验收：预检【14】11 条静态守卫（含反证 3/3：窗口改回 400 / 去掉用户滚动判据 / 补偿退回 scrollHeight → 立刻红）；e2e 把 `TURN_WINDOW`/`TURNS_PAGE` **临时调小到 3** 逐步观察（8/8：没滚过 = 恰好一页 / 滚到顶 +3 / 按钮加载 +3 且位移 385px / 载入提示 / 引擎侧总数不变），跑完恢复 20 并重建。
 
 - **✅ 切换供应商不断档：会话「自动接力」（09-14 用户定稿，改这块先读这一段）**：用户口径是「切供应商，原会话还能继续用」「提醒用户是自动接力、历史没丢，旧会话自动归档，让用户感知不出来」。统一入口 `App.tsx` 的 `alignThreadToProvider(threadId, target, { reason })`——四个场景**只走它**（打开会话 / 发送前 / 引擎 401 / 切换供应商），文案与行为一套：
