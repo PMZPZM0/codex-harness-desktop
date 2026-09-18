@@ -4342,9 +4342,21 @@ w.postMessage({id:1,op:"list",root});
       && /inputTypes: \(m\.inputTypes \?\? \[\]\)\.filter\(\(t\) => t !== \"image\"\)/.test(appProbe))
       ? ok("【39】回合报「不支持图片输入」时自动摘掉该模型的 image 模态（幂等自愈）")
       : fail("【39】图片模态自愈缺失/没接回合失败 —— 升级用户的带图回合永远 InvalidParameter");
-    (/if \(!activeModelSupportsImage\(\)\)/.test(appProbe) && /const activeModelSupportsImage = \(\): boolean =>/.test(appProbe))
-      ? ok("【39】粘贴/插入图片有模态门禁（不支持图片的模型入口就拦，不再浪费一回合才报错）")
-      : fail("【39】图片插入没有模态门禁 —— 不支持图片的模型贴图必失败");
+    // 降级而不是硬失败（09-18 用户追评：「带图发送直接报错、还不能正常对话，设计不合理」）：
+    // 模型不支持图片时把贴图转成路径注记——有视觉插件引导 describe_image（识图由插件模型完成），
+    // 没插件也只忽略图片，对话不中断；粘贴入口不再硬拦（拦了会堵死降级链路）。
+    // ⛔ 断言必须锚定「活条件」而不是文本存在：把条件改成 `if (false && …)` 的死代码时
+    //    注释/字符串全还在，纯文本守卫照样绿（反证 A 实测抓到过）。
+    (/图片降级发送/.test(appProbe) && /readBuiltinPlugins\(\)/.test(appProbe)
+      && /if \(!activeModelSupportsImage\(\) && \(inlineImagePaths\.length \|\| images\.length\)\) \{/.test(appProbe)
+      && /let sendImages = images;/.test(appProbe))
+      ? ok("【39】发送时图片降级（活条件锚定：转文字路径注记，有视觉插件引导 describe_image，没插件只忽略图片）")
+      : fail("【39】带图发送又变硬失败 —— 模型不支持图片时必须降级为文字引用，不能炸掉整回合");
+    // 粘贴入口用函数体切片断言（前 700 字符内不得再出现模态拦截）
+    const insertBody = appProbe.split("function insertComposerImages")[1]?.slice(0, 700) ?? "";
+    (insertBody.length > 0 && !insertBody.includes("activeModelSupportsImage"))
+      ? ok("【39】粘贴入口不再按模态硬拦（拦了会堵死降级链路——发送时统一处理）")
+      : fail("【39】粘贴入口又有硬拦截 —— 用户贴图被拒，降级链路被堵");
   }
 
   // ⑰d 引导弹窗的「出场时机」（09-17 用户明确定规则：「只在进入主界面的时候才弹配置引导和

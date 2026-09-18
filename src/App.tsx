@@ -14820,12 +14820,9 @@ const commandMatches = useMemo(() => {
    *  随后序列化回流 prompt/images——DOM 即时可见，不走重建（否则光标闪跳）。 */
   function insertComposerImages(paths: string[]) {
     if (!paths.length) return;
-    // 模态门禁（09-18）：生效模型未声明图片输入时，贴了也只会吃一回合作者的 InvalidParameter——
-    // 入口就拦下并说清楚。模型确实支持但漏勾的，去模型编辑器勾「图片」。
-    if (!activeModelSupportsImage()) {
-      showToast("当前模型不支持图片输入", `「${customModel?.model ?? ""}」未声明图片模态（本次粘贴已忽略）。如该模型确实支持图片，请到「设置 → 模型」编辑该模型勾选「图片」后保存。`);
-      return;
-    }
+    // ⛔ 粘贴不再按模型模态硬拦（09-18 用户：「带图发送直接报错还不能对话，设计不合理」）：
+    // 图片照常进编辑框，发送时统一降级（见 sendMessage 里的「图片降级发送」）——
+    // 视觉插件已配置就自动转 describe_image 识图，没配置也只忽略图片、对话不中断。
     const el = composerInputRef.current;
     if (!el) {
       setImages((current) => [...current, ...paths.filter((path) => !current.includes(path))]);
@@ -15740,8 +15737,33 @@ const commandMatches = useMemo(() => {
     let messageText = value;
     let threadReferenceBlocks = "";
     // 内联图片：占位符从文本剥离，图片按占位符出现顺序发送；不在占位符里的遗留附件照旧追加
-    const inlineImagePaths = promptImagePaths(messageText);
+    let inlineImagePaths = promptImagePaths(messageText);
     if (inlineImagePaths.length) messageText = stripImageTokens(messageText);
+    // 图片降级发送（09-18 用户：「带图发送直接报错、还不能正常对话了，设计不合理」）：
+    // 生效模型不支持图片输入时，不再让整回合 InvalidParameter 炸掉——把贴图转成路径注记：
+    //   视觉插件已配置 → 引导模型调 describe_image（识图由插件自己配的视觉模型完成，独立于聊天模型）；
+    //   未配置 → 注记告知模型看不了图，对话照常继续（比硬失败好）。
+    // ⛔ 转换必须在所有下游构造（乐观气泡 / 排队 / 专家包装 / 正式 input）之前做：
+    //    否则乐观气泡与真实消息内容不一致，userMessageMatchesInput 对不上 → 气泡重复。
+    let sendImages = images;
+    if (!activeModelSupportsImage() && (inlineImagePaths.length || images.length)) {
+      const paths = [...inlineImagePaths, ...sendImages.filter((path) => !inlineImagePaths.includes(path))];
+      let visionPluginReady = false;
+      try {
+        const plugins = await window.codex.readBuiltinPlugins();
+        const vision = plugins?.vision;
+        visionPluginReady = Boolean(vision && vision.enabled !== false && vision.baseUrl && vision.apiKey && vision.model);
+      } catch { /* 读不到按未配置处理 */ }
+      messageText += visionPluginReady
+        ? `\n\n[用户随消息附了图片。当前模型不支持直接读取图片内容——请按开发者指令里 harness-media vision 的用法调用 describe_image 查看下面的本地图片文件，拿到描述后再继续任务：\n${paths.join("\n")}\n]`
+        : `\n\n[用户随消息附了 ${paths.length} 张图片，但当前模型不支持图片输入且未配置视觉插件，图片内容无法查看。如需识图请告知用户配置视觉插件，或请用户提供图片路径后用 describe_image 查看。图片路径：\n${paths.join("\n")}\n]`;
+      inlineImagePaths = [];
+      sendImages = [];
+      showToast(visionPluginReady ? "图片已转视觉插件识图" : "图片已忽略（模型不支持图片）",
+        visionPluginReady
+          ? `「${customModel?.model ?? ""}」不支持图片输入；已把 ${paths.length} 张图转为 describe_image 调用，由视觉插件的模型识图后继续对话。`
+          : `「${customModel?.model ?? ""}」不支持图片输入且未配置视觉插件，本次发送不含图片、对话照常继续。配置视觉插件后，贴图会自动转为插件识图。`);
+    }
     try {
       // 必须用剥离占位符后的 messageText：传原始 value 会把 [图片:...] 编码路径
       // 覆盖回发送文本（09-04 截图实证：气泡里出现整段乱码 token）
@@ -15762,7 +15784,7 @@ const commandMatches = useMemo(() => {
       const input = [
         ...((messageText || threadReferenceBlocks || files.length || selectedSkills.length || contextItems.length || quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
         ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
-        ...images.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
+        ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
       ];
       try {
         await window.codex.request("thread/queue/add", { threadId: thread.id, input, clientUserMessageId: crypto.randomUUID() });
@@ -15876,7 +15898,7 @@ const commandMatches = useMemo(() => {
       setOptimisticInput({ id: optimisticId, type: "userMessage", content: [
         ...((messageText || threadReferenceBlocks || files.length || quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
         ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
-        ...images.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
+        ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
       ] });
       stickToBottomRef.current = false;
       anchorTopRef.current = true;
@@ -15910,7 +15932,7 @@ const commandMatches = useMemo(() => {
     const input = [
       ...((messageText || threadReferenceBlocks || files.length || quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${memoryPrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
       ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
-      ...images.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
+      ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
     ];
     let sendInput = input;
     if (expertRole) {
@@ -15918,14 +15940,14 @@ const commandMatches = useMemo(() => {
       if (userText) {
         const kindLabel = expertRole.kind === "team" ? "团队会话" : "成员会话";
         const text = `${expertRole.prefix}[SYSTEM TASK · ${kindLabel}]\n=== 用户需求 ===\n${userText}\n=== END ===\n\n${expertRole.instruction}`;
-        sendInput = [{ type: "text", text, text_elements: [] }, ...inlineImagePaths.map((path) => ({ type: "localImage", path })), ...images.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path }))];
+        sendInput = [{ type: "text", text, text_elements: [] }, ...inlineImagePaths.map((path) => ({ type: "localImage", path })), ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path }))];
       }
     } else if (pendingImport) {
       const userText = input.filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n").trim();
       if (userText) {
         // 块语义自明（[导入的会话记录]），不再拼多余自然语言指令——那会泄漏进 cleanText/气泡/标题
         const text = `[导入的会话记录]\n${fmtImportNote(pendingImport)}\n=== 记录内容 ===\n${pendingImport.text}\n=== 记录结束 ===\n\n${userText}`;
-        sendInput = [{ type: "text", text, text_elements: [] }, ...inlineImagePaths.map((path) => ({ type: "localImage", path })), ...images.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path }))];
+        sendInput = [{ type: "text", text, text_elements: [] }, ...inlineImagePaths.map((path) => ({ type: "localImage", path })), ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path }))];
       }
     }
     if (!fastArm) {
