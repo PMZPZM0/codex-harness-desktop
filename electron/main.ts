@@ -2898,6 +2898,12 @@ const botStreamSessions = new Map<string, BotStreamSession>();
 //  · Telegram：无配额限制（editMessageText 只改同一条），沿用原节流。
 const WEIXIN_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 5, flushIntervalMs: 3000, minChars: 40 };
 const TELEGRAM_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 40, flushIntervalMs: 1600, minChars: 0 };
+//  飞书：可发多条、限速宽松（单应用每分钟量级很高）⇒ 追加 4 条 + 收尾 1 条。
+//  钉钉：群 webhook **只能发新消息（无编辑）**，且限 20 条/分钟 ⇒ 追加 3 条、间隔 ≥5s，保守留余量。
+//  QQ：被动回复（msg_id）官方上限 5 次 ⇒ 追加 3 条 + 收尾 1 条 = 4 次，留 1 次余量。
+const FEISHU_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 4, flushIntervalMs: 4000, minChars: 60 };
+const DINGTALK_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 3, flushIntervalMs: 5000, minChars: 60 };
+const QQ_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 3, flushIntervalMs: 3000, minChars: 80 };
 
 function weixinStreamSink(from: string): BotStreamSink {
   // 09-18 修正：此前**整体撤掉了微信流式**，依据是 09-12 的结论「iLink 的 context_token 实测一次一发」。
@@ -2945,6 +2951,40 @@ function stopWeixinTyping(threadId: string) {
   try { stop(); } catch { /* 忽略 */ }
 }
 
+/** 飞书 / 钉钉 / QQ 的追加式流式 sink（09-18 用户：「接上流式（按各渠道限制做）」）。
+ *  三家都**不能编辑已发消息**（飞书 SDK 未暴露 message 更新、钉钉 webhook 只发新消息、
+ *  QQ 被动回复只能逐条发），所以走与微信同款的「少量多次」追加语义：
+ *  append = 发一条进度消息，finalizeAppend = 发收尾（完整正文尾部）；预算按各家频控设（见上）。
+ *  转换与微信一致：发送前统一过 plainTextForChannel（这三家也是纯文本消息类型）。 */
+function feishuStreamSink(chatId: string): BotStreamSink {
+  return {
+    append: (delta) => feishuGateway.sendMessage(chatId, plainTextForChannel(delta)),
+    finalizeAppend: (tail) => feishuGateway.sendMessage(chatId, plainTextForChannel(tail) || "（已完成）"),
+    send: (full) => feishuGateway.sendMessage(chatId, plainTextForChannel(full)),
+  };
+}
+function dingtalkStreamSink(chatId: string): BotStreamSink {
+  return {
+    append: (delta) => dingtalkGateway.sendMessage(chatId, plainTextForChannel(delta)),
+    finalizeAppend: (tail) => dingtalkGateway.sendMessage(chatId, plainTextForChannel(tail) || "（已完成）"),
+    send: (full) => dingtalkGateway.sendMessage(chatId, plainTextForChannel(full)),
+  };
+}
+function qqStreamSink(chatId: string): BotStreamSink {
+  // ctx 逐条现取：QQ 的被动回复凭据随每条入站消息刷新（msg_id 5 分钟内有效），
+  // 闭包捕获旧 ctx 会在长任务里过期 —— 取不到就直接抛，交给 bot-stream 的降级逻辑。
+  const send = (text: string) => {
+    const ctx = qqReplyContexts.get(chatId);
+    if (!ctx) throw new Error("缺少被动回复上下文（msg_id 已过期），请重新 @机器人");
+    return qqGateway.sendMessage(chatId, plainTextForChannel(text), ctx);
+  };
+  return {
+    append: (delta) => send(delta),
+    finalizeAppend: (tail) => send(tail || "（已完成）"),
+    send: (full) => send(full),
+  };
+}
+
 function telegramStreamSink(chatId: number): BotStreamSink {
   // 与微信同理（09-18 用户问「其他渠道是不是一样」）：Telegram 这里**没有 parse_mode**，
   // Markdown 也是原样显示（`**粗体**`、`| 表格 |`），且 Telegram 本身不渲染表格 →
@@ -2979,9 +3019,21 @@ function botStreamPlanFor(threadId: string): { sink: BotStreamSink; budget: BotS
   const tgChat = telegramBindings.get(threadId);
   if (tgChat != null) return { sink: telegramStreamSink(tgChat), budget: TELEGRAM_STREAM_BUDGET };
   for (const [user, bound] of weixinBindings) {
-    if (bound === threadId && !user.startsWith("tg:")) {
-      return { sink: weixinStreamSink(user), budget: WEIXIN_STREAM_BUDGET, typingFrom: user };
-    }
+    if (bound !== threadId) continue;
+    // ⛔ 键前缀区分渠道：飞书/钉钉/QQ 也用同一张绑定表（fs:/dd:/qq:），不加这个过滤
+    //    它们会被微信分支截胡 → 用微信网关去发飞书消息（09-18 加三渠道流式时差点踩）。
+    if (/^(tg|fs|dd|qq|wecom):/.test(user)) continue;
+    return { sink: weixinStreamSink(user), budget: WEIXIN_STREAM_BUDGET, typingFrom: user };
+  }
+  // 飞书 / 钉钉 / QQ（09-18 用户：接上流式，按各渠道限制做）：绑定表按渠道存 threadId，
+  // 聊天 ID 在回合发起时记进 channelThreadChat（回复凭据随之刷新）。
+  for (const channel of ["feishu", "dingtalk", "qq"] as const) {
+    if (channelBotBindings[channel]?.threadId !== threadId) continue;
+    const chatId = channelThreadChat.get(threadId);
+    if (!chatId) continue;
+    if (channel === "feishu") return { sink: feishuStreamSink(chatId), budget: FEISHU_STREAM_BUDGET };
+    if (channel === "dingtalk") return { sink: dingtalkStreamSink(chatId), budget: DINGTALK_STREAM_BUDGET };
+    if (qqReplyContexts.has(chatId)) return { sink: qqStreamSink(chatId), budget: QQ_STREAM_BUDGET };
   }
   return null;
 }
@@ -3313,6 +3365,8 @@ const qqGateway = new QqGateway({
   log: channelLog,
 });
 const wecomWebhookGateway = new WecomWebhookGateway({ log: channelLog });
+// 飞书/钉钉/QQ 的流式回复目标：threadId → chatId（回合发起时记录，见 handleChannelMessage）
+const channelThreadChat = new Map<string, string>();
 // QQ 回复需要 msgId + scene（被动回复机制），与 chatId 一起缓存
 const qqReplyContexts = new Map<string, { msgId: string; scene: "group" | "c2c" }>();
 
@@ -3370,6 +3424,8 @@ async function handleChannelMessage(channel: "feishu" | "dingtalk" | "qq", from:
       await writeBotBindings();
     }
     weixinBindings.set(prefix + from, threadId);
+    // 流式回复目标登记（09-18）：飞书/钉钉/QQ 的 sink 需要 chatId 才能发进度消息
+    channelThreadChat.set(threadId, chatId);
     const onDoneProxy = (event: any) => {
       if (event.kind !== "notification" || event.method !== "turn/completed" || event.params?.threadId !== threadId) return;
       server.off("event", onDoneProxy);
