@@ -21,7 +21,11 @@ export type Thread = { id: string; preview: string; name?: string | null; cwd: s
 //   否则回合结束被吸进「已完成」组时组件卸载重挂，自动收起动画没机会播＝「闪一下就没了」）
 // - 工具·命令·编辑等 → foldable（可折叠进过程组）
 // - 有正文的 agentMessage → body（正文锚点，不可折叠；解说与结论一视同仁）
-// - plan / 图片类 → keepVisible（常驻外露，永不折叠）
+// - plan / **生成的**图片 → keepVisible（常驻外露，永不折叠）
+// ⛔ `imageView`（agent **查看**图片）09-18 从 keepVisible 改为 foldable：
+//   用户原话「消息汇总下面的那个图片和文件展示…只要在那个目录的图片，下面都展示」——
+//   agent 逐张查看目录里的图片时，一张一个常驻大图预览，把消息区铺满（真机记录：单回合 3 张、
+//   单会话 12 张）。查看是**过程**，应当随过程折叠；生成才是**产出**，继续常驻。
 export type FoldKind = "foldable" | "body" | "keepVisible" | "thinking";
 export type FoldUnit = { item: ThreadItem; kind: FoldKind };
 export type FoldSegment = { kind: "foldable"; units: FoldUnit[]; shouldFold: boolean } | { kind: "normal"; units: FoldUnit[] };
@@ -32,7 +36,8 @@ export type OrderedToolRun =
 export function classifyUnit(item: ThreadItem): FoldKind {
   if (item.type === "reasoning") return "thinking";
   if (item.type === "agentMessage") return "body";
-  if (item.type === "plan" || item.type === "imageView" || item.type === "imageGeneration") return "keepVisible";
+  // imageView 走 foldable（见上方注释）；plan 与生成图仍常驻外露
+  if (item.type === "plan" || item.type === "imageGeneration") return "keepVisible";
   if (item.type === "userMessage") return "keepVisible"; // 用户消息不可折叠
   return "foldable";
 }
@@ -53,6 +58,7 @@ export function toolRunMeta(item: ThreadItem): { key: string; label: string } {
     }
     case "collabAgentToolCall": return { key: `collab:${item.tool ?? "agent"}`, label: "协作工具" };
     case "subAgentActivity": return { key: `subagent:${item.kind ?? "activity"}`, label: "子智能体" };
+    case "imageView": return { key: "image-view", label: "查看图片" };
     default: return { key: `tool:${item.type}`, label: "工具" };
   }
 }
@@ -157,6 +163,10 @@ export function foldAtomOf(item: ThreadItem, waitingForApproval?: boolean): Fold
     }
     case "webSearch":
       return { group: "research", object: item.query ? truncText(item.query) : undefined, status };
+    // imageView 归到 read 组（词表：topic「查看 {t}」/ verb「查看文件」）——
+    // 否则会落进 other（摘要变成「处理多个步骤」，看不出它在看图）。
+    case "imageView":
+      return { group: "read", object: item.path ? truncText(basename(String(item.path))) : undefined, status };
     case "mcpToolCall":
       return { group: "external", object: item.tool ? truncText(`${item.server ?? "mcp"}/${item.tool}`) : undefined, status };
     case "dynamicToolCall":

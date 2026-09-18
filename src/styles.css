@@ -2047,7 +2047,9 @@ html[data-ui-font="large"] .action-content pre {
 }
 /* 双类名提高特异性：.msg-refs 的 flex-start 定义在文件更后，单类名会被覆盖（09-08 反馈「还在中间」） */
 .msg-refs.user-attach-row {
-  justify-content: flex-end;
+  justify-content: flex-end;   /* 全部靠右（09-18 用户：「都靠右，自适应排序啊，靠左多丑」） */
+  flex-wrap: wrap;             /* 附件多了自动换行，不横向溢出、也不挤成一坨 */
+  row-gap: 6px;                /* 换行后的行间距（列间距沿用 .msg-refs 的 gap） */
 }
 /* 乐观气泡（服务端未确认落地前）：仅浅一档区分，避免「消息直接闪出来」与已确认消息混淆。
    原先的「发送中…」角标已删（用户反馈：每次发消息下面都有个发送中闪一下，多余）——
