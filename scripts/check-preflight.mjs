@@ -2723,7 +2723,10 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
         ` gpt56: m.matchModelSpec("gpt-5.6-terra").contextWindow, gpt55: m.matchModelSpec("gpt-5.5").contextWindow, gpt51: m.matchModelSpec("gpt-5.1").contextWindow,` +
         ` fable: m.matchModelSpec("claude-fable-5").contextWindow, fableVis: V("claude-fable-5"), claudeOld: m.matchModelSpec("claude-sonnet-4-5").contextWindow,` +
         ` gemini: m.matchModelSpec("gemini-3.5-flash").contextWindow, geminiOut: m.matchModelSpec("gemini-3.5-flash").maxOutputTokens, geminiVis: V("gemini-3.5-flash"),` +
-        ` dsV4: m.matchModelSpec("deepseek-v4-flash-ga-260731").contextWindow, dsV4Out: m.matchModelSpec("deepseek-v4-flash-ga-260731").maxOutputTokens, dsV4Vis: V("deepseek-v4-flash-ga-260731"),` +
+        ` dsV4: m.matchModelSpec("deepseek-v4-pro").contextWindow, dsV4Out: m.matchModelSpec("deepseek-v4-pro").maxOutputTokens, dsV4Vis: V("deepseek-v4-pro"),` +
+        ` dsV41: m.matchModelSpec("deepseek-v4.1-flash").contextWindow, dsV41Out: m.matchModelSpec("deepseek-v4.1-flash").maxOutputTokens, dsV41Vis: V("deepseek-v4.1-flash"),` +
+        ` dsFlashCtx: m.matchModelSpec("deepseek-flash").contextWindow, dsFlashVis: V("deepseek-flash"), dsFlashEff: m.matchModelSpec("deepseek-flash").efforts.join("/"),` +
+        ` dsV4FlashRouted: m.matchModelSpec("deepseek-v4-flash-ga-260731").contextWindow,` +
         ` k3: m.matchModelSpec("kimi-k3").contextWindow, k3Vis: V("kimi-k3"), k3256: m.matchModelSpec("kimi-k3-256k").contextWindow,` +
         ` glm53: m.matchModelSpec("glm-5.3").contextWindow, glm53Vis: V("glm-5.3"), glm53fVis: V("glm-5.3-flash"),` +
         ` qwen38: m.matchModelSpec("qwen3.8-max").contextWindow, qwen38Video: (m.matchModelSpec("qwen3.8-max").inputTypes || []).includes("video"),` +
@@ -2744,7 +2747,10 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
       (sp.fable === 1000000 && sp.fableVis === true ? ok : fail)("Claude Fable 5 / Opus 4.8：1M / 128K / 视觉（新旗舰）");
       (sp.claudeOld === 200000 ? ok : fail)("早期 Claude 仍是 200K —— 不能把整个家族都标成 1M（虚标会被供应商拒）");
       (sp.gemini === 1048576 && sp.geminiOut === 65536 && sp.geminiVis === true ? ok : fail)("Gemini 3.x：1,048,576 / 65,536 / 多模态（Google 官方模型指南）");
-      (sp.dsV4 === 1000000 && sp.dsV4Out === 393216 && sp.dsV4Vis === false ? ok : fail)("DeepSeek V4：1M / 384K 且**纯文本**（官方明确无视觉 —— 漏标虚标都害人）");
+      (sp.dsV4 === 1000000 && sp.dsV4Out === 393216 && sp.dsV4Vis === false ? ok : fail)("DeepSeek V4-Pro（仍在售）：1M / 384K 且**纯文本**（官方明确 v4-pro 无视觉）");
+      (sp.dsV41 === 1048576 && sp.dsV41Out === 393216 && sp.dsV41Vis === true ? ok : fail)("DeepSeek V4.1 Flash：1,048,576 / 384K 且**原生视觉**（09-10 发布，官方特性表 Vision 支持 —— 别沿用 V4 的纯文本旧标）");
+      (sp.dsFlashCtx === 1048576 && sp.dsFlashVis === true && sp.dsFlashEff === "low/high/max" ? ok : fail)("官方主 id deepseek-flash 与别名同规格；思考强度 low/high/max（默认 high，官方模型&价格页）");
+      (sp.dsV4FlashRouted === 1048576 ? ok : fail)("旧名 deepseek-v4-flash 官方声明路由到 V4.1 Flash —— 规格必须按 V4.1（1M/视觉）算，不能留在旧纯文本规则里");
       (sp.k3 === 1000000 && sp.k3Vis === true && sp.k3256 === 262144 ? ok : fail)("Kimi K3：1M + **原生视觉**（K3 首次支持）；K3-256k 省额度档 262K");
       (sp.glm53Vis === false && sp.glm53fVis === true ? ok : fail)("GLM-5.3 纯文本、只有 GLM-5.3-Flash 是原生多模态（别把整个家族标成视觉）");
       (sp.qwen38 === 1000000 && sp.qwen38Video === true ? ok : fail)("Qwen3.8-Max：约 1M / 文本+图像+视频");
@@ -2752,7 +2758,7 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
       (sp.unknown === null ? ok : fail)("未收录的模型返回 null（拿不准就不编 —— 用户手填 + 外部 JSON 可覆盖）");
       (Array.isArray(sp.sugGpt56) && sp.sugGpt56[0] === "gpt-5.6" && sp.sugGpt56.includes("gpt-5.6-sol") ? ok : fail)("补全：完全相等优先（打 gpt-5.6 先出别名本身，再出 Sol/Terra/Luna）");
       (sp.sugEmpty >= 5 ? ok : fail)("补全：空输入给当前主流型号（新手上来不用背名字）");
-      (sp.sugDeepseek === "deepseek-v4-pro" ? ok : fail)("补全：表内顺序 = 新旗舰在前（打 deepseek 先看到 v4-pro 而不是旧 chat）");
+      (sp.sugDeepseek === "deepseek-flash" ? ok : fail)("补全：表内顺序 = 新旗舰在前（打 deepseek 先看到 V4.1 Flash 官方主 id deepseek-flash）");
       (sp.fmt === "1.05M/262K" ? ok : fail)("formatTokenCount：1.05M / 262K（徽标文案）");
     }
   }
