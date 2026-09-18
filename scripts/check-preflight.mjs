@@ -4681,6 +4681,47 @@ w.postMessage({id:1,op:"list",root});
     (/async function forgetDeletedThreads\(ids: string\[\]\)/.test(mainTs) && mainTs.includes("deletedThreadIds.delete(id)") ? ok : fail)("【43】墓碑可被摘除（forgetDeletedThreads 实现存在）");
     (mainTs.includes("await forgetDeletedThreads(summary.threads.filter((entry: { status: string }) => entry.status === \"ok\")") ? ok : fail)("【43】导入备份写入成功即摘墓碑（只清 status===\"ok\"，duplicate/conflict 保留墓碑）");
   }
+
+  // ── ⑳【44】回合结束时必须说清「为什么停」（09-18 用户实测「跑长任务老是中途自动停止」）──
+  //    引擎把原因写在 `turn.error`（`codexErrorInfo` 分类枚举）与 `status === "interrupted"` 上，
+  //    真机实测被中断的回合是 `{status:"interrupted", error:null}` —— 旧实现 `turn.error ? "处理出错" : …`
+  //    既把所有错误压成四个字，又让被中断的回合显示成「耗时 3s」（用户只能理解成"它自己停了"）。
+  //    守卫三层：①纯函数行为（直跑 src/lib/turn-stop-reason.mjs）②界面接线 ③旧写法必须消失。
+  {
+    console.log(C.bold("\n【44】回合结束原因（为什么停 / 能不能接着跑）"));
+    const { describeTurnStop, turnHeadline } = await import("../src/lib/turn-stop-reason.mjs");
+    const appSrc = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+    const cssSrc = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+    const libSrc = readFileSync(join(ROOT, "src", "lib", "turn-stop-reason.mjs"), "utf8");
+
+    // ① 行为：被中断（真机实测形态）必须看得出来
+    const interrupted = describeTurnStop({ status: "interrupted", error: null, durationMs: 3001 });
+    (interrupted.label === "已停止" ? ok : fail)(`【44】status=interrupted 且 error=null → 「已停止」（旧实现落进「耗时 Xs」分支；实得「${interrupted.label}」）`);
+    (interrupted.detail.includes("接着发一条消息") ? ok : fail)("【44】被中断时给出「怎么继续」的说明");
+    // ② 行为：错误分类要落到中文标签，且保留引擎原文
+    const ctx = describeTurnStop({ status: "failed", error: { message: "context window exceeded", codexErrorInfo: "contextWindowExceeded" } });
+    (ctx.label === "上下文超限" ? ok : fail)(`【44】codexErrorInfo=contextWindowExceeded → 「上下文超限」（实得「${ctx.label}」）`);
+    (ctx.detail.includes("context window exceeded") && ctx.detail.includes("新会话") ? ok : fail)("【44】上下文超限：既带引擎原文也带处置建议");
+    (describeTurnStop({ status: "completed", error: { message: "m", codexErrorInfo: "sandboxError" } }).label === "沙箱拒绝" ? ok : fail)("【44】sandboxError → 「沙箱拒绝」（命令被策略拒的场景）");
+    (describeTurnStop({ status: "completed", error: { message: "m", codexErrorInfo: "rateLimitExceeded" } }).label === "被限流" ? ok : fail)("【44】rateLimitExceeded → 「被限流」");
+    (describeTurnStop({ status: "completed", error: { message: "上游炸了", codexErrorInfo: "someFutureCode" } }).label === "处理出错" ? ok : fail)("【44】未知分类回落「处理出错」（引擎新增分类不能变成空白）");
+    // ③ 行为：正常完成 / 运行中**不得**出现提示（防误报）
+    (describeTurnStop({ status: "completed", durationMs: 1200 }).label === "" ? ok : fail)("【44】正常完成的回合不出提示条（否则每条消息下面都挂一块）");
+    (describeTurnStop({ status: "inProgress" }).kind === "running" ? ok : fail)("【44】运行中的回合按 running 处理（不显示结束原因）");
+    // ④ 行为：引擎给的「继续指令」要取出来（misalignment.steer.message）
+    const steer = describeTurnStop({ status: "failed", error: { message: "x", codexErrorInfo: "misalignmentPolicyViolation", misalignment: { steer: { message: "继续执行剩余步骤" } } } });
+    (steer.continueText === "继续执行剩余步骤" ? ok : fail)("【44】misalignment.steer.message 被提取（引擎说「确认继续就把这条作为下一回合输入」）");
+    // ⑤ 标题合成：分类 + 耗时
+    (turnHeadline({ status: "interrupted", error: null }, "3s") === "已停止 · 耗时 3s" ? ok : fail)("【44】标题合成「已停止 · 耗时 3s」");
+    (turnHeadline({ status: "completed" }, "") === "已处理" ? ok : fail)("【44】正常完成回落「已处理」");
+    // ⑥ 接线 + 旧写法必须消失（这是"修好了"的关键锚，别只查新符号存在）
+    (appSrc.includes("describeTurnStop(turn)") ? ok : fail)("【44】界面调用 describeTurnStop");
+    (appSrc.includes("turn-stop-notice") && appSrc.includes("stopReason.label &&") ? ok : fail)("【44】非正常结束渲染提示条（含原因与建议）");
+    (!/turn\.error \? "处理出错"/.test(appSrc) ? ok : fail)("【44】旧的「有 error 就写处理出错」写法已消失（否则被中断的回合还是看不出原因）");
+    (!/turn\.error \? "出错"/.test(appSrc) ? ok : fail)("【44】回合状态词不再只写「出错」");
+    (cssSrc.includes(".turn-stop-notice") && cssSrc.includes(".turn-stop-notice.stop-interrupted") ? ok : fail)("【44】提示条样式存在（被中断用中性色，不冒充错误）");
+    (libSrc.length > 800 ? ok : fail)("【44】原因表在纯函数模块里（可直跑断言，不是散在 JSX 里的字面量）");
+  }
 }
 
 console.log("");
