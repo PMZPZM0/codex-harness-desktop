@@ -402,8 +402,13 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
     setProviderStatus("");
     try {
       const result = await window.codex.probeCustomModel({ provider: providerId, baseUrl: customDraft.baseUrl, apiKey: customDraft.apiKey, model: modelId, wireApi: customDraft.wireApi ?? "responses" });
-      setProviderStatus(`${modelId} 连接成功 · HTTP ${result.status} · ${result.latencyMs} ms${result.via === "stream" ? " · 实测请求连通" : " · 模型列表确认"}`);
-      onProbeSuccess?.(`${modelId} 连接成功`, `HTTP ${result.status} · ${result.latencyMs} ms${result.via === "stream" ? " · 实测请求连通" : " · 模型列表确认"}`);
+      // wireMismatch（09-18）：配置的协议被网关拒、探测按另一协议兜底连通——必须如实告诉用户，
+      // 否则"连接成功"和发送时的报错会对不上（火山 Coding Plan 网关对部分模型只放行 Chat）。
+      const mismatch = (result as { wireMismatch?: boolean; wireUsed?: string }).wireMismatch
+        ? `（注意：按 ${(result as { wireUsed?: string }).wireUsed === "chat" ? "Chat Completions" : "Responses"} 通道连通——你配置的 ${customDraft.wireApi ?? "responses"} 通道被网关拒绝。引擎固定走 Responses，若发送时报同类错误请换支持该协议的接入点）`
+        : "";
+      setProviderStatus(`${modelId} 连接成功 · HTTP ${result.status} · ${result.latencyMs} ms${result.via === "stream" ? " · 实测请求连通" : " · 模型列表确认"}${mismatch}`);
+      onProbeSuccess?.(`${modelId} 连接成功`, `HTTP ${result.status} · ${result.latencyMs} ms${result.via === "stream" ? " · 实测请求连通" : " · 模型列表确认"}${mismatch}`);
     } catch (error: any) {
       setProviderStatus(`${modelId} 连接失败：${error.message}`);
     } finally {

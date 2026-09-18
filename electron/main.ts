@@ -2178,7 +2178,11 @@ async function probeCustomModel(input: { provider?: string; baseUrl: string; api
   // 第二步：对指定模型发起流式极简请求，收到首个响应分片即判定连通，避免推理模型思考耗时。
   // wireApi=auto（自动跟随上游）：先试 Responses，端点/参数不被认就自动换 Chat Completions，
   // 并把实际成功的协议通过 wireUsed 返回——前端回写配置，保存时落定具体值。
-  const wireOrder: ("responses" | "chat")[] = input.wireApi === "chat" ? ["chat"] : input.wireApi === "auto" ? ["responses", "chat"] : ["responses"];
+  // ⛔ 显式 responses 也保留 chat 回落（09-18 用户反馈）：火山 Coding Plan 等网关对**部分模型**
+  // 的 /responses 直接回 404「does not support the coding plan feature」，而 Chat 通道是通的——
+  // 只试单协议会把"明明能用的模型"误报成连接失败。wireUsed/wireMismatch 让前端如实呈现差异。
+  const requestedWire: "responses" | "chat" = input.wireApi === "chat" ? "chat" : "responses";
+  const wireOrder: ("responses" | "chat")[] = requestedWire === "chat" ? ["chat"] : ["responses", "chat"];
   if (!model) {
     // Coding Plan 类网关（火山方舟/智谱 Coding/Kimi/MiniMax 等）不提供 /models 列表：
     // 命中已知网关时返回内置推荐清单（可手动增删），并给出该网关实测的协议偏好。
@@ -2220,6 +2224,10 @@ async function probeCustomModel(input: { provider?: string; baseUrl: string; api
       const detail = describeHttpBody(body) || response.statusText;
       if (response.status === 401 || response.status === 403) throw new Error(`认证失败（HTTP ${response.status}）${detail ? `：${detail}` : "：网络是通的，请检查 API Key"}`);
       if (response.status === 400 && /model.*(not.*(found|exist)|不存在)/i.test(body)) throw new Error(`模型不存在（HTTP 400）：${detail}`);
+      if (response.status === 404 && /coding plan/i.test(body)) {
+        // 火山 Coding Plan 类网关的原话要翻译成白话：用户看到 404 只知道"失败了"，不知道是该换接入点还是换模型
+        throw new Error(`HTTP 404: ${detail}\n白话：供应商表示这个模型不在其 Coding Plan 通道的支持范围。请确认 Base URL 与模型是否配套（例如火山引擎通用接入点是 https://ark.cn-beijing.volces.com/api/v3），或换用支持该模型的接入点。`);
+      }
       throw new Error(`HTTP ${response.status}: ${detail}`);
     }
   }
@@ -2228,7 +2236,8 @@ async function probeCustomModel(input: { provider?: string; baseUrl: string; api
   if (reader) {
     try { await reader.read(); } finally { try { await reader.cancel(); } catch { /* 已断开 */ } }
   }
-  return { status: response.status, latencyMs: Date.now() - startedAt, model, models: models ?? [model], ok: true, via: "stream", wireUsed };
+  // wireMismatch：实际连通的协议与请求指定的不同（responses 被拒、chat 兜底成功）——前端如实提示
+  return { status: response.status, latencyMs: Date.now() - startedAt, model, models: models ?? [model], ok: true, via: "stream", wireUsed, wireMismatch: wireUsed !== requestedWire };
 }
 // ── 原生右键菜单：为输入框/选中文本提供 Windows 式复制、粘贴、剪切、全选、删除、撤销、重做 ──
 // 渲染层跑在 sandbox + contextIsolation 下，且消息气泡的自定义「复制」按钮已存在；

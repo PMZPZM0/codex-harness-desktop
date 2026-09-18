@@ -12238,6 +12238,9 @@ const commandMatches = useMemo(() => {
         const takeoverItem = (params.turn?.items ?? []).find((entry: ThreadItem) => entry.type === "userMessage" && userMessageMatchesInput(entry, optimisticInput?.content ?? []));
         if (optimisticInput && takeoverItem) setOptimisticInput(null);
         if (params.turn.error?.message) showToast("任务失败", params.turn.error.message);
+        // 图片模态自愈（09-18 用户反馈：升级上来的模型配置标了「视觉」，但接入点实际不支持图片
+        // → 带图回合全部 InvalidParameter）。错误原话明确点名时才触发，只动该模型的 inputTypes。
+        void healImageModalityIfUnsupported(params.turn.error?.message);
         // 限流失败 → 自动重试（10 次退避）。仅当失败回合属于最近一次发送的线程才接管
         if (params.turn.error?.message && isRateLimitError(params.turn.error.message) && retryContextRef.current?.threadId === params.threadId) {
           scheduleRateLimitRetry(rateLimitAttemptRef.current + 1);
@@ -12751,6 +12754,32 @@ const commandMatches = useMemo(() => {
   }
   /** 安装进度文案（复用主进程推来的 runtime:progress，取最后一条）。 */
   const envProgress = envInstalling ? (Object.entries(runtimeProgress).slice(-1)[0]?.[1] ?? "") : "";
+
+  /** 当前生效模型是否声明了图片输入（自定义模型看该模型的 inputTypes；官方订阅/未声明 → 放行）。 */
+  const activeModelSupportsImage = (): boolean => {
+    const live = customModel;
+    if (!live) return true;
+    const model = (live.models ?? []).find((m) => m.id === live.model);
+    return !model || (model.inputTypes ?? []).includes("image");
+  };
+
+  /** 图片模态自愈（09-18）：接入点明确报「不支持图片输入」且生效模型标了 image →
+   *  自动摘掉 image 模态并保存（保存即重载引擎配置），toast 说明。只在错误原话点名时触发；
+   *  摘掉后不再命中（幂等），用户仍可在模型编辑器手动勾回。 */
+  async function healImageModalityIfUnsupported(message: string | undefined) {
+    if (!message || !/do not support image(?:s| input)?|not support image|不支持图片|不支持图像/i.test(message)) return;
+    const live = customModel;
+    if (!live?.baseUrl) return; // 官方订阅原生支持视觉，不涉及
+    const model = (live.models ?? []).find((m) => m.id === live.model);
+    if (!model || !(model.inputTypes ?? []).includes("image")) return;
+    // ⛔ 以「已保存的 live 配置」为基底合并，不能用 customDraft——草稿可能正开着另一个供应商的编辑态
+    const merged = { ...live, models: (live.models ?? []).map((m) => m.id === live.model ? { ...m, inputTypes: (m.inputTypes ?? []).filter((t) => t !== "image") } : m) };
+    const saved = await saveCustomDraft(merged);
+    showToast(saved ? "已自动关闭该模型的图片输入" : "未能自动关闭图片输入",
+      saved
+        ? `「${live.model}」的接入点不支持图片（供应商原话：${message.slice(0, 140)}）。模型配置已自动改正，去掉图片重新发送即可。`
+        : `接入点不支持图片输入，自动写配置失败。请到「设置 → 模型」编辑该模型，取消勾选「图片」。`);
+  }
 
   // 首次启动「环境体检」（09-17）：等首屏数据与模型引导判断都落定后再检测，避免两个弹窗抢屏。
   // ⛔ 只判一次（envCheckDoneRef）——否则下面 setDevRuntimes 刷新会把它反复触发。
@@ -14791,6 +14820,12 @@ const commandMatches = useMemo(() => {
    *  随后序列化回流 prompt/images——DOM 即时可见，不走重建（否则光标闪跳）。 */
   function insertComposerImages(paths: string[]) {
     if (!paths.length) return;
+    // 模态门禁（09-18）：生效模型未声明图片输入时，贴了也只会吃一回合作者的 InvalidParameter——
+    // 入口就拦下并说清楚。模型确实支持但漏勾的，去模型编辑器勾「图片」。
+    if (!activeModelSupportsImage()) {
+      showToast("当前模型不支持图片输入", `「${customModel?.model ?? ""}」未声明图片模态（本次粘贴已忽略）。如该模型确实支持图片，请到「设置 → 模型」编辑该模型勾选「图片」后保存。`);
+      return;
+    }
     const el = composerInputRef.current;
     if (!el) {
       setImages((current) => [...current, ...paths.filter((path) => !current.includes(path))]);
