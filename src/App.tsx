@@ -17703,7 +17703,7 @@ const commandMatches = useMemo(() => {
                   </select>
                 </div>
                 <div className="bot-detail-row">
-                  <div><strong>流式回复</strong><small>开启后机器人边生成边推送正文（微信逐段追加 / Telegram 实时改写），不用干等完整回复。</small></div>
+                  <div><strong>流式回复</strong><small>开启后机器人边生成边推送正文（微信逐段追加 / Telegram 实时改写），不用干等完整回复。微信受平台限制：单条消息触发的推送条数有限，长任务期间会以「对方正在输入…」提示进度。</small></div>
                   <label className="bot-switch"><input type="checkbox" checked={botStream.enabled} onChange={(event) => updateBotStream({ ...botStream, enabled: event.target.checked })} /><span /></label>
                 </div>
                 {botStream.enabled && (<>
