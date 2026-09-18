@@ -549,6 +549,17 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   （单列下两卡仍等宽）——它是"内容没把卡撑变形"的检查，反证时期望别写错。
   顺带清掉上一版遗留的**死 CSS**（`-quick/-actions/-head/-body`，TSX 零引用）。
 
+- **「插件」页刷新入口唯一化（09-18 用户：「插件市场有两个刷新按键…保留上面的，里面不要」）**：
+  原先同一屏两颗同款 🔄 —— 标题行那颗刷**页面资源**（技能/钩子/已装插件/记忆/任务/MCP，
+  `refreshSettingsResources`），市场工具栏那颗只刷**市场列表**（当前分类/搜索/页码，`refreshMarketPlugins`）。
+  功能不重复，但挨着放没人分得清。合并成标题行一颗 `refreshPluginsPage()` = `Promise.all([两者])`，
+  市场沿用当前筛选与页码（与旧按钮行为一致），工具栏那颗删除。预检 ⑰g【35】两条守卫
+  （插件 section 内 `title="刷新…"` 只能有 1 颗；`refreshPluginsPage` 必须同时刷市场），反证 E1/E2 成立。
+  ⛔ 两条方法论教训：① **`window.codex` 是 contextBridge 冻结对象**（`frozen:true`、赋值被静默忽略），
+  所以「给桥接方法打点计数」这条验证路径在**渲染层走不通** —— 想验证调用次数只能靠源码级守卫 + 反证，
+  或在主进程侧观察；② 判断 loading 用 `.spinner`（`<Spinner/>` 渲染的是 `<span class="spinner">`），
+  `.spin` 只是 `<RefreshCw className="spin">` 的动画类，用它采样会恒 0 → 误判"没反应"。
+
 - **⛔ mac 全面适配第二轮（09-17，用户「MAC 的适配要做全，全方面适配」）**：一轮全库审计（215 个源文件，
   逐条判读平台分支与 Windows 假设）挖出 15 处真缺失，全部修掉并进预检【32】19 条守卫。按影响排序：
   ① **mac 取麦会被系统杀进程**：`electron-builder.mac.cjs` 的 extendInfo 缺 `NSMicrophoneUsageDescription`
