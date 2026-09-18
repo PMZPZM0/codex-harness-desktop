@@ -1,6 +1,6 @@
 // 频道机器人流式回复：把引擎回合的思考/工具/正文按时间顺序实时推送回聊天渠道。
 // 两种传输语义（由 sink 决定）：
-//   append（微信 iLink）：message_state=1 向同一气泡增量追加，state=2 收尾；
+//   append（微信 iLink）：每条消息新 client_id 独立发送，state=1 标记进行中、state=2 收尾；
 //     state=1 连续失败自动停用追加（降级收集），收尾时把未发出去的尾部整段补发。
 //   replace（Telegram）：sendMessage 建气泡 + editMessageText 节流整段改写。
 // 流式关闭时退化为旧行为：turn/completed 后一次性发送最终正文。
@@ -88,7 +88,15 @@ export class BotStreamSession {
   private bodyByItem = new Map<string, number>();
   private bodyLen = 0;
   private finished = false;
-  readonly clientId = `codex-harness-${randomUUID()}`;
+  // ⛔ 每条消息一个**新** client_id（append 每次新 id、收尾也是新 id）。
+  //  **不要**改回整个回合共用一个 id：服务端按 client_id **去重**——同一 id 连发只有第一条落地，
+  //  后续（含 state=2 收尾）被**静默丢弃**（HTTP 200、无 ret 错误、日志无失败）。
+  //  09-12 与 09-18 两次真机实测同款症状（只见首条「💭 思考」气泡，后续与正文永远不到），
+  //  当时误判成「context_token 一次一发」；实际 token 可复用（官方「24h 内最多 10 条」配额即证：
+  //  有限额就意味着同一 token 允许多条），真正的去重键是 client_id。2026-09-18 二次修正。
+  private newMessageId(): string {
+    return `codex-harness-${randomUUID()}`;
+  }
 
   constructor(
     private readonly sink: BotStreamSink,
@@ -212,7 +220,7 @@ export class BotStreamSession {
     if (this.flushes > 0 && pending.length < this.budget.minChars) return;
     this.flushBusy = true;
     try {
-      await this.sink.append(pending, this.clientId);
+      await this.sink.append(pending, this.newMessageId());
       this.flushedLen = this.composed.length;
       this.flushes += 1;
       this.lastFlushAt = Date.now();
@@ -256,7 +264,7 @@ export class BotStreamSession {
         if (finalText && finalText.length > this.bodyLen) this.compose(finalText.slice(this.bodyLen));
         await this.flushAppend();
         const tail = this.composed.slice(this.flushedLen);
-        await this.sink.finalizeAppend(tail.trim() ? tail : "（已完成）", this.clientId);
+        await this.sink.finalizeAppend(tail.trim() ? tail : "（已完成）", this.newMessageId());
         return;
       }
       if (this.sink.replace) {

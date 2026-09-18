@@ -224,6 +224,9 @@ export class WeixinGateway {
       this.log("error", `sendmessage 失败 ret=${response.ret} ${response.errmsg ?? ""} (state=${opts?.state ?? 2}, to=${to})`);
       throw new Error(`微信发送失败 ret=${response.ret} ${response.errmsg ?? ""}`);
     }
+    // 成功也留痕（09-18 二次事故）：服务端会按 client_id 静默去重（HTTP 200 但不投递），
+    // 只有把「发了哪些 id/state」落盘，才能跟用户实际收到的条数对账定性。
+    this.log("info", `sendmessage ok state=${opts?.state ?? 2} to=${to} bytes=${Buffer.byteLength(text)} id=…${(opts?.clientId ?? "auto").slice(-8)}`);
   }
 
   // ── 「对方正在输入…」────────────────────────────────────────
