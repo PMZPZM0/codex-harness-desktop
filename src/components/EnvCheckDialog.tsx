@@ -62,7 +62,9 @@ export function installableIds(items: EnvCheckState[]): string[] {
 
 export function EnvCheckDialog({ items, installing, progress, onInstall, onGo, onClose }: {
   items: EnvCheckState[];
-  /** 是否正在安装（安装期间禁用一切关闭动作，避免用户以为"取消了"其实还在下） */
+  /** 是否正在后台安装（一键安装点下去弹窗会收起成角标；安装中**允许**关弹窗——
+   *  关闭 ≠ 取消，安装继续、右下角角标继续显示进度，装完自动消失/失败自动展开回来。
+   *  09-18 用户反馈旧版「安装中禁一切关闭」：安装挂住时整个界面被卡死只能重启）。 */
   installing: boolean;
   /** 当前安装进度文本（来自 runtime:progress 事件） */
   progress: string;
@@ -76,14 +78,15 @@ export function EnvCheckDialog({ items, installing, progress, onInstall, onGo, o
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (installing) return; // 安装中不许 Esc 关掉（下载还在跑，关了会让人以为停下来了）
+      // 安装中 Esc = 收起弹窗转后台（安装继续、角标接管），不是取消 —— 不再禁用（09-18）：
+      // 旧版安装中禁关，下载挂住时整个界面被卡死只能重启。
       event.preventDefault();
       event.stopPropagation();
       onClose(dontAsk);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose, dontAsk, installing]);
+  }, [onClose, dontAsk]);
 
   const missingCore = items.filter((item) => item.core && !item.ok);
   const missingOptional = items.filter((item) => !item.core && !item.ok);
@@ -97,7 +100,7 @@ export function EnvCheckDialog({ items, installing, progress, onInstall, onGo, o
             <span><Wrench size={16} /></span>
             <strong>环境体检</strong>
           </div>
-          {!installing && <button className="icon-button" title="关闭（Esc）" onClick={() => onClose(dontAsk)}><X size={16} /></button>}
+          <button className="icon-button" title="收起（安装转后台继续）" onClick={() => onClose(dontAsk)}><X size={16} /></button>
         </header>
 
         <div className="env-check-body">
@@ -156,11 +159,11 @@ export function EnvCheckDialog({ items, installing, progress, onInstall, onGo, o
 
         <footer className="env-check-foot">
           <label className="env-check-optout">
-            <input type="checkbox" checked={dontAsk} disabled={installing} onChange={(event) => setDontAsk(event.target.checked)} />
+            <input type="checkbox" checked={dontAsk} onChange={(event) => setDontAsk(event.target.checked)} />
             <span>不再提示（仍可在「设置 → 开发工具」里装）</span>
           </label>
           <div className="env-check-actions">
-            <button className="secondary-setting" disabled={installing} onClick={() => onClose(dontAsk)}>稍后再说</button>
+            <button className="secondary-setting" onClick={() => onClose(dontAsk)}>稍后再说</button>
             <button
               className="primary-setting"
               disabled={installing || todo.length === 0}

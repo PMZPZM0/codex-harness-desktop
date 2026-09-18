@@ -5319,44 +5319,33 @@ function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[
   // 不该把刻度选区拽回最新——用户往上滚看历史时，新加载的页要出现在他正看的那一段。
   useEffect(() => { setWindowOffset(0); }, [currentIndex]);
 
-  // 可视容量：轨道高度能容纳多少刻度就显示多少（动态测量）；
-  // 超出的用独立滚轮滑窗口。没有"最多 N 条"的硬规则。
+  // 可视容量：轨道高度能容纳多少刻度就显示多少（动态测量，**固定槽高**）；
+  // 超出的用独立滚轮滑窗口、窗口起点跟滚动位置走（09-18 用户改口径：「跟着懒加载来 /
+  // 滚动渲染刻度线」——不再把已加载的全部挤上尺子：那是 09-14 的口径，页数一多
+  // 全部压缩塞进来成一根密集柱，且与当前视口毫无对应关系）。
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [visibleCount, setVisibleCount] = useState(0);
-  /** 刻度内边距/间距（CSS 变量下发）：已加载的用户消息越多，刻度越短越密——
-   *  用户 09-14 口径「加一页就短一点」，目标是**已加载的刻度全部留在尺子上**，
-   *  只有极端多时才退回滑动窗口。单刻度高 = 线 2px + 2×pad，再加 gap pad → 2 + 3×pad。 */
-  const [slotPad, setSlotPad] = useState(4);
+  /** 固定槽高 = 线 2px + 2×pad(4) + gap(4) = 14px。⛔ 不再按刻度总数反解压缩 pad —— 那正是
+   *  「往上滚过就一直透出」的来源。09-15 的教训保留：高度为 0（媒体查询 display:none）时
+   *  不上报，否则 pad/容量被污染成 0；依赖必须含 containerNarrow（组件卸载重建后要重绑观察）。 */
   useEffect(() => {
     if (!scrollable) return;
     const measure = () => {
       const track = trackRef.current;
       if (!track) return;
       const h = track.clientHeight;
-      // ⛔ 高度为 0 = 此刻根本不可见（视口 ≤1080 时 CSS 媒体查询把刻度尺 display:none，
-      //    ResizeObserver 会**如实上报 0**）。若照单写入，pad 会被污染成 0、`--ruler-pad`
-      //    与 `--ruler-gap` 双双变 0px → 所有刻度紧贴成一团方块。
-      //    09-15 用户实测：「手动放大缩小后刻度线变成一个方块」（实测 5 条 tick 挤成 12×10）。
-      if (!h) return;
-      const total = Math.max(1, allMarks.length);
-      // 先按「全部放得下」反解 pad（上限 4 = 原样式，下限 0 = 最密），再据此算可视容量
-      const pad = Math.max(0, Math.min(4, (h / total - 2) / 3));
-      const rounded = Number.isFinite(pad) ? Math.round(pad * 10) / 10 : 4;
-      setSlotPad(rounded);
-      const slot = 2 + 3 * rounded;
-      setVisibleCount(Math.max(4, Math.floor(h / Math.max(3, slot))));
+      if (!h) return; // 不可见时不上报（否则容量被写成 0，恢复可见后刻度挤成一团）
+      setVisibleCount(Math.max(4, Math.floor(h / 14)));
     };
     measure();
     const observer = new ResizeObserver(measure);
     if (trackRef.current) observer.observe(trackRef.current);
     return () => observer.disconnect();
-    // ⛔ 依赖必须含 containerNarrow（09-15 实测修正）：容器太窄时组件 `return null`，
-    //    刻度尺 DOM 被**卸载**；恢复宽度后 React **重建新节点**，而 ResizeObserver 仍绑在
-    //    那个已卸载的旧节点上 —— 不重跑本 effect 就永远不会再观察新节点，measure 此后再不
-    //    执行，`slotPad` 永久停在旧值（实测缩放跨阈值回来 padVar 一直 0px = 上面那个方块）。
-  }, [scrollable, allMarks.length, containerNarrow]);
+  }, [scrollable, containerNarrow]);
 
-  const windowSize = visibleCount > 0 ? visibleCount : RULER_MAX;
+  // 窗口容量封顶（RULER_MAX）：轨道再高，一屏最多 50 个刻度——「已加载页数再多也不会
+  // 全量透出」，超出部分靠滚动/滚轮滑窗口看到。
+  const windowSize = Math.min(Math.max(4, visibleCount), RULER_MAX);
   const marks = useMemo(() => {
     if (allMarks.length <= windowSize) return allMarks;
     let start = Math.max(0, Math.min(currentIndex + windowOffset, allMarks.length - windowSize));
@@ -5415,7 +5404,6 @@ function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[
     <div className="message-ruler" role="navigation" aria-label="消息定位">
       <div
         className="ruler-track"
-        style={{ "--ruler-gap": `${slotPad}px`, "--ruler-pad": `${slotPad}px` } as React.CSSProperties}
         ref={(node) => {
           trackRef.current = node;
           // 独立滚轮：悬停刻度尺时滚轮只滑刻度选区（原生非 passive 监听才能 preventDefault），
@@ -12723,13 +12711,16 @@ const commandMatches = useMemo(() => {
     return { id: spec.id, name: runtime?.name ?? spec.fallbackName, why: spec.why, size: runtime?.size ?? "", core: spec.core, ok: Boolean(runtime?.installed), installing: Boolean(runtime?.installing) };
   }), [devRuntimes, workspace, customModel, envSpecs]);
 
-  /** 一键安装体检缺项。⛔ 串行而不是并行：并行会多个安装进程同时抢同一份 npm 缓存目录。
-   *  ⛔ 逐项独立容错（09-18 用户反馈）：原先循环外只有一个 try —— 任何一项失败就**整批中断**，
-   *  后面几项一个都不装、弹窗还不关，用户看到的是「安装失败」+ 清单原样不动（实际上一项都没装）。
-   *  现在：单项失败只记下来，其余照常装；结束按结果分别提示，并回读清单让「装好的」立刻变已就绪。 */
+  /** 一键安装体检缺项 —— **后台安装**（09-18 用户要求：「加一个后台安装功能，弹窗要知
+   *  道缩小，安装完成自动消失」）：点下去弹窗立刻收起，右下角只剩一枚进度角标，
+   *  用户可以继续用应用；全部装好角标自动消失；有失败时把弹窗展开回来给重试入口。
+   *  ⛔ 串行而不是并行：并行会多个安装进程同时抢同一份 npm 缓存目录。
+   *  ⛔ 逐项独立容错（09-18 用户反馈）：单项失败只记下来，其余照常装——原先循环外一个
+   *  try，任何一项失败就整批中断、弹窗还卡着关不掉（用户只能重启）。 */
   async function installEnvMissing(ids: string[]) {
     if (ids.length === 0) return;
     setEnvInstalling(true);
+    setEnvCheckOpen(false); // 后台化：弹窗收起，右下角角标接管进度展示
     const failed: string[] = [];
     try {
       for (const id of ids) {
@@ -12745,11 +12736,14 @@ const commandMatches = useMemo(() => {
       if (list) setDevRuntimes(list);
       if (failed.length === 0) {
         setNotice(`已装好 ${ids.length} 项，Codex 可以正常干活了`);
-        setEnvCheckOpen(false);
-      } else if (failed.length === ids.length) {
-        setNotice(`安装失败：${failed[0]}${failed.length > 1 ? ` 等 ${failed.length} 项` : ""}（可在「设置 → 开发工具」重试）`);
+        // 全成：角标随 envInstalling=false 自动消失，弹窗保持收起（=「安装完成自动消失」）
       } else {
-        setNotice(`部分完成：已装好 ${ids.length - failed.length} 项；${failed[0]}（可在「设置 → 开发工具」重试）`);
+        setEnvCheckOpen(true); // 有失败：展开回弹窗，让用户看见哪项没成、可重试
+        if (failed.length === ids.length) {
+          setNotice(`安装失败：${failed[0]}${failed.length > 1 ? ` 等 ${failed.length} 项` : ""}（可在「设置 → 开发工具」重试）`);
+        } else {
+          setNotice(`部分完成：已装好 ${ids.length - failed.length} 项；${failed[0]}（可在「设置 → 开发工具」重试）`);
+        }
       }
     } finally {
       setEnvInstalling(false);
@@ -16815,6 +16809,16 @@ const commandMatches = useMemo(() => {
                 setEnvCheckOpen(false);
               }}
             />
+          )}
+          {/* 后台安装角标（09-18 用户要求）：一键安装点下去弹窗就收起，安装转后台；
+              角标实时显示进度、点开可回到弹窗；装完随 envInstalling=false 自动消失。
+              安装中途手动关掉弹窗也一样——关闭 ≠ 取消，角标还在、结果照常通知。 */}
+          {envInstalling && !envCheckOpen && (
+            <button type="button" className="env-install-pill" onClick={() => setEnvCheckOpen(true)}>
+              <RefreshCw size={13} className="spin" />
+              <span className="env-install-pill-text">{envProgress || "正在准备下载…"}</span>
+              <em>后台安装中 · 点开查看</em>
+            </button>
           )}
           {/* 归档后提示浮层（09-17 用户要求）：5 秒自动消失、可手动关、点「查看归档」跳归档管理页 */}
           {archiveToast && (
