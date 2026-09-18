@@ -3466,9 +3466,39 @@ w.postMessage({id:1,op:"list",root});
     /setTimeout\(\(\) => \{[\s\S]{0,220}isTurnRunning\(turn\)[\s\S]{0,140}\}, 15_000\)/.test(appCode)
       ? ok("【29】有 15s 超时兜底（引擎始终不回时气泡不会一直赖在聊天区）")
       : fail("【29】缺超时兜底 —— 引擎不回应时气泡会永久赖在聊天区（09-13 修过的老问题）");
-    ((appCode.match(/sawRunningTurnRef\.current = false;/g) || []).length >= 4)
-      ? ok("【29】判据在两处回收 + 两处发送点都复位（走旧值会让本轮气泡活不下来）")
-      : fail("【29】sawRunningTurnRef 复位点不足 —— 上一轮的置位会污染本轮");
+    // ⛔ 只数次数是弱守卫（09-18）：加/删任意一处都能绕过；按**函数切片**也不行 ——
+    //   `async function send` 在文件里出现在 editResend **之后**，切片会取到空串（当场假红）。
+    //   真判据 = 逐处复位点算出「它属于哪个函数」，再要求 editResend 与 send 都在名单里。
+    const resetOwner = (offset) => {
+      const i = Math.max(appCode.lastIndexOf("async function ", offset), appCode.lastIndexOf("function ", offset));
+      if (i < 0) return "?";
+      const m = appCode.slice(i, i + 80).match(/function\s+([A-Za-z0-9_]+)/);
+      return m ? m[1] : "?";
+    };
+    const resetOwners = [...appCode.matchAll(/sawRunningTurnRef\.current = false;/g)].map((m) => resetOwner(m.index));
+    (resetOwners.length >= 5 && resetOwners.includes("editResend") && resetOwners.filter((n) => n === "send").length >= 2)
+      ? ok("【29】判据在两处回收 + 三条发送路径（普通 / 排队 / 编辑重发）全部复位")
+      : fail(`【29】有发送路径没复位 sawRunningTurnRef（归属：${resetOwners.join("/")}）—— 上一轮的置位会污染本轮`);
+  }
+
+  // ⑥b 编辑重发（fork + 重发）不能把用户的消息弄丢（09-18 用户：「我编辑消息，保存重新，发送，消息不见了」）
+  //   真机复现链（隔离 profile + 60ms 采样 + window.__adbg 埋点）：提交后 fork 立刻把旧回合从可见列表拿掉，
+  //   而编辑后那条**自己的消息**本该由乐观气泡顶着 —— 但 editResend 漏了 sawRunningTurnRef 复位，
+  //   安全阀判据带着上一轮的 true、又见 fork 后新回合还没建（running=false）⇒ 气泡**当帧被回收**
+  //   （埋点 confirm-timeout、pending 恒 0），于是有 1~2s 界面上连用户自己的消息都没有；
+  //   更糟的是 turn/start 失败时 catch 只清气泡不回退 ⇒ 消息**永久消失**。
+  {
+    const editResendBody = appCode.slice(appCode.indexOf("async function editResend"), appCode.indexOf("async function copyImage"));
+    (editResendBody.length > 200 ? ok : fail)("【42】editResend 函数体可定位（守卫读的是真函数，不是全文）");
+    (/const before = threadRef\.current;/.test(editResendBody))
+      ? ok("【42】编辑重发前留了「fork 前的会话」引用 —— 失败时才有东西可回退")
+      : fail("【42】editResend 没记 fork 前的会话 —— 失败后用户的消息无从恢复");
+    ((editResendBody.match(/if \(before\) \{ threadRef\.current = before; setThread\(before\); \}/g) || []).length >= 2)
+      ? ok("【42】两条失败路径（请求抛错 / 引擎没返回回合）都回退了会话")
+      : fail("【42】有失败路径没回退 —— fork 已拿走原回合，用户编辑的消息会永久消失");
+    (/已回到原来的消息/.test(editResendBody))
+      ? ok("【42】失败提示说清了「已回到原来的消息，可重试」（不是干巴巴一句失败）")
+      : fail("【42】失败提示没告诉用户消息还在不在");
   }
 
   // ⑥ 生成状态条的渲染顺序（09-17 用户实测：「这个怎么到这个位置了」）
