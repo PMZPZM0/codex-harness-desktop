@@ -2534,7 +2534,12 @@ console.log(C.bold("\n【23】API 协议：引擎只支持 Responses，chat 不�
   (!appTsx.includes('<option value="chat">') ? ok : fail)("App.tsx 不再提供「Chat Completions」协议选项（引擎不支持，选了也白选）");
   (!appTsx.includes('target.wireApi === "chat"') ? ok : fail)("App.tsx 会话接力内联 config 不把 chat 透传给引擎");
   (!mainTs.includes('savedWire === "chat" ? "chat"') ? ok : fail)("main.ts 历史会话别名段不把 chat 透传进 config.toml");
-  (!mainTs.includes('input.wireApi === "chat" ? "chat"') ? ok : fail)("main.ts 保存入口恒 responses，不透传用户选的 chat（不依赖下游归一兜底）");
+  // ⛔ 锚点切片而非全文禁字符串（09-18）：probeCustomModel 的协议回落合法地含
+  // `input.wireApi === "chat" ? "chat"`（探针只选测试端点、不写 config.toml），
+  // 全文禁会误伤。本守卫的本意是「保存入口不透传 chat」——锁定 save handler 区域来查。
+  const saveEntryIdx = mainTs.indexOf('"custom-model:save"');
+  const saveRegion = saveEntryIdx >= 0 ? mainTs.slice(saveEntryIdx, saveEntryIdx + 4000) : mainTs;
+  (!saveRegion.includes('=== "chat" ? "chat"') ? ok : fail)("main.ts 保存入口恒 responses，不透传用户选的 chat（不依赖下游归一兜底）");
   (!hookTs.includes("wireApi: wireUsed") ? ok : fail)("useModelProviders 探测不再把实测协议回写草稿（避免「探测说 chat、保存变 responses」自相矛盾）");
   (mainTs.includes('wireApi: "responses" }') ? ok : fail)("main.ts normalizeProvider 仍在读入侧归一化 chat（保命逻辑，别删）");
   (mainTs.includes('const activeWireApi = "responses"') ? ok : fail)("main.ts applyCustomModel 生成的 provider 段恒为 responses");
@@ -4313,6 +4318,33 @@ w.postMessage({id:1,op:"list",root});
     (/sendmessage ok state=/.test(gwSrc))
       ? ok("【38】sendmessage 成功也留痕（静默去重只能靠日志条数与实收对账定性）")
       : fail("【38】sendmessage 只记失败不记成功 —— 服务端静默去重时无从排查");
+  }
+
+  // ⑰k 探针协议回落 + 图片模态自愈（09-18 用户反馈两张图：升级用户对火山 Coding Plan 类网关
+  //   测 deepseek-v4.1-flash 探针报 404「does not support the coding plan feature」（连接失败），
+  //   而会话带图发送报 InvalidParameter「Model do not support image input」——
+  //   前者 = 探针只试单协议把"能用"误报成失败；后者 = 模型标了视觉但接入点不支持图片）。
+  {
+    const mainProbe = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+    const appProbe = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+    const hookProbe = readFileSync(join(ROOT, "src", "hooks", "useModelProviders.ts"), "utf8");
+    (/requestedWire === "chat" \? \["chat"\] : \["responses", "chat"\]/.test(mainProbe))
+      ? ok("【39】探针 responses 被拒时自动回落 chat（显式 responses 也回落——单协议误报连接失败）")
+      : fail("【39】探针又只试单协议 —— 火山 Coding Plan 类网关会把能用的模型误报成连接失败");
+    (/coding plan\/i\.test\(body\)/.test(mainProbe) && /白话：供应商表示这个模型不在其 Coding Plan/.test(mainProbe))
+      ? ok("【39】coding-plan 404 带白话提示（告知换通用接入点/换模型，不再只有供应商原话）")
+      : fail("【39】coding-plan 404 没有白话提示 —— 用户看到 404 无从下手");
+    (/wireMismatch: wireUsed !== requestedWire/.test(mainProbe) && /wireMismatch/.test(hookProbe))
+      ? ok("【39】实际连通协议与配置不同时如实标注（wireMismatch → 探针结果提示）")
+      : fail("【39】探针协议差异没有上报/展示 —— 连接成功与发送报错会对不上");
+    (/void healImageModalityIfUnsupported\(params\.turn\.error\?\.message\)/.test(appProbe)
+      && /async function healImageModalityIfUnsupported/.test(appProbe)
+      && /inputTypes: \(m\.inputTypes \?\? \[\]\)\.filter\(\(t\) => t !== \"image\"\)/.test(appProbe))
+      ? ok("【39】回合报「不支持图片输入」时自动摘掉该模型的 image 模态（幂等自愈）")
+      : fail("【39】图片模态自愈缺失/没接回合失败 —— 升级用户的带图回合永远 InvalidParameter");
+    (/if \(!activeModelSupportsImage\(\)\)/.test(appProbe) && /const activeModelSupportsImage = \(\): boolean =>/.test(appProbe))
+      ? ok("【39】粘贴/插入图片有模态门禁（不支持图片的模型入口就拦，不再浪费一回合才报错）")
+      : fail("【39】图片插入没有模态门禁 —— 不支持图片的模型贴图必失败");
   }
 
   // ⑰d 引导弹窗的「出场时机」（09-17 用户明确定规则：「只在进入主界面的时候才弹配置引导和

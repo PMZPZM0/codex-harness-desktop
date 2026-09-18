@@ -343,6 +343,16 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   底部「一键安装 N 项」串行调 `installRuntime`（复用主进程 `runtime:progress` 进度），
   另有「不再提示」（localStorage `env-check-optout`）。复用既有能力（`listRuntimes` / `installRuntime` /
   `runtime:progress` 都已存在），**没有新增主进程 IPC**。
+  - **探针协议回落 + 图片模态自愈（09-18 用户反馈：升级用户测 deepseek-v4.1-flash 两连错）**：
+  ① 探针 404「does not support the coding plan feature」——火山 Coding Plan 类网关对部分模型的
+  `/responses` 直接拒绝，但 Chat 通道是通的；探针只试单协议把"能用"误报成连接失败。
+  修：`probeCustomModel` 显式 responses 也保留 chat 回落（`requestedWire`/`wireMismatch` 上报，
+  `probeOneModel` 结果里如实标注协议差异）；coding-plan 404 附白话（换通用接入点/换模型）。
+  ② 会话带图发送 InvalidParameter「Model do not support image input」——模型标了视觉但接入点
+  （火山托管的 DeepSeek）不支持图片。修：**图片模态自愈**——回合错误原话明确点名时，自动摘掉
+  该生效模型的 `image` inputType 并保存（保存即重载引擎配置，幂等），toast 说明；再加**入口门禁**
+  （`insertComposerImages` 前查 `activeModelSupportsImage()`，不支持就拦在粘贴这一步）。
+  预检 ⑰k【39】5 条；反证 3/3（回落摘掉/自愈摘掉/门禁摘掉 → 全红）。
   - **后台安装（09-18 用户：「加一个后台安装功能，弹窗要知道缩小，安装完成自动消失」；起因是
     Python 下载挂住时弹窗卡死、安装中禁一切关闭，用户只能重启）**：点「一键安装」弹窗**立刻收起**，
     右下角 `.env-install-pill` 角标接管（实时进度、点开回弹窗）；**安装中允许关弹窗（关闭 ≠ 取消）**；
