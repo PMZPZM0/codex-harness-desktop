@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { ImagePlus, Eye, RefreshCw, Play, Save, X, CircleCheck, CircleOff, ChevronRight } from "lucide-react";
+import { ModelIdInput } from "./ModelIdInput";
+import { imageSpecHint, matchImageSpec } from "../lib/image-model-specs";
 
 type PluginKind = "image" | "vision";
 type PluginConfig = { enabled?: boolean; baseUrl: string; apiKey: string; model: string };
@@ -101,6 +103,9 @@ export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => v
     const value = current(active);
     const { title, desc, Icon } = meta(active);
     const models = active === "image" ? imageModels : visionModels;
+    // 生图模型的内置参数（尺寸 / 改图 / 质量档）：命中内置表就在字段下方摊开，
+    // 免得用户选了模型却不知道它能出多大、能不能带参考图（09-18 用户要求的「内置参数」）。
+    const specHint = active === "image" ? imageSpecHint(matchImageSpec(value.model)) : [];
     return createPortal(
       <div className="modal-backdrop builtin-plugin-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) closeEditor(); }}>
         <section className="connector-setup-modal builtin-plugin-modal" role="dialog" aria-modal="true" aria-label={`${title}配置`}>
@@ -109,7 +114,8 @@ export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => v
             <div className="builtin-plugin-enable-row"><div><strong>启用插件</strong><small>停用后 Codex 不会调用该能力</small></div><label className="auto-switch"><input type="checkbox" checked={value.enabled !== false} onChange={(event) => setKind(active, { enabled: event.target.checked })} /><i /></label></div>
             <label className="se-field"><span>API 地址</span><input autoFocus value={value.baseUrl} onChange={(event) => setKind(active, { baseUrl: event.target.value })} placeholder="https://api.example.com/v1" /></label>
             <label className="se-field"><span>API 密钥</span><input type="password" value={value.apiKey} onChange={(event) => setKind(active, { apiKey: event.target.value })} placeholder="sk-..." /></label>
-            <label className="se-field"><span>模型</span><div className="builtin-model-row"><input list={`${active}-models`} value={value.model} onChange={(event) => setKind(active, { model: event.target.value })} placeholder="选择或输入模型 ID" /><datalist id={`${active}-models`}>{models.map((model) => <option key={model} value={model} />)}</datalist><button className="secondary-setting" onClick={() => void probe(active)}>{probing === active ? <RefreshCw size={13} className="spin" /> : <Play size={13} />}检测</button></div></label>
+            <label className="se-field"><span>模型</span><div className="builtin-model-row"><ModelIdInput value={value.model} onChange={(next) => setKind(active, { model: next })} extraIds={models} placeholder="选择或输入模型 ID" ariaLabel={`${title}模型`} variant={active === "image" ? "image" : "chat"} /><button className="secondary-setting" onClick={() => void probe(active)}>{probing === active ? <RefreshCw size={13} className="spin" /> : <Play size={13} />}检测</button></div></label>
+            {specHint.length > 0 && <div className="builtin-model-hint">{specHint.map((line) => <span key={line}>{line}</span>)}</div>}
           </div>
           <footer><button className="secondary-setting" disabled={busy} onClick={closeEditor}>取消</button><button className="primary-setting" disabled={busy || !value.baseUrl.trim() || !value.apiKey.trim() || !value.model.trim()} onClick={() => void save(true)}>{busy ? <RefreshCw size={14} className="spin" /> : <Save size={14} />}保存配置</button></footer>
         </section>

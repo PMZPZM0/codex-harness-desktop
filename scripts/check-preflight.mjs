@@ -2769,6 +2769,108 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   }
 
   const appTs = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  // ---- 09-18 生图模型内置规格表 + 生图插件 Tab 补全：真跑 image-model-specs.ts ----
+  //  为什么用行为断言而不是查字符串：这批数字（尺寸/参考图/质量档）是**给用户看的承诺**，
+  //  字符串守卫只能证明"代码里写着"，证明不了"匹配逻辑真能命中"（假绿高发区）。
+  {
+    const imgUrl = pathToFileURL(join(ROOT, "src", "lib", "image-model-specs.ts")).href;
+    let im = null;
+    try {
+      const probe = spawnSync(process.execPath, [
+        "--experimental-strip-types", "--no-warnings", "--input-type=module", "-e",
+        `import * as m from ${JSON.stringify(imgUrl)};` +
+        `const S = (id) => m.matchImageSpec(id);` +
+        `console.log(JSON.stringify({` +
+        ` flare: S("gpt-image-2.5-flare"), g2: S("gpt-image-2"), g2Dated: S("gpt-image-2-2026-04-21") ? 1 : 0,` +
+        ` sunburst: S("gpt-image-2.5-sunburst") ? 1 : 0,` +
+        ` seed45: S("seedream-4.5"), seed5lite: S("seedream-5-lite"), seed5pro: S("seedream-5-pro"),` +
+        ` nb2: S("nano-banana-2"), nbPro: S("nano-banana-pro"), flux: S("flux-2-pro"),` +
+        ` imagen: S("imagen-4-ultra"), qwen: S("qwen-image-3.0-pro"), unknown: S("totally-unknown-xyz"),` +
+        ` badges: m.imageSpecBadges(S("gpt-image-2.5-flare")).map((b) => b.text),` +
+        ` hint: m.imageSpecHint(S("gpt-image-2.5-flare")),` +
+        ` emptyHint: m.imageSpecHint(null),` +
+        ` sugEmpty: m.suggestImageModelIds("").length,` +
+        ` sugFlare: m.suggestImageModelIds("gpt-image-2.5").map((e) => e.id),` +
+        ` sugSeed: m.suggestImageModelIds("seedream").map((e) => e.id),` +
+        ` tier: m.sideTierLabel(3840) + "/" + m.sideTierLabel(2048),` +
+        ` rows: m.buildImageModelRows("gpt-image-2.5", ["my-relay-flare", "gpt-image-2.5-relay-x"]),` +
+        ` }));`,
+      ], { encoding: "utf8" });
+      im = JSON.parse(probe.stdout.trim().split("\n").at(-1));
+    } catch { /* 下面统一判红 */ }
+    (im ? ok : fail)("【41】image-model-specs.ts 可被 Node type-stripping 直接加载（生图规格守卫跑的是真表）");
+    if (im) {
+      const flare = im.flare ?? {};
+      (JSON.stringify(flare.sizes) === JSON.stringify(["1024x1024", "1536x1024", "1024x1536"]) && flare.maxRefs === 16
+        ? ok : fail)("【41】GPT Image 2.5：三个官方常用尺寸 + 参考图 ≤16 张（改图能力是它的卖点之一）");
+      (flare.custom && flare.custom.step === 16 && flare.custom.maxSide === 3840 && flare.custom.maxPixels === 8294400
+        ? ok : fail)("【41】GPT Image 2.5 自定义尺寸规则：16 倍数 / 单边 ≤3840 / 总像素 ≤8,294,400（与 harness-media 的 checkSize 同口径）");
+      (Array.isArray(flare.qualities) && flare.qualities.includes("xhigh") && flare.qualities.includes("max")
+        ? ok : fail)("【41】2.5 代质量档含 xhigh/max；2 代没有 —— 跨代差异必须分开写，别把 2.5 的档位安到 2 代上");
+      (Array.isArray(im.g2?.qualities) && !im.g2.qualities.includes("xhigh") && !im.g2.qualities.includes("max")
+        ? ok : fail)("【41】GPT Image 2 的质量档只到 high（安上 xhigh/max 会让用户传出不存在的档位）");
+      (im.g2Dated === 1 && im.sunburst === 1 ? ok : fail)("【41】Flare / Sunburst / dated 快照都能命中同一条规则（网关常按快照名给模型）");
+      (im.seed45?.maxRefs === 14 && im.seed45?.custom?.maxSide === 4096 && !(im.seed45?.tiers ?? []).includes("1K")
+        ? ok : fail)("【41】Seedream 4.5：参考图 ≤14、自定义单边 ≤4096、**不支持 1K**（官方明确 1K 不提供）");
+      (im.seed5lite?.maxRefs === 14 && im.seed5pro?.maxRefs === 10 ? ok : fail)("【41】Seedream 5 Lite ≤14 张参考图、5 Pro ≤10 张（代际差异）");
+      (im.nb2?.maxSide === 4096 && im.nbPro?.maxSide === 4096 ? ok : fail)("【41】Nano Banana 2 / Pro：原生 4K");
+      (im.flux?.custom?.step === 16 && im.flux?.custom?.maxPixels === 4194304 ? ok : fail)("【41】FLUX.2：边长 16 倍数、最高 4MP（约 2048×2048）");
+      (im.imagen?.maxSide === 2048 && im.qwen?.maxSide === 2048 ? ok : fail)("【41】Imagen 4 / Qwen-Image：单边上限 2K");
+      (im.unknown === null ? ok : fail)("【41】未收录的生图模型返回 null（拿不准就不编参数 —— 少显示一个徽标，胜过显示一个错的）");
+      (Array.isArray(im.badges) && im.badges.length > 0 && im.badges.some((b) => /改图/.test(b)) && im.badges.some((b) => /质量/.test(b))
+        ? ok : fail)("【41】列表徽标把「尺寸 / 改图 / 质量档」都摊开了（用户不点进去就能比）");
+      (Array.isArray(im.hint) && im.hint.length > 0 && im.hint.some((l) => /尺寸/.test(l)) && JSON.stringify(im.emptyHint) === "[]"
+        ? ok : fail)("【41】字段下方参数说明：命中内置表才有内容，未命中不显示（不给未知模型编参数）");
+      (im.sugEmpty >= 6 ? ok : fail)("【41】补全：空输入给当前热门生图模型（新手不用背名字）");
+      (Array.isArray(im.sugFlare) && im.sugFlare.length === 2 && im.sugFlare[0] === "gpt-image-2.5-flare"
+        ? ok : fail)("【41】补全：打 gpt-image-2.5 先出 Flare（表内顺序 = 热门在前）");
+      (Array.isArray(im.sugSeed) && im.sugSeed.length >= 3 && im.sugSeed[0] === "seedream-5-pro"
+        ? ok : fail)("【41】补全：打 seedream 出 5 Pro / 5 Lite / 4.5（前缀命中保持表内顺序）");
+      (im.tier === "4K/2K" ? ok : fail)("【41】像素→档位文案：3840→4K、2048→2K（徽标不糊大数字）");
+      // 候选行构造 = 真代码行为断言（组件里的分支守卫挡不住 if(false)，所以抽成纯函数后直跑）
+      const rows = Array.isArray(im.rows) ? im.rows : [];
+      (rows.length > 0 && rows[0]?.id === "gpt-image-2.5-flare" && rows[0]?.spec
+        ? ok : fail)("【41】生图候选行构造真跑通（内置表命中且带参数，不是空列表）");
+      (rows.some((r) => r.probed && r.id === "gpt-image-2.5-relay-x" && r.spec)
+        ? ok : fail)("【41】网关探测到的 id 也过规格表（接入点名里带官方型号时照样有参数徽标）");
+      (rows.some((r) => r.probed && r.id === "my-relay-flare" && !r.spec)
+        ? ok : fail)("【41】认不出的探测 id 不带参数徽标（不猜）");
+
+      const imgSpecsSrc = readFileSync(join(ROOT, "src", "lib", "image-model-specs.ts"), "utf8");
+      (/suggestImageModelIds/.test(imgSpecsSrc) && /IMAGE_MODEL_CATALOG/.test(imgSpecsSrc))
+        ? ok("【41】规格表导出补全入口（候选来自内置表，不靠硬编码列表）")
+        : fail("【41】image-model-specs 缺补全入口 —— 输入框拿不到候选");
+
+      const pluginsSrc = readFileSync(join(ROOT, "src", "components", "BuiltinPlugins.tsx"), "utf8");
+      (!/datalist/.test(pluginsSrc))
+        ? ok("【41】内置插件页的原生 datalist 已移除（换成支持 Tab 补全 + 参数徽标的 ModelIdInput）")
+        : fail("【41】内置插件页又有 datalist —— 生图模型字段没有 Tab 补全");
+      // ⛔ 不能用 `<ModelIdInput[^>]*` 这类正则：属性里的箭头函数 `=>` 会在第一个 `>` 处截断
+      //   （09-18 实测：守卫因此假红）。分开断言「元件在位」与「variant 取值」。
+      (/<ModelIdInput\b/.test(pluginsSrc)
+        && /variant=\{active === "image" \? "image" : "chat"\}/.test(pluginsSrc))
+        ? ok("【41】插件模型字段按类型取参数口径（生图=尺寸/改图/质量档，视觉=上下文/图片）")
+        : fail("【41】插件模型字段没接 ModelIdInput 或没区分生图/聊天口径");
+      (/imageSpecHint\(matchImageSpec\(value\.model\)\)/.test(pluginsSrc))
+        ? ok("【41】选中内置生图模型后摊开参数说明（尺寸 / 改图 / 质量档）")
+        : fail("【41】生图模型参数没显示出来 —— 用户选了模型仍不知道能出多大、能不能带参考图");
+
+      const inputSrc = readFileSync(join(ROOT, "src", "components", "ModelIdInput.tsx"), "utf8");
+      // ⛔ 锚定**活分支**而不是「文件里出现过 variant === "image"」：后者在别处（探测项三元）
+      //   也出现，`if (false)` 变异照样绿（09-18 反证 F 当场抓到）。
+      (/if \(variant === "image"\) \{/.test(inputSrc) && /buildImageModelRows\(value, extraIds\)/.test(inputSrc) && /imageSpecBadges/.test(inputSrc))
+        ? ok("【41】ModelIdInput 的生图变体真走生图候选行（同一套 Tab/↑↓/Esc 交互契约）")
+        : fail("【41】ModelIdInput 的生图分支被架空 —— 生图字段拿不到带参数的候选");
+      // 浮层方向 + 高度：只判方向的实现会在弹窗里被裁（09-18 e2e 实测：上弹后顶部超出弹窗 7px、首行被切）
+      (/upward/.test(inputSrc) && /bottom: calc\(100% \+ 6px\)/.test(readFileSync(join(ROOT, "src", "styles.css"), "utf8")))
+        ? ok("【41】候选浮层在底部空间不足时向上弹（插件弹窗 overflow:auto 会把向下弹的列表裁掉）")
+        : fail("【41】候选浮层不会上弹 —— 在弹窗底部会被裁掉，用户看不到候选");
+      (/getComputedStyle\(node\)/.test(inputSrc) && /popMax/.test(inputSrc) && /style=\{\{ maxHeight/.test(inputSrc))
+        ? ok("【41】浮层高度按「最近裁剪祖先」的可用空间封顶（只判方向会让上弹的列表顶出弹窗）")
+        : fail("【41】浮层高度没按可用空间封顶 —— 上弹时首行候选会被弹窗切掉");
+    }
+  }
+
   const applyEffortBody = appTs.slice(appTs.indexOf("function applyEffort"), appTs.indexOf("function changeEffort"));
   (applyEffortBody.includes("setProviderEffort") ? ok : fail)("applyEffort 会把档位写进档案（跟着模型保存的写入端）");
   (!applyEffortBody.includes("!threadRef.current?.id && customModel") ? ok : fail)("写档案不再被「无会话」条件挡住（旧守卫 = 二次保存 bug 的根源）");

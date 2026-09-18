@@ -20736,9 +20736,14 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .builtin-plugin-enable-row small { font-size: 10.5px; color: var(--muted); }
 /* 旧版 chip 布局残留规则已随 09-18 排版重做删除（-quick / -actions / -head / -body 四组，
    TSX 里零引用；卡片样式在上面的 .builtin-plugin-card 一组里）。 */
-.builtin-model-row { display: flex; gap: 6px; }
+.builtin-model-row { display: flex; gap: 6px; align-items: flex-start; }
 .builtin-model-row input { flex: 1; }
+/* 补全组件的输入栏要占满余量（右侧留给「检测」按钮）：.model-id-field 是 div，
+   不像裸 input 那样被上一条 flex:1 命中 —— 漏了这条输入框会缩成一小截。 */
+.builtin-model-row .model-id-field { flex: 1; min-width: 0; }
 .builtin-model-row .secondary-setting { flex: 0 0 auto; }
+/* 生图模型的内置参数提示（命中内置规格表才出现）：紧凑两行，别把弹窗撑高。 */
+.builtin-model-hint { display: flex; flex-direction: column; gap: 2px; margin-top: 5px; color: var(--faint); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .spin { animation: spin .8s linear infinite; }
 @media (max-width: 720px) { .builtin-plugin-grid { grid-template-columns: 1fr; } }
 
@@ -24582,6 +24587,11 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 .model-id-field input {
   width: 100%;
+}
+/* 字段处于弹窗底部时向上弹：弹窗自身 overflow:auto，向下弹的列表会被边界裁掉（组件里按视口空间判定）。 */
+.model-id-pop.up {
+  top: auto;
+  bottom: calc(100% + 6px);
 }
 .model-id-pop {
   position: absolute;
