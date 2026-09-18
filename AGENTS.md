@@ -343,6 +343,15 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   底部「一键安装 N 项」串行调 `installRuntime`（复用主进程 `runtime:progress` 进度），
   另有「不再提示」（localStorage `env-check-optout`）。复用既有能力（`listRuntimes` / `installRuntime` /
   `runtime:progress` 都已存在），**没有新增主进程 IPC**。
+  - **⛔ 升级保会话：旧家 rollout 迁移（09-18 用户：「更新新版本…用户旧会话要能接着用」「复制ID，接力会话也不行」）**：
+  09-10 前的老版本把引擎 CODEX_HOME 指在 `~/.codex`；切到 userData/codex-home 后**老会话三处全失联**——
+  侧栏兜底扫描、复制 ID 引用（`buildThreadPreview`）、`thread/resume` 都只认新家。
+  修：`migrateLegacyRolloutHome()` 挂在启动链 `server.start()` 之前——把旧家 `sessions/`、
+  `archived_sessions/` 里新家没有的 rollout **拷贝**（⛔ 只拷不删：`~/.codex` 可能仍被官方 CLI 用；
+  canonical 文件名按名判重天然幂等）进新家。**真机验收**（隔离 profile 起应用）：
+  13 个旧家 rollout 迁入 → 侧栏 16 行可见、`previewConversation` 读旧会话 9 条消息、二次启动幂等零重复。
+  预检 ⑰m【40】3 条（迁移存在 / 只拷不删 / 挂在 server.start 之前），反证 2/2。
+  ⛔ 以后**任何**动 codexHome / 引擎家目录的改动，都必须先回答「升级用户的老会话去哪了」。
   - **探针协议回落 + 图片模态自愈（09-18 用户反馈：升级用户测 deepseek-v4.1-flash 两连错）**：
   ① 探针 404「does not support the coding plan feature」——火山 Coding Plan 类网关对部分模型的
   `/responses` 直接拒绝，但 Chat 通道是通的；探针只试单协议把"能用"误报成连接失败。
