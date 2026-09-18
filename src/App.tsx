@@ -6,6 +6,10 @@ import { markdownUrlTransform } from "./lib/markdown-url";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+// 语法高亮结果缓存（09-18）：库的默认 renderer 就是「把高亮 AST 递归建成 React 元素」，
+// 切换会话时消息列表重挂载会让它对每段代码重跑一遍（真机 profile 单函数 2251ms）。
+import createHighlightElement from "react-syntax-highlighter/dist/esm/create-element";
+import { createHighlightCache, highlightCacheKey } from "./lib/code-highlight-cache.mjs";
 import { codeFontStack, codeFonts, codePreviewSnippet, codeThemeStyle, codeThemes } from "./lib/code-themes";
 import { codeFontSize, useCodeSettings } from "./lib/code-settings";
 import { DEFAULT_EFFORT, pickDefaultEffort, normalizeEffort, ALL_EFFORTS, declaredModelEfforts } from "./lib/effort";
@@ -2951,6 +2955,13 @@ const ToolCodeBlock = memo(function ToolCodeBlock({ language, text, revealing, c
   // 虚拟化会与逐字追字互相打架；折行会让行高不固定，测不准。其余情况仍走 SyntaxHighlighter。
   const lineCount = useMemo(() => (text ? text.split("\n").length : 0), [text]);
   const virtualizable = language === "diff" && !revealing && !settings.wrap && lineCount > DIFF_VIRTUAL_THRESHOLD;
+  // 高亮结果缓存（09-18）：命令输出/diff 是元素大户（每 token 一个 span），切会话重挂载时
+  // 重跑一遍就是那几百毫秒到几秒的来源。⛔ 逐字追字（revealing）期间**不接**：text 每帧都变，
+  // key 每帧都 miss，白付开销（默认 renderer 走原路径）。
+  const hlRenderer = useMemo(() => {
+    if (revealing || virtualizable || !HIGHLIGHT_CACHE.shouldCache(text)) return undefined;
+    return makeCachedHighlightRenderer(highlightCacheKey({ language, code: text, theme: settings.theme, lineNumbers: settings.lineNumbers, wrapLongLines: settings.wrap }));
+  }, [revealing, virtualizable, text, language, settings.theme, settings.lineNumbers, settings.wrap]);
   return (
     <div className={`tool-code-block ${className ?? ""} ${revealing ? "packet-revealing" : ""}`.trim()}>
       {virtualizable
@@ -2964,6 +2975,7 @@ const ToolCodeBlock = memo(function ToolCodeBlock({ language, text, revealing, c
             className="tool-code-pre code-highlight"
             showLineNumbers={settings.lineNumbers}
             wrapLongLines={settings.wrap}
+            renderer={hlRenderer}
             customStyle={{
               fontSize: codeFontSize(settings.fontScale),
               fontFamily: codeFontStack(settings.font),
@@ -3067,10 +3079,48 @@ function LinkCard({ href }: { href: string }) {
 // 流式出字时代码块/图片每帧闪烁的根因。提为常量后只做文本节点 diff。
 const MD_REMARK_PLUGINS = [remarkGfm, remarkBreaks];
 
+// ── 语法高亮结果缓存（09-18）───────────────────────────────────────────────────
+// 「切到内容多的会话卡 1~3.6 秒」的根因：切换会话时消息列表**卸载再挂载**，`MdCode` 虽是
+// `memo` 也救不了（memo 只在组件保持挂载时生效），于是每段代码都重新高亮一遍 ——
+// CDP CPU profile 实证 `createElement`（bundle 内压缩名 `Ql`）单函数自耗 **2251ms**，
+// 而切换耗时 ≈ 目标会话 DOM 规模 × 0.15ms（r=0.974，实测 666 元素 6ms / 23162 元素 3651ms）。
+// 修法 = 给库的 `renderer` prop（默认实现就是那个递归建元素的函数）接一层按内容寻址的 LRU；
+// 同一段代码第二次渲染直接复用上次的元素树。详见 src/lib/code-highlight-cache.mjs。
+const HIGHLIGHT_CACHE = createHighlightCache();
+
+/** 造一个带缓存的 renderer。key 由调用方按「语言+代码+主题+行号+换行」算好传进来
+ *  （必须覆盖所有影响高亮产物的输入，见 highlightCacheKey 的实现说明）。
+ *  ⛔ 返回的元素树是**同一次计算的结果**，React 元素不可变、可在多处挂载，因此外观与
+ *  不缓存时完全一致；`rows` 长度做二次校验，万一 key 与内容不一致（理论上不会）就自愈重算。 */
+function makeCachedHighlightRenderer(cacheKey: string) {
+  return function cachedHighlightRenderer({ rows, stylesheet, useInlineStyles }: {
+    rows: unknown[];
+    stylesheet?: Record<string, React.CSSProperties>;
+    useInlineStyles?: boolean;
+  }): React.ReactNode {
+    const hit = HIGHLIGHT_CACHE.get(cacheKey) as { rows: number; nodes: React.ReactNode[] } | undefined;
+    if (hit && hit.rows === rows.length) return hit.nodes;
+    const nodes = rows.map((node, i) => createHighlightElement({ node, stylesheet, useInlineStyles, key: `code-segment-${i}` }));
+    HIGHLIGHT_CACHE.set(cacheKey, { rows: rows.length, nodes });
+    return nodes;
+  };
+}
+
 /** 代码块：必须是模块级稳定组件。主题/字体由代码设置驱动，组件内部自己订阅 store，
  * 这样切换主题只重渲染代码块本身，不会让 Markdown 整棵树重建（流式出字时也在复用节点）。 */
 const MdCode = memo(function MdCode({ className, children, ...props }: any) {
   const settings = useCodeSettings();
+  const code = String(children ?? "").replace(/\n$/, "");
+  // ⛔ 流式追字期间不接缓存（09-18 审查补的缺口）：流式的形态是「本次文本 = 上次文本 + 追加」，
+  //   每帧都是一个 never-again 的新 key —— 若照单写入，一屏流式能塞进几十个中间态，把
+  //   其它会话攒下的缓存条目按 LRU 挤掉（那些会话切回来又变慢）。用「是否在上次文本上追加」
+  //   判定，误判最多让某帧少缓存一次，无副作用。ref 在 effect 里更新（render 期不写 ref）。
+  const prevCodeRef = useRef("");
+  const appended = prevCodeRef.current.length > 0 && code.length > prevCodeRef.current.length && code.startsWith(prevCodeRef.current);
+  useEffect(() => { prevCodeRef.current = code; }, [code]);
+  // ⛔ hooks 必须无条件调用（下面 !className / mermaid 会提前 return）
+  const cacheKey = highlightCacheKey({ language: String(className ?? "").replace("language-", ""), code, theme: settings.theme, lineNumbers: settings.lineNumbers, wrapLongLines: settings.wrap });
+  const renderer = useMemo(() => (!appended && HIGHLIGHT_CACHE.shouldCache(code) ? makeCachedHighlightRenderer(cacheKey) : undefined), [cacheKey, code, appended]);
   if (!className) return <code {...props}>{children}</code>;
   const language = className.replace("language-", "");
   if (language === "mermaid") return <MermaidDiagram code={String(children)} />;
@@ -3082,8 +3132,9 @@ const MdCode = memo(function MdCode({ className, children, ...props }: any) {
       className="code-highlight"
       showLineNumbers={settings.lineNumbers}
       wrapLongLines={settings.wrap}
+      renderer={renderer}
       customStyle={{ fontSize: codeFontSize(settings.fontScale), fontFamily: codeFontStack(settings.font), margin: 0 }}
-    >{String(children).replace(/\n$/, "")}</SyntaxHighlighter>
+    >{code}</SyntaxHighlighter>
   );
 });
 
@@ -3092,6 +3143,11 @@ const MdCode = memo(function MdCode({ className, children, ...props }: any) {
 const FilePreviewCode = memo(function FilePreviewCode({ language, content, truncated }: { language: string; content: string; truncated?: boolean }) {
   const settings = useCodeSettings();
   const normalized = String(language ?? "").replace(/^\./, "").toLowerCase();
+  const code = content.replace(/\n$/, "") + (truncated ? "\n…（文件过大，仅展示前 200K 字符）" : "");
+  const renderer = useMemo(() => {
+    if (!HIGHLIGHT_CACHE.shouldCache(code)) return undefined;
+    return makeCachedHighlightRenderer(highlightCacheKey({ language: normalized, code, theme: settings.theme, lineNumbers: true, wrapLongLines: settings.wrap }));
+  }, [normalized, code, settings.theme, settings.wrap]);
   return (
     <SyntaxHighlighter
       language={normalized}
@@ -3102,8 +3158,9 @@ const FilePreviewCode = memo(function FilePreviewCode({ language, content, trunc
       // WorkBuddy 式文件查看：行号常开（代码块内联展示才跟随用户设置）
       showLineNumbers
       wrapLongLines={settings.wrap}
+      renderer={renderer}
       customStyle={{ fontSize: codeFontSize(settings.fontScale), fontFamily: codeFontStack(settings.font), margin: 0 }}
-    >{content.replace(/\n$/, "")}{truncated ? "\n…（文件过大，仅展示前 200K 字符）" : ""}</SyntaxHighlighter>
+    >{code}</SyntaxHighlighter>
   );
 });
 
@@ -10949,6 +11006,14 @@ const commandMatches = useMemo(() => {
   useEffect(() => {
     clearAnchorPad();
   }, [thread?.id, clearAnchorPad]);
+
+  /** 语法高亮缓存的读数口（与 __switchPerfStats 同款，纯诊断、不参与业务）：
+   *  验收靠它确认「二次切同一会话」确实命中了缓存而不是碰巧快了。 */
+  useEffect(() => {
+    const w = window as any;
+    w.__hlCacheStats = () => HIGHLIGHT_CACHE.stats();
+    return () => { try { delete w.__hlCacheStats; } catch { /* ignore */ } };
+  }, []);
 
   // 会话切换耗时诊断（09-12 压测用）：openThread 落笔 switchStartRef，这里在 **DOM 已提交**
   // 之后结算一次——这才是用户真正感知的「点一下到看见内容」的时间。
