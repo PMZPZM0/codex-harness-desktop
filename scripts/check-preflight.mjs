@@ -4767,6 +4767,84 @@ w.postMessage({id:1,op:"list",root});
     (exactWin && /RUN_PHRASES_BY_ACTIVITY\[activity\]/.test(exactWin) && !/\.\.\.RUN_PHRASES\b/.test(exactWin) ? ok : fail)("【44】收尾态专属句不过通用池（pickRunPhraseExact 只取专属池）");
     (/setRunPhrase\(turnFinalizing \? pickRunPhraseExact\(/.test(appSrc) ? ok : fail)("【44】收尾状态跨进/跨出各换一次句（只在跨界时换，不在「思考→命令」之间乱换）");
   }
+
+  // ⑰n 语法高亮结果缓存（09-18 用户：「切换运行会话会有一些卡顿延迟」）
+  //   根因：切换会话时消息列表卸载再挂载，每段代码重新高亮 —— CDP CPU profile 实证
+  //   `createElement`（库内部的递归建元素函数）单函数自耗 **2251ms**；逐会话实测切换耗时
+  //   ≈ 目标会话 DOM 规模 × 0.15ms（r=0.974）：666 元素 6ms / 8001 元素 703ms /
+  //   13554 元素 1951ms / 23162 元素 **3651ms**。
+  //   修法=给库的 renderer prop 接一层按内容寻址的 LRU（纯计算优化、零外观变化）。
+  //   守卫三层：①纯函数行为（直跑 src/lib/code-highlight-cache.mjs）②三处接线 ③流式不接。
+  {
+    console.log(C.bold("\n【45】语法高亮结果缓存（切会话不重复高亮）"));
+    const { highlightCacheKey, createHighlightCache } = await import("../src/lib/code-highlight-cache.mjs");
+    const appSrc45 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+
+    // ① 键必须覆盖所有影响高亮产物的输入 —— 漏一个字段就会串键（不同代码命中同一份元素树 = 高亮错乱）
+    const base = { language: "ts", code: "const a = 1;", theme: "one-dark", lineNumbers: true, wrapLongLines: false };
+    const k0 = highlightCacheKey(base);
+    (k0 === highlightCacheKey({ ...base }) ? ok : fail)("【45】同样的输入 → 同样的键（缓存才能命中）");
+    (k0 !== highlightCacheKey({ ...base, code: "const a = 2;" }) ? ok : fail)("【45】代码不同 → 键不同（否则会用错元素树）");
+    (k0 !== highlightCacheKey({ ...base, language: "python" }) ? ok : fail)("【45】语言不同 → 键不同");
+    (k0 !== highlightCacheKey({ ...base, theme: "dracula" }) ? ok : fail)("【45】主题不同 → 键不同（否则切主题后颜色不跟着变）");
+    (k0 !== highlightCacheKey({ ...base, lineNumbers: false }) ? ok : fail)("【45】行号开关不同 → 键不同");
+    (k0 !== highlightCacheKey({ ...base, wrapLongLines: true }) ? ok : fail)("【45】换行开关不同 → 键不同");
+    // 串键防护：分隔符必须不可出现在正常输入里（用 \u0000 而不是空格/竖线）
+    (highlightCacheKey({ language: "a", code: "b" }) !== highlightCacheKey({ language: "a b", code: "" }) ? ok : fail)("【45】拼接不产生歧义（分隔符不可被输入伪造出同键）");
+
+    // ② LRU 行为：容量上限、淘汰最旧、get 提升热度、命中/未命中计数
+    const c = createHighlightCache({ maxEntries: 3, minCodeChars: 10, maxCodeChars: 100 });
+    c.set("a", 1); c.set("b", 2); c.set("c", 3);
+    (c.size === 3 ? ok : fail)("【45】容量上限生效（3 条）");
+    (c.get("a") === 1 ? ok : fail)("【45】能取回已缓存内容");
+    c.set("d", 4); // 超容量：最旧的应是 b（a 刚被 get 提到最新）
+    (c.get("b") === undefined && c.get("a") === 1 ? ok : fail)("【45】淘汰的是最久未用的那条（get 过的不会被先淘汰）");
+    (c.size === 3 ? ok : fail)("【45】淘汰后仍不超容量");
+    const st = c.stats();
+    (st.hits >= 2 && st.misses >= 1 ? ok : fail)(`【45】命中/未命中计数可用（实得 hits=${st.hits} misses=${st.misses}）`);
+    // 字符总量上限（防"很多大块"把内存吃满）；淘汰时总量必须同步扣减，否则会提前把缓存清空
+    const c2 = createHighlightCache({ maxEntries: 99, maxTotalChars: 30, minCodeChars: 1, maxCodeChars: 999 });
+    c2.set("x".repeat(20), 1); c2.set("y".repeat(20), 2);
+    (c2.size === 1 && c2.stats().totalChars === 20 ? ok : fail)(`【45】总字符上限生效且总量同步扣减（实得 size=${c2.size} totalChars=${c2.stats().totalChars}）`);
+    // 覆盖校验：把同一个 key 再 set 一次不得重复计账（否则总量虚高、缓存被提前清空）
+    c2.set("y".repeat(20), 3);
+    (c2.stats().totalChars === 20 ? ok : fail)("【45】重复 set 同一键不重复计账");
+    // 长度窗口：太短不缓存（本来不贵）、超单块上限不缓存
+    (!c.shouldCache("x".repeat(5)) ? ok : fail)("【45】过短的代码块不缓存（收益低、只增开销）");
+    (c.shouldCache("x".repeat(50)) ? ok : fail)("【45】正常长度的代码块缓存");
+    (!c.shouldCache("x".repeat(500)) ? ok : fail)("【45】超单块上限的代码块不缓存");
+    // ⛔ 默认上限必须覆盖真机出现过的大块（13346 元素的那个会话里最长块 66838 字）——
+    //    第一版把单块上限设成 60000，恰好吃不到缓存，那个会话每次切换照样高亮 ~1.4 秒。
+    {
+      const d = createHighlightCache();
+      (d.shouldCache("x".repeat(66838)) ? ok : fail)(`【45】默认单块上限覆盖真机出现过的 66838 字大块（当前 maxCodeChars=${d.stats().maxCodeChars}）`);
+      (d.stats().maxTotalChars >= 600000 ? ok : fail)("【45】默认总量上限不缩水（防很多大块把内存吃满，同时别把预算设到吃不到缓存）");
+    }
+
+    // ③ 接线：三处 SyntaxHighlighter 必须都能接 renderer；流式追字期间不许接
+    const rendererUses = (appSrc45.match(/renderer=\{/g) ?? []).length;
+    (rendererUses >= 3 ? ok : fail)(`【45】三处高亮都接上了缓存 renderer（实得 ${rendererUses} 处）`);
+    (/function makeCachedHighlightRenderer\(cacheKey: string\)/.test(appSrc45) && /createHighlightElement\(\{ node, stylesheet, useInlineStyles/.test(appSrc45)
+      ? ok : fail)("【45】缓存 renderer 复用库自身的 createElement（不是自己重写高亮逻辑）");
+    // ⛔ 流式追字时 text 每帧都变，key 每帧 miss —— 必须返回 undefined 走默认实现
+    (/if \(revealing \|\| virtualizable \|\| !HIGHLIGHT_CACHE\.shouldCache\(text\)\) return undefined;/.test(appSrc45)
+      ? ok : fail)("【45】逐字追字期间不接缓存（否则每帧 miss，白付哈希/淘汰开销）");
+    // ⛔ MdCode 的提前 return（!className / mermaid）之后**不得再出现任何 hook 调用**，
+    //    否则 hooks 顺序错乱（React 会直接报错）。
+    //    ⚠️ 判据必须是「return 之后那段里没有 hook」，不能写成「存在某个 hook 在 return 之前」——
+    //    后者因为 useCodeSettings() 一直在函数开头而**恒真**（本条守卫第一版就是这样，
+    //    反证时把 hooks 挪到 return 之后它照样绿，等于没有守卫）。
+    const mdIdx = appSrc45.indexOf("const MdCode = memo(function MdCode");
+    const mdBody = mdIdx >= 0 ? appSrc45.slice(mdIdx, appSrc45.indexOf("\n});", mdIdx)) : "";
+    const retIdx = mdBody.search(/if \(!className\) return/);
+    const afterReturn = retIdx > 0 ? mdBody.slice(retIdx) : "";
+    (/useMemo\(|useState\(|useRef\(|useEffect\(|useCallback\(|useCodeSettings\(/.test(afterReturn) ? fail : ok)("【45】MdCode 的提前 return 之后没有 hook 调用（hooks 顺序不能变）");
+    // ⛔ 流式追字期间不许写缓存：流式每帧一个 never-again 的新 key，照单写入会把其它会话
+    //    攒下的条目按 LRU 挤掉（那些会话切回来又变慢）。判据 =「在上次文本上追加」。
+    (/const appended = prevCodeRef\.current\.length > 0 && code\.length > prevCodeRef\.current\.length && code\.startsWith\(prevCodeRef\.current\);/.test(appSrc45)
+      && /useMemo\(\(\) => \(!appended && HIGHLIGHT_CACHE\.shouldCache\(code\)/.test(appSrc45)
+      ? ok : fail)("【45】流式追字期间不写缓存（防中间态挤掉其它会话的缓存条目）");
+  }
 }
 
 console.log("");
