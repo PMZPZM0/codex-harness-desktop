@@ -17,12 +17,13 @@
  * 协议：
  *   请求  { id, op: "list", root }                      → 回 { id, ok, data }
  *   请求  { id, op: "enrich", thread, root }             → 回 { id, ok, data }
+ *   请求  { id, op: "purge", root, ids }                 → 回 { id, ok, data:{ removed, failed } }
  *   出错  回 { id, ok: false, error }
  */
 
 "use strict";
 
-const { readdirSync, readFileSync, statSync, openSync, readSync, closeSync, existsSync } = require("node:fs");
+const { readdirSync, readFileSync, statSync, openSync, readSync, closeSync, existsSync, unlinkSync } = require("node:fs");
 const path = require("node:path");
 
 // ── 缓存（worker 常驻，跨请求复用）──────────────────────────────────────
@@ -140,6 +141,56 @@ function listRolloutThreads(root) {
     }
   }
   return out.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/** ⛔ 永久删除线程时清理磁盘残留（09-18 用户实测：「我删除了，重启又恢复了」）。
+ *
+ *  为什么必须由 harness 自己删：引擎的 `thread/delete` 只把线程从**索引**里摘掉，
+ *  磁盘上的 rollout 文件原样留着；而 `thread/list` 带 rollout 兜底扫描（见
+ *  electron/main.ts 的 thread/list 分支），它把「索引里没有、磁盘上有」的会话当
+ *  权威源合回侧栏 ⇒ 删掉的会话重启后又冒出来（用户机上实测 12 条幽灵会话，
+ *  侧栏分组名与它们的 cwd 一一对应）。
+ *
+ *  匹配方式：文件名尾部 uuid（`rollout-<时间戳>-<uuid>.jsonl`），**不要用 includes**
+ *  ——短 id 会误伤别的 rollout。唯一例外是历史遗留的非标准命名（时间戳位置带了短 id），
+ *  那种靠 `endsWith` 兜不住，但它同样只在「索引里已无该线程」时才可能残留。
+ */
+function purgeRolloutFiles(root, idsInput) {
+  const ids = new Set(
+    (Array.isArray(idsInput) ? idsInput : [])
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const removed = [];
+  const failed = [];
+  if (!ids.size) return { removed, failed };
+  for (const base of [path.join(root, "sessions"), path.join(root, "archived_sessions")]) {
+    if (!existsSync(base)) continue;
+    const stack = [base];
+    while (stack.length) {
+      const current = stack.pop();
+      let entries;
+      try { entries = readdirSync(current, { withFileTypes: true }); } catch { continue; }
+      for (const entry of entries) {
+        const full = path.join(current, entry.name);
+        if (entry.isDirectory()) { stack.push(full); continue; }
+        if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+        const match = entry.name.match(/-([0-9a-f]{8}-[0-9a-f-]{27,})\.jsonl$/i);
+        if (!match || !ids.has(match[1].toLowerCase())) continue;
+        try {
+          unlinkSync(full);
+          removed.push(full);
+          rolloutListCache.delete(full);
+          rolloutParseCache.delete(full);
+          for (const [key, value] of rolloutPathCache) if (value === full) rolloutPathCache.delete(key);
+        } catch (error) {
+          // 文件被占用（正在跑的会话）等：交给调用方记「墓碑」，下次列表合并时仍排除它
+          failed.push({ path: full, error: String((error && error.message) || error) });
+        }
+      }
+    }
+  }
+  return { removed, failed };
 }
 
 // ── 增强解析（把 rollout 里的工具调用补进 thread）──────────────────────
@@ -331,6 +382,8 @@ if (parentPort) {
         parentPort.postMessage({ id, ok: true, data: listRolloutThreads(String(msg.root || "")) });
       } else if (msg.op === "enrich") {
         parentPort.postMessage({ id, ok: true, data: enrichThreadWithRolloutTools(msg.thread, String(msg.root || "")) });
+      } else if (msg.op === "purge") {
+        parentPort.postMessage({ id, ok: true, data: purgeRolloutFiles(String(msg.root || ""), msg.ids) });
       } else {
         parentPort.postMessage({ id, ok: false, error: `unknown op: ${msg.op}` });
       }

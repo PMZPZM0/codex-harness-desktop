@@ -13,12 +13,18 @@
 
 /** 合并 app-server 索引和 rollout 兜底，并严格执行归档筛选。
  * archived=true 只能返回归档项，false 只能返回活动项；旧实现只处理 false，
- * 导致活动会话混入归档管理并被永久删除。 */
+ * 导致活动会话混入归档管理并被永久删除。
+ *
+ * ⛔ `hidden`（已永久删除的线程墓碑，小写 id）：兜底扫描只认磁盘文件，而引擎的
+ * `thread/delete` **不会删磁盘 rollout** —— 不排除就会把用户删掉的会话捞回侧栏
+ * （09-18 用户实测「我删除了，重启又恢复了」，用户机上 12 条幽灵会话）。
+ * 索引侧条目同样要排除：删除请求失败/引擎残留时它可能还在索引里。 */
 export function mergeThreadList(
   indexedInput: any[],
   fallback: any[],
   archived: boolean | null,
   limit = 100,
+  hidden?: Set<string>,
 ) {
   const indexed = indexedInput.map((entry) => archived == null ? entry : { ...entry, archived });
   const byId = new Map<string, any>(indexed.map((entry) => [String(entry.id), entry]));
@@ -48,6 +54,8 @@ export function mergeThreadList(
   }
   return [...byId.values()]
     .filter((entry) => archived == null ? true : Boolean(entry.archived) === archived)
+    // 已永久删除的线程一律不返回（索引与兜底两条来源都算）
+    .filter((entry) => !hidden?.size || !hidden.has(String(entry.id ?? "").toLowerCase()))
     .sort((a, b) => Number(b.updatedAt ?? b.updated_at ?? 0) - Number(a.updatedAt ?? a.updated_at ?? 0))
     .slice(0, limit);
 }
