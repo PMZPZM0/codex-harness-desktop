@@ -126,6 +126,12 @@ contextBridge.exposeInMainWorld("codex", {
     return () => ipcRenderer.removeListener("connectors:oauth-event", handler);
   },
   readClipboardImage: () => ipcRenderer.invoke("clipboard:image"),
+  // 粘贴的长文本落盘成 .txt（超过阈值时输入框显示为文件 chip，见 composer-attachments.mjs）
+  savePastedText: (text: string) => ipcRenderer.invoke("pasted-text:save", text),
+  /** 读粘贴文本：`editable:false` 表示不是应用保存的粘贴文本（渲染层回退普通文件预览） */
+  readPastedText: (path: string) => ipcRenderer.invoke("pasted-text:read", path),
+  /** 保存编辑后的粘贴文本（仅限应用自己的粘贴文本目录） */
+  updatePastedText: (path: string, content: string) => ipcRenderer.invoke("pasted-text:update", { path, content }),
   readMcpServerOverrides: () => ipcRenderer.invoke("mcp-servers:overrides"),
   setMcpServersEnabled: (ids: string[], enabled: boolean) => ipcRenderer.invoke("mcp-servers:set-enabled", { ids, enabled }),
   readMcpToolPermissions: () => ipcRenderer.invoke("mcp-servers:permissions"),

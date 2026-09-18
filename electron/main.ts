@@ -355,6 +355,8 @@ void (async () => {
 const mcpOverridesFile = path.join(app.getPath("userData"), "mcp-server-overrides.json");
 // 剪贴板/临时图片持久化目录：userData 不会被系统重启清理，避免缩略图重启后破图
 const imagesDir = path.join(app.getPath("userData"), "images");
+/** 粘贴长文本落盘目录（见 `pasted-text:save`）。与 images 同层，属应用数据、不进用户工作区。 */
+const pastedTextDir = path.join(app.getPath("userData"), "pasted-text");
 // 1x1 透明 PNG（base64），图片文件缺失时的兜底响应
 const PLACEHOLDER_PNG_B64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
@@ -7670,6 +7672,57 @@ ipcMain.handle("clipboard:image", async () => {
   const file = path.join(imagesDir, `codex-harness-${Date.now()}.png`);
   await fs.writeFile(file, buffer);
   return file;
+});
+/** 把「粘贴进来的长文本」落盘成 .txt，返回绝对路径（09-18 用户：「复制的内容超过 200 字的时候
+ *  把文本直接显示成一个 .txt 文件的方式」）。
+ *
+ *  为什么必须新增 IPC 而不是复用 `fs:write`：那个 handler **限定只能写工作区内**
+ *  （`仅允许保存工作区内的文件`）—— 粘贴的文本是"用户的临时素材"，写进用户项目目录会污染仓库。
+ *  落点放在应用自己的 userData（与 `imagesDir` 同层），随应用数据一起存在。
+ *
+ *  ⛔ 文件名按**内容哈希**去重：同一段文本粘两次得到同一个文件（幂等）。用时间戳命名会每粘一次
+ *  就多一个文件、且历史消息里的引用各自指向不同副本（内容相同却看起来像两份）。
+ *  ⛔ 文件**不自动清理**：消息里的 chip 点击要能打开它、模型也可能在后续回合里读它。 */
+ipcMain.handle("pasted-text:save", async (_event, text: unknown) => {
+  const content = typeof text === "string" ? text : "";
+  if (!content.trim()) return null;
+  await fs.mkdir(pastedTextDir, { recursive: true });
+  const hash = crypto.createHash("sha1").update(content, "utf8").digest("hex").slice(0, 8);
+  // 名字里带一段"内容提示"（首行去掉不适合做文件名的字符），让 chip 一眼能认出来是什么
+  const hint = content.trim().split(/\r?\n/, 1)[0]
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "")
+    .trim()
+    .slice(0, 16) || "文本";
+  const file = path.join(pastedTextDir, `粘贴文本-${hint}-${hash}.txt`);
+  if (!fileStat(file)) await fs.writeFile(file, content, "utf8");
+  return file;
+});
+/** 目标路径是否落在应用自己的粘贴文本目录内。
+ *  ⛔ 读/写这两个通道**必须**做这个校验：渲染层传来的路径不可信，不校验就等于给了渲染层
+ *  一个"任意文件读写"的入口（粘贴文本目录是应用数据，用户自己的文件不该被这条链碰到）。 */
+function isInsidePastedTextDir(target: string) {
+  const resolved = path.resolve(target);
+  const relative = path.relative(pastedTextDir, resolved);
+  return Boolean(relative) && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+/** 读取粘贴文本（供输入框 chip 点击后的大窗口预览/编辑）。
+ *  返回 `editable:false` 表示"这不是应用保存的粘贴文本" → 渲染层回退到普通文件预览，
+ *  **不靠路径猜**（靠猜会把用户自己目录里同名的 .txt 也当可编辑，一保存就改了他的文件）。 */
+ipcMain.handle("pasted-text:read", async (_event, target: unknown) => {
+  const file = typeof target === "string" ? target : "";
+  if (!file || !isInsidePastedTextDir(file)) return { editable: false };
+  if (!fileStat(file)) return { editable: true, content: null };
+  return { editable: true, content: await fs.readFile(path.resolve(file), "utf8") };
+});
+/** 保存编辑后的粘贴文本。
+ *  ⛔ **不改名**：文件名里的哈希表示"创建时的内容"，编辑后不重算 —— 重算就要改名，而已经发出
+ *  的消息里引用的正是旧路径（改名即断链）。代价只是"同一段内容可能对应两个文件"，可接受。 */
+ipcMain.handle("pasted-text:update", async (_event, input: { path: string; content: string }) => {
+  const file = typeof input?.path === "string" ? input.path : "";
+  if (!file || !isInsidePastedTextDir(file)) throw new Error("只允许编辑应用自己保存的粘贴文本");
+  await fs.mkdir(pastedTextDir, { recursive: true });
+  await fs.writeFile(path.resolve(file), String(input?.content ?? ""), "utf8");
+  return { ok: true, size: Buffer.byteLength(String(input?.content ?? ""), "utf8") };
 });
 // ⛔ `file:` 只在**工作区内的 .html** 上放行（09-13 审计 S5）：这条链是
 // `shell.openExternal` = 交给系统默认程序执行 —— 放行任意 `file:` 意味着渲染层（它要渲染
