@@ -560,6 +560,20 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   或在主进程侧观察；② 判断 loading 用 `.spinner`（`<Spinner/>` 渲染的是 `<span class="spinner">`），
   `.spin` 只是 `<RefreshCw className="spin">` 的动画类，用它采样会恒 0 → 误判"没反应"。
 
+- **并发安装假失败：用户反馈「安装失败：Error invoking remote method 'runtime:install': Error: 该工具正在安装」**
+  （09-18 截图）。触发链很日常：**首次启动的 Git 后台自愈安装**（`autoInstallGitIfNeeded`，仅 Windows）
+  占住 `runtimeInstalls["git"]`，而体检弹窗「一键安装」里 git 恰好排第一位 →
+  `runtime:install` 旧实现 `if (runtimeInstalls.has(id)) throw` 直接抛错 → **渲染层循环外只有一个 try，
+  整批中断**：三项一个都没装、弹窗不关、清单原样不动，用户只看到一句"安装失败"。
+  三处一起修（缺一处就复发，且都是静默的）：
+  ① `electron/main.ts`：并发同 id → **`await` 那个在飞的 promise** 并返回 `{joined:true}`（成功一起成功；
+  真失败仍抛真实错误，不假装成功）；② `src/App.tsx` `installEnvMissing`：**逐项 try/catch**，
+  一项失败只记录，其余照装，结束区分「全败 / 部分完成 / 全成」，并回读清单让装好的立刻变已就绪；
+  ③ `EnvCheckDialog.installableIds` 排除 `installing` 项（正在后台装的别塞进批量），行内显示「安装中…」。
+  预检 ⑰i【37】三条守卫；反证 A/B/C 全红（A 改回抛错 / B 改回整批中断 / C 塞回 installing）。
+  **真实验收**（CDP 起真应用，对同一 id 连发两次 `installRuntime`）：两次都成功、第二次 `joined:true`；
+  反证（改回旧行为）→ 逐字复现用户那句报错。样本用 jq（1MB 真下载，非 mock）。
+
 - **⛔ mac 全面适配第二轮（09-17，用户「MAC 的适配要做全，全方面适配」）**：一轮全库审计（215 个源文件，
   逐条判读平台分支与 Windows 假设）挖出 15 处真缺失，全部修掉并进预检【32】19 条守卫。按影响排序：
   ① **mac 取麦会被系统杀进程**：`electron-builder.mac.cjs` 的 extendInfo 缺 `NSMicrophoneUsageDescription`

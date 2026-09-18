@@ -4234,6 +4234,27 @@ w.postMessage({id:1,op:"list",root});
       : fail("【36】displayPath() 缺失或技能中心说明没走它 —— 分隔符又会被写死");
   }
 
+  // ⑰i 并发安装不再假失败 + 体检批量安装逐项容错（09-18 用户反馈「安装失败：Error invoking remote method
+  //   'runtime:install': Error: 该工具正在安装」）。触发链：首次启动 Git 后台自愈安装占住 git，
+  //   体检「一键安装」里 git 排第一 → 旧实现直接抛错 → **整批中断**（三项一个都没装、弹窗不关）。
+  //   三处必须同时在位，缺一处就回到旧症状（且都是静默的：界面只显示一句"安装失败"）。
+  {
+    const mainSrc = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+    const appSrc = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+    const envSrc = readFileSync(join(ROOT, "src", "components", "EnvCheckDialog.tsx"), "utf8");
+    (/const inFlight = runtimeInstalls\.get\(id\);[\s\S]{0,300}?await inFlight;[\s\S]{0,120}?joined: true/.test(mainSrc)
+      && !/throw new Error\("该工具正在安装"\)/.test(mainSrc))
+      ? ok("【37】同工具并发安装改为「等它跑完」（不再抛「该工具正在安装」）")
+      : fail("【37】runtime:install 又会在并发时抛错 —— 用户点「一键安装」会撞上「该工具正在安装」并整批中断");
+    (/for \(const id of ids\) \{\s*try \{[\s\S]{0,400}?failed\.push\(/.test(appSrc)
+      && /failed\.length === ids\.length/.test(appSrc))
+      ? ok("【37】体检批量安装逐项容错（一项失败不再中断其余，并区分全败/部分完成）")
+      : fail("【37】installEnvMissing 又变回「循环外一个 try」—— 任何一项失败会让整批中断、清单原样不动");
+    (/!item\.ok && !item\.installing && !MANUAL_IDS\.has\(item\.id\)/.test(envSrc))
+      ? ok("【37】正在安装的项不算进「一键安装」（避免自己撞自己的并发守卫）")
+      : fail("【37】installableIds 没排除 installing —— 后台自愈安装中的项仍会被塞进批量安装");
+  }
+
   // ⑰d 引导弹窗的「出场时机」（09-17 用户明确定规则：「只在进入主界面的时候才弹配置引导和
   //   工具安装检测自动安装；如果已经配置模型，就不引导模型配置，直接做开发工具检测安装」）。
   //   三种失效形态都**静默**（不报错，只是该弹的不弹 / 不该弹的弹了）：
