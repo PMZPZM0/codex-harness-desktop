@@ -12720,22 +12720,37 @@ const commandMatches = useMemo(() => {
     if (spec.id === "model") return { id: "model", name: spec.fallbackName, why: spec.why, size: "", core: true, ok: Boolean(customModel), go: "model" as const };
     if (spec.id === "workspace") return { id: "workspace", name: spec.fallbackName, why: spec.why, size: "", core: true, ok: Boolean(workspace), go: "workspace" as const };
     const runtime = devRuntimes.find((entry) => entry.id === spec.id);
-    return { id: spec.id, name: runtime?.name ?? spec.fallbackName, why: spec.why, size: runtime?.size ?? "", core: spec.core, ok: Boolean(runtime?.installed) };
+    return { id: spec.id, name: runtime?.name ?? spec.fallbackName, why: spec.why, size: runtime?.size ?? "", core: spec.core, ok: Boolean(runtime?.installed), installing: Boolean(runtime?.installing) };
   }), [devRuntimes, workspace, customModel, envSpecs]);
 
-  /** 一键安装体检缺项。⛔ 串行而不是并行：并行会多个安装进程同时抢同一份 npm 缓存目录。 */
+  /** 一键安装体检缺项。⛔ 串行而不是并行：并行会多个安装进程同时抢同一份 npm 缓存目录。
+   *  ⛔ 逐项独立容错（09-18 用户反馈）：原先循环外只有一个 try —— 任何一项失败就**整批中断**，
+   *  后面几项一个都不装、弹窗还不关，用户看到的是「安装失败」+ 清单原样不动（实际上一项都没装）。
+   *  现在：单项失败只记下来，其余照常装；结束按结果分别提示，并回读清单让「装好的」立刻变已就绪。 */
   async function installEnvMissing(ids: string[]) {
     if (ids.length === 0) return;
     setEnvInstalling(true);
+    const failed: string[] = [];
     try {
       for (const id of ids) {
-        const result = await window.codex.installRuntime(id);
-        if (result?.runtimes) setDevRuntimes(result.runtimes);
+        try {
+          const result = await window.codex.installRuntime(id);
+          if (result?.runtimes) setDevRuntimes(result.runtimes);
+        } catch (error: any) {
+          const name = devRuntimes.find((entry) => entry.id === id)?.name ?? id;
+          failed.push(`${name}：${error?.message ?? error}`);
+        }
       }
-      setNotice(`已装好 ${ids.length} 项，Codex 可以正常干活了`);
-      setEnvCheckOpen(false);
-    } catch (error: any) {
-      setNotice(`安装失败：${error?.message ?? error}（可在「设置 → 开发工具」重试）`);
+      const list = await window.codex.listRuntimes().catch(() => null);
+      if (list) setDevRuntimes(list);
+      if (failed.length === 0) {
+        setNotice(`已装好 ${ids.length} 项，Codex 可以正常干活了`);
+        setEnvCheckOpen(false);
+      } else if (failed.length === ids.length) {
+        setNotice(`安装失败：${failed[0]}${failed.length > 1 ? ` 等 ${failed.length} 项` : ""}（可在「设置 → 开发工具」重试）`);
+      } else {
+        setNotice(`部分完成：已装好 ${ids.length - failed.length} 项；${failed[0]}（可在「设置 → 开发工具」重试）`);
+      }
     } finally {
       setEnvInstalling(false);
     }

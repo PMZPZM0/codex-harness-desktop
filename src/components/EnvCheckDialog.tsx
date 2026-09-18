@@ -30,6 +30,8 @@ export type EnvCheckState = {
   size: string;
   core: boolean;
   ok: boolean;
+  /** 主进程侧正在装（例如首次启动的 Git 后台自愈安装）——此时不该再让用户点它，也不该算进「一键安装」 */
+  installing?: boolean;
   /** 非运行时项缺失时的去向（模型设置 / 工作区选择）；运行时项为空 */
   go?: "model" | "workspace";
 };
@@ -50,10 +52,12 @@ export const ENV_CHECK_SPEC: { id: string; why: string; core: boolean; go?: "mod
 
 /** 缺项里可自动安装的运行时 id。
  *  ⛔ 必须排除 model / workspace —— 它们不是"装"能解决的（要去配置/选目录），
- *  漏掉这个排除会让「一键安装」拿它们去调 installRuntime（未知工具，必然失败）。 */
+ *  漏掉这个排除会让「一键安装」拿它们去调 installRuntime（未知工具，必然失败）。
+ *  ⛔ 也必须排除**正在安装中**的项（首次启动 Git 后台自愈会占住 git）：否则批量安装的第一个请求
+ *  就撞上「该工具正在安装」，整批被中断（09-18 用户反馈）。正在装的就静静等它结束，清单会自己刷新。 */
 const MANUAL_IDS = new Set(["model", "workspace"]);
 export function installableIds(items: EnvCheckState[]): string[] {
-  return items.filter((item) => !item.ok && !MANUAL_IDS.has(item.id)).map((item) => item.id);
+  return items.filter((item) => !item.ok && !item.installing && !MANUAL_IDS.has(item.id)).map((item) => item.id);
 }
 
 export function EnvCheckDialog({ items, installing, progress, onInstall, onGo, onClose }: {
@@ -122,7 +126,7 @@ export function EnvCheckDialog({ items, installing, progress, onInstall, onGo, o
                       {item.go === "model" ? <>去配置</> : <><FolderOpen size={13} />去选择</>}
                     </button>
                   : !item.ok && !item.go
-                    ? <span className="env-check-badge">待安装</span>
+                    ? <span className="env-check-badge">{item.installing ? "安装中…" : "待安装"}</span>
                     : null}
               </div>
             ))}
@@ -140,7 +144,7 @@ export function EnvCheckDialog({ items, installing, progress, onInstall, onGo, o
                   </div>
                   <div className="env-check-why">{item.why}</div>
                 </div>
-                {!item.ok ? <span className="env-check-badge soft">待安装</span> : null}
+                {!item.ok ? <span className="env-check-badge soft">{item.installing ? "安装中…" : "待安装"}</span> : null}
               </div>
             ))}
           </div>

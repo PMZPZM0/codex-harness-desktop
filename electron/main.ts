@@ -5134,7 +5134,17 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
   const id = idValue as DevRuntimeId;
   if (!devRuntimeSpecs[id]) throw new Error("未知开发工具");
   if (devRuntimeSpecs[id].builtIn) return { ok: true, runtimes: runtimeList() };
-  if (runtimeInstalls.has(id)) throw new Error("该工具正在安装");
+  // ⛔ 同一工具并发安装：**等它跑完**，不要抛「该工具正在安装」（09-18 用户反馈截图）。
+  //   触发场景很常见：首次启动的 Git 后台自愈安装（`autoInstallGitIfNeeded`，仅 Windows）会占住 `git`，
+  //   而体检弹窗的「一键安装」里 git 恰好排在可安装项第一位 → 用户点一次就得到
+  //   「安装失败：Error invoking remote method 'runtime:install': Error: 该工具正在安装」，
+  //   既看不懂，又让**整批安装被中断**（后两项也没装）。等待语义对用户才是正确的。
+  const inFlight = runtimeInstalls.get(id);
+  if (inFlight) {
+    // 它成功 → 一起成功；它真失败 → 把真实错误抛给调用方（不假装成功）
+    await inFlight;
+    return { ok: true, joined: true, runtimes: runtimeList() };
+  }
   const spec = devRuntimeSpecs[id];
   // 引导型（docker/openssl）：静默安装需要管理员/重启/登录，这里打开官方下载页由用户自己装
   if (spec.kind === "guide") {
