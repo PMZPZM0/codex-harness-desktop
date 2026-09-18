@@ -4255,6 +4255,39 @@ w.postMessage({id:1,op:"list",root});
       : fail("【37】installableIds 没排除 installing —— 后台自愈安装中的项仍会被塞进批量安装");
   }
 
+  // ⑰j 微信流式：**受平台配额约束的追加 + 「对方正在输入」**（09-18 恢复）。
+  //   背景：09-12 以「context_token 一次一发」为由整体撤掉了微信流式，但那个结论经复核是**误判**
+  //   （同一 token 可复用；真因是请求体字段不全导致静默丢弃）。真正的硬约束是**配额**：
+  //   iLink 每用户消息 24h 内最多 10 条独立消息 ⇒ 追加必须限量，否则撞爆配额后连收尾正文都发不出去。
+  //   三处必须同时在位：① sink 提供 append/finalizeAppend（否则退回"只有汇总"）
+  //   ② 微信预算 maxFlushes ≤ 6（留余量给收尾）③ typing 接线（过程可见的主通道，不占配额）。
+  {
+    const mainSrc = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+    const gwSrc = readFileSync(join(ROOT, "electron", "weixin-gateway.ts"), "utf8");
+    const streamSrc = readFileSync(join(ROOT, "electron", "bot-stream.ts"), "utf8");
+    const budgetMatch = mainSrc.match(/WEIXIN_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: (\d+)/);
+    (budgetMatch && Number(budgetMatch[1]) >= 1 && Number(budgetMatch[1]) <= 6)
+      ? ok(`【38】微信追加预算 ${budgetMatch[1]} 次（+收尾 1 条 ≤ iLink 的 10 条/24h 配额）`)
+      : fail(`【38】微信追加预算 = ${budgetMatch ? budgetMatch[1] : "(未找到)"} —— 必须是 1~6（含收尾要在 10 条配额内，且留余量）`);
+    (/append: \(delta, clientId\) => weixinGateway!\.sendText\(from, delta, \{ clientId, state: 1 \}\)/.test(mainSrc)
+      && /finalizeAppend: \(tail, clientId\) => weixinGateway!\.sendText\(from, tail/.test(mainSrc))
+      ? ok("【38】微信 sink 提供 append/finalizeAppend（state=1 追加同气泡 / state=2 收尾）")
+      : fail("【38】微信 sink 又只剩 send —— 运行过程不会同步，用户只能看到最终汇总");
+    (/new BotStreamSession\(plan\.sink, readBotStreamSettingsSync\(botStreamFile\), plan\.budget\)/.test(mainSrc))
+      ? ok("【38】预算真的传给了流式会话（不是摆设常量）")
+      : fail("【38】BotStreamSession 没拿到 plan.budget —— 预算不生效，长任务会撞爆配额");
+    (/ilink\/bot\/getconfig/.test(gwSrc) && /ilink\/bot\/sendtyping/.test(gwSrc) && /typing_ticket/.test(gwSrc) && /ilink_user_id: to/.test(gwSrc))
+      ? ok("【38】网关按协议实现了 getconfig → sendtyping（typing_ticket + ilink_user_id）")
+      : fail("【38】网关缺「对方正在输入」接口实现（getconfig/sendtyping）—— 长任务期间用户看不到任何进度");
+    (/if \(event\.method === "turn\/started"\)/.test(mainSrc) && /startWeixinTyping\(streamThreadId, plan\.typingFrom\)/.test(mainSrc)
+      && /if \(event\.method === "turn\/completed"\) stopWeixinTyping\(/.test(mainSrc))
+      ? ok("【38】typing 随回合起停（turn/started 起、turn/completed 停）")
+      : fail("【38】typing 没接回合生命周期 —— 会出现「一直在输入」不消失");
+    (/(minChars|maxFlushes|flushIntervalMs)/.test(streamSrc) && /this\.budget\.maxFlushes/.test(streamSrc) && /this\.budget\.minChars/.test(streamSrc))
+      ? ok("【38】流式会话真的按预算节流（maxFlushes / minChars / flushIntervalMs 都参与判断）")
+      : fail("【38】BotStreamBudget 定义了却没参与判断 —— 预算形同虚设");
+  }
+
   // ⑰d 引导弹窗的「出场时机」（09-17 用户明确定规则：「只在进入主界面的时候才弹配置引导和
   //   工具安装检测自动安装；如果已经配置模型，就不引导模型配置，直接做开发工具检测安装」）。
   //   三种失效形态都**静默**（不报错，只是该弹的不弹 / 不该弹的弹了）：

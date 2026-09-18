@@ -1064,7 +1064,37 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 - **输入框粘贴文件为附件（09-10）**：ComposerEditor onPaste 从 clipboardData.files 提取非图片文件（图片仍走 onPasteImage 内联占位符），取 Electron File 对象扩展的 path 属性（File & { path?: string }）→ onPasteFiles → 加入 files 附件条，发送时随 [附件文件] 块带上。支持多选批量粘贴。纯文本粘贴仍走 plaintext-only 原生行为。
 
 - **频道机器人会话绑定（bot-bindings.json）**（09-09）：微信/Telegram 机器人可绑定到已有会话——机器人管理弹窗「绑定会话」选择器（IPC bot-binding:get/set，渠道级绑定存 userData/bot-bindings.json）。会话解析优先级：**渠道级绑定 > per-user 内存绑定（weixinBindings）**；新会话自动写入渠道绑定（顺带修了重启丢内存绑定导致每次重启开新会话）；resume 失败自动清绑定开新会话；weixin/telegram logout 清绑定；解绑同步清 per-user 缓存。绑定行仅在渠道已连接时显示。**机器人始终走标准会话**：机器人级开发/标准切换已随开发模式移除（botDevGet/botDevSet IPC、bot-mode-seg 分段控件均已删除），机器人 cwd 恒为 `botConfig?.workspace || home`。
-- **微信流式回复烧 token 事故 + 网关可观测性（09-12）**：iLink 的 `context_token` **实测一次一发**——每条入站消息只够成功发一次 sendmessage。流式模式（bot-stream）每次 flush 都带同一 token：第一条 flush 成功（微信端只见「💭 思考」半截气泡），后续追加与**最终正文全部发送失败**，且失败被 `flushAppend`/`finish` 的 catch 静默吞掉——桌面端有完整回答、微信端永远收不到正文。**修复：微信渠道撤掉流式增量**（`weixinStreamSink` 只传 `send`，turn/completed 后一次性发最终正文，必达）；思考/工具流式同步仅 Telegram（replace 语义）保留。②`getupdates` ret=-14/token 失效原先**静默 stop()**（轮询死掉后入站消息全部蒸发、无任何提示）——现改为连续 3 次确认才停 + 日志明确写「到机器人管理重新扫码」，`sendmessage` 失败也落日志。③网关日志同步落盘 `userData/channel-logs/gateway.log`（1MB 轮转 .old）——此前只在内存数组+UI 事件，排查「消息没同步」完全瞎抓。④非文本消息（语音条/图片）此前静默丢弃——现回复引导「请用语音转文字或打字」。**生效需重启应用；token 已失效必须重新扫码绑定**（iLink 无免扫码刷新接口）。
+- ⛔ **【已更正】微信流式回复烧 token 事故 + 网关可观测性（09-12）**：~~iLink 的 `context_token` **实测一次一发**~~ ——
+  **"一次一发"这个结论已被 09-18 复核推翻（见下一条）**，当时的处置（撤掉微信流式）已回滚。
+  本条里仍然有效的是**网关可观测性那部分**（与 token 无关，继续照做）：发送/取 ticket 失败必须落日志
+  （`userData/channel-logs/gateway.log`）、token 失效要连续确认 3 次才停、非文本消息要回复引导。
+  （至于当时的现象——每次 flush 都带同一 token、第一条成功后后续全失败——现在归因于**请求体字段/时序**，
+  不是 token 一次性；但"**追加失败被 catch 静默吞掉 → 桌面端有完整回答、微信端收不到正文**"这个
+  观察仍然成立，所以"失败必须可见"的处置继续有效。）**修复：微信渠道撤掉流式增量**（`weixinStreamSink` 只传 `send`，turn/completed 后一次性发最终正文，必达）；思考/工具流式同步仅 Telegram（replace 语义）保留。②`getupdates` ret=-14/token 失效原先**静默 stop()**（轮询死掉后入站消息全部蒸发、无任何提示）——现改为连续 3 次确认才停 + 日志明确写「到机器人管理重新扫码」，`sendmessage` 失败也落日志。③网关日志同步落盘 `userData/channel-logs/gateway.log`（1MB 轮转 .old）——此前只在内存数组+UI 事件，排查「消息没同步」完全瞎抓。④非文本消息（语音条/图片）此前静默丢弃——现回复引导「请用语音转文字或打字」。**生效需重启应用；token 已失效必须重新扫码绑定**（iLink 无免扫码刷新接口）。
+
+- **微信流式恢复：真约束是「配额」不是「token 一次性」（09-18，用户反馈"运行过程的流式正文没同步过来"）**：
+  先复核 09-12 那个结论，判定为**误判**——iLink 的 `context_token` **可复用**（多份协议逆向/实测一致：
+  同一 token 连发多条都收得到；"第一条成功后发不出"的真因是 `from_user_id`/`client_id`/`message_type`/
+  `message_state`/`base_info` 字段不全导致**服务端静默丢弃**，或 token 未持久化）。**真正的硬约束是配额**：
+  用户每发一条消息后，该会话 **24 小时内最多 10 条**独立消息（含最终回复那条），用户再发消息则重置。
+  所以"流式 = 把内容切成多个气泡"**每个气泡占 1 条配额** —— 这也是官方 Skill 里"流式"的实现方式。
+  另有一个**「对方正在输入…」**接口（`ilink/bot/getconfig` 拿 `typing_ticket`，缓存 24h → `ilink/bot/sendtyping`
+  `{ilink_user_id, typing_ticket, status:1|2}`），几秒自动消失需每 5~8 秒重发，**不占那 10 条配额**
+  —— 长任务里它才是"过程可见"的主通道。
+  三处实现（缺一处就退回"只有汇总"或撞爆配额）：
+  ① `weixinStreamSink` 恢复 `append`（state=1 追加同一 client_id 气泡）/ `finalizeAppend`（state=2 收尾）；
+  ② `main.ts` 的 `WEIXIN_STREAM_BUDGET = { maxFlushes: 5, flushIntervalMs: 3000, minChars: 40 }`
+     —— 追加 5 + 收尾 1 = 6 条，留 4 条余量；`BotStreamSession` 新增 `BotStreamBudget` 参数（Telegram 用近似无限制的默认值）；
+  ③ `botStreamPlanFor()` 返回 `{sink, budget, typingFrom}`，turn/started 起 typing、turn/completed 停
+     （`weixinTypingStops` 按 threadId 存停止函数，重开回合先停上一轮）。
+  验证：纯逻辑验收 10 项（`require dist-electron/bot-stream.js` + 假 sink）——追加 ≤5、总消息 ≤10、
+  同一 clientId、**正文零丢失**、降级时收尾补发完整正文、关闭流式退化为一次性发送；
+  预检 ⑰j【38】六条守卫；反证 A~F 全红（sink 退回只有 send / 预算调 40 / 预算不传 / 去掉 typing 接口 /
+  typing 不停 / 预算不参与节流）。
+  ⛔ 两个自己踩的坑：**反证锚点在 CRLF 文件上静默匹配不到**（本仓库行尾不统一：main.ts/bot-stream.ts 是 LF、
+  weixin-gateway.ts 是 CRLF）→ 走"变异已落盘"前置断言 + EOL 自动重试；
+  **断言期望值不能引用被测常量本身**（`x.length >= WEIXIN_BUDGET.minChars` 在预算被改小时恒真 = 自证式断言），
+  必须写**设计值字面量**。
 - **频道机器人流式回复（bot-stream.ts）**（09-08 新增）：微信/Telegram 机器人回复支持流式——思考/工具/正文按引擎事件时间顺序实时推送。设置全局存 `userData/bot-stream.json`（IPC `bot-stream:get/set`，UI 在机器人管理弹窗：流式回复总开关 + 同步思考 + 同步工具，**回合开始时同步读，开关下一条消息即生效**）。两种传输语义：微信 iLink `message_state=1` 向同一 `client_id` 气泡增量追加、`state=2` 收尾（追加连续失败 2 次自动停用降级收集，收尾补发尾部；flush 节流 1.5s、上限 40 条防刷屏）；Telegram `sendMessage` 建气泡 + `editMessageText` 1.6s 节流整段改写，最终落定超 4000 字分片补发。事件源：`item/reasoning/*Delta`（💭 思考）、`item/started` commandExecution/mcpToolCall/fileChange/webSearch（🔧 工具，单命令输出截 400 字）、`item/agentMessage/delta`（正文）；`item/completed` 权威快照兜底补齐漏收 delta。会话按 threadId 挂在 `botStreamSessions`，turn/completed 后保留（handler 的 onDoneProxy 以 `botStreamSessions.has(threadId)` 判断是否兜底发最终正文，防双发）；Telegram 绑定靠 `telegramBindings`(threadId→chatId) 反查。
 - **GPU 渲染策略**（09-06 回退 → 09-09 改为用户可选开关）：默认保持 Chromium 默认（健康显卡自动硬件加速）。曾强推 `ignore-gpu-blocklist` 等四开关，健康显卡上用户实测点击延迟明显变高，已回退——**不要无脑强开**。但低配机（弱核显/黑名单显卡）默认软件渲染、这个 React 应用渲染重会卡，因此做了**设置 → 通用 → 显示与性能 → 硬件加速**三档下拉（`app-settings.hardwareAcceleration`：auto 默认 / force 忽略黑名单+强制 GPU 光栅化/零拷贝 / off 完全 CPU）。主进程在 **app ready 前同步读取并应用**（`readAppSettingsSync`，commandLine 开关只在启动早期生效），需重启生效。启动日志 `[gpu] feature status` 可诊断 GPU 状态；force 档位就是在软件渲染机器上把它改成 hardware 加速的诊断依据。
 - **中转站中心（sub2api 兼容，独立设置页 settingsPage="relay"）**（09-07）：宿主设置 → 账户 → 中转站 + 启动登录界面「中转站账户」tab。协议：POST /api/v1/auth/login、GET /api/v1/user/profile（balance=USD 余额）、GET /api/v1/subscriptions/summary（套餐绑定 group_id）、GET/POST /api/v1/keys（key 明文）。用户选「余额」或「套餐」= 选定 API key（套餐 key 绑对应 group_id，余额 key 无分组）→ 自动生成供应商（{site}/v1，OpenAI 兼容）并选中。**多账号**：userData/relay-store.json {activeId, accounts[]}（id=base|email，老 relay-account.json 首读自动迁移）；IPC relay:accounts/switch-account/remove-account；logout=移除当前账号；登录/切换后宿主自动重配模型（**首套餐优先→无订阅走余额**，无可复用 key 自动新建，逐模型 matchModelSpec 同步规格表）。**注意：部分站点（pptoken）强制 key 必须绑分组，无分组 key 网关 403——宿主自动改绑第一个订阅分组重试。** 侧栏账号区 RelayQuotaChip 与输入框 RelayBalanceBadge 显示当前生效套餐余量/余额（5 分钟轮询）。密码 safeStorage 加密，401 自动重登。公共逻辑在 src/lib/relay.ts。**切换账号强同步（09-08 修复）**：relay-active 增加 `switchedAt` 时间戳 + `email` 字段；RelayBalanceBadge 改为按 `provider|apiKey|mode|groupId|switchedAt` 指纹刷新——同网关不同账号复用同一 provider 字符串时也能立即重拉余额，不再卡在旧账号；displayName 含邮箱便于区分；OpenAI 官方面板切号时通过 `onActiveChange` 把当前账号 email 传给输入框徽标（accountKey），同样立即刷新额度。

@@ -9,7 +9,7 @@ import http from "node:http";
 import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { ChannelBotService, type ChannelBotConfig } from "./channel-bot";
-import { BotStreamSession, readBotStreamSettings, readBotStreamSettingsSync, writeBotStreamSettings, type BotStreamSink, type BotStreamSettings } from "./bot-stream";
+import { BotStreamSession, readBotStreamSettings, readBotStreamSettingsSync, writeBotStreamSettings, type BotStreamBudget, type BotStreamSink, type BotStreamSettings } from "./bot-stream";
 import { CodexServer, codexBinaryPath } from "./codex-server";
 import { ResponsesBridge } from "./responses-bridge";
 import { BotPairingService } from "./bot-pairing";
@@ -2634,10 +2634,16 @@ app.whenReady().then(async () => {
         const streamThreadId = String(p?.threadId ?? "");
         if (streamThreadId) {
           botStreamSessions.delete(streamThreadId);
-          const sink = botStreamSinkFor(streamThreadId);
-          if (sink) botStreamSessions.set(streamThreadId, new BotStreamSession(sink, readBotStreamSettingsSync(botStreamFile)));
+          stopWeixinTyping(streamThreadId); // 新回合重开计时器，防上一轮的泄漏
+          const plan = botStreamPlanFor(streamThreadId);
+          if (plan) {
+            botStreamSessions.set(streamThreadId, new BotStreamSession(plan.sink, readBotStreamSettingsSync(botStreamFile), plan.budget));
+            if (plan.typingFrom) startWeixinTyping(streamThreadId, plan.typingFrom);
+          }
         }
       }
+      // 回合结束：流式会话负责最终回复；「正在输入」指示器这时要收掉
+      if (event.method === "turn/completed") stopWeixinTyping(String(p?.threadId ?? ""));
       const botStreamSession = botStreamSessions.get(String(p?.threadId ?? ""));
       if (botStreamSession) botStreamSession.handle(event.method, p);
       // 记忆捕获缓冲：turn/completed 不带完整 items，必须靠流式事件累积文本（同 channel-bot 的做法）
@@ -2834,14 +2840,38 @@ const weixinBindings = new Map<string, string>(); // 微信用户 → Codex 线�
 // threadId → 流式会话；turn/started 建，最终回复由会话发出（含流式关闭时的整段发送）
 const botStreamSessions = new Map<string, BotStreamSession>();
 
+// 渠道级追加预算（理由见 bot-stream.ts 的 BotStreamBudget 注释）：
+//  · 微信：iLink 每 24h 每个「用户消息」最多 10 条独立消息 ⇒ 追加 5 条 + 收尾 1 条 = 6，留 4 条余量；
+//    间隔 3s、攒够 40 字才发下一条（避免碎片气泡刷屏）。过程可见性主要靠「对方正在输入…」（不占配额）。
+//  · Telegram：无配额限制（editMessageText 只改同一条），沿用原节流。
+const WEIXIN_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 5, flushIntervalMs: 3000, minChars: 40 };
+const TELEGRAM_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 40, flushIntervalMs: 1600, minChars: 0 };
+
 function weixinStreamSink(from: string): BotStreamSink {
-  // 微信 iLink 的 context_token 实测**一次一发**（09-12 事故实证：流式模式下每条入站
-  // 消息只有第一次 sendmessage 成功，后续追加与最终正文全部失败且被静默吞掉——表现为
-  // 微信端只剩「💭 思考」半截气泡、正文永远到不了）。因此微信渠道不传 append/finalize，
-  // 只保留 send：turn/completed 后一次性发最终正文（必达）。思考/工具流式同步仅 Telegram 支持。
+  // 09-18 修正：此前**整体撤掉了微信流式**，依据是 09-12 的结论「iLink 的 context_token 实测一次一发」。
+  // 复核协议资料后确认那个结论是**误判**：同一 context_token 可复用（当时"第二条发不出去"的真因是
+  // 请求体字段不全，服务端静默丢弃）。真正的硬约束是**配额**（每用户消息 24h 内 10 条独立消息）——
+  // 所以这里恢复追加语义，但靠 WEIXIN_STREAM_BUDGET 把条数压到 6 条以内，并保留失败降级：
+  // append 连续失败 2 次即停用追加，收尾那次（state=2）把完整正文补发，正文永不丢。
   return {
+    append: (delta, clientId) => weixinGateway!.sendText(from, delta, { clientId, state: 1 }),
+    finalizeAppend: (tail, clientId) => weixinGateway!.sendText(from, tail || "（已完成）", { clientId, state: 2 }),
     send: (full) => weixinGateway!.sendText(from, full),
   };
+}
+
+/** 「对方正在输入…」按 threadId 挂停止函数（回合结束/重开时调用） */
+const weixinTypingStops = new Map<string, () => void>();
+function startWeixinTyping(threadId: string, from: string) {
+  stopWeixinTyping(threadId);
+  if (!weixinGateway) return;
+  try { weixinTypingStops.set(threadId, weixinGateway.beginTyping(from)); } catch { /* 尽力而为，失败不影响回复 */ }
+}
+function stopWeixinTyping(threadId: string) {
+  const stop = weixinTypingStops.get(threadId);
+  if (!stop) return;
+  weixinTypingStops.delete(threadId);
+  try { stop(); } catch { /* 忽略 */ }
 }
 
 function telegramStreamSink(chatId: number): BotStreamSink {
@@ -2867,11 +2897,15 @@ function telegramStreamSink(chatId: number): BotStreamSink {
   };
 }
 
-function botStreamSinkFor(threadId: string): BotStreamSink | null {
+/** 某会话该用哪套流式方案：Telegram 用 replace 语义；微信 iLink 用 append + 严格预算。
+ *  返回 null = 该会话不是渠道会话（渲染层自己的会话，不需要回推）。 */
+function botStreamPlanFor(threadId: string): { sink: BotStreamSink; budget: BotStreamBudget; typingFrom?: string } | null {
   const tgChat = telegramBindings.get(threadId);
-  if (tgChat != null) return telegramStreamSink(tgChat);
+  if (tgChat != null) return { sink: telegramStreamSink(tgChat), budget: TELEGRAM_STREAM_BUDGET };
   for (const [user, bound] of weixinBindings) {
-    if (bound === threadId && !user.startsWith("tg:")) return weixinStreamSink(user);
+    if (bound === threadId && !user.startsWith("tg:")) {
+      return { sink: weixinStreamSink(user), budget: WEIXIN_STREAM_BUDGET, typingFrom: user };
+    }
   }
   return null;
 }

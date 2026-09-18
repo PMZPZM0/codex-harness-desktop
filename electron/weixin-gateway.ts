@@ -226,6 +226,63 @@ export class WeixinGateway {
     }
   }
 
+  // ── 「对方正在输入…」────────────────────────────────────────
+  //  09-18 恢复微信流式时补上：iLink 的 typing 指示器**几秒后自动消失**，需每 5~8 秒重发；
+  //  它走 getconfig + sendtyping 两个接口，**不占用**「每条用户消息 24h 内最多 10 条」的消息配额
+  //  —— 长任务里这才是"过程可见"的主通道（正文气泡受配额限制只能更新几次）。
+  private typingTickets = new Map<string, { ticket: string; at: number }>();
+  private static readonly TYPING_TICKET_TTL_MS = 24 * 60 * 60 * 1000;
+  private static readonly TYPING_REFRESH_MS = 6000;
+
+  async sendTyping(to: string, status: 1 | 2): Promise<boolean> {
+    const ticket = await this.typingTicket(to);
+    if (!ticket) return false;
+    const response = await post(this.baseUrl, "ilink/bot/sendtyping", {
+      ilink_user_id: to,
+      typing_ticket: ticket,
+      status, // 1=开始/持续显示 2=取消
+      base_info: baseInfo(),
+    }, this.token);
+    if (response.ret && response.ret !== 0) {
+      this.log("error", `sendtyping 失败 ret=${response.ret} ${response.errmsg ?? ""} (status=${status})`);
+      return false;
+    }
+    return true;
+  }
+
+  /** typing_ticket 走 getconfig 换取，缓存 24h（协议文档给的 TTL）；拿不到就静默降级（不影响正文） */
+  private async typingTicket(to: string): Promise<string> {
+    const cached = this.typingTickets.get(to);
+    if (cached && Date.now() - cached.at < WeixinGateway.TYPING_TICKET_TTL_MS) return cached.ticket;
+    const contextToken = this.contextTokens.get(to) ?? "";
+    if (!contextToken) return "";
+    try {
+      const response = await post(this.baseUrl, "ilink/bot/getconfig", {
+        ilink_user_id: to,
+        context_token: contextToken,
+        base_info: baseInfo(),
+      }, this.token);
+      const ticket = String((response as any)?.typing_ticket ?? "");
+      if (!ticket) { this.log("info", `getconfig 未返回 typing_ticket（ret=${response.ret ?? 0}），本轮不做「正在输入」提示`); return ""; }
+      this.typingTickets.set(to, { ticket, at: Date.now() });
+      return ticket;
+    } catch (error: any) {
+      this.log("error", `getconfig 取 typing_ticket 失败：${String(error?.message ?? error).slice(0, 120)}`);
+      this.typingTickets.delete(to);
+      return "";
+    }
+  }
+
+  /** 开始「正在输入」：立即发一次 + 每 6 秒续期；返回停止函数（停止时发 status=2 取消） */
+  beginTyping(to: string): () => void {
+    void this.sendTyping(to, 1).catch(() => undefined);
+    const timer = setInterval(() => { void this.sendTyping(to, 1).catch(() => undefined); }, WeixinGateway.TYPING_REFRESH_MS);
+    return () => {
+      clearInterval(timer);
+      void this.sendTyping(to, 2).catch(() => undefined);
+    };
+  }
+
   // ── 持久化 ────────────────────────────────────────────────
 
   private accountFile() { return path.join(this.stateDir, "weixin-account.json"); }

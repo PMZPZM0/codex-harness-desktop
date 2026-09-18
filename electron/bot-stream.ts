@@ -54,6 +54,20 @@ const REPLACE_EDIT_INTERVAL_MS = 1600;
 const REPLACE_PREVIEW_CAP = 3800; // Telegram 编辑预览上限（最终消息另有 4096 分片）
 const COMMAND_OUTPUT_CAP = 400;   // 单条命令输出最多同步 400 字符
 
+/** 渠道级「追加预算」。⛔ 存在的理由：**iLink 对微信有硬配额** —— 用户每发一条消息后，
+ *  24 小时内该会话最多收到 **10 条**独立消息（含最终回复那条）。不设预算的话，
+ *  长任务按 1.5s 节流能连发几十条，直接撞爆配额、后面的追加与收尾全部失败（正文丢失）。
+ *  所以微信的预算是「少量多次、留余量给收尾」，Telegram 无此限制（replace 语义只改一条）。 */
+export type BotStreamBudget = {
+  /** 本回合最多追加几次（不含收尾那一次） */
+  maxFlushes: number;
+  /** 两次追加的最小间隔 */
+  flushIntervalMs: number;
+  /** 首次之后，待发内容不足这么多字符就先攒着（避免一堆碎片气泡） */
+  minChars: number;
+};
+export const DEFAULT_BOT_STREAM_BUDGET: BotStreamBudget = { maxFlushes: APPEND_MAX_FLUSHES, flushIntervalMs: APPEND_FLUSH_INTERVAL_MS, minChars: 0 };
+
 export class BotStreamSession {
   private composed = "";        // 按时间顺序累积的完整文本（思考/工具/正文）
   private flushedLen = 0;       // append 语义：已推送的字符数
@@ -76,7 +90,11 @@ export class BotStreamSession {
   private finished = false;
   readonly clientId = `codex-harness-${randomUUID()}`;
 
-  constructor(private readonly sink: BotStreamSink, private readonly settings: BotStreamSettings) {}
+  constructor(
+    private readonly sink: BotStreamSink,
+    private readonly settings: BotStreamSettings,
+    private readonly budget: BotStreamBudget = DEFAULT_BOT_STREAM_BUDGET,
+  ) {}
 
   handle(method: string, params: any) {
     if (this.finished) return;
@@ -177,7 +195,7 @@ export class BotStreamSession {
     if (!this.settings.enabled) return;
     if (this.sink.append) {
       if (this.flushTimer) return;
-      const wait = Math.max(0, APPEND_FLUSH_INTERVAL_MS - (Date.now() - this.lastFlushAt));
+      const wait = Math.max(0, this.budget.flushIntervalMs - (Date.now() - this.lastFlushAt));
       this.flushTimer = setTimeout(() => { this.flushTimer = null; void this.flushAppend(); }, wait);
     } else if (this.sink.replace) {
       if (this.replaceTimer) return;
@@ -189,7 +207,9 @@ export class BotStreamSession {
   private async flushAppend() {
     if (this.finished || this.flushBusy || !this.sink.append) return;
     const pending = this.composed.slice(this.flushedLen);
-    if (!pending.trim() || this.flushes >= APPEND_MAX_FLUSHES) return;
+    if (!pending.trim() || this.flushes >= this.budget.maxFlushes) return;
+    // 首次追加不限字数（让用户尽早看到动静）；之后攒够 minChars 再发，避免一堆碎片气泡
+    if (this.flushes > 0 && pending.length < this.budget.minChars) return;
     this.flushBusy = true;
     try {
       await this.sink.append(pending, this.clientId);
