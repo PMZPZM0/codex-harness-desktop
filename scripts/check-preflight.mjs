@@ -4535,21 +4535,32 @@ w.postMessage({id:1,op:"list",root});
       && /inputTypes: \(m\.inputTypes \?\? \[\]\)\.filter\(\(t\) => t !== \"image\"\)/.test(appProbe))
       ? ok("【39】回合报「不支持图片输入」时自动摘掉该模型的 image 模态（幂等自愈）")
       : fail("【39】图片模态自愈缺失/没接回合失败 —— 升级用户的带图回合永远 InvalidParameter");
-    // 降级而不是硬失败（09-18 用户追评：「带图发送直接报错、还不能正常对话，设计不合理」）：
-    // 模型不支持图片时把贴图转成路径注记——有视觉插件引导 describe_image（识图由插件模型完成），
-    // 没插件也只忽略图片，对话不中断；粘贴入口不再硬拦（拦了会堵死降级链路）。
-    // ⛔ 断言必须锚定「活条件」而不是文本存在：把条件改成 `if (false && …)` 的死代码时
-    //    注释/字符串全还在，纯文本守卫照样绿（反证 A 实测抓到过）。
-    (/图片降级发送/.test(appProbe) && /readBuiltinPlugins\(\)/.test(appProbe)
-      && /if \(!activeModelSupportsImage\(\) && \(inlineImagePaths\.length \|\| images\.length\)\) \{/.test(appProbe)
-      && /let sendImages = images;/.test(appProbe))
-      ? ok("【39】发送时图片降级（活条件锚定：转文字路径注记，有视觉插件引导 describe_image，没插件只忽略图片）")
-      : fail("【39】带图发送又变硬失败 —— 模型不支持图片时必须降级为文字引用，不能炸掉整回合");
+    // ⛔ 自愈是**后台便利动作**，不许打断用户正在跑的回合（09-18 用户实测「切到另一个会话，
+    //    原来在跑的那个立马就断」）：保存模型 → applyCustomModel → server.restart()，而引擎重启
+    //    会打断**所有**在跑回合（main.ts 注释原话「重启会打断所有在跑回合」）。
+    //    必须在写配置**之前**判 runningThreadIdsRef，否则守卫拦不住真调用。
+    (/if \(runningThreadIdsRef\.current\.size > 0\)/.test(appProbe)
+      && /已跳过图片模态自动修正/.test(appProbe))
+      ? ok("【39】有回合在跑时不自愈（绝不因后台改配置重启引擎、打断别人的回合）")
+      : fail("【39】图片自愈会在有回合在跑时照样重启引擎 —— 用户别的会话正在跑的任务会被打断");
+    // 图片**正常发送**（09-18 用户：「不管支不支持识图，就可以发正常的图片……就正常发图就行」）：
+    // ⛔ 已删掉「按模型 inputTypes 预判 → 把图吞掉、往消息正文塞一段面向用户的说明文字」的降级分支。
+    //    两条理由：① 判据是本地元数据，模型其实支持视觉只是漏勾「图片」时图被白吞；
+    //    ② 那段文字是写给用户看的（"请告知用户配置视觉插件…"），却被拼进用户消息正文，
+    //       模型照抄出来等于在气泡里跟用户讲道理（用户截图实证）。
+    //    新契约：图片一律按 localImage 发；真不支持时靠**引擎报错自愈**（上一条断言守着）。
+    // ⛔ 断言锚定「活代码」而不是文本存在：条件改成 `if (false && …)` 死代码时字符串还在
+    //    （09-18 反证实测抓到过这种假绿）。
+    (!/if \(!activeModelSupportsImage\(\)/.test(appProbe) && !/const activeModelSupportsImage/.test(appProbe)
+      && !/未配置视觉插件|如需识图请告知用户配置视觉插件/.test(appProbe)
+      && /type: "localImage", path/.test(appProbe))
+      ? ok("【39】图片一律正常发送（预判吞图与面向用户的注入文案已删除，兜底只留引擎报错自愈）")
+      : fail("【39】图片又被预判吞掉了 —— 用户要的是「正常发图」，不是按 inputTypes 猜了再吞");
     // 粘贴入口用函数体切片断言（前 700 字符内不得再出现模态拦截）
     const insertBody = appProbe.split("function insertComposerImages")[1]?.slice(0, 700) ?? "";
     (insertBody.length > 0 && !insertBody.includes("activeModelSupportsImage"))
-      ? ok("【39】粘贴入口不再按模态硬拦（拦了会堵死降级链路——发送时统一处理）")
-      : fail("【39】粘贴入口又有硬拦截 —— 用户贴图被拒，降级链路被堵");
+      ? ok("【39】粘贴入口不按模态硬拦（贴了就该进编辑框，发不发得出去由引擎说了算）")
+      : fail("【39】粘贴入口又有硬拦截 —— 用户贴图被拒");
   }
 
   // ⑰l 旧家 rollout 迁移（09-18 用户：「更新新版本…用户旧会话要能接着用」「复制ID，接力会话也不行」）：
@@ -4736,10 +4747,15 @@ w.postMessage({id:1,op:"list",root});
     // 09-18 收严：在跑的 item 要**扫全量**，不能只看到正文为止 —— 否则「正文已完成 +
     // 后面还有一条在跑的命令」会同时显示「正在执行命令」和「正文已完整，等待模型收尾」。
     (!isAwaitingTurnClose({ status: "inProgress", items: [{ type: "commandExecution", status: "inProgress" }, { type: "agentMessage", status: "completed", text: "答案" }] }) ? ok : fail)("【44】在跑的 item 哪怕排在正文之前也不算收尾等待（防状态行自相矛盾）");
-    // 界面接线：① 计时条拿 finalizing ② 状态行兜底**复用同一判据**（不许在组件里再抄一份，两份会漂移）。
-    //    锚用**结构正则**不锁整行字面量（09-18 教训：给组件加 prop 就会让整行锚假红）。
-    (/<RunningProcessTime[^>]*isAwaitingTurnClose\(turn\)/.test(appSrc) ? ok : fail)("【44】计时条在收尾等待时如实说明（RunningProcessTime 接线 finalizing）");
+    // 界面接线：① 收尾提示**只在一处**说（09-18 用户实测「这段文字会出现在『正在处理』后面，
+    //    跟消息下面重复了」—— 两边同时报同一句就是同屏重复）② 状态行兜底**复用同一判据**
+    //    （不许在组件里再抄一份，两份会漂移）。锚用**结构正则**不锁整行字面量
+    //    （09-18 教训：给组件加 prop 就会让整行锚假红）。
+    const timerIdx = appSrc.indexOf("function RunningProcessTime");
+    const timerFn = timerIdx >= 0 ? appSrc.slice(timerIdx, appSrc.indexOf("\n}", timerIdx) + 2) : "";
+    (timerFn && !/等待模型收尾/.test(timerFn) ? ok : fail)("【44】收尾提示只在底部状态行说一次（计时条不再重复同一句）");
     (/const turnFinalizing = Boolean\([^)]*isAwaitingTurnClose\(/.test(appSrc) ? ok : fail)("【44】收敛为一个布尔判据（状态行与短语共用，不各写一份）");
+    (/turnFinalizing \? "正文已完整，等待模型收尾"/.test(appSrc) ? ok : fail)("【44】状态行在收尾等待时如实说（不再写「正在生成回复」）");
     // ⛔ 反向守卫：判据**不许**写成 `runActivity === "某中文文案"` —— 文案一改就静默失效，
     //   界面会悄悄退回「正在生成回复」，而预检照样全绿（09-18 审查抓出的隐患）。
     //   ⛔ 必须先去掉注释再判：注释里解释这条隐患时也会出现同样的写法，直接正则会假红（本轮踩到）。
