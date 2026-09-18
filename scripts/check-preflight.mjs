@@ -4363,6 +4363,18 @@ w.postMessage({id:1,op:"list",root});
         && /await qqGateway\.sendMessage\(chatId, text, ctx\)/.test(mainSrc))
         ? ok("【38】飞书/钉钉/QQ 回复漏斗也走排版转换（三渠道都是纯文本消息类型）")
         : fail("【38】飞书/钉钉/QQ 回复没走排版转换 —— 表格在这些渠道同样是竖线堆");
+      // 三渠道流式（09-18 用户：「接上流式（按各渠道限制做）」）：不能编辑消息 ⇒ 追加语义 + 按频控设预算
+      (/function feishuStreamSink\(/.test(mainSrc) && /function dingtalkStreamSink\(/.test(mainSrc) && /function qqStreamSink\(/.test(mainSrc)
+        && /FEISHU_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 4/.test(mainSrc)
+        && /DINGTALK_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 3/.test(mainSrc)
+        && /QQ_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 3/.test(mainSrc))
+        ? ok("【38】飞书/钉钉/QQ 都有追加式流式 sink + 按频控设的预算（钉钉 webhook 20 条/分、QQ 被动回复 ≤5 次）")
+        : fail("【38】三渠道流式 sink/预算缺失 —— 这几家仍只发最终汇总");
+      (/channelBotBindings\[channel\]\?\.threadId !== threadId/.test(mainSrc)
+        && /const chatId = channelThreadChat\.get\(threadId\)/.test(mainSrc)
+        && /\^\(tg\|fs\|dd\|qq\|wecom\):/.test(mainSrc))
+        ? ok("【38】流式计划按渠道分发（chatId 登记 + 微信分支排除 fs:/dd:/qq: 前缀，不截胡）")
+        : fail("【38】三渠道流式分发有问题 —— 渠道前缀不排除时飞书/钉钉/QQ 会被微信分支截胡");
     }
   }
 
