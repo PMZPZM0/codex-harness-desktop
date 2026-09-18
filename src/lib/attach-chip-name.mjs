@@ -14,9 +14,14 @@ function lastSegment(value) {
  */
 export function attachChipName(part, src) {
   const s = String(src ?? "");
-  // ① 首选 part.path：有它说明这是本地文件形态，basename 一定有意义
-  const fromPath = lastSegment(part?.path);
-  if (fromPath && !fromPath.startsWith("data:")) return fromPath;
+  const rawPath = String(part?.path ?? "");
+  // ⓪ part.path **本身就是 data URL** 时要先拦：它是"内联数据"不是文件路径。
+  //    ⛔ 必须先于 lastSegment 判断 —— lastSegment 会把前缀剥掉，之后再 `startsWith("data:")`
+  //    永远为假（09-18 真机验收抓到的 bug：占位符里的 data URL 图片名字显示成 base64 尾巴）。
+  if (rawPath.startsWith("data:")) return "粘贴的图片";
+  // ① part.path 是本地路径：basename 一定有意义
+  const fromPath = lastSegment(rawPath);
+  if (fromPath) return fromPath;
   // ② data URL：没有文件名可言 —— ⛔ 绝不能对它取 basename
   //    （实测 `basename(dataUrl)` 会返回 `q842iQAAAABJRU5ErkJggg==` 这种 base64 尾巴）
   if (s.startsWith("data:")) return "粘贴的图片";

@@ -2050,6 +2050,59 @@ html[data-ui-font="large"] .action-content pre {
    「发送前在输入框里看到的样子 == 发送后消息里显示的样子」。相关样式见该类的定义处。
    顺带记一条实测坑：给附件行加 `margin-left: auto` 会让它在交叉轴上失去 stretch，
    宽度从满宽塌成 fit-content（实测 720px → 415px），`flex-wrap` 便永远等不到换行时机。 */
+/* 消息里的内联附件 chip：在输入框同款外观之上，加「点击大预览 + 悬停小预览」。
+   ability 只在消息侧给（输入框的 DOM 由原生 contenteditable 维护，浮层会被选中/复制）。 */
+.message-attach-chip {
+  position: relative;
+}
+.message-attach-chip.is-image {
+  cursor: zoom-in;   /* 一眼看出可点开大图 */
+}
+.message-attach-preview {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px) scale(0.96);
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;   /* 浮层不接收鼠标：否则会挡掉 chip 自身的 hover/click */
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s;
+  z-index: 40;
+}
+/* ⛔ 自适应尺寸的关键：**两个方向都只给上限**，宽高都给 auto ⇒ 浏览器按图片原始宽高比缩到框内
+   （等价 object-fit: contain，但不需要写 contain）。不同比例的图都不用写任何分支。 */
+.message-attach-preview img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(320px, 46vw);
+  max-height: 240px;
+  object-fit: contain;
+  border-radius: 7px;
+  background: var(--panel-2);
+}
+.message-attach-chip:hover .message-attach-preview,
+.message-attach-chip:focus-visible .message-attach-preview {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+/* 上方空间不足时翻到 chip 下方（判定见 App.tsx 的 decideDirection）——否则靠近聊天区顶部的
+   消息，预览会被滚动容器的 overflow 裁掉上半截。 */
+.message-attach-chip.preview-below .message-attach-preview {
+  top: calc(100% + 8px);
+  bottom: auto;
+  transform: translateX(-50%) translateY(-4px) scale(0.96);
+}
+.message-attach-chip.preview-below:hover .message-attach-preview,
+.message-attach-chip.preview-below:focus-visible .message-attach-preview {
+  transform: translateX(-50%) translateY(0) scale(1);
+}
 /* 乐观气泡（服务端未确认落地前）：仅浅一档区分，避免「消息直接闪出来」与已确认消息混淆。
    原先的「发送中…」角标已删（用户反馈：每次发消息下面都有个发送中闪一下，多余）——
    确认通常几百毫秒内完成，视觉上不需要状态说明。
