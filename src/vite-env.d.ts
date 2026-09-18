@@ -564,6 +564,12 @@ interface Window {
     readBuiltinPlugins(): Promise<{ image?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string }; vision?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string } }>;
     engineCheckUpdate(): Promise<{ current: string; latest: string; hasUpdate: boolean }>;
     enginePerformUpdate(): Promise<{ ok: boolean; version: string; message: string }>;
+    /** 重启台账（诊断"任务莫名断了"）：谁触发的重启、当时是否有任务在跑、立即还是推迟。 */
+    engineRestartLog(): Promise<{ t: number; reason: string; busy: boolean; activeTurns: number; action: "now" | "defer" | "flush" | "force" }[]>;
+    /** 当前活跃回合数（0 = 引擎可安全重启；验收/诊断用）。 */
+    engineActiveTurns(): Promise<number>;
+    /** 引擎重启被闸门推迟/已补做：渲染层提示「改动将在当前任务结束后生效」。 */
+    onEngineRestartDeferred(listener: (event: { waiting: boolean; reason?: string; activeTurns?: number }) => void): () => void;
     relaunchApp(): Promise<void>;
     onEngineUpdateProgress(listener: (event: { stage: string; detail?: string; percent?: number }) => void): () => void;
     saveBuiltinPlugins(cfg: unknown): Promise<unknown>;

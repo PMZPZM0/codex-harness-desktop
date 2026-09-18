@@ -303,6 +303,21 @@ contextBridge.exposeInMainWorld("codex", {
   storageClear: (target: "engine-log" | "images") => ipcRenderer.invoke("app:storage-clear", target),
   engineCheckUpdate: () => ipcRenderer.invoke("engine:check-update"),
   enginePerformUpdate: () => ipcRenderer.invoke("engine:perform-update"),
+  /** 重启台账：查「是谁触发了引擎重启、当时有没有任务在跑」（诊断"莫名断了"用）。 */
+  engineRestartLog: () => ipcRenderer.invoke("engine:restart-log"),
+  /** 当前活跃回合数（0 = 引擎可安全重启；验收/诊断用）。 */
+  engineActiveTurns: () => ipcRenderer.invoke("engine:active-turns"),
+  /** 引擎重启被闸门推迟 / 已补做（渲染层据此提示：改动将在当前任务结束后生效）。 */
+  onEngineRestartDeferred: (listener: (event: { waiting: boolean; reason?: string; activeTurns?: number }) => void) => {
+    const deferred = (_e: unknown, payload: any) => listener({ waiting: true, reason: payload?.reason, activeTurns: payload?.activeTurns });
+    const flushed = (_e: unknown, payload: any) => listener({ waiting: false, reason: payload?.reason });
+    ipcRenderer.on("engine:restart-deferred", deferred);
+    ipcRenderer.on("engine:restart-flushed", flushed);
+    return () => {
+      ipcRenderer.removeListener("engine:restart-deferred", deferred);
+      ipcRenderer.removeListener("engine:restart-flushed", flushed);
+    };
+  },
   relaunchApp: () => ipcRenderer.invoke("app:relaunch"),
   onEngineUpdateProgress: (listener: (event: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, value: unknown) => listener(value);

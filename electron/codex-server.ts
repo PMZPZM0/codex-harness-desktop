@@ -98,7 +98,9 @@ export class CodexServer extends EventEmitter {
         this.heartbeatRestarting = true;
         this.emitEvent({ kind: "status", status: "error", message: "Codex 引擎无响应，正在自动重启…" });
         // 卡死恢复：restart 会把 pending 里的请求全部 reject（避免挂 60s 超时）
-        try { await this.restart(); } catch { /* 重启失败会走 fail() 事件 */ }
+        // ⛔ 必须 force：判定的前提就是"引擎不响应"，此时正在跑的回合**不会**再有
+        //    turn/completed（事件根本发不出来），走闸门等下去 = 永远不恢复。
+        try { await this.restart({ force: true, reason: "heartbeat-timeout" }); } catch { /* 重启失败会走 fail() 事件 */ }
         this.heartbeatRestarting = false;
       }
     }
@@ -123,7 +125,75 @@ export class CodexServer extends EventEmitter {
     this.externalEnv = value;
   }
 
-  async restart() {
+  // ── 重启闸门（09-19 用户：「又莫名其妙断了，能一次性从根上解决嘛」）────────────
+  // 背景：全仓库有 20+ 处 `server.restart()`（改模型 / 改供应商 / 装插件 / 装技能 /
+  // 改连接器 / 改沙箱档位 …）。每一次重启都会**打断当时所有在跑的回合**（引擎侧
+  // 统一报 "app-server restarted"），用户看到的就是"我明明没点停止，任务自己断了"。
+  // 逐个调用点加判断是防不住的（今天加一处、明天新增一处照样漏），所以在**唯一入口**
+  // 收口：busy 时不真重启，只挂起；等最后一个回合结束（主进程 turn/completed 记账归零）
+  // 再自动补做。20+ 处调用点一个字都不用改，全部自动受益。
+  private busyGate?: () => number;
+  private busyNotice?: (waiting: boolean, reason?: string) => void;
+  /** 有回合在跑时被推迟的重启请求（reason 用于日志/提示，只保留第一条避免刷屏） */
+  private deferredRestart: { reason: string } | null = null;
+  /** 重启台账（诊断用：谁在什么时候触发的重启、当时有几个任务在跑、最终是立即还是推迟） */
+  private restartLog: { t: number; reason: string; busy: boolean; activeTurns: number; action: "now" | "defer" | "flush" | "force" }[] = [];
+
+  /** 注入「当前有几个回合在跑」的判定（主进程用 turn/started|completed 的真实记账）。
+   *  ⛔ 返回**数量**而不是布尔：台账里要能看出"当时确实有 2 个任务在跑"，
+   *  否则闸门不生效时无法区分"真的不忙"与"记账坏了"（09-19 实测踩过这个坑）。 */
+  setBusyGate(fn: () => number) {
+    this.busyGate = fn;
+  }
+
+  /** 注入「重启被推迟/已补做」的通知（渲染层据此提示用户：改动将在任务结束后生效）。 */
+  setBusyNotice(fn: (waiting: boolean, reason?: string) => void) {
+    this.busyNotice = fn;
+  }
+
+  /** 重启台账（诊断：用户报「又断了」时能立刻查是谁触发的）。 */
+  restartHistory() {
+    return this.restartLog.slice(-40);
+  }
+
+  /** 有回合在跑时挂起的重启，等空闲后由主进程调用本方法补做。 */
+  async flushDeferredRestart() {
+    if (!this.deferredRestart) return;
+    if (this.activeTurnCount() > 0) return;    // 又忙起来了（新回合）→ 继续等
+    const { reason } = this.deferredRestart;
+    this.deferredRestart = null;
+    this.restartLog.push({ t: Date.now(), reason, busy: false, activeTurns: 0, action: "flush" });
+    this.busyNotice?.(false, reason);
+    await this.doRestart();
+  }
+
+  /** 当前活跃回合数（0 = 可以安全重启）。 */
+  activeTurnCount() {
+    try { return Number(this.busyGate?.() ?? 0) || 0; } catch { return 0; }
+  }
+
+  /**
+   * 重启引擎。
+   * @param opts.reason 触发原因（写进台账，便于回溯"是谁把任务打断的"）
+   * @param opts.force  引擎已死/退出流程等**必须立刻**的场景（等也等不到空闲）；
+   *                    默认 false = 有回合在跑就推迟到空闲，绝不打断用户正在跑的任务。
+   */
+  async restart(opts: { reason?: string; force?: boolean } = {}) {
+    const reason = opts.reason ?? "unspecified";
+    const activeTurns = this.activeTurnCount();
+    const busy = activeTurns > 0;
+    if (busy && !opts.force) {
+      // 推迟：不重启、返回。调用方 await 也不会卡住（配置已落盘，引擎在下次启动时读）。
+      this.deferredRestart = { reason };
+      this.restartLog.push({ t: Date.now(), reason, busy: true, activeTurns, action: "defer" });
+      this.busyNotice?.(true, reason);
+      return;
+    }
+    this.restartLog.push({ t: Date.now(), reason, busy, activeTurns, action: opts.force && busy ? "force" : "now" });
+    await this.doRestart();
+  }
+
+  private async doRestart() {
     this.stopping = false;   // 显式重启（不是退出）→ 恢复正常崩溃自愈
     if (this.child) {
       this.child.removeAllListeners("exit");
@@ -321,7 +391,9 @@ export class CodexServer extends EventEmitter {
     // 改为无条件自动重启一次——真实崩溃恢复是必要的，误判重启不是）。
     this.heartbeatRestarting = true;
     this.emitEvent({ kind: "status", status: "error", message: "Codex 引擎已退出，正在自动重启…" });
-    void this.restart()
+    // ⛔ 必须 force：引擎已经死了，闸门等的"回合结束"永远不会到来（那些回合随进程一起没了），
+    //    若走默认推迟就会变成"永远不重启"—— 正确的顺序是立刻拉起，让用户自己重发。
+    void this.restart({ force: true, reason: "engine-exited" })
       .catch(() => undefined)
       .finally(() => { this.heartbeatRestarting = false; });
   }

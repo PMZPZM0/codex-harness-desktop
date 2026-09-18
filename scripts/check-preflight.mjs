@@ -5310,6 +5310,109 @@ w.postMessage({id:1,op:"list",root});
   (/\.turn-user-stopped \{[\s\S]{0,400}?display: flex;/.test(css50) ? ok : fail)("【50】停止标记有样式（不是裸文本）");
 }
 
+// ── 51. 钉顶稳定性（09-18 用户：「切换会话切回来钉顶就没了」「短回复没铺满也自动取消钉顶」） ──
+{
+  const appSrc51 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const appCode51 = codeOnly(appSrc51);
+
+  // ① 「thread?.id 一变就清留白」的 passive effect 必须不存在 ——
+  //    它与 useLayoutEffect 里的 pinSentMessage 抢同一份留白（layout 先跑、passive 后跑），
+  //    结果「刚撑起来就被清成 0」→ 锚点滚不到落点 → 切回来钉顶掉下来。
+  (!/useEffect\(\(\) => \{\r?\n\s*clearAnchorPad\(\);\r?\n\s*\}, \[thread\?\.id, clearAnchorPad\]\)/.test(appCode51)
+    ? ok : fail)("【51】没有「thread.id 一变就清留白」的 passive effect（它会覆盖 layout effect 刚撑好的留白）");
+
+  // ② 归属变化必须被当作 first（切回来要重算留白 + 立即落位）
+  (/const ownerChanged = Boolean\(owner\) && pinThreadIdRef\.current !== owner;/.test(appCode51)
+    ? ok : fail)("【51】归属变化被当作 first 处理（切回来会重算留白并立即落位）");
+  (/const first = pinnedAnchorKeyRef\.current !== key \|\| returned \|\| ownerChanged;/.test(appCode51)
+    ? ok : fail)("【51】first 判据包含归属变化");
+
+  // ③ 归属只能被真实 id 写入（空值不许覆盖）——
+  //    乐观阶段传进来的 thread?.id 还是 null，旧写法会把归属写成 null → 跟随的入口条件
+  //    `pinThreadIdRef.current === myThreadId` 恒不成立 → 钉顶期间一次都不跟随。
+  (/const owner = threadId \|\| pinThreadIdRef\.current \|\| null;/.test(appCode51)
+    ? ok : fail)("【51】归属不被空 threadId 覆盖（否则长消息发送后自动跟随失效）");
+  (!/pinThreadIdRef\.current = threadId \?\? null;/.test(appCode51)
+    ? ok : fail)("【51】没有残留「归属 = threadId ?? null」的旧写法");
+
+  // ④ 回合结束只在钉顶已失效时才清留白（短回复必须保留，否则一完成就掉）
+  (/if \(params\.threadId === threadRef\.current\?\.id && !anchorTopRef\.current\) clearAnchorPad\(\);/.test(appCode51)
+    ? ok : fail)("【51】回合结束只在钉顶已失效时清留白（短回复不再一完成就掉）");
+
+  // ⑤ 侧栏会话行带 data-thread-id：验收脚本按 id 切换才可靠
+  //    （按标题找会因列表重排/标题变化而"找不到会话行" → 观测无效，本轮就是这么白跑一轮的）
+  (/data-thread-id=\{entry\.id\}/.test(appCode51) ? ok : fail)("【51】会话行带 data-thread-id（验收按 id 切换，不靠标题）");
+
+  // ⑥ 「归属未知」不得被当成「属于别的会话」——这是「长内容发送后不自动跟随」的**真根因**：
+  //    乐观阶段归属还是 null，旧判据 `pinThreadIdRef.current !== thread?.id` 把它当外人 ⇒
+  //    跳过 pinSentMessage ⇒ 归属永远补不上 ⇒ 跟随入口恒不成立（真机实测 top 恒为 0、
+  //    内容底部停在视口外 34px 且一动不动）。
+  (/const pinOwnerUnknown = anchorTopRef\.current && pinThreadIdRef\.current === null;/.test(appCode51)
+    ? ok : fail)("【51】归属未知不算休眠（否则钉顶归属永远补不上、跟随永不启动）");
+  (/const pinDormant = anchorTopRef\.current && !pinOwnerUnknown && pinThreadIdRef\.current !== thread\?\.id;/.test(appCode51)
+    ? ok : fail)("【51】pinDormant 判据排除「归属未知」");
+  // ⑦ 跟随入口同样把 null 当自己（多一层保险）
+  (/const pinMine = anchorTopRef\.current && \(pinThreadIdRef\.current === null \|\| pinThreadIdRef\.current === myThreadId\);/.test(appCode51)
+    ? ok : fail)("【51】跟随入口接受「归属未知 = 自己」（anchorTopRef 只在本会话发送时置真）");
+}
+
+// ── 52. 重启闸门：非崩溃的引擎重启不得打断用户正在跑的任务（09-19 用户：「又莫名其妙断了」） ──
+{
+  const srv = readFileSync(join(ROOT, "electron", "codex-server.ts"), "utf8");
+  const main = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  const pre = readFileSync(join(ROOT, "electron", "preload.ts"), "utf8");
+  const appSrc52 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const viteEnv = readFileSync(join(ROOT, "src", "vite-env.d.ts"), "utf8");
+
+  // ① 闸门本体：restart 默认不在忙时真重启
+  (/async restart\(opts: \{ reason\?: string; force\?: boolean \} = \{\}\)/.test(srv)
+    ? ok : fail)("【52】restart 接受 reason/force 参数（可区分「谁触发的」与「必须立刻」）");
+  (/if \(busy && !opts\.force\) \{/.test(srv) ? ok : fail)("【52】忙时默认推迟（不打断在跑的任务）");
+  (/this\.deferredRestart = \{ reason \};/.test(srv) ? ok : fail)("【52】推迟的请求被记下来（等空闲补做）");
+  (/async flushDeferredRestart\(\)/.test(srv) ? ok : fail)("【52】有空闲后补做推迟重启的入口");
+  (/setBusyGate\(fn: \(\) => number\)/.test(srv)
+    ? ok : fail)("【52】可注入「有几个回合在跑」的判定（返回数量，不返回布尔 —— 台账要能看出真实计数）");
+  (/activeTurnCount\(\) \{/.test(srv) ? ok : fail)("【52】对外暴露活跃回合数（验收探针 + 台账共用）");
+
+  // ② 两条"必须立刻"的路径 —— 漏了这两处 force，闸门会变成"永远不重启"（比打断更糟）
+  (/restart\(\{ force: true, reason: "engine-exited" \}\)/.test(srv)
+    ? ok : fail)("【52】引擎已退出时 force 重启（否则等不到空闲 = 永不恢复）");
+  (/restart\(\{ force: true, reason: "heartbeat-timeout" \}\)/.test(srv)
+    ? ok : fail)("【52】心跳卡死时 force 重启（卡死时不会有 turn/completed，等下去等于不恢复）");
+
+  // ③ 主进程接线：用引擎侧真实记账做判定（不依赖渲染层上报）
+  (/server\.setBusyGate\(\(\) => engineActiveTurnIds\.size\)/.test(main)
+    ? ok : fail)("【52】主进程注入真实记账（engineActiveTurnIds）作为判定");
+  (/if \(engineActiveTurnIds\.size === 0\) void server\.flushDeferredRestart\(\)/.test(main)
+    ? ok : fail)("【52】最后一个回合结束时补做推迟的重启（否则配置永不生效）");
+  // ⛔ 记账必须是 Map（turnId → threadId）：用裸 Set 时「A 会话跑完」会把 B 会话的记录一起清掉
+  //    → 闸门误判为空闲 → 直接打断 B（比不修还糟）。这条是 09-19 设计审计抓出来的。
+  (/const engineActiveTurnIds = new Map<string, string>\(\);/.test(main)
+    ? ok : fail)("【52】记账用 Map 而不是 Set（否则一个会话结束会误清掉别的会话）");
+  // ⛔ 记账必须宽容：只认 `params.turn.id` 会漏掉 `turnId` 形态的引擎版本 → 记账恒空 →
+  //    闸门形同虚设（09-19 首轮验收就是 busy=false 假成立，靠 activeTurns 探针才发现）。
+  (/params\?\.turn\?\.id \?\? params\?\.turnId \?\? params\?\.id/.test(main)
+    ? ok : fail)("【52】回合 id 三种形态都收（否则闸门拿不到真实计数）");
+  (/METHOD === "thread\/status\/changed"/.test(main) && /st === "idle" \|\| st === "notLoaded"/.test(main)
+    ? ok : fail)("【52】线程变空闲时释放**该线程**的记账（引擎侧权威信号，防记账泄漏卡死闸门）");
+  (/ipcMain\.handle\("engine:active-turns"/.test(main) && /engineActiveTurns: \(\) => ipcRenderer\.invoke/.test(pre)
+    ? ok : fail)("【52】有「活跃回合数」探针（验收必须确认前置成立，否则测的是「不忙时当然不推迟」）");
+
+  // ④ 安装目录漂移自愈（09-19 用户：「还有没有绝对路径的，通通查出来解决掉」）
+  (/const envPathStale = Boolean\(expectedFirst\)/.test(main)
+    ? ok : fail)("【52】config.toml 的 PATH 会与当前安装目录比对（搬家后自愈）");
+  (/envPathStale \|\| instructionsOutdated/.test(main) ? ok : fail)("【52】PATH 漂移被纳入自愈触发条件");
+
+  // ④ 台账 + 通知（诊断"是谁打断的" + 告诉用户"改动待生效"）
+  (/ipcMain\.handle\("engine:restart-log"/.test(main) ? ok : fail)("【52】有重启台账 IPC（下次再断能查到是谁触发的）");
+  (/engineRestartLog: \(\) => ipcRenderer\.invoke\("engine:restart-log"\)/.test(pre) ? ok : fail)("【52】preload 暴露台账");
+  (/engineRestartLog\(\): Promise</.test(viteEnv) ? ok : fail)("【52】台账有类型声明（IPC 三件套同步）");
+  (/onEngineRestartDeferred:/.test(pre) && /onEngineRestartDeferred\(listener/.test(viteEnv)
+    ? ok : fail)("【52】重启被推迟/补做的通知通道三件套齐全");
+  (/onEngineRestartDeferred\?\.\(\(event\) => \{/.test(appSrc52) && /改动已保存，将在当前任务结束后生效/.test(appSrc52)
+    ? ok : fail)("【52】渲染层明确提示「改动已保存、任务结束后生效」（否则用户以为没保存成功）");
+}
+
 console.log("");
 console.log(C.gray(`已执行断言数：${checks}`));
 if (hardFails === 0) {

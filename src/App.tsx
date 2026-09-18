@@ -9096,6 +9096,7 @@ export default function App() {
     <div
       className={`thread-row ${thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${threadRowMenu?.id === entry.id ? "menu-open" : ""} ${poppedOut ? "popped-out" : ""}${variant === "member" ? " is-member-row" : ""}${delegateRecords[entry.id] ? " is-delegated-row" : ""}`}
       key={entry.id}
+      data-thread-id={entry.id}
     >
       <button title={entry.rolloutMissing ? "该会话的历史记录文件已丢失，无法打开" : poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : "双击修改任务名称"} onClick={() => { if (poppedOut) { showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } if (entry.rolloutMissing) { showToast("会话记录已丢失", "该会话的历史记录文件（rollout）已不在磁盘上，引擎无法恢复内容。可归档该会话，或新建会话继续。"); return; } void openThread(entry.id); }}>
         <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void renameThread(entry.id, next); }); }}><span title={rawTitle}>{displayTitle}</span>{delegateRecords[entry.id] ? <DispatchBadge record={delegateRecords[entry.id]} /> : null}{extras?.badge}{entry.rolloutMissing && <span className="thread-attention-badge tone-confirm" title="会话的历史记录文件已丢失，点开只能看到提示">记录丢失</span>}{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
@@ -9503,6 +9504,18 @@ export default function App() {
       if (event.id === "git" && event.message.includes("自动")) setNotice(event.message);
     }
   }), []);
+  // 引擎重启被闸门推迟/补做（09-19）：说清楚"改动已保存，但等当前任务跑完才生效"——
+  // 否则用户改完配置看不到生效，会以为没保存成功（这一条是闸门的必要配套）。
+  useEffect(() => {
+    const off = window.codex.onEngineRestartDeferred?.((event) => {
+      if (event.waiting) {
+        setNotice(`改动已保存，将在当前任务结束后生效${event.activeTurns ? `（还有 ${event.activeTurns} 个任务在跑，不会打断它们）` : ""}`);
+      } else {
+        setNotice("任务已结束，引擎已按你的改动重新加载");
+      }
+    });
+    return () => { try { off?.(); } catch { /* 忽略 */ } };
+  }, []);
   async function installDevRuntime(id: string) {
     setRuntimeInstalling(id);
     setRuntimeProgress((current) => ({ ...current, [id]: "准备下载…" }));
@@ -9996,13 +10009,26 @@ export default function App() {
     // pin-fix{err:214} 与跟随抢同一帧，最后停在 gap=481（用户看到的就是"切回来钉顶没了"）。
     const returned = pinDormantSeenRef.current;
     if (returned) { pinDormantSeenRef.current = false; pinGapLockedRef.current = null; }
-    const first = pinnedAnchorKeyRef.current !== key || returned;
+    // ⛔ 09-18 用户实测「切换会话切回来，运行中的钉顶效果就没了，就掉下来了」——
+    //   根因在**归属变化没被当成 first**：切走时 openThread 把留白归零（别的会话不该看到
+    //   这条会话的留白），切回来必须**重新撑起来**，而重撑只发生在 first 分支里。
+    //   原先只靠 `returned`（pinDormantSeen，由 [thread] 布局 effect 置位）记账，链条上任何
+    //   一环没跑到就恢复不了。下面改用**归属变化**这个直接事实：现在属于本会话、而上次
+    //   调用属于别的会话（或还没归属）⇒ 必然要重算留白并立即落位。
+    // ⛔ 归属只能用**真实 id** 写入（不能用 threadRef.current —— 它是被动 effect 里更新的，
+    //   布局 effect 期间还停留在上一个会话，会记错归属）。
+    // ⛔ 09-18 用户实测「长内容发送时没有自动跟随、要手动滑到底部才触发」——根因也在这条：
+    //   发送瞬间的乐观阶段 `optimisticInput` 那个 layout effect 传进来的 `thread?.id`
+    //   还是 null（新建会话还没建出来 / state 未更新），于是归属被写成 null；而自动跟随的
+    //   入口条件是 `pinThreadIdRef.current === myThreadId`（真实 id）⇒ 恒不相等 ⇒ 钉顶
+    //   期间**一次都不跟随**，要等用户自己滚到底（那走的是 releaseToUser 解除钉顶）才恢复。
+    //   修法：空值不许覆盖已有归属（`threadId || 旧值`）。
+    const owner = threadId || pinThreadIdRef.current || null;
+    const ownerChanged = Boolean(owner) && pinThreadIdRef.current !== owner;
+    if (ownerChanged) pinGapLockedRef.current = null;
+    const first = pinnedAnchorKeyRef.current !== key || returned || ownerChanged;
     pinnedAnchorKeyRef.current = key;
-    // 记下"这个钉顶属于哪个会话"：切走再切回**同一条**会话时，位置要由钉顶恢复，
-    // 而不是被开会话时的状态清零抹掉（用户实测：「切换会话，钉顶没了」）。
-    // ⚠️ 必须用调用方传入的 threadId，不能用 threadRef.current —— 它是被动 effect 里
-    // 更新的，布局 effect 期间还停留在上一个会话，会记错归属。
-    pinThreadIdRef.current = threadId ?? null;
+    pinThreadIdRef.current = owner;
     // ⛔ 基线**只在真正钉顶/修正时**刷新，位置已经对了就一个字都不要碰它。
     // 这是「自动跟随又没了」的根因（09-13 用户截图：消息钉在顶上，正文却一路流出
     // 输入框外、最新一行永远看不到）：本函数每次 thread 更新都会被调用，若每次都把
@@ -11283,7 +11309,11 @@ const commandMatches = useMemo(() => {
       const FOLLOW_STEP_PX = 48;
       // 只在自己这条会话上跟随：钉顶可能正"休眠"在另一条会话上（切走又没切回来），
       // 那种情况下这里必须走常规贴底逻辑，不能拿别人的锚定模式去动当前视口。
-      if (anchorTopRef.current && pinThreadIdRef.current === myThreadId) {
+      // ⛔ 归属**未知**（null）要按"属于自己"处理：anchorTopRef 只在本会话发送时被置真，
+      //   所以 null 只可能出现在"刚发送、真实回合 id 还没回来"这一小段。若把它当外人，
+      //   自动跟随会在整段回复里不启动（09-18 实测：top 恒 0、内容底部停在视口外）。
+      const pinMine = anchorTopRef.current && (pinThreadIdRef.current === null || pinThreadIdRef.current === myThreadId);
+      if (pinMine) {
         if (dist > -FOLLOW_STEP_PX) {
           // 目标：把「内容底部」补到视口底（dist 归 0），而不是把内容整体推上去。
           // dist ≤ 0（还有余量）时不动，避免短回复也被推。
@@ -11376,11 +11406,15 @@ const commandMatches = useMemo(() => {
       window.removeEventListener("codex:packet-reveal", onPacketReveal);
     };
   }, [thread?.id, scrollRef]);
-  // 锚顶留白只在「当前会话的钉顶期间」有效：会话一变立刻归零，
-  // 否则切走再切回会在底部留一大段空白（用户实测「流动空间太大」）。
-  useEffect(() => {
-    clearAnchorPad();
-  }, [thread?.id, clearAnchorPad]);
+  // ⛔ 09-18 删掉了一个「thread?.id 一变就清留白」的 useEffect —— 它是「切回来钉顶掉下来」的
+  //   直接原因：`pinSentMessage` 跑在 **useLayoutEffect** 里（按真实消息元素重算留白并落位），
+  //   而 React 的顺序是「所有 useLayoutEffect 先跑、之后才跑 useEffect」⇒ 那边刚把留白撑起来，
+  //   这个 passive effect 紧接着就把它清成 0，于是锚点在几何上再也滚不到落点（36px），
+  //   视口掉到内容底部 = 用户看到的「切回来钉顶没了」。
+  //   切会话真正需要清留白的时机是 **openThread 里**（切走那一刻，见那里注释）：那时 thread
+  //   还没换，清完之后的布局 effect 会按 ownerChanged 判定重新撑起来，顺序天然正确。
+  //   这里原先的注释说「否则切走再切回会在底部留一大段空白」—— 那个前提（留白常年撑满一屏）
+  //   在 09-15 改成「只补缺口」后已不成立：滚到底就等于落点，本来就没有多余可滚空间。
 
   /** 语法高亮缓存的读数口（与 __switchPerfStats 同款，纯诊断、不参与业务）：
    *  验收靠它确认「二次切同一会话」确实命中了缓存而不是碰巧快了。 */
@@ -11456,7 +11490,15 @@ const commandMatches = useMemo(() => {
     // pinSentMessage 返回 false（锚点不在当前渲染窗口里）才继续往下走贴底逻辑。
     // `pinDormant` = 钉顶属于**别的**会话（切走期间的休眠态）：此时它既不生效，
     // 也不能被下面的贴底分支销毁 —— 否则切回来就恢复不了了。
-    const pinDormant = anchorTopRef.current && pinThreadIdRef.current !== thread?.id;
+    // ⛔ 09-18 用户实测「长内容发送时没有自动跟随、要手动滑到底部才触发」的真根因就在这一行：
+    //   归属先是 **null**（乐观气泡阶段 `thread?.id` 还是空，pinSentMessage 拿不到真实 id），
+    //   而这里把「归属=null（还不知道属于谁）」误判成「属于**别的**会话」⇒ pinDormant 为真
+    //   ⇒ 下面那行**跳过 pinSentMessage** ⇒ 归属永远补不上（真实 id 再也没机会写入）
+    //   ⇒ update() 里自动跟随的入口 `pinThreadIdRef.current === myThreadId` 恒不成立
+    //   ⇒ 整个回复期间一次都不跟随（实测打点：top 恒为 0、内容底部停在视口外 34px）。
+    //   修法：**归属未知不算休眠**，只有"已知归属且确实不是本会话"才是休眠。
+    const pinOwnerUnknown = anchorTopRef.current && pinThreadIdRef.current === null;
+    const pinDormant = anchorTopRef.current && !pinOwnerUnknown && pinThreadIdRef.current !== thread?.id;
     if (pinDormant) pinDormantSeenRef.current = true;   // 记下"休眠过"，回来时立即落位
     if (anchorTopRef.current && !pinDormant && pinSentMessage(el, thread?.id)) return;
     if (switchJumpRef.current && switchJumpRef.current.id === thread?.id && switchJumpPending()) {
@@ -12562,7 +12604,13 @@ const commandMatches = useMemo(() => {
           // ⚠️ 必须限定**当前会话**（09-13 审计发现）：留白是当前会话的几何依赖，
           // 后台会话跑完就跑完，顺手清掉当前会话的留白会让被 clamp 的 scrollTop 掉下来
           // （短会话正是靠这一屏留白才够得着 54px）→ 画面无故跳一下且不恢复。
-          if (params.threadId === threadRef.current?.id) clearAnchorPad();
+          // ⛔ 09-18 用户实测「短回复也是，回复完，明明没有铺满就自动取消钉顶了」：
+          //   这里原来**无条件**清留白 ⇒ 短回复（内容没超出视口、正靠留白把消息稳在顶部）一完成
+          //   留白就归零、锚点再也滚不到落点 → 钉顶当场掉下来。留白只在「钉顶已失效」时才该清：
+          //     · 还在钉顶（anchorTopRef=true）→ 保留（短回复正是这种，用户要它稳住）；
+          //     · 已交棒给跟随（pinGapLocked）→ 留白早被 shrinkAnchorPad 收缩到 0，无需清；
+          //     · 用户已接管（releaseToUser 已把 anchorTopRef 置假）→ 清掉，别让视口留大片空白。
+          if (params.threadId === threadRef.current?.id && !anchorTopRef.current) clearAnchorPad();
         } else if (method0 === "thread/status/changed") {
           // ⛔ 引擎的 `thread.status` 是**对象** `{type:"notLoaded"|"idle"|"systemError"|"active", activeFlags}`
           // （只有 TurnStatus 才是字符串，见 .workbuddy/codex-schema/*.schemas.json）。

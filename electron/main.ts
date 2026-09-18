@@ -366,6 +366,22 @@ function placeholderPngResponse(): Response {
   });
 }
 const server = new CodexServer(codexHome);
+// ── 重启闸门接线（09-19 用户：「又莫名其妙断了，能一次性从根上解决嘛」）────────────
+// 主进程自己按引擎的 turn/started | turn/completed 记账（engineActiveTurnIds），
+// 是"有没有回合在跑"的**引擎侧真相**，不依赖渲染层上报（渲染层可能没开/切走了）。
+// 注入了它以后，**所有** `server.restart()`（20+ 处：改模型/改供应商/装插件/装技能/
+// 改连接器/改沙箱…）都会在有任务在跑时自动推迟到任务结束，不再打断用户的任务。
+server.setBusyGate(() => engineActiveTurnIds.size);
+server.setBusyNotice((waiting, reason) => {
+  // 通知渲染层：改动还没生效（等任务结束会自动生效）。用既有 toast 通道，不新造 UI。
+  try {
+    if (waiting) {
+      sendToWindow("engine:restart-deferred", { reason: reason ?? "", activeTurns: engineActiveTurnIds.size });
+    } else {
+      sendToWindow("engine:restart-flushed", { reason: reason ?? "" });
+    }
+  } catch { /* 窗口可能已销毁，忽略 */ }
+});
 /**
  * 本地协议桥（09-16）：引擎只会发 Responses（POST /v1/responses），而不少第三方网关
  * 只提供 /v1/chat/completions —— 这类网关过去「连接测试通过、实际对话全废」。
@@ -408,7 +424,7 @@ function bridgeRewriteProviderConfig(params: any) {
   }
 }
 
-const engineActiveTurnIds = new Set<string>();
+const engineActiveTurnIds = new Map<string, string>();  // turnId → threadId（09-19：见记账处注释）
 /** 关窗确认只问一次（用户点过「仍然关闭」后不再拦）。 */
 let closeConfirmed = false;
 // 记忆捕获：turnId → { user, assistant, cwd }；threadId → cwd（thread/start 响应与 settings/updated 维护）
@@ -2770,8 +2786,32 @@ app.whenReady().then(async () => {
         console.warn("[mcp-diag]", event.method, JSON.stringify((event.params as any)?.item ?? event.params ?? {}).slice(0, 400));
       }
       const p = event.params as any;
-      if (event.method === "turn/started" && p?.turn?.id) engineActiveTurnIds.add(String(p.turn.id));
-      if (event.method === "turn/completed" && p?.turn?.id) engineActiveTurnIds.delete(String(p.turn.id));
+      // ⛔ 回合记账必须**宽容**（09-19 实测：只认 `params.turn.id` 会漏掉 `turnId` 形态的引擎版本，
+      //    于是记账恒空 → 重启闸门形同虚设、台账里 activeTurns 永远是 0）。
+      //    三种标识形态都收；结束事件按方法名族匹配（completed / aborted / failed 都算结束）。
+      // ⛔ 存 **turnId → threadId** 而不是裸集合：线程变空闲时只能释放**它自己**的回合，
+      //    否则「A 会话跑完」会把 B 会话正在跑的记账也清掉 → 闸门误判为空闲 → 直接打断 B。
+      const turnIdOf = (params: any) => String(params?.turn?.id ?? params?.turnId ?? params?.id ?? "");
+      const METHOD = String(event.method ?? "");
+      const threadIdOf = String(p?.threadId ?? "");
+      if (METHOD === "turn/started" || METHOD === "turn/begin") {
+        const id = turnIdOf(p);
+        if (id) engineActiveTurnIds.set(id, threadIdOf);
+      } else if (/^turn\/(completed|aborted|failed|interrupted)$/.test(METHOD)) {
+        const id = turnIdOf(p);
+        if (id) engineActiveTurnIds.delete(id);
+        else if (threadIdOf) {
+          // id 形态不认识 → 只释放该线程名下的回合（绝不动别的会话）
+          for (const [turnId, owner] of [...engineActiveTurnIds]) if (owner === threadIdOf) engineActiveTurnIds.delete(turnId);
+        }
+      } else if (METHOD === "thread/status/changed") {
+        // 线程变成 idle/notLoaded ⇒ 该线程不可能还有活跃回合（引擎侧权威信号）
+        const st = (p?.status as any)?.type ?? p?.status;
+        if (threadIdOf && (st === "idle" || st === "notLoaded" || st === "systemError")) {
+          for (const [turnId, owner] of [...engineActiveTurnIds]) if (owner === threadIdOf) engineActiveTurnIds.delete(turnId);
+        }
+      }
+      if (engineActiveTurnIds.size === 0) void server.flushDeferredRestart().catch(() => undefined);
       // 频道机器人流式回复：回合开始建流式会话（同步读设置，开关即时生效），
       // 后续所有事件喂入会话；turn/completed 的最终回复由会话负责（见各 handler 的兜底判断）
       if (event.method === "turn/started") {
@@ -2903,8 +2943,19 @@ app.whenReady().then(async () => {
       const dispatchMcpCount = (configText.match(/\[mcp_servers\.harness-dispatch\]/g) || []).length;
       await ensureDispatchToken(); // 令牌持久化在文件里，这里读出来才能比对配置是否过期
       const dispatchMcpBad = dispatchMcpCount !== 1 || !configText.includes(`:${DISPATCH_FIXED_PORT}/mcp`) || !configText.includes(dispatchToken);
-      if (legacyContextKey || providerOutdated || environmentOutdated || instructionsOutdated || disabledMissing || dispatchMcpBad) {
-        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}; rewriting`);
+      // ⛔ 安装目录漂移（09-19 用户：「还有没有绝对路径的，通通查出来了解决掉」）：
+      //   上面所有检查都只问「键**在不在**」，不问「路径**还对不对**」。而 config.toml 里的
+      //   PATH / PYTHON / PYTHONHOME / tools 相关绝对路径是**按当时的安装目录生成**的 ——
+      //   应用一搬家（便携版换盘、改名、D:\10\… → D:\…），这些路径全部指向旧目录，
+      //   且因为别的漂移条件都不满足而**永远不会自愈** ⇒ exec 与工具调用莫名失败、
+      //   任务莫名中断（真机证据：config.toml 的 PATH 首项与实际安装目录不符）。
+      //   这里补上「安装目录漂移」检查：当前应有的首个 PATH 项不在配置里就整份重写。
+      const cfgPathLine = /^\s*PATH\s*=\s*"([^"]*)"/m.exec(configText)?.[1] ?? "";
+      const expectedFirst = augmentedPath().split(path.delimiter)[0] ?? "";
+      const envPathStale = Boolean(expectedFirst)
+        && !cfgPathLine.replace(/\\\\/g, "\\").split(";").map((entry) => entry.trim()).filter(Boolean).includes(expectedFirst);
+      if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || disabledMissing || dispatchMcpBad) {
+        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, envPathStale=${envPathStale}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}; rewriting`);
         await applyCustomModel(custom);
       }
     } catch (error) {
@@ -3985,6 +4036,15 @@ ipcMain.handle("app:engine-info", async () => {
 
 // ── Codex 引擎在线更新（设置 → 控制台 → Codex 引擎更新） ──
 let engineUpdateRunning = false;
+/**
+ * 重启台账（诊断）：返回最近的引擎重启记录 —— 每条含「谁触发的、当时是否有任务在跑、
+ * 是立即执行还是推迟到任务结束后补做」。
+ * ⛔ 存在理由：用户报「又莫名其妙断了」时，过去只能靠猜（图片自愈？改配置？引擎崩了？）。
+ * 有了它就能一句话回答"是谁把任务打断的"，也能反过来证明闸门确实生效了。
+ */
+ipcMain.handle("engine:restart-log", () => server.restartHistory());
+/** 当前活跃回合数（0 = 引擎可以安全重启）。验收与诊断都要靠它确认闸门拿到了真实计数。 */
+ipcMain.handle("engine:active-turns", () => server.activeTurnCount());
 ipcMain.handle("engine:check-update", async () => {
   const settings = await readAppSettings(app.getPath("userData"));
   return checkEngineUpdate(settings.engineProxyUrl?.trim() || undefined);
