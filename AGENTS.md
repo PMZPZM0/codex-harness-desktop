@@ -581,6 +581,16 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   ⛔ 判据纪律：本机是 Windows ⇒ 所有 mac 分支**只能靠结构性断言 + 纯函数行为断言**锁定（【32】⑫ 就是
   `macHotkeyLabel` 的 5 条真值表），产物层另有 mac CI 的 `verify-packaged-tools.cjs` 兜底。
 
+- **发版前的 mac 适配审计（09-18，v0.0.21）**：把「自上次发版以来**新增的行**」按平台敏感模式扫一遍
+  （`.exe` / `win32` / `Ctrl+` / 反斜杠路径 / PowerShell / Windows 命令 / `%APPDATA%`），逐条判读。
+  本轮抓到一处真问题：技能中心说明把用户数据目录写死成 `${userDataPath}\codex-home\skills`，
+  mac 上会显示成 `/Users/…\codex-home\skills` → 新增 `displayPath(base, ...parts)`（按平台选分隔符）。
+  预检 ⑰h【36】两条：① `src/**/*.{ts,tsx}` 剥注释后不得出现 `\codex-home|skills|sessions|plugins|...`
+  （**1~2 个反斜杠都算**：`\\x` 是源码转义形态，单 `\x` 在模板串里会被 JS 吃掉分隔符，两种都错）；
+  ② 展示路径必须走 `displayPath()`。反证 E1（还原原文形态）/E2（单反斜杠）均变红。
+  ⛔ 教训：**审计只看"新增行"**（别人验证过的老代码不重复审），但**注释要先剥离**——说明性文字里
+  会刻意出现反例（`displayPath` 的注释里就写着 `\codex-home` 这个坏例子）。
+
 - **「开发工具」双平台覆盖核查（09-18 用户问「工具有没有考虑 Windows 和 mac 两种版本」）**：
   逐层查完，**下载链路是分叉的**（`install-runtimes.cjs` 顶部 `IS_MAC` + `mainMac()` 一整套 darwin 资产：
   node/python/pwsh/ffmpeg/vscode-cli/jq/ninja/7zip/yt-dlp/rg/uv/cmake/conda 各有 mac 构建，git 走系统
