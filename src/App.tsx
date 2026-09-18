@@ -17,6 +17,7 @@ import { attachmentToken, fileToken, promptFilePaths, shouldSavePastedTextAsFile
 // 图片显示 src 归一化：⛔ 不能写 `startsWith("http") ? src : imageUrl(src)` —— data URL 会被
 // 当成本地路径去拼协议 URL，灯箱与悬停预览都会打不开（09-18 代码审查发现，见模块注释）。
 import { imageDisplaySrc, localImageUrl } from "./lib/image-src.mjs";
+import { createRunClock } from "./lib/run-clock.mjs";
 // 懒高亮（09-18 用户：「我又没点开看代码高亮，为啥每次切换都重新加载一遍」）：
 // 只对"大块"启用——进视口邻近区之前渲染等价外观的纯文本，进区后才真高亮。
 import { deservesLazyHighlight, plainCodeStyles } from "./lib/lazy-highlight.mjs";
@@ -3641,18 +3642,28 @@ function FoldGroup({ title, leadGroup, variant, running, defaultOpen = false, au
   );
 }
 
+/** 运行计时的起点表（模块级单例）：按回合 id 记忆，**跨卸载存活**。
+ *  ⛔ 起点绝不能只存在组件内部 —— 切会话会把消息区整体卸载再挂载，组件内的 useRef/useState
+ *  随之归零，于是「切出去看一眼、切回来」计时从 0 重数（09-18 用户实测）。详见 run-clock.mjs。
+ *  ⚠️ App 里另外还有 `turnStartedAtRef`（记录 turn/started 时刻，给 reasoning 耗时结算用），
+ *  职责看着重叠、但**不合并**：那张表是引擎事件驱动的（起点取 `turn/started` 那一刻），
+ *  且埋在 1MB 主组件里、无上限、不可离线断言；本表是 UI 计时显示自持的纯逻辑（可测 + 有上限）。
+ *  合并会让「reasoning 耗时结算」与「界面报时」互相牵制，改一处影响另一处。 */
+const RUN_CLOCK = createRunClock();
+
 /** 运行中计时只使用本地秒表，不读取引擎时间戳，避免秒/毫秒单位混淆。
  *  ⛔ 09-18 用户实测「这段文字会出现在『正在处理』后面，跟消息下面重复了」：
  *  「正文已完整，等待模型收尾」这份状态**只在底部运行状态行说一次**（它有专属话语池），
- *  计时条只管报时 —— 两边各说一遍就是同一屏里重复两处。 */
-function RunningProcessTime() {
-  const startedRef = useRef(Date.now());
+ *  计时条只管报时 —— 两边各说一遍就是同一屏里重复两处。
+ *  ⛔ 09-18 用户实测「切出去再切回来，时间就重置了」：起点必须取自 RUN_CLOCK（按回合记忆），
+ *  不能是 `useRef(Date.now())` —— 那样每次重挂载都从 0 开始。 */
+function RunningProcessTime({ turnId }: { turnId: string }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-  const totalSeconds = Math.max(0, Math.floor((now - startedRef.current) / 1000));
+  const totalSeconds = RUN_CLOCK.elapsedSeconds(turnId, now);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return <div className="running-process-time">正在处理 {minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`}</div>;
@@ -6350,6 +6361,14 @@ function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval,
   // 复用 isTurnRunning 覆盖 status === "running" 别名（部分引擎/历史数据会出现）。
   const turnFinished = !isTurnRunning(turn);
   const running = isTurnRunning(turn);
+  // 回合跑完就清掉计时起点（否则这张表会随历史回合一直堆；容量上限只是兜底）。
+  // 幂等：加载历史会话时 running 恒为 false，forget 一个不存在的 key 无副作用。
+  // ⚠️ 不能改成「卸载时清理」——切会话正是要靠这条记忆跨过卸载（09-18）。
+  // 已知小残留（可接受）：切走期间回合在后台跑完时，TurnView 已卸载 → 这次 effect 不跑，
+  // 表项要等用户切回来（重挂载后 running=false）才被清；期间由 RUN_CLOCK 的容量上限兜住。
+  useEffect(() => {
+    if (!running) RUN_CLOCK.forget(turn.id);
+  }, [running, turn.id]);
   const userItems = turn.items.filter((item) => item.type === "userMessage");
   // 回合已结束但个别工具/命令的 item/completed 事件丢失（状态仍 inProgress）→
   // 渲染层兜底落成完成态，避免「任务都完成了还卡在正在运行」。仅回合结束时兜底，
@@ -6405,7 +6424,7 @@ function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval,
             ⛔ 位置必须在「生成中」**之上**（09-17 用户「你这顺序不对吧，生成中怎么能放灰线上面呢」）：
             计时 + 分隔线属于**回合头信息**（紧接口回合标识），状态词属于内容区 —— 灰线是两者的分界。
             「发送后立刻」的反馈由乐观区块的 .turn-head 负责（见下方 chat-anchor 处）。 */}
-        {running && userItems.length > 0 && <RunningProcessTime />}
+        {running && userItems.length > 0 && <RunningProcessTime turnId={turn.id} />}
         {/* 占位头必须等回合内已有 userMessage：turn/started 先建回合、userMessage item 晚到，
             若不等就会渲染在乐观用户气泡上方（切会话后首条消息时肉眼可见错位，09-04 反馈）。
             空窗期反馈由乐观气泡 + 底部 working-indicator 覆盖。 */}

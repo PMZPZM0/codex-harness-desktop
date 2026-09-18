@@ -5167,6 +5167,48 @@ w.postMessage({id:1,op:"list",root});
   }
 }
 
+// ── 49. 运行计时不能被「切会话重挂载」清零（09-18 用户：「切出去再切回来时间就重置了」） ──
+{
+  const { createRunClock } = await import("../src/lib/run-clock.mjs");
+  const T0 = 1_700_000_000_000;
+  const clock = createRunClock({ maxEntries: 3 });
+
+  // ① 行为断言：起点幂等 + 跨挂载接着走（重挂载 = 拿同一个起点再问一次）
+  clock.elapsedSeconds("turn-a", T0);
+  (clock.elapsedSeconds("turn-a", T0 + 8000) === 8 ? ok : fail)("【49】同一回合的计时接着走（8 秒后就是 8 秒，不从 0 重数）");
+  (clock.elapsedSeconds("turn-a", T0 + 125000) === 125 ? ok : fail)("【49】跨分钟后仍接着走（125 秒，不回到个位数）");
+  // 不同回合必须各自独立（否则两个会话的计时会互相串）
+  (clock.elapsedSeconds("turn-b", T0 + 3000) === 0 ? ok : fail)("【49】不同回合各自独立计时（不共用起点）");
+  // 时钟回拨/负值：不得显示成「正在处理 -5 秒」
+  (clock.elapsedSeconds("turn-a", T0 - 5000) === 0 ? ok : fail)("【49】时钟回拨时夹到 0（不出现负数计时）");
+  // 回合结束后清理：下一轮同 id（理论上不复用，但语义要自洽）从 0 开始
+  clock.forget("turn-a");
+  (clock.elapsedSeconds("turn-a", T0 + 999000) === 0 ? ok : fail)("【49】回合结束清理起点（下一轮不再复用老起点）");
+  // 容量上限：溢出淘汰最久未用，防止「只跑不停的会话」把表撑大
+  const cap = createRunClock({ maxEntries: 2 });
+  cap.elapsedSeconds("a", T0); cap.elapsedSeconds("b", T0); cap.elapsedSeconds("c", T0);
+  (cap.size === 2 && !cap.has("a") && cap.has("b") && cap.has("c") ? ok : fail)("【49】起点表有容量上限（超出淘汰最久未用，不无限增长）");
+  // ⛔ 上一条**区分不出「有没有 LRU 提热度」**（插入顺序就是 a,b,c 时，淘汰 a 是无提热度也成立的结果）。
+  //    真机意义很大：长期在跑的回合每秒都在取起点，若命中不提升热度，它会被后续新回合挤出表 →
+  //    切回来又归零（本 bug 原地复活）。这条专测它。
+  const lru = createRunClock({ maxEntries: 2 });
+  lru.elapsedSeconds("x", T0); lru.elapsedSeconds("y", T0);
+  lru.elapsedSeconds("x", T0 + 1000);   // 命中 x → 提到最新
+  lru.elapsedSeconds("z", T0 + 2000);   // 超容量 → 该淘汰 y（不是 x）
+  (lru.has("x") && !lru.has("y") && lru.has("z") ? ok : fail)("【49】正在跑的回合不会被新回合挤掉（取起点会提升热度）");
+  // 没有 id 也不能崩（退化成「不记忆」，只保证当次正确）
+  (typeof createRunClock().elapsedSeconds(null, T0) === "number" ? ok : fail)("【49】缺少回合 id 时不崩（退化为不记忆）");
+
+  // ② 结构守卫：起点必须来自 RUN_CLOCK，不许退回组件内部状态（那正是本 bug 的成因）
+  const appCode49 = codeOnly(readFileSync(join(ROOT, "src", "App.tsx"), "utf8"));
+  (!/const startedRef = useRef\(Date\.now\(\)\)/.test(appCode49) ? ok : fail)("【49】计时起点不再存在组件内部（useRef(Date.now()) 已清除）");
+  (/RUN_CLOCK\.elapsedSeconds\(turnId, now\)/.test(appCode49) ? ok : fail)("【49】计时条从按回合记忆的起点表取值");
+  (/<RunningProcessTime turnId=\{turn\.id\} \/>/.test(appCode49) ? ok : fail)("【49】计时条拿到回合 id（否则记忆表无从索引）");
+  (/if \(!running\) RUN_CLOCK\.forget\(turn\.id\);/.test(appCode49) ? ok : fail)("【49】回合结束时清掉起点（表不随历史回合堆积）");
+  // 必须盯住"不是在 effect 的 cleanup 里清"：卸载时清理 = 切会话就把记忆丢了 = 本 bug 原地复活
+  (!/return \(\) => \{[^}]*RUN_CLOCK\.forget/.test(appCode49) ? ok : fail)("【49】不是「卸载时清理」（切会话正要靠这条记忆跨过卸载）");
+}
+
 console.log("");
 console.log(C.gray(`已执行断言数：${checks}`));
 if (hardFails === 0) {
