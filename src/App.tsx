@@ -7963,6 +7963,19 @@ export default function App() {
     runningStartedAtRef.current.clear();
     setRunningThreadIds(new Set());
   }, []);
+  /** 已结束的回合 id（completed / aborted / failed / interrupted）。
+   *  用途：**已结束的回合不得再被 turn/started 点亮**（09-19 用户截图：消息回完了停止键还亮着）。
+   *  乱序/重复投递的 turn/started 若命中这里的 id，一律忽略，不再 setSending(true)/markThreadRunning。
+   *  只保留最近 80 个（新→旧），防长会话无限增长。 */
+  const finishedTurnIdsRef = useRef<Set<string>>(new Set());
+  const rememberFinishedTurn = useCallback((turnId: string) => {
+    if (!turnId) return;
+    const set = finishedTurnIdsRef.current;
+    if (set.size > 80) {
+      set.clear();   // 溢出即整清：判定只需覆盖「最近刚结束、可能被迟到 start 复活」的窗口
+    }
+    set.add(turnId);
+  }, []);
   // 侧栏「任务已完成」绿点（09-19 用户需求：后台会话跑完，侧栏亮绿点，点进去消失——
   // 快速知道哪个会话任务完成了/运行结束了）。只在**非当前查看的会话**上点亮：
   // 当前正开着的会话用户全程看着，不需要反馈；点进该会话（openThread）即清除。
@@ -12812,13 +12825,42 @@ const commandMatches = useMemo(() => {
       // turn/started · turn/completed 收不到 → activeTurnId 残留、侧边栏状态不更新。
       if (params.threadId) {
         const method0 = event.method ?? "";
+        // ⛔⛔ 09-19 用户实测「消息回完了，右下角停止键还亮着」（截图）：引擎/桥可能把
+        //   `turn/started` 在这条回合的 `turn/completed` **之后**才投递（乱序/重复投递）。
+        //   那样 setSending(true)/markThreadRunning 会在收尾**之后**把「运行中」重新点亮，
+        //   而这条回合的结束事件已经用掉了、再没有任何东西来熄灭它 ⇒ 停止键永久亮着。
+        //   不变量：**已结束的回合不得再被 turn/started 点亮**（不管它在哪个分支处理）。
+        //   结束的回合 id 统一登记在 finishedTurnIdsRef（completed/aborted/failed/interrupted
+        //   四类事件都会登记），这里与下面的当前会话分支共用同一份判定。
+        const startedTurnId = String(params.turn?.id ?? params.turnId ?? "");
+        const startedAlreadyDone = Boolean(startedTurnId) && finishedTurnIdsRef.current.has(startedTurnId);
         if (method0 === "turn/started") {
-          markThreadRunning(params.threadId, params.turn?.id ?? params.turnId);
+          if (!startedAlreadyDone) markThreadRunning(params.threadId, startedTurnId || undefined);
         } else if (method0 === "turn/completed") {
+          if (startedTurnId) rememberFinishedTurn(startedTurnId);
           // 回合顺利收尾 → 会话状态向好（语气随之轻快）；失败/中断在下面的分支里把状态压低。
           // 位置刻意放在**跨会话**这一段：后台会话跑完也要记进它自己的状态（各自独立）。
           bumpMood(params.threadId, "turn-ok");
           markThreadStopped(params.threadId);
+          // ⛔⛔ 09-19 用户实测「消息发出去立马切走 → 显示绿点 → 切回来 agent 回复没了」：
+          //   根因是**后台会话的回复内容从来不落缓存** —— 落缓存的两条链路（流式 delta 的
+          //   applyThreadEvent + turn/completed 的 mergeTurn）都在下面 threadId 过滤**之后**，
+          //   切走期间该会话的 delta/completed 全被 `params.threadId !== threadRef.current?.id
+          //   → return` 拦掉，threadCacheRef 里只剩切走那一刻的半截内容。
+          //   而 openThread 有一条快速路径：「30 秒内刚完整 resume 过且不在运行 → 跳过 resume，
+          //   直接用缓存」（频繁切换防卡顿）。用户「发出去就切走、马上切回」正好同时命中：
+          //   **缓存没回复 + 不 resume ⇒ 回复永久缺失**（本人第一次复现没抓到，就是因为等 60 秒
+          //   才切回，越过了 30 秒窗口）。
+          //   修法：把「完成的回合落缓存」提到**跨会话区**（过滤之前）——引擎的 turn/completed
+          //   事件自带完整 turn，纯前端合并、零 RPC。只写缓存**不动视图**（threadRef/setThread
+          //   仍归当前会话那条链路），后台跑完的会话切回来即可命中完整缓存。
+          if (params.threadId && params.threadId !== threadRef.current?.id && params.turn?.id) {
+            const cachedBg = threadCacheRef.current.get(params.threadId);
+            if (cachedBg) {
+              const mergedBg = mergeTurn(cachedBg, params.turn);
+              if (mergedBg && mergedBg !== cachedBg) threadCacheRef.current.set(params.threadId, mergedBg);
+            }
+          }
           // 回合结束：锚顶留白归零。它只在「钉顶期间」为让锚点滚得上去而存在，
           // 回合结束后继续留着就会在底部残留一大段空白（用户实测「流动空间太大，
           // 汇总时上面消息都看不到」）。
@@ -12864,6 +12906,7 @@ const commandMatches = useMemo(() => {
         } else if (method0 === "turn/aborted" || method0 === "turn/failed" || method0 === "turn/interrupted") {
           // 失败/中断/被中止 → 会话状态转差（语气收紧）。连续失败会累积（见 agent-mood 的连败惩罚）。
           bumpMood(params.threadId, "turn-fail");
+          rememberFinishedTurn(String(params.turn?.id ?? params.turnId ?? ""));   // 同上：结束后不许再被 start 点亮
           // 回合级**权威**结束信号：被中断 / 失败 / 中止的回合也要熄灭指示器。
           // （原先只认 turn/completed ⇒ 被中断的回合转圈永远挂着，用户以为还在跑。）
           markThreadStopped(params.threadId);
@@ -12872,6 +12915,15 @@ const commandMatches = useMemo(() => {
           //   （`params.threadId !== threadRef.current?.id → return`），后台会话的完成事件
           //   走不到那里 —— 第一版把点亮挂在那边，真机验收当场红（绿点永不出现）。
           if (!params.threadId || params.threadId !== threadRef.current?.id) markThreadDoneUnread(params.threadId);
+          // 失败/被中断的回合也要落缓存（同 turn/completed 的修复）：部分回复同样是用户的
+          // 可见内容，切走期间同样拿不到流式事件 —— 不落缓存则切回即丢。
+          if (params.threadId && params.threadId !== threadRef.current?.id && params.turn?.id) {
+            const cachedFail = threadCacheRef.current.get(params.threadId);
+            if (cachedFail) {
+              const mergedFail = mergeTurn(cachedFail, params.turn);
+              if (mergedFail && mergedFail !== cachedFail) threadCacheRef.current.set(params.threadId, mergedFail);
+            }
+          }
         }
         // 渠道机器人等后台会话的 start/stop：走不到下面的当前会话事件流（threadId 过滤会拦掉），
         // 新建的机器人会话永远进不了侧栏 → 防抖刷新一次 thread/list
@@ -12983,6 +13035,12 @@ const commandMatches = useMemo(() => {
         } catch { /* 统计失败不影响主流程 */ }
       }
       if (method === "turn/started") {
+        // ⛔ 已结束的回合不得被迟到的 turn/started 重新点亮（否则收尾之后被置回「运行中」，
+        //   而该回合的结束事件已消费完 ⇒ 停止键永久亮着——见跨会话区的同名判定与注释）。
+        const postStartTurnId = String(params.turn?.id ?? params.turnId ?? "");
+        if (postStartTurnId && finishedTurnIdsRef.current.has(postStartTurnId)) {
+          return;   // 该回合已结束：不点亮、不登记，整条事件忽略
+        }
         setSending(true);
         setActiveTurnId(params.turn.id);
         const startedAt = runningStartedAtRef.current.get(params.threadId) ?? Date.now();
