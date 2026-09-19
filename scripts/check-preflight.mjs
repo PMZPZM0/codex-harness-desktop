@@ -5927,6 +5927,44 @@ w.postMessage({id:1,op:"list",root});
   );
 }
 
+{
+  // ── 【65】429 兜底重试必须**任何路径都能接住**（09-19 用户截图「429 重试机制都没有了？
+  //   直接中止了？」）── 真机（mock 供应商 429）实测出三个致命点：
+  //   ① 引擎把限流包成 `Reconnecting... 10/10`（**文案里没有 429**）⇒ 旧词表落空；
+  //   ② 当前会话的 error 分支用**翻译后的中文文案**判定是否限流 ⇒ 翻译后不含 429 ⇒
+  //      跨会话区刚排好的重试链被当场 cancel（"有登记也不重试"的元凶）；
+  //   ③ 登记只覆盖手动发送 ⇒ 排队释放/重启后恢复的回合没有上下文 ⇒ 检测点 `has()` 落空。
+  const appSrc65 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const rlSrc65 = readFileSync(join(ROOT, "src", "lib", "rate-limit-retry.ts"), "utf8");
+  // ① 引擎重连耗尽 = 可重试信号
+  (/Reconnecting/.test(rlSrc65) && /Number\(exhausted\[1\]\) >= Number\(exhausted\[2\]\)/.test(rlSrc65) ? ok : fail)(
+    "【65】限流判定覆盖引擎的 `Reconnecting... N/M`（耗尽才算引擎放弃）"
+  );
+  // ② 清上下文/判限流必须用**原始错误**（rawError + details），不许用翻译后的文案
+  (/const rawIsRateLimit = isRateLimitError\(\[rawError, details\]\.join\(" "\)\)/.test(appSrc65) ? ok : fail)(
+    "【65】error 分支用原始错误判定是否限流（翻译后文案会丢掉 429 ⇒ 当场清掉重试链）"
+  );
+  (/&& !rawIsRateLimit\)/.test(appSrc65) ? ok : fail)(
+    "【65】非限流才清重试上下文（限流留给重试链）"
+  );
+  // ③ 三个检测点都走统一入口（含兜底恢复）
+  const ensureCalls65 = (appSrc65.match(/ensureRateLimitCtx\(/g) || []).length;
+  (ensureCalls65 >= 4 ? ok : fail)(
+    `【65】三处 429 检测点都走 ensureRateLimitCtx（含定义共 ${ensureCalls65} 处）`
+  );
+  // ④ 兜底绝不放弃：拿不到原文就发续接指令
+  (/const ctx = recoverRateLimitCtx\(threadId, turn\) \?\? \{[^]*?autoContinuePrompt\(\)/.test(appSrc65) ? ok : fail)(
+    "【65】拿不到原文时退续接指令（绝不因为「没有登记」就放弃重试）"
+  );
+  // ⑤ 重试条按会话独立记录（用户要求「每个会话独立弹这个自动重试」）
+  (/useState<Record<string, \{ attempt: number; retryAt: number \}>>\(\{\}\)/.test(appSrc65) ? ok : fail)(
+    "【65】重试条状态按会话分别记录（多会话各记各的倒计时）"
+  );
+  (/\{ \.\.\.current, \[threadId\]: entry \}/.test(appSrc65) ? ok : fail)(
+    "【65】每会话独立写入重试条（不再被最后一次覆盖）"
+  );
+}
+
 
 console.log("");
 console.log(C.gray(`已执行断言数：${checks}`));
