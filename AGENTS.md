@@ -979,6 +979,14 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 - **手机远控二次加固：6 位配对码 + 电脑端审批（09-13）**：手机扫码/打开链接后不再「连上即控」。新流程 = 输入电脑端显示的 **6 位配对码**（5 分钟有效、错 10 次作废、可刷新）→ 挂起等电脑端在「手机远控」面板点**允许/拒绝**（请求到达时面板自动弹到前台 + toast 提醒；2 分钟没人理自动过期）→ 通过后以 HttpOnly cookie 下发凭据（`harness_remote` + `harness_device`，https 场景带 Secure）。**已批准设备持久化**（`userData/remote-devices.json`），再连直接进、可单独移除。**二维码/配对链接不再夹带 `?k=` 凭据**（能力式 URL 会随链接/截图/历史/隧道日志外泄）；`authorize()` 只认「凭据 cookie + 已批准设备」，未配对访问 API/WS 一律 401、页面落到配对页；fail-open（token 为空全放行）已删。实现：`electron/remote.ts`（pairing/pairRequests/approved + `/api/pair`、`/api/pair-status`）+ main.ts IPC（`remote:pair-state/approve/deny/revoke/pair-rotate`）+ App.tsx 面板（配对码大字/审批卡/已批准设备列表）。回归：`scripts/accept.mjs --only remote-auth`（14 断言：无凭据 401/配对页/错码拒绝/对码挂起/审批前仍 401/审批卡/点允许/cookie 下发/带凭据 200/已批准直连）；预检【11】新增静态守卫（配对地址不得夹带 accessToken、必须有配对码+审批入口）。
 
+- **⛔ 安全审计第二轮：fs 通道收敛 + CSP（09-19，用户「用户隐私必须重之重，给我修复好」，推翻 09-13 的「fs:write 保持原语义」决策）**。全库审计四方向（Electron 配置 / 后门特征 / 本地服务面 / 更新与密钥）结论：无后门、无遥测、无隐蔽持久化；两处高危 IPC 缺陷本轮修掉：
+  - **`fs:read`（任意路径读 → 可信根）**：预览通道原来零校验，渲染层被注入即可读全盘文件。收敛到 `isInsideTrustedRoots`（各会话工作目录 + userData + 用户亲自用系统对话框选过的路径，与 harness-image 协议 09-13 S5 完全同口径）。
+  - **`fs:write`（校验形同虚设 → 可信根）**：原校验的 `root` 由渲染层传入，传 `C:\` 即绕过 = 任意路径写。`root` 参数不再参与判定，一律过 `isInsideTrustedRoots`。
+  - **同口径收敛**：`shell:reveal`（新增 `isInsideOrEqualTrustedRoots`，允许揭示可信根本身——reveal 工作区/userData 是合法用法）、`updates:reveal`（只认「刚下载并通过 sha256 校验的那个安装包」，与 `updates:install` 同口径）、`terminal:restart`（cwd 验证存在且是目录；终端本身可交互 cd，故做存在性校验而非白名单——白名单挡不住 cd、只会误伤合法用法）。
+  - **`thread/list` 响应记账 cwd**（主进程 `threadCwd` 表）：可信根集合才能覆盖「本轮没 resume 过的侧栏会话」，旧会话文件预览不被误伤。⛔ 守卫锚点两次假红教训都出在锚点上：必须锚**记账分支独有**文本 `method === "thread/list" && Array.isArray(r?.data)`，锚到 3700 行的列表增强块或用短窗口都会「代码明明写了、守卫照样红」。
+  - **CSP（index.html）**：`script-src 'self' 'unsafe-inline'`（inline 保留是 GenerativeWidget srcdoc 可视化卡片要在 iframe 跑内联脚本，srcdoc 继承父文档 CSP）+ `object-src 'none'` + `base-uri 'self'` + `form-action 'none'`——封死「注入脚本加载外部代码」与劫持；`frame-src *`（PDF 查看器内部导航 chrome-extension://，且内嵌网页本就走 webview 不经 CSP）；img/fetch 放行 https 与本地协议不破外链图片。
+  - 守卫：预检⑦层 7 条（fs:write/fs:read/shell:reveal/updates:reveal/terminal:restart/thread-list 记账/CSP），**反证 4/4 成立**（fs:read、fs:write、CSP、thread/list 摘掉即红）。accept 当轮因并行会话未提交的 App.tsx 半成品导致 CDP 握手超时无法跑通（与 CSP 无关——摘掉 CSP 同样超时，已隔离实验证明），待并行改动收口后复跑。
+
 
 - **✅ 发送锚顶 · 09-13 定稿（当前实现，改这块先读这一段）**：完整走过一天弯路后的收敛版本，**只有三个概念**：
   ① **位置 = 把「这次发送的那条用户消息」放在对话区顶部往下 `ANCHOR_TOP_OFFSET_PX`(54) 处**，唯一 owner 是 `App.tsx` 的 `pinSentMessage(el, threadId)`：锚点取**当前回合里的真实 `.user-message` 元素**（不在发送前回合基线里才算"本次新建"；乐观阶段尚未落进回合时才退回 `#chat-anchor`）。首次调用**立即**落位；之后每次调用**实测 gap**，偏差 > 8px 才延一帧再量一次并一次性修正。**不要**再引入第二个写滚动条的地方 —— 这一天所有"抖/跳/位置不对"最后都归到"两个 owner 抢同一根滚动条"。
