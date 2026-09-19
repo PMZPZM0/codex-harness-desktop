@@ -25,5 +25,12 @@ export function rateLimitBackoffMs(attempt: number): number {
 export function isRateLimitError(message: unknown): boolean {
   const text = String(message ?? "");
   if (!text) return false;
+  // ⛔⛔ 09-19 真机实测（mock 供应商 429 + 引擎日志打点）：引擎把限流包成
+  //   `Reconnecting... 7/10` … `Reconnecting... 10/10` 上报，**文案里没有任何 429 /
+  //   rate limit 字样** ⇒ 旧词表全部落空 ⇒ 用户看到的是「429 重试机制都没有了，直接中止」。
+  //   语义：Reconnecting N/M = 引擎正在自己重连/重试。**达到上限（N ≥ M）才算引擎放弃**，
+  //   那时交给应用层兜底；还没到上限时由引擎自己继续，应用不插手（避免重复投递）。
+  const exhausted = text.match(/Reconnecting\s*\.\.\.\s*(\d+)\s*\/\s*(\d+)/i);
+  if (exhausted) return Number(exhausted[1]) >= Number(exhausted[2]);
   return /(^|\D)429(\D|$)|rate.?limit|too many requests|请求过多|过于频繁|限流|稍后再试|try again later|quota.{0,24}(exceed|exhausted)|usage.?limit/i.test(text);
 }
