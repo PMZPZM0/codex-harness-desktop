@@ -29,6 +29,7 @@ import { resolveModelForOpen, shouldSyncOpenThread } from "./lib/model-scope.mjs
 import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "./lib/provider-continuity.mjs";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "./lib/session-scope.mjs";
 import { advanceMood, composeMoodInstructions, emptyMood, moodBlock, moodSignature, moodTone, normalizeMood, userSignalOf } from "./lib/agent-mood.mjs";
+import { AUTO_CONTINUE_MAX_ATTEMPTS, AUTO_CONTINUE_WINDOW_MS, autoContinuePrompt, isTruncatedEmptyTurn, truncationNotice } from "./lib/turn-truncation.mjs";
 import { LEGACY_PREFIX, dispatchSignature, emptyDispatch, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeDispatch, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "./lib/thread-runtime.mjs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
 import { isUnsupportedEffortError, pickEffortFallback, blockedEffortsOf, markEffortUnsupported, clearEffortUnsupported } from "./lib/effort-support";
@@ -8170,6 +8171,8 @@ export default function App() {
   const rateLimitTimerRef = useRef<number | null>(null);
   const rateLimitAttemptRef = useRef(0);
   const retryContextRef = useRef<{ threadId: string; input: any[]; model: string; effort: string | null; personality: string | null } | null>(null);
+  // 截断自动续接的防循环记账：threadId → { 次数, 首续时刻 }。窗口内超限即停手提示换供应商。
+  const autoContinueLogRef = useRef<Map<string, { count: number; firstAt: number }>>(new Map());
   const [, setRateLimitTick] = useState(0);
   useEffect(() => {
     if (!rateLimitRetry) return;
@@ -12099,6 +12102,56 @@ const commandMatches = useMemo(() => {
     dbg("queue-arm-cancelled", { why });
   }
 
+  /** 回合级「截断空转」的自动续接（09-19 用户实测「思考内容过长会被截断，运行状态就断了」）。
+   *  机制：回合已 task_complete（引擎侧无 active turn，`turn/steer` 不可用——它的前置条件是
+   *  "active turn id"，引擎自己也不做 finish_reason=length 的续写），承接只能落成**新回合**。
+   *  所以：延迟等 turn/completed 收尾（mergeTurn / auto-start / markThreadStopped）跑完 →
+   *  `thread/queue/add` 一条「从断点承接续写」指令 → `thread/queue/start` 启动。
+   *  ⛔ 指令语义是**承接**（接着上次没写完的往下输出、不重新思考），不是"重新做一遍任务"。
+   *  ⛔ 防死循环：同一会话 AUTO_CONTINUE_WINDOW_MS 内最多 AUTO_CONTINUE_MAX_ATTEMPTS 次；
+   *     达到上限停手并提示换供应商（本地部署模型同样受单次输出上限约束）。 */
+  function maybeAutoContinueTruncated(threadId: string) {
+    const now = Date.now();
+    const rec = autoContinueLogRef.current.get(threadId);
+    if (!rec || now - rec.firstAt > AUTO_CONTINUE_WINDOW_MS) {
+      autoContinueLogRef.current.set(threadId, { count: 1, firstAt: now });
+    } else {
+      if (rec.count >= AUTO_CONTINUE_MAX_ATTEMPTS) {
+        showToast("多次被截断", "已自动续接达到上限，建议更换支持更大单次输出的供应商/模型。");
+        return;
+      }
+      rec.count++;
+    }
+    window.setTimeout(() => {
+      if (threadRef.current?.id !== threadId) return; // 用户已切走：不再自动动那个会话
+      // ⛔ 二次防误判（判据已收紧为"严格零产出"，这里是最后一道闸）：延迟期间若该会话已经
+      //   有回合在跑（用户手动续了 / 引擎自己恢复 / 队列已启动），就放弃自动续接——
+      //   绝不让"正常收尾"因为误判而多出一个应用自己发的回合（那才是真正的空转）。
+      if (runningThreadIdsRef.current.has(threadId)) return;
+      const liveTurn = (threadRef.current?.turns ?? []).find((entry) => isTurnRunning(entry));
+      if (liveTurn) return;
+      void window.codex.request("thread/queue/add", {
+        threadId,
+        input: [{ type: "text", text: autoContinuePrompt() }],
+        clientUserMessageId: crypto.randomUUID(),
+      }).then(async () => {
+        showToast("已自动续接", "检测到被供应商截断，正在从断点继续输出…");
+        const list = await window.codex.request("thread/queue/list", { threadId, limit: 1 }).catch(() => null);
+        const head = list?.data?.[0];
+        if (head) {
+          const armedForCont = armPinForReleasedQueue(threadId, "auto-continue");
+          try {
+            await window.codex.request("thread/queue/start", { threadId, queuedSubmissionId: head.id });
+          } catch (error: any) {
+            // 启动失败 ⇒ 那条续接不会出现：撤回钉顶意图（否则去钉列表里别的消息），并告知
+            if (armedForCont) disarmPinIntent("auto-continue-fail");
+            showToast("自动续接失败", String(error?.message ?? error));
+          }
+        }
+      }).catch((error: any) => showToast("自动续接失败", String(error?.message ?? error)));
+    }, 2500);
+  }
+
   async function startQueued(id?: string) {
     if (!thread) return;
     const entry = id ? queue.find((q) => q.id === id) : undefined;
@@ -12923,6 +12976,21 @@ const commandMatches = useMemo(() => {
         const takeoverItem = (params.turn?.items ?? []).find((entry: ThreadItem) => entry.type === "userMessage" && userMessageMatchesInput(entry, optimisticInput?.content ?? []));
         if (optimisticInput && takeoverItem) setOptimisticInput(null);
         if (params.turn.error?.message) showToast("任务失败", params.turn.error.message);
+        // ⛔ 09-19 用户实测「思考内容过长会被截断，运行状态就断了」（昨天「鹈鹕骑自行车」）。
+        //   真机取证（会话 01a0b515 回合 8）：应用配 model_max_output_tokens=393216，但当时的
+        //   商汤网关把单次响应**钳到 8192 tokens**；模型思考 16365 字符（≈8000+ tokens）把预算
+        //   吃光 ⇒ 正文 0 字符 ⇒ 引擎把「空输出」当 task_complete 正常收尾 ⇒ 用户以为"莫名断了"。
+        //   引擎 rollout 不记录 finish_reason，只能靠渲染层已有数据兜底检测：
+        //   思考极长 + 正文为空 + 全程无工具动作 = 被截断的空转（有正文或有工具的一律不判，防误报）。
+        //   只对**当前会话**判定（后台会话的 items 不在 threadRef 里，且用户没在看）。
+        if (params.threadId === threadRef.current?.id) {
+          const turnId = String(params.turn?.id ?? "");
+          const localTurn = threadRef.current?.turns.find((entry) => entry.id === turnId);
+          if (isTruncatedEmptyTurn(localTurn ?? params.turn)) {
+            showToast("回合可能被上游截断", truncationNotice());
+            maybeAutoContinueTruncated(String(params.threadId ?? ""));
+          }
+        }
         // 图片模态自愈（09-18 用户反馈：升级上来的模型配置标了「视觉」，但接入点实际不支持图片
         // → 带图回合全部 InvalidParameter）。错误原话明确点名时才触发，只动该模型的 inputTypes。
         void healImageModalityIfUnsupported(params.turn.error?.message);

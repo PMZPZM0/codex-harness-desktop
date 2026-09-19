@@ -19,6 +19,7 @@ import { MOOD_HEADING, applyMoodSignal, composeMoodInstructions, decayMood, empt
 import { OWN_WRITE_TTL_MS, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeSignature } from "../src/lib/thread-runtime.mjs";
 import { planCompletedFold } from "../src/lib/turn-fold-plan.mjs";
 import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../src/lib/voice-aec.mjs";
+import { TRUNCATE_REASONING_MIN_CHARS, TRUNCATE_OUTPUT_MAX_CHARS, AUTO_CONTINUE_MAX_ATTEMPTS, AUTO_CONTINUE_WINDOW_MS, isTruncatedEmptyTurn, truncationNotice, turnOutputStats } from "../src/lib/turn-truncation.mjs";
 import { createSpeakFilter, normalizeNumbers, numberToChinese, toSpeakableText } from "../src/lib/speak-text.mjs";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -5677,6 +5678,88 @@ w.postMessage({id:1,op:"list",root});
   );
   (/browserSkills: findCapabilitySkills\(skills, BROWSER_SKILL_IDS\)/.test(appSrc58b) ? ok : fail)(
     "【58】联动后复算也走同一份名单"
+  );
+}
+
+{
+  // ── 【59】回合「输出被上游截断」的检测 + 自动续接（09-19 用户实测「思考内容过长会被截断，
+  //    运行状态就断了」；真机取证：商汤把单次响应钳到 8192，思考 16365 字符吃满预算 → 正文 0
+  //    字符 → 引擎当 task_complete 正常收尾。本地部署模型同样有单次输出上限）。──
+  //    核心不变量：① 检测是纯函数、可被断言 ② 应用对思考/输出**不做任何限制** ③ 检测到截断
+  //    要自动续接（承接语义，从断点续写）④ 防死循环有窗口/次数上限 ⑤ 不把正常回合误判成截断。
+  const ttSrc59 = readFileSync(join(ROOT, "src", "lib", "turn-truncation.mjs"), "utf8");
+  const appSrc59 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+
+  // —— 行为断言（跑真实实现，覆盖「正常回合不误报」这个最关键的不变量）——
+  const t59 = { items: [
+    { type: "userMessage", id: "u1" },
+    { type: "reasoning", id: "r1", summary: [{ text: "x".repeat(2000) }], content: [{ text: "y".repeat(15000) }] }, // 思考极长（≈16.4K 字符）
+    { type: "agentMessage", id: "a1", text: "" }, // 正文空
+    // 无任何工具 item
+  ]};
+  const t59ok = { items: [
+    { type: "reasoning", id: "r1", summary: [{ text: "z".repeat(9000) }] }, // 思考长
+    { type: "agentMessage", id: "a1", text: "完整的一段回答，不止一句话。".repeat(200) }, // 有正文
+  ]};
+  const t59tool = { items: [
+    { type: "reasoning", id: "r1", summary: [{ text: "z".repeat(9000) }] }, // 思考长
+    { type: "agentMessage", id: "a1", text: "" },
+    { type: "functionCallOutput", id: "f1", name: "exec_command", output: "ok" }, // 有工具动作
+  ]};
+  const t59short = { items: [
+    { type: "reasoning", id: "r1", summary: [{ text: "短思考" }] },
+    { type: "agentMessage", id: "a1", text: "" },
+  ]};
+  // ⛔ 用户提醒「不要让正常收尾产生空转」的关键区间：思考很长 + **短结论**（20~300 字符之间，
+  //   比如"好的，按方案 A 做"）+ 无工具 —— 这是正常收尾，绝不能误判成截断（否则自动续接
+  //   会多出一个应用自己发的回合 = 空转）。20 阈值下短结论(>20)不判；放宽到 300 必误判 → 反证红。
+  const t59shortReply = { items: [
+    { type: "reasoning", id: "r1", summary: [{ text: "z".repeat(9000) }] }, // 思考长
+    { type: "agentMessage", id: "a1", text: "好的，按方案 A 来，我这就去处理，完成后立刻把结果发给你看。" }, // 正常短结论（>20 且 <300，20 阈值下不误判）
+  ]};
+  // ⛔ 真实形态（rollout 实证）：引擎在截断时把思考摘要**逐字复制**成 agentMessage 当正文
+  //   （task_complete 的 last_agent_message 就是它）——「正文非空」不等于「有产出」。
+  const t59echo = { items: [
+    { type: "reasoning", id: "r1", summary: [{ text: "s".repeat(9000) }], content: [] }, // 思考长
+    { type: "agentMessage", id: "a1", text: "s".repeat(9000) }, // 正文 = 思考复述（逐字相同）
+  ]};
+  const t59real = { items: [
+    { type: "reasoning", id: "r1", summary: [{ text: "s".repeat(9000) }], content: [] }, // 思考长
+    { type: "agentMessage", id: "a1", text: "这是真正的产出正文，不是思考的复述。".repeat(100) }, // 真实正文 ≠ 思考
+  ]};
+  (isTruncatedEmptyTurn(t59) ? ok : fail)("【59】截断空转（长思考+空正文+无工具）判真");
+  (isTruncatedEmptyTurn(t59echo) ? ok : fail)("【59】正文=思考逐字复述 判真（引擎截断时把思考摘要复制成正文，复述≠产出）");
+  (isTruncatedEmptyTurn(t59real) ? fail : ok)("【59】正文是真实产出（≠思考）不误判");
+  (isTruncatedEmptyTurn(t59ok) ? fail : ok)("【59】有正文的正常回合不误判");
+  (isTruncatedEmptyTurn(t59tool) ? fail : ok)("【59】有工具动作的回合不误判");
+  (isTruncatedEmptyTurn(t59short) ? fail : ok)("【59】思考不长的空回合不误判");
+  (isTruncatedEmptyTurn(t59shortReply) ? fail : ok)("【59】长思考+正常短结论的回合不误判（防正常收尾被当成截断 → 空转）");
+  const s59 = turnOutputStats(t59);
+  (s59.reasoningChars >= TRUNCATE_REASONING_MIN_CHARS && s59.outputChars < TRUNCATE_OUTPUT_MAX_CHARS && s59.toolItems === 0 ? ok : fail)(
+    `【59】统计口径正确（思考=${s59.reasoningChars} / 正文=${s59.outputChars} / 工具=${s59.toolItems}）`
+  );
+
+  // —— 结构不变量 ——
+  (AUTO_CONTINUE_MAX_ATTEMPTS >= 1 && AUTO_CONTINUE_MAX_ATTEMPTS <= 3 ? ok : fail)(
+    `【59】自动续接次数上限合理（${AUTO_CONTINUE_MAX_ATTEMPTS}，防死循环）`
+  );
+  (/AUTO_CONTINUE_WINDOW_MS/.test(appSrc59) && /autoContinueLogRef/.test(appSrc59) ? ok : fail)(
+    "【59】自动续接有防循环记账（窗口+次数，否则思考→截断→又思考烧钱）"
+  );
+  (/maybeAutoContinueTruncated\(/.test(appSrc59) ? ok : fail)(
+    "【59】回合收尾时对截断空转触发自动续接"
+  );
+  (/thread\/queue\/add/.test(appSrc59) && /thread\/queue\/start/.test(appSrc59) ? ok : fail)(
+    "【59】自动续接走队列入队+启动（新回合带全新输出预算）"
+  );
+  (/从上次中断处继续/.test(ttSrc59) && /不要重新思考/.test(ttSrc59) ? ok : fail)(
+    "【59】续接指令是「承接续写」语义（从断点往下写，不是重做任务）"
+  );
+  (/应用没有对思考或输出做任何限制|应用未做任何限制/.test(ttSrc59) ? ok : fail)(
+    "【59】说明里讲清应用未做限制（用户明确要求长思考不受限）"
+  );
+  (/\bslice\(0,\s*\d{1,4}\s*\)/.test(ttSrc59) ? fail : ok)(
+    "【59】检测模块对思考/输出正文不做长度截断（应用不限制输出）"
   );
 }
 
