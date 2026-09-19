@@ -18730,20 +18730,9 @@ const commandMatches = useMemo(() => {
             </div>,
             document.body,
           )}
-          {/* ⛔ 未配置模型时的常驻入口（09-19 用户要求：「新手总是不会」）：
-              入口必须待在**用户要发消息的地方**——新手不会主动去「设置 → 模型」找。
-              原来只有"发消息时才弹一句『请先配置并启用自定义模型』"，等于让人撞墙后才找路。
-              现在输入框上方常驻一条可点横幅，点开就是一键配置（粘 Key 即可）。 */}
-          {!customModel && !showLogin && (
-            <button type="button" className="setup-banner" onClick={() => setShowModelGuide(true)}>
-              <Sparkles size={15} />
-              <span className="setup-banner-text">
-                <b>还没配模型 —— 现在就能配好</b>
-                <em>粘一个 API Key 即可，自动识别模型；有 ChatGPT 订阅也可以直接登录</em>
-              </span>
-              <span className="setup-banner-go">去配置</span>
-            </button>
-          )}
+          {/* 未配模型提示已移入输入框**内部顶部**（见下方 form 内）——用户 09-19 要求
+              「不要那么长的长条」「不要改动项目地址选项的位置」：项目地址 chip 是浮在
+              框外的独立图层，提示放框内则两层互不干扰，chip 位置一丝不动。 */}
           {/* 429 限流自动重试状态条（**只显示当前会话自己的重试**）。
               ⛔⛔ 09-19 用户实测「重试弹窗跟别的会话串了，多开会话一起串、一直报错重试，
               正在跑的会话被这个条挡住，点停止还影响别的会话」：原实现当前会话没有重试时
@@ -18804,6 +18793,18 @@ const commandMatches = useMemo(() => {
           {/* 实时语音舞台：彩色波浪 + 中英字幕，只在通话中显示（状态来自 voice/wave-level 广播） */}
           <VoiceWaveform />
           <form className="composer" onSubmit={send}>
+            {/* 未配模型提示（09-19 用户：「不要那么长的长条」「不要改动项目地址选项的位置」）：
+                ⛔ 放在输入框**内部顶部**，且**压缩成一行** —— 项目地址 chip 是浮在框外上方的
+                绝对定位图层（`bottom: calc(100% + 5px)`），提示放框内则两层永不重叠，
+                chip 的位置/定位方式/下拉锚点全部原样不动。
+                入口仍待在"要发消息的地方"（新手不会主动去设置里找），只是不再占外部空间。 */}
+            {!customModel && !showLogin && (
+              <button type="button" className="setup-banner" onClick={() => setShowModelGuide(true)}>
+                <Sparkles size={13} />
+                <span className="setup-banner-text"><b>还没配模型</b><em>粘一个 API Key 即可，自动识别模型</em></span>
+                <span className="setup-banner-go">去配置</span>
+              </button>
+            )}
 {/* 欢迎页「项目地址」选择（仅空态显示，发送首条消息后随欢迎态消失）：
                 与右上角 📁 同一全局 workspace 联动；「无项目」模式每次自动新建独立临时目录 */}
             {isEmpty && (

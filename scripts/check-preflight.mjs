@@ -6221,6 +6221,30 @@ w.postMessage({id:1,op:"list",root});
   (/\.model-guide-quick \{/.test(cssSrc70) && /\.setup-banner \{/.test(cssSrc70) ? ok : fail)(
     "【70】快路卡片与常驻入口的样式存在"
   );
+  // ⛔ 布局硬约束（09-19 用户两次点名：「重叠了」「不要改动项目地址选项的位置」）：
+  //   ① 提示条必须待在输入框**内部**（框外就会被浮在框上方的项目地址 chip 压住）；
+  //   ② 项目地址 chip 必须**保持 absolute 浮在框外上方**（位置是既有行为，不准改）。
+  const bannerInForm = (() => {
+    const i = appSrc70.indexOf("<form className=\"composer\"");
+    const j = appSrc70.indexOf("</form>", i);
+    const k = appSrc70.indexOf("className=\"setup-banner\"");
+    return i >= 0 && j > i && k > i && k < j;
+  })();
+  (bannerInForm ? ok : fail)(
+    "【70】未配模型提示在输入框**内部**（挪到框外会与项目地址 chip 重叠）"
+  );
+  (/\{!customModel && !showLogin && \(\s*<button type="button" className="setup-banner"/.test(appSrc70) ? ok : fail)(
+    "【70】提示条仍是一行紧凑按钮（不是两行长条）"
+  );
+  (/\n\.welcome-cwd-picker \{ position: absolute; bottom: calc\(100% \+ 5px\); left: 12px; z-index: 6; \}/.test(cssSrc70) ? ok : fail)(
+    "【70】项目地址 chip 保持 absolute 浮在输入框上方（位置不许改；改了会与提示重叠）"
+  );
+  (!/with-setup-banner/.test(cssSrc70) && !/with-setup-banner/.test(appSrc70) ? ok : fail)(
+    "【70】没有针对「有提示时」去改项目地址定位的覆盖规则（已回退）"
+  );
+  (/\.setup-banner-text \{[\s\S]{0,140}?flex-direction: row;/.test(cssSrc70) ? ok : fail)(
+    "【70】提示条文案横排（一行高度 ≈30px，不是两行 53px 的长条）"
+  );
 }
 
 
