@@ -5763,6 +5763,40 @@ w.postMessage({id:1,op:"list",root});
   );
 }
 
+{
+  // ── 【60】侧栏「任务完成」绿点 + 通知真实会话名（09-19 用户：「通知栏总显示未命名会话」
+  //    +「会话完成，左侧栏没有反馈效果……点击进去绿点消失」）──
+  const appSrc60 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const css60 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+  // 通知名：fallback 必须传空串（内部 fallback「未命名会话」恒非空 ⇒ 后面的 firstUserTextInTurn
+  // 永远执行不到 = 通知永远「未命名会话」的真根因）
+  (/cleanThreadDisplayTitle\(entry\?\.name,\s*\{\s*preview:\s*entry\?\.preview,\s*fallback:\s*""\s*\}\)/.test(appSrc60) ? ok : fail)(
+    "【60】通知名的会话标题 fallback 传空串（否则内部「未命名会话」恒非空，真实名字永远轮不到）"
+  );
+  // 绿点状态机
+  // ⛔ 点亮必须在**跨会话生命周期区**（method0 分支）：下面的当前会话事件流有 threadId 过滤
+  //   （`params.threadId !== threadRef.current?.id → return`），后台会话事件走不到 —— 第一版
+  //   把点亮挂在那边，真机验收当场红（绿点永不出现）。
+  (/if \(!params\.threadId \|\| params\.threadId !== threadRef\.current\?\.id\) markThreadDoneUnread\(params\.threadId\);\s*\n\s*\} else if \(method0 === "thread\/status\/changed"\)/.test(appSrc60) ? ok : fail)(
+    "【60】turn/completed（跨会话区）对后台会话点亮完成绿点（挂在当前会话事件流 = 永不出现）"
+  );
+  (/markThreadStopped\(params\.threadId\);\s*\n\s*\/\/ 侧栏绿点（失败[^]*?if \(!params\.threadId \|\| params\.threadId !== threadRef\.current\?\.id\) markThreadDoneUnread\(params\.threadId\);/.test(appSrc60) ? ok : fail)(
+    "【60】turn/aborted|failed|interrupted 也点亮绿点（失败也算运行结束）"
+  );
+  (/if\s*\(!threadId\s*\|\|\s*threadId === threadRef\.current\?\.id\)\s*return;/.test(appSrc60) ? ok : fail)(
+    "【60】当前正在查看的会话不点绿点（用户全程看着，不需要反馈）"
+  );
+  (/clearThreadDoneUnread\(entry\.id\)/.test(appSrc60) ? ok : fail)(
+    "【60】点击侧栏会话行即清除绿点（用户明令：点进去消失）"
+  );
+  (/unreadDoneIds\.has\(entry\.id\)\s*\?\s*<span className="thread-done-dot"/.test(appSrc60) ? ok : fail)(
+    "【60】侧栏行渲染绿点（running 优先，完成后未读才亮）"
+  );
+  (/\.thread-done-dot\s*\{/.test(css60) && /#22c55e/.test(css60) ? ok : fail)(
+    "【60】绿点样式存在（绿色 = 成功收尾）"
+  );
+}
+
 console.log("");
 console.log(C.gray(`已执行断言数：${checks}`));
 if (hardFails === 0) {

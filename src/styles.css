@@ -903,6 +903,23 @@ button.brand-mark.sidebar-toggle:hover {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.55; }
   30% { transform: translateY(-3.5px); opacity: 1; }
 }
+/* 任务完成绿点（09-19）：后台会话跑完，侧栏该行亮绿点提醒；点击进入该会话即消失。
+   绿色=成功收尾（运行中是 accent 色的三点动画，二者不会同时出现——running 优先渲染）。 */
+.thread-done-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
+  animation: thread-done-pulse 2s ease-out infinite;
+}
+@keyframes thread-done-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+  70% { box-shadow: 0 0 0 5px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
 .thread-row span {
   text-overflow: ellipsis;
   white-space: nowrap;
