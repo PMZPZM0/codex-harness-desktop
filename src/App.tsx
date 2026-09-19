@@ -8227,11 +8227,12 @@ export default function App() {
   // ⛔ 09-19 用户要求「每个会话独立弹这个自动重试」：重试条状态**按会话分别记录**，
   //   多会话同时限流时各自有各自的倒计时（原来单槽会被最后一次覆盖，看不到别的会话）。
   const [rateLimitRetries, setRateLimitRetries] = useState<Record<string, { attempt: number; retryAt: number }>>({});
-  /** 引擎侧上游重连状态（引擎上报的 `Reconnecting... N/M`）。
-   *  ⛔ 09-19 用户实测「运行脚本检查每次都空转半天没反应」：引擎在 429 / 断流时会**自己**重试
-   *  （request_max_retries=10），这段时间界面完全没动静 ⇒ 用户以为卡死了。
-   *  这里把它的重试进度显示出来：知道"上游在重连、第几次、共几次"，就不会误判成空转。 */
-  const [upstreamRetry, setUpstreamRetry] = useState<{ threadId: string; no: number; total: number } | null>(null);
+  /** 引擎侧上游重连状态（引擎上报的 `Reconnecting... N/M`），**按会话分别记录**。
+   *  ⛔ 09-19 用户实测「运行脚本检查每次都空转半天没反应」+「每个会话必须完全独立」：
+   *  引擎在 429 / 断流时会**自己**重试（request_max_retries=10），这段时间界面完全没动静
+   *  ⇒ 用户以为卡死了。这里把它的重试进度显示出来（第 N/M 次）。
+   *  按会话存：A 会话的重连提示不会被 B 会话覆盖，各窗口只显示自己的。 */
+  const [upstreamRetries, setUpstreamRetries] = useState<Record<string, { no: number; total: number }>>({});
   /** 写入/清除某个会话的重试条（entry=null 表示清除该会话） */
   function setRetryEntry(threadId: string, entry: { attempt: number; retryAt: number } | null) {
     if (!threadId) return;
@@ -8247,8 +8248,12 @@ export default function App() {
   const retryContextsRef = useRef<Map<string, RateLimitCtx>>(new Map());
   const rateLimitAttemptsRef = useRef<Map<string, number>>(new Map());
   const rateLimitTimersRef = useRef<Map<string, number>>(new Map());
-  /** 重试发起串行化：多个会话同时到点也只**一个一个**发（同时发=继续撞上游限流）。 */
-  const retryGateRef = useRef<Promise<unknown>>(Promise.resolve());
+  /** 重试发起串行化：**按会话各自排队**（同一个会话不并发投递），
+   *  ⛔⛔ 09-19 用户严令「每个会话必须完全独立，A 在跑/报错/重试跟 B 一点关系都没有」：
+   *  原实现是**全局单门**（一个 Promise 串所有会话）—— B 的重试必须等 A 的重试发完，
+   *  这就是"会话之间还串着"的根源之一。现在按 threadId 分门：跨会话完全并行，
+   *  只有同一个会话自己的多次重试才排队（防重复投递）。 */
+  const retryGatesRef = useRef<Map<string, Promise<unknown>>>(new Map());
   /** 档位降档重发的内容（即时、只试一次，单槽即可，与限流重试链路解耦）。 */
   const effortFallbackRef = useRef<{ threadId: string; input: any[]; model: string; effort: string | null; personality: string | null } | null>(null);
   // 截断自动续接的防循环记账：threadId → { 次数, 首续时刻 }。窗口内超限即停手提示换供应商。
@@ -8380,18 +8385,40 @@ export default function App() {
     });
   }
 
+  /** ⛔⛔ 会话级状态**彻底重置**（用户 09-19 严令：「每个会话必须从根源上完全独立，
+   *  分支和复制会话 ID 接力的也是一样，必须从根源上完全重置」）。
+   *  一个会话的生命周期结束时（归档/删除/被中断/被 fork 取代/接力到新 id），
+   *  它的**全部衍生状态**都要一起作废，否则会以各种形式"串"给别的会话：
+   *    · 重试上下文 / 尝试计数 / 退避定时器（到点会对着已不存在的会话重发）
+   *    · 重试条与侧栏标记（界面上残留别人的状态）
+   *    · 上游重连提示（B 的提示挂在 A 的窗口上）
+   *  调用点：归档/删除、用户点停止、fork/接力把源会话取代、provider 切换。 */
+  function resetSessionRetryState(threadId: string) {
+    if (!threadId) return;
+    clearRateLimitTimer(threadId);
+    retryContextsRef.current.delete(threadId);
+    rateLimitAttemptsRef.current.delete(threadId);
+    retryGatesRef.current.delete(threadId);
+    setRetryEntry(threadId, null);
+    setUpstreamRetries((current) => {
+      if (!(threadId in current)) return current;
+      const next = { ...current };
+      delete next[threadId];
+      return next;
+    });
+  }
+
   /** 取消某会话的重试链（不传 threadId = 全部取消，如切换供应商/清空前）。 */
   function cancelRateLimitRetry(threadId?: string, silent = false) {
     if (threadId) {
-      clearRateLimitTimer(threadId);
-      retryContextsRef.current.delete(threadId);
-      rateLimitAttemptsRef.current.delete(threadId);
-      setRetryEntry(threadId, null);
+      resetSessionRetryState(threadId);
     } else {
       clearRateLimitTimer();
       retryContextsRef.current.clear();
       rateLimitAttemptsRef.current.clear();
+      retryGatesRef.current.clear();
       setRateLimitRetries({});
+      setUpstreamRetries({});
     }
     if (!silent) showToast("已停止限流重试", "不再自动重发该消息");
   }
@@ -8414,8 +8441,9 @@ export default function App() {
     }
     markThreadRunning(threadId);
     try {
-      // ⛔ 串行化：多个会话同时到点时排队逐个发（同时轰上游 = 继续 429）。
-      const run = retryGateRef.current.then(async () => {
+      // 只串行化**同一个会话**的重试（防重复投递）；跨会话不排队、互不等待
+      const gate = retryGatesRef.current.get(threadId) ?? Promise.resolve();
+      const run = gate.then(async () => {
         // 发送前最后核对一次：该会话若已有活动回合（用户手动重发/引擎自己缓过来了），
         // 不能重复投递同一条输入。
         try {
@@ -8430,12 +8458,15 @@ export default function App() {
           ...(ctx.model ? { model: ctx.model } : {}),
           effort: ctx.effort,
           personality: ctx.personality,
-          // ⛔ 沙箱 cwd 按**目标会话**取（后台会话重试时 threadRef 是别的会话，
-          //   拿它当沙箱根会把重试发到错误的工作目录）。缓存里没有才退当前/工作区。
-          sandboxPolicy: sandboxPolicy(sandbox, threadCacheRef.current.get(threadId)?.cwd ?? threadRef.current?.cwd ?? workspace ?? ""),
+          // ⛔⛔ 沙箱按**目标会话**取（用户 09-19 严令「会话与会话之间的配置和底层根源上必须
+          //   彻底独立」）：cwd 与**权限模式**都要取目标会话自己的，不能借用当前查看会话的
+          //   `sandbox`（那是全局 UI 状态）—— 否则后台会话的重试会带着**别的会话的权限**跑，
+          //   属于配置层面的串会话（比 UI 串更危险：可能提权/降权）。
+          sandboxPolicy: sandboxPolicy(loadThreadPermissions(threadId).sandbox ?? sandbox, threadCacheRef.current.get(threadId)?.cwd ?? threadRef.current?.cwd ?? workspace ?? ""),
+          approvalPolicy: loadThreadPermissions(threadId).approval ?? approvalPolicy,
         });
       });
-      retryGateRef.current = run.catch(() => undefined);
+      retryGatesRef.current.set(threadId, run.catch(() => undefined));
       const result: any = await run;
       if (result?.skipped) {
         cancelRateLimitRetry(threadId, true);
@@ -8478,7 +8509,9 @@ export default function App() {
         model: ctx.model,
         effort: ctx.effort,
         personality: ctx.personality,
-        sandboxPolicy: sandboxPolicy(sandbox, threadRef.current?.cwd ?? workspace ?? ""),
+        // 同限流重试：沙箱 / 权限 / cwd 一律取**目标会话自己的**（会话间配置不得串）
+        sandboxPolicy: sandboxPolicy(loadThreadPermissions(ctx.threadId).sandbox ?? sandbox, threadCacheRef.current.get(ctx.threadId)?.cwd ?? threadRef.current?.cwd ?? workspace ?? ""),
+        approvalPolicy: loadThreadPermissions(ctx.threadId).approval ?? approvalPolicy,
       });
       if (result?.turn?.id) {
         setActiveTurnId(result.turn.id);
@@ -13057,7 +13090,12 @@ const commandMatches = useMemo(() => {
             setRetryEntry(params.threadId, null);
           }
           // 引擎重连提示同理：已经跑起来了 → 上游通了，提示立刻消失
-          setUpstreamRetry((current) => (current && current.threadId === params.threadId ? null : current));
+          setUpstreamRetries((current) => {
+            if (!(params.threadId in current)) return current;
+            const next = { ...current };
+            delete next[params.threadId];
+            return next;
+          });
         } else if (method0 === "turn/completed") {
           if (startedTurnId) rememberFinishedTurn(startedTurnId);
           // 正常收尾（无 error）＝ 不需要重试了 → 立刻取消该会话的重试链与重试条
@@ -13065,7 +13103,12 @@ const commandMatches = useMemo(() => {
             cancelRateLimitRetry(params.threadId, true);
             setRetryEntry(params.threadId, null);
           }
-          setUpstreamRetry((current) => (current && current.threadId === params.threadId ? null : current));
+          setUpstreamRetries((current) => {
+            if (!(params.threadId in current)) return current;
+            const next = { ...current };
+            delete next[params.threadId];
+            return next;
+          });
           // ⛔⛔ 429 兜底重试的**检测点必须在这里**（跨会话区、threadId 过滤之前）：
           //   09-19 用户实测「多会话同时跑，只有当前看的那个会话会自动重试，后台的会话直接断」——
           //   旧检测点在当前会话事件流里，后台会话的 turn/completed(429) 根本走不到那段代码。
@@ -13482,7 +13525,8 @@ const commandMatches = useMemo(() => {
         const reconnectMatch = rawError.match(/^Reconnecting\.\.\.\s*(\d+)\/(\d+)/);
         // 引擎自己正在重连/重试 → 显示进度（否则用户看到的就是"空转半天没反应"）
         if (reconnectMatch) {
-          setUpstreamRetry({ threadId: String(params.threadId ?? ""), no: Number(reconnectMatch[1]), total: Number(reconnectMatch[2]) });
+          const tid = String(params.threadId ?? "");
+          if (tid) setUpstreamRetries((current) => ({ ...current, [tid]: { no: Number(reconnectMatch[1]), total: Number(reconnectMatch[2]) } }));
         }
         let errorMessage = rawError;
       if (reconnectMatch) {
@@ -13585,13 +13629,16 @@ const commandMatches = useMemo(() => {
         setPersonality(params.threadSettings.personality ?? "none");
       } else if (event.method === "thread/queue/changed") {
         void refreshQueue(params.threadId);
-      } else if (event.method === "thread/archived" || event.method === "thread/deleted") {
-        setThreads((current) => current.filter((entry) => entry.id !== params.threadId));
-        threadCacheRef.current.delete(params.threadId);
-        if (threadRef.current?.id === params.threadId) {
-          // 引擎侧归档/删除当前会话同样走完整复位（漏 sending 会让发送按钮卡成「停止」）
-          startNewThread();
-        }
+        } else if (event.method === "thread/archived" || event.method === "thread/deleted") {
+          setThreads((current) => current.filter((entry) => entry.id !== params.threadId));
+          threadCacheRef.current.delete(params.threadId);
+          // ⛔ 该会话被归档/删除 → 它的重试链与提示**一并作废**：否则退避到点后会对着一个
+          //   已归档/不存在的会话重发（引擎报 not found），属于无意义的跨会话串扰。
+          resetSessionRetryState(params.threadId);
+          if (threadRef.current?.id === params.threadId) {
+            // 引擎侧归档/删除当前会话同样走完整复位（漏 sending 会让发送按钮卡成「停止」）
+            startNewThread();
+          }
       } else if (event.method === "model/verification") {
         const verificationText = (params.verifications ?? []).map((entry: any) => entry.message ?? JSON.stringify(entry)).join("\n") || "完成";
         // 模型元数据回退属已知无害噪音（自定义模型名不在引擎内置表），不弹「模型校验」卡
@@ -14676,10 +14723,13 @@ const commandMatches = useMemo(() => {
       threadProviderRef.current.set(next.id, HARNESS_PROVIDER_ID);
       await refreshThreads();
       await openThread(next.id, next);
-      // 旧会话自动清除（09-15 用户定稿：接力成功后**只保留新的**）：fork 已带完整历史，
-      // 旧会话没有保留价值——只归档还会在归档管理留一坨，用户明确要的是「旧的不在了」。
-      // 若旧会话是团队主会话，级联规则会一并清掉成员会话。
-      if (threadRef.current?.id !== threadId) {
+        // 旧会话自动清除（09-15 用户定稿：接力成功后**只保留新的**）：fork 已带完整历史，
+        // 旧会话没有保留价值——只归档还会在归档管理留一坨，用户明确要的是「旧的不在了」。
+        // 若旧会话是团队主会话，级联规则会一并清掉成员会话。
+        if (threadRef.current?.id !== threadId) {
+          // ⛔ 接力 = 换了会话 id：源会话的全部衍生状态必须彻底重置（用户 09-19：「复制会话 ID
+          //   接力的也必须从根源上完全重置」），否则它的退避定时器到点会对着旧 id 重发。
+          resetSessionRetryState(threadId);
         await cascadeTeamCluster(threadId, "delete");
         try { await window.codex.request("thread/delete", { threadId }); } catch { /* 已不存在则跳过 */ }
         threadCacheRef.current.delete(threadId);
@@ -15135,14 +15185,18 @@ const commandMatches = useMemo(() => {
 
   async function forkFromTurn(turnId: string) {
     if (!thread) return;
+    const sourceId = thread.id;
     try {
-      const result = await window.codex.request("thread/fork", { threadId: thread.id, turnId, excludeTurns: false });
+      const result = await window.codex.request("thread/fork", { threadId: sourceId, turnId, excludeTurns: false });
       if (result.thread) {
+        // ⛔ 分支后我们离开了源会话：源会话的重试链/提示必须彻底重置（否则它到点会继续
+        //   对着源会话重发，用户视角就是"分支出去以后那边还在自己动"）。新会话 id 天然干净。
+        resetSessionRetryState(sourceId);
         threadRef.current = result.thread;
         setThread(result.thread);
         setModelId(`custom:${customModel?.provider ?? "custom"}:${result.model ?? selectedModel?.model ?? customModel?.model ?? ""}`);
         await refreshThreads();
-        showToast("任务已分支", "已从选定消息创建新的任务分支");
+        showToast("任务已分支", "已从选定消息创建新的任务分支（新分支状态独立）");
       }
     } catch (error: any) {
       setNotice(`创建分支失败：${error.message}`);
@@ -15188,11 +15242,13 @@ const commandMatches = useMemo(() => {
     try {
       const result = await window.codex.request("thread/fork", { threadId: entry.id, excludeTurns: false });
       if (!result?.thread) throw new Error("引擎未返回新分支");
+      // 源会话的重试链一并作废（分支后它的状态不应再自行推进）；新会话 id 从零开始
+      resetSessionRetryState(entry.id);
       const sourceModel = loadThreadModel(entry.id);
       if (sourceModel) saveThreadModel(result.thread.id, sourceModel);
       await refreshThreads();
       await openThread(result.thread.id, result.thread);
-      showToast("已创建会话分支", cleanThreadDisplayTitle(entry.name, { preview: entry.preview }));
+      showToast("已创建会话分支", `${cleanThreadDisplayTitle(entry.name, { preview: entry.preview })}（新分支状态独立）`);
     } catch (error: any) {
       setNotice(`创建分支失败：${error.message}`);
     }
@@ -17654,6 +17710,8 @@ const commandMatches = useMemo(() => {
     const turnId = activeTurnId ?? runningTurnIdsRef.current.get(thread.id);
     if (!turnId) return;
     setInterrupting(true);
+    // 用户点停止 = 这个会话彻底停下：**只清它自己的**重试链（别的会话完全不受影响）
+    resetSessionRetryState(thread.id);
     try {
       await window.codex.request("turn/interrupt", { threadId: thread.id, turnId });
       setInterruptedTurns((current) => ({ ...current, [turnId]: Date.now() }));
@@ -18577,13 +18635,12 @@ const commandMatches = useMemo(() => {
               </div>
             );
           })()}
-          {/* 引擎上游重连提示（只对当前会话显示）：引擎在 429/断流时自己重试，期间没有输出 ——
-              不显示的话用户看到的就是"空转半天没反应"（09-19 用户实测原话）。 */}
-          {upstreamRetry && thread && upstreamRetry.threadId === thread.id && (
+          {/* 引擎上游重连提示（**只对当前会话显示**，别的会话各显示各的） */}
+          {thread && upstreamRetries[thread.id] && (
             <div className="rate-limit-retry-bar engine-reconnect-bar" role="status" aria-label="上游重连中">
               <LoaderCircle size={15} className="spin" />
               <span className="rate-limit-retry-text">
-                上游限流 / 断流，引擎正在自动重连（<b>第 {upstreamRetry.no}/{upstreamRetry.total} 次</b>）——
+                上游限流 / 断流，引擎正在自动重连（<b>第 {upstreamRetries[thread.id].no}/{upstreamRetries[thread.id].total} 次</b>）——
                 恢复后自动继续，无需操作
               </span>
             </div>

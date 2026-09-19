@@ -5891,9 +5891,18 @@ w.postMessage({id:1,op:"list",root});
   (app63.slice(crossStart, filterAt).includes('method0 === "error"') ? ok : fail)(
     "【63】engine error 通知（429 常见形态）同样在跨会话区处理"
   );
-  // ④ 重试发起串行化 + 退避抖动（同时重发=继续撞限流）
-  (/retryGateRef = useRef<Promise<unknown>>\(Promise\.resolve\(\)\)/.test(app63) ? ok : fail)(
-    "【63】重试发起串行化（多会话同刻到点时逐个发）"
+  // ④ 重试发起串行化：**按会话分门**（同一会话不并发投递），跨会话不排队。
+  //    ⛔⛔ 09-19 用户严令「每个会话必须完全独立，A 在跑/报错/重试跟 B 一点关系都没有」：
+  //    这里**必须**是 per-thread 的 Map，**不许**退回全局单门 —— 全局门会让 B 的重试
+  //    排队等 A 发完，正是"会话之间还串着"的根源。
+  (/const retryGatesRef = useRef<Map<string, Promise<unknown>>>\(new Map\(\)\)/.test(app63) ? ok : fail)(
+    "【63】重试发起串行化按会话分门（跨会话不排队、互不等待）"
+  );
+  (/\bretryGatesRef\.current\.set\(threadId, run\.catch\(\(\) => undefined\)\)/.test(app63) ? ok : fail)(
+    "【63】串行门按 threadId 写入（同一个会话才排队）"
+  );
+  (!/\bretryGateRef\b(?!s)/.test(app63) ? ok : fail)(
+    "【63】已无全局单门 retryGateRef（会话完全独立的结构保证）"
   );
   (/const delay = Math\.round\(base \* \(0\.8 \+ Math\.random\(\) \* 0\.4\)\);/.test(app63) ? ok : fail)(
     "【63】退避叠 ±20% 抖动（避免多会话同一秒重发）"
@@ -5902,8 +5911,14 @@ w.postMessage({id:1,op:"list",root});
   (/const focusedForSend = threadRef\.current\?\.id;\s*\n\s*if \(focusedForSend\) cancelRateLimitRetry\(focusedForSend, true\);/.test(app63) ? ok : fail)(
     "【63】手动发送只取消当前会话的重试（不清别的会话）"
   );
-  (/sandboxPolicy: sandboxPolicy\(sandbox, threadCacheRef\.current\.get\(threadId\)\?\.cwd/.test(app63) ? ok : fail)(
-    "【63】重试的沙箱目录按目标会话取（后台重试不能带当前会话的目录）"
+  (/sandboxPolicy: sandboxPolicy\(loadThreadPermissions\(threadId\)\.sandbox \?\? sandbox, threadCacheRef\.current\.get\(threadId\)\?\.cwd/.test(app63) ? ok : fail)(
+    "【63】重试的沙箱目录 + 权限模式都按目标会话取（配置层面不串会话）"
+  );
+  (/approvalPolicy: loadThreadPermissions\(threadId\)\.approval \?\? approvalPolicy/.test(app63) ? ok : fail)(
+    "【63】重试的审批策略同样按目标会话取"
+  );
+  (/sandboxPolicy: sandboxPolicy\(loadThreadPermissions\(ctx\.threadId\)\.sandbox \?\? sandbox, threadCacheRef\.current\.get\(ctx\.threadId\)\?\.cwd/.test(app63) ? ok : fail)(
+    "【63】降档重发的沙箱/权限也按目标会话取"
   );
 }
 
