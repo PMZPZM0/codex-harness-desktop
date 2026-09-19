@@ -1400,15 +1400,27 @@ function normalizeProvider(entry: CustomModelFile): CustomModelFile {
 /** 合并去重保序，model 始终在列表最前 */
 function withModels(entry: CustomModelFile, extra?: string): CustomModelFile {
   const normalized = normalizeProvider(entry);
+  let result = normalized;
   if (extra) {
     const existing = normalized.models ?? [];
     if (!existing.some((m) => m.id === extra)) {
       const cloned = [...existing];
       cloned.unshift({ id: extra, contextWindow: entry.contextWindow });
-      return { ...normalized, models: cloned };
+      result = { ...normalized, models: cloned };
     }
   }
-  return normalized;
+  // ⛔ 单一真相源（09-19 用户实测：「`custom-model.json` 该模型写 1000000、`custom-models.json` 同一供应商
+  //   顶层写 128000，这个修一下，怎么又出现这个问题」）：
+  //   两个字段表达的是同一件事，却由**两个不同来源**写 —— 模型自己的 `contextWindow` 来自内置规格表
+  //   （新建供应商时的真实能力值），顶层那个只是**新建模型时的默认值**（UI 默认 128000，用户多半没动过），
+  //   而引擎侧 catalog 读的是**模型自己的**值。两处各写各的 ⇒ 每次新建/保存供应商都会留下一对打架的数字，
+  //   界面按大值算（显示 12%），用户按小值理解（以为只剩 4%），谁也不知道哪个是真。
+  //   这里在**唯一写入点**收口：顶层恒等于生效模型自己的值（模型没有自己的值时才保留顶层输入）。
+  //   ⇒ `custom-model.json` 顶层、`custom-models.json` 里那条记录顶层、catalog、界面显示四处永远一致。
+  const effectiveWindow = result.model
+    ? (result.models ?? []).find((m) => m.id === result.model)?.contextWindow
+    : undefined;
+  return effectiveWindow ? { ...result, contextWindow: effectiveWindow } : result;
 }
 
 /**

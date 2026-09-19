@@ -19379,6 +19379,13 @@ const commandMatches = useMemo(() => {
                       if (known && out > known) hints.push(`该模型官方最大输出约 ${fmtCtx(known)}：当前填写 ${fmtCtx(out)} 超过规格，按官方文档填写`);
                       else if (!known && out > 131_072) hints.push("最大输出超过 128K：多数供应商拒绝超过自身上限的 max_output_tokens，建议按官方文档填写");
                     }
+                    // ⛔ 两个数字打架时说清**谁说了算**（09-19 用户实测：`custom-model.json` 该模型写 1M、
+                    //   `custom-models.json` 同一供应商顶层写 128000 —— 顶层那个只是"新建模型时的默认值"，
+                    //   用户多半没动过；真正生效的是**这里**这个）。保存后顶层会自动同步成本值。
+                    const providerDefault = Number(customDraft.contextWindow) || 0;
+                    if (providerDefault && Number.isFinite(ctx) && ctx > 0 && ctx !== providerDefault) {
+                      hints.push(`本模型的上下文 ${ctx.toLocaleString()} 才是**生效上限**；供应商表单里的 ${providerDefault.toLocaleString()} 只是新建模型时的默认值，保存后会自动同步成这里填的值`);
+                    }
                     if (!hints.length) return null;
                     return <div className="provider-field-hints">{hints.map((hint) => <p key={hint}>⚠️ {hint}</p>)}</div>;
                   })()}
