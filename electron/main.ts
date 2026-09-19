@@ -13,7 +13,7 @@ import { RESERVED_PROVIDER_IDS, safeProviderId, stripReservedProviderTables } fr
 import { BotStreamSession, readBotStreamSettings, readBotStreamSettingsSync, writeBotStreamSettings, type BotStreamBudget, type BotStreamSink, type BotStreamSettings } from "./bot-stream";
 import { plainTextForChannel } from "./channel-text";
 import { CodexServer, codexBinaryPath } from "./codex-server";
-import { ResponsesBridge } from "./responses-bridge";
+import { ResponsesBridge, type BridgeMode } from "./responses-bridge";
 import { BotPairingService } from "./bot-pairing";
 import { collectMcpServerNames, escapeTomlString, extractMcpSection, injectMcpToolRules, injectSectionExtras, preserveUserConfig, tomlBareKey, type McpToolRules } from "./config-toml";
 import { applyRoundedCorners } from "./win-rounded-corners";
@@ -408,6 +408,25 @@ server.setEngineSpawnHook(() => {
 const responsesBridge = new ResponsesBridge({ preferredPort: 47121, log: (line) => console.log(line) });
 
 /**
+ * 供应商 id → 上游协议（桥转发用）。**内存映射**，避免每个请求都去读盘。
+ *
+ * ⛔ 为什么必须有它：`bridgeDial` 是**同步**函数、而档案读取是异步的。而且注册点不止一处
+ *   （下发 config.toml、以及 codex:request 入口的兜底改写 `bridgeRewriteProviderConfig`），
+ *   那里只拿得到 provider id —— 所以只能靠这张表把协议设置带过去。
+ * 刷新时机：启动时一次 + 每次 `writeCustomModels` 之后（写档案 = 设置变化的唯一出口）。
+ */
+const upstreamProtocols = new Map<string, BridgeMode>();
+function normalizeUpstreamProtocol(value: unknown): BridgeMode {
+  return value === "chat" || value === "responses" ? value : "auto";
+}
+function syncUpstreamProtocols(list: CustomModelFile[]) {
+  upstreamProtocols.clear();
+  for (const entry of list) {
+    if (entry?.provider) upstreamProtocols.set(entry.provider, normalizeUpstreamProtocol(entry.upstreamProtocol));
+  }
+}
+
+/**
  * 生成「下发给引擎」的 base_url：桥已启动时换成桥地址并登记上游目标；
  * 桥未启动（启动失败等）时原样返回 → 直连，行为与旧版本完全一致（降级安全）。
  */
@@ -415,7 +434,7 @@ function bridgeDial(id: string, upstreamBaseUrl: string | undefined): string | u
   if (!upstreamBaseUrl) return upstreamBaseUrl;
   const dialed = responsesBridge.urlFor(id);
   if (!dialed) return upstreamBaseUrl;
-  responsesBridge.register(id, { baseUrl: upstreamBaseUrl, mode: "auto", label: id });
+  responsesBridge.register(id, { baseUrl: upstreamBaseUrl, mode: upstreamProtocols.get(id) ?? "auto", label: id });
   return dialed;
 }
 
@@ -780,6 +799,13 @@ type CustomModelFile = {
   /** 该供应商最多允许几个会话同时跑（09-19 用户要求，供应商配置界面可自定义，默认 3）。
    *  限流是同一个 Key 的共享配额 → 并发越高越容易 429；未设置时渲染层按 3 处理。 */
   maxConcurrency?: number;
+  /** 上游**协议**（09-19 加，供应商配置界面可自定义）：桥按它决定怎么转发。
+   *  · auto（默认）：先按 responses 试，上游明确表示"没这个端点"时才切 chat；
+   *  · chat：直接按 Chat Completions 转换（**网关不认 responses 且自动判定不灵时手动选它**）；
+   *  · responses：强制透传（确认上游就是 Responses 时用，省一次探测）。
+   *  ⛔ 有些网关对未知路径返回 400（而不是 404），旧版判定会误当成"端点正常"直接透传 ⇒
+   *    对话失败且看不出原因。这就是加这个手动开关的原因（Claude 类通道尤其常见）。 */
+  upstreamProtocol?: BridgeMode;
 };
 
 type StoredChannelBot = Omit<ChannelBotConfig, "appSecret" | "verificationToken" | "encryptKey"> & {
@@ -1418,7 +1444,10 @@ async function readCustomModel(): Promise<CustomModelFile | null> {
 async function readCustomModels(): Promise<CustomModelFile[]> {
   try {
     const list: CustomModelFile[] = JSON.parse(await fs.readFile(customModelsFile, "utf8"));
-    return list.map(normalizeProvider);
+    const normalized = list.map(normalizeProvider);
+    // 读到即是真相：顺手同步「上游协议」映射（启动后第一次读就自动建立，不需要额外启动钩子）
+    syncUpstreamProtocols(normalized);
+    return normalized;
   } catch { return []; }
 }
 
@@ -1430,6 +1459,9 @@ async function writeCustomModels(list: CustomModelFile[]) {
     if (previous.trim() && previous.trim() !== "[]") await fs.writeFile(`${customModelsFile}.bak`, previous, "utf8");
   } catch { /* 首次写入没有旧文件，跳过 */ }
   await fs.writeFile(customModelsFile, JSON.stringify(list, null, 2), "utf8");
+  // ⛔ 同步「上游协议」内存映射：写档案是设置变化的唯一出口，挂这里就不会漏
+  //   （漏了的表现是「用户改了协议设置但桥还按老协议走」）。
+  syncUpstreamProtocols(list);
 }
 
 async function upsertCustomModel(value: CustomModelFile) {
@@ -3025,6 +3057,16 @@ app.whenReady().then(async () => {
     //   放在这里 = 引擎读到的就是修好的文件，中招的用户升级后第一次启动即可用。
     //   函数内部自带 try/catch 降级，失败不阻塞启动。
     await healRolloutLineage();
+    // 「上游协议」映射必须在引擎起来之前就绪（09-19 代码审查发现，P1）：
+    //   `bridgeDial` 是**同步**函数，协议取自内存表 `upstreamProtocols`；而启动链上
+    //   第一次 bridgeDial 未必晚于第一次 readCustomModels（例如 codex:request 入口的
+    //   兜底改写 `bridgeRewriteProviderConfig`、以及历史别名段补齐）—— 表为空时注册给
+    //   桥的协议就回落成 `auto` ⇒ 用户配的「强制 chat」**重启后失效**（表现：重启又不行了、
+    //   得再进设置点一次保存）。这里提前读一次（该函数顺带 sync 这张表），幂等且无副作用。
+    //   失败只降级（表为空 ⇒ 回落 auto，与旧行为一致，不会阻塞启动）。
+    try {
+      await readCustomModels();
+    } catch (error) { console.warn("[bridge] 预填上游协议映射失败（回落 auto）:", error); }
     await server.start();
   } catch (error) {
     broadcastCodexEvent({ kind: "status", status: "error", message: String(error) });
@@ -8144,7 +8186,7 @@ ipcMain.handle("clipboard:read-files", async () => {
 });
 ipcMain.handle("custom-model:read", async () => publicCustomModel(await readCustomModel()));
 ipcMain.handle("custom-model:probe", (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) => probeCustomModel(input));
-ipcMain.handle("custom-model:save", async (_event, input: { provider: string; name: string; model: string; baseUrl: string; contextWindow?: string | number; wireApi?: "responses" | "chat"; apiKey?: string; models?: ProviderModel[]; enabled?: boolean; maxConcurrency?: number }) => {
+ipcMain.handle("custom-model:save", async (_event, input: { provider: string; name: string; model: string; baseUrl: string; contextWindow?: string | number; wireApi?: "responses" | "chat"; apiKey?: string; models?: ProviderModel[]; enabled?: boolean; maxConcurrency?: number; upstreamProtocol?: BridgeMode }) => {
   const provider = safeProviderId(input.provider.trim());
   const name = input.name.trim();
   const requestedModel = input.model.trim();
@@ -8200,7 +8242,9 @@ ipcMain.handle("custom-model:save", async (_event, input: { provider: string; na
   const maxConcurrency = input.maxConcurrency == null
     ? (existing?.maxConcurrency ?? 3)
     : Math.min(10, Math.max(1, Math.round(Number(input.maxConcurrency)) || 3));
-  const saved = withModels({ provider, name, model, baseUrl, contextWindow, wireApi, encryptedKey, maxConcurrency, enabled: keylessThirdPartySave ? false : (input.enabled ?? existing?.enabled ?? true), models: mergedModels }, model);
+  // 上游协议（09-19）：归一为 auto/chat/responses；未传（旧渲染层）时沿用已有值，兜底 auto。
+  const upstreamProtocol = normalizeUpstreamProtocol(input.upstreamProtocol ?? existing?.upstreamProtocol);
+  const saved = withModels({ provider, name, model, baseUrl, contextWindow, wireApi, encryptedKey, maxConcurrency, upstreamProtocol, enabled: keylessThirdPartySave ? false : (input.enabled ?? existing?.enabled ?? true), models: mergedModels }, model);
   await upsertCustomModel(saved);
   const current = await readCustomModel();
   if (saved.enabled === false && current?.provider !== provider) {
@@ -8225,6 +8269,8 @@ ipcMain.handle("custom-model:save", async (_event, input: { provider: string; na
 ipcMain.handle("bridge:status", async () => ({
   ...responsesBridge.status(),
   modes: responsesBridge.modesSnapshot(),
+  // 「用户配了什么协议」（区别于 modes = 「实际跑成什么」）——排查"改了设置不生效"看这个
+  configured: responsesBridge.configuredModes(),
 }));
 ipcMain.handle("custom-model:list", async () => {
   const list = await readCustomModels();

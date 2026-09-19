@@ -45,6 +45,11 @@ const HOP_BY_HOP = new Set([
   "accept-encoding",
 ]);
 
+/** 「上游不认这个端点」的措辞特征（用于 400 的歧义判定，见 probeResponses）。
+ *  ⛔ 只在 400 且**响应体明确是这个意思**时才切 chat —— 宁可漏切（用户可手动指定
+ *  「强制 chat」），也不能把「参数错误」误判成「端点不存在」而把本来能用的网关改坏。 */
+const UNSUPPORTED_ENDPOINT_HINT = /not\s*found|unknown\s+(endpoint|route|path|url|method)|unsupported|not\s+implemented|no\s+such|invalid\s+(url|endpoint|path)|does\s*not\s*exist|无法找到|不支持|未知(的)?(端点|路径|接口)/i;
+
 /** 把 Responses 请求体转成 Chat Completions 请求体（纯函数，可离线断言）。 */
 export function toChatRequest(body: any): any {
   const messages: any[] = [];
@@ -363,9 +368,18 @@ export class ResponsesBridge {
     this.emitReasoning = options.emitReasoning !== false;
   }
 
-  /** 登记路由目标：`/p/<id>/…` → 该 id 的上游。每次下发配置前调用，保证目标最新。 */
+  /** 登记路由目标：`/p/<id>/…` → 该 id 的上游。每次下发配置前调用，保证目标最新。
+   *
+   *  ⛔ 目标**变了就必须丢掉已解析的协议**（09-19 加「上游协议」手动开关时补）：
+   *     · mode 变了：用户从「自动」改成「强制 chat」后，桥若还按老的 `resolved` 走，
+   *       表现为**改了设置不生效**（查半天查不出原因）；
+   *     · base_url 变了：换了一家网关，能力可能完全不同，旧判定同样不能信。 */
   register(id: string, target: BridgeTarget) {
+    const previous = this.targets.get(id);
     this.targets.set(id, target);
+    if (previous && (previous.mode !== target.mode || previous.baseUrl !== target.baseUrl)) {
+      this.resolved.delete(id);
+    }
   }
 
   /** 该 id 当前是否已有确定的上游协议（供状态展示） */
@@ -376,6 +390,15 @@ export class ResponsesBridge {
   /** 已解析出的协议快照（供设置页展示「这个网关实际走的是什么」） */
   modesSnapshot(): Record<string, "responses" | "chat"> {
     return Object.fromEntries(this.resolved.entries());
+  }
+
+  /** 各供应商**配置**的上游协议（register 进来的，不是探测结果）。
+   *
+   *  ⛔ 与 modesSnapshot 的区别：那个是「实际跑了什么」，这个是「用户配了什么」。
+   *    排查「我改了设置但没生效」时，必须看**这个** —— 它为空/是旧值就说明配置没传到桥
+   *    （链路断在注册那一步），而不是桥转发错了。09-19 加手动开关时补的。 */
+  configuredModes(): Record<string, BridgeMode> {
+    return Object.fromEntries([...this.targets.entries()].map(([id, target]) => [id, target.mode]));
   }
 
   getPort(): number { return this.port; }
@@ -464,9 +487,44 @@ export class ResponsesBridge {
       const upstream = this.upstreamRequest(req, target, rest, raw);
       upstream.once("response", (up) => {
         const status = up.statusCode ?? 502;
+        // ① 明确表示「没有这个端点」的状态码
         if (status === 404 || status === 405 || status === 501) {
           up.resume(); // 丢弃响应体，避免连接悬挂
           return resolve("unsupported");
+        }
+        // ② 400 是**歧义**状态：可能是"不认这个端点"（该切 chat），也可能是"请求体有问题"
+        //    （端点正常，切了反而更糟 —— 有些 Responses 网关对不支持的参数就回 400）。
+        //    只看状态码会误判，必须读一小段响应体看措辞（错误响应都很小，缓冲不影响流式）。
+        if (status === 400) {
+          const chunks: Buffer[] = [];
+          let buffered = 0;   // 累加长度（别每次 data 都 reduce 重算 —— 那是 O(n²)）
+          let settled = false;
+          const verdictOf = () => (UNSUPPORTED_ENDPOINT_HINT.test(Buffer.concat(chunks).toString("utf8")) ? "unsupported" : "handled");
+          const settle = (verdict: "unsupported" | "handled") => {
+            if (settled) return;
+            settled = true;
+            if (verdict === "handled" && !res.headersSent) {
+              // 端点正常 → 把缓冲的响应体原样回放给引擎（不能吞掉，否则用户看不到真实报错）
+              this.counters.forwarded += 1;
+              res.writeHead(status, this.responseHeaders(up.headers));
+              res.end(Buffer.concat(chunks));
+            }
+            // ⛔ 无论哪种判决，都要把上游这条响应**排空**：只 resolve 不消费会让这条连接
+            //    （以及 keep-alive 池里的 socket）永远挂着 —— 而 400 恰好是「网关不配套」
+            //    时的高频路径，泄漏会随尝试次数累积。resume 让剩余数据流走并正常收尾。
+            up.resume();
+            resolve(verdict);
+          };
+          up.on("data", (chunk: Buffer) => {
+            if (settled) return;
+            chunks.push(chunk);
+            // 攒够一段就能定性（避免超大响应把内存吃掉）
+            buffered += chunk.length;
+            if (buffered > 8192) settle(verdictOf());
+          });
+          up.once("end", () => settle(verdictOf()));
+          up.once("error", () => settle("handled"));
+          return;
         }
         this.counters.forwarded += 1;
         res.writeHead(status, this.responseHeaders(up.headers));

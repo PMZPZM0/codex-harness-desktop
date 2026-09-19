@@ -2632,7 +2632,12 @@ console.log(C.bold("\n【23】API 协议：引擎只支持 Responses，chat 不�
   const mainTs = readFileSync(join(ROOT, "electron/main.ts"), "utf8");
   const appTsx = readFileSync(join(ROOT, "src/App.tsx"), "utf8");
   const hookTs = readFileSync(join(ROOT, "src/hooks/useModelProviders.ts"), "utf8");
-  (!appTsx.includes('<option value="chat">') ? ok : fail)("App.tsx 不再提供「Chat Completions」协议选项（引擎不支持，选了也白选）");
+  // ⛔ 判据必须**精确到 wireApi**（09-19 修正）：不能全文禁 `<option value="chat">` ——
+  //   新加的「上游协议」选择器**合法地**含有它（那是告诉本地协议桥"上游网关是什么协议"，
+  //   与写给引擎的 wireApi 完全两回事）。全文禁会把正确功能顶红（实测踩到）。
+  (!appTsx.includes('wireApi: "chat"') && !/wireApi:\s*event\.target\.value/.test(appTsx) ? ok : fail)(
+    "App.tsx 没有任何路径把 wireApi 设成 chat（引擎只支持 responses；「上游协议」选择器不算）"
+  );
   (!appTsx.includes('target.wireApi === "chat"') ? ok : fail)("App.tsx 会话接力内联 config 不把 chat 透传给引擎");
   (!mainTs.includes('savedWire === "chat" ? "chat"') ? ok : fail)("main.ts 历史会话别名段不把 chat 透传进 config.toml");
   // ⛔ 锚点切片而非全文禁字符串（09-18）：probeCustomModel 的协议回落合法地含
@@ -6316,6 +6321,81 @@ w.postMessage({id:1,op:"list",root});
   // ④ 自愈必须幂等：只处理「有血缘 + 源不在」的，别动正常会话
   (/if \(!meta\.parentId \|\| known\.has\(meta\.parentId\) \|\| !meta\.hasLineage\) continue;/.test(workerSrc71) ? ok : fail)(
     "【71】自愈只碰「源已丢失」的会话（源还在的正常会话不动，幂等）"
+  );
+}
+
+
+{
+  // ── 【72】上游协议手动开关（09-19 用户要求：Claude 类通道不认 responses，且自动判定不灵）──
+  //   Cloid 等第三方网关常只提供 /v1/chat/completions；引擎只发 Responses ⇒ 由本地协议桥转换。
+  //   但旧版桥的模式**恒为 auto**，而 auto 只在 404/405/501 时才切 chat —— 网关若对未知路径
+  //   返回 400/401，就判成「端点正常」直接透传 ⇒ 对话失败且看不出原因。所以必须能手动指定。
+  const bridgeSrc72 = readFileSync(join(ROOT, "electron", "responses-bridge.ts"), "utf8");
+  const mainSrc72 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  const appSrc72 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const hookSrc72 = readFileSync(join(ROOT, "src", "hooks", "useModelProviders.ts"), "utf8");
+
+  // ① 模式来自配置，不许恒 auto
+  (/const upstreamProtocols = new Map<string, BridgeMode>\(\);/.test(mainSrc72) ? ok : fail)(
+    "【72】主进程有「供应商 id → 上游协议」的内存映射"
+  );
+  (/mode: upstreamProtocols\.get\(id\) \?\? "auto"/.test(mainSrc72) ? ok : fail)(
+    "【72】桥注册时 mode 取自配置（不再恒 auto —— 手动指定才能生效）"
+  );
+  (!/mode: "auto", label: id/.test(mainSrc72) ? ok : fail)(
+    "【72】没有残留的硬编码 auto 注册"
+  );
+  // ② 改设置必须能生效：register 变了要丢旧判定
+  (/if \(previous && \(previous\.mode !== target\.mode \|\| previous\.baseUrl !== target\.baseUrl\)\) \{[\s\S]{0,80}?this\.resolved\.delete\(id\);/.test(bridgeSrc72) ? ok : fail)(
+    "【72】协议/地址变化时丢掉已解析缓存（否则「改了设置不生效」）"
+  );
+  // ③ 400 的歧义判定：必须读措辞（只认状态码会误判）
+  (/UNSUPPORTED_ENDPOINT_HINT/.test(bridgeSrc72) && /if \(status === 400\) \{/.test(bridgeSrc72) ? ok : fail)(
+    "【72】400 走「读响应措辞」判定（不能只看状态码：也可能是参数错误，切了反而更糟）"
+  );
+  // ④ 判定为「端点正常」时必须**回放**缓冲的响应体（不能吞掉真实报错）
+  (/res\.end\(Buffer\.concat\(chunks\)\);/.test(bridgeSrc72) ? ok : fail)(
+    "【72】400 判定为端点正常时回放响应体（不吞真实报错）"
+  );
+  // ⑤ 数据链路：类型 + 保存归一 + 读侧兜底
+  (/upstreamProtocol\?: BridgeMode;/.test(mainSrc72) ? ok : fail)("【72】档案类型含 upstreamProtocol");
+  (/function normalizeUpstreamProtocol\(value: unknown\): BridgeMode \{/.test(mainSrc72) ? ok : fail)(
+    "【72】主进程有协议归一函数（脏值落回 auto）"
+  );
+  (/const upstreamProtocol = normalizeUpstreamProtocol\(input\.upstreamProtocol \?\? existing\?\.upstreamProtocol\);/.test(mainSrc72) ? ok : fail)(
+    "【72】保存时归一并在未传值时沿用旧值"
+  );
+  (/upstreamProtocol\?: BridgeMode \}\) => \{/.test(mainSrc72) ? ok : fail)("【72】custom-model:save 入参带该字段");
+  (/upstreamProtocol: dedupedDraft\.upstreamProtocol \?\? "auto"/.test(hookSrc72) ? ok : fail)(
+    "【72】渲染层保存时带上该字段（缺省 auto）"
+  );
+  // ⑥ 界面入口
+  (/<span>上游协议/.test(appSrc72) ? ok : fail)("【72】供应商配置界面有「上游协议」选项");
+  (/<option value="chat">Chat 兼容/.test(appSrc72) ? ok : fail)("【72】可手动选「Chat 兼容」");
+  (/type UpstreamProtocol/.test(appSrc72) ? ok : fail)("【72】界面用类型约束（不是裸字符串）");
+  // ⑦ 语义不许与 wireApi 混为一谈（wireApi 是写给引擎的，恒 responses）
+  (/wireApi: "responses",\s*\n\s*maxConcurrency: normalizeMaxConcurrency/.test(hookSrc72) ? ok : fail)(
+    "【72】wireApi 仍恒为 responses（写给引擎；引擎只发 Responses，写 chat 会拒载整份配置）"
+  );
+  // ⑧ 代码审查（09-19）修的三处 —— 都是"看起来能跑、实际会静默失效"的类型
+  //   ① 协议映射必须在引擎起来**之前**预填：bridgeDial 是同步的、读内存表，而引擎起来后
+  //      渲染层第一个请求就可能触发 bridgeDial —— 那时表还空 ⇒ 注册成 auto ⇒ 用户配的
+  //      「强制 chat」重启后失效（竞态，难复现）。
+  const bootSeq72 = mainSrc72.slice(mainSrc72.indexOf("await healRolloutLineage()"), mainSrc72.indexOf("await server.start()"));
+  (/await readCustomModels\(\)/.test(bootSeq72) ? ok : fail)(
+    "【72】启动链在 server.start() 之前预填「上游协议」映射（否则首个请求可能注册成 auto）"
+  );
+  //   ② 400 分支定性后必须排空上游响应：只 resolve 不消费会让 socket 长期悬挂，
+  //      而 400 正是「网关不配套」的高频路径 ⇒ 泄漏随尝试次数累积。
+  (/const verdictOf = \(\) => \(UNSUPPORTED_ENDPOINT_HINT\.test/.test(bridgeSrc72) ? ok : fail)(
+    "【72】400 歧义判定抽成单点（不许两处正则各写一遍，会漂移）"
+  );
+  (/\bup\.resume\(\);\s*\n\s*resolve\(verdict\)/.test(bridgeSrc72) ? ok : fail)(
+    "【72】400 判决后排空上游响应（不排空 = keep-alive 连接悬挂泄漏）"
+  );
+  //   ③ register 发现目标变化必须丢掉已解析协议（否则「改了设置不生效」且查不出原因）
+  (/previous\.mode !== target\.mode \|\| previous\.baseUrl !== target\.baseUrl/.test(bridgeSrc72) ? ok : fail)(
+    "【72】桥目标变化时丢弃已缓存的协议判定（mode 或 base_url 变了就重新判定）"
   );
 }
 

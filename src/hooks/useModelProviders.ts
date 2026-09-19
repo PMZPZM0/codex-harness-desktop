@@ -26,7 +26,12 @@ export function classifyProviderProbeFailure(raw: string): string {
   return text;
 }
 
-export type CustomModel = { provider: string; name: string; model: string; baseUrl: string; contextWindow?: number; wireApi?: "responses" | "chat" | "auto"; hasKey?: boolean; effort?: string; models?: ProviderModel[]; enabled?: boolean; maxConcurrency?: number };
+/** 上游协议（本地协议桥按它决定怎么转发）。
+ *  ⛔ 与 `wireApi` 不是一回事：`wireApi` 是**写给引擎**的字段（我们恒写 responses —— 引擎只会发
+ *  Responses，写 chat 会让整份配置拒载）；`upstreamProtocol` 是告诉**本地桥**「上游真实是什么协议」。 */
+export type UpstreamProtocol = "auto" | "chat" | "responses";
+
+export type CustomModel = { provider: string; name: string; model: string; baseUrl: string; contextWindow?: number; wireApi?: "responses" | "chat" | "auto"; hasKey?: boolean; effort?: string; models?: ProviderModel[]; enabled?: boolean; maxConcurrency?: number; upstreamProtocol?: UpstreamProtocol };
 
 export type ProviderDraft = {
   provider: string;
@@ -43,6 +48,9 @@ export type ProviderDraft = {
    *  可选：旧档案/旧构造点没有这个字段 → 读取侧统一兜底，不必逐个补默认值。
    *  限流是**同一个 Key 的共享配额**，并发越高越容易 429 —— 这是把"配额消耗"变成用户可调的旋钮。 */
   maxConcurrency?: string;
+  /** 上游协议（09-19 用户要求：有些网关（Claude 类通道常见）不认 responses，且自动判定
+   *  不灵 —— 必须能手动指定）。缺省 auto。 */
+  upstreamProtocol?: UpstreamProtocol;
 };
 
 export type ProviderSummary = {
@@ -56,6 +64,7 @@ export type ProviderSummary = {
   models?: ProviderModel[];
   enabled?: boolean;
   maxConcurrency?: number;
+  upstreamProtocol?: UpstreamProtocol;
 };
 
 /** 并发上限的默认值与归一（实现在 src/lib/concurrency.mjs —— 与闸门判据同源，
@@ -106,8 +115,8 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
     setCustomModel(saved);
     // ⛔ maxConcurrency 要显式转字符串：草稿里是 string（输入框），而档案里是 number
     //   —— `{...saved}` 会把 number 带进来与 ProviderDraft 冲突（TS 报错）。
-    setCustomDraft({ ...saved, contextWindow: String(saved.contextWindow ?? 128000), wireApi: saved.wireApi ?? "responses", apiKey: "", models: saved.models ?? (saved.model ? [{ id: saved.model }] : []), enabled: saved.enabled ?? true, maxConcurrency: String(normalizeMaxConcurrency(saved.maxConcurrency)) });
-    const entry = { provider: saved.provider, name: saved.name, model: saved.model, baseUrl: saved.baseUrl, wireApi: saved.wireApi ?? "responses", hasKey: saved.hasKey, models: saved.models, enabled: saved.enabled ?? true, maxConcurrency: normalizeMaxConcurrency(saved.maxConcurrency) };
+    setCustomDraft({ ...saved, contextWindow: String(saved.contextWindow ?? 128000), wireApi: saved.wireApi ?? "responses", apiKey: "", models: saved.models ?? (saved.model ? [{ id: saved.model }] : []), enabled: saved.enabled ?? true, maxConcurrency: String(normalizeMaxConcurrency(saved.maxConcurrency)), upstreamProtocol: saved.upstreamProtocol ?? "auto" });
+    const entry = { provider: saved.provider, name: saved.name, model: saved.model, baseUrl: saved.baseUrl, wireApi: saved.wireApi ?? "responses", hasKey: saved.hasKey, models: saved.models, enabled: saved.enabled ?? true, maxConcurrency: normalizeMaxConcurrency(saved.maxConcurrency), upstreamProtocol: saved.upstreamProtocol ?? "auto" };
     setProvidersList((current) => {
       const index = current.findIndex((provider) => provider.provider === saved.provider);
       return index >= 0 ? current.map((provider) => provider.provider === saved.provider ? entry : provider) : [...current, entry];
@@ -177,6 +186,7 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
         model: effectiveModel,
         wireApi: "responses",
         maxConcurrency: normalizeMaxConcurrency(dedupedDraft.maxConcurrency),
+        upstreamProtocol: dedupedDraft.upstreamProtocol ?? "auto",
       });
       adoptSavedProvider(saved);
       onEngineApplied?.();

@@ -184,6 +184,34 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 - **指纹内核（cloak-browsers）仅用于自动化场景**（模型经 `cloakbrowser` CLI 调用）；浏览器视图的「隐身浏览」按钮为预留位，尚未接入 CDP 嵌入。
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
+- **⛔ 上游协议手动开关（`upstreamProtocol`）—— Claude 类通道接入的可控口（09-19，供应商配置界面可调）**：
+  用户诉求：「如果用 Claude 模型呢，能做适配协议吗 / 能不能走本地代理转成 Codex 支持的协议」。
+  答：**走的正是现有架构**（引擎只发 Responses → 本地协议桥 47121 按上游实际能力转发），缺的不是桥，
+  而是「桥判定不了时的人工出口」。
+  - **三档取值**（存在供应商档案里，`CustomModelFile.upstreamProtocol`）：`auto`（默认，先按 responses 试，
+    上游明确表示"没这个端点"才切 chat）/ `chat`（直接按 Chat Completions 转换）/ `responses`（强制透传，省一次探测）。
+    ⛔ **与 `wireApi` 不是一回事**：`wireApi` 是写给**引擎**的（恒 `responses`，写 chat 会让整份 config.toml 拒载）；
+    `upstreamProtocol` 是告诉**本地桥**上游真实是什么协议。别混。
+  - ⛔ **加它的原因**：有些网关对未知路径返回 **400**（不是 404），旧判定只看状态码 ⇒ 当成"端点正常"直接透传 ⇒
+    对话失败且看不出原因（Claude 类通道尤其常见）。现在 400 走**歧义判定**：读一小段响应体（≤8KB）按措辞特征
+    （`UNSUPPORTED_ENDPOINT_HINT`）定性，**且只在明确是这个意思时才切** —— 宁可漏切（用户可手动指定），
+    也不能把"参数错误"误判成"端点不存在"而把本来能用的网关改坏。
+  - **注入链路**：`bridgeDial(id, baseUrl)` 从**内存表** `upstreamProtocols` 取协议（同步函数、拿不到异步档案），
+    该表在 `readCustomModels()` 与 `writeCustomModels()` 里同步（写档案 = 设置变化的唯一出口）。
+    ⛔ **启动链必须在 `await server.start()` 之前预填一次**（`await readCustomModels()`）：引擎起来后渲染层第一个
+    请求就可能触发 `bridgeDial`，那时表还空 ⇒ 注册成 `auto` ⇒ 用户配的「强制 chat」**重启后失效**（竞态，难复现）。
+    预检【72】已钉死这条。
+  - ⛔ `register()` 发现 `mode` 或 `baseUrl` **变了就必须丢掉已解析的协议缓存**（`resolved.delete(id)`）——
+    否则用户改完设置，桥还按旧判定走，表现成"改了设置不生效"且查不出原因。
+  - **排查接口**：`bridge:status` 同时给 `modes`（实际跑成什么）与 `configured`（**用户配了什么**）。
+    排查"我改了设置但没生效"必须看 `configured` —— 它为空/是旧值说明配置没传到桥（断在注册那步），
+    而不是桥转发错了。二者混为一谈会往错的方向查。
+  - **Claude 的现实约束**（给用户解释用）：Anthropic 提供 OpenAI 兼容层（`/v1/chat/completions`），
+    所以 Claude 属「Chat 兼容」那一档，中转站的 Claude 通道多数可直接用；但官方明说兼容层面向测试/对比，
+    **工具调用的 JSON 不保证符合 schema**（`strict` 被忽略）—— 而 Codex 干活全靠工具调用，故不建议把它当生产路径。
+  - 验证：预检【72】19 条守卫；真机 e2e ①界面下拉（三值、默认 auto）+ 保存落档 + **桥注册的协议真变成 chat**；
+    ②**重启场景**（隔离 profile 只放档案、不写 config.toml）：`configured={"tmpchat":"chat"}` 且 config.toml 的
+    `base_url` 指向 `http://127.0.0.1:47121/p/<id>`，全通过。
 - **⛔ 会话血缘（rollout lineage）：删源会拖死子会话 —— 删除必须守卫、已断的启动自愈（09-19 用户实测事故）**：
   用户原文：「我归档会话，提示 `invalid paginated history lineage for <源id>: missing source rollout`，会话都没法选择了，从根上修掉」。
   - **机制**：分支 / 接力 / 专家团派生出来的会话，其 rollout **首行 `session_meta`** 记着源会话；引擎在 `threads.history_mode = paginated` 时会沿血缘**按字节区间回读源 rollout**（`history_base = { thread_id, end_ordinal_exclusive, end_byte_offset }`）。
