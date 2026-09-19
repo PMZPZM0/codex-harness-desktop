@@ -97,3 +97,64 @@ export async function resolveRelayAutoTarget(): Promise<{ mode: "balance" | "pla
   }
   return { mode: "balance", resolved: await resolveRelayTarget("balance") };
 }
+
+/**
+ * 中转站账户登录的**完整链路**：登录 → 自动选计费方式（有套餐用套餐，否则余额）→ 生成供应商 → 生效。
+ *
+ * ⛔ 抽出来是因为它有**两个入口**（登录页 + 模型配置引导弹窗）。分两处各写一份必然漂移 ——
+ *   尤其"无分组 key 被网关 403 时改绑第一个订阅分组重试"这段兜底，漏掉任何一处，那边的用户
+ *   就会卡在"供应商生成失败"而不知道为什么（09-19 引导弹窗补中转站入口时抽的）。
+ *
+ * @param onLogin 宿主自己的「保存供应商 + 探测模型 + 生效」链路（App 的 handleLogin）。
+ * @returns ok=false 时 message 是可直接展示给用户的原因（不用用户去猜）。
+ */
+export async function performRelayLogin(input: {
+  baseUrl: string;
+  email: string;
+  password: string;
+  username?: string;
+  onLogin: (info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string }) => Promise<boolean>;
+}): Promise<{ ok: boolean; message?: string; active?: RelayActive }> {
+  try {
+    await window.codex.relayLogin({ baseUrl: input.baseUrl.trim(), email: input.email.trim(), password: input.password });
+  } catch (error: any) {
+    return { ok: false, message: `中转站登录失败：${error?.message ?? error}` };
+  }
+  try {
+    let target = await resolveRelayAutoTarget();
+    let ok = await input.onLogin({
+      provider: target.resolved.provider,
+      name: target.resolved.displayName,
+      baseUrl: target.resolved.gateway,
+      apiKey: target.resolved.apiKey,
+      model: "",
+      username: input.username,
+    });
+    // 部分站点强制 key 必须绑分组（无分组 key 网关 403）：改绑第一个订阅分组重试
+    if (!ok && target.mode === "balance") {
+      const ov = await window.codex.relayOverview().catch(() => null);
+      const subs: any[] = ov?.subscriptions ?? [];
+      if (subs.length) {
+        const s0 = subs[0];
+        const group = { group_id: Number(s0.group_id), group_name: String(s0.group_name ?? "套餐") };
+        target = { mode: "plan", group, resolved: await resolveRelayTarget("plan", group) };
+        ok = await input.onLogin({
+          provider: target.resolved.provider,
+          name: target.resolved.displayName,
+          baseUrl: target.resolved.gateway,
+          apiKey: target.resolved.apiKey,
+          model: "",
+          username: input.username,
+        });
+      }
+    }
+    if (!ok) {
+      return { ok: false, message: "供应商生成失败：该网关没探测到可用模型 —— 可稍后在「设置 → 账户 → 中转站」重试，或换用「粘贴 API Key」。", active: target.resolved.active };
+    }
+    // 只有供应商真正生成并生效后才落「已生效」标记，避免失败残留锁死按钮/徽标
+    writeRelayActive(target.resolved.active);
+    return { ok: true, active: target.resolved.active };
+  } catch (error: any) {
+    return { ok: false, message: `中转站登录后配置失败：${error?.message ?? error}` };
+  }
+}

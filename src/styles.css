@@ -17099,73 +17099,96 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   color: var(--accent);
   white-space: nowrap;
 }
-/* ── 小白快速上手（09-19 用户：「登录界面和模型供应商配置联动性差，新手总是不会」）──
-   引导弹窗里内嵌「粘 Key 一键配好」快路 + 输入框上方常驻入口横幅。
-   配色一律走主题变量，亮/暗两套主题都可用。 */
-.model-guide-quick {
+/* ── 模型配置引导（09-19 用户：「排版太丑……弹窗提醒的优化一下展示」）──
+   四个入口做成**一行标签**，一次只展开一个：不再把线路/Key/次要路径全堆在一张卡里
+   （上一版又高又没有主次）。配色一律走主题变量，亮/暗两套都可用。 */
+.model-guide-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.model-guide-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.model-guide-tab:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 45%, var(--line-soft)); }
+.model-guide-tab:disabled { opacity: 0.55; cursor: default; }
+.model-guide-tab > svg { flex: none; }
+.model-guide-tab > span { display: flex; flex-direction: column; min-width: 0; }
+.model-guide-tab b { font-size: 12px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-guide-tab em { font-style: normal; font-size: 10.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-guide-tab.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, var(--panel));
+  color: var(--accent);
+}
+.model-guide-tab.active b { color: var(--accent); }
+.model-guide-pane {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 13px 13px 12px;
-  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line-soft));
+  padding: 13px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--line-soft));
   border-radius: 12px;
-  background: color-mix(in srgb, var(--accent) 6%, var(--panel-2));
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel-2));
 }
-.model-guide-quick-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--accent);
-}
-.model-guide-quick-head strong {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text);
-}
-.model-guide-step {
-  margin-left: auto;
-  flex: none;
-  padding: 1px 7px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--accent);
-}
-.model-guide-lines {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 6px;
-}
+.model-guide-pick { display: flex; align-items: flex-start; gap: 10px; }
+.model-guide-pick > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.model-guide-pick strong { font-size: 13px; font-weight: 600; color: var(--text); }
+.model-guide-pick em { font-style: normal; font-size: 11.5px; line-height: 1.6; color: var(--muted); }
+.model-guide-note { margin: 0; font-size: 11.5px; line-height: 1.65; color: var(--muted); }
 .model-guide-line {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 6px;
   text-align: left;
-  padding: 7px 9px;
+  padding: 6px 10px;
   border: 1px solid var(--line-soft);
-  border-radius: 9px;
+  border-radius: 999px;
   background: var(--panel);
   cursor: pointer;
   min-width: 0;
+}
+.model-guide-line > svg { flex: none; color: var(--accent); }
+.model-guide-line .dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--faint) 70%, transparent);
 }
 .model-guide-line b {
   font-size: 11.5px;
   font-weight: 500;
   color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.model-guide-line small {
+.model-guide-line.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.model-guide-line.active b { color: var(--accent); }
+.model-guide-line-url {
+  grid-column: 1 / -1;
   font-size: 10.5px;
   color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.model-guide-line.active {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
-}
-.model-guide-line.active b {
-  color: var(--accent);
+.model-guide-lines {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 6px;
 }
 .model-guide-key > span {
   font-size: 11.5px;
@@ -17220,59 +17243,8 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   opacity: 0.55;
   cursor: default;
 }
-/* 输入框上方的常驻入口：未配模型时一直挂着，点开就是一键配置 */
-/* 未配模型提示：**一行紧凑条**（09-19 用户：「这个引导非要那么长一个长条吗」）。
-   ⛔ 它在输入框**内部顶部**，别把它挪回框外 —— 项目地址 chip 浮在框外上方，挪出去就重叠。 */
-.setup-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  text-align: left;
-  margin: 0 0 8px;
-  padding: 6px 10px;
-  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line-soft));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--accent) 6%, var(--panel));
-  color: var(--accent);
-  cursor: pointer;
-  flex: none;
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-.setup-banner:hover {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
-}
-.setup-banner-text {
-  display: flex;
-  flex-direction: row;
-  align-items: baseline;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
-.setup-banner-text b {
-  flex: none;          /* 窄窗口下不许把「还没配模型」压窄变形 */
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text);
-  white-space: nowrap;
-}
-.setup-banner-text em {
-  font-style: normal;
-  font-size: 11.5px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.setup-banner-go {
-  flex: none;
-  font-size: 12px;
-  color: var(--accent);
-  white-space: nowrap;
-}
+/* ⛔ 原「未配模型」输入框内提示条样式已按用户要求删除（09-19：「输入框里面的删了」
+   「不要吸在输入框上面吧」）。入口改到左侧栏的「模型配置」菜单 —— 别再恢复这段样式。 */
 .model-guide-tips {
   margin-top: 4px;
   padding-top: 12px;
@@ -17290,6 +17262,8 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   line-height: 1.6;
   color: var(--faint);
 }
+.model-guide-foot-note { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--muted); }
+
 .model-guide > footer {
   display: flex;
   justify-content: flex-end;
@@ -18873,6 +18847,19 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   overflow: hidden;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
+/* 侧栏「模型配置」：未配模型时给一个醒目点（入口在侧栏，不再占用输入框） */
+.sidebar-tab.needs-setup { color: var(--accent); }
+.sidebar-tab.needs-setup > svg { color: var(--accent); }
+.sidebar-tab-dot {
+  margin-left: auto;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
 .sidebar-tab:hover {
   background: var(--panel-2);
 }

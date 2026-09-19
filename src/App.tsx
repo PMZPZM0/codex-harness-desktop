@@ -40,7 +40,7 @@ import { createSendAnimClaim, armSendAnimationClaim as armSendAnimationClaimLib,
 import { macHotkeyLabel } from "./lib/hotkey.mjs";
 import { resolveSkillVisual, type SkillVisual } from "./lib/skill-icon";
 import { translateEngineNotice } from "./lib/engine-notices-zh";
-import { resolveRelayAutoTarget, resolveRelayTarget, resolveRelayKeyTarget, writeRelayActive, readRelayActive, type RelayActive } from "./lib/relay";
+import { performRelayLogin, resolveRelayAutoTarget, resolveRelayTarget, resolveRelayKeyTarget, writeRelayActive, readRelayActive, type RelayActive } from "./lib/relay";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "./lib/entity-avatar";
 import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens, isImagePart, imagePartSrc, normalizeImagePartForSend } from "./lib/prompt-images";
 import {
@@ -229,28 +229,19 @@ function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: 
   };
 
   // 中转站账户登录：登录 → 自动选计费方式（有套餐用套餐，否则余额）→ 生成供应商进主界面
+  // ⛔ 链路本体在 lib/relay.ts 的 performRelayLogin —— 引导弹窗里也有同一个入口，
+  //   两处共用一份实现（含"无分组 key 被网关 403 时改绑套餐分组重试"的兜底），避免漂移。
   const relayLogin = async () => {
     setBusy(true); setStatus("");
-    try {
-      await window.codex.relayLogin({ baseUrl: relayDraft.baseUrl.trim(), email: relayDraft.email.trim(), password: relayDraft.password });
-      let target = await resolveRelayAutoTarget();
-      let ok = await onLogin({ provider: target.resolved.provider, name: target.resolved.displayName, baseUrl: target.resolved.gateway, apiKey: target.resolved.apiKey, model: "", username: username.trim() || undefined });
-      // 部分站点强制 key 必须绑分组（无分组 key 网关 403）：改绑第一个订阅分组重试
-      if (!ok && target.mode === "balance") {
-        const ov = await window.codex.relayOverview().catch(() => null);
-        const subs: any[] = ov?.subscriptions ?? [];
-        if (subs.length) {
-          const s0 = subs[0];
-          const group = { group_id: Number(s0.group_id), group_name: String(s0.group_name ?? "套餐") };
-          target = { mode: "plan", group, resolved: await resolveRelayTarget("plan", group) };
-          ok = await onLogin({ provider: target.resolved.provider, name: target.resolved.displayName, baseUrl: target.resolved.gateway, apiKey: target.resolved.apiKey, model: "", username: username.trim() || undefined });
-        }
-      }
-      // 只有供应商真正生成并生效后才落「已生效」标记，避免失败残留锁死按钮/徽标
-      if (ok) writeRelayActive(target.resolved.active);
-      else setStatus("供应商生成失败：网关探测不到可用模型，请稍后在 设置 → 中转站 重试");
-    } catch (error: any) { setStatus("中转站登录失败：" + (error.message ?? error)); }
-    finally { setBusy(false); }
+    const result = await performRelayLogin({
+      baseUrl: relayDraft.baseUrl,
+      email: relayDraft.email,
+      password: relayDraft.password,
+      username: username.trim() || undefined,
+      onLogin,
+    });
+    if (!result.ok) setStatus(result.message ?? "中转站登录失败");
+    setBusy(false);
   };
 
   // OpenAI 官方订阅：设备码登录 → 收进账号库 → 写 auth.json + 重启引擎 → 自动配置进主界面
@@ -9800,6 +9791,9 @@ export default function App() {
   /** 引导弹窗里「一键配好」的忙碌/错误态（就地反馈，不再只给一句全局 notice） */
   const [quickSetupBusy, setQuickSetupBusy] = useState(false);
   const [quickSetupError, setQuickSetupError] = useState("");
+  /** 引导弹窗里「中转站账户登录」的忙碌/错误态（与 Key 路径各一份，互不干扰） */
+  const [relaySetupBusy, setRelaySetupBusy] = useState(false);
+  const [relaySetupError, setRelaySetupError] = useState("");
   const modelGuideDoneRef = useRef(false);
   /** 首次启动「环境体检」（09-17 用户：「新用户不知道该装什么，不装 Codex 啥也干不了」）。
    *  必备 4 项（模型 / 工作区 / Git / ripgrep）缺任一项就弹；装了或用户关掉都算本次完事。 */
@@ -13971,6 +13965,10 @@ const commandMatches = useMemo(() => {
     const timer = window.setTimeout(() => {
       if (modelGuideDoneRef.current) return;
       modelGuideDoneRef.current = true;   // 本次启动只判断一次（关掉后不再弹）
+      // ⛔ 配好过就**永不**再弹（用户 09-19：「在登录界面配置过了，就不要弹这个弹窗了」）。
+      //   登录页 / 引导弹窗 / 中转站 三条配置路径成功后都会写这个标记，所以"登录页配过"
+      //   再进主界面时不会弹（之前只看 customModel，异步加载的空窗会让弹窗闪一下）。
+      if (hadModelConfigured()) return;
       if (!customModel) setShowModelGuide(true);
     }, 1200);
     return () => window.clearTimeout(timer);
@@ -17723,6 +17721,9 @@ const commandMatches = useMemo(() => {
       adoptSavedProvider(saved, models);
       // 4) 进主界面
       localStorage.setItem("login-skipped", "false");
+      // ⛔ 配置成功 ⇒ 落「已配置过」标记（引导弹窗从此永不再弹）。三条配置路径（登录页 /
+      //   引导弹窗 / 中转站）最终都汇到这里，所以在这里写最不容易漏。
+      markModelConfigured();
       setShowLogin(false);
       showToast("登录成功", `已创建 ${info.name}，导入 ${models.length} 个模型，默认生效 ${defaultModel}`);
       // 登录/切换账号后只刷新列表，不创建新会话、不清空本地历史；优先恢复切换前打开的线程。
@@ -17741,6 +17742,14 @@ const commandMatches = useMemo(() => {
     setShowLogin(false);
   }
 
+  /** ⛔「模型已配置过」的持久标记：引导弹窗**配好一次就永不再弹**。
+   *  用户 09-19 原话：「如果在登录界面配置过了，就不要弹这个弹窗了」。
+   *  ⛔ 不能只看「当前有没有 customModel」——启动时配置是**异步**加载的，中间有短暂空窗，
+   *    已配好的用户会看到弹窗闪一下（正是用户报的现象）。标记一落盘就彻底不再出现。 */
+  const MODEL_CONFIGURED_KEY = "model-configured-v1";
+  function markModelConfigured() { try { localStorage.setItem(MODEL_CONFIGURED_KEY, "1"); } catch { /* 忽略 */ } }
+  function hadModelConfigured() { try { return localStorage.getItem(MODEL_CONFIGURED_KEY) === "1"; } catch { return false; } }
+
   /**
    * 引导弹窗里的「粘 Key 一键配好」（09-19 用户要求：让小白快速上手）。
    *
@@ -17757,6 +17766,7 @@ const commandMatches = useMemo(() => {
       const ok = await handleLogin({ ...info, model: "" });
       if (ok) {
         setShowModelGuide(false);
+        markModelConfigured();   // ⛔ 配好即「永不再弹」（用户 09-19：「配置过了就不要弹这个弹窗了」）
         showToast("配置完成，可以开始了", `已启用 ${info.name} —— 直接在下面输入你的任务试试`);
       } else {
         setQuickSetupError("没探测到可用模型。请确认：① Key 复制完整（末尾无空格）；② 线路选对了；③ 该账号有可用额度。");
@@ -17765,6 +17775,27 @@ const commandMatches = useMemo(() => {
       setQuickSetupError(String(error?.message ?? error));
     } finally {
       setQuickSetupBusy(false);
+    }
+  }
+
+  /** 引导弹窗里的中转站登录：走与登录页**同一条链路**（lib/relay.ts 的 performRelayLogin，
+   *  含"无分组 key 被网关 403 时改绑套餐分组重试"的兜底），不另写一份以免两处漂移。 */
+  async function relayQuickLogin(info: { baseUrl: string; email: string; password: string }) {
+    setRelaySetupBusy(true);
+    setRelaySetupError("");
+    try {
+      const result = await performRelayLogin({ ...info, onLogin: (payload) => handleLogin(payload) });
+      if (result.ok) {
+        setShowModelGuide(false);
+        markModelConfigured();
+        showToast("中转站登录成功", `已启用 ${result.active?.label ?? "中转站账户"} —— 直接在下面输入你的任务试试`);
+      } else {
+        setRelaySetupError(result.message ?? "中转站登录未完成");
+      }
+    } catch (error: any) {
+      setRelaySetupError(String(error?.message ?? error));
+    } finally {
+      setRelaySetupBusy(false);
     }
   }
 
@@ -18160,6 +18191,11 @@ const commandMatches = useMemo(() => {
         </div>
         <div className="sidebar-tabs" role="tablist" aria-label="导航">
           <button className="sidebar-tab" onClick={() => { startNewThread(); }}><MessageSquarePlus size={15} /><span>新建任务</span><kbd>{hk("Ctrl+N")}</kbd></button>
+          {/* ⛔ 09-19 用户要求：「在左侧侧边栏加一个模型配置菜单跳转到模型配置入口的选项」
+              （配套：输入框里那个提示条已删）。未配模型时给一个醒目点，新手一眼能看到入口。 */}
+          <button className={`sidebar-tab ${!customModel ? "needs-setup" : ""}`} title="模型配置（供应商 / API Key / 中转站）" onClick={() => { setSettingsPage("model"); setSettingsOpen(true); setMobileNav(false); }}>
+            <Bot size={15} /><span>模型配置</span>{!customModel && <i className="sidebar-tab-dot" aria-label="尚未配置" />}
+          </button>
           <button className="sidebar-tab" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}><Clock3 size={15} /><span>自动化</span></button>
           <button className="sidebar-tab" onClick={() => { setSettingsPage("skills"); setSettingsOpen(true); setMobileNav(false); }}><Zap size={15} /><span>技能中心</span></button>
           <button className="sidebar-tab" onClick={() => { setSettingsPage("plugins"); setSettingsOpen(true); setMobileNav(false); }}><Store size={15} /><span>插件市场</span></button>
@@ -18377,6 +18413,9 @@ const commandMatches = useMemo(() => {
               busy={quickSetupBusy}
               error={quickSetupError}
               onQuickSetup={(info) => void quickSetup(info)}
+              relayBusy={relaySetupBusy}
+              relayError={relaySetupError}
+              onRelayLogin={(info) => void relayQuickLogin(info)}
               onGoManual={() => { setShowModelGuide(false); setSettingsPage("model"); setSettingsOpen(true); }}
               onGoSubscription={() => { setShowModelGuide(false); setSettingsPage("openai"); setSettingsOpen(true); }}
               onRegister={() => void window.codex.openExternal("https://api.pptoken.cc/register?aff=X82JSNVC3W3S").catch(() => undefined)}
@@ -18793,18 +18832,9 @@ const commandMatches = useMemo(() => {
           {/* 实时语音舞台：彩色波浪 + 中英字幕，只在通话中显示（状态来自 voice/wave-level 广播） */}
           <VoiceWaveform />
           <form className="composer" onSubmit={send}>
-            {/* 未配模型提示（09-19 用户：「不要那么长的长条」「不要改动项目地址选项的位置」）：
-                ⛔ 放在输入框**内部顶部**，且**压缩成一行** —— 项目地址 chip 是浮在框外上方的
-                绝对定位图层（`bottom: calc(100% + 5px)`），提示放框内则两层永不重叠，
-                chip 的位置/定位方式/下拉锚点全部原样不动。
-                入口仍待在"要发消息的地方"（新手不会主动去设置里找），只是不再占外部空间。 */}
-            {!customModel && !showLogin && (
-              <button type="button" className="setup-banner" onClick={() => setShowModelGuide(true)}>
-                <Sparkles size={13} />
-                <span className="setup-banner-text"><b>还没配模型</b><em>粘一个 API Key 即可，自动识别模型</em></span>
-                <span className="setup-banner-go">去配置</span>
-              </button>
-            )}
+            {/* ⛔ 09-19 用户明令删除输入框内的「还没配模型」提示条（原话：「排版太丑，不要吸在
+                输入框上面吧」「输入框里面的删了」）。入口改为**左侧栏的「模型配置」菜单**
+                （sidebar-tabs），那里才是配置类功能的固定位置。别再把它塞回输入框。 */}
 {/* 欢迎页「项目地址」选择（仅空态显示，发送首条消息后随欢迎态消失）：
                 与右上角 📁 同一全局 workspace 联动；「无项目」模式每次自动新建独立临时目录 */}
             {isEmpty && (
