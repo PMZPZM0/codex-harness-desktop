@@ -8235,9 +8235,6 @@ export default function App() {
     setWorkStartedAt(Date.now());
     markThreadRunning(ctx.threadId);
     try {
-      // ⛔ 沙箱 cwd 必须按**目标会话**取（不能拿 threadRef.current —— 用户可能已切走，
-      //   重试别的会话会把当前会话的 cwd 当沙箱根）。目标会话不在缓存时退 workspace。
-      const retryTarget = threadCacheRef.current.get(ctx.threadId);
       const result: any = await window.codex.request("turn/start", {
         threadId: ctx.threadId,
         input: ctx.input,
@@ -8245,7 +8242,7 @@ export default function App() {
         effort: ctx.effort,
         personality: ctx.personality,
         // 限流重试这一轮也要带上沙箱，否则重试后会掉回会话创建时的旧权限
-        sandboxPolicy: sandboxPolicy(sandbox, retryTarget?.cwd ?? threadRef.current?.cwd ?? workspace ?? ""),
+        sandboxPolicy: sandboxPolicy(sandbox, threadRef.current?.cwd ?? workspace ?? ""),
       });
       if (result?.turn?.id) {
         setActiveTurnId(result.turn.id);
@@ -8254,15 +8251,12 @@ export default function App() {
       showToast("限流重试已发出", `第 ${attempt}/${RATE_LIMIT_MAX_ATTEMPTS} 次重试已被接受，任务继续运行`);
     } catch (error: any) {
       setSending(false);
+      markThreadStopped(ctx.threadId);
       setWorkStartedAt(null);
       if (isRateLimitError(error?.message) && attempt < RATE_LIMIT_MAX_ATTEMPTS) {
         showToast("仍被限流", `第 ${attempt} 次重试仍失败，稍后自动继续`);
-        // ⛔ 继续 schedule 时不 markThreadStopped（同 scheduleRateLimitRetry 的修复：
-        //   重试链还活着，运行状态应保持；熄灭会让侧栏/停止键闪没）。
         scheduleRateLimitRetry(attempt + 1);
       } else {
-        markThreadStopped(ctx.threadId);
-        markThreadDoneUnread(ctx.threadId);   // 重试链终结 = 任务结束，留绿点反馈
         setNotice(error?.message ?? "限流重试失败");
         cancelRateLimitRetry(true);
       }
@@ -8282,15 +8276,13 @@ export default function App() {
     setWorkStartedAt(Date.now());
     markThreadRunning(ctx.threadId);
     try {
-      // 沙箱 cwd 按**目标会话**取（同 executeRateLimitRetry 的修复：用户可能已切走）
-      const retryTarget = threadCacheRef.current.get(ctx.threadId);
       const result: any = await window.codex.request("turn/start", {
         threadId: ctx.threadId,
         input: ctx.input,
         model: ctx.model,
         effort: ctx.effort,
         personality: ctx.personality,
-        sandboxPolicy: sandboxPolicy(sandbox, retryTarget?.cwd ?? threadRef.current?.cwd ?? workspace ?? ""),
+        sandboxPolicy: sandboxPolicy(sandbox, threadRef.current?.cwd ?? workspace ?? ""),
       });
       if (result?.turn?.id) {
         setActiveTurnId(result.turn.id);
@@ -8309,11 +8301,6 @@ export default function App() {
     const ctx = retryContextRef.current;
     if (!ctx) return;
     if (attempt > RATE_LIMIT_MAX_ATTEMPTS) {
-      // ⛔ 放弃 = 重试链结束：必须熄灭运行状态（否则转圈/停止键永远挂着——09-19 反面教训：
-      //   「保持运行态」只适用于**重试链还活着**的等待期；链断了就要如实收尾）。
-      //   同时给该会话留**完成绿点**：任务确实结束了（哪怕以失败告终），用户切回来要能看见。
-      markThreadStopped(ctx.threadId);
-      markThreadDoneUnread(ctx.threadId);
       cancelRateLimitRetry(true);
       showToast("限流重试放弃", `已连续重试 ${RATE_LIMIT_MAX_ATTEMPTS} 次仍被限流，请稍后手动重发`);
       return;
@@ -8322,16 +8309,12 @@ export default function App() {
     const delay = rateLimitBackoffMs(attempt);
     setSending(false);
     setActiveTurnId(null);
+    markThreadStopped(ctx.threadId);
     setInterrupting(false);
     setWorkStartedAt(null);
     setRateLimitRetry({ threadId: ctx.threadId, attempt, retryAt: Date.now() + delay });
     clearRateLimitTimer();
     rateLimitTimerRef.current = window.setTimeout(() => void executeRateLimitRetry(), delay);
-    // ⛔ 09-19 用户严令「不要影响会话自动收尾」：这里**不能** markThreadStopped ——
-    //   限流重试马上就要原样重发（等退避窗口过去），会话的运行状态应保持可见，
-    //   否则侧栏转圈消失、右下角停止键消失（用户截图实证：状态来回翻转）。
-    //   turn/started 事件在重发成功时自然会重新点亮；executeRateLimitRetry 的
-    //   markThreadRunning 也会兜一层。只有用户点「停止」或重试放弃才真正熄灭。
   }
   const compactPendingRef = useRef(new Set<string>());
   const [interrupting, setInterrupting] = useState(false);
@@ -8402,38 +8385,6 @@ export default function App() {
     optimisticTurnIdRef.current = null;
     setOptimisticInput(null);
   }, [optimisticConfirmed, optimisticInput, thread]);
-  // ⛔⛔ 运行状态看门狗（09-19 用户截图实证「消息都回完了，停止键还挂着」= turn/completed
-  //    收尾事件丢失后没有任何东西来复位 sending/activeTurnId）。规则：
-  //    sending=true 期间每 30s 与**引擎侧记账**（engineActiveTurns，主进程按引擎事件维护）
-  //    对账一次：当前会话不在记账里 = 引擎侧早已没有活动回合 = 收尾事件丢了 → 强制收尾。
-  //    这是状态机的最后一条腿：事件驱动为主（turn/completed 等权威事件），看门狗兜底，
-  //    两层都依赖引擎侧真相——**不存在"永久卡运行"的状态了**。
-  const sendingWatchdogRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (!sending || !activeTurnId) { if (sendingWatchdogRef.current != null) { window.clearInterval(sendingWatchdogRef.current); sendingWatchdogRef.current = null; } return; }
-    const tid = threadRef.current?.id;
-    if (!tid) return;
-    const probe = () => {
-      // 优先对当前 activeTurnId 的会话；记账以 threadId 集合返回
-      void window.codex.engineActiveTurns().then((info) => {
-        const ids: string[] = (info?.threadIds ?? []).map(String);
-        const stillActive = ids.includes(tid);
-        if (!stillActive && !document.hidden) {
-          // 收尾事件丢失 → 强制复位（不弹通知，静默修复；用户无感知差异）
-          setSending(false);
-          setInterrupting(false);
-          setActiveTurnId(null);
-          setWorkStartedAt(null);
-          markThreadStopped(tid);
-          dbg("watchdog-state-reset", { threadId: tid, turnId: activeTurnId });
-        }
-      }).catch(() => undefined);
-    };
-    const timer = window.setTimeout(probe, 30000);   // 首查 30s（正常回合 <30s 的不被打扰）
-    const interval = window.setInterval(probe, 30000);
-    sendingWatchdogRef.current = interval;
-    return () => { window.clearTimeout(timer); window.clearInterval(interval); if (sendingWatchdogRef.current === interval) sendingWatchdogRef.current = null; };
-  }, [sending, activeTurnId]);
   const [openingThread, setOpeningThread] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingRequest[]>([]);
   // e2e UI 场景入口（与 window.__adbg 同款测试钩子，只改内存、不碰引擎）：审批卡的形态
@@ -12183,27 +12134,6 @@ const commandMatches = useMemo(() => {
     dbg("queue-arm-cancelled", { why });
   }
 
-  /** 为「排队释放」启动的回合登记 429 重试上下文（09-19 用户截图实证缺口）：
-   *  引擎侧 10 次重试耗尽后回合以 429 报错结束，渲染层兜底重试（rate-limit-retry）的
-   *  触发条件是 retryContextRef.current?.threadId === 失败会话 —— 而这个上下文只在
-   *  「直接 turn/start」路径登记过；**排队释放的回合（运行中发消息 / 自动续接 / 点立即）
-   *  429 后没有上下文 → 不重试，只弹一张「处理出错」错误卡**。这正是截图里
-   *  「处理出错：429 Too Many Requests」反复出现、应用却不接手的场景。
-   *  ⛔ 上下文的 input 必须用**排队条目自己的 input**（它才是引擎将重跑的内容），
-   *     模型/档位沿用当前生效值（与释放时一致）。 */
-  function armRateLimitRetryForQueueRelease(threadId: string, entryInput: any[]) {
-    if (!threadId) return;
-    retryContextRef.current = {
-      threadId,
-      input: entryInput,
-      model: activeModelRef.current || modelName(modelId),
-      effort: effort || null,
-      personality: null,   // 释放路径拿不到气泡时刻的 personality；置空与「不指定」同义
-    };
-    rateLimitAttemptRef.current = 0;
-    dbg("queue-retry-arm", { threadId });
-  }
-
   /** 回合级「截断空转」的自动续接（09-19 用户实测「思考内容过长会被截断，运行状态就断了」）。
    *  机制：回合已 task_complete（引擎侧无 active turn，`turn/steer` 不可用——它的前置条件是
    *  "active turn id"，引擎自己也不做 finish_reason=length 的续写），承接只能落成**新回合**。
@@ -12242,14 +12172,11 @@ const commandMatches = useMemo(() => {
         const head = list?.data?.[0];
         if (head) {
           const armedForCont = armPinForReleasedQueue(threadId, "auto-continue");
-          // 续接回合同样要被 429 兜底重试覆盖（续接场景本身就是上游不稳的高发区）
-          armRateLimitRetryForQueueRelease(threadId, head.input ?? []);
           try {
             await window.codex.request("thread/queue/start", { threadId, queuedSubmissionId: head.id });
           } catch (error: any) {
             // 启动失败 ⇒ 那条续接不会出现：撤回钉顶意图（否则去钉列表里别的消息），并告知
             if (armedForCont) disarmPinIntent("auto-continue-fail");
-            cancelRateLimitRetry(true);
             showToast("自动续接失败", String(error?.message ?? error));
           }
         }
@@ -12306,8 +12233,6 @@ const commandMatches = useMemo(() => {
     const armedForStart = armPinForReleasedQueue(thread.id, "queue-start");
     try {
       // 它会作为**新回合**的用户消息出现 → 同样要先建立钉顶意图
-      // 429 兜底重试覆盖：这条回合若以 429 失败，用排队条目自己的 input 自动重发
-      armRateLimitRetryForQueueRelease(thread.id, entry?.input ?? []);
       await window.codex.request("thread/queue/start", { threadId: thread.id, ...(id ? { queuedSubmissionId: id } : {}) });
       // 同「回合结束自动启动」：先本地摘掉，避免与真实气泡并存（否则会短暂重复展示）
       if (id) setQueue((current) => current.filter((entry) => entry.id !== id));
@@ -12315,7 +12240,6 @@ const commandMatches = useMemo(() => {
       showToast("已发送", "排队消息已开始执行");
     } catch (error: any) {
       if (armedForStart) disarmPinIntent("queue-start-fail");
-      cancelRateLimitRetry(true);
       showToast("发送失败", error.message);
     }
   }
@@ -13100,20 +13024,12 @@ const commandMatches = useMemo(() => {
         //   引擎 rollout 不记录 finish_reason，只能靠渲染层已有数据兜底检测：
         //   思考极长 + 正文为空 + 全程无工具动作 = 被截断的空转（有正文或有工具的一律不判，防误报）。
         //   只对**当前会话**判定（后台会话的 items 不在 threadRef 里，且用户没在看）。
-        // ⛔⛔ 09-19 用户严令「不要影响会话自动收尾」：429/限流失败的回合 items **恰好长得很像
-        //   截断空转**（思考 + 空正文，工具调用在 error 回合里经常不带）——不排除的话，
-        //   截断续接和限流重试**两条自动恢复路径同时接管同一回合**：一个排队续接、一个定时重发，
-        //   运行状态被来回翻转（用户截图实证：会话显示已完成、右下角却还在运行中）。
-        //   规则收死：**回合有 error 或限流重试在管这个会话 → 绝不触发截断续接**（重试会
-        //   原样重发整条任务，本身就能接上；续接只管"引擎以为正常完成但实际空转"的场景）。
-        if (!params.turn.error?.message && !(retryContextRef.current?.threadId === params.threadId && (rateLimitRetry || rateLimitTimerRef.current != null))) {
-          if (params.threadId === threadRef.current?.id) {
-            const turnId = String(params.turn?.id ?? "");
-            const localTurn = threadRef.current?.turns.find((entry) => entry.id === turnId);
-            if (isTruncatedEmptyTurn(localTurn ?? params.turn)) {
-              showToast("回合可能被上游截断", truncationNotice());
-              maybeAutoContinueTruncated(String(params.threadId ?? ""));
-            }
+        if (params.threadId === threadRef.current?.id) {
+          const turnId = String(params.turn?.id ?? "");
+          const localTurn = threadRef.current?.turns.find((entry) => entry.id === turnId);
+          if (isTruncatedEmptyTurn(localTurn ?? params.turn)) {
+            showToast("回合可能被上游截断", truncationNotice());
+            maybeAutoContinueTruncated(String(params.threadId ?? ""));
           }
         }
         // 图片模态自愈（09-18 用户反馈：升级上来的模型配置标了「视觉」，但接入点实际不支持图片
@@ -13156,8 +13072,6 @@ const commandMatches = useMemo(() => {
           // 这条排队消息马上会变成真实回合的用户消息 → 先建立钉顶意图（否则它落进内容流，
           // 用户看到的就是「钉顶没生效」）。只对当前正在看的会话生效，见函数注释。
           armedByAutoStart = armPinForReleasedQueue(params.threadId, "auto-start");
-          // 429 兜底重试也要覆盖这条回合（09-19 用户截图：「处理出错 429」反复出现却不重试）
-          armRateLimitRetryForQueueRelease(params.threadId, head.input ?? []);
           return window.codex.request("thread/queue/start", { threadId: params.threadId, queuedSubmissionId: head.id });
         }).catch((error) => {
           // 启动失败 ⇒ 那条消息不会出现，撤回意图（否则钉顶会去钉别的消息）
@@ -18297,7 +18211,7 @@ const commandMatches = useMemo(() => {
                 <b>{Math.max(0, Math.ceil((rateLimitRetry.retryAt - Date.now()) / 1000))}s</b> 后自动进行
               </span>
               <button type="button" onClick={() => void executeRateLimitRetry()}>立即重试</button>
-              <button type="button" onClick={() => { cancelRateLimitRetry(); markThreadStopped(rateLimitRetry.threadId); markThreadDoneUnread(rateLimitRetry.threadId); }}>停止</button>
+              <button type="button" onClick={() => cancelRateLimitRetry()}>停止</button>
             </div>
           )}
           {thread && <QueuedMessageList entries={queue} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />}
