@@ -17221,19 +17221,22 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   cursor: default;
 }
 /* 输入框上方的常驻入口：未配模型时一直挂着，点开就是一键配置 */
+/* 未配模型提示：**一行紧凑条**（09-19 用户：「这个引导非要那么长一个长条吗」）。
+   ⛔ 它在输入框**内部顶部**，别把它挪回框外 —— 项目地址 chip 浮在框外上方，挪出去就重叠。 */
 .setup-banner {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
   text-align: left;
   margin: 0 0 8px;
-  padding: 9px 12px;
-  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--line-soft));
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line-soft));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel));
   color: var(--accent);
   cursor: pointer;
+  flex: none;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 .setup-banner:hover {
@@ -17242,20 +17245,27 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 .setup-banner-text {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
   flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 .setup-banner-text b {
-  font-size: 12.5px;
+  flex: none;          /* 窄窗口下不许把「还没配模型」压窄变形 */
+  font-size: 12px;
   font-weight: 500;
   color: var(--text);
+  white-space: nowrap;
 }
 .setup-banner-text em {
   font-style: normal;
   font-size: 11.5px;
   color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .setup-banner-go {
   flex: none;
