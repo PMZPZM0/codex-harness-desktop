@@ -6495,14 +6495,14 @@ w.postMessage({id:1,op:"list",root});
   (/function FieldHelp\(\{ text \}: \{ text: string \}\)/.test(app73) ? ok : fail)(
     "【73】有 ? 说明组件（用户要求：赘述收进 ? 号）"
   );
-  (/tabIndex=\{0\} role="note" aria-label=\{text\}/.test(app73) ? ok : fail)(
+  (/tabIndex=\{0\}[\s\S]{0,140}?role="note"[\s\S]{0,80}?aria-label=\{text\}/.test(app73) ? ok : fail)(
     "【73】? 图标可键盘访问（只靠 hover 的话键盘用户读不到说明）"
   );
   (!/<p className="provider-form-hint">协议自动适配/.test(app73) ? ok : fail)(
     "【73】协议自动适配的常驻长说明已移除（改由 ? 承载）"
   );
-  (/\.field-help \{/.test(css73) && /\.field-help:hover::after/.test(css73) ? ok : fail)(
-    "【73】? 气泡样式存在（hover/focus 才显示）"
+  (/\.field-help-pop \{/.test(css73) ? ok : fail)(
+    "【73】? 气泡浮层样式存在（portal 方案，09-20 起取代伪元素）"
   );
   (/\.local-preset-chip \{/.test(css73) ? ok : fail)("【73】本地预设 chip 样式存在");
   // ⑦ 本地服务「无 Key 也能启用」（09-19 代码审查抓到的真 bug）
@@ -6543,6 +6543,18 @@ w.postMessage({id:1,op:"list",root});
   // 直接锚字面量要嵌套转义，太脆）
   (/if \(current\.baseUrl === preset\.url\) \{[\s\S]{0,400}?custom\$\{Date\.now\(\) % 1000\}/.test(app73) ? ok : fail)(
     "【73】取消时把预设生成的 id 也还原（避免留一个 ollama-2 这种无主 id）"
+  );
+  // ⑨ 「?」气泡必须走 portal 浮层（09-20 用户：「问好弹窗被左边供应商选项遮住了」）
+  //   伪元素方案在 .provider-form（overflow-y:auto）里必被裁：气泡向左伸进 .provider-list 区域
+  //   的部分直接消失（实测左边缘 537 < 列表右边界 603），看起来正是「被左边供应商遮住」。
+  (/: \{ text: string \}\) \{[\s\S]{0,2600}?createPortal\(/.test(app73) ? ok : fail)(
+    "【73】FieldHelp 的气泡走 createPortal 挂 body（伪元素逃不出滚动容器裁剪与层叠上下文）"
+  );
+  (!/\.field-help::after/.test(css73) ? ok : fail)(
+    "【73】不得回退成 .field-help::after 伪元素气泡（09-20 已实锤会被 .provider-form 裁掉）"
+  );
+  (/\.field-help-pop \{[\s\S]{0,200}?position: fixed;/.test(css73) ? ok : fail)(
+    "【73】气泡浮层本体是 position:fixed（fixed 不受祖先 overflow 裁剪）"
   );
 }
 

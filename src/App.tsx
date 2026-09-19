@@ -203,14 +203,90 @@ const LOCAL_MODEL_PRESETS = [
   { id: "llamacpp", name: "llama.cpp", url: "http://127.0.0.1:8080/v1", port: "8080" },
 ];
 
-/** 字段旁的「?」说明气泡（09-19 用户要求「赘述都放到 ? 号里面」）。
- *
- *  为什么**同时**用 CSS 气泡和原生 title：设置面板是滚动容器，绝对定位的伪元素在某些
- *  层级会被 overflow 裁掉；而 title 由浏览器自绘、永不被裁 —— 两者叠加，气泡正常时好看、
- *  被裁时 title 兜底，不会出现「说明彻底读不到」。
- *  ⛔ 必须可键盘访问（tabIndex + :focus 也显示）：只靠 hover 的话键盘用户读不到说明。 */
+/**
+ * 字段说明「?」——气泡**必须**走 portal 挂到 body，不能用 ::after 伪元素（09-20 修）。
+ * ⛔ 伪元素方案在这里必然出错，两个原因各自独立成立：
+ *   ① 供应商表单 `.provider-form` 是 `overflow-y: auto` 的滚动容器，绝对定位的伪元素逃不出它的
+ *      裁剪边界 —— 气泡向下/向左溢出就被切掉，肉眼看起来正是「被左边供应商列表遮住」；
+ *   ② 伪元素的 z-index 只在其所属**层叠上下文**内生效，祖先一旦有层叠上下文就永远压不过兄弟节点。
+ * 改成 body 上的 fixed 浮层后，与滚动容器、层叠上下文彻底解耦。
+ * ⛔ 仍须可键盘访问（tabIndex + onFocus 也打开）：只靠 hover 的话键盘用户读不到说明。
+ */
 function FieldHelp({ text }: { text: string }) {
-  return <i className="field-help" tabIndex={0} role="note" aria-label={text} title={text} data-tip={text}>?</i>;
+  const anchorRef = useRef<HTMLElement | null>(null);
+  const popRef = useRef<HTMLDivElement | null>(null);
+  const [box, setBox] = useState<{ anchorTop: number; anchorBottom: number; left: number; up: boolean } | null>(null);
+  const TIP_W = 300;
+  const open = () => {
+    const el = anchorRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const width = Math.min(TIP_W, window.innerWidth - 24);
+    // 水平方向贴 ? 的左边缘，再夹进视口（不越界，也就不会伸到左侧列表头上）
+    const left = Math.max(12, Math.min(r.left, window.innerWidth - width - 12));
+    // 先按「向下」渲染，真正的上下翻转交给下面的布局副作用按实测高度决定
+    setBox({ anchorTop: r.top, anchorBottom: r.bottom, left, up: false });
+  };
+  const close = () => setBox(null);
+  // ⛔ 翻转必须按**实测高度**决定，不能写死阈值估算：说明文字长短差很多（「上游协议」那段实测
+  //    294px），按 190 估就会向下弹、底部被视口切掉 50px，用户看不到后一半说明。
+  //    useLayoutEffect 在浏览器绘制前执行，翻转过程用户看不到。
+  useLayoutEffect(() => {
+    const el = popRef.current;
+    if (!box || !el || box.up) return;
+    const h = el.offsetHeight;
+    const below = window.innerHeight - box.anchorBottom - 7 - 12;
+    const above = box.anchorTop - 7 - 12;
+    // 下方装得下就保持向下；装不下才向上，且上方必须比下方更宽裕（两边都紧就选大的那侧）
+    if (below < h && above > below) setBox((prev) => (prev ? { ...prev, up: true } : prev));
+  }, [box]);
+  useEffect(() => {
+    if (!box) return;
+    // 滚动/改窗口后锚点会移动，而 fixed 浮层不跟随 —— 直接收起比错位好
+    const dismiss = () => setBox(null);
+    // 形参用 Event + 断言：本文件的 KeyboardEvent 是 React 类型（导入遮蔽了 DOM 那个），
+    // 直接标它会让 addEventListener("keydown") 的重载匹配失败（同 18082 既有写法）
+    const onKey = (event: Event) => {
+      if (String((event as unknown as { key?: string }).key ?? "") === "Escape") setBox(null);
+    };
+    window.addEventListener("scroll", dismiss, true);
+    window.addEventListener("resize", dismiss);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("scroll", dismiss, true);
+      window.removeEventListener("resize", dismiss);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [box]);
+  return (
+    <>
+      <i
+        ref={anchorRef}
+        className="field-help"
+        tabIndex={0}
+        role="note"
+        aria-label={text}
+        onMouseEnter={open}
+        onMouseLeave={close}
+        onFocus={open}
+        onBlur={close}
+      >?</i>
+      {box && createPortal(
+        <div
+          ref={popRef}
+          className="field-help-pop"
+          role="tooltip"
+          style={{
+            top: box.up ? undefined : box.anchorBottom + 7,
+            bottom: box.up ? window.innerHeight - box.anchorTop + 7 : undefined,
+            left: box.left,
+            maxWidth: Math.min(TIP_W, window.innerWidth - 24),
+          }}
+        >{text}</div>,
+        document.body,
+      )}
+    </>
+  );
 }
 
 function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string }) => Promise<boolean> }) {
