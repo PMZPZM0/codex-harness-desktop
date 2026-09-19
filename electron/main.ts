@@ -68,7 +68,7 @@ import { ensureBuiltinSkills, ensureExpertSkillsMarketplace, expertSkillsSourceD
 import { ensurePonytailPlugin } from "./ponytail-plugin";
 import { getPonytailMode, setPonytailMode } from "./ponytail-mode";
 import { markMissingRollouts, mergeThreadList } from "./session-tools";
-import { enrichThreadWithRolloutToolsAsync, listRolloutThreadsAsync, purgeRolloutFilesAsync } from "./rollout-pool";
+import { enrichThreadWithRolloutToolsAsync, healRolloutLineageAsync, listRolloutThreadsAsync, purgeRolloutFilesAsync } from "./rollout-pool";
 /** 诊断计数（09-12 多会话性能）：thread/list 走了几次「rollout 全量兜底扫描」。
     旧实现每次必扫（渲染层每个回合结束都打一发 → O(N²)）；现在只在引擎索引为空时扫。
     e2e 场景据此断言「跑 10 个会话时扫描次数为 0」，避免优化被悄悄改回去。 */
@@ -618,10 +618,50 @@ async function purgeDeletedThread(threadId: string) {
   await rememberDeletedThread(id);
   void purgeRolloutFilesAsync(codexHome, [id]).then((result) => {
     if (result?.removed?.length) console.log("[thread/delete] 已清理磁盘 rollout:", result.removed.length, "个");
+    // ⛔⛔ 血缘守卫命中（09-19）：这条会话的 rollout 还被别的活着的会话依赖（分支/接力/派生），
+    //   删了会让那个会话直接打不开（`missing source rollout`）——所以**故意保留**这个文件。
+    //   侧栏不会显示它（墓碑仍然生效），用户视角就是"删掉了"，只是磁盘上留一份血缘锚点。
+    if (result?.kept?.length) {
+      console.warn(
+        "[thread/delete] 保留 rollout（被其它会话的血缘依赖，删了会让那些会话打不开）:",
+        JSON.stringify(result.kept).slice(0, 400),
+      );
+    }
     if (result?.failed?.length) console.warn("[thread/delete] rollout 文件清理失败（已记墓碑，侧栏不会再显示）：", JSON.stringify(result.failed).slice(0, 300));
   }).catch((error: any) => {
     console.warn("[thread/delete] rollout 清理（worker）失败：", error?.message ?? error);
   });
+}
+
+/**
+ * 血缘自愈（09-19 用户：「归档会话后另一个会话报 missing source rollout，都没法用了，从根上修掉」）。
+ *
+ * 旧版本删会话时没有血缘守卫，把**子会话依赖的源 rollout** 一起删了 ⇒ 子会话每次打开都报
+ *   `invalid paginated history lineage for <源>: missing source rollout`，连侧栏点击都不行。
+ * 启动时跑一次：把这类「源已丢失」的子会话首行血缘字段摘掉（原首行存 `.lineage.bak`），
+ * 让引擎按独立会话加载 —— 代价是丢失继承自源会话的那段历史（自己的回合都在，不受影响），
+ * 但"完全打不开"显然更糟。幂等：修过的不再匹配（血缘字段已摘除）。
+ */
+async function healRolloutLineage() {
+  try {
+    // ⛔ 必须带时限：它被 `await` 在**启动链**上（只有放在 server.start() 之前才生效），
+    //   而 rollout-pool 对 worker 调用的超时是 15s ⇒ worker 卡住时最坏把启动拖 15 秒
+    //   （用户看到的是"双击没反应"）。超时就降级 —— 本次不自愈，下次启动再试，
+    //   绝不能为了自愈把引擎挡在门外。
+    const result: any = await Promise.race([
+      healRolloutLineageAsync(codexHome),
+      new Promise((resolve) => setTimeout(() => resolve({ healed: [], failed: [], timedOut: true }), 5000)),
+    ]);
+    if (result?.timedOut) console.warn("[boot] 血缘自愈超时（5s），本次跳过、不影响启动");
+    if (result?.healed?.length) {
+      console.warn("[boot] 修复了血缘断裂的会话（源 rollout 已丢失，已转为独立会话）:", JSON.stringify(result.healed).slice(0, 400));
+    }
+    if (result?.failed?.length) {
+      console.warn("[boot] 血缘修复失败（不影响启动）:", JSON.stringify(result.failed).slice(0, 300));
+    }
+  } catch (error: any) {
+    console.warn("[boot] healRolloutLineage 失败（降级继续）:", error?.message ?? error);
+  }
 }
 
 const terminals = new Map<string, TerminalService>();
@@ -2978,6 +3018,13 @@ app.whenReady().then(async () => {
     try {
       await migrateLegacyRolloutHome();
     } catch (error) { console.warn("legacy rollout migration failed:", error); }
+    // 血缘自愈（09-19）：⛔ 必须在 server.start() **之前**，而且要 await ——
+    //   引擎一起来（甚至只是加载会话元数据）就会把 `forked_from_id` 读进内存/缓存，
+    //   之后再改 rollout 文件**同一次运行内不生效**（09-19 实测：文件已自愈、血缘字段
+    //   已摘掉，但 resume 仍报 `missing source rollout`，直到重启应用才好）。
+    //   放在这里 = 引擎读到的就是修好的文件，中招的用户升级后第一次启动即可用。
+    //   函数内部自带 try/catch 降级，失败不阻塞启动。
+    await healRolloutLineage();
     await server.start();
   } catch (error) {
     broadcastCodexEvent({ kind: "status", status: "error", message: String(error) });
@@ -3073,6 +3120,7 @@ app.whenReady().then(async () => {
   // config.toml 写成 [model_providers.openai] → 引擎**整份拒载**，用户发消息必报错。
   // 启动时把已写坏的段清掉并修正档案，让这类用户升级后自动恢复（不必手动改文件）。
   void healReservedProviderConfig();
+  // 血缘自愈已移到 `server.start()` **之前**（见上方：引擎起来后再改同一次运行内不生效）。
   // ponytail 写代码模式插件随包直装（09-16 用户「直接内置，不用解压啥的」）：生产包必有
   // tools/ponytail-plugin。只在 config.toml **完全没有** ponytail 注册段时自动种（全新安装）；
   // 段已存在（已装/用户显式卸载置 false）就不再动 —— 否则卸载后下次启动又给装回来，卸载失效。

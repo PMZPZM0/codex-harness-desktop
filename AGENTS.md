@@ -177,6 +177,15 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 - **指纹内核（cloak-browsers）仅用于自动化场景**（模型经 `cloakbrowser` CLI 调用）；浏览器视图的「隐身浏览」按钮为预留位，尚未接入 CDP 嵌入。
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
+- **⛔ 会话血缘（rollout lineage）：删源会拖死子会话 —— 删除必须守卫、已断的启动自愈（09-19 用户实测事故）**：
+  用户原文：「我归档会话，提示 `invalid paginated history lineage for <源id>: missing source rollout`，会话都没法选择了，从根上修掉」。
+  - **机制**：分支 / 接力 / 专家团派生出来的会话，其 rollout **首行 `session_meta`** 记着源会话；引擎在 `threads.history_mode = paginated` 时会沿血缘**按字节区间回读源 rollout**（`history_base = { thread_id, end_ordinal_exclusive, end_byte_offset }`）。
+  - ⛔ **真正的载体是 `history_base`**，不是（也不只是）`forked_from_id` / `forked_from_ordinal_exclusive` / `parent_thread_id`。只摘前者时「文件层面看着血缘已摘」，引擎**照样报错**（为这个漏项白跑两轮真机验证才定位到）——改血缘字段表时必须连 `history_base` 一起，预检【71】已钉死。
+  - **删除侧守卫**：`purgeRolloutFiles` 先 `collectLineage()` 算依赖，**被别的活着的会话依赖的源 rollout 不删**（转 `kept` 返回 + 主进程显式日志）。整批一起删的子会话不算依赖（不存在"子活着源没了"）。保留的文件侧栏不显示（墓碑仍生效），磁盘上留一份血缘锚点。
+  - **启动自愈**：`healRolloutLineage()` 对「有血缘且源已丢失」的会话按 `LINEAGE_KEYS` 摘字段（原首行存 `<文件>.lineage.bak` 可回滚），改写走「写 `.heal.tmp` → `rename`」**原子替换**（半截 JSONL = 会话历史损坏，比打不开更糟）；幂等（摘过的不再匹配）。
+  - ⛔ **位置与时限是硬约束**：必须在 `await server.start()` **之前** await —— 引擎一起来就把血缘读进内存/缓存，之后再改 rollout 文件**同一次运行内不生效**（实测：字段已摘、resume 仍报 missing source rollout，重启才好）；同时带 5s 超时降级（worker 超时是 15s，不能让自愈把启动拖死）。
+  - **取证要点**：血缘只存在 rollout 首行，`state_5.sqlite` **没有血缘列**（判断"能不能删"必须回读文件，不能查索引）；血缘引用只在首行，后续行不含。
+  - 验证：预检【71】15 条守卫；真机 e2e 在**真实 codex-home 的最小副本**上复现断链 → 启动 → 断言字段摘除 / 原首行备份 / 内容完好 / `thread/resume` 返回 ok / 二次启动幂等，全通过。
 - **⛔ 回合「思考被上游截断」的检测 + 自动续接（09-19 用户实测「思考内容过长会被截断，运行状态就断了」）**：
   真机取证（会话 01a0b515 回合 8「鹈鹕骑自行车」）：应用配 `model_max_output_tokens=393216`，但商汤网关把单次响应**钳到 8192 tokens**；模型思考 16365 字符（≈8000+ tokens）把预算吃光 → 正文 0 字符 → 引擎把「空输出」当 task_complete 正常收尾（**rollout 不记录 finish_reason**，无从事后得知被截断）。本地部署模型（Ollama/vLLM）同样受单次输出上限约束。
   - **检测形态（最关键）**：引擎截断时会**把 reasoning 摘要逐字复制成 agentMessage** 当最后的正文（last_agent_message 就是它）——「正文非空」≠「有产出」。判据 = 思考 ≥6000 字符 且 正文「排除与思考逐字相同/高度相似的复述后」为空 且 无工具动作；三者同真才判（漏报优于误报）。
