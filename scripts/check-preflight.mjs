@@ -5861,6 +5861,52 @@ w.postMessage({id:1,op:"list",root});
   );
 }
 
+{
+  // ── 【63】429 自动重试必须**按会话独立**（09-19 用户实测：「多会话同时跑，只有当前看的
+  //   那个会话会自动重试，后台会话直接断——会话完全没有完全独立」）──
+  //   旧实现三处单槽（retryContextRef / rateLimitAttemptRef / rateLimitTimerRef）+ 429 检测点
+  //   写在当前会话事件流里（threadId 过滤之后）⇒ 后台会话连排重试都走不到。
+  const app63 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  // ① 三份状态都必须是 per-thread Map
+  (/const retryContextsRef = useRef<Map<string, RateLimitCtx>>\(new Map\(\)\)/.test(app63) ? ok : fail)(
+    "【63】重试上下文按会话独立（Map，不再是单槽）"
+  );
+  (/const rateLimitAttemptsRef = useRef<Map<string, number>>\(new Map\(\)\)/.test(app63) ? ok : fail)(
+    "【63】重试次数按会话独立（Map）"
+  );
+  (/const rateLimitTimersRef = useRef<Map<string, number>>\(new Map\(\)\)/.test(app63) ? ok : fail)(
+    "【63】重试定时器按会话独立（Map，多会话可同时等待）"
+  );
+  // ② 旧单槽 API 不得复活
+  const legacy = [/retryContextRef\.current(?!s)/, /rateLimitAttemptRef\.current/, /rateLimitTimerRef\.current/].filter((re) => re.test(app63)).length;
+  (legacy === 0 ? ok : fail)(
+    `【63】旧单槽 API 已清干净（残留 ${legacy} 处；复活=多会话互相覆盖）`
+  );
+  // ③ 429 检测点必须在**跨会话区**（threadId 过滤之前）——三处：turn/completed、aborted/failed、error
+  const crossStart = app63.indexOf("── 跨会话生命周期事件");
+  const filterAt = app63.indexOf("if (params.threadId && params.threadId !== threadRef.current?.id) return;");
+  (/scheduleRateLimitRetry\(params\.threadId, \(rateLimitAttemptsRef\.current\.get\(params\.threadId\) \?\? 0\) \+ 1\);/.test(app63.slice(crossStart, filterAt)) ? ok : fail)(
+    "【63】429 排重试在跨会话区（后台会话也能重试；写回过滤之后 = 后台永远不重试）"
+  );
+  (app63.slice(crossStart, filterAt).includes('method0 === "error"') ? ok : fail)(
+    "【63】engine error 通知（429 常见形态）同样在跨会话区处理"
+  );
+  // ④ 重试发起串行化 + 退避抖动（同时重发=继续撞限流）
+  (/retryGateRef = useRef<Promise<unknown>>\(Promise\.resolve\(\)\)/.test(app63) ? ok : fail)(
+    "【63】重试发起串行化（多会话同刻到点时逐个发）"
+  );
+  (/const delay = Math\.round\(base \* \(0\.8 \+ Math\.random\(\) \* 0\.4\)\);/.test(app63) ? ok : fail)(
+    "【63】退避叠 ±20% 抖动（避免多会话同一秒重发）"
+  );
+  // ⑤ 手动发消息只清**当前会话**的重试（清全部=后台会话直接断）
+  (/const focusedForSend = threadRef\.current\?\.id;\s*\n\s*if \(focusedForSend\) cancelRateLimitRetry\(focusedForSend, true\);/.test(app63) ? ok : fail)(
+    "【63】手动发送只取消当前会话的重试（不清别的会话）"
+  );
+  (/sandboxPolicy: sandboxPolicy\(sandbox, threadCacheRef\.current\.get\(threadId\)\?\.cwd/.test(app63) ? ok : fail)(
+    "【63】重试的沙箱目录按目标会话取（后台重试不能带当前会话的目录）"
+  );
+}
+
 
 console.log("");
 console.log(C.gray(`已执行断言数：${checks}`));
