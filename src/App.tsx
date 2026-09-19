@@ -196,6 +196,10 @@ const PPTokenEndpoints = [
  *       （KV cache 随并发路数成倍增长），本地场景应该串行；
  *    ③ 协议用 **auto**：Ollama / LM Studio 只提供 Chat Completions（桥会自动转），
  *       vLLM 较新版本有原生 Responses（会直接透传）—— 让桥自己判定比写死更稳。 */
+/** 通知队列（09-20）：单条存活时长，以及同时最多显示几条（防多会话并发刷屏糊满一屏）。 */
+const NOTICE_TTL_MS = 2600;
+const NOTICE_MAX = 4;
+
 const LOCAL_MODEL_PRESETS = [
   { id: "ollama", name: "Ollama", url: "http://127.0.0.1:11434/v1", port: "11434" },
   { id: "lmstudio", name: "LM Studio", url: "http://127.0.0.1:1234/v1", port: "1234" },
@@ -9660,7 +9664,57 @@ export default function App() {
     return saved === "read-only" || saved === "workspace-write" || saved === "danger-full-access" ? saved : "danger-full-access";
   });
   const [personality, setPersonality] = useState(() => localStorage.getItem("default-personality") ?? "pragmatic");
-  const [notice, setNotice] = useState("");
+  // ⛔ 通知是**多条队列**，不是单槽（09-20 用户：「会话窗口产生的弹窗相互污染，区分不出来哪个是哪个」）。
+  //    旧实现是 `useState("")` 单条字符串 ⇒ 多会话并发来通知时后到的**直接顶掉**先到的，
+  //    加上 2.6s 统一清空，用户永远只看得到最后一条。现在每条独立入队、独立倒计时。
+  //    scope 决定弹窗**贴着哪 anchoring**：设置页产生的贴设置弹窗内居中，会话产生的贴对话区居中
+  //    （09-20 用户：「设置页产生的弹窗在设置弹窗居中，对话框产生的弹窗在对话框区域居中」）。
+  const [notices, setNotices] = useState<{ id: number; text: string; threadId?: string; scope: "settings" | "chat" }[]>([]);
+  const noticeSeqRef = useRef(0);
+  const noticeTimersRef = useRef<Map<number, number>>(new Map());
+  // 设置弹窗开关的 ref 镜像：setNotice 是稳定引用（见下），闭包里读 ref 才能拿到最新开关状态
+  const settingsOpenRef = useRef(false);
+  // 窗口尺寸变化时强制重算一次锚点位置（通知生存期只有 2.6s，这里不需要精细的 ResizeObserver）
+  const [, setNoticeAnchorTick] = useState(0);
+  useEffect(() => {
+    const onResize = () => setNoticeAnchorTick((t) => t + 1);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const dismissNotice = useCallback((id: number) => {
+    const timer = noticeTimersRef.current.get(id);
+    if (timer) {
+      window.clearTimeout(timer);
+      noticeTimersRef.current.delete(id);
+    }
+    setNotices((current) => current.filter((entry) => entry.id !== id));
+  }, []);
+  // ⛔ 这个函数**故意沿用 useState setter 的名字**：既有几百处 `setNotice(text)` 调用不用改一行。
+  //    语义变化只有一点：它现在是「推一条」而不是「覆盖」；传空串仍 = 清空全部
+  //    （关闭按钮、发送前清场这类写法保持不变）。
+  //    ⛔ 必须 useCallback 保持引用稳定：它被当 `onNotice` 传给子组件、并出现在子组件 15 处
+  //    effect 依赖里（VoiceSettingsSection 等）——普通函数每次 render 换引用会让那些 effect
+  //    全部重跑（反复拉取/重挂监听）。旧实现是 useState setter（天然稳定），不能在这里退化。
+  const setNotice = useCallback((text: string, threadId?: string) => {
+    if (!text) {
+      for (const timer of noticeTimersRef.current.values()) window.clearTimeout(timer);
+      noticeTimersRef.current.clear();
+      setNotices([]);
+      return;
+    }
+    const id = (noticeSeqRef.current += 1);
+    // 归属判定：带 threadId 的一定是会话的事 ⇒ 贴对话区；不带 threadId 且设置弹窗开着 ⇒ 贴设置弹窗。
+    // ⛔ 判定必须发生在**入队时**（弹窗开关状态会变，渲染时再判会串组）。
+    const scope: "settings" | "chat" = threadId ? "chat" : (settingsOpenRef.current ? "settings" : "chat");
+    // 上限：多会话同时刷屏时只留最近几条，避免糊满一屏
+    setNotices((current) => [...current, { id, text, threadId, scope }].slice(-NOTICE_MAX));
+    noticeTimersRef.current.set(id, window.setTimeout(() => dismissNotice(id), NOTICE_TTL_MS));
+  }, [dismissNotice]);
+  // 卸载时收掉所有挂着的定时器（否则回调会打到已卸载组件上）
+  useEffect(() => () => {
+    for (const timer of noticeTimersRef.current.values()) window.clearTimeout(timer);
+    noticeTimersRef.current.clear();
+  }, []);
   // 上下文压缩进度/结果（短暂 toast，不进系统事件流，避免之前那种常驻 timeline 卡片）
   const [compactToast, setCompactToast] = useState<{ state: "running" | "success" | "error"; message?: string; threadId: string } | null>(null);
   // 信息面板弹窗：/queue /skills /mcp 等查询命令的输出改为居中弹窗展示（不再插入消息流灰色横幅）
@@ -9681,12 +9735,8 @@ export default function App() {
       el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
     }
   }, [highlightedFilePath, treeEntries, treePath]);
-  // 通知自动消失：内容变化重置计时，2.6s 后自动清除（关闭按钮仍可立即关）
-  useEffect(() => {
-    if (!notice) return;
-    const timer = setTimeout(() => setNotice(""), 2600);
-    return () => clearTimeout(timer);
-  }, [notice]);
+  // ⛔ 旧的「内容变化就重置一个 2.6s 定时器去清空单条 notice」已删除（09-20）：
+  //    现在每条通知自带独立倒计时（见 setNotice），这里再统一清空会把**别的会话**的通知一起干掉。
   useEffect(() => { void Promise.all([window.codex.listLocalSkills(), window.codex.listConnectors(), window.codex.listSubAgents(), window.codex.listConnectorTemplates(), window.codex.listExpertTeams()]).then(([skills, connectorList, agentList, templateList, teamList]) => { setLocalSkills(skills); setConnectors(connectorList); setSubAgents(agentList); setConnectorTemplates(templateList); setExpertTeams(teamList); }).catch(() => undefined); }, []);
   // RPA 配方与任务清单：进入应用拉一次，设置页/清单面板共享这份数据
   useEffect(() => {
@@ -9904,6 +9954,8 @@ export default function App() {
     document.documentElement.dataset.uiFont = uiFont;
   }, [uiFont]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 通知归属判定用的镜像（09-20）：setNotice 是 useCallback 稳定引用，闭包读 ref 拿最新开关状态
+  settingsOpenRef.current = settingsOpen;
   // 未配置的 PPtoken 推荐卡可被用户「禁用」（仅置灰，不写引擎存储；配置真实密钥后走 setProviderEnabled）
   // ⛔ 推荐卡（PPtoken 赞助位）**默认不启用**（09-19 用户：「首次安装启动、没配置供应商的时候，
   //   默认不要启用任何供应商，要不然会跟新配置的供应商同时启用」）。
@@ -11752,8 +11804,11 @@ const commandMatches = useMemo(() => {
   function threadNameOf(threadId: string): string {
     if (!threadId) return "";
     const entry = threads.find((t) => t.id === threadId);
-    // ⛔ 查不到也兜底成「会话」——后台/归档会话可能不在侧栏列表里，但没有前缀比错前缀更误导
-    return entry ? cleanThreadDisplayTitle(entry.name, { preview: entry.preview, fallback: "会话" }) : "会话";
+    // ⛔ 兜底用会话 **id 后 4 位**，不能再用常量「会话」（09-20 用户：「区分不出来哪个是哪个」）：
+    //    未命名会话/后台会话/归档会话都会走到兜底，常量兜底会让它们**全部显示成同一个【会话】**，
+    //    前缀等于没加。短码唯一，且与侧栏、日志里的会话 id 能对上，方便回查。
+    const short = String(threadId).replace(/-/g, "").slice(-4);
+    return entry ? cleanThreadDisplayTitle(entry.name, { preview: entry.preview, fallback: short }) : short;
   }
   /** 会话产生的通知：前置「【会话名】」再进 notice（统一规则，不区分是否当前会话，规则单一无分支）。 */
   function scopedNotice(text: string, threadId?: string) {
@@ -18896,20 +18951,56 @@ const commandMatches = useMemo(() => {
               </div>
             );
           })()}
-          {notice && createPortal(
-            (() => {
-              const tone = noticeTone(notice);
-              const NoticeIcon = tone === "success" ? <CircleCheck size={16} /> : tone === "error" ? <X size={16} /> : tone === "warning" ? <AlertTriangle size={16} /> : <Info size={16} />;
-              return (
-                <div className={`notice notice-toast notice--${tone}`} role="status">
-                  <span className="notice-icon">{NoticeIcon}</span>
-                  <span className="notice-text">{notice}</span>
-                  <button title="关闭" onClick={() => setNotice("")}><X size={13} /></button>
-                </div>
+          {(() => {
+            if (!notices.length) return null;
+            // 按「来源」分两组各贴各的锚（09-20 用户：设置页产生的弹窗在设置弹窗内居中，
+            // 对话产生的在对话区居中）。settings 组找不到锚（弹窗已关）就落回对话区。
+            const groups: Array<{ scope: "settings" | "chat"; items: typeof notices; selector: string }> = [
+              { scope: "settings", items: notices.filter((n) => n.scope === "settings"), selector: ".settings-modal" },
+              { scope: "chat", items: notices.filter((n) => n.scope !== "settings"), selector: "main.workspace" },
+            ];
+            return groups.map((group) => {
+              if (!group.items.length) return null;
+              const anchor = document.querySelector(group.selector)
+                ?? (group.scope === "settings" ? document.querySelector("main.workspace") : null);
+              if (!anchor) return null;
+              const r = anchor.getBoundingClientRect();
+              return createPortal(
+                <div
+                  className="notice-stack"
+                  role="status"
+                  aria-live="polite"
+                  style={{ top: r.top + 12, left: r.left + r.width / 2, maxWidth: Math.min(480, r.width - 24) }}
+                >
+                  {group.items.map((entry) => {
+                    const tone = noticeTone(entry.text);
+                    const NoticeIcon = tone === "success" ? <CircleCheck size={16} /> : tone === "error" ? <X size={16} /> : tone === "warning" ? <AlertTriangle size={16} /> : <Info size={16} />;
+                    return (
+                      <div key={entry.id} className={`notice notice-toast notice--${tone}`}>
+                        <span className="notice-icon">{NoticeIcon}</span>
+                        <span className="notice-text">{entry.text}</span>
+                        {/* 多会话并发时「这条是谁的」是刚需：点一下直接跳过去看（跳完即关） */}
+                        {entry.threadId && (
+                          <button
+                            className="notice-jump"
+                            title="跳到该会话"
+                            onClick={() => {
+                              const target = entry.threadId;
+                              dismissNotice(entry.id);
+                              if (target) void openThread(target);
+                            }}
+                          >跳转</button>
+                        )}
+                        <button title="关闭" onClick={() => dismissNotice(entry.id)}><X size={13} /></button>
+                      </div>
+                    );
+                  })}
+                </div>,
+                document.body,
+                group.scope,
               );
-            })(),
-            document.body,
-          )}
+            });
+          })()}
           {/* 启动静默检查发现新版本 → 通知卡片（非阻塞，可稍后/关闭） */}
           {updateNotice && createPortal(
             <div className="update-card" role="status" aria-label="发现新版本">

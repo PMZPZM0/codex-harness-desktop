@@ -6575,6 +6575,30 @@ w.postMessage({id:1,op:"list",root});
   (/\.field-help-pop \{[\s\S]{0,200}?position: fixed;/.test(css73) ? ok : fail)(
     "【73】气泡浮层本体是 position:fixed（fixed 不受祖先 overflow 裁剪）"
   );
+  // ⑩ 通知是多条队列（09-20 用户：「会话窗口产生的弹窗相互污染，区分不出来哪个是哪个」）
+  //   旧实现 const [notice, setNotice] = useState("") 是单槽：多会话并发来通知时后到的**直接顶掉**先到的。
+  (!/const \[notice, setNotice\] = useState\(""\)/.test(app73) ? ok : fail)(
+    "【73】不得回退成单槽 notice useState（多会话并发时会互相覆盖）"
+  );
+  (/const setNotice = useCallback\(\(text: string, threadId\?: string\) => \{[\s\S]{0,700}?setNotices\(\(current\) => \[\.\.\.current, \{ id, text, threadId, scope \}\]/.test(app73) ? ok : fail)(
+    "【73】setNotice 是「推一条入队」的兼容函数且引用稳定（useCallback——它被当 onNotice 传进子组件的 effect 依赖；空串仍=清空全部）"
+  );
+  (/notice-stack/.test(app73) && /\.notice-stack \{/.test(css73) ? ok : fail)(
+    "【73】通知渲染走 .notice-stack 堆叠容器（多条并存、各自独立倒计时）"
+  );
+  (/String\(threadId\)\.replace\(\/-\/g, ""\)\.slice\(-4\)/.test(app73) ? ok : fail)(
+    "【73】会话名兜底用 id 后 4 位短码（常量「会话」会让所有未命名会话撞成同一个名字）"
+  );
+  // ⑪ 弹窗位置跟随来源（09-20 用户：设置页产生的在设置弹窗内居中，对话的在对话区居中）
+  (/threadId \? "chat" : \(settingsOpenRef\.current \? "settings" : "chat"\)/.test(app73) ? ok : fail)(
+    "【73】通知归属（settings/chat）必须在入队时判定（渲染时再判会串组；带 threadId 恒为对话区）"
+  );
+  (/selector: "\.settings-modal"/.test(app73) && /selector: "main\.workspace"/.test(app73) ? ok : fail)(
+    "【73】两组通知各贴各的锚：设置组贴 .settings-modal、对话组贴 main.workspace"
+  );
+  (/notice-stack-in/.test(css73) ? ok : fail)(
+    "【73】堆叠子项必须用自己的入场动画（旧 notice-in 最终帧 translate(-50%) 配 both 会把子项永久左移——靠左 bug 根因）"
+  );
 }
 
 
