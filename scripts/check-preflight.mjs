@@ -2246,6 +2246,31 @@ console.log(C.bold("\n【14】历史分页懒加载（首屏一页 / 滚一屏�
     ? ok("滑窗音效模块：方向音调区分 + 30ms 节流 + 异常静默降级（音频挂起绝不拖垮滚轮交互）")
     : fail("wheel-tick.mjs 缺节流/方向音调/静默降级 —— 声音会把滚轮交互搞挂或吵人");
 }
+// ---------- 输入框草稿按会话持久化 + 会话通知前置会话名（09-19 用户） ----------
+console.log(C.bold("\n【输入框草稿 + 通知会话名前缀】切会话/关应用不丢输入；通知能看出是哪个会话"));
+{
+  const draftSrc = readFileSync(join(ROOT, "src/lib/composer-draft.mjs"), "utf8");
+  (/export function draftKeyFor/.test(draftSrc) && /export function loadDraft/.test(draftSrc) && /export function saveDraft/.test(draftSrc))
+    ? ok("草稿模块三函数齐全（draftKeyFor / loadDraft / saveDraft）")
+    : fail("composer-draft.mjs 缺函数 —— 输入框草稿持久化失效");
+  (/draftKeyFor\(/.test(draftSrc) && /100 \* 1024/.test(draftSrc))
+    ? ok("草稿键与 100KB 上限在位（键按会话隔离，超长不撑爆 localStorage）")
+    : fail("草稿键/长度上限被改 —— 会话草稿会互相串或撑爆存储");
+  const appD = readFileSync(join(ROOT, "src/App.tsx"), "utf8");
+  (/saveDraft\(thread\?\.id \?\? null, value\);/.test(appD))
+    ? ok("输入框 onPromptChange 即时落盘（闭包里的 thread 是当前会话，键不会写错）")
+    : fail("onPromptChange 不落盘草稿了 —— 打字内容只在内存里，切走/重启即丢");
+  (/draftJustRestoredRef\.current = true;[\s\S]{0,80}setPrompt\(loadDraft\(/.test(appD) && /beforeunload/.test(appD))
+    ? ok("恢复动作带防抖跳过标记 + 关应用前 beforeunload 落盘（恢复值不写错键、重启不丢）")
+    : fail("草稿恢复/关应用落盘被摘 —— 恢复值会写进旧会话键或重启丢草稿");
+  // ⛔ 锚 showToast 的**专属**前缀表达式（scopedNotice 也含 `【${name}】`，裸锚该字样会被它顶成假绿）
+  (/function threadNameOf\(threadId: string\)/.test(appD) && /const prefix = name \? `【\$\{name\}】` : "";/.test(appD))
+    ? ok("会话通知前缀会话名（showToast 带 threadId 参数 + 【会话名】前缀）")
+    : fail("通知前缀会话名的实现被摘 —— 在别的会话看不到通知是哪个会话发的");
+  (/showToast\("已停止限流重试", "不再自动重发该消息", threadId\)/.test(appD) && /showToast\("限流重试放弃"/.test(appD))
+    ? ok("会话级通知调用点已带 threadId（限流重试等后台会话通知能看出归属）")
+    : fail("会话级通知调用点丢了 threadId —— 后台会话的通知又不带会话名了");
+}
 // ---------- 【15】供应商列表交互（点开关要切详情，不许只拦冒泡） ----------
 
 console.log(C.bold("\n【15】供应商列表：点开关（启用/停用）右侧详情必须跟随"));

@@ -18,6 +18,7 @@ import { attachmentToken, fileToken, promptFilePaths, shouldSavePastedTextAsFile
 // 当成本地路径去拼协议 URL，灯箱与悬停预览都会打不开（09-18 代码审查发现，见模块注释）。
 import { imageDisplaySrc, localImageUrl } from "./lib/image-src.mjs";
 import { playWheelTick } from "./lib/wheel-tick.mjs";
+import { loadDraft, saveDraft } from "./lib/composer-draft.mjs";
 import { createRunClock } from "./lib/run-clock.mjs";
 // 懒高亮（09-18 用户：「我又没点开看代码高亮，为啥每次切换都重新加载一遍」）：
 // 只对"大块"启用——进视口邻近区之前渲染等价外观的纯文本，进区后才真高亮。
@@ -8037,6 +8038,38 @@ export default function App() {
    *  （setState 异步，直接读 `workspace` 闭包变量还是旧值），09-14。 */
   const workspaceRef = useRef(workspace);
   const [prompt, setPrompt] = useState("");
+  // 输入框草稿按会话持久化（09-19 用户：「切换会话 / 关闭应用都不能丢」）：
+  //   promptRef 镜像最新文本；draftThreadRef 镜像当前会话（无会话 = 欢迎页 "new" 草稿键）。
+  //   保存点：① 输入框 onPromptChange 即时落盘（闭包里的 thread 是当前的，键一定正确）；
+  //   ② 防抖兜底覆盖「程序化改 prompt」（语音听写 / 增强回填 / /命令）——⛔ 恢复动作前先置
+  //   draftJustRestoredRef，防抖跳过这一次（恢复值本来就来自该键，无需写回；且此刻 thread 状态
+  //   还没切过来，写回会落到旧会话键上）；③ 关应用前 beforeunload 同步落盘。
+  const promptRef = useRef(prompt);
+  promptRef.current = prompt;
+  const draftThreadRef = useRef<string | null>(null);
+  draftThreadRef.current = thread?.id ?? null;
+  const draftJustRestoredRef = useRef(false);
+  // 启动恢复：没有会话（欢迎页）恢复「新会话草稿」；有 last-thread 由 openThread 恢复对应会话草稿
+  useEffect(() => {
+    if (!threadRef.current) {
+      draftJustRestoredRef.current = true;
+      setPrompt(loadDraft(null));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // 防抖兜底（程序化改 prompt 的落盘；onChange 已即时落盘的这次会因值未变不触发）
+  useEffect(() => {
+    if (draftJustRestoredRef.current) { draftJustRestoredRef.current = false; return; }
+    const id = draftThreadRef.current;
+    const timer = window.setTimeout(() => saveDraft(id, promptRef.current), 400);
+    return () => window.clearTimeout(timer);
+  }, [prompt]);
+  // 关应用前把当前草稿落盘（beforeunload 是同步回调，直接读 ref）
+  useEffect(() => {
+    const persist = () => saveDraft(threadRef.current?.id ?? null, promptRef.current);
+    window.addEventListener("beforeunload", persist);
+    return () => window.removeEventListener("beforeunload", persist);
+  }, []);
   // 输入框语音听写状态：partial/final 中文字幕实时回填到 composer，不自动发送。
   const [voiceDictating, setVoiceDictating] = useState(false);
   const dictationBaseRef = useRef("");
@@ -8452,7 +8485,7 @@ export default function App() {
       setRateLimitRetries({});
       setUpstreamRetries({});
     }
-    if (!silent) showToast("已停止限流重试", "不再自动重发该消息");
+    if (!silent) showToast("已停止限流重试", "不再自动重发该消息", threadId);
   }
 
   async function executeRateLimitRetry(threadId: string) {
@@ -8472,7 +8505,7 @@ export default function App() {
       setRetryEntry(threadId, { attempt, retryAt: Date.now() + wait });
       clearRateLimitTimer(threadId);
       rateLimitTimersRef.current.set(threadId, window.setTimeout(() => void executeRateLimitRetry(threadId), wait));
-      showToast("等待并发槽位", `该供应商已跑满 ${maxConcurrencyRef.current} 个任务，槽位空出后自动继续重试`);
+      showToast("等待并发槽位", `该供应商已跑满 ${maxConcurrencyRef.current} 个任务，槽位空出后自动继续重试`, threadId);
       return;
     }
     // 只有**当前正在看的会话**才动全局 sending/activeTurnId（后台会话的重试不能改别人的界面状态）
@@ -8521,15 +8554,15 @@ export default function App() {
         if (isFocused()) setActiveTurnId(result.turn.id);
         markThreadRunning(threadId, result.turn.id);
       }
-      showToast("限流重试已发出", `第 ${attempt}/${RATE_LIMIT_MAX_ATTEMPTS} 次重试已被接受，任务继续运行`);
+      showToast("限流重试已发出", `第 ${attempt}/${RATE_LIMIT_MAX_ATTEMPTS} 次重试已被接受，任务继续运行`, threadId);
     } catch (error: any) {
       if (isFocused()) { setSending(false); setWorkStartedAt(null); }
       markThreadStopped(threadId);
       if (isRateLimitError(error?.message) && attempt < RATE_LIMIT_MAX_ATTEMPTS) {
-        showToast("仍被限流", `第 ${attempt} 次重试仍失败，稍后自动继续`);
+        showToast("仍被限流", `第 ${attempt} 次重试仍失败，稍后自动继续`, threadId);
         scheduleRateLimitRetry(threadId, attempt + 1);
       } else {
-        setNotice(error?.message ?? "限流重试失败");
+        scopedNotice(error?.message ?? "限流重试失败", threadId);
         cancelRateLimitRetry(threadId, true);
       }
     } finally {
@@ -8566,12 +8599,12 @@ export default function App() {
         setActiveTurnId(result.turn.id);
         markThreadRunning(ctx.threadId, result.turn.id);
       }
-      showToast("已换档重发", `改用「${effortLabels[ctx.effort ?? ""] ?? ctx.effort}」重新发送`);
+      showToast("已换档重发", `改用「${effortLabels[ctx.effort ?? ""] ?? ctx.effort}」重新发送`, ctx.threadId);
     } catch (error: any) {
       setSending(false);
       markThreadStopped(ctx.threadId);
       setWorkStartedAt(null);
-      setNotice(error?.message ?? "换档重发失败");
+      scopedNotice(error?.message ?? "换档重发失败", ctx.threadId);
     }
   }
 
@@ -8584,7 +8617,7 @@ export default function App() {
       markThreadStopped(threadId);
       if (wasFocused) { setSending(false); setInterrupting(false); setActiveTurnId(null); setWorkStartedAt(null); }
       cancelRateLimitRetry(threadId, true);
-      showToast("限流重试放弃", `已连续重试 ${RATE_LIMIT_MAX_ATTEMPTS} 次仍被限流，请稍后手动重发`);
+      showToast("限流重试放弃", `已连续重试 ${RATE_LIMIT_MAX_ATTEMPTS} 次仍被限流，请稍后手动重发`, threadId);
       return;
     }
     rateLimitAttemptsRef.current.set(threadId, attempt);
@@ -10101,7 +10134,7 @@ export default function App() {
     try {
       const next = await window.codex.botBindingSet?.({ channel, threadId, title });
       setBotBindings((cur) => ({ ...cur, [channel]: next ?? null }));
-      showToast("绑定已更新", threadId ? "机器人后续消息将在所选会话中继续" : "机器人已解绑，下一条消息将开启新会话");
+      showToast("绑定已更新", threadId ? "机器人后续消息将在所选会话中继续" : "机器人已解绑，下一条消息将开启新会话", threadId ?? undefined);
     } catch { showToast("绑定失败", "请稍后重试"); }
   };
   // 机器人档案：**持久化在主进程**（userData/bots.json，09-13 迁移）。此前只存 localStorage，
@@ -11638,9 +11671,24 @@ const commandMatches = useMemo(() => {
   }, [compactToast]);
 
   /** 一次性状态通知：使用现有 toast，不写入对话历史。 */
-  function showToast(title: string, text?: unknown) {
+  /** 会话 id → 侧栏展示名（通知前缀用；查不到给空串=不加前缀）。
+   *  09-19 用户：「在别的会话，不知道通知弹窗是哪个会话的」→ 带 threadId 的通知一律前置「【会话名】」。 */
+  function threadNameOf(threadId: string): string {
+    if (!threadId) return "";
+    const entry = threads.find((t) => t.id === threadId);
+    // ⛔ 查不到也兜底成「会话」——后台/归档会话可能不在侧栏列表里，但没有前缀比错前缀更误导
+    return entry ? cleanThreadDisplayTitle(entry.name, { preview: entry.preview, fallback: "会话" }) : "会话";
+  }
+  /** 会话产生的通知：前置「【会话名】」再进 notice（统一规则，不区分是否当前会话，规则单一无分支）。 */
+  function scopedNotice(text: string, threadId?: string) {
+    const name = threadId ? threadNameOf(threadId) : "";
+    setNotice(name ? `【${name}】${text}` : text);
+  }
+  function showToast(title: string, text?: unknown, threadId?: string) {
     const detail = String(text ?? "").replace(/\s+/g, " ").trim();
-    setNotice(detail ? `${title}：${detail.slice(0, 220)}` : title);
+    const name = threadId ? threadNameOf(threadId) : "";
+    const prefix = name ? `【${name}】` : "";
+    setNotice(prefix + (detail ? `${title}：${detail.slice(0, 220)}` : title));
   }
 
   /** /context 与 /status 共用：估算当前线程上下文占用（本地用法统计 + 回合 usage） */
@@ -12493,7 +12541,7 @@ const commandMatches = useMemo(() => {
       autoContinueLogRef.current.set(threadId, { count: 1, firstAt: now });
     } else {
       if (rec.count >= AUTO_CONTINUE_MAX_ATTEMPTS) {
-        showToast("多次被截断", "已自动续接达到上限，建议更换支持更大单次输出的供应商/模型。");
+        showToast("多次被截断", "已自动续接达到上限，建议更换支持更大单次输出的供应商/模型。", threadId);
         return;
       }
       rec.count++;
@@ -15270,6 +15318,11 @@ const commandMatches = useMemo(() => {
 
   function onPromptChange(value: string) {
     setPrompt(value);
+    // ⛔ 草稿即时落盘（09-19）：闭包里的 thread 是当前会话，键不会写错；空内容 = 清草稿。
+    //   同时消费恢复标记：真实输入时 thread 已稳定，防抖兜底恢复可用（防「恢复值==当前值导致
+    //   标记滞留、下一次程序化改 prompt 被误跳过」）。
+    draftJustRestoredRef.current = false;
+    saveDraft(thread?.id ?? null, value);
     const at = value.lastIndexOf("@");
     const afterAt = at >= 0 ? value.slice(at + 1) : "";
     if (at >= 0 && !/\s/.test(afterAt)) {
@@ -15345,7 +15398,7 @@ const commandMatches = useMemo(() => {
       if (sourceModel) saveThreadModel(result.thread.id, sourceModel);
       await refreshThreads();
       await openThread(result.thread.id, result.thread);
-      showToast("已创建会话分支", `${cleanThreadDisplayTitle(entry.name, { preview: entry.preview })}（新分支状态独立）`);
+      showToast("已创建会话分支", `${cleanThreadDisplayTitle(entry.name, { preview: entry.preview })}（新分支状态独立）`, entry.id);
     } catch (error: any) {
       setNotice(`创建分支失败：${error.message}`);
     }
@@ -15381,13 +15434,16 @@ const commandMatches = useMemo(() => {
   function startNewThread() {
     setChatSearchOpen(false);
     const savedSandbox = localStorage.getItem("default-sandbox") ?? "danger-full-access";
+    // ⛔ 输入框草稿（09-19）：先存走当前会话草稿（必须在置空 threadRef 之前），再恢复「新会话草稿」
+    saveDraft(threadRef.current?.id ?? null, promptRef.current);
     threadRef.current = null;
     setThread(null);
     // 标准会话未选工作区：不悄悄默认，提醒用户自选（发送时才会真正用到目录）
     if (!workspace) setNotice("尚未选择工作区：当前会话暂用主目录，建议点右上角 📁 选择项目目录");
     // 重置滚动：上个会话若滚在中间，欢迎页会被顶出视口（顶部只露半截建议 chips 幻影）
     requestAnimationFrame(() => { const el = scrollRef.current; if (el) el.scrollTop = 0; });
-    setPrompt("");
+    draftJustRestoredRef.current = true;
+    setPrompt(loadDraft(null));
     setImages([]);
     setModelId(localStorage.getItem("default-model") ?? modelId);
     setEffort(localStorage.getItem("default-effort") ?? effort);
@@ -16498,6 +16554,13 @@ const commandMatches = useMemo(() => {
     // 快速连点防竞态：只有最新一次切换的 resume 响应才允许落地渲染
     const seq = ++switchSeqRef.current;
     setOpeningThread(id);
+    // ⛔ 输入框草稿按会话保存（09-19）：切走前把当前会话的草稿存下，再恢复目标会话的草稿
+    //   （同一会话重复点击不动作；草稿是「打完一半切走、切回来还在」的关键）
+    if ((threadRef.current?.id ?? null) !== id) {
+      saveDraft(threadRef.current?.id ?? null, promptRef.current);
+      draftJustRestoredRef.current = true;   // 恢复值来自该键，无需写回；且防抖此刻会写错键
+      setPrompt(loadDraft(id));
+    }
     // 记住本次打开的会话：重启后据此恢复（否则停在欢迎页，一发消息就新建空会话）
     try { localStorage.setItem("last-thread", id); } catch { /* 隐私模式等：忽略 */ }
     // 模型回填：**该会话自己的记录优先**，它还没有记录（新建/从没选过）才用全局默认。
@@ -16878,7 +16941,7 @@ const commandMatches = useMemo(() => {
           requestAnimationFrame(() => composerInputRef.current?.focus());
           return;
         }
-        setNotice(error.message);
+        scopedNotice(error.message, id);
       }
     } finally {
       if (seq === switchSeqRef.current) {
@@ -17295,7 +17358,7 @@ const commandMatches = useMemo(() => {
       messageText = resolved.text;
       threadReferenceBlocks = resolved.blocks;
     } catch (error: any) {
-      setNotice(error.message);
+      scopedNotice(error.message, thread?.id);
       return;
     }
     const threadReferenceSuffix = threadReferenceBlocks ? `\n\n${threadReferenceBlocks}` : "";
@@ -17319,7 +17382,7 @@ const commandMatches = useMemo(() => {
         setImages([]);
         void refreshQueue(thread.id);
       } catch (error: any) {
-        setNotice(error.message);
+        scopedNotice(error.message, thread?.id);
       }
       return;
     }
@@ -17696,7 +17759,7 @@ const commandMatches = useMemo(() => {
       if (failedText) setPrompt((current) => (String(current ?? "").trim() ? current : failedText));
       setInterrupting(false);
       setWorkStartedAt(null);
-      setNotice(error.message);
+      scopedNotice(error.message, thread?.id ?? createdThreadId ?? undefined);
     }
     } finally {
       sendInFlightRef.current = false;
