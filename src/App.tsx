@@ -9738,6 +9738,13 @@ export default function App() {
   const [devRuntimes, setDevRuntimes] = useState<DevRuntimeEntry[]>([]);
   const [runtimeInstalling, setRuntimeInstalling] = useState<string | null>(null);
   const [runtimeProgress, setRuntimeProgress] = useState<Record<string, string>>({});
+  // 安装进度条（09-19 用户：「不要弹窗，全部进度条展示吧，这样可视化进度，方便新手」）：
+  // 主进程把安装脚本的结构化行（`@@PROGRESS n` / `@@STAGE 阶段`）解析成独立事件下发，
+  // 这里分别记住——文字说明「在做什么」，百分比驱动进度条。
+  const [runtimePercent, setRuntimePercent] = useState<Record<string, number>>({});
+  const [runtimeStage, setRuntimeStage] = useState<Record<string, string>>({});
+  /** 最近一次进度事件对应的工具 id（体检弹窗/角标据此显示"当前在装哪一个"的进度） */
+  const [runtimeActiveId, setRuntimeActiveId] = useState<string>("");
   // 安装/卸载的内置弹窗（替代 window.confirm——浏览器原生 confirm 会抢焦点且打断输入框）
   const [runtimeModal, setRuntimeModal] = useState<{ id: string; name: string; mode: "install" | "uninstall"; done: boolean; failed: boolean } | null>(null);
   const refreshDevRuntimes = () => { window.codex.listRuntimes().then(setDevRuntimes).catch(() => setDevRuntimes([])); };
@@ -9745,11 +9752,18 @@ export default function App() {
     // auto = 主进程监视到 tools 目录变化（引擎自己装了工具）→ 静默刷新清单与状态，
     // 不动「正在安装」指示（那是按钮安装路径的专属状态）
     if (event.auto) { refreshDevRuntimes(); refreshToolsStatus(); return; }
-    setRuntimeProgress((current) => ({ ...current, [event.id]: event.message.split(/\r?\n/).at(-1) || event.message }));
+    setRuntimeActiveId(event.id);
+    if (typeof event.percent === "number") setRuntimePercent((current) => ({ ...current, [event.id]: event.percent as number }));
+    if (event.stage) setRuntimeStage((current) => ({ ...current, [event.id]: String(event.stage) }));
+    if (event.message) {
+      const text = String(event.message);
+      setRuntimeProgress((current) => ({ ...current, [event.id]: text.split(/\r?\n/).at(-1) || text }));
+    }
     if (event.done) {
+      setRuntimePercent((current) => ({ ...current, [event.id]: 100 }));
       setRuntimeInstalling(null); refreshDevRuntimes();
       // 首次启动的 Git 自动安装（后台跑的，用户可能没开开发工具页）：完成/失败都弹一条通知
-      if (event.id === "git" && event.message.includes("自动")) setNotice(event.message);
+      if (event.id === "git" && String(event.message ?? "").includes("自动")) setNotice(String(event.message));
     }
   }), []);
   // 引擎重启被闸门推迟/补做（09-19）：说清楚"改动已保存，但等当前任务跑完才生效"——
@@ -13867,8 +13881,11 @@ const commandMatches = useMemo(() => {
       setEnvInstalling(false);
     }
   }
-  /** 安装进度文案（复用主进程推来的 runtime:progress，取最后一条）。 */
-  const envProgress = envInstalling ? (Object.entries(runtimeProgress).slice(-1)[0]?.[1] ?? "") : "";
+  /** 安装进度（复用主进程推来的 runtime:progress，取**当前正在装的那个工具**的条目——
+   *  批量安装时逐个推进，显示正在装的那一项的百分比与阶段）。 */
+  const envProgress = envInstalling && runtimeActiveId ? (runtimeProgress[runtimeActiveId] ?? "") : "";
+  const envPercent = envInstalling && runtimeActiveId ? runtimePercent[runtimeActiveId] : undefined;
+  const envStage = envInstalling && runtimeActiveId ? runtimeStage[runtimeActiveId] : undefined;
   // ⛔ 这里曾有 `activeModelSupportsImage()`（按模型 inputTypes 预判能否收图），09-18 随
   //   「图片一律正常发送」一并删除：**判据不可靠**（本地元数据，模型其实支持视觉只是漏勾
   //   「图片」时会把图白吞），而且它是「预判 → 吞图 → 注入说明文字」那条错路的入口 ——
@@ -18169,6 +18186,8 @@ const commandMatches = useMemo(() => {
               items={envItems}
               installing={envInstalling}
               progress={envProgress}
+              percent={envPercent}
+              stage={envStage}
               onInstall={(ids) => void installEnvMissing(ids)}
               onGo={(target) => {
                 setEnvCheckOpen(false);
@@ -19684,7 +19703,17 @@ const commandMatches = useMemo(() => {
                         return <div className={`runtime-row ${isDone ? "installed" : "missing"} ${busy ? "busy" : ""}`} key={runtime.id}>
                           <span className="runtime-icon">{busy ? <Spinner /> : isDone ? <CircleCheck size={16} /> : <TerminalSquare size={16} />}</span>
                           <span className="runtime-copy"><strong>{runtime.name}</strong><small>{runtime.description}</small>
-                            {busy && runtimeProgress[runtime.id] ? <em className="runtime-progress">{runtimeProgress[runtime.id]}</em>
+                            {busy ? <span className="runtime-install-state">
+                              {/* 进度条（09-19 用户要求：安装过程不弹窗，用进度条可视化） */}
+                              <span className="runtime-progress-bar" role="progressbar" aria-label={`${runtime.name} 安装进度`} aria-valuenow={runtimePercent[runtime.id] ?? 0} aria-valuemin={0} aria-valuemax={100}>
+                                <i style={{ width: `${runtimePercent[runtime.id] ?? 0}%` }} />
+                              </span>
+                              <em className="runtime-progress">
+                                {runtimeStage[runtime.id] ? `${runtimeStage[runtime.id]} · ` : ""}
+                                {typeof runtimePercent[runtime.id] === "number" ? `${runtimePercent[runtime.id]}%` : "准备中"}
+                                {runtimeProgress[runtime.id] ? ` · ${runtimeProgress[runtime.id]}` : ""}
+                              </em>
+                            </span>
                               : !isDone && runtime.bundled ? <em className="runtime-hint">随包内置能力缺失时可点「修复安装」从包内恢复</em>
                               : !isDone && runtime.id === "cloakbrowser" ? <em className="runtime-hint">按需下载 · 不装也能用内置浏览器与 playwright-cli</em>
                               : null}
@@ -19733,12 +19762,20 @@ const commandMatches = useMemo(() => {
                     )}
                   </header>
                   <div className="dev-runtime-modal-body">
-                    {runtimeProgress[runtimeModal.id]?.split(/\r?\n/).filter(Boolean).slice(-8).map((line, i, arr) => (
-                      <small key={i} className={i === arr.length - 1 ? "dev-runtime-modal-line latest" : "dev-runtime-modal-line"}>{line}</small>
-                    ))}
+                    {/* 进度条：所有安装/下载都在这里可视化（不再弹系统窗口） */}
+                    <div className="runtime-modal-progress">
+                      <span className="runtime-progress-bar large" role="progressbar" aria-label={`${runtimeModal.name} 进度`} aria-valuenow={runtimePercent[runtimeModal.id] ?? 0} aria-valuemin={0} aria-valuemax={100}>
+                        <i style={{ width: `${runtimePercent[runtimeModal.id] ?? 0}%` }} />
+                      </span>
+                      <div className="runtime-modal-progress-meta">
+                        <span>{runtimeStage[runtimeModal.id] ?? (runtimeModal.mode === "install" ? "准备安装" : "准备卸载")}</span>
+                        <b>{typeof runtimePercent[runtimeModal.id] === "number" ? `${runtimePercent[runtimeModal.id]}%` : "…"}</b>
+                      </div>
+                    </div>
+                    {runtimeProgress[runtimeModal.id] ? <small className="dev-runtime-modal-line latest">{runtimeProgress[runtimeModal.id]}</small> : null}
                     {!runtimeModal.done && (
                       <div className="dev-runtime-modal-spinner">
-                        <Spinner /><span>进行中…</span>
+                        <Spinner /><span>进行中…（安装过程全部在应用内展示，不会弹出系统窗口）</span>
                       </div>
                     )}
                   </div>

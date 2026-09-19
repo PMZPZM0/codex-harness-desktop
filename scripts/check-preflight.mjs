@@ -5965,6 +5965,49 @@ w.postMessage({id:1,op:"list",root});
   );
 }
 
+{
+  // ── 【66】安装/依赖获取全程不得弹出系统窗口（09-19 用户：「把这些初次安装依赖和工具改成
+  //   不弹窗，全部，进度条展示吧，这样可视化进度，方便新手」）──
+  //   根因：Electron 父进程**没有控制台**，子进程一旦用 stdio:"inherit"，Windows 会给它
+  //   **新分配一个 cmd.exe 控制台窗口**（用户截图那个黑框）。
+  //   真机验证（e2e 起真实应用 + 安装 yt-dlp + tasklist 采样窗口）：管道方案全程**零新增**
+  //   cmd/conhost 窗口；percent 事件 0→100 共 124 条 → 界面进度条有真实数据。
+  const stripComments66 = (src) => src.split(/\r?\n/).filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line)).join("\n");
+  for (const rel of ["scripts/install-runtimes.cjs", "scripts/install-automation.cjs"]) {
+    const src = stripComments66(readFileSync(join(ROOT, rel), "utf8"));
+    (!/stdio:\s*"inherit"/.test(src) ? ok : fail)(
+      `【66】${rel} 不得用 stdio:"inherit"（无控制台的父进程下会弹 cmd 黑窗）`
+    );
+    (!/\bexecSync\(/.test(src) ? ok : fail)(
+      `【66】${rel} 不得直接用 execSync（缺 windowsHide；统一走 runCommand/runStreaming）`
+    );
+  }
+  const runtimesSrc66 = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
+  (/windowsHide: true/.test(runtimesSrc66) ? ok : fail)(
+    "【66】安装脚本的子进程显式 windowsHide"
+  );
+  (/@@PROGRESS/.test(runtimesSrc66) && /@@STAGE/.test(runtimesSrc66) ? ok : fail)(
+    "【66】安装脚本上报结构化进度（@@PROGRESS / @@STAGE → 界面进度条）"
+  );
+  const mainSrc66 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  (/function emitRuntimeProgress\(/.test(mainSrc66) && /percent: Math\.max\(0, Math\.min\(100/.test(mainSrc66) ? ok : fail)(
+    "【66】主进程把进度行解析成 percent/stage 事件下发给界面"
+  );
+  const appSrc66 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  (/className="runtime-progress-bar"/.test(appSrc66) ? ok : fail)(
+    "【66】渲染层用进度条展示安装进度（卡片 / 安装弹窗）"
+  );
+  const envSrc66 = readFileSync(join(ROOT, "src", "components", "EnvCheckDialog.tsx"), "utf8");
+  (/runtime-progress-bar/.test(envSrc66) ? ok : fail)(
+    "【66】环境体检弹窗（一键安装）也有进度条"
+  );
+  const cssSrc66 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+  (/\.runtime-progress-bar\s*\{/.test(cssSrc66) ? ok : fail)(
+    "【66】进度条样式存在"
+  );
+}
+
+
 
 console.log("");
 console.log(C.gray(`已执行断言数：${checks}`));

@@ -11,7 +11,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { execSync } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 
 const IS_MAC = process.platform === "darwin";
 const NODE_VERSION = "v24.19.0";
@@ -102,8 +102,73 @@ function chinaMirrorUrl(url) {
   return null;
 }
 
+/**
+ * 执行外部命令并转发输出。
+ *
+ * ⛔⛔ 09-19 用户实测（首启安装弹出 `C:\WINDOWS\system32\cmd.exe` 黑窗）：
+ *   父进程是 Electron 主进程、**没有控制台**，子进程一旦用 `stdio: "inherit"`，
+ *   Windows 会给它**新分配一个控制台窗口** —— 那就是用户看到的黑框。
+ *   改用管道 + windowsHide；输出由本脚本转发到自己的 stdout
+ *   （主进程会把它变成界面的安装进度消息）。
+ *  · quiet：不把大段输出刷到进度区（失败时仍带上错误尾巴）
+ */
+function runCommand(command, opts = {}) {
+  const result = spawnSync(command, [], {
+    shell: true,
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+    timeout: opts.timeout ?? 900000,
+    env: opts.env ?? process.env,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  const out = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
+  // 默认不刷屏（界面进度区保持干净）；需要展示进展的长命令用 runStreaming 或显式 showOutput
+  if (out && opts.showOutput) process.stdout.write(out.slice(-3000) + "\n");
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(out.slice(-1200) || `命令失败（退出码 ${result.status}）：${command}`);
+  return out;
+}
+
+/** 异步执行长命令：逐块转发输出，可解析进度（下载/解压/装包用）。 */
+function runStreaming(command, opts = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, [], {
+      shell: true,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: opts.env ?? process.env,
+    });
+    let tail = "";
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch { /* 已退出 */ }
+      reject(new Error(`${opts.label ?? "命令"}超时`));
+    }, opts.timeout ?? 900000);
+    const onData = (chunk) => {
+      const text = String(chunk);
+      tail = (tail + text).slice(-4000);
+      if (opts.onChunk) { opts.onChunk(text); return; }
+      if (opts.quiet) return;
+      const lines = text.replace(/\r/g, "\n").split("\n").map((line) => line.trim()).filter(Boolean);
+      if (lines.length) process.stdout.write(lines.slice(-4).join("\n") + "\n");
+    };
+    child.stdout?.on("data", onData);
+    child.stderr?.on("data", onData);
+    child.on("error", (error) => { clearTimeout(timer); reject(error); });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(tail);
+      else reject(new Error(tail.trim().slice(-1200) || `${opts.label ?? "命令"}退出（${code}）`));
+    });
+  });
+}
+
 async function download(url, file) {
-  const base = `curl -L --fail --silent --show-error --retry 3 --retry-all-errors --connect-timeout 30 --continue-at - -o "${file}"`;
+  process.stdout.write("@@STAGE 下载\n");   // 阶段名 → 界面进度条（新手看得懂"在干什么"）
+  // ⛔ 用 `--progress-bar`（而不是 `--silent`）：curl 的进度条走 stderr，我们解析出百分比
+  //   上报给界面（结构化行 @@PROGRESS n）—— 用户看到的是**应用内的进度条**，
+  //   而不是一个 cmd 黑窗（09-19 用户要求「不要弹窗，全部用进度条」）。
+  const base = `curl -L --fail --show-error --progress-bar --retry 3 --retry-all-errors --connect-timeout 30 --continue-at - -o "${file}"`;
   const attempts = [];
   const mirror = chinaMirrorUrl(url);
   if (mirror) attempts.push([`国内镜像 npmmirror`, `${base} "${mirror}"`, mirror]);
@@ -114,7 +179,21 @@ async function download(url, file) {
   for (const [label, command, effectiveUrl] of attempts) {
     try {
       console.log(`[download] via ${label}: ${effectiveUrl}`);
-      execSync(command, { stdio: "inherit", timeout: 900000 });
+      let lastReported = -1;
+      await runStreaming(command, {
+        label: "下载",
+        timeout: 900000,
+        quiet: true,
+        onChunk: (text) => {
+          const matches = text.replace(/\r/g, "\n").match(/(\d{1,3}(?:\.\d+)?)%/g);
+          if (!matches) return;
+          const percent = Math.min(100, Math.round(parseFloat(matches[matches.length - 1])));
+          if (percent === lastReported) return;   // 节流：只在整数百分比变化时上报
+          lastReported = percent;
+          process.stdout.write(`@@PROGRESS ${percent}\n`);
+        },
+      });
+      process.stdout.write("@@PROGRESS 100\n");
       return;
     } catch (error) {
       lastError = error;
@@ -126,7 +205,7 @@ async function download(url, file) {
 
 function archiveReady(file) {
   if (!fs.existsSync(file) || fs.statSync(file).size < 1024 * 1024) return false;
-  try { execSync(`"${BSDTAR}" -tf "${file}"`, { stdio: "ignore", timeout: 120000 }); return true; }
+  try { runCommand(`"${BSDTAR}" -tf "${file}"`, { quiet: true, timeout: 120000 }); return true; }
   catch { return false; }
 }
 
@@ -142,8 +221,9 @@ async function install(label, url, destDir, opts = {}) {
     console.log(`[${label}] reuse cached ${zip}`);
   }
   fs.mkdirSync(destDir, { recursive: true });
+  process.stdout.write("@@STAGE 解压\n");
   const stripArg = opts.strip ? " --strip-components=1" : "";
-  execSync(`"${BSDTAR}" -xf "${zip}" -C "${destDir}"${stripArg}`, { stdio: "inherit" });
+  await runStreaming(`"${BSDTAR}" -xf "${zip}" -C "${destDir}"${stripArg}`, { label: `${label} 解压`, quiet: true, timeout: 900000 });
   chmodExec(destDir);
   console.log(`[${label}] extracted to ${destDir}`);
 }
@@ -169,7 +249,8 @@ async function installConda(destDir) {
   }
   fs.mkdirSync(destDir, { recursive: true });
   console.log(`[miniconda] silent installing to ${destDir}（约 1-2 分钟）`);
-  execSync(`"${installer}" /InstallationType=JustMe /RegisterPython=0 /AddToPath=0 /S /D=${destDir}`, { stdio: "inherit", timeout: 900000 });
+  process.stdout.write("@@STAGE 静默安装\n");
+  await runStreaming(`"${installer}" /InstallationType=JustMe /RegisterPython=0 /AddToPath=0 /S /D=${destDir}`, { label: "Miniconda 安装", quiet: true, timeout: 900000 });
   // 静默安装后补一个 .condarc 用清华镜像（国内下载包更快），失败不影响安装本身
   try { fs.writeFileSync(path.join(destDir, ".condarc"), "channels:\n  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main\n  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/free\n  - defaults\nshow_channel_urls: true\n", "utf8"); } catch { /* 可选优化 */ }
   console.log("[miniconda] installed to " + destDir);
@@ -204,7 +285,7 @@ async function ensureTkinter(pythonDir) {
   fs.rmSync(extractDir, { recursive: true, force: true });
   fs.mkdirSync(extractDir, { recursive: true });
   console.log("[python-tk] extracting official Tcl/Tk components");
-  execSync(`"${installer}" /quiet InstallAllUsers=0 TargetDir="${extractDir}" Include_tcltk=1 Include_pip=0 Include_test=0 Include_doc=0 Include_launcher=0 SimpleInstall=0`, { stdio: "inherit", timeout: 900000 });
+  runCommand(`"${installer}" /quiet InstallAllUsers=0 TargetDir="${extractDir}" Include_tcltk=1 Include_pip=0 Include_test=0 Include_doc=0 Include_launcher=0 SimpleInstall=0`, { timeout: 900000 });
   const copyFiles = ["_tkinter.pyd", "tcl86t.dll", "tk86t.dll", "zlib1.dll"];
   fs.mkdirSync(pythonDir, { recursive: true });
   for (const file of copyFiles) fs.copyFileSync(path.join(extractDir, "DLLs", file), path.join(pythonDir, file));
@@ -225,7 +306,7 @@ async function installPip(pythonDir) {
   if (fs.existsSync(marker)) { console.log(`[skip] pip already at ${marker}`); return; }
   const script = path.join(TMP, "codex-harness-get-pip.py");
   if (!fs.existsSync(script) || fs.statSync(script).size < 10 * 1024) await download(GET_PIP_URL, script);
-  execSync(`"${path.join(pythonDir, "python.exe")}" "${script}" --no-warn-script-location`, { stdio: "inherit", timeout: 900000, env: { ...process.env, PYTHONHOME: pythonDir } });
+  await runStreaming(`"${path.join(pythonDir, "python.exe")}" "${script}" --no-warn-script-location`, { label: "pip 引导", quiet: true, timeout: 900000, env: { ...process.env, PYTHONHOME: pythonDir } });
   console.log(`[pip] installed to ${pythonDir}`);
 }
 
@@ -234,7 +315,9 @@ async function installPipPackages(pythonDir) {
   const marker = path.join(pythonDir, "Lib", "site-packages", "fastapi");
   if (fs.existsSync(marker)) { console.log("[skip] python packages already installed"); return; }
   console.log("[pip-packages] installing " + PIP_PACKAGES + " (tsinghua mirror, no proxy)");
-  execSync(`"${path.join(pythonDir, "python.exe")}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${PIP_PACKAGES}`, { stdio: "inherit", timeout: 900000, env: { ...process.env, PYTHONHOME: pythonDir } });
+  process.stdout.write("@@STAGE 安装 Python 依赖\n");
+  // pip 下载/安装有天然的分步输出：流式转发给界面（进度区能看到 Collecting / Installing）
+  await runStreaming(`"${path.join(pythonDir, "python.exe")}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${PIP_PACKAGES}`, { label: "Python 依赖安装", timeout: 900000, env: { ...process.env, PYTHONHOME: pythonDir } });
   console.log("[pip-packages] done");
 }
 
@@ -284,28 +367,28 @@ async function main() {
       if (!archiveReady(zip)) { console.log(`[mingw] downloading ${WINLIBS_URL}`); await download(WINLIBS_URL, zip); }
       else console.log(`[mingw] reuse cached ${zip}`);
       fs.mkdirSync(dir, { recursive: true });
-      execSync(`"${BSDTAR}" -xf "${zip}" -C "${dir}"`, { stdio: "inherit" });
+      runCommand(`"${BSDTAR}" -xf "${zip}" -C "${dir}"`, {});
       console.log(`[mingw] extracted to ${dir}`);
     }
   }
 
-  if (fs.existsSync(path.join(nodeDir, "node.exe"))) console.log("[verify node]", execSync(`"${path.join(nodeDir, "node.exe")}" -v`, { encoding: "utf8" }).trim());
+  if (fs.existsSync(path.join(nodeDir, "node.exe"))) console.log("[verify node]", runCommand(`"${path.join(nodeDir, "node.exe")}" -v`, { encoding: "utf8" }).trim());
   if (fs.existsSync(path.join(pythonDir, "python.exe"))) {
-    console.log("[verify python]", execSync(`"${path.join(pythonDir, "python.exe")}" --version`, { encoding: "utf8" }).trim());
-    try { console.log("[verify python-tk]", execSync(`"${path.join(pythonDir, "python.exe")}" -c "import tkinter; print('Tk ' + str(tkinter.TkVersion))"`, { encoding: "utf8" }).trim()); }
+    console.log("[verify python]", runCommand(`"${path.join(pythonDir, "python.exe")}" --version`, { encoding: "utf8" }).trim());
+    try { console.log("[verify python-tk]", runCommand(`"${path.join(pythonDir, "python.exe")}" -c "import tkinter; print('Tk ' + str(tkinter.TkVersion))"`, { encoding: "utf8" }).trim()); }
     catch (error) { console.log("[verify python-tk] unavailable: " + String(error.message).split("\n")[0]); }
   }
-  if (fs.existsSync(path.join(gitDir, "cmd", "git.exe"))) console.log("[verify git]", execSync(`"${path.join(gitDir, "cmd", "git.exe")}" --version`, { encoding: "utf8" }).trim());
-  if (fs.existsSync(path.join(TOOLS, "rg", "rg.exe"))) console.log("[verify rg]", execSync(`"${path.join(TOOLS, "rg", "rg.exe")}" --version`, { encoding: "utf8" }).split(/\r?\n/)[0]);
-  if (fs.existsSync(path.join(TOOLS, "uv", "uv.exe"))) console.log("[verify uv]", execSync(`"${path.join(TOOLS, "uv", "uv.exe")}" --version`, { encoding: "utf8" }).trim());
-  if (fs.existsSync(path.join(TOOLS, "cmake", "bin", "cmake.exe"))) console.log("[verify cmake]", execSync(`"${path.join(TOOLS, "cmake", "bin", "cmake.exe")}" --version`, { encoding: "utf8" }).split(/\r?\n/)[0]);
-  if (fs.existsSync(path.join(TOOLS, "miniconda", "Scripts", "conda.exe"))) console.log("[verify conda]", execSync(`"${path.join(TOOLS, "miniconda", "Scripts", "conda.exe")}" --version`, { encoding: "utf8" }).trim());
-  if (fs.existsSync(path.join(TOOLS, "mingw", "mingw64", "bin", "gcc.exe"))) console.log("[verify gcc]", execSync(`"${path.join(TOOLS, "mingw", "mingw64", "bin", "gcc.exe")}" --version`, { encoding: "utf8" }).split(/\r?\n/)[0]);
-  if (fs.existsSync(path.join(ffmpegDir, "bin", "ffmpeg.exe"))) console.log("[verify ffmpeg]", execSync(`"${path.join(ffmpegDir, "bin", "ffmpeg.exe")}" -version`, { encoding: "utf8" }).split(/\r?\n/)[0]);
-  if (fs.existsSync(path.join(vscodeCliDir, "code.exe"))) console.log("[verify code]", execSync(`"${path.join(vscodeCliDir, "code.exe")}" --version`, { encoding: "utf8", timeout: 30000 }).split(/\r?\n/)[0]);
+  if (fs.existsSync(path.join(gitDir, "cmd", "git.exe"))) console.log("[verify git]", runCommand(`"${path.join(gitDir, "cmd", "git.exe")}" --version`, { encoding: "utf8" }).trim());
+  if (fs.existsSync(path.join(TOOLS, "rg", "rg.exe"))) console.log("[verify rg]", runCommand(`"${path.join(TOOLS, "rg", "rg.exe")}" --version`, { encoding: "utf8" }).split(/\r?\n/)[0]);
+  if (fs.existsSync(path.join(TOOLS, "uv", "uv.exe"))) console.log("[verify uv]", runCommand(`"${path.join(TOOLS, "uv", "uv.exe")}" --version`, { encoding: "utf8" }).trim());
+  if (fs.existsSync(path.join(TOOLS, "cmake", "bin", "cmake.exe"))) console.log("[verify cmake]", runCommand(`"${path.join(TOOLS, "cmake", "bin", "cmake.exe")}" --version`, { encoding: "utf8" }).split(/\r?\n/)[0]);
+  if (fs.existsSync(path.join(TOOLS, "miniconda", "Scripts", "conda.exe"))) console.log("[verify conda]", runCommand(`"${path.join(TOOLS, "miniconda", "Scripts", "conda.exe")}" --version`, { encoding: "utf8" }).trim());
+  if (fs.existsSync(path.join(TOOLS, "mingw", "mingw64", "bin", "gcc.exe"))) console.log("[verify gcc]", runCommand(`"${path.join(TOOLS, "mingw", "mingw64", "bin", "gcc.exe")}" --version`, { encoding: "utf8" }).split(/\r?\n/)[0]);
+  if (fs.existsSync(path.join(ffmpegDir, "bin", "ffmpeg.exe"))) console.log("[verify ffmpeg]", runCommand(`"${path.join(ffmpegDir, "bin", "ffmpeg.exe")}" -version`, { encoding: "utf8" }).split(/\r?\n/)[0]);
+  if (fs.existsSync(path.join(vscodeCliDir, "code.exe"))) console.log("[verify code]", runCommand(`"${path.join(vscodeCliDir, "code.exe")}" --version`, { encoding: "utf8", timeout: 30000 }).split(/\r?\n/)[0]);
   try {
     if (!fs.existsSync(path.join(psDir, "pwsh.exe"))) throw new Error("not installed");
-    const v = execSync(`"${path.join(psDir, "pwsh.exe")}" -NoProfile -NonInteractive -Command "$PSVersionTable.PSVersion.ToString()"`, { encoding: "utf8", timeout: 30000 });
+    const v = runCommand(`"${path.join(psDir, "pwsh.exe")}" -NoProfile -NonInteractive -Command "$PSVersionTable.PSVersion.ToString()"`, { encoding: "utf8", timeout: 30000 });
     console.log("[verify ps7]", v.trim());
   } catch (e) {
     if (!want("pwsh")) return console.log("[done] selected tools installed at " + TOOLS);
@@ -331,7 +414,7 @@ async function mainMac() {
       console.log("[skip] git (system) available");
     } else {
       console.log("[git] no system git — launching Xcode Command Line Tools installer…");
-      try { execSync("xcode-select --install", { stdio: "ignore", timeout: 60000 }); } catch { /* 已装/已请求时非零 */ }
+      try { runCommand("xcode-select --install", { timeout: 60000 }); } catch { /* 已装/已请求时非零 */ }
       console.log("[git] 若系统弹窗未出现，请手动执行: xcode-select --install");
     }
   }
@@ -341,7 +424,7 @@ async function mainMac() {
     if (fs.existsSync(path.join(dir, "python", "bin", "python3"))) {
       console.log(`[skip] python already at ${dir}`);
     } else {
-      const release = JSON.parse(execSync(`curl -sL --fail --max-time 60 "https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest"`, { encoding: "utf8", maxBuffer: 1 << 26 }));
+      const release = JSON.parse(runCommand(`curl -sL --fail --max-time 60 "https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest"`, { encoding: "utf8", maxBuffer: 1 << 26 }));
       const triple = process.arch === "arm64" ? "aarch64" : "x86_64";
       const asset = (release.assets || []).find((a) => a.name.startsWith("cpython-3.13.") && a.name.endsWith(`${triple}-apple-darwin-install_only.tar.gz`));
       if (!asset) throw new Error("No macOS Python 3.13 standalone runtime asset");
@@ -350,7 +433,7 @@ async function mainMac() {
     const python = path.join(TOOLS, "python", "bin", "python3");
     if (want("python") && fs.existsSync(python)) {
       try {
-        execSync(`"${python}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${PIP_PACKAGES}`, { stdio: "inherit", timeout: 900000 });
+        runCommand(`"${python}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${PIP_PACKAGES}`, { timeout: 900000 });
       } catch (error) { console.log("[pip-packages] failed (optional): " + String(error.message).split("\n")[0]); }
     }
   }
@@ -375,7 +458,7 @@ async function mainMac() {
       await download(`https://repo.anaconda.com/miniconda/Miniconda3-py312_25.1.1-2-MacOSX-${arch === "arm64" ? "arm64" : "x86_64"}.sh`, installer);
       fs.mkdirSync(condaDir, { recursive: true });
       console.log(`[miniconda] batch installing to ${condaDir}`);
-      execSync(`bash "${installer}" -b -p "${condaDir}"`, { stdio: "inherit", timeout: 900000 });
+      runCommand(`bash "${installer}" -b -p "${condaDir}"`, { timeout: 900000 });
       console.log("[miniconda] installed to " + condaDir);
     }
   }
