@@ -1950,6 +1950,21 @@ function loadThreadPermissions(id: string): { sandbox?: string; approval?: strin
   const r = loadThreadRuntime(id);
   return { sandbox: r.sandbox, approval: r.approval };
 }
+
+/** 会话自己记录的权限档位，**过白名单**（代码审查发现）。
+ *  localStorage 里的值可能是旧版本写入或脏数据 —— 裸传给引擎会被拒（整条 turn/start 失败），
+ *  比"不传"更糟。非法/缺失时返回 undefined，调用方落到当前 UI 值（= 改动前行为）。
+ *  合法集合同一份判据见 `thread/settings/updated` 分支里的 trusted 校验。 */
+const SANDBOX_MODES = ["danger-full-access", "read-only", "workspace-write"] as const;
+const APPROVAL_MODES = ["never", "on-request", "untrusted"] as const;
+function threadSandboxOf(id: string): string | undefined {
+  const value = loadThreadPermissions(id).sandbox;
+  return (SANDBOX_MODES as readonly string[]).includes(String(value)) ? value : undefined;
+}
+function threadApprovalOf(id: string): string | undefined {
+  const value = loadThreadPermissions(id).approval;
+  return (APPROVAL_MODES as readonly string[]).includes(String(value)) ? value : undefined;
+}
 function saveThreadPermissions(id: string, sandbox: string, approval: string) {
   saveThreadRuntime(id, { sandbox, approval });
 }
@@ -8440,6 +8455,7 @@ export default function App() {
       setWorkStartedAt(Date.now());
     }
     markThreadRunning(threadId);
+    let guarded: Promise<unknown> | undefined;
     try {
       // 只串行化**同一个会话**的重试（防重复投递）；跨会话不排队、互不等待
       const gate = retryGatesRef.current.get(threadId) ?? Promise.resolve();
@@ -8462,11 +8478,12 @@ export default function App() {
           //   彻底独立」）：cwd 与**权限模式**都要取目标会话自己的，不能借用当前查看会话的
           //   `sandbox`（那是全局 UI 状态）—— 否则后台会话的重试会带着**别的会话的权限**跑，
           //   属于配置层面的串会话（比 UI 串更危险：可能提权/降权）。
-          sandboxPolicy: sandboxPolicy(loadThreadPermissions(threadId).sandbox ?? sandbox, threadCacheRef.current.get(threadId)?.cwd ?? threadRef.current?.cwd ?? workspace ?? ""),
-          approvalPolicy: loadThreadPermissions(threadId).approval ?? approvalPolicy,
+          sandboxPolicy: sandboxPolicy(threadSandboxOf(threadId) ?? sandbox, threadCacheRef.current.get(threadId)?.cwd ?? threadRef.current?.cwd ?? workspace ?? ""),
+          approvalPolicy: threadApprovalOf(threadId) ?? approvalPolicy,
         });
       });
-      retryGatesRef.current.set(threadId, run.catch(() => undefined));
+      guarded = run.catch(() => undefined);
+      retryGatesRef.current.set(threadId, guarded);
       const result: any = await run;
       if (result?.skipped) {
         cancelRateLimitRetry(threadId, true);
@@ -8487,6 +8504,10 @@ export default function App() {
         setNotice(error?.message ?? "限流重试失败");
         cancelRateLimitRetry(threadId, true);
       }
+    } finally {
+      // ⛔ 串行门**用后即清**（代码审查发现）：只在 Map 里仍是本次那道门时才删，
+      //    避免误删后来者的门。不清的话条目会随重试次数无限累积（每条持有 Promise 与闭包）。
+      if (retryGatesRef.current.get(threadId) === guarded) retryGatesRef.current.delete(threadId);
     }
   }
 
@@ -8510,8 +8531,8 @@ export default function App() {
         effort: ctx.effort,
         personality: ctx.personality,
         // 同限流重试：沙箱 / 权限 / cwd 一律取**目标会话自己的**（会话间配置不得串）
-        sandboxPolicy: sandboxPolicy(loadThreadPermissions(ctx.threadId).sandbox ?? sandbox, threadCacheRef.current.get(ctx.threadId)?.cwd ?? threadRef.current?.cwd ?? workspace ?? ""),
-        approvalPolicy: loadThreadPermissions(ctx.threadId).approval ?? approvalPolicy,
+        sandboxPolicy: sandboxPolicy(threadSandboxOf(ctx.threadId) ?? sandbox, threadCacheRef.current.get(ctx.threadId)?.cwd ?? threadRef.current?.cwd ?? workspace ?? ""),
+        approvalPolicy: threadApprovalOf(ctx.threadId) ?? approvalPolicy,
       });
       if (result?.turn?.id) {
         setActiveTurnId(result.turn.id);
@@ -15046,16 +15067,13 @@ const commandMatches = useMemo(() => {
     if (!customModel || !selectedModel) { setNotice("请先配置并启用自定义模型"); setSettingsOpen(true); return; }
     const text = (item.content ?? []).filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n");
     if (!text.trim()) { setNotice("该消息没有可编辑的文本"); return; }
-    // fork 前的会话：turn/start 失败时要**回退**到它 —— 否则 fork 已经原回合从可见列表里拿掉，
-    // 新回合又没建起来，用户刚编辑的消息就永久消失了（09-18 用户反馈「编辑保存重发，消息不见了」）。
-    const before = threadRef.current;
+    // ⛔⛔ 09-19 用户要求（原话：「我点编辑消息，保存就知道新建会话，要在原会话继续跑」）：
+    //   编辑重发**不再 fork 分支** —— 直接在**当前会话**重新发送编辑后的内容。
+    //   引擎的 rollout 不可改写，所以时间线上会保留原消息 + 新消息（可见、可追溯），
+    //   但会话是同一个：上下文、模型、权限、侧栏位置全不变，不再有"另开一个会话"的错觉。
+    //   （09-18 那套「fork 失败要回退 thread」的逻辑已随 fork 一起去掉：没换过 thread，
+    //     失败时什么都不用回退 —— 代码审查发现 `before` 当时已沦为死代码。）
     try {
-      // ⛔⛔ 09-19 用户要求（原话：「我点编辑消息，保存就知道新建会话，要在原会话继续跑」）：
-      //   编辑重发**不再 fork 分支** —— 直接在**当前会话**重新发送编辑后的内容。
-      //   引擎的 rollout 不可改写，所以时间线上会保留原消息 + 新消息（可见、可追溯），
-      //   但会话是同一个：上下文、模型、权限、侧栏位置全不变，不再有"另开一个会话"的错觉。
-      //   下面沿用原来的 `forked` 变量名指向原会话，避免大范围改名引入回归；
-      //   「失败回退 thread」那套（before）也随之不再需要 —— 没换过 thread。
       const forked = { thread: threadRef.current ?? thread };
       const input = [
         { type: "text", text, text_elements: [] },
@@ -15088,12 +15106,11 @@ const commandMatches = useMemo(() => {
         effort: effort || null,
         personality: selectedModel?.supportsPersonality ? personality : null,
         approvalPolicy,
-        // 沙箱逐回合下发：fork 出的编辑分支同样按当前权限跑（见 send() 里的实证说明）
-        sandboxPolicy: sandboxPolicy(sandbox, forked.thread.cwd ?? workspace ?? ""),
+        // 沙箱逐回合下发：编辑重发就在原会话里跑，按该会话自己的权限（白名单校验后）
+        sandboxPolicy: sandboxPolicy(threadSandboxOf(forked.thread.id) ?? sandbox, forked.thread.cwd ?? workspace ?? ""),
       });
       if (!result.turn?.id) {
-        // 引擎返回了但没给回合（异常分支）：同样回退 —— 否则消息消失且没有任何补偿
-        if (before) { threadRef.current = before; setThread(before); }
+        // 引擎返回了但没给回合（异常分支）：没换过 thread，只需复位运行态并说明
         setSending(false);
         setWorkStartedAt(null);
         setOptimisticInput(null);
@@ -15113,13 +15130,11 @@ const commandMatches = useMemo(() => {
       void refreshThreads();
       showToast("已编辑重发", "已在原会话重新发送（历史保留原消息）");
     } catch (error: any) {
-      // ⛔ 失败必须回退到 fork 前的会话：fork 已经把原回合从列表里拿掉了，
-      //    不回退 = 用户刚编辑的那条消息凭空消失（且无任何可恢复的入口）。
-      if (before) { threadRef.current = before; setThread(before); }
+      // 没换过 thread，无需回退会话；只复位运行态并把编辑内容还给用户（消息本来就在历史里）
       setSending(false);
       setWorkStartedAt(null);
       setOptimisticInput(null);
-      setNotice(`编辑重发失败：${error.message}（已回到原来的消息，可重试）`);
+      setNotice(`编辑重发失败：${error.message}（原消息仍在，可重试）`);
     }
   }
 

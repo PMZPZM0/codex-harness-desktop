@@ -3589,15 +3589,22 @@ w.postMessage({id:1,op:"list",root});
   {
     const editResendBody = appCode.slice(appCode.indexOf("async function editResend"), appCode.indexOf("async function copyImage"));
     (editResendBody.length > 200 ? ok : fail)("【42】editResend 函数体可定位（守卫读的是真函数，不是全文）");
-    (/const before = threadRef\.current;/.test(editResendBody))
-      ? ok("【42】编辑重发前留了「fork 前的会话」引用 —— 失败时才有东西可回退")
-      : fail("【42】editResend 没记 fork 前的会话 —— 失败后用户的消息无从恢复");
-    ((editResendBody.match(/if \(before\) \{ threadRef\.current = before; setThread\(before\); \}/g) || []).length >= 2)
-      ? ok("【42】两条失败路径（请求抛错 / 引擎没返回回合）都回退了会话")
-      : fail("【42】有失败路径没回退 —— fork 已拿走原回合，用户编辑的消息会永久消失");
-    (/已回到原来的消息/.test(editResendBody))
-      ? ok("【42】失败提示说清了「已回到原来的消息，可重试」（不是干巴巴一句失败）")
-      : fail("【42】失败提示没告诉用户消息还在不在");
+    // ⛔⛔ 09-19 用户要求「我点编辑消息，保存就知道新建会话，要在原会话继续跑」：
+    //   编辑重发**不再 fork**（原来 fork 会另建会话，用户视角就是"莫名多了个会话"）。
+    //   守卫随之反转：必须**不 fork**（改回 fork 会红），且失败路径不得再依赖"回退会话"
+    //   （没换过 thread，回退是死逻辑 —— 代码审查发现过）。
+    (!/thread\/fork/.test(editResendBody) ? ok : fail)(
+      "【42】编辑重发在原会话进行（不得 fork 另建会话）"
+    );
+    (/const forked = \{ thread: threadRef\.current \?\? thread \};/.test(editResendBody) ? ok : fail)(
+      "【42】编辑重发明确指向当前会话（同一个会话继续跑）"
+    );
+    (!/const before = threadRef\.current;/.test(editResendBody) ? ok : fail)(
+      "【42】不再有「fork 前会话」死代码（没换 thread 就无需回退）"
+    );
+    (/原消息仍在，可重试/.test(editResendBody) ? ok : fail)(
+      "【42】失败提示说清「原消息仍在，可重试」（不是干巴巴一句失败）"
+    );
   }
 
   // ⑥ 生成状态条的渲染顺序（09-17 用户实测：「这个怎么到这个位置了」）
@@ -5898,8 +5905,11 @@ w.postMessage({id:1,op:"list",root});
   (/const retryGatesRef = useRef<Map<string, Promise<unknown>>>\(new Map\(\)\)/.test(app63) ? ok : fail)(
     "【63】重试发起串行化按会话分门（跨会话不排队、互不等待）"
   );
-  (/\bretryGatesRef\.current\.set\(threadId, run\.catch\(\(\) => undefined\)\)/.test(app63) ? ok : fail)(
+  (/retryGatesRef\.current\.set\(threadId, guarded\)/.test(app63) ? ok : fail)(
     "【63】串行门按 threadId 写入（同一个会话才排队）"
+  );
+  (/if \(retryGatesRef\.current\.get\(threadId\) === guarded\) retryGatesRef\.current\.delete\(threadId\)/.test(app63) ? ok : fail)(
+    "【63】串行门用后即清（不在 Map 里无限累积）"
   );
   (!/\bretryGateRef\b(?!s)/.test(app63) ? ok : fail)(
     "【63】已无全局单门 retryGateRef（会话完全独立的结构保证）"
@@ -5911,14 +5921,22 @@ w.postMessage({id:1,op:"list",root});
   (/const focusedForSend = threadRef\.current\?\.id;\s*\n\s*if \(focusedForSend\) cancelRateLimitRetry\(focusedForSend, true\);/.test(app63) ? ok : fail)(
     "【63】手动发送只取消当前会话的重试（不清别的会话）"
   );
-  (/sandboxPolicy: sandboxPolicy\(loadThreadPermissions\(threadId\)\.sandbox \?\? sandbox, threadCacheRef\.current\.get\(threadId\)\?\.cwd/.test(app63) ? ok : fail)(
+  // 权限取法：**按目标会话取 + 白名单**（架构审查发现裸传 localStorage 脏值会被引擎拒收）
+  (/sandboxPolicy: sandboxPolicy\(threadSandboxOf\(threadId\) \?\? sandbox, threadCacheRef\.current\.get\(threadId\)\?\.cwd/.test(app63) ? ok : fail)(
     "【63】重试的沙箱目录 + 权限模式都按目标会话取（配置层面不串会话）"
   );
-  (/approvalPolicy: loadThreadPermissions\(threadId\)\.approval \?\? approvalPolicy/.test(app63) ? ok : fail)(
+  (/approvalPolicy: threadApprovalOf\(threadId\) \?\? approvalPolicy/.test(app63) ? ok : fail)(
     "【63】重试的审批策略同样按目标会话取"
   );
-  (/sandboxPolicy: sandboxPolicy\(loadThreadPermissions\(ctx\.threadId\)\.sandbox \?\? sandbox, threadCacheRef\.current\.get\(ctx\.threadId\)\?\.cwd/.test(app63) ? ok : fail)(
+  (/sandboxPolicy: sandboxPolicy\(threadSandboxOf\(ctx\.threadId\) \?\? sandbox, threadCacheRef\.current\.get\(ctx\.threadId\)\?\.cwd/.test(app63) ? ok : fail)(
     "【63】降档重发的沙箱/权限也按目标会话取"
+  );
+  // 白名单本体：非法/脏值必须被挡（`?? 当前 UI 值` 的兜底不能省）
+  (/const SANDBOX_MODES = \["danger-full-access", "read-only", "workspace-write"\] as const;/.test(app63) ? ok : fail)(
+    "【63】会话权限读取有白名单（脏值不传给引擎）"
+  );
+  (/const APPROVAL_MODES = \["never", "on-request", "untrusted"\] as const;/.test(app63) ? ok : fail)(
+    "【63】审批档位白名单存在"
   );
 }
 
