@@ -6464,9 +6464,8 @@ w.postMessage({id:1,op:"list",root});
     "【73】本地预设把并发设为 1（单卡多路会让 KV 成倍占用，明显变慢甚至 OOM）"
   );
   // 点预设不能改掉已有供应商的身份（改了就是覆盖别人的配置）
-  (/const isNew = !current\.provider \|\| \/\^custom\\d\*\$\/\.test\(current\.provider\);/.test(app73) ? ok : fail)(
-    "【73】点本地预设只在「新建」时改 provider id（否则会覆盖已有供应商）"
-  );
+  // 点预设不能改掉已有供应商的身份 —— 09-19 改为**更强的保证**：
+  // 编辑已保存供应商时整排预设根本不显示（见下条），所以旧的「isNew 判定」断言已失效并删除。
   // ⑥ 说明收进 ? 号
   (/function FieldHelp\(\{ text \}: \{ text: string \}\)/.test(app73) ? ok : fail)(
     "【73】有 ? 说明组件（用户要求：赘述收进 ? 号）"
@@ -6499,6 +6498,26 @@ w.postMessage({id:1,op:"list",root});
   );
   (/provider !== "openai-official" && !isLocalEndpoint\(/.test(main73) ? ok : fail)(
     "【73】公网无 Key 的供应商仍被禁用（不能过度放宽，原意图要保住）"
+  );
+  // ⑧ 本地预设只在「新建」时显示 + 可取消（09-19 用户反馈）
+  //   ① 「应该做新建的时候展示，不能在已配置模型里面还能选，容易误点」
+  //   ② 「选中一个没法取消选择」
+  (/const editingExisting = Boolean\(editingProvider\)\s*\n\s*\|\| providersList\.some\(\(item\) => item\.provider === customDraft\.provider\);/.test(app73) ? ok : fail)(
+    "【73】本地预设只在新建时显示（编辑已保存供应商时不出现，防误点）"
+  );
+  (!/const isNew = !current\.provider \|\| \/\^custom\\d\*\$\/\.test\(current\.provider\);/.test(app73) ? ok : fail)(
+    "【73】预设显隐判定**不得**依赖 provider id 前缀（点了预设 id 会变成 ollama，整排会自己消失）"
+  );
+  (/if \(current\.baseUrl === preset\.url\) \{/.test(app73) ? ok : fail)(
+    "【73】再点同一个预设可取消选择（用户反馈「没法取消」）"
+  );
+  (/name: current\.name\.trim\(\) === preset\.name \? "" : current\.name,/.test(app73) ? ok : fail)(
+    "【73】取消时只回退预设写的值（用户手改过的名称/地址不动）"
+  );
+  // 取消分支要恢复一个全新的 custom id —— 用语义锚点（真实代码是 new RegExp 模板字符串，
+  // 直接锚字面量要嵌套转义，太脆）
+  (/if \(current\.baseUrl === preset\.url\) \{[\s\S]{0,400}?custom\$\{Date\.now\(\) % 1000\}/.test(app73) ? ok : fail)(
+    "【73】取消时把预设生成的 id 也还原（避免留一个 ollama-2 这种无主 id）"
   );
 }
 
