@@ -176,6 +176,12 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 - **指纹内核（cloak-browsers）仅用于自动化场景**（模型经 `cloakbrowser` CLI 调用）；浏览器视图的「隐身浏览」按钮为预留位，尚未接入 CDP 嵌入。
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
+- **⛔ 回合「思考被上游截断」的检测 + 自动续接（09-19 用户实测「思考内容过长会被截断，运行状态就断了」）**：
+  真机取证（会话 01a0b515 回合 8「鹈鹕骑自行车」）：应用配 `model_max_output_tokens=393216`，但商汤网关把单次响应**钳到 8192 tokens**；模型思考 16365 字符（≈8000+ tokens）把预算吃光 → 正文 0 字符 → 引擎把「空输出」当 task_complete 正常收尾（**rollout 不记录 finish_reason**，无从事后得知被截断）。本地部署模型（Ollama/vLLM）同样受单次输出上限约束。
+  - **检测形态（最关键）**：引擎截断时会**把 reasoning 摘要逐字复制成 agentMessage** 当最后的正文（last_agent_message 就是它）——「正文非空」≠「有产出」。判据 = 思考 ≥6000 字符 且 正文「排除与思考逐字相同/高度相似的复述后」为空 且 无工具动作；三者同真才判（漏报优于误报）。
+  - **应用不做任何限制**（用户明令「有的任务需要长时间思考」）：检测只提示，绝不截断/裁剪思考与输出。
+  - **自动续接**：引擎无回合内承接通道（`turn/steer` 前置条件 = active turn，截断后已 task_complete；引擎自身不做 finish_reason=length 续写）⇒ 承接落成新回合：延迟 2.5s 等收尾 → `thread/queue/add`「从上次中断处继续写、不要重新思考」（承接语义，非重做任务）→ `queue/start`。防死循环：同一会话 15 分钟内最多 2 次；执行前查该会话无 running turn（用户已手动续上就放弃）——**绝不让正常收尾被误判而多出应用自发的回合（那才是空转）**。
+  - 验证：预检【59】15 条守卫（含「正文=思考复述」判真、「长思考+正常短结论」不误判——用户明令的反向用例、续接语义、防循环记账、无长度截断）；反证（放宽阈值→「短结论」守卫变红）；真实 rollout 数据判真 + 真机「正常回合 tc=1/um=1 无截断提示无续接」。
 - **⛔ 内置技能 browser-automation → browser-skill 替换（09-19 用户「这个技能优化使用，这个更好，那个替换掉吧」）**：
   `electron/builtin-skills.ts` 的浏览器技能整体重写为 `browser-skill`（4.2KB：playwright-cli **全工作流实操手册**——权威命令表取自随包 `@playwright/cli --help`，含旧版完全没提的 `find`/`requests`/`response-body`/`console`/`state-save`/`kill-all`/`--raw`；**旧技能里唯一有价值的通道选型 / CloakBrowser 反爬升级已并入**，删除不丢能力）。
   - **退役清理**：`RETIRED_SKILLS` 机制——升级启动时，磁盘上内容仍**逐字等于当初内置版本**（含 `SKILL.md.disabled` 形态、**行尾归一化后比对**）的旧技能目录随升级删除；用户改过/自建的一律不碰并 `console.warn` 留痕。⛔ 两个实测坑：① **指纹比对必须归一化行尾**——被总闸停用/启用一次的技能文件会被重写成 LF，常量是 CRLF，只 trim() 永远比成「被改过」→ 清理静默失效（真机验收抓到的）；② **`String.replace` 替换串里 `$$` 是特殊序列**——用 replace 插入含 `page.$$` 的模板常量时 `$` 被吃掉一个，指纹差 1 字符全盘失效；模板注入一律用函数替换 `replace(re, () => text)` 或求值后回写。
