@@ -8212,14 +8212,27 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const sendInFlightRef = useRef(false);
-  // ── 429 限流自动重试（应用层兜底）──
+  // ── 429 限流自动重试（应用层兜底，**按会话独立**）──
   // 引擎侧 request_max_retries/stream_max_retries 耗尽后 turn 仍以限流失败结束时，
   // 把原输入自动重发，最多 RATE_LIMIT_MAX_ATTEMPTS 次，退避 5s→120s 逐次放长。
   // 不区分模型/供应商——任何模型限流都走这条兜底；用户可停止或立即重试。
+  // ⛔⛔ 09-19 用户实测「多会话同时跑，只有当前看的那个会自动重试，后台的会话直接断」：
+  //   · 旧实现 retryContextRef / rateLimitAttemptRef / rateLimitTimerRef 全是**单槽**，
+  //     最后发送的会话会覆盖前面的 ⇒ 多会话必然互相踩（会话没有独立）。
+  //   · 429 检测点又写在**当前会话事件流**里（threadId 过滤之后）⇒ 后台会话的
+  //     turn/completed(429) 根本走不到那段代码 ⇒ 连「排重试」都不会。
+  //   现在：上下文 / 尝试计数 / 定时器全部**按 threadId 独立**；检测点提到**跨会话区**
+  //   （见事件流里 armRateLimitRetry 与 scheduleRateLimitRetry 的调用），
+  //   并按会话错峰（±20% 抖动 + 重试发起串行化），避免多会话同时重发把上游打成更严重的 429。
   const [rateLimitRetry, setRateLimitRetry] = useState<{ threadId: string; attempt: number; retryAt: number } | null>(null);
-  const rateLimitTimerRef = useRef<number | null>(null);
-  const rateLimitAttemptRef = useRef(0);
-  const retryContextRef = useRef<{ threadId: string; input: any[]; model: string; effort: string | null; personality: string | null } | null>(null);
+  type RateLimitCtx = { input: any[]; model: string; effort: string | null; personality: string | null };
+  const retryContextsRef = useRef<Map<string, RateLimitCtx>>(new Map());
+  const rateLimitAttemptsRef = useRef<Map<string, number>>(new Map());
+  const rateLimitTimersRef = useRef<Map<string, number>>(new Map());
+  /** 重试发起串行化：多个会话同时到点也只**一个一个**发（同时发=继续撞上游限流）。 */
+  const retryGateRef = useRef<Promise<unknown>>(Promise.resolve());
+  /** 档位降档重发的内容（即时、只试一次，单槽即可，与限流重试链路解耦）。 */
+  const effortFallbackRef = useRef<{ threadId: string; input: any[]; model: string; effort: string | null; personality: string | null } | null>(null);
   // 截断自动续接的防循环记账：threadId → { 次数, 首续时刻 }。窗口内超限即停手提示换供应商。
   const autoContinueLogRef = useRef<Map<string, { count: number; firstAt: number }>>(new Map());
   const [, setRateLimitTick] = useState(0);
@@ -8229,53 +8242,96 @@ export default function App() {
     return () => window.clearInterval(tick);
   }, [rateLimitRetry?.threadId, rateLimitRetry?.attempt]);
 
-  function clearRateLimitTimer() {
-    if (rateLimitTimerRef.current != null) { window.clearTimeout(rateLimitTimerRef.current); rateLimitTimerRef.current = null; }
+  function clearRateLimitTimer(threadId?: string) {
+    if (threadId) {
+      const timer = rateLimitTimersRef.current.get(threadId);
+      if (timer != null) { window.clearTimeout(timer); rateLimitTimersRef.current.delete(threadId); }
+      return;
+    }
+    for (const timer of rateLimitTimersRef.current.values()) window.clearTimeout(timer);
+    rateLimitTimersRef.current.clear();
   }
 
-  function cancelRateLimitRetry(silent = false) {
-    clearRateLimitTimer();
-    setRateLimitRetry(null);
-    rateLimitAttemptRef.current = 0;
-    retryContextRef.current = null;
+  /** 登记/覆盖某会话的「重发内容」（发送成功时调用；限流失败时用它原地重发）。 */
+  function armRateLimitRetry(threadId: string, ctx: RateLimitCtx) {
+    if (!threadId) return;
+    retryContextsRef.current.set(threadId, ctx);
+    rateLimitAttemptsRef.current.set(threadId, 0);
+  }
+
+  /** 取消某会话的重试链（不传 threadId = 全部取消，如切换供应商/清空前）。 */
+  function cancelRateLimitRetry(threadId?: string, silent = false) {
+    if (threadId) {
+      clearRateLimitTimer(threadId);
+      retryContextsRef.current.delete(threadId);
+      rateLimitAttemptsRef.current.delete(threadId);
+      setRateLimitRetry((current) => (current?.threadId === threadId ? null : current));
+    } else {
+      clearRateLimitTimer();
+      retryContextsRef.current.clear();
+      rateLimitAttemptsRef.current.clear();
+      setRateLimitRetry(null);
+    }
     if (!silent) showToast("已停止限流重试", "不再自动重发该消息");
   }
 
-  async function executeRateLimitRetry() {
-    clearRateLimitTimer();
-    const ctx = retryContextRef.current;
-    const attempt = rateLimitAttemptRef.current;
-    if (!ctx || !attempt) { setRateLimitRetry(null); return; }
-    setRateLimitRetry(null);
-    setSending(true);
-    setInterrupting(false);
-    setWorkStartedAt(Date.now());
-    markThreadRunning(ctx.threadId);
+  async function executeRateLimitRetry(threadId: string) {
+    clearRateLimitTimer(threadId);
+    const ctx = retryContextsRef.current.get(threadId);
+    const attempt = rateLimitAttemptsRef.current.get(threadId) ?? 0;
+    if (!ctx || !attempt) {
+      setRateLimitRetry((current) => (current?.threadId === threadId ? null : current));
+      return;
+    }
+    setRateLimitRetry((current) => (current?.threadId === threadId ? null : current));
+    // 只有**当前正在看的会话**才动全局 sending/activeTurnId（后台会话的重试不能改别人的界面状态）
+    const isFocused = () => threadRef.current?.id === threadId;
+    if (isFocused()) {
+      setSending(true);
+      setInterrupting(false);
+      setWorkStartedAt(Date.now());
+    }
+    markThreadRunning(threadId);
     try {
-      const result: any = await window.codex.request("turn/start", {
-        threadId: ctx.threadId,
-        input: ctx.input,
-        model: ctx.model,
-        effort: ctx.effort,
-        personality: ctx.personality,
-        // 限流重试这一轮也要带上沙箱，否则重试后会掉回会话创建时的旧权限
-        sandboxPolicy: sandboxPolicy(sandbox, threadRef.current?.cwd ?? workspace ?? ""),
+      // ⛔ 串行化：多个会话同时到点时排队逐个发（同时轰上游 = 继续 429）。
+      const run = retryGateRef.current.then(async () => {
+        // 发送前最后核对一次：该会话若已有活动回合（用户手动重发/引擎自己缓过来了），
+        // 不能重复投递同一条输入。
+        try {
+          const info = await window.codex.engineActiveTurns();
+          if ((info?.threadIds ?? []).map(String).includes(threadId)) return { skipped: true };
+        } catch { /* 记账不可用：按原计划重试 */ }
+        return await window.codex.request("turn/start", {
+          threadId,
+          input: ctx.input,
+          model: ctx.model,
+          effort: ctx.effort,
+          personality: ctx.personality,
+          // ⛔ 沙箱 cwd 按**目标会话**取（后台会话重试时 threadRef 是别的会话，
+          //   拿它当沙箱根会把重试发到错误的工作目录）。缓存里没有才退当前/工作区。
+          sandboxPolicy: sandboxPolicy(sandbox, threadCacheRef.current.get(threadId)?.cwd ?? threadRef.current?.cwd ?? workspace ?? ""),
+        });
       });
+      retryGateRef.current = run.catch(() => undefined);
+      const result: any = await run;
+      if (result?.skipped) {
+        cancelRateLimitRetry(threadId, true);
+        return;
+      }
       if (result?.turn?.id) {
-        setActiveTurnId(result.turn.id);
-        markThreadRunning(ctx.threadId, result.turn.id);
+        if (isFocused()) setActiveTurnId(result.turn.id);
+        markThreadRunning(threadId, result.turn.id);
       }
       showToast("限流重试已发出", `第 ${attempt}/${RATE_LIMIT_MAX_ATTEMPTS} 次重试已被接受，任务继续运行`);
     } catch (error: any) {
-      setSending(false);
-      markThreadStopped(ctx.threadId);
-      setWorkStartedAt(null);
+      if (isFocused()) { setSending(false); setWorkStartedAt(null); }
+      markThreadStopped(threadId);
       if (isRateLimitError(error?.message) && attempt < RATE_LIMIT_MAX_ATTEMPTS) {
         showToast("仍被限流", `第 ${attempt} 次重试仍失败，稍后自动继续`);
-        scheduleRateLimitRetry(attempt + 1);
+        scheduleRateLimitRetry(threadId, attempt + 1);
       } else {
         setNotice(error?.message ?? "限流重试失败");
-        cancelRateLimitRetry(true);
+        cancelRateLimitRetry(threadId, true);
       }
     }
   }
@@ -8286,7 +8342,7 @@ export default function App() {
    * 上下文里已经是降过档的 effort（由调用方写好 retryContextRef）。
    */
   async function executeEffortFallbackRetry() {
-    const ctx = retryContextRef.current;
+    const ctx = effortFallbackRef.current;
     if (!ctx) return;
     setSending(true);
     setInterrupting(false);
@@ -8314,24 +8370,29 @@ export default function App() {
     }
   }
 
-  function scheduleRateLimitRetry(attempt: number) {
-    const ctx = retryContextRef.current;
+  function scheduleRateLimitRetry(threadId: string, attempt: number) {
+    const ctx = retryContextsRef.current.get(threadId);
     if (!ctx) return;
     if (attempt > RATE_LIMIT_MAX_ATTEMPTS) {
-      cancelRateLimitRetry(true);
+      // 放弃 = 该会话的重试链结束：熄灭它的运行态（不给全局界面留下假运行）
+      const wasFocused = threadRef.current?.id === threadId;
+      markThreadStopped(threadId);
+      if (wasFocused) { setSending(false); setInterrupting(false); setActiveTurnId(null); setWorkStartedAt(null); }
+      cancelRateLimitRetry(threadId, true);
       showToast("限流重试放弃", `已连续重试 ${RATE_LIMIT_MAX_ATTEMPTS} 次仍被限流，请稍后手动重发`);
       return;
     }
-    rateLimitAttemptRef.current = attempt;
-    const delay = rateLimitBackoffMs(attempt);
-    setSending(false);
-    setActiveTurnId(null);
-    markThreadStopped(ctx.threadId);
-    setInterrupting(false);
-    setWorkStartedAt(null);
-    setRateLimitRetry({ threadId: ctx.threadId, attempt, retryAt: Date.now() + delay });
-    clearRateLimitTimer();
-    rateLimitTimerRef.current = window.setTimeout(() => void executeRateLimitRetry(), delay);
+    rateLimitAttemptsRef.current.set(threadId, attempt);
+    // 退避再叠 ±20% 抖动：多会话同时被限流时，避免它们在同一秒一起重发（那会把上游打成
+    // 更严重的 429，等于自己踩自己）。
+    const base = rateLimitBackoffMs(attempt);
+    const delay = Math.round(base * (0.8 + Math.random() * 0.4));
+    const wasFocused2 = threadRef.current?.id === threadId;
+    if (wasFocused2) { setSending(false); setActiveTurnId(null); setInterrupting(false); setWorkStartedAt(null); }
+    markThreadStopped(threadId);
+    setRateLimitRetry({ threadId, attempt, retryAt: Date.now() + delay });
+    clearRateLimitTimer(threadId);
+    rateLimitTimersRef.current.set(threadId, window.setTimeout(() => void executeRateLimitRetry(threadId), delay));
   }
   const compactPendingRef = useRef(new Set<string>());
   const [interrupting, setInterrupting] = useState(false);
@@ -12842,6 +12903,16 @@ const commandMatches = useMemo(() => {
           if (!startedAlreadyDone) markThreadRunning(params.threadId, startedTurnId || undefined);
         } else if (method0 === "turn/completed") {
           if (startedTurnId) rememberFinishedTurn(startedTurnId);
+          // ⛔⛔ 429 兜底重试的**检测点必须在这里**（跨会话区、threadId 过滤之前）：
+          //   09-19 用户实测「多会话同时跑，只有当前看的那个会话会自动重试，后台的会话直接断」——
+          //   旧检测点在当前会话事件流里，后台会话的 turn/completed(429) 根本走不到那段代码。
+          //   判据用**该会话自己的**重试上下文（per-thread），不再要求它是当前会话。
+          if (params.turn?.error?.message && isRateLimitError(params.turn.error.message)
+            && retryContextsRef.current.has(params.threadId)) {
+            scheduleRateLimitRetry(params.threadId, (rateLimitAttemptsRef.current.get(params.threadId) ?? 0) + 1);
+            // 不 return：下面的常规收尾（标停/绿点/缓存合并/侧栏刷新）与重试链并不冲突，
+            // 保持与旧行为一致（旧实现里 429 回合也是先收尾、再排重试）。
+          }
           // 回合顺利收尾 → 会话状态向好（语气随之轻快）；失败/中断在下面的分支里把状态压低。
           // 位置刻意放在**跨会话**这一段：后台会话跑完也要记进它自己的状态（各自独立）。
           bumpMood(params.threadId, "turn-ok");
@@ -12925,6 +12996,11 @@ const commandMatches = useMemo(() => {
           // 失败/中断/被中止 → 会话状态转差（语气收紧）。连续失败会累积（见 agent-mood 的连败惩罚）。
           bumpMood(params.threadId, "turn-fail");
           rememberFinishedTurn(String(params.turn?.id ?? params.turnId ?? ""));   // 同上：结束后不许再被 start 点亮
+          // 429 也可能以 aborted/failed 的形态结束（引擎重试耗尽）→ 同样要排该会话的重试
+          if (params.turn?.error?.message && isRateLimitError(params.turn.error.message)
+            && retryContextsRef.current.has(params.threadId)) {
+            scheduleRateLimitRetry(params.threadId, (rateLimitAttemptsRef.current.get(params.threadId) ?? 0) + 1);
+          }
           // 回合级**权威**结束信号：被中断 / 失败 / 中止的回合也要熄灭指示器。
           // （原先只认 turn/completed ⇒ 被中断的回合转圈永远挂着，用户以为还在跑。）
           markThreadStopped(params.threadId);
@@ -12948,6 +13024,13 @@ const commandMatches = useMemo(() => {
             } else if (cachedFail) {
               needsFullReloadRef.current.add(tidFail);
             }
+          }
+        } else if (method0 === "error") {
+          // ⛔ engine 的 error 通知同样是**限流**的常见形态（引擎 RPC/流直接报错），
+          //   而且后台会话的 error 事件也被 threadId 过滤挡掉 —— 所以排重试也要放在这里。
+          const errMsg0 = String((params.error as any)?.message ?? params.message ?? "");
+          if (errMsg0 && isRateLimitError(errMsg0) && retryContextsRef.current.has(params.threadId)) {
+            scheduleRateLimitRetry(params.threadId, (rateLimitAttemptsRef.current.get(params.threadId) ?? 0) + 1);
           }
         }
         // 渠道机器人等后台会话的 start/stop：走不到下面的当前会话事件流（threadId 过滤会拦掉），
@@ -13118,12 +13201,10 @@ const commandMatches = useMemo(() => {
         // 图片模态自愈（09-18 用户反馈：升级上来的模型配置标了「视觉」，但接入点实际不支持图片
         // → 带图回合全部 InvalidParameter）。错误原话明确点名时才触发，只动该模型的 inputTypes。
         void healImageModalityIfUnsupported(params.turn.error?.message);
-        // 限流失败 → 自动重试（10 次退避）。仅当失败回合属于最近一次发送的线程才接管
-        if (params.turn.error?.message && isRateLimitError(params.turn.error.message) && retryContextRef.current?.threadId === params.threadId) {
-          scheduleRateLimitRetry(rateLimitAttemptRef.current + 1);
-        } else if (!params.turn.error?.message && retryContextRef.current?.threadId === params.threadId) {
-          // 回合正常结束：清掉重试上下文，避免之后别的会话失败误用旧输入重发
-          cancelRateLimitRetry(true);
+        // ⛔ 429 的**排重试**已提到跨会话区（见上，per-thread 上下文）——这里只负责：
+        //   回合**正常结束**时清掉该会话的重试上下文（否则下次它再失败会误用旧输入重发）。
+        if (!params.turn.error?.message && retryContextsRef.current.has(String(params.threadId ?? ""))) {
+          cancelRateLimitRetry(String(params.threadId ?? ""), true);
         }
         // 运行结束通知：窗口最小化/失焦时弹系统通知，点击通知聚焦回窗口
         try {
@@ -13260,10 +13341,10 @@ const commandMatches = useMemo(() => {
         } else if (details.includes("401") && /API key format is incorrect/i.test(details)) {
           errorMessage = "供应商认证失败（API Key 与服务商不匹配）：当前供应商的 Key 被发到了另一个服务商。请停止后重发（会自动迁移会话），或检查供应商配置";
         }
-        if (errorMessage && isRateLimitError(errorMessage) && retryContextRef.current?.threadId === params.threadId) {
-          scheduleRateLimitRetry(rateLimitAttemptRef.current + 1);
-        } else if (params.threadId && retryContextRef.current?.threadId === params.threadId) {
-          cancelRateLimitRetry(true);
+        // ⛔ 429 的**排重试**同样在跨会话区（engine error 通知也覆盖后台会话）；这里只在
+        //   非限流的错误上清上下文（限流错误留给重试链，清了就没人重发了）。
+        if (params.threadId && retryContextsRef.current.has(String(params.threadId)) && !(errorMessage && isRateLimitError(errorMessage))) {
+          cancelRateLimitRetry(String(params.threadId), true);
         }
         if (compactPendingRef.current.delete(String(params.threadId ?? threadRef.current?.id ?? ""))) {
           setCompactEventState("error", errorMessage);
@@ -16799,8 +16880,10 @@ const commandMatches = useMemo(() => {
     }
     if (!value && images.length === 0 && attachedFiles.length === 0) return;
     if (sendInFlightRef.current) return;
-    // 用户手动发消息时取消等待中的 429 自动重试（手动发送优先，避免交错）
-    if (rateLimitRetry || rateLimitTimerRef.current != null) cancelRateLimitRetry(true);
+    // 用户手动发消息：只取消**当前会话**等待中的 429 自动重试（手动发送优先，避免交错）。
+    // ⛔ 不能全清：别的会话的重试链是独立的，清掉就等于「后台会话直接断」（用户实测的毛病）。
+    const focusedForSend = threadRef.current?.id;
+    if (focusedForSend) cancelRateLimitRetry(focusedForSend, true);
     // 用户语气信号（被夸 / 被催）也进会话状态：只在**已有会话**上记 —— 新建会话此刻还没有 id，
     // 它的状态从零开始（第一回合由 turn/completed 起头）。判定是关键词法，见 agent-mood.mjs。
     const userSig = userSignalOf(value);
@@ -17140,15 +17223,13 @@ const commandMatches = useMemo(() => {
           setPlanRunning(true);
           planTurnRef.current = { threadId: active.id, turnId: String(result.turn.id) };
         }
-        // 记录限流重试上下文：该回合若以 429 失败，可用原输入在原会话自动重发
-        retryContextRef.current = {
-          threadId: active.id,
+        // 记录限流重试上下文（**按会话**）：该回合若以 429 失败，可用原输入在原会话自动重发
+        armRateLimitRetry(active.id, {
           input: sendInput,
           model: selectedModel?.model ?? modelName(modelId),
           effort: effort || null,
           personality: selectedModel?.supportsPersonality ? personality : null,
-        };
-        rateLimitAttemptRef.current = 0;
+        });
         const hydratedTurn = hydrateTurnUserMessage(result.turn, sendInput);
         optimisticTurnIdRef.current = hydratedTurn.id;
         setActiveTurnId(hydratedTurn.id);
@@ -17185,7 +17266,7 @@ const commandMatches = useMemo(() => {
       // 没有这一步，用户强制选回被标灰的档位、或网关后来放开了，标记会永久留着（一直标灰）。
       if (effort) clearEffortUnsupported(selectedModel?.model ?? modelName(modelId), effort);
     } catch (error: any) {
-      // turn/start RPC 直接以限流失败：安排应用层自动重试（10 次退避）
+      // turn/start RPC 直接以限流失败：安排应用层自动重试（10 次退避，按会话独立）
       if (isRateLimitError(error?.message)) {
         const retryThreadId = createdThreadId ?? optimisticBaselineRef.current.threadId ?? threadRef.current?.id;
         if (retryThreadId) {
@@ -17193,14 +17274,13 @@ const commandMatches = useMemo(() => {
           setInterrupting(false);
           setWorkStartedAt(null);
           markThreadStopped(retryThreadId);
-          retryContextRef.current = {
-            threadId: retryThreadId,
+          armRateLimitRetry(retryThreadId, {
             input: sendInput,
             model: selectedModel?.model ?? modelName(modelId),
             effort: effort || null,
             personality: selectedModel?.supportsPersonality ? personality : null,
-          };
-          scheduleRateLimitRetry(1);
+          });
+          scheduleRateLimitRetry(retryThreadId, 1);
           return;
         }
       }
@@ -17220,7 +17300,7 @@ const commandMatches = useMemo(() => {
           setInterrupting(false);
           setWorkStartedAt(null);
           markThreadStopped(retryThreadId);
-          retryContextRef.current = {
+          effortFallbackRef.current = {
             threadId: retryThreadId,
             input: sendInput,
             model: fallbackModelId,
@@ -18288,16 +18368,17 @@ const commandMatches = useMemo(() => {
             </div>,
             document.body,
           )}
-          {/* 429 限流自动重试状态条：倒计时 + 立即重试 / 停止（对所有模型生效） */}
+          {/* 429 限流自动重试状态条：倒计时 + 立即重试 / 停止（按会话独立，多会话可同时重试） */}
           {rateLimitRetry && (
             <div className="rate-limit-retry-bar" role="status" aria-label="限流自动重试中">
               <LoaderCircle size={15} className="spin" />
               <span className="rate-limit-retry-text">
-                模型限流（429），<b>第 {rateLimitRetry.attempt}/{RATE_LIMIT_MAX_ATTEMPTS}</b> 次重试将在{" "}
+                {rateLimitRetry.threadId === thread?.id ? "模型限流（429）" : "另一会话限流（429）"}，
+                <b>第 {rateLimitRetry.attempt}/{RATE_LIMIT_MAX_ATTEMPTS}</b> 次重试将在{" "}
                 <b>{Math.max(0, Math.ceil((rateLimitRetry.retryAt - Date.now()) / 1000))}s</b> 后自动进行
               </span>
-              <button type="button" onClick={() => void executeRateLimitRetry()}>立即重试</button>
-              <button type="button" onClick={() => cancelRateLimitRetry()}>停止</button>
+              <button type="button" onClick={() => void executeRateLimitRetry(rateLimitRetry.threadId)}>立即重试</button>
+              <button type="button" onClick={() => cancelRateLimitRetry(rateLimitRetry.threadId)}>停止</button>
             </div>
           )}
           {thread && <QueuedMessageList entries={queue} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />}
