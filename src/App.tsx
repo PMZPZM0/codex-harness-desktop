@@ -188,6 +188,30 @@ const PPTokenEndpoints = [
   { id: "pptoken-claude", name: "PPtoken Claude", label: "Claude 模型 · 专用地址", url: "https://api.pptoken.cc" },
 ];
 
+/** 本地推理服务的常用端点（09-19 用户要求「做一下本地模型适配」）。
+ *  ⛔ 本地服务与云端网关有三个关键差异，预设里直接体现，避免用户逐个踩：
+ *    ① **多数不需要 API Key**（留空即可，本机服务通常不校验）——所以预设不填 Key；
+ *    ② **并发默认压到 1**：单卡本地推理同时跑多路会明显变慢甚至直接 OOM
+ *       （KV cache 随并发路数成倍增长），本地场景应该串行；
+ *    ③ 协议用 **auto**：Ollama / LM Studio 只提供 Chat Completions（桥会自动转），
+ *       vLLM 较新版本有原生 Responses（会直接透传）—— 让桥自己判定比写死更稳。 */
+const LOCAL_MODEL_PRESETS = [
+  { id: "ollama", name: "Ollama", url: "http://127.0.0.1:11434/v1", port: "11434" },
+  { id: "lmstudio", name: "LM Studio", url: "http://127.0.0.1:1234/v1", port: "1234" },
+  { id: "vllm", name: "vLLM", url: "http://127.0.0.1:8000/v1", port: "8000" },
+  { id: "llamacpp", name: "llama.cpp", url: "http://127.0.0.1:8080/v1", port: "8080" },
+];
+
+/** 字段旁的「?」说明气泡（09-19 用户要求「赘述都放到 ? 号里面」）。
+ *
+ *  为什么**同时**用 CSS 气泡和原生 title：设置面板是滚动容器，绝对定位的伪元素在某些
+ *  层级会被 overflow 裁掉；而 title 由浏览器自绘、永不被裁 —— 两者叠加，气泡正常时好看、
+ *  被裁时 title 兜底，不会出现「说明彻底读不到」。
+ *  ⛔ 必须可键盘访问（tabIndex + :focus 也显示）：只靠 hover 的话键盘用户读不到说明。 */
+function FieldHelp({ text }: { text: string }) {
+  return <i className="field-help" tabIndex={0} role="note" aria-label={text} title={text} data-tip={text}>?</i>;
+}
+
 function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string }) => Promise<boolean> }) {
   const [mode, setMode] = useState<"custom" | "pptoken" | "relay" | "openai">("pptoken");
   const [username, setUsername] = useState(() => localStorage.getItem("username") || "");
@@ -20215,6 +20239,41 @@ const commandMatches = useMemo(() => {
                 {customDraft.provider === "pptoken" && !providersList.some((p) => p.provider === "pptoken") && (
                   <p className="provider-form-hint">只需下方填入 API Key 即可使用；<a href="https://api.pptoken.cc/register?aff=X82JSNVC3W3S" onClick={(event) => { event.preventDefault(); void window.codex.openExternal("https://api.pptoken.cc/register?aff=X82JSNVC3W3S"); }}>注册 PPtoken 领取体验额度 ↗</a></p>
                 )}
+                {/* 本地模型快捷预设（09-19 用户要求「做一下本地模型适配」）：本地服务不必
+                    知道端口与路径，点一下把地址/名称/并发一次填好。
+                    ⛔ provider id 的冲突保护：只有在「新建」时才改用预设 id，且发现重名就加
+                    数字后缀 —— 否则点一下会把已有供应商的身份改掉（保存即覆盖，丢配置）。 */}
+                <div className="local-preset-row">
+                  <span className="local-preset-label">本地模型</span>
+                  {LOCAL_MODEL_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={`local-preset-chip ${customDraft.baseUrl === preset.url ? "on" : ""}`}
+                      title={`${preset.name}（默认端口 ${preset.port}）—— 点一下填好地址，本机服务一般无需 API Key，并发按 1 更稳`}
+                      onClick={() => setCustomDraft((current) => {
+                        const isNew = !current.provider || /^custom\d*$/.test(current.provider);
+                        let provider = current.provider;
+                        if (isNew) {
+                          provider = preset.id;
+                          let n = 2;
+                          while (providersList.some((item) => item.provider === provider)) provider = `${preset.id}-${n++}`;
+                        }
+                        return {
+                          ...current,
+                          provider,
+                          name: current.name.trim() ? current.name : preset.name,
+                          baseUrl: preset.url,
+                          // 见常量注释：本地单卡并发应串行，避免 KV 成倍占用
+                          maxConcurrency: "1",
+                          upstreamProtocol: "auto",
+                        };
+                      })}
+                    >
+                      {preset.name}
+                    </button>
+                  ))}
+                </div>
                 {/* 供应商名称（09-17 用户要求从顶部挪到这里）：多个供应商重名时无法区分，
                     所以新增时必填（保存按钮会校验）。 */}
                 <label className="provider-field"><span>供应商名称 <i className="provider-required">必填</i></span><input value={customDraft.name} onChange={(event) => setCustomDraft({ ...customDraft, name: event.target.value })} placeholder="例如：OpenAI 官方 / 公司网关（用于区分多个供应商）" /></label>
@@ -20223,9 +20282,9 @@ const commandMatches = useMemo(() => {
                 {/* ⛔ 不提供「API 格式」下拉（09-16）：引擎只会发 Responses，写 wire_api = "chat"
                     会让整份 config.toml 拒载、所有请求失败（真实引擎实证：`wire_api = "chat"` is no
                     longer supported）。协议改由**本地协议桥**自动适配（electron/responses-bridge.ts）：
-                    引擎照常按 Responses 调用，桥按上游实际能力透传或转成 Chat Completions，
-                    用户不再需要理解、也无法选错。 */}
-                <p className="provider-form-hint">协议自动适配，无需选择：引擎按 <b>Responses（/responses）</b> 请求；若该网关只提供 <b>Chat Completions</b>，本机协议桥会自动双向转换（流式、工具调用、思考过程一并保留），照常可用。</p>
+                    引擎照常按 Responses 调用，桥按上游实际能力透传或转成 Chat Completions。
+                    09-19 起补齐「Claude 原生」一档，并在下方给出「上游协议」手动开关 + ? 说明
+                    （原来这里常驻一大段解释，已按用户要求收进 ? 号）。 */}
                 <label className="provider-field"><span>API Key</span>
                   <span className="key-input">
                     <input type={showApiKey ? "text" : "password"} value={customDraft.apiKey} onChange={(event) => setCustomDraft({ ...customDraft, apiKey: event.target.value })} placeholder={customModel?.hasKey ? "已安全保存，留空则不修改" : "可留空用于本地服务"} />
@@ -20236,7 +20295,7 @@ const commandMatches = useMemo(() => {
                     限流是**同一个 Key 的共享配额**：同时跑的会话越多，越容易撞 429。
                     这里给用户一个直接可调的旋钮 —— 调小 = 更省配额、更稳；调大 = 更能并行。 */}
                 <label className="provider-field">
-                  <span>最大并发 <i className="provider-field-hint">同时运行的会话数</i></span>
+                  <span>最大并发<FieldHelp text={"同一个 API Key 的配额是共享的：同时跑的会话越多，越容易触发上游 429 限流。\n\n· 调小 = 更省配额、更稳（本地单卡模型建议 1，多路并发会让 KV cache 成倍占用、明显变慢甚至 OOM）\n· 调大 = 更能并行，但更容易撞限流\n\n出现频繁限流时，调到 2~3 通常就能明显缓解。"} /></span>
                   <input
                     type="number"
                     min={1}
@@ -20247,17 +20306,14 @@ const commandMatches = useMemo(() => {
                     placeholder={String(DEFAULT_MAX_CONCURRENCY)}
                   />
                 </label>
-                {(Number(customDraft.maxConcurrency) || DEFAULT_MAX_CONCURRENCY) > 3 && (
-                  <div className="provider-field-hints">
-                    <p>⚠️ 并发越高，越容易触发上游 429 限流（同一个 Key 的配额是共享的）。出现频繁限流时，把它调小到 2~3 通常能明显缓解。</p>
-                  </div>
-                )}
+                {/* 并发告警原本常驻在这里（>3 就显示一段警告）——09-19 按用户要求收进上面的 ? 号，
+                    界面不再为「你已经知道的事」常驻占位。 */}
                 {/* 上游协议（09-19 用户要求：Claude 类通道常不认 responses，且自动判定不灵）。
                     ⛔ 与上面的「模型」不同：这是**上游网关说的协议**，本地协议桥按它决定转发方式。
                     默认「自动」够用；对话报错说"不支持/找不到"时，试试「Chat（兼容）」。
                     对应 electron/responses-bridge.ts 的 BridgeMode。 */}
                 <label className="provider-field">
-                  <span>上游协议 <i className="provider-field-hint">网关提供哪种接口</i></span>
+                  <span>上游协议<FieldHelp text={"引擎固定按 Responses（/responses）请求；这里告诉本机协议桥「你的上游实际提供哪种接口」，由它决定转发方式。\n\n· 自动（推荐）：先按 Responses 试，网关明确表示「没这个接口」时自动改用 Chat 格式\n· Chat 兼容：直接按 Chat Completions 转换（绝大多数网关、中转站）\n· Responses（原生透传）：确认上游支持 Responses 时选它，省一次探测\n· Anthropic（Claude 原生）：走 /v1/messages，适用于 Anthropic 官方或只提供 Claude 原生协议的通道\n\n选了「自动」但对话报「不支持 / 找不到接口」却一直不切换时，手动改成对应协议即可。"} /></span>
                   <select
                     value={customDraft.upstreamProtocol ?? "auto"}
                     onChange={(event) => setCustomDraft({ ...customDraft, upstreamProtocol: event.target.value as UpstreamProtocol })}
@@ -20265,13 +20321,10 @@ const commandMatches = useMemo(() => {
                     <option value="auto">自动（推荐）</option>
                     <option value="chat">Chat 兼容（/v1/chat/completions）</option>
                     <option value="responses">Responses（原生透传）</option>
+                    <option value="anthropic">Anthropic（Claude 原生 /v1/messages）</option>
                   </select>
                 </label>
-                {(customDraft.upstreamProtocol ?? "auto") === "auto" && (
-                  <div className="provider-field-hints">
-                    <p>自动模式会先按 Responses 试，网关明确表示"没这个接口"时才改用 Chat 格式。若对话报「不支持 / 找不到接口」但一直不切换，把它改成「Chat 兼容」。</p>
-                  </div>
-                )}
+                {/* 「自动」的详细说明原本常驻在这里 —— 09-19 按用户要求收进上面的 ? 号。 */}
                 <div className="model-list-block">
                   <div className="model-list-head">
                     <span>模型列表</span>

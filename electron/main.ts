@@ -417,7 +417,7 @@ const responsesBridge = new ResponsesBridge({ preferredPort: 47121, log: (line) 
  */
 const upstreamProtocols = new Map<string, BridgeMode>();
 function normalizeUpstreamProtocol(value: unknown): BridgeMode {
-  return value === "chat" || value === "responses" ? value : "auto";
+  return value === "chat" || value === "responses" || value === "anthropic" ? value : "auto";
 }
 function syncUpstreamProtocols(list: CustomModelFile[]) {
   upstreamProtocols.clear();
@@ -2317,6 +2317,39 @@ async function saveChannelBot(input: any) {
   return publicChannelBot(config);
 }
 
+/**
+ * 该上游是否指向「本机 / 内网」的自建推理服务。
+ *
+ * ⛔ 为什么需要它（09-19 代码审查发现的真 bug）：保存逻辑会把「没有密钥的第三方供应商」
+ *   强制存成**禁用**（那是为了「首次安装不要默认启用」）。但**本地模型服务（Ollama /
+ *   LM Studio / vLLM / llama.cpp）本来就不需要 Key** —— 于是用户配好本地模型、保存，
+ *   供应商却是停用状态，发消息毫无反应，且看不出为什么。
+ *   这里把 loopback 与私网地址识别出来，这类上游允许「无 Key 且启用」。
+ *
+ * 判定范围：loopback（127.0.0.1 / localhost / ::1 / 0.0.0.0）+ RFC1918 私网
+ *   （10./172.16-31./192.168.）—— 内网自建推理是常见部署形态。
+ *   ⚠️ 解析失败就返回 false（宁可保守：把需要 Key 的网关误当本地服务只会多一次 401；
+ *      反过来却会让本地用户完全摸不着头脑）。
+ */
+function isLocalEndpoint(baseUrl: unknown): boolean {
+  const raw = String(baseUrl ?? "").trim();
+  if (!raw) return false;
+  let host = "";
+  try { host = new URL(raw).hostname.toLowerCase().replace(/^\[|\]$/g, ""); }
+  catch { host = ""; }
+  if (!host) {
+    // 没写协议时 URL 解析会失败（用户常直接填 127.0.0.1:11434）→ 退化成字符串判断
+    host = (raw.replace(/^[a-z]+:\/\//i, "").split("/")[0] ?? "").split(":")[0].toLowerCase();
+  }
+  if (!host) return false;
+  if (host === "localhost" || host === "::1" || host === "0.0.0.0" || host.endsWith(".localhost")) return true;
+  if (/^127\./.test(host)) return true;
+  if (/^10\./.test(host)) return true;
+  if (/^192\.168\./.test(host)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return true;
+  return false;
+}
+
 function publicCustomModel(value: CustomModelFile | null) {
   if (!value) return null;
   const { encryptedKey, ...config } = value;
@@ -2326,7 +2359,11 @@ function publicCustomModel(value: CustomModelFile | null) {
   //   没有密钥的供应商启用着，一是语义假（它根本发不出请求），二是会出现「默认那个 + 新配的这个」
   //   同时显示启用，用户分不清当前到底是谁生效。
   //   ⚠️ `openai-official` 例外：官方订阅靠 ChatGPT 登录凭据，本来就没有 API Key。
-  const keylessThirdParty = !hasKey && value.provider !== "openai-official";
+  //   ⚠️ 两个例外：① `openai-official` 靠 ChatGPT 登录凭据，本来就没有 API Key；
+  //   ② 本机/内网自建服务（见 isLocalEndpoint）—— 它们本来就不需要 Key。
+  //   ⛔ 两处判定必须同源：这里（显示）与 custom-model:save（落盘）不一致的话，
+  //   会出现「存成启用、界面显示停用」这种自相矛盾的状态。
+  const keylessThirdParty = !hasKey && value.provider !== "openai-official" && !isLocalEndpoint(value.baseUrl);
   return { ...config, enabled: keylessThirdParty ? false : value.enabled !== false, hasKey };
 }
 
@@ -8237,7 +8274,9 @@ ipcMain.handle("custom-model:save", async (_event, input: { provider: string; na
   // ⛔ 新供应商的**默认启用态取决于有没有密钥**（09-19 用户要求：首次安装/未配置时不要默认启用）：
   //   没填密钥就保存（或从推荐卡进来还没填）→ 存成禁用；填了密钥 → 启用（配置完即可用）。
   //   原来无条件 `?? true`：未配置密钥的供应商也会带着「已启用」落盘，于是和新配的那个同时亮。
-  const keylessThirdPartySave = !encryptedKey && provider !== "openai-official";
+  //   ⚠️ 本机/内网自建服务例外（09-19 代码审查发现）：它们本来就不需要 Key，
+  //   存成禁用会让「配好本地模型却发不出消息」且看不出原因。判定与 publicCustomModel 同源。
+  const keylessThirdPartySave = !encryptedKey && provider !== "openai-official" && !isLocalEndpoint(baseUrl);
   // 并发上限（09-19 用户要求）：存储时归一（1~10，缺省 3）。未传（旧渲染层）时沿用已有值。
   const maxConcurrency = input.maxConcurrency == null
     ? (existing?.maxConcurrency ?? 3)

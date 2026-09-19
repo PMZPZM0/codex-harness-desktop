@@ -11717,6 +11717,92 @@ button.search-box:hover {
   line-height: 1.5;
   margin: 0;
 }
+/* 字段旁的「?」说明气泡（09-19 用户要求：配置项的赘述都收进 ? 号，不再常驻占版面）。
+   同时带原生 title（见 FieldHelp 组件注释）—— 设置面板是滚动容器，绝对定位伪元素在
+   某些层级会被 overflow 裁掉，那时 title 兜底，保证说明不会「彻底读不到」。 */
+.field-help {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-left: 5px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 9.5px;
+  font-style: normal;
+  line-height: 1;
+  cursor: help;
+  vertical-align: -1px;
+}
+.field-help:hover,
+.field-help:focus-visible {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  outline: none;
+}
+.field-help::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 7px);
+  transform: translateX(-50%);
+  z-index: 60;
+  width: max-content;
+  max-width: 300px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11.5px;
+  font-style: normal;
+  line-height: 1.6;
+  text-align: left;
+  white-space: pre-line;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.field-help:hover::after,
+.field-help:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+}
+/* 本地模型快捷预设（09-19）：点一下把本地服务的地址/并发一次填好 */
+.local-preset-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.local-preset-label {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.local-preset-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 11.5px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.local-preset-chip:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  color: var(--accent);
+}
+.local-preset-chip.on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+}
 .key-input {
   align-items: center;
   display: flex;
