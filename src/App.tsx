@@ -8227,6 +8227,11 @@ export default function App() {
   // ⛔ 09-19 用户要求「每个会话独立弹这个自动重试」：重试条状态**按会话分别记录**，
   //   多会话同时限流时各自有各自的倒计时（原来单槽会被最后一次覆盖，看不到别的会话）。
   const [rateLimitRetries, setRateLimitRetries] = useState<Record<string, { attempt: number; retryAt: number }>>({});
+  /** 引擎侧上游重连状态（引擎上报的 `Reconnecting... N/M`）。
+   *  ⛔ 09-19 用户实测「运行脚本检查每次都空转半天没反应」：引擎在 429 / 断流时会**自己**重试
+   *  （request_max_retries=10），这段时间界面完全没动静 ⇒ 用户以为卡死了。
+   *  这里把它的重试进度显示出来：知道"上游在重连、第几次、共几次"，就不会误判成空转。 */
+  const [upstreamRetry, setUpstreamRetry] = useState<{ threadId: string; no: number; total: number } | null>(null);
   /** 写入/清除某个会话的重试条（entry=null 表示清除该会话） */
   function setRetryEntry(threadId: string, entry: { attempt: number; retryAt: number } | null) {
     if (!threadId) return;
@@ -13043,8 +13048,24 @@ const commandMatches = useMemo(() => {
         const startedAlreadyDone = Boolean(startedTurnId) && finishedTurnIdsRef.current.has(startedTurnId);
         if (method0 === "turn/started") {
           if (!startedAlreadyDone) markThreadRunning(params.threadId, startedTurnId || undefined);
+          // ⛔⛔ 09-19 用户实测「已经开始运行了，重试弹窗没消失，还在一直发」：
+          //   该会话**已经跑起来了**（新回合开始）就说明上游缓过来了 / 用户自己重发了 ——
+          //   此时必须**立刻取消它的重试链**，而不是把 10 次退避发完（那会重复投递同一条输入，
+          //   把正在跑的会话打断/搞乱）。这正是"会话已恢复却还挂着重试条"的直接原因。
+          if (retryContextsRef.current.has(params.threadId)) {
+            cancelRateLimitRetry(params.threadId, true);
+            setRetryEntry(params.threadId, null);
+          }
+          // 引擎重连提示同理：已经跑起来了 → 上游通了，提示立刻消失
+          setUpstreamRetry((current) => (current && current.threadId === params.threadId ? null : current));
         } else if (method0 === "turn/completed") {
           if (startedTurnId) rememberFinishedTurn(startedTurnId);
+          // 正常收尾（无 error）＝ 不需要重试了 → 立刻取消该会话的重试链与重试条
+          if (!params.turn?.error?.message && retryContextsRef.current.has(params.threadId)) {
+            cancelRateLimitRetry(params.threadId, true);
+            setRetryEntry(params.threadId, null);
+          }
+          setUpstreamRetry((current) => (current && current.threadId === params.threadId ? null : current));
           // ⛔⛔ 429 兜底重试的**检测点必须在这里**（跨会话区、threadId 过滤之前）：
           //   09-19 用户实测「多会话同时跑，只有当前看的那个会话会自动重试，后台的会话直接断」——
           //   旧检测点在当前会话事件流里，后台会话的 turn/completed(429) 根本走不到那段代码。
@@ -13459,6 +13480,10 @@ const commandMatches = useMemo(() => {
         // 引擎的 Reconnecting 是英文原始报错，直接显示不友好——翻译成中文提醒：
         // 401=Key 错配（供应商切换后旧会话），流中断=网关不稳（pptoken 常见），均会自动重试。
         const reconnectMatch = rawError.match(/^Reconnecting\.\.\.\s*(\d+)\/(\d+)/);
+        // 引擎自己正在重连/重试 → 显示进度（否则用户看到的就是"空转半天没反应"）
+        if (reconnectMatch) {
+          setUpstreamRetry({ threadId: String(params.threadId ?? ""), no: Number(reconnectMatch[1]), total: Number(reconnectMatch[2]) });
+        }
         let errorMessage = rawError;
       if (reconnectMatch) {
         const no = reconnectMatch[1], total = reconnectMatch[2];
@@ -14975,11 +15000,13 @@ const commandMatches = useMemo(() => {
     // 新回合又没建起来，用户刚编辑的消息就永久消失了（09-18 用户反馈「编辑保存重发，消息不见了」）。
     const before = threadRef.current;
     try {
-      const forked = await window.codex.request("thread/fork", { threadId: thread.id, beforeTurnId: turnId, excludeTurns: false });
-      if (!forked.thread) { setNotice("创建编辑分支失败"); return; }
-      threadRef.current = forked.thread;
-      setThread(forked.thread);
-      setModelId(`custom:${customModel?.provider ?? "custom"}:${forked.model ?? selectedModel?.model ?? customModel?.model ?? ""}`);
+      // ⛔⛔ 09-19 用户要求（原话：「我点编辑消息，保存就知道新建会话，要在原会话继续跑」）：
+      //   编辑重发**不再 fork 分支** —— 直接在**当前会话**重新发送编辑后的内容。
+      //   引擎的 rollout 不可改写，所以时间线上会保留原消息 + 新消息（可见、可追溯），
+      //   但会话是同一个：上下文、模型、权限、侧栏位置全不变，不再有"另开一个会话"的错觉。
+      //   下面沿用原来的 `forked` 变量名指向原会话，避免大范围改名引入回归；
+      //   「失败回退 thread」那套（before）也随之不再需要 —— 没换过 thread。
+      const forked = { thread: threadRef.current ?? thread };
       const input = [
         { type: "text", text, text_elements: [] },
         ...(item.content ?? []).filter(isImagePart).map(normalizeImagePartForSend).filter(Boolean),
@@ -15034,7 +15061,7 @@ const commandMatches = useMemo(() => {
         if (forkHit) setOptimisticInput(null);
       }
       void refreshThreads();
-      showToast("已编辑重发", "已创建分支并重新发送");
+      showToast("已编辑重发", "已在原会话重新发送（历史保留原消息）");
     } catch (error: any) {
       // ⛔ 失败必须回退到 fork 前的会话：fork 已经把原回合从列表里拿掉了，
       //    不回退 = 用户刚编辑的那条消息凭空消失（且无任何可恢复的入口）。
@@ -18527,29 +18554,40 @@ const commandMatches = useMemo(() => {
             </div>,
             document.body,
           )}
-          {/* 429 限流自动重试状态条：倒计时 + 立即重试 / 停止（**按会话独立**：
-              多会话同时限流时各记各的；当前会话优先显示，其余会话汇总一行提示） */}
+          {/* 429 限流自动重试状态条（**只显示当前会话自己的重试**）。
+              ⛔⛔ 09-19 用户实测「重试弹窗跟别的会话串了，多开会话一起串、一直报错重试，
+              正在跑的会话被这个条挡住，点停止还影响别的会话」：原实现当前会话没有重试时
+              **回退显示别的会话的重试**（"另一会话限流"），既误导（自己明明在跑）又让人
+              误操作。现在：别的会话的重试只在**侧栏那一行**用小标记表示，绝不占用当前会话
+              输入框上方的位置。 */}
           {(() => {
-            const entries = Object.entries(rateLimitRetries);
-            if (!entries.length) return null;
-            const focused = thread?.id && rateLimitRetries[thread.id]
-              ? ([thread.id, rateLimitRetries[thread.id]] as [string, { attempt: number; retryAt: number }])
-              : entries[entries.length - 1];
-            const [tid, info] = focused;
+            const own = thread?.id ? rateLimitRetries[thread.id] : undefined;
+            if (!own || !thread) return null;
             return (
               <div className="rate-limit-retry-bar" role="status" aria-label="限流自动重试中">
                 <LoaderCircle size={15} className="spin" />
                 <span className="rate-limit-retry-text">
-                  {tid === thread?.id ? "模型限流（429）" : "另一会话限流（429）"}，
-                  <b>第 {info.attempt}/{RATE_LIMIT_MAX_ATTEMPTS}</b> 次重试将在{" "}
-                  <b>{Math.max(0, Math.ceil((info.retryAt - Date.now()) / 1000))}s</b> 后自动进行
-                  {entries.length > 1 ? `（另有 ${entries.length - 1} 个会话在重试）` : ""}
+                  模型限流（429），
+                  <b>第 {own.attempt}/{RATE_LIMIT_MAX_ATTEMPTS}</b> 次重试将在{" "}
+                  <b>{Math.max(0, Math.ceil((own.retryAt - Date.now()) / 1000))}s</b> 后自动进行
+                  {Object.keys(rateLimitRetries).length > 1 ? `（另有 ${Object.keys(rateLimitRetries).length - 1} 个会话也在重试，见侧栏标记）` : ""}
                 </span>
-                <button type="button" onClick={() => void executeRateLimitRetry(tid)}>立即重试</button>
-                <button type="button" onClick={() => cancelRateLimitRetry(tid)}>停止</button>
+                <button type="button" onClick={() => void executeRateLimitRetry(thread.id)}>立即重试</button>
+                <button type="button" onClick={() => cancelRateLimitRetry(thread.id)}>停止</button>
               </div>
             );
           })()}
+          {/* 引擎上游重连提示（只对当前会话显示）：引擎在 429/断流时自己重试，期间没有输出 ——
+              不显示的话用户看到的就是"空转半天没反应"（09-19 用户实测原话）。 */}
+          {upstreamRetry && thread && upstreamRetry.threadId === thread.id && (
+            <div className="rate-limit-retry-bar engine-reconnect-bar" role="status" aria-label="上游重连中">
+              <LoaderCircle size={15} className="spin" />
+              <span className="rate-limit-retry-text">
+                上游限流 / 断流，引擎正在自动重连（<b>第 {upstreamRetry.no}/{upstreamRetry.total} 次</b>）——
+                恢复后自动继续，无需操作
+              </span>
+            </div>
+          )}
           {thread && <QueuedMessageList entries={queue} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />}
           {/* 图片与文件都在输入框内联 chip 里展示（09-18 用户：「把文件展示不要在输入框上面了，
               改成在输入框里面的 chip，跟图片一样的展示」）——原先这里那条 .attachment-strip
