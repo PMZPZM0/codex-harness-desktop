@@ -239,6 +239,12 @@ npm run e2e     # UI 场景（默认全部）：自动拉起已构建的应用�
 - **「生效没生效」查到引擎侧、并且要查到后端**：涉及下发给引擎的开关（模型、权限等）只断言 localStorage / UI 文案不够——框架提供 `h.engineModelOf(threadId)` 直读该会话 rollout：`turn_context.model` = 引擎**真正跑**的模型，`token_usage_record.response_id` = **真实网关真的回了包**（没有它只能证明「引擎接了参数」，09-11 用户指正过这点）。常驻验收项用前者证明「A 会话跑 deepseek、B 会话跑 glm，互不串扰」，用后者证明这几轮都是真实后端回的话。
 - **Codex 引擎自己也能跑**（无需 npm）：`resources/tools/node/node.exe scripts/accept.mjs`。E2E 拉的是隔离实例，与应用内常驻的引擎互不干扰。
 - 打包发布前的门槛验收用 `npm run verify:packaged-tools`。
+- **想亲眼看一眼「全新用户」长什么样**（未登录 / 未配模型 / 无历史，不碰你的真实配置与历史）：
+  ```bash
+  npm run preview:fresh     # 前台运行，关掉窗口即结束；临时数据目录会打印出来
+  ```
+  它会拉起一个隔离实例，点「暂时不登录，直接进入」就能看到首启引导与侧栏「模型配置」入口。
+  ⛔ 必须在**你自己的终端前台**跑（别丢后台）—— 应用随这个前台进程存活，进程一退窗口就没了。
 
 详见 [`docs/TESTING.md`](docs/TESTING.md)。
 
