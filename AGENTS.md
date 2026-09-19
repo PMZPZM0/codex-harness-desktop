@@ -188,10 +188,36 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   用户诉求：「如果用 Claude 模型呢，能做适配协议吗 / 能不能走本地代理转成 Codex 支持的协议」。
   答：**走的正是现有架构**（引擎只发 Responses → 本地协议桥 47121 按上游实际能力转发），缺的不是桥，
   而是「桥判定不了时的人工出口」。
-  - **三档取值**（存在供应商档案里，`CustomModelFile.upstreamProtocol`）：`auto`（默认，先按 responses 试，
-    上游明确表示"没这个端点"才切 chat）/ `chat`（直接按 Chat Completions 转换）/ `responses`（强制透传，省一次探测）。
+  - **四档取值**（存在供应商档案里，`CustomModelFile.upstreamProtocol`）：`auto`（默认，先按 responses 试，
+    上游明确表示"没这个端点"才切 chat）/ `chat`（直接按 Chat Completions 转换）/
+    `responses`（强制透传，省一次探测）/ **`anthropic`（09-19 新增，走 Claude 原生 `/v1/messages`）**。
     ⛔ **与 `wireApi` 不是一回事**：`wireApi` 是写给**引擎**的（恒 `responses`，写 chat 会让整份 config.toml 拒载）；
     `upstreamProtocol` 是告诉**本地桥**上游真实是什么协议。别混。
+  - ⛔ **Anthropic Messages 适配的三条硬规则**（照文档猜会全错，预检【73】已钉死；端到端实证见
+    `scripts/probe-anthropic.cjs`）：
+    ① **认证头要转**：引擎只发 `Authorization: Bearer <key>`，Anthropic 要 **`x-api-key`**
+       （从 Bearer 里取出后两个都带，官方与中转站各认一种）+ 强制 `anthropic-version`（缺了官方直接 400）；
+    ② **消息必须严格交替**：`system` 是**顶层字段**（不在 messages 里），且连续同角色的消息要**合并**
+       —— 引擎的 input 里连续两个 user、或并行工具调用产生的多条结果都是常态，不合并必被 400；
+    ③ **工具往返是内容块，不是消息上的字段**：调用侧 = assistant 的 `tool_use` 块，
+       结果侧 = **user** 的 `tool_result` 块，靠 `tool_use_id` 配对；`tool_use.id` 必须**沿用引擎给的
+       `call_id`**（自己生成 → 下一轮回传结果时对不上，工具闭环直接断，表现为"模型说要执行但什么都没发生"）。
+    另：`max_tokens` **必填**且 ≤ 模型上限 —— 引擎给的是上下文级大值（实测见过 393216），
+    原样透传必被拒，故压到 64000；`tools` 用 `input_schema`（不是 chat 的 `function.parameters`）；
+    extended thinking **默认不开**（开启后禁止同时传 temperature/top_p、要求 max_tokens > budget_tokens，
+    且部分中转站直接 400）——**思考档位对 Claude 路径不生效**，模型自发返回的 thinking 块仍会转成 reasoning 事件展示。
+  - **本地模型适配**（09-19）：供应商配置顶部加了「本地模型」快捷预设（Ollama 11434 / LM Studio 1234 /
+    vLLM 8000 / llama.cpp 8080），点一下填好地址与名称，并把**并发设为 1**（单卡多路会让 KV cache 成倍占用、
+    明显变慢甚至 OOM）。⛔ 同时修了一个真 bug：保存逻辑原把「无 Key 的第三方供应商」一律存成**禁用**
+    （为防"首次安装默认启用"），而本地服务**本来就不需要 Key** ⇒ 用户配好本地模型却发不出消息且看不出原因。
+    现在 `isLocalEndpoint()`（loopback + RFC1918 私网）允许无 Key 启用。
+    ⛔ **显示侧（`publicCustomModel`）与保存侧（`custom-model:save`）必须过同一判定**：不一致会出现
+    「存成启用、界面显示停用」这种自相矛盾状态（预检【64】已按新意图更新锚点）。
+  - **配置说明收进 ? 号**（09-19 用户要求「赘述都放到 ? 号里面」）：字段标签旁统一用 `FieldHelp` 组件
+    （`.field-help`），hover/focus 才显示。⛔ 三处实现要点：① **同时带原生 `title`** —— 设置面板是滚动容器，
+    绝对定位伪元素在某些层级会被 overflow 裁掉，title 兜底保证说明不会"彻底读不到"；
+    ② **必须可键盘访问**（`tabIndex={0}` + `:focus-visible`），只靠 hover 的话键盘用户读不到；
+    ③ 原来的常驻 `.provider-field-hints` 段落已删除（不是隐藏）—— 别再往界面加常驻长说明。
   - ⛔ **加它的原因**：有些网关对未知路径返回 **400**（不是 404），旧判定只看状态码 ⇒ 当成"端点正常"直接透传 ⇒
     对话失败且看不出原因（Claude 类通道尤其常见）。现在 400 走**歧义判定**：读一小段响应体（≤8KB）按措辞特征
     （`UNSUPPORTED_ENDPOINT_HINT`）定性，**且只在明确是这个意思时才切** —— 宁可漏切（用户可手动指定），

@@ -5957,12 +5957,15 @@ w.postMessage({id:1,op:"list",root});
   const mainSrc64 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
   const appSrc64 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
   // ① 无密钥的第三方供应商不得报成启用（openai-official 例外：它靠登录凭据）
-  (/const keylessThirdParty = !hasKey && value\.provider !== "openai-official";[\s\S]{0,120}?enabled: keylessThirdParty \? false : value\.enabled !== false/.test(mainSrc64) ? ok : fail)(
-    "【64】未配置密钥的供应商不得视为启用（官方订阅除外）"
+  //   ⛔ 09-19 补第二个例外：本机/内网自建服务（Ollama/LM Studio/vLLM/llama.cpp）本来就
+  //      不需要 Key —— 若也一律禁用，用户配好本地模型却发不出消息且看不出原因。
+  //      判据改锚「公网无 Key 仍禁用」这个**不变的意图**，而不是原来的整行字面。
+  (/const keylessThirdParty = !hasKey && value\.provider !== "openai-official" && !isLocalEndpoint\(value\.baseUrl\);[\s\S]{0,120}?enabled: keylessThirdParty \? false : value\.enabled !== false/.test(mainSrc64) ? ok : fail)(
+    "【64】未配置密钥的供应商不得视为启用（官方订阅 + 本机/内网服务两处例外）"
   );
   // ⛔ 窗口从 220 放宽到 600：中间后来插了并发上限归一那几行（09-19）。
-  (/const keylessThirdPartySave = !encryptedKey && provider !== "openai-official";[\s\S]{0,600}?enabled: keylessThirdPartySave \? false : \(input\.enabled \?\? existing\?\.enabled \?\? true\)/.test(mainSrc64) ? ok : fail)(
-    "【64】保存新供应商：没填密钥就存成禁用（不再无条件默认启用）"
+  (/const keylessThirdPartySave = !encryptedKey && provider !== "openai-official" && !isLocalEndpoint\(baseUrl\);[\s\S]{0,600}?enabled: keylessThirdPartySave \? false : \(input\.enabled \?\? existing\?\.enabled \?\? true\)/.test(mainSrc64) ? ok : fail)(
+    "【64】保存新供应商：没填密钥就存成禁用（本机/内网服务例外，与显示侧同源）"
   );
   // ② 推荐卡默认关（只有显式点开过才启用）
   (/localStorage\.getItem\("pptoken-card-off"\) !== "0"/.test(appSrc64) ? ok : fail)(
@@ -6396,6 +6399,106 @@ w.postMessage({id:1,op:"list",root});
   //   ③ register 发现目标变化必须丢掉已解析协议（否则「改了设置不生效」且查不出原因）
   (/previous\.mode !== target\.mode \|\| previous\.baseUrl !== target\.baseUrl/.test(bridgeSrc72) ? ok : fail)(
     "【72】桥目标变化时丢弃已缓存的协议判定（mode 或 base_url 变了就重新判定）"
+  );
+}
+
+// ── 【73】本地模型适配 + Claude 原生协议（09-19 用户要求）──
+{
+  const bridge73 = readFileSync(join(ROOT, "electron", "responses-bridge.ts"), "utf8");
+  const main73 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  const app73 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const hook73 = readFileSync(join(ROOT, "src", "hooks", "useModelProviders.ts"), "utf8");
+  const css73 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+
+  // ① Anthropic 协议档存在且与其它档区分
+  (/export type BridgeMode = "auto" \| "responses" \| "chat" \| "anthropic";/.test(bridge73) ? ok : fail)(
+    "【73】BridgeMode 含 anthropic 档"
+  );
+  (/export function toAnthropicRequest\(body: any\): any \{/.test(bridge73) ? ok : fail)(
+    "【73】有 Responses → Anthropic Messages 的请求转换（纯函数）"
+  );
+  (/export class AnthropicStreamTranslator/.test(bridge73) ? ok : fail)(
+    "【73】有 Anthropic SSE → Responses SSE 的流式翻译器"
+  );
+  // ② 协议硬规则：这三条照文档猜必错，必须钉死
+  (/type: "tool_use",\s*\n\s*id: item\.call_id/.test(bridge73) ? ok : fail)(
+    "【73】function_call → tool_use 且 id 沿用引擎 call_id（自己生成就对不上，工具往返必断）"
+  );
+  (/type: "tool_result",\s*\n\s*tool_use_id: item\.call_id/.test(bridge73) ? ok : fail)(
+    "【73】function_call_output → tool_result 且 tool_use_id 配对"
+  );
+  (/if \(last && last\.role === role\) last\.content\.push\(\.\.\.blocks\);/.test(bridge73) ? ok : fail)(
+    "【73】连续同角色消息合并（Anthropic 要求 strict 交替，不合并会被 400）"
+  );
+  (/max_tokens: Math\.max\(1, Math\.round\(wanted\)\)/.test(bridge73) ? ok : fail)(
+    "【73】max_tokens 必填且被压到上限（引擎的上下文级大值原样透传会被拒）"
+  );
+  (/input_schema: tool\.parameters/.test(bridge73) ? ok : fail)(
+    "【73】tools 用 input_schema（不是 chat 的 function.parameters）"
+  );
+  (/anthropic-version": ANTHROPIC_VERSION|x-api-key/.test(bridge73) ? ok : fail)(
+    "【73】认证头转换：Bearer → x-api-key + 强制 anthropic-version"
+  );
+  // ③ 请求转换里不许把 system/developer 内容静默丢掉（本轮修过的真 bug）
+  (/for \(const block of blocks\) if \(block\.type === "text" && block\.text\) systemChunks\.push\(block\.text\);/.test(bridge73) ? ok : fail)(
+    "【73】input 里的 system/developer 内容收集进顶层 system（只 continue 跳过 = 静默丢上下文）"
+  );
+  // ④ 配置链路贯通（少一层就会「选了但没效果」）
+  (/value === "chat" \|\| value === "responses" \|\| value === "anthropic" \? value : "auto";/.test(main73) ? ok : fail)(
+    "【73】主进程 normalizeUpstreamProtocol 认 anthropic"
+  );
+  (/export type UpstreamProtocol = "auto" \| "chat" \| "responses" \| "anthropic";/.test(hook73) ? ok : fail)(
+    "【73】渲染层类型含 anthropic"
+  );
+  (/<option value="anthropic">Anthropic（Claude 原生 \/v1\/messages）<\/option>/.test(app73) ? ok : fail)(
+    "【73】供应商配置的下拉里真有这一档（只加类型不加选项 = 用户选不到）"
+  );
+  // ⑤ 本地模型预设
+  (/const LOCAL_MODEL_PRESETS = \[/.test(app73) && /127\.0\.0\.1:11434\/v1/.test(app73) ? ok : fail)(
+    "【73】本地模型预设存在（Ollama 11434 为起点）"
+  );
+  (["11434", "1234", "8000", "8080"].every((port) => app73.includes(`127.0.0.1:${port}/v1`)) ? ok : fail)(
+    "【73】覆盖四家常用本地服务端口（Ollama / LM Studio / vLLM / llama.cpp）"
+  );
+  (/maxConcurrency: "1",/.test(app73) ? ok : fail)(
+    "【73】本地预设把并发设为 1（单卡多路会让 KV 成倍占用，明显变慢甚至 OOM）"
+  );
+  // 点预设不能改掉已有供应商的身份（改了就是覆盖别人的配置）
+  (/const isNew = !current\.provider \|\| \/\^custom\\d\*\$\/\.test\(current\.provider\);/.test(app73) ? ok : fail)(
+    "【73】点本地预设只在「新建」时改 provider id（否则会覆盖已有供应商）"
+  );
+  // ⑥ 说明收进 ? 号
+  (/function FieldHelp\(\{ text \}: \{ text: string \}\)/.test(app73) ? ok : fail)(
+    "【73】有 ? 说明组件（用户要求：赘述收进 ? 号）"
+  );
+  (/tabIndex=\{0\} role="note" aria-label=\{text\}/.test(app73) ? ok : fail)(
+    "【73】? 图标可键盘访问（只靠 hover 的话键盘用户读不到说明）"
+  );
+  (!/<p className="provider-form-hint">协议自动适配/.test(app73) ? ok : fail)(
+    "【73】协议自动适配的常驻长说明已移除（改由 ? 承载）"
+  );
+  (/\.field-help \{/.test(css73) && /\.field-help:hover::after/.test(css73) ? ok : fail)(
+    "【73】? 气泡样式存在（hover/focus 才显示）"
+  );
+  (/\.local-preset-chip \{/.test(css73) ? ok : fail)("【73】本地预设 chip 样式存在");
+  // ⑦ 本地服务「无 Key 也能启用」（09-19 代码审查抓到的真 bug）
+  //   原逻辑把「无 Key 的第三方供应商」一律存成禁用（防首次安装默认启用），
+  //   而本地模型服务本来就不需要 Key ⇒ 配好本地模型却发不出消息且看不出原因。
+  (/function isLocalEndpoint\(baseUrl: unknown\): boolean \{/.test(main73) ? ok : fail)(
+    "【73】有「本机/内网地址」判定（本地服务无 Key 应可启用）"
+  );
+  (/localhost" \|\| host === "::1" \|\| host === "0\.0\.0\.0"/.test(main73) ? ok : fail)(
+    "【73】判定覆盖 loopback 各写法（127.x / localhost / ::1 / 0.0.0.0）"
+  );
+  (/\^172\\\.\(1\[6-9\]\|2\\d\|3\[01\]\)\\\./.test(main73) ? ok : fail)(
+    "【73】判定覆盖 RFC1918 私网（含 172.16-31 这段，容易漏）"
+  );
+  // ⛔ 两处必须同源：只改保存侧 → 存成启用却显示停用；只改显示侧 → 界面假启用
+  ((main73.match(/!isLocalEndpoint\(/g) ?? []).length >= 2 ? ok : fail)(
+    "【73】显示侧（publicCustomModel）与保存侧（custom-model:save）都过同一判定（必须同源）"
+  );
+  (/provider !== "openai-official" && !isLocalEndpoint\(/.test(main73) ? ok : fail)(
+    "【73】公网无 Key 的供应商仍被禁用（不能过度放宽，原意图要保住）"
   );
 }
 

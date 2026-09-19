@@ -29,7 +29,7 @@ export function classifyProviderProbeFailure(raw: string): string {
 /** 上游协议（本地协议桥按它决定怎么转发）。
  *  ⛔ 与 `wireApi` 不是一回事：`wireApi` 是**写给引擎**的字段（我们恒写 responses —— 引擎只会发
  *  Responses，写 chat 会让整份配置拒载）；`upstreamProtocol` 是告诉**本地桥**「上游真实是什么协议」。 */
-export type UpstreamProtocol = "auto" | "chat" | "responses";
+export type UpstreamProtocol = "auto" | "chat" | "responses" | "anthropic";
 
 export type CustomModel = { provider: string; name: string; model: string; baseUrl: string; contextWindow?: number; wireApi?: "responses" | "chat" | "auto"; hasKey?: boolean; effort?: string; models?: ProviderModel[]; enabled?: boolean; maxConcurrency?: number; upstreamProtocol?: UpstreamProtocol };
 
