@@ -2230,6 +2230,19 @@ console.log(C.bold("\n【14】历史分页懒加载（首屏一页 / 滚一屏�
   /setWindowOffset\(0\); \}, \[currentIndex\]\)/.test(appSrc4)
     ? ok("刻度选区只在阅读位置变化时归位（加载新页不会把选区拽走）")
     : fail("加载新页会把刻度选区拽回最新 —— 往上滚看历史时选区会乱跳");
+  // 滚轮滑窗声音反馈（用户 09-19：「鼠标放上去上下滑动，加一个声音反馈，选最贴合的」）：
+  // 合成棘轮咔哒（src/lib/wheel-tick.mjs，无音频资产）；⛔ 只在窗口真的移动时响——
+  // 响与不响的判据依赖最新 state，所以滚轮闭包必须走 wheelCtxRef（顺路修掉的 stale closure）。
+  (/const next = Math\.max\(-ctxNow\.currentIndex, Math\.min\(maxOffset, ctxNow\.windowOffset \+ direction \* RULER_PAGE\)\);[\s\S]{0,220}if \(next === ctxNow\.windowOffset\) return;[\s\S]{0,120}setWindowOffset\(next\);[\s\S]{0,80}playWheelTick\(direction\);/.test(appSrc4))
+    ? ok("刻度尺滚轮：先算 next、窗口真移动才 setWindowOffset + 播放棘轮咔哒（到顶/到底静默）")
+    : fail("刻度尺滚轮的声音反馈被摘了 —— 或窗口移动判定没走 wheelCtxRef 最新值");
+  (/const wheelCtxRef = useRef\(\{ allMarks, windowSize, currentIndex, windowOffset \}\);/.test(appSrc4) && /wheelCtxRef\.current = \{ allMarks, windowSize, currentIndex, windowOffset \};/.test(appSrc4))
+    ? ok("滚轮监听的 stale closure 已修（最新 state 经 wheelCtxRef 进闭包）")
+    : fail("滚轮监听又在闭包里直读 state —— 首帧绑死后钳制/容量全用旧值");
+  const tickSrc = readFileSync(join(ROOT, "src/lib/wheel-tick.mjs"), "utf8");
+  (/THROTTLE_MS/.test(tickSrc) && /UP_FREQ/.test(tickSrc) && /DOWN_FREQ/.test(tickSrc) && /catch/.test(tickSrc))
+    ? ok("滑窗音效模块：方向音调区分 + 30ms 节流 + 异常静默降级（音频挂起绝不拖垮滚轮交互）")
+    : fail("wheel-tick.mjs 缺节流/方向音调/静默降级 —— 声音会把滚轮交互搞挂或吵人");
 }
 // ---------- 【15】供应商列表交互（点开关要切详情，不许只拦冒泡） ----------
 

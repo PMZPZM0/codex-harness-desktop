@@ -17,6 +17,7 @@ import { attachmentToken, fileToken, promptFilePaths, shouldSavePastedTextAsFile
 // 图片显示 src 归一化：⛔ 不能写 `startsWith("http") ? src : imageUrl(src)` —— data URL 会被
 // 当成本地路径去拼协议 URL，灯箱与悬停预览都会打不开（09-18 代码审查发现，见模块注释）。
 import { imageDisplaySrc, localImageUrl } from "./lib/image-src.mjs";
+import { playWheelTick } from "./lib/wheel-tick.mjs";
 import { createRunClock } from "./lib/run-clock.mjs";
 // 懒高亮（09-18 用户：「我又没点开看代码高亮，为啥每次切换都重新加载一遍」）：
 // 只对"大块"启用——进视口邻近区之前渲染等价外观的纯文本，进区后才真高亮。
@@ -5743,12 +5744,8 @@ function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[
   // 窗口容量封顶（RULER_MAX）：轨道再高，一屏最多 50 个刻度——「已加载页数再多也不会
   // 全量透出」，超出部分靠滚动/滚轮滑窗口看到。
   const windowSize = Math.min(Math.max(4, visibleCount), RULER_MAX);
-  // 铺满模式（09-19 用户定稿口径）：消息数 ≤ 一屏容量时，刻度**均匀铺满整列**
-  // （顶边框 → 输入框的距离，像真实尺子）；超过容量才切固定 14px 槽位 + 悬停滚轮滑窗。
-  // ⛔ 不再让刻度按内容数「居中悬浮成一截」——那是用户截图吐槽的「有多少展示多少」观感。
-  const spread = allMarks.length <= windowSize;
   const marks = useMemo(() => {
-    if (spread) return allMarks;
+    if (allMarks.length <= windowSize) return allMarks;
     let start = Math.max(0, Math.min(currentIndex + windowOffset, allMarks.length - windowSize));
     let end = start + windowSize;
     if (end > allMarks.length) {
@@ -5756,9 +5753,15 @@ function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[
       start = end - windowSize;
     }
     return allMarks.slice(start, end);
-  }, [allMarks, currentIndex, windowOffset, windowSize, spread]);
+  }, [allMarks, currentIndex, windowOffset, windowSize]);
 
   const latestId = allMarks.length ? allMarks[allMarks.length - 1].id : null;
+
+  // ⛔ 滚轮监听在挂载时只绑一次（下面的 wheelBound 守卫），闭包里直接读 state 变量会
+  // 永远停在首帧值（stale closure）——allMarks/windowSize/currentIndex/windowOffset 一律
+  // 经这个 ref 取当前渲染的最新值；滑窗要靠 currentIndex 做钳制，读到旧值就会越界滑。
+  const wheelCtxRef = useRef({ allMarks, windowSize, currentIndex, windowOffset });
+  wheelCtxRef.current = { allMarks, windowSize, currentIndex, windowOffset };
 
   // 滚动联动：视口上沿 30% 处落在哪条消息上，就高亮对应刻度
   useEffect(() => {
@@ -5804,7 +5807,7 @@ function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[
   return (
     <div className="message-ruler" role="navigation" aria-label="消息定位">
       <div
-        className={`ruler-track${spread ? " ruler-track-spread" : ""}`}
+        className="ruler-track"
         ref={(node) => {
           trackRef.current = node;
           // 独立滚轮：悬停刻度尺时滚轮只滑刻度选区（原生非 passive 监听才能 preventDefault），
@@ -5814,12 +5817,17 @@ function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[
           node.addEventListener("wheel", (event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (allMarks.length <= windowSize) return;
+            const ctxNow = wheelCtxRef.current;
+            if (ctxNow.allMarks.length <= ctxNow.windowSize) return;
             const direction = event.deltaY > 0 ? 1 : -1;
-            const maxOffset = allMarks.length - windowSize - currentIndex;
+            const maxOffset = ctxNow.allMarks.length - ctxNow.windowSize - ctxNow.currentIndex;
             // 滚轮一次滑**一页**（与消息懒加载的每页 TURNS_PAGE 个用户消息对齐，
             // 用户 09-14：「滚轮也要同步最新每页」）。
-            setWindowOffset((current) => Math.max(-currentIndex, Math.min(maxOffset, current + direction * RULER_PAGE)));
+            const next = Math.max(-ctxNow.currentIndex, Math.min(maxOffset, ctxNow.windowOffset + direction * RULER_PAGE));
+            // 到顶/到底窗口不动 → 静默（自然的边界反馈）；真移动 → 滑一声棘轮咔哒（09-19 用户要求的声音反馈）
+            if (next === ctxNow.windowOffset) return;
+            setWindowOffset(next);
+            playWheelTick(direction);
           }, { passive: false });
         }}
         onMouseLeave={() => { setHoverIndex(null); setTip(null); }}
