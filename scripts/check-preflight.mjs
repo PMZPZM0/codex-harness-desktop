@@ -6224,6 +6224,76 @@ w.postMessage({id:1,op:"list",root});
 }
 
 
+{
+  // ── 【71】会话血缘：删源不得拖死子会话；已断链的必须自愈 ────────────────────
+  //   09-19 用户事故：「我归档会话，提示 invalid paginated history lineage … missing source
+  //   rollout，会话都没法选择了」。根因：旧版删会话时把**子会话依赖的源 rollout** 一起删了，
+  //   而 fork/接力出来的子会话首行记着 `forked_from_id` → 引擎沿血缘回读源文件 → 找不到 →
+  //   整个会话打不开。用户的原话是要「从根上修掉」且「会话必须独立」。
+  const workerSrc71 = readFileSync(join(ROOT, "electron", "rollout-worker.cjs"), "utf8");
+  const poolSrc71 = readFileSync(join(ROOT, "electron", "rollout-pool.ts"), "utf8");
+  const mainSrc71 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  // ① 删之前先算依赖：被别的会话依赖的源文件**必须保留**
+  (/function collectLineage\(root\)/.test(workerSrc71) ? ok : fail)(
+    "【71】purge 前先收集血缘依赖（collectLineage）"
+  );
+  (/const dependents = \(deps\.get\(match\[1\]\.toLowerCase\(\)\) \|\| \[\]\)\.filter\(\(item\) => !ids\.has\(item\.childId\)\);/.test(workerSrc71) ? ok : fail)(
+    "【71】删除对象被别的活着的会话依赖时不算可删（整批一起删的子会话除外）"
+  );
+  (/if \(dependents\.length\) \{[\s\S]{0,200}?kept\.push\(/.test(workerSrc71) ? ok : fail)(
+    "【71】有依赖者的 rollout 走 kept（保留）而不是 unlink"
+  );
+  (/if \(!ids\.size\) return \{ removed, failed, kept \};/.test(workerSrc71) ? ok : fail)(
+    "【71】purge 返回值带 kept（调用方才能感知「被有意保留」）"
+  );
+  // ② 主进程必须把"保留"告诉用户/日志，不能静默
+  (/if \(result\?\.kept\?\.length\) \{/.test(mainSrc71) ? ok : fail)(
+    "【71】删除后被保留的 rollout 有显式日志（不静默）"
+  );
+  // ③ 已写坏的（源已丢）要自愈：摘掉血缘字段 + 备份原首行（可回滚）
+  // ⛔ 必须含 history_base —— 它才是引擎真正读的血缘载体（09-19 实测：只摘 forked_from_id
+  //   那组时文件层面看着"已自愈"，引擎照样报 missing source rollout，白跑两轮真机验证）。
+  (/"history_base"\]/.test(workerSrc71) && /const LINEAGE_KEYS = \[[^\]]*"forked_from_id"[^\]]*\]/.test(workerSrc71) ? ok : fail)(
+    "【71】血缘字段表含 history_base（引擎报错指的就是它的 thread_id）"
+  );
+  (/meta\.history_base\?\.thread_id/.test(workerSrc71) ? ok : fail)(
+    "【71】依赖判定也认 history_base.thread_id（否则删源守卫仍漏判）"
+  );
+  // ⛔ review 抓出的两处：① 改写必须**原子替换**（写坏 = 会话历史损坏，比"打不开"更糟）；
+  //   ② 自愈是 await 在启动链上的 ⇒ 必须有超时，worker 卡住不能把启动拖死。
+  (/const tmpFile = `\$\{file\}\.heal\.tmp`;[\s\S]{0,160}?renameSync\(tmpFile, file\);/.test(workerSrc71) ? ok : fail)(
+    "【71】自愈改写走「写临时文件 → rename」原子替换（避免半截 JSONL 毁掉会话历史）"
+  );
+  (/\{ healed: \[\], failed: \[\], timedOut: true \}/.test(mainSrc71) ? ok : fail)(
+    "【71】血缘自愈带 5s 超时降级（await 在启动链上，不能拖死启动）"
+  );
+  (/for \(const key of LINEAGE_KEYS\) delete meta2\[key\];/.test(workerSrc71) ? ok : fail)(
+    "【71】自愈时按表摘血缘字段（不是只删一个，避免漏摘导致仍打不开）"
+  );
+  (/writeFileSync\(`\$\{file\}\.lineage\.bak`, backupFirst, "utf8"\);/.test(workerSrc71) ? ok : fail)(
+    "【71】自愈前备份原首行（.lineage.bak，可人工回滚）"
+  );
+  (/msg\.op === "healLineage"/.test(workerSrc71) ? ok : fail)(
+    "【71】worker 暴露 healLineage 命令"
+  );
+  (/export function healRolloutLineageAsync\(codexHome/.test(poolSrc71) ? ok : fail)(
+    "【71】主进程侧封装 healRolloutLineageAsync"
+  );
+  // ⛔ 必须 **await** 且在 `server.start()` **之前** —— 引擎一起来就把血缘读进内存，
+  //   之后再改文件**同一次运行内不生效**（09-19 实测：文件已自愈但 resume 仍报 missing
+  //   source rollout，必须重启才好）。位置写错 = 这个功能对"当前这次启动"完全无效。
+  const healIdx = mainSrc71.indexOf("await healRolloutLineage();");
+  const startIdx = mainSrc71.indexOf("await server.start();");
+  (healIdx >= 0 && startIdx >= 0 && healIdx < startIdx ? ok : fail)(
+    "【71】血缘自愈在 server.start() 之前 await（引擎起来后再改同一次运行内不生效）"
+  );
+  // ④ 自愈必须幂等：只处理「有血缘 + 源不在」的，别动正常会话
+  (/if \(!meta\.parentId \|\| known\.has\(meta\.parentId\) \|\| !meta\.hasLineage\) continue;/.test(workerSrc71) ? ok : fail)(
+    "【71】自愈只碰「源已丢失」的会话（源还在的正常会话不动，幂等）"
+  );
+}
+
+
 if (hardFails === 0) {
   console.log(C.green(`预检通过${warns ? `（${warns} 条告警，见上）` : ""}`));
 } else {

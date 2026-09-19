@@ -17,13 +17,14 @@
  * 协议：
  *   请求  { id, op: "list", root }                      → 回 { id, ok, data }
  *   请求  { id, op: "enrich", thread, root }             → 回 { id, ok, data }
- *   请求  { id, op: "purge", root, ids }                 → 回 { id, ok, data:{ removed, failed } }
+ *   请求  { id, op: "purge", root, ids }                 → 回 { id, ok, data:{ removed, failed, kept } }
+ *   请求  { id, op: "healLineage", root }                → 回 { id, ok, data:{ healed, failed } }
  *   出错  回 { id, ok: false, error }
  */
 
 "use strict";
 
-const { readdirSync, readFileSync, statSync, openSync, readSync, closeSync, existsSync, unlinkSync } = require("node:fs");
+const { readdirSync, readFileSync, writeFileSync, renameSync, statSync, openSync, readSync, closeSync, existsSync, unlinkSync } = require("node:fs");
 const path = require("node:path");
 
 // ── 缓存（worker 常驻，跨请求复用）──────────────────────────────────────
@@ -155,6 +156,94 @@ function listRolloutThreads(root) {
  *  ——短 id 会误伤别的 rollout。唯一例外是历史遗留的非标准命名（时间戳位置带了短 id），
  *  那种靠 `endsWith` 兜不住，但它同样只在「索引里已无该线程」时才可能残留。
  */
+// ── 血缘（rollout 首行的 session_meta）──────────────────────────────────
+// ⛔⛔ 09-19 用户实测：归档/删除一条会话后，**另一个会话**报
+//   `invalid paginated history lineage for <源 id>: missing source rollout`，那个会话彻底打不开。
+//   根因：分支/接力/专家团派生出来的会话，其 rollout 首行记着 `forked_from_id` 指向**源会话**，
+//   引擎打开子会话时要沿血缘去读源 rollout；而我们的删除收尾（purge）把源文件直接删了 ⇒ 血缘断链。
+//   所以：**删任何 rollout 之前，必须先确认没有别的活着的会话依赖它**。
+//   ⛔ 09-19 实测教训：真正的血缘载体是 **`history_base`**（`{thread_id, end_ordinal_exclusive,
+//   end_byte_offset}`），引擎报错 `invalid paginated history lineage for <history_base.thread_id>:
+//   missing source rollout` 就是它。只摘 `forked_from_id` 那一组**不够**——文件层面看着"血缘已摘"，
+//   引擎照样报错（为这个漏项白跑两轮真机验证）。改血缘字段表时务必连 history_base 一起。
+const LINEAGE_KEYS = ["forked_from_id", "forked_from_ordinal_exclusive", "parent_thread_id", "history_base"];
+
+/** 遍历 sessions/ 与 archived_sessions/ 下的全部 rollout 文件 */
+function walkRolloutFiles(root) {
+  const out = [];
+  for (const base of [path.join(root, "sessions"), path.join(root, "archived_sessions")]) {
+    if (!existsSync(base)) continue;
+    const stack = [base];
+    while (stack.length) {
+      const current = stack.pop();
+      let entries;
+      try { entries = readdirSync(current, { withFileTypes: true }); } catch { continue; }
+      for (const entry of entries) {
+        const full = path.join(current, entry.name);
+        if (entry.isDirectory()) stack.push(full);
+        else if (entry.isFile() && entry.name.endsWith(".jsonl")) out.push(full);
+      }
+    }
+  }
+  return out;
+}
+
+/** 只读文件第一行（session_meta 所在行）。首行超长（含 dynamic_tools）时退化为整文件读。 */
+function readFirstLine(file, maxBytes = 512 * 1024) {
+  let fd;
+  try {
+    fd = openSync(file, "r");
+    const buf = Buffer.alloc(maxBytes);
+    const read = readSync(fd, buf, 0, maxBytes, 0);
+    const text = buf.subarray(0, read).toString("utf8");
+    const nl = text.indexOf("\n");
+    if (nl >= 0) return text.slice(0, nl);
+    return readFileSync(file, "utf8").split("\n")[0];
+  } catch {
+    return "";
+  } finally {
+    try { if (fd !== undefined) closeSync(fd); } catch { /* 忽略 */ }
+  }
+}
+
+/** 解析一个 rollout 的 session_meta（拿不到返回 null） */
+function readSessionMeta(file) {
+  const first = readFirstLine(file);
+  if (!first) return null;
+  try {
+    const meta = JSON.parse(first)?.payload;
+    if (!meta || typeof meta !== "object") return null;
+    return {
+      id: String(meta.session_id || meta.id || "").toLowerCase(),
+      // ⛔ 与 hasLineage 必须**同步**：history_base 可能是对象（`{thread_id,…}`）也可能是字符串
+      //   （形状变化时不兜底 ⇒ hasLineage=true 但 parentId 为空 ⇒ 自愈直接 continue，
+      //   症状是"这条会话永远修不好、也永远不报修"这种静默漏修）。
+      parentId: String(
+        meta.forked_from_id
+        || meta.parent_thread_id
+        || (typeof meta.history_base === "string" ? meta.history_base : meta.history_base?.thread_id)
+        || "",
+      ).toLowerCase(),
+      hasLineage: LINEAGE_KEYS.some((key) => meta[key] !== undefined && meta[key] !== null),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 血缘依赖图：Map<源会话 id(小写), [{ childId, file }]>（只统计**仍在磁盘上**的 rollout） */
+function collectLineage(root) {
+  const deps = new Map();
+  for (const file of walkRolloutFiles(root)) {
+    const meta = readSessionMeta(file);
+    if (!meta?.id || !meta.parentId) continue;
+    const list = deps.get(meta.parentId) || [];
+    list.push({ childId: meta.id, file });
+    deps.set(meta.parentId, list);
+  }
+  return deps;
+}
+
 function purgeRolloutFiles(root, idsInput) {
   const ids = new Set(
     (Array.isArray(idsInput) ? idsInput : [])
@@ -163,7 +252,12 @@ function purgeRolloutFiles(root, idsInput) {
   );
   const removed = [];
   const failed = [];
-  if (!ids.size) return { removed, failed };
+  const kept = [];
+  if (!ids.size) return { removed, failed, kept };
+  // ⛔ 血缘守卫（09-19）：源 rollout 被别的会话依赖时**不删**，否则子会话直接打不开
+  //   （`invalid paginated history lineage: missing source rollout`）。
+  //   源会话早已不在索引里、侧栏也不会显示它（有墓碑兜底），磁盘上留这一个文件是**必要**的。
+  const deps = collectLineage(root);
   for (const base of [path.join(root, "sessions"), path.join(root, "archived_sessions")]) {
     if (!existsSync(base)) continue;
     const stack = [base];
@@ -177,6 +271,12 @@ function purgeRolloutFiles(root, idsInput) {
         if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
         const match = entry.name.match(/-([0-9a-f]{8}-[0-9a-f-]{27,})\.jsonl$/i);
         if (!match || !ids.has(match[1].toLowerCase())) continue;
+        // 本次一并删除的子会话不算依赖（整批一起删掉，不存在"子活着源没了"）
+        const dependents = (deps.get(match[1].toLowerCase()) || []).filter((item) => !ids.has(item.childId));
+        if (dependents.length) {
+          kept.push({ path: full, id: match[1].toLowerCase(), dependents: dependents.map((item) => item.childId) });
+          continue;
+        }
         try {
           unlinkSync(full);
           removed.push(full);
@@ -190,8 +290,54 @@ function purgeRolloutFiles(root, idsInput) {
       }
     }
   }
-  return { removed, failed };
+  return { removed, failed, kept };
 }
+
+/**
+ * 血缘自愈（09-19）：把「源已丢失」的子会话修成**独立会话**。
+ *
+ * 场景：旧版本删源会话时没有血缘守卫，已经把源 rollout 删掉了 ⇒ 子会话每次打开都报
+ *   `invalid paginated history lineage for <源>: missing source rollout`，用户连侧栏点击都不行。
+ * 修法：把该子会话 rollout 首行里的血缘字段**摘掉**（forked_from_id /
+ *   forked_from_ordinal_exclusive / parent_thread_id），引擎便会把它当普通会话加载。
+ *   ⛔ 代价必须说清：子会话**继承自源会话的那段历史**找不回来了（自己的回合一个不少，
+ *     因为都在它自己的 rollout 里）；但"完全打不开"显然更糟。
+ *   ⛔ 改前把原首行存成 `<文件>.lineage.bak`，可人工回滚。
+ */
+function healBrokenLineage(root) {
+  const healed = [];
+  const failed = [];
+  const metas = walkRolloutFiles(root).map((file) => ({ file, meta: readSessionMeta(file) })).filter((item) => item.meta?.id);
+  const known = new Set(metas.map((item) => item.meta.id));
+  for (const { file, meta } of metas) {
+    if (!meta.parentId || known.has(meta.parentId) || !meta.hasLineage) continue;
+    try {
+      const text = readFileSync(file, "utf8");
+      const nl = text.indexOf("\n");
+      const first = nl >= 0 ? text.slice(0, nl) : text;
+      const rest = nl >= 0 ? text.slice(nl) : "";
+      const parsed = JSON.parse(first);
+      const meta2 = parsed?.payload ?? {};
+      const backupFirst = first;
+      for (const key of LINEAGE_KEYS) delete meta2[key];
+      parsed.payload = meta2;
+      writeFileSync(`${file}.lineage.bak`, backupFirst, "utf8");
+      // ⛔ 必须**原子替换**（写临时文件 → rename）：直接覆盖写时若磁盘满/被杀，会留下
+      //   半截 JSONL ⇒ 整个会话历史损坏（比"打不开"更糟，用户内容真丢了）。
+      //   rename 在同一目录内是原子的，最坏情况是保留原文件（下次启动再试）。
+      const tmpFile = `${file}.heal.tmp`;
+      writeFileSync(tmpFile, JSON.stringify(parsed) + rest, "utf8");
+      renameSync(tmpFile, file);
+      rolloutListCache.delete(file);
+      rolloutParseCache.delete(file);
+      healed.push({ path: file, id: meta.id, lostFrom: meta.parentId });
+    } catch (error) {
+      failed.push({ path: file, error: String((error && error.message) || error) });
+    }
+  }
+  return { healed, failed };
+}
+
 
 // ── 增强解析（把 rollout 里的工具调用补进 thread）──────────────────────
 function findRolloutFile(root, threadId) {
@@ -384,6 +530,8 @@ if (parentPort) {
         parentPort.postMessage({ id, ok: true, data: enrichThreadWithRolloutTools(msg.thread, String(msg.root || "")) });
       } else if (msg.op === "purge") {
         parentPort.postMessage({ id, ok: true, data: purgeRolloutFiles(String(msg.root || ""), msg.ids) });
+      } else if (msg.op === "healLineage") {
+        parentPort.postMessage({ id, ok: true, data: healBrokenLineage(String(msg.root || "")) });
       } else {
         parentPort.postMessage({ id, ok: false, error: `unknown op: ${msg.op}` });
       }
