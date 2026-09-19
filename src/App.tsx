@@ -8254,12 +8254,15 @@ export default function App() {
       showToast("限流重试已发出", `第 ${attempt}/${RATE_LIMIT_MAX_ATTEMPTS} 次重试已被接受，任务继续运行`);
     } catch (error: any) {
       setSending(false);
-      markThreadStopped(ctx.threadId);
       setWorkStartedAt(null);
       if (isRateLimitError(error?.message) && attempt < RATE_LIMIT_MAX_ATTEMPTS) {
         showToast("仍被限流", `第 ${attempt} 次重试仍失败，稍后自动继续`);
+        // ⛔ 继续 schedule 时不 markThreadStopped（同 scheduleRateLimitRetry 的修复：
+        //   重试链还活着，运行状态应保持；熄灭会让侧栏/停止键闪没）。
         scheduleRateLimitRetry(attempt + 1);
       } else {
+        markThreadStopped(ctx.threadId);
+        markThreadDoneUnread(ctx.threadId);   // 重试链终结 = 任务结束，留绿点反馈
         setNotice(error?.message ?? "限流重试失败");
         cancelRateLimitRetry(true);
       }
@@ -8306,6 +8309,11 @@ export default function App() {
     const ctx = retryContextRef.current;
     if (!ctx) return;
     if (attempt > RATE_LIMIT_MAX_ATTEMPTS) {
+      // ⛔ 放弃 = 重试链结束：必须熄灭运行状态（否则转圈/停止键永远挂着——09-19 反面教训：
+      //   「保持运行态」只适用于**重试链还活着**的等待期；链断了就要如实收尾）。
+      //   同时给该会话留**完成绿点**：任务确实结束了（哪怕以失败告终），用户切回来要能看见。
+      markThreadStopped(ctx.threadId);
+      markThreadDoneUnread(ctx.threadId);
       cancelRateLimitRetry(true);
       showToast("限流重试放弃", `已连续重试 ${RATE_LIMIT_MAX_ATTEMPTS} 次仍被限流，请稍后手动重发`);
       return;
@@ -8314,12 +8322,16 @@ export default function App() {
     const delay = rateLimitBackoffMs(attempt);
     setSending(false);
     setActiveTurnId(null);
-    markThreadStopped(ctx.threadId);
     setInterrupting(false);
     setWorkStartedAt(null);
     setRateLimitRetry({ threadId: ctx.threadId, attempt, retryAt: Date.now() + delay });
     clearRateLimitTimer();
     rateLimitTimerRef.current = window.setTimeout(() => void executeRateLimitRetry(), delay);
+    // ⛔ 09-19 用户严令「不要影响会话自动收尾」：这里**不能** markThreadStopped ——
+    //   限流重试马上就要原样重发（等退避窗口过去），会话的运行状态应保持可见，
+    //   否则侧栏转圈消失、右下角停止键消失（用户截图实证：状态来回翻转）。
+    //   turn/started 事件在重发成功时自然会重新点亮；executeRateLimitRetry 的
+    //   markThreadRunning 也会兜一层。只有用户点「停止」或重试放弃才真正熄灭。
   }
   const compactPendingRef = useRef(new Set<string>());
   const [interrupting, setInterrupting] = useState(false);
@@ -13056,12 +13068,20 @@ const commandMatches = useMemo(() => {
         //   引擎 rollout 不记录 finish_reason，只能靠渲染层已有数据兜底检测：
         //   思考极长 + 正文为空 + 全程无工具动作 = 被截断的空转（有正文或有工具的一律不判，防误报）。
         //   只对**当前会话**判定（后台会话的 items 不在 threadRef 里，且用户没在看）。
-        if (params.threadId === threadRef.current?.id) {
-          const turnId = String(params.turn?.id ?? "");
-          const localTurn = threadRef.current?.turns.find((entry) => entry.id === turnId);
-          if (isTruncatedEmptyTurn(localTurn ?? params.turn)) {
-            showToast("回合可能被上游截断", truncationNotice());
-            maybeAutoContinueTruncated(String(params.threadId ?? ""));
+        // ⛔⛔ 09-19 用户严令「不要影响会话自动收尾」：429/限流失败的回合 items **恰好长得很像
+        //   截断空转**（思考 + 空正文，工具调用在 error 回合里经常不带）——不排除的话，
+        //   截断续接和限流重试**两条自动恢复路径同时接管同一回合**：一个排队续接、一个定时重发，
+        //   运行状态被来回翻转（用户截图实证：会话显示已完成、右下角却还在运行中）。
+        //   规则收死：**回合有 error 或限流重试在管这个会话 → 绝不触发截断续接**（重试会
+        //   原样重发整条任务，本身就能接上；续接只管"引擎以为正常完成但实际空转"的场景）。
+        if (!params.turn.error?.message && !(retryContextRef.current?.threadId === params.threadId && (rateLimitRetry || rateLimitTimerRef.current != null))) {
+          if (params.threadId === threadRef.current?.id) {
+            const turnId = String(params.turn?.id ?? "");
+            const localTurn = threadRef.current?.turns.find((entry) => entry.id === turnId);
+            if (isTruncatedEmptyTurn(localTurn ?? params.turn)) {
+              showToast("回合可能被上游截断", truncationNotice());
+              maybeAutoContinueTruncated(String(params.threadId ?? ""));
+            }
           }
         }
         // 图片模态自愈（09-18 用户反馈：升级上来的模型配置标了「视觉」，但接入点实际不支持图片
@@ -16142,17 +16162,32 @@ const commandMatches = useMemo(() => {
       setSandbox(sandbox);
       setApprovalPolicy(approvalPolicy);
       saveThreadPermissions(id, sandbox, approvalPolicy);
-      const runningTurn = (freshThread.turns ?? []).find((turn: Turn) => turn.status === "inProgress" || turn.status === "running");
-      setActiveTurnId(runningTurn?.id ?? null);
-      setSending(Boolean(runningTurn));
-      setWorkStartedAt(runningTurn ? (runningStartedAtRef.current.get(id) ?? Date.now()) : null);
-      if (runningTurn) markThreadRunning(id, runningTurn.id);
+      // 切回一个「引擎仍在后台运行」的会话时，点亮它的侧边栏转圈（跟当前选中解耦）。
       // ⛔ 绝不用「快照里没看到 running 回合」来**熄灭**运行状态（09-19 用户：「切会话/开关独立窗口，
       //   正在跑的任务莫名停止」，这是真根因之一）：
       //   引擎 resume 回包与本地缓存快照经常**不带** inProgress 回合（或带的是旧快照），据此清账会
       //   把真正在跑的会话判成已停 ⇒ 停止键消失、侧栏转圈消失，而且**下一条消息会走 `turn/start`**
       //   ⇒ 引擎侧那个回合被当场打断。撤销运行态只能靠**回合级权威事件**
       //   （turn/completed|aborted|failed|interrupted）或引擎侧记账核实（见 status/changed idle 分支）。
+      // ⛔⛔ 反向同样要防（09-19 截图「运行状态一直不结束」）：freshThread 快照对刚完成的回合
+      //   可能滞后（status 仍 inProgress）——点亮前与引擎侧记账核实，同 resume 主路径。
+      const runningTurn = (freshThread.turns ?? []).find((turn: Turn) => isTurnRunning(turn));
+      setActiveTurnId(runningTurn?.id ?? null);
+      setSending(Boolean(runningTurn));
+      setWorkStartedAt(runningTurn ? (runningStartedAtRef.current.get(id) ?? Date.now()) : null);
+      if (runningTurn) {
+        const probeThreadId = id;
+        void window.codex.engineActiveTurns().then((info) => {
+          if ((info?.threadIds ?? []).map(String).includes(probeThreadId)) {
+            markThreadRunning(probeThreadId, runningTurn.id);
+          } else if (runningThreadIdsRef.current.has(probeThreadId)) {
+            markThreadStopped(probeThreadId);
+          }
+        }).catch(() => {
+          // 核实失败：保守点亮（同 resume 主路径的取舍）
+          markThreadRunning(probeThreadId, runningTurn.id);
+        });
+      }
       // 工作区与线程一致（团队卡片可指定独立项目地址）；用户改过地址时以本地覆盖为准
       const liveCwd = effectiveCwd(freshThread.id, freshThread.cwd);
       if (liveCwd) setWorkspace(liveCwd);
@@ -16344,11 +16379,32 @@ const commandMatches = useMemo(() => {
       setActiveTurnId(resumedRunningTurn?.id ?? null);
       setSending(Boolean(resumedRunningTurn));
       setWorkStartedAt(resumedRunningTurn ? (runningStartedAtRef.current.get(id) ?? Date.now()) : null);
-      // 切回一个「引擎仍在后台运行」的会话时，点亮它的侧边栏转圈（跟当前选中解耦）。
-      // ⛔ 这里同样**不许**用快照熄灭（同上面 freshThread 分支的注释：快照不可靠，熄灭只能由
-      //   回合级权威事件或引擎侧核实触发）。`resumedRunningTurn` 为假只说明"这份快照没告诉我们它在跑"，
-      //   不等于"它没在跑"——把两者混为一谈正是"切会话把运行中的任务判死"的那条路径。
-      if (resumedRunningTurn) markThreadRunning(id, resumedRunningTurn.id);
+        // 切回一个「引擎仍在后台运行」的会话时，点亮它的侧边栏转圈（跟当前选中解耦）。
+        // ⛔ 这里同样**不许**用快照熄灭（同上面 freshThread 分支的注释：快照不可靠，熄灭只能由
+        //   回合级权威事件或引擎侧核实触发）。`resumedRunningTurn` 为假只说明"这份快照没告诉我们它在跑"，
+        //   不等于"它没在跑"——把两者混为一谈正是"切会话把运行中的任务判死"的那条路径。
+        // ⛔⛔ 反向同样要防（09-19 用户截图实证「运行状态一直不结束」）：resume 快照对**刚完成**
+        //   的回合可能滞后（rollout 回放时 status 仍是 inProgress）——点亮前先与**引擎侧记账**
+        //   核实：记账里没有该会话的活动回合 = 快照滞后，不点亮。这与 status/changed idle
+        //   分支的「与引擎侧真相核对后才熄灭」是同一条不变量的两个方向：**快照两个方向都不可信，
+        //   引擎侧记账才是唯一权威**。不核实的话：点亮后没有任何 turn/completed 会再来熄灭它
+        //   （事件早已错过）→ 转圈永远挂着 → 用户以为任务还在跑。
+        if (resumedRunningTurn) {
+          const probeId = id;
+          void window.codex.engineActiveTurns().then((info) => {
+            if ((info?.threadIds ?? []).map(String).includes(probeId)) {
+              markThreadRunning(probeId, resumedRunningTurn.id);
+            } else if (runningThreadIdsRef.current.has(probeId)) {
+              // 已被别处点亮（如 turn/started 事件先到）：快照滞后确认，熄灭
+              markThreadStopped(probeId);
+            }
+            // 两个分支都不命中 = 本来就没点亮，无需动作
+          }).catch(() => {
+            // 核实失败（引擎忙/桥断）：保守点亮——误点亮会被后续权威事件熄灭，
+            // 而漏点亮会破坏「切回在跑会话亮转圈」的主路径
+            markThreadRunning(probeId, resumedRunningTurn.id);
+          });
+        }
     } catch (error: any) {
       if (seq === switchSeqRef.current) {
         // 空会话（专家/团队 defer 预建、尚无 rollout）在引擎侧没有可 resume 的记录：
@@ -18209,7 +18265,7 @@ const commandMatches = useMemo(() => {
                 <b>{Math.max(0, Math.ceil((rateLimitRetry.retryAt - Date.now()) / 1000))}s</b> 后自动进行
               </span>
               <button type="button" onClick={() => void executeRateLimitRetry()}>立即重试</button>
-              <button type="button" onClick={() => cancelRateLimitRetry()}>停止</button>
+              <button type="button" onClick={() => { cancelRateLimitRetry(); markThreadStopped(rateLimitRetry.threadId); markThreadDoneUnread(rateLimitRetry.threadId); }}>停止</button>
             </div>
           )}
           {thread && <QueuedMessageList entries={queue} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />}
