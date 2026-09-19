@@ -7951,6 +7951,26 @@ export default function App() {
     runningStartedAtRef.current.clear();
     setRunningThreadIds(new Set());
   }, []);
+  // 侧栏「任务已完成」绿点（09-19 用户需求：后台会话跑完，侧栏亮绿点，点进去消失——
+  // 快速知道哪个会话任务完成了/运行结束了）。只在**非当前查看的会话**上点亮：
+  // 当前正开着的会话用户全程看着，不需要反馈；点进该会话（openThread）即清除。
+  const [unreadDoneIds, setUnreadDoneIds] = useState<Set<string>>(() => new Set());
+  const unreadDoneIdsRef = useRef<Set<string>>(new Set());
+  const markThreadDoneUnread = useCallback((threadId?: string) => {
+    if (!threadId || threadId === threadRef.current?.id) return;   // 当前会话不点
+    if (unreadDoneIdsRef.current.has(threadId)) return;             // 值判短路（多会话性能同上）
+    const next = new Set(unreadDoneIdsRef.current);
+    next.add(threadId);
+    unreadDoneIdsRef.current = next;
+    setUnreadDoneIds(next);
+  }, []);
+  const clearThreadDoneUnread = useCallback((threadId?: string) => {
+    if (!threadId || !unreadDoneIdsRef.current.has(threadId)) return;
+    const next = new Set(unreadDoneIdsRef.current);
+    next.delete(threadId);
+    unreadDoneIdsRef.current = next;
+    setUnreadDoneIds(next);
+  }, []);
   const [workspace, setWorkspace] = useState(localStorage.getItem("workspace") ?? "");
   /** workspace 的 ref 镜像：send 里弹目录选择框后要立刻读到刚选的值
    *  （setState 异步，直接读 `workspace` 闭包变量还是旧值），09-14。 */
@@ -9114,7 +9134,7 @@ export default function App() {
       key={entry.id}
       data-thread-id={entry.id}
     >
-      <button title={entry.rolloutMissing ? "该会话的历史记录文件已丢失，无法打开" : poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : "双击修改任务名称"} onClick={() => { if (poppedOut) { showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } if (entry.rolloutMissing) { showToast("会话记录已丢失", "该会话的历史记录文件（rollout）已不在磁盘上，引擎无法恢复内容。可归档该会话，或新建会话继续。"); return; } void openThread(entry.id); }}>
+      <button title={entry.rolloutMissing ? "该会话的历史记录文件已丢失，无法打开" : poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : unreadDoneIds.has(entry.id) ? "任务已完成，点击查看" : "双击修改任务名称"} onClick={() => { clearThreadDoneUnread(entry.id); if (poppedOut) { showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } if (entry.rolloutMissing) { showToast("会话记录已丢失", "该会话的历史记录文件（rollout）已不在磁盘上，引擎无法恢复内容。可归档该会话，或新建会话继续。"); return; } void openThread(entry.id); }}>
         <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void renameThread(entry.id, next); }); }}><span title={rawTitle}>{displayTitle}</span>{delegateRecords[entry.id] ? <DispatchBadge record={delegateRecords[entry.id]} /> : null}{extras?.badge}{entry.rolloutMissing && <span className="thread-attention-badge tone-confirm" title="会话的历史记录文件已丢失，点开只能看到提示">记录丢失</span>}{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
       </button>
       <div className="thread-actions">
@@ -9122,7 +9142,7 @@ export default function App() {
         <button className="thread-archive-button" title="归档会话" onClick={(event) => { event.stopPropagation(); void archiveThread(entry.id); }}><Archive size={13} /></button>
         <button className="thread-more-button" title="会话操作" aria-expanded={threadRowMenu?.id === entry.id} onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); const menuHeight = 250; setThreadRowMenu((current) => current?.id === entry.id ? null : { id: entry.id, top: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - menuHeight - 8)), right: Math.max(8, window.innerWidth - rect.right) }); }}><MoreHorizontal size={14} /></button>
         {extras?.actions}
-        {openingThread === entry.id ? <Spinner /> : running ? <span className="thread-running-indicator" title="任务运行中"><i /><i /><i /></span> : null}
+        {openingThread === entry.id ? <Spinner /> : running ? <span className="thread-running-indicator" title="任务运行中"><i /><i /><i /></span> : unreadDoneIds.has(entry.id) ? <span className="thread-done-dot" title="任务已完成，点击进入查看" /> : null}
         {threadRowMenu?.id === entry.id && createPortal(<>
           <button className="thread-row-menu-backdrop" aria-label="关闭会话菜单" onClick={() => setThreadRowMenu(null)} />
           <div className="thread-row-menu" role="menu" style={{ top: threadRowMenu.top, right: threadRowMenu.right }}>
@@ -12800,6 +12820,10 @@ const commandMatches = useMemo(() => {
           //     · 已交棒给跟随（pinGapLocked）→ 留白早被 shrinkAnchorPad 收缩到 0，无需清；
           //     · 用户已接管（releaseToUser 已把 anchorTopRef 置假）→ 清掉，别让视口留大片空白。
           if (params.threadId === threadRef.current?.id && !anchorTopRef.current) clearAnchorPad();
+          // 侧栏绿点：非当前会话跑完 → 点亮，点击进入清除。⛔ 必须在**跨会话生命周期区**
+          // （这里 + 下面的 aborted/failed 分支）：下面的当前会话事件流有 threadId 过滤，
+          // 后台会话的完成事件走不到——第一版挂在那边，真机验收当场红（绿点永不出现）。
+          if (!params.threadId || params.threadId !== threadRef.current?.id) markThreadDoneUnread(params.threadId);
         } else if (method0 === "thread/status/changed") {
           // ⛔ 引擎的 `thread.status` 是**对象** `{type:"notLoaded"|"idle"|"systemError"|"active", activeFlags}`
           // （只有 TurnStatus 才是字符串，见 .workbuddy/codex-schema/*.schemas.json）。
@@ -12831,6 +12855,11 @@ const commandMatches = useMemo(() => {
           // 回合级**权威**结束信号：被中断 / 失败 / 中止的回合也要熄灭指示器。
           // （原先只认 turn/completed ⇒ 被中断的回合转圈永远挂着，用户以为还在跑。）
           markThreadStopped(params.threadId);
+          // 侧栏绿点（失败/中止也算「运行结束了」，用户要知道）：非当前会话才点亮。
+          // ⛔ 必须放在**跨会话生命周期区**（这里）：下面的当前会话事件流有 threadId 过滤
+          //   （`params.threadId !== threadRef.current?.id → return`），后台会话的完成事件
+          //   走不到那里 —— 第一版把点亮挂在那边，真机验收当场红（绿点永不出现）。
+          if (!params.threadId || params.threadId !== threadRef.current?.id) markThreadDoneUnread(params.threadId);
         }
         // 渠道机器人等后台会话的 start/stop：走不到下面的当前会话事件流（threadId 过滤会拦掉），
         // 新建的机器人会话永远进不了侧栏 → 防抖刷新一次 thread/list
@@ -13006,7 +13035,15 @@ const commandMatches = useMemo(() => {
           const isCurrent = params.threadId === threadRef.current?.id;
           const blurred = document.visibilityState !== "visible" || !document.hasFocus();
           if (blurred || !isCurrent) {
-            const name = cleanThreadDisplayTitle(threads.find((entry) => entry.id === params.threadId)?.name, { preview: threads.find((entry) => entry.id === params.threadId)?.preview }) || firstUserTextInTurn(params.turn).slice(0, 30) || "任务";
+            // ⛔ 09-19 用户实测「通知栏总是显示未命名会话」：cleanThreadDisplayTitle 的内部
+            //   fallback 是「未命名会话」（恒非空）⇒ 后面的 `|| firstUserTextInTurn(...) || "任务"`
+            //   **永远执行不到**——threads 快照里查不到该会话（后台会话刚建、列表未回填）或
+            //   name 为空时，通知永远叫「未命名会话」。fallback 传空串把兜底权交回调用方：
+            //   先用回合里第一条用户消息，再退「任务」。
+            const entry = threads.find((t) => t.id === params.threadId);
+            const name = cleanThreadDisplayTitle(entry?.name, { preview: entry?.preview, fallback: "" })
+              || firstUserTextInTurn(params.turn).slice(0, 30)
+              || "任务";
             void window.codex.showNotification(params.turn.error?.message ? "任务失败" : "任务完成", `${name.slice(0, 40)} ${params.turn.error?.message ? "运行失败" : "已运行完成"}`);
           }
         } catch { /* 通知失败不影响主流程 */ }
