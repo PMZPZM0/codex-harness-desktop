@@ -120,6 +120,13 @@ const RENDERER_CROSS_SESSION_METHODS = new Set([
   "thread/deleted",
   "turn/started",
   "turn/completed",
+  // ⛔ 09-20 补齐：渲染层的**跨会话区**要处理 aborted/failed/interrupted（熄灭运行指示 / 点后台绿点）
+  //   与 error（后台会话的 429 排重试），漏发等于后台会话状态永久卡住（转圈不消失 / 重试链不启动）。
+  //   这些都是低频生命周期事件，放行成本可忽略。
+  "turn/aborted",
+  "turn/failed",
+  "turn/interrupted",
+  "error",
 ]);
 
 /** 会话 id 提取：不同事件把归属放在不同字段上，逐个兜。取不到就不敢裁（放行）。 */
@@ -138,20 +145,31 @@ const ACTIVE_THREAD_FRESH_MS = 30_000;
 const EVENT_FILTER_ENABLED = process.env.HARNESS_EVENT_FILTER !== "off";
 
 /** 当前「必须收到事件」的会话集合 = 各窗口新鲜的活跃会话 ∪ 独立弹窗锁定的会话。
- *  返回 null 表示「信息不可信」——此时调用方必须全量放行。 */
+ *  返回 null 表示「信息不可信」——此时调用方必须全量放行。
+ *  ⛔ 09-20 修「两个会话窗口一起跑，前台会话只显示正在回复、过程不出内容」（用户截图 + rollout 实证：
+ *  引擎 49 秒里稳定产出工具事件，是渲染层没收到）：
+ *  旧实现只把**新鲜**（30s 内）的上报并进集合，而**过期**的上报被静默忽略 —— 等价于判定
+ *  「那个窗口不知道在看什么」，可它照样返回集合 ⇒ 过期窗口正在看的会话的 item/delta 被裁掉，
+ *  只剩 turn/started（白名单）把运行态点亮，用户看到的就是「一直转圈 + 内容不出来」。
+ *  规则收紧：**任何窗口的上报过期都视为整体不可信 → 放行**（宁可多发，不可漏发）；
+ *  渲染层侧另加 15s 心跳（见 App.tsx setActiveThread），正常情况下不会走到放行。 */
 function watchedThreadIds(): Set<string> | null {
   const now = Date.now();
   const ids = new Set<string>();
-  let trusted = false;
+  let anyStale = false;
+  let anyFresh = false;
   for (const entry of rendererActiveByWindow.values()) {
     if (now - entry.at <= ACTIVE_THREAD_FRESH_MS) {
-      trusted = true;
+      anyFresh = true;
       if (entry.threadId) ids.add(entry.threadId);
+    } else {
+      anyStale = true;
     }
   }
   // 弹窗锁定的会话：即使主窗口已经切走，也必须继续收到它自己的流式事件
-  for (const tid of popoutThreadIds.values()) if (tid) { ids.add(tid); trusted = true; }
-  return trusted ? ids : null;
+  for (const tid of popoutThreadIds.values()) if (tid) { ids.add(tid); anyFresh = true; }
+  if (!anyFresh || anyStale) return null;
+  return ids;
 }
 
 function filterForRenderer(event: any) {
