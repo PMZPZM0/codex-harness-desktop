@@ -2,6 +2,15 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <!-- ⛔ 隐私加固（09-19 审计中危）：补 CSP——关键收益是封死"注入脚本加载外部代码"
+         （script-src 无外域）、object/base/form 劫持；img/fetch 放行 https 与本地协议，
+         保证模型输出的外链图片、剪贴板复制远程图、PDF 预览（harness-image iframe）不受影响。
+         frame-src 放开（*）：Chromium 内置 PDF 查看器会内部导航到 chrome-extension://，
+         白名单挡不住注入脚本什么（渲染内嵌网页本来就靠 webview，不经 CSP）；
+         script-src 保留 'unsafe-inline'：GenerativeWidget 的 srcdoc 可视化卡片要在 iframe 里
+         跑内联脚本（srcdoc 继承父文档 CSP，不放开就全挂）。 -->
+    <meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src * data: blob: file: harness-image:; media-src * data: blob:; font-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; frame-src *; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="/icon.png" />
     <meta name="theme-color" content="#171916" />

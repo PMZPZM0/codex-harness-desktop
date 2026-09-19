@@ -3785,6 +3785,15 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
       threadCwd.set(String(r.thread.id), String(r.thread.cwd ?? r.cwd ?? p?.cwd ?? ""));
     } else if (method === "thread/settings/update" && p?.threadId && p?.cwd) {
       threadCwd.set(String(p.threadId), String(p.cwd));
+    } else if (method === "thread/list" && Array.isArray(r?.data)) {
+      // ⛔ 隐私加固（09-19）配套：侧栏列表里的每个会话 cwd 也要记账——可信根集合
+      // （fs:read/fs:write/shell:reveal/harness-image 共用）才能覆盖"本轮还没 resume 过
+      // 的会话"的文件预览，不至于一点开旧会话的历史文件就被新校验误伤。
+      for (const t of r.data) {
+        const tid = String(t?.id ?? t?.thread?.id ?? "");
+        const tcwd = String(t?.cwd ?? t?.thread?.cwd ?? "");
+        if (tid && tcwd) threadCwd.set(tid, tcwd);
+      }
     }
   } catch { /* cwd 映射失败不影响请求本身 */ }
   if (method === "thread/resume") {
@@ -5019,8 +5028,11 @@ ipcMain.handle("updates:download", async (event, input: { downloadUrl?: string; 
   }
 });
 ipcMain.handle("updates:reveal", async (_event, filePath: string) => {
-  if (!filePath) return { ok: false };
-  shell.showItemInFolder(filePath);
+  // ⛔ 隐私加固（09-19 审计中危）：只允许定位「刚下载并通过 sha256 校验的那个安装包」，
+  // 与 updates:install 同一口径——渲染层传任意其它路径一律拒绝。
+  if (!lastVerifiedUpdatePath) return { ok: false, error: "no_verified_update" };
+  if (path.resolve(String(filePath ?? "")) !== path.resolve(lastVerifiedUpdatePath)) return { ok: false, error: "path_not_verified" };
+  shell.showItemInFolder(lastVerifiedUpdatePath);
   return { ok: true };
 });
 // 下载完成后运行安装包：交给系统默认程序打开（Windows 下即启动安装向导）
@@ -5692,7 +5704,16 @@ ipcMain.handle("browser:cloak-status", () => cloakStatus);
 
 ipcMain.handle("terminal:input", (_event, id: string, data: string) => terminalFor(id).input(data));
 ipcMain.handle("terminal:resize", (_event, id: string, cols: number, rows: number) => terminalFor(id).resize(cols, rows));
-ipcMain.handle("terminal:restart", (_event, id: string, cwd?: string) => terminalFor(id).restart(cwd));
+ipcMain.handle("terminal:restart", (_event, id: string, cwd?: string) => {
+  // ⛔ 隐私加固（09-19 审计中危）：cwd 由渲染层直传，先验证是真实存在的目录（防怪值/注入面收敛）。
+  // 注：终端本身就是用户可交互 shell（可 cd 到任何目录），故这里做存在性校验而非白名单——
+  // 白名单挡不住"shell 里 cd 出去"，只会误伤"在任意合法目录开会话"的用法。
+  if (cwd) {
+    const st = fileStat(cwd);
+    if (!st || !st.isDirectory()) throw new Error(`终端目录不存在或不可用：${cwd}`);
+  }
+  return terminalFor(id).restart(cwd);
+});
 ipcMain.handle("terminal:ready", () => true);
 ipcMain.handle("git:diff", (_event, input: { cwd: string; scope: string }) => new Promise<{ code: number | null; output: string }>((resolve, reject) => {
   const args = input.scope === "staged" ? ["diff", "--cached"] : input.scope === "head" ? ["diff", "HEAD"] : ["diff"];
@@ -5705,9 +5726,10 @@ ipcMain.handle("git:diff", (_event, input: { cwd: string; scope: string }) => ne
 }));
 ipcMain.handle("fs:write", async (_event, input: { path: string; content: string; root: string }) => {
   const resolved = path.resolve(input.path);
-  const root = path.resolve(input.root || resolved);
-  const relative = path.relative(root, resolved);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("仅允许保存工作区内的文件");
+  // ⛔ 隐私加固（09-19 审计高危）：原校验的 root 由渲染层传入——传 root:"C:\\" 即绕过校验，
+  // 等于"任意路径写文件"。root 参数不再参与判定，一律收敛到主进程自己的可信根集合
+  // （各会话工作目录 + userData + 用户亲自用系统对话框选过的路径，同 harness-image 协议口径）。
+  if (!isInsideTrustedRoots(resolved)) throw new Error("仅允许保存会话工作区与应用数据目录内的文件");
   await fs.writeFile(resolved, input.content, "utf8");
   return { ok: true };
 });
@@ -5715,6 +5737,10 @@ ipcMain.handle("fs:write", async (_event, input: { path: string; content: string
 // 引擎的 fs/readFile 是给 AI 用的工具，非任务上下文会失败或返回结构不一致。
 ipcMain.handle("fs:read", async (_event, input: { path: string }) => {
   const target = path.resolve(input.path);
+  // ⛔ 隐私加固（09-19 审计高危）：预览通道原来是"任意路径读"——渲染层被注入（XSS）即可
+  // 读全盘文件（含系统敏感目录）。收敛到可信根：会话工作目录、userData、用户选过的路径。
+  // 口径与 harness-image 协议（09-13 审计 S5）完全一致，合法预览不受影响。
+  if (!isInsideTrustedRoots(target)) throw new Error("仅允许预览会话工作区与应用数据目录内的文件");
   const stat = fileStat(target);
   if (!stat || !stat.isFile()) throw new Error(`文件不存在或不可读：${input.path}`);
   const size = stat.size;
@@ -7870,6 +7896,14 @@ const isInsideTrustedRoots = (target: string) => {
     return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
   });
 };
+/** 同上，但允许目标**就是**可信根本身（reveal 工作区 / userData 目录这类合法用法）。 */
+const isInsideOrEqualTrustedRoots = (target: string) => {
+  const resolved = path.resolve(target);
+  return trustedRoots().some((root) => {
+    const relative = path.relative(root, resolved);
+    return !relative.startsWith("..") && !path.isAbsolute(relative);
+  });
+};
 ipcMain.handle("external:open", async (_event, value: string) => {
   const url = new URL(value);
   if (url.protocol !== "https:" && url.protocol !== "http:" && !filePreviewAllowed(url)) throw new Error("Unsupported URL");
@@ -7899,6 +7933,9 @@ ipcMain.handle("browser:popout", async (_event, value: string) => {
 });
 ipcMain.handle("shell:reveal", async (_event, target: string) => {
   if (!target) return;
+  // ⛔ 隐私加固（09-19 审计中危）：目标必须落在可信根内（含根本身——reveal 工作区 /
+  // userData 目录是合法用法）。渲染层传来的路径不可信，不校验就等于能系统级打开任意目录。
+  if (!isInsideOrEqualTrustedRoots(target)) throw new Error("仅允许打开会话工作区与应用数据目录");
   // 目录用 openPath 在文件管理器打开；文件用 showItemInFolder 定位
   try {
     const st = await fs.stat(target);
