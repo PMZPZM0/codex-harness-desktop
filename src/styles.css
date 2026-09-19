@@ -4716,6 +4716,51 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
 /* ── 通知 toast（富样式版）：顶部居中弹窗，4 种 tone 各有专属图标/配色/入场动画 ──
    success 绿色弹跳 + 对勾 / error 红色抖动 + 叉 / warning 橙色落下摆动 + 警告三角 / info 蓝色下滑 + i。
    注意：旧版 :root[data-theme=dark] .notice 会把所有 toast 强制染成红棕色（视觉 bug 元凶），已删除。 */
+/* 通知堆叠容器（09-20）：多条通知并存，各自独立倒计时；沿用原单条的顶部居中位置。
+   容器 pointer-events:none + 子项 auto，保证不挡住下方点击。 */
+.notice-stack {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: max-content;
+  max-width: min(480px, calc(100vw - 36px));
+  pointer-events: none;
+}
+.notice-stack .notice {
+  position: static;
+  top: auto;
+  left: auto;
+  max-width: 100%;
+  pointer-events: auto;
+  /* ⛔ 必须换掉入场动画：旧 keyframes（notice-in 等）的最终帧是 translate(-50%)
+     （旧单条设计配合自身 left:50% 居中），且 animation-fill-mode:both 会**永久保留**最终帧，
+     把子项整体左移半个身位 —— 这正是「弹窗靠左不居中」的根因。这里用纯下滑淡入替代。 */
+  animation: notice-stack-in 0.22s ease-out both;
+}
+@keyframes notice-stack-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: none; }
+}
+/* 「跳到该会话」入口：与关闭按钮同款 hover 才现身，避免常驻拥挤 */
+.notice-stack .notice-jump {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.notice-stack .notice-jump:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
 .notice {
   z-index: 10000;
   border: 1px solid var(--line);
