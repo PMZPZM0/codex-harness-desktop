@@ -5522,6 +5522,24 @@ w.postMessage({id:1,op:"list",root});
   (/server\.setEngineSpawnHook\(\(\) => \{[\s\S]{0,400}engineActiveTurnIds\.clear\(\)/.test(mainSrc55) ? ok : fail)(
     "【55】主进程在引擎重建时清记账（否则闸门/安全网永久卡住：改配置永不生效、消息发不出去）"
   );
+
+  // ⑧ 会话「项目地址」改动必须真落到侧栏（09-19 用户实测：「在已创建会话上改了地址，只是对话框上面
+  //    显示改了，左侧栏没有变化，新增的项目地址也不出现 —— 这个切换项目地址功能这样看就是假的」）
+  const appSrc56 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  (/setThreads\(\(current\) => current\.map\(\(entry\) => entry\.id === target\.id \? \{ \.\.\.entry, cwd: value \}/.test(appSrc56)
+    ? ok : fail)("【56】改项目地址会同步列表条目（侧栏项目分组是按 entry.cwd 派的，不同步=侧栏不变）");
+  (/thread-cwd-override-v1/.test(appSrc56) && /rememberThreadCwd\(/.test(appSrc56) ? ok : fail)(
+    "【56】改过的地址落本地覆盖（引擎 thread/list 回包的 cwd 是创建时那个，不覆盖下一次刷新就顶回去）"
+  );
+  ((appSrc56.match(/withCwdOverride\(entry\)/g) || []).length >= 2 ? ok : fail)(
+    "【56】每条会话列表刷新路径都贴本地覆盖（漏一条就等于改了个寂寞）"
+  );
+  (/projectAutoExpandRef/.test(appSrc56) ? ok : fail)(
+    "【56】启动首次拿到项目分组时自动展开当前会话所在项目（用户实测「要手动展开」）"
+  );
+  (/setWorkspace\(effectiveCwd\(id, result\.cwd\)\)/.test(appSrc56) ? ok : fail)(
+    "【56】打开会话时顶栏显示的是覆盖后的地址（与侧栏保持一致）"
+  );
 }
 
 console.log("");
