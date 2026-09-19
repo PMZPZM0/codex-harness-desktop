@@ -27,6 +27,8 @@ import { codeFontSize, useCodeSettings } from "./lib/code-settings";
 import { DEFAULT_EFFORT, pickDefaultEffort, normalizeEffort, ALL_EFFORTS, declaredModelEfforts } from "./lib/effort";
 import { matchModelSpec, loadExternalSpecs, formatTokenCount } from "./lib/model-specs";
 import { resolveModelForOpen, shouldSyncOpenThread } from "./lib/model-scope.mjs";
+// 并发闸门判据（纯函数模块：边界可被离线预检确定性覆盖）
+import { concurrencyExceeded, DEFAULT_MAX_CONCURRENCY, normalizeMaxConcurrency } from "./lib/concurrency.mjs";
 import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "./lib/provider-continuity.mjs";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "./lib/session-scope.mjs";
 import { advanceMood, composeMoodInstructions, emptyMood, moodBlock, moodSignature, moodTone, normalizeMood, userSignalOf } from "./lib/agent-mood.mjs";
@@ -8447,6 +8449,17 @@ export default function App() {
       return;
     }
     setRetryEntry(threadId, null);
+    // 并发闸门（09-19）：该会话此刻不在跑 → 重试会成为**新增一路并发**。
+    // 超限时**不放弃**（放弃等于把重试链打断、用户得手动重发），而是 10 秒后再看槽位；
+    // 这轮只做检查、不打上游，成本可忽略。
+    if (atConcurrencyLimit(threadId)) {
+      const wait = 10_000;
+      setRetryEntry(threadId, { attempt, retryAt: Date.now() + wait });
+      clearRateLimitTimer(threadId);
+      rateLimitTimersRef.current.set(threadId, window.setTimeout(() => void executeRateLimitRetry(threadId), wait));
+      showToast("等待并发槽位", `该供应商已跑满 ${maxConcurrencyRef.current} 个任务，槽位空出后自动继续重试`);
+      return;
+    }
     // 只有**当前正在看的会话**才动全局 sending/activeTurnId（后台会话的重试不能改别人的界面状态）
     const isFocused = () => threadRef.current?.id === threadId;
     if (isFocused()) {
@@ -10771,7 +10784,7 @@ export default function App() {
     if (!target) return;
     providerAutoOpenRef.current = true;
     setEditingProvider(target.provider);
-    setCustomDraft({ provider: target.provider, name: target.name, model: target.model, baseUrl: target.baseUrl, contextWindow: String(target.contextWindow ?? 128000), wireApi: target.wireApi ?? "responses", apiKey: "", models: target.models ?? (target.model ? [{ id: target.model }] : []), enabled: target.enabled ?? true });
+    setCustomDraft({ provider: target.provider, name: target.name, model: target.model, baseUrl: target.baseUrl, contextWindow: String(target.contextWindow ?? 128000), wireApi: target.wireApi ?? "responses", apiKey: "", models: target.models ?? (target.model ? [{ id: target.model }] : []), enabled: target.enabled ?? true, maxConcurrency: String(normalizeMaxConcurrency(target.maxConcurrency)) });
   }, [settingsOpen, settingsPage, customModel, providersList, editingProvider]);
   // 供应商切换「待重启生效」：切换只保存配置不重启引擎（不打断正在运行的会话），
   // 用户点 banner 的「重启生效」或下次启动时才让新供应商生效。生效前消息继续用原供应商。
@@ -11053,6 +11066,43 @@ export default function App() {
   // 供应商下已配置的模型清单：已保存的 models + 输入框里尚未保存的那个
   // probe 拉到的可用模型只属于探测时的那家供应商，换供应商后不再用于补全
   const modelSuggestions = modelSourceProvider === customDraft.provider ? (providerModels ?? []) : [];
+
+  // ── 并发闸门（09-19 用户要求：「供应商配置界面加一个并发限制，自定义输入，默认 3 个并发」）──
+  // ⛔ 根因：限流是**同一个 API Key 的共享配额**。实测（引擎 TRACE 日志）6 分钟内 4 个会话
+  //   同时打上游 **333 次**请求 ⇒ 配额瞬间打满 ⇒ 429 爆发。
+  //   这里把"同时在跑的会话数"限制在该供应商配置的上限内：超限时**不放行**并明确告知原因
+  //   （不静默排队 —— 静默排队会让用户以为卡死，且 send 路径的挂起容易引入状态机 bug）。
+  // ⛔ 与「会话完全独立」不冲突：会话的**状态**依然各自独立（互不读写）；
+  //   这里限制的是**共享资源（Key 配额）的调度**，属于物理约束，不是状态耦合。
+  const maxConcurrencyRef = useRef(DEFAULT_MAX_CONCURRENCY);
+  maxConcurrencyRef.current = normalizeMaxConcurrency(customModel?.maxConcurrency);
+  /** 该供应商允许的最大并发（当前生效值，供界面显示） */
+  const maxConcurrency = maxConcurrencyRef.current;
+
+  /** 除指定会话外，当前有几个会话在跑 */
+  function runningCountExcept(threadId?: string): number {
+    let n = 0;
+    for (const id of runningThreadIdsRef.current) if (id !== threadId) n++;
+    return n;
+  }
+  /** 是否已达并发上限（判据在 src/lib/concurrency.mjs，纯函数、可被离线预检确定性覆盖） */
+  function atConcurrencyLimit(threadId?: string): boolean {
+    return concurrencyExceeded({
+      runningCount: runningCountExcept(threadId),
+      maxConcurrency: maxConcurrencyRef.current,
+      threadAlreadyRunning: Boolean(threadId) && runningThreadIdsRef.current.has(threadId as string),
+    });
+  }
+  /** 统一的超限提示（send / 编辑重发 / 排队启动 / 限流重试 共用一套说法） */
+  function notifyConcurrencyLimit(threadId?: string): void {
+    const used = runningCountExcept(threadId);
+    showToast(
+      "已达并发上限，未发送",
+      `该供应商最多同时运行 ${maxConcurrencyRef.current} 个任务（当前 ${used} 个在跑）。` +
+      `等其中一个完成再发，或到「设置 → 模型 → 供应商」把「最大并发」调大。`,
+    );
+  }
+
   // —— 模型设置页（图一/图二排版）状态 ——
   const [modelEditor, setModelEditor] = useState<{ mode: "add" | "edit"; originalId: string | null; paramsDirty?: boolean; draft: { id: string; contextWindow: string; maxOutputTokens: string; inputTypes: ("text" | "image" | "video")[]; outputTypes: ("text" | "image" | "video")[] } } | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -15064,6 +15114,8 @@ const commandMatches = useMemo(() => {
   async function editResend(turnId: string, item: ThreadItem) {
     if (!thread) return;
     if (sending || activeTurnId) { setNotice("请先停止当前任务，再编辑重发"); return; }
+    // 并发闸门：编辑重发会在本会话开跑（若本会话没在跑就是新增一路并发）
+    if (!runningThreadIdsRef.current.has(thread.id) && atConcurrencyLimit(thread.id)) { notifyConcurrencyLimit(thread.id); return; }
     if (!customModel || !selectedModel) { setNotice("请先配置并启用自定义模型"); setSettingsOpen(true); return; }
     const text = (item.content ?? []).filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n");
     if (!text.trim()) { setNotice("该消息没有可编辑的文本"); return; }
@@ -17135,6 +17187,13 @@ const commandMatches = useMemo(() => {
     }
     if (!value && images.length === 0 && attachedFiles.length === 0) return;
     if (sendInFlightRef.current) return;
+    // ⛔ 并发闸门（09-19）：这条消息会让**这个会话开始跑**——若该会话当前没在跑，
+    //   就是新增一路并发，必须受供应商上限约束（上限来源见「并发闸门」段）。
+    //   已在跑的会话（追加消息/排队释放）不算新增，直接放行。
+    const gateThreadId = threadRef.current?.id ?? "";
+    if (!gateThreadId || !runningThreadIdsRef.current.has(gateThreadId)) {
+      if (atConcurrencyLimit(gateThreadId)) { notifyConcurrencyLimit(gateThreadId); return; }
+    }
     // 用户手动发消息：只取消**当前会话**等待中的 429 自动重试（手动发送优先，避免交错）。
     // ⛔ 不能全清：别的会话的重试链是独立的，清掉就等于「后台会话直接断」（用户实测的毛病）。
     const focusedForSend = threadRef.current?.id;
@@ -19988,11 +20047,11 @@ const commandMatches = useMemo(() => {
                         onClick={() => {
                           if (isPseudoPptoken) {
                             // 未配置的常驻赞助商卡：进表单预填 PPtoken 端点，填密钥保存即可用；启用态与卡片开关联动
-                            setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
+                            setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff, maxConcurrency: String(DEFAULT_MAX_CONCURRENCY) });
                             setEditingProvider(null);
                             return;
                           }
-                          setEditingProvider(p.provider); setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true });
+                          setEditingProvider(p.provider); setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true, maxConcurrency: String(normalizeMaxConcurrency(p.maxConcurrency)) });
                         }}
                       >
                         <span
@@ -20022,11 +20081,11 @@ const commandMatches = useMemo(() => {
                             // 行点击被拦住 → 用户点了开关（开启某个供应商）右侧还停在上一个的界面
                             // （用户 09-14 实测截图）。逻辑与行点击保持一致。
                             if (isPseudoPptoken) {
-                              setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
+                              setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff, maxConcurrency: String(DEFAULT_MAX_CONCURRENCY) });
                               setEditingProvider(null);
                             } else {
                               setEditingProvider(p.provider);
-                              setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true });
+                              setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true, maxConcurrency: String(normalizeMaxConcurrency(p.maxConcurrency)) });
                             }
                           }}
                         >
@@ -20041,7 +20100,7 @@ const commandMatches = useMemo(() => {
                 {/* 不打开编辑器也能测当前生效供应商：切换/保存后最常用的自检动作。
                     失败会弹带排查清单的中文提示，认证类错误保留供应商原文。 */}
                 {customModel && <button className="add-provider-btn" title={`测试当前生效供应商：${customModel.name} · ${customModel.model}`} disabled={!!probingProvider} onClick={() => void probeActiveProvider()}>{probingProvider === "test" ? <Spinner /> : <RefreshCw size={13} />}测试当前供应商</button>}
-                <button className="add-provider-btn" onClick={() => { providerAutoOpenRef.current = true; setCustomDraft({ provider: "custom" + (Date.now() % 1000), name: "", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true }); setEditingProvider(null); }}><Plus size={13} />添加供应商</button>
+                <button className="add-provider-btn" onClick={() => { providerAutoOpenRef.current = true; setCustomDraft({ provider: "custom" + (Date.now() % 1000), name: "", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true, maxConcurrency: String(DEFAULT_MAX_CONCURRENCY) }); setEditingProvider(null); }}><Plus size={13} />添加供应商</button>
               </div>
               <div className="provider-form">
                 <div className="provider-detail-head">
@@ -20084,6 +20143,26 @@ const commandMatches = useMemo(() => {
                     <button type="button" className="key-toggle" title={showApiKey ? "隐藏" : "显示"} onClick={() => setShowApiKey((v) => !v)}>{showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}</button>
                   </span>
                 </label>
+                {/* 最大并发（09-19 用户要求：供应商配置界面可自定义，默认 3）。
+                    限流是**同一个 Key 的共享配额**：同时跑的会话越多，越容易撞 429。
+                    这里给用户一个直接可调的旋钮 —— 调小 = 更省配额、更稳；调大 = 更能并行。 */}
+                <label className="provider-field">
+                  <span>最大并发 <i className="provider-field-hint">同时运行的会话数</i></span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    step={1}
+                    value={customDraft.maxConcurrency ?? String(DEFAULT_MAX_CONCURRENCY)}
+                    onChange={(event) => setCustomDraft({ ...customDraft, maxConcurrency: event.target.value })}
+                    placeholder={String(DEFAULT_MAX_CONCURRENCY)}
+                  />
+                </label>
+                {(Number(customDraft.maxConcurrency) || DEFAULT_MAX_CONCURRENCY) > 3 && (
+                  <div className="provider-field-hints">
+                    <p>⚠️ 并发越高，越容易触发上游 429 限流（同一个 Key 的配额是共享的）。出现频繁限流时，把它调小到 2~3 通常能明显缓解。</p>
+                  </div>
+                )}
                 <div className="model-list-block">
                   <div className="model-list-head">
                     <span>模型列表</span>
