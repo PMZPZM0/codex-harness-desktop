@@ -12059,9 +12059,17 @@ const commandMatches = useMemo(() => {
   // 多会话性能（09-12 P1）：把「当前正在查看哪个会话」上报主进程，主进程据此只把
   // 该会话的高频事件（各种 delta / item 全文 / outputDelta）转发给渲染层——
   // 后台会话的流式事件不再白白序列化跨进程、到了再被丢掉（N 会话 = N 倍无用开销）。
-  // 只订阅 thread?.id：覆盖 openThread / 新建会话 / 删除后回退 / 启动恢复全部路径。
+  // ⛔ 09-20 修「两个会话窗口一起跑，正在看的会话只显示正在回复、过程不出内容」：
+  //   主进程只信 **30s 内**的上报（ACTIVE_THREAD_FRESH_MS），而这里原来**只在会话 id 变化时**
+  //   上报一次 —— 停留超过 30s 就被判成「不知道这个窗口在看什么」，该会话的 item/delta 被裁掉
+  //   （引擎侧事件照发，rollout 有据；渲染层收不到 ⇒ 只剩余运行指示）。
+  //   现在补两条：15s 心跳 + 窗口重新获得焦点时立刻补报（切窗口不改会话，也需要刷新新鲜度）。
   useEffect(() => {
-    void window.codex.setActiveThread?.(thread?.id ?? null).catch(() => undefined);
+    const report = () => { void window.codex.setActiveThread?.(threadRef.current?.id ?? null).catch(() => undefined); };
+    report();
+    const timer = window.setInterval(report, 15_000);
+    window.addEventListener("focus", report);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", report); };
   }, [thread?.id]);
   // 流式出字时 scrollHeight 在涨，但既不触发 resize 也不触发 scroll，
   // 必须主动刷一次，否则「回到底部」按钮的出现时机是错的。

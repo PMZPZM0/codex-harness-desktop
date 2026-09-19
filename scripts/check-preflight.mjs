@@ -2271,6 +2271,25 @@ console.log(C.bold("\n【输入框草稿 + 通知会话名前缀】切会话/关
     ? ok("会话级通知调用点已带 threadId（限流重试等后台会话通知能看出归属）")
     : fail("会话级通知调用点丢了 threadId —— 后台会话的通知又不带会话名了");
 }
+// ---------- 按会话事件过滤的三条不变量（09-20 用户「两个窗口一起跑，前台只转圈不出内容」） ----------
+console.log(C.bold("\n【多窗口事件过滤】过期上报必须放行 / 生命周期事件必须跨会话送达 / 渲染层要心跳"));
+{
+  const mainSrc = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  const appH = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  // ① 只要有一个窗口的上报过期，整体不可信 → 放行（否则过期窗口正在看的会话被裁掉事件）
+  (/let anyStale = false;/.test(mainSrc) && /if \(!anyFresh \|\| anyStale\) return null;/.test(mainSrc))
+    ? ok("watchedThreadIds 过期上报即整体放行（不会把「另一个窗口正在看的会话」裁掉）")
+    : fail("过期上报又被当成「没人看」了 —— 两个窗口一起跑时，前台会话的事件会被裁掉（只转圈不出内容）");
+  // ② aborted/failed/interrupted/error 必须跨会话送达（后台会话的熄灭与 429 重试依赖它们）
+  const cross = mainSrc.slice(mainSrc.indexOf("const RENDERER_CROSS_SESSION_METHODS"), mainSrc.indexOf("const RENDERER_CROSS_SESSION_METHODS") + 700);
+  (["turn/aborted", "turn/failed", "turn/interrupted", "error"].every((m) => cross.includes(`"${m}"`)))
+    ? ok("生命周期事件跨会话白名单齐全（aborted/failed/interrupted/error）")
+    : fail("生命周期事件又不在白名单里 —— 后台会话的停止/绿点/429 重试会永久卡住");
+  // ③ 渲染层心跳：只在上报 id 变化时发一次 ⇒ 停留超 30s 就被判过期
+  (/setInterval\(report, 15_000\)/.test(appH) && /addEventListener\("focus", report\)/.test(appH))
+    ? ok("渲染层活跃会话上报带 15s 心跳 + 窗口聚焦补报（新鲜度不会自己过期）")
+    : fail("活跃会话上报没有心跳 —— 停留超过 30s 主进程就以为「不知道它在看什么」");
+}
 // ---------- 【15】供应商列表交互（点开关要切详情，不许只拦冒泡） ----------
 
 console.log(C.bold("\n【15】供应商列表：点开关（启用/停用）右侧详情必须跟随"));
