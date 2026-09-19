@@ -1,16 +1,23 @@
 /**
  * 429 限流自动重试（应用层兜底）。
  *
- * 引擎侧已有 request_max_retries/stream_max_retries（见 electron/provider-retry.ts），
- * 但引擎重试耗尽后 turn 仍会以限流错误结束——这里在渲染层把该输入自动重发，
- * 最多 RATE_LIMIT_MAX_ATTEMPTS 次，退避时间放长（5s → 120s，累计约 8.5 分钟），
- * 让分钟级限流窗口自然过去。对所有模型生效（不做任何 provider 区分）。
+ * ⛔⛔ 09-19 用户实测「429 触发太频繁，WorkBuddy 用同一供应商完全没问题」后的重新校准：
+ *   引擎侧重试已退回**默认**（4 次 HTTP / 5 次流，见 electron/provider-retry.ts），
+ *   应用层这里也必须**保守**——两层各自"多试几次"叠加起来是乘法：
+ *     引擎 10 次 × 应用 10 次 = 最坏 100 倍请求放大 ⇒ 自己把自己打成限流。
+ *   实测证据：单条消息在引擎侧产生 32 次 429（间隔 2~3 秒，未等 Retry-After）。
+ *
+ *   现在的策略（与 WorkBuddy 的做法对齐）：
+ *     · 次数少：6 次（原来是 10）
+ *     · 退避长：15s 起、顶格 5 分钟（原来 5s 起、顶格 2 分钟）
+ *       —— 限流是**分钟级窗口**问题，靠"等"而不是靠"多试"；
+ *       总覆盖约 12 分钟，比原来的 8.5 分钟更久但请求数少一半以上。
  */
 
-export const RATE_LIMIT_MAX_ATTEMPTS = 10;
+export const RATE_LIMIT_MAX_ATTEMPTS = 6;
 
-/** 退避序列（毫秒）：逐次放长，最后三次顶格 120 秒。索引 = attempt - 1 */
-const BACKOFF_MS = [5000, 8000, 12000, 20000, 30000, 45000, 60000, 90000, 120000, 120000];
+/** 退避序列（毫秒）：逐次放长，后段顶格 5 分钟。索引 = attempt - 1 */
+const BACKOFF_MS = [15000, 30000, 60000, 120000, 240000, 300000];
 
 /** 第 attempt 次（1 起）重试前等待的毫秒数；越界取最后一档 */
 export function rateLimitBackoffMs(attempt: number): number {

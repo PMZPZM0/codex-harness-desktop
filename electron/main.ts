@@ -1781,14 +1781,10 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
       'env_key = "CODEX_HARNESS_API_KEY"',
       `wire_api = "${wireApi}"`,
       "requires_openai_auth = false",
-      // 429 限流防御（已用真实 app-server 探针实证，见 scripts/probe-provider-retries.cjs）：
-      // request_max_retries=10 HTTP 请求失败（含 429）最多重试 10 次；
-      // stream_max_retries=10 SSE 流断开重连最多 10 次；
-      // stream_idle_timeout_ms=600000 流空闲判定超时从默认 5 分钟放长到 10 分钟。
-      // 写在每个 provider 段内 → 不管什么模型都必须生效。
-      "request_max_retries = 10",
-      "stream_max_retries = 10",
-      "stream_idle_timeout_ms = 600000",
+      // ⛔⛔ 09-19：这里**不再写 request_max_retries / stream_max_retries /
+      //   stream_idle_timeout_ms**（曾写 10/10/600000，实测是 429 放大器：
+      //   引擎默认 4/5/5min，调到 10 会让它在限流窗口内密集重打上游 ⇒ 越重试越限流。
+      //   详见 electron/provider-retry.ts 的实测证据）。用引擎默认 = 与 WorkBuddy 行为对齐。
       `model_auto_compact_token_limit = ${Math.round(context * (appSettings.autoCompactRatio ?? 0.8))}`,
       'model_auto_compact_token_limit_scope = "model"',
       // 单次输出上限：用户在该供应商模型上填的「最大输出 Token」真实生效（探针实证：
@@ -1807,9 +1803,7 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
     'env_key = "CODEX_HARNESS_API_KEY"',
     `wire_api = "${activeWireApi}"`,
     "requires_openai_auth = false",
-    "request_max_retries = 10",
-    "stream_max_retries = 10",
-    "stream_idle_timeout_ms = 600000",
+    // 重试键同样不写（见 providerToml 处的实测说明）
     `model_auto_compact_token_limit = ${Math.round(activeContext * (appSettings.autoCompactRatio ?? 0.8))}`,
     'model_auto_compact_token_limit_scope = "model"',
   ]);
@@ -1828,9 +1822,7 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
     'env_key = "CODEX_HARNESS_API_KEY"',
     `wire_api = "${activeWireApi}"`,
     "requires_openai_auth = false",
-    "request_max_retries = 10",
-    "stream_max_retries = 10",
-    "stream_idle_timeout_ms = 600000",
+    // 重试键同样不写（引擎默认 4/5/5min；写 10 会放大 429 —— 见 providerToml 处实测说明）
     `model_auto_compact_token_limit = ${Math.round(activeContext * (appSettings.autoCompactRatio ?? 0.8))}`,
     'model_auto_compact_token_limit_scope = "model"',
   ];

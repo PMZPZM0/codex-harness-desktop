@@ -6078,6 +6078,43 @@ w.postMessage({id:1,op:"list",root});
   }
 }
 
+{
+  // ── 【68】不得把引擎重试参数调得比默认更激进（09-19 真实事故：429 越重试越频繁）──
+  //   引擎默认 request_max_retries=4 / stream_max_retries=5 / stream_idle_timeout_ms=300000
+  //   （codex-rs model-provider-info：DEFAULT_REQUEST_MAX_RETRIES / DEFAULT_STREAM_MAX_RETRIES）。
+  //   曾写 10/10/600000 ⇒ 引擎在限流窗口内以 2~3 秒间隔密集重打上游 ⇒
+  //   实测单个 turn 内 32 次 429、单个 submission 反复 exceeded retry limit，
+  //   叠加应用层 10 次重试 = 最坏 100 倍请求放大（用户："WorkBuddy 用同一供应商完全没问题"）。
+  //   ⇒ 现在一个键都不写（用引擎默认）。谁再加回来，构建阶段就红。
+  const retrySrc68 = readFileSync(join(ROOT, "electron", "provider-retry.ts"), "utf8");
+  // ⛔ 判据必须**剥掉注释**：该文件用注释详细记录了"曾写 10 是错的"这段历史，
+  //   直接全文正则会把注释里的历史数值当成现役配置（实测踩过一次假红）。
+  const retryCode68 = retrySrc68.split(/\r?\n/).filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line)).join("\n");
+  (/export const PROVIDER_RETRY_TUNING = \{\} as const;/.test(retryCode68) ? ok : fail)(
+    "【68】PROVIDER_RETRY_TUNING 必须为空（用引擎默认，不放大重试）"
+  );
+  (!/request_max_retries\s*[:=]\s*\d/.test(retryCode68) ? ok : fail)(
+    "【68】provider-retry.ts 不得写死 request_max_retries 数值（代码区，不含注释）"
+  );
+  const mainSrc68 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  (!/request_max_retries = \d/.test(mainSrc68) ? ok : fail)(
+    "【68】config.toml 生成处不得写 request_max_retries 字面量"
+  );
+  (!/stream_max_retries = \d/.test(mainSrc68) ? ok : fail)(
+    "【68】config.toml 生成处不得写 stream_max_retries 字面量"
+  );
+  const rlSrc68 = readFileSync(join(ROOT, "src", "lib", "rate-limit-retry.ts"), "utf8");
+  const maxMatch = rlSrc68.match(/RATE_LIMIT_MAX_ATTEMPTS = (\d+)/);
+  (maxMatch && Number(maxMatch[1]) <= 8 ? ok : fail)(
+    `【68】应用层重试次数保守（当前 ${maxMatch ? maxMatch[1] : "?"} 次，上限 8）`
+  );
+  const backoff = rlSrc68.match(/const BACKOFF_MS = \[([^\]]+)\]/);
+  const first = backoff ? Number(String(backoff[1]).split(",")[0].trim()) : 0;
+  (first >= 10000 ? ok : fail)(
+    `【68】首次退避足够长（当前 ${first}ms，下限 10000ms —— 限流是分钟级窗口，靠等不靠多试）`
+  );
+}
+
 
 
 
