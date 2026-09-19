@@ -5907,6 +5907,26 @@ w.postMessage({id:1,op:"list",root});
   );
 }
 
+{
+  // ── 【64】首次安装不得默认启用任何供应商（09-19 用户：「没配置供应商的时候默认不要启用任何
+  //   供应商，要不然会跟新配置的供应商同时启用」）──
+  //   两处根因：① 保存新供应商时 enabled 无条件默认 true（没填密钥也启用）；
+  //            ② 推荐卡（PPtoken 赞助位）默认启用（没记录 = 开）。
+  const mainSrc64 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  const appSrc64 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  // ① 无密钥的第三方供应商不得报成启用（openai-official 例外：它靠登录凭据）
+  (/const keylessThirdParty = !hasKey && value\.provider !== "openai-official";[\s\S]{0,120}?enabled: keylessThirdParty \? false : value\.enabled !== false/.test(mainSrc64) ? ok : fail)(
+    "【64】未配置密钥的供应商不得视为启用（官方订阅除外）"
+  );
+  (/const keylessThirdPartySave = !encryptedKey && provider !== "openai-official";[\s\S]{0,220}?enabled: keylessThirdPartySave \? false : \(input\.enabled \?\? existing\?\.enabled \?\? true\)/.test(mainSrc64) ? ok : fail)(
+    "【64】保存新供应商：没填密钥就存成禁用（不再无条件默认启用）"
+  );
+  // ② 推荐卡默认关（只有显式点开过才启用）
+  (/localStorage\.getItem\("pptoken-card-off"\) !== "0"/.test(appSrc64) ? ok : fail)(
+    "【64】推荐卡默认不启用（首次安装没有任何供应商处于启用态）"
+  );
+}
+
 
 console.log("");
 console.log(C.gray(`已执行断言数：${checks}`));
