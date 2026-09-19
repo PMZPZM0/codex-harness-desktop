@@ -13,6 +13,7 @@
     "check": "npm run build && node scripts/check-preflight.mjs",
     "accept": "node scripts/accept.mjs",
     "accept:list": "node scripts/accept.mjs --list",
+    "preview:fresh": "node scripts/preview-fresh.mjs",
     "e2e": "node scripts/accept.mjs",
     "e2e:list": "node scripts/accept.mjs --list",
     "verify": "npm run check && npm run accept",
