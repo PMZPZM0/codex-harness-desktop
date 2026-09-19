@@ -1977,16 +1977,17 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   (/fileStat\(cwd\)/.test(termRestart) && /isDirectory\(\)/.test(termRestart)
     ? ok("terminal:restart 校验 cwd 是真实存在的目录（终端可交互 cd，故做存在性校验而非白名单）")
     : fail("terminal:restart 又直收渲染层 cwd 且不验证了"));
-  // thread/list 也要记账 cwd（fs 通道可信根才能覆盖未 resume 过的侧栏会话）
-  // ⛔ 09-19 修掉守卫自身的**假红**（原判据把锚点锚错了位置）：
-  //   旧写法在 `threadCwd.set(String(r.thread.id)` 与 `if (method === "thread/resume")` 之间的区间里
-  //   找 `thread/list`+`threadCwd.set` —— 而新的 thread/list 分支挂在 `thread/settings/update` 之后，
-  //   **落在这段区间之外** ⇒ 代码明明写了记账、守卫照样红（把功能正确的代码判成回归，比漏检更误导人）。
-  //   现在改为**锚定 thread/list 分支本身**（在整份 main.ts 上取 900 字符窗口，够容纳注释），
-  //   仍能抓住"把记账删掉"这个真回归。
-  const listBranchAt = mainForSec.indexOf('method === "thread/list"');
+  // thread/list 也要记账 cwd（fs 通道可信根才能覆盖未 resume 过的侧栏会话）。
+  // ⛔ 09-19 两次假红教训（都出在锚点上，记下来防再犯）：
+  //   ① 锚 `threadCwd.set(String(r.thread.id)` 到 `if (method === "thread/resume")` 的区间 +
+  //     {0,200} 窗口 —— 窗口小于分支注释长度，恒红；
+  //   ② 锚整份 main.ts 第一处 `method === "thread/list"`（3700 行列表增强块）+ 900 字符窗口
+  //     —— 记账分支在 ~3748 行，窗口够不到，仍恒红。
+  //   正解：锚**记账分支独有**的文本 `method === "thread/list" && Array.isArray(r?.data)`，
+  //   全仓只有记账分支长这样，窗口随便取都落在正确位置。
+  const listBranchAt = mainForSec.indexOf('method === "thread/list" && Array.isArray(r?.data)');
   const listBranch = listBranchAt >= 0 ? mainForSec.slice(listBranchAt, listBranchAt + 900) : "";
-  (/threadCwd\.set\(/.test(listBranch)
+  (/threadCwd\.set\(tid, tcwd\)/.test(listBranch)
     ? ok("thread/list 响应记账 cwd（可信根集合覆盖侧栏全部会话，旧会话文件预览不被误伤）")
     : fail("thread/list 不再记账 cwd —— 未 resume 过的会话文件预览会被可信根校验误伤"));
   // index.html 必须带 CSP（封外链脚本 / object / base / form 劫持）
@@ -5479,6 +5480,20 @@ w.postMessage({id:1,op:"list",root});
   const disarmCalls = (appSrc53.match(/disarmPinIntent\(/g) || []).length;
   (disarmCalls >= 4 ? ok : fail)(`【53】释放失败时撤回钉顶意图（定义+3 处调用，实测 ${disarmCalls}）`);
   (/dbg\("queue-arm-cancelled"/.test(appSrc53) ? ok : fail)("【53】撤回有打点（下次能看出是「建立后撤回」还是「压根没建立」）");
+
+  // ⑥ contextWindow 单一真相源（09-19 用户实测：custom-model.json 该模型写 1M、custom-models.json
+  //    同一供应商顶层写 128000 —— 两个字段表达同一件事却由两个来源写，每次新建供应商都会留下一对打架的数字）
+  const mainWin = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  const withModelsAt = mainWin.indexOf("function withModels(");
+  const withModelsBody = withModelsAt >= 0 ? mainWin.slice(withModelsAt, withModelsAt + 1600) : "";
+  (/const effectiveWindow = result\.model/.test(withModelsBody) ? ok : fail)(
+    "【54】供应商顶层 contextWindow 在唯一写入点归一为「生效模型自己的值」（否则两处数字打架）"
+  );
+  (/contextWindow: effectiveWindow/.test(withModelsBody) ? ok : fail)("【54】归一结果真的写回顶层（不是只算了个变量）");
+  ((mainWin.match(/contextWindow: effectiveWindow/g) || []).length === 1
+    ? ok : fail)("【54】归一只有一个 owner（写在 withModels 里，不散在各调用点）");
+  // 模型编辑器必须说清「哪个才是生效上限」，否则用户看到一个数字、文件里另一个
+  (/才是\*\*生效上限\*\*/.test(appSrc53) ? ok : fail)("【54】模型编辑器标明「本模型的值才是生效上限」（顶层只是默认值）");
 }
 
 console.log("");
