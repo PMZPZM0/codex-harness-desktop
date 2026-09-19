@@ -5494,6 +5494,34 @@ w.postMessage({id:1,op:"list",root});
     ? ok : fail)("【54】归一只有一个 owner（写在 withModels 里，不散在各调用点）");
   // 模型编辑器必须说清「哪个才是生效上限」，否则用户看到一个数字、文件里另一个
   (/才是\*\*生效上限\*\*/.test(appSrc53) ? ok : fail)("【54】模型编辑器标明「本模型的值才是生效上限」（顶层只是默认值）");
+
+  // ⑦ 会话绝对独立（09-19 用户：「不准再因为切换会话、别的独立弹窗关闭影响正在运行的会话，
+  //    每个会话都是绝对独立运行状态……除了用户停止，不许再断」）
+  //    三条硬约束：① 渲染层**不许**用快照熄灭运行态；② 引擎侧 idle 必须核实后再熄灭；
+  //    ③ 主进程 `turn/start` 有"该会话仍有活动回合就拒绝"的兜底（引擎侧事实，不依赖渲染层状态）。
+  const appSrc55 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const srvSrc55 = readFileSync(join(ROOT, "electron", "codex-server.ts"), "utf8");
+  const mainSrc55 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  (!/else markThreadStopped\(id\);/.test(appSrc55) ? ok : fail)(
+    "【55】渲染层不再用「快照里没有 running 回合」熄灭运行态（否则切会话会把在跑的会话判死）"
+  );
+  (!/else markThreadStopped\(params\.threadId\);/.test(appSrc55) ? ok : fail)(
+    "【55】thread/status/changed 的 idle 不再无条件熄灭运行态"
+  );
+  (/else if \(statusType === "idle"\)[\s\S]{0,400}engineActiveTurns\(\)/.test(appSrc55) ? ok : fail)(
+    "【55】idle 改为与引擎侧记账核实后再熄灭"
+  );
+  (/method0 === "turn\/aborted"/.test(appSrc55) ? ok : fail)(
+    "【55】渲染层处理 turn/aborted|failed|interrupted（否则被中断的回合转圈永远挂着）"
+  );
+  (/if \(method === "turn\/start"\)[\s\S]{0,700}\[\.\.\.engineActiveTurnIds\.values\(\)\]\.includes\(guardThreadId\)/.test(mainSrc55)
+    ? ok : fail)("【55】主进程兜底：该会话仍有活动回合时拒绝 turn/start（成对引擎侧事实，防打断）");
+  (/setEngineSpawnHook\(/.test(srvSrc55) && /this\.onEngineSpawned\?\.\(\)/.test(srvSrc55) ? ok : fail)(
+    "【55】引擎进程重建即回调（主进程据此作废失效回合记账）"
+  );
+  (/server\.setEngineSpawnHook\(\(\) => \{[\s\S]{0,400}engineActiveTurnIds\.clear\(\)/.test(mainSrc55) ? ok : fail)(
+    "【55】主进程在引擎重建时清记账（否则闸门/安全网永久卡住：改配置永不生效、消息发不出去）"
+  );
 }
 
 console.log("");

@@ -12693,7 +12693,25 @@ const commandMatches = useMemo(() => {
           const statusType = (params.status as any)?.type ?? params.status;
           setThreads((current) => current.map((entry) => entry.id === params.threadId ? { ...entry, status: statusType } : entry));
           if (statusType === "active") markThreadRunning(params.threadId);
-          else markThreadStopped(params.threadId);
+          // 线程被卸载 / 引擎侧报错 ⇒ 引擎里不可能还有它的回合，清（这是**结构性**事实）
+          else if (statusType === "notLoaded" || statusType === "systemError") markThreadStopped(params.threadId);
+          // ⛔ `idle` 绝不无条件熄灭（09-19 用户：「运行状态莫名其妙停止」的真根因之一）：
+          //   `thread/status/changed` 是**快照式**信号 —— resume 回包、回合间隙、引擎重连、
+          //   切会话重建状态时都会发一条 idle。旧写法 `else markThreadStopped(...)` 拿它把一个
+          //   由 `turn/started` 点亮的运行态直接抹掉 ⇒ 界面停止键消失、侧栏转圈消失 ⇒ 用户以为
+          //   任务停了；更糟的是**下一条消息会因此走 `turn/start`**，而引擎侧那个回合还在跑，
+          //   turn/start 会把它打断 ⇒ 用户看到的就是「切会话/开关独立窗口，正在跑的任务自己断了」。
+          //   现在改为：只有与**引擎侧真相**核对确认该会话没有活动回合，才熄灭。
+          else if (statusType === "idle") {
+            const verifyId = String(params.threadId ?? "");
+            if (verifyId) void window.codex.engineActiveTurns().then((info) => {
+              if (!(info?.threadIds ?? []).map(String).includes(verifyId)) markThreadStopped(verifyId);
+            }).catch(() => undefined);
+          }
+        } else if (method0 === "turn/aborted" || method0 === "turn/failed" || method0 === "turn/interrupted") {
+          // 回合级**权威**结束信号：被中断 / 失败 / 中止的回合也要熄灭指示器。
+          // （原先只认 turn/completed ⇒ 被中断的回合转圈永远挂着，用户以为还在跑。）
+          markThreadStopped(params.threadId);
         }
         // 渠道机器人等后台会话的 start/stop：走不到下面的当前会话事件流（threadId 过滤会拦掉），
         // 新建的机器人会话永远进不了侧栏 → 防抖刷新一次 thread/list
@@ -15847,7 +15865,12 @@ const commandMatches = useMemo(() => {
       setSending(Boolean(runningTurn));
       setWorkStartedAt(runningTurn ? (runningStartedAtRef.current.get(id) ?? Date.now()) : null);
       if (runningTurn) markThreadRunning(id, runningTurn.id);
-      else markThreadStopped(id);
+      // ⛔ 绝不用「快照里没看到 running 回合」来**熄灭**运行状态（09-19 用户：「切会话/开关独立窗口，
+      //   正在跑的任务莫名停止」，这是真根因之一）：
+      //   引擎 resume 回包与本地缓存快照经常**不带** inProgress 回合（或带的是旧快照），据此清账会
+      //   把真正在跑的会话判成已停 ⇒ 停止键消失、侧栏转圈消失，而且**下一条消息会走 `turn/start`**
+      //   ⇒ 引擎侧那个回合被当场打断。撤销运行态只能靠**回合级权威事件**
+      //   （turn/completed|aborted|failed|interrupted）或引擎侧记账核实（见 status/changed idle 分支）。
       // 工作区与线程一致（团队卡片可指定独立项目地址）
       if (freshThread.cwd) setWorkspace(freshThread.cwd);
       // 内容渲染完成后瞬时定位到最新消息（两帧重试；带 settled 回调确保遮罩等渲染稳定）
@@ -16038,8 +16061,10 @@ const commandMatches = useMemo(() => {
       setSending(Boolean(resumedRunningTurn));
       setWorkStartedAt(resumedRunningTurn ? (runningStartedAtRef.current.get(id) ?? Date.now()) : null);
       // 切回一个「引擎仍在后台运行」的会话时，点亮它的侧边栏转圈（跟当前选中解耦）。
+      // ⛔ 这里同样**不许**用快照熄灭（同上面 freshThread 分支的注释：快照不可靠，熄灭只能由
+      //   回合级权威事件或引擎侧核实触发）。`resumedRunningTurn` 为假只说明"这份快照没告诉我们它在跑"，
+      //   不等于"它没在跑"——把两者混为一谈正是"切会话把运行中的任务判死"的那条路径。
       if (resumedRunningTurn) markThreadRunning(id, resumedRunningTurn.id);
-      else markThreadStopped(id);
     } catch (error: any) {
       if (seq === switchSeqRef.current) {
         // 空会话（专家/团队 defer 预建、尚无 rollout）在引擎侧没有可 resume 的记录：
@@ -16056,7 +16081,9 @@ const commandMatches = useMemo(() => {
           setSending(false);
           setActiveTurnId(null);
           setWorkStartedAt(null);
-          markThreadStopped(id);
+          // ⛔ 不 markThreadStopped：resume 报 "no rollout found" 最常见的两种情形之一正是
+          //   「会话刚建好、首回合正在跑、rollout 还没落盘」——此时"清"就是把自己正在跑的任务判死，
+          //   紧接着的下一条消息会走 turn/start 打断它（同切会话那条路径）。
           requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled, contentTailTarget)));
           requestAnimationFrame(() => composerInputRef.current?.focus());
           return;

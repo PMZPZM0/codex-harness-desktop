@@ -567,7 +567,9 @@ interface Window {
     /** 重启台账（诊断"任务莫名断了"）：谁触发的重启、当时是否有任务在跑、立即还是推迟。 */
     engineRestartLog(): Promise<{ t: number; reason: string; busy: boolean; activeTurns: number; action: "now" | "defer" | "flush" | "force" }[]>;
     /** 当前活跃回合数（0 = 引擎可安全重启；验收/诊断用）。 */
-    engineActiveTurns(): Promise<number>;
+    /** 引擎侧"谁在跑"的真相：count = 活跃回合数，threadIds = 这些回合分别属于哪个会话
+     *（渲染层收到快照式的 status/changed {idle} 时据此核实，而不是无条件熄灭运行指示器）。 */
+    engineActiveTurns(): Promise<{ count: number; threadIds: string[] }>;
     /** 引擎重启被闸门推迟/已补做：渲染层提示「改动将在当前任务结束后生效」。 */
     onEngineRestartDeferred(listener: (event: { waiting: boolean; reason?: string; activeTurns?: number }) => void): () => void;
     relaunchApp(): Promise<void>;
