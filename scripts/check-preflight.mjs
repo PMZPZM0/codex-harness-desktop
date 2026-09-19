@@ -5810,6 +5810,45 @@ w.postMessage({id:1,op:"list",root});
   );
 }
 
+{
+  // ── 【62】两条真机复现过的回归守卫（09-19 用户截图/复现）──
+  //  ① 「发出去立马切走 → 绿点 → 30 秒内切回 → agent 回复没了」
+  //     根因：后台会话的回复内容不落缓存（落缓存都在 threadId 过滤之后）+ openThread 有
+  //     「30 秒内跳过 resume」快速路径 ⇒ 缓存没回复且不 resume = 永久缺失。
+  //     修法：把「完成的回合落缓存」提到跨会话区（过滤之前）。
+  //  ② 「消息回完了，右下角停止键还亮着」
+  //     根因之一：迟到的 turn/started 会把已结束的回合重新点亮，而结束事件已消费 ⇒ 无人熄灭。
+  //     修法：已结束回合 id 登记 + turn/started 不再点亮它们。
+  //  ⛔ 本块刻意**不用 codeOnly**：实测 codeOnly 在本文件上会吃掉 ~177KB 代码
+  //    （`/\*[\s\S]*?\*\//g` 被字符串/正则里的 `/*` 误配对，把中间大段代码当块注释剥掉），
+  //    导致这里的断言被静默剥空 → 假红（第一版就是这样红的）。锚点本身已足够具体。
+  const app62 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  // ① 跨会话落缓存（turn/completed 与 aborted/failed 两处）
+  (/if \(params\.threadId && params\.threadId !== threadRef\.current\?\.id && params\.turn\?\.id\) \{[\s\S]{0,200}?const mergedBg = mergeTurn\(cachedBg, params\.turn\);[\s\S]{0,160}?threadCacheRef\.current\.set\(params\.threadId, mergedBg\);/.test(app62) ? ok : fail)(
+    "【62】后台会话完成的回合落缓存（否则 30 秒内切回 = 回复永久缺失）"
+  );
+  (/const mergedFail = mergeTurn\(cachedFail, params\.turn\);[\s\S]{0,160}?threadCacheRef\.current\.set\(params\.threadId, mergedFail\);/.test(app62) ? ok : fail)(
+    "【62】失败/被中断的后台回合同样落缓存（部分回复不能丢）"
+  );
+  // 落缓存只写 cache：合并语句里不得出现 setThread（视图仍归当前会话那两条链路）
+  (/if \(mergedBg && mergedBg !== cachedBg\) threadCacheRef\.current\.set\(params\.threadId, mergedBg\);/.test(app62) ? ok : fail)(
+    "【62】跨会话合并只写缓存、不直改视图"
+  );
+  // ② 已结束回合不得再被 turn/started 点亮
+  (/const finishedTurnIdsRef = useRef<Set<string>>\(new Set\(\)\)/.test(app62) ? ok : fail)(
+    "【62】已结束回合登记表存在"
+  );
+  (/rememberFinishedTurn\(startedTurnId\);/.test(app62) && /rememberFinishedTurn\(String\(params\.turn\?\.id \?\? params\.turnId \?\? ""\)\);/.test(app62) ? ok : fail)(
+    "【62】completed 与 aborted/failed 都登记已结束回合"
+  );
+  (/if \(!startedAlreadyDone\) markThreadRunning\(params\.threadId, startedTurnId \|\| undefined\);/.test(app62) ? ok : fail)(
+    "【62】跨会话 turn/started 不点亮已结束的回合"
+  );
+  (/if \(postStartTurnId && finishedTurnIdsRef\.current\.has\(postStartTurnId\)\) \{[\s\S]{0,60}?return;/.test(app62) ? ok : fail)(
+    "【62】当前会话 turn/started 不点亮已结束的回合（否则停止键永久亮着）"
+  );
+}
+
 
 console.log("");
 console.log(C.gray(`已执行断言数：${checks}`));
