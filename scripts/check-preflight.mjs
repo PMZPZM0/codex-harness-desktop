@@ -13,6 +13,8 @@ import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, rmSync } fr
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../src/lib/model-scope.mjs";
+// 并发闸门判据（纯函数：预检直接跑真实现，覆盖"想当然会写错"的边界）
+import { concurrencyExceeded, DEFAULT_MAX_CONCURRENCY, normalizeMaxConcurrency } from "../src/lib/concurrency.mjs";
 import { ALIGN_RESULT, CONTINUITY_TEXT, shouldAlignProvider } from "../src/lib/provider-continuity.mjs";
 import { SESSION_SCOPE_HEADING, composeScopeInstructions, sessionScopeBlock, sessionScopeSignature, stripScopeBlock } from "../src/lib/session-scope.mjs";
 import { MOOD_HEADING, applyMoodSignal, composeMoodInstructions, decayMood, emptyMood, moodBlock, moodSignature, moodTone, normalizeMood, stripMoodBlock } from "../src/lib/agent-mood.mjs";
@@ -2642,7 +2644,9 @@ console.log(C.bold("\n【23】API 协议：引擎只支持 Responses，chat 不�
   (!hookTs.includes("wireApi: wireUsed") ? ok : fail)("useModelProviders 探测不再把实测协议回写草稿（避免「探测说 chat、保存变 responses」自相矛盾）");
   (mainTs.includes('wireApi: "responses" }') ? ok : fail)("main.ts normalizeProvider 仍在读入侧归一化 chat（保命逻辑，别删）");
   (mainTs.includes('const activeWireApi = "responses"') ? ok : fail)("main.ts applyCustomModel 生成的 provider 段恒为 responses");
-  (hookTs.includes('wireApi: "responses" }') ? ok : fail)("保存路径显式归一 wireApi（草稿里的历史 chat 写不进配置）");
+  // ⛔ 判据不能锚 "wireApi: \"responses\" }"（单行结尾）：保存调用后来拆成多行
+  //   （加了 maxConcurrency 归一），只要**显式传了 responses** 就算通过。
+  (/wireApi: "responses",/.test(hookTs) ? ok : fail)("保存路径显式归一 wireApi（草稿里的历史 chat 写不进配置）");
 }
 
 // ---------- 【24】协议桥（09-16）：chat-only 网关必须能真正用起来 ----------
@@ -5951,7 +5955,8 @@ w.postMessage({id:1,op:"list",root});
   (/const keylessThirdParty = !hasKey && value\.provider !== "openai-official";[\s\S]{0,120}?enabled: keylessThirdParty \? false : value\.enabled !== false/.test(mainSrc64) ? ok : fail)(
     "【64】未配置密钥的供应商不得视为启用（官方订阅除外）"
   );
-  (/const keylessThirdPartySave = !encryptedKey && provider !== "openai-official";[\s\S]{0,220}?enabled: keylessThirdPartySave \? false : \(input\.enabled \?\? existing\?\.enabled \?\? true\)/.test(mainSrc64) ? ok : fail)(
+  // ⛔ 窗口从 220 放宽到 600：中间后来插了并发上限归一那几行（09-19）。
+  (/const keylessThirdPartySave = !encryptedKey && provider !== "openai-official";[\s\S]{0,600}?enabled: keylessThirdPartySave \? false : \(input\.enabled \?\? existing\?\.enabled \?\? true\)/.test(mainSrc64) ? ok : fail)(
     "【64】保存新供应商：没填密钥就存成禁用（不再无条件默认启用）"
   );
   // ② 推荐卡默认关（只有显式点开过才启用）
@@ -6118,8 +6123,60 @@ w.postMessage({id:1,op:"list",root});
 
 
 
-console.log("");
-console.log(C.gray(`已执行断言数：${checks}`));
+{
+  // ── 【69】并发闸门判据（09-19 用户要求：供应商配置界面加并发限制，默认 3）──
+  //   跑**真实实现**（src/lib/concurrency.mjs），覆盖边界；判据写错会直接卡死用户发送，
+  //   所以每条都要能说出"错了会怎样"。
+  (DEFAULT_MAX_CONCURRENCY === 3 ? ok : fail)("【69】默认并发上限为 3");
+  (normalizeMaxConcurrency(undefined) === 3 && normalizeMaxConcurrency("") === 3 && normalizeMaxConcurrency(0) === 3 && normalizeMaxConcurrency(-5) === 3 ? ok : fail)(
+    "【69】非法/缺失上限回落默认（0 与负数不会把发送彻底卡死）"
+  );
+  (normalizeMaxConcurrency(99) === 10 && normalizeMaxConcurrency("2.6") === 3 ? ok : fail)(
+    "【69】上限收敛在 1~10 并四舍五入"
+  );
+  // 核心语义：达到上限拦截、未达放行、本会话已在跑不拦
+  (concurrencyExceeded({ runningCount: 3, maxConcurrency: 3 }) === true ? ok : fail)(
+    "【69】已达上限（3/3）→ 拦截新增一路"
+  );
+  (concurrencyExceeded({ runningCount: 2, maxConcurrency: 3 }) === false ? ok : fail)(
+    "【69】未达上限（2/3）→ 放行"
+  );
+  (concurrencyExceeded({ runningCount: 3, maxConcurrency: 3, threadAlreadyRunning: true }) === false ? ok : fail)(
+    "【69】本会话已在跑 → 追加消息不拦（否则会把自己堵死）"
+  );
+  (concurrencyExceeded({ runningCount: 5, maxConcurrency: 1 }) === true ? ok : fail)(
+    "【69】上限调小到 1 时，超额仍拦"
+  );
+  (concurrencyExceeded({}) === false && concurrencyExceeded({ runningCount: NaN, maxConcurrency: 3 }) === false ? ok : fail)(
+    "【69】计数异常时不拦（宁可放行也不把用户卡死）"
+  );
+  // 接线：闸门必须挂在多个发送入口（只挂一个入口 = 从别的路径绕过限制）
+  const gateSrc69 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const gateCalls69 = (gateSrc69.match(/atConcurrencyLimit\(/g) || []).length;
+  (gateCalls69 >= 3 ? ok : fail)(
+    `【69】闸门接入多个发送入口（send / 编辑重发 / 限流重试，共 ${gateCalls69} 处）`
+  );
+  (/maxConcurrencyRef\.current = normalizeMaxConcurrency\(customModel\?\.maxConcurrency\)/.test(gateSrc69) ? ok : fail)(
+    "【69】闸门上限取自当前供应商配置（不是写死的）"
+  );
+  const providerSrc69 = readFileSync(join(ROOT, "src", "hooks", "useModelProviders.ts"), "utf8");
+  (/maxConcurrency: normalizeMaxConcurrency\(dedupedDraft\.maxConcurrency\)/.test(providerSrc69) ? ok : fail)(
+    "【69】保存供应商时并发上限一并落档（草稿是字符串 → 存成数值）"
+  );
+  const mainSrc69 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  (/maxConcurrency\?: number;/.test(mainSrc69) ? ok : fail)(
+    "【69】主进程档案类型含 maxConcurrency"
+  );
+  (/input\.maxConcurrency == null[\s\S]{0,120}?existing\?\.maxConcurrency \?\? 3/.test(mainSrc69) ? ok : fail)(
+    "【69】主进程保存时归一并在未传值时沿用旧值"
+  );
+  const fieldSrc69 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  (/最大并发/.test(fieldSrc69) ? ok : fail)(
+    "【69】供应商配置界面有「最大并发」输入框"
+  );
+}
+
+
 if (hardFails === 0) {
   console.log(C.green(`预检通过${warns ? `（${warns} 条告警，见上）` : ""}`));
 } else {

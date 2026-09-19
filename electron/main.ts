@@ -737,6 +737,9 @@ type CustomModelFile = {
   models?: ProviderModel[];
   /** 启用状态；禁用时若为当前供应商则清空当前配置 */
   enabled?: boolean;
+  /** 该供应商最多允许几个会话同时跑（09-19 用户要求，供应商配置界面可自定义，默认 3）。
+   *  限流是同一个 Key 的共享配额 → 并发越高越容易 429；未设置时渲染层按 3 处理。 */
+  maxConcurrency?: number;
 };
 
 type StoredChannelBot = Omit<ChannelBotConfig, "appSecret" | "verificationToken" | "encryptKey"> & {
@@ -8093,7 +8096,7 @@ ipcMain.handle("clipboard:read-files", async () => {
 });
 ipcMain.handle("custom-model:read", async () => publicCustomModel(await readCustomModel()));
 ipcMain.handle("custom-model:probe", (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) => probeCustomModel(input));
-ipcMain.handle("custom-model:save", async (_event, input: { provider: string; name: string; model: string; baseUrl: string; contextWindow?: string | number; wireApi?: "responses" | "chat"; apiKey?: string; models?: ProviderModel[]; enabled?: boolean }) => {
+ipcMain.handle("custom-model:save", async (_event, input: { provider: string; name: string; model: string; baseUrl: string; contextWindow?: string | number; wireApi?: "responses" | "chat"; apiKey?: string; models?: ProviderModel[]; enabled?: boolean; maxConcurrency?: number }) => {
   const provider = safeProviderId(input.provider.trim());
   const name = input.name.trim();
   const requestedModel = input.model.trim();
@@ -8145,7 +8148,11 @@ ipcMain.handle("custom-model:save", async (_event, input: { provider: string; na
   //   没填密钥就保存（或从推荐卡进来还没填）→ 存成禁用；填了密钥 → 启用（配置完即可用）。
   //   原来无条件 `?? true`：未配置密钥的供应商也会带着「已启用」落盘，于是和新配的那个同时亮。
   const keylessThirdPartySave = !encryptedKey && provider !== "openai-official";
-  const saved = withModels({ provider, name, model, baseUrl, contextWindow, wireApi, encryptedKey, enabled: keylessThirdPartySave ? false : (input.enabled ?? existing?.enabled ?? true), models: mergedModels }, model);
+  // 并发上限（09-19 用户要求）：存储时归一（1~10，缺省 3）。未传（旧渲染层）时沿用已有值。
+  const maxConcurrency = input.maxConcurrency == null
+    ? (existing?.maxConcurrency ?? 3)
+    : Math.min(10, Math.max(1, Math.round(Number(input.maxConcurrency)) || 3));
+  const saved = withModels({ provider, name, model, baseUrl, contextWindow, wireApi, encryptedKey, maxConcurrency, enabled: keylessThirdPartySave ? false : (input.enabled ?? existing?.enabled ?? true), models: mergedModels }, model);
   await upsertCustomModel(saved);
   const current = await readCustomModel();
   if (saved.enabled === false && current?.provider !== provider) {
