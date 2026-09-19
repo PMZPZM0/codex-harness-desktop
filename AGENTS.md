@@ -177,6 +177,27 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **⛔ 钉顶「落点不可达」+ 排队消息不上钉（09-19 用户实测「钉顶也没有啊」，当日定位并修复）**：
+  两个独立缺口叠在一起，症状都是「用户消息不在顶部、停在半屏」。
+  - **缺口一：留白收缩过头 ⇒ 落点滚不到**。真机打点复现（运行中发消息 → 队列释放这条路径）：
+    `pin-apply` 先把消息钉在 36px ✓，随后 `pad-shrink` 把留白从 291→269→258→226 一路缩，
+    而 `pin-fix` 想滚到的位置已经**超过 maxScroll**（`top` 恒等于 `max`=1170，`err` 一路涨
+    21→59→100→253）⇒ 视口被钳死，消息最终停在 136px（另一轮 289px，用户截图 305px 同源）。
+    成因：收缩公式在**流式 + `content-visibility` 惰性布局**下会拿到偏小的锚点坐标 ⇒ `need` 偏小，
+    而「只减不增」让缺口永远回不来。**修法（`shrinkAnchorPad` 内，单点）**：收缩后算
+    `want = scrollTop + gapErr`，若 `want > maxScroll` ⇒ 判定收缩过头，把缺口**还给留白**
+    （`restore = need + (want - max)`，还回后 scrollHeight 同步变大、`maxScroll` 正好等于 `want`），
+    打点 `pad-restore`。**「只减不增」必须让位给「落点必须可达」这个不变量。**
+  - **缺口二：排队消息从没建立钉顶意图**。会话正在跑时发的消息走 `thread/queue/add`
+    （发送函数里那条分支在「上钉」段（`anchorTopRef = true`）**之前就 return**），
+    随后由「回合结束自动启动」或「立即」把它变成真实回合 —— 两条释放路径原先都不建立意图，
+    那条消息于是落进内容流（实测 `pad≈0`）。**修法**：新增 `armPinForReleasedQueue(threadId, why)`
+    （只写意图，**钉顶唯一 owner 仍是 `pinSentMessage`**），在三条释放路径调用：
+    `auto-start`（turn/completed 里的队列启动）/ `steer`（立即插队）/ `queue-start`（立即开新回合）。
+    ⛔ 它**只对当前可见会话**生效（`threadId !== threadRef.current?.id` 直接返回）——
+    给后台会话设意图会抢走视口。
+  - **别再"猜根因"**：这两条都是靠 `__adbg` 的 `pad-shrink` / `pad-restore` / `pin-fix` /
+    `queue-arm` 打点（带数字）十分钟内定位的；本轮也顺手给 `pin-apply` 加了 `max`/`aCls`。
 - **内置模型规格表更新 + 模型 ID Tab 补全 + 模型下拉徽标 + 思考等级滑块（09-18 用户四连需求）**：
   - **规格表**（`src/lib/model-specs.ts`）：按 09-18 官方资料重写。新增 GPT-6 Astra（1.05M/128K/视觉）、
     GPT-5.6 三档（1.05M/128K/视觉）、Claude Fable 5 / Opus 4.8（1M/128K/视觉）、Gemini 3.x（1,048,576/65,536）、

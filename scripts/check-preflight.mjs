@@ -1830,7 +1830,12 @@ console.log(C.bold("\n【10】滚动与锚定状态：单一 owner + 默认值�
     .split("\n")
     .map((line, i) => ({ line: line.trim(), no: i + 1 }))
     .filter((entry) => /anchorTopRef\.current\s*=/.test(entry.line) && !entry.line.startsWith("*") && !entry.line.startsWith("//"));
-  const ANCHOR_WRITER_BUDGET = 7; // 发送 2 处 + releaseToUser + 长消息 + 切换分支 + 声明初始化
+  // 预算 7 → 9（09-19 已按守卫要求审计过新增的两个写者，**确认不是第二个 owner**）：
+  //   `armPinForReleasedQueue`（true：排队消息释放时建立钉顶意图）与 `disarmPinIntent`
+  //   （false：释放失败时撤回该意图）—— 二者同属"**发送意图**"的生命周期，与正常发送的
+  //   send-arm 是同一件事的两个方向；写滚动条 / 留白的 owner 仍然只有 `pinSentMessage` 一处
+  //   （本文件下面那条"落点全部经 contentTailTarget"的断言仍在把这件事钉死）。
+  const ANCHOR_WRITER_BUDGET = 9; // 发送 2 处 + releaseToUser + 长消息 + 切换分支 + 声明初始化 + 队列 arm/disarm
   anchorWriters.length <= ANCHOR_WRITER_BUDGET
     ? ok(`锚定状态写者 ${anchorWriters.length} 处（预算 ${ANCHOR_WRITER_BUDGET}）—— 没有新增第二 owner`)
     : fail(`锚定状态写者增到 ${anchorWriters.length} 处（预算 ${ANCHOR_WRITER_BUDGET}）：${anchorWriters.map((w) => `L${w.no}`).join(", ")} —— 请先确认是不是又出现了第二个 owner，再调预算`);
@@ -1943,13 +1948,53 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
     ? ok("引擎更新默认校验 TLS 证书（自签名场景需显式 CODEX_HARNESS_INSECURE_TLS=1）")
     : fail("engine-updater.ts 又无条件关闭 TLS 校验 —— 下载物会被当场执行（--version 探针）");
 
-  // ⑦ 渲染层入参校验层（09-13 审计 S5）：不许再把渲染层给的路径/根当文件系统与 shell 目标
+  // ⑦ 渲染层入参校验层（09-13 审计 S5；09-19 用户拍板「隐私第一」后全面收紧 fs 通道）
   const mainForSec = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
-  // fs:write 不得再用渲染层自报的 root 做包含性判断
+  // ⛔ fs:write / fs:read 一律收敛到主进程可信根集合（09-19 用户明令「用户隐私必须重之重」，
+  //   推翻 09-13 的「保持原语义」决策）：fs:write 原来用渲染层自报的 root 判包含（传 C:\ 即绕过），
+  //   fs:read 原来完全无校验（任意路径读）。两条守卫都锚定 handler 内部出现 isInsideTrustedRoots 调用。
   const fsWrite = mainForSec.slice(mainForSec.indexOf('ipcMain.handle("fs:write"'), mainForSec.indexOf('ipcMain.handle("fs:read"'));
-  // fs:write：**保持原行为**（用户 09-13 明确要求「权限我可以自己改，不要限制死」）——
-  // 因此这里不再断言可信根来源，只留一句记录，避免下轮又"顺手"把它改成限定工作区。
-  ok("fs:write 保持原语义（渲染层给 root；用户明确要求不收紧，见 09-13 决策）");
+  /isInsideTrustedRoots\(resolved\)/.test(fsWrite)
+    ? ok("fs:write 收敛到主进程可信根（渲染层自报的 root 不再参与判定，09-19 用户拍板收紧）")
+    : fail("fs:write 又用渲染层可控的 root 做校验或去掉了可信根收敛 —— 等于任意路径写文件");
+  const fsReadFrom = mainForSec.indexOf('ipcMain.handle("fs:read"');
+  const fsReadNext = mainForSec.indexOf("ipcMain.handle(", fsReadFrom + 20);
+  const fsRead = mainForSec.slice(fsReadFrom, fsReadNext > fsReadFrom ? fsReadNext : undefined);
+  (/isInsideTrustedRoots\(target\)/.test(fsRead) ? ok : fail)(
+    "fs:read 收敛到可信根（会话工作目录 + userData + 用户选过的路径，不再任意读全盘文件）"
+  );
+  // shell:reveal / updates:reveal 同口径收敛
+  const shellReveal = mainForSec.slice(mainForSec.indexOf('ipcMain.handle("shell:reveal"'), mainForSec.indexOf('ipcMain.handle("shell:reveal"') + 900);
+  (/isInsideOrEqualTrustedRoots\(target\)/.test(shellReveal) ? ok : fail)(
+    "shell:reveal 收敛到可信根（含根本身：reveal 工作区 / userData 目录是合法用法）"
+  );
+  const updReveal = mainForSec.slice(mainForSec.indexOf('ipcMain.handle("updates:reveal"'), mainForSec.indexOf('ipcMain.handle("updates:install"'));
+  (/lastVerifiedUpdatePath/.test(updReveal) && /path_not_verified/.test(updReveal)
+    ? ok("updates:reveal 只允许定位刚下载并通过校验的安装包（与 updates:install 同口径）")
+    : fail("updates:reveal 又能被渲染层指定任意路径 showItemInFolder 了"));
+  // terminal:restart 的 cwd 必须验证存在且是目录
+  const termRestart = mainForSec.slice(mainForSec.indexOf('ipcMain.handle("terminal:restart"'), mainForSec.indexOf('ipcMain.handle("git:diff"'));
+  (/fileStat\(cwd\)/.test(termRestart) && /isDirectory\(\)/.test(termRestart)
+    ? ok("terminal:restart 校验 cwd 是真实存在的目录（终端可交互 cd，故做存在性校验而非白名单）")
+    : fail("terminal:restart 又直收渲染层 cwd 且不验证了"));
+  // thread/list 也要记账 cwd（fs 通道可信根才能覆盖未 resume 过的侧栏会话）
+  // ⛔ 09-19 修掉守卫自身的**假红**（原判据把锚点锚错了位置）：
+  //   旧写法在 `threadCwd.set(String(r.thread.id)` 与 `if (method === "thread/resume")` 之间的区间里
+  //   找 `thread/list`+`threadCwd.set` —— 而新的 thread/list 分支挂在 `thread/settings/update` 之后，
+  //   **落在这段区间之外** ⇒ 代码明明写了记账、守卫照样红（把功能正确的代码判成回归，比漏检更误导人）。
+  //   现在改为**锚定 thread/list 分支本身**（在整份 main.ts 上取 900 字符窗口，够容纳注释），
+  //   仍能抓住"把记账删掉"这个真回归。
+  const listBranchAt = mainForSec.indexOf('method === "thread/list"');
+  const listBranch = listBranchAt >= 0 ? mainForSec.slice(listBranchAt, listBranchAt + 900) : "";
+  (/threadCwd\.set\(/.test(listBranch)
+    ? ok("thread/list 响应记账 cwd（可信根集合覆盖侧栏全部会话，旧会话文件预览不被误伤）")
+    : fail("thread/list 不再记账 cwd —— 未 resume 过的会话文件预览会被可信根校验误伤"));
+  // index.html 必须带 CSP（封外链脚本 / object / base / form 劫持）
+  let indexHtml = "";
+  try { indexHtml = readFileSync(join(ROOT, "index.html"), "utf8"); } catch { /* 读不到在下面报 */ }
+  (/Content-Security-Policy/.test(indexHtml) && /object-src 'none'/.test(indexHtml) && /base-uri 'self'/.test(indexHtml) && /form-action 'none'/.test(indexHtml)
+    ? ok("index.html 带 CSP（封外链脚本注入 + object/base/form 劫持；inline 脚本为 srcdoc 可视化卡片保留）")
+    : fail("index.html 的 CSP 被摘了 —— 渲染层渲染模型输出/渠道消息时注入脚本可加载外部代码"));
   // external:open / browser:popout 不得无条件放行 file:
   !/url\.protocol !== "file:"\s*\)\s*throw new Error\("Unsupported URL"\)/.test(mainForSec)
     ? ok("external:open / popout 不再无条件放行 file:（只允许工作区内的 .html）")
@@ -5411,6 +5456,29 @@ w.postMessage({id:1,op:"list",root});
     ? ok : fail)("【52】重启被推迟/补做的通知通道三件套齐全");
   (/onEngineRestartDeferred\?\.\(\(event\) => \{/.test(appSrc52) && /改动已保存，将在当前任务结束后生效/.test(appSrc52)
     ? ok : fail)("【52】渲染层明确提示「改动已保存、任务结束后生效」（否则用户以为没保存成功）");
+
+  // ⑤ 钉顶：留白收缩后的**可达性守卫** + 排队消息的钉顶意图（09-19 用户实测「钉顶也没有」）
+  const appSrc53 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  // ⛔ 真机打点复现：留白收缩过头后，落点变成"滚不到的地方"，scrollTop 被 maxScroll 钳死，
+  //    pin-fix 每次都滚到同一个被钳住的位置、err 一路变大（21→59→100→253），消息停在半屏。
+  //    ⇒ 收缩必须检查「要滚到的位置是否超过 maxScroll」，超了就把缺口还给留白。
+  (/if \(want > max \+ 1\) \{/.test(appSrc53) ? ok : fail)("【53】留白收缩后检查落点是否可达（否则被 maxScroll 钳死）");
+  (/anchorPadAppliedRef\.current = restore;/.test(appSrc53) && /dbg\("pad-restore"/.test(appSrc53)
+    ? ok : fail)("【53】落点不可达时把缺口**还给留白**（不是只打点）");
+  // ⛔ 运行中发的消息走 thread/queue/add，随后的「回合结束自动启动 / 立即」两条释放路径
+  //    原先都不建立钉顶意图 → 那条消息落进内容流（实测 pad≈0、消息停在半屏）。
+  const queueArmCalls = (appSrc53.match(/armPinForReleasedQueue\(/g) || []).length;
+  (queueArmCalls >= 4 ? ok : fail)(`【53】排队释放的三条路径都建立钉顶意图（定义+3 处调用，实测 ${queueArmCalls}）`);
+  (/"auto-start"/.test(appSrc53) && /"steer"/.test(appSrc53) && /"queue-start"/.test(appSrc53)
+    ? ok : fail)("【53】自动启动 / 立即插队 / 立即开新回合 都覆盖");
+  // 只对**正在看的**会话建立意图：给后台会话设了会抢走视口
+  (/threadId !== threadRef\.current\?\.id\) return;/.test(appSrc53)
+    ? ok : fail)("【53】只对当前可见会话建立钉顶意图（后台会话不抢视口）");
+  // ⛔ 释放失败必须**撤回**意图（代码审查抓出的缺口）：否则意图悬空，钉顶会去钉列表里
+  //    最后那个回合组的消息 ⇒ 视口莫名跳到旧消息，比"没钉顶"更糟。
+  const disarmCalls = (appSrc53.match(/disarmPinIntent\(/g) || []).length;
+  (disarmCalls >= 4 ? ok : fail)(`【53】释放失败时撤回钉顶意图（定义+3 处调用，实测 ${disarmCalls}）`);
+  (/dbg\("queue-arm-cancelled"/.test(appSrc53) ? ok : fail)("【53】撤回有打点（下次能看出是「建立后撤回」还是「压根没建立」）");
 }
 
 console.log("");

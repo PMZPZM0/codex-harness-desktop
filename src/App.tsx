@@ -10060,7 +10060,7 @@ export default function App() {
       //    用改前的 gapErr 落位会偏（这是「留白改完位置反而不对」的坑）。
       const gapErrNow = (anchor.getBoundingClientRect().top - el.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
       anchorHeightBaselineRef.current = contentBottomOf(el);
-      dbg("pin-apply", { key, gapErr: Math.round(gapErrNow), pad: pad ? pad.style.height : "-", top: Math.round(el.scrollTop) });
+      dbg("pin-apply", { key, gapErr: Math.round(gapErrNow), pad: pad ? pad.style.height : "-", top: Math.round(el.scrollTop), max: Math.round(el.scrollHeight - el.clientHeight), aCls: String(anchor.className || "").slice(0, 30) });
       selfScrollUntilRef.current = Date.now() + 80;
       scrollToOffsetInstant(el, el.scrollTop + gapErrNow);
       pinnedScrollTopRef.current = el.scrollTop;
@@ -10091,8 +10091,33 @@ export default function App() {
       if (!now) return;
       const err = (now.getBoundingClientRect().top - el.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
       if (Math.abs(err) <= 4) return;
-      dbg("pin-fix", { key, err: Math.round(err), top: Math.round(el.scrollTop) });
-      scrollToOffsetInstant(el, el.scrollTop + err);
+      let want = el.scrollTop + err;
+      const max = el.scrollHeight - el.clientHeight;
+      if (want > max + 1) {
+        // ⛔ 09-19 用户实测「钉顶也没有」的**真根因**（真机打点复现，缺口精确对上）：
+        //   收缩公式隐含假设「锚点上方的布局不变」；一旦锚点上方的高度变了（过程卡折叠 /
+        //   `content-visibility` 惰性布局提交 / 上一回合的卡片收起），公式就按**旧坐标**把留白
+        //   算小，缺口恰好等于那次高度变化量（实测最后一次 `pin-fix err=122` 与缺口 122px 一致）。
+        //   此时落点变成"滚不到的地方"：`scrollTop` 被 maxScroll 钳死，pin-fix 每次都滚到同一个
+        //   被钳住的位置、err 一路变大（21 → 59 → 100 → 284），用户看到消息停在半屏
+        //   （实测 97/136/158/289px，与用户截图里的 305px 同一成因）。
+        //   反证（同一次注入、只摘掉本分支）：留白 0 → 0、落点 37 → 97px、`err=284` 反复钳死；
+        //   带本分支：留白 0 → 590px、落点回到 36px。
+        //   ⇒ 在**发现滚不到的这一刻**把缺口还给留白（纠偏的唯一 owner 仍是这里）：
+        //     还回后 scrollHeight 同步增大同样的量 ⇒ maxScroll 正好等于 want ⇒ 落点立刻可达。
+        const pad = anchorSpacerRef.current;
+        const applied = anchorPadAppliedRef.current;
+        if (pad && applied != null) {
+          const restore = applied + (want - max);
+          pad.style.height = restore + "px";
+          anchorPadAppliedRef.current = restore;
+          const maxAfter = el.scrollHeight - el.clientHeight;
+          dbg("pad-restore", { err: Math.round(err), restore, max: Math.round(max), maxAfter: Math.round(maxAfter) });
+          want = Math.min(want, maxAfter);
+        }
+      }
+      dbg("pin-fix", { key, err: Math.round(err), top: Math.round(el.scrollTop), want: Math.round(want) });
+      scrollToOffsetInstant(el, want);
       pinnedScrollTopRef.current = el.scrollTop;
     });
     return true;
@@ -11283,6 +11308,16 @@ const commandMatches = useMemo(() => {
       const px = need + "px";
       if (pad.style.height !== px) pad.style.height = px;
       anchorPadAppliedRef.current = need;
+      // ⛔ 09-19 诊断打点：留白被"收缩过头"时 pin 的纠偏必然被 maxScroll 钳死
+      //    （真机实测：收缩后 pad 只剩 8px、消息停在 289px、pin-fix err 一路涨到 253）。
+      //    这行把公式的**全部输入**落进 __adbg，下次再出现直接看数字，不用猜：
+      //    `off`（pad 实际渲染高度）与 `applied`（我们以为的高度）不一致 = 公式被读偏。
+      dbg("pad-shrink", {
+        need, applied, off: pad.offsetHeight, style: pad.style.height,
+        sh: scroller.scrollHeight, ch: scroller.clientHeight, max: Math.round(scroller.scrollHeight - scroller.clientHeight),
+        ast: Math.round(anchorTopScroll), top: Math.round(scroller.scrollTop),
+        aCls: String(anchorEl.className || "").slice(0, 30),
+      });
       // 留白变小会改变 scrollHeight → 重新量一次钉顶落点，保证 gap 仍等于 36。
       // 注意：必须走 selfScrollUntil 抑制窗，否则这次程序滚动会被当成"用户滚动"。
       const gapErr = (anchorEl.getBoundingClientRect().top - scroller.getBoundingClientRect().top) - ANCHOR_TOP_OFFSET_PX;
@@ -11972,6 +12007,37 @@ const commandMatches = useMemo(() => {
     }
   }
 
+  /** 给「不是走正常发送、但会真的出现在会话里」的用户消息建立**钉顶意图**。
+   *  ⛔ 为什么必须有（09-19 用户实测「钉顶也没有」，真机打点复现）：会话正在跑时用户发的消息
+   *  走 `thread/queue/add`（发送函数里那条分支在「上钉」段之前就 return 了），随后由
+   *  「回合结束自动启动」（见 turn/completed 处理）或「立即」把它变成真实回合 ——
+   *  这两条路径原先都不建立钉顶意图，那条消息于是落进内容流里。
+   *  钉顶的**唯一 owner 仍是 `pinSentMessage`**：这里只负责在「消息真正进入会话」那一刻
+   *  把意图写上（语义等价于正常发送的 send-arm）。
+   *  只对**当前正在看的会话**建立意图：看不见的会话不需要钉顶，给它设了反而会抢走视口。 */
+  function armPinForReleasedQueue(threadId: string | null | undefined, why: string): boolean {
+    if (!threadId || threadId !== threadRef.current?.id) return false;
+    const live = threadRef.current;
+    optimisticBaselineRef.current = { threadId, turnIds: new Set((live?.turns ?? []).map((entry) => entry.id)) };
+    stickToBottomRef.current = false;
+    anchorTopRef.current = true;
+    anchorTurnIdRef.current = null;
+    pinGapLockedRef.current = null;   // 新一轮锚点不该继承上一条的"交棒"锁
+    dbg("queue-arm", { why });
+    return true;
+  }
+
+  /** 释放失败时把刚建立的意图**撤回**（代码审查抓住的缺口）：否则这个"悬空的意图"会让钉顶去钉
+   *  **别的**消息（列表里最后那个回合组的用户消息 / 乐观气泡），用户看到视口莫名跳到旧消息 ——
+   *  比"没钉顶"更糟。只在「确实是本次 arm 的」前提下调用（`armPinForReleasedQueue` 的返回值），
+   *  免得误撤掉用户正常发送时那条仍然有效的钉顶。 */
+  function disarmPinIntent(why: string) {
+    anchorTopRef.current = false;
+    pinGapLockedRef.current = null;
+    clearAnchorPad();
+    dbg("queue-arm-cancelled", { why });
+  }
+
   async function startQueued(id?: string) {
     if (!thread) return;
     const entry = id ? queue.find((q) => q.id === id) : undefined;
@@ -11992,6 +12058,8 @@ const commandMatches = useMemo(() => {
     const runningTurnId = (thread.turns ?? []).find((turn) => isTurnRunning(turn))?.id ?? null;
     const steerTurnId = activeTurnId && activeTurnId === runningTurnId ? activeTurnId : runningTurnId;
     if (steerTurnId && entry) {
+      // 「立即」= 这条消息马上会作为用户消息出现在当前回合里 → 先建立钉顶意图（否则它落进内容流）
+      const armedForSteer = armPinForReleasedQueue(thread.id, "steer");
       try {
         await window.codex.request("turn/steer", {
           threadId: thread.id,
@@ -12006,6 +12074,7 @@ const commandMatches = useMemo(() => {
       } catch (error: any) {
         const message = String(error?.message ?? error ?? "");
         if (!/no active turn/i.test(message)) {
+          if (armedForSteer) disarmPinIntent("steer-fail");   // 意图悬空会去钉别的消息
           showToast("发送失败", message);
           return;
         }
@@ -12015,13 +12084,16 @@ const commandMatches = useMemo(() => {
         dbg("steer-stale-fallback", {});
       }
     }
+    const armedForStart = armPinForReleasedQueue(thread.id, "queue-start");
     try {
+      // 它会作为**新回合**的用户消息出现 → 同样要先建立钉顶意图
       await window.codex.request("thread/queue/start", { threadId: thread.id, ...(id ? { queuedSubmissionId: id } : {}) });
       // 同「回合结束自动启动」：先本地摘掉，避免与真实气泡并存（否则会短暂重复展示）
       if (id) setQueue((current) => current.filter((entry) => entry.id !== id));
       void refreshQueue(thread.id);
       showToast("已发送", "排队消息已开始执行");
     } catch (error: any) {
+      if (armedForStart) disarmPinIntent("queue-start-fail");
       showToast("发送失败", error.message);
     }
   }
@@ -12791,12 +12863,20 @@ const commandMatches = useMemo(() => {
         // 引擎把它变成真实用户消息气泡后，不会再保证发 `thread/queue/changed`，
         // 于是 `.timeline-queue` 里那条「排队中」气泡会与真实气泡**同时存在**——
         // 同一条消息显示两次，直到用户切会话/再发一条才刷新掉。
+        let armedByAutoStart = false;
         void window.codex.request("thread/queue/list", { threadId: params.threadId, limit: 1 }).then((result) => {
           const head = result?.data?.[0];
           if (!head) return undefined;
           setQueue((current) => current.filter((entry) => entry.id !== head.id));
+          // 这条排队消息马上会变成真实回合的用户消息 → 先建立钉顶意图（否则它落进内容流，
+          // 用户看到的就是「钉顶没生效」）。只对当前正在看的会话生效，见函数注释。
+          armedByAutoStart = armPinForReleasedQueue(params.threadId, "auto-start");
           return window.codex.request("thread/queue/start", { threadId: params.threadId, queuedSubmissionId: head.id });
-        }).catch((error) => showToast("队列启动失败", error.message));
+        }).catch((error) => {
+          // 启动失败 ⇒ 那条消息不会出现，撤回意图（否则钉顶会去钉别的消息）
+          if (armedByAutoStart) disarmPinIntent("auto-start-fail");
+          showToast("队列启动失败", error.message);
+        });
         // 计划模式：方案回合正常结束 → 弹「开始执行」确认条；失败则静默复位（错误已 toast）
         if (planTurnRef.current && planTurnRef.current.threadId === params.threadId && planTurnRef.current.turnId === String(params.turn?.id ?? "")) {
           if (!params.turn.error?.message) {
