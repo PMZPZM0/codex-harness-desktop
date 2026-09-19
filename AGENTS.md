@@ -112,7 +112,7 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 | 桌面自动化 MCP | `tools/npm-global` 里的 `nuphus`（MCP 服务器名） | 需先装「自动化工具包」，工具前缀 `desktop_*` / `browser_*` |
 | 浏览器自动化 CLI | `tools/npm-global/playwright-cli` | 需先装「自动化工具包」，首次 open 会提示装内核 |
 | 指纹浏览器 | `require("cloakbrowser")` / `tools/npm-global/cloakbrowser` | 需先装「自动化工具包」+「Cloak 内核」 |
-| 内置技能 | `codex-home/skills/` 的 `desktop-automation`、`browser-automation` | 随应用写入，引导引擎调自动化工具 |
+| 内置技能 | `codex-home/skills/` 的 `desktop-automation`、`browser-skill` | 随应用写入，引导引擎调自动化工具；旧 `browser-automation` 已退役（升级时按指纹自动清理，用户改过的目录不碰） |
 
 ## 会话动态工具（thread/start 已注册，可直接调用）
 
@@ -176,6 +176,11 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 - **指纹内核（cloak-browsers）仅用于自动化场景**（模型经 `cloakbrowser` CLI 调用）；浏览器视图的「隐身浏览」按钮为预留位，尚未接入 CDP 嵌入。
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
+- **⛔ 内置技能 browser-automation → browser-skill 替换（09-19 用户「这个技能优化使用，这个更好，那个替换掉吧」）**：
+  `electron/builtin-skills.ts` 的浏览器技能整体重写为 `browser-skill`（4.2KB：playwright-cli **全工作流实操手册**——权威命令表取自随包 `@playwright/cli --help`，含旧版完全没提的 `find`/`requests`/`response-body`/`console`/`state-save`/`kill-all`/`--raw`；**旧技能里唯一有价值的通道选型 / CloakBrowser 反爬升级已并入**，删除不丢能力）。
+  - **退役清理**：`RETIRED_SKILLS` 机制——升级启动时，磁盘上内容仍**逐字等于当初内置版本**（含 `SKILL.md.disabled` 形态、**行尾归一化后比对**）的旧技能目录随升级删除；用户改过/自建的一律不碰并 `console.warn` 留痕。⛔ 两个实测坑：① **指纹比对必须归一化行尾**——被总闸停用/启用一次的技能文件会被重写成 LF，常量是 CRLF，只 trim() 永远比成「被改过」→ 清理静默失效（真机验收抓到的）；② **`String.replace` 替换串里 `$$` 是特殊序列**——用 replace 插入含 `page.$$` 的模板常量时 `$` 被吃掉一个，指纹差 1 字符全盘失效；模板注入一律用函数替换 `replace(re, () => text)` 或求值后回写。
+  - **总闸联动泛化**：`capability-groups.ts` 的 `browserSkill`（单值）→ `browserSkills`（名单 `BROWSER_SKILL_IDS`），collect/plan/apply/synced/groupMembers 全部走名单——以后再加/换技能只改名单，联动逻辑零改动。
+  - 验证：预检【58】12 条守卫（含退役指纹、名单一致性、聚合联动；行尾归一化断言当场反证 ✗）；真机验收 8/8（技能写入 profile、frontmatter/命令齐全、旧目录已清、通道说明未丢、启停与总闸联动各停→启生效）。
 - **⛔ 语气自适应：给 agent 加会话级状态（09-19 用户要求「想要 agent 有状态、语气跟着变」）**：
   新增 `src/lib/agent-mood.mjs`（纯函数：归一化 / 信号更新 / 时间衰减 / 语气映射 / 拼块 / 幂等剥离 / 变化签名）
   + `src/App.tsx` 的状态读写（键族 `agent-mood-<threadId>`）、回合挂点、注入与级联清理 + `electron/app-settings.ts` 开关。

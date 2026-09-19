@@ -41,8 +41,12 @@ export const NUPHUS_MCP_ID = "nuphus";
 /** 桌面自动化配套技能目录名（ensureBuiltinSkills 写入 codexHome/skills/）。 */
 export const DESKTOP_SKILL_ID = "desktop-automation";
 /** 浏览器自动化配套技能目录名。 */
-export const BROWSER_SKILL_ID = "browser-automation";
-
+export const BROWSER_SKILL_ID = "browser-skill";
+/** 浏览器相关的内置技能目录名（总闸要一起管）。
+ *  09-19 起只有 browser-skill（playwright-cli 实操 + 通道选型 + CloakBrowser 合并版）；
+ *  旧的 browser-automation 已退役，磁盘上那份由主进程 ensureBuiltinSkills 的退役清理删掉
+ *  （只删内容逐字一致的指纹，不碰用户自建/改过的目录）。 */
+export const BROWSER_SKILL_IDS: readonly string[] = [BROWSER_SKILL_ID];
 /** 一个可选子项：未安装时为 null，不参与主开关状态计算。 */
 export interface SkillMember {
   folder: string;
@@ -65,8 +69,8 @@ export interface SubToggleSnapshot {
   nuphusMcpOn: boolean;
   /** 桌面自动化配套技能；未安装为 null。 */
   desktopSkill: SkillMember | null;
-  /** 浏览器自动化配套技能；未安装为 null。 */
-  browserSkill: SkillMember | null;
+  /** 浏览器相关技能（可能多个，未安装的不计）。 */
+  browserSkills: ReadonlyArray<SkillMember>;
 }
 
 /** 同一组里所有相关子项的布尔值列表（未安装的可选子项不计入）。 */
@@ -84,7 +88,7 @@ export function collectItems(snapshot: SubToggleSnapshot, groupId: CapabilityGro
     return items;
   }
   const items = [snapshot.browserAuto];
-  if (snapshot.browserSkill) items.push(snapshot.browserSkill.enabled);
+  items.push(...snapshot.browserSkills.map((s) => s.enabled));
   return items;
 }
 
@@ -121,7 +125,15 @@ export function ponytailSubSkills(localSkills: ReadonlyArray<{ folder?: string; 
     .filter((entry) => entry.folder.length > 0);
 }
 
-/** 按目录名或技能名找本地技能（内置技能 folder 与 name 同名，两个都匹配以防只填了一个）。 */
+/** 找一组技能（未安装的略过）——总闸联动按 BROWSER_SKILL_IDS 一起启停。 */
+export function findCapabilitySkills(
+  localSkills: ReadonlyArray<{ folder?: string; name?: string; enabled?: boolean }>,
+  ids: readonly string[],
+): SkillMember[] {
+  return ids.map((id) => findCapabilitySkill(localSkills, id)).filter((s): s is SkillMember => s !== null);
+}
+
+/** 按目录名或技能名找单个本地技能（内置技能 folder 与 name 同名，两个都匹配以防只填了一个）。 */
 export function findCapabilitySkill(
   localSkills: ReadonlyArray<{ folder?: string; name?: string; enabled?: boolean }>,
   id: string,
@@ -150,8 +162,8 @@ export interface GroupAction {
   nuphusMcp?: boolean;
   /** 桌面自动化配套技能目标状态（差异才发，携带真实 folder）。 */
   desktopSkill?: SkillMember;
-  /** 浏览器自动化配套技能目标状态。 */
-  browserSkill?: SkillMember;
+  /** 浏览器自动化配套技能目标状态（可能多个）。 */
+  browserSkills?: SkillMember[];
 }
 
 /** 计划是否为空（没有需要下发的子项）。 */
@@ -162,7 +174,7 @@ export function isEmptyAction(action: GroupAction): boolean {
     && action.browserAutomation === undefined
     && action.nuphusMcp === undefined
     && action.desktopSkill === undefined
-    && action.browserSkill === undefined;
+    && action.browserSkills === undefined;
 }
 
 export function planAction(snapshot: SubToggleSnapshot, groupId: CapabilityGroupId, target: boolean): GroupAction {
@@ -188,9 +200,10 @@ export function planAction(snapshot: SubToggleSnapshot, groupId: CapabilityGroup
   }
   const action: GroupAction = {};
   if (snapshot.browserAuto !== target) action.browserAutomation = target;
-  if (snapshot.browserSkill && snapshot.browserSkill.enabled !== target) {
-    action.browserSkill = { folder: snapshot.browserSkill.folder, enabled: target };
-  }
+  const pendingBrowserSkills = snapshot.browserSkills
+    .filter((s) => s.enabled !== target)
+    .map((s) => ({ ...s, enabled: target }));
+  if (pendingBrowserSkills.length) action.browserSkills = pendingBrowserSkills;
   return action;
 }
 
@@ -218,7 +231,7 @@ export function syncedSnapshot(snapshot: SubToggleSnapshot, groupId: CapabilityG
   return {
     ...snapshot,
     browserAuto: target,
-    browserSkill: snapshot.browserSkill ? { ...snapshot.browserSkill, enabled: target } : null,
+    browserSkills: snapshot.browserSkills.map((s) => ({ ...s, enabled: target })),
   };
 }
 
@@ -292,12 +305,12 @@ export async function applyAction(action: GroupAction, ipc: GroupIpc): Promise<A
     }
   }
 
-  if (action.browserSkill) {
+  for (const skill of action.browserSkills ?? []) {
     try {
-      await ipc.setSkillEnabled({ folder: action.browserSkill.folder, enabled: action.browserSkill.enabled });
+      await ipc.setSkillEnabled({ folder: skill.folder, enabled: skill.enabled });
       applied.browserSkill = true;
     } catch (error: any) {
-      failures.push(`技能 ${action.browserSkill.folder}：${error?.message ?? String(error)}`);
+      failures.push(`技能 ${skill.folder}：${error?.message ?? String(error)}`);
     }
   }
 
@@ -328,7 +341,8 @@ export function groupMembers(snapshot: SubToggleSnapshot, groupId: CapabilityGro
     return items;
   }
   const items: { key: MemberKey; on: boolean }[] = [{ key: "browser", on: snapshot.browserAuto }];
-  if (snapshot.browserSkill) items.push({ key: "browserSkill", on: snapshot.browserSkill.enabled });
+  // 两个浏览器技能聚合成一个条目展示：全开才算 on（关掉总闸时它们会一起被禁）
+  if (snapshot.browserSkills.length) items.push({ key: "browserSkill", on: snapshot.browserSkills.every((s) => s.enabled) });
   return items;
 }
 

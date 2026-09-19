@@ -5625,6 +5625,59 @@ w.postMessage({id:1,op:"list",root});
     );
   }
 
+
+  // ⑩ 浏览器专用技能 browser-skill（09-19 用户：「browser skill 内置到已安装技能里面，专门跑浏览器自动化」
+  //    → 随后「这个更好，那个替换掉」：改用 browser-skill 替换 browser-automation）
+  //    要点：① 随应用写入 codexHome/skills/（内置=代码为准，启动时按内容覆盖）
+  //          ② 内容必须覆盖**真实存在**的命令（照 help 写）且替换后**不丢能力说明**
+  //             （通道选型 / CloakBrowser 是从旧技能并过来的，删旧技能不能把它们一起删掉）
+  //          ③ 旧技能必须退役清理 —— 内建写入只增不删，不清的话老用户磁盘上那份会继续被加载
+  //          ④ 仍受「浏览器自动化」总闸管（名单 = BROWSER_SKILL_IDS）
+  const bsSrc58 = readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8");
+  (/\["browser-skill", BROWSER_SKILL\]/.test(bsSrc58) ? ok : fail)(
+    "【58】browser-skill 已注册进内置技能（随应用启动写入 codexHome/skills/）"
+  );
+  (!/\["browser-automation", BROWSER_SKILL\]/.test(bsSrc58) ? ok : fail)(
+    "【58】旧技能不再被写入（browser-automation 已退役，否则两套浏览器说明同时加载）"
+  );
+  (/name: browser-skill[\r\n]/.test(bsSrc58) ? ok : fail)(
+    "【58】技能 frontmatter 的 name 与目录名一致（browser-skill，否则引擎按名字索引不到）"
+  );
+  // 命令必须照 playwright-cli --help 写（写错模型就照着错命令试）
+  const bsCmds58 = ["snapshot", "find <text>", "requests", "response-body", "console [min-level]", "state-save", "state-load", "kill-all", "tab-list", "--raw", "eval <func>"];
+  const bsMiss58 = bsCmds58.filter((k) => !bsSrc58.includes(k));
+  (bsMiss58.length === 0 ? ok : fail)(`【58】技能覆盖真实实操命令（缺：${bsMiss58.join("、") || "无"}）`);
+  // 替换后不能丢能力说明：通道选型表 + CloakBrowser 段（原本在旧技能里）
+  const bsMerge58 = ["通道选型", "内置浏览器面板", "CLOAKBROWSER_ENTRY", "cloakbrowser install"];
+  const bsLost58 = bsMerge58.filter((k) => !bsSrc58.includes(k));
+  (bsLost58.length === 0 ? ok : fail)(
+    `【58】替换后能力说明未丢失（缺：${bsLost58.join("、") || "无"}）`
+  );
+  // 退役清理：指纹比对 + 兼容 .disabled（被总闸禁用过的旧技能也要能清）
+  (/const RETIRED_SKILLS: \[string, string\]\[\] = \[\["browser-automation", RETIRED_BROWSER_SKILL\]\]/.test(bsSrc58) ? ok : fail)(
+    "【58】旧技能进了退役名单（否则老用户磁盘上那份永远留着）"
+  );
+  (/"SKILL\.md", "SKILL\.md\.disabled"/.test(bsSrc58) ? ok : fail)(
+    "【58】退役清理想到了 .disabled 形态（被总闸禁用过的旧技能不会被漏掉）"
+  );
+  // ⛔ 判据锚「两边都归一化行尾」这个不变量本身，不锚具体语句形态（语句会被重构，不变量不会）
+  (/existing\.replace\(\/\\r\\n\/g, "\\n"\)/.test(bsSrc58) && /original\.replace\(\/\\r\\n\/g, "\\n"\)/.test(bsSrc58) ? ok : fail)(
+    "【58】退役清理归一化行尾后比对指纹（否则被停用/启用重写成 LF 的旧技能永远清不掉）"
+  );
+  const cgSrc58 = readFileSync(join(ROOT, "src", "lib", "capability-groups.ts"), "utf8");
+  (/BROWSER_SKILL_ID = "browser-skill"/.test(cgSrc58) ? ok : fail)(
+    "【58】总闸管的是新技能名（还指着旧名 = 关总闸关不到真正的技能）"
+  );
+  (/BROWSER_SKILL_IDS: readonly string\[\] = \[BROWSER_SKILL_ID\]/.test(cgSrc58) ? ok : fail)(
+    "【58】技能名单与主技能名一致（名单里留着已退役的名字 = 状态永远对不上）"
+  );
+  const appSrc58b = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  (/findCapabilitySkills\(localSkills as any\[\], BROWSER_SKILL_IDS\)/.test(appSrc58b) ? ok : fail)(
+    "【58】渲染层按名单聚合技能状态（总闸显示才不会与实际状态脱节）"
+  );
+  (/browserSkills: findCapabilitySkills\(skills, BROWSER_SKILL_IDS\)/.test(appSrc58b) ? ok : fail)(
+    "【58】联动后复算也走同一份名单"
+  );
 }
 
 console.log("");
