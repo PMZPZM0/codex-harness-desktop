@@ -427,7 +427,7 @@ import { MermaidDiagram } from "./components/MermaidDiagram";
 import { currentStreak, dayKey, formatTokens, lastDays, readUsageStats, recordTurnUsage, resetUsageStats, totalTokens } from "./lib/usage-stats";
 import { useScheduler, emptyScheduleDraft } from "./hooks/useScheduler";
 import { useChannelBot, type ChannelDraft } from "./hooks/useChannelBot";
-import { useModelProviders } from "./hooks/useModelProviders";
+import { useModelProviders, type UpstreamProtocol } from "./hooks/useModelProviders";
 import { useFilePreview } from "./hooks/useFilePreview";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "./lib/turn-fold";
 import { planCompletedFold } from "./lib/turn-fold-plan.mjs";
@@ -20250,6 +20250,26 @@ const commandMatches = useMemo(() => {
                 {(Number(customDraft.maxConcurrency) || DEFAULT_MAX_CONCURRENCY) > 3 && (
                   <div className="provider-field-hints">
                     <p>⚠️ 并发越高，越容易触发上游 429 限流（同一个 Key 的配额是共享的）。出现频繁限流时，把它调小到 2~3 通常能明显缓解。</p>
+                  </div>
+                )}
+                {/* 上游协议（09-19 用户要求：Claude 类通道常不认 responses，且自动判定不灵）。
+                    ⛔ 与上面的「模型」不同：这是**上游网关说的协议**，本地协议桥按它决定转发方式。
+                    默认「自动」够用；对话报错说"不支持/找不到"时，试试「Chat（兼容）」。
+                    对应 electron/responses-bridge.ts 的 BridgeMode。 */}
+                <label className="provider-field">
+                  <span>上游协议 <i className="provider-field-hint">网关提供哪种接口</i></span>
+                  <select
+                    value={customDraft.upstreamProtocol ?? "auto"}
+                    onChange={(event) => setCustomDraft({ ...customDraft, upstreamProtocol: event.target.value as UpstreamProtocol })}
+                  >
+                    <option value="auto">自动（推荐）</option>
+                    <option value="chat">Chat 兼容（/v1/chat/completions）</option>
+                    <option value="responses">Responses（原生透传）</option>
+                  </select>
+                </label>
+                {(customDraft.upstreamProtocol ?? "auto") === "auto" && (
+                  <div className="provider-field-hints">
+                    <p>自动模式会先按 Responses 试，网关明确表示"没这个接口"时才改用 Chat 格式。若对话报「不支持 / 找不到接口」但一直不切换，把它改成「Chat 兼容」。</p>
                   </div>
                 )}
                 <div className="model-list-block">
