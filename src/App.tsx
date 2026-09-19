@@ -444,8 +444,8 @@ import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextI
 import { installFocusReturn } from "./lib/focus-return";
 import {
   ponytailSubSkills, planAction, applyAction, isEmptyAction, describePartial, guardOffOwner,
-  findCapabilitySkill, syncedSnapshot, samePluginId,
-  PONYTAIL_PLUGIN_ID, NUPHUS_MCP_ID, DESKTOP_SKILL_ID, BROWSER_SKILL_ID, GROUP_LABELS,
+  findCapabilitySkill, findCapabilitySkills, syncedSnapshot, samePluginId,
+  PONYTAIL_PLUGIN_ID, NUPHUS_MCP_ID, DESKTOP_SKILL_ID, BROWSER_SKILL_ID, BROWSER_SKILL_IDS, GROUP_LABELS,
   type CapabilityGroupId, type SubToggleSnapshot, type GroupIpc, type MemberKey,
 } from "./lib/capability-groups";
 
@@ -1227,7 +1227,7 @@ const MEMBER_LABELS: Partial<Record<MemberKey, string>> = {
   nuphusMcp: "nuphus MCP",
   desktopSkill: `${DESKTOP_SKILL_ID} 技能`,
   browser: "浏览器自动化总闸",
-  browserSkill: `${BROWSER_SKILL_ID} 技能`,
+  browserSkill: "浏览器自动化技能",
 };
 
 /** 快捷键一览：settings 快捷键弹窗用。keys 是展示用组合，实际绑定在全局 keydown 处理器。 */
@@ -12299,7 +12299,7 @@ const commandMatches = useMemo(() => {
   const ponytailPluginOn = ponytailPluginEntry?.enabled !== false;
   const ponytailSkillsSnap = useMemo(() => ponytailSubSkills(localSkills as any[]), [localSkills]);
   const desktopSkillSnap = useMemo(() => findCapabilitySkill(localSkills as any[], DESKTOP_SKILL_ID), [localSkills]);
-  const browserSkillSnap = useMemo(() => findCapabilitySkill(localSkills as any[], BROWSER_SKILL_ID), [localSkills]);
+  const browserSkillsSnap = useMemo(() => findCapabilitySkills(localSkills as any[], BROWSER_SKILL_IDS), [localSkills]);
   const nuphusMcpOn = mcpOverrides[NUPHUS_MCP_ID] !== false; // 覆盖表没记录 = 默认启用
   const capabilitySnapshot: SubToggleSnapshot = useMemo(() => ({
     ponytailOn,
@@ -12309,8 +12309,8 @@ const commandMatches = useMemo(() => {
     browserAuto,
     nuphusMcpOn,
     desktopSkill: desktopSkillSnap,
-    browserSkill: browserSkillSnap,
-  }), [ponytailOn, ponytailPluginOn, ponytailSkillsSnap, desktopAuto, browserAuto, nuphusMcpOn, desktopSkillSnap, browserSkillSnap]);
+    browserSkills: browserSkillsSnap,
+  }), [ponytailOn, ponytailPluginOn, ponytailSkillsSnap, desktopAuto, browserAuto, nuphusMcpOn, desktopSkillSnap, browserSkillsSnap]);
   const [groupBusy, setGroupBusy] = useState<CapabilityGroupId | null>(null);
   /** 联动层 IPC 实现（抽出来给「启动自愈」复用）。 */
   const groupIpc: GroupIpc = {
@@ -12353,7 +12353,7 @@ const commandMatches = useMemo(() => {
       if (result.applied.ponytailLinked) parts.push("ponytail 插件与子技能");
       if (result.applied.nuphus) parts.push("nuphus MCP");
       if (result.applied.desktopSkill) parts.push(`${DESKTOP_SKILL_ID} 技能`);
-      if (result.applied.browserSkill) parts.push(`${BROWSER_SKILL_ID} 技能`);
+      if (result.applied.browserSkill) parts.push("浏览器自动化技能");
       // 联动后再复算一次：还有没带起来的子项（例如技能目录被改名）就点名提示
       const hint = describePartial(syncedSnapshot(capabilitySnapshot, groupId, target), groupId, MEMBER_LABELS);
       if (hint) setNotice(`${label}已${target ? "开启" : "关闭"}，但 ${hint.pendingLabels.join("、")} 未同步，请到对应页确认`);
@@ -12391,7 +12391,7 @@ const commandMatches = useMemo(() => {
           browserAuto: settings.browserAutomation !== false,
           nuphusMcpOn: overrides[NUPHUS_MCP_ID] !== false,
           desktopSkill: findCapabilitySkill(skills, DESKTOP_SKILL_ID),
-          browserSkill: findCapabilitySkill(skills, BROWSER_SKILL_ID),
+          browserSkills: findCapabilitySkills(skills, BROWSER_SKILL_IDS),
         };
         let healed = false;
         for (const groupId of ["writing-code", "desktop-automation", "browser-automation"] as CapabilityGroupId[]) {
