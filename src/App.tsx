@@ -20239,41 +20239,74 @@ const commandMatches = useMemo(() => {
                 {customDraft.provider === "pptoken" && !providersList.some((p) => p.provider === "pptoken") && (
                   <p className="provider-form-hint">只需下方填入 API Key 即可使用；<a href="https://api.pptoken.cc/register?aff=X82JSNVC3W3S" onClick={(event) => { event.preventDefault(); void window.codex.openExternal("https://api.pptoken.cc/register?aff=X82JSNVC3W3S"); }}>注册 PPtoken 领取体验额度 ↗</a></p>
                 )}
-                {/* 本地模型快捷预设（09-19 用户要求「做一下本地模型适配」）：本地服务不必
-                    知道端口与路径，点一下把地址/名称/并发一次填好。
-                    ⛔ provider id 的冲突保护：只有在「新建」时才改用预设 id，且发现重名就加
-                    数字后缀 —— 否则点一下会把已有供应商的身份改掉（保存即覆盖，丢配置）。 */}
-                <div className="local-preset-row">
-                  <span className="local-preset-label">本地模型</span>
-                  {LOCAL_MODEL_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      className={`local-preset-chip ${customDraft.baseUrl === preset.url ? "on" : ""}`}
-                      title={`${preset.name}（默认端口 ${preset.port}）—— 点一下填好地址，本机服务一般无需 API Key，并发按 1 更稳`}
-                      onClick={() => setCustomDraft((current) => {
-                        const isNew = !current.provider || /^custom\d*$/.test(current.provider);
-                        let provider = current.provider;
-                        if (isNew) {
-                          provider = preset.id;
-                          let n = 2;
-                          while (providersList.some((item) => item.provider === provider)) provider = `${preset.id}-${n++}`;
-                        }
-                        return {
-                          ...current,
-                          provider,
-                          name: current.name.trim() ? current.name : preset.name,
-                          baseUrl: preset.url,
-                          // 见常量注释：本地单卡并发应串行，避免 KV 成倍占用
-                          maxConcurrency: "1",
-                          upstreamProtocol: "auto",
-                        };
+                {/* 本地模型快捷预设（09-19 用户要求「做一下本地模型适配」）：
+                    本地服务不必知道端口与路径，点一下把地址/名称/并发一次填好。
+
+                    ⛔ **只在「新建供应商」时显示**（09-19 用户反馈：「应该要做新建的时候展示，
+                    不能在已配置模型里面还能选，容易误点」）。判定用两个条件同时成立：
+                      ① hook 的 editingProvider 为空（没在编辑已存供应商）；
+                      ② 草稿的 id 不在已保存列表里（双保险：万一 editingProvider 状态滞后，
+                         也不会对着一个已存在的供应商覆盖它的地址/并发）。
+                    ⛔ 判定**不能**依赖「provider id 以 custom 开头」—— 点了预设后 id 会变成
+                      `ollama` 之类，那样整排会在点击瞬间自己消失。
+
+                    ⛔ **可取消**（同一条反馈：「选中一个没法取消选择」）：再点一次同一个 chip
+                    即取消，只回退**确实是这个预设填进去的值**，用户手改过的字段不动。 */}
+                {(() => {
+                  const editingExisting = Boolean(editingProvider)
+                    || providersList.some((item) => item.provider === customDraft.provider);
+                  // PPtoken 赞助卡是「尚未配置的推荐位」，不是新建本地供应商，不显示这排
+                  if (editingExisting || customDraft.provider === "pptoken") return null;
+                  return (
+                    <div className="local-preset-row">
+                      <span className="local-preset-label">本地模型<FieldHelp text={"一键填好本机服务的地址（Ollama / LM Studio / vLLM / llama.cpp）。\n\n本机服务一般不需要 API Key（留空即可），并发会设为 1 —— 单卡同时跑多路会让 KV cache 成倍占用，明显变慢甚至 OOM。\n\n再点一次已选中的按钮即可取消。"} /></span>
+                      {LOCAL_MODEL_PRESETS.map((preset) => {
+                        const active = customDraft.baseUrl === preset.url;
+                        return (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            className={`local-preset-chip ${active ? "on" : ""}`}
+                            aria-pressed={active}
+                            title={active
+                              ? `${preset.name}：已选中，再点一次取消选择`
+                              : `${preset.name}（默认端口 ${preset.port}）—— 点一下填好地址，本机服务一般无需 API Key，并发按 1 更稳`}
+                            onClick={() => setCustomDraft((current) => {
+                              if (current.baseUrl === preset.url) {
+                                // 取消选择：见上方注释（只回退预设写的值）
+                                return {
+                                  ...current,
+                                  provider: new RegExp(`^${preset.id}(-\\d+)?$`).test(current.provider)
+                                    ? `custom${Date.now() % 1000}` : current.provider,
+                                  name: current.name.trim() === preset.name ? "" : current.name,
+                                  baseUrl: "",
+                                  maxConcurrency: String(DEFAULT_MAX_CONCURRENCY),
+                                };
+                              }
+                              let provider = current.provider;
+                              if (!provider || /^custom\d*$/.test(provider)) {
+                                provider = preset.id;
+                                let n = 2;
+                                while (providersList.some((item) => item.provider === provider)) provider = `${preset.id}-${n++}`;
+                              }
+                              return {
+                                ...current,
+                                provider,
+                                name: current.name.trim() ? current.name : preset.name,
+                                baseUrl: preset.url,
+                                // 见常量注释：本地单卡并发应串行，避免 KV 成倍占用
+                                maxConcurrency: "1",
+                                upstreamProtocol: "auto",
+                              };
+                            })}
+                          >
+                            {preset.name}
+                          </button>
+                        );
                       })}
-                    >
-                      {preset.name}
-                    </button>
-                  ))}
-                </div>
+                    </div>
+                  );
+                })()}
                 {/* 供应商名称（09-17 用户要求从顶部挪到这里）：多个供应商重名时无法区分，
                     所以新增时必填（保存按钮会校验）。 */}
                 <label className="provider-field"><span>供应商名称 <i className="provider-required">必填</i></span><input value={customDraft.name} onChange={(event) => setCustomDraft({ ...customDraft, name: event.target.value })} placeholder="例如：OpenAI 官方 / 公司网关（用于区分多个供应商）" /></label>
