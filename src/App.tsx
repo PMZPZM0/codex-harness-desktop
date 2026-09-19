@@ -8402,6 +8402,38 @@ export default function App() {
     optimisticTurnIdRef.current = null;
     setOptimisticInput(null);
   }, [optimisticConfirmed, optimisticInput, thread]);
+  // ⛔⛔ 运行状态看门狗（09-19 用户截图实证「消息都回完了，停止键还挂着」= turn/completed
+  //    收尾事件丢失后没有任何东西来复位 sending/activeTurnId）。规则：
+  //    sending=true 期间每 30s 与**引擎侧记账**（engineActiveTurns，主进程按引擎事件维护）
+  //    对账一次：当前会话不在记账里 = 引擎侧早已没有活动回合 = 收尾事件丢了 → 强制收尾。
+  //    这是状态机的最后一条腿：事件驱动为主（turn/completed 等权威事件），看门狗兜底，
+  //    两层都依赖引擎侧真相——**不存在"永久卡运行"的状态了**。
+  const sendingWatchdogRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!sending || !activeTurnId) { if (sendingWatchdogRef.current != null) { window.clearInterval(sendingWatchdogRef.current); sendingWatchdogRef.current = null; } return; }
+    const tid = threadRef.current?.id;
+    if (!tid) return;
+    const probe = () => {
+      // 优先对当前 activeTurnId 的会话；记账以 threadId 集合返回
+      void window.codex.engineActiveTurns().then((info) => {
+        const ids: string[] = (info?.threadIds ?? []).map(String);
+        const stillActive = ids.includes(tid);
+        if (!stillActive && !document.hidden) {
+          // 收尾事件丢失 → 强制复位（不弹通知，静默修复；用户无感知差异）
+          setSending(false);
+          setInterrupting(false);
+          setActiveTurnId(null);
+          setWorkStartedAt(null);
+          markThreadStopped(tid);
+          dbg("watchdog-state-reset", { threadId: tid, turnId: activeTurnId });
+        }
+      }).catch(() => undefined);
+    };
+    const timer = window.setTimeout(probe, 30000);   // 首查 30s（正常回合 <30s 的不被打扰）
+    const interval = window.setInterval(probe, 30000);
+    sendingWatchdogRef.current = interval;
+    return () => { window.clearTimeout(timer); window.clearInterval(interval); if (sendingWatchdogRef.current === interval) sendingWatchdogRef.current = null; };
+  }, [sending, activeTurnId]);
   const [openingThread, setOpeningThread] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingRequest[]>([]);
   // e2e UI 场景入口（与 window.__adbg 同款测试钩子，只改内存、不碰引擎）：审批卡的形态
