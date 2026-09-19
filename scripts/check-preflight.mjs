@@ -6177,6 +6177,53 @@ w.postMessage({id:1,op:"list",root});
 }
 
 
+{
+  // ── 【70】小白快速上手：引导弹窗必须内嵌「粘 Key 一键配好」，入口常驻在发消息处 ──
+  //   09-19 用户：「登录界面和模型供应商配置联动性差，新手总是不会」。
+  //   卡点：登录页有快路（粘 Key → 自动探测 + 导入模型 + 生效），但新手多半点
+  //   「暂时不登录，直接进入」——那条快路就再也找不到了，只剩「设置 → 模型 → 供应商」
+  //   的完整表单（供应商 ID / Base URL / 模型列表 / 勾选生效），每样都要先懂概念才能填对。
+  const guideSrc70 = readFileSync(join(ROOT, "src", "components", "ModelSetupGuide.tsx"), "utf8");
+  const appSrc70 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  (/onQuickSetup/.test(guideSrc70) ? ok : fail)(
+    "【70】引导弹窗内嵌一键配置（不再只给跳转按钮）"
+  );
+  (/model-guide-key/.test(guideSrc70) ? ok : fail)(
+    "【70】引导里有 Key 输入框（新手只需粘一个 Key）"
+  );
+  (/model-guide-line/.test(guideSrc70) ? ok : fail)(
+    "【70】引导里可选接入线路"
+  );
+  (/lines=\{PPTokenEndpoints\}/.test(appSrc70) ? ok : fail)(
+    "【70】线路列表与登录页共用同一份数据（避免两处漂移）"
+  );
+  (/onGoManual/.test(guideSrc70) && /onGoSubscription/.test(guideSrc70) ? ok : fail)(
+    "【70】保留「我自己配完整表单」与「ChatGPT 订阅登录」两条原路径（熟手不能被牺牲）"
+  );
+  (/async function quickSetup\(/.test(appSrc70) && /await handleLogin\(\{ \.\.\.info, model: "" \}\)/.test(appSrc70) ? ok : fail)(
+    "【70】一键配置复用登录页那条成熟链路（不另写一套，避免漂移）"
+  );
+  (/className="setup-banner"/.test(appSrc70) ? ok : fail)(
+    "【70】未配模型时输入框上方有常驻配置入口（入口待在要发消息的地方）"
+  );
+  (/\{!customModel && !showLogin && \(/.test(appSrc70) ? ok : fail)(
+    "【70】常驻入口显示条件正确（未配置且不在登录页）"
+  );
+  (/if \(!customModel\) \{ dbg\.deferredByModel = true; return; \}/.test(appSrc70) ? ok : fail)(
+    "【70】未配模型时不弹环境体检（避免两个弹窗抢屏 —— 新手不知道该先干哪个）"
+  );
+  // ⛔ 同名分支有 3 处（另外两处是编辑重发/排队），必须锚**特征代码**才能命中 send() 里那处
+  const sendGuard70 = appSrc70.slice(appSrc70.indexOf("planOnceRef.current = false; // /plan 旗标不跨发送泄漏"), appSrc70.indexOf("planOnceRef.current = false; // /plan 旗标不跨发送泄漏") + 600);
+  (/setShowModelGuide\(true\)/.test(sendGuard70) && !/setNotice\("请先配置并启用自定义模型"\)/.test(sendGuard70) ? ok : fail)(
+    "【70】未配模型时发送直接打开配置引导（不再只弹一句看不懂的错）"
+  );
+  const cssSrc70 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+  (/\.model-guide-quick \{/.test(cssSrc70) && /\.setup-banner \{/.test(cssSrc70) ? ok : fail)(
+    "【70】快路卡片与常驻入口的样式存在"
+  );
+}
+
+
 if (hardFails === 0) {
   console.log(C.green(`预检通过${warns ? `（${warns} 条告警，见上）` : ""}`));
 } else {

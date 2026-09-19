@@ -9797,6 +9797,9 @@ export default function App() {
   /** 模型配置引导（09-17 用户要求）：只在**没有生效模型**时弹，配好后永不再弹。
    *  scope 是本次启动（关掉后本次不再弹；重启仍未配置则再提示一次）。 */
   const [showModelGuide, setShowModelGuide] = useState(false);
+  /** 引导弹窗里「一键配好」的忙碌/错误态（就地反馈，不再只给一句全局 notice） */
+  const [quickSetupBusy, setQuickSetupBusy] = useState(false);
+  const [quickSetupError, setQuickSetupError] = useState("");
   const modelGuideDoneRef = useRef(false);
   /** 首次启动「环境体检」（09-17 用户：「新用户不知道该装什么，不装 Codex 啥也干不了」）。
    *  必备 4 项（模型 / 工作区 / Git / ripgrep）缺任一项就弹；装了或用户关掉都算本次完事。 */
@@ -14091,13 +14094,18 @@ const commandMatches = useMemo(() => {
         setDevRuntimes(list);
         dbg.listRuntimes = list.filter((entry) => ["git", "rg", "pwsh", "python", "jq", "sevenzip"].includes(entry.id))
           .map((entry) => `${entry.id}:${entry.installed ? "ok" : "missing"}`);
-        const missingCore = envSpecs.filter((spec) => spec.core).filter((spec) => {
-          if (spec.id === "model") return !customModel;
-          if (spec.id === "workspace") return !workspace;
-          return !list.find((entry) => entry.id === spec.id)?.installed;
-        });
-        dbg.missingCore = missingCore.map((spec) => spec.id);
-        if (missingCore.length > 0) setEnvCheckOpen(true);
+      const missingCore = envSpecs.filter((spec) => spec.core).filter((spec) => {
+        if (spec.id === "model") return !customModel;
+        if (spec.id === "workspace") return !workspace;
+        return !list.find((entry) => entry.id === spec.id)?.installed;
+      });
+      dbg.missingCore = missingCore.map((spec) => spec.id);
+      // ⛔⛔ 09-19（用户：「登录界面和模型供应商配置联动性差，新手总是不会」）：
+      //   没配模型时**不要弹体检** —— 两个弹窗几乎同时抢屏（模型引导 1.2s、体检 1.4s），
+      //   新手不知道该先干哪个；而且"能不能发消息"是前提，"工具装没装"是第二层。
+      //   模型配好之后（customModel 变化会重建本 effect）体检自然会来提工具的事。
+      if (!customModel) { dbg.deferredByModel = true; return; }
+      if (missingCore.length > 0) setEnvCheckOpen(true);
       } catch (error: any) {
         dbg.error = String(error?.message ?? error);
       } finally {
@@ -17220,8 +17228,10 @@ const commandMatches = useMemo(() => {
     if (!customModel || !selectedModel) {
       planOnceRef.current = false; // /plan 旗标不跨发送泄漏：发送失败即复位
       setPlanArmed(false);
-      setNotice("请先配置并启用自定义模型");
-      setSettingsOpen(true);
+      // ⛔ 09-19：不再只是弹一句「请先配置并启用自定义模型」+ 跳设置页（新手看不懂那张完整表单）。
+      //   直接打开**一键配置向导**（粘 Key 即可），并且**保留用户刚输入的内容**——
+      //   send() 在更靠前的位置才清空输入框，这里 return 时 prompt 还在，配完回来不用重打。
+      setShowModelGuide(true);
       return;
     }
     // ⛔ 09-17 mac 实测（用户报「不使用项目地址功能用不了」）：只有「**既没有项目地址、
@@ -17729,6 +17739,33 @@ const commandMatches = useMemo(() => {
   async function handleSkip() {
     localStorage.setItem("login-skipped", "true");
     setShowLogin(false);
+  }
+
+  /**
+   * 引导弹窗里的「粘 Key 一键配好」（09-19 用户要求：让小白快速上手）。
+   *
+   * ⛔ 直接复用 handleLogin 的成熟链路（探测端点 → 导入全部模型 → 勾选生效模型 →
+   *   写入档案 → 进主界面 → toast 反馈），**不另写一套**：
+   *   两套链路必然漂移，且这条链路走过「探测失败不许进主界面」等一堆边界。
+   * ⛔ 与登录页的区别只在于**入口位置**：新手点了「暂时不登录直接进入」之后，
+   *   仍然能在引导弹窗里走同一条快路（原先这条快路只存在于登录页，跳过登录就再也找不到）。
+   */
+  async function quickSetup(info: { provider: string; name: string; baseUrl: string; apiKey: string }) {
+    setQuickSetupBusy(true);
+    setQuickSetupError("");
+    try {
+      const ok = await handleLogin({ ...info, model: "" });
+      if (ok) {
+        setShowModelGuide(false);
+        showToast("配置完成，可以开始了", `已启用 ${info.name} —— 直接在下面输入你的任务试试`);
+      } else {
+        setQuickSetupError("没探测到可用模型。请确认：① Key 复制完整（末尾无空格）；② 线路选对了；③ 该账号有可用额度。");
+      }
+    } catch (error: any) {
+      setQuickSetupError(String(error?.message ?? error));
+    } finally {
+      setQuickSetupBusy(false);
+    }
   }
 
   async function handleLogout() {
@@ -18331,11 +18368,18 @@ const commandMatches = useMemo(() => {
           {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
           {pastedText && <PastedTextEditor path={pastedText.path} name={pastedText.name} onClose={() => setPastedText(null)} />}
           {/* 设置页使用帮助（09-17 用户要求）：模型/插件/技能/MCP/专家团/语音/开发工具 + 设置总览 */}
-          {/* 模型配置引导（09-17）：只在没有生效模型时出现，配好即不再弹 */}
+          {/* 模型配置引导（09-17，09-19 升级为「小白快速上手」）：
+              只在没有生效模型时出现，配好即不再弹。⛔ 弹窗里内嵌「粘 Key 一键配好」快路——
+              原先只给两个跳转按钮，新手跳过去还是要填完整供应商表单（用户反馈「联动性差」）。 */}
           {showModelGuide && (
             <ModelSetupGuide
-              onGoModel={() => { setShowModelGuide(false); setSettingsPage("model"); setSettingsOpen(true); }}
+              lines={PPTokenEndpoints}
+              busy={quickSetupBusy}
+              error={quickSetupError}
+              onQuickSetup={(info) => void quickSetup(info)}
+              onGoManual={() => { setShowModelGuide(false); setSettingsPage("model"); setSettingsOpen(true); }}
               onGoSubscription={() => { setShowModelGuide(false); setSettingsPage("openai"); setSettingsOpen(true); }}
+              onRegister={() => void window.codex.openExternal("https://api.pptoken.cc/register?aff=X82JSNVC3W3S").catch(() => undefined)}
               onClose={() => setShowModelGuide(false)}
             />
           )}
@@ -18685,6 +18729,20 @@ const commandMatches = useMemo(() => {
               </div>
             </div>,
             document.body,
+          )}
+          {/* ⛔ 未配置模型时的常驻入口（09-19 用户要求：「新手总是不会」）：
+              入口必须待在**用户要发消息的地方**——新手不会主动去「设置 → 模型」找。
+              原来只有"发消息时才弹一句『请先配置并启用自定义模型』"，等于让人撞墙后才找路。
+              现在输入框上方常驻一条可点横幅，点开就是一键配置（粘 Key 即可）。 */}
+          {!customModel && !showLogin && (
+            <button type="button" className="setup-banner" onClick={() => setShowModelGuide(true)}>
+              <Sparkles size={15} />
+              <span className="setup-banner-text">
+                <b>还没配模型 —— 现在就能配好</b>
+                <em>粘一个 API Key 即可，自动识别模型；有 ChatGPT 订阅也可以直接登录</em>
+              </span>
+              <span className="setup-banner-go">去配置</span>
+            </button>
           )}
           {/* 429 限流自动重试状态条（**只显示当前会话自己的重试**）。
               ⛔⛔ 09-19 用户实测「重试弹窗跟别的会话串了，多开会话一起串、一直报错重试，
