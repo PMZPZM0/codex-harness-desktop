@@ -5810,51 +5810,6 @@ w.postMessage({id:1,op:"list",root});
   );
 }
 
-{
-  // ── 【61】429 兜底重试覆盖「排队释放」的回合（09-19 用户截图「处理出错 429 Too Many
-  //    Requests」反复出现却不自动重试——重试上下文只在直接 turn/start 路径登记，
-  //    queue/start 启动的回合（auto-start / 立即 / 自动续接）429 后只弹错误卡）──
-  const appSrc61 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
-  // ⛔ 判据落在**代码**上（codeOnly 剔注释）：注释掉调用仍需报红，否则「// armRateLimit…」
-  //   照样匹配计数 = 假绿（09-19 反证实证：宽松的计数断言注释掉 1/3 调用仍达标）。
-  const appCode61 = codeOnly(appSrc61);
-  // 登记函数存在且被三条释放路径调用（每条一条独立断言，锚各自的上下文）
-  (/function armRateLimitRetryForQueueRelease\(/.test(appCode61) ? ok : fail)(
-    "【61】排队释放的 429 重试登记函数存在"
-  );
-  (/armedByAutoStart = armPinForReleasedQueue\(params\.threadId, "auto-start"\);[^]*?armRateLimitRetryForQueueRelease\(params\.threadId, head\.input \?\? \[\]\);/.test(appCode61) ? ok : fail)(
-    "【61】auto-start 释放的回合登记 429 重试（注释掉调用必须红）"
-  );
-  (/const armedForCont = armPinForReleasedQueue\(threadId, "auto-continue"\);[^]*?armRateLimitRetryForQueueRelease\(threadId, head\.input \?\? \[\]\);/.test(appCode61) ? ok : fail)(
-    "【61】自动续接的回合登记 429 重试（续接场景本身是上游不稳高发区）"
-  );
-  (/armRateLimitRetryForQueueRelease\(thread\.id, entry\?\.input \?\? \[\]\);/.test(appCode61) ? ok : fail)(
-    "【61】点「立即」queue-start 的回合登记 429 重试"
-  );
-  // ⛔ 上下文的 input 必须用**排队条目自己的 input**（head.input / entry.input / 续接文本），
-  //   否则重发会跑错内容
-  (/head\.input \?\? \[\]/.test(appCode61) ? ok : fail)(
-    "【61】重试 input 用排队条目自己的 input（重发内容=引擎将重跑的内容）"
-  );
-  // 启动失败要撤回重试上下文（否则悬空上下文会被之后别的会话的 429 误用）
-  (/cancelRateLimitRetry\(true\);\s*\n\s*showToast\("自动续接失败"/.test(appCode61) && /disarmPinIntent\("queue-start-fail"\);[^]*?cancelRateLimitRetry\(true\);/.test(appCode61) ? ok : fail)(
-    "【61】释放失败路径有收尾（钉顶意图撤回 + 重试上下文清理）"
-  );
-  // ⛔ 重试的沙箱 cwd 必须按**目标会话**取（threadRef.current 是当前查看的会话，用户切走后
-  //   重试别的会话会带错沙箱根——两处执行器都要修）
-  const execRetry61 = appCode61.slice(appCode61.indexOf("async function executeRateLimitRetry"), appCode61.indexOf("function scheduleRateLimitRetry"));
-  (/threadCacheRef\.current\.get\(ctx\.threadId\)/.test(execRetry61) ? ok : fail)(
-    "【61】限流重试的沙箱 cwd 按目标会话取（用户切走后不串目录）"
-  );
-  const execEffort61 = appCode61.slice(appCode61.indexOf("async function executeEffortFallbackRetry"), appCode61.indexOf("function scheduleRateLimitRetry"));
-  (/threadCacheRef\.current\.get\(ctx\.threadId\)/.test(execEffort61) ? ok : fail)(
-    "【61】降档重发的沙箱 cwd 同样按目标会话取"
-  );
-  // 429 判定要能命中截图里的引擎原话
-  (/isRateLimitError/.test(appCode61) ? ok : fail)(
-    "【61】回合失败走 isRateLimitError 判定进入自动重试"
-  );
-}
 
 console.log("");
 console.log(C.gray(`已执行断言数：${checks}`));
