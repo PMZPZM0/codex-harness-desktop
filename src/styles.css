@@ -11744,13 +11744,11 @@ button.search-box:hover {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
   outline: none;
 }
-.field-help::after {
-  content: attr(data-tip);
-  position: absolute;
-  left: 50%;
-  top: calc(100% + 7px);
-  transform: translateX(-50%);
-  z-index: 60;
+/* 气泡本体（09-20）：挂到 body 的 fixed 浮层，不进任何滚动容器，也不受祖先层叠上下文限制。
+   z-index 9500 —— 高于各类设置弹窗 backdrop（80~97），低于 toast(99999) 与 composer 浮层(10001)。 */
+.field-help-pop {
+  position: fixed;
+  z-index: 9500;
   width: max-content;
   max-width: 300px;
   padding: 8px 10px;
@@ -11763,15 +11761,8 @@ button.search-box:hover {
   line-height: 1.6;
   text-align: left;
   white-space: pre-line;
-  opacity: 0;
-  visibility: hidden;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.32);
   pointer-events: none;
-  transition: opacity 0.12s ease;
-}
-.field-help:hover::after,
-.field-help:focus-visible::after {
-  opacity: 1;
-  visibility: visible;
 }
 /* 本地模型快捷预设（09-19）：点一下把本地服务的地址/并发一次填好 */
 .local-preset-row {
