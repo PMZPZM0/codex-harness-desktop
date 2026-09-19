@@ -177,6 +177,27 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **⛔ 会话「项目地址」改动要真落到侧栏 + 启动自动展开项目（09-19 用户实测：「在已创建会话上修改项目地址，
+  改了只是对话框上面显示改了，左侧栏没有变化，新增的项目地址也不出现，这个切换项目地址功能这样看就是假的；
+  启动应用左侧栏也没有自动展开项目，要手动展开」）**：
+  - **根因**：侧栏项目分组 `projectGroups` 是按 `threads[].cwd` 派的，而 `chooseWorkspace()` 原来只改了
+    本地 state + localStorage + 引擎 `thread/settings/update`，**没动列表里那条记录**；
+    且引擎 `thread/list` 回包的 cwd 是**创建时写进 rollout** 的那个（settings/update 只改运行时目录）
+    ⇒ 就算临时改了本地，下一次列表刷新也会被顶回去 ⇒ 用户看到的「假的」。
+  - **修法**：① `chooseWorkspace` 四件事一起做：引擎设置 / 列表条目 + 打开中的 thread 与缓存（侧栏立刻搬家）/
+    **本地覆盖落盘**（`thread-cwd-override-v1`，`rememberThreadCwd`）/ 展开新项目 + toast；
+    ② 两条列表刷新路径都过 `withCwdOverride(entry)`（漏一条就等于改了个寂寞）；
+    ③ `openThread` 顶栏显示走 `effectiveCwd(id, result.cwd)`；
+    ④ 启动后**首次**拿到项目分组时自动展开「当前会话所在项目」（`projectAutoExpandRef`，
+    只在第一次就绪时执行，之后完全交给用户的展开/折叠偏好）。
+  - **验收（真机，profile=main）7/7**：拿一条真实会话把 `thread-cwd-override-v1` 写成新项目 →
+    刷新后 `docs` 计数 2→3、原项目 5→4、`docs` 出现在侧栏、**再刷新一次计数不回退**、
+    清掉展开偏好后启动自动展开。判据用**项目头计数**（`.project-item-head em`）而不是 DOM 行 ——
+    侧栏只渲染展开组的行，用行判会得到"未找到"的假红（前两版就栽在这）。
+  - ⛔ **别想让渲染层 stub 原生目录选择框**：`contextBridge` 暴露的 `window.codex` 是
+    `frozen + non-configurable`（实测 `writable:false, configurable:false`，赋值静默失效、defineProperty 抛错），
+    所以「点『选择其他目录…』→ 侧栏立刻搬家」这一段无法自动化（会真的弹原生框、卡住测试）。
+    那段由预检【56】的静态守卫钉住；能自动化的持久化半边已真机验证。
 - **⛔⛔ 会话绝对独立：切会话 / 开关独立窗口**不许**影响正在运行的任务（09-19 用户明令：
   「不准再因为切换会话、别的独立弹窗关闭影响正在运行的会话，每个会话都是绝对独立运行状态，
   互不影响，除了用户停止，不许再断」）**。三处真根因，全部收口：

@@ -10865,6 +10865,36 @@ export default function App() {
       return next;
     });
   }, []);
+  /** ★ 会话「项目地址」的本地覆盖（09-19 用户实测：「在已创建会话上改了地址，只是对话框上面显示改了，
+   *  左侧栏没有变化；新增的项目地址也不出现 —— 这个切换项目地址功能这样看就是假的」）。
+   *  根因：引擎侧 `thread/settings/update {cwd}` 改的是**运行时**工作目录，而 `thread/list` 回包的 cwd
+   *  仍是创建时写进 rollout 的那个 ⇒ 只发 settings/update 永远改不动侧栏（侧栏项目分组是按 entry.cwd 派的）。
+   *  所以把用户**显式改过**的地址记在这里（threadId → cwd），并在列表刷新 / 打开会话时覆盖引擎值：
+   *  侧栏分组、「只看该项目」、重启之后三处都一致。 */
+  const [cwdOverrides, setCwdOverrides] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem("thread-cwd-override-v1") || "{}") as Record<string, string>; } catch { return {}; }
+  });
+  const cwdOverridesRef = useRef<Record<string, string>>(cwdOverrides);
+  const rememberThreadCwd = useCallback((threadId: string | null | undefined, cwd: string) => {
+    if (!threadId || !cwd) return;
+    const next = { ...cwdOverridesRef.current, [threadId]: cwd };
+    cwdOverridesRef.current = next;
+    try { localStorage.setItem("thread-cwd-override-v1", JSON.stringify(next)); } catch { /* ignore */ }
+    setCwdOverrides(next);
+  }, []);
+  /** 会话当前**生效**的项目地址（用户显式改过就用本地的，否则用引擎给的） */
+  const effectiveCwd = useCallback((threadId: string | null | undefined, engineCwd: string | null | undefined) => {
+    if (threadId) {
+      const override = cwdOverridesRef.current[threadId];
+      if (override) return override;
+    }
+    return engineCwd ?? "";
+  }, []);
+  /** 把本地覆盖贴到引擎回包上（列表与单会话都要走一遍，否则一次刷新就回退） */
+  const withCwdOverride = useCallback(<T extends { id: string; cwd: string }>(entry: T): T => {
+    const cwd = effectiveCwd(entry.id, entry.cwd);
+    return cwd && cwd !== entry.cwd ? { ...entry, cwd } : entry;
+  }, [effectiveCwd]);
   // 项目右键菜单
   const [projectMenu, setProjectMenu] = useState<string | null>(null);
   // 会话置顶：纯前端偏好（引擎无 pin API），用 localStorage 存 id 列表。
@@ -10896,6 +10926,23 @@ export default function App() {
       return next;
     });
   }, [projectGroups]);
+  /** 启动后**首次**拿到项目分组时，自动展开「当前会话所在的项目」（09-19 用户实测：
+   *  「启动应用，左侧栏没有自动展开项目…要手动展开」）。只在第一次就绪时做一次，
+   *  之后完全交给用户的展开/折叠偏好（persisted 在 sidebar-projects-expanded-v1）。 */
+  const projectAutoExpandRef = useRef(false);
+  useEffect(() => {
+    if (projectAutoExpandRef.current || !projectGroups.length) return;
+    projectAutoExpandRef.current = true;   // 想在真正执行处置位：分组就绪才算执行
+    const activeCwd = effectiveCwd(threadRef.current?.id, threadRef.current?.cwd) || workspace || projectGroups[0][0];
+    const hit = projectGroups.some(([cwd]) => cwd === activeCwd) ? activeCwd : projectGroups[0][0];
+    setExpandedProjects((prev) => {
+      if (prev.has(hit)) return prev;
+      const next = new Set(prev);
+      next.add(hit);
+      try { localStorage.setItem("sidebar-projects-expanded-v1", JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  }, [projectGroups, effectiveCwd, workspace]);
   const groupedThreads = useMemo(() => {
     const groups = groupThreadsByTime(listThreads);
     const pinned = listThreads.filter((entry) => pinnedThreads.includes(entry.id));
@@ -11813,7 +11860,8 @@ const commandMatches = useMemo(() => {
     setThreadsLoading(true);
     try {
       const result = await window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc", archived: false });
-      const list = result.data ?? [];
+      // 用户显式改过的项目地址覆盖引擎值（引擎回包的 cwd 是创建时那个，见 cwdOverrides 处注释）
+      const list = (result.data ?? []).map((entry: Thread) => withCwdOverride(entry));
       setThreads(list);
       // 启动耗时测量（09-17）：首屏会话列表到达 = 界面第一次有真实内容，splash 可以退场
       const boot = (window as unknown as { __boot?: Record<string, number> }).__boot;
@@ -13265,7 +13313,8 @@ const commandMatches = useMemo(() => {
 
     void window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc", archived: false })
       .then((threadResult) => {
-        const list = threadResult.data ?? [];
+        // 同样要贴本地覆盖（否则这条路径一跑，用户在别处改过的项目地址就被引擎旧值顶回去）
+        const list = (threadResult.data ?? []).map((entry: Thread) => withCwdOverride(entry));
         setThreads(list);
         threadsRef.current = list;
         setServerStatus("ready");
@@ -14887,10 +14936,35 @@ const commandMatches = useMemo(() => {
     setWorkspace(value);
     workspaceRef.current = value; // ref 同步：send 弹窗选完要立刻读到（state 是异步的）
     localStorage.setItem("workspace", value);
-    if (thread) {
-      const settings = sandbox === "workspace-write" ? { cwd: value, sandboxPolicy: sandboxPolicy(sandbox, value) } : { cwd: value };
-      await updateThreadSettings(settings);
+    const target = thread;
+    if (!target) return;
+    // ⛔ 09-19 用户实测：「在已创建会话上修改项目地址 —— 改了只是对话框上面显示改了，左侧栏没有变化，
+    //   新增的项目地址也不出现，这个切换项目地址功能这样看就是假的」。
+    //   原因：这里原来只改了本地 state + localStorage + 发给引擎，**没动列表里那条记录**；
+    //   而侧栏项目分组（projectGroups）是按 `threads[].cwd` 派的 ⇒ 会话仍挂在旧项目下；
+    //   且引擎 `thread/list` 回包的 cwd 是创建时那个（settings/update 只改运行时目录），
+    //   ⇒ 不改本地覆盖的话下一次刷新就把改动顶回去（所以「假的」）。
+    //   现在四件事一起做：① 引擎设置（运行时生效）② 列表条目 + 打开的 thread 与缓存（侧栏立刻搬家）
+    //   ③ 本地覆盖落盘（刷新/重启后仍然认）④ 展开新项目（用户改完就该看见它）。
+    const settings = sandbox === "workspace-write" ? { cwd: value, sandboxPolicy: sandboxPolicy(sandbox, value) } : { cwd: value };
+    await updateThreadSettings(settings);
+    rememberThreadCwd(target.id, value);
+    setThreads((current) => current.map((entry) => entry.id === target.id ? { ...entry, cwd: value } : entry));
+    const cached = threadCacheRef.current.get(target.id);
+    if (cached) threadCacheRef.current.set(target.id, { ...cached, cwd: value });
+    if (threadRef.current?.id === target.id) {
+      const next = { ...threadRef.current, cwd: value };
+      threadRef.current = next;
+      setThread(next);
     }
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      next.add(value);
+      try { localStorage.setItem("sidebar-projects-expanded-v1", JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+    showToast("项目地址已切换", `该会话现在属于 ${basename(value)}`);
+    void refreshThreads().catch(() => undefined);
   }
 
   async function chooseImages() {
@@ -15871,8 +15945,9 @@ const commandMatches = useMemo(() => {
       //   把真正在跑的会话判成已停 ⇒ 停止键消失、侧栏转圈消失，而且**下一条消息会走 `turn/start`**
       //   ⇒ 引擎侧那个回合被当场打断。撤销运行态只能靠**回合级权威事件**
       //   （turn/completed|aborted|failed|interrupted）或引擎侧记账核实（见 status/changed idle 分支）。
-      // 工作区与线程一致（团队卡片可指定独立项目地址）
-      if (freshThread.cwd) setWorkspace(freshThread.cwd);
+      // 工作区与线程一致（团队卡片可指定独立项目地址）；用户改过地址时以本地覆盖为准
+      const liveCwd = effectiveCwd(freshThread.id, freshThread.cwd);
+      if (liveCwd) setWorkspace(liveCwd);
       // 内容渲染完成后瞬时定位到最新消息（两帧重试；带 settled 回调确保遮罩等渲染稳定）
       requestAnimationFrame(() => requestAnimationFrame(() => jumpToBottom(scrollRef.current, markSettled, contentTailTarget)));
       setOpeningThread(null);
@@ -16008,8 +16083,9 @@ const commandMatches = useMemo(() => {
           if (!seeded && effort) saveThreadEffort(id, effort);
         }
       }
-      // 打开会话后工作区跟随该会话的 cwd（会话创建时锁定的项目目录）。
-      setWorkspace(result.cwd);
+      // 打开会话后工作区跟随该会话的 cwd（会话创建时锁定的项目目录）；
+      // 用户在这个会话里显式改过地址 ⇒ 以本地覆盖为准（否则顶栏会显示引擎那个旧目录）
+      setWorkspace(effectiveCwd(id, result.cwd));
       // 权限恢复优先级：本地每任务记录（用户在这个会话明确选过）> 全局默认 > resume 响应。
       // 引擎 resume 返回的是会话创建时的值，通常是旧默认，不能覆盖用户当前的全局选择。
       const resumedSandbox = sandboxMode(result.sandboxPolicy ?? result.sandbox ?? (result.thread as any)?.sandboxPolicy);
