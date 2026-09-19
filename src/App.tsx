@@ -5743,8 +5743,12 @@ function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[
   // 窗口容量封顶（RULER_MAX）：轨道再高，一屏最多 50 个刻度——「已加载页数再多也不会
   // 全量透出」，超出部分靠滚动/滚轮滑窗口看到。
   const windowSize = Math.min(Math.max(4, visibleCount), RULER_MAX);
+  // 铺满模式（09-19 用户定稿口径）：消息数 ≤ 一屏容量时，刻度**均匀铺满整列**
+  // （顶边框 → 输入框的距离，像真实尺子）；超过容量才切固定 14px 槽位 + 悬停滚轮滑窗。
+  // ⛔ 不再让刻度按内容数「居中悬浮成一截」——那是用户截图吐槽的「有多少展示多少」观感。
+  const spread = allMarks.length <= windowSize;
   const marks = useMemo(() => {
-    if (allMarks.length <= windowSize) return allMarks;
+    if (spread) return allMarks;
     let start = Math.max(0, Math.min(currentIndex + windowOffset, allMarks.length - windowSize));
     let end = start + windowSize;
     if (end > allMarks.length) {
@@ -5752,7 +5756,7 @@ function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[
       start = end - windowSize;
     }
     return allMarks.slice(start, end);
-  }, [allMarks, currentIndex, windowOffset, windowSize]);
+  }, [allMarks, currentIndex, windowOffset, windowSize, spread]);
 
   const latestId = allMarks.length ? allMarks[allMarks.length - 1].id : null;
 
@@ -5800,7 +5804,7 @@ function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[
   return (
     <div className="message-ruler" role="navigation" aria-label="消息定位">
       <div
-        className="ruler-track"
+        className={`ruler-track${spread ? " ruler-track-spread" : ""}`}
         ref={(node) => {
           trackRef.current = node;
           // 独立滚轮：悬停刻度尺时滚轮只滑刻度选区（原生非 passive 监听才能 preventDefault），
@@ -8223,6 +8227,9 @@ export default function App() {
     setWorkStartedAt(Date.now());
     markThreadRunning(ctx.threadId);
     try {
+      // ⛔ 沙箱 cwd 必须按**目标会话**取（不能拿 threadRef.current —— 用户可能已切走，
+      //   重试别的会话会把当前会话的 cwd 当沙箱根）。目标会话不在缓存时退 workspace。
+      const retryTarget = threadCacheRef.current.get(ctx.threadId);
       const result: any = await window.codex.request("turn/start", {
         threadId: ctx.threadId,
         input: ctx.input,
@@ -8230,7 +8237,7 @@ export default function App() {
         effort: ctx.effort,
         personality: ctx.personality,
         // 限流重试这一轮也要带上沙箱，否则重试后会掉回会话创建时的旧权限
-        sandboxPolicy: sandboxPolicy(sandbox, threadRef.current?.cwd ?? workspace ?? ""),
+        sandboxPolicy: sandboxPolicy(sandbox, retryTarget?.cwd ?? threadRef.current?.cwd ?? workspace ?? ""),
       });
       if (result?.turn?.id) {
         setActiveTurnId(result.turn.id);
@@ -8264,13 +8271,15 @@ export default function App() {
     setWorkStartedAt(Date.now());
     markThreadRunning(ctx.threadId);
     try {
+      // 沙箱 cwd 按**目标会话**取（同 executeRateLimitRetry 的修复：用户可能已切走）
+      const retryTarget = threadCacheRef.current.get(ctx.threadId);
       const result: any = await window.codex.request("turn/start", {
         threadId: ctx.threadId,
         input: ctx.input,
         model: ctx.model,
         effort: ctx.effort,
         personality: ctx.personality,
-        sandboxPolicy: sandboxPolicy(sandbox, threadRef.current?.cwd ?? workspace ?? ""),
+        sandboxPolicy: sandboxPolicy(sandbox, retryTarget?.cwd ?? threadRef.current?.cwd ?? workspace ?? ""),
       });
       if (result?.turn?.id) {
         setActiveTurnId(result.turn.id);
@@ -12122,6 +12131,27 @@ const commandMatches = useMemo(() => {
     dbg("queue-arm-cancelled", { why });
   }
 
+  /** 为「排队释放」启动的回合登记 429 重试上下文（09-19 用户截图实证缺口）：
+   *  引擎侧 10 次重试耗尽后回合以 429 报错结束，渲染层兜底重试（rate-limit-retry）的
+   *  触发条件是 retryContextRef.current?.threadId === 失败会话 —— 而这个上下文只在
+   *  「直接 turn/start」路径登记过；**排队释放的回合（运行中发消息 / 自动续接 / 点立即）
+   *  429 后没有上下文 → 不重试，只弹一张「处理出错」错误卡**。这正是截图里
+   *  「处理出错：429 Too Many Requests」反复出现、应用却不接手的场景。
+   *  ⛔ 上下文的 input 必须用**排队条目自己的 input**（它才是引擎将重跑的内容），
+   *     模型/档位沿用当前生效值（与释放时一致）。 */
+  function armRateLimitRetryForQueueRelease(threadId: string, entryInput: any[]) {
+    if (!threadId) return;
+    retryContextRef.current = {
+      threadId,
+      input: entryInput,
+      model: activeModelRef.current || modelName(modelId),
+      effort: effort || null,
+      personality: null,   // 释放路径拿不到气泡时刻的 personality；置空与「不指定」同义
+    };
+    rateLimitAttemptRef.current = 0;
+    dbg("queue-retry-arm", { threadId });
+  }
+
   /** 回合级「截断空转」的自动续接（09-19 用户实测「思考内容过长会被截断，运行状态就断了」）。
    *  机制：回合已 task_complete（引擎侧无 active turn，`turn/steer` 不可用——它的前置条件是
    *  "active turn id"，引擎自己也不做 finish_reason=length 的续写），承接只能落成**新回合**。
@@ -12160,11 +12190,14 @@ const commandMatches = useMemo(() => {
         const head = list?.data?.[0];
         if (head) {
           const armedForCont = armPinForReleasedQueue(threadId, "auto-continue");
+          // 续接回合同样要被 429 兜底重试覆盖（续接场景本身就是上游不稳的高发区）
+          armRateLimitRetryForQueueRelease(threadId, head.input ?? []);
           try {
             await window.codex.request("thread/queue/start", { threadId, queuedSubmissionId: head.id });
           } catch (error: any) {
             // 启动失败 ⇒ 那条续接不会出现：撤回钉顶意图（否则去钉列表里别的消息），并告知
             if (armedForCont) disarmPinIntent("auto-continue-fail");
+            cancelRateLimitRetry(true);
             showToast("自动续接失败", String(error?.message ?? error));
           }
         }
@@ -12221,6 +12254,8 @@ const commandMatches = useMemo(() => {
     const armedForStart = armPinForReleasedQueue(thread.id, "queue-start");
     try {
       // 它会作为**新回合**的用户消息出现 → 同样要先建立钉顶意图
+      // 429 兜底重试覆盖：这条回合若以 429 失败，用排队条目自己的 input 自动重发
+      armRateLimitRetryForQueueRelease(thread.id, entry?.input ?? []);
       await window.codex.request("thread/queue/start", { threadId: thread.id, ...(id ? { queuedSubmissionId: id } : {}) });
       // 同「回合结束自动启动」：先本地摘掉，避免与真实气泡并存（否则会短暂重复展示）
       if (id) setQueue((current) => current.filter((entry) => entry.id !== id));
@@ -12228,6 +12263,7 @@ const commandMatches = useMemo(() => {
       showToast("已发送", "排队消息已开始执行");
     } catch (error: any) {
       if (armedForStart) disarmPinIntent("queue-start-fail");
+      cancelRateLimitRetry(true);
       showToast("发送失败", error.message);
     }
   }
@@ -13060,6 +13096,8 @@ const commandMatches = useMemo(() => {
           // 这条排队消息马上会变成真实回合的用户消息 → 先建立钉顶意图（否则它落进内容流，
           // 用户看到的就是「钉顶没生效」）。只对当前正在看的会话生效，见函数注释。
           armedByAutoStart = armPinForReleasedQueue(params.threadId, "auto-start");
+          // 429 兜底重试也要覆盖这条回合（09-19 用户截图：「处理出错 429」反复出现却不重试）
+          armRateLimitRetryForQueueRelease(params.threadId, head.input ?? []);
           return window.codex.request("thread/queue/start", { threadId: params.threadId, queuedSubmissionId: head.id });
         }).catch((error) => {
           // 启动失败 ⇒ 那条消息不会出现，撤回意图（否则钉顶会去钉别的消息）
