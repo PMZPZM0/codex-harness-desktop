@@ -177,6 +177,31 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 
+- **⛔⛔ 会话绝对独立：切会话 / 开关独立窗口**不许**影响正在运行的任务（09-19 用户明令：
+  「不准再因为切换会话、别的独立弹窗关闭影响正在运行的会话，每个会话都是绝对独立运行状态，
+  互不影响，除了用户停止，不许再断」）**。三处真根因，全部收口：
+  - **① 渲染层拿"快照"熄灭运行态（主犯）**。`openThread` 的两条路径（freshThread / resume）原来都是
+    `if (runningTurn) markThreadRunning(...); else markThreadStopped(id);` —— 而引擎 resume 回包与本地
+    缓存快照**经常不带 inProgress 回合**（或带的是旧快照），于是正在跑的会话被判成"已停"：停止键消失、
+    侧栏转圈消失；**更致命的是下一条消息会因此走 `turn/start`**，而引擎侧那个回合还在跑 ⇒ 当场被打断。
+    ⇒ 撤销运行态**只能**由回合级权威事件（`turn/completed|aborted|failed|interrupted`）或引擎侧记账核实触发；
+    「快照里没看到」≠「没在跑」。三处 `else markThreadStopped`（含 `no rollout found` 兜底分支——它正是
+    "新建会话首回合还在跑、rollout 尚未落盘"的形态）全部删除。
+  - **② `thread/status/changed` 的 `idle` 无条件熄灭**。`idle` 是**快照式**信号（resume 回包、回合间隙、
+    引擎重连、切会话重建状态都会发），旧写法 `else markThreadStopped(...)` 拿它抹掉 `turn/started` 点亮的
+    运行态。⇒ 现在只有 `notLoaded` / `systemError`（结构性事实）直接清；`idle` 必须**向主进程核实**
+    （`engineActiveTurns().threadIds` 里没有该会话）才清。顺带补上渲染层对 `turn/aborted|failed|interrupted`
+    的处理（原先只认 `turn/completed` ⇒ 被中断的回合转圈永远挂着）。
+  - **③ 主进程硬闸（最后一道，不依赖渲染层状态对不对）**：`codex:request` 里 `turn/start` 若发现
+    **引擎侧记账**（`engineActiveTurnIds` 由 `turn/started|completed` 维护）中该会话仍有活动回合，
+    **直接拒绝**并提示改走 `thread/queue/add`（排队）或 `turn/steer`（并入当前回合）。
+    这是"绝对独立"的兜底：渲染层任何一次状态误判都不会再变成"打断在跑的任务"。
+  - **④ 记账必须有出口（否则死锁）**：`engineActiveTurnIds` 原来只按事件增删，**引擎进程重建时不清** ⇒
+    闸门与硬闸永久卡在"有任务在跑"（改配置永不生效、消息再也发不出去）。新增
+    `CodexServer.setEngineSpawnHook()`（每次 spawn 后回调），主进程据此 `clear()` + 打警告台账；
+    同时被推迟的重启请求在"新引擎已按磁盘配置启动"时**直接作废**（等价于已经生效，别再重启一次）。
+  - 对应预检【55】7 条守卫（负向断言：全仓不许再出现 `else markThreadStopped(id);` /
+    `else markThreadStopped(params.threadId);`）。**改动这块先跑 `npm run check`**。
 - **⛔ contextWindow 单一真相源（09-19 用户实测「`custom-model.json` 该模型写 1000000、`custom-models.json`
   同一供应商顶层写 128000，这个修一下，怎么又出现这个问题」）**：
   两个字段表达的是同一件事，却由**两个不同来源**写 —— 模型自己的 `contextWindow` 来自内置规格表

@@ -382,6 +382,18 @@ server.setBusyNotice((waiting, reason) => {
     }
   } catch { /* 窗口可能已销毁，忽略 */ }
 });
+// ⛔ 引擎进程一换，旧回合**全部不存在** ⇒ 记账必须跟着清（否则闸门与 turn/start 安全网永久卡住，
+//   见 codex-server.ts 里 spawn 处的注释）。顺手留一条台账：下次"任务莫名断了"能一眼看出
+//   是"引擎换了进程（含换了几个回合）"还是别的原因。
+server.setEngineSpawnHook(() => {
+  const stale = [...engineActiveTurnIds.entries()];
+  engineActiveTurnIds.clear();
+  if (stale.length) {
+    const byThread = new Map<string, number>();
+    for (const [, owner] of stale) byThread.set(owner, (byThread.get(owner) ?? 0) + 1);
+    console.warn(`[engine] 引擎进程已重启：作废 ${stale.length} 个失效回合记账（会话 ${[...byThread.keys()].map((t) => t.slice(0, 8)).join(", ")}）`);
+  }
+});
 /**
  * 本地协议桥（09-16）：引擎只会发 Responses（POST /v1/responses），而不少第三方网关
  * 只提供 /v1/chat/completions —— 这类网关过去「连接测试通过、实际对话全废」。
@@ -3659,6 +3671,22 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
   //   刻意用 finally 而不是「成功后才做」——引擎对「索引里本就不存在」的 id 会直接报错，
   //   而那条会话恰恰最需要清理：它就是兜底扫描从磁盘捞回来的幽灵会话，引擎早已不认识它。
   const purgeTarget = method === "thread/delete" ? String((params as any)?.threadId ?? "") : "";
+  // ⛔ 会话绝对独立（09-19 用户：「不准再因为切换会话、别的独立弹窗关闭影响正在运行的会话，
+  //   每个会话都是绝对独立运行状态，互不影响……除了用户停止，不许再断」）：
+  //   引擎侧一个 thread 同时只能有一个活动回合，`turn/start` 会**打断**已有回合。渲染层只要
+  //   有任何一次"以为它没在跑"（切会话时快照里看不到 inProgress 回合、独立窗口开关导致状态重建、
+  //   收到一条快照式的 thread/status/changed idle……），下一条消息就会走 turn/start —— 正在跑的
+  //   任务当场被掐掉，用户看到的就是「运行莫名停止」。
+  //   所以在这里用**引擎侧真相**兜底：该会话仍有活动回合 → 拒绝这条 turn/start，让它改走
+  //   `thread/queue/add`（排队）或 `turn/steer`（并入当前回合）。这一层不依赖渲染层的状态是否正确，
+  //   是"绝对独立"的最后一道硬闸；记账本身由 turn/started|completed 与进程重启维护。
+  if (method === "turn/start") {
+    const guardThreadId = String((params as any)?.threadId ?? "");
+    if (guardThreadId && [...engineActiveTurnIds.values()].includes(guardThreadId)) {
+      console.warn(`[turn/start] 拒绝：会话 ${guardThreadId.slice(0, 8)} 仍有活动回合在跑（引擎侧记账），已阻止打断`);
+      throw new Error("该会话仍有任务在运行（引擎侧确认），本次发送未执行以免打断它。等它结束，或点停止后再发。");
+    }
+  }
   try {
     result = await server.request(method, params);
   } catch (error: any) {
@@ -4056,7 +4084,12 @@ let engineUpdateRunning = false;
  */
 ipcMain.handle("engine:restart-log", () => server.restartHistory());
 /** 当前活跃回合数（0 = 引擎可以安全重启）。验收与诊断都要靠它确认闸门拿到了真实计数。 */
-ipcMain.handle("engine:active-turns", () => server.activeTurnCount());
+ipcMain.handle("engine:active-turns", () => ({
+  count: server.activeTurnCount(),
+  // 会话级明细（渲染层核实"这个会话到底还在不在跑"用：收到快照式的 thread/status/changed idle 时，
+  // 不能凭它熄灭运行指示器，要与引擎侧真相核对——见 App.tsx 的 status/changed 分支）
+  threadIds: [...new Set(engineActiveTurnIds.values())],
+}));
 ipcMain.handle("engine:check-update", async () => {
   const settings = await readAppSettings(app.getPath("userData"));
   return checkEngineUpdate(settings.engineProxyUrl?.trim() || undefined);

@@ -168,6 +168,15 @@ export class CodexServer extends EventEmitter {
   }
 
   /** 当前活跃回合数（0 = 可以安全重启）。 */
+  /** 引擎进程**重新拉起**时回调（每次 spawn 后立刻调用）：主进程据此清掉"谁在跑"的记账。
+   *  为什么挂在 spawn 而不是 exit：exit 之后可能还有正在进行的 restart 流程，而 spawn 那一刻
+   *  才是"旧的回合确定全部不存在"的确定点（见 launch 里的注释）。 */
+  setEngineSpawnHook(fn: () => void) {
+    this.onEngineSpawned = fn;
+  }
+
+  private onEngineSpawned?: () => void;
+
   activeTurnCount() {
     try { return Number(this.busyGate?.() ?? 0) || 0; } catch { return 0; }
   }
@@ -229,6 +238,21 @@ export class CodexServer extends EventEmitter {
       env: spawnEnv,
     });
     this.debugLog(`[spawn] HTTPS_PROXY=${spawnEnv.HTTPS_PROXY ?? "(无)"} NO_PROXY=${spawnEnv.NO_PROXY ?? "(无)"} CODEX_HOME=${spawnEnv.CODEX_HOME} provider 相关 env 已注入 ${this.externalEnv.HTTPS_PROXY ? "externalEnv" : "externalEnv 无代理"}`);
+    // ⛔ 进程级清账（09-19，用户：「每个会话都是绝对独立运行状态，互不影响」）：
+    //   新引擎 = 旧进程里那些回合**全部不存在了**（它们的子进程/会话随进程销毁）。主进程那份
+    //   「谁在跑」的记账必须在这里清，否则它会永久卡在"有任务在跑"——
+    //     ① 重启闸门（setBusyGate）此后一律推迟，改配置永不生效；
+    //     ② `turn/start` 安全网（见 main.ts）此后一律拒绝，用户再也发不出消息。
+    //   这是"记账只增不减"的唯一出口，漏了就变成死锁。
+    try { this.onEngineSpawned?.(); } catch { /* 钩子异常绝不能影响引擎启动 */ }
+    // 被推迟的重启请求：新引擎读的就是磁盘上的新配置（推迟时配置已落盘）——等价于已经生效，
+    // 直接作废，别再多余地重启一次（用户刚看到"改动会在任务结束后生效"，这里就是那个兑现点）。
+    if (this.deferredRestart) {
+      const { reason } = this.deferredRestart;
+      this.deferredRestart = null;
+      this.restartLog.push({ t: Date.now(), reason, busy: false, activeTurns: 0, action: "flush" });
+      this.debugLog(`[restart] 新引擎启动即视为兑现被推迟的重启：${reason}`);
+    }
     this.child.stderr.setEncoding("utf8");
     // stderr 只落盘、**不再转发渲染层**（多会话性能 09-12）：渲染层对 kind:"log" 的事件
     // 在 App.tsx 直接 return 丢弃，转发等于白付一次 IPC 序列化；而引擎 stderr 很密
