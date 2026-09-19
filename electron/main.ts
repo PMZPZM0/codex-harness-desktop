@@ -5328,6 +5328,28 @@ function runtimeInstaller(name: string) {
   return packaged || fallback;
 }
 
+/** 安装进度的结构化上报（09-19 用户要求「不要弹窗，全部进度条展示，方便新手」）。
+ *  安装脚本把进度写成 `@@PROGRESS <0-100>` / `@@STAGE <阶段名>` 这样的行——
+ *  它们**不进消息区**，只驱动进度条；其余行原样作为消息（用户能看到在做什么）。 */
+function emitRuntimeProgress(id: string, chunk: string | Buffer, prefix = "") {
+  const text = String(chunk);
+  for (const raw of text.replace(/\r/g, "\n").split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    const progress = line.match(/^@@PROGRESS\s+(\d{1,3})/);
+    if (progress) {
+      sendToWindow("runtime:progress", { id, percent: Math.max(0, Math.min(100, Number(progress[1]))) });
+      continue;
+    }
+    const stage = line.match(/^@@STAGE\s+(.+)/);
+    if (stage) {
+      sendToWindow("runtime:progress", { id, stage: stage[1].trim().slice(0, 40) });
+      continue;
+    }
+    sendToWindow("runtime:progress", { id, message: `${prefix}${line}` });
+  }
+}
+
 function runRuntimeInstaller(id: DevRuntimeId, script: string, args: string[], node = process.execPath) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(node, [script, ...args], {
@@ -5336,15 +5358,15 @@ function runRuntimeInstaller(id: DevRuntimeId, script: string, args: string[], n
     });
     let tail = "";
     const report = (chunk: Buffer | string) => {
-      const message = String(chunk).trim();
-      if (!message) return;
+      const message = String(chunk);
+      if (!message.trim()) return;
       tail = `${tail}\n${message}`.slice(-4000);
-      sendToWindow("runtime:progress", { id, message });
+      emitRuntimeProgress(id, message);
     };
     child.stdout?.on("data", report);
     child.stderr?.on("data", report);
     child.on("error", reject);
-    child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim() || `安装进程退出（${code}）`)));
+    child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim().slice(-1200) || `安装进程退出（${code}）`)));
   });
 }
 
@@ -5467,21 +5489,21 @@ async function runBrowserDownload(
         const child = spawn(node, [cli, ...args], { windowsHide: true, env: attempts[index] });
         let tail = "";
         const report = (chunk: Buffer | string) => {
-          const message = String(chunk).trim();
-          if (!message) return;
-          tail = `${tail}\n${message}`.slice(-4000);
-          sendToWindow("runtime:progress", { id, message: `（${via}）${message}` });
+          const text = String(chunk);
+          if (!text.trim()) return;
+          tail = `${tail}\n${text}`.slice(-4000);
+          emitRuntimeProgress(id, text, `（${via}）`);
         };
         child.stdout?.on("data", report);
         child.stderr?.on("data", report);
         child.on("error", reject);
-        child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim() || `${label}下载失败（${code}）`)));
+        child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim().slice(-1200) || `${label}下载失败（${code}）`)));
       });
       return;
     } catch (error) {
       lastError = error as Error;
       if (index < attempts.length - 1) {
-        sendToWindow("runtime:progress", { id, message: `${label}国内镜像下载失败，改用官方源重试…` });
+        sendToWindow("runtime:progress", { id, message: `${label}国内镜像下载失败，改用官方源重试…`, percent: 0 });
       }
     }
   }
@@ -5521,20 +5543,20 @@ async function runNpmInstall(id: DevRuntimeId, pkg: string, label: string): Prom
         const child = spawn(node, [npmCli, "install", "--global", "--prefix", globalDir, pkg, "--no-audit", "--no-fund"], { windowsHide: true, env });
         let tail = "";
         const report = (chunk: Buffer | string) => {
-          const message = String(chunk).trim();
-          if (!message) return;
-          tail = `${tail}\n${message}`.slice(-4000);
-          sendToWindow("runtime:progress", { id, message: `（${via}）${message}` });
+          const text = String(chunk);
+          if (!text.trim()) return;
+          tail = `${tail}\n${text}`.slice(-4000);
+          emitRuntimeProgress(id, text, `（${via}）`);
         };
         child.stdout?.on("data", report);
         child.stderr?.on("data", report);
         child.on("error", reject);
-        child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim() || `${label} 安装失败（${code}）`)));
+        child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim().slice(-1200) || `${label} 安装失败（${code}）`)));
       });
       return;
     } catch (error) {
       lastError = error as Error;
-      if (registry) sendToWindow("runtime:progress", { id, message: `${label} 从${via}安装失败，改用官方源重试…` });
+      if (registry) sendToWindow("runtime:progress", { id, message: `${label} 从${via}安装失败，改用官方源重试…`, percent: 0 });
     }
   }
   throw lastError ?? new Error(`${label} 安装失败`);
@@ -5631,7 +5653,7 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
   runtimeInstalls.set(id, task);
   try {
     await task;
-    sendToWindow("runtime:progress", { id, message: "安装完成", done: true });
+    sendToWindow("runtime:progress", { id, message: "安装完成", percent: 100, done: true });
     return { ok: true, runtimes: runtimeList() };
   } finally {
     runtimeInstalls.delete(id);
@@ -5658,7 +5680,7 @@ async function autoInstallGitIfNeeded(): Promise<void> {
   runtimeInstalls.set("git", task);
   try {
     await task;
-    sendToWindow("runtime:progress", { id: "git", message: "Git 自动安装完成，引擎已刷新", done: true });
+    sendToWindow("runtime:progress", { id: "git", message: "Git 自动安装完成，引擎已刷新", percent: 100, done: true });
   } catch (error) {
     sendToWindow("runtime:progress", { id: "git", message: `Git 自动安装失败：${String(error)}（可稍后在「开发工具」页手动安装）`, done: true });
   } finally {

@@ -28,7 +28,7 @@ const url = arg("url");
 
 if (!fs.existsSync(zipPath) && url) {
   console.log("[0/3] 下载 automation-tools.zip …");
-  const curl = spawnSync("curl", ["-sL", "--noproxy", "*", "-o", zipPath, url], { stdio: "inherit" });
+  const curl = spawnSync("curl", ["-sL", "--fail", "--noproxy", "*", "-o", zipPath, url], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", timeout: 900000 });
   if (curl.status !== 0) { console.error("下载失败"); process.exit(1); }
 }
 if (!fs.existsSync(zipPath)) {
@@ -69,7 +69,7 @@ print("ok")
 function main() {
 if (!fs.existsSync(zipPath) && url) {
   console.log("[0/3] 下载 automation-tools.zip …");
-  const curl = spawnSync("curl", ["-sL", "--noproxy", "*", "-o", zipPath, url], { stdio: "inherit" });
+  const curl = spawnSync("curl", ["-sL", "--fail", "--noproxy", "*", "-o", zipPath, url], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", timeout: 900000 });
   if (curl.status !== 0) { console.error("下载失败"); process.exit(1); }
 }
 if (!fs.existsSync(zipPath)) {
@@ -90,7 +90,9 @@ if (!extractor) {
 }
 
 console.log(`[1/3] 用 ${extractor.kind} 解压 automation-tools.zip → npm-global/ …`);
-const res = spawnSync(extractor.cmd, extractor.args(zipPath, toolsRoot), { stdio: "inherit" });
+process.stdout.write("@@STAGE 解压\n");
+const res = spawnSync(extractor.cmd, extractor.args(zipPath, toolsRoot), { windowsHide: true, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", timeout: 900000 });
+if (res.stdout || res.stderr) process.stdout.write(String(res.stdout || res.stderr).slice(-800));
 if (res.status !== 0) { console.error(`${extractor.kind} 解压失败`); process.exit(1); }
 
 const ok = fs.existsSync(path.join(globalDir, "node_modules", "@nuphus", "nuphus-mcp", "package.json"));

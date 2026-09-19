@@ -60,7 +60,7 @@ export function installableIds(items: EnvCheckState[]): string[] {
   return items.filter((item) => !item.ok && !item.installing && !MANUAL_IDS.has(item.id)).map((item) => item.id);
 }
 
-export function EnvCheckDialog({ items, installing, progress, onInstall, onGo, onClose }: {
+export function EnvCheckDialog({ items, installing, progress, percent, stage, onInstall, onGo, onClose }: {
   items: EnvCheckState[];
   /** 是否正在后台安装（一键安装点下去弹窗会收起成角标；安装中**允许**关弹窗——
    *  关闭 ≠ 取消，安装继续、右下角角标继续显示进度，装完自动消失/失败自动展开回来。
@@ -68,6 +68,10 @@ export function EnvCheckDialog({ items, installing, progress, onInstall, onGo, o
   installing: boolean;
   /** 当前安装进度文本（来自 runtime:progress 事件） */
   progress: string;
+  /** 进度百分比（主进程解析安装脚本的 @@PROGRESS 得到；没有则进度条呈不确定态） */
+  percent?: number;
+  /** 当前阶段名（下载 / 解压 / 配置…），让新手看得懂"在干什么" */
+  stage?: string;
   onInstall: (ids: string[]) => void;
   onGo: (target: "model" | "workspace") => void;
   onClose: (dontAskAgain: boolean) => void;
@@ -152,8 +156,19 @@ export function EnvCheckDialog({ items, installing, progress, onInstall, onGo, o
             ))}
           </div>
 
-          {installing && progress && (
-            <div className="env-check-progress"><Sparkles size={13} />{progress}</div>
+          {installing && (
+            <div className="env-check-progress">
+              {/* 进度条（09-19 用户：不要弹窗，全部进度条展示，方便新手） */}
+              <span className="runtime-progress-bar large" role="progressbar" aria-label="安装进度" aria-valuenow={percent ?? 0} aria-valuemin={0} aria-valuemax={100} data-indeterminate={typeof percent === "number" ? "false" : "true"}>
+                <i style={{ width: typeof percent === "number" ? `${percent}%` : "100%" }} />
+              </span>
+              <span className="env-check-progress-text">
+                <Sparkles size={13} />
+                {stage ? <b>{stage}</b> : null}
+                {typeof percent === "number" ? <b>{percent}%</b> : null}
+                {progress ? <span>{progress}</span> : null}
+              </span>
+            </div>
           )}
         </div>
 
