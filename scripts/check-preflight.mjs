@@ -6006,6 +6006,45 @@ w.postMessage({id:1,op:"list",root});
     "【66】进度条样式存在"
   );
 }
+{
+  // ── 【67】引擎保留 provider id 不得写进配置（09-19 真实用户 DELL 事故）──
+  //   档案里 provider=openai → config.toml 写出 [model_providers.openai] → 引擎**整份拒载**：
+  //   `model_providers contains reserved built-in provider IDs: openai`，用户发消息必报错，
+  //   且与用哪个模型无关。四层防：① 独立模块提供改名；② 写档案/写配置统一改名；
+  //   ③ 会话级 config 覆盖也改名（审查发现的漏点）；④ 启动自愈清掉已写坏的段。
+  const providerIdSrc67 = readFileSync(join(ROOT, "electron", "provider-id.ts"), "utf8");
+  (/RESERVED_PROVIDER_IDS/.test(providerIdSrc67) && /export function safeProviderId/.test(providerIdSrc67) ? ok : fail)(
+    "【67】保留 provider id 处理模块存在（electron/provider-id.ts）"
+  );
+  (/export function stripReservedProviderTables/.test(providerIdSrc67) ? ok : fail)(
+    "【67】提供清理保留段的工具（供启动自愈用）"
+  );
+  const mainSrc67 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  (/\[model_providers\.\$\{tomlBareKey\(safeProviderId\(normalized\.provider\)\)\}\]/.test(mainSrc67) ? ok : fail)(
+    "【67】生成 provider 段头时过 safeProviderId（保留 id 会被改名）"
+  );
+  (/\.map\(\(id\) => safeProviderId\(id\)\)/.test(mainSrc67) ? ok : fail)(
+    "【67】历史会话别名 id 同样过 safeProviderId（防 duplicate key）"
+  );
+  (/void healReservedProviderConfig\(\)/.test(mainSrc67) ? ok : fail)(
+    "【67】启动时自愈已写坏的配置（老用户升级后自动恢复）"
+  );
+  // 自愈必须看**原始文件**里的 provider —— readCustomModels() 回来的已经改名，比较恒 false（实测踩过死代码）
+  (/const rawList: Array<\{ provider\?: string \}> = raw \? JSON\.parse\(raw\) : \[\]/.test(mainSrc67) ? ok : fail)(
+    "【67】自愈按原始档案判断是否需要改名（不是按已归一化的结果）"
+  );
+  const calls67 = (mainSrc67.match(/model_provider: safeProviderId\(/g) || []).length;
+  (calls67 >= 7 ? ok : fail)(
+    `【67】会话级 config 覆盖也过 safeProviderId（${calls67} 处）`
+  );
+  for (const rel of ["electron/channel-bot.ts", "electron/harness-services.ts"]) {
+    const src = readFileSync(join(ROOT, rel), "utf8");
+    (/model_provider: safeProviderId\(model\.provider\)/.test(src) ? ok : fail)(
+      `【67】${rel} 的会话/子代理 config 同样过 safeProviderId`
+    );
+  }
+}
+
 
 
 

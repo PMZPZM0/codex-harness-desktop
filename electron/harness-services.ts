@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { safeProviderId } from "./provider-id";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { CodexServer } from "./codex-server";
@@ -811,7 +812,7 @@ export class Scheduler {
           cwd: task.workspace,
           approvalPolicy: "never",
           sandbox: "workspace-write",
-          config: { model_provider: model.provider, model_providers: { [model.provider]: { name: model.name, base_url: model.baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } },
+          config: { model_provider: safeProviderId(model.provider), model_providers: { [safeProviderId(model.provider)]: { name: model.name, base_url: model.baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } },
           dynamicTools: [
             { type: "function", name: "memory_recall", description: "按当前任务查询相关记忆。", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
           ],

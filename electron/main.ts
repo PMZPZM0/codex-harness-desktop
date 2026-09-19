@@ -9,6 +9,7 @@ import http from "node:http";
 import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { ChannelBotService, type ChannelBotConfig } from "./channel-bot";
+import { RESERVED_PROVIDER_IDS, safeProviderId, stripReservedProviderTables } from "./provider-id";
 import { BotStreamSession, readBotStreamSettings, readBotStreamSettingsSync, writeBotStreamSettings, type BotStreamBudget, type BotStreamSink, type BotStreamSettings } from "./bot-stream";
 import { plainTextForChannel } from "./channel-text";
 import { CodexServer, codexBinaryPath } from "./codex-server";
@@ -1395,6 +1396,49 @@ async function upsertCustomModel(value: CustomModelFile) {
   await writeCustomModels(list);
 }
 
+// 保留 provider id 的处理统一在 ./provider-id（独立模块：渠道机器人、团队服务也要用，
+// 放这里会循环依赖）。背景见 electron/provider-id.ts 与 09-19 真实用户事故说明。
+
+/** 删掉 config.toml 里**保留 id** 的 provider 段 —— 实现已抽到 ./provider-id（三个模块共用）。 */
+
+/**
+ * 保留 provider id 自愈（09-19 真实用户事故）。
+ *
+ * 老版本允许把供应商 id 存成 `openai` —— 而 `openai` 是引擎的**内置保留 id**，写出的
+ * `[model_providers.openai]` 会让引擎**整份拒绝加载 config.toml**：
+ *   `model_providers contains reserved built-in provider IDs: openai`
+ * 症状是"发消息就报错"，且**与用哪个模型无关**（配 DeepSeek 官网也一样挂）。
+ *
+ * 这里做两件事（幂等、失败不阻塞启动）：
+ *   ① 档案里 provider 是保留 id 的条目 → 改名并落盘（openai → openai-custom）；
+ *   ② config.toml 里已写坏的保留 id 段 → 整段删除（宁可少一段，也不能让整份配置拒载）。
+ * 之后用户切供应商/保存配置时会按安全 id 重写一份权威配置。
+ */
+async function healReservedProviderConfig(): Promise<void> {
+  try {
+    // ⛔ 必须看**原始文件**里的 provider：readCustomModels() 回来的已经过 normalizeProvider
+    //   （provider 早被改名）——拿它比较会让 needsRename 恒为 false，落盘变成死代码（实测踩过）。
+    const raw = await fs.readFile(customModelsFile, "utf8").catch(() => "");
+    const rawList: Array<{ provider?: string }> = raw ? JSON.parse(raw) : [];
+    const needsRename = Array.isArray(rawList) && rawList.some((entry) => safeProviderId(entry?.provider) !== entry?.provider);
+    if (needsRename) {
+      const fixed = rawList.map((entry) => normalizeProvider({ ...(entry as CustomModelFile), provider: safeProviderId(entry?.provider) } as CustomModelFile));
+      await writeCustomModels(fixed);
+      console.warn("[boot] 供应商 id 占用了引擎保留名，已自动改名:", rawList.map((e) => e?.provider).filter((p) => safeProviderId(p) !== p).join(", "));
+    }
+    const file = path.join(codexHome, "config.toml");
+    const text = await fs.readFile(file, "utf8").catch(() => "");
+    if (!text) return;
+    const cleaned = stripReservedProviderTables(text);
+    if (cleaned !== text) {
+      await fs.writeFile(file, cleaned, "utf8");
+      console.warn("[boot] config.toml 含引擎保留 provider id 段，已清理（否则整份配置拒载）");
+    }
+  } catch (error) {
+    console.warn("[boot] healReservedProviderConfig failed (降级继续):", error);
+  }
+}
+
 /** 老版本 models 是 string[]，统一迁移成 ProviderModel[]；并确保生效 model 在列表里 */
 function normalizeProvider(entry: CustomModelFile): CustomModelFile {
   const models = (entry.models ?? []).map((raw: any): ProviderModel => typeof raw === "string" ? { id: raw, contextWindow: entry.contextWindow, enabled: true } : { ...raw, enabled: raw?.enabled !== false }).filter((m) => m && typeof m.id === "string" && m.id);
@@ -1406,7 +1450,10 @@ function normalizeProvider(entry: CustomModelFile): CustomModelFile {
   // 写 chat 时 initialize 能过、**turn/start 必报** `wire_api = "chat"` is no longer supported.
   // How to fix: set `wire_api = "responses"` in your provider config. → 每个请求都失败。
   // 所以归一化不是「顺手做的」，是保命逻辑；UI 侧对应地把 Chat Completions 选项撤掉。
-  return { ...entry, models, wireApi: "responses" };
+  // ⛔ 保留 id 迁移（09-19 真实用户事故）：档案里存着 `openai` 时，写出的 `[model_providers.openai]`
+  //    会让引擎**整份拒载 config.toml**（所有请求全失败）。在唯一的归一化入口改名，
+  //    读档案 / 写配置 / 界面显示三处因此永远一致。
+  return { ...entry, provider: safeProviderId(entry.provider), models, wireApi: "responses" };
 }
 
 /** 合并去重保序，model 始终在列表最前 */
@@ -1705,7 +1752,11 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
   // 历史会话引用过、但已从供应商列表删除的 id（如重装供应商后 id 变化）→ 补成别名段，
   // 否则引擎解析不到会报 "Model provider not found"，会话同样打不开。
   const knownIds = new Set(providerEntries.map((provider) => normalizeProvider(provider).provider));
-  const aliasIds = isOfficialProvider ? [] : [...(await collectSessionProviderIds())].filter((id) => !knownIds.has(id) && id && id !== entry.provider);
+  // ⛔ 历史会话里的 provider id 同样要过 safeProviderId：否则 `openai` 会绕过 knownIds 的去重，
+  //    写成 `[model_providers.openai-custom]` 与真实段**重复**（TOML duplicate key）→ 配置拒载。
+  const aliasIds = isOfficialProvider ? [] : [...(await collectSessionProviderIds())]
+    .map((id) => safeProviderId(id))
+    .filter((id) => !knownIds.has(id) && id && id !== safeProviderId(entry.provider));
   const providerToml = providerEntries.flatMap((provider, index) => {
     const normalized = normalizeProvider(provider);
     const context = normalized.models?.find((model) => model.id === normalized.model)?.contextWindow ?? normalized.contextWindow ?? 128000;
@@ -1724,7 +1775,7 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
     const wireApi = "responses";
     return [
       ...(index ? [""] : []),
-      `[model_providers.${tomlBareKey(normalized.provider)}]`,
+      `[model_providers.${tomlBareKey(safeProviderId(normalized.provider))}]`,
       `name = "${escapeToml(normalized.name)}"`,
       `base_url = "${escapeToml(baseUrl)}"`,
       'env_key = "CODEX_HARNESS_API_KEY"',
@@ -3023,6 +3074,10 @@ app.whenReady().then(async () => {
   // Git 自动安装（后台、不阻塞）：瘦身版不再内置 git，引擎 shell 依赖它，缺就静默补装
   // （函数内部自带 catch 与 done 事件广播，不会冒泡成 unhandled rejection）
   void autoInstallGitIfNeeded();
+  // 保留 provider id 自愈（09-19 真实用户事故）：老版本档案里存过 provider=openai →
+  // config.toml 写成 [model_providers.openai] → 引擎**整份拒载**，用户发消息必报错。
+  // 启动时把已写坏的段清掉并修正档案，让这类用户升级后自动恢复（不必手动改文件）。
+  void healReservedProviderConfig();
   // ponytail 写代码模式插件随包直装（09-16 用户「直接内置，不用解压啥的」）：生产包必有
   // tools/ponytail-plugin。只在 config.toml **完全没有** ponytail 注册段时自动种（全新安装）；
   // 段已存在（已装/用户显式卸载置 false）就不再动 —— 否则卸载后下次启动又给装回来，卸载失效。
@@ -3727,7 +3782,7 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
       const missing = /Model provider `([^`]+)` not found/.exec(firstMessage);
       const active = missing ? await readCustomModel() : null;
       if (!missing || !active?.baseUrl) throw error;
-      const alias = missing[1];
+      const alias = safeProviderId(missing[1]);   // 旧 session 记的 id 同样可能是保留名（openai）
       const configText = await fs.readFile(path.join(codexHome, "config.toml"), "utf8").catch(() => "");
       if (configText.includes(`[model_providers.${alias}]`)) throw error;
       // ⛔ 恒 responses（09-16 真实引擎探针实证，见 scripts/probe-wire-api.cjs）：引擎对
@@ -6859,7 +6914,7 @@ ipcMain.handle("threads:import-conversation", async (_event, input?: { cwd?: str
     sandbox: input?.sandbox || "workspace-write",
     modelProvider: provider,
     personality: input?.personality || null,
-    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+    config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
   });
   const threadName = `导入：${parsed.title || path.basename(filePath, path.extname(filePath))}`.slice(0, 80);
   try { await server.request("thread/name/set", { threadId: started.thread.id, name: threadName }); } catch { /* 命名失败不阻塞进入会话 */ }
@@ -7073,7 +7128,7 @@ async function distillSummarize(prompt: string, body: string): Promise<string> {
     sandbox: "read-only",
     modelProvider: provider,
     config: model?.baseUrl
-      ? { model_provider: provider, model_providers: { [provider]: { name: model?.name ?? provider, base_url: bridgeDial(provider, model.baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } }
+      ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name: model?.name ?? provider, base_url: bridgeDial(provider, model.baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } }
       : undefined,
   });
   const threadId = started.thread.id;
@@ -7114,7 +7169,7 @@ ipcMain.handle("subagents:invoke", async (_event, input: { id?: string; name?: s
     approvalPolicy: agent.inheritApproval ? (input.approvalPolicy ?? "never") : agent.approvalPolicy,
     sandbox: agent.inheritSandbox ? (input.sandbox ?? "workspace-write") : agent.sandbox,
     modelProvider: provider,
-    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+    config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
   });
   const systemPrefix = `[子智能体 ${agent.name}] ${agent.systemPrompt}\n\n`;
   // 09-14：同样包 SYSTEM TASK 壳（子智能体会话首条气泡也不再裸露角色提示词）
@@ -7201,7 +7256,7 @@ ipcMain.handle("teams:start-session", async (_event, input: { teamId: string; ta
     sandbox: input.sandbox || "workspace-write",
     modelProvider: provider,
     personality: input.personality || null,
-    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+    config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
     dynamicTools: [teamTool, teamPhaseTool],
   });
   // 线程 → 团队映射落主进程并持久化：任何窗口（含 popout）据此才知道这个会话属于哪个团
@@ -7251,7 +7306,7 @@ ipcMain.handle("teams:member-session", async (_event, input: { teamId: string; m
     sandbox: member.sandbox || input.sandbox || "workspace-write",
     modelProvider: provider,
     personality: input.personality || null,
-    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+    config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
   });
   const systemPrefix = `[专家团「${team.displayName.zh}」${isLead ? "主理人" : "成员"} ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`;
   teamRunStore.setThreadTeam(started.thread.id, team.teamId);
@@ -7311,7 +7366,7 @@ ipcMain.handle("teams:invoke-member", async (_event, input: { teamId: string; me
       approvalPolicy: member.approvalPolicy || input.approvalPolicy || "never",
       sandbox: member.sandbox || input.sandbox || "workspace-write",
       modelProvider: provider,
-      config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+      config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
     });
     memberThreadId = String(started.thread.id);
     // ② 成员线程标题：`团名·角色`。不设名字时引擎拿首条用户消息（角色提示词全文）当标题，
@@ -7704,7 +7759,7 @@ async function runDelegatedTask(input: {
     approvalPolicy: input.approvalPolicy || "never",
     sandbox: input.sandbox || "workspace-write",
     modelProvider: provider,
-    config: baseUrl ? { model_provider: provider, model_providers: { [provider]: { name: providerName, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+    config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name: providerName, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
     ...(teamTools.length ? { dynamicTools: teamTools } : {}),
   });
   const threadId = String(started?.thread?.id ?? "");
@@ -8047,7 +8102,7 @@ ipcMain.handle("clipboard:read-files", async () => {
 ipcMain.handle("custom-model:read", async () => publicCustomModel(await readCustomModel()));
 ipcMain.handle("custom-model:probe", (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) => probeCustomModel(input));
 ipcMain.handle("custom-model:save", async (_event, input: { provider: string; name: string; model: string; baseUrl: string; contextWindow?: string | number; wireApi?: "responses" | "chat"; apiKey?: string; models?: ProviderModel[]; enabled?: boolean }) => {
-  const provider = input.provider.trim();
+  const provider = safeProviderId(input.provider.trim());
   const name = input.name.trim();
   const requestedModel = input.model.trim();
   const baseUrl = input.baseUrl.trim().replace(/\/$/, "");
