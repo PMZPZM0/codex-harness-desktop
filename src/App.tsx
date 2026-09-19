@@ -28,6 +28,7 @@ import { matchModelSpec, loadExternalSpecs, formatTokenCount } from "./lib/model
 import { resolveModelForOpen, shouldSyncOpenThread } from "./lib/model-scope.mjs";
 import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "./lib/provider-continuity.mjs";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "./lib/session-scope.mjs";
+import { advanceMood, composeMoodInstructions, emptyMood, moodBlock, moodSignature, moodTone, normalizeMood, userSignalOf } from "./lib/agent-mood.mjs";
 import { LEGACY_PREFIX, dispatchSignature, emptyDispatch, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeDispatch, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "./lib/thread-runtime.mjs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "./lib/rate-limit-retry";
 import { isUnsupportedEffortError, pickEffortFallback, blockedEffortsOf, markEffortUnsupported, clearEffortUnsupported } from "./lib/effort-support";
@@ -8416,6 +8417,8 @@ export default function App() {
   const [browserAuto, setBrowserAuto] = useState(true);
   const [autoCompactRatio, setAutoCompactRatio] = useState(0.8);
   const [hardwareAccel, setHardwareAccel] = useState<"auto" | "force" | "off">("auto");
+  /** 语气自适应（默认开）：按会话维护状态（心情/精力/默契），随会话自己的 instructions 下发语气指引。 */
+  const [adaptiveTone, setAdaptiveTone] = useState(true);
   const [restartPending, setRestartPending] = useState(false);
 
   // SSH 服务器连接管理：设置页「SSH 服务器」分区，列表持久化在 userData/ssh-servers.json
@@ -8437,11 +8440,21 @@ export default function App() {
   const [sshEditorTest, setSshEditorTest] = useState<{ ok: boolean; message: string } | null>(null);
   // 联网搜索 UI 入口已整体下架（2026-09-04：引擎沙箱本就允许联网，web_search 工具默认常开，
   // 无需用户切换）。app-settings.webSearch 默认值仍由主进程写进 config.toml，引擎能力不受影响。
-  useEffect(() => { void window.codex.readAppSettings().then((settings) => { setDesktopAuto(settings.desktopAutomation !== false); setBrowserAuto(settings.browserAutomation !== false); setAutoCompactRatio(typeof settings.autoCompactRatio === "number" ? settings.autoCompactRatio : 0.8); setHardwareAccel(settings.hardwareAcceleration ?? "auto"); }).catch(() => undefined); }, []);
+  useEffect(() => { void window.codex.readAppSettings().then((settings) => { setDesktopAuto(settings.desktopAutomation !== false); setBrowserAuto(settings.browserAutomation !== false); setAutoCompactRatio(typeof settings.autoCompactRatio === "number" ? settings.autoCompactRatio : 0.8); setHardwareAccel(settings.hardwareAcceleration ?? "auto"); setAdaptiveTone(settings.adaptiveTone !== false); }).catch(() => undefined); }, []);
   // 桌面/浏览器自动化是能力总闸：开关直接决定引擎能不能用，同时联动 nuphus MCP 与配套技能。
   // 具体实现在 applyGroup（见「能力总闸联动」块），这里只做转发，保证常规页是唯一入口。
   const toggleDesktopAuto = (next: boolean) => { void applyGroup("desktop-automation", next); };
   const toggleBrowserAuto = (next: boolean) => { void applyGroup("browser-automation", next); };
+  /** 语气自适应开关（设置 → 个性化）：写 app-settings（全局开关），并让当前会话立刻跟上
+   *  —— 关掉时重下发一次作用域，把已注入的语气块摘掉（否则要等下次改配置才消失）。 */
+  const changeAdaptiveTone = (next: boolean) => {
+    setAdaptiveTone(next);
+    adaptiveToneRef.current = next;   // ref 立刻同步：onHarnessEvent 的闭包读不到新 state
+    void window.codex.saveAppSettings({ adaptiveTone: next });
+    const id = threadRef.current?.id;
+    if (id) void pushSessionScope(id);
+    setNotice(next ? "语气自适应已开启：每个会话按自己的状态调整说法（只影响语气，不影响内容）" : "语气自适应已关闭：不再更新状态，已注入的语气块已从当前会话移除");
+  };
   // 硬件加速模式（设置 → 通用）：写入 app-settings，主进程下次启动时在 app ready 前应用。需重启生效。
   const changeHardwareAccel = (next: "auto" | "force" | "off") => {
     if (next === hardwareAccel) return;
@@ -12717,6 +12730,9 @@ const commandMatches = useMemo(() => {
         if (method0 === "turn/started") {
           markThreadRunning(params.threadId, params.turn?.id ?? params.turnId);
         } else if (method0 === "turn/completed") {
+          // 回合顺利收尾 → 会话状态向好（语气随之轻快）；失败/中断在下面的分支里把状态压低。
+          // 位置刻意放在**跨会话**这一段：后台会话跑完也要记进它自己的状态（各自独立）。
+          bumpMood(params.threadId, "turn-ok");
           markThreadStopped(params.threadId);
           // 回合结束：锚顶留白归零。它只在「钉顶期间」为让锚点滚得上去而存在，
           // 回合结束后继续留着就会在底部残留一大段空白（用户实测「流动空间太大，
@@ -12757,6 +12773,8 @@ const commandMatches = useMemo(() => {
             }).catch(() => undefined);
           }
         } else if (method0 === "turn/aborted" || method0 === "turn/failed" || method0 === "turn/interrupted") {
+          // 失败/中断/被中止 → 会话状态转差（语气收紧）。连续失败会累积（见 agent-mood 的连败惩罚）。
+          bumpMood(params.threadId, "turn-fail");
           // 回合级**权威**结束信号：被中断 / 失败 / 中止的回合也要熄灭指示器。
           // （原先只认 turn/completed ⇒ 被中断的回合转圈永远挂着，用户以为还在跑。）
           markThreadStopped(params.threadId);
@@ -13622,6 +13640,40 @@ const commandMatches = useMemo(() => {
   const baseInstructionsRef = useRef("");
   /** 每个会话最近一次下发的作用域签名：同签名不重发，避免反复打开会话刷 RPC。 */
   const scopeSigRef = useRef<Record<string, string>>({});
+  // ── 语气自适应（09-19 用户要求「agent 有状态、语气跟着变」）─────────────────────────────
+  /** 开关的 ref 镜像：onHarnessEvent 的监听在挂载时注册一次，闭包捕获的是**当时**的 state，
+   *  直接读 `adaptiveTone` 会永远读到初值（历史坑：effect 里读 state 恒为旧值）。 */
+  const adaptiveToneRef = useRef(true);
+  useEffect(() => { adaptiveToneRef.current = adaptiveTone; }, [adaptiveTone]);
+  /** 状态键族：`agent-mood-<threadId>`（与 thread-runtime 同风格，但**独立存放**）。
+   *  ⛔ 不塞进 thread-runtime：那是「用户配置」的单一存放处，规矩是「只有明确的用户动作才落盘」；
+   *     状态是回合派生的运行时量、每回合都在变，混进去会破坏那条规矩并放大写入量。 */
+  const moodKeyOf = (threadId: string) => "agent-mood-" + threadId;
+  function readMood(threadId: string) {
+    if (!threadId) return emptyMood();
+    try { return normalizeMood(JSON.parse(localStorage.getItem(moodKeyOf(threadId)) ?? "null")); } catch { return emptyMood(); }
+  }
+  function writeMood(threadId: string, state: unknown) {
+    if (!threadId) return;
+    try { localStorage.setItem(moodKeyOf(threadId), JSON.stringify(normalizeMood(state))); } catch { /* 配额/隐私模式：软信息，落盘失败不致命 */ }
+  }
+  /** 吃一个回合级信号：更新该会话自己的状态，并（必要时）把新语气下发到**该会话**。
+   *  后台会话也更新（那是它自己的历史事实）；下发只在它是当前会话时立即做 ——
+   *  等它被打开时随作用域一起下发，避免给没在看的会话发无谓 RPC。
+   *  去重交给 pushSessionScope（签名含语气档），这里不预标记，否则下发失败会丢一次。 */
+  /** 会话被删除时的级联清理：状态与下发签名一起清 —— 留着会让重建的同 id 会话继承旧状态，
+   *  也会让 scopeSigRef 里的旧签名把首次下发判成「同签名」而直接跳过。 */
+  function forgetThreadMood(threadId: string) {
+    if (!threadId) return;
+    try { localStorage.removeItem(moodKeyOf(threadId)); } catch { /* ignore */ }
+    delete scopeSigRef.current[threadId];
+  }
+  function bumpMood(threadId: string, signal: string) {
+    if (!threadId || !signal || !adaptiveToneRef.current) return;
+    const next = advanceMood(readMood(threadId), signal);
+    writeMood(threadId, next);
+    if (threadId === threadRef.current?.id) void pushSessionScope(threadId);
+  }
 
   // ── 多窗口一致性（09-14）：主进程回来的权威运行时 → 镜像 + React 状态 ─────────────────
   /** 当前 React 状态里的四项会话级取值。**必须走 ref**：onHarnessEvent 的监听是在挂载时
@@ -13938,7 +13990,8 @@ const commandMatches = useMemo(() => {
     };
     const base = await loadBaseInstructions();
     return {
-      signature: sessionScopeSignature(values),
+      // 签名带上语气档：只有语气真的变了才重新下发（浮点不进签名，否则每回合都发一次 RPC）
+      signature: `${sessionScopeSignature(values)}|${adaptiveToneRef.current ? moodSignature(readMood(threadId)) : ""}`,
       collaborationMode: {
         // 本应用引擎侧的会话协作模式恒为 default（rollout `task_started.collaboration_mode_kind`
         // 实证）；「计划模式」由 /plan 旗标 + turn/start 实现，不走引擎的 collaboration mode。
@@ -13946,7 +13999,7 @@ const commandMatches = useMemo(() => {
         settings: {
           model,
           reasoning_effort: effortValue || null,
-          developer_instructions: composeScopeInstructions(base, sessionScopeBlock(values)),
+          developer_instructions: composeMoodInstructions(composeScopeInstructions(base, sessionScopeBlock(values)), adaptiveToneRef.current ? moodBlock(readMood(threadId)) : ""),
         },
       },
     };
@@ -13961,7 +14014,11 @@ const commandMatches = useMemo(() => {
     try {
       await window.codex.request("thread/settings/update", { threadId, collaborationMode: built.collaborationMode });
       scopeSigRef.current[threadId] = built.signature;
-    } catch { /* 空会话还没落 rollout / 引擎重启中：留给下一次下发 */ }
+    } catch (error: any) {
+      // 空会话还没落 rollout / 引擎重启中：留给下一次下发。**但要留痕** ——
+      // 静默 catch 会让「状态变了、语气却没下发」这类问题完全查不出来（09-19 验收踩过）。
+      dbg("scope-push-fail", { threadId, err: String(error?.message ?? error).slice(0, 90) });
+    }
   }
 
   /** 改「全局默认模型」的**唯一入口**（设置页「生效模型」/ 一键切中转站 / 启用官方订阅 /
@@ -16243,6 +16300,7 @@ const commandMatches = useMemo(() => {
     if (!id) return;
     try {
       await window.codex.request("thread/delete", { threadId: id });
+    forgetThreadMood(id);
       threadCacheRef.current.delete(id);
       setThreads((current) => current.filter((entry) => entry.id !== id));
       startNewThread();
@@ -16266,6 +16324,7 @@ const commandMatches = useMemo(() => {
   async function deleteThreadCore(id: string) {
     await cascadeTeamCluster(id, "delete");
     await window.codex.request("thread/delete", { threadId: id });
+    forgetThreadMood(id);
     threadCacheRef.current.delete(id);
     threadProviderRef.current.delete(id);
     setThreads((current) => current.filter((entry) => entry.id !== id));
@@ -16344,6 +16403,7 @@ const commandMatches = useMemo(() => {
     for (const id of ids) {
       try {
         await window.codex.request("thread/delete", { threadId: id });
+    forgetThreadMood(id);
         threadCacheRef.current.delete(id);
       } catch (error: any) {
         setNotice(`删除任务失败：${error.message ?? error}`);
@@ -16502,8 +16562,25 @@ const commandMatches = useMemo(() => {
     if (sendInFlightRef.current) return;
     // 用户手动发消息时取消等待中的 429 自动重试（手动发送优先，避免交错）
     if (rateLimitRetry || rateLimitTimerRef.current != null) cancelRateLimitRetry(true);
-    sendInFlightRef.current = true;
+    // 用户语气信号（被夸 / 被催）也进会话状态：只在**已有会话**上记 —— 新建会话此刻还没有 id，
+    // 它的状态从零开始（第一回合由 turn/completed 起头）。判定是关键词法，见 agent-mood.mjs。
+    const userSig = userSignalOf(value);
+    if (userSig && threadRef.current?.id) bumpMood(threadRef.current.id, userSig);
+    // 发送前按**最新状态**刷新一次会话作用域：语气是针对「这一次回复」的，而回合刚结束时
+    // 引擎往往还在收尾（那时发 thread/settings/update 会被静默拒掉，验收实测：状态更新了、
+    // 但引擎侧没有新语气块）。此刻引擎空闲，正是下发的可靠时机；同签名会被去重，不会多发。
+    // ⛔ 必须**等它落地**再进入发送流程（否则语气追不上这一次回复）——但只等最多 800ms，
+    //    引擎无响应时不能让发送卡住（正常情况几十毫秒就回来了）。
+    // ⛔ in-flight 标记必须先置位：await 期间若它还挂着 false，这 800ms 窗口里再点一次
+    //    发送就会重入（同一个问题发两遍）。code review 抓到的顺序问题。
+    // ⛔ 位置与顺序（code review 抓到）：① in-flight 标记必须早于 await —— 否则 await 窗口
+    //    里再点一次发送会重入；② 两者都必须在 try 内 —— 异常由 finally 释放锁，
+    //    一次 throw 不会把发送永久卡死。
     try {
+    sendInFlightRef.current = true;
+    if (threadRef.current?.id && adaptiveToneRef.current) {
+      await Promise.race([pushSessionScope(threadRef.current.id), new Promise((resolve) => setTimeout(resolve, 800))]);
+    }
     if (!customModel || !selectedModel) {
       planOnceRef.current = false; // /plan 旗标不跨发送泄漏：发送失败即复位
       setPlanArmed(false);
@@ -19254,6 +19331,15 @@ const commandMatches = useMemo(() => {
               <CodeAppearanceSection />
             </section>}
             {settingsPage === "personalization" && <PersonalizationPage personality={personality} onPersonalityChange={changePersonality} onNotice={setNotice} />}
+            {settingsPage === "personalization" && <section className="settings-section stack">
+              <div className="settings-copy"><h2>语气自适应</h2><p>按会话维护状态，回复语气随进展变化；只影响说法，不影响内容。</p></div>
+              <div className="settings-subhead"><Zap size={13} />开关<span className="settings-subhead-hint">每个会话各自一份、互不影响；回合失败收紧、顺利轻快，空闲半小时慢慢回到基线。关掉即停止更新，并摘掉当前会话已注入的语气块</span></div>
+              <div className="theme-switch" role="group" aria-label="语气自适应">
+                <button type="button" className={adaptiveTone ? "active" : ""} onClick={() => changeAdaptiveTone(true)}>开启</button>
+                <button type="button" className={!adaptiveTone ? "active" : ""} onClick={() => changeAdaptiveTone(false)}>关闭</button>
+              </div>
+              {thread?.id ? (() => { const t = moodTone(readMood(thread.id)); return <div className="settings-actions"><span>当前会话语气：<b>{t.label}</b> —— {t.tone}</span></div>; })() : null}
+            </section>}
             {settingsPage === "voice" && <VoiceSettingsSection onNotice={setNotice} />}
             {settingsPage === "relay" && <RelayCenterPage busy={relayBusy} activeProvider={customModel?.provider} onActivate={relayActivate} onNotice={setNotice} onOpenModelSettings={() => { setSettingsPage("model"); }} />}
             {settingsPage === "openai" && <OpenaiSubscriptionPage activeProvider={customModel?.provider} onActivate={(models) => activateOfficialProvider(models)} onNotice={setNotice} onActiveChange={setOpenaiActiveAcct} onRefreshActive={() => refreshActive()} />}

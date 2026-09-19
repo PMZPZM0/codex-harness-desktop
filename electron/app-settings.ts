@@ -11,6 +11,9 @@ import { existsSync, readFileSync } from "node:fs";
  *   调用说明并关掉 features.browser_use，模型不再被引导去操作浏览器。
  * - engineWatchdog: 引擎健康看门狗（默认开）。引擎子进程可能「活着但不响应」（interrupt 打断慢速
  *   上游请求时偶发死锁），看门狗周期性 thread/list 心跳，连续失败自动 kill+重启并恢复当前线程。
+ * - adaptiveTone: 语气自适应（默认开）。按会话维护状态（心情/精力/默契），把状态映射成
+ *   一句「只影响说法、不影响内容」的语气指引，随该会话自己的 developer instructions 下发；
+ *   状态按会话各自一份（渲染层键族 agent-mood-<threadId>），A 会话不会改到 B 会话的语气。
  * 以后新开关都往这里加。
  */
 export type AppSettings = {
@@ -27,6 +30,10 @@ export type AppSettings = {
    *  - "force"：忽略 GPU 黑名单 + 强制 GPU 光栅化/零拷贝——低配机上软件渲染卡顿时可选
    *  - "off"：完全关闭硬件加速（极个别驱动与 GPU 通道冲突时用） */
   hardwareAcceleration?: "auto" | "force" | "off";
+  /** 语气自适应（默认开）：按会话维护少量状态（心情/精力/默契），随会话自己的
+   *  developer instructions 下发一句「只影响说法、不影响内容」的语气指引。
+   *  状态按会话各自一份（agent-mood-<threadId>），关掉即停止更新与注入。 */
+  adaptiveTone?: boolean;
 };
 
 let cached: AppSettings | null = null;

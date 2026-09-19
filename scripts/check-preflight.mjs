@@ -15,6 +15,7 @@ import { createRequire } from "node:module";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../src/lib/model-scope.mjs";
 import { ALIGN_RESULT, CONTINUITY_TEXT, shouldAlignProvider } from "../src/lib/provider-continuity.mjs";
 import { SESSION_SCOPE_HEADING, composeScopeInstructions, sessionScopeBlock, sessionScopeSignature, stripScopeBlock } from "../src/lib/session-scope.mjs";
+import { MOOD_HEADING, applyMoodSignal, composeMoodInstructions, decayMood, emptyMood, moodBlock, moodSignature, moodTone, normalizeMood, stripMoodBlock } from "../src/lib/agent-mood.mjs";
 import { OWN_WRITE_TTL_MS, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeSignature } from "../src/lib/thread-runtime.mjs";
 import { planCompletedFold } from "../src/lib/turn-fold-plan.mjs";
 import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../src/lib/voice-aec.mjs";
@@ -473,7 +474,10 @@ console.log(C.bold("\n【4a-2】会话作用域块（会话级配置下发到会
   } else {
     const imported = /from "\.\/lib\/session-scope\.mjs"/.test(scopeSrc);
     // 下发点：collaborationMode 块里必须真的带上 developer_instructions（不能只 import 不用）
-    const wired = /collaborationMode:\s*\{[\s\S]{0,400}?developer_instructions:\s*composeScopeInstructions\(/.test(scopeSrc);
+    // 下发点：collaborationMode 块里必须真的带上 developer_instructions（不能只 import 不用）。
+    // 允许外面再包一层（09-19 起语气块用 composeMoodInstructions 包在作用域块外）——
+    // 判据仍是「这条通道确实接上了」，不锁死拼接层数。
+    const wired = /collaborationMode:\s*\{[\s\S]{0,400}?developer_instructions:\s*(?:composeMoodInstructions\(\s*)?composeScopeInstructions\(/.test(scopeSrc);
     // 覆盖三条路径：新建会话（thread/start 注入 + pushSessionScope）、打开旧会话、设置变更
     const covered = /pushSessionScope\(/.test(scopeSrc) && /buildSessionScope\(/.test(scopeSrc) && /thread\/settings\/update", \{ threadId: thread\.id, \.\.\.values/.test(scopeSrc);
     imported && wired && covered
@@ -5540,6 +5544,87 @@ w.postMessage({id:1,op:"list",root});
   (/setWorkspace\(effectiveCwd\(id, result\.cwd\)\)/.test(appSrc56) ? ok : fail)(
     "【56】打开会话时顶栏显示的是覆盖后的地址（与侧栏保持一致）"
   );
+  // ⑨ 语气自适应（09-19 用户要求「agent 有状态、语气跟着变」）：
+  //    底线 = **每个会话绝对独立**（09-19 铁律）——状态按会话各自一份，注入走会话自己的 instructions。
+  const appSrc57 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  // ⛔ 判据必须落在**代码**上：注释掉调用仍需报红（否则「// bumpMood(...)」照样匹配正则 = 假绿）。
+  //    这里只剔「整行 // 注释」，**不用 codeOnly**——它会把成对的 /* */ 也剥掉，
+  //    App.tsx 里只要有一处不配对就会吞掉后面的代码，让下面的守卫变成假红。
+  const appSrc57Code = appSrc57.split(/\r?\n/).filter((l) => !/^\s*\/\//.test(l)).join("\n");
+  (/"agent-mood-" \+ threadId/.test(appSrc57Code) ? ok : fail)(
+    "【57】状态键按会话拼（含 threadId）—— 全局单份会让 A 会话的心情改到 B 会话的语气"
+  );
+  (!/localStorage\.setItem\("agent-mood"/.test(appSrc57Code) ? ok : fail)(
+    "【57】不存在不带 threadId 的全局状态写入（全局单份 = 会话互相污染）"
+  );
+  const sigLine57 = appSrc57Code.split(/\r?\n/).find((l) => /signature:/.test(l) && /sessionScopeSignature\(values\)/.test(l)) || "";
+  (/moodSignature\(readMood\(threadId\)\)/.test(sigLine57) ? ok : fail)(
+    "【57】下发签名含语气档（漏了 = 状态变了也不重新下发，功能看着像没生效）"
+  );
+  (/composeMoodInstructions\(composeScopeInstructions\(base, sessionScopeBlock\(values\)\)/.test(appSrc57Code) ? ok : fail)(
+    "【57】语气块随会话作用域一起下发（同一通道 = 天然按会话隔离）"
+  );
+  (/bumpMood\(params\.threadId, "turn-ok"\)/.test(appSrc57Code) ? ok : fail)("【57】回合顺利收尾记「向好」");
+  (/bumpMood\(params\.threadId, "turn-fail"\)/.test(appSrc57Code) ? ok : fail)("【57】失败/中断/被中止记「转差」");
+  (/bumpMood\(threadRef\.current\.id, userSig\)/.test(appSrc57Code) ? ok : fail)("【57】用户语气信号（被夸/被催）也进状态");
+  const forgetCalls57 = (appSrc57Code.match(/forgetThreadMood\(/g) || []).length;
+  (forgetCalls57 >= 4 ? ok : fail)(`【57】删除会话时级联清状态与签名（定义+3 处调用，实测 ${forgetCalls57}）`);
+  (/adaptiveToneRef\.current = next;/.test(appSrc57Code) ? ok : fail)(
+    "【57】开关用 ref 镜像（onHarnessEvent 的闭包读不到新 state，直接读 state 会永远读到初值）"
+  );
+
+  // 纯函数断言：直接跑 agent-mood.mjs 的真实现
+  {
+    const wild = normalizeMood({ valence: 99, energy: -5, rapport: 42, turns: -3 });
+    (wild.valence === 1 && wild.energy === 0.05 && wild.rapport === 1 && wild.turns === 0 ? ok : fail)(
+      "【57】坏值/越界一律归一（有界，不漂）"
+    );
+    // 从高水平起连败：valence 触底后下降量会变 0（那是下界在起作用，不是惩罚变小）
+    let s57 = { ...emptyMood(), valence: 0.9, energy: 0.9 };
+    const pen57 = [];
+    for (let i = 0; i < 7; i++) { const before = s57.valence; s57 = applyMoodSignal(s57, "turn-fail", 1000); pen57.push(Number((before - s57.valence).toFixed(4))); }
+    (pen57[0] === 0.12 && pen57[1] === 0.15 && pen57[6] === 0.3 ? ok : fail)(
+      `【57】连败惩罚递增且封顶 0.30（实测 ${pen57.join("/")}）`
+    );
+    (applyMoodSignal({ ...emptyMood(), valence: -0.95 }, "turn-fail", 1000).valence >= -1 ? ok : fail)(
+      "【57】惩罚不把心情推过下界（有界，不会越挫越负到无意义）"
+    );
+    let w57 = emptyMood();
+    for (let i = 0; i < 50; i++) w57 = applyMoodSignal(w57, "turn-ok", 1000);
+    (w57.valence > 0 && w57.valence <= 1 && w57.energy <= 1 && w57.rapport <= 1 ? ok : fail)(
+      `【57】连续成功收敛到正侧且不越界（实测 valence=${w57.valence.toFixed(3)}）`
+    );
+    const bad57 = applyMoodSignal(applyMoodSignal(emptyMood(), "turn-fail", 1000), "turn-fail", 1000);
+    const later57 = decayMood(bad57, 1000 + 3 * 60 * 60 * 1000);
+    (Math.abs(later57.valence) < Math.abs(bad57.valence) ? ok : fail)(
+      `【57】空闲衰减把状态拉回基线（${bad57.valence.toFixed(3)} → ${later57.valence.toFixed(3)}）`
+    );
+    (moodTone({ valence: 0, energy: 0.1 }).key === "terse" ? ok : fail)("【57】精力见底 → 极简档");
+    (moodTone({ valence: -0.5, energy: 0.6 }).key === "sober" ? ok : fail)("【57】心情偏低 → 收紧档");
+    (moodTone({ valence: 0.6, energy: 0.8 }).key === "brisk" ? ok : fail)("【57】心情好+精力足 → 轻快档");
+    (moodTone({ valence: 0, energy: 0.5 }).key === "steady" ? ok : fail)("【57】默认平稳档");
+    const blk57 = moodBlock(applyMoodSignal(emptyMood(), "turn-ok", 1000), 1000);
+    (blk57.includes(MOOD_HEADING) && /\*\*只影响说法/.test(blk57) && /不要在回复里谈论这个状态/.test(blk57) ? ok : fail)(
+      "【57】注入块写明「只影响说法」并禁止谈论状态（否则会出现「我现在心情不错」这类噪音）"
+    );
+    const a1 = moodSignature({ valence: 0.1, energy: 0.5, rapport: 0.1, updatedAt: 1 });
+    const a2 = moodSignature({ valence: 0.2, energy: 0.6, rapport: 0.2, updatedAt: 2 });
+    (a1 === a2 && a1 !== "" ? ok : fail)(`【57】签名不含浮点（同档同签名，实测 ${a1} vs ${a2}）`);
+    // 模拟「上一次下发过的完整文本又被当基线传进来」：块只能出现一次（翻倍 = 每轮重发越拼越长）
+    const twice57 = composeMoodInstructions(composeMoodInstructions("BASE", blk57), blk57);
+    ((twice57.match(/会话状态（语气自适应/g) || []).length === 1 ? ok : fail)("【57】组合/剥离幂等（反复重发不会越拼越长）");
+    let mA = emptyMood();
+    let mB = emptyMood();
+    for (let i = 0; i < 3; i++) mA = applyMoodSignal(mA, "turn-fail", 1000);   // A 连败三次
+    mB = applyMoodSignal(mB, "turn-ok", 1000);
+    (moodTone(mA).key === "sober" && moodTone(mB).key !== "sober" ? ok : fail)(
+      `【57】两会话各自演进语气不同（A=${moodTone(mA).key} / B=${moodTone(mB).key}）`
+    );
+    (moodSignature(mB) === moodSignature(applyMoodSignal(emptyMood(), "turn-ok", 1000)) ? ok : fail)(
+      "【57】A 的连败没有改到 B 的状态（同一份输入跑出同一份结果，证明确实各存各的）"
+    );
+  }
+
 }
 
 console.log("");
@@ -5548,6 +5633,8 @@ if (hardFails === 0) {
   console.log(C.green(`预检通过${warns ? `（${warns} 条告警，见上）` : ""}`));
 } else {
   console.log(C.red(`预检失败：${hardFails} 项硬失败${warns ? `，${warns} 条告警` : ""}`));
+
+
 }
 console.log(C.gray("下一步：npm run accept（拉起应用，在带历史的持久 profile 上跑本轮验收）"));
 process.exit(hardFails === 0 ? 0 : 1);
