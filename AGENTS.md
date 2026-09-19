@@ -176,6 +176,21 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 - **指纹内核（cloak-browsers）仅用于自动化场景**（模型经 `cloakbrowser` CLI 调用）；浏览器视图的「隐身浏览」按钮为预留位，尚未接入 CDP 嵌入。
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
+- **⛔ 语气自适应：给 agent 加会话级状态（09-19 用户要求「想要 agent 有状态、语气跟着变」）**：
+  新增 `src/lib/agent-mood.mjs`（纯函数：归一化 / 信号更新 / 时间衰减 / 语气映射 / 拼块 / 幂等剥离 / 变化签名）
+  + `src/App.tsx` 的状态读写（键族 `agent-mood-<threadId>`）、回合挂点、注入与级联清理 + `electron/app-settings.ts` 开关。
+  **状态**：心情(-1..1) / 精力(0..1) / 默契(0..1)，由**回合级权威事件**驱动（`turn/completed` → 向好；
+  `turn/aborted|failed|interrupted` → 转差，连败惩罚递增封顶 0.30；用户消息关键词 → 被夸 / 被催），
+  30 分钟一档朝基线衰减（最多 5 档）。**注入**：走会话自己的 `developer_instructions`
+  （`buildSessionScope` 里用 `composeMoodInstructions` 包在作用域块外）⇒ **天然按会话隔离**。
+  **⛔ 三个必须记住的点**：① 签名里只放**语气档 + 默契档**，绝不放浮点 —— 否则每回合都发一次
+  `thread/settings/update`；② 触发刷新的可靠时机是**发送消息前**（回合刚结束时引擎还在收尾，那时下发会被
+  静默拒掉 —— 真机验收实测：状态更新了、引擎侧却没有新语气块）；③ 发送路径上新增的 `await` 必须在
+  `sendInFlightRef` 置位**之后**且落在 `try` **之内**（code review 抓到：否则 800ms 窗口可重入发送、
+  且一次 throw 会让发送永久卡死）。
+  **守卫**：预检【57】23 条，判据扫「**剔掉整行注释**的代码文本」——不能只用原文（`// bumpMood(...)` 照样匹配
+  = 假绿），也不能用 `codeOnly`（App.tsx 里成对 `/* */` 极多，一处不配对就会吞掉后面的代码 = 假红）。
+  真机验收 8/8：判据落在 **rollout 的 `developer_instructions`**（引擎侧真收到）+ localStorage 状态键（按会话分开）。
 
 - **⛔ 会话「项目地址」改动要真落到侧栏 + 启动自动展开项目（09-19 用户实测：「在已创建会话上修改项目地址，
   改了只是对话框上面显示改了，左侧栏没有变化，新增的项目地址也不出现，这个切换项目地址功能这样看就是假的；
