@@ -1,4 +1,5 @@
 import { createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
+import { safeProviderId } from "./provider-id";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import fs from "node:fs/promises";
 import type { CodexEvent, CodexServer } from "./codex-server";
@@ -195,7 +196,7 @@ export class ChannelBotService {
         sandbox: config.sandbox,
         personality: "pragmatic",
         modelProvider: model.provider,
-        config: { model_provider: model.provider, model_providers: { [model.provider]: { name: model.name, base_url: model.baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } },
+        config: { model_provider: safeProviderId(model.provider), model_providers: { [safeProviderId(model.provider)]: { name: model.name, base_url: model.baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } },
       }) as any;
       thread = started.thread;
       this.bindings[key] = { threadId: thread.id, chatId, updatedAt: Date.now() };
