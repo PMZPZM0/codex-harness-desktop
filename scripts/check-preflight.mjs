@@ -6178,37 +6178,63 @@ w.postMessage({id:1,op:"list",root});
 
 
 {
-  // ── 【70】小白快速上手：引导弹窗必须内嵌「粘 Key 一键配好」，入口常驻在发消息处 ──
-  //   09-19 用户：「登录界面和模型供应商配置联动性差，新手总是不会」。
-  //   卡点：登录页有快路（粘 Key → 自动探测 + 导入模型 + 生效），但新手多半点
-  //   「暂时不登录，直接进入」——那条快路就再也找不到了，只剩「设置 → 模型 → 供应商」
-  //   的完整表单（供应商 ID / Base URL / 模型列表 / 勾选生效），每样都要先懂概念才能填对。
+  // ── 【70】模型配置引导（09-19 用户三连反馈后定稿的形态）────────────────────
+  //   1) 「排版太丑……弹窗提醒的优化一下展示」→ 四入口做成一行标签，一次只展开一个；
+  //   2) 「中转站登录呢」→ 弹窗里补上中转站账户登录（登录页有的入口不能只在登录页有）；
+  //   3) 「不要吸在输入框上面吧 / 输入框里面的删了」→ 删掉输入框内的提示条，
+  //      入口改到**左侧栏的「模型配置」菜单**；
+  //   4) 「如果在登录界面配置过了，就不要弹这个弹窗了」→ 落持久标记，配过一次永不再弹。
   const guideSrc70 = readFileSync(join(ROOT, "src", "components", "ModelSetupGuide.tsx"), "utf8");
   const appSrc70 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
-  (/onQuickSetup/.test(guideSrc70) ? ok : fail)(
-    "【70】引导弹窗内嵌一键配置（不再只给跳转按钮）"
-  );
-  (/model-guide-key/.test(guideSrc70) ? ok : fail)(
-    "【70】引导里有 Key 输入框（新手只需粘一个 Key）"
-  );
-  (/model-guide-line/.test(guideSrc70) ? ok : fail)(
-    "【70】引导里可选接入线路"
-  );
-  (/lines=\{PPTokenEndpoints\}/.test(appSrc70) ? ok : fail)(
-    "【70】线路列表与登录页共用同一份数据（避免两处漂移）"
-  );
-  (/onGoManual/.test(guideSrc70) && /onGoSubscription/.test(guideSrc70) ? ok : fail)(
-    "【70】保留「我自己配完整表单」与「ChatGPT 订阅登录」两条原路径（熟手不能被牺牲）"
-  );
+  const cssSrc70 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+  const relaySrc70 = readFileSync(join(ROOT, "src", "lib", "relay.ts"), "utf8");
+
+  // ① 一键配置快路仍在（新手只需要粘一个 Key）
+  (/onQuickSetup/.test(guideSrc70) ? ok : fail)("【70】引导弹窗内嵌一键配置（不再只给跳转按钮）");
+  (/model-guide-key/.test(guideSrc70) ? ok : fail)("【70】引导里有 Key 输入框（新手只需粘一个 Key）");
+  (/model-guide-line/.test(guideSrc70) ? ok : fail)("【70】引导里可选接入线路");
+  (/lines=\{PPTokenEndpoints\}/.test(appSrc70) ? ok : fail)("【70】线路列表与登录页共用同一份数据（避免两处漂移）");
   (/async function quickSetup\(/.test(appSrc70) && /await handleLogin\(\{ \.\.\.info, model: "" \}\)/.test(appSrc70) ? ok : fail)(
     "【70】一键配置复用登录页那条成熟链路（不另写一套，避免漂移）"
   );
-  (/className="setup-banner"/.test(appSrc70) ? ok : fail)(
-    "【70】未配模型时输入框上方有常驻配置入口（入口待在要发消息的地方）"
+
+  // ② 四条路径都在，且是「一行标签、一次展开一个」的排版（上一版全堆在一起，用户嫌丑）
+  (/model-guide-tabs/.test(guideSrc70) && /model-guide-tab /.test(guideSrc70) ? ok : fail)("【70】四入口是一行标签（teb 式，一次只展开一个 —— 排版不再挤成大长条）");
+  (/onGoManual/.test(guideSrc70) && /onGoSubscription/.test(guideSrc70) ? ok : fail)("【70】保留「我自己配完整表单」与「ChatGPT 订阅登录」两条原路径（熟手不能被牺牲）");
+  (/\.model-guide-tabs \{[\s\S]{0,120}?grid-template-columns: repeat\(4/.test(cssSrc70) ? ok : fail)("【70】标签栏样式存在（四列等宽）");
+
+  // ③ 中转站账户登录必须在弹窗里（用户第一句话问的就是它）
+  (/onRelayLogin/.test(guideSrc70) && /Wallet/.test(guideSrc70) ? ok : fail)("【70】引导弹窗里有「中转站账户」入口（登录页有、这里不能缺）");
+  (/relayQuickLogin/.test(appSrc70) && /onRelayLogin=\{/.test(appSrc70) ? ok : fail)("【70】App 侧把中转站登录接到了弹窗");
+  (/performRelayLogin/.test(appSrc70) && /export async function performRelayLogin/.test(relaySrc70) ? ok : fail)(
+    "【70】中转站登录链路两处共用同一实现（lib/relay.ts 的 performRelayLogin，不复制）"
   );
-  (/\{!customModel && !showLogin && \(/.test(appSrc70) ? ok : fail)(
-    "【70】常驻入口显示条件正确（未配置且不在登录页）"
+  (!/window\.codex\.relayLogin\(\{ baseUrl: relayDraft/.test(appSrc70) ? ok : fail)(
+    "【70】登录页不再自己写一份 relay 链路（已改走 performRelayLogin）"
   );
+
+  // ④ 输入框内的提示条必须**删干净**（用户明令），入口改到侧栏
+  (!/setup-banner/.test(appSrc70) ? ok : fail)("【70】输入框内不再有「还没配模型」提示条（用户：「输入框里面的删了」）");
+  (!/\.setup-banner/.test(cssSrc70) ? ok : fail)("【70】提示条的样式也一并删除（不留死样式）");
+  (/className=\{`sidebar-tab \$\{!customModel \? "needs-setup" : ""\}`/.test(appSrc70) ? ok : fail)(
+    "【70】左侧栏有「模型配置」菜单（未配模型时带高亮点）"
+  );
+  (/<Bot size=\{15\} \/><span>模型配置<\/span>/.test(appSrc70) ? ok : fail)("【70】侧栏菜单文案是「模型配置」");
+  // ⛔ 锚点别锚"前后顺序"：JSX 里文案在 onClick **之后**（按钮内容），属性在前 —— 取周边窗口才对
+  const sideMenu70 = (() => {
+    const at = appSrc70.indexOf("模型配置</span>");
+    if (at < 0) return false;
+    return /setSettingsPage\("model"\); setSettingsOpen\(true\); setMobileNav\(false\);/.test(appSrc70.slice(Math.max(0, at - 400), at + 120));
+  })();
+  (sideMenu70 ? ok : fail)("【70】侧栏「模型配置」点击后跳到模型设置页");
+  (/\.sidebar-tab\.needs-setup \{/.test(cssSrc70) ? ok : fail)("【70】侧栏未配置高亮样式存在");
+
+  // ⑤ 配过就不再弹（用户：「在登录界面配置过了，就不要弹这个弹窗了」）
+  (/MODEL_CONFIGURED_KEY/.test(appSrc70) ? ok : fail)("【70】有「模型已配置过」的持久标记");
+  (/if \(hadModelConfigured\(\)\) return;/.test(appSrc70) ? ok : fail)("【70】弹窗前先查标记 ⇒ 配过就不再弹");
+  (/markModelConfigured\(\);/.test(appSrc70) ? ok : fail)("【70】配置成功时落标记（登录页/引导/中转站三条路径都汇到 handleLogin，那里写最不容易漏）");
+
+  // ⑥ 未配模型时的既有联动不能被碰坏
   (/if \(!customModel\) \{ dbg\.deferredByModel = true; return; \}/.test(appSrc70) ? ok : fail)(
     "【70】未配模型时不弹环境体检（避免两个弹窗抢屏 —— 新手不知道该先干哪个）"
   );
@@ -6217,34 +6243,10 @@ w.postMessage({id:1,op:"list",root});
   (/setShowModelGuide\(true\)/.test(sendGuard70) && !/setNotice\("请先配置并启用自定义模型"\)/.test(sendGuard70) ? ok : fail)(
     "【70】未配模型时发送直接打开配置引导（不再只弹一句看不懂的错）"
   );
-  const cssSrc70 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
-  (/\.model-guide-quick \{/.test(cssSrc70) && /\.setup-banner \{/.test(cssSrc70) ? ok : fail)(
-    "【70】快路卡片与常驻入口的样式存在"
-  );
-  // ⛔ 布局硬约束（09-19 用户两次点名：「重叠了」「不要改动项目地址选项的位置」）：
-  //   ① 提示条必须待在输入框**内部**（框外就会被浮在框上方的项目地址 chip 压住）；
-  //   ② 项目地址 chip 必须**保持 absolute 浮在框外上方**（位置是既有行为，不准改）。
-  const bannerInForm = (() => {
-    const i = appSrc70.indexOf("<form className=\"composer\"");
-    const j = appSrc70.indexOf("</form>", i);
-    const k = appSrc70.indexOf("className=\"setup-banner\"");
-    return i >= 0 && j > i && k > i && k < j;
-  })();
-  (bannerInForm ? ok : fail)(
-    "【70】未配模型提示在输入框**内部**（挪到框外会与项目地址 chip 重叠）"
-  );
-  (/\{!customModel && !showLogin && \(\s*<button type="button" className="setup-banner"/.test(appSrc70) ? ok : fail)(
-    "【70】提示条仍是一行紧凑按钮（不是两行长条）"
-  );
-  (/\n\.welcome-cwd-picker \{ position: absolute; bottom: calc\(100% \+ 5px\); left: 12px; z-index: 6; \}/.test(cssSrc70) ? ok : fail)(
-    "【70】项目地址 chip 保持 absolute 浮在输入框上方（位置不许改；改了会与提示重叠）"
-  );
-  (!/with-setup-banner/.test(cssSrc70) && !/with-setup-banner/.test(appSrc70) ? ok : fail)(
-    "【70】没有针对「有提示时」去改项目地址定位的覆盖规则（已回退）"
-  );
-  (/\.setup-banner-text \{[\s\S]{0,140}?flex-direction: row;/.test(cssSrc70) ? ok : fail)(
-    "【70】提示条文案横排（一行高度 ≈30px，不是两行 53px 的长条）"
-  );
+  // 引导文案不得残留 markdown 星号（上一版把 `**…**` 原样显示出来了，用户看到的就是星号）
+  // ⛔ 必须**剥掉注释**再判：注释里写 `**强调**` 不会渲染到界面，拿全文去找会自己把自己顶红
+  const guideText70 = guideSrc70.replace(/\/\*[\s\S]*?\*\//g, "").split(/\r?\n/).map((l) => l.replace(/\/\/.*$/, "")).join("\n");
+  (!/\*\*/.test(guideText70) ? ok : fail)("【70】引导文案里没有未渲染的 markdown 星号（上一版界面上真的显示了 `**`）");
 }
 
 
