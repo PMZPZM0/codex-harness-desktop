@@ -7976,6 +7976,10 @@ export default function App() {
     }
     set.add(turnId);
   }, []);
+  /** 缓存里缺整轮内容、**必须走一次 resume** 才能拿全的会话（09-19：后台完成的回合在缓存里
+   *  还没有对应回合时不能只把「产出条目」并进去——会渲染出没有用户消息的孤儿回复）。
+   *  openThread 的「30 秒跳过 resume」快速路径必须让开这些会话；resume 落地后清除。 */
+  const needsFullReloadRef = useRef<Set<string>>(new Set());
   // 侧栏「任务已完成」绿点（09-19 用户需求：后台会话跑完，侧栏亮绿点，点进去消失——
   // 快速知道哪个会话任务完成了/运行结束了）。只在**非当前查看的会话**上点亮：
   // 当前正开着的会话用户全程看着，不需要反馈；点进该会话（openThread）即清除。
@@ -12854,11 +12858,25 @@ const commandMatches = useMemo(() => {
           //   修法：把「完成的回合落缓存」提到**跨会话区**（过滤之前）——引擎的 turn/completed
           //   事件自带完整 turn，纯前端合并、零 RPC。只写缓存**不动视图**（threadRef/setThread
           //   仍归当前会话那条链路），后台跑完的会话切回来即可命中完整缓存。
+          // ⛔⛔ 09-19 用户实测「一个用户消息下面挂了两条回复 / 回复重复」（截图）：
+          //   第一版无条件 `mergeTurn(cachedBg, params.turn)` —— 缓存里**还没有这一轮**时，
+          //   mergeTurn 会把事件里的回合**当成新回合追加**，而引擎在 turn/completed 里给的是
+          //   **产出条目**、不保证带 userMessage ⇒ 渲染出「没有用户消息的孤儿回复」，看起来
+          //   就是上一轮多了一条回复。规则收死：
+          //     · 缓存里**已有**这一轮 → 合并（按 id 合并会保住缓存里已有的用户消息）✅
+          //     · 缓存里**没有**这一轮 → **不造半截回合**，改为登记「需要完整重载」，
+          //       由 openThread 走 resume 拿完整回合（见 needsFullReloadRef 与跳过 resume 的判定）。
           if (params.threadId && params.threadId !== threadRef.current?.id && params.turn?.id) {
-            const cachedBg = threadCacheRef.current.get(params.threadId);
-            if (cachedBg) {
+            const tidBg = params.threadId;
+            const cachedBg = threadCacheRef.current.get(tidBg);
+            const hasTurn = Boolean(cachedBg?.turns?.some((turn) => turn.id === params.turn.id));
+            if (cachedBg && hasTurn) {
               const mergedBg = mergeTurn(cachedBg, params.turn);
-              if (mergedBg && mergedBg !== cachedBg) threadCacheRef.current.set(params.threadId, mergedBg);
+              if (mergedBg && mergedBg !== cachedBg) threadCacheRef.current.set(tidBg, mergedBg);
+            } else if (cachedBg) {
+              // 缓存缺这一轮（发出去就切走，连用户消息都还没落进缓存）：标记必须完整重载，
+              // 否则切回时命中「跳过 resume」快速路径 → 拿到缺用户消息的半截回合。
+              needsFullReloadRef.current.add(tidBg);
             }
           }
           // 回合结束：锚顶留白归零。它只在「钉顶期间」为让锚点滚得上去而存在，
@@ -12917,11 +12935,18 @@ const commandMatches = useMemo(() => {
           if (!params.threadId || params.threadId !== threadRef.current?.id) markThreadDoneUnread(params.threadId);
           // 失败/被中断的回合也要落缓存（同 turn/completed 的修复）：部分回复同样是用户的
           // 可见内容，切走期间同样拿不到流式事件 —— 不落缓存则切回即丢。
+          // ⛔ 与 turn/completed 同一条规则：**只有缓存里已有该回合时才合并**；缓存缺这一轮就
+          //   登记「必须完整重载」，绝不把只有产出条目的半截回合追加成孤儿（会渲染成"多出来
+          //   一条没有用户消息的回复"）。
           if (params.threadId && params.threadId !== threadRef.current?.id && params.turn?.id) {
-            const cachedFail = threadCacheRef.current.get(params.threadId);
-            if (cachedFail) {
+            const tidFail = params.threadId;
+            const cachedFail = threadCacheRef.current.get(tidFail);
+            const hasTurnFail = Boolean(cachedFail?.turns?.some((turn) => turn.id === params.turn.id));
+            if (cachedFail && hasTurnFail) {
               const mergedFail = mergeTurn(cachedFail, params.turn);
-              if (mergedFail && mergedFail !== cachedFail) threadCacheRef.current.set(params.threadId, mergedFail);
+              if (mergedFail && mergedFail !== cachedFail) threadCacheRef.current.set(tidFail, mergedFail);
+            } else if (cachedFail) {
+              needsFullReloadRef.current.add(tidFail);
             }
           }
         }
@@ -16222,7 +16247,9 @@ const commandMatches = useMemo(() => {
     // 频繁切换优化：缓存已秒开、该会话不在运行、且 30 秒内刚完整 resume 过 → 跳过这轮
     // resume。反复切换时每次都全量加载是卡顿主因；非运行会话期间无事件流，内容不可能变化。
     // 运行中会话必须继续走 resume 对齐引擎状态，不能跳。
-    if (cached && !knownRunning && Date.now() - (recentResumeAtRef.current.get(id) ?? 0) < 30_000) {
+    // ⛔ 例外（09-19）：needsFullReloadRef 里的会话**必须** resume —— 它的缓存缺整轮内容
+    //   （后台完成时只拿到产出条目，连用户消息都没有），跳过 resume 会渲染出孤儿回复。
+    if (cached && !knownRunning && !needsFullReloadRef.current.has(id) && Date.now() - (recentResumeAtRef.current.get(id) ?? 0) < 30_000) {
       recentResumeAtRef.current.set(id, Date.now());
       setOpeningThread(null);
       return;
@@ -16265,6 +16292,7 @@ const commandMatches = useMemo(() => {
         return;
       }
       recentResumeAtRef.current.set(id, Date.now());
+      needsFullReloadRef.current.delete(id);   // resume 已拿全内容：清掉「必须重载」标记
       threadCacheRef.current.set(id, mergedLoaded);
       threadRef.current = mergedLoaded;
       // 秒开后 resume 无实质变化时不替换（避免闪烁）；有变化（后台继续跑/消息补齐）才更新

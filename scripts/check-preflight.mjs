@@ -5824,14 +5824,26 @@ w.postMessage({id:1,op:"list",root});
   //    导致这里的断言被静默剥空 → 假红（第一版就是这样红的）。锚点本身已足够具体。
   const app62 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
   // ① 跨会话落缓存（turn/completed 与 aborted/failed 两处）
-  (/if \(params\.threadId && params\.threadId !== threadRef\.current\?\.id && params\.turn\?\.id\) \{[\s\S]{0,200}?const mergedBg = mergeTurn\(cachedBg, params\.turn\);[\s\S]{0,160}?threadCacheRef\.current\.set\(params\.threadId, mergedBg\);/.test(app62) ? ok : fail)(
-    "【62】后台会话完成的回合落缓存（否则 30 秒内切回 = 回复永久缺失）"
+  // ⛔ 合并必须**以「缓存里已有该回合」为前提**：否则 mergeTurn 会把只有产出条目的回合
+  //   追加成「没有用户消息的孤儿回复」（用户实测：一个用户消息下挂两条回复 / 回复重复）。
+  //   缓存缺这一轮时改登记 needsFullReloadRef，让 openThread 必须 resume 拿完整回合。
+  (/const hasTurn = Boolean\(cachedBg\?\.turns\?\.some\(\(turn\) => turn\.id === params\.turn\.id\)\);[\s\S]{0,260}?if \(cachedBg && hasTurn\) \{[\s\S]{0,260}?mergeTurn\(cachedBg, params\.turn\)[\s\S]{0,420}?needsFullReloadRef\.current\.add\(tidBg\);/.test(app62) ? ok : fail)(
+    "【62】只在缓存已有该回合时合并；缺轮则登记完整重载（杜绝孤儿回复）"
   );
-  (/const mergedFail = mergeTurn\(cachedFail, params\.turn\);[\s\S]{0,160}?threadCacheRef\.current\.set\(params\.threadId, mergedFail\);/.test(app62) ? ok : fail)(
-    "【62】失败/被中断的后台回合同样落缓存（部分回复不能丢）"
+  (/const hasTurnFail = Boolean\(cachedFail\?\.turns\?\.some\(\(turn\) => turn\.id === params\.turn\.id\)\);[\s\S]{0,260}?mergeTurn\(cachedFail, params\.turn\)[\s\S]{0,420}?needsFullReloadRef\.current\.add\(tidFail\);/.test(app62) ? ok : fail)(
+    "【62】失败/被中断分支同样只在缓存已有该回合时合并"
+  );
+  (/needsFullReloadRef = useRef<Set<string>>\(new Set\(\)\)/.test(app62) ? ok : fail)(
+    "【62】「必须完整重载」登记表存在"
+  );
+  (/&& !needsFullReloadRef\.current\.has\(id\) && Date\.now\(\) - \(recentResumeAtRef\.current\.get\(id\) \?\? 0\) < 30_000\)/.test(app62) ? ok : fail)(
+    "【62】「跳过 resume」快速路径让开必须重载的会话"
+  );
+  (/needsFullReloadRef\.current\.delete\(id\);/.test(app62) ? ok : fail)(
+    "【62】resume 完成后清除「必须重载」标记"
   );
   // 落缓存只写 cache：合并语句里不得出现 setThread（视图仍归当前会话那两条链路）
-  (/if \(mergedBg && mergedBg !== cachedBg\) threadCacheRef\.current\.set\(params\.threadId, mergedBg\);/.test(app62) ? ok : fail)(
+  (/if \(mergedBg && mergedBg !== cachedBg\) threadCacheRef\.current\.set\(tidBg, mergedBg\);/.test(app62) ? ok : fail)(
     "【62】跨会话合并只写缓存、不直改视图"
   );
   // ② 已结束回合不得再被 turn/started 点亮
