@@ -9591,7 +9591,11 @@ export default function App() {
   }, [uiFont]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // 未配置的 PPtoken 推荐卡可被用户「禁用」（仅置灰，不写引擎存储；配置真实密钥后走 setProviderEnabled）
-  const [pptokenCardOff, setPptokenCardOff] = useState(() => localStorage.getItem("pptoken-card-off") === "1");
+  // ⛔ 推荐卡（PPtoken 赞助位）**默认不启用**（09-19 用户：「首次安装启动、没配置供应商的时候，
+  //   默认不要启用任何供应商，要不然会跟新配置的供应商同时启用」）。
+  //   只有用户**显式点开过**（localStorage 存 "0"）才保持启用；没有记录 = 首次安装 = 关。
+  //   ⚠️ 旧实现是 `=== "1"`（没记录=启用），于是全新安装第一眼就是一个"未配置密钥却已启用"的卡。
+  const [pptokenCardOff, setPptokenCardOff] = useState(() => localStorage.getItem("pptoken-card-off") !== "0");
   useEffect(() => { try { localStorage.setItem("pptoken-card-off", pptokenCardOff ? "1" : "0"); } catch { /* ignore */ } }, [pptokenCardOff]);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>("general");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);

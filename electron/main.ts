@@ -2202,7 +2202,14 @@ async function saveChannelBot(input: any) {
 function publicCustomModel(value: CustomModelFile | null) {
   if (!value) return null;
   const { encryptedKey, ...config } = value;
-  return { ...config, hasKey: Boolean(encryptedKey) };
+  const hasKey = Boolean(encryptedKey);
+  // ⛔ 未配置密钥的第三方供应商**不得视为已启用**（09-19 用户：「首次安装启动、没配置供应商时，
+  //   默认不要启用任何供应商，要不然会跟新配置的供应商同时启用」）。
+  //   没有密钥的供应商启用着，一是语义假（它根本发不出请求），二是会出现「默认那个 + 新配的这个」
+  //   同时显示启用，用户分不清当前到底是谁生效。
+  //   ⚠️ `openai-official` 例外：官方订阅靠 ChatGPT 登录凭据，本来就没有 API Key。
+  const keylessThirdParty = !hasKey && value.provider !== "openai-official";
+  return { ...config, enabled: keylessThirdParty ? false : value.enabled !== false, hasKey };
 }
 
 function probeFetch(url: string, init: RequestInit, timeoutMs: number) {
@@ -8065,7 +8072,11 @@ ipcMain.handle("custom-model:save", async (_event, input: { provider: string; na
   const enabledModels = mergedModels.filter((entry) => entry.enabled !== false);
   const model = requestedModel || enabledModels[0]?.id || "";
   if (!model) throw new Error("请先在「模型列表」添加并勾选至少一个生效模型，再保存");
-  const saved = withModels({ provider, name, model, baseUrl, contextWindow, wireApi, encryptedKey, enabled: input.enabled ?? existing?.enabled ?? true, models: mergedModels }, model);
+  // ⛔ 新供应商的**默认启用态取决于有没有密钥**（09-19 用户要求：首次安装/未配置时不要默认启用）：
+  //   没填密钥就保存（或从推荐卡进来还没填）→ 存成禁用；填了密钥 → 启用（配置完即可用）。
+  //   原来无条件 `?? true`：未配置密钥的供应商也会带着「已启用」落盘，于是和新配的那个同时亮。
+  const keylessThirdPartySave = !encryptedKey && provider !== "openai-official";
+  const saved = withModels({ provider, name, model, baseUrl, contextWindow, wireApi, encryptedKey, enabled: keylessThirdPartySave ? false : (input.enabled ?? existing?.enabled ?? true), models: mergedModels }, model);
   await upsertCustomModel(saved);
   const current = await readCustomModel();
   if (saved.enabled === false && current?.provider !== provider) {
