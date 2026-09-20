@@ -1507,6 +1507,28 @@ button.brand-mark.sidebar-toggle:hover {
   position: relative;
   overflow: hidden;
 }
+/* 短会话靠底（09-20 用户：「回复完了，下面还有这么多空白」）。
+ *
+ * 背景：钉顶（把用户消息稳在距顶部 36px）在内容不足一屏时需要在**下方**补留白才滚得上去；
+ * 09-18 用户提过「短回复别把钉顶丢掉」，所以那份留白在回合结束时被特意保留了 ——
+ * 于是"回复完下方一大片空白"与"钉顶不能掉"其实是同一份留白的两面。
+ * 正解不是把留白删掉（会让 09-18 的问题复发），而是**让内容靠底**：留白挪到上方，
+ * 内容紧贴输入框，钉顶也永远不需要"取消"（短内容从一开始就不需要滚）。
+ *
+ * ⛔ 为什么用 `:first-child { margin-top: auto }` 而不是 `justify-content: flex-end`：
+ *   flex-end 会把**超出**视口的内容顶出容器上沿且滚不上去（顶部内容永久不可达）；
+ *   而 flex 的 auto margin 只在**有剩余空间**时吃掉剩余（内容靠底），
+ *   内容一旦超出视口，auto 自动解析为 0 → 回到正常顶对齐，对钉顶/跟随/滚动零影响。
+ * ⛔ `.empty-state`（欢迎页）排除在外：它自己用 flex + center 居中，别叠加。
+ * ⛔ 间距不受影响：`.turn-group` 是 `margin: 0 0 32px`（只有下边距），
+ *   相邻元素间的折叠与不折叠结果相同（32px），所以 block→flex 不改画面。 */
+.timeline:not(.empty-state) {
+  display: flex;
+  flex-direction: column;
+}
+.timeline:not(.empty-state) > :first-child {
+  margin-top: auto;
+}
 .timeline {
   /* ⛔ 这里**不要**写 `scroll-behavior: smooth`（09-13 拆除）：
      它只作用于**程序滚动**，而聊天区的程序滚动几乎全部要求"瞬时到位"——留白/跟随/钉顶

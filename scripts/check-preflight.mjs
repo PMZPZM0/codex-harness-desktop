@@ -6643,6 +6643,18 @@ w.postMessage({id:1,op:"list",root});
   (/后台运行/.test(app73) ? ok : fail)(
     "【73】安装弹窗支持「后台运行」：未完成也能关，下载继续、完成后再通知"
   );
+  // ⑮ 短会话靠底（09-20 用户：「回复完了，下面还有这么多空白」）
+  //   根因不是 bug：钉顶在内容不足一屏时要在**下方**补留白才滚得上去，而 09-18 用户要求
+  //   「短回复别把钉顶丢掉」→ 那份留白被特意保留 ⇒ 下方一大片空白。正解是让内容靠底。
+  (/\.timeline:not\(\.empty-state\) \{[\s\S]{0,140}?display: flex/.test(css73) ? ok : fail)(
+    "【73】非欢迎页的 timeline 是 flex column（靠底布局的前提）"
+  );
+  (/\.timeline:not\(\.empty-state\) > :first-child \{\s*margin-top: auto/.test(css73) ? ok : fail)(
+    "【73】短会话靠底用首元素 auto margin（内容超出时自动解析为 0，对钉顶/跟随零影响）"
+  );
+  (!/\.timeline:not\(\.empty-state\)[\s\S]{0,200}?justify-content: flex-end/.test(css73) ? ok : fail)(
+    "【73】不得改用 flex-end 靠底（会把超出视口的内容顶出上沿且滚不上去）"
+  );
   (/notice-stack-in/.test(css73) ? ok : fail)(
     "【73】堆叠子项必须用自己的入场动画（旧 notice-in 最终帧 translate(-50%) 配 both 会把子项永久左移——靠左 bug 根因）"
   );
