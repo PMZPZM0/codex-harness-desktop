@@ -2663,7 +2663,7 @@ function createWindow() {
           // 让 `.topbar { background: var(--bg) }` 自己穿过来——钮不再"浮在自己的色条上"，
           // 也无需枚举每个主题调色；亮/暗主题都能干净。符号色在 theme:apply 里跟着主题切。
           color: "#00000000",
-          symbolColor: "#1b1b1a",
+          symbolColor: titleBarOverlayOptions().symbolColor,
           // 43 而非 44：底下留 1px 给 .topbar::after 分隔线，线可贯通窗口钮下方
           height: 43,
         },
@@ -2764,7 +2764,7 @@ function createPopoutWindow(threadId: string) {
     ...(process.platform === "win32"
       ? {
         titleBarStyle: "hidden" as const,
-        titleBarOverlay: { color: "#00000000", symbolColor: "#1b1b1a", height: 43 },
+        titleBarOverlay: titleBarOverlayOptions(),
       }
       : { titleBarStyle: "hiddenInset" as const }),
     webPreferences: {
@@ -2809,16 +2809,43 @@ function createPopoutWindow(threadId: string) {
   return win;
 }
 
+// 无边框标题栏（Windows titleBarOverlay）的符号色：深色主题用浅符号，亮色主题近黑。
+const CHROME_SYMBOL_DARK = "#e8e8e5";
+const CHROME_SYMBOL_LIGHT = "#1b1b1a";
+/** 应用当前主题（由 theme:apply 写入）。null = 渲染层还没告知过 ⇒ 退回跟随系统。 */
+let appThemeDark: boolean | null = null;
+
+/** 新建窗口时的标题栏钮配色：**必须按当前主题给**。
+ *  ⛔ 写死浅色符号会让「深色模式下新开的独立会话窗口」立刻复现
+ *  「三个窗口钮看不见但能点」（09-21 用户实测反馈）。 */
+function titleBarOverlayOptions() {
+  const dark = appThemeDark ?? nativeTheme.shouldUseDarkColors;
+  return { color: "#00000000", symbolColor: dark ? CHROME_SYMBOL_DARK : CHROME_SYMBOL_LIGHT, height: 43 };
+}
+
+/** 把主题应用到**所有**应用窗口的原生外观（窗口底色 + 标题栏控制钮符号色）。
+ *  ⛔ 必须遍历全部窗口：独立会话窗口（popout）是另建的 BrowserWindow，只改 mainWindow
+ *  会让它在深色模式下控制钮符号仍是近黑的 #1b1b1a，而顶栏也是深色 ⇒「看不见但能点」
+ *  （09-21 用户实测）。日志打「已下发的符号色 + 覆盖窗口数」——⛔ Electron 本版**没有
+ *  getTitleBarOverlay 读回接口**（写出来 TS 直接报 TS2551），所以真机是否可见只能看窗口右上角。 */
+function applyWindowChrome(dark: boolean) {
+  const symbol = dark ? CHROME_SYMBOL_DARK : CHROME_SYMBOL_LIGHT;
+  const targets = [mainWindow, ...popoutWindows].filter((win): win is BrowserWindow => Boolean(win && !win.isDestroyed()));
+  for (const win of targets) {
+    try { win.setBackgroundColor(dark ? "#1b1b1a" : "#ffffff"); } catch { /* 窗口可能正在销毁 */ }
+    try { win.setTitleBarOverlay({ color: "#00000000", symbolColor: symbol, height: 43 }); } catch { /* overlay 未启用（非 win32 等）时忽略 */ }
+  }
+  if (targets.length) console.log(`[theme] 窗口外观 → ${dark ? "dark" : "light"}；已给 ${targets.length} 个窗口下发标题栏符号色 ${symbol}`);
+}
+
 // 前端切主题时同步窗口外观：nativeTheme.themeSource 让系统标题栏与 Chromium 默认
 // 滚动条跟随应用主题（不影响系统全局，只作用于本应用窗口）；同时更新窗口底色，
 // 避免深色模式下「外边框/滚轮」残留浅色。
 ipcMain.handle("theme:apply", (_event, theme: string) => {
   const dark = theme === "dark";
+  appThemeDark = dark;
   nativeTheme.themeSource = dark ? "dark" : "light";
-  mainWindow?.setBackgroundColor(dark ? "#1b1b1a" : "#ffffff");
-  // 无边框标题栏：窗口控制钮的底色让 `.topbar { background: var(--bg) }` 自己穿过去（透明），
-  // 符号色仍跟随主题；这样钮不再"浮在自己的色条上"，也无需枚举每个主题调色。
-  try { mainWindow?.setTitleBarOverlay({ color: "#00000000", symbolColor: dark ? "#e8e8e5" : "#1b1b1a", height: 43 }); } catch { /* overlay 未启用时忽略 */ }
+  applyWindowChrome(dark);
   return { ok: true };
 });
 

@@ -7108,6 +7108,58 @@ w.postMessage({id:1,op:"list",root});
   );
 }
 
+// ---------- 【80】审批提醒口径：只留侧栏「需审批」徽标 + 审批永不进通知中心（09-21 用户定稿）----------
+// 用户先问「不会被收纳到通知图标里面去吧，千万不能被收进去」；我做了「跨会话待审批浮层」，
+// 用户看过后否掉：「你这个还是不要加，不好看，bug 太多了，就之前正常左侧侧边栏提醒需审批类似就行」
+// ⇒ 定稿口径 = **提醒入口只有侧栏徽标（threadAttention）+ 当前会话的审批卡**，不许再加第二处。
+{
+  const app80 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const css80 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+  // ① 浮层已按用户要求回滚，别再回来
+  (!/approval-elsewhere/.test(app80) && !/approval-elsewhere/.test(css80) ? ok : fail)(
+    "【80】跨会话待审批浮层已回滚（用户 09-21 明确不要第二处提醒入口，只留侧栏「需审批」徽标）"
+  );
+  // ② 侧栏徽标这条既有口径必须在（用户认可的就是它，别顺手删掉）
+  (/threadAttention/.test(app80) && /需审批/.test(app80) && /\.thread-attention-badge/.test(css80) ? ok : fail)(
+    "【80】侧栏「需审批 / 需选择 / 需确认」徽标仍在（用户认可的提醒口径）"
+  );
+  // ③ setNotice = 通知中心唯一入账通道。审批类文案一旦走它，就会被收进通知图标（用户明确不要）
+  const noticeCalls = app80.split(/\r?\n/).filter((line) => /setNotice\(/.test(line) && !/const setNotice|setNotice = /.test(line));
+  const leaks = noticeCalls.filter((line) => /审批|批准|requestApproval|requestUserInput|elicitation/i.test(line));
+  (leaks.length === 0 ? ok : fail)(
+    `【80】审批类文案不得走 setNotice（= 不进通知中心）：命中 ${leaks.length} 处${leaks.length ? " → " + leaks[0].trim().slice(0, 90) : ""}`
+  );
+  // ④ 通知中心的入账条件：仍只认「别的会话产生的通知」，不许被改成什么都收
+  (/const belongsToOtherThread = Boolean\(threadId && threadId !== threadRef\.current\?\.id\)/.test(app80) ? ok : fail)(
+    "【80】通知中心入账条件未放宽（仍只收「别的会话」的通知）"
+  );
+}
+
+// ---------- 【81】切主题必须覆盖「所有窗口」的原生外观（09-21 用户实测：独立窗口深色下窗口钮看不见）----------
+// 症状：独立会话窗口右上角三个系统钮「看不见但能点」。根因：theme:apply 只设了 mainWindow 的
+// titleBarOverlay，独立窗口创建时写死浅色符号色且再没更新 ⇒ 深色顶栏上近黑符号。
+{
+  const main81 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  (/function applyWindowChrome\(dark: boolean\)/.test(main81) ? ok : fail)(
+    "【81】存在 applyWindowChrome（主题 → 窗口原生外观的唯一入口）"
+  );
+  (/\[mainWindow, \.\.\.popoutWindows\]/.test(main81) ? ok : fail)(
+    "【81】切主题遍历 mainWindow + 全部 popout 窗口（只改 mainWindow ⇒ 独立窗口深色下窗口钮看不见）"
+  );
+  (!/mainWindow\?\.setTitleBarOverlay/.test(main81) ? ok : fail)(
+    "【81】不再单独给 mainWindow 设标题栏 overlay（旧写法正是漏掉独立窗口的原因）"
+  );
+  (!/symbolColor:\s*"#1b1b1a"/.test(main81) ? ok : fail)(
+    "【81】窗口创建处不得写死浅色符号色（深色模式下新开的独立窗口会立刻复现「看不见但能点」）"
+  );
+  (/已给 \$\{targets\.length\} 个窗口下发标题栏符号色/.test(main81) ? ok : fail)(
+    "【81】下发后打日志（含覆盖窗口数 + 已下发符号色）——⛔ 本版 Electron 没有 getTitleBarOverlay 读回接口，别写它（TS2551 会直接让构建失败）"
+  );
+  (!/getTitleBarOverlay\s*\(/.test(main81) ? ok : fail)(
+    "【81】不**调用**不存在的 getTitleBarOverlay（本版 Electron 无此 API；注释里提到不算，只认带括号的调用）"
+  );
+}
+
 
 if (hardFails === 0) {
   console.log(C.green(`预检通过${warns ? `（${warns} 条告警，见上）` : ""}`));
