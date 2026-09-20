@@ -494,14 +494,29 @@ async function main() {
     try { console.log("[verify python-tk]", runCommand(`"${path.join(pythonDir, "python.exe")}" -c "import tkinter; print('Tk ' + str(tkinter.TkVersion))"`, { encoding: "utf8" }).trim()); }
     catch (error) { console.log("[verify python-tk] unavailable: " + String(error.message).split("\n")[0]); }
   }
-  if (fs.existsSync(path.join(gitDir, "cmd", "git.exe"))) console.log("[verify git]", runCommand(`"${path.join(gitDir, "cmd", "git.exe")}" --version`, { encoding: "utf8" }).trim());
-  if (fs.existsSync(path.join(TOOLS, "rg", "rg.exe"))) console.log("[verify rg]", runCommand(`"${path.join(TOOLS, "rg", "rg.exe")}" --version`, { encoding: "utf8" }).split(/\r?\n/)[0]);
-  if (fs.existsSync(path.join(TOOLS, "uv", "uv.exe"))) console.log("[verify uv]", runCommand(`"${path.join(TOOLS, "uv", "uv.exe")}" --version`, { encoding: "utf8" }).trim());
-  if (fs.existsSync(path.join(TOOLS, "cmake", "bin", "cmake.exe"))) console.log("[verify cmake]", runCommand(`"${path.join(TOOLS, "cmake", "bin", "cmake.exe")}" --version`, { encoding: "utf8" }).split(/\r?\n/)[0]);
-  if (fs.existsSync(path.join(TOOLS, "miniconda", "Scripts", "conda.exe"))) console.log("[verify conda]", runCommand(`"${path.join(TOOLS, "miniconda", "Scripts", "conda.exe")}" --version`, { encoding: "utf8" }).trim());
-  if (fs.existsSync(path.join(TOOLS, "mingw", "mingw64", "bin", "gcc.exe"))) console.log("[verify gcc]", runCommand(`"${path.join(TOOLS, "mingw", "mingw64", "bin", "gcc.exe")}" --version`, { encoding: "utf8" }).split(/\r?\n/)[0]);
-  if (fs.existsSync(path.join(ffmpegDir, "bin", "ffmpeg.exe"))) console.log("[verify ffmpeg]", runCommand(`"${path.join(ffmpegDir, "bin", "ffmpeg.exe")}" -version`, { encoding: "utf8" }).split(/\r?\n/)[0]);
-  if (fs.existsSync(path.join(vscodeCliDir, "code.exe"))) console.log("[verify code]", runCommand(`"${path.join(vscodeCliDir, "code.exe")}" --version`, { encoding: "utf8", timeout: 30000 }).split(/\r?\n/)[0]);
+  // ⛔⛔ 09-20 用户实测（Miniconda 装完弹「安装失败」）：验证是**收尾快照**，不是安装的一部分——
+  //   任何一条 verify 抛错都会被 main() 的 catch 连坐成「整个安装失败」，而文件其实已经装好。
+  //   根因之一是 conda 的已知限制：**安装路径含空格时 conda.exe 启动器起不来**
+  //   （工具目录默认在应用名下，如 D:\Codex Harness Desktop\...，必含空格）。
+  //   ⇒ 所有 verify 一律非致命：失败只打 [verify X] unavailable + 原因，不影响安装结果。
+  const safeVerify = (label, command, opts = {}) => {
+    try { console.log(`[verify ${label}]`, runCommand(command, { encoding: "utf8", ...opts }).split(/\r?\n/)[0].trim()); }
+    catch (e) { console.log(`[verify ${label}] unavailable: ` + String(e.message).split("\n")[0] + (label === "conda" && TOOLS.includes(" ") ? "（conda.exe 启动器不支持含空格的安装路径，属 conda 已知限制；Python 环境本身已装好，可用 miniconda\\python.exe 直接使用）" : "")); }
+  };
+  if (fs.existsSync(path.join(nodeDir, "node.exe"))) console.log("[verify node]", runCommand(`"${path.join(nodeDir, "node.exe")}" -v`, { encoding: "utf8" }).trim());
+  if (fs.existsSync(path.join(pythonDir, "python.exe"))) {
+    console.log("[verify python]", runCommand(`"${path.join(pythonDir, "python.exe")}" --version`, { encoding: "utf8" }).trim());
+    try { console.log("[verify python-tk]", runCommand(`"${path.join(pythonDir, "python.exe")}" -c "import tkinter; print('Tk ' + str(tkinter.TkVersion))"`, { encoding: "utf8" }).trim()); }
+    catch (error) { console.log("[verify python-tk] unavailable: " + String(error.message).split("\n")[0]); }
+  }
+  if (fs.existsSync(path.join(gitDir, "cmd", "git.exe"))) safeVerify("git", `"${path.join(gitDir, "cmd", "git.exe")}" --version`);
+  if (fs.existsSync(path.join(TOOLS, "rg", "rg.exe"))) safeVerify("rg", `"${path.join(TOOLS, "rg", "rg.exe")}" --version`);
+  if (fs.existsSync(path.join(TOOLS, "uv", "uv.exe"))) safeVerify("uv", `"${path.join(TOOLS, "uv", "uv.exe")}" --version`);
+  if (fs.existsSync(path.join(TOOLS, "cmake", "bin", "cmake.exe"))) safeVerify("cmake", `"${path.join(TOOLS, "cmake", "bin", "cmake.exe")}" --version`);
+  if (fs.existsSync(path.join(TOOLS, "miniconda", "Scripts", "conda.exe"))) safeVerify("conda", `"${path.join(TOOLS, "miniconda", "Scripts", "conda.exe")}" --version`);
+  if (fs.existsSync(path.join(TOOLS, "mingw", "mingw64", "bin", "gcc.exe"))) safeVerify("gcc", `"${path.join(TOOLS, "mingw", "mingw64", "bin", "gcc.exe")}" --version`);
+  if (fs.existsSync(path.join(ffmpegDir, "bin", "ffmpeg.exe"))) safeVerify("ffmpeg", `"${path.join(ffmpegDir, "bin", "ffmpeg.exe")}" -version`);
+  if (fs.existsSync(path.join(vscodeCliDir, "code.exe"))) safeVerify("code", `"${path.join(vscodeCliDir, "code.exe")}" --version`, { timeout: 30000 });
   try {
     if (!fs.existsSync(path.join(psDir, "pwsh.exe"))) throw new Error("not installed");
     const v = runCommand(`"${path.join(psDir, "pwsh.exe")}" -NoProfile -NonInteractive -Command "$PSVersionTable.PSVersion.ToString()"`, { encoding: "utf8", timeout: 30000 });
