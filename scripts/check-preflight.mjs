@@ -4161,46 +4161,46 @@ w.postMessage({id:1,op:"list",root});
       : fail("【32】总览简介里的页数写成了固定数字 —— 新增设置页后会误导用户");
   }
 
-  // ⑰ 增强按钮提示气泡（09-17 用户要求：输入内容后在图标上方小气泡，词库 15~20 条；
-  //   触发条件三条叠加：① 每次启动后第一次输入必弹 ② 每 5 次发送 ③ 输入长需求）。
+  // ⑰ 增强按钮提示气泡（09-17 用户要求：输入内容后在图标上方小气泡，词库 15~20 条）。
+  //   ⛔ 触发口径 **09-20 已改**（用户：「增强弹出来频率太高了，一输入文字就出来了，降低一下频率」）：
+  //     旧 = ① 每次启动后第一次**输入**必弹 ② 每 5 次发送 ③ 长输入 ≥50 字；气泡 6s；冷却 1min。
+  //     新 = ① **第 1 次成功发送后**弹一次 ② 之后每 **10** 次发送 ③ 长输入 ≥**120** 字；气泡 **3s**；冷却 **3min**。
+  //     "一输入文字就出来"就是旧 ① 造成的 —— 打字期间一次都不该弹。
   {
     const hints = await import("../src/lib/enhance-hints.mjs");
-    const { ENHANCE_HINTS, pickEnhanceHint, shouldShowHintThisRun, markHintShownThisRun, shouldShowHintAfterSends, isLongPrompt, HINT_AUTO_HIDE_MS } = hints;
+    const { ENHANCE_HINTS, pickEnhanceHint, shouldShowHintAfterSends, isLongPrompt, HINT_AUTO_HIDE_MS, HINT_COOLDOWN_MS } = hints;
     (ENHANCE_HINTS.length >= 15 && ENHANCE_HINTS.length <= 25)
       ? ok(`【32】增强提示词库 ${ENHANCE_HINTS.length} 条（用户要求 15~20）`)
       : fail(`【32】提示词库 ${ENHANCE_HINTS.length} 条，超出 15~25 区间`);
-    (ENHANCE_HINTS.every((hint) => typeof hint === "string" && hint.trim().length >= 8 && hint.length <= 30))
-      ? ok("【32】每条提示都是 8~30 字的完整句子（气泡宽度可控）")
-      : fail("【32】有提示过短/过长 —— 过短没信息量，过长气泡会换行成块");
-    // 条件①：语义是「本次启动内弹一次」——启动归零靠模块级变量，用 localStorage 就违背了
-    // "每次启动都弹"，所以额外断言不落盘（下面那条静态守卫负责"初值 = 未弹过"）。
-    // ⛔ 断言必须**幂等**：它内部要调 markHintShownThisRun（改模块状态），若同一进程里被执行
-    //    第二次，`before` 就会是 false。所以**只验"标记之后必须为假"**，不去比较 before
-    //    （写成 `before===true || before===false` 是恒真、等于废掉断言）。
-    const runSemantics = (() => {
-      markHintShownThisRun();
-      return shouldShowHintThisRun() === false;
-    })();
-    (runSemantics)
-      ? ok("【32】条件①：标记后转假（幂等，重复执行不假红）")
-      : fail("【32】markHintShownThisRun 没生效 —— 会导致每次输入都弹");
+    // 长度上限 18：09-20 用户「气泡小一点和文字时间短一点」⇒ 文案必须短，否则在 200px 小气泡里挤成块
+    (ENHANCE_HINTS.every((hint) => typeof hint === "string" && hint.trim().length >= 8 && hint.length <= 18))
+      ? ok("【32】每条提示都是 8~18 字的完整句子（小气泡收得住）")
+      : fail("【32】有提示过短/过长 —— 过短没信息量，过长在 200px 气泡里会挤成块");
     const hintSrcRaw = readFileSync(join(ROOT, "src", "lib", "enhance-hints.mjs"), "utf8");
     const hintSrc = hintSrcRaw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    (!/localStorage/.test(hintSrc) && /let shownThisRun = false/.test(hintSrc))
-      ? ok("【32】条件①用模块级变量（每次启动归零），不落盘")
-      : fail("【32】条件①落了盘 —— 用户要的是「每次启动后第一次输入必弹」，落盘会让老用户永远看不到");
-    // 条件②③
-    (shouldShowHintAfterSends(5) === true && shouldShowHintAfterSends(10) === true && shouldShowHintAfterSends(4) === false && shouldShowHintAfterSends(0) === false)
-      ? ok("【32】条件②：每 5 次发送弹一次（5/10 真，4/0 假）")
-      : fail("【32】条件②节奏判定错误");
-    // 条件③：必须是**精确阈值** 50 —— 只测「50 字真、3 字假」测不出阈值被改成 10（50 仍 ≥ 10），
-    // 所以补 49/50 的边界（反证时发现的守卫弱点，见 memory 09-17）。
-    (isLongPrompt("甲".repeat(50)) === true && isLongPrompt("甲".repeat(49)) === false && isLongPrompt("短需求") === false)
-      ? ok("【32】条件③：长输入阈值为 50 字（含 49/50 边界）")
-      : fail("【32】长输入阈值不是 50（或边界判定错）—— 长需求提醒会失效或误触发");
-    (HINT_AUTO_HIDE_MS === 6000)
-      ? ok("【32】气泡 6 秒自动消失（用户指定）")
-      : fail(`【32】自动消失时间被改动：${HINT_AUTO_HIDE_MS}ms`);
+    // ⛔ 旧条件①（「每次启动后第一次输入必弹」）的整套机制必须**彻底移除** —— 用户 09-20 点名
+    //   「一输入文字就出来了」。只要 shouldShowHintThisRun / markHintShownThisRun / shownThisRun
+    //   还在，就说明它随时可能被重新接回触发链（那正是这次要修的行为）。
+    (!/shouldShowHintThisRun|markHintShownThisRun|shownThisRun/.test(hintSrc) && !/localStorage/.test(hintSrc))
+      ? ok("【32】旧条件①（启动后首次输入必弹）的机制已彻底移除，也不落盘")
+      : fail("【32】残留旧条件①的机制 —— 它会让「一输入文字就弹」复发");
+    // 条件②：第 1 次 + 之后每 10 次（第 1 次就是 ① 的替代："首次发送后提醒一次"）
+    // ⚠️ 命中集合是 {1,10,20,30…} —— 11 必须是假（它不是"每 10 次的第 1 个"）。
+    (shouldShowHintAfterSends(1) === true && shouldShowHintAfterSends(10) === true && shouldShowHintAfterSends(20) === true
+      && shouldShowHintAfterSends(11) === false && shouldShowHintAfterSends(5) === false && shouldShowHintAfterSends(0) === false)
+      ? ok("【32】条件②：第 1 次 + 之后每 10 次发送（1/10/20 真；11/5/0 假）")
+      : fail("【32】条件②节奏判定错误（命中集合应为 {1,10,20,…}）");
+    // 条件③：必须是**精确阈值** 120 —— 只测「120 字真、3 字假」测不出阈值被改成 10，
+    // 所以补 119/120 的边界（守卫弱点见 memory 09-17）。
+    (isLongPrompt("甲".repeat(120)) === true && isLongPrompt("甲".repeat(119)) === false && isLongPrompt("短需求") === false)
+      ? ok("【32】条件③：长输入阈值为 120 字（含 119/120 边界）")
+      : fail("【32】长输入阈值不是 120（或边界判定错）—— 长需求提醒会失效或误触发");
+    (HINT_AUTO_HIDE_MS === 3000)
+      ? ok("【32】气泡 3 秒自动消失（09-20 用户要求调短）")
+      : fail(`【32】自动消失时间被改动：${HINT_AUTO_HIDE_MS}ms（09-20 口径 = 3000）`);
+    (HINT_COOLDOWN_MS === 180000)
+      ? ok("【32】气泡冷却 3 分钟（09-20 降频：原 1 分钟）")
+      : fail(`【32】冷却时间被改动：${HINT_COOLDOWN_MS}ms（09-20 口径 = 180000）`);
     let dup = 0, last;
     for (let i = 0; i < 300; i++) { const next = pickEnhanceHint(last); if (next === last) dup++; last = next; }
     (dup === 0)
@@ -4219,6 +4219,12 @@ w.postMessage({id:1,op:"list",root});
     (/Date\.now\(\) - enhanceHintFiredAtRef\.current < HINT_COOLDOWN_MS/.test(appC2))
       ? ok("【32】多条件叠加时有冷却窗口（防连弹）")
       : fail("【32】缺少冷却 —— 三条触发条件叠在一起时会连弹");
+    // ⛔ 09-20 降频的核心判据：触发链里**不许再出现**「本次启动首次输入」那一项 ——
+    //   用户点名的就是「增强弹出来频率太高了，一输入文字就出来了」。`due` 只能由两项组成：
+    //   「发送后 pending」或「长输入」。这条守卫一红就说明"一输入就弹"要复发。
+    (/const due = enhanceHintAfterSendRef\.current \|\| longPromptDue;/.test(appC2)
+      ? ok("【32】打字期间不弹（due 只含「发送后」与「长输入」两项，旧「启动首次」已摘除）")
+      : fail("【32】due 里仍有「本次启动首次」—— 一输入文字就会弹，正是本次要修掉的行为"));
     // 增强结果可撤销：取消令牌 + 还原原文（用户 09-17 明确要求"支持取消增强，返回原输入"）
     // ⛔ 判据必须锚在**成功路径上紧跟请求之后**的校验：只查 `runId !== ...` 文本存在测不出
     //    成功路径那处被删（catch 里还有一处同名判断，会顶成假绿 —— 反证发现的守卫弱点）。
@@ -4237,6 +4243,13 @@ w.postMessage({id:1,op:"list",root});
     (/width:\s*max-content/.test(hintBlock))
       ? ok("【32】气泡有 width:max-content（防被压成竖排窄条）")
       : fail("【32】.enhance-hint 缺 width:max-content —— 绝对定位在 32px 窄容器里会被压成竖排");
+    // 气泡尺寸（09-20 用户「展示气泡小一点」）：宽 200px + padding 6/9（原 260px + 8/11）
+    (/max-width:\s*200px/.test(hintBlock) && /padding:\s*6px 7px 6px 9px/.test(hintBlock))
+      ? ok("【32】气泡已收小（200px 宽 + 6px/9px padding —— 09-20 用户要求）")
+      : fail("【32】气泡尺寸回弹（应为 max-width:200px + padding:6px 7px 6px 9px）");
+    (/\.enhance-hint-text\s*\{[\s\S]{0,90}?font-size:\s*11\.5px/.test(cssC2))
+      ? ok("【32】气泡文字 11.5px（09-20 收小，原 12px）")
+      : fail("【32】气泡文字尺寸回弹（应为 11.5px）");
   }
 
   // ⑰b assistant 消息头的「头像 + 名字」必须真的显示（09-17 用户报「头像我也没看展示出来」）：

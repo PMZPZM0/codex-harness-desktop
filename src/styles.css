@@ -17626,21 +17626,23 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   display: flex;
   align-items: center;
 }
+/* ⛔ 09-20 用户：「展示气泡小一点和文字时间短一点」⇒ 整圈收小（260→200 宽、padding 8/11→6/9、
+   字号 12→11.5、行高 1.55→1.5、与按钮的间距 9→7px）；停留时长在 src/lib/enhance-hints.mjs。 */
 .enhance-hint {
   position: absolute;
-  bottom: calc(100% + 9px);
+  bottom: calc(100% + 7px);
   right: 0;
   z-index: 40;
   display: inline-flex;
   align-items: flex-start;
-  gap: 7px;
+  gap: 5px;
   /* ⛔ width:max-content 必需：绝对定位元素在 32px 宽的按钮容器里会 shrink-to-fit，
      没有这行气泡会被压成竖排窄条（一个字一行，完全不可读）——截图实测踩到。 */
   width: max-content;
-  max-width: 260px;
-  padding: 8px 9px 8px 11px;
+  max-width: 200px;
+  padding: 6px 7px 6px 9px;
   border: 1px solid color-mix(in srgb, #7048e8 32%, var(--line));
-  border-radius: 10px;
+  border-radius: 9px;
   background: color-mix(in srgb, #7048e8 8%, var(--panel));
   color: var(--text);
   box-shadow: var(--shadow);
@@ -17663,8 +17665,8 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   margin-top: -1px;
 }
 .enhance-hint-text {
-  font-size: 12px;
-  line-height: 1.55;
+  font-size: 11.5px;
+  line-height: 1.5;
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -17673,8 +17675,8 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   flex: none;
   display: grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   padding: 0;
   border: 0;
   border-radius: 5px;

@@ -521,7 +521,7 @@ import { EffortPicker } from "./components/EffortPicker";
 import { ModelIdInput } from "./components/ModelIdInput";
 import { setUserIdentity, type UserAvatarSpec } from "./lib/user-identity.mjs";
 import { readStoredCodexAvatar, storeCodexAvatar, setCodexIdentity, getCodexIdentity, subscribeCodexIdentity, CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "./lib/codex-identity.mjs";
-import { pickEnhanceHint, shouldShowHintThisRun, markHintShownThisRun, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_MS, HINT_AUTO_HIDE_MS } from "./lib/enhance-hints.mjs";
+import { pickEnhanceHint, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_MS, HINT_AUTO_HIDE_MS } from "./lib/enhance-hints.mjs";
 import VoiceWaveform from "./components/VoiceWaveform";
 import VoiceDevToolsSection from "./components/VoiceDevToolsSection";
 import { GlobalSearchView } from "./components/IndexLibrary";
@@ -8278,15 +8278,17 @@ export default function App() {
   const enhanceRunIdRef = useRef(0);
   const [hasEnhanceBackup, setHasEnhanceBackup] = useState(false);
   /** 增强按钮的提示气泡（09-17 用户要求：「输入文字后在图标上方小气泡提醒，词库丰富、个性一点」）。
-   *  触发条件三者叠加（用户定稿）：① **每次启动后**第一次输入必弹 ② 之后每 5 次发送弹一次 ③ 输入长需求时弹。
+   *  ⛔ **09-20 用户改口径**：「增强弹出来频率太高了，一输入文字就出来了，降低一下频率」
+   *     ⇒ 触发条件① 由「每次启动后第一次**输入**必弹」改为「第 1 次**成功发送**后弹一次」
+   *     （打字期间完全不弹，见触发 effect 里的 `due`）。② 每 5 次 → 每 10 次；
+   *     ③ 长输入门槛 50 → 120 字符；冷却 1 分钟 → 3 分钟；气泡停留 6s → 3s。
    *  ⛔ 展示时机必须挂在 enhanceAnchorVisible 上（= 气泡所依附的按钮真的渲染出来了）：
    *  发送后/回合运行中输入时按钮不渲染，此时展示等于用户永远看不到（实测踩到）。 */
   const [enhanceHint, setEnhanceHint] = useState<string | null>(null);
   const enhanceHintTimerRef = useRef<number | null>(null);
   const lastEnhanceHintRef = useRef<string | undefined>(undefined);
-  /** 条件① 待弹：**每次启动后**第一次输入必弹（用户定稿），启动时重置、本次内只弹一次。 */
-  const enhanceHintThisRunRef = useRef(shouldShowHintThisRun());
-  /** 条件② 发送计数（内存计数，重启归零；定位是"偶尔提醒"，不做持久化）。 */
+  /** 条件② 发送计数（内存计数，重启归零；定位是"偶尔提醒"，不做持久化）。
+   *  第 1 次命中即条件① 的"首次发送后提醒"，之后每 10 次一次。 */
   const enhanceSendCountRef = useRef(0);
   /** 条件② 待弹（周期到了）。 */
   const enhanceHintAfterSendRef = useRef(false);
@@ -16426,13 +16428,11 @@ const commandMatches = useMemo(() => {
 
   /** 触发提示词增强：原文备份 → 调主进程 LLM 润色 → 替换输入框文本。
    *  增强后按钮进入撤销模式（再点还原原文）；用户改动文本即清除备份（WorkBuddy 同款）。 */
-  /** 展示增强提示气泡（6 秒后自动消失）。
-   *  **只标记"本次启动已弹过"（模块级内存，不落盘）** —— 下次启动仍会为第一次输入弹出。 */
-  function showEnhanceHint() {
-    setEnhanceHint(pickEnhanceHint(lastEnhanceHintRef.current));
-    enhanceHintFiredAtRef.current = Date.now();
-    markHintShownThisRun();   // 本次启动已弹过（不落盘：下次启动要重新弹，见模块注释）
-    if (enhanceHintTimerRef.current != null) window.clearTimeout(enhanceHintTimerRef.current);
+/** 展示增强提示气泡（3 秒后自动消失；09-20 用户要求「文字时间短一点」，原 6 秒 → `HINT_AUTO_HIDE_MS`）。 */
+function showEnhanceHint() {
+  setEnhanceHint(pickEnhanceHint(lastEnhanceHintRef.current));
+  enhanceHintFiredAtRef.current = Date.now();
+  if (enhanceHintTimerRef.current != null) window.clearTimeout(enhanceHintTimerRef.current);
     enhanceHintTimerRef.current = window.setTimeout(() => {
       setEnhanceHint(null);
       enhanceHintTimerRef.current = null;
@@ -17873,8 +17873,9 @@ const commandMatches = useMemo(() => {
       // 首条已发出：无论包装是否带上了记录（如只发图没文字），该线程已非空、记录永远附不上了，
       // 清除待发送标记（含 localStorage），避免残留卡在重启后误显示。
       if (readStoredPendingImport(active.id)) forgetPendingImport(active.id);
-      // 气泡条件②（09-17）：每 5 次**成功发送**为一个周期。只置 pending，
-      // 真正的展示等用户下次输入时（那时按钮才渲染出来，见 enhanceAnchorVisible 注释）。
+      // 提示气泡的触发（09-20 口径）：**第 1 次**成功发送 + 之后每 10 次为一个周期
+      // （旧口径是"每次启动后第一次**输入**必弹"，用户说「一输入文字就出来了」）。
+      // 只置 pending，真正的展示等按钮渲染出来（见 enhanceAnchorVisible 注释）。
       enhanceSendCountRef.current += 1;
       if (shouldShowHintAfterSends(enhanceSendCountRef.current)) enhanceHintAfterSendRef.current = true;
       void refreshThreads();
@@ -18318,20 +18319,23 @@ const commandMatches = useMemo(() => {
   // 输入被清空 → 重置"长输入已触发"标记（所以下一条长需求还能提醒一次）
   useEffect(() => { if (!prompt.trim()) enhanceLongFiredRef.current = false; }, [prompt]);
 
-  // 三条件叠加 + 冷却；展示条件必须与下方 enhance-button 的 JSX 条件一致（见 enhanceAnchorVisible 注释）
-  const enhanceAnchorVisible = Boolean(prompt.trim() || hasEnhanceBackup) && !activeThreadRunning;
-  useEffect(() => {
-    if (enhanceHint) return;
-    if (!enhanceAnchorVisible) return;   // 条件不满足时**不清任何 pending**，等按钮真的渲染出来
-    const longPromptDue = isLongPrompt(prompt) && !enhanceLongFiredRef.current;
-    const due = enhanceHintThisRunRef.current || enhanceHintAfterSendRef.current || longPromptDue;
-    if (!due) return;
-    if (Date.now() - enhanceHintFiredAtRef.current < HINT_COOLDOWN_MS) return;   // 防连弹；启动后首次不受限（初值 0）
-    enhanceHintThisRunRef.current = false;
-    enhanceHintAfterSendRef.current = false;
-    if (longPromptDue) enhanceLongFiredRef.current = true;
-    showEnhanceHint();
-  }, [enhanceAnchorVisible, enhanceHint, prompt]);
+    // 触发条件叠加 + 冷却；展示条件必须与下方 enhance-button 的 JSX 条件一致（见 enhanceAnchorVisible 注释）
+    const enhanceAnchorVisible = Boolean(prompt.trim() || hasEnhanceBackup) && !activeThreadRunning;
+    useEffect(() => {
+      if (enhanceHint) return;
+      if (!enhanceAnchorVisible) return;   // 条件不满足时**不清任何 pending**，等按钮真的渲染出来
+      const longPromptDue = isLongPrompt(prompt) && !enhanceLongFiredRef.current;
+      // ⛔ 09-20 用户：「增强弹出来频率太高了，一输入文字就出来了」⇒ `due` 里**不再有**
+      //   「本次启动首次」那一项 —— 打字期间**一次都不弹**。提醒只发生在两种时机：
+      //     ① 发送之后（第 1 次发送 + 之后每 10 次，见发送处的 shouldShowHintAfterSends）；
+      //     ② 输入很长（≥120 字符，按"编辑会话"节流）。
+      const due = enhanceHintAfterSendRef.current || longPromptDue;
+      if (!due) return;
+      if (Date.now() - enhanceHintFiredAtRef.current < HINT_COOLDOWN_MS) return;   // 防连弹（3 分钟）
+      enhanceHintAfterSendRef.current = false;
+      if (longPromptDue) enhanceLongFiredRef.current = true;
+      showEnhanceHint();
+    }, [enhanceAnchorVisible, enhanceHint, prompt]);
   // 团队会话里正在被调度的成员（主理人通过 team_member_invoke 分发子任务时点亮其头像）
   const activeThreadMemberRunning = expertTeamMemberRunning && thread && expertTeamMemberRunning.teamId === (teamThreadMapRef.current.get(thread.id) || teamThreadConfigRef.current.get(thread.id)?.teamId) ? expertTeamMemberRunning : null;
   const activeMemberTeam = activeThreadMemberRunning ? expertTeams.find((team) => team.teamId === activeThreadMemberRunning.teamId) ?? null : null;
