@@ -184,6 +184,33 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 - **指纹内核（cloak-browsers）仅用于自动化场景**（模型经 `cloakbrowser` CLI 调用）；浏览器视图的「隐身浏览」按钮为预留位，尚未接入 CDP 嵌入。
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
+- **⛔ 自动化能力「接线」：提示词改为首选已注册的 `browser_*` MCP 工具（09-20，改完直接生效）**：
+  盘点发现一个纯接线问题 —— 包内 nuphus MCP **早已注册 38 个工具**（桌面 14 + 浏览器 24，实测枚举），
+  但 `builtin-skills.ts` 的技能正文里 `playwright-cli` 出现 **23 次**、`browser_*` **0 次** ⇒
+  24 个工具的 schema 白占约 10k token 前缀，模型却每步起一次 CLI 进程（还有两套不共享的浏览器会话）。
+  - **现在的优先级**：① `browser_*` MCP（判据是「工具列表里有没有 `browser_navigate`」——
+    nuphus 随**桌面**总闸注册，写死通道会让模型去调不存在的工具）；② `playwright-cli` 降级为兜底；
+    ③ CloakBrowser 仍是按需下载的可选增强；④ 需要用户看页面走右栏内置面板。
+  - **新增** 三段循环约定（观察 → 动作 → 验证）、`browser_exec` 多步合并单次 CDP 往返、
+    `browser_import_cookies` 登录态复用（含凭证边界）、`desktop_perceive` 拿坐标而
+    `desktop_vision` 的坐标**不可点**（工具描述原文警告）、Intel Mac 无本地 OCR 的降级说明。
+  - ⛔ **桌面指令不再只说 `nuphus-call` 命令行** —— `desktop_*` 就在模型工具列表里，直接调。
+  - ⚠️ 待办（未做）：`browser_*` 的可用性目前绑在**桌面**总闸上（同一个 MCP 服务器）。要两者独立
+    开关需按开关下发 `disabled_tools` 掩码（机制已验证有效），方案见
+    `.workbuddy/artifacts/automation-unification-plan.md` 第 3.3 节。
+- **⛔ 两个「清单与现实脱节」的真 bug（09-20 随上一条一起修，都有真机取证）**：
+  1. **技能停用被静默写回**：总闸停用技能是把 `SKILL.md` 改名成 `SKILL.md.disabled`，而
+     `ensureBuiltinSkills` 原先无条件写 `SKILL.md` ⇒ **用户关掉的技能每次启动都被重新启用**，
+     界面显示「已停用」而引擎照常加载（总闸形同虚设）。现在按 `active → disabled → active` 选目标文件，
+     就地更新 `.disabled`；内容比对归一化行尾（否则每次启动白写盘）。
+  2. **`developer_instructions` 升级后永不刷新**：启动自愈的判据只 grep 一句
+     `"Never infer Python availability"`，而老配置里本来就有这句 ⇒ `instructionsOutdated` **恒为 false**
+     ⇒ 任何指令改动**都到不了老用户**（实测：技能文件已更新、config.toml 还是旧文案，只刷新一半）。
+     现在抽出 `devInstructionsInput()` 作为**唯一输入来源**，判据用 `developerInstructionsLine()` 生成的
+     整行做包含比对 —— 与写出内容逐字同源，既不恒 false（能刷新）也不恒 true（不会每次启动整份重写）。
+  - 另有一条**既存**问题（未修、已记档）：该判据同一处的 `providerOutdated` 恒为 true ——
+    `config.toml` 写的是 `model_provider = "harness"`，而档案里是 `provider = "custom430"`，
+    两者永不相等 ⇒ **每次启动都整份重写 config.toml**（真实 profile 上同样存在，与本次改动无关）。
 - **⛔ 上游协议手动开关（`upstreamProtocol`）—— Claude 类通道接入的可控口（09-19，供应商配置界面可调）**：
   用户诉求：「如果用 Claude 模型呢，能做适配协议吗 / 能不能走本地代理转成 Codex 支持的协议」。
   答：**走的正是现有架构**（引擎只发 Responses → 本地协议桥 47121 按上游实际能力转发），缺的不是桥，
