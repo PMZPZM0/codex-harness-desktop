@@ -13490,19 +13490,32 @@ const commandMatches = useMemo(() => {
               needsFullReloadRef.current.add(tidBg);
             }
           }
-          // 回合结束：锚顶留白归零。它只在「钉顶期间」为让锚点滚得上去而存在，
-          // 回合结束后继续留着就会在底部残留一大段空白（用户实测「流动空间太大，
-          // 汇总时上面消息都看不到」）。
-          // ⚠️ 必须限定**当前会话**（09-13 审计发现）：留白是当前会话的几何依赖，
-          // 后台会话跑完就跑完，顺手清掉当前会话的留白会让被 clamp 的 scrollTop 掉下来
-          // （短会话正是靠这一屏留白才够得着 54px）→ 画面无故跳一下且不恢复。
-          // ⛔ 09-18 用户实测「短回复也是，回复完，明明没有铺满就自动取消钉顶了」：
-          //   这里原来**无条件**清留白 ⇒ 短回复（内容没超出视口、正靠留白把消息稳在顶部）一完成
-          //   留白就归零、锚点再也滚不到落点 → 钉顶当场掉下来。留白只在「钉顶已失效」时才该清：
-          //     · 还在钉顶（anchorTopRef=true）→ 保留（短回复正是这种，用户要它稳住）；
-          //     · 已交棒给跟随（pinGapLocked）→ 留白早被 shrinkAnchorPad 收缩到 0，无需清；
-          //     · 用户已接管（releaseToUser 已把 anchorTopRef 置假）→ 清掉，别让视口留大片空白。
-          if (params.threadId === threadRef.current?.id && !anchorTopRef.current) clearAnchorPad();
+          // ⛔ 09-20 用户定稿：「运行中的话就钉顶，运行完成就不要钉」。
+          //   落实为**回合结束即脱钉**：① 解除锚定；② 留白归零；③ 贴底回到内容末尾
+          //   （这样结束后下方不留空白、最新内容仍在视野里）。
+          //   口径演变（别改回去）：
+          //     · 09-13：无条件清留白 → 用户「流动空间太大，汇总时上面消息都看不到」；
+          //     · 09-18：改成「钉顶仍生效就保留」→ 完成后下方残留一大片空白（09-20 中午截图）；
+          //     · 09-20：**完成即脱钉**（用户明确要求）。本质是二选一 —— 留白量 N 与
+          //       「滚到底时内容底部到视口底部的距离」严格 1:1，留着 N 就有 N 的空白，
+          //       用户选「不要空白」，代价是完成后消息不再停在顶部。
+          //   ⚠️ 仍限定**当前会话**（09-13 审计）：留白是当前会话的几何依赖，
+          //      后台会话跑完顺手清当前会话的留白会让被 clamp 的 scrollTop 掉下来 → 画面无故跳。
+          if (params.threadId === threadRef.current?.id) {
+            if (anchorTopRef.current) {
+              anchorTopRef.current = false;
+              pinGapLockedRef.current = null;
+              pinThreadIdRef.current = null;
+              stickToBottomRef.current = true;
+              const scroller = scrollRef.current;
+              if (scroller) {
+                selfScrollUntilRef.current = Date.now() + 80;
+                scrollToOffsetInstant(scroller, contentTailTarget(scroller));
+                pinnedScrollTopRef.current = scroller.scrollTop;
+              }
+            }
+            clearAnchorPad();
+          }
           // 侧栏绿点：非当前会话跑完 → 点亮，点击进入清除。⛔ 必须在**跨会话生命周期区**
           // （这里 + 下面的 aborted/failed 分支）：下面的当前会话事件流有 threadId 过滤，
           // 后台会话的完成事件走不到——第一版挂在那边，真机验收当场红（绿点永不出现）。
