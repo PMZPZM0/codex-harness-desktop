@@ -5465,7 +5465,7 @@ ipcMain.handle("tools:status", () => {
   ];
 });
 
-type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "playwright-cli" | "cloakbrowser" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl";
+type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "playwright-cli" | "cloakbrowser" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown";
 // bundled：随包内置（zip / 预解压目录是来源，不是联网下载）。界面显示「内置」徽标；
 // 缺失时允许「修复安装」（从随包 zip 重新解压），但不允许卸载（删了没有可靠重取途径）。
 type DevRuntimeSpec = { name: string; description: string; size: string; marker: string; builtIn?: boolean; bundled?: boolean; kind?: "download" | "browsers" | "guide" | "plugin"; noUninstall?: boolean };
@@ -5508,6 +5508,15 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   mingw: { name: "MinGW-w64 (gcc/g++/make)", description: "C/C++ 编译器工具链，含 gcc、g++、make、gdb", size: "约 267 MB", marker: "mingw\\mingw64\\bin\\g++.exe", kind: "download" },
   openssl: { name: "OpenSSL", description: "加密/证书命令行工具（openssl 命令），系统级安装", size: "约 25 MB", marker: "openssl\\openssl.exe", kind: "guide" },
   ponytail: { name: "ponytail 写代码模式插件", description: "Codex 写代码模式（会话钩子 + 6 个技能），随包启动时自动种入，开箱即用", size: "随包 2 MB", marker: "ponytail-plugin", kind: "plugin", bundled: true, noUninstall: true },
+  // 文档转换（09-21 用户：「对我们有帮助的都内置安装好」）：让 Codex 能读 PDF / Word / Excel / PPT 附件。
+  //  **默认随 Python 一起装好**（install-runtimes.cjs 已把它并入 pip 安装清单），这张卡是给
+  //  早版本装过 Python 的老用户补装 / 修复用的 —— 单独点它不会重装 Python。
+  //  marker 仅作占位：真实判定走 runtimeInstalled 的 markitdown 分支（pip 包路径含 Python 版本号，写不死）。
+  //  ⚠️ 已知取舍（09-21 代码审查确认，不是缺陷）：卸载只删 markitdown 包目录（0.4 MB），
+  //     它的 Python 依赖（约 120 MB）会留下 —— 这是 pip 包的固有特点，卸载的语义是「移除这个能力」
+  //     而不是「释放全部空间」，且装了之后随时能重装，所以不设 noUninstall（那是给随包资源的语义）。
+  //     真要让用户释放空间，入口是卸载 Python；描述里不必展开，界面上的体积标注已含依赖。
+  markitdown: { name: "文档转换（markitdown）", description: "让 Codex 能读 PDF / Word / Excel / PowerPoint 附件：先把文档转成 Markdown 再交给模型（Microsoft markitdown，MIT 许可）。随 Python 一起装好，这里可单独补装或修复", size: "约 120 MB", marker: "markitdown" },
 };
 const runtimeInstalls = new Map<DevRuntimeId, Promise<void>>();
 
@@ -5578,13 +5587,37 @@ function runtimeInstalledBySystem(id: DevRuntimeId): boolean {
   return id === "docker" ? !!(process.env.PATH ?? "").split(path.delimiter).some((dir) => dir && existsSync(path.join(dir.trim(), "docker.exe"))) : false;
 }
 
+/** Python 的 site-packages 目录（Windows 是 `Lib/site-packages`，mac 是 `lib/pythonX.Y/site-packages`）。
+ *  ⛔ 与 `scripts/install-runtimes.cjs` 的 pythonSitePackages 是**同一套规则**（两处各写一份是因为
+ *  一边是主进程 TS、一边是纯 Node 安装脚本，不共享模块）—— 改这里务必同步那边。
+ *  ⛔ mac 的目录名含 Python 版本号，绝不能写死 3.13：上游换小版本就判定失效（会反复重装/显示未装）。 */
+function pythonSiteDir(pythonDir: string): string | null {
+  const win = path.join(pythonDir, "Lib", "site-packages");
+  if (existsSync(win)) return win;
+  const lib = path.join(pythonDir, "lib");
+  if (existsSync(lib)) {
+    const hit = readdirSync(lib).filter((name) => /^python\d+\.\d+$/.test(name)).sort().pop();
+    if (hit) return path.join(lib, hit, "site-packages");
+  }
+  return null;
+}
+
 /** 「装没装」的唯一判定（runtimeList 与「修复安装」幂等早退共用，别各写一份）：
  *  ponytail 装在引擎侧 codex-home/plugins/cache，不走 tools 目录 marker；
  *  其余按 tools 目录里的 marker 文件判断。 */
 function runtimeInstalled(id: DevRuntimeId, spec: DevRuntimeSpec): boolean {
   if (id === "ponytail") return existsSync(path.join(codexHome, "plugins", "cache", "ponytail"));
   const root = toolsRoot();
-  return Boolean(root) && existsSync(path.join(root, markerRel(id, spec)));
+  if (!root) return false;
+  // pip 包（markitdown）装在 Python 的 site-packages 里，路径含版本号 ⇒ 不走 marker。
+  //  判定「包目录在不在」：目录在就等于 import 拿得到（比查 dist-info 更抗 pip 元数据差异）。
+  if (id === "markitdown") {
+    const site = pythonSiteDir(path.join(root, "python"));
+    // ⛔ 用 `site !== null` 而不是 `Boolean(site)`：后者不构成类型守卫，TS 不会收窄掉 null
+    //    （`Boolean(site) && …path.join(site…` 会报 TS2345，构建直接失败）。
+    return site !== null && existsSync(path.join(site, "markitdown"));
+  }
+  return existsSync(path.join(root, markerRel(id, spec)));
 }
 
 function runtimeList() {
@@ -5707,6 +5740,12 @@ function runtimeUninstallPath(id: DevRuntimeId, spec: DevRuntimeSpec): string {
   // ⛔ npm 包（cloakbrowser）：只能删**包体目录本身**。按 marker 首段推导会得到 npm-global ——
   //    那是 nuphus / playwright-cli 的共同家目录，卸载 CloakBrowser 会把两个内置能力一起删光。
   if (id === "cloakbrowser") return path.join(npmGlobalRoot(), "cloakbrowser");
+  // ⛔ pip 包（markitdown）：只能删**包目录本身**。按 marker 首段推导会得到 `tools/python` ——
+  //    那是整个 Python 运行时（含 pip 与引擎依赖），卸载一个文档转换会把 Python 一起删光。
+  if (id === "markitdown") {
+    const site = pythonSiteDir(path.join(toolsRoot(), "python"));
+    return site ? path.join(site, "markitdown") : path.join(toolsRoot(), "markitdown");
+  }
   // 工具侧：安装根 = marker 路径的第一段（playwright-browsers -> pw-browsers / git -> git / …）
   return path.join(toolsRoot(), spec.marker.split(/[\\/]/)[0]);
 }

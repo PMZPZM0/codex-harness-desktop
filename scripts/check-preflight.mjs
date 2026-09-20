@@ -10,6 +10,7 @@
 // 用法：npm run check（= build 之后自动跑本脚本）
 
 import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../src/lib/model-scope.mjs";
@@ -7159,6 +7160,119 @@ w.postMessage({id:1,op:"list",root});
   );
   (!/getTitleBarOverlay\s*\(/.test(main81) ? ok : fail)(
     "【81】不**调用**不存在的 getTitleBarOverlay（本版 Electron 无此 API；注释里提到不算，只认带括号的调用）"
+  );
+}
+
+// ---------- 【82】内置的第三方写作技能：内容必须与上游逐字一致（09-21 用户：「对我们有帮助的都内置安装好」）----------
+// 内置三个 MIT 许可的写作 / 输出风格技能（humanizer / no-ai-slop / i-have-adhd），原文**逐字**进 builtin-skills.ts，
+// 随启动写进 codexHome/skills/。来源、许可与内置当天的 sha 记在 THIRD_PARTY_NOTICES.md。
+// ⛔ 为什么必须钉 sha：内置等于**我们替用户分发别人的内容**。一旦有人在常量里手改（或转义写坏），
+//    用户拿到的就不是上游那份，而界面上完全看不出区别 —— 只有逐字比对能发现。
+{
+  const bs82 = readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8");
+  // 反转义 = 转义的**逆序**：先 \${ → ${ ，再 \` → ` ，最后 \\ → \
+  //  ⛔ 顺序写错会把 ${token} 还原成带反斜杠的形态（09-21 实测：差 1 字节，差点误判成内容不一致）
+  const unesc82 = (s) => s.replace(/\\\$\{/g, "${").replace(/\\`/g, "`").replace(/\\\\/g, "\\");
+  const body82 = (cname) => {
+    const head = `const ${cname} = \``;
+    const i = bs82.indexOf(head);
+    if (i < 0) return null;
+    const start = i + head.length;
+    const end = bs82.indexOf("`;", start); // 正文里的反引号都已转义，第一个裸 "`;" 就是结尾
+    return end < 0 ? null : unesc82(bs82.slice(start, end));
+  };
+  // 字节数与 sha256 = 内置当天的上游内容（与 THIRD_PARTY_NOTICES.md 同源）
+  const EXPECT82 = [
+    ["humanizer", "HUMANIZER_SKILL", 28728, "e8269e236bed06ed0fe4824c274112e54950b0cb46b0bafe5e1576ef7c9f93d5"],
+    ["no-ai-slop", "NO_AI_SLOP_SKILL", 10853, "992b365f51a2f62cf4c1c5ed22049a9ee551dfea677550c1a72b371c0ceadd62"],
+    ["i-have-adhd", "I_HAVE_ADHD_SKILL", 7207, "3170b16ace00aecb0dd7feb54c0b5aa642e7502acda06ecd24fd89a11c7127e9"],
+  ];
+  for (const [dir, cname, bytes, sha] of EXPECT82) {
+    const body = body82(cname);
+    if (!body) { fail(`【82】内置技能 ${dir} 的常量 ${cname} 不存在（entries 指向了不存在的常量）`); continue; }
+    const gotBytes = Buffer.byteLength(body, "utf8");
+    const gotSha = createHash("sha256").update(body, "utf8").digest("hex");
+    (gotBytes === bytes ? ok : fail)(`【82】${dir} 内容字节数与内置时一致（${gotBytes}${gotBytes === bytes ? "" : ` ≠ ${bytes}`}）`);
+    (gotSha === sha ? ok : fail)(
+      `【82】${dir} 内容 sha256 与上游一致${gotSha === sha ? "" : `（现 ${gotSha.slice(0, 12)}… / 内置时 ${sha.slice(0, 12)}…；若确为有意更新，请同步本表与 THIRD_PARTY_NOTICES.md）`}`
+    );
+    const fmName = (body.match(/^name:\s*(.+)$/m) || [, ""])[1].trim();
+    (fmName === dir ? ok : fail)(`【82】${dir} 目录名与 frontmatter 的 name 一致（实际 "${fmName}"；不一致会出现同名两条技能）`);
+  }
+  (/\["humanizer", HUMANIZER_SKILL\],[\s\S]{0,180}?\["no-ai-slop", NO_AI_SLOP_SKILL\],[\s\S]{0,180}?\["i-have-adhd", I_HAVE_ADHD_SKILL\],/.test(bs82) ? ok : fail)(
+    "【82】三个技能都进了 ensureBuiltinSkills 的 entries（只写常量不进 entries = 永远不落盘）"
+  );
+  (/\["document-convert", DOC_CONVERT_SKILL\],/.test(bs82) ? ok : fail)(
+    "【82】document-convert 在 entries 里（教模型用内置 markitdown 读 PDF/Word/Excel/PPT 附件）"
+  );
+  // ⛔ 安全约束：i-have-adhd 会重塑**全部**输出的写法 ⇒ 必须保持「只有用户显式调用才生效」。
+  //    引擎认这个字段（二进制里有 disable-model-invocation / disable_model_invocation 两个名字），别删。
+  (/^disable-model-invocation: true$/m.test(codeOnly(bs82)) ? ok : fail)(
+    "【82】i-have-adhd 保留 disable-model-invocation: true（删掉它 = 模型可能自动把全部输出改成 ADHD 风格）"
+  );
+}
+
+// ---------- 【83】文档转换（markitdown）：内置，但体积必须可控（09-21 用户定稿）----------
+// 用户原话：「markitdown 这个可以内置，其他太大的丢到开发工具里面，配置好国内镜像下载源」。
+// 落法：装进**内置 Python**（不是随包分发源码），默认随 Python 装好 = 内置；
+//  「开发工具」页留一张卡（老用户补装 / 修复，单独点不会重装 Python）；下载走清华 pip 镜像。
+// ⛔ 为什么死死盯住体积：`markitdown[all]` 实测 **273 MB+**，含 Azure 云端文档智能 SDK 与
+//    音频 / YouTube 依赖；`[xlsx]` extra 会拉进 pandas(59MB)+numpy(31MB)。而转 xlsx 只需要
+//    openpyxl(1.8MB)。一旦有人图省事写回 `[all]`，每个用户的安装体积会翻三倍且毫无收益。
+{
+  const ir83 = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
+  const ir83c = codeOnly(ir83); // 注释里提到 [all]/[xlsx] 不算命中（本仓库踩过注释假红的坑）
+  const main83 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+
+  (/DOC_PACKAGES = \['"markitdown\[pdf,docx,pptx\]"', "openpyxl"\]/.test(ir83c) ? ok : fail)(
+    "【83】只装 markitdown[pdf,docx,pptx] + openpyxl（精简组合）"
+  );
+  (!/markitdown\[all\]/.test(ir83c) ? ok : fail)(
+    "【83】没用 markitdown[all]（实测 273 MB+，含 Azure 云端 SDK 与音频依赖）"
+  );
+  (!/markitdown\[[^\]]*xlsx/.test(ir83c) ? ok : fail)(
+    "【83】没用 [xlsx] extra（会拉进 pandas+numpy ≈ 90 MB，而转 xlsx 只需 openpyxl）"
+  );
+  // 内置：DOC_PACKAGES 必须并进 pip 安装命令，且 Windows(installPipPackages) 与 mac(mainMac) 两处都要
+  const docJoined = (ir83c.match(/\[PIP_PACKAGES, \.\.\.DOC_PACKAGES\]\.join/g) || []).length;
+  (docJoined >= 2 ? ok : fail)(
+    `【83】文档转换已并入默认 pip 安装清单，且两个平台都接（实际 ${docJoined} 处，应 ≥2）`
+  );
+  // 老用户补装入口：单独跑 `install-runtimes.cjs markitdown`（不重装 Python）
+  (/if \(want\("markitdown"\)\) await installDocTools\(pythonDir\);/.test(ir83c) ? ok : fail)(
+    "【83】开发工具卡片有独立补装入口（want(\"markitdown\")），不会顺手重装 Python"
+  );
+  // skip 判定要同时看两类包：只看 fastapi 的话老用户永远补不到 markitdown，「内置」就落空
+  (/const hasBase = fs\.existsSync\(path\.join\(site, "fastapi"\)\);/.test(ir83c)
+    && /const hasDoc = fs\.existsSync\(path\.join\(site, "markitdown"\)\);/.test(ir83c)
+    ? ok : fail)(
+    "【83】installPipPackages 的 skip 判定同时看 fastapi 与 markitdown（否则老用户补不到）"
+  );
+  // 平台差异：site-packages 路径不能写死 Python 版本号（mac 是 lib/pythonX.Y/site-packages）
+  (/function pythonSitePackages\(pythonDir\)/.test(ir83c) ? ok : fail)(
+    "【83】install-runtimes 有 pythonSitePackages helper（不写死 Python 版本号）"
+  );
+  // ⛔ Python 缺失时必须**抛错**，不能静默 return：脚本 EXIT=0 ⇒ 界面显示「安装完成」，
+  //    而用户其实什么都没装上（09-21 代码审查抓到的 UX 缺口）。
+  (/if \(!fs\.existsSync\(py\)\) \{\s*\n\s*throw new Error\(/.test(ir83c) ? ok : fail)(
+    "【83】Python 缺失时抛错（静默跳过会让界面误报「安装完成」而实际没装）"
+  );
+
+  // main.ts 侧：卡片要真的出现在「开发工具」页，且装上之后状态能正确显示
+  (/"openssl" \| "markitdown";/.test(main83) ? ok : fail)("【83】DevRuntimeId 收录 markitdown");
+  (/markitdown: \{ name: "文档转换（markitdown）"/.test(main83) ? ok : fail)(
+    "【83】「开发工具」页有「文档转换（markitdown）」卡片"
+  );
+  (/if \(id === "markitdown"\) \{[\s\S]{0,140}?pythonSiteDir\(path\.join\(root, "python"\)\)/.test(main83) ? ok : fail)(
+    "【83】标记 markitdown 有专属「装没装」判定（pip 包路径含 Python 版本号，不能走 marker）"
+  );
+  // ⛔ 最危险的一条：卸载路径。marker 首段推导会得到 tools/python —— 卸载文档转换会把整个 Python 删光
+  (/if \(id === "markitdown"\) \{[\s\S]{0,160}?pythonSiteDir\(path\.join\(toolsRoot\(\), "python"\)\)/.test(main83) ? ok : fail)(
+    "【83】卸载只删 markitdown 包目录（不按 marker 首段推 → 否则会删掉整个 Python 运行时）"
+  );
+  // 卡片的体积提示必须与实测同量级（写小了会误导用户点）
+  (/markitdown[\s\S]{0,400}?size: "约 \d+ MB"/.test(main83) ? ok : fail)(
+    "【83】卡片标注了体积（用户点之前要知道要下多大）"
   );
 }
 
