@@ -878,7 +878,7 @@ If yes, send.
 // 不随包分发 markitdown 本身（那由「开发工具」页 / Python 依赖安装负责）。
 const DOC_CONVERT_SKILL = `---
 name: document-convert
-description: 读取用户带来的 PDF / Word / Excel / PowerPoint 等二进制文档：PDF / Word / PPT 用内置 markitdown 转成 Markdown，Excel 用 openpyxl 直读。当附件是这类格式、或任务需要解析这类文档内容时使用。
+description: 读取用户带来的 PDF / Word / Excel / PowerPoint 等二进制文档：PDF / Word / PPT 用 markitdown 转成 Markdown，Excel 用 openpyxl 直读。当附件是这类格式、或任务需要解析这类文档内容时使用。
 ---
 
 # 文档转换（markitdown / openpyxl）
@@ -893,8 +893,14 @@ python -c "import markitdown, openpyxl; print(markitdown.__version__)"
 \`\`\`
 
 - 能打印版本 ⇒ 直接转。
-- 报 \`ModuleNotFoundError\` ⇒ 本机没装。**不要**自己 \`pip install\`（可能没网、源不对、污染环境），
-  直接告诉用户：「去『设置 → 开发工具 → 文档转换（markitdown）』点一次安装（约 120 MB，走国内 pip 镜像）」。
+- 报 \`ModuleNotFoundError\` ⇒ 本机没装 —— **自己装上即可**（有国内镜像，约 4~5 分钟）：
+
+\`\`\`bash
+python -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple "markitdown[pdf,docx,pptx]" openpyxl
+\`\`\`
+
+  装完继续干活，**不必打断用户**。若这一步失败（无网 / 没权限 / 镜像不可用），再告诉用户：
+  「去『设置 → 开发工具 → 文档转换（markitdown）』点一次安装」。
 
 ## PDF / Word / PowerPoint
 

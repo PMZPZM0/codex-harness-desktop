@@ -5508,15 +5508,15 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   mingw: { name: "MinGW-w64 (gcc/g++/make)", description: "C/C++ 编译器工具链，含 gcc、g++、make、gdb", size: "约 267 MB", marker: "mingw\\mingw64\\bin\\g++.exe", kind: "download" },
   openssl: { name: "OpenSSL", description: "加密/证书命令行工具（openssl 命令），系统级安装", size: "约 25 MB", marker: "openssl\\openssl.exe", kind: "guide" },
   ponytail: { name: "ponytail 写代码模式插件", description: "Codex 写代码模式（会话钩子 + 6 个技能），随包启动时自动种入，开箱即用", size: "随包 2 MB", marker: "ponytail-plugin", kind: "plugin", bundled: true, noUninstall: true },
-  // 文档转换（09-21 用户：「对我们有帮助的都内置安装好」）：让 Codex 能读 PDF / Word / Excel / PPT 附件。
-  //  **默认随 Python 一起装好**（install-runtimes.cjs 已把它并入 pip 安装清单），这张卡是给
-  //  早版本装过 Python 的老用户补装 / 修复用的 —— 单独点它不会重装 Python。
+  // 文档转换（09-21 用户定稿：「这个 markitdown 有国内镜像源嘛，有的话，就不内置了，按需下载，
+  //  codex 自己也可以下载」）⇒ **按需下载，不内置**：有清华 PyPI 镜像，装一次约 4~5 分钟，
+  //  没必要让**每个**用户默认付约 120 MB。
+  //  两个入口：① 本卡片（点一次就装，不会顺手重装 Python）② Codex 自己 pip 装（技能里给了镜像命令）。
+  //  ⛔ 别把它并进 install-runtimes 的默认 pip 清单 —— 预检【83】有负向断言盯着。
   //  marker 仅作占位：真实判定走 runtimeInstalled 的 markitdown 分支（pip 包路径含 Python 版本号，写不死）。
-  //  ⚠️ 已知取舍（09-21 代码审查确认，不是缺陷）：卸载只删 markitdown 包目录（0.4 MB），
-  //     它的 Python 依赖（约 120 MB）会留下 —— 这是 pip 包的固有特点，卸载的语义是「移除这个能力」
-  //     而不是「释放全部空间」，且装了之后随时能重装，所以不设 noUninstall（那是给随包资源的语义）。
-  //     真要让用户释放空间，入口是卸载 Python；描述里不必展开，界面上的体积标注已含依赖。
-  markitdown: { name: "文档转换（markitdown）", description: "让 Codex 能读 PDF / Word / Excel / PowerPoint 附件：先把文档转成 Markdown 再交给模型（Microsoft markitdown，MIT 许可）。随 Python 一起装好，这里可单独补装或修复", size: "约 120 MB", marker: "markitdown" },
+  //  ⚠️ 已知取舍（09-21 代码审查确认）：卸载只删 markitdown 包目录（0.4 MB），依赖会留下 ——
+  //     这是 pip 包的固有特点；卸载的语义是「移除这个能力」而不是「释放全部空间」。
+  markitdown: { name: "文档转换（markitdown）", description: "让 Codex 能读 PDF / Word / Excel / PowerPoint 附件：先把文档转成 Markdown 再交给模型（Microsoft markitdown，MIT 许可）。默认不装，需要时点这里装一次（约 120 MB，走清华 pip 镜像）；也可以让 Codex 自己装", size: "约 120 MB", marker: "markitdown" },
 };
 const runtimeInstalls = new Map<DevRuntimeId, Promise<void>>();
 
