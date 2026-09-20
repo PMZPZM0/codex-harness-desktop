@@ -8850,6 +8850,9 @@ export default function App() {
   const [browserAuto, setBrowserAuto] = useState(true);
   const [autoCompactRatio, setAutoCompactRatio] = useState(0.8);
   const [hardwareAccel, setHardwareAccel] = useState<"auto" | "force" | "off">("auto");
+  // 开发工具下载源（09-20 用户「下载太慢，所有工具下载加下载源选择」）：app-settings.downloadSource，
+  // 「开发工具」页顶部可切；runtime:install 每次现读，切完下一次下载立即生效。
+  const [downloadSource, setDownloadSource] = useState<"auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy">("auto");
   /** 语气自适应（默认开）：按会话维护状态（心情/精力/默契），随会话自己的 instructions 下发语气指引。 */
   const [adaptiveTone, setAdaptiveTone] = useState(true);
   const [restartPending, setRestartPending] = useState(false);
@@ -8873,7 +8876,7 @@ export default function App() {
   const [sshEditorTest, setSshEditorTest] = useState<{ ok: boolean; message: string } | null>(null);
   // 联网搜索 UI 入口已整体下架（2026-09-04：引擎沙箱本就允许联网，web_search 工具默认常开，
   // 无需用户切换）。app-settings.webSearch 默认值仍由主进程写进 config.toml，引擎能力不受影响。
-  useEffect(() => { void window.codex.readAppSettings().then((settings) => { setDesktopAuto(settings.desktopAutomation !== false); setBrowserAuto(settings.browserAutomation !== false); setAutoCompactRatio(typeof settings.autoCompactRatio === "number" ? settings.autoCompactRatio : 0.8); setHardwareAccel(settings.hardwareAcceleration ?? "auto"); setAdaptiveTone(settings.adaptiveTone !== false); }).catch(() => undefined); }, []);
+  useEffect(() => { void window.codex.readAppSettings().then((settings) => { setDesktopAuto(settings.desktopAutomation !== false); setBrowserAuto(settings.browserAutomation !== false); setAutoCompactRatio(typeof settings.autoCompactRatio === "number" ? settings.autoCompactRatio : 0.8); setHardwareAccel(settings.hardwareAcceleration ?? "auto"); setAdaptiveTone(settings.adaptiveTone !== false); setDownloadSource(settings.downloadSource ?? "auto"); }).catch(() => undefined); }, []);
   // 桌面/浏览器自动化是能力总闸：开关直接决定引擎能不能用，同时联动 nuphus MCP 与配套技能。
   // 具体实现在 applyGroup（见「能力总闸联动」块），这里只做转发，保证常规页是唯一入口。
   const toggleDesktopAuto = (next: boolean) => { void applyGroup("desktop-automation", next); };
@@ -8896,6 +8899,22 @@ export default function App() {
     const label = next === "force" ? "强制开启硬件加速" : next === "off" ? "关闭硬件加速" : "自动";
     setNotice(`硬件加速已设为「${label}」，重启应用后生效${next === "force" ? "（适合低配机/软件渲染卡顿）" : ""}`);
     void window.codex.saveAppSettings({ hardwareAcceleration: next }).catch(() => { setHardwareAccel(hardwareAccel); setRestartPending(false); });
+  };
+  // 开发工具下载源（设置 → 开发工具）：写入 app-settings；runtime:install 每次现读，
+  // **下一次下载立即生效，无需重启**。切换失败回滚本地选择并提示。
+  const changeDownloadSource = (next: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy") => {
+    if (next === downloadSource) return;
+    setDownloadSource(next);
+    const labels: Record<string, string> = {
+      auto: "自动（国内镜像优先，失败逐通道回落）",
+      mirror: "国内镜像优先（npmmirror，失败回落官方直连）",
+      ghproxy: "GitHub 加速 · gh-proxy（失败回落官方直连）",
+      ghfast: "GitHub 加速 · ghfast（失败回落官方直连）",
+      direct: "官方直连",
+      proxy: "本机代理优先（失败回落直连）",
+    };
+    setNotice(`下载源已切为「${labels[next] ?? next}」，下一次下载立即生效`);
+    void window.codex.saveAppSettings({ downloadSource: next }).catch(() => { setDownloadSource(downloadSource); setNotice("下载源保存失败，请重试"); });
   };
 
   // —— Codex 引擎更新（设置 → 控制台底部） ——
@@ -20325,7 +20344,21 @@ const commandMatches = useMemo(() => {
               </div>
             </section>}
             {settingsPage === "devtools" && <section className="settings-section stack devtools-page">
-              <div className="settings-copy"><h2>开发工具<PageInfo text={<>桌面与浏览器自动化（Nuphus / Playwright CLI）与写代码模式插件随应用内置、开箱即用；CloakBrowser 指纹浏览器、两类浏览器内核与其余工具链按需下载（国内镜像加速，失败自动回落官方源），安装后自动加入 Codex 环境（不改系统 PATH）。</>} helpKey="devtools" label="开发工具" /></h2></div>
+              <div className="settings-copy"><h2>开发工具<PageInfo text={<>桌面与浏览器自动化（Nuphus / Playwright CLI）与写代码模式插件随应用内置、开箱即用；CloakBrowser 指纹浏览器、两类浏览器内核与其余工具链按需下载（下载源可自选，失败自动回落官方源），安装后自动加入 Codex 环境（不改系统 PATH）。</>} helpKey="devtools" label="开发工具" /></h2></div>
+              {/* 下载源选择（09-20 用户「下载太慢，所有工具下载加下载源选择」）：对本页所有按需下载生效，
+                  runtime:install 每次现读 app-settings —— 切完源下一次下载立即生效，无需重启。 */}
+              <div className="devtools-source-row" role="group" aria-label="下载源选择">
+                <span className="settings-subhead"><Download size={13} />下载源</span>
+                <select className="accel-select" value={downloadSource} onChange={(event) => changeDownloadSource(event.target.value as typeof downloadSource)} aria-label="选择下载源">
+                  <option value="auto">自动（国内镜像优先，失败逐通道回落）</option>
+                  <option value="mirror">国内镜像优先（npmmirror）</option>
+                  <option value="ghproxy">GitHub 加速 · gh-proxy</option>
+                  <option value="ghfast">GitHub 加速 · ghfast</option>
+                  <option value="direct">官方直连</option>
+                  <option value="proxy">本机代理优先</option>
+                </select>
+                <span className="settings-card-hint">下载慢就换个源，下一次下载立即生效；带「回落」的选项失败后会自动改走官方源。浏览器内核只认「自动 / 国内镜像 / 官方直连」，其余按自动处理。</span>
+              </div>
               <div className="settings-subhead"><Download size={13} />语音模型<span className="settings-subhead-hint">sherpa-onnx · 本机推理 · 按需下载</span></div>
               <VoiceDevToolsSection onNotice={setNotice} />
               {(() => {

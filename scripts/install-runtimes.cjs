@@ -40,9 +40,10 @@ const JQ_URL = "https://github.com/jqlang/jq/releases/latest/download/jq-windows
 const NINJA_URL = "https://github.com/ninja-build/ninja/releases/latest/download/ninja-win.zip";
 const SEVENZIP_URL = "https://www.7-zip.org/a/7zr.exe";
 const YTDLP_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
-// GitHub 直连在国内经常不可达；gh-proxy.com 加速前缀实测稳定（rg/cmake/uv/7zip 均可 206 分段续传）。
-// 下载顺序：直连 → gh-proxy 加速 → 本机代理（PROXY 环境变量，默认 Clash 7897）。
+// GitHub 直连在国内经常不可达；gh-proxy.com / ghfast.top 加速前缀实测稳定（rg/cmake/uv/7zip 均可 206 分段续传）。
+// 自动模式下载顺序：镜像 → 本机代理（PROXY 环境变量，默认空）→ 直连 → gh-proxy。
 const GHPROXY = "https://gh-proxy.com/";
+const GHFAST = "https://ghfast.top/";
 const RG_VERSION = "14.1.1";
 const RG_URL = `https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/ripgrep-${RG_VERSION}-x86_64-pc-windows-msvc.zip`;
 const UV_VERSION = "0.9.5";
@@ -267,17 +268,39 @@ function downloadWithProgress(args, opts) {
   });
 }
 
+/** 下载源（09-20 用户「所有工具下载加下载源选择」）：主进程经 DOWNLOAD_SOURCE 环境变量传入，
+ *  取值 auto（默认）/ mirror / ghproxy / ghfast / direct / proxy —— 与「开发工具」页的下载源选择一一对应。
+ *  ⛔ 不能用命令行参数传：argv 里的裸词会被当成工具 id（want() 的 requested 集合）。 */
+const SOURCE = (process.env.DOWNLOAD_SOURCE || "auto").toLowerCase();
+
 async function download(url, file) {
   process.stdout.write("@@STAGE 下载\n");
   // 见 downloadWithProgress 的注释：进度与速度都靠采样文件大小，curl 这边只要「安静地下载」。
   const curlArgs = ["-L", "--fail", "--show-error", "--retry", "3", "--retry-all-errors",
     "--connect-timeout", "30", "--continue-at", "-", "-o", file];
-  const attempts = [];
   const mirror = chinaMirrorUrl(url);
-  if (mirror) attempts.push([`国内镜像 npmmirror`, curlArgs.slice(), mirror]);
-  if (PROXY) attempts.push([`本机代理 ${PROXY}`, [...curlArgs, "--proxy", PROXY], url]);
-  attempts.push(["直连", curlArgs.slice(), url]);
-  if (url.includes("github.com")) attempts.push(["gh-proxy 加速", curlArgs.slice(), GHPROXY + url]);
+  const isGh = url.includes("github.com");
+  // 各通道构造器：mirrorFirst = 有国内镜像则镜像打头（回落直连）；gh 加速前缀只对 github.com 资产有意义。
+  const mirrorFirst = mirror ? [["国内镜像 npmmirror", curlArgs.slice(), mirror], ["直连", curlArgs.slice(), url]] : [["直连", curlArgs.slice(), url]];
+  const ghFirst = (prefix, label) => (isGh ? [[label, curlArgs.slice(), prefix + url], ["直连", curlArgs.slice(), url]] : mirrorFirst);
+  const viaProxy = PROXY ? [[`本机代理 ${PROXY}`, [...curlArgs, "--proxy", PROXY], url]] : [];
+  // 按用户选的源组装通道顺序；所选源对当前资产不可用时回落「直连」，保证一定有可行通道。
+  let attempts;
+  switch (SOURCE) {
+    case "direct": attempts = [["直连", curlArgs.slice(), url]]; break;
+    case "mirror": attempts = mirrorFirst; break;
+    case "ghproxy": attempts = ghFirst(GHPROXY, "gh-proxy 加速"); break;
+    case "ghfast": attempts = ghFirst(GHFAST, "ghfast 加速"); break;
+    case "proxy": attempts = [...viaProxy, ["直连", curlArgs.slice(), url]]; break;
+    case "auto":
+    default: attempts = [
+      ...(mirror ? [["国内镜像 npmmirror", curlArgs.slice(), mirror]] : []),
+      ...viaProxy,
+      ["直连", curlArgs.slice(), url],
+      ...(isGh ? [["gh-proxy 加速", curlArgs.slice(), GHPROXY + url]] : []),
+    ]; break;
+  }
+  if (SOURCE !== "auto") console.log(`[download] 指定下载源: ${SOURCE}`);
   let lastError;
   for (const [label, args, effectiveUrl] of attempts) {
     try {

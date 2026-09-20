@@ -9030,6 +9030,10 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
 .runtime-loading { display: flex; align-items: center; gap: 8px; padding: 16px; color: var(--muted); font-size: 11.5px; }
 .devtools-group { display: flex; flex-direction: column; gap: 6px; }
 .devtools-group .settings-subhead { margin: 2px 0 0; }
+/* 下载源选择行（09-20）：标题 + 下拉 + 说明横排，窄窗口自动折行 */
+.devtools-source-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.devtools-source-row .settings-subhead { margin: 0; }
+.devtools-source-row .settings-card-hint { margin: 0; flex: 1 1 260px; min-width: 220px; }
 .runtime-row.busy { background: color-mix(in srgb, var(--panel-2) 40%, var(--bg)); }
 .runtime-row.busy .runtime-icon { color: var(--link); }
 .runtime-copy .runtime-progress { color: var(--link); font-weight: 500; }

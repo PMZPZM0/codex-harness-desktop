@@ -2290,6 +2290,29 @@ console.log(C.bold("\n【多窗口事件过滤】过期上报必须放行 / 生�
     ? ok("渲染层活跃会话上报带 15s 心跳 + 窗口聚焦补报（新鲜度不会自己过期）")
     : fail("活跃会话上报没有心跳 —— 停留超过 30s 主进程就以为「不知道它在看什么」");
 }
+// ---------- 开发工具下载源选择（09-20 用户「下载太慢，所有工具下载加下载源选择」） ----------
+console.log(C.bold("\n【工具下载源】设置持久化 + 三条下载通道都认源 + 页面选择器在位"));
+{
+  const mainSrc2 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  const appS = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const runtimeSrc = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
+  // ① 工具链脚本按 DOWNLOAD_SOURCE 分通道：六种源都要有分派，且每种都带「直连」回落
+  (/const SOURCE = \(process\.env\.DOWNLOAD_SOURCE \|\| "auto"\)\.toLowerCase\(\);/.test(runtimeSrc)
+    && ["direct", "mirror", "ghproxy", "ghfast", "proxy"].every((s) => runtimeSrc.includes(`case "${s}"`))
+    && /ghfast\.top/.test(runtimeSrc))
+    ? ok("install-runtimes.cjs 按 DOWNLOAD_SOURCE 分通道（auto/mirror/ghproxy/ghfast/direct/proxy，均回落直连）")
+    : fail("install-runtimes.cjs 的下载源分派被摘 —— 页面上选了源工具链也不认");
+  // ② 主进程把源传下去：runtime:install 现读 + 三条通道（工具链 env / npm / 浏览器内核）都接线
+  (/async function readDownloadSource\(\)/.test(mainSrc2) && /DOWNLOAD_SOURCE: downloadSource/.test(mainSrc2)
+    && /runNpmInstall\(id, "cloakbrowser", "CloakBrowser", downloadSource\)/.test(mainSrc2)
+    && /runBrowserDownload\(id, node, cli, \["install", "chromium"\], "浏览器内核", downloadSource\)/.test(mainSrc2))
+    ? ok("主进程三条下载通道都接了 downloadSource（工具链 env / npm registry / 浏览器内核）")
+    : fail("主进程没把下载源传下去 —— 选了源也只有部分通道生效");
+  // ③ 页面选择器在位：六个选项 + 保存走 app-settings（选完下一次下载生效）
+  (/changeDownloadSource/.test(appS) && /value="ghfast"/.test(appS) && /saveAppSettings\(\{ downloadSource: next \}\)/.test(appS))
+    ? ok("开发工具页下载源选择器在位（六档选项，写入 app-settings 即时生效）")
+    : fail("开发工具页的下载源选择器被摘 —— 用户没法换源");
+}
 // ---------- 【15】供应商列表交互（点开关要切详情，不许只拦冒泡） ----------
 
 console.log(C.bold("\n【15】供应商列表：点开关（启用/停用）右侧详情必须跟随"));
@@ -3071,14 +3094,16 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   (toolchainTs.includes('CLOAKBROWSER_DOWNLOAD_URL: "https://ghfast.top/https://github.com/CloakHQ/cloakbrowser/releases/download"') ? ok : fail)("toolchain：CloakBrowser 内核走 gh 代理（归档与 SHA256SUMS 同源，校验不受影响）");
   (toolchainTs.includes("if (!process.env[key]) env[key] = value;") ? ok : fail)("toolchain：用户自设的下载源变量优先于镜像（不覆盖用户配置）");
   const mainTs26 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
-  (mainTs26.includes("attempts = mirrorKeys.length ? [mirrored, official] : [official]") ? ok : fail)("main.ts：内核下载是镜像优先 + 官方源回落的双轮尝试");
-  (mainTs26.includes('await runBrowserDownload(id, node, cli, ["install", "chromium"], "浏览器内核")') ? ok : fail)("main.ts：Playwright 内核下载走 runBrowserDownload（不直接 spawn 官方源）");
-  (mainTs26.includes('await runBrowserDownload(id, node, cli, ["install"], "Cloak 内核")') ? ok : fail)("main.ts：Cloak 内核下载走 runBrowserDownload（不直接 spawn 官方源）");
+  // 09-20 下载源选择：内核下载 attempts 改为按 source 组装（direct 只走官方，其余镜像优先+官方回落）
+  (mainTs26.includes('const attempts = source === "direct" || !mirrorKeys.length') && mainTs26.includes('{ env: mirrored, via: "国内镜像" }, { env: official, via: "官方源" }') ? ok : fail)("main.ts：内核下载按所选源组装（direct 只走官方，其余镜像优先 + 官方源回落）");
+  (mainTs26.includes('await runBrowserDownload(id, node, cli, ["install", "chromium"], "浏览器内核", downloadSource)') ? ok : fail)("main.ts：Playwright 内核下载走 runBrowserDownload（不直接 spawn 官方源）");
+  (mainTs26.includes('await runBrowserDownload(id, node, cli, ["install"], "Cloak 内核", downloadSource)') ? ok : fail)("main.ts：Cloak 内核下载走 runBrowserDownload（不直接 spawn 官方源）");
   (mainTs26.includes("devRuntimeSpecs") && !/pwsh: \{[^}]*builtIn: true/.test(mainTs26) && !/git: \{[^}]*builtIn: true/.test(mainTs26) && !/python: \{[^}]*builtIn: true/.test(mainTs26) ? ok : fail)("main.ts：pwsh/git/python 已转为按需下载（不再是 builtIn）");
   (mainTs26.includes("watchFs(toolsRoot(), { recursive: true }") && mainTs26.includes('message: "开发工具目录已更新", auto: true') ? ok : fail)("main.ts：tools 目录监视 → 引擎自己装工具后界面自动刷新");
   const installRuntimes = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
   (installRuntimes.includes("https://cdn.npmmirror.com/binaries/node/") && installRuntimes.includes("https://cdn.npmmirror.com/binaries/python/") && installRuntimes.includes("https://cdn.npmmirror.com/binaries/git-for-windows/") ? ok : fail)("install-runtimes：node/python/git 走 npmmirror 国内镜像（有镜像源的不该是龟速官方源）");
-  (installRuntimes.includes("if (mirror) attempts.push") && installRuntimes.includes("if (url.includes(\"github.com\")) attempts.push") ? ok : fail)("install-runtimes：下载通道 = 镜像 → (代理) → 直连 → gh-proxy 逐级回落");
+  // 09-20 下载源选择：auto 通道序保持「镜像 → (代理) → 直连 → gh-proxy」，六种源在 switch 里分派
+  (installRuntimes.includes('case "mirror": attempts = mirrorFirst') && installRuntimes.includes('case "ghproxy": attempts = ghFirst(GHPROXY') && installRuntimes.includes('case "ghfast": attempts = ghFirst(GHFAST') && installRuntimes.includes('case "auto":') ? ok : fail)("install-runtimes：下载通道按所选源分派（auto 仍 = 镜像 → (代理) → 直连 → gh-proxy 逐级回落）");
   // 09-16 下午：自动化包与 ponytail 改为「随包预解压直装」（用户「直接内置，不用解压啥的」）——
   // npm-global 必须进 extraResources（缺了等于回到「要点安装才解压」），zip 保留作修复备用；
   // ponytail 启动自动种只在 config **没有**注册段时动手（否则用户卸载后下次启动又装回来，卸载失效）。
@@ -3166,8 +3191,9 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   (mainTs27.includes('marker: "npm-global\\\\node_modules\\\\@nuphus\\\\nuphus-mcp\\\\package.json", bundled: true') && mainTs27.includes('marker: "npm-global\\\\node_modules\\\\@playwright\\\\cli\\\\package.json", bundled: true') ? ok : fail)("main.ts：两条内置卡片标为 bundled（界面显示「内置」，缺失才给「修复安装」）");
   (mainTs27.includes('marker: "ponytail-plugin", kind: "plugin", bundled: true, noUninstall: true') ? ok : fail)("main.ts：ponytail 也是 bundled（随包内置；缺失走「重种插件」，绝不能落进解压 zip 的分支）");
   (mainTs27.includes('cloakbrowser: { name: "CloakBrowser 指纹浏览器"') && !/cloakbrowser: \{[^}]*bundled: true/.test(mainTs27) ? ok : fail)("main.ts：CloakBrowser 是独立的按需下载卡片（不是 bundled）");
-  (mainTs27.includes("async function runNpmInstall(") && mainTs27.includes('await runNpmInstall(id, "cloakbrowser", "CloakBrowser")') ? ok : fail)("main.ts：CloakBrowser 走 runNpmInstall（用内置 node 自带 npm，不依赖用户环境）");
-  (mainTs27.includes('const registries = userRegistry ? [userRegistry] : [CHINA_NPM_REGISTRY, ""];') ? ok : fail)("main.ts：npm 安装是国内镜像优先 + 官方源回落（用户自设源时不覆盖）");
+  (mainTs27.includes("async function runNpmInstall(") && mainTs27.includes('await runNpmInstall(id, "cloakbrowser", "CloakBrowser", downloadSource)') ? ok : fail)("main.ts：CloakBrowser 走 runNpmInstall（用内置 node 自带 npm，不依赖用户环境）");
+  // 09-20 下载源选择：direct 只走官方源，其余（auto/mirror/gh 加速/proxy）保持镜像优先+官方回落
+  (mainTs27.includes('const registries = userRegistry ? [userRegistry] : source === "direct" ? [""] : [CHINA_NPM_REGISTRY, ""];') ? ok : fail)("main.ts：npm 安装按所选源组装（direct 只走官方，其余镜像优先 + 官方源回落，用户自设源时不覆盖）");
   (mainTs27.includes('if (id === "cloakbrowser") return path.join(npmGlobalRoot(), "cloakbrowser");') ? ok : fail)("main.ts：卸载 CloakBrowser 只删包体目录（按 marker 首段删会连 nuphus/playwright-cli 一起删光）");
   (mainTs27.includes('npmShimPaths("cloakbrowser")') ? ok : fail)("main.ts：卸载后清掉 npm shim（否则 PATH 留着指向空目录的 cloakbrowser.cmd）");
   (mainTs27.includes('if (spec.bundled) throw new Error("该工具随应用内置') ? ok : fail)("main.ts：bundled 条目拒绝卸载（删了没有可靠重取途径）");
