@@ -163,36 +163,129 @@ function runStreaming(command, opts = {}) {
   });
 }
 
+/** 人类可读的速率 / 体积文案（UI 直接显示，不再二次加工）。 */
+function formatSpeed(bytesPerSecond) {
+  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return "";
+  const units = ["B/s", "KB/s", "MB/s", "GB/s"];
+  let value = bytesPerSecond;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return `${value >= 100 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return `${value >= 100 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+}
+
+/** 取远端总大小（进度条分母）。取不到返回 0 —— 此时只显示「已下载 + 速度」，不显示百分比。 */
+async function probeTotalSize(url) {
+  try {
+    const out = runCommand(`curl -sIL --max-time 25 "${url}"`);
+    const hits = [...String(out).matchAll(/^content-length:\s*(\d+)/gim)];
+    // 取最后一个：跟随重定向后那一条才是实体大小（前面可能是 302 的空 body）
+    return hits.length ? Number(hits[hits.length - 1][1]) || 0 : 0;
+  } catch { return 0; }
+}
+
+/**
+ * 跑 curl 下载，同时**按固定间隔采样输出文件大小**来算百分比与瞬时速度。
+ *
+ * ⛔⛔ 为什么不用 curl 自带的进度输出（09-20 实测出来的硬事实）：
+ *   · `--progress-bar`（`-#`）在 stderr **不是 TTY**（我们走管道）时只输出 `#=#=#` 占位行，
+ *     完全没有百分比 —— 这正是**此前进度条一直空着、右边只显示 `--`** 的根因；
+ *   · 默认进度表在非 TTY 下也只在**结束时**吐一行总结，中途同样无数据可解析。
+ *   ⇒ 采样文件大小是唯一与终端类型无关、Windows/mac 都可靠的数据源，
+ *     顺便把「瞬时速度」也一起算出来了（curl 的进度输出本来就不给这个）。
+ */
+function downloadWithProgress(args, opts) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("curl", args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    let tail = "";
+    let lastSize = opts.startSize ?? 0;
+    let lastAt = Date.now();
+    let lastPercent = -1;
+    let finished = false;
+    const stop = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      clearInterval(sampler);
+    };
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch { /* 已退出 */ }
+      stop();
+      reject(new Error("下载超时"));
+    }, opts.timeout ?? 900000);
+    const sampler = setInterval(() => {
+      let size = 0;
+      try { size = fs.statSync(opts.file).size; } catch { return; }
+      const now = Date.now();
+      const seconds = (now - lastAt) / 1000;
+      if (seconds <= 0) return;
+      const speed = Math.max(0, (size - lastSize) / seconds);
+      lastSize = size;
+      lastAt = now;
+      if (opts.total > 0) {
+        // 上限留 1%：curl 干净退出后我们再补 100，避免进度条先满再干等
+        const percent = Math.max(0, Math.min(99, Math.round((size / opts.total) * 100)));
+        if (percent !== lastPercent) {
+          lastPercent = percent;
+          process.stdout.write(`@@PROGRESS ${percent}\n`);
+        }
+      }
+      const speedText = formatSpeed(speed);
+      if (speedText) {
+        const amount = opts.total > 0 ? `${formatBytes(size)} / ${formatBytes(opts.total)}` : formatBytes(size);
+        process.stdout.write(`@@SPEED ${speedText} · ${amount}\n`);
+      }
+    }, 500);
+    const onData = (chunk) => {
+      const text = String(chunk);
+      tail = (tail + text).slice(-4000);
+      // ⛔ 白名单式转发（09-20 实测修正）：只放行 curl 的**诊断行**，其余一律丢弃。
+      //   曾用黑名单（滤掉含 % / Dload / #= 的行）——实测漏网：慢速时 curl 会周期性吐
+      //   `0   0   0  0  0  0  0  0 --:--:-- ...` 这类表格行（不含 %、不以 #= 开头），
+      //   一路灌进界面消息区。白名单不会漏：下载过程里 curl 对用户有意义的输出只有
+      //   错误与告警（`curl: (22) ...` / `Warning: ...`）。
+      const keep = text.replace(/\r/g, "\n").split("\n").map((line) => line.trim())
+        .filter((line) => /^curl:\s*\(\d+\)/i.test(line) || /^warning:/i.test(line));
+      if (keep.length) process.stdout.write(keep.slice(-3).join("\n") + "\n");
+    };
+    child.stdout?.on("data", onData);
+    child.stderr?.on("data", onData);
+    child.on("error", (error) => { stop(); reject(error); });
+    child.on("close", (code) => {
+      stop();
+      if (code === 0) resolve(tail);
+      else reject(new Error(tail.trim().slice(-1200) || `下载退出（${code}）`));
+    });
+  });
+}
+
 async function download(url, file) {
-  process.stdout.write("@@STAGE 下载\n");   // 阶段名 → 界面进度条（新手看得懂"在干什么"）
-  // ⛔ 用 `--progress-bar`（而不是 `--silent`）：curl 的进度条走 stderr，我们解析出百分比
-  //   上报给界面（结构化行 @@PROGRESS n）—— 用户看到的是**应用内的进度条**，
-  //   而不是一个 cmd 黑窗（09-19 用户要求「不要弹窗，全部用进度条」）。
-  const base = `curl -L --fail --show-error --progress-bar --retry 3 --retry-all-errors --connect-timeout 30 --continue-at - -o "${file}"`;
+  process.stdout.write("@@STAGE 下载\n");
+  // 见 downloadWithProgress 的注释：进度与速度都靠采样文件大小，curl 这边只要「安静地下载」。
+  const curlArgs = ["-L", "--fail", "--show-error", "--retry", "3", "--retry-all-errors",
+    "--connect-timeout", "30", "--continue-at", "-", "-o", file];
   const attempts = [];
   const mirror = chinaMirrorUrl(url);
-  if (mirror) attempts.push([`国内镜像 npmmirror`, `${base} "${mirror}"`, mirror]);
-  if (PROXY) attempts.push([`本机代理 ${PROXY}`, `${base} --proxy "${PROXY}" "${url}"`, url]);
-  attempts.push(["直连", `${base} "${url}"`, url]);
-  if (url.includes("github.com")) attempts.push(["gh-proxy 加速", `${base} "${GHPROXY}${url}"`, GHPROXY + url]);
+  if (mirror) attempts.push([`国内镜像 npmmirror`, curlArgs.slice(), mirror]);
+  if (PROXY) attempts.push([`本机代理 ${PROXY}`, [...curlArgs, "--proxy", PROXY], url]);
+  attempts.push(["直连", curlArgs.slice(), url]);
+  if (url.includes("github.com")) attempts.push(["gh-proxy 加速", curlArgs.slice(), GHPROXY + url]);
   let lastError;
-  for (const [label, command, effectiveUrl] of attempts) {
+  for (const [label, args, effectiveUrl] of attempts) {
     try {
       console.log(`[download] via ${label}: ${effectiveUrl}`);
-      let lastReported = -1;
-      await runStreaming(command, {
-        label: "下载",
-        timeout: 900000,
-        quiet: true,
-        onChunk: (text) => {
-          const matches = text.replace(/\r/g, "\n").match(/(\d{1,3}(?:\.\d+)?)%/g);
-          if (!matches) return;
-          const percent = Math.min(100, Math.round(parseFloat(matches[matches.length - 1])));
-          if (percent === lastReported) return;   // 节流：只在整数百分比变化时上报
-          lastReported = percent;
-          process.stdout.write(`@@PROGRESS ${percent}\n`);
-        },
-      });
+      const startSize = fs.existsSync(file) ? fs.statSync(file).size : 0;
+      const total = await probeTotalSize(effectiveUrl);
+      if (total > 0) console.log(`[download] 文件大小 ${formatBytes(total)}${startSize > 0 ? `（续传起点 ${formatBytes(startSize)}）` : ""}`);
+      await downloadWithProgress([...args, effectiveUrl], { file, startSize, total });
       process.stdout.write("@@PROGRESS 100\n");
       return;
     } catch (error) {

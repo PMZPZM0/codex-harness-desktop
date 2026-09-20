@@ -526,7 +526,7 @@ interface Window {
     listRuntimes(): Promise<DevRuntimeEntry[]>;
     installRuntime(id: string): Promise<{ ok: boolean; runtimes: DevRuntimeEntry[] }>;
     uninstallRuntime(id: string): Promise<{ ok: boolean; runtimes: DevRuntimeEntry[] }>;
-    onRuntimeProgress(listener: (event: { id: string; message?: string; percent?: number; stage?: string; done?: boolean; failed?: boolean; auto?: boolean }) => void): () => void;
+    onRuntimeProgress(listener: (event: { id: string; message?: string; percent?: number; stage?: string; speed?: string; done?: boolean; failed?: boolean; auto?: boolean }) => void): () => void;
     openInCloakBrowser(url: string): Promise<{ ok: boolean; detail: string }>;
     cloakBrowserStatus(): Promise<{ event?: string; message?: string; url?: string; title?: string }>;
     onTerminalData(listener: (id: string, data: string) => void): () => void;

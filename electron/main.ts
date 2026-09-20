@@ -5545,6 +5545,14 @@ function emitRuntimeProgress(id: string, chunk: string | Buffer, prefix = "") {
       sendToWindow("runtime:progress", { id, stage: stage[1].trim().slice(0, 40) });
       continue;
     }
+    // 下载速度（09-20）：安装脚本按 500ms 采样输出文件大小算出速率后写成
+    // `@@SPEED 1.2 MB/s · 45.3 MB / 350 MB`，这里原样带给界面显示。
+    const speed = line.match(/^@@SPEED\s*(.*)/);
+    if (speed) {
+      const text = speed[1].trim();
+      if (text) sendToWindow("runtime:progress", { id, speed: text.slice(0, 48) });
+      continue;
+    }
     sendToWindow("runtime:progress", { id, message: `${prefix}${line}` });
   }
 }
@@ -5852,7 +5860,7 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
   runtimeInstalls.set(id, task);
   try {
     await task;
-    sendToWindow("runtime:progress", { id, message: "安装完成", percent: 100, done: true });
+    sendToWindow("runtime:progress", { id, message: "安装完成", percent: 100, speed: "", done: true });
     return { ok: true, runtimes: runtimeList() };
   } finally {
     runtimeInstalls.delete(id);
