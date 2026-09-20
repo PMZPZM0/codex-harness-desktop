@@ -6597,8 +6597,8 @@ w.postMessage({id:1,op:"list",root});
     "【73】两组通知各贴各的锚：设置组贴 .settings-modal、对话组贴 main.workspace"
   );
   // ⑫ 通知中心（09-20 用户：收纳「不在看的会话」的通知 + 徽标 + 分组/已读/批量）
-  (/const belongsToCurrentThread = Boolean\(threadId && threadId === threadRef\.current\?\.id\);/.test(app73) ? ok : fail)(
-    "【73】中心只收「不在看的会话」的通知（当前会话的通知用户看得到浮层，收纳了反而是噪音）"
+  (/const belongsToOtherThread = Boolean\(threadId && threadId !== threadRef\.current\?\.id\);/.test(app73) ? ok : fail)(
+    "【73】中心只收「别的会话」的通知（设置操作提示/复制这类即时反馈无会话归属，收进去是噪音——用户点名纠正）"
   );
   (/scope === "chat" && settingsOpenRef\.current\) return;/.test(app73) ? ok : fail)(
     "【73】设置弹窗开着时对话来源的通知不弹浮层（不准跨对话框展示），静默进中心靠徽标提醒"
