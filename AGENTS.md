@@ -1647,3 +1647,16 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
       - ⛔ **结构守卫必须剥注释（09-18 一天踩三次）**：本仓库习惯在注释里写清"某个写法已删除/别再恢复"，而"不许出现 X"的守卫按原文匹配会把**注释里提到 X** 当成 X 还在 → 报假红。已在 `check-preflight.mjs` 加了 `codeOnly()`（剥 `//` / `/* */` / `{/* */}`）统一处理：`startsWith("http") ? … : imageUrl(…)`、`.attachment-strip`、`getBoundingClientRect().top` 三次都是这个原因。**任何"不许出现 X"的断言，匹配前先过 `codeOnly`。**
       - **模型列表删除（用户报「没勾选的删不掉／删掉了勾选的」）：本轮未能复现，做了什么要说清** —— 开发版上跑了 6 个场景（逐行删除 / 勾选框 / 批量删除 / 批量删除+保存+重启 / 删掉"当前生效"的模型+保存 / 加同名 id），**全部正确**。按"症状能找到的机制"做了两处加固：① **重名 id**：`saveModelEditor` 的本地合并分支原先只按 `originalId` 过滤 ⇒ 「添加模型 / 改名撞上已有 id」会留下**两份同 id 条目**，而列表渲染去重（只显示第一条）、删除与批量删除作用在**全部副本**上——这正是"删一次把别的那条带走了"的机制（已按 id 归一 + toast 说明）；② 澄清：保存路径不会复活被删的模型（`normalizeProvider`/`withModels` 只在 `entry.model` 不在列表时补，而渲染层在删除生效模型时已把 `model` 改指下一个可用模型；实测删掉生效的 `gpt-5.6-sol` 后磁盘正确变为 `[luna, terra, astra]`、`model=luna`）。**若再复现，先要"操作级步骤"**：设置页那一排有 4 个同区图标（全选 / 取消全部 / 批量移除未勾选 / 刷新列表），其中刷新（`probeProvider("list")`）会把探测到的新模型以 `enabled:false` **追加**进列表、行数会变 —— 按肌肉记忆点"第 N 行"很容易删错。
 
+## 09-21 深色模式下「独立会话窗口」的系统钮看不见但能点（已修）
+
+- **症状**：黑夜模式下独立会话弹窗右上角三个窗口钮看不见、但能点（09-21 用户实测）。
+- **根因**：`theme:apply` 只更新了 `mainWindow` 的 `titleBarOverlay`（符号色 `dark ? #e8e8e5 : #1b1b1a`），
+  而独立会话窗口是另建的 BrowserWindow，创建时写死 `symbolColor: "#1b1b1a"` 且**再没更新过** ⇒ 深色顶栏上画近黑符号。
+- **修法**：抽 `applyWindowChrome(dark)` 遍历 `[mainWindow, ...popoutWindows]`（窗口底色 + 符号色），`theme:apply` 调它；
+  新建窗口走 `titleBarOverlayOptions()`，按**当前**主题取色（`appThemeDark ?? nativeTheme.shouldUseDarkColors`）。
+  ⛔ Electron 本版**没有 `getTitleBarOverlay` 读回接口**（写出来直接 TS2551、构建失败）——只能打「已下发值 + 覆盖窗口数」。
+- **验收**：真机 9/9 —— 开着独立窗口切深色，主进程日志 `[theme] 窗口外观 → dark；已给 2 个窗口下发标题栏符号色 #e8e8e5`。
+- **另（同轮）**：曾按用户要求加过「别的会话待审批浮层」（`.approval-elsewhere`），用户看过后**否掉并已回滚**
+  （原话：「不要加，不好看，bug 太多了，就之前正常左侧侧边栏提醒需审批类似就行」）⇒ 审批提醒入口**只有**
+  侧栏「需审批/需选择/需确认」徽标 + 当前会话输入框上方的审批卡。预检【80】已改为**守这条口径**：
+  浮层不许回来、审批类文案不得走 `setNotice`（那是通知中心唯一入口）、通知中心入账条件不许放宽。
