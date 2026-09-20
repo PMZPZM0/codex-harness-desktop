@@ -6609,6 +6609,16 @@ w.postMessage({id:1,op:"list",root});
   (/notice-center-v1/.test(app73) ? ok : fail)(
     "【73】中心持久化到 localStorage（notice-center-v1，上限 200 条）"
   );
+  // ⑬ PATH 漂移检查必须跨平台（09-20 mac 审计抓到的真缺口）
+  //   cfgPathLine 是 config.toml 里的 PATH 值：Windows 用 `;` 分隔、mac 用 `:`（path.delimiter）。
+  //   写死 `;` 会在 mac 上把整条 PATH 当成一个元素 ⇒ 与 expectedFirst 永不相等 ⇒
+  //   **每次启动都误判「安装目录漂移」并整份重写 config.toml**。
+  (/cfgPathLine[\s\S]{0,160}?split\(path\.delimiter\)/.test(main73) ? ok : fail)(
+    "【73】config.toml 的 PATH 漂移检查用 path.delimiter 切分（写死 ';' 会在 mac 上每次启动误判漂移并重写配置）"
+  );
+  (!/cfgPathLine\.replace\(\/\\\\\\\\\/g, "\\\\"\)\.split\(";"\)/.test(main73) ? ok : fail)(
+    "【73】不得回退成写死分号切分 PATH"
+  );
   (/notice-stack-in/.test(css73) ? ok : fail)(
     "【73】堆叠子项必须用自己的入场动画（旧 notice-in 最终帧 translate(-50%) 配 both 会把子项永久左移——靠左 bug 根因）"
   );
