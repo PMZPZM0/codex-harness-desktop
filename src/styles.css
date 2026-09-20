@@ -23618,6 +23618,22 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   overflow-wrap: anywhere;
 }
 .dev-runtime-modal-line.latest { color: var(--text); }
+/* 下载速度（09-20 用户要求「把下载速度显示」）：等宽数字，读数不跳动 */
+.runtime-modal-speed {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.env-check-speed { color: var(--muted); font-variant-numeric: tabular-nums; }
+/* 「后台运行」说明：占满剩余宽度，按钮靠右（footer 为 flex 时自动生效） */
+.dev-runtime-modal-hint {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
 .dev-runtime-modal-spinner {
   display: flex; align-items: center; gap: 8px;
   padding: 6px 0; color: var(--link); font-size: 12px;

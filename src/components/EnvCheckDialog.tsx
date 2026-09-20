@@ -60,7 +60,7 @@ export function installableIds(items: EnvCheckState[]): string[] {
   return items.filter((item) => !item.ok && !item.installing && !MANUAL_IDS.has(item.id)).map((item) => item.id);
 }
 
-export function EnvCheckDialog({ items, installing, progress, percent, stage, onInstall, onGo, onClose }: {
+export function EnvCheckDialog({ items, installing, progress, percent, stage, speed, onInstall, onGo, onClose }: {
   items: EnvCheckState[];
   /** 是否正在后台安装（一键安装点下去弹窗会收起成角标；安装中**允许**关弹窗——
    *  关闭 ≠ 取消，安装继续、右下角角标继续显示进度，装完自动消失/失败自动展开回来。
@@ -72,6 +72,8 @@ export function EnvCheckDialog({ items, installing, progress, percent, stage, on
   percent?: number;
   /** 当前阶段名（下载 / 解压 / 配置…），让新手看得懂"在干什么" */
   stage?: string;
+  /** 下载速度（形如 "1.2 MB/s · 45.3 MB / 350 MB"；主进程按 500ms 采样文件大小算出） */
+  speed?: string;
   onInstall: (ids: string[]) => void;
   onGo: (target: "model" | "workspace") => void;
   onClose: (dontAskAgain: boolean) => void;
@@ -166,6 +168,7 @@ export function EnvCheckDialog({ items, installing, progress, percent, stage, on
                 <Sparkles size={13} />
                 {stage ? <b>{stage}</b> : null}
                 {typeof percent === "number" ? <b>{percent}%</b> : null}
+                {speed ? <b className="env-check-speed">{speed}</b> : null}
                 {progress ? <span>{progress}</span> : null}
               </span>
             </div>

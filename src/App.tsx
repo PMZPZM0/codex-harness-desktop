@@ -10027,6 +10027,9 @@ export default function App() {
   // 这里分别记住——文字说明「在做什么」，百分比驱动进度条。
   const [runtimePercent, setRuntimePercent] = useState<Record<string, number>>({});
   const [runtimeStage, setRuntimeStage] = useState<Record<string, string>>({});
+  // 下载速度（09-20 用户要求「把下载速度显示」）：主进程按 500ms 采样输出文件大小算好速率后下发，
+  // 形如 "1.2 MB/s · 45.3 MB / 350 MB" —— 这里原样显示，不做二次加工。
+  const [runtimeSpeed, setRuntimeSpeed] = useState<Record<string, string>>({});
   /** 最近一次进度事件对应的工具 id（体检弹窗/角标据此显示"当前在装哪一个"的进度） */
   const [runtimeActiveId, setRuntimeActiveId] = useState<string>("");
   // 安装/卸载的内置弹窗（替代 window.confirm——浏览器原生 confirm 会抢焦点且打断输入框）
@@ -10039,12 +10042,15 @@ export default function App() {
     setRuntimeActiveId(event.id);
     if (typeof event.percent === "number") setRuntimePercent((current) => ({ ...current, [event.id]: event.percent as number }));
     if (event.stage) setRuntimeStage((current) => ({ ...current, [event.id]: String(event.stage) }));
+    if (typeof event.speed === "string") setRuntimeSpeed((current) => ({ ...current, [event.id]: event.speed as string }));
     if (event.message) {
       const text = String(event.message);
       setRuntimeProgress((current) => ({ ...current, [event.id]: text.split(/\r?\n/).at(-1) || text }));
     }
     if (event.done) {
       setRuntimePercent((current) => ({ ...current, [event.id]: 100 }));
+      // 速度是「下载中」的瞬时量：收尾就清掉，免得下一次安装一打开弹窗还挂着上次的速率
+      setRuntimeSpeed((current) => ({ ...current, [event.id]: "" }));
       setRuntimeInstalling(null); refreshDevRuntimes();
       // 首次启动的 Git 自动安装（后台跑的，用户可能没开开发工具页）：完成/失败都弹一条通知
       if (event.id === "git" && String(event.message ?? "").includes("自动")) setNotice(String(event.message));
@@ -14271,6 +14277,7 @@ const commandMatches = useMemo(() => {
   const envProgress = envInstalling && runtimeActiveId ? (runtimeProgress[runtimeActiveId] ?? "") : "";
   const envPercent = envInstalling && runtimeActiveId ? runtimePercent[runtimeActiveId] : undefined;
   const envStage = envInstalling && runtimeActiveId ? runtimeStage[runtimeActiveId] : undefined;
+  const envSpeed = envInstalling && runtimeActiveId ? runtimeSpeed[runtimeActiveId] : undefined;
   // ⛔ 这里曾有 `activeModelSupportsImage()`（按模型 inputTypes 预判能否收图），09-18 随
   //   「图片一律正常发送」一并删除：**判据不可靠**（本地元数据，模型其实支持视觉只是漏勾
   //   「图片」时会把图白吞），而且它是「预判 → 吞图 → 注入说明文字」那条错路的入口 ——
@@ -18778,6 +18785,7 @@ const commandMatches = useMemo(() => {
               progress={envProgress}
               percent={envPercent}
               stage={envStage}
+              speed={envSpeed}
               onInstall={(ids) => void installEnvMissing(ids)}
               onGo={(target) => {
                 setEnvCheckOpen(false);
@@ -20353,6 +20361,7 @@ const commandMatches = useMemo(() => {
                               <em className="runtime-progress">
                                 {runtimeStage[runtime.id] ? `${runtimeStage[runtime.id]} · ` : ""}
                                 {typeof runtimePercent[runtime.id] === "number" ? `${runtimePercent[runtime.id]}%` : "准备中"}
+                                {runtimeSpeed[runtime.id] ? ` · ${runtimeSpeed[runtime.id]}` : ""}
                                 {runtimeProgress[runtime.id] ? ` · ${runtimeProgress[runtime.id]}` : ""}
                               </em>
                             </span>
@@ -20399,9 +20408,14 @@ const commandMatches = useMemo(() => {
                 <div className="modal-card">
                   <header>
                     <strong>{runtimeModal.mode === "install" ? "正在安装" : "正在卸载"}「{runtimeModal.name}」</strong>
-                    {runtimeModal.done && (
-                      <button className="icon-button" aria-label="关闭" onClick={() => setRuntimeModal(null)}><X size={16} /></button>
-                    )}
+                    {/* ⛔ 关闭按钮始终可用（09-20 用户要求「后台下载」）：未完成时点它就是「后台运行」——
+                        任务跑在主进程，关掉弹窗不影响它；完成/失败照常发通知。 */}
+                    <button
+                      className="icon-button"
+                      aria-label={runtimeModal.done ? "关闭" : "后台运行"}
+                      title={runtimeModal.done ? "关闭" : "后台运行（下载继续，完成后通知你）"}
+                      onClick={() => setRuntimeModal(null)}
+                    ><X size={16} /></button>
                   </header>
                   <div className="dev-runtime-modal-body">
                     {/* 进度条：所有安装/下载都在这里可视化（不再弹系统窗口） */}
@@ -20413,6 +20427,7 @@ const commandMatches = useMemo(() => {
                         <span>{runtimeStage[runtimeModal.id] ?? (runtimeModal.mode === "install" ? "准备安装" : "准备卸载")}</span>
                         <b>{typeof runtimePercent[runtimeModal.id] === "number" ? `${runtimePercent[runtimeModal.id]}%` : "…"}</b>
                       </div>
+                      {runtimeSpeed[runtimeModal.id] ? <div className="runtime-modal-speed">{runtimeSpeed[runtimeModal.id]}</div> : null}
                     </div>
                     {runtimeProgress[runtimeModal.id] ? <small className="dev-runtime-modal-line latest">{runtimeProgress[runtimeModal.id]}</small> : null}
                     {!runtimeModal.done && (
@@ -20422,13 +20437,16 @@ const commandMatches = useMemo(() => {
                     )}
                   </div>
                   <footer>
-                    <button
-                      className="primary-setting"
-                      disabled={!runtimeModal.done}
-                      onClick={() => setRuntimeModal(null)}
-                    >
-                      {runtimeModal.failed ? "关闭" : runtimeModal.mode === "install" ? "完成" : "知道了"}
-                    </button>
+                    {runtimeModal.done ? (
+                      <button className="primary-setting" onClick={() => setRuntimeModal(null)}>
+                        {runtimeModal.failed ? "关闭" : runtimeModal.mode === "install" ? "完成" : "知道了"}
+                      </button>
+                    ) : (
+                      <>
+                        <span className="dev-runtime-modal-hint">关掉这个弹窗不影响安装：下载会在后台继续，完成后通知你</span>
+                        <button className="secondary-setting" onClick={() => setRuntimeModal(null)}>后台运行</button>
+                      </>
+                    )}
                   </footer>
                 </div>
               </div>

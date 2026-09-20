@@ -6619,6 +6619,30 @@ w.postMessage({id:1,op:"list",root});
   (!/cfgPathLine\.replace\(\/\\\\\\\\\/g, "\\\\"\)\.split\(";"\)/.test(main73) ? ok : fail)(
     "【73】不得回退成写死分号切分 PATH"
   );
+  // ⑭ 工具下载的进度与速度（09-20 用户：「把下载速度显示，和后台下载加一下」）
+  //   ⛔ 关键事实：curl 的进度输出在**非 TTY**（我们走管道）下拿不到数据 ——
+  //   `--progress-bar` 只吐 `#=#=#` 占位行、默认进度表只在结束时给一行总结。
+  //   所以进度与速度**必须靠采样输出文件大小**自己算，不能回退去解析 curl 的输出。
+  const instSrc = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
+  const instNoComment = instSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  (/\$\{speedText\}/.test(instSrc) && /@@SPEED/.test(instSrc) ? ok : fail)(
+    "【73】下载脚本上报 @@SPEED（速率 + 已下载/总大小）"
+  );
+  (!/--progress-bar/.test(instNoComment) ? ok : fail)(
+    "【73】不得依赖 curl 进度输出（非 TTY 下它只给占位行/结束总结——曾是进度条一直空的根因）"
+  );
+  (/setInterval\(\(\) => \{[\s\S]{0,1400}?\}, 500\)/.test(instSrc) ? ok : fail)(
+    "【73】按 500ms 采样输出文件大小算百分比与瞬时速度"
+  );
+  (/const speed = line\.match\(\/\^@@SPEED/.test(main73) ? ok : fail)(
+    "【73】主进程解析 @@SPEED 并随 runtime:progress 下发"
+  );
+  (/runtimeSpeed/.test(app73) ? ok : fail)(
+    "【73】渲染层显示下载速度（安装弹窗 / 开发工具页 / 体检弹窗）"
+  );
+  (/后台运行/.test(app73) ? ok : fail)(
+    "【73】安装弹窗支持「后台运行」：未完成也能关，下载继续、完成后再通知"
+  );
   (/notice-stack-in/.test(css73) ? ok : fail)(
     "【73】堆叠子项必须用自己的入场动画（旧 notice-in 最终帧 translate(-50%) 配 both 会把子项永久左移——靠左 bug 根因）"
   );
