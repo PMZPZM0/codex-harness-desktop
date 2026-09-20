@@ -11505,6 +11505,42 @@ export default function App() {
     const cwd = effectiveCwd(entry.id, entry.cwd);
     return cwd && cwd !== entry.cwd ? { ...entry, cwd } : entry;
   }, [effectiveCwd]);
+  /** 会话**显示名**的本地覆盖（threadId → 名字）。
+   *  ⛔ 为什么名字必须本地权威（09-20 实测，用户报「导入会话改名不生效，一直显示导入…」）：
+   *  引擎会在**该会话第一条用户消息**到达时用它自动生成 `name`，**把此前 `thread/name/set`
+   *  设过的名字直接覆盖掉**。真机复现（隔离 CODEX_HOME + 真实 app-server）：
+   *    `thread/name/set("我自己改的名字")` → `turn/start("回复两个字：收到")`
+   *    → 之后读回 `name = "回复两个字：收到"`。
+   *  于是「导入 → 改名 → 发首条消息」必然失效：那条首条消息就是整段导入记录（`[导入的会话记录]…`），
+   *  名字被顶成消息内容，用户看到的就是「一直显示导入…」。
+   *  另外这条链上还有第二个坑：**无回合的会话不在 `thread/list` 里**（实测 has_user_event=0 的线程
+   *  一条都不返回），所以刚导入时侧栏/列表根本读不到引擎那份名字 —— 两侧夹击，唯一可靠的做法
+   *  就是**用户显式改过的名字由本地持有**。与 cwdOverrides 同构，覆盖在列表刷新 / 打开会话 /
+   *  resume 三处贴回（见 withNameOverride 的调用点）。 */
+  const [nameOverrides, setNameOverrides] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem("thread-name-override-v1") || "{}") as Record<string, string>; } catch { return {}; }
+  });
+  const nameOverridesRef = useRef<Record<string, string>>(nameOverrides);
+  const rememberThreadName = useCallback((threadId: string | null | undefined, name: string) => {
+    if (!threadId || !name) return;
+    const next = { ...nameOverridesRef.current, [threadId]: name };
+    nameOverridesRef.current = next;
+    try { localStorage.setItem("thread-name-override-v1", JSON.stringify(next)); } catch { /* ignore */ }
+    setNameOverrides(next);
+  }, []);
+  /** 会话当前**生效**的显示名（用户显式改过就用本地的，否则用引擎给的） */
+  const effectiveThreadName = useCallback((threadId: string | null | undefined, engineName: string | null | undefined) => {
+    if (threadId) {
+      const override = nameOverridesRef.current[threadId];
+      if (override) return override;
+    }
+    return engineName ?? "";
+  }, []);
+  /** 把名字覆盖贴到引擎回包上（列表 / 单会话 / resume 都要走一遍，否则一次刷新就回退） */
+  const withNameOverride = useCallback(<T extends { id: string; name?: string | null }>(entry: T): T => {
+    const name = effectiveThreadName(entry.id, entry.name);
+    return name && name !== entry.name ? { ...entry, name } : entry;
+  }, [effectiveThreadName]);
   // 项目右键菜单
   const [projectMenu, setProjectMenu] = useState<string | null>(null);
   // 会话置顶：纯前端偏好（引擎无 pin API），用 localStorage 存 id 列表。
@@ -12496,8 +12532,9 @@ const commandMatches = useMemo(() => {
     setThreadsLoading(true);
     try {
       const result = await window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc", archived: false });
-      // 用户显式改过的项目地址覆盖引擎值（引擎回包的 cwd 是创建时那个，见 cwdOverrides 处注释）
-      const list = (result.data ?? []).map((entry: Thread) => withCwdOverride(entry));
+      // 用户显式改过的项目地址 / 会话名覆盖引擎值（引擎回包的 cwd 是创建时那个；name 会被
+      // 「第一条用户消息」顶掉，见 nameOverrides 处注释）—— 两处都要贴，否则一次刷新就回退
+      const list = (result.data ?? []).map((entry: Thread) => withNameOverride(withCwdOverride(entry)));
       setThreads(list);
       // 启动耗时测量（09-17）：首屏会话列表到达 = 界面第一次有真实内容，splash 可以退场
       const boot = (window as unknown as { __boot?: Record<string, number> }).__boot;
@@ -14187,8 +14224,8 @@ const commandMatches = useMemo(() => {
 
     void window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc", archived: false })
       .then((threadResult) => {
-        // 同样要贴本地覆盖（否则这条路径一跑，用户在别处改过的项目地址就被引擎旧值顶回去）
-        const list = (threadResult.data ?? []).map((entry: Thread) => withCwdOverride(entry));
+        // 同样要贴本地覆盖（否则这条路径一跑，用户在别处改过的项目地址/名字就被引擎旧值顶回去）
+        const list = (threadResult.data ?? []).map((entry: Thread) => withNameOverride(withCwdOverride(entry)));
         setThreads(list);
         threadsRef.current = list;
         setServerStatus("ready");
@@ -16866,9 +16903,12 @@ function showEnhanceHint() {
     // 刚建的线程还没有 rollout，thread/resume 必报 "no rollout found"，会让界面掉回欢迎页。
     if (freshThread) {
       if (seq !== switchSeqRef.current) return;
-      threadRef.current = freshThread;
-      threadCacheRef.current.set(id, freshThread);
-      setThread(freshThread);
+      // 新建线程（含「导入会话记录」建的空会话）本地落地时也贴一次名字覆盖：
+      // 这条链上引擎侧那份名字要么没有（无回合 ⇒ 不在 thread/list），要么会被首条消息顶掉。
+      const fresh = withNameOverride(freshThread);
+      threadRef.current = fresh;
+      threadCacheRef.current.set(id, fresh);
+      setThread(fresh);
       const initialModel = storedModel || modelId || localStorage.getItem("default-model") || "";
       if (initialModel) {
         setModelId(initialModel);
@@ -16961,7 +17001,9 @@ function showEnhanceHint() {
       const result = await resumeThreadLight({ threadId: id, sandbox: resumeSandbox, approvalPolicy: resumeApproval, dynamicTools });
       // 残留运行态归一化（详见 normalizeLoadedThread）：旧会话丢过 turn/completed 的
       // 回合不能带着 inProgress 进渲染，否则永远走流式分支、展示回退到旧效果。
-      const loaded = runningThreadIdsRef.current.has(id) ? result.thread : normalizeLoadedThread(result.thread);
+      // 回包的 name 是引擎那一份（会被该会话第一条用户消息顶掉）⇒ 贴本地覆盖，用户改过的名字要赢
+      const loadedRaw = runningThreadIdsRef.current.has(id) ? result.thread : normalizeLoadedThread(result.thread);
+      const loaded = loadedRaw ? withNameOverride(loadedRaw) : loadedRaw;
       // 运行中会话：resume 快照可能落后于本地流式积累（切走期间 delta 仍在更新内存）。
       // 整体替换会让正文回退、随后 delta 从快照点重新追加 = 出字动画重放。逐 item 取更长的流式文本。
       const mergedLoaded = cached && loaded ? mergeLongerStreams(cached, loaded) : loaded;
@@ -17204,6 +17246,9 @@ function showEnhanceHint() {
   async function renameThread(id: string, value: string) {
     const name = value.trim();
     if (!name) return;
+    // ⛔ 名字**先落本地覆盖表**（它才是权威）：引擎那份 `name` 会被「该会话第一条用户消息」
+    //    顶掉（实测，见 nameOverrides 注释），所以不能反过来依赖引擎回包来显示。
+    rememberThreadName(id, name);
     const applyName = (entry: Thread) => entry.id === id ? { ...entry, name } : entry;
     setThreads((current) => current.map(applyName));
     const cached = threadCacheRef.current.get(id);
@@ -17213,13 +17258,14 @@ function showEnhanceHint() {
       threadRef.current = next;
       setThread(next);
     }
-    try {
-      await window.codex.request("thread/name/set", { threadId: id, name });
-      void refreshThreads();
-    } catch (error: any) {
-      await refreshThreads().catch(() => undefined);
-      setNotice(`重命名失败：${error.message}`);
-    }
+    // 引擎侧只是**尽力同步**（别的客户端 / 引擎自己的标题机制还看它），失败不回滚本地改名。
+    let engineError: any = null;
+    try { await window.codex.request("thread/name/set", { threadId: id, name }); }
+    catch (error: any) { engineError = error; }
+    await refreshThreads().catch(() => undefined);
+    // ⛔ 措辞必须说清「哪一侧没同步」：改名在本地已经生效，说「重命名失败」会让用户以为白改了
+    //    （这正是本 bug 的观感来源之一 —— 引擎侧那份名字随后还会被首条消息顶掉）。
+    if (engineError) setNotice(`已改名（引擎侧未同步：${engineError.message}）`);
   }
 
   async function clearCurrentConversation() {
