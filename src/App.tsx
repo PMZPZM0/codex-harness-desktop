@@ -9725,11 +9725,12 @@ export default function App() {
     // 归属判定：带 threadId 的一定是会话的事 ⇒ 贴对话区；不带 threadId 且设置弹窗开着 ⇒ 贴设置弹窗。
     // ⛔ 判定必须发生在**入队时**（弹窗开关状态会变，渲染时再判会串组）。
     const scope: "settings" | "chat" = threadId ? "chat" : (settingsOpenRef.current ? "settings" : "chat");
-    // 收纳规则（09-20 用户补充）：中心只收「用户**不在看**的那个会话」的通知，防漏重要消息——
-    // 通知正属于当前打开的会话时，浮层就在眼前，不会漏 ⇒ 不收纳（收纳了反而是噪音）。
-    // 无 threadId 的（系统 / 设置页）不属于任何对话框，照常留档。
-    const belongsToCurrentThread = Boolean(threadId && threadId === threadRef.current?.id);
-    if (!belongsToCurrentThread) {
+    // 收纳规则（09-20 用户两次反馈后定稿）：中心**只收「别的会话」产生的通知**——
+    // 那才是"不在看的对话框"里可能漏掉的消息。设置里的操作提示（保存成功之类）和
+    // 对话框的即时反馈（"已复制"等）都是当下操作直接引起的、无会话归属，看得到 ⇒ 不收纳
+    // （此前"非当前会话才不收"的口径把这些也收了进去，用户点名纠正）。
+    const belongsToOtherThread = Boolean(threadId && threadId !== threadRef.current?.id);
+    if (belongsToOtherThread) {
       setNoticeCenter((current) => [{ id, text, threadId, scope, at: Date.now(), read: false }, ...current].slice(0, 200));
     }
     // ⛔ 「不准跨对话框展示」（09-20）：设置弹窗开着时，会话来源的通知**不再弹浮层**
