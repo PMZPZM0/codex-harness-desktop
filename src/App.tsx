@@ -8906,8 +8906,8 @@ export default function App() {
     if (next === downloadSource) return;
     setDownloadSource(next);
     const labels: Record<string, string> = {
-      auto: "自动（国内镜像优先，失败逐通道回落）",
-      mirror: "国内镜像优先（npmmirror，失败回落官方直连）",
+      auto: "自动（国内优先：镜像/加速在前，失败回落直连）",
+      mirror: "国内镜像优先（npmmirror / gh 加速）",
       ghproxy: "GitHub 加速 · gh-proxy（失败回落官方直连）",
       ghfast: "GitHub 加速 · ghfast（失败回落官方直连）",
       direct: "官方直连",
@@ -14257,14 +14257,14 @@ const commandMatches = useMemo(() => {
    *  （terminal.ts 非 win32 分支取 SHELL，默认 zsh），不依赖 pwsh，标成「缺了干不了活」反而误导；
    *  pwsh 在 mac 仍可从「开发工具」页按需装。 */
   const envSpecs = useMemo(() => ENV_CHECK_SPEC.filter((spec) => spec.id !== "pwsh" || !isMacPlatform()), []);
-  /** 体检项（必备：模型 / 工作区 / Git / ripgrep / PowerShell 7(仅 Windows)；常用：Python / jq / 7-Zip）。
+  /** 体检项（必备：模型 / Git / ripgrep / PowerShell 7(仅 Windows)；常用：Python / jq / 7-Zip）。
+   *  ⛔ 09-20 用户定稿：工作区已移出体检（不要必选，后续用户自己配置），体检只管模型与工具下载。
    *  运行时的显示名与体积取自 devRuntimes —— 与「开发工具」页同一份数据，不会两处打架。 */
   const envItems: EnvCheckState[] = useMemo(() => envSpecs.map((spec) => {
     if (spec.id === "model") return { id: "model", name: spec.fallbackName, why: spec.why, size: "", core: true, ok: Boolean(customModel), go: "model" as const };
-    if (spec.id === "workspace") return { id: "workspace", name: spec.fallbackName, why: spec.why, size: "", core: true, ok: Boolean(workspace), go: "workspace" as const };
     const runtime = devRuntimes.find((entry) => entry.id === spec.id);
     return { id: spec.id, name: runtime?.name ?? spec.fallbackName, why: spec.why, size: runtime?.size ?? "", core: spec.core, ok: Boolean(runtime?.installed), installing: Boolean(runtime?.installing) };
-  }), [devRuntimes, workspace, customModel, envSpecs]);
+  }), [devRuntimes, customModel, envSpecs]);
 
   /** 一键安装体检缺项 —— **后台安装**（09-18 用户要求：「加一个后台安装功能，弹窗要知
    *  道缩小，安装完成自动消失」）：点下去弹窗立刻收起，右下角只剩一枚进度角标，
@@ -14374,7 +14374,6 @@ const commandMatches = useMemo(() => {
           .map((entry) => `${entry.id}:${entry.installed ? "ok" : "missing"}`);
       const missingCore = envSpecs.filter((spec) => spec.core).filter((spec) => {
         if (spec.id === "model") return !customModel;
-        if (spec.id === "workspace") return !workspace;
         return !list.find((entry) => entry.id === spec.id)?.installed;
       });
       dbg.missingCore = missingCore.map((spec) => spec.id);
@@ -18819,10 +18818,10 @@ const commandMatches = useMemo(() => {
               stage={envStage}
               speed={envSpeed}
               onInstall={(ids) => void installEnvMissing(ids)}
-              onGo={(target) => {
+              onGo={() => {
+                // 只剩模型一项会跳转（09-20 工作区已移出体检）；去模型页配置
                 setEnvCheckOpen(false);
-                // 模型缺 → 去模型页；工作区缺 → 去「控制台」（该页管理"工作区、数据目录与应用行为"）
-                setSettingsPage(target === "model" ? "model" : "general");
+                setSettingsPage("model");
                 setSettingsOpen(true);
               }}
               onClose={(dontAsk) => {
@@ -20363,8 +20362,8 @@ const commandMatches = useMemo(() => {
               <div className="devtools-source-row" role="group" aria-label="下载源选择">
                 <span className="settings-subhead"><Download size={13} />下载源</span>
                 <select className="accel-select" value={downloadSource} onChange={(event) => changeDownloadSource(event.target.value as typeof downloadSource)} aria-label="选择下载源">
-                  <option value="auto">自动（国内镜像优先，失败逐通道回落）</option>
-                  <option value="mirror">国内镜像优先（npmmirror）</option>
+                  <option value="auto">自动（国内优先：镜像/加速在前，直连兜底）</option>
+                  <option value="mirror">国内镜像优先（npmmirror / gh 加速）</option>
                   <option value="ghproxy">GitHub 加速 · gh-proxy</option>
                   <option value="ghfast">GitHub 加速 · ghfast</option>
                   <option value="direct">官方直连</option>

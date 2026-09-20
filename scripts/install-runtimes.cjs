@@ -41,7 +41,9 @@ const NINJA_URL = "https://github.com/ninja-build/ninja/releases/latest/download
 const SEVENZIP_URL = "https://www.7-zip.org/a/7zr.exe";
 const YTDLP_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
 // GitHub 直连在国内经常不可达；gh-proxy.com / ghfast.top 加速前缀实测稳定（rg/cmake/uv/7zip 均可 206 分段续传）。
-// 自动模式下载顺序：镜像 → 本机代理（PROXY 环境变量，默认空）→ 直连 → gh-proxy。
+// 自动模式（默认）= 国内优先：镜像 → 本机代理（PROXY 环境变量，默认空）→ gh 加速 → 直连兜底。
+// ⛔ 09-20 修订：GitHub 资产**加速在前、直连兜底**——直连不会"失败"只会龟速（PowerShell 7 实测 7% 爬行），
+//    排在加速前面等于永远轮不到加速。
 const GHPROXY = "https://gh-proxy.com/";
 const GHFAST = "https://ghfast.top/";
 const RG_VERSION = "14.1.1";
@@ -280,24 +282,27 @@ async function download(url, file) {
     "--connect-timeout", "30", "--continue-at", "-", "-o", file];
   const mirror = chinaMirrorUrl(url);
   const isGh = url.includes("github.com");
-  // 各通道构造器：mirrorFirst = 有国内镜像则镜像打头（回落直连）；gh 加速前缀只对 github.com 资产有意义。
-  const mirrorFirst = mirror ? [["国内镜像 npmmirror", curlArgs.slice(), mirror], ["直连", curlArgs.slice(), url]] : [["直连", curlArgs.slice(), url]];
-  const ghFirst = (prefix, label) => (isGh ? [[label, curlArgs.slice(), prefix + url], ["直连", curlArgs.slice(), url]] : mirrorFirst);
+  const ghAccels = isGh
+    ? [["gh-proxy 加速", curlArgs.slice(), GHPROXY + url], ["ghfast 加速", curlArgs.slice(), GHFAST + url]]
+    : [];
+  const direct = [["直连", curlArgs.slice(), url]];
   const viaProxy = PROXY ? [[`本机代理 ${PROXY}`, [...curlArgs, "--proxy", PROXY], url]] : [];
   // 按用户选的源组装通道顺序；所选源对当前资产不可用时回落「直连」，保证一定有可行通道。
   let attempts;
   switch (SOURCE) {
-    case "direct": attempts = [["直连", curlArgs.slice(), url]]; break;
-    case "mirror": attempts = mirrorFirst; break;
-    case "ghproxy": attempts = ghFirst(GHPROXY, "gh-proxy 加速"); break;
-    case "ghfast": attempts = ghFirst(GHFAST, "ghfast 加速"); break;
-    case "proxy": attempts = [...viaProxy, ["直连", curlArgs.slice(), url]]; break;
+    case "direct": attempts = direct; break;
+    // 国内优先（mirror）：有 npmmirror 镜像走镜像；纯 GitHub 资产没有镜像，国内优先 = gh 加速打头
+    case "mirror": attempts = mirror ? [["国内镜像 npmmirror", curlArgs.slice(), mirror], ...direct] : [...ghAccels, ...direct]; break;
+    case "ghproxy": attempts = isGh ? [ghAccels[0], ...direct] : [...ghAccels, ...direct]; break;
+    case "ghfast": attempts = isGh ? [ghAccels[1], ...direct] : [...ghAccels, ...direct]; break;
+    case "proxy": attempts = [...viaProxy, ...direct]; break;
+    // auto（默认）= 国内优先：镜像 → (代理) → gh 加速 → 直连
     case "auto":
     default: attempts = [
       ...(mirror ? [["国内镜像 npmmirror", curlArgs.slice(), mirror]] : []),
       ...viaProxy,
-      ["直连", curlArgs.slice(), url],
-      ...(isGh ? [["gh-proxy 加速", curlArgs.slice(), GHPROXY + url]] : []),
+      ...ghAccels,
+      ...direct,
     ]; break;
   }
   if (SOURCE !== "auto") console.log(`[download] 指定下载源: ${SOURCE}`);
