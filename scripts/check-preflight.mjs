@@ -7052,6 +7052,45 @@ w.postMessage({id:1,op:"list",root});
   );
 }
 
+// ---------- 【78】会话改名必须由**本地覆盖**权威（09-20 用户报「导入会话改名不生效」）----------
+// 实测根因（隔离 CODEX_HOME + 真实 app-server）：
+//   ① `thread/name/set` 返回 `{}` 不报错，但 `thread/list` 里的 `name` **仍是引擎按该会话首条
+//      用户消息自动生成的那个**（改完立刻读也没变）⇒ 界面若跟着引擎走，改名永远不显示；
+//   ② 旧 `renameThread` 先做本地乐观更新，紧接着 `refreshThreads()` 用引擎那份**整表替换**
+//      ⇒ 同一拍就把改动抹掉（观感 = 改了一点反应都没有）。
+// 修法与既有 cwdOverrides 同构：用户显式改过的名字由本地持有，并在**所有**引擎回包落地处贴回。
+{
+  const app78 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  (/localStorage\.getItem\("thread-name-override-v1"\)/.test(app78) ? ok : fail)(
+    "【78】本地名字覆盖表存在（thread-name-override-v1）"
+  );
+  (/const rememberThreadName = useCallback/.test(app78) && /const effectiveThreadName = useCallback/.test(app78) ? ok : fail)(
+    "【78】有 rememberThreadName / effectiveThreadName（唯一写入点 + 唯一读取口径）"
+  );
+  // 覆盖必须贴在**每一处**引擎回包落地处，漏一处就会「刷新一下名字弹回去」
+  const listSites = (app78.match(/withNameOverride\(withCwdOverride\(entry\)\)/g) || []).length;
+  (listSites === 2 ? ok : fail)(
+    `【78】两处 thread/list 入口都贴了名字覆盖（实际 ${listSites} 处 —— 漏一处刷新就回退）`
+  );
+  (/withNameOverride\(freshThread\)/.test(app78) ? ok : fail)(
+    "【78】新建/导入会话本地落地时也贴覆盖（导入建的会话走的正是这条）"
+  );
+  (/withNameOverride\(loadedRaw\)/.test(app78) ? ok : fail)(
+    "【78】resume 回包也贴覆盖（打开会话时顶栏标题才不会回退）"
+  );
+  // 写入点在乐观更新之前：引擎那份不可靠，本地必须先落
+  const rn = app78.indexOf("async function renameThread");
+  const body = rn >= 0 ? app78.slice(rn, rn + 1600) : "";
+  (body && /rememberThreadName\(id, name\);[\s\S]{0,260}?setThreads\(\(current\) => current\.map\(applyName\)\)/.test(body) ? ok : fail)(
+    "【78】renameThread 先落本地覆盖再做乐观更新（顺序反了就会被刷新覆盖）"
+  );
+  // 不许回退成「靠引擎回包显示」：改名后必须仍然调 refreshThreads（靠覆盖兜住），
+  // 且失败提示不得说成「重命名失败」（本地已生效，说失败会让用户以为白改）
+  (/已改名（引擎侧未同步：\$\{engineError\.message\}）/.test(body) ? ok : fail)(
+    "【78】引擎侧同步失败时的措辞是「已改名（引擎侧未同步…）」而不是「重命名失败」"
+  );
+}
+
 
 if (hardFails === 0) {
   console.log(C.green(`预检通过${warns ? `（${warns} 条告警，见上）` : ""}`));
