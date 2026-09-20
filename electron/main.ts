@@ -43,6 +43,7 @@ import { feishuQrCancel, feishuQrSnapshot, feishuQrStart } from "./feishu-qr-con
 import { WecomWebhookGateway } from "./wecom-webhook-gateway";
 import { readPersonalization, writePersonalization, applyPersonalizationToAgentsMd, buildAgentsMd, migrateGreetedForExistingUsers } from "./personalization";
 import { developerInstructionsLine } from "./developer-instructions";
+import { shouldRegisterNuphus, withNuphusMasks, withNuphusMasksForRules } from "./automation-policy";
 import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings } from "./app-settings";
 import { checkLatestUpdate, defaultDownloadDir, downloadUpdate, fileExists, installUpdate, UPDATE_CHANNEL } from "./updates";
 import { checkEngineUpdate, performEngineUpdate } from "./engine-updater";
@@ -1820,7 +1821,9 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
   const { preserved, mcpExtra } = await readUserConfigSplit(ownedMcpServers, mcpOverrides);
   // 工具级权限规则（deny/ask/allow）→ 引擎真正支持的键（disabled_tools / approval_mode）。
   // 见 mcpToolRulesOf 上方 09-16 实证说明：旧实现写 [permissions.*] 既无效又会把整份配置打废。
-  const mcpToolRules = mcpToolRulesOf(mcpOverrides);
+  // ⛔ 再叠加**总闸掩码**（09-20）：关掉「桌面自动化 / 浏览器自动化」的那一组，整体进 disabled_tools
+  //    —— 工具从引擎工具表消失 ⇒ 真阻断（此前浏览器总闸只是提示词级控制）。
+  const mcpToolRules = withNuphusMasksForRules(mcpToolRulesOf(mcpOverrides), { desktop: desktopAuto, browser: browserAuto });
   await writeMcpOverrides(mcpOverrides);
   const connectorEnvValue = connectorEnv(connectors);
   // 官方订阅走 chatgpt.com 后端（区域受限）：引擎也要走用户配置的代理，否则 Cloudflare 403/直连超时
@@ -2050,15 +2053,16 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
         return [];
       }
     })()),
-    // 内置桌面自动化 MCP：受覆盖表 + 桌面自动化开关双重控制，任一关闭则整段不写入。
-    // 全量注册 nuphus 0.2.2 的**全部 38 个工具**（09-20 实测枚举：桌面 14 + 浏览器 24），
-    // schema 虽占 ~10k 前缀，但作为 prompt 常量前缀可被上游缓存；
-    // 引擎工具列表完整暴露 desktop_*/browser_*，能力不阉割。
-    // ⚠️ 因此 browser_* 的可用性绑在**桌面自动化**总闸上（nuphus 是同一个服务器）：
-    //    关掉桌面自动化 → 浏览器 MCP 工具也一起消失（此时浏览器侧只剩 playwright-cli）。
-    //    想让两者独立开关，需要按开关下发 disabled_tools 掩码（待办，见
-    //    .workbuddy/artifacts/automation-unification-plan.md 第 3.3 节）。
-    ...(desktopAuto && nuphusBinary() && mcpOverrideEnabled(mcpOverrides, "nuphus") ? [
+    // 内置桌面自动化 MCP：受覆盖表 + 两个自动化总闸控制。
+    // ⛔ 09-20 修正注册条件（原先只看 desktopAuto）：nuphus 是**同一个 MCP 服务器**同时提供
+    //    `desktop_*` 与 `browser_*`，只看桌面开关会带来两个问题 ——
+    //    ① 关掉桌面自动化 ⇒ `browser_*` 被一起带走，「只给浏览器、不给真实键鼠」做不到（安全边界缺陷）；
+    //    ② 关掉浏览器自动化 ⇒ `browser_*` 仍全量注册，只是提示词叫模型别用（**不是硬控制**）。
+    //    现在改为「任一总闸开启就注册」，关闭的那一组由 `disabled_tools` 掩码整体摘掉
+    //    （见 automation-policy.ts 的 nuphusDisabledTools）。
+    // 全量注册 nuphus 的**全部 38 个工具**（09-20 实测枚举：桌面 15 + 浏览器 23），
+    // schema 约占 ~10k 前缀，但作为 prompt 常量前缀可被上游缓存。
+    ...(shouldRegisterNuphus({ desktop: desktopAuto, browser: browserAuto }) && nuphusBinary() && mcpOverrideEnabled(mcpOverrides, "nuphus") ? [
       "[mcp_servers.nuphus]",
       `command = "${escapeToml(nuphusBinary())}"`,
       "args = []",
@@ -6817,11 +6821,19 @@ ipcMain.handle("mcp-servers:set-enabled", async (_event, input: { ids?: unknown;
 // 读接口返回 { server: { tool: mode } }，供渲染层展示每个工具的当前档位。
 ipcMain.handle("mcp-servers:permissions", async () => {
   const overrides = await readMcpOverrides();
-  return Object.fromEntries(
+  const view = Object.fromEntries(
     Object.entries(overrides)
       .filter(([, entry]) => entry?.permissions && Object.keys(entry.permissions).length)
       .map(([name, entry]) => [name, entry!.permissions])
   );
+  // ⛔ 与 config.toml **同源**（09-20）：把总闸掩码一并反映到 UI。
+  //    否则总闸关着时，界面显示「未设权限规则」而配置里那些工具已被 disabled_tools 摘掉
+  //    —— 属于「显示侧与落盘不一致」，本项目修过同类 bug（供应商启用态、本地地址判定）。
+  const appSettings = await readAppSettings(app.getPath("userData"));
+  return withNuphusMasks(view as Record<string, Record<string, "deny" | "ask" | "allow">>, {
+    desktop: appSettings.desktopAutomation !== false,
+    browser: appSettings.browserAutomation !== false,
+  });
 });
 ipcMain.handle("mcp-servers:set-tool-permission", async (_event, input: { server?: unknown; tool?: unknown; mode?: unknown }) => {
   const serverId = String(input.server ?? "").trim();

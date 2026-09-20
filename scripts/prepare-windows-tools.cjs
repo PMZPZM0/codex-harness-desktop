@@ -39,7 +39,14 @@ fs.mkdirSync(downloads, { recursive: true });
 fs.mkdirSync(tools, { recursive: true });
 
 const NODE_VERSION = "v24.19.0";
-const NUPHUS_VERSION = "0.2.2";
+// ⛔ nuphus-mcp 版本：**四处必须同源**，漏一处就两端版本不一致或 mac x64 取源对不上：
+//   ① 本文件 NUPHUS_VERSION
+//   ② scripts/prepare-mac-tools.cjs 的 `@nuphus/nuphus-mcp@X`
+//   ③ scripts/prepare-mac-tools.cjs 的 manifest `nuphus: "X"`
+//   ④ .github/workflows/build-mac.yml 的 `ref: vX`（mac x64 走 cargo 从 tag 取源）
+//   09-20 升 0.2.3：上游该版本只有「HUD 视觉重构 + TLS 依赖安全修复」，**工具能力零变化**
+//   （我们打包本来就 NUPHUS_MCP_HUD=off），升级理由是安全依赖。
+const NUPHUS_VERSION = "0.2.3";
 const PLAYWRIGHT_CLI_VERSION = "0.1.18";
 const PLAYWRIGHT_CORE_VERSION = "1.62.1";
 const PONYTAIL_VERSION = "v4.9.0";

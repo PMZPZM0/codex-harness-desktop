@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: mrpulor-gh/nuphus-mcp
-          ref: v0.2.2
+          ref: v0.2.3
           path: .test-tmp/nuphus-src
 
       - name: Build native desktop engine (Intel)

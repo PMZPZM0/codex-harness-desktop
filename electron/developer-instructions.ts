@@ -26,7 +26,7 @@ const LANGUAGE_INSTRUCTIONS =
  *  把「直接调用」这条路藏起来了（模型被迫走 CLI，每步多一次进程往返）。
  *  细节留在技能里（渐进披露），这里只给优先级与判据，避免每轮多花几百 token。 */
 const DESKTOP_INSTRUCTIONS =
-  "\n\nAUTOMATION TOOLKIT (pre-installed; use ONLY when the task actually needs it — the tools themselves are NOT described in your context by default):\n1) Desktop automation — the nuphus MCP tools are ALREADY REGISTERED in your tool list with the `desktop_*` prefix; call them directly, no script needed. Loop: `desktop_windows_list` → `desktop_window_activate` → observe (`desktop_screenshot` / `desktop_perceive`) → act (`desktop_mouse` / `desktop_input`, pass confirm=true) → verify with another screenshot. Take click coordinates from `desktop_perceive` (runs locally, free); `desktop_vision` coordinates are explicitly unreliable — never click with them. For long text (>500 chars) write the clipboard first and paste (Ctrl+V on Windows, Cmd+V on macOS — never hardcode one platform). `nuphus-call` (on PATH) is the equivalent CLI fallback: `nuphus-call <tool> key=value ...`; run it with no args to list every tool. Never automate a UAC / privilege-elevation prompt — stop and ask the user.";
+  "\n\nAUTOMATION TOOLKIT (pre-installed; use ONLY when the task actually needs it — the tools themselves are NOT described in your context by default):\n1) Desktop automation — IF `desktop_windows_list` is in your tool list, the nuphus MCP desktop tools are already registered; call them directly, no script needed. Loop: `desktop_windows_list` → `desktop_window_activate` → observe (`desktop_screenshot` / `desktop_perceive`) → act (`desktop_mouse` / `desktop_input`, pass confirm=true) → verify with another screenshot. Take click coordinates from `desktop_perceive` (runs locally, free); `desktop_vision` coordinates are explicitly unreliable — never click with them. For long text (>500 chars) write the clipboard first and paste (Ctrl+V on Windows, Cmd+V on macOS — never hardcode one platform). `nuphus-call` (on PATH) is the equivalent CLI fallback: `nuphus-call <tool> key=value ...`; run it with no args to list every tool. IF the tools are NOT in your list, desktop automation is switched off (the tools are hard-removed, not broken): do not call `desktop_*`, do not fall back to `nuphus-call` to bypass the switch, and just tell the user it is disabled in Settings → Automation. Never automate a UAC / privilege-elevation prompt — stop and ask the user.";
 
 /**
  * 浏览器自动化说明。
@@ -68,13 +68,14 @@ export function buildDevInstructions(input: { desktop?: boolean; browser?: boole
   if (input.imagePlugin) text += IMAGE_INSTRUCTIONS(mediaCommand);
   if (input.visionPlugin) text += VISION_INSTRUCTIONS(mediaCommand);
   // 深层联动软约束：自动化能力被关闭时，在基础指令里明确告诉模型不要调用这些工具。
-  // 这能覆盖技能/插件可能携带的调用说明，降低模型在开关关闭时仍尝试调用的概率。
-  // 注意：这是行为引导而非硬阻断；第三方 MCP/技能仍可能通过其他路径暴露相同能力。
+  // 09-20：MCP 工具（`desktop_*` / `browser_*`）现在会被 disabled_tools **硬移除**，所以这里
+  // 重点变成「别用命令行兜底绕过总闸」—— nuphus-call / playwright-cli 仍在 PATH 上，
+  // 那是提示词管得住、配置管不到的一层。
   if (!desktop || !browser) {
-    const disabled: string[] = [];
-    if (!desktop) disabled.push("nuphus-call 及 desktop_* 工具");
-    if (!browser) disabled.push("playwright-cli、cloakbrowser 及 browser_* 工具");
-    text += `\n\nAUTOMATION DISABLED NOTE: 以下自动化能力已在应用设置中关闭，当前任务禁止使用：${disabled.join("、")}。即使其他技能或插件提到这些工具，也不要调用它们。`;
+    const notes: string[] = [];
+    if (!desktop) notes.push("桌面自动化：`desktop_*` MCP 工具已被硬移除，且不得用 `nuphus-call` 从命令行绕过");
+    if (!browser) notes.push("浏览器自动化：`browser_*` MCP 工具已被硬移除，且不得用 `playwright-cli` / `cloakbrowser` 绕过");
+    text += `\n\nAUTOMATION DISABLED NOTE: 以下能力已在应用设置中关闭，当前任务禁止使用：${notes.join("；")}。即使其他技能或插件提到这些工具，也不要调用它们。`;
   }
   return text;
 }
