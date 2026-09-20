@@ -184,6 +184,26 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 - **指纹内核（cloak-browsers）仅用于自动化场景**（模型经 `cloakbrowser` CLI 调用）；浏览器视图的「隐身浏览」按钮为预留位，尚未接入 CDP 嵌入。
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
+- **⛔ 钉顶口径定稿：运行中钉顶、运行完成不钉（09-20 用户）—— 附一次「把钉顶改坏」的撤回记录**：
+  用户口径原话：「运行中的话就钉顶，运行完成就不要钉」。
+  - **本次撤回的错**：12:47 为解「回复完下方一大片空白」，把 `.timeline` 改成 `display:flex` +
+    首元素 `margin-top: auto`（内容靠底）。**真机探针实测它打坏钉顶**：`flex-shrink` 默认 1 ⇒
+    `.timeline-bottom-spacer` 设 300px **实际只渲染 276px**；而钉顶落点公式读的正是
+    `pad.offsetHeight`（**实际渲染高度**，见 `scrollHeightNoPad = scrollHeight − pad.offsetHeight`）
+    ⇒ 落点永远差一截；首元素 auto margin 还会把偏移算进 `anchorTopScroll`，与公式打架
+    ⇒ pad 在 0↔数百 px 间振荡。用户当日实测「钉顶+发送特效你怎么又给我弄没了」。
+    ⇒ **`.timeline` 的布局模型是钉顶几何的一部分**，不许改；要改必须先读 `pinSentMessage` /
+    `shrinkAnchorPad` 的公式，并用真机验「落点 == `ANCHOR_TOP_OFFSET_PX`（36）」。
+  - **回合结束的处理已改**（`src/App.tsx` 的 turn/completed 分支）：旧口径是「钉顶仍生效就保留留白」
+    （09-18 定的），代价是完成后下方残留一大片空白（09-20 中午用户截图）。现按用户定稿改为
+    **完成即脱钉**：解除锚定（`anchorTopRef=false`）+ `clearAnchorPad()` + `stickToBottom` 贴底回
+    内容末尾。本质是二选一 —— 留白量 N 与「滚到底时内容底部到视口底部的距离」**严格 1:1**，
+    用户选「不要空白」，代价是完成后消息不再停在顶部。⚠️ 仍限定**当前会话**（后台会话完成不许
+    清当前会话的留白，否则被 clamp 的 scrollTop 掉下来 = 画面无故跳）。
+  - 真机实测（真实发消息，非静态会话）：留白 `style=321px` / `rendered=321px`（未被压缩）、
+    发送动画 `justSent=true` + `turn-appear`、完成后 `pad=0px` 且「内容底部到视口底 **0px**」。
+  - 守卫：【51】7 条（含「完成即脱钉」+「不得残留旧口径」）＋【73】3 条（timeline 不得是
+    flex/grid、spacer 不得 `flex-grow`、样式表里保留撤回说明防回退）。
 - **⛔ 自动化能力「接线」：提示词改为首选已注册的 `browser_*` MCP 工具（09-20，改完直接生效）**：
   盘点发现一个纯接线问题 —— 包内 nuphus MCP **早已注册 38 个工具**（桌面 15 + 浏览器 23，实测枚举），
   但 `builtin-skills.ts` 的技能正文里 `playwright-cli` 出现 **23 次**、`browser_*` **0 次** ⇒

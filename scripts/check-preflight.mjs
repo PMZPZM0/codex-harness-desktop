@@ -2313,6 +2313,18 @@ console.log(C.bold("\n【工具下载源】设置持久化 + 三条下载通道�
     ? ok("开发工具页下载源选择器在位（六档选项，写入 app-settings 即时生效）")
     : fail("开发工具页的下载源选择器被摘 —— 用户没法换源");
 }
+// ---------- 工具安装「验证」必须非致命（09-20 用户：Miniconda 装完了却报「安装失败」） ----------
+console.log(C.bold("\n【工具安装验证】verify 只是快照，失败不得连坐整个安装"));
+{
+  const runtimeSrc2 = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
+  // Windows main() 的 verify 段：git/rg/uv/cmake/conda/gcc/ffmpeg/code 必须走 safeVerify（try/catch 非致命）；
+  // conda 失败时附「路径含空格」的已知限制说明（conda.exe 启动器限制，环境本身已装好）。
+  (/const safeVerify = \(label, command/.test(runtimeSrc2)
+    && ["git", "rg", "uv", "cmake", "conda", "gcc", "ffmpeg", "code"].every((label) => runtimeSrc2.includes(`safeVerify("${label}"`))
+    && !/\[verify conda\]", runCommand/.test(runtimeSrc2))
+    ? ok("verify 全部非致命（safeVerify 包裹；conda 失败附空格路径限制说明）")
+    : fail("verify 又变回致命了 —— 单条验证失败会把装好的工具连坐成「安装失败」");
+}
 // ---------- 【15】供应商列表交互（点开关要切详情，不许只拦冒泡） ----------
 
 console.log(C.bold("\n【15】供应商列表：点开关（启用/停用）右侧详情必须跟随"));
@@ -5490,9 +5502,15 @@ w.postMessage({id:1,op:"list",root});
   (!/pinThreadIdRef\.current = threadId \?\? null;/.test(appCode51)
     ? ok : fail)("【51】没有残留「归属 = threadId ?? null」的旧写法");
 
-  // ④ 回合结束只在钉顶已失效时才清留白（短回复必须保留，否则一完成就掉）
-  (/if \(params\.threadId === threadRef\.current\?\.id && !anchorTopRef\.current\) clearAnchorPad\(\);/.test(appCode51)
-    ? ok : fail)("【51】回合结束只在钉顶已失效时清留白（短回复不再一完成就掉）");
+  // ④ ⛔ 09-20 用户定稿「运行中的话就钉顶，运行完成就不要钉」：**回合结束即脱钉** ——
+  //    解除锚定（anchorTopRef=false）+ 留白归零 + 贴底回到内容末尾（下方不留空白）。
+  //    旧口径（09-18「钉顶仍生效就保留」）的代价是完成后下方残留一大片空白（09-20 中午截图），
+  //    已按用户新口径废弃 —— 留白量 N 与「滚到底时内容底部到视口底部的距离」严格 1:1，
+  //    留着 N 就有 N 的空白，用户选了「不要空白」。
+  (/if \(params\.threadId === threadRef\.current\?\.id\) \{[\s\S]{0,200}?anchorTopRef\.current = false;/.test(appCode51)
+    ? ok : fail)("【51】回合结束即脱钉（09-20 用户定稿：运行中钉顶、运行完成不钉）");
+  (!/&& !anchorTopRef\.current\) clearAnchorPad\(\);/.test(appCode51)
+    ? ok : fail)("【51】没有残留「只在钉顶已失效时清留白」的旧口径（那会在完成后留下大片空白）");
 
   // ⑤ 侧栏会话行带 data-thread-id：验收脚本按 id 切换才可靠
   //    （按标题找会因列表重排/标题变化而"找不到会话行" → 观测无效，本轮就是这么白跑一轮的）
@@ -6674,18 +6692,29 @@ w.postMessage({id:1,op:"list",root});
   (/后台运行/.test(app73) ? ok : fail)(
     "【73】安装弹窗支持「后台运行」：未完成也能关，下载继续、完成后再通知"
   );
-  // ⑮ 短会话靠底（09-20 用户：「回复完了，下面还有这么多空白」）
-  //   根因不是 bug：钉顶在内容不足一屏时要在**下方**补留白才滚得上去，而 09-18 用户要求
-  //   「短回复别把钉顶丢掉」→ 那份留白被特意保留 ⇒ 下方一大片空白。正解是让内容靠底。
-  (/\.timeline:not\(\.empty-state\) \{[\s\S]{0,140}?display: flex/.test(css73) ? ok : fail)(
-    "【73】非欢迎页的 timeline 是 flex column（靠底布局的前提）"
-  );
-  (/\.timeline:not\(\.empty-state\) > :first-child \{\s*margin-top: auto/.test(css73) ? ok : fail)(
-    "【73】短会话靠底用首元素 auto margin（内容超出时自动解析为 0，对钉顶/跟随零影响）"
-  );
-  (!/\.timeline:not\(\.empty-state\)[\s\S]{0,200}?justify-content: flex-end/.test(css73) ? ok : fail)(
-    "【73】不得改用 flex-end 靠底（会把超出视口的内容顶出上沿且滚不上去）"
-  );
+  // ⑮ ⛔ 撤回记录（09-20 下午用户实测：「钉顶+发送特效你怎么又给我弄没了」）：
+  //   12:47 曾加过「短会话内容靠底」= `.timeline { display:flex }` + 首元素 `margin-top: auto`。
+  //   真机探针实测它**打坏钉顶**：`.timeline-bottom-spacer` 作为 flex item 的 `flex-shrink` 默认 1
+  //   ⇒ 设 300px 只渲染 276px；而钉顶落点公式读的正是 `pad.offsetHeight`（**实际渲染高度**，
+  //   见 `scrollHeightNoPad = scrollHeight − pad.offsetHeight`）⇒ 落点永远差一截；
+  //   且首元素 auto margin 会把偏移算进 `anchorTopScroll`，与公式打架 ⇒ pad 在 0↔数百 px 振荡。
+  //   故守卫改成**反向**：钉顶几何依赖 `.timeline` 的布局模型，不许改成 flex/grid。
+  {
+    const timelineBlock = (/\.timeline:not\(\.empty-state\)\s*\{([^}]*)\}/.exec(css73) || [])[1] ?? "";
+    (!/display:\s*(flex|grid)/.test(timelineBlock) ? ok : fail)(
+      "【73】非欢迎页的 timeline 不得是 flex/grid 容器（会压缩底部留白 spacer → 钉顶落点公式失效）"
+    );
+    // 留白 spacer 的高度必须是**显式 height**：钉顶公式要求它是可预测定值，
+    // flex-grow 会让它随剩余空间伸缩（公式里的 pad.offsetHeight 就失去意义）。
+    const spacerBlock = (/\.timeline-bottom-spacer\s*\{([^}]*)\}/.exec(css73) || [])[1] ?? "";
+    (spacerBlock && !/flex(-grow)?\s*:\s*(1|auto)/.test(spacerBlock) ? ok : fail)(
+      "【73】底部留白 spacer 必须用显式 height（不得 flex-grow：钉顶公式按定值算落点）"
+    );
+    // 撤回原因必须留在样式表里，防止后来者再把「靠底」加回来（这条是真机实测的代价换来的）
+    (/已证明会打坏钉顶/.test(css73) ? ok : fail)(
+      "【73】样式表保留「timeline 不得改 flex 靠底」的撤回说明（防回退）"
+    );
+  }
   (/notice-stack-in/.test(css73) ? ok : fail)(
     "【73】堆叠子项必须用自己的入场动画（旧 notice-in 最终帧 translate(-50%) 配 both 会把子项永久左移——靠左 bug 根因）"
   );
