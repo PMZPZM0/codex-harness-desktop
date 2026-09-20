@@ -67,7 +67,7 @@
 | 来源 | <https://github.com/microsoft/markitdown> |
 | 作者 | Microsoft 及贡献者 |
 | 许可 | MIT |
-| 引入方式 | **内置**：装在内置 Python 里（`scripts/install-runtimes.cjs` 的 `DOC_PACKAGES`，已并入默认 pip 安装清单 ⇒ 随 Python 一起装好）；库源码不随包分发。「开发工具」页另有一张同名列的卡片，供早版本升级的用户补装 / 修复。 |
+| 引入方式 | **按需下载，不内置**：装有清华 PyPI 镜像（装一次约 4~5 分钟），没必要让每个用户默认付约 120 MB。两个入口：① 「设置 → 开发工具 → 文档转换（markitdown）」点一次安装；② Codex 自己用清华镜像 `pip install`（由内置技能 `document-convert` 给出命令）。库源码不随包分发。 |
 | 安装的 extras | `markitdown[pdf,docx,pptx]` + 单独的 `openpyxl`。<br>**不含 `[xlsx]`**：它的 Excel 转换器硬 `import pandas`（+59 MB）—— 本应用改用已装的 openpyxl 直读 Excel（见内置技能 `document-convert`）。<br>**不用 `[all]`**：实测 273 MB+，含 Azure 云端文档智能 SDK、音频与 YouTube 依赖，与本地文件转换无关。 |
 | 体积 | 约 120 MB（实测。其中 onnxruntime 35 MB + numpy 31 MB 是 markitdown 基础依赖 magika 的硬依赖，规避不掉；PPT 的 Pillow 约 18 MB） |
 | 引入日期 | 2026-09-21 |

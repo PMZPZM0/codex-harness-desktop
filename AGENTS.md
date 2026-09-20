@@ -1676,8 +1676,11 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   - 用户可在「设置 → 技能」单独停用（`ensureBuiltinSkills` 尊重 `SKILL.md.disabled`，09-20 已修）。
   - 预检【82】11 条（含逐字 sha256 比对：从 TS 常量反解转义后与原文字节级比对）。
 - **文档转换（markitdown）**：让 Codex 能读 PDF / Word / Excel / PPT 附件（转成 Markdown 再交给模型）。
-  装在**内置 Python** 里（`scripts/install-runtimes.cjs` 的 `DOC_PACKAGES`，已并入 `installPipPackages` 默认清单
-  ⇒ 随 Python 装好 = 内置），另在「开发工具」页留一张「文档转换（markitdown）」卡片给早版本用户补装 / 修复。
+  **按需下载、不内置**（09-21 用户定稿：「这个 markitdown 有国内镜像源嘛，有的话，就不内置了，按需下载，
+  codex 自己也可以下载」）—— 有清华 PyPI 镜像，装一次约 4~5 分钟，没必要让**每个**用户默认付约 120 MB。
+  两个入口：①「开发工具」页的「文档转换（markitdown）」卡片（点一次就装，不会顺手重装 Python）；
+  ② Codex 自己 `pip install -i 清华镜像`（内置技能 `document-convert` 里给了命令）。
+  ⛔ 别把它并进 `installPipPackages` 的默认清单 —— 预检【83】有负向断言盯着。
   - **体积是这条的命门**：只用 `markitdown[pdf,docx,pptx]` + `openpyxl`，实测约 **120 MB**
     （其中 onnxruntime 35 MB + numpy 31 MB 是 markitdown 基础依赖 magika 的硬依赖，规避不掉；
     PPT 的 Pillow 另占约 18 MB）。`[all]` 实测 **273 MB+**，含 Azure 云端文档智能 SDK 与音频 /

@@ -7205,6 +7205,10 @@ w.postMessage({id:1,op:"list",root});
   (/\["document-convert", DOC_CONVERT_SKILL\],/.test(bs82) ? ok : fail)(
     "【82】document-convert 在 entries 里（教模型用内置 markitdown 读 PDF/Word/Excel/PPT 附件）"
   );
+  // 用户明确要求「codex 自己也可以下载」⇒ 技能里必须给出**带国内镜像**的 pip 命令
+  (/pypi\.tuna\.tsinghua\.edu\.cn\/simple "markitdown\[pdf,docx,pptx\]" openpyxl/.test(bs82) ? ok : fail)(
+    "【82】document-convert 技能给出「Codex 自己装」的清华镜像命令（用户要求 codex 也能自己下载）"
+  );
   // ⛔ 安全约束：i-have-adhd 会重塑**全部**输出的写法 ⇒ 必须保持「只有用户显式调用才生效」。
   //    引擎认这个字段（二进制里有 disable-model-invocation / disable_model_invocation 两个名字），别删。
   (/^disable-model-invocation: true$/m.test(codeOnly(bs82)) ? ok : fail)(
@@ -7233,20 +7237,19 @@ w.postMessage({id:1,op:"list",root});
   (!/markitdown\[[^\]]*xlsx/.test(ir83c) ? ok : fail)(
     "【83】没用 [xlsx] extra（会拉进 pandas+numpy ≈ 90 MB，而转 xlsx 只需 openpyxl）"
   );
-  // 内置：DOC_PACKAGES 必须并进 pip 安装命令，且 Windows(installPipPackages) 与 mac(mainMac) 两处都要
+  // ⛔ 按需、不内置：DOC_PACKAGES **不得**出现在默认 pip 安装清单里 —— 否则**每个**装 Python 的用户
+  //    都要付这约 120 MB（09-21 用户定稿：有国内镜像 ⇒ 按需下载即可）。
   const docJoined = (ir83c.match(/\[PIP_PACKAGES, \.\.\.DOC_PACKAGES\]\.join/g) || []).length;
-  (docJoined >= 2 ? ok : fail)(
-    `【83】文档转换已并入默认 pip 安装清单，且两个平台都接（实际 ${docJoined} 处，应 ≥2）`
+  (docJoined === 0 ? ok : fail)(
+    `【83】文档转换**没有**并入默认 pip 安装清单（按需下载不内置；实际 ${docJoined} 处，应为 0）`
   );
   // 老用户补装入口：单独跑 `install-runtimes.cjs markitdown`（不重装 Python）
   (/if \(want\("markitdown"\)\) await installDocTools\(pythonDir\);/.test(ir83c) ? ok : fail)(
     "【83】开发工具卡片有独立补装入口（want(\"markitdown\")），不会顺手重装 Python"
   );
-  // skip 判定要同时看两类包：只看 fastapi 的话老用户永远补不到 markitdown，「内置」就落空
-  (/const hasBase = fs\.existsSync\(path\.join\(site, "fastapi"\)\);/.test(ir83c)
-    && /const hasDoc = fs\.existsSync\(path\.join\(site, "markitdown"\)\);/.test(ir83c)
-    ? ok : fail)(
-    "【83】installPipPackages 的 skip 判定同时看 fastapi 与 markitdown（否则老用户补不到）"
+  // 默认 pip 安装的 skip 判定只看 fastapi：markitdown 是按需项，不该被它拖着一起装
+  (/const marker = path\.join\(pythonDir, "Lib", "site-packages", "fastapi"\);/.test(ir83c) ? ok : fail)(
+    "【83】默认 pip 安装的 skip 判定只看 fastapi（markitdown 是按需项，不随它一起装）"
   );
   // 平台差异：site-packages 路径不能写死 Python 版本号（mac 是 lib/pythonX.Y/site-packages）
   (/function pythonSitePackages\(pythonDir\)/.test(ir83c) ? ok : fail)(

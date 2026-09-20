@@ -57,7 +57,10 @@ const SEVENZIP_GH_URL = "https://github.com/ip7z/7zip/releases/download/25.01/7z
 // Python 常用 Web/API 依赖（引擎自检缺失项）。走清华 PyPI 镜像，无需代理。
 const PIP_PACKAGES = "requests httpx flask fastapi playwright";
 // 文档转换依赖：让 Codex 能读 PDF / Word / Excel / PPT 附件（把二进制文档转成 Markdown 再喂给模型）。
-// **按需安装**（「开发工具」页的一张卡片，收到 want("markitdown") 才装），不并入 PIP_PACKAGES —— 体积大。
+// **按需下载，不内置**（09-21 用户定稿：「这个 markitdown 有国内镜像源嘛，有的话，就不内置了，按需下载，
+//   codex 自己也可以下载」）—— 有清华 PyPI 镜像，装一次约 4~5 分钟，没必要让所有人默认付约 120 MB。
+// 两个入口：① 「开发工具」页卡片（want("markitdown")）② Codex 自己按需装（技能里给了清华镜像命令）。
+// ⛔ 别把它并进 PIP_PACKAGES：那会让**每个**装 Python 的用户默认付这份体积（预检【83】有负向断言）。
 // ⛔ 刻意不用 `markitdown[all]`：实测 273 MB+，含 Azure 云端文档智能 SDK 与音频/YouTube 依赖，
 //    与本地文件转换无关（其中 pandas+numpy 一项就占 90 MB）。
 // ⛔ 也刻意不用 `[xlsx]`：那条 extra 同样拉 pandas+numpy，而转 xlsx 实际只需 openpyxl（1.8 MB）。
@@ -439,19 +442,15 @@ async function installPip(pythonDir) {
   console.log(`[pip] installed to ${pythonDir}`);
 }
 
-/** 预装 Python 常用依赖（requests/httpx/flask/fastapi/playwright **+ 文档转换**），走清华镜像免代理。
- *  ⛔ skip 判定必须**同时**看两类包：只看 fastapi 的话，早版本装过 Python 的老用户永远补不到
- *     markitdown（他得自己去点卡片，而多数人不会点）—— 「内置」就落空了。 */
+/** 预装 Python 常用依赖（requests/httpx/flask/fastapi/playwright），走清华镜像免代理。
+ *  ⛔ 文档转换（markitdown）**不在这里** —— 它是按需下载项，见 DOC_PACKAGES 处的说明。 */
 async function installPipPackages(pythonDir) {
-  const site = pythonSitePackages(pythonDir) ?? path.join(pythonDir, "Lib", "site-packages");
-  const hasBase = fs.existsSync(path.join(site, "fastapi"));
-  const hasDoc = fs.existsSync(path.join(site, "markitdown"));
-  if (hasBase && hasDoc) { console.log("[skip] python packages already installed"); return; }
-  const specs = [PIP_PACKAGES, ...DOC_PACKAGES].join(" ");
-  console.log("[pip-packages] installing " + specs + " (tsinghua mirror, no proxy)");
+  const marker = path.join(pythonDir, "Lib", "site-packages", "fastapi");
+  if (fs.existsSync(marker)) { console.log("[skip] python packages already installed"); return; }
+  console.log("[pip-packages] installing " + PIP_PACKAGES + " (tsinghua mirror, no proxy)");
   process.stdout.write("@@STAGE 安装 Python 依赖\n");
   // pip 下载/安装有天然的分步输出：流式转发给界面（进度区能看到 Collecting / Installing）
-  await runStreaming(`"${path.join(pythonDir, "python.exe")}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${specs}`, { label: "Python 依赖安装", timeout: 1800000, env: { ...process.env, PYTHONHOME: pythonDir } });
+  await runStreaming(`"${path.join(pythonDir, "python.exe")}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${PIP_PACKAGES}`, { label: "Python 依赖安装", timeout: 900000, env: { ...process.env, PYTHONHOME: pythonDir } });
   console.log("[pip-packages] done");
 }
 
@@ -468,7 +467,7 @@ function pythonSitePackages(pythonDir) {
   return null;
 }
 
-/** 文档转换依赖（markitdown + openpyxl）——**按需安装**，不随 Python 默认装（约 85 MB）。
+/** 文档转换依赖（markitdown + openpyxl）——**按需安装**（约 120 MB；不内置的原因见 DOC_PACKAGES 处）。
  *  幂等：已装过就直接跳过（判定看 site-packages 里有没有 markitdown 包目录）。 */
 async function installDocTools(pythonDir) {
   const site = pythonSitePackages(pythonDir);
@@ -617,11 +616,8 @@ async function mainMac() {
     }
     const python = path.join(TOOLS, "python", "bin", "python3");
     if (want("python") && fs.existsSync(python)) {
-      // ⛔ mac 侧不设 marker 早退（Windows 那样）：老用户早已装好 python 与 fastapi，但缺 markitdown。
-      //    pip install 本身幂等（已满足的包秒过），每次跑一遍代价很小，能保证「内置」对老用户也成立。
-      const specs = [PIP_PACKAGES, ...DOC_PACKAGES].join(" ");
       try {
-        runCommand(`"${python}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${specs}`, { timeout: 1800000 });
+        runCommand(`"${python}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${PIP_PACKAGES}`, { timeout: 900000 });
       } catch (error) { console.log("[pip-packages] failed (optional): " + String(error.message).split("\n")[0]); }
     }
   }
