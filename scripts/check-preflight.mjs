@@ -7022,6 +7022,36 @@ w.postMessage({id:1,op:"list",root});
   );
 }
 
+// ---------- 【77】输入框下方的 AI 内容提示（09-20 用户要求）----------
+// 「在输入框下面空白居中位置加一排字：内容由AI生成，请核实重要信息」。
+// 合规类文案最容易被重构顺手删掉/挪走，这里钉住三件事：在、是静态、位置在整列最下方。
+{
+  const appSrc77 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const css77 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+
+  (/<p className="composer-disclaimer">内容由AI生成，请核实重要信息<\/p>/.test(appSrc77) ? ok : fail)(
+    "【77】提示文案原样在（用户指定内容，改写/删除都要能被发现）"
+  );
+  // 静态：不许挂条件（条件渲染 + 动态高度会让 `.composer-wrap` 的 ResizeObserver 反复重申贴底）
+  (!/\{[^}]*&&\s*<p className="composer-disclaimer"/.test(appSrc77) ? ok : fail)(
+    "【77】提示是静态渲染（不挂在条件里 —— 高度反复变化会触发反复贴底抖动）"
+  );
+  // 位置 = composer 那一列的最下方：在 suggest-row 之后、</main> 之前
+  const iSug = appSrc77.indexOf('className="suggest-row"');
+  const iDis = appSrc77.indexOf('className="composer-disclaimer"');
+  const iMain = appSrc77.indexOf("</main>");
+  (iSug >= 0 && iDis > iSug && iMain > iDis ? ok : fail)(
+    "【77】位置在输入框那一列的最下方（suggest-row 之后、</main> 之前）"
+  );
+  const rule77 = (/\.composer-disclaimer\s*\{([^}]*)\}/.exec(css77) || [])[1] ?? "";
+  (rule77 && /text-align:\s*center/.test(rule77) ? ok : fail)(
+    "【77】样式规则存在且居中（缺规则会退回左对齐默认值）"
+  );
+  (!/position:\s*(absolute|fixed)/.test(rule77) ? ok : fail)(
+    "【77】提示不脱流（绝对定位会让它不参与列高，居中基准就不是输入框那一列了）"
+  );
+}
+
 
 if (hardFails === 0) {
   console.log(C.green(`预检通过${warns ? `（${warns} 条告警，见上）` : ""}`));
