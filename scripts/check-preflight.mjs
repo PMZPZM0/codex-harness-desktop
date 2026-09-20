@@ -6800,7 +6800,10 @@ w.postMessage({id:1,op:"list",root});
   );
 
   // ④ 指令过期判据必须与「写出内容」同源（09-20 修的第二个 bug：旧判据 grep 一句老短语 ⇒ 恒 false）
-  (/developerInstructionsLine\(await devInstructionsInput\(\)\)/.test(main74) ? ok : fail)(
+  //   ⛔ 09-20 二次调整：为了让 nuphus 视觉 env 复用同一份输入，判据改成「先取 devInputNow、再生成整行」。
+  //   断言随之改为**抓同源关系**（取值与生成整行用同一个变量）——比锚死一个具体写法耐改，
+  //   且比旧版更强：旧版只证明"调了 devInstructionsInput"，新版证明"两次用的是同一份"。
+  (/const devInputNow = await devInstructionsInput\(\);[\s\S]{0,140}?developerInstructionsLine\(devInputNow\)/.test(main74) ? ok : fail)(
     "【74】instructionsOutdated 用与写出同源的输入重新生成整行比对"
   );
   (/const instructionsOutdated = !configText\.includes\("Never infer/.test(main74) ? fail : ok)(
@@ -6901,6 +6904,121 @@ w.postMessage({id:1,op:"list",root});
   );
   (/do not fall back to `nuphus-call` to bypass the switch/.test(di75) ? ok : fail)(
     "【75】明确禁止用命令行绕过总闸（nuphus-call 仍在 PATH 上，配置管不到这一层）"
+  );
+}
+
+// ---------- 【76】nuphus 视觉插件接线（09-20）----------
+// 背景：用户报「视觉插件配置好了总是不生效」。根因 = `[mcp_servers.nuphus]` 从来没有 env 段，
+// 插件里的 baseUrl/apiKey/model 根本没进 nuphus 进程（`desktop_vision` 恒报 API_KEY required，
+// 模型只好回落本地 OCR → 体感「一调用就空转」）。
+// 格式 `[mcp_servers.X.env]` 已用**真实 app-server 探针**实证（假 stdio MCP 把自己 env 落盘，
+// 4 个哨兵值全部命中、stderr 无 Invalid configuration），这里只守「接线没被改回去 / 没写歪」。
+{
+  const req76 = createRequire(import.meta.url);
+  let nv = null;
+  try { nv = req76(join(ROOT, "dist-electron", "nuphus-env.js")); } catch { nv = null; }
+  (nv ? ok : fail)("【76】dist-electron/nuphus-env.js 可加载（视觉 env 映射的唯一来源）");
+
+  if (nv) {
+    const full = { enabled: true, baseUrl: "https://x.example/v1", apiKey: "  sk-abc  ", model: " glm-v " };
+    const pairs = nv.nuphusVisionEnv(full);
+    const map = Object.fromEntries(pairs);
+    (pairs.length === 4
+      && map.NUPHUS_MCP_VISION_PROVIDER === "openai"
+      && map.NUPHUS_MCP_VISION_API_KEY === "sk-abc"
+      && map.NUPHUS_MCP_VISION_MODEL === "glm-v"
+      && map.NUPHUS_MCP_VISION_BASE_URL === "https://x.example/v1" ? ok : fail)(
+      "【76】配好时产出 4 个 NUPHUS_MCP_VISION_*（provider 恒 openai，值 trim 后原样下发）"
+    );
+    (nv.NUPHUS_VISION_PROVIDER === "openai" ? ok : fail)(
+      "【76】provider 固定 openai（内置视觉插件与 nuphus 同为 OpenAI 兼容 /chat/completions）"
+    );
+    // 缺一即不写：半截 env 只会让 nuphus 报一句更难懂的错
+    (nv.nuphusVisionEnv({ enabled: false, baseUrl: "https://x", apiKey: "k", model: "m" }).length === 0
+      && nv.nuphusVisionEnv({ baseUrl: "https://x", apiKey: "", model: "m" }).length === 0
+      && nv.nuphusVisionEnv({ baseUrl: "", apiKey: "k", model: "m" }).length === 0
+      && nv.nuphusVisionEnv({ baseUrl: "https://x", apiKey: "k", model: "  " }).length === 0
+      && nv.nuphusVisionEnv(undefined).length === 0 ? ok : fail)(
+      "【76】停用或缺 apiKey/model/baseUrl ⇒ 返回空（整段 env 不写，不产出半截配置）"
+    );
+  }
+
+  const main76 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  const nvSrc76 = readFileSync(join(ROOT, "electron", "nuphus-env.ts"), "utf8");
+  // ⛔ 只能有一处**生成**：出现两次就是重复段（TOML duplicate key ⇒ 引擎起不来，09-16 踩过同类）。
+  //   数「生成数组里那一个元素」的形态（`["", NUPHUS_VISION_ENV_TABLE, ...]`）——
+  //   表名字面量只允许出现在 nuphus-env.ts 的常量定义里，两处各写一次就会悄悄漂移。
+  const envTableCount = (main76.match(/\["", NUPHUS_VISION_ENV_TABLE,/g) || []).length;
+  (envTableCount === 1 ? ok : fail)(
+    `【76】视觉 env 段只由一处生成（实际 ${envTableCount} 处 —— 两处会写出重复表，引擎直接起不来）`
+  );
+  (/export const NUPHUS_VISION_ENV_TABLE = "\[mcp_servers\.nuphus\.env\]"/.test(nvSrc76) ? ok : fail)(
+    "【76】表名字面量只在 nuphus-env.ts 定义一次（写出侧与漂移判定共用，不各写一遍）"
+  );
+  (/\$\{key\} = "\$\{escapeToml\(value\)\}"/.test(main76) ? ok : fail)(
+    "【76】env 值走 escapeToml 转义（key 里出现过 \\ / \" 会写坏 TOML）"
+  );
+  (/nuphusVisionEnv\(devInput\.nuphusVision\)/.test(main76) ? ok : fail)(
+    "【76】config.toml 的 nuphus 段用 nuphusVisionEnv(devInput.nuphusVision) 取 env"
+  );
+  (/nuphusVision: builtinPlugins\.vision,/.test(main76) ? ok : fail)(
+    "【76】devInstructionsInput 把原始视觉配置带出来（同一份来源，改插件时两处一起变）"
+  );
+  (/nuphusVisionEnvDrift\(\{[\s\S]{0,220}?escape: escapeToml,/.test(main76) ? ok : fail)(
+    "【76】漂移判定注入的 escape 就是写出用的 escapeToml（换一个实现 ⇒ 判定永远对不上 ⇒ 每次启动重写）"
+  );
+  (/nuphusRegisteredNow = shouldRegisterNuphus\(/.test(main76) ? ok : fail)(
+    "【76】注册前提走 shouldRegisterNuphus + 覆盖表（与 config.toml 写出侧同一判据）"
+  );
+  (/\|\| instructionsOutdated \|\| nuphusVisionStale \|\| disabledMissing/.test(main76) ? ok : fail)(
+    "【76】nuphusVisionStale 真的进了重写条件（只算出变量、不参与判断 = 死代码）"
+  );
+
+  if (nv) {
+    // ---- 漂移判定的**行为断言**（这块内联时只能 grep；「恒真 ⇒ 每次启动整份重写」是最危险的失效模式）----
+    const V = { enabled: true, baseUrl: "https://x.example/v1", apiKey: "sk-abc", model: "glm-v" };
+    // 用**生产同一个** escapeTomlString（config-toml.js 的真产物），不要自己另写一份 ——
+    // 判定两端只要有一端转义口径不同，就会恒判漂移（每次启动整份重写）。
+    const esc = req76(join(ROOT, "dist-electron", "config-toml.js")).escapeTomlString;
+    const withEnvText = [
+      "[mcp_servers.nuphus]",
+      'command = "nuphus.exe"',
+      "",
+      nv.NUPHUS_VISION_ENV_TABLE,
+      `NUPHUS_MCP_VISION_PROVIDER = "${nv.NUPHUS_VISION_PROVIDER}"`,
+      `NUPHUS_MCP_VISION_API_KEY = "${esc(V.apiKey)}"`,
+      `NUPHUS_MCP_VISION_MODEL = "${esc(V.model)}"`,
+      `NUPHUS_MCP_VISION_BASE_URL = "${esc(V.baseUrl)}"`,
+    ].join("\n");
+    const noEnvText = '[mcp_servers.nuphus]\ncommand = "nuphus.exe"\n';
+    const D = (o) => nv.nuphusVisionEnvDrift(o);
+    (D({ vision: V, registered: true, configText: noEnvText, escape: esc }) === true
+      && D({ vision: V, registered: true, configText: withEnvText, escape: esc }) === false ? ok : fail)(
+      "【76】已配插件 + 已注册：缺 env 判漂移、逐字一致不判（用户改 key 后会自动重写）"
+    );
+    // ⛔ 这条就是「恒真」防线：没注册时我们本来就不写这段，绝不能判漂移
+    (D({ vision: V, registered: false, configText: noEnvText, escape: esc }) === false ? ok : fail)(
+      "【76】已配插件但 nuphus 未注册 ⇒ **不**判漂移（否则每次启动整份重写 config.toml）"
+    );
+    // 插件停用/清空 ⇒ 残留段必须清掉；清完就不再命中（收敛，不会每轮重写）
+    (D({ vision: undefined, registered: true, configText: withEnvText, escape: esc }) === true
+      && D({ vision: { ...V, enabled: false }, registered: true, configText: withEnvText, escape: esc }) === true
+      && D({ vision: undefined, registered: false, configText: withEnvText, escape: esc }) === true
+      && D({ vision: undefined, registered: false, configText: noEnvText, escape: esc }) === false ? ok : fail)(
+      "【76】不需要 env 时（停用/清空/未注册）残留段判漂移；重写后即不再命中（收敛）"
+    );
+    // 值变了必须判漂移（否则「改完 key 仍然不生效」）
+    (D({ vision: { ...V, apiKey: "sk-other" }, registered: true, configText: withEnvText, escape: esc }) === true
+      && D({ vision: { ...V, model: "other" }, registered: true, configText: withEnvText, escape: esc }) === true
+      && D({ vision: { ...V, baseUrl: "https://y.example/v1" }, registered: true, configText: withEnvText, escape: esc }) === true ? ok : fail)(
+      "【76】key / model / baseUrl 任一改动都判漂移（重复不生效的另一种成因）"
+    );
+  }
+
+  // 密钥不许出现在 developer_instructions（那是发给模型与落 rollout 的文本）
+  const di76 = readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8");
+  (!/nuphusVision|NUPHUS_MCP_VISION/i.test(di76) ? ok : fail)(
+    "【76】视觉密钥不进 developer_instructions（只写进 config.toml 的 env 表）"
   );
 }
 

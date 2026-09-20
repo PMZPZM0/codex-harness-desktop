@@ -66,6 +66,7 @@ import { upsertSkillDiscipline, DISCIPLINE_START, DISCIPLINE_END } from "./skill
 import { ensureCodexMarketplaceSection, installCodexMarketPlugin, listCodexMarketPlugins, type CodexMarketPlugin } from "./codex-market";
 import { augmentedPath, bundledGit, bundledNode, bundledPython, CHINA_NPM_REGISTRY, cloakCacheDir, cloakOpenHelper, downloadEnv, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "./toolchain";
 import { ensureBuiltinSkills, ensureExpertSkillsMarketplace, expertSkillsSourceDir } from "./builtin-skills";
+import { NUPHUS_VISION_ENV_TABLE, nuphusVisionEnv, nuphusVisionEnvDrift } from "./nuphus-env";
 import { ensurePonytailPlugin } from "./ponytail-plugin";
 import { getPonytailMode, setPonytailMode } from "./ponytail-mode";
 import { markMissingRollouts, mergeThreadList } from "./session-tools";
@@ -1800,6 +1801,9 @@ async function devInstructionsInput() {
     // 内置媒体插件（生图/视觉）：配置并启用后注入命令行用法，引擎（含老会话）由此「看见」并真实调用
     imagePlugin: Boolean(builtinPlugins.image?.enabled !== false && builtinPlugins.image?.baseUrl && builtinPlugins.image?.apiKey && builtinPlugins.image?.model),
     visionPlugin: Boolean(builtinPlugins.vision?.enabled !== false && builtinPlugins.vision?.baseUrl && builtinPlugins.vision?.apiKey && builtinPlugins.vision?.model),
+    // nuphus 侧要的是**真实值**（baseUrl/apiKey/model 原样下发成 NUPHUS_MCP_VISION_*），
+    // 不是上面那个布尔。走同一个来源，改插件配置时两边一起变（见 nuphus-env.ts 的背景说明）。
+    nuphusVision: builtinPlugins.vision,
     mediaCommand: bundledNodePath ? `"${bundledNodePath}" "${mediaHelper}"` : `node "${mediaHelper}"`,
   };
 }
@@ -2067,6 +2071,16 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
       `command = "${escapeToml(nuphusBinary())}"`,
       "args = []",
       "startup_timeout_sec = 20",
+      // 视觉插件（BYOK）必须**真的下发到 nuphus 进程**：`desktop_vision` 读的是
+      // NUPHUS_MCP_VISION_* 环境变量，而不是我们这份 builtin-plugins.json
+      // （09-20 定位：这段 env 从来没写过 ⇒ 插件怎么配 `desktop_vision` 都报 "API_KEY required"）。
+      // ⛔ 子表 `[mcp_servers.X.env]` 这个形态是**真实 app-server 探针实证过**的
+      //    （假 stdio MCP 把自己进程 env 落盘 → 4 个哨兵值全部命中）；别换内联写法。
+      ...(() => {
+        const visionEnv = nuphusVisionEnv(devInput.nuphusVision);
+        if (!visionEnv.length) return [];
+        return ["", NUPHUS_VISION_ENV_TABLE, ...visionEnv.map(([key, value]) => `${key} = "${escapeToml(value)}"`)];
+      })(),
       "",
     ] : []),
     // 用户手工写进 config.toml 的 MCP 段：启用中的原样拼回，停用的保留原文但不输出
@@ -3173,7 +3187,8 @@ app.whenReady().then(async () => {
       //    技能文件已更新、config.toml 的 developer_instructions 还是旧文案）。
       //    这里用与 applyCustomModel 完全相同的输入重新生成整行：命中即最新；
       //    输入同源 ⇒ 不会恒 true（否则每次启动整份重写，09-16 踩过）。
-      const instructionsOutdated = !configText.includes(developerInstructionsLine(await devInstructionsInput()));
+      const devInputNow = await devInstructionsInput();
+      const instructionsOutdated = !configText.includes(developerInstructionsLine(devInputNow));
       // ⛔ 09-16：废止键残留检查 —— 老版本把顶层 model_context_window 写成全局单值（会覆盖
       //    catalog 里每模型的上下文）。升级后必须**主动清掉已写下的旧值**：preserveUserConfig
       //    会丢弃该键，所以整份重写一次它就消失、下次启动不再触发（幂等）。
@@ -3211,8 +3226,22 @@ app.whenReady().then(async () => {
       //   两处口径必须一致。
       const envPathStale = Boolean(expectedFirst)
         && !cfgPathLine.replace(/\\\\/g, "\\").split(path.delimiter).map((entry) => entry.trim()).filter(Boolean).includes(expectedFirst);
-      if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || disabledMissing || dispatchMcpBad) {
-        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, envPathStale=${envPathStale}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}; rewriting`);
+      // ⛔ nuphus 视觉 env 漂移（09-20，与上面的「安装目录漂移」同一类：只问「键在不在」不够）：
+      //   用户改插件里的 key / model 时上面所有判据都不动 ⇒ 不重写 ⇒ nuphus 仍拿旧 key。
+      //   判定抽成纯函数（nuphus-env.ts）——「恒真 ⇒ 每次启动整份重写」是这里最危险的失效模式，
+      //   内联在 main.ts 里只能 grep 断言，抽出来预检才能跑真行为断言（含收敛性）。
+      // 覆盖表读失败按「启用」兜底：真坏了 applyCustomModel 自己也会抛（那条 try/catch 负责收尾），
+      // 不该因为一个损坏的 json 把整段自愈判据一起带崩。
+      const nuphusRegisteredNow = shouldRegisterNuphus({ desktop: devInputNow.desktop, browser: devInputNow.browser })
+        && Boolean(nuphusBinary()) && mcpOverrideEnabled(await readMcpOverrides().catch(() => ({}) as McpOverrides), "nuphus");
+      const nuphusVisionStale = nuphusVisionEnvDrift({
+        vision: devInputNow.nuphusVision,
+        registered: nuphusRegisteredNow,
+        configText,
+        escape: escapeToml,
+      });
+      if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || nuphusVisionStale || disabledMissing || dispatchMcpBad) {
+        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, envPathStale=${envPathStale}, instructions=${instructionsOutdated}, nuphusVision=${nuphusVisionStale}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}; rewriting`);
         await applyCustomModel(custom);
       }
     } catch (error) {

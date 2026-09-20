@@ -236,6 +236,20 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   - **桌面侧也有「判存在」了**（09-20）：此前只有浏览器侧有 ⇒ 总闸关着时模型会去调不存在的
     `desktop_*`。现在技能与指令都按「工具列表里有没有 `desktop_windows_list`」判，并说明不可用时
     的正确回应（让用户去「设置 → 自动化」开）。
+  - **内置视觉插件现在也下发给 nuphus**（09-20，用户报「视觉插件配置好了总不生效」+「desktop_perceive
+    一调用就空转」）：`desktop_vision` 读的是**进程环境变量** `NUPHUS_MCP_VISION_*`，而
+    `[mcp_servers.nuphus]` 过去只有 command / args / startup_timeout_sec —— 插件里配的
+    baseUrl / apiKey / model **从来没进过 nuphus 进程**，于是 `desktop_vision` 恒报
+    `NUPHUS_MCP_VISION_API_KEY required`，模型只好回落本地 OCR（体感就是「空转」）。
+    现在按插件配置生成 `[mcp_servers.nuphus.env]` 子表：映射唯一来源 `electron/nuphus-env.ts`
+    （provider 恒 `openai`，与插件本身同为 OpenAI 兼容 `/chat/completions`；⛔ nuphus 要求
+    BASE_URL **必须 https**，http 只允许 localhost）。两处硬约束：
+    ① 格式已用**真实 app-server 探针**实证（独立 CODEX_HOME + 假 stdio MCP 把自己 env 落盘
+    → 4 个哨兵值全命中、stderr 无 `Invalid configuration`），别换成内联 `env = {...}`；
+    ② 漂移判据抽成纯函数 `nuphusVisionEnvDrift`（改插件 key/model 会自动重写配置），
+    **两个分支判据不同源**：需要 env 时才带注册前提（否则恒判漂移 ⇒ 每次启动整份重写），
+    不需要 env 时**不带前提**（否则残留的 `[X.env]` 清不掉 —— TOML 会隐式建出一个没有
+    command 的空服务器段）。预检【76】17 条守卫（含漂移判定的行为断言与收敛性）。
 - **⛔ 两个「清单与现实脱节」的真 bug（09-20 随上一条一起修，都有真机取证）**：
   1. **技能停用被静默写回**：总闸停用技能是把 `SKILL.md` 改名成 `SKILL.md.disabled`，而
      `ensureBuiltinSkills` 原先无条件写 `SKILL.md` ⇒ **用户关掉的技能每次启动都被重新启用**，
