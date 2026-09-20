@@ -2313,6 +2313,18 @@ console.log(C.bold("\n【工具下载源】设置持久化 + 三条下载通道�
     ? ok("开发工具页下载源选择器在位（六档选项，写入 app-settings 即时生效）")
     : fail("开发工具页的下载源选择器被摘 —— 用户没法换源");
 }
+// ---------- 首启体检只管模型与工具（09-20 用户「工作区不要必选，就保留工具下载」） ----------
+console.log(C.bold("\n【首启体检】工作区已移出，不再有把弹窗带走的「去选择」岔路"));
+{
+  const dialogSrc = readFileSync(join(ROOT, "src", "components", "EnvCheckDialog.tsx"), "utf8");
+  const appE = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  (!/id: "workspace"/.test(dialogSrc) && !dialogSrc.includes('"model" | "workspace"') && !dialogSrc.includes("FolderOpen"))
+    ? ok("体检清单已无工作区项（必选岔路连同「去选择」按钮一起移除）")
+    : fail("工作区又回到体检里了 —— 用户点「去选择」会带走弹窗，工具就没装");
+  (!appE.includes('id === "workspace"') || !/envItems[\s\S]{0,400}workspace.{0,200}go: "workspace"/.test(appE))
+    ? ok("App 侧体检状态不再构造工作区项（一键安装直奔工具下载）")
+    : fail("App 侧仍把工作区算进体检 —— 弹窗还会被工作区岔路带走");
+}
 // ---------- 工具安装「验证」必须非致命（09-20 用户：Miniconda 装完了却报「安装失败」） ----------
 console.log(C.bold("\n【工具安装验证】verify 只是快照，失败不得连坐整个安装"));
 {
@@ -3115,7 +3127,8 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   const installRuntimes = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
   (installRuntimes.includes("https://cdn.npmmirror.com/binaries/node/") && installRuntimes.includes("https://cdn.npmmirror.com/binaries/python/") && installRuntimes.includes("https://cdn.npmmirror.com/binaries/git-for-windows/") ? ok : fail)("install-runtimes：node/python/git 走 npmmirror 国内镜像（有镜像源的不该是龟速官方源）");
   // 09-20 下载源选择：auto 通道序保持「镜像 → (代理) → 直连 → gh-proxy」，六种源在 switch 里分派
-  (installRuntimes.includes('case "mirror": attempts = mirrorFirst') && installRuntimes.includes('case "ghproxy": attempts = ghFirst(GHPROXY') && installRuntimes.includes('case "ghfast": attempts = ghFirst(GHFAST') && installRuntimes.includes('case "auto":') ? ok : fail)("install-runtimes：下载通道按所选源分派（auto 仍 = 镜像 → (代理) → 直连 → gh-proxy 逐级回落）");
+  // 09-20 下载源选择：auto = 国内优先（镜像 → (代理) → gh 加速 → 直连兜底），六种源在 switch 里分派
+  (installRuntimes.includes('case "mirror": attempts = mirror ? [["国内镜像 npmmirror", curlArgs.slice(), mirror], ...direct] : [...ghAccels, ...direct]') && installRuntimes.includes('case "ghproxy": attempts = isGh ? [ghAccels[0], ...direct]') && installRuntimes.includes('case "ghfast": attempts = isGh ? [ghAccels[1], ...direct]') && /case "auto":\s*\n\s*default: attempts = \[\s*\n\s*\.\.\.\(mirror \? \[\["国内镜像 npmmirror", curlArgs\.slice\(\), mirror\]\] : \[\]\),\s*\n\s*\.\.\.viaProxy,\s*\n\s*\.\.\.ghAccels,\s*\n\s*\.\.\.direct,/.test(installRuntimes) ? ok : fail)("install-runtimes：下载通道按所选源分派（auto = 国内优先：镜像 → (代理) → gh 加速 → 直连兜底）");
   // 09-16 下午：自动化包与 ponytail 改为「随包预解压直装」（用户「直接内置，不用解压啥的」）——
   // npm-global 必须进 extraResources（缺了等于回到「要点安装才解压」），zip 保留作修复备用；
   // ponytail 启动自动种只在 config **没有**注册段时动手（否则用户卸载后下次启动又装回来，卸载失效）。
@@ -4443,12 +4456,13 @@ w.postMessage({id:1,op:"list",root});
     const envC = readFileSync(join(ROOT, "src", "components", "EnvCheckDialog.tsx"), "utf8");
     const appEnv = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
     const specCount = (envC.match(/\{ id: "(?:model|workspace|git|rg|pwsh|python|jq|sevenzip)"/g) || []).length;
-    (specCount === 8)
-      ? ok("【32】环境体检 8 项齐全（模型/工作区/Git/ripgrep/PowerShell 7 + Python/jq/7-Zip）")
-      : fail(`【32】体检项变成 ${specCount} 项 —— 用户拍板的是「必备 5 + 常用 3」（09-18 点名补 PowerShell 7）`);
+    // 09-20 用户定稿「工作区不要必选，就保留工具下载」：工作区移出体检 ⇒ 7 项（必备 4 + 常用 3）
+    (specCount === 7 && !envC.includes('id: "workspace"'))
+      ? ok("【32】环境体检 7 项齐全且无工作区（模型/Git/ripgrep/PowerShell 7 + Python/jq/7-Zip）")
+      : fail(`【32】体检项异常（${specCount} 项或含工作区）—— 用户 09-20 定稿：工作区移出、必备 4 + 常用 3`);
     const coreCount = (envC.match(/core: true/g) || []).length;
-    (coreCount === 5)
-      ? ok("【32】必备项 5 项（缺了干不了活的那批，含终端要用的 PowerShell 7）")
+    (coreCount === 4)
+      ? ok("【32】必备项 4 项（模型/Git/ripgrep/PowerShell 7；工作区已按 09-20 口径移出）")
       : fail(`【32】必备项变成 ${coreCount} 项 —— 弹窗触发条件会跟着偏`);
     (/id: "pwsh", fallbackName: "PowerShell 7", core: true/.test(envC))
       ? ok("【32】PowerShell 7 在体检必备组（终端默认 shell，缺失会退回 5.1）")
@@ -4462,9 +4476,9 @@ w.postMessage({id:1,op:"list",root});
     (/await window\.codex\.installRuntime\(id\)/.test(appEnv))
       ? ok("【32】「一键安装」真的调了 installRuntime")
       : fail("【32】一键安装没接 installRuntime —— 按钮是摆设");
-    (/const MANUAL_IDS = new Set\(\["model", "workspace"\]\)/.test(envC))
-      ? ok("【32】installableIds 排除了 model/workspace（它们不是可安装的运行时）")
-      : fail("【32】installableIds 没排除 model/workspace —— 一键安装会拿它们调 installRuntime 并失败");
+    (/const MANUAL_IDS = new Set\(\["model"\]\)/.test(envC))
+      ? ok("【32】installableIds 排除了 model（它不是可安装的运行时；workspace 已移出体检）")
+      : fail("【32】installableIds 没排除 model —— 一键安装会拿它调 installRuntime 并失败");
     (/ENV_CHECK_OPTOUT_KEY/.test(envC) && /localStorage\.getItem\(ENV_CHECK_OPTOUT_KEY\)/.test(appEnv))
       ? ok("【32】「不再提示」真的被读（勾了就不再弹）")
       : fail("【32】optout 标记没被读 —— 用户勾了「不再提示」还会每次被弹");

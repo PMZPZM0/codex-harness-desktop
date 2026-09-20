@@ -1,15 +1,17 @@
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
-import { Check, Download, FolderOpen, Sparkles, Wrench, X } from "lucide-react";
+import { Check, Download, Sparkles, Wrench, X } from "lucide-react";
 
 /** 首次启动「环境体检」（09-17 用户要求）：
  *
  *  痛点原话：「很多新用户上来，工具都不会装，也不知道要装哪些，不装 Codex 啥也干不了」。
  *  所以这里只做两件事：**把"缺什么、为什么缺了不行"讲清楚**，以及**一键补齐**。
  *
- *  为什么是这 8 项（用户 09-17 拍板「必备 + 常用」，09-18 点名补 PowerShell 7——"这个是终端必要的工具"）：
- *   - 必备 5 项（模型 / 工作区 / Git / ripgrep / PowerShell 7）—— 缺任何一项，Codex 都"干不好活"：
- *     没模型发不出消息；没工作区不知道改哪个目录；Git 是引擎跑命令/看 diff/提交的硬依赖；
+ *  为什么是这 7 项（用户 09-17 拍板「必备 + 常用」，09-18 点名补 PowerShell 7；09-20 用户定稿：
+ *  「工作区不要必选，后续用户自己配置就可以了，就保留工具下载」——**工作区已移出体检**，
+ *  不再出现「点了去选择 → 弹窗没了 → 工具没装」的断头路）：
+ *   - 必备 4 项（模型 / Git / ripgrep / PowerShell 7）—— 缺任何一项，Codex 都"干不好活"：
+ *     没模型发不出消息；Git 是引擎跑命令/看 diff/提交的硬依赖；
  *     ripgrep 是代码检索主力（缺它搜代码会慢一个数量级）；终端默认 shell 优先用 pwsh 7，
  *     缺了只能退回系统自带的 PowerShell 5.1（模块与脚本兼容性差一截）。
  *   - 常用 3 项（Python / jq / 7-Zip）—— 按需，缺了只是"某些活干不了"，不阻断。
@@ -32,16 +34,17 @@ export type EnvCheckState = {
   ok: boolean;
   /** 主进程侧正在装（例如首次启动的 Git 后台自愈安装）——此时不该再让用户点它，也不该算进「一键安装」 */
   installing?: boolean;
-  /** 非运行时项缺失时的去向（模型设置 / 工作区选择）；运行时项为空 */
-  go?: "model" | "workspace";
+  /** 非运行时项缺失时的去向（模型设置）；运行时项为空（09-20 起工作区不再是体检项） */
+  go?: "model";
 };
 
 export const ENV_CHECK_OPTOUT_KEY = "env-check-optout";
 
-/** 体检项的顺序与文案（运行时项的体积/名称从 devRuntimes 补全，避免与「开发工具」页两处不一致）。 */
-export const ENV_CHECK_SPEC: { id: string; why: string; core: boolean; go?: "model" | "workspace"; fallbackName: string }[] = [
+/** 体检项的顺序与文案（运行时项的体积/名称从 devRuntimes 补全，避免与「开发工具」页两处不一致）。
+ *  ⛔ 09-20 用户定稿「工作区不要必选，就保留工具下载」：工作区已移出——它不是"装"能解决的，
+ *  之前的「去选择」按钮会把弹窗带走，用户点了就丢了工具安装（实测反馈）。 */
+export const ENV_CHECK_SPEC: { id: string; why: string; core: boolean; go?: "model"; fallbackName: string }[] = [
   { id: "model", fallbackName: "模型配置", core: true, go: "model", why: "决定 Codex 用哪个「大脑」——没配就发不出消息" },
-  { id: "workspace", fallbackName: "工作区", core: true, go: "workspace", why: "Codex 干活的项目目录——没选它不知道去改哪里" },
   { id: "git", fallbackName: "Git", core: true, why: "引擎执行命令、看 diff、提交、读历史都依赖它" },
   { id: "rg", fallbackName: "ripgrep 代码检索", core: true, why: "Codex 搜代码库的主力工具——缺它检索会慢一个数量级" },
   { id: "pwsh", fallbackName: "PowerShell 7", core: true, why: "内置终端的默认 shell——缺了终端只能退回老旧的 PowerShell 5.1" },
@@ -51,11 +54,11 @@ export const ENV_CHECK_SPEC: { id: string; why: string; core: boolean; go?: "mod
 ];
 
 /** 缺项里可自动安装的运行时 id。
- *  ⛔ 必须排除 model / workspace —— 它们不是"装"能解决的（要去配置/选目录），
- *  漏掉这个排除会让「一键安装」拿它们去调 installRuntime（未知工具，必然失败）。
+ *  ⛔ 必须排除 model —— 它不是"装"能解决的（要去配置），
+ *  漏掉这个排除会让「一键安装」拿它去调 installRuntime（未知工具，必然失败）。
  *  ⛔ 也必须排除**正在安装中**的项（首次启动 Git 后台自愈会占住 git）：否则批量安装的第一个请求
  *  就撞上「该工具正在安装」，整批被中断（09-18 用户反馈）。正在装的就静静等它结束，清单会自己刷新。 */
-const MANUAL_IDS = new Set(["model", "workspace"]);
+const MANUAL_IDS = new Set(["model"]);
 export function installableIds(items: EnvCheckState[]): string[] {
   return items.filter((item) => !item.ok && !item.installing && !MANUAL_IDS.has(item.id)).map((item) => item.id);
 }
@@ -75,7 +78,7 @@ export function EnvCheckDialog({ items, installing, progress, percent, stage, sp
   /** 下载速度（形如 "1.2 MB/s · 45.3 MB / 350 MB"；主进程按 500ms 采样文件大小算出） */
   speed?: string;
   onInstall: (ids: string[]) => void;
-  onGo: (target: "model" | "workspace") => void;
+  onGo: (target: "model") => void;
   onClose: (dontAskAgain: boolean) => void;
 }) {
   const [dontAsk, setDontAsk] = useState(false);
@@ -131,8 +134,8 @@ export function EnvCheckDialog({ items, installing, progress, percent, stage, sp
                   <div className="env-check-why">{item.why}</div>
                 </div>
                 {!item.ok && item.go
-                  ? <button className="secondary-setting env-check-go" onClick={() => onGo(item.go as "model" | "workspace")}>
-                      {item.go === "model" ? <>去配置</> : <><FolderOpen size={13} />去选择</>}
+                  ? <button className="secondary-setting env-check-go" onClick={() => onGo(item.go as "model")}>
+                      <>去配置</>
                     </button>
                   : !item.ok && !item.go
                     ? <span className="env-check-badge">{item.installing ? "安装中…" : "待安装"}</span>
