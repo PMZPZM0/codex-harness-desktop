@@ -176,6 +176,8 @@ import {
   Telescope,
   CircleHelp,
   Video,
+  Bell,
+  CheckCheck,
 } from "lucide-react";
 import { useMemory, type MemoryGatewayState, type MemoryGroup, type MemoryPriority, type MemoryRecord, groupMemoriesByThread } from "./hooks/useMemory";
 import UsagePanel from "./components/UsagePanel";
@@ -9670,12 +9672,28 @@ export default function App() {
   //    scope 决定弹窗**贴着哪 anchoring**：设置页产生的贴设置弹窗内居中，会话产生的贴对话区居中
   //    （09-20 用户：「设置页产生的弹窗在设置弹窗居中，对话框产生的弹窗在对话框区域居中」）。
   const [notices, setNotices] = useState<{ id: number; text: string; threadId?: string; scope: "settings" | "chat" }[]>([]);
+  // ── 通知中心（09-20 用户要求）：每条浮层通知同时落一份到中心，可按对话分组查看、
+  //    单条/批量标记已读（已读灰显）与删除；未读数显示在顶栏通知图标徽标上。
+  //    持久化到 localStorage（上限 200 条，防无限膨胀）。
+  const [noticeCenter, setNoticeCenter] = useState<{ id: number; text: string; threadId?: string; scope: "settings" | "chat"; at: number; read: boolean }[]>(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem("notice-center-v1") ?? "[]");
+      return Array.isArray(parsed) ? parsed.filter((entry) => entry && typeof entry.text === "string") : [];
+    } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("notice-center-v1", JSON.stringify(noticeCenter.slice(0, 200))); } catch { /* 隐私模式等：忽略 */ }
+  }, [noticeCenter]);
+  const [noticeCenterOpen, setNoticeCenterOpen] = useState(false);
+  const noticeCenterBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [noticeChecked, setNoticeChecked] = useState<Set<number>>(new Set());
+  const noticeCenterUnread = noticeCenter.filter((entry) => !entry.read).length;
   const noticeSeqRef = useRef(0);
   const noticeTimersRef = useRef<Map<number, number>>(new Map());
   // 设置弹窗开关的 ref 镜像：setNotice 是稳定引用（见下），闭包里读 ref 才能拿到最新开关状态
   const settingsOpenRef = useRef(false);
   // 窗口尺寸变化时强制重算一次锚点位置（通知生存期只有 2.6s，这里不需要精细的 ResizeObserver）
-  const [, setNoticeAnchorTick] = useState(0);
+  const [noticeAnchorTick, setNoticeAnchorTick] = useState(0);
   useEffect(() => {
     const onResize = () => setNoticeAnchorTick((t) => t + 1);
     window.addEventListener("resize", onResize);
@@ -9700,12 +9718,23 @@ export default function App() {
       for (const timer of noticeTimersRef.current.values()) window.clearTimeout(timer);
       noticeTimersRef.current.clear();
       setNotices([]);
+      setNoticeCenter((current) => current.map((entry) => ({ ...entry, read: true })));
       return;
     }
     const id = (noticeSeqRef.current += 1);
     // 归属判定：带 threadId 的一定是会话的事 ⇒ 贴对话区；不带 threadId 且设置弹窗开着 ⇒ 贴设置弹窗。
     // ⛔ 判定必须发生在**入队时**（弹窗开关状态会变，渲染时再判会串组）。
     const scope: "settings" | "chat" = threadId ? "chat" : (settingsOpenRef.current ? "settings" : "chat");
+    // 收纳规则（09-20 用户补充）：中心只收「用户**不在看**的那个会话」的通知，防漏重要消息——
+    // 通知正属于当前打开的会话时，浮层就在眼前，不会漏 ⇒ 不收纳（收纳了反而是噪音）。
+    // 无 threadId 的（系统 / 设置页）不属于任何对话框，照常留档。
+    const belongsToCurrentThread = Boolean(threadId && threadId === threadRef.current?.id);
+    if (!belongsToCurrentThread) {
+      setNoticeCenter((current) => [{ id, text, threadId, scope, at: Date.now(), read: false }, ...current].slice(0, 200));
+    }
+    // ⛔ 「不准跨对话框展示」（09-20）：设置弹窗开着时，会话来源的通知**不再弹浮层**
+    //    （否则会横跨盖在设置弹窗上面）——静默进通知中心，靠顶栏徽标提醒。
+    if (scope === "chat" && settingsOpenRef.current) return;
     // 上限：多会话同时刷屏时只留最近几条，避免糊满一屏
     setNotices((current) => [...current, { id, text, threadId, scope }].slice(-NOTICE_MAX));
     noticeTimersRef.current.set(id, window.setTimeout(() => dismissNotice(id), NOTICE_TTL_MS));
@@ -18335,6 +18364,98 @@ const commandMatches = useMemo(() => {
             restrictedLabel={threadRole.restricted ? (threadRole.label ?? "专家 / 专家团") : null}
             onChange={(next, opts) => { void applyDispatch(next, opts); }}
           />
+          {/* 通知中心入口（09-20 用户要求）：调度图标旁，未读数徽标；点开按对话分组的面板 */}
+          <div className="notice-center-wrap">
+            <button
+              ref={noticeCenterBtnRef}
+              type="button"
+              className="icon-button notice-center-btn"
+              title={noticeCenterUnread > 0 ? `通知中心（${noticeCenterUnread} 条未读）` : "通知中心"}
+              aria-expanded={noticeCenterOpen}
+              onClick={() => { setNoticeCenterOpen((value) => !value); setNoticeChecked(new Set()); }}
+            >
+              <Bell size={16} />
+              {noticeCenterUnread > 0 && <i className="notice-center-badge">{noticeCenterUnread > 99 ? "99+" : noticeCenterUnread}</i>}
+            </button>
+            {noticeCenterOpen && createPortal((() => {
+              // ⛔ 面板必须 portal 到 body + fixed：顶栏 .topbar 自带 z-index:30 的层叠上下文，
+              //    面板 z 再高也只在其内部生效 —— 设置弹窗遮罩（同为 30、DOM 在后）会把面板整个盖住
+              //    （实测：DOM 查询全绿、画面上没有 —— DOM 属性断言不出没画出来的像素）。
+              const r = noticeCenterBtnRef.current?.getBoundingClientRect();
+              void noticeAnchorTick; // resize 时随 tick 重算位置
+              const posStyle = r
+                ? { top: r.bottom + 8, right: Math.max(12, window.innerWidth - r.right) }
+                : { top: 60, right: 12 };
+              return (
+                <>
+                  <div className="menu-backdrop" onClick={() => setNoticeCenterOpen(false)} />
+                  <div className="notice-center-panel" role="dialog" aria-label="通知中心" style={posStyle}>
+                  <div className="notice-center-head">
+                    <strong>通知{noticeCenterUnread > 0 ? `（${noticeCenterUnread} 未读）` : ""}</strong>
+                    <div className="notice-center-head-actions">
+                      {noticeChecked.size > 0 && <>
+                        <button onClick={() => setNoticeCenter((current) => current.map((entry) => (noticeChecked.has(entry.id) ? { ...entry, read: true } : entry)))}><CheckCheck size={13} />已读所选</button>
+                        <button className="danger" onClick={() => { setNoticeCenter((current) => current.filter((entry) => !noticeChecked.has(entry.id))); setNoticeChecked(new Set()); }}><Trash2 size={13} />删除所选</button>
+                      </>}
+                      <button onClick={() => setNoticeCenter((current) => current.map((entry) => ({ ...entry, read: true })))}>全部已读</button>
+                      <button className="danger" onClick={() => { setNoticeCenter([]); setNoticeChecked(new Set()); }}>清空</button>
+                    </div>
+                  </div>
+                  {(() => {
+                    // 按会话分组：组按最新通知时间倒序，组内同序；无 threadId 归「系统通知」
+                    const groups = new Map<string, typeof noticeCenter>();
+                    for (const entry of noticeCenter) {
+                      const key = entry.threadId ?? "__system__";
+                      const bucket = groups.get(key);
+                      if (bucket) bucket.push(entry); else groups.set(key, [entry]);
+                    }
+                    if (!groups.size) return <div className="notice-center-empty">暂无通知</div>;
+                    return [...groups.entries()]
+                      .sort((a, b) => b[1][0].at - a[1][0].at)
+                      .map(([key, items]) => {
+                        const groupUnread = items.filter((entry) => !entry.read).length;
+                        return (
+                          <div key={key} className="notice-center-group">
+                            <div className="notice-center-group-head">
+                              <span>{key === "__system__" ? "系统通知" : threadNameOf(key)}</span>
+                              {groupUnread > 0 && <i className="notice-center-group-unread">{groupUnread} 未读</i>}
+                              <button
+                                title="删除该组全部通知"
+                                onClick={() => { setNoticeCenter((current) => current.filter((entry) => (entry.threadId ?? "__system__") !== key)); setNoticeChecked((current) => new Set([...current].filter((id) => !items.some((entry) => entry.id === id)))); }}
+                              ><Trash2 size={12} /></button>
+                            </div>
+                            {items.map((entry) => (
+                              <div
+                                key={entry.id}
+                                className={`notice-center-item ${entry.read ? "readed" : ""} ${noticeChecked.has(entry.id) ? "checked" : ""}`}
+                                onClick={() => setNoticeCenter((current) => current.map((e) => (e.id === entry.id ? { ...e, read: true } : e)))}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={noticeChecked.has(entry.id)}
+                                  onClick={(event) => event.stopPropagation()}
+                                  onChange={(event) => setNoticeChecked((current) => {
+                                    const next = new Set(current);
+                                    if (event.target.checked) next.add(entry.id); else next.delete(entry.id);
+                                    return next;
+                                  })}
+                                />
+                                <span className="notice-center-item-text">{entry.text}</span>
+                                <span className="notice-center-item-time">{new Date(entry.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                                <button
+                                  title="删除"
+                                  onClick={(event) => { event.stopPropagation(); setNoticeCenter((current) => current.filter((e) => e.id !== entry.id)); setNoticeChecked((current) => { const next = new Set(current); next.delete(entry.id); return next; }); }}
+                                ><X size={12} /></button>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      });
+                  })()}
+                </div>
+              </>
+            )})(), document.body)}
+          </div>
           <button className="icon-button popout-open-btn" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!thread} onClick={() => { if (thread) void popoutCurrentThread(thread.id); }}><Maximize2 size={16} /></button>
         </>
       )}

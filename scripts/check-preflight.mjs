@@ -6580,7 +6580,7 @@ w.postMessage({id:1,op:"list",root});
   (!/const \[notice, setNotice\] = useState\(""\)/.test(app73) ? ok : fail)(
     "【73】不得回退成单槽 notice useState（多会话并发时会互相覆盖）"
   );
-  (/const setNotice = useCallback\(\(text: string, threadId\?: string\) => \{[\s\S]{0,700}?setNotices\(\(current\) => \[\.\.\.current, \{ id, text, threadId, scope \}\]/.test(app73) ? ok : fail)(
+  (/const setNotice = useCallback\(\(text: string, threadId\?: string\) => \{[\s\S]{0,1500}?setNotices\(\(current\) => \[\.\.\.current, \{ id, text, threadId, scope \}\]/.test(app73) ? ok : fail)(
     "【73】setNotice 是「推一条入队」的兼容函数且引用稳定（useCallback——它被当 onNotice 传进子组件的 effect 依赖；空串仍=清空全部）"
   );
   (/notice-stack/.test(app73) && /\.notice-stack \{/.test(css73) ? ok : fail)(
@@ -6595,6 +6595,19 @@ w.postMessage({id:1,op:"list",root});
   );
   (/selector: "\.settings-modal"/.test(app73) && /selector: "main\.workspace"/.test(app73) ? ok : fail)(
     "【73】两组通知各贴各的锚：设置组贴 .settings-modal、对话组贴 main.workspace"
+  );
+  // ⑫ 通知中心（09-20 用户：收纳「不在看的会话」的通知 + 徽标 + 分组/已读/批量）
+  (/const belongsToCurrentThread = Boolean\(threadId && threadId === threadRef\.current\?\.id\);/.test(app73) ? ok : fail)(
+    "【73】中心只收「不在看的会话」的通知（当前会话的通知用户看得到浮层，收纳了反而是噪音）"
+  );
+  (/scope === "chat" && settingsOpenRef\.current\) return;/.test(app73) ? ok : fail)(
+    "【73】设置弹窗开着时对话来源的通知不弹浮层（不准跨对话框展示），静默进中心靠徽标提醒"
+  );
+  (/noticeCenterOpen && createPortal/.test(app73) ? ok : fail)(
+    "【73】通知中心面板必须 portal 到 body（.topbar z-index:30 的层叠上下文会把面板盖死——实测 DOM 全绿画面没有）"
+  );
+  (/notice-center-v1/.test(app73) ? ok : fail)(
+    "【73】中心持久化到 localStorage（notice-center-v1，上限 200 条）"
   );
   (/notice-stack-in/.test(css73) ? ok : fail)(
     "【73】堆叠子项必须用自己的入场动画（旧 notice-in 最终帧 translate(-50%) 配 both 会把子项永久左移——靠左 bug 根因）"
