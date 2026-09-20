@@ -185,7 +185,7 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 近期功能性变更（宿主行为，引擎交互相关）
 - **⛔ 自动化能力「接线」：提示词改为首选已注册的 `browser_*` MCP 工具（09-20，改完直接生效）**：
-  盘点发现一个纯接线问题 —— 包内 nuphus MCP **早已注册 38 个工具**（桌面 14 + 浏览器 24，实测枚举），
+  盘点发现一个纯接线问题 —— 包内 nuphus MCP **早已注册 38 个工具**（桌面 15 + 浏览器 23，实测枚举），
   但 `builtin-skills.ts` 的技能正文里 `playwright-cli` 出现 **23 次**、`browser_*` **0 次** ⇒
   24 个工具的 schema 白占约 10k token 前缀，模型却每步起一次 CLI 进程（还有两套不共享的浏览器会话）。
   - **现在的优先级**：① `browser_*` MCP（判据是「工具列表里有没有 `browser_navigate`」——
@@ -195,9 +195,27 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
     `browser_import_cookies` 登录态复用（含凭证边界）、`desktop_perceive` 拿坐标而
     `desktop_vision` 的坐标**不可点**（工具描述原文警告）、Intel Mac 无本地 OCR 的降级说明。
   - ⛔ **桌面指令不再只说 `nuphus-call` 命令行** —— `desktop_*` 就在模型工具列表里，直接调。
-  - ⚠️ 待办（未做）：`browser_*` 的可用性目前绑在**桌面**总闸上（同一个 MCP 服务器）。要两者独立
-    开关需按开关下发 `disabled_tools` 掩码（机制已验证有效），方案见
-    `.workbuddy/artifacts/automation-unification-plan.md` 第 3.3 节。
+  - **✅ 已做（09-20 同日）：两个总闸从「提示词级」升级为「硬控制」并解耦。** 原状有两个短板：
+    ① 注册只看 `desktopAutomation`，而 nuphus 是同一个 MCP 服务器同时提供 `desktop_*` 与
+    `browser_*` ⇒ **关桌面会把浏览器能力一起带走**（「只给浏览器自动化、不给真实键鼠控制」做不到，
+    属安全边界缺陷）；② `browserAutomation=false` 时 `browser_*` 仍全量注册、只靠提示词劝阻
+    ⇒ 浏览器总闸**不是硬控制**。
+    现法：注册条件改「任一总闸开启」（`shouldRegisterNuphus`），关闭的那一组用 `disabled_tools`
+    整体摘掉（工具从引擎工具表消失 = 真阻断）。**唯一来源** = `electron/automation-policy.ts`
+    （工具分组实测枚举：**桌面 15 + 浏览器 23 = 38**，此前文档里写的 14+24 是数错了）。
+    ⛔ 两个不变量：**UI 与配置同源**（`mcp-servers:permissions` 也过同一掩码，否则出现
+    「界面显示未设权限、配置里已被禁用」）；**掩码压过用户显式 allow**，并从 ask/allow 摘除
+    （否则同一工具既进 `disabled_tools` 又带 `approval_mode`，配置自相矛盾）。
+    ⚠️ 残留：`nuphus-call` / `playwright-cli` 仍在 PATH 上，总闸对**命令行兜底**只有提示词级约束
+    （已在指令里明写「不得用 nuphus-call 绕过总闸」）。
+  - **nuphus 内置版本 0.2.3**（09-20 从 0.2.2 升级）：工具面 diff **零增删、描述零变化**（实测枚举，
+    输出字节数相同）⇒ 对提示词层零风险；上游这一版只有 HUD 视觉重构 + TLS 依赖安全修复，
+    **升级理由是安全依赖**（我们打包本来就 `NUPHUS_MCP_HUD=off`）。版本钉死**四处必须同源**：
+    `prepare-windows-tools.cjs` 的 `NUPHUS_VERSION`、`prepare-mac-tools.cjs` 的 npm 安装与 manifest、
+    `.github/workflows/build-mac.yml` 的 `ref:`（mac x64 走 cargo 从 tag 取源）。
+  - **桌面侧也有「判存在」了**（09-20）：此前只有浏览器侧有 ⇒ 总闸关着时模型会去调不存在的
+    `desktop_*`。现在技能与指令都按「工具列表里有没有 `desktop_windows_list`」判，并说明不可用时
+    的正确回应（让用户去「设置 → 自动化」开）。
 - **⛔ 两个「清单与现实脱节」的真 bug（09-20 随上一条一起修，都有真机取证）**：
   1. **技能停用被静默写回**：总闸停用技能是把 `SKILL.md` 改名成 `SKILL.md.disabled`，而
      `ensureBuiltinSkills` 原先无条件写 `SKILL.md` ⇒ **用户关掉的技能每次启动都被重新启用**，
