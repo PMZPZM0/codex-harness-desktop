@@ -7091,6 +7091,23 @@ w.postMessage({id:1,op:"list",root});
   );
 }
 
+// ---------- 【79】折叠头不再显示「N 项失败」文字（09-20 用户明令）----------
+// 用户原话：「把那个折叠线上后面的那个几项失败文字删了，这个不要」。
+// 两条一起守：① 文字不许回来；② **失败信号本身不能被顺手删掉**（保留左侧小圆点）。
+{
+  const app79 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  const css79 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+  (!/wb-fold-failed/.test(app79) && !/\{failedCount\}\s*项失败/.test(app79) ? ok : fail)(
+    "【79】折叠头不再渲染「N 项失败」文字（用户要求删除，别再回退）"
+  );
+  (!/\.wb-fold-failed\s*\{/.test(css79) ? ok : fail)(
+    "【79】配套样式 .wb-fold-failed 已随文字一起删掉（不留死代码）"
+  );
+  (/wb-fold-dot \$\{failedCount \? "error"/.test(app79) ? ok : fail)(
+    "【79】失败信号保留在左侧小圆点（删文字 ≠ 删掉「这轮有失败」的表达）"
+  );
+}
+
 
 if (hardFails === 0) {
   console.log(C.green(`预检通过${warns ? `（${warns} 条告警，见上）` : ""}`));
