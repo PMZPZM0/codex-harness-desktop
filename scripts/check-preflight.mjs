@@ -7115,8 +7115,10 @@ w.postMessage({id:1,op:"list",root});
 {
   const app80 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
   const css80 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
-  // ① 浮层已按用户要求回滚，别再回来
-  (!/approval-elsewhere/.test(app80) && !/approval-elsewhere/.test(css80) ? ok : fail)(
+  // ① 浮层已按用户要求回滚，别再回来。
+  // ⛔ 负向断言必须走 codeOnly：本仓库习惯在注释里写「某写法已删除/别再恢复」，按原文匹配
+  //    会把注释里提到 approval-elsewhere 当成它还在 → 假红（见 codeOnly 的说明，09-18 踩过三次）。
+  (!/approval-elsewhere/.test(codeOnly(app80)) && !/approval-elsewhere/.test(codeOnly(css80)) ? ok : fail)(
     "【80】跨会话待审批浮层已回滚（用户 09-21 明确不要第二处提醒入口，只留侧栏「需审批」徽标）"
   );
   // ② 侧栏徽标这条既有口径必须在（用户认可的就是它，别顺手删掉）
