@@ -5559,6 +5559,14 @@ function runtimeInstaller(name: string) {
   return packaged || fallback;
 }
 
+/** 开发工具下载源（09-20 用户：「下载太慢了，所有工具下载加下载源选择」）。
+ *  每次安装现读 app-settings.downloadSource —— 用户在「开发工具」页切完源，下一次下载立即生效，无需重启。
+ *  合法值见 AppSettings.downloadSource；非法值一律回落 auto（镜像优先、逐通道回落）。 */
+async function readDownloadSource(): Promise<NonNullable<AppSettings["downloadSource"]>> {
+  const source = (await readAppSettings(app.getPath("userData"))).downloadSource;
+  return source === "mirror" || source === "ghproxy" || source === "ghfast" || source === "direct" || source === "proxy" ? source : "auto";
+}
+
 /** 安装进度的结构化上报（09-19 用户要求「不要弹窗，全部进度条展示，方便新手」）。
  *  安装脚本把进度写成 `@@PROGRESS <0-100>` / `@@STAGE <阶段名>` 这样的行——
  *  它们**不进消息区**，只驱动进度条；其余行原样作为消息（用户能看到在做什么）。 */
@@ -5589,11 +5597,11 @@ function emitRuntimeProgress(id: string, chunk: string | Buffer, prefix = "") {
   }
 }
 
-function runRuntimeInstaller(id: DevRuntimeId, script: string, args: string[], node = process.execPath) {
+function runRuntimeInstaller(id: DevRuntimeId, script: string, args: string[], node = process.execPath, extraEnv?: Record<string, string | undefined>) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(node, [script, ...args], {
       windowsHide: true,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: node === process.execPath ? "1" : undefined, TOOLS_ROOT: toolsRoot() },
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: node === process.execPath ? "1" : undefined, TOOLS_ROOT: toolsRoot(), ...extraEnv },
     });
     let tail = "";
     const report = (chunk: Buffer | string) => {
@@ -5711,21 +5719,25 @@ if (id === "ponytail") {
 
 /** 浏览器内核按需下载（09-16 起内核不再随包）：先走国内镜像，失败回落官方源直连。
  *  用户自设了 PLAYWRIGHT_DOWNLOAD_HOST / CLOAKBROWSER_DOWNLOAD_URL 时尊重用户配置，
- *  此时第一轮已是用户指定的源，回落轮仍是官方源。进度实时推给设置页。 */
+ *  此时第一轮已是用户指定的源，回落轮仍是官方源。进度实时推给设置页。
+ *  ⛔ 09-20 下载源选择：direct = 只走官方；mirror/auto = 镜像优先；gh 加速前缀与本机代理
+ *  对这两类内核的 CDN 通道无从生效（Cloak 内核的镜像本身就是 ghfast 前缀）→ 按 auto 处理。 */
 async function runBrowserDownload(
-  id: DevRuntimeId, node: string, cli: string, args: string[], label: string,
+  id: DevRuntimeId, node: string, cli: string, args: string[], label: string, source: NonNullable<AppSettings["downloadSource"]> = "auto",
 ): Promise<void> {
   const mirrored = downloadEnv();
   const mirrorKeys = ["PLAYWRIGHT_DOWNLOAD_HOST", "CLOAKBROWSER_DOWNLOAD_URL"].filter((key) => mirrored[key]);
   const official = { ...mirrored };
   for (const key of mirrorKeys) delete official[key];
-  const attempts = mirrorKeys.length ? [mirrored, official] : [official];
+  const attempts = source === "direct" || !mirrorKeys.length
+    ? [{ env: official, via: "官方源" }]
+    : [{ env: mirrored, via: "国内镜像" }, { env: official, via: "官方源" }];
   let lastError: Error | null = null;
   for (let index = 0; index < attempts.length; index++) {
-    const via = index === 0 && mirrorKeys.length ? "国内镜像" : "官方源";
+    const via = attempts[index].via;
     try {
       await new Promise<void>((resolve, reject) => {
-        const child = spawn(node, [cli, ...args], { windowsHide: true, env: attempts[index] });
+        const child = spawn(node, [cli, ...args], { windowsHide: true, env: attempts[index].env });
         let tail = "";
         const report = (chunk: Buffer | string) => {
           const text = String(chunk);
@@ -5742,7 +5754,7 @@ async function runBrowserDownload(
     } catch (error) {
       lastError = error as Error;
       if (index < attempts.length - 1) {
-        sendToWindow("runtime:progress", { id, message: `${label}国内镜像下载失败，改用官方源重试…`, percent: 0 });
+        sendToWindow("runtime:progress", { id, message: `${label}${attempts[index].via}下载失败，改用官方源重试…`, percent: 0 });
       }
     }
   }
@@ -5754,8 +5766,10 @@ async function runBrowserDownload(
  *  · 用**内置 node 自带的 npm**——开发工具页的安装链路不能依赖用户机器装没装 node/npm；
  *  · registry 国内镜像优先（npmmirror），失败回落官方源（不设 registry = npm 默认源）；
  *  · 用户自设了 npm_config_registry 时尊重用户配置，只跑一轮（不擅自改用户指定的源）。
+ *  ⛔ 09-20 下载源选择：direct = 只走官方源；其余（auto/mirror/gh 加速/proxy）都是
+ *  「镜像优先、失败回落官方」——npm registry 没有 gh 加速通道，gh 前缀对它无从生效。
  */
-async function runNpmInstall(id: DevRuntimeId, pkg: string, label: string): Promise<void> {
+async function runNpmInstall(id: DevRuntimeId, pkg: string, label: string, source: NonNullable<AppSettings["downloadSource"]> = "auto"): Promise<void> {
   const node = bundledNode();
   if (!node) throw new Error(`缺少内置 Node，无法安装 ${label}`);
   const npmCli = path.join(toolsRoot(), "node", "node_modules", "npm", "bin", "npm-cli.js");
@@ -5763,7 +5777,7 @@ async function runNpmInstall(id: DevRuntimeId, pkg: string, label: string): Prom
   const globalDir = path.join(toolsRoot(), "npm-global");
   await fs.mkdir(globalDir, { recursive: true });
   const userRegistry = process.env.npm_config_registry || process.env.NPM_CONFIG_REGISTRY || "";
-  const registries = userRegistry ? [userRegistry] : [CHINA_NPM_REGISTRY, ""];
+  const registries = userRegistry ? [userRegistry] : source === "direct" ? [""] : [CHINA_NPM_REGISTRY, ""];
   let lastError: Error | null = null;
   for (const registry of registries) {
     const via = registry ? (userRegistry ? "用户配置的源" : "国内镜像") : "官方源";
@@ -5805,6 +5819,9 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
   const id = idValue as DevRuntimeId;
   if (!devRuntimeSpecs[id]) throw new Error("未知开发工具");
   if (devRuntimeSpecs[id].builtIn) return { ok: true, runtimes: runtimeList() };
+  // ⛔ 09-20 下载源选择：所有按需下载通道（工具链 / npm 包 / 浏览器内核）统一从这里读源，
+  //    用户在「开发工具」页切完源，下一次下载立即生效（每次现读 app-settings，不缓存）。
+  const downloadSource = await readDownloadSource();
   // ⛔ 同一工具并发安装：**等它跑完**，不要抛「该工具正在安装」（09-18 用户反馈截图）。
   //   触发场景很常见：首次启动的 Git 后台自愈安装（`autoInstallGitIfNeeded`，仅 Windows）会占住 `git`，
   //   而体检弹窗的「一键安装」里 git 恰好排在可安装项第一位 → 用户点一次就得到
@@ -5848,7 +5865,7 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
       // 随包内置能力的「修复安装」（nuphus / playwright-cli）：从随包 zip 重新解压。
       // 正常情况下卡片直接显示「内置」，界面不给按钮；只有目录被误删/损坏时才会走到这里。
       // 内置 node 是解压器的引导运行时（install-automation.cjs 依赖它跑 python/7z）。
-      if (!bundledNode()) await runRuntimeInstaller("node", runtimeInstaller("install-runtimes.cjs"), ["node"]);
+      if (!bundledNode()) await runRuntimeInstaller("node", runtimeInstaller("install-runtimes.cjs"), ["node"], process.execPath, { DOWNLOAD_SOURCE: downloadSource });
       // ⛔ 只认随包 zip（解压安装），**不再回落在线下载**（09-12 用户实测发布包故障）：
       //   旧实现找不到 zip 就去拉 GitHub Release 的 automation-tools.zip —— 而那个资产
       //   **根本不存在**（实测 v0.0.13 的 release 只有两个 mac zip），于是用户看到的是
@@ -5869,23 +5886,25 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
       // CloakBrowser npm 包（09-16 起不随包）：npm 国内镜像优先、失败回落官方源。
       // 装完 CLOAKBROWSER_ENTRY 才会指向它（toolchainEnv 按标记文件存在与否注入），
       // 在此之前引擎侧看不到它 —— 默认浏览器用内置视图 / playwright-cli，不受影响。
-      await runNpmInstall(id, "cloakbrowser", "CloakBrowser");
+      await runNpmInstall(id, "cloakbrowser", "CloakBrowser", downloadSource);
     } else if (id === "playwright-browsers") {
       // 用内置的 playwright CLI 下载 Chromium 到 pw-browsers（toolchainEnv 已注入 PLAYWRIGHT_BROWSERS_PATH；
       // 09-16 起内核不随包，这里按需下载：国内镜像优先、失败回落官方源）
       const node = bundledNode();
       const cli = path.join(npmGlobalRoot(), "@playwright", "cli", "node_modules", "playwright", "cli.js");
       if (!node || !existsSync(cli)) throw new Error("缺少 Playwright CLI，请先在「开发工具」安装「Playwright 浏览器自动化」");
-      await runBrowserDownload(id, node, cli, ["install", "chromium"], "浏览器内核");
+      await runBrowserDownload(id, node, cli, ["install", "chromium"], "浏览器内核", downloadSource);
     } else if (id === "cloak-browsers") {
       // CloakBrowser 反检测 Chromium 内核下载到 tools/cloak-cache（toolchainEnv 已注入 CLOAKBROWSER_CACHE_DIR；
       // 09-16 起内核不随包，这里按需下载：国内镜像优先、失败回落官方源）
       const node = bundledNode();
       const cli = path.join(npmGlobalRoot(), "cloakbrowser", "dist", "cli.js");
       if (!node || !existsSync(cli)) throw new Error("缺少 CloakBrowser，请先在「开发工具」安装「CloakBrowser 指纹浏览器」（约 4 MB）");
-      await runBrowserDownload(id, node, cli, ["install"], "Cloak 内核");
+      await runBrowserDownload(id, node, cli, ["install"], "Cloak 内核", downloadSource);
     } else {
-      await runRuntimeInstaller(id, runtimeInstaller("install-runtimes.cjs"), [id]);
+      // ⛔ DOWNLOAD_SOURCE 经环境变量传给安装脚本（install-runtimes.cjs 按 it 分通道）——
+      //    脚本 argv 的裸词会被当成工具 id，所以不用命令行参数传。
+      await runRuntimeInstaller(id, runtimeInstaller("install-runtimes.cjs"), [id], process.execPath, { DOWNLOAD_SOURCE: downloadSource });
     }
     await restartServerWhenIdle(id);
   })();
@@ -5913,7 +5932,7 @@ async function autoInstallGitIfNeeded(): Promise<void> {
   gitAutoInstallStarted = true;
   sendToWindow("runtime:progress", { id: "git", message: "检测到未安装 Git，正在后台自动安装（镜像优先，约 90 MB）…" });
   const task = (async () => {
-    await runRuntimeInstaller("git", runtimeInstaller("install-runtimes.cjs"), ["git"]);
+    await runRuntimeInstaller("git", runtimeInstaller("install-runtimes.cjs"), ["git"], process.execPath, { DOWNLOAD_SOURCE: await readDownloadSource() });
     await restartServerWhenIdle("git");
   })();
   runtimeInstalls.set("git", task);

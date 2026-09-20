@@ -138,7 +138,7 @@ contextBridge.exposeInMainWorld("codex", {
   setMcpToolPermission: (server: string, tool: string, mode: "deny" | "ask" | "allow" | null) => ipcRenderer.invoke("mcp-servers:set-tool-permission", { server, tool, mode }),
   readPersonalization: () => ipcRenderer.invoke("personalization:read"),
   savePersonalization: (input: { nickname?: string; customInstructions?: string }) => ipcRenderer.invoke("personalization:save", input),
-  readAppSettings: () => ipcRenderer.invoke("appSettings:read"),  saveAppSettings: (patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean }) => ipcRenderer.invoke("appSettings:save", patch),
+  readAppSettings: () => ipcRenderer.invoke("appSettings:read"),  saveAppSettings: (patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy" }) => ipcRenderer.invoke("appSettings:save", patch),
   themeApply: (theme: string) => ipcRenderer.invoke("theme:apply", theme),
   // 自更新：网页源（https://www.jvszzp.ltd 发布站）/ GitHub Releases 双源可切换，stable 通道
   updateCheck: () => ipcRenderer.invoke("updates:check") as Promise<{ ok: boolean; info?: { hasUpdate: boolean; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string; reason?: string }; currentVersion?: string; source?: string; error?: string }>,

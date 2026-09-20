@@ -34,6 +34,15 @@ export type AppSettings = {
    *  developer instructions 下发一句「只影响说法、不影响内容」的语气指引。
    *  状态按会话各自一份（agent-mood-<threadId>），关掉即停止更新与注入。 */
   adaptiveTone?: boolean;
+  /** 开发工具下载源（09-20 用户：「下载太慢了，所有工具下载加下载源选择」）。
+   *  对「开发工具」页的所有按需下载生效：工具链（install-runtimes.cjs）、npm 包
+   *  （CloakBrowser）、浏览器内核（Playwright / Cloak）。
+   *  - "auto"（默认）：国内镜像优先 → 本机代理（若配置）→ 官方直连 → gh 加速，逐通道回落
+   *  - "mirror"：国内镜像优先，失败回落官方直连
+   *  - "ghproxy" / "ghfast"：GitHub 资产走对应加速前缀，失败回落官方直连（非 GitHub 资产按 auto）
+   *  - "direct"：只走官方直连
+   *  - "proxy"：本机代理优先（PROXY 环境变量），失败回落直连 */
+  downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy";
 };
 
 let cached: AppSettings | null = null;
