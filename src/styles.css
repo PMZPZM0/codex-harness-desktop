@@ -3850,6 +3850,19 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
     transform 0.34s cubic-bezier(0.22, 0.61, 0.36, 1),
     width 0.34s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
+/* 输入框下方的 AI 内容提示（09-20 用户：「在输入框下面空白居中位置加一排字」）。
+   它是 `.composer-wrap` 的最后一个子节点 —— 宽度随该列（min(820px, 100% - 46px)），
+   text-align:center 即相对**输入框**居中（不是相对窗口，右侧面板开合时不会偏）。
+   ⛔ 纯静态、高度常量：别给它 margin 负值或动态高度，`.composer-wrap` 上挂着
+   ResizeObserver（高度一变就重申贴底）。 */
+.composer-disclaimer {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--faint);
+  user-select: none;
+}
 .queue-cards {
   gap: 6px;
   margin-bottom: 6px;

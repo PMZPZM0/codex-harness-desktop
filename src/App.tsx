@@ -19525,6 +19525,12 @@ function showEnhanceHint() {
               ))}
             </div>
           )}
+          {/* AI 内容提示（09-20 用户要求：「在输入框下面空白居中位置加一排字」）。
+              ⛔ 只放**静态一行**，不参与任何布局计算：`.composer-wrap` 被 ResizeObserver 观察
+              （高度一变就重申贴底），这里是常量高度 ⇒ 只在挂载时触发一次；钉顶期间那个观察器
+              本来就直接 return。别给它加条件渲染或动态高度（会变成反复贴底抖动）。
+              位置 = `.composer-wrap` 的最后一个子节点 ⇒ 落在输入框下方的空白处、随输入框那一列居中。 */}
+          <p className="composer-disclaimer">内容由AI生成，请核实重要信息</p>
         </div>
       </main>
 
