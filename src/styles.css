@@ -4713,6 +4713,128 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   from { transform: scale(0.86); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
 }
+/* ── 通知中心（09-20）：顶栏铃铛 + 未读徽标 + 按会话分组的面板 ── */
+.notice-center-wrap { position: relative; display: inline-flex; }
+.notice-center-badge {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--red, #e24b4a);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 500;
+  font-style: normal;
+  line-height: 15px;
+  text-align: center;
+  pointer-events: none;
+}
+.notice-center-panel {
+  position: fixed; /* portal 到 body，按触发按钮 rect 定位（内联 style 给 top/right） */
+  z-index: 10100;
+  width: min(420px, calc(100vw - 48px));
+  max-height: min(520px, calc(100vh - 120px));
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.2);
+  padding: 6px;
+}
+.notice-center-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 1;
+}
+.notice-center-head strong { font-size: 13px; font-weight: 500; }
+.notice-center-head-actions { display: flex; gap: 5px; }
+.notice-center-head-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.notice-center-head-actions button:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.notice-center-head-actions button.danger:hover { color: var(--red, #e24b4a); border-color: color-mix(in srgb, var(--red) 45%, var(--line)); }
+.notice-center-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 22px 0; }
+.notice-center-group { margin-top: 4px; }
+.notice-center-group-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+  border-bottom: 1px solid var(--line-soft, transparent);
+}
+.notice-center-group-head span { font-weight: 500; color: var(--text); }
+.notice-center-group-unread {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--red, #e24b4a);
+  border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
+  border-radius: 999px;
+  padding: 0 6px;
+  line-height: 15px;
+}
+.notice-center-group-head button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 5px;
+}
+.notice-center-group-head button:hover { color: var(--red, #e24b4a); background: color-mix(in srgb, var(--red) 10%, transparent); }
+.notice-center-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.notice-center-item:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.notice-center-item input[type="checkbox"] { flex: none; margin: 0; }
+.notice-center-item-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.notice-center-item-time { flex: none; color: var(--faint); font-size: 10.5px; }
+.notice-center-item button {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 5px;
+  opacity: 0;
+}
+.notice-center-item:hover button { opacity: 1; }
+.notice-center-item button:hover { color: var(--red, #e24b4a); }
+/* 已读：整条灰掉（用户要求「已读后灰掉」），但文字仍可辨认 */
+.notice-center-item.readed .notice-center-item-text,
+.notice-center-item.readed .notice-center-item-time { color: var(--faint); opacity: 0.72; }
+.notice-center-item:not(.readed) .notice-center-item-text { color: var(--text); font-weight: 500; }
+
 /* ── 通知 toast（富样式版）：顶部居中弹窗，4 种 tone 各有专属图标/配色/入场动画 ──
    success 绿色弹跳 + 对勾 / error 红色抖动 + 叉 / warning 橙色落下摆动 + 警告三角 / info 蓝色下滑 + i。
    注意：旧版 :root[data-theme=dark] .notice 会把所有 toast 强制染成红棕色（视觉 bug 元凶），已删除。 */
