@@ -18353,19 +18353,7 @@ const commandMatches = useMemo(() => {
         <button className="icon-button popout-return-btn" title="返回主应用（关闭本独立窗口）" onClick={() => void window.codex.popoutClose(thread?.id ?? null)}><Minimize2 size={16} /></button>
       ) : (
         <>
-          {/* 调度开关放独立窗口图标左边（09-16 用户要求） */}
-          <DispatchMenu
-            topbar
-            dispatch={activeDispatch}
-            targets={dispatchInfo.targets}
-            disabled={!thread?.id}
-            busy={dispatchBusy}
-            lockedBy={dispatchHolderName}
-            onReleaseHolder={() => { void releaseDispatchHolder(); }}
-            restrictedLabel={threadRole.restricted ? (threadRole.label ?? "专家 / 专家团") : null}
-            onChange={(next, opts) => { void applyDispatch(next, opts); }}
-          />
-          {/* 通知中心入口（09-20 用户要求）：调度图标旁，未读数徽标；点开按对话分组的面板 */}
+          {/* 通知中心入口（09-20）：调度图标左边（用户要求），未读数徽标；点开按对话分组的面板 */}
           <div className="notice-center-wrap">
             <button
               ref={noticeCenterBtnRef}
@@ -18457,6 +18445,18 @@ const commandMatches = useMemo(() => {
               </>
             )})(), document.body)}
           </div>
+          {/* 调度开关放独立窗口图标左边（09-16 用户要求） */}
+          <DispatchMenu
+            topbar
+            dispatch={activeDispatch}
+            targets={dispatchInfo.targets}
+            disabled={!thread?.id}
+            busy={dispatchBusy}
+            lockedBy={dispatchHolderName}
+            onReleaseHolder={() => { void releaseDispatchHolder(); }}
+            restrictedLabel={threadRole.restricted ? (threadRole.label ?? "专家 / 专家团") : null}
+            onChange={(next, opts) => { void applyDispatch(next, opts); }}
+          />
           <button className="icon-button popout-open-btn" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!thread} onClick={() => { if (thread) void popoutCurrentThread(thread.id); }}><Maximize2 size={16} /></button>
         </>
       )}
