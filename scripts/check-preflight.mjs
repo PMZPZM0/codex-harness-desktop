@@ -3177,10 +3177,15 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
 
   // 「默认用内置浏览器」：指令 / 技能 / 渲染层三处必须同向
   const devInstr = readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8");
-  (devInstr.includes("DEFAULT browser channel") && devInstr.includes("CLOAKBROWSER_ENTRY") ? ok : fail)("developer_instructions：playwright-cli 是默认通道，cloakbrowser 要先探 CLOAKBROWSER_ENTRY");
+  // ⛔ 09-20 修正方向：浏览器通道**首选已注册的 nuphus browser_* MCP 工具**，playwright-cli 降为兜底。
+  //    旧断言写的是「playwright-cli 是默认通道」——那正是要修的问题：24 个 browser_* 工具已注册、
+  //    占着约 10k 前缀，指令却一次不提、还把 CLI 说成默认（每步一次进程往返）。
+  (devInstr.includes("PREFERRED — the nuphus MCP browser tools") && devInstr.includes("FALLBACK — `playwright-cli`") && devInstr.includes("CLOAKBROWSER_ENTRY") ? ok : fail)("developer_instructions：浏览器通道首选 nuphus browser_* MCP 工具、playwright-cli 为兜底；cloakbrowser 先探 CLOAKBROWSER_ENTRY");
+  (!devInstr.includes("DEFAULT browser channel") ? ok : fail)("developer_instructions：不得回退成「playwright-cli 是默认通道」（会让已注册的 browser_* 工具白占上下文）");
+  (devInstr.includes("If `browser_navigate` appears in your tool list") ? ok : fail)("developer_instructions：通道按「工具列表里有没有 browser_navigate」判存在（nuphus 随桌面总闸注册，写成绝对会调不存在的工具）");
   (!/The in-app browser panel is CloakBrowser/.test(devInstr) ? ok : fail)("developer_instructions：不再声称应用内面板就是 CloakBrowser（默认是内置浏览器视图）");
   const skillsTs = readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8");
-  (!/本机内置的浏览器就是 CloakBrowser/.test(skillsTs) && skillsTs.includes("## 0. 默认用内置浏览器") ? ok : fail)("browser-automation 技能：默认用内置浏览器（CloakBrowser 仅在已安装且需过反爬时用）");
+  (!/本机内置的浏览器就是 CloakBrowser/.test(skillsTs) && /## 0\. 通道选型/.test(skillsTs) && /首选：nuphus 的/.test(skillsTs) && /MCP 工具/.test(skillsTs) ? ok : fail)("browser-skill：通道选型首选 nuphus browser_*（CloakBrowser 仅在已安装且需过反爬时用）");
   const appTs = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
   (appTs.includes('const [browserMode] = useState<"cloak" | "internal">("internal")') ? ok : fail)("App.tsx：浏览器模式默认内置视图（不再是 cloak）");
   (appTs.includes('const autoIds = ["nuphus", "playwright-cli", "cloakbrowser", "playwright-browsers", "cloak-browsers", "ponytail"]') ? ok : fail)("App.tsx：开发工具分组按拆分后的条目 id 归类");
@@ -6657,6 +6662,74 @@ w.postMessage({id:1,op:"list",root});
   );
   (/notice-stack-in/.test(css73) ? ok : fail)(
     "【73】堆叠子项必须用自己的入场动画（旧 notice-in 最终帧 translate(-50%) 配 both 会把子项永久左移——靠左 bug 根因）"
+  );
+}
+
+// ---------- 【74】自动化能力接线（09-20 盘点后的改造）----------
+// 背景：nuphus MCP 已注册 38 个工具（桌面 14 + 浏览器 24），但内置技能里 `playwright-cli` 提 23 次、
+//       `browser_*` 提 0 次 ⇒ 工具白占约 10k 前缀，而模型每步走 CLI（一次进程往返）。
+// 本段钉住两件事：① 提示词必须与**已注册的工具**一致；② 技能停用状态与指令漂移判据不得退化。
+{
+  const bs74 = readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8");
+  const di74 = readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8");
+  const main74 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  // 按常量边界切出各自正文（不要用正则非贪婪到 `  ——正文里有转义反引号，容易切错）
+  const cut = (from, to) => {
+    const a = bs74.indexOf(from), b = bs74.indexOf(to);
+    return a >= 0 && b > a ? bs74.slice(a, b) : "";
+  };
+  const bSkill = cut("const BROWSER_SKILL =", "const RETIRED_SKILLS");
+  const dSkill = cut("const DESKTOP_SKILL =", "const RETIRED_BROWSER_SKILL");
+  (bSkill && dSkill ? ok : fail)("【74】能从 builtin-skills.ts 切出两个技能正文（切不出来说明常量被改名/移动）");
+
+  // ① 浏览器技能必须真的讲 browser_* 通道，而不只是换个标题
+  (/browser_snapshot/.test(bSkill) && /browser_exec/.test(bSkill) && /browser_import_cookies/.test(bSkill) ? ok : fail)(
+    "【74】browser-skill 讲清 browser_* 通道（快照 / 批处理 / 登录态复用）"
+  );
+  (/单次 CDP 往返/.test(bSkill) ? ok : fail)("【74】browser-skill 点明 browser_exec 的价值（多步合并成单次 CDP 往返）");
+  (/三段循环/.test(bSkill) ? ok : fail)("【74】browser-skill 有「观察 → 动作 → 验证」三段协议");
+  (/判存在/.test(bSkill) ? ok : fail)("【74】browser-skill 有判存在规则（nuphus 随桌面总闸注册，通道不能写死）");
+
+  // ② 桌面技能：perceive/vision 分工 + 平台降级（Intel Mac 无本地 OCR）
+  (/desktop_perceive/.test(dSkill) && /never click with them/.test(dSkill) ? ok : fail)(
+    "【74】desktop-skill 写明 perceive 拿坐标、vision 的坐标不可点（工具描述原文警告）"
+  );
+  (/ONNX Runtime 已放弃 osx-x64/.test(dSkill) ? ok : fail)(
+    "【74】desktop-skill 声明 Intel Mac 无本地 OCR（上游放弃 osx-x64，属预期而非故障）"
+  );
+  (/不可逆动作先问用户/.test(dSkill) ? ok : fail)("【74】desktop-skill 有不可逆动作先问用户的硬约束");
+
+  // ③ 技能停用状态必须被尊重（09-20 修：总闸停用后每次启动被静默写回，总闸形同虚设）
+  (/existsSync\(disabledFile\) \? disabledFile : activeFile/.test(bs74) ? ok : fail)(
+    "【74】ensureBuiltinSkills 尊重 SKILL.md.disabled（否则用户停用的技能每次启动被写回）"
+  );
+  (/existing\.replace\(\/\\r\\n\/g, "\\n"\) !== content\.replace\(\/\\r\\n\/g, "\\n"\)/.test(bs74) ? ok : fail)(
+    "【74】技能内容比对归一化行尾（否则每次启动都白写一遍盘）"
+  );
+
+  // ④ 指令过期判据必须与「写出内容」同源（09-20 修的第二个 bug：旧判据 grep 一句老短语 ⇒ 恒 false）
+  (/developerInstructionsLine\(await devInstructionsInput\(\)\)/.test(main74) ? ok : fail)(
+    "【74】instructionsOutdated 用与写出同源的输入重新生成整行比对"
+  );
+  (/const instructionsOutdated = !configText\.includes\("Never infer/.test(main74) ? fail : ok)(
+    "【74】不得回退成「grep 一句老短语」判断指令是否过期（老配置里本来就有 ⇒ 恒 false ⇒ 升级永不刷新）"
+  );
+  (/const devInput = await devInstructionsInput\(\)/.test(main74) && /developerInstructionsLine\(devInput\)/.test(main74) ? ok : fail)(
+    "【74】applyCustomModel 与漂移判据共用 devInstructionsInput（两边输入不同会恒 true ⇒ 每次启动整份重写）"
+  );
+
+  // ⑤ 桌面指令不得只说命令行（否则模型不会直接调已注册的 desktop_* 工具）
+  (/ALREADY REGISTERED in your tool list/.test(di74) ? ok : fail)(
+    "【74】developer_instructions 明说 desktop_* 已注册、可直接调用（旧文案只提 nuphus-call）"
+  );
+  (!/on-demand CLI bridge to desktop automation tools/.test(di74) ? ok : fail)(
+    "【74】不得回退成「桌面只有 nuphus-call 命令行」的旧文案"
+  );
+
+  // ⑥ 跨平台文案不得写死单一平台的按键（09-20 审查抓到：指令里写死 Ctrl+V，mac 用户照着按必失败；
+  //    这条文案是**每次请求都下发**的基础指令，错一次会持续误导）
+  (!/Ctrl\+V/.test(bs74 + di74) || /Cmd\+V/.test(bs74 + di74) ? ok : fail)(
+    "【74】按键写法不得只写死 Windows（出现 Ctrl+V 就必须同时给出 macOS 的 Cmd+V）"
   );
 }
 

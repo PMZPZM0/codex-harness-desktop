@@ -1777,23 +1777,41 @@ async function collectSessionProviderIds(): Promise<Set<string>> {
   return ids;
 }
 
+/**
+ * developer_instructions 的组装输入（**单一来源**）。
+ * ⛔ applyCustomModel 的「写出」与启动自愈的「是否过期」判定必须共用这一个函数（09-20 修）。
+ *   旧判据是 `!configText.includes("Never infer Python availability")` —— 这句老配置里本来就有
+ *   ⇒ `instructionsOutdated` **恒为 false** ⇒ 升级后 developer_instructions 永不刷新，
+ *   任何指令/技能接线改动都到不了老用户（本轮实测：改完指令，真机 config.toml 里仍是旧文案，
+ *   技能文件已更新 —— 只刷新一半，最难发现的那种）。
+ *   反向也危险：两边输入一旦不同就会恒为 true ⇒ 每次启动整份重写 config.toml（09-16 踩过）。
+ *   所以这里只做「读设置 → 算输入」，纯函数式、无副作用、两处共用。
+ */
+async function devInstructionsInput() {
+  const appSettings = await readAppSettings(app.getPath("userData"));
+  // 自动化总闸（设置页「常规」）：桌面=nuphus MCP，浏览器=playwright/cloakbrowser 指令 + browser_use
+  const builtinPlugins = await readBuiltinPlugins();
+  const bundledNodePath = bundledNode();
+  const mediaHelper = path.join(toolsRoot(), "harness-media.mjs");
+  return {
+    desktop: appSettings.desktopAutomation !== false,
+    browser: appSettings.browserAutomation !== false,
+    // 内置媒体插件（生图/视觉）：配置并启用后注入命令行用法，引擎（含老会话）由此「看见」并真实调用
+    imagePlugin: Boolean(builtinPlugins.image?.enabled !== false && builtinPlugins.image?.baseUrl && builtinPlugins.image?.apiKey && builtinPlugins.image?.model),
+    visionPlugin: Boolean(builtinPlugins.vision?.enabled !== false && builtinPlugins.vision?.baseUrl && builtinPlugins.vision?.apiKey && builtinPlugins.vision?.model),
+    mediaCommand: bundledNodePath ? `"${bundledNodePath}" "${mediaHelper}"` : `node "${mediaHelper}"`,
+  };
+}
+
 async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boolean }) {
   const connectors = await readConnectors();
   const mcpOverrides = await readMcpOverrides();
   const appSettings = await readAppSettings(app.getPath("userData"));
-  // 自动化开关（设置页「常规」可切）：桌面=nuphus MCP，浏览器=playwright/cloakbrowser 指令 + browser_use
-  const desktopAuto = appSettings.desktopAutomation !== false;
-  const browserAuto = appSettings.browserAutomation !== false;
-  // 内置媒体插件（生图/视觉）：配置并启用后向 developer_instructions 注入命令行用法，
-  // 引擎（所有会话，含老会话）由此「看见」并真实调用 harness-media.mjs。
-  const builtinPlugins = await readBuiltinPlugins();
-  const imagePluginOn = Boolean(builtinPlugins.image?.enabled !== false && builtinPlugins.image?.baseUrl && builtinPlugins.image?.apiKey && builtinPlugins.image?.model);
-  const visionPluginOn = Boolean(builtinPlugins.vision?.enabled !== false && builtinPlugins.vision?.baseUrl && builtinPlugins.vision?.apiKey && builtinPlugins.vision?.model);
-  const bundledNodePath = bundledNode();
-  const mediaHelper = path.join(toolsRoot(), "harness-media.mjs");
-  const mediaCommand = bundledNodePath
-    ? `"${bundledNodePath}" "${mediaHelper}"`
-    : `node "${mediaHelper}"`;
+  // developer_instructions 的组装输入与下面的「写出」同源（见 devInstructionsInput 上方说明）；
+  // 两个自动化开关也从这里取，避免同一组开关在两处各算一遍而漂移。
+  const devInput = await devInstructionsInput();
+  const desktopAuto = devInput.desktop;
+  const browserAuto = devInput.browser;
   // 内置 nuphus 与所有连接器都由 harness 重新生成，用户手工写的 MCP 段交给覆盖表
   // harness-dispatch（09-16 调度 MCP）同样是 harness 自己生成的段：不进保留清单，
   // 否则「保留旧段 +新生成段」会在 config.toml 里写出重复的 [mcp_servers.harness-dispatch]，
@@ -1953,7 +1971,7 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
     // 完全自主工程模式 + 已装自动化工具使用说明（个性化走 $CODEX_HOME/AGENTS.md 原生机制）。
     // 桌面/浏览器自动化开关关掉时，对应段说明不注入，模型不会被引导去调用它们。
     // 生图/视觉插件配置后才注入对应段——引擎据此知道能力存在并通过命令行真实调用。
-    developerInstructionsLine({ desktop: desktopAuto, browser: browserAuto, imagePlugin: imagePluginOn, visionPlugin: visionPluginOn, mediaCommand }),
+    developerInstructionsLine(devInput),
     // ⛔ 用户自己的顶层键必须在**第一个段头之前**（09-16 修 Bug 3）：旧实现把它们连同用户段
     //    一起拼在文件**末尾**，而末尾紧接 `[mcp_servers.*]` —— TOML 语义上这些键就成了那个段的
     //    键，引擎根本读不到（实测 `approval_policy = "never"` 变成 `mcp_servers.nuphus.approval_policy`，
@@ -2033,8 +2051,13 @@ async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boole
       }
     })()),
     // 内置桌面自动化 MCP：受覆盖表 + 桌面自动化开关双重控制，任一关闭则整段不写入。
-    // 全量注册 35 个工具，schema 虽占 ~10k 前缀，但作为 prompt 常量前缀可被上游缓存，
+    // 全量注册 nuphus 0.2.2 的**全部 38 个工具**（09-20 实测枚举：桌面 14 + 浏览器 24），
+    // schema 虽占 ~10k 前缀，但作为 prompt 常量前缀可被上游缓存；
     // 引擎工具列表完整暴露 desktop_*/browser_*，能力不阉割。
+    // ⚠️ 因此 browser_* 的可用性绑在**桌面自动化**总闸上（nuphus 是同一个服务器）：
+    //    关掉桌面自动化 → 浏览器 MCP 工具也一起消失（此时浏览器侧只剩 playwright-cli）。
+    //    想让两者独立开关，需要按开关下发 disabled_tools 掩码（待办，见
+    //    .workbuddy/artifacts/automation-unification-plan.md 第 3.3 节）。
     ...(desktopAuto && nuphusBinary() && mcpOverrideEnabled(mcpOverrides, "nuphus") ? [
       "[mcp_servers.nuphus]",
       `command = "${escapeToml(nuphusBinary())}"`,
@@ -3141,7 +3164,12 @@ app.whenReady().then(async () => {
       await writeModelCatalogToml(custom);
       const configText = await fs.readFile(path.join(codexHome, "config.toml"), "utf8").catch(() => "");
       const environmentOutdated = !configText.includes("[shell_environment_policy.set]") || !configText.includes("PYTHON_EXECUTABLE");
-      const instructionsOutdated = !configText.includes("Never infer Python availability");
+      // ⛔ 与**写出内容逐字同源**地比对（09-20 修）：旧写法只 grep `"Never infer Python availability"`
+      //    —— 这句老配置里本来就有 ⇒ 该判据恒为 false ⇒ 指令升级永远不落地（本轮实测踩到：
+      //    技能文件已更新、config.toml 的 developer_instructions 还是旧文案）。
+      //    这里用与 applyCustomModel 完全相同的输入重新生成整行：命中即最新；
+      //    输入同源 ⇒ 不会恒 true（否则每次启动整份重写，09-16 踩过）。
+      const instructionsOutdated = !configText.includes(developerInstructionsLine(await devInstructionsInput()));
       // ⛔ 09-16：废止键残留检查 —— 老版本把顶层 model_context_window 写成全局单值（会覆盖
       //    catalog 里每模型的上下文）。升级后必须**主动清掉已写下的旧值**：preserveUserConfig
       //    会丢弃该键，所以整份重写一次它就消失、下次启动不再触发（幂等）。

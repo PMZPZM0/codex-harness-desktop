@@ -20,19 +20,29 @@ const BASE_INSTRUCTIONS =
 const LANGUAGE_INSTRUCTIONS =
   "\n\nLANGUAGE: The user speaks Simplified Chinese. Produce BOTH your internal reasoning (thinking steps) and your final replies in Simplified Chinese by default, regardless of which model is active. Keep code, identifiers, file paths, CLI output, and established technical terms in their original form. Use English only when the user explicitly requests it.";
 
-/** 桌面自动化说明（nuphus-call） */
+/** 桌面自动化说明（nuphus MCP 的 desktop_* 工具；nuphus-call 是等价命令行兜底）
+ *  ⛔ 这里的文案要**与事实一致**（09-20 修）：desktop_* 是通过 [mcp_servers.nuphus] 注册的
+ *  MCP 工具，**已经在模型工具列表里**，直接调用即可 —— 旧文案只提 nuphus-call 命令行，
+ *  把「直接调用」这条路藏起来了（模型被迫走 CLI，每步多一次进程往返）。
+ *  细节留在技能里（渐进披露），这里只给优先级与判据，避免每轮多花几百 token。 */
 const DESKTOP_INSTRUCTIONS =
-  "\n\nAUTOMATION TOOLKIT (pre-installed, on PATH; invoke ONLY when the task actually needs them — they are NOT loaded into your context by default):\n1) nuphus-call — on-demand CLI bridge to desktop automation tools. Usage: `nuphus-call <tool> key=value ...` (e.g. `nuphus-call desktop_screenshot`, `nuphus-call desktop_mouse action=click x=500 y=300 confirm=true`, `nuphus-call desktop_windows_list`). Run `nuphus-call` with no args to list all tools and their parameters. Covers: screen capture, window control (list/activate/move/resize), mouse/keyboard, clipboard, OCR perceive, vision describe. Write operations need confirm=true.";
+  "\n\nAUTOMATION TOOLKIT (pre-installed; use ONLY when the task actually needs it — the tools themselves are NOT described in your context by default):\n1) Desktop automation — the nuphus MCP tools are ALREADY REGISTERED in your tool list with the `desktop_*` prefix; call them directly, no script needed. Loop: `desktop_windows_list` → `desktop_window_activate` → observe (`desktop_screenshot` / `desktop_perceive`) → act (`desktop_mouse` / `desktop_input`, pass confirm=true) → verify with another screenshot. Take click coordinates from `desktop_perceive` (runs locally, free); `desktop_vision` coordinates are explicitly unreliable — never click with them. For long text (>500 chars) write the clipboard first and paste (Ctrl+V on Windows, Cmd+V on macOS — never hardcode one platform). `nuphus-call` (on PATH) is the equivalent CLI fallback: `nuphus-call <tool> key=value ...`; run it with no args to list every tool. Never automate a UAC / privilege-elevation prompt — stop and ask the user.";
 
 /**
  * 浏览器自动化说明。
- * 09-16 用户定调（「CloakBrowser 不用内置，按需下载就行，默认用内置浏览器」）：
- *  - 默认通道 = playwright-cli + 应用内置的浏览器视图（右栏 Chromium webview）；
- *  - cloakbrowser 是**可选增强**，可能根本没装 —— 指令里必须让模型先看环境变量再决定，
- *    否则模型会去调一个不存在的模块，把「没装」误判成「坏了」。
+ * ⛔ 09-20 修正通道优先级（此前把慢的那条说成"默认"）：
+ *  - 首选 = nuphus MCP 的 `browser_*` 工具。它们**本来就注册在模型工具列表里**
+ *    （[mcp_servers.nuphus] 全量注册 24 个），但旧文案一次都没提它们、反而 20 多次指引
+ *    playwright-cli ⇒ 24 个工具的 schema 白占上下文，而模型每步都要起一次 CLI 进程。
+ *    实测定量：`browser_exec` 能把多步合并成单次 CDP 往返、`browser_snapshot` 只回 AX 树。
+ *  - **判据是「工具列表里有没有 browser_navigate」**，不是「我们建议用哪个」——
+ *    nuphus 只在桌面自动化总闸开启时才注册（mcp_servers.nuphus 段缺失就没有这些工具），
+ *    所以必须写成条件式，否则模型会去调不存在的工具、把「没开」误判成「坏了」。
+ *  - playwright-cli 降级为**兜底**通道（nuphus 不可用时仍能干活）。
+ *  - cloakbrowser 仍是可选增强，可能根本没装 —— 必须先看环境变量再决定。
  */
 const BROWSER_INSTRUCTIONS =
-  "\n2) playwright-cli — token-efficient browser automation CLI and the DEFAULT browser channel (installed). Workflow: `playwright-cli open <url>` → `playwright-cli snapshot` to get element refs → `playwright-cli click e12` / `type` / `fill` / `press` / `screenshot` / `pdf`. Named sessions with -s=name; consult `playwright-cli --help`.\n3) cloakbrowser — OPTIONAL anti-detection fingerprint Chromium (drop-in Playwright replacement that passes Cloudflare Turnstile, reCAPTCHA, FingerprintJS). It is downloadable on demand and may NOT be installed: check `process.env.CLOAKBROWSER_ENTRY` first. If it is unset, cloakbrowser is not installed — do NOT try to install it and do NOT treat it as broken; use playwright-cli instead and tell the user it can be downloaded from Settings → Developer Tools. When it is set: `const { launch } = await import(process.env.CLOAKBROWSER_ENTRY)` then `await launch({ headless: false, humanize: true })`, driven with the standard Playwright API. Use it ONLY for bot-protected sites.\nBROWSERS: the default browsing surface is the app's BUILT-IN browser view (right-side Chromium panel) plus playwright-cli; CloakBrowser only opens its own separate fingerprint window. Full usage guides are in your skills desktop-automation and browser-automation. Default to playwright-cli; reach for cloakbrowser only for anti-bot sites and only when installed.";
+  "\n2) Browser automation — two channels; pick by what is ACTUALLY in your tool list:\n   a) PREFERRED — the nuphus MCP browser tools (prefix `browser_`). If `browser_navigate` appears in your tool list, use these: one call per action instead of a process spawn per action, `browser_snapshot` returns only the accessibility tree's interactive elements (token-cheap), `browser_exec` batches several steps into ONE round trip, `browser_import_cookies` can reuse the user's existing Chrome login (use only with their knowledge). Loop: snapshot → act → `browser_wait_for`/re-snapshot to verify.\n   b) FALLBACK — `playwright-cli` (on PATH), for when the `browser_*` tools are NOT present (e.g. desktop automation is switched off in app settings, so nuphus is not registered). Workflow: `playwright-cli open <url>` → `playwright-cli snapshot` for element refs → `click e12` / `type` / `fill` / `press` / `screenshot`; named sessions with -s=name; consult `playwright-cli --help`.\n3) cloakbrowser — OPTIONAL anti-detection fingerprint Chromium (drop-in Playwright replacement that passes Cloudflare Turnstile, reCAPTCHA, FingerprintJS). It is downloadable on demand and may NOT be installed: check `process.env.CLOAKBROWSER_ENTRY` first. If it is unset, cloakbrowser is not installed — do NOT try to install it and do NOT treat it as broken; use the channel from (2) instead and tell the user it can be downloaded from Settings → Developer Tools. When it is set: `const { launch } = await import(process.env.CLOAKBROWSER_ENTRY)` then `await launch({ headless: false, humanize: true })`, driven with the standard Playwright API. Use it ONLY for bot-protected sites.\nBROWSERS: default browsing surface is the app's BUILT-IN browser view (right-side Chromium panel); CloakBrowser only opens its own separate fingerprint window. Full usage guides live in your skills `desktop-automation` and `browser-skill`. Do NOT wrap `require(\"playwright\")` yourself — the CLI and MCP channels are the only supported entry points.";
 
 /**
  * 内置媒体插件说明（生图 / 视觉辅助）。只在用户配置并启用对应插件后注入——
