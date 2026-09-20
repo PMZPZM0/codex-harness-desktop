@@ -3218,11 +3218,6 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.wb-fold-failed {
-  color: var(--red);
-  flex: none;
-  font-size: 11px;
-}
 /* 只过渡 grid-template-rows：流式期间内容增长不会触发高度补间（避免出字时上跳/闪烁） */
 .wb-fold-content {
   display: grid;

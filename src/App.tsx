@@ -3753,7 +3753,8 @@ function FoldGroup({ title, leadGroup, variant, running, defaultOpen = false, au
         {variant === "summary" && <span className="wb-fold-lead"><LeadIcon size={13} /></span>}
         {variant === "completed" && <span className={`wb-fold-dot ${failedCount ? "error" : ""}`} aria-hidden />}
         <span className={`wb-fold-title ${running ? "shimmer-text" : ""}`}>{title}</span>
-        {failedCount ? <span className="wb-fold-failed">{failedCount} 项失败</span> : null}
+        {/* 用户 09-20 明令：「折叠线上后面那个『几项失败』文字删了，这个不要」——失败与否由左边那个
+            小圆点（.wb-fold-dot.error）表达，不再在标题后追加「N 项失败」文字。别再把它加回来。 */}
       </button>
       <Fold open={open} bare><div className="wb-fold-body">{children}</div></Fold>
     </div>
