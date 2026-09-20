@@ -5512,6 +5512,16 @@ w.postMessage({id:1,op:"list",root});
   (!/&& !anchorTopRef\.current\) clearAnchorPad\(\);/.test(appCode51)
     ? ok : fail)("【51】没有残留「只在钉顶已失效时清留白」的旧口径（那会在完成后留下大片空白）");
 
+  // ⑤ 自动跟随三要素（09-20 用户回头确认「最新消息自动跟随还在不，这个没丢吧」）——
+  //    跟随只在**运行中（钉顶期）**生效，回合结束脱钉后自然停止，所以它必须与钉顶口径同存亡。
+  (/const FOLLOW_STEP_PX = 48;/.test(appCode51) ? ok : fail)(
+    "【51】自动跟随步长常量在（48px：攒约两行再整体跟一次，逐帧跟会与换行重排抢）"
+  );
+  (/const pinMine = anchorTopRef\.current && \(pinThreadIdRef\.current === null \|\| pinThreadIdRef\.current === myThreadId\);/.test(appCode51)
+    ? ok : fail)("【51】跟随入口接受「归属未知 = 自己」（否则刚发送那一小段完全不跟随）");
+  (/if \(dist > -FOLLOW_STEP_PX\) \{[\s\S]{0,260}?if \(dist > 0\) \{/.test(appCode51)
+    ? ok : fail)("【51】跟随门槛 dist > -48 且只在 dist > 0 时才补（短回复不被推、最新一行不被遮）");
+
   // ⑤ 侧栏会话行带 data-thread-id：验收脚本按 id 切换才可靠
   //    （按标题找会因列表重排/标题变化而"找不到会话行" → 观测无效，本轮就是这么白跑一轮的）
   (/data-thread-id=\{entry\.id\}/.test(appCode51) ? ok : fail)("【51】会话行带 data-thread-id（验收按 id 切换，不靠标题）");
