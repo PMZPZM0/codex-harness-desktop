@@ -6719,7 +6719,7 @@ w.postMessage({id:1,op:"list",root});
   );
 
   // ⑤ 桌面指令不得只说命令行（否则模型不会直接调已注册的 desktop_* 工具）
-  (/ALREADY REGISTERED in your tool list/.test(di74) ? ok : fail)(
+  (/the nuphus MCP desktop tools are already registered/.test(di74) ? ok : fail)(
     "【74】developer_instructions 明说 desktop_* 已注册、可直接调用（旧文案只提 nuphus-call）"
   );
   (!/on-demand CLI bridge to desktop automation tools/.test(di74) ? ok : fail)(
@@ -6730,6 +6730,85 @@ w.postMessage({id:1,op:"list",root});
   //    这条文案是**每次请求都下发**的基础指令，错一次会持续误导）
   (!/Ctrl\+V/.test(bs74 + di74) || /Cmd\+V/.test(bs74 + di74) ? ok : fail)(
     "【74】按键写法不得只写死 Windows（出现 Ctrl+V 就必须同时给出 macOS 的 Cmd+V）"
+  );
+}
+
+// ---------- 【75】自动化总闸＝硬控制 + nuphus 版本四处同源（09-20）----------
+// 背景：两个总闸原先都不是硬控制 —— 关桌面会把 browser_* 一起带走（安全边界：不能只给浏览器），
+// 关浏览器则 browser_* 仍全量注册、只靠提示词劝阻。现在由 disabled_tools 掩码实现硬阻断。
+// 断言跑的是 dist-electron/automation-policy.js 的**真函数**（与【28】同路子），不是 grep 源码。
+{
+  const req75 = createRequire(import.meta.url);
+  let pol = null;
+  try { pol = req75(join(ROOT, "dist-electron", "automation-policy.js")); } catch { pol = null; }
+  (pol ? ok : fail)("【75】dist-electron/automation-policy.js 可加载（总闸掩码的唯一来源）");
+
+  if (pol) {
+    const D = pol.NUPHUS_DESKTOP_TOOLS || [];
+    const B = pol.NUPHUS_BROWSER_TOOLS || [];
+    (D.length === 15 && B.length === 23 && new Set([...D, ...B]).size === 38 ? ok : fail)(
+      `【75】nuphus 工具分组与实测枚举一致（桌面 15 + 浏览器 23 = 38；实际 ${D.length}+${B.length}）`
+    );
+    (pol.shouldRegisterNuphus({ desktop: false, browser: true })
+      && pol.shouldRegisterNuphus({ desktop: true, browser: false })
+      && !pol.shouldRegisterNuphus({ desktop: false, browser: false }) ? ok : fail)(
+      "【75】nuphus 注册条件是「任一总闸开启」（关桌面不再连带丢掉 browser_* —— 安全边界）"
+    );
+    const onlyBrowser = pol.nuphusDisabledTools({ desktop: false, browser: true });
+    const onlyDesktop = pol.nuphusDisabledTools({ desktop: true, browser: false });
+    (onlyBrowser.length === 15 && !onlyBrowser.some((t) => t.startsWith("browser_")) ? ok : fail)(
+      "【75】只开浏览器 ⇒ 掩掉整组桌面工具（真实键鼠拿不到）且不误伤 browser_*"
+    );
+    (onlyDesktop.length === 23 && !onlyDesktop.some((t) => t.startsWith("desktop_")) ? ok : fail)(
+      "【75】只开桌面 ⇒ 掩掉整组浏览器工具（浏览器总闸＝硬控制，不再只是提示词）"
+    );
+    const merged = pol.withNuphusMasksForRules(
+      { nuphus: { deny: [], ask: ["desktop_mouse"], allow: ["desktop_screenshot"] } },
+      { desktop: false, browser: true },
+    );
+    (merged.nuphus.deny.includes("desktop_mouse")
+      && !merged.nuphus.ask.includes("desktop_mouse")
+      && !merged.nuphus.allow.includes("desktop_screenshot") ? ok : fail)(
+      "【75】掩码进 deny 并从 ask/allow 摘除（否则同一工具既 disabled 又带 approval_mode，配置自相矛盾）"
+    );
+    (pol.effectiveNuphusPermission("desktop_mouse", "allow", { desktop: false, browser: true }) === "deny" ? ok : fail)(
+      "【75】总闸掩码压过用户显式 allow（关着的组不能被单个工具放行）"
+    );
+  }
+
+  const main75 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  (/mcp-servers:permissions[\s\S]{0,700}?withNuphusMasks\(/.test(main75) ? ok : fail)(
+    "【75】mcp-servers:permissions 也过掩码（否则界面显示「未设权限」而配置里已被禁用）"
+  );
+  (/shouldRegisterNuphus\(\{ desktop: desktopAuto, browser: browserAuto \}\)/.test(main75) ? ok : fail)(
+    "【75】config.toml 的 nuphus 段用 shouldRegisterNuphus 判注册"
+  );
+  (/withNuphusMasksForRules\(mcpToolRulesOf\(mcpOverrides\)/.test(main75) ? ok : fail)(
+    "【75】掩码并进 mcpToolRules（落成 disabled_tools）"
+  );
+
+  const pinOf = (file, re) => { try { return (re.exec(readFileSync(join(ROOT, file), "utf8")) || [])[1] || ""; } catch { return ""; } };
+  const pins = {
+    "win版本常量": pinOf("scripts/prepare-windows-tools.cjs", /const NUPHUS_VERSION = "([^"]+)"/),
+    "mac npm 安装": pinOf("scripts/prepare-mac-tools.cjs", /@nuphus\/nuphus-mcp@([0-9.]+)/),
+    "mac manifest": pinOf("scripts/prepare-mac-tools.cjs", /nuphus: "([0-9.]+)"/),
+    "mac cargo ref": pinOf(".github/workflows/build-mac.yml", /repository: mrpulor-gh\/nuphus-mcp[\s\S]{0,220}?ref:\s*v([0-9.]+)/),
+  };
+  const uniq = new Set(Object.values(pins));
+  (uniq.size === 1 && [...uniq][0] ? ok : fail)(
+    `【75】nuphus 版本四处同源（${Object.entries(pins).map(([k, v]) => k + "=" + (v || "缺")).join(" / ")}）`
+  );
+
+  const bs75 = readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8");
+  const di75 = readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8");
+  (/判存在（必做的第一步）/.test(bs75) ? ok : fail)(
+    "【75】desktop-skill 有「判存在」小节（总闸关着时别去调不存在的 desktop_*，也别用命令行绕）"
+  );
+  (/IF `desktop_windows_list` is in your tool list/.test(di75) ? ok : fail)(
+    "【75】基础指令里桌面能力也按「工具列表里有没有 desktop_windows_list」判存在"
+  );
+  (/do not fall back to `nuphus-call` to bypass the switch/.test(di75) ? ok : fail)(
+    "【75】明确禁止用命令行绕过总闸（nuphus-call 仍在 PATH 上，配置管不到这一层）"
   );
 }
 
