@@ -1660,3 +1660,34 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   （原话：「不要加，不好看，bug 太多了，就之前正常左侧侧边栏提醒需审批类似就行」）⇒ 审批提醒入口**只有**
   侧栏「需审批/需选择/需确认」徽标 + 当前会话输入框上方的审批卡。预检【80】已改为**守这条口径**：
   浮层不许回来、审批类文案不得走 `setNotice`（那是通知中心唯一入口）、通知中心入账条件不许放宽。
+
+## 09-21 内置第三方写作技能 + 文档转换（markitdown）
+
+- **用户要求**：「对我们有帮助的都内置安装好」→ 随后澄清为「markitdown 这个可以内置，其他太大的丢到开发工具里面，
+  配置好国内镜像下载源」。落法见下（技能全内置；markitdown 装进 Python = 内置，同时留开发工具卡片给老用户补装）。
+- **内置三个写作技能**（`electron/builtin-skills.ts` 的 `entries`，随启动写进 `codexHome/skills/`）：
+  `humanizer`（blader/humanizer，MIT，28728 B）/ `no-ai-slop`（petergyang/no-ai-slop，MIT，10853 B）/
+  `i-have-adhd`（ayghri/i-have-adhd，MIT，7207 B）。三者都是**纯 SKILL.md、零可执行代码**。
+  - ⛔ 内容**逐字**保留上游（只做 TS 模板串必需的 `\` / `` ` `` / `${` 转义）—— 就地改写会让「上游有没有更新」
+    无法用 sha 判断。来源 / 许可 / 内置当天的 sha256 记在 `THIRD_PARTY_NOTICES.md`。
+  - ⛔ `i-have-adhd` 的 `disable-model-invocation: true` **必须保留**：它会重塑**全部**输出的写法，只允许用户
+    显式调用（引擎认这个字段 —— 已在本机引擎二进制里确认 `disable-model-invocation` / `disable_model_invocation`
+    都在）。删了它，模型可能自己把所有人的默认输出风格换掉。
+  - 用户可在「设置 → 技能」单独停用（`ensureBuiltinSkills` 尊重 `SKILL.md.disabled`，09-20 已修）。
+  - 预检【82】11 条（含逐字 sha256 比对：从 TS 常量反解转义后与原文字节级比对）。
+- **文档转换（markitdown）**：让 Codex 能读 PDF / Word / Excel / PPT 附件（转成 Markdown 再交给模型）。
+  装在**内置 Python** 里（`scripts/install-runtimes.cjs` 的 `DOC_PACKAGES`，已并入 `installPipPackages` 默认清单
+  ⇒ 随 Python 装好 = 内置），另在「开发工具」页留一张「文档转换（markitdown）」卡片给早版本用户补装 / 修复。
+  - **体积是这条的命门**：只用 `markitdown[pdf,docx,pptx]` + `openpyxl`，实测约 **120 MB**
+    （其中 onnxruntime 35 MB + numpy 31 MB 是 markitdown 基础依赖 magika 的硬依赖，规避不掉；
+    PPT 的 Pillow 另占约 18 MB）。`[all]` 实测 **273 MB+**，含 Azure 云端文档智能 SDK 与音频 /
+    YouTube 依赖；`[xlsx]` extra 会拉进 pandas(59MB) —— ⛔ **Excel 因此不走 markitdown**（它的
+    XlsxConverter 硬 `import pandas`），改由内置技能教模型用 openpyxl 直读（openpyxl 只 1.9 MB）。
+    预检【83】用负向断言钉死这两条（注释里提到不算，走 `codeOnly`）。
+  - **两个真缺口（都靠预检抓出来，当轮已修）**：① `installPipPackages` 的 skip 判定原先只看 `fastapi`
+    ⇒ 早版本装过 Python 的用户永远补不到 markitdown（「内置」直接落空），现在**同时**看 `markitdown`；
+    ② 卸载路径若按 marker 首段推导会得到 `tools/python` —— **把整个 Python 运行时删光**，markitdown 必须
+    走 `pythonSiteDir()` 单独特判（同理 mac 的 `lib/pythonX.Y/site-packages` 不能写死版本号）。
+  - mac 侧也必须接 `want("markitdown")` 入口，否则卡片点了静默不装 —— 这条是既有守卫【34】（两平台安装表
+    对称）抓到的。
+  - 预检【83】12 条。

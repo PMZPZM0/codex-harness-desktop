@@ -56,6 +56,14 @@ const CMAKE_URL = `https://github.com/Kitware/CMake/releases/download/v${CMAKE_V
 const SEVENZIP_GH_URL = "https://github.com/ip7z/7zip/releases/download/25.01/7z2501-extra.7z";
 // Python 常用 Web/API 依赖（引擎自检缺失项）。走清华 PyPI 镜像，无需代理。
 const PIP_PACKAGES = "requests httpx flask fastapi playwright";
+// 文档转换依赖：让 Codex 能读 PDF / Word / Excel / PPT 附件（把二进制文档转成 Markdown 再喂给模型）。
+// **按需安装**（「开发工具」页的一张卡片，收到 want("markitdown") 才装），不并入 PIP_PACKAGES —— 体积大。
+// ⛔ 刻意不用 `markitdown[all]`：实测 273 MB+，含 Azure 云端文档智能 SDK 与音频/YouTube 依赖，
+//    与本地文件转换无关（其中 pandas+numpy 一项就占 90 MB）。
+// ⛔ 也刻意不用 `[xlsx]`：那条 extra 同样拉 pandas+numpy，而转 xlsx 实际只需 openpyxl（1.8 MB）。
+//    xlsx 支持靠单独装 openpyxl 拿到。实测这套组合约 85 MB。
+//    方括号加引号：spawn 走 shell，mac 的 sh 会做 glob 展开（Windows cmd 不会），引号两边都安全。
+const DOC_PACKAGES = ['"markitdown[pdf,docx,pptx]"', "openpyxl"];
 // Miniconda：官方 exe 静默安装（/InstallationType=JustMe /RegisterPython=0 /S /D=目标目录）
 const MINICONDA_VERSION = "py312_25.1.1-2";
 const MINICONDA_URL = `https://repo.anaconda.com/miniconda/Miniconda3-${MINICONDA_VERSION}-Windows-x86_64.exe`;
@@ -431,15 +439,53 @@ async function installPip(pythonDir) {
   console.log(`[pip] installed to ${pythonDir}`);
 }
 
-/** 预装 Python 常用依赖（requests/httpx/flask/fastapi/playwright），走清华镜像免代理。 */
+/** 预装 Python 常用依赖（requests/httpx/flask/fastapi/playwright **+ 文档转换**），走清华镜像免代理。
+ *  ⛔ skip 判定必须**同时**看两类包：只看 fastapi 的话，早版本装过 Python 的老用户永远补不到
+ *     markitdown（他得自己去点卡片，而多数人不会点）—— 「内置」就落空了。 */
 async function installPipPackages(pythonDir) {
-  const marker = path.join(pythonDir, "Lib", "site-packages", "fastapi");
-  if (fs.existsSync(marker)) { console.log("[skip] python packages already installed"); return; }
-  console.log("[pip-packages] installing " + PIP_PACKAGES + " (tsinghua mirror, no proxy)");
+  const site = pythonSitePackages(pythonDir) ?? path.join(pythonDir, "Lib", "site-packages");
+  const hasBase = fs.existsSync(path.join(site, "fastapi"));
+  const hasDoc = fs.existsSync(path.join(site, "markitdown"));
+  if (hasBase && hasDoc) { console.log("[skip] python packages already installed"); return; }
+  const specs = [PIP_PACKAGES, ...DOC_PACKAGES].join(" ");
+  console.log("[pip-packages] installing " + specs + " (tsinghua mirror, no proxy)");
   process.stdout.write("@@STAGE 安装 Python 依赖\n");
   // pip 下载/安装有天然的分步输出：流式转发给界面（进度区能看到 Collecting / Installing）
-  await runStreaming(`"${path.join(pythonDir, "python.exe")}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${PIP_PACKAGES}`, { label: "Python 依赖安装", timeout: 900000, env: { ...process.env, PYTHONHOME: pythonDir } });
+  await runStreaming(`"${path.join(pythonDir, "python.exe")}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${specs}`, { label: "Python 依赖安装", timeout: 1800000, env: { ...process.env, PYTHONHOME: pythonDir } });
   console.log("[pip-packages] done");
+}
+
+/** site-packages 的实际路径：Windows 是 `Lib/site-packages`，mac/posix 是 `lib/pythonX.Y/site-packages`。
+ *  ⛔ 别把 mac 的版本号写死（python3.13）—— 上游换小版本目录就变了，「装没装」判定失效会反复重装。 */
+function pythonSitePackages(pythonDir) {
+  const win = path.join(pythonDir, "Lib", "site-packages");
+  if (fs.existsSync(win)) return win;
+  const lib = path.join(pythonDir, "lib");
+  if (fs.existsSync(lib)) {
+    const hit = fs.readdirSync(lib).filter((name) => /^python\d+\.\d+$/.test(name)).sort().pop();
+    if (hit) return path.join(lib, hit, "site-packages");
+  }
+  return null;
+}
+
+/** 文档转换依赖（markitdown + openpyxl）——**按需安装**，不随 Python 默认装（约 85 MB）。
+ *  幂等：已装过就直接跳过（判定看 site-packages 里有没有 markitdown 包目录）。 */
+async function installDocTools(pythonDir) {
+  const site = pythonSitePackages(pythonDir);
+  if (site && fs.existsSync(path.join(site, "markitdown"))) { console.log("[skip] markitdown already installed"); return; }
+  const py = process.platform === "darwin" ? path.join(pythonDir, "bin", "python3") : path.join(pythonDir, "python.exe");
+  // ⛔ 不能在这里静默 return：脚本 EXIT=0 时界面会显示「安装完成」，而用户其实什么都没装到
+  //    （09-21 代码审查抓到的 UX 缺口）。抛出去，界面才会显示真实原因。
+  if (!fs.existsSync(py)) {
+    throw new Error("需要先安装「Python + Tkinter + pip」（在「基础运行时」分组里），再安装文档转换");
+  }
+  console.log("[markitdown] installing " + DOC_PACKAGES.join(" ") + " (tsinghua mirror)");
+  process.stdout.write("@@STAGE 安装文档转换依赖\n");
+  const env = { ...process.env };
+  // mac 的 python-build-standalone 不需要 PYTHONHOME（装了反而会打乱 sys.path）
+  if (process.platform !== "darwin") env.PYTHONHOME = pythonDir;
+  await runStreaming(`"${py}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${DOC_PACKAGES.join(" ")}`, { label: "文档转换依赖安装", timeout: 1800000, env });
+  console.log("[markitdown] done");
 }
 
 async function main() {
@@ -465,6 +511,9 @@ async function main() {
     await installPip(pythonDir);
     await installPipPackages(pythonDir);
   }
+  // 文档转换依赖（按需安装，不并入 PIP_PACKAGES）：用户点「开发工具 → 文档转换」卡片才走这里。
+  //  放在 if (want("python")) **之外** —— 只点这一张卡片时不该顺手把 Python 重装一遍。
+  if (want("markitdown")) await installDocTools(pythonDir);
   if (want("ffmpeg")) await install("ffmpeg", FFMPEG_URL, ffmpegDir, { marker: "bin\\ffmpeg.exe", strip: true, archiveName: "ffmpeg-release-essentials.zip" });
   if (want("vscode-cli")) await install("vscode-cli", VSCODE_CLI_URL, vscodeCliDir, { marker: "code.exe", strip: false, archiveName: "vscode-cli-win32-x64.zip" });
   if (want("jq")) await installFile("jq", JQ_URL, jqDir, "jq.exe");
@@ -568,11 +617,18 @@ async function mainMac() {
     }
     const python = path.join(TOOLS, "python", "bin", "python3");
     if (want("python") && fs.existsSync(python)) {
+      // ⛔ mac 侧不设 marker 早退（Windows 那样）：老用户早已装好 python 与 fastapi，但缺 markitdown。
+      //    pip install 本身幂等（已满足的包秒过），每次跑一遍代价很小，能保证「内置」对老用户也成立。
+      const specs = [PIP_PACKAGES, ...DOC_PACKAGES].join(" ");
       try {
-        runCommand(`"${python}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${PIP_PACKAGES}`, { timeout: 900000 });
+        runCommand(`"${python}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${specs}`, { timeout: 1800000 });
       } catch (error) { console.log("[pip-packages] failed (optional): " + String(error.message).split("\n")[0]); }
     }
   }
+  // 文档转换依赖：mac 侧的按需补装入口（默认已随上面的 pip 安装装好，这里给老用户补装/修复）。
+  //  ⛔ 必须与 Windows 侧**对称存在**：预检【34】会比对两平台的安装表，只在一侧有的话，
+  //    另一平台点「文档转换」卡片会静默什么都不装（用户以为装上了）。
+  if (want("markitdown")) await installDocTools(path.join(TOOLS, "python"));
   // evermeet.cx 的 mac 单文件构建（官方 gyan.dev 只有 Windows 包）
   if (want("ffmpeg")) {
     await installFile("ffmpeg", "https://evermeet.cx/ffmpeg/get/ffmpeg/zip", path.join(TOOLS, "ffmpeg", "bin"), "ffmpeg");
