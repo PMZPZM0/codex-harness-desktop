@@ -3173,8 +3173,12 @@ app.whenReady().then(async () => {
       //   这里补上「安装目录漂移」检查：当前应有的首个 PATH 项不在配置里就整份重写。
       const cfgPathLine = /^\s*PATH\s*=\s*"([^"]*)"/m.exec(configText)?.[1] ?? "";
       const expectedFirst = augmentedPath().split(path.delimiter)[0] ?? "";
+      // ⛔ 切分必须用 path.delimiter（09-20 mac 审计抓到的真缺口）：mac 上 PATH 分隔符是 `:`，
+      //   写死 `;` 会把整条 PATH 当成一个元素 → 与 expectedFirst 永不相等 → **每次启动都误判
+      //   「安装目录漂移」并整份重写 config.toml**。上面 expectedFirst 已经用了 path.delimiter，
+      //   两处口径必须一致。
       const envPathStale = Boolean(expectedFirst)
-        && !cfgPathLine.replace(/\\\\/g, "\\").split(";").map((entry) => entry.trim()).filter(Boolean).includes(expectedFirst);
+        && !cfgPathLine.replace(/\\\\/g, "\\").split(path.delimiter).map((entry) => entry.trim()).filter(Boolean).includes(expectedFirst);
       if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || disabledMissing || dispatchMcpBad) {
         console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, envPathStale=${envPathStale}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}; rewriting`);
         await applyCustomModel(custom);
