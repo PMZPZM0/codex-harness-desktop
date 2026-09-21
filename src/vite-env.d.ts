@@ -592,12 +592,11 @@ interface Window {
     describeImage(input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }): Promise<{ text: string }>;
     relayLogin(input: { baseUrl: string; email: string; password: string }): Promise<{ email: string; baseUrl: string; balance: number }>;
     relayLoadAccount(): Promise<{ baseUrl: string; email: string; loggedIn: boolean; selectedMode: "balance" | "plan" | null; selectedGroupId: number | null; selectedKeyName: string | null } | null>;
-    relayLogout(): Promise<{ ok: boolean; remaining: number }>;
     relayAccounts(): Promise<{ id: string; baseUrl: string; email: string; loggedIn: boolean; selectedMode: "balance" | "plan" | null; selectedGroupId: number | null; selectedKeyName: string | null; active: boolean; disabled: boolean }[]>;
     relayToggleAccount(input: { id: string; disabled: boolean }): Promise<{ ok: boolean; disabled: boolean; deactivated?: boolean }>;
     openaiToggleAccount(input: { id: string; disabled: boolean }): Promise<{ ok: boolean; disabled: boolean; deactivated?: boolean }>;
     relaySwitchAccount(id: string): Promise<{ ok: boolean; baseUrl: string; email: string }>;
-    relayRemoveAccount(id: string): Promise<{ ok: boolean; activeId: string | null }>;
+    relayRemoveAccount(id: string): Promise<{ ok: boolean; activeId: string | null; removed?: boolean; deactivated?: boolean }>;
     openaiLoginStart(input?: { proxy?: string }): Promise<{ started: boolean }>;
     openaiLoginStatus(): Promise<{ loggedIn: boolean; email: string; url: string; code: string; childAlive: boolean; error: string; lines: string }>;
     openaiLoginCancel(): Promise<{ ok: boolean }>;
@@ -610,8 +609,8 @@ interface Window {
     openaiAccountSwitch(id: string): Promise<{ ok: boolean; email: string }>;
     openaiImportFile(input: { contents: string[] }): Promise<{ total: number; imported: number; updated: number; failed: number; items: { index: number; name: string; id?: string; email?: string; loginable?: boolean; action: "imported" | "updated" | "failed"; message?: string }[] }>;
     relayKeysAll(): Promise<{ id: string; email: string; baseUrl: string; active: boolean; selectedKeyId: number | null; keys: any[]; error?: string }[]>;
-    relayOverview(): Promise<{ baseUrl: string; email: string; balance: number; subscriptions: any[]; keys: any[]; groups: any[]; selectedMode: "balance" | "plan" | null; selectedGroupId: number | null; selectedKeyId: number | null; selectedKeyName: string | null }>;
-    relayCreateKey(input: { name: string; groupId?: number | null }): Promise<{ id: number; key: string; name: string; group_id: number | null; status: string }>;
+    relayOverview(id?: string): Promise<{ baseUrl: string; email: string; balance: number; subscriptions: any[]; keys: any[]; groups: any[]; selectedMode: "balance" | "plan" | null; selectedGroupId: number | null; selectedKeyId: number | null; selectedKeyName: string | null }>;
+    relayCreateKey(input: { name: string; groupId?: number | null; accountId?: string }): Promise<{ id: number; key: string; name: string; group_id: number | null; status: string }>;
     relaySelect(input: { mode: "balance" | "plan"; groupId: number | null; keyId?: number; keyName?: string }): Promise<{ ok: boolean }>;
     relayKeyBilling(input: { baseUrl: string; apiKey: string }): Promise<any>;
     relayRegister(input: { baseUrl: string; email: string; password: string; affCode?: string }): Promise<{ email: string; baseUrl: string; balance: number }>;

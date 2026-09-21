@@ -21,6 +21,7 @@ import { deleteCustomCommand, expandCommandTemplate, listCustomCommands, readCus
 import { MemoryStore, Scheduler, type MemoryCategory, type MemoryRemoteConfig } from "./harness-services";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { MemoryLayers } from "./memory-layers";
+import { isRelayAccountLive, normalizeRelayStore, pickRelayActiveId, relayProviderIdOf } from "./relay-accounts";
 import { RpaStore, type RpaRecipe } from "./rpa-store";
 import { TeamRunStore, memberThreadName } from "./team-runs";
 import { DelegateRegistry } from "./delegate-registry";
@@ -4653,8 +4654,18 @@ type RelayStore = { activeId: string | null; accounts: (RelayAccount & { id: str
 // 多账户库：id = base|email；老的单账户 relay-account.json 首次读取时自动迁移
 async function readRelayStore(): Promise<RelayStore> {
   try {
-    const store = JSON.parse(await fs.readFile(relayStoreFile, "utf8"));
-    if (store && Array.isArray(store.accounts)) return store as RelayStore;
+    const parsed = JSON.parse(await fs.readFile(relayStoreFile, "utf8"));
+    if (parsed && Array.isArray(parsed.accounts)) {
+      // ⛔ 自愈（09-21）：activeId 指向不存在/已停用的账号 → 置空并落盘。
+      // 真机事故：库里 activeId 指着一个 disabled 账号，卡片同屏显示「使用中 + 已停用 + 当前生效」，
+      // 而 readRelayAccount()（余额/套餐/密钥全走它）会拿这个停用账号当生效账号用。
+      const { store, changed } = normalizeRelayStore<RelayAccount & { id: string }>(parsed);
+      if (changed) {
+        console.warn(`[relay] 账号库自愈：activeId=${JSON.stringify((parsed as any).activeId)} 指向不存在或已停用的账号 → 置空`);
+        try { await fs.writeFile(relayStoreFile, JSON.stringify(store, null, 2), "utf8"); } catch { /* 落盘失败不阻断读取 */ }
+      }
+      return store;
+    }
   } catch { /* 首次/损坏：走迁移 */ }
   try {
     const legacy = JSON.parse(await fs.readFile(relayAccountFile, "utf8"));
@@ -4669,18 +4680,39 @@ async function readRelayStore(): Promise<RelayStore> {
 async function writeRelayStore(store: RelayStore) {
   await fs.writeFile(relayStoreFile, JSON.stringify(store, null, 2), "utf8");
 }
+/** 当前生效账号。自愈后 activeId 必然指向可用账号，所以这里不再需要额外过滤。 */
 async function readRelayAccount(): Promise<RelayAccount | null> {
   const store = await readRelayStore();
   return store.accounts.find((a) => a.id === store.activeId) ?? null;
 }
-async function writeRelayAccount(account: RelayAccount & { id?: string }) {
+/** 落盘账号（含新增/更新）。`activate:false` ＝**只更新凭据，不许改 activeId**。
+ *  ⛔ 401 自动重登必须传 `activate:false`：否则「打开中转站页 → relay:keys-all 给每个账号补 token」
+ *    会把停用账号顶成生效账号（09-21 真机事故），顺带把引擎的模型配置也换掉。 */
+async function writeRelayAccount(account: RelayAccount & { id?: string }, options: { activate?: boolean } = {}) {
   const store = await readRelayStore();
   const id = account.id ?? `${relayBase(account.baseUrl)}|${account.email}`;
   const next = { ...account, id };
   const idx = store.accounts.findIndex((a) => a.id === id);
   if (idx >= 0) store.accounts[idx] = next; else store.accounts.push(next);
-  store.activeId = id;
+  if (options.activate !== false) store.activeId = id;
   await writeRelayStore(store);
+}
+/** 账号退出「生效」时的统一收尾（停用 / 删除 / 退出登录共用）：禁用同网关 relay 供应商；
+ *  若它正是当前生效模型 → 清空并重启引擎。
+ *  ⛔ 只清 store.activeId 会留下「模型配置里挂着一个用不上的供应商」，用户下一次切模型时
+ *    会看到一个找不到账号对应的条目（正向/反向联动都失配）。 */
+async function deactivateRelayProvider(account: { baseUrl?: string }): Promise<void> {
+  const providerId = relayProviderIdOf(account.baseUrl);
+  if (!providerId) return;
+  const models = await readCustomModels();
+  const target = models.find((m) => m.provider === providerId);
+  if (!target) return;
+  if (target.enabled !== false) await upsertCustomModel({ ...target, enabled: false });
+  const current = await readCustomModel();
+  if (current?.provider === providerId) {
+    await fs.writeFile(customModelFile, "null", "utf8");
+    await server.restart();
+  }
 }
 function relayBase(input: string | undefined): string {
   return String(input ?? "").trim().replace(/\/$/, "") || "https://api.pptoken.cc";
@@ -4721,7 +4753,8 @@ async function relayAuthedFetch(account: RelayAccount, urlPath: string, body?: u
     account.accessToken = login.access_token;
     account.refreshToken = login.refresh_token;
     account.tokenExpiresAt = login.expires_in ? Date.now() + login.expires_in * 1000 : undefined;
-    await writeRelayAccount(account);
+    // ⛔ activate:false —— 补 token 不等于「把该账号设为生效」（09-21 真机事故的根因）
+    await writeRelayAccount(account, { activate: false });
     result = await call(login.access_token);
   }
   if (!result.ok) throw new Error("中转站请求失败：" + (result.message || `HTTP ${result.status}`));
@@ -4752,14 +4785,10 @@ ipcMain.handle("relay:load-account", async () => {
   if (!account) return null;
   return { baseUrl: account.baseUrl, email: account.email, loggedIn: Boolean(account.accessToken), selectedMode: account.selectedMode ?? null, selectedGroupId: account.selectedGroupId ?? null, selectedKeyName: account.selectedKeyName ?? null };
 });
-ipcMain.handle("relay:logout", async () => {
-  // 退出 = 移除当前账号；还有其他账号时自动切到第一个
-  const store = await readRelayStore();
-  store.accounts = store.accounts.filter((a) => a.id !== store.activeId);
-  store.activeId = store.accounts[0]?.id ?? null;
-  await writeRelayStore(store);
-  return { ok: true, remaining: store.accounts.length };
-});
+// ⛔ 原 `relay:logout`（无参、按 activeId 删账号）已删（09-21 账号管理优化）：它删的是**当前生效**
+//    账号，而弹窗是给**某一个**账号打开的 ⇒ 用户可能看着 A 的面板删掉 B；它也是「删除」的第二条
+//    隐藏入口（卡片上那个小图标之外没人知道）。现在语义拆清楚：删除走 `relay:remove-account(id)`
+//    （无歧义、有二次确认），「退出生效」走卡片开关（停用，数据保留）。
 ipcMain.handle("relay:accounts", async () => {
   const store = await readRelayStore();
   return store.accounts.map((a) => ({ id: a.id, baseUrl: a.baseUrl, email: a.email, loggedIn: Boolean(a.accessToken), selectedMode: a.selectedMode ?? null, selectedGroupId: a.selectedGroupId ?? null, selectedKeyName: a.selectedKeyName ?? null, active: a.id === store.activeId, disabled: Boolean(a.disabled) }));
@@ -4772,45 +4801,45 @@ ipcMain.handle("relay:toggle-account", async (_e, input: { id: string; disabled:
   if (!account) throw new Error("账户不存在");
   account.disabled = input.disabled || undefined;
   if (input.disabled && store.activeId === input.id) {
+    // 先落盘再收尾供应商：收尾可能重启引擎，进程若在那一步出问题，账号状态也已经是「已停用」了
     store.activeId = null;
-    // 与账号同网关的 relay 供应商一并禁用（命名规则同 relayActivate：relay-<host 首段>）
-    let providerId = "";
-    try { providerId = `relay-${(new URL(account.baseUrl).host.replace(/^api\./i, "").split(".")[0] || "中转站").toLowerCase()}`; } catch { /* 解析失败跳过 */ }
-    if (providerId) {
-      const models = await readCustomModels();
-      const target = models.find((m) => m.provider === providerId);
-      if (target) {
-        target.enabled = false;
-        await upsertCustomModel(target);
-        const current = await readCustomModel();
-        if (current?.provider === providerId) {
-          await fs.writeFile(customModelFile, "null", "utf8");
-          await server.restart();
-        }
-      }
-    }
+    await writeRelayStore(store);
+    await deactivateRelayProvider(account);
+    return { ok: true, disabled: true, deactivated: true };
   }
   await writeRelayStore(store);
-  return { ok: true, disabled: Boolean(account.disabled), deactivated: input.disabled && !store.activeId };
+  return { ok: true, disabled: Boolean(account.disabled), deactivated: false };
 });
 ipcMain.handle("relay:switch-account", async (_e, id: string) => {
   const store = await readRelayStore();
   const target = store.accounts.find((a) => a.id === id);
   if (!target) throw new Error("账户不存在");
   if (target.disabled) throw new Error("该账号已停用，请先在卡片上重新启用");
+  if (!target.accessToken) throw new Error("该账号的登录凭据已失效，请重新登录后再设为当前");
   store.activeId = id;
   await writeRelayStore(store);
   return { ok: true, baseUrl: target.baseUrl, email: target.email };
 });
 ipcMain.handle("relay:remove-account", async (_e, id: string) => {
   const store = await readRelayStore();
+  const target = store.accounts.find((a) => a.id === id) ?? null;
+  // 没这个账号就当无事发生：**不要**顺手重挑 activeId（否则一次误调用会把别的账号悄悄变成生效）
+  if (!target) return { ok: true, activeId: store.activeId, removed: false, deactivated: false };
+  const wasActive = store.activeId === id;
   store.accounts = store.accounts.filter((a) => a.id !== id);
-  if (store.activeId === id) store.activeId = store.accounts[0]?.id ?? null;
+  // ⛔ 只有「删的正好是生效账号」才重挑接手者；接手者必须**可用**（停用/无凭据的账号不能当生效
+  //    账号 —— 09-21 事故的第二个入口就是这里取 `accounts[0]`，正好可能取到停用账号）。
+  if (wasActive) store.activeId = pickRelayActiveId(store.accounts);
   await writeRelayStore(store);
-  return { ok: true, activeId: store.activeId };
+  // 删掉的是生效账号 → 同步收尾它的供应商（否则模型配置里会留一个没有账号对应的条目）
+  if (wasActive) await deactivateRelayProvider(target);
+  return { ok: true, activeId: store.activeId, removed: true, deactivated: wasActive };
 });
-ipcMain.handle("relay:overview", async () => {
-  const account = await readRelayAccount();
+// ⛔ `id` 可选（09-21）：管理面板要能看**被点开的那个账号**的余额/套餐/密钥。
+//    从前一律读「当前生效账号」，于是「点卡片看一眼」要么显示别人的数据、要么靠 openManage
+//    偷偷切换生效账号来对齐（用户实测报的副作用：点击管理直接生效了）。
+ipcMain.handle("relay:overview", async (_e, id?: string) => {
+  const account = id ? (await readRelayStore()).accounts.find((a) => a.id === String(id)) ?? null : await readRelayAccount();
   if (!account?.accessToken) throw new Error("尚未登录中转站");
   const profile = await relayAuthedFetch(account, "/api/v1/user/profile").catch(() => null);
   // subscriptions/summary 的 data 是 {active_count,total_used_usd,subscriptions:[...]}——数组嵌在 subscriptions 字段
@@ -4831,8 +4860,9 @@ ipcMain.handle("relay:overview", async () => {
     selectedKeyName: account.selectedKeyName ?? null,
   };
 });
-ipcMain.handle("relay:create-key", async (_e, input: { name: string; groupId?: number | null }) => {
-  const account = await readRelayAccount();
+ipcMain.handle("relay:create-key", async (_e, input: { name: string; groupId?: number | null; accountId?: string }) => {
+  // accountId 可选：面板看哪个账号就把密钥建在哪个账号上（原先只能建在当前生效账号上）
+  const account = input.accountId ? (await readRelayStore()).accounts.find((a) => a.id === String(input.accountId)) ?? null : await readRelayAccount();
   if (!account?.accessToken) throw new Error("尚未登录中转站");
   const body: Record<string, unknown> = { name: input.name };
   if (input.groupId != null) body.group_id = input.groupId;
@@ -5247,12 +5277,16 @@ ipcMain.handle("openai:accounts", async () => {
   const [accounts, current] = await Promise.all([readOpenaiVault(), readOpenaiAuth()]);
   return accounts.map((a) => {
     const authClaims = openaiJwtClaims(a.tokens?.id_token)?.["https://api.openai.com/auth"] ?? {};
+    const disabled = Boolean((a as any).disabled);
+    // ⛔ 停用的账号**永不**「使用中」（09-21 与中转站侧同一不变量）：账号卡的生效判据读 auth.json
+    //    的 email，只要有一处忘了清 auth.json，卡片就会同时出现「使用中 + 已停用」。
+    const active = Boolean(!disabled && current?.loggedIn && current.email && current.email === a.email);
     return {
       id: a.id,
       email: a.email,
       savedAt: a.savedAt,
-      active: Boolean(current?.loggedIn && current.email && current.email === a.email),
-      disabled: Boolean((a as any).disabled),
+      active,
+      disabled,
       planType: String(authClaims.chatgpt_plan_type ?? ""),
       subscriptionUntil: String(authClaims.chatgpt_subscription_active_until ?? ""),
     };
@@ -8747,14 +8781,12 @@ ipcMain.handle("custom-model:set-enabled", async (_event, input: { provider: str
         }
         if (changed) await writeOpenaiVault(vault);
       } else if (input.provider.startsWith("relay-")) {
-        const hostSegment = input.provider.slice("relay-".length).toLowerCase();
         const store = await readRelayStore();
         let changed = false;
         for (const account of store.accounts) {
           if (!account.disabled) continue;
-          let accountHost = "";
-          try { accountHost = new URL(account.baseUrl).host.replace(/^api\./i, "").split(".")[0].toLowerCase(); } catch { /* 跳过 */ }
-          if (accountHost && accountHost === hostSegment) { account.disabled = false; changed = true; }
+          // 网关匹配用 relayProviderIdOf（与账号开关/删除收尾同一套命名，别再各抄一遍）
+          if (relayProviderIdOf(account.baseUrl) === input.provider) { account.disabled = false; changed = true; }
         }
         if (changed) await writeRelayStore(store);
       }
@@ -8771,15 +8803,12 @@ ipcMain.handle("custom-model:set-enabled", async (_event, input: { provider: str
   // 反向联动：停用 relay-<host> 供应商 → 对应网关的中转站账号开关同步关
   //（正向联动已有：停用账号会禁用同网关供应商；这里是供应商→账号方向）
   if (input.provider.startsWith("relay-")) {
-    const hostSegment = input.provider.slice("relay-".length).toLowerCase();
     try {
       const store = await readRelayStore();
       let changed = false;
       for (const account of store.accounts) {
         if (account.disabled) continue;
-        let accountHost = "";
-        try { accountHost = new URL(account.baseUrl).host.replace(/^api\./i, "").split(".")[0].toLowerCase(); } catch { /* 跳过 */ }
-        if (accountHost && accountHost === hostSegment) {
+        if (relayProviderIdOf(account.baseUrl) === input.provider) {
           account.disabled = true;
           if (store.activeId === account.id) store.activeId = null;
           changed = true;
@@ -8797,6 +8826,11 @@ ipcMain.handle("custom-model:set-enabled", async (_event, input: { provider: str
         if (!(account as any).disabled) { (account as any).disabled = true; changed = true; }
       }
       if (changed) await writeOpenaiVault(vault);
+      // ⛔ 与 `openai:toggle-account` 对齐：停用供应商必须同时清掉 auth.json 的登录态，
+      //    否则卡片会同时显示「使用中 + 已停用」（账号卡失效判据读的是 auth.json 的 email），
+      //    引擎也会继续拿着凭据跑 —— 这就是用户在中转站侧报的同一类矛盾态。
+      const current = await readOpenaiAuth();
+      if (current?.loggedIn) await fs.writeFile(openaiAuthFile(), "null", "utf8");
     } catch { /* 跳过 */ }
   }
   return publicCustomModel(next);

@@ -7582,6 +7582,85 @@ w.postMessage({id:1,op:"list",root});
   );
 }
 
+// ---------- 【89】账号管理不变量（09-21）：停用账号永不「生效」+ 删除看得见且有确认 ----------
+// 真机事故背景：relay-store.json 的 activeId 指向一个 disabled=true 的账号 ⇒ 中转站卡片同屏
+// 显示「使用中 + 已停用 + 当前生效」；根因是 401 自动重登（relayAuthedFetch）调
+// writeRelayAccount() 时把 activeId 一并改了 —— 打开中转站页就会对每个账号补 token。
+// 判定集中到 electron/relay-accounts.ts（纯函数），这里既跑真断言也盯着接线。
+{
+  const { createRequire } = await import("node:module");
+  const req = createRequire(import.meta.url);
+  let ra = null;
+  try { ra = req(join(ROOT, "dist-electron/relay-accounts.js")); } catch { ra = null; }
+  const mainSrc89 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  const appSrc89 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  if (!ra || typeof ra.normalizeRelayStore !== "function") {
+    fail("dist-electron/relay-accounts.js 缺失 —— 账号生效判定无法断言");
+  } else {
+    const live = { id: "A", baseUrl: "https://api.pptoken.cc", accessToken: "t" };
+    const off = { id: "B", baseUrl: "https://ppz123.asia", accessToken: "t", disabled: true };
+    const noToken = { id: "C", baseUrl: "https://x.com" };
+    ra.isRelayAccountLive(live) && !ra.isRelayAccountLive(off) && !ra.isRelayAccountLive(noToken) && !ra.isRelayAccountLive(null)
+      ? ok("★ 可用账号＝有凭据且未停用（停用/无凭据/不存在一律不算）")
+      : fail("可用判据不对 —— 停用账号可能被当成生效候选");
+    ra.pickRelayActiveId([off, noToken, live]) === "A" && ra.pickRelayActiveId([off]) === null
+      ? ok("★ 挑接手账号只从可用账号里挑，一个都没有 → null")
+      : fail("挑接手账号会选中停用账号 —— 删账号后可能落到停用账号上");
+    ra.normalizeRelayStore({ activeId: "B", accounts: [live, off] }).store.activeId === null
+      && ra.normalizeRelayStore({ activeId: "B", accounts: [live, off] }).changed === true
+      ? ok("★ 自愈：activeId 指向已停用账号 → 置空并标记落盘（用户实测的坏状态）")
+      : fail("自愈失效 —— 「已停用」账号仍会显示成当前生效");
+    ra.normalizeRelayStore({ activeId: "A", accounts: [live, off] }).changed === false
+      && ra.normalizeRelayStore({ activeId: "A", accounts: [live, off] }).store.activeId === "A"
+      ? ok("自愈不误伤正确的 activeId")
+      : fail("自愈把正确的 activeId 也清了");
+    ra.normalizeRelayStore({ activeId: "ZZ", accounts: [live] }).store.activeId === null
+      ? ok("自愈：activeId 指向不存在的账号 → 置空")
+      : fail("指向不存在账号的 activeId 没被清");
+    // ⛔ 自愈只许改 activeId 这一件事：坏形状条目也要原样留着（读取路径不许删用户数据）
+    (() => {
+      const messy = { activeId: "A", accounts: [live, { email: "no-id@x.com" }, null] };
+      const out = ra.normalizeRelayStore(messy);
+      return out.store.accounts.length === 2 && out.store.activeId === "A";
+    })()
+      ? ok("自愈不剔条目（缺 id 的坏条目原样保留，只改 activeId）")
+      : fail("自愈把条目删了 —— 读取路径丢用户数据");
+    ra.relayProviderIdOf("https://api.pptoken.cc") === "relay-pptoken" && ra.relayProviderIdOf("https://ppz123.asia") === "relay-ppz123" && ra.relayProviderIdOf("不是URL") === ""
+      ? ok("★ 中转站供应商命名单一来源（剥 api. 前缀 → 取首段 → 小写）")
+      : fail("relay 供应商命名规则变了 —— 停用账号/正反向联动都会失配");
+    /writeRelayAccount\(account, \{ activate: false \}\)/.test(mainSrc89) && /if \(options\.activate !== false\) store\.activeId = id;/.test(mainSrc89)
+      ? ok("★ 401 自动重登只补凭据、不劫持 activeId（真机事故根因）")
+      : fail("401 重登仍会改 activeId —— 打开中转站页就可能把停用账号顶成生效");
+    /normalizeRelayStore</.test(mainSrc89) && /pickRelayActiveId\(store\.accounts\)/.test(mainSrc89)
+      ? ok("★ readRelayStore 接自愈 + 删账号后按可用性挑接手者")
+      : fail("数据层自愈 / 接手者判定没接上");
+    !/store\.activeId = store\.accounts\[0\]/.test(mainSrc89)
+      ? ok("不再有「activeId = accounts[0]」这种不看停用状态的赋值")
+      : fail("仍有按索引取生效账号的写法 —— 会落到停用账号上");
+    !/window\.codex\.relayLogout|relayLogout:/.test(appSrc89) && !/relayLogout/.test(readFileSync(join(ROOT, "electron", "preload.ts"), "utf8")) && !/ipcMain\.handle\("relay:logout"/.test(mainSrc89)
+      ? ok("★ 「退出登录」（按 activeId 删账号的隐藏删除入口）已整链移除：handler / preload / 调用点")
+      : fail("relay:logout 还留在某处（handler 或 preload 桥）—— 看着 A 的面板可能删掉 B");
+    !/if \(!a\.active\) await switchAccount\(a\.id\)/.test(appSrc89)
+      ? ok("★ 点卡片/「管理」不再自动切换生效账号（用户实测「点击管理直接生效了」）")
+      : fail("openManage 仍会自动切换账号 —— 看一眼余额就改模型配置并重启引擎");
+    (appSrc89.match(/<Trash2 size=\{13\} \/>删除<\/button>/g) || []).length >= 3
+      ? ok("★ 删除入口都带文字（中转站卡片 / 中转站面板 / OpenAI 卡片，不再是光秃秃的图标）")
+      : fail("还有删除入口是纯图标 —— 用户找不到（09-21 反馈）");
+    (appSrc89.match(/openAppConfirm\(\s*"删除/g) || []).length >= 2
+      ? ok("★ 删除前二次确认（openAppConfirm，文案写明会失去什么）")
+      : fail("删除没有二次确认 —— 一点就没了");
+    /const live = Boolean\(a\.active\) && !a\.disabled;/.test(appSrc89)
+      ? ok("卡片「使用中/当前生效」判据同时要求未停用（与数据层同源）")
+      : fail("卡片仍只看 active —— 停用账号会显示成当前生效");
+    /ipcMain\.handle\("relay:overview", async \(_e, id\?: string\)/.test(mainSrc89) && /relayOverview\(account\?\.id\)/.test(appSrc89)
+      ? ok("★ 管理面板按「被点开的账号」读余额/套餐/密钥（不再一律读生效账号）")
+      : fail("面板仍读生效账号 —— 点开别的账号只会看到别人的数据");
+    (appSrc89.match(/!isLiveRow\(account\.id\)/g) || []).length >= 2 && /不是当前生效账号/.test(appSrc89)
+      ? ok("★ 非生效账号禁用「使用此套餐/使用」并给出提示（激活动作不许落到别的账号上）")
+      : fail("非生效账号仍能直接激活 —— 会作用到当前生效账号上");
+  }
+}
+
 
 if (hardFails === 0) {
   console.log(C.green(`预检通过${warns ? `（${warns} 条告警，见上）` : ""}`));
