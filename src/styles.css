@@ -9036,6 +9036,29 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
 .devtools-group .settings-subhead { margin: 2px 0 0; }
 /* 下载源选择行（09-20）：标题 + 下拉 + 说明横排，窄窗口自动折行 */
 .devtools-source-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+/* 「当前能力链路」（09-21）：同一件事有多个后端时，现在实际走哪条。只读展示 —— 它不改任何开关，
+   数据与判据的唯一来源见 electron/capability-registry.ts。 */
+.devtools-capabilities { display: grid; gap: 6px; margin: 4px 0 8px; }
+.capability-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.9fr) minmax(170px, 1.1fr);
+  gap: 2px 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: 12px;
+}
+/* 该能力当前没有任何可用后端：琥珀色提示（不是错误红，它多数情况是"总闸关着"而非故障） */
+.capability-row.missing { border-color: rgba(217, 119, 6, 0.38); background: rgba(217, 119, 6, 0.08); }
+.capability-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.capability-copy small { color: var(--muted); font-size: 11.5px; }
+.capability-active { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--text); font-weight: 600; }
+.capability-active svg { flex: none; color: var(--green, #2f9e44); }
+.capability-why,
+.capability-alt,
+.capability-note { grid-column: 1 / -1; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+.capability-note { color: var(--amber, #d97706); }
 .devtools-source-row .settings-subhead { margin: 0; }
 .devtools-source-row .settings-card-hint { margin: 0; flex: 1 1 260px; min-width: 220px; }
 .runtime-row.busy { background: color-mix(in srgb, var(--panel-2) 40%, var(--bg)); }

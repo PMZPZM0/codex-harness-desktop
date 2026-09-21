@@ -7323,6 +7323,99 @@ w.postMessage({id:1,op:"list",root});
   );
 }
 
+// ---------- 【85】能力选型表：唯一来源 + 「现在走哪条」的真判定（09-21）----------
+// 背景：同一件事往往有多个后端（浏览器自动化、看图、生图…），选型规则原先散在技能文案、工具描述、
+// 代码注释里 —— 用户查不到"现在实际走哪条"，同一个判据还会被写第二遍。现在收进
+// electron/capability-registry.ts（纯函数，UI 与预检共用）。
+// ⛔ 断言必须**能被反转**（总闸一关就必须没有活动后端）—— 恒真的断言等于没写。
+{
+  const req85 = createRequire(import.meta.url);
+  let reg = null;
+  try { reg = req85(join(ROOT, "dist-electron", "capability-registry.js")); } catch { reg = null; }
+  (reg ? ok : fail)("【85】dist-electron/capability-registry.js 可加载（能力选型的唯一来源）");
+
+  if (reg) {
+    const caps = reg.CAPABILITIES || [];
+    const ids = caps.map((c) => c.id);
+    (caps.length >= 6 && new Set(ids).size === ids.length ? ok : fail)(
+      `【85】能力表 ${caps.length} 条且 id 不重复（${ids.join("/")}）`
+    );
+    (caps.every((c) => c.backends.length > 0 && c.backends.every((b) => b.id && b.label && b.why)) ? ok : fail)(
+      "【85】每个能力都有后端，且每个后端都写明「为什么排这个位置」（排序理由不许留空）"
+    );
+
+    const base = {
+      platform: "win32", arch: "x64",
+      desktopSwitch: true, browserSwitch: true,
+      nuphusAvailable: true, nuphusVisionEnv: true,
+      visionPlugin: true, imagePlugin: true,
+      playwrightCli: false, markitdown: false,
+    };
+    const pick = (rows, id) => rows.find((r) => r.id === id) || {};
+    const alt = (rows, capId, altId) => (pick(rows, capId).alternatives || []).find((a) => a.id === altId) || {};
+
+    const allOn = reg.resolveCapabilities(base);
+    (pick(allOn, "browser").activeId === "nuphus-browser" && pick(allOn, "desktop").activeId === "nuphus-desktop" ? ok : fail)(
+      "【85】总闸开着时，浏览器与桌面自动化都走内置 MCP（nuphus）"
+    );
+    (pick(allOn, "vision").activeId === "nuphus-vision" ? ok : fail)(
+      "【85】视觉 env 已下发时，看图首选 nuphus desktop_vision（BYOK）"
+    );
+
+    // 反转用例：总闸关掉 ⇒ **依赖 nuphus 的后端**全部不可用（掩码是硬阻断，不是提示词约束）。
+    // ⛔ 别把「总闸关掉」误写成「视觉彻底不可用」：describe_image 走的是**内置视觉插件**
+    //    （渲染层 dynamicTool → 主进程直接请求视觉 API，不经 nuphus），所以它不受总闸影响。
+    //    我第一版断言就写错了这个假设，被这条"能反转"的断言当场抓出来。
+    const allOff = reg.resolveCapabilities({ ...base, desktopSwitch: false, browserSwitch: false });
+    (pick(allOff, "browser").activeId === null
+      && pick(allOff, "desktop").activeId === null
+      && alt(allOff, "vision", "nuphus-vision").available === false
+      && alt(allOff, "vision", "local-ocr").available === false
+      && pick(allOff, "vision").activeId === "describe-image" ? ok : fail)(
+      "【85】总闸关掉后依赖 nuphus 的后端全不可用，而 describe_image（不经 nuphus）依旧可用"
+    );
+
+    // 视觉回退链：env 未下发 → describe_image；插件也没配 → 本地 OCR
+    const noEnv = reg.resolveCapabilities({ ...base, nuphusVisionEnv: false });
+    (pick(noEnv, "vision").activeId === "describe-image" ? ok : fail)(
+      "【85】视觉 env 未下发时退到 describe_image（不是仍报 desktop_vision 可用）"
+    );
+    const noPlugin = reg.resolveCapabilities({ ...base, nuphusVisionEnv: false, visionPlugin: false });
+    (pick(noPlugin, "vision").activeId === "local-ocr" ? ok : fail)(
+      "【85】视觉插件也没配时退到本地 OCR（无需 key 的免费路径）"
+    );
+
+    // Intel Mac 没有本地 OCR 的平台二进制（ONNX 已放弃 osx-x64）；Apple Silicon 必须相反
+    const intelMac = reg.resolveCapabilities({ ...base, platform: "darwin", arch: "x64", nuphusVisionEnv: false, visionPlugin: false });
+    (pick(intelMac, "vision").activeId === null && alt(intelMac, "vision", "local-ocr").available === false ? ok : fail)(
+      "【85】Intel Mac 上本地 OCR 判为不可用，视觉能力整体判为无可用后端"
+    );
+    const armMac = reg.resolveCapabilities({ ...base, platform: "darwin", arch: "arm64", nuphusVisionEnv: false, visionPlugin: false });
+    (pick(armMac, "vision").activeId === "local-ocr" ? ok : fail)(
+      "【85】Apple Silicon 同条件下本地 OCR 可用（与 Intel Mac 结论相反 ⇒ 平台判据真的生效）"
+    );
+
+    // 没装的后端不许被报成「可用」
+    (alt(allOn, "browser", "playwright-cli").available === false && pick(allOn, "documents").activeId === null ? ok : fail)(
+      "【85】没装的兜底后端判为「未就绪」；没装 markitdown 时文档转换判为无可用后端"
+    );
+    const withCli = reg.resolveCapabilities({ ...base, playwrightCli: true, markitdown: true });
+    (alt(withCli, "browser", "playwright-cli").available === true && pick(withCli, "documents").activeId === "markitdown" ? ok : fail)(
+      "【85】装上以后同两条又变「就绪」（与上一条互为反转）"
+    );
+  }
+
+  // 唯一来源约束：界面只渲染快照、主进程采集判据复用现有来源（不另读一遍设置/插件）
+  const app85 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+  (/capabilitiesSnapshot\(\)/.test(app85) ? ok : fail)(
+    "【85】界面走 capabilities:snapshot 取快照（不是自己拼一套判据）"
+  );
+  const main85 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  (/devInstructionsInput\(\)[\s\S]{0,500}?nuphusVisionEnv\(devInput\.nuphusVision\)\.length > 0/.test(main85) ? ok : fail)(
+    "【85】主进程采集判据复用 devInstructionsInput（总闸与视觉配置的唯一来源，不另读一遍）"
+  );
+}
+
 
 if (hardFails === 0) {
   console.log(C.green(`预检通过${warns ? `（${warns} 条告警，见上）` : ""}`));

@@ -286,6 +286,8 @@ contextBridge.exposeInMainWorld("codex", {
   writeClipboardImage: (filePath: string) => ipcRenderer.invoke("clipboard:write-image", filePath),
   readClipboardFiles: () => ipcRenderer.invoke("clipboard:read-files"),
   doctor: (cwd?: string) => ipcRenderer.invoke("app:doctor", { cwd }),
+  /** 「当前能力链路」快照：同一件事多个后端时现在实际走哪条、其余为什么没走 */
+  capabilitiesSnapshot: () => ipcRenderer.invoke("capabilities:snapshot"),
   engineInfo: () => ipcRenderer.invoke("app:engine-info"),
   perfCounters: () => ipcRenderer.invoke("app:perf-counters") as Promise<{ rolloutFallbackScans: number; droppedForInactiveSession: number; threadListRequests: number }>,
   /** 标记身份引导已打过招呼（此后新会话不再引导、直接干活） */
