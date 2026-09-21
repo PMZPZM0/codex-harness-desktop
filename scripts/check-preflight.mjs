@@ -7469,6 +7469,102 @@ w.postMessage({id:1,op:"list",root});
   }
 }
 
+// ---------- 【87】计划可编辑构件（09-21 用户点名）----------
+// 背景：计划原来只是**只读**渲染（ActionCard 里的 Markdown）。现在条目可勾选/改字/增删，
+// 改完「交给 Codex」把它作为一条用户消息发回。
+// ⛔ 语义边界：这**不是**"直接改引擎里的计划"（计划的权威状态在模型侧，我们传不进去），
+//    而是「用户改了计划 → 让模型按新的执行」—— 编造一个"已同步到引擎"的假象比不做更糟。
+{
+  let steps87 = null;
+  try { steps87 = await import("../src/lib/plan-steps.mjs"); } catch { steps87 = null; }
+  (steps87 ? ok : fail)("【87】计划条目解析器可加载（src/lib/plan-steps.mjs —— 纯函数，预检跑真断言而不是 grep）");
+
+  if (steps87) {
+    const engineText = "先看现状。\n\n- [ ] 改 A\n- [x] 改 B\n- [ ] 改 C";
+    const parsed = steps87.parsePlan(engineText);
+    (parsed.steps.length === 3 && parsed.steps[0].done === false && parsed.steps[1].done === true ? ok : fail)(
+      "【87】能解析引擎真实格式（`- [ ]` / `- [x]`）并读出完成状态"
+    );
+    (parsed.intro === "先看现状。" ? ok : fail)(
+      "【87】第一条条目之前的说明行归入 intro（不参与编辑、原样展示）"
+    );
+    (steps87.serializePlan(parsed.intro, parsed.steps) === engineText ? ok : fail)(
+      "【87】序列化往返幂等（用户没改就不该产生差异 —— 否则「交给 Codex」会凭空改写计划）"
+    );
+    const messy = steps87.parsePlan("- [ ] 一\n收尾补充说明\n1. 第二\n2. 第三");
+    (messy.steps.length === 3 && messy.steps[0].text.includes("收尾补充说明") ? ok : fail)(
+      "【87】条目夹带的说明行并入上一条（丢内容比格式难看严重得多）；有序列表也认"
+    );
+    (steps87.parsePlan("").steps.length === 0 && steps87.parsePlan("只有一段没有条目的话").steps.length === 0 ? ok : fail)(
+      "【87】无条目时不凭空造条目（空文本 / 纯段落）"
+    );
+
+    const app87 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+    (/<PlanEditor[\s\S]{0,220}?onSubmit=/.test(app87) ? ok : fail)(
+      "【87】plan 分支渲染 PlanEditor 并接上 onSubmit（交回路径）"
+    );
+    (!/className="action-plan"/.test(app87) ? ok : fail)(
+      "【87】不再渲染只读的 action-plan（两套并存会让用户改了看不到效果）"
+    );
+    const css87 = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+    (/\.plan-editor \{/.test(css87) && !/\.action-plan \{|\.action-card \.action-plan \{/.test(css87) ? ok : fail)(
+      "【87】有 .plan-editor 样式，且旧的 .action-plan 死样式已清理（否则预检【3】会报未覆盖类）"
+    );
+    const editor87 = readFileSync(join(ROOT, "src", "components", "PlanEditor.tsx"), "utf8");
+    (/from "\.\.\/lib\/plan-steps\.mjs"/.test(editor87) && !/export function parsePlan/.test(editor87) ? ok : fail)(
+      "【87】组件从 lib 取解析函数（单一来源，别在组件里再实现一份）"
+    );
+  }
+
+  // 通用结构性守卫（09-21 踩到的）：tsconfig.app.json 是 `allowJs: false`，
+  // import 一个没有配套 `.d.mts` 的 `.mjs` 会报 TS7016 —— 而且**只在 build 时才炸**。
+  // 项目惯例是每个 src/lib/*.mjs 配一个同名 .d.mts（现有 27 个都齐，这次我新加的漏了）。
+  const libFiles87 = readdirSync(join(ROOT, "src", "lib"));
+  const missingDts87 = libFiles87.filter((f) => f.endsWith(".mjs") && !libFiles87.includes(`${f.slice(0, -4)}.d.mts`));
+  (missingDts87.length === 0 ? ok : fail)(
+    `【87】src/lib 下每个 .mjs 都有配套 .d.mts（allowJs=false 下必需）${missingDts87.length ? " → 缺：" + missingDts87.join(", ") : ""}`
+  );
+  // 真实渲染断言（服务端渲染同一份组件代码）必须挂在 check 链上 —— 否则它只是份没人跑的文档。
+  // 背景：真机 e2e 里没能把界面切进一个已有会话（点侧栏行后仍停在欢迎页，属 e2e 驱动问题），
+  // 于是"有 plan item 时渲染成什么样"改由这条断言保证（它同时覆盖了 XSS 转义面）。
+  const pkg87 = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+  (/verify-plan-editor/.test(String(pkg87.scripts?.check ?? "")) ? ok : fail)(
+    "【87】verify-plan-editor（PlanEditor 真实渲染断言）挂在 npm run check 链上"
+  );
+}
+
+// ---------- 【88】新鲜上下文的 reviewer：写的人不审自己（09-21 用户点名）----------
+// 做法：随应用种入一个内置子智能体（幂等），复用现有委派链路（含防套娃 / 独占锁 / 身份闸），
+// **不新造工具** —— 新工具会把那些安全闸重写一遍、还可能绕过去。
+{
+  const agents88 = readFileSync(join(ROOT, "electron", "builtin-agents.ts"), "utf8");
+  const main88 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  const di88 = readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8");
+
+  (/export const FRESH_REVIEW_ID = "fresh-review"/.test(agents88) ? ok : fail)(
+    "【88】内置评审子智能体 id 固定（fresh-review —— 幂等种入依赖它）"
+  );
+  (/看不到/.test(agents88) && /具体位置/.test(agents88) && /未发现/.test(agents88) ? ok : fail)(
+    "【88】提示词保留三条纪律：声明看不到历史 / 只报能定位的问题 / 允许说「未发现」（缺一条就会退化成夸一遍）"
+  );
+  (/effort: "high"/.test(agents88) ? ok : fail)("【88】审阅 effort 给 high（想清楚再说话，贪快会漏）");
+  (/if \(list\.some\(\(agent\) => agent\.id === FRESH_REVIEW_ID\)\) return;/.test(main88) ? ok : fail)(
+    "【88】种入幂等（已存在就返回 —— 用户改过提示词或停用过，不许覆盖）"
+  );
+  (/try \{ await ensureBuiltinReviewer\(\); \} catch/.test(main88) ? ok : fail)(
+    "【88】调用包在 try/catch 里（启动链一处裸 await 抛出会掐死整条链）"
+  );
+  // ⛔ 最关键的一条：指引必须**条件式**。调度是**会话级**开关，而 developer_instructions 是全局的 ——
+  // 直接命令"用 agent_invoke"会让没开调度的会话去调不存在的工具，把「没开」误判成「坏了」
+  // （BROWSER_INSTRUCTIONS 的注释里记着同款教训）。
+  (/IF `agent_invoke` is in your tool list/.test(di88) && /is NOT in your tool list/.test(di88) ? ok : fail)(
+    "【88】复审指引是条件式的（先看自己的工具表；没开调度时不许硬调 agent_invoke）"
+  );
+  (/text \+= REVIEW_INSTRUCTIONS;/.test(di88) ? ok : fail)(
+    "【88】复审指引真的被注入（算了常量却没拼进去 = 死代码）"
+  );
+}
+
 
 if (hardFails === 0) {
   console.log(C.green(`预检通过${warns ? `（${warns} 条告警，见上）` : ""}`));

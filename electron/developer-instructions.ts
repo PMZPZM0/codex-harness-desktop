@@ -57,6 +57,15 @@ const IMAGE_INSTRUCTIONS = (mediaCommand: string) =>
 const VISION_INSTRUCTIONS = (mediaCommand: string) =>
   `\n5) describe_image — let a vision model describe an image you cannot parse directly. Invoke: ${mediaCommand} vision "<image>" [focus question] where <image> can be a LOCAL FILE PATH (fastest — pass it as-is, the helper reads and encodes it for you), a remote http(s) URL, or a data URL. Do NOT base64-encode local files yourself before calling — pass the path directly. Stdout is JSON {"text":"..."}; treat the text as the image content and continue the task.`;
 
+/** 新鲜上下文复审（09-21）：写的人不审自己。
+ *  为什么要写进指令：模型不会自发想到"派一个看不到本次对话历史的自己去复审"。
+ *  ⛔ 必须写成**条件式**（与 BROWSER_INSTRUCTIONS 同一纪律）：调度是**会话级**开关，而这里是
+ *     全局指令 —— 直接命令"用 agent_invoke"会让没开调度的会话去调不存在的工具，把「没开」
+ *     误判成「坏了」。所以先让模型看自己的工具表。
+ *  对应的执行者是随应用种入的内置子智能体（electron/builtin-agents.ts，id=fresh-review）。 */
+const REVIEW_INSTRUCTIONS =
+  "\n6) fresh-context review — when you are about to hand over a non-trivial result (a code change, a plan, a document), prefer having it reviewed by a NEW session that cannot see this conversation.\n   IF `agent_invoke` is in your tool list (scheduling is on for this session): dispatch the built-in subagent named \"评审（新鲜上下文）\" with kind=subagent. It judges only the material you hand it — which is the point: your own review is contaminated by the detour you just took.\n   How to write the query (the reviewer sees NOTHING else, so it must be self-contained): (a) what the material is and where it lives — file paths, or the full text if short; (b) what the goal was; (c) what you are unsure about. Do NOT paste this conversation, and do NOT narrate your reasoning.\n   IF `agent_invoke` is NOT in your tool list: scheduling is off for this session — do not try to work around it; review the material yourself and say explicitly that it was a self-review.\n   Skip this entirely for trivial edits, or when the user asked for speed.";
+
 /** 按开关组装完整的 developer_instructions 文本 */
 export function buildDevInstructions(input: { desktop?: boolean; browser?: boolean; imagePlugin?: boolean; visionPlugin?: boolean; mediaCommand?: string } = {}): string {
   const desktop = input.desktop !== false;
@@ -67,6 +76,8 @@ export function buildDevInstructions(input: { desktop?: boolean; browser?: boole
   const mediaCommand = input.mediaCommand || "node harness-media.mjs";
   if (input.imagePlugin) text += IMAGE_INSTRUCTIONS(mediaCommand);
   if (input.visionPlugin) text += VISION_INSTRUCTIONS(mediaCommand);
+  // 复审指引无条件下发（内容自带条件式判断：先看 agent_invoke 在不在工具表里）
+  text += REVIEW_INSTRUCTIONS;
   // 深层联动软约束：自动化能力被关闭时，在基础指令里明确告诉模型不要调用这些工具。
   // 09-20：MCP 工具（`desktop_*` / `browser_*`）现在会被 disabled_tools **硬移除**，所以这里
   // 重点变成「别用命令行兜底绕过总闸」—— nuphus-call / playwright-cli 仍在 PATH 上，

@@ -68,6 +68,7 @@ import { augmentedPath, bundledGit, bundledNode, bundledPython, CHINA_NPM_REGIST
 import { ensureBuiltinSkills, ensureExpertSkillsMarketplace, expertSkillsSourceDir } from "./builtin-skills";
 import { NUPHUS_VISION_ENV_TABLE, nuphusVisionEnv, nuphusVisionEnvDrift } from "./nuphus-env";
 import { resolveCapabilities, type CapabilityProbe } from "./capability-registry";
+import { FRESH_REVIEW_ID, freshReviewSpec } from "./builtin-agents";
 import { ensurePonytailPlugin } from "./ponytail-plugin";
 import { getPonytailMode, setPonytailMode } from "./ponytail-mode";
 import { markMissingRollouts, mergeThreadList } from "./session-tools";
@@ -2919,6 +2920,9 @@ app.whenReady().then(async () => {
   // 专家技能市场（cheat-on-content / ppt-master）原位注册，零拷贝——见 ensureExpertSkillsMarketplace
   await ensureExpertSkillsMarketplace(codexHome);
   await ensureBuiltinSkills(userSkillsDir);
+  // 内置「评审」子智能体（09-21）：用干净上下文复审的现成对象。⚠️ 必须包 try/catch ——
+  // 启动链里一处裸 await 抛出会掐死整条链（界面能开、核心服务没起来，日志只有一行）。
+  try { await ensureBuiltinReviewer(); } catch (error) { console.warn("[reviewer] 内置评审子智能体种入失败（不影响启动）：", error); }
   // 启动自愈：剥掉已安装技能 SKILL.md 的 UTF-8 BOM。带 BOM 的文件引擎会判「缺 frontmatter」
   // 整份拒载（装了但永远不被使用），市场包/本地导入都可能带 BOM——这里兜住存量文件。
   try {
@@ -7428,6 +7432,17 @@ async function readSubAgents(): Promise<SubAgentConfig[]> {
   } catch { return []; }
 }
 async function writeSubAgents(list: SubAgentConfig[]) { await fs.writeFile(subAgentsFile, JSON.stringify(list, null, 2), "utf8"); }
+/** 种入内置「评审」子智能体（新鲜上下文复审）。
+ *  **幂等**：已存在就不动 —— 用户可能改过提示词、调过 effort 或直接停用它，那些都不该被覆盖。
+ *  为什么用子智能体而不是新工具：见 electron/builtin-agents.ts —— 复用整条委派链路
+ *  （含防套娃/独占锁/身份闸），且它在界面上看得见、改得动、停得了。 */
+async function ensureBuiltinReviewer() {
+  const list = await readSubAgents();
+  if (list.some((agent) => agent.id === FRESH_REVIEW_ID)) return;
+  const now = new Date().toISOString();
+  await writeSubAgents([...list, { ...freshReviewSpec(), createdAt: now, updatedAt: now }]);
+  console.log(`[reviewer] 已种入内置评审子智能体（${FRESH_REVIEW_ID}）：用干净上下文复审，写的人不审自己`);
+}
 function safeAgentId(name: string) {
   return String(name ?? "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64) || `agent-${Date.now()}`;
 }

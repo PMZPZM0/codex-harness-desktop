@@ -3117,11 +3117,48 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   margin: 0;
   overflow: auto;
 }
-.action-card .action-plan {
-  color: var(--text);
-  font-size: 13px;
-  line-height: 1.6;
+/* 计划可编辑构件（09-21）：条目可勾选/改字/增删，改完「交给 Codex」作为一条用户消息发回。
+   原来是 `.action-card .action-plan` 的只读 Markdown 渲染（该规则已随改动删除，别留死样式）。 */
+.plan-editor { display: grid; gap: 6px; }
+.plan-editor-intro { color: var(--muted); font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
+.plan-editor-steps { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.plan-step {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: var(--bg);
 }
+.plan-step:hover { background: color-mix(in srgb, var(--link) 6%, var(--bg)); }
+.plan-step-check { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; }
+.plan-step.done .plan-step-check { color: var(--green, #2f9e44); }
+.plan-step-text {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+  /* 高度由 onInput 自适应：不出现内部滚动条（与输入框同款手感） */
+  resize: none;
+  overflow: hidden;
+}
+.plan-step-text:hover { border-color: var(--line); }
+.plan-step-text:focus { outline: none; border-color: var(--link); background: var(--panel); }
+.plan-step.done .plan-step-text { color: var(--muted); text-decoration: line-through; }
+.plan-step-del { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--faint); cursor: pointer; }
+.plan-step-del:hover { background: color-mix(in srgb, var(--red, #e03131) 12%, transparent); color: var(--red, #e03131); }
+.plan-editor-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.plan-op { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 8px; background: none; color: var(--muted); font-size: 12px; cursor: pointer; }
+.plan-op:hover { border-color: var(--link); color: var(--link); }
+.plan-op.primary { border-color: color-mix(in srgb, var(--link) 40%, var(--line)); color: var(--link); }
+.plan-op:disabled { opacity: 0.5; cursor: default; }
+.plan-editor-progress { margin-left: auto; color: var(--faint); font-size: 11.5px; }
 .action-card .action-approval {
   border: 1px solid color-mix(in srgb, var(--orange) 35%, var(--line));
   background: color-mix(in srgb, var(--orange) 6%, var(--panel));
