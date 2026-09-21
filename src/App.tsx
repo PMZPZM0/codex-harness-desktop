@@ -4321,7 +4321,7 @@ function extractQuotaBars(data: any): { label: string; value: number }[] {
 }
 
 /** OpenAI 订阅页（设置 → 账户 → OpenAI 订阅）：监控面板 + 多账号批量管理。 */
-function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActiveChange, onRefreshActive }: { activeProvider?: string; onActivate: (models: string[]) => Promise<void> | void; onNotice: (m: string) => void; onActiveChange?: (email: string) => void; onRefreshActive?: () => unknown }) {
+function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActiveChange, onRefreshActive, openAppConfirm }: { activeProvider?: string; onActivate: (models: string[]) => Promise<void> | void; onNotice: (m: string) => void; onActiveChange?: (email: string) => void; onRefreshActive?: () => unknown; openAppConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean> }) {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [device, setDevice] = useState<{ url: string; code: string; raw?: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -4454,9 +4454,18 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActive
       onNotice("已切换官方账号：" + r.email + "，引擎已重启");
     } catch (e: any) { setErr("切换失败：" + (e.message ?? e)); } finally { setWorking(""); }
   };
-  const removeAccount = async (id: string) => {
-    setWorking("rm" + id); setErr("");
-    try { await window.codex.openaiAccountRemove(id); await reload(); onNotice("账号已删除"); } catch (e: any) { setErr("删除失败：" + (e.message ?? e)); } finally { setWorking(""); }
+  // 删除订阅账号：二次确认（09-21）。OpenAI 账号删掉就只剩 vault 里的 tokens —— 站方那边
+  // 不受影响，但要重新走一次设备码登录，所以确认文案把这点写清楚。
+  const removeAccount = async (target: { id: string; email?: string; active?: boolean }) => {
+    const label = target.email || target.id;
+    const ok = await openAppConfirm(
+      "删除 OpenAI 账号",
+      `确认从本机删除「${label}」？\n\n· 本机保存的登录 token 会被清除，以后要重新走设备码登录\n· OpenAI 账号本身与订阅不受影响\n${target.active ? "· 它是当前生效账号：会退出订阅生效并重启引擎一次\n" : ""}`,
+      "删除"
+    );
+    if (!ok) return;
+    setWorking("rm" + target.id); setErr("");
+    try { await window.codex.openaiAccountRemove(target.id); await reload(); onNotice("账号已删除"); } catch (e: any) { setErr("删除失败：" + (e.message ?? e)); } finally { setWorking(""); }
   };
   const enableSubscription = async (id: string) => {
     setWorking("en" + id); setErr("");
@@ -4525,13 +4534,15 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActive
             } catch { bars = []; }
           }
           const primary = bars[0];
+          // 与中转站卡片同一不变量：停用账号永不显示「使用中 / 生效」
+          const live = Boolean(a.active) && !a.disabled;
           return (
-            <div className={`relay-plan-card openai-account-card ${a.active ? "selected" : ""}${a.disabled ? " acct-disabled" : ""}`} key={a.id} onClick={() => { setManageEmail(a.email); setManageOpen(true); if (!usageRaw) void loadUsage(a.email); }} title="点卡片进入监控面板">
+            <div className={`relay-plan-card openai-account-card ${live ? "selected" : ""}${a.disabled ? " acct-disabled" : ""}`} key={a.id} onClick={() => { setManageEmail(a.email); setManageOpen(true); if (!usageRaw) void loadUsage(a.email); }} title="点卡片进入监控面板">
               <div className="relay-plan-card-head">
                 <Bot size={15} />
                 <strong title={a.email}>{a.email || a.id}</strong>
                 {a.planType ? <span className="openai-plan-badge">{a.planType.toUpperCase()}</span> : null}
-                {a.active && <span className="relay-plan-live"><Check size={11} />使用中</span>}
+                {live && <span className="relay-plan-live"><Check size={11} />使用中</span>}
                 {a.disabled && <span className="acct-disabled-badge">已停用</span>}
                 <label className="bot-switch acct-switch" title={a.disabled ? (activeProvider && !a.active ? `已有供应商生效（一次只能启用一个），先停用再启用这个账号` : "已停用，点击启用") : "启用中，点击停用"} onClick={(event) => event.stopPropagation()}>
                   <input type="checkbox" checked={!a.disabled} disabled={working === "tg" + a.id || (a.disabled && Boolean(activeProvider) && !a.active)} onChange={(event) => void toggleAccount(a.id, event.target.checked)} /><span />
@@ -4547,7 +4558,9 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActive
               ) : <p className="openai-sub-line">点卡片查看额度监控面板</p>}
               <div className="relay-plan-card-foot">
                 <span className="relay-plan-live openai-card-hint"><CircleGauge size={11} />监控面板</span>
-                {!a.active && <button className="secondary-setting" disabled={working !== "" || a.disabled} title={a.disabled ? "已停用的账号不能启用订阅，请先在卡片上重新启用" : undefined} onClick={(event) => { event.stopPropagation(); void enableSubscription(a.id); }}>{working === "en" + a.id ? <Spinner /> : <Play size={13} />}启用订阅</button>}
+                {!live && <button className="secondary-setting" disabled={working !== "" || a.disabled} title={a.disabled ? "已停用的账号不能启用订阅，请先在卡片上重新启用" : undefined} onClick={(event) => { event.stopPropagation(); void enableSubscription(a.id); }}>{working === "en" + a.id ? <Spinner /> : <Play size={13} />}启用订阅</button>}
+                {/* 删除入口搬到卡片上（原先只在监控面板里、还是图标，用户找不到） */}
+                <button className="secondary-setting relay-account-remove" title={`删除账号「${a.email || a.id}」（会二次确认）`} disabled={working !== ""} onClick={(event) => { event.stopPropagation(); void removeAccount(a); }}><Trash2 size={13} />删除</button>
               </div>
             </div>
           );
@@ -4584,7 +4597,8 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActive
               <div className="relay-keys-head">
                 <strong className="relay-modal-title"><Bot size={15} />{a.email || a.id}</strong>
                 {a.planType ? <span className="openai-plan-badge">{a.planType.toUpperCase()}</span> : null}
-                {a.active && <span className="relay-plan-live"><Check size={11} />使用中</span>}
+                {a.active && !a.disabled && <span className="relay-plan-live"><Check size={11} />使用中</span>}
+                {a.disabled && <span className="acct-disabled-badge">已停用</span>}
                 <button className="icon-button relay-modal-close" title="关闭" onClick={() => setManageOpen(false)}><X size={15} /></button>
               </div>
               <p className="openai-sub-line">订阅{a.subscriptionUntil ? "至 " + a.subscriptionUntil.slice(0, 10) : "生效中"} · {new Date(a.savedAt).toLocaleString()} 登录 · 额度与官方实时同步</p>
@@ -4603,10 +4617,10 @@ function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActive
               {usageRaw && usageRaw.startsWith("ERR:") && <p className="openai-sub-line openai-quota-err">{usageRaw.slice(4)}</p>}
               <div className="relay-plan-card-foot">
                 <button className="secondary-setting" disabled={working !== ""} onClick={() => void loadUsage(a.email)}><RefreshCw size={13} />刷新额度</button>
-                {a.active
+                {a.active && !a.disabled
                   ? <button className="secondary-setting" disabled={working !== ""} onClick={() => void onActivate(OFFICIAL_MODELS)}>{working === "en" + a.id ? <Spinner /> : <Play size={13} />}重新启用</button>
-                  : <button className="secondary-setting" disabled={working !== "" || Boolean(activeProvider)} title={activeProvider ? `已有供应商「${activeProvider}」生效，请先停用再启用 OpenAI 订阅` : undefined} onClick={() => void enableSubscription(a.id)}>{working === "en" + a.id ? <Spinner /> : <Play size={13} />}启用订阅</button>}
-                <button className="secondary-setting relay-account-remove" title="删除账号" disabled={working !== ""} onClick={() => void removeAccount(a.id)}><LogOut size={13} /></button>
+                  : <button className="secondary-setting" disabled={working !== "" || a.disabled || Boolean(activeProvider)} title={a.disabled ? "已停用的账号不能启用订阅，请先在卡片上重新启用" : (activeProvider ? `已有供应商「${activeProvider}」生效，请先停用再启用 OpenAI 订阅` : undefined)} onClick={() => void enableSubscription(a.id)}>{working === "en" + a.id ? <Spinner /> : <Play size={13} />}启用订阅</button>}
+                <button className="secondary-setting relay-account-remove" title={`删除账号「${a.email || a.id}」（会二次确认）`} disabled={working !== ""} onClick={() => void removeAccount(a)}><Trash2 size={13} />删除</button>
               </div>
               <p className="relay-center-foot">启用 = 写入引擎并重启生效，直接可对话；额度数据来自 chatgpt.com 后端（wham/usage）。</p>
             </div>
@@ -4716,8 +4730,8 @@ function RelayAccountEntryBanner({ active, onOpen }: { active: { label: string }
 }
 
 /** 中转站中心页（设置 → 中转站）：余额总览 + 套餐卡片 + 登录/退出 + 一键切换计费方式。 */
-function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenModelSettings }: { busy: boolean; activeProvider?: string; onActivate: (mode: "balance" | "plan", group?: { group_id: number; group_name: string }, explicitKey?: { id: any; name: any; key: string; group_id: number | null }) => Promise<void> | void; onNotice: (m: string) => void; onOpenModelSettings: () => void }) {
-  const [account, setAccount] = useState<{ baseUrl: string; email: string } | null>(null);
+function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenModelSettings, openAppConfirm }: { busy: boolean; activeProvider?: string; onActivate: (mode: "balance" | "plan", group?: { group_id: number; group_name: string }, explicitKey?: { id: any; name: any; key: string; group_id: number | null }) => Promise<void> | void; onNotice: (m: string) => void; onOpenModelSettings: () => void; openAppConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean> }) {
+  const [account, setAccount] = useState<{ id?: string; baseUrl: string; email: string } | null>(null);
   const [draft, setDraft] = useState({ baseUrl: "https://api.pptoken.cc", email: "", password: "" });
   const [overview, setOverview] = useState<any>(null);
   const [err, setErr] = useState("");
@@ -4725,9 +4739,21 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
   const active = readRelayActive();
   const isActiveProvider = Boolean(active && activeProvider === active.provider);
   const [refreshing, setRefreshing] = useState(false);
-  const load = useCallback(async (silent = true) => {
+  /** 读余额/套餐/密钥：`accountId` 指定「面板正在看的那个账号」。
+   *  ⛔ 09-21：管理面板从前一律读**当前生效账号**，于是「点卡片看某个账号」要么显示别人的数据、
+   *     要么靠 openManage 偷偷切换生效账号来对齐 —— 两个都不对。现在按 id 读，切换只由用户显式触发。 */
+  const load = useCallback(async (silent = true, accountId?: string) => {
     if (!silent) setRefreshing(true);
     try {
+      if (accountId) {
+        try {
+          setOverview(await window.codex.relayOverview(accountId));
+          setErr("");
+        } catch (e: any) {
+          setErr(e.message ?? "刷新失败");
+        }
+        return;
+      }
       const acc = await window.codex.relayLoadAccount();
       if (acc?.loggedIn) {
         setAccount({ baseUrl: acc.baseUrl, email: acc.email });
@@ -4751,6 +4777,12 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
     try { setAccounts(await window.codex.relayAccounts()); } catch { setAccounts([]); }
   }, []);
   useEffect(() => { void reloadAccounts(); }, [reloadAccounts]);
+  /** 面板里「当前展示的账号」是否就是生效账号（生效 = active 且未停用，与数据层同一判据）。
+   *  套餐/密钥的「使用」是**激活动作**，只能对生效账号做 —— 非生效账号先点卡片上的「设为当前」。 */
+  const isLiveRow = (id?: string) => {
+    const row = accounts.find((x: any) => x.id === id);
+    return Boolean(row && row.active && !row.disabled);
+  };
   // 登录/切换账号后自动配置模型：已选中 key 优先 → 第一个套餐 → 余额（参数同步内置规格表在 onActivate 链路内）
   const autoConfigure = async () => {
     const ov = await window.codex.relayOverview().catch(() => null);
@@ -4795,21 +4827,36 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
       await autoConfigure();
     } catch (e: any) { setErr("切换账号失败：" + (e.message ?? e)); } finally { setWorking(""); }
   };
-  const removeAccount = async (id: string) => {
-    setWorking(`acc${id}`); setErr("");
+  // 删除账号：**必须二次确认**（09-21 用户要求「删除功能要看得见、且别一点就没了」）。
+  // 确认文案把「会失去什么 / 不会影响什么」写清楚：本机凭据与密钥选择会清掉，站方数据不动。
+  const removeAccount = async (target: { id: string; email?: string; active?: boolean }) => {
+    const label = target.email || target.id;
+    const ok = await openAppConfirm(
+      "删除中转站账号",
+      `确认从本机删除「${label}」？\n\n· 本机保存的登录凭据与密钥选择记录会被清除，需重新登录才能再用\n· 中转站站方的余额、订阅套餐、密钥不受影响\n${target.active ? "· 它是当前生效账号：对应模型供应商会被停用，引擎会重启一次\n" : ""}`,
+      "删除"
+    );
+    if (!ok) return;
+    setWorking(`acc${target.id}`); setErr("");
     try {
-      const r = await window.codex.relayRemoveAccount(id);
+      const r = await window.codex.relayRemoveAccount(target.id);
       onNotice("账号已删除");
-      const acc = await window.codex.relayLoadAccount();
-      if (acc?.loggedIn && r.activeId) {
-        setAccount({ baseUrl: acc.baseUrl, email: acc.email });
-        await reloadAccounts();
-        await autoConfigure();
-      } else {
-        setAccount(null); setOverview(null);
-        writeRelayActive(null);
-        await reloadAccounts();
+      if (account?.id === target.id) setManageOpen(false);
+      await reloadAccounts();
+      // ⛔ 只有「删的正好是生效账号」才碰模型配置：删一个无关账号却触发 autoConfigure，
+      //    会重写模型配置 + 重启引擎 —— 与用户意图完全不相干（原先只要 activeId 非空就会走）。
+      if (!r.deactivated) return;
+      if (r.activeId) {
+        const acc = await window.codex.relayLoadAccount();
+        if (acc?.loggedIn) {
+          setAccount({ baseUrl: acc.baseUrl, email: acc.email });
+          await autoConfigure();
+          return;
+        }
       }
+      setAccount(null); setOverview(null);
+      writeRelayActive(null);
+      await reloadAccounts();
     } catch (e: any) { setErr("删除账号失败：" + (e.message ?? e)); } finally { setWorking(""); }
   };
   // 账号启用/停用：停用 = 退出切换候选（数据保留）；停用使用中的账号会同步禁用其供应商并退出生效。
@@ -4858,29 +4905,19 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
       await reloadAccounts();
     } finally { setWorking(""); }
   };
-  // 点账号卡片：非当前账号先切换（自动重配），再打开管理弹窗
+  // 点账号卡片/「管理」：**只打开管理面板，不切账号**。
+  // ⛔ 09-21 用户实测反馈「点击管理直接生效了」：原实现在这里 `if (!a.active) switchAccount(...)`，
+  //    于是「想看一眼余额」会顺手把生效账号换掉、重写模型配置、重启引擎 —— 看信息不该有副作用。
+  //    真正要切换有明显的入口：卡片上的「设为当前」/「启用订阅」。
   const openManage = async (a: any) => {
-    if (!a.active) await switchAccount(a.id);
+    setAccount({ id: a.id, baseUrl: a.baseUrl, email: a.email });
     setManageOpen(true);
-    await load(false);
+    await load(false, a.id);
     void loadKeyGroups();
   };
-  const logout = async () => {
-    await window.codex.relayLogout();
-    const acc = await window.codex.relayLoadAccount();
-    if (acc?.loggedIn) {
-      // 还有其他账号：自动切到剩余的第一个并重新配置
-      setAccount({ baseUrl: acc.baseUrl, email: acc.email });
-      onNotice("已退出当前账号，已切换到剩余账号并重新配置");
-      await reloadAccounts();
-      await autoConfigure();
-    } else {
-      writeRelayActive(null);
-      setAccount(null); setOverview(null);
-      await reloadAccounts();
-      onNotice("已退出中转站账户（生成的供应商保留，可在模型设置里删除）");
-    }
-  };
+  // ⛔ 原「退出登录」（relayLogout，按 activeId 删账号）已删：它删的是当前生效账号，而弹窗是给
+  //    **某一个**账号开的 ⇒ 可能看着 A 的面板删掉 B，而且是「删除」的第二条隐藏入口。
+  //    删除统一走 removeAccount(id)（无歧义 + 二次确认）；停用/启用走卡片开关。
   const switchTarget = async (mode: "balance" | "plan", group?: { group_id: number; group_name: string }, explicitKey?: { id: any; name: any; key: string; group_id: number | null }) => {
     setWorking(mode + (group?.group_id ?? "") + (explicitKey ? `key${explicitKey.id}` : "")); setErr("");
     try {
@@ -5024,9 +5061,10 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
   const createKey = async () => {
     setCreatingKey(true); setErr("");
     try {
-      await window.codex.relayCreateKey({ name: newKey.name.trim(), groupId: newKey.groupId ? Number(newKey.groupId) : null });
+      // accountId：密钥建在**面板正在看的账号**上（原先只能建在当前生效账号上）
+      await window.codex.relayCreateKey({ name: newKey.name.trim(), groupId: newKey.groupId ? Number(newKey.groupId) : null, accountId: account?.id });
       setNewKey({ name: "", groupId: "" }); setShowKeyForm(false);
-      setOverview(await window.codex.relayOverview().catch(() => null));
+      setOverview(await window.codex.relayOverview(account?.id).catch(() => null));
       void loadKeyGroups();
       onNotice("密钥已创建");
     } catch (e: any) { setErr("创建密钥失败：" + (e.message ?? e)); } finally { setCreatingKey(false); }
@@ -5148,12 +5186,16 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
         {accounts.map((a) => {
           const group = keyGroups.find((g) => g.id === a.id);
           const keyCount = group ? (group.keys ?? []).length : null;
+          // ⛔ 「使用中 / 当前生效」必须**同时**满足「库里的 active」与「未停用」（09-21 真机事故：
+          //    库内 activeId 残留指向一个 disabled 账号 ⇒ 卡片同屏显示「使用中 + 已停用 + 当前生效」）。
+          //    数据层已自愈，这里再判一次 —— 界面与库两处同源，谁都不会单独说谎。
+          const live = Boolean(a.active) && !a.disabled;
           return (
-            <div className={`relay-plan-card relay-account-card ${a.active ? "selected" : ""}${a.disabled ? " acct-disabled" : ""}`} key={a.id} onClick={() => void openManage(a)} title="点卡片进入管理面板">
+            <div className={`relay-plan-card relay-account-card ${live ? "selected" : ""}${a.disabled ? " acct-disabled" : ""}`} key={a.id} onClick={() => void openManage(a)} title="点卡片进入管理面板">
               <div className="relay-plan-card-head">
                 <span className="relay-key-status" data-status={a.loggedIn && !group?.error ? "on" : "off"} />
                 <strong title={a.email}>{a.email}</strong>
-                {a.active && <span className="relay-plan-live"><Check size={11} />使用中</span>}
+                {live && <span className="relay-plan-live"><Check size={11} />使用中</span>}
                 {a.disabled && <span className="acct-disabled-badge">已停用</span>}
                 <label className="bot-switch acct-switch" title={a.disabled ? (activeProvider && !a.active ? `已有供应商生效（一次只能启用一个），先停用再启用这个账号` : "已停用，点击启用") : "启用中，点击停用"} onClick={(event) => event.stopPropagation()}>
                   <input type="checkbox" checked={!a.disabled} disabled={working === `tg${a.id}` || (a.disabled && Boolean(activeProvider) && !a.active)} onChange={(event) => void toggleAccount(a.id, event.target.checked)} /><span />
@@ -5162,11 +5204,11 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
               <p>{String(a.baseUrl || "").replace(/^https?:\/\//, "")}</p>
               <p>{keyCount == null ? "密钥未读取" : `${keyCount} 把密钥`}{a.selectedKeyName ? ` · 当前 ${a.selectedKeyName}` : ""}</p>
               <div className="relay-plan-card-foot">
-                {a.active
+                {live
                   ? <span className="relay-plan-live"><Check size={11} />当前生效</span>
                   : <button className="secondary-setting" disabled={working !== "" || a.disabled || (Boolean(activeProvider) && !isActiveProvider)} title={activeProvider && !isActiveProvider ? `已有供应商生效，请先停用再设为当前` : (a.disabled ? "已停用的账号不能设为当前，请先在卡片上启用" : undefined)} onClick={(event) => { event.stopPropagation(); void switchAccount(a.id); }}>{working === `acc${a.id}` ? <Spinner /> : <Play size={13} />}设为当前</button>}
                 <button className="secondary-setting" onClick={(event) => { event.stopPropagation(); void openManage(a); }}><Settings2 size={13} />管理</button>
-                <button className="secondary-setting relay-account-remove" title="删除账号" disabled={working !== ""} onClick={(event) => { event.stopPropagation(); void removeAccount(a.id); }}><LogOut size={13} /></button>
+                <button className="secondary-setting relay-account-remove" title={`删除账号「${a.email}」（会二次确认）`} disabled={working !== ""} onClick={(event) => { event.stopPropagation(); void removeAccount(a); }}><Trash2 size={13} />删除</button>
               </div>
             </div>
           );
@@ -5201,12 +5243,20 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
                 )}
               </div>
               <div className="relay-hero-actions">
-                <button className="icon-button" title="刷新余额与套餐" disabled={refreshing} onClick={() => void load(false)}>{refreshing ? <Spinner /> : <RefreshCw size={14} />}</button>
+                <button className="icon-button" title="刷新余额与套餐" disabled={refreshing} onClick={() => void load(false, account?.id)}>{refreshing ? <Spinner /> : <RefreshCw size={14} />}</button>
                 <button className="secondary-setting" onClick={() => onOpenModelSettings()}><Bot size={13} />模型配置</button>
-                <button className="secondary-setting" onClick={() => void logout()}><LogOut size={13} />退出登录</button>
+                {/* 删除作用于**本面板这个账号**（不再是按 activeId 删当前账号，见 openManage 上方说明）。
+                    面板里的 account 只有 baseUrl/email（relayLoadAccount 的结构），id 从账号列表按 email 反查。 */}
+                <button
+                  className="secondary-setting relay-account-remove"
+                  title={`删除账号「${account.email}」（会二次确认）`}
+                  disabled={working !== "" || !accounts.some((x: any) => x.email === account.email)}
+                  onClick={() => { const row = accounts.find((x: any) => x.email === account.email); if (row) void removeAccount(row); }}
+                ><Trash2 size={13} />删除账号</button>
               </div>
             </div>
             {overview?.selectedMode && !isActiveProvider && <p className="relay-account-err"><AlertTriangle size={13} />上次切换没有完成（供应商未生成）：点下方套餐卡或密钥的「使用」重新激活即可。</p>}
+            {account.id && !isLiveRow(account.id) && <p className="relay-account-err"><AlertTriangle size={13} />本面板看的是「{account.email}」，它不是当前生效账号 —— 余额与密钥都能看，但要选套餐/密钥请先回卡片点「设为当前」。</p>}
             <div className="relay-plan-grid">
               {subs.map((s) => {
                 const limit = s.monthly_limit_usd ?? s.daily_limit_usd ?? 0;
@@ -5219,7 +5269,7 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
                     <p>已用 ${Number(used).toFixed(2)}{limit ? ` / 月上限 $${Number(limit).toFixed(2)}` : ""}{s.expires_at ? ` · 到期 ${String(s.expires_at).slice(0, 10)}` : ""}</p>
                     <div className="relay-plan-card-foot">
                       <small>{limit ? `剩余 $${Math.max(0, Number(limit) - Number(used)).toFixed(2)}` : "生效中"}</small>
-                      <button className="secondary-setting" disabled={busy || working !== ""} onClick={() => void switchTarget("plan", { group_id: Number(s.group_id), group_name: String(s.group_name ?? "套餐") })}>{working === `plan${s.group_id}` ? <Spinner /> : isSelected ? <Check size={13} /> : <Play size={13} />}使用此套餐</button>
+                      <button className="secondary-setting" disabled={busy || working !== "" || !isLiveRow(account.id)} title={isLiveRow(account.id) ? undefined : "该账号不是当前生效账号：先回卡片点「设为当前」"} onClick={() => void switchTarget("plan", { group_id: Number(s.group_id), group_name: String(s.group_name ?? "套餐") })}>{working === `plan${s.group_id}` ? <Spinner /> : isSelected ? <Check size={13} /> : <Play size={13} />}使用此套餐</button>
                     </div>
                   </div>
                 );
@@ -5260,7 +5310,8 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
                 </div>
               )}
               {(() => {
-                const group = keyGroups.find((g) => g.active) ?? keyGroups[0];
+                // 按**面板正在看的账号**取密钥组（回落到生效账号组）—— 不再是恒取生效账号
+                const group = keyGroups.find((g) => g.id === account.id) ?? keyGroups.find((g) => g.active) ?? keyGroups[0];
                 if (!group) return <p className="relay-key-empty">暂无账号密钥。</p>;
                 const rows = [...(group.keys ?? [])].reverse();
                 return (
@@ -5276,7 +5327,7 @@ function RelayCenterPage({ busy, activeProvider, onActivate, onNotice, onOpenMod
                           <small className="relay-key-group">{groupNameOf(k.group_id)}</small>
                           {isCurrent
                             ? <span className="relay-plan-live"><Check size={11} />使用中</span>
-                            : <button className="secondary-setting" disabled={busy || working !== ""} onClick={() => void useKeyFromGroup(group, k)}>{working === `key${k.id}` ? <Spinner /> : <Play size={13} />}使用</button>}
+                            : <button className="secondary-setting" disabled={busy || working !== "" || !isLiveRow(account.id)} title={isLiveRow(account.id) ? undefined : "该账号不是当前生效账号：先回卡片点「设为当前」"} onClick={() => void useKeyFromGroup(group, k)}>{working === `key${k.id}` ? <Spinner /> : <Play size={13} />}使用</button>}
                         </div>
                       );
                     })}
@@ -20678,8 +20729,8 @@ function showEnhanceHint() {
               {thread?.id ? (() => { const t = moodTone(readMood(thread.id)); return <div className="settings-actions"><span>当前会话语气：<b>{t.label}</b> —— {t.tone}</span></div>; })() : null}
             </section>}
             {settingsPage === "voice" && <VoiceSettingsSection onNotice={setNotice} />}
-            {settingsPage === "relay" && <RelayCenterPage busy={relayBusy} activeProvider={customModel?.provider} onActivate={relayActivate} onNotice={setNotice} onOpenModelSettings={() => { setSettingsPage("model"); }} />}
-            {settingsPage === "openai" && <OpenaiSubscriptionPage activeProvider={customModel?.provider} onActivate={(models) => activateOfficialProvider(models)} onNotice={setNotice} onActiveChange={setOpenaiActiveAcct} onRefreshActive={() => refreshActive()} />}
+            {settingsPage === "relay" && <RelayCenterPage busy={relayBusy} activeProvider={customModel?.provider} onActivate={relayActivate} onNotice={setNotice} onOpenModelSettings={() => { setSettingsPage("model"); }} openAppConfirm={openAppConfirm} />}
+            {settingsPage === "openai" && <OpenaiSubscriptionPage activeProvider={customModel?.provider} onActivate={(models) => activateOfficialProvider(models)} onNotice={setNotice} onActiveChange={setOpenaiActiveAcct} onRefreshActive={() => refreshActive()} openAppConfirm={openAppConfirm} />}
             {settingsPage === "model" && <section className="settings-model-layout">
               <div className="model-global-bar">
                 <div className="model-global-item">
