@@ -7594,11 +7594,6 @@ w.postMessage({id:1,op:"list",root});
   try { ra = req(join(ROOT, "dist-electron/relay-accounts.js")); } catch { ra = null; }
   const mainSrc89 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
   const appSrc89 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
-  // ⛔ 中转站 UI 已搬到 src/features/relay/（架构改造第 1 批）：下面这些「按内容写」的断言必须
-  //    同时读新路径 —— 否则「代码搬走了」会被误判成「功能退化了」（09-21 实测：搬完立刻两条红）。
-  //    原则不变：断言盯的是**这段内容存在于中转站 UI 面**，不关心它落在哪个文件。
-  const relayFeat89 = readFileSync(join(ROOT, "src", "features", "relay", "RelayCenterPage.tsx"), "utf8");
-  const relayUi89 = appSrc89 + "\n" + relayFeat89;
   if (!ra || typeof ra.normalizeRelayStore !== "function") {
     fail("dist-electron/relay-accounts.js 缺失 —— 账号生效判定无法断言");
   } else {
@@ -7642,25 +7637,25 @@ w.postMessage({id:1,op:"list",root});
     !/store\.activeId = store\.accounts\[0\]/.test(mainSrc89)
       ? ok("不再有「activeId = accounts[0]」这种不看停用状态的赋值")
       : fail("仍有按索引取生效账号的写法 —— 会落到停用账号上");
-    !/window\.codex\.relayLogout|relayLogout:/.test(relayUi89) && !/relayLogout/.test(readFileSync(join(ROOT, "electron", "preload.ts"), "utf8")) && !/ipcMain\.handle\("relay:logout"/.test(mainSrc89)
+    !/window\.codex\.relayLogout|relayLogout:/.test(appSrc89) && !/relayLogout/.test(readFileSync(join(ROOT, "electron", "preload.ts"), "utf8")) && !/ipcMain\.handle\("relay:logout"/.test(mainSrc89)
       ? ok("★ 「退出登录」（按 activeId 删账号的隐藏删除入口）已整链移除：handler / preload / 调用点")
       : fail("relay:logout 还留在某处（handler 或 preload 桥）—— 看着 A 的面板可能删掉 B");
-    !/if \(!a\.active\) await switchAccount\(a\.id\)/.test(relayUi89)
+    !/if \(!a\.active\) await switchAccount\(a\.id\)/.test(appSrc89)
       ? ok("★ 点卡片/「管理」不再自动切换生效账号（用户实测「点击管理直接生效了」）")
       : fail("openManage 仍会自动切换账号 —— 看一眼余额就改模型配置并重启引擎");
-    (relayUi89.match(/<Trash2 size=\{13\} \/>删除<\/button>/g) || []).length >= 3
+    (appSrc89.match(/<Trash2 size=\{13\} \/>删除<\/button>/g) || []).length >= 3
       ? ok("★ 删除入口都带文字（中转站卡片 / 中转站面板 / OpenAI 卡片，不再是光秃秃的图标）")
       : fail("还有删除入口是纯图标 —— 用户找不到（09-21 反馈）");
-    (relayUi89.match(/openAppConfirm\(\s*"删除/g) || []).length >= 2
+    (appSrc89.match(/openAppConfirm\(\s*"删除/g) || []).length >= 2
       ? ok("★ 删除前二次确认（openAppConfirm，文案写明会失去什么）")
       : fail("删除没有二次确认 —— 一点就没了");
-    /const live = Boolean\(a\.active\) && !a\.disabled;/.test(relayUi89)
+    /const live = Boolean\(a\.active\) && !a\.disabled;/.test(appSrc89)
       ? ok("卡片「使用中/当前生效」判据同时要求未停用（与数据层同源）")
       : fail("卡片仍只看 active —— 停用账号会显示成当前生效");
-    /ipcMain\.handle\("relay:overview", async \(_e, id\?: string\)/.test(mainSrc89) && /relayOverview\(account\?\.id\)/.test(relayUi89)
+    /ipcMain\.handle\("relay:overview", async \(_e, id\?: string\)/.test(mainSrc89) && /relayOverview\(account\?\.id\)/.test(appSrc89)
       ? ok("★ 管理面板按「被点开的账号」读余额/套餐/密钥（不再一律读生效账号）")
       : fail("面板仍读生效账号 —— 点开别的账号只会看到别人的数据");
-    (relayUi89.match(/!isLiveRow\(account\.id\)/g) || []).length >= 2 && /不是当前生效账号/.test(relayUi89)
+    (appSrc89.match(/!isLiveRow\(account\.id\)/g) || []).length >= 2 && /不是当前生效账号/.test(appSrc89)
       ? ok("★ 非生效账号禁用「使用此套餐/使用」并给出提示（激活动作不许落到别的账号上）")
       : fail("非生效账号仍能直接激活 —— 会作用到当前生效账号上");
   }
