@@ -17,6 +17,7 @@ import { attachmentToken, fileToken, promptFilePaths, shouldSavePastedTextAsFile
 // 图片显示 src 归一化：⛔ 不能写 `startsWith("http") ? src : imageUrl(src)` —— data URL 会被
 // 当成本地路径去拼协议 URL，灯箱与悬停预览都会打不开（09-18 代码审查发现，见模块注释）。
 import { imageDisplaySrc, localImageUrl } from "./lib/image-src.mjs";
+import { PlanEditor } from "./components/PlanEditor";
 import { playWheelTick } from "./lib/wheel-tick.mjs";
 import { loadDraft, saveDraft } from "./lib/composer-draft.mjs";
 import { createRunClock } from "./lib/run-clock.mjs";
@@ -3713,6 +3714,8 @@ type FoldHandlers = {
   onEdit: (turnId: string, item: ThreadItem) => void;
   onOpenFile: (path: string) => void;
   onOpenThread?: (id: string) => void;
+  /** 把（可能被用户改过的）计划作为一条用户消息交回 —— 计划可编辑构件的出口 */
+  onApplyPlan?: (markdown: string) => void;
 };
 
 /** 过程折叠组（对齐 WorkBuddy cr-collapse summary/completed/process 三种皮肤）
@@ -3868,6 +3871,7 @@ function TurnFoldStream({ items, turn, running, fallbackWindow, waitingForApprov
       onFork={unit.item.type === "agentMessage" && unit.item.id === finalAgentId && !hideFooter ? () => handlers.onFork(turn.id) : undefined}
       onOpenFile={handlers.onOpenFile}
       onOpenThread={handlers.onOpenThread}
+      onApplyPlan={handlers.onApplyPlan}
       key={unit.item.id}
     />
   );
@@ -6337,7 +6341,7 @@ function ProgressiveToolPayload({ itemId, text, active, className, language }: {
   return <ToolCodeBlock language={language ?? payloadLanguage(text)} text={displayed} revealing={revealing} className={className} />;
 }
 
-function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWindow, hideFooter, waitingForApproval, onCopy, onQuote, onFork, onImageCopy, onEditSubmit, onOpenFile, onOpenThread, pending }: { item: ThreadItem; turn?: Turn; turnActive?: boolean; usage?: any; tokenUsage?: any; fallbackWindow?: number; hideFooter?: boolean; waitingForApproval?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void; pending?: boolean }) {
+function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWindow, hideFooter, waitingForApproval, onCopy, onQuote, onFork, onImageCopy, onEditSubmit, onOpenFile, onOpenThread, onApplyPlan, pending }: { item: ThreadItem; turn?: Turn; turnActive?: boolean; usage?: any; tokenUsage?: any; fallbackWindow?: number; hideFooter?: boolean; waitingForApproval?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void; onApplyPlan?: (markdown: string) => void; pending?: boolean }) {
   if (item.type === "userMessage") {
     return <UserMessageView item={item} turn={turn} pending={pending} onCopy={onCopy} onQuote={onQuote} onImageCopy={onImageCopy} onEditSubmit={onEditSubmit} onOpenFile={onOpenFile} onOpenThread={onOpenThread} />;
   }
@@ -6415,9 +6419,12 @@ function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWindow, h
     );
   }
   if (item.type === "plan") {
+    // 计划是**可编辑构件**（09-21 用户点名）：条目可勾选/改字/增删，改完「交给 Codex」把它作为
+    // 一条用户消息发回。⛔ 语义是「用户改了计划 → 让模型按新的执行」，**不是**"直接改引擎里的计划"
+    // （计划的权威状态在模型侧，我们传不进去）—— 编造"已同步"的假象比不做更糟。
     return (
       <ActionCard icon={<BookOpen size={13} />} verb="计划" status="done" defaultExpanded>
-        <div className="action-plan"><Markdown>{item.text ?? ""}</Markdown></div>
+        <PlanEditor itemId={String(item.id)} text={String(item.text ?? "")} onSubmit={(markdown) => onApplyPlan?.(markdown)} />
       </ActionCard>
     );
   }
@@ -10856,6 +10863,13 @@ export default function App() {
     onEdit: (turnId, item) => void editResend(turnId, item),
     onOpenFile: (path) => void openFile(path),
     onOpenThread: (id) => void openThread(id),
+    // 计划可编辑构件的出口：把用户改后的计划**填进输入框**，不自动发送。
+    // ⛔ 不自动发：立刻发会花掉一次模型调用，且用户可能还想接着改别的；填进输入框是可见、可撤销的
+    //    （与项目里"不擅自动作"的一贯口径一致）。
+    onApplyPlan: (markdown) => {
+      setPrompt(`我按你的计划做了这些修改，请以修改后的为准执行：\n\n${markdown}`);
+      showToast("计划已放入输入框", "确认后按回车发送给 Codex");
+    },
   };
   const messageHandlers = useMemo<FoldHandlers>(() => ({
     onCopy: (text) => messageHandlersRef.current?.onCopy(text),
@@ -10865,6 +10879,7 @@ export default function App() {
     onEdit: (turnId, item) => messageHandlersRef.current?.onEdit(turnId, item),
     onOpenFile: (path) => messageHandlersRef.current?.onOpenFile(path),
     onOpenThread: (id) => messageHandlersRef.current?.onOpenThread?.(id),
+    onApplyPlan: (markdown) => messageHandlersRef.current?.onApplyPlan?.(markdown),
   }), []);
 
   const {

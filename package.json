@@ -10,7 +10,7 @@
     "build:electron": "node scripts/gen-rollout-worker.mjs && tsc -p electron/tsconfig.json",
     "build:vite": "cross-env CODEBUDDY_SAFE_DELETE_ENABLED=0 vite build",
     "build": "npm run build:electron && npm run build:vite",
-    "check": "npm run build && node scripts/verify-image-plugin.mjs && node scripts/check-preflight.mjs",
+    "check": "npm run build && node scripts/verify-image-plugin.mjs && node scripts/verify-plan-editor.mjs && node scripts/check-preflight.mjs",
     "accept": "node scripts/accept.mjs",
     "accept:list": "node scripts/accept.mjs --list",
     "preview:fresh": "node scripts/preview-fresh.mjs",
