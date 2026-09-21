@@ -2560,6 +2560,17 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     dp.canDispatchFrom({ isDelegated: false, depth: 0 }).ok
       ? ok("L3 硬闸放行用户直连会话（depth=0）")
       : fail("正常会话被误拦 —— 调度根本用不起来");
+    // 入口位置文案同源（09-21）：调度开关**唯一**渲染点在顶栏（DispatchMenu 里 composer 变体
+    // 没有任何调用点，是死代码），所以位置文案只能指向顶栏 —— 拒绝语曾写「输入框的调度开关」，
+    // 而模型会把这句原样转告用户 ⇒ 用户去输入框找、找不到。
+    const dpSrc9 = readFileSync(join(ROOT, "electron/dispatch.ts"), "utf8");
+    const dispatchEntry9 = (appSrc9.match(/<DispatchMenu/g) || []).length;
+    dispatchEntry9 === 1 && /<DispatchMenu\s+topbar/.test(appSrc9)
+      ? ok("★ 调度开关唯一渲染点＝顶栏（App.tsx 里只有一处 <DispatchMenu topbar>）")
+      : fail(`调度开关渲染点 ${dispatchEntry9} 处 / 未用 topbar 变体 —— 双入口会让「在哪开」说不清`);
+    /顶栏/.test(dpSrc9) && !/输入框的调度开关/.test(dpSrc9)
+      ? ok("★ L3 拒绝文案指向真实入口（顶栏调度开关）")
+      : fail("调度权限恢复文案未指向顶栏 —— 开关只在顶栏渲染，用户找不到");
     !dp.canDispatchFrom({ depth: dp.MAX_DEPTH }).ok
       ? ok(`L3 深度闸：depth >= MAX_DEPTH(${dp.MAX_DEPTH}) 拒绝`)
       : fail("深度闸失效 —— 调用链可以无限延长");
@@ -7559,6 +7570,12 @@ w.postMessage({id:1,op:"list",root});
   // （BROWSER_INSTRUCTIONS 的注释里记着同款教训）。
   (/IF `agent_invoke` is in your tool list/.test(di88) && /is NOT in your tool list/.test(di88) ? ok : fail)(
     "【88】复审指引是条件式的（先看自己的工具表；没开调度时不许硬调 agent_invoke）"
+  );
+  // ⛔ 09-21 查清：`agent_invoke` 是 config.toml 里的**全局** MCP 段（`tools/list` 无条件返回，
+  //    main.ts 里没有 per-thread 掩码，开关只存在 thread-runtime）⇒「工具表里有没有」区分不出
+  //    调度开没开。真实判据落在**调用结果**上（原因含「不持有调度权限」），必须写进指引。
+  (/IF `agent_invoke` is in your tool list[\s\S]*不持有调度权限/.test(di88) ? ok : fail)(
+    "【88】调度开关的判据落在调用结果上（工具表无差别返回 agent_invoke，当判据会白费回合）"
   );
   (/text \+= REVIEW_INSTRUCTIONS;/.test(di88) ? ok : fail)(
     "【88】复审指引真的被注入（算了常量却没拼进去 = 死代码）"

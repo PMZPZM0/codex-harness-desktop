@@ -25098,7 +25098,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   html:not([data-motion="force"]) #chat-anchor { animation: none; }
 }
 
-/* ── 调度（09-15）：输入框的调度开关 + 侧栏「被调度的临时会话」标记 ─────────────── */
+/* ── 调度（09-15）：顶栏的调度开关 + 侧栏「被调度的临时会话」标记 ─────────────── */
 .dispatch-menu .composer-setting.dispatch-on { color: var(--accent-text); border-color: var(--accent); }
 /* 顶栏形态：纯图标按钮 + 弹层向下弹（顶栏在页面顶部，向上弹会出屏） */
 .dispatch-topbar-btn { position: relative; }
