@@ -265,7 +265,7 @@ export class CodexServer extends EventEmitter {
     lines.on("line", (line) => this.handleLine(line));
 
     await this.request("initialize", {
-      clientInfo: { name: "codex_harness_desktop", title: "Codex Harness Desktop", version: "0.0.26-a" },
+      clientInfo: { name: "codex_harness_desktop", title: "Codex Harness Desktop", version: "0.0.26-b" },
       capabilities: { experimentalApi: true },
     });
     this.notify("initialized", {});
