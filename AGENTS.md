@@ -1541,7 +1541,7 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   - **⛔ 调度工具注册改走内置 MCP（09-16，用户实测「配置全开 Codex 说没工具」后查清）**：**引擎硬约束 —— `dynamicTools` 只在 `thread/start` 生效**。四个决定性实验（假工具 + 直接问模型）实测：`thread/resume`、`thread/fork`、`turn/start`、`thread/queue/start` **四条通道全部不生效**（引擎二进制里也只有 `thread/start.dynamicTools` 一个定义点）。⇒ 渲染层 dynamic 注册的 `agent_invoke` 对**已存在的会话永远不可见**；09-15 那句「开关确认后重放 resume 同步工具面」是**假绿**（断言正则匹配到了提问里的「有没有」，把模型的「没有」也判成了绿）。**唯一能覆盖所有会话（含老会话）的注册通道是 MCP**（引擎级注入）。落地：`electron/main.ts` 的 `ensureDispatchHttp()`（本机 HTTP 服务，同时提供 MCP `/mcp` 端点）+ `dispatchMcpTools()` / `dispatchRpcCall()`；config.toml 写 `[mcp_servers.harness-dispatch] url = "http://127.0.0.1:47120/mcp?token=<持久令牌>"`。**三个坑（都踩过）**：① **stdio 通道不可用** —— 用 `electron.exe` 当 MCP 服务器要 **28 秒**才握手完（冷启动），超过 `startup_timeout_sec=20` 被引擎判死，工具根本不注册；② **必须提供 SSE 长连接**（`GET /mcp`）—— 引擎 rmcp streamable-http 客户端开局长连，缺了报 `fail to get common stream: Unexpected content type: None`，POST 就绪也没用（隔离实验的 HTTP 探针实证）；③ **端口与令牌必须跨运行稳定** —— 随机端口/随机令牌会让 config 里的 url 指向**上一次运行的死端口**，引擎连不上就静默放弃（`rmcp::transport::worker: worker quit with fatal` 只在引擎 stderr 里可见）。故：`DISPATCH_FIXED_PORT = 47120` + 令牌落 `userData/dispatch-token.txt`（`ensureDispatchToken()`）。**自愈**：config 的 MCP 段缺失/重复/端口或令牌过期 → 启动自动整份重写（含 `if (custom)` 之外的无模型兜底分支）。**已删代码**：`dispatchToolList()` 与渲染层的 `dynamicToolCall` 分支（`agent_invoke` / `agent_archive_sessions`）—— 双通道会让模型混乱，注释留在原地。
   - **调度独占锁（09-16，用户要求「同一时间只能一个会话开」）**：开关仍**按会话存放**，但「谁有权调度」**全局唯一**。持有者**从记录派生**（`ThreadRuntimeStore.dispatchOwner()`：第一个 `dispatch.enabled` 的线程）而非单独存字段 —— 删/归档线程时锁自动释放，不留死锁。冲突时主进程**不改动任何东西**并回传 `blockedBy`；渲染层显示占用者名 + 「接管并开启」，`takeover=true` 才在同一笔写入里关掉原持有者（原子，两窗口并发也不会出现「两个都开」）。UI：`DispatchMenu` 的 `lockedBy`（锁定态）/ `restrictedLabel`（受保护会话禁用）。IPC：`thread-runtime:dispatch-owner`。**执行侧校验**：`canDispatchFrom({ holdsLock })` —— 非持有者的残留调用一律拒绝（开关关掉/被接管之后，在途调用也刹得住）。
   - **受保护会话（09-16）**：专家 / 专家团 / 被调度的临时会话**不许对外调度**（`restrictedThreadRole()`：`delegateRegistry.infoOf` + `teamRunStore.teamOfThread`，单人专家直达会话走同一条 member-session 链路所以一并覆盖）。UI 直接禁用按钮换锁图标（`agents:thread-role` IPC），主进程在 `thread-runtime:patch` 里硬挡，`canDispatchFrom({ restricted })` 再兜一层。
-  - **调度开关的顶栏位置（09-16 两次调整，以最终态为准）**：`DispatchMenu`（`topbar` 变体）挂在 `topbarActionsNode` 的 **「独立弹窗」图标（`.popout-open-btn`）左边**（用户定稿）。历史：先放最右挨着最小化 → 用户改要「独立弹窗图标左边」。**⛔ 只允许一处渲染**（`grep -c "<DispatchMenu" src/App.tsx` 必须为 1）——早期版本在末尾留过一份，双渲染会导致按钮重复。几何验收：`dr.right <= pr.left + 3 && sameRow`（同一行、紧邻）。独立窗口（popout）模式下该按钮不渲染（只显示"返回主应用"）。
+  - **调度开关的顶栏位置（09-16 两次调整，以最终态为准）**：`DispatchMenu`（`topbar` 变体）挂在 `topbarActionsNode` 的 **「独立弹窗」图标（`.popout-open-btn`）左边**（用户定稿）。历史：先放最右挨着最小化 → 用户改要「独立弹窗图标左边」。**⛔ 只允许一处渲染**（`grep -c "<DispatchMenu" src/App.tsx` 必须为 1）——早期版本在末尾留过一份，双渲染会导致按钮重复。几何验收：`dr.right <= pr.left + 3 && sameRow`（同一行、紧邻）。独立窗口（popout）模式下该按钮不渲染（只显示"返回主应用"）。**⛔ 位置文案必须同源（09-21）**：`DispatchMenu` 内部那个 `topbar` 为假的 composer 变体**没有任何调用点（死代码）**，因此任何告诉用户/模型「开关在哪」的文案都必须写**顶栏**——`canDispatchFrom({ holdsLock:false })` 的拒绝语曾写「输入框的调度开关」，而模型会把这句原样转告用户 ⇒ 用户去输入框找、找不到。预检【20】已加断言盯这一条。
   - **调度头像轨（09-16，用户要求「跟专家团那个展示一样」+「调度完头像停留 20 秒，方便用户查看内容」）**：`DelegatedRail` + `DelegatedRunPopup`（复用专家团 `team-rail` / `team-run-popup` 的样式与锚点定位）。数据源＝主进程 `delegate-run` 广播（`started` 点亮头像 + 自动弹窗 / `delta` 流式追加 / `finished` 切完成态）；种子＝`listDelegates`（中途开窗也能看到正在跑的）。`delegateRegistry.handleEngineEvent()` 转发被调度会话的文本增量（与 `TeamRunStore` 同套路，只认正在跑的线程）。**⛔ 停留 20 秒（`DELEGATE_RAIL_LINGER_MS`）**：`finished` 时头像**不立刻摘** —— 先切 `is-done`（呼吸环 `display:none`、头像回正），`delegateRailTimersRef` 计时 20 秒后才从 live 表删除并收起弹窗；计时器在组件卸载时统一 `clearTimeout`。**注意 `delegatedRailRuns` 不再过滤 `status === "running"`**（否则完成态根本渲染不出来），过滤条件只剩 `originThreadId === thread?.id`；`refreshDelegateRecords` 的种子也只补 running、**不删非 running**（删除归计时器管，否则重开窗口会把停留中的头像立刻抹掉）。
   - **调度归档必须真调引擎（09-16 用户实测「Codex 说归档了，但侧栏那个对话还在」）**：MCP 的 `agent_archive_sessions` 执行端原先只调 `delegateRegistry.markArchived()`（标记）→ 登记表 `archived:true` 但**引擎侧线程没归档**，而侧栏是 `thread/list { archived:false }` 过滤的 ⇒ 会话照常显示。**修法**：与 `agents:archive` IPC 走同一条链路 —— 每个 id 先 `server.request("thread/archive", { threadId })`（**不吞错**）再 `markArchived`，最后广播 `delegates-changed`（渲染层 `refreshThreads()` 重拉未归档列表）。回传文案还会报「还有 N 个未归档」（`listByOrigin` 兜底），避免模型误判。验收（4/4）：头像停留 19 秒→消失、侧栏行数 6→5、登记表 `archived:true`。
     - **⛔ 验收写法坑（这次又踩）**：判断「侧栏是否还有调度会话」不能用 `textContent.includes("调度·")` —— 被调度会话的标题是已知瑕疵的 `[SYSTEM TASK · 调度会话]` 首条消息壳（**不含** `调度·`），该断言**恒为假**、是假绿。正确判据：侧栏行数变化 + 登记表 `archived` 字段（引擎侧权威）。
@@ -1799,10 +1799,17 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 - **提示词三条纪律**（缺一条就退化成"夸一遍"）：① 先复述理解（让发起方立刻发现它理解偏了）；
   ② 只报**能指出具体位置**的问题（说不出位置的直觉不许进结论）；③ 单列一节「怀疑但无法证实」，
   并允许直说「未发现」—— **不要为了凑数把风格偏好包装成问题**。
-- **指令侧**（`developer-instructions.ts` 的 `REVIEW_INSTRUCTIONS`）是**条件式**的：
-  先看 `agent_invoke` 在不在工具表里。调度是**会话级**开关，而这条指令是**全局**的 ——
-  直接命令"用 agent_invoke"会让没开调度的会话去调不存在的工具、把「没开」误判成「坏了」
-  （`BROWSER_INSTRUCTIONS` 注释里记着同款教训）。预检【88】7 条钉住这一点。
+- **指令侧**（`developer-instructions.ts` 的 `REVIEW_INSTRUCTIONS`）是**条件式**的 —— ⚠️ **但
+  「工具表里有没有 `agent_invoke`」不能当判据（09-21 修正）**：`harness-dispatch` 是 config.toml
+  里的**全局** MCP 段，`tools/list` **无条件**返回它（`main.ts` 里 `mcp_servers` 只出现在 config.toml
+  生成路径，没有任何 per-thread 掩码；开关只存在 thread-runtime，引擎侧读不到）⇒ 没开调度的会话
+  工具**照样在表里**，第一分支会被无条件命中、白费一个回合。**修法：判据落到调用结果** —— 调用被拒
+  （原因含「不持有调度权限」）＝本会话没开调度 ⇒ 自己审并明说这是自审；工具表判断留作兜底。
+  预检【88】加断言钉住（含「判据落在调用结果上」一条）。
+- **⛔ 同一处教训（09-21）：开关位置文案必须同源** —— 调度开关**唯一**入口是**顶栏**（`DispatchMenu`
+  的 composer 变体没有调用点，是死代码），而 `canDispatchFrom({ holdsLock:false })` 的拒绝语原先写
+  「输入框的调度开关」，模型会把这句**原样转告用户** ⇒ 用户去输入框找、找不到。预检【20】加了断言
+  （拒绝文案指向顶栏 + 不含「输入框的调度开关」）。
 - 有意**不做**：自动触发复审（"每次改完都自动派审"）。复审要花一整次会话，值不值得由模型按
   指令里的判据自己判断（非平凡产出才做；琐碎改动、用户要快时跳过）。
 
