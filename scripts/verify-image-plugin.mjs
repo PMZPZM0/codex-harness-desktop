@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -21,19 +22,69 @@ for (const url of ['javascript:alert(1)', 'data:text/html;base64,YQ==', 'data:im
 assert.equal(markdownUrlTransform(png, 'href', { tagName: 'a' }), '');
 assert.equal(markdownUrlTransform('https://example.com/image.png', 'src', { tagName: 'img' }), 'https://example.com/image.png');
 
+// —— 主进程 generateImageWith：**绝不允许把内联 base64 回给渲染层** ——
+// 09-21 取证：生图网关多只回 b64_json，我们曾把它拼成 data URL 回传，渲染层再拼进工具返回文本，
+// 于是单条工具输出 = 3.03 MB base64 文本进对话历史、且每轮重发。
+// persistGeneratedImage 就是为此存在的：落盘到 <userData>/images/，只回路径。
 const source = await fs.readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
-const imageFunction = source.slice(source.indexOf('async function generateImageWith('), source.indexOf('async function describeImageWith('));
+const imageFunctions = source.slice(source.indexOf('async function persistGeneratedImage('), source.indexOf('async function describeImageWith('));
+assert.ok(imageFunctions.includes('persistGeneratedImage') && imageFunctions.includes('generateImageWith'), 'sanity: 抠出的函数区间必须同时含落盘与生图两个函数');
 let payload;
-const generate = vm.runInNewContext(ts.transpile(imageFunction) + '\ngenerateImageWith', {
-  AbortSignal, fetch: async () => new Response(JSON.stringify(payload)), describeNetworkError: error => error,
+const imageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'generate-image-'));
+const generate = vm.runInNewContext(ts.transpile(imageFunctions) + '\ngenerateImageWith', {
+  AbortSignal,
+  Buffer,
+  path,
+  fs,
+  existsSync,
+  app: { getPath: () => imageDir },
+  console: { warn: () => {} },
+  fetch: async () => new Response(JSON.stringify(payload)),
+  describeNetworkError: error => error,
 });
 const input = { baseUrl: 'https://example.com/v1', apiKey: 'test-only', model: 'gpt-image-2', prompt: 'test' };
+
+// ① 网关只回 b64_json：必须落盘 + 只回路径，url 必须为空（这是本次修复的核心断言）
 payload = { data: [{ url: '', b64_json: png.split(',')[1] }] };
-assert.equal((await generate(input)).url, png);
+const fromB64 = await generate(input);
+assert.equal(fromB64.url, '', 'inline base64 must never be handed back to the renderer');
+assert.ok(fromB64.path && path.isAbsolute(fromB64.path), 'b64_json must be persisted and returned as an absolute path');
+assert.ok((await fs.readFile(fromB64.path)).equals(Buffer.from(png.split(',')[1], 'base64')), 'persisted file must equal the image bytes from the gateway');
+
+// ② 网关给了托管地址：地址原样带出（短、可用），同时也要落盘（托管地址会失效）
 payload = { data: [{ url: 'https://example.com/image.png' }] };
-assert.equal((await generate(input)).url, payload.data[0].url);
+const fromUrl = await generate(input);
+assert.equal(fromUrl.url, 'https://example.com/image.png');
+assert.ok(fromUrl.path && path.isAbsolute(fromUrl.path), 'hosted url must still be persisted locally');
+
+// ③ 网关什么都没回：必须报错，不能静默返回空
 payload = { data: [] };
 await assert.rejects(generate(input), /未返回图片/);
+
+await fs.rm(imageDir, { recursive: true, force: true });
+
+// —— 本地路径必须被读成 data URL ——
+// 理由：引擎消息里的图片就是本地文件路径，模型照用法原样传给 describe_image 时上游会
+// 400「invalid image」。命令行那条路径（harness-media.mjs 的 vision 分支）早就这么做对了，
+// 这里锁住主进程侧同口径 —— 否则同一件事两条路径行为不一致。
+const toImageSourceFn = source.slice(source.indexOf('async function toImageSource('), source.indexOf('async function describeImageWith('));
+assert.ok(toImageSourceFn.includes('toImageSource'), 'sanity: toImageSource 区间必须被抠出来');
+const toImageSource = vm.runInNewContext(ts.transpile(toImageSourceFn) + '\ntoImageSource', {
+  Buffer,
+  path,
+  fs,
+  existsSync,
+  console: { warn: () => {} },
+});
+const localDir = await fs.mkdtemp(path.join(os.tmpdir(), 'image-src-'));
+const localPng = path.join(localDir, 'local.png');
+await fs.writeFile(localPng, Buffer.from(png.split(',')[1], 'base64'));
+assert.equal(await toImageSource('https://example.com/a.png'), 'https://example.com/a.png', 'http(s) url must pass through');
+assert.equal(await toImageSource(png), png, 'data url must pass through');
+const converted = await toImageSource(localPng);
+assert.ok(converted.startsWith('data:image/png;base64,') && converted.endsWith(png.split(',')[1]), 'local path must be read into a data url');
+await assert.rejects(toImageSource(path.join(localDir, 'nope.png')), /不存在/, 'missing local file must fail loudly');
+await fs.rm(localDir, { recursive: true, force: true });
 
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'image-plugin-'));
 const server = http.createServer(async (request, response) => {
@@ -48,12 +99,17 @@ try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   await fs.writeFile(path.join(temporary, 'builtin-plugins.json'), JSON.stringify({ image: { ...input, baseUrl: `http://127.0.0.1:${server.address().port}/v1` } }));
   const { stdout } = await promisify(execFile)(process.execPath, ['resources/tools/harness-media.mjs', 'image', 'test'], { env: { ...process.env, CODEX_HARNESS_USERDATA: temporary }, timeout: 10000 });
-  assert.equal(JSON.parse(stdout).url, png);
+  // 命令行那条路径（harness-media.mjs）也必须落盘 + 不回内联 base64 —— 它比主进程更早做对，
+  // 这里锁住同一口径，避免两边漂移。
+  const cliOut = JSON.parse(stdout);
+  assert.ok(cliOut.path, 'CLI image generation must persist and return a path');
+  assert.equal(cliOut.url, undefined, 'CLI must not return an inline data URL');
   const pkg = JSON.parse(await fs.readFile('package.json', 'utf8'));
   assert.ok(pkg.build.extraResources.some(entry => entry.from === 'resources/tools/harness-media.mjs' && entry.to === 'tools/harness-media.mjs'));
 } finally {
   await new Promise(resolve => server.close(resolve));
   await fs.unlink(path.join(temporary, 'builtin-plugins.json'));
+  await fs.rm(path.join(temporary, 'images'), { recursive: true, force: true });
   await fs.rmdir(temporary);
 }
-console.log('PASS: image rendering, unsafe URLs blocked, image response handling, configured CLI, package resource');
+console.log('PASS: image rendering, unsafe URLs blocked, no inline base64 in tool output (b64_json persisted), hosted url kept, CLI parity, package resource');

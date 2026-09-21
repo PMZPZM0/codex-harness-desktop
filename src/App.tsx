@@ -13290,7 +13290,17 @@ const commandMatches = useMemo(() => {
                 } else {
                   try {
                     const result = await window.codex.generateImage({ baseUrl: c.baseUrl, apiKey: c.apiKey, model: c.model, prompt: String(args.prompt ?? "") });
-                    await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: result.url ? "图片已生成：" + result.url : "生图未返回图片地址" }], success: Boolean(result.url) });
+                    // ⛔ 这段文本是**进对话历史**的，只能带路径或短托管地址，绝不能带 data URL：
+                    //    09-21 实测它曾等于单条 3.03 MB 的 base64 文本、且每轮重发
+                    //    （见 electron/main.ts 的 persistGeneratedImage）。给用户看走 markdown 图片语法。
+                    const text = result.path
+                      ? `图片已生成，本地文件：${result.path}\n展示给用户请用 markdown 图片语法引用该路径（![描述](路径)）；需要看图片内容用 view_image 传该路径。`
+                      : result.url
+                        ? `图片已生成（网关托管地址，可能很快失效）：${result.url}`
+                        // 走到这里只剩一种可能：网关只回了内联 base64、而落盘失败了 —— 别报成
+                        // 「没生成」（图其实生成了），否则用户会以为白等一场。
+                        : "图片已生成，但保存到本地失败（磁盘空间或权限问题）。请检查应用数据目录下的 images 目录后重试。";
+                    await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text }], success: Boolean(result.path || result.url) });
                   } catch (error: any) {
                     await window.codex.respond(event.id!, { contentItems: [{ type: "inputText", text: "生图失败：" + error.message }], success: false });
                   }
@@ -17412,14 +17422,14 @@ function showEnhanceHint() {
       ...(builtinCfg?.image?.enabled !== false && builtinCfg?.image?.baseUrl ? [{
         type: "function",
         name: "generate_image",
-        description: "生成一张图片并返回可访问的图片地址。用于用户要求画图、配图、示意图等场景。",
+        description: "生成一张图片，返回图片的本地文件路径。用于用户要求画图、配图、示意图等场景。展示给用户请用 markdown 图片语法引用该路径（![描述](路径)）；要看图片内容用 view_image 传该路径。",
         inputSchema: { type: "object", properties: { prompt: { type: "string", description: "图片内容的详细描述（含风格、主体、构图）" } }, required: ["prompt"] },
       }] : []),
       ...(builtinCfg?.vision?.enabled !== false && builtinCfg?.vision?.baseUrl ? [{
         type: "function",
         name: "describe_image",
         description: "当你看不清或无法解析用户提供的图片内容时，调用此工具让视觉模型描述图片并把结果作为依据继续回答。",
-        inputSchema: { type: "object", properties: { imageUrl: { type: "string", description: "图片地址或 data URL" }, prompt: { type: "string", description: "你想让视觉模型关注的问题，可省略" } }, required: ["imageUrl"] },
+        inputSchema: { type: "object", properties: { imageUrl: { type: "string", description: "图片的本地文件路径或 http(s) 地址（本地图片直接传路径，会自动读取；生成/保存下来的图片就用它的路径）。⛔ 不要传 data URL —— 内联 base64 会把几 MB 文本灌进对话历史" }, prompt: { type: "string", description: "你想让视觉模型关注的问题，可省略" } }, required: ["imageUrl"] },
       }] : []),
       ...(memoryEnabled ? [
         { type: "function", name: "memory_recall", description: "按当前任务查询相关的分类记忆。", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },

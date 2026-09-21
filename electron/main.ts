@@ -4472,6 +4472,39 @@ async function probeBuiltinModels(input: { kind: "image" | "vision"; baseUrl: st
   return { models: [...new Set<string>(models)] };
 }
 
+/** 把生图结果落盘到 `<userData>/images/`，返回本地绝对路径；失败返回 ""。
+ *
+ *  ⛔ 存在的理由（09-21 实测取证，不是预防性设计）：多数生图网关**不返回托管 url，只返回
+ *  `b64_json`**。我们原来把它拼成 data URL 回给渲染层，渲染层再拼进工具返回文本 ——
+ *  于是**单条工具输出 = 3.03 MB 的 base64 文本**（实测 `rollout` 里 base64 片段长 3,177,992
+ *  字符），它进对话历史、并且**每一轮都被重发**。
+ *
+ *  与 `resources/tools/harness-media.mjs`（命令行那条路径）用**同一目录与命名**，
+ *  避免出现第二套图片落点（它早就做对了：落盘 + 只回 path）。 */
+async function persistGeneratedImage(url: string): Promise<string> {
+  try {
+    const dir = path.join(app.getPath("userData"), "images");
+    await fs.mkdir(dir, { recursive: true });
+    const head = url.slice(0, 64);
+    const ext = /jpe?g/i.test(head) ? ".jpg" : /webp/i.test(head) ? ".webp" : /gif/i.test(head) ? ".gif" : ".png";
+    const file = path.join(dir, `codex-harness-${Date.now()}${ext}`);
+    if (/^data:/i.test(url)) {
+      await fs.writeFile(file, Buffer.from(url.slice(url.indexOf(",") + 1), "base64"));
+    } else if (/^https?:/i.test(url)) {
+      const res = await fetch(url, { signal: AbortSignal.timeout(120_000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await fs.writeFile(file, Buffer.from(await res.arrayBuffer()));
+    } else {
+      return "";
+    }
+    return existsSync(file) ? file : "";
+  } catch (error) {
+    // 落盘失败不该让生图整体失败 —— 调用方会退回「只给托管 url」，只是图不再持久
+    console.warn(`[generate-image] 图片落盘失败：${(error as Error)?.message ?? error}`);
+    return "";
+  }
+}
+
 async function generateImageWith(input: { baseUrl: string; apiKey: string; model: string; prompt: string }) {
   const base = input.baseUrl.trim().replace(/\/$/, "");
   // 兼容 /images/generations（OpenAI 兼容）与 /v1/images/generations
@@ -4499,7 +4532,26 @@ async function generateImageWith(input: { baseUrl: string; apiKey: string; model
   // 返回 url 时会拼出 "data:image/png;base64,undefined"，已修）
   const url = item?.url || (item?.b64_json ? "data:image/png;base64," + item.b64_json : "");
   if (typeof url !== "string" || !url.trim()) throw new Error("生图服务未返回图片地址或图片数据");
-  return { url };
+  // ⛔ 回给渲染层的是**本地路径**，不是 data URL（理由见 persistGeneratedImage 注释：
+  //   内联 base64 会被拼进工具返回文本 ⇒ 3 MB 文本进对话历史且每轮重发）。
+  //   只有网关给的是真托管地址时才把 url 一并带出（它很短，且能直接当可点击链接用）。
+  const path = await persistGeneratedImage(url);
+  return { path, url: /^https?:/i.test(url) ? url : "" };
+}
+
+/** 图片引用 → 上游能吃的形态：`http(s)` / `data:` 原样透传，本地路径读文件转 data URL。
+ *
+ *  ⛔ 为什么必须支持本地路径（不是可选增强）：**引擎消息里的图片就是本地文件路径**，
+ *  模型照用法原样传过来时上游会 400「invalid image」。命令行那条路径
+ *  （`resources/tools/harness-media.mjs` 的 vision 分支）早就这么做对了 —— 这里补齐，
+ *  避免同一件事在两条路径上行为不一致（那是最难查的一类问题）。 */
+async function toImageSource(ref: string): Promise<string> {
+  const source = String(ref ?? "").trim();
+  if (/^(https?:|data:)/i.test(source)) return source;
+  const candidate = path.isAbsolute(source) ? source : path.resolve(source);
+  if (!existsSync(candidate)) throw new Error("图片本地文件不存在：" + candidate);
+  const mime = /\.jpe?g$/i.test(candidate) ? "image/jpeg" : /\.gif$/i.test(candidate) ? "image/gif" : /\.webp$/i.test(candidate) ? "image/webp" : "image/png";
+  return `data:${mime};base64,` + (await fs.readFile(candidate)).toString("base64");
 }
 
 async function describeImageWith(input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) {
@@ -4507,7 +4559,7 @@ async function describeImageWith(input: { baseUrl: string; apiKey: string; model
   const endpoint = /\/chat\/completions$/.test(base) ? base : base + "/chat/completions";
   const content = [
     { type: "text", text: input.prompt || "请详细描述这张图片的内容，包括画面主体、场景、文字、布局等，用中文回答。" },
-    { type: "image_url", image_url: { url: input.imageUrl } },
+    { type: "image_url", image_url: { url: await toImageSource(input.imageUrl) } },
   ];
   let response: Response;
   try {

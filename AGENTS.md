@@ -1694,3 +1694,27 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   - mac 侧也必须接 `want("markitdown")` 入口，否则卡片点了静默不装 —— 这条是既有守卫【34】（两平台安装表
     对称）抓到的。
   - 预检【83】12 条。
+
+## 09-21 「工具输出裁剪」的真相：不是文本工具，是生图内联 base64（已修）
+
+- **先量再改**：扫最近 12 个 rollout，按 `function_call_output` 字节数聚合 —— **文本工具不是大头**
+  （`exec_command` 合计 97 KB、`browser_navigate` 21 KB，`desktop_perceive` 连前 12 都没进）；
+  **真凶是图片**：`view_image` 合计 15.4 MB、`generate_image` 5.8 MB。
+- **两条 3 MB 级记录的形态**：`"图片已生成：data:image/png;base64,iVBORw0KGgo…"` —— 单条 **3.03 MB**、
+  base64 片段长 **3,177,992 字符**，且进对话历史后被**每轮重发**。
+- **根因两层，都在我们自己代码里**（与引擎 / MCP 无关）：
+  ① `electron/main.ts` 的 `generateImageWith`：生图网关（国内中转站尤甚）**多只回 `b64_json`、
+     不返回托管 url**，我们把它拼成 data URL 回给渲染层；
+  ② `src/App.tsx` 生图工具执行端把它拼进**工具返回文本** —— 那才是进历史的地方。
+- **修法**：新增 `persistGeneratedImage()` 落盘到 `<userData>/images/`（**与命令行路径
+  `resources/tools/harness-media.mjs` 同目录同命名** —— 它早就做对了：落盘 + 只回 path），
+  `generateImageWith` 改回 `{ path, url }`，**url 仅真托管地址才有、data URL 绝不回传**；
+  App 侧返回文本改为给路径，并告诉模型用 markdown 图片语法展示、要看内容用 `view_image`。
+- ⛔ **`describe_image` 的入参同样要防**：模型若把内联 base64 当 `imageUrl` 传进来，几 MB 一样进历史
+  ⇒ 参数描述里明确劝退 data URL。
+- **行为断言进了 check 链**：`scripts/verify-image-plugin.mjs` 用 `vm` 真跑 `generateImageWith`
+  （b64 必须落盘且内容与网关一致 / url 必须为空 / 托管地址要保留 / 空返回要报错），已把
+  `verify:image-plugin` **挂进 `npm run check`** —— 它原先不在链上，所以早就红着没人知道
+  （命令行那条断言期望 `url === dataURL`，而 harness-media 早已改成只回 path）。预检【84】7 条。
+- 顺带记：`view_image` 的 4.36 MB 是**引擎内置工具**把图变成 `input_image` 内容块（模型按图片算
+  token，不是按 4 MB 文本），属引擎设计，不是 bug —— 别拿它当"文本爆炸"去优化。
