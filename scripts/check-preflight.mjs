@@ -7279,6 +7279,50 @@ w.postMessage({id:1,op:"list",root});
   );
 }
 
+// ---------- 【84】生图结果绝不内联 base64 进对话（09-21「工具输出裁剪」）----------
+// 取证（不是预防性设计）：09-20 那场会话里**单条工具输出 = 3.03 MB**，base64 片段长 3,177,992
+// 字符，而且它进对话历史后被**每轮重发**。根因两层，都要守（任一处回退就复发）：
+//   ① `electron/main.ts`：生图网关多只回 `b64_json`，我们把它拼成 data URL 回给渲染层；
+//   ② `src/App.tsx`：渲染层把它拼进**工具返回文本**（那才是进历史的地方）。
+// 真行为断言在 `scripts/verify-image-plugin.mjs`（vm 里真跑 generateImageWith），已挂上 check 链。
+{
+  const main84 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+  const app84 = readFileSync(join(ROOT, "src", "App.tsx"), "utf8");
+
+  (/async function persistGeneratedImage\(url: string\)/.test(main84) ? ok : fail)(
+    "【84】有 persistGeneratedImage（生图结果落盘，而不是把 base64 回传）"
+  );
+  (/persistGeneratedImage[\s\S]{0,700}?app\.getPath\("userData"\), "images"/.test(main84) ? ok : fail)(
+    "【84】落盘目录是 <userData>/images（与命令行路径 harness-media.mjs 同目录，不造第二套落点）"
+  );
+  (/return \{ path, url: \/\^https\?:\/i\.test\(url\) \? url : "" \};/.test(main84) ? ok : fail)(
+    "【84】generateImageWith 回的是 { path, url }，且 url 仅真托管地址才有（data URL 绝不回传）"
+  );
+  (/const text = result\.path[\s\S]{0,300}?: result\.url/.test(app84) ? ok : fail)(
+    "【84】生图工具返回文本优先用本地路径，托管地址只作兜底"
+  );
+  (!/\+\s*result\.url/.test(app84) ? ok : fail)(
+    "【84】App 侧不得再把 result.url 直接拼进返回文本（一拼就有 MB 级 base64 进对话历史）"
+  );
+  // 识图工具的**入参**同样要劝退 data URL：模型若填了内联 base64，一样几 MB 进历史
+  (/imageUrl[\s\S]{0,240}?不要传 data URL/.test(app84) ? ok : fail)(
+    "【84】describe_image 的 imageUrl 参数描述明确劝退 data URL"
+  );
+  // 识图工具也要能吃**本地路径** —— 引擎消息里的图片就是本地文件路径，模型照用法传过来时
+  // 上游会 400「invalid image」。命令行那条路径（harness-media.mjs 的 vision 分支）早就做对了，
+  // 主进程侧曾经没有 ⇒ 同一件事两条路径行为不一致（最难查的一类问题）。
+  (/async function toImageSource\(ref: string\)/.test(main84) ? ok : fail)(
+    "【84】有 toImageSource（本地图片路径读成 data URL，与命令行路径 harness-media 同口径）"
+  );
+  (/image_url: \{ url: await toImageSource\(input\.imageUrl\) \}/.test(main84) ? ok : fail)(
+    "【84】describe_image 真的走了 toImageSource（否则模型传本地路径必然 400）"
+  );
+  const pkg84 = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+  (/verify-image-plugin/.test(String(pkg84.scripts?.check ?? "")) ? ok : fail)(
+    "【84】verify-image-plugin（b64 必须落盘的行为断言）挂在 npm run check 链上"
+  );
+}
+
 
 if (hardFails === 0) {
   console.log(C.green(`预检通过${warns ? `（${warns} 条告警，见上）` : ""}`));
