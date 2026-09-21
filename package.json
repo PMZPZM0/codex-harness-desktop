@@ -19,6 +19,7 @@
     "verify": "npm run check && npm run accept",
     "verify:reasoning": "node scripts/verify-reasoning-transport.cjs",
     "verify:image-plugin": "node scripts/verify-image-plugin.mjs",
+    "scan:config": "node scripts/scan-config.mjs",
     "verify:packaged-tools": "node scripts/verify-packaged-tools.cjs",
     "voice:models": "node scripts/install-voice-models.cjs",
     "engine:upgrade": "node scripts/upgrade-codex-engine.cjs",

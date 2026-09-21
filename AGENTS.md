@@ -1742,3 +1742,31 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   没装的兜底后端不许报成「可用」。另两条守唯一来源（前端只渲染快照、主进程复用 `devInstructionsInput`）。
 - 有意**没做**：把选型表也注入 `developer_instructions`（模型侧）。指令已按可用性分叉
   （desktop/browser/nuphusVision 字段），再塞整张表只会变长；等出现真实需求（模型选错后端）再说。
+
+## 09-21 配置面安全扫描：把 agent 自己的配置当攻击面（预检【86】+ `npm run scan:config`）
+
+- **为什么做**（对标 ECC 的 AgentShield）：我们从外部引入了内容 —— 3 个第三方写作技能**逐字内置**
+  + markitdown 的使用说明。而**技能文件是 prompt injection 的天然载体**：模型会把技能内容当真指令读。
+  这类问题**不会自己暴露** —— 症状是"模型行为有点怪"，没有人会归因到技能内容。
+- **落点**：`scripts/lib/config-scan.mjs`（15 条规则 + 配置面专项 + 自证），开发者入口
+  `npm run scan:config`（完整报告），预检【86】在同一套规则上做阻断。
+- **扫描目标**（本机 465 个）：`electron/builtin-skills.ts` 里 7 个技能常量区间 +
+  `<userData>/codex-home/skills/**` 的文本文件（含市场装的、`.system`、用户手放的）+ `codex-home/config.toml`。
+  ⛔ **刻意不扫 `AGENTS.md`**：它是我们自己的开发文档（里面本来就会出现 `rm -rf` 这类讨论），
+  扫它噪声必然压过信号 —— 它靠 code review 与人工维护。
+- **分级**：critical（私钥块 / `sk-…` / AWS key / GitHub token）、high（注入句式、毁灭性删除、
+  凭据类路径、读 `.env`）、medium（网络下载、`curl | sh`、base64 后执行、明文密钥、"不要告诉用户"）。
+  **low 直接不写**（precision 优先）。
+- ⛔ **「不要告诉用户…」只配 medium，不许升级成 high**：这句话在写作风格指南里完全合法
+  （"别对用户说'我正在思考'"），在注入攻击里才恶意 —— 单行正则分不出这两者。
+  **这条是被扫描器自证里的良性样本当场抓出来的**（我第一版写成 high，被自己打回）。
+- ⛔ **责任边界**：只**硬断言我们自己引入的内容**（内置技能常量零 critical/high）。用户侧技能/配置
+  的命中一律只告警 —— 用户装的东西不该让我们的构建变红，但必须**看得见**。另有一条**防空扫假绿**
+  断言：扫描目标数必须 ≥7（太少说明路径推导错了，此时"零命中"毫无意义）。
+- **首次扫描的真实发现**（465 个目标）：critical 0 / high 0 / medium 6。其中 4 条在意料之中
+  （插件创建器的"别让用户手敲命令"、下载 whisper 模型、config.toml 里的视觉 key 明文 —— 后者是设计需要）；
+  **1 条值得用户知道**：用户装的市场技能 `cheat-on-content` 的 `trend-sources/aihot.md` 里写着
+  `curl -fsSL https://…/install.sh | bash` —— 教模型把远程脚本直接管道给 shell 执行（供应链风险）。
+  **没有改动它**：那是用户装的技能，不由我们擅自修（已如实汇报）。
+- **自证**（工具本身必须能被证明有效）：每条规则配一个正例（必中）+ 一组良性样本
+  （不得被报成 critical/high）。预检【86】每次都跑它 —— 恒绿的扫描器比没有更糟（会让人更安心）。

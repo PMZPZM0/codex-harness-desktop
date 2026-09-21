@@ -11,6 +11,7 @@
 
 import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../src/lib/model-scope.mjs";
@@ -7414,6 +7415,58 @@ w.postMessage({id:1,op:"list",root});
   (/devInstructionsInput\(\)[\s\S]{0,500}?nuphusVisionEnv\(devInput\.nuphusVision\)\.length > 0/.test(main85) ? ok : fail)(
     "【85】主进程采集判据复用 devInstructionsInput（总闸与视觉配置的唯一来源，不另读一遍）"
   );
+}
+
+// ---------- 【86】配置面安全扫描：技能内容 / MCP 配置 / 明文密钥（09-21）----------
+// 为什么需要：我们从外部引入了内容（3 个第三方写作技能**逐字内置** + markitdown 的使用说明），
+// 而**技能文件是 prompt injection 的天然载体** —— 模型会把技能内容当真指令读。
+// 这类问题不会自己暴露：症状是"模型行为有点怪"，没人会归因到技能内容。
+//
+// ⛔ 责任边界（它决定了断言怎么写）：**只硬断言我们自己引入的内容**（内置技能常量）。
+//    用户侧技能/配置里的命中一律只告警 —— 用户装的东西不该让我们的构建变红；
+//    但它必须**看得见**（扫了不报等于没扫）。完整报告走 `npm run scan:config`。
+{
+  let scan = null;
+  try { scan = await import("../scripts/lib/config-scan.mjs"); } catch { scan = null; }
+  (scan ? ok : fail)("【86】配置面扫描器可加载（scripts/lib/config-scan.mjs）");
+
+  if (scan) {
+    const st = scan.selfTest();
+    (st.ok ? ok : fail)(
+      st.ok
+        ? "【86】扫描器自证通过（每条规则正例必中；良性文本不被误报成 critical/high）"
+        : `【86】扫描器自证失败：${st.failures.slice(0, 3).join("；")}（恒绿的扫描器比没有更糟）`
+    );
+
+    const fsMod = await import("node:fs");
+    const pathMod = await import("node:path");
+    const userData = scan.defaultUserDataDir({ homedir: homedir() });
+    const { findings, scanned } = scan.scanWorkspace({ root: ROOT, userData, fs: fsMod, path: pathMod });
+
+    // ⛔ 防空扫假绿：目标数太少说明路径推导错了（那时"零命中"毫无意义）
+    (scanned.length >= 7 ? ok : fail)(
+      `【86】扫描目标 ${scanned.length} 个（≥7：内置技能常量 + 用户侧技能与配置）`
+    );
+
+    const isBuiltin = (f) => String(f.source).startsWith("electron/builtin-skills.ts#");
+    const hard = findings.filter((f) => isBuiltin(f) && (f.severity === "critical" || f.severity === "high"));
+    (hard.length === 0 ? ok : fail)(
+      "【86】**内置技能**零 critical/high（我们自己引入的内容）" +
+        (hard.length ? " → " + hard.slice(0, 3).map((f) => `${f.ruleId}@${f.source}:${f.line}`).join("；") : "")
+    );
+
+    const userSide = findings.filter((f) => !isBuiltin(f));
+    if (userSide.length) {
+      const n = (s) => userSide.filter((f) => f.severity === s).length;
+      warn(
+        `【86】用户侧技能/配置命中 ${userSide.length} 条（critical ${n("critical")} / high ${n("high")} / medium ${n("medium")}）——` +
+          `不阻断构建，但值得人眼看一遍（npm run scan:config 出完整报告）：` +
+          userSide.slice(0, 4).map((f) => `${f.ruleId}@${f.source}:${f.line}`).join("；")
+      );
+    } else {
+      ok("【86】用户侧技能/配置零命中");
+    }
+  }
 }
 
 
