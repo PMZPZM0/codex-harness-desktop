@@ -1718,3 +1718,27 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   （命令行那条断言期望 `url === dataURL`，而 harness-media 早已改成只回 path）。预检【84】7 条。
 - 顺带记：`view_image` 的 4.36 MB 是**引擎内置工具**把图变成 `input_image` 内容块（模型按图片算
   token，不是按 4 MB 文本），属引擎设计，不是 bug —— 别拿它当"文本爆炸"去优化。
+
+## 09-21 「当前能力链路」：同一件事多个后端时，"现在走哪条"终于有唯一来源
+
+- **问题**（对标 Agent-Reach 的「能力层」）：选型规则原先散在四处 —— 技能文案（"首选 `browser_*`，
+  判据是工具表里有 `browser_navigate`"）、`developer_instructions` 段落、代码注释、各处 if 判断。
+  后果：① 用户**查不到**"现在实际走哪条"（只有零散的安装状态），出问题只能猜；② 同一判据被写两遍
+  ⇒ 文案说"首选 X"、代码实际是 Y —— 本项目反复踩过这类漂移。
+- **落点**：新建 `electron/capability-registry.ts`（纯函数 + 常量表，与 `automation-policy.ts` 同风格）。
+  `CAPABILITIES` 定义 6 个能力（浏览器自动化 / 桌面控制 / 看图 / 生图 / 文档附件 / 多智能体调度），
+  每个能力带**有序后端列表**，每个后端**必须**写明「为什么排这个位置」；
+  `resolveCapabilities(probe)` 输出：现在走哪条 + 为什么 + 其余为什么没走 + 注意事项。
+- ⛔ **判据必须与真实决策处同源**（这才是这个模块的意义）：总闸走 `devInstructionsInput()`
+  （与 config.toml 写出、指令组装同一来源）；视觉 env 走 `nuphusVisionEnv()`（与 config.toml 的 env 段
+  同一来源）。**在 collector 里另读一遍 appSettings / builtin-plugins 就是制造第二个来源。**
+- **入口**：`capabilities:snapshot` IPC → 设置 → 开发工具页顶部「当前能力链路」只读卡片
+  （能力 → 当前后端 → 为什么 → 备选就绪情况 → 注意事项）。
+  ⚠️ 既有 `app:doctor` IPC 早就写好却**渲染层没有调用方**（写了没人用）—— 这次没复用它，新开窄 IPC
+  （doctor 是"体检"语义，与"选型"不是一回事）。
+- **预检【85】12 条**：加载 dist 里的**真函数**跑断言，且每条都**能被反转** ——
+  两个总闸关掉后浏览器/桌面/视觉必须都判为「无可用后端」；视觉回退链（env 未下发 → `describe_image`
+  → 本地 OCR）；**Intel Mac 的本地 OCR 必须判不可用、Apple Silicon 相反**（跨平台移植最容易丢这条）；
+  没装的兜底后端不许报成「可用」。另两条守唯一来源（前端只渲染快照、主进程复用 `devInstructionsInput`）。
+- 有意**没做**：把选型表也注入 `developer_instructions`（模型侧）。指令已按可用性分叉
+  （desktop/browser/nuphusVision 字段），再塞整张表只会变长；等出现真实需求（模型选错后端）再说。

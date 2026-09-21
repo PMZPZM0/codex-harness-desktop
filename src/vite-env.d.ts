@@ -536,6 +536,16 @@ interface Window {
     writeClipboardImage(filePath: string): Promise<boolean>;
     readClipboardFiles(): Promise<string[]>;
     doctor(cwd?: string): Promise<{ checks: { label: string; ok: boolean; detail: string }[]; at: number }>;
+    /** 「当前能力链路」：同一件事有多个后端时，现在实际走哪条（唯一来源见 electron/capability-registry.ts） */
+    capabilitiesSnapshot(): Promise<{
+      capabilities: {
+        id: string; label: string; purpose: string;
+        activeId: string | null; activeLabel: string; activeWhy: string;
+        alternatives: { id: string; label: string; available: boolean; why: string }[];
+        note: string;
+      }[];
+      at: number;
+    }>;
     engineInfo(): Promise<{
       codexHome: string; binary: string; binaryExists: boolean; version: string; running: boolean;
       userData: string; agentsMd: boolean; configToml: boolean;

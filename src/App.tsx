@@ -10057,6 +10057,24 @@ export default function App() {
   // 安装/卸载的内置弹窗（替代 window.confirm——浏览器原生 confirm 会抢焦点且打断输入框）
   const [runtimeModal, setRuntimeModal] = useState<{ id: string; name: string; mode: "install" | "uninstall"; done: boolean; failed: boolean } | null>(null);
   const refreshDevRuntimes = () => { window.codex.listRuntimes().then(setDevRuntimes).catch(() => setDevRuntimes([])); };
+  /** 「当前能力链路」（09-21）：同一件事有多个后端时，现在实际走哪条。
+   *  数据来自 `capabilities:snapshot` —— 判据的唯一来源是 electron/capability-registry.ts
+   *  （⛔ 前端不许自己算，否则又变成"界面说的"和"实际走的"两套）。 */
+  const [capabilityRows, setCapabilityRows] = useState<{
+    id: string; label: string; purpose: string;
+    activeId: string | null; activeLabel: string; activeWhy: string;
+    alternatives: { id: string; label: string; available: boolean }[];
+    note: string;
+  }[]>([]);
+  /** 读取失败的原因（非空时界面直接显示它）。
+   *  ⛔ 为什么要有：只 catch 成空数组的话，界面会永远停在「读取中…」—— 那是个**说谎的状态**
+   *  （看的人会一直等）。失败就把话说明白。 */
+  const [capabilityError, setCapabilityError] = useState("");
+  const refreshCapabilities = () => {
+    window.codex.capabilitiesSnapshot()
+      .then((snapshot) => { setCapabilityRows(snapshot.capabilities); setCapabilityError(""); })
+      .catch((error: any) => { setCapabilityRows([]); setCapabilityError(`读取失败：${error?.message ?? "未知错误"}`); });
+  };
   useEffect(() => window.codex.onRuntimeProgress((event) => {
     // auto = 主进程监视到 tools 目录变化（引擎自己装了工具）→ 静默刷新清单与状态，
     // 不动「正在安装」指示（那是按钮安装路径的专属状态）
@@ -10135,6 +10153,9 @@ export default function App() {
   }
   useEffect(() => { if (settingsOpen) refreshToolsStatus(); }, [settingsOpen]);
   useEffect(() => { if (settingsOpen && settingsPage === "devtools") refreshDevRuntimes(); }, [settingsOpen, settingsPage]);
+  // 进入「开发工具」页时同时刷一次能力链路（装/卸工具会改变"现在走哪条"：例如装上 playwright-cli 后
+  // 浏览器自动化就多了条兜底路径）
+  useEffect(() => { if (settingsOpen && settingsPage === "devtools") refreshCapabilities(); }, [settingsOpen, settingsPage]);
   // 进入「SSH 服务器」分区时拉取一次服务器列表
   useEffect(() => {
     if (settingsOpen && settingsPage === "ssh" && !sshLoaded) {
@@ -20437,6 +20458,28 @@ function showEnhanceHint() {
                   <option value="proxy">本机代理优先</option>
                 </select>
                 <span className="settings-card-hint">下载慢就换个源，下一次下载立即生效；带「回落」的选项失败后会自动改走官方源。浏览器内核只认「自动 / 国内镜像 / 官方直连」，其余按自动处理。</span>
+              </div>
+              {/* 「当前能力链路」（09-21）：回答"现在实际走哪条" —— 原先这些规则散在技能文案与代码
+                  注释里，用户只能看到零散的安装状态，出问题无法判断走的是哪条。判据的唯一来源见
+                  electron/capability-registry.ts（⛔ 前端只渲染，不自己算）。 */}
+              <div className="devtools-capabilities" data-count={capabilityRows.length}>
+                <div className="settings-subhead">
+                  <CircleCheck size={13} />当前能力链路
+                  <span className="settings-subhead-hint">同一件事多个后端时，现在实际走哪条</span>
+                </div>
+                {capabilityRows.length === 0
+                  ? <div className="settings-card-hint">{capabilityError || "读取中…（打开本页时自动刷新）"}</div>
+                  : capabilityRows.map((cap) => (
+                    <div className={`capability-row ${cap.activeId ? "" : "missing"}`} key={cap.id} data-capability={cap.id} data-active={cap.activeId ?? "none"}>
+                      <span className="capability-copy"><strong>{cap.label}</strong><small>{cap.purpose}</small></span>
+                      <span className="capability-active">{cap.activeId ? <CircleCheck size={14} /> : null}{cap.activeLabel}</span>
+                      <span className="capability-why">{cap.activeWhy}</span>
+                      {cap.alternatives.length > 0 && (
+                        <span className="capability-alt">备选：{cap.alternatives.map((alt) => `${alt.label}${alt.available ? "（就绪）" : "（未就绪）"}`).join("、")}</span>
+                      )}
+                      {cap.note ? <span className="capability-note">{cap.note}</span> : null}
+                    </div>
+                  ))}
               </div>
               <div className="settings-subhead"><Download size={13} />语音模型<span className="settings-subhead-hint">sherpa-onnx · 本机推理 · 按需下载</span></div>
               <VoiceDevToolsSection onNotice={setNotice} />

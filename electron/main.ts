@@ -67,6 +67,7 @@ import { ensureCodexMarketplaceSection, installCodexMarketPlugin, listCodexMarke
 import { augmentedPath, bundledGit, bundledNode, bundledPython, CHINA_NPM_REGISTRY, cloakCacheDir, cloakOpenHelper, downloadEnv, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "./toolchain";
 import { ensureBuiltinSkills, ensureExpertSkillsMarketplace, expertSkillsSourceDir } from "./builtin-skills";
 import { NUPHUS_VISION_ENV_TABLE, nuphusVisionEnv, nuphusVisionEnvDrift } from "./nuphus-env";
+import { resolveCapabilities, type CapabilityProbe } from "./capability-registry";
 import { ensurePonytailPlugin } from "./ponytail-plugin";
 import { getPonytailMode, setPonytailMode } from "./ponytail-mode";
 import { markMissingRollouts, mergeThreadList } from "./session-tools";
@@ -4226,6 +4227,36 @@ ipcMain.handle("app:doctor", async (_event, input: { cwd?: string } = {}) => {
   const free = Math.round(os.freemem() / 1024 ** 3 * 10) / 10;
   checks.push({ label: "内存", ok: free >= 1, detail: `可用物理内存 ${free} GB / 共 ${(os.totalmem() / 1024 ** 3).toFixed(1)} GB` });
   return { checks, at: Date.now() };
+});
+
+/** 收集「能力选型」所需的环境观测值。
+ *
+ *  ⛔ 判据必须与**真实决策处同源**，不在这里另读一遍设置/插件（那正是本项目反复踩过的漂移）：
+ *   · 总闸 → `devInstructionsInput()`（与 config.toml 写出、指令组装同一来源）
+ *   · 视觉 env → `nuphusVisionEnv()`（与 config.toml 的 env 段同一来源） */
+async function collectCapabilityProbe(): Promise<CapabilityProbe> {
+  const devInput = await devInstructionsInput();
+  const mcpOverrides = await readMcpOverrides().catch(() => ({}) as McpOverrides);
+  return {
+    platform: process.platform,
+    arch: process.arch,
+    desktopSwitch: devInput.desktop,
+    browserSwitch: devInput.browser,
+    nuphusAvailable: Boolean(nuphusBinary()) && mcpOverrideEnabled(mcpOverrides, "nuphus"),
+    nuphusVisionEnv: nuphusVisionEnv(devInput.nuphusVision).length > 0,
+    visionPlugin: devInput.visionPlugin,
+    imagePlugin: devInput.imagePlugin,
+    playwrightCli: runtimeInstalled("playwright-cli", devRuntimeSpecs["playwright-cli"]),
+    markitdown: runtimeInstalled("markitdown", devRuntimeSpecs.markitdown),
+  };
+}
+
+/** 「当前能力链路」：同一件事有多个后端时，现在实际走哪条、其余为什么没走。
+ *  为什么需要这个入口：原先这些规则散在技能文案与代码注释里，用户只能看到零散的安装状态，
+ *  出问题时无法回答"到底走的哪条"（对标 Agent-Reach 的 doctor 思路）。 */
+ipcMain.handle("capabilities:snapshot", async () => {
+  const probe = await collectCapabilityProbe();
+  return { capabilities: resolveCapabilities(probe), at: Date.now() };
 });
 
 // ── 数据管理 / 缓存清理（设置 → 数据与统计 → 数据管理） ──
