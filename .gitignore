@@ -29,6 +29,16 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+*.local
+
+# 凭据 / 私钥（⛔ 防误提交：本机有 SSH deploy key 与跳板密钥，这类文件一旦入库只能改历史才能清除）
+*.pem
+*.key
+*.p12
+*.pfx
+*.ppk
+id_rsa*
+*.keystore
 
 # 测试运行时产物（验证脚本每次运行会重新生成带编号的目录）
 .verify-*/
