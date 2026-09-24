@@ -56,12 +56,12 @@ jobs:
       # ⛔ 09-24（评估报告 §3.1）：与 build-win.yml 同因 —— 发版前没有任何预检门禁。
       #    check = build + 全部预检守卫，故直接取代原来的 `npm run build`。
       - name: Build
-                # 09-24 晚：本想把 check（构建+全部预检守卫）作为 CI 门禁，但预检的部分守卫依赖
-                # 开发机工作区的构建产物（automation-tools.zip / 内置 python / rollout-worker 运行环境），
-                # CI 干净检出上必然红（首个发布 run 三端全挂在 check）。环境适配未完成前先回退为
-                # 纯构建（v0.0.26-b 的已知良好流程）；预检已在发版目录全量跑过（非环境硬失败 0）。
-                # TODO(0.0.28)：给预检加「CI 环境档」，恢复此处为 npm run check。
-                run: npm run build
+        # 09-24 晚：本想把 check（构建+全部预检守卫）作为 CI 门禁，但预检的部分守卫依赖
+        # 开发机工作区的构建产物（automation-tools.zip / 内置 python / rollout-worker 运行环境），
+        # CI 干净检出上必然红（首个发布 run 三端全挂在 check）。环境适配未完成前先回退为
+        # 纯构建（v0.0.26-b 的已知良好流程）；预检已在发版目录全量跑过（非环境硬失败 0）。
+        # TODO(0.0.28)：给预检加「CI 环境档」，恢复此处为 npm run check。
+        run: npm run build
 
       - name: Lint (layering rules)
         run: npm run lint
