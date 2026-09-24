@@ -107,19 +107,22 @@ export class ChannelBotService {
     // 才清理。多会话并行时这是纯浪费（不配机器人也一样付）。
     if (!this.config?.enabled) return;
     const params = event.params as any;
+    // ⛔ 09-22：本文件里 delta 累积用 params.turnId、而 finishTurn 读 params.turn?.id —— 同一事实两个键名，
+    //    必然有一端取不到（累积写到错的 key / 删不掉旧条目）。统一走宽容取法。
+    const turnId = String(params?.turn?.id ?? params.turnId ?? params.id ?? "");
     // 该会话没绑定任何渠道 → 只维护 busyThreads（turn/completed 里有兜底删除），
     // 正文累积完全没必要（finishTurn 找不到 route 会直接 return，白攒）。
     const bound = Object.values(this.bindings).some((binding) => binding.threadId === params.threadId);
     if (event.method === "turn/started") {
       if (bound) this.busyThreads.add(params.threadId);
     } else if (event.method === "item/agentMessage/delta") {
-      if (bound) this.turnMessages.set(params.turnId, (this.turnMessages.get(params.turnId) ?? "") + (params.delta ?? ""));
+      if (bound) this.turnMessages.set(turnId, (this.turnMessages.get(turnId) ?? "") + (params.delta ?? ""));
     } else if (event.method === "item/completed" && params.item?.type === "agentMessage") {
-      if (bound) this.turnMessages.set(params.turnId, params.item.text ?? this.turnMessages.get(params.turnId) ?? "");
+      if (bound) this.turnMessages.set(turnId, params.item.text ?? this.turnMessages.get(turnId) ?? "");
     } else if (event.method === "turn/completed") {
       this.busyThreads.delete(params.threadId);
       if (bound) void this.finishTurn(params).catch((error) => this.log("error", `飞书回复失败：${error.message}`));
-      else this.turnMessages.delete(params.turnId);
+      else this.turnMessages.delete(turnId);
     }
   }
 
@@ -216,10 +219,11 @@ export class ChannelBotService {
 
   private async finishTurn(params: any) {
     const route = Object.values(this.bindings).find((binding) => binding.threadId === params.threadId);
+    const turnId = String(params?.turn?.id ?? params.turnId ?? params.id ?? "");
     const final = [...(params.turn?.items ?? [])].reverse().find((item: any) => item.type === "agentMessage")?.text
-      ?? this.turnMessages.get(params.turn?.id)
+      ?? this.turnMessages.get(turnId)
       ?? (params.turn?.error?.message ? `Codex 处理失败：${params.turn.error.message}` : "");
-    this.turnMessages.delete(params.turn?.id);
+    this.turnMessages.delete(turnId);
     if (!route || !this.config) return;
     try {
       if (final.trim()) await this.sendFeishu(this.config, route.chatId, final.trim());

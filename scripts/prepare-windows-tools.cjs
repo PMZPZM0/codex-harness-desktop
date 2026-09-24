@@ -46,10 +46,13 @@ const NODE_VERSION = "v24.19.0";
 //   ④ .github/workflows/build-mac.yml 的 `ref: vX`（mac x64 走 cargo 从 tag 取源）
 //   09-20 升 0.2.3：上游该版本只有「HUD 视觉重构 + TLS 依赖安全修复」，**工具能力零变化**
 //   （我们打包本来就 NUPHUS_MCP_HUD=off），升级理由是安全依赖。
-const NUPHUS_VERSION = "0.2.3";
-const PLAYWRIGHT_CLI_VERSION = "0.1.18";
-const PLAYWRIGHT_CORE_VERSION = "1.62.1";
-const PONYTAIL_VERSION = "v4.9.0";
+// ⛔ 09-24：版本常量搬到 scripts/lib/tools-versions.cjs（单一来源）。
+//   原先这里是独立字面量、mac 侧各写一份 ⇒ 实测漂移出 playwright-core 1.62.1 vs 1.58.2。
+const { TOOLS_VERSIONS } = require("./lib/tools-versions.cjs");
+const NUPHUS_VERSION = TOOLS_VERSIONS.nuphus;
+const PLAYWRIGHT_CLI_VERSION = TOOLS_VERSIONS.playwrightCli;
+const PLAYWRIGHT_CORE_VERSION = TOOLS_VERSIONS.playwrightCore.win32;
+const PONYTAIL_VERSION = TOOLS_VERSIONS.ponytail;
 
 const run = (file, args, env = {}) =>
   execFileSync(file, args, { stdio: "inherit", env: { ...process.env, ...env }, timeout: 30 * 60_000 });

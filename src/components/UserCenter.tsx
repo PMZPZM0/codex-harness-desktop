@@ -209,7 +209,7 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
           `.uc-presets` 是「表情头像选择器」的样式，里面有 `.uc-presets button { width:30px }` ——
           复用它会把「用默认名」按钮压成 30px 宽、文字竖排断行（用户截图实测就是这么坏的）；
           `.uc-avatar` 的圆形底 + overflow 还会把方形默认头像裁圆。 */}
-      <div className="uc-card codex-id-card">
+      <div className="uc-card">
         <div className="codex-id-head">
           <div className="codex-id-avatar">
             {codexAvatar?.type === "image" && codexAvatar.value

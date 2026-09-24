@@ -1,0 +1,1386 @@
+/**
+ * 工具 / 命令 / 理由 / diff / 计划等卡片
+ *
+ * 09-21 架构改造：从 src/styles.css 按域拆出（原 L3406–L4711，1306 行）。
+ * ⛔ 内容与顺序均未改动 —— 全部分节拼回与原文件逐字节一致（构建产物亦一致）。
+ */
+
+
+/* 流光文字：流式头部 shimmer 扫光（cr-text-shimmer-sweep） */
+.shimmer-text {
+  width: fit-content;
+  background: linear-gradient(
+    110deg,
+    color-mix(in srgb, currentColor 55%, transparent) 0%,
+    color-mix(in srgb, currentColor 55%, transparent) 35%,
+    var(--text) 50%,
+    color-mix(in srgb, currentColor 55%, transparent) 65%,
+    color-mix(in srgb, currentColor 55%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--text);
+  animation: shimmer-sweep 2.2s linear infinite;
+}
+@keyframes shimmer-sweep {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.plan-block {
+  padding: 12px 14px;
+}
+.plan-block strong {
+  color: var(--text);
+}
+.plan-block p {
+  margin-bottom: 0;
+}
+.working-indicator {
+  color: var(--muted);
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 20px;
+  font-size: 12.5px;
+  display: flex;
+}
+.working-indicator.paused,
+.approval-wait-icon {
+  color: var(--orange);
+}
+/* 专家团成员调度中：聊天区工作指示条点亮该成员的渐变头像 */
+.expert-working-avatar {
+  width: 22px; height: 22px; border-radius: 50%; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 11px; font-weight: 600;
+  animation: expert-avatar-glow 1.6s ease-in-out infinite;
+}
+@keyframes expert-avatar-glow {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 45%, transparent); filter: brightness(1.05); }
+  50% { box-shadow: 0 0 10px 2px color-mix(in srgb, var(--ok) 30%, transparent); filter: brightness(1.22); }
+}
+/* 工具卡里的成员头像（team_member_invoke 调度卡） */
+.tool-member-avatar {
+  width: 18px; height: 18px; border-radius: 50%; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 10px; font-weight: 600;
+  transition: box-shadow 0.25s, filter 0.25s;
+}
+.tool-member-avatar.running { animation: expert-avatar-glow 1.6s ease-in-out infinite; }
+.process-running-icon {
+  color: var(--muted);
+}
+.system-event {
+  border: 1px solid var(--line-soft);
+  border-left: 2px solid var(--muted);
+  background: var(--panel);
+  color: var(--muted);
+  border-radius: 10px;
+  margin: 0 0 18px;
+  padding: 10px 13px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.system-event strong {
+  color: var(--text);
+  margin-bottom: 4px;
+  display: block;
+}
+.system-event p {
+  white-space: pre-wrap;
+  margin: 0;
+}
+.system-event.warning {
+  border-left-color: var(--orange);
+}
+.system-event.error {
+  border-left-color: var(--red);
+}
+/* 成功/完成类提醒：绿色左边框 + 标题行绿色对勾 */
+.system-event.success {
+  border-left-color: var(--green);
+}
+.system-event-icon {
+  vertical-align: -2px;
+  margin-right: 5px;
+}
+.system-event.success .system-event-icon {
+  color: var(--green);
+}
+.system-event.compact-card {
+  border-left-width: 3px;
+  border-left-color: var(--accent);
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  display: flex;
+}
+.system-event.compact-card.done {
+  border-left-color: var(--green);
+}
+.system-event.compact-card.failed {
+  border-left-color: var(--red);
+}
+.system-event.compact-card .compact-icon {
+  width: 28px;
+  height: 28px;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  border-radius: 8px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  display: flex;
+}
+.system-event.compact-card.done .compact-icon {
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 25%, var(--line));
+  background: color-mix(in srgb, var(--green) 10%, var(--bg));
+}
+.system-event.compact-card.failed .compact-icon {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 25%, var(--line));
+  background: color-mix(in srgb, var(--red) 10%, var(--bg));
+}
+.system-event.compact-card .compact-icon .spinner {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+.system-event.compact-card .compact-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.system-event.compact-card .compact-title-row {
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  display: flex;
+}
+.system-event.compact-card .compact-title-row strong {
+  margin: 0;
+  font-size: 13px;
+}
+.system-event.compact-card .compact-badge {
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.system-event.compact-card.done .compact-badge {
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 30%, var(--line));
+  background: color-mix(in srgb, var(--green) 10%, var(--bg));
+}
+.system-event.compact-card.failed .compact-badge {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 30%, var(--line));
+  background: color-mix(in srgb, var(--red) 10%, var(--bg));
+}
+.system-event.compact-card p {
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.process-row {
+  color: var(--muted);
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+.process-row summary {
+  cursor: pointer;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  list-style: none;
+  display: flex;
+}
+.process-row summary::-webkit-details-marker {
+  display: none;
+}
+.process-row summary > span {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.process-row summary code,
+.activity-row code {
+  color: var(--muted);
+  font: inherit;
+  text-underline-offset: 2px;
+  text-decoration: underline;
+}
+.process-row summary small {
+  color: var(--faint);
+}
+.process-row summary > svg:last-child {
+  color: var(--faint);
+  transition: transform 0.22s;
+}
+.process-row[open] summary > svg:last-child {
+  transform: rotate(180deg);
+}
+.process-row .pre-wrap {
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.26s cubic-bezier(0.22, 0.61, 0.36, 1);
+  display: grid;
+}
+.process-row[open] .pre-wrap {
+  grid-template-rows: 1fr;
+}
+.process-row .pre-wrap > pre {
+  opacity: 0;
+  min-height: 0;
+  transition: opacity 0.18s;
+  overflow: hidden;
+}
+.process-row[open] .pre-wrap > pre {
+  opacity: 1;
+  transition: opacity 0.22s 60ms;
+  overflow: auto;
+}
+.process-row pre {
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  max-height: 300px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: 0 8px 8px 0;
+  margin: 5px 0 0;
+  padding: 9px 12px;
+  font:
+    11px/1.55 Cascadia Code,
+    Consolas,
+    monospace;
+  overflow: auto;
+}
+.activity-row {
+  min-height: 24px;
+  color: var(--muted);
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  display: flex;
+}
+.activity-row span {
+  overflow-wrap: anywhere;
+  flex: 1;
+  min-width: 0;
+}
+.activity-row small {
+  color: var(--faint);
+}
+.activity-row b,
+.diff-add,
+.completed-file b {
+  color: var(--add);
+  font-style: normal;
+  font-weight: 500;
+}
+.activity-row i,
+.diff-delete,
+.completed-file i {
+  color: var(--del);
+  font-style: normal;
+}
+.completed-changes {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 10px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  animation: 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both block-grow;
+  overflow: hidden;
+}
+@keyframes block-grow {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.completed-changes summary {
+  cursor: pointer;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 9px 12px;
+  list-style: none;
+  display: flex;
+}
+.completed-changes summary::-webkit-details-marker {
+  display: none;
+}
+.completed-changes summary strong {
+  margin-right: auto;
+  font-size: 12.5px;
+}
+.completed-changes summary > svg:last-child {
+  color: var(--faint);
+  transition: transform 0.15s;
+}
+.completed-changes[open] summary > svg:last-child {
+  transform: rotate(180deg);
+}
+.completed-changes > div {
+  border-top: 1px solid var(--line-soft);
+}
+.completed-file {
+  border-bottom: 1px solid var(--line-soft);
+  align-items: center;
+  gap: 12px;
+  min-height: 38px;
+  padding: 8px 12px;
+  display: flex;
+}
+.completed-file:last-child {
+  border-bottom: 0;
+}
+.completed-file code {
+  min-width: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  flex: 1;
+  font:
+    11px/1.45 Cascadia Code,
+    Consolas,
+    monospace;
+}
+.completed-file span {
+  flex: none;
+}
+.codex-turn > .message-footer {
+  margin: 2px 0 10px;
+}
+:root:not([data-theme="dark"]) .approval-card {
+  background: #fffaf1;
+  border-color: #f0dcb8;
+  overflow: hidden;
+}
+.approval-card header {
+  min-height: 42px;
+  color: var(--orange);
+  border-bottom: 1px solid #f2e4c8;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  display: flex;
+}
+:root:not([data-theme="dark"]) .approval-card > p {
+  color: #5b4a2e;
+  margin: 12px;
+  line-height: 1.55;
+}
+.approval-card > p.request-error {
+  color: var(--red);
+}
+.approval-card > button {
+  margin: 0 12px 12px;
+}
+.approval-card footer {
+  border-top: 1px solid #f2e4c8;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 7px;
+  min-height: 50px;
+  padding: 8px 12px;
+  display: flex;
+}
+.approval-card button,
+.notice button {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  cursor: pointer;
+  min-height: 30px;
+  color: var(--text);
+  border-radius: 8px;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  font-size: 12px;
+  display: inline-flex;
+}
+.approval-card button.primary {
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--accent-text);
+}
+.approval-card button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.question {
+  gap: 6px;
+  margin: 12px;
+  display: grid;
+}
+.question > span {
+  font-weight: 600;
+}
+.question small {
+  color: var(--muted);
+}
+.question select,
+.question input {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  height: 34px;
+  color: var(--text);
+  border-radius: 8px;
+  outline: 0;
+  padding: 0 9px;
+}
+.composer-wrap {
+  z-index: 3;
+  width: min(820px, 100% - 46px);
+  margin: 0 auto 22px;
+  position: relative;
+}
+.composer-wrap.docked-center {
+  width: min(680px, 100% - 60px);
+  margin: 0;
+  position: absolute;
+  /* 空态输入框：位于屏幕下方区域，给上方欢迎内容留出视觉空间。56% 比 54% 更低，
+     与 padding-bottom:54vh 的内容区拉开更大距离（见 .welcome-state 注释） */
+  top: 56%;
+  bottom: auto;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+.composer-wrap.docked-center .composer {
+  position: relative;
+  min-height: 96px;
+  box-shadow: 0 18px 44px #00000012;
+}
+.composer-wrap.docked-center .suggest-row {
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+.composer-wrap {
+  transition: width 0.34s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.composer-wrap.docked-center {
+  transition:
+    top 0.34s cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 0.34s cubic-bezier(0.22, 0.61, 0.36, 1),
+    width 0.34s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+/* 输入框下方的 AI 内容提示（09-20 用户：「在输入框下面空白居中位置加一排字」）。
+   它是 `.composer-wrap` 的最后一个子节点 —— 宽度随该列（min(820px, 100% - 46px)），
+   text-align:center 即相对**输入框**居中（不是相对窗口，右侧面板开合时不会偏）。
+   ⛔ 纯静态、高度常量：别给它 margin 负值或动态高度，`.composer-wrap` 上挂着
+   ResizeObserver（高度一变就重申贴底）。 */
+.composer-disclaimer {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--faint);
+  user-select: none;
+}
+.queue-cards {
+  gap: 6px;
+  margin-bottom: 6px;
+  display: grid;
+}
+.queue-card {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 12px;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 10px;
+  display: flex;
+}
+.queue-card.dragging {
+  opacity: 0.5;
+}
+.queue-handle {
+  color: var(--faint);
+  cursor: grab;
+  flex: none;
+  place-items: center;
+  display: grid;
+}
+.queue-card p {
+  min-width: 0;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  margin: 0;
+  font-size: 12px;
+  overflow: hidden;
+}
+.queue-actions {
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  display: flex;
+}
+.queue-act {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  min-height: 26px;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 7px;
+  align-items: center;
+  gap: 3px;
+  padding: 0 9px;
+  font-size: 11px;
+  display: inline-flex;
+}
+.queue-act:hover {
+  background: var(--panel-2);
+}
+.queue-act.icon {
+  width: 26px;
+  color: var(--muted);
+  background: 0 0;
+  border: 0;
+  justify-content: center;
+  padding: 0;
+}
+.queue-act.icon:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+.command-palette,
+.context-picker {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  max-height: 310px;
+  box-shadow: var(--shadow);
+  z-index: 35;
+  border-radius: 12px;
+  padding: 6px;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  overflow-y: auto;
+}
+.context-picker {
+  animation: 0.14s menu-pop;
+}
+.context-picker-head {
+  color: var(--text);
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 8px 5px;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+}
+.context-picker-head small {
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 400;
+}
+.context-picker button {
+  width: 100%;
+  min-height: 30px;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  background: 0 0;
+  border: 0;
+  border-radius: 8px;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  display: flex;
+}
+.context-picker button:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+.context-picker button b {
+  color: var(--text);
+  flex: none;
+  font-size: 10.5px;
+}
+.context-picker button span {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  overflow: hidden;
+}
+.context-picker p {
+  color: var(--faint);
+  margin: 7px 8px;
+  font-size: 11.5px;
+}
+.context-chip-row {
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: -2px 0 7px;
+  display: flex;
+}
+.context-chip {
+  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  max-width: min(100%, 420px);
+  height: 26px;
+  color: var(--muted);
+  border-radius: 8px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 5px 0 7px;
+  font-size: 11px;
+  display: inline-flex;
+}
+.context-chip > svg,
+.context-chip b {
+  color: var(--text);
+  flex: none;
+}
+.context-chip b {
+  font-size: 10.5px;
+}
+.context-chip em {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-style: normal;
+  overflow: hidden;
+}
+.context-chip button {
+  width: 19px;
+  height: 19px;
+  color: var(--faint);
+  cursor: pointer;
+  background: 0 0;
+  border: 0;
+  border-radius: 5px;
+  place-items: center;
+  padding: 0;
+  display: grid;
+}
+.context-chip button:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+/* 输入框上方的引用条：消息引用显示在这里，发送时以块引用前缀拼进消息文本 */
+.quote-bar {
+  border: 1px solid color-mix(in srgb, var(--link) 32%, transparent);
+  background: color-mix(in srgb, var(--link) 7%, transparent);
+  border-radius: 10px;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 8px;
+  padding: 7px 8px 7px 10px;
+  display: flex;
+}
+.quote-bar-icon {
+  color: var(--link);
+  flex: none;
+}
+.quote-bar-label {
+  color: var(--link);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  flex: none;
+}
+.quote-bar-text {
+  color: var(--text);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.45;
+  min-width: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.quote-bar button {
+  width: 20px;
+  height: 20px;
+  color: var(--faint);
+  cursor: pointer;
+  background: 0 0;
+  border: 0;
+  border-radius: 5px;
+  place-items: center;
+  padding: 0;
+  flex: none;
+  display: grid;
+  margin-left: auto;
+}
+.quote-bar button:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+.command-palette button {
+  width: 100%;
+  min-height: 29px;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  background: 0 0;
+  border: 0;
+  border-radius: 8px;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: center;
+  padding: 0 10px;
+  font-size: 12px;
+  display: grid;
+}
+.command-palette button:hover,
+.command-palette button:focus-visible {
+  background: var(--panel-2);
+  color: var(--text);
+  outline: 0;
+}
+/* 命令中文注释：弱化二列文字，与命令名区分层级 */
+.command-palette .command-desc {
+  color: var(--faint);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.command-palette code {
+  color: var(--text);
+  font:
+    12px Cascadia Code,
+    Consolas,
+    monospace;
+}
+/* 「#」技能面板：与命令面板同款两列（技能名 + 中文注释），技能名较长故首列加宽、名字与命令区分色。 */
+.command-palette.skill-palette button { grid-template-columns: 156px minmax(0, 1fr); }
+.command-palette.skill-palette code { color: var(--accent); }
+.composer {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  min-height: 108px;
+  box-shadow: var(--shadow);
+  border-radius: 16px;
+  flex-direction: column;
+  padding: 14px 14px 10px;
+  display: flex;
+}
+.composer:focus-within {
+  border-color: var(--faint);
+}
+.composer textarea {
+  resize: vertical;
+  width: 100%;
+  min-height: 48px;
+  max-height: 180px;
+  color: var(--text);
+  background: 0 0;
+  border: 0;
+  outline: 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.composer textarea::placeholder {
+  color: var(--faint);
+}
+/* ── WorkBuddy 式内联图片 chip：contentEditable 输入框，chip 真正内联在文字流里 ──
+   编辑框非受控（App 侧 ComposerEditor），chip 为 contenteditable=false 原生节点。 */
+.composer-input-shell { position: relative; }
+.composer-editor {
+  width: 100%;
+  min-height: 48px;
+  max-height: min(42vh, 360px);
+  overflow-y: auto;
+  color: var(--text);
+  background: 0 0;
+  border: 0;
+  outline: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: text;
+}
+.composer-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--faint);
+  pointer-events: none;
+}
+.composer-image-chip-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 4px 0 7px;
+  margin: 0 4px;
+  border-radius: 100px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1;
+  vertical-align: -5px;
+  max-width: 200px;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+.composer-image-chip-inline:hover {
+  background: color-mix(in srgb, var(--text) 8%, var(--panel-2));
+  border-color: var(--faint);
+}
+.composer-image-chip-inline .composer-image-chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #b180d7;
+  flex: none;
+}
+/* 文件 chip 与图片 chip **同款外形、不同图标色**（09-18：文件改为内联 chip，跟图片一样）。
+   保留紫色给图片，文件用主题链接色（蓝），与消息侧 FileText 的配色一致。 */
+.composer-image-chip-inline.composer-attach-chip-file .composer-image-chip-icon {
+  color: var(--link);
+}
+.composer-image-chip-inline .composer-image-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.composer-image-chip-inline .composer-image-chip-close {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1;
+}
+.composer-image-chip-inline .composer-image-chip-close:hover { color: var(--red); }
+.composer-actions {
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  margin-top: 6px;
+  display: flex;
+}
+.composer-left,
+.composer-right {
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  display: flex;
+}
+.composer-right {
+  flex: none;
+}
+.composer-quick-menu {
+  position: relative;
+}
+.composer-quick-pop {
+  z-index: 40;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  width: 218px;
+  box-shadow: var(--shadow);
+  border-radius: 12px;
+  padding: 5px;
+  animation: 0.14s menu-pop;
+  position: absolute;
+  /* 向下弹出：从按钮处展开、盖在输入框上方，永远贴着按钮（WorkBuddy 同款方向） */
+  top: calc(100% + 6px);
+  bottom: auto;
+  left: 0;
+}
+.composer-quick-pop.flip-main-up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+.composer-quick-pop > button {
+  width: 100%;
+  min-height: 31px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  background: 0 0;
+  border: 0;
+  border-radius: 8px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 8px;
+  font-size: 12px;
+  display: flex;
+}
+.composer-quick-pop > button:hover {
+  background: var(--panel-2);
+}
+.composer-quick-pop > button > span {
+  flex: 1;
+  /* 09-17：菜单项装的是动态名（专家/技能/连接器/文件名），长名省略不撑破 218px 面板 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-quick-pop > button > svg:last-child {
+  color: var(--faint);
+}
+/* ── WorkBuddy 式附件菜单：子面板 + +号点击转动 ── */
+/* + 号按钮：每次点击小幅旋转 180° 回弹（key 重建触发） */
+.plus-spin {
+  animation: plus-spin 0.42s cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+/* 菜单打开时 + 旋转 45° 变 ×（WorkBuddy：transform 0.42s 弹性过渡，open 态保持） */
+.plus-spin-button[aria-expanded="true"] .plus-spin {
+  transform: rotate(45deg);
+}
+.plus-spin-button .plus-spin {
+  transition: transform 0.42s cubic-bezier(0.25, 0.8, 0.3, 1);
+  transform-origin: center;
+}
+@keyframes plus-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(180deg); }
+}
+/* 主菜单项 hover 时右箭头微微右移（WorkBuddy 子菜单入口质感） */
+.composer-quick-pop > button .submenu-chevron {
+  transition: transform 0.14s ease;
+}
+.composer-quick-pop > button:hover .submenu-chevron {
+  transform: rotate(-90deg);
+}
+.composer-quick-pop > button.submenu-open {
+  background: var(--panel-2);
+}
+/* 二级子面板：贴在主菜单右侧（同 WorkBuddy 层叠结构） */
+.composer-quick-pop.submenu-pop {
+  /* 子面板现在是一级菜单的真实子层，100% 就是一级菜单边缘；
+     垂直偏移由实际触发项与面板尺寸计算，并限制在可视窗口内。 */
+  top: var(--submenu-top, 0);
+  bottom: auto;
+  left: calc(100% + 6px);
+  width: 250px;
+  max-height: min(340px, calc(100vh - 16px));
+  overflow-y: auto;
+  padding: 6px;
+}
+/* 主菜单贴窗口右缘时从左侧弹出，仍保持 6px 紧邻间距。 */
+.composer-quick-pop.submenu-pop.flip-left {
+  left: auto;
+  right: calc(100% + 6px);
+}
+.composer-quick-pop.submenu-pop > button {
+  min-height: 34px;
+}
+/* 子面板内搜索框 */
+.submenu-search {
+  align-items: center;
+  gap: 7px;
+  margin: 2px 2px 6px;
+  padding: 0 8px;
+  background: var(--panel-2);
+  border-radius: 7px;
+  height: 30px;
+  display: flex;
+  color: var(--faint);
+}
+.submenu-search input {
+  background: 0 0;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+}
+.submenu-search input::placeholder { color: var(--faint); }
+.submenu-list {
+  flex-direction: column;
+  gap: 1px;
+  display: flex;
+}
+.submenu-list > button {
+  width: 100%;
+  min-height: 31px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  background: 0 0;
+  border: 0;
+  border-radius: 8px;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 8px;
+  font-size: 12px;
+  display: flex;
+}
+.submenu-list > button:hover { background: var(--panel-2); }
+.submenu-list > button > svg:first-child { color: var(--muted); flex: none; }
+.submenu-list .thread-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.submenu-list small {
+  color: var(--faint);
+  font-size: 10.5px;
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.submenu-list .expert-menu-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--link, #2f6bdd), color-mix(in srgb, var(--link, #2f6bdd) 55%, #8a5cf6));
+}
+.submenu-list .expert-menu-avatar.is-lead { background: linear-gradient(135deg, #d68910, #e5a53c); }
+.submenu-list .expert-menu-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.submenu-empty {
+  color: var(--faint);
+  font-size: 11.5px;
+  text-align: center;
+  padding: 18px 8px;
+  margin: 0;
+}
+.submenu-manage {
+  width: 100%;
+  min-height: 34px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  background: 0 0;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0 0 8px 8px;
+  align-items: center;
+  gap: 9px;
+  margin-top: 4px;
+  padding: 6px 8px 2px;
+  font-size: 12px;
+  display: flex;
+}
+.submenu-manage:hover { color: var(--link, #2f6bdd); }
+.chooser-pop {
+  width: 276px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.chooser-pop input {
+  background: var(--panel-2);
+  width: calc(100% - 8px);
+  height: 30px;
+  color: var(--text);
+  border: 0;
+  border-radius: 7px;
+  outline: 0;
+  margin: 4px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+.chooser-pop > button {
+  min-height: 42px;
+}
+.chooser-pop > button > span {
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  display: flex;
+}
+.chooser-pop b {
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.chooser-pop small {
+  color: var(--faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  overflow: hidden;
+}
+.chooser-pop em {
+  color: var(--green);
+  margin-left: auto;
+  font-size: 10.5px;
+  font-style: normal;
+}
+.chooser-pop .chooser-manage {
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  margin-top: 4px;
+}
+.composer-left .icon-button {
+  color: var(--text);
+}
+.composer-left .icon-button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.composer-setting {
+  min-width: 0;
+  height: 26px;
+  color: var(--text);
+  border: 0;
+  border-radius: 13px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 500;
+  display: flex;
+}
+.composer-setting:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.composer-setting .menu-caret {
+  color: currentColor;
+  opacity: 0.64;
+}
+.composer-setting.danger {
+  background: color-mix(in srgb, var(--red) 22%, var(--bg));
+  color: color-mix(in srgb, var(--red) 92%, var(--text));
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--red) 45%, transparent);
+}
+.composer-setting.danger:hover {
+  background: color-mix(in srgb, var(--red) 30%, var(--bg));
+}
+.composer-setting select {
+  max-width: 92px;
+  color: var(--muted);
+  background: 0 0;
+  border: 0;
+  outline: 0;
+  font-size: 11.5px;
+}
+.composer-setting select option {
+  background: var(--panel);
+  color: var(--text);
+}
+.composer-tool {
+  height: 26px;
+  color: var(--faint);
+  cursor: pointer;
+  border: 0;
+  border-radius: 13px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 500;
+  display: flex;
+}
+.composer-tool .composer-tool-label {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  transition:
+    width 0.18s ease,
+    opacity 0.18s ease;
+}
+.composer-tool:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.composer-tool:hover .composer-tool-label {
+  opacity: 1;
+  width: auto;
+}
+.composer-tool.on {
+  background: color-mix(in srgb, var(--green) 16%, var(--bg));
+  color: color-mix(in srgb, var(--green) 88%, var(--text));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 40%, transparent);
+}
+.composer-tool.on .composer-tool-label {
+  opacity: 1;
+  width: auto;
+}
+.composer-tool.off {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--faint);
+}
+.composer-setting.full,
+.composer-setting.full select {
+  color: var(--orange);
+}
+.send-button,
+.stop-button {
+  cursor: pointer;
+  border: 0;
+  border-radius: 10px;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-left: 6px;
+  padding: 0;
+  display: grid;
+  animation: button-pop 0.18s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.send-button {
+  background: var(--green);
+  color: var(--accent-text);
+  transition: background-color .2s ease, color .2s ease, transform .18s ease, box-shadow .2s ease;
+}
+
+/* 输入框语音按钮：普通麦克风 → 录音中三根动态声柱 */
+.composer-mic-button {
+  cursor: pointer;
+  border: 0;
+  border-radius: 10px;
+  width: 32px;
+  height: 32px;
+  margin-left: 6px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--link) 8%, var(--bg));
+  transition: background-color .2s ease, color .2s ease, transform .18s ease, box-shadow .2s ease;
+}
+.composer-mic-button:hover {
+  color: var(--link);
+  background: color-mix(in srgb, var(--link) 14%, var(--bg));
+}
+.composer-mic-button.recording {
+  color: #fff;
+  background: linear-gradient(145deg, #ef4444, #f43f5e);
+  box-shadow: 0 0 0 4px color-mix(in srgb, #ef4444 14%, transparent);
+}
+.composer-recording-bars {
+  height: 17px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.composer-recording-bars i {
+  width: 2.5px;
+  border-radius: 3px;
+  background: currentColor;
+  animation: composer-recording-wave .65s ease-in-out infinite alternate;
+}
+.composer-recording-bars i:nth-child(1) { height: 7px; animation-delay: -.3s; }
+.composer-recording-bars i:nth-child(2) { height: 15px; animation-delay: -.1s; }
+.composer-recording-bars i:nth-child(3) { height: 10px; animation-delay: -.5s; }
+@keyframes composer-recording-wave {
+  from { transform: scaleY(.45); opacity: .65; }
+  to { transform: scaleY(1); opacity: 1; }
+}
+
+/* ═══ 加号菜单 · 收藏夹子面板（09-24）═══
+   与技能/连接器子面板共用 .submenu-* 骨架，只补「一行两个热区」的布局：
+   左侧整行 = 插入到输入框，右侧箭头 = 一键发送（两个动作不藏在二级菜单里）。 */
+.submenu-count {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-style: normal;
+}
+.composer-quick-pop .favorites-submenu .submenu-list {
+  max-height: 264px;
+  overflow-y: auto;
+}
+.favorite-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 8px;
+}
+.favorite-row:hover { background: var(--panel-2); }
+.favorite-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: 0 0;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+}
+.favorite-main > svg { color: var(--muted); flex: none; }
+.favorite-main .favorite-title {
+  flex: none;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.favorite-main small {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--faint);
+  font-size: 10.5px;
+  max-width: none;
+}
+.favorite-send {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: 0 0;
+  color: var(--muted);
+  cursor: pointer;
+}
+.favorite-send:hover { background: var(--accent-soft); color: var(--accent); }

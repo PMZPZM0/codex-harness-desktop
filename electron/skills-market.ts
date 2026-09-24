@@ -191,7 +191,12 @@ async function collectFiles(root: string, relative = "", out: string[] = []): Pr
   return out;
 }
 
-function auditSkill(content: string, files: string[]) {
+/** 技能包的**机器扫描**（关键词 + 载荷后缀）。市场安装必经（installCocoLoopSkill），
+ *  本地导入 `skills:import` 也必须调它 —— 否则「导入 SKILL.md」就是绕开审查的后门
+ *  （09-23 用户明令：任何技能安装前必须过审查；导出给 builtin-skills-ipc 用）。
+ *  ⛔ 它是**闸门**不是**全部**：机器只看字符串，同义改写（拼接/变量展开/别名）能绕过；
+ *    语义层复核在内置技能 skill-audit 里（模型按五查清单读意图）。两者是"闸门 + 复核"。 */
+export function auditSkill(content: string, files: string[]) {
   const findings: string[] = [];
   const lower = content.toLowerCase();
   if (/\brm\s+-rf\s+[/~]|\bformat\s+[a-z]:|\bdel\s+\/s\s+\/q\b/.test(lower)) findings.push("检测到破坏性删除命令");

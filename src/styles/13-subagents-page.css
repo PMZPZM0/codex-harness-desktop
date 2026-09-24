@@ -1,0 +1,1458 @@
+/**
+ * 子智能体页
+ *
+ * 09-21 架构改造：从 src/styles.css 按域拆出（原 L15871–L17321，1451 行）。
+ * ⛔ 内容与顺序均未改动 —— 全部分节拼回与原文件逐字节一致（构建产物亦一致）。
+ */
+
+
+/* ══ 子智能体页（此前 styles.css 完全没有对应样式，全部裸奔） ══════════ */
+.subagent-center {
+  gap: 14px;
+}
+.subagent-banner {
+  border: 1px solid color-mix(in srgb, var(--green) 22%, var(--line-soft));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--green) 7%, var(--panel)), var(--panel) 70%);
+  border-radius: 12px;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  display: flex;
+}
+.subagent-banner > svg {
+  color: var(--green);
+  flex: none;
+  margin-top: 1px;
+}
+.subagent-banner strong {
+  color: var(--text);
+  margin-bottom: 3px;
+  font-size: 12.5px;
+  display: block;
+}
+.subagent-banner p {
+  color: var(--muted);
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+.subagent-banner code {
+  background: var(--panel-2);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-size: 11px;
+}
+.subagent-grid {
+  grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
+  gap: 11px;
+  display: grid;
+}
+.subagent-card {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 13px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 13px 14px;
+  transition: border-color .15s, box-shadow .15s, transform .15s, opacity .15s;
+  display: flex;
+}
+.subagent-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--text) 7%, transparent);
+}
+.subagent-card.enabled {
+  border-color: color-mix(in srgb, var(--green) 32%, var(--line));
+}
+.subagent-card.disabled {
+  opacity: .6;
+}
+.subagent-card.disabled:hover {
+  opacity: .85;
+}
+.subagent-card-head {
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  display: flex;
+}
+.subagent-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--green) 12%, var(--bg));
+  color: var(--green);
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  display: inline-flex;
+}
+.subagent-name {
+  color: var(--text);
+  font-size: 13.5px;
+}
+.subagent-desc {
+  color: var(--muted);
+  margin: 0;
+  min-height: 34px;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+.subagent-meta {
+  gap: 6px;
+  flex-wrap: wrap;
+  display: flex;
+}
+.subagent-meta span {
+  align-items: center;
+  gap: 4px;
+  background: var(--panel-2);
+  border-radius: 6px;
+  padding: 3px 7px;
+  color: var(--muted);
+  font-size: 10.5px;
+  display: inline-flex;
+}
+.subagent-meta svg {
+  flex: none;
+  opacity: .75;
+}
+.subagent-card-actions {
+  border-top: 1px solid var(--line-soft);
+  margin-top: 2px;
+  padding-top: 9px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  display: flex;
+}
+.subagent-empty {
+  border: 1px dashed var(--line);
+  border-radius: 13px;
+  grid-column: 1/-1;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 36px 24px;
+  text-align: center;
+  display: flex;
+}
+.subagent-empty svg {
+  color: var(--faint);
+}
+.subagent-empty strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.subagent-empty p {
+  color: var(--muted);
+  margin: 0;
+  max-width: 420px;
+  font-size: 11.5px;
+  line-height: 1.65;
+}
+.subagent-editor-modal {
+  max-width: 640px;
+}
+.subagent-config-grid {
+  gap: 10px;
+}
+.subagent-toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  display: flex;
+}
+
+/* ══ 记忆页卡片：分类色条 + 悬停操作（沿用现有 class，仅增强） ══════════ */
+.memory-grid {
+  gap: 11px;
+}
+.memory-card {
+  border-radius: 13px;
+  gap: 9px;
+  padding: 12px 14px 11px;
+  position: relative;
+  overflow: hidden;
+}
+.memory-card:before {
+  content: "";
+  background: color-mix(in srgb, var(--green) 50%, transparent);
+  width: 3px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+}
+.memory-card p {
+  line-height: 1.62;
+}
+.memory-card-head .icon-button {
+  opacity: 0;
+  transition: opacity .15s;
+}
+.memory-card:hover .icon-button,
+.memory-card-head .icon-button:focus-visible {
+  opacity: 1;
+}
+.memory-category-pill {
+  font-weight: 500;
+  letter-spacing: .2px;
+}
+.memory-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="force"]) .code-theme-card:hover,
+  html:not([data-motion="force"]) .code-font-card:hover,
+  html:not([data-motion="force"]) .index-tile:hover,
+  html:not([data-motion="force"]) .personalization-style-card:hover,
+  html:not([data-motion="force"]) .subagent-card:hover,
+  html:not([data-motion="force"]) .memory-card:hover {
+    transform: none;
+  }
+}
+
+/* ══ 子智能体编辑器：工具名只读展示（此前裸奔，无对应样式） ══════════════ */
+.subagent-tool-name {
+  border: 1px dashed var(--line);
+  background: color-mix(in srgb, var(--link) 7%, transparent);
+  border-radius: 8px;
+  min-height: 30px;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 11.5px;
+  display: flex;
+}
+.subagent-tool-name code {
+  color: var(--link);
+  background: none;
+  padding: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+}
+
+/* ══ 专家团（Team 型专家）页面：复刻 WorkBuddy 团队协作 UI ════════════════ */
+.expert-team-center { gap: 14px; }
+.expert-team-grid-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+.expert-team-tag {
+  color: var(--faint);
+  background: color-mix(in srgb, var(--link) 8%, transparent);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10.5px;
+}
+.expert-team-quickprompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 10px;
+}
+.expert-team-quick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.expert-team-quick:hover {
+  border-color: var(--link);
+  color: var(--link);
+  background: color-mix(in srgb, var(--link) 8%, transparent);
+}
+.expert-team-grid-list .subagent-card-actions { flex-wrap: wrap; gap: 6px; }
+
+/* 专家团卡片：项目地址配置行（为每个团队单独指定工作目录） */
+.expert-team-cwd {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+  border-radius: 8px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 2px 0 8px;
+  padding: 5px 8px;
+  display: flex;
+  color: var(--muted);
+}
+.expert-team-cwd-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 11px;
+}
+.expert-team-cwd-pick {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  color: var(--link);
+  border-radius: 6px;
+  flex: none;
+  cursor: pointer;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  display: inline-flex;
+  font-size: 11px;
+}
+.expert-team-cwd-pick:hover {
+  border-color: var(--link);
+  background: color-mix(in srgb, var(--link) 8%, transparent);
+}
+.expert-team-cwd-clear {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  color: var(--faint);
+}
+.expert-team-cwd-clear:hover { color: var(--danger, #d64545); }
+/* 专家团卡片：角色直达会话，两列排列，成员较多时自然形成两排。 */
+.expert-team-member-chips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+/* ── 09-13 专家团卡片视觉精修（仅作用域到专家团页，不影响子智能体页共用样式） ── */
+.expert-team-center .expert-team-grid-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.expert-team-center .subagent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: 14px;
+  padding: 14px 16px;
+  transition: border-color .12s ease, box-shadow .12s ease, transform .12s ease;
+}
+.expert-team-center .subagent-card:hover {
+  border-color: var(--accent, #7a94ff);
+  box-shadow: 0 4px 18px rgba(122, 148, 255, .12);
+  transform: translateY(-1px);
+}
+.expert-team-center .subagent-card-head {
+  align-items: center;
+}
+.expert-team-center .expert-team-avatar {
+  background: linear-gradient(135deg, #7a94ff, #a78bfa);
+  color: #fff;
+  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+}
+.expert-team-center .subagent-name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .2px;
+}
+.expert-team-center .subagent-desc {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+  margin: 0;
+}
+.expert-team-center .subagent-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.expert-team-center .subagent-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted, #888) 10%, transparent);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.expert-team-center .expert-team-tag {
+  background: color-mix(in srgb, var(--accent, #7a94ff) 12%, transparent);
+  color: var(--accent, #7a94ff);
+}
+.expert-team-center .expert-team-member-chips {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.expert-team-center .subagent-card-actions {
+  margin-top: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-top: 4px;
+  border-top: 1px dashed var(--line, rgba(127, 127, 127, 0.2));
+}
+.expert-team-center .subagent-card-actions .icon-button {
+  margin-left: auto;
+}
+/* 09-13 专家中心：智能体团队 hub 页的单专家卡片区（每团队 lead+members 铺开） */
+.expert-center-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+.expert-center-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.25));
+  border-radius: 12px;
+  background: var(--panel, #fff);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .12s ease, background .12s ease;
+}
+.expert-center-card:hover {
+  border-color: var(--accent, #7a94ff);
+  background: color-mix(in srgb, var(--accent, #7a94ff) 6%, transparent);
+}
+.expert-center-avatar {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #7a94ff, #a78bfa);
+}
+.expert-center-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.expert-center-main strong {
+  font-size: 13px;
+  color: var(--text);
+}
+.expert-center-main small {
+  font-size: 11px;
+  color: var(--link, #2f6bdd);
+}
+.expert-center-main em {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 专家中心页（09-13）：按领域分类陈列 + 主理人徽标 */
+.hub-card-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.expert-category {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.expert-category + .expert-category {
+  margin-top: 14px;
+}
+.expert-category-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 2px;
+}
+.expert-category-icon {
+  align-self: center;
+  display: inline-flex;
+  color: var(--accent, #7a94ff);
+}
+.expert-category-head strong {
+  font-size: 13.5px;
+  color: var(--text);
+}
+.expert-category-head small {
+  font-size: 11.5px;
+  color: var(--muted);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.expert-category-head em {
+  margin-left: auto;
+  flex: none;
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--muted);
+  background: var(--panel-2, rgba(127, 127, 127, 0.08));
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.2));
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.expert-lead-badge {
+  font-style: normal;
+  font-size: 9.5px;
+  line-height: 1;
+  color: var(--accent, #7a94ff);
+  background: color-mix(in srgb, var(--accent, #7a94ff) 12%, transparent);
+  border-radius: 999px;
+  padding: 2px 6px;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+.expert-team-member-chip {
+  display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%;
+  padding: 3px 9px 3px 4px; border-radius: 999px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.25)); background: transparent;
+  font-size: 11px; color: var(--text); cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, translate 0.12s, box-shadow 0.2s;
+}
+.expert-team-member-chip:hover:not(:disabled) { border-color: var(--link, #2f6bdd); background: color-mix(in srgb, var(--link, #2f6bdd) 8%, transparent); translate: 0 -1px; }
+.expert-team-member-chip:disabled { opacity: 0.6; cursor: default; }
+/* 成员正在执行子任务：chip 点亮（呼吸光圈 + 高亮边框），与聊天区正在工作指示联动 */
+.expert-team-member-chip.is-working {
+  border-color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 45%, transparent);
+  animation: member-working-glow 1.6s ease-in-out infinite;
+}
+@keyframes member-working-glow {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 40%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 12%, transparent); }
+}
+.expert-member-working-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--ok);
+  animation: working-dot-pulse 1.2s ease-in-out infinite;
+}
+@keyframes working-dot-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.7); } }
+.expert-team-member-chip-avatar {
+  width: 18px; height: 18px; border-radius: 50%; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 600; color: #fff;
+  background: linear-gradient(135deg, var(--link, #2f6bdd), color-mix(in srgb, var(--link, #2f6bdd) 55%, #8a5cf6));
+  transition: box-shadow 0.2s, filter 0.2s;
+}
+.expert-team-member-chip.is-lead .expert-team-member-chip-avatar { background: linear-gradient(135deg, #d68910, #e5a53c); }
+/* 运行中成员头像提亮 + 光圈（点亮过渡） */
+.expert-team-member-chip.is-working .expert-team-member-chip-avatar {
+  filter: brightness(1.18) saturate(1.15);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--ok) 55%, transparent);
+}
+.expert-team-member-chip-name { font-weight: 600; }
+.expert-team-member-chip-role { color: var(--text-secondary, #7a7a7a); font-size: 10px; }
+@media (max-width: 520px) {
+  .expert-team-member-chips { grid-template-columns: 1fr; }
+}
+
+/* 专家团编辑器：主理人 / 成员分块 */
+.expert-team-editor-modal { max-width: 760px; width: min(92vw, 760px); max-height: 86vh; overflow-y: auto; }
+.expert-team-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.expert-team-section {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.expert-team-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.expert-team-section-title strong { font-size: 13px; }
+.expert-team-section-title small { color: var(--faint); font-weight: 400; font-size: 11px; }
+.expert-team-member {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+}
+.expert-team-member-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.expert-team-member-head strong { font-size: 12px; color: var(--text); }
+.expert-team-member-empty {
+  padding: 12px;
+  text-align: center;
+  color: var(--faint);
+  font-size: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+}
+
+/* 记忆页网关配置行：三列网格在窄屏下挤在一起，给个最小列宽 */
+.memory-config-row {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+/* ══ 补齐检查发现的裸奔类名（独立使用、无伴生类提供布局） ══════════════════ */
+/* 设置页标题右侧的操作按钮组：父级 .channel-heading 已 space-between，这里只管内部排列 */
+.settings-heading-actions {
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  display: flex;
+  /* 窄窗口下按钮换行，而不是把标题挤扁或溢出容器（09-17：说明收进 ? 后头部只有一行，
+     按钮成为这一行唯一的宽度压力来源） */
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+/* ── 供应商名称必填标记（09-17：名字从顶部挪到表单后，新增时必须填） ── */
+.provider-required {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 500;
+  margin-left: 5px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--red, #e24b4a) 14%, transparent);
+  color: var(--red, #e24b4a);
+  vertical-align: middle;
+}
+.provider-required-hint {
+  color: var(--red, #e24b4a);
+  font-weight: 500;
+}
+
+/* ── 用户中心「Codex 的身份」卡（09-17）：名字输入 + 头像上传/重置 ──
+   ⛔ 全部走 codex-id-* 独立类名，**不复用**上面「你自己」那张卡的 .uc-*：
+   `.uc-presets button{width:30px}` 会把「用默认名」压成 30px 宽 → 文字竖排断行（用户截图实测）；
+   `.uc-avatar` 的圆形底 + 尺寸会把方形默认头像裁圆。 */
+.codex-id-head {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.codex-id-avatar {
+  position: relative;
+  flex: none;
+  width: 56px;
+  height: 56px;
+}
+.codex-id-avatar > .codex-avatar-default,
+.codex-id-avatar > img {
+  width: 56px;
+  height: 56px;
+  border-radius: 15px;
+  object-fit: cover;
+  display: block;
+}
+/* 上传/恢复按钮：压在头像下缘的两角（圆底 + 描边 + 投影，不遮头像主体；两枚左右错开） */
+.codex-id-avatar-btn {
+  position: absolute;
+  bottom: -5px;
+  right: -5px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 15%);
+}
+.codex-id-avatar-btn.reset {
+  right: auto;
+  left: -5px;
+}
+.codex-id-avatar-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.codex-id-info {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.codex-id-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+}
+.codex-id-desc {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.codex-id-label {
+  margin: 12px 0 5px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.codex-id-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.codex-id-hint {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.codex-name-input {
+  height: 30px;
+  width: 200px;
+  max-width: 100%;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12.5px;
+}
+.codex-name-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.codex-name-reset {
+  flex: none;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
+  /* ⛔ white-space:nowrap 是关键：早期版本被 .uc-presets button 的 30px 宽压成竖排断行 */
+  white-space: nowrap;
+  cursor: pointer;
+}
+.codex-name-reset:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ── Codex 回合标识：头像 + 名字（09-17 用户两次要求） ──
+   ① 「给 codex 消息上面加一个名字和头像」→ 有了；
+   ② 「一轮会话就一个 Codex 名字和 Codex 头像就行，就在会话上面就行」→ 从每条 agent 消息里
+      **提到回合级**（`.turn-head`，TurnView 渲染且只渲染一份）。
+   顺带修掉「名字头像没第一时间出来」：原来头部长在 agentMessage 内部，而引擎建好 item 到
+   首 token 之间 text 为空、被「空文本不渲染」整条挡掉 —— 要等第一个字才见到头像和名字。
+   现在是回合级渲染，用户气泡一上屏就出现，与首 token 无关。 */
+.turn-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 1px 0 5px;
+}
+.turn-head-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+}
+.turn-head-name {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 头像：圆角方形（与应用图标同体系，且与用户头像的圆形区分开） */
+.codex-avatar-img {
+  display: block;
+  border-radius: 7px;
+  flex: none;
+}
+/* 默认头像的底色走 **CSS 渐变**：⛔ 不能用 SVG `<linearGradient id>` + `url(#id)` ——
+   那是文档级引用，同页多个实例（回合头 / 乐观头 / 各历史回合的头）共用同一个 id，
+   引用会解析到文档里第一个同 id 元素；它一旦落在 `content-visibility: auto` 被跳过的
+   子树里（.turn-group / .turn-card：视口外回合跳过绘制）就解析不到 → **整块渲染成空白**，
+   而 DOM 上尺寸/display/opacity 全正常（09-17 用户两次报「头像不见了」的真因，
+   细节见 DefaultCodexAvatar.tsx）。 */
+.codex-avatar-default {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  border-radius: 7px;
+  flex: none;
+  background-image: linear-gradient(135deg, #4f6bff 0%, #6a54e8 55%, #8b53d8 100%);
+}
+.codex-avatar-default::after {
+  /* 右上一点柔光：让纯色块看起来有体积，不至于像占位图 */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: radial-gradient(60% 60% at 78% 22%, #ffffff5c, #ffffff00);
+  pointer-events: none;
+}
+.codex-avatar-spark {
+  display: block;
+  position: relative;
+  z-index: 1;
+}
+/* ── 「你」的回合头：名字 + 头像（09-17 用户「人也要有名字和头像，位置跟 Codex 一样」）──
+   与 Codex 的 `.turn-head` 镜像：他那边「头像 + 名字」左对齐，这边「名字 + 头像」右对齐。
+   头像圆形（Codex 是圆角方形，见 .codex-avatar-img），三态渲染见 UserAvatar.tsx。 */
+.user-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 1px 0 5px;
+}
+.user-head-name {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel-2);
+  color: var(--muted);
+  line-height: 1;
+  overflow: hidden;
+  user-select: none;
+}
+.user-avatar > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.user-avatar-initial {
+  font-weight: 600;
+}
+/* ── 思考强度：底栏按钮 +「滑块」弹窗（09-18 用户定稿）──────────────────────
+   「前面一个⚪点滑动滑到哪里；⚪鼠标放上去再展示；默认展示一条线；已选的后面彩色
+   动态液体流动加灯带；没拉到的地方空着；拉满后一个燃烧特效」。
+   对应实现：轨道=2px 细线；已选段=按档位分色的渐变（铺满整条再裁，颜色对齐档位）
+   ＋流光＋外发光＋前沿亮珠；⚪默认 opacity:0，hover/聚焦/拖动才出现（原生 input 的
+   拇指保持透明但可拖，拖动/键盘/触摸全复用原生行为）；最高档加火焰层＋轨道转橙红。
+   档位标签保留（可点/可键盘），但不再是「点哪里亮哪里」的高亮胶囊。 */
+.effort-trigger {
+  height: 26px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px 0 7px;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  color: var(--effort-color, var(--accent));
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  cursor: pointer;
+}
+.effort-trigger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--effort-color, var(--accent)) 12%, transparent);
+}
+.effort-trigger:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.effort-trigger-icon, .effort-trigger-label {
+  color: inherit;
+}
+.effort-trigger-label {
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.effort-trigger-caret {
+  color: inherit;
+  opacity: 0.7;
+}
+.effort-picker-pop {
+  position: fixed;
+  z-index: 220;
+  width: min(340px, calc(100vw - 24px));
+  padding: 13px 14px 9px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 18px 48px #00000038;
+  animation: 0.16s ease both effort-pop-in;
+}
+@keyframes effort-pop-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.effort-picker-head {
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+  display: flex;
+}
+.effort-picker-head strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.effort-picker-head span {
+  color: var(--faint);
+  font-size: 11px;
+}
+/* ── 滑块本体 ── */
+.effort-picker-bar {
+  position: relative;
+  height: 30px;
+  margin: 0 2px;
+  cursor: pointer;
+}
+/* 未选段：一条 2px 细线（默认形态就是「一条线」） */
+.effort-picker-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 16%, transparent);
+}
+/* 已选段：外发光放 wrapper（fill 自身 overflow:hidden 会裁掉自己的 box-shadow） */
+.effort-picker-fillwrap {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 8px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  overflow: hidden;
+  pointer-events: none;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--fill-color) 55%, transparent);
+  transition: width 0.12s ease, box-shadow 0.2s ease;
+}
+.effort-picker-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background-repeat: no-repeat;
+  box-shadow: inset 0 1px 0 #ffffff59;
+}
+/* 灯带的流光：一条高光周期性扫过（液体流动感） */
+.effort-picker-fill::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -45%;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, #ffffffcc 45%, #ffffff66 60%, transparent);
+  animation: 2.8s ease-in-out infinite effort-sheen;
+}
+@keyframes effort-sheen {
+  0% { transform: translateX(0); }
+  60%, 100% { transform: translateX(320%); }
+}
+/* 液体前沿的亮珠 */
+.effort-picker-bead {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--fill-color);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--fill-color) 80%, transparent), 0 0 18px color-mix(in srgb, var(--fill-color) 45%, transparent);
+  pointer-events: none;
+  transition: left 0.12s ease, opacity 0.15s ease;
+}
+/* ⚪ 圆点滑块：默认隐藏，hover / 聚焦 / 拖动才出现 */
+.effort-picker-thumb {
+  position: absolute;
+  top: 50%;
+  width: 15px;
+  height: 15px;
+  transform: translate(-50%, -50%) scale(0.5);
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2.5px solid var(--fill-color);
+  box-shadow: 0 1px 6px #00000059, 0 0 0 5px color-mix(in srgb, var(--fill-color) 22%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.effort-picker-bar:hover .effort-picker-thumb,
+.effort-picker-bar:focus-within .effort-picker-thumb {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+.effort-picker-bar:hover .effort-picker-bead {
+  opacity: 0; /* 圆点出现后亮珠让位（两者同位置） */
+}
+/* 档位刻度点：贴轨道的低存在感小点 */
+.effort-picker-dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 0;
+  pointer-events: none;
+}
+.effort-picker-dots i {
+  position: absolute;
+  top: 0;
+  width: 3px;
+  height: 3px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 30%, transparent);
+}
+.effort-picker-dots i.on {
+  background: var(--fill-color);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--fill-color) 70%, transparent);
+}
+/* 原生 input：铺满轨道提供拖动/键盘/触摸；视觉全部由上面元素承担（拇指透明但可拖） */
+.effort-picker-range {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.effort-picker-range::-webkit-slider-runnable-track {
+  height: 30px;
+  border-radius: 15px;
+  background: transparent;
+}
+.effort-picker-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: 4px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  opacity: 0;
+}
+.effort-picker-range:focus-visible {
+  outline: none;
+}
+.effort-picker-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fill-color) 35%, transparent);
+}
+/* 拖动中：圆点放大、灯带更亮 */
+.effort-picker-bar:has(.effort-picker-range:active) .effort-picker-thumb {
+  transform: translate(-50%, -50%) scale(1.25);
+}
+.effort-picker-bar:has(.effort-picker-range:active) .effort-picker-fillwrap {
+  box-shadow: 0 0 16px color-mix(in srgb, var(--fill-color) 78%, transparent);
+}
+/* ── 拉满：燃烧特效 ── 填充切火焰配色、流光加速，右端三簇火苗＋整条轨道泛橙红 */
+.effort-picker-bar.burn .effort-picker-fill {
+  background-image: linear-gradient(90deg, #fbbf24, #f97316 45%, #ef4444 80%, #dc2626) !important;
+  box-shadow: inset 0 1px 0 #ffffff66;
+}
+.effort-picker-bar.burn .effort-picker-fill::after {
+  animation-duration: 1.6s;
+}
+.effort-picker-bar.burn .effort-picker-fillwrap {
+  box-shadow: 0 0 14px #f9731688, 0 0 30px #ef44444d;
+}
+.effort-picker-bar.burn .effort-picker-track {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--text) 14%, transparent), #f9731655);
+}
+.effort-picker-bar.burn .effort-picker-thumb {
+  border-color: #f97316;
+  box-shadow: 0 0 10px #f97316aa, 0 0 0 5px #f9731633;
+}
+.effort-picker-flames {
+  position: absolute;
+  right: -3px;
+  top: 50%;
+  width: 34px;
+  height: 30px;
+  transform: translateY(-58%);
+  pointer-events: none;
+}
+.effort-picker-flames i {
+  position: absolute;
+  bottom: 2px;
+  left: 2px;
+  width: 9px;
+  height: 15px;
+  border-radius: 50% 50% 42% 42%;
+  background: radial-gradient(55% 65% at 50% 78%, #ffe9a8 0%, #ffb84d 38%, #ff7a1f 68%, rgba(255, 90, 31, 0) 100%);
+  filter: blur(1.2px);
+  opacity: 0.9;
+  transform-origin: 50% 100%;
+  animation: 1.05s ease-in-out infinite effort-flame;
+}
+.effort-picker-flames i:nth-child(2) {
+  left: 11px;
+  width: 12px;
+  height: 20px;
+  animation: 0.86s ease-in-out infinite effort-flame;
+  animation-delay: 0.14s;
+}
+.effort-picker-flames i:nth-child(3) {
+  left: 22px;
+  width: 8px;
+  height: 13px;
+  opacity: 0.75;
+  animation: 1.2s ease-in-out infinite effort-flame;
+  animation-delay: 0.3s;
+}
+@keyframes effort-flame {
+  0%, 100% { transform: scaleY(0.8) translateY(1px); opacity: 0.7; }
+  50% { transform: scaleY(1.15) translateY(-2px); opacity: 1; }
+}
+/* 档位标签：可点/可键盘；「当前档」用颜色 + 加粗标识，不再做高亮胶囊 */
+.effort-picker-ticks {
+  gap: 2px;
+  margin-top: 8px;
+  display: flex;
+}
+.effort-tick {
+  flex: 1;
+  padding: 3px 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  font-size: 11px;
+  cursor: pointer;
+}
+.effort-tick:hover {
+  color: var(--text);
+}
+.effort-tick.on {
+  font-weight: 700;
+}
+.effort-tick.blocked {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+.effort-picker-hint {
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  min-height: 16px;
+  font-size: 11.5px;
+  display: flex;
+}
+.effort-picker-hint i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: 0 0 6px currentColor;
+}
+.effort-picker-hint span {
+  font-weight: 700;
+}
+.effort-picker-hint em {
+  font-style: normal;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.effort-picker-foot {
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 10.5px;
+  display: flex;
+}
+.effort-picker-blocked {
+  color: #e8830c;
+}
+.effort-picker-blocked em {
+  font-style: normal;
+  opacity: 0.8;
+}
+
+
+.assistant-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 首次启动「环境体检」（09-17 用户：新用户不知道该装什么，不装 Codex 啥也干不了） ──
+   7 项（必备：模型 / 工作区 / Git / ripgrep；常用：Python / jq / 7-Zip），缺项可一键补齐。
+   视觉与 .help-modal、模型引导同族（圆角 16 / 面板底 / 同一套阴影），避免"三套弹窗三种长相"。 */
+.env-check-backdrop {
+  z-index: 260;
+}
+.env-check-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(600px, calc(100vw - 48px));
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 24px 72px #0000003d;
+}
+.env-check-modal > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.env-check-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text);
+}
+.env-check-title > span {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.env-check-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 16px;
+}
+.env-check-intro {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.env-check-intro b {
+  color: var(--text);
+}
+.env-check-group {
+  margin-bottom: 14px;
+}
+.env-check-group-title {
+  margin-bottom: 6px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--faint);
+}
+.env-check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.env-check-row + .env-check-row {
+  margin-top: 6px;
+}
+/* 缺失的必备项用琥珀色描边 + 浅底强调（不能靠颜色单独表意，行内还有「待安装」徽标与文案） */
+.env-check-row.missing {
+  border-color: color-mix(in srgb, var(--orange) 45%, var(--line));
+  background: color-mix(in srgb, var(--orange) 6%, var(--bg));
+}
+.env-check-row.ok {
+  opacity: 0.72;
+}
+.env-check-dot {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--green);
+}
+.env-check-row.ok .env-check-dot {
+  border-color: color-mix(in srgb, var(--green) 55%, var(--line));
+}
+.env-check-text {
+  flex: 1;
+  min-width: 0;
+}
+.env-check-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.env-check-name em {
+  font-style: normal;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--faint);
+}
+.env-check-why {
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.env-check-badge {
+  flex: none;
+  align-self: center;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--orange) 16%, transparent);
+  color: var(--orange);
+  font-size: 10.5px;
+}
+.env-check-badge.soft {
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  color: var(--muted);
+}
+.env-check-go {
+  flex: none;
+  align-self: center;
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+/* ── 安装进度条（09-19 用户：「不要弹窗，全部进度条展示吧，这样可视化进度，方便新手」）──
+   依赖/工具的下载与安装全部改为**应用内进度**：安装脚本侧不再有任何系统窗口
+   （`stdio: "inherit"` 在无控制台的 Electron 父进程下会新开一个 cmd 黑窗），
+   进度由主进程解析脚本的 `@@PROGRESS n` 事件驱动这里的条。 */
+.runtime-progress-bar { display: block; width: 100%; height: 4px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.runtime-progress-bar.large { height: 6px; }
+.runtime-progress-bar > i { display: block; height: 100%; border-radius: 999px; background: var(--accent); transition: width 220ms ease; }
+.runtime-progress-bar[data-indeterminate="true"] > i { background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: runtime-bar-sweep 1.2s ease-in-out infinite; }
+@keyframes runtime-bar-sweep { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+.runtime-install-state { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.runtime-install-state .runtime-progress { margin: 0; }
+.runtime-modal-progress { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.runtime-modal-progress-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+.env-check-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11.5px;
+}
+.env-check-progress-text { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* 后台安装角标（09-18 用户要求）：一键安装点下去弹窗收起，右下角只剩这枚小胶囊；
+   装完自动消失；点开回到弹窗。不能太抢眼——用户还要继续用应用。 */
+.env-install-pill {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 90; /* 低于弹窗层，避免角标与弹窗抢焦点 */
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 340px;
+  padding: 7px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11.5px;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 14%);
+  transition: border-color .15s ease, transform .15s ease;
+}
+.env-install-pill:hover { border-color: var(--accent); transform: translateY(-1px); }
+.env-install-pill .env-install-pill-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent);
+}
+.env-install-pill em {
+  flex: none;
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--muted);
+  border-left: 1px solid var(--line);
+  padding-left: 7px;
+}
+.env-check-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+}
+.env-check-optout {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.env-check-optout input {
+  margin: 0;
+}
+.env-check-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}

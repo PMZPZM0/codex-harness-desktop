@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["*.ts", "voice/**/*.ts"]
+  "include": ["*.ts", "voice/**/*.ts", "features/**/*.ts"]
 }

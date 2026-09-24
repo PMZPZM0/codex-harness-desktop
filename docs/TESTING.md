@@ -11,7 +11,7 @@ npm run verify   # = npm run check && npm run e2e，退出码 0 才算完成
 ```
 
 - **只跑一半不算验收**：`check` 过但 `e2e` 没过 = 没完成，不许提交。
-- **改了哪个模块，就给哪个模块补场景**：在 `scripts/e2e/scenarios/` 加/改场景（`npm run e2e` 不带参数就是跑**全部**场景，新场景自动进门槛），或给 `check-preflight.mjs` 加检查项。不要写一次性脚本跑完就丢——09-06 那批 `verify-*.mjs` 全员消失就是这么来的。
+- **改了哪个模块，就给它补判据**：⛔ 场景目录 `scripts/e2e/scenarios/` 与 runner `scripts/e2e/run.mjs` **已按用户要求删除**（守卫【7】不许它们回来），别再往那儿加东西。现在是两条路：① 能在离线静态验证的 → 加进 `scripts/guards/` 下**对应域**的文件（⛔ 不是 `scripts/check-preflight.mjs`，它只是个 ~20 行的聚合器，其头注释明确写着「加新守卫请改 guards/ 下对应域的文件」）；② 需要真链路证据的 → 在 `scripts/accept.mjs` 加一项并**登记 `ROUND_OF` 轮次**。不要写一次性脚本跑完就丢——09-06 那批 `verify-*.mjs` 全员消失就是这么来的。
 - **不做反证**（用户 09-19 明令：「把你的反证流程删了，以后不需要再反证了」）：断言写完直接跑正式那轮。
   历史上「把修复临时改回去确认会红」的步骤**已取消**；省下的时间用于覆盖更多真实场景。
 - **GUI 起不来时**最低跑 `check`（离线可用），并在提交信息里写明 `e2e` 未跑的原因。
@@ -22,9 +22,10 @@ npm run verify   # = npm run check && npm run e2e，退出码 0 才算完成
 
 ```bash
 # 推荐：随包 node，不依赖 npm
-resources/tools/node/node.exe scripts/e2e/run.mjs            # 全部场景
-resources/tools/node/node.exe scripts/e2e/run.mjs smoke      # 指定场景
-resources/tools/node/node.exe scripts/e2e/run.mjs --list     # 列出场景
+resources/tools/node/node.exe scripts/accept.mjs              # 跑「最新一轮」全部验收项（约 20s）
+resources/tools/node/node.exe scripts/accept.mjs --only greet  # 只跑 id 含 greet 的项
+resources/tools/node/node.exe scripts/accept.mjs --list        # 列出全部项并标注所属轮次
+resources/tools/node/node.exe scripts/accept.mjs --all         # 全量（发版闸门，平时别用）
 
 # 有 node 在 PATH 时等价于
 npm run check && npm run e2e
@@ -78,11 +79,11 @@ npm run e2e          # UI 冒烟全绿，去 .e2e-artifacts/shots/ 扫一眼截�
 
 自动拉起**已构建**的应用（跑之前必须先构建，脚本会检查），经 CDP 驱动渲染层跑剧本，逐步截图。
 
-**不带参数 = 跑 `scripts/e2e/scenarios/` 下的全部场景**（验收门槛必须覆盖所有回归场景，否则新写的场景只是摆设）；指定名字则只跑那几个：`npm run e2e -- smoke model-scope`。
+**不带参数 = 只跑 `LATEST_ROUND` 那一轮**（不是全部！）—— `ROUND_OF` 登记每项所属轮次，新增项必须登记否则默认跑不到。要全量必须显式 `--all`（仅发版/里程碑/跨模块改动时用，且先在提交信息里说明理由）。
 
 ### 原理
 
-不依赖 Playwright/Puppeteer，用的是应用**主进程自带**的两个测试开关（`electron/main.ts:60` / `:65`）：
+不依赖 Playwright/Puppeteer，用的是应用**主进程自带**的两个测试开关（⛔ 别写行号 —— 它们已经搬过一次，用符号 grep `CODEX_HARNESS_USER_DATA` / `CODEX_HARNESS_DEBUG_PORT` 定位）：
 
 ```
 CODEX_HARNESS_USER_DATA   → 把 userData 重定向到临时目录（完全隔离，绝不碰你的真实会话/配置）
@@ -113,7 +114,7 @@ CODEX_HARNESS_DEBUG_PORT  → 打开 CDP 调试端口（端口随机取空闲端
 
 ### 写新场景
 
-在 `scripts/e2e/scenarios/` 下加一个 `.mjs`，导出一个 `steps` 数组即可（文件名 = 场景名）：
+在 `scripts/accept.mjs` 的 `CHECKS` 里加一项 `{ id, name, run(h) }`，并在 `ROUND_OF` 登记轮次（⛔ 旧的场景目录已删除，不要再新建）：
 
 ```js
 export const description = "一句话说明这个场景管什么";
@@ -171,7 +172,7 @@ export const steps = [
 | `未找到 page target` | `/json/version`（浏览器端点）先就绪、page target 后注册；带真实模型配置后启动更慢。框架已轮询 20s，仍失败就看报错里列出的 target 类型 |
 | 模型选择器点不开 / 菜单里只有「更多设置…」 | 真实模型配置没灌进去（看开头的黄字警告），或 `custom-model.json` 缺失 |
 | 黄字 `未找到真实模型配置` | 本机还没配置过供应商，或 userData 不在默认位置——用 `CODEX_HARNESS_REAL_USER_DATA=<目录>` 指定 |
-| 步骤① 「按文本点击失败：暂时不登录，直接进入」 | 真实 Key 灌进去后 `customModel.hasKey=true`，`App.tsx:7754` 会自动跳过引导页进主界面，按钮已消失。步骤① 现在等的是「引导页**或**主界面」，两者都放行 |
+| 步骤① 「按文本点击失败：暂时不登录，直接进入」 | 真实 Key 灌进去后 `customModel.hasKey=true`，兼容 effect 会自动跳过引导页进主界面，按钮已消失（⛔ 别引用 `App.tsx:7754` 这类行号，`App.tsx` 现在只有 12 行；用符号 grep `login-skipped` 定位）。步骤① 现在等的是「引导页**或**主界面」，两者都放行 |
 | 断言「真实后端回了话」红、`后端响应 0 → 0` | 三种可能：① 灌配置时把 `encryptedKey` 抹掉了（看步骤① 的 `encryptedKey 已保留` 断言）；② 没复制 `Local State`，safeStorage 解不开；③ 网关侧问题（看 `errors` 里的 401 原文） |
 | 断言「真实后端回了话」红、`encryptedKey 已保留` 也红 | 灌配置代码又被改回「抹密钥」了——检查 `seedRealModelConfig` 里 `CODEX_HARNESS_KEEP_SECRETS === "0"` 那个分支（默认必须**不**进） |
 | 想跑完不关应用 | `npm run e2e -- smoke --keep` |

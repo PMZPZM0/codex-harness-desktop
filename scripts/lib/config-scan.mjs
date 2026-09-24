@@ -100,11 +100,33 @@ export function defaultUserDataDir({ platform = process.platform, env = process.
 export function collectScanTargets({ root, userData, fs, path }) {
   const targets = [];
 
-  // ① 内置技能：直接扫 builtin-skills.ts 里的技能常量区间（内容与上游逐字一致，只是多了模板转义）
+  // ① 内置技能：扫 builtin-skills 的技能常量区间（内容与上游逐字一致，只是多了模板转义）
+  //    ⛔ 09-22 起该文件按技能切成 `electron/builtin-skills/NN-skill-*.ts`（纯数据搬迁）。
+  //    只读单文件会让内置技能**静默退出扫描** —— 而预检【86】的判据是
+  //    「内置技能零 critical/high」，目标集为空时它**恒真**（假绿，且丢掉真实覆盖）。
+  //    故：基文件 + 同名子目录一起扫，每条命中都标它真正所在的文件。
   try {
-    const src = fs.readFileSync(path.join(root, "electron", "builtin-skills.ts"), "utf8");
-    for (const m of src.matchAll(/^const ([A-Z0-9_]+_SKILL) = `([\s\S]*?)^`;/gm)) {
-      targets.push({ kind: "builtin-skill", source: `electron/builtin-skills.ts#${m[1]}`, text: m[2] });
+    const files = [];
+    const baseRel = "electron/builtin-skills.ts";
+    try { fs.readFileSync(path.join(root, baseRel), "utf8"); files.push(baseRel); } catch { /* 无基文件 */ }
+    const walkTs = (rel, depth) => {
+      if (depth > 3) return;
+      let entries = [];
+      try { entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        const childRel = rel + "/" + e.name;
+        if (e.isDirectory()) { walkTs(childRel, depth + 1); continue; }
+        if (/\.ts$/.test(e.name)) files.push(childRel);
+      }
+    };
+    walkTs("electron/builtin-skills", 0);
+    for (const rel of files) {
+      let src = "";
+      try { src = fs.readFileSync(path.join(root, rel), "utf8"); } catch { continue; }
+      /* `export const`（搬迁后的子文件）与 `const`（仍在基文件的）都要认 */
+      for (const m of src.matchAll(/^(?:export\s+)?const ([A-Z0-9_]+_SKILL) = `([\s\S]*?)^`;/gm)) {
+        targets.push({ kind: "builtin-skill", source: `${rel}#${m[1]}`, text: m[2] });
+      }
     }
   } catch { /* 文件不存在时跳过（例如裁剪过的发布包） */ }
 

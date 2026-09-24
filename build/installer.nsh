@@ -13,5 +13,7 @@
 !macroend
 
 !macro customInstall
-  DetailPrint "内置工具已随包安装（nuphus / playwright-cli / cloakbrowser / Chromium 内核）"
+  ; 09-24 更正：自 09-16 起 cloakbrowser 与 Chromium/Playwright 内核都是**首次使用时按需下载**，
+  ; 只有 nuphus 与 playwright-cli 随包。旧文案声称四者全部随包，会让人以为装完就能离线用。
+  DetailPrint "内置工具：nuphus / playwright-cli 已随包；cloakbrowser 与浏览器内核在首次使用时按需下载"
 !macroend

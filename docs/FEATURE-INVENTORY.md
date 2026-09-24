@@ -111,6 +111,7 @@
 | 功能 | 现状 | 目标域 |
 |---|---|---|
 | 记忆分层 / 搜索 / 召回 / 历史 | `ipc: memory:17`（L8867–L8913）+ `electron/memory-layers.ts` + `hooks/useMemory.ts` | `features/memory/` |
+| **L3 碎片池生命周期（09-22）** | `electron/memory-prune.ts`（纯函数：临时上下文 TTL 14 天 / 容量 500 / pinned 豁免）+ `MemoryStore.pruneIfDue`（读接口不写盘、写盘成功才改内存）+ 淘汰留痕 `{workspace}/.codex-harness/memory/pruned.jsonl`；健康度经 `memory:layers:read\|write` 暴露；预检【97】15 条断言 + 验收 `memory-lifecycle` | 同上 |
 | 记忆漏斗 / 分层编辑器 / 配置弹窗 | `MemoryFunnel`(97) `MemoryLayersEditor`(73) `MemoryConfigModal`(35) | 同上 |
 
 ## 10. 自动化与任务（automation）

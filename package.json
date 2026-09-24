@@ -10,7 +10,7 @@
     "build:electron": "node scripts/gen-rollout-worker.mjs && tsc -p electron/tsconfig.json",
     "build:vite": "cross-env CODEBUDDY_SAFE_DELETE_ENABLED=0 vite build",
     "build": "npm run build:electron && npm run build:vite",
-    "check": "npm run build && node scripts/verify-image-plugin.mjs && node scripts/verify-plan-editor.mjs && node scripts/check-preflight.mjs",
+    "check": "npm run build && node scripts/verify-image-plugin.mjs && node scripts/verify-plan-editor.mjs && node scripts/check-preflight.mjs && node scripts/check-bag-types.mjs && node scripts/check-dead-imports.mjs && node scripts/check-require-paths.mjs",
     "accept": "node scripts/accept.mjs",
     "accept:list": "node scripts/accept.mjs --list",
     "preview:fresh": "node scripts/preview-fresh.mjs",
@@ -25,7 +25,9 @@
     "engine:upgrade": "node scripts/upgrade-codex-engine.cjs",
     "engine:verify": "node scripts/upgrade-codex-engine.cjs --verify-only",
     "start": "electron .",
-    "dist": "npm run build && electron-builder --win nsis"
+    "dist": "npm run build && electron-builder --win nsis",
+    "gen:ipc": "node scripts/gen-ipc-bridge.mjs generate",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.73.3",
@@ -56,11 +58,14 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.7",
     "@types/ssh2": "^1.15.6",
+    "@typescript-eslint/parser": "^8.70.1",
     "@vitejs/plugin-react": "^6.1.1",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
     "electron": "^44.2.0",
     "electron-builder": "^26.15.3",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
     "wait-on": "^9.0.3"
@@ -77,6 +82,9 @@
       "dist/**",
       "dist-electron/**",
       "!dist-electron/**/*.tsbuildinfo",
+      "build/tray.png",
+      "build/trayTemplate.png",
+      "build/trayTemplate@2x.png",
       "package.json",
       "!node_modules/mermaid/dist/*.map"
     ],

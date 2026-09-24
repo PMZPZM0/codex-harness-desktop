@@ -48,17 +48,45 @@ type SubAgentEntry = {
   updatedAt: string;
 };
 
-/** 记忆分层快照（L0 用户档案 / L1 项目记忆 / L2 每日日志） */
+/** 记忆分层快照（L1.5 坑与纪律 / L0 用户档案 / L1 项目记忆 / L2 每日日志） */
 type MemoryLayersSnapshot = {
   user: string;
   background: string;
   project: string;
+  /** L1.5 踩坑与纪律（LESSONS.md 全文；注入时排在最前） */
+  lessons: string;
   hasWorkspace: boolean;
-  paths: { user: string; projectDir: string; background: string; project: string; logDir: string };
+  paths: { user: string; projectDir: string; background: string; project: string; lessons: string; logDir: string };
   logs: { date: string; chars: number }[];
-  budget: { user: number; background: number; project: number; logs: number; total: number; over: boolean };
+  budget: { user: number; background: number; project: number; lessons: number; logs: number; total: number; over: boolean };
+  /** 记忆金字塔八层水位（L0–L7；needDistill = 已达 90% 蒸馏线） */
+  layers?: {
+    id: string;
+    name: string;
+    where: string;
+    budget: number;
+    used: number;
+    ratio: number | null;
+    needDistill: boolean;
+    writer: string;
+    sink: string;
+  }[];
   pendingDistill: { dates: string[]; chars: number };
+  /** L2 纪律与记忆的分类计数（用户纠错 / 用户偏好 / 工作流-SOP / 任务经验） */
+  lessonGroups?: { category: string; count: number; chars: number }[];
   lastDistillAt?: number;
+  /** L3 碎片池健康度（09-22 补）：生命周期与淘汰对用户可见 */
+  entries?: {
+    total: number;
+    byCategory: Record<string, number>;
+    pinned: number;
+    expiring: number;
+    expiringSoon: number;
+    prunedTotal: number;
+    lastPruneAt: number;
+    max: number;
+    ttlDays: number;
+  };
 };
 
 type ExpertTeamMember = {
@@ -263,14 +291,82 @@ type CodexEvent = {
 };
 type DevRuntimeEntry = { id: string; name: string; description: string; size: string; marker: string; builtIn?: boolean; kind?: "download" | "browsers" | "guide" | "plugin"; noUninstall?: boolean; installed: boolean; installedBySystem?: boolean; installing: boolean };
 
+/**
+ * 归一化后的 IPC 错误（09-24，preload 的 `__ipc` 包装产出）。
+ * ⛔⛔ **跨 contextBridge 时自定义字段会丢**：真机验证渲染层 `catch (e) => e.code` 是
+ * `undefined`（结构化克隆只保留 message/stack）⇒ **渲染层请用 `src/lib/ipc-error.mjs` 的
+ * `ipcErrorCodeOf(e)` / `ipcErrorChannelOf(e)` 解析**（错误码同时写在消息前缀
+ * `[ERR_XXX] <channel>: …` 里，正是为了跨进程后仍可读）。本类型用于主进程/preload 同进程场景。
+ * 码表：ERR_MISSING_ARGS 参数个数不足（渲染层前置拦下）· ERR_NO_HANDLER 主进程没注册该通道
+ *   · ERR_UNCLONABLE 返回值不可结构化克隆 · ERR_BAD_ARGS 参数非法 · ERR_TIMEOUT 超时 · ERR_INVOKE_FAILED 其它
+ * ⛔ 超时只有登记进 preload 的 `IPC_TIMEOUT_MS` 的通道才会触发（默认不超时，与历史行为一致）。
+ */
+type IpcErrorCode = "ERR_MISSING_ARGS" | "ERR_NO_HANDLER" | "ERR_UNCLONABLE" | "ERR_BAD_ARGS" | "ERR_TIMEOUT" | "ERR_INVOKE_FAILED";
+interface IpcError extends Error {
+  code: IpcErrorCode;
+  /** 出错的通道名（如 "ssh:delete"），便于日志聚合与按接口定位 */
+  channel: string;
+  /** 原始错误（Electron 包装前） */
+  cause?: unknown;
+}
+
+/* ── 截图与收藏夹（09-24）────────────────────────────────────────────
+   截图：full = 隐藏窗口截整屏；region = 冻结帧框选。两种模式各绑一条全局快捷键。
+   收藏：跨会话/跨项目的用户素材（对话片段 / 截图 / 文件 / 链接），
+        真相源 = 主进程 userData/favorites.json（渲染层只做展示与增删，不自己存）。 */
+type ShotMode = "full" | "region";
+type ShotHotkey = { enabled: boolean; accelerator: string };
+type ScreenshotSettings = { full: ShotHotkey; region: ShotHotkey; hideWindow: boolean; saveDir: string };
+type ScreenshotSettingsSnapshot = {
+  settings: ScreenshotSettings;
+  /** 实际注册成功的加速键（空串 = 该模式当前没挂上） */
+  registered: Record<ShotMode, string>;
+  /** 注册失败原因（被占用 / 与另一模式重复）；有键即表示失败，设置页照实显示 */
+  errors: Partial<Record<ShotMode, string>>;
+  defaultDir: string;
+  /** 主进程的默认值（「恢复默认」用它，渲染层不另抄一份常量） */
+  defaults: ScreenshotSettings;
+  platform: string;
+};
+type ShotCaptureResult =
+  | { ok: true; path: string; width: number; height: number; mode: ShotMode }
+  | { ok: false; canceled?: boolean; error?: string };
+/** `screenshot:captured` 事件的载荷（成功才有；渲染层据此把截图放进输入框） */
+type ScreenshotCapturedPayload = { ok: true; path: string; width: number; height: number; mode: ShotMode; at: number };
+type FavoriteKind = "text" | "image" | "file" | "link";
+type FavoriteSource = { threadId?: string; threadName?: string; turnId?: string; messageId?: string; role?: string };
+type FavoriteItem = {
+  id: string;
+  kind: FavoriteKind;
+  title: string;
+  content: string;
+  note?: string;
+  tags: string[];
+  source?: FavoriteSource;
+  createdAt: string;
+  updatedAt: string;
+  useCount: number;
+  lastUsedAt?: string;
+};
+type FavoriteDeleteResult = { items: FavoriteItem[]; removed: number };
+/** 写入记忆金字塔的层：user=L0 用户档案 · project=L1 项目记忆 · background=L3 项目背景 · lessons=L2 纪律 */
+type MemoryLayerScope = "user" | "project" | "background" | "lessons";
+type FavoritesToMemoryResult = { ok: boolean; written: number; error?: string };
+
 interface Window {
   codex: {
+    /* ⛔ invoke 方法签名由 scripts/gen-ipc-bridge.mjs 生成（两标记之间勿手改）。 */
+/* ═══ gen:begin（由 scripts/gen-ipc-bridge.mjs 生成，源 ipc-channels.manifest.json，勿手改）═══ */
     request(method: string, params?: unknown): Promise<any>;
     respond(id: string | number, result: unknown): Promise<void>;
     getUsername(): Promise<string>;
     getUserData(): Promise<string>;
     setAwake(on: boolean): Promise<boolean>;
     showNotification(title: string, body: string): Promise<boolean>;
+    toolStatus(): Promise<{ id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>;
+    listRuntimes(): Promise<DevRuntimeEntry[]>;
+    openInCloakBrowser(url: string): Promise<{ ok: boolean; detail: string }>;
+    cloakBrowserStatus(): Promise<{ event?: string; message?: string; url?: string; title?: string }>;
     remoteStart(): Promise<{ port: number; url: string }>;
     remoteStatus(): Promise<{ status: string; devices: any[]; url: string }>;
     remoteDevices(): Promise<any[]>;
@@ -282,51 +378,28 @@ interface Window {
     remoteApprove(rid: string): Promise<{ ok: boolean }>;
     remoteDeny(rid: string): Promise<{ ok: boolean }>;
     remoteRevoke(deviceId: string): Promise<{ ok: boolean }>;
-    onRemotePairRequest(handler: (request: { rid: string; deviceId: string; name: string }) => void): () => void;
     botPairState(): Promise<{ code: string; pending: { rid: string; channel: string; chatId: string; name: string; createdAt: number }[]; approved: { key: string; channel: string; chatId: string; name: string; approvedAt: number }[] }>;
     botApprove(rid: string): Promise<{ ok: boolean }>;
     botDeny(rid: string): Promise<{ ok: boolean }>;
     botRevoke(key: string): Promise<{ ok: boolean }>;
-    onBotPairRequest(handler: (request: { rid: string; channel: string; chatId: string; name: string }) => void): () => void;
     botBindQrcode(botId: string, botName: string): Promise<{ qr: string; url: string; code: string }>;
     botBindStatus(code: string): Promise<"waiting" | "confirmed" | "expired">;
     botBindConsume(code: string): Promise<{ botId: string; deviceName?: string } | null>;
-    weixinStartLogin(): Promise<{ qrcodeImg: string; qrcode: string } | null | undefined>;
-    weixinCancelLogin(): Promise<{ ok: boolean }>;
-    weixinPollLogin(): Promise<{ status: string; verifyCodeRequired?: boolean; connected?: boolean } | null | undefined>;
     weixinStatus(): Promise<{ bound: boolean }>;
+    weixinCancelLogin(): Promise<{ ok: boolean }>;
     weixinLogout(): Promise<{ ok: boolean }>;
     telegramLogout(): Promise<{ ok: boolean }>;
-    feishuConnect(appId: string, appSecret: string): Promise<{ ok: boolean; name?: string; error?: string }>;
     feishuLogout(): Promise<{ ok: boolean }>;
-    dingtalkConnect(clientId: string, clientSecret: string): Promise<{ ok: boolean; name?: string; error?: string }>;
     dingtalkLogout(): Promise<{ ok: boolean }>;
-    qqConnect(appId: string, appSecret: string): Promise<{ ok: boolean; name?: string; error?: string }>;
-    qqQrStart(): Promise<{ state: string; qr?: string; name?: string; error?: string }>;
-    qqQrStatus(): Promise<{ state: string; qr?: string; name?: string; error?: string }>;
     qqQrCancel(): Promise<{ ok: boolean }>;
-    feishuQrStart(): Promise<{ state: string; qr?: string; userCode?: string; name?: string; error?: string }>;
-    feishuQrStatus(): Promise<{ state: string; qr?: string; userCode?: string; name?: string; error?: string }>;
-    feishuQrCancel(): Promise<{ ok: boolean }>;
     qqLogout(): Promise<{ ok: boolean }>;
-    wecomWebhookConnect(url: string): Promise<{ ok: boolean; name?: string; error?: string }>;
+    feishuQrCancel(): Promise<{ ok: boolean }>;
     wecomWebhookLogout(): Promise<{ ok: boolean }>;
-    wecomWebhookTest(text?: string): Promise<{ ok: boolean; error?: string }>;
-    botBindingGet(): Promise<{ wechat: { threadId: string; title: string; updatedAt: number } | null; telegram: { threadId: string; title: string; updatedAt: number } | null }>;
     botsGet(): Promise<any[]>;
-    botsSet(list: any[]): Promise<{ ok: boolean; count: number }>;
-    botBindingSet(input: { channel: string; threadId: string | null; title?: string }): Promise<{ threadId: string; title: string; updatedAt: number } | null>;
     homeDir(): Promise<string>;
-    onBotBindingChanged(handler: (bindings: unknown) => void): () => void;
-    botStreamGet(): Promise<{ enabled: boolean; thinking: boolean; tools: boolean }>;
-    botStreamSet(input: { enabled: boolean; thinking: boolean; tools: boolean }): Promise<{ enabled: boolean; thinking: boolean; tools: boolean }>;
-    channelsStatus(): Promise<{ weixin: boolean; telegram: boolean; feishu?: boolean; dingtalk?: boolean; qq?: boolean; "wecom-webhook"?: boolean }>;
-    telegramConnect(token: string): Promise<{ ok: boolean; username?: string; error?: string }>;
     telegramStatus(): Promise<{ bound: boolean }>;
     ponytailModeGet(): Promise<string>;
     ponytailModeSet(mode: string): Promise<{ mode: string }>;
-    onRemoteCommand(listener: (payload: { command: string; device: { id: string; name: string } }) => void): () => void;
-    onRemoteDevice(listener: (device: { id: string; name: string }) => void): () => void;
     writeFile(path: string, content: string, root: string): Promise<void>;
     readFile(path: string): Promise<{ dataBase64: string; size: number }>;
     fileExists(path: string): Promise<{ exists: boolean }>;
@@ -336,8 +409,6 @@ interface Window {
     importSkill(): Promise<{ name: string; path: string; source: string; content: string } | null>;
     listMarketSkills(input?: { category?: string; page?: number; pageSize?: number; query?: string }): Promise<{ items: MarketSkillEntry[]; total: number; page: number; pageSize: number }>;
     installMarketSkill(skill: MarketSkillEntry): Promise<LocalSkillEntry>;
-    installMarketSkillLight(skill: unknown): Promise<{ name: string; discovered: boolean; engineCheckMessage: string }>;
-    skillDisciplineGet(): Promise<{ present: boolean; section: string }>;
     listMarketPlugins(input?: { category?: string; query?: string; page?: number; pageSize?: number }): Promise<{ items: PluginMarketEntry[]; total: number; page: number; pageSize: number }>;
     installMarketPlugin(plugin: PluginMarketEntry): Promise<PluginMarketInstallResult>;
     listLocalSkills(): Promise<LocalSkillEntry[]>;
@@ -347,6 +418,8 @@ interface Window {
     removeLocalSkill(input: { folder: string; name?: string }): Promise<{ ok: boolean; engineRemoved?: boolean; engineCheckMessage?: string }>;
     trustHooks(cwds?: string[]): Promise<{ total: number; trusted: number; alreadyTrusted: number; failures: string[] }>;
     setHookEnabled(input: { hookKeys: string[]; enabled: boolean }): Promise<{ changed: number; failures: string[] }>;
+    /* 09-24 新增：顶栏 🔍 历史会话搜索。扫 codex-home rollout 原档（sessions/** + archived_sessions/**）搜对话内容；先 indexOf 快速否决再解析，>32MB 跳过并计数 */
+    searchHistory(input?: { query?: string; limit?: number }): Promise<{ threads: { threadId: string; title: string; archived: boolean; updatedAt: number; matchCount: number; matches: { role: string; ts: string; snippet: string }[] }[]; scannedFiles: number; skippedLarge: number; elapsedMs: number }>;
     setPluginLinkedEnabled(input: { pluginId: string; enabled: boolean }): Promise<{ ok: boolean; failures: string[] }>;
     listConnectors(): Promise<ConnectorEntry[]>;
     listConnectorTemplates(): Promise<ConnectorTemplate[]>;
@@ -355,88 +428,53 @@ interface Window {
     setConnectorsEnabled(ids: string[], enabled: boolean): Promise<{ ok: boolean; updated: number }>;
     startConnectorOAuth(input: { templateId: string; values: Record<string, string> }): Promise<{ ok: boolean; authorizeUrl?: string; message?: string }>;
     cancelConnectorOAuth(templateId: string): Promise<{ ok: boolean }>;
-    onConnectorOAuth(listener: (event: ConnectorOAuthEvent) => void): () => void;
     readClipboardImage(): Promise<string | null>;
-    /** 粘贴的长文本（超过阈值）落盘成 .txt，返回绝对路径；空文本返回 null。按内容哈希去重。 */
-    savePastedText(text: string): Promise<string | null>;
-    /** 读粘贴文本；editable=false 表示不是应用保存的粘贴文本（回退普通文件预览）。
-     *  content=null 表示文件已不存在。 */
-    readPastedText(path: string): Promise<{ editable: boolean; content?: string | null }>;
-    /** 保存编辑后的粘贴文本（仅限应用自己的粘贴文本目录，越界会抛错） */
-    updatePastedText(path: string, content: string): Promise<{ ok: boolean; size: number }>;
-    /** app-server 直管 MCP 的启用覆盖表；没记过的一律视为启用 */
+    /* app-server 直管 MCP 的启用覆盖表；没记过的一律视为启用 */
     readMcpServerOverrides(): Promise<Record<string, boolean>>;
-    /** 统一入口：名字能匹配连接器的走连接器，其余走覆盖表；每次改动都会重启引擎 */
+    /* 统一入口：名字能匹配连接器的走连接器，其余走覆盖表；每次改动都会重启引擎 */
     setMcpServersEnabled(ids: string[], enabled: boolean): Promise<{ ok: boolean; updated: number }>;
-    /** 各 MCP 服务器的按工具权限档位：{ 服务器: { 工具: "deny"|"ask"|"allow" } } */
+    /* 各 MCP 服务器的按工具权限档位：{ 服务器: { 工具: "deny"|"ask"|"allow" } } */
     readMcpToolPermissions(): Promise<Record<string, Record<string, "deny" | "ask" | "allow">>>;
-    /** 设置/清除某个 MCP 工具的权限档位；mode 传 null 清除。改动后引擎重启生效 */
+    /* 设置/清除某个 MCP 工具的权限档位；mode 传 null 清除。改动后引擎重启生效 */
     setMcpToolPermission(server: string, tool: string, mode: "deny" | "ask" | "allow" | null): Promise<{ ok: boolean; updated: boolean; reason?: string }>;
     readPersonalization(): Promise<PersonalizationConfig>;
     savePersonalization(input: { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean; greeted?: boolean }): Promise<PersonalizationConfig>;
-    /** 标记身份引导已打过招呼（此后新会话不再引导、直接干活） */
-    markIdentityGreeted(): Promise<PersonalizationConfig>;
-    saveIdentity(input: Record<string, string>): Promise<unknown>;
-    /** 应用级运行时开关（联网搜索等） */
+    /* 应用级运行时开关（联网搜索等） */
     readAppSettings(): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy" }>;
     saveAppSettings(patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy" }): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; adaptiveTone?: boolean }>;
     themeApply(theme: string): Promise<{ ok: boolean }>;
-    /** SSH 服务器连接管理：列表 CRUD、批量启停、连接测试、命令执行、交互式会话、导入导出 */
+    updateReveal(filePath: string): Promise<{ ok: boolean }>;
+    /* SSH 服务器连接管理：列表 CRUD、批量启停、连接测试、命令执行、交互式会话、导入导出 */
     listSshServers(): Promise<SshServer[]>;
     saveSshServer(server: SshServer): Promise<SshServer[]>;
-    deleteSshServers(ids: string[]): Promise<SshServer[]>;
-    setSshServersEnabled(ids: string[], enabled: boolean): Promise<SshServer[]>;
     testSshServer(server: SshServer): Promise<SshTestResult>;
     execSshCommand(server: SshServer, command: string): Promise<SshExecResult>;
+    deleteSshServers(ids: string[]): Promise<SshServer[]>;
+    setSshServersEnabled(ids: string[], enabled: boolean): Promise<SshServer[]>;
     sshSessionOpen(server: SshServer, cols: number, rows: number): Promise<{ sessionId: string } | { error: string }>;
     sshSessionWrite(sessionId: string, data: string): Promise<void>;
     sshSessionResize(sessionId: string, cols: number, rows: number): Promise<void>;
     sshSessionClose(sessionId: string): Promise<void>;
     exportSshServers(servers: SshServer[], includeSecrets: boolean): Promise<string | null>;
     importSshServers(): Promise<SshServer[] | null>;
-    /** 会话备份：导出 = 打包引擎 rollout 原档 + 元信息为 .json；threadIds 缺省/空数组 = 全部 */
+    /* 会话备份：导出 = 打包引擎 rollout 原档 + 元信息为 .json；threadIds 缺省/空数组 = 全部 */
     exportThreadsBackup(threadIds?: string[]): Promise<{ path: string; count: number } | null>;
-    /** 会话记录导出为通用 Markdown（主流 AI 可直接读取/带入）；threadIds 缺省/空数组 = 全部 */
+    /* 会话记录导出为通用 Markdown（主流 AI 可直接读取/带入）；threadIds 缺省/空数组 = 全部 */
     exportThreadsMarkdown(threadIds?: string[]): Promise<{ path: string; count: number; totalMessages: number } | null>;
-    /** 单会话只读全文预览（读 rollout 原档，不动引擎焦点）；无此会话返回 null */
-    previewConversation(threadId: string): Promise<{
-      id: string;
-      name: string;
-      updatedAt: number;
-      cwd: string;
-      archived: boolean;
-      messages: { role: "user" | "assistant"; text: string }[];
-      truncated: number;
-      truncatedMessages: number;
-    } | null>;
+    /* ⛔ 09-23 补：以下方法 preload 里早就有、渲染层也在用，但这里一直没有签名 —— 渲染层从不跑 tsc ⇒ 静默漏网（gen-ipc-bridge 提取时暴露）。返回形状没把握的先 any。 */
+    previewConversation(threadId: string): Promise<any>;
     importThreadsBackup(): Promise<{ path: string; imported: number; skipped: number; threads: { id: string; name: string; status: string }[] } | null>;
-    /** 导入外部对话记录（主流 AI / 官方 Codex 导出的 .md/.txt）→ 自动新建命名会话并返回；会话留空，首条消息由渲染层附上记录全文 */
-    importConversationMarkdown(input?: { cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null }): Promise<{
-      thread: Thread;
-      imported: { title: string; fileName: string; turns: number; text: string; at: string };
-    } | null>;
+    importConversationMarkdown(input?: { cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null }): Promise<{ thread: any; imported: { title: string; fileName: string; turns: number; text: string; at: string } } | null>;
     chooseSshKey(startPath?: string): Promise<string | null>;
-    onSshData(listener: (payload: { data: string }) => void): () => void;
-    onSshExit(listener: (payload: { code?: number; signal?: string; error?: string }) => void): () => void;
-    /** 仅更新称呼：写 personalization.json + AGENTS.md，不重启引擎 */
+    /* 仅更新称呼：写 personalization.json + AGENTS.md，不重启引擎 */
     setNickname(nickname: string): Promise<PersonalizationConfig>;
-    /** 回读真实落盘的 AGENTS.md，确认个性化确实写进了引擎会读取的位置 */
-    verifyPersonalization(): Promise<{
-      exists: boolean;
-      expects: boolean;
-      applied: boolean;
-      inSync: boolean;
-      preview: string;
-      agentsPath: string;
-    }>;
+    verifyPersonalization(): Promise<any>;
     listCommands(input?: { cwd?: string }): Promise<CustomCommandEntry[]>;
     readCommand(filePath: string): Promise<CustomCommandEntry | null>;
     saveCommand(input: SaveCommandInput): Promise<CustomCommandEntry>;
     deleteCommand(filePath: string): Promise<{ ok: boolean }>;
     expandCommand(input: { filePath: string; argument?: string; cwd?: string }): Promise<{ text: string }>;
     getCustomModel(): Promise<CustomModelState | null>;
-    /** 本地协议桥状态：引擎只发 Responses，上游只支持 Chat 时由桥转换（port/running/各 provider 实际协议） */
-    bridgeStatus(): Promise<{ running: boolean; port: number; targets: number; requests: number; converted: number; forwarded: number; failures: number; modes: Record<string, "responses" | "chat"> }>;
     probeCustomModel(config: unknown): Promise<{ status: number; latencyMs: number; models: string[]; model?: string; ok?: boolean; via?: "models" | "stream" | "builtin" | "official" | "official-fallback"; wireUsed?: "responses" | "chat" }>;
     readModelSpecs(): Promise<unknown[] | null>;
     saveCustomModel(config: unknown): Promise<CustomModelState>;
@@ -444,17 +482,16 @@ interface Window {
     selectCustomModel(providerId: string): Promise<CustomModelState>;
     setProviderModel(input: { provider: string; model: string; apply?: boolean; restart?: boolean }): Promise<CustomModelState>;
     setProviderEffort(input: { provider: string; model: string; effort: string }): Promise<CustomModelState>;
-    getThreadRuntime(threadId: string): Promise<{ model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number } | null>;
     listThreadRuntimes(): Promise<Record<string, { model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }>>;
     seedThreadRuntime(input: { threadId: string; runtime: unknown }): Promise<{ model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }>;
     patchThreadRuntime(input: { threadId: string; patch: unknown; baseRev?: number; takeover?: boolean }): Promise<{ runtime: { model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }; conflict: boolean; changed: boolean; blockedBy?: string; tookOverFrom?: string; restrictedBy?: string }>;
     dispatchOwner(): Promise<{ threadId: string | null }>;
-  /** 释放某个会话的调度独占锁（会话被归档/删除后，渲染层发现持有者已消失时自愈调用） */
-  releaseDispatch(threadId: string): Promise<{ released: boolean }>;
+    releaseDispatch(threadId: string): Promise<{ released: boolean }>;
     threadRole(threadId: string): Promise<{ restricted: boolean; label?: string }>;
     writeClipboard(text: string): Promise<boolean>;
     createScratchDir(): Promise<string>;
-    saveIdentity(input: { assistantName?: string; userName?: string; about?: string }): Promise<unknown>;
+    /* ⛔ d.ts 历史上本有两处声明（宽口径 Record<string,string> 与窄口径 3 字段），提取去重保留宽口径 —— identity_onboard 调用点传 8 个字段，窄口径会爆 excess-property。 */
+    saveIdentity(input: Record<string, string>): Promise<unknown>;
     applyCustomModel(): Promise<CustomModelState>;
     upsertProviderModel(input: { provider: string; model: ProviderModelConfig }): Promise<CustomModelState>;
     removeProviderModel(input: { provider: string; modelId: string }): Promise<CustomModelState>;
@@ -483,8 +520,10 @@ interface Window {
     saveMemoryGateway(config: unknown): Promise<any>;
     testMemoryGateway(config: unknown): Promise<{ ok: boolean; latencyMs: number; health: any }>;
     readMemoryLayers(workspace?: string): Promise<MemoryLayersSnapshot>;
+    /* 执行清理动作：⛔ 必须 confirm: true（UI 二次确认后才置位） */
+    applyMemoryHygiene(input: { action: "purge-archive" | "prune-pool" | "tidy-lessons"; workspace?: string; confirm: true }): Promise<{ action: string; result: any }>;
     readMemoryContext(workspace?: string, includeWorkspace?: boolean): Promise<{ text: string; stats: { chars: number; over: boolean } }>;
-    writeMemoryLayer(input: { scope: "user" | "background" | "project"; content: string; workspace?: string }): Promise<MemoryLayersSnapshot>;
+    writeMemoryLayer(input: { scope: "user" | "background" | "project" | "lessons"; content: string; workspace?: string }): Promise<MemoryLayersSnapshot>;
     readWorkspaceMemoryEnabled(workspace?: string): Promise<boolean>;
     setWorkspaceMemoryEnabled(input: { workspace: string; enabled: boolean }): Promise<boolean>;
     distillMemory(workspace?: string): Promise<{ ok: boolean; dates: string[]; added: number; reason?: string }>;
@@ -496,8 +535,6 @@ interface Window {
     saveSubAgent(input: unknown): Promise<SubAgentEntry>;
     removeSubAgent(id: string): Promise<{ ok: boolean }>;
     invokeSubAgent(input: { id?: string; name?: string; query: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ threadId: string; turnId?: string; name: string; output: string }>;
-    /** 调度（09-15）：可被 Codex 调度的对象目录 */
-    listDispatchCatalog(): Promise<{ targets: DispatchTargetEntry[] }>;
     dispatchToolDescription(): Promise<{ description: string }>;
     dispatchNotice(): Promise<{ text: string }>;
     dispatchOffNotice(): Promise<{ text: string }>;
@@ -511,9 +548,10 @@ interface Window {
     resetExpertTeams(): Promise<ExpertTeamConfig[]>;
     getTeamTools(teamId: string): Promise<{ tools: { id: string; name: string; profession: string; description: string }[]; teamSystemPrompt: string; teamTool: any }>;
     getTeamSessionConfig(teamId: string): Promise<{ team: ExpertTeamConfig; systemPrompt: string; teamTool: any }>;
-    startTeamSession(input: { teamId: string; task?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null; defer?: boolean }): Promise<{ thread: any; turnId: string | null; role?: ExpertPendingRole | null }>;    startTeamMemberSession(input: { teamId: string; memberId: string; task?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null; defer?: boolean }): Promise<{ thread: any; turnId: string | null; member: { id: string; name: string; profession: string }; role?: ExpertPendingRole | null }>;
+    startTeamSession(input: { teamId: string; task?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null; defer?: boolean }): Promise<{ thread: any; turnId: string | null; role?: ExpertPendingRole | null }>;
+    startTeamMemberSession(input: { teamId: string; memberId: string; task?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null; defer?: boolean }): Promise<{ thread: any; turnId: string | null; member: { id: string; name: string; profession: string }; role?: ExpertPendingRole | null }>;
     invokeTeamMember(input: { teamId: string; memberId: string; query: string; leadThreadId?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ threadId: string; turnId?: string; teamId: string; memberId: string; name: string; profession: string; output: string; runId?: string; reused?: boolean }>;
-    /** 专家团历史委托记录（成员历史工作记录面板；主进程落盘，跨窗口一致） */
+    /* 专家团历史委托记录（成员历史工作记录面板；主进程落盘，跨窗口一致） */
     listTeamRuns(threadId: string): Promise<TeamMemberRunRecord[]>;
     teamThreadsMap(): Promise<{ threads: Record<string, string>; members: Record<string, string> }>;
     teamOfThread(threadId: string): Promise<string>;
@@ -522,79 +560,30 @@ interface Window {
     restartTerminal(id: string, cwd?: string): Promise<void>;
     terminalReady(): Promise<void>;
     gitDiff(cwd: string, scope: string): Promise<{ code: number | null; output: string }>;
-    toolStatus(): Promise<{ id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>;
-    listRuntimes(): Promise<DevRuntimeEntry[]>;
-    installRuntime(id: string): Promise<{ ok: boolean; runtimes: DevRuntimeEntry[] }>;
-    uninstallRuntime(id: string): Promise<{ ok: boolean; runtimes: DevRuntimeEntry[] }>;
-    onRuntimeProgress(listener: (event: { id: string; message?: string; percent?: number; stage?: string; speed?: string; done?: boolean; failed?: boolean; auto?: boolean }) => void): () => void;
-    openInCloakBrowser(url: string): Promise<{ ok: boolean; detail: string }>;
-    cloakBrowserStatus(): Promise<{ event?: string; message?: string; url?: string; title?: string }>;
-    onTerminalData(listener: (id: string, data: string) => void): () => void;
     openExternal(url: string): Promise<void>;
     browserPopout(url: string): Promise<{ ok: boolean }>;
     shellReveal(target: string): Promise<void>;
     writeClipboardImage(filePath: string): Promise<boolean>;
     readClipboardFiles(): Promise<string[]>;
     doctor(cwd?: string): Promise<{ checks: { label: string; ok: boolean; detail: string }[]; at: number }>;
-    /** 「当前能力链路」：同一件事有多个后端时，现在实际走哪条（唯一来源见 electron/capability-registry.ts） */
-    capabilitiesSnapshot(): Promise<{
-      capabilities: {
-        id: string; label: string; purpose: string;
-        activeId: string | null; activeLabel: string; activeWhy: string;
-        alternatives: { id: string; label: string; available: boolean; why: string }[];
-        note: string;
-      }[];
-      at: number;
-    }>;
-    engineInfo(): Promise<{
-      codexHome: string; binary: string; binaryExists: boolean; version: string; running: boolean;
-      userData: string; agentsMd: boolean; configToml: boolean;
-      logFile: { path: string; size: number; modifiedAt: number } | null;
-      databases: { name: string; size: number }[]; sessions: number; archived: number;
-    }>;
-    /** 多会话性能诊断计数：rollout 兜底扫描次数（应为 0）与被按会话过滤掉的事件数 */
-    perfCounters(): Promise<{ rolloutFallbackScans: number; droppedForInactiveSession: number; threadListRequests: number }>;
-    /** 上报当前正在查看的会话：主进程据此只转发该会话的高频事件（多会话性能） */
+    engineInfo(): Promise<any>;
+    /* 上报当前正在查看的会话：主进程据此只转发该会话的高频事件（多会话性能） */
     setActiveThread(threadId: string | null): Promise<{ ok: boolean }>;
-    /** 独立会话弹窗：把会话开到新窗口（focused=true 表示该会话已有弹窗，聚焦了旧窗口） */
-    popoutThread(threadId: string): Promise<{ ok: boolean; focused?: boolean }>;
-    /** 弹窗返回主应用：关闭本弹窗并把主窗口带到指定会话 */
-    popoutClose(threadId: string | null): Promise<{ ok: boolean }>;
-    /** 当前窗口是否为独立会话弹窗（返回弹窗锁定的会话 id，非弹窗返回 null） */
-    popoutThreadId(): Promise<string | null>;
-    /** 所有弹窗锁定的会话 id 列表（主窗口侧栏据此隐藏，避免重复渲染） */
-    popoutList(): Promise<string[]>;
-    /** 数据管理：各数据目录占用（bytes）与是否可清理 */
-    storageInfo(): Promise<{
-      items: { key: string; label: string; bytes: number; deletable: boolean }[];
-      userData: string; engineLog: string; imagesDir: string;
-    }>;
-    /** 缓存清理：仅支持安全目标（引擎日志 / 本地图片缓存），绝不删会话历史 */
+    storageInfo(): Promise<any>;
+    /* 缓存清理：仅支持安全目标（引擎日志 / 本地图片缓存），绝不删会话历史 */
     storageClear(target: "engine-log" | "images"): Promise<{ ok: boolean; target: string; error?: string }>;
-    readBuiltinPlugins(): Promise<{ image?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string }; vision?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string } }>;
     engineCheckUpdate(): Promise<{ current: string; latest: string; hasUpdate: boolean }>;
     enginePerformUpdate(): Promise<{ ok: boolean; version: string; message: string }>;
-    /** 重启台账（诊断"任务莫名断了"）：谁触发的重启、当时是否有任务在跑、立即还是推迟。 */
-    engineRestartLog(): Promise<{ t: number; reason: string; busy: boolean; activeTurns: number; action: "now" | "defer" | "flush" | "force" }[]>;
-    /** 当前活跃回合数（0 = 引擎可安全重启；验收/诊断用）。 */
-    /** 引擎侧"谁在跑"的真相：count = 活跃回合数，threadIds = 这些回合分别属于哪个会话
-     *（渲染层收到快照式的 status/changed {idle} 时据此核实，而不是无条件熄灭运行指示器）。 */
-    engineActiveTurns(): Promise<{ count: number; threadIds: string[] }>;
-    /** 引擎重启被闸门推迟/已补做：渲染层提示「改动将在当前任务结束后生效」。 */
-    onEngineRestartDeferred(listener: (event: { waiting: boolean; reason?: string; activeTurns?: number }) => void): () => void;
     relaunchApp(): Promise<void>;
-    onEngineUpdateProgress(listener: (event: { stage: string; detail?: string; percent?: number }) => void): () => void;
+    readBuiltinPlugins(): Promise<{ image?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string }; vision?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string } }>;
     saveBuiltinPlugins(cfg: unknown): Promise<unknown>;
     probeBuiltinModels(input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }): Promise<{ models: string[] }>;
-    /** ⛔ `path` 是落盘后的本地路径（网关只回 b64_json 时也有值）；`url` **仅在网关给了
-     *  真托管地址时**才有值 —— data URL 绝不会回传（会把 3 MB base64 带进对话历史）。 */
+    /* ⛔ `path` 是落盘后的本地路径（网关只回 b64_json 时也有值）；`url` **仅在网关给了 * 真托管地址时**才有值 —— data URL 绝不会回传（会把 3 MB base64 带进对话历史）。 */
     generateImage(input: { baseUrl: string; apiKey: string; model: string; prompt: string }): Promise<{ path: string; url: string }>;
     describeImage(input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }): Promise<{ text: string }>;
     relayLogin(input: { baseUrl: string; email: string; password: string }): Promise<{ email: string; baseUrl: string; balance: number }>;
     relayLoadAccount(): Promise<{ baseUrl: string; email: string; loggedIn: boolean; selectedMode: "balance" | "plan" | null; selectedGroupId: number | null; selectedKeyName: string | null } | null>;
     relayAccounts(): Promise<{ id: string; baseUrl: string; email: string; loggedIn: boolean; selectedMode: "balance" | "plan" | null; selectedGroupId: number | null; selectedKeyName: string | null; active: boolean; disabled: boolean }[]>;
-    relayToggleAccount(input: { id: string; disabled: boolean }): Promise<{ ok: boolean; disabled: boolean; deactivated?: boolean }>;
-    openaiToggleAccount(input: { id: string; disabled: boolean }): Promise<{ ok: boolean; disabled: boolean; deactivated?: boolean }>;
     relaySwitchAccount(id: string): Promise<{ ok: boolean; baseUrl: string; email: string }>;
     relayRemoveAccount(id: string): Promise<{ ok: boolean; activeId: string | null; removed?: boolean; deactivated?: boolean }>;
     openaiLoginStart(input?: { proxy?: string }): Promise<{ started: boolean }>;
@@ -620,91 +609,246 @@ interface Window {
     listTerminals(): Promise<{ id: string; alive: boolean; cwd: string }[]>;
     validatePlugin(target: string): Promise<{ ok: boolean; root: string; manifestPath?: string; issues: string[]; inventory: { skills: number; commands: number; agents: number; hooks: number }; name?: string }>;
     chooseDirectoryAt(startPath: string): Promise<string | null>;
-    onEvent(listener: (event: CodexEvent) => void): () => void;
-    onChannelBotEvent(listener: (event: any) => void): () => void;
-    onHarnessEvent(listener: (event: any) => void): () => void;
-    // ---- 语音通话（本机离线识别与合成，旁挂新增） ----
-    voiceStatus(): Promise<{ active: boolean; state: string; runtimeReady: boolean; modelsReady: boolean; threadId: string; lastError: string }>;
-    voiceStart(threadId: string, options?: { mode?: "conversation" | "dictation" }): Promise<{ ok: boolean; error?: string; status: unknown }>;
-    voiceDictationFinish(): Promise<{ ok: boolean; text?: string; error?: string }>;
-    /** 提前端点：识别文本已收尾 + 停口 ~0.5s 时调用，立即提交这一句（不等 rule2 静音） */
-    voiceEndpointNow(): Promise<{ ok: boolean; text?: string }>;
     voiceStop(): Promise<{ ok: boolean }>;
-    voiceAudio(samples: Float32Array): void;
-    voiceSpeak(text: string, options?: { sid?: number; speed?: number }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
-    voicePreviewVoice(input?: { sid?: number; speed?: number; text?: string }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
-    voiceProfilesList(): Promise<{ profiles: any[]; zipvoiceReady: boolean }>;
     voiceProfilesImport(): Promise<any>;
     voiceProfilesRecord(input: { samples: number[]; sampleRate: number }): Promise<any>;
     voiceProfilesSave(input: { draftFile: string; name: string; refText: string }): Promise<any>;
     voiceProfilesDelete(id: string): Promise<{ ok: boolean }>;
-    voicePresetList(): Promise<{ presets: { id: string; name: string; desc: string; lang: string; applied: boolean }[] }>;
-    voicePresetApply(presetId: string): Promise<{ ok: boolean; profile?: any; existed?: boolean; error?: string }>;
-    voiceProfilesSelect(id: string): Promise<{ ok: boolean; profileId: string }>;
     voiceProfilesPreview(input: { id?: string; text?: string }): Promise<any>;
     voiceBarge(): Promise<{ ok: boolean }>;
     voicePlaybackDone(): Promise<{ ok: boolean }>;
-    voiceModelsStatus(): Promise<{
-      ready: boolean; missing: string[]; readyFiles: number; totalFiles: number;
-      bytes: number; root: string;
-      repos: { id: string; lastSegment: string }[];
-      zipvoice?: { ready: boolean; bytes: number; dir: string };
-      kws?: { ready: boolean; bytes: number; dir: string };
-    }>;
-    voiceModelsInstall(): Promise<{ ok: boolean; error?: string }>;
-    voiceZipvoiceInstall(): Promise<{ ok: boolean; error?: string }>;
     voiceZipvoiceCancel(): Promise<{ ok: boolean }>;
     voiceModelsCancel(): Promise<{ ok: boolean }>;
-    voiceModelsImport(input: { sourceDir: string }): Promise<{ ok: boolean; failures: string[] }>;
     voiceModelsReveal(): Promise<string>;
     voiceModelsUninstall(): Promise<{ ok: boolean }>;
-    voiceMicPermission(): Promise<{ status: string; error?: string }>;
-    voiceSettingsGet(): Promise<{
-      settings: {
-        tts: { sid: number; speed: number; volume: number };
-        asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
-        mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
-        barge: { gateDb: number; mode: "auto" | "manual" };
-        aec?: { mode: "auto" | "on" | "off" };
-        modelHost: "auto" | "huggingface" | "hf-mirror";
-        hotkey: { enabled: boolean; accelerator: string };
-        dictationHotkey: { enabled: boolean; accelerator: string };
-        wake: { enabled: boolean; phrase: string };
-      };
-      ttsVoices: Record<number, string>;
-      modelHosts: Record<string, string>;
-      modelHostOptions: string[];
-    }>;
-    voiceSettingsSet(patch: any): Promise<{
-      tts: { sid: number; speed: number; volume: number };
-      asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
-      mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
-      barge: { gateDb: number; mode: "auto" | "manual" };
-      aec?: { mode: "auto" | "on" | "off" };
-      modelHost: "auto" | "huggingface" | "hf-mirror";
-      hotkey: { enabled: boolean; accelerator: string };
-      dictationHotkey: { enabled: boolean; accelerator: string };
-      wake: { enabled: boolean; phrase: string };
-    }>;
-    onVoiceEvent(listener: (event: any) => void): () => void;
-    voiceHotkeySet(input: { accelerator: string; enabled?: boolean }): Promise<{ ok: boolean; error?: string }>;
     voiceHotkeyGet(): Promise<{ registered: string }>;
-    onVoiceHotkey(listener: (event: { accelerator: string }) => void): () => void;
-    voiceWakeStart(): Promise<{ ok: boolean; error?: string; phrase?: string; hint?: string }>;
-    /** 只回「命中没命中」：识别文本与匹配都在主进程做 */
-    voiceWakeAudio(samples: Float32Array): Promise<{ ok: boolean; matched: boolean }>;
     voiceWakeReset(): Promise<{ ok: boolean }>;
     voiceWakeStop(): Promise<{ ok: boolean }>;
-    /** 关键词唤醒模型（KWS，31MB 归档）：装完唤醒自动切到「读音匹配」引擎 */
-    voiceKwsInstall(): Promise<{ ok: boolean; error?: string }>;
     voiceKwsCancel(): Promise<{ ok: boolean }>;
     voiceKwsStatus(): Promise<{ ready: boolean }>;
-    // 自更新：网页源（发布站）/ GitHub Releases 双源可切换
+    installRuntime(id: string): Promise<{ ok: boolean; runtimes: DevRuntimeEntry[] }>;
+    uninstallRuntime(id: string): Promise<{ ok: boolean; runtimes: DevRuntimeEntry[] }>;
+    weixinStartLogin(): Promise<{ qrcodeImg: string; qrcode: string } | null | undefined>;
+    weixinPollLogin(): Promise<{ status: string; verifyCodeRequired?: boolean; connected?: boolean } | null | undefined>;
+    feishuConnect(appId: string, appSecret: string): Promise<{ ok: boolean; name?: string; error?: string }>;
+    dingtalkConnect(clientId: string, clientSecret: string): Promise<{ ok: boolean; name?: string; error?: string }>;
+    qqConnect(appId: string, appSecret: string): Promise<{ ok: boolean; name?: string; error?: string }>;
+    qqQrStart(): Promise<{ state: string; qr?: string; name?: string; error?: string }>;
+    qqQrStatus(): Promise<{ state: string; qr?: string; name?: string; error?: string }>;
+    feishuQrStart(): Promise<{ state: string; qr?: string; userCode?: string; name?: string; error?: string }>;
+    feishuQrStatus(): Promise<{ state: string; qr?: string; userCode?: string; name?: string; error?: string }>;
+    wecomWebhookConnect(url: string): Promise<{ ok: boolean; name?: string; error?: string }>;
+    wecomWebhookTest(text?: string): Promise<{ ok: boolean; error?: string }>;
+    botBindingGet(): Promise<{ wechat: { threadId: string; title: string; updatedAt: number } | null; telegram: { threadId: string; title: string; updatedAt: number } | null }>;
+    botsSet(list: any[]): Promise<{ ok: boolean; count: number }>;
+    botBindingSet(input: { channel: string; threadId: string | null; title?: string }): Promise<{ threadId: string; title: string; updatedAt: number } | null>;
+    botStreamGet(): Promise<{ enabled: boolean; thinking: boolean; tools: boolean }>;
+    botStreamSet(input: { enabled: boolean; thinking: boolean; tools: boolean }): Promise<{ enabled: boolean; thinking: boolean; tools: boolean }>;
+    relayToggleAccount(input: { id: string; disabled: boolean }): Promise<{ ok: boolean; disabled: boolean; deactivated?: boolean }>;
+    openaiToggleAccount(input: { id: string; disabled: boolean }): Promise<{ ok: boolean; disabled: boolean; deactivated?: boolean }>;
+    channelsStatus(): Promise<{ weixin: boolean; telegram: boolean; feishu?: boolean; dingtalk?: boolean; qq?: boolean; "wecom-webhook"?: boolean }>;
+    telegramConnect(token: string): Promise<{ ok: boolean; username?: string; error?: string }>;
+    installMarketSkillLight(skill: unknown): Promise<{ name: string; discovered: boolean; engineCheckMessage: string }>;
+    skillDisciplineGet(): Promise<{ present: boolean; section: string }>;
+    savePastedText(text: string): Promise<string | null>;
+    readPastedText(path: string): Promise<{ editable: boolean; content?: string | null }>;
+    updatePastedText(path: string, content: string): Promise<{ ok: boolean; size: number }>;
     updateCheck(): Promise<{ ok: boolean; info?: { hasUpdate: boolean; reason: string; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string }; currentVersion?: string; source?: string; error?: string }>;
     updateDownload(input: { downloadUrl: string; filename?: string }): Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;
     updateInstall(filePath: string): Promise<{ ok: boolean; error?: string }>;
-    updateReveal(filePath: string): Promise<{ ok: boolean }>;
+    bridgeStatus(): Promise<{ running: boolean; port: number; targets: number; requests: number; converted: number; forwarded: number; failures: number; modes: Record<string, "responses" | "chat"> }>;
+    getThreadRuntime(threadId: string): Promise<{ model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number } | null>;
+    planMemoryHygiene(workspace?: string): Promise<{ rules: { layer: string; name: string; when: string; action: string; protect: string; trace: string }[]; labels: Record<string, { title: string; danger: string }>; actions: string[]; issues: { severity: "info" | "warn"; layer: string; code: string; message: string; count?: number }[]; archive: { files: number; bytes: number }; pool: { total: number; pinned: number; expiring: number; max: number; ttlDays: number }; }>;
+    listDispatchCatalog(): Promise<{ targets: DispatchTargetEntry[] }>;
+    capabilitiesSnapshot(): Promise<{ capabilities: { id: string; label: string; purpose: string; activeId: string | null; activeLabel: string; activeWhy: string; alternatives: { id: string; label: string; available: boolean; why: string }[]; note: string; }[]; at: number; }>;
+    perfCounters(): Promise<{ rolloutFallbackScans: number; droppedForInactiveSession: number; threadListRequests: number }>;
+    markIdentityGreeted(): Promise<PersonalizationConfig>;
+    popoutThread(threadId: string): Promise<{ ok: boolean; focused?: boolean }>;
+    popoutClose(threadId: string | null): Promise<{ ok: boolean }>;
+    popoutThreadId(): Promise<string | null>;
+    popoutList(): Promise<string[]>;
+    engineRestartLog(): Promise<{ t: number; reason: string; busy: boolean; activeTurns: number; action: "now" | "defer" | "flush" | "force" }[]>;
+    engineActiveTurns(): Promise<{ count: number; threadIds: string[] }>;
+    voiceStatus(): Promise<{ active: boolean; state: string; runtimeReady: boolean; modelsReady: boolean; threadId: string; lastError: string }>;
+    voiceStart(threadId: string, options?: { mode?: "conversation" | "dictation" }): Promise<{ ok: boolean; error?: string; status: unknown }>;
+    voiceDictationFinish(): Promise<{ ok: boolean; text?: string; error?: string }>;
+    voiceEndpointNow(): Promise<{ ok: boolean; text?: string }>;
+    voiceSpeak(text: string, options?: { sid?: number; speed?: number }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
+    voicePreviewVoice(input?: { sid?: number; speed?: number; text?: string }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
+    voiceProfilesList(): Promise<{ profiles: any[]; zipvoiceReady: boolean }>;
+    voicePresetList(): Promise<{ presets: { id: string; name: string; desc: string; lang: string; applied: boolean }[] }>;
+    voicePresetApply(presetId: string): Promise<{ ok: boolean; profile?: any; existed?: boolean; error?: string }>;
+    voiceProfilesSelect(id: string): Promise<{ ok: boolean; profileId: string }>;
+    voiceModelsStatus(): Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string; repos: { id: string; lastSegment: string }[]; zipvoice?: { ready: boolean; bytes: number; dir: string }; kws?: { ready: boolean; bytes: number; dir: string }; }>;
+    voiceModelsInstall(): Promise<{ ok: boolean; error?: string }>;
+    voiceZipvoiceInstall(): Promise<{ ok: boolean; error?: string }>;
+    voiceModelsImport(input: { sourceDir: string }): Promise<{ ok: boolean; failures: string[] }>;
+    voiceMicPermission(): Promise<{ status: string; error?: string }>;
+    voiceSettingsGet(): Promise<{ settings: { tts: { sid: number; speed: number; volume: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: "auto" | "manual" }; aec?: { mode: "auto" | "on" | "off" }; modelHost: "auto" | "huggingface" | "hf-mirror"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; }; ttsVoices: Record<number, string>; modelHosts: Record<string, string>; modelHostOptions: string[]; }>;
+    voiceSettingsSet(patch: any): Promise<{ tts: { sid: number; speed: number; volume: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: "auto" | "manual" }; aec?: { mode: "auto" | "on" | "off" }; modelHost: "auto" | "huggingface" | "hf-mirror"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; }>;
+    voiceHotkeySet(input: { accelerator: string; enabled?: boolean }): Promise<{ ok: boolean; error?: string }>;
+    voiceWakeStart(): Promise<{ ok: boolean; error?: string; phrase?: string; hint?: string }>;
+    voiceWakeAudio(samples: Float32Array): Promise<{ ok: boolean; matched: boolean }>;
+    voiceKwsInstall(): Promise<{ ok: boolean; error?: string }>;
+    /* 截图设置 + 实际注册成功的快捷键 + 冲突说明 */
+    screenshotSettingsGet(): Promise<ScreenshotSettingsSnapshot>;
+    /* 改完立刻重挂快捷键（不重启即生效） */
+    screenshotSettingsSet(patch: Partial<ScreenshotSettings>): Promise<ScreenshotSettingsSnapshot>;
+    /* 先注册成功才落盘；冲突时保留原设置 */
+    screenshotHotkeySet(input: { mode: "full" | "region"; accelerator?: string; enabled?: boolean }): Promise<{ ok: boolean; error?: string; settings?: ScreenshotSettings }>;
+    /* 成功时另推 screenshot:captured 事件给主窗口（渲染层只认事件，避免插两份） */
+    screenshotCapture(mode: "full" | "region"): Promise<ShotCaptureResult>;
+    screenshotPickDir(): Promise<string | null>;
+    /* 在系统文件管理器里定位截图 */
+    screenshotReveal(file: string): Promise<boolean>;
+    listFavorites(): Promise<FavoriteItem[]>;
+    addFavorite(input: Partial<FavoriteItem>): Promise<{ items: FavoriteItem[]; item: FavoriteItem }>;
+    updateFavorite(input: { id: string; patch: Partial<FavoriteItem> }): Promise<FavoriteItem[]>;
+    /* 批量删除只认显式 id 列表（不提供隐式删全部） */
+    deleteFavorites(ids: string[]): Promise<{ items: FavoriteItem[]; removed: number }>;
+    clearFavorites(): Promise<{ items: FavoriteItem[]; removed: number }>;
+    /* 记一次使用（useCount/lastUsedAt），失败不阻断发送 */
+    touchFavorite(id: string): Promise<FavoriteItem[]>;
+    /* 只追加到记忆层（先读后写，不抹既有内容）；单行限长 300 字 */
+    favoritesToMemory(input: { ids: string[]; scope?: "user" | "project" | "background" | "lessons"; workspace?: string }): Promise<{ ok: boolean; written: number; error?: string }>;
+/* ═══ gen:end ═══ */
+
+
+    onRemotePairRequest(handler: (request: { rid: string; deviceId: string; name: string }) => void): () => void;
+
+    onBotPairRequest(handler: (request: { rid: string; channel: string; chatId: string; name: string }) => void): () => void;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    onBotBindingChanged(handler: (bindings: unknown) => void): () => void;
+
+
+
+
+
+    onRemoteCommand(listener: (payload: { command: string; device: { id: string; name: string } }) => void): () => void;
+
+    onRemoteDevice(listener: (device: { id: string; name: string }) => void): () => void;
+
+
+
+    onConnectorOAuth(listener: (event: ConnectorOAuthEvent) => void): () => void;
+
+    /** 粘贴的长文本（超过阈值）落盘成 .txt，返回绝对路径；空文本返回 null。按内容哈希去重。 */
+
+    /** 读粘贴文本；editable=false 表示不是应用保存的粘贴文本（回退普通文件预览）。
+     *  content=null 表示文件已不存在。 */
+
+    /** 保存编辑后的粘贴文本（仅限应用自己的粘贴文本目录，越界会抛错） */
+
+    /** 标记身份引导已打过招呼（此后新会话不再引导、直接干活） */
+
+    onSshData(listener: (payload: { data: string }) => void): () => void;
+
+    onSshExit(listener: (payload: { code?: number; signal?: string; error?: string }) => void): () => void;
+
+    /** 本地协议桥状态：引擎只发 Responses，上游只支持 Chat 时由桥转换（port/running/各 provider 实际协议） */
+
+
+    /** 记忆整洁报告（只读）：清理规则表 + 待办 + 八层水位 + 分类计数 */
+
+    /** 调度（09-15）：可被 Codex 调度的对象目录 */
+
+
+
+    onRuntimeProgress(listener: (event: { id: string; message?: string; percent?: number; stage?: string; speed?: string; done?: boolean; failed?: boolean; auto?: boolean }) => void): () => void;
+
+    onTerminalData(listener: (id: string, data: string) => void): () => void;
+
+    /** 「当前能力链路」：同一件事有多个后端时，现在实际走哪条（唯一来源见 electron/capability-registry.ts） */
+
+    /** 多会话性能诊断计数：rollout 兜底扫描次数（应为 0）与被按会话过滤掉的事件数 */
+
+    /** 独立会话弹窗：把会话开到新窗口（focused=true 表示该会话已有弹窗，聚焦了旧窗口） */
+
+    /** 弹窗返回主应用：关闭本弹窗并把主窗口带到指定会话 */
+
+    /** 当前窗口是否为独立会话弹窗（返回弹窗锁定的会话 id，非弹窗返回 null） */
+
+    /** 所有弹窗锁定的会话 id 列表（主窗口侧栏据此隐藏，避免重复渲染） */
+
+    /** 重启台账（诊断"任务莫名断了"）：谁触发的重启、当时是否有任务在跑、立即还是推迟。 */
+
+    /** 当前活跃回合数（0 = 引擎可安全重启；验收/诊断用）。 */
+    /** 引擎侧"谁在跑"的真相：count = 活跃回合数，threadIds = 这些回合分别属于哪个会话
+     *（渲染层收到快照式的 status/changed {idle} 时据此核实，而不是无条件熄灭运行指示器）。 */
+
+    /** 引擎重启被闸门推迟/已补做：渲染层提示「改动将在当前任务结束后生效」。 */
+    onEngineRestartDeferred(listener: (event: { waiting: boolean; reason?: string; activeTurns?: number }) => void): () => void;
+
+    onEngineUpdateProgress(listener: (event: { stage: string; detail?: string; percent?: number }) => void): () => void;
+
+    /** 截图完成（快捷键或设置页「试试截图」触发）。**渲染层唯一插入路径**：
+     *  成功截图一定会走这里 ⇒ 输入框把图放进草稿；不要再按 invoke 的返回值各插一次。 */
+    onScreenshotCaptured(listener: (payload: ScreenshotCapturedPayload) => void): () => void;
+
+
+
+    onEvent(listener: (event: CodexEvent) => void): () => void;
+
+    onChannelBotEvent(listener: (event: any) => void): () => void;
+
+    onHarnessEvent(listener: (event: any) => void): () => void;
+
+    // ---- 语音通话（本机离线识别与合成，旁挂新增） ----
+
+
+
+    /** 提前端点：识别文本已收尾 + 停口 ~0.5s 时调用，立即提交这一句（不等 rule2 静音） */
+
+    voiceAudio(samples: Float32Array): void;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    onVoiceEvent(listener: (event: any) => void): () => void;
+
+
+    onVoiceHotkey(listener: (event: { accelerator: string }) => void): () => void;
+
+
+    /** 只回「命中没命中」：识别文本与匹配都在主进程做 */
+
+    /** 关键词唤醒模型（KWS，31MB 归档）：装完唤醒自动切到「读音匹配」引擎 */
+
+    // 自更新：网页源（发布站）/ GitHub Releases 双源可切换
+
+
+
     /** 订阅下载进度（0~1），返回取消订阅函数 */
     updateOnProgress(callback: (percent: number) => void): () => void;
+
+
   };
 }
+
+/** 构建期注入的构建指纹（`YYYYMMDD-HHmm`，见 vite.config.ts 的 define）。
+ *  用途：界面自证「正在运行的是哪一份产物」——运行时读 dist/ 只能说明磁盘上有什么。 */
+declare const __BUILD_STAMP__: string;

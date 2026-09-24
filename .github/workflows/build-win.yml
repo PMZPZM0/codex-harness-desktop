@@ -29,8 +29,15 @@ jobs:
       - name: Verify bundled toolchain before packaging
         run: node scripts/verify-packaged-tools.cjs resources/tools
 
-      - name: Build renderer & main
-        run: npm run build
+      # ⛔ 09-24（评估报告 §3.1）：此前**整条流水线没有任何测试/预检门禁**（grep check/verify/lint 全 0 命中），
+      #    而 AGENTS.md 把 `npm run check` 定为改动完成的硬标准 ⇒ 公开发版前那个闸门一次都没跑过。
+      #    这里用 `npm run check` 取代原来的 `npm run build`（check = build + 全部预检守卫，不会重复构建），
+      #    顺序仍是「装工具 → 验工具 → 构建+预检 → 打包」，产物新鲜度断言也在构建之后才判，不会误红。
+      - name: Build + preflight gates
+        run: npm run check
+
+      - name: Lint (layering rules)
+        run: npm run lint
 
       - name: Pack Windows installer
         # ⛔ 不用 npx：本机踩过「PowerShell 执行策略挡 npx.ps1」，直接调 cli.js 无此依赖

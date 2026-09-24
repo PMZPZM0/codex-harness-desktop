@@ -1,0 +1,871 @@
+/**
+ * 基础 / 顶层外壳（reset、顶栏、侧栏骨架、窗口钮避让）
+ *
+ * 09-21 架构改造：从 src/styles.css 按域拆出（原 L1–L864，864 行）。
+ * ⛔ 内容与顺序均未改动 —— 全部分节拼回与原文件逐字节一致（构建产物亦一致）。
+ */
+
+.xterm {
+  cursor: text;
+  -webkit-user-select: none;
+  user-select: none;
+  position: relative;
+}
+.xterm.focus,
+.xterm:focus {
+  outline: none;
+}
+.xterm .xterm-helpers {
+  z-index: 5;
+  position: absolute;
+  top: 0;
+}
+.xterm .xterm-helper-textarea {
+  opacity: 0;
+  z-index: -5;
+  white-space: nowrap;
+  resize: none;
+  border: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  position: absolute;
+  top: 0;
+  left: -9999em;
+  overflow: hidden;
+}
+.xterm .composition-view {
+  color: #fff;
+  white-space: nowrap;
+  z-index: 1;
+  background: #000;
+  display: none;
+  position: absolute;
+}
+.xterm .composition-view.active {
+  display: block;
+}
+.xterm .xterm-viewport {
+  cursor: default;
+  background-color: #000;
+  position: absolute;
+  inset: 0;
+  overflow-y: scroll;
+}
+.xterm .xterm-screen {
+  position: relative;
+}
+.xterm .xterm-screen canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+.xterm-char-measure-element {
+  visibility: hidden;
+  line-height: normal;
+  display: inline-block;
+  position: absolute;
+  top: 0;
+  left: -9999em;
+}
+.xterm.enable-mouse-events {
+  cursor: default;
+}
+.xterm.xterm-cursor-pointer,
+.xterm .xterm-cursor-pointer {
+  cursor: pointer;
+}
+.xterm.column-select.focus {
+  cursor: crosshair;
+}
+.xterm .xterm-accessibility:not(.debug),
+.xterm .xterm-message {
+  z-index: 10;
+  color: #0000;
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+}
+.xterm .xterm-accessibility-tree:not(.debug) ::selection {
+  color: #0000;
+}
+.xterm .xterm-accessibility-tree {
+  -webkit-user-select: text;
+  user-select: text;
+  white-space: pre;
+  font-family: monospace;
+}
+.xterm .xterm-accessibility-tree > div {
+  transform-origin: 0;
+  width: fit-content;
+}
+.xterm .live-region {
+  width: 1px;
+  height: 1px;
+  position: absolute;
+  left: -9999px;
+  overflow: hidden;
+}
+.xterm-dim {
+  opacity: 1 !important;
+}
+.xterm-underline-1 {
+  text-decoration: underline;
+}
+.xterm-underline-2 {
+  -webkit-text-decoration: underline double;
+  text-decoration: underline double;
+}
+.xterm-underline-3 {
+  -webkit-text-decoration: underline wavy;
+  text-decoration: underline wavy;
+}
+.xterm-underline-4 {
+  -webkit-text-decoration: underline dotted;
+  text-decoration: underline dotted;
+}
+.xterm-underline-5 {
+  -webkit-text-decoration: underline dashed;
+  text-decoration: underline dashed;
+}
+.xterm-overline {
+  text-decoration: overline;
+}
+.xterm-overline.xterm-underline-1 {
+  text-decoration: underline overline;
+}
+.xterm-overline.xterm-underline-2 {
+  -webkit-text-decoration: overline double underline;
+  text-decoration: overline double underline;
+}
+.xterm-overline.xterm-underline-3 {
+  -webkit-text-decoration: overline wavy underline;
+  text-decoration: overline wavy underline;
+}
+.xterm-overline.xterm-underline-4 {
+  -webkit-text-decoration: overline dotted underline;
+  text-decoration: overline dotted underline;
+}
+.xterm-overline.xterm-underline-5 {
+  -webkit-text-decoration: overline dashed underline;
+  text-decoration: overline dashed underline;
+}
+.xterm-strikethrough {
+  text-decoration: line-through;
+}
+.xterm-screen .xterm-decoration-container .xterm-decoration {
+  z-index: 6;
+  position: absolute;
+}
+.xterm-screen
+  .xterm-decoration-container
+  .xterm-decoration.xterm-decoration-top-layer {
+  z-index: 7;
+}
+.xterm-decoration-overview-ruler {
+  z-index: 8;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+.xterm-decoration-top {
+  z-index: 2;
+  position: relative;
+}
+.xterm .xterm-scrollable-element > .scrollbar {
+  cursor: default;
+}
+.xterm .xterm-scrollable-element > .scrollbar > .scra {
+  cursor: pointer;
+  font-size: 11px !important;
+}
+.xterm .xterm-scrollable-element > .visible {
+  opacity: 1;
+  z-index: 11;
+  background: 0 0;
+  transition: opacity 0.1s linear;
+}
+.xterm .xterm-scrollable-element > .invisible {
+  opacity: 0;
+  pointer-events: none;
+}
+.xterm .xterm-scrollable-element > .invisible.fade {
+  transition: opacity 0.8s linear;
+}
+.xterm .xterm-scrollable-element > .shadow {
+  display: none;
+  position: absolute;
+}
+.xterm .xterm-scrollable-element > .shadow.top {
+  width: 100%;
+  height: 3px;
+  box-shadow: var(--vscode-scrollbar-shadow, #000) 0 6px 6px -6px inset;
+  display: block;
+  top: 0;
+  left: 3px;
+}
+.xterm .xterm-scrollable-element > .shadow.left {
+  width: 3px;
+  height: 100%;
+  box-shadow: var(--vscode-scrollbar-shadow, #000) 6px 0 6px -6px inset;
+  display: block;
+  top: 3px;
+  left: 0;
+}
+.xterm .xterm-scrollable-element > .shadow.top-left-corner {
+  width: 3px;
+  height: 3px;
+  display: block;
+  top: 0;
+  left: 0;
+}
+.xterm .xterm-scrollable-element > .shadow.top.left {
+  box-shadow: var(--vscode-scrollbar-shadow, #000) 6px 0 6px -6px inset;
+}
+/* 滚动条跟随主题：thumb/track 取 CSS 变量，深色模式不再残留系统浅色滚轮 */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--panel-2); border-radius: 6px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--line); }
+::-webkit-scrollbar-corner { background: transparent; }
+/* Chromium 117+ / Firefox 标准滚动条配色 */
+* { scrollbar-width: thin; scrollbar-color: var(--panel-2) var(--bg); }
+
+:root {
+  color: #23231f;
+  font-synthesis: none;
+  text-rendering: optimizelegibility;
+  letter-spacing: 0;
+  --bg: #fff;
+  --panel: #f8f8f7;
+  --panel-2: #f1f1ef;
+  --line: #e7e7e4;
+  --line-soft: #efefec;
+  --text: #23231f;
+  --muted: #6f6f69;
+  --faint: #9b9b95;
+  --green: #1a7f37;
+  --green-dark: #ebebe8;
+  --accent-text: #fff;
+  --accent: #2f6bdd;
+  --accent-soft: #2f6bdd14;
+  --orange: #e8830c;
+  --red: #d94f43;
+  --ok: #3fb36b;
+  --link: #2f6bdd;
+  --add: #1a7f37;
+  --del: #d94f43;
+  --shadow: 0 1px 2px #14140f0a, 0 10px 32px #14140f12;
+  background: #fff;
+  font-family:
+    Inter,
+    Segoe UI,
+    system-ui,
+    sans-serif;
+}
+:root[data-theme="dark"] {
+  color: #ececea;
+  --bg: #1b1b1a;
+  --panel: #222221;
+  --panel-2: #2c2c2b;
+  --line: #373736;
+  --line-soft: #2e2e2d;
+  --text: #ececea;
+  --muted: #a6a6a1;
+  --faint: #7d7d78;
+  --green: #4ec27a;
+  --green-dark: #383836;
+  --accent-text: #161615;
+  --accent: #7cabf8;
+  --accent-soft: #7cabf81f;
+  --orange: #f0a35c;
+  --red: #ec7a70;
+  --ok: #58c085;
+  --link: #7cabf8;
+  --add: #6cc281;
+  --del: #ec7a70;
+  --shadow: 0 1px 3px #00000059, 0 10px 30px #00000059;
+  background: #1b1b1a;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  letter-spacing: 0;
+}
+button {
+  color: inherit;
+}
+.app-shell {
+  background: var(--bg);
+  grid-template-columns: 256px minmax(0, 1fr);
+  /* 第一行 = 全宽顶行（任务名 + 操作簇 + 原生窗口钮），第二行 = 侧栏/聊天/右栏。
+     右栏从第二行开始：拖分隔条只影响面板，顶行纹丝不动。 */
+  grid-template-rows: 44px minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  display: grid;
+}
+.app-shell.with-context {
+  grid-template-columns: 256px minmax(0, 1fr) 1px 308px;
+}
+.app-shell {
+  transition: grid-template-columns 0.22s;
+}
+.app-shell.side-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+.app-shell.side-collapsed.with-context {
+  grid-template-columns: minmax(0, 1fr) 1px 308px;
+}
+.sidebar-hotzone {
+  z-index: 34;
+  background: 0 0;
+  width: 6px;
+  display: none;
+  position: fixed;
+  inset: 0 auto 0 0;
+}
+.app-shell.side-collapsed .sidebar-hotzone {
+  display: block;
+}
+.app-shell.side-collapsed:not(.narrow) .sidebar {
+  z-index: 35;
+  width: 256px;
+  min-width: 256px;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  padding: 12px 10px 10px;
+  transition: transform 0.2s;
+  position: fixed;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+  transform: translate(-100%);
+}
+.app-shell.side-collapsed:not(.narrow) .sidebar.flyout-open {
+  pointer-events: auto;
+  transform: translate(0);
+}
+.app-shell.side-collapsed:not(.narrow) .sidebar .brand-row {
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 8px;
+}
+.app-shell.side-collapsed:not(.narrow) .sidebar .brand-row > div {
+  display: none;
+}
+.app-shell.side-collapsed:not(.narrow) .sidebar .brand-row .status-dot {
+  display: block;
+}
+.brand-mark {
+  /* 黑底白字徽标（用户指定）：纯深色底 + 白色 CH，尺寸固定醒目；切换动画（CH↔箭头）继续保留。 */
+  color: #fff;
+  background: linear-gradient(155deg, #26282c 0%, #101113 70%, #0a0b0c 100%);
+  cursor: pointer;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  flex: 0 0 30px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  transition:
+    background 0.18s,
+    transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.brand-mark:hover {
+  /* hover 轻微提亮，不再整块变色 */
+  background: linear-gradient(155deg, #303338 0%, #17191c 70%, #101113 100%);
+}
+.brand-mark:active {
+  transform: scale(0.94);
+}
+.brand-mark:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+.sidebar-toggle {
+  isolation: isolate;
+  position: relative;
+  overflow: hidden;
+}
+/* .sidebar-toggle:after 旧版「整块圆角边框动画」——去掉，视觉上不再出现方框 */
+.sidebar-toggle:after {
+  content: none;
+}
+.ch-logo {
+  /* 黑底徽标内的白色 CH 字符 */
+  color: #fff;
+  letter-spacing: 0.8px;
+  text-indent: 0.8px;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font:
+    800 11.5px/1 "Segoe UI",
+    system-ui,
+    sans-serif;
+  transition:
+    opacity 0.14s,
+    transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  display: inline-flex;
+  position: relative;
+  gap: 0.5px;
+}
+.ch-logo i {
+  font-style: normal;
+}
+.ch-logo i + i {
+  margin-left: 0;
+}
+/* 侧栏徽标改用应用图标（用户指定 09-17）：平时透明底显示蓝色 icon，hover 浮现黑底让白色箭头可读
+ * （收起/展开交互完整保留：图标淡出 → 箭头浮现）。只限定侧栏 toggle，登录页 brand-mark 不受影响。 */
+.ch-logo-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  object-fit: cover;
+  display: block;
+}
+button.brand-mark.sidebar-toggle {
+  background: transparent;
+}
+button.brand-mark.sidebar-toggle:hover {
+  background: linear-gradient(155deg, #26282c 0%, #101113 70%, #0a0b0c 100%);
+}
+.sidebar-toggle-arrow {
+  z-index: 2;
+  color: #fff;
+  opacity: 0;
+  place-items: center;
+  transition:
+    opacity 0.14s,
+    transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  display: grid;
+  position: absolute;
+  inset: 0;
+  transform: translate(7px) scale(0.72);
+}
+.brand-mark:hover .ch-logo {
+  opacity: 0;
+  transform: translate(-7px) scale(0.72);
+}
+.brand-mark:hover .sidebar-toggle-arrow {
+  opacity: 1;
+  transform: translate(0) scale(1);
+}
+.brand-mark.is-collapsed .sidebar-toggle-arrow {
+  transform: translate(-7px) scale(0.72);
+}
+.brand-mark.is-collapsed .sidebar-toggle-arrow svg {
+  transform: rotate(180deg);
+}
+.brand-mark.is-collapsed:hover .ch-logo {
+  transform: translate(7px) scale(0.72);
+}
+.brand-mark.is-collapsed:hover .sidebar-toggle-arrow {
+  transform: translate(0) scale(1);
+}
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="force"]) .brand-mark,
+  html:not([data-motion="force"]) .brand-mark *,
+  html:not([data-motion="force"]) .sidebar-toggle-arrow {
+    transition: none !important;
+  }
+}
+
+.panel-divider {
+  cursor: col-resize;
+  position: relative;
+  background: var(--line-soft);
+}
+/* 视觉 1px 细线，前后各扩 3px 命中区方便抓取 */
+.panel-divider::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  right: -3px;
+}
+.panel-divider:hover,
+.panel-divider:active {
+  background: var(--muted);
+}
+.sidebar,
+.context-panel {
+  background: var(--panel);
+  min-width: 0;
+}
+.sidebar {
+  border-right: 1px solid var(--line);
+  /* 通高：logo 行与顶行（任务名）同一行，不额外多出一行 */
+  grid-row: 1 / 3;
+  grid-column: 1;
+  z-index: 5;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 12px 10px 10px;
+  display: flex;
+  overflow: hidden;
+}
+.brand-row {
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 8px;
+  display: flex;
+}
+.brand-mark {
+  /* 段1已定义完整 .brand-mark 视觉样式；这里删掉旧 28x28 方块定义以避免重复。
+     此 .brand-mark 是 button 上的 class — 两次定义合并生效（CSS 后定义优先，但同名
+     同属性后者胜出），段1放在文件前面留作占位提示，勿再次启用方块样式。 */
+  display: inline-flex;
+}
+.brand-row > div:nth-child(2) {
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+  display: flex;
+}
+.brand-row strong {
+  white-space: nowrap;
+  font-size: 13px;
+}
+.brand-row span {
+  color: var(--faint);
+  font-size: 11px;
+}
+.status-dot {
+  background: var(--orange);
+  width: 8px;
+  height: 8px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 16%, transparent);
+  border-radius: 50%;
+  flex: 0 0 8px;
+  margin-left: auto;
+}
+.status-dot.ready {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 16%, transparent);
+}
+.status-dot.error {
+  background: var(--red);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 16%, transparent);
+}
+.workspace-button {
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  min-height: 38px;
+  color: var(--muted);
+  background: 0 0;
+  border: 0;
+  border-radius: 8px;
+  align-items: center;
+  gap: 9px;
+  margin: 10px 0 2px;
+  padding: 0 10px;
+  display: flex;
+}
+.workspace-button:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+.workspace-button > span {
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.workspace-button small {
+  color: var(--faint);
+  font-size: 10px;
+}
+.workspace-button span {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  overflow: hidden;
+}
+.workspace-button > svg:last-child {
+  color: var(--faint);
+}
+.new-thread {
+  width: 100%;
+  height: 36px;
+  color: var(--text);
+  cursor: pointer;
+  background: 0 0;
+  border: 0;
+  border-radius: 8px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+}
+.new-thread > span {
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+}
+.new-thread:hover {
+  background: var(--panel-2);
+}
+.side-nav {
+  width: 100%;
+  height: 34px;
+  color: var(--text);
+  cursor: pointer;
+  background: 0 0;
+  border: 0;
+  border-radius: 8px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  font-size: 13px;
+  display: flex;
+}
+.side-nav > span {
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+}
+.side-nav:hover {
+  background: var(--panel-2);
+}
+.new-thread kbd,
+.search-box kbd {
+  color: var(--faint);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 4px;
+  flex: none;
+  padding: 3px 5px;
+  font:
+    10px/1 Segoe UI,
+    sans-serif;
+}
+.search-box {
+  height: 34px;
+  color: var(--muted);
+  cursor: pointer;
+  background: 0 0;
+  border: 0;
+  border-radius: 8px;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0;
+  padding: 0 10px;
+  display: flex;
+}
+.search-box:hover,
+.search-box:focus-within {
+  background: var(--panel-2);
+  color: var(--text);
+}
+.search-box > svg {
+  color: var(--muted);
+  flex: none;
+}
+.search-box > span {
+  text-align: left;
+  min-width: 0;
+  color: var(--text);
+  flex: 1;
+  font-size: 12.5px;
+}
+.search-box kbd {
+  color: var(--faint);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 5px;
+  flex: none;
+  padding: 3px 6px;
+  font:
+    10px/1 Segoe UI,
+    sans-serif;
+}
+.search-box input {
+  width: 100%;
+  min-width: 0;
+  color: var(--text);
+  background: 0 0;
+  border: 0;
+  outline: 0;
+  flex: 1;
+  font-size: 12.5px;
+}
+.search-box input::placeholder {
+  color: var(--faint);
+}
+.group-chips {
+  background: var(--panel-2);
+  border-radius: 8px;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  margin: 12px 0 2px;
+  padding: 2px;
+  display: grid;
+}
+.group-chips button {
+  height: 24px;
+  color: var(--muted);
+  cursor: pointer;
+  background: 0 0;
+  border: 0;
+  border-radius: 6px;
+  font-size: 11px;
+}
+.group-chips button.active {
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 500;
+  box-shadow: 0 1px 2px #00000012;
+}
+.filter-chip {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  min-width: 0;
+  height: 26px;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 13px;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0 9px;
+  font-size: 11px;
+  display: inline-flex;
+}
+.filter-chip:hover {
+  color: var(--text);
+}
+.project-row {
+  width: 100%;
+  min-height: 46px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  background: 0 0;
+  border: 0;
+  border-radius: 8px;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  display: flex;
+}
+.project-row:hover {
+  background: var(--panel-2);
+}
+.project-row > svg {
+  color: var(--muted);
+  flex: none;
+}
+.project-row > span {
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  display: flex;
+}
+.project-row strong {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 500;
+  overflow: hidden;
+}
+.project-row small {
+  color: var(--faint);
+  font-size: 10.5px;
+}
+.archive-toggle {
+  height: 32px;
+  color: var(--muted);
+  cursor: pointer;
+  background: 0 0;
+  border: 0;
+  border-radius: 8px;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  padding: 0 10px;
+  font-size: 12.5px;
+  display: flex;
+}
+.archive-toggle:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+.archive-toggle.active {
+  color: var(--text);
+}
+.list-label {
+  color: var(--faint);
+  margin: 14px 10px 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.thread-list {
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 2px 0 14px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.team-cluster-body::-webkit-scrollbar { width: 6px; }
+.team-cluster-body::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-primary, #111) 16%, transparent);
+  border-radius: 3px;
+}
+.team-cluster-body::-webkit-scrollbar-track { background: transparent; }
+.thread-row {
+  border-radius: 8px;
+  align-items: center;
+  min-height: 46px;
+  display: flex;
+}
+/* ⛔ 选中态不能与 hover 同色（用户 09-14 实测：「选择下面会话都没有反馈，
+   都不知道选择了那个」——此前 .active 与 :hover 共用 --panel-2 浅底，选中看不出来）。
+   现在选中 = 蓝底 + 左侧 3px 色条，一眼可辨。 */
+.thread-row { position: relative; }
+.thread-row:hover {
+  background: var(--panel-2);
+}
+.thread-row.active {
+  background: color-mix(in srgb, var(--blue, #3b82f6) 13%, transparent);
+}
+.thread-row.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--blue, #3b82f6);
+}
+/* 展开体里的主会话行：明确「主」的身份（左色条 + 深色标题） */

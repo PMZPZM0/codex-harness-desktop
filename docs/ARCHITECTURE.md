@@ -1,6 +1,11 @@
 # 架构与扩展点（目标形态）
 
-> 配套：`docs/REFACTOR-PLAN-2026-09-21.md`（怎么分批改）、`docs/REFACTOR-COMPARE-2026-09-21.md`（现状 vs 目标 + 利弊）。
+> ⚠️ **本文是 09-21 写的目标形态草案，不是现行规则**。文中 `src/features/registry.ts`、`defineFeature`、
+> `src/components/Slot.tsx`、`src/lib/bus.mjs`、`src/lib/ipc.ts`、`scripts/gen-ipc-bridge.mjs`
+> **均未落地**（截至 09-22）；`App.tsx` 也早已不是本文假设的 22,216 行（现 21 行，视图在 `app-view/`）。
+> **写代码前请读 `docs/ARCHITECTURE-RULES.md`（现行有效，以实测现状为基准）**；本文只在讨论"要不要按目标形态演进"时参考。
+
+> 配套：`docs/archive/REFACTOR-PLAN-2026-09-21.md`（怎么分批改）、`docs/REFACTOR-COMPARE-2026-09-21.md`（现状 vs 目标 + 利弊）。
 > 本文回答：**新功能放哪、接口在哪、怎么不改别人就加功能、mac 上会不会瘸**。
 
 ---
@@ -138,7 +143,7 @@ export default defineFeature({
 | 约束 | 说明 | 反例（曾发生） |
 |---|---|---|
 | 路径一律 `path.join` / `path.delimiter` | 不许手写 `/` 或 `\`，不许用 `;` 切 PATH | v0.0.22 审出「用 `;` 切 PATH」，mac 直接坏 |
-| **新增 `electron/` 子目录必须改 `tsconfig.json` 的 `include`** | 现在是白名单 `["*.ts", "voice/**/*.ts"]` | 新建 `electron/features/**` 不在编译范围（只靠 import 跟随） |
+| **新增 `electron/` 子目录必须改 `tsconfig.json` 的 `include`** | 现在是白名单 `["*.ts", "voice/**/*.ts", "features/**/*.ts"]`（09-21 起 `features/**` 已加入） | 新建 `electron/<新目录>/**` 不在编译范围（只靠 import 跟随） |
 | 目录/文件名**全小写**，import 大小写与磁盘一致 | CI runner 是 Linux（大小写敏感），Windows 会掩盖错误 | — |
 | 随包资源新增要**同步两个平台脚本** | `prepare-windows-tools.cjs` + `prepare-mac-tools.cjs`（+ `build-mac.yml`） | 预检【29】按 `extraResources` 逐条比对 |
 | 平台分支要**两条都在**（不是只判 win32） | 预检【74】一类守卫盯着 | 「只认 Windows 解压器」曾让 mac 修复安装必失败 |

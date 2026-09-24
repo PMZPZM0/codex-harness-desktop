@@ -1,0 +1,1 @@
+export { BotBindCard } from "./BotBindCard";

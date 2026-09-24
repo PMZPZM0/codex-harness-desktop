@@ -78,6 +78,18 @@ const mockCodex = `
 
 export default defineConfig({
   base: "./",
+  /* 构建指纹（09-23 用户点名的第一个改进项）：
+     把「这次构建是什么时候、跑的是哪份产物」在**构建期**写进包体。
+     ⛔ 必须构建期注入而不是运行时去读 dist/：运行时读文件只能说明"磁盘上有什么"，
+        而我们要回答的是"**正在执行的**是哪一份"—— 09-23 那次事故（用户看的实例没加载新构建、
+        我无法自证）正是这个区别。显示值 = 这份代码自己，改不掉、也不会滞后。 */
+  define: {
+    __BUILD_STAMP__: JSON.stringify((() => {
+      const d = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+    })()),
+  },
   plugins: [
     react(),
     {
@@ -92,5 +104,9 @@ export default defineConfig({
     },
   ],
   server: { port: 5174, strictPort: true },
-  build: { outDir: "dist" },
+  /* ⛔ 不许清空 dist（09-23 崩溃修复）：vite 默认 emptyOutDir=true，每次 build 清掉全部旧 chunk
+     ⇒ 正在运行、加载 dist 的实例点开 lazy 页面就 Failed to fetch dynamically imported module。
+     保留旧产物 + main.tsx 的 vite:preloadError 自愈 = 运行中实例不会被打断腿。
+     （代价：dist 会累积，可手动清或定期删 dist/assets 里的旧文件。） */
+  build: { outDir: "dist", emptyOutDir: false },
 });

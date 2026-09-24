@@ -1,0 +1,1241 @@
+/**
+ * 侧栏：会话列表 / 分组 / 置顶 / 运行指示
+ *
+ * 09-21 架构改造：从 src/styles.css 按域拆出（原 L865–L2085，1221 行）。
+ * ⛔ 内容与顺序均未改动 —— 全部分节拼回与原文件逐字节一致（构建产物亦一致）。
+ */
+
+
+.thread-row > button:first-child {
+  text-align: left;
+  cursor: pointer;
+  background: 0 0;
+  border: 0;
+  flex-direction: column;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+  padding: 7px 6px 7px 10px;
+  display: flex;
+  position: relative;
+}
+.thread-row > button:first-child:after { content: none; }
+.thread-running-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 2.5px;
+  width: auto;
+  height: 13px;
+  flex: 0 0 auto;
+  margin-right: 7px;
+  padding: 0 1px;
+}
+/* 三点跳跃式动态运行图标：依次上浮-回落，带呼吸节奏（WorkBuddy 风格） */
+.thread-running-indicator i {
+  width: 3.5px;
+  height: 3.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.85;
+  animation: thread-dot-bounce 1.05s ease-in-out infinite;
+}
+.thread-running-indicator i:nth-child(1) { animation-delay: 0s; }
+.thread-running-indicator i:nth-child(2) { animation-delay: 0.15s; }
+.thread-running-indicator i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes thread-dot-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.55; }
+  30% { transform: translateY(-3.5px); opacity: 1; }
+}
+/* 任务完成绿点（09-19）：后台会话跑完，侧栏该行亮绿点提醒；点击进入该会话即消失。
+   绿色=成功收尾（运行中是 accent 色的三点动画，二者不会同时出现——running 优先渲染）。 */
+.thread-done-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
+  animation: thread-done-pulse 2s ease-out infinite;
+}
+@keyframes thread-done-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+  70% { box-shadow: 0 0 0 5px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+.thread-row span {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  overflow: hidden;
+}
+.thread-row small {
+  color: var(--faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  overflow: hidden;
+}
+.thread-actions {
+  justify-content: flex-end;
+  align-items: center;
+  min-width: 30px;
+  gap: 1px;
+  display: flex;
+}
+.thread-more-button,
+.thread-pin-button,
+.thread-archive-button {
+  width: 24px;
+  height: 24px;
+  color: var(--faint);
+  cursor: pointer;
+  opacity: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  place-items: center;
+  display: grid;
+  transition: color 0.14s ease, background 0.14s ease, opacity 0.14s ease, width 0.16s ease, margin 0.16s ease;
+  width: 0;
+  margin: 0;
+  overflow: hidden;
+}
+/* 运行中指示器常驻，但行内操作按钮（置顶/归档/三点）统一 hover 展开显隐 */
+.thread-row:hover .thread-more-button,
+.thread-more-button[aria-expanded="true"],
+.thread-row:hover .thread-pin-button,
+.thread-row:hover .thread-archive-button {
+  opacity: 1;
+  width: 24px;
+  margin: 0 1px;
+}
+.thread-more-button:hover,
+.thread-more-button[aria-expanded="true"],
+.thread-pin-button:hover,
+.thread-pin-button.pinned,
+.thread-archive-button:hover {
+  color: var(--text);
+  background: var(--bg);
+}
+/* 置顶态常亮：Pin 图标带主题色，一眼看出该会话被置顶（不 hover 也显示） */
+.thread-pin-button.pinned {
+  color: var(--accent);
+  opacity: 1;
+  width: 24px;
+  margin: 0 1px;
+}
+.thread-row-menu-backdrop {
+  z-index: 10020;
+  border: 0;
+  background: transparent;
+  position: fixed;
+  inset: 0;
+}
+.thread-row-menu {
+  z-index: 10021;
+  width: 170px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .18);
+  display: grid;
+  gap: 1px;
+  position: fixed;
+}
+.thread-row-menu button {
+  min-height: 31px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  font-size: 12px;
+  display: flex;
+}
+.thread-row-menu button:hover { background: var(--panel-2); }
+.thread-row-menu button.danger { color: var(--red); border-top: 1px solid var(--line-soft); margin-top: 2px; padding-top: 7px; }
+.thread-row-menu button svg { flex: none; }
+.archive-button {
+  width: 28px;
+  height: 28px;
+  color: var(--faint);
+  cursor: pointer;
+  visibility: hidden;
+  background: 0 0;
+  border: 0;
+  border-radius: 6px;
+  place-items: center;
+  margin-right: 2px;
+  padding: 0;
+  display: grid;
+}
+.thread-row:hover .archive-button {
+  visibility: visible;
+}
+.archive-button:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+.archive-button.danger:hover {
+  color: var(--red);
+}
+.empty-list {
+  color: var(--faint);
+  text-align: center;
+  padding: 28px 0;
+  font-size: 12px;
+}
+.thread-skeleton {
+  background: var(--panel-2);
+  border-radius: 8px;
+  height: 40px;
+  margin: 6px;
+}
+.shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--panel-2) 0,
+    var(--line) 45%,
+    var(--panel-2) 90%
+  );
+  background-size: 220% 100%;
+  animation: 1.5s linear infinite shimmer;
+}
+@keyframes shimmer {
+  to {
+    background-position: -220% 0;
+  }
+}
+.account-row {
+  border-top: 1px solid var(--line);
+  align-items: center;
+  gap: 9px;
+  height: 42px;
+  margin-top: 6px;
+  padding: 4px 2px 0 8px;
+  display: flex;
+  flex: 0 0 42px;
+  background: var(--panel);
+  position: relative;
+  z-index: 6;
+}
+.account-avatar {
+  /* 用户指定（09-17）：头像底色透明，不再显示绿色圆底 */
+  background: transparent;
+  width: 26px;
+  height: 26px;
+  color: var(--accent-text);
+  border-radius: 50%;
+  flex: 0 0 26px;
+  place-items: center;
+  display: grid;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+  overflow: hidden;
+}
+.account-avatar:hover { opacity: .85; }
+.account-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.account-avatar-emoji { font-size: 15px; line-height: 1; }
+.account-avatar-letter { font-size: 12px; font-weight: 600; }
+.account-row > span {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  color: var(--muted);
+  flex: 1;
+  font-size: 12.5px;
+  overflow: hidden;
+}
+.sidebar-settings {
+  width: 32px;
+  height: 32px;
+  color: var(--muted);
+  cursor: pointer;
+  background: 0 0;
+  border: 0;
+  border-radius: 8px;
+  flex: 0 0 32px;
+  place-items: center;
+  padding: 0;
+  display: grid;
+}
+.sidebar-settings:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+.avatar {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
+  border-radius: 50%;
+  flex: 0 0 28px;
+  place-items: center;
+  display: grid;
+}
+.avatar.agent {
+  color: var(--text);
+}
+.workspace {
+  background: var(--bg);
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  position: relative;
+}
+/* 顶栏操作簇：内嵌在拖拽容器（topbar / panel-topstrip）内的 no-drag 子元素。
+   不能用 fixed 悬浮层——跨层与拖拽区重叠时点击会被拖拽区域吞掉（实测）。 */
+.topbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+/* ⛔ 修复「目标钮和⋯钮竖着挤在一起」（09-16 用户截图）：操作簇总宽超出可用空间时，
+   flex 默认压缩 .task-menu-wrap 这类 div 子项 → 里面的两个 inline 按钮被迫换行竖排。
+   簇内一律禁止收缩换行；宽度不够时由 .task-title（flex:1 + min-width:0 + ellipsis）吸收。 */
+.topbar-actions > * {
+  flex: none;
+}
+.task-menu-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.topbar {
+  grid-column: 2 / -1;
+  grid-row: 1;
+  position: relative;
+  /* 高于侧栏(z5)/面板，⋯ 菜单从顶行下拉不被盖 */
+  z-index: 30;
+  background: var(--bg);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 16px;
+  /* 145 = 原生窗口钮预留区：操作簇右缘紧贴系统按钮，位置恒定 */
+  padding-right: 145px;
+  display: flex;
+  -webkit-app-region: drag;
+  height: 44px;
+}
+/* 侧栏折叠/窄屏：侧栏变 fixed 飞出层，顶行补位跨全宽 */
+.app-shell.side-collapsed:not(.narrow) .topbar,
+.app-shell.narrow .topbar {
+  grid-column: 1 / -1;
+}
+/* ⛔ mac 适配（09-16）：窗口控制键（红绿灯）在左上角、没有 Windows 的右上 WCO——
+   ① 右上 145px 的系统钮预留区在 mac 上是纯空白，全部还给内容；
+   ② 顶行跨全宽（折叠侧栏/窄屏/独立弹窗）或侧栏 logo 行时，左侧要给红绿灯让位。 */
+[data-os="darwin"] .topbar {
+  padding-right: 16px;
+}
+[data-os="darwin"] .app-shell.side-collapsed:not(.narrow) .topbar,
+[data-os="darwin"] .app-shell.narrow .topbar,
+[data-os="darwin"] .app-shell.popout-shell .topbar {
+  padding-left: 80px;
+}
+[data-os="darwin"] .sidebar .brand-row {
+  padding-left: 68px;
+}
+/* 底部分隔线止于窗口钮左侧——原生 overlay 区域画不进线，避免「线断一截」 */
+.topbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--line);
+}
+/* 标题栏上的交互元素全部豁免拖拽，否则点不动 */
+.topbar button,
+.topbar input,
+.topbar .composer-menu,
+.topbar .chat-search-wrap,
+.topbar .task-title strong,
+.topbar .subagent-badge,
+.topbar .build-stamp {
+  -webkit-app-region: no-drag;
+}
+.task-title {
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  display: flex;
+}
+/* 工作区路径与子智能体徽标：空间不足时让出宽度（路径省略号收尾），保操作簇不换行 */
+.task-title > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.build-stamp {
+  color: var(--faint);
+  opacity: 0.72;
+  -webkit-user-select: none;
+  user-select: none;
+  flex: none;
+  margin-right: 4px;
+  font:
+    10px/1 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+}
+.task-title strong {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+  border-radius: 5px;
+  max-width: min(42vw, 380px);
+  font-size: 14px;
+  overflow: hidden;
+}
+.task-title strong:hover {
+  background: var(--panel-2);
+}
+.task-title > span:last-child {
+  color: var(--faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  overflow: hidden;
+}
+.task-title input {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  width: min(42vw, 380px);
+  height: 27px;
+  color: var(--text);
+  border-radius: 6px;
+  outline: none;
+  padding: 0 7px;
+  font-size: 14px;
+}
+.task-title input:focus {
+  border-color: var(--text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 11%, transparent);
+}
+.model-controls {
+  align-items: center;
+  gap: 4px;
+  display: flex;
+}
+.model-controls label {
+  height: 26px;
+  color: var(--faint);
+  border: 0;
+  border-radius: 8px;
+  align-items: center;
+  gap: 3px;
+  padding: 0 4px;
+  display: flex;
+}
+.model-controls label:hover {
+  background: var(--panel-2);
+}
+.model-controls select {
+  max-width: 170px;
+  color: var(--muted);
+  background: 0 0;
+  border: 0;
+  outline: 0;
+  font-size: 12px;
+}
+.model-controls option,
+.context-panel option,
+.question option {
+  color: var(--text);
+  background: var(--panel);
+}
+.icon-button {
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  color: var(--muted);
+  background: 0 0;
+  border: 0;
+  border-radius: 8px;
+  place-items: center;
+  padding: 0;
+  display: grid;
+}
+.icon-button:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+.mobile-menu {
+  display: none;
+}
+.menu-backdrop {
+  z-index: 20;
+  position: fixed;
+  inset: 0;
+}
+.task-menu {
+  z-index: 21;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  width: 226px;
+  max-width: min(226px, calc(100vw - 24px));
+  max-height: min(72vh, 560px);
+  box-shadow: var(--shadow);
+  border-radius: 12px;
+  padding: 6px;
+  display: block;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.task-menu button {
+  min-height: 32px;
+  height: auto;
+  width: 100%;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  background: 0 0;
+  border: 0;
+  border-radius: 8px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  display: flex;
+}
+.task-menu button > svg {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+.task-menu button > span {
+  min-width: 0;
+  flex: 1;
+}
+.task-menu button:hover:not(:disabled) {
+  background: var(--panel-2);
+}
+.task-menu button:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+}
+.task-menu button.danger {
+  color: var(--red);
+}
+.task-menu button.danger > svg {
+  color: currentColor;
+}
+.task-menu-sections,
+.task-menu-subpage {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.task-menu-section {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.task-menu-section + .task-menu-section {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 5px;
+}
+.task-menu-label {
+  color: var(--faint);
+  padding: 4px 9px 2px;
+  font-size: 10.5px;
+  line-height: 1.2;
+  font-weight: 500;
+}
+.task-menu-section.danger-zone {
+  margin-top: 1px;
+}
+.task-menu-section.danger-zone .task-menu-label {
+  color: color-mix(in srgb, var(--red) 72%, var(--faint));
+}
+.task-menu-arrow {
+  color: var(--faint) !important;
+  margin-left: auto;
+}
+.task-menu-back {
+  border-bottom: 1px solid var(--line-soft) !important;
+  border-radius: 7px 7px 3px 3px !important;
+  margin-bottom: 4px;
+  padding-bottom: 9px !important;
+  font-weight: 600;
+}
+.task-menu-rename {
+  gap: 8px;
+  min-width: 240px;
+  padding: 10px 6px 6px;
+  display: grid;
+}
+.task-menu-rename-title {
+  color: var(--muted);
+  padding: 0 4px;
+  font-size: 12px;
+}
+.task-menu-rename-input {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  height: 32px;
+  color: var(--text);
+  border-radius: 8px;
+  outline: none;
+  padding: 0 10px;
+  font-size: 13px;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.task-menu-rename-input:focus {
+  border-color: var(--text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 12%, transparent);
+}
+.task-menu-rename-actions {
+  justify-content: flex-end;
+  gap: 6px;
+  display: flex;
+}
+.task-menu-rename-actions button {
+  height: 30px;
+  color: var(--text);
+  cursor: pointer;
+  background: 0 0;
+  border: 1px solid #0000;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 12.5px;
+}
+.task-menu-rename-actions button.ghost {
+  color: var(--muted);
+}
+.task-menu-rename-actions button.ghost:hover {
+  background: var(--panel-2);
+}
+.task-menu-rename-actions button.primary {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+.task-menu-rename-actions button.primary:hover {
+  opacity: 0.85;
+}
+.task-menu-rename-actions button.primary:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.timeline-wrap {
+  flex-direction: row;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+}
+/* ⛔⛔ 09-20 撤回：这里曾短暂加过「短会话内容靠底」（`.timeline { display:flex }` +
+ *   `.timeline > :first-child { margin-top: auto }`），**已证明会打坏钉顶，不要再试**。
+ *
+ * 真机实测（e2e 探针，400px 容器 + 内容 100px + `.timeline-bottom-spacer` 设 300px）：
+ *   spacer 的 `flex-shrink` 默认是 **1** ⇒ **实际渲染只有 276px**（被压掉 24px）。
+ * 而钉顶落点公式（pinSentMessage / shrinkAnchorPad）读的正是 `pad.offsetHeight`
+ * （**实际渲染高度**，见该处 `scrollHeightNoPad = scrollHeight − pad.offsetHeight`）：
+ *   ① 留白被压缩 ⇒ 每轮算出的 need 都比上一轮多出被压掉的量，落点永远差一截 → 钉顶失效/抖动；
+ *   ② `:first-child { margin-top: auto }` 还会把 auto margin 的偏移算进 `anchorTopScroll`
+ *      （内容不足一屏时它是几百 px），与公式互相打架 → pad 在 0 ↔ 数百 px 间振荡。
+ * ⇒ **`.timeline` 的布局模型是钉顶几何的一部分**。要改它必须先读 pinSentMessage /
+ *   shrinkAnchorPad 的公式，并用真机验「落点 == ANCHOR_TOP_OFFSET_PX」。
+ * ⛔ 另一条通用教训：`.timeline-bottom-spacer` / `.timeline-bottom-spacer.anchor-pad` 是
+ *    `.timeline` 的**直接子元素**，任何让它成为 flex/grid item 的改动都可能压缩它
+ *    → 留白不足 → 钉顶直接失效。改 `.timeline` 布局前先想这一点。
+ * 补充事实（09-14 记录，三次尝试均被 send-anchor 验收打回）：**「钉顶（消息固定在顶部）」
+ * 与「短会话下方没有大空白」在数值上互斥** —— 留白量 N 与「滚到底时内容底部到视口底部的
+ * 距离」严格 1:1；想减空白就只能减留白，而留白一少，消息就滚不到 36px。 */
+.timeline {
+  /* ⛔ 这里**不要**写 `scroll-behavior: smooth`（09-13 拆除）：
+     它只作用于**程序滚动**，而聊天区的程序滚动几乎全部要求"瞬时到位"——留白/跟随/钉顶
+     都必须一帧到位，动画中途内容还会继续长高 → retarget → 出字抖动、互相拉扯。
+     一行 CSS 曾逼出代码里 8 处 `style.scrollBehavior = "auto"` 的临时改写与还原，
+     还有 3 处 `scrollIntoView({behavior:"smooth"})` 根本没绕过（刻度尺跳转/搜索跳转）。
+     需要动画的地方**显式**写 `behavior: "smooth"`（少数几处跳转），默认保持瞬时。
+     注：`scroll-behavior` 不影响用户手动滚轮/拖拽，所以拆掉它不会让手动滚动变生硬。 */
+  overflow-anchor: none; /* 浏览器滚动锚定会跟手动滚动打架（思考卡折叠等内容高度突变时自行补偿 scrollTop）= 出字来回闪，09-12 实测 */
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+  min-height: 0;
+  /* ⛔ padding-bottom 必须是 0（09-23 用户要求「内容超一屏时，最新一条消息紧贴输入框正上方」）：
+     它会被算进 scrollHeight ⇒ contentBottomOf（= scrollHeight − 留白）比真实内容末端多出这 28px，
+     贴底跟随就会留着一条 28px 的空白。真机实测（完成态贴底）：可视空隙 60px = 最后回合
+     margin-bottom 32 + 这里 28。底部的呼吸空间由回合间 margin 承担，最后一个回合的 margin
+     由下面的规则归零。 */
+  padding: 28px max(23px, 50% - 410px) 0;
+  overflow: hidden auto;
+}
+.timeline.empty-state {
+  flex-direction: column;
+  display: flex;
+}
+.timeline-bottom-spacer {
+  pointer-events: none;
+  height: max(360px, 100vh - 360px);
+}
+/* 运行态跟随留白：流式最新内容与输入框之间的缓冲。120px 用户嫌缝隙大，压到 64px
+   （仍保留约一张小卡片的余量，贴底跟随时不至于顶死）。 */
+.timeline-bottom-spacer.compact {
+  height: 64px;
+}
+/* 锚顶专用留白（09-12）：高度由 App.tsx 钉顶逻辑按「视口高 − 锚点高」写成
+   inline style。这里只负责把默认的 max(360px, 100vh-360px) 归零，避免非钉顶
+   状态下凭空多出一屏空白。 */
+.timeline-bottom-spacer.anchor-pad {
+  height: 0;
+}
+.jump-bottom {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  width: 34px;
+  height: 34px;
+  color: var(--text);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  z-index: 5;
+  border-radius: 50%;
+  place-items: center;
+  padding: 0;
+  transition:
+    transform 0.15s,
+    background 0.15s;
+  display: grid;
+  position: absolute;
+  bottom: 18px;
+  right: 26px;
+}
+.jump-bottom:hover {
+  background: var(--panel-2);
+  transform: translateY(-2px);
+}
+.jump-bottom svg {
+  display: block;
+}
+.empty-state {
+  text-align: center;
+  height: 100%;
+  min-height: 340px;
+  color: var(--muted);
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  display: flex;
+}
+.empty-icon {
+  border: 1px solid var(--line);
+  width: 56px;
+  height: 56px;
+  color: var(--muted);
+  background: var(--panel);
+  border-radius: 14px;
+  place-items: center;
+  display: grid;
+}
+.empty-state h1 {
+  color: var(--text);
+  margin: 18px 0 6px;
+  font-size: 20px;
+  font-weight: 600;
+}
+.empty-state p {
+  overflow-wrap: anywhere;
+  max-width: 560px;
+  margin: 0;
+  font-size: 13px;
+}
+.empty-actions {
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  display: flex;
+}
+.empty-actions button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  min-height: 36px;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 9px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 14px;
+  font-size: 12px;
+  display: inline-flex;
+}
+.empty-actions button:hover {
+  background: var(--panel-2);
+}
+.empty-actions button.empty-primary {
+  border-color: var(--green);
+  background: var(--green);
+  color: var(--accent-text);
+}
+.suggest-row {
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+  display: flex;
+}
+.suggest-row button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  min-height: 32px;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 16px;
+  padding: 0 13px;
+  font-size: 12px;
+}
+.turn-group {
+  /* 回合与回合之间留出更多呼吸空间，避免 agent 末尾叙述贴到下一条用户消息 */
+  margin: 0 0 32px;
+  position: relative;
+  /* 超长会话性能：视口外的回合直接跳过布局/绘制（软件渲染机器尤其关键）。
+     contain-intrinsic-size 给一个估算高度，保证滚动条与「跳到底部」测量稳定；
+     auto 关键字会在回合计入视口后记住真实高度，长历史也不会跳动。 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 300px;
+}
+/* ⛔ 最后一个回合的 margin-bottom 归零（09-23 用户要求「最新一条消息紧贴输入框正上方」）：
+   contentBottomOf 不扣回合 margin ⇒ 贴底跟随位置上这 32px 是**可见**的空白
+   （真机实测 60px 空隙 = 这 32 + timeline padding-bottom 28，后者已归零）。
+   只归零「后面没有其它回合」的那一个（回合之间的呼吸空间不变）；
+   乐观气泡（#chat-anchor）在场时保持原 margin —— 气泡与上一回合之间仍要呼吸空间。 */
+.timeline > .turn-group:not(:has(~ .turn-group)):not(:has(~ #chat-anchor)) {
+  margin-bottom: 0;
+}
+.turn-group > .message.user-message {
+  /* 拉大与下方 turn-card 的间距，避免 hover 操作按钮时视觉过于紧凑 */
+  margin-bottom: 14px;
+}
+.turn-card {
+  background: 0 0;
+  border: 0;
+  border-radius: 0;
+  transition: none;
+  overflow: visible;
+  /* 渲染加速：视口外的历史回合（巨长 agent 输出/代码块）跳过布局与绘制，
+   * 流式期间每帧只布局/绘制可视区附近内容 —— 长会话掉帧的主修复。
+   * 只加在 .turn-card（agent 回合输出）上：用户消息在外面，MessageRuler 的
+   * offsetTop 测量（data-ruler-mark="user"）不受屏外跳过影响。
+   * contain-intrinsic-size 带 auto：元素渲染过一次后记住真实高度，滚动条不跳。 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 480px;
+}
+.turn-group:hover .turn-card {
+  border-color: #0000;
+}
+/* ⛔ 09-15 修「agent 消息滚过时闪一下 / 内容被硬挤上去」：真凶是 content-visibility:auto
+   配合 contain-intrinsic-size 的**估算高度**。实测几何时间线（40ms 采样，一次发送后）：
+     t=9476  scrollHeight=1073  最后一组高 80（真实）
+     t=9502  scrollHeight= 993  ← -80
+     t=9539  scrollHeight=1213  最后一组高 **300** ← 换成估算值（+220）
+     t=9583  scrollHeight= 913  最后一组高 **0**   ← 塌成 0（-300）
+   26ms 内 scrollHeight 在 1073/993/1213/913 之间反复跳、scrollTop 跟着跳 160px →
+   用户看到「闪一下 + 内容被硬挤上去」。
+   修法：**正在流式的回合**（.running）内容就在视口内、每帧都在长，跳过布局只会让高度
+   在真实值/估算值之间翻转 —— 对它在流式期间关掉 content-visibility，用真实高度。
+   流式结束后（去掉 .running）自动恢复优化，长历史仍走 content-visibility。
+   同理保护**最后一个回合**（data-current-turn）：它是刚发送的那条，正被视口跟随。 */
+.turn-group.running,
+.turn-group[data-current-turn="true"] {
+  content-visibility: visible;
+}
+.turn-group.running > .turn-card,
+.turn-group[data-current-turn="true"] > .turn-card {
+  content-visibility: visible;
+}
+.turn-group.running .turn-card,
+.turn-group.error .turn-card {
+  box-shadow: none;
+  border-color: #0000;
+}
+.turn-card-header {
+  min-height: 0;
+  color: var(--faint);
+  background: 0 0;
+  border-bottom: 0;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0 4px;
+  font-size: 11px;
+  display: flex;
+}
+.turn-group.running .turn-card-header,
+.turn-group.error .turn-card-header {
+  background: 0 0;
+}
+.turn-card-dot {
+  background: var(--faint);
+  border-radius: 50%;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  transition: background 0.2s;
+  box-shadow: 0 0 #0000;
+}
+.turn-group.running .turn-card-dot {
+  background: var(--accent);
+  animation: 1.6s ease-in-out infinite turn-dot-pulse;
+}
+.turn-group.error .turn-card-dot {
+  background: var(--red);
+}
+.turn-card-status {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+.turn-group.running .turn-card-status {
+  color: var(--accent);
+}
+.turn-group.error .turn-card-status {
+  color: var(--red);
+}
+.turn-card-meta {
+  color: var(--faint);
+  margin-left: 6px;
+  font-size: 11px;
+}
+.turn-card-body {
+  padding: 0;
+}
+.interrupted-turn {
+  border: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  width: min(100%, 520px);
+  min-height: 52px;
+  color: var(--faint);
+  border-radius: 10px;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 2px 0 10px;
+  padding: 11px 13px;
+  animation: 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) both card-appear;
+  display: flex;
+}
+.interrupted-turn > svg {
+  color: var(--muted);
+  flex: none;
+  margin-top: 2px;
+}
+.interrupted-turn > div {
+  flex-direction: column;
+  gap: 3px;
+  display: flex;
+}
+.interrupted-turn strong {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.interrupted-turn span {
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+/* 「用户已停止」标记（09-18 用户：「在最新内容后面加一个用户已停止」）：
+   位置在**最新内容之后**、操作栏之前；只陈述"停了 + 内容没丢可继续"两件事，
+   耗时由上方过程组标题负责，避免同屏两处说同一个数。 */
+.turn-user-stopped {
+  border: 1px solid var(--line-soft);
+  border-left-width: 3px;
+  border-left-color: var(--muted);
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  width: min(100%, 560px);
+  color: var(--faint);
+  border-radius: 10px;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 8px 0 10px;
+  padding: 9px 13px;
+  display: flex;
+}
+.turn-user-stopped > svg {
+  color: var(--muted);
+  flex: none;
+  margin-top: 2px;
+}
+.turn-user-stopped > div {
+  flex-direction: column;
+  gap: 3px;
+  display: flex;
+}
+.turn-user-stopped strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.turn-user-stopped span {
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+/* 回合「为什么停」提示条（09-18 用户实测「跑长任务老是中途自动停止」）：
+   旧实现只把「处理出错」四个字塞进折叠头，用户看不出是上下文超限 / 沙箱拒绝 / 被中断。
+   这里把引擎的分类 + 处置建议摆到明面（完整原文在 title 悬停里）。 */
+.turn-stop-notice {
+  border: 1px solid var(--line-soft);
+  border-left-width: 3px;
+  border-left-color: var(--red);
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  width: min(100%, 560px);
+  color: var(--faint);
+  border-radius: 10px;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 2px 0 10px;
+  padding: 10px 13px;
+  display: flex;
+}
+.turn-stop-notice > svg {
+  color: var(--muted);
+  flex: none;
+  margin-top: 2px;
+}
+.turn-stop-notice > div {
+  flex-direction: column;
+  gap: 3px;
+  display: flex;
+}
+.turn-stop-notice strong {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.turn-stop-notice span {
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+/* 被中断（用户/客户端中止）不是错误：用中性灰，别吓人 */
+.turn-stop-notice.stop-interrupted {
+  border-left-color: var(--muted);
+}
+@keyframes turn-dot-pulse {
+  0%,
+  to {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+}
+.codex-turn {
+  position: relative;
+}
+.message {
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 14px;
+  display: grid;
+  position: relative;
+}
+.codex-turn .assistant-message {
+  /* 09-17 二改（用户「一轮会话就一个 Codex 名字和头像就行，就在会话上面就行」）：
+     头像+名字已提到**回合级**（`.turn-head`）只渲染一份，这里回**单列** —— 正文全宽，
+     不再为头像留 22px 列（留着的话每段回复都自带一份头像，正文还会被挤到右边）。
+     ⛔ 但别把 `.avatar { display:none }` 加回来：那是老设计「assistant 左侧不放图标」的遗留，
+     用户为它报过一次「头像我也没看展示出来」；现在正文里本就不渲染头像。 */
+  grid-template-columns: minmax(0, 1fr);
+  justify-self: start;
+  width: min(88%, 720px);
+  min-width: 0;
+  margin-left: 0;
+  margin-right: auto;
+  padding-left: 0;
+}
+.codex-turn .assistant-message .message-body,
+.process-content .assistant-message .message-body {
+  max-width: 100%;
+  box-shadow: none;
+  text-align: left;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  background: 0 0;
+  border: 0;
+  justify-self: start;
+}
+.message-body {
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.72;
+}
+html[data-ui-font="compact"] .message-body {
+  font-size: 13px;
+  line-height: 1.66;
+}
+html[data-ui-font="compact"] .process-content pre,
+html[data-ui-font="compact"] .action-content pre {
+  font-size: 11px;
+}
+html[data-ui-font="large"] .message-body {
+  font-size: 15.5px;
+  line-height: 1.78;
+}
+html[data-ui-font="large"] .process-content pre,
+html[data-ui-font="large"] .action-content pre {
+  font-size: 13px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="force"]) *,
+  html:not([data-motion="force"]) :before,
+  html:not([data-motion="force"]) :after {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+  }
+}
+.message-body > p:first-child,
+.markdown > :first-child {
+  margin-top: 2px;
+}
+.message-body > p:last-child,
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+/* 长会话窗口化入口：默认只渲染最近若干回合，点这里加载更早的历史 */
+/* 续载更早历史时的行内提示（此前自动加载是静默的，用户不知道在加载） */
+.load-earlier-hint {
+  display: flex; align-items: center; justify-content: center;
+  padding: 8px 0 2px; font-size: 12px;
+  color: var(--text-secondary, #888);
+}
+.load-earlier-turns {
+  width: 100%;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  margin: 6px 0 12px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.load-earlier-turns:hover { color: var(--text); background: var(--panel); }
+.load-earlier-turns small { color: var(--faint); font-size: 11px; }
+/* 供应商启用/停用：状态与动作合成一颗药丸（此前是「徽标 + 纯文字按钮」两块） */
+.provider-state-btn.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 999px;
+  padding: 4px 11px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+.provider-state-btn.pill .provider-state-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.provider-state-btn.pill.on {
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  color: var(--ok);
+}
+.provider-state-btn.pill.on .provider-state-dot { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.provider-state-btn.pill.off { color: var(--faint); }
+.provider-state-btn.pill.off .provider-state-dot { background: var(--faint); }
+.provider-state-btn.pill:not(:disabled):hover { border-color: var(--muted); color: var(--text); }
+.provider-state-btn.pill:disabled { cursor: not-allowed; opacity: 0.6; }
+/* 设置页「全局审批权限」分段按钮（模型全局条里，与胶囊同语义） */
+.model-global-perm { display: flex; gap: 6px; flex-wrap: wrap; }
+.model-global-perm-btn {
+  font-size: 11.5px;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+.model-global-perm-btn:hover { color: var(--text); border-color: var(--muted); }
+.model-global-perm-btn.on {
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  color: var(--ok);
+  font-weight: 600;
+}
+/* 控制台「全局审批权限」分段选择：三档一排，选中态高亮并带「当前」角标 */
+.perm-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.perm-seg-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  cursor: pointer;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  padding: 9px 12px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.perm-seg-btn strong { color: var(--text); font-size: 12.5px; }
+.perm-seg-btn small { color: var(--faint); font-size: 11px; }
+.perm-seg-btn em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--ok);
+  border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+.perm-seg-btn:hover { border-color: var(--muted); }
+.perm-seg-btn.on {
+  border-color: color-mix(in srgb, var(--ok) 50%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+}
+.perm-seg-btn.on strong { color: var(--ok); }
+.perm-seg-btn.on small { color: var(--muted); }
+/* ⛔ 09-15 撤销「sticky 钉顶」第三次尝试（用户实测截图：助手消息被拦腰切断）。
+   真因不是 content-visibility（上一版注释误判为此），而是**气泡本身是不透明白底**：
+   实测几何 —— 气泡 position:sticky/top:54px/z-index:5/background:rgb(255,255,255)，
+   落在 top:132~204；组内助手消息从 top:170 就开始，与气泡竖直交叠 [170,204] →
+   重叠区文字被白底抹掉，表现为「消息中间几行被竖着切掉」。
+   而钉顶（消息固定悬停）与「不占滚动空间、不遮挡后代内容」在文档流里无法兼得：
+   要么留白（占用空间、可真空白），要么悬浮（遮住下面）。本项目此前两次尝试
+   （见 App.tsx 的 STICKY_USER_SLOT 注释）已实测「sticky 在这个结构里无解」。
+   故回归文档流：气泡正常跟随滚动，不做钉顶悬浮。 */

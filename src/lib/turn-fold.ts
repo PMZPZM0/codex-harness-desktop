@@ -2,6 +2,10 @@
 // 本模块是纯函数层：不依赖 React / Electron / DOM，输入 ThreadItem 输出分段与摘要。
 // 从 App.tsx 抽离的可测试单元——改分段/摘要逻辑前，先跑 scripts/verify-turn-fold.mjs。
 
+import { commandIntentOf, commandTarget } from "./command-display.mjs";
+import { diffStats } from "./diff-stats";
+import { argSummary, skillOfItem, skillTargetLabel } from "./tool-display.mjs";
+
 // ── 线程基础类型（与引擎 thread/list、thread/resume 返回结构对齐） ──
 export type ThreadItem = { id: string; type: string; [key: string]: any };
 export type Turn = {
@@ -101,12 +105,27 @@ export function buildSegments(units: FoldUnit[], turnFinished: boolean): FoldSeg
   const segments: FoldSegment[] = [];
   let buffer: FoldUnit[] = [];
   const flush = () => {
-    if (buffer.length >= 2) segments.push({ kind: "foldable", units: buffer, shouldFold: false });
-    else if (buffer.length === 1) segments.push({ kind: "normal", units: buffer });
+    // ⛔ **单条过程也要收**（09-23 用户追报「运行过程折叠没了」）：旧版 length === 1 时直接内联
+    //   （normal 段），正文锚点化（见 turn-fold-plan.mjs）之后过程段普遍只剩一两条，
+    //   单条不折 ⇒ 大量孤零零的命令卡散在正文之间，看上去就像"过程折叠没有了"。
+    //   用户 09-23 的口径是「**无论**中间执行了多少工具和命令，最终都归并为一个可折叠区块」
+    //   —— 1 条也是"多少"之内。
+    if (buffer.length) segments.push({ kind: "foldable", units: buffer, shouldFold: false });
     buffer = [];
   };
-  for (const unit of units) {
-    if (unit.kind === "foldable" || (unit.kind === "thinking" && !isLiveThinking(unit.item))) {
+  for (let index = 0; index < units.length; index++) {
+    const unit = units[index];
+    // ⛔ 「直播思考」判定必须带**事件顺序**兜底（09-23 用户：「运行状态下，下一个正文输出的时候，
+    //   深度思考板块没有被收纳到正文工具折叠里面去」）：上游经常不给 reasoning item 回传
+    //   completed/status（isLiveThinking 恒真）⇒ 思考卡永远留在正文外面。但事件是**有序**的 ——
+    //   后面已经出现工具或正文时，前面那块思考必然已经结束。与 SessionQueue 的 reasoningActive
+    //   同一条规则（两边必须一致，守卫【127】钉着）；只有「末尾连续的思考」才是真直播。
+    const laterWork = units.slice(index + 1).some((next) => next.item.type !== "reasoning");
+    const thinkingLive = unit.kind === "thinking"
+      && (isLiveThinking(unit.item) || (!unit.item.status && !unit.item.durationMs))
+      && !laterWork
+      && !turnFinished;   // ⛔ 回合已结束 ⇒ 不存在还在直播的思考（settle 会补记时长）
+    if (unit.kind === "foldable" || (unit.kind === "thinking" && !thinkingLive)) {
       // 工具与已结束的思考合并成段（对齐 WorkBuddy：一段过程一个摘要组，思考在组内）；
       // 直播中的思考打断分段、内联常驻
       buffer.push(unit);
@@ -149,17 +168,51 @@ function basename(value: string) {
   return value.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || value;
 }
 
-export type FoldAtom = { group: string; object?: string; status: FoldStatus };
+export type FoldAtom = { group: string; object?: string; status: FoldStatus; stats?: { add: number; del: number } };
 
 /** 工具原子（对齐 extract atom）：group + 展示对象 */
 export function foldAtomOf(item: ThreadItem, waitingForApproval?: boolean): FoldAtom {
   const status = foldItemStatus(item, waitingForApproval);
+  // ★ 技能优先（09-24 用户：「使用了技能类似没看见」）：`desktop_*` / `browser_*` / markitdown
+  //   这类调用落在 mcpToolCall / dynamicToolCall / commandExecution 里，命中技能就按技能归类
+  //   ⇒ 折叠芯片显示「使用技能 桌面自动化」，而不是「调用 nuphus/desktop_screenshot」。
+  const skill = skillOfItem(item);
+  if (skill) {
+    // 「怎么用的」：命令走 commandTarget（文件），工具调用走入参摘要；都取不到就只显示技能名。
+    const how = skillTargetLabel(item.type === "commandExecution"
+      ? commandTarget(String(item.command ?? ""))
+      : argSummary(item.arguments));
+    return { group: "skill", object: how ? truncText(`${skill.label} · ${how}`, 40) : skill.label, status };
+  }
   switch (item.type) {
-    case "commandExecution":
-      return { group: "command", object: item.command ? truncText(item.command) : undefined, status };
+    // ⛔ 命令的展示对象**不能是原始命令行**（09-23 用户实测「图一看着很变扭」）：引擎给的
+    //   `item.command` 是宿主包过一层 shell 启动器的形态，真机原样是
+    //     "D:\…\resources\tools\pwsh\pwsh.exe" -Command "Get-Content -Lit…"
+    //   ——拿它当摘要 topic，每条都从同一段 ~90 字符绝对路径开头，标题又长又乱。
+    //   改成取命令里的**文件目标**（剥壳 + 路径归一 + 保尾截断，见 command-display.mjs）；
+    //   取不到（如 `Write-Output "…"`）就留空 ⇒ 摘要退回无目标文案（对齐 WorkBuddy 原样）。
+    // ⛔ 分组**不能一律 command**（09-23 用户：「正文中间怎么全是运行命令，编辑文件、读取、
+    //   检索没有嘛」）：引擎里读/搜/改文件大多也走 shell 命令 ⇒ 用命令的二级意图
+    //   （commandIntentOf，词法判定）拆成 modify/search/read/command 四档，
+    //   摘要才出得了「修改…」「查看…」「定位…相关代码」。认不出 ⇒ 照旧 "command"。
+    case "commandExecution": {
+      const raw = item.command ? String(item.command) : "";
+      return { group: commandIntentOf(raw), object: raw ? commandTarget(raw) || undefined : undefined, status };
+    }
     case "fileChange": {
-      const names = (item.changes ?? []).map((change: any) => basename(change.path ?? change.filePath ?? "")).filter(Boolean);
-      return { group: "modify", object: names.length ? truncText(names.slice(0, 2).join("、"), 28) : undefined, status };
+      // ★ 真实状态映射（09-23 用户附 WorkBuddy 截图：「这种效果我也要」——「编辑 xxx.mjs +40 -0」）：
+      //   渲染层归一后的 changes 是数组、每项带 `diff`（unified diff 文本，见 ItemView 的同款消费），
+      //   复用 lib/diff-stats.ts 数 +/- 行，多文件聚合求和 —— 与明细卡同一真相源，别再解析 rollout 原始对象。
+      const changes = item.changes ?? [];
+      let add = 0, del = 0;
+      for (const change of changes) {
+        const next = diffStats(String(change?.diff ?? ""));
+        add += next.added;
+        del += next.deleted;
+      }
+      const names = changes.map((change: any) => basename(change.path ?? change.filePath ?? "")).filter(Boolean);
+      const stats = changes.length ? { add, del } : undefined;
+      return { group: "modify", object: names.length ? truncText(names.slice(0, 2).join("、"), 28) : undefined, status, stats };
     }
     case "webSearch":
       return { group: "research", object: item.query ? truncText(item.query) : undefined, status };
@@ -167,10 +220,20 @@ export function foldAtomOf(item: ThreadItem, waitingForApproval?: boolean): Fold
     // 否则会落进 other（摘要变成「处理多个步骤」，看不出它在看图）。
     case "imageView":
       return { group: "read", object: item.path ? truncText(basename(String(item.path))) : undefined, status };
-    case "mcpToolCall":
-      return { group: "external", object: item.tool ? truncText(`${item.server ?? "mcp"}/${item.tool}`) : undefined, status };
-    case "dynamicToolCall":
-      return { group: "external", object: item.tool ? truncText(item.tool) : undefined, status };
+    // ★ 来源分档（09-24 用户：「技能，插件，mcp 都要展示出来怎么用了」）：
+    //   mcpToolCall = MCP 服务器，dynamicToolCall = 插件注册的动态工具；两者各归一组，
+    //   不再混进含糊的「调用服务」。名字后面带上**入参摘要**（这次到底对谁/对什么做的）。
+    case "mcpToolCall": {
+      const name = item.tool ? `${item.server ?? "mcp"}/${item.tool}` : String(item.server ?? "mcp");
+      const how = argSummary(item.arguments);
+      // ⛔ 目标上限 56（与摘要 topic 同口径）：40 会把路径截成 `…/imag…`，比不显示更糟。
+      return { group: "mcp", object: truncText(how ? `${name} · ${how}` : name, 56), status };
+    }
+    case "dynamicToolCall": {
+      const name = item.tool ? String(item.tool) : "";
+      const how = argSummary(item.arguments);
+      return { group: "plugin", object: name ? truncText(how ? `${name} · ${how}` : name, 56) : undefined, status };
+    }
     case "collabAgentToolCall":
     case "subAgentActivity":
       return { group: "collab", object: item.tool ?? item.kind ? truncText(String(item.tool ?? item.kind)) : undefined, status };
@@ -187,9 +250,14 @@ export const DEFAULT_GROUP_TEXT: GroupTextMap = {
   read: { topic: "查看 {t}", noTopic: "查看相关文件", verb: "查看文件" },
   search: { topic: "定位{t}相关代码", noTopic: "搜索相关代码", verb: "定位代码" },
   research: { topic: "收集{t}资料", noTopic: "收集资料", verb: "收集资料" },
-  modify: { topic: "修改{t}", noTopic: "修改文件", verb: "修改文件" },
+  modify: { topic: "编辑 {t}", noTopic: "编辑文件", verb: "编辑文件" },
   command: { topic: "运行 {t}", noTopic: "运行命令", verb: "运行命令" },
   external: { topic: "获取 {t}", noTopic: "调用外部服务", verb: "调用服务" },
+  // MCP 服务器 / 插件动态工具（09-24：与「技能」分开，各自可见）
+  mcp: { topic: "调用 MCP {t}", noTopic: "调用 MCP", verb: "调用 MCP" },
+  plugin: { topic: "用插件 {t}", noTopic: "使用插件", verb: "使用插件" },
+  // 技能调用（09-24 用户：「使用了技能类似没看见」）—— 桌面自动化/浏览器自动化/文档转换…
+  skill: { topic: "使用技能 {t}", noTopic: "使用技能", verb: "使用技能" },
   collab: { topic: "协作处理{t}", noTopic: "协作分派", verb: "协作分派" },
   other: { topic: "处理{t}", noTopic: "处理多个步骤", verb: "处理" },
 };
@@ -204,11 +272,18 @@ export function computeFoldSummary(
   // Partial 展开后值类型带 | undefined，但 DEFAULT 全量兜底所有 key，运行时不会缺
   const TEXT: GroupTextMap = { ...DEFAULT_GROUP_TEXT, ...customText } as GroupTextMap;
   const atoms = units.filter((u) => u.item.type !== "reasoning").map((u) => foldAtomOf(u.item, waitingForApproval));
+  // ★ 真实状态映射尾巴（09-23 用户附截图：「编辑 xxx.mjs +40 -0」）：段里只要有文件编辑，
+  //   摘要末尾就带聚合行数 —— 数字来自 fileChange 的 diff（与明细卡同一 diffStats 真相源）。
+  let editAdd = 0, editDel = 0, hasEdit = false;
+  for (const atom of atoms) {
+    if (atom.stats) { editAdd += atom.stats.add; editDel += atom.stats.del; hasEdit = true; }
+  }
+  const statsTail = hasEdit ? ` +${editAdd} -${editDel}` : "";
   if (atoms.length === 0) return "深度思考";
   const status: "waiting" | "running" | "done" = atoms.some((a) => a.status === "waiting") ? "waiting" : isRunning && atoms.some((a) => a.status === "running") ? "running" : "done";
-  const decorate = (text: string) => (status === "running" ? `正在${text}` : status === "waiting" ? `等待确认：${text}` : text);
+  const decorate = (text: string) => (status === "running" ? `正在${text}` : status === "waiting" ? `等待确认：${text}` : text) + statsTail;
   const useful = atoms.filter((a) => a.group !== "other" || a.object);
-  if (useful.length === 0) return status === "running" ? "正在处理任务过程" : "处理任务过程";
+  if (useful.length === 0) return (status === "running" ? "正在处理任务过程" : "处理任务过程") + statsTail;
   if (useful.length === 1) {
     const atom = useful[0];
     return atom.object ? decorate(TEXT[atom.group].topic.replace("{t}", atom.object)) : decorate(TEXT[atom.group].noTopic);
@@ -221,13 +296,18 @@ export function computeFoldSummary(
   }
   const sorted = [...order].sort((a, b) => (buckets.get(b) ?? 0) - (buckets.get(a) ?? 0));
   const objects = [...new Set(useful.map((a) => a.object).filter(Boolean))] as string[];
-  const topic = objects.length ? truncText(objects.slice(0, 2).join("、"), 28) : undefined;
+  // 目标文案上限 56 字（09-23 改：原来 28 字会把一个文件路径从中间切断 ——
+  // 摘要里的目标现在常是路径，如 `…/features/app-state/parts/part09/01-seg.tsx`，必须留得下）。
+  // ⛔ 两个目标拼起来超上限时**只留第一个**，不再截断第二个
+  //   （实测：拼出来是 `…/imagegen/SKILL.md、…/skills/.syst…`，尾巴被切成半截，比不展示更糟）。
+  const joined = objects.slice(0, 2).join("、");
+  const topic = objects.length ? (joined.length > 56 ? String(objects[0]) : joined) : undefined;
   if (order.length === 1) {
     return topic && useful.length > 1 ? decorate(TEXT[order[0]].topic.replace("{t}", topic)) : decorate(TEXT[order[0]].noTopic);
   }
   if (topic && order.length === 2) return decorate(`${TEXT[sorted[0]].verb}、${TEXT[sorted[1]].verb}：${topic}`);
   if (topic) return decorate(`${TEXT[sorted[0]].verb}：${topic}`);
-  if (order.length > 3) return `${order.length} 类操作`;
+  if (order.length > 3) return `${order.length} 类操作${statsTail}`;
   return decorate(TEXT[sorted[0]].noTopic);
 }
 

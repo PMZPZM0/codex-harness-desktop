@@ -233,8 +233,11 @@ export function stripSystemTaskWrapper(text: string): string {
 /** harness 发送管线注入的机器可读块：记忆召回 / 技能引用。剥离后还原用户真实输入；附件与对话上下文保留（对 AI 有上下文价值）。 */
 export function stripHarnessBlocks(text: string): string {
   let out = stripSystemTaskWrapper(text);
-  out = out.replace(/\[Harness 相关记忆，仅供参考\][\s\S]*?\[记忆结束\]/g, "");
-  out = out.replace(/\[本轮已引用技能\][\s\S]*?\[请按上述技能工作流执行\]/g, "");
+  out = out.replace(/^\[Harness 相关记忆，仅供参考\][\s\S]*?^\[记忆结束\][ \t]*\r?\n?/gm, "");
+  // 常驻记忆段（L0 档案 + L1 项目记忆 + L2 近 3 天日志；主进程 memory-layers 每轮无条件前置）。
+  // 与召回段同属内部上下文 —— 导出/备份的正文里不得出现（09-22 实测气泡侧已泄漏过一轮）。
+  out = out.replace(/^\[Harness 常驻记忆[^\]]*\][\s\S]*?^\[常驻记忆结束\][ \t]*\r?\n?/gm, "");
+  out = out.replace(/^\[本轮已引用技能\][\s\S]*?^\[请按上述技能工作流执行\][ \t]*\r?\n?/gm, "");
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 
