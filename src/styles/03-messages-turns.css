@@ -1,0 +1,1398 @@
+/**
+ * 消息流与回合（回合卡片、停止标记、窗口化续载）
+ *
+ * 09-21 架构改造：从 src/styles.css 按域拆出（原 L2086–L3405，1320 行）。
+ * ⛔ 内容与顺序均未改动 —— 全部分节拼回与原文件逐字节一致（构建产物亦一致）。
+ */
+
+
+.user-message {
+  grid-template-columns: minmax(0, 1fr);
+  width: min(88%, 720px);
+  min-width: 0;
+  margin-bottom: 8px;
+  margin-left: auto;
+  margin-right: 0;
+}
+/* 附件行（文件卡+图片缩略图）挂在气泡边框外：外层 stack 控宽，气泡只装正文不撑大（09-08 反馈） */
+.user-message-stack {
+  width: min(88%, 720px);
+  min-width: 0;
+  margin-bottom: 8px;
+  margin-left: auto;
+  margin-right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.user-message-stack > .message.user-message {
+  width: 100%;
+  margin-bottom: 0;
+}
+/* ⛔ 用户消息固定槽位（sticky）已废弃 —— 09-12 实测此路不通，勿再打开：
+   sticky 只能在**包含块内部**位移，而 `.user-message-stack` 的包含块是 `.turn-group`。
+   刚发消息时该组里只有这一条消息（~72px），下方无空间可借 → sticky 钉不住（实测连发
+   第 2 条 gap=396）；把留白放到 `.timeline` 末尾是**兄弟节点**，扩不了包含块。
+   位置改回「滚动式锚顶」：钉一次 + 按增长量跟随（App.tsx 的 anchorTopRef 分支）。
+   `data-current-turn` 仍然保留（其余按当前回合生效的样式在用）。 */
+/* ⛔ 09-18 附件行的三版尝试全部被否决，样式已随之删除，别再重建（用户三次纠正的原话）：
+   ① 单独一行、整行右对齐（`justify-content: flex-end` + `flex-wrap`）→「谁让你单独一行靠右了」；
+   ② 方形缩略图（64px）→「太丑了」；
+   ③ 自造长条 chip（`.user-attach-chip`）→ 仍属"另起一行"，形态与输入框不一致。
+   定稿：**附件 chip 内联在正文文字流里，直接复用输入框的 `.composer-image-chip-inline`**，
+   「发送前在输入框里看到的样子 == 发送后消息里显示的样子」。相关样式见该类的定义处。
+   顺带记一条实测坑：给附件行加 `margin-left: auto` 会让它在交叉轴上失去 stretch，
+   宽度从满宽塌成 fit-content（实测 720px → 415px），`flex-wrap` 便永远等不到换行时机。 */
+/* 消息里的内联附件 chip：在输入框同款外观之上，加「点击大预览 + 悬停小预览」。
+   ability 只在消息侧给（输入框的 DOM 由原生 contenteditable 维护，浮层会被选中/复制）。 */
+.message-attach-chip {
+  position: relative;
+}
+.message-attach-chip.is-image {
+  cursor: zoom-in;   /* 一眼看出可点开大图 */
+}
+.message-attach-preview {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px) scale(0.96);
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;   /* 浮层不接收鼠标：否则会挡掉 chip 自身的 hover/click */
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s;
+  z-index: 40;
+}
+/* ⛔ 自适应尺寸的关键：**两个方向都只给上限**，宽高都给 auto ⇒ 浏览器按图片原始宽高比缩到框内
+   （等价 object-fit: contain，但不需要写 contain）。不同比例的图都不用写任何分支。 */
+.message-attach-preview img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(320px, 46vw);
+  max-height: 240px;
+  object-fit: contain;
+  border-radius: 7px;
+  background: var(--panel-2);
+}
+.message-attach-chip:hover .message-attach-preview,
+.message-attach-chip:focus-visible .message-attach-preview {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+/* 上方空间不足时翻到 chip 下方（判定见 App.tsx 的 decideDirection）——否则靠近聊天区顶部的
+   消息，预览会被滚动容器的 overflow 裁掉上半截。 */
+.message-attach-chip.preview-below .message-attach-preview {
+  top: calc(100% + 8px);
+  bottom: auto;
+  transform: translateX(-50%) translateY(-4px) scale(0.96);
+}
+.message-attach-chip.preview-below:hover .message-attach-preview,
+.message-attach-chip.preview-below:focus-visible .message-attach-preview {
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+/* 乐观气泡（服务端未确认落地前）：仅浅一档区分，避免「消息直接闪出来」与已确认消息混淆。
+   原先的「发送中…」角标已删（用户反馈：每次发消息下面都有个发送中闪一下，多余）——
+   确认通常几百毫秒内完成，视觉上不需要状态说明。
+   仅影响客户端本地的临时 userMessage，不影响 thread.turns 里已合并的 userMessage。 */
+.user-message.pending .user-message-text {
+  opacity: 0.78;
+}
+.user-message .avatar {
+  display: none;
+}
+.user-message .message-body {
+  max-width: 100%;
+  box-shadow: none;
+  text-align: left;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  position: relative;
+  justify-self: end;
+}
+.user-message .message-image {
+  max-width: 120px;
+  max-height: 90px;
+  margin-top: 6px;
+}
+.user-message .message-body > p {
+  text-align: left;
+  white-space: pre-wrap;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+}
+.user-message .message-footer {
+  justify-content: flex-end;
+}
+.user-message-team-task {
+  align-self: flex-end;
+  margin-top: 4px;
+  padding: 8px 14px;
+  border: 1px solid rgba(99, 102, 241, 0.22);
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.06);
+  max-width: 100%;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.55;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+.user-message-team-task-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #6366f1;
+  font-weight: 500;
+  margin-bottom: 4px;
+  letter-spacing: 0.2px;
+}
+html[data-theme="dark"] .user-message-team-task {
+  background: rgba(129, 140, 248, 0.08);
+  border-color: rgba(129, 140, 248, 0.25);
+}
+html[data-theme="dark"] .user-message-team-task-tag {
+  color: #a5b4fc;
+}
+.user-message-team-task-body {
+  white-space: pre-wrap;
+  width: auto;
+  min-width: 0;
+}
+/* —— 导入的会话记录卡：消息内（已发送）与消息区顶部预览（未发送）共用 —— */
+.import-record-card {
+  align-self: flex-end;
+  margin-top: 4px;
+  max-width: 100%;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 10px;
+  background: rgba(16, 185, 129, 0.05);
+  text-align: left;
+  font-size: 12.5px;
+  line-height: 1.5;
+  overflow: hidden;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+html[data-theme="dark"] .import-record-card {
+  background: rgba(52, 211, 153, 0.07);
+  border-color: rgba(52, 211, 153, 0.32);
+}
+.import-record-card.pending { border-style: dashed; }
+.import-record-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  padding: 7px 10px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.import-record-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #059669;
+  white-space: nowrap;
+}
+html[data-theme="dark"] .import-record-tag { color: #34d399; }
+.import-record-note {
+  flex: 1 1 180px;
+  min-width: 0;
+  font-size: 11.5px;
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.import-record-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.import-record-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+.import-record-toggle .flip-down { transform: rotate(180deg); }
+.import-record-discard {
+  font-size: 11px;
+  opacity: 0.8;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.import-record-discard:hover { opacity: 1; background: rgba(239, 68, 68, 0.12); }
+.import-record-open {
+  font-size: 11px;
+  opacity: 0.8;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.import-record-open:hover { opacity: 1; background: rgba(59, 130, 246, 0.14); }
+.import-record-card.thread-reference .import-record-open:hover { background: rgba(37, 99, 235, 0.18); }
+.import-record-body {
+  max-height: 55vh;
+  overflow: auto;
+  border-top: 1px solid rgba(128, 128, 128, 0.18);
+}
+.import-record-body pre {
+  margin: 0;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.import-record-hint {
+  padding: 6px 10px 8px;
+  font-size: 11px;
+  opacity: 0.65;
+  border-top: 1px dashed rgba(128, 128, 128, 0.22);
+}
+/* —— 引用的会话记录卡：与导入卡同构，蓝色系区分“引用”语义（导入=绿） —— */
+.import-record-card.thread-reference {
+  border-color: rgba(59, 130, 246, 0.32);
+  background: rgba(59, 130, 246, 0.05);
+}
+html[data-theme="dark"] .import-record-card.thread-reference {
+  background: rgba(96, 165, 250, 0.08);
+  border-color: rgba(96, 165, 250, 0.34);
+}
+.import-record-card.thread-reference .import-record-tag { color: #2563eb; }
+html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag { color: #60a5fa; }
+/* 未发送预览槽：消息区顶部，宽度与消息列一致 */
+.import-preview-slot {
+  width: 100%;
+  max-width: 820px;
+  margin: 14px auto 0;
+  padding: 0 max(23px, calc((100% - 820px) / 2));
+}
+.import-preview-slot .import-record-card { align-self: stretch; }
+.user-message-footer {
+  display: flex;
+  justify-content: flex-end;
+  /* 紧贴气泡，让 hover 操作按钮与用户消息气泡的视觉距离更近 */
+  margin-top: 0;
+  padding-right: 2px;
+  /* footer 常驻 22px 高度，用户消息块整体自然留出 22px 操作栏高度 */
+  min-height: 22px;
+}
+.user-message-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 6px;
+}
+/* 缩略图并入 msg-refs 附件行后：与文件引用卡同行排布、底对齐、尺寸略大易辨认，
+   圆角/边框/背景与 ref-file-card 一套视觉语言（09-08 反馈「图+文件同时发排版丑」） */
+.msg-refs .user-message-thumb {
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--panel-2);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.msg-refs .user-message-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.msg-refs:has(.user-message-thumb) {
+  align-items: flex-end;
+}
+.user-message-thumb {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--panel);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.user-message-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.codex-turn .assistant-message .message-footer {
+  justify-content: flex-start;
+}
+.markdown p {
+  margin: 0 0 8px;
+}
+.markdown p:empty,
+.markdown p:has(> br:only-child) {
+  display: none;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  margin: 20px 0 8px;
+  font-size: 16px;
+  line-height: 1.3;
+}
+.markdown h3 {
+  font-size: 14.5px;
+}
+.markdown ul,
+.markdown ol {
+  padding-left: 21px;
+}
+/* 引用块：模型常用 `> 说明` 给列表收尾（如 `> 1–10 全是「数字开头」…`）。
+   ⛔ 09-24 修：此前**全仓没有一条 blockquote 样式** ⇒ 走浏览器默认 `margin: 1em 40px`，
+   即文字左右各缩进 40px 且**没有任何可见标记**（无竖条、无底色）——
+   用户看到的就是「最后一行凭空歪了、前面空那么多」（连续两次截图报同一现象）。
+   现在给它一个明确的引用形态：左侧竖条 + 小内边距 + 不再左右各缩 40px；
+   文字保持正文色（不洗灰），避免把可读性让给装饰。 */
+.markdown blockquote {
+  margin: 8px 0;
+  padding: 1px 0 1px 10px;
+  border-left: 2px solid var(--line);
+}
+.markdown blockquote > p {
+  margin: 0;
+}
+.markdown code {
+  background: var(--panel-2);
+  border-radius: 5px;
+  padding: 2px 5px;
+  font-family:
+    Cascadia Code,
+    Consolas,
+    monospace;
+  font-size: 12.5px;
+}
+.markdown pre {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 10px;
+  max-width: 100%;
+  padding: 12px;
+  overflow: auto;
+}
+.markdown pre code {
+  background: 0 0;
+  padding: 0;
+}
+.markdown a {
+  color: var(--link);
+  cursor: pointer;
+}
+.link-card {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 12px;
+  align-items: center;
+  gap: 12px;
+  max-width: 460px;
+  margin: 4px 0 12px;
+  padding: 12px 14px;
+  display: flex;
+  box-shadow: 0 1px 2px #14140f0a;
+}
+.link-card-icon {
+  background: var(--panel-2);
+  width: 38px;
+  height: 38px;
+  color: var(--muted);
+  border-radius: 50%;
+  flex: 0 0 38px;
+  place-items: center;
+  display: grid;
+}
+.link-card-body {
+  flex-direction: column;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+  display: flex;
+}
+.link-card-body strong {
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 500;
+  overflow: hidden;
+}
+.link-card-body small {
+  color: var(--faint);
+  font-size: 11px;
+}
+.link-card-open {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  min-height: 32px;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 8px;
+  flex: none;
+  justify-content: center;
+  align-items: center;
+  padding: 0 15px;
+  font-size: 12.5px;
+  display: inline-flex;
+}
+.link-card-open:hover {
+  background: var(--panel-2);
+}
+.markdown table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.markdown th,
+.markdown td {
+  border: 1px solid var(--line);
+  text-align: left;
+  padding: 6px 8px;
+}
+.message-image {
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  max-width: min(200px, 100%);
+  max-height: 180px;
+  margin-top: 8px;
+  display: block;
+}
+.message-footer {
+  /* 关键：默认常驻固定行高，避免 hover 显隐按钮时把后续板块「往下挪」。 */
+  /* WorkBuddy 式：操作条 hover 消息才显示，正文出字时不再顶着一排按键 */
+  min-height: 22px;
+  height: 22px;
+  align-items: center;
+  color: var(--faint);
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 10.5px;
+  display: flex;
+  opacity: 0.45;
+  visibility: visible;
+  overflow: visible;
+  transition: opacity 0.12s;
+}
+.message:hover .message-footer,
+.message-footer:focus-within,
+.codex-turn:hover > .message-footer {
+  opacity: 1;
+}
+/* 内部按钮默认隐藏（仍占据 flex 间距），hover 才显示——避免按钮出现时撑高 footer */
+.message-footer .message-action-extra {
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.12s,
+    color 0.12s;
+}
+.message:hover .message-footer .message-action-extra,
+.message-footer:focus-within .message-action-extra,
+.codex-turn:hover > .message-footer .message-action-extra {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* 默认常驻项（复制/分支/时间）默认显隐——给 hover 时浮上来用色 */
+.message-footer button.message-action-default,
+.message-footer .message-action-default {
+  opacity: 0.5;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.message:hover .message-footer .message-action-default,
+.message-footer:focus-within .message-action-default,
+.codex-turn:hover > .message-footer .message-action-default {
+  opacity: 1;
+}
+.codex-turn .assistant-message {
+  margin-bottom: 6px;
+}
+.message-footer span,
+.message-footer button {
+  align-items: center;
+  gap: 4px;
+  display: inline-flex;
+}
+.message-footer button {
+  color: var(--faint);
+  cursor: pointer;
+  background: 0 0;
+  border: 0;
+  border-radius: 5px;
+  padding: 2px 5px;
+  font-size: 10.5px;
+}
+.message-footer button:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+.context-ring {
+  color: var(--faint);
+  align-items: center;
+  gap: 3px;
+  display: inline-flex;
+}
+/* 超长上下文预警：接近窗口上限变色（warn 80% / danger 95%） */
+.context-ring.warn {
+  color: color-mix(in srgb, var(--orange) 85%, var(--text));
+}
+.context-ring.danger {
+  color: var(--red);
+}
+.context-ring.warn small,
+.context-ring.danger small {
+  font-weight: 700;
+}
+.context-ring small {
+  font-size: 9px;
+  line-height: 1;
+}
+.tool-block,
+.plan-block,
+.approval-card {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 10px;
+  margin: 0 0 18px;
+  font-size: 12.5px;
+}
+/* ⛔ 贴输入框上方的审批卡（09-13 从消息流大卡迁来，用户反馈「审批弹窗太大」）：
+   与 agent-ask-inline 同款容器定位，整体限高（命令预览最多 8 行滚动），紧凑行距。
+   主窗口与独立会话窗口共用同一组件，弹窗里同样贴输入框展示。 */
+.composer-wrap .approval-card {
+  margin: 0 0 10px;
+  max-height: min(320px, 45vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .1);
+}
+.composer-wrap .approval-card > p {
+  margin: 8px 12px;
+  line-height: 1.45;
+}
+.composer-wrap .approval-card pre {
+  max-height: 9.5em;   /* ≈8 行命令，超出滚动，不再撑起 360px 大块 */
+  min-height: 0;
+  padding: 8px 12px;
+}
+.composer-wrap .approval-card .question {
+  margin: 6px 12px;
+}
+.composer-wrap .approval-card .tool-meta {
+  padding: 4px 12px;
+}
+.composer-wrap .approval-card footer {
+  min-height: 42px;
+  padding: 6px 10px;
+}
+/* ── 审批：一行一条（09-14 用户「审批弹窗有点丑，卡片太大，两个卡片直接占满」） ──────────
+   收起态 = 图标 + 标题 + 一句话预览 + 允许/拒绝；点摘要才展开正文（命令全文 / 改动原因 / 权限）。
+   多条统一收进 .approval-stack：整体限高 + 滚动，条数再多也不推挤输入框。
+   ⛔ 要用户填东西的两类（问问题 / MCP elicitation）由组件默认展开——那不是审美问题，是可用性。 */
+/* ⛔ 窄窗口自适应的真根因（09-14 用户截图「审批卡片没有自适应大小」）：
+   `.composer-wrap` 是 `.workspace` 的 **grid item**，而 grid/flex item 的默认
+   `min-width: auto` = **内容的 min-content**。摘要行里的命令是 `white-space: nowrap`，
+   于是「一条长路径/长命令」会把整个输入区撑到 1150px（实测窄窗口 520px 时），
+   表现为内容横向溢出、右侧「允许/拒绝」被挤出可视区 —— 卡片看起来「不会自适应」。
+   `min-width: 0` 让输入区回到轨道宽度，超长内容在盒子内截断（摘要行本来就是 ellipsis）。 */
+.workspace > .composer-wrap {
+  min-width: 0;
+}
+.approval-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 10px;
+  min-width: 0;
+  max-height: min(232px, 38vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.composer-wrap .approval-stack .approval-card {
+  margin: 0;
+  min-width: 0;
+  max-height: none;
+  overflow: visible;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .06);
+  /* ⛔ flex 列默认会让子项**压缩**（flex-shrink:1）来塞进限高容器：行高会被压到 24px，
+     而且永远不溢出 → 滚动条永远不出现（实测 8 条时 stackHeight=232、scrollable=false）。
+     必须是「行高固定 + 容器滚动」。 */
+  flex: none;
+}
+.approval-card.compact > header.approval-line {
+  color: var(--text);
+  height: 36px;
+  min-height: 36px;
+  padding: 0 6px 0 10px;
+  gap: 8px;
+  border-bottom: 1px solid transparent;
+}
+.approval-card.compact.expanded > header.approval-line {
+  border-bottom-color: #f2e4c8;
+}
+.approval-card.compact .approval-summary {
+  /* 显式声明布局：底层 `.approval-card button` 是 inline-flex + justify-content:center，
+     摘要行要的是左对齐 + 让预览文字吃掉剩余宽度（否则长命令会把按钮挤出去） */
+  display: inline-flex;
+  justify-content: flex-start;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: none;
+  padding: 0;
+  gap: 7px;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+}
+.approval-card.compact .approval-summary > svg:first-child {
+  flex: none;
+  color: var(--orange);
+}
+.approval-card.compact .approval-summary strong {
+  flex: none;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.approval-card.compact .approval-peek {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+.approval-card.compact .approval-peek.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.approval-card.compact .approval-caret {
+  flex: none;
+  color: var(--muted);
+  transition: transform .18s ease;
+}
+.approval-card.compact.expanded .approval-caret {
+  transform: rotate(180deg);
+}
+.approval-card.compact .approval-actions {
+  flex: none;
+  gap: 6px;
+}
+.approval-card.compact .approval-actions button {
+  min-height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+.approval-card.compact .approval-detail {
+  min-height: 0;
+}
+.approval-card.compact .approval-detail > p {
+  margin: 8px 12px;
+  line-height: 1.5;
+}
+.approval-card.compact footer {
+  min-height: 38px;
+  padding: 6px 10px;
+}
+.tool-block summary {
+  cursor: pointer;
+  min-height: 40px;
+  color: var(--muted);
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  list-style: none;
+  display: flex;
+}
+.tool-block summary::-webkit-details-marker {
+  display: none;
+}
+.tool-block summary > svg:last-child {
+  margin-left: auto;
+  transition: transform 0.15s;
+}
+.tool-block[open] summary > svg:last-child {
+  transform: rotate(180deg);
+}
+.tool-title {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  color: var(--text);
+  flex: 1;
+  font-family:
+    Cascadia Code,
+    Consolas,
+    monospace;
+  overflow: hidden;
+}
+.tool-block .pre-wrap {
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.26s cubic-bezier(0.22, 0.61, 0.36, 1);
+  display: grid;
+}
+.tool-block[open] .pre-wrap {
+  grid-template-rows: 1fr;
+}
+.tool-block .pre-wrap > pre {
+  opacity: 0;
+  min-height: 0;
+  transition: opacity 0.18s;
+  overflow: hidden;
+}
+.tool-block[open] .pre-wrap > pre {
+  opacity: 1;
+  transition: opacity 0.22s 60ms;
+  overflow: auto;
+}
+.tool-block pre,
+.approval-card pre {
+  border-top: 1px solid var(--line-soft);
+  max-height: 360px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: 0 0;
+  margin: 0;
+  padding: 12px;
+  font:
+    11.5px/1.55 Cascadia Code,
+    Consolas,
+    monospace;
+  overflow: auto;
+}
+.tool-meta {
+  color: var(--faint);
+  border-top: 1px solid var(--line-soft);
+  overflow-wrap: anywhere;
+  padding: 7px 12px;
+  font-size: 10.5px;
+}
+/* ── 工具/命令卡片（外壳）：跟 ReasoningCard 同款——无底色/无边框/无圆角，inline-flex 自然撑开；
+   内容区（action-content / cmd-content / action-diff pre）继续保留边框/底色，因为 diff / 命令输出
+   这些"实质内容"才需要放在边框里。 ── */
+.action-card {
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  transition: color 0.18s;
+  overflow: visible;
+  display: inline-flex;
+  flex-direction: column;
+  max-width: 100%;
+}
+.action-card:hover {
+  /* 不再加边框/底色，避免视觉跳动；仅让头部变深作为可点击反馈 */
+}
+.action-card .action-head {
+  cursor: pointer;
+  min-height: 26px;
+  width: fit-content;
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: var(--muted);
+  font: inherit;
+  -webkit-user-select: none;
+  user-select: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  display: inline-flex;
+}
+.action-card:hover .action-head {
+  color: var(--text);
+}
+.action-card .action-icon {
+  /* 去掉圆形背景：icon 直接跟随状态色，视觉上更像「chip」而非独立小色块 */
+  background: transparent;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  border-radius: 0;
+  flex: none;
+  place-items: center;
+  transition: color 0.18s;
+  display: grid;
+}
+.action-card .action-verb {
+  color: var(--text);
+  flex: none;
+  font-weight: 500;
+}
+.action-card .action-info {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  color: var(--muted);
+  flex: 1;
+  overflow: hidden;
+}
+.action-card .action-info code {
+  color: var(--text);
+  background: transparent;
+  text-overflow: ellipsis;
+  vertical-align: baseline;
+  border-radius: 0;
+  max-width: 100%;
+  padding: 0;
+  font:
+    11.5px/1.4 Cascadia Code,
+    Consolas,
+    ui-monospace,
+    monospace;
+  text-decoration: none;
+  display: inline;
+  overflow: hidden;
+}
+.action-card .action-info > code + code {
+  margin-left: 4px;
+}
+/* 「怎么用的」：技能/插件/MCP 调用的关键入参（url / 路径 / 查询词），跟在名字后面（09-24） */
+/* 插件包名：跟在工具名后面的次要标注（09-24，与 action-arg 同一视觉层级） */
+.action-card .action-info .action-plugin {
+  margin-left: 4px;
+  color: var(--faint);
+  opacity: 0.85;
+}
+
+.action-card .action-info .action-arg {
+  color: var(--faint);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  max-width: 60%;
+  display: inline-block;
+  vertical-align: bottom;
+}
+.action-card .action-status {
+  color: var(--faint);
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  display: inline-flex;
+}
+/* 卡片状态图标：命令卡/工具卡/编辑卡共用同一套（CardShell.CardStatusIcon） */
+.action-card .card-status-icon,
+.cmd-card .card-status-icon {
+  color: var(--green);
+}
+.action-card.error .card-status-icon,
+.cmd-card.error .card-status-icon {
+  color: var(--red);
+}
+.action-card.running .card-status-icon {
+  color: var(--accent);
+}
+.action-card .action-status-text {
+  color: var(--faint);
+  font-size: 10.5px;
+}
+.action-card.done .action-status-text {
+  opacity: 0.55;
+}
+.action-card .action-status-text b {
+  color: var(--add);
+  font-style: normal;
+  font-weight: 600;
+}
+.action-card .action-status-text i {
+  color: var(--del);
+  font-style: normal;
+}
+.action-card .action-chevron {
+  color: var(--faint);
+  flex: none;
+  transform: rotate(-90deg);
+  opacity: 0.55;
+  transition:
+    transform 0.22s,
+    opacity 0.18s;
+}
+.action-card.open .action-chevron,
+.action-card .action-head:hover .action-chevron {
+  transform: rotate(0deg);
+  opacity: 1;
+}
+/* running / error 不再加外壳色——状态色交给 status-icon + verb 表达，保持外壳干净 */
+.action-card.running .action-icon {
+  color: var(--accent);
+}
+.action-card.error .action-icon {
+  color: var(--red);
+}
+.action-card.done .action-icon {
+  color: var(--green);
+}
+/* 内容区：diff / pre / plan 等实质内容才保留边框/底色，自身成为一个完整卡片 */
+.action-card .action-content {
+  border: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--panel-2) 70%, transparent);
+  border-radius: 8px;
+  margin: 6px 0 2px;
+  padding: 8px 10px 10px;
+}
+.action-card .action-content > pre {
+  max-height: 320px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  font:
+    11.5px/1.55 Cascadia Code,
+    Consolas,
+    monospace;
+  overflow-y: auto;
+}
+
+/* 大 diff 行级虚拟化（09-14）：滚动容器 + 绝对定位行，只挂可视区 ± overscan。
+   line-height 必须与 App.tsx 的 DIFF_LINE_HEIGHT(20) 严格一致——不一致会导致滚动位置与行错位。 */
+.virtual-diff {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow: auto;
+  line-height: 20px;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 7px;
+  scrollbar-width: thin;
+  contain: content;
+  background: color-mix(in srgb, var(--panel-2) 55%, transparent);
+}
+.virtual-diff-inner { position: relative; width: 100%; }
+.virtual-diff-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 20px;
+  line-height: 20px;
+  padding: 0 10px;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  contain: layout paint;
+}
+.virtual-diff-line.add { background: color-mix(in srgb, var(--green) 14%, transparent); }
+.virtual-diff-line.del { background: color-mix(in srgb, var(--red) 14%, transparent); }
+.virtual-diff-line.hunk { color: var(--muted); background: color-mix(in srgb, var(--line) 22%, transparent); }
+.virtual-diff-line.meta { color: var(--faint); font-weight: 600; }
+.tool-code-block {
+  min-width: 0;
+  max-width: 100%;
+  position: relative;
+}
+.tool-code-block .tool-code-pre {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 7px;
+  overflow: auto !important;
+  scrollbar-width: thin;
+}
+.tool-code-block .tool-code-pre code {
+  font-family: inherit !important;
+}
+.tool-code-block .linenumber {
+  min-width: 2.4em !important;
+  color: color-mix(in srgb, currentColor 42%, transparent) !important;
+}
+.tool-code-block .language-diff .token.inserted,
+.tool-code-block .language-diff .token.prefix.inserted {
+  color: #168447 !important;
+  background: color-mix(in srgb, #21a366 10%, transparent) !important;
+}
+.tool-code-block .language-diff .token.deleted,
+.tool-code-block .language-diff .token.prefix.deleted {
+  color: #c43d4b !important;
+  background: color-mix(in srgb, #df4b5b 9%, transparent) !important;
+}
+.tool-code-cursor {
+  position: absolute;
+  right: 9px;
+  bottom: 8px;
+  z-index: 1;
+}
+.action-card .action-diff {
+  margin-bottom: 8px;
+}
+.action-card .action-diff:last-child {
+  margin-bottom: 0;
+}
+.action-card .action-diff strong {
+  color: var(--text);
+  margin-bottom: 4px;
+  font-size: 12px;
+  display: block;
+}
+.action-card .action-diff pre {
+  max-height: 240px;
+  margin: 0;
+  overflow: auto;
+}
+/* 计划可编辑构件（09-21）：条目可勾选/改字/增删，改完「交给 Codex」作为一条用户消息发回。
+   原来是 `.action-card .action-plan` 的只读 Markdown 渲染（该规则已随改动删除，别留死样式）。 */
+.plan-editor { display: grid; gap: 6px; }
+.plan-editor-intro { color: var(--muted); font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
+.plan-editor-steps { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.plan-step {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: var(--bg);
+}
+.plan-step:hover { background: color-mix(in srgb, var(--link) 6%, var(--bg)); }
+.plan-step-check { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; }
+.plan-step.done .plan-step-check { color: var(--green, #2f9e44); }
+.plan-step-text {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+  /* 高度由 onInput 自适应：不出现内部滚动条（与输入框同款手感） */
+  resize: none;
+  overflow: hidden;
+}
+.plan-step-text:hover { border-color: var(--line); }
+.plan-step-text:focus { outline: none; border-color: var(--link); background: var(--panel); }
+.plan-step.done .plan-step-text { color: var(--muted); text-decoration: line-through; }
+.plan-step-del { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--faint); cursor: pointer; }
+.plan-step-del:hover { background: color-mix(in srgb, var(--red, #e03131) 12%, transparent); color: var(--red, #e03131); }
+.plan-editor-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.plan-op { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 8px; background: none; color: var(--muted); font-size: 12px; cursor: pointer; }
+.plan-op:hover { border-color: var(--link); color: var(--link); }
+.plan-op.primary { border-color: color-mix(in srgb, var(--link) 40%, var(--line)); color: var(--link); }
+.plan-op:disabled { opacity: 0.5; cursor: default; }
+.plan-editor-progress { margin-left: auto; color: var(--faint); font-size: 11.5px; }
+.action-card .action-approval {
+  border: 1px solid color-mix(in srgb, var(--orange) 35%, var(--line));
+  background: color-mix(in srgb, var(--orange) 6%, var(--panel));
+  color: var(--orange);
+  border-radius: 6px;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  display: flex;
+}
+/* ── WorkBuddy cr-collapse 折叠状态机 1:1 移植 ──
+   结构：header(标题流光/hover变深/箭头收起隐藏) + content(grid 0fr→1fr 高度过渡
+   0.28s cubic-bezier(0.33,1,0.68,1)) + inner(opacity/translateY 过渡) */
+.wb-fold {
+  display: flex;
+  flex-direction: column;
+}
+.wb-fold-header {
+  display: flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  margin: 0;
+  gap: 8px;
+  line-height: 1.75;
+  color: var(--faint);
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: color 0.18s ease;
+  padding: 2px 0;
+}
+.wb-fold-header:hover {
+  color: var(--muted);
+}
+.wb-fold--completed .wb-fold-header:hover,
+.wb-fold--summary .wb-fold-header:hover {
+  color: var(--text);
+}
+/* 展开/收起箭头：**排在内容之后**（`order: 2`），**默认隐藏、悬停才显形**
+   （09-23 用户：「展开折叠图标动态展示在内容后面就行，鼠标放上去展示，不放上去默认隐藏，
+   点击后可以展示」）。
+   ⛔ 两个易踩点：① 别再放回标题**之前**（旧形态是左对齐箭头，用户明确要"在内容后面"）；
+   ② 别再给它常显（`opacity: 1`）—— 默认隐藏是用户点名的行为。
+   `margin-left: -4px` 是为了吃掉 .wb-fold-header 的 `gap: 8px`，让箭头紧贴标题。 */
+.wb-fold-caret {
+  flex: none;
+  order: 2;
+  width: 12px;
+  height: 12px;
+  margin-left: -4px;
+  opacity: 0;
+  transform-origin: center;
+  transition:
+    transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
+    color 0.18s ease,
+    opacity 0.18s ease;
+}
+.wb-fold.collapsed .wb-fold-caret {
+  transform: rotate(-90deg);
+}
+/* 悬停整行（含标题）时箭头显形 —— 唯一的显形入口，别再补 `.open` 常显 */
+.wb-fold-header:hover .wb-fold-caret {
+  opacity: 1;
+}
+.wb-fold-lead {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  line-height: 0;
+  color: inherit;
+}
+.wb-fold-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+}
+.wb-fold-dot.error {
+  background: var(--red);
+}
+.wb-fold-title {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.wb-fold--summary .wb-fold-title,
+.wb-fold--process .wb-fold-title {
+  display: block;
+  max-width: 520px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* 只过渡 grid-template-rows：流式期间内容增长不会触发高度补间（避免出字时上跳/闪烁） */
+.wb-fold-content {
+  display: grid;
+  grid-template-rows: 1fr;
+  overflow: hidden;
+  opacity: 1;
+  transition:
+    grid-template-rows 0.28s cubic-bezier(0.33, 1, 0.68, 1),
+    opacity 0.2s ease-out;
+}
+.wb-fold-inner {
+  min-height: 0;
+  overflow: hidden;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.22s ease-out,
+    transform 0.28s cubic-bezier(0.33, 1, 0.68, 1);
+}
+.wb-fold.open .wb-fold-content {
+  grid-template-rows: 1fr;
+}
+.wb-fold.collapsed .wb-fold-content {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    grid-template-rows 0.28s cubic-bezier(0.33, 1, 0.68, 1),
+    opacity 0.18s ease-out,
+    visibility 0s linear 0.28s;
+}
+.wb-fold.collapsed .wb-fold-inner {
+  opacity: 0;
+  transform: translateY(-6px);
+  -webkit-user-select: none;
+  user-select: none;
+}
+.wb-fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-block: 2px;
+}
+.wb-fold--summary .wb-fold-body,
+.wb-fold--process .wb-fold-body {
+  margin: 2px 0 2px;
+}
+/* ⛔ 折叠体内部的正文/思考卡**收掉自身下边距**（09-23「紧凑一点」）：
+   外层 `.message` 的 `margin-bottom: 6px` 会与 `.wb-fold-body` 的 `gap` 叠加成
+   正文↔工具之间的大缝隙（实测 12~14px）。折叠体内部一律用 gap 说话，不再叠外边距。 */
+.wb-fold-body > .message,
+.wb-fold-body > .message.assistant-message,
+.wb-fold-body > .reasoning-card {
+  margin-bottom: 0;
+}
+.wb-fold-body .action-card {
+  margin: 0 0 5px;
+}
+.wb-fold-body .action-card:last-child {
+  margin-bottom: 0;
+}
+.capped-tool-run,
+.capped-tool-hidden,
+.capped-tool-latest {
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+}
+.capped-tool-toggle {
+  min-height: 24px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 1px 0 3px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  align-items: center;
+  gap: 5px;
+  font: inherit;
+  font-size: 11px;
+  display: inline-flex;
+}
+.capped-tool-toggle:hover {
+  color: var(--text);
+}
+.capped-tool-toggle svg {
+  flex: none;
+  transform: rotate(-90deg);
+  transition: transform 0.18s ease;
+}
+.capped-tool-run.expanded .capped-tool-toggle svg {
+  transform: rotate(0deg);
+}
+.capped-tool-toggle small {
+  color: var(--faint);
+  font-size: 10px;
+}
+.capped-tool-hidden,
+.capped-tool-latest {
+  gap: 0;
+}
+.capped-tool-run > .wb-fold {
+  width: 100%;
+}
+.wb-fold + .wb-fold,
+.wb-fold + .message,
+.message + .wb-fold {
+  margin-top: 2px;
+}
+/* ⛔⛔ 折叠段与正文之间保持**紧凑**（09-23 用户：「两个正文之间离工具缝隙太大了，调整一下，
+   紧凑一点」）。实测缝隙由三层叠加而成（合计 12~14px）：
+     ① 本节 `margin: 2px 0 8px` ② `.wb-fold-body` 的 `gap: 4px` ③ `.message` 的 `margin-bottom: 6px`
+   ⇒ 折叠段上下外边距一起收到 2px，正文紧贴芯片。改回 8px 前请先问用户。 */
+.wb-fold--summary,
+.wb-fold--process,
+.wb-fold--completed {
+  margin: 2px 0 2px;
+}
+/* ⛔⛔ 灰线：**回合收尾那条必须留，正文之间的芯片不许有**（用户 09-23 两轮，第二轮附完成态截图）。
+   ① 「正文中间的折叠，和思考板块折叠不要灰色线…不要删了那个正在处理下面的那个灰色运行过程
+      折叠线，**只保留这个灰色线**」；
+   ② 「运行完成，折叠后，这个地方灰色线不见」—— 指的就是同一条：运行中是 `.running-process-time`
+      （「正在处理 N 秒」），回合完成后同一个槽位换成回合收尾头（「耗时 1m 36s」／停止原因），
+      **两条都要有这条线**，否则完成的瞬间线会凭空消失（dd6f04b 把后半段一起归零，就是这次返工）。
+   ⇒ 实现依据：`variant="completed"` 在 `TurnFoldStream` 两条渲染分支里**只有 lead 段（回合收尾头）**
+      会用，非 lead 段落一律 `variant="summary"`（意图词芯片）。
+   ⛔ **但"只有 lead 是 completed"不等于"只有 lead 有线"** —— 下面这条是**后代选择器**，大折叠展开后，
+      体内每个芯片（`.wb-fold--summary`）的折叠头也命中它，于是每个工具折叠都白得一条线 + `width:100%`
+      （真机实测：`.wb-fold--summary > .wb-fold-header` 的 `borderBottomWidth=1px`、`width=810`，
+      而 base 规则是 `width: fit-content` ⇒ 810 只可能来自这条）。用户 09-23 截图点名的
+      「工具的折叠不要灰线，只保留大折叠的灰线」就是这个泄漏。⇒ 紧跟的 `--completed .wb-fold-body
+      .wb-fold-header` 覆盖规则负责把嵌套头的线归零。
+   几何对齐：与 `.running-process-time` 同为 min-height 28px / padding-bottom 4px，
+   运行→完成切换时线与文字位置不跳（外边距见下方 `margin: 2px 0 2px`，比运行态紧，是有意的）。 */
+.wb-fold--completed .wb-fold-header {
+  width: 100%;
+  min-height: 28px;
+  border-bottom: 1px solid var(--line-soft);
+  padding: 0 3px 4px 0;
+  color: var(--faint);
+}
+/* ⛔⛔ **嵌套的折叠头一律不画线**（用户 09-23：「工具的折叠不要灰线，能做到吗，只保留大折叠的灰线」）：
+   命中上面那条后代规则的**不只**回合级的头，还有它体内所有芯片/工具折叠的头。这里按"嵌在大折叠体内"
+   这个结构条件把线归零 —— 特异性 (0,3,0) > (0,2,0)，与声明顺序无关。
+   ⛔ **只归零 border，不动 width/min-height/padding**：芯片现有的几何（满宽 + 28px 行高）是用户没抱怨过
+      的形态，改它会引起整段高度变化，属于本轮没被要求的事（要改先问）。 */
+.wb-fold--completed .wb-fold-body .wb-fold-header,
+.wb-fold--completed .wb-fold .wb-fold-header {
+  border-bottom: 0;
+}
+.wb-fold--completed .wb-fold-header:hover {
+  color: var(--muted);
+}
+.wb-fold--completed .wb-fold-dot {
+  display: none;
+}
+.wb-fold--completed .wb-fold-title {
+  /* ⛔ 不能是 flex:1：标题撑满会把箭头推到行尾（旧形态），而用户要求箭头**紧跟内容之后**。
+     改成按内容宽度收缩后，箭头就贴在标题右侧（见 .wb-fold-caret 的 order: 2）。 */
+  flex: 0 1 auto;
+  font-size: 11.5px;
+  font-weight: 400;
+}
+/* ⛔ 这里曾有一条「完成态专属」箭头样式（order:2 + margin-left:auto + opacity:0，且 open 时常显）——
+   已随「箭头统一放到内容后面、默认隐藏、只悬停显形」删除，规则由上面的 .wb-fold-caret /
+   .wb-fold-header:hover .wb-fold-caret 统一负责。别再加回按 variant 分叉的箭头显隐。 */
+.running-process-time {
+  width: 100%;
+  min-height: 28px;
+  margin: 2px 0 8px;
+  padding: 0 3px 4px 0;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.6;
+}

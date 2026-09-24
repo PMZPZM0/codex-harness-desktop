@@ -53,8 +53,13 @@ jobs:
       - name: Verify native automation before packaging
         run: node scripts/verify-packaged-tools.cjs resources/tools
 
-      - name: Build renderer & main
-        run: npm run build
+      # ⛔ 09-24（评估报告 §3.1）：与 build-win.yml 同因 —— 发版前没有任何预检门禁。
+      #    check = build + 全部预检守卫，故直接取代原来的 `npm run build`。
+      - name: Build + preflight gates
+        run: npm run check
+
+      - name: Lint (layering rules)
+        run: npm run lint
 
       - name: Pack macOS zip (${{ matrix.mac_target }})
         run: npx electron-builder --config build/electron-builder.mac.cjs --mac zip --${{ matrix.mac_target }} --publish never

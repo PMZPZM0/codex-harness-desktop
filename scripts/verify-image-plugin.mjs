@@ -26,9 +26,40 @@ assert.equal(markdownUrlTransform('https://example.com/image.png', 'src', { tagN
 // 09-21 取证：生图网关多只回 b64_json，我们曾把它拼成 data URL 回传，渲染层再拼进工具返回文本，
 // 于是单条工具输出 = 3.03 MB base64 文本进对话历史、且每轮重发。
 // persistGeneratedImage 就是为此存在的：落盘到 <userData>/images/，只回路径。
-const source = await fs.readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
-const imageFunctions = source.slice(source.indexOf('async function persistGeneratedImage('), source.indexOf('async function describeImageWith('));
-assert.ok(imageFunctions.includes('persistGeneratedImage') && imageFunctions.includes('generateImageWith'), 'sanity: 抠出的函数区间必须同时含落盘与生图两个函数');
+// ⛔ 用并集口径（main.ts + electron/features/**）：生图/落盘/识图这几个函数已随 tools 域拆到
+//    electron/features/builtin-skills-ipc.ts；只读 main.ts 会抠不到区间（09-21 实测预检直接崩）。
+const { createRequire } = await import("node:module");
+const { readMainSource } = createRequire(import.meta.url)("./main-source.cjs");
+const source = readMainSource();
+/* ⛔ 用 **TS 解析器**按函数节点抠取（不再用「两个标记之间的区间」，也不再手写括号配对）：
+   ① 区间法：09-22 这两个函数被拆进 electron/features/builtin-skills-ipc/01-builtin-images.ts，
+      聚合器只扫一层时区间抠成空串 ⇒ 断言以「功能退化」的样子崩掉（实际是代码搬走了）。
+   ② 手写括号配对：参数类型里就有 `{`（如 `input: { baseUrl: string; … }`）⇒ 会切在参数类型上、
+      拿到没有函数体的片段 ⇒ vm 里 ReferenceError: generateImageWith is not defined。实测踩过。
+   另外**必须剥掉 `export ` 前缀**：带 export 时 ts.transpile 编成 CJS（exports.xxx = …），
+   而下面 vm 里那句 `\ngenerateImageWith` 就取不到。 */
+const agg = ts.createSourceFile("agg.ts", source, ts.ScriptTarget.Latest, true);
+const extractFn = (name) => {
+  let out = "";
+  const visit = (n) => {
+    if (out) return;
+    if (ts.isFunctionDeclaration(n) && n.name && n.name.text === name) {
+      const text = source.slice(n.getStart(agg), n.getEnd());
+      out = text.replace(/^\s*export\s+default\s+/, "").replace(/^\s*export\s+/, "");
+      return;
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(agg);
+  return out;
+};
+const persistFn = extractFn('persistGeneratedImage');
+const generateFn = extractFn('generateImageWith');
+assert.ok(
+  persistFn.includes('persistGeneratedImage') && generateFn.includes('generateImageWith'),
+  'sanity: 必须同时抠到「落盘」与「生图」两个函数（各自独立抠取，不依赖两者落在同一区间）'
+);
+const imageFunctions = persistFn + "\n" + generateFn;
 let payload;
 const imageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'generate-image-'));
 const generate = vm.runInNewContext(ts.transpile(imageFunctions) + '\ngenerateImageWith', {

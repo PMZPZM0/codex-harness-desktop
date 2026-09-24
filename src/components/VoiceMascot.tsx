@@ -26,8 +26,8 @@ export default function VoiceMascot({ mode, size = 44 }: Props) {
       aria-hidden="true"
     >
       <span className="orb-eyes">
-        <span className="orb-eye orb-eye-l" />
-        <span className="orb-eye orb-eye-r" />
+        <span className="orb-eye" />
+        <span className="orb-eye" />
       </span>
     </span>
   );

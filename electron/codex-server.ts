@@ -69,7 +69,12 @@ export class CodexServer extends EventEmitter {
     super();
   }
 
-  /** 看门狗已移除（2026-09-09）：保留空实现兼容主进程调用点，不再做任何心跳/重启。 */
+  /** 看门狗已移除（2026-09-09）：保留空实现兼容主进程调用点，不再做任何心跳/重启。
+   *  ⛔ 09-24 评估报告核查后的更正：这**不是**"忘了实现的死代码"，而是**刻意的产品决策**，
+   *  所以不要顺手把它接回来 —— 下面的 heartbeat() 是力重启（`restart({ force: true })`），
+   *  在引擎被长回合占满时若判定超时就会**打断正在跑的会话**，违反「除用户停止不许断」的铁律。
+   *  真要恢复必须先加"忙碌闸"（有活动回合时只记数、不重启）。
+   *  残留的诚实性问题（设置项与注释仍声称本能力）已同轮改写，并由守卫【140】钉住。 */
   startWatchdog() {}
   stopWatchdog() {}
 
@@ -277,9 +282,10 @@ export class CodexServer extends EventEmitter {
     //   --disable remote_control → 不是合法 feature 名，静默无效
     //   config.toml 里没有对应键（二进制里 remote_control 只出现在 SQL 语句中）
     this.emitEvent({ kind: "status", status: "ready" });
-    // 注意：引擎就绪后是否启动健康看门狗由主进程控制（startWatchdog/stopWatchdog），
-    // 因为开关存于 app-settings.json（engineWatchdog，默认开）。主进程在 server 的
-    // "ready" 事件里按设置调用；这里不再自动启动，避免与主进程控制竞争。
+    // ⛔ 09-24 更正：这里原先写「引擎就绪后由主进程按设置启停看门狗」——**已不成立**。
+    // 看门狗 2026-09-09 被整体移除（理由见本文件 fail() 分支的注释：心跳误判会让用户会话
+    // 莫名跳回欢迎页），startWatchdog/stopWatchdog 是空实现。主进程那边的调用点仍在，
+    // 但什么都不做。真实崩溃恢复不依赖心跳（走 fail() 的进程退出分支无条件拉起一次）。
   }
 
   /** 引擎子进程是否存活（/doctor、/debug 等诊断命令用） */

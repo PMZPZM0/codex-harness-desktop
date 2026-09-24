@@ -2,6 +2,7 @@
 // 剥离为结构化字段，留下对外展示用的 cleanText。
 // 纯函数、零 React 依赖，可独立编译跑 node:test（scripts/verify-user-refs.mjs）。
 import { stripImageTokens } from "./prompt-images";
+import { stripHarnessBlocks } from "./harness-block-strip.mjs";
 
 /** 引用会话记录协议块的载荷：id=源会话 ID，note=折叠卡备注行（必须单行），content=记录全文。 */
 export type ThreadReferencePayload = { id: string; note: string; content: string };
@@ -83,10 +84,13 @@ export function parseUserRefs(text: string): ParsedUserRefs {
     }
     clean = clean.replace(ctxMatch[0], "");
   }
-  // 记忆召回段：这是发送给模型的内部参考上下文，不属于用户原文。
-  // 保留在原始 userMessage 里供引擎使用，但从气泡、标题、复制和引用文本中隐藏，
-  // 避免每次开启记忆都把整段项目背景铺满对话框。
-  clean = clean.replace(/\[Harness 相关记忆，仅供参考\][\s\S]*?\[记忆结束\]/g, "");
+  // 记忆段剥离：召回段（L3 按需）与常驻段（L0/L1/L2 每轮前置）都属内部参考上下文，
+  // 不属于用户原文 ⇒ 从气泡、标题、复制、引用文本中全部隐藏。
+  // ⛔ 实现收口到 ./harness-block-strip.mjs（纯函数，守卫可真跑）：它同时处理**完整形态**与
+  //    09-22 用户截图反馈的**残缺形态**（只有头标签、闭合标签丢了 —— 成对正则不命中，
+  //    整段常驻记忆会铺进气泡与左栏标题）。放在本条链的**最后**统一跑，避免与上面的
+  //    技能段/上下文段正则互相干扰。
+  clean = stripHarnessBlocks(clean);
   // 专家团/成员会话首条系统任务段：渲染层只展示用户需求原文，角色提示与编排指令折叠隐藏。
   // 剥除范围 = [SYSTEM TASK ...] 到 === END === 之后的编排指令段（到下一个引用段标记或串尾为止），
   // 否则"请按 SOP…"之类的指令会泄漏进 cleanText。
@@ -179,20 +183,15 @@ export function cleanThreadDisplayTitle(
   // 没有 [记忆结束] 时，配对正则不命中；这里从 [Harness 相关记忆…] 起吃
   // 到下一个已知块标签或串尾（含 [本轮已引用技能]、[Harness 常驻记忆…]、导入/引用、
   // SYSTEM TASK、附件、上下文等），避免误伤用户正文里的孤立方括号词。
-  const HARNESS_HEAD = "[Harness";
-  const KNOWN_BLOCK_LABEL = String.raw`\[(?:Harness\s*(?:相关记忆|常驻记忆)|本轮已引用技能|已注入技能|SYSTEM\s*TASK|附件文件|用户指定的对话上下文|导入的会话记录|引用的会话记录|记忆结束|常驻记忆结束|请按上述技能工作流执行|上下文结束|附件结束)\]`;
+  // （残缺/完整两种 harness 注入形态的剥离已收口到 ./harness-block-strip.mjs）
 
   const firstNonEmptyLine = (text: string | null | undefined): string => {
     if (!text) return "";
-    let cleaned = userDisplayText(text).trim();
-    if (!cleaned) return "";
-    // 容错：残缺的 harness 注入片段（用户复述时丢了 [记忆结束]）
-    if (cleaned.includes(HARNESS_HEAD)) {
-      try {
-        const re = new RegExp(String.raw`\[Harness\s*(?:相关记忆|常驻记忆)[^\]]*\][\s\S]*?(?=${KNOWN_BLOCK_LABEL}|$)`, "g");
-        cleaned = cleaned.replace(re, "").trim();
-      } catch { /* 正则容错失败不要阻塞主流程 */ }
-    }
+    /* 完整形态与**残缺形态**都由 stripHarnessBlocks 处理（收口到 ./harness-block-strip.mjs）。
+       ⛔ 旧实现在这里用"非贪婪 + 前瞻到下一个块标签"的容错正则：对残缺块只能剥到**下一个标签**为止，
+          于是 `[Harness 常驻记忆 · …]\n## 踩坑与纪律…` 里的正文整段残留在标题里（09-22 用户截图：
+          左栏会话标题显示 `[Harness 常驻…`）。 */
+    const cleaned = stripHarnessBlocks(userDisplayText(text)).trim();
     if (!cleaned) return "";
     return cleaned.split(/\r?\n/).map((line) => line.trim()).find((line) => line.length > 0) ?? "";
   };

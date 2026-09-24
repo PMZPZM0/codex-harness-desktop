@@ -63,10 +63,25 @@ type PairRequest = {
   name: string;
   status: "pending" | "approved" | "denied" | "expired";
   createdAt: number;
+  /** 09-24：审批通过时生成的设备秘密明文 —— 只在 /api/pair-status 那一次响应里交付，
+   *  随后随请求记录一起删除（服务端只留 sha256）。 */
+  secret?: string;
 };
 
-/** 已批准设备（持久化，之后凭 cookie 直接进，不再重复审批） */
-type ApprovedDevice = { name: string; approvedAt: number; lastSeen: number };
+/** 已批准设备（持久化，之后凭 cookie 直接进，不再重复审批）。
+ *  ⛔ 09-24 安全修复：新增 `secretHash` = 设备侧持有秘密的 sha256。
+ *  背景：`/api/pair` 的「老朋友免输码」快路原先**只认 deviceId 在不在已批准表**就下发全套凭据。
+ *  而 `accessToken` 每次启动重新生成、`deviceId` 却**永久持久化且无过期** ⇒ 该快路会用长期不变
+ *  的 deviceId 现场重铸一枚全新有效 token ⇒ **deviceId 泄露一次 = 永久访问权**；而 deviceId 是
+ *  客户端自造的非秘密（`dev-` + Math.random + Date.now），局域网 http 回退时还会明文过网。
+ *  拿到凭据即可 new-thread + send-message，而手机新建的会话固定是
+ *  `approvalPolicy: "never"` + `sandbox: "danger-full-access"`（见 main.ts 的 newThread）
+ *  ⇒ 等于把宿主机任意命令执行权交出去。现在快路必须**同时**持有配当时下发的秘密。
+ *  历史记录没有该字段 ⇒ 不认快路，自动回落完整配对流程（重新下发秘密）。 */
+type ApprovedDevice = { name: string; approvedAt: number; lastSeen: number; secretHash?: string };
+
+/** 秘密摘要（用于常量时间比对；长度恒为 64 个十六进制字符）。 */
+const sha256Hex = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
 
 /** 6 位配对码：5 分钟有效，错 10 次作废并轮换（挡暴力试码） */
 const PAIR_CODE_TTL = 5 * 60_000;
@@ -521,10 +536,19 @@ pollLoop();
           const data = JSON.parse(body);
           const deviceId = String(data.deviceId ?? "").trim();
           const name = String(data.deviceName ?? "手机").slice(0, 40);
-          // 老朋友：已批准过 → 直接发凭据（不用再输码、不用再审批）
-          if (deviceId && this.approved.has(deviceId)) {
-            const info = this.approved.get(deviceId)!;
-            this.approved.set(deviceId, { ...info, lastSeen: Date.now() });
+          /* 老朋友快路：**必须同时验设备秘密**（09-24 安全修复）。
+             ⛔ 绝不能退回「只看 approved.has(deviceId)」：deviceId 不是秘密、且永久持久化，
+             那样等于把一次性泄漏放大成永久访问权（进而是宿主机任意命令执行 —— 见 ApprovedDevice 注释）。
+             没有 secretHash 的历史记录 ⇒ 不认快路，走下面的完整配对（并重新下发秘密）。 */
+          const known = deviceId ? this.approved.get(deviceId) : undefined;
+          const presented = String(data.deviceSecret ?? "");
+          const presentedHash = presented ? sha256Hex(presented) : "";
+          if (
+            known?.secretHash
+            && presentedHash.length === known.secretHash.length
+            && crypto.timingSafeEqual(Buffer.from(presentedHash), Buffer.from(known.secretHash))
+          ) {
+            this.approved.set(deviceId, { ...known, lastSeen: Date.now() });
             this.saveApproved();
             this.grantCookies(res, deviceId);
             this.json(res, 200, { ok: true, approved: true });
@@ -550,14 +574,16 @@ pollLoop();
       const req0 = this.pairRequests.get(params.get("rid") ?? "");
       let status: string = req0?.status ?? "expired";
       if (req0 && status === "pending" && Date.now() - req0.createdAt > PAIR_REQUEST_TTL) { req0.status = "expired"; status = "expired"; }
+      let issuedSecret = "";
       if (status === "approved") {
-        // 审批通过 → 发凭据（accessToken + deviceId 两个 HttpOnly cookie）
+        // 审批通过 → 发凭据（accessToken + deviceId 两个 HttpOnly cookie）+ 一次性设备秘密
         this.grantCookies(res, req0!.deviceId);
+        issuedSecret = req0!.secret ?? "";
         this.pairRequests.delete(req0!.rid);
       } else if (status === "denied" || status === "expired") {
         this.pairRequests.delete(params.get("rid") ?? "");
       }
-      this.json(res, 200, { ok: status === "approved", status });
+      this.json(res, 200, { ok: status === "approved", status, ...(issuedSecret ? { deviceSecret: issuedSecret } : {}) });
       return;
     }
     // WebSocket upgrade
@@ -827,7 +853,12 @@ pollLoop();
     const req = this.pairRequests.get(rid);
     if (!req || req.status !== "pending") return false;
     req.status = "approved";
-    this.approved.set(req.deviceId, { name: req.name, approvedAt: Date.now(), lastSeen: Date.now() });
+    /* 09-24 安全修复：配当时生成一枚设备秘密（服务端**只留 sha256**）。
+       手机在 /api/pair-status 领走它并存进 localStorage；此后「老朋友」快路必须带上它 ——
+       只认 deviceId 的话，deviceId 一次性泄漏就等于永久访问权（见 ApprovedDevice 注释）。 */
+    const secret = crypto.randomBytes(32).toString("base64url");
+    req.secret = secret;
+    this.approved.set(req.deviceId, { name: req.name, approvedAt: Date.now(), lastSeen: Date.now(), secretHash: sha256Hex(secret) });
     this.saveApproved();
     return true;
   }
@@ -921,8 +952,10 @@ button{width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;backg
 <button onclick="submit()">配对并请求连接</button><p id="state"></p></div>
 <script>
 const KEY_DEVICE = "chm-pair-device";
+const KEY_SECRET = "chm-pair-secret";
 let deviceId = localStorage.getItem(KEY_DEVICE);
 if (!deviceId) { deviceId = "dev-" + Math.random().toString(36).slice(2,10) + Date.now().toString(36); localStorage.setItem(KEY_DEVICE, deviceId); }
+let deviceSecret = localStorage.getItem(KEY_SECRET) || "";
 const ua = navigator.userAgent;
 const deviceName = ua.includes("iPhone") ? "iPhone" : ua.includes("Android") ? "Android 手机" : "手机";
 const el = document.getElementById("state");
@@ -931,9 +964,10 @@ async function submit(){
   if (code.length !== 6) { el.className = "err"; el.textContent = "请输入 6 位数字"; return; }
   el.className = ""; el.textContent = "正在校验…";
   try {
-    const r = await fetch("/api/pair", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ code, deviceId, deviceName }) });
+    const r = await fetch("/api/pair", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ code, deviceId, deviceName, deviceSecret }) });
     const j = await r.json();
     if (!j.ok) { el.className = "err"; el.textContent = j.error || "配对失败"; return; }
+    if (j.deviceSecret) { deviceSecret = j.deviceSecret; localStorage.setItem(KEY_SECRET, deviceSecret); }
     if (j.approved) { el.className = "ok"; el.textContent = "已配对，正在进入…"; setTimeout(() => location.href = "/r/mobile", 600); return; }
     el.className = "wait"; el.textContent = "配对码正确，等待电脑端批准…";
     poll(j.rid);
@@ -946,7 +980,7 @@ async function poll(rid){
     try {
       const r = await fetch("/api/pair-status?rid=" + rid);
       const j = await r.json();
-      if (j.status === "approved") { el.className = "ok"; el.textContent = "已批准，正在进入…"; setTimeout(() => location.href = "/r/mobile", 600); return; }
+      if (j.status === "approved") { if (j.deviceSecret) { deviceSecret = j.deviceSecret; localStorage.setItem(KEY_SECRET, deviceSecret); } el.className = "ok"; el.textContent = "已批准，正在进入…"; setTimeout(() => location.href = "/r/mobile", 600); return; }
       if (j.status === "denied") { el.className = "err"; el.textContent = "电脑端拒绝了这次连接"; return; }
       if (j.status === "expired") { el.className = "err"; el.textContent = "等待超时，请重新配对"; return; }
     } catch { /* 隧道偶尔超时，继续轮询 */ }

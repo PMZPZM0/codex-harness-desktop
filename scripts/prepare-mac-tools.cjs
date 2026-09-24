@@ -2,6 +2,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFileSync } = require("node:child_process");
+// ⛔ 09-24：版本常量走 scripts/lib/tools-versions.cjs（单一来源）—— 原先与 Windows 各写一份字面量，
+//    实测漂移出 playwright-core 1.62.1(win) vs 1.58.2(mac)。各平台现值**原样保留**（对齐属产品决策）。
+const { TOOLS_VERSIONS } = require("./lib/tools-versions.cjs");
 
 if (process.platform !== "darwin") throw new Error("Run on the target macOS architecture");
 const tools = path.resolve("resources/tools");
@@ -52,8 +55,8 @@ async function main() {
   // ⛔ 09-16 用户「CloakBrowser 不用内置，按需下载就行」：这里**不再**装 cloakbrowser，
   //    它由应用「开发工具」页按需 npm 下载（npmmirror）。内核（cloak-cache）本来就不随包。
   run(node, [npm, "install", "-g", "--prefix", prefix, "--registry=https://registry.npmjs.org",
-    ...npmFlags, "@nuphus/nuphus-mcp@0.2.3", "@playwright/cli@0.1.18",
-    "playwright-core@1.58.2"], env);
+    ...npmFlags, `@nuphus/nuphus-mcp@${TOOLS_VERSIONS.nuphus}`, `@playwright/cli@${TOOLS_VERSIONS.playwrightCli}`,
+    `playwright-core@${TOOLS_VERSIONS.playwrightCore.darwin}`], env);
   const modules = path.join(prefix, "lib/node_modules");
   // Keep the same module layout as the Windows distribution.
   fs.renameSync(modules, path.join(prefix, "node_modules"));
@@ -115,12 +118,12 @@ async function main() {
   }
   fs.chmodSync(cfBinary, 0o755);
   console.log(`[cloudflared] ${cfRelease.tag_name} → ${cfBinary}`);
-  tar("https://github.com/DietrichGebert/ponytail/archive/refs/tags/v4.9.0.tar.gz",
+  tar(`https://github.com/DietrichGebert/ponytail/archive/refs/tags/${TOOLS_VERSIONS.ponytail}.tar.gz`,
     "ponytail.tar.gz", path.join(tools, "ponytail-plugin"), true);
   fs.writeFileSync(path.join(tools, "mac-runtime-manifest.json"), JSON.stringify({
-    platform: process.platform, arch, node: nodeVersion, nuphus: "0.2.3",
+    platform: process.platform, arch, node: nodeVersion, nuphus: TOOLS_VERSIONS.nuphus,
     // cloakbrowser 09-16 起不随包（按需下载），故不再记入随包清单
-    playwrightCli: "0.1.18", python: pythonAsset.name, cloudflared: cfRelease.tag_name, source: process.env.GITHUB_SHA || "",
+    playwrightCli: TOOLS_VERSIONS.playwrightCli, python: pythonAsset.name, cloudflared: cfRelease.tag_name, source: process.env.GITHUB_SHA || "",
     helperSha256: crypto.createHash("sha256").update(fs.readFileSync(path.join(tools, "nuphus-call.mjs"))).digest("hex"),
   }, null, 2));
 }

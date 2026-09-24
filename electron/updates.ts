@@ -24,6 +24,37 @@ export const GITHUB_RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/
 /** 订阅通道（固定 stable） */
 export const UPDATE_CHANNEL = "stable";
 
+export type ParsedVersion = { major: number; minor: number; patch: number; pre: string };
+
+/** 解析 `v1.2.3` / `1.2.3` / `0.0.26-b` / `0.0.26-beta.1`；不是 semver 时返回 null。 */
+export function parseVersion(input: string): ParsedVersion | null {
+  const raw = String(input ?? "").trim().replace(/^v/i, "");
+  const m = raw.match(/^(\d+)\.(\d+)\.(\d+)(?:[-.]([0-9A-Za-z.-]+))?$/);
+  if (!m) return null;
+  return { major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]), pre: m[4] ?? "" };
+}
+
+/**
+ * 语义化版本比较：a > b 返回 1，相等 0，a < b 返回 -1。
+ * ⛔ 09-24 修：原先是「字符串不等 ⇒ hasUpdate」⇒ **任何不同的 tag（包括更旧的）都报有更新**，
+ *    且 `0.0.26-b` 这类带后缀的版本与 `0.0.26` 的大小关系完全反直觉。
+ * 规则（与 semver 一致）：先比 major/minor/patch 数值；打平后**有预发布后缀的小于正式版**，
+ *    两边都有后缀时按字典序（`-b` < `-beta`，与 npm 的标识符比较同向）。
+ * 非 semver 输入（解析失败）回退字符串比较 —— 但**不再是"不等即更新"**。
+ */
+export function compareVersions(a: string, b: string): number {
+  const A = parseVersion(a);
+  const B = parseVersion(b);
+  if (!A || !B) return String(a) === String(b) ? 0 : (String(a) > String(b) ? 1 : -1);
+  for (const key of ["major", "minor", "patch"] as const) {
+    if (A[key] !== B[key]) return A[key] > B[key] ? 1 : -1;
+  }
+  if (A.pre === B.pre) return 0;
+  if (!A.pre) return 1;   // 1.2.3 > 1.2.3-beta
+  if (!B.pre) return -1;  // 1.2.3-beta < 1.2.3
+  return A.pre > B.pre ? 1 : -1;
+}
+
 export type LatestInfo = {
   hasUpdate: boolean;
   reason: string;
@@ -104,8 +135,15 @@ export async function checkLatestUpdate(
   }
   if (!release?.tag_name) throw new Error("no_release");
   const version = String(release.tag_name).replace(/^v/i, "");
-  // 当前已是最新则无需下载
-  if (version === currentVersion) {
+  // ⛔ 09-24 修：改为 semver 比较 —— 旧写法「字符串不等即更新」会把**更旧的 tag** 也报成有更新。
+  //    同时尊重 GitHub 的 prerelease 标志：stable 通道下不推预发布版
+  //    （**例外**：本地本身就是预发布版，如 0.0.26-b，否则 beta 用户永远收不到更新）。
+  const localPre = Boolean(parseVersion(currentVersion)?.pre);
+  const remotePre = Boolean(release?.prerelease) || Boolean(parseVersion(version)?.pre);
+  if (remotePre && UPDATE_CHANNEL === "stable" && !localPre) {
+    return { hasUpdate: false, reason: "prerelease_not_on_stable_channel", channel: UPDATE_CHANNEL, version };
+  }
+  if (compareVersions(version, currentVersion) <= 0) {
     return { hasUpdate: false, reason: "up_to_date", channel: UPDATE_CHANNEL, version };
   }
   // 按平台选资产：Windows → *.exe；mac → 按架构 *-mac-arm64.zip / *-mac-x64.zip（含 mac 即可）

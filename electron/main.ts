@@ -1,92 +1,139 @@
-import { Menu, Notification, app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, ipcMain, nativeImage, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, session, shell, systemPreferences } from "electron";
-import os from "node:os";
-import nodeNet from "node:net";
+/**
+ * main —— 保留未分出的部分（09-22 结构改造）。
+ * ⛔ 顺序即契约（若含 hook / 副作用注册，调用顺序 == 原文件顺序）⇒ 只能按文件名前缀顺序 import。
+ */
+import { Menu, Notification, app, BrowserWindow, clipboard, globalShortcut, ipcMain, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, session, shell, systemPreferences } from "electron";
 import { execSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs/promises";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, watch as watchFs, writeFileSync, type Dirent } from "node:fs";
 import path from "node:path";
 import http from "node:http";
-import crypto from "node:crypto";
-import { pathToFileURL } from "node:url";
 import { ChannelBotService, type ChannelBotConfig } from "./channel-bot";
-import { RESERVED_PROVIDER_IDS, safeProviderId, stripReservedProviderTables } from "./provider-id";
-import { BotStreamSession, readBotStreamSettings, readBotStreamSettingsSync, writeBotStreamSettings, type BotStreamBudget, type BotStreamSink, type BotStreamSettings } from "./bot-stream";
-import { plainTextForChannel } from "./channel-text";
 import { CodexServer, codexBinaryPath } from "./codex-server";
-import { ResponsesBridge, type BridgeMode } from "./responses-bridge";
 import { BotPairingService } from "./bot-pairing";
-import { collectMcpServerNames, escapeTomlString, extractMcpSection, injectMcpToolRules, injectSectionExtras, preserveUserConfig, tomlBareKey, type McpToolRules } from "./config-toml";
-import { applyRoundedCorners } from "./win-rounded-corners";
-import { deleteCustomCommand, expandCommandTemplate, listCustomCommands, readCustomCommand, saveCustomCommand } from "./commands";
-import { MemoryStore, Scheduler, type MemoryCategory, type MemoryRemoteConfig } from "./harness-services";
-import { PROVIDER_RETRY_TUNING } from "./provider-retry";
+import { MemoryStore, type MemoryCategory, type MemoryRemoteConfig } from "./memory-store";
+import { Scheduler } from "./scheduler";
 import { MemoryLayers } from "./memory-layers";
-import { isRelayAccountLive, normalizeRelayStore, pickRelayActiveId, relayProviderIdOf } from "./relay-accounts";
 import { RpaStore, type RpaRecipe } from "./rpa-store";
 import { TeamRunStore, memberThreadName } from "./team-runs";
 import { DelegateRegistry } from "./delegate-registry";
-import {
-  admitDispatch, canDispatchFrom, clipDispatchOutput, delegateScopeBlock,
-  dispatchNoticeText, dispatchOffNoticeText, dispatchToolDescription, filterTargetsBySwitch, kindLabel, resolveDispatchTarget,
-  type DispatchKind, type DispatchTarget,
-} from "./dispatch";
 import { ThreadRuntimeStore } from "./thread-runtime-store";
 import { TerminalService } from "./terminal";
 import { RemoteControlService } from "./remote";
 import QRCode from "qrcode";
-import { WeixinGateway } from "./weixin-gateway";
-import { TelegramGateway } from "./telegram-gateway";
-import { FeishuGateway } from "./feishu-gateway";
-import { DingtalkGateway } from "./dingtalk-gateway";
-import { QqGateway } from "./qq-gateway";
-import { qqQrCancel, qqQrSnapshot, qqQrStart } from "./qq-qr-connect";
-import { feishuQrCancel, feishuQrSnapshot, feishuQrStart } from "./feishu-qr-connect";
-import { WecomWebhookGateway } from "./wecom-webhook-gateway";
 import { readPersonalization, writePersonalization, applyPersonalizationToAgentsMd, buildAgentsMd, migrateGreetedForExistingUsers } from "./personalization";
-import { developerInstructionsLine } from "./developer-instructions";
-import { shouldRegisterNuphus, withNuphusMasks, withNuphusMasksForRules } from "./automation-policy";
 import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings } from "./app-settings";
-import { checkLatestUpdate, defaultDownloadDir, downloadUpdate, fileExists, installUpdate, UPDATE_CHANNEL } from "./updates";
-import { checkEngineUpdate, performEngineUpdate } from "./engine-updater";
-import { flushBootTiming, markBoot } from "./boot-timing";
 import { VoiceService } from "./voice/voice-service";
 import * as voiceProfiles from "./voice/voice-profiles";
-import { ALL_VOICE_REPOS, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "./voice/model-manifest";
-import { ensureRepo, ensureZipvoice, modelsSizeOnDisk, voiceModelsStatus } from "./voice/model-store";
 import {
   deleteSshServer, execSshCommand, exportSshServers, parseSshImport, readSshServers, saveSshServer, setSshServerEnabled,
   testSshConnection, writeSshServers, SshSessionManager, type SshExecResult, type SshServer, type SshTestResult,
 } from "./ssh-servers";
-
-/** 二维码 SVG（官方 qrcode 包：mask/纠错全规范实现，自研版有机读缺陷已弃用） */
-function qrSvg(text: string) {
-  return QRCode.toString(text, { type: "svg", margin: 2, errorCorrectionLevel: "M" });
-}
-import { installCocoLoopSkill, listCocoLoopSkills, listSkillHubSkills, repairSkillBomScan, stripSkillBom, type InstalledMarketSkill, type MarketSkill } from "./skills-market";
-import { upsertSkillDiscipline, DISCIPLINE_START, DISCIPLINE_END } from "./skill-discipline";
-import { ensureCodexMarketplaceSection, installCodexMarketPlugin, listCodexMarketPlugins, type CodexMarketPlugin } from "./codex-market";
-import { augmentedPath, bundledGit, bundledNode, bundledPython, CHINA_NPM_REGISTRY, cloakCacheDir, cloakOpenHelper, downloadEnv, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "./toolchain";
+import {
+  allBusWindows, broadcastCodexEvent, broadcastHarnessEvent, isPopoutWindow,
+  popoutBusWindows, registerBusWindow, sendToWindow, unregisterBusWindow,
+} from "./features/window-bus";
+import type { CustomModelFile, ProviderModel } from "./features/custom-model-types";
+import { bindCustomModelProbe } from "./features/custom-model-probe";
+import type { ConnectorOAuthKind, ConnectorOAuthSpec, ConnectorTemplate } from "./features/connector-templates";
+import { buildModelCatalog, probeCustomModel } from "./features/custom-model-probe";
+import { bootApp, bindBoot } from "./features/boot";
+import {
+  DISPATCH_FIXED_PORT, buildDispatchCatalog, dispatchHttpPort, dispatchHttpReady, dispatchMcpTools,
+  dispatchProbes, dispatchToken, ensureDispatchToken, restrictedThreadRole, setDispatchHttpPort,
+  setDispatchHttpReady, stableKey,
+} from "./features/dispatch-core";
+import { dirEntries, fileStat, sizeLabel } from "./features/app-diagnostics";
+import { registerVoiceIpc } from "./features/voice-ipc";
+import { readRelayStore, registerRelayIpc, writeRelayStore } from "./features/relay-ipc";
+import { IPC_DOMAINS, domainsStillInMain } from "./ipc-registry";
 import { ensureBuiltinSkills, ensureExpertSkillsMarketplace, expertSkillsSourceDir } from "./builtin-skills";
 import { NUPHUS_VISION_ENV_TABLE, nuphusVisionEnv, nuphusVisionEnvDrift } from "./nuphus-env";
-import { resolveCapabilities, type CapabilityProbe } from "./capability-registry";
-import { FRESH_REVIEW_ID, freshReviewSpec } from "./builtin-agents";
-import { ensurePonytailPlugin } from "./ponytail-plugin";
-import { getPonytailMode, setPonytailMode } from "./ponytail-mode";
-import { markMissingRollouts, mergeThreadList } from "./session-tools";
-import { enrichThreadWithRolloutToolsAsync, healRolloutLineageAsync, listRolloutThreadsAsync, purgeRolloutFilesAsync } from "./rollout-pool";
+import {
+  buildChengxiangExpertTeam, buildDefaultExpertTeams, buildDongmingExpertTeam, buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, buildZhiweiExpertTeam, normalizeTeamConfig,
+  readExpertTeams, setExpertTeamsFile, syncSkillsPathInTeam, writeExpertTeams, type ExpertTeamConfig, type ExpertTeamMember,
+} from "./expert-teams";
+import { applyCustomModel } from "./features/custom-model-apply";
+import { fetchOpenaiModels, readOpenaiAuth, resolveLiveProxy } from "./features/openai-auth";
+import { deletedThreadIds, healRolloutLineage, loadDeletedThreads, purgeDeletedThread } from "./features/thread-deletion";
+import { autoInstallGitIfNeeded } from "./features/dev-runtimes";
+import { engineDebugLogPath } from "./user-data-paths";
+import { createAppTray, destroyAppTray, trayIconPath } from "./tray";
+import { showMainWindow } from "./features/window-factory";
+import { runDelegatedTask } from "./features/delegation";
+import { createPopoutWindow, createWindow } from "./features/window-factory";
+import { dispatchRpcCall, ensureDispatchHttp } from "./features/dispatch-rpc";
+import { handleChannelMessage, handleTelegramMessage, handleWeixinMessage } from "./features/im-inbound";
+import { collectSessionProviderIds } from "./features/provider-sessions";
+import { botStreamPlanFor, botStreamSessions, botsFile, channelBotBindings, channelLog, channelThreadChat, dingtalkGateway, feishuGateway, loadBotBindings, persistChannelLog, qqGateway, qqReplyContexts, setWeixinGateway, startWeixinTyping, stopWeixinTyping, telegramBindings, telegramGateway, wecomWebhookGateway, weixinBindings, weixinGateway, writeBotBindings } from "./features/im-gateways";
+import { EVENT_FILTER_ENABLED, eventThreadId, filterForRenderer, rendererDroppedEventCount } from "./features/renderer-fuse";
+/* 运行时单例与路径（09-24 P2-9 下沉）：构造仍在下方启动链，赋值走 setXxx（见 runtime-refs.ts）。 */
+import {
+  appSourceRoot, botStreamFile, builtinPluginsFile, channelBotFile, channelLogs, closeToTrayEnabled, codexHome,
+  connectorsFile, customModelFile, customModelsFile, delegateRegistry, engineActiveTurnIds, initRuntimePaths,
+  internalThreads, modelCatalogFile,
+  isInsideOrEqualTrustedRoots, isInsideTrustedRoots, mainWindow, memoryGatewayFile, memoryLayers,
+  memoryStore, memoryWorkspaceFile, notifyPopoutClosed, pastedTextDir, popoutThreadIds, qrSvg,
+  rpaStore, server, setAppThemeDark, setDelegateRegistry, setMainWindow, setMemoryLayers,
+  setMemoryStore, setRpaStore, setServer, setTeamRunStore, setThreadRuntimeStore, sshSessions,
+  syncEngineWatchdog, teamRunStore, terminals, threadCwd, threadRuntimeStore, titleBarOverlayOptions,
+  trustPicked, upsertCustomModel,
+} from "./runtime-refs";
+import { readCustomModel, readCustomModels, writeCustomModels, healReservedProviderConfig, normalizeProvider, writeModelCatalogToml, readUserConfigSplit } from "./main/01-model-catalog";
+import { distillSummarize, turnOutputText, waitForTurnCompletion } from "./main/03-turn-summary";
+import { connectorEnv, readChannelBot, connectorToml, mcpToolRulesOf } from "./main/04-connector-config";
+import "./features/dialog-ipc";
+import "./features/clipboard-ipc";
+import "./features/im-channels-ipc";
+import "./features/teams-agents-ipc";
+import "./features/engine-ipc";
+import "./features/builtin-skills-ipc";
+import "./features/connectors-mcp-ipc";
+import "./features/model-custom-ipc";
+import "./features/settings-app-ipc";
+import "./features/user-ipc";
+import "./features/remote-ipc";
+import "./features/memory-rpa-ipc";
+import "./features/fs-ipc";
+import "./features/updates-ipc";
+import "./features/shell-misc-ipc";
+/* 截图（全屏/框选）+ 收藏夹：用户素材链的两端（截图可收藏、收藏可发送/进记忆） */
+import "./features/screenshot-favorites-ipc";
+/* 历史会话搜索：顶栏 🔍 → 扫 rollout 原档搜对话内容（真相源=rollout，见 history-search-ipc.ts） */
+import "./features/history-search-ipc";
+import { readMemoryMode, applyMemoryMode, workspaceMemoryEnabled } from "./main/05-memory-mode";
+import { readMcpOverrides, mcpOverrideEnabled } from "./main/06-mcp-overrides";
+import { escapeToml, readConnectors } from "./main/07-connectors-io";
+import { ensureBuiltinReviewer } from "./main/09-agents-plugins";
+import { classifyProbeError, migrateLegacyRolloutHome, describeNetworkError } from "./main/11-maintenance";
+import { devInstructionsInput, refreshSkillDiscipline } from "./main/12-skill-discipline";
+/* 断环用叶子模块（2026-09-24）：路径常量(runtime-paths) / 上游协议表(upstream-protocols) /
+   协议桥下发(bridge-dial)，只依赖 electron 与 node 内置 ⇒ 谁都能正向依赖，不成环。 */
+import { normalizeUpstreamProtocol } from "./upstream-protocols";
+import { bridgeDial, responsesBridge } from "./bridge-dial";
+
+
+
+
 /** 诊断计数（09-12 多会话性能）：thread/list 走了几次「rollout 全量兜底扫描」。
     旧实现每次必扫（渲染层每个回合结束都打一发 → O(N²)）；现在只在引擎索引为空时扫。
     e2e 场景据此断言「跑 10 个会话时扫描次数为 0」，避免优化被悄悄改回去。 */
 let rolloutFallbackScanCount = 0;
+
 /** 主进程耗时打点：thread/resume 总耗时 与 其中 enrich（同步解析 rollout）的耗时。
     切会话卡不卡主要看这两项——它们是主进程**同步**路径，会连带堵住所有会话的事件转发。 */
 let resumeTotalMs = 0;
+
 let resumeCount = 0;
+
 let resumeEnrichMs = 0;
+
 let resumeMaxMs = 0;
+
 /** thread/list 的请求次数（多会话性能验证用）：渲染层原本**每个回合结束都打一发**，
     改成「本地补丁 + 去抖兜底」后应显著下降。 */
 let threadListRequestCount = 0;
+
 function enrichScanCountSnapshot() {
   return {
     rolloutFallbackScans: rolloutFallbackScanCount,
@@ -101,112 +148,26 @@ function enrichScanCountSnapshot() {
   };
 }
 
-/** 渲染层当前正在查看的会话（由渲染层在切换会话时上报）。
-    多会话性能（09-12 P1）：引擎事件原本**全量广播**给渲染层，渲染层到
-    `App.tsx` 的 threadId 过滤才丢弃——序列化 + 跨进程拷贝的成本已经付过却白付，
-    N 个后台会话同时流式就是 N 倍的冤枉开销。这里在**发给渲染层之前**就按会话裁掉。 */
-let rendererActiveThreadId = "";
-/** 诊断计数：被按会话过滤掉的事件数（e2e 用它证明过滤真的生效，而非「碰巧没事件」）。 */
-let rendererDroppedEventCount = 0;
-
-/** 跨会话也必须送达渲染层的**轻量**事件白名单。
-    依据是渲染层真实依赖：侧栏转圈/运行指示（markThreadRunning 系）靠
-    thread/status/changed + turn/started + turn/completed；排队角标靠 thread/queue/changed；
-    后台新建会话（渠道机器人）要靠 thread/started 触发侧栏刷新。
-    **其余事件（各种 delta / item 全文 / outputDelta）只有当前会话需要。** */
-const RENDERER_CROSS_SESSION_METHODS = new Set([
-  "thread/started",
-  "thread/status/changed",
-  "thread/name/updated",
-  "thread/queue/changed",
-  "thread/closed",
-  "thread/archived",
-  "thread/unarchived",
-  "thread/deleted",
-  "turn/started",
-  "turn/completed",
-  // ⛔ 09-20 补齐：渲染层的**跨会话区**要处理 aborted/failed/interrupted（熄灭运行指示 / 点后台绿点）
-  //   与 error（后台会话的 429 排重试），漏发等于后台会话状态永久卡住（转圈不消失 / 重试链不启动）。
-  //   这些都是低频生命周期事件，放行成本可忽略。
-  "turn/aborted",
-  "turn/failed",
-  "turn/interrupted",
-  "error",
-]);
-
-/** 会话 id 提取：不同事件把归属放在不同字段上，逐个兜。取不到就不敢裁（放行）。 */
-function eventThreadId(params: any): string {
-  if (!params || typeof params !== "object") return "";
-  return String(params.threadId ?? params.thread_id ?? params.conversationId ?? "");
-}
-
-/** 每个窗口各自上报的「我在看哪个会话」——**必须按窗口分别记**。
- *  09-12 那次事故的根因就在这里：主窗口与独立弹窗共用同一个全局变量，
- *  后上报的窗口会覆盖前一个 → 另一个窗口正在看的会话被裁掉事件 → 永久转圈。 */
-const rendererActiveByWindow = new Map<number, { threadId: string; at: number }>();
-/** 上报新鲜度窗口：超过这个时间没再上报，就认为「不知道它在看什么」，一律放行（宁多不漏）。 */
-const ACTIVE_THREAD_FRESH_MS = 30_000;
-/** 逃生阀：HARNESS_EVENT_FILTER=off 一键回到全量放行（改代码之外的回退路径）。 */
-const EVENT_FILTER_ENABLED = process.env.HARNESS_EVENT_FILTER !== "off";
-
-/** 当前「必须收到事件」的会话集合 = 各窗口新鲜的活跃会话 ∪ 独立弹窗锁定的会话。
- *  返回 null 表示「信息不可信」——此时调用方必须全量放行。
- *  ⛔ 09-20 修「两个会话窗口一起跑，前台会话只显示正在回复、过程不出内容」（用户截图 + rollout 实证：
- *  引擎 49 秒里稳定产出工具事件，是渲染层没收到）：
- *  旧实现只把**新鲜**（30s 内）的上报并进集合，而**过期**的上报被静默忽略 —— 等价于判定
- *  「那个窗口不知道在看什么」，可它照样返回集合 ⇒ 过期窗口正在看的会话的 item/delta 被裁掉，
- *  只剩 turn/started（白名单）把运行态点亮，用户看到的就是「一直转圈 + 内容不出来」。
- *  规则收紧：**任何窗口的上报过期都视为整体不可信 → 放行**（宁可多发，不可漏发）；
- *  渲染层侧另加 15s 心跳（见 App.tsx setActiveThread），正常情况下不会走到放行。 */
-function watchedThreadIds(): Set<string> | null {
-  const now = Date.now();
-  const ids = new Set<string>();
-  let anyStale = false;
-  let anyFresh = false;
-  for (const entry of rendererActiveByWindow.values()) {
-    if (now - entry.at <= ACTIVE_THREAD_FRESH_MS) {
-      anyFresh = true;
-      if (entry.threadId) ids.add(entry.threadId);
-    } else {
-      anyStale = true;
-    }
-  }
-  // 弹窗锁定的会话：即使主窗口已经切走，也必须继续收到它自己的流式事件
-  for (const tid of popoutThreadIds.values()) if (tid) { ids.add(tid); anyFresh = true; }
-  if (!anyFresh || anyStale) return null;
-  return ids;
-}
-
-function filterForRenderer(event: any) {
-  if (!EVENT_FILTER_ENABLED) return event;
-  if (event?.kind !== "notification") return event;
-  const method = String(event?.method ?? "");
-  if (RENDERER_CROSS_SESSION_METHODS.has(method)) return event;
-  const tid = eventThreadId(event?.params);
-  if (!tid) return event;
-  const watched = watchedThreadIds();
-  if (!watched) return event;          // 不知道任何窗口在看什么 → 放行
-  if (watched.has(tid)) return event;  // 正在被看着 → 放行
-  // 真的可以裁掉：只有渲染层当前不看的会话的高频事件（各种 delta / item 全文 / outputDelta）。
-  rendererDroppedEventCount += 1;
-  return null;
-}
-
-
-import { applySessionsBackup, backupFromRolloutFile, buildMarkdownExport, buildSessionsBackup, buildThreadPreview, parseMarkdownConversation, BACKUP_FORMAT, BACKUP_VERSION } from "./thread-backup";
-import {
-  buildChengxiangExpertTeam, buildDefaultExpertTeams, buildDongmingExpertTeam, buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, buildZhiweiExpertTeam, normalizeTeamConfig,
-  readExpertTeams, setExpertTeamsFile, syncSkillsPathInTeam, writeExpertTeams, type ExpertTeamConfig, type ExpertTeamMember,
-} from "./expert-teams";
-
 protocol.registerSchemesAsPrivileged([{ scheme: "harness-image", privileges: { secure: true, supportFetchAPI: true } }]);
+
 app.setName("Codex Harness Desktop");
+
 app.setPath("userData", process.env.CODEX_HARNESS_USER_DATA || path.join(app.getPath("appData"), "Codex Harness Desktop"));
-// 自定义 AUMID 只有在系统里有快捷方式注册它时才有意义（安装版由 electron-builder NSIS 写入）。
-// 裸 electron.exe（dev/绿色启动）下设置未注册 AUMID 会让任务栏回退取 electron.exe
-// 的默认原子图标、顶掉窗口图标——因此仅在打包后设置。
-if (app.isPackaged) app.setAppUserModelId("com.codexharness.desktop");
+
+/* 自定义 AUMID（AppUserModelID）：Windows 任务栏靠它把"运行中的进程"与"某个快捷方式"配对，
+   配对成功后**任务栏图标取该快捷方式的图标**（我们的 build/icon.ico），否则回退进程 exe 的图标
+   —— dev 形态 exe 是 node_modules/electron/dist/electron.exe，于是任务栏永远是 **Electron 原子图标**
+   （09-24 用户报「任务栏图标又变成默认的」的根因）。
+   ⛔ 两个前提必须同时成立，缺一个就会**顶掉窗口图标**（历史上踩过，当时因此只敢在打包后设置）：
+     ① 系统里存在**注册了同一个 AUMID** 的快捷方式（安装版由 electron-builder NSIS 写入
+        `com.codexharness.desktop`；dev 由桌面快捷方式注册 `com.codexharness.desktop.dev`）；
+     ② 进程设置的 AUMID 与那个快捷方式**逐字一致**。
+   ⇒ dev 与打包用**两个不同 id**，各自与自己的快捷方式对应。dev 快捷方式已注册 `.dev`，
+     所以 dev 分支现在也能安全设置（09-24 修复）。换机/新建快捷方式时务必带上这个 AUMID。 */
+app.setAppUserModelId(app.isPackaged ? "com.codexharness.desktop" : "com.codexharness.desktop.dev");
+
 if (process.env.CODEX_HARNESS_DEBUG_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.CODEX_HARNESS_DEBUG_PORT);
+
 // 硬件加速策略：默认全部保持 Chromium 默认（健康显卡自动走硬件加速）。
 // 曾试过 ignore-gpu-blocklist / enable-gpu-rasterization / enable-zero-copy / disable-frame-rate-limit
 // 四开关无脑强推，健康显卡上用户实测「点击延迟明显变高」——强开对本来就走 GPU 的机器反而是劣化。
@@ -240,6 +201,7 @@ if (process.env.CODEX_HARNESS_IN_PROCESS_GPU) {
     console.error(`[e2e-diag] 渲染进程退出 reason=${details?.reason} exitCode=${details?.exitCode}`);
   });
 }
+
 /**
  * 崩溃取证（09-12 新增）：用户反馈「开实时语音一会就闪退」，但应用跑 e2e 之外的路径
  * 没有任何崩溃日志——渲染进程一死 → 窗口关闭 → window-all-closed → app.quit()，
@@ -256,6 +218,7 @@ function logCrash(scope: string, detail: unknown): void {
     /* 取证失败不能影响主流程 */
   }
 }
+
 app.on("render-process-gone", (_event, contents, details) => {
   logCrash("renderer-gone", { reason: details?.reason, exitCode: details?.exitCode });
   if (details?.reason === "clean-exit") return;
@@ -265,7 +228,9 @@ app.on("render-process-gone", (_event, contents, details) => {
     /* 重载失败就交给用户手动重开 */
   }
 });
+
 process.on("uncaughtException", (error) => logCrash("main-uncaught", String(error?.stack ?? error)));
+
 process.on("unhandledRejection", (reason) => logCrash("main-unhandled", String((reason as any)?.stack ?? reason)));
 
 void app.whenReady().then(() => {
@@ -275,62 +240,28 @@ void app.whenReady().then(() => {
   } catch { /* 诊断日志，失败不影响启动 */ }
 });
 
-const codexHome = path.join(app.getPath("userData"), "codex-home");
-const customModelFile = path.join(app.getPath("userData"), "custom-model.json");
-const customModelsFile = path.join(app.getPath("userData"), "custom-models.json");
-const channelBotFile = path.join(app.getPath("userData"), "channel-bot.json");
-const botStreamFile = path.join(app.getPath("userData"), "bot-stream.json");
+initRuntimePaths();
 
-function appSourceRoot() {
-  // 打包运行：resources 目录（tools/*.mjs 等可改文件在此）；源码运行：项目根
-  return app.isPackaged ? process.resourcesPath : app.getAppPath();
-}
 
-let gitBinCache = "";
-function gitBin(): string {
-  if (gitBinCache) return gitBinCache;
-  // 系统 PATH 里通常没有 git（GUI 进程继承的注册表 PATH 无 Git Bash 注入）——
-  // 按候选顺序解析：应用自带便携版 → 常见安装位置 → 最后才赌 PATH
-  // ⛔ mac 适配（09-17 审计）：darwin 没有便携 git，用系统那份；且 GUI 进程的 PATH 是 launchd
-  //    给的最小集，/usr/bin/git 是 Xcode 命令行工具提供的 shim，homebrew 在 /opt/homebrew/bin。
-  const candidates = process.platform === "darwin"
-    ? [
-        "/usr/bin/git",
-        "/opt/homebrew/bin/git",
-        "/usr/local/bin/git",
-        path.join(toolsRoot(), "git", "bin", "git"),
-      ]
-    : [
-        path.join(appSourceRoot(), "resources", "tools", "git", "cmd", "git.exe"),
-        path.join(process.resourcesPath || app.getAppPath(), "tools", "git", "cmd", "git.exe"),
-        "C:\\Program Files\\Git\\cmd\\git.exe",
-        path.join(process.env.LOCALAPPDATA || "", "Programs", "Git", "cmd", "git.exe"),
-      ];
-  gitBinCache = candidates.find((c) => c && existsSync(c)) ?? "git";
-  return gitBinCache;
-}
 
-function gitExec(root: string, args: string): string {
-  const bin = `"${gitBin()}"`;
-  try {
-    // -c core.quotepath=off：中文/特殊字符文件名默认输出带引号的八进制转义（"docs\350\207\252..."），
-    // ls-files 之类按行解析路径的调用会拿到坏路径（实测炸过）
-    return execSync(`${bin} -c core.quotepath=off ${args}`, { cwd: root, timeout: 90_000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }).toString().trim();
-  } catch (error: any) {
-    // 把 stderr 带进错误信息：否则切换失败只显示「Command failed」，查不到原因
-    const detail = String(error?.stderr ?? "").trim() || String(error?.message ?? error);
-    throw new Error(`git ${args.split(" ")[0]} 失败：${detail.slice(0, 200)}`);
-  }
-}
+
+
+
+
+
 
 
 const memoryFile = path.join(app.getPath("userData"), "memory.json");
-const memoryGatewayFile = path.join(app.getPath("userData"), "memory-gateway.json");
+
+
+
 const scheduleFile = path.join(app.getPath("userData"), "scheduled-tasks.json");
-const connectorsFile = path.join(app.getPath("userData"), "connectors.json");
+
 // 专家团（Team 型专家）：团队定义 + 内置示例首次启动写入
 const expertTeamsFile = path.join(app.getPath("userData"), "expert-teams.json");
+
 setExpertTeamsFile(expertTeamsFile);
+
 void (async () => {
   try {
     const existing = await readExpertTeams();
@@ -375,27 +306,32 @@ void (async () => {
     if (renamed) await writeExpertTeams(teams);
   } catch { /* 忽略初始化失败 */ }
 })();
-// 引擎直管的 MCP 服务器（如内置 nuphus）不在 connectors 列表里，单独存一份 名字 -> 是否启用
-const mcpOverridesFile = path.join(app.getPath("userData"), "mcp-server-overrides.json");
-// 剪贴板/临时图片持久化目录：userData 不会被系统重启清理，避免缩略图重启后破图
-const imagesDir = path.join(app.getPath("userData"), "images");
-/** 粘贴长文本落盘目录（见 `pasted-text:save`）。与 images 同层，属应用数据、不进用户工作区。 */
-const pastedTextDir = path.join(app.getPath("userData"), "pasted-text");
+
+// 引擎直管的 MCP 服务器（如内置 nuphus）不在 connectors 列表里，单独存一份 名字 -> 是否启用。
+// ⛔ 路径常量 mcpOverridesFile 已下沉 electron/runtime-paths.ts（2026-09-24 断环收尾）。
+
+// 粘贴长文本落盘目录（见 `pasted-text:save`）。与 images 同层，属应用数据、不进用户工作区。
+
+
 // 1x1 透明 PNG（base64），图片文件缺失时的兜底响应
 const PLACEHOLDER_PNG_B64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
 function placeholderPngResponse(): Response {
   return new Response(Buffer.from(PLACEHOLDER_PNG_B64, "base64"), {
     headers: { "content-type": "image/png" },
   });
 }
-const server = new CodexServer(codexHome);
+
+setServer(new CodexServer(codexHome));
+
 // ── 重启闸门接线（09-19 用户：「又莫名其妙断了，能一次性从根上解决嘛」）────────────
 // 主进程自己按引擎的 turn/started | turn/completed 记账（engineActiveTurnIds），
 // 是"有没有回合在跑"的**引擎侧真相**，不依赖渲染层上报（渲染层可能没开/切走了）。
 // 注入了它以后，**所有** `server.restart()`（20+ 处：改模型/改供应商/装插件/装技能/
 // 改连接器/改沙箱…）都会在有任务在跑时自动推迟到任务结束，不再打断用户的任务。
 server.setBusyGate(() => engineActiveTurnIds.size);
+
 server.setBusyNotice((waiting, reason) => {
   // 通知渲染层：改动还没生效（等任务结束会自动生效）。用既有 toast 通道，不新造 UI。
   try {
@@ -406,6 +342,7 @@ server.setBusyNotice((waiting, reason) => {
     }
   } catch { /* 窗口可能已销毁，忽略 */ }
 });
+
 // ⛔ 引擎进程一换，旧回合**全部不存在** ⇒ 记账必须跟着清（否则闸门与 turn/start 安全网永久卡住，
 //   见 codex-server.ts 里 spawn 处的注释）。顺手留一条台账：下次"任务莫名断了"能一眼看出
 //   是"引擎换了进程（含换了几个回合）"还是别的原因。
@@ -418,17 +355,10 @@ server.setEngineSpawnHook(() => {
     console.warn(`[engine] 引擎进程已重启：作废 ${stale.length} 个失效回合记账（会话 ${[...byThread.keys()].map((t) => t.slice(0, 8)).join(", ")}）`);
   }
 });
-/**
- * 本地协议桥（09-16）：引擎只会发 Responses（POST /v1/responses），而不少第三方网关
- * 只提供 /v1/chat/completions —— 这类网关过去「连接测试通过、实际对话全废」。
- * 桥让引擎照常按 Responses 调用它，由它按上游**实际能力**转发：支持 responses 就原样透传，
- * 只支持 chat 就把请求体/流双向转换（详见 electron/responses-bridge.ts，契约来自真实引擎实证）。
- *
- * 端口固定 47121（与内置调度 MCP 47120 同族）以便跨运行稳定；被占用则退回随机端口。
- * 桥只在主进程内监听 127.0.0.1，没有外部依赖、不留存密钥（凭据由引擎带、桥原样透传）
- * —— 所以换电脑只需重填一次 Key，行为与设备无关。
- */
-const responsesBridge = new ResponsesBridge({ preferredPort: 47121, log: (line) => console.log(line) });
+
+/* 本地协议桥单例 + bridgeDial 已抽成叶子模块 electron/bridge-dial.ts（2026-09-24 断环收尾：
+   两者原在本文件，而 main/03-turn-summary.ts 要调 bridgeDial ⇒ 反向依赖 main.ts）。
+   本文件按名 import 后原样 re-export（见文件末 export 块），feature / main 侧引用名不变。 */
 
 /**
  * 供应商 id → 上游协议（桥转发用）。**内存映射**，避免每个请求都去读盘。
@@ -437,29 +367,11 @@ const responsesBridge = new ResponsesBridge({ preferredPort: 47121, log: (line) 
  *   （下发 config.toml、以及 codex:request 入口的兜底改写 `bridgeRewriteProviderConfig`），
  *   那里只拿得到 provider id —— 所以只能靠这张表把协议设置带过去。
  * 刷新时机：启动时一次 + 每次 `writeCustomModels` 之后（写档案 = 设置变化的唯一出口）。
+ *
+ * 上游协议表已抽成叶子模块 electron/upstream-protocols.ts（2026-09-24 断环：
+ *   它原先在本文件，而 main/01-model-catalog.ts 要写它 ⇒ 那边反向依赖 main.ts）。
+ *   bridgeDial（现于 bridge-dial.ts）读表、model-catalog 写表，两边都是正向依赖。
  */
-const upstreamProtocols = new Map<string, BridgeMode>();
-function normalizeUpstreamProtocol(value: unknown): BridgeMode {
-  return value === "chat" || value === "responses" || value === "anthropic" ? value : "auto";
-}
-function syncUpstreamProtocols(list: CustomModelFile[]) {
-  upstreamProtocols.clear();
-  for (const entry of list) {
-    if (entry?.provider) upstreamProtocols.set(entry.provider, normalizeUpstreamProtocol(entry.upstreamProtocol));
-  }
-}
-
-/**
- * 生成「下发给引擎」的 base_url：桥已启动时换成桥地址并登记上游目标；
- * 桥未启动（启动失败等）时原样返回 → 直连，行为与旧版本完全一致（降级安全）。
- */
-function bridgeDial(id: string, upstreamBaseUrl: string | undefined): string | undefined {
-  if (!upstreamBaseUrl) return upstreamBaseUrl;
-  const dialed = responsesBridge.urlFor(id);
-  if (!dialed) return upstreamBaseUrl;
-  responsesBridge.register(id, { baseUrl: upstreamBaseUrl, mode: upstreamProtocols.get(id) ?? "auto", label: id });
-  return dialed;
-}
 
 /**
  * 兜底收口：把 «任意来源» 的内联 provider 配置改成走桥。
@@ -469,61 +381,34 @@ function bridgeDial(id: string, upstreamBaseUrl: string | undefined): string | u
  * 「params.config.model_providers 里出现了 base_url」，与具体方法名无关，覆盖所有线程生命周期调用。
  * 桥未启动时 bridgeDial 原样返回，等于不改（直连）。
  */
-function bridgeRewriteProviderConfig(params: any) {
-  const providers = params?.config?.model_providers;
-  if (!providers || typeof providers !== "object") return;
-  for (const [id, entry] of Object.entries<any>(providers)) {
-    if (entry && typeof entry.base_url === "string" && entry.base_url) {
-      entry.base_url = bridgeDial(id, entry.base_url) ?? entry.base_url;
-    }
-  }
-}
 
-const engineActiveTurnIds = new Map<string, string>();  // turnId → threadId（09-19：见记账处注释）
+
+  // turnId → threadId（09-19：见记账处注释）
 /** 关窗确认只问一次（用户点过「仍然关闭」后不再拦）。 */
 let closeConfirmed = false;
+
 // 记忆捕获：turnId → { user, assistant, cwd }；threadId → cwd（thread/start 响应与 settings/updated 维护）
 const captureBuffers = new Map<string, { user: string; assistant: string; cwd?: string }>();
-const threadCwd = new Map<string, string>();
-let mainWindow: BrowserWindow | null = null;
-/** 独立会话弹窗（09-13 新增）：主窗口之外可开多个只显示单个会话的窗口。
- *  所有 popout 窗口与主窗口同 origin（共享 localStorage）但各自持有 thread 状态；
- *  引擎事件全量广播（filterForRenderer 当前为放行态），每个窗口按自己的会话过滤。 */
-const popoutWindows = new Set<BrowserWindow>();
+
+
+
 /** 弹窗窗口 → 会话 id 的同步登记表：创建时立即写入（不依赖 URL 加载完成）。
  *  之前的实现靠「读窗口 URL 里的 ?popout=」反查，但 loadFile 异步加载、URL 未就绪时
  *  popoutList 拿到空 → 主窗口侧栏隐藏不生效（用户 09-13 实测）。 */
-const popoutThreadIds = new Map<BrowserWindow, string>();
-/** codex:event 广播：主窗口 + 所有独立会话弹窗（弹窗也要收到自己那个会话的流式事件）。 */
-function broadcastCodexEvent(payload: unknown) {
-  for (const win of [mainWindow, ...popoutWindows]) {
-    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) continue;
-    try { win.webContents.send("codex:event", payload); } catch { /* 发送失败忽略 */ }
-  }
-}
-function sendToWindow(channel: string, payload: unknown) {
-  // 退出时窗口可能已销毁，?. 挡不住 destroyed 的 webContents，必须显式判活
-  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
-  mainWindow.webContents.send(channel, payload);
-}
-/** harness:event 广播到**所有**窗口（主窗口 + 独立会话弹窗）。会话运行时配置是跨窗口共享的：
- *  一个窗口改了，另一个窗口必须看到，否则它下次「读-改-写」会拿旧值写回（丢更新）。 */
-function broadcastHarnessEvent(payload: Record<string, unknown>) {
-  for (const win of [mainWindow, ...popoutWindows]) {
-    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) continue;
-    try { win.webContents.send("harness:event", payload); } catch { /* 窗口在关闭过程中，忽略 */ }
-  }
-}
+
+// ⛔ 窗口集合与广播（broadcastCodexEvent / sendToWindow / broadcastHarnessEvent）已收敛到
+//   features/window-bus：原先就地维护 `mainWindow` + `popoutWindows`，导致每个想按域拆出去的
+//   feature 都必须反向依赖 main.ts（语音域 39 个 handler 全卡在这一条）。
+//   这里保留 `mainWindow` 本地引用（dialog / 关窗 / show 等局部用途），但窗口登记进总线。
+//   导出名与旧函数同名 ⇒ 全文 100+ 个调用点一行未改。
 
 // ── 专家团运行记录（09-14）：成员线程复用映射 / 委托记录落盘 / 运行期流式增量广播 ──
 // 权威必须在主进程 —— 成员线程的流式事件只有这里看得到，而且 popout 独立窗口的
 // 渲染层没有 teamThreadMapRef，只能靠这份映射才知道自己打开的会话属于哪个团。
-const teamRunStore = new TeamRunStore(app.getPath("userData"), (payload) => broadcastHarnessEvent(payload as Record<string, unknown>));
+setTeamRunStore(new TeamRunStore(app.getPath("userData"), (payload) => broadcastHarnessEvent(payload as Record<string, unknown>)));
+
 /** 被调度的临时会话登记表（09-15）：侧栏标记 / L3 硬闸 / 任务完成后询问归档都靠它 */
-const delegateRegistry = new DelegateRegistry(path.join(app.getPath("userData"), "delegate-threads.json"));
-ipcMain.handle("team-runs:list", async (_event, threadId: string) => teamRunStore.listRuns(String(threadId ?? "")));
-ipcMain.handle("team-threads:map", async () => teamRunStore.listThreads());
-ipcMain.handle("team-threads:team-of", async (_event, threadId: string) => teamRunStore.teamOfThread(String(threadId ?? "")));
+setDelegateRegistry(new DelegateRegistry(path.join(app.getPath("userData"), "delegate-threads.json")));
 
 // ── 会话运行时配置（模型 / 思考档位 / 权限）的主进程权威存放处 + 多窗口并发保护（09-14） ──
 // 渲染层用 localStorage 作**同步读缓存**（大量同步读不能全改异步 IPC），权威值在这里：
@@ -531,191 +416,19 @@ ipcMain.handle("team-threads:team-of", async (_event, threadId: string) => teamR
 //   · baseRev 与当前 rev 不等 = 另一个窗口在你读之后改过 → 回报 conflict，渲染层据此刷新界面；
 //   · 每次变更广播给所有窗口 → 其它窗口的镜像与 React 状态跟着更新。
 const threadRuntimeFile = path.join(app.getPath("userData"), "thread-runtime.json");
-const threadRuntimeStore = new ThreadRuntimeStore(threadRuntimeFile);
-ipcMain.handle("thread-runtime:get", async (_event, threadId: string) => threadRuntimeStore.get(String(threadId ?? "")));
-ipcMain.handle("thread-runtime:list", async () => threadRuntimeStore.list());
-ipcMain.handle("thread-runtime:seed", async (_event, input: { threadId?: string; runtime?: unknown }) => {
-  const threadId = String(input?.threadId ?? "");
-  if (!threadId) return null;
-  return threadRuntimeStore.seed(threadId, input?.runtime);
-});
-ipcMain.handle("thread-runtime:patch", async (_event, input: { threadId?: string; patch?: unknown; baseRev?: number; takeover?: boolean }) => {
-  const threadId = String(input?.threadId ?? "");
-  if (!threadId) throw new Error("threadId 不能为空");
-  // 身份闸（09-16 用户要求「专家会话、专家团会话也要禁用掉」）：这些会话一律不许开调度。
-  // UI 已经把按钮禁用了，这里再挡一道 —— 快捷键/多窗口/旧版本渲染层都绕不过去。
-  if ((input?.patch as any)?.dispatch?.enabled === true) {
-    const role = await restrictedThreadRole(threadId);
-    if (role.restricted) {
-      const current = await threadRuntimeStore.get(threadId);
-      return { runtime: current, conflict: false, changed: false, restrictedBy: role.label };
-    }
-  }
-  const result = await threadRuntimeStore.patch(threadId, input?.patch, typeof input?.baseRev === "number" ? input.baseRev : undefined, { takeover: input?.takeover === true });
-  if (result.changed) {
-    broadcastHarnessEvent({ type: "thread-runtime", threadId, runtime: result.runtime, at: Date.now() });
-  }
-  // 独占接管：被摘掉锁的那个线程也要广播出去，否则别的窗口/别的会话还挂着「调度中」的旧状态
-  if (result.tookOverFrom) {
-    const released = await threadRuntimeStore.get(result.tookOverFrom);
-    if (released) broadcastHarnessEvent({ type: "thread-runtime", threadId: result.tookOverFrom, runtime: released, at: Date.now() });
-  }
-  return result;
-});
+
+setThreadRuntimeStore(new ThreadRuntimeStore(threadRuntimeFile));
+
 // 调度独占锁的当前持有者（全局唯一）。渲染层用它把非持有会话的开关灰掉并显示占用者。
-ipcMain.handle("thread-runtime:dispatch-owner", async () => ({ threadId: await threadRuntimeStore.dispatchOwner() }));
 // 释放某个会话的调度独占锁（会话被归档/删除后的兜底 + 渲染层自愈调用入口）。
 // ⛔ 09-17 用户实测「都关掉了还提示被另一个会话占用」：锁的持有者是从记录派生的，而归档/删除
 //   会话时历史上**没有任何地方清这条记录** ⇒ 孤儿记录永久占锁，且该会话在侧栏已找不到，
 //   用户没有任何入口能关它。这里提供显式释放 + 下面的引擎事件清理。
-ipcMain.handle("thread-runtime:release-dispatch", async (_event, threadId: string) => {
-  const id = String(threadId ?? "");
-  if (!id) return { released: false };
-  const released = await threadRuntimeStore.releaseDispatch(id);
-  if (released) {
-    const runtime = await threadRuntimeStore.get(id);
-    broadcastHarnessEvent({ type: "thread-runtime", threadId: id, runtime, at: Date.now() });
-  }
-  return { released };
-});
 // 该会话是否属于「不允许开调度」的受保护会话（专家 / 专家团 / 被调度的临时会话）——
 // 渲染层据此**禁用**调度按钮；真正作准的是下面 patch 里的硬闸。
-ipcMain.handle("agents:thread-role", async (_event, threadId: string) => await restrictedThreadRole(String(threadId ?? "")));
 
-// ── 永久删除会话的**本地收尾**（09-18 用户实测：「我删除了，重启又恢复了」）────────────
-// ⛔ 根因：引擎的 `thread/delete` 只把线程从**索引**里摘掉，磁盘上的 rollout 文件原样留着；
-//   而 thread/list 带 rollout 兜底扫描（见下面的 thread/list 分支），它把「索引里没有、
-//   磁盘上有」的会话当权威源合回侧栏 ⇒ 删掉的会话重启后又冒出来。
-//   用户机实测：state 库 11 条、磁盘 18 个 rollout，其中 12 条「已从索引删除但文件还在」，
-//   侧栏那 7 个分组名与它们的 cwd 一一对应（D:\2 四条、D:\Codex Harness Desktop 五条…）。
-//
-//   收尾两件事，缺一不可：
-//     ① 删掉磁盘 rollout —— 真正的清理，不删就永远会复活；
-//     ② 记「墓碑」—— 文件被占用（正跑的会话）删不掉时的保险，也是唯一能压住兜底扫描的判据。
-//   落点刻意放在**两处**：
-//     · 请求路径（codex:request 里 method === "thread/delete"）覆盖渲染层全部删除入口
-//       （deleteThreadCore / 删整个项目 / 清空对话 / 级联删专家团成员…）；
-//     · 引擎事件（thread/deleted）覆盖不经渲染层的删除。
-//   ⛔ 别把这份收尾写到渲染层去：删除入口有 6+ 处，漏一处就是这个 bug 复发（本项目的旧坑形态）。
-const deletedThreadsFile = path.join(app.getPath("userData"), "deleted-threads.json");
-/** 墓碑上限：一条 36 字节，3000 条约 120KB —— 够用，且不能让文件无限长大 */
-const DELETED_THREADS_LIMIT = 3000;
-const deletedThreadIds = new Set<string>();   // 小写 id → thread/list 合并时按它排除
-let deletedThreadOrder: string[] = [];        // 与 Set 同步，用于 FIFO 截断
-let deletedThreadsLoaded = false;
 
-async function loadDeletedThreads() {
-  if (deletedThreadsLoaded) return;
-  deletedThreadsLoaded = true;
-  try {
-    const raw = JSON.parse(await fs.readFile(deletedThreadsFile, "utf8"));
-    const list = Array.isArray(raw) ? raw : [];
-    deletedThreadOrder = list.map((value) => String(value || "").toLowerCase()).filter(Boolean).slice(-DELETED_THREADS_LIMIT);
-    for (const value of deletedThreadOrder) deletedThreadIds.add(value);
-  } catch { /* 首次运行没有这个文件；损坏也按空处理（只是少了保险，不阻塞启动） */ }
-}
 
-async function rememberDeletedThread(threadId: string) {
-  const id = String(threadId || "").trim().toLowerCase();
-  if (!id) return;
-  await loadDeletedThreads();
-  if (!deletedThreadIds.has(id)) {
-    deletedThreadIds.add(id);
-    deletedThreadOrder.push(id);
-    if (deletedThreadOrder.length > DELETED_THREADS_LIMIT) {
-      const dropped = deletedThreadOrder.splice(0, deletedThreadOrder.length - DELETED_THREADS_LIMIT);
-      for (const value of dropped) deletedThreadIds.delete(value);
-    }
-  }
-  await fs.writeFile(deletedThreadsFile, JSON.stringify(deletedThreadOrder, null, 2), "utf8").catch(() => undefined);
-}
-
-/** 反向操作：把 id 从墓碑里摘掉。
- *  ⛔ 只有「这条会话被重新写回磁盘」时才允许调用 —— 目前唯一入口是**导入会话备份**：
- *  `applySessionsBackup` 会**原样复用备份里的 thread id**（canonical 文件名就是 `rollout-<时间戳>-<id>.jsonl`），
- *  不摘墓碑的话「删除 → 再从备份导入」之后这条会话永远不会显示，用户也没有任何入口能发现原因。
- *  只清「真正写入成功」的条目：duplicate/conflict 说明磁盘上那份还在（或内容冲突被跳过），
- *  那种情况保留墓碑更安全（它就是删不掉的那份残留）。 */
-async function forgetDeletedThreads(ids: string[]) {
-  await loadDeletedThreads();
-  const targets = new Set(ids.map((value) => String(value || "").trim().toLowerCase()).filter(Boolean));
-  if (!targets.size) return;
-  let changed = false;
-  for (const id of targets) if (deletedThreadIds.delete(id)) changed = true;
-  if (!changed) return;
-  deletedThreadOrder = deletedThreadOrder.filter((value) => !targets.has(value));
-  await fs.writeFile(deletedThreadsFile, JSON.stringify(deletedThreadOrder, null, 2), "utf8").catch(() => undefined);
-}
-
-/** 永久删除的本地收尾：**同步**记墓碑（落盘后才返回）+ **后台**清磁盘 rollout。
- *  ⛔ 顺序与同步性是刻意的（code review 后定的）：
- *    · 墓碑必须在删除请求返回**之前**落盘 —— 它是「文件没删掉也不会复活」的唯一保证；
- *    · 文件清理不阻塞删除响应：渲染层在 `await thread/delete` 之后才把该行从侧栏摘掉，
- *      而 purge 走 worker 往返 —— worker 正忙于大目录兜底扫描时请求要排队（超时上限 15s），
- *      用户会看到「点了删除，那行迟迟不消失」。放后台后删一个会话只等一次小文件写入。
- *    · 真失败也不影响正确性：墓碑兜底，重启照样不复活。 */
-async function purgeDeletedThread(threadId: string) {
-  const id = String(threadId || "").trim();
-  if (!id) return;
-  await rememberDeletedThread(id);
-  void purgeRolloutFilesAsync(codexHome, [id]).then((result) => {
-    if (result?.removed?.length) console.log("[thread/delete] 已清理磁盘 rollout:", result.removed.length, "个");
-    // ⛔⛔ 血缘守卫命中（09-19）：这条会话的 rollout 还被别的活着的会话依赖（分支/接力/派生），
-    //   删了会让那个会话直接打不开（`missing source rollout`）——所以**故意保留**这个文件。
-    //   侧栏不会显示它（墓碑仍然生效），用户视角就是"删掉了"，只是磁盘上留一份血缘锚点。
-    if (result?.kept?.length) {
-      console.warn(
-        "[thread/delete] 保留 rollout（被其它会话的血缘依赖，删了会让那些会话打不开）:",
-        JSON.stringify(result.kept).slice(0, 400),
-      );
-    }
-    if (result?.failed?.length) console.warn("[thread/delete] rollout 文件清理失败（已记墓碑，侧栏不会再显示）：", JSON.stringify(result.failed).slice(0, 300));
-  }).catch((error: any) => {
-    console.warn("[thread/delete] rollout 清理（worker）失败：", error?.message ?? error);
-  });
-}
-
-/**
- * 血缘自愈（09-19 用户：「归档会话后另一个会话报 missing source rollout，都没法用了，从根上修掉」）。
- *
- * 旧版本删会话时没有血缘守卫，把**子会话依赖的源 rollout** 一起删了 ⇒ 子会话每次打开都报
- *   `invalid paginated history lineage for <源>: missing source rollout`，连侧栏点击都不行。
- * 启动时跑一次：把这类「源已丢失」的子会话首行血缘字段摘掉（原首行存 `.lineage.bak`），
- * 让引擎按独立会话加载 —— 代价是丢失继承自源会话的那段历史（自己的回合都在，不受影响），
- * 但"完全打不开"显然更糟。幂等：修过的不再匹配（血缘字段已摘除）。
- */
-async function healRolloutLineage() {
-  try {
-    // ⛔ 必须带时限：它被 `await` 在**启动链**上（只有放在 server.start() 之前才生效），
-    //   而 rollout-pool 对 worker 调用的超时是 15s ⇒ worker 卡住时最坏把启动拖 15 秒
-    //   （用户看到的是"双击没反应"）。超时就降级 —— 本次不自愈，下次启动再试，
-    //   绝不能为了自愈把引擎挡在门外。
-    const result: any = await Promise.race([
-      healRolloutLineageAsync(codexHome),
-      new Promise((resolve) => setTimeout(() => resolve({ healed: [], failed: [], timedOut: true }), 5000)),
-    ]);
-    if (result?.timedOut) console.warn("[boot] 血缘自愈超时（5s），本次跳过、不影响启动");
-    if (result?.healed?.length) {
-      console.warn("[boot] 修复了血缘断裂的会话（源 rollout 已丢失，已转为独立会话）:", JSON.stringify(result.healed).slice(0, 400));
-    }
-    if (result?.failed?.length) {
-      console.warn("[boot] 血缘修复失败（不影响启动）:", JSON.stringify(result.failed).slice(0, 300));
-    }
-  } catch (error: any) {
-    console.warn("[boot] healRolloutLineage 失败（降级继续）:", error?.message ?? error);
-  }
-}
-
-const terminals = new Map<string, TerminalService>();
-function terminalFor(id: string) {
-  let service = terminals.get(id);
-  if (!service) {
-    service = new TerminalService();
-    service.onData((data) => sendToWindow("terminal:data", { id, data }));
-    terminals.set(id, service);
-  }
-  return service;
-}
 /** 引擎流式事件 → 手机对话页转发器（remote.ts 的 onThreadEvent 注册） */
 const remoteEventForwarders: ((event: { threadId: string; kind: string; text: string }) => void)[] = [];
 
@@ -771,210 +484,31 @@ const remote = new RemoteControlService({
     return () => { const index = remoteEventForwarders.indexOf(listener); if (index >= 0) remoteEventForwarders.splice(index, 1); };
   },
 });
+
 const rpaFile = path.join(app.getPath("userData"), "rpa-recipes.json");
+
 const taskListFile = path.join(app.getPath("userData"), "task-list.json");
-const rpaStore = new RpaStore(rpaFile, taskListFile);
-const memoryStore = new MemoryStore(memoryFile);
-const memoryLayers = new MemoryLayers(app.getPath("userData"));
+
+setRpaStore(new RpaStore(rpaFile, taskListFile));
+
+setMemoryStore(new MemoryStore(memoryFile));
+
+setMemoryLayers(new MemoryLayers(app.getPath("userData")));
+
 // 自动捕获的出口接到 L2 日志层：从此对话原文不再进检索池
 memoryStore.setLayers(memoryLayers);
-/** 主进程内部会话（记忆蒸馏等）：其事件不参与记忆捕获与远程转发，否则蒸馏输出会被当成对话写回日志 */
-const internalThreads = new Set<string>();
+
+/** 主进程内部会话（记忆蒸馏等）：其事件不参与记忆捕获与远程转发，否则蒸馏输出会被当成对话写回日志。
+ *  ⛔ 容器已下沉 electron/runtime-refs.ts（2026-09-24 断环收尾：main/03-turn-summary.ts 要用它）。 */
+
 const scheduler = new Scheduler(scheduleFile, server, async () => {
   const model = await readCustomModel();
   return model ? { model: model.model, provider: model.provider, name: model.name, baseUrl: model.baseUrl } : null;
 }, (message) => sendToWindow("harness:event", { type: "scheduler", message, at: Date.now() }));
 
-/** 供应商下的单个模型配置（图二弹窗编辑的字段） */
-type ProviderModel = {
-  id: string;
-  /** 是否加入该供应商的可用模型列表；旧配置缺失时按 true 迁移。 */
-  enabled?: boolean;
-  contextWindow?: number;
-  maxOutputTokens?: number;
-  inputTypes?: ("text" | "image" | "video")[];
-  outputTypes?: ("text" | "image" | "video")[];
-  /** 该模型支持的思考档位（按声明顺序）；缺省走默认三档 low/medium/high。
-   *   GPT 系等模型支持 minimal/xhigh/ultra 更多档位，在这里显式声明后引擎才认。 */
-  efforts?: string[];
-  /** 用户为该模型选定的思考档位（档案持久化）：切供应商/切模型时自动应用，
-   *  重装/清存储后不丢。仅存档不写入引擎——引擎侧兜底默认走 config.toml
-   *  顶层 model_reasoning_effort，会话内显式值由每轮 turn/start 下发。 */
-  effort?: string;
-};
-
-type CustomModelFile = {
-  provider: string;
-  name: string;
-  model: string;
-  baseUrl: string;
-  contextWindow: number;
-  wireApi?: "responses" | "chat";
-  encryptedKey?: string;
-  /** 当前生效模型的思考档位（档案 100% 同步口径，对齐顶层 model）：
-   *  写 config.toml 顶层 model_reasoning_effort 作引擎兜底默认，
-   *  也是 UI「切供应商/切模型」时恢复用户所选档位的依据。 */
-  effort?: string;
-  /** 该供应商下已保存的模型列表，model 是其中当前生效的那个 */
-  models?: ProviderModel[];
-  /** 启用状态；禁用时若为当前供应商则清空当前配置 */
-  enabled?: boolean;
-  /** 该供应商最多允许几个会话同时跑（09-19 用户要求，供应商配置界面可自定义，默认 3）。
-   *  限流是同一个 Key 的共享配额 → 并发越高越容易 429；未设置时渲染层按 3 处理。 */
-  maxConcurrency?: number;
-  /** 上游**协议**（09-19 加，供应商配置界面可自定义）：桥按它决定怎么转发。
-   *  · auto（默认）：先按 responses 试，上游明确表示"没这个端点"时才切 chat；
-   *  · chat：直接按 Chat Completions 转换（**网关不认 responses 且自动判定不灵时手动选它**）；
-   *  · responses：强制透传（确认上游就是 Responses 时用，省一次探测）。
-   *  ⛔ 有些网关对未知路径返回 400（而不是 404），旧版判定会误当成"端点正常"直接透传 ⇒
-   *    对话失败且看不出原因。这就是加这个手动开关的原因（Claude 类通道尤其常见）。 */
-  upstreamProtocol?: BridgeMode;
-};
-
-type StoredChannelBot = Omit<ChannelBotConfig, "appSecret" | "verificationToken" | "encryptKey"> & {
-  encryptedAppSecret?: string;
-  encryptedVerificationToken?: string;
-  encryptedEncryptKey?: string;
-};
-type StoredMemoryGateway = Omit<MemoryRemoteConfig, "apiKey"> & { encryptedApiKey?: string };
-type ConnectorTransport = "stdio" | "streamable_http";
-type ConnectorConfig = {
-  id: string;
-  name: string;
-  transport: ConnectorTransport;
-  command?: string;
-  args?: string[];
-  url?: string;
-  headers?: Record<string, string>;
-  envHttpHeaders?: Record<string, string>;
-  env?: Record<string, string>;
-  encryptedSecrets?: Record<string, string>;
-  oauth?: { status: "connected"; provider: string; authorizedAt: number; accountHint?: string };
-  // 停用的连接器不写入引擎 config.toml（等效于引擎看不到该 MCP），配置本身保留
-  enabled?: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
-type PublicConnectorConfig = Omit<ConnectorConfig, "headers" | "envHttpHeaders" | "env" | "encryptedSecrets"> & { hasSecrets: boolean; headerKeys: string[]; envKeys: string[]; envHttpHeaderKeys: string[] };
-
 /** 内置连接器模板：把官方/社区 MCP 服务的真实配置固化成可填表模板 */
-type ConnectorTemplateField = {
-  key: string;
-  label: string;
-  placeholder: string;
-  secret?: boolean;
-  hint?: string;
-  envVar?: string; // stdio 模板：字段经此环境变量传给 MCP server（secret 字段走加密注入）
-  tokenFor?: string; // HTTP 模板：该字段的值作为指定 envHttpHeaders 的 secret
-  optional?: boolean;
-};
-type ConnectorOAuthKind = "lark-login" | "http-code";
-type ConnectorOAuthSpec = {
-  kind: ConnectorOAuthKind;
-  port: number; // 本地回调/授权监听端口（与开发后台配置的 redirect_uri 对应）
-  credentialKeys: string[]; // 表单字段里作为客户端凭据的 key
-  redirectUri?: string; // 固定回调地址；缺省用 http://127.0.0.1:{port}/callback
-  authorizeUrl?: string; // http-code：授权页 URL 模板（{client_id}/{redirect_uri}/{state} 占位）
-  tokenUrl?: string; // http-code：code 换 token 接口
-  tokenMethod?: "GET" | "POST";
-  tokenParams?: Record<string, string>; // 附加请求参数（grant_type 等）
-  tokenResult?: { accessToken: string; refreshToken?: string; userId?: string }; // 响应字段映射
-  scopes?: string; // lark-login 的 scope
-  note?: string; // 该服务商授权注意事项（提示用户）
-};
-type ConnectorTemplate = {
-  id: string;
-  name: string;
-  vendor: string;
-  summary: string;
-  helpUrl: string;
-  transport: "stdio" | "streamable_http";
-  command?: string;
-  args?: string[]; // 支持 {field} 占位符
-  url?: string; // 支持 {field} 占位符
-  envHttpHeaders?: Record<string, string>; // header 名 -> 环境变量名（密钥经 connectorEnv 注入）
-  env: Record<string, string>; // 明文字段里的默认 env
-  fields: ConnectorTemplateField[];
-  oauth?: ConnectorOAuthSpec; // OAuth 授权流程（跳转官方授权页，授权完成即连接）
-  oauthNote?: string; // 授权注意事项（展示在弹窗）
-};
-const BUILTIN_CONNECTOR_TEMPLATES: ConnectorTemplate[] = [
-  {
-    id: "feishu", name: "飞书", vendor: "官方 Larksuite MCP", transport: "stdio",
-    summary: "即时通讯、日历、云文档、多维表格、知识库、审批、OKR 等全产品能力",
-    helpUrl: "https://open.feishu.cn/app",
-    command: "npx",
-    args: ["-y", "@larksuiteoapi/lark-mcp", "mcp", "-a", "{app_id}", "-s", "{app_secret}", "--token-mode", "tenant_access_token"],
-    env: {},
-    fields: [
-      { key: "app_id", label: "App ID", placeholder: "cli_xxxxxxxx", hint: "飞书开发者后台创建自建应用后，在「凭证与基础信息」页获取" },
-      { key: "app_secret", label: "App Secret", placeholder: "应用密钥", secret: true, hint: "同页获取；仅保存在本机，加密后写入引擎配置" },
-    ],
-    oauth: { kind: "lark-login", port: 3000, credentialKeys: ["app_id", "app_secret"], scopes: "offline_access" },
-    oauthNote: "授权前请在飞书开发者后台为应用配置重定向 URL：http://localhost:3000/callback，并开启「刷新 user_access_token」开关；授权后 MCP 将以你的用户身份（user_access_token）调用接口，token 过期自动刷新。",
-  },
-  {
-    id: "dingtalk", name: "钉钉", vendor: "官方 DingTalk MCP", transport: "stdio",
-    summary: "通讯录、群聊与机器人、日历、待办、OA 审批、AI 表格、DING 消息等",
-    helpUrl: "https://open.dingtalk.com",
-    command: "npx",
-    args: ["-y", "dingtalk-mcp@latest"],
-    env: { ACTIVE_PROFILES: "ALL" },
-    fields: [
-      { key: "client_id", label: "Client ID (AppKey)", placeholder: "钉钉应用 AppKey", envVar: "DINGTALK_Client_ID", hint: "钉钉开放平台创建企业内部应用后，在「凭证与基础信息」获取" },
-      { key: "client_secret", label: "Client Secret (AppSecret)", placeholder: "应用密钥", secret: true, envVar: "DINGTALK_Client_Secret", hint: "同页获取；加密保存" },
-      { key: "agent_id", label: "AgentId", placeholder: "可选", optional: true, envVar: "DINGTALK_AgentId", hint: "如需发送工作通知才需要；留空则跳过" },
-    ],
-    oauth: {
-      kind: "http-code", port: 8765, credentialKeys: ["client_id", "client_secret"],
-      authorizeUrl: "https://login.dingtalk.com/oauth2/auth?redirect_uri={redirect_uri}&response_type=code&client_id={client_id}&scope=openid&state={state}&prompt=consent",
-      tokenUrl: "https://api.dingtalk.com/v1.0/oauth2/userAccessToken",
-      tokenMethod: "POST",
-      tokenParams: { grantType: "authorization_code" },
-      tokenResult: { accessToken: "accessToken", refreshToken: "refreshToken" },
-      note: "请在钉钉开放平台应用「安全设置」配置回调域名 http://localhost:8765；授权后以你的钉钉账号身份获取用户令牌（官方 MCP 目前以应用身份调用，用户令牌先加密保存备用）。",
-    },
-    oauthNote: "点「授权连接」会打开钉钉扫码授权页，扫码同意后自动换取并保存用户令牌。",
-  },
-  {
-    id: "tencent-docs", name: "腾讯文档", vendor: "官方腾讯文档 MCP", transport: "streamable_http",
-    summary: "创建/编辑在线文档、表格、幻灯片，查询与整理内容",
-    helpUrl: "https://docs.qq.com/open/auth/mcp.html",
-    url: "https://docs.qq.com/openapi/mcp",
-    env: {},
-    envHttpHeaders: { Authorization: "TENCENT_DOCS_TOKEN" },
-    fields: [
-      { key: "client_id", label: "Client ID", placeholder: "应用审核通过后分配", hint: "登录腾讯文档开放合作平台创建第三方应用，审核通过后获得" },
-      { key: "client_secret", label: "Client Secret", placeholder: "应用密钥", secret: true, hint: "同页获取；加密保存" },
-      { key: "redirect_uri", label: "回调地址", placeholder: "http://127.0.0.1:8766/callback", optional: true, hint: "默认本机 8766；腾讯文档要求 HTTPS 回调，被拦截时用内网穿透转发到本机 8766 并在此填公网地址" },
-      { key: "token", label: "个人访问 Token", placeholder: "docs.qq.com 开放平台签发", optional: true, secret: true, tokenFor: "TENCENT_DOCS_TOKEN", hint: "访问 https://docs.qq.com/open/auth/mcp.html 领取，供官方 MCP 端点使用" },
-    ],
-    oauth: {
-      kind: "http-code", port: 8766, credentialKeys: ["client_id", "client_secret"],
-      authorizeUrl: "https://docs.qq.com/oauth/v2/authorize?client_id={client_id}&redirect_uri={redirect_uri}&new_login=1&response_type=code&scope=all&state={state}",
-      tokenUrl: "https://docs.qq.com/oauth/v2/token",
-      tokenMethod: "GET",
-      tokenParams: { grant_type: "authorization_code" },
-      tokenResult: { accessToken: "access_token", refreshToken: "refresh_token", userId: "user_id" },
-      note: "腾讯文档要求 HTTPS 回调地址；本地 127.0.0.1 可能被拦截，需用内网穿透把公网 HTTPS 转发到本机 8766 端口并填入上方回调地址。OAuth 令牌用于 OpenAPI（Client ID + Open ID + Token 三元组），官方 MCP 端点仍用个人 Token。",
-    },
-    oauthNote: "点「授权连接」会跳转腾讯文档授权页，登录同意后自动换取令牌并加密保存。",
-  },
-  {
-    id: "tdx", name: "通达信选股", vendor: "MCP 行情 · 需自备数据地址", transport: "streamable_http",
-    summary: "股票行情、条件选股、研究报告、公告与宏观信息（依赖可达的 MCP 端点）",
-    helpUrl: "https://github.com/adambbhe/TDX-finance-mcp-plugin-v3",
-    url: "https://{endpoint}",
-    env: {},
-    envHttpHeaders: { Authorization: "TDX_API_TOKEN" },
-    fields: [
-      { key: "endpoint", label: "MCP 服务地址", placeholder: "https://tdxhub.example.com", hint: "通达信无官方 MCP，请填可达的 MCP 端点；本地方案可改用「添加 MCP」手动配置" },
-      { key: "token", label: "API Token", placeholder: "可选", optional: true, secret: true, tokenFor: "TDX_API_TOKEN", hint: "服务商签发的令牌；无鉴权可留空" },
-    ],
-  },
-];
 
-const channelLogs: { at: number; level: "info" | "error"; message: string }[] = [];
+
 const channelBot = new ChannelBotService(
   server,
   path.join(app.getPath("userData"), "channel-bindings.json"),
@@ -992,7 +526,9 @@ const channelBot = new ChannelBotService(
 // ---- 语音通话（旁挂新增：不改动任何既有输入链路） ----
 // 模型放 userData 而非应用目录：重装应用不丢，与其它用户数据一致。
 const voiceModelsRoot = path.join(app.getPath("userData"), "voice-models");
+
 const voiceLogs: { at: number; level: "info" | "error"; message: string }[] = [];
+
 const voiceService = new VoiceService({
   server,
   getModel: async () => {
@@ -1024,593 +560,10 @@ void (async () => {
   } catch { /* 清理失败不阻塞启动 */ }
 })();
 
-/** 语音模型安装的并发与取消由 voiceService 内部管（installController），主进程不再包一层。 */
-ipcMain.handle("voice:status", () => voiceService.status());
-
-ipcMain.handle("voice:settings-get", () => {
-  const { loadVoiceSettings, TTS_VOICE_NAMES, MODEL_HOST_PRESETS, MODEL_HOST_LABELS } = require("./voice/voice-settings");
-  const settings = voiceService.getSettings();
-  // 把枚举的可选值一起回传，渲染层不用自己硬码
-  return {
-    settings,
-    ttsVoices: TTS_VOICE_NAMES,
-    modelHosts: MODEL_HOST_LABELS,
-    modelHostOptions: Object.keys(MODEL_HOST_PRESETS),
-  };
-});
-
-ipcMain.handle("voice:settings-set", async (_event, patch: any) => {
-  const { saveVoiceSettings } = require("./voice/voice-settings");
-  const next = saveVoiceSettings(app.getPath("userData"), patch ?? {});
-  voiceService.updateSettings(next);
-  // ★ 广播出去：语音唤醒这类「按设置常驻」的能力必须能**立刻**重挂。
-  //   旧实现：VoiceCallFloat 的唤醒 effect 只在 phase 变化时读一次设置 →
-  //   在设置页打开开关后毫无反应（用户 09-13 反馈「唤醒功能不太行」的直接原因之一）。
-  sendToWindow("voice:event", { type: "settings", settings: next });
-  return next;
-});
-
-ipcMain.handle("voice:start", async (event, threadId: string, options?: { mode?: "conversation" | "dictation" }) => {
-  // ⛔ 全局互斥（09-13 用户要求）：语音通话是**全应用唯一**的（麦克风/ASR/TTS 线程只有一份），
-  // 多窗口下每个窗口都渲染了自己的悬浮球——A 窗口通话中，B 窗口再点会被 voiceService
-  // 静默复用（`if (this.active) return ok`），把 B 的会话绑不上、音频还全喂给了 A 的通话。
-  // 规则：同一会话重复 start = 恢复语义放行；不同会话 → 明确拒绝，前端据此把悬浮球置灰。
-  const status = voiceService.status();
-  const requestedThread = String(threadId ?? "");
-  if (status.active && status.threadId && requestedThread && status.threadId !== requestedThread) {
-    return { ok: false, busy: true, error: "另一个窗口正在语音通话中，请先挂断那边的通话再试" };
-  }
-  const result = await voiceService.start({ threadId: requestedThread, mode: options?.mode });
-  return { ...result, status: voiceService.status() };
-});
-
-ipcMain.handle("voice:dictation-finish", async () => voiceService.finishDictation());
-/** 提前端点（审计 ④）：渲染层判定「句末标点 + 停口 0.5s」时调用，立即提交这一句 */
-ipcMain.handle("voice:endpoint-now", async () => voiceService.endpointNow());
-ipcMain.handle("voice:stop", async () => {
-  await voiceService.stop();
-  return { ok: true, status: voiceService.status() };
-});
-
-// 音频块走 send（不等回包），避免每 64ms 一次 IPC 往返带来的抖动
-ipcMain.on("voice:audio", (_event, samples: Float32Array) => {
-  void voiceService.handleAudio(samples).catch((error) => console.error("[voice] audio:", error));
-});
-
-/**
- * TTS 音频跨 Electron IPC 的安全封装。
- * Float32Array 直接从 worker/native 一路返回给 renderer 时，Electron 的 structured clone
- * 会拒绝某些 external backing store（"External buffers are not allowed"）。
- * 所以主进程统一转 Base64 字符串：字符串 IPC 最稳定，渲染层再还原 Float32Array。
- */
-function voiceAudioForIpc(result: Awaited<ReturnType<VoiceService["speak"]>>):
-  | { ok: true; sampleRate: number; audioBase64: string }
-  | { ok: false; error: string } {
-  if (!result.ok) return result;
-  const samples = result.samples;
-  const bytes = Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength);
-  return {
-    ok: true,
-    sampleRate: result.sampleRate,
-    audioBase64: bytes.toString("base64"),
-  };
-}
-
-ipcMain.handle("voice:speak", async (_event, text: string, options?: { sid?: number; speed?: number }) => {
-  return voiceAudioForIpc(await voiceService.speak(String(text ?? ""), options));
-});
-ipcMain.handle("voice:preview-voice", async (_event, input?: { sid?: number; speed?: number; text?: string }) => {
-  // 设置页「音色试听」：不必在通话中，内部会临时起一个 TTS worker，合成完即销毁
-  return voiceAudioForIpc(await voiceService.previewVoice(input ?? {}));
-});
-
-// ── 语音通话「按键启动」：系统级快捷键（Electron globalShortcut）──
-// 用全局快捷键而不是页面内 keydown：即便应用没聚焦、焦点在别处也能唤起语音。
-let registeredVoiceHotkey = "";
-function applyVoiceHotkey(accelerator: string): { ok: boolean; error?: string } {
-  try {
-    if (!accelerator) {
-      if (registeredVoiceHotkey) {
-        globalShortcut.unregister(registeredVoiceHotkey);
-        registeredVoiceHotkey = "";
-      }
-      return { ok: true };
-    }
-    // 同键重复设置直接视为成功（globalShortcut 对已注册的键二次 register 会失败，
-    // 而设置页开关切换时会用同一个键反复 set）
-    if (accelerator === registeredVoiceHotkey) return { ok: true };
-    // 先注册新键、成功后才放旧键：反过来（先注销再注册）一旦新键被占用，
-    // 旧键已没了、新键又没注册上，快捷键两头空——「改了一下就用不了」的主因之一
-    const ok = globalShortcut.register(accelerator, () => {
-      // 触发时把事件推给渲染层，由 VoiceCallFloat 决定开始/结束通话
-      sendToWindow("voice:hotkey", { accelerator });
-    });
-    if (!ok) return { ok: false, error: `快捷键「${accelerator}」注册失败（可能被其它程序占用）` };
-    if (registeredVoiceHotkey) globalShortcut.unregister(registeredVoiceHotkey);
-    registeredVoiceHotkey = accelerator;
-    return { ok: true };
-  } catch (error: any) {
-    return { ok: false, error: String(error?.message ?? error) };
-  }
-}
-// 启动时按已保存的设置注册一次
-app.whenReady().then(() => {
-  const s = require("./voice/voice-settings").loadVoiceSettings(app.getPath("userData"));
-  if (s.hotkey?.enabled && s.hotkey.accelerator) applyVoiceHotkey(s.hotkey.accelerator);
-});
-ipcMain.handle("voice:hotkey-set", async (_event, input: { accelerator: string; enabled?: boolean }) => {
-  const accelerator = input?.enabled === false ? "" : String(input?.accelerator ?? "");
-  return applyVoiceHotkey(accelerator);
-});
-ipcMain.handle("voice:hotkey-get", () => ({ registered: registeredVoiceHotkey }));
-
-// ── 语音唤醒（持续聆听 + 文本匹配唤醒词）──
-ipcMain.handle("voice:wake-start", () => voiceService.startWakeListener());
-ipcMain.handle("voice:wake-audio", async (_event, samples: Float32Array) => voiceService.feedWakeAudio(samples));
-ipcMain.handle("voice:wake-reset", async () => { await voiceService.resetWakeStream(); return { ok: true }; });
-ipcMain.handle("voice:wake-stop", async () => { await voiceService.stopWakeListener(); return { ok: true }; });
-
-ipcMain.handle("voice:barge", () => voiceService.barge());
-
-ipcMain.handle("voice:playback-done", () => {
-  voiceService.notifyPlaybackDone();
-  return { ok: true };
-});
-
-ipcMain.handle("voice:models-status", async () => {
-  const status = await voiceModelsStatus(voiceModelsRoot, ALL_VOICE_REPOS);
-  return {
-    ...status,
-    bytes: modelsSizeOnDisk(voiceModelsRoot),
-    root: voiceModelsRoot,
-    // 提示 UI「本地导入」该期望的目录结构（HF 仓库 id 很长，用户需要明确看到）
-    repos: ALL_VOICE_REPOS.map((r) => ({ id: r.repo, lastSegment: r.repo.split("/").pop() ?? r.repo })),
-    // 音色克隆模型（ZipVoice，归档型资源，单独安装）：UI 按它显示独立条目
-    zipvoice: { ready: zipvoiceReady(voiceModelsRoot), bytes: ZIPVOICE_ARCHIVE.bytes + ZIPVOICE_ARCHIVE.vocoder.bytes, dir: ZIPVOICE_DIR },
-    // 语音唤醒关键词模型（KWS，归档型资源，单独安装）：唤醒卡片按它决定显示「一键下载」还是「已就绪」
-    kws: { ready: kwsReady(voiceModelsRoot), bytes: KWS_ARCHIVE.bytes, dir: KWS_DIR },
-  };
-});
-
-/** 音色克隆模型的安装与取消（归档型资源：GitHub release 整包 + 声码器，按需下载）。 */
-let zipvoiceAbort: AbortController | null = null;
-ipcMain.handle("voice:zipvoice-install", async () => {
-  if (zipvoiceAbort) return { ok: false, error: "正在安装中" };
-  zipvoiceAbort = new AbortController();
-  try {
-    const result = await ensureZipvoice(
-      voiceModelsRoot,
-      toolsRoot(),
-      (progress) => sendToWindow("voice:event", { type: "download", ...progress, target: "zipvoice" }),
-      zipvoiceAbort.signal,
-    );
-    sendToWindow("voice:event", { type: "downloadDone", ok: result.ok, error: result.ok ? undefined : (result as any).error, target: "zipvoice" });
-    return result;
-  } finally {
-    zipvoiceAbort = null;
-  }
-});
-ipcMain.handle("voice:zipvoice-cancel", () => {
-  zipvoiceAbort?.abort();
-  return { ok: true };
-});
-
-/**
- * 语音唤醒关键词模型（KWS，31MB 归档）：只服务「语音唤醒」，与三个主模型分开装 ——
- * 不装也能用（回退到识别模型匹配），装了才是不误唤醒 + 低 CPU 的那条路。
- */
-let kwsAbort: AbortController | null = null;
-ipcMain.handle("voice:kws-install", async () => {
-  const { ensureKws } = require("./voice/model-store");
-  const { kwsReady } = require("./voice/model-manifest");
-  if (kwsReady(voiceModelsRoot)) return { ok: true };
-  if (kwsAbort) return { ok: false, error: "正在安装中" };
-  kwsAbort = new AbortController();
-  try {
-    const result = await ensureKws(
-      voiceModelsRoot,
-      toolsRoot(),
-      (progress: any) => sendToWindow("voice:event", { type: "download", ...progress, target: "kws" }),
-      kwsAbort.signal,
-    );
-    sendToWindow("voice:event", { type: "downloadDone", ok: result.ok, error: result.ok ? undefined : (result as any).error, target: "kws" });
-    // 装好了让唤醒用上关键词模型：唤醒词没变也要重挂（引擎从 asr 换成 kws）
-    if (result.ok && voiceService.wakeListening()) {
-      await voiceService.stopWakeListener();
-      await voiceService.startWakeListener();
-    }
-    return result;
-  } finally {
-    kwsAbort = null;
-  }
-});
-ipcMain.handle("voice:kws-cancel", () => {
-  kwsAbort?.abort();
-  return { ok: true };
-});
-ipcMain.handle("voice:kws-status", () => {
-  const { kwsReady } = require("./voice/model-manifest");
-  return { ready: kwsReady(voiceModelsRoot) };
-});
-
-// ── 音色档案（音色克隆 ZipVoice）：导入/录制参考音频 → 本机 ASR 转写参考文本 → 保存为专属音色 ──
-const voiceProfilesDirOf = () => path.join(app.getPath("userData"), "voice-profiles");
-
-/** 把一段音频做成草稿：落盘 + 重采样到 16k 用本机 ASR 自动转写「参考文本」。
- *  参考文本必须与音频内容一致（zeroshot 硬约束，对不上音质会明显劣化）——
- *  所以这里转成草稿后**一定**要让用户校对一遍再保存。 */
-async function draftProfileAudio(samples: Float32Array, sampleRate: number, sourceName: string) {
-  const root = voiceProfilesDirOf();
-  await fs.mkdir(root, { recursive: true });
-  const draftFile = ".draft-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) + ".wav";
-  await fs.writeFile(path.join(root, draftFile), voiceProfiles.encodeWav16(samples, sampleRate));
-  const at16k = voiceProfiles.resampleLinear(samples, sampleRate, 16000);
-  const tmp16 = draftFile.replace(/\.wav$/, "-16k.wav");
-  await fs.writeFile(path.join(root, tmp16), voiceProfiles.encodeWav16(at16k, 16000));
-  let refText = "";
-  let transcribeError = "";
-  try {
-    const done = await voiceService.transcribeAudioFile(path.join(root, tmp16));
-    if (done.ok) refText = String(done.text ?? "").trim();
-    else transcribeError = String(done.error ?? "");
-  } catch (error) {
-    transcribeError = String((error as any)?.message ?? error);
-  }
-  await fs.rm(path.join(root, tmp16), { force: true }).catch(() => undefined);
-  return {
-    ok: true,
-    draftFile,
-    refText,
-    transcribeError,
-    sampleRate,
-    durationSec: Math.round((samples.length / sampleRate) * 10) / 10,
-    sourceName,
-  };
-}
-
-ipcMain.handle("voice:profiles-list", async () => ({
-  profiles: await voiceProfiles.listProfiles(app.getPath("userData")),
-  zipvoiceReady: zipvoiceReady(voiceModelsRoot),
-}));
-
-/** 内置音色预设（合成音源的克隆预设）：wav+参考文本随包分发，一键创建档案。
- *  目录解析与 resolveFfmpegPath 同规则：开发版用项目 resources/，打包版用 process.resourcesPath/。 */
-function voicePresetsDir(): string {
-  const dev = path.join(process.cwd(), "resources", "voice-presets");
-  if (existsSync(dev)) return dev;
-  return path.join(process.resourcesPath ?? process.cwd(), "voice-presets");
-}
-
-ipcMain.handle("voice:preset-list", async () => {
-  try {
-    const raw = JSON.parse(await fs.readFile(path.join(voicePresetsDir(), "presets.json"), "utf8"));
-    const profiles = await voiceProfiles.listProfiles(app.getPath("userData"));
-    const presets = (Array.isArray(raw) ? raw : []).map((p: any) => ({
-      id: String(p.id ?? ""),
-      name: String(p.name ?? ""),
-      desc: String(p.desc ?? ""),
-      lang: String(p.lang ?? "zh"),
-      applied: profiles.some((profile) => profile.name === String(p.name ?? "")),
-    }));
-    return { presets };
-  } catch { return { presets: [] }; }
-});
-
-ipcMain.handle("voice:preset-apply", async (_event, presetId: string) => {
-  try {
-    const raw = JSON.parse(await fs.readFile(path.join(voicePresetsDir(), "presets.json"), "utf8"));
-    const preset = (Array.isArray(raw) ? raw : []).find((p: any) => p.id === String(presetId ?? ""));
-    if (!preset) return { ok: false, error: "内置音色不存在" };
-    const parsed = voiceProfiles.readWav(await fs.readFile(path.join(voicePresetsDir(), String(preset.wav ?? ""))));
-    if (!parsed) return { ok: false, error: "预设音频缺失或格式不对" };
-    const existing = await voiceProfiles.listProfiles(app.getPath("userData"));
-    const already = existing.find((profile) => profile.name === String(preset.name ?? ""));
-    if (already) return { ok: true, profile: already, existed: true };
-    const profile = await voiceProfiles.createProfile(app.getPath("userData"), {
-      name: String(preset.name ?? ""),
-      refText: String(preset.refText ?? ""),
-      samples: parsed.samples,
-      sampleRate: parsed.sampleRate,
-    });
-    return { ok: true, profile };
-  } catch (error: any) {
-    return { ok: false, error: String(error?.message ?? error) };
-  }
-});
-
-ipcMain.handle("voice:profiles-import", async () => {
-  const picked = await dialog.showOpenDialog({
-    title: "选择一段参考音频（16-bit PCM wav，10 秒左右效果最好）",
-    filters: [{ name: "音频", extensions: ["wav"] }],
-    properties: ["openFile"],
-  });
-  if (picked.canceled || !picked.filePaths?.[0]) return { ok: false, canceled: true };
-  const file = picked.filePaths[0];
-  try {
-    const parsed = voiceProfiles.readWav(await fs.readFile(file));
-    if (!parsed || !parsed.samples.length) {
-      return { ok: false, error: "只能读取 16-bit PCM 的 wav 文件（mp3/m4a 请先用音频工具转成 wav）" };
-    }
-    if (parsed.samples.length / parsed.sampleRate > 60) {
-      return { ok: false, error: "参考音频请控制在 60 秒以内（10 秒左右效果最好）" };
-    }
-    return await draftProfileAudio(parsed.samples, parsed.sampleRate, path.basename(file));
-  } catch (error: any) {
-    return { ok: false, error: String(error?.message ?? error) };
-  }
-});
-
-/** 渲染层录制（麦克风）→ PCM 回传 → 与导入走同一条草稿链路。 */
-ipcMain.handle("voice:profiles-record", async (_event, input: { samples?: number[]; sampleRate?: number }) => {
-  try {
-    const samples = Float32Array.from(Array.isArray(input?.samples) ? input!.samples! : []);
-    const rate = Number(input?.sampleRate ?? 16000) || 16000;
-    if (samples.length < rate * 1) return { ok: false, error: "录得太短了，至少录 1 秒" };
-    return await draftProfileAudio(samples, rate, "麦克风录制");
-  } catch (error: any) {
-    return { ok: false, error: String(error?.message ?? error) };
-  }
-});
-
-ipcMain.handle("voice:profiles-save", async (_event, input: { draftFile?: string; name?: string; refText?: string }) => {
-  try {
-    const root = voiceProfilesDirOf();
-    const draft = String(input?.draftFile ?? "");
-    const parsed = voiceProfiles.readWav(await fs.readFile(path.join(root, draft)));
-    if (!parsed) return { ok: false, error: "草稿音频已失效，请重新导入或录制" };
-    const profile = await voiceProfiles.createProfile(app.getPath("userData"), {
-      name: String(input?.name ?? ""),
-      refText: String(input?.refText ?? ""),
-      samples: parsed.samples,
-      sampleRate: parsed.sampleRate,
-    });
-    await fs.rm(path.join(root, draft), { force: true }).catch(() => undefined);
-    return { ok: true, profile };
-  } catch (error: any) {
-    return { ok: false, error: String(error?.message ?? error) };
-  }
-});
-
-ipcMain.handle("voice:profiles-delete", async (_event, id: string) => ({
-  ok: await voiceProfiles.deleteProfile(app.getPath("userData"), String(id ?? "")),
-}));
-
-/** 选用某个音色（写进语音设置 tts.profileId；空串 = 用内置预置音色）。 */
-ipcMain.handle("voice:profiles-select", async (_event, id: string) => {
-  const { saveVoiceSettings } = require("./voice/voice-settings");
-  const current = voiceService.getSettings();
-  const next = saveVoiceSettings(app.getPath("userData"), {
-    tts: { ...current.tts, profileId: String(id ?? "") },
-  });
-  voiceService.updateSettings(next);
-  return { ok: true, profileId: String(id ?? "") };
-});
-
-ipcMain.handle("voice:profiles-preview", async (_event, input?: { id?: string; text?: string }) =>
-  voiceAudioForIpc(await voiceService.previewVoice({ profileId: input?.id, text: input?.text }))
-);
-
-ipcMain.handle("voice:models-install", () => voiceService.installModels());
-ipcMain.handle("voice:models-cancel", () => ({ ok: voiceService.cancelInstall() }));
-ipcMain.handle("voice:models-import", async (_event, input: { sourceDir: string }) => {
-  // 开发版：从开发者本机已下载的目录导入，按 repo 校验 SHA 后落盘到 userData/voice-models
-  const { importRepoFromDir } = require("./voice/model-store");
-  const { ALL_VOICE_REPOS } = require("./voice/model-manifest");
-  const failures: string[] = [];
-  for (const repo of ALL_VOICE_REPOS) {
-    const f = await importRepoFromDir(voiceModelsRoot, input.sourceDir, repo, (progress: any) => {
-      sendToWindow("voice:event", { type: "download", ...progress });
-    });
-    failures.push(...f.map((x: string) => `${repo.repo} → ${x}`));
-  }
-  await voiceService.refreshModelsReady();
-  sendToWindow("voice:event", { type: "download", percent: 100, message: "导入完成" });
-  sendToWindow("voice:event", { type: "downloadDone", ok: failures.length === 0, error: failures.slice(0, 3).join("；") });
-  return { ok: failures.length === 0, failures };
-});
-ipcMain.handle("voice:models-reveal", () => {
-  // 在文件管理器里打开模型目录（开发者验证下载内容用）
-  return shell.openPath(voiceModelsRoot);
-});
-ipcMain.handle("voice:models-uninstall", async () => {
-  // 防御（破坏性操作必须显式收口）：只认 <userData>/voice-models 这一个专用子目录。
-  // 万一将来路径拼错（比如退化成 userData 本身），宁可直接失败也不能端掉整个配置目录。
-  const userData = app.getPath("userData");
-  const expected = path.join(userData, "voice-models");
-  const target = path.resolve(voiceModelsRoot);
-  if (!voiceModelsRoot || target !== path.resolve(expected) || target === path.resolve(userData)) {
-    return { ok: false, error: "语音模型目录路径异常，已取消卸载" };
-  }
-  // 卸载 = 删除整个 voice-models 根目录（含 .part）；下次再点下载会重新拉。
-  // ★ 必须先销毁「挂断后保活」的工作线程：它们持有已加载的 onnx 文件句柄，
-  //   Windows 上会让 fs.rm 报 EBUSY（表现为「卸载失败但也没提示」）。
-  voiceService.disposeIdleWorkers();
-  await fs.rm(voiceModelsRoot, { recursive: true, force: true });
-  await voiceService.refreshModelsReady();
-  return { ok: true };
-});
-
-/** macOS 需要显式申请麦克风授权；Windows/Linux 直接按「已授权」处理。 */
-ipcMain.handle("voice:mic-permission", async () => {
-  if (process.platform !== "darwin") return { status: "granted" };
-  try {
-    const current = systemPreferences.getMediaAccessStatus("microphone");
-    if (current === "granted") return { status: "granted" };
-    const granted = await systemPreferences.askForMediaAccess("microphone");
-    return { status: granted ? "granted" : current };
-  } catch (error: any) {
-    return { status: "unknown", error: String(error?.message ?? error) };
-  }
-});
-
-async function readCustomModel(): Promise<CustomModelFile | null> {
-  try {
-    return JSON.parse(await fs.readFile(customModelFile, "utf8"));
-  } catch (error: any) {
-    if (error.code === "ENOENT") return null;
-    // ⛔ 绝不 throw（09-13 审计 P0）：这个函数在启动链上被裸 await，而它前面就是
-    // `createWindow()` —— 一旦文件被写坏（非原子写/断电/并发写撞车），异常会掐断整条
-    // `app.whenReady().then(...)`（那条链没有 .catch），**窗口根本不创建**：双击没反应、
-    // 连引导页都不出现，用户只能手工删 %APPDATA% 下的文件才能再用。
-    // 现在的语义：解析失败 → 把坏文件改名留证 + 当"没配置"继续启动（用户看到提示，可重配）。
-    try {
-      const bad = `${customModelFile}.bad-${Date.now()}`;
-      await fs.rename(customModelFile, bad);
-      console.warn(`[custom-model] 配置损坏，已备份为 ${bad} 并按空配置继续启动：`, error?.message ?? error);
-    } catch (renameError) {
-      console.warn("[custom-model] 配置损坏且备份失败，按空配置继续启动：", error?.message ?? error);
-    }
-    return null;
-  }
-}
-
-async function readCustomModels(): Promise<CustomModelFile[]> {
-  try {
-    const list: CustomModelFile[] = JSON.parse(await fs.readFile(customModelsFile, "utf8"));
-    const normalized = list.map(normalizeProvider);
-    // 读到即是真相：顺手同步「上游协议」映射（启动后第一次读就自动建立，不需要额外启动钩子）
-    syncUpstreamProtocols(normalized);
-    return normalized;
-  } catch { return []; }
-}
-
-async function writeCustomModels(list: CustomModelFile[]) {
-  // 写前备份（09-16）：档案清单出现过整份清空（custom-models.json → []）且无法从代码路径定责，
-  // 留一份上一版内容随时可手工回滚——备份本身幂等，只在上一版非空时覆盖。
-  try {
-    const previous = await fs.readFile(customModelsFile, "utf8");
-    if (previous.trim() && previous.trim() !== "[]") await fs.writeFile(`${customModelsFile}.bak`, previous, "utf8");
-  } catch { /* 首次写入没有旧文件，跳过 */ }
-  await fs.writeFile(customModelsFile, JSON.stringify(list, null, 2), "utf8");
-  // ⛔ 同步「上游协议」内存映射：写档案是设置变化的唯一出口，挂这里就不会漏
-  //   （漏了的表现是「用户改了协议设置但桥还按老协议走」）。
-  syncUpstreamProtocols(list);
-}
-
-async function upsertCustomModel(value: CustomModelFile) {
-  const list = await readCustomModels();
-  const index = list.findIndex((entry) => entry.provider === value.provider);
-  if (index >= 0) list[index] = value; else list.push(value);
-  await writeCustomModels(list);
-}
-
-// 保留 provider id 的处理统一在 ./provider-id（独立模块：渠道机器人、团队服务也要用，
-// 放这里会循环依赖）。背景见 electron/provider-id.ts 与 09-19 真实用户事故说明。
-
-/** 删掉 config.toml 里**保留 id** 的 provider 段 —— 实现已抽到 ./provider-id（三个模块共用）。 */
-
-/**
- * 保留 provider id 自愈（09-19 真实用户事故）。
- *
- * 老版本允许把供应商 id 存成 `openai` —— 而 `openai` 是引擎的**内置保留 id**，写出的
- * `[model_providers.openai]` 会让引擎**整份拒绝加载 config.toml**：
- *   `model_providers contains reserved built-in provider IDs: openai`
- * 症状是"发消息就报错"，且**与用哪个模型无关**（配 DeepSeek 官网也一样挂）。
- *
- * 这里做两件事（幂等、失败不阻塞启动）：
- *   ① 档案里 provider 是保留 id 的条目 → 改名并落盘（openai → openai-custom）；
- *   ② config.toml 里已写坏的保留 id 段 → 整段删除（宁可少一段，也不能让整份配置拒载）。
- * 之后用户切供应商/保存配置时会按安全 id 重写一份权威配置。
- */
-async function healReservedProviderConfig(): Promise<void> {
-  try {
-    // ⛔ 必须看**原始文件**里的 provider：readCustomModels() 回来的已经过 normalizeProvider
-    //   （provider 早被改名）——拿它比较会让 needsRename 恒为 false，落盘变成死代码（实测踩过）。
-    const raw = await fs.readFile(customModelsFile, "utf8").catch(() => "");
-    const rawList: Array<{ provider?: string }> = raw ? JSON.parse(raw) : [];
-    const needsRename = Array.isArray(rawList) && rawList.some((entry) => safeProviderId(entry?.provider) !== entry?.provider);
-    if (needsRename) {
-      const fixed = rawList.map((entry) => normalizeProvider({ ...(entry as CustomModelFile), provider: safeProviderId(entry?.provider) } as CustomModelFile));
-      await writeCustomModels(fixed);
-      console.warn("[boot] 供应商 id 占用了引擎保留名，已自动改名:", rawList.map((e) => e?.provider).filter((p) => safeProviderId(p) !== p).join(", "));
-    }
-    const file = path.join(codexHome, "config.toml");
-    const text = await fs.readFile(file, "utf8").catch(() => "");
-    if (!text) return;
-    const cleaned = stripReservedProviderTables(text);
-    if (cleaned !== text) {
-      await fs.writeFile(file, cleaned, "utf8");
-      console.warn("[boot] config.toml 含引擎保留 provider id 段，已清理（否则整份配置拒载）");
-    }
-  } catch (error) {
-    console.warn("[boot] healReservedProviderConfig failed (降级继续):", error);
-  }
-}
-
-/** 老版本 models 是 string[]，统一迁移成 ProviderModel[]；并确保生效 model 在列表里 */
-function normalizeProvider(entry: CustomModelFile): CustomModelFile {
-  const models = (entry.models ?? []).map((raw: any): ProviderModel => typeof raw === "string" ? { id: raw, contextWindow: entry.contextWindow, enabled: true } : { ...raw, enabled: raw?.enabled !== false }).filter((m) => m && typeof m.id === "string" && m.id);
-  if (entry.model && !models.some((m) => m.id === entry.model)) models.unshift({ id: entry.model, contextWindow: entry.contextWindow, enabled: true });
-  // ⛔ wire_api 归一化：新版引擎对 "chat" **硬拒载**。档案（custom-model.json）里残留的 chat
-  // 必须在这里就消掉 —— 否则「删掉供应商、重新配置」也清不掉它，每次写 config.toml 都会把
-  // 坏值带回去（09-14 用户实测：删了重配仍报同一条错）。这里归一化后，写入侧恒为 responses。
-  // 09-16 用独立 CODEX_HOME + 真实 app-server 复核过（scripts/probe-wire-api.cjs）：config.toml
-  // 写 chat 时 initialize 能过、**turn/start 必报** `wire_api = "chat"` is no longer supported.
-  // How to fix: set `wire_api = "responses"` in your provider config. → 每个请求都失败。
-  // 所以归一化不是「顺手做的」，是保命逻辑；UI 侧对应地把 Chat Completions 选项撤掉。
-  // ⛔ 保留 id 迁移（09-19 真实用户事故）：档案里存着 `openai` 时，写出的 `[model_providers.openai]`
-  //    会让引擎**整份拒载 config.toml**（所有请求全失败）。在唯一的归一化入口改名，
-  //    读档案 / 写配置 / 界面显示三处因此永远一致。
-  return { ...entry, provider: safeProviderId(entry.provider), models, wireApi: "responses" };
-}
-
-/** 合并去重保序，model 始终在列表最前 */
-function withModels(entry: CustomModelFile, extra?: string): CustomModelFile {
-  const normalized = normalizeProvider(entry);
-  let result = normalized;
-  if (extra) {
-    const existing = normalized.models ?? [];
-    if (!existing.some((m) => m.id === extra)) {
-      const cloned = [...existing];
-      cloned.unshift({ id: extra, contextWindow: entry.contextWindow });
-      result = { ...normalized, models: cloned };
-    }
-  }
-  // ⛔ 单一真相源（09-19 用户实测：「`custom-model.json` 该模型写 1000000、`custom-models.json` 同一供应商
-  //   顶层写 128000，这个修一下，怎么又出现这个问题」）：
-  //   两个字段表达的是同一件事，却由**两个不同来源**写 —— 模型自己的 `contextWindow` 来自内置规格表
-  //   （新建供应商时的真实能力值），顶层那个只是**新建模型时的默认值**（UI 默认 128000，用户多半没动过），
-  //   而引擎侧 catalog 读的是**模型自己的**值。两处各写各的 ⇒ 每次新建/保存供应商都会留下一对打架的数字，
-  //   界面按大值算（显示 12%），用户按小值理解（以为只剩 4%），谁也不知道哪个是真。
-  //   这里在**唯一写入点**收口：顶层恒等于生效模型自己的值（模型没有自己的值时才保留顶层输入）。
-  //   ⇒ `custom-model.json` 顶层、`custom-models.json` 里那条记录顶层、catalog、界面显示四处永远一致。
-  const effectiveWindow = result.model
-    ? (result.models ?? []).find((m) => m.id === result.model)?.contextWindow
-    : undefined;
-  return effectiveWindow ? { ...result, contextWindow: effectiveWindow } : result;
-}
-
-/**
- * 拆出「用户自己管的配置」+「用户手工写的 MCP 段」。
- * mcp_servers 永远不进 preserved：harness 自己会重新生成连接器与内置 nuphus，
- * 用户手工写的那些则由覆盖表决定是否原样拼回（并顺手把原文记进覆盖表）。
- */
-async function readUserConfigSplit(ownedMcpServers: Set<string>, overrides: McpOverrides) {
-  let raw = "";
-  try { raw = await fs.readFile(path.join(codexHome, "config.toml"), "utf8"); }
-  catch (error: any) { if (error.code !== "ENOENT") throw error; }
-  const preserved = preserveUserConfig(raw);
-  const found: Record<string, string> = {};
-  for (const name of new Set([...collectMcpServerNames(raw), ...Object.keys(overrides)])) {
-    // ⛔ 子段也算 owned：`[mcp_servers.harness-dispatch.env]` 的名字是 "harness-dispatch.env"，
-    // 精确匹配会漏 → 被当成用户段拼回 → 与新生成的段重复（09-16 实测 duplicate key，MCP 全灭）。
-    const ownedBase = name.split(".")[0];
-    if (ownedMcpServers.has(name) || ownedMcpServers.has(ownedBase)) continue;
-    const text = extractMcpSection(raw, name) || overrides[name]?.toml || "";
-    if (!text) { delete overrides[name]; continue; } // 原文已丢且没存档，清掉这条死记录
-    overrides[name] = { enabled: overrides[name]?.enabled !== false, toml: text, permissions: overrides[name]?.permissions };
-    if (overrides[name].enabled) found[name] = text;
-  }
-  return { preserved, mcpExtra: Object.values(found) };
-}
+// ── 语音通话 IPC 面（39 个 handler）已按域拆到 features/voice-ipc.ts；仍在此处注册以保持时机不变 ──
+registerVoiceIpc({ voiceService, voiceModelsRoot });
 
 
-/** 引擎健康看门狗开关同步：按 app-settings.json 的 engineWatchdog（默认开）启停 */
-async function syncEngineWatchdog() {
-  const settings = await readAppSettings(app.getPath("userData"));
-  if (settings.engineWatchdog !== false) server.startWatchdog();
-  else server.stopWatchdog();
-}
 
 /**
  * 为当前供应商的所有模型生成 model_catalog.json。
@@ -1632,89 +585,8 @@ async function syncEngineWatchdog() {
  * 这里为供应商下每个模型生成一条 catalog 记录，contextWindow 取模型自己的
  * contextWindow（缺省用供应商级 entry.contextWindow）。
  */
-const modelCatalogFile = path.join(codexHome, "model-catalog.json");
+/* modelCatalogFile 已随 codexHome 一起进 runtime-paths（叶子模块，见文件头注释）。 */
 
-function buildModelCatalog(entry: CustomModelFile) {
-  const models = (normalizeProvider(entry).models ?? []).filter((model) => model.enabled !== false);
-  const fallbackWindow = entry.contextWindow ?? 128000;
-  // 只收「有明确 contextWindow」的模型，其余交给引擎默认；把生效 model 放最前
-  const ordered = entry.model && models.some((m) => m.id === entry.model)
-    ? [models.find((m) => m.id === entry.model)!, ...models.filter((m) => m.id !== entry.model)]
-    : models;
-  const seen = new Set<string>();
-  const catalogModels = [];
-  for (const m of ordered) {
-    if (!m?.id || seen.has(m.id)) continue;
-    seen.add(m.id);
-    const contextWindow = m.contextWindow ?? fallbackWindow;
-    if (!contextWindow) continue;
-    // 该模型显式声明的思考档位（GPT 系可声明 minimal/max/ultra 等）；未声明（含空数组——
-    // 探测合并会写入 efforts: []）默认全档位——复刻 ZCode：思考等级下拉选什么都能用。
-    // ⛔ 09-16 修正两处旧认知（修 Bug 11/12）：
-    //  ① 旧注释称「引擎会按 catalog 的 supported_reasoning_levels 校验档位，catalog 没声明的档会被拒」
-    //     ——**被真实引擎证伪**：自定义模型与**内置模型**的 `effort="minimal"` / `"bogus-level"`
-    //     都被照单全收、turn 正常完成。先排除了「catalog 没被读到」这个替代解释（把 catalog 的
-    //     context_window 改成哨兵 555000，引擎写进 rollout 的 model_context_window 就是 555000
-    //     ⇒ catalog 确实生效），然后才下的结论：**读了 catalog，但不校验档位**。
-    //     ⇒ 这个白名单只决定「catalog 声明什么 / UI 能选什么」，不是安全边界。
-    //  ② 旧白名单漏了 `max`，而引擎内置 gpt-6-astra 就声明了 max（low/medium/high/xhigh/max/ultra）
-    //     ⇒ 声明 max 的模型 UI 里反而没 max；「只声明 max」更糟：过滤后为空会回落成整套默认档，
-    //     等于替用户换了一套他没声明的档位。`max` 追加在末尾，不动已定稿的展示顺序。
-    // ⛔ 与渲染层 declaredModelEfforts（src/lib/effort.ts）同规则，两处必须同源。
-    const EFFORT_WHITELIST = ["minimal", "low", "medium", "high", "xhigh", "ultra", "max"] as const;
-    const rawEfforts = m.efforts?.length ? m.efforts : ["minimal", "low", "medium", "high", "ultra", "xhigh", "max"];
-    let efforts = rawEfforts.filter((effort): effort is typeof EFFORT_WHITELIST[number] => (EFFORT_WHITELIST as readonly string[]).includes(effort));
-    // 旧版自动生成的声明（低/中/高 三档或 +最高，且没有极高）补「极高」——与渲染层 declaredModelEfforts 同规则
-    const hasBase = ["low", "medium", "high"].every((e) => efforts.includes(e as any));
-    const legacyAuto = hasBase && !efforts.includes("xhigh") && efforts.every((e) => ["low", "medium", "high", "ultra"].includes(e));
-    if (legacyAuto) efforts = [...efforts, "xhigh"] as typeof efforts;
-    const effortDescriptions: Record<string, string> = {
-      minimal: "Minimal reasoning, fastest responses",
-      low: "Fast responses with lighter reasoning",
-      medium: "Greater reasoning depth",
-      high: "Deep reasoning",
-      xhigh: "Very deep reasoning, slower responses",
-      ultra: "Maximum reasoning depth",
-      max: "Top reasoning tier (engine extension; declared by some built-in models)",
-    };
-    catalogModels.push({
-      slug: m.id,
-      display_name: m.id,
-      description: `${entry.name} · custom model`,
-      default_reasoning_level: efforts.includes("medium") ? "medium" : (efforts.at(-1) ?? "medium"),
-      supported_reasoning_levels: efforts.map((effort) => ({ effort, description: effortDescriptions[effort] ?? effort })),
-      context_window: contextWindow,
-      max_context_window: contextWindow,
-      effective_context_window_percent: 100,
-      supports_parallel_tool_calls: false,
-      supports_image_detail_original: (m.inputTypes ?? []).includes("image") || (m.outputTypes ?? []).includes("image"),
-      input_modalities: (m.inputTypes ?? ["text"]).includes("image") ? ["text", "image"] : ["text"],
-      shell_type: "default",
-      visibility: "list",
-      supported_in_api: true,
-      priority: 1,
-      base_instructions: "",
-      support_verbosity: false,
-      supports_reasoning_summaries: false,
-      experimental_supported_tools: [],
-      truncation_policy: { mode: "bytes", limit: 10000 },
-    });
-  }
-  return { models: catalogModels };
-}
-
-/** 把模型 catalog 写进 codex-home/model-catalog.json，返回其 TOML 配置行（无模型则空）。
- * 合并所有已保存供应商的模型（含禁用）：历史线程引用禁用供应商的模型时引擎也要能
- * 认出它——禁用只影响下拉新增可选，不影响旧会话继续使用。当前生效供应商排最前，同名去重保留靠前者。 */
-async function writeModelCatalogToml(entry: CustomModelFile): Promise<string> {
-  const savedProviders = await readCustomModels();
-  const providers = [entry, ...savedProviders.filter((candidate) => candidate.provider !== entry.provider)];
-  const seen = new Set<string>();
-  const models = providers.flatMap((candidate) => buildModelCatalog(candidate).models).filter((m) => !seen.has(m.slug) && seen.add(m.slug));
-  if (!models.length) return "";
-  await fs.writeFile(modelCatalogFile, JSON.stringify({ models }, null, 2), "utf8");
-  return `model_catalog_json = "${escapeToml(modelCatalogFile)}"`;
-}
 
 /** 收集所有被历史会话引用过的 `model_provider` id。
  *  用途：这些 id 必须继续在 config.toml 里有段（否则旧会话 resume 报
@@ -1732,1099 +604,28 @@ async function writeModelCatalogToml(entry: CustomModelFile): Promise<string> {
  *  （`thread/resume` 报 `no rollout found for thread id ...`），与 provider 段无关。
  *  结果缓存 60s，避免每次切换供应商都打一遍 RPC / 全盘扫描。 */
 let sessionProviderIdsCache: { at: number; ids: Set<string> } | null = null;
-async function collectSessionProviderIds(): Promise<Set<string>> {
-  const now = Date.now();
-  if (sessionProviderIdsCache && now - sessionProviderIdsCache.at < 60_000) return sessionProviderIdsCache.ids;
-  const ids = new Set<string>();
-  // ① 权威源：引擎线程索引。引擎未就绪（启动期/重启中）就静默跳过，退回 ②。
-  try {
-    for (const archived of [false, true]) {
-      let cursor = "";
-      for (let page = 0; page < 5; page += 1) {
-        const response: any = await server.request("thread/list", { limit: 200, archived, ...(cursor ? { cursor } : {}) });
-        for (const entry of response?.data ?? []) {
-          const id = typeof entry?.modelProvider === "string" ? entry.modelProvider.trim() : "";
-          if (id) ids.add(id);
-        }
-        const next = typeof response?.nextCursor === "string" ? response.nextCursor : "";
-        if (!next || next === cursor) break;
-        cursor = next;
-      }
-    }
-  } catch { /* 引擎没起来：跳过，下面用 rollout 兜底 */ }
-  // ② 补充源：rollout 首行（session_meta）的 model_provider
-  const stack = [path.join(codexHome, "sessions")];
-  let visited = 0;
-  while (stack.length && visited < 4000) {
-    const dir = stack.pop() as string;
-    let entries: any[] = [];
-    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { continue; }
-    for (const dirEntry of entries) {
-      const full = path.join(dir, dirEntry.name);
-      if (dirEntry.isDirectory()) { stack.push(full); continue; }
-      if (!dirEntry.name.endsWith(".jsonl")) continue;
-      visited += 1;
-      // 只读首行（session_meta）即可拿到创建时的 model_provider，避免整文件读入
-      try {
-        const handle = await fs.open(full, "r");
-        try {
-          const buffer = Buffer.alloc(8192);
-          const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-          const firstLine = buffer.subarray(0, bytesRead).toString("utf8").split("\n")[0];
-          const parsed = JSON.parse(firstLine);
-          const id = parsed?.payload?.model_provider ?? parsed?.payload?.modelProvider;
-          if (typeof id === "string" && id.trim()) ids.add(id.trim());
-        } finally { await handle.close(); }
-      } catch { /* 空文件/损坏行：跳过 */ }
-    }
-  }
-  sessionProviderIdsCache = { at: now, ids };
-  return ids;
-}
-
-/**
- * developer_instructions 的组装输入（**单一来源**）。
- * ⛔ applyCustomModel 的「写出」与启动自愈的「是否过期」判定必须共用这一个函数（09-20 修）。
- *   旧判据是 `!configText.includes("Never infer Python availability")` —— 这句老配置里本来就有
- *   ⇒ `instructionsOutdated` **恒为 false** ⇒ 升级后 developer_instructions 永不刷新，
- *   任何指令/技能接线改动都到不了老用户（本轮实测：改完指令，真机 config.toml 里仍是旧文案，
- *   技能文件已更新 —— 只刷新一半，最难发现的那种）。
- *   反向也危险：两边输入一旦不同就会恒为 true ⇒ 每次启动整份重写 config.toml（09-16 踩过）。
- *   所以这里只做「读设置 → 算输入」，纯函数式、无副作用、两处共用。
- */
-async function devInstructionsInput() {
-  const appSettings = await readAppSettings(app.getPath("userData"));
-  // 自动化总闸（设置页「常规」）：桌面=nuphus MCP，浏览器=playwright/cloakbrowser 指令 + browser_use
-  const builtinPlugins = await readBuiltinPlugins();
-  const bundledNodePath = bundledNode();
-  const mediaHelper = path.join(toolsRoot(), "harness-media.mjs");
-  return {
-    desktop: appSettings.desktopAutomation !== false,
-    browser: appSettings.browserAutomation !== false,
-    // 内置媒体插件（生图/视觉）：配置并启用后注入命令行用法，引擎（含老会话）由此「看见」并真实调用
-    imagePlugin: Boolean(builtinPlugins.image?.enabled !== false && builtinPlugins.image?.baseUrl && builtinPlugins.image?.apiKey && builtinPlugins.image?.model),
-    visionPlugin: Boolean(builtinPlugins.vision?.enabled !== false && builtinPlugins.vision?.baseUrl && builtinPlugins.vision?.apiKey && builtinPlugins.vision?.model),
-    // nuphus 侧要的是**真实值**（baseUrl/apiKey/model 原样下发成 NUPHUS_MCP_VISION_*），
-    // 不是上面那个布尔。走同一个来源，改插件配置时两边一起变（见 nuphus-env.ts 的背景说明）。
-    nuphusVision: builtinPlugins.vision,
-    mediaCommand: bundledNodePath ? `"${bundledNodePath}" "${mediaHelper}"` : `node "${mediaHelper}"`,
-  };
-}
-
-async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boolean }) {
-  const connectors = await readConnectors();
-  const mcpOverrides = await readMcpOverrides();
-  const appSettings = await readAppSettings(app.getPath("userData"));
-  // developer_instructions 的组装输入与下面的「写出」同源（见 devInstructionsInput 上方说明）；
-  // 两个自动化开关也从这里取，避免同一组开关在两处各算一遍而漂移。
-  const devInput = await devInstructionsInput();
-  const desktopAuto = devInput.desktop;
-  const browserAuto = devInput.browser;
-  // 内置 nuphus 与所有连接器都由 harness 重新生成，用户手工写的 MCP 段交给覆盖表
-  // harness-dispatch（09-16 调度 MCP）同样是 harness 自己生成的段：不进保留清单，
-  // 否则「保留旧段 +新生成段」会在 config.toml 里写出重复的 [mcp_servers.harness-dispatch]，
-  // MCP 服务器起不来（实测：模型看不到任何 mcp__ 工具）。
-  const ownedMcpServers = new Set(["nuphus", "harness-dispatch", ...connectors.map((connector) => safeConnectorId(connector.id))]);
-  const { preserved, mcpExtra } = await readUserConfigSplit(ownedMcpServers, mcpOverrides);
-  // 工具级权限规则（deny/ask/allow）→ 引擎真正支持的键（disabled_tools / approval_mode）。
-  // 见 mcpToolRulesOf 上方 09-16 实证说明：旧实现写 [permissions.*] 既无效又会把整份配置打废。
-  // ⛔ 再叠加**总闸掩码**（09-20）：关掉「桌面自动化 / 浏览器自动化」的那一组，整体进 disabled_tools
-  //    —— 工具从引擎工具表消失 ⇒ 真阻断（此前浏览器总闸只是提示词级控制）。
-  const mcpToolRules = withNuphusMasksForRules(mcpToolRulesOf(mcpOverrides), { desktop: desktopAuto, browser: browserAuto });
-  await writeMcpOverrides(mcpOverrides);
-  const connectorEnvValue = connectorEnv(connectors);
-  // 官方订阅走 chatgpt.com 后端（区域受限）：引擎也要走用户配置的代理，否则 Cloudflare 403/直连超时
-  if (entry.provider === "openai-official") {
-    const proxy = await resolveLiveProxy();
-    if (proxy) Object.assign(connectorEnvValue, { HTTPS_PROXY: proxy, HTTP_PROXY: proxy, NO_PROXY: "localhost,127.0.0.1,::1", no_proxy: "localhost,127.0.0.1,::1" });
-  }
-  server.setExternalEnv(connectorEnvValue);
-  // 自定义模型目录：让引擎认识非内置模型，用 catalog 里的 context_window（否则 fallback ~121K，
-  // 用户设置的 1M 上下文不生效）。无模型时返回空串不写该行。官方订阅走引擎内置模型目录，不需要。
-  const isOfficialProvider = entry.provider === "openai-official";
-  const catalogToml = isOfficialProvider ? "" : await writeModelCatalogToml(entry);
-  // 当前生效模型（catalog 里那条）：下面的 effort 兜底默认要用它。
-  // ⛔ 上下文上限**不在这里算、也不写顶层** —— 顶层单值会覆盖每模型上下文，
-  //    改为只靠 catalog 的每模型 context_window（见上方 09-16 修正说明）。
-  const currentCatalogModel = (normalizeProvider(entry).models ?? []).find((m) => m.id === entry.model);
-  const savedProviders = await readCustomModels();
-  // 全部已保存供应商都写进引擎配置（含禁用的）：旧线程的 rollout 里记录着创建时的
-  // model_provider，抹掉 provider 段会让这些历史会话 resume 直接失败
-  // （"Model provider `X` not found"→ 表现为归档/恢复后内容全空）。禁用只影响下拉可选。
-  // 官方订阅是伪供应商（走引擎内置 openai + ChatGPT 登录），不写 provider 段。
-  const providerEntries = isOfficialProvider ? savedProviders : [entry, ...savedProviders.filter((candidate) => candidate.provider !== entry.provider)];
-  // ── 旧会话必须永远走「当前生效供应商」（09-10 跨引擎生命周期探针实证） ──
-  // 实测结论：会话存档里的 model_provider 只记「名字」，引擎解析请求地址时只认 config.toml 里
-  // 该名字对应段的 base_url（改存档无效、改 config.toml 生效，且必须重启引擎后重新加载会话）。
-  // 而引擎进程只有一把全局 Key（= 当前生效供应商的 Key），所以「每个 id 各自指向自家网关」
-  // 是错的自洽性：旧会话拿着当前 Key 去打老网关 → 必然 401 无限重连。
-  // 正确形态：所有 id（含已删除供应商的历史 id）一律指向**当前生效供应商的地址与协议**，
-  // 名字保留用于展示/兼容引用。这样任何历史会话都必然走当前供应商，切换后原会话直接可用。
-  const activeNormalized = normalizeProvider(entry);
-  // 下发地址统一走本地协议桥（见 responsesBridge 定义处）：非官方模式下**所有** provider 段、
-  // 历史别名段、统一 harness 段都共用这一个地址，所以这里是全链路的单点接入——只此一处，
-  // 别再在下游分散判断。桥未启动时 bridgeDial 原样返回 → 直连（旧行为）。
-  const activeBaseUrl = bridgeDial(activeNormalized.provider, activeNormalized.baseUrl) ?? activeNormalized.baseUrl;
-  // ⛔ 恒为 responses：新版引擎对 `wire_api = "chat"` 是**硬拒载**（整份 config.toml 加载失败
-  // → 应用所有 codex:request 全部报错，09-14 用户实测截图）。历史上这里会透传用户档案里的
-  // chat（旧版本可写入），一旦档案里有 chat 就写坏配置把应用打死。
-  const activeWireApi = "responses" as const;
-  const activeContext = activeNormalized.models?.find((model) => model.id === activeNormalized.model)?.contextWindow ?? activeNormalized.contextWindow ?? 128000;
-  // 历史会话引用过、但已从供应商列表删除的 id（如重装供应商后 id 变化）→ 补成别名段，
-  // 否则引擎解析不到会报 "Model provider not found"，会话同样打不开。
-  const knownIds = new Set(providerEntries.map((provider) => normalizeProvider(provider).provider));
-  // ⛔ 历史会话里的 provider id 同样要过 safeProviderId：否则 `openai` 会绕过 knownIds 的去重，
-  //    写成 `[model_providers.openai-custom]` 与真实段**重复**（TOML duplicate key）→ 配置拒载。
-  const aliasIds = isOfficialProvider ? [] : [...(await collectSessionProviderIds())]
-    .map((id) => safeProviderId(id))
-    .filter((id) => !knownIds.has(id) && id && id !== safeProviderId(entry.provider));
-  const providerToml = providerEntries.flatMap((provider, index) => {
-    const normalized = normalizeProvider(provider);
-    const context = normalized.models?.find((model) => model.id === normalized.model)?.contextWindow ?? normalized.contextWindow ?? 128000;
-    // ⛔ 数值键必须**强校验**（09-16 修 Bug 10，RCE 级）：`maxOutputTokens` 类型上写 number，
-    //    运行时却可能来自用户可编辑的 `userData/model-specs.json`（setExternalSpecs 只校验
-    //    `contextWindow > 0`，这个字段原样透传）/ `custom-models.json` / IPC `custom-model:save`。
-    //    此前是**裸插值** —— 既没有 Number() 也没有转义。实测：值里塞
-    //    `393216\n[mcp_servers.pwn]\ncommand="…"` 能拼出一个**合法**的新段（它是 provider 段的
-    //    最后一行，后面紧跟的段头本身就是合法表声明），真引擎 `thread/start` 时**真的 spawn 了**
-    //    注入的命令。⇒ 本地配置文件到代码执行的越权边界，四环（渲染层 JSON → IPC →
-    //    custom-models.json → config.toml）全都没校验，这里兜住最后一道。
-    const maxOut = Number(normalized.models?.find((model) => model.id === normalized.model)?.maxOutputTokens);
-    // 非官方模式下所有段共用当前生效供应商的地址/协议（见上方实证说明）；官方模式保持各自原值
-    const baseUrl = isOfficialProvider ? normalized.baseUrl : activeBaseUrl;
-    // ⛔ 恒 responses（官方段也不透传 chat）——引擎已不支持 chat，写了会整份配置拒载
-    const wireApi = "responses";
-    return [
-      ...(index ? [""] : []),
-      `[model_providers.${tomlBareKey(safeProviderId(normalized.provider))}]`,
-      `name = "${escapeToml(normalized.name)}"`,
-      `base_url = "${escapeToml(baseUrl)}"`,
-      'env_key = "CODEX_HARNESS_API_KEY"',
-      `wire_api = "${wireApi}"`,
-      "requires_openai_auth = false",
-      // ⛔⛔ 09-19：这里**不再写 request_max_retries / stream_max_retries /
-      //   stream_idle_timeout_ms**（曾写 10/10/600000，实测是 429 放大器：
-      //   引擎默认 4/5/5min，调到 10 会让它在限流窗口内密集重打上游 ⇒ 越重试越限流。
-      //   详见 electron/provider-retry.ts 的实测证据）。用引擎默认 = 与 WorkBuddy 行为对齐。
-      `model_auto_compact_token_limit = ${Math.round(context * (appSettings.autoCompactRatio ?? 0.8))}`,
-      'model_auto_compact_token_limit_scope = "model"',
-      // 单次输出上限：用户在该供应商模型上填的「最大输出 Token」真实生效（探针实证：
-      // model_max_output_tokens 是引擎认可的 provider 段顶层键，config/read 能读回；
-      // catalog JSON 里的 max_output_tokens 字段会被引擎忽略——写这里才生效）。
-      // 防止超长输出把上下文窗口撑爆卡死。未填时不写（引擎按模型自身上限）。
-      ...(Number.isFinite(maxOut) && maxOut > 0 ? [`model_max_output_tokens = ${Math.floor(maxOut)}`] : []),
-    ];
-  });
-  // 已删除供应商 id 的别名段：名字沿用原名（不可考），其余与当前生效供应商完全一致
-  const aliasToml = aliasIds.flatMap((aliasId) => [
-    "",
-    `[model_providers.${tomlBareKey(aliasId)}]`,
-    `name = "${escapeToml(aliasId)}（历史会话别名 → 当前生效供应商）"`,
-    `base_url = "${escapeToml(activeBaseUrl)}"`,
-    'env_key = "CODEX_HARNESS_API_KEY"',
-    `wire_api = "${activeWireApi}"`,
-    "requires_openai_auth = false",
-    // 重试键同样不写（见 providerToml 处的实测说明）
-    `model_auto_compact_token_limit = ${Math.round(activeContext * (appSettings.autoCompactRatio ?? 0.8))}`,
-    'model_auto_compact_token_limit_scope = "model"',
-  ]);
-  // 自动化三件套不再注册为 MCP 常驻服务器：35 个工具 schema 会把每轮 prompt 撑大十几 KB，
-  // 拖慢所有对话。改为按需命令行调用（nuphus-call / playwright-cli / cloakbrowser，
-  // 用法见 developer_instructions），工具能力不变，上下文零占用。
-  // ⛔ 统一内置 provider id 段（09-14 用户定稿）：新建会话一律绑 harness，它**永远指向当前生效
-  // 供应商** —— 切供应商只重写这一段 + 重启引擎注入新 Key，所有会话零迁移直接可用。
-  // 用户配置的真实 id 段（providerToml）与历史 id 别名段（aliasToml）都保留：前者给显示/兼容，
-  // 后者给「旧会话 rollout 里记的老 id」兜底。官方订阅模式不写（走引擎内置 openai 通道）。
-  const harnessToml = isOfficialProvider ? [] : [
-    "",
-    "[model_providers.harness]",
-    'name = "内置统一通道（当前生效供应商）"',
-    `base_url = "${escapeToml(activeBaseUrl)}"`,
-    'env_key = "CODEX_HARNESS_API_KEY"',
-    `wire_api = "${activeWireApi}"`,
-    "requires_openai_auth = false",
-    // 重试键同样不写（引擎默认 4/5/5min；写 10 会放大 429 —— 见 providerToml 处实测说明）
-    `model_auto_compact_token_limit = ${Math.round(activeContext * (appSettings.autoCompactRatio ?? 0.8))}`,
-    'model_auto_compact_token_limit_scope = "model"',
-  ];
-  // ⛔ 防重护栏（09-15 真实事故）：档案里若混入 id=harness 的供应商条目，providerToml 会
-  //    再写一个 [model_providers.harness] 段，与下方 harnessToml 重复 → TOML duplicate key，
-  //    引擎加载配置直接失败 = 应用全瘫。harness 段的**唯一权威**是 harnessToml，其余来源
-  //    （用户档案/别名段）一律整段剔除。
-  const stripHarnessTable = (lines: string[]) => {
-    const out: string[] = [];
-    let skipping = false;
-    for (const line of lines) {
-      if (/^\[model_providers\.harness\]/.test(line)) { skipping = true; continue; }
-      if (skipping) { if (/^\[/.test(line)) { skipping = false; out.push(line); } continue; }
-      out.push(line);
-    }
-    return out;
-  };
-  const configText = [
-    `model = "${escapeToml(entry.model)}"`,
-    // （顶层 model_context_window 已按 09-16 修正移除：全局单值会压掉 catalog 里每模型的
-    //   上下文；`model_context_window` 仍留在 config-toml.ts 的 HARNESS_CONFIG_KEYS 里，
-    //   以便 preserveUserConfig 把老版本写下的旧值一并丢弃，不留残留。）
-    // 思考档位兜底默认（当前生效模型档案里记的档）：会话内显式值由每轮 turn/start
-    // 的 effort 覆盖，这里只管「重启后 resume 的老会话没显式值时」的默认落点，
-    // 与 custom-model.json 的 effort 字段同源。模型没记档位时不写，引擎用内置默认。
-    ...((() => {
-      const effort = currentCatalogModel?.effort ?? entry.effort;
-      return effort ? [`model_reasoning_effort = "${escapeToml(effort)}"`] : [];
-    })()),
-    // 官方订阅：不写 model_provider（引擎默认 openai），声明优先用 ChatGPT 登录凭据
-    // 非官方模式：顶层默认也指向统一内置 id —— 任何「没显式传 modelProvider」的建会话路径
-    // （渠道机器人 / 远控 / 其它入口）都自动落到当前生效供应商，不再产生新的绑定差异。
-    ...(isOfficialProvider ? ['preferred_auth_method = "chatgpt"'] : ['model_provider = "harness"']),
-    ...(catalogToml ? [catalogToml] : []),
-    // 完全自主工程模式 + 已装自动化工具使用说明（个性化走 $CODEX_HOME/AGENTS.md 原生机制）。
-    // 桌面/浏览器自动化开关关掉时，对应段说明不注入，模型不会被引导去调用它们。
-    // 生图/视觉插件配置后才注入对应段——引擎据此知道能力存在并通过命令行真实调用。
-    developerInstructionsLine(devInput),
-    // ⛔ 用户自己的顶层键必须在**第一个段头之前**（09-16 修 Bug 3）：旧实现把它们连同用户段
-    //    一起拼在文件**末尾**，而末尾紧接 `[mcp_servers.*]` —— TOML 语义上这些键就成了那个段的
-    //    键，引擎根本读不到（实测 `approval_policy = "never"` 变成 `mcp_servers.nuphus.approval_policy`，
-    //    顶层设置静默失效）。放在这里（developer_instructions 块字符串之后、第一个段头之前）才安全：
-    //    再往前会被多行字符串吞掉，往后会被段落吞掉。
-    ...(preserved.topLevel ? [preserved.topLevel] : []),
-    ...connectorToml(connectors),
-    ...stripHarnessTable(providerToml),
-    ...harnessToml,
-    ...stripHarnessTable(aliasToml),
-    "",
-    // Windows 原生沙箱：elevated 模式需要一次性管理员安装（建沙箱用户/防火墙规则），
-    // harness 静默 spawn 装不了，会导致所有 exec_command "blocked by policy"。
-    // unelevated 用受限令牌，无需安装，是官方兜底。
-    "[windows]",
-    'sandbox = "unelevated"',
-    "",
-    // 联网工具开关：web_search 是 Responses API 服务端搜索工具，每轮 prompt 都带上；
-    // 关掉能省掉模型「顺手联网」的往返（设置页「联网搜索」开关可切）。
-    // workspace-write 沙箱网络访问保持开启（模型仍可用 curl/pip 自行联网，不依赖该开关）。
-    "[tools]",
-    `web_search = ${appSettings.webSearch === false ? "false" : "true"}`,
-    "",
-    // 关闭 otel/feedback 遥测写出：OtelExporterKind 的 "none" 会停掉 spans 的本地落库
-    // （logs_*.sqlite 里那些 Reloading auth / remote control 噪音）。本机是 API key 模式，
-    // 不需要 OpenTelemetry 导出，纯本地日志保留在引擎自有 feedback log 里够用了。
-    "[otel]",
-    'exporter = "none"',
-    "",
-    "[sandbox_workspace_write]",
-    "network_access = true",
-    "",
-    // Codex 会按 shell_environment_policy 重新构造每次工具调用的环境；显式覆盖 PATH，
-    // 防止 WindowsApps 的 0 字节 python.exe 占位符抢在应用内置 Python 前面。
-    "[shell_environment_policy]",
-    'inherit = "all"',
-    "ignore_default_excludes = true",
-    "",
-    "[shell_environment_policy.set]",
-    `PATH = "${escapeToml(augmentedPath())}"`,
-    ...(bundledPython() ? [
-      `PYTHON = "${escapeToml(bundledPython())}"`,
-      `PYTHON_EXECUTABLE = "${escapeToml(bundledPython())}"`,
-      `PYTHONHOME = "${escapeToml(path.dirname(bundledPython()))}"`,
-    ] : []),
-    "",
-    // 默认浏览器 = **内置浏览器视图**（右栏 Chromium webview）+ playwright-cli；CloakBrowser 是
-    // 按需下载的可选增强（见 developer_instructions 的浏览器能力段）。
-    // 浏览器自动化开关关掉后不开启 features.browser_use，模型不再被引导操作浏览器。
-    ...(browserAuto ? [
-      "[features]",
-      "browser_use = true",
-      "",
-    ] : []),
-    // ⛔ 工具级权限规则**不在这里写**（09-16 修 Bug 1/2）：旧实现把 deny/ask/allow 写成
-    // `[permissions.allow/ask/deny]` + `"mcp__server__tool" = true`，既不被引擎解析（该 struct
-    // 没有工具映射字段），又因为缺 `default_permissions` 让整份配置非法。
-    // 现在由文件末尾的 injectMcpToolRules 把规则落到 `disabled_tools` / `[mcp_servers.X.tools.<名>]`
-    // 这两个**引擎真正支持**的键上（见 mcpToolRulesOf 上方实证记录）。
-    // 内置调度 MCP（09-16）：agent_invoke 走引擎级 MCP 注入 —— dynamicTools 只在 thread/start
-    // 生效（引擎硬约束），MCP 是唯一能覆盖**所有会话（含老会话）**的注册通道。执行闸在主进程。
-    ...(await (async () => {
-      try {
-        await ensureDispatchHttp();
-        if (!dispatchHttpPort) return [];
-        // 直连 HTTP 传输（引擎原生支持 url）：无子进程冷启动 —— stdio 走 electron.exe 实测要
-        // 28s 才握手完，超过 startup_timeout 会被引擎判死，工具根本不注册（09-16 踩过）。
-        return [
-          "[mcp_servers.harness-dispatch]",
-          `url = "http://127.0.0.1:${dispatchHttpPort}/mcp?token=${dispatchToken}"`,
-          "startup_timeout_sec = 60",
-          "",
-        ];
-      } catch (error: any) {
-        console.warn("[dispatch] MCP 段写入失败：", error?.message ?? error);
-        return [];
-      }
-    })()),
-    // 内置桌面自动化 MCP：受覆盖表 + 两个自动化总闸控制。
-    // ⛔ 09-20 修正注册条件（原先只看 desktopAuto）：nuphus 是**同一个 MCP 服务器**同时提供
-    //    `desktop_*` 与 `browser_*`，只看桌面开关会带来两个问题 ——
-    //    ① 关掉桌面自动化 ⇒ `browser_*` 被一起带走，「只给浏览器、不给真实键鼠」做不到（安全边界缺陷）；
-    //    ② 关掉浏览器自动化 ⇒ `browser_*` 仍全量注册，只是提示词叫模型别用（**不是硬控制**）。
-    //    现在改为「任一总闸开启就注册」，关闭的那一组由 `disabled_tools` 掩码整体摘掉
-    //    （见 automation-policy.ts 的 nuphusDisabledTools）。
-    // 全量注册 nuphus 的**全部 38 个工具**（09-20 实测枚举：桌面 15 + 浏览器 23），
-    // schema 约占 ~10k 前缀，但作为 prompt 常量前缀可被上游缓存。
-    ...(shouldRegisterNuphus({ desktop: desktopAuto, browser: browserAuto }) && nuphusBinary() && mcpOverrideEnabled(mcpOverrides, "nuphus") ? [
-      "[mcp_servers.nuphus]",
-      `command = "${escapeToml(nuphusBinary())}"`,
-      "args = []",
-      "startup_timeout_sec = 20",
-      // 视觉插件（BYOK）必须**真的下发到 nuphus 进程**：`desktop_vision` 读的是
-      // NUPHUS_MCP_VISION_* 环境变量，而不是我们这份 builtin-plugins.json
-      // （09-20 定位：这段 env 从来没写过 ⇒ 插件怎么配 `desktop_vision` 都报 "API_KEY required"）。
-      // ⛔ 子表 `[mcp_servers.X.env]` 这个形态是**真实 app-server 探针实证过**的
-      //    （假 stdio MCP 把自己进程 env 落盘 → 4 个哨兵值全部命中）；别换内联写法。
-      ...(() => {
-        const visionEnv = nuphusVisionEnv(devInput.nuphusVision);
-        if (!visionEnv.length) return [];
-        return ["", NUPHUS_VISION_ENV_TABLE, ...visionEnv.map(([key, value]) => `${key} = "${escapeToml(value)}"`)];
-      })(),
-      "",
-    ] : []),
-    // 用户手工写进 config.toml 的 MCP 段：启用中的原样拼回，停用的保留原文但不输出
-    ...mcpExtra.flatMap((section) => [section, ""]),
-    // 用户自行管理的段落（projects / marketplaces / plugins / hooks / permissions 等）原样拼回，
-    // 避免保存模型时把已安装插件的注册信息抹掉。
-    ...(preserved.sections ? [preserved.sections, ""] : []),
-  ].join("\n");
-  // 两处**后置注入**（都在 config-toml.ts，纯函数、可被预检直接测）：
-  //  ① injectSectionExtras：把用户在段级共享表里手写的额外子键插回对应段末尾（修 Bug 6）
-  //  ② injectMcpToolRules：把 per-tool 权限落到 disabled_tools / approval_mode（修 Bug 1/2）
-  await fs.writeFile(
-    path.join(codexHome, "config.toml"),
-    injectMcpToolRules(injectSectionExtras(configText, preserved.sectionExtras), mcpToolRules),
-    "utf8",
-  );
-  // 官方订阅绝不能带 API Key：chatgpt 后端只认 ChatGPT 登录凭据，
-  // 带上陈旧 sk- key 会 401 "api_key_not_supported" → 流无限重连（实证）。
-  // 顺手把存档里的陈旧密钥清掉。
-  if (entry.provider === "openai-official") {
-    if (entry.encryptedKey) {
-      try {
-        const { encryptedKey: _stripped, ...clean } = entry;
-        await upsertCustomModel(clean as CustomModelFile);
-      } catch { /* 清档失败不影响主流程 */ }
-    }
-    server.setApiKey("");
-  } else {
-    const apiKey = entry.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(entry.encryptedKey, "base64")) : "";
-    server.setApiKey(apiKey);
-  }
-  // restart:false = 同供应商内换模型的「只写配置」通道：引擎只在启动时读 config.toml，
-  // 运行中重写零影响；重启会打断所有在跑回合（「app-server restarted」），只在
-  // 真正切换供应商/Key 的流程里才需要。
-  if (opts?.restart !== false) await server.restart();
-}
-
-async function readStoredChannelBot(): Promise<StoredChannelBot | null> {
-  try { return JSON.parse(await fs.readFile(channelBotFile, "utf8")); }
-  catch (error: any) { if (error.code === "ENOENT") return null; throw error; }
-}
-
-async function readMemoryGateway(): Promise<MemoryRemoteConfig | null> {
-  try {
-    const stored = JSON.parse(await fs.readFile(memoryGatewayFile, "utf8")) as StoredMemoryGateway;
-    return { endpoint: stored.endpoint, sessionKey: stored.sessionKey, userId: stored.userId, apiKey: decryptSecret(stored.encryptedApiKey) };
-  } catch (error: any) { if (error.code === "ENOENT") return null; throw error; }
-}
 
 /**
  * 记忆来源模式：local 只用本机 memory.json；cloud 走 TencentDB Gateway。
  * 这个开关必须落到主进程——真正决定 recall/capture 去哪儿的是 MemoryStore 有没有 remote。
+ * ⛔ 路径常量 memoryModeFile 已下沉 electron/runtime-paths.ts（2026-09-24 断环收尾）。
  */
-const memoryModeFile = path.join(app.getPath("userData"), "memory-mode.json");
-const memoryWorkspaceFile = path.join(app.getPath("userData"), "memory-workspaces.json");
-type MemoryMode = "local" | "cloud";
-async function readMemoryMode(): Promise<MemoryMode> {
-  try { return JSON.parse(await fs.readFile(memoryModeFile, "utf8"))?.mode === "cloud" ? "cloud" : "local"; }
-  catch { return "local"; }
-}
-async function applyMemoryMode(mode: MemoryMode) {
-  await fs.writeFile(memoryModeFile, JSON.stringify({ mode }, null, 2), "utf8");
-  memoryStore.setRemote(mode === "cloud" ? await readMemoryGateway() ?? undefined : undefined);
-  return mode;
-}
 
-async function readWorkspaceMemorySettings(): Promise<Record<string, boolean>> {
-  try {
-    const raw = JSON.parse(await fs.readFile(memoryWorkspaceFile, "utf8"));
-    return raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, boolean> : {};
-  } catch (error: any) { if (error.code === "ENOENT") return {}; throw error; }
-}
 
-async function workspaceMemoryEnabled(workspace?: string): Promise<boolean> {
-  if (!workspace) return false;
-  const settings = await readWorkspaceMemorySettings();
-  // Keep existing behavior for projects that have never explicitly been disabled.
-  return settings[path.resolve(workspace)] !== false;
-}
-
-async function setWorkspaceMemoryEnabled(workspace: string, enabled: boolean): Promise<boolean> {
-  const key = path.resolve(workspace);
-  const settings = await readWorkspaceMemorySettings();
-  settings[key] = Boolean(enabled);
-  await fs.mkdir(path.dirname(memoryWorkspaceFile), { recursive: true });
-  await fs.writeFile(memoryWorkspaceFile, JSON.stringify(settings, null, 2), "utf8");
-  return settings[key];
-}
-
-async function saveMemoryGateway(input: any) {
-  const previous = await readMemoryGateway();
-  const config: MemoryRemoteConfig = {
-    endpoint: String(input.endpoint ?? "").trim().replace(/\/$/, ""),
-    sessionKey: String(input.sessionKey ?? "").trim(),
-    userId: String(input.userId ?? "codex-harness").trim(),
-    apiKey: String(input.apiKey ?? "").trim() || previous?.apiKey || "",
-  };
-  if (config.endpoint && !/^https?:\/\//.test(config.endpoint)) throw new Error("Memory Gateway 地址必须使用 http 或 https");
-  if (config.endpoint && (!config.sessionKey || !config.userId)) throw new Error("Gateway 模式需要 session key 和 user ID");
-  if (config.apiKey && !safeStorage.isEncryptionAvailable()) throw new Error("当前系统无法安全保存 Memory Gateway Key");
-  await fs.writeFile(memoryGatewayFile, JSON.stringify({ endpoint: config.endpoint, sessionKey: config.sessionKey, userId: config.userId, encryptedApiKey: config.apiKey ? safeStorage.encryptString(config.apiKey).toString("base64") : undefined } satisfies StoredMemoryGateway, null, 2), "utf8");
-  // 填了网关地址就切到云端（Codex 从此去云端找记忆），清空地址则回到本地
-  await applyMemoryMode(config.endpoint ? "cloud" : "local");
-  return { ...memoryStore.remoteStatus(), sessionKey: config.sessionKey, userId: config.userId, hasApiKey: Boolean(config.apiKey) };
-}
-
-function decryptSecret(value?: string) {
-  return value && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(value, "base64")) : "";
-}
-
-/** TOML 字符串转义：实现统一收口在 config-toml.ts（预检能 require 编译产物直接测它）。
- *  ⛔ 09-16 修 Bug 5：旧实现只转义 `\` 与 `"`，换行/制表/控制字符原样落盘 →
- *  粘贴一个带尾换行的 base_url 就能让引擎整份配置拒载。 */
-const escapeToml = escapeTomlString;
-/** 表头里的键名：TOML 裸键只允许 `A-Za-z0-9_-`，别的字符一律剔除（写进去只会让整份配置非法）。 */
-function safeConnectorId(value: string) { return value.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64); }
-function publicConnector(value: ConnectorConfig): PublicConnectorConfig {
-  const { headers, env, encryptedSecrets, ...rest } = value;
-  return { ...rest, hasSecrets: Boolean(Object.keys(encryptedSecrets ?? {}).length), headerKeys: Object.keys(headers ?? {}), envKeys: Object.keys(env ?? {}), envHttpHeaderKeys: Object.keys(value.envHttpHeaders ?? {}) };
-}
-async function readConnectors(): Promise<ConnectorConfig[]> {
-  try {
-    const list = JSON.parse(await fs.readFile(connectorsFile, "utf8"));
-    return Array.isArray(list) ? list.filter((entry: any) => entry && typeof entry.id === "string" && typeof entry.name === "string") : [];
-  } catch (error: any) { if (error.code === "ENOENT") return []; throw error; }
-}
-async function writeConnectors(list: ConnectorConfig[]) { await fs.writeFile(connectorsFile, JSON.stringify(list, null, 2), "utf8"); }
-
-// —— app-server MCP 启停覆盖表 ——
-// app-server 回报的 MCP 分两类：harness 自己的连接器（connectors.json），
-// 以及引擎直管的服务器（内置 nuphus、用户手工写进 config.toml 的段落）。
-// 后者没有连接器记录，用这张表记住启用/停用，写 config.toml 时按它决定是否输出该段。
-//
-// 除了服务器级启停，还支持按工具的权限规则（deny/ask/allow）。
-// ⛔ 09-16 实证纠正（原实现整个走错了路）：引擎**没有** per-tool 的「工具 → deny/ask/allow」
-// 配置机制。旧实现把规则写成 `[permissions.allow]` + `"mcp__x__y" = true`，两个后果都致命：
-//   ① 引擎的 `PermissionProfileToml` 只有 description/extends/workspace_roots/filesystem/network
-//      五个字段 → 工具规则被**静默丢弃**（档位名会出现在 permissionProfile/list 里，那只是
-//      「段头名」，与段内容无关 —— 旧注释据此误判成「格式正确」）；
-//   ② 只写 `[permissions.*]` 而不写顶层 `default_permissions` → 引擎判定**整份配置非法**
-//      （stderr `Invalid configuration; using defaults`；`config/read` / `mcpServerStatus/list`
-//      随后全挂），而 harness 从来不写 default_permissions ⇒ 点一下权限格就把配置打废。
-// 现在改走引擎真正支持的键（真实 app-server + 最小 stdio MCP 实证）：
-//   deny  → `disabled_tools = [...]`：工具从引擎工具表里消失（模型看不到 = 真阻断）
-//   ask   → `[mcp_servers.X.tools.<工具>] approval_mode = "prompt"`（引擎侧审批档位）
-//   allow → 同上的 `approval_mode = "auto"`
-/** 单工具的权限档位；deny = 不暴露给模型，ask = 引擎侧要审批，allow = 直接放行 */
-type McpToolPermission = "deny" | "ask" | "allow";
-type McpOverrideEntry = {
-  enabled: boolean;
-  /** 停用前的整段 config.toml 原文；只有用户手工写进 config.toml 的 MCP 才需要 */
-  toml?: string;
-  /** 按工具名的权限规则（deny 硬阻断 / ask 需审批 / allow 直接放行） */
-  permissions?: Record<string, McpToolPermission>;
-};
-type McpOverrides = Record<string, McpOverrideEntry>;
-async function readMcpOverrides(): Promise<McpOverrides> {
-  try {
-    const raw = JSON.parse(await fs.readFile(mcpOverridesFile, "utf8"));
-    return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as McpOverrides) : {};
-  } catch (error: any) { if (error.code === "ENOENT") return {}; throw error; }
-}
-async function writeMcpOverrides(value: McpOverrides) { await fs.writeFile(mcpOverridesFile, JSON.stringify(value, null, 2), "utf8"); }
-/** 没记过的一律视为启用，只有显式写了 false 才算停用 */
-function mcpOverrideEnabled(overrides: McpOverrides, id: string) { return overrides[id]?.enabled !== false; }
-
-/** 把覆盖表里的 per-tool 规则整理成 `服务器名 → {deny,ask,allow}`，交给
- *  `injectMcpToolRules` 落到 config.toml 里引擎真正认的键上（见上方 09-16 实证说明）。 */
-function mcpToolRulesOf(overrides: McpOverrides): Record<string, McpToolRules> {
-  const rules: Record<string, McpToolRules> = {};
-  for (const [server, entry] of Object.entries(overrides)) {
-    if (!entry?.permissions) continue;
-    const bucket: McpToolRules = { deny: [], ask: [], allow: [] };
-    for (const [tool, mode] of Object.entries(entry.permissions)) {
-      if (!tool || (mode !== "deny" && mode !== "ask" && mode !== "allow")) continue;
-      bucket[mode].push(tool);
-    }
-    if (bucket.deny.length || bucket.ask.length || bucket.allow.length) rules[server] = bucket;
-  }
-  return rules;
-}
-function connectorEnv(list: ConnectorConfig[]) {
-  const result: Record<string, string> = {};
-  for (const connector of list) {
-    // 停用的连接器：密钥不再注入引擎环境，与「不写入 config.toml」保持一致
-    if (connector.enabled === false) continue;
-    for (const [key, encrypted] of Object.entries(connector.encryptedSecrets ?? {})) {
-      const value = decryptSecret(encrypted);
-      if (value) result[key] = value;
-    }
-  }
-  return result;
-}
-function connectorToml(list: ConnectorConfig[]) {
-  const lines: string[] = [];
-  for (const connector of list) {
-    // 停用的连接器整段跳过：引擎侧完全没有该 MCP，而不是加载后靠 enabled 字段生效
-    if (connector.enabled === false) continue;
-    const id = safeConnectorId(connector.id);
-    if (!id) continue;
-    lines.push("", `[mcp_servers.${id}]`);
-    if (connector.transport === "stdio") {
-      if (!connector.command) continue;
-      lines.push(`command = "${escapeToml(connector.command)}"`);
-      if (connector.args?.length) lines.push(`args = [${connector.args.map((arg) => `"${escapeToml(arg)}"`).join(", ")}]`);
-      // env 的**键**也必须转义加引号（09-16，Bug 5 同族）：键名来自用户输入，此前是裸插值
-      // → 键里带 `"` 或 `}` 就能闭合内联表往外注入内容（同段里的 env_http_headers 早就转义了，
-      //    两处不一致本身就是漏）。
-      if (Object.keys(connector.env ?? {}).length) lines.push(`env = { ${Object.entries(connector.env ?? {}).map(([key, value]) => `"${escapeToml(key)}" = "${escapeToml(String(value))}"`).join(", ")} }`);
-    } else {
-      if (!connector.url) continue;
-      lines.push(`url = "${escapeToml(connector.url)}"`);
-      // envHttpHeaders：HTTP header 名 -> 环境变量名。密钥走 connectorEnv 注入，不落盘到 config.toml。
-      if (Object.keys(connector.envHttpHeaders ?? {}).length) lines.push(`env_http_headers = { ${Object.entries(connector.envHttpHeaders ?? {}).map(([key, value]) => `"${escapeToml(key)}" = "${escapeToml(value)}"`).join(", ")} }`);
-      const tokenKey = Object.keys(connector.encryptedSecrets ?? {})[0];
-      if (tokenKey && !Object.keys(connector.envHttpHeaders ?? {}).length) lines.push(`bearer_token_env_var = "${escapeToml(tokenKey)}"`);
-    }
-    lines.push("startup_timeout_sec = 20");
-  }
-  return lines;
-}
-
-async function readChannelBot(): Promise<ChannelBotConfig | null> {
-  const stored = await readStoredChannelBot();
-  if (!stored) return null;
-  return {
-    enabled: stored.enabled,
-    host: stored.host,
-    port: stored.port,
-    workspace: stored.workspace,
-    sandbox: stored.sandbox,
-    appId: stored.appId,
-    appSecret: decryptSecret(stored.encryptedAppSecret),
-    verificationToken: decryptSecret(stored.encryptedVerificationToken),
-    encryptKey: decryptSecret(stored.encryptedEncryptKey),
-  };
-}
-
-function publicChannelBot(config: ChannelBotConfig | null) {
-  const defaults = { enabled: false, host: "127.0.0.1" as const, port: 8787, workspace: "", sandbox: "workspace-write" as const, appId: "" };
-  const value = config ?? defaults;
-  return {
-    ...defaults,
-    ...value,
-    appSecret: undefined,
-    verificationToken: undefined,
-    encryptKey: undefined,
-    hasAppSecret: Boolean(config?.appSecret),
-    hasVerificationToken: Boolean(config?.verificationToken),
-    hasEncryptKey: Boolean(config?.encryptKey),
-    ...channelBot.status(),
-    logs: channelLogs,
-  };
-}
-
-async function normalizeChannelBot(input: any): Promise<ChannelBotConfig> {
-  const previous = await readChannelBot();
-  const host = input.host === "0.0.0.0" ? "0.0.0.0" : "127.0.0.1";
-  const port = Number(input.port ?? 8787);
-  if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) throw new Error("回调端口必须在 1024 到 65535 之间");
-  const config: ChannelBotConfig = {
-    enabled: Boolean(input.enabled),
-    host,
-    port,
-    workspace: String(input.workspace ?? "").trim(),
-    sandbox: ["read-only", "danger-full-access"].includes(input.sandbox) ? input.sandbox : "workspace-write",
-    appId: String(input.appId ?? "").trim(),
-    appSecret: String(input.appSecret ?? "").trim() || previous?.appSecret || "",
-    verificationToken: String(input.verificationToken ?? "").trim() || previous?.verificationToken || "",
-    encryptKey: String(input.encryptKey ?? "").trim() || previous?.encryptKey || "",
-  };
-  if (config.enabled && (!config.workspace || !config.appId || !config.appSecret || !config.verificationToken)) throw new Error("启用前需填写工作区、App ID、App Secret 和 Verification Token");
-  return config;
-}
-
-async function saveChannelBot(input: any) {
-  const config = await normalizeChannelBot(input);
-  if ((config.appSecret || config.verificationToken || config.encryptKey) && !safeStorage.isEncryptionAvailable()) throw new Error("当前系统无法安全保存机器人密钥");
-  const encrypt = (value: string) => value ? safeStorage.encryptString(value).toString("base64") : undefined;
-  const stored: StoredChannelBot = {
-    enabled: config.enabled,
-    host: config.host,
-    port: config.port,
-    workspace: config.workspace,
-    sandbox: config.sandbox,
-    appId: config.appId,
-    encryptedAppSecret: encrypt(config.appSecret),
-    encryptedVerificationToken: encrypt(config.verificationToken),
-    encryptedEncryptKey: encrypt(config.encryptKey),
-  };
-  await channelBot.configure(config);
-  await fs.writeFile(channelBotFile, JSON.stringify(stored, null, 2), "utf8");
-  return publicChannelBot(config);
-}
-
-/**
- * 该上游是否指向「本机 / 内网」的自建推理服务。
- *
- * ⛔ 为什么需要它（09-19 代码审查发现的真 bug）：保存逻辑会把「没有密钥的第三方供应商」
- *   强制存成**禁用**（那是为了「首次安装不要默认启用」）。但**本地模型服务（Ollama /
- *   LM Studio / vLLM / llama.cpp）本来就不需要 Key** —— 于是用户配好本地模型、保存，
- *   供应商却是停用状态，发消息毫无反应，且看不出为什么。
- *   这里把 loopback 与私网地址识别出来，这类上游允许「无 Key 且启用」。
- *
- * 判定范围：loopback（127.0.0.1 / localhost / ::1 / 0.0.0.0）+ RFC1918 私网
- *   （10./172.16-31./192.168.）—— 内网自建推理是常见部署形态。
- *   ⚠️ 解析失败就返回 false（宁可保守：把需要 Key 的网关误当本地服务只会多一次 401；
- *      反过来却会让本地用户完全摸不着头脑）。
- */
-function isLocalEndpoint(baseUrl: unknown): boolean {
-  const raw = String(baseUrl ?? "").trim();
-  if (!raw) return false;
-  let host = "";
-  try { host = new URL(raw).hostname.toLowerCase().replace(/^\[|\]$/g, ""); }
-  catch { host = ""; }
-  if (!host) {
-    // 没写协议时 URL 解析会失败（用户常直接填 127.0.0.1:11434）→ 退化成字符串判断
-    host = (raw.replace(/^[a-z]+:\/\//i, "").split("/")[0] ?? "").split(":")[0].toLowerCase();
-  }
-  if (!host) return false;
-  if (host === "localhost" || host === "::1" || host === "0.0.0.0" || host.endsWith(".localhost")) return true;
-  if (/^127\./.test(host)) return true;
-  if (/^10\./.test(host)) return true;
-  if (/^192\.168\./.test(host)) return true;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return true;
-  return false;
-}
-
-function publicCustomModel(value: CustomModelFile | null) {
-  if (!value) return null;
-  const { encryptedKey, ...config } = value;
-  const hasKey = Boolean(encryptedKey);
-  // ⛔ 未配置密钥的第三方供应商**不得视为已启用**（09-19 用户：「首次安装启动、没配置供应商时，
-  //   默认不要启用任何供应商，要不然会跟新配置的供应商同时启用」）。
-  //   没有密钥的供应商启用着，一是语义假（它根本发不出请求），二是会出现「默认那个 + 新配的这个」
-  //   同时显示启用，用户分不清当前到底是谁生效。
-  //   ⚠️ `openai-official` 例外：官方订阅靠 ChatGPT 登录凭据，本来就没有 API Key。
-  //   ⚠️ 两个例外：① `openai-official` 靠 ChatGPT 登录凭据，本来就没有 API Key；
-  //   ② 本机/内网自建服务（见 isLocalEndpoint）—— 它们本来就不需要 Key。
-  //   ⛔ 两处判定必须同源：这里（显示）与 custom-model:save（落盘）不一致的话，
-  //   会出现「存成启用、界面显示停用」这种自相矛盾的状态。
-  const keylessThirdParty = !hasKey && value.provider !== "openai-official" && !isLocalEndpoint(value.baseUrl);
-  return { ...config, enabled: keylessThirdParty ? false : value.enabled !== false, hasKey };
-}
-
-function probeFetch(url: string, init: RequestInit, timeoutMs: number) {
-  return net.fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) }).catch((error: any) => {
-    throw new Error(classifyProbeError(error));
-  });
-}
-
-/** 把探测失败时的 HTTP 响应体整理成一句可读的话：优先取 JSON 里的 error.message / message，
- *  拿不到再退回原始文本（截断）。网关原话必须原样保留——它是判断「Key 错」还是「通道不配套」
- *  的唯一依据，直接丢给用户看整坨 JSON 也不友好。 */
-function describeHttpBody(body: string): string {
-  const raw = String(body ?? "").trim();
-  if (!raw) return "";
-  try {
-    const data: any = JSON.parse(raw);
-    const message = data?.error?.message ?? data?.error?.msg ?? data?.message ?? data?.msg ?? data?.error;
-    if (typeof message === "string" && message.trim()) return message.trim().slice(0, 300);
-    if (message && typeof message === "object") return JSON.stringify(message).slice(0, 300);
-  } catch { /* 非 JSON：走原文 */ }
-  return raw.slice(0, 300);
-}
-
-/** 把 net.fetch 的底层错误翻译成能看懂的中文提示 */
-function classifyProbeError(error: any): string {
-  const message = String(error?.message ?? error);
-  if (error?.name === "TimeoutError" || error?.name === "AbortError" || /timeout|aborted/i.test(message)) return "连接超时（服务器长时间无响应）";
-  if (error?.code === "ENOTFOUND" || /getaddrinfo|ENOTFOUND/i.test(message)) return "域名解析失败（检查 Base URL）";
-  if (error?.code === "ECONNREFUSED" || /ECONNREFUSED/i.test(message)) return "连接被拒绝（服务未启动或端口不对）";
-  return message;
-}
-
-// 已知不提供 /models 列表的网关（Coding Plan 套餐等）：探测拉列表失败时返回内置推荐清单。
-// 模型清单基于各官方文档（2026-09）；wire 是该网关实测的协议偏好（火山 Coding 仅支持 Chat）。
-const KNOWN_GATEWAY_MODELS: { match: RegExp; wire: "responses" | "chat"; models: string[] }[] = [
-  // 火山方舟 Coding Plan：https://ark.cn-beijing.volces.com/api/coding/v3（仅 Chat 协议）
-  { match: /volces\.com\/api\/coding/, wire: "chat", models: ["doubao-seed-2.0-code", "doubao-seed-code", "glm-4.7", "deepseek-v3.2", "kimi-k2.5"] },
-  // 火山方舟标准端点
-  { match: /volces\.com/, wire: "chat", models: ["doubao-seed-1.8", "doubao-seed-1.6", "doubao-1.5-pro-32k", "deepseek-v3"] },
-  // 智谱 Coding Plan：https://open.bigmodel.cn/api/coding/paas/v4
-  { match: /bigmodel\.cn\/api\/coding/, wire: "responses", models: ["glm-5.3", "glm-5.2", "glm-5.1", "glm-5"] },
-  { match: /bigmodel\.cn/, wire: "responses", models: ["glm-5.3", "glm-5.2", "glm-5.1", "glm-5", "glm-4.6"] },
-  // Kimi For Coding：https://api.kimi.com/coding/v1
-  { match: /api\.kimi\.com|kimi\.com/, wire: "chat", models: ["kimi-k3", "kimi-k2-0905-preview", "kimi-k2-turbo-preview"] },
-  // MiniMax
-  { match: /minimaxi\.com|minimax\.io|minimax/, wire: "responses", models: ["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2"] },
-];
-
-async function probeCustomModel(input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) {
-  const baseUrl = input.baseUrl.trim().replace(/\/$/, "");
-  let parsedUrl: URL;
-  try { parsedUrl = new URL(baseUrl); } catch { throw new Error("Base URL 不是合法地址"); }
-  if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") throw new Error("Base URL 必须使用 http 或 https");
-  const previous = await readCustomModel();
-  const canReuseKey = previous?.provider === input.provider?.trim() && previous?.baseUrl === baseUrl;
-  const apiKey = input.apiKey?.trim() || (canReuseKey && previous?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(previous.encryptedKey, "base64")) : "");
-  const model = input.model?.trim();
-  const startedAt = Date.now();
-  // 官方订阅不走 HTTP 探测（chatgpt 后端无裸 /models，且 Bearer 语义不同）：以 auth.json 登录态为准
-  if (input.provider === "openai-official") {
-    const auth = await readOpenaiAuth();
-    if (!auth?.loggedIn) throw new Error("尚未登录 OpenAI 官方账号——请先在模型设置页完成设备码登录");
-    const catalog = await fetchOpenaiModels();
-    return { status: 200, latencyMs: Date.now() - startedAt, model: model ?? "", models: catalog.models, ok: true, via: catalog.source === "official" ? "official" : "official-fallback" };
-  }
-  const authHeaders: Record<string, string> = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
-
-  // 第一步：GET /models 轻量探测，毫秒级即可判断网络连通与认证
-  let models: string[] | null = null;
-  let modelsStatus = 0;
-  let modelsError: Error | null = null;
-  try {
-    const response = await probeFetch(`${baseUrl}/models`, { headers: { ...authHeaders, Accept: "application/json" } }, 8_000);
-    if (response.ok) {
-      const body = await response.text();
-      try {
-        const data: any = JSON.parse(body);
-        models = [...new Set<string>((Array.isArray(data) ? data : data.data ?? data.models ?? []).map((entry: any) => typeof entry === "string" ? entry : entry?.id ?? entry?.name).filter(Boolean))].sort();
-        modelsStatus = response.status;
-      } catch { /* 返回的不是 JSON，走流式探测兜底 */ }
-    } else if (response.status === 401 || response.status === 403) {
-      const raw = await response.text().catch(() => "");
-      let reason = "";
-      try { const parsed = JSON.parse(raw); reason = parsed?.error?.message ?? parsed?.message ?? ""; } catch { reason = raw.slice(0, 160); }
-      throw new Error(`认证失败（HTTP ${response.status}）${reason ? `：${reason}` : "：网络是通的，请检查 API Key"}`);
-    } else if (response.status !== 404 && response.status !== 405) {
-      const body = await response.text();
-      throw new Error(`HTTP ${response.status}: ${body.slice(0, 200) || response.statusText}`);
-    }
-    // 404/405：网关不提供 /models，走流式探测
-  } catch (error: any) {
-    modelsError = error instanceof Error ? error : new Error(String(error));
-  }
-  // 网络层/认证已确定失败的场景直接报错，不再浪费时间做第二次请求
-  if (modelsError && /域名解析失败|连接被拒绝|认证失败/.test(modelsError.message)) throw modelsError;
-
-  if (models) {
-    // /models 可用：没指定模型，或模型在列表里 → 直接连通成功（最快路径）
-    if (!model || !models.length || models.includes(model)) {
-      return { status: modelsStatus, latencyMs: Date.now() - startedAt, model: model ?? "", models, ok: true, via: "models" };
-    }
-    // 模型不在列表里：列表可能不全，用流式请求做精确判定
-  }
-
-  // 第二步：对指定模型发起流式极简请求，收到首个响应分片即判定连通，避免推理模型思考耗时。
-  // wireApi=auto（自动跟随上游）：先试 Responses，端点/参数不被认就自动换 Chat Completions，
-  // 并把实际成功的协议通过 wireUsed 返回——前端回写配置，保存时落定具体值。
-  // ⛔ 显式 responses 也保留 chat 回落（09-18 用户反馈）：火山 Coding Plan 等网关对**部分模型**
-  // 的 /responses 直接回 404「does not support the coding plan feature」，而 Chat 通道是通的——
-  // 只试单协议会把"明明能用的模型"误报成连接失败。wireUsed/wireMismatch 让前端如实呈现差异。
-  const requestedWire: "responses" | "chat" = input.wireApi === "chat" ? "chat" : "responses";
-  const wireOrder: ("responses" | "chat")[] = requestedWire === "chat" ? ["chat"] : ["responses", "chat"];
-  if (!model) {
-    // Coding Plan 类网关（火山方舟/智谱 Coding/Kimi/MiniMax 等）不提供 /models 列表：
-    // 命中已知网关时返回内置推荐清单（可手动增删），并给出该网关实测的协议偏好。
-    const known = KNOWN_GATEWAY_MODELS.find((entry) => entry.match.test(baseUrl));
-    if (known) {
-      const wireHint = /volces\.com\/api\/coding|coding\/v3/.test(baseUrl) ? "chat" : known.wire;
-      return { status: 200, latencyMs: Date.now() - startedAt, model: "", models: known.models, ok: true, via: "builtin", wireUsed: wireHint as "responses" | "chat" };
-    }
-    throw new Error(modelsError ? `该网关不提供 /models 列表接口：${modelsError.message}。可用下方「添加模型」手动输入模型 ID` : "该网关不提供 /models，且未指定要测试的模型。可用下方「添加模型」手动输入模型 ID");
-  }
-  const headers: Record<string, string> = { "Content-Type": "application/json", ...authHeaders };
-  const buildPayload = (wire: "responses" | "chat", tokenParam: string) => wire === "chat"
-    ? { model, messages: [{ role: "user", content: "hi" }], [tokenParam]: 16, stream: true }
-    : { model, input: "hi", max_output_tokens: 16, stream: true };
-  const attempt = async (wire: "responses" | "chat", tokenParam: string) => {
-    const endpoint = wire === "chat" ? `${baseUrl}/chat/completions` : `${baseUrl}/responses`;
-    const response = await probeFetch(endpoint, { method: "POST", headers, body: JSON.stringify(buildPayload(wire, tokenParam)) }, 20_000);
-    const body = response.ok ? "" : await response.text();
-    return { response, body };
-  };
-  // gpt-5 系列要求 max_completion_tokens，旧网关只认 max_tokens：先按新规范发，参数不识别时自动换旧参数重试
-  let response!: Response;
-  let body = "";
-  let wireUsed: "responses" | "chat" = wireOrder[0];
-  for (let w = 0; w < wireOrder.length; w++) {
-    const wire = wireOrder[w];
-    wireUsed = wire;
-    ({ response, body } = await attempt(wire, "max_completion_tokens"));
-    if (!response.ok && response.status === 400 && /max_completion_tokens|max_tokens/i.test(body)) {
-      ({ response, body } = await attempt(wire, "max_tokens"));
-    }
-    if (response.ok) break;
-    // 自动模式：端点不存在/参数不认（非认证、非模型缺失错误）→ 换另一种协议再试
-    const canSwitch = w + 1 < wireOrder.length && (response.status === 404 || response.status === 405 || response.status === 400);
-    if (!canSwitch) {
-      // 认证失败必须把供应商自己的原话带上：不同网关的 401 含义不同——「API key 格式不正确」
-      // 说明 Key 与通道/Key 类型不配套（如火山 /api/plan/v3 要套餐专属 Key），
-      // 「Invalid API key」才是 Key 值不对。丢掉原文用户只能看到笼统提示，无从下手（实测踩坑）。
-      const detail = describeHttpBody(body) || response.statusText;
-      if (response.status === 401 || response.status === 403) throw new Error(`认证失败（HTTP ${response.status}）${detail ? `：${detail}` : "：网络是通的，请检查 API Key"}`);
-      if (response.status === 400 && /model.*(not.*(found|exist)|不存在)/i.test(body)) throw new Error(`模型不存在（HTTP 400）：${detail}`);
-      if (response.status === 404 && /coding plan/i.test(body)) {
-        // 火山 Coding Plan 类网关的原话要翻译成白话：用户看到 404 只知道"失败了"，不知道是该换接入点还是换模型
-        throw new Error(`HTTP 404: ${detail}\n白话：供应商表示这个模型不在其 Coding Plan 通道的支持范围。请确认 Base URL 与模型是否配套（例如火山引擎通用接入点是 https://ark.cn-beijing.volces.com/api/v3），或换用支持该模型的接入点。`);
-      }
-      throw new Error(`HTTP ${response.status}: ${detail}`);
-    }
-  }
-  // 200 已证明网络、认证、模型名全部有效；读首个分片后立即断开，不等待生成完成
-  const reader = (response.body as any)?.getReader?.();
-  if (reader) {
-    try { await reader.read(); } finally { try { await reader.cancel(); } catch { /* 已断开 */ } }
-  }
-  // wireMismatch：实际连通的协议与请求指定的不同（responses 被拒、chat 兜底成功）——前端如实提示
-  return { status: response.status, latencyMs: Date.now() - startedAt, model, models: models ?? [model], ok: true, via: "stream", wireUsed, wireMismatch: wireUsed !== requestedWire };
-}
-// ── 原生右键菜单：为输入框/选中文本提供 Windows 式复制、粘贴、剪切、全选、删除、撤销、重做 ──
-// 渲染层跑在 sandbox + contextIsolation 下，且消息气泡的自定义「复制」按钮已存在；
-// 这里补的是系统级右键菜单（此前右键无任何响应）。链接会额外提供「复制链接 / 浏览器打开」。
-function installContextMenu(win: BrowserWindow) {
-  win.webContents.on("context-menu", (_event, params) => {
-    const editable = params.isEditable;
-    const hasSelection = Boolean(params.selectionText && params.selectionText.trim().length > 0);
-    const flags = params.editFlags;
-    const link = params.linkURL?.trim();
-
-    const template: Electron.MenuItemConstructorOptions[] = [];
-    const usable = () => template.some((item) => item.type !== "separator" && (item as { enabled?: boolean }).enabled !== false);
-
-    // 复制：只要有选中文本即可（只读的正文 / 消息气泡区域也能复制）
-    template.push({ label: "复制", accelerator: "CmdOrCtrl+C", enabled: hasSelection, click: () => win.webContents.copy() });
-    // 剪切：仅可编辑且选中文本
-    template.push({ label: "剪切", accelerator: "CmdOrCtrl+X", enabled: editable && hasSelection, click: () => win.webContents.cut() });
-    // 粘贴：仅可编辑
-    template.push({ label: "粘贴", accelerator: "CmdOrCtrl+V", enabled: editable, click: () => win.webContents.paste() });
-    template.push({ label: "删除", enabled: editable && flags.canDelete, click: () => win.webContents.delete() });
-    template.push({ type: "separator" });
-    template.push({ label: "全选", accelerator: "CmdOrCtrl+A", enabled: flags.canSelectAll, click: () => win.webContents.selectAll() });
-
-    if (link) {
-      template.push({ type: "separator" });
-      template.push({ label: "复制链接地址", click: () => clipboard.writeText(link) });
-      template.push({ label: "在浏览器中打开", click: () => void shell.openExternal(link) });
-    }
-
-    template.push({ type: "separator" });
-    template.push({ label: "撤销", accelerator: "CmdOrCtrl+Z", enabled: editable && flags.canUndo, click: () => win.webContents.undo() });
-    template.push({ label: "重做", accelerator: "CmdOrCtrl+Shift+Z", enabled: editable && flags.canRedo, click: () => win.webContents.redo() });
-
-    // 空白区域右键（无选中、非编辑、非链接）时没有任何可用项，不弹菜单
-    if (!usable()) return;
-    Menu.buildFromTemplate(template).popup({ window: win });
-  });
-}
-
-function createWindow() {
-  // Windows 任务栏图标必须用 .ico 才可靠（PNG 会被 electron.exe 默认图标顶掉）；
-  // dev 下 __dirname=dist-electron → ../build/icon.ico；打包后 build/ 不进 asar，
-  // existsSync 为 false 走 exe 内嵌图标（electron-builder win.icon 已注入）。
-  const windowIcon = path.join(
-    __dirname,
-    "..",
-    "build",
-    process.platform === "win32" ? "icon.ico" : "icon.png",
-  );
-  mainWindow = new BrowserWindow({
-    // 默认桌面尺寸要容纳展开侧栏和完整输入工具栏；小屏仍由响应式布局处理。
-    width: 1280,
-    height: 800,
-    minWidth: 640,
-    minHeight: 480,
-    backgroundColor: "#ffffff",
-    title: "Codex Harness Desktop",
-    icon: existsSync(windowIcon) ? windowIcon : undefined,
-    autoHideMenuBar: true,
-    // 无边框标题栏：系统标题栏隐藏，应用 topbar 顶到窗口边缘（省 ~32px 高度）。
-    // ⛔ 平台分叉（09-16 mac 适配）：titleBarOverlay 的窗口控制钮是 **Windows 专属**
-    // （右上角贴靠/双击最大化等原生行为）；mac 上硬传只是被忽略，红绿灯仍画在左上角，
-    // 而渲染层按 Windows 预留的右上 145px 空白就成了纯浪费。mac 走 hiddenInset——
-    // 红绿灯按系统标准内缩，渲染层用 [data-os="darwin"] 把顶行内容让开（styles.css）。
-    ...(process.platform === "win32"
-      ? {
-        titleBarStyle: "hidden" as const,
-        titleBarOverlay: {
-          // 让 `.topbar { background: var(--bg) }` 自己穿过来——钮不再"浮在自己的色条上"，
-          // 也无需枚举每个主题调色；亮/暗主题都能干净。符号色在 theme:apply 里跟着主题切。
-          color: "#00000000",
-          symbolColor: titleBarOverlayOptions().symbolColor,
-          // 43 而非 44：底下留 1px 给 .topbar::after 分隔线，线可贯通窗口钮下方
-          height: 43,
-        },
-      }
-      : { titleBarStyle: "hiddenInset" as const }),
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      // <webview> 标签（Electron 默认禁用）：主区「浏览器」视图用它嵌入外部网页。
-      // guest 内容是独立 webContents，与主应用隔离（拿不到 preload / node API），
-      // 仅用于渲染，不赋予任何宿主权限。
-      webviewTag: true,
-    },
-  });
-  // Windows 11 原生圆角（仅 win32；其余平台函数内静默跳过）。
-  applyRoundedCorners(mainWindow);
-  // ⛔ 导航与新窗口收敛（09-13 审计 S5）：全仓此前 `will-navigate` / `setWindowOpenHandler`
-  // **零命中** —— 主窗口加载了任意页面（模型输出里的链接、拖入的本地 html）就能在当前
-  // webContents 里换掉整个应用界面，而它带着 `harness-image://` 与全部 IPC 桥。
-  // 规则：**主窗口自身永不导航**（应用只从 dist/devServer 加载），新窗口一律拒绝并转系统浏览器。
-  mainWindow.webContents.on("will-navigate", (event, target) => {
-    const devUrl = process.env.VITE_DEV_SERVER_URL ?? "";
-    if (devUrl && target.startsWith(devUrl)) return;   // 开发期 HMR reload 放行
-    if (target.startsWith("file://") && target.includes("/dist/index.html")) return;
-    event.preventDefault();
-    if (/^https?:/i.test(target)) void shell.openExternal(target).catch(() => undefined);
-  });
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) void shell.openExternal(url).catch(() => undefined);
-    return { action: "deny" };
-  });
-  // <webview> guest 只允许 http(s) 且禁弹窗；不给它任何宿主权限（分区隔离见 BrowserPane）。
-  mainWindow.webContents.on("will-attach-webview", (_event, webPreferences, params) => {
-    delete (webPreferences as any).preload;
-    (webPreferences as any).nodeIntegration = false;
-    (webPreferences as any).contextIsolation = true;
-    if (!/^https?:/i.test(String(params.src ?? ""))) delete (params as any).src;
-  });
-  const devUrl = process.env.VITE_DEV_SERVER_URL;
-  // ⛔ 关窗守卫（09-13 审计第 5 条）：此前全 `main.ts` **没有 `mainWindow.on("close")`、没有确认框**，
-  // 而 `cleanupAll()` 里 `server.stop()` 直接 kill 引擎 —— 长任务流式中点关闭 = 该回合在 rollout 里
-  // 没有 task_complete（半截），排队中的消息随引擎内存一起消失。
-  // 只做一件事：**有在跑回合时先问一句**。不阻塞主进程（异步对话框 + preventDefault + 二次 close）。
-  mainWindow.on("close", (event) => {
-    if (closeConfirmed || engineActiveTurnIds.size === 0) return;
-    event.preventDefault();
-    const busy = engineActiveTurnIds.size;
-    void dialog.showMessageBox(mainWindow!, {
-      type: "warning",
-      buttons: ["继续运行（取消关闭）", "仍然关闭"],
-      defaultId: 0,
-      cancelId: 0,
-      message: `还有 ${busy} 个任务在运行`,
-      detail: "关闭应用会中断正在运行的回合，未完成的内容不会写入会话记录；排队中的消息也会丢失。",
-    }).then(({ response }) => {
-      if (response !== 1) return;
-      closeConfirmed = true;
-      mainWindow?.close();
-    }).catch(() => undefined);
-  });
-  // 主窗口真正关闭后，独立会话弹窗跟着一起关（用户 09-13 明确要求「跟着主应用关闭」）。
-  mainWindow.on("closed", () => {
-    for (const win of popoutWindows) { if (!win.isDestroyed()) win.close(); }
-  });
-  const contents = mainWindow.webContents;
-  contents.on("did-start-loading", () => markBoot("page-start-loading"));
-  contents.on("did-finish-load", () => { markBoot("page-finish-load"); flushBootTiming(); });
-  if (devUrl) void mainWindow.loadURL(devUrl);
-  else void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
-  installContextMenu(mainWindow);
-}
 
 /** 独立会话弹窗：打开一个只显示指定会话对话区的新窗口（09-13）。
  *  样式与主窗口一致（hidden titleBar + overlay 43px + 同款图标），可拖出应用外；
  *  渲染层通过 URL query `?popout=<threadId>` 进入弹窗模式（只渲染对话区并锁定该会话）。
  *  主题/事件都走全局广播，弹窗无需额外维护。 */
-function createPopoutWindow(threadId: string) {
-  const windowIcon = path.join(
-    __dirname,
-    "..",
-    "build",
-    process.platform === "win32" ? "icon.ico" : "icon.png",
-  );
-  const win = new BrowserWindow({
-    // 1120 而非 1080：主布局在 ≤1080px 时隐藏消息刻度尺（media query），弹窗初始宽度
-    // 必须避开这个断点，否则弹窗里看不到刻度线（用户截图反馈）。
-    width: 1120,
-    height: 760,
-    minWidth: 520,
-    minHeight: 420,
-    backgroundColor: "#ffffff",
-    title: "Codex Harness Desktop — 独立会话",
-    icon: existsSync(windowIcon) ? windowIcon : undefined,
-    autoHideMenuBar: true,
-    // 独立弹窗同款平台分叉（mac hiddenInset / win overlay），理由见 createWindow
-    ...(process.platform === "win32"
-      ? {
-        titleBarStyle: "hidden" as const,
-        titleBarOverlay: titleBarOverlayOptions(),
-      }
-      : { titleBarStyle: "hiddenInset" as const }),
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      // 弹窗只渲染对话区，不需要 webview 标签
-      webviewTag: false,
-    },
-  });
-  // Windows 11 原生圆角（仅 win32；其余平台函数内静默跳过）。
-  applyRoundedCorners(win);
-  // ⛔ 导航收敛与主窗口同规则：弹窗永不导航，新窗口一律拒绝并转系统浏览器。
-  win.webContents.on("will-navigate", (event, target) => {
-    const devUrl = process.env.VITE_DEV_SERVER_URL ?? "";
-    if (devUrl && target.startsWith(devUrl)) return;   // 开发期 HMR reload 放行
-    if (target.startsWith("file://") && target.includes("/dist/index.html")) return;
-    event.preventDefault();
-    if (/^https?:/i.test(target)) void shell.openExternal(target).catch(() => undefined);
-  });
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) void shell.openExternal(url).catch(() => undefined);
-    return { action: "deny" };
-  });
-  win.on("closed", () => {
-    popoutWindows.delete(win);
-    popoutThreadIds.delete(win);
-    notifyPopoutClosed(threadId);
-  });
-  popoutWindows.add(win);
-  popoutThreadIds.set(win, threadId);
-  const devUrl = process.env.VITE_DEV_SERVER_URL;
-  const query = `?popout=${encodeURIComponent(threadId)}`;
-  if (devUrl) {
-    const sep = devUrl.includes("?") ? "&" : "?";
-    void win.loadURL(devUrl + sep + query.slice(1));
-  } else {
-    void win.loadFile(path.join(__dirname, "../dist/index.html"), { query: { popout: threadId } });
-  }
-  installContextMenu(win);
-  return win;
-}
 
 // 无边框标题栏（Windows titleBarOverlay）的符号色：深色主题用浅符号，亮色主题近黑。
 const CHROME_SYMBOL_DARK = "#e8e8e5";
+
 const CHROME_SYMBOL_LIGHT = "#1b1b1a";
+
 /** 应用当前主题（由 theme:apply 写入）。null = 渲染层还没告知过 ⇒ 退回跟随系统。 */
 let appThemeDark: boolean | null = null;
 
-/** 新建窗口时的标题栏钮配色：**必须按当前主题给**。
- *  ⛔ 写死浅色符号会让「深色模式下新开的独立会话窗口」立刻复现
- *  「三个窗口钮看不见但能点」（09-21 用户实测反馈）。 */
-function titleBarOverlayOptions() {
-  const dark = appThemeDark ?? nativeTheme.shouldUseDarkColors;
-  return { color: "#00000000", symbolColor: dark ? CHROME_SYMBOL_DARK : CHROME_SYMBOL_LIGHT, height: 43 };
-}
 
 /** 把主题应用到**所有**应用窗口的原生外观（窗口底色 + 标题栏控制钮符号色）。
  *  ⛔ 必须遍历全部窗口：独立会话窗口（popout）是另建的 BrowserWindow，只改 mainWindow
@@ -2833,7 +634,7 @@ function titleBarOverlayOptions() {
  *  getTitleBarOverlay 读回接口**（写出来 TS 直接报 TS2551），所以真机是否可见只能看窗口右上角。 */
 function applyWindowChrome(dark: boolean) {
   const symbol = dark ? CHROME_SYMBOL_DARK : CHROME_SYMBOL_LIGHT;
-  const targets = [mainWindow, ...popoutWindows].filter((win): win is BrowserWindow => Boolean(win && !win.isDestroyed()));
+  const targets = allBusWindows().filter((win) => Boolean(win && !win.isDestroyed()));
   for (const win of targets) {
     try { win.setBackgroundColor(dark ? "#1b1b1a" : "#ffffff"); } catch { /* 窗口可能正在销毁 */ }
     try { win.setTitleBarOverlay({ color: "#00000000", symbolColor: symbol, height: 43 }); } catch { /* overlay 未启用（非 win32 等）时忽略 */ }
@@ -2844,9 +645,12 @@ function applyWindowChrome(dark: boolean) {
 // 前端切主题时同步窗口外观：nativeTheme.themeSource 让系统标题栏与 Chromium 默认
 // 滚动条跟随应用主题（不影响系统全局，只作用于本应用窗口）；同时更新窗口底色，
 // 避免深色模式下「外边框/滚轮」残留浅色。
+// ⛔ 多主题扩展点（09-24，主题清单见 src/lib/themes.ts）：这里只有"暗/不暗"二元 ——
+//    新增非暗色系主题无需动这里；新增**暗色系**第三主题时，把判定换成注册表口径。
 ipcMain.handle("theme:apply", (_event, theme: string) => {
   const dark = theme === "dark";
   appThemeDark = dark;
+  setAppThemeDark(dark);
   nativeTheme.themeSource = dark ? "dark" : "light";
   applyWindowChrome(dark);
   return { ok: true };
@@ -2856,1485 +660,61 @@ ipcMain.handle("theme:apply", (_event, theme: string) => {
 // 第二个实例启动时 requestSingleInstanceLock 返回 false → 立即退出；
 // 已运行实例收到 second-instance 事件 → 聚焦已有窗口（唤起）。
 const gotSingleLock = app.requestSingleInstanceLock();
+
 if (!gotSingleLock) {
   app.quit();
 }
+
 app.on("second-instance", () => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-  }
+  // 「显示主窗口」的唯一实现（不存在则建、最小化则还原、隐藏则显示再聚焦）——
+  // ⛔ 托盘开启「关闭窗口时最小化到托盘」后窗口是 hidden 而非 destroyed，只管 focus() 会把用户晾在那儿。
+  showMainWindow();
 });
 
-// ── 旧家 rollout 迁移（09-18 用户：「更新新版本…用户旧会话要能接着用」「复制ID，接力会话也不行」）──
-// 09-10 之前的老版本把引擎 CODEX_HOME 指在用户主目录 ~/.codex；现行版本为隔离切到
-// userData/codex-home。升级后老会话 rollout 留在旧家 ⇒ 三处全部失联：侧栏 thread/list 兜底扫描
-// 只扫新家、复制 ID 引用（buildThreadPreview 只扫新家）、thread/resume（引擎 CODEX_HOME=新家）。
-// 修法：把旧家 sessions/ 与 archived_sessions/ 里**新家没有的** rollout **拷贝**进新家——
-// ⛔ 只拷不删：~/.codex 可能仍被官方 Codex CLI 使用；文件名是 canonical 的
-// rollout-<ts>-<uuid>.jsonl（resume 对文件名有硬要求），同名即同会话，按名判重天然幂等；
-// 拷完 rollout 兜底扫描立即可见，resume / 复制 ID 引用随之恢复。
-async function migrateLegacyRolloutHome(): Promise<void> {
-  const legacyHome = path.join(os.homedir(), ".codex");
-  const roots: { from: string; to: string }[] = [
-    { from: path.join(legacyHome, "sessions"), to: path.join(codexHome, "sessions") },
-    { from: path.join(legacyHome, "archived_sessions"), to: path.join(codexHome, "archived_sessions") },
-  ];
-  let copied = 0;
-  for (const { from, to } of roots) {
-    if (!existsSync(from)) continue;
-    const stack = [from];
-    while (stack.length) {
-      const current = stack.pop()!;
-      let entries: Dirent[];
-      try { entries = readdirSync(current, { withFileTypes: true }); } catch { continue; }
-      for (const entry of entries) {
-        const abs = path.join(current, entry.name);
-        if (entry.isDirectory()) { stack.push(abs); continue; }
-        if (!entry.isFile() || !/-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$/i.test(entry.name)) continue;
-        const target = path.join(to, path.relative(from, abs));
-        if (existsSync(target)) continue; // 同名 = 同一会话，已在新家 → 幂等跳过
-        await fs.mkdir(path.dirname(target), { recursive: true });
-        await fs.copyFile(abs, target);
-        copied += 1;
-      }
-    }
-  }
-  if (copied > 0) console.log(`[migration] 已从旧家 ${legacyHome} 拷入 ${copied} 个老会话 rollout（旧家文件保留不动，官方 CLI 不受影响）`);
-}
+// ── 启动编排（app.whenReady 里那一大段）已按域拆到 features/boot.ts；仍在此处注册以保持时机不变 ──
+app.whenReady().then(() => bootApp());
 
-app.whenReady().then(async () => {
-  markBoot("app-ready");   // 启动耗时测量（见 electron/boot-timing.ts）
-  await fs.mkdir(codexHome, { recursive: true });
-  // 已删除会话的墓碑必须在**第一次 thread/list 之前**载入：渲染层启动就会拉列表，靠懒加载
-  // 会让首屏短暂出现幽灵会话（见 purgeDeletedThread 注释）。失败不阻塞启动。
-  try { await loadDeletedThreads(); } catch (error) { console.warn("deleted-threads 载入失败：", error); }
-  // ⛔ 协议桥必须赶在**任何 config.toml 写入之前**起来：写配置时 base_url 要换成桥地址，
-  //    桥没起来就只能直连（chat-only 网关由此不可用）。启动失败不致命：bridgeDial 自动降级直连，
-  //    与旧版本行为一致；同样必须包 try/catch —— 裸 await 抛出会掐死整条启动链（界面能开、引擎不 spawn）。
+// ── 系统托盘（09-23 用户：「要在系统托盘里面常驻，系统托盘右键功能菜单齐全一下」）──
+// 与 bootApp 分开注册：托盘是**可选**副作用，起不来（缺图标 / 平台限制）只打日志，不拖垮启动链。
+// ⛔ 机内 no-op 兜底：`activeTurnCount` 用 engineActiveTurnIds 实时取，菜单每次弹出重建（见 electron/tray.ts）。
+app.whenReady().then(() => {
   try {
-    const bridgePort = await responsesBridge.start();
-    console.log(`[bridge] 本地协议桥监听 http://127.0.0.1:${bridgePort}（引擎按 Responses 调用，桥上按上游实际协议转发）`);
+    createAppTray({
+      getMainWindow: () => mainWindow,
+      showMainWindow,
+      activeTurnCount: () => engineActiveTurnIds.size,
+      userDataDir: () => app.getPath("userData"),
+      logFilePath: engineDebugLogPath,
+      readCloseToTray: closeToTrayEnabled,
+      writeCloseToTray: (next) => {
+        void saveAppSettings(app.getPath("userData"), { closeToTray: next }).catch(() => undefined);
+      },
+      // 退出前先把 closeConfirmed 置真：否则关窗守卫会把 quit 变成 hide，应用退不掉。
+      quit: () => {
+        mutableState.closeConfirmed = true;
+        app.quit();
+      },
+    });
+    console.log(`[tray] 系统托盘已创建（图标 ${trayIconPath()}；closeToTray=${closeToTrayEnabled()}）`);
   } catch (error) {
-    console.warn("[bridge] 启动失败，本次运行直连上游：", error);
-  }
-  // 专家技能市场（cheat-on-content / ppt-master）原位注册，零拷贝——见 ensureExpertSkillsMarketplace
-  await ensureExpertSkillsMarketplace(codexHome);
-  await ensureBuiltinSkills(userSkillsDir);
-  // 内置「评审」子智能体（09-21）：用干净上下文复审的现成对象。⚠️ 必须包 try/catch ——
-  // 启动链里一处裸 await 抛出会掐死整条链（界面能开、核心服务没起来，日志只有一行）。
-  try { await ensureBuiltinReviewer(); } catch (error) { console.warn("[reviewer] 内置评审子智能体种入失败（不影响启动）：", error); }
-  // 启动自愈：剥掉已安装技能 SKILL.md 的 UTF-8 BOM。带 BOM 的文件引擎会判「缺 frontmatter」
-  // 整份拒载（装了但永远不被使用），市场包/本地导入都可能带 BOM——这里兜住存量文件。
-  try {
-    const bomFixed = await repairSkillBomScan(userSkillsDir);
-    if (bomFixed > 0) console.log(`[skills] 修复 ${bomFixed} 个带 BOM 的 SKILL.md`);
-  } catch (error) { console.warn("skill BOM repair failed:", error); }
-  // 启动即补齐 AGENTS.md（emoji + 中文语言规范基础段）：老版本升级后没有这些段，
-  // 重写让模型默认用中文思考与回复；AGENTS.md 引擎每请求动态重读，无需重启即生效。
-  try {
-    await applyPersonalizationToAgentsMd(await readPersonalization(), codexHome);
-    void refreshSkillDiscipline();
-  } catch (error) { console.warn("AGENTS.md bootstrap failed:", error); }
-  // 身份引导存量迁移（09-12 用户反馈「怎么每次思考还说新会话引导」）：老档案没有 greeted
-  // 字段，于是「装了很久、聊过很多次、但没回答过那套引导提问」的用户升级后又被当成第一次见面。
-  // 判定改为「只要这个 profile 已有历史会话，就认定早打过招呼」→ 直接落 greeted=true。
-  // 必须放在 server.start() 之前（引擎启动前把档案定稿），且按 preflight【5】包 try/catch，
-  // 裸 await 抛出会掐死整条启动链（界面能开、引擎不 spawn）。
-  try {
-    if (await migrateGreetedForExistingUsers(codexHome)) {
-      console.log("[personalization] 存量用户已有历史会话 → 标记 greeted=true（不再做初次见面引导）");
-    }
-  } catch (error) { console.warn("greeted migration failed:", error); }
-  const custom = await readCustomModel();
-  if (custom?.provider === "openai-official") {
-    server.setApiKey("");
-  } else if (custom?.encryptedKey && safeStorage.isEncryptionAvailable()) {
-    try {
-      server.setApiKey(safeStorage.decryptString(Buffer.from(custom.encryptedKey, "base64")));
-    } catch (error) {
-      console.warn("custom-model API key decrypt failed, starting without key:", error);
-    }
-  }
-  protocol.handle("harness-image", async (request) => {
-    let imagePath = new URL(request.url).searchParams.get("path");
-    if (!imagePath) return new Response("Missing path", { status: 400 });
-    // 双编码兼容：渲染层传的是双编码路径（Chromium 会自行解一层）；若解出来还不是
-    // 盘符/根路径形态，再手动解一层（兼容旧的单编码 URL）。
-    if (!/^[a-zA-Z]:[\\/]/.test(imagePath) && !imagePath.startsWith("/")) {
-      try { imagePath = decodeURIComponent(imagePath); } catch { /* 原样使用 */ }
-    }
-    // ⛔ 收敛到「图片 + 可信根内」（09-13 审计 S5）：这个协议注册在**默认 session** 上，
-    // 而渲染层要渲染模型输出 / 内置浏览器里的网页 / 渠道消息 —— 不收敛就等于给它们一个
-    // `harness-image://img/?path=C:/任意文件` 的任意文件读取原语。
-    // 允许：常见图片扩展名，且落在 userData / images 缓存目录 / 任一已知会话工作目录内。
-    if (!/\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(imagePath)) {
-      return new Response("Unsupported media type", { status: 415 });
-    }
-    {
-      const resolved = path.resolve(imagePath);
-      if (!isInsideTrustedRoots(resolved)) return new Response("Forbidden", { status: 403 });
-      imagePath = resolved;
-    }
-    // 斜杠方向兜底：引擎/宿主写入的路径斜杠方向可能不一致
-    if (!existsSync(imagePath)) {
-      const backslash = imagePath.replace(/\//g, "\\");
-      const forward = imagePath.replace(/\\/g, "/");
-      if (existsSync(backslash)) imagePath = backslash;
-      else if (existsSync(forward)) imagePath = forward;
-    }
-    // 兜底：图片被清理/不存在时返回 1x1 透明占位，避免渲染层破图报错
-    try {
-      if (!existsSync(imagePath)) return placeholderPngResponse();
-      return net.fetch(pathToFileURL(imagePath).toString());
-    } catch {
-      return placeholderPngResponse();
-    }
-  });
-  // 语音通话：授予麦克风权限。此前全项目没有任何权限处理，getUserMedia 会被直接拒绝。
-  // 只放行 media，其余权限一律沿用 Electron 默认（不放大授权面）。
-  // macOS 上还需要 Info.plist 的 NSMicrophoneUsageDescription（见 build/entitlements 与文档），
-  // 且首次调用会弹系统授权框，由系统偏好设置持久记忆。
-  try {
-    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-      callback(permission === "media");
-    });
-    session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
-      return permission === "media";
-    });
-  } catch (error) {
-    console.warn("voice permission handler failed:", error);
-  }
-  markBoot("pre-create-window");
-  createWindow();
-  markBoot("window-created");
-  server.on("event", (event) => {
-    // 裁剪后可能为 null（09-14 启用按会话过滤）——null 绝不能进 broadcastCodexEvent，
-    // 否则渲染层收到一条空事件。channelBot / voiceService 拿的是未裁剪的原始事件。
-    const forwarded = filterForRenderer(event);
-    if (forwarded) broadcastCodexEvent(forwarded);
-    channelBot.handleCodexEvent(event);
-    // 语音通话：只旁听事件（正文增量 / 回合生命周期），不改变事件本身的任何流向
-    voiceService.handleCodexEvent(event);
-    // 引擎就绪后按设置启停健康看门狗（engineWatchdog 默认开）
-    if (event.kind === "status" && event.status === "ready") void syncEngineWatchdog();
-    // 手机对话页实时同步：流式增量 / 用户消息 / 回合完成
-    if (event.kind === "notification") {
-      // ⛔ 调度独占锁的孤儿记录清理（09-17 用户实测「都关掉了，怎么还提示被锁住了」）：
-      //   锁的持有者是从 thread-runtime 记录**派生**的（第一个 dispatch.enabled 的线程），而会话被
-      //   **归档 / 删除**时历史上没有任何地方清这条记录 ⇒ 孤儿记录永久占着全局唯一的调度权，
-      //   且该会话在侧栏上已经找不到，用户**没有任何入口**能关它。
-      //   实测证据：用户 thread-runtime.json 有 1 条 enabled，其 threadId 在引擎 state 库里已不存在。
-      //   归档 → 只关开关（保留模型/权限等配置，恢复会话后不丢）；删除 → 整条移除。
-      if (event.method === "thread/archived" || event.method === "thread/deleted") {
-        const goneId = eventThreadId(event.params);
-        if (goneId) {
-          // ⛔ 引擎侧发起的删除（不经渲染层 thread/delete 请求）同样要清磁盘残留 + 记墓碑，
-          //   否则侧栏的 rollout 兜底扫描在下次启动把它捞回来（见 purgeDeletedThread 注释）。
-          if (event.method === "thread/deleted") void purgeDeletedThread(goneId).catch(() => undefined);
-          void (async () => {
-            const changed = event.method === "thread/deleted"
-              ? await threadRuntimeStore.remove(goneId)
-              : await threadRuntimeStore.releaseDispatch(goneId);
-            if (changed) {
-              const runtime = await threadRuntimeStore.get(goneId);
-              broadcastHarnessEvent({ type: "thread-runtime", threadId: goneId, runtime, at: Date.now() });
-            }
-          })().catch(() => undefined);
-        }
-      }
-      // 专家团成员线程的流式文本 → 广播给所有窗口（成员工作弹窗实时渲染）。
-      // 只认「正在跑的成员线程」，其它会话的增量一律不碰。
-      teamRunStore.handleEngineEvent(event);
-      // 被调度的临时会话：同样把流式文本广播出去 —— 右侧「调度头像轨」的实时工作内容靠它
-      // （09-16 用户要求：调度时右侧显示专家头像 + 点开看工作内容，跟专家团一致）。
-      const delegated = delegateRegistry.handleEngineEvent(event);
-      if (delegated) broadcastHarnessEvent({ type: "delegate-run", phase: "delta", threadId: delegated.threadId, text: delegated.text, chars: delegated.chars, at: Date.now() });
-      // 调度 MCP 旁证：item/started 事件携带**真实调用者线程**，参数指纹 → threadId
-      // （HTTP 执行端据此对号入座，模型谎报 originThreadId 也绕不过独占锁/身份闸）。
-      if (event.method === "item/started") {
-        const item: any = (event.params as any)?.item ?? {};
-        if (item?.type === "mcpToolCall" && /harness-dispatch/.test(String(item.server ?? item.serverName ?? item.server_tool ?? item.tool ?? ""))) {
-          dispatchProbes.push({ threadId: String((event.params as any)?.threadId ?? ""), argsKey: stableKey(item.arguments ?? {}), at: Date.now() });
-          if (dispatchProbes.length > 100) dispatchProbes.shift();
-        }
-      }
-      // ⛔ 临时诊断（验证完删）：抓 MCP 服务器启动状态与工具调用事件
-      if (/^mcpServer\//.test(event.method ?? "") || /mcpToolCall/.test(String((event.params as any)?.item?.type ?? "")) || /mcpToolCall/.test(event.method ?? "")) {
-        console.warn("[mcp-diag]", event.method, JSON.stringify((event.params as any)?.item ?? event.params ?? {}).slice(0, 400));
-      }
-      const p = event.params as any;
-      // ⛔ 回合记账必须**宽容**（09-19 实测：只认 `params.turn.id` 会漏掉 `turnId` 形态的引擎版本，
-      //    于是记账恒空 → 重启闸门形同虚设、台账里 activeTurns 永远是 0）。
-      //    三种标识形态都收；结束事件按方法名族匹配（completed / aborted / failed 都算结束）。
-      // ⛔ 存 **turnId → threadId** 而不是裸集合：线程变空闲时只能释放**它自己**的回合，
-      //    否则「A 会话跑完」会把 B 会话正在跑的记账也清掉 → 闸门误判为空闲 → 直接打断 B。
-      const turnIdOf = (params: any) => String(params?.turn?.id ?? params?.turnId ?? params?.id ?? "");
-      const METHOD = String(event.method ?? "");
-      const threadIdOf = String(p?.threadId ?? "");
-      if (METHOD === "turn/started" || METHOD === "turn/begin") {
-        const id = turnIdOf(p);
-        if (id) engineActiveTurnIds.set(id, threadIdOf);
-      } else if (/^turn\/(completed|aborted|failed|interrupted)$/.test(METHOD)) {
-        const id = turnIdOf(p);
-        if (id) engineActiveTurnIds.delete(id);
-        else if (threadIdOf) {
-          // id 形态不认识 → 只释放该线程名下的回合（绝不动别的会话）
-          for (const [turnId, owner] of [...engineActiveTurnIds]) if (owner === threadIdOf) engineActiveTurnIds.delete(turnId);
-        }
-      } else if (METHOD === "thread/status/changed") {
-        // 线程变成 idle/notLoaded ⇒ 该线程不可能还有活跃回合（引擎侧权威信号）
-        const st = (p?.status as any)?.type ?? p?.status;
-        if (threadIdOf && (st === "idle" || st === "notLoaded" || st === "systemError")) {
-          for (const [turnId, owner] of [...engineActiveTurnIds]) if (owner === threadIdOf) engineActiveTurnIds.delete(turnId);
-        }
-      }
-      if (engineActiveTurnIds.size === 0) void server.flushDeferredRestart().catch(() => undefined);
-      // 频道机器人流式回复：回合开始建流式会话（同步读设置，开关即时生效），
-      // 后续所有事件喂入会话；turn/completed 的最终回复由会话负责（见各 handler 的兜底判断）
-      if (event.method === "turn/started") {
-        const streamThreadId = String(p?.threadId ?? "");
-        if (streamThreadId) {
-          botStreamSessions.delete(streamThreadId);
-          stopWeixinTyping(streamThreadId); // 新回合重开计时器，防上一轮的泄漏
-          const plan = botStreamPlanFor(streamThreadId);
-          if (plan) {
-            botStreamSessions.set(streamThreadId, new BotStreamSession(plan.sink, readBotStreamSettingsSync(botStreamFile), plan.budget));
-            if (plan.typingFrom) startWeixinTyping(streamThreadId, plan.typingFrom);
-          }
-        }
-      }
-      // 回合结束：流式会话负责最终回复；「正在输入」指示器这时要收掉
-      if (event.method === "turn/completed") stopWeixinTyping(String(p?.threadId ?? ""));
-      const botStreamSession = botStreamSessions.get(String(p?.threadId ?? ""));
-      if (botStreamSession) botStreamSession.handle(event.method, p);
-      // 记忆捕获缓冲：turn/completed 不带完整 items，必须靠流式事件累积文本（同 channel-bot 的做法）
-      if (event.method === "item/started" && p?.item?.type === "userMessage") {
-        const text = (p.item.content ?? []).filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n");
-        if (text) captureBuffers.set(`${p.threadId}:${p.turnId}`, { user: text, assistant: "", cwd: threadCwd.get(String(p.threadId)) });
-      } else if (event.method === "item/agentMessage/delta" && p?.delta) {
-        const buffer = captureBuffers.get(`${p.threadId}:${p.turnId}`);
-        if (buffer) buffer.assistant += p.delta;
-        for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "delta", text: p.delta });
-      } else if (event.method === "item/completed" && p?.item?.type === "agentMessage" && p.item.text) {
-        const buffer = captureBuffers.get(`${p.threadId}:${p.turnId}`);
-        if (buffer) buffer.assistant = p.item.text;
-      } else if (event.method === "turn/completed") {
-        if (!internalThreads.has(String(p?.threadId))) for (const forward of remoteEventForwarders) forward({ threadId: p?.threadId, kind: "done", text: "" });
-      }
-      if (event.method === "turn/completed" && !internalThreads.has(String(p?.threadId))) {
-        const key = `${p?.threadId}:${p?.turnId}`;
-        const buffer = captureBuffers.get(key) ?? { user: "", assistant: "", cwd: undefined };
-        captureBuffers.delete(key);
-        // completed.items 有内容时兜底覆盖
-        const items = p?.turn?.items ?? [];
-        if (items.length) {
-          buffer.user = items.filter((item: any) => item.type === "userMessage").flatMap((item: any) => item.content ?? []).filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n") || buffer.user;
-          buffer.assistant = items.filter((item: any) => item.type === "agentMessage").map((item: any) => item.text ?? "").join("\n") || buffer.assistant;
-        }
-        // 欢迎语隐藏线程（[welcome-gen] 标记）不进记忆：一次性生成文案的内部线程
-        const isWelcomeGen = buffer.user.includes("[welcome-gen]") || items.some((item: any) => JSON.stringify(item?.content ?? item).includes("[welcome-gen]"));
-        if (!isWelcomeGen && (buffer.user.trim() || buffer.assistant.trim())) {
-          void workspaceMemoryEnabled(buffer.cwd).then((enabled) => memoryStore.captureTurn(p?.threadId ?? "", buffer.user, buffer.assistant, { workspace: buffer.cwd, includeWorkspace: enabled })).catch((error) => sendToWindow("harness:event", { type: "memory", message: `Memory Gateway 捕获失败：${error.message}`, at: Date.now() }));
-        }
-        // 会话结束自动蒸馏：主进程内部节流（6 小时一次），异常全吞，绝不影响主流程
-        if (buffer.cwd) {
-          void workspaceMemoryEnabled(buffer.cwd).then((enabled) => {
-            if (!enabled) return null;
-            return memoryLayers.autoDistill(buffer.cwd!, distillSummarize).then((result) => {
-              if (result?.ok) sendToWindow("harness:event", { type: "memory", message: `记忆自动蒸馏完成：${result.dates.length} 天日志已提炼进项目记忆`, at: Date.now() });
-              return result;
-            });
-          }).catch(() => undefined);
-        }
-      }
-    }
-  });
-  try {
-    // 官方订阅走 chatgpt.com 后端（区域受限）：必须在引擎 spawn 之前注入代理 env——
-    // spawn 后再 setExternalEnv 对已运行进程无效，引擎会一直直连导致流反复断开（Reconnecting x/10）。
-    if (custom?.provider === "openai-official") {
-      const proxy = await resolveLiveProxy();
-      if (proxy) {
-        const officialEnv = connectorEnv(await readConnectors());
-        Object.assign(officialEnv, { HTTPS_PROXY: proxy, HTTP_PROXY: proxy, NO_PROXY: "localhost,127.0.0.1,::1", no_proxy: "localhost,127.0.0.1,::1" });
-        server.setExternalEnv(officialEnv);
-      }
-    }
-    // ⛔ 启动自愈（必须赶在 server.start 之前）：存量 config.toml 里的 `wire_api = "chat"`
-    // 会让新版引擎**整份配置拒载** —— 症状是应用起来后所有 codex:request 都报
-    // 「failed to load configuration ... wire_api = "chat" is no longer supported」（09-14
-    // 用户实测截图，来自另一位用户的机器）。生成侧已改为恒写 responses，这里兜住老文件。
-    try {
-      const configPath = path.join(codexHome, "config.toml");
-      const raw = await fs.readFile(configPath, "utf8").catch(() => "");
-      if (/wire_api\s*=\s*"chat"/.test(raw)) {
-        await fs.writeFile(`${configPath}.chat-bak`, raw, "utf8").catch(() => undefined);
-        await fs.writeFile(configPath, raw.replace(/wire_api\s*=\s*"chat"/g, 'wire_api = "responses"'), "utf8");
-        console.log('[config] 已把 wire_api="chat" 迁移为 "responses"（原文件备份为 config.toml.chat-bak）');
-      }
-    } catch (error) { console.warn("wire_api repair failed:", error); }
-    // 旧家 rollout 迁移（09-18）：必须在 server.start() 之前——引擎起来后侧栏第一次
-    // thread/list 就要扫到这些文件；失败只降级不阻塞启动（老会话晚点再迁也不丢）。
-    try {
-      await migrateLegacyRolloutHome();
-    } catch (error) { console.warn("legacy rollout migration failed:", error); }
-    // 血缘自愈（09-19）：⛔ 必须在 server.start() **之前**，而且要 await ——
-    //   引擎一起来（甚至只是加载会话元数据）就会把 `forked_from_id` 读进内存/缓存，
-    //   之后再改 rollout 文件**同一次运行内不生效**（09-19 实测：文件已自愈、血缘字段
-    //   已摘掉，但 resume 仍报 `missing source rollout`，直到重启应用才好）。
-    //   放在这里 = 引擎读到的就是修好的文件，中招的用户升级后第一次启动即可用。
-    //   函数内部自带 try/catch 降级，失败不阻塞启动。
-    await healRolloutLineage();
-    // 「上游协议」映射必须在引擎起来之前就绪（09-19 代码审查发现，P1）：
-    //   `bridgeDial` 是**同步**函数，协议取自内存表 `upstreamProtocols`；而启动链上
-    //   第一次 bridgeDial 未必晚于第一次 readCustomModels（例如 codex:request 入口的
-    //   兜底改写 `bridgeRewriteProviderConfig`、以及历史别名段补齐）—— 表为空时注册给
-    //   桥的协议就回落成 `auto` ⇒ 用户配的「强制 chat」**重启后失效**（表现：重启又不行了、
-    //   得再进设置点一次保存）。这里提前读一次（该函数顺带 sync 这张表），幂等且无副作用。
-    //   失败只降级（表为空 ⇒ 回落 auto，与旧行为一致，不会阻塞启动）。
-    try {
-      await readCustomModels();
-    } catch (error) { console.warn("[bridge] 预填上游协议映射失败（回落 auto）:", error); }
-    await server.start();
-  } catch (error) {
-    broadcastCodexEvent({ kind: "status", status: "error", message: String(error) });
-  }
-  // ⛔ 调度 MCP 的 HTTP 执行端必须**无条件**启动（不依赖是否配了自定义模型）：
-  //    它是 /mcp 端点的宿主，引擎按 config.toml 的 url 连的就是它；没起 = 工具永远注册不上。
-  void ensureDispatchHttp();
-  // 自愈：catalog 每次启动都重写（幂等），确保包含所有启用供应商的模型。
-  // ⛔ 09-16：**不再检查、也不再写顶层 model_context_window**（该键已废弃 —— 它是引擎的全局
-  // 单值，会覆盖 catalog 里每个模型各自的 context_window，表现为「只有默认那个模型的上下文
-  // 生效」，用户实测）。**别恢复这个检查**：删掉写入后 `written !== wanted` 会恒为真
-  // （written 恒 0、wanted 恒正数）→ 每次启动都整份重写 config.toml。
-  if (custom) {
-    try {
-      // catalog 每次启动都重写（幂等）：确保包含所有启用供应商的模型——
-      // 旧会话切换到任何供应商的模型时引擎都查得到，不会报「不支持」。
-      await writeModelCatalogToml(custom);
-      const configText = await fs.readFile(path.join(codexHome, "config.toml"), "utf8").catch(() => "");
-      const environmentOutdated = !configText.includes("[shell_environment_policy.set]") || !configText.includes("PYTHON_EXECUTABLE");
-      // ⛔ 与**写出内容逐字同源**地比对（09-20 修）：旧写法只 grep `"Never infer Python availability"`
-      //    —— 这句老配置里本来就有 ⇒ 该判据恒为 false ⇒ 指令升级永远不落地（本轮实测踩到：
-      //    技能文件已更新、config.toml 的 developer_instructions 还是旧文案）。
-      //    这里用与 applyCustomModel 完全相同的输入重新生成整行：命中即最新；
-      //    输入同源 ⇒ 不会恒 true（否则每次启动整份重写，09-16 踩过）。
-      const devInputNow = await devInstructionsInput();
-      const instructionsOutdated = !configText.includes(developerInstructionsLine(devInputNow));
-      // ⛔ 09-16：废止键残留检查 —— 老版本把顶层 model_context_window 写成全局单值（会覆盖
-      //    catalog 里每模型的上下文）。升级后必须**主动清掉已写下的旧值**：preserveUserConfig
-      //    会丢弃该键，所以整份重写一次它就消失、下次启动不再触发（幂等）。
-      //    没这个检查时，若其它漂移条件恰好都不满足就不会重写 → 旧值一直生效，用户重启后 bug 依旧
-      //    （教训：「删掉写入」不等于「清掉已写下的值」）。
-      const legacyContextKey = /^\s*model_context_window\s*=/m.test(configText);
-      // 供应商/模型漂移：custom-model.json（当前激活）与 config.toml 顶层 model / model_provider 不一致时重写。
-      // 场景：UI 切换供应商只保存配置（延迟生效），用户没点「重启生效」就退出应用——下次启动必须
-      // 按新配置生效，否则引擎继续跑旧供应商（self-heal 原只查 context_window，查不出这种漂移）。
-      const cfgModel = /^\s*model\s*=\s*"([^"]*)"/m.exec(configText)?.[1];
-      const cfgProvider = /^\s*model_provider\s*=\s*"([^"]*)"/m.exec(configText)?.[1];
-      const providerOutdated = cfgModel !== custom.model || (custom.provider !== "openai-official" && cfgProvider !== custom.provider);
-      // 禁用供应商的 provider 段必须保留在 config.toml：历史线程 resume 时按创建时的
-      // model_provider 加载配置，段被移除会报 "Model provider `X` not found" → 会话内容全空。
-      // 旧版本 applyCustomModel 写配置时过滤了禁用供应商——检测到缺失就整份重写补回。
-      const disabledMissing = (await readCustomModels()).some((candidate) => candidate.enabled === false && !configText.includes(`[model_providers.${candidate.provider}]`));
-      // 调度 MCP（harness-dispatch）：段缺失（老配置）/ 重复（09-16 保留机制漏排除的历史文件）
-      // 都触发重写。⛔ 端口已固定、令牌已持久化 → url 跨运行稳定，不再有「每次启动都过期」的问题；
-      // 但仍要校验端口/令牌真的对得上（旧版本写过随机端口的历史文件必须被纠正）。
-      const dispatchMcpCount = (configText.match(/\[mcp_servers\.harness-dispatch\]/g) || []).length;
-      await ensureDispatchToken(); // 令牌持久化在文件里，这里读出来才能比对配置是否过期
-      const dispatchMcpBad = dispatchMcpCount !== 1 || !configText.includes(`:${DISPATCH_FIXED_PORT}/mcp`) || !configText.includes(dispatchToken);
-      // ⛔ 安装目录漂移（09-19 用户：「还有没有绝对路径的，通通查出来了解决掉」）：
-      //   上面所有检查都只问「键**在不在**」，不问「路径**还对不对**」。而 config.toml 里的
-      //   PATH / PYTHON / PYTHONHOME / tools 相关绝对路径是**按当时的安装目录生成**的 ——
-      //   应用一搬家（便携版换盘、改名、D:\10\… → D:\…），这些路径全部指向旧目录，
-      //   且因为别的漂移条件都不满足而**永远不会自愈** ⇒ exec 与工具调用莫名失败、
-      //   任务莫名中断（真机证据：config.toml 的 PATH 首项与实际安装目录不符）。
-      //   这里补上「安装目录漂移」检查：当前应有的首个 PATH 项不在配置里就整份重写。
-      const cfgPathLine = /^\s*PATH\s*=\s*"([^"]*)"/m.exec(configText)?.[1] ?? "";
-      const expectedFirst = augmentedPath().split(path.delimiter)[0] ?? "";
-      // ⛔ 切分必须用 path.delimiter（09-20 mac 审计抓到的真缺口）：mac 上 PATH 分隔符是 `:`，
-      //   写死 `;` 会把整条 PATH 当成一个元素 → 与 expectedFirst 永不相等 → **每次启动都误判
-      //   「安装目录漂移」并整份重写 config.toml**。上面 expectedFirst 已经用了 path.delimiter，
-      //   两处口径必须一致。
-      const envPathStale = Boolean(expectedFirst)
-        && !cfgPathLine.replace(/\\\\/g, "\\").split(path.delimiter).map((entry) => entry.trim()).filter(Boolean).includes(expectedFirst);
-      // ⛔ nuphus 视觉 env 漂移（09-20，与上面的「安装目录漂移」同一类：只问「键在不在」不够）：
-      //   用户改插件里的 key / model 时上面所有判据都不动 ⇒ 不重写 ⇒ nuphus 仍拿旧 key。
-      //   判定抽成纯函数（nuphus-env.ts）——「恒真 ⇒ 每次启动整份重写」是这里最危险的失效模式，
-      //   内联在 main.ts 里只能 grep 断言，抽出来预检才能跑真行为断言（含收敛性）。
-      // 覆盖表读失败按「启用」兜底：真坏了 applyCustomModel 自己也会抛（那条 try/catch 负责收尾），
-      // 不该因为一个损坏的 json 把整段自愈判据一起带崩。
-      const nuphusRegisteredNow = shouldRegisterNuphus({ desktop: devInputNow.desktop, browser: devInputNow.browser })
-        && Boolean(nuphusBinary()) && mcpOverrideEnabled(await readMcpOverrides().catch(() => ({}) as McpOverrides), "nuphus");
-      const nuphusVisionStale = nuphusVisionEnvDrift({
-        vision: devInputNow.nuphusVision,
-        registered: nuphusRegisteredNow,
-        configText,
-        escape: escapeToml,
-      });
-      if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || nuphusVisionStale || disabledMissing || dispatchMcpBad) {
-        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, envPathStale=${envPathStale}, instructions=${instructionsOutdated}, nuphusVision=${nuphusVisionStale}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}; rewriting`);
-        await applyCustomModel(custom);
-      }
-    } catch (error) {
-      console.warn("[custom-model] config self-heal failed:", error);
-    }
-  } else {
-    // 没配自定义模型（如被清空/首次运行）：config.toml 也要保证有调度 MCP 段，
-    // 否则引擎起来后连不上 → 工具永远注册不上。直接做一次最小重写。
-    try {
-      await ensureDispatchToken();
-      const cfgPath = path.join(codexHome, "config.toml");
-      const existing = await fs.readFile(cfgPath, "utf8").catch(() => "");
-      const block = `[mcp_servers.harness-dispatch]\nurl = "http://127.0.0.1:${DISPATCH_FIXED_PORT}/mcp?token=${dispatchToken}"\nstartup_timeout_sec = 60\n`;
-      const count = (existing.match(/\[mcp_servers\.harness-dispatch\]/g) || []).length;
-      if (count !== 1 || !existing.includes(`:${DISPATCH_FIXED_PORT}/mcp`) || !existing.includes(dispatchToken)) {
-        const cleaned = existing.replace(/\[mcp_servers\.harness-dispatch\][^\[]*/g, "").replace(/\[mcp_servers\.harness-dispatch\.env\][^\[]*/g, "");
-        await fs.writeFile(cfgPath, cleaned.trimEnd() + "\n\n" + block, "utf8");
-      }
-    } catch (error) {
-      console.warn("[dispatch] MCP 段兜底写入失败：", error);
-    }
-  }
-  // 启动副作用一律「尽力而为」：这里任何一处抛出都会让 whenReady 的 promise 变成
-  // unhandled rejection，**整条启动链就此中断、引擎根本不 spawn** —— 表现是「界面能打开、
-  // 发消息完全没有回复」，且日志里只有一行 EPERM（实测：memory-mode.json 写不进去，
-  // 例如被安全软件/同步盘占用或磁盘满）。周边 channelBot.configure 早已是 try/catch，
-  // 这三处漏了，补齐；记忆模式/调度/远端的失败都只降级、不影响会话可用。
-  try { await applyMemoryMode(await readMemoryMode()); }
-  catch (error) { console.warn("[boot] applyMemoryMode failed (降级继续):", error); }
-  try { await scheduler.start(); }
-  catch (error) { console.warn("[boot] scheduler.start failed (降级继续):", error); }
-  try { await remote.start(); }
-  catch (error) { console.warn("[boot] remote.start failed (降级继续):", error); }
-  // Git 自动安装（后台、不阻塞）：瘦身版不再内置 git，引擎 shell 依赖它，缺就静默补装
-  // （函数内部自带 catch 与 done 事件广播，不会冒泡成 unhandled rejection）
-  void autoInstallGitIfNeeded();
-  // 保留 provider id 自愈（09-19 真实用户事故）：老版本档案里存过 provider=openai →
-  // config.toml 写成 [model_providers.openai] → 引擎**整份拒载**，用户发消息必报错。
-  // 启动时把已写坏的段清掉并修正档案，让这类用户升级后自动恢复（不必手动改文件）。
-  void healReservedProviderConfig();
-  // 血缘自愈已移到 `server.start()` **之前**（见上方：引擎起来后再改同一次运行内不生效）。
-  // ponytail 写代码模式插件随包直装（09-16 用户「直接内置，不用解压啥的」）：生产包必有
-  // tools/ponytail-plugin。只在 config.toml **完全没有** ponytail 注册段时自动种（全新安装）；
-  // 段已存在（已装/用户显式卸载置 false）就不再动 —— 否则卸载后下次启动又给装回来，卸载失效。
-  // 失败降级不阻塞启动，开发工具页按钮仍可手动种。必须在 server.start() 之后——要写 config.toml。
-  try {
-    const bundledPonytail = path.join(toolsRoot(), "ponytail-plugin");
-    const ponytailCache = path.join(codexHome, "plugins", "cache", "ponytail");
-    if (bundledPonytail && existsSync(bundledPonytail) && !existsSync(ponytailCache)) {
-      const configText = await fs.readFile(path.join(codexHome, "config.toml"), "utf8").catch(() => "");
-      if (!configText.includes('ponytail@ponytail')) {
-        // ensurePonytailPlugin 自己就把注册段（含 enabled = true）写进 config.toml，这里不再额外
-        // 走 config/value/write —— 引擎要求该请求必带 mergeStrategy，多于一次写只是多一个失败点。
-        void ensurePonytailPlugin(codexHome, bundledPonytail)
-          .catch((error) => console.warn("[boot] ponytail auto-seed failed (降级继续):", error));
-      }
-    }
-  } catch (error) { console.warn("[boot] ponytail auto-seed failed (降级继续):", error); }
-  // 微信机器人网关：扫码登录 → 微信消息 → Codex 会话处理 → 回复发回微信
-  weixinGateway = new WeixinGateway(path.join(app.getPath("userData"), "weixin-accounts"), {
-    onMessage: (message) => void handleWeixinMessage(message),
-    log: (level, message) => {
-      channelLogs.push({ at: Date.now(), level, message });
-      persistChannelLog(level, message);
-      sendToWindow("channel-bot:event", { level, message, at: Date.now(), status: channelBot.status() });
-    },
-  });
-  void weixinGateway.resume();
-  void telegramGateway.resume().catch(() => undefined);
-  void feishuGateway.resume().catch(() => undefined);
-  void dingtalkGateway.resume().catch(() => undefined);
-  void qqGateway.resume().catch(() => undefined);
-  void wecomWebhookGateway.resume().catch(() => undefined);
-  try {
-    await channelBot.configure(await readChannelBot());
-  } catch (error) {
-    channelLogs.push({ at: Date.now(), level: "error", message: `频道机器人启动失败：${String(error)}` });
-    sendToWindow("channel-bot:event", { level: "error", message: `频道机器人启动失败：${String(error)}`, at: Date.now(), status: channelBot.status() });
+    console.warn("[tray] 托盘创建失败（不影响启动）：", error instanceof Error ? error.message : error);
   }
 });
 
-// ── 微信机器人：收消息 → Codex → 回复发回微信 ───────────────────
-let weixinGateway: WeixinGateway | null = null;
-const weixinBindings = new Map<string, string>(); // 微信用户 → Codex 线程
-
-// ── 频道机器人流式回复（bot-stream）──────────────────────────
-// threadId → 流式会话；turn/started 建，最终回复由会话发出（含流式关闭时的整段发送）
-const botStreamSessions = new Map<string, BotStreamSession>();
-
-// 渠道级追加预算（理由见 bot-stream.ts 的 BotStreamBudget 注释）：
-//  · 微信：iLink 每 24h 每个「用户消息」最多 10 条独立消息 ⇒ 追加 5 条 + 收尾 1 条 = 6，留 4 条余量；
-//    间隔 3s、攒够 40 字才发下一条（避免碎片气泡刷屏）。过程可见性主要靠「对方正在输入…」（不占配额）。
-//  · Telegram：无配额限制（editMessageText 只改同一条），沿用原节流。
-const WEIXIN_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 5, flushIntervalMs: 3000, minChars: 40 };
-const TELEGRAM_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 40, flushIntervalMs: 1600, minChars: 0 };
-//  飞书：可发多条、限速宽松（单应用每分钟量级很高）⇒ 追加 4 条 + 收尾 1 条。
-//  钉钉：群 webhook **只能发新消息（无编辑）**，且限 20 条/分钟 ⇒ 追加 3 条、间隔 ≥5s，保守留余量。
-//  QQ：被动回复（msg_id）官方上限 5 次 ⇒ 追加 3 条 + 收尾 1 条 = 4 次，留 1 次余量。
-const FEISHU_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 4, flushIntervalMs: 4000, minChars: 60 };
-const DINGTALK_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 3, flushIntervalMs: 5000, minChars: 60 };
-const QQ_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 3, flushIntervalMs: 3000, minChars: 80 };
-
-function weixinStreamSink(from: string): BotStreamSink {
-  // 09-18 修正：此前**整体撤掉了微信流式**，依据是 09-12 的结论「iLink 的 context_token 实测一次一发」。
-  // 复核协议资料后确认那个结论是**误判**：同一 context_token 可复用（当时"第二条发不出去"的真因是
-  // 请求体字段不全，服务端静默丢弃）。真正的硬约束是**配额**（每用户消息 24h 内 10 条独立消息）——
-  // 所以这里恢复追加语义，但靠 WEIXIN_STREAM_BUDGET 把条数压到 6 条以内，并保留失败降级：
-  // append 连续失败 2 次即停用追加，收尾那次（state=2）把完整正文补发，正文永不丢。
-  // ⛔ 微信是**纯文本通道**（09-18 用户：「为啥不能跟汇总一样的格式同步过来」）：iLink 不渲染
-  // Markdown，桌面端的表格/标题/粗体原样发过去就是一堆竖线。发前统一走 plainTextForChannel
-  // 转成手机可读排版。流式分片可能切在半行中间 → 先攒到**完整行**再转换发送（转换是逐行的，
-  // 分片安全）；carry 里的残留由收尾（finalizeAppend）补上，正文不丢。
-  // 同一转换也用于 Telegram 与飞书/钉钉/QQ（它们同是纯文本消息，见各发送点）。
-  let carry = "";
-  const sendChunk = (text: string, opts: { clientId?: string; state?: number }) =>
-    weixinGateway!.sendText(from, plainTextForChannel(text), opts);
-  return {
-    append: (delta, clientId) => {
-      carry += delta;
-      const cut = carry.lastIndexOf("\n");
-      if (cut < 0) return Promise.resolve(); // 还没有完整行：继续攒
-      const sendable = carry.slice(0, cut + 1);
-      carry = carry.slice(cut + 1);
-      return sendChunk(sendable, { clientId, state: 1 });
-    },
-    finalizeAppend: (tail, clientId) => {
-      const rest = carry + tail;
-      carry = "";
-      return weixinGateway!.sendText(from, plainTextForChannel(rest) || "（已完成）", { clientId, state: 2 });
-    },
-    send: (full) => weixinGateway!.sendText(from, plainTextForChannel(full)),
-  };
-}
-
-/** 「对方正在输入…」按 threadId 挂停止函数（回合结束/重开时调用） */
-const weixinTypingStops = new Map<string, () => void>();
-function startWeixinTyping(threadId: string, from: string) {
-  stopWeixinTyping(threadId);
-  if (!weixinGateway) return;
-  try { weixinTypingStops.set(threadId, weixinGateway.beginTyping(from)); } catch { /* 尽力而为，失败不影响回复 */ }
-}
-function stopWeixinTyping(threadId: string) {
-  const stop = weixinTypingStops.get(threadId);
-  if (!stop) return;
-  weixinTypingStops.delete(threadId);
-  try { stop(); } catch { /* 忽略 */ }
-}
-
-/** 飞书 / 钉钉 / QQ 的追加式流式 sink（09-18 用户：「接上流式（按各渠道限制做）」）。
- *  三家都**不能编辑已发消息**（飞书 SDK 未暴露 message 更新、钉钉 webhook 只发新消息、
- *  QQ 被动回复只能逐条发），所以走与微信同款的「少量多次」追加语义：
- *  append = 发一条进度消息，finalizeAppend = 发收尾（完整正文尾部）；预算按各家频控设（见上）。
- *  转换与微信一致：发送前统一过 plainTextForChannel（这三家也是纯文本消息类型）。 */
-function feishuStreamSink(chatId: string): BotStreamSink {
-  return {
-    append: (delta) => feishuGateway.sendMessage(chatId, plainTextForChannel(delta)),
-    finalizeAppend: (tail) => feishuGateway.sendMessage(chatId, plainTextForChannel(tail) || "（已完成）"),
-    send: (full) => feishuGateway.sendMessage(chatId, plainTextForChannel(full)),
-  };
-}
-function dingtalkStreamSink(chatId: string): BotStreamSink {
-  return {
-    append: (delta) => dingtalkGateway.sendMessage(chatId, plainTextForChannel(delta)),
-    finalizeAppend: (tail) => dingtalkGateway.sendMessage(chatId, plainTextForChannel(tail) || "（已完成）"),
-    send: (full) => dingtalkGateway.sendMessage(chatId, plainTextForChannel(full)),
-  };
-}
-function qqStreamSink(chatId: string): BotStreamSink {
-  // ctx 逐条现取：QQ 的被动回复凭据随每条入站消息刷新（msg_id 5 分钟内有效），
-  // 闭包捕获旧 ctx 会在长任务里过期 —— 取不到就直接抛，交给 bot-stream 的降级逻辑。
-  const send = (text: string) => {
-    const ctx = qqReplyContexts.get(chatId);
-    if (!ctx) throw new Error("缺少被动回复上下文（msg_id 已过期），请重新 @机器人");
-    return qqGateway.sendMessage(chatId, plainTextForChannel(text), ctx);
-  };
-  return {
-    append: (delta) => send(delta),
-    finalizeAppend: (tail) => send(tail || "（已完成）"),
-    send: (full) => send(full),
-  };
-}
-
-function telegramStreamSink(chatId: number): BotStreamSink {
-  // 与微信同理（09-18 用户问「其他渠道是不是一样」）：Telegram 这里**没有 parse_mode**，
-  // Markdown 也是原样显示（`**粗体**`、`| 表格 |`），且 Telegram 本身不渲染表格 →
-  // 同样先过 plainTextForChannel，三个发送点全带。
-  let messageId: number | null = null;
-  return {
-    replace: async (full) => {
-      const text = plainTextForChannel(full);
-      if (messageId == null) {
-        messageId = await telegramGateway.streamBegin(chatId, text.slice(0, 3800));
-        return messageId != null;
-      }
-      return telegramGateway.streamEdit(chatId, messageId, text.slice(0, 3800));
-    },
-    finalizeReplace: async (full) => {
-      const text = plainTextForChannel(full);
-      if (messageId != null) {
-        const head = text.slice(0, 4000);
-        const ok = await telegramGateway.streamEdit(chatId, messageId, head).catch(() => false);
-        if (!ok) await telegramGateway.sendText(chatId, head).catch(() => undefined);
-        const rest = text.slice(4000);
-        if (rest) await telegramGateway.sendText(chatId, rest).catch(() => undefined);
-      } else if (text) await telegramGateway.sendText(chatId, text).catch(() => undefined);
-    },
-    send: (full) => telegramGateway.sendText(chatId, plainTextForChannel(full)),
-  };
-}
-
-/** 某会话该用哪套流式方案：Telegram 用 replace 语义；微信 iLink 用 append + 严格预算。
- *  返回 null = 该会话不是渠道会话（渲染层自己的会话，不需要回推）。 */
-function botStreamPlanFor(threadId: string): { sink: BotStreamSink; budget: BotStreamBudget; typingFrom?: string } | null {
-  const tgChat = telegramBindings.get(threadId);
-  if (tgChat != null) return { sink: telegramStreamSink(tgChat), budget: TELEGRAM_STREAM_BUDGET };
-  for (const [user, bound] of weixinBindings) {
-    if (bound !== threadId) continue;
-    // ⛔ 键前缀区分渠道：飞书/钉钉/QQ 也用同一张绑定表（fs:/dd:/qq:），不加这个过滤
-    //    它们会被微信分支截胡 → 用微信网关去发飞书消息（09-18 加三渠道流式时差点踩）。
-    if (/^(tg|fs|dd|qq|wecom):/.test(user)) continue;
-    return { sink: weixinStreamSink(user), budget: WEIXIN_STREAM_BUDGET, typingFrom: user };
-  }
-  // 飞书 / 钉钉 / QQ（09-18 用户：接上流式，按各渠道限制做）：绑定表按渠道存 threadId，
-  // 聊天 ID 在回合发起时记进 channelThreadChat（回复凭据随之刷新）。
-  for (const channel of ["feishu", "dingtalk", "qq"] as const) {
-    if (channelBotBindings[channel]?.threadId !== threadId) continue;
-    const chatId = channelThreadChat.get(threadId);
-    if (!chatId) continue;
-    if (channel === "feishu") return { sink: feishuStreamSink(chatId), budget: FEISHU_STREAM_BUDGET };
-    if (channel === "dingtalk") return { sink: dingtalkStreamSink(chatId), budget: DINGTALK_STREAM_BUDGET };
-    if (qqReplyContexts.has(chatId)) return { sink: qqStreamSink(chatId), budget: QQ_STREAM_BUDGET };
-  }
-  return null;
-}
-
-// ── 频道机器人会话绑定（持久化）────────────────────────────────
-// 渠道级绑定：机器人后续消息固定在选定会话中继续（UI 可选老会话/解绑重开）。
-// 存 userData/bot-bindings.json；查找优先级：渠道绑定 > per-user 内存绑定。
-// 新会话自动写入渠道绑定——顺带修了重启丢绑定（原内存绑定重启即丢，每次重启都开新会话）。
-type BotChannelBinding = { threadId: string; title: string; updatedAt: number };
-const botBindingsFile = path.join(app.getPath("userData"), "bot-bindings.json");
-// 渠道键：wechat / telegram 为历史双键；feishu / dingtalk / qq 为 09-09 新增真实网关渠道
-const channelBotBindings: Record<string, BotChannelBinding | null> = { wechat: null, telegram: null, feishu: null, dingtalk: null, qq: null };
-let botBindingsLoaded = false;
-
-async function loadBotBindings() {
-  if (botBindingsLoaded) return;
-  botBindingsLoaded = true;
-  try {
-    const raw = JSON.parse(await fs.readFile(botBindingsFile, "utf8"));
-    for (const key of Object.keys(channelBotBindings)) {
-      const b = raw?.[key];
-      if (b?.threadId) channelBotBindings[key] = { threadId: String(b.threadId), title: String(b.title ?? ""), updatedAt: Number(b.updatedAt ?? 0) };
-    }
-  } catch { /* 无绑定文件 */ }
-}
-
-async function writeBotBindings() {
-  try { await fs.writeFile(botBindingsFile, JSON.stringify({ ...channelBotBindings }, null, 2), "utf8"); } catch { /* 忽略 */ }
-}
-
-ipcMain.handle("bot-binding:get", async () => { await loadBotBindings(); return channelBotBindings; });
-
-// ── 机器人档案持久化（09-13）：此前机器人列表只存渲染层 localStorage —— 清缓存/换实例
-// 就整单丢失（用户实丢过一次，配对/绑定记录都在 userData 而档案没了）。迁到 userData/bots.json，
-// 与 botBindings / bot-pairing 同层。localStorage 旧数据由渲染层启动时上交迁移（见 App.tsx）。
-const botsFile = path.join(app.getPath("userData"), "bots.json");
-ipcMain.handle("bots:get", async () => {
-  try { return JSON.parse(await fs.readFile(botsFile, "utf8")); } catch { return []; }
-});
-ipcMain.handle("bots:set", async (_e, list: unknown) => {
-  const safe = Array.isArray(list) ? list : [];
-  await fs.writeFile(botsFile, JSON.stringify(safe, null, 2), "utf8");
-  return { ok: true, count: safe.length };
-});
-ipcMain.handle("bot-binding:set", async (_e, input: { channel: string; threadId: string | null; title?: string }) => {
-  await loadBotBindings();
-  const key = ["wechat", "telegram", "feishu", "dingtalk", "qq"].includes(String(input?.channel)) ? String(input.channel) : "wechat";
-  if (input?.threadId) {
-    // 预验证：绑定前先 resume 一次，确认该会话真实可用——否则发消息时 resume 失败
-    // 会被自动重置回新会话，表现为「选了老会话又被弹回去」
-    try {
-      await server.request("thread/resume", { threadId: String(input.threadId), excludeTurns: false });
-    } catch (error: any) {
-      throw new Error(`该会话无法恢复（${String(error?.message ?? error).slice(0, 80)}），请换一个会话，或先在主界面打开它确认存在`);
-    }
-    channelBotBindings[key] = { threadId: String(input.threadId), title: String(input.title ?? ""), updatedAt: Date.now() };
-  } else {
-    channelBotBindings[key] = null;
-    // 解绑：同步清 per-user 缓存，保证下一条消息开新会话
-    if (key === "wechat") { for (const [k] of [...weixinBindings]) if (!k.startsWith("tg:")) weixinBindings.delete(k); }
-    else if (key === "telegram") { for (const [k] of [...weixinBindings]) if (k.startsWith("tg:")) weixinBindings.delete(k); telegramBindings.clear(); }
-    else { const prefix = { feishu: "fs:", dingtalk: "dd:", qq: "qq:" }[key] ?? ""; if (prefix) for (const [k] of [...weixinBindings]) if (k.startsWith(prefix)) weixinBindings.delete(k); }
-  }
-  await writeBotBindings();
-  return channelBotBindings[key];
-});
-
-ipcMain.handle("bot-stream:get", async () => readBotStreamSettings(botStreamFile));
-ipcMain.handle("bot-stream:set", async (_event, input: BotStreamSettings) => {
-  const settings = { enabled: Boolean(input?.enabled), thinking: Boolean(input?.thinking), tools: Boolean(input?.tools) };
-  await writeBotStreamSettings(botStreamFile, settings);
-  return settings;
-});
-
-async function handleWeixinMessage(message: { from: string; text: string; contextToken: string }) {
-  if (!weixinGateway) return;
-  // 配对门卫（09-13）：未批准的聊天只有发对 6 位授权码才放行，其余消息只收到配对引导
-  const gate = botPairing.onChannelMessage("wechat", message.from, `微信 ${message.from}`, message.text);
-  if (gate.action !== "allow") { await weixinGateway.sendText(message.from, gate.message).catch(() => undefined); return; }
-  try {
-    const model = await readCustomModel();
-    if (!model) { await weixinGateway.sendText(message.from, "请先在应用里配置模型再使用微信机器人。"); return; }
-    // 会话解析优先级：渠道级绑定（UI 可选老会话/持久化）> per-user 内存绑定；都没有才开新会话
-    await loadBotBindings();
-    let threadId = (channelBotBindings.wechat?.threadId ?? "") || weixinBindings.get(message.from) || "";
-    if (threadId) {
-      let resumed = false;
-      // 瞬态失败重试一次再放弃：绑定被静默重置的表现是「选了老会话又被弹回新会话」
-      for (let attempt = 0; attempt < 2 && !resumed; attempt++) {
-        try {
-          await server.request("thread/resume", { threadId, excludeTurns: false });
-          resumed = true;
-        } catch {
-          if (attempt === 0) { await new Promise((r) => setTimeout(r, 800)); continue; }
-          threadId = "";
-          weixinBindings.delete(message.from);
-          if (channelBotBindings.wechat?.threadId) { channelBotBindings.wechat = null; await writeBotBindings(); }
-        }
-      }
-    }
-    if (!threadId) {
-      const botConfig = await readChannelBot().catch(() => null);
-      const started = await server.request("thread/start", {
-        model: model.model,
-        cwd: (botConfig?.workspace || app.getPath("home")),
-        approvalPolicy: "never",
-        sandbox: "danger-full-access",
-        ...(model.provider === "openai-official" ? {} : { modelProvider: model.provider }),
-      }) as any;
-      threadId = started.thread.id;
-      // 新会话自动写入渠道级绑定：重启后继续该会话（原内存绑定重启即丢，每次重启都开新会话）
-      channelBotBindings.wechat = { threadId, title: `微信机器人会话 ${new Date().toLocaleDateString("zh-CN")}`, updatedAt: Date.now() };
-      await writeBotBindings();
-    }
-    weixinBindings.set(message.from, threadId); // per-user 缓存：流式回复按 threadId 反查发送目标用
-    // 微信回复需要 context_token。最终回复优先由 bot-stream 流式会话发出（含思考/工具同步、
-    // 流式关闭时的整段发送）；会话未建成功（绑定竞态等）时这里兜底发最终正文。
-    const from = message.from;
-    const onDoneProxy = (event: any) => {
-      if (event.kind !== "notification" || event.method !== "turn/completed" || event.params?.threadId !== threadId) return;
-      server.off("event", onDoneProxy);
-      if (botStreamSessions.has(threadId)) return;
-      const finalText = [...(event.params?.turn?.items ?? [])].reverse().find((item: any) => item.type === "agentMessage")?.text ?? "";
-      if (finalText.trim()) weixinGateway?.sendText(from, finalText.trim()).catch((error) => console.warn("微信回信失败:", error.message));
-    };
-    server.on("event", onDoneProxy);
-    await server.request("turn/start", { threadId, input: [{ type: "text", text: `[微信用户] ${message.text}`, text_elements: [] }], model: model.model, effort: "high" });
-  } catch (error: any) {
-    console.warn("微信消息处理失败:", error.message);
-    weixinGateway.sendText(message.from, `处理失败：${error.message}`).catch(() => undefined);
-  }
-}
-
-// ── 微信机器人 IPC ───────────────────────────────────────────
-ipcMain.handle("weixin:start-login", async () => {
-  const result = await weixinGateway?.startLogin();
-  if (!result?.qrcodeImg) return result;
-  // iLink 的 qrcode_img_content 格式不固定：可能是裸 base64 图片、data URL 图片、
-  // 或二维码内容文本（liteapp.weixin.qq.com/... 短链）。统一归一化成渲染端可直接
-  // 使用的形式，避免裸 base64 被当成 HTML 注入导致二维码区域白屏：
-  //   data:image → 原样返回（<img> 直接显示）
-  //   裸 base64 图片 → 补 data:image/png;base64, 前缀（浏览器会嗅探真实格式）
-  //   http URL / 短文本 → 内容文本，编码成 SVG 码
-  const raw = String(result.qrcodeImg).trim();
-  const compact = raw.replace(/\s+/g, "");
-  const isBareB64 = compact.length > 64 && /^[A-Za-z0-9+/=]+$/.test(compact);
-  const qr = raw.startsWith("data:")
-    ? raw
-    : isBareB64
-      ? `data:image/png;base64,${compact}`
-      : await qrSvg(raw);
-  return { ...result, qrcodeImg: qr };
-});
-ipcMain.handle("weixin:poll-login", async () => weixinGateway?.pollLogin());
-// 取消扫码：停止前端轮询由渲染层 clearInterval 完成；网关若有 cancelLogin 则一并调用（回到未连接态）
-ipcMain.handle("weixin:cancel-login", async () => {
-  const gateway = weixinGateway as { cancelLogin?: () => Promise<void> | void } | null;
-  try { await gateway?.cancelLogin?.(); } catch { /* 网关无 cancelLogin 时忽略 */ }
-  return { ok: true };
-});
-ipcMain.handle("weixin:status", async () => ({ bound: weixinGateway?.hasSession() ?? false }));
-ipcMain.handle("weixin:logout", async () => { await weixinGateway?.logout(); channelBotBindings.wechat = null; await writeBotBindings(); return { ok: true }; });
-ipcMain.handle("telegram:logout", async () => { telegramGateway.logout(); channelBotBindings.telegram = null; await writeBotBindings(); return { ok: true }; });
-// 各渠道真实连接状态（机器人列表圆点用）
-ipcMain.handle("channels:status", async () => ({
-  weixin: weixinGateway?.hasSession() ?? false,
-  telegram: telegramGateway.hasSession(),
-  feishu: feishuGateway.hasSession(),
-  dingtalk: dingtalkGateway.hasSession(),
-  qq: qqGateway.hasSession(),
-  "wecom-webhook": wecomWebhookGateway.hasSession(),
-}));
-
-const telegramGateway = new TelegramGateway({
-  onMessage: (message) => void handleTelegramMessage(message),
-  log: (level, message) => {
-    channelLogs.push({ at: Date.now(), level, message });
-    sendToWindow("channel-bot:event", { level, message, at: Date.now(), status: channelBot.status() });
-  },
-});
-const telegramBindings = new Map<string, number>();
-async function handleTelegramMessage(message: { from: string; chatId: number; text: string }) {
-  // 配对门卫（09-13）：同微信
-  const gate = botPairing.onChannelMessage("telegram", String(message.chatId), `Telegram ${message.from}`, message.text);
-  if (gate.action !== "allow") { await telegramGateway.sendText(message.chatId, gate.message).catch(() => undefined); return; }
-  try {
-    const model = await readCustomModel();
-    if (!model) { await telegramGateway.sendText(message.chatId, "请先在应用里配置模型。"); return; }
-    let threadId = weixinBindings.get("tg:" + message.from) ?? "";
-    // 会话解析优先级：渠道级绑定（UI 可选老会话/持久化）> per-user 内存绑定（与微信一致）
-    await loadBotBindings();
-    threadId = (channelBotBindings.telegram?.threadId ?? "") || threadId;
-    if (threadId) {
-      let resumed = false;
-      for (let attempt = 0; attempt < 2 && !resumed; attempt++) {
-        try {
-          await server.request("thread/resume", { threadId, excludeTurns: false });
-          resumed = true;
-        } catch {
-          if (attempt === 0) { await new Promise((r) => setTimeout(r, 800)); continue; }
-          threadId = "";
-          weixinBindings.delete("tg:" + message.from);
-          if (channelBotBindings.telegram?.threadId) { channelBotBindings.telegram = null; await writeBotBindings(); }
-        }
-      }
-    }
-    if (!threadId) {
-      const botConfig = await readChannelBot().catch(() => null);
-      const started = await server.request("thread/start", { model: model.model, cwd: (botConfig?.workspace || app.getPath("home")), approvalPolicy: "never", sandbox: "danger-full-access", ...(model.provider === "openai-official" ? {} : { modelProvider: model.provider }) }) as any;
-      threadId = started.thread.id;
-      weixinBindings.set("tg:" + message.from, threadId);
-      channelBotBindings.telegram = { threadId, title: `Telegram 会话 ${new Date().toLocaleDateString("zh-CN")}`, updatedAt: Date.now() };
-      await writeBotBindings();
-    }
-    weixinBindings.set("tg:" + message.from, threadId); // per-user 缓存：流式回复按 threadId 反查发送目标用
-    const chatId = message.chatId;
-    telegramBindings.set(threadId, chatId); // bot-stream 会话按 threadId 反查渠道
-    const onDoneProxy = (event: any) => {
-      if (event.kind !== "notification" || event.method !== "turn/completed" || event.params?.threadId !== threadId) return;
-      server.off("event", onDoneProxy);
-      if (botStreamSessions.has(threadId)) return; // 流式会话负责最终回复
-      const finalText = [...(event.params?.turn?.items ?? [])].reverse().find((item: any) => item.type === "agentMessage")?.text ?? "";
-      if (finalText.trim()) telegramGateway.sendText(chatId, finalText.trim()).catch(() => undefined);
-    };
-    server.on("event", onDoneProxy);
-    await server.request("turn/start", { threadId, input: [{ type: "text", text: message.text, text_elements: [] }], model: model.model, effort: "high" });
-  } catch (error: any) {
-    telegramGateway.sendText(message.chatId, `处理失败：${error.message}`).catch(() => undefined);
-  }
-}
-ipcMain.handle("telegram:connect", async (_event, token: string) => { try { return { ok: true, ...(await telegramGateway.connect(String(token ?? ""))) }; } catch (error: any) { return { ok: false, error: error.message }; } });
-ipcMain.handle("telegram:status", async () => ({ bound: telegramGateway.hasSession() }));
-
-// ── 新增渠道（飞书/钉钉/QQ/企微Webhook）：统一走 handleChannelMessage 管线 ──
-function channelLog(level: "info" | "error", message: string) {
-  channelLogs.push({ at: Date.now(), level, message });
-  persistChannelLog(level, message);
-  sendToWindow("channel-bot:event", { level, message, at: Date.now(), status: channelBot.status() });
-}
-
-/** 渠道网关日志统一落盘（1MB 轮转 .old）：token 失效/发送失败这类事故只存在内存和 UI
- *  事件里时，窗口没开就丢——「消息没同步」类问题排查全靠它（09-12 微信事故教训）。 */
-function persistChannelLog(level: "info" | "error", message: string) {
-  try {
-    const logFile = path.join(app.getPath("userData"), "channel-logs", "gateway.log");
-    if (!existsSync(logFile) || statSync(logFile).size > 1024 * 1024) {
-      mkdirSync(path.dirname(logFile), { recursive: true });
-      if (existsSync(logFile)) renameSync(logFile, logFile.replace(/\.log$/, ".old"));
-    }
-    appendFileSync(logFile, `[${new Date().toISOString()}] [${level}] ${message}\n`, "utf8");
-  } catch { /* 日志落盘失败不影响主流程 */ }
-}
-
-const feishuGateway = new FeishuGateway({
-  onMessage: (message) => void handleChannelMessage("feishu", message.from, message.chatId, message.text),
-  // 语音消息：下载原始 opus → ffmpeg 归一 16k wav → ASR 转写 → 按普通文本走会话管线
-  onAudio: (message) => void handleChannelAudioMessage(message),
-  log: channelLog,
-});
-
-/** ffmpeg 可执行文件：随包按需安装（开发工具页），装过就在 tools/ffmpeg 下；都没装则期望 PATH 里有。
- *  ⛔ mac 适配（09-17 审计）：darwin 侧 install-runtimes 把 ffmpeg/ffprobe 放在 `tools/ffmpeg/bin/`，
- *  文件名**不带 .exe**（evermeet 单文件构建）；旧实现只找 `ffmpeg.exe` ⇒ mac 上永远回落到裸名 "ffmpeg"，
- *  而 GUI 启动的进程 PATH 里通常没有它 ⇒ 渠道语音消息（飞书 opus 转 16k wav）在 mac 上必失败。 */
-function resolveFfmpegPath(): string {
-  const rel = process.platform === "win32" ? ["ffmpeg", "ffmpeg.exe"] : ["ffmpeg", "bin", "ffmpeg"];
-  const candidates = [
-    path.join(process.resourcesPath ?? "", "tools", ...rel),
-    path.join(appSourceRoot(), "resources", "tools", ...rel),
-    path.join(appSourceRoot(), "tools", ...rel),
-    // 内置工具目录里的 ffmpeg 直接可用（不论它是随包还是开发工具页装的）
-    ...(toolsRoot() ? [path.join(toolsRoot(), ...rel)] : []),
-  ];
-  for (const candidate of candidates) {
-    try { if (existsSync(candidate)) return candidate; } catch { /* 忽略路径异常，继续下一个 */ }
-  }
-  return "ffmpeg";
-}
-
-/** 把渠道语音（飞书 opus / 其它）归一成 16k 单声道 PCM wav，供 sherpa ASR 直接吃。 */
-async function transcodeToWav16k(inputPath: string): Promise<string> {
-  const outPath = inputPath.replace(/\.[^.]+$/, "") + "-16k.wav";
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(resolveFfmpegPath(), ["-y", "-i", inputPath, "-ar", "16000", "-ac", "1", "-f", "wav", outPath], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
-    child.stderr?.on("data", (chunk) => { stderr += String(chunk); });
-    child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg 退出码 ${code}：${stderr.slice(-200)}`))));
-    child.on("error", (error) => reject(new Error(`ffmpeg 不可用（请在开发工具页下载 FFmpeg）：${error.message}`)));
-  });
-  return outPath;
-}
-
-/** 渠道语音消息管线：转写成功后与普通文本消息走同一条路（会话绑定/回复机制全部复用）。 */
-async function handleChannelAudioMessage(message: { from: string; chatId: string; messageId: string; fileKey: string; replyHint: string }) {
-  try {
-    await feishuGateway.sendMessage(message.chatId, "🎤 收到语音，正在转写…");
-    const rawPath = await feishuGateway.downloadAudio(message.messageId, message.fileKey);
-    let wavPath = "";
-    try {
-      wavPath = await transcodeToWav16k(rawPath);
-    } catch (error: any) {
-      await feishuGateway.sendMessage(message.chatId, `⚠️ ${error.message}`);
-      return;
-    } finally {
-      await fs.rm(rawPath, { force: true }).catch(() => undefined);
-    }
-    const result = await voiceService.transcribeAudioFile(wavPath);
-    await fs.rm(wavPath, { force: true }).catch(() => undefined);
-    if (!result.ok) {
-      await feishuGateway.sendMessage(message.chatId, `⚠️ 语音转写失败：${result.error ?? ""}`);
-      return;
-    }
-    const text = String(result.text ?? "").trim();
-    if (!text) {
-      await feishuGateway.sendMessage(message.chatId, "⚠️ 语音转写结果为空，请靠近麦克风再说一遍");
-      return;
-    }
-    await handleChannelMessage("feishu", message.from, message.chatId, text);
-  } catch (error: any) {
-    await feishuGateway.sendMessage(message.chatId, `⚠️ 语音处理失败：${error?.message ?? error}`).catch(() => undefined);
-  }
-}
-const dingtalkGateway = new DingtalkGateway({
-  onMessage: (message) => void handleChannelMessage("dingtalk", message.from, message.chatId, message.text),
-  log: channelLog,
-});
-const qqGateway = new QqGateway({
-  onMessage: (message) => { recordQqContext(message.from, message.chatId, message.msgId, message.scene); void handleChannelMessage("qq", message.from, message.chatId, message.text); },
-  log: channelLog,
-});
-const wecomWebhookGateway = new WecomWebhookGateway({ log: channelLog });
-// 飞书/钉钉/QQ 的流式回复目标：threadId → chatId（回合发起时记录，见 handleChannelMessage）
-const channelThreadChat = new Map<string, string>();
-// QQ 回复需要 msgId + scene（被动回复机制），与 chatId 一起缓存
-const qqReplyContexts = new Map<string, { msgId: string; scene: "group" | "c2c" }>();
-
-/** 飞书/钉钉/QQ 通用消息管线（与微信/Telegram 同语义）：绑定会话 > per-user 绑定 > 新建 */
-async function handleChannelMessage(channel: "feishu" | "dingtalk" | "qq", from: string, chatId: string, text: string) {
-  const prefix = { feishu: "fs:", dingtalk: "dd:", qq: "qq:" }[channel];
-  const gateway = { feishu: feishuGateway, dingtalk: dingtalkGateway, qq: qqGateway }[channel];
-  const reply = async (content: string) => {
-    try {
-      // 纯文本排版统一（09-18）：飞书 msg_type=text / 钉钉 msgtype=text / QQ msg_type=0
-      // 都是纯文本消息，Markdown 表格与粗体原样过去不可读——与微信同一套转换。
-      const text = plainTextForChannel(content);
-      if (channel === "qq") {
-        const ctx = qqReplyContexts.get(chatId);
-        if (!ctx) throw new Error("缺少被动回复上下文（msg_id 5 分钟内有效），请重新 @机器人");
-        await qqGateway.sendMessage(chatId, text, ctx);
-      } else if (channel === "feishu") {
-        await feishuGateway.sendMessage(chatId, text);
-      } else {
-        await dingtalkGateway.sendMessage(chatId, text);
-      }
-    } catch (error: any) {
-      channelLog("error", `${channel} 回复失败：${error?.message ?? error}`);
-    }
-  };
-  // 配对门卫（09-13）：未批准的聊天先发 6 位授权码配对（等电脑端允许），其余消息只收到配对引导
-  const gate = botPairing.onChannelMessage(channel, chatId, `${channel} ${from}`, text);
-  if (gate.action !== "allow") { await reply(gate.message); return; }
-  try {
-    const model = await readCustomModel();
-    if (!model) { await reply("请先在应用里配置模型。"); return; }
-    let threadId = weixinBindings.get(prefix + from) ?? "";
-    await loadBotBindings();
-    threadId = (channelBotBindings[channel]?.threadId ?? "") || threadId;
-    if (threadId) {
-      let resumed = false;
-      for (let attempt = 0; attempt < 2 && !resumed; attempt++) {
-        try {
-          await server.request("thread/resume", { threadId, excludeTurns: false });
-          resumed = true;
-        } catch {
-          if (attempt === 0) { await new Promise((r) => setTimeout(r, 800)); continue; }
-          threadId = "";
-          weixinBindings.delete(prefix + from);
-          if (channelBotBindings[channel]?.threadId) { channelBotBindings[channel] = null; await writeBotBindings(); }
-        }
-      }
-    }
-    if (!threadId) {
-      const botConfig = await readChannelBot().catch(() => null);
-      const started = await server.request("thread/start", { model: model.model, cwd: (botConfig?.workspace || app.getPath("home")), approvalPolicy: "never", sandbox: "danger-full-access", ...(model.provider === "openai-official" ? {} : { modelProvider: model.provider }) }) as any;
-      threadId = started.thread.id;
-      weixinBindings.set(prefix + from, threadId);
-      channelBotBindings[channel] = { threadId, title: `${channel} 会话 ${new Date().toLocaleDateString("zh-CN")}`, updatedAt: Date.now() };
-      await writeBotBindings();
-    }
-    weixinBindings.set(prefix + from, threadId);
-    // 流式回复目标登记（09-18）：飞书/钉钉/QQ 的 sink 需要 chatId 才能发进度消息
-    channelThreadChat.set(threadId, chatId);
-    const onDoneProxy = (event: any) => {
-      if (event.kind !== "notification" || event.method !== "turn/completed" || event.params?.threadId !== threadId) return;
-      server.off("event", onDoneProxy);
-      if (botStreamSessions.has(threadId)) return;
-      const finalText = [...(event.params?.turn?.items ?? [])].reverse().find((item: any) => item.type === "agentMessage")?.text ?? "";
-      if (finalText.trim()) void reply(finalText.trim());
-    };
-    server.on("event", onDoneProxy);
-    await server.request("turn/start", { threadId, input: [{ type: "text", text, text_elements: [] }], model: model.model, effort: "high" });
-  } catch (error: any) {
-    void reply(`处理失败：${error.message}`);
-  }
-}
-const qqLastMsgId = new Map<string, string>();
-const qqLastScene = new Map<string, "group" | "c2c">();
-// QQ 被动回复上下文：gateway onMessage 包装层先记录（msgId/scene 5 分钟有效）
-function recordQqContext(from: string, chatId: string, msgId: string, scene: "group" | "c2c") {
-  qqLastMsgId.set(from, msgId);
-  qqLastScene.set(from, scene);
-  qqReplyContexts.set(chatId, { msgId, scene });
-}
-
-ipcMain.handle("feishu:connect", async (_event, appId: string, appSecret: string) => { try { return { ...(await feishuGateway.connect(String(appId ?? ""), String(appSecret ?? ""))), ok: true }; } catch (error: any) { return { ok: false, error: error.message }; } });
-ipcMain.handle("feishu:logout", async () => { feishuGateway.logout(); channelBotBindings.feishu = null; await writeBotBindings(); return { ok: true }; });
-ipcMain.handle("dingtalk:connect", async (_event, clientId: string, clientSecret: string) => { try { return { ...(await dingtalkGateway.connect(String(clientId ?? ""), String(clientSecret ?? ""))), ok: true }; } catch (error: any) { return { ok: false, error: error.message }; } });
-ipcMain.handle("dingtalk:logout", async () => { dingtalkGateway.logout(); channelBotBindings.dingtalk = null; await writeBotBindings(); return { ok: true }; });
-ipcMain.handle("qq:connect", async (_event, appId: string, appSecret: string) => { try { return { ...(await qqGateway.connect(String(appId ?? ""), String(appSecret ?? ""))), ok: true }; } catch (error: any) { return { ok: false, error: error.message }; } });
-// QQ 官方扫码连接：桌面出二维码 → 手机 QQ（开放平台管理者账号）扫码确认 → 官方回传凭据 → 复用 qqGateway.connect
-// 注意：扫码授权会重置该机器人的 AppSecret（腾讯规则），UI 文案已提示
-ipcMain.handle("qq:qr-start", async () => {
-  try {
-    return await qqQrStart(
-      async (appId, appSecret) => qqGateway.connect(appId, appSecret),
-      (text) => qrSvg(text),
-    );
-  } catch (error: any) {
-    return { state: "failed", error: error.message };
-  }
-});
-ipcMain.handle("qq:qr-status", () => qqQrSnapshot());
-ipcMain.handle("qq:qr-cancel", () => { qqQrCancel(); return { ok: true }; });
-ipcMain.handle("qq:logout", async () => { qqQrCancel(); qqGateway.logout(); channelBotBindings.qq = null; await writeBotBindings(); return { ok: true }; });
-// 飞书官方扫码连接（Device Authorization Flow，复刻 ZCode）：扫码 → 飞书自动建应用并授权 → 凭据回传 → 复用 feishuGateway.connect
-ipcMain.handle("feishu:qr-start", async () => {
-  try {
-    return await feishuQrStart(
-      async (appId, appSecret) => feishuGateway.connect(appId, appSecret),
-      (text) => qrSvg(text),
-    );
-  } catch (error: any) {
-    return { state: "failed", error: error.message };
-  }
-});
-ipcMain.handle("feishu:qr-status", () => feishuQrSnapshot());
-ipcMain.handle("feishu:qr-cancel", () => { feishuQrCancel(); return { ok: true }; });
-ipcMain.handle("wecom-webhook:connect", async (_event, url: string) => { try { return { ...(await wecomWebhookGateway.connect(String(url ?? ""))), ok: true }; } catch (error: any) { return { ok: false, error: error.message }; } });
-ipcMain.handle("wecom-webhook:logout", async () => { wecomWebhookGateway.logout(); return { ok: true }; });
-ipcMain.handle("wecom-webhook:test", async (_event, text: string) => { try { await wecomWebhookGateway.sendMarkdown(String(text ?? "测试推送")); return { ok: true }; } catch (error: any) { return { ok: false, error: error.message }; } });
-
-// ponytail 技能包开关（写代码模式）：off 时钩子静默跳过，full 时注入精简工程规则
-ipcMain.handle("ponytail:mode:get", async () => getPonytailMode());
-ipcMain.handle("ponytail:mode:set", async (_event, mode: string) => { await setPonytailMode(mode as any); return { mode }; });
-
-ipcMain.handle("codex:request", async (_event, method: string, params: unknown) => {
-  let result: unknown;
-  const __reqT0 = performance.now();
-  // 协议桥兜底收口（09-16）：渲染层自带的内联 provider 配置在这里统一换成桥地址，
-  // 保证「引擎发出的每个请求都经过桥」，不依赖各下发点自觉（见 bridgeRewriteProviderConfig）。
-  bridgeRewriteProviderConfig(params);
-  // ⛔ 永久删除的本地收尾（09-18）：不论引擎返回成功还是抛错，都要把磁盘 rollout 与墓碑处理掉。
-  //   刻意用 finally 而不是「成功后才做」——引擎对「索引里本就不存在」的 id 会直接报错，
-  //   而那条会话恰恰最需要清理：它就是兜底扫描从磁盘捞回来的幽灵会话，引擎早已不认识它。
-  const purgeTarget = method === "thread/delete" ? String((params as any)?.threadId ?? "") : "";
-  // ⛔ 会话绝对独立（09-19 用户：「不准再因为切换会话、别的独立弹窗关闭影响正在运行的会话，
-  //   每个会话都是绝对独立运行状态，互不影响……除了用户停止，不许再断」）：
-  //   引擎侧一个 thread 同时只能有一个活动回合，`turn/start` 会**打断**已有回合。渲染层只要
-  //   有任何一次"以为它没在跑"（切会话时快照里看不到 inProgress 回合、独立窗口开关导致状态重建、
-  //   收到一条快照式的 thread/status/changed idle……），下一条消息就会走 turn/start —— 正在跑的
-  //   任务当场被掐掉，用户看到的就是「运行莫名停止」。
-  //   所以在这里用**引擎侧真相**兜底：该会话仍有活动回合 → 拒绝这条 turn/start，让它改走
-  //   `thread/queue/add`（排队）或 `turn/steer`（并入当前回合）。这一层不依赖渲染层的状态是否正确，
-  //   是"绝对独立"的最后一道硬闸；记账本身由 turn/started|completed 与进程重启维护。
-  if (method === "turn/start") {
-    const guardThreadId = String((params as any)?.threadId ?? "");
-    if (guardThreadId && [...engineActiveTurnIds.values()].includes(guardThreadId)) {
-      console.warn(`[turn/start] 拒绝：会话 ${guardThreadId.slice(0, 8)} 仍有活动回合在跑（引擎侧记账），已阻止打断`);
-      throw new Error("该会话仍有任务在运行（引擎侧确认），本次发送未执行以免打断它。等它结束，或点停止后再发。");
-    }
-  }
-  try {
-    result = await server.request(method, params);
-  } catch (error: any) {
-    const firstMessage = String(error?.message ?? "");
-    // ⛔ 幽灵会话的删除按成功处理（09-18，与 purgeDeletedThread 同一根因）：
-    //   引擎索引里已经没有这条线程（用户删过一次、或它本就是磁盘残留被兜底扫描捞出来的），
-    //   `thread/delete` 会报 "failed to delete thread / failed to read session metadata"。
-    //   但这类会话的**本地残留已在 finally 里清掉、墓碑也记了**（列表不会再显示、重启不复活），
-    //   用户点「永久删除」的意图已经达成 —— 把这种错误抛回去只会让他以为没删掉、反复再点。
-    //   只吞「引擎确认删不掉」这一类；别的错误（含引擎重启窗口的瞬态）照旧走下面的分支。
-    if (purgeTarget && /failed to delete thread|failed to read session metadata|no rollout found|thread[^.]{0,40}not found/i.test(firstMessage)) {
-      console.warn("[thread/delete] 引擎侧删除失败，但本地残留已清理并按成功处理：", firstMessage.slice(0, 200));
-      return { ok: true, localCleanupOnly: true };
-    }
-    // 保存/切换供应商会重启引擎：撞上重启窗口的在途请求被 reject「Codex app-server restarted」。
-    // 这是瞬态错误（restart() 会 reject 全部 pending 再拉起新进程），等新引擎就绪后自动重试，
-    // 不把吓人的报错甩给用户（设置页黄色横幅）。重试 2 次（1.2s / 2.4s），仍失败才抛出。
-    if (/app-server restarted/i.test(firstMessage)) {
-      let recovered = false;
-      for (const delay of [1200, 2400]) {
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        try { result = await server.request(method, params); recovered = true; break; } catch (retryError: any) {
-          if (!/app-server restarted/i.test(String(retryError?.message ?? ""))) { error = retryError; break; }
-        }
-      }
-      if (!recovered) throw error;
-    } else {
-      // 历史线程引用了已删除/换 ID 的供应商（rollout 里硬编码旧 model_provider）：
-      // 引擎 resume 报 "Model provider `X` not found" → 会话内容全空。
-      // 自动补一个指向当前生效端点的同名 provider 段，重启引擎后重试——内容找回。
-      const missing = /Model provider `([^`]+)` not found/.exec(firstMessage);
-      const active = missing ? await readCustomModel() : null;
-      if (!missing || !active?.baseUrl) throw error;
-      const alias = safeProviderId(missing[1]);   // 旧 session 记的 id 同样可能是保留名（openai）
-      const configText = await fs.readFile(path.join(codexHome, "config.toml"), "utf8").catch(() => "");
-      if (configText.includes(`[model_providers.${alias}]`)) throw error;
-      // ⛔ 恒 responses（09-16 真实引擎探针实证，见 scripts/probe-wire-api.cjs）：引擎对
-      // `wire_api = "chat"` 是**整份配置拒载**（原文：`wire_api = "chat"` is no longer supported.
-      // How to fix: set `wire_api = "responses"`），所有请求随之失败。这里原先把档案里的
-      // savedWire / 生效供应商的 chat 透传进 config.toml —— 而 active 来自 readCustomModel()，
-      // 那个函数**不经过 normalizeProvider**，档案里一旦有 chat 残留就会把应用写死。别名段
-      // 的唯一合法值就是 responses。
-      await fs.appendFile(path.join(codexHome, "config.toml"), `\n[model_providers.${alias}]\nname = "${alias}"\nbase_url = "${bridgeDial(alias, active.baseUrl)}"\nenv_key = "CODEX_HARNESS_API_KEY"\nwire_api = "responses"\n`);
-      await server.restart();
-      result = await server.request(method, params);
-    }
-  } finally {
-    // 见 purgeDeletedThread 注释：删了会话就必须把磁盘残留一起带走，否则重启即复活
-    if (purgeTarget) await purgeDeletedThread(purgeTarget);
-  }
-  if (method === "thread/list") {
-    threadListRequestCount += 1;
-    const response = result as any;
-    const archiveFilter = typeof (params as any)?.archived === "boolean" ? Boolean((params as any).archived) : null;
-    const indexed = Array.isArray(response?.data) ? response.data : [];
-    // 零阻塞宿主（09-12）：兜底扫描整体在 **worker 线程**里跑（目录遍历 + 单文件解析都是
-    // 同步 I/O，放主进程会阻塞**所有会话**的事件转发）。语义与原实现一致：仍然无条件扫
-    // （不要改成「仅 indexed 为空时才扫」——引擎索引瞬时为空会让侧栏整片消失）。
-    // worker 不可用时退化为「不发兜底」：宁可列表少一截，也不能让主线程被同步 I/O 堵住。
-    rolloutFallbackScanCount += 1;
-    try {
-      const fallback = await listRolloutThreadsAsync(codexHome);
-      // ⛔ 合并阶段必须排除「已永久删除」的线程（墓碑集合）：兜底扫描只认磁盘文件，
-      //   而删掉的 rollout 可能还在（文件被占用删不掉、或旧版本删过留下的残留）——
-      //   不排除就会在下次启动把用户删掉的会话捞回侧栏（09-18 用户实测的「重启又恢复」）。
-      const merged = mergeThreadList(indexed, fallback, archiveFilter, Number((params as any)?.limit ?? 100), deletedThreadIds);
-      // 「记录已丢失」标记：判据与实测口径见 session-tools.ts 的 markMissingRollouts 注释
-      // （白拿兜底扫描结果，不额外做同步磁盘 I/O；本机引擎会隐藏 rollout 丢失的线程，
-      //  所以这是防御性标记 —— 用户侧真实症状是会话静默消失，见该函数注释）。
-      const present = new Set(fallback.map((entry: any) => String(entry?.id ?? "").toLowerCase()));
-      markMissingRollouts(merged, present);
-      result = { ...response, data: merged };
-    } catch (error: any) {
-      console.warn("[thread/list] rollout 兜底扫描（worker）失败，本次仅返回引擎索引：", error?.message);
-    }
-  }
-  // 记忆捕获用：记录 threadId → cwd（新建线程响应 / 线程设置更新都带 cwd）
-  try {
-    const p = params as any;
-    const r = result as any;
-    if (method === "thread/start" && r?.thread?.id) {
-      threadCwd.set(String(r.thread.id), String(p?.cwd ?? r.thread.cwd ?? ""));
-    } else if (method === "thread/resume" && r?.thread?.id) {
-      // 零阻塞宿主（09-12）：rollout 增强解析也在 worker 线程里（同步读盘 + 逐行 parse
-      // 会阻塞所有会话）。失败就退化为「不增强」——工具调用卡片少几个，但界面不卡。
-      const __t0 = performance.now();
-      try {
-        r.thread = await enrichThreadWithRolloutToolsAsync(r.thread, codexHome);
-      } catch (error: any) {
-        console.warn("[thread/resume] rollout 增强（worker）失败，本次跳过：", error?.message);
-      }
-      const __enrich = performance.now() - __t0;
-      resumeCount += 1;
-      resumeEnrichMs += __enrich;
-      if (__enrich > resumeMaxMs) resumeMaxMs = __enrich;
-      threadCwd.set(String(r.thread.id), String(r.thread.cwd ?? r.cwd ?? p?.cwd ?? ""));
-    } else if (method === "thread/settings/update" && p?.threadId && p?.cwd) {
-      threadCwd.set(String(p.threadId), String(p.cwd));
-    } else if (method === "thread/list" && Array.isArray(r?.data)) {
-      // ⛔ 隐私加固（09-19）配套：侧栏列表里的每个会话 cwd 也要记账——可信根集合
-      // （fs:read/fs:write/shell:reveal/harness-image 共用）才能覆盖"本轮还没 resume 过
-      // 的会话"的文件预览，不至于一点开旧会话的历史文件就被新校验误伤。
-      for (const t of r.data) {
-        const tid = String(t?.id ?? t?.thread?.id ?? "");
-        const tcwd = String(t?.cwd ?? t?.thread?.cwd ?? "");
-        if (tid && tcwd) threadCwd.set(tid, tcwd);
-      }
-    }
-  } catch { /* cwd 映射失败不影响请求本身 */ }
-  if (method === "thread/resume") {
-    const total = performance.now() - __reqT0;
-    resumeTotalMs += total;
-    if (total > resumeMaxMs) resumeMaxMs = total;
-  }
-  return result;
-});
-ipcMain.handle("codex:respond", (_event, id: string | number, result: unknown) => server.respond(id, result));
-ipcMain.handle("user:name", async () => {
-  // 用户名的权威源是个性化昵称（personalization.json），重启不丢；
-  // 只有未设置昵称时才回退到操作系统用户名，避免每次启动把自定义称呼覆盖回系统用户。
-  try {
-    const cfg = await readPersonalization();
-    if (cfg?.nickname) return cfg.nickname;
-  } catch { /* 忽略，走回退 */ }
-  try { return os.userInfo().username || "Codex 用户"; } catch { return "Codex 用户"; }
-});
-ipcMain.handle("app:userData", () => app.getPath("userData"));
-ipcMain.handle("app:home-dir", () => os.homedir());
-
-// ── 内置斜杠命令支撑：/doctor（环境诊断）、/debug（引擎信息）、/export（导出会话）、
-//    /bashes（后台终端）、/plugin-validate（插件目录校验）────────────────────────
-/** 跑一次外部命令取输出，带超时，失败返回空串（诊断用，绝不抛错） */
-function commandOutput(binary: string, args: string[], timeoutMs = 6000): Promise<string> {
-  return new Promise((resolve) => {
-    let done = false;
-    let out = "";
-    const finish = (value: string) => { if (done) return; done = true; clearTimeout(timer); resolve(value.trim()); };
-    const timer = setTimeout(() => { try { child?.kill(); } catch { /* 已退出 */ } finish(out || "（超时未返回）"); }, timeoutMs);
-    let child: ReturnType<typeof spawn> | undefined;
-    try {
-      child = spawn(binary, args, { windowsHide: true, env: toolchainEnv() });
-      child.stdout?.on("data", (chunk) => { out += String(chunk); });
-      child.stderr?.on("data", (chunk) => { out += String(chunk); });
-      child.on("error", () => finish(""));
-      child.on("close", () => finish(out));
-    } catch { finish(""); }
-  });
-}
-function sizeLabel(bytes: number) {
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${bytes} B`;
-}
-function fileStat(target: string) {
-  try { return statSync(target); } catch { return null; }
-}
-function dirEntries(target: string) {
-  try { return readdirSync(target); } catch { return null; }
-}
-function engineLogFile() {
-  for (const name of ["logs_2.sqlite", "logs_1.sqlite", "logs.sqlite"]) {
-    const stat = fileStat(path.join(codexHome, name));
-    if (stat) return { path: path.join(codexHome, name), size: stat.size, modifiedAt: stat.mtimeMs };
-  }
-  return null;
-}
-
-ipcMain.handle("app:doctor", async (_event, input: { cwd?: string } = {}) => {
-  const checks: { label: string; ok: boolean; detail: string }[] = [];
-  checks.push({
-    label: "应用", ok: true,
-    detail: `Codex Harness Desktop ${app.getVersion()} · Electron ${process.versions.electron} · Node ${process.versions.node} · ${process.platform}/${process.arch}`,
-  });
-  let binary = "";
-  try { binary = codexBinaryPath(); } catch { binary = ""; }
-  const binaryOk = Boolean(binary) && existsSync(binary);
-  checks.push({ label: "引擎二进制", ok: binaryOk, detail: binaryOk ? binary : "未找到 codex 引擎二进制（重新安装 @openai/codex 依赖）" });
-  if (binaryOk) {
-    const version = await commandOutput(binary, ["--version"]);
-    checks.push({ label: "引擎版本", ok: Boolean(version), detail: version || "读取版本失败" });
-  }
-  checks.push({ label: "引擎服务", ok: server.running, detail: server.running ? "app-server 子进程运行中" : "app-server 未运行——发起一次对话会自动拉起" });
-  const configStat = fileStat(path.join(codexHome, "config.toml"));
-  checks.push({
-    label: "引擎配置", ok: Boolean(configStat),
-    detail: configStat ? `config.toml · ${sizeLabel(configStat.size)} · 更新于 ${new Date(configStat.mtimeMs).toLocaleString("zh-CN")}` : `${codexHome}\\config.toml 不存在`,
-  });
-  let modelOk = false;
-  let modelDetail = "未配置自定义模型（/model 打开模型设置）";
-  try {
-    const raw = JSON.parse(readFileSync(existsSync(customModelsFile) ? customModelsFile : customModelFile, "utf8"));
-    const list = Array.isArray(raw) ? raw : (raw?.providers ?? [raw]).filter(Boolean);
-    const enabled = list.filter((entry: any) => entry?.enabled !== false);
-    modelOk = enabled.length > 0;
-    modelDetail = modelOk
-      ? `${enabled.length}/${list.length} 个模型服务启用 · ${enabled.slice(0, 3).map((entry: any) => `${entry.name ?? entry.id}/${entry.model ?? ""}`).join("、")}`
-      : `已配置 ${list.length} 个模型服务，但全部停用`;
-  } catch { /* 尚未配置模型 */ }
-  checks.push({ label: "模型", ok: modelOk, detail: modelDetail });
-  const cwd = input?.cwd ? String(input.cwd) : "";
-  checks.push({ label: "工作区", ok: Boolean(cwd) && existsSync(cwd), detail: cwd ? (existsSync(cwd) ? cwd : `${cwd}（目录已不存在）`) : "未选择工作区（/cd 选择目录）" });
-  if (cwd && existsSync(cwd)) {
-    const git = bundledGit() || "git";
-    const version = await commandOutput(git, ["--version"], 4000);
-    const branch = version ? await commandOutput(git, ["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"], 4000) : "";
-    checks.push({
-      label: "Git", ok: Boolean(version),
-      detail: version ? `${version}${branch && !branch.includes("fatal") ? ` · 分支 ${branch}` : " · 当前目录不是 git 仓库"}` : "未检测到 git（应用内置或系统 PATH 中均找不到）",
-    });
-  }
-  const log = engineLogFile();
-  checks.push({
-    label: "引擎日志", ok: !log || log.size < 200 * 1024 * 1024,
-    detail: log ? `${path.basename(log.path)} · ${sizeLabel(log.size)}${log.size > 200 * 1024 * 1024 ? "（偏大，可在设置里清理 codex-home）" : ""}` : "暂无日志文件",
-  });
-  const toolRoot = toolsRoot();
-  const modulesDir = npmGlobalRoot();
-  checks.push({
-    label: "自动化工具链", ok: Boolean(modulesDir) && existsSync(modulesDir),
-    detail: modulesDir ? `${modulesDir}${existsSync(modulesDir) ? " · 已安装" : " · 未安装（npm 包缺失）"}` : "未找到 resources/tools",
-  });
-  if (process.platform === "darwin") {
-    const accessibility = systemPreferences.isTrustedAccessibilityClient(false);
-    const screen = systemPreferences.getMediaAccessStatus("screen");
-    checks.push({
-      label: "macOS 辅助功能权限", ok: accessibility,
-      detail: accessibility ? "已授权键鼠和窗口控制" : "请在系统设置 → 隐私与安全性 → 辅助功能中允许本应用及 Nuphus",
-    });
-    checks.push({
-      label: "macOS 屏幕录制权限", ok: screen === "granted",
-      detail: screen === "granted" ? "已授权屏幕捕获" : "请在系统设置 → 隐私与安全性 → 屏幕录制中允许本应用及 Nuphus，授权后重新启动应用",
-    });
-  }
-  const git = bundledGit();
-  const python = bundledPython();
-  checks.push({ label: "Git 运行时", ok: Boolean(git), detail: git || "未找到 Git（请重新安装应用工具包）" });
-  checks.push({ label: "Python 运行时", ok: Boolean(python), detail: python || "未找到 Python（请重新安装应用工具包）" });
-  if (python) {
-    const tk = await commandOutput(python, ["-c", "import tkinter; print('Tk ' + str(tkinter.TkVersion))"], 5000);
-    checks.push({ label: "Python Tkinter", ok: Boolean(tk), detail: tk || "内置 Python 已存在，但 Tkinter/Tcl/Tk 组件缺失" });
-  }
-  const free = Math.round(os.freemem() / 1024 ** 3 * 10) / 10;
-  checks.push({ label: "内存", ok: free >= 1, detail: `可用物理内存 ${free} GB / 共 ${(os.totalmem() / 1024 ** 3).toFixed(1)} GB` });
-  return { checks, at: Date.now() };
-});
+// IPC 域账本（架构改造进度可观测；纯日志，零行为影响）
+console.log(`[ipc-registry] ${IPC_DOMAINS.length} 个 IPC 域，${domainsStillInMain().length} 个仍在 main.ts 待拆`);
 
 /** 收集「能力选型」所需的环境观测值。
  *
  *  ⛔ 判据必须与**真实决策处同源**，不在这里另读一遍设置/插件（那正是本项目反复踩过的漂移）：
  *   · 总闸 → `devInstructionsInput()`（与 config.toml 写出、指令组装同一来源）
  *   · 视觉 env → `nuphusVisionEnv()`（与 config.toml 的 env 段同一来源） */
-async function collectCapabilityProbe(): Promise<CapabilityProbe> {
-  const devInput = await devInstructionsInput();
-  const mcpOverrides = await readMcpOverrides().catch(() => ({}) as McpOverrides);
-  return {
-    platform: process.platform,
-    arch: process.arch,
-    desktopSwitch: devInput.desktop,
-    browserSwitch: devInput.browser,
-    nuphusAvailable: Boolean(nuphusBinary()) && mcpOverrideEnabled(mcpOverrides, "nuphus"),
-    nuphusVisionEnv: nuphusVisionEnv(devInput.nuphusVision).length > 0,
-    visionPlugin: devInput.visionPlugin,
-    imagePlugin: devInput.imagePlugin,
-    playwrightCli: runtimeInstalled("playwright-cli", devRuntimeSpecs["playwright-cli"]),
-    markitdown: runtimeInstalled("markitdown", devRuntimeSpecs.markitdown),
-  };
-}
 
 /** 「当前能力链路」：同一件事有多个后端时，现在实际走哪条、其余为什么没走。
  *  为什么需要这个入口：原先这些规则散在技能文案与代码注释里，用户只能看到零散的安装状态，
  *  出问题时无法回答"到底走的哪条"（对标 Agent-Reach 的 doctor 思路）。 */
-ipcMain.handle("capabilities:snapshot", async () => {
-  const probe = await collectCapabilityProbe();
-  return { capabilities: resolveCapabilities(probe), at: Date.now() };
-});
 
-// ── 数据管理 / 缓存清理（设置 → 数据与统计 → 数据管理） ──
-/** 递归统计目录字节数（忽略不可读项） */
-async function dirSize(root: string): Promise<number> {
-  let total = 0;
-  try {
-    const entries = await fs.readdir(root, { withFileTypes: true });
-    for (const entry of entries) {
-      const full = path.join(root, entry.name);
-      try {
-        if (entry.isDirectory()) total += await dirSize(full);
-        else if (entry.isFile()) total += (await fs.stat(full)).size;
-        // 符号链接等跳过，避免重复计数
-      } catch { /* 忽略不可读项 */ }
-    }
-  } catch { /* 目录不存在/无权限 */ }
-  return total;
-}
-
-ipcMain.handle("app:storage-info", async () => {
-  const ud = app.getPath("userData");
-  const imagesDir = path.join(ud, "images");
-  const engineLog = path.join(ud, "engine-debug.log");
-  // ⛔ 09-16 修 Bug 7：真实 rollout 落在 `codexHome/sessions/` + `archived_sessions/`
-  //    （`threads.rollout_path` 就是 `<CH>/sessions/2026/09/14/rollout-*.jsonl`）。
-  //    旧实现量的是 `codexHome/rollouts` —— 那个目录**根本不存在**，`dirSize` 对不存在的目录
-  //    catch 后返回 0 ⇒ 设置页「会话记录」占用**结构上不可能正确**（恒为 0）。
-  //    同项目的 thread-backup.ts 用的就是正确路径，这里是笔误不是有意。
-  const rolloutDirs = [path.join(codexHome, "sessions"), path.join(codexHome, "archived_sessions")];
-  const [imagesBytes, engineLogBytes, rolloutsBytes] = await Promise.all([
-    dirSize(imagesDir),
-    (async () => { try { return (await fs.stat(engineLog)).size; } catch { return 0; } })(),
-    Promise.all(rolloutDirs.map((dir) => dirSize(dir))).then((parts) => parts.reduce((sum, part) => sum + part, 0)),
-  ]);
-  return {
-    items: [
-      // rollout 原档 = 全部会话历史，绝不在此处提供删除（清了就丢记录），仅展示占用
-      { key: "rollouts", label: "会话记录（rollout 原档，含全部历史）", bytes: rolloutsBytes, deletable: false },
-      { key: "images", label: "本地图片缩略图缓存", bytes: imagesBytes, deletable: true },
-      { key: "engine-log", label: "引擎诊断日志（黑匣子）", bytes: engineLogBytes, deletable: true },
-    ],
-    userData: ud,
-    engineLog,
-    imagesDir,
-  };
-});
-
-ipcMain.handle("app:storage-clear", async (_event, target: "engine-log" | "images") => {
-  const ud = app.getPath("userData");
-  if (target === "engine-log") {
-    await fs.rm(path.join(ud, "engine-debug.log"), { force: true });
-    return { ok: true, target };
-  }
-  if (target === "images") {
-    await fs.rm(path.join(ud, "images"), { recursive: true, force: true });
-    return { ok: true, target };
-  }
-  return { ok: false, error: "未知清理目标" };
-});
-
-ipcMain.handle("app:perf-counters", () => enrichScanCountSnapshot());
 /** 渲染层上报「当前正在查看哪个会话」：主进程据此只转发该会话的高频事件（P1）。 */
-ipcMain.handle("codex:set-active-thread", (event, threadId: unknown) => {
-  const id = threadId == null ? "" : String(threadId);
-  rendererActiveThreadId = id;
-  try { rendererActiveByWindow.set(event.sender.id, { threadId: id, at: Date.now() }); } catch { /* 窗口已销毁：忽略 */ }
-  // 窗口销毁时清掉记录：否则一个已关闭窗口的旧值会在新鲜度窗口内继续放行它的会话事件
-  try {
-    event.sender.once("destroyed", () => rendererActiveByWindow.delete(event.sender.id));
-  } catch { /* ignore */ }
-  return { ok: true };
-});
 /** 当前窗口是否为独立会话弹窗：优先读登记表，URL query 兜底。 */
 ipcMain.handle("window:popout-id", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
@@ -4345,6 +725,7 @@ ipcMain.handle("window:popout-id", (event) => {
     return new URL(win.webContents.getURL()).searchParams.get("popout") ?? null;
   } catch { return null; }
 });
+
 /** 所有独立会话弹窗锁定的会话 id 列表：主窗口据此在侧栏隐藏这些会话
  *  （避免主窗口与弹窗重复渲染同一会话，用户 09-13 明确要求）。
  *  读同步登记表（创建时立即写入），不受窗口 URL 加载时序影响。 */
@@ -4355,17 +736,8 @@ ipcMain.handle("window:popout-list", () => {
   }
   return ids;
 });
-/** 弹窗被关闭（用户点 X / 返回主应用 / 主窗口联动关）→ 通知主窗口：
- *  ① popout-closed：把该会话从侧栏隐藏列表移除（回到侧栏）；
- *  ② popout-return：主窗口自动打开该会话（用户 09-13 要求「点独立窗口的叉，会话自动返回主窗口」，
- *     与「返回主应用」按钮同语义——弹窗里只有对话区、会话锁定在创建时那个，关窗即该会话）。 */
-function notifyPopoutClosed(threadId: string) {
-  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
-  try {
-    mainWindow.webContents.send("harness:event", { type: "popout-closed", threadId, at: Date.now() });
-    mainWindow.webContents.send("harness:event", { type: "popout-return", threadId, at: Date.now() });
-  } catch { /* 主窗口可能已关 */ }
-}
+
+
 /** 独立会话弹窗：按 threadId 打开一个新窗口（渲染层在顶栏/侧栏长按触发）。
  *  允许同时存在多个弹窗；主窗口关闭不会带走弹窗（window-all-closed 只在全部窗口
  *  关闭后触发，弹窗还开着时应用保持运行）。 */
@@ -4378,135 +750,28 @@ ipcMain.handle("window:popout-thread", (_event, threadId: unknown) => {  const t
   createPopoutWindow(tid);
   return { ok: true };
 });
+
 /** 弹窗「返回主应用」：关闭该弹窗，并把主窗口带到指定会话（渲染层据此恢复视角）。 */
 ipcMain.handle("window:popout-close", (event, threadId: unknown) => {
   const tid = threadId == null ? "" : String(threadId);
   const win = BrowserWindow.fromWebContents(event.sender);
-  if (win && popoutWindows.has(win) && !win.isDestroyed()) win.close();
+  if (win && isPopoutWindow(win) && !win.isDestroyed()) win.close();
   // ⛔ 不在这里发 popout-return：win.close() 会触发 closed → notifyPopoutClosed
   // 统一发（含 popout-closed 解除侧栏隐藏），避免「返回按钮」路径重复 openThread。
   if (mainWindow && !mainWindow.isDestroyed()) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); }
   return { ok: true };
 });
-ipcMain.handle("app:engine-info", async () => {
-  let binary = "";
-  try { binary = codexBinaryPath(); } catch { binary = ""; }
-  const version = binary && existsSync(binary) ? await commandOutput(binary, ["--version"]) : "";
-  const entries = dirEntries(codexHome) ?? [];
-  const databases = entries
-    .filter((name) => name.endsWith(".sqlite"))
-    .map((name) => ({ name, size: fileStat(path.join(codexHome, name))?.size ?? 0 }))
-    .sort((a, b) => b.size - a.size);
-  return {
-    codexHome,
-    binary,
-    binaryExists: Boolean(binary) && existsSync(binary),
-    version,
-    running: server.running,
-    userData: app.getPath("userData"),
-    agentsMd: Boolean(fileStat(path.join(codexHome, "AGENTS.md"))),
-    configToml: Boolean(fileStat(path.join(codexHome, "config.toml"))),
-    logFile: engineLogFile(),
-    databases: databases.slice(0, 8),
-    sessions: (dirEntries(path.join(codexHome, "sessions"))?.length ?? 0),
-    archived: (dirEntries(path.join(codexHome, "archived_sessions"))?.length ?? 0),
-  };
-});
 
 // ── Codex 引擎在线更新（设置 → 控制台 → Codex 引擎更新） ──
-let engineUpdateRunning = false;
 /**
  * 重启台账（诊断）：返回最近的引擎重启记录 —— 每条含「谁触发的、当时是否有任务在跑、
  * 是立即执行还是推迟到任务结束后补做」。
  * ⛔ 存在理由：用户报「又莫名其妙断了」时，过去只能靠猜（图片自愈？改配置？引擎崩了？）。
  * 有了它就能一句话回答"是谁把任务打断的"，也能反过来证明闸门确实生效了。
  */
-ipcMain.handle("engine:restart-log", () => server.restartHistory());
 /** 当前活跃回合数（0 = 引擎可以安全重启）。验收与诊断都要靠它确认闸门拿到了真实计数。 */
-ipcMain.handle("engine:active-turns", () => ({
-  count: server.activeTurnCount(),
-  // 会话级明细（渲染层核实"这个会话到底还在不在跑"用：收到快照式的 thread/status/changed idle 时，
-  // 不能凭它熄灭运行指示器，要与引擎侧真相核对——见 App.tsx 的 status/changed 分支）
-  threadIds: [...new Set(engineActiveTurnIds.values())],
-}));
-ipcMain.handle("engine:check-update", async () => {
-  const settings = await readAppSettings(app.getPath("userData"));
-  return checkEngineUpdate(settings.engineProxyUrl?.trim() || undefined);
-});
-ipcMain.handle("engine:perform-update", async () => {
-  if (engineUpdateRunning) throw new Error("引擎更新正在进行中，请稍候");
-  engineUpdateRunning = true;
-  try {
-    const settings = await readAppSettings(app.getPath("userData"));
-    const proxy = settings.engineProxyUrl?.trim() || undefined;
-    // 有任务在跑就等它结束（最多 10 分钟），避免替换文件时引擎仍在写
-    if (engineActiveTurnIds.size) {
-      sendToWindow("engine:update:progress", { stage: "wait", detail: "等待当前任务结束后开始替换…" });
-      const deadline = Date.now() + 10 * 60_000;
-      while (engineActiveTurnIds.size && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-    // 替换二进制前必须停引擎（否则 codex.exe 被占用，rename 失败）
-    server.stop();
-    const result = await performEngineUpdate(proxy, (progress) => {
-      sendToWindow("engine:update:progress", { stage: progress.stage, detail: progress.detail, percent: progress.percent });
-    });
-    if (!result.ok) {
-      // 更新失败要把引擎拉起来，应用保持可用（引擎会加载旧/回滚后的二进制）
-      await server.restart().catch(() => undefined);
-    }
-    return result;
-  } finally {
-    engineUpdateRunning = false;
-  }
-});
-ipcMain.handle("app:relaunch", () => {
-  app.relaunch();
-  app.exit(0);
-});
 
-
-// ── 内置插件：生图 + 视觉辅助 ──
-const builtinPluginsFile = path.join(app.getPath("userData"), "builtin-plugins.json");
-
-type BuiltinPluginConfig = {
-  image?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string };
-  vision?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string };
-};
-
-async function readBuiltinPlugins(): Promise<BuiltinPluginConfig> {
-  try { return JSON.parse(await fs.readFile(builtinPluginsFile, "utf8")); } catch { return {}; }
-}
-async function writeBuiltinPlugins(cfg: BuiltinPluginConfig) {
-  await fs.writeFile(builtinPluginsFile, JSON.stringify(cfg, null, 2), "utf8");
-}
-
-// 网络层错误中文化：证书过期/域名解析/超时等 give 用户能看懂的原因（引擎/插件直连供应商时可能遇到）
-function describeNetworkError(error: unknown, what: string): Error {
-  const raw = error instanceof Error ? error.message : String(error);
-  const code = String((error as any)?.cause?.code ?? (error as any)?.code ?? "");
-  const haystack = raw + " " + code;
-  if (/CERT_HAS_EXPIRED|certificate has expired|ERR_CERT/i.test(haystack)) return new Error(`${what}失败：服务器的 HTTPS 证书已过期——这是接口服务商的问题，等其续期后自动恢复；也可先在插件配置里换成其他可用的接口地址。`);
-  if (/ENOTFOUND|EAI_AGAIN/i.test(haystack)) return new Error(`${what}失败：域名解析不到，检查网络连接或接口地址是否写错`);
-  if (/ECONNREFUSED/i.test(haystack)) return new Error(`${what}失败：连接被拒绝，服务未开放或地址/端口不对`);
-  if (/ETIMEDOUT|ECONNABORTED|timeout/i.test(haystack)) return new Error(`${what}失败：连接超时，检查网络或代理设置`);
-  if (/ECONNRESET|socket hang up/i.test(haystack)) return new Error(`${what}失败：连接被重置，网络波动或被防火墙拦截`);
-  return new Error(`${what}失败：${raw}`);
-}
-
-async function probeBuiltinModels(input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) {
-  const base = input.baseUrl.trim().replace(/\/$/, "");
-  const url = base + "/models";
-  let response: Response;
-  try {
-    response = await fetch(url, { headers: { Authorization: "Bearer " + (input.apiKey || ""), "Content-Type": "application/json" } });
-  } catch (error) {
-    throw describeNetworkError(error, "检测");
-  }
-  if (!response.ok) throw new Error("模型列表请求失败 HTTP " + response.status + (response.status === 401 ? "（密钥无效）" : response.status === 404 ? "（地址可能缺少 /v1）" : ""));
-  const data = await response.json();
-  const models = (Array.isArray(data) ? data : data.data ?? data.models ?? []).map((x: any) => typeof x === "string" ? x : x?.id ?? x?.model).filter(Boolean);
-  return { models: [...new Set<string>(models)] };
-}
+// ── 内置插件：生图 + 视觉辅助（路径 builtinPluginsFile 已下沉 runtime-paths.ts）──
 
 /** 把生图结果落盘到 `<userData>/images/`，返回本地绝对路径；失败返回 ""。
  *
@@ -4517,63 +782,7 @@ async function probeBuiltinModels(input: { kind: "image" | "vision"; baseUrl: st
  *
  *  与 `resources/tools/harness-media.mjs`（命令行那条路径）用**同一目录与命名**，
  *  避免出现第二套图片落点（它早就做对了：落盘 + 只回 path）。 */
-async function persistGeneratedImage(url: string): Promise<string> {
-  try {
-    const dir = path.join(app.getPath("userData"), "images");
-    await fs.mkdir(dir, { recursive: true });
-    const head = url.slice(0, 64);
-    const ext = /jpe?g/i.test(head) ? ".jpg" : /webp/i.test(head) ? ".webp" : /gif/i.test(head) ? ".gif" : ".png";
-    const file = path.join(dir, `codex-harness-${Date.now()}${ext}`);
-    if (/^data:/i.test(url)) {
-      await fs.writeFile(file, Buffer.from(url.slice(url.indexOf(",") + 1), "base64"));
-    } else if (/^https?:/i.test(url)) {
-      const res = await fetch(url, { signal: AbortSignal.timeout(120_000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      await fs.writeFile(file, Buffer.from(await res.arrayBuffer()));
-    } else {
-      return "";
-    }
-    return existsSync(file) ? file : "";
-  } catch (error) {
-    // 落盘失败不该让生图整体失败 —— 调用方会退回「只给托管 url」，只是图不再持久
-    console.warn(`[generate-image] 图片落盘失败：${(error as Error)?.message ?? error}`);
-    return "";
-  }
-}
 
-async function generateImageWith(input: { baseUrl: string; apiKey: string; model: string; prompt: string }) {
-  const base = input.baseUrl.trim().replace(/\/$/, "");
-  // 兼容 /images/generations（OpenAI 兼容）与 /v1/images/generations
-  const endpoint = /\/images\/generations$/.test(base) ? base : base + "/images/generations";
-  let response: Response;
-  try {
-    response = await fetch(endpoint, {
-      method: "POST",
-      headers: { Authorization: "Bearer " + input.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: input.model, prompt: input.prompt, n: 1 }),
-      signal: AbortSignal.timeout(300_000),
-    });
-  } catch (error) {
-    throw describeNetworkError(error, "生图请求");
-  }
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    let hint = "";
-    try { hint = JSON.parse(detail)?.error?.message ?? ""; } catch { hint = detail.slice(0, 160); }
-    throw new Error("生图失败 HTTP " + response.status + (hint ? "：" + hint : ""));
-  }
-  const data = await response.json();
-  const item = data?.data?.[0];
-  // 注意优先级：url 存在用 url；否则 b64_json 转 data URL（旧写法运算符优先级有误，
-  // 返回 url 时会拼出 "data:image/png;base64,undefined"，已修）
-  const url = item?.url || (item?.b64_json ? "data:image/png;base64," + item.b64_json : "");
-  if (typeof url !== "string" || !url.trim()) throw new Error("生图服务未返回图片地址或图片数据");
-  // ⛔ 回给渲染层的是**本地路径**，不是 data URL（理由见 persistGeneratedImage 注释：
-  //   内联 base64 会被拼进工具返回文本 ⇒ 3 MB 文本进对话历史且每轮重发）。
-  //   只有网关给的是真托管地址时才把 url 一并带出（它很短，且能直接当可点击链接用）。
-  const path = await persistGeneratedImage(url);
-  return { path, url: /^https?:/i.test(url) ? url : "" };
-}
 
 /** 图片引用 → 上游能吃的形态：`http(s)` / `data:` 原样透传，本地路径读文件转 data URL。
  *
@@ -4581,916 +790,22 @@ async function generateImageWith(input: { baseUrl: string; apiKey: string; model
  *  模型照用法原样传过来时上游会 400「invalid image」。命令行那条路径
  *  （`resources/tools/harness-media.mjs` 的 vision 分支）早就这么做对了 —— 这里补齐，
  *  避免同一件事在两条路径上行为不一致（那是最难查的一类问题）。 */
-async function toImageSource(ref: string): Promise<string> {
-  const source = String(ref ?? "").trim();
-  if (/^(https?:|data:)/i.test(source)) return source;
-  const candidate = path.isAbsolute(source) ? source : path.resolve(source);
-  if (!existsSync(candidate)) throw new Error("图片本地文件不存在：" + candidate);
-  const mime = /\.jpe?g$/i.test(candidate) ? "image/jpeg" : /\.gif$/i.test(candidate) ? "image/gif" : /\.webp$/i.test(candidate) ? "image/webp" : "image/png";
-  return `data:${mime};base64,` + (await fs.readFile(candidate)).toString("base64");
-}
 
-async function describeImageWith(input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) {
-  const base = input.baseUrl.trim().replace(/\/$/, "");
-  const endpoint = /\/chat\/completions$/.test(base) ? base : base + "/chat/completions";
-  const content = [
-    { type: "text", text: input.prompt || "请详细描述这张图片的内容，包括画面主体、场景、文字、布局等，用中文回答。" },
-    { type: "image_url", image_url: { url: await toImageSource(input.imageUrl) } },
-  ];
-  let response: Response;
-  try {
-    response = await fetch(endpoint, {
-      method: "POST",
-      headers: { Authorization: "Bearer " + input.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: input.model, messages: [{ role: "user", content }] }),
-    });
-  } catch (error) {
-    throw describeNetworkError(error, "识图请求");
-  }
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    let hint = "";
-    try { hint = JSON.parse(detail)?.error?.message ?? ""; } catch { hint = detail.slice(0, 160); }
-    throw new Error("识图失败 HTTP " + response.status + (hint ? "：" + hint : ""));
-  }
-  const data = await response.json();
-  return { text: data?.choices?.[0]?.message?.content ?? "" };
-}
 
-ipcMain.handle("builtin:read", async () => readBuiltinPlugins());
-ipcMain.handle("builtin:save", async (_e, cfg: BuiltinPluginConfig) => {
-  await writeBuiltinPlugins(cfg);
-  // 保存后重写 config.toml 并重启引擎：developer_instructions 的生图/视觉段与
-  // dynamicTools 都依赖这份配置，不重启的话引擎和已有会话感知不到配置变化。
-  const model = await readCustomModel();
-  if (model) await applyCustomModel(model); else await server.restart();
-  return readBuiltinPlugins();
-});
-ipcMain.handle("builtin:probe", async (_e, input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) => probeBuiltinModels(input));
-ipcMain.handle("builtin:generate-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; prompt: string }) => generateImageWith(input));
-ipcMain.handle("builtin:describe-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) => describeImageWith(input));
 
-// —— 中转站账户（sub2api 兼容网关：登录 / 余额 / 订阅套餐 / 密钥） ——
-// 协议实证（Wei-Shaw/sub2api）：POST /api/v1/auth/login{email,password}→{access_token,refresh_token,user}；
-// GET /api/v1/user/profile→data.balance(USD)；GET /api/v1/subscriptions/summary→[{group_id,group_name,monthly_used_usd,monthly_limit_usd,expires_at}]；
-// GET /api/v1/keys→[{id,key(明文),name,group_id,quota,quota_used,status}]；POST /api/v1/keys{name,group_id?}；
-// GET /api/v1/groups/available；网关 OpenAI 兼容 = {baseUrl}/v1。
-const relayAccountFile = path.join(app.getPath("userData"), "relay-account.json");
-const relayStoreFile = path.join(app.getPath("userData"), "relay-store.json");
-type RelayAccount = {
-  baseUrl: string;
-  email: string;
-  passwordEnc?: string; // safeStorage 加密，401 时自动重登
-  accessToken?: string;
-  refreshToken?: string;
-  tokenExpiresAt?: number;
-  selectedMode?: "balance" | "plan";
-  selectedGroupId?: number | null;
-  selectedKeyId?: number;
-  selectedKeyName?: string;
-  disabled?: boolean; // 停用 = 退出切换候选（数据保留）；当前生效账号不允许停用
-};
-type RelayStore = { activeId: string | null; accounts: (RelayAccount & { id: string })[] };
-// 多账户库：id = base|email；老的单账户 relay-account.json 首次读取时自动迁移
-async function readRelayStore(): Promise<RelayStore> {
-  try {
-    const parsed = JSON.parse(await fs.readFile(relayStoreFile, "utf8"));
-    if (parsed && Array.isArray(parsed.accounts)) {
-      // ⛔ 自愈（09-21）：activeId 指向不存在/已停用的账号 → 置空并落盘。
-      // 真机事故：库里 activeId 指着一个 disabled 账号，卡片同屏显示「使用中 + 已停用 + 当前生效」，
-      // 而 readRelayAccount()（余额/套餐/密钥全走它）会拿这个停用账号当生效账号用。
-      const { store, changed } = normalizeRelayStore<RelayAccount & { id: string }>(parsed);
-      if (changed) {
-        console.warn(`[relay] 账号库自愈：activeId=${JSON.stringify((parsed as any).activeId)} 指向不存在或已停用的账号 → 置空`);
-        try { await fs.writeFile(relayStoreFile, JSON.stringify(store, null, 2), "utf8"); } catch { /* 落盘失败不阻断读取 */ }
-      }
-      return store;
-    }
-  } catch { /* 首次/损坏：走迁移 */ }
-  try {
-    const legacy = JSON.parse(await fs.readFile(relayAccountFile, "utf8"));
-    if (legacy?.baseUrl && legacy?.email) {
-      const store: RelayStore = { activeId: `${relayBase(legacy.baseUrl)}|${legacy.email}`, accounts: [{ ...legacy, id: `${relayBase(legacy.baseUrl)}|${legacy.email}` }] };
-      await fs.writeFile(relayStoreFile, JSON.stringify(store, null, 2), "utf8");
-      return store;
-    }
-  } catch { /* 无旧数据 */ }
-  return { activeId: null, accounts: [] };
-}
-async function writeRelayStore(store: RelayStore) {
-  await fs.writeFile(relayStoreFile, JSON.stringify(store, null, 2), "utf8");
-}
-/** 当前生效账号。自愈后 activeId 必然指向可用账号，所以这里不再需要额外过滤。 */
-async function readRelayAccount(): Promise<RelayAccount | null> {
-  const store = await readRelayStore();
-  return store.accounts.find((a) => a.id === store.activeId) ?? null;
-}
-/** 落盘账号（含新增/更新）。`activate:false` ＝**只更新凭据，不许改 activeId**。
- *  ⛔ 401 自动重登必须传 `activate:false`：否则「打开中转站页 → relay:keys-all 给每个账号补 token」
- *    会把停用账号顶成生效账号（09-21 真机事故），顺带把引擎的模型配置也换掉。 */
-async function writeRelayAccount(account: RelayAccount & { id?: string }, options: { activate?: boolean } = {}) {
-  const store = await readRelayStore();
-  const id = account.id ?? `${relayBase(account.baseUrl)}|${account.email}`;
-  const next = { ...account, id };
-  const idx = store.accounts.findIndex((a) => a.id === id);
-  if (idx >= 0) store.accounts[idx] = next; else store.accounts.push(next);
-  if (options.activate !== false) store.activeId = id;
-  await writeRelayStore(store);
-}
-/** 账号退出「生效」时的统一收尾（停用 / 删除 / 退出登录共用）：禁用同网关 relay 供应商；
- *  若它正是当前生效模型 → 清空并重启引擎。
- *  ⛔ 只清 store.activeId 会留下「模型配置里挂着一个用不上的供应商」，用户下一次切模型时
- *    会看到一个找不到账号对应的条目（正向/反向联动都失配）。 */
-async function deactivateRelayProvider(account: { baseUrl?: string }): Promise<void> {
-  const providerId = relayProviderIdOf(account.baseUrl);
-  if (!providerId) return;
-  const models = await readCustomModels();
-  const target = models.find((m) => m.provider === providerId);
-  if (!target) return;
-  if (target.enabled !== false) await upsertCustomModel({ ...target, enabled: false });
-  const current = await readCustomModel();
-  if (current?.provider === providerId) {
-    await fs.writeFile(customModelFile, "null", "utf8");
-    await server.restart();
-  }
-}
-function relayBase(input: string | undefined): string {
-  return String(input ?? "").trim().replace(/\/$/, "") || "https://api.pptoken.cc";
-}
-async function relayRequest(url: string, init: RequestInit = {}): Promise<{ ok: boolean; status: number; data: any; message?: string }> {
-  let response: Response;
-  try {
-    response = await fetch(url, { signal: AbortSignal.timeout(20_000), ...init });
-  } catch (error) {
-    throw describeNetworkError(error, "中转站请求");
-  }
-  const payload = await response.json().catch(() => null);
-  const code = payload?.code;
-  const ok = response.ok && (code === undefined || code === 0 || code === 200);
-  return { ok, status: response.status, data: payload?.data ?? payload, message: payload?.message };
-}
-async function relayLoginRaw(baseUrl: string, email: string, password: string) {
-  const { ok, data, message } = await relayRequest(`${baseUrl}/api/v1/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  if (!ok || !data?.access_token) throw new Error("中转站登录失败：" + (message || "账号或密码不正确"));
-  return data as { access_token: string; refresh_token?: string; expires_in?: number; user?: { balance?: number } };
-}
-// 认证请求：401 且本地存有加密密码时自动重登一次再重试
-async function relayAuthedFetch(account: RelayAccount, urlPath: string, body?: unknown): Promise<any> {
-  const base = relayBase(account.baseUrl);
-  const call = (token: string) => relayRequest(`${base}${urlPath}`, {
-    method: body === undefined ? "GET" : "POST",
-    headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  let result = await call(account.accessToken ?? "");
-  if (result.status === 401 && account.passwordEnc && safeStorage.isEncryptionAvailable()) {
-    const password = safeStorage.decryptString(Buffer.from(account.passwordEnc, "base64"));
-    const login = await relayLoginRaw(base, account.email, password);
-    account.accessToken = login.access_token;
-    account.refreshToken = login.refresh_token;
-    account.tokenExpiresAt = login.expires_in ? Date.now() + login.expires_in * 1000 : undefined;
-    // ⛔ activate:false —— 补 token 不等于「把该账号设为生效」（09-21 真机事故的根因）
-    await writeRelayAccount(account, { activate: false });
-    result = await call(login.access_token);
-  }
-  if (!result.ok) throw new Error("中转站请求失败：" + (result.message || `HTTP ${result.status}`));
-  return result.data;
-}
-async function relayAsArray(data: any): Promise<any[]> {
-  return Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : Array.isArray(data?.items) ? data.items : [];
-}
-ipcMain.handle("relay:login", async (_e, input: { baseUrl: string; email: string; password: string }) => {
-  const baseUrl = relayBase(input.baseUrl);
-  const email = String(input.email ?? "").trim();
-  const login = await relayLoginRaw(baseUrl, email, String(input.password ?? ""));
-  const account: RelayAccount = {
-    baseUrl,
-    email,
-    accessToken: login.access_token,
-    refreshToken: login.refresh_token,
-    tokenExpiresAt: login.expires_in ? Date.now() + login.expires_in * 1000 : undefined,
-  };
-  if (safeStorage.isEncryptionAvailable()) {
-    try { account.passwordEnc = safeStorage.encryptString(String(input.password ?? "")).toString("base64"); } catch { /* 加密不可用就不存密码，401 时需重新登录 */ }
-  }
-  await writeRelayAccount(account);
-  return { email, baseUrl, balance: Number(login.user?.balance ?? 0) };
-});
-ipcMain.handle("relay:load-account", async () => {
-  const account = await readRelayAccount();
-  if (!account) return null;
-  return { baseUrl: account.baseUrl, email: account.email, loggedIn: Boolean(account.accessToken), selectedMode: account.selectedMode ?? null, selectedGroupId: account.selectedGroupId ?? null, selectedKeyName: account.selectedKeyName ?? null };
-});
-// ⛔ 原 `relay:logout`（无参、按 activeId 删账号）已删（09-21 账号管理优化）：它删的是**当前生效**
-//    账号，而弹窗是给**某一个**账号打开的 ⇒ 用户可能看着 A 的面板删掉 B；它也是「删除」的第二条
-//    隐藏入口（卡片上那个小图标之外没人知道）。现在语义拆清楚：删除走 `relay:remove-account(id)`
-//    （无歧义、有二次确认），「退出生效」走卡片开关（停用，数据保留）。
-ipcMain.handle("relay:accounts", async () => {
-  const store = await readRelayStore();
-  return store.accounts.map((a) => ({ id: a.id, baseUrl: a.baseUrl, email: a.email, loggedIn: Boolean(a.accessToken), selectedMode: a.selectedMode ?? null, selectedGroupId: a.selectedGroupId ?? null, selectedKeyName: a.selectedKeyName ?? null, active: a.id === store.activeId, disabled: Boolean(a.disabled) }));
-});
-// 账号启用/停用：停用 = 退出切换候选（数据保留，随时可重新启用）。
-// 停用**当前生效**账号时同步退出生效状态：清 activeId + 禁用其 relay 供应商（引擎侧不再可用）。
-ipcMain.handle("relay:toggle-account", async (_e, input: { id: string; disabled: boolean }) => {
-  const store = await readRelayStore();
-  const account = store.accounts.find((a) => a.id === input.id);
-  if (!account) throw new Error("账户不存在");
-  account.disabled = input.disabled || undefined;
-  if (input.disabled && store.activeId === input.id) {
-    // 先落盘再收尾供应商：收尾可能重启引擎，进程若在那一步出问题，账号状态也已经是「已停用」了
-    store.activeId = null;
-    await writeRelayStore(store);
-    await deactivateRelayProvider(account);
-    return { ok: true, disabled: true, deactivated: true };
-  }
-  await writeRelayStore(store);
-  return { ok: true, disabled: Boolean(account.disabled), deactivated: false };
-});
-ipcMain.handle("relay:switch-account", async (_e, id: string) => {
-  const store = await readRelayStore();
-  const target = store.accounts.find((a) => a.id === id);
-  if (!target) throw new Error("账户不存在");
-  if (target.disabled) throw new Error("该账号已停用，请先在卡片上重新启用");
-  if (!target.accessToken) throw new Error("该账号的登录凭据已失效，请重新登录后再设为当前");
-  store.activeId = id;
-  await writeRelayStore(store);
-  return { ok: true, baseUrl: target.baseUrl, email: target.email };
-});
-ipcMain.handle("relay:remove-account", async (_e, id: string) => {
-  const store = await readRelayStore();
-  const target = store.accounts.find((a) => a.id === id) ?? null;
-  // 没这个账号就当无事发生：**不要**顺手重挑 activeId（否则一次误调用会把别的账号悄悄变成生效）
-  if (!target) return { ok: true, activeId: store.activeId, removed: false, deactivated: false };
-  const wasActive = store.activeId === id;
-  store.accounts = store.accounts.filter((a) => a.id !== id);
-  // ⛔ 只有「删的正好是生效账号」才重挑接手者；接手者必须**可用**（停用/无凭据的账号不能当生效
-  //    账号 —— 09-21 事故的第二个入口就是这里取 `accounts[0]`，正好可能取到停用账号）。
-  if (wasActive) store.activeId = pickRelayActiveId(store.accounts);
-  await writeRelayStore(store);
-  // 删掉的是生效账号 → 同步收尾它的供应商（否则模型配置里会留一个没有账号对应的条目）
-  if (wasActive) await deactivateRelayProvider(target);
-  return { ok: true, activeId: store.activeId, removed: true, deactivated: wasActive };
-});
-// ⛔ `id` 可选（09-21）：管理面板要能看**被点开的那个账号**的余额/套餐/密钥。
-//    从前一律读「当前生效账号」，于是「点卡片看一眼」要么显示别人的数据、要么靠 openManage
-//    偷偷切换生效账号来对齐（用户实测报的副作用：点击管理直接生效了）。
-ipcMain.handle("relay:overview", async (_e, id?: string) => {
-  const account = id ? (await readRelayStore()).accounts.find((a) => a.id === String(id)) ?? null : await readRelayAccount();
-  if (!account?.accessToken) throw new Error("尚未登录中转站");
-  const profile = await relayAuthedFetch(account, "/api/v1/user/profile").catch(() => null);
-  // subscriptions/summary 的 data 是 {active_count,total_used_usd,subscriptions:[...]}——数组嵌在 subscriptions 字段
-  const summaryRaw = await relayAuthedFetch(account, "/api/v1/subscriptions/summary").catch(() => null);
-  const subscriptions = Array.isArray(summaryRaw) ? summaryRaw : Array.isArray(summaryRaw?.subscriptions) ? summaryRaw.subscriptions : relayAsArray(summaryRaw);
-  const keys = await relayAuthedFetch(account, "/api/v1/keys").then(relayAsArray).catch(() => [] as any[]);
-  const groups = await relayAuthedFetch(account, "/api/v1/groups/available").then(relayAsArray).catch(() => [] as any[]);
-  return {
-    baseUrl: account.baseUrl,
-    email: account.email,
-    balance: Number(profile?.balance ?? 0),
-    subscriptions,
-    keys,
-    groups,
-    selectedMode: account.selectedMode ?? null,
-    selectedGroupId: account.selectedGroupId ?? null,
-    selectedKeyId: account.selectedKeyId ?? null,
-    selectedKeyName: account.selectedKeyName ?? null,
-  };
-});
-ipcMain.handle("relay:create-key", async (_e, input: { name: string; groupId?: number | null; accountId?: string }) => {
-  // accountId 可选：面板看哪个账号就把密钥建在哪个账号上（原先只能建在当前生效账号上）
-  const account = input.accountId ? (await readRelayStore()).accounts.find((a) => a.id === String(input.accountId)) ?? null : await readRelayAccount();
-  if (!account?.accessToken) throw new Error("尚未登录中转站");
-  const body: Record<string, unknown> = { name: input.name };
-  if (input.groupId != null) body.group_id = input.groupId;
-  return relayAuthedFetch(account, "/api/v1/keys", body);
-});
-ipcMain.handle("relay:select", async (_e, input: { mode: "balance" | "plan"; groupId: number | null; keyId?: number; keyName?: string }) => {
-  const account = await readRelayAccount();
-  if (!account) throw new Error("尚未登录中转站");
-  account.selectedMode = input.mode;
-  account.selectedGroupId = input.groupId;
-  account.selectedKeyId = input.keyId;
-  account.selectedKeyName = input.keyName;
-  await writeRelayAccount(account);
-  return { ok: true };
-});
-// 主界面余额徽标：用 API key 直接查网关账单（无需面板 token）
-ipcMain.handle("relay:key-billing", async (_e, input: { baseUrl: string; apiKey: string }) => {
-  const base = relayBase(input.baseUrl);
-  const { ok, data, message } = await relayRequest(`${base}/v1/sub2api/billing`, { headers: { Authorization: `Bearer ${input.apiKey}` } });
-  if (!ok) throw new Error("账单查询失败：" + (message || ""));
-  return data;
+// ── 中转站账户域（登录/多账户/余额/套餐/密钥/订阅支付）已按域拆到 features/relay-ipc.ts；仍在此处注册以保持时机不变 ──
+registerRelayIpc({
+  readCustomModels,
+  readCustomModel,
+  upsertCustomModel,
+  customModelFile,
+  describeNetworkError,
+  server,
 });
 
-// ── 付费订阅：应用内注册 → 自动登录 → 套餐目录 → 站内付款弹窗 ──
-// 协议实证（Wei-Shaw/sub2api + pptoken 实测 09-12）：
-//   POST /api/v1/auth/register {email,password,aff_code?}（站点可选用 verify_code/turnstile，
-//   未开启时三字段即可；开启时报错原文透传，渲染层降级为外部注册页）
-ipcMain.handle("relay:register", async (_e, input: { baseUrl: string; email: string; password: string; affCode?: string }) => {
-  const baseUrl = relayBase(input.baseUrl);
-  const email = String(input.email ?? "").trim();
-  const password = String(input.password ?? "");
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("邮箱格式不正确");
-  if (password.length < 6) throw new Error("密码至少 6 位");
-  const { ok, data, message } = await relayRequest(`${baseUrl}/api/v1/auth/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, ...(input.affCode ? { aff_code: input.affCode } : {}) }),
-  });
-  if (!ok) throw new Error("注册失败：" + (message || `HTTP ${data?.status ?? ""}`));
-  // 注册成功 = 立即登录（同一套凭据），落多账号库并设为当前 —— 真正的「注册完自动登录」
-  const login = await relayLoginRaw(baseUrl, email, password);
-  const account: RelayAccount = {
-    baseUrl,
-    email,
-    accessToken: login.access_token,
-    refreshToken: login.refresh_token,
-    tokenExpiresAt: login.expires_in ? Date.now() + login.expires_in * 1000 : undefined,
-  };
-  if (safeStorage.isEncryptionAvailable()) {
-    try { account.passwordEnc = safeStorage.encryptString(password).toString("base64"); } catch { /* 加密不可用就不存密码 */ }
-  }
-  await writeRelayAccount(account);
-  return { email, baseUrl, balance: Number(login.user?.balance ?? 0) };
-});
-// 套餐市场目录（站方定价/有效期/划线价/features），登录后可拉
-ipcMain.handle("relay:payment-plans", async () => {
-  const account = await readRelayAccount();
-  if (!account?.accessToken) throw new Error("尚未登录中转站");
-  const plans = await relayAuthedFetch(account, "/api/v1/payment/plans");
-  const arr = Array.isArray(plans) ? plans : Array.isArray(plans?.data) ? plans.data : [];
-  return arr.filter((p: any) => p?.for_sale !== false);
-});
-// 付款页弹窗：独立窗口打开 {站点}/purchase，首帧加载后把面板 token 注入站点 localStorage
-// （sub2api 前端键名实证：auth_token / refresh_token / token_expires_at）再刷新一次 —— 打开即登录态，
-// 用户在站内完成选套餐+支付；应用侧同时轮询 subscriptions/summary 等待新订阅出现。
-let purchaseWindow: Electron.BrowserWindow | null = null;
-ipcMain.handle("relay:open-purchase", async () => {
-  const account = await readRelayAccount();
-  if (!account?.accessToken) throw new Error("尚未登录中转站");
-  const base = relayBase(account.baseUrl);
-  if (purchaseWindow && !purchaseWindow.isDestroyed()) {
-    purchaseWindow.focus();
-    return { ok: true, url: `${base}/purchase` };
-  }
-  const win = new BrowserWindow({
-    width: 1120,
-    height: 840,
-    minWidth: 760,
-    minHeight: 560,
-    title: "订阅支付 · 中转站",
-    autoHideMenuBar: true,
-    backgroundColor: "#0d0f12",
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
-  });
-  purchaseWindow = win;
-  let injected = false;
-  win.webContents.on("did-finish-load", async () => {
-    if (injected || win.isDestroyed()) return;
-    injected = true;
-    try {
-      const script = [
-        `localStorage.setItem("auth_token", ${JSON.stringify(account.accessToken ?? "")});`,
-        account.refreshToken ? `localStorage.setItem("refresh_token", ${JSON.stringify(account.refreshToken)});` : "",
-        `localStorage.setItem("token_expires_at", String(${account.tokenExpiresAt ?? Date.now() + 3600_000}));`,
-        "true;",
-      ].join(" ");
-      await win.webContents.executeJavaScript(script, true);
-      win.webContents.reload();
-    } catch { /* 注入失败 = 用户在站内手动登录，不堵流程 */ }
-  });
-  win.on("closed", () => { if (purchaseWindow === win) purchaseWindow = null; });
-  // loadURL 不阻塞 IPC 返回：收银台页加载慢/失败（代理、断网）不应卡死订阅流程——
-  // 渲染层拿到返回值就开始轮询 summary（用户也可以在站点官网手动付款后点「我已完成支付」）
-  void win.loadURL(`${base}/purchase`).catch((error: unknown) => {
-    console.log("[relay-purchase] 支付页加载失败:", error instanceof Error ? error.message : String(error));
-  });
-  return { ok: true, url: `${base}/purchase` };
-});
-
-// ── OpenAI 官方订阅（ChatGPT 登录）：走引擎原生 codex login --device-auth 设备码流程 ──
-// 登录成功后引擎在 CODEX_HOME/auth.json 拿到 ChatGPT tokens，config 由 applyCustomModel
-// 对 provider="openai-official" 特判（不写 model_provider，写 preferred_auth_method="chatgpt"）。
-type OpenaiLoginState = { child: { kill: () => void; exitCode: number | null } | null; lines: string[]; url: string; code: string; error: string };
-const openaiLogin: OpenaiLoginState = { child: null, lines: [], url: "", code: "", error: "" };
-function openaiAuthFile() {
-  return path.join(codexHome, "auth.json");
-}
-async function readOpenaiAuth(): Promise<{ loggedIn: boolean; email: string; accountId: string } | null> {
-  try {
-    const auth = JSON.parse(await fs.readFile(openaiAuthFile(), "utf8"));
-    const tokens = auth?.tokens;
-    if (!tokens?.id_token) return { loggedIn: false, email: "", accountId: "" };
-    // id_token 是 JWT：payload 里带 email / chatgpt_account_id
-    let email = "";
-    try {
-      const payload = JSON.parse(Buffer.from(String(tokens.id_token).split(".")[1], "base64").toString("utf8"));
-      email = String(payload?.email ?? "");
-    } catch { /* JWT 解析失败不影响登录态判定 */ }
-    return { loggedIn: true, email, accountId: String(tokens.account_id ?? "") };
-  } catch { return null; }
-}
-ipcMain.handle("openai:login-start", async (_e, input: { proxy?: string } = {}) => {
-  if (openaiLogin.child) { try { openaiLogin.child.kill(); } catch { /* 已退出 */ } }
-  openaiLogin.lines = []; openaiLogin.url = ""; openaiLogin.code = ""; openaiLogin.error = "";
-  // OpenAI 对部分地区/IP 限制访问（直连 403）：用户手填代理 > 进程环境变量 > 系统代理解析
-  const proxyEnv: Record<string, string> = {};
-  try {
-    const manual = String(input?.proxy ?? "").trim();
-    const direct = manual || process.env.HTTPS_PROXY || process.env.https_proxy || process.env.ALL_PROXY || process.env.all_proxy;
-    if (direct) {
-      proxyEnv.HTTPS_PROXY = direct; proxyEnv.HTTP_PROXY = direct;
-    } else {
-      const rule = await (await import("electron")).session.defaultSession.resolveProxy("https://auth.openai.com");
-      const match = rule.match(/PROXY\s+([^;\s]+)/i);
-      if (match && !/^direct/i.test(rule)) {
-        const proxyUrl = match[1].startsWith("http") ? match[1] : `http://${match[1]}`;
-        proxyEnv.HTTPS_PROXY = proxyUrl; proxyEnv.HTTP_PROXY = proxyUrl;
-      }
-    }
-  } catch { /* 代理解析失败就直连尝试 */ }
-  const child = spawn(codexBinaryPath(), ["login", "--device-auth"], {
-    stdio: ["ignore", "pipe", "pipe"],
-    windowsHide: true,
-    env: { ...process.env, ...proxyEnv, CODEX_HOME: codexHome },
-  });
-  openaiLogin.child = child;
-  child.on("exit", (code) => {
-    // 进程退出且没拿到授权 URL = 登录请求本身失败（典型：无代理直连 403），把最后错误行透出
-    if (!openaiLogin.url) {
-      const last = [...openaiLogin.lines].reverse().map((l) => l.trim()).find((l) => l && !/warning/i.test(l));
-      openaiLogin.error = last || `登录进程已退出（exit ${code ?? "?"}）`;
-    } else if (!existsSync(openaiAuthFile())) {
-      // URL 已发出但进程退出且 auth.json 没落地 = 授权没完成/令牌交换失败（如代码过期、代理中断）
-      const last = [...openaiLogin.lines].reverse().map((l) => l.trim()).find((l) => l && !/warning/i.test(l));
-      openaiLogin.error = last || `登录进程已退出（exit ${code ?? "?"}）但未完成授权，请重新登录获取新的验证码`;
-    }
-  });
-  child.stdout.on("data", (chunk: Buffer) => {
-    // Windows 控制台输出带 ANSI 颜色转义码（\x1b[36m 等），会污染 URL 和验证码——先剥掉
-    const text = chunk.toString().replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/[\u0000-\u001f](?=\S)/g, (m) => (m === "\n" ? m : ""));
-    openaiLogin.lines.push(text);
-    if (openaiLogin.lines.length > 40) openaiLogin.lines.shift();
-    const urlMatch = text.match(/https:\/\/auth\.openai\.com[^\s"'）\]]+/);
-    if (urlMatch && !openaiLogin.url) openaiLogin.url = urlMatch[0];
-    const codeMatch = text.match(/\b([A-Z0-9]{4}-[A-Z0-9?]{3,})\b/);
-    if (codeMatch && !openaiLogin.code) openaiLogin.code = codeMatch[1];
-    else if (!openaiLogin.code && !text.includes("https://")) {
-      // 兜底：官方输出格式可能变——含 "code" 的行里抓验证码样式的 token
-      const line = text.split(/\r?\n/).find((l) => /one-time|验证码|code/i.test(l) && !/https?:\/\//.test(l));
-      const m2 = line?.match(/([A-Z0-9]{4,}-[A-Z0-9?]{3,})/i) ?? line?.match(/code[^A-Za-z0-9]*([A-Za-z0-9][A-Za-z0-9-]{3,})/i);
-      if (m2) openaiLogin.code = m2[1];
-    }
-  });
-  child.stderr.on("data", (chunk: Buffer) => {
-    openaiLogin.lines.push(chunk.toString().replace(/\x1b\[[0-9;?]*[A-Za-z]/g, ""));
-    if (openaiLogin.lines.length > 40) openaiLogin.lines.shift();
-  });
-  return { started: true };
-});
-ipcMain.handle("openai:login-status", async () => {
-  const auth = await readOpenaiAuth();
-  const childAlive = Boolean(openaiLogin.child && openaiLogin.child.exitCode === null);
-  if (auth?.loggedIn && openaiLogin.child) { try { openaiLogin.child.kill(); } catch { /* 已退出 */ } }
-  return { loggedIn: Boolean(auth?.loggedIn), email: auth?.email ?? "", url: openaiLogin.url, code: openaiLogin.code, childAlive, error: openaiLogin.error, lines: openaiLogin.lines.slice(-6).join("") };
-});
-ipcMain.handle("openai:login-cancel", async () => {
-  if (openaiLogin.child) { try { openaiLogin.child.kill(); } catch { /* 已退出 */ } }
-  return { ok: true };
-});
-ipcMain.handle("openai:usage", async (_e, input: { email?: string } = {}) => {
-  // 额度：ChatGPT 后端 wham/usage（与 dsh-codex-subscription 同源）。可指定 vault 中的账号，缺省用当前 auth.json
-  let tokens: any = null;
-  let accountId = "";
-  if (input?.email) {
-    const account = (await readOpenaiVault()).find((a) => a.email === input.email);
-    if (!account?.tokens?.access_token) throw new Error("未找到该账号的登录凭据");
-    tokens = account.tokens; accountId = account.tokens.account_id ?? "";
-  } else {
-    const auth = await readOpenaiAuth();
-    if (!auth?.loggedIn) throw new Error("尚未登录 OpenAI 官方账号");
-    tokens = JSON.parse(await fs.readFile(openaiAuthFile(), "utf8")).tokens;
-    accountId = auth.accountId;
-  }
-  const response = await openaiFetch("https://chatgpt.com/backend-api/wham/usage", accountId, tokens.access_token);
-  if (!response.ok) throw new Error(`额度查询失败 HTTP ${response.status}`);
-  return await response.json();
-});
-// ── OpenAI 多账号 vault：每账号保存 tokens（本机明文仅 userData，引擎激活时写入 auth.json）──
-const openaiVaultFile = path.join(app.getPath("userData"), "openai-accounts.json");
-const openaiProxyFile = path.join(app.getPath("userData"), "openai-proxy.json");
-const OPENAI_FALLBACK_MODELS = ["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"];
-type OpenaiVaultAccount = { id: string; email: string; tokens: { id_token?: string; access_token?: string; refresh_token?: string; account_id?: string }; savedAt: number };
-async function readOpenaiProxy(): Promise<string> {
-  try { return String(JSON.parse(await fs.readFile(openaiProxyFile, "utf8")).proxy ?? "").trim(); } catch { return ""; }
-}
-ipcMain.handle("openai:set-proxy", async (_e, proxy: string) => {
-  await fs.writeFile(openaiProxyFile, JSON.stringify({ proxy: String(proxy ?? "").trim() }, null, 2), "utf8");
-  liveProxyCache = null;
-  return { ok: true };
-});
-// 本地代理端口自动探测：配置端口连不通时扫描常见端口（用户常把 7890/7897 记混，实证）
-let liveProxyCache: { value: string; at: number } | null = null;
-function proxyAlive(proxy: string): Promise<boolean> {
-  const match = proxy.match(/^(?:https?:\/\/)?([^:]+):(\d+)/);
-  if (!match) return Promise.resolve(false);
-  return new Promise((resolve) => {
-    const socket = nodeNet.connect(Number(match[2]), match[1], () => { socket.destroy(); resolve(true); });
-    socket.on("error", () => { socket.destroy(); resolve(false); });
-    socket.setTimeout(1200, () => { socket.destroy(); resolve(false); });
-  });
-}
-async function resolveLiveProxy(): Promise<string> {
-  if (liveProxyCache && Date.now() - liveProxyCache.at < 60_000) return liveProxyCache.value;
-  const configured = await readOpenaiProxy();
-  const candidates = [...new Set([configured, "http://127.0.0.1:7897", "http://127.0.0.1:7890", "http://127.0.0.1:7899", "http://127.0.0.1:10808", "http://127.0.0.1:10809", "http://127.0.0.1:2080"])].filter(Boolean);
-  for (const candidate of candidates) {
-    if (await proxyAlive(candidate)) { liveProxyCache = { value: candidate, at: Date.now() }; return candidate; }
-  }
-  liveProxyCache = { value: configured, at: Date.now() };
-  return configured;
-}
-// OpenAI 接口（chatgpt.com 后端）在部分区域被 Cloudflare 拦截：有代理设置时走独立 session 注入代理
-async function openaiFetch(url: string, accountId: string, accessToken: string): Promise<Response> {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${accessToken}`,
-    Accept: "application/json",
-    // 官方后端按 client_version/originator/UA 识别客户端（缺 client_version 会 400，实证）
-    originator: "codex-harness",
-    "User-Agent": `codex-harness/${app.getVersion()}`,
-  };
-  if (accountId) headers["chatgpt-account-id"] = accountId;
-  const init: Record<string, unknown> = { headers, signal: AbortSignal.timeout(20_000) };
-  const proxy = await resolveLiveProxy();
-  if (proxy) {
-    const ses = session.fromPartition("persist:openai-api");
-    await ses.setProxy({ proxyRules: proxy, proxyBypassRules: "<local>" });
-    init.session = ses;
-  }
-  return net.fetch(url, init as RequestInit);
-}
-async function fetchOpenaiModels(): Promise<{ models: string[]; source: "official" | "fallback" }> {
-  const auth = await readOpenaiAuth();
-  if (!auth?.loggedIn) throw new Error("尚未登录 OpenAI 官方账号");
-  const tokens = JSON.parse(await fs.readFile(openaiAuthFile(), "utf8")).tokens;
-  // 官方目录按 client_version 门控：不认识的版本返回 {"models":[]}（实证 1.14.3 可用、app 自身版本为空）
-  const candidates = ["1.14.3", app.getVersion()];
-  for (const cv of candidates) {
-    try {
-      const url = `https://chatgpt.com/backend-api/codex/models?client_version=${encodeURIComponent(cv)}`;
-      const response = await openaiFetch(url, auth.accountId, tokens.access_token);
-      if (!response.ok) continue;
-      const payload: any = await response.json().catch(() => null);
-      // 官方目录结构：{ models: [{ slug, visibility, display_name, priority, ... }] }（dsh 插件实证）
-      const arr = Array.isArray(payload?.models) ? payload.models : [];
-      const ids = arr
-        .filter((m: any) => m && typeof m === "object" && typeof m.slug === "string" && m.slug && m.visibility === "list")
-        .sort((a: any, b: any) => (Number(b?.priority) || 0) - (Number(a?.priority) || 0))
-        .map((m: any) => String(m.slug));
-      if (ids.length) return { models: [...new Set<string>(ids)], source: "official" };
-    } catch { /* 尝试下一个 client_version */ }
-  }
-  return { models: OPENAI_FALLBACK_MODELS, source: "fallback" };
-}
-ipcMain.handle("openai:models", async () => {
-  try { return (await fetchOpenaiModels()).models; } catch { return OPENAI_FALLBACK_MODELS; }
-});
-async function readOpenaiVault(): Promise<OpenaiVaultAccount[]> {
-  try {
-    const vault = JSON.parse(await fs.readFile(openaiVaultFile, "utf8"));
-    return Array.isArray(vault?.accounts) ? vault.accounts : [];
-  } catch { return []; }
-}
-async function writeOpenaiVault(accounts: OpenaiVaultAccount[]) {
-  await fs.writeFile(openaiVaultFile, JSON.stringify({ accounts }, null, 2), "utf8");
-}
-ipcMain.handle("openai:capture-login", async () => {
-  // 登录检测到成功后调用：把 CODEX_HOME/auth.json 的 tokens 收进 vault（按 email 去重）
-  const auth = await readOpenaiAuth();
-  if (!auth?.loggedIn) throw new Error("尚未检测到登录成功的账号");
-  const raw = JSON.parse(await fs.readFile(openaiAuthFile(), "utf8"));
-  const accounts = await readOpenaiVault();
-  const id = auth.email || auth.accountId || "account";
-  const entry: OpenaiVaultAccount = { id, email: auth.email, tokens: raw.tokens, savedAt: Date.now() };
-  const idx = accounts.findIndex((a) => a.id === id);
-  if (idx >= 0) accounts[idx] = entry; else accounts.push(entry);
-  await writeOpenaiVault(accounts);
-  return { id, email: auth.email, total: accounts.length };
-});
-function openaiJwtClaims(idToken?: string): Record<string, any> {
-  try {
-    const part = String(idToken ?? "").split(".")[1];
-    if (!part) return {};
-    const padded = part.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (part.length % 4)) % 4);
-    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
-  } catch { return {}; }
-}
-// ── 导入账号文件直接登录（复刻 sub2api account_codex_import 的格式面，09-12）──
-// 接受四种形态（可混用；JSON 数组 / 连续 JSON 流 / 每行一个 JSON 或裸 token 均可）：
-//   ① 裸 accessToken（一行一个，非 JWT 也收）
-//   ② Codex CLI auth.json：{tokens:{access_token,refresh_token,id_token}, last_refresh}
-//   ③ 扁平 JSON：{access_token|accessToken|token, refresh_token?, id_token?, email?, chatgpt_account_id?}
-//   ④ 上述任意整体包成 JSON 数组
-// 身份识别：id_token/access_token 是 JWT → 解 `https://api.openai.com/auth` claims
-// （chatgpt_account_id / chatgpt_plan_type / email）——与 capture-login 的 vault 结构完全一致。
-function openaiImportEntries(content: string): any[] {
-  const trimmed = String(content ?? "").trim();
-  if (!trimmed) return [];
-  const flatten = (v: any): any[] => (Array.isArray(v) ? v.flatMap(flatten) : [v]);
-  try {
-    return flatten(JSON.parse(trimmed));
-  } catch { /* 整体不是合法 JSON → 按行拆（NDJSON / 每行一个裸 token） */ }
-  const out: any[] = [];
-  for (const line of trimmed.split("\n")) {
-    const t = line.trim();
-    if (!t) continue;
-    if (t.startsWith("{") || t.startsWith("[")) {
-      try { out.push(...flatten(JSON.parse(t))); continue; } catch { /* 当作裸 token 处理 */ }
-    }
-    out.push(t);
-  }
-  return out;
-}
-function openaiImportPick(obj: any, paths: string[][]): string {
-  for (const path of paths) {
-    let cur = obj;
-    for (const key of path) {
-      if (cur == null || typeof cur !== "object") { cur = undefined; break; }
-      cur = cur[key];
-    }
-    const value = typeof cur === "string" ? cur.trim() : "";
-    if (value) return value;
-  }
-  return "";
-}
-ipcMain.handle("openai:import-file", async (_e, input: { contents: string[] }) => {
-  const contents = Array.isArray(input?.contents) ? input.contents : [];
-  if (!contents.length) throw new Error("没有可导入的文件内容");
-  const accounts = await readOpenaiVault();
-  const items: { index: number; name: string; id?: string; email?: string; loginable?: boolean; action: "imported" | "updated" | "failed"; message?: string }[] = [];
-  let index = 0;
-  for (const content of contents) {
-    for (const entry of openaiImportEntries(content)) {
-      index += 1;
-      const name = `#${index}`;
-      try {
-        const raw = typeof entry === "string" ? { access_token: entry } : entry;
-        if (raw == null || typeof raw !== "object") throw new Error("无法识别的条目格式");
-        const tokens = {
-          access_token: openaiImportPick(raw, [["tokens", "access_token"], ["tokens", "accessToken"], ["access_token"], ["accessToken"], ["token"]]),
-          refresh_token: openaiImportPick(raw, [["tokens", "refresh_token"], ["tokens", "refreshToken"], ["refresh_token"], ["refreshToken"]]),
-          id_token: openaiImportPick(raw, [["tokens", "id_token"], ["tokens", "idToken"], ["id_token"], ["idToken"]]),
-        };
-        if (!tokens.access_token) throw new Error("缺少 accessToken（无法登录）");
-        const claims = openaiJwtClaims(tokens.id_token || tokens.access_token);
-        const auth = claims["https://api.openai.com/auth"] ?? {};
-        const email = openaiImportPick(raw, [["email"], ["user", "email"]]) || String(claims.email ?? "");
-        const accountId = openaiImportPick(raw, [["chatgpt_account_id"], ["chatgptAccountId"], ["account_id"], ["accountId"], ["account", "id"], ["account", "account_id"], ["account", "chatgpt_account_id"]]) || String(auth.chatgpt_account_id ?? "");
-        // JWT exp 已过期只警告不阻断：refresh_token 仍在时引擎激活后会自行刷新
-        let message: string | undefined;
-        if (claims.exp && Number(claims.exp) * 1000 < Date.now()) message = "token 已过期（凭 refresh_token 激活后会自动刷新）";
-        const id = email || accountId || String(claims.sub ?? "") || `import-${Date.now()}-${index}`;
-        const entryOut: OpenaiVaultAccount = { id, email, tokens: { ...tokens, account_id: accountId || undefined }, savedAt: Date.now() };
-        const idx = accounts.findIndex((a) => a.id === id);
-        if (idx >= 0) accounts[idx] = entryOut; else accounts.push(entryOut);
-        // loginable = 带 id_token（写 auth.json 后引擎才认作登录态）；裸 token 只入 vault 不作为切换目标
-        items.push({ index, name: email || id, id, email, loginable: Boolean(tokens.id_token), action: idx >= 0 ? "updated" : "imported", message });
-      } catch (error: any) {
-        items.push({ index, name, action: "failed", message: String(error.message ?? error) });
-      }
-    }
-  }
-  await writeOpenaiVault(accounts);
-  return {
-    total: items.length,
-    imported: items.filter((i) => i.action === "imported").length,
-    updated: items.filter((i) => i.action === "updated").length,
-    failed: items.filter((i) => i.action === "failed").length,
-    items,
-  };
-});
-ipcMain.handle("openai:accounts", async () => {
-  const [accounts, current] = await Promise.all([readOpenaiVault(), readOpenaiAuth()]);
-  return accounts.map((a) => {
-    const authClaims = openaiJwtClaims(a.tokens?.id_token)?.["https://api.openai.com/auth"] ?? {};
-    const disabled = Boolean((a as any).disabled);
-    // ⛔ 停用的账号**永不**「使用中」（09-21 与中转站侧同一不变量）：账号卡的生效判据读 auth.json
-    //    的 email，只要有一处忘了清 auth.json，卡片就会同时出现「使用中 + 已停用」。
-    const active = Boolean(!disabled && current?.loggedIn && current.email && current.email === a.email);
-    return {
-      id: a.id,
-      email: a.email,
-      savedAt: a.savedAt,
-      active,
-      disabled,
-      planType: String(authClaims.chatgpt_plan_type ?? ""),
-      subscriptionUntil: String(authClaims.chatgpt_subscription_active_until ?? ""),
-    };
-  });
-});
-// 账号启用/停用：停用 = 退出切换候选（vault 数据保留，随时可重新启用）。
-// 停用**当前生效**账号时同步退出生效状态——与 relay:toggle-account 对称做全套：
-// auth.json 置空 + openai-official 供应商条目停用 + custom-model.json 清空 + 重启引擎。
-// 只清 auth.json 会留下「生效配置指向一个没有凭据的供应商」：引擎请求必 401，且
-// customModel.provider 还挂着 openai-official 会把其他供应商的启用按钮全部互斥置灰（卡死）。
-ipcMain.handle("openai:toggle-account", async (_e, input: { id: string; disabled: boolean }) => {
-  const accounts = await readOpenaiVault();
-  const account = accounts.find((a) => a.id === input.id);
-  if (!account) throw new Error("账号不存在");
-  (account as any).disabled = input.disabled || undefined;
-  await writeOpenaiVault(accounts);
-  if (input.disabled) {
-    const current = await readOpenaiAuth();
-    if (current?.loggedIn && current.email && current.email === account.email) {
-      const list = await readCustomModels();
-      const entry = list.find((e) => e.provider === "openai-official");
-      if (entry && entry.enabled !== false) await upsertCustomModel({ ...entry, enabled: false });
-      await fs.writeFile(openaiAuthFile(), "null", "utf8");
-      await fs.writeFile(customModelFile, "null", "utf8");
-      await server.restart();
-      return { ok: true, disabled: true, deactivated: true };
-    }
-  }
-  return { ok: true, disabled: Boolean((account as any).disabled) };
-});
-ipcMain.handle("openai:account-remove", async (_e, id: string) => {
-  const accounts = (await readOpenaiVault()).filter((a) => a.id !== id);
-  await writeOpenaiVault(accounts);
-  return { ok: true, total: accounts.length };
-});
-ipcMain.handle("openai:account-switch", async (_e, id: string) => {
-  // 切换 = 把该账号 tokens 写回 CODEX_HOME/auth.json 并重启引擎
-  const account = (await readOpenaiVault()).find((a) => a.id === id);
-  if (!account) throw new Error("账号不存在");
-  if ((account as any).disabled) throw new Error("该账号已停用，请先在卡片上重新启用");
-  await fs.writeFile(openaiAuthFile(), JSON.stringify({ OPENAI_API_KEY: null, tokens: account.tokens, last_refresh: new Date().toISOString() }, null, 2), "utf8");
-  await server.restart();
-  return { ok: true, email: account.email };
-});
-// ── 中转站多账号：全部账号的密钥（按账户分组返回，渲染层折叠展示）──
-ipcMain.handle("relay:keys-all", async () => {
-  const store = await readRelayStore();
-  const groups: any[] = [];
-  for (const account of store.accounts) {
-    try {
-      const keys = await relayAuthedFetch(account, "/api/v1/keys").then(relayAsArray);
-      groups.push({ id: account.id, email: account.email, baseUrl: account.baseUrl, active: account.id === store.activeId, selectedKeyId: account.selectedKeyId ?? null, keys });
-    } catch (error: any) {
-      groups.push({ id: account.id, email: account.email, baseUrl: account.baseUrl, active: account.id === store.activeId, selectedKeyId: account.selectedKeyId ?? null, keys: [], error: String(error.message ?? error) });
-    }
-  }
-  return groups;
-});
-
-/**
- * 输入框提示词增强（复刻 WorkBuddy enhance 按钮）：用当前自定义模型把用户原文润色成
- * 更清晰、结构化的提示词。直调 chat/completions（一次非流式调用），不经过引擎会话。
- * 成功返回 { ok: true, text }；原文为空/模型未配置返回 { ok: false, error }。
- */
-const ENHANCE_SYSTEM_PROMPT = [
-  "你是提示词优化助手。把用户的原始输入改写成一个清晰、具体、结构化的 AI 提示词：",
-  "- 保留用户原文的全部意图与信息，不编造新需求",
-  "- 补齐缺失的背景、目标、输出要求，使指令可直接执行",
-  "- 用简洁的中文输出优化后的提示词本身，不要任何解释、前言或 markdown 代码块",
-].join("\n");
-
-ipcMain.handle("prompt:enhance", async (_event, input: { text: string }) => {
-  const text = String(input?.text ?? "").trim();
-  if (!text) return { ok: false, error: "输入内容为空" };
-  try {
-    const model = await readCustomModel();
-    if (!model?.baseUrl || !model.model || model.enabled === false) return { ok: false, error: "请先在设置中配置并启用自定义模型" };
-    const apiKey = model.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(model.encryptedKey, "base64")) : "";
-    const base = model.baseUrl.trim().replace(/\/$/, "");
-    const endpoint = /\/chat\/completions$/.test(base) ? base : base + "/chat/completions";
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60_000);
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        signal: controller.signal,
-        headers: { "Content-Type": "application/json", ...(apiKey ? { Authorization: "Bearer " + apiKey } : {}) },
-        body: JSON.stringify({
-          model: model.model,
-          messages: [
-            { role: "system", content: ENHANCE_SYSTEM_PROMPT },
-            { role: "user", content: text },
-          ],
-          temperature: 0.4,
-        }),
-      });
-      if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        return { ok: false, error: `增强失败 HTTP ${response.status}${body ? "：" + body.slice(0, 160) : ""}` };
-      }
-      const data: any = await response.json();
-      const enhanced = String(data?.choices?.[0]?.message?.content ?? "").trim();
-      if (!enhanced) return { ok: false, error: "增强结果为空，请重试" };
-      return { ok: true, text: enhanced };
-    } finally {
-      clearTimeout(timeout);
-    }
-  } catch (error: any) {
-    return { ok: false, error: error?.name === "AbortError" ? "增强超时，请重试" : `增强失败：${error?.message ?? error}` };
-  }
-});
-
-ipcMain.handle("terminal:list", () => [...terminals.entries()].map(([id, service]) => ({ id, alive: service.alive, cwd: service.dir })));
-
-// ★ 更新链的主进程侧权威（09-13 审计 P0）：下载地址与安装路径**不再由渲染层决定**。
-//   `updates:check` 拿到的 info 存在这里，下载用它自己的 downloadUrl + sha256 校验，
-//   安装只接受"刚刚校验通过的那个文件"——渲染层即使被注入也换不掉安装包。
-let lastUpdateInfo: { downloadUrl?: string; sha256?: string; version?: string; filename?: string } | null = null;
-let lastVerifiedUpdatePath = "";
-
-ipcMain.handle("updates:check", async () => {
-  try {
-    const currentVersion = String(app.getVersion() || "0.0.0");
-    // ⛔ 09-15 用户定稿：更新源只剩 GitHub Releases（发布站不再分发安装包）
-    const info = await checkLatestUpdate(currentVersion, process.platform, process.arch);
-    lastUpdateInfo = info ? { downloadUrl: (info as any).downloadUrl, sha256: (info as any).sha256, version: (info as any).version, filename: (info as any).filename } : null;
-    return { ok: true, info, currentVersion, channel: UPDATE_CHANNEL, source: "github" as const };
-  } catch (err: any) {
-    return { ok: false, error: err?.message || String(err) };
-  }
-});
-ipcMain.handle("updates:download", async (event, input: { downloadUrl?: string; filename?: string }) => {
-  try {
-    // 有"刚检查到的官方地址"就用它；渲染层传的地址只在没有检查结果时才作为兜底，
-    // 而且无论如何都会被 downloadUpdate 的 https + sha256 双重校验挡住。
-    const url = lastUpdateInfo?.downloadUrl || input?.downloadUrl;
-    if (!url) return { ok: false, error: "没有可用的更新地址（请先检查更新）" };
-    const dir = defaultDownloadDir(app.getPath("downloads"));
-    const safeName = String(input?.filename || lastUpdateInfo?.filename || "codex-harness-update.bin").replace(/[\\/:*?"<>|]/g, "_");
-    const dest = path.join(dir, safeName);
-    let lastPushed = -1;
-    const info = await downloadUpdate(url, dest, ({ percent }) => {
-      const pct = Math.round(percent * 100);
-      // 每 2% 推一次（+ 必定推 100%），避免高频 IPC 刷屏
-      if (pct !== lastPushed && (pct - lastPushed >= 2 || pct >= 100)) {
-        lastPushed = pct;
-        event.sender.send("updates:download-progress", percent);
-      }
-    }, lastUpdateInfo?.sha256);
-    lastVerifiedUpdatePath = info.path;   // 只有校验通过才会走到这里
-    return { ok: true, path: info.path, bytes: info.bytes };
-  } catch (err: any) {
-    return { ok: false, error: err?.message || String(err) };
-  }
-});
-ipcMain.handle("updates:reveal", async (_event, filePath: string) => {
-  // ⛔ 隐私加固（09-19 审计中危）：只允许定位「刚下载并通过 sha256 校验的那个安装包」，
-  // 与 updates:install 同一口径——渲染层传任意其它路径一律拒绝。
-  if (!lastVerifiedUpdatePath) return { ok: false, error: "no_verified_update" };
-  if (path.resolve(String(filePath ?? "")) !== path.resolve(lastVerifiedUpdatePath)) return { ok: false, error: "path_not_verified" };
-  shell.showItemInFolder(lastVerifiedUpdatePath);
-  return { ok: true };
-});
-// 下载完成后运行安装包：交给系统默认程序打开（Windows 下即启动安装向导）
-// ⛔ 只接受**刚刚下载并通过 sha256 校验的那个文件**（09-13 审计 P0）：此前渲染层可以传任意
-// 路径进来，配合"下载地址也由渲染层给"就构成"任意 exe 落盘并执行"。渲染层被注入时也换不掉。
-ipcMain.handle("updates:install", async (_event, filePath: string) => {
-  if (!lastVerifiedUpdatePath) return { ok: false, error: "no_verified_update" };
-  if (path.resolve(String(filePath ?? "")) !== path.resolve(lastVerifiedUpdatePath)) {
-    return { ok: false, error: "path_not_verified" };
-  }
-  if (!fileExists(lastVerifiedUpdatePath)) return { ok: false, error: "file_not_found" };
-  const started = await installUpdate(lastVerifiedUpdatePath);
-  return { ok: started, error: started ? undefined : "open_failed" };
-});
-
-ipcMain.handle("plugin:validate", async (_event, input: { path?: string }) => {
-  const root = input?.path ? String(input.path) : "";
-  if (!root) return { ok: false, root: "", issues: ["未提供插件目录路径"], inventory: {} };
-  if (!existsSync(root)) return { ok: false, root, issues: [`目录不存在：${root}`], inventory: {} };
-  const manifestCandidates = [".codex-plugin/plugin.json", "plugin.json", ".codebuddy-plugin/plugin.json"];
-  const manifestPath = manifestCandidates.map((rel) => path.join(root, rel)).find((full) => existsSync(full)) ?? "";
-  const issues: string[] = [];
-  let manifest: any = null;
-  if (manifestPath) {
-    try { manifest = JSON.parse(readFileSync(manifestPath, "utf8")); } catch (error: any) { issues.push(`清单解析失败：${manifestPath} — ${error.message}`); }
-  } else {
-    issues.push("缺少插件清单（.codex-plugin/plugin.json 或 plugin.json）");
-  }
-  if (manifest && !manifest.name) issues.push("清单缺少 name 字段");
-  const count = (rel: string) => dirEntries(path.join(root, rel))?.length ?? 0;
-  const inventory = { skills: count("skills"), commands: count("commands"), agents: count("agents"), hooks: existsSync(path.join(root, "hooks", "hooks.json")) ? 1 : 0 };
-  if (!inventory.skills && !inventory.commands && !inventory.agents && !inventory.hooks) issues.push("插件没有任何能力目录（skills / commands / agents / hooks）");
-  return { ok: issues.length === 0, root, manifestPath, issues, inventory, name: manifest?.name ?? "" };
-});
 // ⚠️ 必须 await：`remote.start()` 是 async，不 await 时 port 是个 Promise 对象（渲染层拿到
 // `{}`、二维码地址也可能在 token 生成前取），这正是 09-13 冒烟测试第一次跑就超时的原因。
-ipcMain.handle("remote:start", async () => { const port = await remote.start(); return { port, url: remote.pairUrlAuth() }; });
-ipcMain.handle("remote:status", () => ({ status: "idle", devices: remote.listDevices(), url: remote.pairUrlAuth() }));
-ipcMain.handle("remote:devices", () => remote.listDevices());
-ipcMain.handle("remote:send", (_event, cmd: string) => { mainWindow?.webContents.send("remote:command", { command: String(cmd), device: { id: "local", name: "本机" } }); return { ok: true }; });
-ipcMain.handle("remote:stop", () => { remote.stop(); return { ok: true }; });
 // 配对码 + 审批（09-13 二次加固：手机首次连接 = 6 位配对码 + 电脑端点允许）
-ipcMain.handle("remote:pair-state", () => ({ code: remote.pairingCode(), pending: remote.pendingPairs(), approved: remote.approvedDevices() }));
 // ── Bot Channel 配对门卫（09-13：机器人聊天的首次使用 = 聊天里发 6 位授权码 + 电脑端点允许）──
 // 与「手机远控」共用同一个 6 位码（电脑端只显示一个数字）；approved 持久化到 userData/bot-pairing.json
 const botPairing = new BotPairingService(
@@ -5498,977 +813,23 @@ const botPairing = new BotPairingService(
   (request) => { try { mainWindow?.webContents.send("bot:pair-request", request); } catch { /* ignore */ } },
   (approved) => { void fs.writeFile(path.join(app.getPath("userData"), "bot-pairing.json"), JSON.stringify(approved, null, 2), "utf8").catch(() => undefined); },
 );
+
 try {
   const saved = JSON.parse(readFileSync(path.join(app.getPath("userData"), "bot-pairing.json"), "utf8")) as Record<string, unknown>;
   botPairing.restoreApproved(saved ?? {});
 } catch { /* 首次运行无文件 */ }
-ipcMain.handle("bot:pair-state", () => botPairing.state());
-ipcMain.handle("bot:approve", (_event, rid: string) => ({ ok: botPairing.approve(String(rid)) }));
-ipcMain.handle("bot:deny", (_event, rid: string) => ({ ok: botPairing.deny(String(rid)) }));
-ipcMain.handle("bot:revoke", (_event, key: string) => { const [channel, ...rest] = String(key).split(":"); return { ok: botPairing.revoke(channel, rest.join(":")) }; });
-ipcMain.handle("remote:pair-rotate", () => ({ code: remote.rotatePairingCode() }));
-ipcMain.handle("remote:approve", (_event, rid: string) => ({ ok: remote.approvePair(String(rid)) }));
-ipcMain.handle("remote:deny", (_event, rid: string) => ({ ok: remote.denyPair(String(rid)) }));
-ipcMain.handle("remote:revoke", (_event, deviceId: string) => ({ ok: remote.revokeDevice(String(deviceId)) }));
-ipcMain.handle("remote:qrcode", async (_event, botId?: string) => {
-  // 服务端拼 URL（含一次性凭据），避免调用方把 `?`/`&` 拼错 —— 拼错的后果是扫码后 401
-  return qrSvg(remote.pairUrlFor(botId));
-});
-// 机器人扫码绑定：创建绑定会话二维码 + 渲染层轮询状态
-let lastBindSession = "";
-ipcMain.handle("bot:bind-qrcode", async (_event, botId: string, botName: string) => {
-  lastBindSession = remote.createBindSession(botId, botName);
-  const code = lastBindSession.match(/\/r\/([a-z0-9]+)\?/)?.[1] ?? "";
-  return { qr: await qrSvg(lastBindSession), url: lastBindSession, code };
-});
-ipcMain.handle("bot:bind-status", (_event, code: string) => remote.bindStatus(code));
-ipcMain.handle("bot:bind-consume", (_event, code: string) => remote.consumeBind(code));
-let awakeId: number | null = null;
-ipcMain.handle("notify:show", (_event, title: string, body: string) => {
-  if (!Notification.isSupported()) return false;
-  const n = new Notification({ title: String(title ?? "Codex Harness"), body: String(body ?? ""), silent: false });
-  n.on("click", () => { mainWindow?.show(); mainWindow?.focus(); });
-  n.show();
-  return true;
-});
-ipcMain.handle("awake:set", (_event, on: boolean) => {
-  if (on && awakeId == null) awakeId = powerSaveBlocker.start("prevent-app-suspension");
-  if (!on && awakeId != null) { powerSaveBlocker.stop(awakeId); awakeId = null; }
-  return awakeId != null;
-});
-
-// 自动化工具链状态：nuphus-mcp（桌面）/ playwright-cli（浏览器）/ cloakbrowser（指纹浏览器）。
-// 静态检测安装目录与缓存，不 spawn 进程，打开设置页即时返回。
-ipcMain.handle("tools:status", () => {
-  const readVersion = (pkgDir: string) => {
-    try { return JSON.parse(readFileSync(pkgDir, "utf8")).version as string; }
-    catch { return ""; }
-  };
-  const root = toolsRoot();
-  const modules = npmGlobalRoot();
-  const nuphusBin = nuphusBinary();
-  // CloakBrowser 内核优先查应用内置缓存，兼容旧的用户目录缓存
-  const cloakDirs = [cloakCacheDir(), path.join(os.homedir(), ".cloakbrowser")].filter(Boolean);
-  let cloakBinary = false;
-  for (const dir of cloakDirs) {
-    try { if (readdirSync(dir).some((entry) => entry.includes("chromium"))) { cloakBinary = true; break; } } catch { /* 未下载 */ }
-  }
-  return [
-    {
-      id: "nuphus-mcp", name: "Nuphus 桌面自动化", scope: "computer",
-      version: modules ? readVersion(path.join(modules, "@nuphus", "nuphus-mcp", "package.json")) : "",
-      installed: Boolean(nuphusBin), binaryReady: Boolean(nuphusBin),
-      detail: nuphusBin ? "35 个桌面/浏览器自动化工具就绪（屏幕、窗口、键鼠、剪贴板、OCR、Chrome CDP），经 nuphus-call 按需调用，不占模型上下文" : "未安装：到「开发工具」页对「Nuphus 桌面自动化」点一次「修复安装」",
-      command: nuphusBin,
-    },
-    {
-      id: "playwright-cli", name: "Playwright 浏览器自动化", scope: "browser",
-      version: modules ? readVersion(path.join(modules, "@playwright", "cli", "package.json")) : "",
-      installed: modules ? existsSync(path.join(modules, "@playwright", "cli", "package.json")) : false,
-      binaryReady: existsSync(path.join(root, "pw-browsers")) && readdirSync(path.join(root, "pw-browsers")).some((entry) => entry.startsWith("chromium-")),
-      detail: "命令行浏览器自动化：open / snapshot / click / type / screenshot；默认浏览器通道，内核可在「开发工具」页下载（国内镜像）",
-      command: "playwright-cli",
-    },
-    {
-      id: "cloakbrowser", name: "CloakBrowser 指纹浏览器", scope: "browser",
-      version: modules ? readVersion(path.join(modules, "cloakbrowser", "package.json")) : "",
-      installed: modules ? existsSync(path.join(modules, "cloakbrowser", "package.json")) : false,
-      binaryReady: cloakBinary,
-      // 三态（09-16 起 CloakBrowser 不随包，默认浏览器是内置视图 / playwright-cli）：
-      // 未装包 → 提示可按需下载；装了包没内核 → 提示点内核卡片下载；都在 → 就绪。
-      detail: !(modules && existsSync(path.join(modules, "cloakbrowser", "package.json")))
-        ? "未安装（按需使用：需要过反爬站点时再到「开发工具」页下载，约 4 MB）"
-        : cloakBinary
-          ? "反检测 Chromium 内核已就绪（tools/cloak-cache）"
-          : "npm 包已装，Chromium 内核未下载（「开发工具」页点「Cloak 指纹浏览器内核」下载）",
-      command: "cloakbrowser",
-    },
-  ];
-});
-
-type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "playwright-cli" | "cloakbrowser" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown";
-// bundled：随包内置（zip / 预解压目录是来源，不是联网下载）。界面显示「内置」徽标；
-// 缺失时允许「修复安装」（从随包 zip 重新解压），但不允许卸载（删了没有可靠重取途径）。
-type DevRuntimeSpec = { name: string; description: string; size: string; marker: string; builtIn?: boolean; bundled?: boolean; kind?: "download" | "browsers" | "guide" | "plugin"; noUninstall?: boolean };
-// 09-16 打包瘦身：凡是有国内加速下载源的运行时一律不随包（Windows 包从 ~3.2GB 原始降到 ~1.9GB），
-// 由「开发工具」页按需下载（install-runtimes.cjs：npmmirror/gh-proxy 镜像优先，失败回落官方源）。
-// 例外（用户明确要求内置）：
-//   · node —— 安装器引导运行时（install-runtimes 本身靠内置 node 跑），没有它其余都装不了；
-//   · vscode-cli —— 体积小、无国内镜像；
-//   · nuphus / playwright-cli —— 桌面与浏览器自动化的两条默认通道，只发在 npm 上、
-//     国内没有独立的"加速直链"（详见下方 bundled 注释与 package.json 的 filter）。
-// ⛔ CloakBrowser 不在此列：09-16 起剥离出包，按需下载（开发工具页 → npm 国内镜像）。
-const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
-  python: { name: "Python + Tkinter + pip", description: "Python 项目、数据处理、GUI 脚本和 Python MCP（含 Tkinter、requests/httpx/flask/fastapi/playwright）；npmmirror 镜像下载 + 清华 pip 源", size: "约 40 MB + 依赖", marker: "python\\python.exe" },
-  node: { name: "Node.js + npm", description: "JavaScript / TypeScript 项目和 npm 工具（安装器引导运行时，随应用内置）", size: "约 101 MB", marker: "node\\node.exe", builtIn: true },
-  pwsh: { name: "PowerShell 7", description: "现代 PowerShell 脚本与跨平台命令；gh 加速下载", size: "约 282 MB", marker: "pwsh\\pwsh.exe" },
-  git: { name: "Git", description: "Diff、分支、提交、历史和仓库操作；引擎执行 shell 命令依赖它，建议装机后首先安装；npmmirror 镜像下载", size: "约 90 MB", marker: "git\\cmd\\git.exe" },
-  ffmpeg: { name: "FFmpeg", description: "音视频转码、抽帧、探测与媒体处理", size: "约 307 MB", marker: "ffmpeg\\bin\\ffmpeg.exe" },
-  "vscode-cli": { name: "VS Code CLI", description: "通过 code 命令打开文件与工作区", size: "约 28 MB", marker: "vscode-cli\\code.exe", builtIn: true },
-  // noUninstall：来源是**随包内置资源**（zip / 插件目录）而不是联网下载 —— 删掉后没有
-// 可靠的重取途径（压缩包本体随应用分发、不单独缓存），用户误删很难找回，因此不支持卸载。
-  // 09-16 用户「自动化工具拆开，拆详细一点」：原来一张「桌面与浏览器自动化」大卡（把三个 npm 包
-  // 混在一起、装没装只能看一个 marker）拆成逐条能力卡，每条各自可查状态、可单独恢复。
-  // 同时按用户「这三个内置，CloakBrowser 不用内置，按需下载就行」定下分工：
-  //   nuphus / playwright-cli —— 随包预解压内置（bundled，开箱即用；缺了可从随包 zip 修复）；
-  //   cloakbrowser —— 从包里剥离，走 npm 国内镜像按需下载（默认浏览器用内置视图 / playwright-cli）。
-  nuphus: { name: "Nuphus 桌面自动化", description: "35 个桌面自动化工具（屏幕截取、窗口控制、键鼠输入、剪贴板、OCR 感知），经 nuphus-call 按需调用，不占模型上下文；随包内置，开箱即用", size: "随包 30 MB", marker: "npm-global\\node_modules\\@nuphus\\nuphus-mcp\\package.json", bundled: true, noUninstall: true },
-  "playwright-cli": { name: "Playwright 浏览器自动化", description: "命令行浏览器自动化 CLI（open / snapshot / click / type / screenshot），浏览器内核单独按需下载；随包内置，开箱即用", size: "随包 18 MB", marker: "npm-global\\node_modules\\@playwright\\cli\\package.json", bundled: true, noUninstall: true },
-  cloakbrowser: { name: "CloakBrowser 指纹浏览器", description: "反检测指纹浏览器 npm 包（过 Cloudflare Turnstile / reCAPTCHA / FingerprintJS），默认不用、需要时再装；npm 国内镜像下载，失败自动回落官方源", size: "约 4 MB", marker: "npm-global\\node_modules\\cloakbrowser\\package.json" },
-  jq: { name: "jq", description: "命令行查询、筛选和转换 JSON；gh 加速下载", size: "约 1 MB", marker: "jq\\jq.exe" },
-  ninja: { name: "Ninja", description: "高速构建工具，常与 CMake 配合；gh 加速下载", size: "约 1 MB", marker: "ninja\\ninja.exe" },
-  sevenzip: { name: "7-Zip CLI", description: "解压和创建 7z、zip、tar 等归档；gh 加速下载", size: "约 1 MB", marker: "sevenzip\\7z.exe" },
-  "yt-dlp": { name: "yt-dlp", description: "下载和分析在线视频与音频资源", size: "约 20 MB", marker: "yt-dlp\\yt-dlp.exe" },
-  rg: { name: "ripgrep (rg)", description: "极速代码搜索，Codex 检索代码库的主力工具；gh 加速下载", size: "约 5 MB", marker: "rg\\rg.exe" },
-  uv: { name: "uv", description: "极速 Python 包管理器（pip/venv 替代）；gh 加速下载", size: "约 12 MB", marker: "uv\\uv.exe" },
-  cmake: { name: "CMake", description: "C/C++ 构建系统生成器（配合 Ninja）；gh 加速下载", size: "约 45 MB", marker: "cmake\\bin\\cmake.exe" },
-  "playwright-browsers": { name: "Playwright 浏览器内核", description: "Chromium 等浏览器内核，浏览器自动化 CLI 首次运行所需；按需下载（国内镜像优先，失败自动回落官方源）", size: "约 170 MB", marker: "pw-browsers", kind: "browsers" },
-  "cloak-browsers": { name: "Cloak 指纹浏览器内核", description: "反检测 Chromium 内核（Cloudflare/reCAPTCHA 站点用），CloakBrowser 运行所需；按需下载（国内镜像优先，失败自动回落官方源）", size: "约 200 MB", marker: "cloak-cache" },
-  conda: { name: "Miniconda", description: "Python 环境管理器（conda 命令，科学计算/环境隔离）", size: "约 100 MB", marker: "miniconda\\Scripts\\conda.exe", kind: "download" },
-  docker: { name: "Docker Desktop", description: "容器运行时，需要系统级安装（管理员权限 + 重启 + 登录）", size: "约 500 MB", marker: "docker\\docker.exe", kind: "guide" },
-  mingw: { name: "MinGW-w64 (gcc/g++/make)", description: "C/C++ 编译器工具链，含 gcc、g++、make、gdb", size: "约 267 MB", marker: "mingw\\mingw64\\bin\\g++.exe", kind: "download" },
-  openssl: { name: "OpenSSL", description: "加密/证书命令行工具（openssl 命令），系统级安装", size: "约 25 MB", marker: "openssl\\openssl.exe", kind: "guide" },
-  ponytail: { name: "ponytail 写代码模式插件", description: "Codex 写代码模式（会话钩子 + 6 个技能），随包启动时自动种入，开箱即用", size: "随包 2 MB", marker: "ponytail-plugin", kind: "plugin", bundled: true, noUninstall: true },
-  // 文档转换（09-21 用户定稿：「这个 markitdown 有国内镜像源嘛，有的话，就不内置了，按需下载，
-  //  codex 自己也可以下载」）⇒ **按需下载，不内置**：有清华 PyPI 镜像，装一次约 4~5 分钟，
-  //  没必要让**每个**用户默认付约 120 MB。
-  //  两个入口：① 本卡片（点一次就装，不会顺手重装 Python）② Codex 自己 pip 装（技能里给了镜像命令）。
-  //  ⛔ 别把它并进 install-runtimes 的默认 pip 清单 —— 预检【83】有负向断言盯着。
-  //  marker 仅作占位：真实判定走 runtimeInstalled 的 markitdown 分支（pip 包路径含 Python 版本号，写不死）。
-  //  ⚠️ 已知取舍（09-21 代码审查确认）：卸载只删 markitdown 包目录（0.4 MB），依赖会留下 ——
-  //     这是 pip 包的固有特点；卸载的语义是「移除这个能力」而不是「释放全部空间」。
-  markitdown: { name: "文档转换（markitdown）", description: "让 Codex 能读 PDF / Word / Excel / PowerPoint 附件：先把文档转成 Markdown 再交给模型（Microsoft markitdown，MIT 许可）。默认不装，需要时点这里装一次（约 120 MB，走清华 pip 镜像）；也可以让 Codex 自己装", size: "约 120 MB", marker: "markitdown" },
-};
-const runtimeInstalls = new Map<DevRuntimeId, Promise<void>>();
-
-// ⛔ mac 适配（09-16）：上面 specs 的 marker 全按 Windows 布局写（反斜杠 + .exe）。
-// darwin 的目录布局不同（node/bin/node、python/bin/python3、pwsh/pwsh、CMake.app 包…），
-// 这里集中覆盖；未列出的按「分隔符替换」兜底（npm-global 这类本身就是 posix 兼容布局）。
-const IS_MAC = process.platform === "darwin";
-const DARWIN_MARKERS: Partial<Record<DevRuntimeId, string>> = {
-  python: "python/bin/python3",
-  node: "node/bin/node",
-  pwsh: "pwsh/pwsh",
-  git: "git/bin/git",
-  ffmpeg: "ffmpeg/bin/ffmpeg",
-  "vscode-cli": "vscode-cli/code",
-  jq: "jq/jq",
-  ninja: "ninja/ninja",
-  sevenzip: "sevenzip/7zz",
-  "yt-dlp": "yt-dlp/yt-dlp",
-  rg: "rg/rg",
-  uv: "uv/uv",
-  cmake: "cmake/CMake.app/Contents/bin/cmake",
-  conda: "miniconda/bin/conda",
-  docker: "docker/docker",
-};
-// darwin 上无意义 / 系统自带的工具：不显示安装卡（mingw 是 Windows 编译器；mac 用系统 clang）
-const DARWIN_HIDDEN = new Set<DevRuntimeId>(["mingw"]);
-/** ⛔ mac 适配（09-17 审计）：上面 specs 的**文案**是按 Windows 侧写的，mac 上照搬会误导
- *  （例如让用户「装 Git 约 90 MB」，而 darwin 根本不下载 git —— 用的是系统自带那份）。
- *  这里只覆盖 mac 上说法确实会错的那几条，未列出的沿用原文（体积本就是量级提示）。 */
-const DARWIN_SPEC_TEXT: Partial<Record<DevRuntimeId, { name?: string; description?: string; size?: string }>> = {
-  git: {
-    description: "Diff、分支、提交、历史和仓库操作；引擎执行 shell 命令依赖它。macOS 使用系统自带的 git（随 Xcode 命令行工具提供），无需下载；点安装会调起系统的命令行工具安装程序",
-    size: "系统自带",
-  },
-  openssl: { description: "加密/证书命令行工具（openssl 命令）；macOS 系统自带（LibreSSL），无需安装", size: "系统自带" },
-  docker: { description: "容器运行时，需要系统级安装：下载并打开 Docker Desktop.dmg，装完首次启动需要授权", size: "约 600 MB" },
-  ffmpeg: { description: "音视频转码、抽帧、探测与媒体处理（macOS 单文件构建，装在 tools/ffmpeg/bin）", size: "约 78 MB" },
-  conda: { description: "Python 环境管理器（conda 命令，科学计算/环境隔离）；macOS 走官方 shell 安装器静默装到 tools/miniconda", size: "约 130 MB" },
-};
-
-/** marker 的平台展开（装没装判定的唯一入口，别再各自 path.join(spec.marker)）。 */
-function markerRel(id: DevRuntimeId, spec: DevRuntimeSpec): string {
-  if (!IS_MAC) return spec.marker;
-  return DARWIN_MARKERS[id] ?? spec.marker.replace(/\\/g, "/");
-}
-
-/** spec 的平台展开（文案与体积；marker 走 markerRel）。 */
-function specFor(id: DevRuntimeId, spec: DevRuntimeSpec): DevRuntimeSpec {
-  if (!IS_MAC) return spec;
-  const override = DARWIN_SPEC_TEXT[id];
-  return override ? { ...spec, ...override } : spec;
-}
-
-/** 系统级已装探测（不落 tools 目录也算装好）：win 只认 docker 在 PATH；darwin 认系统自带件。 */
-function runtimeInstalledBySystem(id: DevRuntimeId): boolean {
-  if (IS_MAC) {
-    if (id === "git") return ["/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git"].some((p) => existsSync(p));
-    if (id === "openssl") return existsSync("/usr/bin/openssl");
-    // ⛔ mac 适配（09-17 审计）：Docker Desktop for Mac 装完是 /Applications/Docker.app，
-    //    CLI 落在 /usr/local/bin/docker（或 Apple Silicon 的 /opt/homebrew/bin/docker）。
-    //    旧实现只探测 Windows 的 docker.exe，mac 用户装好 Docker 也一直显示「未安装」。
-    if (id === "docker") {
-      return ["/usr/local/bin/docker", "/opt/homebrew/bin/docker", "/Applications/Docker.app"].some((p) => existsSync(p));
-    }
-    return false;
-  }
-  // docker 是系统级安装：未在工具目录时也探测系统 PATH 上的 docker.exe（已装则视为完成）
-  return id === "docker" ? !!(process.env.PATH ?? "").split(path.delimiter).some((dir) => dir && existsSync(path.join(dir.trim(), "docker.exe"))) : false;
-}
-
-/** Python 的 site-packages 目录（Windows 是 `Lib/site-packages`，mac 是 `lib/pythonX.Y/site-packages`）。
- *  ⛔ 与 `scripts/install-runtimes.cjs` 的 pythonSitePackages 是**同一套规则**（两处各写一份是因为
- *  一边是主进程 TS、一边是纯 Node 安装脚本，不共享模块）—— 改这里务必同步那边。
- *  ⛔ mac 的目录名含 Python 版本号，绝不能写死 3.13：上游换小版本就判定失效（会反复重装/显示未装）。 */
-function pythonSiteDir(pythonDir: string): string | null {
-  const win = path.join(pythonDir, "Lib", "site-packages");
-  if (existsSync(win)) return win;
-  const lib = path.join(pythonDir, "lib");
-  if (existsSync(lib)) {
-    const hit = readdirSync(lib).filter((name) => /^python\d+\.\d+$/.test(name)).sort().pop();
-    if (hit) return path.join(lib, hit, "site-packages");
-  }
-  return null;
-}
-
-/** 「装没装」的唯一判定（runtimeList 与「修复安装」幂等早退共用，别各写一份）：
- *  ponytail 装在引擎侧 codex-home/plugins/cache，不走 tools 目录 marker；
- *  其余按 tools 目录里的 marker 文件判断。 */
-function runtimeInstalled(id: DevRuntimeId, spec: DevRuntimeSpec): boolean {
-  if (id === "ponytail") return existsSync(path.join(codexHome, "plugins", "cache", "ponytail"));
-  const root = toolsRoot();
-  if (!root) return false;
-  // pip 包（markitdown）装在 Python 的 site-packages 里，路径含版本号 ⇒ 不走 marker。
-  //  判定「包目录在不在」：目录在就等于 import 拿得到（比查 dist-info 更抗 pip 元数据差异）。
-  if (id === "markitdown") {
-    const site = pythonSiteDir(path.join(root, "python"));
-    // ⛔ 用 `site !== null` 而不是 `Boolean(site)`：后者不构成类型守卫，TS 不会收窄掉 null
-    //    （`Boolean(site) && …path.join(site…` 会报 TS2345，构建直接失败）。
-    return site !== null && existsSync(path.join(site, "markitdown"));
-  }
-  return existsSync(path.join(root, markerRel(id, spec)));
-}
-
-function runtimeList() {
-  return (Object.entries(devRuntimeSpecs) as [DevRuntimeId, DevRuntimeSpec][])
-    .filter(([id]) => !(IS_MAC && DARWIN_HIDDEN.has(id)))
-    .map(([id, spec]) => ({
-      id, ...specFor(id, spec),
-      installed: runtimeInstalled(id, spec),
-      installedBySystem: runtimeInstalledBySystem(id),
-      installing: runtimeInstalls.has(id),
-    }));
-}
-
-/**
- * ⛔ 这里曾经有过一个「自动化工具包在线回落地址」（GitHub Release 的 automation-tools.zip），
- * 已于 09-12 删除：那个 release 资产**根本不存在**（实测 v0.0.13 只有两个 mac zip），
- * 回落只会让用户看到「下载失败」，还把真正的问题（安装包没带 zip）藏起来。
- * 现在「包里必须有 zip」由打包链路硬保证（scripts/before-pack.cjs 硬失败）。
- * 注意：本段注释刻意不写出那个常量的字面名——preflight【8】会全文搜它，注释也会命中。
- */
-
-function runtimeInstaller(name: string) {
-  const packaged = app.isPackaged ? path.join(toolsRoot(), name) : "";
-  if (packaged && existsSync(packaged)) return packaged;
-  // 打包态兜底：mac 包此前漏拷安装脚本（copy-mac-tools 已修），缺了就回落到 asar 外的源码目录
-  const fallback = path.join(app.getAppPath(), "scripts", name);
-  if (existsSync(fallback)) return fallback;
-  return packaged || fallback;
-}
-
-/** 开发工具下载源（09-20 用户：「下载太慢了，所有工具下载加下载源选择」）。
- *  每次安装现读 app-settings.downloadSource —— 用户在「开发工具」页切完源，下一次下载立即生效，无需重启。
- *  合法值见 AppSettings.downloadSource；非法值一律回落 auto（镜像优先、逐通道回落）。 */
-async function readDownloadSource(): Promise<NonNullable<AppSettings["downloadSource"]>> {
-  const source = (await readAppSettings(app.getPath("userData"))).downloadSource;
-  return source === "mirror" || source === "ghproxy" || source === "ghfast" || source === "direct" || source === "proxy" ? source : "auto";
-}
-
-/** 安装进度的结构化上报（09-19 用户要求「不要弹窗，全部进度条展示，方便新手」）。
- *  安装脚本把进度写成 `@@PROGRESS <0-100>` / `@@STAGE <阶段名>` 这样的行——
- *  它们**不进消息区**，只驱动进度条；其余行原样作为消息（用户能看到在做什么）。 */
-function emitRuntimeProgress(id: string, chunk: string | Buffer, prefix = "") {
-  const text = String(chunk);
-  for (const raw of text.replace(/\r/g, "\n").split("\n")) {
-    const line = raw.trim();
-    if (!line) continue;
-    const progress = line.match(/^@@PROGRESS\s+(\d{1,3})/);
-    if (progress) {
-      sendToWindow("runtime:progress", { id, percent: Math.max(0, Math.min(100, Number(progress[1]))) });
-      continue;
-    }
-    const stage = line.match(/^@@STAGE\s+(.+)/);
-    if (stage) {
-      sendToWindow("runtime:progress", { id, stage: stage[1].trim().slice(0, 40) });
-      continue;
-    }
-    // 下载速度（09-20）：安装脚本按 500ms 采样输出文件大小算出速率后写成
-    // `@@SPEED 1.2 MB/s · 45.3 MB / 350 MB`，这里原样带给界面显示。
-    const speed = line.match(/^@@SPEED\s*(.*)/);
-    if (speed) {
-      const text = speed[1].trim();
-      if (text) sendToWindow("runtime:progress", { id, speed: text.slice(0, 48) });
-      continue;
-    }
-    sendToWindow("runtime:progress", { id, message: `${prefix}${line}` });
-  }
-}
-
-function runRuntimeInstaller(id: DevRuntimeId, script: string, args: string[], node = process.execPath, extraEnv?: Record<string, string | undefined>) {
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(node, [script, ...args], {
-      windowsHide: true,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: node === process.execPath ? "1" : undefined, TOOLS_ROOT: toolsRoot(), ...extraEnv },
-    });
-    let tail = "";
-    const report = (chunk: Buffer | string) => {
-      const message = String(chunk);
-      if (!message.trim()) return;
-      tail = `${tail}\n${message}`.slice(-4000);
-      emitRuntimeProgress(id, message);
-    };
-    child.stdout?.on("data", report);
-    child.stderr?.on("data", report);
-    child.on("error", reject);
-    child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim().slice(-1200) || `安装进程退出（${code}）`)));
-  });
-}
-
-async function restartServerWhenIdle(id: DevRuntimeId) {
-  if (engineActiveTurnIds.size) sendToWindow("runtime:progress", { id, message: "安装完成，等待当前任务结束后刷新引擎" });
-  const deadline = Date.now() + 10 * 60_000;
-  while (engineActiveTurnIds.size && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 500));
-  await server.restart();
-}
-
-ipcMain.handle("runtime:list", () => runtimeList());
-
-// 开发工具目录监视（09-16）：内核/运行时不随包后，除了「开发工具」页的按钮安装，
-// 引擎（用户让 Codex 自己装工具）也可能往 tools/ 里写东西。目录一变就广播 auto 事件，
-// 渲染层收到后自动刷新开发工具清单与工具状态 —— 界面永远反映真实安装状态，不用手动重开设置。
-let toolsWatchDebounce: NodeJS.Timeout | null = null;
-try {
-  watchFs(toolsRoot(), { recursive: true }, () => {
-    if (toolsWatchDebounce) clearTimeout(toolsWatchDebounce);
-    // 去抖 1.5s：安装是「下载 zip → 解压很多文件」的高频写入，等写入稳定后再刷新一次
-    toolsWatchDebounce = setTimeout(() => {
-      toolsWatchDebounce = null;
-      sendToWindow("runtime:progress", { id: "__auto__", message: "开发工具目录已更新", auto: true, done: true });
-    }, 1500);
-  });
-} catch (error) {
-  // 监视失败只影响「自动刷新」，按钮安装路径仍会主动推 done 事件，不影响功能
-  console.warn("[runtime] tools 目录监视失败（自动刷新不可用）:", error);
-}
-
-/** 运行时卸载：删除安装根目录（不是单个 marker），状态回退为"未下载" */
-function runtimeUninstallPath(id: DevRuntimeId, spec: DevRuntimeSpec): string {
-  // 引擎侧安装：ponytail 在 codex-home/plugins/cache/ponytail
-  if (id === "ponytail") return path.join(codexHome, "plugins", "cache", "ponytail");
-  // ⛔ npm 包（cloakbrowser）：只能删**包体目录本身**。按 marker 首段推导会得到 npm-global ——
-  //    那是 nuphus / playwright-cli 的共同家目录，卸载 CloakBrowser 会把两个内置能力一起删光。
-  if (id === "cloakbrowser") return path.join(npmGlobalRoot(), "cloakbrowser");
-  // ⛔ pip 包（markitdown）：只能删**包目录本身**。按 marker 首段推导会得到 `tools/python` ——
-  //    那是整个 Python 运行时（含 pip 与引擎依赖），卸载一个文档转换会把 Python 一起删光。
-  if (id === "markitdown") {
-    const site = pythonSiteDir(path.join(toolsRoot(), "python"));
-    return site ? path.join(site, "markitdown") : path.join(toolsRoot(), "markitdown");
-  }
-  // 工具侧：安装根 = marker 路径的第一段（playwright-browsers -> pw-browsers / git -> git / …）
-  return path.join(toolsRoot(), spec.marker.split(/[\\/]/)[0]);
-}
-
-/** npm 包在 npm-global 根与 node_modules/.bin 下留的 shim（cloakbrowser / .cmd / .ps1） */
-function npmShimPaths(pkg: string): string[] {
-  const globalDir = path.join(toolsRoot(), "npm-global");
-  return [
-    path.join(globalDir, pkg),
-    // ⛔ mac 适配（09-17 审计）：POSIX 的 npm 全局 shim 落在 `<prefix>/bin/<pkg>`（不带后缀、
-    //    symlink 到包内 bin），prepare-mac-tools 正是这么写的（npm-global/bin/nuphus-call）。
-    //    旧清单只有 Windows 的 .cmd/.ps1 ⇒ mac 上卸载包后 shim 残留，PATH 里继续指向空目录。
-    path.join(globalDir, "bin", pkg),
-    path.join(globalDir, `${pkg}.cmd`),
-    path.join(globalDir, `${pkg}.ps1`),
-    path.join(globalDir, "node_modules", ".bin", pkg),
-    path.join(globalDir, "node_modules", ".bin", `${pkg}.cmd`),
-    path.join(globalDir, "node_modules", ".bin", `${pkg}.ps1`),
-  ];
-}
-
-ipcMain.handle("runtime:uninstall", async (_event, idValue: string) => {
-  const id = idValue as DevRuntimeId;
-  const spec = devRuntimeSpecs[id];
-  if (!spec) throw new Error("未知开发工具");
-  if (spec.builtIn) throw new Error("内置工具不可卸载");
-  if (spec.kind === "guide") throw new Error("该工具是系统级安装，请到系统的「应用与功能」里卸载");
-  // 随包内置能力（nuphus / playwright-cli / ponytail 插件），不是联网下载 —— 删了没有可靠的重取途径
-  if (spec.bundled) throw new Error("该工具随应用内置，删除后只能从随包资源恢复，因此不支持卸载");
-  // 随包内置资源（zip / 插件目录），不是联网下载 —— 删了没有可靠的重取途径，直接拒绝
-  if (spec.noUninstall) throw new Error("该工具来自随包内置资源，删除后难以恢复，因此不支持卸载");
-  const target = runtimeUninstallPath(id, spec);
-  // 防御：marker 解析异常时 target 可能退化成某个根目录 —— 那会把**所有**工具/插件删光。
-  // 要求 target 必须落在 toolsRoot 或 codexHome 之内（ponytail 走引擎侧 codexHome），
-  // 且不等于这两者本身；宁可失败也不能误删全局。
-  const allowedRoots = [toolsRoot(), codexHome].filter(Boolean).map((r) => path.resolve(r));
-  const resolvedTarget = path.resolve(target);
-  const underAllowed = allowedRoots.some((r) => resolvedTarget.startsWith(r + path.sep));
-  if (!resolvedTarget || allowedRoots.includes(resolvedTarget) || !underAllowed) {
-    throw new Error("安装路径解析异常，已取消卸载");
-  }
-  // 一些 marker 是文件而不是目录（如 npm-global/.../package.json）—— 删父目录的安装根即可
-  await fs.rm(target, { recursive: true, force: true });
-  // npm 包卸载后清掉残留 shim：不清的话卡片显示「未安装」，但 PATH 上还留着指向已删目录的
-  // cloakbrowser.cmd，引擎调用会报模块找不到（比「没装」更难诊断）。
-  if (id === "cloakbrowser") {
-    await Promise.all(npmShimPaths("cloakbrowser").map((file) => fs.rm(file, { force: true }).catch(() => undefined)));
-  }
-// ponytail 卸载后要显式关掉 config.toml 里的注册段（否则引擎重启找不到已删的 cache）：
-// 插件 key 是 **"ponytail@ponytail"**（见 ponytail-plugin.ts 的 MARKETPLACE_SECTION），
-// 写成 "ponytail-plugin" 会静默无效。
-// 注意：install 分支必须对应地把 enabled 置回 true —— 因为 seedConfigSections 是
-// 「注册段已存在就幂等跳过」，不会把 false 翻回 true，漏了会导致重装后永久失效。
-if (id === "ponytail") {
-  await server.request("config/value/write", {
-    filePath: path.join(codexHome, "config.toml"),
-    keyPath: 'plugins."ponytail@ponytail".enabled',
-    value: false,
-    // ⛔ 引擎必填：缺了整条请求被判 Invalid request: missing field `mergeStrategy`，
-    //    而这里是 .catch(() => undefined) 静默吞掉 —— 表现为「卸载了但 enabled 还是 true」。
-    mergeStrategy: "replace",
-  }).catch(() => undefined);
-}
-  return { ok: true, runtimes: runtimeList() };
-});
-
-/** 浏览器内核按需下载（09-16 起内核不再随包）：先走国内镜像，失败回落官方源直连。
- *  用户自设了 PLAYWRIGHT_DOWNLOAD_HOST / CLOAKBROWSER_DOWNLOAD_URL 时尊重用户配置，
- *  此时第一轮已是用户指定的源，回落轮仍是官方源。进度实时推给设置页。
- *  ⛔ 09-20 下载源选择：direct = 只走官方；mirror/auto = 镜像优先；gh 加速前缀与本机代理
- *  对这两类内核的 CDN 通道无从生效（Cloak 内核的镜像本身就是 ghfast 前缀）→ 按 auto 处理。 */
-async function runBrowserDownload(
-  id: DevRuntimeId, node: string, cli: string, args: string[], label: string, source: NonNullable<AppSettings["downloadSource"]> = "auto",
-): Promise<void> {
-  const mirrored = downloadEnv();
-  const mirrorKeys = ["PLAYWRIGHT_DOWNLOAD_HOST", "CLOAKBROWSER_DOWNLOAD_URL"].filter((key) => mirrored[key]);
-  const official = { ...mirrored };
-  for (const key of mirrorKeys) delete official[key];
-  const attempts = source === "direct" || !mirrorKeys.length
-    ? [{ env: official, via: "官方源" }]
-    : [{ env: mirrored, via: "国内镜像" }, { env: official, via: "官方源" }];
-  let lastError: Error | null = null;
-  for (let index = 0; index < attempts.length; index++) {
-    const via = attempts[index].via;
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn(node, [cli, ...args], { windowsHide: true, env: attempts[index].env });
-        let tail = "";
-        const report = (chunk: Buffer | string) => {
-          const text = String(chunk);
-          if (!text.trim()) return;
-          tail = `${tail}\n${text}`.slice(-4000);
-          emitRuntimeProgress(id, text, `（${via}）`);
-        };
-        child.stdout?.on("data", report);
-        child.stderr?.on("data", report);
-        child.on("error", reject);
-        child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim().slice(-1200) || `${label}下载失败（${code}）`)));
-      });
-      return;
-    } catch (error) {
-      lastError = error as Error;
-      if (index < attempts.length - 1) {
-        sendToWindow("runtime:progress", { id, message: `${label}${attempts[index].via}下载失败，改用官方源重试…`, percent: 0 });
-      }
-    }
-  }
-  throw lastError ?? new Error(`${label}下载失败`);
-}
-
-/**
- * npm 包按需安装（09-16：CloakBrowser 从随包剥离后按需下载）。
- *  · 用**内置 node 自带的 npm**——开发工具页的安装链路不能依赖用户机器装没装 node/npm；
- *  · registry 国内镜像优先（npmmirror），失败回落官方源（不设 registry = npm 默认源）；
- *  · 用户自设了 npm_config_registry 时尊重用户配置，只跑一轮（不擅自改用户指定的源）。
- *  ⛔ 09-20 下载源选择：direct = 只走官方源；其余（auto/mirror/gh 加速/proxy）都是
- *  「镜像优先、失败回落官方」——npm registry 没有 gh 加速通道，gh 前缀对它无从生效。
- */
-async function runNpmInstall(id: DevRuntimeId, pkg: string, label: string, source: NonNullable<AppSettings["downloadSource"]> = "auto"): Promise<void> {
-  const node = bundledNode();
-  if (!node) throw new Error(`缺少内置 Node，无法安装 ${label}`);
-  const npmCli = path.join(toolsRoot(), "node", "node_modules", "npm", "bin", "npm-cli.js");
-  if (!existsSync(npmCli)) throw new Error(`内置 Node 缺少 npm（${npmCli}），无法安装 ${label}`);
-  const globalDir = path.join(toolsRoot(), "npm-global");
-  await fs.mkdir(globalDir, { recursive: true });
-  const userRegistry = process.env.npm_config_registry || process.env.NPM_CONFIG_REGISTRY || "";
-  const registries = userRegistry ? [userRegistry] : source === "direct" ? [""] : [CHINA_NPM_REGISTRY, ""];
-  let lastError: Error | null = null;
-  for (const registry of registries) {
-    const via = registry ? (userRegistry ? "用户配置的源" : "国内镜像") : "官方源";
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const env: Record<string, string> = {
-          ...toolchainEnv(),
-          npm_config_audit: "false",
-          npm_config_fund: "false",
-          npm_config_loglevel: "error",
-          npm_config_update_notifier: "false",
-          NO_UPDATE_NOTIFIER: "1",
-        };
-        // 空串 = 不设 registry，npm 回落到官方源
-        if (registry) env.npm_config_registry = registry;
-        const child = spawn(node, [npmCli, "install", "--global", "--prefix", globalDir, pkg, "--no-audit", "--no-fund"], { windowsHide: true, env });
-        let tail = "";
-        const report = (chunk: Buffer | string) => {
-          const text = String(chunk);
-          if (!text.trim()) return;
-          tail = `${tail}\n${text}`.slice(-4000);
-          emitRuntimeProgress(id, text, `（${via}）`);
-        };
-        child.stdout?.on("data", report);
-        child.stderr?.on("data", report);
-        child.on("error", reject);
-        child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim().slice(-1200) || `${label} 安装失败（${code}）`)));
-      });
-      return;
-    } catch (error) {
-      lastError = error as Error;
-      if (registry) sendToWindow("runtime:progress", { id, message: `${label} 从${via}安装失败，改用官方源重试…`, percent: 0 });
-    }
-  }
-  throw lastError ?? new Error(`${label} 安装失败`);
-}
-
-ipcMain.handle("runtime:install", async (_event, idValue: string) => {
-  const id = idValue as DevRuntimeId;
-  if (!devRuntimeSpecs[id]) throw new Error("未知开发工具");
-  if (devRuntimeSpecs[id].builtIn) return { ok: true, runtimes: runtimeList() };
-  // ⛔ 09-20 下载源选择：所有按需下载通道（工具链 / npm 包 / 浏览器内核）统一从这里读源，
-  //    用户在「开发工具」页切完源，下一次下载立即生效（每次现读 app-settings，不缓存）。
-  const downloadSource = await readDownloadSource();
-  // ⛔ 同一工具并发安装：**等它跑完**，不要抛「该工具正在安装」（09-18 用户反馈截图）。
-  //   触发场景很常见：首次启动的 Git 后台自愈安装（`autoInstallGitIfNeeded`，仅 Windows）会占住 `git`，
-  //   而体检弹窗的「一键安装」里 git 恰好排在可安装项第一位 → 用户点一次就得到
-  //   「安装失败：Error invoking remote method 'runtime:install': Error: 该工具正在安装」，
-  //   既看不懂，又让**整批安装被中断**（后两项也没装）。等待语义对用户才是正确的。
-  const inFlight = runtimeInstalls.get(id);
-  if (inFlight) {
-    // 它成功 → 一起成功；它真失败 → 把真实错误抛给调用方（不假装成功）
-    await inFlight;
-    return { ok: true, joined: true, runtimes: runtimeList() };
-  }
-  const spec = devRuntimeSpecs[id];
-  // 引导型（docker/openssl）：静默安装需要管理员/重启/登录，这里打开官方下载页由用户自己装
-  if (spec.kind === "guide") {
-    const url = id === "openssl"
-      ? "https://slproweb.com/products/Win32OpenSSL.html"
-      : "https://www.docker.com/products/docker-desktop/";
-    await shell.openExternal(url);
-    return { ok: true, guide: url, runtimes: runtimeList() };
-  }
-  // 随包内置且已就位：无需「修复」。再解压/重种一遍只会覆盖同名文件（无收益，还多一次引擎重启）。
-  // 判定用 runtimeInstalled（与清单同一份逻辑）——ponytail 的 marker 在引擎侧 cache，不在 tools 目录。
-  if (spec.bundled && runtimeInstalled(id, spec)) return { ok: true, runtimes: runtimeList() };
-  const task = (async () => {
-    if (id === "ponytail") {
-      // ponytail 写代码模式插件（bundled）：从随包安装源种到引擎（plugins cache + config 注册段），技能随 cache 自动列出。
-      // ⛔ 必须排在 spec.bundled 分支**之前**：ponytail 也是 bundled，但它的修复路径是「重种插件」
-      //    而不是「解压 automation-tools.zip」——漏了会让「修复安装 ponytail」把 zip 解到 npm-global。
-      await ensurePonytailPlugin(codexHome, path.join(toolsRoot(), "ponytail-plugin"));
-      // 卸载时把注册段置成了 false，这里必须显式置回 true —— seedConfigSections 是
-      // 「段已存在就幂等跳过」，不会自己翻回 true，漏了会导致「卸载→重装」后插件永久不可用。
-      await server.request("config/value/write", {
-        filePath: path.join(codexHome, "config.toml"),
-        keyPath: 'plugins."ponytail@ponytail".enabled',
-        value: true,
-        // ⛔ 同卸载分支：引擎必填 mergeStrategy（缺了整条请求被拒且此处 catch 吞掉），
-        //    漏了会让「卸载→重装」后插件永久 disabled（seedConfigSections 幂等不回滚 enabled）。
-        mergeStrategy: "replace",
-      }).catch(() => undefined);
-    } else if (spec.bundled) {
-      // 随包内置能力的「修复安装」（nuphus / playwright-cli）：从随包 zip 重新解压。
-      // 正常情况下卡片直接显示「内置」，界面不给按钮；只有目录被误删/损坏时才会走到这里。
-      // 内置 node 是解压器的引导运行时（install-automation.cjs 依赖它跑 python/7z）。
-      if (!bundledNode()) await runRuntimeInstaller("node", runtimeInstaller("install-runtimes.cjs"), ["node"], process.execPath, { DOWNLOAD_SOURCE: downloadSource });
-      // ⛔ 只认随包 zip（解压安装），**不再回落在线下载**（09-12 用户实测发布包故障）：
-      //   旧实现找不到 zip 就去拉 GitHub Release 的 automation-tools.zip —— 而那个资产
-      //   **根本不存在**（实测 v0.0.13 的 release 只有两个 mac zip），于是用户看到的是
-      //   「直接下载失败」。既然装不上就当场说清楚，别去撞一个死地址。
-      //   保证「包里一定有 zip」是打包链路的责任：scripts/before-pack.cjs 现在**硬失败**
-      //   （并且直接校验随包 npm-global 里 nuphus / playwright-cli 是否在位），宁可不打包也不发坏包。
-      const bundledAutomationZip = path.join(toolsRoot(), "automation-tools.zip");
-      if (!existsSync(bundledAutomationZip)) {
-        throw new Error(
-          `随包缺少 tools/automation-tools.zip —— 这一版安装包不完整，装不了「${spec.name}」。`
-          + "请更新到带该文件的版本；自建包时先在本机装一次自动化工具链再执行打包。"
-        );
-      }
-      await runRuntimeInstaller(id, runtimeInstaller("install-automation.cjs"), [], bundledNode());
-      // 解压安装成功后自动激活「桌面自动化」「浏览器自动化」联动开关（nuphus MCP 注册 + 技能启用）
-      await saveAppSettings(app.getPath("userData"), { desktopAutomation: true, browserAutomation: true });
-    } else if (id === "cloakbrowser") {
-      // CloakBrowser npm 包（09-16 起不随包）：npm 国内镜像优先、失败回落官方源。
-      // 装完 CLOAKBROWSER_ENTRY 才会指向它（toolchainEnv 按标记文件存在与否注入），
-      // 在此之前引擎侧看不到它 —— 默认浏览器用内置视图 / playwright-cli，不受影响。
-      await runNpmInstall(id, "cloakbrowser", "CloakBrowser", downloadSource);
-    } else if (id === "playwright-browsers") {
-      // 用内置的 playwright CLI 下载 Chromium 到 pw-browsers（toolchainEnv 已注入 PLAYWRIGHT_BROWSERS_PATH；
-      // 09-16 起内核不随包，这里按需下载：国内镜像优先、失败回落官方源）
-      const node = bundledNode();
-      const cli = path.join(npmGlobalRoot(), "@playwright", "cli", "node_modules", "playwright", "cli.js");
-      if (!node || !existsSync(cli)) throw new Error("缺少 Playwright CLI，请先在「开发工具」安装「Playwright 浏览器自动化」");
-      await runBrowserDownload(id, node, cli, ["install", "chromium"], "浏览器内核", downloadSource);
-    } else if (id === "cloak-browsers") {
-      // CloakBrowser 反检测 Chromium 内核下载到 tools/cloak-cache（toolchainEnv 已注入 CLOAKBROWSER_CACHE_DIR；
-      // 09-16 起内核不随包，这里按需下载：国内镜像优先、失败回落官方源）
-      const node = bundledNode();
-      const cli = path.join(npmGlobalRoot(), "cloakbrowser", "dist", "cli.js");
-      if (!node || !existsSync(cli)) throw new Error("缺少 CloakBrowser，请先在「开发工具」安装「CloakBrowser 指纹浏览器」（约 4 MB）");
-      await runBrowserDownload(id, node, cli, ["install"], "Cloak 内核", downloadSource);
-    } else {
-      // ⛔ DOWNLOAD_SOURCE 经环境变量传给安装脚本（install-runtimes.cjs 按 it 分通道）——
-      //    脚本 argv 的裸词会被当成工具 id，所以不用命令行参数传。
-      await runRuntimeInstaller(id, runtimeInstaller("install-runtimes.cjs"), [id], process.execPath, { DOWNLOAD_SOURCE: downloadSource });
-    }
-    await restartServerWhenIdle(id);
-  })();
-  runtimeInstalls.set(id, task);
-  try {
-    await task;
-    sendToWindow("runtime:progress", { id, message: "安装完成", percent: 100, speed: "", done: true });
-    return { ok: true, runtimes: runtimeList() };
-  } finally {
-    runtimeInstalls.delete(id);
-  }
-});
-
-// 首次启动自动安装 Git（09-16 瘦身后续）：git 不再随包，但引擎执行 shell 命令依赖它，
-// 用户不点安装的话引擎跑终端命令全是失败。启动时检测到缺失就后台自动装一次
-// （install-runtimes.cjs：npmmirror 镜像优先、失败回落官方源），失败不阻塞启动，
-// 用户仍可到「开发工具」页手动装；下次启动若仍缺会再试（自愈）。
-// 仅 Windows：mac 包仍内置 git（copy-mac-tools 只排除 pw-browsers/cloak-cache），不需要装。
-let gitAutoInstallStarted = false;
-async function autoInstallGitIfNeeded(): Promise<void> {
-  if (process.platform !== "win32" || gitAutoInstallStarted) return;
-  const root = toolsRoot();
-  if (!root || runtimeInstalls.has("git")) return;
-  if (existsSync(path.join(root, devRuntimeSpecs.git.marker))) return;
-  gitAutoInstallStarted = true;
-  sendToWindow("runtime:progress", { id: "git", message: "检测到未安装 Git，正在后台自动安装（镜像优先，约 90 MB）…" });
-  const task = (async () => {
-    await runRuntimeInstaller("git", runtimeInstaller("install-runtimes.cjs"), ["git"], process.execPath, { DOWNLOAD_SOURCE: await readDownloadSource() });
-    await restartServerWhenIdle("git");
-  })();
-  runtimeInstalls.set("git", task);
-  try {
-    await task;
-    sendToWindow("runtime:progress", { id: "git", message: "Git 自动安装完成，引擎已刷新", percent: 100, done: true });
-  } catch (error) {
-    sendToWindow("runtime:progress", { id: "git", message: `Git 自动安装失败：${String(error)}（可稍后在「开发工具」页手动安装）`, done: true });
-  } finally {
-    runtimeInstalls.delete("git");
-  }
-}
 
 // CloakBrowser 常驻助手：单个 node 进程托管指纹浏览器窗口（headed + humanize），
 // stdin 逐行喂 URL；stdout 回传 JSON 事件（boot / launching / ready / opened / error / closed）。
 let cloakProc: ReturnType<typeof spawn> | null = null;
-let cloakStatus: { event?: string; message?: string; url?: string; title?: string } = {};
 
-ipcMain.handle("browser:open-cloak", (_event, url: string) => {
-  const modules = npmGlobalRoot();
-  if (!modules || !existsSync(path.join(modules, "cloakbrowser", "package.json"))) {
-    return { ok: false, detail: "CloakBrowser 未安装（按需下载）：到「设置 → 开发工具」下载「CloakBrowser 指纹浏览器」（约 4 MB）后再用；日常浏览走内置浏览器视图" };
-  }
-  if (!cloakProc || cloakProc.exitCode !== null) {
-    const helper = cloakOpenHelper();
-    if (!helper || !existsSync(helper)) return { ok: false, detail: "缺少 resources/tools/cloak-open.mjs 助手脚本" };
-    const node = bundledNode() || "node";
-    cloakProc = spawn(node, [helper], { windowsHide: true, env: { ...toolchainEnv(), CLOAK_NPM_ROOT: modules } });
-    cloakProc.stdout?.on("data", (chunk: Buffer) => {
-      for (const line of chunk.toString().split("\n")) {
-        if (!line.trim()) continue;
-        try { cloakStatus = JSON.parse(line); } catch { /* 非 JSON 行 */ }
-      }
-    });
-    cloakProc.stderr?.on("data", (chunk: Buffer) => {
-      const text = chunk.toString().trim();
-      if (text) cloakStatus = { event: "error", message: text.slice(0, 300) };
-    });
-    cloakProc.once("error", (error) => { cloakStatus = { event: "error", message: error.message }; cloakProc = null; });
-    cloakProc.once("exit", (code) => {
-      if (cloakStatus.event !== "error") cloakStatus = { event: "exit", ...(code ? { message: `浏览器进程退出（${code}）` } : {}) };
-      cloakProc = null;
-    });
-    cloakProc.stdin?.on("error", () => { /* EPIPE：进程刚退出 */ });
-    cloakStatus = { event: "launching" };
-  }
-  try {
-    cloakProc.stdin?.write(`${url.trim()}\n`);
-    return { ok: true, detail: "已提交给 CloakBrowser" };
-  } catch (error: any) {
-    return { ok: false, detail: error.message };
-  }
-});
-
-ipcMain.handle("browser:cloak-status", () => cloakStatus);
-
-ipcMain.handle("terminal:input", (_event, id: string, data: string) => terminalFor(id).input(data));
-ipcMain.handle("terminal:resize", (_event, id: string, cols: number, rows: number) => terminalFor(id).resize(cols, rows));
-ipcMain.handle("terminal:restart", (_event, id: string, cwd?: string) => {
-  // ⛔ 隐私加固（09-19 审计中危）：cwd 由渲染层直传，先验证是真实存在的目录（防怪值/注入面收敛）。
-  // 注：终端本身就是用户可交互 shell（可 cd 到任何目录），故这里做存在性校验而非白名单——
-  // 白名单挡不住"shell 里 cd 出去"，只会误伤"在任意合法目录开会话"的用法。
-  if (cwd) {
-    const st = fileStat(cwd);
-    if (!st || !st.isDirectory()) throw new Error(`终端目录不存在或不可用：${cwd}`);
-  }
-  return terminalFor(id).restart(cwd);
-});
-ipcMain.handle("terminal:ready", () => true);
-ipcMain.handle("git:diff", (_event, input: { cwd: string; scope: string }) => new Promise<{ code: number | null; output: string }>((resolve, reject) => {
-  const args = input.scope === "staged" ? ["diff", "--cached"] : input.scope === "head" ? ["diff", "HEAD"] : ["diff"];
-  const proc = spawn(bundledGit() || "git", args, { cwd: input.cwd, windowsHide: true, env: toolchainEnv() });
-  let output = "";
-  proc.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
-  proc.stderr?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
-  proc.on("error", () => resolve({ code: null, output: "" }));
-  proc.on("close", (code) => resolve({ code, output }));
-}));
-ipcMain.handle("fs:write", async (_event, input: { path: string; content: string; root: string }) => {
-  const resolved = path.resolve(input.path);
-  // ⛔ 隐私加固（09-19 审计高危）：原校验的 root 由渲染层传入——传 root:"C:\\" 即绕过校验，
-  // 等于"任意路径写文件"。root 参数不再参与判定，一律收敛到主进程自己的可信根集合
-  // （各会话工作目录 + userData + 用户亲自用系统对话框选过的路径，同 harness-image 协议口径）。
-  if (!isInsideTrustedRoots(resolved)) throw new Error("仅允许保存会话工作区与应用数据目录内的文件");
-  await fs.writeFile(resolved, input.content, "utf8");
-  return { ok: true };
-});
-// 本地读文件：预览文件内容（Base64 返回，渲染层解码）。取代转发给引擎的 fs/readFile——
-// 引擎的 fs/readFile 是给 AI 用的工具，非任务上下文会失败或返回结构不一致。
-ipcMain.handle("fs:read", async (_event, input: { path: string }) => {
-  const target = path.resolve(input.path);
-  // ⛔ 隐私加固（09-19 审计高危）：预览通道原来是"任意路径读"——渲染层被注入（XSS）即可
-  // 读全盘文件（含系统敏感目录）。收敛到可信根：会话工作目录、userData、用户选过的路径。
-  // 口径与 harness-image 协议（09-13 审计 S5）完全一致，合法预览不受影响。
-  if (!isInsideTrustedRoots(target)) throw new Error("仅允许预览会话工作区与应用数据目录内的文件");
-  const stat = fileStat(target);
-  if (!stat || !stat.isFile()) throw new Error(`文件不存在或不可读：${input.path}`);
-  const size = stat.size;
-  if (size > 2 * 1024 * 1024) throw new Error(`文件过大（${sizeLabel(size)}），预览仅支持 2MB 以内`);
-  const buf = await fs.readFile(target);
-  return { dataBase64: buf.toString("base64"), size };
-});
-// 探测文件是否存在（InlineFileCards 用：不存在的引用文件灰显，点击不再直接报 os error 2）
-ipcMain.handle("fs:exists", async (_event, input: { path: string }) => {
-  try {
-    const target = path.resolve(input.path);
-    const stat = fileStat(target);
-    return { exists: Boolean(stat && stat.isFile()) };
-  } catch {
-    return { exists: false };
-  }
-});
-ipcMain.handle("dialog:directory", async () => {
-  const result = await dialog.showOpenDialog(mainWindow!, { properties: ["openDirectory", "createDirectory"] });
-  if (result.canceled) return null; trustPicked(result.filePaths); return result.filePaths[0];
-});
-// /add-dir：从指定起始目录打开选择器（目录不存在时回落到默认行为）
-ipcMain.handle("dialog:directory-at", async (_event, startPath: string) => {
-  const start = startPath && existsSync(startPath) ? startPath : undefined;
-  const result = await dialog.showOpenDialog(mainWindow!, { properties: ["openDirectory", "createDirectory"], defaultPath: start });
-  if (result.canceled) return null; trustPicked(result.filePaths); return result.filePaths[0];
-});
-ipcMain.handle("dialog:images", async () => {
-  const result = await dialog.showOpenDialog(mainWindow!, {
-    properties: ["openFile", "multiSelections"],
-    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
-  });
-  if (result.canceled) return []; trustPicked(result.filePaths); return result.filePaths;
-});
-ipcMain.handle("dialog:files", async () => {
-  const result = await dialog.showOpenDialog(mainWindow!, {
-    properties: ["openFile", "multiSelections"],
-    filters: [{ name: "All files", extensions: ["*"] }],
-  });
-  if (result.canceled) return []; trustPicked(result.filePaths); return result.filePaths;
-});
 const userSkillsDir = path.join(codexHome, "skills");
-const skillsRegistryFile = path.join(codexHome, "skills-registry.json");
-type SkillRegistryRecord = { name: string; path: string; source: "cocoloop" | "local"; marketId?: string; sourceUrl?: string; installedAt: string };
-async function readSkillRegistry(): Promise<SkillRegistryRecord[]> {
-  try {
-    const records = JSON.parse(await fs.readFile(skillsRegistryFile, "utf8"));
-    return Array.isArray(records) ? records.filter((entry: any) => entry && typeof entry.name === "string" && typeof entry.path === "string") : [];
-  } catch (error: any) { if (error.code === "ENOENT") return []; throw error; }
-}
-async function updateSkillRegistry(record: SkillRegistryRecord) {
-  const records = await readSkillRegistry();
-  const next = [...records.filter((entry) => entry.path !== record.path && entry.marketId !== record.marketId), record];
-  await fs.mkdir(codexHome, { recursive: true });
-  await fs.writeFile(skillsRegistryFile, JSON.stringify(next, null, 2), "utf8");
-}
-async function removeFromSkillRegistry(skillPath: string) {
-  const records = await readSkillRegistry();
-  await fs.writeFile(skillsRegistryFile, JSON.stringify(records.filter((entry) => entry.path !== skillPath), null, 2), "utf8");
-}
-function skillFolderName(source: string) {
-  return path.basename(path.dirname(source)).replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || `skill-${Date.now()}`;
-}
-ipcMain.handle("skills:import", async () => {
-  const picked = await dialog.showOpenDialog(mainWindow!, {
-    properties: ["openFile"],
-    filters: [{ name: "Skill definition", extensions: ["md"] }],
-  });
-  if (picked.canceled || !picked.filePaths[0]) return null;
-  const source = picked.filePaths[0];
-  if (path.basename(source).toLowerCase() !== "skill.md") throw new Error("请选择名为 SKILL.md 的技能定义文件");
-  const content = await fs.readFile(source, "utf8");
-  if (!content.trim()) throw new Error("SKILL.md 不能为空");
-  const name = skillFolderName(source);
-  const destination = path.join(userSkillsDir, name);
-  await fs.mkdir(destination, { recursive: true });
-  const skillPath = path.join(destination, "SKILL.md");
-  await fs.copyFile(source, skillPath);
-  // 用户从本地挑的 SKILL.md 也可能带 BOM（编辑器/导出习惯所致）：剥掉，否则引擎拒载
-  await stripSkillBom(skillPath);
-  await updateSkillRegistry({ name, path: skillPath, source: "local", installedAt: new Date().toISOString() });
-  await server.restart();
-  void refreshSkillDiscipline();
-  return { name, path: destination, source, content };
-});
-// SkillHub 榜单分类（技能中心 tab → showcase section）；其余分类名一律落回 hot
-const skillHubSectionMap: Record<string, string> = { "总排行": "hot", "近期最热": "trending", "最新上传": "newest", "官方精选": "featured" };
-ipcMain.handle("skills:market-list", (_event, input: { category?: string; query?: string } = {}) => {
-  const section = skillHubSectionMap[input.category ?? ""] ?? "hot";
-  return listSkillHubSkills({ section, query: input.query });
-});
-ipcMain.handle("skills:market-install", async (_event, skill: MarketSkill) => {
-  const emit = (stage: string, message: string) => sendToWindow("harness:event", { type: "skill-install", skillId: skill.id, stage, message, at: Date.now() });
-  const installed = await installCocoLoopSkill({
-    skill,
-    destinationRoot: userSkillsDir,
-    onProgress: ({ stage, message }) => emit(stage, message),
-  });
-  await updateSkillRegistry({ name: installed.name, path: installed.path, source: "cocoloop", marketId: installed.marketId, sourceUrl: installed.sourceUrl, installedAt: new Date().toISOString() });
-  // SKILL.md 落到 CODEX_HOME/skills 后重启进程，再强制刷新 skills/list；返回的状态才是 UI 的“Codex 已发现”依据。
-  emit("engine", "正在重启 Codex 引擎并注册技能");
-  await server.restart();
-  emit("verify", "正在确认 Codex 是否已发现该技能");
-  let engineRegistered = false;
-  let engineCheckMessage = "Codex 技能目录已刷新，下一轮任务可使用该技能";
-  try {
-    const result: any = await server.request("skills/list", { cwds: [], forceReload: true });
-    const discovered = (result.data ?? []).flatMap((entry: any) => entry.skills ?? []);
-    engineRegistered = discovered.some((entry: any) => entry?.path === installed.path || entry?.name === installed.name || entry?.name === skill.name);
-    if (!engineRegistered) engineCheckMessage = "技能已写入 Codex 技能目录；引擎已刷新，但当前接口未返回该技能名称。新建或下一轮任务仍会重新扫描。";
-  } catch (error: any) {
-    engineCheckMessage = `技能已安装且引擎已重启，但自动确认暂时不可用：${error.message}`;
-  }
-  emit(engineRegistered ? "complete" : "pending", engineCheckMessage);
-  void refreshSkillDiscipline();
-  return { ...installed, engineRegistered, engineCheckMessage };
-});
 
-/** 技能/连接器变化后刷新 AGENTS.md 里的「技能与 MCP 运用守则」区间（引擎每会话注入，
- *  模型开局即知当前军火库）。任何失败都不影响主流程。 */
-async function refreshSkillDiscipline() {
-  try {
-    const connectors = await readConnectors();
-    const mcp = connectors
-      .filter((c) => c.enabled !== false)
-      .map((c) => ({ name: c.name, desc: c.transport === "stdio" ? `本地 MCP（${String(c.command ?? "")}）` : `HTTP MCP（${String(c.url ?? "")}）` }));
-    await upsertSkillDiscipline(codexHome, mcp);
-  } catch (error: any) {
-    console.warn("技能纪律注入失败:", error?.message ?? error);
-  }
-}
+const skillsRegistryFile = path.join(codexHome, "skills-registry.json");
 
 /** 给引擎动态工具用的轻量安装：**不重启引擎**（重启会杀掉正在跑的回合）——
  *  写目录 + 刷新注册表 + forceReload 重扫（下一回合即可用）+ 刷新 AGENTS 纪律区间。 */
-ipcMain.handle("skills:market-install-light", async (_event, skill: MarketSkill) => {
-  const installed = await installCocoLoopSkill({ skill, destinationRoot: userSkillsDir });
-  await updateSkillRegistry({ name: installed.name, path: installed.path, source: "cocoloop", marketId: installed.marketId, sourceUrl: installed.sourceUrl, installedAt: new Date().toISOString() });
-  let discovered = false;
-  try {
-    const result: any = await server.request("skills/list", { cwds: [], forceReload: true });
-    discovered = (result.data ?? []).flatMap((entry: any) => entry.skills ?? [])
-      .some((entry: any) => entry?.name === installed.name || entry?.path === installed.path);
-  } catch { /* 重扫失败不阻塞：下一回合引擎自己会重新扫描 */ }
-  await refreshSkillDiscipline();
-  return { name: installed.name, path: installed.path, discovered, engineCheckMessage: discovered ? "引擎已发现该技能，下一回合即可使用" : "技能已入库，下一回合引擎重新扫描后即可使用" };
-});
 
-ipcMain.handle("skill-discipline:get", async () => {
-  try {
-    const raw = await fs.readFile(path.join(codexHome, "AGENTS.md"), "utf8");
-    const start = raw.indexOf(DISCIPLINE_START);
-    const end = raw.indexOf(DISCIPLINE_END);
-    return { present: start >= 0 && end > start, section: start >= 0 && end > start ? raw.slice(start, end + DISCIPLINE_END.length) : "" };
-  } catch { return { present: false, section: "" };
-  }
-});
-ipcMain.handle("plugins:market-list", (_event, input: { category?: string; query?: string; page?: number; pageSize?: number } = {}) => listCodexMarketPlugins(input));
-ipcMain.handle("plugins:market-install", async (_event, plugin: CodexMarketPlugin) => {
-  const emit = (stage: string, message: string) => sendToWindow("harness:event", { type: "plugin-install", pluginId: plugin.slug, stage, message, at: Date.now() });
-  // 幂等注册本地 marketplace 段（缺才写），返回插件落盘目录
-  const destinationRoot = await ensureCodexMarketplaceSection(codexHome);
-  const installed = await installCodexMarketPlugin({
-    plugin,
-    destinationRoot,
-    onProgress: ({ stage, message }) => emit(stage, message),
-  });
-  // 引擎实证：光把文件写进本地 marketplace 引擎不认（plugin/list 返回空），
-  // 必须调 plugin/install（marketplacePath 传 .claude-plugin/marketplace.json 文件路径）
-  // 让引擎把它拷进 plugins/cache/<marketplace>/<plugin>/<version> 并置 installed=true。
-  emit("engine", "正在通过引擎注册插件");
-  try {
-    await server.request("plugin/install", { pluginName: installed.marketId ?? plugin.slug, marketplacePath: installed.manifestPath });
-  } catch (error: any) {
-    emit("pending", `引擎注册插件未成功：${error?.message ?? error}（文件已落盘，重启引擎后会重新扫描）`);
-  }
-  emit("engine", "正在重启 Codex 引擎并注册插件");
-  await server.restart();
-  emit("verify", "正在确认 Codex 是否已发现该插件");
-  let engineRegistered = false;
-  let engineCheckMessage = "插件目录已写入，重启 Codex 后生效";
-  try {
-    const list: any = await server.request("plugin/list", { cwds: [], forceRefetch: false });
-    const base = (value: string) => String(value ?? "").split("@")[0];
-    const found = (list?.marketplaces ?? []).flatMap((marketplace: any) => marketplace.plugins ?? [])
-      .find((entry: any) => entry?.installed && (base(entry.id) === plugin.slug || entry.name === plugin.slug || entry.name === plugin.name));
-    engineRegistered = Boolean(found);
-    if (!engineRegistered) engineCheckMessage = "插件已写入本地插件目录；引擎已刷新，但当前列表未返回该插件，新建会话后仍会重新扫描。";
-  } catch (error: any) {
-    engineCheckMessage = `插件已安装且引擎已重启，但自动确认暂时不可用：${error.message}`;
-  }
-  emit(engineRegistered ? "complete" : "pending", engineCheckMessage);
-  return { ...installed, engineRegistered, engineCheckMessage };
-});
-ipcMain.handle("skills:local-list", async () => {
-  try {
-    const entries = await fs.readdir(userSkillsDir, { withFileTypes: true });
-    const results = await Promise.all(entries.filter((entry) => entry.isDirectory()).map(async (entry) => {
-      const file = path.join(userSkillsDir, entry.name, "SKILL.md");
-      // 停用是把 SKILL.md 改名成 SKILL.md.disabled：Codex 扫描目录时看不到，技能就真的不生效。
-      const disabledFile = path.join(userSkillsDir, entry.name, "SKILL.md.disabled");
-      const active = existsSync(file);
-      const target = active ? file : disabledFile;
-      try {
-        const content = await fs.readFile(target, "utf8");
-        let market: InstalledMarketSkill | null = null;
-        let marketSource: "cocoloop" | "skillhub" | null = null;
-        // 市场来源清单：cocoloop 与 skillhub 两种命名都认
-        try { market = JSON.parse(await fs.readFile(path.join(userSkillsDir, entry.name, ".cocoloop.json"), "utf8")); marketSource = "cocoloop"; } catch { /* 继续查 skillhub 清单 */ }
-        if (!market) { try { market = JSON.parse(await fs.readFile(path.join(userSkillsDir, entry.name, ".skillhub.json"), "utf8")); marketSource = "skillhub"; } catch { /* 本地导入没有市场清单 */ } }
-        // .plugin.json 记录「这个技能由哪个插件提供」，钩子页的联动开关靠它定位关联技能
-        let pluginId: string | undefined;
-        try { pluginId = JSON.parse(await fs.readFile(path.join(userSkillsDir, entry.name, ".plugin.json"), "utf8"))?.pluginId || undefined; } catch { /* 非插件技能没有归属 */ }
-        const description = (content.match(/^description:\s*["']?(.+?)["']?\s*$/mi)?.[1] ?? content.split(/\r?\n/).find((line) => line.trim() && !line.startsWith("---")) ?? "本地导入技能").slice(0, 120);
-        // 文件夹名是安装 ID（例如 Memory-Setup-7733），技能名必须以 SKILL.md 的 frontmatter 为准，
-        // 否则会与 Codex skills/list 返回的规范名（例如 memory-setup）显示成两条。
-        const declaredName = content.match(/^name:\s*["']?(.+?)["']?\s*$/mi)?.[1]?.trim();
-        // allowed-tools：SKILL.md frontmatter 里声明的工具白名单（复刻 WorkBuddy 的 allowed-tools）。
-        // 引擎不做强制（引擎技能对象只有 enabled），这里是给 UI 展示声明的工具范围；不声明则为空。
-        const allowedTools = parseSkillAllowedTools(content);
-        return { name: declaredName || entry.name, folder: entry.name, path: target, description, descriptionZh: market?.descriptionZh, enabled: active, pluginId, marketId: market?.marketId, sourceUrl: market?.sourceUrl, installedAt: market?.installedAt, source: marketSource ?? "local", allowedTools, icon: market?.icon, category: market?.category };
-      } catch { return null; }
-    }));
-    return results.filter(Boolean);
-  } catch { return []; }
-});
 /**
  * 解析 SKILL.md frontmatter 里的 allowed-tools 白名单。支持两种 YAML 写法：
  *   allowed-tools:
@@ -6477,151 +838,22 @@ ipcMain.handle("skills:local-list", async () => {
  * 或行内列表：allowed-tools: [Read, Bash]
  * 引擎不强制这个字段（引擎技能对象只有 enabled），这里仅解析展示用；不声明返回空数组。
  */
-function parseSkillAllowedTools(content: string): string[] {
-  const lines = content.split(/\r?\n/);
-  const idx = lines.findIndex((line) => /^allowed-tools\s*:/i.test(line));
-  if (idx < 0) return [];
-  // 行内列表写法
-  const inline = lines[idx].match(/^allowed-tools\s*:\s*\[(.*)\]\s*$/i);
-  if (inline) {
-    return inline[1].split(",").map((entry) => entry.trim()).filter(Boolean);
-  }
-  // 块级列表写法：后续以 "- " 开头的行，直到下一个 frontmatter 键或结束
-  const tools: string[] = [];
-  for (let i = idx + 1; i < lines.length; i += 1) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    if (!/^-\s+/.test(line)) break; // 不再是列表项
-    const tool = line.replace(/^-\s+/, "").replace(/^["']|["']$/g, "").trim();
-    if (tool) tools.push(tool);
-  }
-  return tools;
-}
 
 /** 只改文件名，不重启；批量操作由调用方统一重启一次，避免每个技能都拉起一次引擎 */
-async function setSkillEnabledSilent(folder: string, enabled: boolean) {
-  const resolved = path.resolve(userSkillsDir, String(folder ?? ""));
-  if (!resolved.startsWith(path.resolve(userSkillsDir) + path.sep)) throw new Error("非法技能路径");
-  const active = path.join(resolved, "SKILL.md");
-  const inactive = path.join(resolved, "SKILL.md.disabled");
-  if (enabled) {
-    if (existsSync(inactive) && !existsSync(active)) await fs.rename(inactive, active);
-  } else if (existsSync(active)) {
-    await fs.rename(active, inactive);
-  }
-}
-ipcMain.handle("skills:set-enabled", async (_event, input: { folder: string; enabled: boolean }) => {
-  await setSkillEnabledSilent(input.folder, Boolean(input.enabled));
-  await server.restart();
-  void refreshSkillDiscipline();
-  return { ok: true };
-});
-ipcMain.handle("skills:set-enabled-batch", async (_event, input: { folders: string[]; enabled: boolean }) => {
-  const folders = Array.isArray(input?.folders) ? input.folders : [];
-  const failures: string[] = [];
-  for (const folder of folders) {
-    try { await setSkillEnabledSilent(folder, Boolean(input.enabled)); }
-    catch (error: any) { failures.push(`${folder}：${error.message}`); }
-  }
-  await server.restart();
-  void refreshSkillDiscipline();
-  return { ok: failures.length === 0, changed: folders.length - failures.length, failures };
-});
 /**
  * 卸载技能：与安装对称——分批发出进度事件（校验 → 删除 → 清理登记 → 重启引擎 → 确认移除），
  * 让渲染层用安装同款进度弹窗呈现，结束时明确回报「引擎是否已不再发现该技能」。
  * 兼容旧调用：入参传字符串时按「文件夹名」处理。
  */
-ipcMain.handle("skills:local-remove", async (_event, input: { folder?: string; name?: string } | string) => {
-  const folder = (typeof input === "string" ? input : String(input?.folder ?? "")).trim();
-  const label = (typeof input === "string" ? input : String(input?.name ?? folder)).trim() || folder;
-  if (!folder) throw new Error("缺少技能目录名");
-  const emit = (stage: string, message: string) => sendToWindow("harness:event", { type: "skill-remove", skillId: folder, stage, message, at: Date.now() });
-  const root = path.resolve(userSkillsDir);
-  const target = path.resolve(userSkillsDir, folder);
-  // 防目录穿越：解析后必须仍在技能根目录内
-  if (!target.startsWith(root + path.sep)) throw new Error("非法技能路径");
-  if (!existsSync(target)) throw new Error("技能目录不存在，可能已被卸载");
-  emit("prepare", `已确认待卸载技能：${label}`);
-  emit("delete", "正在删除技能文件");
-  await removeFromSkillRegistry(path.join(target, "SKILL.md"));
-  await fs.rm(target, { recursive: true, force: true });
-  emit("registry", "已清理市场来源与来源登记");
-  emit("engine", "正在重启 Codex 引擎并注销技能");
-  await server.restart();
-  emit("verify", "正在确认 Codex 是否已移除该技能");
-  let engineRemoved = false;
-  let engineCheckMessage = "技能目录已删除，引擎已刷新";
-  try {
-    const result: any = await server.request("skills/list", { cwds: [], forceReload: true });
-    const discovered = (result.data ?? []).flatMap((entry: any) => entry.skills ?? []);
-    const stillPresent = discovered.some((entry: any) => {
-      const entryPath = String(entry?.path ?? "").replace(/\\/g, "/").toLowerCase();
-      const targetPath = target.replace(/\\/g, "/").toLowerCase();
-      const entryFolder = entryPath.split("/").slice(-2, -1)[0] ?? "";
-      return entryPath.startsWith(targetPath) || entryFolder === folder.toLowerCase();
-    });
-    engineRemoved = !stillPresent;
-    if (!engineRemoved) engineCheckMessage = `技能文件已删除，但引擎列表仍返回「${label}」；引擎已刷新，下一轮任务会重新扫描确认。`;
-  } catch (error: any) {
-    engineCheckMessage = `技能已删除且引擎已重启，但自动确认暂时不可用：${error.message}`;
-  }
-  emit(engineRemoved ? "complete" : "pending", engineCheckMessage);
-  void refreshSkillDiscipline();
-  return { ok: true, engineRemoved, engineCheckMessage };
-});
 /**
  * 信任钩子：Codex 默认不执行未信任的钩子（装了等于没装）。
  * 信任记录写在 config.toml 的 [hooks.state."<hook key>"].trusted_hash，
  * 值与 hooks/list 返回的 currentHash 一致；写完后无需重启即可生效。
  */
-ipcMain.handle("hooks:trust", async (_event, input: { cwds?: string[] } = {}) => {
-  const result: any = await server.request("hooks/list", { cwds: input.cwds ?? [] });
-  const hooks = (result?.data ?? []).flatMap((entry: any) => entry.hooks ?? []);
-  const targets = hooks.filter((hook: any) => hook.trustStatus !== "trusted" && hook.currentHash && hook.key);
-  if (!targets.length) return { total: hooks.length, trusted: 0, alreadyTrusted: hooks.length, failures: [] };
-  const configPath = path.join(codexHome, "config.toml");
-  const failures: string[] = [];
-  for (const hook of targets) {
-    // 钩子 key 里含 Windows 路径反斜杠，写进 TOML 点路径前必须转义，否则会被吞掉、信任记录匹配不上
-    const escaped = String(hook.key).split("\\").join("\\\\");
-    try {
-      await server.request("config/value/write", {
-        filePath: configPath,
-        keyPath: `hooks.state."${escaped}".trusted_hash`,
-        value: hook.currentHash,
-        mergeStrategy: "replace",
-      });
-    } catch (error: any) {
-      failures.push(`${hook.eventName ?? hook.key}：${error.message}`);
-    }
-  }
-  return { total: hooks.length, trusted: targets.length - failures.length, alreadyTrusted: hooks.length - targets.length, failures };
-});
 /** 把 hook key 转义成能安全写进 TOML 点路径的形式（反斜杠与引号都要处理） */
-function escapeHookKey(key: string) {
-  return String(key).split("\\").join("\\\\").split('"').join('\\"');
-}
 
 /** 单条钩子的启停：状态在 config.toml 的 [hooks.state."<key>"] enabled */
-async function writeHookEnabled(key: string, enabled: boolean) {
-  await server.request("config/value/write", {
-    filePath: path.join(codexHome, "config.toml"),
-    keyPath: `hooks.state."${escapeHookKey(key)}".enabled`,
-    value: Boolean(enabled),
-    mergeStrategy: "replace",
-  });
-}
 
-ipcMain.handle("hooks:set-enabled", async (_event, input: { hookKeys: string[]; enabled: boolean }) => {
-  const keys = (Array.isArray(input?.hookKeys) ? input.hookKeys : []).map((key) => String(key ?? "")).filter(Boolean);
-  const failures: string[] = [];
-  for (const key of keys) {
-    try { await writeHookEnabled(key, Boolean(input.enabled)); }
-    catch (error: any) { failures.push(`${key}：${error.message}`); }
-  }
-  return { changed: keys.length - failures.length, failures };
-});
 
 /**
  * 联动开关：插件、它的全部钩子、它提供的全部技能一起开/关。
@@ -6631,95 +863,12 @@ ipcMain.handle("hooks:set-enabled", async (_event, input: { hookKeys: string[]; 
  *   3. 技能目录里带 .plugin.json（pluginId 相同）的 SKILL.md ↔ SKILL.md.disabled
  * 最后只重启一次引擎，避免每个技能重启一次导致界面长时间卡住。
  */
-ipcMain.handle("plugins:set-linked-enabled", async (_event, input: { pluginId: string; enabled: boolean }) => {
-  const pluginId = String(input?.pluginId ?? "");
-  if (!pluginId) throw new Error("缺少插件 ID");
-  const enabled = Boolean(input.enabled);
-  const failures: string[] = [];
-
-  // 市场安装的插件真实 ID 形如 "ponytail@ponytail"（id@市场名），调用方可能传短名。
-  // 先从 plugin/list 解析出真实 ID，否则 config 写错键、钩子/技能归属全部匹配不上。
-  let targetId = pluginId;
-  try {
-    const list: any = await server.request("plugin/list", { cwds: [], forceRefetch: false });
-    const base = (value: string) => String(value ?? "").split("@")[0];
-    const found = (list?.marketplaces ?? []).flatMap((marketplace: any) => marketplace.plugins ?? [])
-      .find((plugin: any) => plugin.installed && (plugin.id === pluginId || base(plugin.id) === base(pluginId)));
-    if (found?.id) targetId = String(found.id);
-  } catch { /* 列表失败时保留原 ID */ }
-
-  // 1. 插件本体
-  try {
-    await server.request("config/value/write", {
-      filePath: path.join(codexHome, "config.toml"),
-      keyPath: `plugins."${escapeHookKey(targetId)}".enabled`,
-      value: enabled,
-      mergeStrategy: "replace",
-    });
-  } catch (error: any) { failures.push(`插件：${error.message}`); }
-
-  // 2. 该插件提供的钩子（按 pluginId 过滤，用户自定义钩子 source=user 不受影响）
-  try {
-    const result: any = await server.request("hooks/list", { cwds: [] });
-    const hooks = (result?.data ?? []).flatMap((entry: any) => entry.hooks ?? []);
-    for (const hook of hooks.filter((hook: any) => hook.pluginId === targetId)) {
-      try { await writeHookEnabled(hook.key, enabled); }
-      catch (error: any) { failures.push(`${hook.eventName ?? hook.key}：${error.message}`); }
-    }
-  } catch (error: any) { failures.push(`读取钩子列表失败：${error.message}`); }
-
-  // 3. 该插件提供的技能（.plugin.json 的 pluginId 可能带市场后缀，按 base 名归一化匹配）
-  try {
-    const base = (value: string) => String(value ?? "").split("@")[0];
-    const entries = await fs.readdir(userSkillsDir, { withFileTypes: true });
-    for (const entry of entries.filter((entry) => entry.isDirectory())) {
-      const dir = path.join(userSkillsDir, entry.name);
-      let owner: string | undefined;
-      try { owner = JSON.parse(await fs.readFile(path.join(dir, ".plugin.json"), "utf8"))?.pluginId || undefined; } catch { /* 没有归属清单 */ }
-      if (!owner || base(owner) !== base(targetId)) continue;
-      try { await setSkillEnabledSilent(entry.name, enabled); }
-      catch (error: any) { failures.push(`技能 ${entry.name}：${error.message}`); }
-    }
-  } catch { /* 技能目录不存在时跳过 */ }
-
-  await server.restart();
-  return { ok: failures.length === 0, failures };
-});
 
 /**
  * 插件启用/停用：Codex 没有 plugin/enable 这类 RPC，开关状态存在
  * config.toml 的 [plugins."<id>"] enabled，通过 config/value/write 改写。
  * 支持批量，最后统一重新拉一次插件列表校验是否真的生效。
  */
-ipcMain.handle("plugins:set-enabled", async (_event, input: { pluginIds: string[]; enabled: boolean }) => {
-  const ids = (Array.isArray(input?.pluginIds) ? input.pluginIds : []).map((id) => String(id ?? "")).filter(Boolean);
-  if (!ids.length) return { changed: 0, failures: [] };
-  const configPath = path.join(codexHome, "config.toml");
-  const failures: string[] = [];
-  const idSet = new Set(ids);
-  for (const id of ids) {
-    try {
-      await server.request("config/value/write", {
-        filePath: configPath,
-        keyPath: `plugins."${escapeHookKey(id)}".enabled`,
-        value: Boolean(input.enabled),
-        mergeStrategy: "replace",
-      });
-    } catch (error: any) {
-      failures.push(`${id}：${error.message}`);
-    }
-  }
-  // 联动：插件停用后它提供的钩子在 UI 上也应显示成停用，否则两页状态打架
-  try {
-    const result: any = await server.request("hooks/list", { cwds: [] });
-    const hooks = (result?.data ?? []).flatMap((entry: any) => entry.hooks ?? []);
-    for (const hook of hooks.filter((hook: any) => hook.pluginId && idSet.has(hook.pluginId))) {
-      try { await writeHookEnabled(hook.key, Boolean(input.enabled)); }
-      catch (error: any) { failures.push(`${hook.eventName ?? hook.key}：${error.message}`); }
-    }
-  } catch (error: any) { failures.push(`读取钩子列表失败：${error.message}`); }
-  return { changed: ids.length - failures.length, failures };
-});
 // —— 连接器 OAuth 授权（跳转官方授权页，授权完成自动保存令牌并重启引擎） ——
 type OAuthSession = {
   kind: ConnectorOAuthKind;
@@ -6728,1604 +877,97 @@ type OAuthSession = {
   timer: NodeJS.Timeout;
   state: string;
 };
+
 const oauthSessions = new Map<string, OAuthSession>();
 
-function sendOAuthEvent(payload: { templateId: string; phase: "waiting" | "authorized" | "failed"; message: string; authorizeUrl?: string }) {
-  sendToWindow("connectors:oauth-event", payload);
-}
-
-function closeOAuthSession(templateId: string) {
-  const session = oauthSessions.get(templateId);
-  if (!session) return;
-  clearTimeout(session.timer);
-  if (session.child) try { session.child.kill(); } catch { /* ignore */ }
-  if (session.server) try { session.server.close(); } catch { /* ignore */ }
-  oauthSessions.delete(templateId);
-}
-
 /** 本地回调服务器：接收授权页 redirect 回来的 code/state，返回成功提示页 */
-function startCallbackServer(port: number): Promise<{ server: http.Server; waitCode: (state: string, timeoutMs: number) => Promise<{ code: string; state: string; error: string }> }> {
-  return new Promise((resolve, reject) => {
-    const pending = new Map<string, { resolve: (value: { code: string; state: string; error: string }) => void; timer: NodeJS.Timeout }>();
-    const server = http.createServer((req, res) => {
-      const parsed = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
-      const code = parsed.searchParams.get("code") ?? "";
-      const state = parsed.searchParams.get("state") ?? "";
-      const error = parsed.searchParams.get("error") ?? "";
-      const waiter = pending.get(state);
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      if (waiter) {
-        clearTimeout(waiter.timer);
-        pending.delete(state);
-        if (error) {
-          res.writeHead(400);
-          res.end(`<h3>授权失败：${error}</h3><p>可以关闭此窗口并回到 Codex Harness。</p>`);
-        } else {
-          res.writeHead(200);
-          res.end("<h3>✅ 授权成功</h3><p>令牌已保存，可以关闭此窗口并回到 Codex Harness。</p>");
-        }
-        waiter.resolve({ code, state, error });
-      } else {
-        res.writeHead(404);
-        res.end("not found");
-      }
-    });
-    server.once("error", reject);
-    server.listen(port, "127.0.0.1", () => {
-      server.removeListener("error", reject);
-      resolve({
-        server,
-        waitCode: (waitState, timeoutMs) => new Promise((resolveWait, rejectWait) => {
-          const timer = setTimeout(() => { pending.delete(waitState); rejectWait(new Error("等待授权回调超时，请重试")); }, timeoutMs);
-          pending.set(waitState, { resolve: resolveWait, timer });
-        }),
-      });
-    });
-  });
-}
 
 /** Windows 下 npx 是 npx.cmd，spawn 必须用带扩展名的二进制名，否则 ENOENT；stdio 恒为 pipe，stdout 非空 */
-function spawnNpx(args: string[], options: Parameters<typeof spawn>[2] = {}): ChildProcessWithoutNullStreams {
-  return spawn(process.platform === "win32" ? "npx.cmd" : "npx", args, { shell: false, windowsHide: true, stdio: "pipe", ...options }) as ChildProcessWithoutNullStreams;
-}
 
 /** 飞书：官方 lark-mcp login 子进程回显授权 URL；授权完成后进程以 0 退出并自行保存 token */
-function startFeishuLogin(appId: string, appSecret: string, port: number, scopes?: string): Promise<{ authorizeUrl: string; child: ReturnType<typeof spawn> }> {
-  return new Promise((resolve, reject) => {
-    const args = ["-y", "@larksuiteoapi/lark-mcp", "login", "-a", appId, "-s", appSecret, "--host", "127.0.0.1", "--port", String(port)];
-    if (scopes) args.push("--scope", scopes);
-    const child = spawnNpx(args);
-    let settled = false;
-    let buffer = "";
-    const timer = setTimeout(() => {
-      if (!settled) { settled = true; try { child.kill(); } catch { /* ignore */ } reject(new Error("等待飞书授权地址超时，请确认 App ID/Secret 正确")); }
-    }, 60000);
-    child.stdout.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString();
-      const match = buffer.match(/https?:\/\/[^\s"'<>，。]+/);
-      if (match && !settled) {
-        settled = true;
-        clearTimeout(timer);
-        resolve({ authorizeUrl: match[0], child });
-      }
-    });
-    child.on("error", (error: Error) => {
-      if (!settled) { settled = true; clearTimeout(timer); reject(new Error(`启动飞书授权进程失败：${error.message}`)); }
-    });
-    child.on("exit", (code) => {
-      if (!settled) { settled = true; clearTimeout(timer); reject(new Error(`飞书授权进程提前退出（code=${code}），请检查 App ID/Secret 与网络`)); }
-    });
-  });
-}
 
-async function exchangeOAuthToken(spec: ConnectorOAuthSpec, params: Record<string, string>): Promise<any> {
-  const url = spec.tokenUrl ?? "";
-  const body = { ...(spec.tokenParams ?? {}), ...params };
-  let response: Response;
-  if (spec.tokenMethod === "POST") {
-    response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  } else {
-    response = await fetch(`${url}?${new URLSearchParams(body)}`);
-  }
-  const data: any = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`令牌接口返回 ${response.status}：${JSON.stringify(data)}`);
-  return data;
-}
 
-async function applyOAuthResult(template: ConnectorTemplate, values: Record<string, string>, secrets: Record<string, string>, accountHint?: string, argsPatch?: { remove: string[]; add: string[] }) {
-  const list = await readConnectors();
-  const previous = list.find((entry) => entry.id === template.id);
-  const fill = (text: string) => text.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? "").trim() || `{${key}}`);
-  const config: ConnectorConfig = previous ?? {
-    id: template.id, name: template.name, transport: template.transport,
-    command: template.transport === "stdio" ? template.command : undefined,
-    args: template.transport === "stdio" ? (template.args ?? []).map(fill) : undefined,
-    url: template.transport === "streamable_http" ? fill(template.url ?? "") : undefined,
-    env: { ...template.env },
-    envHttpHeaders: template.envHttpHeaders,
-    encryptedSecrets: {},
-    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-  };
-  if (argsPatch && config.args) {
-    const args = [...config.args];
-    for (const token of argsPatch.remove) { const index = args.indexOf(token); if (index >= 0) args.splice(index, 1); }
-    config.args = [...new Set([...args, ...argsPatch.add])];
-  }
-  config.encryptedSecrets = { ...(previous?.encryptedSecrets ?? {}), ...Object.fromEntries(Object.entries(secrets).map(([key, value]) => [key, safeStorage.encryptString(value).toString("base64")])) };
-  config.oauth = { status: "connected", provider: template.id, authorizedAt: Date.now(), accountHint };
-  config.updatedAt = new Date().toISOString();
-  await writeConnectors([...list.filter((entry) => entry.id !== template.id), config]);
-  const model = await readCustomModel();
-  if (model) await applyCustomModel(model); else { server.setExternalEnv(connectorEnv(await readConnectors())); await server.restart(); }
-}
 
-ipcMain.handle("connectors:oauth-start", async (_event, input: any) => {
-  const templateId = String(input?.templateId ?? "");
-  const template = BUILTIN_CONNECTOR_TEMPLATES.find((entry) => entry.id === templateId);
-  if (!template?.oauth) throw new Error("该模板不支持 OAuth 授权");
-  const values: Record<string, string> = input?.values ?? {};
-  const spec = template.oauth;
-  const missing = spec.credentialKeys.filter((key) => !String(values[key] ?? "").trim());
-  if (missing.length) {
-    const labels = missing.map((key) => template.fields.find((field) => field.key === key)?.label ?? key).join("、");
-    throw new Error(`请先填写：${labels}`);
-  }
-  closeOAuthSession(templateId);
-  try {
-    if (spec.kind === "lark-login") {
-      const port = spec.port;
-      const { authorizeUrl, child } = await startFeishuLogin(String(values[spec.credentialKeys[0]]).trim(), String(values[spec.credentialKeys[1]]).trim(), port, spec.scopes);
-      oauthSessions.set(templateId, { kind: "lark-login", child, timer: setTimeout(() => { closeOAuthSession(templateId); sendOAuthEvent({ templateId, phase: "failed", message: "授权超时，已取消" }); }, 240000), state: "" });
-      sendOAuthEvent({ templateId, phase: "waiting", message: "已在浏览器打开飞书授权页，请登录并点击授权", authorizeUrl });
-      void shell.openExternal(authorizeUrl);
-      child.once("exit", (code) => {
-        closeOAuthSession(templateId);
-        if (code === 0) {
-          void applyOAuthResult(template, values, {}, undefined, { remove: ["--token-mode", "tenant_access_token"], add: ["--oauth", "--token-mode", "user_access_token"] })
-            .then(() => sendOAuthEvent({ templateId, phase: "authorized", message: "飞书授权成功，已保存用户令牌并重启引擎" }))
-            .catch((error: Error) => sendOAuthEvent({ templateId, phase: "failed", message: `授权成功但保存失败：${error.message}` }));
-        } else {
-          sendOAuthEvent({ templateId, phase: "failed", message: `飞书授权未完成（进程退出码 ${code}），请重试` });
-        }
-      });
-      return { ok: true, authorizeUrl };
-    }
-    // http-code：钉钉 / 腾讯文档 —— 本地回调收 code，再换 token
-    const port = spec.port;
-    const redirectUri = String(values.redirect_uri ?? "").trim() || spec.redirectUri || `http://127.0.0.1:${port}/callback`;
-    const state = crypto.randomBytes(8).toString("hex");
-    const { server, waitCode } = await startCallbackServer(port);
-    oauthSessions.set(templateId, { kind: "http-code", server, timer: setTimeout(() => { closeOAuthSession(templateId); sendOAuthEvent({ templateId, phase: "failed", message: "等待授权超时，已取消" }); }, 240000), state });
-    const clientId = String(values[spec.credentialKeys[0]]).trim();
-    const clientSecret = String(values[spec.credentialKeys[1]]).trim();
-    const authorizeUrl = (spec.authorizeUrl ?? "")
-      .replace("{client_id}", encodeURIComponent(clientId))
-      .replace("{redirect_uri}", encodeURIComponent(redirectUri))
-      .replace("{state}", state);
-    sendOAuthEvent({ templateId, phase: "waiting", message: `${template.name}：请在浏览器完成授权`, authorizeUrl });
-    void shell.openExternal(authorizeUrl);
-    const { code, error } = await waitCode(state, 210000);
-    if (error) throw new Error(`${template.name}授权失败：${error}`);
-    const tokenData = await exchangeOAuthToken(spec, { client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, code });
-    const map = spec.tokenResult ?? { accessToken: "access_token" };
-    const accessToken = tokenData[map.accessToken] ?? "";
-    if (!accessToken) throw new Error(`令牌接口未返回访问令牌：${JSON.stringify(tokenData)}`);
-    const refreshToken = map.refreshToken ? tokenData[map.refreshToken] ?? "" : "";
-    const userId = map.userId ? tokenData[map.userId] ?? "" : "";
-    const prefix = template.id.toUpperCase().replace("-", "_");
-    const secrets: Record<string, string> = { [`${prefix}_OAUTH_TOKEN`]: accessToken };
-    if (refreshToken) secrets[`${prefix}_OAUTH_REFRESH`] = refreshToken;
-    const accountHint = userId
-      ? (template.id === "tencent-docs" ? `OpenID ${userId.slice(0, 8)}…` : `用户 ${userId.slice(0, 8)}…`)
-      : template.id === "dingtalk" ? (tokenData.nick ?? tokenData.nickName ?? "") : "";
-    await applyOAuthResult(template, values, secrets, accountHint || undefined);
-    closeOAuthSession(templateId);
-    sendOAuthEvent({ templateId, phase: "authorized", message: `${template.name}授权成功，用户令牌已加密保存` });
-    return { ok: true, authorizeUrl };
-  } catch (error: any) {
-    closeOAuthSession(templateId);
-    sendOAuthEvent({ templateId, phase: "failed", message: error.message });
-    return { ok: false, message: error.message };
-  }
-});
 
-ipcMain.handle("connectors:oauth-cancel", (_event, templateId: string) => {
-  closeOAuthSession(String(templateId));
-  return { ok: true };
-});
 
-ipcMain.handle("connectors:list", async () => (await readConnectors()).map(publicConnector));ipcMain.handle("connectors:templates", () => BUILTIN_CONNECTOR_TEMPLATES);
-ipcMain.handle("connectors:save", async (_event, input: any) => {
-  const id = safeConnectorId(String(input.id ?? input.name ?? ""));
-  const name = String(input.name ?? "").trim();
-  const transport: ConnectorTransport = input.transport === "streamable_http" ? "streamable_http" : "stdio";
-  if (!id || !name) throw new Error("连接器名称不能为空");
-  const command = String(input.command ?? "").trim();
-  const url = String(input.url ?? "").trim();
-  if (transport === "stdio" && !command) throw new Error("stdio 连接器必须填写启动命令");
-  if (transport === "streamable_http") {
-    let parsed: URL;
-    try { parsed = new URL(url); } catch { throw new Error("HTTP MCP 地址不是合法 URL"); }
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("HTTP MCP 地址必须使用 http 或 https");
-  }
-  const list = await readConnectors();
-  const previous = list.find((entry) => entry.id === id);
-  const secrets: Record<string, string> = Object.fromEntries(Object.entries(input.secrets ?? {}).map(([key, value]) => [String(key).trim(), String(value ?? "").trim()]).filter(([key, value]) => Boolean(key && value)) as [string, string][]);
-  if (Object.keys(secrets).length && !safeStorage.isEncryptionAvailable()) throw new Error("当前系统无法安全保存连接器密钥");
-  const encryptedSecrets = { ...(previous?.encryptedSecrets ?? {}), ...Object.fromEntries(Object.entries(secrets).map(([key, value]) => [key, safeStorage.encryptString(value).toString("base64")])) };
-  const config: ConnectorConfig = {
-    id, name, transport, command: transport === "stdio" ? command : undefined,
-    args: transport === "stdio" ? (Array.isArray(input.args) ? input.args.map((value: unknown) => String(value).trim()).filter(Boolean) : []) : undefined,
-    url: transport === "streamable_http" ? url : undefined,
-    headers: transport === "streamable_http" && input.headers && typeof input.headers === "object" ? Object.fromEntries(Object.entries(input.headers).map(([key, value]) => [String(key).trim(), String(value ?? "").trim()]).filter(([key, value]) => key && value)) : undefined,
-    envHttpHeaders: transport === "streamable_http" && input.envHttpHeaders && typeof input.envHttpHeaders === "object" ? Object.fromEntries(Object.entries(input.envHttpHeaders).map(([key, value]) => [String(key).trim(), String(value ?? "").trim()]).filter(([key, value]) => key && value)) : undefined,
-    env: transport === "stdio" && input.env && typeof input.env === "object" ? Object.fromEntries(Object.entries(input.env).map(([key, value]) => [String(key).trim(), String(value ?? "").trim()]).filter(([key, value]) => key && value)) : undefined,
-    encryptedSecrets, enabled: input.enabled === undefined ? previous?.enabled ?? true : Boolean(input.enabled), createdAt: previous?.createdAt ?? new Date().toISOString(), updatedAt: new Date().toISOString(),
-  };
-  await writeConnectors([...list.filter((entry) => entry.id !== id), config]);
-  const model = await readCustomModel();
-  if (model) await applyCustomModel(model); else { server.setExternalEnv(connectorEnv(await readConnectors())); await server.restart(); }
-  void refreshSkillDiscipline();
-  return publicConnector(config);
-});
-ipcMain.handle("connectors:remove", async (_event, id: string) => {
-  const list = await readConnectors();
-  const next = list.filter((entry) => entry.id !== id);
-  if (next.length === list.length) throw new Error("未找到连接器");
-  await writeConnectors(next);
-  const model = await readCustomModel();
-  if (model) await applyCustomModel(model); else { server.setExternalEnv(connectorEnv(next)); await server.restart(); }
-  void refreshSkillDiscipline();
-  return { ok: true };
-});
 // 单个或批量启用/停用：ids 传一个等价单卡开关，传多个走批量勾选。每次改动都重启引擎使 config.toml 生效
-ipcMain.handle("connectors:set-enabled", async (_event, input: { ids?: unknown; enabled?: unknown }) => {
-  const ids = Array.isArray(input.ids)
-    ? input.ids.map((value) => String(value ?? "").trim()).filter(Boolean)
-    : [];
-  if (!ids.length) throw new Error("未指定要更新状态的连接器");
-  const enabled = input.enabled !== false;
-  const list = await readConnectors();
-  let updated = 0;
-  const next = list.map((entry) => {
-    if (!ids.includes(entry.id) || entry.enabled === enabled) return entry;
-    updated += 1;
-    return { ...entry, enabled, updatedAt: new Date().toISOString() };
-  });
-  if (!updated) return { ok: true, updated: 0 };
-  await writeConnectors(next);
-  const model = await readCustomModel();
-  if (model) await applyCustomModel(model); else { server.setExternalEnv(connectorEnv(next)); await server.restart(); }
-  void refreshSkillDiscipline();
-  return { ok: true, updated };
-});
 
 // —— app-server MCP 服务器启停（页面上的「app-server MCP 状态」卡片用） ——
 // 同一个入口同时处理两类服务器：名字能匹配到连接器的走 connectors.json，
 // 其余（内置 nuphus 等）走覆盖表。渲染层因此不需要区分来源。
 // 渲染层只需要 名字 -> 是否启用；原文（toml）是主进程恢复用的内部数据，不外泄
-ipcMain.handle("mcp-servers:overrides", async () => {
-  const overrides = await readMcpOverrides();
-  return Object.fromEntries(Object.entries(overrides).map(([name, entry]) => [name, entry?.enabled !== false]));
-});
-ipcMain.handle("mcp-servers:set-enabled", async (_event, input: { ids?: unknown; enabled?: unknown }) => {
-  const ids = Array.isArray(input.ids)
-    ? input.ids.map((value) => String(value ?? "").trim()).filter(Boolean)
-    : [];
-  if (!ids.length) throw new Error("未指定要更新状态的 MCP 服务");
-  const enabled = input.enabled !== false;
-  const connectors = await readConnectors();
-  const connectorIds = new Set(connectors.map((entry) => entry.id));
-  let updated = 0;
-  let next = connectors;
-  const connectorTargets = ids.filter((id) => connectorIds.has(id));
-  if (connectorTargets.length) {
-    next = connectors.map((entry) => {
-      if (!connectorTargets.includes(entry.id) || entry.enabled === enabled) return entry;
-      updated += 1;
-      return { ...entry, enabled, updatedAt: new Date().toISOString() };
-    });
-    if (updated) await writeConnectors(next);
-  }
-  const overrides = await readMcpOverrides();
-  // 覆盖表只管非连接器的服务器（内置 nuphus + 用户手工写在 config.toml 的段 + 已有记录）。
-  // 陌生 id 一律忽略：记进去也只是死记录（readUserConfigSplit 会清掉），还白触发一次引擎重启。
-  let knownExtra = new Set<string>();
-  try {
-    knownExtra = new Set(collectMcpServerNames(await fs.readFile(path.join(codexHome, "config.toml"), "utf8")));
-  } catch { /* config.toml 还不存在就当没有手工段 */ }
-  for (const id of ids) {
-    if (connectorIds.has(id)) continue; // 已由连接器处理，别在覆盖表里留下同名垃圾
-    if (id !== "nuphus" && !(id in overrides) && !knownExtra.has(id)) continue;
-    if (mcpOverrideEnabled(overrides, id) === enabled) continue;
-    // 保留已有原文与工具权限：用户手工写的 MCP 靠原文才能启用时拼回，工具权限不能因启停被抹掉
-    overrides[id] = { enabled, toml: overrides[id]?.toml, permissions: overrides[id]?.permissions };
-    updated += 1;
-  }
-  await writeMcpOverrides(overrides);
-  if (!updated) return { ok: true, updated: 0 };
-  const model = await readCustomModel();
-  if (model) await applyCustomModel(model); else { server.setExternalEnv(connectorEnv(next)); await server.restart(); }
-  return { ok: true, updated };
-});
 
 // —— MCP 服务器按工具权限（deny/ask/allow）——
 // 复刻 WorkBuddy 工具级权限模型：对某个服务器的某个工具设/清权限档位。
 // mode 传 "deny" | "ask" | "allow"；传 null 清除该工具规则。改动落覆盖表，
 // 重写 config.toml（[permissions.*] 段）并重启引擎。未知服务器 id 直接忽略。
 // 读接口返回 { server: { tool: mode } }，供渲染层展示每个工具的当前档位。
-ipcMain.handle("mcp-servers:permissions", async () => {
-  const overrides = await readMcpOverrides();
-  const view = Object.fromEntries(
-    Object.entries(overrides)
-      .filter(([, entry]) => entry?.permissions && Object.keys(entry.permissions).length)
-      .map(([name, entry]) => [name, entry!.permissions])
-  );
-  // ⛔ 与 config.toml **同源**（09-20）：把总闸掩码一并反映到 UI。
-  //    否则总闸关着时，界面显示「未设权限规则」而配置里那些工具已被 disabled_tools 摘掉
-  //    —— 属于「显示侧与落盘不一致」，本项目修过同类 bug（供应商启用态、本地地址判定）。
-  const appSettings = await readAppSettings(app.getPath("userData"));
-  return withNuphusMasks(view as Record<string, Record<string, "deny" | "ask" | "allow">>, {
-    desktop: appSettings.desktopAutomation !== false,
-    browser: appSettings.browserAutomation !== false,
-  });
-});
-ipcMain.handle("mcp-servers:set-tool-permission", async (_event, input: { server?: unknown; tool?: unknown; mode?: unknown }) => {
-  const serverId = String(input.server ?? "").trim();
-  const tool = String(input.tool ?? "").trim();
-  if (!serverId || !tool) throw new Error("缺少服务器名或工具名");
-  const mode = input.mode == null ? null : String(input.mode);
-  if (mode !== null && mode !== "deny" && mode !== "ask" && mode !== "allow") {
-    throw new Error(`未知权限档位：${mode}（应为 deny/ask/allow，或传 null 清除）`);
-  }
-  const overrides = await readMcpOverrides();
-  // 陌生服务器不落死记录：只在覆盖表已有记录或已知服务器上生效
-  const connectors = await readConnectors();
-  let knownExtra = new Set<string>();
-  try {
-    knownExtra = new Set(collectMcpServerNames(await fs.readFile(path.join(codexHome, "config.toml"), "utf8")));
-  } catch { /* config.toml 不存在就当没有手工段 */ }
-  const known = serverId === "nuphus" || connectors.some((c) => c.id === serverId) || (serverId in overrides) || knownExtra.has(serverId);
-  if (!known) return { ok: true, updated: false, reason: "unknown-server" };
-
-  const permissions = overrides[serverId]?.permissions ?? {};
-  if (mode === null) {
-    delete permissions[tool];
-  } else {
-    permissions[tool] = mode;
-  }
-  // 清空整表就删掉字段，保持覆盖表干净
-  overrides[serverId] = { ...overrides[serverId], enabled: overrides[serverId]?.enabled !== false, toml: overrides[serverId]?.toml, ...(Object.keys(permissions).length ? { permissions } : {}) };
-  await writeMcpOverrides(overrides);
-  const model = await readCustomModel();
-  if (model) await applyCustomModel(model); else await server.restart();
-  return { ok: true, updated: true, server: serverId, tool, mode };
-});
 
 // —— 个性化：称呼 + 自定义指令。走 Codex 原生 AGENTS.md 机制（$CODEX_HOME/AGENTS.md），
 // 引擎每个会话开始时自动注入 prompt；纯 Markdown 落盘，无 TOML 转义风险 ——
-ipcMain.handle("personalization:read", async () => readPersonalization());
-ipcMain.handle("personalization:save", async (_event, input: { nickname?: unknown; customInstructions?: unknown }) => {
-  const config = await writePersonalization(input);
-  await applyPersonalizationToAgentsMd(config, codexHome);
-  void refreshSkillDiscipline();
-  const model = await readCustomModel();
-  // 重写 config.toml：把迁移前残留在 developer_instructions 里的旧个性化段清掉，并重启引擎
-  if (model) await applyCustomModel(model);
-  return config;
-});
 /** 首次见面引导保存（identity_onboard 工具的落点）：全维度写个性化档案
  *  （助手名/称呼/场景/职业/风格/语气/爱好/习惯 + onboarded=true），重建 AGENTS.md
  *  即时生效——刻意不重启引擎、不重写 config.toml（AGENTS.md 每新会话由引擎读取）。 */
-ipcMain.handle("personalization:save-identity", async (_event, input: Record<string, unknown>) => {
-  const config = await writePersonalization(input);
-  await applyPersonalizationToAgentsMd(config, codexHome);
-  void refreshSkillDiscipline();
-  return config;
-});
 /** 标记「身份引导已打过招呼」（09-12 用户反馈「怎么每次新会话都强制引导」）：
     第一次对话注入引导指令后调用一次，此后新会话不再引导、直接干活——
     与 `onboarded` 分开：那个表示用户**真的回答了**，这个只表示**问过一次**。 */
-ipcMain.handle("personalization:mark-greeted", async () => {
-  const config = await writePersonalization({ greeted: true });
-  return config;
-});
 
 // 应用级运行时开关（联网搜索等）。改完重写 config.toml 让引擎重载生效。
-ipcMain.handle("appSettings:read", async (): Promise<AppSettings> => readAppSettings(app.getPath("userData")));
 // 外部模型规格规则（userData/model-specs.json）：数据与代码分离，更新模型数据无需重新构建。
 // 文件不存在返回 null，渲染层用内置表兜底；更新 JSON 后重启应用生效。
-ipcMain.handle("model-specs:read", async () => {
-  try { return JSON.parse(await fs.readFile(path.join(app.getPath("userData"), "model-specs.json"), "utf8")); } catch { return null; }
-});
-ipcMain.handle("appSettings:save", async (_event, patch: Partial<AppSettings>): Promise<AppSettings> => {
-  const next = await saveAppSettings(app.getPath("userData"), patch);
-  const model = await readCustomModel();
-  if (model) await applyCustomModel(model);
-  // 引擎健康看门狗开关即时生效（不依赖重启后的 ready 事件）
-  await syncEngineWatchdog();
-  return next;
-});
 
 // SSH 服务器连接管理：列表 CRUD + 启用开关 + 连接测试 + 命令执行 + 交互式会话（userData/ssh-servers.json）
-const sshSessions = new SshSessionManager();
-ipcMain.handle("ssh:list", async (): Promise<SshServer[]> => readSshServers(app.getPath("userData")));
-ipcMain.handle("ssh:save", async (_event, input: SshServer): Promise<SshServer[]> => {
-  const server: SshServer = {
-    ...input,
-    id: input.id || crypto.randomUUID(),
-    port: Number(input.port) || 22,
-    createdAt: input.createdAt || new Date().toISOString(),
-  };
-  return saveSshServer(app.getPath("userData"), server);
-});
-ipcMain.handle("ssh:delete", async (_event, ids: string[]): Promise<SshServer[]> => {
-  const list = Array.isArray(ids) ? ids.map((id) => String(id)) : [String(ids)];
-  return deleteSshServer(app.getPath("userData"), list);
-});
-ipcMain.handle("ssh:set-enabled", async (_event, input: { ids: string[]; enabled: boolean }): Promise<SshServer[]> => {
-  const ids = Array.isArray(input?.ids) ? input.ids.map(String) : [];
-  return setSshServerEnabled(app.getPath("userData"), ids, Boolean(input?.enabled));
-});
-ipcMain.handle("ssh:test", async (_event, input: SshServer): Promise<SshTestResult> => {
-  try {
-    return await testSshConnection(input, (input.connectTimeout && input.connectTimeout > 0 ? input.connectTimeout : 10) * 1000);
-  } catch (error: any) {
-    return { ok: false, error: error.message };
-  }
-});
-ipcMain.handle("ssh:exec", async (_event, input: { server: SshServer; command: string }): Promise<SshExecResult> => {
-  try {
-    return await execSshCommand(input?.server, String(input?.command ?? ""));
-  } catch (error: any) {
-    return { ok: false, error: error.message };
-  }
-});
+
 // 交互式 shell 会话：一次 open 建立一个 ssh2 连接，数据/退出通过窗口事件推送给渲染层
-ipcMain.handle("ssh:session-open", async (_event, input: { server: SshServer; cols: number; rows: number }): Promise<{ sessionId: string } | { error: string }> => {
-  try {
-    return await sshSessions.open(input.server, {
-      cols: Number(input?.cols) || 100,
-      rows: Number(input?.rows) || 30,
-      onData: (data) => sendToWindow("ssh:data", { data }),
-      onExit: (info) => sendToWindow("ssh:exit", info),
-    });
-  } catch (error: any) {
-    return { error: error.message };
-  }
-});
-ipcMain.handle("ssh:session-write", (_event, input: { sessionId: string; data: string }) => {
-  sshSessions.write(String(input?.sessionId ?? ""), String(input?.data ?? ""));
-});
-ipcMain.handle("ssh:session-resize", (_event, input: { sessionId: string; cols: number; rows: number }) => {
-  sshSessions.resize(String(input?.sessionId ?? ""), Number(input?.cols) || 100, Number(input?.rows) || 30);
-});
-ipcMain.handle("ssh:session-close", (_event, sessionId: string) => {
-  sshSessions.close(String(sessionId));
-});
 // 导出连接配置：弹出保存对话框，支持「不含凭据」的安全导出
-ipcMain.handle("ssh:export", async (_event, input: { servers: SshServer[]; includeSecrets: boolean }): Promise<string | null> => {
-  const result = await dialog.showSaveDialog(mainWindow!, {
-    title: "导出 SSH 连接配置",
-    defaultPath: `ssh-servers-${new Date().toISOString().slice(0, 10)}.json`,
-    filters: [{ name: "JSON", extensions: ["json"] }],
-  });
-  if (result.canceled || !result.filePath) return null;
-  await fs.writeFile(result.filePath, exportSshServers(input?.servers ?? [], Boolean(input?.includeSecrets)), "utf8");
-  return result.filePath;
-});
-ipcMain.handle("ssh:import", async (): Promise<SshServer[] | null> => {
-  const result = await dialog.showOpenDialog(mainWindow!, {
-    title: "导入 SSH 连接配置",
-    properties: ["openFile"],
-    filters: [{ name: "JSON", extensions: ["json"] }],
-  });
-  if (result.canceled || !result.filePaths?.length) return null;
-  const imported = parseSshImport(await fs.readFile(result.filePaths[0], "utf8"));
-  if (!imported.length) return null;
-  const current = await readSshServers(app.getPath("userData"));
-  const merged = [...current];
-  for (const server of imported) merged.push({ ...server, id: crypto.randomUUID() });
-  await writeSshServers(app.getPath("userData"), merged);
-  return merged;
-});
 // ── 会话备份导入/导出：导出 = 引擎 rollout 原档 + 元信息打包成单文件 .json；
 //    导入 = rollout 原样写回 codex-home/sessions，主进程扫描兜底立即可见，不依赖引擎索引。──
-ipcMain.handle("threads:export", async (_event, input?: { threadIds?: string[] }): Promise<{ path: string; count: number } | null> => {
-  const ids = Array.isArray(input?.threadIds) && input.threadIds.length ? input.threadIds.map((id) => String(id)) : undefined;
-  const backup = buildSessionsBackup(codexHome, ids);
-  if (!backup.threads.length) return null;
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-  const single = ids && ids.length === 1 ? `codex-thread-${ids[0].slice(0, 8)}-${stamp}` : `codex-sessions-backup-${stamp}`;
-  const result = await dialog.showSaveDialog(mainWindow!, {
-    title: ids?.length === 1 ? "导出会话备份" : "导出全部会话备份",
-    defaultPath: `${single}.json`,
-    filters: [{ name: "Codex 会话备份", extensions: ["json"] }],
-  });
-  if (result.canceled || !result.filePath) return null;
-  await fs.writeFile(result.filePath, JSON.stringify(backup, null, 1), "utf8");
-  return { path: result.filePath, count: backup.threads.length };
-});
-ipcMain.handle("threads:export-markdown", async (_event, input?: { threadIds?: string[] }): Promise<{ path: string; count: number; totalMessages: number } | null> => {
-  const ids = Array.isArray(input?.threadIds) && input.threadIds.length ? input.threadIds.map((id) => String(id)) : undefined;
-  const md = buildMarkdownExport(codexHome, ids);
-  if (!md.count) return null;
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-  const single = ids && ids.length === 1 ? `codex-thread-${ids[0].slice(0, 8)}-${stamp}` : `codex-sessions-${stamp}`;
-  const result = await dialog.showSaveDialog(mainWindow!, {
-    title: ids?.length === 1 ? "导出会话记录为 Markdown" : "导出全部会话记录为 Markdown",
-    defaultPath: `${single}.md`,
-    filters: [{ name: "Markdown 对话记录", extensions: ["md"] }],
-  });
-  if (result.canceled || !result.filePath) return null;
-  await fs.writeFile(result.filePath, md.markdown, "utf8");
-  return { path: result.filePath, count: md.count, totalMessages: md.totalMessages };
-});
 // 单会话只读全文预览（全局搜索「会话」命中点开）：直接读 rollout 原档渲染消息序列，不动引擎焦点
-ipcMain.handle("threads:preview-conversation", (_event, threadId: string) => buildThreadPreview(codexHome, String(threadId ?? "")));
-ipcMain.handle("threads:import", async (): Promise<{ path: string; imported: number; skipped: number; threads: { id: string; name: string; status: string }[] } | null> => {
-  // 支持两类文件：本应用导出的会话备份（.json）+ 原生 Codex rollout 会话记录（.jsonl，
-  // 用户反馈 #10：原生会话记录都是 .jsonl，此前只认 .json 导不进来）。可多选合并导入。
-  const result = await dialog.showOpenDialog(mainWindow!, {
-    title: "导入会话备份 / 原生 Codex 会话记录",
-    properties: ["openFile", "multiSelections"],
-    filters: [
-      { name: "会话备份 / Codex 会话记录（json, jsonl）", extensions: ["json", "jsonl"] },
-      { name: "所有文件", extensions: ["*"] },
-    ],
-  });
-  if (result.canceled || !result.filePaths?.length) return null;
-  const merged: any = { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), threads: [] };
-  for (const filePath of result.filePaths) {
-    if (/\.jsonl$/i.test(filePath)) {
-      // 原生 Codex rollout：转成本应用备份格式后走同一条写回管线（重导入同会话按 duplicate/conflict 跳过）
-      merged.threads.push(...backupFromRolloutFile(filePath).threads);
-    } else {
-      let parsed: any;
-      try {
-        parsed = JSON.parse(await fs.readFile(filePath, "utf8"));
-      } catch (error: any) {
-        throw new Error(`${path.basename(filePath)}：不是有效的 JSON 文件（${error.message}）`);
-      }
-      if (!parsed || parsed.format !== BACKUP_FORMAT || !Array.isArray(parsed.threads)) {
-        // .json 但不是本应用备份格式：常见原因是把 rollout 内容存成了 .json，提示改扩展名
-        const looksLikeRollout = typeof parsed === "object" && parsed !== null && (parsed.type === "session_meta" || (Array.isArray(parsed) && parsed[0]?.type === "session_meta"));
-        throw new Error(
-          looksLikeRollout
-            ? `${path.basename(filePath)}：这是单条会话记录内容，请把扩展名改为 .jsonl 后再导入`
-            : `${path.basename(filePath)}：不是有效的会话备份文件（缺少 format 标记）`
-        );
-      }
-      merged.threads.push(...parsed.threads);
-    }
-  }
-  if (!merged.threads.length) return { path: result.filePaths[0], imported: 0, skipped: 0, threads: [] };
-  const summary = applySessionsBackup(codexHome, merged);
-  // ⛔ 导入成功 = 这条会话被重新写回磁盘 → 必须摘掉同名墓碑（见 forgetDeletedThreads 注释）：
-  //   不然用户「删掉 → 从备份恢复」后会看不到它，且无从发现原因。
-  //   只清 status === "ok"（真正写进去的）：duplicate / conflict 是磁盘上那份还在，保留墓碑更安全。
-  await forgetDeletedThreads(summary.threads.filter((entry: { status: string }) => entry.status === "ok").map((entry: { id: string }) => entry.id));
-  return { path: result.filePaths[0], ...summary };
-});
 // 导入外部对话记录（主流 AI / 官方 Codex /export 导出的 .md/.txt 文本）→ 自动新建一个命名会话：
 // 标题「导入：原会话名」带导入标识，会话本身留空（不自动跑）。渲染层在用户发出该会话第一条
 // 消息时，把整段记录附在消息前发给引擎，并把界面折叠成一条可展开的「导入的会话记录」卡。
-ipcMain.handle("threads:import-conversation", async (_event, input?: { cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null }): Promise<{ thread: any; imported: { title: string; fileName: string; turns: number; text: string; at: string } } | null> => {
-  const result = await dialog.showOpenDialog(mainWindow!, {
-    title: "导入外部会话记录（Markdown）",
-    properties: ["openFile"],
-    filters: [
-      { name: "对话记录（Markdown/文本）", extensions: ["md", "markdown", "txt"] },
-      { name: "所有文件", extensions: ["*"] },
-    ],
-  });
-  if (result.canceled || !result.filePaths?.length) return null;
-  const filePath = result.filePaths[0];
-  const raw = await fs.readFile(filePath, "utf8");
-  const parsed = parseMarkdownConversation(raw, path.basename(filePath));
-  if (!parsed.text.trim()) throw new Error("文件中没有可导入的对话内容");
-  // 超出上下文窗口的记录直接拒绝，提示拆分——避免首条消息过大被引擎截断/超窗
-  if (parsed.text.length > 400000) throw new Error("记录过长（超过 40 万字符），请先拆分成更小的文件再导入");
-  const customModel = await readCustomModel();
-  const provider = customModel?.provider ?? "openai";
-  const baseUrl = customModel?.baseUrl;
-  const name = customModel?.name ?? provider;
-  const apiKey = customModel?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
-  if (apiKey) server.setApiKey(apiKey);
-  const effectiveModel = input?.model || customModel?.model;
-  if (!effectiveModel) throw new Error("尚未配置自定义模型，无法新建导入会话");
-  const started: any = await server.request("thread/start", {
-    model: effectiveModel,
-    cwd: input?.cwd || process.cwd(),
-    approvalPolicy: input?.approvalPolicy || "never",
-    sandbox: input?.sandbox || "workspace-write",
-    modelProvider: provider,
-    personality: input?.personality || null,
-    config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
-  });
-  const threadName = `导入：${parsed.title || path.basename(filePath, path.extname(filePath))}`.slice(0, 80);
-  try { await server.request("thread/name/set", { threadId: started.thread.id, name: threadName }); } catch { /* 命名失败不阻塞进入会话 */ }
-  return {
-    thread: { ...started.thread, name: threadName },
-    imported: { title: parsed.title, fileName: path.basename(filePath), turns: parsed.turns, text: parsed.text, at: new Date().toISOString() },
-  };
-});
-// 私钥文件选择器：设置页「浏览…」按钮
-ipcMain.handle("dialog:ssh-key", async (_event, startPath?: string) => {
-  const start = startPath && existsSync(path.dirname(startPath)) ? path.dirname(startPath) : undefined;
-  const result = await dialog.showOpenDialog(mainWindow!, {
-    title: "选择 SSH 私钥文件",
-    properties: ["openFile"],
-    defaultPath: start,
-    filters: [{ name: "SSH 私钥", extensions: ["", "pem", "key", "ppk", "id_rsa", "id_ed25519"] }, { name: "All files", extensions: ["*"] }],
-  });
-  return result.canceled || !result.filePaths?.length ? null : result.filePaths[0];
-});
 // 仅更新称呼（昵称）：只写 personalization.json + AGENTS.md，不重启引擎。// AGENTS.md 是 Codex 原生动态加载机制（每个请求都重新读），下次对话即生效，无需重启。
 // 用于左下角账户名改名的轻量联动，避免打断正在进行的对话。
-ipcMain.handle("personalization:setNickname", async (_event, nickname: unknown) => {
-  const current = await readPersonalization();
-  const config = await writePersonalization({ nickname, customInstructions: current.customInstructions });
-  await applyPersonalizationToAgentsMd(config, codexHome);
-  void refreshSkillDiscipline();
-  return config;
-});
 // 回读真实落盘的 AGENTS.md，确认个性化确实在引擎会读取的位置——避免「保存成功但没生效」
 // emoji 基础段始终存在：AGENTS.md 永不删除，inSync = 落盘内容与 buildAgentsMd 逐字一致（无论个性化是否为空）
-ipcMain.handle("personalization:verify", async () => {
-  const stored = await readPersonalization();
-  const expects = Boolean(stored.nickname || stored.customInstructions);
-  const agentsPath = path.join(codexHome, "AGENTS.md");
-  const expectedText = buildAgentsMd(stored);
-  let raw = "";
-  try { raw = await fs.readFile(agentsPath, "utf8"); }
-  catch (error: any) {
-    if (error.code !== "ENOENT") throw error;
-    // 缺文件：直接补齐基础段（emoji + 中文语言规范），老实例升级后自动生效
-    await fs.writeFile(agentsPath, expectedText, "utf8");
-    return { exists: true, expects, applied: true, inSync: true, preview: expectedText.trim().slice(0, 2000), agentsPath };
-  }
-  const applied = Boolean(raw.trim());
-  const inSync = raw === expectedText;
-  // 生成逻辑与写入共用 buildAgentsMd，逐字一致才算同步。
-  // 不一致（如新增了语言基础段、或用户手改过）时重写补齐——AGENTS.md 是
-  // 引擎动态加载（每请求重读），重写后下一条消息即生效，无需重启引擎。
-  if (raw !== expectedText) {
-    await fs.writeFile(agentsPath, expectedText, "utf8");
-    return { exists: true, expects, applied: true, inSync: true, preview: expectedText.trim().slice(0, 2000), agentsPath, replayed: true };
-  }
-  return {
-    exists: true,
-    expects,
-    applied,
-    inSync,
-    preview: raw.trim().slice(0, 2000),
-    agentsPath,
-  };
-});
 
 // —— 自定义斜杠命令：$CODEX_HOME/commands + <cwd>/.codex/commands 下的 .md 文件 ——
-ipcMain.handle("commands:list", async (_event, input: { cwd?: unknown } = {}) => {
-  return listCustomCommands(codexHome, input?.cwd ? String(input.cwd) : undefined);
-});
-ipcMain.handle("commands:read", async (_event, input: { filePath?: unknown; cwd?: unknown } = {}) => {
-  const filePath = String(input?.filePath ?? "");
-  if (!filePath) return null;
-  return readCustomCommand(filePath, codexHome, input?.cwd ? String(input.cwd) : undefined);
-});
-ipcMain.handle("commands:save", async (_event, input: any) => saveCustomCommand({ ...input, codexHome }));
-ipcMain.handle("commands:delete", async (_event, filePath: string) => {
-  // ⛔ 收敛到「自定义命令目录内」（09-13 审计 S5）：`deleteCustomCommand` 内部就是裸 `fs.rm`
-  // 且**没有任何包含性校验**，而这条链由渲染层任意字符串直达 —— 一个 `fs.rm` 原语。
-  {
-    const target = path.resolve(String(filePath ?? ""));
-    // 自定义命令有两个来源目录（见 commands.ts）：全局 `<codexHome>/commands` 与
-    // 项目级 `<cwd>/.codex/commands` —— 两个都要放行，否则删项目命令会误报。
-    const bases = [path.join(codexHome, "commands"), ...[...threadCwd.values()].filter(Boolean).map((cwd) => path.join(String(cwd), ".codex", "commands"))]
-      .map((base) => path.resolve(base));
-    const inside = Boolean(target) && bases.some((base) => {
-      const relative = path.relative(base, target);
-      return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
-    });
-    if (!inside) throw new Error("只能删除自定义命令目录内的文件");
-  }
-  await deleteCustomCommand(String(filePath ?? ""));
-  return { ok: true };
-});
 // 把命令模板展开成可直接发送的 prompt（参数替换 / @file 注入 / !`cmd` 转执行指令）
-ipcMain.handle("commands:expand", async (_event, input: { filePath?: unknown; argument?: unknown; cwd?: unknown }) => {
-  const filePath = String(input?.filePath ?? "");
-  if (!filePath) throw new Error("缺少命令文件路径");
-  const entry = await readCustomCommand(filePath, codexHome, input?.cwd ? String(input.cwd) : undefined);
-  if (!entry) throw new Error("命令不存在或已被删除。");
-  return { text: await expandCommandTemplate(entry, String(input?.argument ?? ""), input?.cwd ? String(input.cwd) : undefined) };
-});
 
-// —— 子智能体（用户自定义；跟随当前会话模型/effort，codex 通过 dynamicTools 真正调用） ——
-const subAgentsFile = path.join(app.getPath("userData"), "sub-agents.json");
-type SubAgentConfig = {
-  id: string;
-  name: string;
-  description: string;
-  systemPrompt: string;
-  effort: string;
-  inheritModel: boolean;
-  model?: string;
-  inheritSandbox: boolean;
-  sandbox?: "read-only" | "workspace-write" | "danger-full-access";
-  inheritApproval: boolean;
-  approvalPolicy?: "never" | "on-request" | "on-failure" | "untrusted";
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
-async function readSubAgents(): Promise<SubAgentConfig[]> {
-  try {
-    const list = JSON.parse(await fs.readFile(subAgentsFile, "utf8")) as SubAgentConfig[];
-    return Array.isArray(list) ? list : [];
-  } catch { return []; }
-}
-async function writeSubAgents(list: SubAgentConfig[]) { await fs.writeFile(subAgentsFile, JSON.stringify(list, null, 2), "utf8"); }
-/** 种入内置「评审」子智能体（新鲜上下文复审）。
- *  **幂等**：已存在就不动 —— 用户可能改过提示词、调过 effort 或直接停用它，那些都不该被覆盖。
- *  为什么用子智能体而不是新工具：见 electron/builtin-agents.ts —— 复用整条委派链路
- *  （含防套娃/独占锁/身份闸），且它在界面上看得见、改得动、停得了。 */
-async function ensureBuiltinReviewer() {
-  const list = await readSubAgents();
-  if (list.some((agent) => agent.id === FRESH_REVIEW_ID)) return;
-  const now = new Date().toISOString();
-  await writeSubAgents([...list, { ...freshReviewSpec(), createdAt: now, updatedAt: now }]);
-  console.log(`[reviewer] 已种入内置评审子智能体（${FRESH_REVIEW_ID}）：用干净上下文复审，写的人不审自己`);
-}
-function safeAgentId(name: string) {
-  return String(name ?? "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64) || `agent-${Date.now()}`;
-}
-ipcMain.handle("subagents:list", async () => {
-  const list = await readSubAgents();
-  return list;
-});
-ipcMain.handle("subagents:save", async (_event, input: any) => {
-  const list = await readSubAgents();
-  const now = new Date().toISOString();
-  const name = String(input.name ?? "").trim();
-  if (!name) throw new Error("子智能体名称不能为空");
-  const description = String(input.description ?? "").trim() || `由「${name}」负责的子任务`;
-  const systemPrompt = String(input.systemPrompt ?? "").trim() || `你是「${name}」，请按你的角色完成任务并返回结构化结果。`;
-  const effort = String(input.effort ?? "high");
-  const inheritModel = input.inheritModel !== false;
-  const inheritSandbox = input.inheritSandbox !== false;
-  const inheritApproval = input.inheritApproval !== false;
-  const id = input.id ? safeAgentId(String(input.id)) : safeAgentId(name);
-  const config: SubAgentConfig = {
-    id, name, description, systemPrompt, effort,
-    inheritModel,
-    model: inheritModel ? undefined : String(input.model ?? "").trim() || undefined,
-    inheritSandbox,
-    sandbox: inheritSandbox ? undefined : (input.sandbox ?? "workspace-write"),
-    inheritApproval,
-    approvalPolicy: inheritApproval ? undefined : (input.approvalPolicy ?? "on-request"),
-    enabled: input.enabled !== false,
-    createdAt: list.find((entry) => entry.id === id)?.createdAt ?? now,
-    updatedAt: now,
-  };
-  const next = list.some((entry) => entry.id === id) ? list.map((entry) => entry.id === id ? config : entry) : [config, ...list];
-  await writeSubAgents(next);
-  return config;
-});
-ipcMain.handle("subagents:remove", async (_event, id: string) => {
-  const list = await readSubAgents();
-  const next = list.filter((entry) => entry.id !== id);
-  await writeSubAgents(next);
-  return { ok: true };
-});
-/** 等待 app-server 的某个回合完成，返回 turn 对象；用于子智能体同步取回结果。 */
-function waitForTurnCompletion(threadId: string, turnId: string, timeoutMs = 600_000) {
-  return new Promise<any>((resolve, reject) => {
-    const handler = (event: any) => {
-      if (event.kind !== "notification") return;
-      const method = String(event.method ?? "");
-      if (!["turn/completed", "turn/aborted", "turn/failed"].includes(method)) return;
-      if (event.params?.threadId !== threadId || event.params?.turn?.id !== turnId) return;
-      cleanup();
-      if (method === "turn/completed") resolve(event.params.turn);
-      else reject(new Error(`子智能体回合未正常完成（${method}）`));
-    };
-    const timer = setTimeout(() => { cleanup(); reject(new Error("子智能体执行超时（10 分钟）")); }, timeoutMs);
-    const cleanup = () => { clearTimeout(timer); server.off("event", handler); };
-    server.on("event", handler);
-  });
-}
-
-function turnOutputText(turn: any) {
-  const items = Array.isArray(turn?.items) ? turn.items : [];
-  const text = items
-    .filter((item: any) => item?.type === "agentMessage")
-    .map((item: any) => String(item.text ?? "").trim())
-    .filter(Boolean)
-    .join("\n\n");
-  return text || String(turn?.finalMessage ?? "").trim();
-}
-
-/**
- * 记忆蒸馏的模型通道：开一个只读的一次性会话把旧日志提炼成长期记忆。
- * 全程标记 internalThreads —— 否则它自己的 turn/completed 会被捕获逻辑当成对话写回日志。
- */
-async function distillSummarize(prompt: string, body: string): Promise<string> {
-  const model = await readCustomModel();
-  const effectiveModel = model?.model;
-  if (!effectiveModel) throw new Error("尚未配置自定义模型，无法蒸馏记忆");
-  if (model?.encryptedKey && safeStorage.isEncryptionAvailable()) {
-    const apiKey = safeStorage.decryptString(Buffer.from(model.encryptedKey, "base64"));
-    if (apiKey) server.setApiKey(apiKey);
-  }
-  const provider = model?.provider ?? "openai";
-  const started: any = await server.request("thread/start", {
-    model: effectiveModel,
-    cwd: process.cwd(),
-    approvalPolicy: "never",
-    sandbox: "read-only",
-    modelProvider: provider,
-    config: model?.baseUrl
-      ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name: model?.name ?? provider, base_url: bridgeDial(provider, model.baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } }
-      : undefined,
-  });
-  const threadId = started.thread.id;
-  internalThreads.add(threadId);
-  try {
-    const turn: any = await server.request("turn/start", {
-      threadId,
-      input: [{ type: "text", text: `${prompt}\n\n下面是原始日志：\n\n${body}`, text_elements: [] }],
-      model: effectiveModel,
-      effort: "low",
-    });
-    const turnId = turn.turn?.id;
-    if (!turnId) throw new Error("蒸馏回合启动失败：未返回 turnId");
-    const completed = await waitForTurnCompletion(threadId, turnId, 300_000);
-    return turnOutputText(completed);
-  } finally {
-    internalThreads.delete(threadId);
-  }
-}
-
-ipcMain.handle("subagents:invoke", async (_event, input: { id?: string; name?: string; query: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }) => {
-  const list = await readSubAgents();
-  const key = String(input.id ?? input.name ?? "").trim().toLowerCase();
-  const agent = list.find((entry) => entry.id === key || entry.name.trim().toLowerCase() === key);
-  if (!agent) throw new Error(`子智能体「${input.id ?? input.name}」不存在`);
-  if (!agent.enabled) throw new Error(`子智能体「${agent.name}」已停用`);
-  const customModel = await readCustomModel();
-  const provider = customModel?.provider ?? "openai";
-  const baseUrl = customModel?.baseUrl;
-  const name = customModel?.name ?? provider;
-  const apiKey = customModel?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
-  if (apiKey) server.setApiKey(apiKey);
-  const effectiveModel = input.model || (agent.inheritModel ? customModel?.model : agent.model) || customModel?.model;
-  if (!effectiveModel) throw new Error("尚未配置自定义模型，无法启动子智能体");
-  const started: any = await server.request("thread/start", {
-    model: effectiveModel,
-    cwd: input.cwd || process.cwd(),
-    approvalPolicy: agent.inheritApproval ? (input.approvalPolicy ?? "never") : agent.approvalPolicy,
-    sandbox: agent.inheritSandbox ? (input.sandbox ?? "workspace-write") : agent.sandbox,
-    modelProvider: provider,
-    config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
-  });
-  const systemPrefix = `[子智能体 ${agent.name}] ${agent.systemPrompt}\n\n`;
-  // 09-14：同样包 SYSTEM TASK 壳（子智能体会话首条气泡也不再裸露角色提示词）
-  const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n用户任务：${input.query}\n=== END ===\n\n${systemPrefix}完成后请输出结构化结果（关键结论 + 行动步骤 + 任何上下文）；不要主动发起破坏性操作。`;
-  const turn: any = await server.request("turn/start", {
-    threadId: started.thread.id,
-    input: [{ type: "text", text: finalQuery, text_elements: [] }],
-    model: effectiveModel,
-    effort: input.effort || agent.effort,
-  });
-  const turnId = turn.turn?.id;
-  if (!turnId) throw new Error("子智能体回合启动失败：未返回 turnId");
-  const completed = await waitForTurnCompletion(started.thread.id, turnId);
-  let output = turnOutputText(completed);
-  if (!output) {
-    const resumed: any = await server.request("thread/resume", { threadId: started.thread.id, excludeTurns: false }).catch(() => null);
-    output = turnOutputText(resumed?.thread?.turns?.find((entry: any) => entry.id === turnId));
-  }
-  return { threadId: started.thread.id, turnId, name: agent.name, output: output || "（子智能体没有返回文本内容）" };
-});
+// —— 子智能体（用户自定义；跟随当前会话模型/effort，codex 通过 dynamicTools 真正调用）——
+//    ⛔ 路径常量 subAgentsFile 已下沉 electron/runtime-paths.ts（2026-09-24 断环收尾）。
 
 // —— 专家团（Team 型专家）：团队 CRUD + 成员调度（复用子智能体引擎） ——
-ipcMain.handle("teams:list", async () => {
-  return await readExpertTeams();
-});
-ipcMain.handle("teams:save", async (_event, input: any) => {
-  const list = await readExpertTeams();
-  const team = normalizeTeamConfig(input);
-  const next = list.some((entry) => entry.teamId === team.teamId)
-    ? list.map((entry) => entry.teamId === team.teamId ? team : entry)
-    : [team, ...list];
-  await writeExpertTeams(next);
-  return team;
-});
-ipcMain.handle("teams:remove", async (_event, teamId: string) => {
-  const list = await readExpertTeams();
-  await writeExpertTeams(list.filter((entry) => entry.teamId !== teamId));
-  return { ok: true };
-});
-ipcMain.handle("teams:reset-defaults", async () => {
-  await writeExpertTeams(buildDefaultExpertTeams());
-  return await readExpertTeams();
-});
 /** 团队会话工具参数（供前端把 team_member_invoke 注册进 dynamicTools） */
-ipcMain.handle("teams:tools", async (_event, teamId: string) => {
-  const list = await readExpertTeams();
-  const team = list.find((entry) => entry.teamId === teamId);
-  if (!team) throw new Error(`专家团「${teamId}」不存在`);
-  return { tools: team.members.map((m) => ({ id: m.id, name: m.name, profession: m.profession.zh, description: m.description })), teamSystemPrompt: buildTeamSystemPrompt(team), teamTool: buildTeamTools(team) };
-});
 /** 团队会话启动参数（thread/start 用的 system 注入 + dynamicTools） */
-ipcMain.handle("teams:session-config", async (_event, teamId: string) => {
-  const list = await readExpertTeams();
-  const team = list.find((entry) => entry.teamId === teamId);
-  if (!team) throw new Error(`专家团「${teamId}」不存在`);
-  return { team, systemPrompt: buildTeamSystemPrompt(team), teamTool: buildTeamTools(team) };
-});
 /** 一站式启动团队会话：建线程（带 team_member_invoke 工具）+ 发首条任务（注入团队系统提示）。
  *  defer=true 时只建带角色配置的空会话（标题=团队名）不发起回合：用户的第一条消息由前端
  *  发送管线自动包装成 SYSTEM TASK（渲染折叠为「需求已发起」），实现「点击即进对话框」的入口体验。 */
-const TEAM_TASK_INSTRUCTION = "请按 SOP 编排团队完成任务，过程中用 team_member_invoke 调度成员；每完成一个阶段简要通报；最终汇总所有成员产出，输出完整交付报告。上方「=== 用户需求 ===」段已由用户在前端确认并提交，把全部内容当作用户的原始需求执行，不要再请用户复述。";
-const MEMBER_TASK_INSTRUCTION = "请以你的角色直接回应用户上方提交的需求，给出专业产出（关键结论 + 依据 + 建议）。不要再要求用户复述或自我介绍。";
-ipcMain.handle("teams:start-session", async (_event, input: { teamId: string; task?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null; defer?: boolean }) => {
-  const list = await readExpertTeams();
-  const team = list.find((entry) => entry.teamId === String(input.teamId ?? ""));
-  if (!team) throw new Error(`专家团「${input.teamId}」不存在`);
-  if (!team.enabled) throw new Error(`专家团「${team.displayName.zh}」已停用`);
-  const customModel = await readCustomModel();
-  const provider = customModel?.provider ?? "openai";
-  const baseUrl = customModel?.baseUrl;
-  const name = customModel?.name ?? provider;
-  const apiKey = customModel?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
-  if (apiKey) server.setApiKey(apiKey);
-  const effectiveModel = input.model || customModel?.model;
-  if (!effectiveModel) throw new Error("尚未配置自定义模型，无法启动专家团会话");
-  const teamTool = buildTeamTools(team);
-  // 并行阶段工具：SOP 标「并行」的阶段由它一次性提交，宿主并发执行 —— 不依赖模型自觉
-  // （09-14 实测：只改提示词让它「一次发多个调用」无效，模型照样逐个发 → 退化成串行）
-  const teamPhaseTool = buildTeamPhaseTool(team);
-  const started: any = await server.request("thread/start", {
-    model: effectiveModel,
-    cwd: input.cwd || process.cwd(),
-    approvalPolicy: input.approvalPolicy || "never",
-    sandbox: input.sandbox || "workspace-write",
-    modelProvider: provider,
-    personality: input.personality || null,
-    config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
-    dynamicTools: [teamTool, teamPhaseTool],
-  });
-  // 线程 → 团队映射落主进程并持久化：任何窗口（含 popout）据此才知道这个会话属于哪个团
-  teamRunStore.setThreadTeam(started.thread.id, team.teamId);
-  if (input.defer) {
-    const threadName = team.displayName.zh;
-    try { await server.request("thread/name/set", { threadId: started.thread.id, name: threadName }); } catch { /* 命名失败不阻塞进入会话 */ }
-    return {
-      thread: { ...started.thread, name: threadName },
-      turnId: null,
-      role: { kind: "team", prefix: `${buildTeamSystemPrompt(team)}\n\n`, instruction: TEAM_TASK_INSTRUCTION },
-    };
-  }
-  const systemPrefix = buildTeamSystemPrompt(team);
-  const finalTask = `${systemPrefix}\n\n[SYSTEM TASK · 团队会话]\n=== 用户需求 ===\n${String(input.task ?? "")}\n=== END ===\n\n${TEAM_TASK_INSTRUCTION}`;
-  const turn: any = await server.request("turn/start", {
-    threadId: started.thread.id,
-    input: [{ type: "text", text: finalTask, text_elements: [] }],
-    model: effectiveModel,
-    effort: input.effort || team.lead.effort || "high",
-  });
-  return { thread: started.thread, turnId: turn.turn?.id ?? null };
-});
 /** 成员直达会话：以成员角色提示开一个可持续对话的线程（用户与单个成员直接交流，不挂团队调度工具）。
  *  defer=true 时只建空会话（标题=团队名·成员名），用户首条消息由前端包装成 SYSTEM TASK 注入成员角色。 */
-ipcMain.handle("teams:member-session", async (_event, input: { teamId: string; memberId: string; task?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null; defer?: boolean }) => {
-  const list = await readExpertTeams();
-  const team = list.find((entry) => entry.teamId === String(input.teamId ?? ""));
-  if (!team) throw new Error(`专家团「${input.teamId}」不存在`);
-  if (!team.enabled) throw new Error(`专家团「${team.displayName.zh}」已停用`);
-  const memberKey = String(input.memberId ?? "").trim().toLowerCase();
-  const member = [team.lead, ...team.members].find((m) => m.id.toLowerCase() === memberKey);
-  if (!member) throw new Error(`成员「${input.memberId}」不存在于专家团「${team.displayName.zh}」`);
-  const isLead = member.id === team.lead.id;
-  const customModel = await readCustomModel();
-  const provider = customModel?.provider ?? "openai";
-  const baseUrl = customModel?.baseUrl;
-  const name = customModel?.name ?? provider;
-  const apiKey = customModel?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
-  if (apiKey) server.setApiKey(apiKey);
-  const effectiveModel = input.model || member.model || customModel?.model;
-  if (!effectiveModel) throw new Error("尚未配置自定义模型，无法发起成员会话");
-  const started: any = await server.request("thread/start", {
-    model: effectiveModel,
-    cwd: input.cwd || process.cwd(),
-    approvalPolicy: member.approvalPolicy || input.approvalPolicy || "never",
-    sandbox: member.sandbox || input.sandbox || "workspace-write",
-    modelProvider: provider,
-    personality: input.personality || null,
-    config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
-  });
-  const systemPrefix = `[专家团「${team.displayName.zh}」${isLead ? "主理人" : "成员"} ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`;
-  teamRunStore.setThreadTeam(started.thread.id, team.teamId);
-  if (input.defer) {
-    // 会话标题只展示角色职能，不把成员真实姓名带到用户界面。
-    const threadName = `${team.displayName.zh} · ${member.profession.zh || "成员"}`;
-    try { await server.request("thread/name/set", { threadId: started.thread.id, name: threadName }); } catch { /* 命名失败不阻塞进入会话 */ }
-    return {
-      thread: { ...started.thread, name: threadName },
-      turnId: null,
-      member: { id: member.id, name: member.name, profession: member.profession.zh },
-      role: { kind: "member", prefix: systemPrefix, instruction: MEMBER_TASK_INSTRUCTION },
-    };
-  }
-  const firstTask = String(input.task ?? "").trim();
-  if (!firstTask) throw new Error(`请先在对话框描述你的需求`);
-  const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n${firstTask}\n=== END ===\n\n${systemPrefix}${MEMBER_TASK_INSTRUCTION}`;
-  const turn: any = await server.request("turn/start", {
-    threadId: started.thread.id,
-    input: [{ type: "text", text: finalQuery, text_elements: [] }],
-    model: effectiveModel,
-    effort: input.effort || member.effort || "high",
-  });
-  return { thread: started.thread, turnId: turn.turn?.id ?? null, member: { id: member.id, name: member.name, profession: member.profession.zh } };
-});
 /** 调度一个团队成员在独立会话执行子任务并返回结构化结果（供 team_member_invoke 工具调用） */
-ipcMain.handle("teams:invoke-member", async (_event, input: { teamId: string; memberId: string; query: string; leadThreadId?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }) => {
-  const list = await readExpertTeams();
-  const team = list.find((entry) => entry.teamId === String(input.teamId ?? ""));
-  if (!team) throw new Error(`专家团「${input.teamId}」不存在`);
-  if (!team.enabled) throw new Error(`专家团「${team.displayName.zh}」已停用`);
-  const memberKey = String(input.memberId ?? "").trim().toLowerCase();
-  const member = team.members.find((m) => m.id.toLowerCase() === memberKey);
-  if (!member) throw new Error(`成员「${input.memberId}」不存在于专家团「${team.displayName.zh}」`);
-  const customModel = await readCustomModel();
-  const provider = customModel?.provider ?? "openai";
-  const baseUrl = customModel?.baseUrl;
-  const name = customModel?.name ?? provider;
-  const apiKey = customModel?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
-  if (apiKey) server.setApiKey(apiKey);
-  const effectiveModel = input.model || member.model || customModel?.model;
-  if (!effectiveModel) throw new Error("尚未配置自定义模型，无法调度团队成员");
 
-  // ① 成员线程复用：同一 (团队, 成员) 始终沿用同一个线程，成员因此记得自己之前做过什么。
-  //    旧行为每次委托都新建线程 —— 同一成员被调两次是两个互不知情的会话，跨阶段上下文
-  //    只能靠主理人把结论内联进 query。
-  const existingThreadId = teamRunStore.memberThreadOf(team.teamId, member.id);
-  let memberThreadId = "";
-  if (existingThreadId) {
-    const resumed: any = await server.request("thread/resume", { threadId: existingThreadId, excludeTurns: false }).catch(() => null);
-    if (resumed?.thread?.id) memberThreadId = String(resumed.thread.id);
-  }
-  if (!memberThreadId) {
-    const started: any = await server.request("thread/start", {
-      model: effectiveModel,
-      cwd: input.cwd || process.cwd(),
-      approvalPolicy: member.approvalPolicy || input.approvalPolicy || "never",
-      sandbox: member.sandbox || input.sandbox || "workspace-write",
-      modelProvider: provider,
-      config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
-    });
-    memberThreadId = String(started.thread.id);
-    // ② 成员线程标题：`团名·角色`。不设名字时引擎拿首条用户消息（角色提示词全文）当标题，
-    //    侧栏里会显示成一整坨提示词（09-14 实测截图）。
-    try { await server.request("thread/name/set", { threadId: memberThreadId, name: memberThreadName(team.displayName.zh, member.profession.zh || member.name) }); } catch { /* 命名失败不阻塞调度 */ }
-  }
-  teamRunStore.rememberMemberThread(team.teamId, member.id, memberThreadId);
-  teamRunStore.setThreadTeam(memberThreadId, team.teamId);
-
-  // 运行记录：开始时广播 started（界面点亮头像 + 自动打开成员工作弹窗），
-  // 跑的过程由 teamRunStore.handleEngineEvent 转发流式增量，结束时落盘并广播 finished。
-  const run = teamRunStore.beginRun({
-    leadThreadId: String(input.leadThreadId ?? ""),
-    teamId: team.teamId,
-    memberId: member.id,
-    memberName: member.name,
-    profession: member.profession.zh,
-    role: "member",
-    memberThreadId,
-    query: String(input.query ?? ""),
-  });
-  const systemPrefix = `[专家团「${team.displayName.zh}」成员 ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`;
-  // ③ 修掉死指令：成员线程**没有**挂任何 dynamicTools，不存在 SendMessage 之类的回传工具。
-  //    真实回传路径是同步的：宿主等这个回合跑完，把最终文本当 team_member_invoke 的返回值
-  //    交回主理人。旧文案叫模型「通过 SendMessage 回传」，它可能白花 token 去调不存在的工具。
-  // 09-14：包上 [SYSTEM TASK · 成员会话] 壳——渲染端 userDisplayText 只认这个壳，
-  // 不包壳的话用户打开成员会话时整段角色提示词会裸露在首条气泡里（用户实测反馈）。
-  const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n主理人分配的子任务：${input.query}\n=== END ===\n\n${systemPrefix}请直接给出你的专业产出（关键结论 + 依据 + 建议）。你的最终回答文本会被完整回传给主理人，无需调用任何回传工具。不要发起破坏性操作。`;
-  try {
-    const turn: any = await server.request("turn/start", {
-      threadId: memberThreadId,
-      input: [{ type: "text", text: finalQuery, text_elements: [] }],
-      model: effectiveModel,
-      effort: input.effort || member.effort || "high",
-    });
-    const turnId = turn.turn?.id;
-    if (!turnId) throw new Error("成员调度失败：未返回 turnId");
-    const completed = await waitForTurnCompletion(memberThreadId, turnId);
-    let output = turnOutputText(completed);
-    if (!output) {
-      const resumed: any = await server.request("thread/resume", { threadId: memberThreadId, excludeTurns: false }).catch(() => null);
-      output = turnOutputText(resumed?.thread?.turns?.find((entry: any) => entry.id === turnId));
-    }
-    const text = output || `（成员 ${member.name} 未返回文本内容）`;
-    teamRunStore.finishRun(run.runId, { status: "done", output: text });
-    return { threadId: memberThreadId, turnId, teamId: team.teamId, memberId: member.id, name: member.name, profession: member.profession.zh, output: text, runId: run.runId, reused: Boolean(existingThreadId) };
-  } catch (error: any) {
-    teamRunStore.finishRun(run.runId, { status: "failed", output: run.output, error: error?.message ?? String(error) });
-    throw error;
-  }
-});
-
-// ── 调度（09-15）：让 Codex 在任意会话里调度 专家 / 专家团 / 子智能体 干活 ─────────────
-// 四层防护里主进程负责的部分：L3 执行侧硬闸、L4 并发/深度闸、L1 持久指令。
-// L2（注册侧不给工具）在渲染层，但那一层防不住「线程复用 / 竞态 / 以后有人改错注册点」——
-// 所以真正的安全边界是下面这行 canDispatchFrom：**给了工具也不认**。
-
-/** 「不允许开调度」的会话识别（09-16 用户要求：专家会话 / 专家团会话也要禁用掉）。
- *  覆盖三类：① 被调度产生的临时会话（delegateRegistry）② 专家团会话（主理人 + 成员）
- *  ③ 单人专家的直达会话 —— ③ 走的是同一条 member-session 链路（单人专家 = 只有 lead 的团队），
- *  所以 teamRunStore 里的 thread→team 映射一并覆盖。 */
-async function restrictedThreadRole(threadId: string): Promise<{ restricted: boolean; label?: string }> {
-  if (!threadId) return { restricted: false };
-  if (await delegateRegistry.infoOf(threadId)) return { restricted: true, label: "被调度的临时会话" };
-  if (teamRunStore.teamOfThread(threadId)) return { restricted: true, label: "专家 / 专家团" };
-  return { restricted: false };
-}
-
-// ⛔ 09-16 重大修正（引擎硬约束，四个决定性实验实测）：dynamicTools **只在 thread/start 生效**——
-// resume / fork / turn/start / queue/start 一律不认（引擎二进制里也只有 thread/start.dynamicTools）。
-// 这意味着渲染层 dynamicTools 注册的 agent_invoke 对**老会话永远不可见**，之前「开关确认后重放
-// resume」的修法是假绿（断言正则匹配到了提问里的「有没有」）。唯一能覆盖所有会话（含老会话）的
-// 通道是 **MCP**：引擎级注入，工具对所有线程可见。故 agent_invoke 改走内置 MCP 服务器（下方
-// dispatchMcpScript），安全闸全部收敛到主进程 HTTP 端 + 引擎事件旁证（谁调的、有没有权限）。
-
-/** 内置调度 MCP 服务器（HTTP 直连）。⛔ 端口必须**固定**、令牌必须**持久化**：
- *  config.toml 里的 url 是引擎启动时读的，若每次运行都变（随机端口/随机令牌），
- *  引擎就会连到**上一次运行的死端口** → 工具永远注册不上（09-16 实测踩坑）。 */
-const DISPATCH_FIXED_PORT = 47120;
-let dispatchToken = ""; // 由 ensureDispatchToken() 从文件读/生成
-let dispatchHttpPort = DISPATCH_FIXED_PORT;
-type DispatchProbe = { threadId: string; argsKey: string; at: number };
-const dispatchProbes: DispatchProbe[] = [];
-
-/** 读取（或首次生成并持久化）调度令牌：跨运行稳定，config.toml 无需每次重写。 */
-async function ensureDispatchToken(): Promise<string> {
-  if (dispatchToken) return dispatchToken;
-  const file = path.join(app.getPath("userData"), "dispatch-token.txt");
-  try {
-    const saved = (await fs.readFile(file, "utf8")).trim();
-    if (saved.length >= 16) { dispatchToken = saved; return dispatchToken; }
-  } catch { /* 首次运行没有文件 */ }
-  dispatchToken = crypto.randomUUID().replace(/-/g, "");
-  try { await fs.writeFile(file, dispatchToken, "utf8"); } catch { /* 写失败不致命：本次会话仍可用 */ }
-  return dispatchToken;
-}
-
-/** 稳定序列化（键排序）：把「item/started 事件里的 arguments」与「MCP 服务器收到的 arguments」对上号 */
-function stableKey(value: unknown): string {
-  const walk = (v: unknown): unknown => {
-    if (Array.isArray(v)) return v.map(walk);
-    if (v && typeof v === "object") {
-      const obj = v as Record<string, unknown>;
-      return Object.keys(obj).sort().map((k) => `${k}:${JSON.stringify(walk(obj[k]))}`).join("|");
-    }
-    return String(JSON.stringify(v) ?? "null");
-  };
-  return String(walk(value)).slice(0, 4000);
-}
-
-/** 调度工具的 schema（MCP tools/list 与 stdio 通道共用）。 */
-function dispatchMcpTools(): unknown[] {
-  return [
-    {
-      name: "agent_invoke",
-      description: "调度专家 / 专家团 / 子智能体 执行一个独立子任务并拿回产出（仅在会话开启调度时可用）。",
-      inputSchema: {
-        type: "object",
-        properties: {
-          kind: { type: "string", enum: ["expert", "team", "member", "subagent"], description: "expert=单个专家, team=专家团(主理人按SOP调度), member=专家团某成员, subagent=子智能体" },
-          name: { type: "string", description: "对象名称（专家名 / 团名 / 子智能体名）" },
-          member: { type: "string", description: "kind=member 时的成员名" },
-          query: { type: "string", description: "交给它的任务描述（要自包含：对方看不到本会话上下文）" },
-        },
-        required: ["kind", "name", "query"],
-      },
-    },
-    {
-      name: "agent_archive_sessions",
-      description: "征得用户同意后，归档本次调度产生的临时会话。",
-      inputSchema: {
-        type: "object",
-        properties: { threadIds: { type: "array", items: { type: "string" }, description: "要归档的调度会话 id 列表" } },
-        required: ["threadIds"],
-      },
-    },
-  ];
-}
 
 /** 调度工具的统一执行入口（MCP /mcp 与 stdio /rpc 共用）——安全闸全部在这里。 */
-async function dispatchRpcCall(name: unknown, args: Record<string, unknown>): Promise<{ ok: boolean; output?: string; error?: string }> {
-  // ── 旁证：引擎把调用转发给 MCP 服务器的同一时刻会发 item/started 事件（含真实 threadId）。
-  // 用「参数指纹」对上号，拿到的才是**引擎认定的调用者**——模型谎报身份也绕不过。
-  const argsKey = stableKey(args);
-  const deadline = Date.now() + 10000;
-  let callerThreadId = "";
-  while (Date.now() < deadline) {
-    const hit = [...dispatchProbes].reverse().find((probe) => probe.argsKey === argsKey && Date.now() - probe.at < 120_000);
-    if (hit) { callerThreadId = hit.threadId; break; }
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  if (!callerThreadId) return { ok: false, error: "安全校验失败：引擎事件里找不到这次调用" };
 
-  if (name === "agent_invoke") {
-    const originDispatch = (await threadRuntimeStore.get(callerThreadId))?.dispatch;
-    const restrict = await restrictedThreadRole(callerThreadId);
-    const originRecord = await delegateRegistry.infoOf(callerThreadId);
-    const gate = canDispatchFrom({
-      isDelegated: Boolean(originRecord),
-      depth: originRecord?.depth ?? 0,
-      holdsLock: originDispatch?.enabled === true,
-      restricted: restrict.restricted,
-      restrictedLabel: restrict.label,
-    });
-    if (!gate.ok) return { ok: false, error: gate.reason };
-    const result = await runDelegatedTask({
-      kind: String(args.kind ?? "") as DispatchKind,
-      name: String(args.name ?? ""),
-      query: String(args.query ?? ""),
-      originThreadId: callerThreadId,
-      cwd: args.cwd ? String(args.cwd) : undefined,
-      model: args.model ? String(args.model) : undefined,
-      effort: args.effort ? String(args.effort) : undefined,
-      sandbox: args.sandbox ? String(args.sandbox) : undefined,
-      approvalPolicy: args.approvalPolicy ? String(args.approvalPolicy) : undefined,
-    });
-    return result.ok ? { ok: true, output: result.output } : { ok: false, error: result.error ?? "调度失败" };
-  }
-  if (name === "agent_archive_sessions") {
-    const ids = Array.isArray(args.threadIds) ? args.threadIds.map(String) : [];
-    // ⛔ 必须真调引擎的 thread/archive（09-16 用户实测：只标登记表的话侧栏会话不消失）。
-    // 与 agents:archive IPC 同一条链路：引擎归档 + 登记表标记 + 广播刷新。
-    let archived = 0;
-    const failed: string[] = [];
-    for (const id of ids) {
-      try {
-        const record = await delegateRegistry.infoOf(id);
-        if (!record || record.archived) continue;
-        await server.request("thread/archive", { threadId: id });
-        await delegateRegistry.markArchived([id]);
-        archived += 1;
-      } catch { failed.push(id); }
-    }
-    const remaining = await delegateRegistry.listByOrigin(String(args.originThreadId ?? "")).catch(() => []);
-    broadcastHarnessEvent({ type: "delegates-changed" } as any);
-    const hint = failed.length ? `（${failed.length} 个失败）` : remaining.length ? `（还有 ${remaining.length} 个未归档）` : "";
-    return { ok: true, output: `已归档 ${archived} 个调度会话${hint}。` };
-  }
-  return { ok: false, error: `未知工具：${String(name)}` };
-}
-
-/** 内置 MCP 的执行端：只在 127.0.0.1 监听，token 校验 + 「引擎事件里确实有这条调用」旁证。
- *  端口固定（DISPATCH_FIXED_PORT）→ config.toml 的 url 跨运行稳定，引擎重启也能连上。 */
-let dispatchHttpReady: Promise<void> | null = null;
-async function ensureDispatchHttp(): Promise<void> {
-  if (dispatchHttpReady) return dispatchHttpReady;
-  await ensureDispatchToken(); // 令牌先就绪：/mcp 端点与 config.toml 都要用它
-  dispatchHttpReady = new Promise<void>((resolve) => {
-    const server = http.createServer((req, res) => {
-      res.setHeader("content-type", "application/json; charset=utf-8");
-      // ── MCP 协议端点（/mcp，09-16）：引擎用 url 直连（无子进程冷启动，避免 stdio 的
-      //    electron 启动 28s > startup_timeout 被判死导致工具不注册）。Streamable HTTP：
-      //    POST = JSON-RPC 请求/响应；**GET = SSE 长连接**（引擎 rmcp 客户端必开，缺了会报
-      //    "fail to get common stream: Unexpected content type: None"）；DELETE = 会话终止。 ──
-      if (req.url?.startsWith("/mcp") && (req.method === "GET" || req.method === "DELETE")) {
-        const token = new URL(req.url, "http://x").searchParams.get("token");
-        if (token !== dispatchToken) { res.statusCode = 403; res.end(); return; }
-        if (req.method === "DELETE") { res.statusCode = 200; res.end(); return; }
-        // SSE 流：保持连接（引擎用它收服务端主动消息），定期心跳防中间层断连
-        res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive", "mcp-session-id": "harness-dispatch" });
-        res.write(": connected\n\n");
-        const keep = setInterval(() => { try { res.write(": ping\n\n"); } catch { /* 连接已断 */ } }, 25000);
-        req.on("close", () => clearInterval(keep));
-        return;
-      }
-      if (req.method === "POST" && req.url?.startsWith("/mcp")) {
-        const token = new URL(req.url, "http://x").searchParams.get("token");
-        if (token !== dispatchToken) { res.end(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "token 校验失败" } })); return; }
-        let body = "";
-        req.on("data", (chunk) => { body += chunk; if (body.length > 2_000_000) req.destroy(); });
-        req.on("end", async () => {
-          let msg: any = null;
-          try { msg = JSON.parse(body); } catch { res.end(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } })); return; }
-          res.setHeader("mcp-session-id", "harness-dispatch");
-          const reply = (result: any) => res.end(JSON.stringify({ jsonrpc: "2.0", id: msg?.id ?? null, result }));
-          const fail = (message: string) => res.end(JSON.stringify({ jsonrpc: "2.0", id: msg?.id ?? null, error: { code: -32000, message } }));
-          if (msg?.id === undefined || msg?.id === null) { res.statusCode = 202; res.end(""); return; } // notification
-          try {
-            if (msg.method === "initialize") {
-              reply({ protocolVersion: msg.params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "harness-dispatch", version: "1.0.0" } });
-              return;
-            }
-            if (msg.method === "tools/list") { reply({ tools: dispatchMcpTools() }); return; }
-            if (msg.method === "ping") { reply({}); return; }
-            if (msg.method === "tools/call") {
-              const out = await dispatchRpcCall(msg.params?.name, msg.params?.arguments ?? {});
-              reply({ content: [{ type: "text", text: out.ok ? String(out.output ?? "") : "调用被拒绝：" + String(out.error ?? "未知原因") }], isError: !out.ok });
-              return;
-            }
-            fail("method not found: " + String(msg.method));
-          } catch (error: any) {
-            fail(String(error?.message ?? error).slice(0, 300));
-          }
-        });
-        return;
-      }
-      if (req.method !== "POST" || !req.url?.startsWith("/rpc")) { res.statusCode = 404; res.end(JSON.stringify({ ok: false, error: "not found" })); return; }
-      let body = "";
-      req.on("data", (chunk) => { body += chunk; if (body.length > 1_000_000) req.destroy(); });
-      req.on("end", async () => {
-        try {
-          const payload = JSON.parse(body) as { token?: string; name?: string; args?: Record<string, unknown> };
-          if (!payload.token || payload.token !== dispatchToken) { res.end(JSON.stringify({ ok: false, error: "token 校验失败" })); return; }
-          res.end(JSON.stringify(await dispatchRpcCall(payload.name, payload.args ?? {})));
-        } catch (error: any) {
-          res.end(JSON.stringify({ ok: false, error: String(error?.message ?? error).slice(0, 300) }));
-        }
-      });
-    });
-    server.listen(DISPATCH_FIXED_PORT, "127.0.0.1", () => {
-      dispatchHttpPort = DISPATCH_FIXED_PORT;
-      resolve();
-    });
-    // 端口被占（可能另一个实例/残留进程）：退回相邻端口并记录，config 会用实际端口重写
-    server.on("error", () => {
-      const fallback = http.createServer(server.listeners("request")[0] as any);
-      fallback.listen(0, "127.0.0.1", () => {
-        const addr = fallback.address();
-        if (addr && typeof addr === "object") dispatchHttpPort = addr.port;
-        resolve();
-      });
-    });
-    // 立即 resolve 兜底：listen 异常时不能卡死 config 写入（宁可这轮没有 MCP 段）
-    setTimeout(resolve, 2000);
-  });
-  return dispatchHttpReady;
-}
-
-
-
-/** 组装「可调度对象目录」（只含已启用的；单人专家 = 只有 lead 的团队，结构同型） */
-async function buildDispatchCatalog(): Promise<DispatchTarget[]> {  const [teams, subs] = await Promise.all([readExpertTeams(), readSubAgents()]);
-  const targets: DispatchTarget[] = [];
-  for (const team of teams) {
-    if (!team.enabled) continue;
-    if (!team.members?.length) {
-      targets.push({
-        kind: "expert",
-        key: team.teamId,
-        name: team.displayName.zh,
-        profession: team.lead?.profession?.zh ?? "",
-        description: team.lead?.description ?? team.description?.zh ?? "",
-        teamId: team.teamId,
-        memberId: team.lead?.id,
-      });
-    } else {
-      targets.push({
-        kind: "team",
-        key: team.teamId,
-        name: team.displayName.zh,
-        profession: `${team.members.length} 位成员`,
-        description: team.description?.zh ?? "",
-        teamId: team.teamId,
-      });
-    }
-  }
-  for (const sub of subs) {
-    if (!sub.enabled) continue;
-    targets.push({ kind: "subagent", key: sub.id, name: sub.name, profession: "", description: sub.description ?? "" });
-  }
-  return targets;
-}
 
 /** 起一个「被调度的会话」并把任务跑完，返回它的最终产出。三类对象共用这一条链路。 */
-async function runDelegatedTask(input: {
-  kind: DispatchKind; name: string; query: string; originThreadId: string;
-  cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string;
-}): Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string }> {
-  const origin = String(input.originThreadId ?? "");
-  // ── L3 硬闸：发起方本身是被委派产生的会话 → 一律拒绝（防套娃的最后一道，注册侧漏了也拦住）
-  const originRecord = origin ? await delegateRegistry.infoOf(origin) : null;
-  // ── 独占锁校验（同一时间只允许一个会话调度）：注册侧不给工具只是「少给一次机会」，
-  //    这里才作准 —— 会话被接管、开关被关掉之后，残留的工具调用一律不认。 ──
-  const originDispatch = origin ? (await threadRuntimeStore.get(origin))?.dispatch : null;
-  // 身份闸：专家 / 专家团 / 被调度的会话一律不许**对外**派人（团内协作走 teams:invoke-member，不受此限）
-  const originRestrict = origin ? await restrictedThreadRole(origin) : { restricted: false };
-  const gate = canDispatchFrom({
-    isDelegated: Boolean(originRecord),
-    depth: originRecord?.depth ?? 0,
-    holdsLock: originDispatch?.enabled === true,
-    restricted: originRestrict.restricted,
-    restrictedLabel: originRestrict.label,
-  });
-  if (!gate.ok) return { ok: false, output: "", error: gate.reason };
-  const admit = admitDispatch({ running: await delegateRegistry.runningCount() });
-  if (!admit.ok) return { ok: false, output: "", error: admit.reason };
 
-  const targets = await buildDispatchCatalog();
-  const found = resolveDispatchTarget(targets, { kind: input.kind, name: input.name });
-  if (!found.target) return { ok: false, output: "", error: found.error };
-  const target = found.target;
-
-  // 解析角色提示词与（团队才有的）调度工具
-  let rolePrompt = "";
-  let displayName = target.name;
-  let teamTools: unknown[] = [];
-  if (target.kind === "subagent") {
-    const subs = await readSubAgents();
-    const sub = subs.find((entry) => entry.id === target.key);
-    if (!sub) return { ok: false, output: "", error: `子智能体「${input.name}」不存在` };
-    rolePrompt = sub.systemPrompt ?? "";
-  } else {
-    const teams = await readExpertTeams();
-    const team = teams.find((entry) => entry.teamId === target.teamId);
-    if (!team) return { ok: false, output: "", error: `专家「${input.name}」不存在` };
-    if (target.kind === "team") {
-      rolePrompt = buildTeamSystemPrompt(team);
-      // 主理人靠这两个工具管**本团成员**（团队内部机制，不是对外委派，故不受 L3 限制）
-      teamTools = [buildTeamTools(team), buildTeamPhaseTool(team)];
-    } else {
-      const member = [team.lead, ...team.members].find((m) => m.id === target.memberId);
-      if (!member) return { ok: false, output: "", error: `成员「${input.name}」不在专家团里` };
-      rolePrompt = member.systemPrompt ?? "";
-      displayName = target.kind === "expert" ? team.displayName.zh : `${team.displayName.zh}·${member.name}`;
-    }
-  }
-
-  const customModel = await readCustomModel();
-  const provider = customModel?.provider ?? "openai";
-  const baseUrl = customModel?.baseUrl;
-  const providerName = customModel?.name ?? provider;
-  const apiKey = customModel?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
-  if (apiKey) server.setApiKey(apiKey);
-  const effectiveModel = input.model || customModel?.model;
-  if (!effectiveModel) return { ok: false, output: "", error: "尚未配置模型，无法发起调度" };
-
-  const started: any = await server.request("thread/start", {
-    model: effectiveModel,
-    cwd: input.cwd || process.cwd(),
-    approvalPolicy: input.approvalPolicy || "never",
-    sandbox: input.sandbox || "workspace-write",
-    modelProvider: provider,
-    config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name: providerName, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
-    ...(teamTools.length ? { dynamicTools: teamTools } : {}),
-  });
-  const threadId = String(started?.thread?.id ?? "");
-  if (!threadId) return { ok: false, output: "", error: "调度会话创建失败（未返回 threadId）" };
-  try { await server.request("thread/name/set", { threadId, name: `调度·${displayName}`.slice(0, 40) }); } catch { /* 命名失败不阻塞 */ }
-
-  // ── L1：给被委派会话下发**会话级持久指令**（直接干活、不要转派）。
-  //    刻意走持久指令而不是塞在首条消息里：成员会话/被调会话可能被复用、也可能被用户点开继续问，
-  //    写在单条消息里会被历史淹没、压缩后丢失。
-  try {
-    const baseRead: any = await server.request("config/read", {}).catch(() => null);
-    const baseInstructions = String(baseRead?.config?.developer_instructions ?? "");
-    const block = delegateScopeBlock({ kind: target.kind, name: displayName, origin });
-    const merged = baseInstructions ? `${baseInstructions}\n\n---\n\n${block}` : block;
-    await server.request("thread/settings/update", {
-      threadId,
-      collaborationMode: { mode: "default", settings: { model: effectiveModel, developer_instructions: merged } },
-    }).catch(() => undefined);
-  } catch { /* 下发失败不阻塞执行：L3 硬闸仍在主进程把关 */ }
-
-  const record = await delegateRegistry.register({ threadId, originThreadId: origin, kind: target.kind, name: displayName, depth: (originRecord?.depth ?? 0) + 1 });
-  broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
-  // 右侧「调度头像轨」：开始即点亮头像（弹窗打开后能看到实时产出流）
-  broadcastHarnessEvent({ type: "delegate-run", phase: "started", threadId, record, at: Date.now() } as any);
-
-  const finalQuery = [
-    "[SYSTEM TASK · 调度会话]",
-    "=== 用户需求 ===",
-    `发起方交给你的任务：${String(input.query ?? "").trim()}`,
-    "=== END ===",
-    "",
-    `[角色：${kindLabel(target.kind)} ${displayName}]`,
-    rolePrompt,
-    "",
-    "直接执行上面的任务并给出最终产出（关键结论 + 依据 + 建议）。你的最终回答文本会被完整回传给发起方，无需调用任何回传工具。不要发起破坏性操作。",
-  ].join("\n");
-
-  try {
-    const turn: any = await server.request("turn/start", {
-      threadId,
-      input: [{ type: "text", text: finalQuery, text_elements: [] }],
-      model: effectiveModel,
-      effort: input.effort || undefined,
-    });
-    const turnId = turn?.turn?.id;
-    if (!turnId) throw new Error("调度失败：未返回 turnId");
-    const completed = await waitForTurnCompletion(threadId, turnId);
-    let output = turnOutputText(completed);
-    if (!output) {
-      const resumed: any = await server.request("thread/resume", { threadId, excludeTurns: false }).catch(() => null);
-      output = turnOutputText(resumed?.thread?.turns?.find((entry: any) => entry.id === turnId));
-    }
-    const text = clipDispatchOutput(output || `（${displayName} 没有返回文本内容）`, threadId);
-    // 标题在 turn 之后**再设一次**：首条消息会覆盖会话标题（引擎拿首条用户消息当 title），
-    // 只在 turn 之前设的话侧栏会显示成 `[SYSTEM TASK · 调度会话]` 那一坨（09-15 验收实测）。
-    try { await server.request("thread/name/set", { threadId, name: `调度·${displayName}`.slice(0, 40) }); } catch { /* 命名失败不影响产出回传 */ }
-    await delegateRegistry.setOutput(threadId, text);
-    await delegateRegistry.markStatus(threadId, "done");
-    broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
-    // 头像轨收场：跑完即从右侧消失（用户 09-16：「调用完就不展示头像了」）；广播终态供弹窗收起与兜底渲染
-    broadcastHarnessEvent({ type: "delegate-run", phase: "finished", threadId, status: "done", output: text, at: Date.now() } as any);
-    return { ok: true, threadId, name: displayName, output: text };
-  } catch (error: any) {
-    const message = error?.message ?? String(error);
-    await delegateRegistry.setOutput(threadId, "").catch(() => undefined);
-    await delegateRegistry.markStatus(threadId, "failed", { error: message }).catch(() => undefined);
-    broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
-    broadcastHarnessEvent({ type: "delegate-run", phase: "finished", threadId, status: "failed", error: message, at: Date.now() } as any);
-    return { ok: false, threadId, name: displayName, output: "", error: message };
-  }
-}
-
-ipcMain.handle("agents:catalog", async () => ({ targets: await buildDispatchCatalog() }));
 
 /** 工具说明书：目录 + 用法（模型据此知道「有什么可调」——这是闭环的前提） */
-ipcMain.handle("agents:tool-description", async () => ({ description: dispatchToolDescription(await buildDispatchCatalog()) }));
 
 /** 本会话要下发给 Codex 的调度提示词（开启开关时自动发的那条告知消息） */
-ipcMain.handle("agents:notice", async () => ({ text: dispatchNoticeText(await buildDispatchCatalog()) }));
 
 /** 关闭开关时的告知消息（让 Codex 立刻知道权限被收回了） */
-ipcMain.handle("agents:off-notice", async () => ({ text: dispatchOffNoticeText() }));
 
 /** 全部「被调度的临时会话」——渲染层据此做注册侧过滤（L2）与侧栏标记 */
-ipcMain.handle("agents:delegated", async () => ({ records: await delegateRegistry.listAll() }));
 
 /** 某个会话调度出来的临时会话（任务完成后询问归档时用） */
-ipcMain.handle("agents:delegated-of", async (_event, originThreadId: string) => ({
-  records: await delegateRegistry.listByOrigin(String(originThreadId ?? "")),
-}));
 
 /** 统一调度入口：kind 决定调谁 */
-ipcMain.handle("agents:invoke", async (_event, input: any) => runDelegatedTask(input ?? ({} as any)));
 
 /** 归档被调度的临时会话（用户在 Codex 询问后确认 → Codex 调它） */
-ipcMain.handle("agents:archive", async (_event, input: { threadIds?: string[]; originThreadId?: string }) => {
-  const ids = Array.isArray(input?.threadIds) && input.threadIds.length
-    ? input.threadIds.map(String)
-    : (await delegateRegistry.listByOrigin(String(input?.originThreadId ?? ""))).map((record) => record.threadId);
-  let archived = 0;
-  const failed: string[] = [];
-  for (const id of ids) {
-    try {
-      const record = await delegateRegistry.infoOf(id);
-      if (!record || record.archived) continue;
-      await server.request("thread/archive", { threadId: id }).catch(() => undefined);
-      await delegateRegistry.markArchived([id]);
-      archived += 1;
-    } catch { failed.push(id); }
-  }
-  broadcastHarnessEvent({ type: "delegates-changed" } as any);
-  return { archived, failed };
-});
 
-ipcMain.handle("clipboard:image", async () => {
-  // Electron 44：clipboard.readImage() 已移除，改 W3C 风格 read() → ClipboardItem[] → image/png Blob
-  const items = await clipboard.read();
-  const item = items.find((entry) => entry.types.includes("image/png"));
-  if (!item) return null;
-  const blob = await item.getType("image/png");
-  if (!(blob instanceof Blob)) return null;
-  const buffer = Buffer.from(await blob.arrayBuffer());
-  if (!buffer.length) return null;
-  await fs.mkdir(imagesDir, { recursive: true });
-  const file = path.join(imagesDir, `codex-harness-${Date.now()}.png`);
-  await fs.writeFile(file, buffer);
-  return file;
-});
 /** 把「粘贴进来的长文本」落盘成 .txt，返回绝对路径（09-18 用户：「复制的内容超过 200 字的时候
  *  把文本直接显示成一个 .txt 文件的方式」）。
  *
@@ -8336,47 +978,15 @@ ipcMain.handle("clipboard:image", async () => {
  *  ⛔ 文件名按**内容哈希**去重：同一段文本粘两次得到同一个文件（幂等）。用时间戳命名会每粘一次
  *  就多一个文件、且历史消息里的引用各自指向不同副本（内容相同却看起来像两份）。
  *  ⛔ 文件**不自动清理**：消息里的 chip 点击要能打开它、模型也可能在后续回合里读它。 */
-ipcMain.handle("pasted-text:save", async (_event, text: unknown) => {
-  const content = typeof text === "string" ? text : "";
-  if (!content.trim()) return null;
-  await fs.mkdir(pastedTextDir, { recursive: true });
-  const hash = crypto.createHash("sha1").update(content, "utf8").digest("hex").slice(0, 8);
-  // 名字里带一段"内容提示"（首行去掉不适合做文件名的字符），让 chip 一眼能认出来是什么
-  const hint = content.trim().split(/\r?\n/, 1)[0]
-    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "")
-    .trim()
-    .slice(0, 16) || "文本";
-  const file = path.join(pastedTextDir, `粘贴文本-${hint}-${hash}.txt`);
-  if (!fileStat(file)) await fs.writeFile(file, content, "utf8");
-  return file;
-});
 /** 目标路径是否落在应用自己的粘贴文本目录内。
  *  ⛔ 读/写这两个通道**必须**做这个校验：渲染层传来的路径不可信，不校验就等于给了渲染层
  *  一个"任意文件读写"的入口（粘贴文本目录是应用数据，用户自己的文件不该被这条链碰到）。 */
-function isInsidePastedTextDir(target: string) {
-  const resolved = path.resolve(target);
-  const relative = path.relative(pastedTextDir, resolved);
-  return Boolean(relative) && !relative.startsWith("..") && !path.isAbsolute(relative);
-}
 /** 读取粘贴文本（供输入框 chip 点击后的大窗口预览/编辑）。
  *  返回 `editable:false` 表示"这不是应用保存的粘贴文本" → 渲染层回退到普通文件预览，
  *  **不靠路径猜**（靠猜会把用户自己目录里同名的 .txt 也当可编辑，一保存就改了他的文件）。 */
-ipcMain.handle("pasted-text:read", async (_event, target: unknown) => {
-  const file = typeof target === "string" ? target : "";
-  if (!file || !isInsidePastedTextDir(file)) return { editable: false };
-  if (!fileStat(file)) return { editable: true, content: null };
-  return { editable: true, content: await fs.readFile(path.resolve(file), "utf8") };
-});
 /** 保存编辑后的粘贴文本。
  *  ⛔ **不改名**：文件名里的哈希表示"创建时的内容"，编辑后不重算 —— 重算就要改名，而已经发出
  *  的消息里引用的正是旧路径（改名即断链）。代价只是"同一段内容可能对应两个文件"，可接受。 */
-ipcMain.handle("pasted-text:update", async (_event, input: { path: string; content: string }) => {
-  const file = typeof input?.path === "string" ? input.path : "";
-  if (!file || !isInsidePastedTextDir(file)) throw new Error("只允许编辑应用自己保存的粘贴文本");
-  await fs.mkdir(pastedTextDir, { recursive: true });
-  await fs.writeFile(path.resolve(file), String(input?.content ?? ""), "utf8");
-  return { ok: true, size: Buffer.byteLength(String(input?.content ?? ""), "utf8") };
-});
 // ⛔ `file:` 只在**工作区内的 .html** 上放行（09-13 审计 S5）：这条链是
 // `shell.openExternal` = 交给系统默认程序执行 —— 放行任意 `file:` 意味着渲染层（它要渲染
 // 模型输出 / 市场条目描述 / 内置浏览器里的网页）可以 `file:///C:/.../x.exe` 让系统去跑它。
@@ -8390,543 +1000,44 @@ const filePreviewAllowed = (target: URL) => {
   // （后者是文件对话框返回值，渲染层伪造不出来 —— 所以不牺牲"我能自己选文件"的自由度）
   return isInsideTrustedRoots(p);
 };
+
 /**
  * 「用户亲自选过」的路径 = **可信来源**（09-13 审计 S5 的安全版修法，用户要求"别把口子焊死"）。
  * 为什么这样既安全又不憋屈：这些路径是**主进程自己弹的系统对话框**返回的，渲染层伪造不出来；
  * 而渲染层里跑着模型输出 / 内置浏览器网页 / 渠道消息，它们想凭空写 `C:\Windows\...` 是拿不到
  * 这条信任的。于是：工作区/userData（主进程记着的）+ 用户选过的路径 → 放行；其余一律拒。
  */
-const userPickedPaths = new Set<string>();
-const trustPicked = (paths: readonly string[]) => {
-  for (const p of paths) {
-    if (!p) continue;
-    const resolved = path.resolve(String(p));
-    userPickedPaths.add(resolved);
-    if (userPickedPaths.size > 200) userPickedPaths.delete(userPickedPaths.values().next().value as string);
-  }
-};
-/** 可信根集合：主进程记着的各会话工作目录 + userData + 用户亲自选过的路径（含其所在目录）。 */
-const trustedRoots = () => {
-  const roots = [app.getPath("userData"), ...[...threadCwd.values()].filter(Boolean).map((cwd) => String(cwd))];
-  for (const picked of userPickedPaths) roots.push(picked, path.dirname(picked));
-  return roots.filter(Boolean).map((root) => path.resolve(root));
-};
-const isInsideTrustedRoots = (target: string) => {
-  const resolved = path.resolve(target);
-  return trustedRoots().some((root) => {
-    const relative = path.relative(root, resolved);
-    return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
-  });
-};
-/** 同上，但允许目标**就是**可信根本身（reveal 工作区 / userData 目录这类合法用法）。 */
-const isInsideOrEqualTrustedRoots = (target: string) => {
-  const resolved = path.resolve(target);
-  return trustedRoots().some((root) => {
-    const relative = path.relative(root, resolved);
-    return !relative.startsWith("..") && !path.isAbsolute(relative);
-  });
-};
-ipcMain.handle("external:open", async (_event, value: string) => {
-  const url = new URL(value);
-  if (url.protocol !== "https:" && url.protocol !== "http:" && !filePreviewAllowed(url)) throw new Error("Unsupported URL");
-  await shell.openExternal(url.toString());
-});
-// 放大查看：独立 BrowserWindow 弹出预览（右栏 BrowserPane 太窄时用），宽高可自由调整
-ipcMain.handle("browser:popout", async (_event, value: string) => {
-  const url = new URL(value);
-  if (url.protocol !== "https:" && url.protocol !== "http:" && !filePreviewAllowed(url)) throw new Error("Unsupported URL");
-  const pop = new BrowserWindow({
-    width: 1180,
-    height: 800,
-    minWidth: 480,
-    minHeight: 320,
-    title: "预览",
-    autoHideMenuBar: true,
-    backgroundColor: "#1b1b1a",
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-  pop.setMenuBarVisibility(false);
-  void pop.loadURL(url.toString());
-  return { ok: true };
-});
-ipcMain.handle("shell:reveal", async (_event, target: string) => {
-  if (!target) return;
-  // ⛔ 隐私加固（09-19 审计中危）：目标必须落在可信根内（含根本身——reveal 工作区 /
-  // userData 目录是合法用法）。渲染层传来的路径不可信，不校验就等于能系统级打开任意目录。
-  if (!isInsideOrEqualTrustedRoots(target)) throw new Error("仅允许打开会话工作区与应用数据目录");
-  // 目录用 openPath 在文件管理器打开；文件用 showItemInFolder 定位
-  try {
-    const st = await fs.stat(target);
-    if (st.isDirectory()) await shell.openPath(target);
-    else shell.showItemInFolder(target);
-  } catch {
-    shell.showItemInFolder(target);
-  }
-});
-/** 复制本地图片文件到剪贴板：渲染层 fetch harness-image:// 自定义协议拿不到 blob，
- * 必须主进程读文件 → nativeImage → clipboard.write（Electron 44 已移除 writeImage，
- * 改用 W3C ClipboardItem）。 */
-/** 文本写剪贴板：走主进程 electron clipboard，不受渲染层 Clipboard API 的
- *  焦点/权限限制（用户实测窗口失焦时 navigator.clipboard.writeText 抛
- *  "Write permission denied"，表现为「复制失败」toast）。 */
-ipcMain.handle("clipboard:write", async (_event, text: string) => {
-  clipboard.writeText(String(text ?? ""));
-  return true;
-});
+
+
+
+
+
 /** 欢迎页「无项目」会话的临时工作目录：每次调用在基础目录下新建一个独立子目录。
- *  Windows：优先应用安装目录（便携安装可写，用户要求"安装目录下"）；装在系统盘
- *  Program Files 等不可写位置时回落 userData（%APPDATA%\Codex Harness Desktop）。
- *  ⛔ mac（09-17 mac 适配）：**绝不写进 .app bundle** —— `path.dirname(app.getPath("exe"))`
- *  指向 `X.app/Contents/MacOS`，在那里建目录会破坏代码签名，且 /Applications 通常不可写、
- *  被 Gatekeeper translocate 时整个路径还是只读卷 ⇒ darwin 直接落 userData
- *  （~/Library/Application Support/Codex Harness Desktop/scratch）。 */
-ipcMain.handle("scratch:create", async () => {
-  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const name = `chat-${stamp}-${Date.now().toString(36)}`;
-  const make = async (root: string) => {
-    const dir = path.join(root, "scratch", name);
-    await fs.mkdir(dir, { recursive: true });
-    return dir;
-  };
-  if (process.platform === "darwin") return make(app.getPath("userData"));
-  try {
-    return await make(path.dirname(app.getPath("exe")));
-  } catch {
-    return await make(app.getPath("userData"));
-  }
-});
-ipcMain.handle("clipboard:write-image", async (_event, filePath: string) => {
-  if (!filePath) throw new Error("缺少图片路径");
-  const image = nativeImage.createFromPath(filePath);
-  if (image.isEmpty()) throw new Error("无法读取该图片文件");
-  const png = image.toPNG();
-  // Electron 44 的 ClipboardItem 是 electron 模块具名导出（官方 breaking-changes 迁移示例：
-  // const { clipboard, ClipboardItem } = require('electron')）。writeImage 已移除，写图片 =
-  // clipboard.write([new ClipboardItem({ 'image/png': new Blob([image.toPNG()]) })]）。
-  if (typeof ClipboardItem !== "function") throw new Error("剪贴板 API 不可用");
-  await clipboard.write([new ClipboardItem({ "image/png": new Blob([new Uint8Array(png)], { type: "image/png" }) })]);
-  return true;
-});
-/** 读取剪贴板里的文件路径（渲染层 clipboardData.files/uri-list 拿不到时的兜底）：
- *  Windows 复制文件进剪贴板是 CF_HDROP，Chromium 渲染层有时不暴露，但主进程
- *  clipboard.read() 的 ClipboardItem 带 text/uri-list（file:/// 列表）。 */
-ipcMain.handle("clipboard:read-files", async () => {
-  const items = await clipboard.read();
-  const paths: string[] = [];
-  for (const item of items) {
-    if (!item.types.includes("text/uri-list")) continue;
-    try {
-      const payload = await item.getType("text/uri-list");
-      if (!(payload instanceof Blob)) continue;
-      const text = await payload.text();
-      for (const line of text.split(/\r?\n/)) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          const url = new URL(trimmed);
-          if (url.protocol === "file:") {
-            paths.push(decodeURIComponent(trimmed.slice("file://".length)).replace(/\//g, "\\").replace(/^\\/, ""));
-          }
-        } catch { /* 非 URL 行跳过 */ }
-      }
-    } catch { /* 单个 item 读取失败不影响其他 */ }
-  }
-  return paths;
-});
-ipcMain.handle("custom-model:read", async () => publicCustomModel(await readCustomModel()));
-ipcMain.handle("custom-model:probe", (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) => probeCustomModel(input));
-ipcMain.handle("custom-model:save", async (_event, input: { provider: string; name: string; model: string; baseUrl: string; contextWindow?: string | number; wireApi?: "responses" | "chat"; apiKey?: string; models?: ProviderModel[]; enabled?: boolean; maxConcurrency?: number; upstreamProtocol?: BridgeMode }) => {
-  const provider = safeProviderId(input.provider.trim());
-  const name = input.name.trim();
-  const requestedModel = input.model.trim();
-  const baseUrl = input.baseUrl.trim().replace(/\/$/, "");
-  const contextWindow = Number(input.contextWindow ?? 128000);
-  if (!/^[a-zA-Z0-9_-]+$/.test(provider)) throw new Error("供应商 ID 只能包含字母、数字、下划线和短横线");
-  if (!name) throw new Error("供应商名称不能为空");
-  if (!Number.isSafeInteger(contextWindow) || contextWindow < 1024) throw new Error("上下文额度必须是大于等于 1024 的整数");
-  const parsedUrl = new URL(baseUrl);
-  if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") throw new Error("Base URL 必须使用 http 或 https");
-  const previous = await readCustomModel();
-  let encryptedKey = previous?.encryptedKey;
-  if (input.apiKey) {
-    if (!safeStorage.isEncryptionAvailable()) throw new Error("当前系统无法安全保存 API Key");
-    encryptedKey = safeStorage.encryptString(input.apiKey).toString("base64");
-  }
-  // ⛔ 恒 responses（09-16 真实引擎探针实证：写 chat 会让整份 config.toml 拒载、所有请求失败）。
-  // 前端也不再传 chat（UI 已撤掉协议选项），这里保留入参只为兼容旧渲染层，统一归一。
-  const wireApi = "responses" as const;
-  // 官方订阅：chatgpt 后端只认 ChatGPT 登录凭据，绝不能把任何 API Key 带上（含「留空沿用上一供应商」的复用逻辑）
-  // 带上会 401 "api_key_not_supported" → 流无限重连（实证）
-  if (provider === "openai-official") encryptedKey = undefined;
-  // 模型列表以「前端传入的完整列表」为权威：前端保存时总是带全量 models（模型设置页、
-  // 中转站/官方订阅切换、登录页都一样），其中不含的模型即视为「被用户删除」——绝不能
-  // 再从磁盘旧列表合并回来，否则删除的模型保存后立即复活（2026-09-08 实测反馈）。
-  // 仅当调用方完全没传 models 字段时才回退到磁盘旧列表兜底（老调用方兼容）。
-  const list = await readCustomModels();
-  const existing = list.find((entry) => entry.provider === provider);
-  const seen = new Set<string>();
-  const mergedModels: ProviderModel[] = [];
-  for (const m of input.models ?? []) {
-    const id = typeof m === "string" ? m : m?.id;
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    mergedModels.push(typeof m === "string" ? { id, contextWindow } : m);
-  }
-  if (!Array.isArray(input.models)) {
-    for (const m of existing?.models ?? []) {
-      const id = typeof m === "string" ? m : m?.id;
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      mergedModels.push(typeof m === "string" ? { id, contextWindow: existing?.contextWindow } : m);
-    }
-  }
-  const enabledModels = mergedModels.filter((entry) => entry.enabled !== false);
-  const model = requestedModel || enabledModels[0]?.id || "";
-  if (!model) throw new Error("请先在「模型列表」添加并勾选至少一个生效模型，再保存");
-  // ⛔ 新供应商的**默认启用态取决于有没有密钥**（09-19 用户要求：首次安装/未配置时不要默认启用）：
-  //   没填密钥就保存（或从推荐卡进来还没填）→ 存成禁用；填了密钥 → 启用（配置完即可用）。
-  //   原来无条件 `?? true`：未配置密钥的供应商也会带着「已启用」落盘，于是和新配的那个同时亮。
-  //   ⚠️ 本机/内网自建服务例外（09-19 代码审查发现）：它们本来就不需要 Key，
-  //   存成禁用会让「配好本地模型却发不出消息」且看不出原因。判定与 publicCustomModel 同源。
-  const keylessThirdPartySave = !encryptedKey && provider !== "openai-official" && !isLocalEndpoint(baseUrl);
-  // 并发上限（09-19 用户要求）：存储时归一（1~10，缺省 3）。未传（旧渲染层）时沿用已有值。
-  const maxConcurrency = input.maxConcurrency == null
-    ? (existing?.maxConcurrency ?? 3)
-    : Math.min(10, Math.max(1, Math.round(Number(input.maxConcurrency)) || 3));
-  // 上游协议（09-19）：归一为 auto/chat/responses；未传（旧渲染层）时沿用已有值，兜底 auto。
-  const upstreamProtocol = normalizeUpstreamProtocol(input.upstreamProtocol ?? existing?.upstreamProtocol);
-  const saved = withModels({ provider, name, model, baseUrl, contextWindow, wireApi, encryptedKey, maxConcurrency, upstreamProtocol, enabled: keylessThirdPartySave ? false : (input.enabled ?? existing?.enabled ?? true), models: mergedModels }, model);
-  await upsertCustomModel(saved);
-  const current = await readCustomModel();
-  if (saved.enabled === false && current?.provider !== provider) {
-    // 禁用状态的供应商不抢生效位
-    return publicCustomModel(saved);
-  }
-  // 全局互斥：保存为启用状态的供应商成为唯一生效者，其他启用中的全部禁用
-  //（UI 置灰是第一道防线，这里是兜底——中转站/官方订阅/设置页保存都汇到这个 handler）
-  if (saved.enabled !== false) {
-    for (const other of list) {
-      if (other.provider !== provider && other.enabled !== false) {
-        await upsertCustomModel({ ...other, enabled: false });
-      }
-    }
-  }
-  await fs.writeFile(customModelFile, JSON.stringify(saved, null, 2), "utf8");
-  await applyCustomModel(saved);
-  broadcastProviderActivated(provider);
-  return publicCustomModel(saved);
-});
+ *  09-22 收紧：**全平台一律 userData**（%APPDATA%\Codex Harness Desktop\scratch）。
+ *  旧实现优先 exe 同级目录（当年便携安装的可写要求），但实测后果严重：开发模式落在
+ *  dist/scratch —— 构建即清，会话记忆全丢；打包后在 Program Files 又只读。
+ *  scratch 现在承载会话 cwd ⇒ 记忆/技能发现都跟着它走，必须持久。 */
 // 协议桥状态：设置页展示「引擎的请求实际怎么走」（直通 / 转换），也是排查 chat-only 网关的依据。
-ipcMain.handle("bridge:status", async () => ({
-  ...responsesBridge.status(),
-  modes: responsesBridge.modesSnapshot(),
-  // 「用户配了什么协议」（区别于 modes = 「实际跑成什么」）——排查"改了设置不生效"看这个
-  configured: responsesBridge.configuredModes(),
-}));
-ipcMain.handle("custom-model:list", async () => {
-  const list = await readCustomModels();
-  const current = await readCustomModel();
-  const providers = list.length ? list.map(publicCustomModel) : (current ? [publicCustomModel(current)] : []);
-  return { providers, current: current?.provider ?? null };
-});
-ipcMain.handle("custom-model:select", async (_event, providerId: string) => {
-  const list = await readCustomModels();
-  const target = list.find((entry) => entry.provider === providerId);
-  if (!target) throw new Error("未找到该供应商");
-  const next = withModels(target);
-  if (next !== target) await upsertCustomModel(next);
-  await disableOtherCustomProviders(providerId);
-  await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
-  await applyCustomModel(next);
-  broadcastProviderActivated(providerId);
-  return publicCustomModel(next);
-});
 /** 在同一供应商内切换生效模型：保留 models 列表，只改 model 字段 */
 /** 全局互斥兜底：provider 成为唯一启用者后，其余启用中的供应商全部停用。
  *  save / set-enabled 原本就有；set-model（下拉跨供应商切换）与 select（直接选档案）
  *  同样会改变生效者——漏掉会出现「中转站登录后模型列表里其他供应商仍显示启用」。 */
-async function disableOtherCustomProviders(provider: string) {
-  const list = await readCustomModels();
-  for (const other of list) {
-    if (other.provider !== provider && other.enabled !== false) {
-      await upsertCustomModel({ ...other, enabled: false });
-    }
-  }
-}
 /** 供应商→中转站反向联动的信号：任何供应商成为当前生效后广播给渲染层，
  *  渲染层据此清掉不再匹配的 relay-active（localStorage 在渲染层，主进程清不了）。 */
-function broadcastProviderActivated(provider: string) {
-  try { sendToWindow("harness:event", { type: "provider-activated", provider, at: Date.now() }); } catch { /* 窗口未就绪 */ }
-}
-ipcMain.handle("custom-model:set-model", async (_event, input: { provider: string; model: string; apply?: boolean; restart?: boolean }) => {
-  const model = input.model.trim();
-  if (!model) throw new Error("模型 ID 不能为空");
-  const list = await readCustomModels();
-  const target = list.find((entry) => entry.provider === input.provider);
-  if (!target) throw new Error("未找到该供应商");
-  const next = withModels({ ...target, model }, model);
-  await upsertCustomModel(next);
-  await disableOtherCustomProviders(input.provider);
-  await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
-  // apply=false 时只保存配置不重写 config.toml（最轻量，仅对齐档案文件）。
-  // apply=true + restart=false：一次性写齐 custom-model.json + config.toml 顶层 + catalog，
-  // 但**不重启引擎**——同供应商换模型不需要重启，重启会打断在跑的回合。
-  // apply=true + restart 缺省 = 旧语义：写配置并重启引擎（供应商级切换用）。
-  if (input.apply !== false) {
-    await applyCustomModel(next, { restart: input.restart !== false });
-    broadcastProviderActivated(input.provider);
-  }
-  return publicCustomModel(next);
-});
 /** 思考等级档案持久化：写进 custom-model.json（models[].effort + 顶层 effort），
  *  并同步 config.toml 顶层 model_reasoning_effort（restart:false 不重启引擎——
  *  会话内显式档位由每轮 turn/start 的 effort 下发，config.toml 只做重启后的兜底默认）。
  *  与「模型自报」同步案同源：档案不写，切供应商/重装后档位就丢了。 */
-ipcMain.handle("custom-model:set-effort", async (_event, input: { provider: string; model: string; effort: string }) => {
-  const model = input.model.trim();
-  const effort = String(input.effort ?? "").trim();
-  if (!model) throw new Error("模型 ID 不能为空");
-  if (effort && !["minimal", "low", "medium", "high", "ultra", "xhigh"].includes(effort)) throw new Error(`未知思考档位: ${effort}`);
-  const list = await readCustomModels();
-  const target = list.find((entry) => entry.provider === input.provider);
-  if (!target) throw new Error("未找到该供应商");
-  const effortPatch = effort ? { effort } : { effort: undefined };
-  let models = (target.models ?? []).map((m) => m.id === model ? { ...m, ...effortPatch } : m);
-  // 旧档案 models 缺当前生效模型条目时补一条，保证顶层与 models[] 永不同步分叉
-  if (effort && !models.some((m) => m.id === model)) models = [...models, { id: model, effort }];
-  const next: CustomModelFile = { ...target, models, ...(model === target.model ? { effort: effort || undefined } : {}) };
-  await upsertCustomModel(next);
-  await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
-  await applyCustomModel(next, { restart: false });
-  return publicCustomModel(next);
-});
 /** 延迟生效：读取当前激活供应商并重启引擎使配置生效（供应商切换「重启生效」按钮用，幂等） */
-ipcMain.handle("custom-model:apply", async () => {
-  const custom = await readCustomModel();
-  if (!custom) throw new Error("尚未配置供应商");
-  await applyCustomModel(custom);
-  return publicCustomModel(custom);
-});
 /** 添加或更新供应商下的一个模型（按模型 ID 匹配）；新模型不自动生效 */
-ipcMain.handle("custom-model:upsert-model", async (_event, input: { provider: string; model: ProviderModel }) => {
-  const id = input.model.id?.trim();
-  if (!id) throw new Error("模型 ID 不能为空");
-  const list = await readCustomModels();
-  const target = list.find((entry) => entry.provider === input.provider);
-  if (!target) throw new Error("未找到该供应商");
-  const models = [...(target.models ?? [])];
-  const index = models.findIndex((m) => m.id === id);
-  if (index >= 0) models[index] = { ...models[index], ...input.model, id }; else models.push({ ...input.model, id });
-  const next: CustomModelFile = { ...target, models };
-  await upsertCustomModel(next);
-  const current = await readCustomModel();
-  // 改的是当前生效供应商：必须重写 model-catalog.json + 重启引擎，否则用户改的
-  // contextWindow 不会进引擎链路 —— 引擎会继续用旧 catalog 的 fallback (~128K)，
-  // 表现为「UI 显示 12.8 万，但模型配置里写的是 1M」。
-  if (current?.provider === input.provider) {
-    await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
-    await applyCustomModel(next);
-  }
-  return publicCustomModel(next);
-});
 /** 从供应商的模型列表里删掉一个；允许删空，删的是当前模型时自动切到剩余模型 */
-ipcMain.handle("custom-model:remove-model", async (_event, input: { provider: string; modelId: string }) => {
-  const list = await readCustomModels();
-  const target = list.find((entry) => entry.provider === input.provider);
-  if (!target) throw new Error("未找到该供应商");
-  const models = (target.models ?? []).filter((m) => m.id !== input.modelId);
-  const next: CustomModelFile = { ...target, models, model: target.model === input.modelId ? (models[0]?.id ?? "") : target.model };
-  await upsertCustomModel(next);
-  const current = await readCustomModel();
-  if (current?.provider === input.provider) {
-    await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
-    await applyCustomModel(next);
-  }
-  return publicCustomModel(next);
-});
 /** 启用/禁用供应商；禁用当前供应商时清空生效配置并重启 Codex */
-ipcMain.handle("custom-model:set-enabled", async (_event, input: { provider: string; enabled: boolean }) => {
-  const list = await readCustomModels();
-  const target = list.find((entry) => entry.provider === input.provider);
-  if (!target) throw new Error("未找到该供应商");
-  const current = await readCustomModel();
-  const isCurrent = current?.provider === input.provider;
-  // 全局互斥：一次只能启用一个供应商。启用 A 时若 B 在生效 → 自动禁用所有其他启用中的
-  // 供应商，并把 A 写为当前生效（引擎重启，切换语义）。UI 置灰是第一道防线，这里是兜底。
-  if (input.enabled) {
-    for (const other of list) {
-      if (other.provider !== input.provider && other.enabled !== false) {
-        await upsertCustomModel({ ...other, enabled: false });
-      }
-    }
-    const next: CustomModelFile = { ...target, enabled: true };
-    await upsertCustomModel(next);
-    if (!isCurrent) {
-      await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
-      await applyCustomModel(next);
-    }
-    // 正向联动：在「模型供应商」列表启用 → 对应账号库里被停用的账号同步恢复启用。
-    // 不补这一步会出现死锁（实测反馈）：供应商生效了，但账号卡仍显示「已停用」，
-    // 而账号的 disabled 又会把开关/「启用订阅/设为当前」按钮一起禁用 → 用户回到订阅页什么都点不了。
-    try {
-      if (input.provider === "openai-official") {
-        const vault = await readOpenaiVault();
-        let changed = false;
-        for (const account of vault) {
-          if ((account as any).disabled) { delete (account as any).disabled; changed = true; }
-        }
-        if (changed) await writeOpenaiVault(vault);
-      } else if (input.provider.startsWith("relay-")) {
-        const store = await readRelayStore();
-        let changed = false;
-        for (const account of store.accounts) {
-          if (!account.disabled) continue;
-          // 网关匹配用 relayProviderIdOf（与账号开关/删除收尾同一套命名，别再各抄一遍）
-          if (relayProviderIdOf(account.baseUrl) === input.provider) { account.disabled = false; changed = true; }
-        }
-        if (changed) await writeRelayStore(store);
-      }
-    } catch { /* 账号库不存在等：跳过联动，不影响启用主流程 */ }
-    broadcastProviderActivated(input.provider);
-    return publicCustomModel(next);
-  }
-  const next: CustomModelFile = { ...target, enabled: false };
-  await upsertCustomModel(next);
-  if (isCurrent) {
-    await fs.writeFile(customModelFile, "null", "utf8");
-    await server.restart();
-  }
-  // 反向联动：停用 relay-<host> 供应商 → 对应网关的中转站账号开关同步关
-  //（正向联动已有：停用账号会禁用同网关供应商；这里是供应商→账号方向）
-  if (input.provider.startsWith("relay-")) {
-    try {
-      const store = await readRelayStore();
-      let changed = false;
-      for (const account of store.accounts) {
-        if (account.disabled) continue;
-        if (relayProviderIdOf(account.baseUrl) === input.provider) {
-          account.disabled = true;
-          if (store.activeId === account.id) store.activeId = null;
-          changed = true;
-        }
-      }
-      if (changed) await writeRelayStore(store);
-    } catch { /* relay store 不存在等，跳过联动 */ }
-  }
-  // 反向联动：停用 openai-official 供应商 → 订阅账号一并置为「已停用」（与中转站账号同语义）
-  if (input.provider === "openai-official") {
-    try {
-      const vault = await readOpenaiVault();
-      let changed = false;
-      for (const account of vault) {
-        if (!(account as any).disabled) { (account as any).disabled = true; changed = true; }
-      }
-      if (changed) await writeOpenaiVault(vault);
-      // ⛔ 与 `openai:toggle-account` 对齐：停用供应商必须同时清掉 auth.json 的登录态，
-      //    否则卡片会同时显示「使用中 + 已停用」（账号卡失效判据读的是 auth.json 的 email），
-      //    引擎也会继续拿着凭据跑 —— 这就是用户在中转站侧报的同一类矛盾态。
-      const current = await readOpenaiAuth();
-      if (current?.loggedIn) await fs.writeFile(openaiAuthFile(), "null", "utf8");
-    } catch { /* 跳过 */ }
-  }
-  return publicCustomModel(next);
-});
-ipcMain.handle("custom-model:remove", async (_event, providerId: string) => {
-  const list = await readCustomModels();
-  const next = list.filter((entry) => entry.provider !== providerId);
-  await writeCustomModels(next);
-  const current = await readCustomModel();
-  if (current?.provider === providerId) {
-    // 删除当前供应商只改变模型配置，绝不能触碰 codex-home/sessions。
-    // 还有可用供应商时直接切到下一家，避免引擎短暂进入“无模型”状态；没有时
-    // 才清空当前模型。两条路径都会保留同一个 CODEX_HOME，因此本地会话仍可列出。
-    const fallback = next.find((entry) => entry.enabled !== false) ?? null;
-    if (fallback) {
-      const normalized = withModels(fallback);
-      await fs.writeFile(customModelFile, JSON.stringify(normalized, null, 2), "utf8");
-      await applyCustomModel(normalized);
-      return { ok: true, current: publicCustomModel(normalized) };
-    }
-    await fs.writeFile(customModelFile, "null", "utf8");
-    await server.restart();
-    return { ok: true, current: null };
-  }
-  return { ok: true, current: current ? publicCustomModel(current) : null };
-});
-ipcMain.handle("channel-bot:read", async () => publicChannelBot(await readChannelBot()));
-ipcMain.handle("channel-bot:save", (_event, input: unknown) => saveChannelBot(input));
-ipcMain.handle("channel-bot:test", async (_event, input: unknown) => {
-  const config = await normalizeChannelBot(input);
-  if (!config.appId || !config.appSecret) throw new Error("测试连接需要 App ID 和 App Secret");
-  return channelBot.test(config);
-});
-ipcMain.handle("memory:list", (_event, category?: string) => memoryStore.list(category));
-ipcMain.handle("memory:search", (_event, query: string, workspace?: string) => memoryStore.search(query, 8, { workspace }));
-ipcMain.handle("memory:recall", (_event, query: string, workspace?: string) => memoryStore.recall(query, { workspace }));
-ipcMain.handle("memory:mode-read", async () => readMemoryMode());
-ipcMain.handle("memory:mode-set", async (_event, mode: MemoryMode) => {
-  if (mode === "cloud" && !(await readMemoryGateway())?.endpoint) throw new Error("请先配置云端 Gateway 地址，再切到云端记忆");
-  return applyMemoryMode(mode === "cloud" ? "cloud" : "local");
-});
-ipcMain.handle("memory:save", (_event, input: unknown) => memoryStore.upsert(input as { content: string; category: MemoryCategory; sourceThreadId?: string; sourceTurnId?: string; confidence?: number }));
-ipcMain.handle("memory:delete", (_event, id: string) => memoryStore.remove(id));
-ipcMain.handle("memory:reset", () => memoryStore.reset());
-ipcMain.handle("memory:gateway:read", async () => { const value = await readMemoryGateway(); return { ...memoryStore.remoteStatus(), sessionKey: value?.sessionKey ?? "", userId: value?.userId ?? "codex-harness", hasApiKey: Boolean(value?.apiKey) }; });
-ipcMain.handle("memory:gateway:save", (_event, input: unknown) => saveMemoryGateway(input));
-ipcMain.handle("memory:layers:read", (_event, workspace?: string) => memoryLayers.snapshot(workspace));
-ipcMain.handle("memory:layers:context", (_event, workspace?: string, includeWorkspace = true) => memoryLayers.context(workspace, includeWorkspace));
-ipcMain.handle("memory:workspace-enabled:read", (_event, workspace?: string) => workspaceMemoryEnabled(workspace));
-ipcMain.handle("memory:workspace-enabled:set", (_event, input: { workspace?: string; enabled?: boolean }) => {
-  if (!input?.workspace) throw new Error("尚未选择工作区");
-  return setWorkspaceMemoryEnabled(input.workspace, Boolean(input.enabled));
-});
-ipcMain.handle("memory:layers:write", async (_event, input: { scope: "user" | "background" | "project"; content: string; workspace?: string }) => {
-  if (input.scope === "user") await memoryLayers.writeUser(input.content ?? "");
-  else if (input.scope === "background") {
-    if (!input.workspace) throw new Error("尚未选择工作区，无法保存项目背景");
-    await memoryLayers.writeBackground(input.workspace, input.content ?? "");
-  }
-  else {
-    if (!input.workspace) throw new Error("尚未选择工作区，无法保存项目记忆");
-    await memoryLayers.writeProject(input.workspace, input.content ?? "");
-  }
-  return memoryLayers.snapshot(input.workspace);
-});
-ipcMain.handle("memory:distill", async (_event, workspace?: string) => {
-  if (!workspace) throw new Error("尚未选择工作区，无法蒸馏项目记忆");
-  const result = await memoryLayers.distill(workspace, distillSummarize, true);
-  if (!result.ok) throw new Error(result.reason ?? "没有需要蒸馏的日志");
-  return result;
-});
-ipcMain.handle("rpa:list", () => rpaStore.listRecipes());
-ipcMain.handle("rpa:save", (_e, input: unknown) => rpaStore.saveRecipe(input as Parameters<RpaStore["saveRecipe"]>[0]));
-ipcMain.handle("rpa:delete", (_e, id: string) => rpaStore.deleteRecipe(id));
-ipcMain.handle("rpa:record", (_e, input: { id: string; ok: boolean; error?: string }) => rpaStore.recordRun(input.id, input.ok, input.error));
-ipcMain.handle("tasks:list", () => rpaStore.listTasks());
-ipcMain.handle("tasks:add", (_e, input: unknown) => rpaStore.addTask(input as { text: string; priority?: "low" | "medium" | "high" }));
-ipcMain.handle("tasks:update", (_e, input: { id: string; patch: unknown }) => rpaStore.updateTask(input.id, input.patch as any));
-ipcMain.handle("tasks:delete", (_e, id: string) => rpaStore.deleteTask(id));
-ipcMain.handle("memory:gateway:test", async (_event, input: any) => {
-  const endpoint = String(input.endpoint ?? "").trim().replace(/\/$/, "");
-  if (!endpoint) throw new Error("请填写 Memory Gateway 地址");
-  const startedAt = Date.now();
-  const response = await fetch(`${endpoint}/health`, { headers: input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {}, signal: AbortSignal.timeout(15_000) });
-  if (!response.ok) throw new Error(`Gateway HTTP ${response.status}`);
-  return { ok: true, latencyMs: Date.now() - startedAt, health: await response.json() };
-});
-ipcMain.handle("scheduler:list", () => scheduler.list());
-ipcMain.handle("scheduler:save", (_event, input: unknown) => scheduler.save(input as any));
-ipcMain.handle("scheduler:delete", (_event, id: string) => scheduler.remove(id));
-ipcMain.handle("scheduler:run", (_event, id: string) => scheduler.runNow(id));
 
 // ── 退出统一清理：确保所有子进程/服务都被终止，应用「退得干净」 ──
 // 覆盖：引擎(codex.exe)、node-pty 终端、CloakBrowser 助手、远程隧道+HTTP 服务、
 // 频道机器人 HTTP、调度器、微信/Telegram 网关轮询。
 let cleanupDone = false;
+
 function cleanupAll() {
   if (cleanupDone) return;
   cleanupDone = true;
@@ -8957,7 +1068,13 @@ app.on("window-all-closed", () => {
   cleanupAll();
   app.quit();
 });
+
 app.on("before-quit", () => {
+  // ⛔ 退出已经开始：必须在这里把 closeConfirmed 置真 —— 否则开了「关闭窗口时最小化到托盘」时，
+  //    关窗守卫会把这次 quit 变成 hide，应用**退不掉**（托盘「退出」/ Cmd+Q / 系统关机全中）。
+  mutableState.closeConfirmed = true;
+  // 托盘图标要显式销毁：Windows 上不销毁会残留到鼠标划过才消失。
+  destroyAppTray();
   // 兜底：无论窗口事件如何，退出前都清理一次（幂等，cleanupDone 去重）
   cleanupAll();
   // SSH 会话持有 ssh2 连接，不主动断开会让退出流程挂住
@@ -8965,6 +1082,108 @@ app.on("before-quit", () => {
   // 挂断后保活的语音工作线程：退出时彻底销毁（否则 90s 内进程里还挂着两份 ONNX 模型）
   voiceService.disposeIdleWorkers();
 });
+
 app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  // mac：点 Dock 图标 —— 窗口不存在就建；存在但被托盘藏起来了要**显示出来**（只 focus 看不见的窗口没用）。
+  showMainWindow();
 });
+
+// ── 依赖注入给 features/boot.ts（必须在所有顶层声明之后调用：它按值取这些单例）──
+bindBoot({
+  codexHome, loadDeletedThreads, responsesBridge, userSkillsDir, ensureBuiltinReviewer, refreshSkillDiscipline, readCustomModel, server, isInsideTrustedRoots, placeholderPngResponse, createWindow, filterForRenderer, channelBot, voiceService, syncEngineWatchdog, eventThreadId, purgeDeletedThread, threadRuntimeStore, teamRunStore, delegateRegistry, dispatchProbes, stableKey, engineActiveTurnIds, botStreamSessions, stopWeixinTyping, botStreamPlanFor, botStreamFile, startWeixinTyping, captureBuffers, threadCwd, remoteEventForwarders, internalThreads, workspaceMemoryEnabled, memoryStore, memoryLayers, distillSummarize, resolveLiveProxy, connectorEnv, readConnectors, migrateLegacyRolloutHome, healRolloutLineage, readCustomModels, ensureDispatchHttp, writeModelCatalogToml, devInstructionsInput, ensureDispatchToken, applyMemoryMode, scheduler, remote,
+  DISPATCH_FIXED_PORT, mcpOverrideEnabled, readMcpOverrides, escapeToml, applyCustomModel, readMemoryMode, autoInstallGitIfNeeded, healReservedProviderConfig, handleWeixinMessage, channelLogs, persistChannelLog, telegramGateway, feishuGateway, dingtalkGateway, qqGateway, wecomWebhookGateway, readChannelBot,
+  setWeixinGateway,
+  // dispatchToken 是 let 且运行时才赋值 ⇒ 必须给 getter（按值 bind 会拿到旧值）
+  getDispatchToken: () => dispatchToken,
+});
+
+// ── 注入给 features/custom-model-probe.ts（放在文件末尾：所有声明之后）──
+bindCustomModelProbe({ normalizeProvider, readOpenaiAuth, readCustomModel, fetchOpenaiModels, classifyProbeError });
+
+// 供 features/ 取用（活绑定：main 里重新赋值也能读到）
+
+
+
+
+// 供 features/ 取用（活绑定：main 里重新赋值也能读到）
+
+
+
+
+/** 诊断计数快照（app:perf-counters 搬走后由 features/app-diagnostics.ts 取用）。 */
+
+
+
+
+// 供 features/ 取用（活绑定：main 里重新赋值也能读到）
+
+
+// 供 features/ 取用（活绑定：main 里重新赋值也能读到）
+
+
+// 供 features/ 取用（活绑定：main 里重新赋值也能读到）
+
+
+
+
+// ── 供 electron/features/** 读写的共享可变状态（09-21 架构改造：随按域拆分引入）──
+// ⛔ 为什么用访问器对象而不是直接 export：ESM 里 `import` 进来的绑定**不可赋值**（TS2632）。
+//    这些符号既要读也要写（计数器 / 子进程句柄 / 缓存），所以经 getter/setter 暴露；
+//    main 侧现有代码一行未改。
+export const mutableState = {
+  get cloakProc() { return cloakProc; },
+  set cloakProc(v: typeof cloakProc) { cloakProc = v; },
+  get resumeCount() { return resumeCount; },
+  set resumeCount(v: typeof resumeCount) { resumeCount = v; },
+  get resumeEnrichMs() { return resumeEnrichMs; },
+  set resumeEnrichMs(v: typeof resumeEnrichMs) { resumeEnrichMs = v; },
+  get resumeMaxMs() { return resumeMaxMs; },
+  set resumeMaxMs(v: typeof resumeMaxMs) { resumeMaxMs = v; },
+  get resumeTotalMs() { return resumeTotalMs; },
+  set resumeTotalMs(v: typeof resumeTotalMs) { resumeTotalMs = v; },
+  get rolloutFallbackScanCount() { return rolloutFallbackScanCount; },
+  set rolloutFallbackScanCount(v: typeof rolloutFallbackScanCount) { rolloutFallbackScanCount = v; },
+  get threadListRequestCount() { return threadListRequestCount; },
+  set threadListRequestCount(v: typeof threadListRequestCount) { threadListRequestCount = v; },
+  get closeConfirmed() { return closeConfirmed; },
+  set closeConfirmed(v: typeof closeConfirmed) { closeConfirmed = v; },
+  get dispatchHttpPort() { return dispatchHttpPort; },
+  set dispatchHttpPort(v: typeof dispatchHttpPort) { setDispatchHttpPort(v); },
+  get dispatchHttpReady() { return dispatchHttpReady; },
+  set dispatchHttpReady(v: typeof dispatchHttpReady) { setDispatchHttpReady(v); },
+  get mainWindow() { return mainWindow; },
+  set mainWindow(v: typeof mainWindow) { setMainWindow(v); },
+  get sessionProviderIdsCache() { return sessionProviderIdsCache; },
+  set sessionProviderIdsCache(v: typeof sessionProviderIdsCache) { sessionProviderIdsCache = v; },
+};
+
+// ── 09-22 架构改造 A 前置：聚合导出集中到文件末尾（纯搬移；export 位置与求值顺序无关）──
+// 动机：它们原先交错在顶层声明之间，机械删定义时会被「定义体切片」连带吃掉。
+export { decryptSecret } from "./main/07-connectors-io";
+export { readStoredChannelBot } from "./main/08-channel-bot-io";
+export { botPairing, botStreamFile, botsFile, channelBot, channelBotBindings, channelBotFile, channelLogs, dingtalkGateway, feishuGateway, loadBotBindings, qqGateway, qrSvg, readChannelBot, remote, server, telegramBindings, telegramGateway, wecomWebhookGateway, weixinBindings, weixinGateway, writeBotBindings };
+export { bridgeDial, buildDispatchCatalog, codexHome, delegateRegistry, readCustomModel, restrictedThreadRole, runDelegatedTask, teamRunStore, threadCwd, turnOutputText, waitForTurnCompletion };
+export { engineActiveTurnIds, mainWindow, responsesBridge, threadRuntimeStore };
+export { applyCustomModel, builtinPluginsFile, describeNetworkError, dirEntries, refreshSkillDiscipline, skillsRegistryFile, userSkillsDir };
+export { enrichScanCountSnapshot };
+export { connectorEnv, connectorsFile, mcpOverrideEnabled, oauthSessions, readConnectors, readMcpOverrides };
+export { customModelFile, customModelsFile, normalizeProvider, normalizeUpstreamProtocol, readCustomModels, upsertCustomModel, writeCustomModels };
+export { filePreviewAllowed, fileStat, pastedTextDir, sshSessions, syncEngineWatchdog, terminals };
+export { devInstructionsInput };
+export { applyMemoryMode, distillSummarize, memoryGatewayFile, memoryLayers, memoryStore, memoryWorkspaceFile, readMemoryMode, rpaStore, scheduler, workspaceMemoryEnabled };
+export { collectSessionProviderIds, connectorToml, dispatchHttpPort, dispatchToken, ensureDispatchHttp, escapeToml, mcpToolRulesOf, readUserConfigSplit, writeModelCatalogToml };
+export { notifyPopoutClosed, popoutThreadIds, titleBarOverlayOptions };
+export { DISPATCH_FIXED_PORT, dispatchMcpTools, dispatchProbes, ensureDispatchToken, stableKey };
+export { appSourceRoot, voiceService };
+export { botStreamSessions, channelLog, channelThreadChat, qqReplyContexts };
+export type { StoredChannelBot, StoredMemoryGateway } from "./main/08-channel-bot-io";
+export { readSubAgents, writeSubAgents, readBuiltinPlugins } from "./main/09-agents-plugins";
+export type { SubAgentConfig, BuiltinPluginConfig } from "./main/09-agents-plugins";
+export { safeConnectorId } from "./main/07-connectors-io";
+export { writeMcpOverrides } from "./main/06-mcp-overrides";
+export type { ConnectorConfig, ConnectorTransport } from "./main/07-connectors-io";
+export type { McpOverrides } from "./main/06-mcp-overrides";
+export { readMemoryGateway } from "./main/08-channel-bot-io";
+export { readWorkspaceMemorySettings } from "./main/05-memory-mode";
+export type { MemoryMode } from "./main/05-memory-mode";
+export { installContextMenu } from "./main/10-window-menu";

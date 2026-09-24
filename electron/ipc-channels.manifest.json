@@ -1,0 +1,3265 @@
+{
+  "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
+  "generatedAt": "2026-09-23",
+  "count": 329,
+  "channels": [
+    {
+      "name": "request",
+      "channel": "codex:request",
+      "paramsImpl": "method: string, params: unknown = {}",
+      "paramsDecl": "method: string, params?: unknown",
+      "returns": "Promise<any>",
+      "invokeArgs": "method, params",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "respond",
+      "channel": "codex:respond",
+      "paramsImpl": "id: string | number, result: unknown",
+      "paramsDecl": "id: string | number, result: unknown",
+      "returns": "Promise<void>",
+      "invokeArgs": "id, result",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "getUsername",
+      "channel": "user:name",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<string>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "getUserData",
+      "channel": "app:userData",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<string>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "setAwake",
+      "channel": "awake:set",
+      "paramsImpl": "on: boolean",
+      "paramsDecl": "on: boolean",
+      "returns": "Promise<boolean>",
+      "invokeArgs": "on",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "showNotification",
+      "channel": "notify:show",
+      "paramsImpl": "title: string, body: string",
+      "paramsDecl": "title: string, body: string",
+      "returns": "Promise<boolean>",
+      "invokeArgs": "title, body",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "toolStatus",
+      "channel": "tools:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ id: string; name: string; scope: \"computer\" | \"browser\"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listRuntimes",
+      "channel": "runtime:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<DevRuntimeEntry[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "openInCloakBrowser",
+      "channel": "browser:open-cloak",
+      "paramsImpl": "url: string",
+      "paramsDecl": "url: string",
+      "returns": "Promise<{ ok: boolean; detail: string }>",
+      "invokeArgs": "url",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "cloakBrowserStatus",
+      "channel": "browser:cloak-status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ event?: string; message?: string; url?: string; title?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "remoteStart",
+      "channel": "remote:start",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ port: number; url: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "remoteStatus",
+      "channel": "remote:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ status: string; devices: any[]; url: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "remoteDevices",
+      "channel": "remote:devices",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "remoteSend",
+      "channel": "remote:send",
+      "paramsImpl": "cmd: string",
+      "paramsDecl": "cmd: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "cmd",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "remoteStop",
+      "channel": "remote:stop",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "remoteQrcode",
+      "channel": "remote:qrcode",
+      "paramsImpl": "botId?: string",
+      "paramsDecl": "botId?: string",
+      "returns": "Promise<string>",
+      "invokeArgs": "botId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "remotePairState",
+      "channel": "remote:pair-state",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ code: string; pending: { rid: string; deviceId: string; name: string; createdAt: number }[]; approved: { deviceId: string; name: string; approvedAt: number; lastSeen: number }[] }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "remotePairRotate",
+      "channel": "remote:pair-rotate",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ code: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "remoteApprove",
+      "channel": "remote:approve",
+      "paramsImpl": "rid: string",
+      "paramsDecl": "rid: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "rid",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "remoteDeny",
+      "channel": "remote:deny",
+      "paramsImpl": "rid: string",
+      "paramsDecl": "rid: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "rid",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "remoteRevoke",
+      "channel": "remote:revoke",
+      "paramsImpl": "deviceId: string",
+      "paramsDecl": "deviceId: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "deviceId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "botPairState",
+      "channel": "bot:pair-state",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ code: string; pending: { rid: string; channel: string; chatId: string; name: string; createdAt: number }[]; approved: { key: string; channel: string; chatId: string; name: string; approvedAt: number }[] }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "botApprove",
+      "channel": "bot:approve",
+      "paramsImpl": "rid: string",
+      "paramsDecl": "rid: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "rid",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "botDeny",
+      "channel": "bot:deny",
+      "paramsImpl": "rid: string",
+      "paramsDecl": "rid: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "rid",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "botRevoke",
+      "channel": "bot:revoke",
+      "paramsImpl": "key: string",
+      "paramsDecl": "key: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "key",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "botBindQrcode",
+      "channel": "bot:bind-qrcode",
+      "paramsImpl": "botId: string, botName: string",
+      "paramsDecl": "botId: string, botName: string",
+      "returns": "Promise<{ qr: string; url: string; code: string }>",
+      "invokeArgs": "botId, botName",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "botBindStatus",
+      "channel": "bot:bind-status",
+      "paramsImpl": "code: string",
+      "paramsDecl": "code: string",
+      "returns": "Promise<\"waiting\" | \"confirmed\" | \"expired\">",
+      "invokeArgs": "code",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "botBindConsume",
+      "channel": "bot:bind-consume",
+      "paramsImpl": "code: string",
+      "paramsDecl": "code: string",
+      "returns": "Promise<{ botId: string; deviceName?: string } | null>",
+      "invokeArgs": "code",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "weixinStatus",
+      "channel": "weixin:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ bound: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ bound: boolean }>",
+      "note": null
+    },
+    {
+      "name": "weixinCancelLogin",
+      "channel": "weixin:cancel-login",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "weixinLogout",
+      "channel": "weixin:logout",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "telegramLogout",
+      "channel": "telegram:logout",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "feishuLogout",
+      "channel": "feishu:logout",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "dingtalkLogout",
+      "channel": "dingtalk:logout",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "qqQrCancel",
+      "channel": "qq:qr-cancel",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "qqLogout",
+      "channel": "qq:logout",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "feishuQrCancel",
+      "channel": "feishu:qr-cancel",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "wecomWebhookLogout",
+      "channel": "wecom-webhook:logout",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "botsGet",
+      "channel": "bots:get",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any[]>",
+      "invokeArgs": "",
+      "cast": "Promise<any[]>",
+      "note": null
+    },
+    {
+      "name": "homeDir",
+      "channel": "app:home-dir",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<string>",
+      "invokeArgs": "",
+      "cast": "Promise<string>",
+      "note": null
+    },
+    {
+      "name": "telegramStatus",
+      "channel": "telegram:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ bound: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ bound: boolean }>",
+      "note": null
+    },
+    {
+      "name": "ponytailModeGet",
+      "channel": "ponytail:mode:get",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<string>",
+      "invokeArgs": "",
+      "cast": "Promise<string>",
+      "note": null
+    },
+    {
+      "name": "ponytailModeSet",
+      "channel": "ponytail:mode:set",
+      "paramsImpl": "mode: string",
+      "paramsDecl": "mode: string",
+      "returns": "Promise<{ mode: string }>",
+      "invokeArgs": "mode",
+      "cast": "Promise<{ mode: string }>",
+      "note": null
+    },
+    {
+      "name": "writeFile",
+      "channel": "fs:write",
+      "paramsImpl": "path: string, content: string, root: string",
+      "paramsDecl": "path: string, content: string, root: string",
+      "returns": "Promise<void>",
+      "invokeArgs": "{ path, content, root }",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "readFile",
+      "channel": "fs:read",
+      "paramsImpl": "path: string",
+      "paramsDecl": "path: string",
+      "returns": "Promise<{ dataBase64: string; size: number }>",
+      "invokeArgs": "{ path }",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "fileExists",
+      "channel": "fs:exists",
+      "paramsImpl": "path: string",
+      "paramsDecl": "path: string",
+      "returns": "Promise<{ exists: boolean }>",
+      "invokeArgs": "{ path }",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "chooseDirectory",
+      "channel": "dialog:directory",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<string | null>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "chooseImages",
+      "channel": "dialog:images",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<string[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "chooseFiles",
+      "channel": "dialog:files",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<string[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "importSkill",
+      "channel": "skills:import",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ name: string; path: string; source: string; content: string } | null>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listMarketSkills",
+      "channel": "skills:market-list",
+      "paramsImpl": "input: unknown = {}",
+      "paramsDecl": "input?: { category?: string; page?: number; pageSize?: number; query?: string }",
+      "returns": "Promise<{ items: MarketSkillEntry[]; total: number; page: number; pageSize: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "installMarketSkill",
+      "channel": "skills:market-install",
+      "paramsImpl": "skill: unknown",
+      "paramsDecl": "skill: MarketSkillEntry",
+      "returns": "Promise<LocalSkillEntry>",
+      "invokeArgs": "skill",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listMarketPlugins",
+      "channel": "plugins:market-list",
+      "paramsImpl": "input: unknown = {}",
+      "paramsDecl": "input?: { category?: string; query?: string; page?: number; pageSize?: number }",
+      "returns": "Promise<{ items: PluginMarketEntry[]; total: number; page: number; pageSize: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "installMarketPlugin",
+      "channel": "plugins:market-install",
+      "paramsImpl": "plugin: unknown",
+      "paramsDecl": "plugin: PluginMarketEntry",
+      "returns": "Promise<PluginMarketInstallResult>",
+      "invokeArgs": "plugin",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listLocalSkills",
+      "channel": "skills:local-list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<LocalSkillEntry[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "setEnabledSkill",
+      "channel": "skills:set-enabled",
+      "paramsImpl": "input: { folder: string; enabled: boolean }",
+      "paramsDecl": "input: { folder: string; enabled: boolean }",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "setEnabledSkillBatch",
+      "channel": "skills:set-enabled-batch",
+      "paramsImpl": "input: { folders: string[]; enabled: boolean }",
+      "paramsDecl": "input: { folders: string[]; enabled: boolean }",
+      "returns": "Promise<{ ok: boolean; changed: number; failures: string[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "setPluginEnabled",
+      "channel": "plugins:set-enabled",
+      "paramsImpl": "input: { pluginIds: string[]; enabled: boolean }",
+      "paramsDecl": "input: { pluginIds: string[]; enabled: boolean }",
+      "returns": "Promise<{ changed: number; failures: string[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "removeLocalSkill",
+      "channel": "skills:local-remove",
+      "paramsImpl": "input: { folder: string; name?: string }",
+      "paramsDecl": "input: { folder: string; name?: string }",
+      "returns": "Promise<{ ok: boolean; engineRemoved?: boolean; engineCheckMessage?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "trustHooks",
+      "channel": "hooks:trust",
+      "paramsImpl": "cwds?: string[]",
+      "paramsDecl": "cwds?: string[]",
+      "returns": "Promise<{ total: number; trusted: number; alreadyTrusted: number; failures: string[] }>",
+      "invokeArgs": "{ cwds }",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "setHookEnabled",
+      "channel": "hooks:set-enabled",
+      "paramsImpl": "input: { hookKeys: string[]; enabled: boolean }",
+      "paramsDecl": "input: { hookKeys: string[]; enabled: boolean }",
+      "returns": "Promise<{ changed: number; failures: string[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "searchHistory",
+      "channel": "history:search",
+      "paramsImpl": "input?: { query?: string; limit?: number }",
+      "paramsDecl": "input?: { query?: string; limit?: number }",
+      "returns": "Promise<{ threads: { threadId: string; title: string; archived: boolean; updatedAt: number; matchCount: number; matches: { role: string; ts: string; snippet: string }[] }[]; scannedFiles: number; skippedLarge: number; elapsedMs: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "09-24 新增：顶栏 🔍 历史会话搜索。扫 codex-home rollout 原档（sessions/** + archived_sessions/**）搜对话内容；先 indexOf 快速否决再解析，>32MB 跳过并计数"
+    },
+    {
+      "name": "setPluginLinkedEnabled",
+      "channel": "plugins:set-linked-enabled",
+      "paramsImpl": "input: { pluginId: string; enabled: boolean }",
+      "paramsDecl": "input: { pluginId: string; enabled: boolean }",
+      "returns": "Promise<{ ok: boolean; failures: string[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listConnectors",
+      "channel": "connectors:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<ConnectorEntry[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listConnectorTemplates",
+      "channel": "connectors:templates",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<ConnectorTemplate[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "saveConnector",
+      "channel": "connectors:save",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: ConnectorDraft",
+      "returns": "Promise<ConnectorEntry>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "removeConnector",
+      "channel": "connectors:remove",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "setConnectorsEnabled",
+      "channel": "connectors:set-enabled",
+      "paramsImpl": "ids: string[], enabled: boolean",
+      "paramsDecl": "ids: string[], enabled: boolean",
+      "returns": "Promise<{ ok: boolean; updated: number }>",
+      "invokeArgs": "{ ids, enabled }",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "startConnectorOAuth",
+      "channel": "connectors:oauth-start",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { templateId: string; values: Record<string, string> }",
+      "returns": "Promise<{ ok: boolean; authorizeUrl?: string; message?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "cancelConnectorOAuth",
+      "channel": "connectors:oauth-cancel",
+      "paramsImpl": "templateId: string",
+      "paramsDecl": "templateId: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "templateId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "readClipboardImage",
+      "channel": "clipboard:image",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<string | null>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "readMcpServerOverrides",
+      "channel": "mcp-servers:overrides",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<Record<string, boolean>>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "app-server 直管 MCP 的启用覆盖表；没记过的一律视为启用"
+    },
+    {
+      "name": "setMcpServersEnabled",
+      "channel": "mcp-servers:set-enabled",
+      "paramsImpl": "ids: string[], enabled: boolean",
+      "paramsDecl": "ids: string[], enabled: boolean",
+      "returns": "Promise<{ ok: boolean; updated: number }>",
+      "invokeArgs": "{ ids, enabled }",
+      "cast": null,
+      "note": "统一入口：名字能匹配连接器的走连接器，其余走覆盖表；每次改动都会重启引擎"
+    },
+    {
+      "name": "readMcpToolPermissions",
+      "channel": "mcp-servers:permissions",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<Record<string, Record<string, \"deny\" | \"ask\" | \"allow\">>>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "各 MCP 服务器的按工具权限档位：{ 服务器: { 工具: \"deny\"|\"ask\"|\"allow\" } }"
+    },
+    {
+      "name": "setMcpToolPermission",
+      "channel": "mcp-servers:set-tool-permission",
+      "paramsImpl": "server: string, tool: string, mode: \"deny\" | \"ask\" | \"allow\" | null",
+      "paramsDecl": "server: string, tool: string, mode: \"deny\" | \"ask\" | \"allow\" | null",
+      "returns": "Promise<{ ok: boolean; updated: boolean; reason?: string }>",
+      "invokeArgs": "{ server, tool, mode }",
+      "cast": null,
+      "note": "设置/清除某个 MCP 工具的权限档位；mode 传 null 清除。改动后引擎重启生效"
+    },
+    {
+      "name": "readPersonalization",
+      "channel": "personalization:read",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<PersonalizationConfig>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "savePersonalization",
+      "channel": "personalization:save",
+      "paramsImpl": "input: { nickname?: string; customInstructions?: string }",
+      "paramsDecl": "input: { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean; greeted?: boolean }",
+      "returns": "Promise<PersonalizationConfig>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "readAppSettings",
+      "channel": "appSettings:read",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "应用级运行时开关（联网搜索等）"
+    },
+    {
+      "name": "saveAppSettings",
+      "channel": "appSettings:save",
+      "paramsImpl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }",
+      "paramsDecl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }",
+      "returns": "Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; adaptiveTone?: boolean }>",
+      "invokeArgs": "patch",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "themeApply",
+      "channel": "theme:apply",
+      "paramsImpl": "theme: string",
+      "paramsDecl": "theme: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "theme",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "updateReveal",
+      "channel": "updates:reveal",
+      "paramsImpl": "filePath: string",
+      "paramsDecl": "filePath: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "filePath",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "listSshServers",
+      "channel": "ssh:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<SshServer[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "SSH 服务器连接管理：列表 CRUD、批量启停、连接测试、命令执行、交互式会话、导入导出"
+    },
+    {
+      "name": "saveSshServer",
+      "channel": "ssh:save",
+      "paramsImpl": "server: unknown",
+      "paramsDecl": "server: SshServer",
+      "returns": "Promise<SshServer[]>",
+      "invokeArgs": "server",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "testSshServer",
+      "channel": "ssh:test",
+      "paramsImpl": "server: unknown",
+      "paramsDecl": "server: SshServer",
+      "returns": "Promise<SshTestResult>",
+      "invokeArgs": "server",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "execSshCommand",
+      "channel": "ssh:exec",
+      "paramsImpl": "server: unknown, command: string",
+      "paramsDecl": "server: SshServer, command: string",
+      "returns": "Promise<SshExecResult>",
+      "invokeArgs": "{ server, command }",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "deleteSshServers",
+      "channel": "ssh:delete",
+      "paramsImpl": "ids: string[]",
+      "paramsDecl": "ids: string[]",
+      "returns": "Promise<SshServer[]>",
+      "invokeArgs": "ids",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "setSshServersEnabled",
+      "channel": "ssh:set-enabled",
+      "paramsImpl": "ids: string[], enabled: boolean",
+      "paramsDecl": "ids: string[], enabled: boolean",
+      "returns": "Promise<SshServer[]>",
+      "invokeArgs": "{ ids, enabled }",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "sshSessionOpen",
+      "channel": "ssh:session-open",
+      "paramsImpl": "server: unknown, cols: number, rows: number",
+      "paramsDecl": "server: SshServer, cols: number, rows: number",
+      "returns": "Promise<{ sessionId: string } | { error: string }>",
+      "invokeArgs": "{ server, cols, rows }",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "sshSessionWrite",
+      "channel": "ssh:session-write",
+      "paramsImpl": "sessionId: string, data: string",
+      "paramsDecl": "sessionId: string, data: string",
+      "returns": "Promise<void>",
+      "invokeArgs": "{ sessionId, data }",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "sshSessionResize",
+      "channel": "ssh:session-resize",
+      "paramsImpl": "sessionId: string, cols: number, rows: number",
+      "paramsDecl": "sessionId: string, cols: number, rows: number",
+      "returns": "Promise<void>",
+      "invokeArgs": "{ sessionId, cols, rows }",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "sshSessionClose",
+      "channel": "ssh:session-close",
+      "paramsImpl": "sessionId: string",
+      "paramsDecl": "sessionId: string",
+      "returns": "Promise<void>",
+      "invokeArgs": "sessionId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "exportSshServers",
+      "channel": "ssh:export",
+      "paramsImpl": "servers: unknown[], includeSecrets: boolean",
+      "paramsDecl": "servers: SshServer[], includeSecrets: boolean",
+      "returns": "Promise<string | null>",
+      "invokeArgs": "{ servers, includeSecrets }",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "importSshServers",
+      "channel": "ssh:import",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<SshServer[] | null>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "exportThreadsBackup",
+      "channel": "threads:export",
+      "paramsImpl": "threadIds?: string[]",
+      "paramsDecl": "threadIds?: string[]",
+      "returns": "Promise<{ path: string; count: number } | null>",
+      "invokeArgs": "threadIds ? { threadIds } : undefined",
+      "cast": null,
+      "note": "会话备份：导出 = 打包引擎 rollout 原档 + 元信息为 .json；threadIds 缺省/空数组 = 全部"
+    },
+    {
+      "name": "exportThreadsMarkdown",
+      "channel": "threads:export-markdown",
+      "paramsImpl": "threadIds?: string[]",
+      "paramsDecl": "threadIds?: string[]",
+      "returns": "Promise<{ path: string; count: number; totalMessages: number } | null>",
+      "invokeArgs": "threadIds ? { threadIds } : undefined",
+      "cast": null,
+      "note": "会话记录导出为通用 Markdown（主流 AI 可直接读取/带入）；threadIds 缺省/空数组 = 全部"
+    },
+    {
+      "name": "previewConversation",
+      "channel": "threads:preview-conversation",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<any>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": "⛔ 09-23 补：以下方法 preload 里早就有、渲染层也在用，但这里一直没有签名 —— 渲染层从不跑 tsc ⇒ 静默漏网（gen-ipc-bridge 提取时暴露）。返回形状没把握的先 any。"
+    },
+    {
+      "name": "importThreadsBackup",
+      "channel": "threads:import",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ path: string; imported: number; skipped: number; threads: { id: string; name: string; status: string }[] } | null>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "importConversationMarkdown",
+      "channel": "threads:import-conversation",
+      "paramsImpl": "input?: { cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null }",
+      "paramsDecl": "input?: { cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null }",
+      "returns": "Promise<{ thread: any; imported: { title: string; fileName: string; turns: number; text: string; at: string } } | null>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "chooseSshKey",
+      "channel": "dialog:ssh-key",
+      "paramsImpl": "startPath?: string",
+      "paramsDecl": "startPath?: string",
+      "returns": "Promise<string | null>",
+      "invokeArgs": "startPath",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "setNickname",
+      "channel": "personalization:setNickname",
+      "paramsImpl": "nickname: string",
+      "paramsDecl": "nickname: string",
+      "returns": "Promise<PersonalizationConfig>",
+      "invokeArgs": "nickname",
+      "cast": null,
+      "note": "仅更新称呼：写 personalization.json + AGENTS.md，不重启引擎"
+    },
+    {
+      "name": "verifyPersonalization",
+      "channel": "personalization:verify",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listCommands",
+      "channel": "commands:list",
+      "paramsImpl": "input: { cwd?: string } = {}",
+      "paramsDecl": "input?: { cwd?: string }",
+      "returns": "Promise<CustomCommandEntry[]>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "readCommand",
+      "channel": "commands:read",
+      "paramsImpl": "filePath: string",
+      "paramsDecl": "filePath: string",
+      "returns": "Promise<CustomCommandEntry | null>",
+      "invokeArgs": "filePath",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "saveCommand",
+      "channel": "commands:save",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: SaveCommandInput",
+      "returns": "Promise<CustomCommandEntry>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "deleteCommand",
+      "channel": "commands:delete",
+      "paramsImpl": "filePath: string",
+      "paramsDecl": "filePath: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "filePath",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "expandCommand",
+      "channel": "commands:expand",
+      "paramsImpl": "input: { filePath: string; argument?: string; cwd?: string }",
+      "paramsDecl": "input: { filePath: string; argument?: string; cwd?: string }",
+      "returns": "Promise<{ text: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "getCustomModel",
+      "channel": "custom-model:read",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<CustomModelState | null>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "probeCustomModel",
+      "channel": "custom-model:probe",
+      "paramsImpl": "config: unknown",
+      "paramsDecl": "config: unknown",
+      "returns": "Promise<{ status: number; latencyMs: number; models: string[]; model?: string; ok?: boolean; via?: \"models\" | \"stream\" | \"builtin\" | \"official\" | \"official-fallback\"; wireUsed?: \"responses\" | \"chat\" }>",
+      "invokeArgs": "config",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "readModelSpecs",
+      "channel": "model-specs:read",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<unknown[] | null>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "saveCustomModel",
+      "channel": "custom-model:save",
+      "paramsImpl": "config: unknown",
+      "paramsDecl": "config: unknown",
+      "returns": "Promise<CustomModelState>",
+      "invokeArgs": "config",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listCustomModels",
+      "channel": "custom-model:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ providers: ProviderSummary[]; current: string | null }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "selectCustomModel",
+      "channel": "custom-model:select",
+      "paramsImpl": "providerId: string",
+      "paramsDecl": "providerId: string",
+      "returns": "Promise<CustomModelState>",
+      "invokeArgs": "providerId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "setProviderModel",
+      "channel": "custom-model:set-model",
+      "paramsImpl": "input: { provider: string; model: string; apply?: boolean; restart?: boolean }",
+      "paramsDecl": "input: { provider: string; model: string; apply?: boolean; restart?: boolean }",
+      "returns": "Promise<CustomModelState>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "setProviderEffort",
+      "channel": "custom-model:set-effort",
+      "paramsImpl": "input: { provider: string; model: string; effort: string }",
+      "paramsDecl": "input: { provider: string; model: string; effort: string }",
+      "returns": "Promise<CustomModelState>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listThreadRuntimes",
+      "channel": "thread-runtime:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<Record<string, { model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }>>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "seedThreadRuntime",
+      "channel": "thread-runtime:seed",
+      "paramsImpl": "input: { threadId: string; runtime: unknown }",
+      "paramsDecl": "input: { threadId: string; runtime: unknown }",
+      "returns": "Promise<{ model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "patchThreadRuntime",
+      "channel": "thread-runtime:patch",
+      "paramsImpl": "input: { threadId: string; patch: unknown; baseRev?: number; takeover?: boolean }",
+      "paramsDecl": "input: { threadId: string; patch: unknown; baseRev?: number; takeover?: boolean }",
+      "returns": "Promise<{ runtime: { model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }; conflict: boolean; changed: boolean; blockedBy?: string; tookOverFrom?: string; restrictedBy?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "dispatchOwner",
+      "channel": "thread-runtime:dispatch-owner",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ threadId: string | null }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "releaseDispatch",
+      "channel": "thread-runtime:release-dispatch",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<{ released: boolean }>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "threadRole",
+      "channel": "agents:thread-role",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<{ restricted: boolean; label?: string }>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "writeClipboard",
+      "channel": "clipboard:write",
+      "paramsImpl": "text: string",
+      "paramsDecl": "text: string",
+      "returns": "Promise<boolean>",
+      "invokeArgs": "text",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "createScratchDir",
+      "channel": "scratch:create",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<string>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "saveIdentity",
+      "channel": "personalization:save-identity",
+      "paramsImpl": "input: Record<string, string>",
+      "paramsDecl": "input: Record<string, string>",
+      "returns": "Promise<unknown>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "⛔ d.ts 历史上本有两处声明（宽口径 Record<string,string> 与窄口径 3 字段），提取去重保留宽口径 —— identity_onboard 调用点传 8 个字段，窄口径会爆 excess-property。"
+    },
+    {
+      "name": "applyCustomModel",
+      "channel": "custom-model:apply",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<CustomModelState>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "upsertProviderModel",
+      "channel": "custom-model:upsert-model",
+      "paramsImpl": "input: { provider: string; model: unknown }",
+      "paramsDecl": "input: { provider: string; model: ProviderModelConfig }",
+      "returns": "Promise<CustomModelState>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "removeProviderModel",
+      "channel": "custom-model:remove-model",
+      "paramsImpl": "input: { provider: string; modelId: string }",
+      "paramsDecl": "input: { provider: string; modelId: string }",
+      "returns": "Promise<CustomModelState>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "setProviderEnabled",
+      "channel": "custom-model:set-enabled",
+      "paramsImpl": "input: { provider: string; enabled: boolean }",
+      "paramsDecl": "input: { provider: string; enabled: boolean }",
+      "returns": "Promise<CustomModelState>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "removeCustomModel",
+      "channel": "custom-model:remove",
+      "paramsImpl": "providerId: string",
+      "paramsDecl": "providerId: string",
+      "returns": "Promise<{ ok: boolean; current: CustomModelState | null }>",
+      "invokeArgs": "providerId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "getChannelBot",
+      "channel": "channel-bot:read",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "saveChannelBot",
+      "channel": "channel-bot:save",
+      "paramsImpl": "config: unknown",
+      "paramsDecl": "config: unknown",
+      "returns": "Promise<any>",
+      "invokeArgs": "config",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "testChannelBot",
+      "channel": "channel-bot:test",
+      "paramsImpl": "config: unknown",
+      "paramsDecl": "config: unknown",
+      "returns": "Promise<{ ok: boolean; latencyMs: number }>",
+      "invokeArgs": "config",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listMemory",
+      "channel": "memory:list",
+      "paramsImpl": "category?: string",
+      "paramsDecl": "category?: string",
+      "returns": "Promise<any[]>",
+      "invokeArgs": "category",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "searchMemory",
+      "channel": "memory:search",
+      "paramsImpl": "query: string",
+      "paramsDecl": "query: string",
+      "returns": "Promise<any[]>",
+      "invokeArgs": "query",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "recallMemory",
+      "channel": "memory:recall",
+      "paramsImpl": "query: string, workspace?: string",
+      "paramsDecl": "query: string, workspace?: string",
+      "returns": "Promise<{ context: string; remote: boolean; memoryCount?: number }>",
+      "invokeArgs": "query, workspace",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "readMemoryMode",
+      "channel": "memory:mode-read",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<\"local\" | \"cloud\">",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "setMemoryMode",
+      "channel": "memory:mode-set",
+      "paramsImpl": "mode: \"local\" | \"cloud\"",
+      "paramsDecl": "mode: \"local\" | \"cloud\"",
+      "returns": "Promise<\"local\" | \"cloud\">",
+      "invokeArgs": "mode",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "saveMemory",
+      "channel": "memory:save",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: unknown",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listRpaRecipes",
+      "channel": "rpa:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "saveRpaRecipe",
+      "channel": "rpa:save",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: unknown",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "deleteRpaRecipe",
+      "channel": "rpa:delete",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<void>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "recordRpaRun",
+      "channel": "rpa:record",
+      "paramsImpl": "input: { id: string; ok: boolean; error?: string }",
+      "paramsDecl": "input: { id: string; ok: boolean; error?: string }",
+      "returns": "Promise<void>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listTasks",
+      "channel": "tasks:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "addTask",
+      "channel": "tasks:add",
+      "paramsImpl": "input: { text: string; priority?: string }",
+      "paramsDecl": "input: { text: string; priority?: string }",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "updateTask",
+      "channel": "tasks:update",
+      "paramsImpl": "input: { id: string; patch: unknown }",
+      "paramsDecl": "input: { id: string; patch: unknown }",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "deleteTask",
+      "channel": "tasks:delete",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<void>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "deleteMemory",
+      "channel": "memory:delete",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<void>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "resetMemory",
+      "channel": "memory:reset",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<void>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "getMemoryGateway",
+      "channel": "memory:gateway:read",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "saveMemoryGateway",
+      "channel": "memory:gateway:save",
+      "paramsImpl": "config: unknown",
+      "paramsDecl": "config: unknown",
+      "returns": "Promise<any>",
+      "invokeArgs": "config",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "testMemoryGateway",
+      "channel": "memory:gateway:test",
+      "paramsImpl": "config: unknown",
+      "paramsDecl": "config: unknown",
+      "returns": "Promise<{ ok: boolean; latencyMs: number; health: any }>",
+      "invokeArgs": "config",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "readMemoryLayers",
+      "channel": "memory:layers:read",
+      "paramsImpl": "workspace?: string",
+      "paramsDecl": "workspace?: string",
+      "returns": "Promise<MemoryLayersSnapshot>",
+      "invokeArgs": "workspace",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "applyMemoryHygiene",
+      "channel": "memory:hygiene:apply",
+      "paramsImpl": "input: { action: \"purge-archive\" | \"prune-pool\" | \"tidy-lessons\"; workspace?: string; confirm: true }",
+      "paramsDecl": "input: { action: \"purge-archive\" | \"prune-pool\" | \"tidy-lessons\"; workspace?: string; confirm: true }",
+      "returns": "Promise<{ action: string; result: any }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "执行清理动作：⛔ 必须 confirm: true（UI 二次确认后才置位）"
+    },
+    {
+      "name": "readMemoryContext",
+      "channel": "memory:layers:context",
+      "paramsImpl": "workspace?: string, includeWorkspace = true",
+      "paramsDecl": "workspace?: string, includeWorkspace?: boolean",
+      "returns": "Promise<{ text: string; stats: { chars: number; over: boolean } }>",
+      "invokeArgs": "workspace, includeWorkspace",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "writeMemoryLayer",
+      "channel": "memory:layers:write",
+      "paramsImpl": "input: { scope: \"user\" | \"background\" | \"project\" | \"lessons\"; content: string; workspace?: string }",
+      "paramsDecl": "input: { scope: \"user\" | \"background\" | \"project\" | \"lessons\"; content: string; workspace?: string }",
+      "returns": "Promise<MemoryLayersSnapshot>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "readWorkspaceMemoryEnabled",
+      "channel": "memory:workspace-enabled:read",
+      "paramsImpl": "workspace?: string",
+      "paramsDecl": "workspace?: string",
+      "returns": "Promise<boolean>",
+      "invokeArgs": "workspace",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "setWorkspaceMemoryEnabled",
+      "channel": "memory:workspace-enabled:set",
+      "paramsImpl": "input: { workspace: string; enabled: boolean }",
+      "paramsDecl": "input: { workspace: string; enabled: boolean }",
+      "returns": "Promise<boolean>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "distillMemory",
+      "channel": "memory:distill",
+      "paramsImpl": "workspace?: string",
+      "paramsDecl": "workspace?: string",
+      "returns": "Promise<{ ok: boolean; dates: string[]; added: number; reason?: string }>",
+      "invokeArgs": "workspace",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listScheduledTasks",
+      "channel": "scheduler:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "saveScheduledTask",
+      "channel": "scheduler:save",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: unknown",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "deleteScheduledTask",
+      "channel": "scheduler:delete",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<void>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "runScheduledTask",
+      "channel": "scheduler:run",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<void>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listSubAgents",
+      "channel": "subagents:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<SubAgentEntry[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "saveSubAgent",
+      "channel": "subagents:save",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: unknown",
+      "returns": "Promise<SubAgentEntry>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "removeSubAgent",
+      "channel": "subagents:remove",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "invokeSubAgent",
+      "channel": "subagents:invoke",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { id?: string; name?: string; query: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }",
+      "returns": "Promise<{ threadId: string; turnId?: string; name: string; output: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "dispatchToolDescription",
+      "channel": "agents:tool-description",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ description: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "dispatchNotice",
+      "channel": "agents:notice",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ text: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "dispatchOffNotice",
+      "channel": "agents:off-notice",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ text: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listDelegates",
+      "channel": "agents:delegated",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ records: DelegateRecordEntry[] }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listDelegatesOf",
+      "channel": "agents:delegated-of",
+      "paramsImpl": "originThreadId: string",
+      "paramsDecl": "originThreadId: string",
+      "returns": "Promise<{ records: DelegateRecordEntry[] }>",
+      "invokeArgs": "originThreadId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "invokeAgent",
+      "channel": "agents:invoke",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { kind: \"expert\" | \"team\" | \"member\" | \"subagent\"; name: string; query: string; originThreadId: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }",
+      "returns": "Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "archiveDelegates",
+      "channel": "agents:archive",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { threadIds?: string[]; originThreadId?: string }",
+      "returns": "Promise<{ archived: number; failed: string[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listExpertTeams",
+      "channel": "teams:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<ExpertTeamConfig[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "saveExpertTeam",
+      "channel": "teams:save",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: unknown",
+      "returns": "Promise<ExpertTeamConfig>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "removeExpertTeam",
+      "channel": "teams:remove",
+      "paramsImpl": "teamId: string",
+      "paramsDecl": "teamId: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "teamId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "resetExpertTeams",
+      "channel": "teams:reset-defaults",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<ExpertTeamConfig[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "getTeamTools",
+      "channel": "teams:tools",
+      "paramsImpl": "teamId: string",
+      "paramsDecl": "teamId: string",
+      "returns": "Promise<{ tools: { id: string; name: string; profession: string; description: string }[]; teamSystemPrompt: string; teamTool: any }>",
+      "invokeArgs": "teamId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "getTeamSessionConfig",
+      "channel": "teams:session-config",
+      "paramsImpl": "teamId: string",
+      "paramsDecl": "teamId: string",
+      "returns": "Promise<{ team: ExpertTeamConfig; systemPrompt: string; teamTool: any }>",
+      "invokeArgs": "teamId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "startTeamSession",
+      "channel": "teams:start-session",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { teamId: string; task?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null; defer?: boolean }",
+      "returns": "Promise<{ thread: any; turnId: string | null; role?: ExpertPendingRole | null }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "startTeamMemberSession",
+      "channel": "teams:member-session",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { teamId: string; memberId: string; task?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null; defer?: boolean }",
+      "returns": "Promise<{ thread: any; turnId: string | null; member: { id: string; name: string; profession: string }; role?: ExpertPendingRole | null }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "invokeTeamMember",
+      "channel": "teams:invoke-member",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { teamId: string; memberId: string; query: string; leadThreadId?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }",
+      "returns": "Promise<{ threadId: string; turnId?: string; teamId: string; memberId: string; name: string; profession: string; output: string; runId?: string; reused?: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listTeamRuns",
+      "channel": "team-runs:list",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<TeamMemberRunRecord[]>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": "专家团历史委托记录（成员历史工作记录面板；主进程落盘，跨窗口一致）"
+    },
+    {
+      "name": "teamThreadsMap",
+      "channel": "team-threads:map",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ threads: Record<string, string>; members: Record<string, string> }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "teamOfThread",
+      "channel": "team-threads:team-of",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<string>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "terminalInput",
+      "channel": "terminal:input",
+      "paramsImpl": "id: string, data: string",
+      "paramsDecl": "id: string, data: string",
+      "returns": "Promise<void>",
+      "invokeArgs": "id, data",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "terminalResize",
+      "channel": "terminal:resize",
+      "paramsImpl": "id: string, cols: number, rows: number",
+      "paramsDecl": "id: string, cols: number, rows: number",
+      "returns": "Promise<void>",
+      "invokeArgs": "id, cols, rows",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "restartTerminal",
+      "channel": "terminal:restart",
+      "paramsImpl": "id: string, cwd?: string",
+      "paramsDecl": "id: string, cwd?: string",
+      "returns": "Promise<void>",
+      "invokeArgs": "id, cwd",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "terminalReady",
+      "channel": "terminal:ready",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<void>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "gitDiff",
+      "channel": "git:diff",
+      "paramsImpl": "cwd: string, scope: string",
+      "paramsDecl": "cwd: string, scope: string",
+      "returns": "Promise<{ code: number | null; output: string }>",
+      "invokeArgs": "{ cwd, scope }",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "openExternal",
+      "channel": "external:open",
+      "paramsImpl": "url: string",
+      "paramsDecl": "url: string",
+      "returns": "Promise<void>",
+      "invokeArgs": "url",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "browserPopout",
+      "channel": "browser:popout",
+      "paramsImpl": "url: string",
+      "paramsDecl": "url: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "url",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "shellReveal",
+      "channel": "shell:reveal",
+      "paramsImpl": "target: string",
+      "paramsDecl": "target: string",
+      "returns": "Promise<void>",
+      "invokeArgs": "target",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "writeClipboardImage",
+      "channel": "clipboard:write-image",
+      "paramsImpl": "filePath: string",
+      "paramsDecl": "filePath: string",
+      "returns": "Promise<boolean>",
+      "invokeArgs": "filePath",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "readClipboardFiles",
+      "channel": "clipboard:read-files",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<string[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "doctor",
+      "channel": "app:doctor",
+      "paramsImpl": "cwd?: string",
+      "paramsDecl": "cwd?: string",
+      "returns": "Promise<{ checks: { label: string; ok: boolean; detail: string }[]; at: number }>",
+      "invokeArgs": "{ cwd }",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "engineInfo",
+      "channel": "app:engine-info",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "setActiveThread",
+      "channel": "codex:set-active-thread",
+      "paramsImpl": "threadId: string | null",
+      "paramsDecl": "threadId: string | null",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "threadId",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": "上报当前正在查看的会话：主进程据此只转发该会话的高频事件（多会话性能）"
+    },
+    {
+      "name": "storageInfo",
+      "channel": "app:storage-info",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "storageClear",
+      "channel": "app:storage-clear",
+      "paramsImpl": "target: \"engine-log\" | \"images\"",
+      "paramsDecl": "target: \"engine-log\" | \"images\"",
+      "returns": "Promise<{ ok: boolean; target: string; error?: string }>",
+      "invokeArgs": "target",
+      "cast": null,
+      "note": "缓存清理：仅支持安全目标（引擎日志 / 本地图片缓存），绝不删会话历史"
+    },
+    {
+      "name": "engineCheckUpdate",
+      "channel": "engine:check-update",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ current: string; latest: string; hasUpdate: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "enginePerformUpdate",
+      "channel": "engine:perform-update",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; version: string; message: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "relaunchApp",
+      "channel": "app:relaunch",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<void>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "readBuiltinPlugins",
+      "channel": "builtin:read",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ image?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string }; vision?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "saveBuiltinPlugins",
+      "channel": "builtin:save",
+      "paramsImpl": "cfg: unknown",
+      "paramsDecl": "cfg: unknown",
+      "returns": "Promise<unknown>",
+      "invokeArgs": "cfg",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "probeBuiltinModels",
+      "channel": "builtin:probe",
+      "paramsImpl": "input: { kind: \"image\" | \"vision\"; baseUrl: string; apiKey: string }",
+      "paramsDecl": "input: { kind: \"image\" | \"vision\"; baseUrl: string; apiKey: string }",
+      "returns": "Promise<{ models: string[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "generateImage",
+      "channel": "builtin:generate-image",
+      "paramsImpl": "input: { baseUrl: string; apiKey: string; model: string; prompt: string }",
+      "paramsDecl": "input: { baseUrl: string; apiKey: string; model: string; prompt: string }",
+      "returns": "Promise<{ path: string; url: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "⛔ `path` 是落盘后的本地路径（网关只回 b64_json 时也有值）；`url` **仅在网关给了 * 真托管地址时**才有值 —— data URL 绝不会回传（会把 3 MB base64 带进对话历史）。"
+    },
+    {
+      "name": "describeImage",
+      "channel": "builtin:describe-image",
+      "paramsImpl": "input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }",
+      "paramsDecl": "input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }",
+      "returns": "Promise<{ text: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "relayLogin",
+      "channel": "relay:login",
+      "paramsImpl": "input: { baseUrl: string; email: string; password: string }",
+      "paramsDecl": "input: { baseUrl: string; email: string; password: string }",
+      "returns": "Promise<{ email: string; baseUrl: string; balance: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "relayLoadAccount",
+      "channel": "relay:load-account",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ baseUrl: string; email: string; loggedIn: boolean; selectedMode: \"balance\" | \"plan\" | null; selectedGroupId: number | null; selectedKeyName: string | null } | null>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "relayAccounts",
+      "channel": "relay:accounts",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ id: string; baseUrl: string; email: string; loggedIn: boolean; selectedMode: \"balance\" | \"plan\" | null; selectedGroupId: number | null; selectedKeyName: string | null; active: boolean; disabled: boolean }[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "relaySwitchAccount",
+      "channel": "relay:switch-account",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; baseUrl: string; email: string }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "relayRemoveAccount",
+      "channel": "relay:remove-account",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; activeId: string | null; removed?: boolean; deactivated?: boolean }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "openaiLoginStart",
+      "channel": "openai:login-start",
+      "paramsImpl": "input?: { proxy?: string }",
+      "paramsDecl": "input?: { proxy?: string }",
+      "returns": "Promise<{ started: boolean }>",
+      "invokeArgs": "input ?? {}",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "openaiLoginStatus",
+      "channel": "openai:login-status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ loggedIn: boolean; email: string; url: string; code: string; childAlive: boolean; error: string; lines: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "openaiLoginCancel",
+      "channel": "openai:login-cancel",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "openaiUsage",
+      "channel": "openai:usage",
+      "paramsImpl": "input?: { email?: string }",
+      "paramsDecl": "input?: { email?: string }",
+      "returns": "Promise<any>",
+      "invokeArgs": "input ?? {}",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "openaiSetProxy",
+      "channel": "openai:set-proxy",
+      "paramsImpl": "proxy: string",
+      "paramsDecl": "proxy: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "proxy",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "openaiModels",
+      "channel": "openai:models",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<string[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "openaiCaptureLogin",
+      "channel": "openai:capture-login",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ id: string; email: string; total: number }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "openaiAccounts",
+      "channel": "openai:accounts",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ id: string; email: string; savedAt: number; active: boolean; disabled: boolean; planType: string; subscriptionUntil: string }[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "openaiAccountRemove",
+      "channel": "openai:account-remove",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; total: number }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "openaiAccountSwitch",
+      "channel": "openai:account-switch",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; email: string }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "openaiImportFile",
+      "channel": "openai:import-file",
+      "paramsImpl": "input: { contents: string[] }",
+      "paramsDecl": "input: { contents: string[] }",
+      "returns": "Promise<{ total: number; imported: number; updated: number; failed: number; items: { index: number; name: string; id?: string; email?: string; loginable?: boolean; action: \"imported\" | \"updated\" | \"failed\"; message?: string }[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "relayKeysAll",
+      "channel": "relay:keys-all",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ id: string; email: string; baseUrl: string; active: boolean; selectedKeyId: number | null; keys: any[]; error?: string }[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "relayOverview",
+      "channel": "relay:overview",
+      "paramsImpl": "id?: string",
+      "paramsDecl": "id?: string",
+      "returns": "Promise<{ baseUrl: string; email: string; balance: number; subscriptions: any[]; keys: any[]; groups: any[]; selectedMode: \"balance\" | \"plan\" | null; selectedGroupId: number | null; selectedKeyId: number | null; selectedKeyName: string | null }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "relayCreateKey",
+      "channel": "relay:create-key",
+      "paramsImpl": "input: { name: string; groupId?: number | null; accountId?: string }",
+      "paramsDecl": "input: { name: string; groupId?: number | null; accountId?: string }",
+      "returns": "Promise<{ id: number; key: string; name: string; group_id: number | null; status: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "relaySelect",
+      "channel": "relay:select",
+      "paramsImpl": "input: { mode: \"balance\" | \"plan\"; groupId: number | null; keyId?: number; keyName?: string }",
+      "paramsDecl": "input: { mode: \"balance\" | \"plan\"; groupId: number | null; keyId?: number; keyName?: string }",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "relayKeyBilling",
+      "channel": "relay:key-billing",
+      "paramsImpl": "input: { baseUrl: string; apiKey: string }",
+      "paramsDecl": "input: { baseUrl: string; apiKey: string }",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "relayRegister",
+      "channel": "relay:register",
+      "paramsImpl": "input: { baseUrl: string; email: string; password: string; affCode?: string }",
+      "paramsDecl": "input: { baseUrl: string; email: string; password: string; affCode?: string }",
+      "returns": "Promise<{ email: string; baseUrl: string; balance: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "relayPaymentPlans",
+      "channel": "relay:payment-plans",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "relayOpenPurchase",
+      "channel": "relay:open-purchase",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; url: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "enhancePrompt",
+      "channel": "prompt:enhance",
+      "paramsImpl": "text: string",
+      "paramsDecl": "text: string",
+      "returns": "Promise<{ ok: boolean; text?: string; error?: string }>",
+      "invokeArgs": "{ text }",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listTerminals",
+      "channel": "terminal:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ id: string; alive: boolean; cwd: string }[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "validatePlugin",
+      "channel": "plugin:validate",
+      "paramsImpl": "target: string",
+      "paramsDecl": "target: string",
+      "returns": "Promise<{ ok: boolean; root: string; manifestPath?: string; issues: string[]; inventory: { skills: number; commands: number; agents: number; hooks: number }; name?: string }>",
+      "invokeArgs": "{ path: target }",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "chooseDirectoryAt",
+      "channel": "dialog:directory-at",
+      "paramsImpl": "startPath: string",
+      "paramsDecl": "startPath: string",
+      "returns": "Promise<string | null>",
+      "invokeArgs": "startPath",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceStop",
+      "channel": "voice:stop",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "voiceProfilesImport",
+      "channel": "voice:profiles-import",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any>",
+      "invokeArgs": "",
+      "cast": "Promise<any>",
+      "note": null
+    },
+    {
+      "name": "voiceProfilesRecord",
+      "channel": "voice:profiles-record",
+      "paramsImpl": "input: { samples: number[]; sampleRate: number }",
+      "paramsDecl": "input: { samples: number[]; sampleRate: number }",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": "Promise<any>",
+      "note": null
+    },
+    {
+      "name": "voiceProfilesSave",
+      "channel": "voice:profiles-save",
+      "paramsImpl": "input: { draftFile: string; name: string; refText: string }",
+      "paramsDecl": "input: { draftFile: string; name: string; refText: string }",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": "Promise<any>",
+      "note": null
+    },
+    {
+      "name": "voiceProfilesDelete",
+      "channel": "voice:profiles-delete",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "id",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "voiceProfilesPreview",
+      "channel": "voice:profiles-preview",
+      "paramsImpl": "input: { id?: string; text?: string }",
+      "paramsDecl": "input: { id?: string; text?: string }",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": "Promise<any>",
+      "note": null
+    },
+    {
+      "name": "voiceBarge",
+      "channel": "voice:barge",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "voicePlaybackDone",
+      "channel": "voice:playback-done",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "voiceZipvoiceCancel",
+      "channel": "voice:zipvoice-cancel",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "voiceModelsCancel",
+      "channel": "voice:models-cancel",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "voiceModelsReveal",
+      "channel": "voice:models-reveal",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<string>",
+      "invokeArgs": "",
+      "cast": "Promise<string>",
+      "note": null
+    },
+    {
+      "name": "voiceModelsUninstall",
+      "channel": "voice:models-uninstall",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "voiceHotkeyGet",
+      "channel": "voice:hotkey-get",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ registered: string }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ registered: string }>",
+      "note": null
+    },
+    {
+      "name": "voiceWakeReset",
+      "channel": "voice:wake-reset",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "voiceWakeStop",
+      "channel": "voice:wake-stop",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "voiceKwsCancel",
+      "channel": "voice:kws-cancel",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": null
+    },
+    {
+      "name": "voiceKwsStatus",
+      "channel": "voice:kws-status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ready: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ ready: boolean }>",
+      "note": null
+    },
+    {
+      "name": "installRuntime",
+      "channel": "runtime:install",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; runtimes: DevRuntimeEntry[] }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "uninstallRuntime",
+      "channel": "runtime:uninstall",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; runtimes: DevRuntimeEntry[] }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "weixinStartLogin",
+      "channel": "weixin:start-login",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ qrcodeImg: string; qrcode: string } | null | undefined>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "weixinPollLogin",
+      "channel": "weixin:poll-login",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ status: string; verifyCodeRequired?: boolean; connected?: boolean } | null | undefined>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "feishuConnect",
+      "channel": "feishu:connect",
+      "paramsImpl": "appId: string, appSecret: string",
+      "paramsDecl": "appId: string, appSecret: string",
+      "returns": "Promise<{ ok: boolean; name?: string; error?: string }>",
+      "invokeArgs": "appId, appSecret",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "dingtalkConnect",
+      "channel": "dingtalk:connect",
+      "paramsImpl": "clientId: string, clientSecret: string",
+      "paramsDecl": "clientId: string, clientSecret: string",
+      "returns": "Promise<{ ok: boolean; name?: string; error?: string }>",
+      "invokeArgs": "clientId, clientSecret",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "qqConnect",
+      "channel": "qq:connect",
+      "paramsImpl": "appId: string, appSecret: string",
+      "paramsDecl": "appId: string, appSecret: string",
+      "returns": "Promise<{ ok: boolean; name?: string; error?: string }>",
+      "invokeArgs": "appId, appSecret",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "qqQrStart",
+      "channel": "qq:qr-start",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ state: string; qr?: string; name?: string; error?: string }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "qqQrStatus",
+      "channel": "qq:qr-status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ state: string; qr?: string; name?: string; error?: string }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "feishuQrStart",
+      "channel": "feishu:qr-start",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ state: string; qr?: string; userCode?: string; name?: string; error?: string }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "feishuQrStatus",
+      "channel": "feishu:qr-status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ state: string; qr?: string; userCode?: string; name?: string; error?: string }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "wecomWebhookConnect",
+      "channel": "wecom-webhook:connect",
+      "paramsImpl": "url: string",
+      "paramsDecl": "url: string",
+      "returns": "Promise<{ ok: boolean; name?: string; error?: string }>",
+      "invokeArgs": "url",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "wecomWebhookTest",
+      "channel": "wecom-webhook:test",
+      "paramsImpl": "text?: string",
+      "paramsDecl": "text?: string",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "text",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "botBindingGet",
+      "channel": "bot-binding:get",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ wechat: { threadId: string; title: string; updatedAt: number } | null; telegram: { threadId: string; title: string; updatedAt: number } | null }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "botsSet",
+      "channel": "bots:set",
+      "paramsImpl": "list: any[]",
+      "paramsDecl": "list: any[]",
+      "returns": "Promise<{ ok: boolean; count: number }>",
+      "invokeArgs": "list",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "botBindingSet",
+      "channel": "bot-binding:set",
+      "paramsImpl": "input: { channel: string; threadId: string | null; title?: string }",
+      "paramsDecl": "input: { channel: string; threadId: string | null; title?: string }",
+      "returns": "Promise<{ threadId: string; title: string; updatedAt: number } | null>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "botStreamGet",
+      "channel": "bot-stream:get",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ enabled: boolean; thinking: boolean; tools: boolean }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "botStreamSet",
+      "channel": "bot-stream:set",
+      "paramsImpl": "input: { enabled: boolean; thinking: boolean; tools: boolean }",
+      "paramsDecl": "input: { enabled: boolean; thinking: boolean; tools: boolean }",
+      "returns": "Promise<{ enabled: boolean; thinking: boolean; tools: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "relayToggleAccount",
+      "channel": "relay:toggle-account",
+      "paramsImpl": "input: { id: string; disabled: boolean }",
+      "paramsDecl": "input: { id: string; disabled: boolean }",
+      "returns": "Promise<{ ok: boolean; disabled: boolean; deactivated?: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "openaiToggleAccount",
+      "channel": "openai:toggle-account",
+      "paramsImpl": "input: { id: string; disabled: boolean }",
+      "paramsDecl": "input: { id: string; disabled: boolean }",
+      "returns": "Promise<{ ok: boolean; disabled: boolean; deactivated?: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "channelsStatus",
+      "channel": "channels:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ weixin: boolean; telegram: boolean; feishu?: boolean; dingtalk?: boolean; qq?: boolean; \"wecom-webhook\"?: boolean }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "telegramConnect",
+      "channel": "telegram:connect",
+      "paramsImpl": "token: string",
+      "paramsDecl": "token: string",
+      "returns": "Promise<{ ok: boolean; username?: string; error?: string }>",
+      "invokeArgs": "token",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "installMarketSkillLight",
+      "channel": "skills:market-install-light",
+      "paramsImpl": "skill: unknown",
+      "paramsDecl": "skill: unknown",
+      "returns": "Promise<{ name: string; discovered: boolean; engineCheckMessage: string }>",
+      "invokeArgs": "skill",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "skillDisciplineGet",
+      "channel": "skill-discipline:get",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ present: boolean; section: string }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "savePastedText",
+      "channel": "pasted-text:save",
+      "paramsImpl": "text: string",
+      "paramsDecl": "text: string",
+      "returns": "Promise<string | null>",
+      "invokeArgs": "text",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "readPastedText",
+      "channel": "pasted-text:read",
+      "paramsImpl": "path: string",
+      "paramsDecl": "path: string",
+      "returns": "Promise<{ editable: boolean; content?: string | null }>",
+      "invokeArgs": "path",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "updatePastedText",
+      "channel": "pasted-text:update",
+      "paramsImpl": "path: string, content: string",
+      "paramsDecl": "path: string, content: string",
+      "returns": "Promise<{ ok: boolean; size: number }>",
+      "invokeArgs": "{ path, content }",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "updateCheck",
+      "channel": "updates:check",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; info?: { hasUpdate: boolean; reason: string; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string }; currentVersion?: string; source?: string; error?: string }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "updateDownload",
+      "channel": "updates:download",
+      "paramsImpl": "input: { downloadUrl: string; filename?: string }",
+      "paramsDecl": "input: { downloadUrl: string; filename?: string }",
+      "returns": "Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "updateInstall",
+      "channel": "updates:install",
+      "paramsImpl": "filePath: string",
+      "paramsDecl": "filePath: string",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "filePath",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "bridgeStatus",
+      "channel": "bridge:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ running: boolean; port: number; targets: number; requests: number; converted: number; forwarded: number; failures: number; modes: Record<string, \"responses\" | \"chat\"> }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "getThreadRuntime",
+      "channel": "thread-runtime:get",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<{ model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number } | null>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "planMemoryHygiene",
+      "channel": "memory:hygiene:plan",
+      "paramsImpl": "workspace?: string",
+      "paramsDecl": "workspace?: string",
+      "returns": "Promise<{ rules: { layer: string; name: string; when: string; action: string; protect: string; trace: string }[]; labels: Record<string, { title: string; danger: string }>; actions: string[]; issues: { severity: \"info\" | \"warn\"; layer: string; code: string; message: string; count?: number }[]; archive: { files: number; bytes: number }; pool: { total: number; pinned: number; expiring: number; max: number; ttlDays: number }; }>",
+      "invokeArgs": "workspace",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listDispatchCatalog",
+      "channel": "agents:catalog",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ targets: DispatchTargetEntry[] }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "capabilitiesSnapshot",
+      "channel": "capabilities:snapshot",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ capabilities: { id: string; label: string; purpose: string; activeId: string | null; activeLabel: string; activeWhy: string; alternatives: { id: string; label: string; available: boolean; why: string }[]; note: string; }[]; at: number; }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "perfCounters",
+      "channel": "app:perf-counters",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ rolloutFallbackScans: number; droppedForInactiveSession: number; threadListRequests: number }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "markIdentityGreeted",
+      "channel": "personalization:mark-greeted",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<PersonalizationConfig>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "popoutThread",
+      "channel": "window:popout-thread",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<{ ok: boolean; focused?: boolean }>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "popoutClose",
+      "channel": "window:popout-close",
+      "paramsImpl": "threadId: string | null",
+      "paramsDecl": "threadId: string | null",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "popoutThreadId",
+      "channel": "window:popout-id",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<string | null>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "popoutList",
+      "channel": "window:popout-list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<string[]>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "engineRestartLog",
+      "channel": "engine:restart-log",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ t: number; reason: string; busy: boolean; activeTurns: number; action: \"now\" | \"defer\" | \"flush\" | \"force\" }[]>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "engineActiveTurns",
+      "channel": "engine:active-turns",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ count: number; threadIds: string[] }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceStatus",
+      "channel": "voice:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ active: boolean; state: string; runtimeReady: boolean; modelsReady: boolean; threadId: string; lastError: string }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceStart",
+      "channel": "voice:start",
+      "paramsImpl": "threadId: string, options?: { mode?: \"conversation\" | \"dictation\" }",
+      "paramsDecl": "threadId: string, options?: { mode?: \"conversation\" | \"dictation\" }",
+      "returns": "Promise<{ ok: boolean; error?: string; status: unknown }>",
+      "invokeArgs": "threadId, options",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceDictationFinish",
+      "channel": "voice:dictation-finish",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; text?: string; error?: string }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceEndpointNow",
+      "channel": "voice:endpoint-now",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; text?: string }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceSpeak",
+      "channel": "voice:speak",
+      "paramsImpl": "text: string, options?: { sid?: number; speed?: number }",
+      "paramsDecl": "text: string, options?: { sid?: number; speed?: number }",
+      "returns": "Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>",
+      "invokeArgs": "text, options",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voicePreviewVoice",
+      "channel": "voice:preview-voice",
+      "paramsImpl": "input?: { sid?: number; speed?: number; text?: string }",
+      "paramsDecl": "input?: { sid?: number; speed?: number; text?: string }",
+      "returns": "Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceProfilesList",
+      "channel": "voice:profiles-list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ profiles: any[]; zipvoiceReady: boolean }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voicePresetList",
+      "channel": "voice:preset-list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ presets: { id: string; name: string; desc: string; lang: string; applied: boolean }[] }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voicePresetApply",
+      "channel": "voice:preset-apply",
+      "paramsImpl": "presetId: string",
+      "paramsDecl": "presetId: string",
+      "returns": "Promise<{ ok: boolean; profile?: any; existed?: boolean; error?: string }>",
+      "invokeArgs": "presetId",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceProfilesSelect",
+      "channel": "voice:profiles-select",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; profileId: string }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceModelsStatus",
+      "channel": "voice:models-status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string; repos: { id: string; lastSegment: string }[]; zipvoice?: { ready: boolean; bytes: number; dir: string }; kws?: { ready: boolean; bytes: number; dir: string }; }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceModelsInstall",
+      "channel": "voice:models-install",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceZipvoiceInstall",
+      "channel": "voice:zipvoice-install",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceModelsImport",
+      "channel": "voice:models-import",
+      "paramsImpl": "input: { sourceDir: string }",
+      "paramsDecl": "input: { sourceDir: string }",
+      "returns": "Promise<{ ok: boolean; failures: string[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceMicPermission",
+      "channel": "voice:mic-permission",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ status: string; error?: string }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceSettingsGet",
+      "channel": "voice:settings-get",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ settings: { tts: { sid: number; speed: number; volume: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: \"auto\" | \"manual\" }; aec?: { mode: \"auto\" | \"on\" | \"off\" }; modelHost: \"auto\" | \"huggingface\" | \"hf-mirror\"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; }; ttsVoices: Record<number, string>; modelHosts: Record<string, string>; modelHostOptions: string[]; }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceSettingsSet",
+      "channel": "voice:settings-set",
+      "paramsImpl": "patch: any",
+      "paramsDecl": "patch: any",
+      "returns": "Promise<{ tts: { sid: number; speed: number; volume: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: \"auto\" | \"manual\" }; aec?: { mode: \"auto\" | \"on\" | \"off\" }; modelHost: \"auto\" | \"huggingface\" | \"hf-mirror\"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; }>",
+      "invokeArgs": "patch",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceHotkeySet",
+      "channel": "voice:hotkey-set",
+      "paramsImpl": "input: { accelerator: string; enabled?: boolean }",
+      "paramsDecl": "input: { accelerator: string; enabled?: boolean }",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceWakeStart",
+      "channel": "voice:wake-start",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error?: string; phrase?: string; hint?: string }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceWakeAudio",
+      "channel": "voice:wake-audio",
+      "paramsImpl": "samples: Float32Array",
+      "paramsDecl": "samples: Float32Array",
+      "returns": "Promise<{ ok: boolean; matched: boolean }>",
+      "invokeArgs": "samples",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "voiceKwsInstall",
+      "channel": "voice:kws-install",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "screenshotSettingsGet",
+      "channel": "screenshot:settings-get",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<ScreenshotSettingsSnapshot>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "截图设置 + 实际注册成功的快捷键 + 冲突说明"
+    },
+    {
+      "name": "screenshotSettingsSet",
+      "channel": "screenshot:settings-set",
+      "paramsImpl": "patch: unknown",
+      "paramsDecl": "patch: Partial<ScreenshotSettings>",
+      "returns": "Promise<ScreenshotSettingsSnapshot>",
+      "invokeArgs": "patch",
+      "cast": null,
+      "note": "改完立刻重挂快捷键（不重启即生效）"
+    },
+    {
+      "name": "screenshotHotkeySet",
+      "channel": "screenshot:hotkey-set",
+      "paramsImpl": "input: { mode: \"full\" | \"region\"; accelerator?: string; enabled?: boolean }",
+      "paramsDecl": "input: { mode: \"full\" | \"region\"; accelerator?: string; enabled?: boolean }",
+      "returns": "Promise<{ ok: boolean; error?: string; settings?: ScreenshotSettings }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "先注册成功才落盘；冲突时保留原设置"
+    },
+    {
+      "name": "screenshotCapture",
+      "channel": "screenshot:capture",
+      "paramsImpl": "mode: \"full\" | \"region\"",
+      "paramsDecl": "mode: \"full\" | \"region\"",
+      "returns": "Promise<ShotCaptureResult>",
+      "invokeArgs": "mode",
+      "cast": null,
+      "note": "成功时另推 screenshot:captured 事件给主窗口（渲染层只认事件，避免插两份）"
+    },
+    {
+      "name": "screenshotPickDir",
+      "channel": "screenshot:pick-dir",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<string | null>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "screenshotReveal",
+      "channel": "screenshot:reveal",
+      "paramsImpl": "file: string",
+      "paramsDecl": "file: string",
+      "returns": "Promise<boolean>",
+      "invokeArgs": "file",
+      "cast": null,
+      "note": "在系统文件管理器里定位截图"
+    },
+    {
+      "name": "listFavorites",
+      "channel": "favorites:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<FavoriteItem[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "addFavorite",
+      "channel": "favorites:add",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: Partial<FavoriteItem>",
+      "returns": "Promise<{ items: FavoriteItem[]; item: FavoriteItem }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "updateFavorite",
+      "channel": "favorites:update",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { id: string; patch: Partial<FavoriteItem> }",
+      "returns": "Promise<FavoriteItem[]>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "deleteFavorites",
+      "channel": "favorites:delete",
+      "paramsImpl": "ids: string[]",
+      "paramsDecl": "ids: string[]",
+      "returns": "Promise<{ items: FavoriteItem[]; removed: number }>",
+      "invokeArgs": "ids",
+      "cast": null,
+      "note": "批量删除只认显式 id 列表（不提供隐式删全部）"
+    },
+    {
+      "name": "clearFavorites",
+      "channel": "favorites:clear",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ items: FavoriteItem[]; removed: number }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "touchFavorite",
+      "channel": "favorites:touch",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<FavoriteItem[]>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": "记一次使用（useCount/lastUsedAt），失败不阻断发送"
+    },
+    {
+      "name": "favoritesToMemory",
+      "channel": "favorites:to-memory",
+      "paramsImpl": "input: { ids: string[]; scope?: \"user\" | \"project\" | \"background\" | \"lessons\"; workspace?: string }",
+      "paramsDecl": "input: { ids: string[]; scope?: \"user\" | \"project\" | \"background\" | \"lessons\"; workspace?: string }",
+      "returns": "Promise<{ ok: boolean; written: number; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "只追加到记忆层（先读后写，不抹既有内容）；单行限长 300 字"
+    }
+  ]
+}

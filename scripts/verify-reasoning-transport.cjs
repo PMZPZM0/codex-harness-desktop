@@ -15,7 +15,9 @@ const pickDefaultEffort = vm.runInNewContext(ts.transpile(effortSource) + "\npic
 assert.equal(pickDefaultEffort(["low"]), "low");
 assert.equal(pickDefaultEffort(["low", "medium"]), "medium");
 assert.equal(pickDefaultEffort(["low", "high"]), "high");
-const source = fs.readFileSync(path.join(root, "electron/main.ts"), "utf8");
+// ⛔ 用并集口径（main.ts + electron/features/**）：buildModelCatalog 已随域拆到 features/**
+const { readMainSource } = require("./main-source.cjs");
+const source = readMainSource();
 const start = source.indexOf("function buildModelCatalog(");
 const end = source.indexOf("\n/**", start);
 const buildModelCatalog = vm.runInNewContext(

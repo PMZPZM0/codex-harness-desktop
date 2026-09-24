@@ -118,7 +118,7 @@ export function UsagePanel({ stats, currentInput, currentOutput, contextWindow, 
   const activeDays = useMemo(() => Object.values(stats.days ?? {}).filter((day) => day.turns > 0).length, [stats]);
 
   return (
-    <section className="settings-section stack usage-center">
+    <section className="settings-section stack">
       <div className="settings-copy channel-heading">
         <div><h2>使用统计</h2><p>本机累计消耗（随回合完成自动累加，保存在本机）。只保存聚合数字，不保存任何对话内容。</p></div>
         <div className="settings-heading-actions"><button className="secondary-setting" onClick={onReset}><Trash2 size={13} />清空累计</button></div>

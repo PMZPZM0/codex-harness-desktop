@@ -28,7 +28,7 @@ export function UserAvatar({ size = 22 }: { size?: number }) {
       {showImage
         ? <img src={value} alt="" onError={() => setBroken(true)} />
         : type === "emoji" && value
-          ? <span className="user-avatar-emoji">{value}</span>
+          ? <span className="">{value}</span>
           : <span className="user-avatar-initial">{initial}</span>}
     </span>
   );

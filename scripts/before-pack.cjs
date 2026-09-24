@@ -26,7 +26,67 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
+/**
+ * 打包期裁剪 `dist/assets` 里**没被 index.html 引用**的陈旧 chunk（09-24，评估报告 §3.3）。
+ *
+ * 背景：`vite.config.ts` 设了 `emptyOutDir: false`（09-23 的崩溃修复 —— `npm run build` 在每次
+ * `npm run check` 里跑，清空 dist 会让**正在运行的实例**懒加载 404）。代价是 dist 只增不减：
+ * 实测 4,504 文件 / 187 MB，而 index.html 只引用 8 个（2.52 MB）⇒ **98.65% 是死重**；
+ * 压缩后约 51–57 MB 会被打进本地安装包。
+ *
+ * ⛔ 为什么默认只在 CI 开：本地 `npm run dist` 时开发机上**可能正跑着一个旧构建的实例**，
+ *    它懒加载需要的 chunk 恰好就是"未被新 index.html 引用"的那批 —— 删了它就会重演
+ *    09-23 那类「点开设置白屏」。所以本地要显式 `PACK_PRUNE_STALE_DIST=1` 才动手，
+ *    CI（干净检出、无运行实例、且 dist 本来就是构建产物）默认执行。
+ * ⛔ 无论开不开，都把**可省空间**打出来 —— 让这笔账一直可见，而不是静默存在。
+ */
+function pruneStaleDistAssets(root) {
+  const distDir = path.join(root, "dist");
+  const assetsDir = path.join(distDir, "assets");
+  const indexPath = path.join(distDir, "index.html");
+  if (!fs.existsSync(indexPath) || !fs.existsSync(assetsDir)) return;
+  const html = fs.readFileSync(indexPath, "utf8");
+  const referenced = new Set();
+  for (const m of html.matchAll(/assets\/([A-Za-z0-9._/-]+)/g)) referenced.add(m[1]);
+  const stale = [];
+  let staleBytes = 0;
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      const rel = path.relative(assetsDir, p).replace(/\\/g, "/");
+      if (referenced.has(rel) || referenced.has(e.name)) continue;
+      stale.push(p);
+      try { staleBytes += fs.statSync(p).size; } catch { /* 忽略 */ }
+    }
+  };
+  walk(assetsDir);
+  const mb = (staleBytes / 1048576).toFixed(1);
+  if (!stale.length) {
+    console.log("[before-pack] dist/assets 无陈旧产物（全是 index.html 引用的）");
+    return;
+  }
+  const enabled = process.env.CI || process.env.PACK_PRUNE_STALE_DIST === "1";
+  if (!enabled) {
+    console.log(`[before-pack] dist/assets 有 ${stale.length} 个未被引用的陈旧文件（约 ${mb} MB 会被打进安装包）。`
+      + `\n  本地默认不删（可能有旧构建的实例正在运行，删了它会懒加载 404 —— 09-23 那次崩溃同源）。`
+      + `\n  确认没有正在运行的实例后可加 PACK_PRUNE_STALE_DIST=1 重新打包。`);
+    return;
+  }
+  let removed = 0;
+  for (const p of stale) {
+    try { fs.unlinkSync(p); removed += 1; } catch { /* 忽略单个失败 */ }
+  }
+  console.log(`[before-pack] 已裁剪 ${removed}/${stale.length} 个陈旧 chunk（约 ${mb} MB）`);
+}
+
 module.exports = async function beforePack() {
+  // ⛔ 必须排在所有早退分支（darwin / AUTOMATION_ZIP_OPTIONAL）**之前**：裁剪与平台无关。
+  try {
+    pruneStaleDistAssets(path.resolve(__dirname, ".."));
+  } catch (error) {
+    console.warn("[before-pack] dist 陈旧产物裁剪失败（不影响打包）:", error?.message ?? error);
+  }
   if (process.platform === "darwin") return;
 
   const root = path.resolve(__dirname, "..");

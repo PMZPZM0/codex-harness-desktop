@@ -9,8 +9,10 @@ import { existsSync, readFileSync } from "node:fs";
  * - desktopAutomation: 桌面自动化（nuphus MCP），关闭后不注册 nuphus，引擎不再加载 35 个桌面工具。
  * - browserAutomation: 浏览器自动化（playwright-cli / cloakbrowser 命令行），关闭后从基础指令里移除
  *   调用说明并关掉 features.browser_use，模型不再被引导去操作浏览器。
- * - engineWatchdog: 引擎健康看门狗（默认开）。引擎子进程可能「活着但不响应」（interrupt 打断慢速
- *   上游请求时偶发死锁），看门狗周期性 thread/list 心跳，连续失败自动 kill+重启并恢复当前线程。
+ * - engineWatchdog: ⛔ **已停用（2026-09-09 移除看门狗本体）**，字段仅为兼容历史 app-settings.json
+ *   与调用点而保留；**没有任何界面渲染它**，`server.startWatchdog()` 是空实现（见 codex-server.ts）。
+ *   保留此字段 = 老配置里的值不会被清掉；若要恢复该能力，必须先给重启加"忙碌闸"
+ *   （有活动回合时只记数不重启），否则会打断正在跑的会话。守卫【140】钉住这条。
  * - adaptiveTone: 语气自适应（默认开）。按会话维护状态（心情/精力/默契），把状态映射成
  *   一句「只影响说法、不影响内容」的语气指引，随该会话自己的 developer instructions 下发；
  *   状态按会话各自一份（渲染层键族 agent-mood-<threadId>），A 会话不会改到 B 会话的语气。
@@ -34,6 +36,11 @@ export type AppSettings = {
    *  developer instructions 下发一句「只影响说法、不影响内容」的语气指引。
    *  状态按会话各自一份（agent-mood-<threadId>），关掉即停止更新与注入。 */
   adaptiveTone?: boolean;
+  /** 关闭窗口时最小化到托盘（默认**关**，09-23 加）：
+   *  开着时点窗口 X 只隐藏窗口 —— 应用主进程、引擎、调度器、渠道机器人与正在跑的回合都继续活着，
+   *  真正退出走托盘右键「退出」/ Cmd+Q。**开关入口在系统托盘右键菜单**（放托盘上比塞设置页更顺手）。
+   *  ⛔ 默认必须是关：开着等于"点 X 不退出"，属可见行为变化，只能由用户主动打开。 */
+  closeToTray?: boolean;
   /** 开发工具下载源（09-20 用户：「下载太慢了，所有工具下载加下载源选择」）。
    *  对「开发工具」页的所有按需下载生效：工具链（install-runtimes.cjs）、npm 包
    *  （CloakBrowser）、浏览器内核（Playwright / Cloak）。

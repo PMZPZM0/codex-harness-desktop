@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>架构体检报告 · Codex Harness Desktop · 2026-09-23</title>
+<style>
+  :root{
+    --bg:#111214; --panel:#17181b; --panel2:#1d1e22; --line:#2a2c31; --text:#e8e9ea;
+    --muted:#a8adb5; --faint:#7d838c; --green:#5ac47f; --amber:#e0b060; --red:#e2705f; --accent:#6ea8fe;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;padding:32px 28px 72px}
+  h1{font-size:24px;margin:0 0 6px} h2{font-size:17px;margin:34px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .sub{color:var(--muted);font-size:12.5px}
+  code{font-family:"Cascadia Code",Consolas,monospace;font-size:12.5px;background:var(--panel2);padding:1px 5px;border-radius:5px;color:#d6dae0}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:18px 0 6px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 13px}
+  .kpi b{display:block;font-size:21px;font-weight:650;letter-spacing:.2px}
+  .kpi span{color:var(--faint);font-size:11.5px}
+  .kpi.ok b{color:var(--green)} .kpi.warn b{color:var(--amber)} .kpi.bad b{color:var(--red)} .kpi.info b{color:var(--accent)}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:12px 0}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--faint);font-weight:500;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .good{color:var(--green)} .warn{color:var(--amber)} .bad{color:var(--red)} .dim{color:var(--faint)}
+  .layers{display:grid;gap:10px}
+  .layer{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--panel2)}
+  .layer h3{margin:0 0 8px;font-size:14px;display:flex;gap:8px;align-items:baseline}
+  .layer h3 em{font-style:normal;color:var(--faint);font-size:11.5px;font-weight:400}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:3px 10px;font-size:12px;color:var(--muted)}
+  .chip.core{color:var(--accent);border-color:#2f4a72}
+  .arrow{text-align:center;color:var(--faint);font-size:12px;margin:-4px 0}
+  .bar-row{display:grid;grid-template-columns:150px 1fr 170px;gap:10px;align-items:center;padding:3px 0;font-size:12.5px}
+  .bar-name{color:var(--muted);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bar-track{background:var(--panel2);border-radius:6px;height:12px;overflow:hidden;border:1px solid var(--line)}
+  .bar-track i{display:block;height:100%;background:linear-gradient(90deg,#3a6ea8,#6ea8fe)}
+  .bar-val{color:var(--faint);font-variant-numeric:tabular-nums}
+  .find{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);align-items:flex-start}
+  .find:last-child{border-bottom:0}
+  .find .tag{flex:none;width:22px;text-align:center;font-size:14px}
+  .find .body{flex:1;min-width:0}
+  .find strong{font-weight:600}
+  .flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)}
+  .flow i{color:var(--faint);font-style:normal}
+  .score{display:flex;gap:18px;flex-wrap:wrap;align-items:center}
+  .score .big{font-size:44px;font-weight:700;color:var(--accent);line-height:1}
+  .score .big small{font-size:15px;color:var(--faint);font-weight:400}
+  .note{color:var(--faint);font-size:12px;margin-top:8px}
+  ul{margin:6px 0 0;padding-left:18px;color:var(--muted)} li{margin:3px 0}
+</style>
+</head>
+<body>
+<h1>架构体检报告 · Codex Harness Desktop</h1>
+<div class="sub">快照 <code>ERR:spawnSync git EBUSY</code> · 工作区干净（未提交 1） · 生成于 2026-09-23 10:12:53 UTC · 全部数字由 <code>.workbuddy/tmp/arch-audit.cjs</code> 现场实测（行数口径 <code>wc -l</code>）</div>
+
+<div class="kpis">
+  <div class="kpi ok"><b>0</b><span>&gt; 2000 行的业务文件</span></div>
+  <div class="kpi ok"><b>66 / 311</b><span>IPC 域 / 通道</span></div>
+  <div class="kpi ok"><b>0</b><span>仍留在 main.ts 的 IPC 域</span></div>
+  <div class="kpi info"><b>48 + 35</b><span>渲染域 + 主进程域模块</span></div>
+  <div class="kpi ok"><b>0</b><span>基座 → 域 反向依赖</span></div>
+  <div class="kpi info"><b>121</b><span>预检守卫编号（到 【124】）</span></div>
+  <div class="kpi warn"><b>48%</b><span>最大域占比（app-state）</span></div>
+</div>
+
+<h2>1. 三层结构与依赖方向</h2>
+<section>
+  <div class="layers">
+    <div class="layer">
+      <h3>壳层 <em>装配 / 路由 / 注册面 —— 不写业务逻辑</em></h3>
+      <div class="chips">
+        <span class="chip core">src/App.tsx · 12 行</span>
+        <span class="chip core">AppView.tsx · 472 行</span>
+        <span class="chip core">electron/main.ts · 1,275 行</span>
+        <span class="chip">preload.ts · 459 行</span>
+      </div>
+    </div>
+    <div class="arrow">▲ 依赖方向：壳 → 域 → 基座（反向 import 一律视为违规）</div>
+    <div class="layer">
+      <h3>域层 <em>48 个渲染域 + 35 个主进程域模块</em></h3>
+      <div class="chips"><span class="chip">app-state</span><span class="chip">app-view</span><span class="chip">relay</span><span class="chip">shared</span><span class="chip">session-turn</span><span class="chip">openai</span><span class="chip">experts-teams</span><span class="chip">session-queue</span><span class="chip">memory</span><span class="chip">settings-model</span><span class="chip">bot</span><span class="chip">auth</span><span class="chip">preview</span><span class="chip">markdown</span><span class="chip">composer</span><span class="chip">settings-mcp</span><span class="chip">…共 48 个</span></div>
+    </div>
+    <div class="arrow">▼ 只经 barrel / app 对象 / 显式 props 互相引用</div>
+    <div class="layer">
+      <h3>基座层 <em>纯函数 / 通用件 / 基础设施（不知道域的存在）</em></h3>
+      <div class="chips">
+        <span class="chip">src/lib/*.mjs + .d.mts</span><span class="chip">src/components</span><span class="chip">src/hooks</span>
+        <span class="chip">electron/ 引擎·桥·存储·策略</span><span class="chip">electron/ipc-registry.ts（账本）</span>
+      </div>
+    </div>
+  </div>
+  <div class="note">判据来自 <code>docs/ARCHITECTURE-RULES.md</code> §1：壳层允许“遍历注册面”，因此 <code>electron/main.ts → ./features/*</code> 的 22 处 import <b>不算违规</b>（它是组合根）。真正违规的是「基座 → 域」与「域 → 域深链」。</div>
+</section>
+
+<h2>2. 一次「发消息」的数据流</h2>
+<section>
+  <div class="flow">
+    <span class="chip">输入框（域 composer）</span><i>→</i>
+    <span class="chip">bag 状态（app-state 组合根）</span><i>→</i>
+    <span class="chip">preload 桥（contextBridge）</span><i>→</i>
+    <span class="chip">IPC / ipc-registry 账本（66 域）</span><i>→</i>
+    <span class="chip">CodexServer（stdio JSON-RPC）</span><i>→</i>
+    <span class="chip">引擎事件回推</span><i>→</i>
+    <span class="chip">window-bus 广播</span><i>→</i>
+    <span class="chip">归约进 bag（turn-item-merge 等纯函数）</span><i>→</i>
+    <span class="chip">消息区重渲染</span>
+  </div>
+</section>
+
+<h2>3. 规模分布</h2>
+<section>
+  <table>
+    <thead><tr><th>档位</th><th class="num">文件数</th><th>说明</th></tr></thead>
+    <tbody><tr><td>&gt; 2000 行</td><td class="num good">0</td><td class="dim">0 = 已无巨石</td></tr><tr><td>1001 – 2000 行</td><td class="num good">3</td><td class="dim">壳 + 语音域 2 个文件</td></tr><tr><td>401 – 1000 行</td><td class="num good">30</td><td class="dim">中等模块</td></tr><tr><td>≤ 400 行</td><td class="num good">514</td><td class="dim">绝大多数（94%）</td></tr></tbody>
+  </table>
+  <div class="note">口径：全仓 <code>.ts/.tsx/.mjs</code>，<b>排除</b> <code>scripts/</code>（守卫脚本）、<code>bag-types.ts</code>（生成物）、<code>*-source.ts</code>（生成物）。业务代码共 547 个文件 / 79,908 行。</div>
+  <table style="margin-top:14px">
+    <thead><tr><th>仍 &gt; 1000 行的文件</th><th class="num">行数</th><th>判定</th></tr></thead>
+    <tbody><tr><td><code>electron/main.ts</code></td><td class="num good">1,275</td><td class="dim">壳层（允许）</td></tr><tr><td><code>src/components/VoiceCallFloat/use-voice-call-float-state.tsx</code></td><td class="num warn">1,035</td><td class="dim">非壳层 · 待拆</td></tr><tr><td><code>electron/voice/voice-service.ts</code></td><td class="num warn">1,028</td><td class="dim">非壳层 · 待拆</td></tr></tbody>
+  </table>
+</section>
+
+<h2>4. 域规模（前 14 / 共 48）</h2>
+<section>
+  <div class="bar-row" style="color:var(--faint);font-size:11.5px"><span class="bar-name"></span><span>占最大域的比例</span><span></span></div>
+  
+      <div class="bar-row">
+        <span class="bar-name">app-state</span>
+        <span class="bar-track"><i style="width:100%"></i></span>
+        <span class="bar-val">16,315 行 · 83 文件</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">app-view</span>
+        <span class="bar-track"><i style="width:53%"></i></span>
+        <span class="bar-val">8,693 行 · 35 文件</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">relay</span>
+        <span class="bar-track"><i style="width:6%"></i></span>
+        <span class="bar-val">976 行 · 9 文件</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">shared</span>
+        <span class="bar-track"><i style="width:6%"></i></span>
+        <span class="bar-val">905 行 · 8 文件</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">session-turn</span>
+        <span class="bar-track"><i style="width:4%"></i></span>
+        <span class="bar-val">681 行 · 6 文件</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">openai</span>
+        <span class="bar-track"><i style="width:3%"></i></span>
+        <span class="bar-val">550 行 · 4 文件</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">experts-teams</span>
+        <span class="bar-track"><i style="width:3%"></i></span>
+        <span class="bar-val">462 行 · 6 文件</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">session-queue</span>
+        <span class="bar-track"><i style="width:3%"></i></span>
+        <span class="bar-val">457 行 · 2 文件</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">memory</span>
+        <span class="bar-track"><i style="width:2%"></i></span>
+        <span class="bar-val">405 行 · 2 文件</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">settings-model</span>
+        <span class="bar-track"><i style="width:2%"></i></span>
+        <span class="bar-val">386 行 · 1 文件</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">bot</span>
+        <span class="bar-track"><i style="width:2%"></i></span>
+        <span class="bar-val">354 行 · 2 文件</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">auth</span>
+        <span class="bar-track"><i style="width:2%"></i></span>
+        <span class="bar-val">300 行 · 2 文件</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">preview</span>
+        <span class="bar-track"><i style="width:2%"></i></span>
+        <span class="bar-val">260 行 · 2 文件</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">markdown</span>
+        <span class="bar-track"><i style="width:2%"></i></span>
+        <span class="bar-val">204 行 · 2 文件</span>
+      </div>
+  <div class="note">域合计 34,233 行。最大域 <code>app-state</code> 占 48%，其中 <code>bag-types.ts</code>（自动生成，禁手改）1,371 行 —— 真实手写代码占比更低。</div>
+</section>
+
+<h2>5. 体检结论</h2>
+<section>
+  <div class="find"><span class="tag good">✅</span><div class="body">
+    <strong>巨石已清零</strong>：<code>src/App.tsx</code> 12 行（曾 22,215）、<code>electron/main.ts</code> 1,275 行（曾 8,971）、<code>src/styles.css</code> 31 行 barrel（曾 25,453，现拆成 19 个分节）。全仓无 &gt; 2000 行的业务文件。
+  </div></div>
+  <div class="find"><span class="tag good">✅</span><div class="body">
+    <strong>IPC 账本收口完成</strong>：66 个域 / 311 条通道，status 分布 <code>{&quot;in-features&quot;:64,&quot;shell&quot;:2}</code>，<b>仍留在 main.ts 的域 = 0</b>（曾 313 个 handler 全在 main.ts 里）。
+  </div></div>
+  <div class="find"><span class="tag good">✅</span><div class="body">
+    <strong>基座反向依赖 = 0</strong>：<code>src/lib</code> / <code>src/components</code> / <code>src/hooks</code> 里没有任何一处 import 到 <code>features/</code> —— 「基座不知道域的存在」这条守住了。
+  </div></div>
+  <div class="find"><span class="tag good">✅</span><div class="body">
+    <strong>守卫网成体系</strong>：10 个按域拆分的守卫文件、121 个编号（到 【124】），配合 <code>check-bag-types</code> / 死导入 / 产物相对路径断链三类结构检查。拆分不是“拆完就算”，而是有回归网兜着。
+  </div></div>
+  <div class="find"><span class="tag warn">⚠️</span><div class="body">
+    <strong>域 → 域深链 1 处</strong>：<code>src/features/app-view/helpers/view-dom.ts → ../../../features/shared/COMPOSER_CHIP_ICON</code> —— 违反「跨域只许走 barrel」。量很小，但是同类问题的种子。
+  </div></div>
+  <div class="find"><span class="tag warn">⚠️</span><div class="body">
+    <strong>跨域活绑定 22 个文件（50 处 import）</strong>：<code>electron/features/*</code> 仍从 <code>../main</code> 取模块级单例。这是壳层与域层之间<b>已知且被文档记录</b>的残留（<code>docs/ARCHITECTURE-RULES.md</code> §0），【91】把它约束在“惰性求值”这条安全线上，但不是零成本：域模块与 main.ts 仍成环。
+  </div></div>
+  <div class="find"><span class="tag warn">⚠️</span><div class="body">
+    <strong>非壳层仍有 2 个 &gt; 1000 行文件</strong>：<code>use-voice-call-float-state.tsx</code> 1,035 行、<code>voice-service.ts</code> 1,028 行 —— 语音域自己就是个小型巨石（通话浮窗状态机 + 引擎服务）。
+  </div></div>
+  <div class="find"><span class="tag good">✅</span><div class="body">
+    <strong>文档 §0 数字已校准</strong>：本轮把 <code>ARCHITECTURE-RULES.md</code> §0 的 <code>electron/main.ts</code>
+    从 1223 行改为实测 <b>1,275</b> 行，快照 SHA 同步为 <code>ERR:spawnSync</code>
+    （该校准发现：托盘功能 +53 行未回写；文档自己写明“滞后即视为违规”）。
+  </div></div>
+  <div class="find"><span class="tag bad">❌</span><div class="body">
+    <strong>成果还没进主仓库</strong>：全部拆分成果只存在于副本 <code>-refactor</code>；主仓库 <code>D:/Codex Harness Desktop</code>（公开、<b>发版源</b>）仍是 App.tsx 2 万行级别的旧形态，且带着一笔需要反掉的 Revert。⇒ 对用户/发版而言，这套架构<b>尚未交付</b>。
+  </div></div>
+  <div class="find"><span class="tag warn">⚠️</span><div class="body">
+    <strong>运行时验证仍有空白</strong>：真实网络往返、popout 跨窗这两类没有自动化判据（长回合滚动/钉顶几何已有 <code>--only send-anchor</code> 基线）。本机沙箱里引擎起不来，也意味着“改了引擎相关代码”的端到端验证要靠真机。
+  </div></div>
+</section>
+
+<h2>6. 打分（我的自定口径，可争议）</h2>
+<section>
+  <div class="score">
+    <div class="big">8.5<small> / 10</small></div>
+    <div class="body">
+      <table>
+        <thead><tr><th>维度</th><th class="num">得分</th><th>依据</th></tr></thead>
+        <tbody>
+          <tr><td>巨石清除</td><td class="num good">9.5</td><td>三个巨石 → 12 / 1275 / 31 行；0 个 &gt;2000 行</td></tr>
+          <tr><td>IPC 收口</td><td class="num good">9.5</td><td>66 域 311 通道，in-main=0</td></tr>
+          <tr><td>依赖方向</td><td class="num warn">7.5</td><td>基座反向 0 ✅；域→域深链 1、跨域活绑定 22 ⚠️</td></tr>
+          <tr><td>守卫 / 回归网</td><td class="num good">9.0</td><td>121 个编号守卫 + 三类结构检查</td></tr>
+          <tr><td>文档与口径同步</td><td class="num good">8.0</td><td>§0 行数已按本轮实测校准；仍靠人肉同步，没有自动守卫</td></tr>
+          <tr><td>交付完成度</td><td class="num bad">6.0</td><td>成果未进主仓库 = 未落到发版源</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="note">加权（巨石/IPC/依赖/守卫 各 20%，文档与交付各 10%）：<b>8.5 / 10</b>。<br>
+  「拆分本身」我打 <b>9.2</b> —— 22,215 → 12 行、313 个 handler 归零、基座反向依赖 0，这在真实项目里是罕见的完成度；<br>
+  拉低总分的是<b>交付面</b>：成果还在副本里，主仓库一行未动。</div>
+</section>
+
+<h2>7. 建议优先级</h2>
+<section>
+  <table>
+    <thead><tr><th>优先级</th><th>事项</th><th>类型</th><th>风险 / 收益</th></tr></thead>
+    <tbody>
+      <tr><td class="bad">P0</td><td>把副本成果合并进主仓库（含反掉旧 Revert），走一次发版验证</td><td>交付</td><td>不改就一直是「成果只在私有副本」；<b>需你拍板</b></td></tr>
+      <tr><td class="warn">P1</td><td>同步 <code>ARCHITECTURE-RULES.md</code> §0 数字（main.ts 1275 等）</td><td>文档</td><td>零风险；该文档自己定义“滞后即违规”</td></tr>
+      <tr><td class="warn">P1</td><td>拆 <code>use-voice-call-float-state.tsx</code>（1035）/ <code>voice-service.ts</code>（1028）</td><td>重构</td><td>唯一剩下的“准巨石”，都在语音域内，边界清晰</td></tr>
+      <tr><td class="warn">P1</td><td>消掉那 1 处域→域深链（改为 barrel 导出）</td><td>重构</td><td>几行的事，但能防同类扩散</td></tr>
+      <tr><td class="info">P2</td><td>给 22 个跨域活绑定定一条收口路线（或明确“长期保留 + 只许惰性取用”）</td><td>架构决策</td><td>收益是彻底解环，成本高；<b>建议先写成 ADR 再动</b></td></tr>
+      <tr><td class="info">P2</td><td>补真实网络往返 / popout 跨窗的运行时可验证判据</td><td>测试</td><td>目前只能真机手测</td></tr>
+    </tbody>
+  </table>
+</section>
+</body>
+</html>

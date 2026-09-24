@@ -90,7 +90,8 @@ export function GlobalSearchView({
     };
     const match = (...parts: (string | null | undefined)[]) => !keyword || parts.some((part) => (part ?? "").toLowerCase().includes(keyword));
 
-    if (keyword) {
+    /* 09-23（用户反馈「这里怎么没有展示已有记忆」）：原为 if (keyword) —— 空关键词直接跳过全部检索，界面只剩一句「输入关键词开始检索」，用户看不到任何已有内容。改成无条件执行：match() 在空关键词时对一切返回 true ⇒ 打开即全量展示，输入关键词才收窄。 */
+    {
       const threadById = new Map(threads.map((entry) => [String(entry.id).toLowerCase(), entry]));
       for (const thread of threads) {
         if (!match(thread.title, thread.preview)) continue;
@@ -194,11 +195,11 @@ export function GlobalSearchView({
         </div>
       </div>
 
-      {!query.trim() && (
+      {!groups.length && (
         <div className="index-empty">
           <Search size={22} />
-          <strong>输入关键词开始检索</strong>
-          <p>可以搜会话标题与摘要、记忆正文、定时任务名与技能名；结果会按所属会话折叠成组，点命中条目即可预览全文。</p>
+          <strong>没有可检索的内容</strong>
+          <p>当前范围下没有会话、记忆、任务或技能。可以切到「全部项目」，或先保存一条记忆。</p>
         </div>
       )}
 

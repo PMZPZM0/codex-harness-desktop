@@ -20,8 +20,8 @@
 | 许可 | MIT |
 | 文件 | `SKILL.md`（仓库根目录） |
 | 内置位置 | `electron/builtin-skills.ts` 的 `HUMANIZER_SKILL` 常量 → 落盘为 `skills/humanizer/SKILL.md` |
-| 内置字节数 | 28728 |
-| 内置时 sha256 | `e8269e236bed06ed0fe4824c274112e54950b0cb46b0bafe5e1576ef7c9f93d5` |
+| 内置字节数 | 29102 |
+| 内置时 sha256 | `c39879e29a7fe8a9e4bcd0ef66339589ba0e85e3893521ecb0d96a277761467c` |
 | 内置日期 | 2026-09-21 |
 | 说明 | 去掉 AI 写作痕迹（按 Wikipedia「Signs of AI writing」整理的模式表）。原文未做任何修改。 |
 
@@ -34,8 +34,8 @@
 | 许可 | MIT |
 | 文件 | `skills/no-ai-slop/SKILL.md` |
 | 内置位置 | `electron/builtin-skills.ts` 的 `NO_AI_SLOP_SKILL` 常量 → 落盘为 `skills/no-ai-slop/SKILL.md` |
-| 内置字节数 | 10853 |
-| 内置时 sha256 | `992b365f51a2f62cf4c1c5ed22049a9ee551dfea677550c1a72b371c0ceadd62` |
+| 内置字节数 | 10950 |
+| 内置时 sha256 | `1c1abfa4e447e2e96f02832cc3d31d8b298184027aab1bb4cf5aa33179dc2f81` |
 | 内置日期 | 2026-09-21 |
 | 说明 | 编辑草稿去 AI 味 / 检测 AI 味（另一套口径，与 humanizer 互补）。原文未做任何修改。 |
 
@@ -48,8 +48,8 @@
 | 许可 | MIT |
 | 文件 | `skills/i-have-adhd/SKILL.md` |
 | 内置位置 | `electron/builtin-skills.ts` 的 `I_HAVE_ADHD_SKILL` 常量 → 落盘为 `skills/i-have-adhd/SKILL.md` |
-| 内置字节数 | 7207 |
-| 内置时 sha256 | `3170b16ace00aecb0dd7feb54c0b5aa642e7502acda06ecd24fd89a11c7127e9` |
+| 内置字节数 | 7349 |
+| 内置时 sha256 | `37f3ff72c0514f0119bd43753030e9c916abf10ef0c358fe849c3b4ea3ff6c88` |
 | 内置日期 | 2026-09-21 |
 | 说明 | 输出风格：先给下一步动作、编号、末行给一个动作、限长。**原文带 `disable-model-invocation: true`**，即只有用户显式调用（`/i-have-adhd`）才生效 —— 引擎支持该字段（已在本机引擎二进制中确认），因此它不会自行改变默认输出风格。原文未做任何修改。 |
 
