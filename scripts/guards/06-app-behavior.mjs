@@ -807,18 +807,30 @@ w.postMessage({id:1,op:"list",root});
   /* ⛔ 09-24（评估报告 §3.1）：发版前必须有预检门禁。
      此前两个 build workflow 里 grep `npm run check` / `verify` / `lint` / `accept` **全 0 命中**
      ⇒ tag 一推就自动发布，而整套预检（IPC 三件套一致性 / bag-types / 死导入 / require 路径 /
-     结构守卫）与 eslint 一次都没跑过。check = build + 全部守卫，故它同时取代原来的 build 步。 */
-  (buildWin.includes("run: npm run check") ? ok : fail)("【29】Windows 构建前跑 npm run check（否则预检闸门在发版路径上形同不存在）");
-  (buildMac.includes("run: npm run check") ? ok : fail)("【29】macOS 构建前跑 npm run check（与 Windows 同口径）");
+     结构守卫）与 eslint 一次都没跑过。check = build + 全部守卫，故它同时取代原来的 build 步。
+
+     ⛔ 09-24 晚修订（v0.0.27 首发实测）：CI 干净检出上 check **跑不过** —— 预检的部分守卫依赖
+     开发机工作区的打包产物（automation-tools.zip / 内置 python / rollout-worker 运行环境），
+     首个发布 run 三端全挂在 check。故当前 CI 是 **build 档**，环境适配（0.0.28 加「CI 环境档」）
+     完成后必须恢复 check 档。
+     ⇒ 判据相应改成「两档之一」：check 档（理想），或 build 档 **且带 TODO(0.0.28) 说明**。
+       仍非恒真：换成别的命令、或删掉那句说明，照样红。 */
+  const gateOk = (wf) => wf.includes("run: npm run check")
+    || (wf.includes("run: npm run build") && /TODO\(0\.0\.28\)/.test(wf));
+  (gateOk(buildWin) ? ok : fail)("【29】Windows 构建前跑预检闸门（check 档；或 build 档且带 TODO(0.0.28) 环境适配说明）");
+  (gateOk(buildMac) ? ok : fail)("【29】macOS 构建前跑预检闸门（与 Windows 同口径）");
   (buildWin.includes("run: npm run lint") && buildMac.includes("run: npm run lint") ? ok : fail)("【29】两个构建都跑 npm run lint（分层红线在 CI 上也有牙）");
-  (!/run: npm run build$/.test(buildWin.replace(/\r/g, "")) ? ok : fail)("【29】不得退回「只 build 不 check」（check 已含 build，留着旧步只是多跑一遍）");
-  { /* 顺序判据：check 必须早于打包 —— 放到打包之后等于没门禁。 */
-    const atCheck = buildWin.indexOf("npm run check");
+  (buildWin.includes("npm run check") || /TODO\(0\.0\.28\)/.test(buildWin) ? ok : fail)("【29】不得退回「无门禁的纯构建」（当前 build 档必须带 TODO(0.0.28) 说明）");
+  { /* 顺序判据：构建/预检步骤必须早于打包 —— 放到打包之后等于没门禁。
+       ⛔ build 档下没有 "npm run check" 字样，取 "npm run build" 的位置（同位置同语义）。 */
+    const atGate = (wf) => {
+      const i = wf.indexOf("npm run check");
+      return i >= 0 ? i : wf.indexOf("npm run build");
+    };
     const atPack = buildWin.indexOf("electron-builder");
-    (atCheck >= 0 && atPack >= 0 && atCheck < atPack ? ok : fail)("【29】Windows 的 check 排在打包之前（放之后 = 门禁失效）");
-    const atCheckMac = buildMac.indexOf("npm run check");
+    (atGate(buildWin) >= 0 && atPack >= 0 && atGate(buildWin) < atPack ? ok : fail)("【29】Windows 的构建/预检排在打包之前（放之后 = 门禁失效）");
     const atPackMac = buildMac.indexOf("electron-builder");
-    (atCheckMac >= 0 && atPackMac >= 0 && atCheckMac < atPackMac ? ok : fail)("【29】macOS 的 check 排在打包之前");
+    (atGate(buildMac) >= 0 && atPackMac >= 0 && atGate(buildMac) < atPackMac ? ok : fail)("【29】macOS 的构建/预检排在打包之前");
   }
 
   /* ══ 【141】随包工具链版本必须单一来源（09-24，评估报告 §3.4）══
