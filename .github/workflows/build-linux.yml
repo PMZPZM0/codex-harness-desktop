@@ -1,0 +1,46 @@
+name: Build Linux
+
+# 实验性 Linux 构建（09-24）：只验证「AppImage 能否在 CI 上打出来」。
+# ⛔ 随包工具链（miniconda / cloudflared / git / jq …）目前是 Windows/mac 二进制，
+#    Linux 包是「壳能跑、工具链未适配」状态，故未列入发布资产（release.yml 的 publish 只取 win/mac）；
+#    工具链 linux 化（cloudflared/linux 版 miniconda/jq/ffmpeg 换 linux 二进制 + 脚本分支）是后续工作。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build renderer & main
+        run: npm run build
+
+      - name: Pack Linux AppImage
+        run: node node_modules/electron-builder/cli.js --linux AppImage --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: release/*.AppImage
+          if-no-files-found: error
