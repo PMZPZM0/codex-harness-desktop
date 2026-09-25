@@ -12,7 +12,9 @@
  */
 import path from "node:path";
 import fs from "node:fs/promises";
-import { ipcMain, safeStorage } from "electron";
+import { app, ipcMain, safeStorage } from "electron";
+import { saveAppSettings } from "../app-settings";
+import { memoryBackendStatus, type MemoryBackend } from "../memory-backend";
 import { RpaStore } from "../rpa-store";
 import { CLEANUP_RULES, HYGIENE_ACTION_LABEL, isHygieneAction, planHygiene, suggestedActions } from "../memory-hygiene";
 import type { MemoryCategory, MemoryRemoteConfig } from "../memory-store";
@@ -54,6 +56,16 @@ ipcMain.handle("memory:mode-read", async () => readMemoryMode());
 ipcMain.handle("memory:mode-set", async (_event, mode: MemoryMode) => {
   if (mode === "cloud" && !(await readMemoryGateway())?.endpoint) throw new Error("请先配置云端 Gateway 地址，再切到云端记忆");
   return applyMemoryMode(mode === "cloud" ? "cloud" : "local");
+});
+/* 记忆后端二选一（09-25，设置页「记忆 → 记忆后端」的读写）。
+   ⛔ 这里只持久化**用户的选择**；实际生效的后端由 effectiveMemoryBackend() 决定
+      （装了服务才让位，否则回退内置 —— 宁可回退也不能让记忆一处都不写）。
+   ⛔ MCP 服务按用户要求走「命令安装」，本文件**不**跑安装器（不在主进程 spawn npm）。 */
+ipcMain.handle("memory:backend:read", () => memoryBackendStatus());
+ipcMain.handle("memory:backend:set", async (_event, backend: unknown) => {
+  const next: MemoryBackend = backend === "mcp" ? "mcp" : "builtin";
+  await saveAppSettings(app.getPath("userData"), { memoryBackend: next });
+  return memoryBackendStatus();
 });
 ipcMain.handle("memory:save", (_event, input: unknown) => memoryStore.upsert(input as { content: string; category: MemoryCategory; sourceThreadId?: string; sourceTurnId?: string; confidence?: number }));
 ipcMain.handle("memory:delete", (_event, id: string) => memoryStore.remove(id));

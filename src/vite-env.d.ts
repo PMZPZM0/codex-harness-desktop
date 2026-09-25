@@ -505,6 +505,10 @@ interface Window {
     recallMemory(query: string, workspace?: string): Promise<{ context: string; remote: boolean; memoryCount?: number }>;
     readMemoryMode(): Promise<"local" | "cloud">;
     setMemoryMode(mode: "local" | "cloud"): Promise<"local" | "cloud">;
+    /* 记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位）+ 安装命令 */
+    readMemoryBackend(): Promise<{ backend: "builtin" | "mcp"; effective: "builtin" | "mcp"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null }>;
+    /* 切换记忆后端并回传新状态 */
+    setMemoryBackend(backend: "builtin" | "mcp"): Promise<{ backend: "builtin" | "mcp"; effective: "builtin" | "mcp"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null }>;
     saveMemory(input: unknown): Promise<any>;
     listRpaRecipes(): Promise<any[]>;
     saveRpaRecipe(input: unknown): Promise<any>;

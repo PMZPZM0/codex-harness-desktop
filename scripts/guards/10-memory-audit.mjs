@@ -512,7 +512,7 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     (/isHygieneAction\(/.test(ipcSrc) ? ok : fail)("【107】IPC 层走动作白名单校验");
     (/memory:hygiene:plan/.test(ipcSrc) && /memory:hygiene:apply/.test(ipcSrc) ? ok : fail)("【107】两个通道都已注册（plan 只读 / apply 动作）");
     const regSrc = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
-    (/memory:hygiene:apply/.test(regSrc) && /prefix: "memory", count: 19/.test(regSrc) ? ok : fail)("【107】IPC 账本同步（memory 域 19 通道）");
+    (/memory:hygiene:apply/.test(regSrc) && /prefix: "memory", count: 21/.test(regSrc) ? ok : fail)("【107】IPC 账本同步（memory 域 21 通道：09-25 加 backend:read/set）");
     /* preload 面 = 手写 + 生成（09-23 gen-ipc-bridge）：applyMemoryHygiene 的桥接已迁到生成文件 */
     const preloadSrc = readFileSync(join(ROOT, "electron", "preload.ts"), "utf8");
     (/applyMemoryHygiene/.test(preloadSrc) && /confirm: true/.test(preloadSrc) ? ok : fail)("【107】preload 桥接同步（apply 的类型要求 confirm: true）");
@@ -957,6 +957,17 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     (/effectiveMemoryBackend\(\)/.test(connSrc) ? ok : fail)("【150】连接器同步必须用 effectiveMemoryBackend（与捕获链同源，否则会出现双写窗口）");
     const bootSrc = readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8");
     (/try \{\s*\n\s*const action = await syncLocalMemoryConnector\(\)|await syncLocalMemoryConnector\(\)/.test(bootSrc) ? ok : fail)("【150】启动链会同步本地 MCP 连接器（挂进 boot.ts，包 try/catch 不掐启动）");
+
+    /* 设置页入口（09-25 补）：只有后端逻辑、没有入口 = 用户根本开不了
+       （本轮用户原话就是「MCP 那个记忆，在哪里开启啊」—— 当时三处后端逻辑齐全但无处可点）。
+       三处必须同轮齐全：manifest 两条通道 + IPC 账本 + 设置页「记忆」里的区块。 */
+    const manifestSrc = readFileSync(join(ROOT, "electron", "ipc-channels.manifest.json"), "utf8");
+    (manifestSrc.includes("memory:backend:read") && manifestSrc.includes("memory:backend:set") ? ok : fail)("【150】记忆后端两条通道在 manifest 里（read/set）");
+    const regSrc150 = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
+    (/prefix: "memory", count: 21/.test(regSrc150) ? ok : fail)("【150】记忆域 IPC 账本同步（21 通道）");
+    const centerSrc = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryCenterSection.tsx"), "utf8");
+    (centerSrc.includes("MemoryBackendSection") && centerSrc.includes("readMemoryBackend") && centerSrc.includes("setMemoryBackend") ? ok : fail)("【150】设置页「记忆」有后端入口（MemoryBackendSection：能读、能切；否则用户无处开启）");
+    (!/spawn\(|execFile\(|child_process/.test(centerSrc) ? ok : fail)("【150】渲染层不自己跑安装器（按用户要求走「命令安装」，不在渲染层 spawn）");
   }
   }
 }

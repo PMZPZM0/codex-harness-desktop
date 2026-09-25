@@ -59,3 +59,44 @@ export function effectiveMemoryBackend(): MemoryBackend {
   }
   return "mcp";
 }
+
+/** MCP 记忆服务的安装根目录（`<userData>/memory-mcp`，与安装器 scripts/install-memory-mcp.cjs 同源）。 */
+export function localMemoryMcpInstallRoot(): string {
+  return path.join(app.getPath("userData"), "memory-mcp");
+}
+
+/** 设置页「记忆后端」区块要的状态快照（09-25）。⛔ 全部惰性求值 —— 顶层不碰 `app.getPath`（【91】）。 */
+export type MemoryBackendStatus = {
+  /** 用户选的值（可能不可用） */
+  backend: MemoryBackend;
+  /** 实际生效的写入后端（带可用性回退） */
+  effective: MemoryBackend;
+  /** 服务入口是否存在（只判文件，便宜） */
+  installed: boolean;
+  serverPath: string;
+  installRoot: string;
+  /** 装服务的命令（给 UI 展示/复制 —— 按用户要求走「命令安装」，不做一键安装） */
+  installCommand: string;
+  /** 选了 MCP 却回退时的原因；没回退则为 null */
+  fallbackReason: string | null;
+};
+
+export function memoryBackendStatus(): MemoryBackendStatus {
+  const backend = memoryBackend();
+  const installed = localMemoryMcpInstalled();
+  const installRoot = localMemoryMcpInstallRoot();
+  // ⛔ 与 effectiveMemoryBackend() 同口径（后端可用才认 MCP），但**不重复打 warn** —— 设置页会反复刷新。
+  const effective: MemoryBackend = backend === "mcp" && installed ? "mcp" : "builtin";
+  return {
+    backend,
+    effective,
+    installed,
+    serverPath: localMemoryMcpServerPath(),
+    installRoot,
+    installCommand: `npm install --prefix "${installRoot}" @vheins/local-memory-mcp`,
+    fallbackReason:
+      backend === "mcp" && !installed
+        ? "已选 MCP，但服务未安装：当前仍走内置金字塔（宁可回退，也不让记忆一处都不写）。装好服务后重启应用即可生效。"
+        : null,
+  };
+}
