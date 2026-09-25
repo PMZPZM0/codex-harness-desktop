@@ -246,6 +246,38 @@ const CHECKS = [
       await h.screenshot("正文渲染-列表尾行与全角空格");
     },
   },
+  {
+    id: "settings-pages",
+    name: "⑱ 设置页逐页可打开（26 页全过 —— 防 lazy chunk 缺失 / 导出名不匹配，0.0.27 事故）",
+    run: async (h) => {
+      // 为什么断言这一条：0.0.27 的安装包里，before-pack 把**所有懒加载 chunk** 当成「陈旧死重」
+      // 删掉了（判据只认 index.html 的直接引用），于是点开任意设置页都报
+      // `Cannot read properties of undefined (reading 'default')`。这类问题**只在打包形态暴露**，
+      // dev 下 vite 直供源码永远看不到。本项 + 守卫【151】一起把它钉死。
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await wait(1500);
+      const labels = await h.eval(`[...document.querySelectorAll(".settings-nav button")].map(b => b.textContent.trim())`);
+      const list = Array.isArray(labels) ? labels : [];
+      h.check("① 设置面板打开且有导航项（≥20）", list.length >= 20, `实得 ${list.length} 项`);
+      if (list.length < 20) return;
+      const bad = [];
+      for (let i = 0; i < list.length; i++) {
+        await h.eval(`(function(){ document.querySelectorAll(".settings-nav button")[${i}]?.click(); return 1; })()`);
+        await wait(1100);
+        const probe = await h.eval(`(function(){
+          const m = document.querySelector(".settings-modal");
+          if (!m) return "面板不见了";
+          const t = m.innerText || "";
+          return /重试加载应用|复制诊断信息|Cannot read properties of undefined|Failed to fetch dynamically imported/.test(t)
+            ? "错误边界: " + t.slice(0, 100) : "ok";
+        })()`);
+        if (probe !== "ok") bad.push(`${list[i]} → ${probe}`);
+        await h.eval(`(function(){ document.querySelectorAll(".settings-nav button")[0]?.click(); return 1; })()`);
+        await wait(250);
+      }
+      h.check(`② ${list.length} 个设置页逐页打开无 ErrorBoundary`, bad.length === 0, bad.slice(0, 4).join(" ∣ "));
+    },
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -275,9 +307,10 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "09-24";
+const LATEST_ROUND = "09-25";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
+  "settings-pages": "09-25",
   "shot-editor": "09-24",
   "history-search": "09-24",
   "md-render": "09-24",

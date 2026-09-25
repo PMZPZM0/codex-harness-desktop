@@ -224,6 +224,41 @@ console.log(C.bold("\n【8】打包必备件：随包 automation-tools.zip（发
 }
   }
 
+  /* ══ 【151】打包期 dist 裁剪判据：必须是「可达闭包」（09-25 事故）══
+     现场：0.0.27 安装包点开**任意**设置页都 `Cannot read properties of undefined (reading 'default')`。
+     根因：before-pack 的 pruneStaleDistAssets 只保留 index.html 里出现的 assets/xxx，而 vite 的懒加载
+     chunk（写成 `import("./X.js")`）**一个都不在 index.html 里** ⇒ 被整批当死重删掉；CI 里
+     `process.env.CI` 恒真 ⇒ 裁剪默认执行 ⇒ 每个包都是坏的。 */
+  {
+    console.log(C.bold("\n【151】打包期 dist 裁剪：可达闭包判据（防懒加载 chunk 被当死重删掉）"));
+    const bpPath = join(ROOT, "scripts", "before-pack.cjs");
+    const bpSrc = existsSync(bpPath) ? readFileSync(bpPath, "utf8") : "";
+    (bpSrc.includes("function reachableAssets") ? ok : fail)("【151】裁剪判据走可达闭包 reachableAssets()（⛔ 只看 index.html 直接引用会删光懒加载 chunk）");
+    (!/const referenced = new Set\(\);\s*\n\s*for \(const m of html\.matchAll/.test(bpSrc) ? ok : fail)("【151】旧的「只收集 index.html 引用」写法不得回归");
+    (/live\.size < Math\.min\(/.test(bpSrc) ? ok : fail)("【151】安全阀在：闭包结果小得离谱就一律不删（宁留死重，不删活文件）");
+
+    let bp = null;
+    try {
+      bp = (await import(pathToFileURL(bpPath).href)).default;
+    } catch (error) {
+      fail(`【151】before-pack.cjs 加载失败：${error?.message ?? error}`);
+    }
+    const distAssets = join(ROOT, "dist", "assets");
+    const distHtml = join(ROOT, "dist", "index.html");
+    if (!bp?.reachableAssets || !existsSync(distAssets) || !existsSync(distHtml)) {
+      warn("【151】dist 未构建 ⇒ 跳过「真跑闭包」检查（静态断言已做）");
+    } else {
+      const { readdirSync } = await import("node:fs");
+      const html = readFileSync(distHtml, "utf8");
+      const entries = [...html.matchAll(/assets\/([A-Za-z0-9._/-]+)/g)].map((m) => m[1].split("/").pop());
+      const live = bp.reachableAssets(distAssets, [...new Set(entries)]);
+      const all = readdirSync(distAssets).filter((n) => statSync(join(distAssets, n)).isFile());
+      const lazy = all.filter((n) => /^(ModelSettingsSection|MemoryCenterSection|GeneralSettingsSection|SkillsCenterSection)-/.test(n));
+      (live.size >= all.length - 2 ? ok : fail)(`【151】真跑：可达闭包几乎覆盖全部产物（${live.size}/${all.length}）`);
+      (lazy.length > 0 && lazy.every((n) => live.has(n)) ? ok : fail)(`【151】真跑：懒加载 chunk 未被判死重（抽样 ${lazy.length} 个）`);
+    }
+  }
+
   /* ══ 【9】原 L1929–L1974 ══ */
   {
 console.log(C.bold("\n【9】过程折叠不得吞掉正文（长正文/最终答复永远是正文锚点）"));
