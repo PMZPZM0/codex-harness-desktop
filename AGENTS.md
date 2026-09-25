@@ -404,3 +404,39 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
   ③ ⛔ **别指望拿用户实例的 rollout 取证**：本轮试过 `AppData\Roaming\Codex Harness Desktop\codex-home`、
      `~/.codex/sessions`、D 盘 maxdepth 5 的 `codex-home` 三处全部扑空（用户跑的实例 userData 不在
      这些位置，且它的快捷方式里没有 `CODEX_HARNESS_USER_DATA`）；也别用 `wmic`（宿主黑名单已封）。
+
+## 🧠 记忆后端二选一（09-25 立，守卫【150】）
+
+用户要求：「启用 MCP 记忆就优先用 MCP，不要 MCP 写了记忆又用金字塔记忆，这样重复了」。
+
+**两个后端互斥，同一时刻只用一个**：
+
+| 后端 | 设置值 | 写入去哪 | 配套技能 |
+|---|---|---|---|
+| 内置记忆金字塔（**默认**） | `memoryBackend: "builtin"` | 工作区 `lessons/*.md` + `MEMORY.md`（`MemoryLayers.appendLesson`） | `memory-classify` |
+| MCP 记忆服务 | `memoryBackend: "mcp"` | MCP 工具（`@vheins/local-memory-mcp`） | `memory-mcp-backend` |
+
+- 设置项在 `app-settings.json` 的 `memoryBackend`（类型见 `electron/app-settings.ts`；新开关一律加那里）。
+- **互斥的实现点**（改了会红）：
+  1. `electron/memory-backend.ts` = 后端判定的**叶子模块**。⛔ 不许把它放进 `runtime-refs.ts`
+     —— 后者已 import `memory-layers`，反向引用会成 require 环（守卫【147】同族）。
+  2. `MemoryLayers.appendLesson()` 开头让位：`memoryBackend() === "mcp"` 时直接 `return false`
+     ⇒ 内置金字塔**停止捕获**，不会与 MCP 各存一份。
+  3. `ensureBuiltinSkills()` 末尾按后端**改名切换** `SKILL.md ⇄ SKILL.md.disabled`：
+     mcp → 只启用 `memory-mcp-backend`；builtin → 只启用 `memory-classify`。
+     （改名而非删除，切回来立刻恢复。）
+
+**MCP 记忆服务是可选安装，不内置**（不进 package.json 依赖、不随包发布）：
+
+```bash
+node scripts/install-memory-mcp.cjs              # 装到 <userData>/memory-mcp（独立 package.json）
+node scripts/install-memory-mcp.cjs --check      # 0=已装 / 2=未装
+node scripts/install-memory-mcp.cjs --uninstall  # 删目录即可
+node scripts/install-memory-mcp.cjs --ignore-scripts  # 受限环境逃生口（会缺原生构建产物，慎用）
+```
+
+⛔ 已知环境坑：本机封 node 内嵌 spawn ⇒ 带 postinstall 的依赖（esbuild / better-sqlite3）装不上原生产物，
+用 `--ignore-scripts` 能装上但 **better-sqlite3 缺 `build/Release/*.node`，服务起不来** ⇒ 端到端写读验证在本机做不了
+（用户机器无此限制）。连接器接入：以 `connectors.json` 注册 stdio 服务器
+（`node <userData>/memory-mcp/node_modules/@vheins/local-memory-mcp/bin/mcp-memory-server.js`，
+`MEMORY_DB_PATH` 指到 userData）；⛔ 不要手改 `config.toml` 的 `mcp_servers`（那是 harness 生成的）。

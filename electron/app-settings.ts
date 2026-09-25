@@ -16,6 +16,12 @@ import { existsSync, readFileSync } from "node:fs";
  * - adaptiveTone: 语气自适应（默认开）。按会话维护状态（心情/精力/默契），把状态映射成
  *   一句「只影响说法、不影响内容」的语气指引，随该会话自己的 developer instructions 下发；
  *   状态按会话各自一份（渲染层键族 agent-mood-<threadId>），A 会话不会改到 B 会话的语气。
+ * - memoryBackend: **记忆后端二选一**（09-25 加，用户明确要求「不重复」）：
+ *   - "builtin"（默认缺省）：内置记忆金字塔（L0~L7 + 纪律/坑分类写入）。
+ *   - "mcp"：**优先用 MCP 记忆服务**（@vheins/local-memory-mcp，可选安装，装在
+ *     `<userData>/memory-mcp`，见 scripts/install-memory-mcp.cjs）。
+ *     ⛔ 选它之后内置金字塔**停止捕获写入**（`MemoryLayers.appendLesson` 会让位），
+ *     否则会出现「MCP 写一份、金字塔再写一份」的双份记忆。
  * 以后新开关都往这里加。
  */
 export type AppSettings = {
@@ -23,6 +29,8 @@ export type AppSettings = {
   desktopAutomation?: boolean;
   browserAutomation?: boolean;
   engineWatchdog?: boolean;
+  /** 记忆后端："builtin"= 内置记忆金字塔（默认）；"mcp"= MCP 记忆服务（此时内置停止写入） */
+  memoryBackend?: "builtin" | "mcp";
   /** 全局自动压缩比例：上下文用量达到该比例时引擎自动压缩（0.5~0.95，默认 0.8） */
   autoCompactRatio?: number;
   /** Codex 引擎更新用的 HTTP 代理（如 http://127.0.0.1:7890）。空 = 国内镜像直连 */

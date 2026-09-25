@@ -154,6 +154,10 @@ export function closeToTrayEnabled(): boolean {
   return Boolean(readAppSettingsSync(app.getPath("userData")).closeToTray);
 }
 
+/* 记忆后端判定在 ./memory-backend（⛔ 不能定义在这里：本文件已 import memory-layers，
+   在此定义再被 memory-layers 反向 import 会形成 require 环）。这里只做转发。 */
+export { memoryBackend, type MemoryBackend } from "./memory-backend";
+
 /** 当前主题是否深色（main.ts 的 applyWindowChrome 维护；未设置时回退系统）。 */
 let appThemeDark: boolean | null = null;
 export function setAppThemeDark(v: boolean | null) { appThemeDark = v; }

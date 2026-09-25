@@ -17,6 +17,8 @@ import { SELF_REVIEW_SKILL } from "./builtin-skills/09-skill-self-review";
 import { MEMORY_HYGIENE_SKILL } from "./builtin-skills/10-skill-memory-hygiene";
 import { MEMORY_CLASSIFY_SKILL } from "./builtin-skills/11-skill-memory-classify";
 import { SKILL_AUDIT_SKILL } from "./builtin-skills/12-skill-skill-audit";
+import { MEMORY_MCP_SKILL } from "./builtin-skills/13-skill-memory-mcp";
+import { memoryBackend } from "./memory-backend";
 
 /** 已退役的内置技能：磁盘上的内容仍是**我们当初写的那份**时，随升级清掉目录 ——
  *  否则引擎会同时加载两套浏览器说明（新的实操手册 + 旧的通道说明），模型读到自相矛盾的指引。
@@ -51,6 +53,8 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     ["memory-classify", MEMORY_CLASSIFY_SKILL],
     // ⛔ 强制门禁：装任何技能之前先按它审一遍（用户 09-23 明令）。与 skills-market 的机器扫描是"闸门 + 复核"。
     ["skill-audit", SKILL_AUDIT_SKILL],
+    // 09-25：记忆后端 = MCP 时的写法（与 memory-classify 二选一，见下方互斥切换）
+    ["memory-mcp-backend", MEMORY_MCP_SKILL],
   ];
   for (const [name, content] of entries) {
     const dir = path.join(skillsDir, name);
@@ -73,6 +77,24 @@ export async function ensureBuiltinSkills(skillsDir: string) {
       }
     } catch { /* 写不进不阻塞启动 */ }
   }
+
+  /* 09-25 记忆后端**互斥**：启用 MCP 记忆后端时只留 memory-mcp-backend，内置分类技能必须停用。
+     ⛔ 不这么做的话，引擎会同时读到两套互相矛盾的写法（一套让它往 lessons/*.md 写、
+     一套让它调 MCP 工具）—— 用户原话：「不要 mcp 写了记忆，又用金字塔记忆，这样重复了」。
+     ⛔ 用**改名**（SKILL.md ⇄ SKILL.md.disabled）而不是删目录：切回内置时立刻恢复，不用重写盘。
+     ⛔ 这是后端语义驱动的强制切换（与「能力总闸」同源），会覆盖对这两个技能的手动启停。 */
+  try {
+    const backend = memoryBackend();
+    const setEnabled = async (name: string, enabled: boolean) => {
+      const dir = path.join(skillsDir, name);
+      const activeFile = path.join(dir, "SKILL.md");
+      const disabledFile = path.join(dir, "SKILL.md.disabled");
+      if (enabled && existsSync(disabledFile)) await fs.rename(disabledFile, activeFile);
+      else if (!enabled && existsSync(activeFile)) await fs.rename(activeFile, disabledFile);
+    };
+    await setEnabled("memory-mcp-backend", backend === "mcp");
+    await setEnabled("memory-classify", backend === "builtin");
+  } catch { /* 不阻塞启动 */ }
 
   // 退役清理：只删「内容仍是我们写的那份」的旧内置技能目录（browser-automation → browser-skill）。
   //  ⛔ 内建写入是只增不删的：不清理的话，老用户磁盘上那份旧技能会继续被引擎加载，
