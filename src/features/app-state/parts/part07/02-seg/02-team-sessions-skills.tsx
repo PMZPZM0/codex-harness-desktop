@@ -125,7 +125,9 @@ bag.startTeamSession = startTeamSession as typeof bag.startTeamSession;
         memberId: String(toolArgs?.memberId ?? ""),
         query: String(toolArgs?.query ?? ""),
         leadThreadId,
-        cwd: parentConfig?.cwd || bag.workspace || undefined,
+        // ⛔ cwd 兜底顺序：团队的登记配置 → **该会话自己的 cwd**（仅当它就是当前会话时可用；
+        //    后台调度别的会话时读当前会话的 cwd 会把配置串掉，见 teamThreadConfigRef 的注释）→ 全局工作区。
+        cwd: parentConfig?.cwd || (bag.thread?.id === leadThreadId ? bag.thread?.cwd : undefined) || bag.workspace || undefined,
         model: parentConfig?.model || bag.selectedModel?.model || modelName(bag.modelId),
         effort: parentConfig?.effort || bag.effort || undefined,
         sandbox: parentConfig?.sandbox || bag.sandbox,

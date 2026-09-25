@@ -1402,6 +1402,10 @@ w.postMessage({id:1,op:"list",root});
     (/if \(!teamId\) \{[\s\S]{0,320}?无法确定该会话所属的专家团/.test(teamSrc) ? ok : fail)("【155】拿不到团队标识 ⇒ 明确报错（⛔ 不得把空 teamId 发下去）");
     const rolesSrc = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "01-mcp-teams-plan", "02-team-roles-import.tsx"), "utf8");
     (/teamOfThread[\s\S]{0,400}?teamThreadMapRef\.current\.set\(id, String\(teamId\)\)/.test(rolesSrc) ? ok : fail)("【155】打开会话时把团队映射回填 ref（重启后调度/UI 都能恢复）");
+    /* 启动时从主进程灌满映射（否则重启后未打开过的会话：调度拿不到 teamId、
+       工具卡的成员头像注册表也为空 —— 同一事故的第二个受害面） */
+    (/teamThreadsMap\?\.\(\)[\s\S]{0,500}?teamThreadMapRef\.current\.set\(threadId/.test(rolesSrc) ? ok : fail)("【155】启动时从主进程全量灌 ref（工具卡成员解析 + 调度共用）");
+    (teamSrc.includes("bag.thread?.id === leadThreadId ? bag.thread?.cwd") ? ok : fail)("【155】cwd 兜底用「本会话 cwd」且限定同会话（后台调度不串配置）");
   }
 
   }
