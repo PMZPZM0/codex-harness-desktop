@@ -866,6 +866,8 @@
 .memory-backend-fallback { color: var(--muted); font-size: 11.5px; line-height: 1.5; }
 .memory-backend-actions { align-items: center; gap: 10px; display: flex; flex-wrap: wrap; }
 .memory-backend-path { color: var(--muted); font-size: 11.5px; }
+/* 安装默认走国内镜像的说明（09-25）：占一整行，不被按钮挤成半截 */
+.memory-backend-note { flex-basis: 100%; color: var(--muted); font-size: 11.5px; line-height: 1.55; }
 .memory-backend-path code {
   background: color-mix(in srgb, var(--panel) 70%, transparent);
   border: 1px solid var(--line-soft);

@@ -82,7 +82,7 @@ function MemoryBackendSection() {
   const runAction = async (kind: "install" | "uninstall" | "verify") => {
     setBusy(true);
     setNote("");
-    setBusyLabel(kind === "install" ? "正在安装…（首次几分钟：下载依赖 + 原生绑定）" : kind === "uninstall" ? "正在卸载…" : "正在检测…");
+    setBusyLabel(kind === "install" ? "正在安装…（默认走国内镜像；首次几分钟：下载依赖 + 原生绑定）" : kind === "uninstall" ? "正在卸载…" : "正在检测…");
     try {
       const r = kind === "install"
         ? await window.codex.installMemoryMcp()
@@ -93,7 +93,9 @@ function MemoryBackendSection() {
       if (kind === "uninstall") {
         setNote("已卸载：记忆服务目录已删除。");
       } else if (r?.result?.verified) {
-        setNote(kind === "install" ? "安装完成，MCP 握手已通过 ✅" : "检测通过：服务能正常握手 ✅");
+        // 把实际用到的镜像显示出来（安装器默认 npmmirror，失败才依次换源）
+        const via = typeof r?.result?.registry === "string" ? `（源：${r.result.registry.replace(/^https?:\/\//, "")}）` : "";
+        setNote(kind === "install" ? `安装完成，MCP 握手已通过 ✅ ${via}`.trim() : "检测通过：服务能正常握手 ✅");
       } else {
         const why = r?.result?.error ?? r?.log?.split("\n").filter(Boolean).pop() ?? "未知原因";
         setNote(`失败：${why}`);
@@ -150,6 +152,8 @@ function MemoryBackendSection() {
           </>
         )}
         {status && <span className="memory-backend-path">装到 <code>{status.installRoot}</code></span>}
+        {/* 让用户放心：不需要自己配镜像/挂代理（09-25 用户：「记忆 mcp 安装默认使用国内镜像」） */}
+        <span className="memory-backend-note">安装默认走国内镜像（registry.npmmirror.com），依赖与原生绑定同理；镜像不可用时自动换源，无需你配置。</span>
       </div>
       {busyLabel && <p className="settings-status">{busyLabel}</p>}
       {note && <p className="settings-status">{note}</p>}
