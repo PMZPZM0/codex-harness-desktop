@@ -281,6 +281,12 @@ console.log(C.bold("\n【8】打包必备件：随包 automation-tools.zip（发
     const ipcSrc = readFileSync(join(ROOT, "electron", "features", "data-dir-ipc.ts"), "utf8");
     (ipcSrc.includes("dataDir:read") && ipcSrc.includes("dataDir:prepare") ? ok : fail)("【152】dataDir IPC 两通道已注册");
     (!ipcSrc.includes("dataDir:relaunch") ? ok : fail)("【152】不重复注册 relaunch（复用既有 app:relaunch）");
+    /* ⛔ MCP 记忆安装器必须跟随数据目录（09-25 用户实测：切到 D:\11 后「装了但永远显示未安装」——
+       安装器把服务装进硬编码旧锚点，引擎在新目录找 ⇒ 永远对不上）。两处缺一不可。 */
+    const mcpIpcSrc = readFileSync(join(ROOT, "electron", "features", "memory-rpa-ipc.ts"), "utf8");
+    (mcpIpcSrc.includes('CODEX_HARNESS_USER_DATA: app.getPath("userData")') ? ok : fail)("【152】spawn MCP 安装器时显式传当前 userData（否则安装器装进旧锚点）");
+    const instSrc = readFileSync(join(ROOT, "scripts", "install-memory-mcp.cjs"), "utf8");
+    (instSrc.includes("data-dir.json") ? ok : fail)("【152】安装器自身也读指路牌（用户手工复制命令跑时不带 env）");
     const genSrc = readFileSync(join(ROOT, "src", "features", "settings-general", "GeneralSettingsSection.tsx"), "utf8");
     (genSrc.includes("prepareDataDir") && genSrc.includes("readDataDir") ? ok : fail)("【152】设置 → 通用页有数据目录入口（否则用户无处修改）");
   }

@@ -88,7 +88,13 @@ async function runMemoryInstaller(extra: string[]): Promise<{ code: number | nul
     return await new Promise((resolve, reject) => {
       const child = spawn(nodeExe, [script, ...extra], {
         windowsHide: true,
-        env: { ...process.env, NODE_OPTIONS: "", ELECTRON_RUN_AS_NODE: "" },
+        env: {
+          ...process.env,
+          NODE_OPTIONS: "",
+          // ⛔ 安装器的落点必须与引擎找服务的目录一致：显式传当前 userData（数据目录自定义后
+          //    安装器自己解析只会拿到硬编码旧锚点 ⇒ 装到 C 盘旧目录、引擎在 D:\11 找不到 =「装不上」）
+          CODEX_HARNESS_USER_DATA: app.getPath("userData"),
+        },
       });
       let out = "", err = "";
       const timer = setTimeout(() => {

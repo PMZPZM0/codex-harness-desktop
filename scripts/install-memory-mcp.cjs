@@ -45,10 +45,20 @@ const doVerify = args.includes("--verify");
 const doForce = args.includes("--force");
 
 function userDataRoot() {
+  // ① 主进程 spawn 时显式传（与 app.getPath("userData") 同源，最可靠）
   if (process.env.CODEX_HARNESS_USER_DATA) return process.env.CODEX_HARNESS_USER_DATA;
-  if (process.platform === "win32") return path.join(process.env.APPDATA || os.homedir(), "Codex Harness Desktop");
-  if (process.platform === "darwin") return path.join(os.homedir(), "Library", "Application Support", "Codex Harness Desktop");
-  return path.join(os.homedir(), ".config", "Codex Harness Desktop");
+  // ② 固定锚点下可能有 data-dir.json 指路牌（数据目录自定义，09-25）——
+  //    ⛔ 不读它的话服务会装进旧锚点，而引擎在新目录找 ⇒ 「装了但永远显示未安装/verify 失败」
+  const anchor = process.platform === "win32"
+    ? path.join(process.env.APPDATA || os.homedir(), "Codex Harness Desktop")
+    : process.platform === "darwin"
+      ? path.join(os.homedir(), "Library", "Application Support", "Codex Harness Desktop")
+      : path.join(os.homedir(), ".config", "Codex Harness Desktop");
+  try {
+    const boot = JSON.parse(fs.readFileSync(path.join(anchor, "data-dir.json"), "utf8"));
+    if (boot && typeof boot.dir === "string" && path.isAbsolute(boot.dir) && path.parse(boot.dir).root !== boot.dir) return boot.dir;
+  } catch { /* 无指路牌/损坏 ⇒ 默认锚点 */ }
+  return anchor;
 }
 
 const ROOT = path.join(userDataRoot(), "memory-mcp");
