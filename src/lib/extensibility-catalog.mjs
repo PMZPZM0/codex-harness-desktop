@@ -19,7 +19,7 @@ export const EXTENSIBILITY_GROUPS = ["接口与契约", "界面与呈现", "智�
  * ⛔ 这个数字**由守卫【2】保证与 manifest 实际条数一致**（写死在别处必然过期 —— docs 里
  *    曾长期写着「251 个通道」，迁移到 315 后没人同步）。改 manifest 后若忘了改这里，预检会红。
  */
-export const IPC_CHANNEL_COUNT = 334;
+export const IPC_CHANNEL_COUNT = 336;
 
 export const EXTENSIBILITY_ENTRIES = [
   {

@@ -259,6 +259,30 @@ console.log(C.bold("\n【8】打包必备件：随包 automation-tools.zip（发
     }
   }
 
+  /* ══ 【152】自定义数据目录：setPath 必须走 resolveStartupUserData（09-25）══
+     现场：用户要求「数据目录可自定义，重启生效」。指路牌 = 默认目录下 data-dir.json，
+     迁移在下次启动**引擎 spawn 之前**由 data-dir.ts 执行（唯一无进程写文件的时机）。
+     ⛔ 若有人把 main.ts 的 setPath 改回裸 env 判断，指路牌/迁移整条链路会静默失效。 */
+  {
+    console.log(C.bold("\n【152】自定义数据目录：启动链与指路牌"));
+    const ddPath = join(ROOT, "electron", "data-dir.ts");
+    const ddSrc = readFileSync(ddPath, "utf8");
+    const mainSrc = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+    (/app\.setPath\("userData",\s*resolveStartupUserData\(\)\)/.test(mainSrc) ? ok : fail)("【152】main.ts 的 setPath 走 resolveStartupUserData()（裸 env 判断不得回归）");
+    (/CODEX_HARNESS_USER_DATA/.test(ddSrc) ? ok : fail)("【152】env 覆盖优先级保留（CODEX_HARNESS_USER_DATA）");
+    (ddSrc.includes("data-dir.json") && ddSrc.includes("defaultUserDataDir") ? ok : fail)("【152】指路牌落在默认目录（appData 锚点）下的 data-dir.json");
+    (ddSrc.includes('base === "data-dir.json"') ? ok : fail)("【152】迁移排除指路牌本体（复制它会把新目录也标上旧指路）");
+    (/cpSync[\s\S]{0,200}recursive:\s*true/.test(ddSrc) ? ok : fail)("【152】迁移走递归复制（cpSync）");
+    (/catch[\s\S]{0,120}回退默认/.test(ddSrc) ? ok : fail)("【152】迁移失败回退默认目录（绝不静默丢数据）");
+    // data-dir.ts 必须是叶子：不得 import 项目内模块（否则 main.ts 模块体早期 import 会连带求值，【91】）
+    (!/from "\.\//.test(ddSrc) ? ok : fail)("【152】data-dir.ts 是叶子模块（不 import 项目内模块，【91】惰性求值纪律）");
+    const ipcSrc = readFileSync(join(ROOT, "electron", "features", "data-dir-ipc.ts"), "utf8");
+    (ipcSrc.includes("dataDir:read") && ipcSrc.includes("dataDir:prepare") ? ok : fail)("【152】dataDir IPC 两通道已注册");
+    (!ipcSrc.includes("dataDir:relaunch") ? ok : fail)("【152】不重复注册 relaunch（复用既有 app:relaunch）");
+    const genSrc = readFileSync(join(ROOT, "src", "features", "settings-general", "GeneralSettingsSection.tsx"), "utf8");
+    (genSrc.includes("prepareDataDir") && genSrc.includes("readDataDir") ? ok : fail)("【152】设置 → 通用页有数据目录入口（否则用户无处修改）");
+  }
+
   /* ══ 【9】原 L1929–L1974 ══ */
   {
 console.log(C.bold("\n【9】过程折叠不得吞掉正文（长正文/最终答复永远是正文锚点）"));
