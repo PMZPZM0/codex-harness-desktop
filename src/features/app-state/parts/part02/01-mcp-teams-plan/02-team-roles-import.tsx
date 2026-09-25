@@ -86,18 +86,31 @@ bag.teamThreadConfigRef = teamThreadConfigRef as typeof bag.teamThreadConfigRef;
 
   // 把「threadId → 团队成员解析」注册进模块级注册表，聊天区深处的 ItemView 渲染
   // team_member_invoke 工具卡时能查到成员头像（不逐层传 props，见 entity-avatar.ts 注释）
+  // ⛔⛔ 09-25 事故修复：这个 ref 原先只在「本次运行内发起会话」时写入 ⇒ 重启后为空，
+  //    于是 ①成员调度拿不到 teamId（4/4 全失败，错误「专家团「」不存在」）
+  //    ②工具卡解析不出成员身份。现在**启动时从主进程持久映射灌满**（team-threads.json 是真相源），
+  //    再注册；之后再打开会话时按需回填（见上面的 effect）。
   useEffect(() => {
-    for (const [threadId, teamId] of bag.teamThreadMapRef.current) {
-      const team = bag.expertTeams.find((entry) => entry.teamId === teamId);
-      if (!team) continue;
-      registerThreadTeam(threadId, (memberId) => {
-        const member = [team.lead, ...team.members].find((entry) => entry.id === memberId);
-        if (!member) return null;
-        const isLead = member.id === team.lead.id;
-        return { id: member.id, name: member.name, label: expertRoleLabel(member, isLead), isLead };
-      });
-    }
-    return () => { for (const threadId of bag.teamThreadMapRef.current.keys()) unregisterThreadTeam(threadId); };
+    let alive = true;
+    const register = () => {
+      for (const [threadId, teamId] of bag.teamThreadMapRef.current) {
+        const team = bag.expertTeams.find((entry) => entry.teamId === teamId);
+        if (!team) continue;
+        registerThreadTeam(threadId, (memberId) => {
+          const member = [team.lead, ...team.members].find((entry) => entry.id === memberId);
+          if (!member) return null;
+          const isLead = member.id === team.lead.id;
+          return { id: member.id, name: member.name, label: expertRoleLabel(member, isLead), isLead };
+        });
+      }
+    };
+    register();
+    void window.codex.teamThreadsMap?.().then((map) => {
+      if (!alive || !map?.threads) return;
+      for (const [threadId, teamId] of Object.entries(map.threads)) bag.teamThreadMapRef.current.set(threadId, String(teamId));
+      register();   // 灌满后再注册一遍（含本次启动未打开过的会话）
+    }).catch(() => undefined);
+    return () => { alive = false; for (const threadId of bag.teamThreadMapRef.current.keys()) unregisterThreadTeam(threadId); };
   }, [bag.expertTeams]);
 
   // defer 预建的空会话：threadId -> 首条待注入角色。用户在该空会话发出第一条消息时，
