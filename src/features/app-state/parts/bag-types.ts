@@ -664,6 +664,8 @@ export interface Bag {
   setUiFont: React.Dispatch<React.SetStateAction<string>>;
   settingsOpen: boolean;
   setSettingsOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  companyModeOpen: boolean;
+  setCompanyModeOpen: React.Dispatch<React.SetStateAction<boolean>>;
   pptokenCardOff: boolean;
   setPptokenCardOff: React.Dispatch<React.SetStateAction<boolean>>;
   settingsPage: import("../../app-view/types.ts").SettingsPage;

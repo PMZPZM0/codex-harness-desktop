@@ -10,6 +10,7 @@ import {
   ArrowUp,
   ArrowUpRight,
   Bot,
+  Building2,
   Brain,
   QrCode,
   Star,
@@ -190,6 +191,7 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
     setRemoteUrl,
     setSettingsOpen,
     setSettingsPage,
+    setCompanyModeOpen,
     setSidebarCollapsed,
     setSidebarFlyout,
     setTheme,
@@ -262,6 +264,7 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
               <button className="sidebar-tab" onClick={() => { setSettingsPage("skills"); setSettingsOpen(true); setMobileNav(false); }}><Zap size={15} /><span>技能中心</span></button>
               <button className="sidebar-tab" onClick={() => { setSettingsPage("plugins"); setSettingsOpen(true); setMobileNav(false); }}><Store size={15} /><span>插件市场</span></button>
               <button className="sidebar-tab" onClick={() => { setSettingsPage("agentteam"); setSettingsOpen(true); setMobileNav(false); }}><Users size={15} /><span>专家/专家团</span></button>
+              <button className="sidebar-tab" onClick={() => { setCompanyModeOpen(true); setMobileNav(false); }}><Building2 size={15} /><span>公司模式</span></button>
               <button className="sidebar-tab" onClick={() => { setSettingsPage("backup"); setSettingsOpen(true); setMobileNav(false); }}><Download size={15} /><span>会话备份</span></button>
             </div>
             <button className="search-box" title={`搜索任务与操作（${hk("Ctrl+K")}）`} onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={15} /><span>搜索任务</span><kbd>{hk("Ctrl+K")}</kbd></button>
