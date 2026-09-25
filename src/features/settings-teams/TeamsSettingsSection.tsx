@@ -5,17 +5,17 @@
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
 import { PageInfo } from "../../components/SettingsHead";
-import { Briefcase, FolderOpen, MessageSquarePlus, PenLine, Plus, RefreshCw, Rocket, RotateCcw, Tag, Trash2, Users, Workflow, X } from "lucide-react";
+import { Briefcase, Building2, FolderOpen, MessageSquarePlus, PenLine, Plus, RefreshCw, Rocket, RotateCcw, Tag, Trash2, Users, Workflow, X } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { expertIconOf } from "../../lib/expert-icon-of";
 import { expertRoleLabel } from "../../lib/expert-role-label";
 import { AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
 import { ExpertTeamEditorModal } from "../../features/experts-teams";
 
-export type TeamsSettingsSectionProps = { openNewExpertTeam: any; resetExpertTeams: any; refreshExpertTeams: any; resourceLoading: any; expertTeams: any; toggleExpertTeamEnabled: any; categoryLabel: any; expertTeamMemberRunning: any; expertTeamMemberDirect: any; startMemberDirectSession: any; teamCwdMap: any; workspace: any; chooseTeamCwd: any; clearTeamCwd: any; startTeamSession: any; expertTeamRunning: any; openEditExpertTeam: any; deleteExpertTeam: any; expertTeamEditorOpen: any; expertTeamDraft: any; setExpertTeamDraft: any; setExpertTeamEditorOpen: any; saveExpertTeam: any };
+export type TeamsSettingsSectionProps = { openNewExpertTeam: any; resetExpertTeams: any; refreshExpertTeams: any; resourceLoading: any; expertTeams: any; toggleExpertTeamEnabled: any; categoryLabel: any; expertTeamMemberRunning: any; expertTeamMemberDirect: any; startMemberDirectSession: any; teamCwdMap: any; workspace: any; chooseTeamCwd: any; clearTeamCwd: any; startTeamSession: any; expertTeamRunning: any; openEditExpertTeam: any; deleteExpertTeam: any; expertTeamEditorOpen: any; expertTeamDraft: any; setExpertTeamDraft: any; setExpertTeamEditorOpen: any; saveExpertTeam: any; openTeamOfficePreview: (teamId: string) => void };
 
 export function TeamsSettingsSection(props: TeamsSettingsSectionProps) {
-  const { openNewExpertTeam, resetExpertTeams, refreshExpertTeams, resourceLoading, expertTeams, toggleExpertTeamEnabled, categoryLabel, expertTeamMemberRunning, expertTeamMemberDirect, startMemberDirectSession, teamCwdMap, workspace, chooseTeamCwd, clearTeamCwd, startTeamSession, expertTeamRunning, openEditExpertTeam, deleteExpertTeam, expertTeamEditorOpen, expertTeamDraft, setExpertTeamDraft, setExpertTeamEditorOpen, saveExpertTeam } = props;
+  const { openNewExpertTeam, resetExpertTeams, refreshExpertTeams, resourceLoading, expertTeams, toggleExpertTeamEnabled, categoryLabel, expertTeamMemberRunning, expertTeamMemberDirect, startMemberDirectSession, teamCwdMap, workspace, chooseTeamCwd, clearTeamCwd, startTeamSession, expertTeamRunning, openEditExpertTeam, deleteExpertTeam, expertTeamEditorOpen, expertTeamDraft, setExpertTeamDraft, setExpertTeamEditorOpen, saveExpertTeam, openTeamOfficePreview } = props;
   return (
     <>
       <section className="settings-section stack expert-team-center">
@@ -58,6 +58,7 @@ export function TeamsSettingsSection(props: TeamsSettingsSectionProps) {
                       <div className="expert-team-quickprompts">{team.quickPrompts.slice(0, 3).map((prompt: any, index: any) => <button key={index} className="expert-team-quick" title={prompt.zh} onClick={() => void startTeamSession(team, prompt.zh)}><MessageSquarePlus size={11} />{prompt.zh}</button>)}</div>
                       <div className="subagent-card-actions">
                         <button className="primary-setting" disabled={expertTeamRunning === team.teamId} onClick={() => void startTeamSession(team, "")}><Rocket size={13} />{expertTeamRunning === team.teamId ? "创建中…" : "发起会话"}</button>
+                        <button className="secondary-setting" title="预览该团队的虚拟办公室（成员状态实时可视化）" onClick={() => openTeamOfficePreview(team.teamId)}><Building2 size={12} />办公室预览</button>
                         <button className="secondary-setting" onClick={() => openEditExpertTeam(team)}><PenLine size={12} />编辑</button>
                         <button className="icon-button" title="删除" onClick={() => void deleteExpertTeam(team.teamId)}><Trash2 size={13} /></button>
                       </div>

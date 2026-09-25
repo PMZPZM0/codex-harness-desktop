@@ -1343,33 +1343,44 @@ w.postMessage({id:1,op:"list",root});
     );
   }
 
-  /* ══ 【154】公司模式（09-25 新域）═════════════════════════════════════
-     专家团的公司化可视化：侧栏入口 + 全屏浮层（组织树动画 + 员工看板）。
-     数据零新 IPC（复用 teams / team-threads:map / runningThreadIds）—— 若有人
-     给它加新通道，说明在重复造已有能力，打红。 */
+  /* ══ 【154】专家团办公室预览（09-25 新域 team-office）══════════════════
+     ⛔ 09-25 用户定稿：独立「公司模式」侧栏菜单**删掉**（「这样没啥用，不方便」），
+        改成**专家团专属预览**（在「专家 / 专家团」页每个团队卡片上进入）。
+     形态 = Marvis 式拟人化办公室（单张 SVG 插画 + 三态动画）：
+        v1 折线组织图被否「歪歪扭扭」；v2 div 纯色块被否「不好看」⇒ 断言钉死 SVG 插画形态。
+     数据零新 IPC（复用 teams / team-threads:map / runningThreadIds）—— 若有人给它加新通道，
+     说明在重复造已有能力，打红。 */
   {
-    console.log(C.bold("\n【154】公司模式（company-mode 域）"));
+    console.log(C.bold("\n【154】专家团办公室预览（team-office 域）"));
+    /* 不得再有独立侧栏入口 */
     const shellSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8");
-    (shellSrc.includes("setCompanyModeOpen(true)") ? ok : fail)("【154】侧栏有「公司模式」入口");
-    const viewPath = join(ROOT, "src", "features", "company-mode", "CompanyModeView.tsx");
+    (!shellSrc.includes("CompanyMode") && !shellSrc.includes("companyPreview") ? ok : fail)("【154】侧栏不得有独立「公司模式」入口（已收成专家团专属预览）");
+    /* 入口 = 专家团页卡片按钮 + registry 接线 */
+    const teamsSrc = readFileSync(join(ROOT, "src", "features", "settings-teams", "TeamsSettingsSection.tsx"), "utf8");
+    (teamsSrc.includes("openTeamOfficePreview(team.teamId)") ? ok : fail)("【154】专家团页每个团队卡片有「办公室预览」入口");
+    const registrySrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
+    (registrySrc.includes("openTeamOfficePreview={(teamId: string) => app.setCompanyPreviewTeamId(teamId)}") ? ok : fail)("【154】registry 已把预览入口接到 bag（专家团页是 props 面）");
+    /* 组件与数据面 */
+    const viewPath = join(ROOT, "src", "features", "team-office", "TeamOfficePreview.tsx");
     const viewSrc = existsSync(viewPath) ? readFileSync(viewPath, "utf8") : "";
     (viewSrc.includes("teamThreadsMap()") ? ok : fail)("【154】成员会话映射走既有 team-threads:map（⛔ 不得新增重复通道）");
-    (viewSrc.includes("runningThreadIds") ? ok : fail)("【154】节点运行态来自 runningThreadIds");
+    (viewSrc.includes("runningThreadIds") ? ok : fail)("【154】角色运行态来自 runningThreadIds");
     (!/ipcMain\.handle/.test(viewSrc) ? ok : fail)("【154】视图组件内不得直接注册 IPC");
     const appViewSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView.tsx"), "utf8");
-    (appViewSrc.includes("<CompanyModeView") && appViewSrc.includes("open={app.companyModeOpen}") ? ok : fail)("【154】公司模式浮层已挂载进 AppView（显式 props，域组件禁收 app）");
+    (appViewSrc.includes("<TeamOfficePreview") && appViewSrc.includes("teamId={app.companyPreviewTeamId}") ? ok : fail)("【154】预览浮层已挂载进 AppView（显式 props，域组件禁收 app）");
     const bagSrc = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "bag-types.ts"), "utf8");
-    (bagSrc.includes("companyModeOpen: boolean;") ? ok : fail)("【152→154】companyModeOpen 已登记 bag-types");
+    (bagSrc.includes("companyPreviewTeamId: string | null;") ? ok : fail)("【154】companyPreviewTeamId 已登记 bag-types");
     const cssEntry = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
-    (cssEntry.includes("./styles/20-company-mode") ? ok : fail)("【154】company-mode 样式已接入 styles.css");
-    const officeCss = existsSync(join(ROOT, "src", "styles", "20-company-mode.css")) ? readFileSync(join(ROOT, "src", "styles", "20-company-mode.css"), "utf8") : "";
-    /* 形态守卫（09-25 v2）：用户明确要求「Marvis 马维斯那种效果」= 拟人化办公室 + 状态动画，
-       ⛔ 不是组织架构折线图（v1 被否：「歪歪扭扭，跟 Marvis 差远了」）。 */
-    const officePath = join(ROOT, "src", "features", "company-mode", "OfficeScene.tsx");
+    (cssEntry.includes("./styles/20-team-office") ? ok : fail)("【154】办公室样式已接入 styles.css（20-team-office）");
+    const officeCss = existsSync(join(ROOT, "src", "styles", "20-team-office.css")) ? readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8") : "";
+    /* 形态守卫（v3）：单张 SVG 插画（统一描边）+ 三态 + 动画，⛔ 不许退回折线图/div 色块 */
+    const officePath = join(ROOT, "src", "features", "team-office", "OfficeScene.tsx");
     const officeSrc = existsSync(officePath) ? readFileSync(officePath, "utf8") : "";
-    (officeSrc.includes("office-worker") && officeSrc.includes('"never"') && officeSrc.includes("state-${state}") ? ok : fail)("【154】虚拟办公室场景存在（拟人化角色 + 三态：工作/空闲/空工位）");
-    (/.office-desk\s*\{/.test(officeCss) && /.office-worker\s*\{/.test(officeCss) ? ok : fail)("【154】办公室样式（工位/小人）齐全");
-    (/office-type-a|office-breathe|office-zzz/.test(officeCss) ? ok : fail)("【154】角色动画（敲键盘/呼吸/打盹）存在");
+    (officeSrc.includes("ofc-worker") && officeSrc.includes('"never"') && officeSrc.includes("state-${state}") ? ok : fail)("【154】虚拟办公室场景存在（拟人化角色 + 三态：工作/空闲/空工位）");
+    (officeSrc.includes("<svg") && /stroke=\{C\.ink\}/.test(officeSrc) ? ok : fail)("【154】办公室为单张 SVG 插画（统一描边，⛔ 不许退回 div 纯色块）");
+    (/.ofc-desk/.test(officeCss) && /.ofc-bubble/.test(officeCss) ? ok : fail)("【154】办公室样式（工位/角色）齐全");
+    (/ofc-type-a|ofc-zzz|ofc-sip/.test(officeCss) ? ok : fail)("【154】角色动画（敲键盘/打盹/端咖啡）存在");
   }
+
   }
 }
