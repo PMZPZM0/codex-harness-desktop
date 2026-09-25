@@ -27,6 +27,7 @@ function DataDirEditor({ currentPath, setNotice }: { currentPath: string; setNot
   const [saved, setSaved] = useState(false);
   const [msg, setMsg] = useState("");
   const [progress, setProgress] = useState<{ done: number; total: number; percent: number } | null>(null);
+  const [restartHint, setRestartHint] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -87,6 +88,7 @@ function DataDirEditor({ currentPath, setNotice }: { currentPath: string; setNot
   };
   const restart = async () => {
     setBusy(true);
+    setRestartHint(true); // ⛔ 重启后到窗口出现之间有一段无界面期（收尾同步/正常启动），明确告知避免「以为没反应」
     await window.codex.relaunchApp();
   };
 
@@ -124,7 +126,8 @@ function DataDirEditor({ currentPath, setNotice }: { currentPath: string; setNot
         </div>
       )}
       {busy && !progress && <p className="settings-card-hint">正在处理…</p>}
-      {msg && <p className="settings-card-hint">{msg}{saved && <button className="secondary-setting" style={{ marginLeft: 10 }} disabled={busy} onClick={() => void restart()}><RefreshCw size={13} />立即重启</button>}</p>}
+      {msg && <p className="settings-card-hint">{msg}{saved && <button className="secondary-setting" style={{ marginLeft: 10 }} disabled={busy || restartHint} onClick={() => void restart()}><RefreshCw size={13} />立即重启</button>}</p>}
+      {restartHint && <p className="settings-card-hint"><strong>正在重启应用…</strong> 新目录首次启动会做最后的收尾同步，窗口出现前可能需要数秒到几十秒 —— <strong>请耐心等待，不要重复启动</strong>。之后每次启动都恢复正常速度。</p>}
       {info?.migratePending && !msg && <p className="settings-card-hint">数据迁移待收尾：下次启动会自动做秒级增量同步。</p>}
     </>
   );

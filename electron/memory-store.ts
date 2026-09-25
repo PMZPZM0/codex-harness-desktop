@@ -315,12 +315,41 @@ export class MemoryStore {
   private async load() {
     if (this.loaded) return;
     this.loaded = true;
-    try { this.records = JSON.parse(await fs.readFile(this.file, "utf8")); }
-    catch (error: any) { if (error.code !== "ENOENT") throw error; }
+    let raw: string;
+    try {
+      raw = await fs.readFile(this.file, "utf8");
+    } catch (error: any) {
+      if (error.code !== "ENOENT") throw error;
+      return;
+    }
+    try {
+      this.records = JSON.parse(raw);
+      return;
+    } catch { /* 落到自愈 */ }
+    // ⛔ 自愈：文件损坏（09-25 实测出现「合法 JSON 之后被并发写追加了一截文本」的撕裂形态）
+    //    ⇒ 备份损坏原件，按「最长可解析前缀」恢复，绝不因坏文件让 memory:list 永远报错。
+    const backup = this.file + ".corrupt-" + Date.now();
+    await fs.writeFile(backup, raw, "utf8");
+    let recovered = 0;
+    for (let end = raw.length; end > 0; end--) {
+      if (raw[end - 1] !== "]") continue; // 数组结束候选（本文件就是 JSON.stringify(list) 的形态）
+      try {
+        const parsed = JSON.parse(raw.slice(0, end));
+        if (!Array.isArray(parsed)) continue;
+        await fs.writeFile(this.file, JSON.stringify(parsed, null, 2) + "\n", "utf8"); // 原子化后的 save 会在下次写时收紧
+        this.records = parsed;
+        recovered = parsed.length;
+        break;
+      } catch { /* 继续向前找 */ }
+    }
+    console.warn(`[memory] memory.json 损坏已自愈：备份 ${path.basename(backup)}，恢复 ${recovered} 条` + (recovered ? "" : "（恢复失败，按空列表启动；损坏原件已保留）"));
   }
 
+  /** ⛔ 原子写：先写同盘临时文件再 rename —— 直接 writeFile 在并发/崩溃时会留下撕裂文件
+   *  （09-25 实测：memory.json 尾部被追加进另一段文本，memory:list 永远报错）。 */
   private save(list: MemoryRecord[] = this.records) {
-    return fs.writeFile(this.file, JSON.stringify(list, null, 2), "utf8");
+    const tmp = this.file + ".tmp";
+    return fs.writeFile(tmp, JSON.stringify(list, null, 2), "utf8").then(() => fs.rename(tmp, this.file));
   }
 
   private async remoteRequest(route: string, body: unknown) {
