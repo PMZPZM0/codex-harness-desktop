@@ -1342,5 +1342,26 @@ w.postMessage({id:1,op:"list",root});
       "【138】tick 走 runTickSafely 包装（catch 住并记日志，下一轮照常）"
     );
   }
+
+  /* ══ 【154】公司模式（09-25 新域）═════════════════════════════════════
+     专家团的公司化可视化：侧栏入口 + 全屏浮层（组织树动画 + 员工看板）。
+     数据零新 IPC（复用 teams / team-threads:map / runningThreadIds）—— 若有人
+     给它加新通道，说明在重复造已有能力，打红。 */
+  {
+    console.log(C.bold("\n【154】公司模式（company-mode 域）"));
+    const shellSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8");
+    (shellSrc.includes("setCompanyModeOpen(true)") ? ok : fail)("【154】侧栏有「公司模式」入口");
+    const viewPath = join(ROOT, "src", "features", "company-mode", "CompanyModeView.tsx");
+    const viewSrc = existsSync(viewPath) ? readFileSync(viewPath, "utf8") : "";
+    (viewSrc.includes("teamThreadsMap()") ? ok : fail)("【154】成员会话映射走既有 team-threads:map（⛔ 不得新增重复通道）");
+    (viewSrc.includes("runningThreadIds") ? ok : fail)("【154】节点运行态来自 runningThreadIds");
+    (!/ipcMain\.handle/.test(viewSrc) ? ok : fail)("【154】视图组件内不得直接注册 IPC");
+    const appViewSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView.tsx"), "utf8");
+    (appViewSrc.includes("<CompanyModeView") && appViewSrc.includes("open={app.companyModeOpen}") ? ok : fail)("【154】公司模式浮层已挂载进 AppView（显式 props，域组件禁收 app）");
+    const bagSrc = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "bag-types.ts"), "utf8");
+    (bagSrc.includes("companyModeOpen: boolean;") ? ok : fail)("【152→154】companyModeOpen 已登记 bag-types");
+    const cssEntry = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+    (cssEntry.includes("./styles/20-company-mode") ? ok : fail)("【154】company-mode 样式已接入 styles.css");
+  }
   }
 }

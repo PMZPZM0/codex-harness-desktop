@@ -156,6 +156,7 @@ import { AppViewRemoteApproval } from "./AppView/04-remote-approval";
 import { AppViewRemoteConsole } from "./AppView/05-remote-console";
 import { AppViewTaskComposer } from "./AppView/06-task-composer";
 import { AppViewMemoryPanel } from "./AppView/07-memory-panel";
+import { CompanyModeView } from "../company-mode/CompanyModeView";
 import { AppViewSettingsSheet } from "./AppView/08-settings-sheet";
 import { AppViewFilePreviewEditor } from "./AppView/09-file-preview-editor";
 
@@ -456,6 +457,16 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {/* 记忆中心：设置页「记忆」只做总览，条目浏览 / 常驻记忆编辑 / 存储切换都在这个大弹窗里完成 */}
       <AppViewMemoryPanel app={app} />
       <AppViewSettingsSheet app={app} />
+      {/* 公司模式（09-25）：专家团的公司化组织架构可视化 —— 中间对话框保持正常，这里只是「第三只眼」 */}
+      <CompanyModeView
+        open={app.companyModeOpen}
+        onClose={() => app.setCompanyModeOpen(false)}
+        teams={app.expertTeams}
+        threads={app.threads}
+        runningThreadIds={app.runningThreadIds}
+        openThread={(threadId) => void openThread(threadId)}
+        onOpenTeamCenter={() => { app.setSettingsPage("agentteam"); app.setSettingsOpen(true); }}
+      />
       {shortcutsOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShortcutsOpen(false); }}><div className="shortcuts-modal" role="dialog" aria-modal="true" aria-label="键盘快捷键"><header><div><Keyboard size={17} /><strong>键盘快捷键</strong><span className="esc-hint" title="按 ESC 关闭弹窗">ESC</span></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setShortcutsOpen(false)}><X size={17} /></button></header><div className="shortcuts-body">{SHORTCUT_GROUPS.map((group) => <section className="shortcuts-group" key={group.group}><h3>{group.group}</h3>{group.shortcuts.map((item) => <div className="shortcuts-row" key={item.keys.join("+")}><span className="shortcut-desc">{item.desc}</span><span className="shortcut-keys">{item.keys.map((key, index) => <kbd key={index}>{key}</kbd>)}</span></div>)}</section>)}<footer><span className="muted">部分快捷键在输入框聚焦时优先用于文本编辑。</span></footer></div></div></div>}
       {marketPreview && <MarketPreviewModal state={marketPreview} onClose={() => setMarketPreview(null)} />}
       {skillInstall && <SkillInstallModal state={skillInstall} onClose={() => setSkillInstall(null)} onUse={() => { const skill = { name: skillInstall.skill.name, description: skillInstall.skill.description }; setSelectedSkills((current) => current.some((entry) => entry.name === skill.name) ? current : [...current, skill]); setSkillInstall(null); setSettingsOpen(false); setNotice(`已引用技能：${skill.name}`); }} />}

@@ -121,6 +121,10 @@ bag.uiFont = uiFont as typeof bag.uiFont; bag.setUiFont = setUiFont as typeof ba
   const [settingsOpen, setSettingsOpen] = useState(false);
 bag.settingsOpen = settingsOpen as typeof bag.settingsOpen; bag.setSettingsOpen = setSettingsOpen as typeof bag.setSettingsOpen;
 
+  // 公司模式（09-25）：专家团的公司化组织架构可视化浮层（侧栏「公司模式」入口）
+  const [companyModeOpen, setCompanyModeOpen] = useState(false);
+bag.companyModeOpen = companyModeOpen as typeof bag.companyModeOpen; bag.setCompanyModeOpen = setCompanyModeOpen as typeof bag.setCompanyModeOpen;
+
   // 通知归属判定用的镜像（09-20）：setNotice 是 useCallback 稳定引用，闭包读 ref 拿最新开关状态
   bag.settingsOpenRef.current = bag.settingsOpen;
 
@@ -209,5 +213,5 @@ bag.runtimePercent = runtimePercent as typeof bag.runtimePercent; bag.setRuntime
 
   const [runtimeStage, setRuntimeStage] = useState<Record<string, string>>({});
 bag.runtimeStage = runtimeStage as typeof bag.runtimeStage; bag.setRuntimeStage = setRuntimeStage as typeof bag.setRuntimeStage;
-  return { runUpdateCheck, runUpdateDownload, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, showModelGuide, setShowModelGuide, quickSetupBusy, setQuickSetupBusy, quickSetupError, setQuickSetupError, relaySetupBusy, setRelaySetupBusy, relaySetupError, setRelaySetupError, modelGuideDoneRef, envCheckOpen, setEnvCheckOpen, envInstalling, setEnvInstalling, envCheckDoneRef, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
+  return { runUpdateCheck, runUpdateDownload, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyModeOpen, setCompanyModeOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, showModelGuide, setShowModelGuide, quickSetupBusy, setQuickSetupBusy, quickSetupError, setQuickSetupError, relaySetupBusy, setRelaySetupBusy, relaySetupError, setRelaySetupError, modelGuideDoneRef, envCheckOpen, setEnvCheckOpen, envInstalling, setEnvInstalling, envCheckDoneRef, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
 }
