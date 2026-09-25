@@ -189,8 +189,8 @@ bag.resolveThreadReferences = resolveThreadReferences as typeof bag.resolveThrea
   async function editResend(turnId: string, item: ThreadItem) {
     if (!bag.thread) return;
     if (bag.sending || bag.activeTurnId) { bag.setNotice("请先停止当前任务，再编辑重发"); return; }
-    // 并发闸门：编辑重发会在本会话开跑（若本会话没在跑就是新增一路并发）
-    if (!bag.runningThreadIdsRef.current.has(bag.thread.id) && bag.atConcurrencyLimit(bag.thread.id)) { bag.notifyConcurrencyLimit(bag.thread.id); return; }
+    /* ⛔ 原先这里有一道并发闸门（编辑重发 = 新增一路并发，超限就拦）。09-25 用户要求删除并发限制
+       ⇒ 移除；编辑重发不再受「同时跑几路」约束。 */
     if (!bag.customModel || !bag.selectedModel) { bag.setNotice("请先配置并启用自定义模型"); bag.setSettingsOpen(true); return; }
     const text = (item.content ?? []).filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n");
     if (!text.trim()) { bag.setNotice("该消息没有可编辑的文本"); return; }

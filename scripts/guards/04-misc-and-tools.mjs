@@ -482,18 +482,13 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     !dp.canDispatchFrom({ depth: dp.MAX_DEPTH }).ok
       ? ok(`L3 深度闸：depth >= MAX_DEPTH(${dp.MAX_DEPTH}) 拒绝`)
       : fail("深度闸失效 —— 调用链可以无限延长");
-    // L4 并发闸
-    !dp.admitDispatch({ running: dp.MAX_CONCURRENT_DISPATCH }).ok
-      ? ok(`L4 并发闸：running >= ${dp.MAX_CONCURRENT_DISPATCH} 时拒绝`)
-      : fail("并发闸失效 —— 模型一口气发十几个会把引擎压垮");
-    /* 09-25 用户要求「调度也提到 10」。⚠️ 断言取值本身，不是「常量存在」——
-       变异测试判据：把它改回 4 ⇒ 这条必须红（否则文案在承诺一个没验的数字）。 */
-    dp.MAX_CONCURRENT_DISPATCH === 10
-      ? ok("L4 调度并发上限 = 10（09-25 用户要求，原 4）")
-      : fail(`调度并发上限变了：${dp.MAX_CONCURRENT_DISPATCH}（用户要求 10）`);
-    dp.admitDispatch({ running: 9 }).ok && !dp.admitDispatch({ running: 10 }).ok
-      ? ok("L4 边界：9 放行 / 10 拒绝（新上限两侧各验一次）")
-      : fail("调度并发边界与常量不一致 —— 上限形同虚设或多挡一路");
+    /* L4「总量闸」已于 09-25 **删除**（用户：「直接把并发限制删了吧」；与渲染层供应商并发闸一起）。
+       ⛔ 判据 = **取值**（产物里不得再导出 admitDispatch / maxConcurrentDispatch / 档位常量），
+       不是"常量存在"——用户要求的是删除，不许悄悄复活。L3 深度闸（canDispatchFrom）仍保留。 */
+    (typeof dp.admitDispatch !== "function" && typeof dp.maxConcurrentDispatch !== "function"
+      && dp.MAX_CONCURRENT_DISPATCH_CONSERVATIVE === undefined && dp.MAX_CONCURRENT_DISPATCH_HIGH === undefined
+      ? ok("L4 调度并发闸已删除（用户 09-25 要求；保留 L3 深度闸）")
+      : fail("调度并发闸又出现了 —— 用户 09-25 明确要求删除，不许复活"));
     const clipped = dp.clipDispatchOutput("x".repeat(dp.MAX_OUTPUT_CHARS + 500), "th-1");
     clipped.length <= dp.MAX_OUTPUT_CHARS && /th-1/.test(clipped)
       ? ok("回传输出超长被截断且指向完整会话（不撑爆调用方上下文）")

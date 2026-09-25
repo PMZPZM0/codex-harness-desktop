@@ -9,7 +9,6 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import "@xterm/xterm/css/xterm.css";
 import { DEFAULT_EFFORT, pickDefaultEffort, normalizeEffort, ALL_EFFORTS, declaredModelEfforts } from "../../../../../lib/effort";
 import { matchModelSpec, loadExternalSpecs, formatTokenCount } from "../../../../../lib/model-specs";
-import { concurrencyExceeded, DEFAULT_MAX_CONCURRENCY, normalizeMaxConcurrency } from "../../../../../lib/concurrency.mjs";
 import { performRelayLogin, resolveRelayAutoTarget, resolveRelayTarget, resolveRelayKeyTarget, writeRelayActive, readRelayActive, type RelayActive } from "../../../../../lib/relay";
 import { OFFICIAL_MODELS } from "../../../../../lib/official-models";
 import { useFilePreview } from "../../../../../hooks/useFilePreview";
@@ -32,7 +31,7 @@ bag.providerAutoOpenRef = providerAutoOpenRef as typeof bag.providerAutoOpenRef;
     if (!target) return;
     bag.providerAutoOpenRef.current = true;
     bag.setEditingProvider(target.provider);
-    bag.setCustomDraft({ provider: target.provider, name: target.name, model: target.model, baseUrl: target.baseUrl, contextWindow: String(target.contextWindow ?? 128000), wireApi: target.wireApi ?? "responses", apiKey: "", models: target.models ?? (target.model ? [{ id: target.model }] : []), enabled: target.enabled ?? true, maxConcurrency: String(normalizeMaxConcurrency(target.maxConcurrency)) });
+    bag.setCustomDraft({ provider: target.provider, name: target.name, model: target.model, baseUrl: target.baseUrl, contextWindow: String(target.contextWindow ?? 128000), wireApi: target.wireApi ?? "responses", apiKey: "", models: target.models ?? (target.model ? [{ id: target.model }] : []), enabled: target.enabled ?? true });
   }, [bag.settingsOpen, bag.settingsPage, bag.customModel, bag.providersList, bag.editingProvider]);
 
   // 供应商切换「待重启生效」：切换只保存配置不重启引擎（不打断正在运行的会话），

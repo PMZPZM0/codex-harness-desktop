@@ -46,13 +46,8 @@ export async function send(bag: Bag, event?: FormEvent) {
     }
     if (!value && bag.images.length === 0 && bag.attachedFiles.length === 0) return;
     if (bag.sendInFlightRef.current) return;
-    // ⛔ 并发闸门（09-19）：这条消息会让**这个会话开始跑**——若该会话当前没在跑，
-    //   就是新增一路并发，必须受供应商上限约束（上限来源见「并发闸门」段）。
-    //   已在跑的会话（追加消息/排队释放）不算新增，直接放行。
-    const gateThreadId = bag.threadRef.current?.id ?? "";
-    if (!gateThreadId || !bag.runningThreadIdsRef.current.has(gateThreadId)) {
-      if (bag.atConcurrencyLimit(gateThreadId)) { bag.notifyConcurrencyLimit(gateThreadId); return; }
-    }
+    /* ⛔ 原先这里有一道并发闸门（09-19）：消息会让该会话开始跑，若它没在跑就算新增一路并发、
+       超限就拦。09-25 用户要求删除并发限制 ⇒ 移除。上游限流仍由引擎默认重试/退避兜底。 */
     // 用户手动发消息：只取消**当前会话**等待中的 429 自动重试（手动发送优先，避免交错）。
     // ⛔ 不能全清：别的会话的重试链是独立的，清掉就等于「后台会话直接断」（用户实测的毛病）。
     const focusedForSend = bag.threadRef.current?.id;

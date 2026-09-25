@@ -794,11 +794,11 @@
       "note": "写指路牌并就地完成基础迁移（异步分批 + 进度）；重启后只做秒级增量同步。重启复用既有 app:relaunch"
     },
     {
-      "name": "readAppSettings",
-      "channel": "appSettings:read",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }>",
+ "name": "readAppSettings",
+ "channel": "appSettings:read",
+ "paramsImpl": "",
+ "paramsDecl": "",
+ "returns": "Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }>",
       "invokeArgs": "",
       "cast": null,
       "note": "应用级运行时开关（联网搜索等）"
@@ -806,8 +806,8 @@
     {
       "name": "saveAppSettings",
       "channel": "appSettings:save",
-      "paramsImpl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }",
-      "paramsDecl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }",
+ "paramsImpl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }",
+ "paramsDecl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }",
       "returns": "Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; adaptiveTone?: boolean }>",
       "invokeArgs": "patch",
       "cast": null,

@@ -287,7 +287,7 @@ bag.downloadSource = downloadSource as typeof bag.downloadSource; bag.setDownloa
   const [adaptiveTone, setAdaptiveTone] = useState(true);
 bag.adaptiveTone = adaptiveTone as typeof bag.adaptiveTone; bag.setAdaptiveTone = setAdaptiveTone as typeof bag.setAdaptiveTone;
 
-
+  /* ⛔ 这里原先是「放开并发上限」开发功能（默认关）。用户随后决定删除并发限制 ⇒ 连开关一起移除。 */
   const [restartPending, setRestartPending] = useState(false);
 bag.restartPending = restartPending as typeof bag.restartPending; bag.setRestartPending = setRestartPending as typeof bag.setRestartPending;
 
@@ -406,5 +406,9 @@ bag.changeHardwareAccel = changeHardwareAccel as typeof bag.changeHardwareAccel;
     void window.codex.saveAppSettings({ downloadSource: next }).catch(() => { bag.setDownloadSource(bag.downloadSource); bag.setNotice("下载源保存失败，请重试"); });
   };
 bag.changeDownloadSource = changeDownloadSource as typeof bag.changeDownloadSource;
+
+  /* ⛔ 这里原先是「放开并发上限」开发功能（09-25 加、默认关）。用户随后决定**删除并发限制**
+     （「直接把并发限制删了吧」）⇒ 开关与它控制的档位同步一并移除。
+     上游限流改由引擎默认重试/退避兜底（`electron/provider-retry.ts`：一个重试键都不写）。 */
   return { sawRunningTurnRef, optimisticConfirmed, openingThread, setOpeningThread, pending, setPending, diff, setDiff, tokenUsage, setTokenUsage, tokenUsageRef, tokenUsageByThreadRef, persistTokenUsageSnapshot, inheritTokenUsageSnapshot, tokenUsageTotalsRef, derivedTokenUsageRef, normalizeTokenUsage, turnStartedAtRef, activeModelRef, usageStats, setUsageStats, streamRafRef, pendingDeltaRef, lastFlushAtRef, rightOpen, setRightOpen, desktopAuto, setDesktopAuto, browserAuto, setBrowserAuto, autoCompactRatio, setAutoCompactRatio, hardwareAccel, setHardwareAccel, downloadSource, setDownloadSource, adaptiveTone, setAdaptiveTone, restartPending, setRestartPending, sshServers, setSshServers, sshLoaded, setSshLoaded, sshBusyId, setSshBusyId, sshTestingId, setSshTestingId, sshDraft, setSshDraft, sshSaving, setSshSaving, sshQuery, setSshQuery, sshFilter, setSshFilter, sshChecked, setSshChecked, sshBatchBusy, setSshBatchBusy, sshTerminal, setSshTerminal, sshExecTarget, setSshExecTarget, sshEditorTest, setSshEditorTest, toggleDesktopAuto, toggleBrowserAuto, changeAdaptiveTone, changeHardwareAccel, changeDownloadSource };
 }

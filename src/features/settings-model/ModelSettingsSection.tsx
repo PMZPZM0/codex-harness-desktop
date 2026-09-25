@@ -6,7 +6,6 @@
  */
 import { Check, ExternalLink, Eye, EyeOff, ListChecks, PenLine, Plus, RefreshCw, Rocket, Store, Trash2, X, Zap } from "lucide-react";
 import { PageInfo } from "../../components/SettingsHead";
-import { DEFAULT_MAX_CONCURRENCY, normalizeMaxConcurrency } from "../../lib/concurrency.mjs";
 import { AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
 import { Spinner } from "../../components/CardShell";
 import { FieldHelp } from "../../features/auth";
@@ -48,11 +47,11 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                               onClick={() => {
                                 if (isPseudoPptoken) {
                                   // 未配置的常驻赞助商卡：进表单预填 PPtoken 端点，填密钥保存即可用；启用态与卡片开关联动
-                                  setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff, maxConcurrency: String(DEFAULT_MAX_CONCURRENCY) });
+                                  setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
                                   setEditingProvider(null);
                                   return;
                                 }
-                                setEditingProvider(p.provider); setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true, maxConcurrency: String(normalizeMaxConcurrency(p.maxConcurrency)) });
+                                setEditingProvider(p.provider); setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true });
                               }}
                             >
                               <span
@@ -82,11 +81,11 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                                   // 行点击被拦住 → 用户点了开关（开启某个供应商）右侧还停在上一个的界面
                                   // （用户 09-14 实测截图）。逻辑与行点击保持一致。
                                   if (isPseudoPptoken) {
-                                    setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff, maxConcurrency: String(DEFAULT_MAX_CONCURRENCY) });
+                                    setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
                                     setEditingProvider(null);
                                   } else {
                                     setEditingProvider(p.provider);
-                                    setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true, maxConcurrency: String(normalizeMaxConcurrency(p.maxConcurrency)) });
+                                    setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true });
                                   }
                                 }}
                               >
@@ -101,7 +100,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                       {/* 不打开编辑器也能测当前生效供应商：切换/保存后最常用的自检动作。
                           失败会弹带排查清单的中文提示，认证类错误保留供应商原文。 */}
                       {customModel && <button className="add-provider-btn" title={`测试当前生效供应商：${customModel.name} · ${customModel.model}`} disabled={!!probingProvider} onClick={() => void probeActiveProvider()}>{probingProvider === "test" ? <Spinner /> : <RefreshCw size={13} />}测试当前供应商</button>}
-                      <button className="add-provider-btn" onClick={() => { providerAutoOpenRef.current = true; setCustomDraft({ provider: "custom" + (Date.now() % 1000), name: "", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true, maxConcurrency: String(DEFAULT_MAX_CONCURRENCY) }); setEditingProvider(null); }}><Plus size={13} />添加供应商</button>
+                      <button className="add-provider-btn" onClick={() => { providerAutoOpenRef.current = true; setCustomDraft({ provider: "custom" + (Date.now() % 1000), name: "", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true }); setEditingProvider(null); }}><Plus size={13} />添加供应商</button>
                     </div>
                     <div className="provider-form">
                       <div className="provider-detail-head">
@@ -168,7 +167,6 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                                           ? `custom${Date.now() % 1000}` : current.provider,
                                         name: current.name.trim() === preset.name ? "" : current.name,
                                         baseUrl: "",
-                                        maxConcurrency: String(DEFAULT_MAX_CONCURRENCY),
                                       };
                                     }
                                     let provider = current.provider;
@@ -183,7 +181,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                                       name: current.name.trim() ? current.name : preset.name,
                                       baseUrl: preset.url,
                                       // 见常量注释：本地单卡并发应串行，避免 KV 成倍占用
-                                      maxConcurrency: "1",
+                                     
                                       upstreamProtocol: "auto",
                                     };
                                   })}
@@ -212,23 +210,9 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                           <button type="button" className="key-toggle" title={showApiKey ? "隐藏" : "显示"} onClick={() => setShowApiKey((v: any) => !v)}>{showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}</button>
                         </span>
                       </label>
-                      {/* 最大并发（09-19 用户要求：供应商配置界面可自定义；09-25 默认值 3 → 10 = 上限）。
-                          限流是**同一个 Key 的共享配额**：同时跑的会话越多，越容易撞 429。
-                          这里给用户一个直接可调的旋钮 —— 调小 = 更省配额、更稳；调大 = 更能并行。 */}
-                      <label className="provider-field">
-                        <span>最大并发<FieldHelp text={"同一个 API Key 的配额是共享的：同时跑的会话越多，越容易触发上游 429 限流。\n\n· 调小 = 更省配额、更稳（本地单卡模型建议 1，多路并发会让 KV cache 成倍占用、明显变慢甚至 OOM）\n· 调大 = 更能并行，但更容易撞限流\n\n出现频繁限流时，调到 2~3 通常就能明显缓解。"} /></span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={10}
-                          step={1}
-                          value={customDraft.maxConcurrency ?? String(DEFAULT_MAX_CONCURRENCY)}
-                          onChange={(event) => setCustomDraft({ ...customDraft, maxConcurrency: event.target.value })}
-                          placeholder={String(DEFAULT_MAX_CONCURRENCY)}
-                        />
-                      </label>
-                      {/* 并发告警原本常驻在这里（>3 就显示一段警告）——09-19 按用户要求收进上面的 ? 号，
-                          界面不再为「你已经知道的事」常驻占位。 */}
+                      {/* ⛔ 原先这里有「最大并发」输入框（09-19 加）。09-25 用户要求删除并发限制
+                          （「直接把并发限制删了吧」）⇒ 输入框与 `maxConcurrency` 字段一起移除。
+                          上游限流仍由引擎的重试/退避兜底（provider-retry.ts：一个重试键都不写）。 */}
                       {/* 上游协议（09-19 用户要求：Claude 类通道常不认 responses，且自动判定不灵）。
                           ⛔ 与上面的「模型」不同：这是**上游网关说的协议**，本地协议桥按它决定转发方式。
                           默认「自动」够用；对话报错说"不支持/找不到"时，试试「Chat（兼容）」。
