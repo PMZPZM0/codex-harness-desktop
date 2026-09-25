@@ -986,9 +986,15 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
        ⛔ 只用 registry.npmjs.org 在国内基本必失败；GitHub 直连下载原生绑定同理。 */
     const installerSrc150 = readFileSync(join(ROOT, "scripts", "install-memory-mcp.cjs"), "utf8");
     (/registry\.npmmirror\.com/.test(installerSrc150) ? ok : fail)("【150】安装器带国内 registry 兜底（否则国内用户 npm install 必失败）");
+    /* 09-25 用户明确：「记忆 mcp 安装默认使用国内镜像」⇒ 断言**顺序**：npmmirror 必须排在 npmjs 之前 */
+    (installerSrc150.indexOf("registry.npmmirror.com") < installerSrc150.indexOf("registry.npmjs.org") ? ok : fail)(
+      "【150】⛔ 国内镜像必须是**默认首选**（npmmirror 在 npmjs 之前，不是失败后才退）"
+    );
+    (/registryReachable/.test(installerSrc150) ? ok : fail)("【150】换源前做可达性预检（不可达立刻换下一个，不让 npm 耗满超时）");
+    (/registry: inst\.via/.test(installerSrc150) ? ok : fail)("【150】安装结果回传实际用的 registry（UI/诊断能看出走的哪个源）");
     (/installViaRegistries/.test(installerSrc150) && /NPM_CONFIG_REGISTRY/.test(installerSrc150) ? ok : fail)("【150】安装器按序多 registry 重试（用户/公司自配的最高优先）");
     (/registry\.npmmirror\.com\/-\/binary/.test(installerSrc150) ? ok : fail)("【150】原生绑定走国内镜像（npmmirror /-/binary），GitHub 直连在国内不可靠");
-    (/cleanInstallDir/.test(installerSrc150) ? ok : fail)("【150】换 registry 前清 node_modules/lock（半成品会让下一通道报错）");
+    (/cleanInstallDir/.test(installerSrc150) && /\.npmrc/.test(installerSrc150) ? ok : fail)("【150】换 registry 前清 node_modules/lock/.npmrc（半成品与坏配置会让下一通道报错）");
   }
   }
 }

@@ -281,12 +281,13 @@ function verifySync(nodeExe) {
   });
 }
 
-/* ── npm registry 多通道（09-25 用户报「多数用户装不了：取不到 npm registry」）──
-   ⛔ 只用 registry.npmjs.org 在国内基本必失败 ⇒ 按序试：
-        ① 用户/公司自己配的（env NPM_CONFIG_REGISTRY / npm_config_registry，最高优先，不动它）
-        ② registry.npmmirror.com（国内镜像）
-        ③ registry.npmjs.org（官方，海外/兜底）
-   每次换通道前**清掉 node_modules 与 lock**：上一次失败留下的半成品会让下一次报奇怪的错。
+/* ── npm registry 默认走**国内镜像**（09-25 用户明确：「记忆 mcp 安装默认使用国内镜像」）──
+   顺序（前者优先）：
+     ① 用户/公司**显式**配的（env NPM_CONFIG_REGISTRY / npm_config_registry，尊重既有约定）
+     ② `registry.npmmirror.com`（**默认首选**：国内直连快且稳）
+     ③ `registry.npmjs.org`（仅当镜像不可用时兜底，海外可用）
+   ⛔ 不要把官方源放前面：国内不仅慢，很多网络直接取不到 ⇒ 失败率极高。
+   每次换通道前**清 node_modules / lock / .npmrc**：上一次失败留下的半成品与坏配置会让下一通道继续报错。
    ⛔ `--ignore-scripts` 必须保留（postinstall 会派生子进程，受限环境必挂，见文件头 ②）。 */
 const NPM_REGISTRIES = (() => {
   const fromEnv = [process.env.NPM_CONFIG_REGISTRY, process.env.npm_config_registry]
@@ -295,15 +296,38 @@ const NPM_REGISTRIES = (() => {
 })();
 
 function cleanInstallDir() {
-  for (const target of [path.join(ROOT, "node_modules"), path.join(ROOT, "package-lock.json")]) {
+  for (const target of [path.join(ROOT, "node_modules"), path.join(ROOT, "package-lock.json"), path.join(ROOT, ".npmrc")]) {
     try { fs.rmSync(target, { recursive: true, force: true }); } catch (e) { /* 忽略 */ }
   }
+}
+
+/** registry 可达性预检（5s 超时）：不可达就**立刻换下一个**，别让 npm 自己耗满超时再失败。
+    npm 的 `/-/ping` 是标准端点，npmmirror 与官方都支持。 */
+function registryReachable(registry) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ok, note) => { if (done) return; done = true; resolve({ ok, note }); };
+    try {
+      const req = https.get(`${registry.replace(/\/+$/, "")}/-/ping?write=true`, { headers: { "user-agent": "codex-harness-installer" } }, (res) => {
+        res.resume();
+        finish(res.statusCode === 200, `HTTP ${res.statusCode}`);
+      });
+      req.on("error", (e) => finish(false, String(e.message).slice(0, 80)));
+      req.setTimeout(5000, () => { req.destroy(); finish(false, "超时 5s"); });
+    } catch (e) { finish(false, String(e.message).slice(0, 80)); }
+  });
 }
 
 /** 依次换 registry 装；返回 { ok, via } 或 { ok:false, failures:[…] }。 */
 async function installViaRegistries(nodeExe) {
   const failures = [];
   for (const registry of NPM_REGISTRIES) {
+    const reach = await registryReachable(registry);
+    if (!reach.ok) {
+      log(`跳过不可达通道 ${registry}（${reach.note}）`);
+      failures.push(`${new URL(registry).host}：不可达（${reach.note}）`);
+      continue;
+    }
     cleanInstallDir();
     const npmArgs = [
       NPM_CLI, "install", "@vheins/local-memory-mcp@latest",
@@ -410,7 +434,8 @@ async function main() {
     process.exit(1);
   }
   log(`安装完成 v${after.version}，握手通过（ABI ${abi}）`);
-  emit({ ...v, node: nodeExe, abi, native: nat, installedAt: new Date().toISOString() });
+  // 带上实际使用的 registry：诊断/UI 要能看到「走的是哪个镜像」
+  emit({ ...v, node: nodeExe, abi, native: nat, registry: inst.via, installedAt: new Date().toISOString() });
   process.exit(0);
 }
 
