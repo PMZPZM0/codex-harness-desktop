@@ -355,7 +355,8 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         const usageThreadId = String(params.threadId ?? bag.threadRef.current?.id ?? "");
         if (usageThreadId) {
           const normalizedUsage = bag.normalizeTokenUsage(params.tokenUsage, usageThreadId);
-          bag.tokenUsageByThreadRef.current.set(usageThreadId, normalizedUsage);
+          // 落盘：切供应商会重启应用，不落盘则重启后进度"归零"（用户 09-25 报障）
+          bag.persistTokenUsageSnapshot(usageThreadId, normalizedUsage);
           if (usageThreadId === String(bag.threadRef.current?.id ?? "")) {
             bag.tokenUsageRef.current = normalizedUsage;
             bag.setTokenUsage(normalizedUsage);

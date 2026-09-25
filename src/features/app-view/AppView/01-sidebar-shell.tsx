@@ -202,6 +202,10 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
     sourcedThreads,
     sourcedChildrenOf,
     sourcedChildIds,
+    expandedDispatchBlocks,
+    toggleDispatchBlock,
+    clusterSplit,
+    renderClusterRow,
     renderThreadRow,
     sidebarCollapsed,
     sidebarFlyout,
@@ -249,24 +253,51 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
   /* 调度归属的统一渲染（09-25 用户：「项目里面也这样展示可以嘛」）：
      顶层会话渲染后，紧跟它**调度出去的会话**（缩进 + ↳ 标签），与「分类」视图完全一致。
      ⛔ 两个视图**共用这一份实现** —— 免得日后再分叉成「分类有、项目没有」。
-     ⛔ 调用方必须先用 sourcedChildIds 把子会话从**顶层**剔除，否则同一会话会显示两遍。 */
-  const renderDispatchedList = (entries: typeof listThreads) => entries.map((entry) => {
-    const children = sourcedChildrenOf[entry.id] ?? [];
+     ⛔ 调用方必须先用 sourcedChildIds 把子会话从**顶层**剔除，否则同一会话会显示两遍。
+     ⛔⛔ **必须先对整批做 expert 聚簇，再逐个挂子会话**（09-25 用户实测「专家团成员都在外面当成
+        主代理重复展示」）：早先写成 `entries.map(e => renderClusterList([e]))` ⇒ 每个**成员会话**
+        各自把本团那一簇再渲染一遍（成员都在 memberIds 里 ⇒ singles 为空、clusters 命中本团），
+        于是 1 个团 4 个成员 = 4 行重复的主会话行。整批切分一次才对。
+     ⛔ 默认**收起**（用户：「默认被调度和专家团会话都折叠状态」）：只显示「↳ 调度会话 · N」头，点开才展开。 */
+  const renderDispatchedList = (entries: typeof listThreads) => {
+    const { clusters, singles } = clusterSplit(entries);
+    const childrenAfter = (threadId: string) => {
+      const children = threadId ? (sourcedChildrenOf[threadId] ?? []) : [];
+      if (!children.length) return null;
+      const dispatchKey = `dispatch:${threadId}`;
+      const collapsed = !expandedDispatchBlocks.has(dispatchKey);
+      return (
+        <div className={`dispatch-children ${collapsed ? "collapsed" : "expanded"}`}>
+          <button type="button" className="dispatch-children-label" title={collapsed ? `展开 ${children.length} 个被调度会话` : "收起被调度会话"} onClick={() => toggleDispatchBlock(dispatchKey)}>
+            <ChevronDown size={11} className={`conv-section-chevron ${collapsed ? "" : "open"}`} />
+            <CornerDownRight size={11} />调度会话 · {children.length}
+          </button>
+          {!collapsed && children.map((child) => {
+            const childThread = listThreads.find((t) => t.id === child.threadId);
+            // ⛔ 子会话用聚类渲染：它本身可能就是某个**专家团的主会话**（成员已被顶层剔除，
+            //    走 renderThreadRow 会把那一批成员会话整块漏掉）。
+            return childThread ? <div className="dispatch-child" key={child.threadId}>{renderClusterList([childThread])}</div> : null;
+          })}
+        </div>
+      );
+    };
     return (
-      <div className="dispatch-parent" key={entry.id}>
-        {renderClusterList([entry])}
-        {children.length > 0 && (
-          <div className="dispatch-children">
-            <div className="dispatch-children-label"><CornerDownRight size={11} />调度会话 · {children.length}</div>
-            {children.map((child) => {
-              const childThread = listThreads.find((t) => t.id === child.threadId);
-              return childThread ? <div className="dispatch-child" key={child.threadId}>{renderThreadRow(childThread, "member")}</div> : null;
-            })}
+      <>
+        {clusters.map((cluster) => (
+          <div className="dispatch-parent" key={`cluster-${cluster.teamId}`}>
+            {renderClusterRow(cluster)}
+            {childrenAfter(cluster.lead?.id ?? "")}
           </div>
-        )}
-      </div>
+        ))}
+        {singles.map((entry) => (
+          <div className="dispatch-parent" key={entry.id}>
+            {renderThreadRow(entry)}
+            {childrenAfter(entry.id)}
+          </div>
+        ))}
+      </>
     );
-  });
+  };
 
   return (
     !popoutThreadId && <aside className={`sidebar ${mobileNav ? "mobile-open" : ""} ${sidebarFlyout ? "flyout-open" : ""}`} onMouseEnter={() => sidebarCollapsed && setSidebarFlyout(true)} onMouseLeave={() => sidebarCollapsed && setSidebarFlyout(false)}>        <div className="brand-row">

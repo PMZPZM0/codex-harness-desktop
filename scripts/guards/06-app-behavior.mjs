@@ -1424,7 +1424,8 @@ w.postMessage({id:1,op:"list",root});
       "【157】容量弹层：百分比只认 last，明细网格仍可 total 兜底"
     );
     const part05Src157 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part05", "01-seg.tsx"), "utf8");
-    (/tokenUsageByThreadRef\.current\.set\(usageThreadId/.test(part05Src157) ? ok : fail)(
+    const part01Src157 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part01", "04-optimistic-turn-approval-e2e.tsx"), "utf8");
+    (/persistTokenUsageSnapshot[\s\S]{0,300}?map\.set\(threadId/.test(part01Src157) ? ok : fail)(
       "【157】用量按会话归属存储（后台会话/被委派子会话不污染当前的环）"
     );
     (/usageThreadId === String\(bag\.threadRef\.current\?\.id/.test(part05Src157) ? ok : fail)(
@@ -1432,6 +1433,24 @@ w.postMessage({id:1,op:"list",root});
     );
     (/useEffect\(\(\) => \{[\s\S]{0,240}?tokenUsageByThreadRef\.current\.get\(activeId\)/.test(part05Src157) ? ok : fail)(
       "【157】切会话时换成该会话自己的快照（否则环里粘着上一个会话的数字）"
+    );
+    /* 落盘 + 接力继承（09-25 用户补充：「一切换供应商，显示从初始值开始统计，原来的不消耗识别出来，
+       聊一会就爆了」）—— 切供应商会**重启应用**，内存快照全丢 ⇒ 必须落盘才谈得上"真实进度"。 */
+    (/localStorage\.setItem\(TOKEN_SNAPSHOT_KEY/.test(part01Src157) && /JSON\.parse\(localStorage\.getItem\(TOKEN_SNAPSHOT_KEY\)/.test(part01Src157) ? ok : fail)(
+      "【157】用量快照落盘 + 启动读回（⛔ 不落盘 ⇒ 切供应商重启后进度归零）"
+    );
+    (/TOKEN_SNAPSHOT_MAX/.test(part01Src157) && /slice\(-TOKEN_SNAPSHOT_MAX\)/.test(part01Src157) ? ok : fail)(
+      "【157】快照按 LRU 截断（防撑爆 localStorage）"
+    );
+    (/const TOKEN_SNAPSHOT_KEY/.test(part01Src157.split("export function")[0]) ? ok : fail)(
+      "【157】存储键在**模块级**（放 hook 体里会被【93】当 Bag 名字）"
+    );
+    (/persistTokenUsageSnapshot\(usageThreadId, normalizedUsage\)/.test(part05Src157) ? ok : fail)(
+      "【157】每次用量事件都落盘"
+    );
+    const settingsSrc157 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part06", "02-seg", "02-model-thread-settings.tsx"), "utf8");
+    (/inheritTokenUsageSnapshot\(threadId, next\.id\)/.test(settingsSrc157) ? ok : fail)(
+      "【157】接力（fork）时把用量快照继承给新会话（⛔ 否则新会话环从 0 开始）"
     );
   }
 

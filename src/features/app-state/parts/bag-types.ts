@@ -250,6 +250,8 @@ export interface Bag {
   setTokenUsage: React.Dispatch<any>;
   tokenUsageRef: React.RefObject<any>;
   tokenUsageByThreadRef: React.RefObject<Map<string, any>>;
+  persistTokenUsageSnapshot: (threadId: string, usage: any) => void;
+  inheritTokenUsageSnapshot: (fromThreadId: string, toThreadId: string) => void;
   tokenUsageTotalsRef: React.RefObject<Map<string, import("../../status/Status.tsx").UsageCounterSnapshot>>;
   derivedTokenUsageRef: React.RefObject<Map<string, any>>;
   normalizeTokenUsage: (raw: any, threadId?: string | undefined) => any;
@@ -1051,6 +1053,10 @@ export interface Bag {
   teamMemberThreadIds: Set<string>;
   setTeamMemberThreadIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   expandedTeamClusters: Set<string>;
+  expandedDispatchBlocks: Set<string>;
+  setExpandedDispatchBlocks: React.Dispatch<React.SetStateAction<Set<string>>>;
+  toggleDispatchBlock: (key: string) => void;
+  dispatchBlockKeys: string[];
   setExpandedTeamClusters: React.Dispatch<React.SetStateAction<Set<string>>>;
   toggleTeamCluster: (teamId: string) => void;
   clusteredSidebar: { memberIds: Set<string>; clusters: { teamId: string; lead: import("../../app-view/types.ts").Thread | null; members: import("../../app-view/types.ts").Thread[]; }[]; };

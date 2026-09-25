@@ -181,6 +181,9 @@ bag.migrateThreadToProvider = migrateThreadToProvider as typeof bag.migrateThrea
       if (!relayed.ok) throw new Error(relayed.error || "接力会话绑定失败");
       saveThreadModel(next.id, `custom:${target.provider}:${target.model}`);
       bag.threadProviderRef.current.set(next.id, HARNESS_PROVIDER_ID);
+      // fork 带走完整历史 ⇒ 真实上下文规模与源会话一致：把用量快照继承给新会话，
+      // ⛔ 不继承的话新会话环从 0 开始（用户看到的「进度被重置」）。
+      bag.inheritTokenUsageSnapshot(threadId, next.id);
       await bag.refreshThreads();
       await bag.openThread(next.id, next);
         // 旧会话自动清除（09-15 用户定稿：接力成功后**只保留新的**）：fork 已带完整历史，

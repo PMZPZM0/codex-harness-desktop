@@ -1249,11 +1249,21 @@ html[data-ui-font="large"] .action-content pre {
   border-left: 1px dashed var(--line);
 }
 .dispatch-children-label {
+  /* 折叠头（09-25 用户：「被调度的会话也要支持跟专家团那样折叠收纳起来」）——
+     与专家团聚簇的展开箭头同一套交互：默认收起，点标签展开。 */
   display: flex;
+  width: 100%;
   align-items: center;
   gap: 4px;
   font-size: 10.5px;
   color: var(--muted);
+  background: none;
+  border: 0;
   padding: 2px 0 2px 2px;
+  cursor: pointer;
   user-select: none;
+  font-family: inherit;
+  text-align: left;
 }
+.dispatch-children-label:hover { color: var(--text); }
+.dispatch-children.collapsed { padding-bottom: 0; border-left-color: transparent; }

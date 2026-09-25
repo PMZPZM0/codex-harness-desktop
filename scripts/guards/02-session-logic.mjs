@@ -1352,6 +1352,16 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       ((appSrc2.match(/dispatch-children-label/g) || []).length === 1 ? ok : fail)("【156】调度归属渲染只有一份实现（⛔ 不许分类/项目各写一份再分叉）");
       (appSrc2.includes("renderDispatchedList(g.items)") ? ok : fail)("【156】分类视图用共用的调度归属渲染器");
       (/renderDispatchedList\([\s\S]{0,260}?sourcedChildIds\.has\(entry\.id\)/.test(appSrc2) ? ok : fail)("【156】项目视图用同一渲染器 + 先把子会话从顶层剔除（否则同一会话显示两遍）");
+      /* 折叠收纳（09-25 用户：「默认被调度和专家团会话都折叠状态」+「被调度的会话也要支持跟专家团
+         那样折叠收纳起来」）：调度块默认**收起**，键 dispatch:<父会话 id>，与专家团聚簇同一套交互。 */
+      /* 默认折叠用**展开集合**（命中=展开、默认空=全收起）。⛔ 不许用 collapsedSections 判「收起」——
+         它的语义是「命中=收起」，默认空集 = 默认全展开，正是用户看到的一片重复行（09-25 实测踩过）。 */
+      (appSrc2.includes("const collapsed = !expandedDispatchBlocks.has(dispatchKey)") ? ok : fail)("【156】被调度会话块默认收起（用展开集合，⛔ 不是 collapsedSections）");
+      (appSrc2.includes("toggleDispatchBlock(dispatchKey)") ? ok : fail)("【156】调度块表头可点开合（走 toggleDispatchBlock）");
+      (!appSrc2.includes("toggleSection(dispatchKey)") ? ok : fail)("【156】⛔ 调度块不得走 toggleSection（那是 collapsedSections 的语义，会把默认态写反）");
+      (appSrc2.includes("renderClusterList([childThread])") ? ok : fail)("【156】被调度的会话走聚类渲染（它本身可能就是专家团主会话，⛔ 用 renderThreadRow 会漏掉成员会话）");
+      (appSrc2.includes("`dispatch:${id}`") || appSrc2.includes("dispatchBlockKeys") ? ok : fail)("【156】批量展开/折叠带上调度折叠块（否则点「全部展开」这些块纹丝不动）");
+      (appSrc2.includes('className="dispatch-children-label"') ? ok : fail)("【156】调度块表头是**按钮**（可点开合，不是纯文本标签）");
     } catch (error) {
       fail("【156】thread-source.mjs 加载失败：" + error.message);
     }
