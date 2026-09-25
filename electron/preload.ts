@@ -163,6 +163,10 @@ contextBridge.exposeInMainWorld("codex", {
   setMcpToolPermission: (server: string, tool: string, mode: "deny" | "ask" | "allow" | null) => __ipc("mcp-servers:set-tool-permission", 3, [{ server, tool, mode }]),
   readPersonalization: () => __ipc("personalization:read", 0, []),
   savePersonalization: (input: { nickname?: string; customInstructions?: string }) => __ipc("personalization:save", 0, [input]),
+  /* 数据目录（userData）现状：生效值 / 默认锚点 / 自定义值 / 待迁移标记 */
+  readDataDir: () => __ipc("dataDir:read", 0, []),
+  /* 写指路牌 + 迁移标记；实际迁移在下一次启动的引擎 spawn 之前执行。重启复用既有 app:relaunch */
+  prepareDataDir: (dir: string) => __ipc("dataDir:prepare", 1, [dir]),
   /* 应用级运行时开关（联网搜索等） */
   readAppSettings: () => __ipc("appSettings:read", 0, []),
   saveAppSettings: (patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy" }) => __ipc("appSettings:save", 0, [patch]),

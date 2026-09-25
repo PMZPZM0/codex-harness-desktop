@@ -3,13 +3,110 @@
  *
  * 纯搬迁：返回的 JSX 与原块逐字一致（仅去掉外层缩进）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
+ *
+ * 09-25 新增「配置目录可自定义」（DataDirEditor）：改的是 userData 指路牌
+ * （默认目录下 data-dir.json），保存后经 app.relaunch 重启，迁移由主进程在
+ * 引擎 spawn 之前完成（electron/data-dir.ts）。
  */
+import { useEffect, useState } from "react";
 import { Code2, Copy, FolderOpen, FolderTree, Globe2, Keyboard, Monitor, MonitorUp, PanelRightOpen, RefreshCw, Search, ShieldCheck, Zap } from "lucide-react";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { Spinner } from "../../components/CardShell";
 
 export type GeneralSettingsSectionProps = { globalPermApproval: any; applyGlobalPermissionMode: any; workspace: any; chooseWorkspace: any; userDataPath: any; setNotice: any; rightOpen: any; setRightOpen: any; capabilityHint: any; desktopAuto: any; groupBusy: any; toggleDesktopAuto: any; browserAuto: any; toggleBrowserAuto: any; ponytailOn: any; applyGroup: any; hardwareAccel: any; changeHardwareAccel: any; restartPending: any; SHORTCUT_GROUPS: any; setShortcutsOpen: any; engineVersion: any; engineCheck: any; engineUpdating: any; checkEngineUpdateNow: any; performEngineUpdateNow: any; engineUpdatePercent: any; engineUpdateStageText: any; engineUpdateLog: any; engineUpdateResult: any; relaunchCountdown: any };
+
+/* ══ 配置目录自定义（09-25）═══════════════════════════════════════════════
+ * 自持状态小组件（不占 bag）。写的是主进程指路牌（data-dir.json），
+ * 实际目录切换与数据迁移发生在**下一次启动**（引擎 spawn 之前），所以必须重启生效。 */
+function DataDirEditor({ currentPath, setNotice }: { currentPath: string; setNotice: (s: string) => void }) {
+  const [info, setInfo] = useState<{ current: string; defaultDir: string; custom: string | null; migratePending: boolean } | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    void window.codex.readDataDir().then((v) => { if (alive) setInfo(v); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
+
+  const shown = info?.current ?? currentPath;
+  const browse = async () => {
+    const dir = await window.codex.chooseDirectory();
+    if (dir) setValue(dir);
+  };
+  const save = async () => {
+    setBusy(true);
+    setMsg("");
+    try {
+      const r = await window.codex.prepareDataDir(value);
+      const info2 = await window.codex.readDataDir();
+      setInfo(info2);
+      setEditing(false);
+      setSaved(true);
+      setMsg(r.restoreDefault
+        ? "已恢复默认目录，重启应用后生效。"
+        : (r.note ?? (r.migrate ? "已保存。重启应用后将自动把现有数据迁移到新目录（旧目录保留作备份）。" : "已保存，重启应用后生效。")));
+      setNotice("数据目录已更新，重启后生效");
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const restore = async () => {
+    setBusy(true);
+    try {
+      await window.codex.prepareDataDir(info?.defaultDir ?? "");
+      const info2 = await window.codex.readDataDir();
+      setInfo(info2);
+      setEditing(false);
+      setSaved(true);
+      setMsg("已恢复默认目录，重启应用后生效。");
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const restart = async () => {
+    setBusy(true);
+    await window.codex.relaunchApp();
+  };
+
+  return (
+    <>
+      <div className="path-row">
+        <span className="path-row-label">配置目录</span>
+        <span className="path-row-input"><span className="path-row-value" title={shown || "读取中…"}>{shown || "读取中…"}</span>
+          <span className="path-row-actions">
+            <button className="secondary-setting" onClick={() => { setEditing((v) => !v); setSaved(false); setMsg(""); setValue(info?.custom ?? ""); }}><FolderOpen size={14} />{info?.custom ? "更改 / 恢复默认" : "更改…"}</button>
+            <button className="icon-button" title="复制路径" onClick={() => { void copyTextToClipboard(shown || ""); setNotice("配置目录已复制"); }}><Copy size={14} /></button>
+            <button className="icon-button" title="在文件管理器中打开" disabled={!shown} onClick={() => { if (shown) void window.codex.shellReveal(shown); }}><FolderTree size={15} /></button>
+          </span>
+        </span>
+      </div>
+      {editing && (
+        <div className="path-row">
+          <span className="path-row-label">新目录</span>
+          <span className="path-row-input">
+            <input className="path-row-value datadir-input" value={value} placeholder={info?.defaultDir} disabled={busy} onChange={(e) => setValue(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
+            <span className="path-row-actions">
+              <button className="secondary-setting" disabled={busy} onClick={() => void browse()}>浏览…</button>
+              <button className="primary-setting" disabled={busy || !value.trim()} onClick={() => void save()}>保存</button>
+              {info?.custom && <button className="secondary-setting" disabled={busy} onClick={() => void restore()}>恢复默认</button>}
+            </span>
+          </span>
+        </div>
+      )}
+      {msg && <p className="settings-card-hint">{msg}{saved && <button className="secondary-setting" style={{ marginLeft: 10 }} disabled={busy} onClick={() => void restart()}><RefreshCw size={13} />立即重启</button>}</p>}
+      {info?.migratePending && !msg && <p className="settings-card-hint">数据迁移待执行：下次启动时自动把现有数据迁到自定义目录。</p>}
+    </>
+  );
+}
 
 export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
   const { globalPermApproval, applyGlobalPermissionMode, workspace, chooseWorkspace, userDataPath, setNotice, rightOpen, setRightOpen, capabilityHint, desktopAuto, groupBusy, toggleDesktopAuto, browserAuto, toggleBrowserAuto, ponytailOn, applyGroup, hardwareAccel, changeHardwareAccel, restartPending, SHORTCUT_GROUPS, setShortcutsOpen, engineVersion, engineCheck, engineUpdating, checkEngineUpdateNow, performEngineUpdateNow, engineUpdatePercent, engineUpdateStageText, engineUpdateLog, engineUpdateResult, relaunchCountdown } = props;
@@ -48,16 +145,8 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                             </span>
                           </span>
                         </div>
-                        <div className="path-row">
-                          <span className="path-row-label">配置目录</span>
-                          <span className="path-row-input"><span className="path-row-value" title={userDataPath || "读取中…"}>{userDataPath || "读取中…"}</span>
-                            <span className="path-row-actions">
-                              <button className="secondary-setting" title="复制路径" onClick={() => { void copyTextToClipboard(userDataPath || ""); setNotice("配置目录已复制"); }}><Copy size={14} />复制</button>
-                              <button className="icon-button" title="在文件管理器中打开" disabled={!userDataPath} onClick={() => { if (userDataPath) void window.codex.shellReveal(userDataPath); }}><FolderTree size={15} /></button>
-                            </span>
-                          </span>
-                        </div>
-                        <p className="settings-card-hint">模型、任务记录、记忆都保存在配置目录里。如果换了个启动方式后配置「消失」，多半是两个启动方式用了不同目录——把旧目录里的 custom-model.json 和 codex-home 拷过来即可恢复。</p>
+                        <DataDirEditor currentPath={userDataPath} setNotice={setNotice} />
+                        <p className="settings-card-hint">模型、任务记录、记忆都保存在配置目录里。支持自定义到其他磁盘/目录：更改并重启后，现有数据会自动迁移过去（旧目录保留作备份）。如果换了个启动方式后配置「消失」，多半是两个启动方式用了不同目录。</p>
                       </div>
                     </div>
 

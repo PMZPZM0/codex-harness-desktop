@@ -9,6 +9,7 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readF
 import path from "node:path";
 import http from "node:http";
 import { ChannelBotService, type ChannelBotConfig } from "./channel-bot";
+import { resolveStartupUserData } from "./data-dir";
 import { CodexServer, codexBinaryPath } from "./codex-server";
 import { BotPairingService } from "./bot-pairing";
 import { MemoryStore, type MemoryCategory, type MemoryRemoteConfig } from "./memory-store";
@@ -91,6 +92,7 @@ import "./features/builtin-skills-ipc";
 import "./features/connectors-mcp-ipc";
 import "./features/model-custom-ipc";
 import "./features/settings-app-ipc";
+import "./features/data-dir-ipc";
 import "./features/user-ipc";
 import "./features/remote-ipc";
 import "./features/memory-rpa-ipc";
@@ -152,7 +154,7 @@ protocol.registerSchemesAsPrivileged([{ scheme: "harness-image", privileges: { s
 
 app.setName("Codex Harness Desktop");
 
-app.setPath("userData", process.env.CODEX_HARNESS_USER_DATA || path.join(app.getPath("appData"), "Codex Harness Desktop"));
+app.setPath("userData", resolveStartupUserData());
 
 /* 自定义 AUMID（AppUserModelID）：Windows 任务栏靠它把"运行中的进程"与"某个快捷方式"配对，
    配对成功后**任务栏图标取该快捷方式的图标**（我们的 build/icon.ico），否则回退进程 exe 的图标
