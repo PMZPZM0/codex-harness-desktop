@@ -981,4 +981,92 @@ export async function run() {
     }
   }
   (bad.length === 0 ? ok : fail)(`【130】域间只经 barrel、禁深链内部文件（0 违规）${bad.length ? "：" + bad.slice(0, 4).join("；") : ""}`);
+
+  /* ══ 【158】项目日志库（`logs/`）：规范 + 索引 + 不丢失保障（用户 09-25 要求）══════
+     用户原话：「新增一个专门用于写日志的独立目录，并配套完整的日志规范和使用技能…加入与 WorkBuddy
+     一致的索引机制…提供配套的日志管理功能，包括查看、清理和删除，确保项目记录完整留存、不丢失」。
+     判据分四类：①规范与工具存在 ②索引可校验（sha256）③**删除必须留墓碑**（用户允许硬删，
+     但"存在过"不能消失）④**`logs/` 必须能进 git**（最强度的一道防丢失 —— 被 gitignore 吃掉就全废）。 */
+  {
+    console.log(C.bold("\n【158】项目日志库：规范 / 索引 / 不丢失"));
+    const logsDir = join(ROOT, "logs");
+    const mgr = join(ROOT, "scripts", "logs.mjs");
+    (existsSync(join(logsDir, "README.md")) ? ok : fail)("【158】日志规范存在（logs/README.md）");
+    (existsSync(mgr) ? ok : fail)("【158】日志管理入口存在（scripts/logs.mjs）");
+    const mgrSrc = existsSync(mgr) ? readFileSync(mgr, "utf8") : "";
+    const mgrCode = codeOnly(mgrSrc);
+    /* ⛔ 九个子命令缺一不可：用户点名的「查看/清理/删除」= list|show|stats / archive / delete */
+    const required = ["new", "list", "search", "show", "stats", "reindex", "verify", "archive", "delete", "dedupe"];
+    const missing = required.filter((c) => !new RegExp(`\\b${c}:\\s*cmd`).test(mgrCode) && !new RegExp(`function cmd${c[0].toUpperCase()}${c.slice(1)}`).test(mgrCode));
+    (missing.length === 0 ? ok : fail)(`【158】子命令齐全（查看/检索/统计/重建/校验/归档/删除/查重）${missing.length ? "，缺：" + missing.join(",") : ""}`);
+
+    /* ⛔⛔ 防重复写（用户 2026-09-25：「确保没有重复写日志哈」）—— 两道机制必须都在：
+       ① 写入时拦（相似标题 / 相同正文 ⇒ 拒写，除非显式 --allow-similar）
+       ② 随时可查（dedupe 全库查重）
+       ⛔ 断言打到**代码形态**：只 grep "dedupe" 会被 USAGE 文案满足（今天已踩过同类坑）。 */
+    (/function findSimilar\(/.test(mgrCode) && /const similar = findSimilar\(/.test(mgrCode) ? ok : fail)("【158】new 写入时查相似条目（标题 ≥0.75 即拒写）");
+    (/--allow-similar/.test(mgrCode) && /flags\["allow-similar"\]/.test(mgrCode) ? ok : fail)("【158】重复拦阻有显式放行闸门（--allow-similar，逼使用者确认不是同一件事）");
+    (/bodySha256/.test(mgrCode) && /内容完全相同/.test(mgrCode) ? ok : fail)("【158】正文哈希查重（同一段话换个标题再记一遍也能抓）");
+    /* ⛔ 断言要覆盖**注册**，不能只判函数定义存在：改名成 `cmdDedupeGone` 也能通过 `function cmdDedupe`
+       （09-25 变异测试实测抓到这个漏洞）。注册在 COMMANDS 表里 = 真的可达。 */
+    (/function cmdDedupe/.test(mgrCode) && /dedupe: cmdDedupe/.test(mgrCode) && /problems\.length \? 2 : 0/.test(mgrCode) ? ok : fail)("【158】dedupe 已注册且发现重复时非 0 退出（⛔ 只判函数名会被改名绕过）");
+
+    /* 索引文件存在性 + 边界规则必须写进规范与技能（不然只有工具、没有用法） */
+    const readme = existsSync(join(logsDir, "README.md")) ? readFileSync(join(logsDir, "README.md"), "utf8") : "";
+    (/不许重复写/.test(readme) && /只留一行/.test(readme) ? ok : fail)("【158】规范写明「不许重复写 + 别处只留指针」的边界");
+    /* ⛔ 删除的安全闸门：--confirm（二次确认）+ --reason（进墓碑）。缺一个就等于"可被误删且无据可查"。 */
+    /* ⛔ 删除的安全闸门：必须断言**代码形态**，不能只 grep 字样 —— USAGE/注释里也有 `--confirm`/`--reason`，
+       只查字样的话把代码删了照样绿（09-25 变异测试实测抓到的空洞断言）。 */
+    (/const confirm = flags\.confirm === undefined[\s\S]{0,160}?if \(!confirm\) die\(/.test(mgrCode) ? ok : fail)("【158】delete 的二次确认是**代码**要求（--confirm 缺失即 die）");
+    (/const reason = String\(flags\.reason \?\? ""\)\.trim\(\);[\s\S]{0,140}?if \(!reason\) die\(/.test(mgrCode) ? ok : fail)("【158】delete 的 --reason 是**代码**要求（缺失即 die）");
+    /* ⛔ 顺序也算判据：**先写墓碑、后删文件**。
+       ⛔ 别再加「不得先删后写」的反向断言（我加过、是**误报**）：delete 里有 `if 文件存在 / else 文件已不在`
+       两个分支，`if` 分支的 rmSync 之后紧跟 else 分支的 appendJsonl，跨分支匹配必然命中。
+       正向顺序断言已经足够守住这个行为。 */
+    (/appendJsonl\(AUDIT,[\s\S]{0,600}?fs\.rmSync\(file/.test(mgrCode) ? ok : fail)("【158】delete 先写墓碑再删（内容可删，「存在过」永久留存）");
+    (existsSync(join(logsDir, "index.jsonl")) ? ok : fail)("【158】索引文件存在（logs/index.jsonl）");
+    (existsSync(join(logsDir, "audit-deletions.jsonl")) ? ok : fail)("【158】删除审计存在（logs/audit-deletions.jsonl）");
+    /* ⛔ sha256 是"没被偷偷改过"的唯一判据：索引记录必须带它，verify 必须比对它。 */
+    (/sha256: sha256\(buf\)/.test(mgrCode) ? ok : fail)("【158】索引记录带 sha256（verify 据此发现内容被改/被截断）");
+    (/哈希不符/.test(mgrCode) ? ok : fail)("【158】verify 会因哈希不符报错（实测：追加一行即报）");
+    /* ⛔⛔ 最强的一道防丢失：logs/ 必须进 git。`.gitignore` 里一旦有 `logs/` 之类目录级规则，
+       换机器/磁盘坏就找不回。
+       ⚠️ 别把 `*.log` 也算成致命（我第一版就误报了）：它不匹配 `logs/` 目录名，只意味着
+       **条目文件必须用 `.md`** —— 那是下一条断言的职责，两类规则不要混在一起。 */
+    const gi = existsSync(join(ROOT, ".gitignore")) ? readFileSync(join(ROOT, ".gitignore"), "utf8") : "";
+    const giRules = gi.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+    const killedLogs = giRules.filter((r) => ["logs", "logs/", "/logs", "/logs/"].includes(r));
+    (!killedLogs.length ? ok : fail)(`【158】⛔ .gitignore 不得忽略日志库目录（命中：${killedLogs.join(",")} ⇒ 换机器/磁盘坏就找不回）`);
+    /* 真实条目：格式契约（front-matter 必备字段）+ 扩展名契约 */
+    if (existsSync(logsDir)) {
+      const entryFiles = [];
+      const walkLogs = (dir) => {
+        for (const e of readdirSync(dir, { withFileTypes: true })) {
+          const p = join(dir, e.name);
+          if (e.isDirectory()) { if (e.name !== "node_modules") walkLogs(p); continue; }
+          if (e.name.endsWith(".md")) entryFiles.push(p);
+        }
+      };
+      walkLogs(logsDir);
+      const entries = entryFiles.filter((f) => !/[/\\]README\.md$/.test(f));
+      const badMeta = [];
+      for (const f of entries) {
+        const src = readFileSync(f, "utf8");
+        const miss = ["id", "date", "kind", "area", "title"].filter((k) => !new RegExp(`^${k}:`, "m").test(src));
+        if (miss.length) badMeta.push(`${relative(ROOT, f).replace(/\\/g, "/")}（缺 ${miss.join(",")}）`);
+      }
+      (badMeta.length === 0 ? ok : fail)(`【158】${entries.length} 个条目都有必备 front-matter${badMeta.length ? "，问题：" + badMeta.slice(0, 3).join("；") : ""}`);
+      const wrongExt = entryFiles.filter((f) => /\.log$/.test(f));
+      (wrongExt.length === 0 ? ok : fail)("【158】⛔ 条目必须是 .md（.gitignore 有 *.log ⇒ 用 .log 会进不了 git）");
+    }
+    /* 技能：模型得知道有这套东西，否则等于没建 */
+    const skill = join(ROOT, ".codex", "skills", "log-archive", "SKILL.md");
+    (existsSync(skill) ? ok : fail)("【158】项目级技能存在（.codex/skills/log-archive/SKILL.md）");
+    if (existsSync(skill)) {
+      const sk = readFileSync(skill, "utf8");
+      (/^---[\s\S]*?name:\s*log-archive[\s\S]*?description:\s*\S/.test(sk) ? ok : fail)("【158】技能 frontmatter 合法（name + 非空 description）");
+      (/scripts\/logs\.mjs/.test(sk) ? ok : fail)("【158】技能里给出真实命令入口（不是空泛描述）");
+      (/archive/.test(sk) && /delete/.test(sk) ? ok : fail)("【158】技能写清「默认 archive、delete 需理由」（安全边界教给使用者）");
+    }
+  }
 }

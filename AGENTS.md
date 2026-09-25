@@ -64,6 +64,32 @@ node xxx.mjs > ./arch-scan.txt                         # ✗ 落仓库根
 - 仓库根只允许出现**源码 / 文档 / 配置**；别处冒出来的中间文件一律视为待清理。
 - 收尾自查：`git status` 干净 + `D:\` 盘根没有你新产生的文件。
 
+## 📓 项目日志库 `logs/`（09-25 立，守卫【158】）
+
+**结论档案**（不是流水账）：一个结论一个文件 + 结构化头 + `index.jsonl` 索引 + sha256 校验。
+配套：规范 `logs/README.md`、工具 `scripts/logs.mjs`、技能 `.codex/skills/log-archive/SKILL.md`。
+
+```bash
+node scripts/logs.mjs new --kind decision --area memory --title "…" --tags a,b --files p1   # 建条目
+node scripts/logs.mjs search <关键词...> [--area a] [--since d]     # 检索（本地打分，按相关度）
+node scripts/logs.mjs show <唯一前缀即可>                            # 看内容
+node scripts/logs.mjs dedupe / verify                              # 查重 / 完整性校验
+node scripts/logs.mjs archive <id...>                              # 清理（默认用它）
+node scripts/logs.mjs delete <id...> --confirm <id...|all> --reason "…"   # 硬删（留永久墓碑）
+```
+
+⛔ **该写**：定了方案（`decision`）/ 修了非显而易见的 bug（`incident`）/ 发版（`milestone`）/ 改了用户可感知行为（`change`）/ 推翻了旧结论（`decision` + `supersedes`）。
+⛔ **不该写**：纯格式、重命名、依赖升级 —— 留在每日流水即可。
+
+⛔⛔ **不许重复写**（用户 09-25：「确保没有重复写日志哈」）：同一段正文**只允许存在一份**。
+- **日报**（`<ws>/.workbuddy/memory/YYYY-MM-DD.md`）记时间线与零散判断；涉及结论时**只留一行 `→ logs/<id>`**，⛔ 不复述正文
+- **`logs/`** 记结论/依据/影响面/回滚；⛔ 不抄日报流水，也不抄进 `lessons/`
+- 两道机制拦阻（不靠自觉）：`new` 写入时就拦相似标题（≥0.75）与相同正文；`dedupe` 随时全库查重
+
+⛔ **不丢失的五道保障**（按强度）：① `logs/` **进 git**（⛔ 别被 gitignore 吃掉，条目必须 `.md` —— `.gitignore` 有 `*.log`）
+② 一条一目追加写、不覆盖（改结论用 `supersedes`）③ `verify` 用 sha256 抓篡改/截断 ④ 索引可 `reindex` 重建（磁盘才是真相源）
+⑤ 删除**先写墓碑再删**（`audit-deletions.jsonl` 永久留 id/path/sha256/reason ⇒ 内容可删，"存在过"不可删）
+
 ## ⛔ 验收铁律（硬性要求，2026-09-11 起生效，先读这条）
 
 **本项目任何源码改动，一律以「自动验收通过」为完成标准。禁止「我改完了，你自己点一下试试」。**
