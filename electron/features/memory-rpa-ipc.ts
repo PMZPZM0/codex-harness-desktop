@@ -12,9 +12,12 @@
  */
 import path from "node:path";
 import fs from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { app, ipcMain, safeStorage } from "electron";
 import { saveAppSettings } from "../app-settings";
-import { memoryBackendStatus, type MemoryBackend } from "../memory-backend";
+import { bundledNodePath, memoryBackendStatus, memoryInstallerPath, type MemoryBackend } from "../memory-backend";
+import { syncLocalMemoryConnector } from "../memory-mcp-connector";
 import { RpaStore } from "../rpa-store";
 import { CLEANUP_RULES, HYGIENE_ACTION_LABEL, isHygieneAction, planHygiene, suggestedActions } from "../memory-hygiene";
 import type { MemoryCategory, MemoryRemoteConfig } from "../memory-store";
@@ -66,6 +69,60 @@ ipcMain.handle("memory:backend:set", async (_event, backend: unknown) => {
   const next: MemoryBackend = backend === "mcp" ? "mcp" : "builtin";
   await saveAppSettings(app.getPath("userData"), { memoryBackend: next });
   return memoryBackendStatus();
+});
+/* MCP 记忆服务的安装 / 卸载 / 校验（09-25，用户：「用户新电脑安装这个应用，MCP 记忆怎么安装，
+   不要加个安装功能吗」⇒ 加）。
+   ⛔ 一律用**应用自带的 node** 跑安装器：装（npm + 原生绑定）与跑（引擎侧 runner）同 ABI 才自洽，
+      也因为新电脑**不需要预装 Node.js**（自带 node + 自带 npm 就在包里）。
+   ⛔ 安装器落点由 memory-backend.ts 的 memoryInstallerPath() 统一解析（dev=scripts/，打包=tools/）。 */
+let memoryMcpBusy = false; // ⛔ 防连点并发（npm install 很重，并发会互相踩 node_modules）
+
+async function runMemoryInstaller(extra: string[]): Promise<{ code: number | null; result: any; log: string }> {
+  if (memoryMcpBusy) throw new Error("已有安装/卸载正在进行，请稍候");
+  const nodeExe = bundledNodePath();
+  const script = memoryInstallerPath();
+  if (!existsSync(nodeExe)) throw new Error(`找不到应用自带的 node：${nodeExe}`);
+  if (!existsSync(script)) throw new Error(`找不到安装器：${script}`);
+  memoryMcpBusy = true;
+  try {
+    return await new Promise((resolve, reject) => {
+      const child = spawn(nodeExe, [script, ...extra], {
+        windowsHide: true,
+        env: { ...process.env, NODE_OPTIONS: "", ELECTRON_RUN_AS_NODE: "" },
+      });
+      let out = "", err = "";
+      const timer = setTimeout(() => {
+        try { child.kill(); } catch { /* 已退出 */ }
+        reject(new Error("安装超时（10 分钟）：可能是网络取不到 npm registry"));
+      }, 10 * 60 * 1000);
+      child.stdout.on("data", (d) => { out += d.toString(); });
+      child.stderr.on("data", (d) => { err += d.toString(); });
+      child.on("error", (e) => { clearTimeout(timer); reject(e); });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        const line = out.trim().split("\n").filter(Boolean).pop() ?? "";
+        let parsed: any = null;
+        try { parsed = JSON.parse(line); } catch { /* 非 JSON 行（崩了） */ }
+        resolve({ code, result: parsed, log: err.split("\n").filter(Boolean).slice(-12).join("\n") });
+      });
+    });
+  } finally {
+    memoryMcpBusy = false;
+  }
+}
+
+ipcMain.handle("memory:mcp:install", async (_event, options?: { force?: boolean }) => {
+  const r = await runMemoryInstaller(options?.force ? ["--force"] : []);
+  await syncLocalMemoryConnector(); // 装完立刻把连接器同步成正确形态（自带 node 当 runner）
+  return { ...r, status: memoryBackendStatus() };
+});
+ipcMain.handle("memory:mcp:uninstall", async () => {
+  const r = await runMemoryInstaller(["--uninstall"]);
+  return { ...r, status: memoryBackendStatus() };
+});
+ipcMain.handle("memory:mcp:verify", async () => {
+  const r = await runMemoryInstaller(["--verify"]);
+  return { ...r, status: memoryBackendStatus() };
 });
 ipcMain.handle("memory:save", (_event, input: unknown) => memoryStore.upsert(input as { content: string; category: MemoryCategory; sourceThreadId?: string; sourceTurnId?: string; confidence?: number }));
 ipcMain.handle("memory:delete", (_event, id: string) => memoryStore.remove(id));
