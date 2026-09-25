@@ -21,6 +21,13 @@ import type { Bag } from "../bag-types";
 const TOKEN_SNAPSHOT_KEY = "token-usage-by-thread-v1";
 const TOKEN_SNAPSHOT_MAX = 60;
 
+/* ⛔ 自动压缩比例的**渲染层默认值**（09-25 用户要求 80% → 60%）。
+   主进程侧真相源 = `electron/app-settings.ts` 的 `DEFAULT_AUTO_COMPACT_RATIO`（同为 0.6）。
+   两侧**不能互相 import**（electron/ 与 src/ 是独立打包产物，electron 不引用 src）⇒ 只能各存一份，
+   守卫【159】逐字比对，改一边忘另一边即红。
+   这里的两处用途：① 启动读回失败/未配置时的兜底；② settings 里没有该字段时的初值。 */
+const AUTO_COMPACT_RATIO_DEFAULT = 0.6;
+
 export function usePart01d(bag: Bag) {
   // 09-17：本轮是否**确实出现过**运行中的回合 —— 乐观气泡安全阀的判据（见下方 effect 注释）。
   const sawRunningTurnRef = useRef(false);
@@ -262,7 +269,7 @@ bag.desktopAuto = desktopAuto as typeof bag.desktopAuto; bag.setDesktopAuto = se
 bag.browserAuto = browserAuto as typeof bag.browserAuto; bag.setBrowserAuto = setBrowserAuto as typeof bag.setBrowserAuto;
 
 
-  const [autoCompactRatio, setAutoCompactRatio] = useState(0.8);
+  const [autoCompactRatio, setAutoCompactRatio] = useState(AUTO_COMPACT_RATIO_DEFAULT);
 bag.autoCompactRatio = autoCompactRatio as typeof bag.autoCompactRatio; bag.setAutoCompactRatio = setAutoCompactRatio as typeof bag.setAutoCompactRatio;
 
 
@@ -344,7 +351,7 @@ bag.sshEditorTest = sshEditorTest as typeof bag.sshEditorTest; bag.setSshEditorT
 
   // 联网搜索 UI 入口已整体下架（2026-09-04：引擎沙箱本就允许联网，web_search 工具默认常开，
   // 无需用户切换）。app-settings.webSearch 默认值仍由主进程写进 config.toml，引擎能力不受影响。
-  useEffect(() => { void window.codex.readAppSettings().then((settings) => { bag.setDesktopAuto(settings.desktopAutomation !== false); bag.setBrowserAuto(settings.browserAutomation !== false); bag.setAutoCompactRatio(typeof settings.autoCompactRatio === "number" ? settings.autoCompactRatio : 0.8); bag.setHardwareAccel(settings.hardwareAcceleration ?? "auto"); bag.setAdaptiveTone(settings.adaptiveTone !== false); bag.setDownloadSource(settings.downloadSource ?? "auto"); }).catch(() => undefined); }, []);
+  useEffect(() => { void window.codex.readAppSettings().then((settings) => { bag.setDesktopAuto(settings.desktopAutomation !== false); bag.setBrowserAuto(settings.browserAutomation !== false); bag.setAutoCompactRatio(typeof settings.autoCompactRatio === "number" ? settings.autoCompactRatio : AUTO_COMPACT_RATIO_DEFAULT); bag.setHardwareAccel(settings.hardwareAcceleration ?? "auto"); bag.setAdaptiveTone(settings.adaptiveTone !== false); bag.setDownloadSource(settings.downloadSource ?? "auto"); }).catch(() => undefined); }, []);
 
 
   // 桌面/浏览器自动化是能力总闸：开关直接决定引擎能不能用，同时联动 nuphus MCP 与配套技能。

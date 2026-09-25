@@ -1,5 +1,5 @@
 import type { PersonalizationConfig } from "./personalization";
-import { MEMORY_CLASSIFY_SKILL, MEMORY_HYGIENE_SKILL, MEMORY_MCP_BACKEND_SKILL, PROJECT_SKILLS_SUBDIR, SELF_REVIEW_SKILL, SKILL_AUDIT_SKILL, SKILL_AUTHORING_NAME } from "./skill-pack";
+import { HARNESS_API_SKILL_NAME, MEMORY_CLASSIFY_SKILL, MEMORY_HYGIENE_SKILL, MEMORY_MCP_BACKEND_SKILL, PROJECT_SKILLS_SUBDIR, SELF_REVIEW_SKILL, SKILL_AUDIT_SKILL, SKILL_AUTHORING_NAME } from "./skill-pack";
 import { effectiveMemoryBackend } from "./memory-backend";
 import { MEMORY_DISTILL_SKILL, MEMORY_DISTILL_THRESHOLD } from "./memory-layers";
 
@@ -134,6 +134,26 @@ const MEMORY_PYRAMID_INSTRUCTIONS =
  *      是为了让 boot 的「指令是否过期」比对与 applyCustomModel 的写出**逐字同源**：
  *      两处都调这一个函数、读同一个后端状态 ⇒ 永远不会因为传参不一致而互相判定过期（09-16 踩过重写环）。
  */
+/* ── 第 11 条：宿主能力与可拓展性（09-25 用户报障：「接口和拓展清单，Codex 好像不知道啊，
+      我今天问了，扫半天都没扫到，不知道能拓展什么，没有内置清单嘛」）────────────────────
+   ⛔ 为什么这条**必须常驻**，不能只靠那个内置技能：技能是**渐进披露**的 —— 引擎的技能目录只给
+      name + description，模型得先"想起来去读"它。而用户问「宿主有没有 XX 能力 / 能拓展什么」时，
+      模型的第一反应是 **grep 源码**。实测（会话 01a0d7b1，19:06「拓展清单看看」）：
+        · 它其实**看得到** harness-api（技能目录里就有），也判断出"这正是相关技能"；
+        · 但为了读那个文件跑了十几轮 exec —— cmd 的 `type "D:\11\…"` 引号被通道剥掉、
+          `workdir` 偶发 `os error 267`，等于「扫半天」；
+        · 而打包版用户机器上**根本没有宿主源码**，grep 注定一无所获。
+      ⇒ 把「能力索引在哪 + 怎么读 + 拓展点分类」放进每轮都可见的指令里，把「要不要读文件」
+        从关键路径上摘掉；完整清单仍按需读（不把 337 个通道塞进每轮 prompt）。
+   ⛔ 技能名用 skill-pack 的常量（【159】断言与 builtin-skills 的登记同源）。 */
+const CAPABILITY_INSTRUCTIONS =
+  `\n11) HOST CAPABILITIES & EXTENSIBILITY — the answer is a built-in skill, never a source scan:\n` +
+  `   Questions like 「宿主有没有 XX 能力 / 能不能做 XX / 能拓展什么 / 帮我接上 XX」 are answered by the built-in skill \`${HARNESS_API_SKILL_NAME}\`: it lists EVERY capability domain the host exposes (\`域:动作\` channels) and is **generated from the code**, so it cannot go stale. Read it FIRST.\n` +
+  `   ⛔ DO NOT grep the harness source to discover capabilities, and never answer "没有这个能力" before reading that skill — the host source is usually NOT in your workspace (an installed build is a sealed bundle), so scanning burns the whole turn and finds nothing. A user asking this has already seen that failure mode; do not repeat it.\n` +
+  `   HOW TO READ: it is ONE file, listed in your skill inventory as \`${HARNESS_API_SKILL_NAME}\` (that entry shows its path). Read it in a SINGLE call. On Windows ⛔ do not use cmd's \`type "…"\` with a quoted path — the channel strips the quotes and it fails silently; use your normal file-reading path, or set its directory as the working dir and read \`SKILL.md\`.\n` +
+  `   HOW TO EXTEND: new host capability = a channel in \`electron/ipc-channels.manifest.json\` → \`npm run gen:ipc\` (then re-run the skill generator); reusable procedure = a **skill**; external service = an **MCP connector**; a lasting role that works in its own session = an **expert / expert team**; periodic work = the **scheduler**; a recorded desktop flow = an **RPA recipe**; hardware/clipboard/screenshot/voice = existing domains in the catalogue (reuse them).\n` +
+  `   ⛔ SCOPE: on an installed (packaged) build there is no source tree ⇒ only the *configuration* extension paths exist (skill / MCP connector / expert / scheduler / RPA / IM channel). Say that plainly instead of promising a source patch you cannot make. After extending the host in a source tree, re-run the generator so the catalogue matches the code again.`;
+
 function gateAndReviewInstructions(): string {
   const mcpBackend = effectiveMemoryBackend() === "mcp";
   const memorySkill = mcpBackend ? MEMORY_MCP_BACKEND_SKILL : MEMORY_CLASSIFY_SKILL;
@@ -166,6 +186,8 @@ export function buildDevInstructions(input: { desktop?: boolean; browser?: boole
   text += MEMORY_PYRAMID_INSTRUCTIONS;
   // 技能安装门禁 + 收尾复盘 + 记忆分类/整洁（09-23 用户明令的硬规则）
   text += gateAndReviewInstructions();
+  // 宿主能力与可拓展性（09-25：用户问「能拓展什么」时模型去 grep 源码，扫半天没答案）
+  text += CAPABILITY_INSTRUCTIONS;
   // 深层联动软约束：自动化能力被关闭时，在基础指令里明确告诉模型不要调用这些工具。
   // 09-20：MCP 工具（`desktop_*` / `browser_*`）现在会被 disabled_tools **硬移除**，所以这里
   // 重点变成「别用命令行兜底绕过总闸」—— nuphus-call / playwright-cli 仍在 PATH 上，

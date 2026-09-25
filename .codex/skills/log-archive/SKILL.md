@@ -23,20 +23,16 @@ description: 往 logs/ 建规范日志条目、检索历史结论、归档或删
 
 ## 写：一条命令
 
+⛔⛔ **正文一律走 `--body-file`，不要用 `--body "…"`**（09-25 实测事故：正文里的反引号被 shell 当命令替换
+执行，几段内容**静默消失**、而命令**报「新建成功」**）。正确姿势 = 用 Write 工具把正文落成 `.md`，再：
+
 ```bash
 node scripts/logs.mjs new --kind decision --area memory --title "记忆后端二选一" \
   --tags memory,mcp --commits 9308b62 --files electron/memory-backend.ts --importance high \
-  --body "## 背景
-（用户的原始诉求/现象）
-## 结论
-（定下了什么，可执行可验证）
-## 依据
-（代码路径 / 实测数据 / 用户原话）
-## 影响面
-## 回滚"
+  --body-file .workbuddy/tmp/body.md
 ```
 
-不给 `--body` 会生成五段骨架（背景/结论/依据/影响面/回滚）——**必须逐段填实**，别留占位符。
+正文五段（没给就生成骨架，**必须逐段填实**，别留占位符）：背景 / 结论 / 依据 / 影响面 / 回滚。
 
 ⛔ 三条硬要求（写不出就是还没想清楚）：
 

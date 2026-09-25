@@ -21,6 +21,7 @@ import { BotStreamSession, readBotStreamSettingsSync } from "../bot-stream";
 import { ensureBuiltinSkills, ensureExpertSkillsMarketplace } from "../builtin-skills";
 import { syncLocalMemoryConnector } from "../memory-mcp-connector";
 import { developerInstructionsLine } from "../developer-instructions";
+import { normalizeAutoCompactRatio, readAppSettings } from "../app-settings";
 import { broadcastCodexEvent, broadcastHarnessEvent } from "./window-bus";
 import { nuphusVisionEnvDrift } from "../nuphus-env";
 import { applyPersonalizationToAgentsMd, migrateGreetedForExistingUsers, readPersonalization } from "../personalization";
@@ -554,6 +555,17 @@ export async function bootApp() {
       //    没这个检查时，若其它漂移条件恰好都不满足就不会重写 → 旧值一直生效，用户重启后 bug 依旧
       //    （教训：「删掉写入」不等于「清掉已写下的值」）。
       const legacyContextKey = /^\s*model_context_window\s*=/m.test(configText);
+      /* ⛔ 自动压缩阈值漂移（09-25 加；code review 抓到）。上面所有判据都只问「键在不在 / 模型对不对」，
+         没有一个会因「压缩比例变了」而重写 ⇒ 改了设置页那个下拉（只写 app-settings.json）、
+         或改了 `DEFAULT_AUTO_COMPACT_RATIO` 默认值，**config.toml 里的旧阈值会一直生效**
+         —— 正是本项目反复踩的「删掉写入 ≠ 清掉已写下的值」那一类。
+         ⛔ 期望值必须与 applyCustomModel 的算法**逐字同源**（同一个 normalizeAutoCompactRatio、
+            同一个 activeContext 表达式、同一个 Math.round），否则要么恒 false（永不落地）、
+            要么恒 true（每次启动整份重写 —— 09-16 踩过）。跨文件不同源由守卫【159】钉住。 */
+      const compactWindow = Number(custom.models?.find((m: any) => m.id === custom.model)?.contextWindow ?? custom.contextWindow ?? 128000);
+      const compactApplied = await readAppSettings(app.getPath("userData"));
+      const expectedCompact = Math.round(compactWindow * normalizeAutoCompactRatio(compactApplied.autoCompactRatio));
+      const compactStale = !new RegExp(`model_auto_compact_token_limit = ${expectedCompact}\\b`).test(configText);
       // 供应商/模型漂移：custom-model.json（当前激活）与 config.toml 顶层 model / model_provider 不一致时重写。
       // 场景：UI 切换供应商只保存配置（延迟生效），用户没点「重启生效」就退出应用——下次启动必须
       // 按新配置生效，否则引擎继续跑旧供应商（self-heal 原只查 context_window，查不出这种漂移）。
@@ -599,8 +611,8 @@ export async function bootApp() {
         configText,
         escape: escapeToml,
       });
-      if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || nuphusVisionStale || disabledMissing || dispatchMcpBad) {
-        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, envPathStale=${envPathStale}, instructions=${instructionsOutdated}, nuphusVision=${nuphusVisionStale}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}; rewriting`);
+      if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || nuphusVisionStale || disabledMissing || dispatchMcpBad || compactStale) {
+        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, envPathStale=${envPathStale}, instructions=${instructionsOutdated}, nuphusVision=${nuphusVisionStale}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}, compactStale=${compactStale}(期望 ${expectedCompact}); rewriting`);
         await applyCustomModel(custom);
       }
     } catch (error) {

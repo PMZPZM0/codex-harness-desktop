@@ -212,7 +212,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                           <button type="button" className="key-toggle" title={showApiKey ? "隐藏" : "显示"} onClick={() => setShowApiKey((v: any) => !v)}>{showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}</button>
                         </span>
                       </label>
-                      {/* 最大并发（09-19 用户要求：供应商配置界面可自定义，默认 3）。
+                      {/* 最大并发（09-19 用户要求：供应商配置界面可自定义；09-25 默认值 3 → 10 = 上限）。
                           限流是**同一个 Key 的共享配额**：同时跑的会话越多，越容易撞 429。
                           这里给用户一个直接可调的旋钮 —— 调小 = 更省配额、更稳；调大 = 更能并行。 */}
                       <label className="provider-field">
