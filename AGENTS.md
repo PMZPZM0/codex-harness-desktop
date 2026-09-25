@@ -40,6 +40,9 @@
   - ⛔⚠️ **全仓唯一的段间入参例外**：`parts/part03/03-restart-file-model-editor.tsx` 的签名是 `(bag: Bag, ibB: ReturnType<typeof usePart03b>)`，多收 b 段 return 只为取 `providerModels`（该名字在旧文件里声明在 c 段语句区之前）。等价性已核（同一次渲染内 b 段刚算出的 state）；这也是它相对旧文件**唯一多出的一条语句**。改它要连 `part03.tsx` 调用点一起改。
   - ⛔ **组合根头注释里的「原 N 行 / M 条语句 / K 个子 hook」必须与实测一致**：09-22 抓到 7 处照抄模板的错数字（part03–part09 全写成 2,139/690/4）。数字对不上 = 注释在骗下一个读它的人。
 - `src/features/app-view/helpers.tsx` **36 行（barrel，09-24 实测）**：86 个符号原样 re-export；内容已切进 `src/features/app-view/helpers/` 下 9 个模块（runtime / stream / catalogs / skills / text / thread-list / paths / view-dom / components）。
+- 侧栏会话视图（09-25）：**分组（时间）/ 项目（cwd）/ 分类（会话来源）**三个 view tab；
+  分类口径收在纯模块 `src/lib/thread-source.mjs`（主代理 / 专家团主理人 / 团队成员子任务 /
+  专家调度 / 子智能体调度 / 专家团调度），守卫【156】**真跑**该模块断言分类判定。
 - 新增/改动 part 结构后，预检【92】会守住「子模块 return 面自洽 + 三者顺序一致」；跳过它的红 = 静默丢值。
 
 ## ⛔ 临时产物放哪（硬性，2026-09-21 立）

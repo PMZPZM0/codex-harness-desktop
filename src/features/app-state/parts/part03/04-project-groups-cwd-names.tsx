@@ -9,6 +9,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "../../../../lib/provider-continuity.mjs";
+import { groupThreadsBySource } from "../../../../lib/thread-source.mjs";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, subAgentTools, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import type { Bag } from "../bag-types";
@@ -49,7 +50,10 @@ bag.providerConfig = providerConfig as typeof bag.providerConfig;
 bag.listThreads = listThreads as typeof bag.listThreads;
 
   // 侧边栏视图模式：分组（按时间） vs 项目（按 cwd）；与 WorkBuddy 项目列表对齐
-  const [viewTab, setViewTab] = useState<"groups" | "projects">(() => (localStorage.getItem("sidebar-view-tab-v1") === "projects" ? "projects" : "groups"));
+  const [viewTab, setViewTab] = useState<"groups" | "projects" | "source">(() => {
+    const saved = localStorage.getItem("sidebar-view-tab-v1");
+    return saved === "projects" || saved === "source" ? saved : "groups";
+  });
 bag.viewTab = viewTab as typeof bag.viewTab; bag.setViewTab = setViewTab as typeof bag.setViewTab;
 
   useEffect(() => { try { localStorage.setItem("sidebar-view-tab-v1", bag.viewTab); } catch { /* ignore */ } }, [bag.viewTab]);
@@ -229,6 +233,20 @@ bag.projectAutoExpandRef = projectAutoExpandRef as typeof bag.projectAutoExpandR
   }, [bag.listThreads, bag.pinnedThreads]);
 bag.groupedThreads = groupedThreads as typeof bag.groupedThreads;
 
+  /* 侧栏「分类」视图（09-25 用户要求）：按**会话来源**归类 ——
+     主代理会话 / 专家团主理人 / 团队成员子任务 / 专家调度 / 子智能体调度 / 专家团调度。
+     口径收在纯模块 src/lib/thread-source.mjs（可被预检直接跑断言）；数据全为既有真相源。 */
+  const sourcedThreads = useMemo(() => groupThreadsBySource(bag.listThreads, {
+    delegateRecords: bag.delegateRecords,
+    teamThreadIndex: bag.teamThreadsIndex,
+    teamMemberThreadIds: bag.teamMemberThreadIds,
+    pinnedThreadIds: bag.pinnedThreads,
+  }), [bag.listThreads, bag.delegateRecords, bag.teamThreadsIndex, bag.teamMemberThreadIds, bag.pinnedThreads]);
+bag.sourcedThreads = sourcedThreads as typeof bag.sourcedThreads;
+
+  const allSourceGroupsCollapsed = bag.sourcedThreads.length > 0 && bag.sourcedThreads.every((group) => bag.collapsedSections.has(group.key));
+bag.allSourceGroupsCollapsed = allSourceGroupsCollapsed as typeof bag.allSourceGroupsCollapsed;
+
   const allGroupsCollapsed = bag.groupedThreads.length > 0 && bag.groupedThreads.every((group) => bag.collapsedSections.has(group.key));
 bag.allGroupsCollapsed = allGroupsCollapsed as typeof bag.allGroupsCollapsed;
 
@@ -253,5 +271,5 @@ bag.teamMemberThreadIds = teamMemberThreadIds as typeof bag.teamMemberThreadIds;
     }).catch(() => undefined);
     return () => { alive = false; };
   }, []);
-  return { currentModelId, usingCustomModel, providerConfig, listThreads, viewTab, setViewTab, expandedProjects, setExpandedProjects, toggleProjectExpanded, cwdOverrides, setCwdOverrides, cwdOverridesRef, rememberThreadCwd, effectiveCwd, withCwdOverride, nameOverrides, setNameOverrides, nameOverridesRef, rememberThreadName, effectiveThreadName, withNameOverride, projectMenu, setProjectMenu, pinnedThreads, setPinnedThreads, togglePinThread, projectGroups, allProjectsCollapsed, toggleAllProjects, projectAutoExpandRef, groupedThreads, allGroupsCollapsed, teamThreadsIndex, setTeamThreadsIndex, teamMemberThreadIds, setTeamMemberThreadIds };
+  return { currentModelId, usingCustomModel, providerConfig, listThreads, viewTab, setViewTab, expandedProjects, setExpandedProjects, toggleProjectExpanded, cwdOverrides, setCwdOverrides, cwdOverridesRef, rememberThreadCwd, effectiveCwd, withCwdOverride, nameOverrides, setNameOverrides, nameOverridesRef, rememberThreadName, effectiveThreadName, withNameOverride, projectMenu, setProjectMenu, pinnedThreads, setPinnedThreads, togglePinThread, projectGroups, allProjectsCollapsed, toggleAllProjects, projectAutoExpandRef, groupedThreads, allGroupsCollapsed, sourcedThreads, allSourceGroupsCollapsed, teamThreadsIndex, setTeamThreadsIndex, teamMemberThreadIds, setTeamMemberThreadIds };
 }
