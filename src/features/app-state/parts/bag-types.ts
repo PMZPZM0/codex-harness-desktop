@@ -998,11 +998,6 @@ export interface Bag {
   allModels: import("../../app-view/types.ts").Model[];
   archiveSyncRef: React.RefObject<string>;
   modelSuggestions: string[];
-  maxConcurrencyRef: React.RefObject<number>;
-  maxConcurrency: number;
-  runningCountExcept: (threadId?: string | undefined) => number;
-  atConcurrencyLimit: (threadId?: string | undefined) => boolean;
-  notifyConcurrencyLimit: (threadId?: string | undefined) => void;
   modelEditor: { mode: "edit" | "add"; originalId: string | null; paramsDirty?: boolean | undefined; draft: { id: string; contextWindow: string; maxOutputTokens: string; inputTypes: ("image" | "text" | "video")[]; outputTypes: ("image" | "text" | "video")[]; }; } | null;
   setModelEditor: React.Dispatch<React.SetStateAction<{ mode: "edit" | "add"; originalId: string | null; paramsDirty?: boolean | undefined; draft: { id: string; contextWindow: string; maxOutputTokens: string; inputTypes: ("image" | "text" | "video")[]; outputTypes: ("image" | "text" | "video")[]; }; } | null>>;
   showApiKey: boolean;

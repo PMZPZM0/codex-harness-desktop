@@ -108,17 +108,8 @@ bag.cancelRateLimitRetry = cancelRateLimitRetry as typeof bag.cancelRateLimitRet
       return;
     }
     bag.setRetryEntry(threadId, null);
-    // 并发闸门（09-19）：该会话此刻不在跑 → 重试会成为**新增一路并发**。
-    // 超限时**不放弃**（放弃等于把重试链打断、用户得手动重发），而是 10 秒后再看槽位；
-    // 这轮只做检查、不打上游，成本可忽略。
-    if (bag.atConcurrencyLimit(threadId)) {
-      const wait = 10_000;
-      bag.setRetryEntry(threadId, { attempt, retryAt: Date.now() + wait });
-      bag.clearRateLimitTimer(threadId);
-      bag.rateLimitTimersRef.current.set(threadId, window.setTimeout(() => void executeRateLimitRetry(threadId), wait));
-      bag.showToast("等待并发槽位", `该供应商已跑满 ${bag.maxConcurrencyRef.current} 个任务，槽位空出后自动继续重试`, threadId);
-      return;
-    }
+    /* ⛔ 这里原先是「并发闸门」（09-19）：超限时 10 秒后再看槽位。09-25 用户要求删除并发限制
+       （「直接把并发限制删了吧」）⇒ 整段移除，重试不再等槽位 —— 限流重试只按上游限流走。 */
     // 只有**当前正在看的会话**才动全局 sending/activeTurnId（后台会话的重试不能改别人的界面状态）
     const isFocused = () => bag.threadRef.current?.id === threadId;
     if (isFocused()) {

@@ -5,14 +5,9 @@
  */
 import type { BridgeMode } from "../responses-bridge";
 
-/**
- * 并发上限的**主进程侧默认值**（1~10）。
- *
- * 09-25 用户要求「并发默认 10」（原 3，09-19 定的）。范围仍是 1~10 ⇒ 默认即上限。
- * ⛔ 渲染层同源副本 = `src/lib/concurrency.mjs` 的 `DEFAULT_MAX_CONCURRENCY`（electron/ 与 src/
- *    独立打包、互不 import，只能各存一份）；守卫【159】逐字比对两侧。
- */
-export const DEFAULT_MAX_CONCURRENCY = 10;
+/* 并发上限的默认值不在这里 —— 它由「放开并发上限」开发功能（默认关）决定，
+   真相源 = `electron/app-settings.ts` 的 `defaultMaxConcurrency()`（保守 3 / 放开 10）。
+   ⛔ 别在本模块再定义一份：那样就有两个「默认并发」，改一处另一处静默过期。 */
 
 export type CustomModelFile = {
   provider: string;
@@ -30,9 +25,6 @@ export type CustomModelFile = {
   models?: ProviderModel[];
   /** 启用状态；禁用时若为当前供应商则清空当前配置 */
   enabled?: boolean;
-  /** 该供应商最多允许几个会话同时跑（09-19 加、供应商配置界面可自定义；09-25 默认值 3 → 10 = 上限）。
-   *  限流是同一个 Key 的共享配额 → 并发越高越容易 429；未设置时按 DEFAULT_MAX_CONCURRENCY 处理。 */
-  maxConcurrency?: number;
   /** 上游**协议**（09-19 加，供应商配置界面可自定义）：桥按它决定怎么转发。
    *  · auto（默认）：先按 responses 试，上游明确表示"没这个端点"时才切 chat；
    *  · chat：直接按 Chat Completions 转换（**网关不认 responses 且自动判定不灵时手动选它**）；

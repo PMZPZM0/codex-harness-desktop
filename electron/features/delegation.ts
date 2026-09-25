@@ -7,7 +7,7 @@
  * 跨域符号经 `import … from "../main"` 取用 —— **活绑定**（TS→CJS 编译成 `main_1.X` 属性访问）。
  * 会被重新赋值的符号经 `mutableState` 访问器读写（ESM 里 import 的绑定不可赋值）。
  */
-import { admitDispatch, canDispatchFrom, clipDispatchOutput, delegateScopeBlock, kindLabel, resolveDispatchTarget } from "../dispatch";
+import { canDispatchFrom, clipDispatchOutput, delegateScopeBlock, kindLabel, resolveDispatchTarget } from "../dispatch";
 import { buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, readExpertTeams } from "../expert-teams";
 import { safeStorage } from "electron";
 import { safeProviderId } from "../provider-id";
@@ -41,8 +41,9 @@ export async function runDelegatedTask(input: {
     restrictedLabel: originRestrict.label,
   });
   if (!gate.ok) return { ok: false, output: "", error: gate.reason };
-  const admit = admitDispatch({ running: await delegateRegistry.runningCount() });
-  if (!admit.ok) return { ok: false, output: "", error: admit.reason };
+  /* ⛔ 原先这里有一道 L4 并发闸（同时进行的调度任务上限，超限就拒）。09-25 用户要求删除并发限制
+     ⇒ 移除；一次 fan-out 派多少成员不再受限（后果：更容易撞上游 429，由引擎默认重试兜底）。
+     L3 深度闸仍在上面（`canDispatchFrom`）—— 它挡的是调用链无限延长，不是并发数。 */
 
   const targets = await buildDispatchCatalog();
   const found = resolveDispatchTarget(targets, { kind: input.kind, name: input.name });

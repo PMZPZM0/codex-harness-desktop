@@ -63,8 +63,7 @@ export type AppSettings = {
 /* ── 本文件是「应用级默认值」的**主进程侧真相源** ─────────────────────────────
    ⛔ 渲染层拿不到本模块（electron/ 不引用 src/，两侧是独立打包产物）⇒ 这几个默认值在渲染层
       有**同源副本**：`src/features/app-state/parts/part01/04-optimistic-turn-approval-e2e.tsx`
-      （autoCompactRatio）与 `src/lib/concurrency.mjs`（DEFAULT_MAX_CONCURRENCY）。
-      守卫【159】逐字比对两侧取值，改一边忘另一边即红。
+      （autoCompactRatio）。守卫【159】逐字比对两侧取值，改一边忘另一边即红。
    ⛔ 归一化不是洁癖：`autoCompactRatio` 是被乘进 `model_auto_compact_token_limit` 的**乘数**，
       存档里出现 0 / 负数 / 字符串（手改 app-settings.json、旧版本残留）会让阈值变成 0
       ⇒ 引擎每轮都在压缩，对话直接不可用（09-25 加归一化时顺手堵上）。 */

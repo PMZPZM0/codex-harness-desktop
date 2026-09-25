@@ -7,7 +7,7 @@ import path from "node:path";
 import { app, ipcMain, safeStorage } from "electron";
 import { probeCustomModel } from "../../features/custom-model-probe";
 import { safeProviderId } from "../../provider-id";
-import { DEFAULT_MAX_CONCURRENCY, type CustomModelFile, type ProviderModel } from "../../features/custom-model-types";
+import type { CustomModelFile, ProviderModel } from "../../features/custom-model-types";
 import type { BridgeMode } from "../../responses-bridge";
 import { applyCustomModel, normalizeProvider, normalizeUpstreamProtocol, readCustomModel, readCustomModels, writeCustomModels } from "../../main";
 import { codexHome, customModelFile, server, upsertCustomModel } from "../../runtime-refs";
@@ -21,7 +21,7 @@ ipcMain.handle("custom-model:read", async () => publicCustomModel(await readCust
 
 ipcMain.handle("custom-model:probe", (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) => probeCustomModel(input));
 
-ipcMain.handle("custom-model:save", async (_event, input: { provider: string; name: string; model: string; baseUrl: string; contextWindow?: string | number; wireApi?: "responses" | "chat"; apiKey?: string; models?: ProviderModel[]; enabled?: boolean; maxConcurrency?: number; upstreamProtocol?: BridgeMode }) => {
+ipcMain.handle("custom-model:save", async (_event, input: { provider: string; name: string; model: string; baseUrl: string; contextWindow?: string | number; wireApi?: "responses" | "chat"; apiKey?: string; models?: ProviderModel[]; enabled?: boolean; upstreamProtocol?: BridgeMode }) => {
   const provider = safeProviderId(input.provider.trim());
   const name = input.name.trim();
   const requestedModel = input.model.trim();
@@ -75,15 +75,9 @@ ipcMain.handle("custom-model:save", async (_event, input: { provider: string; na
   //   ⚠️ 本机/内网自建服务例外（09-19 代码审查发现）：它们本来就不需要 Key，
   //   存成禁用会让「配好本地模型却发不出消息」且看不出原因。判定与 publicCustomModel 同源。
   const keylessThirdPartySave = !encryptedKey && provider !== "openai-official" && !isLocalEndpoint(baseUrl);
-  // 并发上限（09-19 用户要求）：存储时归一（1~10，缺省 10 —— 09-25 用户要求放开到顶）。未传（旧渲染层）时沿用已有值。
-  // ⛔ 缺省值 10 与渲染层 `src/lib/concurrency.mjs` 的 DEFAULT_MAX_CONCURRENCY **同源**（守卫【159】比对）；
-  //    这里的 `|| DEFAULT_MAX_CONCURRENCY` 是「传了非法值（NaN/0/空串）」的兜底，不是"没传"的兜底。
-  const maxConcurrency = input.maxConcurrency == null
-    ? (existing?.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY)
-    : Math.min(10, Math.max(1, Math.round(Number(input.maxConcurrency)) || DEFAULT_MAX_CONCURRENCY));
   // 上游协议（09-19）：归一为 auto/chat/responses；未传（旧渲染层）时沿用已有值，兜底 auto。
   const upstreamProtocol = normalizeUpstreamProtocol(input.upstreamProtocol ?? existing?.upstreamProtocol);
-  const saved = withModels({ provider, name, model, baseUrl, contextWindow, wireApi, encryptedKey, maxConcurrency, upstreamProtocol, enabled: keylessThirdPartySave ? false : (input.enabled ?? existing?.enabled ?? true), models: mergedModels }, model);
+  const saved = withModels({ provider, name, model, baseUrl, contextWindow, wireApi, encryptedKey, upstreamProtocol, enabled: keylessThirdPartySave ? false : (input.enabled ?? existing?.enabled ?? true), models: mergedModels }, model);
   await upsertCustomModel(saved);
   const current = await readCustomModel();
   if (saved.enabled === false && current?.provider !== provider) {

@@ -9,7 +9,6 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import "@xterm/xterm/css/xterm.css";
 import { DEFAULT_EFFORT, pickDefaultEffort, normalizeEffort, ALL_EFFORTS, declaredModelEfforts } from "../../../../../lib/effort";
 import { matchModelSpec, loadExternalSpecs, formatTokenCount } from "../../../../../lib/model-specs";
-import { concurrencyExceeded, DEFAULT_MAX_CONCURRENCY, normalizeMaxConcurrency } from "../../../../../lib/concurrency.mjs";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, subAgentTools, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 
@@ -72,50 +71,19 @@ bag.archiveSyncRef = archiveSyncRef as typeof bag.archiveSyncRef;
   const modelSuggestions = bag.modelSourceProvider === bag.customDraft.provider ? (bag.providerModels ?? []) : [];
 bag.modelSuggestions = modelSuggestions as typeof bag.modelSuggestions;
 
-  // ── 并发闸门（09-19 加该旋钮；09-25 用户要求默认值 3 → 10 = 上限，仍可在界面调到 1~10）──
-  // ⛔ 根因：限流是**同一个 API Key 的共享配额**。实测（引擎 TRACE 日志）6 分钟内 4 个会话
-  //   同时打上游 **333 次**请求 ⇒ 配额瞬间打满 ⇒ 429 爆发。
-  //   这里把"同时在跑的会话数"限制在该供应商配置的上限内：超限时**不放行**并明确告知原因
-  //   （不静默排队 —— 静默排队会让用户以为卡死，且 send 路径的挂起容易引入状态机 bug）。
-  // ⛔ 与「会话完全独立」不冲突：会话的**状态**依然各自独立（互不读写）；
-  //   这里限制的是**共享资源（Key 配额）的调度**，属于物理约束，不是状态耦合。
-  const maxConcurrencyRef = useRef(DEFAULT_MAX_CONCURRENCY);
-bag.maxConcurrencyRef = maxConcurrencyRef as typeof bag.maxConcurrencyRef;
-
-  bag.maxConcurrencyRef.current = normalizeMaxConcurrency(bag.customModel?.maxConcurrency);
-
-  /** 该供应商允许的最大并发（当前生效值，供界面显示） */
-  const maxConcurrency = bag.maxConcurrencyRef.current;
-bag.maxConcurrency = maxConcurrency as typeof bag.maxConcurrency;
-
-  /** 除指定会话外，当前有几个会话在跑 */
-  function runningCountExcept(threadId?: string): number {
-    let n = 0;
-    for (const id of bag.runningThreadIdsRef.current) if (id !== threadId) n++;
-    return n;
-  }
-bag.runningCountExcept = runningCountExcept as typeof bag.runningCountExcept;
-
-  /** 是否已达并发上限（判据在 src/lib/concurrency.mjs，纯函数、可被离线预检确定性覆盖） */
-  function atConcurrencyLimit(threadId?: string): boolean {
-    return concurrencyExceeded({
-      runningCount: bag.runningCountExcept(threadId),
-      maxConcurrency: bag.maxConcurrencyRef.current,
-      threadAlreadyRunning: Boolean(threadId) && bag.runningThreadIdsRef.current.has(threadId as string),
-    });
-  }
-bag.atConcurrencyLimit = atConcurrencyLimit as typeof bag.atConcurrencyLimit;
-
-  /** 统一的超限提示（send / 编辑重发 / 排队启动 / 限流重试 共用一套说法） */
-  function notifyConcurrencyLimit(threadId?: string): void {
-    const used = bag.runningCountExcept(threadId);
-    bag.showToast(
-      "已达并发上限，未发送",
-      `该供应商最多同时运行 ${bag.maxConcurrencyRef.current} 个任务（当前 ${used} 个在跑）。` +
-      `等其中一个完成再发，或到「设置 → 模型 → 供应商」把「最大并发」调大。`,
-    );
-  }
-bag.notifyConcurrencyLimit = notifyConcurrencyLimit as typeof bag.notifyConcurrencyLimit;
+  /* ──────────────────────────────────────────────────────────────────────────
+     ⛔ 并发闸门已于 09-25 **整体删除**（用户：「直接把并发限制删了吧」，即 09-19 加的
+     「供应商最大并发」旋钮 + 09-25 加的「放开并发上限」开发功能 + 调度侧 L4 并发闸）。
+     原实现：`src/lib/concurrency.mjs`（`concurrencyExceeded` / `normalizeMaxConcurrency`）
+     与这里的 `atConcurrencyLimit` / `notifyConcurrencyLimit` / `maxConcurrencyRef`。
+     ⛔ 为什么是"删"而不是"留着但永不拦截"：留着会变成「注释声称能力」的僵尸代码 ——
+        本项目最忌讳的一类（判据看起来在、实际不生效，且没人知道该不该信）。
+     ⛔ 删除后的**已知后果**（不是 bug，是用户接受的行为变化）：
+        同时跑多少个会话不再有闸门 ⇒ 专家团一次 fan-out 全部成员时不会有人拦，
+        更容易撞上游 429（同一个 Key 的窗口内配额）。上游限流仍由引擎的重试/退避处理
+        （`provider-retry.ts`：一个重试键都不写，用引擎默认）。
+     ⛔ 要恢复：见 `logs/` 里本轮 decision 条目的「回滚」段（含被删文件的清单与判据）。
+     ────────────────────────────────────────────────────────────────────────── */
 
   // —— 模型设置页（图一/图二排版）状态 ——
   const [modelEditor, setModelEditor] = useState<{ mode: "add" | "edit"; originalId: string | null; paramsDirty?: boolean; draft: { id: string; contextWindow: string; maxOutputTokens: string; inputTypes: ("text" | "image" | "video")[]; outputTypes: ("text" | "image" | "video")[] } } | null>(null);
@@ -222,5 +190,5 @@ bag.saveModelEditor = saveModelEditor as typeof bag.saveModelEditor;
 
   const selectedModel = bag.allModels.find((entry) => entry.id === bag.modelId || entry.model === bag.modelId);
 bag.selectedModel = selectedModel as typeof bag.selectedModel;
-  return { archiveSyncRef, modelSuggestions, maxConcurrencyRef, maxConcurrency, runningCountExcept, atConcurrencyLimit, notifyConcurrencyLimit, modelEditor, setModelEditor, showApiKey, setShowApiKey, applyModelIdInput, openModelEditor, targetProviderHint, saveModelEditor, selectedModel };
+  return { archiveSyncRef, modelSuggestions, modelEditor, setModelEditor, showApiKey, setShowApiKey, applyModelIdInput, openModelEditor, targetProviderHint, saveModelEditor, selectedModel };
 }

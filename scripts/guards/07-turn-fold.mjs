@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  AUTO_CONTINUE_MAX_ATTEMPTS, C, DEFAULT_MAX_CONCURRENCY, MOOD_HEADING, ROOT, TRUNCATE_OUTPUT_MAX_CHARS, TRUNCATE_REASONING_MIN_CHARS, applyMoodSignal, codeOnly, composeMoodInstructions, concurrencyExceeded, createHash, createRequire, decayMood, emptyMood, existsSync, fail, homedir, isTruncatedEmptyTurn, join, mainSrc, moodBlock, moodSignature, moodTone, normalizeMaxConcurrency, normalizeMood, ok, pathToFileURL, preloadSrc, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readResponsesBridgeSource, readStyles, readVoiceSettingsSrc, readdirSync, relative, spawnSync, statSync, turnOutputStats, walk, warn,
+  AUTO_CONTINUE_MAX_ATTEMPTS, C, MOOD_HEADING, ROOT, TRUNCATE_OUTPUT_MAX_CHARS, TRUNCATE_REASONING_MIN_CHARS, applyMoodSignal, codeOnly, composeMoodInstructions, createHash, createRequire, decayMood, emptyMood, existsSync, fail, homedir, isTruncatedEmptyTurn, join, mainSrc, moodBlock, moodSignature, moodTone, normalizeMood, ok, pathToFileURL, preloadSrc, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readResponsesBridgeSource, readStyles, readVoiceSettingsSrc, readdirSync, relative, spawnSync, statSync, turnOutputStats, walk, warn,
 } from "./_ctx.mjs";
 import { isQueueAlreadyStartedError } from "../../src/lib/queue-errors.mjs";
 import { splitMarkdown, trimInvisibleSpace } from "../../src/lib/markdown-blocks.mjs";
@@ -2542,68 +2542,28 @@ export async function run() {
 
 
 {
-  // ── 【69】并发闸门判据（09-19 加；09-25 用户要求默认值 3 → 10）──
-  //   跑**真实实现**（src/lib/concurrency.mjs），覆盖边界；判据写错会直接卡死用户发送，
-  //   所以每条都要能说出"错了会怎样"。
-  (DEFAULT_MAX_CONCURRENCY === 10 ? ok : fail)("【69】默认并发上限为 10（09-25 用户要求，原 3）");
-  (normalizeMaxConcurrency(undefined) === 10 && normalizeMaxConcurrency("") === 10 && normalizeMaxConcurrency(0) === 10 && normalizeMaxConcurrency(-5) === 10 ? ok : fail)(
-    "【69】非法/缺失上限回落默认（0 与负数不会把发送彻底卡死）"
-  );
-  (normalizeMaxConcurrency(99) === 10 && normalizeMaxConcurrency("2.6") === 3 ? ok : fail)(
-    "【69】上限收敛在 1~10 并四舍五入"
-  );
-  // 核心语义：达到上限拦截、未达放行、本会话已在跑不拦
-  (concurrencyExceeded({ runningCount: 3, maxConcurrency: 3 }) === true ? ok : fail)(
-    "【69】已达上限（3/3）→ 拦截新增一路"
-  );
-  (concurrencyExceeded({ runningCount: 2, maxConcurrency: 3 }) === false ? ok : fail)(
-    "【69】未达上限（2/3）→ 放行"
-  );
-  (concurrencyExceeded({ runningCount: 3, maxConcurrency: 3, threadAlreadyRunning: true }) === false ? ok : fail)(
-    "【69】本会话已在跑 → 追加消息不拦（否则会把自己堵死）"
-  );
-  (concurrencyExceeded({ runningCount: 5, maxConcurrency: 1 }) === true ? ok : fail)(
-    "【69】上限调小到 1 时，超额仍拦"
-  );
-  (concurrencyExceeded({}) === false && concurrencyExceeded({ runningCount: NaN, maxConcurrency: 3 }) === false ? ok : fail)(
-    "【69】计数异常时不拦（宁可放行也不把用户卡死）"
-  );
-  // 接线：闸门必须挂在多个发送入口（只挂一个入口 = 从别的路径绕过限制）
-  const gateSrc69 = readAppUi();
-  const gateCalls69 = (gateSrc69.match(/atConcurrencyLimit\(/g) || []).length;
-  (gateCalls69 >= 3 ? ok : fail)(
-    `【69】闸门接入多个发送入口（send / 编辑重发 / 限流重试，共 ${gateCalls69} 处）`
-  );
-  (/maxConcurrencyRef\.current = normalizeMaxConcurrency\(customModel\?\.maxConcurrency\)/.test(gateSrc69) ? ok : fail)(
-    "【69】闸门上限取自当前供应商配置（不是写死的）"
-  );
-  const providerSrc69 = readFileSync(join(ROOT, "src", "hooks", "useModelProviders.ts"), "utf8");
-  (/maxConcurrency: normalizeMaxConcurrency\(dedupedDraft\.maxConcurrency\)/.test(providerSrc69) ? ok : fail)(
-    "【69】保存供应商时并发上限一并落档（草稿是字符串 → 存成数值）"
-  );
-  const mainSrc69 = readMainSource();
-  (/maxConcurrency\?: number;/.test(mainSrc69) ? ok : fail)(
-    "【69】主进程档案类型含 maxConcurrency"
-  );
-  (/input\.maxConcurrency == null[\s\S]{0,140}?existing\?\.maxConcurrency \?\? DEFAULT_MAX_CONCURRENCY/.test(mainSrc69) ? ok : fail)(
-    "【69】主进程保存时归一并在未传值时沿用旧值（缺省用常量，不写死数字）"
-  );
-  const fieldSrc69 = readAppUi();
-  (/最大并发/.test(fieldSrc69) ? ok : fail)(
-    "【69】供应商配置界面有「最大并发」输入框"
-  );
+  /* ── 【69】并发闸门已于 09-25 **整体删除**（用户：「直接把并发限制删了吧」）────────────
+     被删的符号：`src/lib/concurrency.mjs`（concurrencyExceeded / normalizeMaxConcurrency / 两档常量）、
+     part03 的 atConcurrencyLimit / notifyConcurrencyLimit / maxConcurrencyRef、
+     主进程 `admitDispatch` / `maxConcurrentDispatch`、UI「最大并发」输入框。
+     ⛔ 下面两条是**负向断言**（匹配前先过 codeOnly —— 注释里引用旧符号名不该把它顶成假红/假绿）：
+        谁把并发限制加回来，预检直接红（用户 09-25 的明确要求是删除，不许悄悄复活）。
+     ⛔ 上游限流仍由引擎默认重试/退避兜底（provider-retry.ts：一个重试键都不写）。 */
+    const appUiCode69 = codeOnly(readAppUi());
+    const mainSrc69 = codeOnly(readMainSource());
+    (!/concurrencyExceeded|atConcurrencyLimit|normalizeMaxConcurrency|notifyConcurrencyLimit|maxConcurrencyRef/.test(appUiCode69) ? ok : fail)(
+      "【69】⛔ 渲染层不得再有并发闸门的任何符号（用户 09-25 要求删除，不许悄悄复活）"
+    );
+    (!/admitDispatch|maxConcurrentDispatch|MAX_CONCURRENT_DISPATCH/.test(mainSrc69) ? ok : fail)(
+      "【69】⛔ 主进程不得再有调度并发闸（L4 总量闸已删；L3 深度闸 canDispatchFrom 保留）"
+    );
 
-  /* ── 【159】（09-25 用户要求）：两个「改了就影响所有会话」的默认值必须**跨进程同源** ──
-     ⛔ 为什么值得一条守卫：`electron/` 与 `src/` 是**独立打包产物、互不 import**，所以
-        「默认并发」「默认自动压缩比例」各存了一份字面量。改了主进程忘渲染层（或反过来）的症状
-        是**静默偏半**：设置页显示 10、主进程按 3 存；或反过来。跑绿也看不出来。
-     ⛔ 判据取**字面量本身**（不是"含某个词"）—— 上一轮【150】就吃过「断言命中注释而非代码」的亏。 */
-  const concSrc = readFileSync(join(ROOT, "src", "lib", "concurrency.mjs"), "utf8");
-  const concRenderer = (concSrc.match(/export const DEFAULT_MAX_CONCURRENCY = (\d+);/) || [])[1];
-  const concMain = (mainSrc69.match(/export const DEFAULT_MAX_CONCURRENCY = (\d+);/) || [])[1];
-  (concRenderer && concMain && concRenderer === concMain && Number(concRenderer) === 10 ? ok : fail)(
-    `【159】默认并发跨进程同源且为 10（渲染层 ${concRenderer} / 主进程 ${concMain}）`
-  );
+  /* ── 【159】默认值跨进程同源（09-25；压缩比例保留，并发档位已随闸门删除）──
+     ⛔ `electron/` 与 `src/` 是**独立打包产物、互不 import**，所以「默认自动压缩比例」两侧各有一份
+        字面量。改了主进程忘渲染层（或反过来）的症状是**静默偏半**：设置页显示 60%、主进程按 75% 写。
+        跑绿也看不出来。
+     ⛔ 判据取**字面量本身**（不是"含某个词"）—— 上一轮【150】就吃过「断言命中注释而非代码」的亏。
+     ⛔ 并发档位已随闸门删除（见【69】），这里只剩压缩比例这一对。 */
   const ratioRenderer = ((readAppUi().match(/const AUTO_COMPACT_RATIO_DEFAULT = ([\d.]+);/) || [])[1]);
   const ratioMain = ((mainSrc69.match(/export const DEFAULT_AUTO_COMPACT_RATIO = ([\d.]+);/) || [])[1]);
   (ratioRenderer && ratioMain && ratioRenderer === ratioMain && Number(ratioRenderer) === 0.6 ? ok : fail)(
@@ -2822,7 +2782,7 @@ export async function run() {
   (/<option value="chat">Chat 兼容/.test(appSrc72) ? ok : fail)("【72】可手动选「Chat 兼容」");
   (/type UpstreamProtocol/.test(appSrc72) ? ok : fail)("【72】界面用类型约束（不是裸字符串）");
   // ⑦ 语义不许与 wireApi 混为一谈（wireApi 是写给引擎的，恒 responses）
-  (/wireApi: "responses",\s*\n\s*maxConcurrency: normalizeMaxConcurrency/.test(hookSrc72) ? ok : fail)(
+  (/wireApi: "responses",/.test(hookSrc72) ? ok : fail)(
     "【72】wireApi 仍恒为 responses（写给引擎；引擎只发 Responses，写 chat 会拒载整份配置）"
   );
   // ⑧ 代码审查（09-19）修的三处 —— 都是"看起来能跑、实际会静默失效"的类型
@@ -2905,8 +2865,8 @@ export async function run() {
   (["11434", "1234", "8000", "8080"].every((port) => app73.includes(`127.0.0.1:${port}/v1`)) ? ok : fail)(
     "【73】覆盖四家常用本地服务端口（Ollama / LM Studio / vLLM / llama.cpp）"
   );
-  (/maxConcurrency: "1",/.test(app73) ? ok : fail)(
-    "【73】本地预设把并发设为 1（单卡多路会让 KV 成倍占用，明显变慢甚至 OOM）"
+  (!/maxConcurrency: "/.test(app73) ? ok : fail)(
+    "【73】⛔ 本地预设不得再带并发档位（并发限制已删，09-25；不许悄悄复活）"
   );
   // 点预设不能改掉已有供应商的身份（改了就是覆盖别人的配置）
   // 点预设不能改掉已有供应商的身份 —— 09-19 改为**更强的保证**：

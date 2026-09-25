@@ -115,29 +115,14 @@ export function canDispatchFrom(input: { isDelegated?: boolean; depth?: number; 
   return { ok: true };
 }
 
-/* ─────────────── L4：总量闸 ─────────────── */
-
-/**
- * 同时进行的调度任务上限（超出的直接拒绝并说明，不排队——排队会让模型以为自己已经发出去了）。
- *
- * 09-25 用户要求 4 → **10**（与「供应商最大并发」同一轮的诉求：并发放开）。
- * ⛔ 它挡的是「一次 fan-out 出十几个成员把同一个 Key 的配额打爆（429 爆发）」——
- *    配额共享这条物理约束没有变，所以超限仍然**拒绝而非排队**；调到 10 意味着用户接受更激进的并行。
- * ⛔ 拒绝文案里的数字取自本常量（别在文案里写死）。
- */
-export const MAX_CONCURRENT_DISPATCH = 10;
-
-export function admitDispatch(input: { running: number; depth?: number }): { ok: boolean; reason?: string } {
-  const running = Number(input?.running ?? 0);
-  if (running >= MAX_CONCURRENT_DISPATCH) {
-    return {
-      ok: false,
-      reason: `当前已有 ${running} 个调度任务在执行（上限 ${MAX_CONCURRENT_DISPATCH}）。请等其中一个结束后再试，或把要委托的活合并成一次调用。`,
-    };
-  }
-  const gate = canDispatchFrom({ depth: input?.depth });
-  return gate.ok ? { ok: true } : gate;
-}
+/* ─────────────── 原 L4「总量闸」（同时进行的调度任务上限）已于 09-25 删除 ───────────────
+   用户原话：「直接把并发限制删了吧」。被删的符号：`MAX_CONCURRENT_DISPATCH*` /
+   `maxConcurrentDispatch()` / `admitDispatch()`；调用点 `features/delegation.ts` 同步移除。
+   ⛔ 删除后：一次 fan-out 派出多少成员**不再有人拦**。已知后果 = 专家团并行时更容易撞上游 429
+      （同一个 Key 的窗口内配额）。上游限流仍由引擎默认重试/退避处理（provider-retry.ts）。
+   ⛔ 保留的仍是 L3 深度闸（`canDispatchFrom`）—— 它挡的是**调用链无限延长**（被委派者再委派），
+      与"同时几路"无关，不属于并发限制，不要顺手删。
+   恢复方式见 `logs/` 本轮 decision 条目。 */
 
 /** 单次回传给调用方的输出上限（字符）。超出部分截断并指向完整会话。 */
 export const MAX_OUTPUT_CHARS = 12000;
