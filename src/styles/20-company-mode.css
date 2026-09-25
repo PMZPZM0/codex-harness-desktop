@@ -95,72 +95,370 @@
   overflow: hidden;
 }
 
-/* ── 组织树（SVG 动画）── */
-.company-mode-org {
-  padding: 10px 14px;
-  overflow: auto;
-  border-right: 1px solid var(--line);
+/* ── 虚拟办公室场景（09-25 v2：对齐 Marvis 马维斯的「拟人化办公室」）──
+   ⛔ v1 是方框节点 + 直角折线的组织架构图，用户反馈「歪歪扭扭，跟 Marvis 差远了」。
+   现在 = 后墙（窗/白板/挂钟/绿植）+ 地板 + CEO 独立工位 + 员工工位网格，
+   每个员工是一个 SVG 小人：运行中敲键盘 / 空闲打盹喝咖啡 / 无会话空工位。 */
+.office-scene {
+  position: relative;
+  flex: 1;
+  min-height: 300px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--office-wall);
+  --office-wall: color-mix(in srgb, var(--panel-2) 88%, var(--link) 6%);
+  --office-floor: color-mix(in srgb, var(--panel-2) 74%, var(--text) 6%);
+  border: 1px solid var(--line);
+  padding: 10px 12px 14px;
   display: flex;
   flex-direction: column;
+  gap: 6px;
 }
 
-.company-mode-org-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.company-mode-org-svg { width: 100%; height: auto; flex: 1; }
-
-.company-mode-org-caption,
-.company-mode-org-hint { margin: 4px 6px; font-size: 11.5px; color: var(--muted); }
-
-/* SVG 变量（随主题） */
-.company-mode-org-svg {
-  --company-link-from: var(--faint);
-  --company-link-to: var(--muted);
-  --company-pulse: var(--link);
-}
-
-/* CEO 节点 */
-.cm-node-ceo rect {
-  fill: color-mix(in srgb, var(--link) 12%, var(--panel-2));
-  stroke: color-mix(in srgb, var(--link) 55%, var(--line));
-  stroke-width: 1.4;
-}
-.cm-node-ceo .cm-node-name { fill: var(--text); font-size: 14px; font-weight: 600; }
-.cm-node-ceo .cm-node-role { fill: var(--muted); font-size: 10.5px; }
-
-/* 员工节点 */
-.cm-node-member rect {
-  fill: var(--panel-2);
-  stroke: var(--line);
-  stroke-width: 1.2;
-  transition: stroke .2s ease, fill .2s ease;
-}
-.cm-node-member .cm-node-name { fill: var(--text); font-size: 12.5px; font-weight: 600; }
-.cm-node-member .cm-node-role { fill: var(--muted); font-size: 10px; }
-.cm-node-member:hover rect { stroke: var(--link); }
-.cm-node-member.is-running rect { stroke: color-mix(in srgb, var(--ok, #1a9e55) 65%, var(--line)); fill: color-mix(in srgb, var(--ok, #1a9e55) 7%, var(--panel-2)); }
-.cm-node-member.is-never rect { stroke-dasharray: 4 3; }
-
-/* 运行中呼吸光环 */
-.cm-node-halo {
-  fill: none;
-  stroke: color-mix(in srgb, var(--ok, #1a9e55) 55%, transparent);
-  stroke-width: 1.6;
-  animation: cm-halo 1.8s ease-in-out infinite;
+/* 后墙装饰 */
+.office-wall {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 42%;
   pointer-events: none;
 }
-@keyframes cm-halo {
-  0%, 100% { opacity: .35; transform: scale(1); }
-  50% { opacity: .9; transform: scale(1.015); }
-}
-.cm-node-member.is-running .cm-node-halo { transform-box: fill-box; transform-origin: center; }
 
-/* 连线：静止细线；运行中光点流动 */
-.cm-link-path { opacity: .8; }
-.cm-link.is-running .cm-link-path {
-  stroke-dasharray: 7 6;
-  animation: cm-flow 1.2s linear infinite;
+.office-window {
+  position: absolute;
+  top: 14px;
+  left: 18px;
+  width: 132px;
+  height: 74px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #cfe6ff, #eaf4ff);
+  border: 2px solid color-mix(in srgb, var(--line) 80%, var(--text) 20%);
+  overflow: hidden;
 }
-@keyframes cm-flow { to { stroke-dashoffset: -13; } }
-.cm-link-pulse { filter: drop-shadow(0 0 4px var(--company-pulse)); }
+.office-sky { position: absolute; inset: 0; background: linear-gradient(180deg, #bfe0ff, #f2f9ff); }
+.office-cloud {
+  position: absolute;
+  height: 10px;
+  border-radius: 999px;
+  background: #fff;
+  opacity: .92;
+  animation: office-drift 26s linear infinite;
+}
+.office-cloud.cloud-a { width: 34px; top: 16px; left: 10px; }
+.office-cloud.cloud-b { width: 22px; top: 34px; left: 60px; animation-duration: 34s; animation-delay: -8s; }
+@keyframes office-drift {
+  from { transform: translateX(-14px); }
+  to { transform: translateX(120px); }
+}
+
+.office-whiteboard {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 168px;
+  height: 50px;
+  border-radius: 6px;
+  background: #fff;
+  border: 2px solid color-mix(in srgb, var(--line) 78%, var(--text) 22%);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.office-board-line { height: 4px; border-radius: 3px; background: color-mix(in srgb, var(--link) 45%, #cdd6e2); }
+.office-board-line.w70 { width: 70%; }
+.office-board-line.w45 { width: 45%; background: color-mix(in srgb, var(--ok, #1a9e55) 45%, #cdd6e2); }
+.office-board-line.w60 { width: 60%; }
+
+.office-clock {
+  position: absolute;
+  top: 18px;
+  right: 26px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid color-mix(in srgb, var(--line) 78%, var(--text) 22%);
+}
+.office-clock-hand {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 13px;
+  background: var(--text);
+  border-radius: 2px;
+  transform-origin: 50% 100%;
+  animation: office-clock-spin 48s linear infinite;
+}
+@keyframes office-clock-spin { to { transform: rotate(360deg); } }
+
+.office-plant {
+  position: absolute;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+}
+.office-plant.plant-left { left: 26px; }
+.office-plant span {
+  display: block;
+  width: 12px;
+  height: 26px;
+  border-radius: 50% 50% 40% 40%;
+  background: color-mix(in srgb, var(--ok, #1a9e55) 55%, #7fbf8f);
+}
+.office-plant span:nth-child(2) { height: 34px; }
+.office-plant span:nth-child(3) { height: 22px; }
+
+/* 地板 */
+.office-floor {
+  position: absolute;
+  inset: 42% 0 0 0;
+  background: linear-gradient(180deg, var(--office-floor), color-mix(in srgb, var(--office-floor) 80%, var(--panel)));
+  pointer-events: none;
+}
+.office-floor-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+/* CEO 独立工位（绝对定位：名牌 → 显示器 → 人 → 桌板 → 职位） */
+.office-ceo {
+  position: relative;
+  z-index: 2;
+  align-self: center;
+  width: 240px;
+  height: 166px;
+  margin-top: 54px;
+  flex: none;
+}
+.office-ceo-plate {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--link) 14%, var(--panel));
+  color: var(--link);
+  border: 1px solid color-mix(in srgb, var(--link) 32%, var(--line));
+  white-space: nowrap;
+}
+.office-ceo-monitor {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 46px;
+  height: 28px;
+  border-radius: 5px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--link) 22%, #fff), color-mix(in srgb, var(--link) 8%, #fff));
+  border: 2px solid color-mix(in srgb, var(--text) 30%, var(--line));
+  z-index: 1;
+}
+.office-ceo .office-worker { position: absolute; top: 56px; left: 50%; margin-left: -33px; z-index: 2; }
+.office-ceo-desk {
+  position: absolute;
+  top: 130px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 190px;
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #c9a97c, #b08d5f);
+  box-shadow: 0 3px 0 color-mix(in srgb, #8a6b45 80%, transparent);
+  z-index: 3;
+}
+.office-ceo-sub { position: absolute; top: 146px; left: 50%; transform: translateX(-50%); font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+/* 员工工位网格 */
+.office-desks {
+  position: relative;
+  z-index: 2;
+  margin-top: auto;
+  display: grid;
+  grid-template-columns: repeat(var(--office-cols, 4), minmax(140px, 168px));
+  justify-content: center;
+  gap: 6px 10px;
+  align-items: end;
+}
+.office-desks[data-cols="1"] { --office-cols: 1; }
+.office-desks[data-cols="2"] { --office-cols: 2; }
+.office-desks[data-cols="3"] { --office-cols: 3; }
+.office-desks[data-cols="4"] { --office-cols: 4; }
+
+/* 工位：固定高度 + 绝对定位（显示器 → 人 → 桌板遮大腿 → 名牌），避免 flex 流造成「人浮空」 */
+.office-desk {
+  position: relative;
+  height: 150px;
+}
+
+/* 状态气泡（工位右上角） */
+.office-desk-bubble {
+  position: absolute;
+  top: 0;
+  right: 14px;
+  min-height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+.office-bubble-dots { display: inline-flex; gap: 3px; padding: 3px 7px; border-radius: 999px; background: color-mix(in srgb, var(--ok, #1a9e55) 16%, #fff); border: 1px solid color-mix(in srgb, var(--ok, #1a9e55) 38%, var(--line)); }
+.office-bubble-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--ok, #1a9e55); animation: office-dot 1.1s ease-in-out infinite; }
+.office-bubble-dots i:nth-child(2) { animation-delay: .18s; }
+.office-bubble-dots i:nth-child(3) { animation-delay: .36s; }
+@keyframes office-dot { 0%, 100% { opacity: .35; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-3px); } }
+
+.office-bubble-zzz {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: .06em;
+  animation: office-zzz 2.6s ease-in-out infinite;
+}
+@keyframes office-zzz {
+  0%, 100% { opacity: .35; transform: translate(0, 2px) scale(.92); }
+  50% { opacity: 1; transform: translate(3px, -3px) scale(1); }
+}
+.office-bubble-off { width: 6px; height: 6px; border-radius: 50%; background: color-mix(in srgb, var(--muted) 45%, transparent); }
+
+/* 显示器（工位顶部居中） */
+.office-monitor {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 44px;
+  height: 28px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 22%, var(--panel));
+  border: 2px solid color-mix(in srgb, var(--text) 32%, var(--line));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+.office-screen {
+  display: block;
+  width: 35px;
+  height: 19px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 30%, #dfe6ee);
+}
+.office-desk.is-working .office-screen {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ok, #1a9e55) 32%, #fff), color-mix(in srgb, var(--link) 22%, #fff));
+  animation: office-screen-glow 1.5s ease-in-out infinite;
+}
+@keyframes office-screen-glow {
+  0%, 100% { box-shadow: 0 0 4px color-mix(in srgb, var(--ok, #1a9e55) 30%, transparent); }
+  50% { box-shadow: 0 0 10px color-mix(in srgb, var(--ok, #1a9e55) 60%, transparent); }
+}
+.office-desk.is-empty .office-screen { background: color-mix(in srgb, var(--text) 12%, #e3e8ee); }
+.office-monitor-stand { position: absolute; bottom: -7px; left: 50%; transform: translateX(-50%); width: 16px; height: 7px; border-radius: 0 0 3px 3px; background: color-mix(in srgb, var(--text) 28%, var(--line)); }
+
+/* 椅子（在人身后） */
+.office-chair {
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  margin-left: -16px;
+  width: 32px;
+  height: 34px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 14%, var(--panel-2));
+  border: 1px solid var(--line);
+  z-index: 0;
+}
+
+/* 桌板（在人前方，遮住大腿 ⇒ 视觉上「坐在桌后伏案」） */
+.office-desk-panel {
+  position: absolute;
+  top: 118px;
+  left: 5%;
+  width: 90%;
+  height: 10px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #cfae82, #b08d5f);
+  box-shadow: 0 3px 0 color-mix(in srgb, #8a6b45 80%, transparent);
+  z-index: 3;
+}
+
+/* 小人（坐在桌后：人 z=2 < 桌板 z=3 ⇒ 大腿被桌板遮住） */
+.office-worker { position: absolute; top: 34px; left: 50%; margin-left: -30px; z-index: 2; transform-origin: 50% 100%; animation: office-breathe 3.4s ease-in-out infinite; }
+@keyframes office-breathe { 0%, 100% { transform: translateY(0) scale(var(--wk-scale, 1)); } 50% { transform: translateY(-1.5px) scale(var(--wk-scale, 1)); } }
+.office-worker.is-clickable { cursor: pointer; }
+.office-worker.is-clickable:hover { filter: drop-shadow(0 4px 10px color-mix(in srgb, var(--worker-color) 45%, transparent)); }
+
+.wk-head { fill: var(--worker-color); }
+.wk-hair { fill: color-mix(in srgb, var(--worker-dark) 82%, #1b2430); }
+.wk-body { fill: var(--worker-color); }
+.wk-tie { fill: color-mix(in srgb, var(--worker-dark) 70%, #ffffff); }
+.wk-eye { fill: #1f2733; }
+.wk-eye-closed { fill: none; stroke: #1f2733; stroke-width: 1.4; stroke-linecap: round; }
+.wk-chair-back { fill: none; stroke: none; }
+.wk-thigh { fill: color-mix(in srgb, var(--worker-dark) 55%, #33404e); }
+.wk-shin { fill: color-mix(in srgb, var(--worker-dark) 55%, #33404e); }
+.wk-shoe { fill: #2c3542; }
+.wk-arm { fill: var(--worker-color); transform-origin: 50% 0%; }
+
+/* 工作态：手臂交替敲键盘 + 脚打拍子 */
+.wk-arm.is-typing { animation: office-type-a .42s ease-in-out infinite alternate; }
+.wk-arm.is-typing-alt { animation: office-type-b .42s ease-in-out infinite alternate; }
+@keyframes office-type-a { from { transform: rotate(-14deg); } to { transform: rotate(6deg); } }
+@keyframes office-type-b { from { transform: rotate(10deg); } to { transform: rotate(-8deg); } }
+.office-worker.state-running .wk-shin,
+.office-worker.state-ceo .wk-shin { animation: office-foot-tap 1.3s ease-in-out infinite; transform-origin: 50% 0%; }
+@keyframes office-foot-tap { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-5deg); } }
+
+/* 空闲态：咖啡杯浮动（眼睛闭着由 JSX 决定） */
+.office-coffee {
+  position: absolute;
+  right: -4px;
+  top: 26px;
+  font-size: 13px;
+  animation: office-coffee-sip 3.6s ease-in-out infinite;
+}
+@keyframes office-coffee-sip {
+  0%, 100% { transform: translateY(0) rotate(-4deg); opacity: .95; }
+  45% { transform: translateY(-5px) rotate(6deg); opacity: 1; }
+}
+
+/* 空工位：整体虚化 + 虚线标签 */
+.office-worker.state-never { opacity: .34; animation: none; }
+.office-vacant {
+  position: absolute;
+  top: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  z-index: 4;
+}
+
+/* 名牌（桌板下方） */
+.office-name-plate { position: absolute; top: 130px; left: 0; width: 100%; text-align: center; line-height: 1.3; z-index: 4; }
+.office-name-plate strong { display: block; font-size: 11.5px; }
+.office-name-plate em { font-style: normal; font-size: 10px; color: var(--muted); }
+
+/* 窄屏：工位网格降为两列 */
+@media (max-width: 900px) {
+  .office-desks[data-cols="4"] { --office-cols: 2; }
+  .office-desks[data-cols="3"] { --office-cols: 2; }
+}
+
 
 /* ── 员工看板（右栏卡片）── */
 .company-mode-staff {
