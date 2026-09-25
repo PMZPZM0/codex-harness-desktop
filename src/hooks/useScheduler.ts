@@ -140,8 +140,13 @@ export function useScheduler() {
   }
 
   async function deleteSchedule(id: string) {
-    await window.codex.deleteScheduledTask(id);
-    setScheduledTasks((current) => current.filter((entry) => entry.id !== id));
+    try {
+      await window.codex.deleteScheduledTask(id);
+      setScheduledTasks((current) => current.filter((entry) => entry.id !== id));
+      setScheduleStatus("定时任务已删除");
+    } catch (error: any) {
+      setScheduleStatus(`删除失败：${error?.message ?? String(error)}`);
+    }
   }
 
   async function runSchedule(id: string) {

@@ -163,17 +163,25 @@ export function useMemory({ threadId, activeTurnId, workspace }: Options = {}) {
   }
 
   async function deleteMemoryRecord(id: string) {
-    await window.codex.deleteMemory(id);
-    setMemories((current) => current.filter((entry) => entry.id !== id));
+    try {
+      await window.codex.deleteMemory(id);
+      setMemories((current) => current.filter((entry) => entry.id !== id));
+      setMemoryStatus("已删除 1 条记忆");
+    } catch (error: any) {
+      setMemoryStatus(`删除失败：${error?.message ?? String(error)}`);
+    }
   }
 
   /** 按会话组一次性删除：避免一次会话产生的多条 message-level 记录要逐条删 */
   async function deleteMemoryGroup(predicate: (entry: MemoryRecord) => boolean) {
     const targets = memories.filter(predicate);
     if (!targets.length) return 0;
-    await Promise.all(targets.map((entry) => window.codex.deleteMemory(entry.id).catch(() => undefined)));
+    const results = await Promise.allSettled(targets.map((entry) => window.codex.deleteMemory(entry.id)));
+    const failed = results.filter((r) => r.status === "rejected").length;
     setMemories((current) => current.filter((entry) => !predicate(entry)));
-    return targets.length;
+    const done = targets.length - failed;
+    if (failed) setMemoryStatus(`删除完成 ${done} 条、失败 ${failed} 条（重试可再删）`);
+    return done;
   }
 
   async function resetMemory() {

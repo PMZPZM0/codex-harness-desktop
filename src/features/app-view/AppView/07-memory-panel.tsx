@@ -270,7 +270,7 @@ export function AppViewMemoryPanel({ app }: { app: HarnessAppApi }) {
                       onPreview={(entry) => setMemoryPreview(entry)}
                       onTogglePin={togglePinned}
                       onDeleteOne={(id) => void deleteMemoryRecord(id)}
-                      onDeleteGroup={(group) => void deleteMemoryGroup((entry) => (entry.sourceThreadId ?? "__manual") === group.key).then((count) => count > 0 && setMemoryStatus(`已从「${group.threadTitle}」删除 ${count} 条记忆`))}
+                      onDeleteGroup={(group) => void deleteMemoryGroup((entry) => (entry.sourceThreadId ?? "__manual") === group.key).then((count) => { if (count > 0) setMemoryStatus(`已从「${group.threadTitle}」删除 ${count} 条记忆`); else setMemoryStatus("没有可删除的记忆（可能已被删除）"); })}
                       onOpenThread={(threadId) => { setMemoryCenterOpen(false); setSettingsOpen(false); void openThread(threadId); }}
                     />
                   </div>
