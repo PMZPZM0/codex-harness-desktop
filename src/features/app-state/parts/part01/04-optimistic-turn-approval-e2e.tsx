@@ -140,6 +140,13 @@ bag.tokenUsageTotalsRef = tokenUsageTotalsRef as typeof bag.tokenUsageTotalsRef;
   const derivedTokenUsageRef = useRef(new Map<string, any>());
 bag.derivedTokenUsageRef = derivedTokenUsageRef as typeof bag.derivedTokenUsageRef;
 
+  /* 每个会话**各自**的用量快照（09-25 用户报「一切换供应商就爆了上下文」）。
+     ⛔ 原先 tokenUsage 是全应用**单槽**：任何会话的 thread/tokenUsage/updated 都往里写、切会话
+     也不清 ⇒ 环里可能亮着**上一个会话**的数字（长会话切走后那个大数字就"粘"在环上）。
+     现在按 threadId 存一份，显示侧只取**当前会话**那一份（见 part05 的写入与切换同步）。 */
+  const tokenUsageByThreadRef = useRef(new Map<string, any>());
+bag.tokenUsageByThreadRef = tokenUsageByThreadRef as typeof bag.tokenUsageByThreadRef;
+
 
   const normalizeTokenUsage = useCallback((raw: any, threadId?: string) => {
     if (!raw || !threadId) return raw;
@@ -349,5 +356,5 @@ bag.changeHardwareAccel = changeHardwareAccel as typeof bag.changeHardwareAccel;
     void window.codex.saveAppSettings({ downloadSource: next }).catch(() => { bag.setDownloadSource(bag.downloadSource); bag.setNotice("下载源保存失败，请重试"); });
   };
 bag.changeDownloadSource = changeDownloadSource as typeof bag.changeDownloadSource;
-  return { sawRunningTurnRef, optimisticConfirmed, openingThread, setOpeningThread, pending, setPending, diff, setDiff, tokenUsage, setTokenUsage, tokenUsageRef, tokenUsageTotalsRef, derivedTokenUsageRef, normalizeTokenUsage, turnStartedAtRef, activeModelRef, usageStats, setUsageStats, streamRafRef, pendingDeltaRef, lastFlushAtRef, rightOpen, setRightOpen, desktopAuto, setDesktopAuto, browserAuto, setBrowserAuto, autoCompactRatio, setAutoCompactRatio, hardwareAccel, setHardwareAccel, downloadSource, setDownloadSource, adaptiveTone, setAdaptiveTone, restartPending, setRestartPending, sshServers, setSshServers, sshLoaded, setSshLoaded, sshBusyId, setSshBusyId, sshTestingId, setSshTestingId, sshDraft, setSshDraft, sshSaving, setSshSaving, sshQuery, setSshQuery, sshFilter, setSshFilter, sshChecked, setSshChecked, sshBatchBusy, setSshBatchBusy, sshTerminal, setSshTerminal, sshExecTarget, setSshExecTarget, sshEditorTest, setSshEditorTest, toggleDesktopAuto, toggleBrowserAuto, changeAdaptiveTone, changeHardwareAccel, changeDownloadSource };
+  return { sawRunningTurnRef, optimisticConfirmed, openingThread, setOpeningThread, pending, setPending, diff, setDiff, tokenUsage, setTokenUsage, tokenUsageRef, tokenUsageByThreadRef, tokenUsageTotalsRef, derivedTokenUsageRef, normalizeTokenUsage, turnStartedAtRef, activeModelRef, usageStats, setUsageStats, streamRafRef, pendingDeltaRef, lastFlushAtRef, rightOpen, setRightOpen, desktopAuto, setDesktopAuto, browserAuto, setBrowserAuto, autoCompactRatio, setAutoCompactRatio, hardwareAccel, setHardwareAccel, downloadSource, setDownloadSource, adaptiveTone, setAdaptiveTone, restartPending, setRestartPending, sshServers, setSshServers, sshLoaded, setSshLoaded, sshBusyId, setSshBusyId, sshTestingId, setSshTestingId, sshDraft, setSshDraft, sshSaving, setSshSaving, sshQuery, setSshQuery, sshFilter, setSshFilter, sshChecked, setSshChecked, sshBatchBusy, setSshBatchBusy, sshTerminal, setSshTerminal, sshExecTarget, setSshExecTarget, sshEditorTest, setSshEditorTest, toggleDesktopAuto, toggleBrowserAuto, changeAdaptiveTone, changeHardwareAccel, changeDownloadSource };
 }

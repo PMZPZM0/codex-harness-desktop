@@ -249,6 +249,7 @@ export interface Bag {
   tokenUsage: any;
   setTokenUsage: React.Dispatch<any>;
   tokenUsageRef: React.RefObject<any>;
+  tokenUsageByThreadRef: React.RefObject<Map<string, any>>;
   tokenUsageTotalsRef: React.RefObject<Map<string, import("../../status/Status.tsx").UsageCounterSnapshot>>;
   derivedTokenUsageRef: React.RefObject<Map<string, any>>;
   normalizeTokenUsage: (raw: any, threadId?: string | undefined) => any;

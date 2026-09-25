@@ -136,10 +136,17 @@ function download(url, dest, redirects = 0) {
 
 /* ── 多通道下载（09-25 真机：GitHub Releases 直连在国内常中断 —— curl 实测 `exit 56`；
       同一 URL 走本地代理 / ghfast 镜像则 10s 内完成且字节数一致）──
-   依次试：直连 → ghfast.top → gh-proxy.com，每通道 2 次；全失败才报错，并把各通道原因拼出来。 */
+   依次试：npmmirror 二进制镜像 → 直连 → ghfast.top → gh-proxy.com，每通道 2 次；全失败才报错，
+   并把各通道原因拼出来。
+   ⛔ npmmirror 必须排在**前面**（09-25 用户反馈「别的用户装不了」）：国内直连 GitHub 大概率超时，
+   而 ghfast/gh-proxy 这类公共服务本身也会限流；npmmirror 是国内最稳的那条。
+   映射规则：`github.com/<owner>/<repo>/releases/download/<tag>/<file>`
+        → `registry.npmmirror.com/-/binary/<repo>/<tag>/<file>`（npmmirror 的 GitHub release 镜像规则）。 */
 function mirrorUrls(url) {
   if (!/^https:\/\/github\.com\//.test(url)) return [url];
-  return [url, `https://ghfast.top/${url}`, `https://gh-proxy.com/${url}`];
+  const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/releases\/download\/([^/]+)\/(.+)$/.exec(url);
+  const npmmirror = m ? `https://registry.npmmirror.com/-/binary/${m[2]}/${m[3]}/${m[4]}` : null;
+  return [npmmirror, url, `https://ghfast.top/${url}`, `https://gh-proxy.com/${url}`].filter(Boolean);
 }
 
 async function downloadAny(url, dest) {
@@ -274,6 +281,44 @@ function verifySync(nodeExe) {
   });
 }
 
+/* ── npm registry 多通道（09-25 用户报「多数用户装不了：取不到 npm registry」）──
+   ⛔ 只用 registry.npmjs.org 在国内基本必失败 ⇒ 按序试：
+        ① 用户/公司自己配的（env NPM_CONFIG_REGISTRY / npm_config_registry，最高优先，不动它）
+        ② registry.npmmirror.com（国内镜像）
+        ③ registry.npmjs.org（官方，海外/兜底）
+   每次换通道前**清掉 node_modules 与 lock**：上一次失败留下的半成品会让下一次报奇怪的错。
+   ⛔ `--ignore-scripts` 必须保留（postinstall 会派生子进程，受限环境必挂，见文件头 ②）。 */
+const NPM_REGISTRIES = (() => {
+  const fromEnv = [process.env.NPM_CONFIG_REGISTRY, process.env.npm_config_registry]
+    .map((s) => String(s ?? "").trim()).filter(Boolean);
+  return [...new Set([...fromEnv, "https://registry.npmmirror.com", "https://registry.npmjs.org"])];
+})();
+
+function cleanInstallDir() {
+  for (const target of [path.join(ROOT, "node_modules"), path.join(ROOT, "package-lock.json")]) {
+    try { fs.rmSync(target, { recursive: true, force: true }); } catch (e) { /* 忽略 */ }
+  }
+}
+
+/** 依次换 registry 装；返回 { ok, via } 或 { ok:false, failures:[…] }。 */
+async function installViaRegistries(nodeExe) {
+  const failures = [];
+  for (const registry of NPM_REGISTRIES) {
+    cleanInstallDir();
+    const npmArgs = [
+      NPM_CLI, "install", "@vheins/local-memory-mcp@latest",
+      "--no-audit", "--no-fund", "--ignore-scripts", "--loglevel=error",
+      `--registry=${registry}`, "--fetch-retries=1", "--fetch-timeout=20000",
+    ];
+    log(`安装通道：${registry}`);
+    const r = await runNpmInstall(nodeExe, npmArgs);
+    if (r.status === 0) return { ok: true, via: registry };
+    const tail = String(r.out || "").concat(String(r.err || "")).split("\n").filter(Boolean).slice(-6).join(" | ");
+    failures.push(`${new URL(registry).host}：${r.status === null ? "npm 进程起不来" : "退出码 " + r.status} ${tail.slice(0, 200)}`);
+  }
+  return { ok: false, failures };
+}
+
 async function main() {
   if (doCheck) {
     const s = status();
@@ -329,24 +374,26 @@ async function main() {
   }
 
   /* ⛔ 显式 --ignore-scripts：postinstall 会派生子进程（prebuild-install / esbuild install.js），
-     受限环境必挂。跳过它们之后，我们**自己**把 better-sqlite3 的 .node 补上（见 ensureNativeBinding）。 */
-  const npmArgs = [NPM_CLI, "install", "@vheins/local-memory-mcp@latest", "--no-audit", "--no-fund", "--ignore-scripts", "--loglevel=error"];
+     受限环境必挂。跳过它们之后，我们**自己**把 better-sqlite3 的 .node 补上（见 ensureNativeBinding）。
+     ⛔ registry 走多通道（见 installViaRegistries）：国内直连 npmjs 基本必失败。 */
   log(`安装到 ${ROOT}`);
-  log(`${nodeExe} ${npmArgs.join(" ")}`);
-  const r = await runNpmInstall(nodeExe, npmArgs);
-  if (r.status !== 0) {
-    const tail = String(r.out || "").concat(String(r.err || "")).split("\n").filter(Boolean).slice(-8).join("\n");
-    log(`安装失败（status=${r.status}）：\n${tail}`);
+  log(`registry 通道（按序）：${NPM_REGISTRIES.join(" → ")}`);
+  const inst = await installViaRegistries(nodeExe);
+  if (!inst.ok) {
+    log(`安装失败（${NPM_REGISTRIES.length} 个通道全挂）：\n${inst.failures.join("\n")}`);
     emit({
       installed: false,
-      error: r.status === null ? `npm 进程起不来（环境限制或安全策略）：${String(r.err).slice(-200)}` : "npm install 失败（多数是网络：取不到 npm registry）",
-      detail: tail.slice(0, 600),
+      error: `npm install 失败（已试 ${NPM_REGISTRIES.length} 个 registry 都没成功）`,
+      detail: inst.failures.join("\n").slice(0, 700),
+      registries: NPM_REGISTRIES,
+      hint: "常见原因：网络/代理不可达 npm registry。可自建或公司内网 registry —— 设环境变量 NPM_CONFIG_REGISTRY=<你的 registry> 后重装；或挂上能出网的代理再用。",
       root: ROOT,
       abi,
       node: nodeExe,
     });
     process.exit(1);
   }
+  log(`安装成功（registry=${inst.via}）`);
 
   const nat = await ensureNativeBinding();
   log(nat.ok ? `原生绑定就位（ABI ${abi}）` : `原生绑定缺失：${nat.error}`);

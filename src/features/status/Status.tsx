@@ -46,7 +46,10 @@ export function RunningProcessTime({ turnId }: { turnId: string }) {
 
 export function ContextRing({ tokenUsage, fallbackWindow }: { tokenUsage?: any; fallbackWindow?: number }) {
   const contextWindow = tokenUsage?.modelContextWindow ?? tokenUsage?.model_context_window ?? fallbackWindow;
-  const currentUsage = usageBucket(tokenUsage, "last") ?? usageBucket(tokenUsage, "total");
+  // ⛔ 分子只用「本轮 last」= **当前上下文规模**。`total` 是会话**累计计费量**（多轮累加，
+  //    长会话必然超过窗口）⇒ 拿它当分子会把环顶到 100%，用户看到的就是「上下文爆了」
+  //    （09-25 报障，实测某会话 total 969K/窗口 1048K 但真实上下文只有 65K）。
+  const currentUsage = usageBucket(tokenUsage, "last");
   const used = currentUsage?.totalTokens ?? currentUsage?.total_tokens;
   if (!contextWindow) return null;
   // 有 contextWindow 但还没用量时仍显示图标占位（0%），让"上下文进度"始终可见
@@ -79,8 +82,13 @@ export function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction
   const contextWindow = tokenUsage?.modelContextWindow ?? tokenUsage?.model_context_window ?? fallbackWindow;
   const lastUsage = usageBucket(tokenUsage, "last");
   const totalUsage = usageBucket(tokenUsage, "total");
-  const currentUsage = lastUsage ?? totalUsage;
-  const cacheUsage = tokenUsage?.derivedLast ?? currentUsage;
+  // ⛔ 百分比与「压缩上下文」提示只认**本轮 last**（= 当前上下文规模）；`total` 是会话累计计费量，
+  //    长会话必然超过窗口 ⇒ 拿它当分子会把上下文顶到 100% 并在 70% 处误弹「压缩上下文」
+  //    （09-25 用户报的「一切换供应商就爆上下文」症状来源之一）。
+  const currentUsage = lastUsage;
+  // 明细网格（消息 / MCP 工具 / 系统提示词…）与缓存率仍允许用 total 兜底，避免个别载荷缺 last 时整块空掉
+  const breakdownUsage = lastUsage ?? totalUsage;
+  const cacheUsage = tokenUsage?.derivedLast ?? breakdownUsage;
   const used = currentUsage?.totalTokens ?? currentUsage?.total_tokens;
   if (!contextWindow) return null;
   const percent = used != null ? Math.min(100, Math.max(0, (used / contextWindow) * 100)) : 0;
@@ -91,12 +99,12 @@ export function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction
   const summaryCacheRate = averageCacheRate ?? turnCacheRate;
   const ctx = (value: any) => value != null ? Math.round((Number(value) / contextWindow) * 1000) / 10 : null;
   const details = [
-    { label: "消息", value: ctx(currentUsage?.messageTokens ?? currentUsage?.message_tokens) },
-    { label: "MCP 工具", value: ctx(currentUsage?.mcpToolTokens ?? currentUsage?.mcp_tool_tokens) },
-    { label: "系统工具", value: ctx(currentUsage?.systemToolTokens ?? currentUsage?.system_tool_tokens) },
-    { label: "技能", value: ctx(currentUsage?.skillTokens ?? currentUsage?.skill_tokens) },
-    { label: "系统提示词", value: ctx(currentUsage?.systemPromptTokens ?? currentUsage?.system_prompt_tokens) },
-    { label: "其他", value: ctx(currentUsage?.otherTokens ?? currentUsage?.other_tokens) },
+    { label: "消息", value: ctx(breakdownUsage?.messageTokens ?? breakdownUsage?.message_tokens) },
+    { label: "MCP 工具", value: ctx(breakdownUsage?.mcpToolTokens ?? breakdownUsage?.mcp_tool_tokens) },
+    { label: "系统工具", value: ctx(breakdownUsage?.systemToolTokens ?? breakdownUsage?.system_tool_tokens) },
+    { label: "技能", value: ctx(breakdownUsage?.skillTokens ?? breakdownUsage?.skill_tokens) },
+    { label: "系统提示词", value: ctx(breakdownUsage?.systemPromptTokens ?? breakdownUsage?.system_prompt_tokens) },
+    { label: "其他", value: ctx(breakdownUsage?.otherTokens ?? breakdownUsage?.other_tokens) },
   ].filter((entry) => entry.value != null) as { label: string; value: number }[];
   const rows = details.length ? details : [{ label: "已用", value: Math.round(percent * 10) / 10 }];
   return (

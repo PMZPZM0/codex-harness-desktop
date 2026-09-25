@@ -982,6 +982,13 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     const centerSrc = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryCenterSection.tsx"), "utf8");
     (centerSrc.includes("MemoryBackendSection") && centerSrc.includes("readMemoryBackend") && centerSrc.includes("setMemoryBackend") ? ok : fail)("【150】设置页「记忆」有后端入口（MemoryBackendSection：能读、能切；否则用户无处开启）");
     (/installMemoryMcp|uninstallMemoryMcp|verifyMemoryMcp/.test(centerSrc) ? ok : fail)("【150】设置页提供安装/卸载/检测入口（用户明确要求「加个安装功能」）");
+    /* 09-25 用户报「多数用户装不了：npm install 失败（取不到 npm registry）」⇒ 安装器必须多 registry 兜底。
+       ⛔ 只用 registry.npmjs.org 在国内基本必失败；GitHub 直连下载原生绑定同理。 */
+    const installerSrc150 = readFileSync(join(ROOT, "scripts", "install-memory-mcp.cjs"), "utf8");
+    (/registry\.npmmirror\.com/.test(installerSrc150) ? ok : fail)("【150】安装器带国内 registry 兜底（否则国内用户 npm install 必失败）");
+    (/installViaRegistries/.test(installerSrc150) && /NPM_CONFIG_REGISTRY/.test(installerSrc150) ? ok : fail)("【150】安装器按序多 registry 重试（用户/公司自配的最高优先）");
+    (/registry\.npmmirror\.com\/-\/binary/.test(installerSrc150) ? ok : fail)("【150】原生绑定走国内镜像（npmmirror /-/binary），GitHub 直连在国内不可靠");
+    (/cleanInstallDir/.test(installerSrc150) ? ok : fail)("【150】换 registry 前清 node_modules/lock（半成品会让下一通道报错）");
   }
   }
 }

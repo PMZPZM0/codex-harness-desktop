@@ -167,6 +167,16 @@ bag.applyGroup = applyGroup as typeof bag.applyGroup;
   const bootHealRef = useRef(false);
 bag.bootHealRef = bootHealRef as typeof bag.bootHealRef;
 
+  /* 上下文环只反映**当前正在看的会话**（09-25 用户报「一切换供应商就爆了上下文」）：
+     切会话时把显示值换成该会话自己那一份快照（没有就清空 ⇒ 环显示「用量待同步」），
+     ⛔ 不许把上一个会话的数字留着 —— 那正是"粘在环上的大数字"的来源。 */
+  useEffect(() => {
+    const activeId = String(bag.thread?.id ?? "");
+    const snapshot = activeId ? bag.tokenUsageByThreadRef.current.get(activeId) ?? null : null;
+    bag.tokenUsageRef.current = snapshot;
+    bag.setTokenUsage(snapshot);
+  }, [bag.thread?.id]);
+
   useEffect(() => {
     if (bag.bootHealRef.current) return;
     bag.bootHealRef.current = true;
@@ -339,9 +349,18 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
       } else if (event.method === "turn/diff/updated") {
         bag.setDiff(params.diff ?? "");
       } else if (event.method === "thread/tokenUsage/updated") {
-        const normalizedUsage = bag.normalizeTokenUsage(params.tokenUsage, String(params.threadId ?? bag.threadRef.current?.id ?? ""));
-        bag.tokenUsageRef.current = normalizedUsage;
-        bag.setTokenUsage(normalizedUsage);
+        /* ⛔ 用量按**会话**归属（09-25）：只有当前正在看的会话才进上下文环；后台会话
+           （团队成员 / 被委派的子会话）的推送只存进它自己那一份快照，不污染当前的环
+           —— 否则「一边跑着成员会话、一边看主会话」时环里会是别人的数字。 */
+        const usageThreadId = String(params.threadId ?? bag.threadRef.current?.id ?? "");
+        if (usageThreadId) {
+          const normalizedUsage = bag.normalizeTokenUsage(params.tokenUsage, usageThreadId);
+          bag.tokenUsageByThreadRef.current.set(usageThreadId, normalizedUsage);
+          if (usageThreadId === String(bag.threadRef.current?.id ?? "")) {
+            bag.tokenUsageRef.current = normalizedUsage;
+            bag.setTokenUsage(normalizedUsage);
+          }
+        }
       } else if (event.method === "error") { if (handleEventRouter8(bag, params)) return; } else if (event.method === "serverRequest/resolved") {
         bag.setPending((current) => current.filter((entry) => entry.id !== params.requestId));
       } else if (method === "thread/name/updated") {
