@@ -272,7 +272,9 @@ console.log(C.bold("\n【8】打包必备件：随包 automation-tools.zip（发
     (/CODEX_HARNESS_USER_DATA/.test(ddSrc) ? ok : fail)("【152】env 覆盖优先级保留（CODEX_HARNESS_USER_DATA）");
     (ddSrc.includes("data-dir.json") && ddSrc.includes("defaultUserDataDir") ? ok : fail)("【152】指路牌落在默认目录（appData 锚点）下的 data-dir.json");
     (ddSrc.includes('base === "data-dir.json"') ? ok : fail)("【152】迁移排除指路牌本体（复制它会把新目录也标上旧指路）");
-    (/cpSync[\s\S]{0,200}recursive:\s*true/.test(ddSrc) ? ok : fail)("【152】迁移走递归复制（cpSync）");
+    (/copySync\(|copyAsync\(/.test(ddSrc) && /setImmediate/.test(ddSrc) ? ok : fail)("【152】迁移 = 差量复制 + 分批 yield（保存时就地迁 + 启动只做秒级增量；⛔ 全量同步复制会让启动卡死成「起不来」，09-25 实测事故）");
+    (ddSrc.includes("MIGRATION_SKIP") && ddSrc.includes("memory-mcp") && ddSrc.includes("voice-models") ? ok : fail)("【152】迁移排除可重建大目录（memory-mcp 可重装 / voice-models 可重下 / 各类缓存）");
+    (ddSrc.includes("MIGRATED_MARKER") ? ok : fail)("【152】迁移完成标记存在（半迁移自愈：目标非空但无标记 ⇒ 续迁，否则数据缺失不自愈）");
     (/catch[\s\S]{0,120}回退默认/.test(ddSrc) ? ok : fail)("【152】迁移失败回退默认目录（绝不静默丢数据）");
     // data-dir.ts 必须是叶子：不得 import 项目内模块（否则 main.ts 模块体早期 import 会连带求值，【91】）
     (!/from "\.\//.test(ddSrc) ? ok : fail)("【152】data-dir.ts 是叶子模块（不 import 项目内模块，【91】惰性求值纪律）");

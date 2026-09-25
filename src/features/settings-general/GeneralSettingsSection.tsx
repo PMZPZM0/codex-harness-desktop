@@ -20,12 +20,13 @@ export type GeneralSettingsSectionProps = { globalPermApproval: any; applyGlobal
  * 自持状态小组件（不占 bag）。写的是主进程指路牌（data-dir.json），
  * 实际目录切换与数据迁移发生在**下一次启动**（引擎 spawn 之前），所以必须重启生效。 */
 function DataDirEditor({ currentPath, setNotice }: { currentPath: string; setNotice: (s: string) => void }) {
-  const [info, setInfo] = useState<{ current: string; defaultDir: string; custom: string | null; migratePending: boolean } | null>(null);
+  const [info, setInfo] = useState<{ current: string; defaultDir: string; custom: string | null; migratePending: boolean; progress: { running: boolean; done: number; total: number; bytes: number; totalBytes: number; error: string | null } | null } | null>(null);
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [msg, setMsg] = useState("");
+  const [progress, setProgress] = useState<{ done: number; total: number; percent: number } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -41,6 +42,14 @@ function DataDirEditor({ currentPath, setNotice }: { currentPath: string; setNot
   const save = async () => {
     setBusy(true);
     setMsg("");
+    setProgress(null);
+    /* ⛔ 迁移在保存时就地做（异步分批）⇒ busy 期间轮询进度，显示百分比，不让用户对着无反馈的等待猜。 */
+    const timer = setInterval(() => {
+      void window.codex.readDataDir().then((v) => {
+        const p = v?.progress;
+        if (p?.running && p.total > 0) setProgress({ done: p.done, total: p.total, percent: Math.round((p.done / p.total) * 100) });
+      }).catch(() => undefined);
+    }, 250);
     try {
       const r = await window.codex.prepareDataDir(value);
       const info2 = await window.codex.readDataDir();
@@ -49,11 +58,15 @@ function DataDirEditor({ currentPath, setNotice }: { currentPath: string; setNot
       setSaved(true);
       setMsg(r.restoreDefault
         ? "已恢复默认目录，重启应用后生效。"
-        : (r.note ?? (r.migrate ? "已保存。重启应用后将自动把现有数据迁移到新目录（旧目录保留作备份）。" : "已保存，重启应用后生效。")));
+        : (r.note ?? (r.migrated
+          ? `已切换并完成数据迁移（${r.migrated.files} 个文件）。重启应用即用新目录（重启后只做秒级收尾同步）。旧目录保留作备份。`
+          : "已保存，重启应用后生效。")));
       setNotice("数据目录已更新，重启后生效");
     } catch (error) {
       setMsg(error instanceof Error ? error.message : String(error));
     } finally {
+      clearInterval(timer);
+      setProgress(null);
       setBusy(false);
     }
   };
@@ -102,8 +115,17 @@ function DataDirEditor({ currentPath, setNotice }: { currentPath: string; setNot
           </span>
         </div>
       )}
+      {busy && progress && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, margin: "2px 0" }}>
+          <div style={{ height: 6, borderRadius: 999, background: "var(--line-soft)", overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${progress.percent}%`, borderRadius: 999, background: "var(--green)", transition: "width .2s" }} />
+          </div>
+          <span className="muted" style={{ fontSize: 11.5 }}>正在迁移数据… {progress.percent}%（{progress.done} / {progress.total} 个文件），完成后重启即用新目录</span>
+        </div>
+      )}
+      {busy && !progress && <p className="settings-card-hint">正在处理…</p>}
       {msg && <p className="settings-card-hint">{msg}{saved && <button className="secondary-setting" style={{ marginLeft: 10 }} disabled={busy} onClick={() => void restart()}><RefreshCw size={13} />立即重启</button>}</p>}
-      {info?.migratePending && !msg && <p className="settings-card-hint">数据迁移待执行：下次启动时自动把现有数据迁到自定义目录。</p>}
+      {info?.migratePending && !msg && <p className="settings-card-hint">数据迁移待收尾：下次启动会自动做秒级增量同步。</p>}
     </>
   );
 }

@@ -5,8 +5,8 @@
  *
  * 设计要点（细节见 electron/data-dir.ts）：
  * - 指路牌 = 默认目录（appData 锚点）下的 data-dir.json；env 覆盖优先于它（开发/测试用途）。
- * - prepare 只写指路牌 + 迁移标记，**不做实际迁移** —— 迁移在下一次启动的**引擎 spawn 之前**
- *   由 resolveStartupUserData() 执行（唯一没有进程写文件的时机）。
+ * - prepare **就地完成基础迁移**（异步分批不阻塞主进程，进度经 dataDir:read.progress 轮询）；
+ *   重启后只剩秒级增量同步（resolveStartupUserData 在引擎 spawn 前补保存→重启之间的变更）。
  * - 重启复用既有 `app:relaunch`（app-diagnostics.ts），本文件不重复注册。
  */
 import { existsSync } from "node:fs";
@@ -15,7 +15,9 @@ import path from "node:path";
 import { app, ipcMain } from "electron";
 import {
   defaultUserDataDir,
+  migrationProgress,
   readDataDirBootstrap,
+  runBaseMigration,
   writeDataDirBootstrap,
 } from "../data-dir";
 
@@ -26,6 +28,7 @@ ipcMain.handle("dataDir:read", () => {
     defaultDir: defaultUserDataDir(),
     custom: boot?.dir && path.resolve(boot.dir) !== path.resolve(defaultUserDataDir()) ? boot.dir : null,
     migratePending: Boolean(boot?.migrate),
+    progress: migrationProgress(),
   };
 });
 
@@ -55,6 +58,14 @@ ipcMain.handle("dataDir:prepare", async (_event, dir: unknown) => {
     hasExistingData = existsSync(path.join(target, "app-settings.json")) || existsSync(path.join(target, "codex-home"));
   } catch { /* 忽略 */ }
   writeDataDirBootstrap({ dir: target, migrate: !hasExistingData });
+
+  /* ⛔ 09-25 事故修复：迁移**就地、现在**做（异步分批，不阻塞主进程），而不是留给重启后的
+     启动早期 —— 全量同步复制 1.8GB 会把启动卡成「应用起不来」。现在保存时迁移完（进度经
+     dataDir:read.progress 轮询），重启后只剩秒级增量同步（补保存→重启之间的变更）。 */
+  let migrated: { files: number; bytes: number } | null = null;
+  if (!hasExistingData) {
+    migrated = await runBaseMigration(fallback, target); // 失败会 throw ⇒ 渲染层收到错误并回退提示
+  }
   return {
     ok: true,
     restoreDefault: false,
@@ -62,6 +73,7 @@ ipcMain.handle("dataDir:prepare", async (_event, dir: unknown) => {
     target,
     migrate: !hasExistingData,
     hasExistingData,
+    migrated,
     note: hasExistingData
       ? "目标目录已有本应用数据，将直接使用（不覆盖、不迁移）"
       : undefined,

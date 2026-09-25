@@ -778,20 +778,20 @@
       "channel": "dataDir:read",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ current: string; defaultDir: string; custom: string | null; migratePending: boolean }>",
+      "returns": "Promise<{ current: string; defaultDir: string; custom: string | null; migratePending: boolean; progress: { running: boolean; done: number; total: number; bytes: number; totalBytes: number; error: string | null } | null }>",
       "invokeArgs": "",
       "cast": null,
-      "note": "数据目录（userData）现状：生效值 / 默认锚点 / 自定义值 / 待迁移标记"
+      "note": "数据目录（userData）现状：生效值 / 默认锚点 / 自定义值 / 待迁移标记 / 迁移进度"
     },
     {
       "name": "prepareDataDir",
       "channel": "dataDir:prepare",
       "paramsImpl": "dir: string",
       "paramsDecl": "dir: string",
-      "returns": "Promise<{ ok: boolean; restoreDefault: boolean; needRestart: boolean; target: string; migrate?: boolean; hasExistingData?: boolean; note?: string }>",
+      "returns": "Promise<{ ok: boolean; restoreDefault: boolean; needRestart: boolean; target: string; migrate?: boolean; hasExistingData?: boolean; migrated?: { files: number; bytes: number }; note?: string }>",
       "invokeArgs": "dir",
       "cast": null,
-      "note": "写指路牌 + 迁移标记；实际迁移在下一次启动的引擎 spawn 之前执行。重启复用既有 app:relaunch"
+      "note": "写指路牌并就地完成基础迁移（异步分批 + 进度）；重启后只做秒级增量同步。重启复用既有 app:relaunch"
     },
     {
       "name": "readAppSettings",
