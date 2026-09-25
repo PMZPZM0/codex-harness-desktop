@@ -1408,5 +1408,32 @@ w.postMessage({id:1,op:"list",root});
     (teamSrc.includes("bag.thread?.id === leadThreadId ? bag.thread?.cwd") ? ok : fail)("【155】cwd 兜底用「本会话 cwd」且限定同会话（后台调度不串配置）");
   }
 
+  /* ══ 【157】上下文用量口径（09-25 用户报「用户经常爆上下文，一切换供应商就爆了上下文」）══
+     ⛔ 两个真根因：① 分子用了会话**累计计费量** total（长会话必然超过窗口 ⇒ 环顶到 100%）；
+     ② tokenUsage 是全应用**单槽**、切会话不清 ⇒ 环里粘着上一个会话的数字。 */
+  {
+    console.log(C.bold("\n【157】上下文用量口径：按会话归属 + 只用本轮 last"));
+    const statusSrc157 = readFileSync(join(ROOT, "src", "features", "status", "Status.tsx"), "utf8");
+    (!/usageBucket\(tokenUsage, "last"\) \?\? usageBucket\(tokenUsage, "total"\)/.test(statusSrc157) ? ok : fail)(
+      "【157】⛔ 上下文环不得拿会话累计 total 当分子（长会话必然超窗口 ⇒ 环顶到 100%）"
+    );
+    (statusSrc157.includes('const currentUsage = usageBucket(tokenUsage, "last");') ? ok : fail)(
+      "【157】环的分子只用本轮 last（= 当前上下文规模）"
+    );
+    (statusSrc157.includes("const currentUsage = lastUsage;") && statusSrc157.includes("const breakdownUsage = lastUsage ?? totalUsage;") ? ok : fail)(
+      "【157】容量弹层：百分比只认 last，明细网格仍可 total 兜底"
+    );
+    const part05Src157 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part05", "01-seg.tsx"), "utf8");
+    (/tokenUsageByThreadRef\.current\.set\(usageThreadId/.test(part05Src157) ? ok : fail)(
+      "【157】用量按会话归属存储（后台会话/被委派子会话不污染当前的环）"
+    );
+    (/usageThreadId === String\(bag\.threadRef\.current\?\.id/.test(part05Src157) ? ok : fail)(
+      "【157】只有当前会话的用量才进环"
+    );
+    (/useEffect\(\(\) => \{[\s\S]{0,240}?tokenUsageByThreadRef\.current\.get\(activeId\)/.test(part05Src157) ? ok : fail)(
+      "【157】切会话时换成该会话自己的快照（否则环里粘着上一个会话的数字）"
+    );
+  }
+
   }
 }
