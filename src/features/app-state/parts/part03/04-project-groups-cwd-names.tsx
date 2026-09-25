@@ -210,17 +210,28 @@ bag.projectGroups = projectGroups as typeof bag.projectGroups;
 bag.allProjectsCollapsed = allProjectsCollapsed as typeof bag.allProjectsCollapsed;
 
   const toggleAllProjects = useCallback(() => {
+    // 本次点击是「展开」还是「收起」：以当前状态为准（所有项目都没展开 ⇒ 本次是展开）
+    const expandAll = bag.projectGroups.every(([cwd]) => !bag.expandedProjects.has(cwd));
     bag.setExpandedProjects((prev) => {
       const next = new Set(prev);
-      const expand = bag.projectGroups.every(([cwd]) => !next.has(cwd));
       for (const [cwd] of bag.projectGroups) {
-        if (expand) next.add(cwd);
+        if (expandAll) next.add(cwd);
         else next.delete(cwd);
       }
       try { localStorage.setItem("sidebar-projects-expanded-v1", JSON.stringify([...next])); } catch { /* ignore */ }
       return next;
     });
-  }, [bag.projectGroups]);
+    /* ⛔ 项目展开是 cwd 集合；「被调度会话」块走**展开集合**（语义与 collapsedSections 相反：
+       命中=展开、默认空=全收起）。同一次「全部展开/折叠」两边都要翻，否则点了按钮调度块纹丝不动。 */
+    bag.setExpandedDispatchBlocks((prev) => {
+      const next = new Set(prev);
+      for (const key of bag.dispatchBlockKeys) {
+        if (expandAll) next.add(key);
+        else next.delete(key);
+      }
+      return next;
+    });
+  }, [bag.projectGroups, bag.expandedProjects, bag.dispatchBlockKeys]);
 bag.toggleAllProjects = toggleAllProjects as typeof bag.toggleAllProjects;
 
   /** 启动后**首次**拿到项目分组时，自动展开「当前会话所在的项目」（09-19 用户实测：

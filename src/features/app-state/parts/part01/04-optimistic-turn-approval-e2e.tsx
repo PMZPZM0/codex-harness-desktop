@@ -17,6 +17,10 @@ import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtin
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import type { Bag } from "../bag-types";
 
+/** 用量快照落盘的存储键与上限（**模块级**：不进 Bag 推断面，也不随 hook 重建）。 */
+const TOKEN_SNAPSHOT_KEY = "token-usage-by-thread-v1";
+const TOKEN_SNAPSHOT_MAX = 60;
+
 export function usePart01d(bag: Bag) {
   // 09-17：本轮是否**确实出现过**运行中的回合 —— 乐观气泡安全阀的判据（见下方 effect 注释）。
   const sawRunningTurnRef = useRef(false);
@@ -143,9 +147,41 @@ bag.derivedTokenUsageRef = derivedTokenUsageRef as typeof bag.derivedTokenUsageR
   /* 每个会话**各自**的用量快照（09-25 用户报「一切换供应商就爆了上下文」）。
      ⛔ 原先 tokenUsage 是全应用**单槽**：任何会话的 thread/tokenUsage/updated 都往里写、切会话
      也不清 ⇒ 环里可能亮着**上一个会话**的数字（长会话切走后那个大数字就"粘"在环上）。
-     现在按 threadId 存一份，显示侧只取**当前会话**那一份（见 part05 的写入与切换同步）。 */
-  const tokenUsageByThreadRef = useRef(new Map<string, any>());
+     现在按 threadId 存一份，显示侧只取**当前会话**那一份（见 part05 的写入与切换同步）。
+
+     ⛔⛔ **必须落盘**（用户 09-25 补充：「一切换供应商，显示从初始值开始统计，原来的不消耗识别出来，
+     聊一会就爆了」）：切供应商会 **重启应用** ⇒ useRef 全丢 ⇒ 环只能显示空/0，而引擎那边上下文
+     其实是满的（历史都在）⇒ 用户看到"进度被重置"，聊几轮又累加着涨上去、看着像爆。
+     所以在 localStorage 里按会话留最后一份快照，重启后恢复真实进度。 */
+  const tokenUsageByThreadRef = useRef<Map<string, any>>((() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(TOKEN_SNAPSHOT_KEY) || "{}") as Record<string, any>;
+      return new Map(Object.entries(raw));
+    } catch { return new Map(); }
+  })());
 bag.tokenUsageByThreadRef = tokenUsageByThreadRef as typeof bag.tokenUsageByThreadRef;
+
+  /** 用量快照落盘（LRU 截断：只保留最近 TOKEN_SNAPSHOT_MAX 个会话）。 */
+  const persistTokenUsageSnapshot = useCallback((threadId: string, usage: any) => {
+    try {
+      const map = bag.tokenUsageByThreadRef.current;
+      if (threadId) map.set(threadId, usage);
+      const entries = [...map.entries()].slice(-TOKEN_SNAPSHOT_MAX);
+      bag.tokenUsageByThreadRef.current = new Map(entries);
+      localStorage.setItem(TOKEN_SNAPSHOT_KEY, JSON.stringify(Object.fromEntries(entries)));
+    } catch { /* 配额满/隐私模式 ⇒ 忽略，内存里那份仍生效 */ }
+  }, []);
+bag.persistTokenUsageSnapshot = persistTokenUsageSnapshot as typeof bag.persistTokenUsageSnapshot;
+
+  /** 接力（fork 到新会话 id）时把源会话的用量快照**继承**给新会话：
+   *  fork 带走完整历史 ⇒ 真实上下文规模与原会话几乎一致。⛔ 不继承的话新会话环从 0 开始，
+   *  用户看到的就是「进度被重置」。 */
+  const inheritTokenUsageSnapshot = useCallback((fromThreadId: string, toThreadId: string) => {
+    const snapshot = bag.tokenUsageByThreadRef.current.get(fromThreadId);
+    if (!snapshot || !toThreadId) return;
+    bag.persistTokenUsageSnapshot(toThreadId, snapshot);
+  }, []);
+bag.inheritTokenUsageSnapshot = inheritTokenUsageSnapshot as typeof bag.inheritTokenUsageSnapshot;
 
 
   const normalizeTokenUsage = useCallback((raw: any, threadId?: string) => {
@@ -356,5 +392,5 @@ bag.changeHardwareAccel = changeHardwareAccel as typeof bag.changeHardwareAccel;
     void window.codex.saveAppSettings({ downloadSource: next }).catch(() => { bag.setDownloadSource(bag.downloadSource); bag.setNotice("下载源保存失败，请重试"); });
   };
 bag.changeDownloadSource = changeDownloadSource as typeof bag.changeDownloadSource;
-  return { sawRunningTurnRef, optimisticConfirmed, openingThread, setOpeningThread, pending, setPending, diff, setDiff, tokenUsage, setTokenUsage, tokenUsageRef, tokenUsageByThreadRef, tokenUsageTotalsRef, derivedTokenUsageRef, normalizeTokenUsage, turnStartedAtRef, activeModelRef, usageStats, setUsageStats, streamRafRef, pendingDeltaRef, lastFlushAtRef, rightOpen, setRightOpen, desktopAuto, setDesktopAuto, browserAuto, setBrowserAuto, autoCompactRatio, setAutoCompactRatio, hardwareAccel, setHardwareAccel, downloadSource, setDownloadSource, adaptiveTone, setAdaptiveTone, restartPending, setRestartPending, sshServers, setSshServers, sshLoaded, setSshLoaded, sshBusyId, setSshBusyId, sshTestingId, setSshTestingId, sshDraft, setSshDraft, sshSaving, setSshSaving, sshQuery, setSshQuery, sshFilter, setSshFilter, sshChecked, setSshChecked, sshBatchBusy, setSshBatchBusy, sshTerminal, setSshTerminal, sshExecTarget, setSshExecTarget, sshEditorTest, setSshEditorTest, toggleDesktopAuto, toggleBrowserAuto, changeAdaptiveTone, changeHardwareAccel, changeDownloadSource };
+  return { sawRunningTurnRef, optimisticConfirmed, openingThread, setOpeningThread, pending, setPending, diff, setDiff, tokenUsage, setTokenUsage, tokenUsageRef, tokenUsageByThreadRef, persistTokenUsageSnapshot, inheritTokenUsageSnapshot, tokenUsageTotalsRef, derivedTokenUsageRef, normalizeTokenUsage, turnStartedAtRef, activeModelRef, usageStats, setUsageStats, streamRafRef, pendingDeltaRef, lastFlushAtRef, rightOpen, setRightOpen, desktopAuto, setDesktopAuto, browserAuto, setBrowserAuto, autoCompactRatio, setAutoCompactRatio, hardwareAccel, setHardwareAccel, downloadSource, setDownloadSource, adaptiveTone, setAdaptiveTone, restartPending, setRestartPending, sshServers, setSshServers, sshLoaded, setSshLoaded, sshBusyId, setSshBusyId, sshTestingId, setSshTestingId, sshDraft, setSshDraft, sshSaving, setSshSaving, sshQuery, setSshQuery, sshFilter, setSshFilter, sshChecked, setSshChecked, sshBatchBusy, setSshBatchBusy, sshTerminal, setSshTerminal, sshExecTarget, setSshExecTarget, sshEditorTest, setSshEditorTest, toggleDesktopAuto, toggleBrowserAuto, changeAdaptiveTone, changeHardwareAccel, changeDownloadSource };
 }

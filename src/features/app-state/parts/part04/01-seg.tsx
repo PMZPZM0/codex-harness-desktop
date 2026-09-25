@@ -61,6 +61,29 @@ bag.expandedTeamClusters = expandedTeamClusters as typeof bag.expandedTeamCluste
   }, []);
 bag.toggleTeamCluster = toggleTeamCluster as typeof bag.toggleTeamCluster;
 
+  /** 展开的「被调度会话」块（父会话 id 集合，键 = `dispatch:<id>`）。
+   *  ⛔ **默认全部收起**（用户 09-25：「默认被调度和专家团会话都折叠状态」+「重复展示这么多干嘛」）：
+   *  用**展开集合**而不是 collapsedSections —— 后者的语义是「命中=收起」，默认空集意味着默认**全展开**，
+   *  正是用户看到的一片重复行（我第一版就写反了）。这里与 expandedTeamClusters 语义完全一致：默认空 = 全收起。 */
+  const [expandedDispatchBlocks, setExpandedDispatchBlocks] = useState<Set<string>>(new Set());
+bag.expandedDispatchBlocks = expandedDispatchBlocks as typeof bag.expandedDispatchBlocks; bag.setExpandedDispatchBlocks = setExpandedDispatchBlocks as typeof bag.setExpandedDispatchBlocks;
+
+  const toggleDispatchBlock = useCallback((key: string) => {
+    bag.setExpandedDispatchBlocks((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+bag.toggleDispatchBlock = toggleDispatchBlock as typeof bag.toggleDispatchBlock;
+
+  /** 当前所有「被调度会话」折叠块的键（批量展开/折叠、守卫用）。 */
+  const dispatchBlockKeys = useMemo(() => {
+    const childrenOf = bag.sourcedChildrenOf ?? {};
+    return Object.keys(childrenOf).filter((id) => (childrenOf[id] ?? []).length > 0).map((id) => `dispatch:${id}`);
+  }, [bag.sourcedChildrenOf]);
+bag.dispatchBlockKeys = dispatchBlockKeys as typeof bag.dispatchBlockKeys;
+
   /** 聚簇后的侧栏结构：成员会话行从原分组抽走，作为 cluster 子项渲染。
    *  主会话识别：threads 表里同 teamId 的会话中，标题**不带**成员会话特征（「 · 」分隔或
    *  [专家团 前缀）的那条；主会话不在列表（被删/归档）时用最新成员会话当代表行。 */
@@ -106,19 +129,31 @@ bag.toggleTeamCluster = toggleTeamCluster as typeof bag.toggleTeamCluster;
 bag.clusteredSidebar = clusteredSidebar as typeof bag.clusteredSidebar;
 
   /* 「分类」视图（09-25）：全部折叠/展开。键带 `source:` 前缀 ⇒ 与项目视图的折叠状态互不干扰，
-     共用同一个 collapsedSections 存储。 */
+     共用同一个 collapsedSections 存储。
+     ⛔ 还要带上「被调度会话」折叠块（dispatchBlockKeys，走**展开集合**）——
+     否则点「全部展开」时这些块纹丝不动。 */
   const toggleAllSources = useCallback(() => {
+    // 本次是「展开」还是「收起」：以当前状态为准（所有分类都收起 ⇒ 本次是展开）
+    const expandAll = bag.sourcedThreads.every((group) => bag.collapsedSections.has(group.key));
     bag.setCollapsedSections((previous) => {
       const next = new Set(previous);
-      const collapse = !bag.sourcedThreads.every((group) => next.has(group.key));
       for (const group of bag.sourcedThreads) {
-        if (collapse) next.add(group.key);
-        else next.delete(group.key);
+        if (expandAll) next.delete(group.key);
+        else next.add(group.key);
       }
       try { localStorage.setItem("sidebar-sections-collapsed", JSON.stringify([...next])); } catch { /* ignore */ }
       return next;
     });
-  }, [bag.sourcedThreads]);
+    // 调度块走「展开集合」（语义相反：命中=展开），同一次点击要一起翻
+    bag.setExpandedDispatchBlocks((prev) => {
+      const next = new Set(prev);
+      for (const key of bag.dispatchBlockKeys) {
+        if (expandAll) next.add(key);
+        else next.delete(key);
+      }
+      return next;
+    });
+  }, [bag.sourcedThreads, bag.dispatchBlockKeys, bag.collapsedSections]);
 bag.toggleAllSources = toggleAllSources as typeof bag.toggleAllSources;
 
   const sidebarAllCollapsed = bag.viewTab === "source" ? bag.allSourceGroupsCollapsed : bag.allProjectsCollapsed;
@@ -386,5 +421,5 @@ bag.showToast = showToast as typeof bag.showToast;
     return [line, used, life, turn, tip].join("\n");
   }
 bag.contextUsageText = contextUsageText as typeof bag.contextUsageText;
-  return { expandedTeamClusters, setExpandedTeamClusters, toggleTeamCluster, clusteredSidebar, toggleAllSources, sidebarAllCollapsed, toggleAllSidebarSections, TURN_WINDOW, TURNS_PAGE, TURN_WINDOW_MEMORY_KEEP, touchTurnWindow, ANCHOR_TOP_OFFSET_PX, CONTENT_TAIL_GAP_PX, COMMON_COMMAND_ORDER, commandMatches, mergedSkillCatalog, skillCommandMatches, threadMemoKey, availableContextItems, threadFileCandidates, addSystemEvent, setCompactEventState, pruneSupersededCompactions, threadNameOf, scopedNotice, showToast, contextUsageText };
+  return { expandedTeamClusters, setExpandedTeamClusters, toggleTeamCluster, expandedDispatchBlocks, setExpandedDispatchBlocks, toggleDispatchBlock, dispatchBlockKeys, clusteredSidebar, toggleAllSources, sidebarAllCollapsed, toggleAllSidebarSections, TURN_WINDOW, TURNS_PAGE, TURN_WINDOW_MEMORY_KEEP, touchTurnWindow, ANCHOR_TOP_OFFSET_PX, CONTENT_TAIL_GAP_PX, COMMON_COMMAND_ORDER, commandMatches, mergedSkillCatalog, skillCommandMatches, threadMemoKey, availableContextItems, threadFileCandidates, addSystemEvent, setCompactEventState, pruneSupersededCompactions, threadNameOf, scopedNotice, showToast, contextUsageText };
 }
