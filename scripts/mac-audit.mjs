@@ -23,6 +23,7 @@
 //    真正要修的是"跨平台代码路径里写死某个平台的东西"。
 
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
 
 const GIT = process.env.GIT_BIN || "git";
 const git = (args) => execFileSync(GIT, args, { encoding: "utf8", maxBuffer: 200 * 1024 * 1024 });
@@ -102,8 +103,15 @@ function selfCheck() {
 }
 
 // ── 第二步：取 diff 的新增行 ────────────────────────────────────────────────
+// ⛔ 本脚本跑在 agent 沙箱里时，内部 spawnSync/execFileSync(git) 会被拒（EBUSY）⇒ 假红。
+//    提供 MAC_AUDIT_DIFF_FILE / MAC_AUDIT_STAT_FILE 逃生口：宿主 shell 先把 git diff 落盘，
+//    再让脚本从文件读（09-25 加；不影响正常环境 —— 未设这两个变量时行为不变）。
 function addedLines(base, target) {
-  const diff = git(["diff", "-U0", `${base}..${target}`, "--", "electron/", "src/", "scripts/", "build/"]);
+  const diffFile = process.env.MAC_AUDIT_DIFF_FILE;
+  const statFile = process.env.MAC_AUDIT_STAT_FILE;
+  const diff = diffFile
+    ? fs.readFileSync(diffFile, "utf8")
+    : git(["diff", "-U0", `${base}..${target}`, "--", "electron/", "src/", "scripts/", "build/"]);
   const rows = [];
   let file = "";
   let line = 0;
@@ -115,7 +123,10 @@ function addedLines(base, target) {
     rows.push({ file, line, text: raw.slice(1) });
     line++;
   }
-  return { rows, stat: git(["diff", "--stat", `${base}..${target}`, "--", "electron/", "src/", "scripts/", "build/"]) };
+  const stat = statFile
+    ? fs.readFileSync(statFile, "utf8")
+    : git(["diff", "--stat", `${base}..${target}`, "--", "electron/", "src/", "scripts/", "build/"]);
+  return { rows, stat };
 }
 
 // ── 主流程 ─────────────────────────────────────────────────────────────────

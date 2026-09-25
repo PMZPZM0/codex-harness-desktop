@@ -727,9 +727,11 @@
 /* —— 记忆中心（常驻 / 存储 / 条目） —— */
 .memory-center { gap: 12px; }
 .memory-page-heading { padding-bottom: 4px; }
-/* 设置页「记忆」总览卡：点卡片直接进记忆中心对应视图 */
+/* 设置页「记忆」总览卡：点卡片直接进记忆中心对应视图。
+   09-25 排版返工：原 auto-fit minmax(200px) 在面板宽度下算出 3 列 ⇒ 4 张卡 3+1 换行（「全局搜索」孤行）、
+   窄列里描述文字被挤成竖条。改固定 2×2（等高），描述限两行，区块之间加分隔线。 */
 .memory-overview {
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   display: grid;
 }
@@ -745,6 +747,7 @@
   gap: 9px;
   padding: 12px 13px;
   display: flex;
+  min-width: 0;
   transition: border-color .16s, background .16s, box-shadow .16s;
 }
 .memory-overview-card:hover {
@@ -763,17 +766,129 @@
 }
 .memory-overview-body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .memory-overview-body strong { color: var(--text); font-size: 13px; font-weight: 600; }
-.memory-overview-body small { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.memory-overview-body small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .memory-overview-stat {
   border-top: 1px dashed var(--line-soft);
   color: var(--muted);
   font-size: 11px;
   line-height: 1.5;
   padding-top: 8px;
+  margin-top: auto;
 }
 .memory-overview-stat b { color: var(--green); font-size: 12px; font-weight: 700; margin-right: 1px; }
 .memory-overview-actions { align-items: center; gap: 12px; display: flex; flex-wrap: wrap; }
 .memory-overview-actions .muted { font-size: 11.5px; }
+/* 「记忆」页内的小节（被委派会话的记忆 / 记忆后端）与上方内容之间加分隔线，分组更清楚 */
+.memory-center > .channel-heading:not(:first-child) {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 14px;
+  margin-top: 4px;
+}
+/* —— 记忆后端（09-25 排版返工：radio ⇒ 选择卡片，按钮走 primary/secondary 体系）—— */
+.memory-backend-options {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+  display: grid;
+}
+.memory-backend-option {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+  border-radius: 12px;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  display: flex;
+  position: relative;
+  min-width: 0;
+  transition: border-color .16s, background .16s;
+}
+.memory-backend-option:hover { border-color: color-mix(in srgb, var(--green) 40%, var(--line)); }
+.memory-backend-option[aria-checked="true"] {
+  border-color: var(--green);
+  background: color-mix(in srgb, var(--green) 8%, var(--bg));
+}
+.memory-backend-option[aria-checked="true"]::after {
+  content: "✓";
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 700;
+  position: absolute;
+  top: 10px;
+  right: 12px;
+}
+.memory-backend-option:disabled { opacity: .55; cursor: default; }
+.memory-backend-icon {
+  background: color-mix(in srgb, var(--green) 12%, var(--bg));
+  color: var(--green);
+  width: 30px; height: 30px;
+  border-radius: 9px;
+  place-items: center;
+  display: grid;
+  flex: none;
+}
+.memory-backend-body { min-width: 0; padding-right: 14px; }
+.memory-backend-body strong { color: var(--text); font-size: 13px; font-weight: 600; }
+.memory-backend-body strong em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+.memory-backend-body small { color: var(--muted); font-size: 11px; line-height: 1.45; display: block; margin-top: 3px; }
+.memory-backend-meta { display: flex; flex-direction: column; gap: 4px; }
+.memory-backend-state {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  align-items: center;
+  gap: 7px;
+  display: inline-flex;
+}
+.memory-backend-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex: none; }
+.memory-backend-state.warn::before { background: #d97706; }
+.memory-backend-fallback { color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+.memory-backend-actions { align-items: center; gap: 10px; display: flex; flex-wrap: wrap; }
+.memory-backend-path { color: var(--muted); font-size: 11.5px; }
+.memory-backend-path code {
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  font-family: ui-monospace, monospace;
+  font-size: 10.5px;
+  padding: 2px 6px;
+  word-break: break-all;
+}
+.memory-backend-manual { margin-top: 2px; }
+.memory-backend-manual summary { color: var(--muted); font-size: 11.5px; cursor: pointer; user-select: none; }
+.memory-backend-manual summary:hover { color: var(--text); }
+.memory-backend-cmd {
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  margin: 8px 0;
+  word-break: break-all;
+}
 /* 记忆中心大弹窗：盖在设置弹窗之上(z 85)，云端配置(86)/全文预览(90)再盖在其上 */
 .memory-center-backdrop { z-index: 85; }
 .memory-config-backdrop { z-index: 86; }
