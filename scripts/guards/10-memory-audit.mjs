@@ -933,7 +933,9 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     (beSrc && !/from "\.\/(?!app-settings")/.test(beSrc) ? ok : fail)("【150】memory-backend.ts 只依赖 app-settings（叶子，不许依赖其它业务模块）");
 
     const layersSrc = readFileSync(join(ROOT, "electron", "memory-layers.ts"), "utf8");
-    (/appendLesson\([\s\S]{0,600}?memoryBackend\(\) === "mcp"\) return false/.test(layersSrc) ? ok : fail)("【150】内置记忆写入入口 appendLesson 有 MCP 后端让位（否则同一条记忆在两处各存一份）");
+    (/appendLesson\([\s\S]{0,900}?effectiveMemoryBackend\(\) === "mcp"\) return false/.test(layersSrc) ? ok : fail)("【150】内置记忆写入入口 appendLesson 有 MCP 后端让位（否则同一条记忆在两处各存一份）");
+    (beSrc.includes("export function effectiveMemoryBackend") && /localMemoryMcpInstalled\(\)/.test(beSrc) ? ok : fail)("【150】后端判定必须是 effectiveMemoryBackend（带「装了才让位」回退）：⛔ 选了 MCP 但服务装不上时若也让位 ⇒ 记忆一处都不写 = 彻底丢记忆");
+    (!/appendLesson[\s\S]{0,900}?[^e]memoryBackend\(\) === "mcp"\) return false/.test(layersSrc) ? ok : fail)("【150】捕获链不得用裸 memoryBackend() 做让位（必须用带回退的 effective 版）");
     (!/from "\.\/runtime-refs"/.test(layersSrc) ? ok : fail)("【150】memory-layers 不得 import runtime-refs（会与它成环，与守卫【147】同族）");
 
     const skillsSrc = readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8");
@@ -943,6 +945,10 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     const instPath = join(ROOT, "scripts", "install-memory-mcp.cjs");
     const instSrc = existsSync(instPath) ? readFileSync(instPath, "utf8") : "";
     (instSrc.includes("--check") && instSrc.includes("--uninstall") ? ok : fail)("【150】MCP 记忆服务是**可选安装**（scripts/install-memory-mcp.cjs 支持 --check/--uninstall，不进项目依赖）");
+    /* ⛔ --verify：这个包依赖原生模块 + 带 postinstall 的依赖，会**装得上但起不来**
+       （禁 npm scripts / 无构建工具链 / 取不到预编译二进制）。只判文件存在 = 把坏安装报成就绪。 */
+    (instSrc.includes("--verify") && /"result"/.test(instSrc) ? ok : fail)("【150】安装器提供 --verify（真起一次服务做 MCP 握手），不许只凭文件存在判定「可用」");
+    (instSrc.includes("--ignore-scripts") ? ok : fail)("【150】安装器保留 --ignore-scripts 逃生口（受限环境唯一装法），并在文档里写明它会缺原生产物");
   }
   }
 }

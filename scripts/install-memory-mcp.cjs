@@ -34,6 +34,7 @@ delete process.env.ELECTRON_RUN_AS_NODE;
 const args = process.argv.slice(2);
 const doCheck = args.includes("--check");
 const doUninstall = args.includes("--uninstall");
+const doVerify = args.includes("--verify");
 const ignoreScripts = args.includes("--ignore-scripts");
 
 function userDataRoot() {
@@ -76,6 +77,45 @@ if (doUninstall) {
     emit({ installed: true, removed: false, error: String(e.message) });
     process.exit(1);
   }
+}
+
+/* ⛔ --verify：**真起一次服务做 MCP 握手**。
+   为什么必须有：这个包依赖原生模块（better-sqlite3）+ 带 postinstall 的依赖（esbuild），
+   在「禁 npm scripts / 没有构建工具链 / 网络取不到预编译」的环境里会**装得上但起不来**
+   ——只判文件存在会把这种坏安装报成"已就绪"，用户选了 MCP 后端却写不进任何记忆。
+   实现：spawn 服务 → 发 initialize → 15s 内收到带 result 的响应即算可用。 */
+if (doVerify) {
+  const s = status();
+  if (!s.installed) {
+    emit({ installed: false, verified: false, error: "未安装" });
+    process.exit(2);
+  }
+  const { spawn } = require("node:child_process");
+  const child = spawn(process.execPath, [s.serverPath], {
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
+    env: { ...process.env, NODE_OPTIONS: "" },
+  });
+  let out = "", err = "", done = false;
+  const finish = (r) => {
+    if (done) return;
+    done = true;
+    try { child.kill(); } catch (e) { /* 已退出 */ }
+    emit({ ...s, ...r });
+    process.exit(r.verified ? 0 : 1);
+  };
+  const timer = setTimeout(() => finish({ verified: false, error: "超时：15s 内未完成 MCP 握手（服务可能卡在加载原生模块）", detail: String(err || out).slice(-400) }), 15000);
+  child.stdout.on("data", (d) => {
+    out += d.toString();
+    if (out.includes('"result"')) { clearTimeout(timer); finish({ verified: true }); }
+  });
+  child.stderr.on("data", (d) => { err += d.toString(); });
+  child.on("error", (e) => { clearTimeout(timer); finish({ verified: false, error: "进程无法启动：" + e.message }); });
+  child.on("exit", (c) => {
+    if (c !== 0) { clearTimeout(timer); finish({ verified: false, error: "服务退出码 " + c + "（常见原因：原生模块未构建，见 --ignore-scripts 说明）", detail: String(err).slice(-400) }); }
+  });
+  child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "harness-installer", version: "1.0" } } }) + "\n");
+  return; // 异步分支：不落到底部安装流程
 }
 
 const before = status();

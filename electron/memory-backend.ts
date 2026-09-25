@@ -11,16 +11,51 @@
  *   - "mcp"：优先用 MCP 记忆服务（@vheins/local-memory-mcp，可选安装，不内置）；
  *     此时内置金字塔**停止捕获写入**（`MemoryLayers.appendLesson` 会让位）。
  */
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { app } from "electron";
 import { readAppSettingsSync } from "./app-settings";
 
 export type MemoryBackend = "builtin" | "mcp";
 
-/** 当前记忆后端。惰性求值（每次读盘）——⛔ 不要在模块体里求值 userData（main.ts 的 setPath 之前读会漂移）。 */
+/** 用户选的记忆后端。惰性求值（每次读盘）——⛔ 不要在模块体里求值 userData（main.ts 的 setPath 之前读会漂移）。 */
 export function memoryBackend(): MemoryBackend {
   try {
     return readAppSettingsSync(app.getPath("userData")).memoryBackend === "mcp" ? "mcp" : "builtin";
   } catch {
     return "builtin"; // 读取失败（userData 未就绪等）时保守回退内置，绝不因此吞掉记忆
   }
+}
+
+/** MCP 记忆服务的安装落点与入口（与 scripts/install-memory-mcp.cjs 同源，改一边要改两边）。 */
+export function localMemoryMcpServerPath(): string {
+  return path.join(
+    app.getPath("userData"), "memory-mcp", "node_modules", "@vheins", "local-memory-mcp", "bin", "mcp-memory-server.js",
+  );
+}
+
+/** MCP 记忆服务是否**已安装**（只判入口存在，必须便宜 —— appendLesson 每次都会问）。
+ *  ⛔「装了」不等于「能起来」：进程级可用性由安装器的 `--verify` 负责（真跑一次 stdio 握手）。
+ *     这里刻意只做文件判定：捕获链上起进程既慢又可能卡住。 */
+export function localMemoryMcpInstalled(): boolean {
+  try {
+    return existsSync(localMemoryMcpServerPath());
+  } catch {
+    return false;
+  }
+}
+
+/** ⛔ **实际生效的写入后端** —— 捕获链只认这个，不认 `memoryBackend()`。
+ *
+ *  为什么多一层：用户选了 MCP、但服务**没装/装坏了**（用户 09-25：「我的电脑不行，用户电脑肯定也不行」——
+ *  依赖原生模块 better-sqlite3 的包在禁 npm scripts / 无构建工具链 / 网络受限的环境里装不上），
+ *  若此时内置也让位 ⇒ **记忆一处都不写 = 彻底丢记忆**，这比"重复"严重得多。
+ *  ⇒ 选了 MCP 但不可用时**回退内置**：宁可回到金字塔，也不能丢。 */
+export function effectiveMemoryBackend(): MemoryBackend {
+  if (memoryBackend() !== "mcp") return "builtin";
+  if (!localMemoryMcpInstalled()) {
+    console.warn("[memory] 记忆后端选了 MCP，但服务未安装（入口缺失）⇒ 本轮回退内置记忆金字塔，避免记忆丢失");
+    return "builtin";
+  }
+  return "mcp";
 }

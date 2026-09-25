@@ -4,7 +4,7 @@ import {
   CORRECTION_CATEGORY, PITFALL_CATEGORY, PREFERENCE_CATEGORY, SOP_CATEGORY,
   appendLessonLine, groupLessonSections, lessonSectionTitle, sortLessonSections, splitLessonSections,
 } from "./memory-lessons";
-import { memoryBackend } from "./memory-backend";
+import { effectiveMemoryBackend } from "./memory-backend";
 
 /**
  * 记忆分层（对齐 WorkBuddy 的三层 + 碎片池）
@@ -474,11 +474,12 @@ export class MemoryLayers {
    * 注入时排最前、永不被淘汰。
    */
   async appendLesson(workspace: string, line: string, dedupeKey: string, category?: string): Promise<boolean> {
-    /* ⛔ 09-25「记忆后端二选一」：用户启用 MCP 记忆服务后，记忆一律走 MCP，
-       内置记忆金字塔**停止捕获写入** —— 否则同一条纪律会在 MCP 库里存一份、
-       在 lessons/*.md 里再存一份（双份记忆，检索时互相打架）。
-       这是内置写入的**唯一入口**，门禁放这里即可覆盖全部捕获链。 */
-    if (memoryBackend() === "mcp") return false;
+    /* ⛔ 09-25「记忆后端二选一」：用户启用 MCP 记忆服务**且服务确实装好**时，记忆一律走 MCP，
+       内置记忆金字塔停止捕获写入 —— 否则同一条纪律会在 MCP 库里存一份、在 lessons/*.md 里再存一份。
+       ⛔ 判据必须是 `effectiveMemoryBackend()`（带可用性回退），**不是** `memoryBackend()`：
+       用户选了 MCP 但服务没装/装坏时（原生模块装不上的环境很常见），若这里也让位 ⇒
+       记忆一处都不写 = **彻底丢记忆**。宁可回到金字塔，也不能丢。 */
+    if (effectiveMemoryBackend() === "mcp") return false;
     const dir = this.projectDir(workspace);
     const text = String(line ?? "").trim();
     if (!dir || !text) return false;

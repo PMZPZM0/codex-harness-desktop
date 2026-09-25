@@ -18,7 +18,7 @@ import { MEMORY_HYGIENE_SKILL } from "./builtin-skills/10-skill-memory-hygiene";
 import { MEMORY_CLASSIFY_SKILL } from "./builtin-skills/11-skill-memory-classify";
 import { SKILL_AUDIT_SKILL } from "./builtin-skills/12-skill-skill-audit";
 import { MEMORY_MCP_SKILL } from "./builtin-skills/13-skill-memory-mcp";
-import { memoryBackend } from "./memory-backend";
+import { effectiveMemoryBackend } from "./memory-backend";
 
 /** 已退役的内置技能：磁盘上的内容仍是**我们当初写的那份**时，随升级清掉目录 ——
  *  否则引擎会同时加载两套浏览器说明（新的实操手册 + 旧的通道说明），模型读到自相矛盾的指引。
@@ -84,7 +84,10 @@ export async function ensureBuiltinSkills(skillsDir: string) {
      ⛔ 用**改名**（SKILL.md ⇄ SKILL.md.disabled）而不是删目录：切回内置时立刻恢复，不用重写盘。
      ⛔ 这是后端语义驱动的强制切换（与「能力总闸」同源），会覆盖对这两个技能的手动启停。 */
   try {
-    const backend = memoryBackend();
+    /* ⛔ 用**生效**后端（带可用性回退），与 appendLesson 的判据同源：
+       选了 MCP 但服务没装好时，技能必须保持 memory-classify（写内置），
+       否则会出现「技能教模型调 MCP 工具、而工具根本不存在」的空指引。 */
+    const backend = effectiveMemoryBackend();
     const setEnabled = async (name: string, enabled: boolean) => {
       const dir = path.join(skillsDir, name);
       const activeFile = path.join(dir, "SKILL.md");
