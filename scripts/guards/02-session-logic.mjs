@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  C, OWN_WRITE_TTL_MS, ROOT, SESSION_SCOPE_HEADING, composeScopeInstructions, createAec, createEchoGate, createSentenceChunker, createSpeakFilter, emptyRuntime, existsSync, fail, isOwnEcho, join, legacyMirror, mainSrc, migrateRuntime, normalizeNumbers, normalizeRuntime, numberToChinese, ok, patchRuntime, preloadSrc, readAppUi, readFileSync, readMainSource, readStyles, readVoiceCallFloatSrc, readVoiceSettingsSrc, rememberOwnWrite, resampleLinear, resolveModelForOpen, rmsOf, runtimeSignature, sessionScopeBlock, sessionScopeSignature, shouldSyncOpenThread, stripScopeBlock, toSpeakableText, warn,
+  C, OWN_WRITE_TTL_MS, ROOT, SESSION_SCOPE_HEADING, codeOnly, composeScopeInstructions, createAec, createEchoGate, createSentenceChunker, createSpeakFilter, emptyRuntime, existsSync, fail, isOwnEcho, join, legacyMirror, mainSrc, migrateRuntime, normalizeNumbers, normalizeRuntime, numberToChinese, ok, patchRuntime, preloadSrc, readAppUi, readFileSync, readMainSource, readStyles, readVoiceCallFloatSrc, readVoiceSettingsSrc, rememberOwnWrite, resampleLinear, resolveModelForOpen, rmsOf, runtimeSignature, sessionScopeBlock, sessionScopeSignature, shouldSyncOpenThread, stripScopeBlock, toSpeakableText, warn,
 } from "./_ctx.mjs";
 
 export async function run() {
@@ -1311,7 +1311,14 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
 
       /* ── 「分组」（按时间）视图已按用户要求删除（09-25：「分组可以删了」）──
          ⛔ 负向断言：不许有人把第三个 tab / groups 分支加回来。 */
-      (!appSrc2.includes('setViewTab("groups")') && !appSrc2.includes("按时间分组") ? ok : fail)("【156】⛔ 侧栏「分组」（按时间）视图已删除，不得加回");
+      /* ⛔ 负向断言必须匹配**代码**、且要剥掉注释（09-25 实测踩两次）：
+         ① 原来匹配裸文案 `includes("按时间分组")` ⇒ 我在 `thread-list.ts` 的注释里写了
+            「若将来『按时间分组』视图回归」，注释把断言顶成**假红**（它在 readAppUi 聚合里）；
+         ② 改成匹配代码片段（`viewTab === "groups"`）仍会被**注释里的同款片段**误伤。
+         ⇒ 正解是用项目现成的 `codeOnly()` 剥注释后再匹配（`_ctx.mjs` 提供，09-24 断环守卫
+            已因同类原因用过它）。负向断言的判据是「代码里不许再有 groups 分支」，与文案无关。 */
+      const appUiCode2 = codeOnly(appSrc2);
+      (!/setViewTab\("groups"\)|viewTab === "groups"|"groups" \| "projects"/.test(appUiCode2) ? ok : fail)("【156】⛔ 侧栏「分组」（按时间）视图已删除，不得加回");
       const bagTypesSrc2 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "bag-types.ts"), "utf8");
       (!/viewTab: "groups"/.test(bagTypesSrc2) ? ok : fail)("【156】viewTab 类型只有 projects|source（旧偏好值在 part03 回落到 projects）");
 
