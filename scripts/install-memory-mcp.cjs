@@ -318,12 +318,26 @@ function registryReachable(registry) {
   });
 }
 
-/** 依次换 registry 装；返回 { ok, via } 或 { ok:false, failures:[…] }。 */
+/** 依次换 registry 装；返回 { ok, via } 或 { ok:false, failures:[…] }。
+ *
+ *  ⛔⛔ **必须 fail-open**（09-25 代码审查抓到）：registryReachable 用的是**裸 https.get**，
+ *  它**不走** `HTTP_PROXY` / `HTTPS_PROXY` / 系统代理，而 **npm 走**。在「只能用代理出网」或
+ *  带 TLS 拦截的公司网络里，三个通道会被探测全判「不可达」⇒ 若据此直接 fail，就等于
+ *  **把本来能装成功的场景拦死**（比不加预检还差）。所以：
+ *    · 有任一通道探测通过 ⇒ 用探测结果提前跳过没希望的（省时间）
+ *    · **全部探测失败 ⇒ 忽略探测，照样逐个真试 npm**（真正的判据是 npm 的退出码）
+ */
 async function installViaRegistries(nodeExe) {
   const failures = [];
+  const probes = new Map();
+  for (const registry of NPM_REGISTRIES) probes.set(registry, await registryReachable(registry));
+  const anyReachable = [...probes.values()].some((probe) => probe.ok);
+  if (!anyReachable) {
+    log("所有通道的可达性预检都失败（裸 https 不带代理，可能你只能通过代理出网）⇒ 忽略预检，逐个真试 npm");
+  }
   for (const registry of NPM_REGISTRIES) {
-    const reach = await registryReachable(registry);
-    if (!reach.ok) {
+    const reach = probes.get(registry);
+    if (anyReachable && !reach.ok) {
       log(`跳过不可达通道 ${registry}（${reach.note}）`);
       failures.push(`${new URL(registry).host}：不可达（${reach.note}）`);
       continue;
@@ -332,7 +346,9 @@ async function installViaRegistries(nodeExe) {
     const npmArgs = [
       NPM_CLI, "install", "@vheins/local-memory-mcp@latest",
       "--no-audit", "--no-fund", "--ignore-scripts", "--loglevel=error",
-      `--registry=${registry}`, "--fetch-retries=1", "--fetch-timeout=20000",
+      // ⛔ fetch-timeout 是**单个请求的整体超时**（含下载正文）：20s 在慢链路上会把正常下载掐断
+      //    ⇒ 取 60s（仍远小于 npm 默认的 5 分钟，且外层还有 10 分钟总闸）。
+      `--registry=${registry}`, "--fetch-retries=1", "--fetch-timeout=60000",
     ];
     log(`安装通道：${registry}`);
     const r = await runNpmInstall(nodeExe, npmArgs);

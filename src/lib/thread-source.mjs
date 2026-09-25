@@ -150,19 +150,56 @@ export function resolveGroupCwd(threads, ctx) {
     const origin = delegateRecords[id]?.originThreadId;
     return origin && String(origin) !== String(id) && own.has(String(origin)) ? String(origin) : null;
   };
+  /** 该会话「该跟随谁」的唯一判据（两条边：① 调度父 ② 团队成员 → 本团主理人）。
+   *  放在一处，好让「环检测」与「解析」用**同一张图** —— 否则会在一条边上判环、在另一条边上成环。 */
+  const edgeOf = (id) => {
+    const parent = parentOf(id);
+    if (parent) return parent;
+    if (!has(teamMemberThreadIds, id)) return null;
+    const lead = leadOfTeam.get(String(teamThreadIndex[id] ?? ""));
+    return lead && lead !== id ? lead : null;
+  };
+
+  /* ⛔ **参与任何有向环的节点：固定用自己的 cwd、且不再上溯**（09-25 代码审查改）：
+     原实现只在「撞到重复节点」那一刻返回该节点的 cwd，然后把这份值**回传给闭环节点**
+     ⇒ 互指的 A/B 会双双变成 A 的 cwd（把两个项目并成一个），与注释「成环 ⇒ 用该节点自己的 cwd」
+     不符，而且原断言只判了「非空」⇒ 恒真、抓不到。这里先把环成员找出来，再解析。 */
+  const inCycle = new Set();
+  {
+    const state = new Map();   // 0/未访问 1/在栈上 2/已完成
+    const stack = [];
+    const dfs = (id) => {
+      state.set(id, 1);
+      stack.push(id);
+      const next = edgeOf(id);
+      if (next) {
+        const st = state.get(next) ?? 0;
+        if (st === 1) {
+          // 命中环：把栈上「从 next 起到栈顶」的全部标为环成员
+          for (let i = stack.indexOf(next); i < stack.length; i++) inCycle.add(stack[i]);
+        } else if (st === 0) {
+          dfs(next);
+        }
+      }
+      stack.pop();
+      state.set(id, 2);
+    };
+    for (const id of own.keys()) if ((state.get(id) ?? 0) === 0) dfs(id);
+  }
 
   const memo = new Map();
   const walk = (id, seen) => {
     if (memo.has(id)) return memo.get(id);
-    if (seen.has(id)) return own.get(id) ?? "";   // 成环 ⇒ 该节点用自己的 cwd，不再上溯
+    if (inCycle.has(id)) {                       // 环上节点：不嵌套，固定自己的 cwd
+      const self = own.get(id) ?? "";
+      memo.set(id, self);
+      return self;
+    }
+    if (seen.has(id)) return own.get(id) ?? "";  // 兜底（理论到不了：环已在上一步全部摘出）
     seen.add(id);
     let cwd = "";
-    const parent = parentOf(id);
-    if (parent) cwd = walk(parent, seen);
-    if (!cwd && has(teamMemberThreadIds, id)) {
-      const lead = leadOfTeam.get(String(teamThreadIndex[id] ?? ""));
-      if (lead && lead !== id) cwd = walk(lead, seen);
-    }
+    const next = edgeOf(id);
+    if (next) cwd = walk(next, seen);
     if (!cwd) cwd = own.get(id) ?? "";
     seen.delete(id);
     memo.set(id, cwd);

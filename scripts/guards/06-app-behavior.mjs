@@ -1440,7 +1440,12 @@ w.postMessage({id:1,op:"list",root});
       "【157】用量快照落盘 + 启动读回（⛔ 不落盘 ⇒ 切供应商重启后进度归零）"
     );
     (/TOKEN_SNAPSHOT_MAX/.test(part01Src157) && /slice\(-TOKEN_SNAPSHOT_MAX\)/.test(part01Src157) ? ok : fail)(
-      "【157】快照按 LRU 截断（防撑爆 localStorage）"
+      "【157】快照按上限截断（防撑爆 localStorage）"
+    );
+    /* ⛔ 必须**真 LRU**（09-25 代码审查）：Map 的 set 不会把已存在的键挪到末尾 ⇒ 只写 slice(-N)
+       实际是 FIFO，长期活跃的老会话会被新会话挤掉、重启后进度照样归零。 */
+    (/map\.delete\(threadId\);[\s\S]{0,80}?map\.set\(threadId, usage\);/.test(part01Src157) ? ok : fail)(
+      "【157】快照截断是**真 LRU**（先 delete 再 set 挪到末尾；否则长期活跃会话会被挤掉、进度照样归零）"
     );
     (/const TOKEN_SNAPSHOT_KEY/.test(part01Src157.split("export function")[0]) ? ok : fail)(
       "【157】存储键在**模块级**（放 hook 体里会被【93】当 Bag 名字）"

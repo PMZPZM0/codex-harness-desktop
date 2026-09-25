@@ -1343,7 +1343,25 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       (cwdMap.grand === "D:\\proj" ? ok : fail)("【156】链式调度一路跟随到最顶层主对话 cwd（实得 " + cwdMap.grand + "）");
       (cwdMap.orphan === "D:\\solo" ? ok : fail)("【156】父不在列表 ⇒ 回退自己的 cwd（⛔ 不许把会话弄丢）");
       (cwdMap.member === "D:\\proj" ? ok : fail)("【156】团队成员会话跟随本团主理人 cwd（实得 " + cwdMap.member + "）");
-      (cwdMap.cycA && cwdMap.cycB ? ok : fail)("【156】互为父子的环 ⇒ 不死循环，各自返回自己的 cwd");
+      /* ⛔ 环必须**各自用自己的 cwd**（09-25 代码审查改）：原断言只判「非空」⇒ 恒真，
+         而当时实现会把互指的两条都算成同一条的 cwd（把两个项目并成一个）。现在断言具体值。 */
+      (cwdMap.cycA === "D:\\a" && cwdMap.cycB === "D:\\b" ? ok : fail)("【156】互为父子的环 ⇒ 各用自己的 cwd（实得 cycA=" + cwdMap.cycA + " cycB=" + cwdMap.cycB + "）");
+      /* ⛔ 「成员自己调度出的会话」是**真实可达**的形状：它的父是团队成员 ⇒ childrenOf 的键是成员 id。
+         UI 若只给 cluster.lead 挂子块，这些会话就会被 childIds 从顶层剔除后**一处都不渲染 = 消失**
+         （09-25 代码审查用纯模块取证）。这条钉住形状，另一条钉住 UI 必须处理它。 */
+      {
+        const memberKid = mod.buildDispatchChildren(
+          [{ id: "lead" }, { id: "m" }, { id: "kid" }],
+          { kid: { originThreadId: "m", kind: "subagent" } },
+          { skipIds: new Set(["m"]) }
+        );
+        (memberKid.childrenOf["m"]?.length === 1 && memberKid.childIds.has("kid") ? ok : fail)(
+          "【156】成员调度出的会话挂在**成员 id** 下（UI 必须为成员也渲染子块，否则会话消失）"
+        );
+      }
+      (/cluster\.members\.filter\([\s\S]{0,140}?sourcedChildrenOf\[member\.id\]/.test(appSrc2) && appSrc2.includes("childrenAfter(member.id)") ? ok : fail)(
+        "【156】⛔ 项目视图为**簇内成员**也挂调度子块（只挂 lead ⇒ 成员调度出的会话从侧栏消失）"
+      );
       (appSrc2.includes("resolveGroupCwd") && appSrc2.includes("dispatchCwdMap") ? ok : fail)("【156】项目分组用有效 cwd（part03 接线 resolveGroupCwd / dispatchCwdMap）");
       /* ⛔ 断言写法注意：readAppUi() 会归一化（剥掉 `bag.` 前缀），别按源码字面量写正则。 */
       (/cwdMap\[entry\.id\][\s\S]{0,200}?该项目下已无对话/.test(appSrc2) ? ok : fail)("【156】删除整个项目按**有效 cwd** 取目标（否则跟随过来的被调度会话删不掉 / 误删他项目会话）");
