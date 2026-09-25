@@ -19,13 +19,17 @@ type TeamMember = { id: string; name: string; profession: { zh: string; en: stri
 type Team = { teamId: string; displayName: { zh: string; en: string }; profession: { zh: string; en: string }; description: { zh: string; en: string }; lead: TeamMember; members: TeamMember[]; enabled: boolean };
 type MemberState = { member: TeamMember; threadId: string | null; running: boolean; preview: string };
 
-/** ⛔ 域组件收**显式 props**（规则第 4 条，禁收 app / 禁深链 useHarnessApp）；壳层 AppView 传参。 */
-export function TeamOfficePreview({ teamId, onClose, teams, threads, runningThreadIds, openThread }: {
+/** ⛔ 域组件收**显式 props**（规则第 4 条，禁收 app / 禁深链 useHarnessApp）；壳层 AppView 传参。
+ *  ⛔ 09-25 用户定稿：入口在**专家团会话右侧的成员流转轨末位**（不是设置页卡片），
+ *     且角色状态要**映射真实成员运行**（runningByMember/lastByMember 优先于 runningThreadIds）。 */
+export function TeamOfficePreview({ teamId, onClose, teams, threads, runningThreadIds, runningByMember, openThread }: {
   teamId: string | null;
   onClose: () => void;
   teams: Team[];
   threads: { id: string; preview: string; name?: string | null; updatedAt: number }[];
   runningThreadIds: Set<string>;
+  /** 真实成员运行记录（01-timeline 的 railRunningByMember）：有它就以它为准确来源 */
+  runningByMember?: Record<string, { status: string }>;
   openThread: (threadId: string) => void | Promise<void>;
 }) {
   const [memberMap, setMemberMap] = useState<Record<string, string>>({});
@@ -44,14 +48,18 @@ export function TeamOfficePreview({ teamId, onClose, teams, threads, runningThre
     return team.members.map((member) => {
       const threadId = memberMap[`${team.teamId}|${member.id}`.toLowerCase()] ?? null;
       const thread = threadId ? threads.find((t) => t.id === threadId) : undefined;
+      // ⛔ 真实运行态优先：runningByMember 是主进程落盘的委托记录（成员级），
+      //    比「按会话 id 猜运行」准确 —— 同一成员会话可能空闲但刚被委派过任务。
+      const byMember = runningByMember ? Boolean(runningByMember[member.id]) : undefined;
+      const running = byMember ?? Boolean(threadId && runningThreadIds.has(threadId));
       return {
         member,
         threadId,
-        running: Boolean(threadId && runningThreadIds.has(threadId)),
+        running,
         preview: thread?.preview?.slice(0, 60) ?? "",
       };
     });
-  }, [team, memberMap, threads, runningThreadIds]);
+  }, [team, memberMap, threads, runningThreadIds, runningByMember]);
 
   const runningCount = memberStates.filter((m) => m.running).length;
   const activeCount = memberStates.filter((m) => m.threadId).length;
