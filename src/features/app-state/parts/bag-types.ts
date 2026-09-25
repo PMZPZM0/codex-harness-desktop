@@ -1041,6 +1041,7 @@ export interface Bag {
   projectAutoExpandRef: React.RefObject<boolean>;
   sourcedThreads: { key: string; label: string; items: import("../../app-view/types.ts").Thread[] }[];
   allSourceGroupsCollapsed: boolean;
+  sourcedChildrenOf: Record<string, { threadId: string; kind: string; name: string }[]>;
   groupedThreads: { key: string; label: string; items: import("../../app-view/types.ts").Thread[]; }[];
   allGroupsCollapsed: boolean;
   teamThreadsIndex: Record<string, string>;

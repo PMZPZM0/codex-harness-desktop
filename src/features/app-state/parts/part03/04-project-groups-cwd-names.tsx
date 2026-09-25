@@ -9,7 +9,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "../../../../lib/provider-continuity.mjs";
-import { groupThreadsBySource } from "../../../../lib/thread-source.mjs";
+import { buildDispatchChildren, groupThreadsBySource } from "../../../../lib/thread-source.mjs";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, subAgentTools, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import type { Bag } from "../bag-types";
@@ -244,6 +244,13 @@ bag.groupedThreads = groupedThreads as typeof bag.groupedThreads;
   }), [bag.listThreads, bag.delegateRecords, bag.teamThreadsIndex, bag.teamMemberThreadIds, bag.pinnedThreads]);
 bag.sourcedThreads = sourcedThreads as typeof bag.sourcedThreads;
 
+  /* 「谁调度了谁」的归属（09-25 用户要求：「谁调度的，那个就要生成分类在调度的会话下面，方便看」）：
+     被调度的会话（专家/子智能体/被调度的团队会话）挂在**发起调度的那个会话**下面缩进显示。
+     团队成员会话不在这里（它们由既有团队聚类挂在主理人行下）⇒ 传 skipIds 避免重复。 */
+  const sourcedChildrenOf = useMemo(() => buildDispatchChildren(bag.listThreads, bag.delegateRecords, { skipIds: bag.teamMemberThreadIds }).childrenOf,
+    [bag.listThreads, bag.delegateRecords, bag.teamMemberThreadIds]);
+bag.sourcedChildrenOf = sourcedChildrenOf as typeof bag.sourcedChildrenOf;
+
   const allSourceGroupsCollapsed = bag.sourcedThreads.length > 0 && bag.sourcedThreads.every((group) => bag.collapsedSections.has(group.key));
 bag.allSourceGroupsCollapsed = allSourceGroupsCollapsed as typeof bag.allSourceGroupsCollapsed;
 
@@ -271,5 +278,5 @@ bag.teamMemberThreadIds = teamMemberThreadIds as typeof bag.teamMemberThreadIds;
     }).catch(() => undefined);
     return () => { alive = false; };
   }, []);
-  return { currentModelId, usingCustomModel, providerConfig, listThreads, viewTab, setViewTab, expandedProjects, setExpandedProjects, toggleProjectExpanded, cwdOverrides, setCwdOverrides, cwdOverridesRef, rememberThreadCwd, effectiveCwd, withCwdOverride, nameOverrides, setNameOverrides, nameOverridesRef, rememberThreadName, effectiveThreadName, withNameOverride, projectMenu, setProjectMenu, pinnedThreads, setPinnedThreads, togglePinThread, projectGroups, allProjectsCollapsed, toggleAllProjects, projectAutoExpandRef, groupedThreads, allGroupsCollapsed, sourcedThreads, allSourceGroupsCollapsed, teamThreadsIndex, setTeamThreadsIndex, teamMemberThreadIds, setTeamMemberThreadIds };
+  return { currentModelId, usingCustomModel, providerConfig, listThreads, viewTab, setViewTab, expandedProjects, setExpandedProjects, toggleProjectExpanded, cwdOverrides, setCwdOverrides, cwdOverridesRef, rememberThreadCwd, effectiveCwd, withCwdOverride, nameOverrides, setNameOverrides, nameOverridesRef, rememberThreadName, effectiveThreadName, withNameOverride, projectMenu, setProjectMenu, pinnedThreads, setPinnedThreads, togglePinThread, projectGroups, allProjectsCollapsed, toggleAllProjects, projectAutoExpandRef, groupedThreads, allGroupsCollapsed, sourcedThreads, sourcedChildrenOf, allSourceGroupsCollapsed, teamThreadsIndex, setTeamThreadsIndex, teamMemberThreadIds, setTeamMemberThreadIds };
 }

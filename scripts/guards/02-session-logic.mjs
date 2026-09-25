@@ -1285,6 +1285,29 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       const keys = groups.map((g) => g.key).join(",");
       (keys === "source:main,source:lead,source:expert" ? ok : fail)("【156】分组顺序与键名正确（实得 " + keys + "）");
       (groups.every((g) => g.label && g.items.length) ? ok : fail)("【156】每组都有标签与成员（空类不出现）");
+      /* 调度归属（09-25 用户：「谁调度的，那个就要生成分类在调度的会话下面」）—— 真跑四条边界 */
+      const kids = mod.buildDispatchChildren(
+        [{ id: "p" }, { id: "c1" }, { id: "orphan" }, { id: "deep" }, { id: "skip" }, { id: "mutualA" }, { id: "mutualB" }],
+        {
+          c1: { originThreadId: "p", kind: "expert", name: "知微" },
+          orphan: { originThreadId: "gone", kind: "expert" },
+          deep: { originThreadId: "c1", kind: "subagent" },   // 父自己也被调度 ⇒ 不收编（单层）
+          skip: { originThreadId: "p", kind: "member" },
+          mutualA: { originThreadId: "mutualB" },
+          mutualB: { originThreadId: "mutualA" },
+        },
+        { skipIds: new Set(["skip"]) }
+      );
+      (kids.childrenOf["p"]?.length === 1 && kids.childrenOf["p"][0].threadId === "c1" ? ok : fail)("【156】父在列表 ⇒ 收编到父行下（" + JSON.stringify(kids.childrenOf["p"] ?? []) + "）");
+      (!kids.childIds.has("orphan") ? ok : fail)("【156】父不在列表 ⇒ 不收编（回退来源分组，会话不消失）");
+      (!kids.childIds.has("deep") ? ok : fail)("【156】父自身也被调度 ⇒ 不收编（只做单层，避免看不出层级）");
+      (!kids.childIds.has("skip") ? ok : fail)("【156】skipIds（团队成员会话）不收编（交给既有团队聚类，避免重复渲染）");
+      (!kids.childIds.has("mutualA") && !kids.childIds.has("mutualB") ? ok : fail)("【156】互为父子的环 ⇒ 都不收编");
+      const groupedAfter = mod.groupThreadsBySource(
+        [{ id: "p", updatedAt: 2 }, { id: "c1", updatedAt: 1 }],
+        { delegateRecords: { c1: { originThreadId: "p", kind: "expert" } } }
+      );
+      (groupedAfter.every((g) => !g.items.some((t) => t.id === "c1")) ? ok : fail)("【156】被收编的会话不再出现在来源分组（避免同一会话两处显示）");
     } catch (error) {
       fail("【156】thread-source.mjs 加载失败：" + error.message);
     }

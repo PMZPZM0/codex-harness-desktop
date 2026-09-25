@@ -37,6 +37,7 @@ import {
   Globe2,
   GripVertical,
   Hash,
+  CornerDownRight,
   Layers,
   Info,
   KeyRound,
@@ -202,6 +203,8 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
     bundleFile,
     sidebarAllCollapsed,
     sourcedThreads,
+    sourcedChildrenOf,
+    renderThreadRow,
     sidebarCollapsed,
     sidebarFlyout,
     startNewThread,
@@ -311,7 +314,27 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
                       <ChevronDown size={12} className={`conv-section-chevron ${collapsedSections.has(g.key) ? "" : "open"}`} />
                       <span>{g.label}</span><em>{g.items.length}</em>
                     </button>
-                    {!collapsedSections.has(g.key) && <div className="conv-section-body">{renderClusterList(g.items)}</div>}
+                    {!collapsedSections.has(g.key) && <div className="conv-section-body">
+                      {/* 每个顶层会话渲染后，紧跟它**调度出去的会话**（缩进）—— 
+                          用户 09-25：「谁调度的，那个就要生成分类在调度的会话下面，方便看」。 */}
+                      {g.items.map((entry) => {
+                        const children = sourcedChildrenOf[entry.id] ?? [];
+                        return (
+                          <div className="dispatch-parent" key={entry.id}>
+                            {renderClusterList([entry])}
+                            {children.length > 0 && (
+                              <div className="dispatch-children">
+                                <div className="dispatch-children-label"><CornerDownRight size={11} />调度会话 · {children.length}</div>
+                                {children.map((child) => {
+                                  const childThread = listThreads.find((t) => t.id === child.threadId);
+                                  return childThread ? <div className="dispatch-child" key={child.threadId}>{renderThreadRow(childThread, "member")}</div> : null;
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>}
                   </section>
                 ))}</> : <div className="empty-list">{threads.length ? "当前筛选下暂无任务" : "暂无任务"}</div>
               ) : listThreads.length ? (

@@ -1239,3 +1239,21 @@ html[data-ui-font="large"] .action-content pre {
    要么留白（占用空间、可真空白），要么悬浮（遮住下面）。本项目此前两次尝试
    （见 App.tsx 的 STICKY_USER_SLOT 注释）已实测「sticky 在这个结构里无解」。
    故回归文档流：气泡正常跟随滚动，不做钉顶悬浮。 */
+/* ── 调度归属（09-25）：被调度的会话缩进挂在「发起调度的那个会话」下面 ──
+   用户原话：「谁调度的，那个就要生成分类在调度的会话下面，方便看」。
+   外层用 display:contents ⇒ 不产生盒子，不干扰既有 .thread-list 的直接子选择器。 */
+.dispatch-parent { display: contents; }
+.dispatch-children {
+  margin: 2px 0 4px 20px;
+  padding-left: 8px;
+  border-left: 1px dashed var(--line);
+}
+.dispatch-children-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--muted);
+  padding: 2px 0 2px 2px;
+  user-select: none;
+}
