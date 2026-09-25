@@ -21,6 +21,14 @@ function parseTeamMemberTitle(name: string): { teamName: string; memberName: str
   return m ? { teamName: m[1], memberName: m[2], profession: m[3] } : null;
 }
 
+/** ⛔ **当前无调用方**（2026-09-25 起）：它是侧栏「分组（按时间）」视图的归组函数，而那个视图
+ *  已按用户要求删除（「分组可以删了」）⇒ 只剩导出、没有调用点。
+ *
+ *  ⛔ 为什么不单独删它：它只是**搬迁遗留的整体模式**里的一个 —— 实测 31 个 part 文件都从
+ *  `app-view/helpers` 批量 import 一个 40+ 符号的巨长列表，而**1478 个符号里 92.5% 从未被引用**；
+ *  删这一个名字要同步改约 50 处 import 列表，收益（静态体积，且 build 后 tree-shaken 为 0）
+ *  远小于风险。**要清就整体清**（一次重写这 31 个文件的 import），别单摘一个。
+ *  ⛔ 若将来「按时间分组」视图回归：本函数可直接复用（口径不变），别另写一份。 */
 export function groupThreadsByTime(threads: Thread[]): { key: string; label: string; items: Thread[] }[] {
   const groups = new Map<string, { key: string; label: string; items: Thread[] }>();
   const now = new Date();
