@@ -122,17 +122,9 @@ export class DelegateRegistry {
     return Object.values(this.map).sort((a, b) => b.startedAt - a.startedAt);
   }
 
-  /** 运行中的调度数量（L4 并发闸用） */
-  async runningCount(): Promise<number> {
-    await this.load();
-    return Object.values(this.map).filter((record) => record.status === "running").length;
-  }
-
   /** 启动自愈（09-24，评估报告 §4.3）：重启后不可能还有活着的外部回合，但记录里 status="running"
    *  是**持久化**的 —— 只有 delegation 的成功/失败两条路径会把它改掉，应用被中断（崩溃 / 关窗 /
-   *  引擎被杀）就永远留着。后果不是"少一条记录"：runningCount() 只增不减，攒满
-   *  MAX_CONCURRENT_DISPATCH（见 dispatch.ts，09-25 为 10）之后 **admitDispatch 永久拒绝所有委派**，且跨重启累积
-   *  （prune() 只清 finished，救不了这个）。⇒ 启动时把残留 running 一律收成 failed。
+   *  引擎被杀）就永远留着。⇒ 启动时把残留 running 一律收成 failed（并清 activeThreads）。
    *  幂等：没有残留时返回 0、不写盘。 */
   async reconcileRunning(reason = "应用重启中断，未收到回合结束事件"): Promise<number> {
     await this.load();
