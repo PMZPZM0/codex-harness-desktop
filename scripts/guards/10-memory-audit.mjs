@@ -920,5 +920,29 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     );
   }
 }
+
+  /* ══ 【150】记忆后端二选一（09-25 加）══
+     用户原话：「启用 MCP 记忆就优先用 MCP，不要 MCP 写了记忆又用金字塔记忆，这样重复了」。
+     三条不变量：① 后端判定必须是叶子模块（放进 runtime-refs 会与 memory-layers 成环）；
+     ② 内置记忆的写入入口必须让位（否则同一条记忆存两份）；③ 两个记忆技能互斥（否则模型
+     同时收到「写 lessons/」与「调 MCP 工具」两套矛盾指引）。 */
+  {
+    const bePath = join(ROOT, "electron", "memory-backend.ts");
+    (existsSync(bePath) ? ok : fail)("【150】记忆后端判定在独立叶子模块 electron/memory-backend.ts（⛔ 不许放进 runtime-refs：它已 import memory-layers，反向引用会成 require 环）");
+    const beSrc = existsSync(bePath) ? readFileSync(bePath, "utf8") : "";
+    (beSrc && !/from "\.\/(?!app-settings")/.test(beSrc) ? ok : fail)("【150】memory-backend.ts 只依赖 app-settings（叶子，不许依赖其它业务模块）");
+
+    const layersSrc = readFileSync(join(ROOT, "electron", "memory-layers.ts"), "utf8");
+    (/appendLesson\([\s\S]{0,600}?memoryBackend\(\) === "mcp"\) return false/.test(layersSrc) ? ok : fail)("【150】内置记忆写入入口 appendLesson 有 MCP 后端让位（否则同一条记忆在两处各存一份）");
+    (!/from "\.\/runtime-refs"/.test(layersSrc) ? ok : fail)("【150】memory-layers 不得 import runtime-refs（会与它成环，与守卫【147】同族）");
+
+    const skillsSrc = readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8");
+    (/setEnabled\("memory-mcp-backend", backend === "mcp"\)/.test(skillsSrc) && /setEnabled\("memory-classify", backend === "builtin"\)/.test(skillsSrc) ? ok : fail)("【150】两个记忆技能按后端互斥启用（同时生效会让模型收到两套写法）");
+    (skillsSrc.includes("MEMORY_MCP_SKILL") && existsSync(join(ROOT, "electron", "builtin-skills", "13-skill-memory-mcp.ts")) ? ok : fail)("【150】MCP 记忆后端技能存在且已注册到内置技能清单");
+
+    const instPath = join(ROOT, "scripts", "install-memory-mcp.cjs");
+    const instSrc = existsSync(instPath) ? readFileSync(instPath, "utf8") : "";
+    (instSrc.includes("--check") && instSrc.includes("--uninstall") ? ok : fail)("【150】MCP 记忆服务是**可选安装**（scripts/install-memory-mcp.cjs 支持 --check/--uninstall，不进项目依赖）");
+  }
   }
 }
