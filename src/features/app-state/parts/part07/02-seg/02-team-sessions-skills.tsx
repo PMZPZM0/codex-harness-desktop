@@ -103,7 +103,20 @@ bag.startTeamSession = startTeamSession as typeof bag.startTeamSession;
    *  并行时会有多个同时跑 —— 活动指示用计数控制，不能在 finally 里无条件清空。 */
   async function runTeamMember(toolArgs: any, leadThreadId: string): Promise<{ ok: boolean; name: string; profession: string; output: string }> {
     const parentConfig = bag.teamThreadConfigRef.current.get(leadThreadId);
-    const teamId = parentConfig?.teamId || bag.teamThreadMapRef.current.get(leadThreadId) || "";
+    // ⛔⛔ 团队标识必须能从**主进程落盘映射**兜底（09-25 真机事故：成员调度 4/4 全失败，
+    //    错误是「专家团「」不存在」）。根因：这两个 ref 只在**本次运行内**「发起会话」时填充，
+    //    重启后打开历史团队会话时它们是空的，而调度只读 ref ⇒ teamId = ""。
+    //    现在：ref → 当前会话的 threadTeamId → 主进程 teamOfThread（持久映射）三级兜底，且回填 ref。
+    let teamId = parentConfig?.teamId || bag.teamThreadMapRef.current.get(leadThreadId) || "";
+    if (!teamId && bag.thread?.id === leadThreadId && bag.threadTeamId) teamId = bag.threadTeamId;
+    if (!teamId) {
+      try { teamId = String((await window.codex.teamOfThread?.(leadThreadId)) ?? ""); } catch { /* 主进程查不到 ⇒ 保持空 */ }
+    }
+    if (teamId) bag.teamThreadMapRef.current.set(leadThreadId, teamId);
+    if (!teamId) {
+      // 明确报错而不是把空 teamId 发下去（空 teamId 只会得到「专家团「」不存在」这种误导性错误）
+      return { ok: false, name: String(toolArgs?.memberId ?? ""), profession: "", output: `[成员调度失败]\n无法确定该会话所属的专家团（会话 ${leadThreadId} 不在团队映射里）。请从左侧「专家/专家团」入口重新发起一次团队会话。` };
+    }
     bag.teamRunningCountRef.current += 1;
     bag.setExpertTeamMemberRunning({ teamId, memberName: String(toolArgs?.memberId ?? "") });
     try {
