@@ -9,8 +9,8 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "../../../../lib/provider-continuity.mjs";
-import { buildDispatchChildren, groupThreadsBySource } from "../../../../lib/thread-source.mjs";
-import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, subAgentTools, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
+import { buildDispatchChildren, groupThreadsBySource, resolveGroupCwd } from "../../../../lib/thread-source.mjs";
+import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, subAgentTools, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import type { Bag } from "../bag-types";
 
@@ -46,13 +46,28 @@ bag.usingCustomModel = usingCustomModel as typeof bag.usingCustomModel;
   } : {}, [bag.usingCustomModel, bag.customModel]);
 bag.providerConfig = providerConfig as typeof bag.providerConfig;
 
-  const listThreads = useMemo(() => bag.projectFilter ? bag.threads.filter((entry) => entry.cwd === bag.projectFilter) : bag.threads, [bag.threads, bag.projectFilter]);
+  /* 「被调度的会话跟随主对话的项目地址」（09-25 用户要求）：被调度的专家 / 专家团 / 子智能体 /
+     团队成员会话在「项目」视图里归到**发起调度那个会话**的 cwd 下，不再各自新开一个项目地址。
+     ⛔ 只改「归到哪个项目」这一层，不动引擎侧的会话 cwd（会话自己的工作目录仍按原样）。
+     口径在纯模块 src/lib/thread-source.mjs（resolveGroupCwd，可被预检真跑断言）。 */
+  const dispatchCwdMap = useMemo(() => resolveGroupCwd(bag.threads, {
+    delegateRecords: bag.delegateRecords,
+    teamThreadIndex: bag.teamThreadsIndex,
+    teamMemberThreadIds: bag.teamMemberThreadIds,
+  }), [bag.threads, bag.delegateRecords, bag.teamThreadsIndex, bag.teamMemberThreadIds]);
+bag.dispatchCwdMap = dispatchCwdMap as typeof bag.dispatchCwdMap;
+
+  const listThreads = useMemo(() => {
+    const cwdOf = (entry: { id: string; cwd: string }) => dispatchCwdMap[entry.id] ?? entry.cwd;
+    return bag.projectFilter ? bag.threads.filter((entry) => cwdOf(entry) === bag.projectFilter) : bag.threads;
+  }, [bag.threads, bag.projectFilter, dispatchCwdMap]);
 bag.listThreads = listThreads as typeof bag.listThreads;
 
-  // 侧边栏视图模式：分组（按时间） vs 项目（按 cwd）；与 WorkBuddy 项目列表对齐
-  const [viewTab, setViewTab] = useState<"groups" | "projects" | "source">(() => {
+  // 侧边栏视图模式：项目（按 cwd） vs 分类（按会话来源）；与 WorkBuddy 项目列表对齐
+  // ⛔ 原「分组」（按时间）视图已于 09-25 按用户要求删除；旧偏好值一律回落到「项目」。
+  const [viewTab, setViewTab] = useState<"projects" | "source">(() => {
     const saved = localStorage.getItem("sidebar-view-tab-v1");
-    return saved === "projects" || saved === "source" ? saved : "groups";
+    return saved === "source" ? "source" : "projects";
   });
 bag.viewTab = viewTab as typeof bag.viewTab; bag.setViewTab = setViewTab as typeof bag.setViewTab;
 
@@ -182,9 +197,13 @@ bag.togglePinThread = togglePinThread as typeof bag.togglePinThread;
 
   const projectGroups = useMemo(() => {
     const map = new Map<string, Thread[]>();
-    for (const entry of bag.listThreads) map.set(entry.cwd, [...(map.get(entry.cwd) ?? []), entry]);
+    // 分组键 = **有效 cwd**（被调度会话跟随发起调度的会话，见上面的 dispatchCwdMap）
+    for (const entry of bag.listThreads) {
+      const cwd = dispatchCwdMap[entry.id] ?? entry.cwd;
+      map.set(cwd, [...(map.get(cwd) ?? []), entry]);
+    }
     return [...map.entries()].sort((a, b) => Math.max(...b[1].map((entry) => entry.updatedAt)) - Math.max(...a[1].map((entry) => entry.updatedAt)));
-  }, [bag.listThreads]);
+  }, [bag.listThreads, dispatchCwdMap]);
 bag.projectGroups = projectGroups as typeof bag.projectGroups;
 
   const allProjectsCollapsed = bag.projectGroups.length > 0 && bag.projectGroups.every(([cwd]) => !bag.expandedProjects.has(cwd));
@@ -224,15 +243,6 @@ bag.projectAutoExpandRef = projectAutoExpandRef as typeof bag.projectAutoExpandR
     });
   }, [bag.projectGroups, bag.effectiveCwd, bag.workspace]);
 
-  const groupedThreads = useMemo(() => {
-    const groups = groupThreadsByTime(bag.listThreads);
-    const pinned = bag.listThreads.filter((entry) => bag.pinnedThreads.includes(entry.id));
-    if (!pinned.length) return groups;
-    // 置顶组固定排最前：仅保留未归档里的置顶项，组内按时间倒序
-    return [{ key: "pinned", label: "置顶", items: pinned.sort((a, b) => b.updatedAt - a.updatedAt) }, ...groups.filter((g) => g.key !== "pinned")];
-  }, [bag.listThreads, bag.pinnedThreads]);
-bag.groupedThreads = groupedThreads as typeof bag.groupedThreads;
-
   /* 侧栏「分类」视图（09-25 用户要求）：按**会话来源**归类 ——
      主代理会话 / 专家团主理人 / 团队成员子任务 / 专家调度 / 子智能体调度 / 专家团调度。
      口径收在纯模块 src/lib/thread-source.mjs（可被预检直接跑断言）；数据全为既有真相源。 */
@@ -253,9 +263,6 @@ bag.sourcedChildrenOf = sourcedChildrenOf as typeof bag.sourcedChildrenOf;
 
   const allSourceGroupsCollapsed = bag.sourcedThreads.length > 0 && bag.sourcedThreads.every((group) => bag.collapsedSections.has(group.key));
 bag.allSourceGroupsCollapsed = allSourceGroupsCollapsed as typeof bag.allSourceGroupsCollapsed;
-
-  const allGroupsCollapsed = bag.groupedThreads.length > 0 && bag.groupedThreads.every((group) => bag.collapsedSections.has(group.key));
-bag.allGroupsCollapsed = allGroupsCollapsed as typeof bag.allGroupsCollapsed;
 
   // ── 专家团会话聚簇（09-14 用户反馈）：一个专家团的主会话 + N 个成员会话在侧栏占 N+1 行，
   // 把成员会话合并进主会话行下、默认折叠，点「成员会话」展开。
@@ -278,5 +285,5 @@ bag.teamMemberThreadIds = teamMemberThreadIds as typeof bag.teamMemberThreadIds;
     }).catch(() => undefined);
     return () => { alive = false; };
   }, []);
-  return { currentModelId, usingCustomModel, providerConfig, listThreads, viewTab, setViewTab, expandedProjects, setExpandedProjects, toggleProjectExpanded, cwdOverrides, setCwdOverrides, cwdOverridesRef, rememberThreadCwd, effectiveCwd, withCwdOverride, nameOverrides, setNameOverrides, nameOverridesRef, rememberThreadName, effectiveThreadName, withNameOverride, projectMenu, setProjectMenu, pinnedThreads, setPinnedThreads, togglePinThread, projectGroups, allProjectsCollapsed, toggleAllProjects, projectAutoExpandRef, groupedThreads, allGroupsCollapsed, sourcedThreads, sourcedChildrenOf, allSourceGroupsCollapsed, teamThreadsIndex, setTeamThreadsIndex, teamMemberThreadIds, setTeamMemberThreadIds };
+  return { currentModelId, usingCustomModel, providerConfig, listThreads, dispatchCwdMap, viewTab, setViewTab, expandedProjects, setExpandedProjects, toggleProjectExpanded, cwdOverrides, setCwdOverrides, cwdOverridesRef, rememberThreadCwd, effectiveCwd, withCwdOverride, nameOverrides, setNameOverrides, nameOverridesRef, rememberThreadName, effectiveThreadName, withNameOverride, projectMenu, setProjectMenu, pinnedThreads, setPinnedThreads, togglePinThread, projectGroups, allProjectsCollapsed, toggleAllProjects, projectAutoExpandRef, sourcedThreads, sourcedChildrenOf, allSourceGroupsCollapsed, teamThreadsIndex, setTeamThreadsIndex, teamMemberThreadIds, setTeamMemberThreadIds };
 }

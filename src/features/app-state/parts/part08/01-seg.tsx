@@ -11,6 +11,7 @@ import "@xterm/xterm/css/xterm.css";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "../../../../lib/session-scope.mjs";
 import { LEGACY_PREFIX, dispatchSignature, emptyDispatch, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeDispatch, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "../../../../lib/thread-runtime.mjs";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../lib/user-refs";
+import { resolveGroupCwd } from "../../../../lib/thread-source.mjs";
 import { basename } from "../../../../lib/basename";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, subAgentTools, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
 import { DELEGATE_RAIL_LINGER_MS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, MEMBER_LABELS, NOTICE_MAX, NOTICE_TTL_MS, QUICK_SITES } from "../../../app-view/constants";
@@ -197,7 +198,16 @@ bag.deleteThread = deleteThread as typeof bag.deleteThread;
 bag.releaseDispatchHolder = releaseDispatchHolder as typeof bag.releaseDispatchHolder;
 
   async function deleteThreadsByCwd(cwd: string) {
-    const ids = bag.threads.filter((entry) => entry.cwd === cwd).map((entry) => entry.id);
+    /* ⛔ 必须按**有效 cwd**（侧栏项目视图的归组口径）取目标 —— 09-25 加「被调度会话跟随主对话
+       项目地址」后，一个项目组里含 own cwd 不同的被调度会话。仍按 entry.cwd 过滤会有两个错：
+       ① 组里看得见的被调度会话删不掉（留在原地变孤儿行）② 反把 own cwd 命中但已归到**别的**
+       项目下的会话删掉（用户没在该项目里看到它）。口径与 resolveGroupCwd 同源。 */
+    const cwdMap = resolveGroupCwd(bag.threads, {
+      delegateRecords: bag.delegateRecords,
+      teamThreadIndex: bag.teamThreadsIndex,
+      teamMemberThreadIds: bag.teamMemberThreadIds,
+    });
+    const ids = bag.threads.filter((entry) => (cwdMap[entry.id] ?? entry.cwd) === cwd).map((entry) => entry.id);
     if (!ids.length) { bag.setNotice("该项目下已无对话"); return; }
     if (!(await bag.openAppConfirm("删除整个项目", `项目「${basename(cwd)}」下的 ${ids.length} 条任务将被永久删除，此操作无法撤销。`, "永久删除"))) return;
     for (const id of ids) {
@@ -209,8 +219,9 @@ bag.releaseDispatchHolder = releaseDispatchHolder as typeof bag.releaseDispatchH
         bag.setNotice(`删除任务失败：${error.message ?? error}`);
       }
     }
-    bag.setThreads((current) => current.filter((entry) => entry.cwd !== cwd));
-    if (bag.threadRef.current && bag.threadRef.current.cwd === cwd) {
+    const removed = new Set(ids);
+    bag.setThreads((current) => current.filter((entry) => !removed.has(entry.id)));
+    if (bag.threadRef.current && removed.has(bag.threadRef.current.id)) {
       bag.threadRef.current = null;
       bag.setThread(null);
       bag.setOptimisticInput(null);

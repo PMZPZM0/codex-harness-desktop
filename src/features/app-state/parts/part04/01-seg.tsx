@@ -105,22 +105,8 @@ bag.toggleTeamCluster = toggleTeamCluster as typeof bag.toggleTeamCluster;
   }, [bag.listThreads, bag.teamThreadsIndex, bag.teamMemberThreadIds, bag.expertTeams]);
 bag.clusteredSidebar = clusteredSidebar as typeof bag.clusteredSidebar;
 
-  const toggleAllGroups = useCallback(() => {
-    bag.setCollapsedSections((previous) => {
-      const next = new Set(previous);
-      const collapse = !bag.groupedThreads.every((group) => next.has(group.key));
-      for (const group of bag.groupedThreads) {
-        if (collapse) next.add(group.key);
-        else next.delete(group.key);
-      }
-      try { localStorage.setItem("sidebar-sections-collapsed", JSON.stringify([...next])); } catch { /* ignore */ }
-      return next;
-    });
-  }, [bag.groupedThreads]);
-bag.toggleAllGroups = toggleAllGroups as typeof bag.toggleAllGroups;
-
-  /* 「分类」视图（09-25）：全部折叠/展开。键与时间分组不冲突（source:xxx 前缀）⇒ 共用同一个
-     collapsedSections 存储，切视图时各自的折叠状态都能保留。 */
+  /* 「分类」视图（09-25）：全部折叠/展开。键带 `source:` 前缀 ⇒ 与项目视图的折叠状态互不干扰，
+     共用同一个 collapsedSections 存储。 */
   const toggleAllSources = useCallback(() => {
     bag.setCollapsedSections((previous) => {
       const next = new Set(previous);
@@ -135,10 +121,10 @@ bag.toggleAllGroups = toggleAllGroups as typeof bag.toggleAllGroups;
   }, [bag.sourcedThreads]);
 bag.toggleAllSources = toggleAllSources as typeof bag.toggleAllSources;
 
-  const sidebarAllCollapsed = bag.viewTab === "groups" ? bag.allGroupsCollapsed : bag.viewTab === "source" ? bag.allSourceGroupsCollapsed : bag.allProjectsCollapsed;
+  const sidebarAllCollapsed = bag.viewTab === "source" ? bag.allSourceGroupsCollapsed : bag.allProjectsCollapsed;
 bag.sidebarAllCollapsed = sidebarAllCollapsed as typeof bag.sidebarAllCollapsed;
 
-  const toggleAllSidebarSections = bag.viewTab === "groups" ? bag.toggleAllGroups : bag.viewTab === "source" ? bag.toggleAllSources : bag.toggleAllProjects;
+  const toggleAllSidebarSections = bag.viewTab === "source" ? bag.toggleAllSources : bag.toggleAllProjects;
 bag.toggleAllSidebarSections = toggleAllSidebarSections as typeof bag.toggleAllSidebarSections;
 
   // 「清空当前视图」批量删除按钮已下架（2026-09-04 反馈：侧栏顶部太容易误触）。
@@ -400,5 +386,5 @@ bag.showToast = showToast as typeof bag.showToast;
     return [line, used, life, turn, tip].join("\n");
   }
 bag.contextUsageText = contextUsageText as typeof bag.contextUsageText;
-  return { expandedTeamClusters, setExpandedTeamClusters, toggleTeamCluster, clusteredSidebar, toggleAllGroups, toggleAllSources, sidebarAllCollapsed, toggleAllSidebarSections, TURN_WINDOW, TURNS_PAGE, TURN_WINDOW_MEMORY_KEEP, touchTurnWindow, ANCHOR_TOP_OFFSET_PX, CONTENT_TAIL_GAP_PX, COMMON_COMMAND_ORDER, commandMatches, mergedSkillCatalog, skillCommandMatches, threadMemoKey, availableContextItems, threadFileCandidates, addSystemEvent, setCompactEventState, pruneSupersededCompactions, threadNameOf, scopedNotice, showToast, contextUsageText };
+  return { expandedTeamClusters, setExpandedTeamClusters, toggleTeamCluster, clusteredSidebar, toggleAllSources, sidebarAllCollapsed, toggleAllSidebarSections, TURN_WINDOW, TURNS_PAGE, TURN_WINDOW_MEMORY_KEEP, touchTurnWindow, ANCHOR_TOP_OFFSET_PX, CONTENT_TAIL_GAP_PX, COMMON_COMMAND_ORDER, commandMatches, mergedSkillCatalog, skillCommandMatches, threadMemoKey, availableContextItems, threadFileCandidates, addSystemEvent, setCompactEventState, pruneSupersededCompactions, threadNameOf, scopedNotice, showToast, contextUsageText };
 }

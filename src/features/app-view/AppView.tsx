@@ -212,7 +212,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     fileTabs, fileTruncated, forgetPendingImport, globalPermApproval,
     goalStatus, goalText, goalsAutoGone, goalsDocked,
     goalsExpanded, goalsOpen, greetSub, greeting,
-    groupBusy, groupedThreads, handleLogout, hardwareAccel,
+    groupBusy, handleLogout, hardwareAccel,
     hasEnhanceBackup, helpKey, highlightedFilePath, historyMemberRuns,
     hookBusy, hookPulse, hookTrusting, images,
     importConversationMarkdown, importSkill, importSshEntries, importThreadsBackup,

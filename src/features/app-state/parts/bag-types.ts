@@ -1013,8 +1013,9 @@ export interface Bag {
   usingCustomModel: boolean;
   providerConfig: { modelProvider: "harness"; config: { model_provider: "harness"; model_providers: { harness: { name: string; base_url: string; env_key: string; wire_api: "responses"; requires_openai_auth: boolean; }; }; }; } | { modelProvider?: undefined; config?: undefined; };
   listThreads: import("../../app-view/types.ts").Thread[];
-  viewTab: "groups" | "projects" | "source";
-  setViewTab: React.Dispatch<React.SetStateAction<"groups" | "projects" | "source">>;
+  dispatchCwdMap: Record<string, string>;
+  viewTab: "projects" | "source";
+  setViewTab: React.Dispatch<React.SetStateAction<"projects" | "source">>;
   expandedProjects: Set<string>;
   setExpandedProjects: React.Dispatch<React.SetStateAction<Set<string>>>;
   toggleProjectExpanded: (cwd: string) => void;
@@ -1039,11 +1040,9 @@ export interface Bag {
   allProjectsCollapsed: boolean;
   toggleAllProjects: () => void;
   projectAutoExpandRef: React.RefObject<boolean>;
-  sourcedThreads: { key: string; label: string; items: import("../../app-view/types.ts").Thread[] }[];
+  sourcedThreads: { key: string; label: string; items: import("../../app-view/types.ts").Thread[]; }[];
   allSourceGroupsCollapsed: boolean;
-  sourcedChildrenOf: Record<string, { threadId: string; kind: string; name: string }[]>;
-  groupedThreads: { key: string; label: string; items: import("../../app-view/types.ts").Thread[]; }[];
-  allGroupsCollapsed: boolean;
+  sourcedChildrenOf: Record<string, { threadId: string; kind: string; name: string; }[]>;
   teamThreadsIndex: Record<string, string>;
   setTeamThreadsIndex: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   teamMemberThreadIds: Set<string>;
@@ -1053,7 +1052,6 @@ export interface Bag {
   toggleTeamCluster: (teamId: string) => void;
   clusteredSidebar: { memberIds: Set<string>; clusters: { teamId: string; lead: import("../../app-view/types.ts").Thread | null; members: import("../../app-view/types.ts").Thread[]; }[]; };
   toggleAllSources: () => void;
-  toggleAllGroups: () => void;
   sidebarAllCollapsed: boolean;
   toggleAllSidebarSections: () => void;
   TURN_WINDOW: 5;

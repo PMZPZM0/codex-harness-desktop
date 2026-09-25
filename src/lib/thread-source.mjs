@@ -115,3 +115,61 @@ export function groupThreadsBySource(threads, ctx) {
     .filter((key) => buckets.has(key))
     .map((key) => ({ key: `source:${key}`, label: THREAD_SOURCE_LABELS[key], items: [...buckets.get(key)].sort(byRecent) }));
 }
+
+/**
+ * 解析每个会话在侧栏「项目」视图里应当归到哪个 cwd（09-25 用户要求：
+ * 「被调度的专家或者专家团和子智能体跟随主对话的项目地址，不要新开项目地址」）。
+ *
+ * 规则（优先级从上到下）：
+ *   ① 被调度会话（主进程登记的 originThreadId 指向发起调度的会话，且父也在列表里）⇒ 跟随父的 cwd（可链式）
+ *   ② 团队成员会话 ⇒ 跟随**本团主理人**（team-threads.json 里同 teamId 且非成员会话那条）的 cwd
+ *   ③ 兜底 = 自己的 cwd（⛔ 父不在列表 / 无团队主理人 / 成环 时都不许把会话弄丢）
+ *
+ * 返回 Record<threadId, cwd>；cwd 仍为空串的项表示无法解析（调用方按原样处理）。
+ */
+export function resolveGroupCwd(threads, ctx) {
+  const list = threads ?? [];
+  const { delegateRecords = {}, teamThreadIndex = {}, teamMemberThreadIds = new Set() } = ctx ?? {};
+  const has = (set, id) => (set && typeof set.has === "function" ? set.has(id) : false);
+
+  const own = new Map();
+  for (const thread of list) {
+    const id = String(thread?.id ?? "");
+    if (id) own.set(id, String(thread?.cwd ?? ""));
+  }
+  // teamId → 主理人会话 id（该团里非成员会话；多个候选时优先有 cwd 的）
+  const leadOfTeam = new Map();
+  for (const [threadId, teamId] of Object.entries(teamThreadIndex)) {
+    const id = String(threadId);
+    if (has(teamMemberThreadIds, id) || !own.has(id)) continue;
+    const key = String(teamId);
+    const prev = leadOfTeam.get(key);
+    if (!prev || (!own.get(prev) && own.get(id))) leadOfTeam.set(key, id);
+  }
+  const parentOf = (id) => {
+    const origin = delegateRecords[id]?.originThreadId;
+    return origin && String(origin) !== String(id) && own.has(String(origin)) ? String(origin) : null;
+  };
+
+  const memo = new Map();
+  const walk = (id, seen) => {
+    if (memo.has(id)) return memo.get(id);
+    if (seen.has(id)) return own.get(id) ?? "";   // 成环 ⇒ 该节点用自己的 cwd，不再上溯
+    seen.add(id);
+    let cwd = "";
+    const parent = parentOf(id);
+    if (parent) cwd = walk(parent, seen);
+    if (!cwd && has(teamMemberThreadIds, id)) {
+      const lead = leadOfTeam.get(String(teamThreadIndex[id] ?? ""));
+      if (lead && lead !== id) cwd = walk(lead, seen);
+    }
+    if (!cwd) cwd = own.get(id) ?? "";
+    seen.delete(id);
+    memo.set(id, cwd);
+    return cwd;
+  };
+
+  const resolved = {};
+  for (const id of own.keys()) resolved[id] = walk(id, new Set());
+  return resolved;
+}
