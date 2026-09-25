@@ -117,8 +117,15 @@ export function canDispatchFrom(input: { isDelegated?: boolean; depth?: number; 
 
 /* ─────────────── L4：总量闸 ─────────────── */
 
-/** 同时进行的调度任务上限（超出的直接拒绝并说明，不排队——排队会让模型以为自己已经发出去了）。 */
-export const MAX_CONCURRENT_DISPATCH = 4;
+/**
+ * 同时进行的调度任务上限（超出的直接拒绝并说明，不排队——排队会让模型以为自己已经发出去了）。
+ *
+ * 09-25 用户要求 4 → **10**（与「供应商最大并发」同一轮的诉求：并发放开）。
+ * ⛔ 它挡的是「一次 fan-out 出十几个成员把同一个 Key 的配额打爆（429 爆发）」——
+ *    配额共享这条物理约束没有变，所以超限仍然**拒绝而非排队**；调到 10 意味着用户接受更激进的并行。
+ * ⛔ 拒绝文案里的数字取自本常量（别在文案里写死）。
+ */
+export const MAX_CONCURRENT_DISPATCH = 10;
 
 export function admitDispatch(input: { running: number; depth?: number }): { ok: boolean; reason?: string } {
   const running = Number(input?.running ?? 0);

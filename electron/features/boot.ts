@@ -516,7 +516,7 @@ export async function bootApp() {
     } catch (error) { console.warn("[bridge] 预填上游协议映射失败（回落 auto）:", error); }
     /* 委派记录启动自愈（09-24，评估报告 §4.3）：status="running" 是**持久化**的，只有 delegation
        的成功/失败两条路径会清。应用被中断 ⇒ 残留记录让 runningCount() 只增不减，攒满
-       MAX_CONCURRENT_DISPATCH(4) 后 **永久拒绝所有委派**（跨重启累积，prune 只清 finished 救不了）。
+       MAX_CONCURRENT_DISPATCH（见 dispatch.ts，09-25 为 10）后 **永久拒绝所有委派**（跨重启累积，prune 只清 finished 救不了）。
        ⛔ 必须在任何 admitDispatch 之前跑完 —— 放在 server.start() 之前的启动链上最稳。
        失败只降级不阻塞启动（与上面几条自愈同口径）。 */
     try {

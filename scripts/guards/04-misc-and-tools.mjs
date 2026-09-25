@@ -486,6 +486,14 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     !dp.admitDispatch({ running: dp.MAX_CONCURRENT_DISPATCH }).ok
       ? ok(`L4 并发闸：running >= ${dp.MAX_CONCURRENT_DISPATCH} 时拒绝`)
       : fail("并发闸失效 —— 模型一口气发十几个会把引擎压垮");
+    /* 09-25 用户要求「调度也提到 10」。⚠️ 断言取值本身，不是「常量存在」——
+       变异测试判据：把它改回 4 ⇒ 这条必须红（否则文案在承诺一个没验的数字）。 */
+    dp.MAX_CONCURRENT_DISPATCH === 10
+      ? ok("L4 调度并发上限 = 10（09-25 用户要求，原 4）")
+      : fail(`调度并发上限变了：${dp.MAX_CONCURRENT_DISPATCH}（用户要求 10）`);
+    dp.admitDispatch({ running: 9 }).ok && !dp.admitDispatch({ running: 10 }).ok
+      ? ok("L4 边界：9 放行 / 10 拒绝（新上限两侧各验一次）")
+      : fail("调度并发边界与常量不一致 —— 上限形同虚设或多挡一路");
     const clipped = dp.clipDispatchOutput("x".repeat(dp.MAX_OUTPUT_CHARS + 500), "th-1");
     clipped.length <= dp.MAX_OUTPUT_CHARS && /th-1/.test(clipped)
       ? ok("回传输出超长被截断且指向完整会话（不撑爆调用方上下文）")
