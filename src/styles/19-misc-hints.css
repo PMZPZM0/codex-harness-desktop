@@ -1930,3 +1930,31 @@
 .history-search-snippet span { min-width: 0; word-break: break-all; }
 .history-search-snippet mark { background: color-mix(in srgb, var(--accent, #4b7be5) 22%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
 .history-search-more { margin-top: 2px; color: var(--muted); font-size: 10.5px; opacity: 0.8; }
+
+/* 办公室预览节点（09-25）：成员流转轨末位的独立入口，与成员节点同尺寸但用中性色区分 */
+.team-rail-node.team-rail-office {
+  margin-top: 6px;
+  padding-top: 10px;
+  color: var(--muted);
+}
+.team-rail-node.team-rail-office::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 1px;
+  background: var(--line);
+}
+.team-rail-office-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--link) 14%, var(--panel-2));
+  color: var(--link);
+  border: 1px solid color-mix(in srgb, var(--link) 34%, var(--line));
+}
+.team-rail-node.team-rail-office:hover .team-rail-office-avatar {
+  background: color-mix(in srgb, var(--link) 22%, var(--panel-2));
+}

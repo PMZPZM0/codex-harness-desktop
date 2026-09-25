@@ -1355,16 +1355,20 @@ w.postMessage({id:1,op:"list",root});
     /* 不得再有独立侧栏入口 */
     const shellSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8");
     (!shellSrc.includes("CompanyMode") && !shellSrc.includes("companyPreview") ? ok : fail)("【154】侧栏不得有独立「公司模式」入口（已收成专家团专属预览）");
-    /* 入口 = 专家团页卡片按钮 + registry 接线 */
+    /* 入口 = 专家团会话右侧「成员流转轨」末位节点（用户 09-25 定稿：⛔ 不是设置页卡片） */
+    const railSrc = readFileSync(join(ROOT, "src", "features", "experts-teams", "ExpertsTeams", "02-rails.tsx"), "utf8");
+    (railSrc.includes("onOpenOffice") && railSrc.includes("team-rail-office") ? ok : fail)("【154】成员流转轨末位有「办公室」入口节点");
     const teamsSrc = readFileSync(join(ROOT, "src", "features", "settings-teams", "TeamsSettingsSection.tsx"), "utf8");
-    (teamsSrc.includes("openTeamOfficePreview(team.teamId)") ? ok : fail)("【154】专家团页每个团队卡片有「办公室预览」入口");
-    const registrySrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
-    (registrySrc.includes("openTeamOfficePreview={(teamId: string) => app.setCompanyPreviewTeamId(teamId)}") ? ok : fail)("【154】registry 已把预览入口接到 bag（专家团页是 props 面）");
+    (!teamsSrc.includes("openTeamOfficePreview") ? ok : fail)("【154】⛔ 不得在专家团设置页卡片加入口（用户已否）");
+    const timelineSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "01-timeline.tsx"), "utf8");
+    (timelineSrc.includes("onOpenOffice={() => setCompanyPreviewTeamId(railTeam.teamId)}") ? ok : fail)("【154】会话把 rail 入口接到预览状态（用当前会话的团队）");
     /* 组件与数据面 */
     const viewPath = join(ROOT, "src", "features", "team-office", "TeamOfficePreview.tsx");
     const viewSrc = existsSync(viewPath) ? readFileSync(viewPath, "utf8") : "";
     (viewSrc.includes("teamThreadsMap()") ? ok : fail)("【154】成员会话映射走既有 team-threads:map（⛔ 不得新增重复通道）");
-    (viewSrc.includes("runningThreadIds") ? ok : fail)("【154】角色运行态来自 runningThreadIds");
+    (viewSrc.includes("runningThreadIds") ? ok : fail)("【154】角色运行态来自 runningThreadIds（回退路径）");
+    (viewSrc.includes("runningByMember") ? ok : fail)("【154】角色状态映射真实成员运行记录 runningByMember（优先）");
+    (viewSrc.includes("openThread") ? ok : fail)("【154】预览的「进入对话」真实跳到该成员会话");
     (!/ipcMain\.handle/.test(viewSrc) ? ok : fail)("【154】视图组件内不得直接注册 IPC");
     const appViewSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView.tsx"), "utf8");
     (appViewSrc.includes("<TeamOfficePreview") && appViewSrc.includes("teamId={app.companyPreviewTeamId}") ? ok : fail)("【154】预览浮层已挂载进 AppView（显式 props，域组件禁收 app）");

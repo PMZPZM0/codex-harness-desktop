@@ -230,6 +230,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     setSettingsOpen,
     setSettingsPage,
     setShowModelGuide,
+    setCompanyPreviewTeamId,
     setTeamHistoryMember,
     setTeamPopupRunId,
     showLogin,
@@ -467,6 +468,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       lastByMember={railLastByMember}
                       activeMemberId={teamHistoryMember || popupRun?.memberId || ""}
                       onOpenMember={(memberId) => { setTeamPopupRunId(""); setTeamHistoryMember(memberId); }}
+                      onOpenOffice={() => setCompanyPreviewTeamId(railTeam.teamId)}
                     />
                   )}
                   {railTeam && popupRun && (

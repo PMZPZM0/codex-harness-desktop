@@ -2,20 +2,22 @@
  * ExpertsTeams 的「rails」部分（09-22 从同目录 ExpertsTeams.tsx 按顶层声明分出，纯搬迁、零改写）。
  * ⛔ 逻辑与原地逐字一致，只补了顶部 import 与 `export`。
  */
-import { Users, X, Plus, Trash2, Info, Check, Bot, Sparkles, LoaderCircle, Clock3 } from "lucide-react";
+import { Users, X, Plus, Trash2, Info, Check, Bot, Building2, Sparkles, LoaderCircle, Clock3 } from "lucide-react";
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { AVATAR_GRADIENTS, avatarToneOf } from "../../../lib/entity-avatar";
 import { useRefObject } from "../../../lib/use-ref-object";
 import { expertIconOf } from "../../../lib/expert-icon-of";
 import { expertRoleLabel } from "../../../lib/expert-role-label";
 import { useAvatarAnchor } from "./04-avatar-anchor";
-export function TeamMemberRail({ team, containerRef, runningByMember, lastByMember, activeMemberId, onOpenMember }: {
+export function TeamMemberRail({ team, containerRef, runningByMember, lastByMember, activeMemberId, onOpenMember, onOpenOffice }: {
   team: ExpertTeamConfig;
   containerRef: useRefObject;
   runningByMember: Record<string, TeamMemberRunRecord>;
   lastByMember: Record<string, TeamMemberRunRecord>;
   activeMemberId: string;
   onOpenMember: (memberId: string) => void;
+  /** 办公室预览入口（09-25 用户要求：加在这列流转图标的末位，映射真实成员状态）。 */
+  onOpenOffice?: () => void;
 }) {
   const [mode, setMode] = useState<"full" | "compact" | "hidden">("full");
   useEffect(() => {
@@ -56,6 +58,13 @@ export function TeamMemberRail({ team, containerRef, runningByMember, lastByMemb
             </button>
           );
         })}
+        {/* 办公室预览：轨道末位的独立节点（用户 09-25：加在这列流转图标里，不进设置页卡片） */}
+        {onOpenOffice && (
+          <button type="button" className="team-rail-node team-rail-office" title="办公室预览：把成员状态映射成虚拟办公室（工作中敲键盘 / 空闲打盹 / 未开工空位）" onClick={onOpenOffice}>
+            <span className="team-rail-avatar team-rail-office-avatar"><Building2 size={14} /></span>
+            <span className="team-rail-name">办公室</span>
+          </button>
+        )}
       </div>
     </aside>
   );
