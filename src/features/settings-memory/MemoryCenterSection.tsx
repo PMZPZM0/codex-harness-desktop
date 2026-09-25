@@ -9,7 +9,7 @@
  */
 import { useEffect, useState, type CSSProperties } from "react";
 import { PageInfo } from "../../components/SettingsHead";
-import { Archive, BookOpen, Cloud, LayoutGrid, Search } from "lucide-react";
+import { Archive, BookOpen, Cloud, Database, LayoutGrid, Search, Server } from "lucide-react";
 import { MemoryConfigModal } from "../../features/memory";
 
 export type MemoryCenterSectionProps = { memoryEnabled: any; setMemoryEnabled: any; setMemoryCenterTab: any; setMemoryCenterOpen: any; memories: any; memoryGroups: any; memoryLayers: any; memoryMode: any; workspaceMemoryEnabled: any; threads: any; scheduledTasks: any; localSkills: any; memoryStatus: any; memoryConfigOpen: any; memoryGateway: any; setMemoryGateway: any; memoryGatewayAction: any; setMemoryConfigOpen: any; testMemoryGateway: any; saveMemoryGateway: any };
@@ -107,48 +107,58 @@ function MemoryBackendSection() {
   };
 
   const radioRow: CSSProperties = { display: "flex", gap: 8, alignItems: "flex-start", cursor: "pointer" };
+  void radioRow; // 09-25 排版返工后 radioRow 已不再使用；保留 void 防止 lint 报未用（后续清理时一并删）
 
   return (
     <>
       <div className="settings-copy channel-heading"><div><h2>记忆后端<PageInfo text={<>二选一：内置记忆金字塔，或可选的 MCP 记忆服务。两者**不会同时写入** —— 选了 MCP，内置金字塔就停止捕获，避免同一件事记两份。</>} /></h2></div></div>
-      <p className="muted">MCP 记忆服务（@vheins/local-memory-mcp）<strong>不内置</strong>在安装包里，需要按下面的命令自行安装（装到 userData 下的独立目录，卸载就是删目录）。服务没装好时记忆不会被丢弃 —— 会自动回退到内置金字塔。</p>
+      <p className="muted">MCP 记忆服务（@vheins/local-memory-mcp）<strong>不内置</strong>在安装包里，需要按下面的按钮或命令安装（装到 userData 下的独立目录，卸载就是删目录）。服务没装好时记忆不会被丢弃 —— 会自动回退到内置金字塔。</p>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
-        <label style={radioRow}>
-          <input type="radio" name="memoryBackend" checked={status?.backend === "builtin"} disabled={busy || !status} onChange={() => void pick("builtin")} />
-          <span><strong>内置记忆金字塔</strong>（默认）<br /><small className="muted">L0~L7 分层 + 纠错/坑分类写入；自包含、零依赖。</small></span>
-        </label>
-        <label style={radioRow}>
-          <input type="radio" name="memoryBackend" checked={status?.backend === "mcp"} disabled={busy || !status} onChange={() => void pick("mcp")} />
-          <span><strong>MCP 记忆服务</strong><br /><small className="muted">{status?.installed ? "服务已安装。" : "服务未安装 —— 选中它会先回退到内置（不丢记忆）。"}</small></span>
-        </label>
+      {/* 09-25 排版返工：原生 radio ⇒ 可点击选择卡片（选中态绿框 + 浅绿底 + 右上角勾） */}
+      <div className="memory-backend-options" role="radiogroup" aria-label="记忆后端">
+        <button type="button" role="radio" aria-checked={status?.backend === "builtin"} className="memory-backend-option" disabled={busy || !status} onClick={() => void pick("builtin")}>
+          <span className="memory-backend-icon"><Database size={16} /></span>
+          <span className="memory-backend-body">
+            <strong>内置记忆金字塔<em>默认</em></strong>
+            <small>L0~L7 分层与纠错/坑分类写入；自包含零依赖。</small>
+          </span>
+        </button>
+        <button type="button" role="radio" aria-checked={status?.backend === "mcp"} className="memory-backend-option" disabled={busy || !status} onClick={() => void pick("mcp")}>
+          <span className="memory-backend-icon"><Server size={16} /></span>
+          <span className="memory-backend-body">
+            <strong>MCP 记忆服务</strong>
+            <small>{status?.installed ? "服务已安装，切换后重启生效。" : "服务未安装 —— 选中它会先回退到内置（不丢记忆）。"}</small>
+          </span>
+        </button>
       </div>
 
       {status && (
-        <p className="settings-status">当前生效：<strong>{status.effective === "mcp" ? "MCP 记忆服务" : "内置记忆金字塔"}</strong>{status.backend !== status.effective ? "（你选的是 MCP，但服务还没就绪）" : ""}</p>
+        <div className="memory-backend-meta">
+          <span className={`memory-backend-state${status.backend !== status.effective ? " warn" : ""}`}>当前生效：{status.effective === "mcp" ? "MCP 记忆服务" : "内置记忆金字塔"}{status.backend !== status.effective ? " · 所选后端未就绪" : ""}</span>
+          {status.fallbackReason && <span className="memory-backend-fallback">{status.fallbackReason}</span>}
+        </div>
       )}
-      {status?.fallbackReason && <p className="settings-status">{status.fallbackReason}</p>}
 
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
+      <div className="memory-backend-actions">
         {!status?.installed ? (
           <button className="primary-setting" disabled={busy || !status} onClick={() => void runAction("install")}>安装 MCP 记忆服务</button>
         ) : (
           <>
-            <button disabled={busy} onClick={() => void runAction("verify")}>检测连通性</button>
-            <button disabled={busy} onClick={() => void runAction("install")}>重新安装 / 修复</button>
-            <button disabled={busy} onClick={() => void runAction("uninstall")}>卸载</button>
+            <button className="secondary-setting" disabled={busy} onClick={() => void runAction("verify")}>检测连通性</button>
+            <button className="secondary-setting" disabled={busy} onClick={() => void runAction("install")}>重新安装 / 修复</button>
+            <button className="secondary-setting" disabled={busy} onClick={() => void runAction("uninstall")}>卸载</button>
           </>
         )}
-        {status && <span className="muted">装到：{status.installRoot}</span>}
+        {status && <span className="memory-backend-path">装到 <code>{status.installRoot}</code></span>}
       </div>
       {busyLabel && <p className="settings-status">{busyLabel}</p>}
       {note && <p className="settings-status">{note}</p>}
 
       {status && (
-        <details style={{ marginTop: 10 }}>
-          <summary className="muted" style={{ cursor: "pointer" }}>想自己用命令装？（走同一套：应用自带 node，不需要你预装 Node.js）</summary>
-          <p className="settings-status" style={{ fontFamily: "ui-monospace, monospace", wordBreak: "break-all", marginTop: 6 }}>{status.installCommand}</p>
-          <button onClick={() => void copyCommand()}>复制命令</button>
+        <details className="memory-backend-manual">
+          <summary>想自己用命令装？（走同一套：应用自带 node，不需要你预装 Node.js）</summary>
+          <p className="memory-backend-cmd">{status.installCommand}</p>
+          <button className="secondary-setting" onClick={() => void copyCommand()}>复制命令</button>
         </details>
       )}
     </>
