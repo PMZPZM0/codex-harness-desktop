@@ -240,16 +240,18 @@ if (!mainSrc || !preloadSrc) {
       const appearSrc = readFileSync(join(ROOT, "src", "features", "settings-appearance", "AppearanceSettingsSection.tsx"), "utf8");
       (/THEMES\.map\(/.test(appearSrc) && !/theme === "light" \? "active"/.test(appearSrc) ? ok : fail)("【2】外观页主题按钮由注册表渲染（不许再手写 light/dark 两份）");
       (/normalizeThemeId\(localStorage\.getItem\("theme"\)\)/.test(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "03-thread-switch-update", "01-thread-switch-system-events.tsx"), "utf8")) ? ok : fail)("【2】主题初始化过 normalizeThemeId（localStorage 脏值兜底）");
-      /* ── 任务栏图标 / AUMID（09-24：用户报「任务栏图标又变成默认的 Electron 原子图标」）──
-         Windows 靠 AUMID 把运行中的进程与某个**注册了同一 AUMID 的快捷方式**配对，配对成功任务栏才
-         取我们的 build/icon.ico；否则回退 electron.exe 的原子图标（dev 形态必然如此）。
-         ⛔ 所以 dev 与打包必须各用一个 id，且都能被对应快捷方式注册（dev = .dev 后缀）。 */
+      /* ── 任务栏图标 / AUMID（09-25 实测改判，旧判据已证伪）──
+         ⛔ dev **不许**设 AUMID。Windows 仅在能把 AUMID 解析到"注册了同一 AUMID 的快捷方式"时才用
+         它；解析失败 ⇒ 回退进程 exe 图标，**并且忽略窗口图标**。dev 的 exe 是 electron.exe ⇒
+         任务栏变 Electron 原子图标（用户 09-24/09-25 反复报的症状）。
+         09-25 A/B（同一 .ico、同一窗口，任务栏截图 md5 比对）：不设 AUMID ⇒ 图标正确；
+         设 .dev AUMID ⇒ 与真实应用逐像素相同的原子图标。 */
       const mainNow = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
-      (/app\.setAppUserModelId\(app\.isPackaged \? "com\.codexharness\.desktop" : "com\.codexharness\.desktop\.dev"\)/.test(mainNow) ? ok : fail)(
-        "【2】AUMID 按 dev/打包分叉设置（dev 用 .dev 后缀，与桌面快捷方式注册值一致 —— 否则任务栏回落原子图标）"
+      (/if \(app\.isPackaged\) app\.setAppUserModelId\("com\.codexharness\.desktop"\);/.test(mainNow) ? ok : fail)(
+        "【2】AUMID 只在打包版设置（打包由 NSIS 写规范快捷方式，AUMID 可解析）"
       );
-      (/app\.setAppUserModelId\("com\.codexharness\.desktop\.dev"\)/.test(mainNow) || /"com\.codexharness\.desktop\.dev"/.test(mainNow) ? ok : fail)(
-        "【2】dev AUMID 常量存在（缺了就等于没有 dev 图标）"
+      (!/setAppUserModelId\([\s\S]{0,120}?desktop\.dev/.test(mainNow) ? ok : fail)(
+        "【2】⛔ dev 不得设置 AUMID（配对失败会回退 exe 图标并顶掉窗口图标 ⇒ 原子图标）"
       );
       const iconPath = join(ROOT, "build", "icon.ico");
       const iconOk = existsSync(iconPath) && (() => {

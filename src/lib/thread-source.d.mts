@@ -15,3 +15,11 @@ export function groupThreadsBySource<T extends { id: string; updatedAt?: number 
     pinnedThreadIds?: string[];
   }
 ): { key: string; label: string; items: T[] }[];
+export function resolveGroupCwd<T extends { id: string; cwd?: string }>(
+  threads: T[],
+  ctx?: {
+    delegateRecords?: Record<string, { originThreadId?: string }>;
+    teamThreadIndex?: Record<string, string>;
+    teamMemberThreadIds?: Set<string>;
+  }
+): Record<string, string>;

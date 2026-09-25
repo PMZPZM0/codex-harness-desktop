@@ -1308,6 +1308,45 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
         { delegateRecords: { c1: { originThreadId: "p", kind: "expert" } } }
       );
       (groupedAfter.every((g) => !g.items.some((t) => t.id === "c1")) ? ok : fail)("【156】被收编的会话不再出现在来源分组（避免同一会话两处显示）");
+
+      /* ── 「分组」（按时间）视图已按用户要求删除（09-25：「分组可以删了」）──
+         ⛔ 负向断言：不许有人把第三个 tab / groups 分支加回来。 */
+      (!appSrc2.includes('setViewTab("groups")') && !appSrc2.includes("按时间分组") ? ok : fail)("【156】⛔ 侧栏「分组」（按时间）视图已删除，不得加回");
+      const bagTypesSrc2 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "bag-types.ts"), "utf8");
+      (!/viewTab: "groups"/.test(bagTypesSrc2) ? ok : fail)("【156】viewTab 类型只有 projects|source（旧偏好值在 part03 回落到 projects）");
+
+      /* ── 被调度会话跟随主对话的项目地址（09-25 用户要求：「不要新开项目地址」）──
+         真跑 resolveGroupCwd 五条边界（⛔ 只查字面量抓不到口径跑偏）。 */
+      const cwdMap = mod.resolveGroupCwd(
+        [
+          { id: "lead", cwd: "D:\\proj" },
+          { id: "child", cwd: "D:\\proj\\sub" },
+          { id: "grand", cwd: "D:\\other" },
+          { id: "orphan", cwd: "D:\\solo" },
+          { id: "member", cwd: "D:\\tmp\\wt" },
+          { id: "cycA", cwd: "D:\\a" },
+          { id: "cycB", cwd: "D:\\b" },
+        ],
+        {
+          delegateRecords: {
+            child: { originThreadId: "lead" },
+            grand: { originThreadId: "child" },        // 链式：跟随祖父
+            orphan: { originThreadId: "gone" },        // 父不在列表
+            cycA: { originThreadId: "cycB" },
+            cycB: { originThreadId: "cycA" },
+          },
+          teamThreadIndex: { lead: "t1", member: "t1" },
+          teamMemberThreadIds: new Set(["member"]),
+        }
+      );
+      (cwdMap.child === "D:\\proj" ? ok : fail)("【156】被调度会话跟随发起调度的会话 cwd（实得 " + cwdMap.child + "）");
+      (cwdMap.grand === "D:\\proj" ? ok : fail)("【156】链式调度一路跟随到最顶层主对话 cwd（实得 " + cwdMap.grand + "）");
+      (cwdMap.orphan === "D:\\solo" ? ok : fail)("【156】父不在列表 ⇒ 回退自己的 cwd（⛔ 不许把会话弄丢）");
+      (cwdMap.member === "D:\\proj" ? ok : fail)("【156】团队成员会话跟随本团主理人 cwd（实得 " + cwdMap.member + "）");
+      (cwdMap.cycA && cwdMap.cycB ? ok : fail)("【156】互为父子的环 ⇒ 不死循环，各自返回自己的 cwd");
+      (appSrc2.includes("resolveGroupCwd") && appSrc2.includes("dispatchCwdMap") ? ok : fail)("【156】项目分组用有效 cwd（part03 接线 resolveGroupCwd / dispatchCwdMap）");
+      /* ⛔ 断言写法注意：readAppUi() 会归一化（剥掉 `bag.` 前缀），别按源码字面量写正则。 */
+      (/cwdMap\[entry\.id\][\s\S]{0,200}?该项目下已无对话/.test(appSrc2) ? ok : fail)("【156】删除整个项目按**有效 cwd** 取目标（否则跟随过来的被调度会话删不掉 / 误删他项目会话）");
     } catch (error) {
       fail("【156】thread-source.mjs 加载失败：" + error.message);
     }

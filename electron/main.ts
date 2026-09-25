@@ -156,17 +156,19 @@ app.setName("Codex Harness Desktop");
 
 app.setPath("userData", resolveStartupUserData());
 
-/* 自定义 AUMID（AppUserModelID）：Windows 任务栏靠它把"运行中的进程"与"某个快捷方式"配对，
-   配对成功后**任务栏图标取该快捷方式的图标**（我们的 build/icon.ico），否则回退进程 exe 的图标
-   —— dev 形态 exe 是 node_modules/electron/dist/electron.exe，于是任务栏永远是 **Electron 原子图标**
-   （09-24 用户报「任务栏图标又变成默认的」的根因）。
-   ⛔ 两个前提必须同时成立，缺一个就会**顶掉窗口图标**（历史上踩过，当时因此只敢在打包后设置）：
-     ① 系统里存在**注册了同一个 AUMID** 的快捷方式（安装版由 electron-builder NSIS 写入
-        `com.codexharness.desktop`；dev 由桌面快捷方式注册 `com.codexharness.desktop.dev`）；
-     ② 进程设置的 AUMID 与那个快捷方式**逐字一致**。
-   ⇒ dev 与打包用**两个不同 id**，各自与自己的快捷方式对应。dev 快捷方式已注册 `.dev`，
-     所以 dev 分支现在也能安全设置（09-24 修复）。换机/新建快捷方式时务必带上这个 AUMID。 */
-app.setAppUserModelId(app.isPackaged ? "com.codexharness.desktop" : "com.codexharness.desktop.dev");
+/* 自定义 AUMID（AppUserModelID）—— **只在打包版设置，dev 一律不设**。
+   Windows 用 AUMID 把"运行中的进程"与"注册了同一 AUMID 的快捷方式"配对：配对成功 ⇒ 任务栏取
+   该快捷方式的图标；**配对失败 ⇒ 回退到进程 exe 的图标，并且此时窗口图标（BrowserWindow.icon）
+   会被完全忽略**。dev 形态 exe 是 node_modules/electron/dist/electron.exe ⇒ 回退即 Electron 原子图标。
+   ⛔ 09-25 A/B 实证（同一份 build/icon.ico、同一个窗口，仅差一行 AUMID，任务栏截图 md5）：
+     · 不设 AUMID           → 任务栏 = 我们的图标 ✓
+     · 设 .dev AUMID        → 任务栏 = Electron 原子图标 ✗（正是用户反复报的症状）
+   原因是「系统里存在注册了该 AUMID 的快捷方式」这条前提**不可靠**：快捷方式文件在、字段对，
+   但 Shell 的应用解析器不一定会认（实测 Get-StartApps 里根本没有本应用），dev 下随时可能失效，
+   失效后不是"没有图标"而是"被 exe 图标顶掉 + 窗口图标失效"—— 这就是图标反复掉的真根因。
+   ⇒ 打包版由 electron-builder NSIS 写入规范快捷方式（AUMID 可解析），保留设置；
+     dev 不设，让 Windows 走窗口图标那条路（window-factory 已把 icon 锚在 app.getAppPath()/build/icon.ico）。 */
+if (app.isPackaged) app.setAppUserModelId("com.codexharness.desktop");
 
 if (process.env.CODEX_HARNESS_DEBUG_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.CODEX_HARNESS_DEBUG_PORT);
 
