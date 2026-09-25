@@ -9,7 +9,7 @@
  */
 import path from "node:path";
 import fs from "node:fs/promises";
-import { readAppSettings } from "../app-settings";
+import { normalizeAutoCompactRatio, readAppSettings } from "../app-settings";
 import { app, safeStorage } from "electron";
 import { shouldRegisterNuphus, withNuphusMasksForRules } from "../automation-policy";
 import { safeProviderId } from "../provider-id";
@@ -35,6 +35,11 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
   const connectors = await readConnectors();
   const mcpOverrides = await readMcpOverrides();
   const appSettings = await readAppSettings(app.getPath("userData"));
+  /* 自动压缩阈值 = 当前模型窗口 × 本比例（09-25 用户要求默认 80% → 60%）。
+     ⛔ 只算一次、三处 provider 段（当前 / 历史别名 / harness 统一通道）共用同一份 —— 分头各算
+        就会「改了设置但某一段还是老值」，而引擎按**会话实际用的那个 provider 段**取阈值，
+        症状是「切了模型压缩行为却没跟着变」。归一化见 normalizeAutoCompactRatio。 */
+  const compactRatio = normalizeAutoCompactRatio(appSettings.autoCompactRatio);
   // developer_instructions 的组装输入与下面的「写出」同源（见 devInstructionsInput 上方说明）；
   // 两个自动化开关也从这里取，避免同一组开关在两处各算一遍而漂移。
   const devInput = await devInstructionsInput();
@@ -126,7 +131,7 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
       //   stream_idle_timeout_ms**（曾写 10/10/600000，实测是 429 放大器：
       //   引擎默认 4/5/5min，调到 10 会让它在限流窗口内密集重打上游 ⇒ 越重试越限流。
       //   详见 electron/provider-retry.ts 的实测证据）。用引擎默认 = 与 WorkBuddy 行为对齐。
-      `model_auto_compact_token_limit = ${Math.round(context * (appSettings.autoCompactRatio ?? 0.8))}`,
+      `model_auto_compact_token_limit = ${Math.round(context * compactRatio)}`,
       'model_auto_compact_token_limit_scope = "model"',
       // 单次输出上限：用户在该供应商模型上填的「最大输出 Token」真实生效（探针实证：
       // model_max_output_tokens 是引擎认可的 provider 段顶层键，config/read 能读回；
@@ -145,7 +150,7 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
     `wire_api = "${activeWireApi}"`,
     "requires_openai_auth = false",
     // 重试键同样不写（见 providerToml 处的实测说明）
-    `model_auto_compact_token_limit = ${Math.round(activeContext * (appSettings.autoCompactRatio ?? 0.8))}`,
+    `model_auto_compact_token_limit = ${Math.round(activeContext * compactRatio)}`,
     'model_auto_compact_token_limit_scope = "model"',
   ]);
   // 自动化三件套不再注册为 MCP 常驻服务器：35 个工具 schema 会把每轮 prompt 撑大十几 KB，
@@ -164,7 +169,7 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
     `wire_api = "${activeWireApi}"`,
     "requires_openai_auth = false",
     // 重试键同样不写（引擎默认 4/5/5min；写 10 会放大 429 —— 见 providerToml 处实测说明）
-    `model_auto_compact_token_limit = ${Math.round(activeContext * (appSettings.autoCompactRatio ?? 0.8))}`,
+    `model_auto_compact_token_limit = ${Math.round(activeContext * compactRatio)}`,
     'model_auto_compact_token_limit_scope = "model"',
   ];
   // ⛔ 防重护栏（09-15 真实事故）：档案里若混入 id=harness 的供应商条目，providerToml 会

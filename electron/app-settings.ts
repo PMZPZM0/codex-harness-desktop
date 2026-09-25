@@ -31,7 +31,7 @@ export type AppSettings = {
   engineWatchdog?: boolean;
   /** 记忆后端："builtin"= 内置记忆金字塔（默认）；"mcp"= MCP 记忆服务（此时内置停止写入） */
   memoryBackend?: "builtin" | "mcp";
-  /** 全局自动压缩比例：上下文用量达到该比例时引擎自动压缩（0.5~0.95，默认 0.8） */
+  /** 全局自动压缩比例：上下文用量达到该比例时引擎自动压缩（0.5~0.95，默认见 DEFAULT_AUTO_COMPACT_RATIO） */
   autoCompactRatio?: number;
   /** Codex 引擎更新用的 HTTP 代理（如 http://127.0.0.1:7890）。空 = 国内镜像直连 */
   engineProxyUrl?: string;
@@ -59,6 +59,22 @@ export type AppSettings = {
    *  - "proxy"：本机代理优先（PROXY 环境变量），失败回落直连 */
   downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy";
 };
+
+/* ── 本文件是「应用级默认值」的**主进程侧真相源** ─────────────────────────────
+   ⛔ 渲染层拿不到本模块（electron/ 不引用 src/，两侧是独立打包产物）⇒ 这几个默认值在渲染层
+      有**同源副本**：`src/features/app-state/parts/part01/04-optimistic-turn-approval-e2e.tsx`
+      （autoCompactRatio）与 `src/lib/concurrency.mjs`（DEFAULT_MAX_CONCURRENCY）。
+      守卫【159】逐字比对两侧取值，改一边忘另一边即红。
+   ⛔ 归一化不是洁癖：`autoCompactRatio` 是被乘进 `model_auto_compact_token_limit` 的**乘数**，
+      存档里出现 0 / 负数 / 字符串（手改 app-settings.json、旧版本残留）会让阈值变成 0
+      ⇒ 引擎每轮都在压缩，对话直接不可用（09-25 加归一化时顺手堵上）。 */
+export const DEFAULT_AUTO_COMPACT_RATIO = 0.6;
+
+export function normalizeAutoCompactRatio(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0.5 || n > 0.95) return DEFAULT_AUTO_COMPACT_RATIO;
+  return n;
+}
 
 let cached: AppSettings | null = null;
 

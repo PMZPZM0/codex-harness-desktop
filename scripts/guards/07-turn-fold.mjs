@@ -2363,8 +2363,14 @@ export async function run() {
   (/const keylessThirdParty = !hasKey && value\.provider !== "openai-official" && !isLocalEndpoint\(value\.baseUrl\);[\s\S]{0,120}?enabled: keylessThirdParty \? false : value\.enabled !== false/.test(mainSrc64) ? ok : fail)(
     "【64】未配置密钥的供应商不得视为启用（官方订阅 + 本机/内网服务两处例外）"
   );
-  // ⛔ 窗口从 220 放宽到 600：中间后来插了并发上限归一那几行（09-19）。
-  (/const keylessThirdPartySave = !encryptedKey && provider !== "openai-official" && !isLocalEndpoint\(baseUrl\);[\s\S]{0,600}?enabled: keylessThirdPartySave \? false : \(input\.enabled \?\? existing\?\.enabled \?\? true\)/.test(mainSrc64) ? ok : fail)(
+  /* ⛔ 判据改成「两个代码形态**各自锚定**」，不再用固定字符窗口把两句串起来。
+     历史：窗口 220 → 600（09-19 插了并发归一那几行）→ 09-25 又插了几行注释 + 常量替换，
+     实测距离 877 ⇒ 红。**这是判据写法的问题，不是代码的问题** —— 固定窗口的跨语句断言
+     会随"中间合法地多写一行"而假红，而每次假红都诱人把 N 调大，调到最后等于没约束。
+     两句用**同名唯一变量** `keylessThirdPartySave` 绑定，强度不变（该名在文件里唯一）、
+     且与中间写了多少行无关。 */
+  (/const keylessThirdPartySave = !encryptedKey && provider !== "openai-official" && !isLocalEndpoint\(baseUrl\);/.test(mainSrc64) &&
+   /enabled: keylessThirdPartySave \? false : \(input\.enabled \?\? existing\?\.enabled \?\? true\)/.test(mainSrc64) ? ok : fail)(
     "【64】保存新供应商：没填密钥就存成禁用（本机/内网服务例外，与显示侧同源）"
   );
   // ② 推荐卡默认关（只有显式点开过才启用）
@@ -2536,11 +2542,11 @@ export async function run() {
 
 
 {
-  // ── 【69】并发闸门判据（09-19 用户要求：供应商配置界面加并发限制，默认 3）──
+  // ── 【69】并发闸门判据（09-19 加；09-25 用户要求默认值 3 → 10）──
   //   跑**真实实现**（src/lib/concurrency.mjs），覆盖边界；判据写错会直接卡死用户发送，
   //   所以每条都要能说出"错了会怎样"。
-  (DEFAULT_MAX_CONCURRENCY === 3 ? ok : fail)("【69】默认并发上限为 3");
-  (normalizeMaxConcurrency(undefined) === 3 && normalizeMaxConcurrency("") === 3 && normalizeMaxConcurrency(0) === 3 && normalizeMaxConcurrency(-5) === 3 ? ok : fail)(
+  (DEFAULT_MAX_CONCURRENCY === 10 ? ok : fail)("【69】默认并发上限为 10（09-25 用户要求，原 3）");
+  (normalizeMaxConcurrency(undefined) === 10 && normalizeMaxConcurrency("") === 10 && normalizeMaxConcurrency(0) === 10 && normalizeMaxConcurrency(-5) === 10 ? ok : fail)(
     "【69】非法/缺失上限回落默认（0 与负数不会把发送彻底卡死）"
   );
   (normalizeMaxConcurrency(99) === 10 && normalizeMaxConcurrency("2.6") === 3 ? ok : fail)(
@@ -2579,12 +2585,47 @@ export async function run() {
   (/maxConcurrency\?: number;/.test(mainSrc69) ? ok : fail)(
     "【69】主进程档案类型含 maxConcurrency"
   );
-  (/input\.maxConcurrency == null[\s\S]{0,120}?existing\?\.maxConcurrency \?\? 3/.test(mainSrc69) ? ok : fail)(
-    "【69】主进程保存时归一并在未传值时沿用旧值"
+  (/input\.maxConcurrency == null[\s\S]{0,140}?existing\?\.maxConcurrency \?\? DEFAULT_MAX_CONCURRENCY/.test(mainSrc69) ? ok : fail)(
+    "【69】主进程保存时归一并在未传值时沿用旧值（缺省用常量，不写死数字）"
   );
   const fieldSrc69 = readAppUi();
   (/最大并发/.test(fieldSrc69) ? ok : fail)(
     "【69】供应商配置界面有「最大并发」输入框"
+  );
+
+  /* ── 【159】（09-25 用户要求）：两个「改了就影响所有会话」的默认值必须**跨进程同源** ──
+     ⛔ 为什么值得一条守卫：`electron/` 与 `src/` 是**独立打包产物、互不 import**，所以
+        「默认并发」「默认自动压缩比例」各存了一份字面量。改了主进程忘渲染层（或反过来）的症状
+        是**静默偏半**：设置页显示 10、主进程按 3 存；或反过来。跑绿也看不出来。
+     ⛔ 判据取**字面量本身**（不是"含某个词"）—— 上一轮【150】就吃过「断言命中注释而非代码」的亏。 */
+  const concSrc = readFileSync(join(ROOT, "src", "lib", "concurrency.mjs"), "utf8");
+  const concRenderer = (concSrc.match(/export const DEFAULT_MAX_CONCURRENCY = (\d+);/) || [])[1];
+  const concMain = (mainSrc69.match(/export const DEFAULT_MAX_CONCURRENCY = (\d+);/) || [])[1];
+  (concRenderer && concMain && concRenderer === concMain && Number(concRenderer) === 10 ? ok : fail)(
+    `【159】默认并发跨进程同源且为 10（渲染层 ${concRenderer} / 主进程 ${concMain}）`
+  );
+  const ratioRenderer = ((readAppUi().match(/const AUTO_COMPACT_RATIO_DEFAULT = ([\d.]+);/) || [])[1]);
+  const ratioMain = ((mainSrc69.match(/export const DEFAULT_AUTO_COMPACT_RATIO = ([\d.]+);/) || [])[1]);
+  (ratioRenderer && ratioMain && ratioRenderer === ratioMain && Number(ratioRenderer) === 0.6 ? ok : fail)(
+    `【159】默认自动压缩比例跨进程同源且为 0.6（渲染层 ${ratioRenderer} / 主进程 ${ratioMain}）`
+  );
+  /* ⛔ 反向：不能再有 `autoCompactRatio ?? 数字` 的裸默认（改了常量但某处仍写死 ⇒ 那一段 provider
+     段的压缩阈值与设置页显示的不一致，而引擎按会话实际用的段取值 = 静默偏半）。
+     ⛔ 判据必须**带上 autoCompactRatio**：裸匹配 `?? 0.8` 会命中无关代码（语音 asr rule2、
+     记忆 confidence 都有 `?? 0.8`）—— 第一版就这么写真红了，属「断言比文案宽」的典型。 */
+  (!/autoCompactRatio \?\? [\d.]+/.test(mainSrc69) ? ok : fail)("【159】主进程不再有 `autoCompactRatio ?? 数字` 裸默认（全走 normalizeAutoCompactRatio）");
+  (/normalizeAutoCompactRatio\(appSettings\.autoCompactRatio\)/.test(mainSrc69) ? ok : fail)(
+    "【159】压缩阈值经归一化（0 / 负数 / 越界会被挡下 —— 否则阈值变 0，引擎每轮都压缩）"
+  );
+  /* ⛔ 压缩阈值必须纳入**启动自愈的漂移判据**（09-25 code review 抓到）：
+     config.toml 里的阈值是**写下来就不再变**的（除非有人重写整份配置）。只改设置 / 只改默认值
+     都不会触发上面任何一条既有判据 ⇒ 旧阈值一直生效 = 用户看到的「改了没生效」。
+     判据要同时锚「算期望值」与「接进 if 条件」两处 —— 只验前者会漏掉"算出来了但没接"。 */
+  (/const expectedCompact = Math\.round\(compactWindow \* normalizeAutoCompactRatio\(/.test(mainSrc69) ? ok : fail)(
+    "【159】启动自愈会算「期望压缩阈值」（与 applyCustomModel 同源算法）"
+  );
+  (/\|\| dispatchMcpBad \|\| compactStale\)/.test(mainSrc69) ? ok : fail)(
+    "【159】压缩阈值漂移**接进了重写条件**（只算不接 = 恒不做，等于没有这条判据）"
   );
 }
 

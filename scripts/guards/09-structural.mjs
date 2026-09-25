@@ -1067,6 +1067,12 @@ export async function run() {
       (/^---[\s\S]*?name:\s*log-archive[\s\S]*?description:\s*\S/.test(sk) ? ok : fail)("【158】技能 frontmatter 合法（name + 非空 description）");
       (/scripts\/logs\.mjs/.test(sk) ? ok : fail)("【158】技能里给出真实命令入口（不是空泛描述）");
       (/archive/.test(sk) && /delete/.test(sk) ? ok : fail)("【158】技能写清「默认 archive、delete 需理由」（安全边界教给使用者）");
+      /* ⛔ 正文必须能「整段原样落盘」（09-25 实测事故：正文含反引号时 `--body "…"` 会被 shell 当命令
+         替换执行，几段内容静默消失而命令仍报成功）。判据 = 工具**支持 --body-file** + 技能/规范都
+         **要求用**它 —— 只加能力不改指引，下一个人（或下一个我）照样踩。 */
+      (/body-file/.test(mgrCode) && /readFileSync\(bf/.test(mgrCode) ? ok : fail)("【158】CLI 支持 --body-file（正文含反引号时必须走文件，否则被 shell 吃掉）");
+      (/--body-file/.test(sk) ? ok : fail)("【158】技能要求用 --body-file 写正文（不是「可以用」）");
+      (/--body-file/.test(readFileSync(join(ROOT, "logs", "README.md"), "utf8")) ? ok : fail)("【158】规范里也写明 --body-file 的用法与原因");
     }
   }
 }

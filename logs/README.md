@@ -125,6 +125,10 @@ supersedes:                # 可选：被本条目取代的旧 id
 ## 6 查看 / 检索 / 清理 / 删除
 
 ```bash
+# 写（⛔ 正文一律 --body-file；用 --body "…" 时正文里的反引号会被 shell 当命令替换执行，
+#   内容静默少一段而命令仍报成功 —— 09-25 实际踩到，两条条目正文被吃掉）
+node scripts/logs.mjs new --kind decision --area memory --title "标题" --body-file .workbuddy/tmp/body.md
+
 # 看
 node scripts/logs.mjs list                      # 列全部（默认不含归档）
 node scripts/logs.mjs list --kind decision --since 2026-09-01

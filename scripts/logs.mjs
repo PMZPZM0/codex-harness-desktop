@@ -21,7 +21,7 @@
  *   ⑤ `logs/` **必须提交进 git** —— 这是「项目记录不丢失」最强的一道保障（本地磁盘会坏、机器会换）。
  *
  * 用法（在仓库根跑）：
- *   node scripts/logs.mjs new --kind decision --area memory --title "记忆后端二选一" [--body "…"] [--tags a,b]
+ *   node scripts/logs.mjs new --kind decision --area memory --title "记忆后端二选一" [--body-file 正文.md] [--tags a,b]
  *   node scripts/logs.mjs list [--kind decision] [--area memory] [--since 2026-09-01] [--limit 20] [--json]
  *   node scripts/logs.mjs search 上下文 供应商 [--area sidebar] [--tag memory] [--limit 10]
  *   node scripts/logs.mjs show 2026-09-25-decision-memory-backend
@@ -220,6 +220,15 @@ function cmdNew(argv) {
      ① 同内容（正文哈希相同）—— 最硬的重复；
      ② 标题高度相似（默认 0.75）—— 同一件事换个说法再记一遍，这才是最常见的分叉来源。
      要真的并列记两条（例如"同一现象在两个模块各发生一次"），显式加 --allow-similar 并在正文里写清区别。 */
+  /* ⛔ 正文从哪来：`--body-file <路径>` 优先。**这是给 agent 用的**（09-25 实测踩到）：
+     正文里几乎必然出现反引号、`$(`、多行中文；直接 `--body "…"` 会被 shell 当命令替换执行
+     —— 内容静默缺一块、还报「新建成功」（本次两条条目的正文就被吃掉了几段）。
+     写文件（Write 工具）再 `--body-file` 是唯一稳的传法。 */
+  if (flags["body-file"]) {
+    const bf = path.resolve(ROOT, String(flags["body-file"]));
+    if (!fs.existsSync(bf)) die(`--body-file 指向的文件不存在：${bf}`);
+    flags.body = fs.readFileSync(bf, "utf8");
+  }
   if (!flags["allow-similar"]) {
     const bodyText = String(flags.body ?? "").trim();
     if (bodyText) {
@@ -544,7 +553,7 @@ function cmdDelete(argv) {
 /* ── 入口 ───────────────────────────────────────────────────────────── */
 const USAGE = `项目日志库（全部子命令见文件头注释）
 
-  node scripts/logs.mjs new --kind <${KINDS.join("|")}> --area <域> --title "标题" [--tags a,b] [--commits h1,h2] [--files p1,p2] [--importance high] [--body "…"]
+  node scripts/logs.mjs new --kind <${KINDS.join("|")}> --area <域> --title "标题" [--tags a,b] [--commits h1,h2] [--files p1,p2] [--importance high] [--body "…" | --body-file <路径>]
   node scripts/logs.mjs list [--kind k] [--area a] [--tag t] [--since YYYY-MM-DD] [--limit n] [--json]
   node scripts/logs.mjs search <关键词...> [--area a] [--kind k] [--tag t] [--since d] [--limit n] [--json]
   node scripts/logs.mjs show <id>

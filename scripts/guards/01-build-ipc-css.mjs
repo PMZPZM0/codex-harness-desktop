@@ -214,6 +214,35 @@ if (!mainSrc || !preloadSrc) {
       }
       const skillEntrySrc = readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8");
       (skillEntrySrc.includes('"harness-api"') && skillEntrySrc.includes("HARNESS_API_SKILL") ? ok : fail)("【153】harness-api 技能已登记进 builtin-skills（漏登记 = 引擎永远看不到清单）");
+
+      /* ── 【159】清单「能不能被 Codex 用上」（09-25 用户报障：「扫半天都没扫到，不知道能拓展什么」）──
+         实测根因不在"清单没生成"，而在两条可达性：
+           ① 引擎的技能目录只给 name+description（渐进披露）⇒ 模型**不知道要读**，第一反应是 grep 源码
+              （打包版根本没有宿主源码 ⇒ 注定扫不到）；
+           ② 就算去读，cmd 的 `type "路径"` 引号被剥、workdir 报 267 ⇒ 十几轮 exec 才读到。
+         ⇒ 判据钉住「指令里有常驻指针」+「技能正文自带读法」两条，防它悄悄退回只有通道清单的旧形态。 */
+      const devInstrSrc = readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8");
+      /* ⛔ 判据必须锚**接线**（`text += CAPABILITY_INSTRUCTIONS;`），不能只锚"常量和块都存在" ——
+         第一版只查两个标识符，变异测试当场证明：把接线那行删掉、块还留着，断言照样绿（恒真）。
+         这类"常量都在、就是没接上"的形态本仓库见过多次（能力写好了但没下发）。 */
+      (/text \+= CAPABILITY_INSTRUCTIONS;/.test(devInstrSrc) && /HARNESS_API_SKILL_NAME/.test(devInstrSrc) ? ok : fail)(
+        "【159】开发者指令**真下发**了能力清单块，且技能名走常量（写死会在改名时静默失联）"
+      );
+      (/DO NOT grep the harness source[\s\S]{0,80}?capabilit/.test(devInstrSrc) ? ok : fail)(
+        "【159】指令明确「不要 grep 源码找能力」（09-25 实测模型正是这么浪费掉整轮的）"
+      );
+      const packSrc = readFileSync(join(ROOT, "electron", "skill-pack.ts"), "utf8");
+      (/export const HARNESS_API_SKILL_NAME = "harness-api";/.test(packSrc) ? ok : fail)(
+        "【159】skill-pack 有 HARNESS_API_SKILL_NAME 常量（⚠️ 字面量必须与 builtin-skills 登记一致 —— 见下条）"
+      );
+      (/HARNESS_API_SKILL_NAME = "harness-api"/.test(packSrc) && skillEntrySrc.includes('["harness-api", HARNESS_API_SKILL]') ? ok : fail)(
+        "【159】两个 harness-api 名字同源（常量值 == 登记字面量；不一致 ⇒ 指令指向一个不存在的技能）"
+      );
+      // 正文自带「读法」与「拓展点」两张表 —— 少了任一张，用户那两个问题就又没答案
+      const capSkillSrc = readFileSync(join(ROOT, "electron", "builtin-skills", "14-skill-harness-api.ts"), "utf8");
+      (capSkillSrc.includes("怎么读这份清单") ? ok : fail)("【159】清单正文自带读法（一次读全 / 别用 cmd type 拼引号）");
+      (capSkillSrc.includes("## 可拓展点") ? ok : fail)("【159】清单正文有「可拓展点」表（否则答不了「能拓展什么」，只剩通道罗列）");
+      (capSkillSrc.includes("打包版没有宿主源码") ? ok : fail)("【159】清单写明打包版边界（只有接入类拓展；不许承诺改不到的源码补丁）");
       /* ── IPC 强化层（09-24）：invoke 走 __ipc（校验/归一化/超时表）、订阅走 __on（幂等+精确退订）── */
       const hardSrc = readFileSync(join(ROOT, "electron", "preload.ts"), "utf8");
       (/function __ipc\(/.test(hardSrc) ? ok : fail)("【2】__ipc 辅助存在（arity 前置校验 + 错误归一化 + 超时表）");

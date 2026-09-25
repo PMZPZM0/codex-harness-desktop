@@ -72,7 +72,7 @@ bag.archiveSyncRef = archiveSyncRef as typeof bag.archiveSyncRef;
   const modelSuggestions = bag.modelSourceProvider === bag.customDraft.provider ? (bag.providerModels ?? []) : [];
 bag.modelSuggestions = modelSuggestions as typeof bag.modelSuggestions;
 
-  // ── 并发闸门（09-19 用户要求：「供应商配置界面加一个并发限制，自定义输入，默认 3 个并发」）──
+  // ── 并发闸门（09-19 加该旋钮；09-25 用户要求默认值 3 → 10 = 上限，仍可在界面调到 1~10）──
   // ⛔ 根因：限流是**同一个 API Key 的共享配额**。实测（引擎 TRACE 日志）6 分钟内 4 个会话
   //   同时打上游 **333 次**请求 ⇒ 配额瞬间打满 ⇒ 429 爆发。
   //   这里把"同时在跑的会话数"限制在该供应商配置的上限内：超限时**不放行**并明确告知原因

@@ -137,3 +137,14 @@ export const SKILL_AUDIT_SKILL = "skill-audit";
  *  但技能没配套，模型还在往 lessons/ 手写」）。 */
 export const MEMORY_MCP_BACKEND_SKILL = "memory-mcp-backend";
 
+/**
+ * 宿主接口/能力清单技能名（09-25 加，用户报障：「问了接口和拓展清单，Codex 扫半天都没扫到」）。
+ *
+ * 正文是**生成物**（`scripts/gen-capability-skill.mjs` 从 manifest + ipc-registry 生成），
+ * 所以这里只需要名字；指令里点名它时必须用本常量（预检【159】断言与 builtin-skills 的登记同源）。
+ * ⛔ 为什么必须在 `developer_instructions` 里点名，而不是只靠引擎的技能目录：
+ *    技能目录只带 name+description（渐进披露），模型**不知道要读**；而用户问「能拓展什么」时，
+ *    模型的第一反应是 grep 源码 —— 实测跑掉十几轮 exec 都没落到答案（打包版根本没有宿主源码）。
+ */
+export const HARNESS_API_SKILL_NAME = "harness-api";
+

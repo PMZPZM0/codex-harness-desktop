@@ -43,7 +43,7 @@ export type ProviderDraft = {
   apiKey: string;
   models: ProviderModel[];
   enabled: boolean;
-  /** 该供应商最多允许几个会话**同时**跑（09-19 用户要求：供应商配置界面可自定义，默认 3）。
+  /** 该供应商最多允许几个会话**同时**跑（09-19 加：供应商配置界面可自定义；09-25 默认值改为 10 = 上限）。
    *  草稿里用字符串便于输入框编辑；空串/非法值落回默认（normalizeMaxConcurrency 归一）。
    *  可选：旧档案/旧构造点没有这个字段 → 读取侧统一兜底，不必逐个补默认值。
    *  限流是**同一个 Key 的共享配额**，并发越高越容易 429 —— 这是把"配额消耗"变成用户可调的旋钮。 */
@@ -179,8 +179,8 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
       const effectiveModel = enabled.length === 0 ? "" : enabled.some((model: any) => model.id === dedupedDraft.model) ? dedupedDraft.model : enabled[0].id;
       // 引擎只支持 Responses（写 chat 会整份配置拒载，09-16 真实引擎探针实证）：
       // 保存时恒归一，避免草稿里残留的历史 chat 被写进 config.toml 把应用写死。
-      // 并发上限同样归一（空串/非法 → 默认 3，收敛在 1~10）—— 草稿是字符串，
-      // 主进程与渲染层都按数值用（09-19 用户要求「供应商配置界面可自定义，默认 3」）。
+      // 并发上限同样归一（空串/非法 → DEFAULT_MAX_CONCURRENCY，收敛在 1~10）—— 草稿是字符串，
+      // 主进程与渲染层都按数值用（09-19 加该旋钮；09-25 默认值 3 → 10）。
       const saved = await window.codex.saveCustomModel({
         ...dedupedDraft,
         model: effectiveModel,
