@@ -229,6 +229,10 @@ contextBridge.exposeInMainWorld("codex", {
   recallMemory: (query: string, workspace?: string) => __ipc("memory:recall", 1, [query, workspace]),
   readMemoryMode: () => __ipc("memory:mode-read", 0, []),
   setMemoryMode: (mode: "local" | "cloud") => __ipc("memory:mode-set", 1, [mode]),
+  /* 记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位）+ 安装命令 */
+  readMemoryBackend: () => __ipc("memory:backend:read", 0, []),
+  /* 切换记忆后端并回传新状态 */
+  setMemoryBackend: (backend: "builtin" | "mcp") => __ipc("memory:backend:set", 1, [backend]),
   saveMemory: (input: unknown) => __ipc("memory:save", 1, [input]),
   listRpaRecipes: () => __ipc("rpa:list", 0, []),
   saveRpaRecipe: (input: unknown) => __ipc("rpa:save", 1, [input]),

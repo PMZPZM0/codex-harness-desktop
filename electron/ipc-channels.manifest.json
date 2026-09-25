@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-09-23",
-  "count": 329,
+  "count": 331,
   "channels": [
     {
       "name": "request",
@@ -1362,6 +1362,26 @@
       "invokeArgs": "mode",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "readMemoryBackend",
+      "channel": "memory:backend:read",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ backend: \"builtin\" | \"mcp\"; effective: \"builtin\" | \"mcp\"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位）+ 安装命令"
+    },
+    {
+      "name": "setMemoryBackend",
+      "channel": "memory:backend:set",
+      "paramsImpl": "backend: \"builtin\" | \"mcp\"",
+      "paramsDecl": "backend: \"builtin\" | \"mcp\"",
+      "returns": "Promise<{ backend: \"builtin\" | \"mcp\"; effective: \"builtin\" | \"mcp\"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null }>",
+      "invokeArgs": "backend",
+      "cast": null,
+      "note": "切换记忆后端并回传新状态"
     },
     {
       "name": "saveMemory",
