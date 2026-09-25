@@ -13,13 +13,11 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { Building2, X, MessageSquare, Loader2, CircleDot, Users } from "lucide-react";
-import { basename } from "../../lib/basename";
+import { OfficeScene } from "./OfficeScene";
 
 type TeamMember = { id: string; name: string; profession: { zh: string; en: string }; description: string };
 type Team = { teamId: string; displayName: { zh: string; en: string }; profession: { zh: string; en: string }; description: { zh: string; en: string }; lead: TeamMember; members: TeamMember[]; enabled: boolean };
 type MemberState = { member: TeamMember; threadId: string | null; running: boolean; preview: string; updatedAt: number };
-
-const ROLE_LABEL: Record<string, string> = { lead: "CEO", member: "员工" };
 
 /** ⛔ 域组件收**显式 props**（规则第 4 条，禁收 app / 禁深链 useHarnessApp）；
  *  壳层 AppView 负责从 bag 解构传入。类型就地声明（结构同 bag 对应字段）。 */
@@ -109,7 +107,13 @@ export function CompanyModeView({ open, onClose, teams, threads, runningThreadId
             {team && (
               <div className="company-mode-body">
                 <div className="company-mode-org">
-                  <OrgTree team={team} memberStates={memberStates} onOpenThread={openThread} />
+                  <OfficeScene
+                    ceoName={team.lead?.name || "CEO"}
+                    ceoProfession={team.lead?.profession?.zh || "首席执行官"}
+                    members={memberStates.map((state) => ({ id: state.member.id, name: state.member.name, profession: state.member.profession?.zh || "通用", running: state.running, hasThread: Boolean(state.threadId) }))}
+                    onOpenThread={(memberId) => { const target = memberStates.find((s) => s.member.id === memberId); if (target?.threadId) { onClose(); openThread(target.threadId); } }}
+                  />
+                  <p className="company-mode-org-caption">公司：{team.displayName.zh || team.teamId} —— {team.profession?.zh || "综合事业部"} · CEO {team.lead?.name || "CEO"} 统筹 {memberStates.length} 名员工</p>
                 </div>
                 <aside className="company-mode-staff">
                   <div className="company-mode-staff-title">员工看板</div>
@@ -146,71 +150,3 @@ export function CompanyModeView({ open, onClose, teams, threads, runningThreadId
   );
 }
 
-/* ── 组织树（SVG 动画）：CEO 顶部居中，员工横排；运行中的成员连线有流动光点 ── */
-function OrgTree({ team, memberStates, onOpenThread }: { team: Team; memberStates: MemberState[]; onOpenThread: (id: string) => void }) {
-  const W = 860;
-  const H = 300;
-  const ceo = { x: W / 2, y: 56 };
-  const rowY = 218;
-  const n = Math.max(memberStates.length, 1);
-  const spacing = Math.min(132, (W - 120) / n);
-  const startX = W / 2 - ((n - 1) * spacing) / 2;
-
-  const ceoName = team.lead?.name || "CEO";
-  const ceoProf = team.lead?.profession?.zh || "首席执行官";
-
-  return (
-    <div className="company-mode-org-wrap">
-      <svg className="company-mode-org-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={`${team.displayName.zh} 组织架构`}>
-        <defs>
-          <linearGradient id="cm-link" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--company-link-from)" />
-            <stop offset="100%" stopColor="var(--company-link-to)" />
-          </linearGradient>
-        </defs>
-        {/* 连线：CEO → 员工 */}
-        {memberStates.map((state, index) => {
-          const x = startX + index * spacing;
-          const midY = (ceo.y + rowY) / 2 + 18;
-          const d = `M ${ceo.x} ${ceo.y + 26} L ${ceo.x} ${midY} L ${x} ${midY} L ${x} ${rowY - 30}`;
-          return (
-            <g key={state.member.id} className={state.running ? "cm-link is-running" : "cm-link"}>
-              <path className="cm-link-path" d={d} fill="none" stroke="url(#cm-link)" strokeWidth={state.running ? 2 : 1.4} />
-              {state.running && (
-                <circle className="cm-link-pulse" r={3.2} fill="var(--company-pulse)">
-                  <animateMotion dur="1.6s" repeatCount="indefinite" path={d} />
-                </circle>
-              )}
-            </g>
-          );
-        })}
-        {/* CEO 节点 */}
-        <g className="cm-node cm-node-ceo">
-          <rect x={ceo.x - 86} y={ceo.y - 26} width={172} height={52} rx={12} />
-          <text x={ceo.x} y={ceo.y - 3} className="cm-node-name">{ceoName}</text>
-          <text x={ceo.x} y={ceo.y + 15} className="cm-node-role">{ceoProf} · CEO</text>
-        </g>
-        {/* 员工节点 */}
-        {memberStates.map((state, index) => {
-          const x = startX + index * spacing;
-          const width = 104;
-          return (
-            <g
-              key={state.member.id}
-              className={`cm-node cm-node-member ${state.running ? "is-running" : ""}${state.threadId ? "" : " is-never"}`}
-              onClick={() => { if (state.threadId) onOpenThread(state.threadId); }}
-              style={{ cursor: state.threadId ? "pointer" : "default" }}
-            >
-              {state.running && <rect className="cm-node-halo" x={x - width / 2 - 5} y={rowY - 33} width={width + 10} height={64} rx={14} />}
-              <rect x={x - width / 2} y={rowY - 28} width={width} height={56} rx={10} />
-              <text x={x} y={rowY - 5} className="cm-node-name">{state.member.name || "员工"}</text>
-              <text x={x} y={rowY + 14} className="cm-node-role">{ROLE_LABEL.member} · {state.member.profession?.zh || "通用"}</text>
-            </g>
-          );
-        })}
-      </svg>
-      {memberStates.length > 6 && <p className="company-mode-org-hint">员工较多，节点已等距排布；横向滚动条可查看全部（卡片看板在右侧）。</p>}
-      <p className="company-mode-org-caption">公司：{team.displayName.zh || basename(team.teamId)} —— {team.profession?.zh || "综合事业部"} · CEO {ceoName} 统筹 {memberStates.length} 名员工</p>
-    </div>
-  );
-}

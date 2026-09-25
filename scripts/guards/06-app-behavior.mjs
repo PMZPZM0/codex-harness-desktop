@@ -1362,6 +1362,14 @@ w.postMessage({id:1,op:"list",root});
     (bagSrc.includes("companyModeOpen: boolean;") ? ok : fail)("【152→154】companyModeOpen 已登记 bag-types");
     const cssEntry = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
     (cssEntry.includes("./styles/20-company-mode") ? ok : fail)("【154】company-mode 样式已接入 styles.css");
+    const officeCss = existsSync(join(ROOT, "src", "styles", "20-company-mode.css")) ? readFileSync(join(ROOT, "src", "styles", "20-company-mode.css"), "utf8") : "";
+    /* 形态守卫（09-25 v2）：用户明确要求「Marvis 马维斯那种效果」= 拟人化办公室 + 状态动画，
+       ⛔ 不是组织架构折线图（v1 被否：「歪歪扭扭，跟 Marvis 差远了」）。 */
+    const officePath = join(ROOT, "src", "features", "company-mode", "OfficeScene.tsx");
+    const officeSrc = existsSync(officePath) ? readFileSync(officePath, "utf8") : "";
+    (officeSrc.includes("office-worker") && officeSrc.includes('"never"') && officeSrc.includes("state-${state}") ? ok : fail)("【154】虚拟办公室场景存在（拟人化角色 + 三态：工作/空闲/空工位）");
+    (/.office-desk\s*\{/.test(officeCss) && /.office-worker\s*\{/.test(officeCss) ? ok : fail)("【154】办公室样式（工位/小人）齐全");
+    (/office-type-a|office-breathe|office-zzz/.test(officeCss) ? ok : fail)("【154】角色动画（敲键盘/呼吸/打盹）存在");
   }
   }
 }
