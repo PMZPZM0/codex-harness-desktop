@@ -995,6 +995,32 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     (/installViaRegistries/.test(installerSrc150) && /NPM_CONFIG_REGISTRY/.test(installerSrc150) ? ok : fail)("【150】安装器按序多 registry 重试（用户/公司自配的最高优先）");
     (/registry\.npmmirror\.com\/-\/binary/.test(installerSrc150) ? ok : fail)("【150】原生绑定走国内镜像（npmmirror /-/binary），GitHub 直连在国内不可靠");
     (/cleanInstallDir/.test(installerSrc150) && /\.npmrc/.test(installerSrc150) ? ok : fail)("【150】换 registry 前清 node_modules/lock/.npmrc（半成品与坏配置会让下一通道报错）");
+
+    /* ⛔⛔ 后端 ⇄ 开发者指令必须**配套**（09-25 用户报障：「切到本地记忆 MCP 了，但 memory-mcp-backend
+       技能没配套，模型还在往 lessons/ 手写」）。此前 developer-instructions 硬编码 memory-classify、
+       完全不看后端 ⇒ 指令把模型指向一个已被停用（改名 SKILL.md.disabled）的技能。
+       判据：指令生成必须读 effectiveMemoryBackend，并按后端换技能名。 */
+    const devSrc150 = readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8");
+    (/effectiveMemoryBackend\(\)/.test(devSrc150) ? ok : fail)("【150】开发者指令按**生效后端**生成（⛔ 硬编码 memory-classify 会把模型指向已停用的技能）");
+    (/MEMORY_MCP_BACKEND_SKILL/.test(devSrc150) ? ok : fail)("【150】后端=mcp 时指令改用 memory-mcp-backend（写入方式随之改成 MCP 工具）");
+    (/gateAndReviewInstructions\(\)/.test(devSrc150) && !/GATE_AND_REVIEW_INSTRUCTIONS\b/.test(devSrc150) ? ok : fail)("【150】记忆写法那段是**函数**（内部读后端）而不是常量 —— 保证 boot 的过期比对与写出逐字同源");
+    (devSrc150.includes("memory-write") ? ok : fail)("【150】MCP 口径的指令点名 memory-write（不是笼统说去用 MCP）");
+    const packSrc150 = readFileSync(join(ROOT, "electron", "skill-pack.ts"), "utf8");
+    (/MEMORY_MCP_BACKEND_SKILL = "memory-mcp-backend"/.test(packSrc150) ? ok : fail)("【150】MCP 后端技能名的单一真相源在 skill-pack（与内置技能目录名同源）");
+    /* 切换必须**当场落盘**：此前只在启动链里同步 ⇒ 不重启就等于没切。 */
+    (/memory:backend:set[\s\S]{0,900}?ensureBuiltinSkills\(/.test(ipcSrc150) ? ok : fail)("【150】切后端时当场同步内置技能（否则不重启=没切）");
+    (/memory:backend:set[\s\S]{0,1400}?syncLocalMemoryConnector\(/.test(ipcSrc150) ? ok : fail)("【150】切后端时当场同步本地 MCP 连接器");
+    /* ⛔⛔ 其它技能正文也不许**无条件**指向 memory-classify（09-25 代码审查抓到）：
+       self-review / memory-hygiene / skill-authoring **不在**互斥切换里（切后端时它们照旧启用），
+       但正文写着「落点见 memory-classify / 写到 lessons/」⇒ MCP 后端下模型读到的是"去写一个已被
+       停用的技能 + 写文件"，于是继续往 lessons/ 手写 —— 正是用户报障的第二个来源。
+       判据：这三份正文必须同时给出 MCP 口径（提到 memory-mcp-backend 或 memory-write）。 */
+    const selfReviewSrc150 = readFileSync(join(ROOT, "electron", "builtin-skills", "09-skill-self-review.ts"), "utf8");
+    (/memory-mcp-backend/.test(selfReviewSrc150) ? ok : fail)("【150】self-review 的落点表随后端分岔（否则 MCP 后端下仍教模型写 lessons/）");
+    const hygieneSrc150 = readFileSync(join(ROOT, "electron", "builtin-skills", "10-skill-memory-hygiene.ts"), "utf8");
+    (/memory-mcp-backend/.test(hygieneSrc150) ? ok : fail)("【150】memory-hygiene 的去重步骤随后端分岔");
+    const authoringSrc150 = readFileSync(join(ROOT, "electron", "builtin-skills", "07-skill-authoring.ts"), "utf8");
+    (/memory-mcp-backend/.test(authoringSrc150) ? ok : fail)("【150】skill-authoring 的记忆落点随后端分岔");
   }
   }
 }

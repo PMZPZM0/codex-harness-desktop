@@ -16,6 +16,7 @@ import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { app, ipcMain, safeStorage } from "electron";
 import { saveAppSettings } from "../app-settings";
+import { ensureBuiltinSkills } from "../builtin-skills";
 import { bundledNodePath, memoryBackendStatus, memoryInstallerPath, type MemoryBackend } from "../memory-backend";
 import { syncLocalMemoryConnector } from "../memory-mcp-connector";
 import { RpaStore } from "../rpa-store";
@@ -26,7 +27,7 @@ import { distillSummarize } from "../main/03-turn-summary";
 import { readMemoryGateway } from "../main/08-channel-bot-io";
 import { readWorkspaceMemorySettings } from "../main/05-memory-mode";
 import { memoryGatewayFile, memoryLayers, memoryStore, memoryWorkspaceFile, rpaStore } from "../runtime-refs";
-import { scheduler } from "../main";
+import { scheduler, userSkillsDir } from "../main";
 import type { MemoryMode, StoredMemoryGateway } from "../main";
 async function setWorkspaceMemoryEnabled(workspace: string, enabled: boolean): Promise<boolean> {
   const key = path.resolve(workspace);
@@ -63,11 +64,35 @@ ipcMain.handle("memory:mode-set", async (_event, mode: MemoryMode) => {
 /* 记忆后端二选一（09-25，设置页「记忆 → 记忆后端」的读写）。
    ⛔ 这里只持久化**用户的选择**；实际生效的后端由 effectiveMemoryBackend() 决定
       （装了服务才让位，否则回退内置 —— 宁可回退也不能让记忆一处都不写）。
-   ⛔ MCP 服务按用户要求走「命令安装」，本文件**不**跑安装器（不在主进程 spawn npm）。 */
+   ⛔ MCP 服务按用户要求走「命令安装」，本文件**不**跑安装器（不在主进程 spawn npm）。
+
+   ⛔⛔ **切换必须当场落盘**（09-25 用户实测报障：「切到本地记忆 MCP 了，但 memory-mcp-backend
+   技能没配套」）：此前这里只 saveAppSettings 就返回，互斥改名与连接器同步**只在启动链里跑**
+   ⇒ 用户不重启应用就等于没切，技能清单里还是旧技能、模型继续按旧口径往 lessons/ 写。
+   现在按与启动链**同一套口径**当场做两件事（都用同一批函数，避免两处口径分叉）：
+     ① `ensureBuiltinSkills` —— memory-classify ⇄ memory-mcp-backend 的互斥改名
+     ② `syncLocalMemoryConnector` —— local-memory 连接器的启用态（引擎是否看得到 MCP 工具）
+   ⚠️ 引擎侧（config.toml 的 developer_instructions / mcp_servers）仍由**启动自愈**在下次启动时重写，
+      所以切换后要**重启应用**才在引擎里生效 —— 设置页的文案已如实说明。
+   ⛔ 两处都包 try/catch：设置已经保存成功，同步失败不能让整次切换看起来像"没切成"。 */
 ipcMain.handle("memory:backend:read", () => memoryBackendStatus());
 ipcMain.handle("memory:backend:set", async (_event, backend: unknown) => {
   const next: MemoryBackend = backend === "mcp" ? "mcp" : "builtin";
   await saveAppSettings(app.getPath("userData"), { memoryBackend: next });
+  /* ⛔ 时序防御：userSkillsDir 由启动链注入（boot 的 deps），理论上窗口创建早于它的赋值不可能，
+     但这里显式判一下 —— 传 undefined 进去只会在深处抛 TypeError，被下面的 catch 吞成一条 warn，
+     表现是「切换时技能没同步、用户以为切了」。宁可在日志里说清楚。 */
+  if (!userSkillsDir) console.warn("[memory] userSkillsDir 尚未就绪（启动链未完成？）⇒ 本次跳过技能同步，重启应用会补上");
+  try {
+    if (userSkillsDir) await ensureBuiltinSkills(userSkillsDir);
+  } catch (error: any) {
+    console.warn("[memory] 切后端时同步内置技能失败（重启应用会补上）：", error?.message ?? error);
+  }
+  try {
+    await syncLocalMemoryConnector();
+  } catch (error: any) {
+    console.warn("[memory] 切后端时同步本地 MCP 连接器失败（重启应用会补上）：", error?.message ?? error);
+  }
   return memoryBackendStatus();
 });
 /* MCP 记忆服务的安装 / 卸载 / 校验（09-25，用户：「用户新电脑安装这个应用，MCP 记忆怎么安装，

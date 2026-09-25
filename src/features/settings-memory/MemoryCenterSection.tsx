@@ -57,8 +57,20 @@ function MemoryBackendSection() {
     setNote("");
     try {
       const value = await window.codex.setMemoryBackend(next);
-      setStatus(value as MemoryBackendStatus);
-      setNote(next === "mcp" ? "已选 MCP 后端。服务装好后重启应用即可生效。" : "已切回内置记忆金字塔。");
+      const status = value as MemoryBackendStatus;
+      setStatus(status);
+      /* ⛔ 文案必须说清「什么时候生效」（09-25 用户实测困惑：切了后端但技能清单还是旧的）。
+         事实：切换会**当场**同步技能文件与连接器；但引擎侧（config.toml 的指令与 MCP 服务注册）
+         由启动自愈在下次启动时重写 ⇒ 要重启应用；模型实际改口径还要**新开会话**（引擎把指令
+         钉在会话上，已在跑的会话读的是旧的那份）。
+         ⛔ 选了 MCP 但服务没装好时 effective 仍是 builtin ⇒ **不能说"已切到 MCP"**（那是假话，
+            技能也仍保持 memory-classify）——退回内置口径的说明，并指向上面的回退原因。 */
+      const notEffective = next === "mcp" && status.effective !== "mcp";
+      setNote(next !== "mcp"
+        ? "已切回内置记忆金字塔，技能与连接器已同步落盘。重启应用后引擎侧生效。"
+        : notEffective
+          ? "已记下选择，但 MCP 服务尚未装好 ⇒ 当前仍走内置金字塔（技能保持 memory-classify）。先装服务，重启应用后才会真正切过去。"
+          : "已切到 MCP 记忆后端，技能与连接器已同步落盘。重启应用后引擎侧生效；之后新开一个会话，模型就会按 MCP 写法记记忆（不再往 lessons/ 手写）。");
     } catch (error) {
       setNote(error instanceof Error ? error.message : String(error));
     } finally {

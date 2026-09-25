@@ -130,4 +130,10 @@ export const SELF_REVIEW_SKILL = "self-review";
 export const MEMORY_HYGIENE_SKILL = "memory-hygiene";
 export const MEMORY_CLASSIFY_SKILL = "memory-classify";
 export const SKILL_AUDIT_SKILL = "skill-audit";
+/** MCP 记忆后端技能名（09-25 补）。⛔ 与 `MEMORY_CLASSIFY_SKILL` 是**互斥**的一对：
+ *  后端 = mcp 时前者启用、后者改名停用（见 builtin-skills.ts 的后端切换）；
+ *  developer-instructions 里的记忆写法指引必须**跟着后端换名字** ——
+ *  否则指令会把模型指向一个已被停用的技能（用户 09-25 报障：「切到 MCP 了，
+ *  但技能没配套，模型还在往 lessons/ 手写」）。 */
+export const MEMORY_MCP_BACKEND_SKILL = "memory-mcp-backend";
 
