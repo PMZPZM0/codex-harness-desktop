@@ -21,6 +21,7 @@ import { fmtImportNote } from "../../../../../lib/fmt-import-note";
 import { justSentIds } from "../../../../../lib/just-sent-ids";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, subAgentTools, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../app-view/types";
+import { saveMessageOriginal } from "../../../../../lib/user-message-originals.mjs";
 import type { Bag } from "../../bag-types";
 
 export async function send(bag: Bag, event?: FormEvent) {
@@ -116,6 +117,10 @@ export async function send(bag: Bag, event?: FormEvent) {
     //   图片一律按 localImage 正常发；真遇到接入点不支持，引擎会报错，届时由
     //   healImageModalityIfUnsupported（回合错误路径）自动摘掉该模型的图片模态并提示重发。
     const sendImages = bag.images;
+    // ⛔ 注解「chip 原始位置」：剥离 token 前的原文按剥离后核心文本的指纹存本地（localStorage），
+    //    渲染层 UserMessageView 命中后按 token 在文字流里的位置内联渲染 ——
+    //    否则附件 chip 全部堆到消息尾部（用户 09-25：「不用强制在消息尾部」）。引擎协议不动。
+    saveMessageOriginal(messageText, value);
     try {
       // 必须用剥离占位符后的 messageText：传原始 value 会把 [图片:...] 编码路径
       // 覆盖回发送文本（09-04 截图实证：气泡里出现整段乱码 token）
@@ -205,6 +210,8 @@ export async function send(bag: Bag, event?: FormEvent) {
       }
     }
     bag.setSending(true);
+    // 同 queue 分支：注解「chip 原始位置」，渲染层据此内联而不是堆到尾部
+    saveMessageOriginal(messageText, value);
     // 立即点亮侧边栏转圈（turn/start 返回前也转）：复用当前会话时立刻标记运行中；
     // 新建会话（thread 为 null）时等 turn/start 返回后再登记。
     if (bag.thread) bag.markThreadRunning(bag.thread.id);

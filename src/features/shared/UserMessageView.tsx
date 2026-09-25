@@ -9,6 +9,8 @@ import { itemText } from "../../lib/item-text";
 import { parseUserRefs, userDisplayText, formatThreadReferenceBlock } from "../../lib/user-refs";
 import type { ParsedUserRefs } from "../../lib/user-refs";
 import { isImagePart, promptImagePaths, imagePartSrc, splitPromptSegments } from "../../lib/prompt-images";
+import { stripAttachmentTokens, splitAttachmentSegments } from "../../lib/composer-attachments.mjs";
+import { lookupMessageOriginal } from "../../lib/user-message-originals.mjs";
 import { isImagePath } from "../../lib/is-image-path";
 import { basename } from "../../lib/basename";
 import { attachChipName } from "../../lib/attach-chip-name.mjs";
@@ -81,8 +83,17 @@ export function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, o
   //    曾试过"气泡下方单独一行、整行右对齐"以及"方形缩略图"两版，均被否决：
   //    附件行一旦独立成行，就与用户输入时看到的形态不一致（输入框里它明明在文字流里）。
   const inlineAttachItems: { path: string; name: string; image: boolean }[] = [];
+  /** chip 原始位置注解（09-25）：发送时 token 被剥离 ⇒ 默认只能堆到尾部；命中本地注解
+   *  （key = 剥离后核心文本的指纹）就用带 token 的原文渲染，chip 回到用户放置的位置。 */
+  const annotatedText = lookupMessageOriginal(stripAttachmentTokens(refs.cleanText ?? ""));
+  const annotatedPaths = new Set<string>();
+  if (annotatedText) {
+    for (const seg of splitPromptSegments(annotatedText)) {
+      if (seg.kind !== "text") annotatedPaths.add(seg.path);
+    }
+  }
   {
-    const seen = new Set<string>();
+    const seen = new Set<string>(annotatedPaths);
     for (const path of refs.files) {
       // 已在文本占位符里内联渲染过的图片跳过（否则同一张图出现两次）
       if (inlineImageSet.has(path) || seen.has(path)) continue;
@@ -133,15 +144,21 @@ export function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, o
             </div>
           ) : (refs.cleanText || inlineAttachItems.length) ? (
             <p className="user-message-text">
-              {splitPromptSegments(refs.cleanText ?? "").map((seg, index) => seg.kind === "text"
+              {/* 命中位置注解 ⇒ 用带 token 的原文按 splitAttachmentSegments 拆（图片+文件都内联，
+                  与输入框 rebuild 同款拆分器）；未命中 ⇒ 老行为（splitPromptSegments 只拆图片 token）。 */}
+              {(annotatedText ?? refs.cleanText ?? "").length ? (annotatedText
+                ? splitAttachmentSegments(annotatedText)
+                : splitPromptSegments(refs.cleanText ?? "")
+              ).map((seg: any, index: number) => seg.kind === "text"
                 ? <span key={index}>{seg.text}</span>
                 : <MessageAttachChip
                     key={index}
                     name={attachChipName({ path: seg.path }, seg.path)}
                     source={seg.path}
-                    image
+                    image={annotatedText ? seg.kind === "image" : true}
                     onOpenImage={openImageLightbox ?? undefined}
-                  />)}
+                    onOpenFile={annotatedText ? onOpenFile : undefined}
+                  />) : null}
               {/* 附件 chip 内联在正文文字之后，与输入框同一个 `composer-image-chip-inline` —— 
                   「发送前看到的样子 == 发送后显示的样子」（09-18 用户定稿）。 */}
               {inlineAttachItems.map((att, index) => (
