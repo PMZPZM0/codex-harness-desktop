@@ -949,6 +949,14 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
        （禁 npm scripts / 无构建工具链 / 取不到预编译二进制）。只判文件存在 = 把坏安装报成就绪。 */
     (instSrc.includes("--verify") && /"result"/.test(instSrc) ? ok : fail)("【150】安装器提供 --verify（真起一次服务做 MCP 握手），不许只凭文件存在判定「可用」");
     (instSrc.includes("--ignore-scripts") ? ok : fail)("【150】安装器保留 --ignore-scripts 逃生口（受限环境唯一装法），并在文档里写明它会缺原生产物");
+
+    /* 连接器同步（09-25）：后端=mcp ⇒ 启用 local-memory 连接器（引擎可见 MCP 工具、写入走 MCP）；
+       builtin ⇒ 停用。⛔ 两边必须同源，否则「内置在写 + 工具也可见」= 双写。 */
+    const connPath = join(ROOT, "electron", "memory-mcp-connector.ts");
+    const connSrc = existsSync(connPath) ? readFileSync(connPath, "utf8") : "";
+    (/effectiveMemoryBackend\(\)/.test(connSrc) ? ok : fail)("【150】连接器同步必须用 effectiveMemoryBackend（与捕获链同源，否则会出现双写窗口）");
+    const bootSrc = readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8");
+    (/try \{\s*\n\s*const action = await syncLocalMemoryConnector\(\)|await syncLocalMemoryConnector\(\)/.test(bootSrc) ? ok : fail)("【150】启动链会同步本地 MCP 连接器（挂进 boot.ts，包 try/catch 不掐启动）");
   }
   }
 }

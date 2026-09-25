@@ -19,6 +19,7 @@ import { sendToWindow } from "./window-bus";
 import { shouldRegisterNuphus } from "../automation-policy";
 import { BotStreamSession, readBotStreamSettingsSync } from "../bot-stream";
 import { ensureBuiltinSkills, ensureExpertSkillsMarketplace } from "../builtin-skills";
+import { syncLocalMemoryConnector } from "../memory-mcp-connector";
 import { developerInstructionsLine } from "../developer-instructions";
 import { broadcastCodexEvent, broadcastHarnessEvent } from "./window-bus";
 import { nuphusVisionEnvDrift } from "../nuphus-env";
@@ -217,6 +218,14 @@ export async function bootApp() {
   // 专家技能市场（cheat-on-content / ppt-master）原位注册，零拷贝——见 ensureExpertSkillsMarketplace
   await ensureExpertSkillsMarketplace(codexHome);
   await ensureBuiltinSkills(userSkillsDir);
+  /* 记忆后端 → 本地 MCP 连接器同步（09-25）：后端=mcp 时启用 local-memory 连接器
+     （引擎可见 MCP 记忆工具、写入走 MCP），builtin 时停用它（写入走内置金字塔）。
+     ⛔ 两边必须同源，否则「内置在写 + MCP 工具也可见」会让模型两边都写 = 双份记忆。
+     幂等：状态一致时不写盘。⚠️ 包 try/catch —— 启动链里裸 await 抛出会掐死整条链。 */
+  try {
+    const action = await syncLocalMemoryConnector();
+    if (action !== "absent") console.log(`[memory] 本地 MCP 连接器：${action}（记忆后端=${action === "enabled" ? "mcp" : "builtin"}）`);
+  } catch (error) { console.warn("[memory] 本地 MCP 连接器同步失败（不影响启动）：", error); }
   // 内置「评审」子智能体（09-21）：用干净上下文复审的现成对象。⚠️ 必须包 try/catch ——
   // 启动链里一处裸 await 抛出会掐死整条链（界面能开、核心服务没起来，日志只有一行）。
   try { await ensureBuiltinReviewer(); } catch (error) { console.warn("[reviewer] 内置评审子智能体种入失败（不影响启动）：", error); }
