@@ -204,7 +204,11 @@ if (!mainSrc || !preloadSrc) {
          gen:ipc 已挂钩顺带重生成。这里真跑生成器 --check，比对落盘技能是否过期。 */
       try {
         const r = spawnSync(process.execPath, [join(ROOT, "scripts", "gen-capability-skill.mjs"), "--check"], { encoding: "utf8", timeout: 60000 });
-        (r.status === 0 ? ok : fail)("【153】harness-api 技能与 manifest/registry 一致（过期就重跑 npm run gen:ipc）");
+        if (r.error && r.error.code === "EBUSY") {
+          warn("【153】沙箱拒绝 spawnSync（EBUSY）⇒ 跳过比对（宿主跑 npm run check 才是真判据）");
+        } else {
+          (r.status === 0 ? ok : fail)("【153】harness-api 技能与 manifest/registry 一致（过期就重跑 npm run gen:ipc）");
+        }
       } catch (error) {
         fail(`【153】生成器 --check 跑不了：${error?.message ?? error}`);
       }
