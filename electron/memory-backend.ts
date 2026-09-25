@@ -65,6 +65,29 @@ export function localMemoryMcpInstallRoot(): string {
   return path.join(app.getPath("userData"), "memory-mcp");
 }
 
+/** ⛔⛔ **应用自带的 node** —— 引擎侧跑 MCP 记忆服务必须用它，**不能用 Electron 的 node**。
+ *
+ *  为什么（09-25 真机踩到）：better-sqlite3 按 `NODE_MODULE_VERSION`(ABI) 取预编译产物，
+ *  实测 Electron 43 = **149**、自带 node 24 = **137**、系统 node 22 = **127**，三者互不通用。
+ *  用 electron.exe 当 runner ⇒ 装得再好也 `Could not locate the bindings file` ⇒ 引擎侧报
+ *  「local-memory 启动失败」。装（安装器也用自带 node）与跑用同一个 ABI 才自洽。
+ *
+ *  落点：dev = `<repo>/resources/tools/node/node.exe`（与 tray.ts 取 build/ 同法，用 getAppPath）；
+ *        打包 = `<resources>/tools/node/node.exe`（extraResources 已带 tools/node）。 */
+export function bundledNodePath(): string {
+  const exe = process.platform === "win32" ? "node.exe" : "node";
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "tools", "node", exe)
+    : path.join(app.getAppPath(), "resources", "tools", "node", exe);
+}
+
+/** 安装器落点（与 features/memory-rpa-ipc.ts 的调用同源，改一边要改两边）。
+ *  dev = `<repo>/scripts/`；打包 = `<resources>/tools/`（package.json extraResources 带的）。 */
+export function memoryInstallerPath(): string {
+  const dev = path.join(app.getAppPath(), "scripts", "install-memory-mcp.cjs");
+  return existsSync(dev) ? dev : path.join(process.resourcesPath, "tools", "install-memory-mcp.cjs");
+}
+
 /** 设置页「记忆后端」区块要的状态快照（09-25）。⛔ 全部惰性求值 —— 顶层不碰 `app.getPath`（【91】）。 */
 export type MemoryBackendStatus = {
   /** 用户选的值（可能不可用） */
@@ -93,7 +116,7 @@ export function memoryBackendStatus(): MemoryBackendStatus {
     installed,
     serverPath: localMemoryMcpServerPath(),
     installRoot,
-    installCommand: `npm install --prefix "${installRoot}" @vheins/local-memory-mcp`,
+    installCommand: `"${bundledNodePath()}" "${memoryInstallerPath()}" --force`,
     fallbackReason:
       backend === "mcp" && !installed
         ? "已选 MCP，但服务未安装：当前仍走内置金字塔（宁可回退，也不让记忆一处都不写）。装好服务后重启应用即可生效。"

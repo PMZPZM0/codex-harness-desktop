@@ -34,6 +34,7 @@ type MemoryBackendStatus = {
 function MemoryBackendSection() {
   const [status, setStatus] = useState<MemoryBackendStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const [busyLabel, setBusyLabel] = useState("");
   const [note, setNote] = useState("");
 
   useEffect(() => {
@@ -69,9 +70,39 @@ function MemoryBackendSection() {
     if (!status) return;
     try {
       await navigator.clipboard.writeText(status.installCommand);
-      setNote("安装命令已复制到剪贴板。");
+      setNote("安装命令已复制到剪贴板（想自己装时用）。");
     } catch {
       setNote("复制失败，请手动选中命令复制。");
+    }
+  };
+
+  /* 一键安装 / 卸载 / 检测（09-25 用户要求「加个安装功能」）。
+     主进程用**应用自带的 node** 跑安装器 —— 新电脑不用预装 Node.js，装与跑同 ABI。
+     ⛔ 首次安装要下依赖 + 原生绑定，可能几分钟 ⇒ busyLabel 让用户知道在动、不是卡了。 */
+  const runAction = async (kind: "install" | "uninstall" | "verify") => {
+    setBusy(true);
+    setNote("");
+    setBusyLabel(kind === "install" ? "正在安装…（首次几分钟：下载依赖 + 原生绑定）" : kind === "uninstall" ? "正在卸载…" : "正在检测…");
+    try {
+      const r = kind === "install"
+        ? await window.codex.installMemoryMcp()
+        : kind === "uninstall"
+          ? await window.codex.uninstallMemoryMcp()
+          : await window.codex.verifyMemoryMcp();
+      if (r?.status) setStatus(r.status as MemoryBackendStatus);
+      if (kind === "uninstall") {
+        setNote("已卸载：记忆服务目录已删除。");
+      } else if (r?.result?.verified) {
+        setNote(kind === "install" ? "安装完成，MCP 握手已通过 ✅" : "检测通过：服务能正常握手 ✅");
+      } else {
+        const why = r?.result?.error ?? r?.log?.split("\n").filter(Boolean).pop() ?? "未知原因";
+        setNote(`失败：${why}`);
+      }
+    } catch (error) {
+      setNote(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+      setBusyLabel("");
     }
   };
 
@@ -98,17 +129,28 @@ function MemoryBackendSection() {
       )}
       {status?.fallbackReason && <p className="settings-status">{status.fallbackReason}</p>}
 
-      {status && !status.installed && (
-        <>
-          <p className="muted">安装命令（在终端执行）：</p>
-          <p className="settings-status" style={{ fontFamily: "ui-monospace, monospace", wordBreak: "break-all" }}>{status.installCommand}</p>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 4 }}>
-            <button onClick={() => void copyCommand()}>复制安装命令</button>
-            <span className="muted">装到：{status.installRoot}</span>
-          </div>
-        </>
-      )}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
+        {!status?.installed ? (
+          <button className="primary-setting" disabled={busy || !status} onClick={() => void runAction("install")}>安装 MCP 记忆服务</button>
+        ) : (
+          <>
+            <button disabled={busy} onClick={() => void runAction("verify")}>检测连通性</button>
+            <button disabled={busy} onClick={() => void runAction("install")}>重新安装 / 修复</button>
+            <button disabled={busy} onClick={() => void runAction("uninstall")}>卸载</button>
+          </>
+        )}
+        {status && <span className="muted">装到：{status.installRoot}</span>}
+      </div>
+      {busyLabel && <p className="settings-status">{busyLabel}</p>}
       {note && <p className="settings-status">{note}</p>}
+
+      {status && (
+        <details style={{ marginTop: 10 }}>
+          <summary className="muted" style={{ cursor: "pointer" }}>想自己用命令装？（走同一套：应用自带 node，不需要你预装 Node.js）</summary>
+          <p className="settings-status" style={{ fontFamily: "ui-monospace, monospace", wordBreak: "break-all", marginTop: 6 }}>{status.installCommand}</p>
+          <button onClick={() => void copyCommand()}>复制命令</button>
+        </details>
+      )}
     </>
   );
 }

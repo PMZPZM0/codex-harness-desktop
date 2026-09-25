@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-09-23",
-  "count": 331,
+  "count": 334,
   "channels": [
     {
       "name": "request",
@@ -1382,6 +1382,36 @@
       "invokeArgs": "backend",
       "cast": null,
       "note": "切换记忆后端并回传新状态"
+    },
+    {
+      "name": "installMemoryMcp",
+      "channel": "memory:mcp:install",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ code: number | null; result: any; log: string; status: any }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "一键安装 MCP 记忆服务（主进程用应用自带 node 跑安装器；新电脑无需预装 Node）"
+    },
+    {
+      "name": "uninstallMemoryMcp",
+      "channel": "memory:mcp:uninstall",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ code: number | null; result: any; log: string; status: any }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "卸载 MCP 记忆服务（删 <userData>/memory-mcp）"
+    },
+    {
+      "name": "verifyMemoryMcp",
+      "channel": "memory:mcp:verify",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ code: number | null; result: any; log: string; status: any }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "真跑一次 MCP 握手校验（不是只判文件存在）"
     },
     {
       "name": "saveMemory",

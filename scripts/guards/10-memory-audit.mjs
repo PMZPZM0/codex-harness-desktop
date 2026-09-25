@@ -512,7 +512,12 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     (/isHygieneAction\(/.test(ipcSrc) ? ok : fail)("【107】IPC 层走动作白名单校验");
     (/memory:hygiene:plan/.test(ipcSrc) && /memory:hygiene:apply/.test(ipcSrc) ? ok : fail)("【107】两个通道都已注册（plan 只读 / apply 动作）");
     const regSrc = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
-    (/memory:hygiene:apply/.test(regSrc) && /prefix: "memory", count: 21/.test(regSrc) ? ok : fail)("【107】IPC 账本同步（memory 域 21 通道：09-25 加 backend:read/set）");
+    /* ⛔ 不写死通道数：从 manifest 现数再与账本比 —— 硬编码会随每次加通道过期
+       （09-25 一天之内就过期两次：19→21→24）。 */
+    const manifestSrc107 = readFileSync(join(ROOT, "electron", "ipc-channels.manifest.json"), "utf8");
+    const memoryChannels107 = (manifestSrc107.match(/"channel":\s*"memory:/g) || []).length;
+    const memoryLedger107 = Number((regSrc.match(/prefix: "memory", count: (\d+)/) || [])[1]);
+    (/memory:hygiene:apply/.test(regSrc) && memoryLedger107 === memoryChannels107 && memoryChannels107 > 0 ? ok : fail)(`【107】IPC 账本同步（memory 域：账本 ${memoryLedger107} = manifest ${memoryChannels107} 通道）`);
     /* preload 面 = 手写 + 生成（09-23 gen-ipc-bridge）：applyMemoryHygiene 的桥接已迁到生成文件 */
     const preloadSrc = readFileSync(join(ROOT, "electron", "preload.ts"), "utf8");
     (/applyMemoryHygiene/.test(preloadSrc) && /confirm: true/.test(preloadSrc) ? ok : fail)("【107】preload 桥接同步（apply 的类型要求 confirm: true）");
@@ -963,11 +968,20 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
        三处必须同轮齐全：manifest 两条通道 + IPC 账本 + 设置页「记忆」里的区块。 */
     const manifestSrc = readFileSync(join(ROOT, "electron", "ipc-channels.manifest.json"), "utf8");
     (manifestSrc.includes("memory:backend:read") && manifestSrc.includes("memory:backend:set") ? ok : fail)("【150】记忆后端两条通道在 manifest 里（read/set）");
+    (manifestSrc.includes("memory:mcp:install") && manifestSrc.includes("memory:mcp:uninstall") && manifestSrc.includes("memory:mcp:verify") ? ok : fail)("【150】MCP 记忆服务有安装/卸载/校验三条通道（用户「不要加个安装功能吗」）");
     const regSrc150 = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
-    (/prefix: "memory", count: 21/.test(regSrc150) ? ok : fail)("【150】记忆域 IPC 账本同步（21 通道）");
+    const memoryChannels150 = (manifestSrc.match(/"channel":\s*"memory:/g) || []).length;
+    const memoryLedger150 = Number((regSrc150.match(/prefix: "memory", count: (\d+)/) || [])[1]);
+    (memoryLedger150 === memoryChannels150 && memoryChannels150 > 0 ? ok : fail)(`【150】记忆域 IPC 账本同步（账本 ${memoryLedger150} = manifest ${memoryChannels150}）`);
+    /* ⛔ 连接器必须拿**应用自带 node** 当 runner：better-sqlite3 按 ABI 取预编译产物，
+       Electron 43 = 149 / 自带 node 24 = 137，用错一个就 `Could not locate the bindings file`
+       （09-25 现场：装好了引擎侧仍报 local-memory 启动失败）。 */
+    (/bundledNodePath\(\)/.test(connSrc) ? ok : fail)("【150】连接器用应用自带 node 当 runner（否则 ABI 不匹配，装好了也起不来）");
+    const ipcSrc150 = readFileSync(join(ROOT, "electron", "features", "memory-rpa-ipc.ts"), "utf8");
+    (/bundledNodePath\(\)/.test(ipcSrc150) ? ok : fail)("【150】一键安装用自带 node 跑安装器（新电脑无需预装 Node.js）");
     const centerSrc = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryCenterSection.tsx"), "utf8");
     (centerSrc.includes("MemoryBackendSection") && centerSrc.includes("readMemoryBackend") && centerSrc.includes("setMemoryBackend") ? ok : fail)("【150】设置页「记忆」有后端入口（MemoryBackendSection：能读、能切；否则用户无处开启）");
-    (!/spawn\(|execFile\(|child_process/.test(centerSrc) ? ok : fail)("【150】渲染层不自己跑安装器（按用户要求走「命令安装」，不在渲染层 spawn）");
+    (/installMemoryMcp|uninstallMemoryMcp|verifyMemoryMcp/.test(centerSrc) ? ok : fail)("【150】设置页提供安装/卸载/检测入口（用户明确要求「加个安装功能」）");
   }
   }
 }

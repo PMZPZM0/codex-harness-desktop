@@ -17,14 +17,30 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
 import type { ConnectorConfig } from "./main/07-connectors-io";
-import { effectiveMemoryBackend, localMemoryMcpServerPath } from "./memory-backend";
+import { bundledNodePath, effectiveMemoryBackend, localMemoryMcpServerPath } from "./memory-backend";
 import { connectorsFile } from "./runtime-paths";
 
 export const LOCAL_MEMORY_CONNECTOR_ID = "local-memory";
 
 type SyncResult = "enabled" | "disabled" | "absent";
 
-/** 按生效后端同步 `local-memory` 连接器的启用态。返回最终动作（便于日志与断言）。 */
+/** 期望的连接器形态：**用应用自带的 node** 当 runner。
+ *
+ *  ⛔ 为什么不能用 electron.exe（老做法 `process.execPath` + `ELECTRON_RUN_AS_NODE=1`）：
+ *     better-sqlite3 按 ABI 取预编译产物 —— Electron 43 = 149、自带 node 24 = 137，
+ *     用错一个就 `Could not locate the bindings file`，引擎侧直接报「local-memory 启动失败」。
+ *     装（安装器）与跑（连接器）都用自带 node，ABI 才自洽（09-25 真机踩到）。
+ *  自带 node 缺失时退回过路（能跑通但 ABI 可能不匹配）—— 只在异常环境兜底。 */
+function expectedShape(): { command: string; env: Record<string, string> } {
+  const nodeExe = bundledNodePath();
+  const dbEnv = { MEMORY_DB_PATH: path.join(app.getPath("userData"), "memory-mcp", "memory.db") };
+  if (existsSync(nodeExe)) return { command: nodeExe, env: dbEnv };
+  return { command: process.execPath, env: { ...dbEnv, ELECTRON_RUN_AS_NODE: "1" } };
+}
+
+/** 按生效后端同步 `local-memory` 连接器的启用态。返回最终动作（便于日志与断言）。
+ *  ⛔ 幂等判据是「**形态 + 启用态**都一致才不写盘」—— 只比 enabled 的话，老版本写下的
+ *     electron.exe 形态会永远留在盘上（正是 09-25「装好了还是启动失败」的现场）。 */
 export async function syncLocalMemoryConnector(): Promise<SyncResult> {
   const want = effectiveMemoryBackend() === "mcp";
   let list: ConnectorConfig[] = [];
@@ -37,25 +53,27 @@ export async function syncLocalMemoryConnector(): Promise<SyncResult> {
   if (idx < 0 && !want) return "absent";
 
   const now = new Date().toISOString();
+  const shape = expectedShape();
+  const expectedArgs = [localMemoryMcpServerPath()];
+
   if (idx >= 0) {
-    if (Boolean(list[idx].enabled) === want) return want ? "enabled" : "disabled"; // 幂等：一致就不写盘
-    list[idx] = { ...list[idx], enabled: want, updatedAt: now };
+    const cur: any = list[idx];
+    const curEnv = cur.env ?? {};
+    const sameShape =
+      cur.command === shape.command &&
+      JSON.stringify(cur.args ?? []) === JSON.stringify(expectedArgs) &&
+      curEnv.MEMORY_DB_PATH === shape.env.MEMORY_DB_PATH &&
+      Boolean(curEnv.ELECTRON_RUN_AS_NODE) === Boolean(shape.env.ELECTRON_RUN_AS_NODE);
+    if (Boolean(cur.enabled) === want && sameShape) return want ? "enabled" : "disabled"; // 幂等
+    list[idx] = { ...cur, command: shape.command, args: expectedArgs, env: shape.env, enabled: want, updatedAt: now };
   } else {
-    /* 首次注册：command 用**当前进程的可执行文件**。
-       主进程里 process.execPath 是 electron(.exe) ⇒ 必须带 ELECTRON_RUN_AS_NODE=1，
-       否则引擎 spawn 它会当成 GUI 应用再开一个窗口（而不是 MCP 服务器）。 */
-    const exec = process.execPath;
-    const isElectron = /electron(\.exe)?$/i.test(exec);
     list.push({
       id: LOCAL_MEMORY_CONNECTOR_ID,
       name: "本地记忆（MCP 记忆服务）",
       transport: "stdio",
-      command: exec,
-      args: [localMemoryMcpServerPath()],
-      env: {
-        ...(isElectron ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
-        MEMORY_DB_PATH: path.join(app.getPath("userData"), "memory-mcp", "memory.db"),
-      },
+      command: shape.command,
+      args: expectedArgs,
+      env: shape.env,
       enabled: true,
       createdAt: now,
       updatedAt: now,

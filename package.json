@@ -154,6 +154,10 @@
         "to": "tools/install-automation.cjs"
       },
       {
+        "from": "scripts/install-memory-mcp.cjs",
+        "to": "tools/install-memory-mcp.cjs"
+      },
+      {
         "from": "resources/tools/ponytail-plugin",
         "to": "tools/ponytail-plugin"
       },

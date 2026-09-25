@@ -233,6 +233,12 @@ contextBridge.exposeInMainWorld("codex", {
   readMemoryBackend: () => __ipc("memory:backend:read", 0, []),
   /* 切换记忆后端并回传新状态 */
   setMemoryBackend: (backend: "builtin" | "mcp") => __ipc("memory:backend:set", 1, [backend]),
+  /* 一键安装 MCP 记忆服务（主进程用应用自带 node 跑安装器；新电脑无需预装 Node） */
+  installMemoryMcp: () => __ipc("memory:mcp:install", 0, []),
+  /* 卸载 MCP 记忆服务（删 <userData>/memory-mcp） */
+  uninstallMemoryMcp: () => __ipc("memory:mcp:uninstall", 0, []),
+  /* 真跑一次 MCP 握手校验（不是只判文件存在） */
+  verifyMemoryMcp: () => __ipc("memory:mcp:verify", 0, []),
   saveMemory: (input: unknown) => __ipc("memory:save", 1, [input]),
   listRpaRecipes: () => __ipc("rpa:list", 0, []),
   saveRpaRecipe: (input: unknown) => __ipc("rpa:save", 1, [input]),
