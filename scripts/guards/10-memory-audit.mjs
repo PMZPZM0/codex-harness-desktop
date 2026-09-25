@@ -986,11 +986,19 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
        ⛔ 只用 registry.npmjs.org 在国内基本必失败；GitHub 直连下载原生绑定同理。 */
     const installerSrc150 = readFileSync(join(ROOT, "scripts", "install-memory-mcp.cjs"), "utf8");
     (/registry\.npmmirror\.com/.test(installerSrc150) ? ok : fail)("【150】安装器带国内 registry 兜底（否则国内用户 npm install 必失败）");
-    /* 09-25 用户明确：「记忆 mcp 安装默认使用国内镜像」⇒ 断言**顺序**：npmmirror 必须排在 npmjs 之前 */
-    (installerSrc150.indexOf("registry.npmmirror.com") < installerSrc150.indexOf("registry.npmjs.org") ? ok : fail)(
-      "【150】⛔ 国内镜像必须是**默认首选**（npmmirror 在 npmjs 之前，不是失败后才退）"
+    /* 09-25 用户明确：「记忆 mcp 安装默认使用国内镜像」⇒ 断言**顺序**：npmmirror 必须排在 npmjs 之前。
+       ⛔⛔ 断言必须打到**代码**（09-25 代码审查抓到原来那版是恒真的）：`indexOf("registry.npmmirror.com")`
+       命中的是**文件里更早的注释**（GitHub 镜像那段），与数组字面量的顺序无关
+       ⇒ 把数组改成 [npmjs, npmmirror] 也照样绿。这里直接匹配数组字面量。 */
+    (/\[\.\.\.fromEnv, "https:\/\/registry\.npmmirror\.com", "https:\/\/registry\.npmjs\.org"\]/.test(installerSrc150) ? ok : fail)(
+      "【150】⛔ 国内镜像必须是**默认首选**（数组字面量里 npmmirror 在 npmjs 之前 —— ⛔ 别用 indexOf 查注释）"
     );
     (/registryReachable/.test(installerSrc150) ? ok : fail)("【150】换源前做可达性预检（不可达立刻换下一个，不让 npm 耗满超时）");
+    /* ⛔ 预检必须 fail-open（09-25 代码审查）：裸 https.get 不走代理，而 npm 走 ⇒ 只能靠代理出网的
+       网络里三通道全判不可达；据此直接 fail 会把本来能装成功的场景**拦死**。 */
+    (/const anyReachable = /.test(installerSrc150) && /anyReachable && !reach\.ok/.test(installerSrc150) ? ok : fail)(
+      "【150】可达性预检 fail-open（全不可达时忽略预检、照样逐个真试 npm）"
+    );
     (/registry: inst\.via/.test(installerSrc150) ? ok : fail)("【150】安装结果回传实际用的 registry（UI/诊断能看出走的哪个源）");
     (/installViaRegistries/.test(installerSrc150) && /NPM_CONFIG_REGISTRY/.test(installerSrc150) ? ok : fail)("【150】安装器按序多 registry 重试（用户/公司自配的最高优先）");
     (/registry\.npmmirror\.com\/-\/binary/.test(installerSrc150) ? ok : fail)("【150】原生绑定走国内镜像（npmmirror /-/binary），GitHub 直连在国内不可靠");
@@ -1001,8 +1009,10 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
        完全不看后端 ⇒ 指令把模型指向一个已被停用（改名 SKILL.md.disabled）的技能。
        判据：指令生成必须读 effectiveMemoryBackend，并按后端换技能名。 */
     const devSrc150 = readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8");
-    (/effectiveMemoryBackend\(\)/.test(devSrc150) ? ok : fail)("【150】开发者指令按**生效后端**生成（⛔ 硬编码 memory-classify 会把模型指向已停用的技能）");
-    (/MEMORY_MCP_BACKEND_SKILL/.test(devSrc150) ? ok : fail)("【150】后端=mcp 时指令改用 memory-mcp-backend（写入方式随之改成 MCP 工具）");
+    /* ⛔ 断言打到**代码**而不是注释（09-25 代码审查抓到：原来只 grep `effectiveMemoryBackend()` /
+       `MEMORY_MCP_BACKEND_SKILL`，而这两个词**在文件头注释里也出现** ⇒ 把实现换成常量也照样绿）。 */
+    (/const mcpBackend = effectiveMemoryBackend\(\) === "mcp";/.test(devSrc150) ? ok : fail)("【150】开发者指令按**生效后端**生成（⛔ 硬编码 memory-classify 会把模型指向已停用的技能）");
+    (/mcpBackend \? MEMORY_MCP_BACKEND_SKILL : MEMORY_CLASSIFY_SKILL/.test(devSrc150) ? ok : fail)("【150】后端=mcp 时指令改用 memory-mcp-backend（写入方式随之改成 MCP 工具）");
     (/gateAndReviewInstructions\(\)/.test(devSrc150) && !/GATE_AND_REVIEW_INSTRUCTIONS\b/.test(devSrc150) ? ok : fail)("【150】记忆写法那段是**函数**（内部读后端）而不是常量 —— 保证 boot 的过期比对与写出逐字同源");
     (devSrc150.includes("memory-write") ? ok : fail)("【150】MCP 口径的指令点名 memory-write（不是笼统说去用 MCP）");
     const packSrc150 = readFileSync(join(ROOT, "electron", "skill-pack.ts"), "utf8");
@@ -1015,12 +1025,14 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
        但正文写着「落点见 memory-classify / 写到 lessons/」⇒ MCP 后端下模型读到的是"去写一个已被
        停用的技能 + 写文件"，于是继续往 lessons/ 手写 —— 正是用户报障的第二个来源。
        判据：这三份正文必须同时给出 MCP 口径（提到 memory-mcp-backend 或 memory-write）。 */
+    /* ⛔ 断言要求**技能正文**（模板串里，反引号写成 \`）里出现，而不是文件里任意位置
+       —— 否则将来有人把它挪进注释也能骗过断言（09-25 代码审查）。 */
     const selfReviewSrc150 = readFileSync(join(ROOT, "electron", "builtin-skills", "09-skill-self-review.ts"), "utf8");
-    (/memory-mcp-backend/.test(selfReviewSrc150) ? ok : fail)("【150】self-review 的落点表随后端分岔（否则 MCP 后端下仍教模型写 lessons/）");
+    (/\\`memory-mcp-backend\\`/.test(selfReviewSrc150) ? ok : fail)("【150】self-review 的落点表随后端分岔（否则 MCP 后端下仍教模型写 lessons/）");
     const hygieneSrc150 = readFileSync(join(ROOT, "electron", "builtin-skills", "10-skill-memory-hygiene.ts"), "utf8");
-    (/memory-mcp-backend/.test(hygieneSrc150) ? ok : fail)("【150】memory-hygiene 的去重步骤随后端分岔");
+    (/\\`memory-mcp-backend\\`/.test(hygieneSrc150) ? ok : fail)("【150】memory-hygiene 的去重步骤随后端分岔");
     const authoringSrc150 = readFileSync(join(ROOT, "electron", "builtin-skills", "07-skill-authoring.ts"), "utf8");
-    (/memory-mcp-backend/.test(authoringSrc150) ? ok : fail)("【150】skill-authoring 的记忆落点随后端分岔");
+    (/\\`memory-mcp-backend\\`/.test(authoringSrc150) ? ok : fail)("【150】skill-authoring 的记忆落点随后端分岔");
   }
   }
 }

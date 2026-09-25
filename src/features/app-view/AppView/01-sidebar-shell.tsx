@@ -2,6 +2,7 @@
  * AppViewSidebarShell —— AppView 的 JSX 第 1 段（09-22 从 AppView.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
+import { Fragment } from "react";
 import { hk } from "../../../lib/hk";
 import {
   AlertTriangle,
@@ -206,6 +207,7 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
     toggleDispatchBlock,
     clusterSplit,
     renderClusterRow,
+    expandedTeamClusters,
     renderThreadRow,
     sidebarCollapsed,
     sidebarFlyout,
@@ -283,12 +285,24 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
     };
     return (
       <>
-        {clusters.map((cluster) => (
-          <div className="dispatch-parent" key={`cluster-${cluster.teamId}`}>
-            {renderClusterRow(cluster)}
-            {childrenAfter(cluster.lead?.id ?? "")}
-          </div>
-        ))}
+        {clusters.map((cluster) => {
+          /* ⛔⛔ **簇里的成员也要挂子会话**（09-25 代码审查抓到「会话消失」）：
+             `sourcedChildIds` 会把**所有**被调度会话从顶层剔除，而成员会话自己也可能调度出东西
+             （成员 → 子智能体）。成员只渲染在簇体内、不在顶层 ⇒ 只对 lead 调 childrenAfter 的话，
+             这些孙会话**一处都不渲染 = 从侧栏彻底消失**（已在纯模块取证：childrenOf 的键是成员 id）。
+             成员只在簇**展开**时可见 ⇒ 它们的子块同样只在展开时渲染（收起时一并收起，符合直觉）。 */
+          const clusterOpen = expandedTeamClusters.has(cluster.teamId);
+          const memberChildren = clusterOpen ? cluster.members.filter((member) => (sourcedChildrenOf[member.id] ?? []).length > 0) : [];
+          return (
+            <div className="dispatch-parent" key={`cluster-${cluster.teamId}`}>
+              {renderClusterRow(cluster)}
+              {childrenAfter(cluster.lead?.id ?? "")}
+              {memberChildren.map((member) => (
+                <Fragment key={`member-children-${member.id}`}>{childrenAfter(member.id)}</Fragment>
+              ))}
+            </div>
+          );
+        })}
         {singles.map((entry) => (
           <div className="dispatch-parent" key={entry.id}>
             {renderThreadRow(entry)}

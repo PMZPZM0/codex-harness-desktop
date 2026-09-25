@@ -201,12 +201,10 @@ bag.releaseDispatchHolder = releaseDispatchHolder as typeof bag.releaseDispatchH
     /* ⛔ 必须按**有效 cwd**（侧栏项目视图的归组口径）取目标 —— 09-25 加「被调度会话跟随主对话
        项目地址」后，一个项目组里含 own cwd 不同的被调度会话。仍按 entry.cwd 过滤会有两个错：
        ① 组里看得见的被调度会话删不掉（留在原地变孤儿行）② 反把 own cwd 命中但已归到**别的**
-       项目下的会话删掉（用户没在该项目里看到它）。口径与 resolveGroupCwd 同源。 */
-    const cwdMap = resolveGroupCwd(bag.threads, {
-      delegateRecords: bag.delegateRecords,
-      teamThreadIndex: bag.teamThreadsIndex,
-      teamMemberThreadIds: bag.teamMemberThreadIds,
-    });
+       项目下的会话删掉（用户没在该项目里看到它）。
+       ⛔ 直接复用 part03 算好的 `bag.dispatchCwdMap`（**同一份口径**，别在这里重算）——
+       重算等于留第二份会漂移的真相源（09-25 代码审查）。part08 在 part03 之后运行，映射已就绪。 */
+    const cwdMap = bag.dispatchCwdMap ?? {};
     const ids = bag.threads.filter((entry) => (cwdMap[entry.id] ?? entry.cwd) === cwd).map((entry) => entry.id);
     if (!ids.length) { bag.setNotice("该项目下已无对话"); return; }
     if (!(await bag.openAppConfirm("删除整个项目", `项目「${basename(cwd)}」下的 ${ids.length} 条任务将被永久删除，此操作无法撤销。`, "永久删除"))) return;

@@ -161,11 +161,18 @@ bag.derivedTokenUsageRef = derivedTokenUsageRef as typeof bag.derivedTokenUsageR
   })());
 bag.tokenUsageByThreadRef = tokenUsageByThreadRef as typeof bag.tokenUsageByThreadRef;
 
-  /** 用量快照落盘（LRU 截断：只保留最近 TOKEN_SNAPSHOT_MAX 个会话）。 */
+  /** 用量快照落盘（只保留最近 TOKEN_SNAPSHOT_MAX 个会话）。
+   *  ⛔ **必须是真 LRU**（09-25 代码审查改）：Map 保持**插入顺序**，对已存在的键 `set` **不会**把它
+   *  移到最后 ⇒ 原来那句 `slice(-N)` 实际是 **FIFO**：一个长期活跃的老会话（比如钉住的主会话）
+   *  插入早、排前面，会被后来的一批新会话挤掉 —— 它重启后进度**照样归零**，正是本功能要防的症状。
+   *  所以每次写入先 `delete` 再 `set`，把它挪到末尾。 */
   const persistTokenUsageSnapshot = useCallback((threadId: string, usage: any) => {
     try {
       const map = bag.tokenUsageByThreadRef.current;
-      if (threadId) map.set(threadId, usage);
+      if (threadId) {
+        map.delete(threadId);   // ⛔ 先删再插 = 挪到末尾（真 LRU 的关键）
+        map.set(threadId, usage);
+      }
       const entries = [...map.entries()].slice(-TOKEN_SNAPSHOT_MAX);
       bag.tokenUsageByThreadRef.current = new Map(entries);
       localStorage.setItem(TOKEN_SNAPSHOT_KEY, JSON.stringify(Object.fromEntries(entries)));
