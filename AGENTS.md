@@ -440,3 +440,18 @@ node scripts/install-memory-mcp.cjs --ignore-scripts  # 受限环境逃生口（
 （用户机器无此限制）。连接器接入：以 `connectors.json` 注册 stdio 服务器
 （`node <userData>/memory-mcp/node_modules/@vheins/local-memory-mcp/bin/mcp-memory-server.js`，
 `MEMORY_DB_PATH` 指到 userData）；⛔ 不要手改 `config.toml` 的 `mcp_servers`（那是 harness 生成的）。
+
+### ⛔ 记忆后端必须用「带回退」的判定（09-25 追加，守卫【150】）
+
+用户 09-25：「你弄好，如果我的电脑不行，用户电脑肯定也不行」—— 指向一个真实缺陷：
+这个 MCP 服务依赖原生模块（better-sqlite3）+ 带 postinstall 的依赖（esbuild），在
+**禁 npm scripts / 无构建工具链 / 取不到预编译二进制**的环境里会**装得上但起不来**。
+
+- 捕获链与技能互斥一律用 `effectiveMemoryBackend()`（**不是** `memoryBackend()`）：
+  选了 mcp 但服务入口缺失 ⇒ **回退内置金字塔**并 `console.warn`。
+  ⛔ 若此处按裸 `memoryBackend()` 让位，坏安装环境下会**记忆一处都不写 = 彻底丢记忆** ——
+  这比"重复"严重得多，所以宁可回退。
+- 安装器必须提供 `--verify`（真起一次服务做 MCP 握手，15s 超时）：只判文件存在会把坏安装报成"已就绪"。
+  实测本机：`--verify` → `{installed:true, verified:false, error:"服务退出码 1（原生模块未构建）"}`。
+- 用户侧兼容性结论（写进给用户的答复）：Windows + 正常网络下 better-sqlite3 走 prebuild 下载，通常能装；
+  装不上时**自动回退内置**，不丢记忆；`--ignore-scripts` 是受限环境的逃生口（会缺原生产物，须配 `--verify` 自证）。
