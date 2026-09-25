@@ -201,6 +201,7 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
     sidebarAllCollapsed,
     sourcedThreads,
     sourcedChildrenOf,
+    sourcedChildIds,
     renderThreadRow,
     sidebarCollapsed,
     sidebarFlyout,
@@ -244,6 +245,28 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
     await copyTextToClipboard(text);
     showToast("已复制诊断信息", "含构建指纹与产物名，可直接粘贴到反馈里");
   };
+
+  /* 调度归属的统一渲染（09-25 用户：「项目里面也这样展示可以嘛」）：
+     顶层会话渲染后，紧跟它**调度出去的会话**（缩进 + ↳ 标签），与「分类」视图完全一致。
+     ⛔ 两个视图**共用这一份实现** —— 免得日后再分叉成「分类有、项目没有」。
+     ⛔ 调用方必须先用 sourcedChildIds 把子会话从**顶层**剔除，否则同一会话会显示两遍。 */
+  const renderDispatchedList = (entries: typeof listThreads) => entries.map((entry) => {
+    const children = sourcedChildrenOf[entry.id] ?? [];
+    return (
+      <div className="dispatch-parent" key={entry.id}>
+        {renderClusterList([entry])}
+        {children.length > 0 && (
+          <div className="dispatch-children">
+            <div className="dispatch-children-label"><CornerDownRight size={11} />调度会话 · {children.length}</div>
+            {children.map((child) => {
+              const childThread = listThreads.find((t) => t.id === child.threadId);
+              return childThread ? <div className="dispatch-child" key={child.threadId}>{renderThreadRow(childThread, "member")}</div> : null;
+            })}
+          </div>
+        )}
+      </div>
+    );
+  });
 
   return (
     !popoutThreadId && <aside className={`sidebar ${mobileNav ? "mobile-open" : ""} ${sidebarFlyout ? "flyout-open" : ""}`} onMouseEnter={() => sidebarCollapsed && setSidebarFlyout(true)} onMouseLeave={() => sidebarCollapsed && setSidebarFlyout(false)}>        <div className="brand-row">
@@ -300,7 +323,12 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
                             <button className="danger" onClick={() => { setProjectMenu(null); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />移除（删除全部对话）</button>
                           </div>}
                         </div>
-                        {expanded && <div className="project-item-body">{renderClusterList([...items].sort((a, b) => Number(pinnedThreads.includes(b.id)) - Number(pinnedThreads.includes(a.id)) || b.updatedAt - a.updatedAt))}</div>}
+                        {expanded && <div className="project-item-body">{renderDispatchedList(
+                          [...items]
+                            // 子会话从顶层剔除（它们缩进挂在发起调度的会话下面，见 renderDispatchedList）
+                            .filter((entry) => !sourcedChildIds.has(entry.id))
+                            .sort((a, b) => Number(pinnedThreads.includes(b.id)) - Number(pinnedThreads.includes(a.id)) || b.updatedAt - a.updatedAt),
+                        )}</div>}
                       </div>
                     );
                   }) : <div className="empty-list">暂无项目</div>}
@@ -313,25 +341,8 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
                       <span>{g.label}</span><em>{g.items.length}</em>
                     </button>
                     {!collapsedSections.has(g.key) && <div className="conv-section-body">
-                      {/* 每个顶层会话渲染后，紧跟它**调度出去的会话**（缩进）—— 
-                          用户 09-25：「谁调度的，那个就要生成分类在调度的会话下面，方便看」。 */}
-                      {g.items.map((entry) => {
-                        const children = sourcedChildrenOf[entry.id] ?? [];
-                        return (
-                          <div className="dispatch-parent" key={entry.id}>
-                            {renderClusterList([entry])}
-                            {children.length > 0 && (
-                              <div className="dispatch-children">
-                                <div className="dispatch-children-label"><CornerDownRight size={11} />调度会话 · {children.length}</div>
-                                {children.map((child) => {
-                                  const childThread = listThreads.find((t) => t.id === child.threadId);
-                                  return childThread ? <div className="dispatch-child" key={child.threadId}>{renderThreadRow(childThread, "member")}</div> : null;
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                      {/* 顶层会话渲染后紧跟它**调度出去的会话**（缩进）—— 与项目视图共用同一实现。 */}
+                      {renderDispatchedList(g.items)}
                     </div>}
                   </section>
                 ))}</> : <div className="empty-list">{threads.length ? "当前筛选下暂无任务" : "暂无任务"}</div>

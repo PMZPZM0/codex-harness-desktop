@@ -1043,6 +1043,8 @@ export interface Bag {
   sourcedThreads: { key: string; label: string; items: import("../../app-view/types.ts").Thread[]; }[];
   allSourceGroupsCollapsed: boolean;
   sourcedChildrenOf: Record<string, { threadId: string; kind: string; name: string; }[]>;
+  sourcedDispatch: { childrenOf: Record<string, { threadId: string; kind: string; name: string; }[]>; childIds: Set<string>; };
+  sourcedChildIds: Set<string>;
   teamThreadsIndex: Record<string, string>;
   setTeamThreadsIndex: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   teamMemberThreadIds: Set<string>;

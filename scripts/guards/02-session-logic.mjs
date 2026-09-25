@@ -1347,6 +1347,11 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       (appSrc2.includes("resolveGroupCwd") && appSrc2.includes("dispatchCwdMap") ? ok : fail)("【156】项目分组用有效 cwd（part03 接线 resolveGroupCwd / dispatchCwdMap）");
       /* ⛔ 断言写法注意：readAppUi() 会归一化（剥掉 `bag.` 前缀），别按源码字面量写正则。 */
       (/cwdMap\[entry\.id\][\s\S]{0,200}?该项目下已无对话/.test(appSrc2) ? ok : fail)("【156】删除整个项目按**有效 cwd** 取目标（否则跟随过来的被调度会话删不掉 / 误删他项目会话）");
+      /* 项目视图与分类视图**共用**同一份调度归属渲染（09-25 用户：「项目里面也这样展示可以嘛」）——
+         ⛔ 断言「只有一份实现」：两个视图各写一份就会再次分叉成「分类有、项目没有」。 */
+      ((appSrc2.match(/dispatch-children-label/g) || []).length === 1 ? ok : fail)("【156】调度归属渲染只有一份实现（⛔ 不许分类/项目各写一份再分叉）");
+      (appSrc2.includes("renderDispatchedList(g.items)") ? ok : fail)("【156】分类视图用共用的调度归属渲染器");
+      (/renderDispatchedList\([\s\S]{0,260}?sourcedChildIds\.has\(entry\.id\)/.test(appSrc2) ? ok : fail)("【156】项目视图用同一渲染器 + 先把子会话从顶层剔除（否则同一会话显示两遍）");
     } catch (error) {
       fail("【156】thread-source.mjs 加载失败：" + error.message);
     }

@@ -256,10 +256,18 @@ bag.sourcedThreads = sourcedThreads as typeof bag.sourcedThreads;
 
   /* 「谁调度了谁」的归属（09-25 用户要求：「谁调度的，那个就要生成分类在调度的会话下面，方便看」）：
      被调度的会话（专家/子智能体/被调度的团队会话）挂在**发起调度的那个会话**下面缩进显示。
-     团队成员会话不在这里（它们由既有团队聚类挂在主理人行下）⇒ 传 skipIds 避免重复。 */
-  const sourcedChildrenOf = useMemo(() => buildDispatchChildren(bag.listThreads, bag.delegateRecords, { skipIds: bag.teamMemberThreadIds }).childrenOf,
+     团队成员会话不在这里（它们由既有团队聚类挂在主理人行下）⇒ 传 skipIds 避免重复。
+     ⛔ 「分类」与「项目」两个视图**共用**这份归属（用户 09-25：「项目里面也这样展示可以嘛」）：
+     childrenOf 给两个视图画缩进行，childIds 给两个视图把子会话从**顶层**剔除（否则同一会话显示两遍）。 */
+  const sourcedDispatch = useMemo(() => buildDispatchChildren(bag.listThreads, bag.delegateRecords, { skipIds: bag.teamMemberThreadIds }),
     [bag.listThreads, bag.delegateRecords, bag.teamMemberThreadIds]);
+bag.sourcedDispatch = sourcedDispatch as typeof bag.sourcedDispatch;
+
+  const sourcedChildrenOf = sourcedDispatch.childrenOf;
 bag.sourcedChildrenOf = sourcedChildrenOf as typeof bag.sourcedChildrenOf;
+
+  const sourcedChildIds = sourcedDispatch.childIds;
+bag.sourcedChildIds = sourcedChildIds as typeof bag.sourcedChildIds;
 
   const allSourceGroupsCollapsed = bag.sourcedThreads.length > 0 && bag.sourcedThreads.every((group) => bag.collapsedSections.has(group.key));
 bag.allSourceGroupsCollapsed = allSourceGroupsCollapsed as typeof bag.allSourceGroupsCollapsed;
@@ -285,5 +293,5 @@ bag.teamMemberThreadIds = teamMemberThreadIds as typeof bag.teamMemberThreadIds;
     }).catch(() => undefined);
     return () => { alive = false; };
   }, []);
-  return { currentModelId, usingCustomModel, providerConfig, listThreads, dispatchCwdMap, viewTab, setViewTab, expandedProjects, setExpandedProjects, toggleProjectExpanded, cwdOverrides, setCwdOverrides, cwdOverridesRef, rememberThreadCwd, effectiveCwd, withCwdOverride, nameOverrides, setNameOverrides, nameOverridesRef, rememberThreadName, effectiveThreadName, withNameOverride, projectMenu, setProjectMenu, pinnedThreads, setPinnedThreads, togglePinThread, projectGroups, allProjectsCollapsed, toggleAllProjects, projectAutoExpandRef, sourcedThreads, sourcedChildrenOf, allSourceGroupsCollapsed, teamThreadsIndex, setTeamThreadsIndex, teamMemberThreadIds, setTeamMemberThreadIds };
+  return { currentModelId, usingCustomModel, providerConfig, listThreads, dispatchCwdMap, viewTab, setViewTab, expandedProjects, setExpandedProjects, toggleProjectExpanded, cwdOverrides, setCwdOverrides, cwdOverridesRef, rememberThreadCwd, effectiveCwd, withCwdOverride, nameOverrides, setNameOverrides, nameOverridesRef, rememberThreadName, effectiveThreadName, withNameOverride, projectMenu, setProjectMenu, pinnedThreads, setPinnedThreads, togglePinThread, projectGroups, allProjectsCollapsed, toggleAllProjects, projectAutoExpandRef, sourcedThreads, sourcedDispatch, sourcedChildrenOf, sourcedChildIds, allSourceGroupsCollapsed, teamThreadsIndex, setTeamThreadsIndex, teamMemberThreadIds, setTeamMemberThreadIds };
 }
