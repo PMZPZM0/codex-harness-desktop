@@ -8,6 +8,7 @@
 import {
   C, ROOT, existsSync, fail, join, mainSrc, ok, preloadSrc, readFileSync, readMainSource, readModuleWithDir, readStyles, readdirSync, topLevelKeys, typesPath, typesSrc, walk, warn,
 } from "./_ctx.mjs";
+import { spawnSync } from "node:child_process";
 import { GEN_BEGIN, GEN_END, MANIFEST_PATH, PRELOAD_PATH, TYPES_PATH, generatePreloadRegion, generateTypesRegion, normalizeEol, regionOf } from "../lib/gen-ipc-core.mjs";
 
 export async function run() {
@@ -198,6 +199,17 @@ if (!mainSrc || !preloadSrc) {
       (unregistered.length === 0 ? ok : fail)(
         `【2】manifest 频道全部在 ipc-registry 登记（未登记 ${unregistered.length} 个：${unregistered.slice(0, 6).join(", ")}）`
       );
+      /* ── 【153】（09-25）：宿主接口清单技能与 manifest 同步（用户：「让 Codex 知道，不用一个个去扫」）──
+         技能正文由 scripts/gen-capability-skill.mjs 从 manifest+registry 生成（⛔ 正文必须字面量，【86】），
+         gen:ipc 已挂钩顺带重生成。这里真跑生成器 --check，比对落盘技能是否过期。 */
+      try {
+        const r = spawnSync(process.execPath, [join(ROOT, "scripts", "gen-capability-skill.mjs"), "--check"], { encoding: "utf8", timeout: 60000 });
+        (r.status === 0 ? ok : fail)("【153】harness-api 技能与 manifest/registry 一致（过期就重跑 npm run gen:ipc）");
+      } catch (error) {
+        fail(`【153】生成器 --check 跑不了：${error?.message ?? error}`);
+      }
+      const skillEntrySrc = readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8");
+      (skillEntrySrc.includes('"harness-api"') && skillEntrySrc.includes("HARNESS_API_SKILL") ? ok : fail)("【153】harness-api 技能已登记进 builtin-skills（漏登记 = 引擎永远看不到清单）");
       /* ── IPC 强化层（09-24）：invoke 走 __ipc（校验/归一化/超时表）、订阅走 __on（幂等+精确退订）── */
       const hardSrc = readFileSync(join(ROOT, "electron", "preload.ts"), "utf8");
       (/function __ipc\(/.test(hardSrc) ? ok : fail)("【2】__ipc 辅助存在（arity 前置校验 + 错误归一化 + 超时表）");

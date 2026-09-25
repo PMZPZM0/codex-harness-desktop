@@ -26,7 +26,7 @@
     "engine:verify": "node scripts/upgrade-codex-engine.cjs --verify-only",
     "start": "electron .",
     "dist": "npm run build && electron-builder --win nsis",
-    "gen:ipc": "node scripts/gen-ipc-bridge.mjs generate",
+    "gen:ipc": "node scripts/gen-ipc-bridge.mjs generate && node scripts/gen-capability-skill.mjs",
     "lint": "eslint ."
   },
   "dependencies": {

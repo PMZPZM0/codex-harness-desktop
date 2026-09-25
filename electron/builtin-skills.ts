@@ -18,6 +18,7 @@ import { MEMORY_HYGIENE_SKILL } from "./builtin-skills/10-skill-memory-hygiene";
 import { MEMORY_CLASSIFY_SKILL } from "./builtin-skills/11-skill-memory-classify";
 import { SKILL_AUDIT_SKILL } from "./builtin-skills/12-skill-skill-audit";
 import { MEMORY_MCP_SKILL } from "./builtin-skills/13-skill-memory-mcp";
+import { HARNESS_API_SKILL } from "./builtin-skills/14-skill-harness-api";
 import { effectiveMemoryBackend } from "./memory-backend";
 
 /** 已退役的内置技能：磁盘上的内容仍是**我们当初写的那份**时，随升级清掉目录 ——
@@ -55,6 +56,9 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     ["skill-audit", SKILL_AUDIT_SKILL],
     // 09-25：记忆后端 = MCP 时的写法（与 memory-classify 二选一，见下方互斥切换）
     ["memory-mcp-backend", MEMORY_MCP_SKILL],
+    // 09-25：宿主接口清单与可拓展能力（生成器产物，用户：「不用一个个去扫」）——
+    //  ⛔ 内容来自 scripts/gen-capability-skill.mjs，勿手改；加通道后重跑生成器（守卫【153】比对）
+    ["harness-api", HARNESS_API_SKILL],
   ];
   for (const [name, content] of entries) {
     const dir = path.join(skillsDir, name);
