@@ -1251,5 +1251,43 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     ? ok("档案为空时从渠道登录态自动恢复机器人卡片（已连接的不会隐身）")
     : fail("已连接渠道的卡片自动恢复缺失 —— 登录态在、卡片丢了就隐身");
 }
+
+  /* ══ 【156】侧栏「按来源分类」视图（09-25 用户要求）══════════════════════
+     会话按来源归类：主代理 / 专家团主理人 / 团队成员子任务 / 专家调度 / 子智能体调度 / 专家团调度。
+     口径收在纯模块 src/lib/thread-source.mjs ⇒ 这里**真跑**它断言分类判定与分组
+     （⛔ 只查字面量的断言抓不到分类逻辑跑偏 —— 分类错了 UI 照样渲染）。 */
+  {
+    console.log(C.bold("\n【156】侧栏「按来源分类」视图"));
+    const appSrc2 = readAppUi();
+    (appSrc2.includes('viewTab === "source"') ? ok : fail)("【156】侧栏有「分类」视图分支（第三个 view tab）");
+    (appSrc2.includes("groupThreadsBySource") ? ok : fail)("【156】分类视图走纯模块 groupThreadsBySource（口径单一真相源）");
+    try {
+      const mod = await import("file://" + join(ROOT, "src", "lib", "thread-source.mjs").replace(/\\/g, "/"));
+      const cases = [
+        [{ isTeamMember: true, teamId: "t1", delegateKind: "member" }, "member"],
+        [{ delegateKind: "expert" }, "expert"],
+        [{ delegateKind: "subagent" }, "subagent"],
+        [{ delegateKind: "team" }, "team"],
+        [{ teamId: "t1" }, "lead"],
+        [{}, "main"],
+      ];
+      const bad = [];
+      for (const [input, expect] of cases) {
+        const got = mod.classifyThreadSource(input);
+        if (got !== expect) bad.push(JSON.stringify(input) + "=" + got + "(期望" + expect + ")");
+      }
+      (bad.length === 0 ? ok : fail)("【156】分类判定 6 例全对" + (bad.length ? "（" + bad.join("；") + "）" : ""));
+      (mod.classifyThreadSource({ isTeamMember: true, delegateKind: "team" }) === "member" ? ok : fail)("【156】成员身份优先于调度记录（members 映射权威，不靠标题猜）");
+      const groups = mod.groupThreadsBySource(
+        [{ id: "a", updatedAt: 1 }, { id: "b", updatedAt: 2 }, { id: "c", updatedAt: 3 }],
+        { delegateRecords: { b: { kind: "expert" } }, teamThreadIndex: { c: "t1" }, teamMemberThreadIds: new Set(), pinnedThreadIds: [] }
+      );
+      const keys = groups.map((g) => g.key).join(",");
+      (keys === "source:main,source:lead,source:expert" ? ok : fail)("【156】分组顺序与键名正确（实得 " + keys + "）");
+      (groups.every((g) => g.label && g.items.length) ? ok : fail)("【156】每组都有标签与成员（空类不出现）");
+    } catch (error) {
+      fail("【156】thread-source.mjs 加载失败：" + error.message);
+    }
+  }
   }
 }

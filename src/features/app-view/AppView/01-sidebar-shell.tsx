@@ -37,6 +37,7 @@ import {
   Globe2,
   GripVertical,
   Hash,
+  Layers,
   Info,
   KeyRound,
   LayoutGrid,
@@ -200,6 +201,7 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
     buildStamp,
     bundleFile,
     sidebarAllCollapsed,
+    sourcedThreads,
     sidebarCollapsed,
     sidebarFlyout,
     startNewThread,
@@ -269,9 +271,12 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
             <div className="view-tabs" role="tablist" aria-label="视图">
               <button className={`view-tab ${viewTab === "groups" ? "active" : ""}`} onClick={() => setViewTab("groups")} title="按时间分组"><Hash size={14} /><span>分组</span></button>
               <button className={`view-tab ${viewTab === "projects" ? "active" : ""}`} onClick={() => setViewTab("projects")} title="按项目分组"><FolderOpen size={14} /><span>项目</span></button>
+              {/* 分类视图（09-25 用户要求）：按**会话来源**归类 —— 主代理 / 专家团主理人 /
+                  团队成员子任务 / 专家调度 / 子智能体调度 / 专家团调度（口径见 lib/thread-source.mjs） */}
+              <button className={`view-tab ${viewTab === "source" ? "active" : ""}`} onClick={() => setViewTab("source")} title="按会话来源分类"><Layers size={14} /><span>分类</span></button>
               <div className="view-toolbar">
                 <button className="view-toolbar-btn" title="刷新会话列表" onClick={() => { void refreshThreads().then(() => showToast("会话列表已刷新", "已重新读取全部会话")); }}><ListRestart size={14} /></button>
-                <button className="view-toolbar-btn" title={sidebarAllCollapsed ? "全部展开" : "全部折叠"} onClick={toggleAllSidebarSections} disabled={viewTab === "groups" ? !groupedThreads.length : !projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
+                <button className="view-toolbar-btn" title={sidebarAllCollapsed ? "全部展开" : "全部折叠"} onClick={toggleAllSidebarSections} disabled={viewTab === "groups" ? !groupedThreads.length : viewTab === "source" ? !sourcedThreads.length : !projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
               </div>
             </div>
             <div className="thread-list">
@@ -299,6 +304,16 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
                     );
                   }) : <div className="empty-list">暂无项目</div>}
                 </div>
+              ) : viewTab === "source" ? (
+                sourcedThreads.length ? <>{sourcedThreads.map((g) => (
+                  <section className="conv-section" key={g.key}>
+                    <button className="conv-section-label" title="折叠/展开分类" onClick={() => toggleSection(g.key)}>
+                      <ChevronDown size={12} className={`conv-section-chevron ${collapsedSections.has(g.key) ? "" : "open"}`} />
+                      <span>{g.label}</span><em>{g.items.length}</em>
+                    </button>
+                    {!collapsedSections.has(g.key) && <div className="conv-section-body">{renderClusterList(g.items)}</div>}
+                  </section>
+                ))}</> : <div className="empty-list">{threads.length ? "当前筛选下暂无任务" : "暂无任务"}</div>
               ) : listThreads.length ? (
                 <>
                   {groupedThreads.map((g) => {
