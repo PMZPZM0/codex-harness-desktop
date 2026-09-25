@@ -917,7 +917,7 @@ const appSrc4 = readAppUi();
   /* ══ 【136】委派并发闸不得被"残留运行中记录"永久占满（09-24，评估报告 §4.3）══
      status="running" 是**持久化**的，只有 delegation 的成功/失败两条路径会清；应用被中断
      （崩溃 / 关窗 / 引擎被杀）就永远留着 ⇒ runningCount() 只增不减 ⇒ 攒满
-     MAX_CONCURRENT_DISPATCH(4) 后 **admitDispatch 永久拒绝所有委派**，且跨重启累积
+     MAX_CONCURRENT_DISPATCH（见 dispatch.ts，09-25 为 10）后 **admitDispatch 永久拒绝所有委派**，且跨重启累积
      （prune() 只清 finished，救不了）。修法 = 启动时收敛 + 该窗口内的记忆构建必须降级。 */
   {
     const registrySrc = readFileSync(join(ROOT, "electron", "delegate-registry.ts"), "utf8");
