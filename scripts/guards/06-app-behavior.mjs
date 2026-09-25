@@ -1386,5 +1386,23 @@ w.postMessage({id:1,op:"list",root});
     (/ofc-type-a|ofc-zzz|ofc-sip/.test(officeCss) ? ok : fail)("【154】角色动画（敲键盘/打盹/端咖啡）存在");
   }
 
+  /* ══ 【155】团队调度的团队标识恢复（09-25 真机事故）═════════════════════
+     事故：重启后打开历史专家团会话，主理人调度 4/4 全失败，错误「专家团「」不存在」。
+     根因：runTeamMember 只从 teamThreadConfigRef / teamThreadMapRef 取 teamId，而这两个 ref
+     **只在本次运行「发起会话」时填充** —— 打开历史会话时没人恢复它们 ⇒ teamId = ""。
+     修复：① 主进程持久映射 teamOfThread 兜底（+ 回填 ref）
+           ② 打开会话时把映射同步进 ref（UI 与调度共用同一真相源）
+           ③ 拿不到就不发空 teamId，改为明确报错。
+     ⛔ 这条链断掉的表现极具迷惑性（工具可调用、通道通、只有 team 名是空串），必须钉住。 */
+  {
+    console.log(C.bold("\n【155】团队调度的团队标识恢复"));
+    const teamSrc = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part07", "02-seg", "02-team-sessions-skills.tsx"), "utf8");
+    (teamSrc.includes("window.codex.teamOfThread?.(leadThreadId)") ? ok : fail)("【155】runTeamMember 有主进程持久映射兜底（teamOfThread）");
+    (/bag\.teamThreadMapRef\.current\.set\(leadThreadId, teamId\)/.test(teamSrc) ? ok : fail)("【155】兜底拿到的 teamId 回填 ref（避免重复查询）");
+    (/if \(!teamId\) \{[\s\S]{0,320}?无法确定该会话所属的专家团/.test(teamSrc) ? ok : fail)("【155】拿不到团队标识 ⇒ 明确报错（⛔ 不得把空 teamId 发下去）");
+    const rolesSrc = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "01-mcp-teams-plan", "02-team-roles-import.tsx"), "utf8");
+    (/teamOfThread[\s\S]{0,400}?teamThreadMapRef\.current\.set\(id, String\(teamId\)\)/.test(rolesSrc) ? ok : fail)("【155】打开会话时把团队映射回填 ref（重启后调度/UI 都能恢复）");
+  }
+
   }
 }

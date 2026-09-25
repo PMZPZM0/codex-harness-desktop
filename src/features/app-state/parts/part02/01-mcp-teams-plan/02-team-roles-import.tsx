@@ -19,10 +19,16 @@ export function usePart02a2(bag: Bag) {
   useEffect(() => {
     const id = bag.thread?.id ?? "";
     if (!id) { bag.setThreadTeamId(""); return; }
-    bag.setThreadTeamId(bag.teamThreadMapRef.current.get(id) ?? "");
+    const cached = bag.teamThreadMapRef.current.get(id) ?? "";
+    bag.setThreadTeamId(cached);
     let alive = true;
     void window.codex.teamOfThread?.(id).then((teamId) => {
-      if (alive && teamId) bag.setThreadTeamId(String(teamId));
+      if (!alive || !teamId) return;
+      bag.setThreadTeamId(String(teamId));
+      // ⛔⛔ 必须回填 ref（09-25 事故）：ref 原先只在「发起会话」时填，
+      //    重启后成员调度（runTeamMember）读 ref 拿不到 teamId ⇒ 4/4 全失败「专家团「」不存在」。
+      //    主进程映射是持久真相源 ⇒ 打开会话时同步进 ref，UI 与调度都据此恢复。
+      bag.teamThreadMapRef.current.set(id, String(teamId));
     }).catch(() => undefined);
     return () => { alive = false; };
   }, [bag.thread?.id]);
