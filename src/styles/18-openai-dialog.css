@@ -102,7 +102,7 @@
   cursor: pointer;
   flex: none;
 }
-.accel-select:hover { border-color: var(--text-dim); }
+.accel-select:hover { border-color: var(--muted); }
 .accel-restart-hint { color: #f59e0b; margin-top: 8px; }
 
 /* Telegram Bot Token 连接面板 */
@@ -115,11 +115,11 @@
   color: var(--text);
   padding: 9px 12px;
   font-size: 13px;
-  font-family: var(--mono, Consolas, monospace);
+  font-family: var(--mono);
 }
-.tg-token-input:focus { border-color: var(--text-dim); outline: none; }
-.tg-token-input::placeholder { color: var(--text-dim); }
-.tg-token-status { color: var(--text-dim); font-size: 12.5px; }
+.tg-token-input:focus { border-color: var(--muted); outline: none; }
+.tg-token-input::placeholder { color: var(--muted); }
+.tg-token-status { color: var(--muted); font-size: 12.5px; }
 .bot-scan-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 
@@ -130,7 +130,7 @@
   border: 1px solid var(--line, #334155);
   border-radius: 12px;
   padding: 12px;
-  background: var(--bg-card, transparent);
+  background: transparent;
 }
 .mermaid-diagram svg {
   display: block;
@@ -138,7 +138,7 @@
   height: auto;
 }
 .mermaid-loading {
-  color: var(--text-dim, #94a3b8);
+  color: var(--muted);
   font-size: 13px;
   padding: 8px 4px;
 }
@@ -153,7 +153,7 @@
   border-radius: 8px;
   overflow-x: auto;
   color: var(--text, #e2e8f0);
-  font-family: var(--mono, Consolas, monospace);
+  font-family: var(--mono);
   font-size: 12px;
   white-space: pre-wrap;
 }
@@ -166,7 +166,7 @@
   gap: 12px;
   margin: 0 16px 10px;
   padding: 8px 12px;
-  border: 1px solid var(--border, rgba(148, 163, 184, 0.35));
+  border: 1px solid var(--line);
   border-left: 3px solid #f59e0b;
   border-radius: 10px;
   background: var(--panel, #fff);
@@ -199,7 +199,7 @@
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
-  border: 1px solid var(--border, rgba(148, 163, 184, 0.4));
+  border: 1px solid var(--line);
   border-radius: 7px;
   background: transparent;
   color: var(--text, #0f172a);
@@ -1320,7 +1320,7 @@
   /* 三色 conic 渐变：紫蓝 → 粉 → 橙（品牌感）；球面被内部高光 + 阴影"压"出 3D 体感。
      opacity 0.78 让背后的内容透出 = 透明 3D 玻璃 */
   background: conic-gradient(
-    from var(--orb-angle, 0deg) at 50% 50%,
+    from 0deg at 50% 50%,
     #a78bfa 0%,    /* 紫 */
     #6366f1 22%,   /* 靛 */
     #38bdf8 44%,   /* 天蓝 */
@@ -1343,7 +1343,7 @@
 /* 聆听：冷静青绿 + 旋快一点 + 眼睛更亮 */
 .voice-mascot-listening {
   background: conic-gradient(
-    from var(--orb-angle, 0deg) at 50% 50%,
+    from 0deg at 50% 50%,
     #5eead4 0%, #14b8a6 20%, #06b6d4 40%, #22d3ee 60%, #67e8f9 80%, #5eead4 100%
   );
   opacity: 0.85;
@@ -1352,7 +1352,7 @@
 /* 播报：暖橙 + 更快旋转 + 跟音量微微脉动 */
 .voice-mascot-speaking {
   background: conic-gradient(
-    from var(--orb-angle, 0deg) at 50% 50%,
+    from 0deg at 50% 50%,
     #fb923c 0%, #f97316 18%, #f43f5e 36%, #ec4899 54%, #fb923c 72%, #fbbf24 90%, #fb923c 100%
   );
   opacity: 0.88;

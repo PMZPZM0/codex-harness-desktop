@@ -325,7 +325,7 @@
   height: 20px;
   color: var(--faint);
 }
-.expert-team-cwd-clear:hover { color: var(--danger, #d64545); }
+.expert-team-cwd-clear:hover { color: var(--red); }
 /* 专家团卡片：角色直达会话，两列排列，成员较多时自然形成两排。 */
 .expert-team-member-chips {
   display: grid;
@@ -527,7 +527,7 @@
 .expert-team-member-chip {
   display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%;
   padding: 3px 9px 3px 4px; border-radius: 999px;
-  border: 1px solid var(--border, rgba(127, 127, 127, 0.25)); background: transparent;
+  border: 1px solid var(--line); background: transparent;
   font-size: 11px; color: var(--text); cursor: pointer;
   transition: border-color 0.12s, background 0.12s, translate 0.12s, box-shadow 0.2s;
 }
@@ -564,7 +564,7 @@
   box-shadow: 0 0 8px color-mix(in srgb, var(--ok) 55%, transparent);
 }
 .expert-team-member-chip-name { font-weight: 600; }
-.expert-team-member-chip-role { color: var(--text-secondary, #7a7a7a); font-size: 10px; }
+.expert-team-member-chip-role { color: var(--muted); font-size: 10px; }
 @media (max-width: 520px) {
   .expert-team-member-chips { grid-template-columns: 1fr; }
 }

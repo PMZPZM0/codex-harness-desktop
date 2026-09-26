@@ -436,25 +436,25 @@
   margin-left: 6px; padding: 1px 7px;
   border-radius: 999px;
   font-size: 10.5px; font-weight: 500;
-  color: var(--text-secondary, #666);
-  background: color-mix(in srgb, var(--text-primary, #111) 7%, transparent);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
   white-space: nowrap;
 }
 .thread-cluster-toggle {
   /* 09-14 用户反馈「展开按钮做好看一点」：此前是游离的小箭头，做成明确的圆形按钮 */
   display: inline-flex; align-items: center; justify-content: center;
   width: 24px; height: 24px; border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--text-primary, #111) 14%, transparent);
-  background: var(--color-background-primary, #fff);
-  color: var(--text-secondary, #666); cursor: pointer; padding: 0;
+  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+  background: var(--bg);
+  color: var(--muted); cursor: pointer; padding: 0;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 .thread-cluster-toggle:hover {
-  background: color-mix(in srgb, var(--blue, #3b82f6) 12%, transparent);
-  border-color: color-mix(in srgb, var(--blue, #3b82f6) 45%, transparent);
-  color: var(--blue, #3b82f6);
-  box-shadow: 0 2px 5px color-mix(in srgb, var(--blue, #3b82f6) 22%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+  box-shadow: 0 2px 5px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .thread-cluster-toggle svg { transition: transform 0.18s ease; }
 .thread-cluster-toggle svg.open { transform: rotate(180deg); }
@@ -463,7 +463,7 @@
      改动：缩进 26px→12px、竖线 2px 实线→1px 淡线、行紧凑、子行只留必要按钮。 */
   margin: 2px 0 4px 12px;
   padding: 2px 0 2px 8px;
-  border-left: 1px solid color-mix(in srgb, var(--text-primary, #111) 9%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--text) 9%, transparent);
   display: flex; flex-direction: column; gap: 0;
   /* 成员多/侧栏窄时限高滚动：不生硬堆出、不撑爆侧栏、不穿透外层列表 */
   /* 用户反馈「展开了原大分类看不到」：限高从 320px 收到 220px，展开后外层分类头仍可见 */
@@ -490,33 +490,33 @@
    点行体进主会话，行体自带归档/更多按钮，箭头额外挂在 actions 里。 */
 .team-cluster > .thread-row,
 .team-cluster-head {
-  background: color-mix(in srgb, var(--blue, #3b82f6) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--blue, #3b82f6) 18%, transparent);
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--blue, #3b82f6) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
 }
 /* 展开箭头：圆形描边按钮，hover 变蓝（与归档/更多区分开） */
 .team-cluster > .thread-row .thread-cluster-toggle,
 .team-cluster-head .thread-cluster-toggle { margin-right: 2px; }
-.team-cluster-head:hover { background: color-mix(in srgb, var(--text-primary, #111) 8%, transparent); }
+.team-cluster-head:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
 .team-cluster-head .thread-row-title-line > span:first-child {
-  font-weight: 600; color: var(--color-text-primary, var(--text, #111));
+  font-weight: 600; color: var(--text);
 }
 /* 组内主会话行：左侧细色条标识身份 + 「主会话」小标签 */
 .team-cluster-body .thread-row:not(.is-member-row) {
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--blue, #3b82f6) 45%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .team-cluster-role {
   display: inline-flex; align-items: center;
   margin-left: 6px; padding: 0 6px;
   height: 15px; border-radius: 999px;
   font-size: 10px; font-weight: 500;
-  color: var(--blue, #3b82f6);
-  background: color-mix(in srgb, var(--blue, #3b82f6) 12%, transparent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   white-space: nowrap;
 }
 /* 成员会话行：次要层级（更小更淡，退后一层） */
 .team-cluster-body .thread-row.is-member-row .thread-row-title-line > span:first-child {
-  font-weight: 400; color: var(--text-secondary, #666);
+  font-weight: 400; color: var(--muted);
 }
 .team-cluster-body .thread-row.is-member-row small { opacity: 0.75; }
 /* 归档/更多按钮 24→20px：hover 时总占用从 78px 降到 ~44px，标题不再被挤到点不中 */
@@ -529,7 +529,7 @@
 .team-cluster-label {
   margin: 6px 0 2px;
   font-size: 10.5px; font-weight: 600;
-  color: var(--text-tertiary, #999);
+  color: var(--faint);
   letter-spacing: 0.04em;
 }
 .team-cluster-body .thread-row { padding-left: 2px; }

@@ -348,10 +348,24 @@ if (!existsSync(stylesEntry)) {
    这类**从未定义的变量**（全仓库没有一处 `--color-*:` 声明）⇒ 永远落在亮色 fallback，
    暗色主题下菜单白底黑字。修法 = 换真 tokens（--bg/--panel-2/--line/--text/--muted/
    --faint/--accent(--soft)），真机 CDP 实测亮色逐值不变、暗色全部跟随。
-   ⛔ 负向断言：welcome-cwd 块内不许再引用这三类未定义变量（改回去 = 事故复现）。
-   ⚠️ 范围只钉这一块 —— 其它文件还有同病残留（19-misc-hints 的 --color-* 两处、
-   --blue 25 处），那些是**亮色 fallback 在两主题下都还可看**的存量，待用户拍板再扫。 */
+   09-26 全库扫：81+12 处未定义变量全部清零（--blue/--amber 家族 → accent/orange、
+   --text-* 家族 → text/muted/faint、死变量写死 fallback、补 --purple/--mono 两主题定义）。
+   ⛔ 下面第一条是**定义对账**（比逐家族枚举强）：引用 − 定义 − 白名单必须为空 ——
+   今后任何人引用任何未定义变量（哪怕 fallback "看着还行"）预检直接红。 */
 {
+  const allStyles = readStyles().replace(/\/\*[\s\S]*?\*\//g, "");   // 剥块注释（注释里解释事故会写出同名字串，假红）
+  const defined = new Set([...allStyles.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
+  const refs = new Set([...allStyles.matchAll(/var\((--[\w-]+)/g)].map((m) => m[1]));
+  /* 白名单（各自有合法来源，不是「忘了定义」）：
+     · --effort-color / --fill-color（EffortPicker 内联注入）· --t / --voice-level（VoiceCallFloat 注入）
+     · --submenu-top（composer-form 内联注入）· --vscode-scrollbar-shadow（xterm/VS Code 宿主约定，fallback #000） */
+  const whitelist = new Set(["--effort-color", "--fill-color", "--t", "--submenu-top", "--voice-level", "--vscode-scrollbar-shadow"]);
+  const orphan = [...refs].filter((v) => !defined.has(v) && !whitelist.has(v));
+  (orphan.length === 0 ? ok : fail)(
+    orphan.length
+      ? `【160】CSS 变量定义对账：${orphan.length} 个变量被引用但从未定义（暗色主题下恒落亮色 fallback）：${orphan.join(", ")}`
+      : "【160】CSS 变量定义对账：每个 var() 引用都有定义/注入/外部约定（两主题跟随的前提）"
+  );
   const cards = readFileSync(join(ROOT, "src", "styles", "17-visual-cards.css"), "utf8").replace(/\r/g, "");
   const start = cards.indexOf(".welcome-cwd-picker");
   const end = cards.indexOf("── /plan 方案审阅卡");

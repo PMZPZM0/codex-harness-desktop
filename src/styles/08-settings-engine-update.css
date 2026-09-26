@@ -225,7 +225,7 @@
 .capability-why,
 .capability-alt,
 .capability-note { grid-column: 1 / -1; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
-.capability-note { color: var(--amber, #d97706); }
+.capability-note { color: var(--orange); }
 .devtools-source-row .settings-subhead { margin: 0; }
 .devtools-source-row .settings-card-hint { margin: 0; flex: 1 1 260px; min-width: 220px; }
 .runtime-row.busy { background: color-mix(in srgb, var(--panel-2) 40%, var(--bg)); }
@@ -375,7 +375,7 @@
   border-bottom-width: 2px;
   border-radius: 5px;
   padding: 2px 7px;
-  font-family: var(--mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-family: var(--mono);
   font-size: 11px;
   white-space: nowrap;
 }
@@ -1397,7 +1397,7 @@
 }
 /* 漏斗视觉：P0 最窄/最显眼，P3 最宽最不强调 */
 .memory-funnel-P0 { border-color: color-mix(in srgb, var(--green) 45%, var(--line-soft)); box-shadow: 0 2px 12px color-mix(in srgb, var(--green) 8%, transparent); }
-.memory-funnel-P1 { border-color: color-mix(in srgb, var(--blue, #4a90e2) 25%, var(--line-soft)); }
+.memory-funnel-P1 { border-color: color-mix(in srgb, var(--accent) 25%, var(--line-soft)); }
 .memory-funnel-P3 { opacity: .9; background: color-mix(in srgb, var(--text) 2%, var(--panel)); }
 
 .memory-funnel-layer-head {
@@ -1508,7 +1508,7 @@
 .memory-card-pin-badge,
 .memory-pin-badge { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); border-radius: 6px; padding: 2px 6px; font-size: 10px; font-weight: 500; }
 .memory-card-workspace,
-.memory-ws-badge { background: color-mix(in srgb, var(--blue, #4a90e2) 14%, transparent); color: var(--blue, #4a90e2); border-radius: 6px; padding: 2px 6px; font-size: 10px; }
+.memory-ws-badge { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); border-radius: 6px; padding: 2px 6px; font-size: 10px; }
 .memory-category-pill {
   background: color-mix(in srgb, var(--green) 13%, var(--bg));
   color: var(--green);
@@ -1551,7 +1551,7 @@
   color: var(--muted);
 }
 .memory-hygiene-layer.hot {
-  color: var(--amber, #d99000);
+  color: var(--orange);
 }
 .memory-hygiene-id {
   color: var(--faint);
@@ -1574,10 +1574,10 @@
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: 999px;
-  background: var(--blue, #4a90e2);
+  background: var(--accent);
 }
 .memory-hygiene-layer.hot .memory-hygiene-bar > i {
-  background: var(--amber, #d99000);
+  background: var(--orange);
 }
 .memory-hygiene-pct {
   text-align: right;
@@ -1597,7 +1597,7 @@
 }
 .memory-hygiene-group.key {
   color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--amber, #d99000);
+  box-shadow: inset 0 0 0 1px var(--orange);
 }
 .memory-hygiene-group b {
   color: var(--text);
@@ -1649,7 +1649,7 @@
   gap: 6px;
 }
 .memory-hygiene-action .secondary-setting.suggested {
-  box-shadow: inset 0 0 0 1px var(--amber, #d99000);
+  box-shadow: inset 0 0 0 1px var(--orange);
 }
 .memory-hygiene-confirm {
   display: flex;
@@ -1664,7 +1664,7 @@
 }
 .memory-hygiene-confirm > span {
   flex: 1 1 220px;
-  color: var(--amber, #d99000);
+  color: var(--orange);
 }
 .memory-hygiene-rules {
   margin-top: 2px;
@@ -1698,7 +1698,7 @@
 .memory-pyramid { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 12px; }
 .memory-pyramid-head { align-items: flex-start; justify-content: space-between; gap: 12px; display: flex; flex-wrap: wrap; }
 .memory-pyramid-title { gap: 10px; display: flex; align-items: flex-start; min-width: 0; }
-.memory-pyramid-icon { background: color-mix(in srgb, var(--blue, #4a90e2) 12%, var(--bg)); width: 30px; height: 30px; border-radius: 9px; place-items: center; display: grid; color: var(--blue, #4a90e2); flex: none; }
+.memory-pyramid-icon { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); width: 30px; height: 30px; border-radius: 9px; place-items: center; display: grid; color: var(--accent); flex: none; }
 .memory-pyramid-title div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .memory-pyramid-title strong { font-size: 13px; font-weight: 600; color: var(--text); }
 .memory-pyramid-title span { font-size: 11px; color: var(--muted); }
