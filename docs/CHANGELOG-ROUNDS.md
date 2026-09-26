@@ -2349,3 +2349,199 @@ localStorage 脏值。外观页由注册表 `map` 渲染，**新增主题 = 表�
     预检里所有探针类守卫（type-stripping 4 + tomllib【28】10 + before-pack 等 19 项）无法在
     会话内跑通 —— 手工等价验证走一级 Bash 直接调（node --experimental-strip-types / python -c）。
     明天可能恢复；若持续，探针守卫需换执行通道。
+
+
+---
+
+> 以下由 AGENTS.md 于 2026-09-26 二次拆骨迁入（09-24/09-25 期间新堆回的历史小节）。
+> 与文件头同一条纪律：**只增不回迁**。现行规则只看 AGENTS.md。
+
+### ⛔ 停止链路与 runtime-refs 下沉（09-24 下午，守卫【131】【132】）
+
+- **委派场景「无法停止 + 反复弹窗」（老版本用户截图：expected active turn id <X> but found <Y> 反复弹）**：
+  宿主记录的回合已结束、引擎活跃回合已切到 <Y> ⇒ interrupt 被拒。修法（part08/03-seg.tsx）：
+  ① 从报错捕获 `but found <Y>` → **按真实回合重试中断**（那回合还在烧 token，必须真停）；
+  ② 重试也失败/其它失败 → **一律复位运行态**（setSending(false) 等），绝不挂着「运行中」让用户反复点。
+  ⛔【131】钉死两条；voice 侧同款 catch 只打日志（语音不涉及运行态 UI，无需改）。
+- **P2-9 收敛**：electron/features/** 的 `from "../main"` 163 处引用清到白名单 9 符号：
+  B 类（经 main 转发的）机械直连源模块（75+9 符号）；C 类 41 符号下沉 **electron/runtime-refs.ts**
+  （路径组走 initRuntimePaths()——⛔ main.ts 必须在 app.setPath("userData") 之后立即调；
+  类单例构造仍在 main.ts 启动链、setXxx 注入；复杂闭包 mutableState/bridgeDial/enrichScanCountSnapshot/
+  filePreviewAllowed/remote/scheduler/voiceService/channelBot/botPairing 留 main = 白名单【132】）。
+- ⛔ 行号制手术（行内替换 + 降序删除）：通用括号扫描器在 `(paths: …) => {` 箭头参上会误判块结束
+  ——别再用「depth 归零即块尾」，要「归零且当前字符是 ; 或 }」。
+
+### ⛔ 审计报告遗漏项补修（09-24 下午，守卫【143】【144】【145】）
+
+- **§2.2 断环**：`main → runtime-refs → main/01-model-catalog → main` 已断。做法是拆出两个**叶子模块**：
+  · `electron/runtime-paths.ts`：9 个 userData 路径常量 + `initRuntimePaths()`（⛔ main.ts 必须在
+    `app.setPath("userData")` 之后立刻调，自带 once）。它是叶子（只 import electron / node）⇒ 谁都能安全依赖。
+  · `electron/upstream-protocols.ts`：协议表 + `syncUpstreamProtocols` + `normalizeUpstreamProtocol`。
+  · ⛔ 关键教训：**别把路径放进 runtime-refs** —— runtime-refs 反过来要 import 01-model-catalog
+    （upsertCustomModel 用 readCustomModels）⇒ 会生成新环。叶子模块是唯一安全形态。
+  · `runtime-refs.ts` 路径组改为 `export { … } from "./runtime-paths"`（CJS 产物是
+    `Object.defineProperty(get)` ⇒ **活绑定，不是快照**，已在 dist-electron 上验证）。
+  · 守卫【143】：01-model-catalog 必断 + main/** 历史引用冻结上限 10（不增长）。
+- **§3.5 更新检查**：`updates.ts` 加 `parseVersion` / `compareVersions`，取代「字符串不等即更新」
+  （旧写法：任何不同 tag 含更旧的都报 hasUpdate）；stable 通道尊重 `prerelease`
+  （**本地是预发布版时除外**，否则 beta 用户永远收不到更新）。守卫【144】含 7 组行为用例。
+- **§2.8 守卫缺口**：`accelerator.ts` 与收藏夹从「只看文本」升级为**行为断言**（跑 dist-electron 产物）：
+  sanitizeAccelerator 7 组（无修饰键回落 / 修饰键归一排序）、acceleratorLabel 2 组、
+  收藏夹 4 组（addFavorite 真落盘、**空 id 列表不删**、只删指定 id、clear 独立计数）——
+  收藏夹用 `mkdtempSync` 临时目录，**不碰用户真实数据**。守卫【145】。
+- **§6 清理**：`docs/posters`（9.1 MB，无引用）移入 `archive/posters`（不删，可逆）；
+  `build/icon-b-*`、`icon-c-*` 两套竞争图标删除（18 文件，`icon-preview.html` 同步去掉 B/C 卡片）；
+  `.playwright-cli/page-*.yml` 出库（`git rm --cached`）；`installer.nsh` 文案更正
+  （cloakbrowser 与浏览器内核是自 09-16 起**按需下载**，不再声称随包）。
+- **自检阈值修正**：原「精确区间」在宿主封锁子进程时会把 19 条环境失败误报成「断言消失」；
+  现在检测到环境类失败时只告警并提示复核，环境正常才硬卡（基准 2276，改守卫必须同步）。
+- ⚠️ **报告 §6 的一条结论已过时**：`.codex/skills/preflight-guard-authoring/SKILL.md:32` 实际已经改成
+  「不做反证，此前要求的『故意改坏一次』已作废」——不必再改。真冲突的是
+  `.codex-harness/memory/lessons/pitfalls.md:4`（记着"搬路径常量别再试第二次"，与已落地的
+  runtime-paths 冲突），已改写为「结论作废 + 已落地做法」（该文件 gitignore，评审看不到，故同步于此）。
+
+### 搜索改为「当前会话内」+ 修用户消息搜不到（09-24 下午，副本待提交）
+
+- **用户两次纠正**：①「回车提示这个啊，没有跳转到那个消息」（截图 = `Session … is archived. Run codex unarchive`
+  —— 跨会话面板点到了**已归档**会话，引擎直接拒）；②「这个搜索只展示当前会话的历史记录，不要展示其他的」。
+- **定案**：顶栏 🔍 改为**当前会话搜索**（不再跨会话），点击结果**跳到那条消息**。
+  复用项目里已存在但**没有 UI** 的会话内搜索能力（`bag.chatSearchQuery` / `chatSearchResults` /
+  `chatSearchGo` / `locateMatchEl` / part04 的高亮 useLayoutEffect）。
+  ⛔ 开关必须复用 `bag.chatSearchOpen` **单一真相源**：Ctrl+Shift+F 也走它，另立局部 state 会导致
+  「快捷键把结果算出来、高亮打上，却不显示面板」（实测设计缺陷）。
+  ⛔ 跨会话实现（history:search IPC + 墓碑过滤）**保留但不接 UI**（用户明确不要看到其他会话）。
+- **顺手修掉一个真 bug（用户消息搜不到）**：`collectMessageTexts` 只看 `item.text`，而
+  **userMessage 的正文在 `content[]` 里**（item.text 为空）⇒ 用户自己发的消息一律搜不到。
+  实测证据：DOM 上明明显示「请严格按顺序做三件事…」，搜它 **0 命中**；而搜助手消息里的「的」
+  能命中 5 处 —— 一半内容搜不到。改用 `itemText(item)`（按 type 取正确字段）后：该词 **2 处命中**、
+  「的」10 处。守卫【146】新增一条钉死。
+- **测试姿势的两次教训（都是我自己取样错，不是产品 bug）**：
+  ① 关键词从整个 `.timeline` 取 ⇒ 取到「加载更早的消息」「请严格\n按顺序」这类 UI 文案/跨行文本
+     （原文里不连续 ⇒ 必然 0 命中）。正解：只从 `.message-body` 取，且用 `[\u4e00-\u9fa5]{6,}`
+     **不跨换行**地取。
+  ② 诊断脚本传 `workspace: null` ⇒ 应用停在「尚未选择工作区」、消息根本发不出去 ⇒ 会话为空、
+     搜什么都是 0 命中。**验收项必须先断言「当前会话有正文」**（没有就点侧栏会话直到有内容，
+     始终没有则明确报环境不满足）——已加为该验收项的前置条件。
+- accept 的 history-search 项重写为：顶栏 🔍 存在 → 面板 portal → 不存在的词明确「当前会话里没有匹配」
+  → 取当前会话真实关键词 → 有命中 → **点击后该消息拿到 .msg-search-highlight 高亮**（真的跳过去了）。
+- 验证：tsc 0 / check 非环境失败 0 / accept **10/10**。
+
+### ⛔ 断环收尾：electron/main/** 零反向依赖（09-24 晚，守卫【143】【147】）
+
+- **从「冻结上限 10」到「硬性 0」**：此前 `electron/main/**` 有 10 个文件反向 `import ... from "../main"`
+  （01 之外），与已修好的环并列为「已知尾巴」。本轮全部断干净，守卫上限**删除**，改为必须 0：
+  - 5 个 userData 路径 → **electron/runtime-paths.ts**（`memoryModeFile`/`mcpOverridesFile`/`connectorsFile`/
+    `builtinPluginsFile`/`subAgentsFile`，均在 `initRuntimePaths()` 里赋值 —— 时序与原 main.ts 顶层一致，
+    因为原声明也在 `app.setPath("userData")` 之后）；
+  - `internalThreads`（Set 容器）→ **electron/runtime-refs.ts**；
+  - `responsesBridge` 单例 + `bridgeDial` → 新叶子 **electron/bridge-dial.ts**（依赖只有 responses-bridge
+    与 upstream-protocols，都是叶子）；main.ts 按名 import 后原样 re-export，feature 侧引用名不变；
+  - `gitBinCache` → 归其**唯一**使用模块 `main/02-git-bin.ts`（改模块局部 `let`，main.ts 退出）；
+  - 04-connector-config 的 `McpOverrides`/`ConnectorConfig`/`decryptSecret`/`safeConnectorId`/`escapeToml`/
+    `readStoredChannelBot` → **同目录直连** `./06-mcp-overrides` / `./07-connectors-io` / `./08-channel-bot-io`。
+- ⛔⛔ **顺手抓到一个真环（本轮最大发现）**：`runtime-refs → main/01-model-catalog → features/window-factory
+  → runtime-refs`。最后一条边是 `01-model-catalog` 里的**死导入**（`createWindow`/`createPopoutWindow`
+  只在该文件的**注释**里出现）。**这类环 tsc 不报、既有守卫全绿**，只在运行时让模块拿到部分初始化的
+  exports（行为取决于求值时机 —— 今天恰好安全，改一行就未必）。删死导入即断环。
+  ⇒ 新增守卫 **【147】**：源码级剥注释建 import 图，Tarjan 求 size&gt;1 的 SCC，
+  `runtime-refs` + 三个叶子**不得出现在任何环里**（【143】只管叶子自身的直接依赖，管不到这个）。
+- ⛔ **环检测器必须剥注释**：注释里写 `from "…"` 会被裸正则当成真 import —— 我自己写的「此处原先 import …」
+  注释就让断掉的老环在检测器里「复活」了一次（本项目已记录的最危险假象：以代码为准，注释只是线索）。
+- ⛔ **同一类「假红」再现**：守卫【143】首版用裸正则扫 `main/**`，被 `01-model-catalog` 注释里的
+  `from "../main"` 命中 ⇒ 用 `codeOnly`（剥注释）后才是真判据。
+- **顺带修好上一轮漏下的【93】bag-types 漂移**：「会话内搜索」改造删了 10 个 `historySearch*` 字段、
+  新增了 `closeHistoryPanel`/`jumpToHit`，但上一轮最后一次完整 `npm run check` 跑在收尾改动**之前**
+  ⇒ 【93】红了却没被拦（正是项目记录的「check 是一条链，别漏跑 check-bag-types」）。已补齐
+  1370 项对齐。**纪律重申：提交前的 check 必须在当轮最后一次改动之后跑。**
+- **验证**：tsc 双 tsconfig 0 诊断；eslint 0 errors；`npm run check` 非环境硬失败 0（含【93】/【143】/【147】）；
+  accept 真机 **10/10**（启动链被改，必须验）；源码级环图：三个叶子 **0 环**、`runtime-refs` 亦退出大 SCC。
+
+### ⛔ 正文 Markdown 渲染：列表尾部的「结语行」（09-24，守卫【149】）
+
+- **现象**（用户截图：「最后一个总是歪的，前面空那么多」）：列表最后一项后面紧跟一行**顶格**结语
+  （模型常忘加空行），CommonMark 判定它是该项的 lazy 续行 ⇒ 渲染成
+  `<li>四通八达<br/>1–10 全是「数字开头」</li>` ⇒ 结语从 marker 之后起排、左侧空出 marker 宽度
+  （`.markdown ol/ul { padding-left: 21px }`）。
+  证据 = **离线等价渲染**（同 react-markdown@10 + remark-gfm + remark-breaks + 同 components.p）：
+  源 `…\n30. 四通八达\n1–10 全是…` ⇒ `<li>四通八达<br/>1–10 全是…</li>`；
+  中间加一个空行 ⇒ 变成 `</ol><p>1–10 全是…</p>`（正常左对齐）。
+- **修法**：分块函数从 `Markdown.tsx` 搬到 **`src/lib/markdown-blocks.mjs`**（纯函数 ⇒ 守卫能直接跑真值表），
+  新增 `softenListTailLazyContinuation`：只在「**块尾 + 顶格 + 非列表项/非块级开头**」三条同时成立时，
+  在那行前**补一个空行**（不是拆块 —— 块数不变 ⇒ 流式期间 `<MdBlock>` 的 key 稳定、组件不会重挂载）。
+- ⛔ **围栏感知是必须的**：代码块（含流式**未闭合**的 ```）内部绝不能注入空行 —— 那等于改代码内容。
+  实现逐行记录「该行开始前是否已在围栏内」，围栏内的行直接停手（守卫有"已闭合/未闭合"两条反向用例）。
+- ⛔ 判据刻意窄：**缩进的续行**（作者本意就是列表项内换行）、纯段落、块级开头（引用/标题/分隔线）
+  一律不动；"中间夹着结语再继续列表"的也不动（只治尾部）。
+  守卫【149】= 静态（分块只允许一份实现，`Markdown.tsx` 不许再出现本地 `splitMarkdown`）
+  + 跑真代码的真值表（正向必拆 / 反向必不拆）。
+- ⛔ **用户消息不走 Markdown 渲染**（`UserMessageView` 用的是 `<p className="user-message-text">`）⇒
+  这条修复**不能靠"发一条用户消息"在 accept 里端到端验**，只能靠离线等价渲染 + 真机回归（不崩、验收项全绿）。
+
+### 追加：同一症状的第二种成因 —— 正文行首/行尾的**全角空格**（09-24 二次反馈，守卫【149】）
+
+- 用户第二次反馈时给了完整上下文截图：**列表 → 明显空档 → 仍然缩进的两行**。
+  ⛔ 这个形态**排除**了「列表 lazy 续行」（那种是紧贴、无空档），也排除了「普通独立段落」（那种必须顶格）
+  ⇒ 剩下的解释只有一个：**缩进来自文本本身** —— 行首的全角空格 U+3000。
+- ⛔ 关键机制：**HTML 只折叠 ASCII 空白（U+0020 / U+0009）与换行；U+3000 与 U+00A0 不参与折叠**
+  ⇒ 行首一个全角空格 = 渲染出一格宽（≈ font-size）的可见空白；行尾那种还会把长行挤折、多出一行。
+  （半角空格不用管：行首/行尾的 ASCII 空白浏览器自己会折叠掉，没有视觉影响。）
+- 修法：`trimInvisibleSpace` —— 只对**非围栏行**去掉行首/行尾的 U+3000 / U+00A0；
+  **行中间的不动**（排版间隔是合理的），**ASCII 前导空格不动**（那是 markdown 缩进语义）。
+- ⛔ 排查这类「缩进 / 空白」问题的顺序（本轮踩实）：
+  ① 先看**间距**：与大间距并存 ⇒ 是独立块（缩进必来自内容）；紧贴上一行 ⇒ 才可能是列表 lazy 续行。
+  ② 再用**离线等价渲染**（`react-dom/server` + 同版本 react-markdown + 同插件 + 同 `components.p`）
+     枚举候选源（顶格 / 缩进 / 全角空格 / 有空行 / 无空行），看哪种 HTML 结构吻合 —— 五分钟出结论。
+  ③ ⛔ **别指望拿用户实例的 rollout 取证**：本轮试过 `AppData\Roaming\Codex Harness Desktop\codex-home`、
+     `~/.codex/sessions`、D 盘 maxdepth 5 的 `codex-home` 三处全部扑空（用户跑的实例 userData 不在
+     这些位置，且它的快捷方式里没有 `CODEX_HARNESS_USER_DATA`）；也别用 `wmic`（宿主黑名单已封）。
+
+### 🧠 记忆后端二选一（09-25 立，守卫【150】）
+
+用户要求：「启用 MCP 记忆就优先用 MCP，不要 MCP 写了记忆又用金字塔记忆，这样重复了」。
+
+**两个后端互斥，同一时刻只用一个**：
+
+| 后端 | 设置值 | 写入去哪 | 配套技能 |
+|---|---|---|---|
+| 内置记忆金字塔（**默认**） | `memoryBackend: "builtin"` | 工作区 `lessons/*.md` + `MEMORY.md`（`MemoryLayers.appendLesson`） | `memory-classify` |
+| MCP 记忆服务 | `memoryBackend: "mcp"` | MCP 工具（`@vheins/local-memory-mcp`） | `memory-mcp-backend` |
+
+- 设置项在 `app-settings.json` 的 `memoryBackend`（类型见 `electron/app-settings.ts`；新开关一律加那里）。
+- **互斥的实现点**（改了会红）：
+  1. `electron/memory-backend.ts` = 后端判定的**叶子模块**。⛔ 不许把它放进 `runtime-refs.ts`
+     —— 后者已 import `memory-layers`，反向引用会成 require 环（守卫【147】同族）。
+  2. `MemoryLayers.appendLesson()` 开头让位：`memoryBackend() === "mcp"` 时直接 `return false`
+     ⇒ 内置金字塔**停止捕获**，不会与 MCP 各存一份。
+  3. `ensureBuiltinSkills()` 末尾按后端**改名切换** `SKILL.md ⇄ SKILL.md.disabled`：
+     mcp → 只启用 `memory-mcp-backend`；builtin → 只启用 `memory-classify`。
+     （改名而非删除，切回来立刻恢复。）
+
+**MCP 记忆服务是可选安装，不内置**（不进 package.json 依赖、不随包发布）：
+
+```bash
+node scripts/install-memory-mcp.cjs              # 装到 <userData>/memory-mcp（独立 package.json）
+node scripts/install-memory-mcp.cjs --check      # 0=已装 / 2=未装
+node scripts/install-memory-mcp.cjs --uninstall  # 删目录即可
+node scripts/install-memory-mcp.cjs --ignore-scripts  # 受限环境逃生口（会缺原生构建产物，慎用）
+```
+
+⛔ 已知环境坑：本机封 node 内嵌 spawn ⇒ 带 postinstall 的依赖（esbuild / better-sqlite3）装不上原生产物，
+用 `--ignore-scripts` 能装上但 **better-sqlite3 缺 `build/Release/*.node`，服务起不来** ⇒ 端到端写读验证在本机做不了
+（用户机器无此限制）。连接器接入：以 `connectors.json` 注册 stdio 服务器
+（`node <userData>/memory-mcp/node_modules/@vheins/local-memory-mcp/bin/mcp-memory-server.js`，
+`MEMORY_DB_PATH` 指到 userData）；⛔ 不要手改 `config.toml` 的 `mcp_servers`（那是 harness 生成的）。
+
+### ⛔ 记忆后端必须用「带回退」的判定（09-25 追加，守卫【150】）
+
+用户 09-25：「你弄好，如果我的电脑不行，用户电脑肯定也不行」—— 指向一个真实缺陷：
+这个 MCP 服务依赖原生模块（better-sqlite3）+ 带 postinstall 的依赖（esbuild），在
+**禁 npm scripts / 无构建工具链 / 取不到预编译二进制**的环境里会**装得上但起不来**。
+
+- 捕获链与技能互斥一律用 `effectiveMemoryBackend()`（**不是** `memoryBackend()`）：
+  选了 mcp 但服务入口缺失 ⇒ **回退内置金字塔**并 `console.warn`。
+  ⛔ 若此处按裸 `memoryBackend()` 让位，坏安装环境下会**记忆一处都不写 = 彻底丢记忆** ——
+  这比"重复"严重得多，所以宁可回退。
+- 安装器必须提供 `--verify`（真起一次服务做 MCP 握手，15s 超时）：只判文件存在会把坏安装报成"已就绪"。
+  实测本机：`--verify` → `{installed:true, verified:false, error:"服务退出码 1（原生模块未构建）"}`。
+- 用户侧兼容性结论（写进给用户的答复）：Windows + 正常网络下 better-sqlite3 走 prebuild 下载，通常能装；
+  装不上时**自动回退内置**，不丢记忆；`--ignore-scripts` 是受限环境的逃生口（会缺原生产物，须配 `--verify` 自证）。
