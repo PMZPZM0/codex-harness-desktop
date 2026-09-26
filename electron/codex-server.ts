@@ -232,7 +232,13 @@ export class CodexServer extends EventEmitter {
       CODEX_HARNESS_API_KEY: this.apiKey,
       CODEX_INTERNAL_APP_SERVER_REMOTE_CONTROL_DISABLED: "1",
     };
-    this.child = spawn(binary, ["app-server", "--listen", "stdio://"], {
+    // ⛔ project_doc_max_bytes（09-26 实测）：引擎读 <cwd>/AGENTS.md 并注入会话上下文，但默认上限
+    //   只有 32768 字节，超出部分**静默截断**（不报错、也不加"已截断"提示）。本项目 AGENTS.md
+    //   已 64KB ⇒ 尾部一半规则（工具链清单 / 能力清单 / 初始化原则 / 记忆后端…）根本进不了模型，
+    //   表现为"规章写了但 agent 不照做"。实测：加此参数后 129890 字节完整注入；且引擎会向上遍历
+    //   拼接多级 AGENTS.md，这个上限卡的是**拼接总量**，必须留足余量。
+    //   放在子命令之前（`codex -c k=v app-server`）—— app-server 只认全局 -c。
+    this.child = spawn(binary, ["-c", "project_doc_max_bytes=262144", "app-server", "--listen", "stdio://"], {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
       // toolchainEnv：PATH 里带内置 node/pwsh/npm-global，NODE_PATH 指向 npm 全局
