@@ -428,6 +428,9 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
           const tid = String(params.threadId ?? bag.threadRef.current?.id ?? "");
           if (tid) { bag.tokenUsageTotalsRef.current.delete(tid); bag.derivedTokenUsageRef.current.delete(tid); }
         }
+        // 引擎产出的摘要文本（09-26「摘要接力」用：宿主真压缩拿它做新会话的历史种子）。
+        // 字段名按引擎实际形态兜底取值（payload.message / summary / text 任一）。
+        bag.compactedSummaryRef.current = String(params.message ?? params.summary ?? params.text ?? "");
         bag.setCompactEventState("success");
         // ⛔ 分隔线停转（09-26 用户截图：toast 已报成功、分隔线还在转圈）：thread/compacted
         //    是权威完成信号，引擎侧对应 item 的 completed 可能迟到/缺失 —— 本地把所有还挂着
