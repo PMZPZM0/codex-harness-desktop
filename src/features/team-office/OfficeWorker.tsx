@@ -97,10 +97,28 @@ function Torso({ look, ceo }: { look: WorkerLook; ceo?: boolean }) {
   );
 }
 
+/**
+ * 背面（工作中）：只见后脑勺 + 肩背。
+ * ⛔ 这是参考实现（ai-office-react）的关键规则 —— `working/thinking → back`：人在看显示器，
+ *    自然就背对观众，既合理又省掉画脸；只有空闲/走动时才转正面。
+ */
+function HeadBack({ look }: { look: WorkerLook }) {
+  return (
+    <g className="ofc-head">
+      <ellipse cx="0" cy="10" rx="9.5" ry="6" fill={look.skin} stroke={OFC.ink} strokeWidth="2.4" />
+      <circle cx="0" cy="-7" r="20.5" fill={look.hair} stroke={OFC.ink} strokeWidth={INK_W} />
+      {/* 发旋高光 */}
+      <path d="M -11 -14 q 11 -9 22 0" fill="none" stroke="#ffffff" strokeWidth="2.8" strokeLinecap="round" opacity="0.22" />
+      {look.hairStyle === 2 && <circle cx="-2" cy="-32" r="11" fill={look.hair} stroke={OFC.ink} strokeWidth={INK_W} />}
+    </g>
+  );
+}
+
 /** 坐在工位上的角色（六种姿势；手臂与手是**同一个 g**，抬手时手跟着走）。 */
-export function SeatedWorker({ pose, look }: SeatedProps) {
+export function SeatedWorker({ pose, look, view = "front" }: SeatedProps & { view?: "front" | "back" }) {
   const sleeping = pose.kind === "doze";
   const moving = pose.kind === "stretch";
+  const back = view === "back";
   return (
     <g className={`ofc-person ofc-person--seated pose-${pose.kind} v${pose.variant % 3}`}>
       <ellipse cx="0" cy="82" rx="38" ry="8.5" fill="#63707f" opacity="0.16" />
@@ -123,17 +141,19 @@ export function SeatedWorker({ pose, look }: SeatedProps) {
         </g>
       </g>
       <g className="ofc-headwrap">
-        <Head look={look} pose={pose} sleeping={sleeping} awake={moving} />
+        {back ? <HeadBack look={look} /> : <Head look={look} pose={pose} sleeping={sleeping} awake={moving} />}
       </g>
 
-      {/* ── 姿势附加物 ── */}
+      {/* ── 姿势附加物 ──
+          ⛔ 背对观众时手在身前，这些（杯子/手机/纸/汗珠）**一律不画** —— 背面看不到。
+          ⛔ Zzz 例外：它在头侧上飘，背面也看得见。 */}
       {sleeping && (
         <g className="ofc-zzz-group">
           <text className="ofc-zzz" x="22" y="-32" fontSize="17" fontWeight="700" fill="#8fa0b4" stroke="none">Z</text>
           <text className="ofc-zzz ofc-zzz-2" x="35" y="-47" fontSize="13" fontWeight="700" fill="#8fa0b4" stroke="none">z</text>
         </g>
       )}
-      {pose.kind === "coffee" && (
+      {!back && pose.kind === "coffee" && (
         <g className="ofc-mug" transform="translate(24 28)">
           <rect x="-7.5" y="-9.5" width="15" height="15" rx="3.4" fill="#ffffff" stroke={OFC.ink} strokeWidth="2.6" />
           <path d="M 7.5 -6.5 q 6.5 4.5 0 10" fill="none" stroke={OFC.ink} strokeWidth="2.4" />
@@ -141,20 +161,20 @@ export function SeatedWorker({ pose, look }: SeatedProps) {
           <path className="ofc-steam ofc-steam-2" d="M 3.2 -13 q 3.2 -5.4 0 -9.6" fill="none" stroke="#c3ccd8" strokeWidth="2.2" strokeLinecap="round" />
         </g>
       )}
-      {pose.kind === "phone" && (
+      {!back && pose.kind === "phone" && (
         <g className="ofc-phone" transform="translate(21 32)">
           <rect x="-7.5" y="-12" width="15" height="24" rx="3.8" fill="#39424f" stroke={OFC.ink} strokeWidth="2.4" />
           <rect x="-4.8" y="-8.6" width="9.6" height="17.2" rx="2.2" fill="#bfe0ff" opacity="0.92" />
         </g>
       )}
-      {pose.kind === "note" && (
+      {!back && pose.kind === "note" && (
         <g className="ofc-note" transform="translate(-2 33)">
           <rect x="-17" y="-12" width="34" height="24" rx="3.4" fill={OFC.paper} stroke={OFC.ink} strokeWidth="2.4" transform="rotate(-6)" />
           <line x1="-12" y1="-5.5" x2="6" y2="-5.5" stroke="#9fb0c2" strokeWidth="2.2" strokeLinecap="round" transform="rotate(-6)" />
           <line x1="-12" y1="1" x2="9.5" y2="1" stroke="#9fb0c2" strokeWidth="2.2" strokeLinecap="round" transform="rotate(-6)" />
         </g>
       )}
-      {pose.kind === "stretch" && (
+      {!back && pose.kind === "stretch" && (
         <g className="ofc-sweat" transform="translate(23 -29)">
           <path d="M 0 0 q 4.4 5.5 0 9 q -4.4 -3.5 0 -9 z" fill={OFC.info} opacity="0.78" />
         </g>
