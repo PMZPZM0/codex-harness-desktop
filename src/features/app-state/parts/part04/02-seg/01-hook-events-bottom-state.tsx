@@ -168,18 +168,24 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
        *  折叠思考卡 / 收起工具卡 / 过程块合并都会让内容一次性变矮。 */
       const shrankBy = prevBottom ? prevBottom.cb - cb : 0;
       if (pinMine) {
+        // ⛔ 09-26 用户定稿：钉顶期的跟随/贴合只看**正文**（bodyBottomOf，扣除展开中的思考卡）
+        //    —— 思考板块把内容撑满一屏**不许**取消钉顶（思考卡有自己的内部滚动）；
+        //    正文满一屏才交棒给跟随。判据与 pinSentMessage 的交棒同一来源，两边不同源
+        //    就会出现「跟随已交棒、纠偏还锁着（或反过来）」的半死状态。
+        const bodyDist = bag.bodyBottomOf(scroller) - scroller.scrollTop - scroller.clientHeight;
         /** ★ 钉顶期间「内容变矮」也要立刻贴合（09-23 用户报「思考板块折叠后，缝隙也跟着效果」）。
          *  为什么单独加这条：下面那条跟随**只往下补**（`scrollTop + dist`，步长 48 是为打字机
          *  逐字重排的抖动设计的），永远不会把视口**拉上来** —— 于是回合运行中折叠思考卡后，
          *  内容底部上方就留一条缝，而且再也不会自己消掉。
          *  收缩方向没有抖动风险（内容是一次性变矮，不是逐帧增长），所以立即贴合；
          *  增长方向仍走原来的 48px 步长逻辑，一个字都不改。
-         *  ⛔ 只在内容确实**超出一屏**时接手：内容不足一屏时钉顶要把锚点放在 54px，
-         *     那是钉顶的职责，不能被这里动（历史教训见本文件上方 sticky/留白那几段）。
+         *  ⛔ 只在**正文**超出一屏时接手（09-26 同上）：正文不足一屏时钉顶要把锚点放在 54px，
+         *     那是钉顶的职责 —— 思考折叠后内容缩回一屏内，这里让位，pin-fix 自然把消息拉回
+         *     落点（那不是「钉顶丢了」，恰恰是用户要的稳定）。
          *  ⛔⛔ 流式期间**不追**（09-23 深夜打点实锤的「上下翻转」根因）：折叠动画的每一帧
          *     都算一次「变矮」，逐帧追 = 与流式增长互抢视口。1.2s 内有揭示就跳过 ——
          *     缺口由随后的文字增长自动填平；流式停了才贴合（见 lastRevealAt 注释）。 */
-        if (prevBottom && shrankBy > 1 && cb - scroller.clientHeight > 0 && Date.now() - lastRevealAt > 1200) {
+        if (prevBottom && shrankBy > 1 && bodyDist > 0 && Date.now() - lastRevealAt > 1200) {
           const want = bag.contentTailTarget(scroller);
           if (Math.abs(want - scroller.scrollTop) > 1) {
             bag.selfScrollUntilRef.current = Date.now() + 80;
@@ -190,12 +196,12 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
           lastTop = scroller.scrollTop;
           return;
         }
-        if (dist > -FOLLOW_STEP_PX) {
+        if (bodyDist > -FOLLOW_STEP_PX) {
           // 目标：把「内容底部」补到视口底（dist 归 0），而不是把内容整体推上去。
           // dist ≤ 0（还有余量）时不动，避免短回复也被推。
-          if (dist > 0) {
+          if (bodyDist > 0) {
             bag.selfScrollUntilRef.current = Date.now() + 80;
-            scrollToOffsetInstant(scroller, scroller.scrollTop + dist);
+            scrollToOffsetInstant(scroller, scroller.scrollTop + bodyDist);
             bag.pinnedScrollTopRef.current = scroller.scrollTop;
           }
           lastTop = scroller.scrollTop;
@@ -233,7 +239,11 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
       // 程序滚动的抑制窗内：只刷新基线，不做方向判定（否则自己的钉顶/贴底
       // 会被当成用户滚动，误解除钉顶——09-12 调试探针实锤）
       if (Date.now() < bag.selfScrollUntilRef.current) { lastTop = scroller.scrollTop; return; }
-      bag.setAwayFromBottom(dist > scroller.clientHeight * 0.25);
+      // ⛔ 09-26：钉顶期间这颗旗必须为假 —— 「回到底部」按钮的 onClick 会 releaseToUser
+      //    （解除钉顶），若按全量 dist 置真，思考流式撑长内容就会把按钮顶出来 = 思考
+      //    从侧门取消了钉顶。钉顶期视口归钉顶 owner 管（旧代码 dist > -48 提前 return
+      //    走不到这里，效果等同；bodyBottomOf 改判据后这里变为可达，必须显式挡住）。
+      bag.setAwayFromBottom(!bag.anchorTopRef.current && dist > scroller.clientHeight * 0.25);
       // 迟滞：距底 ≤4px 重新开启跟随；>25% 视口才关闭。中间地带保持原状，
       // 避免流式内容增高时 stick 反复翻转（此前 smooth 滚动动画的中间滚动事件
       // 会误关跟随，导致"消息发了不显示、停止后才出现"）。

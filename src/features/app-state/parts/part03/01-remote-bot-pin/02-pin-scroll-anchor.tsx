@@ -36,6 +36,19 @@ bag.compactSpacerRef = compactSpacerRef as typeof bag.compactSpacerRef;
   }, []);
 bag.contentBottomOf = contentBottomOf as typeof bag.contentBottomOf;
 
+  /** 「正文底部」= 内容底扣掉**展开中的思考卡**高度（09-26 用户定稿：思考板块不许取消钉顶，
+   *  只有正文满一屏才交棒）。为什么直接从底部坐标里扣：思考卡在 DOM 里永远位于它对应
+   *  正文之前 ⇒ 扣掉展开部分即得「当作思考已收起时」的正文底；折叠态思考卡的
+   *  offsetHeight 本来就是 0（grid 0fr 过渡的收起态），无需按状态过滤。
+   *  ⛔ 消费方：pinSentMessage 的交棒判据与 update() 钉顶跟随分支 —— 两处必须同源，
+   *    一边全量一边正文就会出现「跟随交棒了、纠偏还锁着」的半死状态。 */
+  const bodyBottomOf = useCallback((el: HTMLElement) => {
+    let reasonH = 0;
+    for (const f of el.querySelectorAll<HTMLElement>(".reasoning-card .wb-fold-content")) reasonH += f.offsetHeight;
+    return bag.contentBottomOf(el) - reasonH;
+  }, []);
+bag.bodyBottomOf = bodyBottomOf as typeof bag.bodyBottomOf;
+
   /** 「最新内容」应有的 scrollTop：内容底部贴到视口底，再留 CONTENT_TAIL_GAP_PX 呼吸位。 */
   const contentTailTarget = useCallback((el: HTMLElement) => {
     const max = Math.max(0, el.scrollHeight - el.clientHeight);
@@ -193,7 +206,11 @@ bag.contentTailTarget = contentTailTarget as typeof bag.contentTailTarget;
     //   用户看到的就是抖。所以：内容一旦长出视口，**钉顶停止纠偏**、位置交给跟随，
     //   消息自然往上走 —— 这正是用户要的「agent 消息很丝滑往下流、自动跟随」。
     //   短回复（未超屏）时继续纠偏，消息就稳稳待在 54px。
-    const overflow = bag.contentBottomOf(el) - el.scrollTop - el.clientHeight;
+    //   ⛔ 09-26 用户定稿：判据只看**正文**（bodyBottomOf）—— 思考板块在输出时全量内容
+    //      会先于正文超出一屏，旧判据被思考撑爆而提前交棒；思考折叠后 pin-fix 又把消息
+    //      拉回来 = 用户看到的「钉顶没了、正文一出又钉上去」来回翻。思考卡撑满一屏
+    //      不取消钉顶（思考卡有自己的内部滚动，不需要视口让位）。
+    const overflow = bag.bodyBottomOf(el) - el.scrollTop - el.clientHeight;
     if (overflow > 4) { bag.pinGapLockedRef.current = key; return true; }
     if (bag.pinGapLockedRef.current === key) return true;
     if (Math.abs(gapErr) <= 8) return true;
@@ -310,5 +327,5 @@ bag.glideTo = glideTo as typeof bag.glideTo;
 
   const [workStartedAt, setWorkStartedAt] = useState<number | null>(null);
 bag.workStartedAt = workStartedAt as typeof bag.workStartedAt; bag.setWorkStartedAt = setWorkStartedAt as typeof bag.setWorkStartedAt;
-  return { clearAnchorPad, compactSpacerRef, contentBottomOf, contentTailTarget, pinSentMessage, pinnedScrollTopRef, pinGapLockedRef, pinThreadIdRef, pinDormantSeenRef, pinFixRef, pinnedAnchorKeyRef, anchorGlideRef, glideTo, workStartedAt, setWorkStartedAt };
+  return { clearAnchorPad, compactSpacerRef, contentBottomOf, bodyBottomOf, contentTailTarget, pinSentMessage, pinnedScrollTopRef, pinGapLockedRef, pinThreadIdRef, pinDormantSeenRef, pinFixRef, pinnedAnchorKeyRef, anchorGlideRef, glideTo, workStartedAt, setWorkStartedAt };
 }

@@ -854,6 +854,7 @@ export interface Bag {
   clearAnchorPad: () => void;
   compactSpacerRef: React.RefObject<HTMLDivElement | null>;
   contentBottomOf: (el: HTMLElement) => number;
+  bodyBottomOf: (el: HTMLElement) => number;
   contentTailTarget: (el: HTMLElement) => number;
   pinSentMessage: (el: HTMLElement, threadId?: string | null | undefined) => boolean;
   pinnedScrollTopRef: React.RefObject<number>;

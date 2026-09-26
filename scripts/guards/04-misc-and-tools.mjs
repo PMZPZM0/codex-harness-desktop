@@ -626,9 +626,12 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   const bottomSrc = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part04", "02-seg", "01-hook-events-bottom-state.tsx"), "utf8").replace(/\r/g, "");
   const pinSrc = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part03", "01-remote-bot-pin", "02-pin-scroll-anchor.tsx"), "utf8").replace(/\r/g, "");
   /* ① 流式静默门：pin-shrink-follow 的条件里必须有 lastRevealAt 时效判定（剥离注释再验，
-     注释里含同名字串会自造假绿 —— 09-23 已踩过一次） */
+     注释里含同名字串会自造假绿 —— 09-23 已踩过一次）。
+     ⛔ 09-26 起「超出一屏」的判据是 bodyDist（正文底，扣除展开中的思考卡）——
+        用户定稿「只有正文满一屏才能取消钉顶」，思考折叠后内容缩回一屏内时这里让位，
+        pin-fix 把消息拉回落点（那不是钉顶丢失，是钉顶职责本身）。 */
   const codeOnly = bottomSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
-  (/shrankBy > 1 && cb - scroller\.clientHeight > 0 && Date\.now\(\) - lastRevealAt > 1200/.test(codeOnly) ? ok : fail)(
+  (/shrankBy > 1 && bodyDist > 0 && Date\.now\(\) - lastRevealAt > 1200/.test(codeOnly) ? ok : fail)(
     "【126】pin-shrink-follow 在流式期间不追折叠收缩（1.2s 内有揭示就跳过，缺口由文字增长填平）"
   );
   /* ② lastRevealAt 必须真的有人写（packet-reveal 的 rAF 里置时刻）——门没数据源 = 恒假绿 */
@@ -640,7 +643,7 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     "【126】pin-fix 的 rAF 在已交棒（gap 锁定）时退出 —— 迟到的纠偏会与 pad-shrink 逐帧互踹"
   );
   /* ④ 反向绊线：pin-shrink-follow 的条件不许被改回「无条件追收缩」（那会当场回到翻转形态） */
-  (!/if \(prevBottom && shrankBy > 1 && cb - scroller\.clientHeight > 0\) \{/.test(codeOnly) ? ok : fail)(
+  (!/if \(prevBottom && shrankBy > 1 && bodyDist > 0\) \{/.test(codeOnly) ? ok : fail)(
     "【126】pin-shrink-follow 不许回到无条件的「变矮就追」（就是上下翻转事故本身）"
   );
 }
