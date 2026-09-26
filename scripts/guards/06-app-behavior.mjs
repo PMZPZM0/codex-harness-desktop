@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  C, ROOT, createRequire, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readResponsesBridgeSource, readStyles, readdirSync, rmSync, spawnSync, typesSrc,
+  C, ROOT, createRequire, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readResponsesBridgeSource, readStyles, readdirSync, rmSync, spawnSync, statSync, typesSrc,
 } from "./_ctx.mjs";
 
 export async function run() {
@@ -1594,6 +1594,36 @@ w.postMessage({id:1,op:"list",root});
     })() ? ok : fail)(
       "【171】主路径（codex:request）在转发前调用（引擎处理 thread/start 时就读 AGENTS.md）"
     );
+  }
+
+  /* ══ 【172】AGENTS.md 注入上限（09-26 实测：默认 32KB 静默截断，一半规章进不了模型）═══
+     实测取证（`codex debug prompt-input` 渲染模型实际输入）：引擎读 <cwd>/AGENTS.md 注入
+     <INSTRUCTIONS>，但受 `project_doc_max_bytes` 限制 —— **默认 32768 字节**，超出静默截断
+     （不报错、不加提示）。本仓 AGENTS.md 已 64KB ⇒ 只注入 32770 字节，尾部一半（工具链 /
+     能力清单 / 初始化原则 / 记忆后端…）全部读不到，症状 =「规章写了但 agent 不照做」。
+     ⛔ 引擎会向上遍历拼接多级 AGENTS.md，上限卡的是**拼接总量**（子目录项目叠加后更容易超）。
+     判据：启动参数必须显式抬高上限，且**值要 > 当前 AGENTS.md 字节数**（否则等于没修）。 */
+  {
+    console.log(C.bold("\n【172】AGENTS.md 注入上限（默认 32KB 会静默截断）"));
+    const csSrc = readFileSync(join(ROOT, "electron", "codex-server.ts"), "utf8");
+    // ① 启动参数显式设置上限（接线锚：spawn 的 argv 数组里带 -c project_doc_max_bytes=…）
+    const m = csSrc.match(/-c",\s*"project_doc_max_bytes=(\d+)"/);
+    (m ? ok : fail)(
+      "【172】启动参数显式抬高 project_doc_max_bytes（引擎默认 32768 会静默截断 AGENTS.md）"
+        + (m ? `（当前 ${m[1]}）` : "，未找到 -c project_doc_max_bytes=… ⇒ 用的是默认 32768")
+    );
+    // ② 值必须留有余量：> 当前 AGENTS.md 实际字节数（引擎会向上拼接多级，故要求 ≥2×）
+    if (m) {
+      const limit = Number(m[1]);
+      let agentsBytes = 0;
+      try { agentsBytes = statSync(join(ROOT, "AGENTS.md")).size; } catch { agentsBytes = 0; }
+      (limit > agentsBytes ? ok : fail)(
+        `【172】上限(${limit}) 必须大于 AGENTS.md 实际大小(${agentsBytes} 字节，否则等于没修)`
+      );
+      (limit >= agentsBytes * 2 ? ok : fail)(
+        `【172】上限留 2× 余量（引擎向上遍历会拼接多级 AGENTS.md，卡的是总量；余量=${(agentsBytes ? (limit / agentsBytes).toFixed(2) : "?")}×）`
+      );
+    }
   }
 
   /* ══ 【155】团队调度的团队标识恢复（09-25 真机事故）═════════════════════
