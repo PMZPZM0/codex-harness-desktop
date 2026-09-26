@@ -188,3 +188,66 @@ export const steps = [
 | `npm run verify:packaged-tools` | 打包后工具完整性（需已打包） |
 
 > 历史的 `verify:turnfold` / `verify:userrefs` / `verify:memory-layers` 等一批脚本在 09-06 清理批次中已删除，`package.json` 里的死条目在 09-11 一并清掉——**现在每条 npm script 都真实可跑**。新增验证请走 `scripts/e2e/` 场景或 `check-preflight.mjs` 检查项。
+
+
+---
+
+> 以下由 AGENTS.md 于 2026-09-26 外置迁入（AGENTS.md 有注入上限，历史事故叙述与方法论长文移出）。
+
+## 排查方法论（09-13 一整天弯路换来的，下一轮动手前先读）
+
+1. **看到症状先别调阈值、别加条件**。先问一句：「**现在有几个东西在写同一份状态 / 同一根滚动条？**」这一天 6 次修复的真根因全部是两类 —— ①**多个 owner 抢同一个东西**（钉顶与跟随每 60px 互拉、`switchJumpRef` 被两处消费）；②**状态被提前/错位消费**（裸布尔被下一次任意渲染吃掉）。**阈值从来不是根因**，调阈值只是把互拉挪到另一个区间。
+2. **先打点，再推理**。`window.__adbg` 一次 dump 出的时间线胜过半小时的代码推演：这一天每次"我觉得是这个原因"都猜错，每次打点都一击命中（`pin-fix{err:-65}` ↔ `follow-grow{+65}` 互拉、`clear-anchor{at:"switch-jump"}` 出现在**发送**时刻、`pad:622` 残留、`follow-grow` 全程不触发）。**加打点是第一动作，不是最后手段**；打点要带数字（top/gap/pad/err），不要只写"到这里了"。
+3. **测试必须跑到事件真正结束**（用户原话：「每次测试消息都不看完，你能发现什么bug，总是运行中就杀应用」）。长回合的毛病只在后段暴露；采样截断 + 收尾杀应用 = 把最关键的证据扔掉，还会把"没跑完"误报成失败。
+4. **判据不能用会随渲染状态变化的量**：折叠组收起时 `innerText` 是空串、`textContent` 才与折叠无关；侧栏按最近活动重排，**会话要用标题点、不能用行索引**（用索引测出来的"钉顶没了"有一半是点开了别的会话 → 假红）。判据要落在**语义主体**上（"正在跑的那个回合"），不要用整页总量。
+5. **状态重置要挂在「动作」上，不能挂在「某条渲染分支」上**。曾经把锚定状态清零写在"切会话瞬时定位"分支里，那段一旦被任何条件挡掉，清零就跟着被跳过 → 留白残留一整屏、锚点指向别的会话。现在清零挂在 `openThread` 里，结构上不可能被跳过。
+6. **文档与代码同轮更新**。过时文档会主动误导下一轮（旧版 AGENTS.md 详细描述了已被删除的 `anchorHeightBaselineRef` 增长量模型与 `byUs` 判据，这一天的弯路有一部分就是照着它走的）。**删掉实现就把对应文档段落标记作废或改写**，别让后来者读到一段"看起来很像现状"的历史。
+7. **⛔ 不跑与本次改动无关的断言（用户 09-13 严令，第二次强调）**。原话：「能不能不要再跑旧的测试了，不要浪费我token啊…只能测试最新改动，给你说了几百遍」。
+   - 每轮改完只跑 **`--only <与改动相关的 id>`**；判据是「**这条断言会不会因为这次改动而变红**」，不会就别跑。
+   - 全量 `accept.mjs` 只用于**发版前 / 跨模块改动 / 用户明确要求**，且跑之前先说明为什么必须全量。
+   - 改主进程/引擎/打包这类 CDP 测不到的模块 → **不要跑 accept**，改跑 `check`，并把可静态验证的部分补进预检守卫（【10】【11】就是为此存在的）。
+   - 曾经一整天每轮都全量跑 57 项，其中绝大多数与本轮改动无关 —— 纯浪费用户时间和 token，**这是行为准则层面的硬约束，不是建议**。
+8. **⛔ 改动范围纪律：只做「架构层设计缺陷」和「渲染层真 bug」，不许顺手改行为（用户 09-13 明令）**。
+   原话：「设计缺陷是只架构层，渲染层的bug，你别给我乱改」。
+   - **两类可动**：① **架构层设计缺陷** —— IPC 契约与错误传播、真相源数量、事件通道与背压、持久化原子性与迁移、模块边界与守卫、生命周期状态机；② **渲染层真 bug** —— 有可复现路径、能说清"用户看到什么错"的。
+   - **不许动**：行为语义、权限边界、可见交互（不经用户确认就"收紧/放开"）。**教训**：我自作主张把 `fs:write` 限定到工作区，用户不得不叫停并回退（`7f0de22`）—— 安全收紧也是**产品决策**，先问再做。
+   - **重构不算修复**：除非要动的那段代码本身就是缺陷（例如"两个 owner 抢同一份状态"），否则不要为了"更干净"去改它。
+   - 动之前先回答两句：**这是架构缺陷还是渲染 bug？**、**这个改动会不会改变用户看得见的行为？** 第二问为"是"就先问用户。
+9. **⛔ 功能完整性铁律（09-15 用户明令：「加功能必须考虑得比我多，不能只做表面」）。**
+   一个对象被创建/接力/归档/删除时，它的**全部衍生状态**必须有明确去向——成员会话、
+   渲染缓存、映射表（threadProviderRef / team-threads / thread-runtime）、复用键、备份分支、
+   侧栏列表。做法：把这次动作当**状态机迁移**，穷举它触碰的每一份持久化状态并逐一回答
+   「它去哪」；只实现用户说的那一步 = 半成品。09-14~15 三起事故全是这一类：接力后旧会话
+   还在、删主会话后成员成孤儿、统一 id 后 config 出现重复段。修 bug 时同样要问：
+   **同类场景还有哪些没覆盖？旧的引用还在不在？清理动作要不要级联？**
+
+10. **⛔ 探针方法论（09-16 发版当天踩出来的三条，省下的是错误结论而不只是时间）**：
+   - **Node 的 `https.request` 不读 `HTTP(S)_PROXY` 环境变量**（只有 `curl` 之类会读）。所以「清掉代理变量
+     再直连」对 Node 探针**等于没清**，而直连 GitHub 在国内时通时不通 ⇒ 同一脚本这次 533KB、下次 0 字节，
+     判据随机。**凡是测网络行为的断言，要么用本地 mock，要么走 curl。**
+   - **外网不可当判据**：`downloadUpdate` 那类「跟随重定向」的行为，用真 GitHub 验证会被 ECONNRESET /
+     0 字节干扰（还容易被误读成代码有问题）。**正解 = 本地 HTTPS mock**：openssl 自签证书（`-subj /CN=127.0.0.1`
+     且 `-addext subjectAltName=IP:127.0.0.1`，否则 Node 不认）× `https.createServer` 一个
+     `/redirect → 302 → /payload → 200`，进程内 `NODE_TLS_REJECT_UNAUTHORIZED=0` 放行自签。
+     确定性判据 = **下载字节数 + 载荷 sha256 与源一致**；反证 = 摘掉重定向分支 → 必然报 `HTTP 302`。
+   - **`(cond ? ok : fail)("消息")` 不能写成 `cond ? ok : fail("消息")`**：后者在 `cond` 为真时**根本不调用 `ok`**，
+     于是该断言**一行都不打印、静默漏检**（我这两条新守卫第一版就是这样，预检 526 条"全绿"却查不到它们）。
+     写完新守卫先确认**它在输出里出现了**。：临时 profile 每轮都是白纸 —— 侧栏零会话，「切会话重播 / 首轮不出字 / 会话一多互相拖慢」这类问题**只在有历史时才现形**，空目录里测等于没测（用户原话：「为啥你每次拉起来的应用都没有历史记录，那测试有什么意义呢」）。现在首次建 profile 时会把**真实 profile 的会话历史**（`codex-home/sessions/**`）搬进来，之后一轮轮叠加；断言「本轮数据」时用 `h._rolloutFiles({ since: h.launchedAt })`，别让历史文件把断言顶成假绿。profile 在 `.e2e-profile/<name>/`（已 gitignore，含真实对话内容与 Key 密文，**绝不入库**）；想重来就删目录，想重灌真实配置/历史用 `CODEX_HARNESS_RESEED=1`。
+
+GUI 起不来时，最低限度跑 `check`（离线可用），并在提交信息里写明 `accept` 未跑的原因。手册见 `docs/TESTING.md`。
+
+
+---
+
+> 以下由 AGENTS.md 于 2026-09-26 外置迁入（写新验收项时才需要查的细节）。
+
+## 验证基建实现细节（配合开头的「验收铁律」看）
+
+- **E2E 靠主进程自带开关实现**：`CODEX_HARNESS_USER_DATA`（重定向 userData，完全隔离）+ `CODEX_HARNESS_DEBUG_PORT`（开 CDP 端口，端口随机取空闲）——⛔ **别写行号**（这两个开关已经搬过一次，原写的 `main.ts:60/:65` 当场失效）：用符号 grep `CODEX_HARNESS_USER_DATA` 定位。框架 `scripts/e2e/lib/harness.mjs` 零新依赖（复用 `ws`），**不要引入 Playwright/Puppeteer**。
+- **测试实例的工作区 = 项目根目录**（09-11 用户定：以后拉 CDP 就用这个项目地址测）：应用从 `localStorage.workspace` 读工作区（⛔ 同样别写行号 —— 原写的 `App.tsx:5972` 已失效；用符号 grep `localStorage.getItem("workspace")` 定位，当前在 `src/features/app-state/parts/part01/01-session-drafts-voice.tsx`），而隔离 profile 是白纸 → 界面停在「尚未选择工作区」，部分路径下发送会被拦。harness 现在默认用 `Page.addScriptToEvaluateOnNewDocument` 把 `workspace` 注入成 `this.root`（项目根）**并重载一次**让注入先于页面脚本执行；需要「未选择工作区」空态的场景可传 `new ElectronHarness({ workspace: null })` 关掉。
+- **离线预检**：`npm run check` = `build` + `scripts/check-preflight.mjs`。其中 IPC「方法面」解析用自写的括号深度扫描器（纯正则会被「同一行写多个方法 `a: …,  b: …`」和「类型里的 `name(...)` 括号被吃掉后参数名被误当方法名」骗到）。
+- **现存验收项**：`scripts/accept.mjs` 里 26 项，按 `ROUND_OF` 登记轮次、`LATEST_ROUND` 指向当前轮（默认只跑那一轮）。⛔ **此处不再逐一列举** —— 早期版本在这里描述 `smoke` / `model-scope` 两个"场景"，而那两个脚本**早已删除**（连同 `scripts/e2e/scenarios/`，守卫【7】不许它们回来），留在文档里只会误导。要看待跑清单就 `node scripts/accept.mjs --list`，要看某一项做什么就直接读它的 `name` 与 `run(h)`。
+- **引导页可能被跳过**：真实 Key 灌进去后 `customModel.hasKey=true`，兼容 effect 会自动进入主界面（写 `login-skipped`），所以任何"等引导页"的断言都要写成「引导页**或**主界面二选一」，不能硬等跳过按钮。⛔ 别再引用 `App.tsx:7754` 这类行号（`App.tsx` 现在只有 12 行）；用符号 grep `login-skipped` 定位。
+- **环境坑（踩过）**：①环境里的 `HTTP_PROXY` 会把回环请求也代理走 → harness 已自动注入 `NO_PROXY=127.0.0.1,localhost`；②`ws` 库的 `on("message", (data) => …)` 首参是**原始数据**不是 `MessageEvent`；③`clickByText` 必须取**最内层**元素（按 innerText 长度升序），否则点到 wrapper 上；④`contenteditable` 用 CDP `Input.insertText` 输入，`[contenteditable="true"]` 匹配不到 `plaintext-only`；⑤**宿主带着 `ELECTRON_RUN_AS_NODE` 时 Electron 会被降级成纯 node 跑主进程**（启动即崩 `Cannot read properties of undefined (reading 'registerSchemesAsPrivileged')`，栈尾打 `Node.js vXX`）→ harness 在 spawn 前 `delete` 掉这个变量；⑥**引擎的 rollout 是首回合才落盘的**：只 `thread/start` 的会话 `thread/resume` 报 `no rollout found`、`thread/list` 里也不出现 → 想造「能 resume 的会话」必须补一发 `turn/start`（模型调用失败无妨，rollout 已落盘）；⑦宿主还会注入 `NODE_OPTIONS=--require …node-language-shim.cjs`（拦截子进程 fs 写入）——继承下去会让主进程写 userData 时 `EPERM`、启动链断掉（**窗口能开、引擎不 spawn、发消息零回复**）→ harness 也一并 `delete` 掉 `NODE_OPTIONS`（与 ⑤ 同源：都是宿主环境泄漏）；⑧**无 GPU 的机器 / CI 上 Chromium 的 GPU 子进程会反复起不来并最终 FATAL 自杀**（`GPU process isn't usable. Goodbye.`），表现为 e2e「CDP Runtime.enable 超时 / Target crashed」——实测连零项目代码的最小 Electron 应用也一样崩，**与本项目代码无关**；harness 已带 `CODEX_HARNESS_IN_PROCESS_GPU`（主进程据此 `appendSwitch("in-process-gpu")`，另附 `no-sandbox` 等，**仅测试实例生效**）绕开。
+- **历史遗留**：`verify:turnfold`/`verify:userrefs`/`verify:memory-layers` 等一批 npm script 指向的文件早已删除（跑必 ENOENT），**09-11 已从 package.json 清理**；现存真脚本只有 `verify:reasoning` / `verify:image-plugin` / `verify:packaged-tools`。新增验证请走 e2e 场景或 preflight 检查项，**别再散落一次性 `.mjs`**。
+- 手册见 `docs/TESTING.md`。
