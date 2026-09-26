@@ -93,7 +93,8 @@
   overflow: hidden;
   border-radius: 14px;
   border: 1px solid var(--line);
-  background: #f7fafd;
+  /* v6 斜俯视房间外围：比房间地板再冷一点，让房间"浮"在画布上 */
+  background: #eef1f5;
 }
 .office-svg { width: 100%; height: auto; max-height: 100%; display: block; }
 
@@ -107,6 +108,11 @@
 .ofc-vacant-text { fill: #7e8c9e; font-size: 11.5px; }
 .office-empty-text { fill: #6b7a8d; font-size: 13px; }
 .ofc-walker-tag-text { fill: #47566a; font-size: 11px; font-weight: 600; }
+
+/* 头顶状态标签（v6 复刻 ai-office-react 最有辨识度的元素：动作 + 姓名 + 在线点） */
+.ofc-status-tag { transition: opacity .25s ease; }
+.ofc-tag-task { fill: #6b7280; font-size: 11px; font-weight: 600; }
+.ofc-tag-name { fill: #22303f; font-size: 12.5px; font-weight: 700; }
 
 /* ── 角色：手臂/头部/躯干的旋转锚点 ─────────────────────────────────────
    ⛔ transform-box: fill-box 让旋转原点落在元素自身 bbox（否则绕 SVG 原点转，整个人飞出去）。 */
