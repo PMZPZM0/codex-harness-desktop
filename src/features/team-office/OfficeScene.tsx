@@ -18,7 +18,11 @@ import { OFC, ISO, workerLook } from "./office-palette";
 import { handoffArc, type DirectorSnapshot, type OfficeHandoff, type OfficePose } from "./office-director";
 import { SeatedWorker, WalkingWorker } from "./OfficeWorker";
 import { deskSlots, floorPoint, SCENE_H, SCENE_W, type FloorSpot } from "./office-iso";
-import { IsoCabinet, IsoCooler, IsoDeskSet, IsoFridge, IsoPlant, IsoPrinter, IsoRoom, WallBoard, WallClock, WallShelf } from "./OfficeFurniture";
+import {
+  HANDOFF_LIFT, IsoBin, IsoCabinet, IsoCarton, IsoCeilingFan, IsoDeskBack, IsoDeskChair, IsoDeskFront,
+  IsoFloorLamp, IsoLowTable, IsoPlant, IsoRoom, IsoRug, IsoShelfUnit, IsoSideTable,
+  IsoSmallPlant, IsoWindow, SEAT_LIFT, TAG_LIFT,
+} from "./OfficeFurniture";
 
 export type OfficeMember = { id: string; name: string; profession: string; running: boolean; hasThread: boolean };
 export type OfficeSceneProps = {
@@ -30,10 +34,11 @@ export type OfficeSceneProps = {
   onOpenThread?: (memberId: string) => void;
 };
 
-/** 跑腿目标点（归一化地面坐标：饮水机前 / 吊架下 / 打印机旁）。 */
+/** 跑腿目标点（归一化地面坐标）：左侧接水区 / 右侧书架前 / 右前过道。
+ *  ⛔ u 别贴 0/1：地板收窄后，u<0.1 的目标点会落在房间外面（人会"走出去"）。 */
 const ERRAND_SPOTS: Record<string, { u: number; v: number; facing: 1 | -1 }> = {
-  water: { u: 0.085, v: 0.3, facing: 1 },
-  shelf: { u: 0.9, v: 0.26, facing: -1 },
+  water: { u: 0.13, v: 0.3, facing: 1 },
+  shelf: { u: 0.86, v: 0.28, facing: -1 },
   printer: { u: 0.8, v: 0.24, facing: -1 },
 };
 
@@ -94,8 +99,8 @@ export function OfficeScene({ ceoName, ceoProfession, members, snapshot, onOpenT
   /** 交接卡片的起落点 = 该工位人物头顶。 */
   const headOf = (index: number): { x: number; y: number } => {
     const slot = slots[index + 1];
-    if (index < 0) return slots[0] ? { x: slots[0].x, y: slots[0].y - 128 * slots[0].scale } : { x: SCENE_W / 2, y: 200 };
-    return slot ? { x: slot.x, y: slot.y - 128 * slot.scale } : { x: SCENE_W / 2, y: 200 };
+    if (index < 0) return slots[0] ? { x: slots[0].x, y: slots[0].y - HANDOFF_LIFT * slots[0].scale } : { x: SCENE_W / 2, y: 200 };
+    return slot ? { x: slot.x, y: slot.y - HANDOFF_LIFT * slot.scale } : { x: SCENE_W / 2, y: 200 };
   };
 
   return (
@@ -110,21 +115,31 @@ export function OfficeScene({ ceoName, ceoProfession, members, snapshot, onOpenT
 
         <IsoRoom />
 
-        {/* ── 后墙装饰（挂件先画，被家具压住才对）── */}
-        <WallClock u={0.06} up={104} />
-        <WallShelf u0={0.17} u1={0.36} up={128} rows={2} />
-        <WallBoard u={0.5} up={120} />
-        <WallShelf u0={0.64} u1={0.83} up={128} rows={2} />
+        {/* ── 后墙：窗户（素材件）。
+            ⛔ 这里**不再混用粗描边 SVG 家具**（墙架/挂钟/白板/饮水机/打印机已删）：
+               手绘粗描边与 Kenney 的 3D 渲染件放同一屏，一眼就是"两种画风拼的"（实测）。 */}
+        <IsoWindow u={0.3} up={92} k={0.56} />
+        <IsoWindow u={0.7} up={92} k={0.56} />
 
-        {/* ── 靠墙家具 ── */}
-        <IsoCabinet u0={0.2} u1={0.34} v={0.05} h={78} />
-        <IsoCabinet u0={0.62} u1={0.74} v={0.05} h={78} />
-        <IsoFridge u={0.86} v={0.05} />
-        <IsoPlant u={0.045} v={0.2} size={1} />
-        <IsoPlant u={0.955} v={0.22} size={1} />
-        <IsoPlant u={0.5} v={0.1} size={0.8} />
-        <IsoCooler u={0.075} v={0.14} />
-        <IsoPrinter u={0.79} v={0.12} />
+        {/* ── 地毯（先画，被家具与人压住）── */}
+        <IsoRug u={0.5} v={0.5} k={0.66} />
+
+        {/* ── 靠墙家具与角落陈设（全部 Kenney 素材，画风统一）──
+            ⛔ u 别贴 0/1：地板收窄后，u<0.1 的家具会有一半掉到地板外面（实测）。 */}
+        <IsoCabinet u={0.26} v={0.05} />
+        <IsoCabinet u={0.74} v={0.05} />
+        <IsoShelfUnit u={0.88} v={0.07} />
+        <IsoSideTable u={0.5} v={0.07} />
+        <IsoPlant u={0.1} v={0.2} />
+        <IsoPlant u={0.9} v={0.24} />
+        <IsoFloorLamp u={0.11} v={0.6} />
+        <IsoLowTable u={0.13} v={0.36} />
+        <IsoSideTable u={0.87} v={0.48} />
+        <IsoCarton u={0.88} v={0.74} />
+        <IsoBin u={0.17} v={0.8} />
+        <IsoSmallPlant u={0.35} v={0.94} variant={1} />
+        <IsoSmallPlant u={0.65} v={0.94} variant={2} />
+        <IsoCeilingFan x={SCENE_W / 2} y={104} k={0.9} />
 
         {/* ── 工位（后排先画 ⇒ 前排自然盖住后排，形成纵深）── */}
         {slots.map((slot) => {
@@ -139,15 +154,19 @@ export function OfficeScene({ ceoName, ceoProfession, members, snapshot, onOpenT
               onClick={slot.memberId && slot.hasThread ? () => onOpenThread?.(slot.memberId as string) : undefined}
             >
               {state === "never" && <NeverMark spot={slot} />}
-              <IsoDeskSet u={slot.u} v={slot.v} />
-              {/* ⛔ 人物要**上抬 76**（坐姿髋部→头顶约 105 高）：v6 首版没抬，
-                  头顶落在桌面下方 ⇒ 人被自己的桌子压住，看起来像"躲在桌子底下"。 */}
+              {/* ⛔ v7 图层顺序（复刻参考实现的工位构图）：**显示器（最远）→ 椅子 → 人 → 桌子（最近）**。
+                  人夹在中间，桌子才会**遮住人的下半身** = 「坐在桌后」；早先是「家具先画、人后画」，
+                  人浮在桌子上方 ⇒ 看着像站在桌前而不是坐在桌后（v6 的观感问题）。 */}
+              <IsoDeskBack u={slot.u} v={slot.v} />
+              <IsoDeskChair u={slot.u} v={slot.v} />
+              {/* 人物上抬量见 SEAT_LIFT（与 SPRITE_K 联动，OfficeFurniture 里有实测记录）。 */}
               {slot.pose && !away && (
-                <g transform={`translate(${slot.x} ${slot.y - 76 * slot.scale}) scale(${slot.scale})`}>
+                <g transform={`translate(${slot.x} ${slot.y - SEAT_LIFT * slot.scale}) scale(${slot.scale})`}>
                   <SeatedWorker pose={slot.pose} look={workerLook(slot.isCeo ? members.length + 3 : members.findIndex((m) => m.id === slot.memberId), slot.isCeo ? 1 : 0)} view={back ? "back" : "front"} />
                 </g>
               )}
-              <StatusTag x={slot.x} y={slot.y - 138 * slot.scale} name={slot.name} activity={slot.pose?.label ?? ""} running={slot.running} dim={state === "never"} />
+              <IsoDeskFront u={slot.u} v={slot.v} />
+              <StatusTag x={slot.x} y={slot.y - TAG_LIFT * slot.scale} name={slot.name} activity={slot.pose?.label ?? ""} running={slot.running} dim={state === "never"} />
             </g>
           );
         })}

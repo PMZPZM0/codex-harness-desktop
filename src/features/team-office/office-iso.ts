@@ -15,12 +15,14 @@
 export const SCENE_W = 960;
 export const SCENE_H = 640;
 
-/** 地板四角（屏幕坐标）：后左、后右、前右、前左。 */
+/** 地板四角（屏幕坐标）：后左、后右、前右、前左。
+ *  ⛔ v7 收窄了 110px（后 604→456、前 856→652）：原来的房间太宽，工位只占中间一条，
+ *    两侧留出两大片空地板（"大房间摆小桌"）。收窄后内容占满，房间也更像"一间办公室"。 */
 export const FLOOR = {
-  bl: [178, 206] as const,
-  br: [782, 206] as const,
-  fr: [908, 574] as const,
-  fl: [52, 574] as const,
+  bl: [252, 206] as const,
+  br: [708, 206] as const,
+  fr: [806, 574] as const,
+  fl: [154, 574] as const,
 };
 
 /** 墙高（屏幕像素）——后墙从地板后边线向上抬这么多。 */
@@ -85,9 +87,13 @@ export function deskSlots(count: number): Array<FloorSpot & { u: number; v: numb
     const row = Math.floor(i / cols);
     const col = i % cols;
     // u/v 在 [0.2, 0.8] 内均匀分布，行自上而下铺开（近处的行更靠前）
-    // ⛔ 列距别拉太开：参考实现的工位几乎相连，0.27~0.73 会让两个人之间空出一大块（实测）。
-    const u = count === 1 ? 0.5 : 0.36 + (col / (cols - 1)) * 0.28;
-    const v = rows === 1 ? 0.58 : 0.18 + (row / (rows - 1)) * 0.64;
+    // ⛔ 列距别拉太开：0.27~0.73 会让两个人之间空出一大块（实测）。
+    // ⛔ v7 又收窄到 0.40~0.60：换 Kenney 素材后，桌子（等距 sprite 含**深度投影**，
+    //    高度 ≈88px×系数）会把同 v 的人整个盖住；间距收到 0.20（≈146px）+ 素材缩到 0.95，
+    //    桌子才只遮住人的下半身、露出头与肩（照参考实现的观感）。
+    const u = count === 1 ? 0.5 : 0.37 + (col / (cols - 1)) * 0.26;
+    // ⛔ v7 行距同时拉开到 0.14~0.86：0.18~0.82 时前排的人+桌会压住后排那位的身体与标签（实测）。
+    const v = rows === 1 ? 0.58 : 0.14 + (row / (rows - 1)) * 0.72;
     out.push({ ...floorPoint(u, v), u, v });
   }
   return out;

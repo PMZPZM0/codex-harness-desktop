@@ -471,3 +471,25 @@
   .team-office-body { grid-template-columns: 1fr; overflow-y: auto; }
   .team-office-staff { border-left: 0; border-top: 1px solid var(--line); }
 }
+
+
+/* ── v7 素材件动效（Kenney 的等距渲染件是**静态图**，动效改由 CSS 挂在素材节点上）──
+   ⛔ 只做「轻微摆动」这类不破坏等距透视的动画：整图旋转会让桌腿/底座一起转，一眼就看出来是"贴纸在转"。 */
+.ofc-fan {
+  transform-box: fill-box;
+  transform-origin: 50% 6%;
+  animation: ofc-fan-sway 4.6s ease-in-out infinite;
+}
+@keyframes ofc-fan-sway {
+  0%, 100% { transform: rotate(-2.6deg); }
+  50% { transform: rotate(2.6deg); }
+}
+.ofc-plant {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: ofc-plant-sway 5.4s ease-in-out infinite;
+}
+@keyframes ofc-plant-sway {
+  0%, 100% { transform: rotate(-1.5deg); }
+  50% { transform: rotate(1.5deg); }
+}
