@@ -5,6 +5,7 @@
  * ⛔ 顺序即契约：段内含 hook 调用，React 靠**调用顺序**绑定 state ⇒ 组合根必须按文件名前缀顺序调用。
  * ⛔ 本段语句只引用「自己的局部声明」与 bag；跨段名字由组合根按入参转交。
  */
+import { isCompactionItem } from "../../../../../lib/compaction-item.mjs";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../../../../../lib/model-scope.mjs";
@@ -45,7 +46,7 @@ bag.turnFinalizing = turnFinalizing as typeof bag.turnFinalizing;
         // ⛔ contextCompaction 不是「生成回复」（09-26 用户截图：压缩期间状态条挂
         //    「正在生成回复 · 正在落笔」）—— 压缩有自己的指示（时间线压缩分隔线转圈 +
         //    compact toast），状态条这里跳过它继续找真实活动；找不到就静默（见兜底）。
-        if (item?.type === "contextCompaction") continue;
+        if (isCompactionItem(item)) continue;
         switch (item.type) {
           case "commandExecution": return "正在执行命令";
           case "fileChange": return "正在编辑文件";

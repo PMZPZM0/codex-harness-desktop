@@ -2,6 +2,7 @@
  * MainStageTimeline —— AppViewMainStage 的 JSX 第 1 段（09-22 从 02-main-stage.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
+import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
 import { PPTokenEndpoints } from "../../../../lib/pptoken-endpoints";
 import { Fragment, type ReactNode } from "react";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../lib/entity-avatar";
@@ -307,7 +308,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                     let insertBefore = -1;
                     if (thread) {
                       let lastCompaction: any = null;
-                      for (const t of ordered) for (const it of (t.items ?? []) as any[]) if (it?.type === "contextCompaction" && it?.status !== "inProgress" && it?.status !== "running") lastCompaction = it;
+                      for (const t of ordered) for (const it of (t.items ?? []) as any[]) if (isCompactionItem(it) && it?.status !== "inProgress" && it?.status !== "running") lastCompaction = it;
                       for (let i = ordered.length - 1; i >= 0; i--) {
                         if (((ordered[i].items ?? []) as any[]).some((it) => it?.type === "userMessage")) { insertBefore = visible.indexOf(ordered[i]); break; }
                       }
@@ -424,7 +425,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                   {/* 上下文压缩分隔线：两边虚线 + 中间文字，状态切换带过渡；success/error 常驻可手动关闭，
                       只属于发起压缩的会话。成功态若时间线里已有 contextCompaction 项（同样渲染为成功分隔线），
                       跳过这条 toast 避免重复显示常驻卡 */}
-                  {compactToast && compactToast.state !== "running" && compactToast.threadId === thread?.id && !(compactToast.state === "success" && (thread?.turns ?? []).some((t) => (t.items ?? []).some((i) => i.type === "contextCompaction"))) && (
+                  {compactToast && compactToast.state !== "running" && compactToast.threadId === thread?.id && !(compactToast.state === "success" && (thread?.turns ?? []).some((t) => (t.items ?? []).some((i) => isCompactionItem(i)))) && (
                     <div className={`compact-divider compact-divider--${compactToast.state} compact-divider--settled`} role="status" aria-label="上下文压缩状态">
                       <i className="compact-divider-line" aria-hidden />
                       <span className="compact-divider-text">

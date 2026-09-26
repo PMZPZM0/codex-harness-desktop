@@ -6,6 +6,7 @@
  *    每个名字要么是本段刚声明的局部，要么走 bag（跨 part 用），要么由段末 return 交给组合根转交 App。
  *    改动后请重跑预检【92】与保真脚本（口径见 docs/archive/REFACTOR-PLAN-2026-09-21.md §10.2）。
  */
+import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { translateEngineNotice } from "../../../../lib/engine-notices-zh";
@@ -315,11 +316,17 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         const key = String(params.item.id ?? params.itemId ?? "");
         if (!reasoningStart.has(key)) reasoningStart.set(key, Date.now());
       }
-      if (method === "item/started" && params.item?.type === "contextCompaction") {
+      // ⛔ 判定走 isCompactionItem（唯一口径，大小写不敏感）——引擎发/落盘的是 PascalCase
+      //    「ContextCompaction」，早先各处硬写 camelCase 让整条压缩链静默不命中（09-26 rollout 取证）。
+      //    ② attachCompactionItem：压缩 item 的 turnId 常指向宿主**不知道**的引擎内部回合
+      //    ⇒ mergeItem 丢弃它 ⇒ thread 里没有 item ⇒ 渲染层无法归位（线只剩尾部 toast 兜底，
+      //    用户三次看到「线一直在下面」）。兜底把它挂到最后一条已知回合（= 压缩发生的历史点）。
+      if (method === "item/started" && isCompactionItem(params.item)) {
         bag.compactPendingRef.current.add(String(params.threadId ?? bag.threadRef.current?.id ?? ""));
         bag.setCompactEventState("running");
         bag.pruneSupersededCompactions(String(params.item?.id ?? ""));
-      } else if (method === "item/completed" && params.item?.type === "contextCompaction") {
+        bag.attachCompactionItem(params.item, String(params.turnId ?? ""));
+      } else if (method === "item/completed" && isCompactionItem(params.item)) {
         const tid0 = String(params.threadId ?? bag.threadRef.current?.id ?? "");
         const itemId0 = String(params.item?.id ?? "");
         bag.compactPendingRef.current.delete(tid0);
@@ -330,13 +337,14 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
           const turns = bag.threadRef.current?.turns ?? [];
           for (const t of turns) {
             for (const it of (t.items ?? []) as any[]) {
-              if (it?.type === "contextCompaction" && it?.status === "inProgress" && String(it?.id ?? "") !== itemId0) return true;
+              if (isCompactionItem(it) && (it?.status === "inProgress" || it?.status === "running") && String(it?.id ?? "") !== itemId0) return true;
             }
           }
           return false;
         })();
         if (!stillCompacting) bag.setCompactEventState("success");
         bag.pruneSupersededCompactions(String(params.item?.id ?? ""));
+        bag.attachCompactionItem(params.item, String(params.turnId ?? ""));
         bag.settleAfterCompaction(tid0);
       }
       if (method === "turn/plan/updated") {
