@@ -1426,3 +1426,179 @@
   word-break: break-word;
   overflow-wrap: break-word;
 }
+
+/* ── 文件卡片右键菜单（09-26「像 WorkBuddy 那样」） ── */
+.file-card-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 168px;
+  padding: 5px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+}
+.file-card-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.file-card-menu button:hover {
+  background: var(--panel-2);
+  color: var(--link);
+}
+.file-card-menu button svg {
+  color: var(--faint);
+  flex: none;
+}
+.file-card-menu button:hover svg {
+  color: var(--link);
+}
+
+/* ── md 表格可视化编辑（弹窗「表格」视图，09-26） ── */
+.pasted-text-tablebody {
+  overflow: auto;
+  padding: 8px 10px;
+}
+.md-edit-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.md-edit-block-label {
+  margin: 0 0 4px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.md-edit-table-wrap {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.md-edit-table {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: auto;
+}
+.md-edit-table th, .md-edit-table td {
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  padding: 0;
+  vertical-align: middle;
+}
+.md-edit-table th:last-child, .md-edit-table td:last-child {
+  border-right: none;
+}
+.md-edit-table tr:last-child td {
+  border-bottom: none;
+}
+.md-edit-table input {
+  width: 100%;
+  min-width: 90px;
+  padding: 6px 9px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+.md-edit-table input:focus {
+  background: var(--panel-2);
+}
+.md-edit-table thead input {
+  font-weight: 600;
+}
+.md-edit-cell-head {
+  display: flex;
+  align-items: center;
+}
+.md-edit-cell-head input {
+  flex: 1;
+}
+.md-edit-col-del, .md-edit-row-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin: 0 4px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.md-edit-table tr:hover .md-edit-col-del,
+.md-edit-table tr:hover .md-edit-row-del {
+  opacity: 1;
+}
+.md-edit-col-del:hover, .md-edit-row-del:hover {
+  background: rgba(220, 60, 60, 0.16);
+  color: #e05555;
+}
+.md-edit-op-col {
+  width: 30px;
+  text-align: center;
+}
+.md-edit-block-actions {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.md-edit-block-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.md-edit-block-actions button:hover {
+  border-color: var(--link);
+  color: var(--link);
+}
+.md-edit-empty {
+  margin: 0;
+  padding: 16px;
+  color: var(--faint);
+  font-size: 12.5px;
+}
+.pasted-text-viewtoggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pasted-text-viewtoggle:hover {
+  border-color: var(--link);
+  color: var(--link);
+}

@@ -1,1 +1,2 @@
-export { ImagePreview, ImageLightbox, SearchPreviewModal, PastedTextEditor } from "./Preview";
+export { ImagePreview, ImageLightbox, SearchPreviewModal, PastedTextEditor, type TextEditorTransport } from "./Preview";
+export { MdTableView } from "./MdTableEditor";

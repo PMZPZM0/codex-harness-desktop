@@ -9,7 +9,7 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import "@xterm/xterm/css/xterm.css";
 import { isMacPlatform } from "../../../../../lib/is-mac-platform";
 import { basename } from "../../../../../lib/basename";
-import { openImageLightbox, registerImageLightbox, openPastedTextEditor, registerOpenPastedTextEditor, notifyToast, registerToast, requestClosePastedText, registerClosePastedText, resolveFilePath, registerResolveFilePath, lookupKnownFile, registerLookupKnownFile, notifyFileMissing, registerFileMissing } from "../../../../../lib/ui-channels";
+import { openImageLightbox, registerImageLightbox, openPastedTextEditor, registerOpenPastedTextEditor, registerOpenFileTextEditor, notifyToast, registerToast, requestClosePastedText, registerClosePastedText, resolveFilePath, registerResolveFilePath, lookupKnownFile, registerLookupKnownFile, notifyFileMissing, registerFileMissing } from "../../../../../lib/ui-channels";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, subAgentTools, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../app-view/types";
 import type { Bag } from "../../bag-types";
@@ -77,8 +77,10 @@ bag.clearChatSearchHistory = clearChatSearchHistory as typeof bag.clearChatSearc
     // 粘贴文本 chip 的大窗口预览/编辑（与图片灯箱同款的模块级开关：chip 是原生 DOM，
     // 拿不到 React 上下文）
     registerOpenPastedTextEditor((path: string, name: string) => bag.setPastedText({ path, name }));
+    // 会话工作区文件的弹窗编辑（文件卡片右键「编辑」，09-26）：kind="file" ⇒ timeline 传 fs 通道 transport
+    registerOpenFileTextEditor((path: string, name: string) => bag.setPastedText({ path, name, kind: "file" }));
     registerToast((title: string, text?: string) => bag.showToast(title, text));
-    return () => { registerImageLightbox(null); registerOpenPastedTextEditor(null); registerToast(null); };
+    return () => { registerImageLightbox(null); registerOpenPastedTextEditor(null); registerOpenFileTextEditor(null); registerToast(null); };
   }, []);
 
   useEffect(() => {

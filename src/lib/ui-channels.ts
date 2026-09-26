@@ -23,6 +23,7 @@ type FileMissingFn = (message: string) => void;
 
 let lightbox: LightboxFn | null = null;
 let openPastedText: OpenPastedTextFn | null = null;
+let openFileText: OpenPastedTextFn | null = null;
 let toast: ToastFn | null = null;
 let closePastedText: ClosePastedTextFn | null = null;
 let resolvePath: ResolvePathFn | null = null;
@@ -34,6 +35,10 @@ export function openImageLightbox(path: string, alt: string): void { lightbox?.(
 
 export function registerOpenPastedTextEditor(fn: OpenPastedTextFn | null): void { openPastedText = fn; }
 export function openPastedTextEditor(path: string, name: string): void { openPastedText?.(path, name); }
+
+/** 会话工作区文件的弹窗编辑（09-26 文件卡片右键「编辑」）：同一 pastedText 槽位渲染，kind 区分读写通道 */
+export function registerOpenFileTextEditor(fn: OpenPastedTextFn | null): void { openFileText = fn; }
+export function openFileTextEditor(path: string, name: string): void { openFileText?.(path, name); }
 
 export function registerToast(fn: ToastFn | null): void { toast = fn; }
 export function notifyToast(title: string, text?: string): void { toast?.(title, text); }

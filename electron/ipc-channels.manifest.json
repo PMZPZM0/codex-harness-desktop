@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-09-23",
-  "count": 336,
+  "count": 337,
   "channels": [
     {
       "name": "request",
@@ -794,11 +794,11 @@
       "note": "写指路牌并就地完成基础迁移（异步分批 + 进度）；重启后只做秒级增量同步。重启复用既有 app:relaunch"
     },
     {
- "name": "readAppSettings",
- "channel": "appSettings:read",
- "paramsImpl": "",
- "paramsDecl": "",
- "returns": "Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }>",
+      "name": "readAppSettings",
+      "channel": "appSettings:read",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }>",
       "invokeArgs": "",
       "cast": null,
       "note": "应用级运行时开关（联网搜索等）"
@@ -806,8 +806,8 @@
     {
       "name": "saveAppSettings",
       "channel": "appSettings:save",
- "paramsImpl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }",
- "paramsDecl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }",
+      "paramsImpl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }",
+      "paramsDecl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }",
       "returns": "Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; adaptiveTone?: boolean }>",
       "invokeArgs": "patch",
       "cast": null,
@@ -1010,6 +1010,16 @@
       "paramsDecl": "startPath?: string",
       "returns": "Promise<string | null>",
       "invokeArgs": "startPath",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "saveFileAs",
+      "channel": "dialog:save-as",
+      "paramsImpl": "sourcePath: string",
+      "paramsDecl": "sourcePath: string",
+      "returns": "Promise<{ ok: boolean; savedTo?: string }>",
+      "invokeArgs": "sourcePath",
       "cast": null,
       "note": null
     },

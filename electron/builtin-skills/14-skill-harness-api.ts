@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（70 个能力域 / 337 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（70 个能力域 / 338 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -195,9 +195,9 @@ Bot 会话（Bot 与会话的绑定与消息注入）
 受控文件系统访问（读写/存在性检查，路径受信任目录约束）
 通道：fs:write, fs:read, fs:exists
 
-### dialog（5 通道）
+### dialog（6 通道）
 文件/目录选择对话框（含跨窗口）
-通道：dialog:directory, dialog:directory-at, dialog:images, dialog:files, dialog:ssh-key
+通道：dialog:directory, dialog:directory-at, dialog:images, dialog:files, dialog:ssh-key, dialog:save-as
 
 ### dataDir（2 通道）
 数据目录自定义（userData 重定向 + 启动期自动迁移；改后重启生效）

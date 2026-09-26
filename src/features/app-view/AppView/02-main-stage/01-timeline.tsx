@@ -150,7 +150,20 @@ import { visibleTurnWindow, mergeTurnListsById } from "../../../../lib/turn-orde
 import { ExpertTeamEditorModal, SubAgentEditorModal, TeamMemberRail, TeamMemberHistory, DelegatedRail, DelegatedRunPopup, TeamRunPopup } from "../../../experts-teams";
 import { expertRoleLabel } from "../../../../lib/expert-role-label";
 import { ImportedRecordCard, PendingImportSlot } from "../../../import-records";
-import { ImagePreview, ImageLightbox, SearchPreviewModal, PastedTextEditor } from "../../../preview";
+import { ImagePreview, ImageLightbox, SearchPreviewModal, PastedTextEditor, type TextEditorTransport } from "../../../preview";
+import { decodeText } from "../../../../hooks/useFilePreview";
+
+/** 会话工作区文件的弹窗编辑读写通道（pastedText.kind==="file" 时用）：读 = fs:read（base64→
+ *  与右栏预览同一 decodeText 口径，GBK 兜底）；写 = fs:write（可信根校验在主进程，root 参数不参与判定）。 */
+const fileEditTransport: TextEditorTransport = {
+  read: async (path: string) => {
+    const result = await window.codex.readFile(path);
+    const binary = atob(result.dataBase64 ?? "");
+    return decodeText(Uint8Array.from(binary, (value) => value.charCodeAt(0)));
+  },
+  save: (path: string, content: string) => window.codex.writeFile(path, content, ""),
+};
+
 import { Markdown, MdCode, MdBlock, FilePreviewCode } from "../../../markdown";
 import { ItemView } from "../../../session-queue";
 import { TurnView, MemoTurnView, MessageRuler, MemoMessageRuler } from "../../../session-turn";
@@ -315,7 +328,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                     </div>
                   )}
                   {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
-                  {pastedText && <PastedTextEditor path={pastedText.path} name={pastedText.name} onClose={() => setPastedText(null)} />}
+                  {pastedText && <PastedTextEditor path={pastedText.path} name={pastedText.name} onClose={() => setPastedText(null)} transport={pastedText.kind === "file" ? fileEditTransport : undefined} />}
                   {/* 设置页使用帮助（09-17 用户要求）：模型/插件/技能/MCP/专家团/语音/开发工具 + 设置总览 */}
                   {/* 模型配置引导（09-17，09-19 升级为「小白快速上手」）：
                       只在没有生效模型时出现，配好即不再弹。⛔ 弹窗里内嵌「粘 Key 一键配好」快路——
