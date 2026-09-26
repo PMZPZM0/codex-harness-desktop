@@ -168,24 +168,29 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
        *  折叠思考卡 / 收起工具卡 / 过程块合并都会让内容一次性变矮。 */
       const shrankBy = prevBottom ? prevBottom.cb - cb : 0;
       if (pinMine) {
-        // ⛔ 09-26 用户定稿：钉顶期的跟随/贴合只看**正文**（bodyBottomOf，扣除展开中的思考卡）
-        //    —— 思考板块把内容撑满一屏**不许**取消钉顶（思考卡有自己的内部滚动）；
-        //    正文满一屏才交棒给跟随。判据与 pinSentMessage 的交棒同一来源，两边不同源
-        //    就会出现「跟随已交棒、纠偏还锁着（或反过来）」的半死状态。
+        // ⛔ 09-26 用户定稿：**交棒之前**（钉顶期）跟随/贴合只看**正文**（bodyBottomOf，扣除
+        //    展开中的思考卡）—— 思考板块把内容撑满一屏**不许**取消钉顶（思考卡有自己的
+        //    内部滚动）；正文满一屏才交棒给跟随。
         const bodyDist = bag.bodyBottomOf(scroller) - scroller.scrollTop - scroller.clientHeight;
+        // ⛔ 09-26 用户截图：**交棒之后**（锚点消息早已滚出视口、跟随接管）新思考卡必须跟 ——
+        //    此时钉顶稳定已无意义，判据回到**全量** dist。不分相位的代价两头翻车：
+        //    要么思考在跟随期不跟（本轮截图：新思考卡被窗口底裁掉），要么思考在钉顶期
+        //    取消钉顶（上午的事故）。交棒信号 = gap 锁（pinSentMessage 在正文超屏时落锁）。
+        const handedOver = bag.pinGapLockedRef.current !== null && bag.pinGapLockedRef.current === bag.pinnedAnchorKeyRef.current;
+        const followDist = handedOver ? dist : bodyDist;
         /** ★ 钉顶期间「内容变矮」也要立刻贴合（09-23 用户报「思考板块折叠后，缝隙也跟着效果」）。
          *  为什么单独加这条：下面那条跟随**只往下补**（`scrollTop + dist`，步长 48 是为打字机
          *  逐字重排的抖动设计的），永远不会把视口**拉上来** —— 于是回合运行中折叠思考卡后，
          *  内容底部上方就留一条缝，而且再也不会自己消掉。
          *  收缩方向没有抖动风险（内容是一次性变矮，不是逐帧增长），所以立即贴合；
          *  增长方向仍走原来的 48px 步长逻辑，一个字都不改。
-         *  ⛔ 只在**正文**超出一屏时接手（09-26 同上）：正文不足一屏时钉顶要把锚点放在 54px，
-         *     那是钉顶的职责 —— 思考折叠后内容缩回一屏内，这里让位，pin-fix 自然把消息拉回
-         *     落点（那不是「钉顶丢了」，恰恰是用户要的稳定）。
+         *  ⛔ 交棒前只在**正文**超出一屏时接手（09-26 同上）：正文不足一屏时钉顶要把锚点放在
+         *     54px，那是钉顶的职责 —— 思考折叠后内容缩回一屏内，这里让位，pin-fix 自然把消息
+         *     拉回落点（那不是「钉顶丢了」，恰恰是用户要的稳定）；交棒后看全量。
          *  ⛔⛔ 流式期间**不追**（09-23 深夜打点实锤的「上下翻转」根因）：折叠动画的每一帧
          *     都算一次「变矮」，逐帧追 = 与流式增长互抢视口。1.2s 内有揭示就跳过 ——
          *     缺口由随后的文字增长自动填平；流式停了才贴合（见 lastRevealAt 注释）。 */
-        if (prevBottom && shrankBy > 1 && bodyDist > 0 && Date.now() - lastRevealAt > 1200) {
+        if (prevBottom && shrankBy > 1 && followDist > 0 && Date.now() - lastRevealAt > 1200) {
           const want = bag.contentTailTarget(scroller);
           if (Math.abs(want - scroller.scrollTop) > 1) {
             bag.selfScrollUntilRef.current = Date.now() + 80;
@@ -196,12 +201,12 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
           lastTop = scroller.scrollTop;
           return;
         }
-        if (bodyDist > -FOLLOW_STEP_PX) {
+        if (followDist > -FOLLOW_STEP_PX) {
           // 目标：把「内容底部」补到视口底（dist 归 0），而不是把内容整体推上去。
           // dist ≤ 0（还有余量）时不动，避免短回复也被推。
-          if (bodyDist > 0) {
+          if (followDist > 0) {
             bag.selfScrollUntilRef.current = Date.now() + 80;
-            scrollToOffsetInstant(scroller, scroller.scrollTop + bodyDist);
+            scrollToOffsetInstant(scroller, scroller.scrollTop + followDist);
             bag.pinnedScrollTopRef.current = scroller.scrollTop;
           }
           lastTop = scroller.scrollTop;
