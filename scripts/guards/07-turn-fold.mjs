@@ -4527,3 +4527,29 @@ export async function run() {
     else fail("【149】.markdown blockquote 缺样式 —— 会退回浏览器默认 margin: 1em 40px（用户报的「歪 + 前面空一块」）");
   }
 }
+
+// ── 54. 思考卡自适应展开（09-26 用户截图：思考板块溢出窗口底被裁掉）──
+{
+  const itemSrc = readFileSync(join(ROOT, "src", "features", "session-queue", "ItemView.tsx"), "utf8").replace(/\r/g, "");
+  const styles53 = readStyles();
+  // ① 自适应函数本体：量的是时间线滚动容器底（裁剪边），不是 window——composer 在容器外。
+  (/const scroller = el\.closest\(".timeline"\)/.test(itemSrc) ? ok : fail)(
+    "【161】思考卡自适应量的是 .timeline 裁剪边（composer 在容器外，量 window 会算多一截）"
+  );
+  // ② 跟随必须**先收高度再贴底**：顺序反了 scrollTop 会按旧 max 钳住，尾部差一行。
+  (/fitReasoningBody\(el\); el\.scrollTop = el\.scrollHeight;/.test(itemSrc) ? ok : fail)(
+    "【161】卡内跟随先 fit 后贴底（顺序反了最新一行差一截）"
+  );
+  // ③ 展开态逐字追字期间每 tick 重算（上方内容增长会把卡片顶低）+ done 卡靠 resize/展开兜底。
+  (/\[open, displayed, fitReasoningBody\]/.test(itemSrc) ? ok : fail)(
+    "【161】fit 判据挂 open+displayed（展开态与追字 tick 都要重算，done 卡手动展开也要兜住）"
+  );
+  // ④ 反向绊线：静态基线 260px 不许删（空间充裕时高度必须有界；自适应只是**往下收**）。
+  (/max-height: 260px;/.test(styles53) ? ok : fail)(
+    "【161】.reasoning-body 静态基线 max-height:260px 必须在（自适应只许收小不许放大）"
+  );
+  // ⑤ 下限 96px：贴到窗口底也不许把正文压成一条缝。
+  (/Math\.max\(96, Math\.min\(260, available\)\)/.test(itemSrc) ? ok : fail)(
+    "【161】自适应下限 96px（空间再小也不许把思考正文压成一条缝）"
+  );
+}

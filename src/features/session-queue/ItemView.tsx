@@ -26,7 +26,7 @@ import { usePacketRevealText } from "../shared/use-packet-reveal-text";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { bufferedAgentRevealStarts } from "../../lib/buffered-agent-reveal-starts";
 import { bufferedToolRevealStarts } from "../../lib/buffered-tool-reveal-starts";
-import { useRef, useMemo, useState, useEffect } from "react";
+import { useCallback, useRef, useMemo, useState, useEffect } from "react";
 import { reasoningTextOf } from "../../lib/reasoning-text-of";
 import { reasoningDuration } from "../../lib/reasoning-duration";
 import { bufferedReasoningRevealStarts } from "../../lib/buffered-reasoning-reveal-starts";
@@ -340,15 +340,43 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
     };
     // 监听器只在正文元素首次挂载时装一次（displayed 从空到有）；逐字追字期间不重装。
   }, [reasoningBodyMounted]);
+  /* ── 09-26 自适应展开：思考卡落在视口下方时，静态 max-height:260px 会让卡体
+     溢出时间线裁剪边（用户截图：思考板块被窗口底切掉），而钉顶期视口不跟随
+     ⇒ 最新思考永远看不见。修法 = 按卡顶到时间线裁剪边（.timeline 容器底）的
+     剩余空间动态收 max-height，正文靠已有的卡内滚动展示尾部；空间充裕时上限
+     仍是 260px（行为不变）。⛔ 量的是**滚动容器底**而不是 window——裁剪发生在
+     .timeline 的 client 区，composer 在容器外不算可用空间。 */
+  const fitReasoningBody = useCallback((el: HTMLDivElement | null) => {
+    if (!el || !el.isConnected) return;
+    const scroller = el.closest(".timeline");
+    const limit = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight;
+    const available = Math.round(limit - el.getBoundingClientRect().top - 12);
+    const cap = Math.max(96, Math.min(260, available));
+    if (el.style.maxHeight !== cap + "px") el.style.maxHeight = cap + "px";
+  }, []);
+  const fitResizeHandler = useCallback(() => fitReasoningBody(bodyRef.current), [fitReasoningBody]);
+  // 展开态与内容变化都重算（不抢滚动——滚动仍由上面的跟随 effect 独占）：
+  // displayed 逐字追字期间每 16ms 一跳，正好覆盖「上方内容增长把卡片顶低」的位移。
+  useEffect(() => {
+    if (!open) return;
+    const raf = requestAnimationFrame(() => fitReasoningBody(bodyRef.current));
+    return () => cancelAnimationFrame(raf);
+  }, [open, displayed, fitReasoningBody]);
+  // 手动展开/窗口尺寸变化同样要重算（done 卡没有追字 tick，只有这里能兜住）。
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener("resize", fitResizeHandler);
+    return () => window.removeEventListener("resize", fitResizeHandler);
+  }, [open]);
   useEffect(() => {
     if (!running || manualOpen === false) return;
     if (!reasoningFollowRef.current) return;
     const raf = requestAnimationFrame(() => {
       const el = bodyRef.current;
-      if (el && reasoningFollowRef.current) el.scrollTop = el.scrollHeight;
+      if (el && reasoningFollowRef.current) { fitReasoningBody(el); el.scrollTop = el.scrollHeight; }
     });
     return () => cancelAnimationFrame(raf);
-  }, [displayed, running, manualOpen]);
+  }, [displayed, running, manualOpen, fitReasoningBody]);
   // 没现场出现过且无内容的（历史加载的空占位）才不渲染；现场出现过的保留标题行常驻
   if (!text && !running && !seenLiveRef.current && !turnActive) return null;
   const head = running
