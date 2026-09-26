@@ -1,15 +1,18 @@
 /**
  * 共享 ReasoningCard（09-26 抽取）：此前有**两份逐字相同的实现**——
  * `session-turn/SessionTurn/02-reasoning-card.tsx`（主时间线回合内）与
- * `session-queue/ItemView.tsx` 内的本地副本。09-26 的教训：给一份加「自适应展开 +
- * 滚轮门」修复、另一份没动，用户看到的永远是没修的那份（探针 fit 生效率 0/25 实锤）。
+ * `session-queue/ItemView.tsx` 内的本地副本。09-26 的教训：给一份加修复、另一份没动，
+ * 用户看到的永远是没修的那份（探针 fit 生效率 0/25 实锤）。
  * ⛔ 从现在起思考卡只有一个真相源；改动必须落在这里，两处调用点只许 import。
  *
- * 今天落进来的两个行为（都先在 ItemView 版实现并验证过）：
- * ① 自适应展开：正文 max-height 由静态 260px 改为按「卡顶到 .timeline 裁剪边」的剩余
- *    空间动态收（clamp 96..260），空间不足时靠卡内滚动展示尾部——思考板块不再溢出窗口底。
- * ② 卡内接管只认「真有内部滚动条」的滚轮/触摸：外层时间线滚动时 wheel 冒泡到卡体，
- *    旧写法无条件置 follow=false 会把卡内跟随**永久**误杀（09-26 用户报「卡内不跟最新」）。
+ * 呈现形态（09-26 用户定稿，三轮迭代收敛）：
+ *  · 流内**永远只有一行芯片**（直播「深度思考中 ›」/ 完成「已深度思考（用时）›」）；
+ *  · 正文一律走 **portal 浮窗**：与输入框同宽同列、锚在芯片下方（空间不够自动翻到
+ *    芯片上方）、正文约 4 行（96px）内部滚动——不占消息流布局，工具卡不再被撑出视口；
+ *  · **macOS 窗口缩放特效**：浮窗从芯片位置放大放出（spawn）、完成时缩回芯片消失
+ *    （suck，forwarded 停在消失帧再卸载）——transform-origin 钉在芯片所在的左上角；
+ *  · 直播时自动展开并贴底跟随；done 态点芯片 = 弹窗预览（从头读，不自动跟）；
+ *    接管/恢复语义与外层时间线一致（滚轮接管、滚回距底 ≤8px 恢复）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -22,7 +25,6 @@ import { bufferedReasoningRevealStarts } from "../../lib/buffered-reasoning-reve
 import { revealReasoningProgress } from "../../lib/reveal-reasoning-progress";
 import { revealStepForReasoning } from "../../lib/reveal-step-for-reasoning";
 import { useCardOpen } from "../../components/CardShell";
-import { Fold } from "./Fold";
 
 export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: boolean }) {
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -52,9 +54,6 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
   }, [item.id]);
   const [displayed, setDisplayed] = useState(initialReveal);
   const [revealing, setRevealing] = useState(() => initialReveal.length < text.length);
-  /* 直播中 = 浮窗态（09-26 用户定稿「思考内容做成小弹窗」）。定义在 effects 之前：
-     监听器 effect 的依赖数组要用它（浮窗 ↔ 内联切换时 bodyRef 换元素，必须重绑）。 */
-  const floating = Boolean(running || revealing);
   const displayedRef = useRef(displayed);
   useEffect(() => { displayedRef.current = displayed; }, [displayed]);
   useEffect(() => {
@@ -146,25 +145,57 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
   // 与外层时间线同一哲学：滚轮/触摸/按住滚动条拖动 = 接管；滚回距底 ≤8px = 重新跟随。
   const reasoningFollowRef = useRef(true);
   const reasoningBodyPointerDownRef = useRef(false);
-  const reasoningBodyMounted = Boolean(displayed);
-  /* ── 09-26 自适应展开：思考卡落在视口下方时，静态 max-height:260px 会让卡体
-     溢出时间线裁剪边（用户截图：思考板块被窗口底切掉），而钉顶期视口不跟随
-     ⇒ 最新思考永远看不见。修法 = 按卡顶到时间线裁剪边（.timeline 容器底）的
-     剩余空间动态收 max-height，正文靠已有的卡内滚动展示尾部；空间充裕时上限
-     仍是 260px（行为不变）。⛔ 量的是**滚动容器底**而不是 window——裁剪发生在
-     .timeline 的 client 区，composer 在容器外不算可用空间。 */
-  const fitReasoningBody = useCallback((el: HTMLDivElement | null) => {
-    if (!el || !el.isConnected) return;
-    const scroller = el.closest(".timeline");
-    // ⛔ 浮窗态（直播中的思考卡 portal 到 body）不在时间线流内：高度由浮窗 CSS 自己管
-    //    （42vh 上限），fit 的「裁剪边」几何对它无意义 —— 没找到 .timeline 就直接跳过。
-    if (!scroller) return;
-    const limit = scroller.getBoundingClientRect().bottom;
-    const available = Math.round(limit - el.getBoundingClientRect().top - 12);
-    const cap = Math.max(96, Math.min(260, available));
-    if (el.style.maxHeight !== cap + "px") el.style.maxHeight = cap + "px";
+  /* ── 浮窗挂载态：直播自动展开；done 态点芯片 = 弹窗预览（open 驱动）。
+     卸载走**吸入特效**：popupOpen 转 false 的那一次先挂 .sucking 停 240ms 再卸——
+     ⛔ 不能直接卸载：macOS 缩回特效需要元素活着播完 forwards 帧。 */
+  const popupOpen = open && Boolean(displayed);
+  const [exiting, setExiting] = useState(false);
+  const prevOpenRef = useRef(false);
+  useEffect(() => {
+    if (popupOpen) { prevOpenRef.current = true; setExiting(false); return; }
+    if (prevOpenRef.current && Boolean(displayed)) {
+      prevOpenRef.current = false;
+      setExiting(true);
+      const t = setTimeout(() => setExiting(false), 240);
+      return () => clearTimeout(t);
+    }
+  }, [popupOpen, displayed]);
+  const reasoningBodyPointerMounted = (popupOpen || exiting) && Boolean(displayed);
+  const headRef = useRef<HTMLButtonElement>(null);
+  const floatRef = useRef<HTMLDivElement>(null);
+  /* ── 浮窗定位：与输入框**同宽同列**（跟输入框一样长）；垂直方向**按空间自适应**
+     （09-26 用户定稿「位置不是固定每次都在下方」）：下方够就贴芯片下方 4px；
+     下方不够（芯片贴近输入框——最常见）放芯片上方；两侧都不够取**空间大**的一侧
+     并钳进边界。每帧跟随（rAF 循环）：流式追字、外层滚动、窗口变化都重新选边。 */
+  const positionFloat = useCallback(() => {
+    const panel = floatRef.current;
+    const chip = headRef.current;
+    if (!panel || !chip || !chip.isConnected) return;
+    const comp = document.querySelector(".composer");
+    const compR = comp ? comp.getBoundingClientRect() : null;
+    const chipR = chip.getBoundingClientRect();
+    const width = compR ? Math.round(compR.width) : Math.min(820, window.innerWidth - 46);
+    const left = compR ? Math.round(compR.left) : Math.round((window.innerWidth - width) / 2);
+    const compTop = compR ? compR.top : window.innerHeight;
+    panel.style.width = width + "px";
+    panel.style.left = left + "px";
+    const ph = panel.offsetHeight || 140;
+    const spaceBelow = compTop - 8 - chipR.bottom;
+    const spaceAbove = chipR.top - 8;
+    let top;
+    if (spaceBelow >= ph) top = chipR.bottom + 4;
+    else if (spaceAbove >= ph) top = chipR.top - 6 - ph;
+    else if (spaceAbove >= spaceBelow) top = Math.max(8, chipR.top - 6 - ph);
+    else top = Math.min(chipR.bottom + 4, compTop - 8 - ph);
+    panel.style.top = Math.round(top) + "px";
   }, []);
-  const fitResizeHandler = useCallback(() => fitReasoningBody(bodyRef.current), [fitReasoningBody]);
+  useEffect(() => {
+    if (!reasoningBodyPointerMounted) return;
+    let raf = 0;
+    const loop = () => { positionFloat(); raf = requestAnimationFrame(loop); };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [reasoningBodyPointerMounted, positionFloat]);
   useEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
@@ -197,60 +228,48 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
       window.removeEventListener("pointercancel", onPointerUp);
     };
     // 监听器只在正文元素首次挂载时装一次（displayed 从空到有）；逐字追字期间不重装。
-    // ⛔ floating（浮窗 ↔ 内联）切换时 bodyRef 换了元素，必须重绑，否则跟随监听丢失。
-  }, [reasoningBodyMounted, floating]);
+    // ⛔ 浮窗 ↔ 卸载切换时 bodyRef 换元素，必须重绑，否则跟随监听丢失。
+  }, [reasoningBodyPointerMounted]);
+  // 直播跟随：每 tick 把卡内滚动贴到最新一行（done 预览不跟——从头读）。
   useEffect(() => {
     if (!running || manualOpen === false) return;
     if (!reasoningFollowRef.current) return;
     const raf = requestAnimationFrame(() => {
       const el = bodyRef.current;
-      // ⛔ 先收高度再贴底：顺序反了 scrollTop 会按旧 max 钳住，尾部差一行。
-      if (el && reasoningFollowRef.current) { fitReasoningBody(el); el.scrollTop = el.scrollHeight; }
+      if (el && reasoningFollowRef.current) el.scrollTop = el.scrollHeight;
     });
     return () => cancelAnimationFrame(raf);
-  }, [displayed, running, manualOpen, fitReasoningBody]);
-  // 展开态与内容变化都重算（不抢滚动——滚动仍由上面的跟随 effect 独占）：
-  // displayed 逐字追字期间每 16ms 一跳，正好覆盖「上方内容增长把卡片顶低」的位移。
-  useEffect(() => {
-    if (!open) return;
-    const raf = requestAnimationFrame(() => fitReasoningBody(bodyRef.current));
-    return () => cancelAnimationFrame(raf);
-  }, [open, displayed, fitReasoningBody]);
-  // 手动展开/窗口尺寸变化同样要重算（done 卡没有追字 tick，只有这里能兜住）。
-  useEffect(() => {
-    if (!open) return;
-    window.addEventListener("resize", fitResizeHandler);
-    return () => window.removeEventListener("resize", fitResizeHandler);
-  }, [open, fitResizeHandler]);
+  }, [displayed, running, manualOpen]);
   // 没现场出现过且无内容的（历史加载的空占位）才不渲染；现场出现过的保留标题行常驻
   if (!text && !running && !seenLiveRef.current && !turnActive) return null;
-  /* ── 09-26 用户定稿「思考内容做成小弹窗」：直播中（running/revealing）的思考正文
-     **portal 成右下角浮窗**，不再挤占消息流——正在运行的工具卡不被撑出视口，
-     钉顶/跟随/裁剪那一整类几何竞争从根上消失（浮窗不在 .timeline 流内，
-     bodyBottomOf 也量不到它）。思考完成后浮窗消失，流内落回「已深度思考 ›」折叠芯片
-     （本来就有的收纳态），点芯片仍可内联展开回看（done 态走 fit 限高）。
-     ⛔ 浮窗常挂到 live 结束、用 hidden 类切显示（不随 open 卸载）——卡内跟随的
-     监听器绑在 bodyRef 上，卸载重挂会丢监听、且会丢滚动位置。 */
   const head = running
     ? <span className="reasoning-head shimmer-text"><Brain size={13} className="reasoning-pulse" />深度思考中</span>
     : <span className="reasoning-head"><Brain size={13} />已深度思考{durationMs ? `（用时 ${formatDuration(durationMs)}）` : ""}</span>;
-  const bodyNode = <div className="reasoning-body" ref={bodyRef}>{displayed}{revealing ? <span className="reasoning-stream-cursor" aria-hidden /> : null}</div>;
   return (
     <div className={`reasoning-card ${running ? "live" : "done"} ${open ? "open" : "collapsed"}`}>
-      <button type="button" className="reasoning-head-btn" onClick={toggle}>
+      <button type="button" className="reasoning-head-btn" ref={headRef} onClick={toggle}>
         {head}<ChevronDown size={13} className="reasoning-caret" />
       </button>
-      {displayed && (floating
-        ? createPortal(
-            <div className={`reasoning-float ${open ? "" : "hidden"}`} role="complementary" aria-label="深度思考直播">
-              <button type="button" className="reasoning-float-head" onClick={toggle} title={open ? "收起浮窗（点流内芯片可再展开）" : "展开"}>
-                {head}<ChevronDown size={13} className={`reasoning-caret ${open ? "" : "collapsed"}`} />
-              </button>
-              <div className="reasoning-body-wrap">{bodyNode}</div>
-            </div>,
-            document.body,
-          )
-        : <Fold open={open}><div className="reasoning-body-wrap">{bodyNode}</div></Fold>)}
+      {reasoningBodyPointerMounted && createPortal(
+        <div
+          className={`reasoning-float ${exiting ? "sucking" : ""}`} ref={floatRef} role="complementary" aria-label="深度思考"
+          onClick={(event) => {
+            // ⛔ 09-26 用户定稿「整个留白地方做成可以折叠收纳的按键」：点浮窗**空白处/头部**
+            //    即收起；正文区例外（点正文是选字/滚动，不能误收）。
+            if ((event.target as HTMLElement).closest(".reasoning-body")) return;
+            toggle();
+          }}
+        >
+          {/* ⛔ 浮窗头不放「深度思考中」文字——流内芯片已经写着，重复两遍很傻；只留收起箭头（主题蓝） */}
+          <button type="button" className="reasoning-float-head" onClick={toggle} title="收起（点流内芯片可再展开）">
+            <ChevronDown size={13} className="reasoning-caret" />
+          </button>
+          <div className="reasoning-body-wrap">
+            <div className="reasoning-body" ref={bodyRef}>{displayed}{revealing ? <span className="reasoning-stream-cursor" aria-hidden /> : null}</div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

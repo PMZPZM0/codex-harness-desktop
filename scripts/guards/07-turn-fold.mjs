@@ -4530,10 +4530,10 @@ export async function run() {
   }
 }
 
-// ── 54. 思考卡自适应展开（09-26 用户截图：思考板块溢出窗口底被裁掉）──
+// ── 54. 思考卡浮窗形态（09-26 三轮迭代定稿：芯片 + portal 浮窗 + macOS 缩放特效）──
 {
   const itemSrc = readFileSync(join(ROOT, "src", "features", "shared", "ReasoningCard.tsx"), "utf8").replace(/\r/g, "");
-  const styles53 = readStyles();
+  const styles54 = readStyles();
   // ⓪ 单一真相源（09-26 教训：两份逐字相同的 ReasoningCard 并存，修一份漏另一份，
   //    探针 fit 生效率 0/25 才暴露）。调用点只许 import 共享组件，本地定义 = 事故复发。
   (!/function ReasoningCard\(/.test(readFileSync(join(ROOT, "src", "features", "session-queue", "ItemView.tsx"), "utf8")) ? ok : fail)(
@@ -4542,38 +4542,46 @@ export async function run() {
   (/export function ReasoningCard/.test(itemSrc) ? ok : fail)(
     "【161】思考卡真相源 = src/features/shared/ReasoningCard.tsx（共享导出）"
   );
-  // ① 自适应函数本体：量的是时间线滚动容器底（裁剪边），不是 window——composer 在容器外。
-  (/const scroller = el\.closest\(".timeline"\)/.test(itemSrc) ? ok : fail)(
-    "【161】思考卡自适应量的是 .timeline 裁剪边（composer 在容器外，量 window 会算多一截）"
+  // ① 正文一律走 portal 浮窗（直播与 done 预览同一条路）——内联 Fold 展开已退役：
+  //    思考不占消息流布局，工具卡不再被撑出视口（用户 09-26 定稿）。
+  (/createPortal\(/.test(itemSrc) ? ok : fail)("【161】思考正文 = portal 浮窗（直播与预览同路）");
+  (!/Fold open=\{open\}/.test(itemSrc) ? ok : fail)("【161】⛔ 内联 Fold 展开不得回归（那是「撑走工具卡」本身）");
+  // ② 浮窗与输入框同宽同列（JS 每帧取 composerRect.width/left 写内联样式）。
+  (/compR\.width/.test(itemSrc) && /compR\.left/.test(itemSrc) ? ok : fail)(
+    "【161】浮窗与输入框同宽同列（width/left 取自 composerRect）"
   );
-  // ② 跟随必须**先收高度再贴底**：顺序反了 scrollTop 会按旧 max 钳住，尾部差一行。
-  (/fitReasoningBody\(el\); el\.scrollTop = el\.scrollHeight;/.test(itemSrc) ? ok : fail)(
-    "【161】卡内跟随先 fit 后贴底（顺序反了最新一行差一截）"
+  // ③ 垂直**按空间自适应**（09-26 用户定稿「位置不固定每次都在下方」）：下方够放下方、
+  //    不够放上方、两侧都不够取空间大的一侧；rAF 每帧重选边（追字/滚动/缩放都自适应）。
+  (/const spaceBelow = compTop - 8 - chipR\.bottom;/.test(itemSrc) && /const spaceAbove = chipR\.top - 8;/.test(itemSrc) && /spaceAbove >= spaceBelow/.test(itemSrc) && /requestAnimationFrame\(loop\)/.test(itemSrc) ? ok : fail)(
+    "【161】浮窗方向按空间自适应（下方/上方/取大侧钳边界），rAF 每帧重选边"
   );
-  // ③ 展开态逐字追字期间每 tick 重算（上方内容增长会把卡片顶低）+ done 卡靠 resize/展开兜底。
-  (/\[open, displayed, fitReasoningBody\]/.test(itemSrc) ? ok : fail)(
-    "【161】fit 判据挂 open+displayed（展开态与追字 tick 都要重算，done 卡手动展开也要兜住）"
+  // ④ macOS 缩放特效：spawn 放大放出 / suck 缩回芯片（forwards 停在消失帧再卸载，
+  //    卸载延迟 240ms——直接卸载会跳过特效）；transform-origin 钉在芯片所在的左上角。
+  (/reasoning-float-spawn/.test(styles54) && /reasoning-float-suck/.test(styles54) && /transform-origin: 0 0;/.test(styles54) ? ok : fail)(
+    "【161】spawn/suck 特效 + transform-origin 0 0（从芯片放大/缩回）必须都在 CSS"
   );
-  // ④ 反向绊线：静态基线 260px 不许删（空间充裕时高度必须有界；自适应只是**往下收**）。
-  (/max-height: 260px;/.test(styles53) ? ok : fail)(
-    "【161】.reasoning-body 静态基线 max-height:260px 必须在（自适应只许收小不许放大）"
+  (/exiting \? "sucking" : ""/.test(itemSrc) && /setTimeout\(\(\) => setExiting\(false\), 240\)/.test(itemSrc) ? ok : fail)(
+    "【161】完成吸入 = .sucking 挂 240ms 再卸载（直接卸载会跳过特效）"
   );
-  // ⑤ 下限 96px：贴到窗口底也不许把正文压成一条缝。
-  (/Math\.max\(96, Math\.min\(260, available\)\)/.test(itemSrc) ? ok : fail)(
-    "【161】自适应下限 96px（空间再小也不许把思考正文压成一条缝）"
+  // ⑤ 正文 ≈ 4 行（96px）内部滚动：浮窗高度由此决定（不再有 260px 内联展开）。
+  (/max-height: 144px;/.test(styles54) ? ok : fail)(
+    "【161】浮窗正文 6 行（144px，09-26 用户要求加高）内部滚动 —— 撑高与裁切从此与思考无关"
   );
-  // ⑥ 09-26 用户报「卡内内容不跟最新」的根因之一：滚轮在卡上滚**外层**时间线时事件冒泡
-  //    到卡体，被当成「接管卡内滚动」→ 永久停跟。接管必须只在卡体**真有内部滚动条**时成立。
+  // ⑥ 直播跟随贴底；done 预览不跟（从头读）。
+  (/if \(el && reasoningFollowRef\.current\) el\.scrollTop = el\.scrollHeight;/.test(itemSrc) ? ok : fail)(
+    "【161】直播跟随 = 每 tick 贴底（最新一行始终可见）"
+  );
+  // ⑦ 接管只认「真有内部滚动条」的滚轮/触摸（外层滚动冒泡不许误杀卡内跟随）。
   (/const onWheel = \(\) => \{ if \(el\.scrollHeight > el\.clientHeight \+ 1\) reasoningFollowRef\.current = false; \};/.test(itemSrc) ? ok : fail)(
-    "【161】卡内接管只认「真有内部滚动条」的滚轮（外层滚动冒泡不许误杀卡内跟随）"
+    "【161】卡内接管只认「真有内部滚动条」的滚轮（外层滚动冒泡不许误杀）"
   );
-  // ⑦ 09-26 用户定稿「思考内容做成小弹窗，不靠往下撑」：直播中的思考正文 portal 成
-  //    右下角浮窗（.reasoning-float），不占消息流——正在运行的工具卡不再被撑出视口。
-  //    ⛔ 浮窗隐藏用 hidden 类而非卸载（卡内跟随监听器与滚动位置绑在元素上）。
-  (/createPortal\(/.test(itemSrc) && /reasoning-float \$\{open \? "" : "hidden"\}/.test(itemSrc) ? ok : fail)(
-    "【161】直播中思考正文 = portal 浮窗（.reasoning-float），隐藏用 hidden 类不卸载"
+  // ⑧ 整面可点收起（09-26 用户定稿「留白地方做成折叠收纳的按键」）：点空白/头部收起，
+  //    点正文例外（选字/滚动不能误收）。
+  (/closest\("\.reasoning-body"\)/.test(itemSrc) && /onClick=\{\(event\) =>/.test(itemSrc) ? ok : fail)(
+    "【161】浮窗整面可点收起（点正文例外——选字/滚动不误收）"
   );
-  (/if \(!scroller\) return;/.test(itemSrc) ? ok : fail)(
-    "【161】fit 在浮窗态（无 .timeline 祖先）直接跳过（浮窗高度由自身 CSS 46vh 管）"
+  // ⑨ 面板身份色：左 accent 色条 + 头箭头主题蓝（09-26 用户要求加颜色区分；都在 CSS）。
+  (/border-left: 3px solid var\(--accent\);/.test(styles54) && /color: var\(--accent\);/.test(styles54) ? ok : fail)(
+    "【161】浮窗身份色 = 左 accent 色条 + 头箭头主题蓝（09-26 用户要求）"
   );
 }

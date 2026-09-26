@@ -433,27 +433,37 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   display: inline-block;
   animation: reasoning-cursor-blink 0.72s steps(2, jump-none) infinite;
 }
-/* ── 思考直播浮窗（09-26 用户定稿「思考内容做成小弹窗，不靠往下撑」）：
-   直播中的思考正文 portal 成右下角浮窗，不占消息流布局——正在运行的工具卡不再被
-   撑出视口。思考完成后浮窗消失，流内落回「已深度思考 ›」折叠芯片（收纳态）。
-   ⛔ 隐藏用 hidden 类（display:none）而不是卸载：卡内跟随监听器与滚动位置都绑在
-   这个元素上，卸载重挂会两者皆失。z-index 8：盖过消息流，让位下拉面板（30/40）。 */
+/* ── 思考直播浮窗（09-26 用户定稿：小弹窗 + macOS 应用缩放特效）：
+   位置与宽度由 JS 每帧跟随（left/top/width 内联：与输入框同宽同列、垂直锚在思考
+   芯片下方 4px，放不下翻到芯片上方）；CSS 只管外观与**放出/吸入特效**——
+   transform-origin 钉在芯片所在的左上角，scale 0.12 ↔ 1 = 从芯片放大放出 /
+   缩回芯片消失（macOS 最小化窗口的简化版）。
+   ⛔ spawn/suck 的 keyframes 里必须带各自的 transform 终态（ Morning 教训：
+   动画的 transform 整体覆盖静态位移，origin 补偿不能只写在外层）。
+   ⛔ 卸载延迟 240ms（.sucking forwards 停在消失帧）——直接卸载会跳过特效。 */
 .reasoning-float {
   position: fixed;
-  right: 18px;
-  bottom: 20px;
   z-index: 8;
-  width: min(420px, calc(100vw - 48px));
-  max-height: min(46vh, 380px);
   display: flex;
   flex-direction: column;
   background: var(--bg);
   border: 1px solid var(--line);
+  /* 左侧 accent 色条：一眼区分「这是思考直播」的面板身份（09-26 用户要求加颜色区分） */
+  border-left: 3px solid var(--accent);
   border-radius: 12px;
   box-shadow: var(--shadow);
-  padding: 8px 10px 10px;
+  padding: 8px 12px 10px;
+  transform-origin: 0 0;
+  animation: reasoning-float-spawn 0.2s ease-out;
+  cursor: pointer; /* 整面可点收起（正文区除外）——见组件里的 onClick 分流 */
 }
-.reasoning-float.hidden { display: none; }
+.reasoning-float.sucking { animation: reasoning-float-suck 0.22s ease-in forwards; }
+@keyframes reasoning-float-spawn {
+  from { opacity: 0; transform: scale(0.12); }
+}
+@keyframes reasoning-float-suck {
+  to { opacity: 0; transform: scale(0.12); }
+}
 .reasoning-float .reasoning-float-head {
   display: inline-flex;
   align-items: center;
@@ -461,22 +471,20 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   border: 0;
   background: 0 0;
   cursor: pointer;
-  padding: 2px 0;
+  padding: 2px 6px;
+  border-radius: 6px;
   text-align: left;
+  /* ⛔ 收窄（09-26 用户：折叠收纳那一行不要太宽）——flex 列的子项默认 stretch 满宽，
+     改为按内容宽、贴右缘：收纳钮就是右上角一个小箭头，不占一整行。 */
+  align-self: flex-end;
   flex: none;
+  color: var(--accent);
 }
-.reasoning-float .reasoning-body-wrap {
-  min-height: 0;
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-/* 浮窗内的正文不限 260px（浮窗自身 46vh 上限管总高），占满剩余空间并内部滚动 */
+.reasoning-float .reasoning-float-head:hover { background: var(--panel-2); }
+/* 正文 ≈ 6 行（144px，09-26 用户定稿从 4 行加到 6 行）：内部滚动，浮窗整体高度由此决定（JS 只跟随位置） */
 .reasoning-float .reasoning-body {
-  max-height: none;
-  flex: 1 1 auto;
-  min-height: 0;
+  max-height: 144px;
+  overflow-y: auto;
   margin: 2px 0 0;
 }
 .packet-stream-cursor {
