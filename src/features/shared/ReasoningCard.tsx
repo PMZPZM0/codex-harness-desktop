@@ -54,9 +54,16 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
   }, [item.id]);
   const [displayed, setDisplayed] = useState(initialReveal);
   const [revealing, setRevealing] = useState(() => initialReveal.length < text.length);
+  // 吸入动画挂起态（声明在追字 effect 之前：它的依赖数组要引用）
+  const [exiting, setExiting] = useState(false);
   const displayedRef = useRef(displayed);
   useEffect(() => { displayedRef.current = displayed; }, [displayed]);
+  // ⛔ 吸入动画期间（exiting）**冻结追字**：完成瞬间剩余全文会被一次性灌进浮窗 + 定时器
+  //    每 16ms setDisplayed，与 suck 动画同帧抢主线程 = 用户报的「展开后卡顿一下」。
+  //    冻结到动画播完（exiting 转 false 本 effect 重跑），再走下面的放全文分支——
+  //    那时浮窗已卸载，setDisplayed 只重渲染流内芯片，零成本。
   useEffect(() => {
+    if (exiting) return;
     const markedStart = bufferedReasoningRevealStarts.get(String(item.id));
     let start = displayedRef.current;
     if (markedStart != null && text.startsWith(markedStart) && start.length < markedStart.length) {
@@ -125,7 +132,7 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
       }
     }, 16);
     return () => window.clearInterval(timer);
-  }, [item.id, text, revealing, running]);
+  }, [item.id, text, revealing, running, exiting]);
   // 自动延迟可见与用户手动展开必须分开：自动行为不能写进 manualOpen，
   // 否则会被误认为“用户主动展开”，导致第一块思考永久保持打开。
   const { open, toggle, manualOpen } = useCardOpen(Boolean(running) || revealing);
@@ -149,7 +156,6 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
      卸载走**吸入特效**：popupOpen 转 false 的那一次先挂 .sucking 停 240ms 再卸——
      ⛔ 不能直接卸载：macOS 缩回特效需要元素活着播完 forwards 帧。 */
   const popupOpen = open && Boolean(displayed);
-  const [exiting, setExiting] = useState(false);
   const prevOpenRef = useRef(false);
   useEffect(() => {
     if (popupOpen) { prevOpenRef.current = true; setExiting(false); return; }
