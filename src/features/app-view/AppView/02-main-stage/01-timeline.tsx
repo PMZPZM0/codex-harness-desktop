@@ -314,6 +314,20 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       }
                       if (lastCompaction && insertBefore >= 0) {
                         compactionLine = <ItemView item={lastCompaction} onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} key={`compact-${lastCompaction.id}`} />;
+                      } else if (compactToast && compactToast.state !== "running" && compactToast.threadId === thread.id) {
+                        // ⛔ 时间线里没有压缩 item 时才用 toast 兜底 —— 而且**渲染在同一个归位位置**，
+                        //    不再单独挂在时间线尾部（09-26 两条线就是「归位的一条 + 尾部兜底一条」）。
+                        compactionLine = (
+                          <div className={`compact-divider compact-divider--${compactToast.state} compact-divider--settled`} role="status" aria-label="上下文压缩状态" key={`compact-toast-${compactToast.threadId}`}>
+                            <i className="compact-divider-line" aria-hidden />
+                            <span className="compact-divider-text">
+                              {compactToast.state === "error" ? <CircleX size={13} /> : <CircleCheck size={13} />}
+                              {compactToast.message}
+                            </span>
+                            <button type="button" className="compact-divider-close" title="关闭此条记录" aria-label="关闭" onClick={() => setCompactToast(null)}><X size={12} /></button>
+                            <i className="compact-divider-line" aria-hidden />
+                          </div>
+                        );
                       }
                     }
                     return visible.map((turn, i) => (
@@ -422,20 +436,9 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                     done={bootReady || Boolean(showLogin)}
                   />
                   {systemEvents.map((event) => <div className={`system-event ${event.tone ?? "info"}`} key={event.id}><strong>{event.tone === "success" ? <CircleCheck size={13} className="system-event-icon" /> : null}{event.title}</strong><Markdown>{event.text}</Markdown></div>)}
-                  {/* 上下文压缩分隔线：两边虚线 + 中间文字，状态切换带过渡；success/error 常驻可手动关闭，
-                      只属于发起压缩的会话。成功态若时间线里已有 contextCompaction 项（同样渲染为成功分隔线），
-                      跳过这条 toast 避免重复显示常驻卡 */}
-                  {compactToast && compactToast.state !== "running" && compactToast.threadId === thread?.id && !(compactToast.state === "success" && (thread?.turns ?? []).some((t) => (t.items ?? []).some((i) => isCompactionItem(i)))) && (
-                    <div className={`compact-divider compact-divider--${compactToast.state} compact-divider--settled`} role="status" aria-label="上下文压缩状态">
-                      <i className="compact-divider-line" aria-hidden />
-                      <span className="compact-divider-text">
-                        {compactToast.state === "error" ? <CircleX size={13} /> : <CircleCheck size={13} />}
-                        {compactToast.message}
-                      </span>
-                      <button type="button" className="compact-divider-close" title="关闭此条记录" aria-label="关闭" onClick={() => setCompactToast(null)}><X size={12} /></button>
-                      <i className="compact-divider-line" aria-hidden />
-                    </div>
-                  )}
+                  {/* ⛔ 成功/失败的压缩线**只在上面的归位处渲染一处**（09-26 用户截图「两条压缩线」：
+                      归位一条 + 这里尾部兜底一条）。这条尾部兜底已删除——任何时序下同屏只可能有一条
+                      「已完成」压缩线。进行中的转圈（running）仍留在底部贴输入框，见下方。 */}
                   {compactToast && compactToast.state === "running" && compactToast.threadId === thread?.id && !(thread?.turns ?? []).some((t) => (t.items ?? []).some((i) => i.type === "contextCompaction" && (i.status === "inProgress" || i.status === "running"))) && (
                     <div className={`compact-divider compact-divider--running`} role="status" aria-label="上下文压缩状态">
                       <i className="compact-divider-line" aria-hidden />

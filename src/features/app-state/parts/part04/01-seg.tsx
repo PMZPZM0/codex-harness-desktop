@@ -362,13 +362,21 @@ bag.settleAfterCompaction = settleAfterCompaction as typeof bag.settleAfterCompa
    *  项从渲染状态中移除（只改本地渲染副本，不动引擎 rollout）。旧「成功」分隔线一直挂着，
    *  新压缩一开始就上下两条叠在一起，被当成多余展示（用户实测）。 */
   function pruneSupersededCompactions(keepId: string) {
-    if (!keepId) return;
+    // ⛔ keepId 为空也要收敛（09-26 用户截图「两条压缩线」）：空 id 直接 return 时，多余的压缩项
+    //    全留在时间线里 ⇒ 同屏多条线。空 id 时改为「保留最后一条压缩 item」，语义等价于「只留最新」。
     bag.setThread((current) => {
       if (!current) return current;
+      let keep = keepId;
+      if (!keep) {
+        let last: any = null;
+        for (const turn of current.turns ?? []) for (const item of (turn.items ?? []) as any[]) if (isCompactionItem(item)) last = item;
+        keep = String(last?.id ?? "");
+      }
+      if (!keep) return current;
       let changed = false;
       const turns = current.turns.map((turn) => {
         const before = (turn.items ?? []).length;
-        const items = (turn.items ?? []).filter((item) => !isCompactionItem(item) || String(item.id) === keepId);
+        const items = (turn.items ?? []).filter((item) => !isCompactionItem(item) || String(item.id) === keep);
         if (items.length !== before) { changed = true; return { ...turn, items }; }
         return turn;
       });
