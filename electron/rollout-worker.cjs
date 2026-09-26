@@ -121,7 +121,13 @@ function readRolloutListEntry(full, id, archived) {
 
 /** 侧栏会话列表兜底扫描（目录遍历 + 单文件缓存解析）。 */
 function listRolloutThreads(root) {
-  const roots = [path.join(root, "sessions"), path.join(root, "archived_sessions")];
+  // ⛔ archived_sessions 必须先扫（09-26 用户报「点归档没反应」）：同一条会话的 rollout 在
+  //   sessions/ 与 archived_sessions/ 各有一份时（维护迁移拷贝/归档残留），先扫 sessions/
+  //   会让 seen 去重吃掉 archived_sessions 那份 ⇒ 已归档的会话被标成 archived:false，
+  //   被兜底扫描当**活跃会话**捞回侧栏；而引擎侧已不认它，点归档报 `no rollout found`
+  //   （渲染层 void 调用静默吞掉）——用户观感就是「点归档没反应」。
+  //   归档优先 = 归档真相赢：双份存在时按 archived:true 处理，活跃列表不再出现幽灵行。
+  const roots = [path.join(root, "archived_sessions"), path.join(root, "sessions")];
   const out = [];
   const seen = new Set();
   for (const base of roots) {

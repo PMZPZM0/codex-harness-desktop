@@ -1458,6 +1458,37 @@ w.postMessage({id:1,op:"list",root});
       "【157】接力（fork）时把用量快照继承给新会话（⛔ 否则新会话环从 0 开始）"
     );
   }
+// ── 21. 归档链路失败必须可见（09-26 用户报「点归档没反应」）──
+{
+  const part08Src = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part08", "01-seg.tsx"), "utf8").replace(/\r/g, "");
+  // ① archiveThread 整体 try/catch：引擎 thread/archive 报错不许再落进 unhandled rejection（void 调用 = 无声消失）
+  (/async function archiveThread\(id: string\) \{\n    \/\/ ⛔ 09-26[\s\S]*?try \{[\s\S]*?await window\.codex\.request\("thread\/archive", \{ threadId: id \}\);/.test(part08Src) ? ok : fail)(
+    "【162】归档链路整体 try/catch（void 调用的报错不许静默消失——「点归档没反应」本身）"
+  );
+  // ② 失败必须弹可见 toast（带引擎原话），行保持原位（本地清理在引擎成功之后才执行）。
+  (/bag\.showToast\("归档失败", msg\.slice\(0, 160\)\)/.test(part08Src) ? ok : fail)(
+    "【162】归档失败弹可见 toast（引擎原话截 160 字；用户不再面对无声失败）"
+  );
+  // ③ unarchive 同病同修：历史归档区点恢复也不许静默。
+  (/async function unarchiveThread\(id: string\) \{[\s\S]*?try \{[\s\S]*?await window\.codex\.request\("thread\/unarchive", \{ threadId: id \}\);[\s\S]*?bag\.showToast\("取消归档失败"/.test(part08Src) ? ok : fail)(
+    "【162】取消归档同修（历史归档区恢复失败也要可见）"
+  );
+  // ④ 反向绊线：本地清理（setThreads 过滤行）必须仍在引擎请求**之后**——失败时不许误删本地行。
+  (/await window\.codex\.request\("thread\/archive", \{ threadId: id \}\);\n      bag\.setThreads\(\(current\) => current\.filter/.test(part08Src) ? ok : fail)(
+    "【162】本地行的移除必须在引擎归档成功之后（失败时行保持原位）"
+  );
+  // ⑤ 幽灵会话分流（09-26「点归档没反应」真根因）：no rollout found / not found 类错误 = 引擎已
+  //    不认这条线程（rollout 双份残留、兜底扫描捞回的幽灵行）；按「失败」提示只会让用户反复点，
+  //    按幽灵处理（本地移除 + 「已从列表清理」提示）才达成用户意图 = 让它从侧栏消失。
+  (/no rollout found/i.test(part08Src) && /\.test\(msg\)/.test(part08Src) ? ok : fail)(
+    "【162】幽灵会话（引擎已不认）按本地清理分流，不按失败提示"
+  );
+  // ⑥ 反向绊线：幽灵分流必须真的移除本地行（只提示不清理 = 幽灵行还在，没解决任何事）。
+  (/bag\.setThreads\(\(current\) => current\.filter\(\(entry\) => entry\.id !== id\)\);[\s\S]{0,160}bag\.showToast\("已从列表清理"/.test(part08Src) ? ok : fail)(
+    "【162】幽灵分流必须带本地行移除（setThreads filter + 「已从列表清理」提示成对）"
+  );
+}
+
 
   }
 }
