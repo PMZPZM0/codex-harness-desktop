@@ -342,5 +342,32 @@ if (!existsSync(stylesEntry)) {
     ok(`全部 ${usedClasses.size} 个静态类名在 styles.css 均有规则`);
   }
 }
+
+/* ══ 【160】主题变量必须是真 tokens（09-26 用户截图：欢迎页项目菜单暗色下白底黑字）══
+   事故：`.welcome-cwd-*` 整块用了 `--color-background-primary` / `--text-primary` / `--blue`
+   这类**从未定义的变量**（全仓库没有一处 `--color-*:` 声明）⇒ 永远落在亮色 fallback，
+   暗色主题下菜单白底黑字。修法 = 换真 tokens（--bg/--panel-2/--line/--text/--muted/
+   --faint/--accent(--soft)），真机 CDP 实测亮色逐值不变、暗色全部跟随。
+   ⛔ 负向断言：welcome-cwd 块内不许再引用这三类未定义变量（改回去 = 事故复现）。
+   ⚠️ 范围只钉这一块 —— 其它文件还有同病残留（19-misc-hints 的 --color-* 两处、
+   --blue 25 处），那些是**亮色 fallback 在两主题下都还可看**的存量，待用户拍板再扫。 */
+{
+  const cards = readFileSync(join(ROOT, "src", "styles", "17-visual-cards.css"), "utf8").replace(/\r/g, "");
+  const start = cards.indexOf(".welcome-cwd-picker");
+  const end = cards.indexOf("── /plan 方案审阅卡");
+  if (start < 0 || end < 0 || end <= start) {
+    fail("【160】找不到 welcome-cwd 样式块（17-visual-cards.css 结构变了，守卫锚点需同步更新）");
+  } else {
+    const block = cards.slice(start, end);
+    const bad = block.match(/var\(--color-|var\(--text-primary|var\(--text-secondary|var\(--blue/);
+    (!bad ? ok : fail)(`【160】welcome-cwd 块只许用主题真 tokens（不许退回未定义变量${bad ? "：" + bad[0] : ""}）`);
+    (/\.welcome-cwd-menu \{[\s\S]*?background: var\(--bg\);[\s\S]*?border: 1px solid var\(--line\);[\s\S]*?box-shadow: var\(--shadow\);/.test(block) ? ok : fail)(
+      "【160】菜单表面 = var(--bg/--line/--shadow)（与 composer-quick-pop 同一模式，两主题自动跟随）"
+    );
+    (/\.welcome-cwd-menu button\.active \{ background: var\(--accent-soft\); \}/.test(block) ? ok : fail)(
+      "【160】选中态高亮 = var(--accent-soft)（两主题都有定义的蓝 tint，不许写死 #3b82f6 系）"
+    );
+  }
+}
   }
 }
