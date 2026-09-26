@@ -3,6 +3,7 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { PPTokenEndpoints } from "../../../../lib/pptoken-endpoints";
+import { Fragment, type ReactNode } from "react";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../lib/entity-avatar";
 import {
   AlertTriangle,
@@ -297,7 +298,29 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                     // isLastTurn / 窗口切片都以规范序列为准
                     const { ordered, visible } = visibleTurnWindow(thread?.turns, thread ? (turnWindow[thread.id] ?? TURN_WINDOW) : TURN_WINDOW);
                     const lastId = String(ordered[ordered.length - 1]?.id ?? "");
-                    return visible.map((turn) => <MemoTurnView turn={turn} isLastTurn={String(turn.id) === lastId} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={turn.id === latestCompletedTurn?.id || turn.id === activeTurnId ? tokenUsage : null} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} key={turn.id} />);
+                    // ⛔ 压缩线 timeline 层归位（09-26 二次修：「旧消息上面，新的压缩线又在新消息下面」）：
+                    //    回合中途的自动压缩时，引擎新开的压缩回合排在 turns **末尾** ⇒ 只把线提到「它所在
+                    //    回合」的顶部还不够，回合本身在最后 ⇒ 线还是在新消息下面。语义上压缩针对的是
+                    //    「最后一条用户消息之前」的历史 ⇒ 线固定插在**最后一条用户消息回合**的正上方，
+                    //    任何事件时序都归位。与 pruneSupersededCompactions 同口径：只渲染最新一条。
+                    let compactionLine: ReactNode = null;
+                    let insertBefore = -1;
+                    if (thread) {
+                      let lastCompaction: any = null;
+                      for (const t of ordered) for (const it of (t.items ?? []) as any[]) if (it?.type === "contextCompaction" && it?.status !== "inProgress" && it?.status !== "running") lastCompaction = it;
+                      for (let i = ordered.length - 1; i >= 0; i--) {
+                        if (((ordered[i].items ?? []) as any[]).some((it) => it?.type === "userMessage")) { insertBefore = visible.indexOf(ordered[i]); break; }
+                      }
+                      if (lastCompaction && insertBefore >= 0) {
+                        compactionLine = <ItemView item={lastCompaction} onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} key={`compact-${lastCompaction.id}`} />;
+                      }
+                    }
+                    return visible.map((turn, i) => (
+                      <Fragment key={turn.id}>
+                        {compactionLine && i === insertBefore && compactionLine}
+                        <MemoTurnView turn={turn} isLastTurn={String(turn.id) === lastId} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={turn.id === latestCompletedTurn?.id || turn.id === activeTurnId ? tokenUsage : null} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} />
+                      </Fragment>
+                    ));
                   })()}
                   {/* ⛔ 状态条（run-activity-bar）必须排在 #chat-anchor（乐观气泡）**之后**（09-17 用户实测
                       「这个怎么到这个位置了」）：原先它排在最前面，于是「发送后 · 引擎回声前」这段时间里，

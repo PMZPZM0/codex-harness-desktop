@@ -4627,23 +4627,22 @@ export async function run() {
   ((() => { const i = part05Src.indexOf('event.method === "thread/compacted"'); return i >= 0 && part05Src.slice(i, i + 1400).includes('status: "completed"'); })() ? ok : fail)(
     "【163】thread/compacted 必须本地落平还挂着的 inProgress 压缩 item（分隔线停转不依赖引擎补发）"
   );
-  /* ── 【165】压缩线位置归位（09-26 用户截图「压缩完成线要在新消息上面」） ──
-     引擎把压缩跑成真回合时，压缩 item 的 turnId 仍是上一回合、且 item/started 晚于
-     agentMessage 才到 ⇒ merge 进回合 items 末尾 ⇒ 线渲染在回复内容下面。
-     渲染层把压缩线从内容区抽出、挂到回合顶部（用户气泡上方）。 */
+    /* ── 【165】压缩线位置归位（09-26 两次修：回合中途自动压缩时引擎新开的压缩回合排在 turns 末尾，
+     只提「所在回合」顶部不够 ⇒ 归位逻辑上收到 timeline 层：线固定插在最后一条用户消息回合正上方） */
   {
     const turnView = readFileSync(join(ROOT, "src/features/session-turn/SessionTurn/03-turn-view.tsx"), "utf8");
-    (turnView.includes("const compactItems = responseItems.filter((item) => item.type === \"contextCompaction\")") ? ok : fail)(
-      "【165】压缩 item 从回合内容区抽出（单独渲染，不再随 items 顺序落到回复下面）"
+    const timeline = readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/01-timeline.tsx"), "utf8");
+    (turnView.includes("item.type !== \"contextCompaction\"") && !turnView.includes("items={responseItems}") ? ok : fail)(
+      "【165】回合内容区剔除压缩线（TurnFoldStream 只吃 foldItems，线不许再落回内容末尾）"
     );
-    (turnView.includes("const foldItems = useMemo(() => responseItems.filter((item) => item.type !== \"contextCompaction\")") ? ok : fail)(
-      "【165】折叠流收到的是剔除压缩线的 items（压缩线不进过程折叠组）"
+    (timeline.includes("let lastCompaction: any = null;") && timeline.includes("it?.type === \"contextCompaction\"") ? ok : fail)(
+      "【165】timeline 层扫描最后一条已完成压缩 item（与 pruneSupersededCompactions 同口径）"
     );
-    ((() => { const i = turnView.indexOf("compactItems.map"); const j = turnView.indexOf("userItems.map"); return i >= 0 && j >= 0 && i < j; })() ? ok : fail)(
-      "【165】压缩线渲染在用户气泡**之前**（回合顶部 = 「新消息上面」，不是内容之后）"
+    ((() => { const a = timeline.indexOf("compactionLine && i === insertBefore"); const b = timeline.indexOf("<MemoTurnView"); return a >= 0 && b >= 0 && a < b; })() ? ok : fail)(
+      "【165】压缩线插在目标回合**之前**（= 最后一条用户消息的上方，不是回合后面）"
     );
-    (turnView.includes("items={foldItems}") && !turnView.includes("items={responseItems}") ? ok : fail)(
-      "【165】TurnFoldStream 只吃 foldItems（喂 responseItems 会让压缩线回到内容末尾）"
+    (/status !== \"inProgress\" && it\?\.status !== \"running\"/.test(timeline) ? ok : fail)(
+      "【165】归位只取**已完成**的压缩 item（进行中的转圈由 compact toast 负责，不抢位置）"
     );
   }
 }

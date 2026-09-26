@@ -3,7 +3,7 @@
  * ⛔ 逻辑与原地逐字一致，只补了顶部 import 与 `export`。
  */
 import { Turn } from "../../../lib/turn";
-import { FoldHandlers, TurnFoldStream, ItemView } from "../../session-queue";
+import { FoldHandlers, TurnFoldStream } from "../../session-queue";
 import { useCodexName, CodexAvatar } from "../../../components/CodexAvatar";
 import { isTurnRunning } from "../../../lib/turn-fold";
 import { useEffect, useMemo, memo, useState, useRef } from "react";
@@ -48,12 +48,10 @@ export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForAp
     });
     return stale ? fixed : items;
   }, [turn.items, running]);
-  // ⛔ 压缩线位置归位（09-26 用户截图「压缩完成线要在新消息上面，怎么一直在下面」）：
-  //    引擎把压缩跑成真实回合时，压缩 item 的 turnId 仍是**上一回合**、且 item/started 晚于
-  //    agentMessage 才到（真机事件序列实证）⇒ mergeItem 把它排在回合 items 末尾 ⇒ 线渲染在
-  //    回复内容下面。语义上压缩针对的是**这条消息之前的**历史上下文 ⇒ 线固定渲染到回合
-  //    顶部（用户气泡上方）= 「新消息上面」。数据不动，只动显示位置。
-  const compactItems = responseItems.filter((item) => item.type === "contextCompaction");
+  // ⛔ 压缩线位置归位（09-26 二次修）：回合中途的自动压缩时，引擎新开的压缩回合排在 turns
+  //    末尾 ⇒ 只把线提到「所在回合」顶部还不够。归位逻辑上收到 **timeline 层**（见
+  //    01-timeline.tsx 的 compactionLine：固定插在最后一条用户消息回合正上方）。这里只负责
+  //    把压缩 item 从内容区剔除——线绝不能再随 items 顺序落到回复下面（首修的教训）。
   const foldItems = useMemo(() => responseItems.filter((item) => item.type !== "contextCompaction"), [responseItems]);
   // 最终答复 = 最后一条有正文的 agentMessage
   const finalAgent = [...foldItems].reverse().find((item) => item.type === "agentMessage" && String(item.text ?? "").trim()) ?? null;
@@ -83,8 +81,6 @@ export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForAp
   const hookBadge = hooks && hooks.length > 0 ? <HookBadge hooks={hooks} /> : undefined;
   return (
     <div className={`turn-group ${running ? "running" : turn.error ? "error" : "completed"}`} id={`turn-${turn.id}`} data-current-turn={isLastTurn ? "true" : undefined}>
-      {/* 压缩线固定在回合最顶部（用户气泡上方）——「新消息上面」（09-26，见 compactItems 注释） */}
-      {compactItems.map((item) => <ItemView item={item} turn={turn} onCopy={handlers.onCopy} onQuote={handlers.onQuote} key={item.id} />)}
       {userItems.map((item) => <MemoUserMessageView item={item} turn={turn} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} key={item.id} />)}
       {(userItems.length > 0 || hasVisible) && (
       <div className="turn-card">
