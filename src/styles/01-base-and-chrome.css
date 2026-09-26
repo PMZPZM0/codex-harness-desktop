@@ -252,6 +252,8 @@
   --accent: #2f6bdd;
   --accent-soft: #2f6bdd14;
   --orange: #e8830c;
+  --purple: #8b5cf6;
+  --mono: "Cascadia Code", Consolas, ui-monospace, monospace;
   --red: #d94f43;
   --ok: #3fb36b;
   --link: #2f6bdd;
@@ -281,6 +283,7 @@
   --accent: #7cabf8;
   --accent-soft: #7cabf81f;
   --orange: #f0a35c;
+  --purple: #a78bfa;
   --red: #ec7a70;
   --ok: #58c085;
   --link: #7cabf8;
@@ -838,7 +841,7 @@ button.brand-mark.sidebar-toggle:hover {
 }
 .team-cluster-body::-webkit-scrollbar { width: 6px; }
 .team-cluster-body::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text-primary, #111) 16%, transparent);
+  background: color-mix(in srgb, var(--text) 16%, transparent);
   border-radius: 3px;
 }
 .team-cluster-body::-webkit-scrollbar-track { background: transparent; }
@@ -856,7 +859,7 @@ button.brand-mark.sidebar-toggle:hover {
   background: var(--panel-2);
 }
 .thread-row.active {
-  background: color-mix(in srgb, var(--blue, #3b82f6) 13%, transparent);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
 }
 .thread-row.active::before {
   content: "";
@@ -866,6 +869,6 @@ button.brand-mark.sidebar-toggle:hover {
   bottom: 20%;
   width: 3px;
   border-radius: 2px;
-  background: var(--blue, #3b82f6);
+  background: var(--accent);
 }
 /* 展开体里的主会话行：明确「主」的身份（左色条 + 深色标题） */

@@ -162,7 +162,7 @@
 }
 .ssh-server-empty .primary-setting { margin-top: 6px; }
 .ssh-editor-modal .connector-form textarea {
-  font-family: var(--mono, monospace);
+  font-family: var(--mono);
   font-size: 12px;
   resize: vertical;
 }
@@ -772,7 +772,7 @@
   max-width: 180px;
 }
 .ssh-fingerprint {
-  font-family: var(--mono, monospace);
+  font-family: var(--mono);
   font-size: 11px;
 }
 .ssh-notes {
@@ -982,7 +982,7 @@
   gap: 12px;
 }
 .ssh-exec-modal .connector-form textarea {
-  font-family: var(--mono, monospace);
+  font-family: var(--mono);
   font-size: 12.5px;
   resize: vertical;
 }
@@ -1019,7 +1019,7 @@
   border-radius: 7px;
   background: var(--panel);
   border: 1px solid var(--line-soft);
-  font-family: var(--mono, monospace);
+  font-family: var(--mono);
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1255,7 +1255,7 @@
 .builtin-plugin-card:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
 .builtin-plugin-card.configured { border-color: color-mix(in srgb, var(--green) 40%, var(--line)); }
 /* 已配置但被停用：琥珀色系（与启用绿强区分，09-17 用户反馈「启停一个状态没颜色区分」） */
-.builtin-plugin-card.off { border-color: color-mix(in srgb, var(--amber, #d97706) 42%, var(--line)); }
+.builtin-plugin-card.off { border-color: color-mix(in srgb, var(--orange) 42%, var(--line)); }
 .builtin-plugin-icon {
   width: 30px;
   height: 30px;
@@ -1289,9 +1289,9 @@
   color: var(--green);
 }
 .builtin-plugin-card.off .builtin-plugin-state {
-  border-color: color-mix(in srgb, var(--amber, #d97706) 40%, var(--line));
-  background: color-mix(in srgb, var(--amber, #d97706) 8%, var(--bg));
-  color: color-mix(in srgb, var(--amber, #d97706) 78%, var(--muted));
+  border-color: color-mix(in srgb, var(--orange) 40%, var(--line));
+  background: color-mix(in srgb, var(--orange) 8%, var(--bg));
+  color: color-mix(in srgb, var(--orange) 78%, var(--muted));
 }
 .builtin-plugin-chevron { flex: none; color: var(--faint); }
 @media (max-width: 760px) {

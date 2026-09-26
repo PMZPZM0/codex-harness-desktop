@@ -51,7 +51,7 @@
   display: flex;
 }
 .provider-field-hints p {
-  color: var(--amber2, #b7791f);
+  color: var(--orange);
   font-size: 11.5px;
   line-height: 1.5;
   margin: 0;
@@ -986,10 +986,10 @@
 }
 .relay-account-err {
   align-items: center;
-  background: color-mix(in srgb, #b7791f 10%, var(--panel));
-  border: 1px solid color-mix(in srgb, #b7791f 35%, transparent);
+  background: color-mix(in srgb, var(--orange) 10%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--orange) 35%, transparent);
   border-radius: 10px;
-  color: var(--amber2, #b7791f);
+  color: var(--orange);
   display: flex;
   font-size: 11.5px;
   gap: 6px;

@@ -171,7 +171,7 @@
 .widget-frame--code pre {
   margin: 0;
   padding: 12px 14px;
-  font-family: var(--mono, ui-monospace, monospace);
+  font-family: var(--mono);
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-word;
@@ -251,7 +251,7 @@
   padding: 10px 44px 10px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: var(--bg-elevated, transparent);
+  background: transparent;
   color: var(--text);
   font-size: 13px;
   line-height: 1.45;
@@ -277,7 +277,7 @@
   padding: 9px 12px;
   border-radius: 10px;
   border: 1px solid var(--line);
-  background: var(--bg-elevated, transparent);
+  background: transparent;
   color: var(--text);
   font-size: 13px;
   outline: none;
@@ -325,7 +325,7 @@
   padding: 9px 12px;
   border-radius: 10px;
   border: 1px solid var(--line);
-  background: var(--bg-elevated, transparent);
+  background: transparent;
   color: var(--text);
   font-size: 13px;
   line-height: 1.5;
@@ -618,7 +618,7 @@
 .index-result-thread .index-result-icon { color: var(--green); background: color-mix(in srgb, var(--green) 10%, transparent); }
 .index-result-memory .index-result-icon { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .index-result-task .index-result-icon { color: #d9a13b; background: color-mix(in srgb, #d9a13b 10%, transparent); }
-.index-result-skill .index-result-icon { color: var(--purple, #8b5cf6); background: color-mix(in srgb, var(--purple, #8b5cf6) 10%, transparent); }
+.index-result-skill .index-result-icon { color: var(--purple); background: color-mix(in srgb, var(--purple) 10%, transparent); }
 .index-result-total { color: var(--faint); font-size: 10.5px; margin: -2px 0 0; }
 .linkish { background: none; border: 0; padding: 0; color: var(--green); font: inherit; cursor: pointer; }
 .linkish:hover { text-decoration: underline; }
@@ -656,7 +656,7 @@
 .search-preview-kind-thread { color: var(--green); background: color-mix(in srgb, var(--green) 12%, transparent); }
 .search-preview-kind-memory { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .search-preview-kind-task { color: #d9a13b; background: color-mix(in srgb, #d9a13b 12%, transparent); }
-.search-preview-kind-skill { color: var(--purple, #8b5cf6); background: color-mix(in srgb, var(--purple, #8b5cf6) 12%, transparent); }
+.search-preview-kind-skill { color: var(--purple); background: color-mix(in srgb, var(--purple) 12%, transparent); }
 .search-preview-title { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; min-width: 0; flex: 1; }
 .search-preview-modal > header .icon-button { flex: none; }
 .search-preview-body { overflow-y: auto; padding: 14px 16px; gap: 10px; flex-direction: column; display: flex; min-height: 120px; }
@@ -726,7 +726,7 @@
   margin: 0 auto 8px;
   border-radius: 10px;
   background: var(--panel);
-  border: 1px solid var(--amber, #d97706);
+  border: 1px solid var(--orange);
   box-shadow: var(--shadow);
   color: var(--text);
   font-size: 12.5px;
@@ -737,7 +737,7 @@
   max-width: min(100%, 720px);
   flex-wrap: wrap;
 }
-.rate-limit-retry-bar .spin { color: var(--amber, #d97706); flex: none; }
+.rate-limit-retry-bar .spin { color: var(--orange); flex: none; }
 .rate-limit-retry-text {
   font-weight: 500;
   /* 09-17：允许换行完整展示（原来是 nowrap+ellipsis，窄窗下整句被截断） */
@@ -747,7 +747,7 @@
   overflow-wrap: anywhere;
   line-height: 1.45;
 }
-.rate-limit-retry-bar b { color: var(--amber, #d97706); }
+.rate-limit-retry-bar b { color: var(--orange); }
 .rate-limit-retry-bar button {
   border: 1px solid var(--line);
   background: transparent;
@@ -806,9 +806,9 @@
   border-radius: 20px;
   animation: attention-pulse 1.6s ease-in-out infinite;
 }
-.thread-attention-badge.tone-approval { color: var(--amber, #d97706); background: rgba(217, 119, 6, 0.14); border: 1px solid rgba(217, 119, 6, 0.38); }
-.thread-attention-badge.tone-choice { color: var(--blue, #3b82f6); background: rgba(59, 130, 246, 0.13); border: 1px solid rgba(59, 130, 246, 0.38); }
-.thread-attention-badge.tone-confirm { color: var(--purple, #8b5cf6); background: rgba(139, 92, 246, 0.13); border: 1px solid rgba(139, 92, 246, 0.38); }
+.thread-attention-badge.tone-approval { color: var(--orange); background: color-mix(in srgb, var(--orange) 14%, transparent); border: 1px solid rgba(217, 119, 6, 0.38); }
+.thread-attention-badge.tone-choice { color: var(--accent); background: color-mix(in srgb, var(--accent) 13%, transparent); border: 1px solid rgba(59, 130, 246, 0.38); }
+.thread-attention-badge.tone-confirm { color: var(--purple); background: color-mix(in srgb, var(--purple) 13%, transparent); border: 1px solid rgba(139, 92, 246, 0.38); }
 @keyframes attention-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
@@ -897,7 +897,7 @@
   color: #fff;
 }
 .mode-banner button.mode-banner-primary:hover { filter: brightness(1.08); background: var(--accent, #3b82f6); color: #fff; }
-.mode-banner.plan-confirm .mode-banner-icon { color: var(--blue, #3b82f6); }
+.mode-banner.plan-confirm .mode-banner-icon { color: var(--accent); }
 .mode-banner.goal-loop .mode-banner-icon { color: var(--orange); }
 .mode-banner.goal-loop.done { opacity: 0.75; }
 .mode-banner.goal-loop.done .mode-banner-icon { color: var(--green); }
@@ -918,9 +918,9 @@
   cursor: pointer;
 }
 .mode-chip-float.chip-plan {
-  color: var(--blue, #3b82f6);
-  background: color-mix(in srgb, var(--blue, #3b82f6) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--blue, #3b82f6) 38%, transparent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
 }
 .mode-chip-float.chip-plan.running { animation: attention-pulse 1.6s ease-in-out infinite; }
 .mode-chip-float.chip-goal {
@@ -982,8 +982,8 @@
 .welcome-cwd-menu button small { color: var(--faint); font-size: 12px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
 
 /* ── /plan 方案审阅卡（agent-ask 同族，蓝色调）：预览摘要 + 执行/意见迭代 ── */
-.agent-ask-inline.plan-review { border-color: color-mix(in srgb, var(--blue, #3b82f6) 45%, var(--line)); }
-.agent-ask-inline.plan-review > header { color: var(--blue, #3b82f6); }
+.agent-ask-inline.plan-review { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.agent-ask-inline.plan-review > header { color: var(--accent); }
 .plan-review-summary {
   margin: 0;
   font-size: 12.5px;
@@ -1000,7 +1000,7 @@
   padding: 8px 10px;
   background: color-mix(in srgb, var(--panel-2, transparent) 55%, transparent);
 }
-.plan-review-summary:hover { border-color: var(--blue, #3b82f6); }
+.plan-review-summary:hover { border-color: var(--accent); }
 .plan-review-actions { display: flex; align-items: center; gap: 8px; }
 .plan-review-actions button {
   border: 1px solid var(--line);
@@ -1020,14 +1020,14 @@
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 9px;
-  background: var(--bg-elevated, transparent);
+  background: transparent;
   color: var(--text);
   padding: 7px 11px;
   font-size: 12.5px;
   line-height: 1.4;
   outline: 0;
 }
-.plan-review-feedback input:focus { border-color: var(--blue, #3b82f6); }
+.plan-review-feedback input:focus { border-color: var(--accent); }
 .plan-review-feedback button { flex: none; }
 .info-modal-markdown {
   overflow: auto;

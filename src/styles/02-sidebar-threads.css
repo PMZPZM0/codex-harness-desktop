@@ -1126,7 +1126,7 @@ html[data-ui-font="large"] .action-content pre {
 .load-earlier-hint {
   display: flex; align-items: center; justify-content: center;
   padding: 8px 0 2px; font-size: 12px;
-  color: var(--text-secondary, #888);
+  color: var(--muted);
 }
 .load-earlier-turns {
   width: 100%;

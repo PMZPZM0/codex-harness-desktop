@@ -653,7 +653,7 @@
   padding-top: 12px;
 }
 .help-tips h3 {
-  color: var(--amber, #d97706);
+  color: var(--orange);
 }
 /* ── 设置总览（标题栏「设置总览」按钮打开）：分组地图 + 页名可点跳转 ── */
 .settings-header-actions {

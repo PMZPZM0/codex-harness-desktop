@@ -139,12 +139,12 @@
   border-color: color-mix(in srgb, var(--link) 35%, var(--line));
 }
 .queued-action.danger {
-  color: var(--danger, #d9534f);
+  color: var(--red);
 }
 .queued-action.danger:hover {
-  background: color-mix(in srgb, var(--danger, #d9534f) 14%, transparent);
-  color: var(--danger, #d9534f);
-  border-color: color-mix(in srgb, var(--danger, #d9534f) 35%, var(--line));
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 35%, var(--line));
 }
 .queued-message-editing {
   flex-direction: column;
@@ -223,11 +223,11 @@
   flex: none;
 }
 .message-footer button.danger {
-  color: var(--danger, #d9534f);
+  color: var(--red);
 }
 .message-footer button.danger:hover {
-  background: color-mix(in srgb, var(--danger, #d9534f) 14%, transparent);
-  color: var(--danger, #d9534f);
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+  color: var(--red);
 }
 /* ═══ 命令执行卡片（WorkBuddy ExecuteCommandCompactRenderer 复刻） ═══ */
 /* 命令卡外壳跟 ActionCard 同款——无底色/无边框/无圆角，inline-flex 自然撑开；
@@ -912,8 +912,8 @@
   opacity: 1;
 }
 .chat-search-history-delete:hover {
-  background: var(--danger-bg, rgba(239, 68, 68, 0.12));
-  color: var(--danger, #ef4444);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+  color: var(--red);
 }
 
 /* ===== 浏览器面板：工具栏分隔 + 独立地址栏 + Go 按钮 ===== */
