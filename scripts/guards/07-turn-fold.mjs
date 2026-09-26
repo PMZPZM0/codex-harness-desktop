@@ -4567,4 +4567,13 @@ export async function run() {
   (/const onWheel = \(\) => \{ if \(el\.scrollHeight > el\.clientHeight \+ 1\) reasoningFollowRef\.current = false; \};/.test(itemSrc) ? ok : fail)(
     "【161】卡内接管只认「真有内部滚动条」的滚轮（外层滚动冒泡不许误杀卡内跟随）"
   );
+  // ⑦ 09-26 用户定稿「思考内容做成小弹窗，不靠往下撑」：直播中的思考正文 portal 成
+  //    右下角浮窗（.reasoning-float），不占消息流——正在运行的工具卡不再被撑出视口。
+  //    ⛔ 浮窗隐藏用 hidden 类而非卸载（卡内跟随监听器与滚动位置绑在元素上）。
+  (/createPortal\(/.test(itemSrc) && /reasoning-float \$\{open \? "" : "hidden"\}/.test(itemSrc) ? ok : fail)(
+    "【161】直播中思考正文 = portal 浮窗（.reasoning-float），隐藏用 hidden 类不卸载"
+  );
+  (/if \(!scroller\) return;/.test(itemSrc) ? ok : fail)(
+    "【161】fit 在浮窗态（无 .timeline 祖先）直接跳过（浮窗高度由自身 CSS 46vh 管）"
+  );
 }

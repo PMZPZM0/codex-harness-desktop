@@ -12,6 +12,7 @@
  *    旧写法无条件置 follow=false 会把卡内跟随**永久**误杀（09-26 用户报「卡内不跟最新」）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { formatDuration } from "../../lib/format-duration";
 import { Brain, ChevronDown } from "lucide-react";
 import { ThreadItem } from "../../lib/thread-item";
@@ -51,6 +52,9 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
   }, [item.id]);
   const [displayed, setDisplayed] = useState(initialReveal);
   const [revealing, setRevealing] = useState(() => initialReveal.length < text.length);
+  /* 直播中 = 浮窗态（09-26 用户定稿「思考内容做成小弹窗」）。定义在 effects 之前：
+     监听器 effect 的依赖数组要用它（浮窗 ↔ 内联切换时 bodyRef 换元素，必须重绑）。 */
+  const floating = Boolean(running || revealing);
   const displayedRef = useRef(displayed);
   useEffect(() => { displayedRef.current = displayed; }, [displayed]);
   useEffect(() => {
@@ -152,7 +156,10 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
   const fitReasoningBody = useCallback((el: HTMLDivElement | null) => {
     if (!el || !el.isConnected) return;
     const scroller = el.closest(".timeline");
-    const limit = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight;
+    // ⛔ 浮窗态（直播中的思考卡 portal 到 body）不在时间线流内：高度由浮窗 CSS 自己管
+    //    （42vh 上限），fit 的「裁剪边」几何对它无意义 —— 没找到 .timeline 就直接跳过。
+    if (!scroller) return;
+    const limit = scroller.getBoundingClientRect().bottom;
     const available = Math.round(limit - el.getBoundingClientRect().top - 12);
     const cap = Math.max(96, Math.min(260, available));
     if (el.style.maxHeight !== cap + "px") el.style.maxHeight = cap + "px";
@@ -190,7 +197,8 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
       window.removeEventListener("pointercancel", onPointerUp);
     };
     // 监听器只在正文元素首次挂载时装一次（displayed 从空到有）；逐字追字期间不重装。
-  }, [reasoningBodyMounted]);
+    // ⛔ floating（浮窗 ↔ 内联）切换时 bodyRef 换了元素，必须重绑，否则跟随监听丢失。
+  }, [reasoningBodyMounted, floating]);
   useEffect(() => {
     if (!running || manualOpen === false) return;
     if (!reasoningFollowRef.current) return;
@@ -216,15 +224,33 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
   }, [open, fitResizeHandler]);
   // 没现场出现过且无内容的（历史加载的空占位）才不渲染；现场出现过的保留标题行常驻
   if (!text && !running && !seenLiveRef.current && !turnActive) return null;
+  /* ── 09-26 用户定稿「思考内容做成小弹窗」：直播中（running/revealing）的思考正文
+     **portal 成右下角浮窗**，不再挤占消息流——正在运行的工具卡不被撑出视口，
+     钉顶/跟随/裁剪那一整类几何竞争从根上消失（浮窗不在 .timeline 流内，
+     bodyBottomOf 也量不到它）。思考完成后浮窗消失，流内落回「已深度思考 ›」折叠芯片
+     （本来就有的收纳态），点芯片仍可内联展开回看（done 态走 fit 限高）。
+     ⛔ 浮窗常挂到 live 结束、用 hidden 类切显示（不随 open 卸载）——卡内跟随的
+     监听器绑在 bodyRef 上，卸载重挂会丢监听、且会丢滚动位置。 */
   const head = running
     ? <span className="reasoning-head shimmer-text"><Brain size={13} className="reasoning-pulse" />深度思考中</span>
     : <span className="reasoning-head"><Brain size={13} />已深度思考{durationMs ? `（用时 ${formatDuration(durationMs)}）` : ""}</span>;
+  const bodyNode = <div className="reasoning-body" ref={bodyRef}>{displayed}{revealing ? <span className="reasoning-stream-cursor" aria-hidden /> : null}</div>;
   return (
     <div className={`reasoning-card ${running ? "live" : "done"} ${open ? "open" : "collapsed"}`}>
       <button type="button" className="reasoning-head-btn" onClick={toggle}>
         {head}<ChevronDown size={13} className="reasoning-caret" />
       </button>
-      {displayed && <Fold open={open}><div className="reasoning-body-wrap"><div className="reasoning-body" ref={bodyRef}>{displayed}{revealing ? <span className="reasoning-stream-cursor" aria-hidden /> : null}</div></div></Fold>}
+      {displayed && (floating
+        ? createPortal(
+            <div className={`reasoning-float ${open ? "" : "hidden"}`} role="complementary" aria-label="深度思考直播">
+              <button type="button" className="reasoning-float-head" onClick={toggle} title={open ? "收起浮窗（点流内芯片可再展开）" : "展开"}>
+                {head}<ChevronDown size={13} className={`reasoning-caret ${open ? "" : "collapsed"}`} />
+              </button>
+              <div className="reasoning-body-wrap">{bodyNode}</div>
+            </div>,
+            document.body,
+          )
+        : <Fold open={open}><div className="reasoning-body-wrap">{bodyNode}</div></Fold>)}
     </div>
   );
 }

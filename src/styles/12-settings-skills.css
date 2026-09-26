@@ -433,6 +433,52 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   display: inline-block;
   animation: reasoning-cursor-blink 0.72s steps(2, jump-none) infinite;
 }
+/* ── 思考直播浮窗（09-26 用户定稿「思考内容做成小弹窗，不靠往下撑」）：
+   直播中的思考正文 portal 成右下角浮窗，不占消息流布局——正在运行的工具卡不再被
+   撑出视口。思考完成后浮窗消失，流内落回「已深度思考 ›」折叠芯片（收纳态）。
+   ⛔ 隐藏用 hidden 类（display:none）而不是卸载：卡内跟随监听器与滚动位置都绑在
+   这个元素上，卸载重挂会两者皆失。z-index 8：盖过消息流，让位下拉面板（30/40）。 */
+.reasoning-float {
+  position: fixed;
+  right: 18px;
+  bottom: 20px;
+  z-index: 8;
+  width: min(420px, calc(100vw - 48px));
+  max-height: min(46vh, 380px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 8px 10px 10px;
+}
+.reasoning-float.hidden { display: none; }
+.reasoning-float .reasoning-float-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: 0 0;
+  cursor: pointer;
+  padding: 2px 0;
+  text-align: left;
+  flex: none;
+}
+.reasoning-float .reasoning-body-wrap {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* 浮窗内的正文不限 260px（浮窗自身 46vh 上限管总高），占满剩余空间并内部滚动 */
+.reasoning-float .reasoning-body {
+  max-height: none;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 2px 0 0;
+}
 .packet-stream-cursor {
   width: 1.5px;
   height: 1em;
