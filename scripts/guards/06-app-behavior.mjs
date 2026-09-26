@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  C, ROOT, createRequire, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readResponsesBridgeSource, readStyles, rmSync, spawnSync, typesSrc,
+  C, ROOT, createRequire, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readResponsesBridgeSource, readStyles, readdirSync, rmSync, spawnSync, typesSrc,
 } from "./_ctx.mjs";
 
 export async function run() {
@@ -1431,13 +1431,60 @@ w.postMessage({id:1,op:"list",root});
     (sceneSrc2.includes("snapshot.handoffs.map") && sceneSrc2.includes("<Walker") ? ok : fail)(
       "【168】场景渲染交接飞行与走动小人（不许退回静止插画）"
     );
-    // ⑨ 家具动效齐备（云漂 / 钟摆 / 水泡 / 吐纸 / 叶片 / 灯摆 / 白板手写）
-    (["ofc-drift", "ofc-swing", "ofc-rise", "ofc-print", "ofc-leaf", "ofc-lamp-sway", "ofc-draw"].every((k) => css2.includes(k)) ? ok : fail)(
-      "【168】家具动效齐备（云漂 / 钟摆 / 水泡 / 吐纸 / 叶片 / 灯摆 / 白板手写）"
+    // ⑨ 家具动效：v7 换成 Kenney **静态图**后，动效改由 CSS 挂在素材节点上。
+    //    ⛔ 只做轻微摆动：整图旋转会让桌腿/底座一起转，一眼就是"贴纸在转"。
+    (["ofc-fan-sway", "ofc-plant-sway"].every((k) => css2.includes(k)) ? ok : fail)(
+      "【168】素材件动效齐备（吊扇轻摆 / 绿植微摇 —— 静态素材的动效出口）"
+    );
+    // ⑩ 动效宿主必须真的在场景里（⛔ 只有 CSS 规则没有宿主 = 恒真假绿）
+    (sceneSrc2.includes("<IsoCeilingFan") && sceneSrc2.includes("<IsoPlant") ? ok : fail)(
+      "【168】动效宿主存在（吊扇与绿植真的挂在场景里，不是只有 CSS 规则）"
     );
     // ⑩ 姿势动画齐备（每个姿势都要有自己的手臂/躯干姿态，否则「预设动画」是空话）
     (["pose-work", "pose-coffee", "pose-stretch", "pose-phone", "pose-note", "pose-doze"].every((k) => css2.includes("." + k + " ")) ? ok : fail)(
       "【168】六种坐姿各有自己的动画（工作 / 咖啡 / 伸懒腰 / 手机 / 翻资料 / 打盹）"
+    );
+  }
+
+  /* ══ 【169】办公室素材链路（09-26 v7「换成 Kenney 美术素材」）════════════════
+     用户看完参考实现（workbzw/ai-office-react = PixiJS + Spine + 预渲染大图）后指出
+     「人物还是好丑 / 场景也很丑」—— 它的观感来自**美术素材**，不是技术。
+     调研后采用 Kenney「Furniture Kit」（CC0 1.0，可商用免署名）的**等距渲染件**替换手绘家具；
+     角色仍自绘（素材包只有家居物件，没有等距人物）。
+     ⛔ 钉死三件事：
+       ① 素材必须走**静态 import** —— import.meta.glob 在本模块被 root 之外的入口加载时
+          实测匹配到 0 个文件，且失败**静默** ⇒ 整间办公室的家具「凭空消失」却零报错；
+       ② 尺寸表必须覆盖每个素材文件 —— 缺一条 ⇒ IsoSprite 拿不到尺寸直接 return null；
+       ③ 工位必须三段式渲染（显示器 → 椅子 → 人 → 桌子）：桌子最近才遮得住人的下半身。 */
+  {
+    console.log(C.bold("\n【169】办公室素材链路（静态素材 / 尺寸表 / 工位三段式）"));
+    const furnSrc = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeFurniture.tsx"), "utf8");
+    const sceneSrc3 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeScene.tsx"), "utf8");
+
+    // ⛔ 判据带左括号：注释里会提到这个 API 的名字，只有**调用形式**才算违规
+    (!furnSrc.includes("import.meta.glob(") ? ok : fail)(
+      "【169】办公室素材走静态 import（import.meta.glob 在 root 外的入口下会静默丢光素材）"
+    );
+
+    const assetDir = join(ROOT, "src", "assets", "office");
+    const assetFiles = existsSync(assetDir) ? readdirSync(assetDir).filter((f) => f.endsWith(".png")) : [];
+    const missing = assetFiles.filter((f) => furnSrc.split(f.slice(0, f.lastIndexOf("_")) + ": [").length === 1);
+    (assetFiles.length >= 20 && missing.length === 0 ? ok : fail)(
+      "【169】素材尺寸表覆盖全部素材文件（缺尺寸的那件家具会被静默丢掉）"
+        + (missing.length ? "，缺：" + missing.slice(0, 3).join("；") : "")
+    );
+
+    ((() => {
+      const back = sceneSrc3.indexOf("<IsoDeskBack");
+      const person = sceneSrc3.indexOf("<SeatedWorker");
+      const front = sceneSrc3.indexOf("<IsoDeskFront");
+      return back >= 0 && person >= 0 && front >= 0 && back < person && person < front;
+    })() ? ok : fail)(
+      "【169】工位三段式渲染顺序（显示器 → 人 → 桌子；桌子在人之后画才遮得住下半身）"
+    );
+
+    (/Kenney/.test(furnSrc) && /CC0/.test(furnSrc) ? ok : fail)(
+      "【169】素材来源与许可写在文件头（Kenney Furniture Kit / CC0 1.0）"
     );
   }
 

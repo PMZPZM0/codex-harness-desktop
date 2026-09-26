@@ -1,17 +1,163 @@
 /**
- * 斜俯视房间与家具（team-office 域 09-26 v6「复刻 ai-office-react」）。
+ * 斜俯视房间与家具（team-office 域 09-26 v7「换成美术素材」）。
  *
- * 参考实现（PixiJS + Spine）的画面要素，按 SVG 复刻：
- *   · 房间 = 一个长方体从斜上方看 —— 后墙正对、两侧墙向内收、地板是后窄前宽的梯形
- *   · 极简浅色现代办公室：近白地板 / 灰白墙 / 纯白桌 / **深灰显示器背面** / 木柜 / 绿植
- *   · 靠墙家具（柜子、冰箱、吊架、画框、饮水机）+ 落地绿植
- * ⛔ 家具一律用「地面归一化坐标 (u,v) + 纵深缩放」定位（见 office-iso.ts）——
- *    早先那种「各画各的绝对坐标」会随布局改动集体漂移。
- * ⛔ 主轮廓描边照旧用 INK_W（粗描边是这个画风的底子）。
+ * 演进：v3~v5 正视平铺 → v6 用 SVG 复刻 ai-office-react 的斜俯视构图 → v7 换素材。
+ *
+ * ⛔ v7 为什么换：用户看完参考实现（workbzw/ai-office-react = PixiJS + Spine + 预渲染大图）
+ *    后指出「人物还是好丑 / 场景也很丑」—— 它的观感**来自美术素材，不是来自技术**。
+ *    调研结论：
+ *      · LimeZu「Modern Interiors」❌ 免费版**仅限私人用途**（作者亲口回复），有商用风险 ⇒ 排除；
+ *      · **Kenney「Furniture Kit」✅ CC0 1.0**（可商用、免署名；来源 kenney.nl）——
+ *        含 120 种家具、每件 4 个朝向的**等距渲染件**，低多边形 3D 渲染 + 柔和光照，
+ *        材质（木纹/布面）与明暗层次是真画出来的，手绘 SVG 复刻不出来。
+ *      · 但它**没有等距人物** ⇒ 角色仍自绘（OfficeWorker.tsx），只换家具与环境。
+ *
+ * ⛔ SPRITE_SIZE 是**实测 PNG 头**读出来的（不是估的）：错一个数家具就整体错位。
+ * ⛔ 图层顺序（复刻参考实现的构图，v7 修正）：**显示器（最远）→ 椅子 → 人 → 桌子（最近）**。
+ *    早先是「家具先画、人后画」⇒ 人浮在桌子上方，看着像站在桌前而不是坐在桌后（这是 v6 “人像躲在桌子底/浮着”的真因）。
  */
-import { OFC, INK_W } from "./office-palette";
 import { ISO } from "./office-palette";
-import { depthScale, floorPoint, FLOOR, SCENE_W, WALL_H, wallPoint, type FloorSpot } from "./office-iso";
+import { floorPoint, FLOOR, SCENE_W, WALL_H, wallPoint } from "./office-iso";
+
+/* ══ Kenney 素材（CC0 1.0，kenney.nl「Furniture Kit」isometric renders）══════
+   ⛔ 用**静态 import**而不是 import.meta.glob：glob 依赖对文件系统的路径扫描，
+      本模块被 vite root 之外的入口加载时（离线预览、以及将来别的入口）**实测匹配到 0 个文件**
+      —— 而失败是静默的：`IsoSprite` 直接 return null，整间办公室的家具"凭空消失"却零报错。
+      静态 import 由 vite 的 asset 管线处理，任何加载位置都稳定，也便于 tsc 静态检查。 */
+import bookcaseClosedUrl from "../../assets/office/bookcaseClosed_NE.png";
+import bookcaseOpenUrl from "../../assets/office/bookcaseOpen_NE.png";
+import booksUrl from "../../assets/office/books_NE.png";
+import cabinetTelevisionUrl from "../../assets/office/cabinetTelevision_NE.png";
+import cardboardBoxClosedUrl from "../../assets/office/cardboardBoxClosed_NE.png";
+import ceilingFanUrl from "../../assets/office/ceilingFan_NE.png";
+import chairDeskUrl from "../../assets/office/chairDesk_NE.png";
+import computerKeyboardUrl from "../../assets/office/computerKeyboard_NE.png";
+import computerMouseUrl from "../../assets/office/computerMouse_NE.png";
+import computerScreenUrl from "../../assets/office/computerScreen_NE.png";
+import deskUrl from "../../assets/office/desk_NE.png";
+import doorwayUrl from "../../assets/office/doorway_NE.png";
+import lampRoundFloorUrl from "../../assets/office/lampRoundFloor_NE.png";
+import laptopUrl from "../../assets/office/laptop_NE.png";
+import plantSmall1Url from "../../assets/office/plantSmall1_NE.png";
+import plantSmall2Url from "../../assets/office/plantSmall2_NE.png";
+import plantSmall3Url from "../../assets/office/plantSmall3_NE.png";
+import pottedPlantUrl from "../../assets/office/pottedPlant_NE.png";
+import rugRectangleUrl from "../../assets/office/rugRectangle_NE.png";
+import sideTableDrawersUrl from "../../assets/office/sideTableDrawers_NE.png";
+import sideTableUrl from "../../assets/office/sideTable_NE.png";
+import trashcanUrl from "../../assets/office/trashcan_NE.png";
+import wallWindowUrl from "../../assets/office/wallWindow_NE.png";
+
+/** 素材名 → 打包后的 URL。 */
+const SPRITE_URL: Record<string, string> = {
+  bookcaseClosed: bookcaseClosedUrl,
+  bookcaseOpen: bookcaseOpenUrl,
+  books: booksUrl,
+  cabinetTelevision: cabinetTelevisionUrl,
+  cardboardBoxClosed: cardboardBoxClosedUrl,
+  ceilingFan: ceilingFanUrl,
+  chairDesk: chairDeskUrl,
+  computerKeyboard: computerKeyboardUrl,
+  computerMouse: computerMouseUrl,
+  computerScreen: computerScreenUrl,
+  desk: deskUrl,
+  doorway: doorwayUrl,
+  lampRoundFloor: lampRoundFloorUrl,
+  laptop: laptopUrl,
+  plantSmall1: plantSmall1Url,
+  plantSmall2: plantSmall2Url,
+  plantSmall3: plantSmall3Url,
+  pottedPlant: pottedPlantUrl,
+  rugRectangle: rugRectangleUrl,
+  sideTableDrawers: sideTableDrawersUrl,
+  sideTable: sideTableUrl,
+  trashcan: trashcanUrl,
+  wallWindow: wallWindowUrl,
+};
+
+/** sprite 原始像素尺寸（实测 PNG 头）。 */
+const SPRITE_SIZE: Record<string, [number, number]> = {
+  desk: [85, 88],
+  chairDesk: [44, 56],
+  computerScreen: [34, 40],
+  computerKeyboard: [30, 23],
+  computerMouse: [9, 6],
+  laptop: [37, 24],
+  bookcaseOpen: [49, 101],
+  bookcaseClosed: [49, 99],
+  cabinetTelevision: [79, 79],
+  sideTable: [57, 68],
+  sideTableDrawers: [57, 68],
+  cardboardBoxClosed: [32, 40],
+  trashcan: [25, 45],
+  pottedPlant: [21, 61],
+  plantSmall1: [10, 14],
+  plantSmall2: [10, 14],
+  plantSmall3: [10, 14],
+  lampRoundFloor: [19, 76],
+  ceilingFan: [55, 39],
+  books: [18, 19],
+  rugRectangle: [188, 134],
+  wallWindow: [79, 153],
+  doorway: [44, 107],
+};
+
+/**
+ * 素材整体缩放（配合 deskSlots 收窄后的工位间距 ≈146px）。
+ * ⛔ 别调大：等距 sprite 的垂直占用 = 深度投影(≈半宽) + 实际高度，
+ *    1.5 时桌高 132px > 人坐高，人只露头顶；1.05 仍压住肩。0.95 才能露出头+肩。
+ * ⛔ 也别再调小：desk 宽 85×0.95=81px，再小工位之间就空成"大房间摆小桌"。
+ */
+export const SPRITE_K = 1.05;
+
+/* ── 与素材缩放**联动**的三个高度 ────────────────────────────────────────────
+   ⛔ 别在 OfficeScene 里写这几个魔数：它们都是"人坐在桌前"的对齐量，
+      桌子投影一变高，三个必须一起变（v7 实测：58 → 78 → 90 → 110，
+      每一次都是因为桌子变高、把坐着的人整个盖住了）。 */
+/** 坐姿人物相对地面的抬高量（≈ 椅子坐垫高度）。 */
+export const SEAT_LIFT = 110;
+/** 头顶标签相对地面的高度（= SEAT_LIFT + 头内偏移 27.5 + 标签框自身高度）。 */
+export const TAG_LIFT = 172;
+/** 交接卡片落点高度（对方头部附近）。 */
+export const HANDOFF_LIFT = 160;
+
+/** 桌面「后边缘」离屏高度（sprite 原始像素 = desk 的 88）。
+ *  ⛔ 取值必须是 88（**sprite 的整个垂直投影**），不是"桌腿高度"：等距 sprite 的垂直范围
+ *     = 后边线桌面 → 前边线地面，所以桌面靠后的上表面就在 88 处。
+ *     取 46 时显示器整块坐在桌面之下（只露 14px）；取 78 时显示器升到人的肩膀旁
+ *     （看着像"扛着屏幕"）。取 88 才是"显示器立在桌子后缘"。 */
+const DESK_TOP = 88;
+
+function spriteUrl(name: string): string {
+  return SPRITE_URL[name] ?? "";
+}
+
+/**
+ * 通用等距 sprite：**底边中心**对齐到 (x, y)。
+ * ⛔ 锚点是底边中心，不是左上角 —— 等距素材的贴地参考点是物体在地面上的中心投影，
+ *    用左上角对齐会让家具整体偏半个身位（多件叠加后误差累积成"乱"）。
+ */
+export function IsoSprite({ name, x, y, k = 1, opacity, className }: {
+  name: string; x: number; y: number; k?: number; opacity?: number; className?: string;
+}) {
+  const size = SPRITE_SIZE[name];
+  const url = spriteUrl(name);
+  if (!size || !url) return null;
+  const [w, h] = size;
+  return (
+    <image
+      className={className}
+      href={url}
+      x={x - (w * k) / 2}
+      y={y - h * k}
+      width={w * k}
+      height={h * k}
+      opacity={opacity}
+      preserveAspectRatio="none"
+      style={{ imageRendering: "auto" }}
+    />
+  );
+}
 
 /* ── 房间：地板 / 后墙 / 两侧墙 / 踢脚 / 天花板边缘 ── */
 export function IsoRoom() {
@@ -34,12 +180,18 @@ export function IsoRoom() {
       </g>
       {/* 地板 */}
       <polygon points={`${p(bl[0], bl[1])} ${p(br[0], br[1])} ${p(fr[0], fr[1])} ${p(fl[0], fl[1])}`} fill={ISO.floor} />
-      {/* 地板拼缝（顺着纵深方向，稀疏几道） */}
-      <g stroke={ISO.floorTile} strokeWidth="2.6">
-        {[0.24, 0.42, 0.58, 0.76].map((u) => {
+      {/* 地板拼缝：**两个方向都画**（等 u 线 + 等 v 线 = 地砖格）。
+          ⛔ 只画一个方向时大片浅色地板会显得很空（实测"大房间摆小桌"）。 */}
+      <g stroke={ISO.floorTile} strokeWidth="2.4">
+        {[0.14, 0.28, 0.42, 0.58, 0.72, 0.86].map((u) => {
           const a = floorPoint(u, 0);
           const b = floorPoint(u, 1);
-          return <line key={u} x1={a.x} y1={a.y} x2={b.x} y2={b.y} />;
+          return <line key={`u${u}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} />;
+        })}
+        {[0.2, 0.4, 0.6, 0.8].map((v) => {
+          const a = floorPoint(0, v);
+          const b = floorPoint(1, v);
+          return <line key={`v${v}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} />;
         })}
       </g>
       {/* 踢脚线 */}
@@ -52,200 +204,127 @@ export function IsoRoom() {
   );
 }
 
-/** 通用等距长方体（靠墙柜子/冰箱/矮柜都用它）。 */
-export function IsoBox({ u0, v0, u1, v1, h, top, front, side }: {
-  u0: number; v0: number; u1: number; v1: number; h: number;
-  top: string; front: string; side?: string;
-}) {
-  const a = floorPoint(u0, v0);
-  const b = floorPoint(u1, v0);
-  const c = floorPoint(u1, v1);
-  const d = floorPoint(u0, v1);
-  const H = h * depthScale((v0 + v1) / 2);
-  const f = (pt: FloorSpot, up = 0) => `${pt.x.toFixed(1)},${(pt.y - up).toFixed(1)}`;
-  return (
-    <g>
-      {side && <polygon points={`${f(b)} ${f(c)} ${f(c, H)} ${f(b, H)}`} fill={side} stroke={ISO.ink} strokeWidth={INK_W} strokeLinejoin="round" />}
-      <polygon points={`${f(d)} ${f(c)} ${f(c, H)} ${f(d, H)}`} fill={front} stroke={ISO.ink} strokeWidth={INK_W} strokeLinejoin="round" />
-      <polygon points={`${f(a, H)} ${f(b, H)} ${f(c, H)} ${f(d, H)}`} fill={top} stroke={ISO.ink} strokeWidth={INK_W} strokeLinejoin="round" />
-    </g>
-  );
+/** 墙上窗户（Kenney wallWindow，等距渲染件）。 */
+export function IsoWindow({ u, up, k = 1 }: { u: number; up: number; k?: number }) {
+  const p = wallPoint(u, up);
+  return <IsoSprite name="wallWindow" x={p.x} y={p.y + 153 * k} k={k} className="ofc-window" />;
 }
 
-/** 绿植（落地）。 */
+/** 地板地毯（Kenney rugRectangle）。 */
+export function IsoRug({ u, v, k = 1 }: { u: number; v: number; k?: number }) {
+  const p = floorPoint(u, v);
+  return <IsoSprite name="rugRectangle" x={p.x} y={p.y + 20 * p.scale} k={k * p.scale} opacity={0.95} className="ofc-rug" />;
+}
+
+/** 落地绿植（Kenney pottedPlant）。 */
 export function IsoPlant({ u, v, size = 1 }: { u: number; v: number; size?: number }) {
   const p = floorPoint(u, v);
   return (
-    <g transform={`translate(${p.x} ${p.y}) scale(${p.scale * size})`} className="ofc-plant">
-      <ellipse cx="0" cy="2" rx="26" ry="9" fill={ISO.shadow} opacity="0.13" />
-      <path d="M -19 0 L 19 0 L 14 -30 L -14 -30 Z" fill={ISO.pot} stroke={ISO.ink} strokeWidth={INK_W} strokeLinejoin="round" />
-      <g className="ofc-leaves">
-        <path className="ofc-leaf lf1" d="M 0 -30 Q -16 -58 -34 -62 Q -18 -34 0 -30 Z" fill={ISO.plant} stroke={ISO.ink} strokeWidth="2.6" strokeLinejoin="round" />
-        <path className="ofc-leaf lf2" d="M 0 -30 Q 16 -58 34 -62 Q 18 -34 0 -30 Z" fill={ISO.plantDark} stroke={ISO.ink} strokeWidth="2.6" strokeLinejoin="round" />
-        <path className="ofc-leaf lf3" d="M 0 -30 Q -2 -66 2 -78 Q 12 -50 6 -30 Z" fill={ISO.plant} stroke={ISO.ink} strokeWidth="2.6" strokeLinejoin="round" />
-      </g>
+    <g className="ofc-plant">
+      <IsoSprite name="pottedPlant" x={p.x} y={p.y} k={SPRITE_K * p.scale * size} />
     </g>
   );
 }
 
-/** 靠墙木柜（顶上摆点小物）。 */
-export function IsoCabinet({ u0, u1, v = 0.06, h = 74 }: { u0: number; u1: number; v?: number; h?: number }) {
-  const a = floorPoint(u0, v);
-  const b = floorPoint(u1, v);
-  const H = h * depthScale(v);
-  return (
-    <g>
-      <IsoBox u0={u0} v0={v} u1={u1} v1={v + 0.07} h={h} top={ISO.wood} front={ISO.woodDark} side={ISO.woodDark} />
-      {/* 柜门缝 + 拉手 */}
-      <g stroke={ISO.ink} strokeWidth="2.2" opacity="0.5">
-        <line x1={a.x + 2} y1={a.y - H * 0.42} x2={b.x - 2} y2={b.y - H * 0.42} />
-      </g>
-      {[0.28, 0.72].map((t) => {
-        const x = a.x + (b.x - a.x) * t;
-        return <rect key={t} x={x - 9} y={a.y - H * 0.52} width="18" height="4" rx="2" fill={ISO.ink} opacity="0.45" />;
-      })}
-    </g>
-  );
-}
-
-/** 立柱冰箱（参考图右侧那台）。 */
-export function IsoFridge({ u, v = 0.06 }: { u: number; v?: number }) {
-  return (
-    <g>
-      {/* ⛔ 别用近白色：会和后墙糊成一片，看着像"多了一块墙"（实测） */}
-      <IsoBox u0={u - 0.045} v0={v} u1={u + 0.045} v1={v + 0.09} h={132} top="#dde2e8" front="#cbd2da" side="#b9c1ca" />
-      <g stroke={ISO.ink} strokeWidth="2.2" opacity="0.45">
-        <line x1={floorPoint(u - 0.045, v).x} y1={floorPoint(u, v).y - 92} x2={floorPoint(u + 0.045, v).x} y2={floorPoint(u, v).y - 92} />
-      </g>
-    </g>
-  );
-}
-
-/** 墙上的吊架（参考图里后墙那两层开放格子）。 */
-export function WallShelf({ u0, u1, up, rows = 2 }: { u0: number; u1: number; up: number; rows?: number }) {
-  const a = wallPoint(u0, up);
-  const b = wallPoint(u1, up);
-  const w = b.x - a.x;
-  return (
-    <g>
-      {Array.from({ length: rows }).map((_, r) => (
-        <g key={r}>
-          <rect x={a.x} y={a.y + r * 34} width={w} height="9" fill={ISO.wood} stroke={ISO.ink} strokeWidth="2.6" />
-          {/* 架上小物 */}
-          {[0.12, 0.34, 0.56, 0.78].map((t, i) => (
-            <rect key={t} x={a.x + w * t} y={a.y + r * 34 - 16} width="15" height="16" rx="2.5"
-              fill={[OFC.noteB, OFC.noteA, ISO.plant, OFC.noteC][(r + i) % 4]} stroke={ISO.ink} strokeWidth="2.2" />
-          ))}
-        </g>
-      ))}
-      {/* 侧板 */}
-      <line x1={a.x} y1={a.y} x2={a.x} y2={a.y + (rows - 1) * 34 + 9} stroke={ISO.ink} strokeWidth="2.6" />
-      <line x1={b.x} y1={b.y} x2={b.x} y2={b.y + (rows - 1) * 34 + 9} stroke={ISO.ink} strokeWidth="2.6" />
-    </g>
-  );
-}
-
-/** 后墙画框 / 白板（参考图里挂在墙上的那几块）。 */
-export function WallBoard({ u, up, w = 118, h = 78, tint = OFC.paper, lines = 3 }: { u: number; up: number; w?: number; h?: number; tint?: string; lines?: number }) {
-  const p = wallPoint(u, up);
-  return (
-    <g transform={`translate(${p.x - w / 2} ${p.y - h})`}>
-      <rect x="-4" y="-4" width={w + 8} height={h + 8} rx="6" fill={ISO.ink} opacity="0.08" />
-      <rect x="0" y="0" width={w} height={h} rx="5" fill={tint} stroke={ISO.ink} strokeWidth="2.8" />
-      <g strokeLinecap="round">
-        {Array.from({ length: lines }).map((_, i) => (
-          <line key={i} x1="16" y1={22 + i * 17} x2={16 + (w - 40) * (1 - i * 0.18)} y2={22 + i * 17} stroke="#9fb4cc" strokeWidth="6" />
-        ))}
-      </g>
-    </g>
-  );
-}
-
-/** 饮水机（靠墙）。 */
-export function IsoCooler({ u, v = 0.1 }: { u: number; v?: number }) {
+/** 靠墙木柜（Kenney bookcaseClosed）。 */
+export function IsoCabinet({ u, v }: { u: number; v: number }) {
   const p = floorPoint(u, v);
-  const s = p.scale;
-  return (
-    <g transform={`translate(${p.x} ${p.y}) scale(${s})`}>
-      <ellipse cx="0" cy="2" rx="26" ry="9" fill={ISO.shadow} opacity="0.13" />
-      <rect x="-22" y="-58" width="44" height="58" rx="7" fill="#e6e8ec" stroke={ISO.ink} strokeWidth={INK_W / s} />
-      <path d="M -15 -58 L 15 -58 L 11 -108 L -11 -108 Z" fill="#cfe6f7" stroke={ISO.ink} strokeWidth={INK_W / s} />
-      <path className="ofc-steam" d="M 0 -104 q 4 -8 0 -16" fill="none" stroke={ISO.baseboard} strokeWidth="3" strokeLinecap="round" />
-      <circle cx="12" cy="-30" r="5" fill={OFC.info} stroke={ISO.ink} strokeWidth="2.2" />
-      <circle cx="12" cy="-14" r="5" fill={OFC.warn} stroke={ISO.ink} strokeWidth="2.2" />
-    </g>
-  );
+  return <IsoSprite name="bookcaseClosed" x={p.x} y={p.y} k={SPRITE_K * p.scale} className="ofc-furn" />;
 }
 
-/** 打印机（靠墙落地）。 */
-export function IsoPrinter({ u, v = 0.1 }: { u: number; v?: number }) {
+/** 开放书架（Kenney bookcaseOpen）。 */
+export function IsoShelfUnit({ u, v }: { u: number; v: number }) {
   const p = floorPoint(u, v);
-  const s = p.scale;
-  return (
-    <g transform={`translate(${p.x} ${p.y}) scale(${s})`} className="ofc-printer">
-      <ellipse cx="0" cy="2" rx="32" ry="10" fill={ISO.shadow} opacity="0.13" />
-      <rect x="-30" y="-52" width="60" height="52" rx="7" fill="#e9ebef" stroke={ISO.ink} strokeWidth={INK_W / s} />
-      <rect x="-22" y="-72" width="44" height="22" rx="5" fill="#f2f4f7" stroke={ISO.ink} strokeWidth="2.6" />
-      <rect x="-16" y="-30" width="32" height="9" rx="3" fill={ISO.baseboard} stroke={ISO.ink} strokeWidth="2.2" />
-      <circle className="ofc-printer-led" cx="20" cy="-44" r="3.2" fill={OFC.ok} stroke={ISO.ink} strokeWidth="1.8" />
-      <g className="ofc-print-sheet">
-        <rect x="-13" y="-24" width="26" height="18" rx="2" fill={OFC.paper} stroke={ISO.ink} strokeWidth="2" />
-      </g>
-    </g>
-  );
+  return <IsoSprite name="bookcaseOpen" x={p.x} y={p.y} k={SPRITE_K * p.scale} className="ofc-furn" />;
 }
 
-/** 后墙挂钟。 */
-export function WallClock({ u = 0.09, up = 96 }: { u?: number; up?: number }) {
-  const p = wallPoint(u, up);
-  return (
-    <g transform={`translate(${p.x} ${p.y})`}>
-      <circle cx="0" cy="0" r="24" fill={OFC.paper} stroke={ISO.ink} strokeWidth="3" />
-      <circle className="ofc-clock-hand" cx="0" cy="0" r="2" fill={ISO.ink} stroke="none" />
-      <line className="ofc-clock-minute" x1="0" y1="0" x2="0" y2="-15" stroke={ISO.ink} strokeWidth="2.6" strokeLinecap="round" />
-      <line className="ofc-clock-hand" x1="0" y1="0" x2="11" y2="3" stroke={OFC.warn} strokeWidth="2.6" strokeLinecap="round" />
-    </g>
-  );
-}
-
-/* ── 工位：白桌 + 深灰显示器（背面朝观众）+ 椅子 ──
-   ⛔ 构图对齐参考实现：**显示器在最远（贴在桌后）、桌子居中、人坐在桌子近侧（背对观众）**。
-   角色本体由 OfficeScene 画在 (u,v) 上（同一坐标），这里只出家具。 */
-export function IsoDeskSet({ u, v }: { u: number; v: number }) {
+/** 矮柜 / 边桌（Kenney sideTableDrawers）。 */
+export function IsoSideTable({ u, v }: { u: number; v: number }) {
   const p = floorPoint(u, v);
-  const s = p.scale;
+  return <IsoSprite name="sideTableDrawers" x={p.x} y={p.y} k={SPRITE_K * p.scale} className="ofc-furn" />;
+}
+
+/** 纸箱（Kenney cardboardBoxClosed）。 */
+export function IsoCarton({ u, v, k = 1 }: { u: number; v: number; k?: number }) {
+  const p = floorPoint(u, v);
+  return <IsoSprite name="cardboardBoxClosed" x={p.x} y={p.y} k={SPRITE_K * p.scale * k} className="ofc-furn" />;
+}
+
+/** 垃圾桶（Kenney trashcan）。 */
+export function IsoBin({ u, v }: { u: number; v: number }) {
+  const p = floorPoint(u, v);
+  return <IsoSprite name="trashcan" x={p.x} y={p.y} k={SPRITE_K * p.scale} className="ofc-furn" />;
+}
+
+/** 落地灯（Kenney lampRoundFloor）。 */
+export function IsoFloorLamp({ u, v }: { u: number; v: number }) {
+  const p = floorPoint(u, v);
+  return <IsoSprite name="lampRoundFloor" x={p.x} y={p.y} k={SPRITE_K * p.scale} className="ofc-lamp" />;
+}
+
+/** 矮几（Kenney sideTable）。 */
+export function IsoLowTable({ u, v }: { u: number; v: number }) {
+  const p = floorPoint(u, v);
+  return <IsoSprite name="sideTable" x={p.x} y={p.y} k={SPRITE_K * p.scale} className="ofc-furn" />;
+}
+
+/** 小盆栽（Kenney plantSmall*）。 */
+export function IsoSmallPlant({ u, v, variant = 1 }: { u: number; v: number; variant?: 1 | 2 | 3 }) {
+  const p = floorPoint(u, v);
+  return <IsoSprite name={`plantSmall${variant}`} x={p.x} y={p.y} k={SPRITE_K * p.scale} className="ofc-furn" />;
+}
+
+/** 吊扇（Kenney ceilingFan，挂在画面顶部，不参与地面排序）。 */
+export function IsoCeilingFan({ x, y, k = 1 }: { x: number; y: number; k?: number }) {
+  return <IsoSprite name="ceilingFan" x={x} y={y} k={k} className="ofc-fan" />;
+}
+
+/* ── 工位（v7 拆成三联：显示器 / 椅子 / 桌子）────────────────────────────
+   ⛔ 必须拆开渲染，因为**人要夹在中间**：
+        显示器（最远）→ 椅子 → 人 → 桌子（最近，遮住人的下半身）
+      合成一个函数就没法在中间插人 —— 这是 v6「人浮在桌子上方」的根因。
+   ⛔ 三个部件各带一点 v 偏移：桌子在人的**近侧**（v+）、显示器在远侧（v−）。
+      同 v 的话桌子的等距投影正好落在人身上、把人整个盖住（实测只露头顶）。 */
+
+/** 工位·远景：桌面上的显示器 + 键盘。
+    ⛔ 必须**偏到人的左侧**（x − 40·scale）：显示器放在工位正中会正好被坐着的人的脑袋挡住
+       （人物半宽 ≈ 20px，显示器半宽 ≈ 22px ⇒ 偏 40 才完全不重叠）。
+    ⛔ v 与桌子**同值**（不再 −/+ 偏移）：人就是坐在这一格的桌前，错开会让桌子掉到脚边或
+       显示器升到肩膀（两种都实测过）。 */
+export function IsoDeskBack({ u, v }: { u: number; v: number }) {
+  const p = floorPoint(u, v);
+  const k = SPRITE_K * p.scale;
+  const top = DESK_TOP * k;
   return (
-    <g transform={`translate(${p.x} ${p.y}) scale(${s})`} className="ofc-desk-furn">
+    <g className="ofc-desk-back">
+      <IsoSprite name="computerScreen" x={p.x - 40 * p.scale} y={p.y - top} k={k * 1.15} />
+      <IsoSprite name="computerKeyboard" x={p.x - 34 * p.scale} y={p.y - top + 11 * p.scale} k={k * 0.95} />
+    </g>
+  );
+}
+
+/** 工位·中景：椅子（画在人之下，人坐进去会盖住坐垫，只露出椅背与五爪）。 */
+export function IsoDeskChair({ u, v }: { u: number; v: number }) {
+  const p = floorPoint(u, v + 0.025);
+  const k = SPRITE_K * p.scale;
+  return (
+    <g className="ofc-desk-chair">
+      <IsoSprite name="chairDesk" x={p.x + 4 * p.scale} y={p.y + 4 * p.scale} k={k * 0.82} />
+    </g>
+  );
+}
+
+/** 工位·近景：桌子（画在人之上 ⇒ 遮住人的下半身 = "坐在桌后"）。 */
+export function IsoDeskFront({ u, v }: { u: number; v: number }) {
+  const p = floorPoint(u, v);
+  const k = SPRITE_K * p.scale;
+  return (
+    <g className="ofc-desk-furn">
       {/* 桌前地面阴影 */}
-      <ellipse cx="0" cy="-4" rx="62" ry="20" fill={ISO.shadow} opacity="0.09" />
-      {/* 桌子（白色台面 + 前沿厚度 + 两条腿）
-          ⛔ 台面别抬高：抬到 -72 时会把坐在桌前的人整个挡住（只剩一个头，v6 实测）；
-             压到 -56 才能让人露出上半身 —— 这也是参考实现的观感。 */}
-      <rect x="-64" y="-56" width="128" height="15" rx="4" fill={ISO.deskTop} stroke={ISO.ink} strokeWidth={INK_W / s} />
-      <rect x="-64" y="-41" width="128" height="7" rx="3" fill={ISO.deskEdge} stroke={ISO.ink} strokeWidth="2.4" />
-      <rect x="-56" y="-34" width="9" height="42" rx="3" fill={ISO.deskLeg} stroke={ISO.ink} strokeWidth="2.4" />
-      <rect x="47" y="-34" width="9" height="42" rx="3" fill={ISO.deskLeg} stroke={ISO.ink} strokeWidth="2.4" />
-      {/* 显示器：观众看到的是背面（深灰）—— 参考实现的观感。
-          ⛔ 两条约束：① 必须**偏到人的侧面**（x +38），居中会正好盖住坐在桌前那个人的头；
-                        ② 底部要落在台面（-56）上，不能悬空。 */}
-      <g transform="translate(38 26)">
-        <rect x="-25" y="-134" width="50" height="52" rx="5" fill={ISO.monitorBack} stroke={ISO.ink} strokeWidth={INK_W / s} />
-        <rect x="-19" y="-128" width="38" height="40" rx="3" fill={ISO.monitor} opacity="0.75" />
-        <rect x="-6" y="-82" width="12" height="8" fill={ISO.monitorStand} stroke={ISO.ink} strokeWidth="2.2" />
-        <rect x="-14" y="-75" width="28" height="6" rx="3" fill={ISO.monitorStand} stroke={ISO.ink} strokeWidth="2.2" />
-      </g>
-      {/* 桌上小物 */}
-      <rect x="-56" y="-64" width="26" height="9" rx="3" fill="#eef1f5" stroke={ISO.ink} strokeWidth="2.2" />
-      <g transform="translate(46 -66)">
-        <rect x="-6" y="-12" width="12" height="13" rx="2.6" fill={OFC.paper} stroke={ISO.ink} strokeWidth="2.2" />
-        <path d="M 6 -9 q 5 3.4 0 7.6" fill="none" stroke={ISO.ink} strokeWidth="2.2" />
-      </g>
-      {/* 椅子（人在其前方，会挡住大半） */}
-      <g>
-        <ellipse cx="0" cy="16" rx="26" ry="9" fill={ISO.chairDark} stroke={ISO.ink} strokeWidth="2.4" />
-        <rect x="-24" y="-10" width="48" height="30" rx="9" fill={ISO.chair} stroke={ISO.ink} strokeWidth={INK_W / s} />
-        <rect x="-3" y="24" width="7" height="14" rx="3" fill={ISO.chairDark} stroke={ISO.ink} strokeWidth="2.2" />
-      </g>
+      <ellipse cx={p.x} cy={p.y - 2} rx={64 * p.scale} ry={22 * p.scale} fill={ISO.shadow} opacity="0.1" />
+      <IsoSprite name="desk" x={p.x} y={p.y} k={k} />
+      {/* 桌上小物（靠右那侧，避开左边的显示器） */}
+      <IsoSprite name="books" x={p.x + 38 * p.scale} y={p.y - DESK_TOP * k} k={k * 0.85} />
     </g>
   );
 }
