@@ -326,6 +326,9 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         bag.setCompactEventState("running");
         bag.pruneSupersededCompactions(String(params.item?.id ?? ""));
         bag.attachCompactionItem(params.item, String(params.turnId ?? ""));
+        // ⛔ 挂载后再收敛一次（09-26 用户截图「两条压缩线」）：挂载兜底是「找不到同 id 就追加」，
+        //    引擎两阶段的 id/形态不一致时会追加出第二条 ⇒ 必须收尾 prune 成最新一条。
+        bag.pruneSupersededCompactions(String(params.item?.id ?? ""));
       } else if (method === "item/completed" && isCompactionItem(params.item)) {
         const tid0 = String(params.threadId ?? bag.threadRef.current?.id ?? "");
         const itemId0 = String(params.item?.id ?? "");
@@ -345,6 +348,9 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         if (!stillCompacting) bag.setCompactEventState("success");
         bag.pruneSupersededCompactions(String(params.item?.id ?? ""));
         bag.attachCompactionItem(params.item, String(params.turnId ?? ""));
+        // ⛔ 挂载后再收敛一次（09-26 用户截图「两条压缩线」）：挂载兜底是「找不到同 id 就追加」，
+        //    引擎两阶段的 id/形态不一致时会追加出第二条 ⇒ 必须收尾 prune 成最新一条。
+        bag.pruneSupersededCompactions(String(params.item?.id ?? ""));
         bag.settleAfterCompaction(tid0);
       }
       if (method === "turn/plan/updated") {

@@ -4648,6 +4648,15 @@ export async function run() {
     ((() => { const a = timeline.indexOf("compactionLine && i === insertBefore"); const b = timeline.indexOf("<MemoTurnView"); return a >= 0 && b >= 0 && a < b; })() ? ok : fail)(
       "【165】压缩线插在目标回合**之前**（= 最后一条用户消息的上方，不是回合后面）"
     );
+    // ⛔ 同屏最多一条「已完成」压缩线（09-26 用户截图「两条压缩线」）：settled 兜底必须在归位处
+    //    （else-if 与 compactionLine 互斥），不许再单独挂在时间线尾部。
+    ((timeline.match(/compact-divider--settled/g) || []).length === 1 && /\} else if \(compactToast && compactToast\.state !== "running"/.test(timeline) ? ok : fail)(
+      "【165】已完成压缩线只有一处渲染（item 优先，否则 toast 兜底，同位置互斥）"
+    );
+    const part04Prune = readFileSync(join(ROOT, "src/features/app-state/parts/part04/01-seg.tsx"), "utf8");
+    (/let keep = keepId;/.test(part04Prune) && /keep = String\(last\?\.id \?\? ""\);/.test(part04Prune) ? ok : fail)(
+      "【165】prune 空 id 也收敛（保留最后一条）——否则多余压缩项留在时间线里 = 多条线"
+    );
     (/status !== \"inProgress\" && it\?\.status !== \"running\"/.test(timeline) ? ok : fail)(
       "【165】归位只取**已完成**的压缩 item（进行中的转圈由 compact toast 负责，不抢位置）"
     );
