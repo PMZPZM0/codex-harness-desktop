@@ -461,6 +461,18 @@ console.log(C.bold("\n【4a-6】弹窗/浮层窄窗口自适应（固定宽度�
     /left:\s*0/.test(paletteRule) && /right:\s*0/.test(paletteRule)
       ? ok("输入框浮层（# / @ / 命令面板）用 left:0 + right:0 贴住输入区（天然自适应）")
       : fail("输入框浮层不再贴左右边——窄窗口下会溢出视口（改回了固定宽度？）");
+    // 命令面板两列必须按**文字基线**对齐（09-26 用户截图「注释跟对应命令不在一条线上，歪了」）：
+    // code 是 12px 等宽、.command-desc 是 11px，实测两者行框高 16.2px vs 14.85px ——
+    // align-items:center 是按盒子居中 ⇒ 字形基线差 ~2px，肉眼就是「歪」。改 baseline + 统一
+    // line-height 后实测两列 top 差 1px（= 字形高度差，基线已一致）。
+    {
+      const btnRule = cssSrc2.match(/\.command-palette button \{[^}]*\}/)?.[0] ?? "";
+      const lhRule = cssSrc2.match(/\.command-palette button > code,\s*\.command-palette \.command-desc \{[^}]*\}/)?.[0] ?? "";
+      (/align-items:\s*baseline/.test(btnRule) ? ok : fail)(
+        "命令面板两列按文字基线对齐（center 会让两种字号的字形差 ~2px = 看着「歪」）"
+      );
+      (/line-height:/.test(lhRule) ? ok : fail)("命令面板两列 line-height 统一（行框高度一致，基线才稳）");
+    }
     // ⛔ 选择器要带词边界：`\.info-modal` 会先匹配到 `.info-modal-mask`，把掩罩的规则当成弹窗本体
     // （实测这条写松了会假红——掩罩本来就不该有宽度约束）。
     const ruleOf = (name) => cssSrc2.match(new RegExp(`\\.${name}(?![\\w-])[^{]*\\{[^}]*\\}`))?.[0] ?? "";

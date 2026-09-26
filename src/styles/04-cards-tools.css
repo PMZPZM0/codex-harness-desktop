@@ -745,10 +745,19 @@
   border: 0;
   border-radius: 8px;
   grid-template-columns: 112px minmax(0, 1fr);
-  align-items: center;
+  /* ⛔ 按**文字基线**对齐（09-26 用户截图「注释跟对应命令不在一条线上，歪了」）：
+     code 是 12px 等宽、.command-desc 是 11px，两列行框高度不同（实测 14px vs 32px），
+     align-items:center 按盒子居中 ⇒ 字形基线差 ~2px，看着就是「歪」。baseline 让两者
+     的文字真正落在一条线上。 */
+  align-items: baseline;
   padding: 0 10px;
   font-size: 12px;
   display: grid;
+}
+.command-palette button > code,
+.command-palette .command-desc {
+  /* 两列行框高度统一（配合 baseline：不统一时多行内容会把行高撑得参差） */
+  line-height: 1.35;
 }
 .command-palette button:hover,
 .command-palette button:focus-visible {
