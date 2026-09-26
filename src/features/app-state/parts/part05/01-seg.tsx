@@ -344,7 +344,16 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
           bag.setGoalText("");
           bag.setGoalStatus(null);
         }
-      } else if (method === "turn/completed") { if (handleEventRouter5(bag, params)) return; }
+      } else if (method === "turn/completed") {
+        // ⛔ 回合结束 = 压缩必然已经结束（压缩不跨回合）⇒ 兜底熄灭「正在压缩」。
+        //    09-26 实测：引擎 16:33:41 就完成了压缩（item_completed + task_complete，且那次请求
+        //    input 从 7 万降到 2.48 万），界面却一直转圈 15 分钟 —— 完成事件在渲染层没被识别。
+        //    这条兜底与事件形态无关（不依赖 item 类型大小写 / turnId 归属），保证不会再永久转圈。
+        bag.setCompactToast((current) => (current?.state === "running"
+          ? { state: "success", message: "上下文压缩成功", threadId: current.threadId }
+          : current));
+        if (handleEventRouter5(bag, params)) return;
+      }
       if (method === "turn/started") { if (handleEventRouter6(bag, params)) return; } else if (method === "turn/completed") { if (handleEventRouter7(bag, params)) return; } else if (method === "item/started" || method === "item/completed") {
         // 不在这里清空 optimisticInput：清除时机交给渲染端的文本去重，
         // 否则 item/started 与 setThread 的批处理时序差异会让用户消息瞬间消失。
