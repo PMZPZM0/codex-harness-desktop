@@ -1381,9 +1381,64 @@ w.postMessage({id:1,op:"list",root});
     const officePath = join(ROOT, "src", "features", "team-office", "OfficeScene.tsx");
     const officeSrc = existsSync(officePath) ? readFileSync(officePath, "utf8") : "";
     (officeSrc.includes("ofc-worker") && officeSrc.includes('"never"') && officeSrc.includes("state-${state}") ? ok : fail)("【154】虚拟办公室场景存在（拟人化角色 + 三态：工作/空闲/空工位）");
-    (officeSrc.includes("<svg") && /stroke=\{C\.ink\}/.test(officeSrc) ? ok : fail)("【154】办公室为单张 SVG 插画（统一描边，⛔ 不许退回 div 纯色块）");
+    (officeSrc.includes("<svg") && /stroke=\{OFC\.ink\}/.test(officeSrc) ? ok : fail)("【154】办公室为单张 SVG 插画（统一描边，⛔ 不许退回 div 纯色块）");
     (/.ofc-desk/.test(officeCss) && /.ofc-bubble/.test(officeCss) ? ok : fail)("【154】办公室样式（工位/角色）齐全");
     (/ofc-type-a|ofc-zzz|ofc-sip/.test(officeCss) ? ok : fail)("【154】角色动画（敲键盘/打盹/端咖啡）存在");
+  }
+
+  /* ══ 【168】办公室动画体系（09-26 v4「活起来」）═══════════════════════════
+     用户要求：办公室要「好看 + 有动画 + 员工之间交接 + 预设动画和随机动画」。
+     形态钉死三件事：① 动画与数据解耦（导演是纯逻辑，不认识 DOM/React）
+                    ② 快照单源（弹窗持有导演，场景只画 → 右栏看板与画面必然一致）
+                    ③ 走路必须是真的过渡（写 SVG transform 属性 = 人闪现到终点）。 */
+  {
+    console.log(C.bold("\n【168】办公室动画体系（导演 / 姿势 / 交接 / 走路）"));
+    const directorPath = join(ROOT, "src", "features", "team-office", "office-director.ts");
+    const directorSrc = existsSync(directorPath) ? readFileSync(directorPath, "utf8") : "";
+    const sceneSrc2 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeScene.tsx"), "utf8");
+    const previewSrc2 = readFileSync(join(ROOT, "src", "features", "team-office", "TeamOfficePreview.tsx"), "utf8");
+    const css2 = readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8");
+
+    // ① 导演必须是纯逻辑：不认识 React / DOM（否则没法离线写断言，且渲染与决策会缠在一起）
+    (directorSrc.length > 0 && !/from "react"|document\.|window\./.test(directorSrc) ? ok : fail)(
+      "【168】动画导演是纯逻辑（不 import react、不碰 document/window）"
+    );
+    // ② 随机源可注入（截图/断言用固定种子 ⇒ 结果可复现，判据不依赖 Math.random）
+    (/constructor\(private rand: \(\) => number = Math\.random\)/.test(directorSrc) ? ok : fail)(
+      "【168】随机源可注入（固定种子可复现，断言不许靠运气）"
+    );
+    // ③ 真实的两个交接必须是**状态迁移**触发：被派任务 / 交成果
+    (/!wasRunning && nowRunning/.test(directorSrc) && /pushHandoff\(-1, i, "task"\)/.test(directorSrc) && /pushHandoff\(i, -1, "report"\)/.test(directorSrc) ? ok : fail)(
+      "【168】派任务 / 交成果由真实运行态迁移触发（不是纯装饰动画）"
+    );
+    // ④ 姿势池齐备：预设动画（工作/喝咖啡/伸懒腰/看手机/打盹/翻资料）
+    (["coffee", "stretch", "phone", "doze", "note"].every((k) => directorSrc.includes('kind: "' + k + '"')) ? ok : fail)(
+      "【168】空闲姿势池齐备（喝咖啡 / 伸懒腰 / 看手机 / 打盹 / 翻资料）"
+    );
+    // ⑤ 快照单源：弹窗持导演，场景只收 snapshot prop（⛔ 场景内部不得再 new 一个）
+    (previewSrc2.includes("new OfficeDirector()") && /snapshot=\{snapshot\}/.test(previewSrc2) && !sceneSrc2.includes("new OfficeDirector()") ? ok : fail)(
+      "【168】快照单源：导演在弹窗、场景只画 prop（否则画面与右栏看板会不一致）"
+    );
+    // ⑥ 走路是真的过渡：CSS transform + transition，⛔ 不是写 SVG transform 属性（那是闪现）
+    (/\.ofc-walker-slot \{[^}]*transition: transform/.test(css2) && /--wk-x/.test(sceneSrc2) ? ok : fail)(
+      "【168】走动小人用 CSS transform 过渡（写 SVG transform 属性会让人「闪现」到终点）"
+    );
+    // ⑦ 交接特效齐备：飞行卡片 + 落点脉冲 + 接收者惊叹号
+    (["ofc-handoff-card", "ofc-handoff-pulse", "ofc-handoff-alert"].every((k) => css2.includes(k)) ? ok : fail)(
+      "【168】交接特效齐备（飞行卡片 / 落点脉冲 / 接收者惊叹号）"
+    );
+    // ⑧ 场景必须真的渲染交接与走动人（⛔ 防止退回「死插画」）
+    (sceneSrc2.includes("snapshot.handoffs.map") && sceneSrc2.includes("<Walker") ? ok : fail)(
+      "【168】场景渲染交接飞行与走动小人（不许退回静止插画）"
+    );
+    // ⑨ 家具动效齐备（云漂 / 钟摆 / 水泡 / 吐纸 / 叶片 / 灯摆 / 白板手写）
+    (["ofc-drift", "ofc-swing", "ofc-rise", "ofc-print", "ofc-leaf", "ofc-lamp-sway", "ofc-draw"].every((k) => css2.includes(k)) ? ok : fail)(
+      "【168】家具动效齐备（云漂 / 钟摆 / 水泡 / 吐纸 / 叶片 / 灯摆 / 白板手写）"
+    );
+    // ⑩ 姿势动画齐备（每个姿势都要有自己的手臂/躯干姿态，否则「预设动画」是空话）
+    (["pose-work", "pose-coffee", "pose-stretch", "pose-phone", "pose-note", "pose-doze"].every((k) => css2.includes("." + k + " ")) ? ok : fail)(
+      "【168】六种坐姿各有自己的动画（工作 / 咖啡 / 伸懒腰 / 手机 / 翻资料 / 打盹）"
+    );
   }
 
   /* ══ 【155】团队调度的团队标识恢复（09-25 真机事故）═════════════════════
