@@ -1488,6 +1488,50 @@ w.postMessage({id:1,op:"list",root});
     );
   }
 
+  /* ══ 【170】DESIGN.md 视觉规范与代码对账（09-26）══════════════════════════
+     概念来自 Google Stitch 的 DESIGN.md（结构参考 VoltAgent/awesome-design-md，MIT）：
+     AGENTS.md 定义「怎么建」，DESIGN.md 定义「长什么样」。
+     ⛔ 这类文档最大的风险是**和代码漂移**：CSS 变量改了而文档没跟 ⇒ 它变成骗人的东西，
+        比没有还糟（后来改 UI 的 agent 会照着错的色板写）。所以这里做的是**真值对账**，
+        不是「文件存在吗」—— 后者恒真，等于没写。 */
+  {
+    console.log(C.bold("\n【170】DESIGN.md 视觉规范（存在 / 章节 / 变量真值对账）"));
+    const md170 = existsSync(join(ROOT, "DESIGN.md")) ? readFileSync(join(ROOT, "DESIGN.md"), "utf8") : "";
+    const css170 = readFileSync(join(ROOT, "src", "styles", "01-base-and-chrome.css"), "utf8");
+
+    (md170.length > 1200 ? ok : fail)(
+      "【170】根目录存在 DESIGN.md（与 AGENTS.md 并列：一个管怎么建、一个管长什么样）"
+    );
+
+    (["## Overview", "## Colors", "## Typography", "## Components", "## Theming"].every((h) => md170.includes(h)) ? ok : fail)(
+      "【170】DESIGN.md 章节齐备（总览 / 颜色 / 字体 / 组件 / 主题）"
+    );
+
+    // ⛔ 核心：变量表的亮/暗两栏必须与 CSS 里的**真值一致**
+    const lightBlock = css170.slice(css170.indexOf(":root {"), css170.indexOf(':root[data-theme="dark"]'));
+    const darkBlock = css170.slice(css170.indexOf(':root[data-theme="dark"] {'));
+    const cssVal = (blk, name) => {
+      const m = blk.match(new RegExp("--" + name + ":\\s*(#[0-9a-fA-F]{3,8})"));
+      return m ? m[1].toLowerCase() : null;
+    };
+    const drift = [];
+    for (const name of ["bg", "panel", "panel-2", "line", "text", "muted", "accent"]) {
+      const row = md170.split("\n").find((l) => l.startsWith("| `--" + name + "`"));
+      if (!row) { drift.push(name + "(文档缺行)"); continue; }
+      const cells = row.split("|").map((c) => c.trim().replace(/`/g, ""));
+      const mdLight = (cells[2] || "").toLowerCase();
+      const mdDark = (cells[3] || "").toLowerCase();
+      const cLight = (cssVal(lightBlock, name) || "").toLowerCase();
+      const cDark = (cssVal(darkBlock, name) || "").toLowerCase();
+      if (!mdLight || mdLight !== cLight) drift.push(name + " 亮 " + mdLight + "≠" + cLight);
+      if (!mdDark || mdDark !== cDark) drift.push(name + " 暗 " + mdDark + "≠" + cDark);
+    }
+    (drift.length === 0 ? ok : fail)(
+      "【170】DESIGN.md 变量表与 CSS 真值一致（改了变量必须同步文档，否则文档会骗人）"
+        + (drift.length ? "，漂移：" + drift.slice(0, 4).join("；") : "")
+    );
+  }
+
   /* ══ 【155】团队调度的团队标识恢复（09-25 真机事故）═════════════════════
      事故：重启后打开历史专家团会话，主理人调度 4/4 全失败，错误「专家团「」不存在」。
      根因：runTeamMember 只从 teamThreadConfigRef / teamThreadMapRef 取 teamId，而这两个 ref
