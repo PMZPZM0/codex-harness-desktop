@@ -4575,6 +4575,12 @@ export async function run() {
   (/const onWheel = \(\) => \{ if \(el\.scrollHeight > el\.clientHeight \+ 1\) reasoningFollowRef\.current = false; \};/.test(itemSrc) ? ok : fail)(
     "【161】卡内接管只认「真有内部滚动条」的滚轮（外层滚动冒泡不许误杀）"
   );
+  // ⑩ 吸入动画期间冻结追字（09-26 用户报「完成后展开卡顿一下」）：完成瞬间剩余全文
+  //    一次性灌进浮窗 + 定时器每 16ms setDisplayed，与 suck 同帧抢主线程 = 卡顿。
+  //    冻结到动画播完再放全文——那时浮窗已卸载，setDisplayed 只重渲染流内芯片，零成本。
+  (/if \(exiting\) return;/.test(itemSrc) ? ok : fail)(
+    "【161】吸入期间冻结追字（动画播完再放全文，卸载后零成本）"
+  );
   // ⑧ 整面可点收起（09-26 用户定稿「留白地方做成折叠收纳的按键」）：点空白/头部收起，
   //    点正文例外（选字/滚动不能误收）。
   (/closest\("\.reasoning-body"\)/.test(itemSrc) && /onClick=\{\(event\) =>/.test(itemSrc) ? ok : fail)(
