@@ -335,6 +335,28 @@ bag.addSystemEvent = addSystemEvent as typeof bag.addSystemEvent;
   }
 bag.setCompactEventState = setCompactEventState as typeof bag.setCompactEventState;
 
+  /** ⛔ 压缩结束的运行态结算（09-26 用户截图「压缩后『正在生成回复』一直挂着」）：
+   *  引擎把压缩跑成一个回合时，turn/started 会点亮 sending/activeTurnId/running 集合，
+   *  但压缩的完成走 thread/compacted 或 item/completed(contextCompaction)——**不保证**
+   *  有 turn/completed 来熄灭 ⇒ 状态条「正在生成回复 · 正在落笔」与停止键永久亮着。
+   *  ⛔ 守卫：本会话还有**真实**在跑的 item（非 contextCompaction）时绝不动 ——
+   *     回合中途的自动压缩不能把真回合的运行态打停（「运行莫名停止」同类事故零容忍）。 */
+  function settleAfterCompaction(threadId: string) {
+    if (!threadId || threadId !== bag.threadRef.current?.id) return;
+    const turns = bag.threadRef.current?.turns ?? [];
+    for (const turn of turns) {
+      for (const item of (turn.items ?? []) as any[]) {
+        if ((item?.status === "inProgress" || item?.status === "running") && item?.type !== "contextCompaction") return;
+      }
+    }
+    bag.setSending(false);
+    bag.setInterrupting(false);
+    bag.setActiveTurnId(null);
+    bag.markThreadStopped(threadId);
+    bag.setWorkStartedAt(null);
+  }
+bag.settleAfterCompaction = settleAfterCompaction as typeof bag.settleAfterCompaction;
+
   /** 压缩分隔线只保留最新一条：新一轮压缩开始/完成时，把时间线里更早的 contextCompaction
    *  项从渲染状态中移除（只改本地渲染副本，不动引擎 rollout）。旧「成功」分隔线一直挂着，
    *  新压缩一开始就上下两条叠在一起，被当成多余展示（用户实测）。 */
@@ -421,5 +443,5 @@ bag.showToast = showToast as typeof bag.showToast;
     return [line, used, life, turn, tip].join("\n");
   }
 bag.contextUsageText = contextUsageText as typeof bag.contextUsageText;
-  return { expandedTeamClusters, setExpandedTeamClusters, toggleTeamCluster, expandedDispatchBlocks, setExpandedDispatchBlocks, toggleDispatchBlock, dispatchBlockKeys, clusteredSidebar, toggleAllSources, sidebarAllCollapsed, toggleAllSidebarSections, TURN_WINDOW, TURNS_PAGE, TURN_WINDOW_MEMORY_KEEP, touchTurnWindow, ANCHOR_TOP_OFFSET_PX, CONTENT_TAIL_GAP_PX, COMMON_COMMAND_ORDER, commandMatches, mergedSkillCatalog, skillCommandMatches, threadMemoKey, availableContextItems, threadFileCandidates, addSystemEvent, setCompactEventState, pruneSupersededCompactions, threadNameOf, scopedNotice, showToast, contextUsageText };
+  return { expandedTeamClusters, setExpandedTeamClusters, toggleTeamCluster, expandedDispatchBlocks, setExpandedDispatchBlocks, toggleDispatchBlock, dispatchBlockKeys, clusteredSidebar, toggleAllSources, sidebarAllCollapsed, toggleAllSidebarSections, TURN_WINDOW, TURNS_PAGE, TURN_WINDOW_MEMORY_KEEP, touchTurnWindow, ANCHOR_TOP_OFFSET_PX, CONTENT_TAIL_GAP_PX, COMMON_COMMAND_ORDER, commandMatches, mergedSkillCatalog, skillCommandMatches, threadMemoKey, availableContextItems, threadFileCandidates, addSystemEvent, setCompactEventState, settleAfterCompaction, pruneSupersededCompactions, threadNameOf, scopedNotice, showToast, contextUsageText };
 }

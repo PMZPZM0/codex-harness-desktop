@@ -42,6 +42,10 @@ bag.turnFinalizing = turnFinalizing as typeof bag.turnFinalizing;
       for (let j = items.length - 1; j >= 0; j--) {
         const item = items[j] as any;
         if (item?.status !== "inProgress" && item?.status !== "running") continue;
+        // ⛔ contextCompaction 不是「生成回复」（09-26 用户截图：压缩期间状态条挂
+        //    「正在生成回复 · 正在落笔」）—— 压缩有自己的指示（时间线压缩分隔线转圈 +
+        //    compact toast），状态条这里跳过它继续找真实活动；找不到就静默（见兜底）。
+        if (item?.type === "contextCompaction") continue;
         switch (item.type) {
           case "commandExecution": return "正在执行命令";
           case "fileChange": return "正在编辑文件";
@@ -51,10 +55,12 @@ bag.turnFinalizing = turnFinalizing as typeof bag.turnFinalizing;
         }
       }
     }
+    // ⛔ 压缩进行中不给任何兜底（09-26 用户截图）：此时说「正在生成回复/正在落笔」是
+    //    错的 —— 引擎在压缩上下文，不在写回复。压缩指示由分隔线与 compact toast 承担。
+    if (bag.compactPendingRef.current.has(bag.thread.id)) return "";
     // ⛔ 兜底要分两种（09-18 用户实测「回复完了还没结束，啥情况」）：GPT 系模型输出完正文后，
     //   上游迟迟不发流结束信号（真机实测 gpt-5.6-sol 正文完成后 28 秒零事件才 task_complete），
     //   此时说「正在生成回复」会让人以为还在憋正文 —— 如实说「正文已完整，等待模型收尾」。
-    //   判据**复用纯函数**，不在这里抄第二份（两份判定迟早漂移，且纯函数那份有行为断言守着）。
     //   判据**复用纯函数**，不在这里抄第二份（两份判定迟早漂移，且纯函数那份有行为断言守着）。
     return bag.turnFinalizing ? "正文已完整，等待模型收尾" : "正在生成回复";
   }, [bag.taskRunning, bag.thread, bag.turnFinalizing]);

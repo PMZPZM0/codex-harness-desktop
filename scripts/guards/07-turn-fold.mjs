@@ -4591,3 +4591,40 @@ export async function run() {
     "【161】浮窗身份色 = 左 accent 色条 + 头箭头主题蓝（09-26 用户要求）"
   );
 }
+// ── 55. 压缩期间的运行态语义（09-26 用户截图：压缩后「正在生成回复 · 正在落笔」一直挂着）──
+{
+  const activitySrc = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part06", "02-seg", "01-turn-runtime-activity.tsx"), "utf8").replace(/\r/g, "");
+  const part04Src = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part04", "01-seg.tsx"), "utf8").replace(/\r/g, "");
+  const part05Src = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part05", "01-seg.tsx"), "utf8").replace(/\r/g, "");
+  // ① 扫描跳过 contextCompaction：压缩 item 不是任何一种「活动」，不许被 switch 当成未知兜底。
+  (/if \(item\?\.type === "contextCompaction"\) continue;/.test(activitySrc) ? ok : fail)(
+    "【163】runActivity 扫描跳过 contextCompaction（压缩不是「生成回复」，指示归分隔线与 toast）"
+  );
+  // ② 压缩进行中兜底必须给空串：此时「正在生成回复/正在落笔」是错的。
+  (/compactPendingRef\.current\.has\(bag\.thread\.id\)\) return "";/.test(activitySrc) ? ok : fail)(
+    "【163】压缩进行中 runActivity 兜底为空串（状态条静默，分隔线转圈承担指示）"
+  );
+  // ③ 压缩完成必须结算运行态（两个完成事件都要接）：turn/started 点亮的状态没人熄灭 = 永久挂。
+  ((part05Src.match(/bag\.settleAfterCompaction\(/g) || []).length >= 2 ? ok : fail)(
+    "【163】item/completed(contextCompaction) 与 thread/compacted 都必须调 settleAfterCompaction（缺一处就有挂起路径）"
+  );
+  // ④ 结算的守卫：本会话还有真实在跑 item（非压缩）时绝不动 —— 回合中途的自动压缩
+  //    不能把真回合的运行态打停（「运行莫名停止」同类事故零容忍）。
+  (/type !== "contextCompaction"\) return;/.test(part04Src) ? ok : fail)(
+    "【163】settleAfterCompaction 有「真回合在跑就不动」守卫（自动压缩不许打断真回合）"
+  );
+  // ⑤ 反向绊线：结算不许漏 setActiveTurnId（只清 sending 不清 turn id = 状态条照样挂着）。
+  (/bag\.setSending\(false\);[\s\S]{0,80}bag\.setActiveTurnId\(null\);/.test(part04Src) ? ok : fail)(
+    "【163】settleAfterCompaction 必须同时清 sending 与 activeTurnId（漏一个状态条就还挂着）"
+  );
+  // ⑥ 成功提示条件化（09-26 用户截图「还在转圈就报成功」）：item/completed 只代表一个压缩
+  //    item 完成；同会话还有别的压缩 item 在跑时不得报成功（排除刚完成的这条再查）。
+  (/const stillCompacting = \(\(\) => \{/.test(part05Src) && /if \(!stillCompacting\) bag\.setCompactEventState\("success"\);/.test(part05Src) ? ok : fail)(
+    "【163】压缩成功提示必须条件化（还有进行中的压缩 item 就不许报成功）"
+  );
+  // ⑦ 权威信号停转：thread/compacted 到达时本地把还挂着的 inProgress 压缩 item 落成
+  //    completed（引擎侧 completed 迟到/缺失时分隔线会永远转圈）。
+  ((() => { const i = part05Src.indexOf('event.method === "thread/compacted"'); return i >= 0 && part05Src.slice(i, i + 1400).includes('status: "completed"'); })() ? ok : fail)(
+    "【163】thread/compacted 必须本地落平还挂着的 inProgress 压缩 item（分隔线停转不依赖引擎补发）"
+  );
+}
