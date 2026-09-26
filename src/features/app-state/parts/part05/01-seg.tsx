@@ -318,39 +318,20 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
       }
       // ⛔ 判定走 isCompactionItem（唯一口径，大小写不敏感）——引擎发/落盘的是 PascalCase
       //    「ContextCompaction」，早先各处硬写 camelCase 让整条压缩链静默不命中（09-26 rollout 取证）。
-      //    ② attachCompactionItem：压缩 item 的 turnId 常指向宿主**不知道**的引擎内部回合
-      //    ⇒ mergeItem 丢弃它 ⇒ thread 里没有 item ⇒ 渲染层无法归位（线只剩尾部 toast 兜底，
-      //    用户三次看到「线一直在下面」）。兜底把它挂到最后一条已知回合（= 压缩发生的历史点）。
       if (method === "item/started" && isCompactionItem(params.item)) {
         bag.compactPendingRef.current.add(String(params.threadId ?? bag.threadRef.current?.id ?? ""));
         bag.setCompactEventState("running");
         bag.pruneSupersededCompactions(String(params.item?.id ?? ""));
-        bag.attachCompactionItem(params.item, String(params.turnId ?? ""));
-        // ⛔ 挂载后再收敛一次（09-26 用户截图「两条压缩线」）：挂载兜底是「找不到同 id 就追加」，
-        //    引擎两阶段的 id/形态不一致时会追加出第二条 ⇒ 必须收尾 prune 成最新一条。
-        bag.pruneSupersededCompactions(String(params.item?.id ?? ""));
       } else if (method === "item/completed" && isCompactionItem(params.item)) {
         const tid0 = String(params.threadId ?? bag.threadRef.current?.id ?? "");
-        const itemId0 = String(params.item?.id ?? "");
         bag.compactPendingRef.current.delete(tid0);
-        // ⛔ 成功提示只在「再无进行中的压缩 item」时发（09-26 用户截图：分隔线还在转圈、
-        //    toast 已报「压缩成功」）——同会话还有别的压缩 item 在跑（自动+手动叠加）时，
-        //    这条 completed 只代表其中一个完成，成功要等最后一个（排除刚完成的这条再查）。
-        const stillCompacting = (() => {
-          const turns = bag.threadRef.current?.turns ?? [];
-          for (const t of turns) {
-            for (const it of (t.items ?? []) as any[]) {
-              if (isCompactionItem(it) && (it?.status === "inProgress" || it?.status === "running") && String(it?.id ?? "") !== itemId0) return true;
-            }
-          }
-          return false;
-        })();
-        if (!stillCompacting) bag.setCompactEventState("success");
+        // ⛔ 口径（09-26 用户「现在根本压缩成功不了」后重做）：**收到 completed 即认为本次压缩结束**。
+        //    先 prune 收敛掉线程里其它压缩项（含可能残留的 inProgress —— started/completed 两阶段
+        //    id 不一致时会残留一条，扫 item 判定会被它永久抑制 ⇒ 界面永远停在「正在压缩」）。
+        //    多压缩叠加（自动+手动）时可能提前报一次成功，另一个完成时会再报一次 —— 相比「永挂」
+        //    这是可接受的取舍，且实现与数据形状解耦。
         bag.pruneSupersededCompactions(String(params.item?.id ?? ""));
-        bag.attachCompactionItem(params.item, String(params.turnId ?? ""));
-        // ⛔ 挂载后再收敛一次（09-26 用户截图「两条压缩线」）：挂载兜底是「找不到同 id 就追加」，
-        //    引擎两阶段的 id/形态不一致时会追加出第二条 ⇒ 必须收尾 prune 成最新一条。
-        bag.pruneSupersededCompactions(String(params.item?.id ?? ""));
+        bag.setCompactEventState("success");
         bag.settleAfterCompaction(tid0);
       }
       if (method === "turn/plan/updated") {
@@ -434,9 +415,6 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
           const tid = String(params.threadId ?? bag.threadRef.current?.id ?? "");
           if (tid) { bag.tokenUsageTotalsRef.current.delete(tid); bag.derivedTokenUsageRef.current.delete(tid); }
         }
-        // 引擎产出的摘要文本（09-26「摘要接力」用：宿主真压缩拿它做新会话的历史种子）。
-        // 字段名按引擎实际形态兜底取值（payload.message / summary / text 任一）。
-        bag.compactedSummaryRef.current = String(params.message ?? params.summary ?? params.text ?? "");
         bag.setCompactEventState("success");
         // ⛔ 分隔线停转（09-26 用户截图：toast 已报成功、分隔线还在转圈）：thread/compacted
         //    是权威完成信号，引擎侧对应 item 的 completed 可能迟到/缺失 —— 本地把所有还挂着

@@ -205,14 +205,6 @@ export async function send(bag: Bag, event?: FormEvent) {
       }
     }
     bag.setSending(true);
-    // ⛔ 宿主真压缩接力（09-26 用户定稿：摘要接力 + 设置里的自动压缩阈值）：
-    //    上下文到达阈值时，先把历史摘成一段 + 最近几轮原文，开新会话，把摘要块拼在本条消息前
-    //    再发 —— 引擎下一轮**实际发出**的历史就是短的（引擎自己的压缩窗口在自定义网关下不生效，
-    //    实测压缩后请求仍 70K）。旧会话原样保留可切回。阈值 = 设置页「自动压缩阈值」。
-    {
-      const relayBlock = await bag.maybeRelayHighContext();
-      if (relayBlock) { messageText = relayBlock + messageText; bag.setPrompt(""); }
-    }
     // 同 queue 分支：注解「chip 原始位置」，渲染层据此内联而不是堆到尾部
     saveMessageOriginal(messageText, value);
     // 立即点亮侧边栏转圈（turn/start 返回前也转）：复用当前会话时立刻标记运行中；
