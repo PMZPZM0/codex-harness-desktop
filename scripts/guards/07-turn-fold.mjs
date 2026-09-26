@@ -1662,7 +1662,7 @@ export async function run() {
     const marker = at >= 0 ? appCode50.slice(at, appCode50.indexOf("{turnFinished && finalAgent", at)) : "";
     (!/elapsedSeconds|已处理\s*\$\{|耗时/.test(marker) ? ok : fail)("【50】停止标记不重复耗时（耗时由过程组标题负责，同一屏只说一次）");
     // 顺序：内容 → 标记 → 操作栏
-    const foldIdx = appCode50.indexOf("<TurnFoldStream items={responseItems}");
+    const foldIdx = appCode50.indexOf("<TurnFoldStream items={foldItems}");
     const noticeIdx = appCode50.indexOf("{userStopped && (");
     const footerIdx = appCode50.indexOf("{turnFinished && finalAgent");
     (foldIdx > 0 && noticeIdx > foldIdx && footerIdx > noticeIdx ? ok : fail)("【50】标记落在「最新内容之后、操作栏之前」（用户明确要求的位置）");
@@ -4627,4 +4627,23 @@ export async function run() {
   ((() => { const i = part05Src.indexOf('event.method === "thread/compacted"'); return i >= 0 && part05Src.slice(i, i + 1400).includes('status: "completed"'); })() ? ok : fail)(
     "【163】thread/compacted 必须本地落平还挂着的 inProgress 压缩 item（分隔线停转不依赖引擎补发）"
   );
+  /* ── 【165】压缩线位置归位（09-26 用户截图「压缩完成线要在新消息上面」） ──
+     引擎把压缩跑成真回合时，压缩 item 的 turnId 仍是上一回合、且 item/started 晚于
+     agentMessage 才到 ⇒ merge 进回合 items 末尾 ⇒ 线渲染在回复内容下面。
+     渲染层把压缩线从内容区抽出、挂到回合顶部（用户气泡上方）。 */
+  {
+    const turnView = readFileSync(join(ROOT, "src/features/session-turn/SessionTurn/03-turn-view.tsx"), "utf8");
+    (turnView.includes("const compactItems = responseItems.filter((item) => item.type === \"contextCompaction\")") ? ok : fail)(
+      "【165】压缩 item 从回合内容区抽出（单独渲染，不再随 items 顺序落到回复下面）"
+    );
+    (turnView.includes("const foldItems = useMemo(() => responseItems.filter((item) => item.type !== \"contextCompaction\")") ? ok : fail)(
+      "【165】折叠流收到的是剔除压缩线的 items（压缩线不进过程折叠组）"
+    );
+    ((() => { const i = turnView.indexOf("compactItems.map"); const j = turnView.indexOf("userItems.map"); return i >= 0 && j >= 0 && i < j; })() ? ok : fail)(
+      "【165】压缩线渲染在用户气泡**之前**（回合顶部 = 「新消息上面」，不是内容之后）"
+    );
+    (turnView.includes("items={foldItems}") && !turnView.includes("items={responseItems}") ? ok : fail)(
+      "【165】TurnFoldStream 只吃 foldItems（喂 responseItems 会让压缩线回到内容末尾）"
+    );
+  }
 }

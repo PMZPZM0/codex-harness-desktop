@@ -3,7 +3,7 @@
  * ⛔ 逻辑与原地逐字一致，只补了顶部 import 与 `export`。
  */
 import { Turn } from "../../../lib/turn";
-import { FoldHandlers, TurnFoldStream } from "../../session-queue";
+import { FoldHandlers, TurnFoldStream, ItemView } from "../../session-queue";
 import { useCodexName, CodexAvatar } from "../../../components/CodexAvatar";
 import { isTurnRunning } from "../../../lib/turn-fold";
 import { useEffect, useMemo, memo, useState, useRef } from "react";
@@ -48,12 +48,21 @@ export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForAp
     });
     return stale ? fixed : items;
   }, [turn.items, running]);
+  // ⛔ 压缩线位置归位（09-26 用户截图「压缩完成线要在新消息上面，怎么一直在下面」）：
+  //    引擎把压缩跑成真实回合时，压缩 item 的 turnId 仍是**上一回合**、且 item/started 晚于
+  //    agentMessage 才到（真机事件序列实证）⇒ mergeItem 把它排在回合 items 末尾 ⇒ 线渲染在
+  //    回复内容下面。语义上压缩针对的是**这条消息之前的**历史上下文 ⇒ 线固定渲染到回合
+  //    顶部（用户气泡上方）= 「新消息上面」。数据不动，只动显示位置。
+  const compactItems = responseItems.filter((item) => item.type === "contextCompaction");
+  const foldItems = useMemo(() => responseItems.filter((item) => item.type !== "contextCompaction"), [responseItems]);
   // 最终答复 = 最后一条有正文的 agentMessage
-  const finalAgent = [...responseItems].reverse().find((item) => item.type === "agentMessage" && String(item.text ?? "").trim()) ?? null;
-  const hasContent = responseItems.some((item) => item.type !== "agentMessage" || Boolean(String(item.text ?? "").trim()));
+  const finalAgent = [...foldItems].reverse().find((item) => item.type === "agentMessage" && String(item.text ?? "").trim()) ?? null;
+  const hasContent = foldItems.some((item) => item.type !== "agentMessage" || Boolean(String(item.text ?? "").trim()));
   // 可见内容：空的 agentMessage / 空 reasoning 占位不算。引擎建好 item 到首 token 之间有几十~几百毫秒，
   // 这段空窗必须有「思考中/生成中」占位顶着，否则就是白屏一下再突然整段冒出来（观感=卡+闪）。
-  const hasVisible = responseItems.some((item) =>
+  // ⛔ 以 foldItems 为准（09-26）：压缩线已提到回合顶部独立渲染，不算回合内的可见内容——
+  //    否则「只有压缩 item」的回合会渲染一张空卡片壳。
+  const hasVisible = foldItems.some((item) =>
     item.type === "agentMessage" ? Boolean(String(item.text ?? "").trim())
       : item.type === "reasoning" ? Boolean([...(item.summary ?? []), ...(item.content ?? [])].join("").trim())
         : true,
@@ -74,7 +83,10 @@ export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForAp
   const hookBadge = hooks && hooks.length > 0 ? <HookBadge hooks={hooks} /> : undefined;
   return (
     <div className={`turn-group ${running ? "running" : turn.error ? "error" : "completed"}`} id={`turn-${turn.id}`} data-current-turn={isLastTurn ? "true" : undefined}>
+      {/* 压缩线固定在回合最顶部（用户气泡上方）——「新消息上面」（09-26，见 compactItems 注释） */}
+      {compactItems.map((item) => <ItemView item={item} turn={turn} onCopy={handlers.onCopy} onQuote={handlers.onQuote} key={item.id} />)}
       {userItems.map((item) => <MemoUserMessageView item={item} turn={turn} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} key={item.id} />)}
+      {(userItems.length > 0 || hasVisible) && (
       <div className="turn-card">
         {/* 回合标识：一轮会话只有一份「头像 + 名字」（09-17 用户「一轮会话就一个 Codex 名字和
             Codex 头像就行，就在会话上面就行」）。放在回合最上面，且**回合一建立就渲染** ——
@@ -121,7 +133,7 @@ export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForAp
             </div>
           )}
           {/* inner 永远不渲染 finalAgent 的 footer（避免 running 时每个新 body 短暂成为 finalAgent 挂按钮 + 避免与外层 2129 行双排）。外层 turnFinished 决定最终是否独占渲染一份。CompletedChanges 仍需 completedTask（聊天回合没文件改动可显）。 */}
-          <TurnFoldStream items={responseItems} turn={turn} running={running} fallbackWindow={fallbackWindow} waitingForApproval={waitingForApproval} handlers={handlers} finalAgentId={finalAgent?.id} usage={usage} tokenUsage={tokenUsage} keepProcessOpen={userStopped} />
+          <TurnFoldStream items={foldItems} turn={turn} running={running} fallbackWindow={fallbackWindow} waitingForApproval={waitingForApproval} handlers={handlers} finalAgentId={finalAgent?.id} usage={usage} tokenUsage={tokenUsage} keepProcessOpen={userStopped} />
           {completedTask && <CompletedChanges turn={turn} />}
           {/* 「用户已停止」标记：落在**最新内容之后**（用户 09-18 明确定位）。
               ⛔ 不重复耗时：上方过程组的标题已经写着「已停止 · 耗时 36 秒」，这里再说一遍就是
@@ -140,6 +152,7 @@ export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForAp
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }
