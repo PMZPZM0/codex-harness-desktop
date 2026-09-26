@@ -389,40 +389,6 @@ bag.settleAfterCompaction = settleAfterCompaction as typeof bag.settleAfterCompa
   }
 bag.pruneSupersededCompactions = pruneSupersededCompactions as typeof bag.pruneSupersededCompactions;
 
-  /**
-   * 把压缩 item 挂进会话时间线（09-26 取证后的关键修复）。
-   * ⛔ 引擎的压缩 item 带的是**引擎内部压缩回合**的 turnId，宿主的 thread 里通常没有这个回合
-   *   ⇒ mergeItem 把非 userMessage 的未知回合 item 丢弃 ⇒ thread 里没有 item ⇒
-   *   渲染层无法把线归位（只剩时间线尾部 toast 兜底 = 用户三次看到「线一直在下面」）。
-   * 口径：id 已存在 ⇒ 就地合并（状态推进 inProgress→completed）；否则挂到 turnId 命中的回合，
-   *      再退到最后一条已知回合（= 压缩发生的历史点）。thread 还没有任何回合时不动（无位置可挂）。
-   */
-  function attachCompactionItem(item: any, turnId: string) {
-    if (!item || !item.id) return;
-    bag.setThread((current) => {
-      if (!current) return current;
-      const turns = (current.turns ?? []).map((turn) => ({ ...turn, items: (turn.items ?? []).slice() }));
-      if (!turns.length) return current;
-      for (const turn of turns) {
-        const index = turn.items.findIndex((entry: any) => String(entry.id) === String(item.id));
-        if (index >= 0) {
-          const merged = { ...turn.items[index], ...item };
-          turn.items[index] = merged;
-          const next = { ...current, turns };
-          bag.threadRef.current = next;
-          bag.threadCacheRef.current.set(current.id, next);
-          return next;
-        }
-      }
-      const target = turns.find((turn) => String(turn.id) === turnId) ?? turns[turns.length - 1];
-      target.items = [...target.items, item];
-      const next = { ...current, turns };
-      bag.threadRef.current = next;
-      bag.threadCacheRef.current.set(current.id, next);
-      return next;
-    });
-  }
-bag.attachCompactionItem = attachCompactionItem as typeof bag.attachCompactionItem;
 
   // 压缩分隔线：success/error 常驻（用户可手动 × 关闭），running 300s 没收到完成事件才标记失败。
   // 90s 的旧超时会把大上下文的真实模型压缩（几分钟很常见）误判成失败——已实测踩坑。
@@ -487,5 +453,5 @@ bag.showToast = showToast as typeof bag.showToast;
     return [line, used, life, turn, tip].join("\n");
   }
 bag.contextUsageText = contextUsageText as typeof bag.contextUsageText;
-  return { expandedTeamClusters, setExpandedTeamClusters, toggleTeamCluster, expandedDispatchBlocks, setExpandedDispatchBlocks, toggleDispatchBlock, dispatchBlockKeys, clusteredSidebar, toggleAllSources, sidebarAllCollapsed, toggleAllSidebarSections, TURN_WINDOW, TURNS_PAGE, TURN_WINDOW_MEMORY_KEEP, touchTurnWindow, ANCHOR_TOP_OFFSET_PX, CONTENT_TAIL_GAP_PX, COMMON_COMMAND_ORDER, commandMatches, mergedSkillCatalog, skillCommandMatches, threadMemoKey, availableContextItems, threadFileCandidates, addSystemEvent, setCompactEventState, settleAfterCompaction, pruneSupersededCompactions, attachCompactionItem, threadNameOf, scopedNotice, showToast, contextUsageText };
+  return { expandedTeamClusters, setExpandedTeamClusters, toggleTeamCluster, expandedDispatchBlocks, setExpandedDispatchBlocks, toggleDispatchBlock, dispatchBlockKeys, clusteredSidebar, toggleAllSources, sidebarAllCollapsed, toggleAllSidebarSections, TURN_WINDOW, TURNS_PAGE, TURN_WINDOW_MEMORY_KEEP, touchTurnWindow, ANCHOR_TOP_OFFSET_PX, CONTENT_TAIL_GAP_PX, COMMON_COMMAND_ORDER, commandMatches, mergedSkillCatalog, skillCommandMatches, threadMemoKey, availableContextItems, threadFileCandidates, addSystemEvent, setCompactEventState, settleAfterCompaction, pruneSupersededCompactions, threadNameOf, scopedNotice, showToast, contextUsageText };
 }

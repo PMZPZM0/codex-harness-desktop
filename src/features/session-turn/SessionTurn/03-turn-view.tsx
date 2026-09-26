@@ -81,6 +81,18 @@ export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForAp
     ? (turn.items.some((item) => item.type === "reasoning" && (item.status === "inProgress" || item.status === "running" || (!item.status && !item.durationMs))) ? "思考中" : "生成中")
     : stopReason.label || (turn.durationMs ? `已用 ${formatDuration(turn.durationMs)}` : "已完成");
   const hookBadge = hooks && hooks.length > 0 ? <HookBadge hooks={hooks} /> : undefined;
+  // ⛔ 空推进回合整组不渲染（09-26 用户截图「三条线」）：引擎会把上下文压缩这类内部动作跑成
+  //    **独立回合**（没有 userMessage、除压缩项外也没有任何实质内容）⇒ 原先会渲染出一个空卡，
+  //    视觉上只留下一条孤零零的「耗时 X 秒」灰线。压缩线本身由 timeline 层归位单独渲染，
+  //    所以这里整组不渲染是正确的（不是丢内容）。
+  //    判定用**显式白名单**：工具/命令/文件/搜索/正文/思考才算实质内容；plan、hookPrompt 等
+  //    占位型 item 不算（它们单靠自己撑起一个回合是没有意义的）。
+  const hasRealContent = foldItems.some((item: any) =>
+    item?.type === "agentMessage" ? Boolean(String(item.text ?? "").trim())
+      : item?.type === "reasoning" ? Boolean([...(item.summary ?? []), ...(item.content ?? [])].join("").trim())
+        : item?.type === "commandExecution" || item?.type === "fileChange" || item?.type === "mcpToolCall" || item?.type === "webSearch",
+  );
+  if (userItems.length === 0 && !hasRealContent) return null;
   return (
     <div className={`turn-group ${running ? "running" : turn.error ? "error" : "completed"}`} id={`turn-${turn.id}`} data-current-turn={isLastTurn ? "true" : undefined}>
       {userItems.map((item) => <MemoUserMessageView item={item} turn={turn} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} key={item.id} />)}
