@@ -1,7 +1,9 @@
 /**
  * SessionTurn 的「turn-view」部分（09-22 从同目录 SessionTurn.tsx 按顶层声明分出，纯搬迁、零改写）。
  * ⛔ 逻辑与原地逐字一致，只补了顶部 import 与 `export`。
+import 与 `export`。
  */
+import { isCompactionItem } from "../../../lib/compaction-item.mjs";
 import { Turn } from "../../../lib/turn";
 import { FoldHandlers, TurnFoldStream } from "../../session-queue";
 import { useCodexName, CodexAvatar } from "../../../components/CodexAvatar";
@@ -52,7 +54,7 @@ export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForAp
   //    末尾 ⇒ 只把线提到「所在回合」顶部还不够。归位逻辑上收到 **timeline 层**（见
   //    01-timeline.tsx 的 compactionLine：固定插在最后一条用户消息回合正上方）。这里只负责
   //    把压缩 item 从内容区剔除——线绝不能再随 items 顺序落到回复下面（首修的教训）。
-  const foldItems = useMemo(() => responseItems.filter((item) => item.type !== "contextCompaction"), [responseItems]);
+  const foldItems = useMemo(() => responseItems.filter((item) => !isCompactionItem(item)), [responseItems]);
   // 最终答复 = 最后一条有正文的 agentMessage
   const finalAgent = [...foldItems].reverse().find((item) => item.type === "agentMessage" && String(item.text ?? "").trim()) ?? null;
   const hasContent = foldItems.some((item) => item.type !== "agentMessage" || Boolean(String(item.text ?? "").trim()));

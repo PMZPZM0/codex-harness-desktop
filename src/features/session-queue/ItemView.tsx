@@ -4,6 +4,7 @@
  * Progressive 两组件的全仓唯一消费者就是本文件，随之原样搬入 ⇒ 与 SessionQueue 的双向环解除）。
  */
 /** ItemView（从 src/App.tsx 原样搬来）。多处共用 ⇒ 单独成模块，不复制一份。 */
+import { isCompactionItem } from "../../lib/compaction-item.mjs";
 import { ThreadItem } from "../../lib/thread-item";
 import { Turn } from "../../lib/turn";
 import { UserMessageView } from "../shared/UserMessageView";
@@ -156,7 +157,7 @@ export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWi
   if (item.type === "hookPrompt") {
     return <ActionCard icon={<Wrench size={13} />} verb="Hook" status="done" statusText="完成" />;
   }
-  if (item.type === "contextCompaction") {
+  if (isCompactionItem(item)) {
     // 压缩结果常驻为「两边虚线 + 中间文字」分隔线（与压缩进行中的过渡态同一形态），
     // 不再渲染「上下文压缩 · 完成」工具卡——那张卡用户明确不要。
     // 进行中的压缩必须渲染成转圈「正在压缩上下文」：此前 inProgress 也走成功分支，

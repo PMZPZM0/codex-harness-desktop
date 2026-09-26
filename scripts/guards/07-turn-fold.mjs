@@ -4597,7 +4597,7 @@ export async function run() {
   const part04Src = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part04", "01-seg.tsx"), "utf8").replace(/\r/g, "");
   const part05Src = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part05", "01-seg.tsx"), "utf8").replace(/\r/g, "");
   // ① 扫描跳过 contextCompaction：压缩 item 不是任何一种「活动」，不许被 switch 当成未知兜底。
-  (/if \(item\?\.type === "contextCompaction"\) continue;/.test(activitySrc) ? ok : fail)(
+  (/if \(isCompactionItem\(item\)\) continue;/.test(activitySrc) ? ok : fail)(
     "【163】runActivity 扫描跳过 contextCompaction（压缩不是「生成回复」，指示归分隔线与 toast）"
   );
   // ② 压缩进行中兜底必须给空串：此时「正在生成回复/正在落笔」是错的。
@@ -4610,7 +4610,7 @@ export async function run() {
   );
   // ④ 结算的守卫：本会话还有真实在跑 item（非压缩）时绝不动 —— 回合中途的自动压缩
   //    不能把真回合的运行态打停（「运行莫名停止」同类事故零容忍）。
-  (/type !== "contextCompaction"\) return;/.test(part04Src) ? ok : fail)(
+  (/!isCompactionItem\(item\)\) return;/.test(part04Src) ? ok : fail)(
     "【163】settleAfterCompaction 有「真回合在跑就不动」守卫（自动压缩不许打断真回合）"
   );
   // ⑤ 反向绊线：结算不许漏 setActiveTurnId（只清 sending 不清 turn id = 状态条照样挂着）。
@@ -4632,10 +4632,10 @@ export async function run() {
   {
     const turnView = readFileSync(join(ROOT, "src/features/session-turn/SessionTurn/03-turn-view.tsx"), "utf8");
     const timeline = readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/01-timeline.tsx"), "utf8");
-    (turnView.includes("item.type !== \"contextCompaction\"") && !turnView.includes("items={responseItems}") ? ok : fail)(
+    (turnView.includes("!isCompactionItem(item)") && !turnView.includes("items={responseItems}") ? ok : fail)(
       "【165】回合内容区剔除压缩线（TurnFoldStream 只吃 foldItems，线不许再落回内容末尾）"
     );
-    (timeline.includes("let lastCompaction: any = null;") && timeline.includes("it?.type === \"contextCompaction\"") ? ok : fail)(
+    (timeline.includes("let lastCompaction: any = null;") && timeline.includes("isCompactionItem(it)") ? ok : fail)(
       "【165】timeline 层扫描最后一条已完成压缩 item（与 pruneSupersededCompactions 同口径）"
     );
     ((() => { const a = timeline.indexOf("compactionLine && i === insertBefore"); const b = timeline.indexOf("<MemoTurnView"); return a >= 0 && b >= 0 && a < b; })() ? ok : fail)(
@@ -4643,6 +4643,37 @@ export async function run() {
     );
     (/status !== \"inProgress\" && it\?\.status !== \"running\"/.test(timeline) ? ok : fail)(
       "【165】归位只取**已完成**的压缩 item（进行中的转圈由 compact toast 负责，不抢位置）"
+    );
+  }
+  /* ── 【166】压缩 item 判定唯一口径 + 挂载兜底（09-26 rollout 取证） ──
+     ⛔ 引擎落盘/事件的压缩 item 类型是 PascalCase「ContextCompaction」，各处硬写 camelCase
+     会让整条压缩链静默不命中（item 不进 thread ⇒ 线只剩尾部 toast 兜底 ⇒ 用户三次看到「线在下面」）。
+     ⛔ 压缩 item 的 turnId 常指向宿主不知道的引擎内部回合 ⇒ mergeItem 丢弃 ⇒ 必须挂载兜底。 */
+  {
+    const libSrc = readFileSync(join(ROOT, "src/lib/compaction-item.mjs"), "utf8");
+    (libSrc.includes(".toLowerCase()") ? ok : fail)("【166】压缩判定大小写不敏感（唯一口径模块）");
+    const uiFiles = [];
+    (function walk(dir) {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, entry.name);
+        if (entry.isDirectory()) walk(p);
+        else if (/\.(tsx|ts)$/.test(entry.name)) uiFiles.push(p);
+      }
+    })(join(ROOT, "src/features"));
+    const hardCoded = uiFiles.filter((f) => {
+      const s = readFileSync(f, "utf8");
+      return /[=!]==?s*"contextCompaction"|!==s*"contextCompaction"/.test(s);
+    });
+    (hardCoded.length === 0 ? ok : fail)(
+      "【166】渲染层/事件处理不许硬写 camelCase 判定（一律 isCompactionItem）" + (hardCoded.length ? "，命中：" + hardCoded.slice(0, 3).map((f) => f.replace(ROOT, "")).join("；") : "")
+    );
+    const part05 = readFileSync(join(ROOT, "src/features/app-state/parts/part05/01-seg.tsx"), "utf8");
+    ((part05.match(/bag\.attachCompactionItem\(/g) || []).length >= 2 ? ok : fail)(
+      "【166】item/started 与 item/completed 都调挂载兜底（turnId 未知时挂最后回合，线才有位置可归）"
+    );
+    const part04 = readFileSync(join(ROOT, "src/features/app-state/parts/part04/01-seg.tsx"), "utf8");
+    (part04.includes("function attachCompactionItem(") && /turns\.find\(\(turn\) => String\(turn\.id\) === turnId\) \?\? turns\[turns\.length - 1\]/.test(part04) ? ok : fail)(
+      "【166】挂载兜底口径：turnId 命中否则最后一条回合（thread 空则不动）"
     );
   }
 }
