@@ -316,8 +316,13 @@ function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: bo
     const el = bodyRef.current;
     if (!el) return;
     const dist = () => el.scrollHeight - el.scrollTop - el.clientHeight;
-    const onWheel = () => { reasoningFollowRef.current = false; };
-    const onTouchMove = () => { reasoningFollowRef.current = false; };
+    // ⛔ 09-26 用户报「思考板块里面的内容没有自动跟随最新」：滚轮在卡上滚**外层**时间线时，
+    //    wheel 事件会冒泡到卡体 —— 旧写法无条件置 follow=false，外层翻两页就把卡内跟随
+    //    **永久**杀死（正文不滚动就再没有 scroll 事件来恢复它）。
+    //    修法 = 只在卡体**真的有内部滚动条**（内容溢出）时才认接管：卡内容装得下时
+    //    滚轮必然是给外层的，不许误伤。接管后恢复语义不变（滚回距底 ≤8px = 重新跟）。
+    const onWheel = () => { if (el.scrollHeight > el.clientHeight + 1) reasoningFollowRef.current = false; };
+    const onTouchMove = () => { if (el.scrollHeight > el.clientHeight + 1) reasoningFollowRef.current = false; };
     const onScroll = () => {
       if (dist() <= 8) reasoningFollowRef.current = true;
       else if (reasoningBodyPointerDownRef.current) reasoningFollowRef.current = false;

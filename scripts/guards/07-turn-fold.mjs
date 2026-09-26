@@ -1712,8 +1712,10 @@ export async function run() {
   );
   (/const pinMine = anchorTopRef\.current && \(pinThreadIdRef\.current === null \|\| pinThreadIdRef\.current === myThreadId\);/.test(appCode51)
     ? ok : fail)("【51】跟随入口接受「归属未知 = 自己」（否则刚发送那一小段完全不跟随）");
-  (/if \(bodyDist > -FOLLOW_STEP_PX\) \{[\s\S]{0,260}?if \(bodyDist > 0\) \{/.test(appCode51)
-    ? ok : fail)("【51】跟随门槛 bodyDist > -48 且只在 bodyDist > 0 时才补（短回复不被推、最新一行不被遮）");
+  (/if \(followDist > -FOLLOW_STEP_PX\) \{/.test(appCode51) ? ok : fail)(
+    "【51】跟随入口 = followDist > -48（交棒前 bodyDist / 交棒后全量 dist，短回复不被推）");
+  (/scrollToOffsetInstant\(scroller, scroller\.scrollTop \+ followDist\);/.test(appCode51) ? ok : fail)(
+    "【51】跟随补滚动量 = followDist（把内容底补到视口底，不整体推）");
 
   // ⑧ 钉顶交棒只看**正文**（09-26 用户定稿：思考板块撑满一屏不许取消钉顶）——
   //    旧判据用全量内容底，思考卡一流式就把 overflow 撑正 → 提前交棒（钉顶没了）；
@@ -4551,5 +4553,10 @@ export async function run() {
   // ⑤ 下限 96px：贴到窗口底也不许把正文压成一条缝。
   (/Math\.max\(96, Math\.min\(260, available\)\)/.test(itemSrc) ? ok : fail)(
     "【161】自适应下限 96px（空间再小也不许把思考正文压成一条缝）"
+  );
+  // ⑥ 09-26 用户报「卡内内容不跟最新」的根因之一：滚轮在卡上滚**外层**时间线时事件冒泡
+  //    到卡体，被当成「接管卡内滚动」→ 永久停跟。接管必须只在卡体**真有内部滚动条**时成立。
+  (/const onWheel = \(\) => \{ if \(el\.scrollHeight > el\.clientHeight \+ 1\) reasoningFollowRef\.current = false; \};/.test(itemSrc) ? ok : fail)(
+    "【161】卡内接管只认「真有内部滚动条」的滚轮（外层滚动冒泡不许误杀卡内跟随）"
   );
 }

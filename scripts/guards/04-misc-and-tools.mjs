@@ -627,11 +627,17 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   const pinSrc = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part03", "01-remote-bot-pin", "02-pin-scroll-anchor.tsx"), "utf8").replace(/\r/g, "");
   /* ① 流式静默门：pin-shrink-follow 的条件里必须有 lastRevealAt 时效判定（剥离注释再验，
      注释里含同名字串会自造假绿 —— 09-23 已踩过一次）。
-     ⛔ 09-26 起「超出一屏」的判据是 bodyDist（正文底，扣除展开中的思考卡）——
-        用户定稿「只有正文满一屏才能取消钉顶」，思考折叠后内容缩回一屏内时这里让位，
-        pin-fix 把消息拉回落点（那不是钉顶丢失，是钉顶职责本身）。 */
+     ⛔ 09-26 起判据是**分相位**的 followDist：交棒前（钉顶期）= bodyDist（正文底，思考不取消
+        钉顶）；交棒后（锚点已滚出视口）= 全量 dist（新思考卡必须跟 —— 用户截图：交棒后
+        新思考卡被窗口底裁掉）。判据锚 handedOver 接线，缺它 = 跟随期思考永远不跟。 */
   const codeOnly = bottomSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
-  (/shrankBy > 1 && bodyDist > 0 && Date\.now\(\) - lastRevealAt > 1200/.test(codeOnly) ? ok : fail)(
+  (/const handedOver = bag\.pinGapLockedRef\.current !== null && bag\.pinGapLockedRef\.current === bag\.pinnedAnchorKeyRef\.current;/.test(codeOnly) ? ok : fail)(
+    "【126】跟随判据分相位：交棒信号（gap 锁 === 当前锚 key）必须存在（交棒后新思考卡才跟）"
+  );
+  (/const followDist = handedOver \? dist : bodyDist;/.test(codeOnly) ? ok : fail)(
+    "【126】followDist 必须由 handedOver 决定（交棒后用全量 dist —— 写死 bodyDist = 截图事故本身）"
+  );
+  (/shrankBy > 1 && followDist > 0 && Date\.now\(\) - lastRevealAt > 1200/.test(codeOnly) ? ok : fail)(
     "【126】pin-shrink-follow 在流式期间不追折叠收缩（1.2s 内有揭示就跳过，缺口由文字增长填平）"
   );
   /* ② lastRevealAt 必须真的有人写（packet-reveal 的 rAF 里置时刻）——门没数据源 = 恒假绿 */
@@ -643,7 +649,7 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     "【126】pin-fix 的 rAF 在已交棒（gap 锁定）时退出 —— 迟到的纠偏会与 pad-shrink 逐帧互踹"
   );
   /* ④ 反向绊线：pin-shrink-follow 的条件不许被改回「无条件追收缩」（那会当场回到翻转形态） */
-  (!/if \(prevBottom && shrankBy > 1 && bodyDist > 0\) \{/.test(codeOnly) ? ok : fail)(
+  (!/if \(prevBottom && shrankBy > 1 && followDist > 0\) \{/.test(codeOnly) ? ok : fail)(
     "【126】pin-shrink-follow 不许回到无条件的「变矮就追」（就是上下翻转事故本身）"
   );
 }
