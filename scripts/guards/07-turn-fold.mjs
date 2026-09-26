@@ -4532,8 +4532,16 @@ export async function run() {
 
 // ── 54. 思考卡自适应展开（09-26 用户截图：思考板块溢出窗口底被裁掉）──
 {
-  const itemSrc = readFileSync(join(ROOT, "src", "features", "session-queue", "ItemView.tsx"), "utf8").replace(/\r/g, "");
+  const itemSrc = readFileSync(join(ROOT, "src", "features", "shared", "ReasoningCard.tsx"), "utf8").replace(/\r/g, "");
   const styles53 = readStyles();
+  // ⓪ 单一真相源（09-26 教训：两份逐字相同的 ReasoningCard 并存，修一份漏另一份，
+  //    探针 fit 生效率 0/25 才暴露）。调用点只许 import 共享组件，本地定义 = 事故复发。
+  (!/function ReasoningCard\(/.test(readFileSync(join(ROOT, "src", "features", "session-queue", "ItemView.tsx"), "utf8")) ? ok : fail)(
+    "【161】⛔ 思考卡单一真相源：session-queue/ItemView 里不得再有本地 ReasoningCard 实现"
+  );
+  (/export function ReasoningCard/.test(itemSrc) ? ok : fail)(
+    "【161】思考卡真相源 = src/features/shared/ReasoningCard.tsx（共享导出）"
+  );
   // ① 自适应函数本体：量的是时间线滚动容器底（裁剪边），不是 window——composer 在容器外。
   (/const scroller = el\.closest\(".timeline"\)/.test(itemSrc) ? ok : fail)(
     "【161】思考卡自适应量的是 .timeline 裁剪边（composer 在容器外，量 window 会算多一截）"
