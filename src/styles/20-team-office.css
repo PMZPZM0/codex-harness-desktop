@@ -100,17 +100,20 @@
 .team-office-org { display: flex; flex-direction: column; gap: 10px; padding: 14px; min-width: 0; }
 .team-office-org-caption { margin: 0; font-size: 12px; color: var(--muted); padding: 0 2px; }
 
-/* SVG 内文字 */
-.ofc-plate-name { fill: #2f3a4a; font-size: 13px; font-weight: 700; }
-.ofc-plate-role { fill: #7a8798; font-size: 10.5px; }
-.ofc-ceo-plate { fill: #b0731f; font-size: 12.5px; font-weight: 700; }
-.ofc-vacant-text { fill: #93a1b3; font-size: 11px; }
-.office-empty-text { fill: #8b98a9; font-size: 13px; }
-.ofc-walker-tag-text { fill: #47566a; font-size: 10.5px; font-weight: 600; }
+/* SVG 内文字（v5：描边加粗后字号同步放大，否则会显得「字缩在里面」） */
+.ofc-plate-name { fill: #22303f; font-size: 14px; font-weight: 700; }
+.ofc-plate-role { fill: #6b7a8d; font-size: 11px; }
+.ofc-ceo-badge { fill: #ffffff; font-size: 12.5px; font-weight: 700; letter-spacing: .06em; }
+.ofc-vacant-text { fill: #7e8c9e; font-size: 11.5px; }
+.office-empty-text { fill: #6b7a8d; font-size: 13px; }
+.ofc-walker-tag-text { fill: #47566a; font-size: 11px; font-weight: 600; }
 
 /* ── 角色：手臂/头部/躯干的旋转锚点 ─────────────────────────────────────
    ⛔ transform-box: fill-box 让旋转原点落在元素自身 bbox（否则绕 SVG 原点转，整个人飞出去）。 */
 .ofc-arm { transform-box: fill-box; transform-origin: 50% 0%; }
+/* 袖子压深一档：手臂与躯干同色 + 描边分隔 ⇒ 看着像「背带」；有色差才是「手臂在身前」。
+   ⛔ 只作用于袖子 rect（手是肤色，一起压深会变脏）。 */
+.ofc-arm rect { filter: brightness(.9); }
 .ofc-body { transform-box: fill-box; transform-origin: 50% 100%; }
 .ofc-headwrap { transform-box: fill-box; transform-origin: 50% 100%; }
 .ofc-eye { transform-box: fill-box; transform-origin: 50% 50%; }
@@ -129,11 +132,15 @@
 .ofc-person.pose-doze .ofc-eye { animation: none; }
 
 /* ── 预设姿势 ── */
-/* 工作：左右手交替敲键盘 */
+/* 工作：左右手交替敲键盘。
+   ⛔ 角度要围绕「手臂朝桌前伸」的基准，而不是围绕垂直线 —— 垂直线摆动 = 手在身侧上下划，
+      看着不像打字（v5 首版实测）。 */
 .ofc-person.pose-work .ofc-arm-back { animation: ofc-type-a .46s ease-in-out infinite alternate; }
 .ofc-person.pose-work .ofc-arm-front { animation: ofc-type-b .46s ease-in-out infinite alternate; }
-@keyframes ofc-type-a { from { transform: rotate(-13deg); } to { transform: rotate(5deg); } }
-@keyframes ofc-type-b { from { transform: rotate(11deg); } to { transform: rotate(-7deg); } }
+/* ⛔ 符号别写反：旋转原点在肩部、手臂向下延伸 ⇒ 左臂负角、右臂正角才是「手往身前收」；
+   反过来两只手会向外张开，看起来像摊手而不是打字（v5 二次实测）。 */
+@keyframes ofc-type-a { from { transform: rotate(-8deg); } to { transform: rotate(-26deg); } }
+@keyframes ofc-type-b { from { transform: rotate(26deg); } to { transform: rotate(8deg); } }
 
 /* 喝咖啡：前臂端杯抬到嘴边，杯口冒热气 */
 .ofc-person.pose-coffee .ofc-arm-front { animation: ofc-sip 3.8s ease-in-out infinite; }

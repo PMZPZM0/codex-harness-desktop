@@ -1,65 +1,90 @@
 /**
- * 办公室插画色板（team-office 域 09-26 v4）。
+ * 办公室插画色板（team-office 域 09-26 v5「造型升级」）。
  *
  * ⛔ 统一描边（OFC.ink）是「卡通感」的地基：纯填充色块永远像占位图（v2 教训）。
- * ⛔ 场景是**固定浅色插画**（不跟随深色主题）—— 插画自身有光感与阴影，跟着主题反色会脏。
+ * ⛔ v4 被评「人物丑 / 场景也丑」，去 GitHub 调研现成库（DiceBear / open-peeps /
+ *    avataaars / notionists）后的结论：
+ *      现成库全是半身或头像、且 SVG 扁平化（无部件分组）⇒ 不能直接用于工位动画；
+ *      但它们共有的**造型规律**可以用：粗描边 + 大头 + 极简五官 + **饱和纯色（不用渐变/灰调）**。
+ *    v4 的错在于配色一路往「淡」调（墙 #eef3f9 几乎白、地板 #f5ebdd 灰米），整屏像褪色照片。
+ *    v5 转向：**明确的主色 + 明确的对比**，让每个面一眼能分辨。
+ * ⛔ 场景是**固定浅色插画**（不跟随深色主题）—— 插画自带光感与阴影，跟主题反色会发脏。
  */
 export const OFC = {
-  ink: "#2f3a4a",
+  // 墨色（描边）：比 v4 深一档，粗描边才压得住画面
+  ink: "#22303f",
   inkSoft: "#5b6a7d",
 
-  wall: "#eef3f9",
-  wallTop: "#e2eaf4",
-  wallStripe: "#e6edf6",
-  skirt: "#cfd9e6",
+  // 墙：上浅下深（腰线分隔，给墙面做层次，不再是"一整片糊白"）
+  wall: "#e9eff8",
+  wallLower: "#d9e4f2",
+  skirt: "#bfcede",
 
-  floorA: "#f5ebdd",
-  floorB: "#ecdcc6",
-  rug: "#e8d6c0",
-  rugEdge: "#d8c1a6",
+  // 地板：暖木色（v4 的灰米色是"脏"的主因之一）
+  floorA: "#f3e4c8",
+  floorB: "#e0c9a0",
 
-  wood: "#c09a63",
-  woodLight: "#e2c39a",
-  woodDark: "#a97f4b",
+  // 地毯：明确的暖黄（v4 的 #e8d6c0 和地板几乎同色，等于白铺）
+  rug: "#f7d089",
+  rugEdge: "#dfa945",
 
-  metal: "#b9c4d1",
+  // 木器
+  wood: "#b8863f",
+  woodLight: "#ecc79b",
+  woodDark: "#9c6f33",
+
+  // 金属 / 屏幕
+  metal: "#c2ccd8",
   metalDark: "#8d9aab",
-
-  screen: "#dfe9f5",
-  screenOn: "#bfe3cf",
-  screenOnDeep: "#8fd0ac",
+  screen: "#e4eef8",
+  screenOn: "#b9e3cd",
+  screenOnDeep: "#86cfa8",
   codeInk: "#2f7a53",
   codeIdle: "#93a5b8",
 
+  // 纸与便签
   paper: "#ffffff",
   noteA: "#ffe08a",
   noteB: "#a8d8f0",
   noteC: "#f7b3c0",
   noteD: "#b8e6b0",
 
-  plant: "#6bbf73",
-  plantDeep: "#4a9a55",
-  pot: "#d9915f",
-
-  water: "#bfe0ff",
+  // 植物 / 容器 / 水
+  plant: "#5cb85c",
+  plantDeep: "#3f9a4a",
+  pot: "#d98a52",
+  water: "#cbe6ff",
   waterDeep: "#8fc4ee",
 
+  // 地面投影色（家具与人物脚下）
+  shadow: "#5b6a7d",
+
+  // 语义色
   ok: "#4aa96c",
   warn: "#e8875f",
   info: "#5b9bd5",
 } as const;
 
+/**
+ * 主轮廓描边宽度。
+ * ⛔ 「卡通感」的第一杠杆：2.x 的细描边在这个尺寸下看着像线稿没画完，3.2 才是粗描边扁平插画。
+ * ⛔ 只给**主轮廓**用它；眉毛/嘴/腰带/屏幕内容这些细节仍用 INK_W_THIN，否则一脸糊。
+ */
+export const INK_W = 3.2;
+/** 细节线（眉/嘴/内衬/屏幕内容/书脊）。 */
+export const INK_W_THIN = 2.2;
+
 /** 肤色（三档，按成员稳定分配）。 */
 export const SKINS = ["#f6d3ad", "#ecc39a", "#d9a878"] as const;
 /** 发色。 */
 export const HAIRS = ["#3a4657", "#5a4632", "#2c2f3a", "#7a5a3a", "#8a6a4a"] as const;
-/** 上衣色（柔和但有区分度）。 */
-export const CLOTHES = ["#5b9bd5", "#7e7ce0", "#3fb6a8", "#e8875f", "#c96fb4", "#6bbf73", "#d8a13f", "#8a7fd6"] as const;
+/** 上衣色（饱和度比 v4 高一档，且彼此拉开）。 */
+export const CLOTHES = ["#3d8fd6", "#6f6ce0", "#2fb3a3", "#ef7d4e", "#c95fae", "#5ebd68", "#e0a52c", "#7f6fe0"] as const;
 
 export type WorkerLook = {
   skin: string;
   hair: string;
-  /** 0 = 短圆头 / 1 = 中分 / 2 = 丸子头 */
+  /** 0 = 短圆头 / 1 = 中分长鬓 / 2 = 丸子头 */
   hairStyle: 0 | 1 | 2;
   glasses: boolean;
   cloth: string;
