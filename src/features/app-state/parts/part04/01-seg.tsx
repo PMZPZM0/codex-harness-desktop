@@ -325,16 +325,31 @@ bag.threadFileCandidates = threadFileCandidates as typeof bag.threadFileCandidat
   }
 bag.addSystemEvent = addSystemEvent as typeof bag.addSystemEvent;
 
-  function setCompactEventState(state: "running" | "success" | "error", detail?: string) {
+  function setCompactEventState(state: "running" | "success" | "error" | "cancelled", detail?: string) {
     const content = state === "running"
       ? { message: "正在压缩上下文" }
       : state === "success"
         ? { message: "上下文压缩成功" }
-        : { message: detail ? `上下文压缩失败：${detail}` : "上下文压缩失败" };
+        : state === "cancelled"
+          ? { message: "已取消压缩" }
+          : { message: detail ? `上下文压缩失败：${detail}` : "上下文压缩失败" };
     const threadId = Array.from(bag.compactPendingRef.current)[0] ?? bag.threadRef.current?.id ?? "";
     bag.setCompactToast({ state, message: content.message, threadId });
   }
 bag.setCompactEventState = setCompactEventState as typeof bag.setCompactEventState;
+
+  /**
+   * 用户手动取消压缩（09-26 用户要求「压缩的时候要跟运行状态一样可以手动停止」）。
+   * ⛔ 本地**立即**落成 cancelled，不等引擎事件：中断之后完成事件可能永远不来（实测：回合被
+   *    中断时压缩的完成事件从未到达），靠事件熄灯就会永久转圈。随后再中断引擎回合。
+   */
+  function cancelCompaction() {
+    const threadId = Array.from(bag.compactPendingRef.current)[0] ?? bag.threadRef.current?.id ?? "";
+    bag.compactPendingRef.current.clear();
+    bag.setCompactToast({ state: "cancelled", message: "已取消压缩", threadId });
+    void bag.interrupt();
+  }
+bag.cancelCompaction = cancelCompaction as typeof bag.cancelCompaction;
 
   /** ⛔ 压缩结束的运行态结算（09-26 用户截图「压缩后『正在生成回复』一直挂着」）：
    *  引擎把压缩跑成一个回合时，turn/started 会点亮 sending/activeTurnId/running 集合，
@@ -390,15 +405,16 @@ bag.settleAfterCompaction = settleAfterCompaction as typeof bag.settleAfterCompa
 bag.pruneSupersededCompactions = pruneSupersededCompactions as typeof bag.pruneSupersededCompactions;
 
 
-  // 压缩分隔线：success/error 常驻（用户可手动 × 关闭），running 300s 没收到完成事件才标记失败。
-  // 90s 的旧超时会把大上下文的真实模型压缩（几分钟很常见）误判成失败——已实测踩坑。
+  // 压缩分隔线：success/error/cancelled 常驻（用户可手动 × 关闭），running 180s 没收到完成事件才标记失败。
+  // ⛔ 两个方向的坑都踩过：90s 会把大上下文真实压缩误判成失败；300s 太长，用户等到骂人（09-26 实测
+  //    引擎其实 5 秒就完成、只是完成事件没被识别 ⇒ 主要由 turn/completed 兜底负责，超时只兜真卡死）。
   useEffect(() => {
     if (!bag.compactToast) return;
     if (bag.compactToast.state === "running") {
       // running 兜底超时：引擎吞请求 / 不发完成事件时不会一直卡住
       const timer = window.setTimeout(() => {
-        bag.setCompactToast((current) => current?.state === "running" ? { state: "error", message: "上下文压缩失败：压缩耗时超过 5 分钟仍未返回，可稍后重试 /compact", threadId: current.threadId } : current);
-      }, 300000);
+        bag.setCompactToast((current) => current?.state === "running" ? { state: "error", message: "上下文压缩超时：超过 3 分钟未收到完成信号（可重试 /compact）", threadId: current.threadId } : current);
+      }, 180000);
       return () => window.clearTimeout(timer);
     }
   }, [bag.compactToast]);
@@ -453,5 +469,5 @@ bag.showToast = showToast as typeof bag.showToast;
     return [line, used, life, turn, tip].join("\n");
   }
 bag.contextUsageText = contextUsageText as typeof bag.contextUsageText;
-  return { expandedTeamClusters, setExpandedTeamClusters, toggleTeamCluster, expandedDispatchBlocks, setExpandedDispatchBlocks, toggleDispatchBlock, dispatchBlockKeys, clusteredSidebar, toggleAllSources, sidebarAllCollapsed, toggleAllSidebarSections, TURN_WINDOW, TURNS_PAGE, TURN_WINDOW_MEMORY_KEEP, touchTurnWindow, ANCHOR_TOP_OFFSET_PX, CONTENT_TAIL_GAP_PX, COMMON_COMMAND_ORDER, commandMatches, mergedSkillCatalog, skillCommandMatches, threadMemoKey, availableContextItems, threadFileCandidates, addSystemEvent, setCompactEventState, settleAfterCompaction, pruneSupersededCompactions, threadNameOf, scopedNotice, showToast, contextUsageText };
+  return { expandedTeamClusters, setExpandedTeamClusters, toggleTeamCluster, expandedDispatchBlocks, setExpandedDispatchBlocks, toggleDispatchBlock, dispatchBlockKeys, clusteredSidebar, toggleAllSources, sidebarAllCollapsed, toggleAllSidebarSections, TURN_WINDOW, TURNS_PAGE, TURN_WINDOW_MEMORY_KEEP, touchTurnWindow, ANCHOR_TOP_OFFSET_PX, CONTENT_TAIL_GAP_PX, COMMON_COMMAND_ORDER, commandMatches, mergedSkillCatalog, skillCommandMatches, threadMemoKey, availableContextItems, threadFileCandidates, addSystemEvent, setCompactEventState, cancelCompaction, settleAfterCompaction, pruneSupersededCompactions, threadNameOf, scopedNotice, showToast, contextUsageText };
 }

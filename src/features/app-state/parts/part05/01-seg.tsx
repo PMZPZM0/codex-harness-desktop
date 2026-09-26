@@ -437,7 +437,7 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
               const turns = (current.turns ?? []).map((t) => ({
                 ...t,
                 items: (t.items ?? []).map((it: any) => {
-                  if (it?.type === "contextCompaction" && it?.status === "inProgress") { changed = true; return { ...it, status: "completed" }; }
+                  if (isCompactionItem(it) && it?.status === "inProgress") { changed = true; return { ...it, status: "completed" }; }
                   return it;
                 }),
               }));

@@ -321,7 +321,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                           <div className={`compact-divider compact-divider--${compactToast.state} compact-divider--settled`} role="status" aria-label="上下文压缩状态" key={`compact-toast-${compactToast.threadId}`}>
                             <i className="compact-divider-line" aria-hidden />
                             <span className="compact-divider-text">
-                              {compactToast.state === "error" ? <CircleX size={13} /> : <CircleCheck size={13} />}
+                              {compactToast.state === "error" ? <CircleX size={13} /> : compactToast.state === "cancelled" ? <CircleStop size={13} /> : <CircleCheck size={13} />}
                               {compactToast.message}
                             </span>
                             <button type="button" className="compact-divider-close" title="关闭此条记录" aria-label="关闭" onClick={() => setCompactToast(null)}><X size={12} /></button>
@@ -439,13 +439,18 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                   {/* ⛔ 成功/失败的压缩线**只在上面的归位处渲染一处**（09-26 用户截图「两条压缩线」：
                       归位一条 + 这里尾部兜底一条）。这条尾部兜底已删除——任何时序下同屏只可能有一条
                       「已完成」压缩线。进行中的转圈（running）仍留在底部贴输入框，见下方。 */}
-                  {compactToast && compactToast.state === "running" && compactToast.threadId === thread?.id && !(thread?.turns ?? []).some((t) => (t.items ?? []).some((i) => i.type === "contextCompaction" && (i.status === "inProgress" || i.status === "running"))) && (
+                  {compactToast && compactToast.state === "running" && compactToast.threadId === thread?.id && !(thread?.turns ?? []).some((t) => (t.items ?? []).some((i) => isCompactionItem(i) && (i.status === "inProgress" || i.status === "running"))) && (
                     <div className={`compact-divider compact-divider--running`} role="status" aria-label="上下文压缩状态">
                       <i className="compact-divider-line" aria-hidden />
                       <span className="compact-divider-text">
                         <LoaderCircle size={13} className="spin" />
                         {compactToast.message}
                       </span>
+                      {/* 压缩与运行状态一样可手动停止（09-26 用户要求）：本地立即落成「已取消」再中断引擎
+                          ——中断后完成事件可能永远不来，靠事件熄灯会永久转圈。 */}
+                      <button type="button" className="compact-divider-cancel" title="停止压缩" onClick={() => app.cancelCompaction()}>
+                        <CircleStop size={12} />停止
+                      </button>
                       <i className="compact-divider-line" aria-hidden />
                     </div>
                   )}

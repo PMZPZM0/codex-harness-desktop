@@ -593,8 +593,8 @@ export interface Bag {
   setNoticeAnchorTick: React.Dispatch<React.SetStateAction<number>>;
   dismissNotice: (id: number) => void;
   setNotice: (text: string, threadId?: string | undefined) => void;
-  compactToast: { state: "error" | "running" | "success"; message?: string | undefined; threadId: string; } | null;
-  setCompactToast: React.Dispatch<React.SetStateAction<{ state: "error" | "running" | "success"; message?: string | undefined; threadId: string; } | null>>;
+  compactToast: { state: "error" | "running" | "success" | "cancelled"; message?: string | undefined; threadId: string; } | null;
+  setCompactToast: React.Dispatch<React.SetStateAction<{ state: "error" | "running" | "success" | "cancelled"; message?: string | undefined; threadId: string; } | null>>;
   infoModal: { title: string; body: string; markdown?: boolean | undefined; } | null;
   setInfoModal: React.Dispatch<React.SetStateAction<{ title: string; body: string; markdown?: boolean | undefined; } | null>>;
   highlightedFilePath: string | null;
@@ -1073,7 +1073,8 @@ export interface Bag {
   availableContextItems: { id: string; role: "用户" | "Codex"; text: any; }[];
   threadFileCandidates: { path: string; source: string; }[];
   addSystemEvent: (title: string, text: string, tone?: "error" | "success" | "info" | "warning" | undefined) => void;
-  setCompactEventState: (state: "error" | "running" | "success", detail?: string | undefined) => void;
+  setCompactEventState: (state: "error" | "running" | "success" | "cancelled", detail?: string | undefined) => void;
+  cancelCompaction: () => void;
   /** 压缩结束的运行态结算：清掉被压缩回合点亮的 sending/activeTurnId/running（真回合在跑时不动） */
   settleAfterCompaction: (threadId: string) => void;
   pruneSupersededCompactions: (keepId: string) => void;
