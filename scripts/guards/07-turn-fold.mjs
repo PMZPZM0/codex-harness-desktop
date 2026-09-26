@@ -4687,11 +4687,31 @@ export async function run() {
     })(join(ROOT, "src/features"));
     const hardCoded = uiFiles.filter((f) => {
       const s = readFileSync(f, "utf8");
-      return /[=!]==?s*"contextCompaction"|!==s*"contextCompaction"/.test(s);
+      return /[=!]==?\s*"contextCompaction"|!==\s*"contextCompaction"/.test(s);
     });
     (hardCoded.length === 0 ? ok : fail)(
       "【166】渲染层/事件处理不许硬写 camelCase 判定（一律 isCompactionItem）" + (hardCoded.length ? "，命中：" + hardCoded.slice(0, 3).map((f) => f.replace(ROOT, "")).join("；") : "")
     );
+    // ⛔ 压缩可手动停止（09-26 用户：「压缩的时候要跟运行状态一样，可以手动停止」）：
+    //    running 线必须有「停止」按钮 → cancelCompaction；且本地**先**落成 cancelled 再中断引擎
+    //    （中断后完成事件可能永远不来，靠事件熄灯会永久转圈）。
+    {
+      const tl = readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/01-timeline.tsx"), "utf8");
+      const p4 = readFileSync(join(ROOT, "src/features/app-state/parts/part04/01-seg.tsx"), "utf8");
+      (tl.includes("compact-divider-cancel") && tl.includes("() => app.cancelCompaction()") ? ok : fail)(
+        "【166】压缩进行中提供「停止」按钮（与运行状态同款可中断）"
+      );
+      ((() => {
+        const i = p4.indexOf("function cancelCompaction()");
+        if (i < 0) return false;
+        const body = p4.slice(i, i + 600);
+        return body.indexOf('state: "cancelled"') >= 0 && body.indexOf("bag.interrupt()") > body.indexOf('state: "cancelled"');
+      })() ? ok : fail)(
+        "【166】取消压缩：本地先落 cancelled 再中断引擎（顺序反了会永久转圈）"
+      );
+      (tl.includes('compactToast.state === "cancelled"') ? ok : fail)("【166】已取消状态有独立呈现（中性色 + 停止图标）");
+    }
+
     // ⛔ 回合结束兜底熄灯（09-26：引擎 16:33 就压缩完了，界面转圈 15 分钟）——压缩不跨回合，
     //    turn/completed 一定到，用它兜底与「item 类型大小写 / turnId 归属」统统解耦。
     ((() => {

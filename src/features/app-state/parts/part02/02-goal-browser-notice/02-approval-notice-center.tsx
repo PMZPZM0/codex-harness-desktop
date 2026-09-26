@@ -146,7 +146,12 @@ bag.setNotice = setNotice as typeof bag.setNotice;
   }, []);
 
   // 上下文压缩进度/结果（短暂 toast，不进系统事件流，避免之前那种常驻 timeline 卡片）
-  const [compactToast, setCompactToast] = useState<{ state: "running" | "success" | "error"; message?: string; threadId: string } | null>(null);
+  // ⛔ 压缩状态机（09-26 用户要求「压缩要跟运行状态一样能手动停止，状态对应的事件都设计好」）：
+  //    running  ← item/started(compaction) / 手动 /compact / 引擎自动压缩
+  //    success  ← item/completed(无 failure) / thread/compacted / **turn/completed 兜底**
+  //    error    ← item/completed 带 failure / 超时未返回
+  //    cancelled← 用户点「停止」（本地立即落态，不等引擎事件——中断后完成事件可能永远不来）
+  const [compactToast, setCompactToast] = useState<{ state: "running" | "success" | "error" | "cancelled"; message?: string; threadId: string } | null>(null);
 bag.compactToast = compactToast as typeof bag.compactToast; bag.setCompactToast = setCompactToast as typeof bag.setCompactToast;
 
   // 信息面板弹窗：/queue /skills /mcp 等查询命令的输出改为居中弹窗展示（不再插入消息流灰色横幅）

@@ -8,6 +8,7 @@
  */
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
 import "@xterm/xterm/css/xterm.css";
 import { FieldHelp, LoginScreen } from "../../../../features/auth";
 import { DispatchMenu, DispatchBadge } from "../../../../features/dispatch";
@@ -223,7 +224,7 @@ bag.delegatedPopupRun = delegatedPopupRun as typeof bag.delegatedPopupRun;
     if (!bag.thread) return false;
     const turns = bag.thread.turns ?? [];
     for (let i = turns.length - 1; i >= 0; i--) {
-      if (turns[i].items?.some((item) => item.type === "contextCompaction")) return turns.length - 1 - i < 3;
+      if (turns[i].items?.some((item) => isCompactionItem(item))) return turns.length - 1 - i < 3;
     }
     return false;
   }, [bag.threadMemoKey]);

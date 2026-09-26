@@ -844,6 +844,28 @@
 .compact-divider--success .compact-divider-line { border-top-color: var(--green); opacity: 0.55; }
 .compact-divider--error .compact-divider-text { color: var(--red); }
 .compact-divider--error .compact-divider-line { border-top-color: var(--red); opacity: 0.55; }
+/* 已取消压缩（09-26 用户要求压缩可手动停止）：中性色，与失败区分 */
+.compact-divider--cancelled .compact-divider-text { color: var(--faint); }
+.compact-divider--cancelled .compact-divider-line { border-top-color: var(--faint); opacity: 0.5; }
+/* 运行中的「停止」按钮：与运行状态条同款语义（可点、常显） */
+.compact-divider-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.compact-divider-cancel:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
 @keyframes compact-divider-in {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
