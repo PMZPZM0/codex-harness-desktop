@@ -4692,6 +4692,19 @@ export async function run() {
     (hardCoded.length === 0 ? ok : fail)(
       "【166】渲染层/事件处理不许硬写 camelCase 判定（一律 isCompactionItem）" + (hardCoded.length ? "，命中：" + hardCoded.slice(0, 3).map((f) => f.replace(ROOT, "")).join("；") : "")
     );
+    // ⛔ 回合结束兜底熄灯（09-26：引擎 16:33 就压缩完了，界面转圈 15 分钟）——压缩不跨回合，
+    //    turn/completed 一定到，用它兜底与「item 类型大小写 / turnId 归属」统统解耦。
+    ((() => {
+      const p5 = readFileSync(join(ROOT, "src/features/app-state/parts/part05/01-seg.tsx"), "utf8").replace(/\r/g, "");
+      // turn/completed 在文件里出现多次（审查模式分支也有一处）⇒ 任一分支带兜底即通过
+      const hits = [...p5.matchAll(/method === "turn\/completed"/g)].map((m) => m.index ?? -1).filter((i) => i >= 0);
+      return hits.some((i) => {
+        const branch = p5.slice(i, i + 900);
+        return branch.includes('current?.state === "running"') && branch.includes("上下文压缩成功");
+      });
+    })() ? ok : fail)(
+      "【166】回合结束必须兜底熄灭压缩指示（running → 成功；不依赖压缩完成事件被识别）"
+    );
     const turnView2 = readFileSync(join(ROOT, "src/features/session-turn/SessionTurn/03-turn-view.tsx"), "utf8");
     (/if \(userItems\.length === 0 && !hasRealContent\) return null;/.test(turnView2) ? ok : fail)(
       "【166】空推进回合整组不渲染（引擎把压缩跑成独立回合，否则只留一条孤零零的耗时灰线，用户截图「三条线」）"
