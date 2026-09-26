@@ -1712,8 +1712,28 @@ export async function run() {
   );
   (/const pinMine = anchorTopRef\.current && \(pinThreadIdRef\.current === null \|\| pinThreadIdRef\.current === myThreadId\);/.test(appCode51)
     ? ok : fail)("【51】跟随入口接受「归属未知 = 自己」（否则刚发送那一小段完全不跟随）");
-  (/if \(dist > -FOLLOW_STEP_PX\) \{[\s\S]{0,260}?if \(dist > 0\) \{/.test(appCode51)
-    ? ok : fail)("【51】跟随门槛 dist > -48 且只在 dist > 0 时才补（短回复不被推、最新一行不被遮）");
+  (/if \(bodyDist > -FOLLOW_STEP_PX\) \{[\s\S]{0,260}?if \(bodyDist > 0\) \{/.test(appCode51)
+    ? ok : fail)("【51】跟随门槛 bodyDist > -48 且只在 bodyDist > 0 时才补（短回复不被推、最新一行不被遮）");
+
+  // ⑧ 钉顶交棒只看**正文**（09-26 用户定稿：思考板块撑满一屏不许取消钉顶）——
+  //    旧判据用全量内容底，思考卡一流式就把 overflow 撑正 → 提前交棒（钉顶没了）；
+  //    思考折叠后 pin-fix 又把消息拉回落点（又钉上去）= 用户看到的来回翻。
+  //    判据锚**接线**：helper 存在 + 两个消费方（交棒 / 跟随）都改用它，缺一边 = 半死状态。
+  (/const bodyBottomOf = useCallback\(\(el: HTMLElement\) => \{/.test(appCode51) ? ok : fail)(
+    "【51】bodyBottomOf（正文底 = 内容底 − 展开中的思考卡高）在 pin-scroll-anchor 定义"
+  );
+  (/const overflow = bodyBottomOf\(el\) - el\.scrollTop - el\.clientHeight;/.test(appCode51) ? ok : fail)(
+    "【51】pinSentMessage 交棒判据用正文底（思考板块不取消钉顶，09-26）"
+  );
+  (/const bodyDist = bodyBottomOf\(scroller\) - scroller\.scrollTop - scroller\.clientHeight;/.test(appCode51) ? ok : fail)(
+    "【51】钉顶跟随分支的判据与交棒同源（都走 bodyBottomOf，缺一边 = 半死状态）"
+  );
+  (!/const overflow = contentBottomOf\(el\) - el\.scrollTop - el\.clientHeight;/.test(appCode51) ? ok : fail)(
+    "【51】交棒判据不许退回全量内容底（那就是「思考一输出钉顶就没」本身）"
+  );
+  (/setAwayFromBottom\(!anchorTopRef\.current && dist >/.test(appCode51) ? ok : fail)(
+    "【51】钉顶期间「回到底部」按钮不得出现（它的 onClick 会解除钉顶 = 思考从侧门取消钉顶）"
+  );
 
   // ⑤ 侧栏会话行带 data-thread-id：验收脚本按 id 切换才可靠
   //    （按标题找会因列表重排/标题变化而"找不到会话行" → 观测无效，本轮就是这么白跑一轮的）
