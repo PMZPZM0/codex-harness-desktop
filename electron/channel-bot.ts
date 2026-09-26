@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import type { CodexEvent, CodexServer } from "./codex-server";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 
+import { ensureProjectAgentsMd } from "./project-conventions";
 export type ChannelBotConfig = {
   enabled: boolean;
   host: "127.0.0.1" | "0.0.0.0";
@@ -192,6 +193,7 @@ export class ChannelBotService {
       }
     }
     if (!thread) {
+      ensureProjectAgentsMd(config.workspace);
       const started = await this.server.request("thread/start", {
         model: model.model,
         cwd: config.workspace,

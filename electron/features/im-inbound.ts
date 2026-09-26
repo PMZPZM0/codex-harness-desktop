@@ -14,6 +14,7 @@ import { readChannelBot } from "../main/04-connector-config";
 import { readCustomModel } from "../main/01-model-catalog";
 import { server } from "../runtime-refs";
 import { botPairing } from "../main";
+import { ensureProjectAgentsMd } from "../project-conventions";
 export async function handleWeixinMessage(message: { from: string; text: string; contextToken: string }) {
   if (!weixinGateway) return;
   // 配对门卫（09-13）：未批准的聊天只有发对 6 位授权码才放行，其余消息只收到配对引导
@@ -42,6 +43,7 @@ export async function handleWeixinMessage(message: { from: string; text: string;
     }
     if (!threadId) {
       const botConfig = await readChannelBot().catch(() => null);
+      ensureProjectAgentsMd(botConfig?.workspace || app.getPath("home"));
       const started = await server.request("thread/start", {
         model: model.model,
         cwd: (botConfig?.workspace || app.getPath("home")),

@@ -8,6 +8,7 @@ import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { readCustomModel } from "./01-model-catalog";
 import { internalThreads, server } from "../runtime-refs";
 import { bridgeDial } from "../bridge-dial";
+import { ensureProjectAgentsMd } from "../project-conventions";
 /** 等待 app-server 的某个回合完成，返回 turn 对象；用于子智能体同步取回结果。 */
 export function waitForTurnCompletion(threadId: string, turnId: string, timeoutMs = 600_000) {
   return new Promise<any>((resolve, reject) => {
@@ -49,6 +50,7 @@ export async function distillSummarize(prompt: string, body: string): Promise<st
     if (apiKey) server.setApiKey(apiKey);
   }
   const provider = model?.provider ?? "openai";
+  ensureProjectAgentsMd(process.cwd());
   const started: any = await server.request("thread/start", {
     model: effectiveModel,
     cwd: process.cwd(),

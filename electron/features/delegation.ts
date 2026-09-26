@@ -21,6 +21,7 @@ import { turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
 import { readSubAgents } from "../main/09-agents-plugins";
 import { delegateRegistry, server, threadRuntimeStore } from "../runtime-refs";
 import { bridgeDial } from "../main";
+import { ensureProjectAgentsMd } from "../project-conventions";
 export async function runDelegatedTask(input: {
   kind: DispatchKind; name: string; query: string; originThreadId: string;
   cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string;
@@ -84,6 +85,7 @@ export async function runDelegatedTask(input: {
   const effectiveModel = input.model || customModel?.model;
   if (!effectiveModel) return { ok: false, output: "", error: "尚未配置模型，无法发起调度" };
 
+  ensureProjectAgentsMd(input.cwd || process.cwd());
   const started: any = await server.request("thread/start", {
     model: effectiveModel,
     cwd: input.cwd || process.cwd(),

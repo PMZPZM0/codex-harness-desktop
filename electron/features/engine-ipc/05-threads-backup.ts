@@ -11,6 +11,7 @@ import { PROVIDER_RETRY_TUNING } from "../../provider-retry";
 import { bridgeDial, readCustomModel, responsesBridge, restrictedThreadRole } from "../../main";
 import { codexHome, engineActiveTurnIds, mainWindow, server, threadCwd, threadRuntimeStore } from "../../runtime-refs";
 import { deletedThreadIds, forgetDeletedThreads, purgeDeletedThread } from "../thread-deletion";
+import { ensureProjectAgentsMd } from "../../project-conventions";
 ipcMain.handle("threads:export", async (_event, input?: { threadIds?: string[] }): Promise<{ path: string; count: number } | null> => {
   const ids = Array.isArray(input?.threadIds) && input.threadIds.length ? input.threadIds.map((id) => String(id)) : undefined;
   const backup = buildSessionsBackup(codexHome, ids);
@@ -114,6 +115,7 @@ ipcMain.handle("threads:import-conversation", async (_event, input?: { cwd?: str
   if (apiKey) server.setApiKey(apiKey);
   const effectiveModel = input?.model || customModel?.model;
   if (!effectiveModel) throw new Error("尚未配置自定义模型，无法新建导入会话");
+  ensureProjectAgentsMd(input?.cwd || process.cwd());
   const started: any = await server.request("thread/start", {
     model: effectiveModel,
     cwd: input?.cwd || process.cwd(),

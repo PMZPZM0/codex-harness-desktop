@@ -28,6 +28,7 @@ import { readSubAgents, writeSubAgents } from "../main/09-agents-plugins";
 import { codexHome, delegateRegistry, server, teamRunStore, threadCwd } from "../runtime-refs";
 import { bridgeDial } from "../main";
 import type { SubAgentConfig } from "../main";
+import { ensureProjectAgentsMd } from "../project-conventions";
 ipcMain.handle("team-runs:list", async (_event, threadId: string) => teamRunStore.listRuns(String(threadId ?? "")));
 ipcMain.handle("team-threads:map", async () => teamRunStore.listThreads());
 ipcMain.handle("team-threads:team-of", async (_event, threadId: string) => teamRunStore.teamOfThread(String(threadId ?? "")));
@@ -121,6 +122,7 @@ ipcMain.handle("subagents:invoke", async (_event, input: { id?: string; name?: s
   if (apiKey) server.setApiKey(apiKey);
   const effectiveModel = input.model || (agent.inheritModel ? customModel?.model : agent.model) || customModel?.model;
   if (!effectiveModel) throw new Error("尚未配置自定义模型，无法启动子智能体");
+  ensureProjectAgentsMd(input.cwd || process.cwd());
   const started: any = await server.request("thread/start", {
     model: effectiveModel,
     cwd: input.cwd || process.cwd(),
@@ -200,6 +202,7 @@ ipcMain.handle("teams:start-session", async (_event, input: { teamId: string; ta
   // 并行阶段工具：SOP 标「并行」的阶段由它一次性提交，宿主并发执行 —— 不依赖模型自觉
   // （09-14 实测：只改提示词让它「一次发多个调用」无效，模型照样逐个发 → 退化成串行）
   const teamPhaseTool = buildTeamPhaseTool(team);
+  ensureProjectAgentsMd(input.cwd || process.cwd());
   const started: any = await server.request("thread/start", {
     model: effectiveModel,
     cwd: input.cwd || process.cwd(),
@@ -248,6 +251,7 @@ ipcMain.handle("teams:member-session", async (_event, input: { teamId: string; m
   if (apiKey) server.setApiKey(apiKey);
   const effectiveModel = input.model || member.model || customModel?.model;
   if (!effectiveModel) throw new Error("尚未配置自定义模型，无法发起成员会话");
+  ensureProjectAgentsMd(input.cwd || process.cwd());
   const started: any = await server.request("thread/start", {
     model: effectiveModel,
     cwd: input.cwd || process.cwd(),
@@ -311,7 +315,8 @@ ipcMain.handle("teams:invoke-member", async (_event, input: { teamId: string; me
     if (resumed?.thread?.id) memberThreadId = String(resumed.thread.id);
   }
   if (!memberThreadId) {
-    const started: any = await server.request("thread/start", {
+    ensureProjectAgentsMd(input.cwd || process.cwd());
+  const started: any = await server.request("thread/start", {
       model: effectiveModel,
       cwd: input.cwd || process.cwd(),
       approvalPolicy: member.approvalPolicy || input.approvalPolicy || "never",

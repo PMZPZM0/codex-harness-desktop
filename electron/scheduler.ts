@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import type { CodexServer } from "./codex-server";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 
+import { ensureProjectAgentsMd } from "./project-conventions";
 // ============================================================================
 // 自动化调度引擎 —— 对齐 WorkBuddy 的生效逻辑与工作逻辑
 // （逆向自 WorkBuddy 5.4.5 的 scheduler-engine.ts / schedule-utils.ts /
@@ -623,6 +624,7 @@ export class Scheduler {
           threadId = task.threadId;
         }
       } else {
+        await ensureProjectAgentsMd(String(task.workspace));
         const started = await this.server.request("thread/start", {
           model: task.model || model.model,
           modelProvider: model.provider,

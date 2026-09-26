@@ -1539,6 +1539,63 @@ w.postMessage({id:1,op:"list",root});
     );
   }
 
+  /* ══ 【171】项目级 AGENTS.md 自动创建 + DESIGN.md 引导链（09-26 用户报障）══════════
+     用户实测两个断点：「应用没有自动创建项目级 AGENTS.md」；根目录的 DESIGN.md「没生效，
+     让 agent 自己扫他都不知道」。根因：引擎只自动读 <cwd>/AGENTS.md（项目文档机制），
+     而应用此前①从不在用户项目里创建它 ②没有任何机制提及 DESIGN.md。
+     形态：electron/project-conventions.ts 的 ensureProjectAgentsMd(cwd) —— 缺失则创建模板 /
+     存在但从没提 DESIGN.md 且项目根确有 DESIGN.md 时追加引导（带标记、幂等）；
+     接线 = **全部** thread/start 调用点在**转发之前**调用（引擎处理 thread/start 时就读
+     AGENTS.md，响应侧才建会让本会话错过）。⛔ 全静默降级：启动链旁路，失败不许影响会话启动。 */
+  {
+    console.log(C.bold("\n【171】项目级 AGENTS.md 自动创建 + DESIGN.md 引导链"));
+    const pcSrc = readFileSync(join(ROOT, "electron", "project-conventions.ts"), "utf8");
+
+    // ① 模板与追加段都必须引导读 DESIGN.md —— 这是 DESIGN.md 在用户项目里生效的唯一通道
+    //    ⛔ 锚「模板正文本体」（两处模板里各出现一次的短语），不能数全文 DESIGN.md —— 头注释里就有 3 处，数全文恒真
+    const guideHits = (pcSrc.match(/先完整读它/g) || []).length;
+    const sectionHits = (pcSrc.match(/## 视觉规范/g) || []).length;
+    (guideHits >= 2 && sectionHits >= 2 ? ok : fail)(
+      "【171】模板与追加段都引导读 DESIGN.md（DESIGN.md 生效的唯一通道，不能断）"
+        + `（模板正文命中：先完整读它×${guideHits}/视觉规范标题×${sectionHits}）`
+    );
+    // ② 追加幂等：带标记判重，thread/start 反复触发也不重复追加
+    (pcSrc.includes("HARNESS_APPEND_MARK") && /includes\(HARNESS_APPEND_MARK\)/.test(pcSrc) ? ok : fail)(
+      "【171】追加幂等（带标记判重，thread/start 反复触发不重复追加）"
+    );
+    // ③ 静默降级：启动链旁路，任何失败（只读盘/权限）都不许影响会话启动
+    (pcSrc.includes("export function ensureProjectAgentsMd") && /catch \{/.test(pcSrc) ? ok : fail)(
+      "【171】全函数 try/catch 静默降级（启动链旁路，失败不许影响会话启动）"
+    );
+    // ④ 接线完整性（结构性）：每一个 server.request("thread/start") 的文件都必须已接线 ——
+    //    将来新增调用点漏接，这里打红（这就是用户看到的「没自动创建」）。
+    const engineTs = [];
+    (function walk171(dir) {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const fp = join(dir, e.name);
+        if (e.isDirectory()) walk171(fp);
+        else if (/\.ts$/.test(e.name)) engineTs.push(fp);
+      }
+    })(join(ROOT, "electron"));
+    const unwired = engineTs.filter((f) => {
+      const src = readFileSync(f, "utf8");
+      return src.includes('server.request("thread/start"') && !src.includes("ensureProjectAgentsMd");
+    });
+    (unwired.length === 0 ? ok : fail)(
+      "【171】全部 thread/start 调用点都已接线 ensureProjectAgentsMd"
+        + (unwired.length ? "，未接线：" + unwired.slice(0, 3).map((f) => f.replace(ROOT, "")).join("；") : "")
+    );
+    // ⑤ 主路径必须在**转发前**调用（响应侧建会让本会话错过）
+    const bridge171 = readFileSync(join(ROOT, "electron", "features", "engine-ipc", "01-thread-runtime-codex-bridge.ts"), "utf8");
+    ((() => {
+      const call = bridge171.indexOf("ensureProjectAgentsMd(startCwd)");
+      const req = bridge171.indexOf("server.request(method, params)");
+      return call >= 0 && req >= 0 && call < req;
+    })() ? ok : fail)(
+      "【171】主路径（codex:request）在转发前调用（引擎处理 thread/start 时就读 AGENTS.md）"
+    );
+  }
+
   /* ══ 【155】团队调度的团队标识恢复（09-25 真机事故）═════════════════════
      事故：重启后打开历史专家团会话，主理人调度 4/4 全失败，错误「专家团「」不存在」。
      根因：runTeamMember 只从 teamThreadConfigRef / teamThreadMapRef 取 teamId，而这两个 ref

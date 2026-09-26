@@ -117,6 +117,7 @@ import { bridgeDial, responsesBridge } from "./bridge-dial";
 
 
 
+import { ensureProjectAgentsMd } from "./project-conventions";
 /** 诊断计数（09-12 多会话性能）：thread/list 走了几次「rollout 全量兜底扫描」。
     旧实现每次必扫（渲染层每个回合结束都打一发 → O(N²)）；现在只在引擎索引为空时扫。
     e2e 场景据此断言「跑 10 个会话时扫描次数为 0」，避免优化被悄悄改回去。 */
@@ -468,6 +469,7 @@ const remote = new RemoteControlService({
     if (!model) throw new Error("尚未配置自定义模型");
     const apiKey = model.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(model.encryptedKey, "base64")) : "";
     server.setApiKey(apiKey);
+    ensureProjectAgentsMd(process.cwd());
     const started = await server.request("thread/start", {
       model: model.model,
       cwd: process.cwd(),
