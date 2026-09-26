@@ -14,6 +14,7 @@ import { bridgeDial, readCustomModel, responsesBridge, restrictedThreadRole } fr
 import { codexHome, engineActiveTurnIds, mainWindow, server, threadCwd, threadRuntimeStore } from "../../runtime-refs";
 import { deletedThreadIds, forgetDeletedThreads, purgeDeletedThread } from "../thread-deletion";
 import { mutableState } from "../../main";
+import { ensureProjectAgentsMd } from "../../project-conventions";
 let rendererActiveThreadId = "";
 
 function bridgeRewriteProviderConfig(params: any) {
@@ -98,6 +99,11 @@ ipcMain.handle("codex:request", async (_event, method: string, params: unknown) 
       console.warn(`[turn/start] 拒绝：会话 ${guardThreadId.slice(0, 8)} 仍有活动回合在跑（引擎侧记账），已阻止打断`);
       throw new Error("该会话仍有任务在运行（引擎侧确认），本次发送未执行以免打断它。等它结束，或点停止后再发。");
     }
+  }
+  // ⛔ 必须赶在引擎处理 thread/start **之前**：引擎那时就读 <cwd>/AGENTS.md，响应侧才建会让本会话错过
+  if (method === "thread/start") {
+    const startCwd = String((params as any)?.cwd ?? "");
+    if (startCwd) ensureProjectAgentsMd(startCwd);
   }
   try {
     result = await server.request(method, params);
