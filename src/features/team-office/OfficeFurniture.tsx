@@ -217,23 +217,26 @@ export function IsoDeskSet({ u, v }: { u: number; v: number }) {
   return (
     <g transform={`translate(${p.x} ${p.y}) scale(${s})`} className="ofc-desk-furn">
       {/* 桌前地面阴影 */}
-      <ellipse cx="0" cy="-6" rx="62" ry="20" fill={ISO.shadow} opacity="0.09" />
-      {/* 桌子（白色台面 + 前沿厚度 + 两条腿） */}
-      <rect x="-64" y="-72" width="128" height="17" rx="4" fill={ISO.deskTop} stroke={ISO.ink} strokeWidth={INK_W / s} />
-      <rect x="-64" y="-55" width="128" height="7" rx="3" fill={ISO.deskEdge} stroke={ISO.ink} strokeWidth="2.4" />
-      <rect x="-56" y="-48" width="9" height="46" rx="3" fill={ISO.deskLeg} stroke={ISO.ink} strokeWidth="2.4" />
-      <rect x="47" y="-48" width="9" height="46" rx="3" fill={ISO.deskLeg} stroke={ISO.ink} strokeWidth="2.4" />
+      <ellipse cx="0" cy="-4" rx="62" ry="20" fill={ISO.shadow} opacity="0.09" />
+      {/* 桌子（白色台面 + 前沿厚度 + 两条腿）
+          ⛔ 台面别抬高：抬到 -72 时会把坐在桌前的人整个挡住（只剩一个头，v6 实测）；
+             压到 -56 才能让人露出上半身 —— 这也是参考实现的观感。 */}
+      <rect x="-64" y="-56" width="128" height="15" rx="4" fill={ISO.deskTop} stroke={ISO.ink} strokeWidth={INK_W / s} />
+      <rect x="-64" y="-41" width="128" height="7" rx="3" fill={ISO.deskEdge} stroke={ISO.ink} strokeWidth="2.4" />
+      <rect x="-56" y="-34" width="9" height="42" rx="3" fill={ISO.deskLeg} stroke={ISO.ink} strokeWidth="2.4" />
+      <rect x="47" y="-34" width="9" height="42" rx="3" fill={ISO.deskLeg} stroke={ISO.ink} strokeWidth="2.4" />
       {/* 显示器：观众看到的是背面（深灰）—— 参考实现的观感。
-          ⛔ 必须**偏到人的侧面**（x +38）：居中的话会正好盖住坐在桌前那个人的头。 */}
-      <g transform="translate(38 0)">
+          ⛔ 两条约束：① 必须**偏到人的侧面**（x +38），居中会正好盖住坐在桌前那个人的头；
+                        ② 底部要落在台面（-56）上，不能悬空。 */}
+      <g transform="translate(38 26)">
         <rect x="-25" y="-134" width="50" height="52" rx="5" fill={ISO.monitorBack} stroke={ISO.ink} strokeWidth={INK_W / s} />
         <rect x="-19" y="-128" width="38" height="40" rx="3" fill={ISO.monitor} opacity="0.75" />
         <rect x="-6" y="-82" width="12" height="8" fill={ISO.monitorStand} stroke={ISO.ink} strokeWidth="2.2" />
         <rect x="-14" y="-75" width="28" height="6" rx="3" fill={ISO.monitorStand} stroke={ISO.ink} strokeWidth="2.2" />
       </g>
       {/* 桌上小物 */}
-      <rect x="-56" y="-80" width="26" height="9" rx="3" fill="#eef1f5" stroke={ISO.ink} strokeWidth="2.2" />
-      <g transform="translate(46 -82)">
+      <rect x="-56" y="-64" width="26" height="9" rx="3" fill="#eef1f5" stroke={ISO.ink} strokeWidth="2.2" />
+      <g transform="translate(46 -66)">
         <rect x="-6" y="-12" width="12" height="13" rx="2.6" fill={OFC.paper} stroke={ISO.ink} strokeWidth="2.2" />
         <path d="M 6 -9 q 5 3.4 0 7.6" fill="none" stroke={ISO.ink} strokeWidth="2.2" />
       </g>
