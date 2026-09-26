@@ -45,23 +45,43 @@ bag.openThread = openThread as typeof bag.openThread;
 bag.cascadeTeamCluster = cascadeTeamCluster as typeof bag.cascadeTeamCluster;
 
   async function archiveThread(id: string) {
-    // 归档后提示（09-17 用户要求）：先取名字（归档后列表里就查不到了）
-    const archivedName = bag.threadsRef.current.find((entry) => entry.id === id)?.name
-      || bag.threadCacheRef.current.get(id)?.name
-      || "当前会话";
-    await bag.cascadeTeamCluster(id, "archive");
-    await window.codex.request("thread/archive", { threadId: id });
-    bag.setThreads((current) => current.filter((entry) => entry.id !== id));
-    bag.threadCacheRef.current.delete(id);
-    if (bag.threadRef.current?.id === id) {
-      // 归档当前会话 = 回到全新会话：必须走 startNewThread 完整复位。
-      // 之前手工清了一堆状态但漏了 sending/interrupting——会话在运行中被归档后
-      // sending 卡 true，发送按钮永远是「停止」，输入框发不出消息。
-      bag.startNewThread();
-      requestAnimationFrame(() => bag.composerInputRef.current?.focus());
+    // ⛔ 09-26 用户报「点归档没反应」：本函数此前被调用方以 `void` 调用（02-thread-attention-rows
+    //    的归档按钮、会话菜单的归档项），引擎 thread/archive 一旦报错（瞬态 / rollout 异常 /
+    //    引擎重启窗口），异常在 unhandled rejection 里无声消失 —— 行不消失、无任何提示，
+    //    观感就是「点了没反应」。修法 = 失败必须可见：弹错误 toast（带引擎原话），行保持原位。
+    try {
+      // 归档后提示（09-17 用户要求）：先取名字（归档后列表里就查不到了）
+      const archivedName = bag.threadsRef.current.find((entry) => entry.id === id)?.name
+        || bag.threadCacheRef.current.get(id)?.name
+        || "当前会话";
+      await bag.cascadeTeamCluster(id, "archive");
+      await window.codex.request("thread/archive", { threadId: id });
+      bag.setThreads((current) => current.filter((entry) => entry.id !== id));
+      bag.threadCacheRef.current.delete(id);
+      if (bag.threadRef.current?.id === id) {
+        // 归档当前会话 = 回到全新会话：必须走 startNewThread 完整复位。
+        // 之前手工清了一堆状态但漏了 sending/interrupting——会话在运行中被归档后
+        // sending 卡 true，发送按钮永远是「停止」，输入框发不出消息。
+        bag.startNewThread();
+        requestAnimationFrame(() => bag.composerInputRef.current?.focus());
+      }
+      // 提示浮层（**窗口正中间** / 3 秒自动消失 / 可手动关，09-23 改）；token 递增保证连续归档都拿到完整 3 秒
+      bag.setArchiveToast((current) => ({ name: archivedName, token: (current?.token ?? 0) + 1 }));
+    } catch (error: any) {
+      const msg = String(error?.message ?? error);
+      console.error("[archive] 归档失败:", error);
+      // ⛔ 幽灵会话分流（09-26 用户报「点归档没反应」的真根因）：rollout 在 sessions/ 与
+      //    archived_sessions/ 双份残留时，引擎已不认这条线程，thread/archive 报
+      //    `no rollout found`。用户点归档的意图 = 让它从侧栏消失 ⇒ 本地移除即达成意图，
+      //    而不是弹「归档失败」让用户反复点。其余错误（瞬态/引擎重启）才按失败提示。
+      if (/no rollout found|thread[^.]{0,40}not found|failed to read session metadata/i.test(msg)) {
+        bag.setThreads((current) => current.filter((entry) => entry.id !== id));
+        bag.threadCacheRef.current.delete(id);
+        bag.showToast("已从列表清理", "该会话在引擎中已不存在（可能已归档过或记录丢失），已从侧栏移除");
+        return;
+      }
+      bag.showToast("归档失败", msg.slice(0, 160));
     }
-    // 提示浮层（**窗口正中间** / 3 秒自动消失 / 可手动关，09-23 改）；token 递增保证连续归档都拿到完整 3 秒
-    bag.setArchiveToast((current) => ({ name: archivedName, token: (current?.token ?? 0) + 1 }));
   }
 bag.archiveThread = archiveThread as typeof bag.archiveThread;
 
@@ -110,8 +130,14 @@ bag.renameThread = renameThread as typeof bag.renameThread;
 bag.clearCurrentConversation = clearCurrentConversation as typeof bag.clearCurrentConversation;
 
   async function unarchiveThread(id: string) {
-    await window.codex.request("thread/unarchive", { threadId: id });
-    bag.setThreads((current) => current.filter((entry) => entry.id !== id));
+    // 同 archiveThread（09-26）：unarchive 也曾被静默吞错（历史归档区点恢复没反应 = 引擎报错看不见）
+    try {
+      await window.codex.request("thread/unarchive", { threadId: id });
+      bag.setThreads((current) => current.filter((entry) => entry.id !== id));
+    } catch (error: any) {
+      console.error("[unarchive] 取消归档失败:", error);
+      bag.showToast("取消归档失败", String(error?.message ?? error).slice(0, 160));
+    }
   }
 bag.unarchiveThread = unarchiveThread as typeof bag.unarchiveThread;
 

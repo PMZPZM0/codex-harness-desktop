@@ -85,6 +85,11 @@ console.log(C.bold("\n【6】零阻塞宿主（codex:request 链上禁止同步�
       genM + 1 >= srcM
         ? ok("rollout worker 内联产物已生成且不落后于源文件")
         : fail("electron/rollout-worker-source.ts 落后于 rollout-worker.cjs —— 重新生成（build:electron 会做）");
+      // ⛔ 09-26「点归档没反应」根因之一：listRolloutThreads 扫描顺序必须 archived_sessions 在前
+      //    （sessions/ 旧拷贝先入 seen 会把已归档会话标成活跃，幽灵行重回侧栏 + 引擎归档报 no rollout found）。
+      (readFileSync(workerSrc, "utf8").includes('roots = [path.join(root, "archived_sessions"), path.join(root, "sessions")]')
+        ? ok("兜底扫描 archived_sessions 先于 sessions（归档真相赢，幽灵活跃行不再出现）")
+        : fail("listRolloutThreads 扫描顺序被改回 sessions 优先 —— 已归档会话会被 sessions/ 残留拷贝捞回侧栏（09-26 事故）"));
     }
   }
 }
