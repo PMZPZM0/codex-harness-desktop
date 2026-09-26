@@ -320,9 +320,24 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         bag.setCompactEventState("running");
         bag.pruneSupersededCompactions(String(params.item?.id ?? ""));
       } else if (method === "item/completed" && params.item?.type === "contextCompaction") {
-        bag.compactPendingRef.current.delete(String(params.threadId ?? bag.threadRef.current?.id ?? ""));
-        bag.setCompactEventState("success");
+        const tid0 = String(params.threadId ?? bag.threadRef.current?.id ?? "");
+        const itemId0 = String(params.item?.id ?? "");
+        bag.compactPendingRef.current.delete(tid0);
+        // ⛔ 成功提示只在「再无进行中的压缩 item」时发（09-26 用户截图：分隔线还在转圈、
+        //    toast 已报「压缩成功」）——同会话还有别的压缩 item 在跑（自动+手动叠加）时，
+        //    这条 completed 只代表其中一个完成，成功要等最后一个（排除刚完成的这条再查）。
+        const stillCompacting = (() => {
+          const turns = bag.threadRef.current?.turns ?? [];
+          for (const t of turns) {
+            for (const it of (t.items ?? []) as any[]) {
+              if (it?.type === "contextCompaction" && it?.status === "inProgress" && String(it?.id ?? "") !== itemId0) return true;
+            }
+          }
+          return false;
+        })();
+        if (!stillCompacting) bag.setCompactEventState("success");
         bag.pruneSupersededCompactions(String(params.item?.id ?? ""));
+        bag.settleAfterCompaction(tid0);
       }
       if (method === "turn/plan/updated") {
         bag.setPlanSteps((params.plan ?? []).map((step: any) => ({ step: step.step ?? "", status: step.status ?? "pending" })));
@@ -406,6 +421,31 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
           if (tid) { bag.tokenUsageTotalsRef.current.delete(tid); bag.derivedTokenUsageRef.current.delete(tid); }
         }
         bag.setCompactEventState("success");
+        // ⛔ 分隔线停转（09-26 用户截图：toast 已报成功、分隔线还在转圈）：thread/compacted
+        //    是权威完成信号，引擎侧对应 item 的 completed 可能迟到/缺失 —— 本地把所有还挂着
+        //    的 inProgress 压缩 item 落成 completed，分隔线立即停转（不依赖引擎补发）。
+        {
+          const tid2 = String(params.threadId ?? bag.threadRef.current?.id ?? "");
+          if (tid2 && tid2 === bag.threadRef.current?.id) {
+            bag.setThread((current) => {
+              if (!current) return current;
+              let changed = false;
+              const turns = (current.turns ?? []).map((t) => ({
+                ...t,
+                items: (t.items ?? []).map((it: any) => {
+                  if (it?.type === "contextCompaction" && it?.status === "inProgress") { changed = true; return { ...it, status: "completed" }; }
+                  return it;
+                }),
+              }));
+              return changed ? { ...current, turns } : current;
+            });
+          }
+        }
+        // ⛔ 压缩完成必须结算运行态（09-26 用户截图「压缩后『正在生成回复』一直挂着」）：
+        //    引擎把压缩跑成一个回合时 turn/started 会点亮 running/sending/activeTurnId，
+        //    但压缩的完成走 thread/compacted（不保证有 turn/completed）⇒ 没人熄灭，
+        //    状态条与停止键永久亮着。settleAfterCompaction 内部有「真回合还在跑就不动」守卫。
+        bag.settleAfterCompaction(String(params.threadId ?? bag.threadRef.current?.id ?? ""));
       } else if (event.method === "model/rerouted") {
         bag.showToast("模型已切换", `${params.fromModel} → ${params.toModel}`);
       } else if (["warning", "guardianWarning", "deprecationNotice", "configWarning"].includes(event.method ?? "")) {

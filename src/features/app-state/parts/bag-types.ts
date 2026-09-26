@@ -1074,6 +1074,8 @@ export interface Bag {
   threadFileCandidates: { path: string; source: string; }[];
   addSystemEvent: (title: string, text: string, tone?: "error" | "success" | "info" | "warning" | undefined) => void;
   setCompactEventState: (state: "error" | "running" | "success", detail?: string | undefined) => void;
+  /** 压缩结束的运行态结算：清掉被压缩回合点亮的 sending/activeTurnId/running（真回合在跑时不动） */
+  settleAfterCompaction: (threadId: string) => void;
   pruneSupersededCompactions: (keepId: string) => void;
   threadNameOf: (threadId: string) => string;
   scopedNotice: (text: string, threadId?: string | undefined) => void;
