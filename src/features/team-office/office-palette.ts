@@ -66,6 +66,37 @@ export const OFC = {
 } as const;
 
 /**
+ * 斜俯视房间色板（09-26 v6「复刻 ai-office-react」）。
+ * ⛔ 参考实现的观感 = **极简浅色现代办公室**（近白地板 + 灰白墙 + 纯白桌 + 深灰显示器背面
+ *    + 木色柜 + 绿植点缀），与 v5 的「暖木地板 + 蓝灰墙」是两套语言 —— 换投影就得换色板，
+ *    否则浅色等距房间配暖色家具会脏。
+ */
+export const ISO = {
+  floor: "#f5f6f8",
+  floorTile: "#eaecf0",
+  wall: "#e9e7e2",
+  wallSide: "#dbd8d2",
+  wallTop: "#f2f0ec",
+  baseboard: "#cbc8c1",
+  ceiling: "#f8f7f5",
+  deskTop: "#ffffff",
+  deskEdge: "#e0ded8",
+  deskLeg: "#c9c7c1",
+  monitor: "#2f3033",
+  monitorBack: "#26272a",
+  monitorStand: "#a8a9ac",
+  chair: "#d7d5cf",
+  chairDark: "#bcbab4",
+  wood: "#c9a473",
+  woodDark: "#ab8552",
+  pot: "#d8dade",
+  plant: "#4f9f61",
+  plantDark: "#3d8a4d",
+  ink: "#2b2f36",
+  shadow: "#8d8f95",
+} as const;
+
+/**
  * 主轮廓描边宽度。
  * ⛔ 「卡通感」的第一杠杆：2.x 的细描边在这个尺寸下看着像线稿没画完，3.2 才是粗描边扁平插画。
  * ⛔ 只给**主轮廓**用它；眉毛/嘴/腰带/屏幕内容这些细节仍用 INK_W_THIN，否则一脸糊。
