@@ -470,6 +470,7 @@ interface Window {
     importThreadsBackup(): Promise<{ path: string; imported: number; skipped: number; threads: { id: string; name: string; status: string }[] } | null>;
     importConversationMarkdown(input?: { cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null }): Promise<{ thread: any; imported: { title: string; fileName: string; turns: number; text: string; at: string } } | null>;
     chooseSshKey(startPath?: string): Promise<string | null>;
+    saveFileAs(sourcePath: string): Promise<{ ok: boolean; savedTo?: string }>;
     /* 仅更新称呼：写 personalization.json + AGENTS.md，不重启引擎 */
     setNickname(nickname: string): Promise<PersonalizationConfig>;
     verifyPersonalization(): Promise<any>;

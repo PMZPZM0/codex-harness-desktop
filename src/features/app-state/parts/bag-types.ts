@@ -605,8 +605,8 @@ export interface Bag {
   bundleFile: string;
   lightbox: { path: string; alt: string; } | null;
   setLightbox: React.Dispatch<React.SetStateAction<{ path: string; alt: string; } | null>>;
-  pastedText: { path: string; name: string; } | null;
-  setPastedText: React.Dispatch<React.SetStateAction<{ path: string; name: string; } | null>>;
+  pastedText: { path: string; name: string; kind?: "file" | undefined; } | null;
+  setPastedText: React.Dispatch<React.SetStateAction<{ path: string; name: string; kind?: "file" | undefined; } | null>>;
   systemEvents: import("../../app-view/types.ts").SystemEvent[];
   setSystemEvents: React.Dispatch<React.SetStateAction<import("../../app-view/types.ts").SystemEvent[]>>;
   hookPulse: { count: number; hooks: { name: string; label?: string | undefined; done: boolean; }[]; at: number; };
@@ -873,7 +873,7 @@ export interface Bag {
   composerInputRef: React.RefObject<HTMLDivElement | null>;
   composerWrapRef: React.RefObject<HTMLDivElement | null>;
   composerDomValueRef: React.RefObject<string | null>;
-  makeComposerChip: (kind: "image" | "file", path: string) => HTMLElement;
+  makeComposerChip: (kind: "file" | "image", path: string) => HTMLElement;
   syncComposerFromDom: () => void;
   messageHandlersRef: React.RefObject<import("../../session-queue/SessionQueue.tsx").FoldHandlers | null>;
   messageHandlers: import("../../session-queue/SessionQueue.tsx").FoldHandlers;
@@ -1303,7 +1303,7 @@ export interface Bag {
   runPromptEnhance: () => Promise<void>;
   cancelPromptEnhance: () => void;
   promptIncludesBackup: (current: string, backup: string) => boolean;
-  insertComposerAttachments: (kind: "image" | "file", paths: string[]) => void;
+  insertComposerAttachments: (kind: "file" | "image", paths: string[]) => void;
   insertComposerImages: (paths: string[]) => void;
   insertComposerFiles: (paths: string[]) => void;
   pasteLongText: (text: string) => Promise<void>;

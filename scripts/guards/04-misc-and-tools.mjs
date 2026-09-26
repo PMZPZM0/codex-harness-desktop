@@ -728,6 +728,74 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (uiHits.length === 0 ? ok : fail)(
     `【140】渲染层不得暴露 engineWatchdog 开关（它是停用能力，暴露 = 假承诺）${uiHits.length ? "，命中：" + uiHits.slice(0, 3).join("；") : ""}`,
   );
+
+  /* ── 【164】md 表格解析/回写（09-26 文件弹窗编辑的纯函数基座） ──
+     ⛔ 硬约束：只动表格块，其余原文逐字保留；代码块里的「表格样子」绝不是数据表格。 */
+  {
+    const mt = await import(pathToFileURL(join(ROOT, "src/lib/md-table.mjs")).href);
+    const fixture = [
+      "# 标题",
+      "",
+      "| 项 | 内容 |",
+      "| --- | --- |",
+      "| 品牌 | 苏泊尔 |",
+      "| 含\\|竖线 | 值2 |",
+      "",
+      "```md",
+      "| 这 | 是 |",
+      "| -- | -- |",
+      "| 代码块 | 示例 |",
+      "```",
+      "",
+      "结尾段落。",
+    ].join("\n");
+    const parsed = mt.parseMarkdownTables(fixture);
+    (parsed.blocks.length === 1 ? ok : fail)(
+      `【164】代码块里的表格不被识别（实测识别 ${parsed.blocks.length} 块，期望 1）`
+    );
+    (parsed.blocks[0].rows[2][0] === "含|竖线" ? ok : fail)(
+      "【164】\\| 转义还原成单元格内的字面竖线（不拆列）"
+    );
+    const edits = parsed.blocks.map((b) => b.rows.map((r) => r.slice()));
+    edits[0][1][1] = "改过的值";
+    edits[0].push(["新增行", "新增值"]);
+    const out = mt.renderMarkdownTables(fixture, edits);
+    (out.includes("```md") && out.includes("| 这 | 是 |") && out.includes("| 代码块 | 示例 |") ? ok : fail)(
+      "【164】回写时代码块逐字保留（序列化器不许碰表格块以外的行）"
+    );
+    (out.startsWith(fixture.slice(0, fixture.indexOf("| 项"))) && out.endsWith("结尾段落。") ? ok : fail)(
+      "【164】非表格内容（标题/段落）逐字保留"
+    );
+    (out.includes("改过的值") && out.includes("新增行") && out.includes("含\\|竖线") ? ok : fail)(
+      "【164】编辑生效且回写时重新转义字面竖线"
+    );
+    const reparsed = mt.parseMarkdownTables(out);
+    (reparsed.blocks.length === 1 && reparsed.blocks[0].rows.length === 4 ? ok : fail)(
+      "【164】回写产物可再次解析且行数正确（roundtrip 稳定）"
+    );
+    // ── 渲染层接线（静态）：三处断点都会让功能静默失灵 ──
+    const cards = readFileSync(join(ROOT, "src/features/shared/InlineCards.tsx"), "utf8");
+    ((cards.match(/onContextMenu=\{\(event\) => \{ event\.preventDefault\(\); setMenu\(/g) || []).length >= 2 ? ok : fail)(
+      `【164】消息卡片与引用行都挂了右键菜单（实测 ${(cards.match(/onContextMenu=\{\(event\) => \{ event\.preventDefault\(\); setMenu\(/g) || []).length} 处）`
+    );
+    (cards.includes("openFileTextEditor(menu.path, menu.name)") ? ok : fail)(
+      "【164】菜单「编辑」走 openFileTextEditor 槽位（直接 setPastedText 会绕过 kind 分流 = 读写通道错配）"
+    );
+    (cards.includes("window.codex.saveFileAs(menu.path)") ? ok : fail)(
+      "【164】菜单「另存为」走 dialog:save-as 通道（源校验在主进程）"
+    );
+    (cards.includes("isEditableTextFile(menu.path)") && cards.includes("BINARY_EXTENSIONS") ? ok : fail)(
+      "【164】「编辑」只对文本类文件开放（与 useFilePreview 同源口径，二进制写回即损坏）"
+    );
+    const dlg = readFileSync(join(ROOT, "electron/features/dialog-ipc.ts"), "utf8");
+    (/dialog:save-as[\s\S]{0,600}isInsideTrustedRoots\(src\)/.test(dlg) ? ok : fail)(
+      "【164】dialog:save-as 源文件必须落在可信根内（否则渲染层被注入即可把盘上任意文件拷走）"
+    );
+    const timeline = readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/01-timeline.tsx"), "utf8");
+    (timeline.includes('pastedText.kind === "file" ? fileEditTransport : undefined') ? ok : fail)(
+      "【164】kind=file 时编辑窗必须挂 fs 通道 transport（不挂 = 工作区文件写进粘贴文本目录）"
+    );
+  }
 }
   }
 }

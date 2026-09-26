@@ -1,13 +1,68 @@
 /** 内联文件卡片 / 引用行（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
 import { useMemo, useState, useEffect } from "react";
 import type { ReactNode } from "react";
-import { resolveFilePath, lookupKnownFile, openImageLightbox } from "../../lib/ui-channels";
+import { resolveFilePath, lookupKnownFile, openImageLightbox, openFileTextEditor, notifyToast } from "../../lib/ui-channels";
 import { basename } from "../../lib/basename";
 import { isImagePath } from "../../lib/is-image-path";
-import { FileText, Zap, Quote } from "lucide-react";
+import { FileText, Zap, Quote, Pencil, FolderOpen, Save, ExternalLink } from "lucide-react";
 import type { ParsedUserRefs } from "../../lib/user-refs";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
 import { imageUrl } from "../../lib/image-url";
+import { IMAGE_EXTENSIONS, BINARY_EXTENSIONS } from "../../hooks/useFilePreview";
+
+/** 文本类文件才能弹窗编辑（二进制/图片写回即损坏）。口径与 useFilePreview 同源（导出复用，别抄第二份）。 */
+function isEditableTextFile(path: string): boolean {
+  if (isImagePath(path)) return false;
+  const extension = path.split(".").pop()?.toLowerCase() ?? "";
+  return !IMAGE_EXTENSIONS.has(extension) && !BINARY_EXTENSIONS.has(extension);
+}
+
+/** 文件卡片右键菜单（09-26「像 WorkBuddy 那样」）：打开 / 在文件夹中显示 / 编辑 / 另存为… */
+type FileCardMenuState = { x: number; y: number; path: string; name: string };
+
+function FileCardMenu({ menu, onOpen, onClose }: { menu: FileCardMenuState; onOpen: () => void; onClose: () => void }) {
+  useEffect(() => {
+    const onDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest(".file-card-menu")) onClose();
+    };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } };
+    window.addEventListener("mousedown", onDown, true);
+    window.addEventListener("keydown", onKey, true);
+    return () => { window.removeEventListener("mousedown", onDown, true); window.removeEventListener("keydown", onKey, true); };
+  }, [onClose]);
+  // 视口边缘翻转：贴右/贴底时往回挪
+  const width = 168;
+  const itemH = 30, pad = 10;
+  const editable = isEditableTextFile(menu.path);
+  const height = pad * 2 + (editable ? 4 : 3) * itemH;
+  const left = menu.x + width > window.innerWidth ? Math.max(4, menu.x - width) : menu.x;
+  const top = menu.y + height > window.innerHeight ? Math.max(4, menu.y - height) : menu.y;
+  const items: { label: string; icon: ReactNode; run: () => void }[] = [
+    { label: "打开", icon: <ExternalLink size={13} />, run: onOpen },
+    { label: "在文件夹中显示", icon: <FolderOpen size={13} />, run: () => void window.codex.shellReveal(menu.path) },
+    ...(editable ? [{ label: "编辑", icon: <Pencil size={13} />, run: () => openFileTextEditor(menu.path, menu.name) }] : []),
+    {
+      label: "另存为…",
+      icon: <Save size={13} />,
+      run: () => {
+        void window.codex.saveFileAs(menu.path)
+          .then((result) => { if (result?.ok && result.savedTo) notifyToast("已另存为", result.savedTo); })
+          .catch((error: any) => notifyToast("另存为失败", String(error?.message ?? error).slice(0, 160)));
+      },
+    },
+  ];
+  return (
+    <div className="file-card-menu" role="menu" style={{ left, top }} onMouseDown={(event) => event.stopPropagation()}>
+      {items.map((item) => (
+        <button type="button" role="menuitem" key={item.label} onClick={() => { item.run(); onClose(); }}>
+          {item.icon}
+          <span>{item.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function looksLikeFilePath(candidate: string): boolean {
   const trimmed = candidate.replace(/^[`"'\s]+|[`"'\s]+$/g, "");
@@ -78,6 +133,7 @@ function extractFilePathsFromMarkdown(text: string): { path: string; prefix: str
 export function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile?: (path: string) => void }) {
   const matches = useMemo(() => extractFilePathsFromMarkdown(text), [text]);
   const [resolvedPaths, setResolvedPaths] = useState<Record<string, string>>({});
+  const [menu, setMenu] = useState<FileCardMenuState | null>(null);
   // 探测两步走（全程只 stat，不扫磁盘）：① 按解析路径直查；② 裸文件名查会话路径台账
   // （工具调用等消息项里出现过的真实路径）。都找不到才灰显，点击只弹提示、不再炸读取错误。
   useEffect(() => {
@@ -108,6 +164,7 @@ export function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile
   const confirmed = matches.filter((match) => Boolean(resolvedPaths[match.path]));
   if (confirmed.length === 0) return null;
   return (
+    <>
     <div className="inline-file-cards" aria-label="涉及到的文件">
       {confirmed.map((m, index) => {
         const name = basename(m.path) || m.path;
@@ -122,6 +179,7 @@ export function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile
               if (isImagePath(openPath)) openImageLightbox(openPath, name);
               else onOpenFile?.(openPath);
             }}
+            onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, path: openPath, name }); }}
           >
             {isImagePath(m.path) ? (
               <span className="inline-file-thumb">
@@ -134,14 +192,29 @@ export function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile
         );
       })}
     </div>
+    {menu && (
+      <FileCardMenu
+        menu={menu}
+        onOpen={() => {
+          const openPath = resolvedPaths[menu.path] ?? menu.path;
+          if (isImagePath(openPath)) openImageLightbox(openPath, menu.name);
+          else onOpenFile?.(openPath);
+        }}
+        onClose={() => setMenu(null)}
+      />
+    )}
+    </>
   );
 }
 
 export function UserRefsRow({ refs, onOpenFile, onQuote, extraThumbs, hideFiles }: { refs: ParsedUserRefs; onOpenFile?: (path: string) => void; onQuote?: (text: string) => void; extraThumbs?: ReactNode; hideFiles?: boolean }) {
   const { files, skills, contexts } = refs;
   const visibleFiles = hideFiles ? [] : files;
-  if (!visibleFiles.length && !skills.length && !contexts.length && !extraThumbs) return null;
+  const [menu, setMenu] = useState<FileCardMenuState | null>(null);
+  if (!visibleFiles.length && !skills.length && !contexts.length && !extraThumbs && !menu) return null;
+  const refAbsPath = (path: string) => resolveFilePath(path) ?? path;
   return (
+    <>
     <div className="msg-refs">
       {visibleFiles.map((path, index) => {
         const name = basename(path) || path;
@@ -150,7 +223,7 @@ export function UserRefsRow({ refs, onOpenFile, onQuote, extraThumbs, hideFiles 
           //    data URL 被当成本地路径（09-18 守卫【47】抓到的残留，与灯箱同类缺陷）。
           const src = imageDisplaySrc(path);
           return (
-            <button type="button" className="ref-file-card ref-image-card" title={name} onClick={() => openImageLightbox(path, name)} key={index}>
+            <button type="button" className="ref-file-card ref-image-card" title={name} onClick={() => openImageLightbox(path, name)} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, path: refAbsPath(path), name }); }} key={index}>
               <span className="ref-image-thumb">
                 <img src={src} alt={name} loading="lazy" />
                 <span className="ref-image-preview"><img src={src} alt={name} /></span>
@@ -159,7 +232,7 @@ export function UserRefsRow({ refs, onOpenFile, onQuote, extraThumbs, hideFiles 
           );
         }
         return (
-          <button type="button" className="ref-file-card" title={name} onClick={() => onOpenFile?.(path)} key={index}>
+          <button type="button" className="ref-file-card" title={name} onClick={() => onOpenFile?.(path)} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, path: refAbsPath(path), name }); }} key={index}>
             <FileText size={14} />
             <span className="ref-file-name">{name}</span>
           </button>
@@ -177,5 +250,17 @@ export function UserRefsRow({ refs, onOpenFile, onQuote, extraThumbs, hideFiles 
       ))}
       {extraThumbs}
     </div>
+    {menu && (
+      <FileCardMenu
+        menu={menu}
+        onOpen={() => {
+          const abs = refAbsPath(menu.path);
+          if (isImagePath(abs)) openImageLightbox(abs, menu.name);
+          else onOpenFile?.(abs);
+        }}
+        onClose={() => setMenu(null)}
+      />
+    )}
+    </>
   );
 }

@@ -2,9 +2,11 @@ import { useRef, useState } from "react";
 
 export type FilePreview = { path: string; content: string; language: string; kind: "text" | "image" | "binary" | "pdf" };
 
-const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "avif", "svg"]);
+// ⛔ 导出（09-26）：文件卡片右键菜单用同一套扩展名口径判定「编辑」是否可用——
+//    两套判定迟早漂移（右键对二进制文件开放编辑 = 写回即损坏）。
+export const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "avif", "svg"]);
 // 二进制格式：点开只会得到乱码，直接给占位卡（Office / 压缩包 / 可执行 / 媒体 / 字体 / 数据库 …）
-const BINARY_EXTENSIONS = new Set([
+export const BINARY_EXTENSIONS = new Set([
   // Office / 文档容器（xls 老格式是 OLE2 复合文档，xlsx/docx/pptx 是 zip 包）
   "xls", "xlsx", "xlsb", "xlsm", "doc", "docx", "docm", "dot", "dotx", "ppt", "pptx", "pptm", "pps", "ppsx", "odt", "ods", "odp", "wps", "et", "dps",
   // 压缩包 / 磁盘镜像
@@ -40,7 +42,8 @@ function looksBinary(bytes: Uint8Array): boolean {
 }
 
 /** UTF-8 解码后替换字符（U+FFFD）占比过高 → 大概率是 GBK/GB18030 编码的中文文本，重解一次。 */
-function decodeText(bytes: Uint8Array): string {
+/** ⛔ 导出（09-26）：文件弹窗编辑（PastedTextEditor transport）复用同一解码口径，别抄第二份。 */
+export function decodeText(bytes: Uint8Array): string {
   const utf8 = new TextDecoder("utf-8").decode(bytes);
   const sample = utf8.slice(0, 4000);
   const replacement = (sample.match(/\uFFFD/g) ?? []).length;

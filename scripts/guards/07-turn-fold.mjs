@@ -1512,8 +1512,8 @@ export async function run() {
       // ⛔ 允许 `export ` 前缀：搬进 src/features/** 后声明行会变成 `export function …`，
       //    锚死 `^function` 会在搬家时假红（判据要盯"是不是模块级组件"，不盯有没有 export）。
       (/^(?:export\s+)?function PastedTextEditor\(/m.test(appSrc46) ? ok : fail)("【48】编辑器是模块级组件（内联箭头函数会每次 render 重挂）");
-      (/if \(state\.editable && dirty\) \{ await save\(state\.content, \{ silent: true \}\); showToastEverywhere/.test(appSrc46)
-        ? ok : fail)("【48】关窗自动保存（编辑的是应用自己的临时文本，丢改动比多存一次更糟）");
+      (/if \(state\.editable && dirty\) \{ await save\(contentNow, \{ silent: true \}\); showToastEverywhere/.test(appSrc46)
+        ? ok : fail)("【48】关窗自动保存（编辑的是应用自己的临时文本，丢改动比多存一次更糟；表格视图下取回写后的全文 contentNow）");
       (/\.pasted-text-body \{[\s\S]{0,420}?min-height: 0;/.test(css48)
         ? ok : fail)("【48】编辑区 min-height:0（flex 子项不收缩的话 textarea 会顶破面板）");
       (/\.pasted-text-modal \{[\s\S]{0,320}?z-index: 91;/.test(css48) ? ok : fail)("【48】文本窗口层级高于图片灯箱（不会被盖住）");

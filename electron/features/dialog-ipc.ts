@@ -1,9 +1,9 @@
 /**
  * dialog-ipc（09-22 架构改造：从 electron/main.ts 组合根按域拆出，纯搬迁）
  *
- * 域：**系统文件选择对话框**（渲染层「浏览 / 添加目录 / 选图片 / 选文件 / 选私钥」的入口）。
+ * 域：**系统文件对话框**（渲染层「浏览 / 添加目录 / 选图片 / 选文件 / 选私钥 / 另存为」的入口）。
  * 搬出符号：IPC handler dialog:directory / dialog:directory-at / dialog:images /
- *           dialog:files / dialog:ssh-key。
+ *           dialog:files / dialog:ssh-key / dialog:save-as。
  * 消费方：设置页与工作区选择器。
  *
  * 代码与原地逐字一致（仅顶部 import、文件头注释、通道归并）。
@@ -17,8 +17,9 @@
  */
 import { dialog, ipcMain } from "electron";
 import { existsSync } from "node:fs";
+import fsP from "node:fs/promises";
 import path from "node:path";
-import { mainWindow, trustPicked } from "../runtime-refs";
+import { isInsideTrustedRoots, mainWindow, trustPicked } from "../runtime-refs";
 
 ipcMain.handle("dialog:directory", async () => {
   const result = await dialog.showOpenDialog(mainWindow!, { properties: ["openDirectory", "createDirectory"] });
@@ -54,4 +55,18 @@ ipcMain.handle("dialog:ssh-key", async (_event, startPath?: string) => {
     filters: [{ name: "SSH 私钥", extensions: ["", "pem", "key", "ppk", "id_rsa", "id_ed25519"] }, { name: "All files", extensions: ["*"] }],
   });
   return result.canceled || !result.filePaths?.length ? null : result.filePaths[0];
+});
+
+// 另存为：文件卡片右键「另存为…」（09-26）。⛔ 源文件必须落在可信根内（与 fs:read 预览同口径，
+// 防渲染层被注入后把盘上任意文件拷走）；目标路径由用户亲自经系统对话框选定——「另存为」的语义
+// 就是写到用户指定的任意位置，目标不设可信根限制。
+ipcMain.handle("dialog:save-as", async (_event, sourcePath: string) => {
+  const src = path.resolve(typeof sourcePath === "string" ? sourcePath : "");
+  if (!src || !isInsideTrustedRoots(src)) throw new Error("仅允许保存会话工作区与应用数据目录内的文件");
+  const stat = await fsP.stat(src).catch(() => null);
+  if (!stat?.isFile()) throw new Error(`文件不存在：${sourcePath}`);
+  const result = await dialog.showSaveDialog(mainWindow!, { defaultPath: path.basename(src) });
+  if (result.canceled || !result.filePath) return { ok: false };
+  await fsP.copyFile(src, result.filePath);
+  return { ok: true, savedTo: result.filePath };
 });

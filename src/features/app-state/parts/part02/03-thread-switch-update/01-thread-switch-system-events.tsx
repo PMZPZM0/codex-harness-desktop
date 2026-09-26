@@ -57,7 +57,9 @@ bag.bundleFile = bundleFile as typeof bag.bundleFile;
 bag.lightbox = lightbox as typeof bag.lightbox; bag.setLightbox = setLightbox as typeof bag.setLightbox;
 
   /** 粘贴文本大窗口（预览 + 编辑），见 PastedTextEditor */
-  const [pastedText, setPastedText] = useState<{ path: string; name: string } | null>(null);
+  // 粘贴文本大窗口（预览 + 编辑），见 PastedTextEditor。kind: "file" = 会话工作区文件弹窗编辑
+  //（读写走 fs:read/fs:write，右键菜单「编辑」入口），缺省 = 粘贴文本（pasted-text:* 通道）。
+  const [pastedText, setPastedText] = useState<{ path: string; name: string; kind?: "file" } | null>(null);
 bag.pastedText = pastedText as typeof bag.pastedText; bag.setPastedText = setPastedText as typeof bag.setPastedText;
 
   const [systemEvents, setSystemEvents] = useState<SystemEvent[]>([]);

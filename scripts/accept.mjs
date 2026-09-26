@@ -24,7 +24,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { ElectronHarness } from "./e2e/lib/harness.mjs";
 // 正文 markdown 分块（渲染层用的就是这一份；验收项 ⑰ 跑它的真值表）
 import { splitMarkdown } from "../src/lib/markdown-blocks.mjs";
@@ -82,6 +82,33 @@ const globalArchiveOf = (h) => {
 // 本轮验收项（**每次改动只改这一段**；不再对应的旧项直接删掉，别攒着）
 // ─────────────────────────────────────────────────────────────────────────────
 const CHECKS = [
+  {
+    id: "file-card-edit",
+    name: "⑱ 文件卡片右键菜单 + md 表格弹窗编辑（09-26「像 WorkBuddy 那样」轮）",
+    run: async (h) => {
+      // 为什么这样测：md-table.mjs 是编辑保存的数据完整性基座（只回写表格块、其余原文逐字
+      // 保留、代码块里的表格绝不识别），坏一行 = 用户文件被改坏，必须真代码真值表跑死；
+      // saveFileAs 是新 IPC，桥存在 + 主进程可信根校验真的「拒绝」都要在真机验（假桥/校验
+      // 被绕过 = 渲染层被注入即可把盘上任意文件拷走）。UI 右键交互本身由守卫【164】结构
+      // 断言 + 用户真机验收覆盖（CDP 无法合成原生 contextmenu 到 React 卡片）。
+      const mt = await import(pathToFileURL(join(ROOT, "src/lib/md-table.mjs")).href);
+      const md = ["# t", "", "| a | b |", "| --- | --- |", "| 1 | 2 |", "", "```", "| x | y |", "| -- | -- |", "```", "", "尾。"].join("\n");
+      const p1 = mt.parseMarkdownTables(md);
+      h.check("① 只识别真表格（代码块里的不认）", p1.blocks.length === 1, `blocks=${p1.blocks.length}`);
+      const edits = p1.blocks.map((b) => b.rows.map((r) => r.slice()));
+      edits[0].push(["3", "4"]);
+      const out = mt.renderMarkdownTables(md, edits);
+      h.check("② 回写后原文段落与代码块逐字保留", out.includes("| x | y |") && out.endsWith("尾。") && out.includes("| 3"));
+      const bridge = await h.eval(`(function(){ return typeof window.codex.saveFileAs; })()`);
+      h.check("③ saveFileAs 桥存在（IPC 三件套生成面）", bridge === "function", `typeof=${bridge}`);
+      const rejected = await h.eval(`(function(){
+        return window.codex.saveFileAs("C:\\\\Windows\\\\win.ini").then(function(){ return "NOT_REJECTED"; }, function(e){ return String(e && e.message || e).slice(0, 120); });
+      })()`);
+      // 判据：handler 抛错（Electron 包装成 ERR_INVOKE_FAILED）= 未放行。原话被包装串截断，
+      // 所以不匹配具体文案，只判「确实被拒」——放行才是事故。
+      h.check("④ 主进程拒绝可信根外的源文件（另存为不是任意文件拷贝器）", !rejected.includes("NOT_REJECTED") && rejected.length > 0, String(rejected).slice(0, 80));
+    },
+  },
   {
     id: "shot-editor",
     name: "⑮ 截图编辑器：覆盖层出现/标注/确认落盘（09-24 编辑器轮）",
@@ -307,9 +334,10 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "09-25";
+const LATEST_ROUND = "09-26";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
+  "file-card-edit": "09-26",
   "settings-pages": "09-25",
   "shot-editor": "09-24",
   "history-search": "09-24",

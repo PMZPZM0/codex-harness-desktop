@@ -1,13 +1,22 @@
 /** 图片预览 / 搜索预览 / 粘贴文本编辑（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
 import { openImageLightbox, registerClosePastedText, notifyToast } from "../../lib/ui-channels";
-import { useState, useRef, useEffect, useCallback } from "react";
-import { ZoomOut, ZoomIn, Copy, FolderOpen, ExternalLink, X, MessageSquare, Archive, Clock3, Zap, User } from "lucide-react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { ZoomOut, ZoomIn, Copy, FolderOpen, ExternalLink, X, MessageSquare, Archive, Clock3, Zap, User, Table2 } from "lucide-react";
 import { SearchPreviewTarget } from "../../components/IndexLibrary";
 import { Spinner } from "../../components/CardShell";
 import { resolveImagePath } from "../../lib/resolve-image-path";
+import { parseMarkdownTables, renderMarkdownTables } from "../../lib/md-table.mjs";
+import { MdTableView } from "./MdTableEditor";
 
-export function PastedTextEditor({ path, name, onClose }: { path: string; name: string; onClose: () => void }) {
+/** 文件弹窗编辑的读写通道（09-26）：会话工作区文件走 fs:read/fs:write（可信根校验在主进程）；
+ *  不传 = 粘贴文本默认通道（pasted-text:read/update，只限粘贴文本目录）。 */
+export type TextEditorTransport = {
+  read: (path: string) => Promise<string | null>;
+  save: (path: string, content: string) => Promise<void>;
+};
+
+export function PastedTextEditor({ path, name, onClose, transport }: { path: string; name: string; onClose: () => void; transport?: TextEditorTransport }) {
   const [state, setState] = useState<{ loading: boolean; editable: boolean; content: string; error?: string }>({ loading: true, editable: false, content: "" });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -18,7 +27,9 @@ export function PastedTextEditor({ path, name, onClose }: { path: string; name: 
     let alive = true;
     void (async () => {
       try {
-        const result = await window.codex.readPastedText(path);
+        const result = transport
+          ? { editable: true, content: await transport.read(path) }
+          : await window.codex.readPastedText(path);
         if (!alive) return;
         if (!result?.editable) { setState({ loading: false, editable: false, content: "" }); return; }
         const content = result.content ?? "";
@@ -35,7 +46,13 @@ export function PastedTextEditor({ path, name, onClose }: { path: string; name: 
   const save = useCallback(async (content: string, { silent = false } = {}) => {
     setSaving(true);
     try {
-      await window.codex.updatePastedText(path, content);
+      if (transport) await transport.save(path, content);
+      else await window.codex.updatePastedText(path, content);
+      // ⛔ 已保存内容必须同步回编辑态（review 09-26）：表格视图下存的是回写后的全文
+      //    （contentNow），不同步的话切回文本视图看到的是编辑前旧文，再一保存就丢表格编辑。
+      //    矩阵也按新全文重建，保证后续编辑与块结构对齐。
+      setState((current) => ({ ...current, content }));
+      setTableEdits(parseMarkdownTables(content).blocks.map((b) => b.rows.map((r) => r.slice())));
       setDirty(false);
       setSavedAt(Date.now());
       if (!silent) showToastEverywhere("已保存修改", name);
@@ -48,11 +65,33 @@ export function PastedTextEditor({ path, name, onClose }: { path: string; name: 
 
   const close = useCallback(() => { onClose(); }, [onClose]);
 
-  // 关窗前保存：把"最后一次内容"交给 save 用（闭包里的 content 是当前渲染值，够用）
+  // ── 双视图（09-26「像 WorkBuddy 那样编辑 md」）：md 里检出 GFM 表格时提供可视化表格编辑 ──
+  //   「表格」视图只编辑表格矩阵；保存/切回文本时用 renderMarkdownTables **只回写表格块、
+  //   其余原文逐字保留**（纯函数有行为断言）。文本视图照旧整体编辑。
+  const tableBlocks = useMemo(() => parseMarkdownTables(state.content).blocks, [state.content]);
+  const [view, setView] = useState<"text" | "table">("text");
+  const [tableEdits, setTableEdits] = useState<string[][][]>([]);
+  const hasTables = state.editable && tableBlocks.length > 0;
+  // 当前生效全文：表格视图且矩阵已初始化时 = 回写后的全文；否则就是文本框内容
+  const contentNow = useMemo(() => {
+    if (view !== "table" || tableEdits.length === 0) return state.content;
+    try { return renderMarkdownTables(state.content, tableEdits); } catch { return state.content; }
+  }, [view, tableEdits, state.content]);
+  const switchView = useCallback((next: "text" | "table") => {
+    if (next === "table") setTableEdits(parseMarkdownTables(state.content).blocks.map((b) => b.rows.map((r) => r.slice())));
+    else if (view === "table" && tableEdits.length > 0) {
+      // table → text：把表格编辑落进全文再展示（没保存就切换也不许丢编辑，review 09-26）
+      setState((current) => ({ ...current, content: contentNow }));
+      setTableEdits([]);
+    }
+    setView(next);
+  }, [state.content, view, tableEdits, contentNow]);
+
+  // 关窗前保存：把"最后一次内容"交给 save 用（表格视图下取回写后的全文）
   const closeWithSave = useCallback(async () => {
-    if (state.editable && dirty) { await save(state.content, { silent: true }); showToastEverywhere("已保存修改", name); }
+    if (state.editable && dirty) { await save(contentNow, { silent: true }); showToastEverywhere("已保存修改", name); }
     close();
-  }, [state.editable, state.content, dirty, save, close, name]);
+  }, [state.editable, contentNow, dirty, save, close, name]);
 
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
@@ -60,11 +99,11 @@ export function PastedTextEditor({ path, name, onClose }: { path: string; name: 
       //    见「所有 overlay 的 Esc 关闭」），本窗口已注册进去（`requestClosePastedText`）。
       //    自带一份会让两条链各关一次；而且实测"CDP 注入的按键在 textarea 聚焦时投递不可靠"，
       //    走统一管线才能稳定被触发。这里只留 Ctrl/Cmd+S（保存不关窗）。
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); void save(state.content); }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); void save(contentNow); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [save, state.content]);
+  }, [save, contentNow]);
 
   // 交给全局 Escape 管线调用（关窗即存）。卸载时清掉，避免关闭后仍被回调。
   useEffect(() => {
@@ -82,23 +121,35 @@ export function PastedTextEditor({ path, name, onClose }: { path: string; name: 
             {state.loading ? "读取中…" : `${lineCount} 行 · ${state.content.length} 字`}
             {dirty ? " · 未保存" : savedAt ? " · 已保存" : ""}
           </span>
-          <button type="button" className="pasted-text-save" disabled={saving || !state.editable} onClick={() => void save(state.content)}>
+          {hasTables && (
+            <button type="button" className="pasted-text-viewtoggle" title={view === "table" ? "切换到原始文本" : "表格可视化编辑"} onClick={() => switchView(view === "table" ? "text" : "table")}>
+              <Table2 size={13} />{view === "table" ? "文本" : "表格"}
+            </button>
+          )}
+          <button type="button" className="pasted-text-save" disabled={saving || !state.editable} onClick={() => void save(contentNow)}>
             {saving ? "保存中…" : "保存"}
           </button>
           <button type="button" className="pasted-text-close" title="关闭 (Esc)" onClick={() => void closeWithSave()}><X size={15} /></button>
         </div>
         {state.error ? <p className="pasted-text-error">{state.error}</p> : null}
-        <textarea
-          ref={boxRef}
-          className="pasted-text-body"
-          value={state.content}
-          readOnly={!state.editable}
-          spellCheck={false}
-          onChange={(event) => { setState((current) => ({ ...current, content: event.target.value })); setDirty(true); }}
-          placeholder={state.loading ? "" : "（内容为空）"}
-        />
+        {view === "table" && hasTables ? (
+          <div className="pasted-text-body pasted-text-tablebody">
+            <MdTableView text={state.content} edits={tableEdits} onEditsChange={(next) => { setTableEdits(next); setDirty(true); }} />
+          </div>
+        ) : (
+          <textarea
+            ref={boxRef}
+            className="pasted-text-body"
+            value={state.content}
+            readOnly={!state.editable}
+            spellCheck={false}
+            onChange={(event) => { setState((current) => ({ ...current, content: event.target.value })); setDirty(true); }}
+            placeholder={state.loading ? "" : "（内容为空）"}
+          />
+        )}
         <p className="pasted-text-hint">
           编辑后点「保存」或直接关闭窗口（会自动保存）。Ctrl/Cmd+S 保存不关窗，Esc 关闭。
+          {hasTables ? " 表格视图下只回写表格，其余内容不动。" : ""}
         </p>
       </div>
     </div>

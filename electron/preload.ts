@@ -194,6 +194,7 @@ contextBridge.exposeInMainWorld("codex", {
   importThreadsBackup: () => __ipc("threads:import", 0, []),
   importConversationMarkdown: (input?: { cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null }) => __ipc("threads:import-conversation", 0, [input]),
   chooseSshKey: (startPath?: string) => __ipc("dialog:ssh-key", 0, [startPath]),
+  saveFileAs: (sourcePath: string) => __ipc("dialog:save-as", 1, [sourcePath]),
   /* 仅更新称呼：写 personalization.json + AGENTS.md，不重启引擎 */
   setNickname: (nickname: string) => __ipc("personalization:setNickname", 1, [nickname]),
   verifyPersonalization: () => __ipc("personalization:verify", 0, []),
