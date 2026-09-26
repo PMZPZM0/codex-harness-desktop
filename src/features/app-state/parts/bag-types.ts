@@ -1078,6 +1078,10 @@ export interface Bag {
   settleAfterCompaction: (threadId: string) => void;
   pruneSupersededCompactions: (keepId: string) => void;
   attachCompactionItem: (item: any, turnId: string) => void;
+  relayInFlightRef: React.RefObject<boolean>;
+  compactedSummaryRef: React.RefObject<string>;
+  contextUsedRatio: () => number;
+  maybeRelayHighContext: () => Promise<string>;
   threadNameOf: (threadId: string) => string;
   scopedNotice: (text: string, threadId?: string | undefined) => void;
   showToast: (title: string, text?: unknown, threadId?: string | undefined) => void;

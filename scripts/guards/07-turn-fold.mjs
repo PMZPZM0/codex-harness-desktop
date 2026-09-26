@@ -4624,7 +4624,14 @@ export async function run() {
   );
   // ⑦ 权威信号停转：thread/compacted 到达时本地把还挂着的 inProgress 压缩 item 落成
   //    completed（引擎侧 completed 迟到/缺失时分隔线会永远转圈）。
-  ((() => { const i = part05Src.indexOf('event.method === "thread/compacted"'); return i >= 0 && part05Src.slice(i, i + 1400).includes('status: "completed"'); })() ? ok : fail)(
+  //    ⛔ 锚到**分支边界**而非固定字符窗口（09-26 实测：分支里插几行就假红过一次）。
+  ((() => {
+    const i = part05Src.indexOf('event.method === "thread/compacted"');
+    if (i < 0) return false;
+    const nextBranch = part05Src.indexOf("} else if (event.method ===", i);
+    const branch = part05Src.slice(i, nextBranch > 0 ? nextBranch : i + 3000);
+    return branch.includes('status: "completed"') && branch.includes("settleAfterCompaction");
+  })() ? ok : fail)(
     "【163】thread/compacted 必须本地落平还挂着的 inProgress 压缩 item（分隔线停转不依赖引擎补发）"
   );
     /* ── 【165】压缩线位置归位（09-26 两次修：回合中途自动压缩时引擎新开的压缩回合排在 turns 末尾，
@@ -4674,6 +4681,33 @@ export async function run() {
     const part04 = readFileSync(join(ROOT, "src/features/app-state/parts/part04/01-seg.tsx"), "utf8");
     (part04.includes("function attachCompactionItem(") && /turns\.find\(\(turn\) => String\(turn\.id\) === turnId\) \?\? turns\[turns\.length - 1\]/.test(part04) ? ok : fail)(
       "【166】挂载兜底口径：turnId 命中否则最后一条回合（thread 空则不动）"
+    );
+  }
+  /* ── 【167】宿主真压缩「摘要接力」（09-26 用户定稿：引擎压缩窗口在自定义网关下不生效，
+     改由宿主换新会话把上下文真的压下去）── */
+  {
+    const relay = readFileSync(join(ROOT, "src/features/app-state/parts/part06/03-seg/02-context-fork-backup.tsx"), "utf8").replace(/\r/g, "");
+    const sendSrc = readFileSync(join(ROOT, "src/features/app-state/parts/part08/02-seg/send.tsx"), "utf8").replace(/\r/g, "");
+    const part05 = readFileSync(join(ROOT, "src/features/app-state/parts/part05/01-seg.tsx"), "utf8").replace(/\r/g, "");
+    // ① 触发水位必须读设置页那个自动压缩阈值（两处阈值必然漂移 ⇒ 禁另立常量）。
+    (/const threshold = Number\(bag\.autoCompactRatio\) \|\| 0\.6;/.test(relay) ? ok : fail)(
+      "【167】接力触发水位 = 设置页「自动压缩阈值」（不另立常量）"
+    );
+    // ② 摘要来源：引擎压缩产出的摘要（part05 的 thread/compacted 写入 compactedSummaryRef）。
+    (/compactedSummaryRef\.current = String\(params\.message/.test(part05) ? ok : fail)(
+      "【167】摘要取自引擎压缩结果（thread/compacted 的 message），拿不到才退化为省略声明"
+    );
+    // ③ 接力必须换新会话（否则历史没变，压了等于没压） + 旧会话保留提示。
+    (/startNewThread\(\);/.test(relay) && relay.includes("完整保留") ? ok : fail)(
+      "【167】接力换新会话发消息 + 明确告知旧会话完整保留可切回"
+    );
+    // ④ 防重入。
+    (/if \(relayInFlightRef\.current\) return "";/.test(relay) ? ok : fail)(
+      "【167】接力防重入（同一轮不许压两次）"
+    );
+    // ⑤ 接线：发送前调用并把块拼在本条消息前（不拼 = 摘要在新会话里丢了）。
+    (/const relayBlock = await bag\.maybeRelayHighContext\(\);/.test(sendSrc) && /messageText = relayBlock \+ messageText;/.test(sendSrc) ? ok : fail)(
+      "【167】send 在真发送前调用接力并把摘要块拼在本条消息前"
     );
   }
 }
