@@ -1530,6 +1530,13 @@ w.postMessage({id:1,op:"list",root});
       "【170】DESIGN.md 变量表与 CSS 真值一致（改了变量必须同步文档，否则文档会骗人）"
         + (drift.length ? "，漂移：" + drift.slice(0, 4).join("；") : "")
     );
+
+    // 引导链：引擎只会自动读 AGENTS.md ⇒ DESIGN.md 必须在那里登记，
+    // 否则改 UI 的 agent 根本不知道有这份规范（写得再好也没人读）。
+    const agents170 = readFileSync(join(ROOT, "AGENTS.md"), "utf8");
+    (agents170.includes("DESIGN.md") && agents170.includes("改 UI 前先读") ? ok : fail)(
+      "【170】AGENTS.md 已登记 DESIGN.md（引擎只保证读 AGENTS.md，引导链断了规范就没人看）"
+    );
   }
 
   /* ══ 【155】团队调度的团队标识恢复（09-25 真机事故）═════════════════════
