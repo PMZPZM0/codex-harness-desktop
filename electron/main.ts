@@ -98,6 +98,8 @@ import "./features/remote-ipc";
 import "./features/memory-rpa-ipc";
 import "./features/phone-harness-ipc";
 import "./features/fs-ipc";
+import "./features/drama-canvas";
+import "./features/video-gen";
 import "./features/updates-ipc";
 import "./features/shell-misc-ipc";
 /* 截图（全屏/框选）+ 收藏夹：用户素材链的两端（截图可收藏、收藏可发送/进记忆） */

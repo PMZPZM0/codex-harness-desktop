@@ -1,0 +1,201 @@
+/**
+ * 右侧检查器（域内私有）：看/改选中节点的完整字段、改连线关系、回写分镜表。
+ *
+ * 卡面只放最常用的三五个按钮 —— 完整字段全在这儿。这样卡片能保持固定尺寸
+ * （尺寸一变，画布排版与命中测试全得跟着变），也避免卡面上堆二十个输入框。
+ */
+import { Clapperboard, Link2, RefreshCw, Sparkles, X } from "lucide-react";
+import { dramaNodeDef, dramaNodeLabel, dramaRelationLabel, dramaRelationOptions } from "../../lib/drama-canvas-model.mjs";
+import { STORYBOARD_ASPECTS, STORYBOARD_SHOT_SIZES } from "../../lib/drama-storyboard.mjs";
+import { useDramaActions } from "./drama-actions";
+
+interface FieldSpec {
+  key: string;
+  label: string;
+  type?: "text" | "textarea" | "number" | "select";
+  options?: string[];
+  placeholder?: string;
+  hint?: string;
+}
+
+/** 每种卡在检查器里露哪些字段。**只列会被用到、会被回写的**，不做万能表单。 */
+const FIELDS: Record<string, FieldSpec[]> = {
+  note: [{ key: "title", label: "标题" }, { key: "text", label: "内容", type: "textarea" }],
+  script: [
+    { key: "title", label: "标题" },
+    { key: "text", label: "剧本正文", type: "textarea", placeholder: "一句话概念、人物关系、冲突、对白与结局" },
+    { key: "aspect", label: "画幅", type: "select", options: STORYBOARD_ASPECTS },
+    { key: "shotDuration", label: "每镜时长（秒）", type: "number" },
+    { key: "style", label: "统一风格", placeholder: "光线、色调、质感 —— 会拼在每镜提示词最前面", hint: "不写的话镜与镜之间画风会飘" },
+  ],
+  agent: [
+    { key: "title", label: "标题" },
+    { key: "task", label: "任务描述", type: "textarea" },
+    { key: "status", label: "状态" },
+  ],
+  character: [
+    { key: "name", label: "姓名" },
+    { key: "role", label: "定位" },
+    { key: "look", label: "外貌描写", type: "textarea", hint: "写死一段，后面每镜照抄 —— 每镜现编会让脸一镜一个样" },
+    { key: "description", label: "性格与目标", type: "textarea" },
+    { key: "ref", label: "定妆照路径", hint: "这是每一镜生首帧要参照的那张图" },
+  ],
+  location: [
+    { key: "name", label: "场景名" },
+    { key: "time", label: "时间 / 光线" },
+    { key: "description", label: "场景描写", type: "textarea" },
+    { key: "ref", label: "场景图路径" },
+  ],
+  storyboard: [
+    { key: "board", label: "分镜表" },
+    { key: "style", label: "统一风格（读自分镜表）" },
+  ],
+  scene: [
+    { key: "id", label: "场次号" },
+    { key: "place", label: "地点" },
+    { key: "time", label: "时间 / 光线" },
+  ],
+  shot: [
+    { key: "id", label: "镜头号" },
+    { key: "shot_size", label: "景别", type: "select", options: STORYBOARD_SHOT_SIZES },
+    { key: "duration", label: "时长（秒）", type: "number" },
+    { key: "prompt", label: "首帧提示词", type: "textarea", placeholder: "景别 + 场景 + 姿态 + 光线" },
+    { key: "motion", label: "动作与运镜", type: "textarea", placeholder: "只写动作和运镜，画面内容已经在首帧里" },
+    { key: "line", label: "台词 / 旁白", placeholder: "空着就是无人声镜头" },
+    { key: "speaker", label: "说话人（角色 id）" },
+    { key: "first_frame", label: "首帧产物", hint: "由生成写回；改它会同步回分镜表" },
+    { key: "video", label: "视频产物" },
+    { key: "audio", label: "配音产物" },
+  ],
+  image: [
+    { key: "title", label: "标题" },
+    { key: "role", label: "用途" },
+    { key: "path", label: "文件路径" },
+    { key: "text", label: "说明", type: "textarea" },
+  ],
+  audio: [
+    { key: "title", label: "标题" },
+    { key: "text", label: "文本", type: "textarea" },
+    { key: "path", label: "音频路径" },
+  ],
+  video: [
+    { key: "title", label: "标题" },
+    { key: "prompt", label: "提示词", type: "textarea" },
+    { key: "model", label: "模型" },
+    { key: "aspect", label: "画幅", type: "select", options: STORYBOARD_ASPECTS },
+    { key: "duration", label: "时长（秒）", type: "number" },
+  ],
+  timeline: [
+    { key: "title", label: "标题" },
+    { key: "description", label: "说明", type: "textarea" },
+    { key: "video", label: "成片路径" },
+  ],
+};
+
+export function DramaInspector({ onClose }: { onClose: () => void }) {
+  const actions = useDramaActions();
+  const id = actions.board.anchor || actions.board.selectedIds[0] || "";
+  const node = actions.board.nodes.find((n) => n.id === id);
+  if (!node) return null;
+  const kind = String(node.data?.kind || "note");
+  const payload = node.data.payload || {};
+  const def = dramaNodeDef(kind);
+  const fields = FIELDS[kind] || [];
+  const outEdges = actions.board.edges.filter((e) => e.source === id);
+  const inEdges = actions.board.edges.filter((e) => e.target === id);
+  const label = (nodeId: string) => {
+    const n = actions.board.nodes.find((x) => x.id === nodeId);
+    return n ? dramaNodeLabel(String(n.data?.kind || ""), n.data.payload || {}) : nodeId;
+  };
+
+  return (
+    <aside className="drama-canvas-inspector" aria-label="节点属性">
+      <header className="drama-canvas-inspector-head">
+        <div>
+          <b>{dramaNodeLabel(kind, payload)}</b>
+          <small>{def.label} · {selectedSummary(actions.board.selectedIds.length)}</small>
+        </div>
+        <button className="drama-canvas-icon-btn nodrag" title="关闭属性面板" onClick={onClose}><X size={14} /></button>
+      </header>
+
+      {actions.board.selectedIds.length > 1 ? (
+        <p className="drama-canvas-hint">选中了 {actions.board.selectedIds.length} 个节点 —— 多选时只显示批量操作，单个节点的字段在单选时改。</p>
+      ) : null}
+
+      <div className="drama-canvas-inspector-body nowheel">
+        {!fields.length ? <p className="drama-canvas-hint">这个类型的节点没有可编辑字段。</p> : null}
+        {fields.map((f) => (
+          <label className="drama-canvas-field" key={f.key}>
+            <span>{f.label}</span>
+            {f.type === "textarea" ? (
+              <textarea
+                className="nodrag"
+                rows={3}
+                value={String(payload[f.key] ?? "")}
+                placeholder={f.placeholder}
+                onChange={(e) => actions.board.updatePayload(id, { [f.key]: e.target.value })}
+                onBlur={() => void actions.story.writeBack(id)}
+              />
+            ) : f.type === "select" ? (
+              <select className="nodrag" value={String(payload[f.key] ?? "")} onChange={(e) => { actions.board.updatePayload(id, { [f.key]: e.target.value }); void actions.story.writeBack(id); }}>
+                {(f.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            ) : (
+              <input
+                className="nodrag"
+                type={f.type === "number" ? "number" : "text"}
+                value={String(payload[f.key] ?? "")}
+                placeholder={f.placeholder}
+                onChange={(e) => actions.board.updatePayload(id, { [f.key]: f.type === "number" ? Number(e.target.value) : e.target.value })}
+                onBlur={() => void actions.story.writeBack(id)}
+              />
+            )}
+            {f.hint ? <small className="drama-canvas-field-hint">{f.hint}</small> : null}
+          </label>
+        ))}
+
+        <div className="drama-canvas-inspector-actions">
+          <button className="drama-canvas-btn" onClick={() => void actions.story.generate(id, "image")}><Sparkles size={12} />生成图片</button>
+          <button className="drama-canvas-btn is-ghost" onClick={() => void actions.story.writeBack(id)}><RefreshCw size={12} />写回分镜表</button>
+          {kind === "storyboard" ? (
+            <button className="drama-canvas-btn is-brand" disabled={!payload.board || !actions.boardNodeId} onClick={() => void actions.story.expand(id, String(payload.board))}><Clapperboard size={12} />展开场次与镜头</button>
+          ) : null}
+        </div>
+
+        <section className="drama-canvas-links">
+          <h4><Link2 size={12} />连线（{outEdges.length + inEdges.length}）</h4>
+          {!outEdges.length && !inEdges.length ? <p className="drama-canvas-hint">还没有连线。从卡片右侧的圆点拖到另一张卡，就能表达「这份输入喂给下一步」。</p> : null}
+          {outEdges.map((e) => (
+            <div className="drama-canvas-link-row" key={e.id}>
+              <span className="drama-canvas-link-dir">→</span>
+              <span title={label(e.target)}>{label(e.target)}</span>
+              <select className="nodrag" value={String(e.data?.relation || "input")} onChange={(ev) => actions.board.setRelation(e.id, ev.target.value)}>
+                {dramaRelationOptions(String(e.data?.relation || "input"), kind, String(actions.board.nodes.find((n) => n.id === e.target)?.data?.kind || "")).map(([key, text]) => (
+                  <option key={key} value={key}>{text}</option>
+                ))}
+              </select>
+            </div>
+          ))}
+          {inEdges.map((e) => (
+            <div className="drama-canvas-link-row" key={e.id}>
+              <span className="drama-canvas-link-dir is-in">←</span>
+              <span title={label(e.source)}>{label(e.source)}</span>
+              <em>{dramaRelationLabel(String(e.data?.relation || "input"))}</em>
+            </div>
+          ))}
+        </section>
+
+        {actions.story.problems.length ? (
+          <section className="drama-canvas-problems">
+            <h4>分镜表的问题（{actions.story.problems.length}）</h4>
+            <ul>{actions.story.problems.slice(0, 6).map((p, i) => <li key={i}>{p}</li>)}</ul>
+          </section>
+        ) : null}
+      </div>
+    </aside>
+  );
+}
+
+function selectedSummary(count: number) {
+  return count > 1 ? `已选 ${count} 个` : "单选";
+}

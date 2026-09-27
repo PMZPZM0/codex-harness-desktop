@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-09-27",
-  "count": 346,
+  "count": 354,
   "channels": [
     {
       "name": "request",
@@ -3430,6 +3430,86 @@
       "invokeArgs": "",
       "cast": "Promise<{adb:string}>",
       "note": "把工具链里的 adb 写进 phone-harness 配置（android.adb，不改系统 PATH）"
+    },
+    {
+      "name": "dramaCanvasAssetWrite",
+      "channel": "drama-canvas:asset-write",
+      "paramsImpl": "input: { workspace: string; name: string; base64: string; subdir?: string }",
+      "paramsDecl": "input: { workspace: string; name: string; base64: string; subdir?: string }",
+      "returns": "Promise<{ path: string }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ path: string }>",
+      "note": "把二进制素材（配音 WAV / 生成图）按字节写进工作区 .drama-canvas/assets/。⛔ 渲染层唯一的写入通道 fs:write 是 utf8 字符串写，写不了二进制，WAV 必须走这里"
+    },
+    {
+      "name": "weixinSend",
+      "channel": "weixin:send",
+      "paramsImpl": "input: { to?: string; text: string }",
+      "paramsDecl": "input: { to?: string; text: string }",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": "主动推送一条微信消息给用户（to 缺省=最近对话用户）。⛔ 正文气泡依赖 context_token，对方近期发过消息才最可靠；机器人未登录时抛错"
+    },
+    {
+      "name": "videoProviders",
+      "channel": "video:providers",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{id:string;name:string;region:string;modes:string[];imageInput:string;fields:string[];models:string[];defaultModel:string;configured:boolean}[]>",
+      "invokeArgs": "",
+      "cast": "Promise<{id:string;name:string;region:string;modes:string[];imageInput:string;fields:string[];models:string[];defaultModel:string;configured:boolean}[]>",
+      "note": "内置视频生成接口：国内外 8 家厂商清单 + 是否已配凭证（可灵/万相/Seedance/CogVideoX/MiniMax/Runway/Luma/Veo）"
+    },
+    {
+      "name": "videoConfigRead",
+      "channel": "video:config-read",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<Record<string, Record<string,string>>>",
+      "invokeArgs": "",
+      "cast": "Promise<Record<string, Record<string,string>>>",
+      "note": "各厂商凭证（userData/video-providers.json）"
+    },
+    {
+      "name": "videoConfigSave",
+      "channel": "video:config-save",
+      "paramsImpl": "input: { providerId: string; values: Record<string,string> }",
+      "paramsDecl": "input: { providerId: string; values: Record<string,string> }",
+      "returns": "Promise<{ ok: boolean; configured: boolean }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ ok: boolean; configured: boolean }>",
+      "note": "保存某厂商的 API 凭证"
+    },
+    {
+      "name": "videoSubmit",
+      "channel": "video:submit",
+      "paramsImpl": "input: { providerId: string; mode: string; prompt: string; image?: string; model?: string; duration?: number }",
+      "paramsDecl": "input: { providerId: string; mode: string; prompt: string; image?: string; model?: string; duration?: number }",
+      "returns": "Promise<{ jobId: string }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ jobId: string }>",
+      "note": "提交视频生成异步任务（i2v 时 image 可为本地路径/URL，主进程转 base64）"
+    },
+    {
+      "name": "videoPoll",
+      "channel": "video:poll",
+      "paramsImpl": "input: { providerId: string; jobId: string }",
+      "paramsDecl": "input: { providerId: string; jobId: string }",
+      "returns": "Promise<{ status: string; url?: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ status: string; url?: string; error?: string }>",
+      "note": "轮询任务状态（MiniMax 成功后自动两段式换下载地址）"
+    },
+    {
+      "name": "videoDownload",
+      "channel": "video:download",
+      "paramsImpl": "input: { url: string; workspace: string; name: string; subdir?: string }",
+      "paramsDecl": "input: { url: string; workspace: string; name: string; subdir?: string }",
+      "returns": "Promise<{ path: string; bytes: number }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ path: string; bytes: number }>",
+      "note": "把产物视频拉回本地落 <workspace>/.drama-canvas/assets/（可信根校验）"
     }
   ]
 }

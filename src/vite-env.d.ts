@@ -744,6 +744,22 @@ interface Window {
     phoneHarnessOpenSettings(): Promise<void>;
     /* 把工具链里的 adb 写进 phone-harness 配置（android.adb，不改系统 PATH） */
     phoneHarnessWireAdb(): Promise<{adb:string}>;
+    /* 把二进制素材（配音 WAV / 生成图）按字节写进工作区 .drama-canvas/assets/。⛔ 渲染层唯一的写入通道 fs:write 是 utf8 字符串写，写不了二进制，WAV 必须走这里 */
+    dramaCanvasAssetWrite(input: { workspace: string; name: string; base64: string; subdir?: string }): Promise<{ path: string }>;
+    /* 主动推送一条微信消息给用户（to 缺省=最近对话用户）。⛔ 正文气泡依赖 context_token，对方近期发过消息才最可靠；机器人未登录时抛错 */
+    weixinSend(input: { to?: string; text: string }): Promise<{ ok: boolean }>;
+    /* 内置视频生成接口：国内外 8 家厂商清单 + 是否已配凭证（可灵/万相/Seedance/CogVideoX/MiniMax/Runway/Luma/Veo） */
+    videoProviders(): Promise<{id:string;name:string;region:string;modes:string[];imageInput:string;fields:string[];models:string[];defaultModel:string;configured:boolean}[]>;
+    /* 各厂商凭证（userData/video-providers.json） */
+    videoConfigRead(): Promise<Record<string, Record<string,string>>>;
+    /* 保存某厂商的 API 凭证 */
+    videoConfigSave(input: { providerId: string; values: Record<string,string> }): Promise<{ ok: boolean; configured: boolean }>;
+    /* 提交视频生成异步任务（i2v 时 image 可为本地路径/URL，主进程转 base64） */
+    videoSubmit(input: { providerId: string; mode: string; prompt: string; image?: string; model?: string; duration?: number }): Promise<{ jobId: string }>;
+    /* 轮询任务状态（MiniMax 成功后自动两段式换下载地址） */
+    videoPoll(input: { providerId: string; jobId: string }): Promise<{ status: string; url?: string; error?: string }>;
+    /* 把产物视频拉回本地落 <workspace>/.drama-canvas/assets/（可信根校验） */
+    videoDownload(input: { url: string; workspace: string; name: string; subdir?: string }): Promise<{ path: string; bytes: number }>;
 /* ═══ gen:end ═══ */
 
 

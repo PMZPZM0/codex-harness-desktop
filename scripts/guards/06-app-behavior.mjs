@@ -2290,6 +2290,58 @@ w.postMessage({id:1,op:"list",root});
       "【183】harness-api 能力清单包含 weixin:send 与 deliver（agent 读的就是这份——清单里没有 = 会话里永远配不出来）"
     );
   }
+
+  /* ══ 【184】内置视频生成接口 + 生图工作流（09-27；适配层纯函数真跑） ══ */
+  {
+    const videoGen184 = readFileSync(join(ROOT, "electron", "features", "video-gen.ts"), "utf8");
+    const manifest184 = JSON.parse(readFileSync(join(ROOT, "electron", "ipc-channels.manifest.json"), "utf8"));
+    const videoChannels184 = (manifest184.channels || []).filter((c) => c.channel.startsWith("video:")).map((c) => c.channel);
+    const wantVideo184 = ["video:providers", "video:config-read", "video:config-save", "video:submit", "video:poll", "video:download"];
+    (wantVideo184.every((ch) => videoChannels184.includes(ch)) ? ok : fail)(
+      "【184】manifest 登记了 video 域全部 6 通道（providers/config-read/config-save/submit/poll/download）"
+    );
+    (/videoAssertImageOk\(/.test(videoGen184) ? ok : fail)(
+      "【184】video:submit 提交前过 videoAssertImageOk（url-only 厂商吃本地首帧要当场报错，不许静默失败）"
+    );
+    (/isInsideTrustedRoots\(String\(input\.workspace\)\)/.test(videoGen184) ? ok : fail)(
+      "【184】video:download 落盘前过可信根校验（与 fs:write 同一口径）"
+    );
+    const registry184 = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
+    (/{ prefix: "video", count: 6,/.test(registry184) && /features\/video-gen\.ts/.test(registry184) ? ok : fail)(
+      "【184】ipc-registry 有 video 域条目（count 6，file 指向 video-gen.ts）"
+    );
+    // 适配层真值表（纯 .mjs 直接 import 跑，不是读文本）
+    const vp = await import(pathToFileURL(join(ROOT, "src", "lib", "video-providers.mjs")).href);
+    const NOW184 = 1727420000000;
+    (vp.VIDEO_PROVIDERS.length === 8 && vp.VIDEO_PROVIDERS.filter((p) => p.region === "cn").length === 5 ? ok : fail)(
+      "【184】真跑：8 家厂商（国内 5 国外 3）——国内外都要支持是用户点名的要求"
+    );
+    (vp.klingToken({ accessKey: "ak", secretKey: "sk" }, NOW184) === vp.klingToken({ accessKey: "ak", secretKey: "sk" }, NOW184) ? ok : fail)(
+      "【184】真跑：klingToken 确定性（nowMs 入参，同输入同输出——JWT 里不许藏 Date.now）"
+    );
+    (() => {
+      try { vp.videoAssertImageOk("wanx", "i2v", "D:/local/frame.png"); return fail("【184】真跑：url-only 厂商吃本地首帧竟然放行了"); }
+      catch (e) { return /公网/.test(e.message) ? ok("【184】真跑：url-only 厂商吃本地首帧被拒且指明替代厂商") : fail("【184】真跑：报错文案没说清要公网 URL"); }
+    })();
+    (vp.videoParsePoll("wanx", { output: { task_status: "SUCCEEDED", video_url: "https://v/1.mp4" } }).url === "https://v/1.mp4" ? ok : fail)(
+      "【184】真跑：wanx 成功态取到 video_url（parsePoll 归一成 {status,url}）"
+    );
+    // 渲染层：shot 卡的生成按钮必须真接线（⛔ 禁止"生成视频（未接入）"这种假按钮回潮）
+    const card184 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8");
+    (card184.includes('actions.story.generate(id, "video")') && !card184.includes("生成视频（未接入）") ? ok : fail)(
+      "【184】shot 卡「生成视频」真调 story.generate(id,'video')（未接入的置灰假按钮不许回潮）"
+    );
+    const story184 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8");
+    (story184.includes("videoSubmit") && story184.includes("videoPoll") && story184.includes("videoDownload") ? ok : fail)(
+      "【184】视频生成闭环三步都在（submit → poll → download 落工作区），不是只调了 submit"
+    );
+    // 生图工作流变体：参考项目没有这个模块（已核实），是我们的画布复用形态——锚变体接线
+    const model184 = readFileSync(join(ROOT, "src", "lib", "drama-canvas-model.mjs"), "utf8");
+    const side184 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8");
+    (model184.includes("export function imageStarterWorkflow") && side184.includes('setDramaCanvasVariant("image")') && side184.includes("生图工作流") ? ok : fail)(
+      "【184】生图工作流：起手骨架存在 + 侧栏入口把 variant 设为 image"
+    );
+  }
 }
 
 
