@@ -499,6 +499,17 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   !/rejectUnauthorized: false/.test(engineUpdSrc)
     ? ok("引擎更新默认校验 TLS 证书（自签名场景需显式 CODEX_HARNESS_INSECURE_TLS=1）")
     : fail("engine-updater.ts 又无条件关闭 TLS 校验 —— 下载物会被当场执行（--version 探针）");
+  // 引擎更新必须跟随「开发工具」页的下载源（09-27）：否则用户在页里切了「官方直连/镜像」，
+  // 引擎更新却另走一套硬编码顺序 —— 同一台机器两种网络行为，出问题无从判断。
+  // ⛔ 锚**接线**：排序函数必须真的读到 downloadSource（只定义函数而不用 = 恒真假绿）。
+  (/async function orderedRegistries[\s\S]{0,320}?readDownloadSource\(\)/.test(engineUpdSrc)
+    && /NPMMIRROR/.test(engineUpdSrc) && /registry\.npmjs\.org/.test(engineUpdSrc)
+    ? ok("引擎更新跟随下载源设置（auto/mirror 镜像在前，direct 官方在前；gh* 回落 auto）")
+    : fail("引擎更新不读 downloadSource —— 用户在开发工具页选的源对它无效"));
+  // ⛔ 源的排序必须**只有一处**（tarball 候选由 orderedRegistries 派生），两处各排一次迟早漂移。
+  (/const candidates[\s\S]{0,240}?orderedRegistries\(/.test(engineUpdSrc)
+    ? ok("registry 与 tarball 共用同一份源排序（不各排一次，避免两边漂移）")
+    : fail("tarball 候选地址又自己排了一遍源 —— 与 registry 的顺序会漂移"));
 
   // ⑦ 渲染层入参校验层（09-13 审计 S5；09-19 用户拍板「隐私第一」后全面收紧 fs 通道）
   const mainForSec = readMainSource();

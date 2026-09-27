@@ -2725,3 +2725,21 @@ Windows/Linux 上 iPhone 通道（Mac 的 iPhone 镜像窗口）根本不存在�
 ③ CSS 用了未定义的 `--success` 被【160】抓到（本项目语义色是 `--ok`）。
 **未完**：adb / platform-tools 自动下载（npmmirror 无该二进制镜像，只有 dl.google.com 可达，
 需要解压 + PATH 注入基建）—— 当前只检测 adb 并给引导步骤。
+
+## 🌐 2026-09-27 Codex 引擎更新跟随「下载源」设置（用户：「引擎更新也加上国内镜像源可以不」）
+
+**先澄清前提**：引擎更新**本来就有**国内镜像兜底 —— 无代理时先 npmmirror、失败回落 npmjs。
+真正缺的是：它**不跟随**「开发工具」页的下载源选择（`app-settings.downloadSource`），
+于是同一台机器上「工具链下载」和「引擎更新」是两套网络行为，用户切了源对引擎更新无效。
+
+**改动**（`electron/engine-updater.ts`）：
+- 新增 `readDownloadSource()`：每次更新现读设置，切完源下一次检查立即生效（不用重启）；
+  取值与工具链侧同源：`auto` / `mirror` → 镜像在前，`direct` → 官方在前；
+  `ghproxy` / `ghfast` 是 GitHub 加速、对 npm registry 无对应实现 ⇒ 回落 `auto`（与浏览器内核同源处理）。
+- 新增 `orderedRegistries(proxyUrl)`：registry 查询与 tarball 下载**共用同一份排序**（原来 tarball
+  那段自己排了一遍，两处迟早漂移）。
+- ⛔ 语义澄清：**代理是"怎么连"、下载源是"连谁"** —— 配了代理时两个源都走 CONNECT 隧道，
+  但先后顺序仍按下载源偏好（不再像原来那样"一配代理就强制官方源在前"）。
+
+**守卫**：03-runtime-boot +2（排序函数必须真的读到 downloadSource / tarball 候选由统一排序派生），
+变异验证（砍掉读源）如期报红 —— 第一次写的锚太松（只查函数定义存在，砍掉调用仍绿），已改成锚接线。
