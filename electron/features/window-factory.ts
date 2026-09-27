@@ -23,11 +23,21 @@ export function createWindow() {
   //    （09-21 架构改造把本模块从 electron/main.ts 搬进 features/ 时正是这样把图标/渲染层/preload 三个路径一起打歪的）。
   // 打包后 build/ 不进 asar（files 白名单只有 dist/**、dist-electron/**），existsSync 为 false
   // 走 exe 内嵌图标（electron-builder win.icon 已注入）。
-  const windowIcon = path.join(
-    app.getAppPath(),
-    "build",
-    process.platform === "win32" ? "icon.ico" : "icon.png",
-  );
+  // ⛔⛔ 多源兜底（09-27 修「保存供应商重启后任务栏图标变默认」）：**只认 app.getAppPath() 一条
+  //    路径是脆的** —— relaunch / 从快捷方式启动 / cwd 变化等场景下 appPath 可能不落在仓库根
+  //    （实测探针里 appPath 会落成启动脚本所在目录），此时 existsSync=false ⇒ `icon: undefined`
+  //    ⇒ 窗口图标失效 ⇒ dev 下没有 AUMID 兜底 ⇒ 任务栏回退 Electron 原子图标。
+  //    ⇒ 依次尝试 appPath / execPath 上溯 / cwd，**取第一个真实存在的**；都对才放弃。
+  const iconName = process.platform === "win32" ? "icon.ico" : "icon.png";
+  const iconCandidates = [
+    path.join(app.getAppPath(), "build", iconName),
+    // execPath 上溯（dev: node_modules/electron/dist/electron.exe → 仓库根 / electron 子目录）
+    path.resolve(path.dirname(process.execPath), "..", "..", "..", "..", "build", iconName),
+    path.resolve(path.dirname(process.execPath), "..", "..", "..", "build", iconName),
+    // 进程 cwd（dev 从仓库根启动时命中）
+    path.join(process.cwd(), "build", iconName),
+  ];
+  const windowIcon = iconCandidates.find((candidate) => existsSync(candidate)) ?? iconCandidates[0];
   mutableState.mainWindow = new BrowserWindow({
     // 默认桌面尺寸要容纳展开侧栏和完整输入工具栏；小屏仍由响应式布局处理。
     width: 1280,
@@ -143,8 +153,17 @@ export function createWindow() {
   const contents = mutableState.mainWindow.webContents;
   contents.on("did-start-loading", () => markBoot("page-start-loading"));
   contents.on("did-finish-load", () => { markBoot("page-finish-load"); flushBootTiming(); });
-  if (devUrl) void mutableState.mainWindow.loadURL(devUrl);
-  else void mutableState.mainWindow.loadFile(path.join(app.getAppPath(), "dist", "index.html"));
+  // ⛔ 加载兜底（09-27 修 dev 白屏的第二道保险）：dev 下 VITE_DEV_SERVER_URL 指向的 vite
+  //    可能已经不在（relaunch 后 concurrently -k 把它一起杀了，实测 ERR_CONNECTION_REFUSED
+  //    ⇒ DOM 全空 = 白屏）。首道保险是 app:relaunch 里摘掉该变量；这里再兜一层——
+  //    dev URL 加载失败就回落到本地 dist 产物，宁可看构建版也不能给用户留白屏。
+  //    打包版无 devUrl，走下面的 loadFile，不受影响。
+  if (devUrl) {
+    const distIndex = path.join(app.getAppPath(), "dist", "index.html");
+    mutableState.mainWindow.loadURL(devUrl).catch(() => {
+      try { void mutableState.mainWindow?.loadFile(distIndex); } catch { /* 兜底失败不再处理 */ }
+    });
+  } else void mutableState.mainWindow.loadFile(path.join(app.getAppPath(), "dist", "index.html"));
   installContextMenu(mutableState.mainWindow);
 }
 

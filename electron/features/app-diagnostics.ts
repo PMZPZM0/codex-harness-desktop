@@ -231,13 +231,18 @@ ipcMain.handle("app:engine-info", async () => {
 });
 
 ipcMain.handle("app:relaunch", () => {
+  /* ⛔ dev 下 relaunch 必须**摘掉 VITE_DEV_SERVER_URL**（09-27 实证修白屏）：
+     新实例由 app.relaunch() 继承当前进程的环境变量，而 dev 的启动脚本是
+     `concurrently -k "vite" "wait-on tcp:5173 && electron ."` —— `-k` 让旧 electron 一退出
+     就把 **vite 一起杀掉**。于是新实例仍拿着 `http://localhost:5173` 去加载 ⇒
+     `did-fail-load code=-102 ERR_CONNECTION_REFUSED` ⇒ DOM 全空 = **白屏**（探针实测）。
+     摘掉它 ⇒ 新实例走 `loadFile(dist/index.html)`（本地构建产物，一定在）。
+     打包版本就没有该变量，此操作对其无影响。窗口侧还有一道加载兜底（见 window-factory）。 */
+  if (!app.isPackaged) delete process.env.VITE_DEV_SERVER_URL;
   app.relaunch();
-  // ⛔ 必须 app.quit()（优雅退）而不是 app.exit(0)（硬退）：exit 会跳过 before-quit 的
-  // 全部清理——closeConfirmed 不置真、托盘不销毁、引擎子进程不停车；且旧进程瞬时死亡时
-  // 新实例已顶上，Windows 任务栏图标被旧进程的退出态顶成默认图标（用户实测：保存供应商
-  // 自动重启后任务栏图标变白纸）。quit 走 before-quit（closeConfirmed / destroyAppTray /
-  // cleanupAll / ssh / voice 全覆盖，见 main.ts），新实例在旧进程完全退出后才起，图标重走
-  // 窗口图标（dev）那条路。
+  // 优雅退出（app.quit 而非 app.exit）：走 before-quit 全套清理（closeConfirmed /
+  // destroyAppTray / cleanupAll / ssh / voice），旧进程干净退出后新实例才起，
+  // 任务栏图标不会被旧进程的退出态顶成默认。
   app.quit();
 });
 
