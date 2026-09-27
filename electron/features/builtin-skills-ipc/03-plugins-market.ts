@@ -13,6 +13,7 @@ import type { CodexMarketPlugin } from "../../codex-market";
 import { applyCustomModel, builtinPluginsFile, describeNetworkError, dirEntries, readBuiltinPlugins, readCustomModel, refreshSkillDiscipline, skillsRegistryFile, userSkillsDir } from "../../main";
 import { codexHome, mainWindow, server } from "../../runtime-refs";
 import { removeFromSkillRegistry } from "./02-skills-registry";
+import { describeSkillPool, setSkillPoolState } from "../../skill-pool";
 ipcMain.handle("plugins:market-list", (_event, input: { category?: string; query?: string; page?: number; pageSize?: number } = {}) => listCodexMarketPlugins(input));
 
 ipcMain.handle("plugins:market-install", async (_event, plugin: CodexMarketPlugin) => {
@@ -198,4 +199,27 @@ ipcMain.handle("hooks:trust", async (_event, input: { cwds?: string[] } = {}) =>
     }
   }
   return { total: hooks.length, trusted: targets.length - failures.length, alreadyTrusted: hooks.length - targets.length, failures };
+});
+
+// ── 共享技能池（09-27）：按项目查看/管理全局技能生效集 ──────────────────────────
+ipcMain.handle("skills:pool-describe", (_event, input: { cwd: string }) => {
+  try {
+    return { skills: describeSkillPool(String(input?.cwd ?? "")).skills };
+  } catch (error: any) {
+    return { skills: [], error: error?.message ?? String(error) };
+  }
+});
+
+ipcMain.handle("skills:pool-set", async (_event, input: { cwd: string; name: string; globalDisabled?: boolean; projectDisabled?: boolean }) => {
+  try {
+    setSkillPoolState(String(input?.cwd ?? ""), String(input?.name ?? ""), {
+      globalDisabled: input?.globalDisabled,
+      projectDisabled: input?.projectDisabled,
+    });
+    // 与全局启停同一刷新链（AGENTS.md 守则区间的 MCP 清单仍走这）
+    await refreshSkillDiscipline().catch(() => undefined);
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, error: error?.message ?? String(error) };
+  }
 });

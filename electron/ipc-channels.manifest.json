@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
-  "generatedAt": "2026-09-23",
-  "count": 337,
+  "generatedAt": "2026-09-27",
+  "count": 339,
   "channels": [
     {
       "name": "request",
@@ -572,6 +572,26 @@
       "invokeArgs": "input",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "describeSkillPool",
+      "channel": "skills:pool-describe",
+      "paramsImpl": "input: { cwd: string }",
+      "paramsDecl": "input: { cwd: string }",
+      "returns": "Promise<{ skills: { name: string; globalDisabled: boolean; projectDisabled: boolean; active: boolean }[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "共享技能池（09-27）：按项目查看/管理全局技能生效集"
+    },
+    {
+      "name": "setSkillPoolState",
+      "channel": "skills:pool-set",
+      "paramsImpl": "input: { cwd: string; name: string; globalDisabled?: boolean; projectDisabled?: boolean }",
+      "paramsDecl": "input: { cwd: string; name: string; globalDisabled?: boolean; projectDisabled?: boolean }",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "设置全局停用/本项目禁用并立即投影"
     },
     {
       "name": "setPluginEnabled",

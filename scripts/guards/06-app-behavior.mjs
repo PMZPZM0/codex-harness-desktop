@@ -1631,6 +1631,54 @@ w.postMessage({id:1,op:"list",root});
     }
   }
 
+  /* ══ 【173】共享技能池（09-27 用户需求：按项目选择生效的全局技能）══════════
+     模型：全局停用集（codex-home/skill-global-disabled.json）∪ 项目禁用集
+     （<项目>/.codex-harness/skill-pool.json）→ syncSkillPool(cwd) 投影到磁盘改名。
+     ⛔ 引擎「扫到就注入」无 per-project 开关 ⇒ 池的唯一生效途径 = thread/start 前
+     重排磁盘状态；接线挂在 ensureProjectAgentsMd（【171】的同一收口，12 处继承）。
+     ⛔ 投影必须幂等且保底迁移（磁盘 .disabled 而配置无记录 ⇒ 记入全局停用集，
+     否则用户已停用的技能会被误恢复）。 */
+  {
+    console.log(C.bold("\n【173】共享技能池（按项目生效）"));
+    const poolSrc = readFileSync(join(ROOT, "electron", "skill-pool.ts"), "utf8");
+
+    // ① 三件套齐全（sync 投影 / describe UI 数据 / set 动作）
+    ((["syncSkillPool", "describeSkillPool", "setSkillPoolState"].every((fn) => poolSrc.includes("export function " + fn))) ? ok : fail)(
+      "【173】skill-pool.ts 三件套齐全（sync 投影 / describe / set）"
+    );
+    // ② 接线：ensureProjectAgentsMd 里必须调用 syncSkillPool（thread/start 前生效的唯一通道）
+    const pcPool = readFileSync(join(ROOT, "electron", "project-conventions.ts"), "utf8");
+    (pcPool.includes("syncSkillPool(dir)") ? ok : fail)(
+      "【173】syncSkillPool 挂在 ensureProjectAgentsMd（thread/start 前投影，12 处调用点继承）"
+    );
+    // ③ 迁移保底：磁盘停用态而配置无记录 ⇒ 记入全局停用集（防误恢复）
+    (poolSrc.includes("记入全局停用集") && poolSrc.includes("writeGlobalDisabled(codexHome, global)") ? ok : fail)(
+      "【173】迁移保底：遗留 .disabled 先记入全局停用集（防已停用技能被误恢复）"
+    );
+    // ④ IPC 三件套：handler 注册 + manifest 通道 + registry 域表
+    const handlerPool = readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "03-plugins-market.ts"), "utf8");
+    const manifestPool = readFileSync(join(ROOT, "electron", "ipc-channels.manifest.json"), "utf8");
+    const registryPool = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
+    (handlerPool.includes('ipcMain.handle("skills:pool-describe"') && handlerPool.includes('ipcMain.handle("skills:pool-set"') ? ok : fail)(
+      "【173】skills:pool-describe / skills:pool-set handler 已注册"
+    );
+    (manifestPool.includes("skills:pool-describe") && manifestPool.includes("skills:pool-set") ? ok : fail)(
+      "【173】manifest 已登记 skills:pool-* 两通道"
+    );
+    (registryPool.includes('"skills:pool-describe", "skills:pool-set"') ? ok : fail)(
+      "【173】ipc-registry 的 skills 域已登记 pool 通道"
+    );
+    // ⑤ UI：技能中心挂池管理区块
+    const uiPool = readFileSync(join(ROOT, "src", "features", "settings-skills", "SkillPoolSection.tsx"), "utf8");
+    const centerPool = readFileSync(join(ROOT, "src", "features", "settings-skills", "SkillsCenterSection.tsx"), "utf8");
+    (uiPool.includes("describeSkillPool") && uiPool.includes("setSkillPoolState") ? ok : fail)(
+      "【173】SkillPoolSection 自取池数据与动作（不经 bag，避开【92】顺序契约）"
+    );
+    (centerPool.includes("<SkillPoolSection />") ? ok : fail)(
+      "【173】技能中心「我的技能」视图已挂共享技能池区块"
+    );
+  }
+
   /* ══ 【155】团队调度的团队标识恢复（09-25 真机事故）═════════════════════
      事故：重启后打开历史专家团会话，主理人调度 4/4 全失败，错误「专家团「」不存在」。
      根因：runTeamMember 只从 teamThreadConfigRef / teamThreadMapRef 取 teamId，而这两个 ref

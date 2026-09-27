@@ -9,6 +9,7 @@ import { ArrowUpRight, Check, CircleStop, LayoutGrid, Paperclip, Play, Plus, Quo
 import { Spinner } from "../../components/CardShell";
 import { BatchActions, CheckCard, SearchField, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
 import { SkillAvatar } from "../../features/skills-market";
+import { SkillPoolSection } from "./SkillPoolSection";
 
 export type SkillsCenterSectionProps = { userDataPath: any; displayPath: any; skillsManageOnly: any; setSkillsManageOnly: any; installedTotalCount: any; importSkill: any; refreshMarketSkills: any; skillHubCategory: any; skillHubSearch: any; marketPage: any; marketLoading: any; skillHubCategories: any; setSkillHubCategory: any; setMarketPage: any; skillManageSearch: any; setSkillManageSearch: any; setSkillHubSearch: any; skillHubCategoryTabs: any; skillHubFilterCategory: any; setSkillHubFilterCategory: any; marketSkills: any; skillHubCategoryName: any; localSkills: any; settingsResources: any; skillChecked: any; setSkillChecked: any; skillZhNote: any; toggleSkillEnabled: any; setSelectedSkills: any; setSettingsOpen: any; removeLocalSkill: any; skillBatchBusy: any; batchSetSkillEnabled: any; marketPageSize: any; setMarketPreview: any; setNotice: any; installMarketSkill: any; installingMarketSkill: any };
 
@@ -104,6 +105,7 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                         </article>;
                       };
                       return <div className="skill-installed-view">
+                        <SkillPoolSection />
                         <div className="resource-toolbar secondary">
                           <SelectAllToggle total={selectableFolders.length} selected={checkedFolders.length} unit="个技能" onSelectAll={() => setSkillChecked(selectableFolders)} onClear={() => setSkillChecked([])} />
                           <div className="skill-installed-summary">共 {installedTotalCount} 项 · 内置 {builtinSkills.length} · 市场 {localSkills.filter((entry: any) => entry.source === "cocoloop" || entry.source === "skillhub").length} · 本地 {localSkills.filter((entry: any) => entry.source !== "cocoloop" && entry.source !== "skillhub").length} · 停用 {localSkills.filter((entry: any) => entry.enabled === false).length}</div>
