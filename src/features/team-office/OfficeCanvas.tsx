@@ -30,6 +30,9 @@ import {
   animalOf, collarColor, collarDark, type AnimalKind,
 } from "./office-palette";
 import { deskSlots, floorPoint, SCENE_W, SCENE_H, type FloorSpot } from "./office-iso";
+// 走动人寻路（09-27）：BFS 网格路径，⛔ 别再退回"直线插值"（那会让人穿过别人的桌子）。
+// ⚠️ 它是 .mjs 而不是 .ts：纯函数才能被预检守卫**直接 import 跑真值表**（`.ts` 守卫只能读文本）。
+import { buildWalkGrid, findPath } from "./office-nav.mjs";
 import type { DirectorSnapshot, OfficePose, OfficeHandoff, ErrandSpot } from "./office-director";
 import type { OfficeMember } from "./OfficeScene";
 
@@ -122,7 +125,7 @@ interface SeatView {
   clock: number;
 }
 
-/** 走动小人：位置由 ticker 在「工位 ↔ 目标」之间按帧插值，⛔ 不是瞬移。 */
+/** 走动小人：位置由 ticker **沿 BFS 路径**插值（09-27 v12 起不再是直线），⛔ 不是瞬移。 */
 interface WalkerParts {
   container: Container;
   body: Container;
@@ -133,10 +136,18 @@ interface WalkerParts {
   headwrap: Container;
   /** 左右耳（pivot 在耳根）—— 走路时耳朵跟着颠 */
   ears: Graphics[];
-  /** 0 = 还在工位，1 = 已走到目标 */
+  /** 0 = 还在工位，1 = 已走到目标（回程就是让它递减 —— 路径天然可逆，不用另存一条） */
   t: number;
-  from: { x: number; y: number; scale: number };
-  to: { x: number; y: number; scale: number };
+  /** 行进路径（屏幕坐标点列，含起点与终点）：由 office-nav 的 BFS 算出来，绕开桌椅 */
+  path: Array<{ x: number; y: number; scale: number }>;
+  /** 各段长度与总长（按屏幕距离）—— 把 t 均匀映射到路径上，避免长段走得飞快、短段磨蹭 */
+  segLen: number[];
+  totalLen: number;
+  /** 目标签名（kind|visitIndex|spot）：**变了才重算路径** —— 否则每帧重跑 BFS */
+  pathKey: string;
+  /** 当前是否在**去目标**的路上：true ⇒ t 递增；false ⇒ t 递减（沿同一条路径走回工位，
+   *  路径天然可逆，不用另存一条 —— 这也是保留这个布尔的原因） */
+  away: boolean;
   clock: number;
 }
 
@@ -167,11 +178,15 @@ interface SceneRefs {
   props: PropTicker[];
   /** 每台显示器的屏幕动画（⛔ 工位重建时整批换掉，别和 props 混在一个数组里） */
   screens: PropTicker[];
+  /** 走动人用的可行走网格（按工位布局缓存：布局没变就不重建 —— 每次寻路重算是白烧 CPU） */
+  navGrid: ReturnType<typeof buildWalkGrid> | null;
+  /** 网格对应的工位签名（布局变了才重建） */
+  navKey: string;
   clock: number;
 }
 
 function emptyScene(): SceneRefs {
-  return { statics: new Map(), staticsKey: "", seats: new Map(), walkers: new Map(), tags: new Map(), handoffs: new Map(), props: [], screens: [], clock: 0 };
+  return { statics: new Map(), staticsKey: "", seats: new Map(), walkers: new Map(), tags: new Map(), handoffs: new Map(), props: [], screens: [], navGrid: null, navKey: "", clock: 0 };
 }
 
 export type OfficeCanvasProps = {
@@ -382,6 +397,12 @@ function syncPeople(
   scene: SceneRefs,
   openThreadRef: { current: ((memberId: string) => void) | undefined },
 ) {
+  // 可行走网格：按工位布局**缓存**（布局没变就不重建 —— 每帧重建 768 格纯属浪费）
+  const navKey = slots.map((s) => `${s.u.toFixed(3)},${s.v.toFixed(3)}`).join(";");
+  if (!scene.navGrid || scene.navKey !== navKey) {
+    scene.navGrid = buildWalkGrid(slots.map((s) => ({ u: s.u, v: s.v })));
+    scene.navKey = navKey;
+  }
   const live = new Set(slots.map((s) => s.key));
   for (const [key, view] of scene.seats) {
     if (live.has(key)) continue;
@@ -440,7 +461,7 @@ function syncPeople(
       }
     }
 
-    /* 走动：visit/errand 时把人换成走动小人，位置由 ticker 插值 */
+    /* 走动：visit/errand 时把人换成走动小人，位置由 ticker **沿 BFS 路径**推进（09-27 v12） */
     const ground = { x: slot.x, y: slot.y - 12, scale: slot.scale };
     let walker = scene.walkers.get(slot.key);
     if (away && pose) {
@@ -449,10 +470,20 @@ function syncPeople(
         world.addChild(walker.container);
         scene.walkers.set(slot.key, walker);
       }
-      walker.to = walkTarget(pose, slots);
-      walker.from = ground;
+      walker.away = true;
+      // ⛔ 目标没变就别重算：本函数每帧都跑，无条件重算 = 每帧一次 BFS
+      const key = walkKeyOf(pose);
+      if (walker.pathKey !== key) {
+        const target = walkTarget(pose, slots);
+        walker.path = buildWalkerPath(scene, ground, { u: slot.u, v: slot.v }, target);
+        const measured = measurePath(walker.path);
+        walker.segLen = measured.segLen;
+        walker.totalLen = measured.totalLen;
+        walker.pathKey = key;
+      }
     } else if (walker) {
-      walker.to = ground;
+      // 回程：沿**同一条路径反向**走回（t 递减到 0 即卸载），不重算路径
+      walker.away = false;
       if (walker.t <= 0) {
         world.removeChild(walker.container);
         walker.container.destroy({ children: true });
@@ -476,18 +507,74 @@ function buildVacant(scale: number): Container {
   return c;
 }
 
-function walkTarget(pose: OfficePose, slots: Slot[]): { x: number; y: number; scale: number } {
+/** 跑腿 / 串门的目标点：同时给出**地面归一化坐标**（给 BFS 找路）与**屏幕点**（给插值）。
+ *  ⛔ 两套坐标必须从同一处算出来 —— 早先只返回屏幕点，寻路就没法在 (u,v) 网格上跑。 */
+function walkTarget(pose: OfficePose, slots: Slot[]): { uv: { u: number; v: number }; point: { x: number; y: number; scale: number } } {
   if (pose.kind === "visit" && pose.visitIndex !== undefined) {
     const host = slots[pose.visitIndex + 1];
     if (host) {
-      const p = floorPoint(clamp01(host.u + 0.19), clamp01(host.v + 0.02));
-      return { x: p.x, y: p.y, scale: p.scale };
+      const uv = { u: clamp01(host.u + 0.19), v: clamp01(host.v + 0.02) };
+      return { uv, point: floorPoint(uv.u, uv.v) };
     }
   }
   const spot: ErrandSpot = pose.kind === "errand" ? pose.spot ?? "water" : "water";
   const uv = ERRAND_STAND_UV[spot];
-  const p = floorPoint(uv.u, uv.v);
-  return { x: p.x, y: p.y, scale: p.scale };
+  return { uv, point: floorPoint(uv.u, uv.v) };
+}
+
+/** 目标签名：只有它变了才需要重算路径（工位固定 ⇒ 起点不用进签名）。 */
+function walkKeyOf(pose: OfficePose): string {
+  return `${pose.kind}|${pose.visitIndex ?? -1}|${pose.spot ?? ""}`;
+}
+
+/**
+ * 用 BFS 网格路径把「工位 → 目标」串起来。
+ * ⛔ 找不到通路就退回**两点直线**：宁可偶尔穿一次家具，也不能让人站着不动（那更像 bug）。
+ * ⛔ 首尾用**真实坐标**（BFS 给的是格心，直接用会停在离目标半步远的地方）。
+ */
+function buildWalkerPath(
+  scene: SceneRefs,
+  from: { x: number; y: number; scale: number },
+  fromUV: { u: number; v: number },
+  target: { uv: { u: number; v: number }; point: { x: number; y: number; scale: number } },
+): WalkerParts["path"] {
+  const straight = [from, target.point];
+  if (!scene.navGrid) return straight;
+  const uvPath = findPath(fromUV, target.uv, scene.navGrid);
+  if (!uvPath || uvPath.length < 2) return straight;
+  const pts = uvPath.map((p) => floorPoint(p.u, p.v));
+  pts[0] = from;
+  pts[pts.length - 1] = target.point;
+  return pts;
+}
+
+/** 路径弧长表 —— t 按**弧长**映射（等比映射会让长段走得飞快、短段磨蹭）。 */
+function measurePath(path: WalkerParts["path"]): { segLen: number[]; totalLen: number } {
+  const segLen: number[] = [];
+  let totalLen = 0;
+  for (let i = 1; i < path.length; i++) {
+    const d = Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+    segLen.push(d);
+    totalLen += d;
+  }
+  return { segLen, totalLen };
+}
+
+/** 沿路径按弧长比例取点（e ∈ [0,1]）。 */
+function pointOnPath(w: WalkerParts, e: number): { x: number; y: number; scale: number } {
+  if (w.path.length === 0) return { x: 0, y: 0, scale: 1 };
+  if (w.path.length === 1 || w.totalLen <= 0) return w.path[0];
+  let want = e * w.totalLen;
+  for (let i = 0; i < w.segLen.length; i++) {
+    if (want <= w.segLen[i] || i === w.segLen.length - 1) {
+      const k = Math.max(0, Math.min(1, w.segLen[i] > 0 ? want / w.segLen[i] : 1));
+      const a = w.path[i];
+      const b = w.path[i + 1];
+      return { x: lerp(a.x, b.x, k), y: lerp(a.y, b.y, k), scale: lerp(a.scale, b.scale, k) };
+    }
+    want -= w.segLen[i];
+  }
+  return w.path[w.path.length - 1];
 }
 
 /* ── 标签与交接 ─────────────────────────────────────────────────────────── */
@@ -981,8 +1068,12 @@ function createWalker(cosplay: Cosplay, ground: { x: number; y: number; scale: n
     headwrap,
     ears: walkEars,
     t: 0,
-    from: { ...ground },
-    to: { ...ground },
+    // 路径先只放"站在原地"两点（真实路径由 syncSeats 按目标算出来填；见 buildWalkerPath）
+    path: [{ ...ground }, { ...ground }],
+    segLen: [0],
+    totalLen: 0,
+    pathKey: "",
+    away: false,
     clock: Math.random() * Math.PI * 2,
   };
 }
@@ -1066,21 +1157,21 @@ function animateScene(scene: SceneRefs, delta: number) {
   });
 
   scene.walkers.forEach((w) => {
-    const away = w.to.x !== w.from.x || w.to.y !== w.from.y;
-    const dir = away ? 1 : -1;
-    const speed = delta * 0.02;
+    const dir = w.away ? 1 : -1;
+    // ⛔ 速度按**距离**给（原来 t 恒速，走完一条固定时长的直线；改成路径后路程变长，
+    //   若还按 t 恒速就会"绕远路反而走得飞快"）。180 px/s ≈ 真人步速在这个尺度下的观感。
+    const pxPerFrame = 180 / 60;
+    const speed = w.totalLen > 0 ? (pxPerFrame / w.totalLen) * delta : 0.02;
     const before = w.t;
     w.t = clamp01(w.t + dir * speed);
-    const walking = (away && w.t < 1 && before < 1) || (!away && w.t > 0);
+    const walking = (w.away && w.t < 1 && before < 1) || (!w.away && w.t > 0);
     w.clock += delta * 0.06;
 
-    const e = easeInOut(w.t);
-    const x = lerp(w.from.x, w.to.x, e);
-    const y = lerp(w.from.y, w.to.y, e);
-    const s = lerp(w.from.scale, w.to.scale, e);
-    w.container.position.set(x, y);
-    w.container.scale.set(s);
-    w.container.zIndex = y;
+    // 沿路径按**弧长**取点 —— 不再是 from→to 直线（直线会让人穿过别人的桌子）
+    const at = pointOnPath(w, easeInOut(w.t));
+    w.container.position.set(at.x, at.y);
+    w.container.scale.set(at.scale);
+    w.container.zIndex = at.y;
 
     const swing = walking ? Math.sin(w.clock * 7) : 0;
     w.legBack.rotation = swing * 0.45;
