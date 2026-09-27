@@ -1655,6 +1655,18 @@ w.postMessage({id:1,op:"list",root});
     (/floorPoint\(u - 0\.04\d*, v - 0\.045\)/.test(render176) ? ok : fail)(
       "【176】键盘偏向人的左手侧（居中 = 被躯干挡住，放大才看得见的假 blanks）"
     );
+    // ⛔ 走动小人的头部 wrap 偏移**必须补偿 HEAD_CY**：buildAnimalHead 把头画在 wrap 内部
+    //    (0, HEAD_CY) 处，walker 的 headwrap 若还写死 (0,-76)（buildHead 时代的旧补偿），
+    //    头就被双重抬高 36+ 单位 —— 脖子上出现"白色空洞"，背后的墙 / 饮水机从洞里透出来
+    //    （09-27 用户截图点名"人物出来都是穿模的"）。
+    (/headwrap\.position\.set\(0, -76 - HEAD_CY\)/.test(canvas176) ? ok : fail)(
+      "【176】走动小人头部 wrap 偏移补偿 HEAD_CY（写死旧偏移 = 头双重抬高、脖子断成两截）"
+    );
+    // 圆头下缘往中间收，头两侧与项圈上缘之间必然露楔形白缝 —— 必须有**脖子填充**兜底
+    // （09-27 用户截图点名"脖子中间空了那么多"；小 ry 物种中心也空 3~7 单位）。
+    (/const NECK_FILL = \{/.test(canvas176) && /neck\.roundRect\(NECK_FILL\.x/.test(canvas176) ? ok : fail)(
+      "【176】坐姿有脖子填充（头底扎进项圈 + 黑块兜住楔形白缝，缺一个就露缝）"
+    );
   }
 
   /* ══ 【170】DESIGN.md 视觉规范与代码对账（09-26）══════════════════════════

@@ -626,11 +626,18 @@ function headOf(index: number, slots: Slot[], side: -1 | 1): { x: number; y: num
      · 个体只能靠**项圈颜色**区分（office-palette.collarColor）；
      · ⛔ 不许给角色加眼睛 / 嘴 / 衣服色 —— 一加就退回 v4 那种"卡通小人"，与参考违和。 */
 
-/** 局部坐标：脖子在 (0, 0)，头心 (0, HEAD_CY)，身体往下铺。 */
-const HEAD_CY = -44;
-/** 项圈矩形（脖子那一圈）。⛔ 宽度**必须明显窄于肩宽**（参考里项圈 ≈ 肩宽 × 0.57）——
- *  项圈做宽了会把两只爪子整段盖住，角色就只剩"一个头 + 一条色带"（第三版实测）。 */
-const COLLAR = { x: -25, y: -17, w: 50, h: 21, r: 10.5 };
+/** 局部坐标：脖子在 (0, 0)，头心 (0, HEAD_CY)，身体往下铺。
+ *  ⛔ 头底（HEAD_CY + ry）必须**扎进项圈**（−22）里 2~6 单位：抬高头就会在脖子上留出
+ *     一段白缝（v11 把头抬到 −44，狐/猫这种小 ry 物种脖子和项圈之间空了 3~7 单位，
+ *     两侧还有楔形缺口 —— 用户截图点名）。往下降比往上升安全：头顶离显示器只会更远。 */
+const HEAD_CY = -36;
+/** 项圈矩形（脖子那一圈）：上缘 −22 要**接住**所有物种的头底（−36+ry = −16~−12）。
+ *  ⛔ 宽度明显窄于肩宽（参考里项圈 ≈ 肩宽 × 0.57），但**不能窄过头**——比头窄太多
+ *     会在项圈两上角留出楔形白缝（v11 的 w50 配 26 的头实测）。 */
+const COLLAR = { x: -27, y: -22, w: 54, h: 26, r: 11 };
+/** 脖子填充：垫在头与项圈之间的黑块，兜住"圆头下缘收窄 + 项圈偏窄"留下的楔形白缝。
+ *  上端藏进头椭圆（中心列头底 ≥ −16），下端扎进项圈（−22）。 */
+const NECK_FILL = { x: -17, y: -30, w: 34, h: 18 };
 /**
  * 手臂：枢轴在**肩**（不是爪子）—— 动画转的是"抬爪"这个动作；枢轴放爪子上就变成
  * 爪子不动、袖子在甩（看着像抽筋）。
@@ -826,6 +833,12 @@ function createWorkerGraphics(pose: OfficePose, cosplay: Cosplay, back: boolean)
   torso.roundRect(-23, -8, 46, 58, 20).fill(SILHOUETTE);
   body.addChild(torso);
 
+  // 脖子填充（垫在头后面）：圆头下缘往中间收，头两侧与项圈上缘之间会露楔形白缝，
+  // 这块黑兜住它 —— 上端藏进头椭圆、下端扎进项圈，只在该露的缝里露出来。
+  const neck = new Graphics();
+  neck.roundRect(NECK_FILL.x, NECK_FILL.y, NECK_FILL.w, NECK_FILL.h, 6).fill(SILHOUETTE);
+  body.addChild(neck);
+
   // 两只爪子：局部原点 = **肩**，爪在肩的上方 ARM_REACH 处；基准张角让爪子往外上方伸
   // （像"抱在桌前"）。⛔ 别画成两根竖直柱子 —— 参考里的爪子是外张的。
   const armBack = new Graphics();
@@ -938,12 +951,17 @@ function createWalker(cosplay: Cosplay, ground: { x: number; y: number; scale: n
   body.addChild(armFront);
 
   const collar = new Graphics();
-  collar.roundRect(-19, -80, 38, 15, 7).fill(cosplay.collar);
-  collar.roundRect(-19, -80, 38, 4, 2).fill({ color: 0xffffff, alpha: 0.24 });
+  // ⛔ 项圈要落在**头底之下**（头底 ≈ −76 + ry×0.94 ≈ −57~−53）：−59 起头、与头叠 2~6，
+  //    露出 8~12 的色带。放在 −80（躯干顶）会被头部重构后的头整个盖住（熊/考拉直接看不到项圈）。
+  collar.roundRect(-19, -59, 38, 14, 7).fill(cosplay.collar);
+  collar.roundRect(-19, -57, 38, 4, 2).fill({ color: 0xffffff, alpha: 0.24 });
   body.addChild(collar);
 
   const headwrap = new Container();
-  headwrap.position.set(0, -76);
+  // ⛔ buildAnimalHead 把头画在 wrap 内部 (0, HEAD_CY) 处 —— 这里必须**减掉 HEAD_CY** 补偿，
+  //    否则头被双重抬高 36+ 单位，脖子上留出一段"白色空洞"（09-27 用户截图实测：走动的人
+  //    头和躯干断开，背后的墙 / 饮水机从洞里透出来）。头心目标 = 躯干顶 (0, −76)。
+  headwrap.position.set(0, -76 - HEAD_CY);
   headwrap.scale.set(0.94);
   const { wrap: headWrap, ears: walkEars } = buildAnimalHead(cosplay);
   headwrap.addChild(headWrap);
