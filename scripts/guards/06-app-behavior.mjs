@@ -2254,6 +2254,42 @@ w.postMessage({id:1,op:"list",root});
       fail("【182】样例输入竟不合法：" + JSON.stringify(sample182.problems));
     }
   }
+
+  /* ══ 【183】定时任务 → 微信主动投递（09-27：打通「会话设定时 + 到点推微信」通道） ══ */
+  {
+    const sched183 = readFileSync(join(ROOT, "electron", "scheduler.ts"), "utf8");
+    const im183 = readFileSync(join(ROOT, "electron", "features", "im-channels-ipc.ts"), "utf8");
+    const gw183 = readFileSync(join(ROOT, "electron", "weixin-gateway.ts"), "utf8");
+    // ⛔ 都锚接线形态，别锚常量/注释（注释里的同名字串不算——【180】【70】各踩过一次）
+    (/deliver\?: DeliverTarget/.test(sched183) && /deliver: input\.deliver === undefined \? current\?\.deliver : sanitizeDeliver\(input\.deliver\)/.test(sched183) ? ok : fail)(
+      "【183】定时任务有 deliver 字段且 save 走 sanitizeDeliver（缺省保留原值，局部更新不打掉已有投递）"
+    );
+    (/task\.deliver\?\.channel === "weixin"/.test(sched183) && /await this\.deliverWeixin\(task, outcome\.replyText\)/.test(sched183) ? ok : fail)(
+      "【183】run 完成后真的调 deliverWeixin 并把抓到的回复文本传进去（⛔ 只建通道不接线 = 永远不发）"
+    );
+    (/if \(!weixinGateway\) throw/.test(sched183) && /weixinGateway\.sendToBoundUser\(text\)/.test(sched183) && /weixinGateway\.sendText\(to, text\)/.test(sched183) ? ok : fail)(
+      "【183】投递走微信网关（to 显式→sendText；缺省→sendToBoundUser；未登录要抛错留痕，不许静默吞）"
+    );
+    (/textByTurn/.test(sched183) && /item\/agentMessage\/delta/.test(sched183) && /item\/completed/.test(sched183) ? ok : fail)(
+      "【183】回复文本从 agentMessage 增量聚合 + completed 兜底（完成事件经常只回 id+status，只等 completed 会拿到空文本）"
+    );
+    (/ipcMain\.handle\("weixin:send"/.test(im183) && /sendToBoundUser\(text\)/.test(im183) && /hasSession\(\)/.test(im183) ? ok : fail)(
+      "【183】weixin:send 通道存在（agent 主动推送的直连工具；未登录 must 抛错，to 缺省走绑定用户）"
+    );
+    (/get boundUserId\(\)/.test(gw183) && /sendToBoundUser/.test(gw183) ? ok : fail)(
+      "【183】网关暴露 boundUserId/sendToBoundUser（调度投递的缺省目标）"
+    );
+    let manifest183 = {};
+    try { manifest183 = JSON.parse(readFileSync(join(ROOT, "electron", "ipc-channels.manifest.json"), "utf8")); } catch { /* 读不到由下一条报 */ }
+    const wxSend183 = (manifest183.channels || []).find((c) => c.channel === "weixin:send");
+    (wxSend183 && wxSend183.cast === "Promise<{ ok: boolean }>" ? ok : fail)(
+      "【183】manifest 登记了 weixin:send（cast 完整 Promise 形态——写对象类型会让 preload TS2352，phone 域踩过）"
+    );
+    const cap183 = readFileSync(join(ROOT, "electron", "builtin-skills", "14-skill-harness-api.ts"), "utf8");
+    (cap183.includes("weixin:send") && cap183.includes("deliver") ? ok : fail)(
+      "【183】harness-api 能力清单包含 weixin:send 与 deliver（agent 读的就是这份——清单里没有 = 会话里永远配不出来）"
+    );
+  }
 }
 
 

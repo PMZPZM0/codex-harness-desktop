@@ -190,6 +190,22 @@ export class WeixinGateway {
    */
   private lastUserId = "";
 
+  /** 最近一次与机器人对话的用户 id（调度投递的缺省目标；空串 = 还没有可投递对象） */
+  get boundUserId(): string {
+    return this.lastUserId.trim();
+  }
+
+  /**
+   * 主动推送给「最近对话用户」（定时任务投递的缺省通道）。
+   * ⛔ iLink 语义：正文气泡依赖 context_token（对方近期发过消息才有效）——
+   * lastUserId 正是来自收消息路径，通常 token 还热；过期时 sendText 会失败并留痕。
+   */
+  async sendToBoundUser(text: string): Promise<void> {
+    const to = this.lastUserId.trim();
+    if (!to) throw new Error("微信机器人还没有可投递的对象（对方近期未发过消息）");
+    await this.sendText(to, text);
+  }
+
   /** 连接成功后主动打招呼（best-effort：对端 id 缺失或发送失败都静默，不阻塞登录流程） */
   private sendGreeting() {
     const userId = this.lastUserId.trim();

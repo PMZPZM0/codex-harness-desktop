@@ -12,6 +12,39 @@ import type { CodexServer } from "./codex-server";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 
 import { ensureProjectAgentsMd } from "./project-conventions";
+import { weixinGateway } from "./features/im-gateways";
+
+// ============================================================================
+// 微信投递（09-27）：定时任务跑完后把回合结论主动推给微信用户。
+// 三层证据分离：run 的簿记（lastRunAt/nextRunAt）≠ 投递回执（sendText 的 ok 日志）
+// ≠ 用户肉眼收到。投递失败**不回滚调度簿记**（任务已执行，只是没送到），但必须留痕。
+// ============================================================================
+
+/** 投递目标。channel 目前只有 weixin（个人微信 iLink bot）；to 缺省 = 最近对话用户。 */
+export type DeliverTarget = { channel: "weixin"; to?: string };
+
+/** 微信正文气泡的安全长度（超长截断并指回应用会话，避免 iLink 静默丢弃超长消息）。 */
+const WEIXIN_DELIVER_MAX_CHARS = 3600;
+
+/** 归一投递配置：只认 weixin；to 空串归 undefined（= 缺省投给最近对话用户）。 */
+export function sanitizeDeliver(input: unknown): DeliverTarget | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const channel = (input as { channel?: unknown }).channel;
+  if (channel !== "weixin") return undefined;
+  const rawTo = (input as { to?: unknown }).to;
+  const to = typeof rawTo === "string" ? rawTo.trim() : "";
+  return to ? { channel: "weixin", to } : { channel: "weixin" };
+}
+
+/** 投递正文：任务名 + 回合结论；空结论也要有明确交代（不能发一条空气）。 */
+export function buildDeliverText(taskName: string, reply: string, maxChars = WEIXIN_DELIVER_MAX_CHARS): string {
+  const body = reply.trim() || "（回合已完成，但没有产出文本内容。）";
+  const trimmed = body.length > maxChars
+    ? body.slice(0, maxChars) + "\n…（超长截断，完整内容见应用的会话列表）"
+    : body;
+  return `⏰ 定时任务「${taskName}」执行完成：\n\n${trimmed}`;
+}
+
 // ============================================================================
 // 自动化调度引擎 —— 对齐 WorkBuddy 的生效逻辑与工作逻辑
 // （逆向自 WorkBuddy 5.4.5 的 scheduler-engine.ts / schedule-utils.ts /
@@ -75,6 +108,8 @@ export type ScheduledTask = {
   recoveryDispatchAt?: number;
   recoveryOccurrenceMs?: number;
   recoveryDelayMs?: number;
+  /** 执行完成后主动投递结论的目标（09-27；缺省 = 只落在应用会话列表里，不外推） */
+  deliver?: DeliverTarget;
 };
 
 // ---------- 常量（对齐 WorkBuddy） ----------
@@ -456,6 +491,8 @@ export class Scheduler {
     private readonly server: CodexServer,
     private readonly getModel: () => Promise<{ model: string; provider: string; name: string; baseUrl: string } | null>,
     private readonly log: (message: string) => void,
+    /** 投递函数（DI 供离线冒烟注入 stub；生产缺省走微信网关） */
+    private readonly deliverer?: (text: string, to?: string) => Promise<void>,
   ) {}
 
   async start() {
@@ -505,6 +542,8 @@ export class Scheduler {
       monthDay: input.monthDay, month: input.month, biweekly: input.biweekly,
       createdAt: current?.createdAt ?? now,
       consecutiveInterruptCount: current?.consecutiveInterruptCount ?? 0,
+      // 投递配置：显式传入才改（含 undefined = 明确清除）；缺省保留原值（会话里做局部更新不打掉已有投递）
+      deliver: input.deliver === undefined ? current?.deliver : sanitizeDeliver(input.deliver),
     };
     task.nextRunAt = input.enabled === false ? (current?.nextRunAt ?? computeNextRunAt(task, now)) : computeNextRunAt(task, now);
     this.tasks = current ? this.tasks.map((entry) => entry.id === task.id ? task : entry) : [task, ...this.tasks];
@@ -643,10 +682,19 @@ export class Scheduler {
       // 等待该线程首回合真正完成，用 finishedAt 推进下一次（对齐 WorkBuddy advanceNextRunAt(finishedAt)）
       const outcome = await this.waitForTurnCompletion(threadId, AUTOMATION_RUN_TIMEOUT_MS);
       finishedAt = Date.now();
-      if (outcome === "completed") {
+      if (outcome.outcome === "completed") {
         task.lastError = undefined;
         task.consecutiveInterruptCount = 0;
         this.log(`[Scheduler] 「${task.name}」回合完成，用时 ${Math.round((finishedAt - startedAt) / 1000)}s`);
+        if (task.deliver?.channel === "weixin") {
+          try {
+            await this.deliverWeixin(task, outcome.replyText);
+          } catch (error: any) {
+            // ⛔ 投递失败不回滚调度簿记（任务已执行、nextRunAt 照常推进），但必须留痕可查
+            task.lastError = `微信投递失败：${error.message}`;
+            this.log(`[Scheduler] 「${task.name}」微信投递失败：${error.message}`);
+          }
+        }
       } else {
         interrupted = true;
         task.consecutiveInterruptCount = (task.consecutiveInterruptCount ?? 0) + 1;
@@ -668,9 +716,23 @@ export class Scheduler {
     await this.write();
   }
 
+  /**
+   * 投递回合结论（09-27）。deliverer DI 优先（离线冒烟注入 stub）；生产走微信网关：
+   * to 显式指定 = 发给该用户；缺省 = 最近对话用户（iLink 正文气泡依赖 context_token，
+   * 「最近发过消息的人」是最可靠的投递对象）。
+   */
+  private async deliverWeixin(task: ScheduledTask, reply: string): Promise<void> {
+    const text = buildDeliverText(task.name, reply);
+    if (this.deliverer) return this.deliverer(text, task.deliver?.to);
+    if (!weixinGateway) throw new Error("微信机器人未初始化");
+    if (!weixinGateway.hasSession()) throw new Error("微信机器人未登录（设置 → 机器人管理 扫码绑定）");
+    const to = task.deliver?.to?.trim();
+    if (to) await weixinGateway.sendText(to, text);
+    else await weixinGateway.sendToBoundUser(text);
+  }
+
   /** 完成时刻推进 nextRunAt（严格 > base；若原 nextRunAt 已晚于本次完成时刻则保持，如手动提前运行） */
-  private advanceNextRunAt(task: ScheduledTask, base: number) {
-    if (typeof task.nextRunAt === "number" && task.nextRunAt > base) return;
+  private advanceNextRunAt(task: ScheduledTask, base: number) {    if (typeof task.nextRunAt === "number" && task.nextRunAt > base) return;
     const next = computeNextRunAt(task, base);
     task.nextRunAt = next;
     this.log(`[Scheduler] 「${task.name}」下一次运行：${next ? new Date(next).toLocaleString("zh-CN") : "无（序列已结束）"}`);
@@ -731,17 +793,41 @@ export class Scheduler {
   }
 
   /** 等待某线程首回合结束（turn/completed / turn/aborted / turn/failed） */
-  private waitForTurnCompletion(threadId: string, timeoutMs: number): Promise<"completed" | "aborted" | "failed" | "timeout"> {
+  private waitForTurnCompletion(threadId: string, timeoutMs: number): Promise<{ outcome: "completed" | "aborted" | "failed" | "timeout"; replyText: string }> {
     return new Promise((resolve) => {
+      // ⛔ agentMessage 的正文主要在 item/agentMessage/delta 里**增量**到达——完成事件经常只回
+      // id+status（渲染层 stream.ts 的 sparse 分支就是为它写的）。按 turnId 聚合，完成时取该回合全文。
+      const textByTurn = new Map<string, string>();
+      const finalByItem = new Map<string, string>();
       const handler = (event: any) => {
         if (event?.kind !== "notification") return;
         const method = String(event.method ?? "");
+        const params = event.params ?? {};
+        if (method === "item/agentMessage/delta") {
+          if (params.threadId && params.threadId !== threadId) return;
+          const turnId = String(params.turnId ?? "");
+          if (!turnId) return;
+          textByTurn.set(turnId, (textByTurn.get(turnId) ?? "") + String(params.delta ?? ""));
+          return;
+        }
+        if (method === "item/completed") {
+          if (params.threadId && params.threadId !== threadId) return;
+          const item = params.item ?? {};
+          if (item.type === "agentMessage" && typeof item.text === "string" && item.text.trim()) {
+            finalByItem.set(String(item.id ?? ""), item.text);
+          }
+          return;
+        }
         if (!["turn/completed", "turn/aborted", "turn/failed"].includes(method)) return;
-        if (event.params?.threadId !== threadId) return;
+        if (params.threadId !== threadId) return;
         cleanup();
-        resolve(method === "turn/completed" ? "completed" : method === "turn/aborted" ? "aborted" : "failed");
+        const turnId = String(params.turnId ?? "");
+        const aggregated = turnId ? (textByTurn.get(turnId) ?? "") : "";
+        const finals = [...finalByItem.values()].sort((a, b) => b.length - a.length);
+        const replyText = aggregated || finals[0] || "";
+        resolve({ outcome: method === "turn/completed" ? "completed" : method === "turn/aborted" ? "aborted" : "failed", replyText });
       };
-      const timer = setTimeout(() => { cleanup(); resolve("timeout"); }, timeoutMs);
+      const timer = setTimeout(() => { cleanup(); resolve({ outcome: "timeout", replyText: "" }); }, timeoutMs);
       const cleanup = () => { clearTimeout(timer); this.server.off("event", handler); };
       this.server.on("event", handler);
     });
