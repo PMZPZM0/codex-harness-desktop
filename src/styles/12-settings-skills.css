@@ -1386,3 +1386,14 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   border-color: color-mix(in srgb, var(--green) 34%, var(--line-soft));
   color: var(--text);
 }
+/* 共享技能池：管理项目条**固定横向一行**——说明在左（可收缩）、选择器在右（固定宽度）。
+   ⛔ 修「切换项目后位置变化」（09-27 用户实测截图）：基类 .memory-project-context 是
+   flex + flex-wrap + space-between，说明文案随项目切换变长（"项目技能池随项目走…" →
+   "正在管理其他项目的技能生效集（不影响当前会话…）"）时把选择器挤到第二行，卡片网格
+   整体下移。这里强制 nowrap + 选择器不收缩，位置不随文案长度变化。 */
+.skill-pool-context {
+  flex-wrap: nowrap;
+  margin-bottom: 10px;
+}
+.skill-pool-context > .memory-project-context-copy { flex: 1 1 auto; min-width: 0; }
+.skill-pool-context > .memory-project-picker { flex: 0 0 min(360px, 46%); min-width: 0; }
