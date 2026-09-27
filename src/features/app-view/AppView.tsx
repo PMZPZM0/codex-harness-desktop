@@ -201,7 +201,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     deleteMemoryGroup, deleteMemoryRecord, deleteQueued, deleteSchedule,
     deleteSubAgent, deleteThreadsByCwd, desktopAuto, devRuntimes,
     dictationBaseRef, diff, dismissEnhanceHint, dismissNotice,
-    doneExpanded, downloadSource, dramaCanvasOpen, dramaCanvasVariant, duplicateSshEntry, earlierLoadingId,
+    doneExpanded, downloadSource, dramaCanvasOpen, duplicateSshEntry, earlierLoadingId,
     editSchedule, editingProvider, effort, emptySshDraft,
     emptySshJump, engineCheck, engineUpdateLog, engineUpdatePercent,
     engineUpdateResult, engineUpdateStageText, engineUpdating, engineVersion,
@@ -499,7 +499,6 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           onClose={() => setDramaCanvasOpen(false)}
           workspace={workspace}
           threads={threads}
-          variant={dramaCanvasVariant}
           onAskAgent={(text, threadId) => {
             /* 闭环：画布选好目标会话 → 这里切过去（或新建）→ 用 pendingCommandTextRef 塞任务
                （⛔ 它是 ref，不受 setPrompt 状态滞后影响，send 首选消费它）→ 直接发送。 */
@@ -512,6 +511,13 @@ export function AppView({ app }: { app: HarnessAppApi }) {
                 await send();
               } catch { setPrompt(text); /* 切会话失败兜底：塞进输入框由用户手动发 */ }
             })();
+          }}
+          onSummonTeam={(teamId, text) => {
+            /* 召唤内置专家团（视频制作 / 生图）：teams:start-session 会新建团队会话并跑 task。 */
+            setDramaCanvasOpen(false);
+            window.codex.startTeamSession({ teamId, task: text, cwd: workspace || undefined }).catch((error: any) => {
+              setNotice(`召唤专家失败：${String(error?.message ?? error).slice(0, 120)}`);
+            });
           }}
         />
       )}

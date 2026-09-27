@@ -129,9 +129,7 @@ bag.companyPreviewTeamId = companyPreviewTeamId as typeof bag.companyPreviewTeam
   // AI 短剧无限画布（09-27）：侧栏入口的整体开关。画布自己的状态全在域内（localStorage 持久化），
   // 挂 bag 的只有「开没开」这一位 —— 宿主只需要知道要不要渲染它。
   const [dramaCanvasOpen, setDramaCanvasOpen] = useState(false);
-  const [dramaCanvasVariant, setDramaCanvasVariant] = useState<"drama" | "image">("drama");
   bag.dramaCanvasOpen = dramaCanvasOpen as typeof bag.dramaCanvasOpen; bag.setDramaCanvasOpen = setDramaCanvasOpen as typeof bag.setDramaCanvasOpen;
-  bag.dramaCanvasVariant = dramaCanvasVariant as typeof bag.dramaCanvasVariant; bag.setDramaCanvasVariant = setDramaCanvasVariant as typeof bag.setDramaCanvasVariant;
 
   // 通知归属判定用的镜像（09-20）：setNotice 是 useCallback 稳定引用，闭包读 ref 拿最新开关状态
   bag.settingsOpenRef.current = bag.settingsOpen;
@@ -221,5 +219,5 @@ bag.runtimePercent = runtimePercent as typeof bag.runtimePercent; bag.setRuntime
 
   const [runtimeStage, setRuntimeStage] = useState<Record<string, string>>({});
 bag.runtimeStage = runtimeStage as typeof bag.runtimeStage; bag.setRuntimeStage = setRuntimeStage as typeof bag.setRuntimeStage;
-  return { runUpdateCheck, runUpdateDownload, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, dramaCanvasVariant, setDramaCanvasVariant, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, showModelGuide, setShowModelGuide, quickSetupBusy, setQuickSetupBusy, quickSetupError, setQuickSetupError, relaySetupBusy, setRelaySetupBusy, relaySetupError, setRelaySetupError, modelGuideDoneRef, envCheckOpen, setEnvCheckOpen, envInstalling, setEnvInstalling, envCheckDoneRef, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
+  return { runUpdateCheck, runUpdateDownload, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, showModelGuide, setShowModelGuide, quickSetupBusy, setQuickSetupBusy, quickSetupError, setQuickSetupError, relaySetupBusy, setRelaySetupBusy, relaySetupError, setRelaySetupError, modelGuideDoneRef, envCheckOpen, setEnvCheckOpen, envInstalling, setEnvInstalling, envCheckDoneRef, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
 }

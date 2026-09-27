@@ -177,7 +177,7 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
     setAccountMenuOpen,
     setAccountMenuSub,
     setMobileNav,
-    setDramaCanvasOpen, setDramaCanvasVariant,
+    setDramaCanvasOpen,
     setMobileRemoteOpen,
     setPaletteOpen,
     setPaletteQuery,
@@ -334,11 +334,8 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
               {/* 09-27 用户要求：「在左侧菜单栏中新增『AI 短剧无限画布』入口」。
                   排在这里（仅次于建任务与搜索）是刻意的高位 —— 它是与「聊天」并列的另一种工作台，
                   不是设置项；放进设置类入口那一簇会显得像配置页。 */}
-              <button className="sidebar-tab" title="AI 短剧无限画布：把一条短剧拆成卡片摆在图上，连线就是「这份输入喂给下一步」" onClick={() => { setDramaCanvasVariant("drama"); setDramaCanvasOpen(true); setMobileNav(false); }}>
-                <Clapperboard size={15} /><span>AI 短剧无限画布</span>
-              </button>
-              <button className="sidebar-tab" title="AI 生图工作流：需求 → 提示词 → 出图 A/B → 选图" onClick={() => { setDramaCanvasVariant("image"); setDramaCanvasOpen(true); setMobileNav(false); }}>
-                <LayoutGrid size={15} /><span>生图工作流</span>
+              <button className="sidebar-tab" title="AI 画布工作流：短剧 / 生图两种起手，卡片连线就是「这份输入喂给下一步」" onClick={() => { setDramaCanvasOpen(true); setMobileNav(false); }}>
+                <Clapperboard size={15} /><span>AI 画布工作流</span>
               </button>
               {/* ⛔ 09-27 用户要求：侧栏「自动化」改名「定时任务」—— 它跳的本来就是 settingsPage="schedule"
                   （该页标题即「定时任务」），改名后入口与目标页同名，不再和设置页里那个真正叫

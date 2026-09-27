@@ -10,7 +10,7 @@
  *  · 滚轮三源分流：ctrl/meta（触控板捏合）→ 指数连续缩放；deltaMode=1（鼠标格）→ 一格 8%；
  *    其余（按像素，触控板双指滑动）→ 平移。缩放**以光标为锚点**。
  *  · 空白左拖 = 平移；Shift 拖 / 开「框选」= 框选；中键与 Space 也可平移。
- *  · 缩放范围 0.12–1.8；节点 ≤10 个时「适配」的最小缩放取 0.38（宁可留白，也不缩成缩略图）。
+ *  · 缩放范围 0.12–1.8；节点 ≤10 个时「适配」的最小缩放取 0.62（⛔ 09-27 用户点名「卡片文字糊」：0.38 时 12.5px 字缩到 ~5px 再加分 数缩放栅格化必然糊；宁可出滚动条）。
  *  · 拖完立刻点不弹属性面板；删节点后提示里挂「撤销」；Cmd/Ctrl+Z / ⇧Z / Y、⌘A、Esc、Delete。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -66,17 +66,17 @@ export interface DramaCanvasProps {
    *  ⛔ 闭环在宿主侧完成（openThread/startNewThread + pendingCommandTextRef + send）——
    *  画布只负责「选谁」，不碰会话状态。 */
   onAskAgent?: (text: string, threadId: string | null) => void;
+  /** 召唤内置专家团执行任务（teamId；不做则不显示专家选项） */
+  onSummonTeam?: (teamId: string, text: string) => void;
   /** 会话列表（交给 Agent 选择器的数据源；不传则该入口不显示选择器） */
   threads?: Array<{ id: string; preview: string; name?: string | null; cwd: string; updatedAt: number }>;
-  /** 画布用途：drama=短剧（默认），image=生图工作流（起手骨架/文案不同，引擎同一套） */
-  variant?: "drama" | "image";
   /** 打开时的画布名（侧栏入口带过来的） */
   initialBoard?: string;
 }
 
 interface Notice { id: number; text: string; tone: "ok" | "err" | ""; undo?: () => void }
 
-export function DramaCanvas({ onClose, workspace, onAskAgent, threads, variant = "drama", initialBoard }: DramaCanvasProps) {
+export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, threads, initialBoard }: DramaCanvasProps) {
   const shellRef = useRef<HTMLElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const rfRef = useRef<ReactFlowInstance<DramaRFNode, DramaRFEdge> | null>(null);
@@ -131,7 +131,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, threads, variant =
     }
     const vw = Math.max(280, wrap.clientWidth - (inspectorOpen ? INSPECTOR_WIDTH : 0));
     const vh = Math.max(220, wrap.clientHeight);
-    const minScale = nodes.length <= 10 ? 0.38 : MIN_ZOOM;
+    const minScale = nodes.length <= 10 ? 0.62 : MIN_ZOOM;
     const zoom = Math.min(1.6, Math.max(minScale, Math.min((vw - FIT_PADDING * 2) / (maxX - minX), (vh - FIT_PADDING * 2) / (maxY - minY))));
     rf.setViewport({ x: (vw - (maxX - minX) * zoom) / 2 - minX * zoom, y: (vh - (maxY - minY) * zoom) / 2 - minY * zoom, zoom });
     setZoomText(`${Math.round(zoom * 100)}%`);
@@ -277,14 +277,14 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, threads, variant =
     }
   }, [board, marquee, pushNotice, selected]);
 
-  const createStarter = useCallback(() => {
-    const isImage = variant === "image";
+  const createStarter = useCallback((kind: "drama" | "image" = "drama") => {
+    const isImage = kind === "image";
     const snapshot = isImage ? imageStarterWorkflow() : starterSnapshot();
     board.replaceAll(snapshot, { resetHistory: true });
     fittedRef.current = false;
     window.setTimeout(() => fitAll(), 30);
     pushNotice(isImage ? "生图工作流骨架已建立：写好主提示词，A/B 两个出图卡点「生成」即可" : "短剧创作骨架已建立：先写剧本，再连角色、场景与分镜表", "ok");
-  }, [board, fitAll, pushNotice, variant]);
+  }, [board, fitAll, pushNotice]);
 
   const dropFiles = useCallback(async (evt: React.DragEvent) => {
     evt.preventDefault();
@@ -331,7 +331,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, threads, variant =
   }, [actions, board, fitAll, menu, pushNotice, story]);
 
   return (
-    <div className="drama-canvas-backdrop" role="dialog" aria-modal="true" aria-label={variant === "image" ? "AI 生图工作流" : "AI 短剧无限画布"}>
+    <div className="drama-canvas-backdrop" role="dialog" aria-modal="true" aria-label="AI 画布工作流">
       <section className="drama-canvas-shell" ref={shellRef} tabIndex={-1} onKeyDown={onKeyDown}>
         {/* ⛔ Provider 必须包住**整块**：检查器与时间线同样要读动作上下文。
             只包 ReactFlow 的话，一打开就 "useDramaActions 必须在 Provider 内使用" ——
@@ -341,8 +341,8 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, threads, variant =
           <div className="drama-canvas-head-left">
             <span className="drama-canvas-head-icon"><Clapperboard size={17} /></span>
             <div>
-              <b>{variant === "image" ? "AI 生图工作流" : "AI 短剧无限画布"}</b>
-              <small>{variant === "image" ? "需求 → 提示词 → 出图 A/B → 选图：每张出图卡都能直接生成" : "把一条短剧拆成卡片摆在图上，连线就是「这份输入喂给下一步」"}</small>
+              <b>AI 画布工作流</b>
+              <small>短剧：剧本拆卡逐镜出片；生图：需求 → 提示词 → 出图 A/B → 选图</small>
             </div>
             <label className="drama-canvas-select nodrag" title={workspace || "尚未选择工作文件夹"}>
               <span>画布</span>
@@ -360,7 +360,8 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, threads, variant =
           <div className="drama-canvas-head-actions">
             <button className="drama-canvas-head-btn" onClick={() => setNaming({ kind: "board", value: "新画布" })}><Plus size={13} />新建画布</button>
             <button className="drama-canvas-head-btn" onClick={() => setNaming({ kind: "story", value: "未命名短剧" })}><Plus size={13} />新建分镜表</button>
-            <button className="drama-canvas-head-btn is-brand" onClick={createStarter}>{variant === "image" ? "新建生图工作流" : "新建短剧工作流"}</button>
+            <button className="drama-canvas-head-btn is-brand" onClick={() => createStarter("drama")}>新建短剧工作流</button>
+              <button className="drama-canvas-head-btn is-brand" onClick={() => createStarter("image")}>新建生图工作流</button>
             <button className="drama-canvas-head-btn" onClick={() => { board.saveNow(); void story.saveNow(); pushNotice("已保存到本机" + (workspace ? "（分镜表同时写到工作区）" : ""), "ok"); }}><Save size={13} />保存</button>
             <button className="drama-canvas-head-btn" onClick={onClose} title="退出画布"><X size={13} />退出</button>
           </div>
@@ -520,6 +521,13 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, threads, variant =
                   </button>
                 ))}
               </div>
+              {onSummonTeam ? (
+                <div className="drama-canvas-expert-row">
+                  <span className="drama-canvas-expert-label">或直接召唤内置专家团（自动新建会话）：</span>
+                  <button className="drama-canvas-btn" onClick={() => { const picked = agentPicker; setAgentPicker(null); onSummonTeam("video-production-team", picked.text); onClose(); }}>🎬 视频制作专家团</button>
+                  <button className="drama-canvas-btn" onClick={() => { const picked = agentPicker; setAgentPicker(null); onSummonTeam("image-gen-expert", picked.text); onClose(); }}>🖼️ 生图专家</button>
+                </div>
+              ) : null}
               <div className="drama-canvas-modal-row">
                 <button type="button" className="drama-canvas-btn is-ghost" onClick={() => setAgentPicker(null)}>取消</button>
                 <button
