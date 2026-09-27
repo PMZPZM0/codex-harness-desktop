@@ -2696,3 +2696,32 @@ md 反而误读）；编辑流程不变（textarea + 保存后回到排版）。
 （写死 true / target 改成常量 true）都红。
 **注意**：修好后你本机那份配置目前是 `full`（被上一版自愈翻回来的）⇒ **重启应用后再关一次，
 之后就会保持关**。
+
+## 📱 2026-09-27 手机控制 phone-harness（做成「开发工具页工具卡」，Windows / macOS 分叉）
+
+**为什么不是连接器**：本项目的连接器 = MCP 服务模板（飞书/钉钉/腾讯文档…），而 phone-harness 是
+**Python CLI + SKILL.md**，agent 靠 `phone-harness <<'PY'` 调用。硬塞进连接器页需要我们自己写一个
+stdio MCP 包装器（重复造轮子、上游若官方出 MCP 会冲突）⇒ 按用户确认做成**工具卡**（照 09-25 记忆后端）：
+安装 / 体检 / 卸载 + 装机后把 SKILL.md 注册成引擎技能。
+
+**主进程**（`electron/features/phone-harness.ts`，IPC 前缀 `phone:` 共 6 通道）：
+- status：平台 / Python / pip 包 / adb / 技能 / 遥测 / iPhone 是否可能可用；
+- install：pip 装包（**清华 PyPI 镜像**）→ `config set telemetry false` → `phone-harness skill`
+  写进 `$CODEX_HOME/skills/phone-harness/SKILL.md`（⛔ 尊重 `.disabled` 停用态，别静默启用）；
+  ⛔ **顺序不能反**：先关遥测再注册技能（技能一生效就会被调用）；
+- doctor：直接跑上游 `--doctor`，结论原样回传（不自己编造判定）；
+- guides / open-settings：按平台给权限引导（Android：开发者选项+USB 调试；macOS：iPhone 镜像
+  + 辅助功能 / 屏幕录制授权），按钮直达系统设置页。
+
+**平台分叉是能力边界不是文案**：`iphoneEligible = process.platform === "darwin"` ——
+Windows/Linux 上 iPhone 通道（Mac 的 iPhone 镜像窗口）根本不存在，卡片必须明说，不能让用户照着做不到。
+
+**渲染层**：`src/features/settings-devtools/PhoneHarnessCard.tsx` 嵌进「开发工具」页，复用既有变量。
+
+**守卫**：【177】4 条（iPhone 通道绑定 darwin / 卡片按平台分叉 / 遥测先关 / pip 走国内镜像），
+变异双向验证（平台松绑、砍掉关遥测）都红。
+**踩坑**：① manifest 的 `cast` 要写完整 `Promise<…>`（照现有通道），否则生成物 TS2352；
+② 新增域必须补 `gen-capability-skill.mjs` 的 DOMAIN_DESCRIPTIONS（生成器会报缺）；
+③ CSS 用了未定义的 `--success` 被【160】抓到（本项目语义色是 `--ok`）。
+**未完**：adb / platform-tools 自动下载（npmmirror 无该二进制镜像，只有 dl.google.com 可达，
+需要解压 + PATH 注入基建）—— 当前只检测 adb 并给引导步骤。
