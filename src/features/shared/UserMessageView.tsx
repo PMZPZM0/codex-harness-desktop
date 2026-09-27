@@ -88,7 +88,10 @@ export function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, o
   const annotatedText = lookupMessageOriginal(stripAttachmentTokens(refs.cleanText ?? ""));
   const annotatedPaths = new Set<string>();
   if (annotatedText) {
-    for (const seg of splitPromptSegments(annotatedText)) {
+    // ⛔ 去重集合必须用与下面渲染**同一个**拆分器（splitAttachmentSegments，图片+文件都认）。
+    //    曾经用 splitPromptSegments（只认图片 token）收：文件 token 进不了集合 ⇒ 同一个文件
+    //    「按原位置内联一次 + refs.files 追加到末尾一次」，气泡里出现两颗 chip（09-27 用户截图）。
+    for (const seg of splitAttachmentSegments(annotatedText)) {
       if (seg.kind !== "text") annotatedPaths.add(seg.path);
     }
   }

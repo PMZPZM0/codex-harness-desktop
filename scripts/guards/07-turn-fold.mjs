@@ -1302,6 +1302,12 @@ export async function run() {
       // 去重：已在文本占位符里渲染过的图片不重复出现（否则同一张图显示两份）
       (chipDef.length > 0 && /inlineImageSet\.has\(path\)/.test(appSrc46)
         ? ok : fail)("【46】内联附件对占位符已渲染的图片去重（不出现两份）");
+      // ⛔ 去重集合的收集器必须与渲染拆分器**同一个**（splitAttachmentSegments，图片+文件都认）：
+      //    曾经用 splitPromptSegments（只认图片 token）收 annotatedPaths ⇒ 文件 chip
+      //    「按原位置内联一次 + refs.files 末尾追加一次」，同一文件两颗 chip（09-27 用户截图）。
+      (appSrc46.includes("for (const seg of splitAttachmentSegments(annotatedText))")
+        && !/annotatedPaths[\s\S]{0,160}?splitPromptSegments/.test(appSrc46)
+        ? ok : fail)("【46】annotatedPaths 与渲染用同一个拆分器（只认图片的收集器会让文件 chip 出现两次）");
       // ⛔ 附件名必须是"像文件名"的字符串：data URL 直接取 basename 会得到 base64 尾巴
       //    （实测 `basename("data:image/png;base64,iVBOR…")` → `q842iQAAAABJRU5ErkJggg==`）。
       //    09-18 代码审查抓到的真缺陷，用纯函数钉死。
