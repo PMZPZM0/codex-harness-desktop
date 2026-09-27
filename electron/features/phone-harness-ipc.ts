@@ -7,6 +7,7 @@
 import { ipcMain } from "electron";
 import {
   installPhoneHarness,
+  wireAdb,
   openPhoneHarnessSettings,
   phoneHarnessDoctor,
   phoneHarnessGuides,
@@ -18,6 +19,7 @@ ipcMain.handle("phone:harness:status", async () => await phoneHarnessStatus());
 ipcMain.handle("phone:harness:install", async () => await installPhoneHarness());
 ipcMain.handle("phone:harness:uninstall", async () => await uninstallPhoneHarness());
 ipcMain.handle("phone:harness:doctor", async () => await phoneHarnessDoctor());
+ipcMain.handle("phone:harness:wire-adb", async () => ({ adb: await wireAdb() }));
 ipcMain.handle("phone:harness:guides", async () => phoneHarnessGuides());
 ipcMain.handle("phone:harness:open-settings", async () => {
   await openPhoneHarnessSettings();

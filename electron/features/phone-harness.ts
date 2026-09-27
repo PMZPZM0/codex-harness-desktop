@@ -21,6 +21,7 @@ import { spawn } from "node:child_process";
 import { app } from "electron";
 import { bundledPython } from "../toolchain";
 import { codexHome } from "../runtime-paths";
+import { toolsRoot } from "../toolchain";
 
 /** 清华 PyPI 镜像（与 markitdown / install-runtimes 同一套口径：国内先走镜像）。 */
 const PIP_INDEX = process.env.PHONE_HARNESS_PIP_INDEX ?? "https://pypi.tuna.tsinghua.edu.cn/simple";
@@ -96,6 +97,25 @@ function skillFile(): string {
   return path.join(codexHome, "skills", SKILL_DIR_NAME, "SKILL.md");
 }
 
+/** 随工具链装在 tools/platform-tools 下的 adb（开发工具页「Android 平台工具」装的就是它）。 */
+export function bundledAdb(): string {
+  const exe = process.platform === "win32" ? "adb.exe" : "adb";
+  const p = path.join(toolsRoot(), "platform-tools", exe);
+  return existsSync(p) ? p : "";
+}
+
+/**
+ * 让 phone-harness 用上本机的 adb：PATH 里有就直接用；没有但工具链装过，
+ * 就把绝对路径写进它的 `android.adb`（⛔ 不改系统 PATH —— 与项目一贯做法一致）。
+ * 返回实际生效的 adb 路径（没有则空串）。
+ */
+export async function wireAdb(): Promise<string> {
+  const bundled = bundledAdb();
+  if (!bundled) return "";
+  await harness(["config", "set", "android.adb", bundled], pythonBin());
+  return bundled;
+}
+
 export async function phoneHarnessStatus(): Promise<PhoneHarnessStatus> {
   const bin = pythonBin();
   const pyOk = await run(bin, ["-c", "import sys; print(sys.version.split()[0])"]).then((r) => r.code === 0);
@@ -106,7 +126,7 @@ export async function phoneHarnessStatus(): Promise<PhoneHarnessStatus> {
     installed = show.code === 0;
     version = (/^Version:\s*(\S+)/m.exec(show.out) ?? [])[1] ?? "";
   }
-  const adb = await run("adb", ["version"]).then((r) => r.code === 0);
+  const adb = (await run("adb", ["version"]).then((r) => r.code === 0)) || Boolean(bundledAdb());
   let telemetryOff = false;
   if (installed) {
     const cfg = await harness(["config", "get", "telemetry"], bin);
@@ -148,6 +168,10 @@ export async function installPhoneHarness(): Promise<{ ok: boolean; log: string 
 
   const off = await harness(["config", "set", "telemetry", "false"], bin);
   log.push(`telemetry off → exit ${off.code}`);
+
+  // 若工具链已装过 adb，顺手指过去（store 在内置目录、不在系统 PATH 上）
+  const wired = await wireAdb();
+  if (wired) log.push(`adb → ${wired}`);
 
   const skillOut = await harness(["skill"], bin);
   const text = skillOut.out.trim();

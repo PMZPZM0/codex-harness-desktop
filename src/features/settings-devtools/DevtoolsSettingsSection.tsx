@@ -130,7 +130,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
                     <p className="settings-card-hint">随应用内置：引擎、Node、VS Code CLI、Nuphus 桌面自动化、Playwright 浏览器自动化（CLI）、ponytail 写代码模式插件；按需下载：CloakBrowser 指纹浏览器（npm 国内镜像）、Playwright / Cloak 两类浏览器内核，以及 Python、Git、PowerShell、ripgrep、uv、CMake、7-Zip、jq、Ninja（npmmirror / gh 加速，失败自动回落官方源），首次启动检测到缺 Git 会自动补装；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。日常浏览用内置浏览器视图，CloakBrowser 只在需要过反爬站点时按需下载。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）；引擎在会话里自行安装工具时，此页状态也会自动刷新。</p>
                     {/* 手机控制（09-27）：上游 phone-harness 是 Python CLI 不是 MCP 服务，
                         所以不做连接器模板，做成工具卡：装机 + 关遥测 + 注册技能 + 权限引导。 */}
-                    <PhoneHarnessCard setNotice={setNotice} />
+                    <PhoneHarnessCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} />
                   </section>
     </>
   );
