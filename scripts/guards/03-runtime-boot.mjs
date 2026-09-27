@@ -548,6 +548,14 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   (/Content-Security-Policy/.test(indexHtml) && /object-src 'none'/.test(indexHtml) && /base-uri 'self'/.test(indexHtml) && /form-action 'none'/.test(indexHtml)
     ? ok("index.html 带 CSP（封外链脚本注入 + object/base/form 劫持；inline 脚本为 srcdoc 可视化卡片保留）")
     : fail("index.html 的 CSP 被摘了 —— 渲染层渲染模型输出/渠道消息时注入脚本可加载外部代码"));
+  /* 【175】connect-src 必须放行 data:（09-27 白方块事故，⛔ 只在构建产物里暴露）
+     PixiJS 用 fetch 加载贴图 ⇒ 受 connect-src 管（不是 img-src）。Vite 构建会把 <4KB 的
+     小图内联成 data: URI（team-office 的 23 张家具贴图全部命中），不放行 data: ⇒ 贴图全被
+     CSP 拦下、渲染成白方块（位置对、贴图空，极易误判为渲染 bug）。dev 下贴图走
+     http://localhost:* 被放行，所以**dev 不复现**。 */
+  (/connect-src[^;]*\bdata:/.test(indexHtml)
+    ? ok("【175】CSP connect-src 放行 data:（PixiJS 用 fetch 读内联贴图，缺这条渲染成白方块）")
+    : fail("【175】CSP connect-src 丢了 data: —— 构建产物里内联贴图会被拦成白方块（dev 下不复现，只在打包/构建版暴露）"));
   // external:open / browser:popout 不得无条件放行 file:
   !/url\.protocol !== "file:"\s*\)\s*throw new Error\("Unsupported URL"\)/.test(mainForSec)
     ? ok("external:open / popout 不再无条件放行 file:（只允许工作区内的 .html）")
