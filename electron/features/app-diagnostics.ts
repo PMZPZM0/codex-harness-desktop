@@ -232,7 +232,13 @@ ipcMain.handle("app:engine-info", async () => {
 
 ipcMain.handle("app:relaunch", () => {
   app.relaunch();
-  app.exit(0);
+  // ⛔ 必须 app.quit()（优雅退）而不是 app.exit(0)（硬退）：exit 会跳过 before-quit 的
+  // 全部清理——closeConfirmed 不置真、托盘不销毁、引擎子进程不停车；且旧进程瞬时死亡时
+  // 新实例已顶上，Windows 任务栏图标被旧进程的退出态顶成默认图标（用户实测：保存供应商
+  // 自动重启后任务栏图标变白纸）。quit 走 before-quit（closeConfirmed / destroyAppTray /
+  // cleanupAll / ssh / voice 全覆盖，见 main.ts），新实例在旧进程完全退出后才起，图标重走
+  // 窗口图标（dev）那条路。
+  app.quit();
 });
 
 /** 工具函数对 features/main 侧开放（fs:read / fs:exists / re-export 消费方）。 */
