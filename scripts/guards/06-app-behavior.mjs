@@ -2342,6 +2342,20 @@ w.postMessage({id:1,op:"list",root});
       "【184】生图工作流：起手骨架存在 + 侧栏入口把 variant 设为 image"
     );
   }
+
+  /* ══ 【185】备份页「选择会话导出」（09-27：勾选任意多条一次导出） ══ */
+  {
+    const backup185 = readFileSync(join(ROOT, "src", "features", "settings-backup", "BackupSettingsSection.tsx"), "utf8");
+    (backup185.includes("void exportThreadsMarkdown(picked)") && backup185.includes("void exportThreadsBackup(picked)") ? ok : fail)(
+      "【185】选择器勾的 id 数组要真的传进导出函数（⛔ 两张卡各自为政 = 勾了白勾）"
+    );
+    (/backup-picker-search/.test(backup185) && /onChange=\{\(e\) => setPickerQuery\(e\.target\.value\)\}/.test(backup185) ? ok : fail)(
+      "【185】选择器带搜索框（会话多了之后没有搜索的勾选列表没法用）"
+    );
+    (/allVisiblePicked/.test(backup185) && /取消全选/.test(backup185) ? ok : fail)(
+      "【185】全选只作用于当前可见集（搜索过滤后全选/取消全选不能误伤被过滤掉的勾选）"
+    );
+  }
 }
 
 
