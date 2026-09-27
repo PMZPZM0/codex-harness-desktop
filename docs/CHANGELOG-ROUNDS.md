@@ -2889,3 +2889,39 @@ katex ^0.18.9（走 npmmirror）。
 跨域数据管道（事件流 item → bag → TeamOfficePreview → OfficeCanvas → 导演），并先定语义映射表
 （我们现有设施是饮水机 / 资料架 / 打印机 / 洗手间，没有 munder-difflin 那种"终端站 / 邮箱"）——
 属独立一轮的量，先没动。
+
+## 🗺️ 2026-09-27 archkit：逆向复刻 archify 的架构图引擎（净室重实现，3/5 图型落地）
+
+**背景**：用户要求逆向复刻 `tt-a1i/archify`（MIT，7.3 万★但 watchers 异常低，详见
+`docs/EVAL-ARCHIFY-2026-09-27.md`）。采取**净室重实现**：只复刻行为与方法论（typed JSON-IR →
+fail-closed 校验 → 确定性渲染 → 自包含 HTML → 三层证据分离），⛔ 不复制上游任何代码/文案/素材。
+
+**落地**（`src/lib/archkit-*.mjs` + `scripts/archkit.mjs` + `.codex/skills/arch-diagram/`）：
+- `archkit-model.mjs`：三型图（architecture / workflow / sequence）的规格校验与归一。**fail-closed**：
+  id 重复、连线端点不存在、kind 不认识 ⇒ 整份拒收（证据图错一根线就是错图）；sequence 消息、
+  重复边去重、缺证据节点清单（external 豁免）。
+- `archkit-render.mjs`：归一图 → **自包含可交互 HTML**（内联 SVG + 内嵌样式/脚本，无任何外链，
+  离线双击可开）：分层布局（最长路径定列）、正交连线（回边从底下绕）、workflow 菱形/胶囊形状、
+  sequence 泳道线、光标锚点缩放 / 拖动平移 / Shift+滚轮横移、悬停高亮关联边、点击卡片弹**证据面板**
+  （锚到真实文件）、深浅主题、导出 PNG。⛔ 渲染确定性：无时间/随机值，同输入逐字节同输出。
+- CLI：`validate / render / deliver / demo / doctor`。`deliver` 出**确定性回执**（输入/输出 sha256 +
+  计数），明示"回执只证明渲染了什么，不证明看起来对"（三层证据分离）。
+- 技能 `.codex/skills/arch-diagram/SKILL.md`：引擎原生发现，agent 可直接按 schema 产图。
+
+**验收（对齐上游口径）**：
+- 模型 12 项真值表全过；**Electron 离屏截图 + 数非背景像素 = 41797**（上游自己 broken=11500 /
+  correct=44599，我们在"画对了"量级），蓝色入口卡像素 1041；
+- 两次 `deliver` 输出 sha256 一致（确定性实证）；
+- 守卫【182】8 条（纯函数真跑：拒收语义 ×4 + 确定性 + 自包含 + 真 DOM + sequence 泳道），
+  **双向变异**（悬空连线降级为 warn / 注入外链 link）各报 1 红；
+- `npm run check`：build OK，preflight **2636 ✓ / 0 ✗**（本轮连沙箱假红都为零）。
+
+**过程中抓到并修掉的 3 个真缺陷**：
+1. ⛔ 守卫自包含断言只查 `src="http`，**漏了 `href=`**（`<link>` 走 href）——变异 M2 抓出来的，
+   已改成 `(src|href)`；这正是上游"变异测试抓断言恒真"方法论的直接收益；
+2. ⛔ `.k-external.card` 漏空格成复合选择器 ⇒ rect 落回 SVG 默认**黑填充**（截图中 external 卡
+   全黑）——离屏截图目检抓到，隔一个空格的事；
+3. 上轮无限画布遗留的"产物过期"红在本轮重建后清零。
+
+**诚实边界**：上游 5 型图，本轮复刻 3 型（dataflow / lifecycle 未做）；delta 对比视图、视觉回归
+门禁、内嵌字体（用的系统字体栈，避免 OFL 依赖）未做。要补随时排。

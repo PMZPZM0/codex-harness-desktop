@@ -2210,6 +2210,50 @@ w.postMessage({id:1,op:"list",root});
     for (const desk of desks181) if (!nav181.findPath(desk, { u: 0.5, v: 0.06 }, grid181)) trapped181++;
     (trapped181 === 0 ? ok : fail)(`【181】真跑：9 个工位都能走到后墙通道（被困住 ${trapped181} 个）`);
   }
+
+  /* ══ 【182】archkit 架构图引擎（逆向复刻 archify 方法论，净室重实现；纯函数真跑） ══ */
+  {
+    const model = await import(pathToFileURL(join(ROOT, "src", "lib", "archkit-model.mjs")).href);
+    const renderer = await import(pathToFileURL(join(ROOT, "src", "lib", "archkit-render.mjs")).href);
+    (model.archkitNormalizeDiagram({ type: "mindmap", nodes: [], edges: [] }).ok === false ? ok : fail)(
+      "【182】未知 type 被拒（白名单：architecture / workflow / sequence）"
+    );
+    const dup182 = model.archkitNormalizeDiagram({ type: "architecture", nodes: [{ id: "a" }, { id: "a" }], edges: [] });
+    (dup182.ok === false && dup182.problems.some((p) => /重复/.test(p.message)) ? ok : fail)("【182】节点 id 重复 ⇒ 整份拒收");
+    (model.archkitNormalizeDiagram({ type: "architecture", nodes: [{ id: "a" }], edges: [{ from: "a", to: "ghost" }] }).ok === false ? ok : fail)(
+      "【182】连线端点不存在 ⇒ 不 ok（⛔ 不做静默修复——证据图错一根线就整份拒收）"
+    );
+    (model.archkitNormalizeDiagram({ type: "sequence", nodes: [{ id: "A" }, { id: "B" }], messages: [{ from: "A", to: "B" }] }).ok === false ? ok : fail)(
+      "【182】sequence 消息缺 text 被拒"
+    );
+    const sample182 = model.archkitNormalizeDiagram({
+      type: "architecture", title: "样例",
+      nodes: [
+        { id: "m", kind: "entry", label: "main.ts", evidence: ["electron/main.ts"] },
+        { id: "e", kind: "external", label: "引擎" },
+        { id: "u", kind: "module", label: "渲染层" },
+      ],
+      edges: [{ from: "m", to: "e", label: "spawn" }, { from: "m", to: "u", label: "桥" }],
+    });
+    if (sample182.ok) {
+      const html182 = renderer.archkitRender(sample182.diagram);
+      (html182 === renderer.archkitRender(sample182.diagram) ? ok : fail)(
+        "【182】渲染确定性：同输入两次输出逐字节一致（deliver 回执 sha256 的前提）"
+      );
+      (!/(src|href)\s*=\s*"https?:|@import|url\(\s*['"]?https?:/i.test(html182) && html182.includes("<svg") ? ok : fail)(
+        "【182】产出自包含：无任何外链资源（src/href 都要查——link 标签走 href，⛔ 只查 src 会漏）"
+      );
+      (html182.includes("main.ts") && html182.includes('data-archkit="1"') && html182.includes('data-id="m"') ? ok : fail)(
+        "【182】节点卡片是真 SVG 文本（可搜索可复制），不是位图；且带 data 属性供交互"
+      );
+      (renderer.archkitRender(model.archkitNormalizeDiagram({
+        type: "sequence", title: "s",
+        nodes: [{ id: "A" }, { id: "B" }], messages: [{ from: "A", to: "B", text: "hi" }],
+      }).diagram).includes("lifeline") ? ok : fail)("【182】sequence 渲染出 lifeline（三型图各自有专属布局）");
+    } else {
+      fail("【182】样例输入竟不合法：" + JSON.stringify(sample182.problems));
+    }
+  }
 }
 
 
