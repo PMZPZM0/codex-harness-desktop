@@ -2088,6 +2088,71 @@ w.postMessage({id:1,op:"list",root});
   );
 }
 
+// ── 24. 侧栏导航重排（09-27 用户一次性五条：删会话备份 / 自动化改名 / 三入口合并 / 删模型配置 / 搜索任务挪位）──
+{
+  // ⛔⛔ 读进来先过 codeOnly()：本块自己的注释里必然会提到这些类名/文案（讲解历史时写的），
+  //   裸词断言会被自己的注释命中 —— 09-27 变异实测当场栽了两次（`search-box` 命中的是注释里的
+  //   「.search-box」）。这是同一个坑的第五次，从此本块的断言一律在**剥掉注释的代码**上做。
+  const side180 = codeOnly(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8"));
+  // ① 删「会话备份」入口（用户：「会话备份选项删了，前面不需要这个了」）。
+  //   ⛔ 只删**侧栏入口**：设置页里的 backup 页保留（用户说的是"主界面左侧侧边栏的"）。
+  (!/setSettingsPage\("backup"\)/.test(side180) ? ok : fail)(
+    "【180】侧栏不再有「会话备份」入口（⛔ 设置页里的备份页仍保留，别连带删掉）"
+  );
+  // ② 「自动化」→「定时任务」：它跳的本来就是 schedule 页，改名后入口与目标页同名
+  (/<Clock3 size=\{15\} \/><span>定时任务<\/span>/.test(side180) ? ok : fail)(
+    "【180】侧栏该项文案是「定时任务」（跳 schedule 页，与页面同名）"
+  );
+  (!/<span>自动化<\/span>/.test(side180) ? ok : fail)(
+    "【180】侧栏不再有「自动化」文案（与设置页里真正的 automation 页区分开）"
+  );
+  // ③ 技能中心 / 插件市场 / 专家-专家团 合并成一个入口 + 弹窗三选一
+  (/<span>技能-插件-专家\/专家团<\/span>/.test(side180) ? ok : fail)(
+    "【180】侧栏有合并入口「技能-插件-专家/专家团」"
+  );
+  (!/<span>技能中心<\/span>|<span>插件市场<\/span>|<span>专家\/专家团<\/span>/.test(side180) ? ok : fail)(
+    "【180】原来的三个独立入口不再并列在侧栏（已收进弹窗）"
+  );
+  // ⛔ 必须同时钉「打开动作」与「打开条件」：只查弹窗内容会**恒真** —— 09-27 变异实测，
+  //   把渲染条件 `{extHubOpen && (` 改成 `{false && (` 时断言照样绿（内容还在源码里）。
+  (/onClick=\{\(\) => setExtHubOpen\(true\)\}/.test(side180) ? ok : fail)(
+    "【180】合并入口的按钮真的会打开弹窗（有 setExtHubOpen(true)）"
+  );
+  (/\{extHubOpen && \(/.test(side180) ? ok : fail)(
+    "【180】弹窗挂在 extHubOpen 条件上（⛔ 不是被改成恒假/被删）"
+  );
+  // 弹窗内容取「aria-label → 下一个稳定标记 {projectFilter」之间（⛔ 别用固定字符窗口，
+  // 插几行就假红；也别锚结尾缩进 —— 09-27 自己在这里写错过一次）
+  const hub180 = (() => {
+    const at = side180.indexOf('aria-label="技能 / 插件 / 智能体"');
+    if (at < 0) return "";
+    const end = side180.indexOf("{projectFilter &&", at);
+    return side180.slice(at, end > at ? end : at + 2400);
+  })();
+  (["skills", "plugins", "agentteam"].every((p) => new RegExp(`setSettingsPage\\("${p}"\\)`).test(hub180)) ? ok : fail)(
+    "【180】弹窗三项（技能市场 / 插件市场 / 智能体）各自能跳到对应设置页"
+  );
+  (["技能市场", "插件市场", "智能体"].every((t) => hub180.includes(t)) ? ok : fail)(
+    "【180】弹窗三项文案齐全"
+  );
+  (/\.ext-hub-list\s*\{/.test(readStyles()) ? ok : fail)(
+    "【180】合并入口弹窗的列表样式存在（缺了弹窗里会是一堆裸按钮）"
+  );
+  // ④ 模型配置入口的删除在【70】里（同轮把那两条正向断言翻成负向）
+  // ⑤ 搜索任务挪到「新建任务」下面（原来在按钮区之外，是独立一行）
+  // ⛔ 导航区边界 = `aria-label="导航"` 到它的 `</div>`（按钮区内无嵌套 div，首个 </div> 即边界）。
+  //   09-27 变异实测：只查「全文某处有 search-box」太弱（挪出去照样能过）。
+  const navStart180 = side180.indexOf('aria-label="导航"');
+  const navEnd180 = navStart180 >= 0 ? side180.indexOf("</div>", navStart180) : -1;
+  const nav180 = navStart180 >= 0 && navEnd180 > navStart180 ? side180.slice(navStart180, navEnd180) : "";
+  (nav180.includes("新建任务") && nav180.includes("search-box") && nav180.indexOf("search-box") > nav180.indexOf("新建任务") ? ok : fail)(
+    "【180】「搜索任务」在导航区内、且排在「新建任务」之后"
+  );
+  (!/<\/div>\s*<button className="search-box"/.test(side180) ? ok : fail)(
+    "【180】搜索任务不再留在导航区之外的旧位置（紧跟 </div> 之后那一行）"
+  );
+}
+
 
   }
 }
