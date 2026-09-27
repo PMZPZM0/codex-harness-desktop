@@ -458,17 +458,57 @@
   overflow: hidden;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
-/* 侧栏「模型配置」：未配模型时给一个醒目点（入口在侧栏，不再占用输入框） */
-.sidebar-tab.needs-setup { color: var(--accent); }
-.sidebar-tab.needs-setup > svg { color: var(--accent); }
-.sidebar-tab-dot {
-  margin-left: auto;
+/* ⛔ 09-27：侧栏「模型配置」入口按用户要求删除（连同 09-19 加的未配置高亮点
+   .sidebar-tab.needs-setup / .sidebar-tab-dot —— 已成死样式，一并清掉，
+   同 09-19 处理 .setup-banner 的做法：不留死样式）。
+   同一位置换成「技能-插件-专家/专家团」合并入口的弹窗列表样式。 */
+.ext-hub-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  overflow: auto;
+}
+.ext-hub-list > button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.ext-hub-list > button:hover {
+  background: var(--panel-2);
+  border-color: var(--accent);
+}
+.ext-hub-list > button > svg {
   flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+}
+.ext-hub-list > button > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ext-hub-list > button strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.ext-hub-list > button small {
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+/* 合并入口的弹窗比正文弹窗窄一点即可，高度按内容走 */
+.ext-hub-modal {
+  width: min(440px, calc(100vw - 48px));
 }
 
 .sidebar-tab:hover {

@@ -2,7 +2,7 @@
  * AppViewSidebarShell —— AppView 的 JSX 第 1 段（09-22 从 AppView.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import { hk } from "../../../lib/hk";
 import {
   AlertTriangle,
@@ -10,7 +10,6 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpRight,
-  Bot,
   Brain,
   QrCode,
   Star,
@@ -153,7 +152,6 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
     accountMenuSub,
     accountNameRef,
     collapsedSections,
-    customModel,
     deleteThreadsByCwd,
     expandedProjects,
     handleLogout,
@@ -229,6 +227,11 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
     username,
     viewTab,
   } = app;
+
+  // ⛔ 09-27 用户要求：技能中心 / 插件市场 / 专家-专家团**合并成一个入口**，点击弹窗三选一。
+  //   纯局部 UI 状态（不跨组件共享、不进 bag）⇒ 用组件内 useState，与 09-file-preview-editor.tsx
+  //   的 mdSourceView 同款做法，避免动自动生成的 bag-types.ts。
+  const [extHubOpen, setExtHubOpen] = useState(false);
 
   /** 复制「我正在跑的是哪一份构建」的诊断信息（09-23）。
    *  目的很具体：用户报「改了没生效」时，第一件要排除的就是**跑的产物不是最新构建**（09-23 真实事故，
@@ -323,18 +326,46 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
             </div>
             <div className="sidebar-tabs" role="tablist" aria-label="导航">
               <button className="sidebar-tab" onClick={() => { startNewThread(); }}><MessageSquarePlus size={15} /><span>新建任务</span><kbd>{hk("Ctrl+N")}</kbd></button>
-              {/* ⛔ 09-19 用户要求：「在左侧侧边栏加一个模型配置菜单跳转到模型配置入口的选项」
-                  （配套：输入框里那个提示条已删）。未配模型时给一个醒目点，新手一眼能看到入口。 */}
-              <button className={`sidebar-tab ${!customModel ? "needs-setup" : ""}`} title="模型配置（供应商 / API Key / 中转站）" onClick={() => { setSettingsPage("model"); setSettingsOpen(true); setMobileNav(false); }}>
-                <Bot size={15} /><span>模型配置</span>{!customModel && <i className="sidebar-tab-dot" aria-label="尚未配置" />}
+              {/* ⛔ 09-27 用户要求：「搜索任务选项放到新建任务下面」。原来是按钮区之外的独立一行，
+                  现在挪进来紧随「新建任务」；样式沿用 .search-box（与 .sidebar-tab 同为 34px 行）。 */}
+              <button className="search-box" title={`搜索任务与操作（${hk("Ctrl+K")}）`} onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={15} /><span>搜索任务</span><kbd>{hk("Ctrl+K")}</kbd></button>
+              {/* ⛔ 09-27 用户要求：侧栏「自动化」改名「定时任务」—— 它跳的本来就是 settingsPage="schedule"
+                  （该页标题即「定时任务」），改名后入口与目标页同名，不再和设置页里那个真正叫
+                  「自动化」的 automation 页混起来。配套：命令面板里的同名项一起改（part09）。 */}
+              <button className="sidebar-tab" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}><Clock3 size={15} /><span>定时任务</span></button>
+              {/* ⛔ 09-27 用户要求：技能中心 / 插件市场 / 专家-专家团**合并成一个入口**，点击弹窗三选一
+                  （原来三个独立按钮）。入口名按用户指定逐字写全。 */}
+              <button className="sidebar-tab" title="技能 / 插件 / 智能体" aria-expanded={extHubOpen} onClick={() => setExtHubOpen(true)}>
+                <LayoutGrid size={15} /><span>技能-插件-专家/专家团</span>
               </button>
-              <button className="sidebar-tab" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}><Clock3 size={15} /><span>自动化</span></button>
-              <button className="sidebar-tab" onClick={() => { setSettingsPage("skills"); setSettingsOpen(true); setMobileNav(false); }}><Zap size={15} /><span>技能中心</span></button>
-              <button className="sidebar-tab" onClick={() => { setSettingsPage("plugins"); setSettingsOpen(true); setMobileNav(false); }}><Store size={15} /><span>插件市场</span></button>
-              <button className="sidebar-tab" onClick={() => { setSettingsPage("agentteam"); setSettingsOpen(true); setMobileNav(false); }}><Users size={15} /><span>专家/专家团</span></button>
-              <button className="sidebar-tab" onClick={() => { setSettingsPage("backup"); setSettingsOpen(true); setMobileNav(false); }}><Download size={15} /><span>会话备份</span></button>
             </div>
-            <button className="search-box" title={`搜索任务与操作（${hk("Ctrl+K")}）`} onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={15} /><span>搜索任务</span><kbd>{hk("Ctrl+K")}</kbd></button>
+            {/* 合并入口的弹窗：复用既有 info-modal 体系（遮罩点击关闭 / header 带关闭键），
+                三项各自跳到对应设置页；跳转前先关弹窗（与侧栏其它入口同款：关设置面板移动端导航）。 */}
+            {extHubOpen && (
+              <div className="info-modal-mask" onClick={() => setExtHubOpen(false)}>
+                <div className="info-modal ext-hub-modal" role="dialog" aria-label="技能 / 插件 / 智能体" onClick={(event) => event.stopPropagation()}>
+                  <header>
+                    <LayoutGrid size={15} className="info-modal-icon" />
+                    <strong>技能 · 插件 · 智能体</strong>
+                    <button title="关闭" onClick={() => setExtHubOpen(false)}><X size={14} /></button>
+                  </header>
+                  <div className="ext-hub-list">
+                    <button type="button" onClick={() => { setExtHubOpen(false); setSettingsPage("skills"); setSettingsOpen(true); setMobileNav(false); }}>
+                      <Zap size={16} />
+                      <span><strong>技能市场</strong><small>浏览、安装技能（腾讯 SkillHub），自动写入 Codex 技能目录</small></span>
+                    </button>
+                    <button type="button" onClick={() => { setExtHubOpen(false); setSettingsPage("plugins"); setSettingsOpen(true); setMobileNav(false); }}>
+                      <Store size={16} />
+                      <span><strong>插件市场</strong><small>安装插件与连接器，给引擎加能力</small></span>
+                    </button>
+                    <button type="button" onClick={() => { setExtHubOpen(false); setSettingsPage("agentteam"); setSettingsOpen(true); setMobileNav(false); }}>
+                      <Users size={16} />
+                      <span><strong>智能体</strong><small>专家 / 专家团与子智能体</small></span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             {projectFilter && <button className="filter-chip" title="清除项目筛选" onClick={() => setProjectFilter(null)}><FolderOpen size={12} />{basename(projectFilter)}<X size={12} /></button>}
             <div className="view-tabs" role="tablist" aria-label="视图">
               {/* ⛔ 「分组」（按时间）视图已于 09-25 按用户要求删除（原话：「分组可以删了」）。

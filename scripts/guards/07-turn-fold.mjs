@@ -2682,19 +2682,27 @@ export async function run() {
 
   // ④ 输入框内的提示条必须**删干净**（用户明令），入口改到侧栏
   (!/setup-banner/.test(appSrc70) ? ok : fail)("【70】输入框内不再有「还没配模型」提示条（用户：「输入框里面的删了」）");
-  (!/\.setup-banner/.test(cssSrc70) ? ok : fail)("【70】提示条的样式也一并删除（不留死样式）");
-  (/className=\{`sidebar-tab \$\{!customModel \? "needs-setup" : ""\}`/.test(appSrc70) ? ok : fail)(
-    "【70】左侧栏有「模型配置」菜单（未配模型时带高亮点）"
+  // 样式判据锚**选择器形态**（带 `{`）而不是裸词 —— 注释里讲历史时必然会提到这个类名
+  // （09-27 实测：换上来的新注释里写了 `.setup-banner`，裸词断言当场被自己误伤）
+  (!/\.setup-banner\s*\{/.test(cssSrc70) ? ok : fail)("【70】提示条的样式也一并删除（不留死样式）");
+  // ⛔ 09-27 用户**第三改**（原话：「模型配置选项删了」）：09-19 那句「输入框提示条删掉、入口改侧栏」
+  //   的下半段已作废 —— **侧栏入口本身也被删了**。模型配置的入口现在只剩两条：
+  //   设置页导航的「模型」页（常驻）＋ 未配模型时的引导弹窗（见下方 ⑤）。
+  //   下面两条由正向断言翻成**负向**（防回潮）：别再照着 09-19 的旧结论把侧栏入口加回来。
+  (!/needs-setup/.test(appSrc70) ? ok : fail)(
+    "【70】侧栏不再有「模型配置」未配置高亮（09-27 用户要求删掉该入口）"
   );
-  (/<Bot size=\{15\} \/><span>模型配置<\/span>/.test(appSrc70) ? ok : fail)("【70】侧栏菜单文案是「模型配置」");
-  // ⛔ 锚点别锚"前后顺序"：JSX 里文案在 onClick **之后**（按钮内容），属性在前 —— 取周边窗口才对
-  const sideMenu70 = (() => {
-    const at = appSrc70.indexOf("模型配置</span>");
-    if (at < 0) return false;
-    return /setSettingsPage\("model"\); setSettingsOpen\(true\); setMobileNav\(false\);/.test(appSrc70.slice(Math.max(0, at - 400), at + 120));
-  })();
-  (sideMenu70 ? ok : fail)("【70】侧栏「模型配置」点击后跳到模型设置页");
-  (/\.sidebar-tab\.needs-setup \{/.test(cssSrc70) ? ok : fail)("【70】侧栏未配置高亮样式存在");
+  (!/<Bot size=\{15\} \/><span>模型配置<\/span>/.test(appSrc70) ? ok : fail)(
+    "【70】侧栏不再有「模型配置」菜单（⛔ 不许按 09-19 的旧结论加回来）"
+  );
+  // 样式判据锚**选择器形态**而不是裸词：本文件自己的注释里会提到这两个类名（09-27 第三次踩同型坑）
+  (!/\.sidebar-tab\.needs-setup\s*\{|\.sidebar-tab-dot\s*\{/.test(cssSrc70) ? ok : fail)(
+    "【70】未配置高亮的样式已随入口一起删除（不留死样式）"
+  );
+  // 入口虽删，模型配置的**常驻**入口不能断：设置页导航里必须有「模型」页
+  (/\["model", "模型"/.test(readFileSync(join(ROOT, "src", "features", "app-view", "helpers", "catalogs.ts"), "utf8")) ? ok : fail)(
+    "【70】设置页导航里仍有「模型」页（侧栏入口删掉后这是唯一的常驻入口）"
+  );
 
   // ⑤ 配过就不再弹（用户：「在登录界面配置过了，就不要弹这个弹窗了」）
   (/MODEL_CONFIGURED_KEY/.test(appSrc70) ? ok : fail)("【70】有「模型已配置过」的持久标记");
