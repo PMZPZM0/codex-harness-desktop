@@ -5,23 +5,28 @@
  * tar 解压到临时目录 → 校验新二进制 --version → 停引擎 → 替换 vendor 目录
  * （旧目录保留一代做回滚）→ 校验落位版本。失败自动回滚并重启引擎。
  *
- * 网络配套：
- * - 设置了代理（app-settings.json engineProxyUrl，如 http://127.0.0.1:7890）：
- *   走 HTTP CONNECT 隧道访问 registry.npmjs.org 官方源。
- * - 未设代理：先试国内 npmmirror 直连，失败再试 npmjs 直连。
+ * 网络配套（09-27 与「开发工具」页的下载源统一）：
+ * - 下载源 `app-settings.downloadSource`：auto / mirror → **国内镜像（npmmirror）在前**，
+ *   失败回落 npmjs；direct → 官方源在前；ghproxy / ghfast 是 GitHub 加速通道、对 npm registry
+ *   没有对应实现 ⇒ 回落 auto；每次更新现读，切完源下一次检查立即生效。
+ * - 代理 `app-settings.engineProxyUrl`（如 http://127.0.0.1:7890）：走 HTTP CONNECT 隧道。
+ *   ⛔ 代理是"怎么连"、下载源是"连谁"：配了代理时两个源都走隧道，但**先后顺序仍按下载源偏好**。
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import { createWriteStream, existsSync } from "node:fs";
+import { app } from "electron";
 import net from "node:net";
 import tls from "node:tls";
 import path from "node:path";
 import os from "node:os";
 import { codexBinaryPath } from "./codex-server";
+import { readAppSettings } from "./app-settings";
 
 const NPMJS = "https://registry.npmjs.org";
 const NPMMIRROR = "https://registry.npmmirror.com";
 const PKG_NAME = "@openai/codex";
+const TARBALL = PKG_NAME.split("/")[1];
 const PLATFORM_SUFFIX = process.platform === "win32"
   ? (process.arch === "x64" ? "win32-x64" : "win32-arm64")
   : (process.arch === "arm64" ? (process.platform === "darwin" ? "darwin-arm64" : "linux-arm64") : (process.platform === "darwin" ? "darwin-x64" : "linux-x64"));
@@ -186,10 +191,34 @@ export async function downloadTo(
 
 // ── registry 层 ──
 
+/**
+ * 下载源偏好（09-27）：与「开发工具」页同一套取值（`app-settings.downloadSource`），
+ * 每次更新现读 ⇒ 切完源下一次检查立即生效，不用重启。
+ * ⛔ ghproxy / ghfast 是 GitHub 加速通道，对 npm registry 没有对应实现 ⇒ 回落 auto
+ *    （与工具链侧对浏览器内核的处理同源，别在这里假装支持）。
+ */
+async function readDownloadSource(): Promise<"auto" | "mirror" | "direct" | "proxy"> {
+  try {
+    const source = (await readAppSettings(app.getPath("userData"))).downloadSource;
+    return source === "mirror" || source === "direct" || source === "proxy" ? source : "auto";
+  } catch {
+    return "auto";
+  }
+}
+
+/**
+ * 按源偏好排出两个 registry 的顺序。⛔ 代理是"怎么连"、下载源是"连谁"：
+ * 配了代理就两个源都走隧道，但**先后顺序仍按偏好**（auto/mirror 镜像在前，direct 官方在前）。
+ */
+async function orderedRegistries(proxyUrl?: string): Promise<{ base: string; proxy?: string }[]> {
+  const source = await readDownloadSource();
+  const first = source === "direct" ? NPMJS : NPMMIRROR;
+  const second = first === NPMJS ? NPMMIRROR : NPMJS;
+  return [{ base: first, proxy: proxyUrl }, { base: second, proxy: proxyUrl }];
+}
+
 async function registryEndpoints(proxyUrl?: string): Promise<{ base: string; proxy?: string }[]> {
-  if (proxyUrl) return [{ base: NPMJS, proxy: proxyUrl }, { base: NPMMIRROR, proxy: proxyUrl }];
-  // 无代理：国内镜像直连优先，官方源直连兜底
-  return [{ base: NPMMIRROR }, { base: NPMJS }];
+  return orderedRegistries(proxyUrl);
 }
 
 function trimVersion(raw: string): string {
@@ -281,11 +310,10 @@ export async function performEngineUpdate(
   const workRoot = path.join(os.tmpdir(), `codex-engine-update-${Date.now()}`);
   await fs.mkdir(workRoot, { recursive: true });
 
-  // 1) 下载 tarball：镜像优先（下载量大，镜像快），代理配置则用官方源
+  // 1) 下载 tarball：与 registry 同一套源顺序（镜像在前 / direct 时官方在前），配代理则都走隧道
   const tarballPath = path.join(workRoot, `codex-${tarballVersion}.tgz`);
-  const candidates: { url: string; proxy?: string }[] = proxyUrl
-    ? [{ url: `${NPMJS}/${PKG_NAME}/-/${PKG_NAME.split("/")[1]}-${tarballVersion}.tgz`, proxy: proxyUrl }, { url: `${NPMMIRROR}/${PKG_NAME}/-/${PKG_NAME.split("/")[1]}-${tarballVersion}.tgz`, proxy: proxyUrl }]
-    : [{ url: `${NPMMIRROR}/${PKG_NAME}/-/${PKG_NAME.split("/")[1]}-${tarballVersion}.tgz` }, { url: `${NPMJS}/${PKG_NAME}/-/${PKG_NAME.split("/")[1]}-${tarballVersion}.tgz` }];
+  const candidates: { url: string; proxy?: string }[] = (await orderedRegistries(proxyUrl))
+    .map(({ base, proxy }) => ({ url: `${base}/${PKG_NAME}/-/${TARBALL}-${tarballVersion}.tgz`, proxy }));
   let downloaded = false;
   let lastDownloadError: unknown = null;
   for (const cand of candidates) {
