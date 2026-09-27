@@ -25,7 +25,7 @@ Windows 用 `node scripts/prepare-windows-tools.cjs`、macOS 用 `node scripts/p
 | VS Code CLI | `vscode-cli/` | `code` 命令打开文件/工作区 |
 | cloudflared | `cloudflared.exe` | Cloudflare Tunnel（远程接入） |
 | 桌面 / 浏览器自动化 | `npm-global/` | Nuphus MCP + Playwright CLI（见第二节 1） |
-| ponytail 插件源 | `ponytail-plugin/` | 写代码模式插件（首启自动种进引擎） |
+| ponytail 插件源 | `ponytail-plugin/` | 写代码模式插件（09-27 起默认不装，开发工具页按需装） |
 
 > **09-16 安装包瘦身**：Python 3 / Git / ripgrep / uv / CMake / Ninja / 7-Zip / jq / 完整 PowerShell
 > **都不再随包**（它们有国内镜像源），改由「开发工具」页按需下载（`scripts/install-runtimes.cjs`，

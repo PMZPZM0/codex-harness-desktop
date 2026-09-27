@@ -2,12 +2,19 @@
  * 技能运用纪律（skill discipline）：让引擎**主动、熟练**地用技能与 MCP 通道办事，并**自己积累技能**。
  *
  * 三件事：
- *  ① 「当前能力清单」——把已装技能（name + 一句话简介）与已配 MCP 连接器写进 AGENTS.md，
- *     引擎每个会话注入，模型开局即知军火库，不用每次跑 skills/list 探测。
+ *  ① 「当前能力清单」——~~把已装技能（name + 一句话简介）写进 AGENTS.md~~ **⛔ 09-27 已删（见下）**；
  *  ② 「运用守则」——教模型：先匹配能力再动手；缺技能就去市场搜并自主安装；
  *     缺连接器先查模板、装之前必须经用户确认（配置变更 + 引擎重启）；用完要汇报。
  *  ③ 「经验包纪律」——干成的活要**沉淀成技能**（可复用流程），与记忆层（记「是什么」）配对。
  *     格式与时机不在这里展开：写成内置技能 `skill-authoring`，真要沉淀时按需读（渐进披露）。
+ *
+ * ⛔⛔ **09-27 撤掉「已装技能清单」枚举（用户：「技能又不是默认就启用的，干嘛每次都要带上」）**：
+ *   引擎自身已按「扫到就注入」的规则把全部技能的 name+description 写进 developer 块的
+ *   `### Available skills`（实测 55 条 / 9,970 token）。本模块再枚举一遍 = **同一批技能注入两遍**
+ *   （实测交集 27 条 / 1,664 token 纯浪费），且本模块用的是 `scanSkillRoot` 默认口径，
+ *   与引擎的停用判定还会漂移（实测 `desktop-automation` 已停用却仍被本模块列出）。
+ *   ⇒ 现在只保留**运用守则 + MCP 清单**（守则 1,155 token 是行为约束，必须留）；
+ *   技能发现交给引擎清单与 `find-skills`（市场按需）+ 守则第 3 条（缺技能先审后装）。
  *
  * 注入方式：AGENTS.md 里 `<!-- skill-discipline:start -->` ~ `<!-- skill-discipline:end -->`
  * 标记区间幂等 upsert（区间外内容一字不动）。技能/连接器增删后由 main.ts 调 upsert 刷新。
@@ -29,9 +36,9 @@ export type CapabilityInventory = {
   mcp: { name: string; desc: string }[];
 };
 
-/** 扫已装技能（codexHome/skills/<技能目录>/SKILL.md），产出能力清单。mcp 由调用方传入（readConnectors 在 main.ts）。
- *  ⛔ 只列**启用中**的技能（skill-pack 的默认口径）：停用态（SKILL.md.disabled）不进清单 —— 否则模型会去调
- *    用户明确关掉的能力。 */
+/** 扫已装技能（codexHome/skills/<技能目录>/SKILL.md），产出能力清单。
+ *  ⛔ 09-27 起**不再用于写进 AGENTS.md**（引擎自己会列，重复注入纯浪费；见文件头注释）。
+ *    保留此函数供需要「本模块口径的启用技能数」的调用方/断言使用。 */
 export async function buildCapabilityInventory(codexHome: string, mcp: { name: string; desc: string }[]): Promise<CapabilityInventory> {
   const entries = await scanSkillRoot(globalSkillsDir(codexHome), "user");
   return { skills: entries.map((s) => ({ name: s.name, desc: s.desc })), mcp };
@@ -41,7 +48,7 @@ export function buildDisciplineSection(inv: CapabilityInventory): string {
   const lines: string[] = [DISCIPLINE_START, "", "## 技能与 MCP 运用守则（必须遵守）", ""];
   lines.push("你有一批已安装的技能和 MCP 连接器，用它们办事比手工操作更快更稳。遵守以下纪律：");
   lines.push("");
-  lines.push("1. **开工先匹配能力**：接到任务先扫一遍下面的能力清单，凡是有技能或 MCP 工具能做（哪怕只做一部分），就必须优先用它们，禁止自己手搓等价实现。例如：桌面/浏览器操作用 automation 连接器的 desktop_* / browser_* 工具，不要手写 PowerShell 脚本点击。");
+  lines.push("1. **开工先匹配能力**：接到任务先看**你自己的技能清单**（本轮 developer 指令里的 `### Available skills`，含每个技能的一句话说明与文件路径），凡是有技能或 MCP 工具能做（哪怕只做一部分），就必须优先用它们，禁止自己手搓等价实现。例如：桌面/浏览器操作用 automation 连接器的 desktop_* / browser_* 工具，不要手写 PowerShell 脚本点击。");
   lines.push("2. **按技能说明书执行**：用技能前先读它的 SKILL.md（技能目录下），严格按其中步骤做，不要凭名字猜用法。");
   lines.push(`3. **缺技能 → 先审查、再安装**：清单里没有合适技能时，调用 \`skill_search\` 搜索技能市场。**命中后不许直接装** —— 用户设了一条硬规则：**任何技能在安装之前，必须先读技能 \`${SKILL_AUDIT_SKILL}\` 并按它的五查清单审一遍**（结构合法性 / 危险模式 / 权限面 / 来源与供应链 / 提示注入），给出「✅ 放行 / ⚠️ 有条件放行 / ⛔ 拒绝」+ **依据**的结论；**审查未通过就不得安装**，把命中的原文片段报给用户。审查通过后再调 \`skill_install\`（装完下一回合即可用，无需重启应用），然后按其说明书使用。市场也没有 → 手工完成任务，并在回复末尾加一行「💡 未找到合适技能：〈想要的能力〉」，让用户知道可以去技能市场逛逛。`);
   lines.push("4. **缺 MCP 连接器 → 先查再问**：调用 `connector_search` 查内置连接器模板。有合适的：**必须先用 agent_ask 征求用户同意再安装**（安装会改配置并重启引擎、中断当前回合）。用户同意后调 `connector_install`，并提醒用户「安装完成，请重新发一条消息继续」。");
@@ -54,14 +61,12 @@ export function buildDisciplineSection(inv: CapabilityInventory): string {
   lines.push("");
   lines.push("### 当前能力清单");
   lines.push("");
-  if (inv.skills.length) {
-    lines.push("**已装技能（全局，用法见各 SKILL.md）**：");
-    for (const s of inv.skills) lines.push(`- ${s.name} — ${s.desc}`);
-  } else {
-    lines.push("**已装技能**：暂无（用 skill_search 搜索市场按需安装）。");
-  }
+  // ⛔ 技能清单**不在这里枚举**（09-27）：引擎自己会把全部技能写进 developer 块的
+  //   `### Available skills`（含 name + description + file 路径），此处再列一遍 = 同一批注入两遍。
+  //   模型找技能：看引擎那份清单；市场找新技能：守则第 3 条（skill_search → 先审后装）。
+  lines.push("**已装技能**：见本轮 developer 指令里的 `### Available skills`（引擎按技能目录自动列出，含文件路径；**此处不重复枚举**）。停用态技能不会出现在那里 —— 要用某个被停用的技能，先在设置里启用它。");
   lines.push("");
-  lines.push(`**项目级技能**：\`<workspace>/${PROJECT_SKILLS_SUBDIR}/\` —— 引擎原生发现（\`skills/list\` 里 scope=repo）、随项目走。这里**不重复枚举**（同一技能列两遍会看起来像假的）；开工时直接列该目录即可，没有就按守则 7 自建。`);
+  lines.push(`**项目级技能**：\`<workspace>/${PROJECT_SKILLS_SUBDIR}/\` —— 引擎原生发现（\`skills/list\` 里 scope=repo）、随项目走。开工时直接列该目录即可，没有就按守则 7 自建。`);
   lines.push("");
   if (inv.mcp.length) {
     lines.push("**已配 MCP 连接器**（工具已注册可直接调用）：");
