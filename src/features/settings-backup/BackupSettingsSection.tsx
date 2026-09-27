@@ -3,9 +3,13 @@
  *
  * 纯搬迁：返回的 JSX 与原块逐字一致（仅去掉外层缩进）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
+ *
+ * 09-27 追加（非搬迁部分）：「选择会话导出」卡 —— 勾选任意多条会话导出
+ * （exportThreadsMarkdown/Backup 本来就收 id 数组，缺的只是选择 UI）。
  */
+import { useMemo, useState } from "react";
 import { PageInfo } from "../../components/SettingsHead";
-import { Archive, FileText, FileUp, Info, MessageSquare, Upload } from "lucide-react";
+import { Archive, FileText, FileUp, Info, ListChecks, MessageSquare, Upload } from "lucide-react";
 import { cleanThreadDisplayTitle } from "../../lib/user-refs";
 import { Spinner } from "../../components/CardShell";
 
@@ -13,6 +17,20 @@ export type BackupSettingsSectionProps = { thread: any; backupBusy: any; exportT
 
 export function BackupSettingsSection(props: BackupSettingsSectionProps) {
   const { thread, backupBusy, exportThreadsMarkdown, exportThreadsBackup, threads, importThreadsBackup, importConversationMarkdown } = props;
+  /* 选择会话导出（09-27）：勾选任意多条 → 一次导出。按更新时间新→旧排，勾选状态跨搜索保留 */
+  const [picked, setPicked] = useState<string[]>([]);
+  const [pickerQuery, setPickerQuery] = useState("");
+  const sortedThreads = useMemo(
+    () => [...threads].sort((a: any, b: any) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0)),
+    [threads],
+  );
+  const visibleThreads = useMemo(() => {
+    const keyword = pickerQuery.trim().toLowerCase();
+    if (!keyword) return sortedThreads;
+    return sortedThreads.filter((t: any) => `${t.name ?? ""} ${t.preview ?? ""} ${t.cwd ?? ""}`.toLowerCase().includes(keyword));
+  }, [sortedThreads, pickerQuery]);
+  const togglePicked = (id: string) => setPicked((current) => current.includes(id) ? current.filter((x) => x !== id) : [...current, id]);
+  const allVisiblePicked = visibleThreads.length > 0 && visibleThreads.every((t: any) => picked.includes(t.id));
   return (
     <>
       <section className="settings-section stack backup-page">
@@ -32,6 +50,27 @@ export function BackupSettingsSection(props: BackupSettingsSectionProps) {
                         <div className="backup-card-actions">
                           <button className="primary-setting" disabled={backupBusy !== "" || !threads.length} onClick={() => void exportThreadsMarkdown()}>{backupBusy === "export-md" ? <Spinner /> : <FileText size={14} />}导出 Markdown</button>
                           <button className="secondary-setting" disabled={backupBusy !== "" || !threads.length} onClick={() => void exportThreadsBackup()}>{backupBusy === "export" ? <Spinner /> : <Archive size={14} />}完整 JSON</button>
+                        </div>
+                      </article>
+                      <article className="backup-card backup-card--picker">
+                        <div className="backup-card-head"><span><ListChecks size={16} /></span><div><strong>选择会话导出</strong><small>已选 {picked.length} / {threads.length} 条</small></div></div>
+                        <div className="backup-picker-toolbar">
+                          <input className="backup-picker-search" placeholder="搜索会话（名称 / 内容 / 项目）" value={pickerQuery} onChange={(e) => setPickerQuery(e.target.value)} />
+                          <button className="secondary-setting" disabled={!visibleThreads.length} onClick={() => setPicked(allVisiblePicked ? picked.filter((id) => !visibleThreads.some((t: any) => t.id === id)) : [...new Set([...picked, ...visibleThreads.map((t: any) => t.id)])])}>{allVisiblePicked ? "取消全选" : "全选（当前可见）"}</button>
+                          <button className="secondary-setting" disabled={!picked.length} onClick={() => setPicked([])}>清空</button>
+                        </div>
+                        <div className="backup-picker-list">
+                          {visibleThreads.length ? visibleThreads.map((t: any) => (
+                            <label key={t.id} className={`backup-picker-row ${picked.includes(t.id) ? "is-picked" : ""}`}>
+                              <input type="checkbox" checked={picked.includes(t.id)} onChange={() => togglePicked(t.id)} />
+                              <span className="backup-picker-title">{cleanThreadDisplayTitle(t.name, { preview: t.preview })}</span>
+                              <span className="backup-picker-meta">{t.cwd ? t.cwd.split(/[\\/]/).pop() : ""} · {new Date(Number(t.updatedAt) || 0).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                            </label>
+                          )) : <div className="backup-picker-empty">没有匹配的会话</div>}
+                        </div>
+                        <div className="backup-card-actions">
+                          <button className="primary-setting" disabled={backupBusy !== "" || !picked.length} onClick={() => void exportThreadsMarkdown(picked)}>{backupBusy === "export-md" ? <Spinner /> : <FileText size={14} />}导出 Markdown（{picked.length}）</button>
+                          <button className="secondary-setting" disabled={backupBusy !== "" || !picked.length} onClick={() => void exportThreadsBackup(picked)}>{backupBusy === "export" ? <Spinner /> : <Archive size={14} />}完整 JSON（{picked.length}）</button>
                         </div>
                       </article>
                       <article className="backup-card">

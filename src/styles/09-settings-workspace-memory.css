@@ -1665,3 +1665,45 @@ button.search-box:hover {
   margin: -8px 0 0;
   font-size: 11px;
 }
+/* 备份页「选择会话导出」选择器（09-27）：勾选任意多条一次导出 */
+.backup-card--picker { grid-column: 1 / -1; }
+.backup-picker-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.backup-picker-search {
+  flex: 1;
+  min-width: 180px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 12px;
+  outline: none;
+}
+.backup-picker-search:focus { border-color: var(--accent); }
+.backup-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 264px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 6px;
+  background: var(--bg);
+}
+.backup-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+  min-width: 0;
+}
+.backup-picker-row:hover { background: var(--accent-soft); }
+.backup-picker-row.is-picked { background: var(--accent-soft); }
+.backup-picker-row input { flex: none; accent-color: var(--accent); }
+.backup-picker-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.backup-picker-meta { flex: none; color: var(--muted); font-size: 11px; }
+.backup-picker-empty { padding: 14px; text-align: center; color: var(--muted); font-size: 12px; }
