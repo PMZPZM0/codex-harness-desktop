@@ -1448,7 +1448,9 @@ w.postMessage({id:1,op:"list",root});
       "【168】快照单源：导演在弹窗、场景只画 prop（否则画面与右栏看板会不一致）"
     );
     // ⑥ 走路必须是**逐帧插值**（v8：PixiJS ticker）—— 写终点坐标/属性 = 人闪现到终点
-    (/const e = easeInOut\(w\.t\)/.test(canvas2) && /w\.container\.position\.set\(x, y\)/.test(canvas2) && !/--wk-x/.test(canvas2) ? ok : fail)(
+    //   09-27 v12：位置改由 `pointOnPath(w, easeInOut(w.t))` 沿 BFS 路径取点 ⇒ 锚点跟着放宽
+    //   （只锚"每帧按缓动后的 t 求位置 + 真的 set 到容器"，不锚具体变量名 —— 否则换实现就假红）
+    (/easeInOut\(w\.t\)/.test(canvas2) && /w\.container\.position\.set\(/.test(canvas2) && !/--wk-x/.test(canvas2) ? ok : fail)(
       "【168】走动小人逐帧插值（easeInOut(w.t) + position.set；⛔ 写终点坐标会让人「闪现」）"
     );
     // ⑦ 交接特效齐备：起点圆点 + 落点圆环 + 落点脉冲 + 飞行卡片 + 说明标签
@@ -2151,6 +2153,63 @@ w.postMessage({id:1,op:"list",root});
   (!/<\/div>\s*<button className="search-box"/.test(side180) ? ok : fail)(
     "【180】搜索任务不再留在导航区之外的旧位置（紧跟 </div> 之后那一行）"
   );
+}
+
+// ── 25. 办公室走动人寻路（09-27 用户「按建议顺序」第 3 项）──
+// 背景：走动人原来是 from→to **直线插值**，从自己工位走到饮水机会直接穿过别人的桌子。
+// 参照 munder-difflin 的做法（作者博客：BFS 四方向寻路，明确说这规模不需要 A*）改成网格寻路。
+{
+  const canvas181 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
+  const navPath181 = join(ROOT, "src", "features", "team-office", "office-nav.mjs");
+  // ① 接线：走动人必须走 BFS 路径
+  (/buildWalkerPath\(scene, ground/.test(canvas181) ? ok : fail)(
+    "【181】走动人用 BFS 路径（buildWalkerPath）"
+  );
+  // ⛔ 用 codeOnly 剥注释再判：注释里讲解历史时必然提到"直线插值"这些词
+  (!/lerp\(w\.from\.x, w\.to\.x/.test(codeOnly(canvas181)) ? ok : fail)(
+    "【181】不再有 from→to 直线插值（那会让人穿过别人的桌子）"
+  );
+  // ② 路径只在目标变化时重算（这个同步函数每帧跑，无条件重算 = 每帧一次 BFS）
+  (/walker\.pathKey !== key/.test(canvas181) ? ok : fail)(
+    "【181】路径只在目标变化时重算（每帧重算 = 每帧一次 BFS）"
+  );
+  // ③ 可行走网格按工位布局缓存
+  (/scene\.navKey !== navKey/.test(canvas181) ? ok : fail)(
+    "【181】可行走网格按布局缓存（不每帧重建 768 格）"
+  );
+  // ④ 走动速度按弧长换算（按 t 恒速会让"绕远路"的人反而走得飞快）
+  (/pxPerFrame \/ w\.totalLen/.test(canvas181) ? ok : fail)(
+    "【181】走动速度按路径长度换算（不是按 t 恒速）"
+  );
+  // ⑤ 真跑纯模块（office-nav.mjs 就是为此才用 .mjs：.ts 守卫只能读文本、跑不了）
+  if (!existsSync(navPath181)) fail("【181】office-nav.mjs 缺失 —— 守卫无法真跑寻路");
+  else {
+    const nav181 = await import(pathToFileURL(navPath181).href);
+    // ⛔ 这里的工位 u/v 抄自 office-iso 的 COL_U / ROW_V（3 列 × 3 行）；布局改了两边一起改。
+    const desks181 = [
+      { u: 0.23, v: 0.3 }, { u: 0.5, v: 0.3 }, { u: 0.77, v: 0.3 },
+      { u: 0.23, v: 0.61 }, { u: 0.5, v: 0.61 }, { u: 0.77, v: 0.61 },
+      { u: 0.23, v: 0.92 }, { u: 0.5, v: 0.92 }, { u: 0.77, v: 0.92 },
+    ];
+    const grid181 = nav181.buildWalkGrid(desks181);
+    const blocked181 = (pt) => nav181.isBlocked(grid181, nav181.cellOf(pt.u, pt.v, grid181).cx, nav181.cellOf(pt.u, pt.v, grid181).cy);
+    (desks181.every(blocked181) ? ok : fail)("【181】真跑：工位座位点被判为障碍（网格确实按桌子标了）");
+    const p181 = nav181.findPath({ u: 0.5, v: 0.61 }, { u: 0.9, v: 0.68 }, grid181);
+    (Array.isArray(p181) && p181.length >= 3 ? ok : fail)(`【181】真跑：工位→饮水机有路径（${p181?.length ?? 0} 个点）`);
+    if (p181) {
+      const hits181 = p181.filter(blocked181).length;
+      (hits181 <= 2 ? ok : fail)(`【181】真跑：路径不穿家具（落在障碍格的只有 ${hits181} 个，允许起终点计数）`);
+      const walked181 = nav181.pathLength(p181.map((pt) => ({ x: pt.u, y: pt.v })));
+      const direct181 = Math.hypot(0.9 - 0.5, 0.68 - 0.61);
+      (walked181 > direct181 * 1.001 ? ok : fail)(
+        `【181】真跑：路径比直线长（${walked181.toFixed(3)} vs ${direct181.toFixed(3)}）⇒ 确实在绕，不是直线`
+      );
+    }
+    // 每个工位都要能走出去（⛔ 别出现"被自己桌子困住"的工位）
+    let trapped181 = 0;
+    for (const desk of desks181) if (!nav181.findPath(desk, { u: 0.5, v: 0.06 }, grid181)) trapped181++;
+    (trapped181 === 0 ? ok : fail)(`【181】真跑：9 个工位都能走到后墙通道（被困住 ${trapped181} 个）`);
+  }
 }
 
 
