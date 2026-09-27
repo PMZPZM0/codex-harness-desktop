@@ -138,6 +138,7 @@ import {
   CheckCheck,
 } from "lucide-react";
 import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../../components/CardShell";
+import { useState } from "react";
 import { basename } from "../../../lib/basename";
 import { imageUrl } from "../../../lib/image-url";
 import { Markdown, MdCode, MdBlock, FilePreviewCode } from "../../markdown";
@@ -162,6 +163,11 @@ export function AppViewFilePreviewEditor({ app }: { app: HarnessAppApi }) {
     setNotice,
     workspace,
   } = app;
+  // md 文档视图：.md/.markdown 默认按**排版渲染**（像文档一样读），可切回源码。
+  // ⛔ 以 path 记忆开关 —— 切 tab / 换文件时自动回到"排版"默认，不会把 A 文件的选择带给 B。
+  const [mdSourceView, setMdSourceView] = useState<{ path: string; on: boolean }>({ path: "", on: false });
+  const isMarkdownDoc = !!filePreview && /\.(md|markdown)$/i.test(filePreview.path);
+  const sourceOn = !!filePreview && mdSourceView.path === filePreview.path && mdSourceView.on;
   return (
     filePreview && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFilePreview(null); }}>
             <div className={`file-preview ${filePreview.kind === "image" ? "image-preview" : "text-preview"}`} role="dialog" aria-label="文件预览">
@@ -183,6 +189,13 @@ export function AppViewFilePreviewEditor({ app }: { app: HarnessAppApi }) {
                     <button className="secondary-setting" title="在独立大窗口预览（可自由调整大小）" onClick={() => void window.codex.browserPopout(toFileUrl(filePreview.path)).catch((error: any) => setNotice(`放大预览失败：${error?.message ?? ""}`))}><Maximize2 size={14} />放大预览</button>
                   </>}
                   {!fileEditing && filePreview.kind === "text" && !fileTruncated && workspace && <button className="secondary-setting" onClick={() => { setFileDraft(filePreview.content); setFileEditing(true); }}><PenLine size={14} />编辑</button>}
+                  {filePreview.kind === "text" && isMarkdownDoc && !fileTruncated && (
+                    <button
+                      className="secondary-setting"
+                      title={sourceOn ? "按排版视图查看" : "查看 Markdown 源码"}
+                      onClick={() => setMdSourceView({ path: filePreview.path, on: !sourceOn })}
+                    >{sourceOn ? <><Eye size={14} />排版</> : <><FileCode2 size={14} />源码</>}</button>
+                  )}
                   {fileEditing && <><button className="secondary-setting" onClick={() => setFileEditing(false)}>取消</button><button className="primary-setting" disabled={savingFile || fileDraft === filePreview.content} onClick={() => void saveFilePreview()}>{savingFile ? <Spinner /> : <Check size={14} />}保存</button></>}
                   <button className="icon-button relay-modal-close" title="关闭" onClick={() => setFilePreview(null)}><X size={17} /></button>
                 </div>
@@ -200,7 +213,9 @@ export function AppViewFilePreviewEditor({ app }: { app: HarnessAppApi }) {
                       </div>
                     : fileEditing
                       ? <textarea className="file-preview-editor" value={fileDraft} spellCheck={false} onChange={(event) => setFileDraft(event.target.value)} />
-                      : <FilePreviewCode language={filePreview.language} content={filePreview.content} truncated={fileTruncated} />}
+                      : isMarkdownDoc && !sourceOn && !fileTruncated
+                        ? <div className="file-preview-markdown markdown"><Markdown>{filePreview.content}</Markdown></div>
+                        : <FilePreviewCode language={filePreview.language} content={filePreview.content} truncated={fileTruncated} />}
             </div>
           </div>
   );
