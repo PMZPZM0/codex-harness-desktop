@@ -1669,6 +1669,40 @@ w.postMessage({id:1,op:"list",root});
     );
   }
 
+  /* ══ 【177】手机控制 phone-harness（09-27 新增）══════════════════════════
+     ⛔ 两条硬边界，都是"错了不会报错、但会悄悄骗人"的那类：
+       ① **iPhone 通道只在 macOS 上可能存在** —— iPhone 走的是 Mac 的「iPhone 镜像」窗口，
+          Windows/Linux 上根本不存在这条通道。UI 若不加区分地宣传"能控制 iPhone"，
+          用户会照着做然后发现做不到（能力边界必须是真的）。
+       ② **装机即关掉上游遥测** —— 上游默认开启且会上报 task 文本与每步调用参数
+          （上游 issue #100 正在修）。这是本机数据边界，不跟随上游默认值。
+       两者都锚**代码形态**（平台判定 / 装机流程里的那一行），不锚注释文字。 */
+  {
+    console.log(C.bold("\n【177】手机控制 phone-harness（平台边界 / 遥测默认关）"));
+    const phPath = join(ROOT, "electron", "features", "phone-harness.ts");
+    const phSrc = existsSync(phPath) ? readFileSync(phPath, "utf8") : "";
+    const phUi = existsSync(join(ROOT, "src", "features", "settings-devtools", "PhoneHarnessCard.tsx"))
+      ? readFileSync(join(ROOT, "src", "features", "settings-devtools", "PhoneHarnessCard.tsx"), "utf8") : "";
+
+    (existsSync(phPath) && /iphoneEligible: process\.platform === "darwin"/.test(phSrc) ? ok : fail)(
+      "【177】iPhone 通道严格绑定 darwin（Windows/Linux 上不存在的通道不许宣传）"
+    );
+    (phUi.includes("iphoneEligible") && /status\?\.platform === "darwin"/.test(phUi) ? ok : fail)(
+      "【177】卡片按平台显示不同能力清单（非 Mac 要明说 iPhone 通道不支持）"
+    );
+    ((() => {
+      // ⛔ 顺序也是判据：必须先关遥测、再注册技能（技能一生效就会被调用）。
+      const off = phSrc.indexOf('harness(["config", "set", "telemetry", "false"]');
+      const skill = phSrc.indexOf('harness(["skill"]');
+      return off > 0 && skill > off;
+    })() ? ok : fail)(
+      "【177】装机后先关上游遥测再注册技能（上游默认开且会上报任务文本与调用参数）"
+    );
+    (/const PIP_INDEX[\s\S]{0,120}pypi\.tuna/.test(phSrc) ? ok : fail)(
+      "【177】pip 安装走国内镜像（清华源，与 markitdown 同一套口径）"
+    );
+  }
+
   /* ══ 【170】DESIGN.md 视觉规范与代码对账（09-26）══════════════════════════
      概念来自 Google Stitch 的 DESIGN.md（结构参考 VoltAgent/awesome-design-md，MIT）：
      AGENTS.md 定义「怎么建」，DESIGN.md 定义「长什么样」。
