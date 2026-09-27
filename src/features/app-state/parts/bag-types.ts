@@ -671,9 +671,6 @@ export interface Bag {
   setCompanyPreviewTeamId: React.Dispatch<React.SetStateAction<string | null>>;
   dramaCanvasOpen: boolean;
   setDramaCanvasOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  /** 画布用途：drama=短剧（默认）| image=生图工作流（09-27，同引擎不同起手） */
-  dramaCanvasVariant: "drama" | "image";
-  setDramaCanvasVariant: React.Dispatch<React.SetStateAction<"drama" | "image">>;
   pptokenCardOff: boolean;
   setPptokenCardOff: React.Dispatch<React.SetStateAction<boolean>>;
   settingsPage: import("../../app-view/types.ts").SettingsPage;
