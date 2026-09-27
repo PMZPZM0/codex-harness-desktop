@@ -25,6 +25,14 @@ import { splitMarkdown } from "../../lib/markdown-blocks.mjs";
 import { Globe2 } from "lucide-react";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
+// 数学公式（09-27，对齐引擎 0.156/0.157 的公式渲染能力）：remark-math 负责把 `$…$` / `$$…$$`
+// 解析成 math 节点，rehype-katex 渲染成 HTML。只引 katex 自带 CSS（自带字体，深浅色靠 currentColor）。
+// ⛔ 已知边界：行内 `$` 与 shell 变量（`$HOME`、`$(…)`）理论上可能误判 —— 但 micromark 的规则是
+//   「闭合 $ 后紧跟数字则不解析」（`$5 和 $10` 安全）+「不闭合不成公式」，正文单独出现 `$VAR` 不会被吞，
+//   与 GitHub / Typora 行为一致；若日后真被误伤，可关 singleDollarTextMath 只留 `$$`。
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 
 function LinkCard({ href }: { href: string }) {
   let host = href;
@@ -38,7 +46,8 @@ function LinkCard({ href }: { href: string }) {
   );
 }
 
-const MD_REMARK_PLUGINS = [remarkGfm, remarkBreaks];
+const MD_REMARK_PLUGINS = [remarkGfm, remarkBreaks, remarkMath];
+const MD_REHYPE_PLUGINS = [rehypeKatex];
 
 export const MdCode = memo(function MdCode({ className, children, ...props }: any) {
   const settings = useCodeSettings();
@@ -147,7 +156,7 @@ export const MD_COMPONENTS: Components = {
 };
 
 export const MdBlock = memo(function MdBlock({ text }: { text: string }) {
-  return <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS} urlTransform={markdownUrlTransform}>{text}</ReactMarkdown>;
+  return <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} rehypePlugins={MD_REHYPE_PLUGINS} components={MD_COMPONENTS} urlTransform={markdownUrlTransform}>{text}</ReactMarkdown>;
 });
 
 export const Markdown = memo(function Markdown({ children }: { children: string }) {

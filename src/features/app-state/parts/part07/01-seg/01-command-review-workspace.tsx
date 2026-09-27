@@ -155,10 +155,40 @@ export function usePart07a1(bag: Bag) {
             await bag.send();
           }
         } else if (name === "undo") {
-          const result = await window.codex.request("thread/rollback", { threadId: bag.thread.id, numTurns: 1 });
-          bag.threadRef.current = result.thread;
-          bag.setThread(result.thread);
-          bag.showToast("已撤销上一轮", "仅回退对话历史，不会撤销工作区文件改动");
+          // ⛔ 引擎 0.157 起 `thread/rollback` 已被**移除**（协议里 ThreadRollbackParams/Response 整个消失，
+          // 调用会直接 method not found）。替代是 `thread/revert`，语义从「回退 N 个回合」变成
+          // 「把持久历史替换为 beforeTurnId **之前**的前缀（该回合及其后全丢）」
+          // ⇒ 传**最后一个回合的 id** 即等价于原来的 numTurns:1。
+          // ⛔ 第二个坑：revert 返回的 `thread.turns` **恒为空**（协议注释明写 "turns is always empty"），
+          // 直接塞回 bag 会把界面上所有消息清空 ⇒ 必须用 `thread/turns/list` 重新拉一页。
+          // 拉取口径与 `app-view/helpers/thread-list.ts` 的 resumeThreadWithTurns 一致
+          // （desc + limit 200 + 末尾 reverse 翻回时间正序）；那个函数是 app-view 域内私有，
+          // 跨域不深链（见 AGENTS.md 分层规则），故此处同口径就地实现。
+          const turns = bag.thread?.turns ?? [];
+          const lastTurnId = String(turns[turns.length - 1]?.id ?? "");
+          if (!lastTurnId) {
+            bag.showToast("无法撤销", "当前会话没有可撤销的回合");
+          } else {
+            // ⛔ 必须整体 try/catch：同文件其它分支（goal 等）都有，这里原来没有 —— 而 revert 是会
+            //   失败的操作（未登录 / 引擎报错），静默冒泡出去用户只会看到"点了没反应"（09-26 归档
+            //   那条 bug 的同型）。失败必须弹可见 toast 带引擎原话。
+            try {
+              const result = await window.codex.request("thread/revert", { threadId: bag.thread.id, beforeTurnId: lastTurnId });
+              // 回合重载是**尽力而为**：失败不阻断 —— 引擎侧历史已经回退了，界面刷新失败最多暂时显示
+              // 旧回合（下次 resume 会纠正），不该因此把"已撤销"报成"撤销失败"。
+              let restored: any[] | null = null;
+              try {
+                const page: any = await window.codex.request("thread/turns/list", { threadId: bag.thread.id, limit: 200, sortDirection: "desc", itemsView: "full" });
+                restored = Array.isArray(page?.data) ? [...page.data].reverse() : [];
+              } catch { /* 重载失败：保留 revert 返回的元数据 */ }
+              const nextThread = restored ? { ...result.thread, turns: restored } : result.thread;
+              bag.threadRef.current = nextThread;
+              bag.setThread(nextThread);
+              bag.showToast("已撤销上一轮", "仅回退对话历史，不会撤销工作区文件改动");
+            } catch (error: any) {
+              bag.showToast("撤销失败", String(error?.message ?? error).slice(0, 160));
+            }
+          }
         } else if (name === "queue") {
           const result = await window.codex.request("thread/queue/list", { threadId: bag.thread.id, limit: 100 });
           bag.setInfoModal({ title: "消息队列", body: result.data?.length ? result.data.map((entry: any, index: number) => `${index + 1}. ${entry.input?.find((part: any) => part.type === "text")?.text ?? "附件消息"}`).join("\n") : "队列为空" });

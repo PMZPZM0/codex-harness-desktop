@@ -2050,6 +2050,44 @@ w.postMessage({id:1,op:"list",root});
   );
 }
 
+// ── 22. 引擎 0.157 协议迁移：thread/rollback → thread/revert（09-27 用 generate-ts 做协议 diff 发现）──
+{
+  const undo178 = readAppUi();
+  // ⛔ 用**调用形态**锚（`request("thread/rollback"`）——注释里会写旧方法名解释原因，
+  //   用「全文禁词」会被自己的注释误伤（09-27 在【46】上真踩过）。
+  (!/request\("thread\/rollback"/.test(undo178) ? ok : fail)(
+    "【178】不许再调 thread/rollback（引擎 0.157 已移除该 RPC ⇒ 直接 method not found）"
+  );
+  // 撤销分支先整块锚定再查内容（⛔ 别用固定字符窗口串两句：插几行就假红）
+  const undoBlock178 = /name === "undo"\)([\s\S]*?)\} else if/.exec(undo178)?.[1] ?? "";
+  (/request\("thread\/revert", \{ threadId[^}]*beforeTurnId/.test(undoBlock178) ? ok : fail)(
+    "【178】撤销走 thread/revert 且传 beforeTurnId（替代 numTurns：beforeTurnId 之前的前缀才是保留部分）"
+  );
+  (/request\("thread\/turns\/list"/.test(undoBlock178) ? ok : fail)(
+    "【178】revert 后必须 thread/turns/list 重载回合（返回的 thread.turns 恒为空，直接塞回会清空界面）"
+  );
+}
+
+// ── 23. 使用统计页的「账号用量」区块（09-27 接引擎 account/usage/read；该 RPC 0.153 就有，只是没接）──
+{
+  const upSrc = readFileSync(join(ROOT, "src", "components", "UsagePanel.tsx"), "utf8");
+  (/request\("account\/usage\/read"/.test(upSrc) ? ok : fail)(
+    "【179】使用统计页接入引擎账号用量（account/usage/read）"
+  );
+  // ⛔ 必须静默降级：未登录 / 用第三方 provider（引擎侧没有账号态）/ 网络失败 ⇒ **整块不渲染**。
+  //   本机实测 auth.json 是 4 字节的 `null` ⇒ 用户当前走的就是这条降级路（SSR 已实证不留空区块）。
+  (/\.catch\(\(\) => undefined\)/.test(upSrc) && /if \(!summary\) return null/.test(upSrc) ? ok : fail)(
+    "【179】拿不到账号数据时静默降级（catch 兜住 + !summary 直接 return null，不留空占位）"
+  );
+  // ⛔ 两套来源不许混算：本机累计（本地 stats）与服务端账号 summary 必须分开展示。
+  //   锚 `stats` 的**数据引用形态**（stats. / stats, / stats)）—— 裸词会被自己的 CSS 类名
+  //   `usage-stats-row` 误伤（09-27 实测踩到；同型教训：断言别锚裸词，要锚代码形态）。
+  const accountFn = /function AccountUsageBlock\(\)[^]*?\n}/.exec(upSrc)?.[0] ?? "";
+  (accountFn.length > 0 && !/stats\s*[.,)]/.test(accountFn) ? ok : fail)(
+    "【179】账号区块不引用本机 stats（本机累计与服务端记账是两套来源，不许混算）"
+  );
+}
+
 
   }
 }

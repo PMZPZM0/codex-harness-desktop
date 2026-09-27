@@ -2787,3 +2787,34 @@ Windows/Linux 上 iPhone 通道（Mac 的 iPhone 镜像窗口）根本不存在�
 
 **守卫**：03-runtime-boot +1（卡片必须显示当前取源，锚 `ENGINE_SOURCE_LABEL` + registry 传参），
 变异（去掉传参）如期报红。
+
+## 🧩 2026-09-27 引擎 0.157 配套三项：撤销协议迁移 + 公式渲染 + 账号用量
+
+**① `thread/rollback` → `thread/revert`（升级引入的真回归）**
+新版协议里 `ThreadRollbackParams/Response` 整个消失（用 `codex app-server generate-ts` 导出新旧协议
+做 diff 发现）⇒ `/undo` 会直接 method not found。迁移**不是换个名字**：
+- 参数 `{threadId, numTurns}` → `{threadId, beforeTurnId}`（语义：保留该回合**之前**的前缀）；
+- ⛔ 返回的 `thread.turns` **恒为空**（协议注释明写）⇒ 必须用 `thread/turns/list` 重载回合，
+  否则界面消息被清空；
+- ⛔ 补 try/catch + 可见 toast：原分支**没有**异常处理（同文件其它分支都有），而 revert 是会失败的
+  操作 —— 静默冒泡只会让用户看到「点撤销没反应」（09-26 归档那条 bug 的同型）。
+守卫【178】3 条；双向变异（退回 rollback / 删掉重载）均红。
+
+**② 公式渲染（KaTeX）**
+`remark-math` + `rehype-katex` + `katex` 接进唯一渲染入口 `MdBlock` ⇒ 聊天 / 文件预览 / info modal
+全场景生效。⛔ 顺带修**打包裁剪的真缺陷**：`before-pack.cjs` 的 `reachableAssets()` 只认 `.js/.css`，
+而 katex 的 59 个字体是通过 CSS 的 `url(./KaTeX_xxx.woff2)`（**无引号**形态）引用的 ⇒ 全部被判
+「陈旧」待删，安全阀（阈值 30）也兜不住（闭包 167 ≥ 30）= v0.0.27「删活文件」同型。补第 ④ 条规则
+跟随 CSS 资源引用后：闭包 **167 → 226/226**，待删 **59 → 0**。守卫【151】+1（临时夹具真跑，不依赖 dist）。
+⛔ 还修了 `splitMarkdown` 的 math 分块：`$$ … $$` 内的空行会把多行公式切成两块、各含落单 `$$`
+⇒ 渲染成字面文本（实测四形态里只有「多行 + 含空行」坏，而模型常这么写）。守卫【149】+3
+（多行不切块 / 单行不翻转 / `$VAR` 不误判）。
+
+**③ 使用统计页接入账号用量**
+该页早就有本机分析（20 周热力图 + 30 天趋势 + 模型占比环形 + 峰值/连续/上下文），**比引擎 `/usage` 还全**；
+本次新增的是**服务端账号级**数据（`account/usage/read`，0.153 就有、只是没接）。⛔ 该 RPC 需要 OpenAI
+登录态（本机 auth.json 实测是 4 字节的 `null`）⇒ **拿不到就整块不渲染**（不留空占位），且与本机 stats
+**不混算**。守卫【179】3 条；SSR 实证：组件不崩、无数据时无空区块、既有图表全在。
+
+**收尾**：`npm run check` 2514✓ / 19✗（全为已知沙箱假红）；新增依赖 remark-math ^6 / rehype-katex ^7 /
+katex ^0.18.9（走 npmmirror）。
