@@ -1389,7 +1389,7 @@ w.postMessage({id:1,op:"list",root});
     const officeSrc = existsSync(officePath) ? readFileSync(officePath, "utf8") : "";
     const officeCanvasPath = join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx");
     const officeCanvasSrc = existsSync(officeCanvasPath) ? readFileSync(officeCanvasPath, "utf8") : "";
-    (officeSrc.includes("<OfficeCanvas") && officeSrc.includes("snapshot: DirectorSnapshot") ? ok : fail)(
+    (/<OfficeCanvas\s/.test(officeSrc) && officeSrc.includes("snapshot: DirectorSnapshot") ? ok : fail)(
       "【154】虚拟办公室场景存在（OfficeScene 薄壳 → OfficeCanvas，快照单源入参）"
     );
     (/new Application\(/.test(officeCanvasSrc) && /function animateScene\(/.test(officeCanvasSrc) ? ok : fail)(
@@ -1507,12 +1507,15 @@ w.postMessage({id:1,op:"list",root});
     );
 
     ((() => {
-      const back = furnSrc.indexOf("back.zIndex = slot.y - 0.4");
-      const chair = furnSrc.indexOf("chair.zIndex = slot.y - 0.3");
-      const person = furnSrc.indexOf("view.container.zIndex = slot.y - 0.2");
-      const front = furnSrc.indexOf("front.zIndex = slot.y - 0.1");
-      return back >= 0 && chair >= 0 && person >= 0 && front >= 0
-        && back < chair && chair < person && person < front
+      // ⛔ 取**偏移量数值**比大小，不比出现位置：显示器/椅子/桌子在 syncStatics 里连着画，
+      //    落座人物在 syncPeople（更靠后）—— 按行号比会因为"人写在下面"而假红。
+      const off = (re) => { const m = furnSrc.match(re); return m ? Number(m[1].replace(/\s+/g, "")) : NaN; };
+      const back = off(/back\.zIndex = slot\.y ([+-] [\d.]+)/);
+      const chair = off(/chair\.zIndex = slot\.y ([+-] [\d.]+)/);
+      const person = off(/view\.container\.zIndex = slot\.y ([+-] [\d.]+)/);
+      const front = off(/front\.zIndex = slot\.y ([+-] [\d.]+)/);
+      return Number.isFinite(back) && Number.isFinite(chair) && Number.isFinite(person)
+        && Number.isFinite(front) && back < chair && chair < person && person < front
         && /world\.sortableChildren = true/.test(furnSrc);
     })() ? ok : fail)(
       "【169】工位纵深排序（显示器 → 椅子 → 人 → 桌子，按地面基线 zIndex + sortableChildren）"
@@ -1659,6 +1662,37 @@ w.postMessage({id:1,op:"list",root});
         `【172】上限留 2× 余量（引擎向上遍历会拼接多级 AGENTS.md，卡的是总量；余量=${(agentsBytes ? (limit / agentsBytes).toFixed(2) : "?")}×）`
       );
     }
+  }
+
+  /* ══ 【174】dev 重启不白屏 + 任务栏图标不丢（09-27 用户实测两连）════════════
+     事故一（白屏）：保存供应商 → relaunchApp() 整应用重启。dev 启动脚本是
+       `concurrently -k "vite" "wait-on tcp:5173 && electron ."`，`-k` 让旧 electron 一退
+       就把 vite 一起杀掉，而新实例继承 VITE_DEV_SERVER_URL=http://localhost:5173 ⇒
+       did-fail-load ERR_CONNECTION_REFUSED ⇒ DOM 全空 = 白屏（探针实测）。
+     事故二（图标）：WindowFactory 只认 app.getAppPath()/build/icon.ico 一条路径，relaunch
+       等场景 appPath 不落在仓库根 ⇒ existsSync=false ⇒ icon:undefined ⇒ dev 无 AUMID 兜底
+       ⇒ 任务栏回退 Electron 原子图标。
+     两条都为「文件存在但路径/环境变了」，故断言锚**接线与多源兜底**而非文件存在。 */
+  {
+    const diagSrc = readFileSync(join(ROOT, "electron", "features", "app-diagnostics.ts"), "utf8");
+    const winSrc = readFileSync(join(ROOT, "electron", "features", "window-factory.ts"), "utf8");
+    // ① relaunch 前必须摘掉 dev URL（新实例才不会去连已死的 vite）
+    (/delete process\.env\.VITE_DEV_SERVER_URL/.test(diagSrc) ? ok : fail)(
+      "【174】app:relaunch 在 dev 下摘掉 VITE_DEV_SERVER_URL（否则新实例连已死的 vite ⇒ 白屏）"
+    );
+    // ② relaunch 必须优雅退（app.quit 而非 app.exit）——保证 before-quit 清理与图标不被打断
+    const relaunchBlock = diagSrc.slice(diagSrc.indexOf('ipcMain.handle("app:relaunch"'), diagSrc.indexOf('ipcMain.handle("app:relaunch"') + 1200);
+    (/app\.relaunch\(\)/.test(relaunchBlock) && /app\.quit\(\)/.test(relaunchBlock) && !/app\.exit\(0\)/.test(relaunchBlock) ? ok : fail)(
+      "【174】app:relaunch 用 app.quit() 优雅退出（app.exit 会跳过 before-quit 清理并打断任务栏图标）"
+    );
+    // ③ 窗口加载失败要能回落本地 dist（宁可看构建版也不能白屏）
+    (/loadURL\(devUrl\)\.catch\(/.test(winSrc) && /loadFile\(distIndex\)/.test(winSrc) ? ok : fail)(
+      "【174】dev URL 加载失败回落本地 dist（白屏第二道保险）"
+    );
+    // ④ 图标路径必须多源兜底（只认 app.getAppPath() 一条会在 relaunch 后丢图标）
+    (/iconCandidates/.test(winSrc) && /process\.execPath/.test(winSrc) && /iconCandidates\.find\(/.test(winSrc) ? ok : fail)(
+      "【174】窗口图标多源兜底（appPath / execPath 上溯 / cwd，取首个存在的）"
+    );
   }
 
   /* ══ 【173】共享技能池（09-27 用户需求：按项目选择生效的全局技能）══════════
