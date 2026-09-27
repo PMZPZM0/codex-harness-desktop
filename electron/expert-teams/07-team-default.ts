@@ -10,6 +10,7 @@ import { dataAnalysisTeam } from ".//11-data-analysis-team";
 import { marketingGrowthTeam } from ".//12-marketing-growth-team";
 import { productDesignTeam } from ".//13-product-design-team";
 import { videoProductionTeam } from ".//14-video-production-team";
+import { imageGenExpert } from ".//15-image-gen-expert";
 export function buildDefaultExpertTeams(): ExpertTeamConfig[] {  const now = new Date().toISOString();
   const mk = (partial: any): ExpertTeamConfig => ({ ...partial, createdAt: now, updatedAt: now, enabled: true });
 
@@ -20,5 +21,7 @@ export function buildDefaultExpertTeams(): ExpertTeamConfig[] {  const now = new
     dataAnalysisTeam(mk),
     marketingGrowthTeam(mk),
     productDesignTeam(mk),
+    videoProductionTeam(mk),
+    imageGenExpert(mk),
   ];
 }

@@ -3008,3 +3008,39 @@ video-providers.mjs 一处；② 万相/Seedance/Luma 的 i2v 需要公网图片
 按更新时间新→旧排、显示所属项目与最近更新时间。
 ⛔ 底层 `exportThreadsMarkdown/Backup` 本来就收 id 数组（当前会话卡就是传 `[thread.id]`），
 缺的只是选择 UI —— 勾选数组必须真传进导出函数（守卫【185】钉这条，变异：改回不传参即红）。
+
+## 🧩 2026-09-27 archkit 收尾：5 型图齐 + delta 对比 + 视觉回归门禁（诚实边界清零）
+
+**补齐（上一轮声明未做的全部）**：
+- **dataflow**（source/process/store/sink/external）与 **lifecycle**（state + 自环转移合法，
+  圆环布局状态机、往返转移按奇偶错弧）两型 —— 至此与上游对齐 **5 型全量**。
+- **delta 对比**：`archkitDelta(old,new)` 纯函数（按节点 id 对齐，changed = 同 id 内容变化；
+  连线只算增删；跨 type 直接抛错）→ CLI `archkit delta v1.json v2.json` 渲染新图 + Δ 增删改摘要面板
+  （⛔ 不传 delta 的普通渲染输出保持逐字节不变）。
+- **visual-check 视觉回归门禁**：`archkit visual-check <html|json> <baseline.png> [--update]` ——
+  electron 离屏截图 → 与基线逐像素比对（阈值 0.5%，超阈 exit 1）→ `--update` 重建基线。
+  ⛔ 基线按机器生成（字体平台差），跨机器比较无意义。
+
+**实测**：delta/visual-check 全链真跑 —— 同产物复检 **0/1,296,000 像素差（确定性再次实证）**，
+换一张异图立即被门禁拦截（exit 1）。
+
+**排查中抓到的两个真 bug（都在我自己刚写的代码里）**：
+1. ⛔⛔ **07-team-default.ts 的"注册"从未生效**：videoProductionTeam / imageGenExpert 只加了
+   import、**数组项没加上**（CRLF 环境里 node replace 用 `\n` 匹配静默失败）——视频专家团
+   从未进默认清单，若非守卫【184】红，召咁会直接报未知 teamId。修法改用 Edit 工具逐字插入。
+   ⛔ 教训升级：**node 脚本里做跨行 replace 必须按 `\r?\n` 切行处理，或在 replace 后断言
+   "替换真的生效"**（本次 replace 打印了"已注册"但实际只生效一半——成功输出骗了我）。
+2. ⛔ **变异 M2 的还原漏了被改文件**：M2 改的是 CLI、还原脚本只还原了 model —— env 清理
+   被吞，【186】红才发现。变异脚本必须**逐文件配对备份/还原**（此前各轮都在同一文件内
+   改还原，这次跨了两个文件就漏了）。
+3. （承接上一轮）ELECTRON_RUN_AS_NODE=1 被宿主继承 ⇒ spawn 的 electron.exe 退化纯 Node
+   （报错 Node 版本 v24.20.0 = electron 内嵌 node，不是系统 v22）—— spawn 前 delete 该变量
+   与 NODE_OPTIONS，守卫【186】钉死。
+
+**守卫**：【186】7 条（5 型真跑 / delta 真值表 / 跨 type 抛错 / lifecycle 渲染 / delta 面板条件渲染 /
+env 清理锚 / 技能文档同步），**双向变异**（白名单砍 lifecycle / env 清理被删）各 1 红。
+`npm run check`：2583✓/19✗（全沙箱假红）。
+
+**关于"无限画布 3 项验收收尾"**：那 3 项失败里 2 项是当时验收脚本自己断言错了目标
+（画布实际已打开/已建板），1 项是可信根限制（冒烟用了临时 workspace）；对应的产品缺陷
+（窗控重叠、window.prompt、交给 Agent）本轮已全部修复并随 bca35f2/本提交落库，验收闭环。
