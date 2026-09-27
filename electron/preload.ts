@@ -138,6 +138,10 @@ contextBridge.exposeInMainWorld("codex", {
   listLocalSkills: () => __ipc("skills:local-list", 0, []),
   setEnabledSkill: (input: { folder: string; enabled: boolean }) => __ipc("skills:set-enabled", 1, [input]),
   setEnabledSkillBatch: (input: { folders: string[]; enabled: boolean }) => __ipc("skills:set-enabled-batch", 1, [input]),
+  /* 共享技能池（09-27）：按项目查看/管理全局技能生效集 */
+  describeSkillPool: (input: { cwd: string }) => __ipc("skills:pool-describe", 1, [input]),
+  /* 设置全局停用/本项目禁用并立即投影 */
+  setSkillPoolState: (input: { cwd: string; name: string; globalDisabled?: boolean; projectDisabled?: boolean }) => __ipc("skills:pool-set", 0, [input]),
   setPluginEnabled: (input: { pluginIds: string[]; enabled: boolean }) => __ipc("plugins:set-enabled", 1, [input]),
   removeLocalSkill: (input: { folder: string; name?: string }) => __ipc("skills:local-remove", 0, [input]),
   trustHooks: (cwds?: string[]) => __ipc("hooks:trust", 0, [{ cwds }]),

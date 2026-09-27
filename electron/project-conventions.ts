@@ -16,6 +16,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { syncSkillPool } from "./skill-pool";
 
 /** 追加段的标记（幂等判据：含它就不再追加）。 */
 const HARNESS_APPEND_MARK = "Codex Harness 自动追加";
@@ -49,11 +50,17 @@ const DESIGN_APPEND = (date: string) => `
 /**
  * 确保 `<cwd>/AGENTS.md` 就绪：缺失则创建模板；已存在但从没提及 DESIGN.md、且项目根
  * 确有 DESIGN.md 时追加一次引导。幂等、静默降级（任何失败都不抛出）。
+ *
+ * ⛔ 顺带执行 `syncSkillPool(cwd, codexHome)`（09-27 共享技能池）：本函数是**全部**
+ *    thread/start 调用点的统一收口（守卫【171】④），技能池投影挂这里 = 12 处调用点
+ *    自动继承，新会话启动前池配置即生效。codexHome 由调用方延迟传入（顶层求值纪律）。
  */
 export function ensureProjectAgentsMd(cwd: string): void {
   try {
     const dir = String(cwd ?? "").trim();
     if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return;
+    // 共享技能池投影（09-27）：失败静默，绝不影响会话启动
+    try { syncSkillPool(dir); } catch { /* 池投影失败不影响 AGENTS.md 主流程 */ }
     const agentsPath = path.join(dir, "AGENTS.md");
     const designPath = path.join(dir, "DESIGN.md");
     const date = new Date().toISOString().slice(0, 10);

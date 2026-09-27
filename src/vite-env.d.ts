@@ -414,6 +414,10 @@ interface Window {
     listLocalSkills(): Promise<LocalSkillEntry[]>;
     setEnabledSkill(input: { folder: string; enabled: boolean }): Promise<{ ok: boolean }>;
     setEnabledSkillBatch(input: { folders: string[]; enabled: boolean }): Promise<{ ok: boolean; changed: number; failures: string[] }>;
+    /* 共享技能池（09-27）：按项目查看/管理全局技能生效集 */
+    describeSkillPool(input: { cwd: string }): Promise<{ skills: { name: string; globalDisabled: boolean; projectDisabled: boolean; active: boolean }[] }>;
+    /* 设置全局停用/本项目禁用并立即投影 */
+    setSkillPoolState(input: { cwd: string; name: string; globalDisabled?: boolean; projectDisabled?: boolean }): Promise<{ ok: boolean }>;
     setPluginEnabled(input: { pluginIds: string[]; enabled: boolean }): Promise<{ changed: number; failures: string[] }>;
     removeLocalSkill(input: { folder: string; name?: string }): Promise<{ ok: boolean; engineRemoved?: boolean; engineCheckMessage?: string }>;
     trustHooks(cwds?: string[]): Promise<{ total: number; trusted: number; alreadyTrusted: number; failures: string[] }>;
