@@ -14,7 +14,19 @@ import { copyTextToClipboard } from "../../lib/clipboard";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { Spinner } from "../../components/CardShell";
 
-export type GeneralSettingsSectionProps = { globalPermApproval: any; applyGlobalPermissionMode: any; workspace: any; chooseWorkspace: any; userDataPath: any; setNotice: any; rightOpen: any; setRightOpen: any; capabilityHint: any; desktopAuto: any; groupBusy: any; toggleDesktopAuto: any; browserAuto: any; toggleBrowserAuto: any; ponytailOn: any; applyGroup: any; hardwareAccel: any; changeHardwareAccel: any; restartPending: any; SHORTCUT_GROUPS: any; setShortcutsOpen: any; engineVersion: any; engineCheck: any; engineUpdating: any; checkEngineUpdateNow: any; performEngineUpdateNow: any; engineUpdatePercent: any; engineUpdateStageText: any; engineUpdateLog: any; engineUpdateResult: any; relaunchCountdown: any };
+export type GeneralSettingsSectionProps = { globalPermApproval: any; applyGlobalPermissionMode: any; workspace: any; chooseWorkspace: any; userDataPath: any; setNotice: any; rightOpen: any; setRightOpen: any; capabilityHint: any; desktopAuto: any; groupBusy: any; toggleDesktopAuto: any; browserAuto: any; toggleBrowserAuto: any; ponytailOn: any; applyGroup: any; hardwareAccel: any; changeHardwareAccel: any; restartPending: any; SHORTCUT_GROUPS: any; setShortcutsOpen: any; engineVersion: any; engineCheck: any; engineUpdating: any; checkEngineUpdateNow: any; performEngineUpdateNow: any; engineUpdatePercent: any; engineUpdateStageText: any; engineUpdateLog: any; engineUpdateResult: any; relaunchCountdown: any; downloadSource: any };
+
+/** 引擎更新实际会走的取源（与 electron/engine-updater.ts 的 orderedRegistries 同源口径）。
+ *  ⛔ ghproxy / ghfast 是 GitHub 加速通道，对 npm registry 没有对应实现 ⇒ 引擎侧按 auto 处理，
+ *    这里如实说出来，别让用户在「开发工具」页选了 gh 加速却以为引擎更新也走它。 */
+const ENGINE_SOURCE_LABEL: Record<string, string> = {
+  auto: "国内镜像优先（npmmirror，失败自动回落官方源）",
+  mirror: "国内镜像优先（npmmirror）",
+  direct: "官方源直连（registry.npmjs.org）",
+  proxy: "代理隧道（两个源都走代理，顺序仍按镜像优先）",
+  ghproxy: "国内镜像优先（gh 加速通道对 npm 无实现，按 auto 处理）",
+  ghfast: "国内镜像优先（gh 加速通道对 npm 无实现，按 auto 处理）",
+};
 
 /* ══ 配置目录自定义（09-25）═══════════════════════════════════════════════
  * 自持状态小组件（不占 bag）。写的是主进程指路牌（data-dir.json），
@@ -134,7 +146,9 @@ function DataDirEditor({ currentPath, setNotice }: { currentPath: string; setNot
 }
 
 export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
-  const { globalPermApproval, applyGlobalPermissionMode, workspace, chooseWorkspace, userDataPath, setNotice, rightOpen, setRightOpen, capabilityHint, desktopAuto, groupBusy, toggleDesktopAuto, browserAuto, toggleBrowserAuto, ponytailOn, applyGroup, hardwareAccel, changeHardwareAccel, restartPending, SHORTCUT_GROUPS, setShortcutsOpen, engineVersion, engineCheck, engineUpdating, checkEngineUpdateNow, performEngineUpdateNow, engineUpdatePercent, engineUpdateStageText, engineUpdateLog, engineUpdateResult, relaunchCountdown } = props;
+  const { globalPermApproval, applyGlobalPermissionMode, workspace, chooseWorkspace, userDataPath, setNotice, rightOpen, setRightOpen, capabilityHint, desktopAuto, groupBusy, toggleDesktopAuto, browserAuto, toggleBrowserAuto, ponytailOn, applyGroup, hardwareAccel, changeHardwareAccel, restartPending, SHORTCUT_GROUPS, setShortcutsOpen, engineVersion, engineCheck, engineUpdating, checkEngineUpdateNow, performEngineUpdateNow, engineUpdatePercent, engineUpdateStageText, engineUpdateLog, engineUpdateResult, relaunchCountdown, downloadSource } = props;
+  /** 引擎更新的实际取源（供卡片如实显示；口径见 ENGINE_SOURCE_LABEL）。 */
+  const engineSourceLabel = ENGINE_SOURCE_LABEL[String(downloadSource ?? "auto")] ?? ENGINE_SOURCE_LABEL.auto;
   return (
     <>
       <section className="settings-section stack general-page">
@@ -236,7 +250,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                         <div className="engine-status-row">
                           <span className="engine-ver-chip" title={engineVersion}>{(engineVersion.match(/[\d][\d.]*/) || ["—"])[0]}</span>
                           <span className="engine-status-text">
-                            {engineCheck.state === "idle" && "检查更新会访问 npm 仓库（默认国内镜像直连，无需代理）"}
+                            {engineCheck.state === "idle" && `检查更新会访问 npm 仓库（当前取源：${engineSourceLabel}）`}
                             {engineCheck.state === "checking" && "正在查询最新稳定版…"}
                             {engineCheck.state === "latest" && "已是最新版本"}
                             {engineCheck.state === "available" && `官方已发布新版 ${engineCheck.latest}`}
@@ -274,7 +288,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                         )}
                         {engineUpdateResult && !engineUpdateResult.ok && <p className="settings-card-hint engine-update-error">更新失败：{engineUpdateResult.message}（旧引擎已回滚，应用不受影响，可重试）</p>}
                         {relaunchCountdown != null && <p className="settings-card-hint engine-update-ok">✅ 引擎更新完成，{relaunchCountdown} 秒后自动重启应用生效…</p>}
-                        <p className="settings-card-hint">下载默认跟随本地网络：优先国内镜像直连，检测到系统代理时自动走代理，无需手动配置。</p>
+                        <p className="settings-card-hint">取源跟随「开发工具 → 下载源」设置（当前：{engineSourceLabel}）；改了下次检查立即生效，无需重启。配了引擎代理时两个源都走代理隧道。</p>
                       </div>
                     </div>
                   </section>

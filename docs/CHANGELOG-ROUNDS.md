@@ -2767,3 +2767,23 @@ Windows/Linux 上 iPhone 通道（Mac 的 iPhone 镜像窗口）根本不存在�
 变异（删掉 mac 侧那行）**同时触发本断言与既有【34】平台对称守卫**。
 ⛔ 顺带修一处守卫自身的假红：【83】原写死 `"openssl" | "markitdown";`（尾部字面量），
 09-27 往联合类型追加新 id 后必然失配 ⇒ 改成锚「成员是否在 DevRuntimeId 里」。
+
+## 🧾 2026-09-27 引擎更新收尾：界面如实显示「当前取源」+ 镜像链路端到端验证
+
+**补完的缺口**：上一轮让引擎更新**逻辑**跟随 `downloadSource`，但界面文案还停在旧行为
+（"默认国内镜像直连"、"检测到系统代理时自动走代理"）—— 用户改了「开发工具 → 下载源」，
+引擎更新卡片却什么也不说，等于把选择藏起来。
+- 卡片新增 `ENGINE_SOURCE_LABEL`（与 `orderedRegistries` 同源口径）：auto/mirror → 国内镜像优先、
+  direct → 官方源直连、proxy → 代理隧道；**ghproxy/ghfast 如实标注"对 npm 无实现，按 auto 处理"**；
+- 状态行与底部说明都改成"当前取源：…（跟随开发工具 → 下载源，改了下次检查立即生效）"；
+- `downloadSource` 经 registry 传进 `GeneralSettingsSection`（原来没传）。
+
+**端到端验证（真网络，不是读代码）**：
+- npmmirror 上确有 `@openai/codex`：5,002 个版本，`dist-tags.latest = 0.157.1`，win32-x64 平台包在位；
+- tarball 链路：`registry.npmmirror.com/…/codex-0.157.1-win32-x64.tgz` → **302** →
+  `cdn.npmmirror.com/packages/...` → **206 实收字节**；官方源 npmjs 同路径 → 206。
+- ⛔ 关键点：镜像会 **302 跳到 CDN**，而应用下载器确实处理 301/302/303/307（跳数上限 3）
+  ⇒ 镜像路径不是"看起来接好了"，是真的能取到包。
+
+**守卫**：03-runtime-boot +1（卡片必须显示当前取源，锚 `ENGINE_SOURCE_LABEL` + registry 传参），
+变异（去掉传参）如期报红。
