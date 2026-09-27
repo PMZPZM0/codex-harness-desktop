@@ -1787,7 +1787,7 @@
 }
 .phone-status-row > span { display: inline-flex; align-items: center; gap: 4px; }
 .phone-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.phone-ready { font-size: 12px; color: var(--success); }
+.phone-ready { font-size: 12px; color: var(--ok); }
 .phone-guides { display: grid; gap: 8px; }
 .phone-guide {
   padding: 8px 10px;
