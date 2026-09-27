@@ -140,6 +140,18 @@ ipcMain.handle("weixin:cancel-login", async () => {
   return { ok: true };
 });
 ipcMain.handle("weixin:status", async () => ({ bound: weixinGateway?.hasSession() ?? false }));
+// 09-27：主动推送通道（给 agent 与调度投递用）——此前 weixin 域只有登录态 5 通道，agent 想推消息没工具。
+// to 缺省 = 最近对话用户（iLink 正文气泡依赖 context_token，「最近发过消息的人」最可靠）。
+ipcMain.handle("weixin:send", async (_event, input: { to?: string; text: string }) => {
+  const text = String(input?.text ?? "");
+  if (!text.trim()) throw new Error("发送内容不能为空");
+  if (!weixinGateway) throw new Error("微信机器人未初始化");
+  if (!weixinGateway.hasSession()) throw new Error("微信机器人未登录（设置 → 机器人管理 扫码绑定）");
+  const to = typeof input?.to === "string" && input.to.trim() ? input.to.trim() : undefined;
+  if (to) await weixinGateway.sendText(to, text);
+  else await weixinGateway.sendToBoundUser(text);
+  return { ok: true };
+});
 ipcMain.handle("weixin:logout", async () => { await weixinGateway?.logout(); channelBotBindings.wechat = null; await writeBotBindings(); return { ok: true }; });
 ipcMain.handle("telegram:logout", async () => { telegramGateway.logout(); channelBotBindings.telegram = null; await writeBotBindings(); return { ok: true }; });
 ipcMain.handle("channels:status", async () => ({

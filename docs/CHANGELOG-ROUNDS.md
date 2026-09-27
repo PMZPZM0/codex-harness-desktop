@@ -2925,3 +2925,41 @@ fail-closed 校验 → 确定性渲染 → 自包含 HTML → 三层证据分离
 
 **诚实边界**：上游 5 型图，本轮复刻 3 型（dataflow / lifecycle 未做）；delta 对比视图、视觉回归
 门禁、内嵌字体（用的系统字体栈，避免 OFL 依赖）未做。要补随时排。
+
+## 📬 2026-09-27 定时任务 → 微信主动投递：打通「会话设定时 + 到点推微信」整条通道
+
+**背景**：用户在会话里问 Codex 能否定时发微信，Codex 报告 weixin 域只有登录态 5 通道、没有
+send，定时任务也没有投递出口。核实结论：**网关本身有 `sendText`**（打招呼/引导都在用），
+缺的是三段接线——调度器不抓回复文本、任务没有投递配置、agent 没有 `weixin:send` 工具。本轮补齐：
+
+1. **回复抓取**（`scheduler.ts` waitForTurnCompletion）：返回值升级为 `{outcome, replyText}`——
+   ⛔ 正文主要在 `item/agentMessage/delta` **增量**到达（completed 事件经常只回 id+status，
+   渲染层 stream.ts 的 sparse 分支同源问题），按 turnId 聚合 + completed 全文兜底；
+   按 threadId 过滤（并发会话的流不许混进来）。
+2. **投递**：`ScheduledTask.deliver?: {channel:'weixin', to?}`；save 走 `sanitizeDeliver`
+   （只认 weixin；**缺省保留原值**——会话局部更新不打掉已有投递；`deliver:null` 显式清除）；
+   run 完成后 `deliverWeixin`：to 显式→sendText，缺省→`sendToBoundUser`（最近对话用户，
+   iLink 正文气泡依赖 context_token，最近发过消息的人最可靠）；投递失败**不回滚调度簿记**
+   但必须留痕（lastError + log）。`deliverer` 构造参数 DI（离线冒烟注入 stub）。
+3. **agent 工具**：新通道 `weixin:send {to?, text}`（im-channels-ipc，未登录抛错）；
+   weixin 域 5→6；DOMAIN_DESCRIPTIONS 更新 weixin/scheduler 描述（deliver 用法写进去）；
+   `npm run gen:ipc` 重生成 preload/vite-env/14-skill-harness-api（72 域/349 通道）。
+
+**验收**：
+- **离线端到端冒烟 12/12 全绿**（Electron 内跑真 Scheduler 编译产物 + stub 引擎事件）：
+  流式聚合全文进投递正文、跨线程/无 threadId 的 delta 不混入、未配 deliver 不投递、
+  局部更新保留/显式清除语义正确；顺带实证 `scheduler → im-gateways → im-inbound → main`
+  是真实循环链（真实应用 main 先加载所以没事；冒烟入口须给 main.js 预置空壳缓存）。
+- 守卫【183】8 条（deliver 管线/投递接线/网关暴露/增量聚合/weixin:send/manifest cast/
+  harness-api 清单），**双向变异**（砍投递调用 / 砍 send handler）各 1 红。
+- `npm run check`：build+5 脚本 OK，preflight 2554✓/19✗（全沙箱假红）。
+
+**使用方式（会话里直接说）**：「每天 21:10 给我微信发杭州天气」→ agent 调
+`scheduler:save {name,prompt,workspace,kind:'daily',timeOfDay:'21:10',deliver:{channel:'weixin'}}`；
+到点跑会话 → 回合结论自动推到微信。也可让 agent 随时 `weixin:send` 立即推一条。
+
+⛔ **诚实边界**：① 真实微信投递未实测（沙箱里无登录态）——冒烟覆盖到网关调用层，
+线上首跑请先拿一条测试任务验证；② 投递依赖 context_token（对方 24h 内发过消息最稳），
+长期无人发消息的冷目标可能投递失败（会留痕 lastError）；③ 定时任务设置页 UI 暂无 deliver
+编辑项（会话里配 + 配置文件生效），要 UI 再排；④ harness-api/manifest 等生成物的再生成
+与上轮未提交的画布改动在同文件——本圈只提交手写件，生成物随画布收尾提交一并落库。
