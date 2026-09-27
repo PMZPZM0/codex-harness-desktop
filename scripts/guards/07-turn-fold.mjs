@@ -1306,8 +1306,20 @@ export async function run() {
       //    曾经用 splitPromptSegments（只认图片 token）收 annotatedPaths ⇒ 文件 chip
       //    「按原位置内联一次 + refs.files 末尾追加一次」，同一文件两颗 chip（09-27 用户截图）。
       (appSrc46.includes("for (const seg of splitAttachmentSegments(annotatedText))")
-        && !/annotatedPaths[\s\S]{0,160}?splitPromptSegments/.test(appSrc46)
+        && !/for \(const seg of splitPromptSegments\(\s*annotatedText/.test(appSrc46)
         ? ok : fail)("【46】annotatedPaths 与渲染用同一个拆分器（只认图片的收集器会让文件 chip 出现两次）");
+      // ⛔ 上面那条**锚代码形态**（for 循环 + 哪个拆分器），⛔ 别用「annotatedPaths 后 N 字符内
+      //    禁止出现 splitPromptSegments」这种禁词式正则 —— 注释里的解释文字就含这个词，
+      //    会把正确的代码误判红（09-27 实测：修复注释自己触发了自己）。
+      // md 文档视图（09-27，用户：「他都这种可视化 MD，跟 WorkBuddy 差远了」）：
+      // .md/.markdown 在文件预览里默认按**排版渲染**（复用聊天的 .markdown 体系），
+      // ⛔ 不许退回"所有文本一律 FilePreviewCode"（暗底行号 = 把文档当代码读）；
+      // 源码必须是显式开关（path 记忆，切 tab 复位），超大截断文件仍走源码。
+      (appSrc46.includes("file-preview-markdown markdown")
+        && /isMarkdownDoc && !sourceOn && !fileTruncated/.test(appSrc46)
+        && /mdSourceView\b/.test(appSrc46) ? ok : fail)(
+        "【46】md 文件默认排版视图 + 源码开关（一律代码视图 = 把文档当代码读）"
+      );
       // ⛔ 附件名必须是"像文件名"的字符串：data URL 直接取 basename 会得到 base64 尾巴
       //    （实测 `basename("data:image/png;base64,iVBOR…")` → `q842iQAAAABJRU5ErkJggg==`）。
       //    09-18 代码审查抓到的真缺陷，用纯函数钉死。
