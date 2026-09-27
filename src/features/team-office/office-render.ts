@@ -260,10 +260,13 @@ export function drawDeskStation(g: Graphics, u: number, v: number): void {
   const cx = c.x;
 
   // 占地：桌子在**远侧**（人背对观众面向它），椅子在近侧
-  const dv = 0.075;                  // 桌面纵深（归一化）
-  const vDesk0 = v - dv * 0.62;      // 桌子（远）
-  const vDesk1 = v + dv * 0.38;
-  const vChair = v + 0.055;          // 椅子（近）
+  // ⛔ 09-27：桌子改画到锚点**近侧**（观众侧），人坐远侧 —— 两者屏幕区域不重叠，
+  //    人才能被完整画出来（此前桌子压在锚点上，人只露头肩）。改动要与人物的 SEAT_LIFT
+  //    和 zIndex 一起看（OfficeCanvas 的 PERSON_K/SEAT_LIFT）。
+  const dv = 0.085;                  // 桌面纵深（归一化）
+  const vDesk0 = v + 0.014;          // 桌子（近侧）
+  const vDesk1 = v + 0.014 + dv;
+  const vChair = v + 0.050;          // 椅子（桌下靠人侧）
 
   // 阴影（桌椅各一块）
   const sd = floorPoint(u, vDesk1);
@@ -272,7 +275,7 @@ export function drawDeskStation(g: Graphics, u: number, v: number): void {
   g.ellipse(cx, sc.y + 10 * k, 36 * k, 11 * k).fill({ color: SKIN.shadow, alpha: 0.06 });
 
   // 桌子（桌面 40px 高 + 四条腿 + 桌下侧柜）
-  const deskH = 46;
+  const deskH = 38;
   isoBox(g, u - 0.098, vDesk0, u + 0.098, vDesk1, deskH, {
     top: SKIN.deskTop, front: SKIN.deskFront, side: SKIN.deskSide,
   });
@@ -291,14 +294,14 @@ export function drawDeskStation(g: Graphics, u: number, v: number): void {
   // 显示器：底座 + 支架 + 屏（屏幕朝观众/人）
   const mon = surf(u, vDesk0 + dv * 0.20);
   const my = mon.y - deskH * k;
-  g.roundRect(mon.x - 16 * k, my - 5 * k, 32 * k, 5 * k, 2).fill(SKIN.monitorStand);
+  g.roundRect(mon.x - 14 * k, my - 4 * k, 28 * k, 4 * k, 2).fill(SKIN.monitorStand);
   g.rect(mon.x - 3 * k, my - 14 * k, 6 * k, 10 * k).fill(SKIN.monitorStand);
-  g.roundRect(mon.x - 26 * k, my - 42 * k, 52 * k, 31 * k, 3).fill(SKIN.monitorBack);
-  g.roundRect(mon.x - 22 * k, my - 38 * k, 44 * k, 24 * k, 2).fill(SKIN.monitorScreen);
+  g.roundRect(mon.x - 22 * k, my - 30 * k, 44 * k, 22 * k, 3).fill(SKIN.monitorBack);
+  g.roundRect(mon.x - 18 * k, my - 27 * k, 36 * k, 17 * k, 2).fill(SKIN.monitorScreen);
   // 屏上内容（几行文字条，纯装饰）
-  g.rect(mon.x - 21 * k, my - 38 * k, 22 * k, 2.4 * k).fill({ color: hex("#9fb4c8"), alpha: 0.9 });
-  g.rect(mon.x - 21 * k, my - 33 * k, 31 * k, 2.4 * k).fill({ color: hex("#b6c7d6"), alpha: 0.85 });
-  g.rect(mon.x - 21 * k, my - 28 * k, 17 * k, 2.4 * k).fill({ color: hex("#b6c7d6"), alpha: 0.85 });
+  g.rect(mon.x - 14 * k, my - 23 * k, 17 * k, 2.2 * k).fill({ color: hex("#9fb4c8"), alpha: 0.9 });
+  g.rect(mon.x - 14 * k, my - 19 * k, 24 * k, 2.2 * k).fill({ color: hex("#b6c7d6"), alpha: 0.85 });
+  g.rect(mon.x - 14 * k, my - 15 * k, 13 * k, 2.2 * k).fill({ color: hex("#b6c7d6"), alpha: 0.85 });
   // 键盘 + 鼠标
   const kb = surf(u, vDesk0 + dv * 0.72);
   const ky = kb.y - deskH * k;
@@ -315,3 +318,115 @@ export function drawDeskStation(g: Graphics, u: number, v: number): void {
   g.roundRect(ch.x - 22 * k, cy - 62 * k, 44 * k, 8 * k, 6).fill(SKIN.chairBackDark);
 }
 
+
+/* ── 办公设施（饮水机 / 打印机 / 资料架 / 挂钟）—— 全部带动画 ──────────────
+   ⛔ 位置必须与 office-director 的跑腿目标**同源**（OfficeCanvas 的 ERRAND_SPOT_UV）：
+      「去接水」的人要真的站在饮水机旁、「去打印」站在打印机旁。
+      设施只是画在那个目标点上 —— ⛔ 不要在渲染层另定一套坐标（两边一漂移就穿帮）。 */
+
+/** 逐帧动画部件：t 是场景时钟（秒·缩放后）。 */
+export type PropTicker = { update: (t: number) => void };
+
+export function drawAmenities(layer: Container): PropTicker[] {
+  const tickers: PropTicker[] = [];
+  const g = new Graphics();
+  g.zIndex = -7e5;
+
+  /* ① 饮水机（水桶里的气泡持续上升）—— 对应 errand「去接水」 */
+  {
+    const p = floorPoint(0.84, 0.62);
+    const k = p.scale, x = p.x, y = p.y;
+    g.ellipse(x, y + 3 * k, 26 * k, 9 * k).fill({ color: SKIN.shadow, alpha: 0.08 });
+    g.roundRect(x - 17 * k, y - 46 * k, 34 * k, 46 * k, 4).fill(hex("#edf0f3"));
+    g.roundRect(x - 17 * k, y - 46 * k, 34 * k, 5 * k, 2).fill(hex("#dee3e8"));
+    g.roundRect(x - 13 * k, y - 78 * k, 26 * k, 33 * k, 5).fill({ color: hex("#c2e2f6"), alpha: 0.93 });
+    g.roundRect(x - 13 * k, y - 78 * k, 26 * k, 6 * k, 3).fill({ color: hex("#d9eefb"), alpha: 0.95 });
+    g.rect(x - 6 * k, y - 33 * k, 12 * k, 6 * k).fill(hex("#9aa3ad"));
+    g.roundRect(x - 12 * k, y - 20 * k, 24 * k, 5 * k, 2).fill({ color: hex("#ccd2d8") });
+    // 水泡：3 个循环上升 + 淡出
+    for (let i = 0; i < 3; i++) {
+      const bubble = new Graphics();
+      bubble.circle(0, 0, 2.3 * k).fill({ color: 0xffffff, alpha: 0.9 });
+      bubble.zIndex = -7e5 + 1;
+      bubble.position.set(x + (i - 1) * 5 * k, y - 50 * k);
+      layer.addChild(bubble);
+      const phase = i / 3;
+      tickers.push({ update: (t) => {
+        const c = (t * 0.2 + phase) % 1;
+        bubble.position.y = y - 48 * k - c * 28 * k;
+        bubble.alpha = c < 0.16 ? c / 0.16 : Math.max(0, 1 - (c - 0.16) / 0.84);
+      } });
+    }
+  }
+
+  /* ② 打印机（出纸口往复吐纸）—— 对应 errand「去打印」 */
+  {
+    const p = floorPoint(0.80, 0.16);
+    const k = p.scale, x = p.x, y = p.y;
+    g.ellipse(x, y + 3 * k, 30 * k, 9 * k).fill({ color: SKIN.shadow, alpha: 0.08 });
+    // 柜体 + 机器
+    g.roundRect(x - 24 * k, y - 34 * k, 48 * k, 34 * k, 4).fill(hex("#eef1f4"));
+    g.roundRect(x - 21 * k, y - 60 * k, 42 * k, 26 * k, 4).fill(hex("#4a4f57"));
+    g.roundRect(x - 21 * k, y - 60 * k, 42 * k, 6 * k, 3).fill(hex("#3c4148"));
+    g.roundRect(x - 8 * k, y - 48 * k, 16 * k, 3 * k, 1.5).fill(hex("#9fd7a8"));
+    // 纸（从出纸口来回吐）
+    const paper = new Graphics();
+    paper.roundRect(-13 * k, 0, 26 * k, 17 * k, 1.5).fill(SKIN.paper);
+    paper.rect(-9 * k, 3 * k, 18 * k, 1.4 * k).fill({ color: hex("#c9d2da") });
+    paper.rect(-9 * k, 6.5 * k, 13 * k, 1.4 * k).fill({ color: hex("#c9d2da") });
+    paper.zIndex = -7e5 + 1;
+    paper.position.set(x, y - 38 * k);
+    layer.addChild(paper);
+    tickers.push({ update: (t) => {
+      const c = (t * 0.16) % 1;
+      paper.position.y = y - 38 * k + Math.min(1, Math.max(0, (c - 0.15) / 0.5)) * 13 * k;
+    } });
+  }
+
+  /* ③ 资料架（矮书架 + 书脊；书页轻微呼吸）—— 对应 errand「去翻资料架」 */
+  {
+    const p = floorPoint(0.18, 0.13);
+    const k = p.scale, x = p.x, y = p.y;
+    g.ellipse(x, y + 3 * k, 32 * k, 9 * k).fill({ color: SKIN.shadow, alpha: 0.08 });
+    g.roundRect(x - 26 * k, y - 56 * k, 52 * k, 56 * k, 4).fill(SKIN.woodFront);
+    g.roundRect(x - 26 * k, y - 56 * k, 52 * k, 5 * k, 2).fill(SKIN.woodTop);
+    g.rect(x - 22 * k, y - 32 * k, 44 * k, 3 * k).fill(SKIN.woodSide);
+    const spine = [hex("#d98b6a"), hex("#6a9bd9"), hex("#8ec07c"), hex("#e0c063"), hex("#b48ad9")];
+    for (let i = 0; i < 5; i++) {
+      g.rect(x - 20 * k + i * 8 * k, y - 54 * k, 6 * k, 21 * k).fill(spine[i]);
+    }
+    for (let i = 0; i < 4; i++) {
+      g.rect(x - 20 * k + i * 9 * k, y - 29 * k, 7 * k, 26 * k).fill(spine[(i + 2) % 5]);
+    }
+  }
+
+  /* ④ 墙上挂钟（秒针真的在走） */
+  {
+    const c = wallPoint(0.508, 104);
+    g.circle(c.x, c.y, 17).fill(hex("#ffffff"));
+    g.circle(c.x, c.y, 17).stroke({ color: hex("#d7d4ce"), width: 2.5 });
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      g.circle(c.x + Math.sin(a) * 13, c.y - Math.cos(a) * 13, 1.1).fill(hex("#b9b6b0"));
+    }
+    const hour = new Graphics();
+    hour.roundRect(-1.8, -9, 3.6, 11, 1.8).fill(hex("#41454b"));
+    hour.pivot.set(0, 0);
+    hour.position.set(c.x, c.y);
+    const minute = new Graphics();
+    minute.roundRect(-1.4, -14, 2.8, 16, 1.4).fill(hex("#5c6169"));
+    minute.pivot.set(0, 0);
+    minute.position.set(c.x, c.y);
+    const dot = new Graphics();
+    dot.circle(c.x, c.y, 2.2).fill(hex("#41454b"));
+    hour.zIndex = -7e5 + 2; minute.zIndex = -7e5 + 2; dot.zIndex = -7e5 + 2;
+    layer.addChild(hour, minute, dot);
+    tickers.push({ update: (t) => {
+      minute.rotation = (t * 0.06) % (Math.PI * 2);
+      hour.rotation = (t * 0.005) % (Math.PI * 2);
+    } });
+  }
+
+  layer.addChild(g);
+  return tickers;
+}

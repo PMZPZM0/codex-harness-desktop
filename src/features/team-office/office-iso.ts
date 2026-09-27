@@ -100,7 +100,7 @@ export function deskSlots(count: number): Array<FloorSpot & { u: number; v: numb
     // 列：0.35 / 0.65 —— 参考里两列间距约为房间宽的 30%
     const u = cols === 1 ? 0.5 : 0.35 + (col / (cols - 1)) * 0.30;
     // 行：单行落在中段；多行从 0.30 铺到 0.80
-    const v = rows === 1 ? 0.52 : 0.24 + (row / (rows - 1)) * 0.60;
+    const v = rows === 1 ? 0.52 : 0.20 + (row / (rows - 1)) * 0.66;
     out.push({ ...floorPoint(u, v), u, v });
   }
   return out;
