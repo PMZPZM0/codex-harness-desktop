@@ -157,6 +157,7 @@ import { AppViewRemoteConsole } from "./AppView/05-remote-console";
 import { AppViewTaskComposer } from "./AppView/06-task-composer";
 import { AppViewMemoryPanel } from "./AppView/07-memory-panel";
 import { TeamOfficePreview } from "../team-office/TeamOfficePreview";
+import { DramaCanvas } from "../drama-canvas";
 import { OfficeScene } from "../team-office/OfficeScene";
 import { AppViewSettingsSheet } from "./AppView/08-settings-sheet";
 import { AppViewFilePreviewEditor } from "./AppView/09-file-preview-editor";
@@ -200,7 +201,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     deleteMemoryGroup, deleteMemoryRecord, deleteQueued, deleteSchedule,
     deleteSubAgent, deleteThreadsByCwd, desktopAuto, devRuntimes,
     dictationBaseRef, diff, dismissEnhanceHint, dismissNotice,
-    doneExpanded, downloadSource, duplicateSshEntry, earlierLoadingId,
+    doneExpanded, downloadSource, dramaCanvasOpen, dramaCanvasVariant, duplicateSshEntry, earlierLoadingId,
     editSchedule, editingProvider, effort, emptySshDraft,
     emptySshJump, engineCheck, engineUpdateLog, engineUpdatePercent,
     engineUpdateResult, engineUpdateStageText, engineUpdating, engineVersion,
@@ -278,7 +279,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     saveSchedule, saveSshEntry, saveSubAgent, savingFile,
     savingSettings, scheduleDraft, scheduleStatus, scheduleSubmenu,
     scheduleSubmenuClose, scheduledTasks, scrollRef, searchPreview,
-    selectedModel, selectedSkills, send, sending,
+    selectedModel, selectedSkills, send, sending, paletteHandlersRef, pendingCommandTextRef,
     serverStatus, setAccountDraft, setAccountEditing, setAccountMenuOpen,
     setAccountMenuSub, setActiveBotId, setAgentAsk, setAppConfirm,
     setAppPrompt, setArchiveToast, setAttachSubmenu, setAttachmentMenuOpen,
@@ -289,7 +290,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     setConnectorDraft, setConnectorEditorOpen, setConnectorEnabled, setConnectorMenuOpen,
     setConnectorOAuth, setConnectorSearch, setConnectorSecret, setConnectorTemplateModal,
     setConnectorTemplateValues, setConnectorsManageOnly, setContextOpen, setCustomDraft,
-    setDelegatedPopupId, setDoneExpanded, setEditingProvider, setEnvCheckOpen,
+    setDelegatedPopupId, setDoneExpanded, setDramaCanvasOpen, setEditingProvider, setEnvCheckOpen,
     setExpertQuery, setExpertTeamDraft, setExpertTeamEditorOpen, setFileDraft,
     setFileEditing, setFilePreview, setGoalText, setGoalsDocked,
     setGoalsExpanded, setGoalsOpen, setHelpKey, setHookEnabled,
@@ -490,6 +491,30 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         runningByMember={app.railRunningByMember}
         openThread={(threadId) => void openThread(threadId)}
       />
+      {/* AI 短剧无限画布（09-27）：与「专家团办公室预览」同一个档位的整屏浮层 —— 画布需要
+          一大片连续空间，塞进右栏或中央主区分栏都会被挤成缩略图。工作区传进去是因为
+          分镜表副本与素材要落到 <workspace>/.drama-canvas/ 下（引擎读的就是那份）。 */}
+      {dramaCanvasOpen && (
+        <DramaCanvas
+          onClose={() => setDramaCanvasOpen(false)}
+          workspace={workspace}
+          threads={threads}
+          variant={dramaCanvasVariant}
+          onAskAgent={(text, threadId) => {
+            /* 闭环：画布选好目标会话 → 这里切过去（或新建）→ 用 pendingCommandTextRef 塞任务
+               （⛔ 它是 ref，不受 setPrompt 状态滞后影响，send 首选消费它）→ 直接发送。 */
+            setDramaCanvasOpen(false);
+            void (async () => {
+              try {
+                if (threadId) await openThread(threadId);
+                else paletteHandlersRef.current?.startNewThread();
+                pendingCommandTextRef.current = text;
+                await send();
+              } catch { setPrompt(text); /* 切会话失败兜底：塞进输入框由用户手动发 */ }
+            })();
+          }}
+        />
+      )}
       {shortcutsOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShortcutsOpen(false); }}><div className="shortcuts-modal" role="dialog" aria-modal="true" aria-label="键盘快捷键"><header><div><Keyboard size={17} /><strong>键盘快捷键</strong><span className="esc-hint" title="按 ESC 关闭弹窗">ESC</span></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setShortcutsOpen(false)}><X size={17} /></button></header><div className="shortcuts-body">{SHORTCUT_GROUPS.map((group) => <section className="shortcuts-group" key={group.group}><h3>{group.group}</h3>{group.shortcuts.map((item) => <div className="shortcuts-row" key={item.keys.join("+")}><span className="shortcut-desc">{item.desc}</span><span className="shortcut-keys">{item.keys.map((key, index) => <kbd key={index}>{key}</kbd>)}</span></div>)}</section>)}<footer><span className="muted">部分快捷键在输入框聚焦时优先用于文本编辑。</span></footer></div></div></div>}
       {marketPreview && <MarketPreviewModal state={marketPreview} onClose={() => setMarketPreview(null)} />}
       {skillInstall && <SkillInstallModal state={skillInstall} onClose={() => setSkillInstall(null)} onUse={() => { const skill = { name: skillInstall.skill.name, description: skillInstall.skill.description }; setSelectedSkills((current) => current.some((entry) => entry.name === skill.name) ? current : [...current, skill]); setSkillInstall(null); setSettingsOpen(false); setNotice(`已引用技能：${skill.name}`); }} />}

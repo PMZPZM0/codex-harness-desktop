@@ -25,6 +25,8 @@ const OUT = path.join(ROOT, "electron", "builtin-skills", "14-skill-harness-api.
 /* ── 每域的「用户可感知能力」描述（人工维护；新域必须补，缺了生成器报错）──
    口径：写给引擎看 —— 用户提什么需求时该想到这个域、能力边界在哪。一句话。 */
 const DOMAIN_DESCRIPTIONS = {
+  "video": "内置视频生成接口（国内外 8 家：可灵/万相/Seedance/CogVideoX/MiniMax/Runway/Luma/Veo）：submit 提交 → poll 轮询 → download 落工作区；凭证存 userData/video-providers.json",
+  "drama-canvas": "AI 短剧无限画布：把一条短剧拆成卡片摆在无限画布上（剧本/角色/场景/分镜表/镜头/素材/成片），连线表示「这份输入喂给下一步」。这条通道专管素材的**二进制落盘**（本地 TTS 合成的配音 WAV 等）",
   "phone": "手机控制（phone-harness）：查状态 / 安装 / 卸载 / 体检 / 权限引导；Android 走 adb（全平台），iPhone 走 Mac 的 iPhone 镜像（仅 macOS）",
   "codex": "渲染层与引擎（@openai/codex app-server）之间的请求桥：转发请求 / 响应 / 切活跃会话",
   "threads": "会话列表与元数据（归档、重命名、血缘、会话摘要等）",
@@ -45,7 +47,7 @@ const DOMAIN_DESCRIPTIONS = {
   "bot-binding": "Bot 与会话/IM 的绑定关系",
   "bot-stream": "Bot 流式输出转发",
   "channel-bot": "IM 通道 Bot（把某个会话接到 IM 机器人上）",
-  "weixin": "微信通道（收发/绑定/状态）",
+  "weixin": "微信机器人（iLink bot）：登录绑定/状态 + **主动推送 weixin:send**（to 缺省=最近对话用户；正文依赖 context_token）",
   "telegram": "Telegram 通道",
   "feishu": "飞书通道",
   "dingtalk": "钉钉通道",
@@ -66,7 +68,7 @@ const DOMAIN_DESCRIPTIONS = {
   "tools": "引擎工具面状态（动态工具是否注册）",
   "rpa": "RPA 配方（录制好的桌面自动化流程）",
   "tasks": "任务清单（用户待办，可从对话生成）",
-  "scheduler": "定时任务（一次性/周期任务：创建/启停/列表）",
+  "scheduler": "定时任务（一次性/周期：创建/启停/列表/手动运行）。save 支持 deliver:{channel:'weixin',to?}——到点执行后把回合结论主动推给微信用户（to 缺省=最近对话用户）",
   "ssh": "SSH 服务器库（保存/执行远程命令/导入导出/会话终端）",
   "fs": "受控文件系统访问（读写/存在性检查，路径受信任目录约束）",
   "shell": "系统默认方式打开文件/目录",

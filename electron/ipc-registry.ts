@@ -30,6 +30,10 @@ export interface IpcDomainEntry {
 }
 
 export const IPC_DOMAINS: IpcDomainEntry[] = [
+  { prefix: "drama-canvas", count: 1, status: "in-features", file: "features/drama-canvas.ts",
+    channels: ["drama-canvas:asset-write"],
+    note: "09-27 新增：AI 短剧无限画布。画布/分镜表本体走 localStorage + fs:write（文本即可），这条专管**二进制素材**（本地 TTS 合成的配音 WAV）",
+  },
   { prefix: "phone", count: 7, status: "in-features", file: "features/phone-harness-ipc.ts",
     channels: ["phone:harness:status", "phone:harness:install", "phone:harness:uninstall", "phone:harness:doctor", "phone:harness:guides", "phone:harness:open-settings", "phone:harness:wire-adb"],
     note: "09-27 新增：手机控制（phone-harness）。不是 MCP 服务 ⇒ 走「pip 包 + 技能注册」，装完强制关上游遥测；iPhone 通道仅 darwin",
@@ -65,8 +69,12 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
     channels: ["bot-stream:get", "bot-stream:set"],
     note: "09-21 拆出：跨域符号经 main 导出的活绑定取用",
   },
-  { prefix: "weixin", count: 5, status: "in-features", file: "features/im-channels-ipc.ts",
-    channels: ["weixin:cancel-login", "weixin:logout", "weixin:poll-login", "weixin:start-login", "weixin:status"],
+    { prefix: "video", count: 6, status: "in-features", file: "features/video-gen.ts",
+    channels: ["video:providers", "video:config-read", "video:config-save", "video:submit", "video:poll", "video:download"],
+    note: "09-27 内置视频生成接口（国内外 8 家）；凭证存 userData/video-providers.json",
+  },
+{ prefix: "weixin", count: 6, status: "in-features", file: "features/im-channels-ipc.ts",
+    channels: ["weixin:cancel-login", "weixin:logout", "weixin:poll-login", "weixin:send", "weixin:start-login", "weixin:status"],
     note: "09-21 拆出：跨域符号经 main 导出的活绑定取用",
   },
   { prefix: "telegram", count: 3, status: "in-features", file: "features/im-channels-ipc.ts",

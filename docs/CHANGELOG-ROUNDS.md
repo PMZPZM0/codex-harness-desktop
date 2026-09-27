@@ -2963,3 +2963,40 @@ send，定时任务也没有投递出口。核实结论：**网关本身有 `sen
 长期无人发消息的冷目标可能投递失败（会留痕 lastError）；③ 定时任务设置页 UI 暂无 deliver
 编辑项（会话里配 + 配置文件生效），要 UI 再排；④ harness-api/manifest 等生成物的再生成
 与上轮未提交的画布改动在同文件——本圈只提交手写件，生成物随画布收尾提交一并落库。
+
+## 🎬 2026-09-27 AI 短剧无限画布（基座落库）+ 五项修复 + 内置视频生成接口 + 生图工作流
+
+**画布基座首次落库**（上一轮因限流中断未提交）：React Flow 内核（滚轮三源分流/光标锚点缩放/框选/
+多选/快照式撤销）、13 种卡片 × 5 分组、检查器、时间线、本地持久化、短剧工作流起手；
+业务层（分镜表 schema + 展开成卡 + 回写）+ 首帧（builtin:generate-image）与配音（本地 TTS → WAV
+→ drama-canvas:asset-write）。主进程 `drama-canvas:asset-write` 通道（fs:write 是 utf8 写不了二进制）。
+
+**本轮五项（用户实测反馈）**：
+1. **窗控重叠**：画布头部 padding-right 留出 ≈150px 原生窗控地带（整屏浮层贴右上必叠）。
+2. **新建画布/分镜表没反应**：根因 = `window.prompt` 在 **Electron 里不受支持**（点击即抛错）。
+   换成自建命名弹层（Enter/取消，autofocus 全选）。
+3. **交给 Agent 闭环**：原来是 `setPrompt(text)` 只塞当前输入框——"交给哪个 agent"全凭运气。
+   现在弹**会话选择器**（列最近会话 + 新建会话），确认后宿主 `openThread`/`startNewThread` →
+   `pendingCommandTextRef` 塞任务（ref 不受 setPrompt 滞后影响，send 首选消费它）→ `send()` 直接发。
+4. **内置视频生成接口**（插件市场顶部「内置接口」卡）：`video:*` 6 通道（providers/config-read/
+   config-save/submit/poll/download），纯适配层 `src/lib/video-providers.mjs` 覆盖**国内外 8 家**——
+   可灵(JWT)/通义万相/即梦Seedance/智谱CogVideoX/MiniMax（国内）+ Runway/Luma/Veo（国外）。
+   统一"提交→5s 轮询→产物落 `<workspace>/.drama-canvas/assets/`"；shot 卡「生成视频（未接入）」
+   假按钮换成真按钮。⛔ 厂商图片输入分 base64/url/both 三类，url-only 吃本地首帧当场报错并指路。
+   凭证存 `userData/video-providers.json`；download 过可信根校验。
+5. **生图工作流**：核实参考项目**没有**独立的生图工作流模块（生图是它画布卡的一种用法）——
+   如实按"复用画布引擎 + 独立入口 + 生图起手骨架"实现：侧栏新增「生图工作流」，bag 加
+   `dramaCanvasVariant`，起手骨架 imageStarterWorkflow（需求 → 主提示词 → 出图 A/B → 选图）。
+
+**视频专家团**：`electron/expert-teams/14-video-production-team.ts`（主理人剪承 + 编镜/画帧/造镜/声线
+四岗，SOP 按分镜→首帧→视频→配音→核对编排）；配套技能 `.codex/skills/drama-video/SKILL.md`
+（引擎原生发现）。
+
+**守卫**：【184】11 条（manifest 6 通道 / 断言图校验接线 / 可信根 / 域表 / 适配层真值表 4 条 /
+真按钮禁假回潮 / 闭环三步 / 生图变体），**双向变异**（砍 videoAssertImageOk 调用 / 生图入口
+variant 回 drama）各 1 红。`npm run check`：build+5 脚本 OK，preflight 2567✓/19✗（全沙箱假红）。
+
+**诚实边界**：① 8 家厂商的提交/轮询请求按 2026-09 官方文档快照实现，**真实出片未实测**
+（沙箱无各家 API Key）——请求构造与响应解析有守卫真跑，线上首跑如遇字段变动只需改
+video-providers.mjs 一处；② 万相/Seedance/Luma 的 i2v 需要公网图片 URL（本地首帧不支持），
+卡片会明确指路换厂商；③ 跨镜头角色一致性受生图接口限制（只收 prompt），画布上如实标注。

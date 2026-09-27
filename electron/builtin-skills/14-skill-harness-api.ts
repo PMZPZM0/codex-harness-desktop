@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（71 个能力域 / 347 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（73 个能力域 / 355 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -42,6 +42,10 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 ⛔ **打包版没有宿主源码**：用户机器上只有一个安装包 ⇒ 那时真正的答案只有**接入类**（技能 / MCP 连接器 / 专家 · 专家团 / 定时任务 / RPA / IM 渠道 / 记忆后端）。要改宿主代码必须在**源码工程**里做；先确认源码在不在手边，再决定说哪种方案。
 
 ## 能力域
+
+### drama-canvas（1 通道）
+AI 短剧无限画布：把一条短剧拆成卡片摆在无限画布上（剧本/角色/场景/分镜表/镜头/素材/成片），连线表示「这份输入喂给下一步」。这条通道专管素材的**二进制落盘**（本地 TTS 合成的配音 WAV 等）
+通道：drama-canvas:asset-write
 
 ### phone（7 通道）
 手机控制（phone-harness）：查状态 / 安装 / 卸载 / 体检 / 权限引导；Android 走 adb（全平台），iPhone 走 Mac 的 iPhone 镜像（仅 macOS）
@@ -79,9 +83,13 @@ Bot 定义管理
 Bot 流式输出转发
 通道：bot-stream:get, bot-stream:set
 
-### weixin（5 通道）
-微信通道（收发/绑定/状态）
-通道：weixin:cancel-login, weixin:logout, weixin:poll-login, weixin:start-login, weixin:status
+### video（6 通道）
+内置视频生成接口（国内外 8 家：可灵/万相/Seedance/CogVideoX/MiniMax/Runway/Luma/Veo）：submit 提交 → poll 轮询 → download 落工作区；凭证存 userData/video-providers.json
+通道：video:providers, video:config-read, video:config-save, video:submit, video:poll, video:download
+
+### weixin（6 通道）
+微信机器人（iLink bot）：登录绑定/状态 + **主动推送 weixin:send**（to 缺省=最近对话用户；正文依赖 context_token）
+通道：weixin:cancel-login, weixin:logout, weixin:poll-login, weixin:send, weixin:start-login, weixin:status
 
 ### telegram（3 通道）
 Telegram 通道
@@ -308,7 +316,7 @@ RPA 配方（录制好的桌面自动化流程）
 通道：tasks:add, tasks:delete, tasks:list, tasks:update
 
 ### scheduler（4 通道）
-定时任务（一次性/周期任务：创建/启停/列表）
+定时任务（一次性/周期：创建/启停/列表/手动运行）。save 支持 deliver:{channel:'weixin',to?}——到点执行后把回合结论主动推给微信用户（to 缺省=最近对话用户）
 通道：scheduler:delete, scheduler:list, scheduler:run, scheduler:save
 
 ### voice（39 通道）
