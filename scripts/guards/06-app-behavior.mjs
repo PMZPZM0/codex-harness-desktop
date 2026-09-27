@@ -1458,14 +1458,16 @@ w.postMessage({id:1,op:"list",root});
     (canvas2.includes("scene.handoffs.forEach") && canvas2.includes("scene.walkers.forEach") && canvas2.includes("createWalker(") ? ok : fail)(
       "【168】场景渲染交接飞行与走动小人（不许退回静止插画）"
     );
-    // ⑨ 家具动效：静态素材（Kenney PNG）的动效出口 = 挂在 sprite 上的轻微摇摆。
-    //    ⛔ 只做轻微摆动：整图旋转会让桌腿/底座一起转，一眼就是"贴纸在转"。
-    (/scene\.swayers\.forEach\(\(s\) => \{/.test(canvas2) && /s\.obj\.rotation = /.test(canvas2) ? ok : fail)(
-      "【168】素材件动效齐备（吊扇轻摆 / 绿植微摇 —— 静态素材的动效出口）"
+    // ⑨ 场景绘制必须是**程序化 Graphics**（09-27 v9 用户拍板）：参考实现
+    //    （workbzw/ai-office-react）的卖点是它那张 3D 渲染底图 + 白系桌椅，但作者自己在
+    //    README 标注「注意素材版权问题」⇒ 我们**不搬素材**，只复刻风格（office-render 画）。
+    (canvas2.includes("drawDeskStation(") && canvas2.includes("drawBackWall(") && canvas2.includes("drawSideProps(") ? ok : fail)(
+      "【168】房间与工位走程序化绘制（office-render 三件套已接线）"
     );
-    // ⑩ 动效宿主必须真的在场景里（⛔ 只有动效函数没有宿主 = 恒真假绿）
-    (/scene\.swayers\.push\(\{ obj: fan, amp:/.test(canvas2) && /createSprite\("ceilingFan"/.test(canvas2) ? ok : fail)(
-      "【168】动效宿主存在（吊扇真的挂在场景里并注册了摇摆，不是只有动画函数）"
+    // ⑩ 零贴图：画布层不得再出现素材 import / 尺寸表 —— 素材路线整体废弃
+    //    （⛔ 这条是**负向**断言：谁把 Kenney PNG 拼装加回来，这里必须红。）
+    (!/assets\/office\//.test(canvas2) && !canvas2.includes("SPRITE_SIZE") && !canvas2.includes("preloadSpriteTextures") ? ok : fail)(
+      "【168】画布层零贴图素材（程序化绘制路线，不许退回 PNG 拼装）"
     );
     // ⑪ 姿势动画齐备（每个坐姿都要有自己的手臂/躯干姿态，否则「预设动画」是空话）
     (["doze", "stretch", "coffee", "phone", "note"].every((k) => canvas2.includes('pose.kind === "' + k + '"')) && /const typing = /.test(canvas2) ? ok : fail)(
@@ -1477,52 +1479,41 @@ w.postMessage({id:1,op:"list",root});
     );
   }
 
-  /* ══ 【169】办公室素材链路（09-26 v7 Kenney CC0 → 09-27 v8 交给 PixiJS Sprite）═══
-     用户看完参考实现（workbzw/ai-office-react = PixiJS + Spine + 预渲染大图）后要求
-     「复刻过来」⇒ 家具仍是 Kenney CC0 等距渲染件（改成静态 import 的 Sprite），
-     人物改由 PixiJS Graphics 程序绘制（素材包只有家居物件，没有等距人物）。
-     ⛔ 钉死四件事：
-        ① 素材必须走**静态 import** —— import.meta.glob 在本模块被 root 之外的入口加载时
-           实测匹配到 0 个文件，且失败**静默** ⇒ 整间办公室的家具「凭空消失」却零报错；
-        ② 尺寸表必须覆盖每个素材文件 —— 缺一条 ⇒ createSprite 拿不到尺寸直接 return null；
-        ③ 工位纵深必须**按地面基线排序**（显示器 → 椅子 → 人 → 桌子）：桌子最前才遮得住
-           人的下半身 —— v8 用 sortableChildren + zIndex 表达，⛔ 不许退回"按 addChild 顺序"；
-        ④ 素材许可写在文件头（Kenney Furniture Kit / CC0 1.0）。 */
+  /* ══ 【169】办公室渲染纵深（09-27 v9 程序化绘制）══════════════════════════
+     ⛔ v9 定稿（用户 09-27 拍板）：**不搬**参考实现的 3D 素材（作者自己标注「注意素材
+        版权问题」），房间 / 后墙 / 两侧 / 工位桌椅全部用 PixiJS Graphics 程序化绘制
+        （src/features/team-office/office-render.ts）。钉死三件事：
+        ① 绘制模块四件套齐备（房间 / 后墙 / 两侧 / 工位）且**零贴图依赖**；
+        ② 工位家具先于人物绘制（家具 zIndex 更小）—— 参考画面里人只露头肩，
+           桌面与显示器必须清晰可见；反过来设会让人糊住整个桌面（09-27 实测）；
+        ③ 纵深一律靠 sortableChildren + 地面基线 zIndex，⛔ 不许退回 addChild 顺序。 */
   {
-    console.log(C.bold("\n【169】办公室素材链路（静态素材 / 尺寸表 / 工位纵深排序）"));
+    console.log(C.bold("\n【169】办公室渲染纵深（程序化绘制 / 家具遮挡关系）"));
+    const renderPath = join(ROOT, "src", "features", "team-office", "office-render.ts");
+    const renderSrc = existsSync(renderPath) ? readFileSync(renderPath, "utf8") : "";
     const furnSrc = existsSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"))
       ? readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8") : "";
 
-    // ⛔ 判据带左括号：注释里会提到这个 API 的名字，只有**调用形式**才算违规
-    (!furnSrc.includes("import.meta.glob(") ? ok : fail)(
-      "【169】办公室素材走静态 import（import.meta.glob 在 root 外的入口下会静默丢光素材）"
+    (["drawRoom", "drawBackWall", "drawSideProps", "drawDeskStation"].every((f) => renderSrc.includes("export function " + f)) ? ok : fail)(
+      "【169】office-render 四件套齐全（房间 / 后墙 / 两侧 / 工位）"
     );
-
-    const assetDir = join(ROOT, "src", "assets", "office");
-    const assetFiles = existsSync(assetDir) ? readdirSync(assetDir).filter((f) => f.endsWith(".png")) : [];
-    const missing = assetFiles.filter((f) => furnSrc.split(f.slice(0, f.lastIndexOf("_")) + ": [").length === 1);
-    (assetFiles.length >= 20 && missing.length === 0 ? ok : fail)(
-      "【169】素材尺寸表覆盖全部素材文件（缺尺寸的那件家具会被静默丢掉）"
-        + (missing.length ? "，缺：" + missing.slice(0, 3).join("；") : "")
+    (!/assets\/office\/|\.png/.test(renderSrc) ? ok : fail)(
+      "【169】绘制模块零贴图依赖（程序化路线：不引任何 PNG）"
     );
-
     ((() => {
-      // ⛔ 取**偏移量数值**比大小，不比出现位置：显示器/椅子/桌子在 syncStatics 里连着画，
-      //    落座人物在 syncPeople（更靠后）—— 按行号比会因为"人写在下面"而假红。
+      // ⛔ 比**数值大小**而不是出现位置：家具在 syncStatics、人物在 syncPeople，
+      //    按行号比会因为"人写在下面"而假红（v8 踩过）。
       const off = (re) => { const m = furnSrc.match(re); return m ? Number(m[1].replace(/\s+/g, "")) : NaN; };
-      const back = off(/back\.zIndex = slot\.y ([+-] [\d.]+)/);
-      const chair = off(/chair\.zIndex = slot\.y ([+-] [\d.]+)/);
+      const furniture = off(/box\.zIndex = slot\.y ([+-] [\d.]+)/);
       const person = off(/view\.container\.zIndex = slot\.y ([+-] [\d.]+)/);
-      const front = off(/front\.zIndex = slot\.y ([+-] [\d.]+)/);
-      return Number.isFinite(back) && Number.isFinite(chair) && Number.isFinite(person)
-        && Number.isFinite(front) && back < chair && chair < person && person < front
+      return Number.isFinite(furniture) && Number.isFinite(person)
+        && furniture > person
         && /world\.sortableChildren = true/.test(furnSrc);
     })() ? ok : fail)(
-      "【169】工位纵深排序（显示器 → 椅子 → 人 → 桌子，按地面基线 zIndex + sortableChildren）"
+      "【169】工位家具（zIndex y-0.4）在人物（y-0.5）**之后**绘制 ⇒ 家具遮住人的下半身、桌面不被糊住"
     );
-
-    (/Kenney/.test(furnSrc) && /CC0/.test(furnSrc) ? ok : fail)(
-      "【169】素材来源与许可写在文件头（Kenney Furniture Kit / CC0 1.0）"
+    (furnSrc.includes("drawDeskStation(furniture") ? ok : fail)(
+      "【169】整套工位家具画在一个 Graphics 里（逐件贴图时代会散落，09-27 用户截图实测）"
     );
   }
 

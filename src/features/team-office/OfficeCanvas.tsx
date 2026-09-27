@@ -24,117 +24,21 @@ import { useEffect, useRef, useState } from "react";
 //    「Current environment does not allow unsafe-eval」：画布挂进 DOM 却什么都不画（09-27 实测）。
 //    ⛔ 名字有误导性：它是「在没有 unsafe-eval 的环境里跑」的入口，不是「启用 eval」。
 import "pixi.js/unsafe-eval";
-import { Application, Assets, Container, Graphics, Sprite, Text, TextStyle, Texture } from "pixi.js";
+import { Application, Container, Graphics, Text, TextStyle } from "pixi.js";
 import { OFC, INK_W, INK_W_THIN, ISO, workerLook, type WorkerLook } from "./office-palette";
-import { deskSlots, floorPoint, SCENE_W, SCENE_H, FLOOR, WALL_H, type FloorSpot } from "./office-iso";
+import { deskSlots, floorPoint, SCENE_W, SCENE_H, type FloorSpot } from "./office-iso";
 import type { DirectorSnapshot, OfficePose, OfficeHandoff, ErrandSpot } from "./office-director";
 import type { OfficeMember } from "./OfficeScene";
 
-import bookcaseClosedUrl from "../../assets/office/bookcaseClosed_NE.png";
-import bookcaseOpenUrl from "../../assets/office/bookcaseOpen_NE.png";
-import booksUrl from "../../assets/office/books_NE.png";
-import cabinetTelevisionUrl from "../../assets/office/cabinetTelevision_NE.png";
-import cardboardBoxClosedUrl from "../../assets/office/cardboardBoxClosed_NE.png";
-import ceilingFanUrl from "../../assets/office/ceilingFan_NE.png";
-import chairDeskUrl from "../../assets/office/chairDesk_NE.png";
-import computerKeyboardUrl from "../../assets/office/computerKeyboard_NE.png";
-import computerMouseUrl from "../../assets/office/computerMouse_NE.png";
-import computerScreenUrl from "../../assets/office/computerScreen_NE.png";
-import deskUrl from "../../assets/office/desk_NE.png";
-import doorwayUrl from "../../assets/office/doorway_NE.png";
-import lampRoundFloorUrl from "../../assets/office/lampRoundFloor_NE.png";
-import laptopUrl from "../../assets/office/laptop_NE.png";
-import plantSmall1Url from "../../assets/office/plantSmall1_NE.png";
-import plantSmall2Url from "../../assets/office/plantSmall2_NE.png";
-import plantSmall3Url from "../../assets/office/plantSmall3_NE.png";
-import pottedPlantUrl from "../../assets/office/pottedPlant_NE.png";
-import rugRectangleUrl from "../../assets/office/rugRectangle_NE.png";
-import sideTableDrawersUrl from "../../assets/office/sideTableDrawers_NE.png";
-import sideTableUrl from "../../assets/office/sideTable_NE.png";
-import trashcanUrl from "../../assets/office/trashcan_NE.png";
-import wallWindowUrl from "../../assets/office/wallWindow_NE.png";
+import { drawRoom as paintRoom, drawBackWall, drawSideProps, drawDeskStation } from "./office-render";
 
-const SPRITE_URL: Record<string, string> = {
-  bookcaseClosed: bookcaseClosedUrl,
-  bookcaseOpen: bookcaseOpenUrl,
-  books: booksUrl,
-  cabinetTelevision: cabinetTelevisionUrl,
-  cardboardBoxClosed: cardboardBoxClosedUrl,
-  ceilingFan: ceilingFanUrl,
-  chairDesk: chairDeskUrl,
-  computerKeyboard: computerKeyboardUrl,
-  computerMouse: computerMouseUrl,
-  computerScreen: computerScreenUrl,
-  desk: deskUrl,
-  doorway: doorwayUrl,
-  lampRoundFloor: lampRoundFloorUrl,
-  laptop: laptopUrl,
-  plantSmall1: plantSmall1Url,
-  plantSmall2: plantSmall2Url,
-  plantSmall3: plantSmall3Url,
-  pottedPlant: pottedPlantUrl,
-  rugRectangle: rugRectangleUrl,
-  sideTableDrawers: sideTableDrawersUrl,
-  sideTable: sideTableUrl,
-  trashcan: trashcanUrl,
-  wallWindow: wallWindowUrl,
-};
+/** 人物整体缩放：v5 的人物（头径 41px）相对工位桌椅过大，压过桌子 ⇒ 缩到 0.64。 */
+const PERSON_K = 0.54;
+const SEAT_LIFT = 118;
+const TAG_LIFT = 166;
+const HANDOFF_LIFT = 150;
 
-const SPRITE_SIZE: Record<string, [number, number]> = {
-  desk: [85, 88],
-  chairDesk: [44, 56],
-  computerScreen: [34, 40],
-  computerKeyboard: [30, 23],
-  computerMouse: [9, 6],
-  laptop: [37, 24],
-  bookcaseOpen: [49, 101],
-  bookcaseClosed: [49, 99],
-  cabinetTelevision: [79, 79],
-  sideTable: [57, 68],
-  sideTableDrawers: [57, 68],
-  cardboardBoxClosed: [32, 40],
-  trashcan: [25, 45],
-  pottedPlant: [21, 61],
-  plantSmall1: [10, 14],
-  plantSmall2: [10, 14],
-  plantSmall3: [10, 14],
-  lampRoundFloor: [19, 76],
-  ceilingFan: [55, 39],
-  books: [18, 19],
-  rugRectangle: [188, 134],
-  wallWindow: [79, 153],
-  doorway: [44, 107],
-};
 
-const DESK_TOP = 88;
-const SEAT_LIFT = 110;
-const TAG_LIFT = 172;
-const HANDOFF_LIFT = 160;
-const SPRITE_K = 1.05;
-
-/**
- * 已加载贴图缓存（⛔ PixiJS v8 的 `Texture.from(url)` **不再自动下载**资源：
- *  未加载时返回空 texture（1×1 白点），Sprite 拉伸后就是一块白方块 ——
- *  09-27 用户截图实测：家具位置全对、贴图全是白块）。
- *  ⇒ 必须在绘制前 `Assets.load()` 预加载，并从这里取 texture。
- */
-const SPRITE_TEXTURES = new Map<string, Texture>();
-
-/** 预加载全部家具贴图（幂等：已缓存的 URL 不会重复下载）。 */
-async function preloadSpriteTextures(): Promise<void> {
-  const names = Object.keys(SPRITE_URL);
-  await Promise.all(names.map(async (name) => {
-    if (SPRITE_TEXTURES.has(name)) return;
-    const url = SPRITE_URL[name];
-    try {
-      // Assets.load 对图片返回 Texture；加载完再交给 Sprite 使用
-      const texture = (await Assets.load(url)) as Texture;
-      SPRITE_TEXTURES.set(name, texture);
-    } catch (error) {
-      console.warn("[office] 贴图加载失败:", name, error);
-    }
-  }));
-}
 
 /** 世界层里房间永远垫底、吊扇永远在最上（都与地面物件不重叠）。 */
 const Z_ROOM = -1e6;
@@ -216,7 +120,7 @@ interface HandoffView {
 }
 
 interface SwayPart {
-  obj: Sprite;
+  obj: Graphics;
   amp: number;
   speed: number;
   phase: number;
@@ -307,13 +211,10 @@ export function OfficeCanvas({ ceoName, ceoProfession, members, snapshot, onOpen
       app.stage.addChild(world, tags, handoffs);
       layersRef.current = { world, tags, handoffs };
 
-      // ⛔ 必须先加载贴图再画（PixiJS v8 不自动加载，见 SPRITE_TEXTURES 注释）——
-      //    顺序颠倒 = 家具全成白方块（09-27 用户截图实测）。
-      await preloadSpriteTextures();
-      if (cleaned) return;
-
-      drawRoom(world);
-      drawFurniture(world, scene);
+      // 程序化绘制（⛔ 零贴图：参考项目的 3D 素材有版权标注，我们只复刻风格）
+      paintRoom(world);
+      drawBackWall(world);
+      drawSideProps(world);
       app.ticker.add(tick);
       setReady(true);
     };
@@ -403,33 +304,16 @@ function syncStatics(world: Container, slots: Slot[], scene: SceneRefs) {
   scene.statics.clear();
 
   for (const slot of slots) {
-    const k = SPRITE_K * slot.scale;
-    const top = DESK_TOP * k;
-
-    const back = new Container();
-    back.zIndex = slot.y - 0.4;
-    const screen = createSprite("computerScreen", slot.x - 40 * slot.scale, slot.y - top, k * 1.15);
-    const keyboard = createSprite("computerKeyboard", slot.x - 34 * slot.scale, slot.y - top + 11 * slot.scale, k * 0.95);
-    if (screen) back.addChild(screen);
-    if (keyboard) back.addChild(keyboard);
-
-    const chair = new Container();
-    chair.zIndex = slot.y - 0.3;
-    const chairSprite = createSprite("chairDesk", slot.x + 4 * slot.scale, slot.y + 4 * slot.scale, k * 0.82);
-    if (chairSprite) chair.addChild(chairSprite);
-
-    const front = new Container();
-    front.zIndex = slot.y - 0.1;
-    const shadow = new Graphics();
-    shadow.ellipse(slot.x, slot.y - 2, 64 * slot.scale, 22 * slot.scale).fill({ color: hexToNumber(ISO.shadow), alpha: 0.1 });
-    front.addChild(shadow);
-    const deskSprite = createSprite("desk", slot.x, slot.y, k);
-    if (deskSprite) front.addChild(deskSprite);
-    const books = createSprite("books", slot.x + 38 * slot.scale, slot.y - DESK_TOP * k, k * 0.85);
-    if (books) front.addChild(books);
-
-    world.addChild(back, chair, front);
-    scene.statics.set(slot.key, [back, chair, front]);
+    // 整套工位家具（阴影 + 桌子 + 显示器 + 键盘 + 椅子）一次画在一个 Graphics 里。
+    // ⛔ zIndex = slot.y - 0.4：比人物容器（slot.y - 0.2）更靠后 —— 参考画面里桌子在
+    //    人的**远侧**（人背对观众、面向桌子），所以家具必须先于人物绘制。
+    const furniture = new Graphics();
+    drawDeskStation(furniture, slot.u, slot.v);
+    const box = new Container();
+    box.zIndex = slot.y - 0.4;
+    box.addChild(furniture);
+    world.addChild(box);
+    scene.statics.set(slot.key, [box]);
   }
 }
 
@@ -480,8 +364,10 @@ function syncPeople(
       scene.seats.set(slot.key, view);
     }
     view.container.position.set(slot.x, slot.y - SEAT_LIFT * slot.scale);
-    view.container.scale.set(slot.scale);
-    view.container.zIndex = slot.y - 0.2;
+    view.container.scale.set(slot.scale * PERSON_K);
+    // ⛔ 人物在**家具之前**绘制（zIndex 更小 = 更靠后）：参考画面里人只露出肩以上，
+    //    桌面 / 显示器 / 椅子都挡在人前面。反过来设（-0.2）会让人糊住整个桌面。
+    view.container.zIndex = slot.y - 0.5;
 
     const sig = state === "never" ? "never" : away ? "away" : `${pose?.kind}:${back ? 1 : 0}:${lookIdx}`;
     if (view.sig !== sig) {
@@ -662,99 +548,9 @@ function headOf(index: number, slots: Slot[]): { x: number; y: number } {
   return { x: slot.x, y: slot.y - HANDOFF_LIFT * slot.scale };
 }
 
-/* ── 房间与家具 ─────────────────────────────────────────────────────────── */
-
-function drawRoom(layer: Container) {
-  const { bl, br, fr, fl } = FLOOR;
-
-  const g = new Graphics();
-  g.zIndex = Z_ROOM;
-
-  g.rect(bl[0], bl[1] - WALL_H, br[0] - bl[0], WALL_H).fill(hexToNumber(ISO.wall));
-
-  g.poly([bl[0], bl[1] - WALL_H, bl[0], bl[1], fl[0], fl[1], fl[0], fl[1] - WALL_H]).fill(hexToNumber(ISO.wallSide));
-  g.poly([br[0], br[1] - WALL_H, br[0], br[1], fr[0], fr[1], fr[0], fr[1] - WALL_H]).fill(hexToNumber(ISO.wallSide));
-
-  g.poly([bl[0], bl[1] - WALL_H, br[0], br[1] - WALL_H, br[0] + 42, br[1] - WALL_H - 26, bl[0] - 42, bl[1] - WALL_H - 26]).fill(hexToNumber(ISO.wallTop));
-  g.poly([bl[0] - 42, bl[1] - WALL_H - 26, fl[0] - 42, fl[1] - WALL_H - 40, fr[0] + 42, fr[1] - WALL_H - 40, br[0] + 42, br[1] - WALL_H - 26]).fill({ color: hexToNumber(ISO.ceiling), alpha: 0.85 });
-
-  g.moveTo(bl[0] - 34, bl[1] - WALL_H - 18).lineTo(fl[0] - 34, fl[1] - WALL_H - 32).stroke({ color: hexToNumber(ISO.baseboard), width: 3, alpha: 0.75 });
-  g.moveTo(br[0] + 34, br[1] - WALL_H - 18).lineTo(fr[0] + 34, fr[1] - WALL_H - 32).stroke({ color: hexToNumber(ISO.baseboard), width: 3, alpha: 0.75 });
-
-  g.poly([bl[0], bl[1], br[0], br[1], fr[0], fr[1], fl[0], fl[1]]).fill(hexToNumber(ISO.floor));
-
-  g.setStrokeStyle({ color: hexToNumber(ISO.floorTile), width: 2.4 });
-  [0.14, 0.28, 0.42, 0.58, 0.72, 0.86].forEach((u) => {
-    const a = floorPoint(u, 0);
-    const b = floorPoint(u, 1);
-    g.moveTo(a.x, a.y).lineTo(b.x, b.y);
-  });
-  [0.2, 0.4, 0.6, 0.8].forEach((v) => {
-    const a = floorPoint(0, v);
-    const b = floorPoint(1, v);
-    g.moveTo(a.x, a.y).lineTo(b.x, b.y);
-  });
-  g.stroke();
-
-  g.moveTo(bl[0], bl[1]).lineTo(br[0], br[1]).stroke({ color: hexToNumber(ISO.baseboard), width: 5 });
-  g.moveTo(bl[0], bl[1]).lineTo(fl[0], fl[1]).stroke({ color: hexToNumber(ISO.baseboard), width: 5 });
-  g.moveTo(br[0], br[1]).lineTo(fr[0], fr[1]).stroke({ color: hexToNumber(ISO.baseboard), width: 5 });
-
-  g.poly([fl[0], fl[1], fr[0], fr[1], fr[0] + 14, fr[1] + 16, fl[0] - 14, fl[1] + 16]).fill(hexToNumber(ISO.wallTop)).stroke({ color: hexToNumber(ISO.baseboard), width: 3 });
-
-  layer.addChild(g);
-}
-
-function drawFurniture(layer: Container, scene: SceneRefs) {
-  const items: Array<{ name: string; u: number; v: number; k?: number; sway?: number }> = [
-    { name: "bookcaseClosed", u: 0.26, v: 0.05 },
-    { name: "bookcaseClosed", u: 0.74, v: 0.05 },
-    { name: "bookcaseOpen", u: 0.88, v: 0.07 },
-    { name: "sideTableDrawers", u: 0.5, v: 0.07 },
-    { name: "pottedPlant", u: 0.1, v: 0.2, sway: 0.03 },
-    { name: "pottedPlant", u: 0.9, v: 0.24, sway: 0.03 },
-    { name: "lampRoundFloor", u: 0.11, v: 0.6 },
-    { name: "sideTable", u: 0.13, v: 0.36 },
-    { name: "sideTableDrawers", u: 0.87, v: 0.48 },
-    { name: "cardboardBoxClosed", u: 0.88, v: 0.74 },
-    { name: "trashcan", u: 0.17, v: 0.8 },
-    { name: "plantSmall1", u: 0.35, v: 0.94, sway: 0.045 },
-    { name: "plantSmall2", u: 0.65, v: 0.94, sway: 0.045 },
-  ];
-
-  items.forEach((item, i) => {
-    const p = floorPoint(item.u, item.v);
-    const k = SPRITE_K * p.scale * (item.k ?? 1);
-    const sprite = createSprite(item.name, p.x, p.y, k);
-    if (!sprite) return;
-    sprite.zIndex = p.y;
-    layer.addChild(sprite);
-    if (item.sway) scene.swayers.push({ obj: sprite, amp: item.sway, speed: 0.7, phase: i });
-  });
-
-  const fan = createSprite("ceilingFan", SCENE_W / 2, 69, 0.9);
-  if (fan) {
-    fan.anchor.set(0.5, 0);
-    fan.zIndex = Z_FAN;
-    layer.addChild(fan);
-    scene.swayers.push({ obj: fan, amp: 0.05, speed: 0.9, phase: 0 });
-  }
-}
-
-function createSprite(name: string, x: number, y: number, k: number): Sprite | null {
-  const size = SPRITE_SIZE[name];
-  if (!size) return null;
-  // ⛔ 只从预加载缓存取（v8 的 Texture.from(url) 对未加载资源返回空白贴图，
-  //    会把家具画成白方块）；缓存缺失时直接跳过，绝不退回 Texture.from(url)。
-  const texture = SPRITE_TEXTURES.get(name);
-  if (!texture) return null;
-
-  const sprite = new Sprite(texture);
-  sprite.anchor.set(0.5, 1);
-  sprite.position.set(x, y);
-  sprite.scale.set(k);
-  return sprite;
-}
+/* ── 房间与家具 ─────────────────────────────────────────────────────────
+   ⛔ v9 起全部走 office-render 的**程序化绘制**（白系等距、无贴图、无描边）。
+      这里不再有 drawRoom / drawFurniture / createSprite：贴图路线已整体废弃。 */
 
 /* ── 人物绘制 ───────────────────────────────────────────────────────────── */
 
@@ -870,7 +666,7 @@ function createWorkerGraphics(pose: OfficePose, look: WorkerLook, back: boolean)
 function createWalker(look: WorkerLook, ground: { x: number; y: number; scale: number }): WalkerParts {
   const container = new Container();
   container.position.set(ground.x, ground.y);
-  container.scale.set(ground.scale);
+  container.scale.set(ground.scale * PERSON_K);
   container.zIndex = ground.y;
 
   const body = new Container();
