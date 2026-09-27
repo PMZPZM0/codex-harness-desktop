@@ -1425,6 +1425,7 @@ w.postMessage({id:1,op:"list",root});
     const sceneSrc2 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeScene.tsx"), "utf8");
     const previewSrc2 = readFileSync(join(ROOT, "src", "features", "team-office", "TeamOfficePreview.tsx"), "utf8");
     const canvas2 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
+    const renderSrc2 = readFileSync(join(ROOT, "src", "features", "team-office", "office-render.ts"), "utf8");
 
     // ① 导演必须是纯逻辑：不认识 React / DOM（否则没法离线写断言，且渲染与决策会缠在一起）
     (directorSrc.length > 0 && !/from "react"|document\.|window\./.test(directorSrc) ? ok : fail)(
@@ -1469,6 +1470,29 @@ w.postMessage({id:1,op:"list",root});
     (!/assets\/office\//.test(canvas2) && !canvas2.includes("SPRITE_SIZE") && !canvas2.includes("preloadSpriteTextures") ? ok : fail)(
       "【168】画布层零贴图素材（程序化绘制路线，不许退回 PNG 拼装）"
     );
+    // ⑬ 办公设施与它们的动画（09-27 用户「饮水机、啥都配置动画，都做全」）：
+    //    设施位置必须挂在 director 的跑腿目标点上（人真能走到它旁边），
+    //    且每个设施都要有**在跑的**动画部件 —— ⛔ 只有静态画法没有 ticker = 恒真假绿。
+    (canvas2.includes("drawAmenities(") && canvas2.includes("scene.props.forEach") ? ok : fail)(
+      "【168】办公设施已接线并逐帧驱动（drawAmenities → scene.props）"
+    );
+    (["饮水机", "打印机", "资料架", "挂钟"].every((k) => renderSrc2.includes(k)) ? ok : fail)(
+      "【168】四类设施齐备（饮水机 / 打印机 / 资料架 / 挂钟）"
+    );
+    ((renderSrc2.match(/tickers\.push\(\{ update:/g) || []).length >= 3 ? ok : fail)(
+      "【168】设施动画部件 ≥3 组（水泡 / 吐纸 / 走针，每类都是独立 ticker）"
+    );
+    // ⑭ 标签表达（09-27 用户：「头上那个黑框框太丑」）—— 必须是**无描边**的浮起胶囊
+    //    ⛔ 负向断言：把深色描边加回来（stroke ISO.ink）这里必须红。
+    ((() => {
+      // ⛔ 锚**整条绘制语句**再看里面有没有 `.stroke(`：只查"有没有 stroke"会被
+      //    水泡/显示器等其它圆的描边顶成假绿（变异实测漏过一版）。
+      const m = canvas2.match(/g\.roundRect\(-w \/ 2, -h \/ 2, w, h, h \/ 2\)\.fill\([^;]*\);/);
+      return Boolean(m) && !m[0].includes(".stroke(") && !/roundRect\(-62, -8, 124, 36, 11\)/.test(canvas2);
+    })() ? ok : fail)(
+      "【168】头顶标签是无描边胶囊（去掉黑框；变异验证：加回 stroke 必须红）"
+    );
+
     // ⑪ 姿势动画齐备（每个坐姿都要有自己的手臂/躯干姿态，否则「预设动画」是空话）
     (["doze", "stretch", "coffee", "phone", "note"].every((k) => canvas2.includes('pose.kind === "' + k + '"')) && /const typing = /.test(canvas2) ? ok : fail)(
       "【168】六种坐姿各有自己的动画（工作打字 / 咖啡 / 伸懒腰 / 手机 / 翻资料 / 打盹）"
@@ -1510,7 +1534,7 @@ w.postMessage({id:1,op:"list",root});
         && furniture > person
         && /world\.sortableChildren = true/.test(furnSrc);
     })() ? ok : fail)(
-      "【169】工位家具（zIndex y-0.4）在人物（y-0.5）**之后**绘制 ⇒ 家具遮住人的下半身、桌面不被糊住"
+      "【169】工位家具（zIndex 比人物大）在人物**之后**绘制 ⇒ 家具挡人下半身、桌面不被糊住"
     );
     (furnSrc.includes("drawDeskStation(furniture") ? ok : fail)(
       "【169】整套工位家具画在一个 Graphics 里（逐件贴图时代会散落，09-27 用户截图实测）"

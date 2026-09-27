@@ -25,18 +25,18 @@ import { useEffect, useRef, useState } from "react";
 //    ⛔ 名字有误导性：它是「在没有 unsafe-eval 的环境里跑」的入口，不是「启用 eval」。
 import "pixi.js/unsafe-eval";
 import { Application, Container, Graphics, Text, TextStyle } from "pixi.js";
-import { OFC, INK_W, INK_W_THIN, ISO, workerLook, type WorkerLook } from "./office-palette";
+import { OFC, INK_W, INK_W_THIN, workerLook, type WorkerLook } from "./office-palette";
 import { deskSlots, floorPoint, SCENE_W, SCENE_H, type FloorSpot } from "./office-iso";
 import type { DirectorSnapshot, OfficePose, OfficeHandoff, ErrandSpot } from "./office-director";
 import type { OfficeMember } from "./OfficeScene";
 
-import { drawRoom as paintRoom, drawBackWall, drawSideProps, drawDeskStation } from "./office-render";
+import { drawRoom as paintRoom, drawBackWall, drawSideProps, drawDeskStation, drawAmenities, type PropTicker } from "./office-render";
 
 /** 人物整体缩放：v5 的人物（头径 41px）相对工位桌椅过大，压过桌子 ⇒ 缩到 0.64。 */
-const PERSON_K = 0.54;
-const SEAT_LIFT = 118;
-const TAG_LIFT = 166;
-const HANDOFF_LIFT = 150;
+const PERSON_K = 0.72;
+const SEAT_LIFT = 90;
+const TAG_LIFT = 132;
+const HANDOFF_LIFT = 126;
 
 
 
@@ -134,11 +134,13 @@ interface SceneRefs {
   tags: Map<string, TagView>;
   handoffs: Map<string, HandoffView>;
   swayers: SwayPart[];
+  /** 设施动画部件（饮水机水泡 / 打印机吐纸 / 挂钟走针），由 animateScene 驱动 */
+  props: PropTicker[];
   clock: number;
 }
 
 function emptyScene(): SceneRefs {
-  return { statics: new Map(), staticsKey: "", seats: new Map(), walkers: new Map(), tags: new Map(), handoffs: new Map(), swayers: [], clock: 0 };
+  return { statics: new Map(), staticsKey: "", seats: new Map(), walkers: new Map(), tags: new Map(), handoffs: new Map(), swayers: [], props: [], clock: 0 };
 }
 
 export type OfficeCanvasProps = {
@@ -215,6 +217,7 @@ export function OfficeCanvas({ ceoName, ceoProfession, members, snapshot, onOpen
       paintRoom(world);
       drawBackWall(world);
       drawSideProps(world);
+      scene.props = drawAmenities(world);
       app.ticker.add(tick);
       setReady(true);
     };
@@ -365,9 +368,11 @@ function syncPeople(
     }
     view.container.position.set(slot.x, slot.y - SEAT_LIFT * slot.scale);
     view.container.scale.set(slot.scale * PERSON_K);
-    // ⛔ 人物在**家具之前**绘制（zIndex 更小 = 更靠后）：参考画面里人只露出肩以上，
-    //    桌面 / 显示器 / 椅子都挡在人前面。反过来设（-0.2）会让人糊住整个桌面。
-    view.container.zIndex = slot.y - 0.5;
+    // ⛔ 人物在**家具之前**绘制（zIndex 更小 = 更靠后）⇒ 桌面/显示器/椅子挡住人的下半身。
+    //    09-27 用户要「身体展示全」：靠**抬高 + 缩小桌椅**让人露出头与整段躯干
+    //    （SEAT_LIFT / deskH / 显示器尺寸三处是联动的，改一处要一起看）。
+    //    ⛔ 反过来（人后画）会让人腿叠在显示器上 —— 实测截图确认过。
+    view.container.zIndex = slot.y - 0.55;
 
     const sig = state === "never" ? "never" : away ? "away" : `${pose?.kind}:${back ? 1 : 0}:${lookIdx}`;
     if (view.sig !== sig) {
@@ -464,20 +469,31 @@ function syncTags(layer: Container, slots: Slot[], scene: SceneRefs) {
     view.sig = sig;
     view.container.removeChildren().forEach((c) => c.destroy({ children: true }));
 
+    // ⛔ 表达方式（09-27 用户：「头上那个黑框框太丑」）——
+    //    改成**无描边的浮起小胶囊**：白底 + 柔阴影 + 状态点 + 单行「名字 · 动作」。
+    //    参考画面里也没有黑边：标签靠浅阴影"浮"在房间上方，不靠线框框住。
+    const nameText = new Text({ text: slot.name, style: new TextStyle({ fill: 0x1f2733, fontSize: 12, fontWeight: "700" }) });
+    const taskText = new Text({ text: task, style: new TextStyle({ fill: 0x8a94a0, fontSize: 10.5, fontWeight: "600" }) });
+    const dotR = 3.1;
+    const padX = 10;
+    const gap = 6;
+    const leadW = dotR * 2 + 5;                       // 圆点 + 与名字的间距
+    const w = padX * 2 + leadW + nameText.width + gap + taskText.width;
+    const h = 23;
     const g = new Graphics();
-    g.roundRect(-62, -8, 124, 36, 11).fill({ color: 0xffffff, alpha: 0.97 }).stroke({ color: hexToNumber(ISO.ink), width: 2.4 });
-    g.circle(-34, 20, 3.6).fill(slot.running ? OFC.ok : 0xb4b7ba);
+    // 柔阴影（无描边）：偏移 2.5px 的低透明度暗色，让胶囊"浮"起来
+    g.roundRect(-w / 2, -h / 2 + 2.5, w, h, h / 2).fill({ color: 0x2a3542, alpha: 0.1 });
+    g.roundRect(-w / 2, -h / 2, w, h, h / 2).fill({ color: 0xffffff, alpha: 0.95 });
+    const dotX = -w / 2 + padX + dotR;
+    g.circle(dotX, 0, dotR).fill(slot.running ? 0x2fb26a : 0xb9c0c8);
+    if (slot.running) g.circle(dotX, 0, dotR + 2.6).stroke({ color: 0x2fb26a, width: 1.3, alpha: 0.32 });
     view.container.addChild(g);
-
-    const taskText = new Text({ text: task, style: new TextStyle({ fill: 0x6b7280, fontSize: 11, fontWeight: "600" }) });
-    taskText.anchor.set(0.5, 0);
-    taskText.position.set(0, -6);
-    view.container.addChild(taskText);
-
-    const nameText = new Text({ text: slot.name, style: new TextStyle({ fill: 0x22303f, fontSize: 12.5, fontWeight: "700" }) });
-    nameText.anchor.set(0, 0);
-    nameText.position.set(-26, 2);
+    nameText.anchor.set(0, 0.5);
+    nameText.position.set(dotX + dotR + 5, 0);
     view.container.addChild(nameText);
+    taskText.anchor.set(0, 0.5);
+    taskText.position.set(dotX + dotR + 5 + nameText.width + gap, 0.5);
+    view.container.addChild(taskText);
   });
 }
 
@@ -734,6 +750,9 @@ function animateScene(scene: SceneRefs, delta: number) {
   scene.swayers.forEach((s) => {
     s.obj.rotation = Math.sin(scene.clock * s.speed + s.phase) * s.amp;
   });
+
+  // 设施动画（饮水机水泡 / 打印机吐纸 / 挂钟走针）—— 与人物动画同一个 ticker
+  scene.props.forEach((p) => p.update(scene.clock));
 
   scene.seats.forEach((view) => {
     if (!view.parts) return;
