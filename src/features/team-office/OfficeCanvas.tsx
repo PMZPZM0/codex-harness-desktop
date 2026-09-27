@@ -35,7 +35,7 @@ import type { OfficeMember } from "./OfficeScene";
 
 import {
   drawRoom as paintRoom, drawBackWall, drawSideProps, drawDeskStation, drawChair,
-  drawAmenities, screenKindOf, CHAIR_DV, DESK_DV, type PropTicker,
+  drawAmenities, screenKindOf, softShadow, CHAIR_DV, DESK_DV, type PropTicker,
 } from "./office-render";
 
 /**
@@ -45,8 +45,17 @@ import {
 const PERSON_K = 0.76;
 /** 人物容器相对座位地面点的抬升（屏幕像素，再乘纵深缩放）。 */
 const SEAT_LIFT = 56;
-const TAG_LIFT = 124;
-const HANDOFF_LIFT = 120;
+/**
+ * 头顶标签的抬升（屏幕像素，再乘纵深缩放）。⛔ 这个值被两件事同时夹住（改前先算）：
+ *   **下限** = 角色耳朵顶（最高的狐狸约在座面点上方 129k）；**上限** = 显示器下沿（154.8k）。
+ *   标签高 19 ⇒ 抬 145 刚好落在中间：下缘 135.5k（离耳尖 6k）、上缘 154.5k（离屏沿 0.3k）。
+ *   调低会被耳朵戳穿（v10 第二版实测），调高会压住屏幕。
+ */
+const TAG_LIFT = 145;
+/** 交接锚点：卡片在两人**头侧**飞。⛔ 别取头顶正中 —— 起点标记会正好盖在脑袋上，
+ *  放大看像头顶长了个包（v10 实测）。锚点高度取头位（在耳顶与头顶之间）。 */
+const HANDOFF_LIFT = 96;
+const HANDOFF_SIDE = 38;
 
 const HANDOFF_TINT: Record<OfficeHandoff["kind"], number> = {
   task: 0xdbeafe,
@@ -502,14 +511,14 @@ function syncTags(layer: Container, slots: Slot[], scene: SceneRefs) {
     // ⛔ 表达方式（09-27 用户：「头上那个黑框框太丑」）——
     //    改成**无描边的浮起小胶囊**：白底 + 柔阴影 + 状态点 + 单行「名字 · 动作」。
     //    参考画面里也没有黑边：标签靠浅阴影"浮"在房间上方，不靠线框框住。
-    const nameText = new Text({ text: slot.name, style: new TextStyle({ fill: 0x1f2733, fontSize: 12, fontWeight: "700" }) });
-    const taskText = new Text({ text: task, style: new TextStyle({ fill: 0x8a94a0, fontSize: 10.5, fontWeight: "600" }) });
-    const dotR = 3.1;
-    const padX = 10;
-    const gap = 6;
+    const nameText = new Text({ text: slot.name, style: new TextStyle({ fill: 0x1f2733, fontSize: 11.5, fontWeight: "700" }) });
+    const taskText = new Text({ text: task, style: new TextStyle({ fill: 0x8a94a0, fontSize: 10, fontWeight: "600" }) });
+    const dotR = 2.8;
+    const padX = 9;
+    const gap = 5;
     const leadW = dotR * 2 + 5;                       // 圆点 + 与名字的间距
     const w = padX * 2 + leadW + nameText.width + gap + taskText.width;
-    const h = 23;
+    const h = 19;
     const g = new Graphics();
     // 柔阴影（无描边）：偏移 2.5px 的低透明度暗色，让胶囊"浮"起来
     g.roundRect(-w / 2, -h / 2 + 2.5, w, h, h / 2).fill({ color: 0x2a3542, alpha: 0.1 });
@@ -539,8 +548,9 @@ function syncHandoffs(layer: Container, slots: Slot[], snapshot: DirectorSnapsho
   }
 
   snapshot.handoffs.forEach((handoff) => {
-    const from = headOf(handoff.from, slots);
-    const to = headOf(handoff.to, slots);
+    // 起点偏左、终点偏右：标记点让开脑袋（见 HANDOFF_SIDE 的注释）
+    const from = headOf(handoff.from, slots, -1);
+    const to = headOf(handoff.to, slots, 1);
     const sig = `${from.x.toFixed(1)},${from.y.toFixed(1)}>${to.x.toFixed(1)},${to.y.toFixed(1)}:${handoff.kind}`;
 
     let view = scene.handoffs.get(handoff.id);
@@ -560,8 +570,9 @@ function syncHandoffs(layer: Container, slots: Slot[], snapshot: DirectorSnapsho
 
       const tint = HANDOFF_TINT[handoff.kind];
       const g = new Graphics();
-      g.circle(from.x, from.y, 6).fill(tint).stroke({ color: OFC.ink, width: 2.4 });
-      g.circle(to.x, to.y, 10).stroke({ color: OFC.ok, width: 2.8 });
+      // 起点：实心点（发起方）；终点：白底 + 绿环的"落点"（⛔ 只画空心环会像桌上的随机圆圈）
+      g.circle(from.x, from.y, 5.5).fill(tint).stroke({ color: 0xffffff, width: 2, alpha: 0.85 });
+      g.circle(to.x, to.y, 8).fill({ color: 0xffffff, alpha: 0.92 }).stroke({ color: OFC.ok, width: 2.6 });
       view.container.addChild(g);
 
       const pulse = new Graphics();
@@ -580,8 +591,9 @@ function syncHandoffs(layer: Container, slots: Slot[], snapshot: DirectorSnapsho
       view.container.addChild(card);
 
       const label = new Text({ text: handoff.label, style: new TextStyle({ fill: 0x5b6a7d, fontSize: 10.5, fontWeight: "600" }) });
-      label.anchor.set(0.5, 1);
-      label.position.set(to.x, to.y - 34);
+      // ⛔ 标签挂在锚点**下方**：挂上方会正好压到头顶的名字胶囊（实测两处文字叠在一起看不清）
+      label.anchor.set(0.5, 0);
+      label.position.set(to.x, to.y + 17);
       view.container.addChild(label);
     } else {
       view.from = from;
@@ -590,10 +602,10 @@ function syncHandoffs(layer: Container, slots: Slot[], snapshot: DirectorSnapsho
   });
 }
 
-function headOf(index: number, slots: Slot[]): { x: number; y: number } {
+function headOf(index: number, slots: Slot[], side: -1 | 1): { x: number; y: number } {
   const slot = index < 0 ? slots[0] : slots[index + 1];
   if (!slot) return { x: SCENE_W / 2, y: 200 };
-  return { x: slot.x, y: slot.y - HANDOFF_LIFT * slot.scale };
+  return { x: slot.x + side * HANDOFF_SIDE * slot.scale, y: slot.y - HANDOFF_LIFT * slot.scale };
 }
 
 /* ── 角色绘制（黑色动物剪影 + 彩色项圈）───────────────────────────────────
@@ -608,8 +620,15 @@ const HEAD_CY = -44;
 /** 项圈矩形（脖子那一圈）。⛔ 宽度**必须明显窄于肩宽**（参考里项圈 ≈ 肩宽 × 0.57）——
  *  项圈做宽了会把两只爪子整段盖住，角色就只剩"一个头 + 一条色带"（第三版实测）。 */
 const COLLAR = { x: -25, y: -17, w: 50, h: 21, r: 10.5 };
-/** 手臂基准张角（弧度）：左负右正 —— 爪子往外上方伸，像"抱在桌前"。 */
-const ARM_SPREAD = 0.3;
+/**
+ * 手臂：枢轴在**肩**（不是爪子）—— 动画转的是"抬爪"这个动作；枢轴放爪子上就变成
+ * 爪子不动、袖子在甩（看着像抽筋）。
+ * ⛔ 爪心**不能太高**：顶到头的下半部就会和头糊成一件"斗篷"（v10 第二版实测，放大才看得出来）。
+ *    现在的几何：爪心落在局部 (−29.5, −9)，爪顶 −20，刚好在头的下沿之下。
+ */
+const ARM_SHOULDER = { x: 19, y: 10 };
+const ARM_REACH = 22;
+const ARM_SPREAD = 0.5;
 
 function tri(g: Graphics, x1: number, y1: number, x2: number, y2: number, x3: number, y3: number): void {
   g.poly([x1, y1, x2, y2, x3, y3]).fill(SILHOUETTE);
@@ -652,8 +671,9 @@ function drawEars(g: Graphics, animal: AnimalKind, rx: number, ry: number): void
       g.ellipse(8, t - 15, 6.5, 19).fill(SILHOUETTE);
       break;
     case "bear":
-      g.circle(-19, t + 4, 14).fill(SILHOUETTE);
-      g.circle(19, t + 4, 14).fill(SILHOUETTE);
+      // ⛔ 别做成"大圆耳"：r 超过 15 就会变成米老鼠，与考拉撞脸（实测）⇒ 熊耳小且居中，考拉耳大且外扩
+      g.circle(-18, t + 5, 13).fill(SILHOUETTE);
+      g.circle(18, t + 5, 13).fill(SILHOUETTE);
       break;
     case "sheep":
       // 绵羊：一圈小球堆成的"羊毛头"，整个轮廓都是锯齿 —— 剪影里最好认的一种
@@ -664,8 +684,9 @@ function drawEars(g: Graphics, animal: AnimalKind, rx: number, ry: number): void
       g.circle(0, t - 4, 10).fill(SILHOUETTE);
       break;
     case "koala":
-      g.circle(-rx - 3, t + 19, 16).fill(SILHOUETTE);
-      g.circle(rx + 3, t + 19, 16).fill(SILHOUETTE);
+      // 考拉：**大而外扩**的毛耳（与熊的小圆耳拉开距离），耳心再点一个浅色小环做"毛"的暗示
+      g.circle(-rx - 4, t + 20, 17).fill(SILHOUETTE);
+      g.circle(rx + 4, t + 20, 17).fill(SILHOUETTE);
       break;
     case "mouse":
       g.circle(-21, t + 4, 13.5).fill(SILHOUETTE);
@@ -758,31 +779,33 @@ function createWorkerGraphics(pose: OfficePose, cosplay: Cosplay, back: boolean)
   const c = new Container();
 
   const shadow = new Graphics();
-  shadow.ellipse(0, 76, 40, 9).fill({ color: 0x4a5260, alpha: 0.13 });
+  softShadow(shadow, 0, 76, 42, 10, 0.16);
   c.addChild(shadow);
 
   const body = new Container();
 
-  // 躯干（黑一坨，下缘会被椅子挡住）。⛔ 比头**窄**：头必须比肩宽，剪影才有"大头动物"的比例
+  // 躯干（黑一坨，下缘会被椅子挡住）。⛔ 比头**窄**：头必须比肩宽，剪影才有"大头动物"的比例。
+  //    ⛔ 长度也有上限：躯干画到 +78 时下缘会从**椅座下面漏出来**，看着像"人挂在椅子下面"
+  //       （放大实测）。+58 刚好落在椅座范围内，被座面盖住。
   const torso = new Graphics();
-  torso.roundRect(-23, -8, 46, 86, 20).fill(SILHOUETTE);
+  torso.roundRect(-23, -8, 46, 58, 20).fill(SILHOUETTE);
   body.addChild(torso);
 
-  // 两只爪子：从肩**往外上方**伸（ARM_SPREAD），末端一个圆爪。
-  // ⛔ 别画成两根竖直柱子 —— 参考里的爪子是外张的，竖直柱看着像"背了块黑板"（实测）。
+  // 两只爪子：局部原点 = **肩**，爪在肩的上方 ARM_REACH 处；基准张角让爪子往外上方伸
+  // （像"抱在桌前"）。⛔ 别画成两根竖直柱子 —— 参考里的爪子是外张的。
   const armBack = new Graphics();
-  armBack.roundRect(-9.5, -28, 19, 42, 9.5).fill(SILHOUETTE);
-  armBack.circle(0, -28, 10.5).fill(SILHOUETTE);
+  armBack.roundRect(-9, -ARM_REACH, 18, ARM_REACH + 8, 9).fill(SILHOUETTE);
+  armBack.circle(0, -ARM_REACH, 11).fill(SILHOUETTE);
   armBack.pivot.set(0, 0);
-  armBack.position.set(-21, 4);
+  armBack.position.set(-ARM_SHOULDER.x, ARM_SHOULDER.y);
   armBack.rotation = -ARM_SPREAD;
   body.addChild(armBack);
 
   const armFront = new Graphics();
-  armFront.roundRect(-9.5, -28, 19, 42, 9.5).fill(SILHOUETTE);
-  armFront.circle(0, -28, 10.5).fill(SILHOUETTE);
+  armFront.roundRect(-9, -ARM_REACH, 18, ARM_REACH + 8, 9).fill(SILHOUETTE);
+  armFront.circle(0, -ARM_REACH, 11).fill(SILHOUETTE);
   armFront.pivot.set(0, 0);
-  armFront.position.set(21, 4);
+  armFront.position.set(ARM_SHOULDER.x, ARM_SHOULDER.y);
   armFront.rotation = ARM_SPREAD;
   body.addChild(armFront);
 
@@ -800,19 +823,20 @@ function createWorkerGraphics(pose: OfficePose, cosplay: Cosplay, back: boolean)
   collar.roundRect(COLLAR.x + 6, COLLAR.y + COLLAR.h - 5, COLLAR.w - 12, 5, 3).fill(collarDark(cosplay.collar));
   c.addChild(collar);
 
-  // 姿势道具（咖啡杯 / 手机 / 资料），一律**白色 + 细描边**，在黑剪影上读得出来
+  // 姿势道具（咖啡杯 / 手机 / 资料），一律**白色 + 细描边**，在黑剪影上读得出来。
+  // ⛔ 坐标跟着爪心走（爪心 ≈ (±29.5, −9)）：离开爪子太远会像"浮在身边的道具"。
   if (pose.kind === "coffee") {
     const mug = new Graphics();
     mug.roundRect(-7, -9, 14, 14, 3.2).fill(0xffffff).stroke({ color: 0x2b3038, width: 2.2 });
     mug.moveTo(7, -6).quadraticCurveTo(13.5, -2, 7, 3.5).stroke({ color: 0x2b3038, width: 2.2 });
-    mug.position.set(-30, -30);
+    mug.position.set(-33, -20);
     c.addChild(mug);
   }
   if (pose.kind === "phone") {
     const phone = new Graphics();
     phone.roundRect(-7, -11, 14, 22, 3.6).fill(0xffffff).stroke({ color: 0x2b3038, width: 2.2 });
     phone.roundRect(-4.4, -7.8, 8.8, 15.6, 2).fill({ color: 0xbfe0ff, alpha: 0.95 });
-    phone.position.set(28, -28);
+    phone.position.set(32, -17);
     c.addChild(phone);
   }
   if (pose.kind === "note") {
@@ -820,7 +844,7 @@ function createWorkerGraphics(pose: OfficePose, cosplay: Cosplay, back: boolean)
     paper.roundRect(-10, -13, 20, 26, 2.4).fill(0xffffff).stroke({ color: 0x2b3038, width: 2.2 });
     paper.rect(-6, -7, 12, 1.8).fill(0xc7d0da);
     paper.rect(-6, -2, 9, 1.8).fill(0xc7d0da);
-    paper.position.set(-30, -26);
+    paper.position.set(-33, -19);
     c.addChild(paper);
   }
 
@@ -889,7 +913,7 @@ function createWalker(cosplay: Cosplay, ground: { x: number; y: number; scale: n
   body.addChild(headwrap);
 
   const shadow = new Graphics();
-  shadow.ellipse(0, 0, 28, 7.5).fill({ color: 0x4a5260, alpha: 0.13 });
+  softShadow(shadow, 0, 0, 30, 8, 0.16);
   container.addChild(shadow, body);
 
   return {

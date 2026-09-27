@@ -1526,6 +1526,17 @@ w.postMessage({id:1,op:"list",root});
     (!/assets\/office\/|\.png/.test(renderSrc) ? ok : fail)(
       "【169】绘制模块零贴图依赖（程序化路线：不引任何 PNG）"
     );
+    // ⛔ 等距块**不许画底面**：相机在上前方俯视，底面永远被自己的顶面遮住；而它的屏幕位置
+    //    只比顶面低 (z1−z0)·k，画在最后会**盖住顶面上半** ⇒ 白桌面变成一大片灰
+    //    （v10 打磨实测：把桌面渐变 alpha 从 0.019 调到 0.005 都不见效，根因是这块底面）。
+    ((() => {
+      const fn = (renderSrc.match(/function isoPrism\([\s\S]*?\n\}/) || [""])[0];
+      const polys = (fn.match(/g\.poly\(/g) || []).length;
+      const bottomQuad = /up\(a, lo\)[\s\S]{0,40}up\(b, lo\)/.test(fn);
+      return polys === 4 && !bottomQuad;
+    })() ? ok : fail)(
+      "【169】等距块只画 4 个可见面（左右侧 + 前 + 顶），⛔ 不画底面（它会盖住顶面 ⇒ 白桌面变灰）"
+    );
     ((["drawDeskStation(desk", "drawChair(chair"]).every((k) => furnSrc.includes(k)) ? ok : fail)(
       "【169】桌与椅分两个 Graphics（合成一件 ⇒ 要么人被桌挡、要么椅被人挡）"
     );

@@ -64,7 +64,6 @@ export const SKIN = {
   potDark: hex("#e1ded8"),
 
   paper: hex("#ffffff"),
-  frame: hex("#d9c09c"),
 } as const;
 
 /* ── 等距体块 ───────────────────────────────────────────────────────────── */
@@ -77,7 +76,7 @@ function isoPrism(
   g: Graphics,
   u0: number, v0: number, u1: number, v1: number,
   z0: number, z1: number,
-  c: { top: number; front: number; side: number; bottom?: number },
+  c: { top: number; front: number; side: number },
 ): void {
   const [a, b, cc, d] = floorCorners(u0, v0, u1, v1); // 后左 / 后右 / 前右 / 前左
   const k = floorPoint((u0 + u1) / 2, (v0 + v1) / 2).scale;
@@ -92,10 +91,9 @@ function isoPrism(
   g.poly([d.x, d.y - lo, cc.x, cc.y - lo, ...up(cc, hi), ...up(d, hi)]).fill(c.front);
   // 顶面
   g.poly([...up(a, hi), ...up(b, hi), ...up(cc, hi), ...up(d, hi)]).fill(c.top);
-  // 悬空件的底面（贴地的块不画）
-  if (z0 > 0.01) {
-    g.poly([...up(a, lo), ...up(b, lo), ...up(cc, lo), ...up(d, lo)]).fill(c.bottom ?? c.side);
-  }
+  // ⛔ **不画底面**：相机在上前方俯视，底面永远被自己的顶面遮住；而它的屏幕位置只比顶面低
+  //    (z1−z0)·k，画在最后会**盖住顶面上半部分** —— 桌面因此变成一大片灰（v10 打磨时实测：
+  //    把 alpha 从 0.019 调到 0.005 都不见效，根因根本不是渐变，是这块底面）。
 }
 
 /** 落地块 = isoPrism(z0 = 0)。 */
@@ -106,6 +104,32 @@ function isoBox(
   c: { top: number; front: number; side: number },
 ): void {
   isoPrism(g, u0, v0, u1, v1, 0, h, c);
+}
+
+/**
+ * 柔阴影：**多层同心椭圆**堆出衰减。
+ * ⛔ 单层实心椭圆有硬边 —— 画出来是"地上一摊灰"，而不是"物件落在光里"（实测观感）。
+ *    PixiJS Graphics 没有模糊，叠层是最省的做法；层数别多（每层一次绘制）。
+ */
+export function softShadow(g: Graphics, x: number, y: number, rx: number, ry: number, strength: number): void {
+  const layers = 5;
+  const a = strength / layers;
+  for (let i = layers; i >= 1; i--) {
+    const t = i / layers;
+    g.ellipse(x, y, rx * t, ry * t).fill({ color: SKIN.shadow, alpha: a });
+  }
+}
+
+/**
+ * 后墙柜体**顶面**的屏幕 y —— 放在柜面上的物件（咖啡机 / 水槽 / 杯子 / 墙上置物架）
+ * 必须用它定位。
+ * ⛔ 别用 `wallPoint(u, up)`：那是**2D 墙面**坐标（基线恒在 FLOOR 后边线），而柜子是
+ *    3D 方块、顶面要按自身纵深抬高 —— 用墙坐标定位会让咖啡机**浮在柜子上方 39px**
+ *    （09-27 v10 放大截图实测，肉眼一眼假）。
+ */
+function counterTopY(u: number, vFront: number, h: number): number {
+  const p = floorPoint(u, vFront);
+  return p.y - h * p.scale;
 }
 
 /* ── 房间 ───────────────────────────────────────────────────────────────── */
@@ -141,62 +165,111 @@ export function drawRoom(layer: Container): void {
   layer.addChild(g);
 }
 
-/* ── 后墙陈设（矮柜 + 置物架 + 相框 + 木色橱柜 + 冰箱）────────────────── */
+/* ── 后墙陈设（矮柜 + 置物架 + 公告板 + 相框 + 木色橱柜 + 吊架 + 冰箱）──────
+   ⛔ 布置原则（v10 打磨）：**柜面上的东西一律用 counterTopY 定位**（见上），
+      **墙面挂件**才用 wallPoint。混用会让家具浮在半空（实测过）。 */
 
 export function drawBackWall(layer: Container): void {
   const g = new Graphics();
   g.zIndex = -9e5;
 
-  // ① 左下矮柜（带上层置物架）
-  isoBox(g, 0.09, 0.012, 0.28, 0.068, 40, { top: SKIN.whiteTop, front: SKIN.woodFront, side: SKIN.woodSide });
-  const shelfTop = 40 + 50;
-  const [sa, sb] = [wallPoint(0.09, shelfTop), wallPoint(0.28, shelfTop)];
-  g.rect(sa.x, sa.y, sb.x - sa.x, 6).fill(SKIN.woodFront);
-  g.rect(sa.x, sa.y, sb.x - sa.x, 2.5).fill(SKIN.woodTop);
-  g.rect(sa.x, sa.y, 5, -50).fill(SKIN.woodSide);
-  g.rect(sb.x - 5, sb.y, 5, -50).fill(SKIN.woodSide);
+  // ① 左下矮柜（贴墙）
+  const CAB1 = { u0: 0.09, u1: 0.28, vFront: 0.062, h: 40 };
+  isoBox(g, CAB1.u0, 0.01, CAB1.u1, CAB1.vFront, CAB1.h, { top: SKIN.whiteTop, front: SKIN.woodFront, side: SKIN.woodSide });
+  // 柜门缝 + 两个抽屉拉手（白柜面上一道浅线就够分层，别加黑描边）
+  const cab1Front = floorPoint((CAB1.u0 + CAB1.u1) / 2, CAB1.vFront);
+  const cab1W = floorPoint(CAB1.u1, CAB1.vFront).x - floorPoint(CAB1.u0, CAB1.vFront).x;
+  g.rect(cab1Front.x - cab1W * 0.42, cab1Front.y - CAB1.h * 0.52 * cab1Front.scale, cab1W * 0.84, 1.6)
+    .fill({ color: SKIN.woodSide, alpha: 0.5 });
+  // ② 柜面上方的壁挂置物架（离柜面 56 —— 贴着柜子才读成"柜 + 架"，拉高就变浮空）
+  const shelf1Y = counterTopY((CAB1.u0 + CAB1.u1) / 2, CAB1.vFront, CAB1.h) - 56;
+  const [sa, sb] = [wallPoint(CAB1.u0, 0), wallPoint(CAB1.u1, 0)];
+  g.rect(sa.x, shelf1Y, sb.x - sa.x, 6).fill(SKIN.woodFront);
+  g.rect(sa.x, shelf1Y, sb.x - sa.x, 2.5).fill(SKIN.woodTop);
+  g.rect(sa.x, shelf1Y, 5, -50).fill({ color: SKIN.woodSide, alpha: 0.45 });
+  g.rect(sb.x - 5, shelf1Y, 5, -50).fill({ color: SKIN.woodSide, alpha: 0.45 });
   for (let i = 0; i < 3; i++) {
-    const a = wallPoint(0.105 + i * 0.022, shelfTop - 1);
-    g.rect(a.x, a.y - 24, 9, 24).fill(SKIN.paper);
-    g.rect(a.x, a.y - 24, 9, 2.5).fill(hex("#eae8e2"));
+    const a = wallPoint(CAB1.u0 + 0.022 + i * 0.024, 0);
+    g.rect(a.x, shelf1Y - 25, 10, 25).fill(SKIN.paper);
+    g.rect(a.x, shelf1Y - 25, 10, 2.5).fill(hex("#ebe9e3"));
+    g.rect(a.x + 4.5, shelf1Y - 19, 1.2, 12).fill({ color: hex("#dcd9d3"), alpha: 0.8 });
   }
 
-  // ② 墙面相框
-  const f0 = wallPoint(0.40, 56);
-  g.rect(f0.x, f0.y, 56, 68).fill(SKIN.frame);
-  g.rect(f0.x + 4, f0.y + 4, 48, 60).fill(hex("#f6f4f0"));
-  g.rect(f0.x + 9, f0.y + 11, 38, 27).fill(hex("#eae7e0"));
+  // ③ 公告板（补上"下半墙空一片"的洞；软木板 + 三张便签）
+  const nb = wallPoint(0.31, 116);
+  g.roundRect(nb.x, nb.y, 74, 66, 4).fill(hex("#e2d3bb"));
+  g.roundRect(nb.x + 3, nb.y + 3, 68, 60, 3).fill(hex("#f0e6d5"));
+  const notes = [hex("#f3e08a"), hex("#a9d6f2"), hex("#f2b3c4")];
+  notes.forEach((col, i) => {
+    const nx = nb.x + 8 + i * 21;
+    const ny = nb.y + 10 + (i % 2) * 12;
+    g.roundRect(nx, ny, 17, 17, 2).fill(col);
+    g.rect(nx, ny, 17, 2.5).fill({ color: 0xffffff, alpha: 0.5 });
+    g.rect(nx + 3, ny + 7, 11, 1.2).fill({ color: 0x000000, alpha: 0.07 });
+    g.rect(nx + 3, ny + 11, 8, 1.2).fill({ color: 0x000000, alpha: 0.07 });
+  });
 
-  // ③ 右侧木色橱柜 + 白台面
-  isoBox(g, 0.60, 0.012, 0.86, 0.068, 42, { top: SKIN.whiteTop, front: SKIN.woodFront, side: SKIN.woodSide });
-  const counter = (uu: number) => wallPoint(uu, 42);
-  const cm = counter(0.635);
-  g.roundRect(cm.x, cm.y - 19, 13, 19, 3).fill(hex("#6b7078"));
-  g.rect(cm.x + 3, cm.y - 13, 7, 7).fill(hex("#949aa1"));
-  const sink = counter(0.78);
-  g.roundRect(sink.x - 19, sink.y - 6, 32, 9, 3).fill(hex("#dfe3e8"));
-  for (let i = 0; i < 3; i++) {
-    const cup = counter(0.695 + i * 0.026);
-    g.roundRect(cup.x, cup.y - 10, 7.5, 10, 2).fill(SKIN.paper);
+  // ④ 吊植（从墙上垂下来的一小串叶，给"大面白墙"一点层次）
+  //    ⛔ 相框已删：这段墙（矮柜 388 → 橱柜 550）只有 162px，硬塞"公告板 + 相框 + 挂钟"
+  //       必然互相压（实测三者两两重叠），留两件才排得开。
+  const hang = wallPoint(0.556, 106);
+  g.rect(hang.x - 6, hang.y, 12, 8).fill(SKIN.pot);
+  for (let i = 0; i < 6; i++) {
+    const a = hang.x + Math.sin(i * 1.1) * 7;
+    const b = hang.y + 12 + i * 11;
+    g.ellipse(a, b, 5.5, 7.5).fill(i % 2 ? SKIN.plant : SKIN.plantDark);
   }
-  // 上层吊架
-  const [ua, ub] = [wallPoint(0.60, 42 + 50), wallPoint(0.86, 42 + 50)];
-  g.rect(ua.x, ua.y, ub.x - ua.x, 6).fill(SKIN.woodFront);
-  g.rect(ua.x, ua.y, ub.x - ua.x, 2.5).fill(SKIN.woodTop);
+
+  // ⑤ 右侧木色橱柜 + 柜面物件（⛔ 一律用 counterTopY 落位，别用 wallPoint）
+  const CAB2 = { u0: 0.6, u1: 0.86, vFront: 0.062, h: 42 };
+  isoBox(g, CAB2.u0, 0.01, CAB2.u1, CAB2.vFront, CAB2.h, { top: SKIN.whiteTop, front: SKIN.woodFront, side: SKIN.woodSide });
+  const top2 = (uu: number) => counterTopY(uu, CAB2.vFront, CAB2.h);
+  // 咖啡机（机身 + 出水口 + 杯）
+  const cmx = wallPoint(0.632, 0).x;
+  const cmy = top2(0.632);
+  g.roundRect(cmx, cmy - 22, 15, 22, 3).fill(hex("#5f656d"));
+  g.roundRect(cmx, cmy - 22, 15, 5, 2.5).fill(hex("#4c5158"));
+  g.rect(cmx + 3.5, cmy - 15, 8, 5).fill(hex("#9aa1a8"));
+  g.roundRect(cmx + 4, cmy - 8, 7, 8, 1.6).fill(SKIN.paper);
+  // 水槽 + 龙头
+  const skx = wallPoint(0.775, 0).x;
+  const sky = top2(0.775);
+  g.roundRect(skx - 18, sky - 7, 34, 9, 3).fill(hex("#e3e7ec"));
+  g.roundRect(skx - 16, sky - 5.5, 30, 6, 2.4).fill(hex("#cfd5db"));
+  g.moveTo(skx + 10, sky - 6).lineTo(skx + 10, sky - 20).lineTo(skx + 2, sky - 20)
+    .stroke({ color: hex("#b6bcc3"), width: 2.4 });
+  // 杯子两个
+  for (let i = 0; i < 2; i++) {
+    const cx2 = wallPoint(0.70 + i * 0.028, 0).x;
+    g.roundRect(cx2, cmy - 10, 7.5, 10, 2).fill(SKIN.paper);
+  }
+  // ⑥ 吊架（离柜面 64，读成"柜 + 上架"）+ 罐子 + 小绿植
+  const shelf2Y = top2(0.73) - 64;
+  const [ua, ub] = [wallPoint(CAB2.u0, 0), wallPoint(CAB2.u1, 0)];
+  g.rect(ua.x, shelf2Y, ub.x - ua.x, 6).fill(SKIN.woodFront);
+  g.rect(ua.x, shelf2Y, ub.x - ua.x, 2.5).fill(SKIN.woodTop);
   for (let i = 0; i < 4; i++) {
-    const jar = wallPoint(0.62 + i * 0.032, 42 + 49);
-    g.roundRect(jar.x, jar.y - 14, 8.5, 14, 2).fill(SKIN.paper);
+    const jar = wallPoint(0.62 + i * 0.032, 0);
+    g.roundRect(jar.x, shelf2Y - 15, 8.5, 15, 2).fill(SKIN.paper);
+    g.roundRect(jar.x, shelf2Y - 15, 8.5, 3, 1.5).fill(hex("#e6e3dd"));
   }
-  const sp = wallPoint(0.612, 42 + 43);
-  leaf(g, sp.x + 6, sp.y, 0.45);
+  leaf(g, wallPoint(0.83, 0).x + 7, shelf2Y, 0.45);
 
-  // ④ 冰箱（右端，白色高柜）
-  isoBox(g, 0.885, 0.01, 0.945, 0.075, 92, { top: SKIN.whiteTop, front: SKIN.fridge, side: SKIN.fridgeDark });
-  const fr0 = wallPoint(0.887, 92);
-  g.rect(fr0.x + 1, fr0.y + 32, 3.5, 38).fill(SKIN.fridgeDark);
+  // ⑦ 冰箱（右端，白色高柜：上下门缝 + 竖向拉手 + 顶部散热缝）
+  //    ⛔ 门缝/拉手要按**柜体前面**（v = vFront）算，用墙面基线会画到柜顶上方去（浮空）。
+  isoBox(g, 0.885, 0.008, 0.945, 0.07, 92, { top: SKIN.whiteTop, front: SKIN.fridge, side: SKIN.fridgeDark });
+  const frL = floorPoint(0.885, 0.07).x;
+  const frR = floorPoint(0.945, 0.07).x;
+  const frBase = floorPoint(0.915, 0.07);
+  const frTop = frBase.y - 92 * frBase.scale;
+  const frW = frR - frL;
+  g.rect(frL + 1.5, frTop + 2, frW - 3, 1.6).fill({ color: SKIN.fridgeDark, alpha: 0.9 });
+  g.rect(frL + 1.5, frTop + 34 * frBase.scale, frW - 3, 1.4).fill({ color: SKIN.fridgeDark, alpha: 0.85 });
+  g.roundRect(frL + frW * 0.85, frTop + 6, 3.2, 24 * frBase.scale, 1.6).fill(SKIN.fridgeDark);
+  g.roundRect(frL + frW * 0.85, frTop + 42 * frBase.scale, 3.2, 22 * frBase.scale, 1.6).fill(SKIN.fridgeDark);
 
-  // ⑤ 左下角盆栽
-  const pot = floorPoint(0.05, 0.13);
+  // ⑧ 左下角盆栽（⛔ 站在矮柜**左侧**的墙角：放到矮柜正后方会被柜子切掉，看着像"植物长在柜顶上"）
+  const pot = floorPoint(0.042, 0.075);
   potted(g, pot.x, pot.y, pot.scale);
 
   layer.addChild(g);
@@ -209,14 +282,24 @@ export function drawSideProps(layer: Container): void {
   g.zIndex = -8e5;
 
   // 左墙长条花箱（沿左墙纵深铺开）
+  // ⛔ 只堆一排同尺寸灌木会读成"绿梯子"（实测）⇒ 盆体加厚到 32 + 土色盆口 + 灌木大小/高度错开。
   const boxA = sideWallPoint("left", 0.30, 0);
-  const boxB = sideWallPoint("left", 0.72, 0);
-  g.poly([boxA.x - 6, boxA.y - 24, boxA.x + 19, boxA.y - 24, boxB.x + 19, boxB.y - 24, boxB.x - 6, boxB.y - 24]).fill(SKIN.woodTop);
-  g.poly([boxA.x - 6, boxA.y - 24, boxA.x + 19, boxA.y - 24, boxA.x + 19, boxA.y, boxA.x - 6, boxA.y]).fill(SKIN.woodFront);
-  g.poly([boxA.x - 6, boxA.y - 24, boxB.x - 6, boxB.y - 24, boxB.x - 6, boxB.y, boxA.x - 6, boxA.y]).fill(SKIN.woodSide);
-  for (let i = 0; i <= 7; i++) {
-    const p = sideWallPoint("left", 0.31 + (i / 7) * 0.38, 0);
-    bush(g, p.x + 8, p.y - 27, 0.85 + (i % 2) * 0.12);
+  const boxB = sideWallPoint("left", 0.74, 0);
+  const TH = 32;
+  g.poly([boxA.x - 7, boxA.y - TH, boxA.x + 21, boxA.y - TH, boxB.x + 21, boxB.y - TH, boxB.x - 7, boxB.y - TH]).fill(SKIN.woodTop);
+  g.poly([boxA.x - 7, boxA.y - TH, boxA.x + 21, boxA.y - TH, boxA.x + 21, boxA.y, boxA.x - 7, boxA.y]).fill(SKIN.woodFront);
+  g.poly([boxA.x - 7, boxA.y - TH, boxB.x - 7, boxB.y - TH, boxB.x - 7, boxB.y, boxA.x - 7, boxA.y]).fill(SKIN.woodSide);
+  g.poly([boxA.x - 4, boxA.y - TH + 3, boxA.x + 18, boxA.y - TH + 3, boxB.x + 18, boxB.y - TH + 3, boxB.x - 4, boxB.y - TH + 3])
+    .fill(hex("#cdb99b"));
+  for (let i = 0; i <= 9; i++) {
+    const p = sideWallPoint("left", 0.305 + (i / 9) * 0.43, 0);
+    const bk = 0.72 + ((i * 37) % 5) * 0.13;
+    bush(g, p.x + 7, p.y - TH - 5 * bk, bk);
+  }
+  // 下垂到盆前的一片叶（破掉"整齐一排"的机械感）
+  for (let i = 0; i < 3; i++) {
+    const p = sideWallPoint("left", 0.40 + i * 0.10, 0);
+    g.ellipse(p.x + 16, p.y - 12 - i * 3, 5, 9).fill(i % 2 ? SKIN.plantDark : SKIN.plant);
   }
 
   const p1 = floorPoint(0.035, 0.55);
@@ -365,24 +448,28 @@ export function drawDeskStation(g: Graphics, u: number, v: number, screen: Scree
   const u1 = u + DESK_HALF_U;
   const vFar = v - DESK_DV;
 
-  // ① 柔阴影：参考里工位左下角一大片（家具"落"在地上而不是浮着）
-  g.ellipse(cx - 14 * k, seat.y + 16 * k, 104 * k, 26 * k).fill({ color: SKIN.shadow, alpha: 0.085 });
-  g.ellipse(cx - 16 * k, seat.y + 6 * k, 66 * k, 16 * k).fill({ color: SKIN.shadow, alpha: 0.07 });
+  // ① 柔阴影：桌面下那一大片（家具"落"在地上而不是浮着）
+  softShadow(g, cx - 12 * k, seat.y + 12 * k, 104 * k, 26 * k, 0.13);
 
   // ② 桌面：悬空白板（厚 9）
   isoPrism(g, u0, vFar, u1, v, DESK_H - 9, DESK_H, {
-    top: SKIN.deskTop, front: SKIN.deskFront, side: SKIN.deskEdge, bottom: SKIN.deskEdge,
+    top: SKIN.deskTop, front: SKIN.deskFront, side: SKIN.deskEdge,
   });
   // ⛔ 桌面纯白 + 地板纯白 ⇒ 不叠层次的话桌子在白底上等于隐形（第一版实测"工位看不出桌子"）。
-  //    靠后叠一道很淡的过渡（模拟环境光遮蔽）+ 近边一条细暗线（桌沿厚度）把桌面框出来。
+  //    ⛔ 但**别铺满整个桌面**（会把白桌变成"灰垫子"），也**别用单一一档**（硬边像桌上贴了条灰胶带）：
+  //    靠后 7 档逐级压暗、每档极淡（合计约 0.035）：够表达面在往后收，又不会把白桌变灰。
   const topPt = (uu: number, vv: number) => {
     const p = floorPoint(uu, vv);
     return [p.x, p.y - DESK_H * k] as const;
   };
-  const vMid = vFar + DESK_DV * 0.40;
-  g.poly([...topPt(u0, vFar), ...topPt(u1, vFar), ...topPt(u1, vMid), ...topPt(u0, vMid)])
-    .fill({ color: SKIN.shadow, alpha: 0.05 });
+  for (let i = 0; i < 7; i++) {
+    const vm = vFar + DESK_DV * (1 - i * 0.13);
+    g.poly([...topPt(u0, vFar), ...topPt(u1, vFar), ...topPt(u1, vm), ...topPt(u0, vm)])
+      .fill({ color: SKIN.shadow, alpha: 0.009 });
+  }
   const [fa, fb] = [floorPoint(u0, v), floorPoint(u1, v)];
+  // 前挡边：桌沿内侧压一道浅影 + 桌沿一条亮线，"板厚"才看得出来
+  g.rect(fa.x, fa.y - DESK_H * k, fb.x - fa.x, 2.6 * k).fill({ color: SKIN.shadow, alpha: 0.055 });
   g.moveTo(fa.x, fa.y - DESK_H * k).lineTo(fb.x, fb.y - DESK_H * k).stroke({ color: SKIN.deskEdge, width: 1.6 });
 
   // ③ 四条细腿
@@ -398,7 +485,7 @@ export function drawDeskStation(g: Graphics, u: number, v: number, screen: Scree
   g.rect(drawer.x - 9 * k, drawer.y - DESK_H * 0.68 * k, 18 * k, 2 * k).fill(SKIN.deskEdge);
   g.rect(drawer.x - 9 * k, drawer.y - DESK_H * 0.42 * k, 18 * k, 2 * k).fill(SKIN.deskEdge);
 
-  // ⑤ 显示器：浅色外壳 + 大屏（屏幕朝观众）+ 立柱支架（抬起来，让开角色头顶）
+  // ⑤ 显示器：浅色外壳 + 深色内圈（屏幕"嵌"进去）+ 大屏（屏幕朝观众）+ 支架 + 电源点
   const deskW = floorPoint(u1, v).x - floorPoint(u0, v).x;
   // ⛔ 宽度**封顶**：前排的桌宽是后排的 1.25 倍，不封顶的话前排显示器会长到上一排人的胸口，
   //    把上一排的项圈/椅子盖掉（实测过一次）。
@@ -406,17 +493,22 @@ export function drawDeskStation(g: Graphics, u: number, v: number, screen: Scree
   const mh = mw * 0.62;
   const mon = floorPoint(u, vFar + DESK_DV * 0.30);
   const baseY = mon.y - (DESK_H + MONITOR_LIFT) * k;
+  const shellTop = baseY - mh * 1.14;
   g.ellipse(mon.x, baseY + MONITOR_LIFT * k, mw * 0.19, 3.6 * k).fill(SKIN.monitorStand);
   g.rect(mon.x - mw * 0.05, baseY, mw * 0.10, MONITOR_LIFT * k).fill(SKIN.monitorStand);
-  g.roundRect(mon.x - mw / 2, baseY - mh - mh * 0.12, mw, mh * 1.12, mw * 0.035).fill(SKIN.monitorShell);
-  g.roundRect(mon.x - mw / 2, baseY - mh - mh * 0.12, mw, mh * 1.12, mw * 0.035).stroke({ color: SKIN.monitorEdge, width: 1.3 });
-  drawScreen(g, screen, mon.x - mw * 0.45, baseY - mh * 1.02, mw * 0.90, mh * 0.92);
+  g.roundRect(mon.x - mw / 2, shellTop, mw, mh * 1.14, mw * 0.035).fill(SKIN.monitorShell);
+  g.roundRect(mon.x - mw * 0.47, shellTop + mh * 0.09, mw * 0.94, mh * 0.94, mw * 0.02).fill(hex("#3a4048"));
+  drawScreen(g, screen, mon.x - mw * 0.45, shellTop + mh * 0.11, mw * 0.90, mh * 0.90);
+  // 底部亮唇 + 电源指示灯（几像素的细节，但"像不像一台显示器"全在这）
+  g.roundRect(mon.x - mw * 0.09, baseY - mh * 0.075, mw * 0.18, 2.2, 1.1).fill(hex("#cdd2d9"));
+  g.circle(mon.x + mw * 0.37, baseY - mh * 0.05, 1.5).fill(hex("#8fd6a4"));
+  g.roundRect(mon.x - mw / 2, shellTop, mw, mh * 1.14, mw * 0.035).stroke({ color: SKIN.monitorEdge, width: 1.3 });
 
   // ⑥ 键鼠（贴桌沿，人侧）
   const kb = floorPoint(u, v - 0.045);
   const ky = kb.y - DESK_H * k;
-  g.roundRect(kb.x - deskW * 0.19, ky - deskW * 0.055, deskW * 0.38, deskW * 0.028, 2).fill(hex("#f1efea"));
-  g.ellipse(kb.x + deskW * 0.26, ky - deskW * 0.032, deskW * 0.026, deskW * 0.019).fill(hex("#f1efea"));
+  g.roundRect(kb.x - deskW * 0.19, ky - deskW * 0.055, deskW * 0.38, deskW * 0.028, 2).fill(hex("#e2dfd9"));
+  g.ellipse(kb.x + deskW * 0.26, ky - deskW * 0.032, deskW * 0.026, deskW * 0.019).fill(hex("#e2dfd9"));
 }
 
 /**
@@ -429,11 +521,12 @@ export function drawChair(g: Graphics, u: number, v: number): void {
   const x = c.x;
   const y = c.y;
   const deskW = floorPoint(u + DESK_HALF_U, v).x - floorPoint(u - DESK_HALF_U, v).x;
-  const w = deskW * 0.42;
+  // ⛔ 0.42 会让椅背和角色肩宽一样（放大看像"人卡在一张大椅子里"）⇒ 收到 0.38
+  const w = deskW * 0.38;
 
-  // ⛔ 椅子是**白椅落在白地板上** —— 不给它一圈浅描边 + 投影，画出来等于没画（第一版实测：
+  // ⛔ 椅子是**白椅落在白地板上** —— 不给它柔阴影 + 一圈浅描边，画出来等于没画（第一版实测：
   //    整排工位看着"人悬在桌沿上"）。⛔ 描边用浅灰而不是黑：黑描边会退回卡通线稿风。
-  g.ellipse(x, y + 2 * k, w * 0.92, 8 * k).fill({ color: SKIN.shadow, alpha: 0.1 });
+  softShadow(g, x, y + 2 * k, w * 0.92, 9 * k, 0.13);
   // 五星脚 + 滚轮
   for (let i = 0; i < 5; i++) {
     const a = -Math.PI / 2 + (i / 5) * Math.PI * 2;
@@ -565,13 +658,15 @@ export function drawAmenities(layer: Container): PropTicker[] {
     g.rect(x - w / 2 + 3 * k, y - h + 5 * k, w - 6 * k, h - 8 * k).fill(hex("#dcc0a0"));
     g.rect(x - w / 2 + 3 * k, y - h + 5 * k, w - 6 * k, 3.2 * k).fill(hex("#c7a582"));
     g.circle(x + w / 2 - 10 * k, y - h * 0.5, 2.8 * k).fill(hex("#9c7c56"));
-    g.roundRect(x - 11 * k, y - h - 16 * k, 22 * k, 12 * k, 3).fill(hex("#ffffff"));
-    g.circle(x - 4.5 * k, y - h - 10 * k, 2.4 * k).fill(hex("#5b7cba"));
-    g.circle(x + 4.5 * k, y - h - 10 * k, 2.4 * k).fill(hex("#cf7594"));
+    // 顶部标识牌（男女双色小人 + 占用指示灯）—— 牌面要够大，否则放大看只是"三个飘着的点"
+    g.roundRect(x - 15 * k, y - h - 19 * k, 30 * k, 15 * k, 3).fill(hex("#ffffff"));
+    g.roundRect(x - 15 * k, y - h - 19 * k, 30 * k, 15 * k, 3).stroke({ color: hex("#e2e6ea"), width: 1 });
+    g.circle(x - 5.5 * k, y - h - 11.5 * k, 3.4 * k).fill(hex("#5b7cba"));
+    g.circle(x + 5.5 * k, y - h - 11.5 * k, 3.4 * k).fill(hex("#cf7594"));
     const lamp = new Graphics();
     lamp.circle(0, 0, 3.2 * k).fill(hex("#4dbf6a"));
     lamp.zIndex = -7e5 + 1;
-    lamp.position.set(x + w / 2 + 8 * k, y - h - 10 * k);
+    lamp.position.set(x + w / 2 + 9 * k, y - h - 11.5 * k);
     layer.addChild(lamp);
     tickers.push({ update: (t) => { lamp.alpha = 0.5 + 0.5 * Math.abs(Math.sin(t * 0.5)); } });
   }
