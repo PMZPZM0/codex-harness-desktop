@@ -231,10 +231,3 @@ export function emptySnapshot(size = 0): DirectorSnapshot {
     handoffs: [],
   };
 }
-
-/** 交接卡片在两人之间飞行的弧线路径（供 SVG animateMotion 用）。 */
-export function handoffArc(from: { x: number; y: number }, to: { x: number; y: number }): string {
-  const lift = Math.min(from.y, to.y) - 74;
-  const cx = from.x + (to.x - from.x) * 0.5;
-  return `M ${from.x} ${from.y} C ${cx} ${lift}, ${cx} ${lift}, ${to.x} ${to.y}`;
-}

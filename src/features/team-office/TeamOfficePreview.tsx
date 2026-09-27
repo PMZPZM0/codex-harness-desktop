@@ -188,7 +188,7 @@ export function TeamOfficePreview({ teamId, onClose, teams, threads, runningThre
                 );
               })}
             </div>
-            <p className="team-office-hint">办公室里的角色随成员状态变化：工作中敲键盘（屏幕滚动、气泡跳动），空闲时喝咖啡 / 伸懒腰 / 打盹，还会串门递资料；接到任务与交成果时会有卡片在两人之间飞过。没有会话则显示空工位。</p>
+            <p className="team-office-hint">办公室里的角色随成员状态变化：工作中敲键盘（打字 + 呼吸起伏），空闲时喝咖啡 / 伸懒腰 / 打盹 / 翻资料，还会串门递资料；接到任务与交成果时会有卡片在两人之间飞过。没有会话则显示空工位。点工位可直接进入该成员会话。</p>
           </aside>
         </div>
       </section>
