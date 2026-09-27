@@ -45,15 +45,16 @@ export function BackupSettingsSection(props: BackupSettingsSectionProps) {
                         </div>
                       </article>
                       <article className="backup-card">
-                        <div className="backup-card-head"><span><MessageSquare size={16} /></span><div><strong>全部会话</strong><small>{threads.length} 条未归档会话</small></div></div>
-                        <p>一次导出当前列表里的全部会话，适合存档或迁移到另一台电脑。</p>
+                        <div className="backup-card-head"><span><Upload size={16} /></span><div><strong>导入与恢复</strong><small>不会覆盖同 ID 的已有会话</small></div></div>
+                        <p>JSON 恢复完整记录；Markdown 会创建一条可继续提问的新会话。</p>
                         <div className="backup-card-actions">
-                          <button className="primary-setting" disabled={backupBusy !== "" || !threads.length} onClick={() => void exportThreadsMarkdown()}>{backupBusy === "export-md" ? <Spinner /> : <FileText size={14} />}导出 Markdown</button>
-                          <button className="secondary-setting" disabled={backupBusy !== "" || !threads.length} onClick={() => void exportThreadsBackup()}>{backupBusy === "export" ? <Spinner /> : <Archive size={14} />}完整 JSON</button>
+                          <button className="secondary-setting" disabled={backupBusy !== ""} onClick={() => void importThreadsBackup()}>{backupBusy === "import" ? <Spinner /> : <Upload size={14} />}导入 JSON</button>
+                          <button className="secondary-setting" disabled={backupBusy !== ""} onClick={() => void importConversationMarkdown()}>{backupBusy === "import-md" ? <Spinner /> : <FileUp size={14} />}导入 Markdown</button>
                         </div>
                       </article>
+                      {/* 「全部会话」卡已并入这张（09-28 用户报「重复」）：全选 = 全部导出，不需要第三组同构按钮 */}
                       <article className="backup-card backup-card--picker">
-                        <div className="backup-card-head"><span><ListChecks size={16} /></span><div><strong>选择会话导出</strong><small>已选 {picked.length} / {threads.length} 条</small></div></div>
+                        <div className="backup-card-head"><span><ListChecks size={16} /></span><div><strong>选择会话导出</strong><small>共 {threads.length} 条 · 已选 {picked.length} 条</small></div></div>
                         <div className="backup-picker-toolbar">
                           <input className="backup-picker-search" placeholder="搜索会话（名称 / 内容 / 项目）" value={pickerQuery} onChange={(e) => setPickerQuery(e.target.value)} />
                           <button className="secondary-setting" disabled={!visibleThreads.length} onClick={() => setPicked(allVisiblePicked ? picked.filter((id) => !visibleThreads.some((t: any) => t.id === id)) : [...new Set([...picked, ...visibleThreads.map((t: any) => t.id)])])}>{allVisiblePicked ? "取消全选" : "全选（当前可见）"}</button>
@@ -71,14 +72,6 @@ export function BackupSettingsSection(props: BackupSettingsSectionProps) {
                         <div className="backup-card-actions">
                           <button className="primary-setting" disabled={backupBusy !== "" || !picked.length} onClick={() => void exportThreadsMarkdown(picked)}>{backupBusy === "export-md" ? <Spinner /> : <FileText size={14} />}导出 Markdown（{picked.length}）</button>
                           <button className="secondary-setting" disabled={backupBusy !== "" || !picked.length} onClick={() => void exportThreadsBackup(picked)}>{backupBusy === "export" ? <Spinner /> : <Archive size={14} />}完整 JSON（{picked.length}）</button>
-                        </div>
-                      </article>
-                      <article className="backup-card">
-                        <div className="backup-card-head"><span><Upload size={16} /></span><div><strong>导入与恢复</strong><small>不会覆盖同 ID 的已有会话</small></div></div>
-                        <p>JSON 恢复完整记录；Markdown 会创建一条可继续提问的新会话。</p>
-                        <div className="backup-card-actions">
-                          <button className="secondary-setting" disabled={backupBusy !== ""} onClick={() => void importThreadsBackup()}>{backupBusy === "import" ? <Spinner /> : <Upload size={14} />}导入 JSON</button>
-                          <button className="secondary-setting" disabled={backupBusy !== ""} onClick={() => void importConversationMarkdown()}>{backupBusy === "import-md" ? <Spinner /> : <FileUp size={14} />}导入 Markdown</button>
                         </div>
                       </article>
                     </div>

@@ -1230,7 +1230,9 @@
 
 /* 会话备份页：当前 / 全部 / 导入三块工作区 */
 .backup-page { gap: 14px; }
-.backup-grid { width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; display: grid; }
+/* 2 列（09-28）：第一行 当前会话 | 导入与恢复，第二行 选择会话导出整行——
+   3 列时 4 张卡（picker 整行）会在第一行留一个空位，且三张卡带同构导出按钮 = 重复。 */
+.backup-grid { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; display: grid; }
 .backup-card {
   min-width: 0;
   border: 1px solid var(--line-soft);
