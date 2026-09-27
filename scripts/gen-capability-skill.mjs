@@ -25,6 +25,7 @@ const OUT = path.join(ROOT, "electron", "builtin-skills", "14-skill-harness-api.
 /* ── 每域的「用户可感知能力」描述（人工维护；新域必须补，缺了生成器报错）──
    口径：写给引擎看 —— 用户提什么需求时该想到这个域、能力边界在哪。一句话。 */
 const DOMAIN_DESCRIPTIONS = {
+  "phone": "手机控制（phone-harness）：查状态 / 安装 / 卸载 / 体检 / 权限引导；Android 走 adb（全平台），iPhone 走 Mac 的 iPhone 镜像（仅 macOS）",
   "codex": "渲染层与引擎（@openai/codex app-server）之间的请求桥：转发请求 / 响应 / 切活跃会话",
   "threads": "会话列表与元数据（归档、重命名、血缘、会话摘要等）",
   "thread-runtime": "会话运行态（派发所有权、运行/闲置状态机）",

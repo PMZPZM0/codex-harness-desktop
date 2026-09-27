@@ -96,6 +96,7 @@ import "./features/data-dir-ipc";
 import "./features/user-ipc";
 import "./features/remote-ipc";
 import "./features/memory-rpa-ipc";
+import "./features/phone-harness-ipc";
 import "./features/fs-ipc";
 import "./features/updates-ipc";
 import "./features/shell-misc-ipc";

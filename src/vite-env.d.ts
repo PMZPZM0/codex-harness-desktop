@@ -730,6 +730,18 @@ interface Window {
     touchFavorite(id: string): Promise<FavoriteItem[]>;
     /* 只追加到记忆层（先读后写，不抹既有内容）；单行限长 300 字 */
     favoritesToMemory(input: { ids: string[]; scope?: "user" | "project" | "background" | "lessons"; workspace?: string }): Promise<{ ok: boolean; written: number; error?: string }>;
+    /* 手机控制状态（平台/pip 包/adb/技能/遥测） */
+    phoneHarnessStatus(): Promise<{platform:string;python:string;pythonOk:boolean;installed:boolean;version:string;adb:boolean;skill:boolean;telemetryOff:boolean;iphoneEligible:boolean}>;
+    /* 装 phone-harness + 关遥测 + 注册技能 */
+    phoneHarnessInstall(): Promise<{ok:boolean;log:string}>;
+    /* 卸载 phone-harness 与技能 */
+    phoneHarnessUninstall(): Promise<{ok:boolean;log:string}>;
+    /* 跑上游 --doctor 体检 */
+    phoneHarnessDoctor(): Promise<{ok:boolean;log:string}>;
+    /* 按平台返回权限引导步骤 */
+    phoneHarnessGuides(): Promise<{id:string;title:string;steps:string[]}[]>;
+    /* 打开系统权限设置页 */
+    phoneHarnessOpenSettings(): Promise<void>;
 /* ═══ gen:end ═══ */
 
 

@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-09-27",
-  "count": 339,
+  "count": 345,
   "channels": [
     {
       "name": "request",
@@ -3360,6 +3360,66 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "只追加到记忆层（先读后写，不抹既有内容）；单行限长 300 字"
+    },
+    {
+      "name": "phoneHarnessStatus",
+      "channel": "phone:harness:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{platform:string;python:string;pythonOk:boolean;installed:boolean;version:string;adb:boolean;skill:boolean;telemetryOff:boolean;iphoneEligible:boolean}>",
+      "invokeArgs": "",
+      "cast": "Promise<{platform:string;python:string;pythonOk:boolean;installed:boolean;version:string;adb:boolean;skill:boolean;telemetryOff:boolean;iphoneEligible:boolean}>",
+      "note": "手机控制状态（平台/pip 包/adb/技能/遥测）"
+    },
+    {
+      "name": "phoneHarnessInstall",
+      "channel": "phone:harness:install",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ok:boolean;log:string}>",
+      "invokeArgs": "",
+      "cast": "Promise<{ok:boolean;log:string}>",
+      "note": "装 phone-harness + 关遥测 + 注册技能"
+    },
+    {
+      "name": "phoneHarnessUninstall",
+      "channel": "phone:harness:uninstall",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ok:boolean;log:string}>",
+      "invokeArgs": "",
+      "cast": "Promise<{ok:boolean;log:string}>",
+      "note": "卸载 phone-harness 与技能"
+    },
+    {
+      "name": "phoneHarnessDoctor",
+      "channel": "phone:harness:doctor",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ok:boolean;log:string}>",
+      "invokeArgs": "",
+      "cast": "Promise<{ok:boolean;log:string}>",
+      "note": "跑上游 --doctor 体检"
+    },
+    {
+      "name": "phoneHarnessGuides",
+      "channel": "phone:harness:guides",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{id:string;title:string;steps:string[]}[]>",
+      "invokeArgs": "",
+      "cast": "Promise<{id:string;title:string;steps:string[]}[]>",
+      "note": "按平台返回权限引导步骤"
+    },
+    {
+      "name": "phoneHarnessOpenSettings",
+      "channel": "phone:harness:open-settings",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<void>",
+      "invokeArgs": "",
+      "cast": "Promise<void>",
+      "note": "打开系统权限设置页"
     }
   ]
 }
