@@ -80,6 +80,7 @@ export function PhoneHarnessCard({ setNotice }: { setNotice: (text: string) => v
         让 Codex 直接操作真机：看屏幕、点、打字、滑、读结果。上游是 MIT 许可的 Python CLI，装机后我们把它的
         SKILL.md 注册成引擎技能，模型自己按 skill 写法调用。
         <strong> 装完会自动关掉上游遥测</strong>（它默认开，且会带上你的任务文本与调用参数）。
+        保持按需安装（不上内置）是为了随时拿上游修复：上游还是 alpha、每周都在改，点「检查更新」即拉最新版。
       </p>
       <div className="phone-status-row">
         <span>{status?.installed ? <><CircleCheck size={12} />已安装{status.version ? ` v${status.version}` : ""}</> : <><AlertTriangle size={12} />未安装</>}</span>
@@ -90,8 +91,8 @@ export function PhoneHarnessCard({ setNotice }: { setNotice: (text: string) => v
         <span>iPhone：{darwin ? "本机型支持（需授权）" : "不支持（需 macOS）"}</span>
       </div>
       <div className="phone-actions">
-        <button className="secondary-setting" disabled={!status?.pythonOk || busy !== ""} onClick={() => void act("install")}>
-          {busy === "install" ? <Spinner /> : <Download size={14} />}安装 / 重装
+        <button className="secondary-setting" disabled={!status?.pythonOk || busy !== ""} onClick={() => void act("install")} title="已装时拉取上游最新版本（pip -U）">
+          {busy === "install" ? <Spinner /> : <Download size={14} />}{status?.installed ? "检查更新" : "安装"}
         </button>
         <button className="secondary-setting" disabled={!status?.installed || busy !== ""} onClick={() => void act("doctor")}>
           {busy === "doctor" ? <Spinner /> : <Stethoscope size={14} />}体检

@@ -1701,6 +1701,11 @@ w.postMessage({id:1,op:"list",root});
     (/const PIP_INDEX[\s\S]{0,120}pypi\.tuna/.test(phSrc) ? ok : fail)(
       "【177】pip 安装走国内镜像（清华源，与 markitdown 同一套口径）"
     );
+    // ⛔ 必须带 `-U`：不带升级参数时 pip 对已装的包只回 "Requirement already satisfied" 就结束，
+    //    用户点「检查更新」什么也没发生（上游 alpha 周更，拿不到修复 = 假动作）。
+    (/pip", "install", "-U"/.test(phSrc) ? ok : fail)(
+      "【177】装机/更新走 pip install -U（不带 -U 时已装包不会被升级，点更新 = 静默空转）"
+    );
   }
 
   /* ══ 【170】DESIGN.md 视觉规范与代码对账（09-26）══════════════════════════
