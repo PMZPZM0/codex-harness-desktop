@@ -23,7 +23,7 @@ import { codexHome, engineActiveTurnIds, server } from "../runtime-refs";
 // 自动化工具链状态：nuphus-mcp（桌面）/ playwright-cli（浏览器）/ cloakbrowser（指纹浏览器）。
 // 静态检测安装目录与缓存，不 spawn 进程，打开设置页即时返回。
 
-type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "playwright-cli" | "cloakbrowser" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown";
+type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "playwright-cli" | "cloakbrowser" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools";
 // bundled：随包内置（zip / 预解压目录是来源，不是联网下载）。界面显示「内置」徽标；
 // 缺失时允许「修复安装」（从随包 zip 重新解压），但不允许卸载（删了没有可靠重取途径）。
 type DevRuntimeSpec = { name: string; description: string; size: string; marker: string; builtIn?: boolean; bundled?: boolean; kind?: "download" | "browsers" | "guide" | "plugin"; noUninstall?: boolean };
@@ -75,6 +75,10 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   //  ⚠️ 已知取舍（09-21 代码审查确认）：卸载只删 markitdown 包目录（0.4 MB），依赖会留下 ——
   //     这是 pip 包的固有特点；卸载的语义是「移除这个能力」而不是「释放全部空间」。
   markitdown: { name: "文档转换（markitdown）", description: "让 Codex 能读 PDF / Word / Excel / PowerPoint 附件：先把文档转成 Markdown 再交给模型（Microsoft markitdown，MIT 许可）。默认不装，需要时点这里装一次（约 120 MB，走清华 pip 镜像）；也可以让 Codex 自己装", size: "约 120 MB", marker: "markitdown" },
+  // Android 平台工具（adb）：手机控制（phone-harness）的 Android 通道必需。⛔ 官方源 dl.google.com
+  //  **没有国内镜像**（npmmirror 的 binaries 目录下没有该包，实测 404）⇒ 下载慢/失败时只能回落手动安装，
+  //  卡片里如实说明，不假装有镜像。装到 tools/platform-tools/adb.exe，phone-harness 用 android.adb 指过去。
+  "platform-tools": { name: "Android 平台工具（adb）", description: "让 Codex 通过 adb 控制 Android 手机（USB 或无线调试）：截图、点击、输入、读界面。官方源 dl.google.com（暂无国内镜像，网络慢时可手动装到 tools/platform-tools）", size: "约 8 MB", marker: "platform-tools\\adb.exe" },
 };
 const runtimeInstalls = new Map<DevRuntimeId, Promise<void>>();
 
@@ -113,6 +117,7 @@ const DARWIN_SPEC_TEXT: Partial<Record<DevRuntimeId, { name?: string; descriptio
   docker: { description: "容器运行时，需要系统级安装：下载并打开 Docker Desktop.dmg，装完首次启动需要授权", size: "约 600 MB" },
   ffmpeg: { description: "音视频转码、抽帧、探测与媒体处理（macOS 单文件构建，装在 tools/ffmpeg/bin）", size: "约 78 MB" },
   conda: { description: "Python 环境管理器（conda 命令，科学计算/环境隔离）；macOS 走官方 shell 安装器静默装到 tools/miniconda", size: "约 130 MB" },
+  "platform-tools": { size: "约 15 MB" },
 };
 
 /** marker 的平台展开（装没装判定的唯一入口，别再各自 path.join(spec.marker)）。 */

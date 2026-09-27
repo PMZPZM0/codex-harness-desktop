@@ -742,6 +742,8 @@ interface Window {
     phoneHarnessGuides(): Promise<{id:string;title:string;steps:string[]}[]>;
     /* 打开系统权限设置页 */
     phoneHarnessOpenSettings(): Promise<void>;
+    /* 把工具链里的 adb 写进 phone-harness 配置（android.adb，不改系统 PATH） */
+    phoneHarnessWireAdb(): Promise<{adb:string}>;
 /* ═══ gen:end ═══ */
 
 

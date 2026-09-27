@@ -1706,6 +1706,21 @@ w.postMessage({id:1,op:"list",root});
     (/pip", "install", "-U"/.test(phSrc) ? ok : fail)(
       "【177】装机/更新走 pip install -U（不带 -U 时已装包不会被升级，点更新 = 静默空转）"
     );
+    // adb（Android 通道必需）：① 两平台安装表都要有它（预检【34】同源要求对称）；
+    // ② 装进 tools/platform-tools；③ CLI 侧要能拿到路径（写 android.adb，⛔ 不动系统 PATH）。
+    const rtSrc = existsSync(join(ROOT, "scripts", "install-runtimes.cjs"))
+      ? readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8") : "";
+    ((rtSrc.match(/want\("platform-tools"\)/g) ?? []).length >= 2
+      && /path\.join\(TOOLS, "platform-tools"\)/.test(rtSrc)
+      && /PLATFORM_TOOLS_URL/.test(rtSrc) ? ok : fail)(
+      "【177】adb 在 Windows 与 macOS 两条安装路径上对称存在且落 tools/platform-tools（预检【34】比对两平台安装表）"
+    );
+    (/harness\(\["config", "set", "android\.adb"/.test(phSrc) ? ok : fail)(
+      "【177】adb 路径写进 phone-harness 的 android.adb（⛔ 不改系统 PATH，与项目一贯做法一致）"
+    );
+    (phUi.includes('installDevRuntime') && phUi.includes('"platform-tools"') ? ok : fail)(
+      "【177】卡片里有 adb 下载安装入口（复用开发工具页的运行时安装链路：进度与下载源都一致）"
+    );
   }
 
   /* ══ 【170】DESIGN.md 视觉规范与代码对账（09-26）══════════════════════════

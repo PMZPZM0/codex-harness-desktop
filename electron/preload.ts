@@ -466,6 +466,8 @@ contextBridge.exposeInMainWorld("codex", {
   phoneHarnessGuides: () => __ipc("phone:harness:guides", 0, []) as Promise<{id:string;title:string;steps:string[]}[]>,
   /* 打开系统权限设置页 */
   phoneHarnessOpenSettings: () => __ipc("phone:harness:open-settings", 0, []) as Promise<void>,
+  /* 把工具链里的 adb 写进 phone-harness 配置（android.adb，不改系统 PATH） */
+  phoneHarnessWireAdb: () => __ipc("phone:harness:wire-adb", 0, []) as Promise<{adb:string}>,
   /* ═══ gen:end ═══ */
 
   // ⛔ mac 适配（09-16）：渲染层此前完全不知道自己跑在什么平台——窗口控制键让位、

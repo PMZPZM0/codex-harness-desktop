@@ -2743,3 +2743,27 @@ Windows/Linux 上 iPhone 通道（Mac 的 iPhone 镜像窗口）根本不存在�
 
 **守卫**：03-runtime-boot +2（排序函数必须真的读到 downloadSource / tarball 候选由统一排序派生），
 变异验证（砍掉读源）如期报红 —— 第一次写的锚太松（只查函数定义存在，砍掉调用仍绿），已改成锚接线。
+
+## 🔌 2026-09-27 手机控制补上 adb 下载安装入口（用户：「把 adb 下载安装补上，在手机控制那里补上入口」）
+
+**接进既有链路**（不另造一套下载器）：adb 作为「开发工具」页的一个运行时 `platform-tools` 加入
+`devRuntimeSpecs`，下载与解压交给 `scripts/install-runtimes.cjs` 现成的 `install()` ——
+于是**自动获得**页内的下载源选择、进度条 / 速度显示、`@STAGE` 事件，装机落 `tools/platform-tools/adb.exe`。
+⛔ 两平台对称加（Windows + macOS），否则预检【34】会红（另一平台点安装会静默装不上）。
+
+**装完自动接线**：新增 `phone:harness:wire-adb` 通道 —— 把 `tools/platform-tools/adb(.exe)` 的绝对路径
+写进 phone-harness 的 `android.adb`（⛔ **不改系统 PATH**，与项目一贯做法一致）；装机流程里若已装 adb 也会顺手接上。
+
+**卡片新增**：adb 状态行 + 「安装 adb」按钮（未装时可点、已装显示「adb 已就绪」）+ 安装进度文案
+（复用页内 runtimeStage/runtimePercent），装完自动接线并刷新状态。
+
+**如实说明的约束**：adb **没有国内镜像**（npmmirror 的 binaries 目录下没有该包，实测 404），
+只能走官方源 dl.google.com ⇒ 卡片与运行时描述里都写明"暂无国内镜像，网络慢可手动装到 tools/platform-tools"。
+
+**冒烟实测**：真跑 `node scripts/install-runtimes.cjs platform-tools` → 落位 `resources/tools/platform-tools/`，
+`adb.exe version` 输出 `Android Debug Bridge version 1.0.41 / Version 37.0.1`（确认 zip 内层目录被 strip 对）。
+
+**守卫**：【177】+3（两平台对称且落 tools/platform-tools / android.adb 接线 / 卡片有入口），
+变异（删掉 mac 侧那行）**同时触发本断言与既有【34】平台对称守卫**。
+⛔ 顺带修一处守卫自身的假红：【83】原写死 `"openssl" | "markitdown";`（尾部字面量），
+09-27 往联合类型追加新 id 后必然失配 ⇒ 改成锚「成员是否在 DevRuntimeId 里」。

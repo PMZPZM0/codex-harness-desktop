@@ -6,7 +6,7 @@
  *   状态与主进程 electron/features/phone-harness.ts 同源；这里只渲染，不自己判定。
  */
 import { useCallback, useEffect, useState } from "react";
-import { Smartphone, Download, Trash2, Stethoscope, ShieldCheck, CircleCheck, AlertTriangle } from "lucide-react";
+import { Smartphone, Cable, Download, Trash2, Stethoscope, ShieldCheck, CircleCheck, AlertTriangle } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 
 type Status = {
@@ -22,11 +22,21 @@ type Status = {
 };
 type Guide = { id: string; title: string; steps: string[] };
 
-export function PhoneHarnessCard({ setNotice }: { setNotice: (text: string) => void }) {
+export function PhoneHarnessCard({ setNotice, installDevRuntime, runtimeInstalling, runtimePercent, runtimeStage }: {
+  setNotice: (text: string) => void;
+  installDevRuntime?: (id: string) => void;
+  runtimeInstalling?: Record<string, boolean> | null;
+  runtimePercent?: Record<string, number> | null;
+  runtimeStage?: Record<string, string> | null;
+}) {
   const [status, setStatus] = useState<Status | null>(null);
   const [guides, setGuides] = useState<Guide[]>([]);
   const [busy, setBusy] = useState<"" | "install" | "uninstall" | "doctor">("");
   const [log, setLog] = useState("");
+  // adb 走「开发工具」页既有的运行时安装链路（进度 / 下载源都复用），装完再把路径接进 phone-harness
+  const [adbBusy, setAdbBusy] = useState(false);
+  const adbStage = runtimeStage?.["platform-tools"] ?? "";
+  const adbPercent = runtimePercent?.["platform-tools"];
 
   const refresh = useCallback(async () => {
     try {
@@ -42,6 +52,21 @@ export function PhoneHarnessCard({ setNotice }: { setNotice: (text: string) => v
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  // adb 安装结束（标志从 true 落地）→ 把 tools/platform-tools 的路径写进 phone-harness 的 android.adb，
+  // 因为它在应用的工具目录里、不在系统 PATH 上。⛔ 失败也只是提示，不改系统环境。
+  useEffect(() => {
+    if (!adbBusy || runtimeInstalling?.["platform-tools"]) return;
+    setAdbBusy(false);
+    void (async () => {
+      try {
+        const r = await window.codex.phoneHarnessWireAdb();
+        setNotice(r.adb ? `adb 已接入手机控制：${r.adb}` : "未找到随工具链安装的 adb（若你手动装在别处，PATH 上有也能用）");
+      } catch { /* 接线失败不阻塞 */ }
+      await refresh();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adbBusy, runtimeInstalling]);
 
   const act = async (kind: "install" | "uninstall" | "doctor") => {
     setBusy(kind);
@@ -94,6 +119,21 @@ export function PhoneHarnessCard({ setNotice }: { setNotice: (text: string) => v
         <button className="secondary-setting" disabled={!status?.pythonOk || busy !== ""} onClick={() => void act("install")} title="已装时拉取上游最新版本（pip -U）">
           {busy === "install" ? <Spinner /> : <Download size={14} />}{status?.installed ? "检查更新" : "安装"}
         </button>
+        {/* adb：Android 通道必需。走「开发工具」页同一套运行时安装链路（进度条 / 下载源选择都复用），
+            装完再把它写进 phone-harness 的 android.adb —— ⛔ 不改系统 PATH。 */}
+        <button
+          className="secondary-setting"
+          disabled={adbBusy || status?.adb === true}
+          title={status?.adb ? "已检测到 adb" : "从官方源下载 Android 平台工具（约 8 MB，暂无国内镜像）"}
+          onClick={() => {
+            const install = installDevRuntime as ((id: string) => void) | undefined;
+            if (!install) return;
+            setAdbBusy(true);
+            install("platform-tools");
+          }}
+        >
+          {adbBusy ? <Spinner /> : <Cable size={14} />}{status?.adb ? "adb 已就绪" : "安装 adb"}
+        </button>
         <button className="secondary-setting" disabled={!status?.installed || busy !== ""} onClick={() => void act("doctor")}>
           {busy === "doctor" ? <Spinner /> : <Stethoscope size={14} />}体检
         </button>
@@ -105,6 +145,7 @@ export function PhoneHarnessCard({ setNotice }: { setNotice: (text: string) => v
         </button>
         {ready ? <span className="phone-ready">就绪：会话里让 Codex “用手机打开…”即可</span> : null}
       </div>
+      {adbStage ? <div className="settings-card-hint">adb：{adbStage}{typeof adbPercent === "number" ? ` ${adbPercent}%` : ""}</div> : null}
       {guides.length > 0 && (
         <div className="phone-guides">
           {guides.map((guide) => (

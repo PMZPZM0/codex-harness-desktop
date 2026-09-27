@@ -3609,7 +3609,10 @@ export async function run() {
   );
 
   // main.ts 侧：卡片要真的出现在「开发工具」页，且装上之后状态能正确显示
-  (/"openssl" \| "markitdown";/.test(main83) ? ok : fail)("【83】DevRuntimeId 收录 markitdown");
+  // ⛔ 锚**成员关系**而不是尾部字面量：原先写死 `"openssl" | "markitdown";`，
+  //    09-27 往联合类型尾部追加 "platform-tools" 后这条就假红了（断言本身在骗人）。
+  const devRuntimeIdLine = (main83.match(/type DevRuntimeId = [^\n]+/) ?? [""])[0];
+  (devRuntimeIdLine.includes('"markitdown"') ? ok : fail)("【83】DevRuntimeId 收录 markitdown");
   (/markitdown: \{ name: "文档转换（markitdown）"/.test(main83) ? ok : fail)(
     "【83】「开发工具」页有「文档转换（markitdown）」卡片"
   );

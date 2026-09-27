@@ -36,6 +36,12 @@ const PYTHON_FULL_URL = `https://www.python.org/ftp/python/${PYTHON_VERSION}/pyt
 const GET_PIP_URL = "https://bootstrap.pypa.io/get-pip.py";
 const FFMPEG_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
 const VSCODE_CLI_URL = "https://update.code.visualstudio.com/latest/cli-win32-x64/stable";
+// Android 平台工具（adb）：手机控制（phone-harness）的 Android 通道。
+// ⛔ 官方源，**没有国内镜像**（npmmirror 的 binaries 目录下没有该包，实测 404）——走不了 gh 加速，
+//    只能直连或用户手动装；卡片里如实说明，不假装有镜像。
+const PLATFORM_TOOLS_URL = IS_MAC
+  ? "https://dl.google.com/android/repository/platform-tools-latest-darwin.zip"
+  : "https://dl.google.com/android/repository/platform-tools-latest-windows.zip";
 const JQ_URL = "https://github.com/jqlang/jq/releases/latest/download/jq-windows-amd64.exe";
 const NINJA_URL = "https://github.com/ninja-build/ninja/releases/latest/download/ninja-win.zip";
 const SEVENZIP_URL = "https://www.7-zip.org/a/7zr.exe";
@@ -515,6 +521,8 @@ async function main() {
   if (want("markitdown")) await installDocTools(pythonDir);
   if (want("ffmpeg")) await install("ffmpeg", FFMPEG_URL, ffmpegDir, { marker: "bin\\ffmpeg.exe", strip: true, archiveName: "ffmpeg-release-essentials.zip" });
   if (want("vscode-cli")) await install("vscode-cli", VSCODE_CLI_URL, vscodeCliDir, { marker: "code.exe", strip: false, archiveName: "vscode-cli-win32-x64.zip" });
+  // adb（zip 内一层 platform-tools/ ⇒ strip 掉），装到 tools/platform-tools/adb.exe
+  if (want("platform-tools")) await install("platform-tools", PLATFORM_TOOLS_URL, path.join(TOOLS, "platform-tools"), { marker: "adb.exe", strip: true, archiveName: "platform-tools-latest-windows.zip" });
   if (want("jq")) await installFile("jq", JQ_URL, jqDir, "jq.exe");
   if (want("ninja")) await install("ninja", NINJA_URL, ninjaDir, { marker: "ninja.exe", strip: false, archiveName: "ninja-win.zip" });
   if (want("sevenzip")) {
@@ -588,6 +596,8 @@ async function mainMac() {
   const arch = process.arch === "arm64" ? "arm64" : "x64";
   const jqArch = process.arch === "arm64" ? "arm64" : "amd64";
   const rgArch = process.arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin";
+  // adb（darwin 侧，与 Windows 侧**对称**存在 —— 预检【34】比对两平台安装表）
+  if (want("platform-tools")) await install("platform-tools", PLATFORM_TOOLS_URL, path.join(TOOLS, "platform-tools"), { marker: "adb", strip: true, archiveName: "platform-tools-latest-darwin.zip" });
   if (want("node")) await install("node", NODE_URL, path.join(TOOLS, "node"), { marker: "bin/node", strip: true });
   if (want("pwsh")) await install("ps7", PS7_URL, path.join(TOOLS, "pwsh"), { marker: "pwsh", strip: false });
   if (want("git")) {
