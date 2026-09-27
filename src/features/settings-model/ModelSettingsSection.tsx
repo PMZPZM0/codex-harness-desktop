@@ -284,6 +284,9 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                           // 按钮虽已禁用，这里再兜一层（键盘回车等路径不会绕过 disabled，但语义上要明确）。
                           if (!customDraft.name.trim()) { showToast("请填写供应商名称", "建议用服务商名或用途命名，例如「OpenAI 官方」「公司网关」"); return; }
                           // 用户要求：保存模型配置后重启整个应用（引擎 Key 全新注入，状态彻底归位）
+                          // ⛔ 保留该交互（09-27 用户明确「改回重启应用吧」）；dev 下重启会连 vite 一起
+                          //    被杀，白屏由 app:relaunch 摘掉 VITE_DEV_SERVER_URL + 窗口加载回落 dist 解决，
+                          //    图标由 window-factory 的多源兜底解决（守卫【174】）。
                           if (!(await openAppConfirm("保存供应商", "保存后应用将自动重启使配置完全生效。\n是否继续？", "保存并重启应用"))) return;
                           try {
                             const saved = await saveCustomModel();
