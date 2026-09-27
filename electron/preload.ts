@@ -484,6 +484,10 @@ contextBridge.exposeInMainWorld("codex", {
   videoPoll: (input: { providerId: string; jobId: string }) => __ipc("video:poll", 1, [input]) as Promise<{ status: string; url?: string; error?: string }>,
   /* 把产物视频拉回本地落 <workspace>/.drama-canvas/assets/（可信根校验） */
   videoDownload: (input: { url: string; workspace: string; name: string; subdir?: string }) => __ipc("video:download", 0, [input]) as Promise<{ path: string; bytes: number }>,
+  /* 排队消息定时发送：主进程登记定时器（不受渲染层隐藏节流），到点广播 queue-timer:due */
+  queueTimerSet: (input: { threadId: string; queuedSubmissionId: string; runAt: number }) => __ipc("queue-timer:set", 1, [input]) as Promise<{ ok: boolean; scheduled: boolean }>,
+  /* 取消排队消息定时（删除消息/取消定时/到点清理时调） */
+  queueTimerCancel: (input: { queuedSubmissionId: string }) => __ipc("queue-timer:cancel", 1, [input]) as Promise<{ ok: boolean }>,
   /* ═══ gen:end ═══ */
 
   // ⛔ mac 适配（09-16）：渲染层此前完全不知道自己跑在什么平台——窗口控制键让位、
@@ -541,6 +545,9 @@ onHarnessEvent: (listener: (event: unknown) => void) =>
     __on("harness:event", listener, (listener) => (_event: Electron.IpcRendererEvent, value: unknown) => listener(value)),
   // ---- 语音通话（旁挂新增，不影响任何既有方法） ----
 voiceAudio: (samples: Float32Array) => ipcRenderer.send("voice:audio", samples),
+  // 排队消息定时发送到点：主进程定时器广播（不受渲染层隐藏节流），渲染层据此启动那条排队消息
+onQueueTimerDue: (listener: (event: { threadId: string; queuedSubmissionId: string }) => void) =>
+    __on("queue-timer:due", listener, (listener) => (_event: Electron.IpcRendererEvent, value: { threadId: string; queuedSubmissionId: string }) => listener(value)),
   // TTS 音频走 Base64 字符串跨 Electron IPC；避免 native/external ArrayBuffer 被 structured clone 拒绝。
 onVoiceEvent: (listener: (event: unknown) => void) =>
     __on("voice:event", listener, (listener) => (_event: Electron.IpcRendererEvent, value: unknown) => listener(value)),

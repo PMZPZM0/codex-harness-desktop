@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-09-27",
-  "count": 354,
+  "count": 356,
   "channels": [
     {
       "name": "request",
@@ -3510,6 +3510,26 @@
       "invokeArgs": "input",
       "cast": "Promise<{ path: string; bytes: number }>",
       "note": "把产物视频拉回本地落 <workspace>/.drama-canvas/assets/（可信根校验）"
+    },
+    {
+      "name": "queueTimerSet",
+      "channel": "queue-timer:set",
+      "paramsImpl": "input: { threadId: string; queuedSubmissionId: string; runAt: number }",
+      "paramsDecl": "input: { threadId: string; queuedSubmissionId: string; runAt: number }",
+      "returns": "Promise<{ ok: boolean; scheduled: boolean }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ ok: boolean; scheduled: boolean }>",
+      "note": "排队消息定时发送：主进程登记定时器（不受渲染层隐藏节流），到点广播 queue-timer:due"
+    },
+    {
+      "name": "queueTimerCancel",
+      "channel": "queue-timer:cancel",
+      "paramsImpl": "input: { queuedSubmissionId: string }",
+      "paramsDecl": "input: { queuedSubmissionId: string }",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": "取消排队消息定时（删除消息/取消定时/到点清理时调）"
     }
   ]
 }

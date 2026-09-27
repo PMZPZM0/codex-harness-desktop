@@ -760,8 +760,14 @@ interface Window {
     videoPoll(input: { providerId: string; jobId: string }): Promise<{ status: string; url?: string; error?: string }>;
     /* 把产物视频拉回本地落 <workspace>/.drama-canvas/assets/（可信根校验） */
     videoDownload(input: { url: string; workspace: string; name: string; subdir?: string }): Promise<{ path: string; bytes: number }>;
+    /* 排队消息定时发送：主进程登记定时器（不受渲染层隐藏节流），到点广播 queue-timer:due */
+    queueTimerSet(input: { threadId: string; queuedSubmissionId: string; runAt: number }): Promise<{ ok: boolean; scheduled: boolean }>;
+    /* 取消排队消息定时（删除消息/取消定时/到点清理时调） */
+    queueTimerCancel(input: { queuedSubmissionId: string }): Promise<{ ok: boolean }>;
 /* ═══ gen:end ═══ */
 
+
+    onQueueTimerDue(listener: (event: { threadId: string; queuedSubmissionId: string }) => void): () => void;
 
     onRemotePairRequest(handler: (request: { rid: string; deviceId: string; name: string }) => void): () => void;
 

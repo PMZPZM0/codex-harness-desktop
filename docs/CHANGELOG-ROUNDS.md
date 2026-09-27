@@ -3044,3 +3044,31 @@ env 清理锚 / 技能文档同步），**双向变异**（白名单砍 lifecycl
 **关于"无限画布 3 项验收收尾"**：那 3 项失败里 2 项是当时验收脚本自己断言错了目标
 （画布实际已打开/已建板），1 项是可信根限制（冒烟用了临时 workspace）；对应的产品缺陷
 （窗控重叠、window.prompt、交给 Agent）本轮已全部修复并随 bca35f2/本提交落库，验收闭环。
+
+## ⏰ 2026-09-28 排队消息定时发送（queue-timer 域）
+
+**功能**：每条排队消息可设定时（5/15/30/60 分钟后 / 自定义时间 / 取消），到点自动发送；
+条目挂蓝色定时徽标（日期+时刻）。
+
+**关键设计**：
+- **定时器在主进程**（`electron/features/queue-timer-ipc.ts`，新域 `queue-timer` 2 通道）——
+  主窗口最小化/遮挡时渲染层 setTimeout 会被 Chromium 节流（hidden→1Hz），分钟级定时可能迟到；
+  主进程到点 `broadcastToAll("queue-timer:due")`，启动动作全在渲染层。
+- **due 落点按 threadId 定位，不认 bag.queue/bag.thread**（到点的会话可能不是当前会话）：
+  先以引擎 `thread/queue/list` 确认条目还在（被删/已被启动 ⇒ 定时自然失效）；
+  空闲 ⇒ `thread/queue/start` 直接开新回合；忙 ⇒ 这条 reorder 到队头，交给既有的
+  「回合结束自动启动队头」机制（定时只改时机，不改变"排队不打断任务"的约定）。
+- 与「立即」同待遇：释放时挂钉顶意图（armPinForReleasedQueue）+ 429 兜底
+  （armRetryForQueueRelease）+ 引擎竞态（already-started 按成功静默）。
+- **衍生状态去向**（审查修的 3 个配套缺口）：删除消息 ⇒ 同步撤定时；「立即」发出 ⇒ 撤定时；
+  编辑/重存（= 删旧加新，id 必变）⇒ 定时必然失效，toast 明确告知而不是静默消失。
+- 持久化只做窗口 reload 恢复（localStorage `queue-timers-v1` + 对账 effect 幂等重设/清悬空）；
+  应用重启 = 引擎队列清空，定时随之失效 —— 与排队消息生命周期一致，不需要更重的持久化。
+
+**审查抓到的自身错误**：守卫断言把 `/composer\.tsx/.test("composer")` 当"路径含 composer.tsx"
+用（对常量串 test 恒 false ⇒ 短路恒红）——改为读文件入变量再判。
+
+**守卫**：【187】14 条（主进程 handler / due 只广播不直调 / set 幂等 clearTimer / preload 订阅 /
+类型面 / 引擎队列对账 / 忙时 reorder 队头 / 空闲 queue/start / 钉顶+429 / 删除撤定时 /
+UI 三态 / 不用 window.prompt / composer 数据面 / CSS 接入），**5 项变异**（改坏→红→还原）全抓。
+`npm run check`：本轮域全绿，余 ✗ 均为改动前已存在的 19 条沙箱环境假红。

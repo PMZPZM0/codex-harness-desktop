@@ -224,6 +224,8 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
     plusSpinTick,
     prompt,
     queue,
+    queueTimers,
+    setQueuedTimer,
     queueDragIndex,
     quickMenuFlipUp,
     quickMenuPanelRef,
@@ -437,7 +439,7 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                       </span>
                     </div>
                   )}
-                  {thread && <QueuedMessageList entries={queue} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />}
+                  {thread && <QueuedMessageList entries={queue} timers={queueTimers[thread.id] ?? {}} onSetTimer={(entry, runAt) => void setQueuedTimer(thread.id, entry.id, runAt)} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />}
                   {/* 图片与文件都在输入框内联 chip 里展示（09-18 用户：「把文件展示不要在输入框上面了，
                       改成在输入框里面的 chip，跟图片一样的展示」）——原先这里那条 .attachment-strip
                       已删除，别再恢复。 */}

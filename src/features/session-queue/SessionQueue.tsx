@@ -1,6 +1,6 @@
 /** 排队消息 / 折叠流 / 渐进体（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
 import { useState, useMemo, useEffect, memo, Fragment } from "react";
-import { ChevronDown, ChevronRight, GripVertical, Clock3, Image, ArrowUp, PenLine, Trash2, TerminalSquare, FileCode2, Search, Bot, Brain, Wrench } from "lucide-react";
+import { ChevronDown, ChevronRight, GripVertical, Clock3, Image, ArrowUp, PenLine, Trash2, TerminalSquare, FileCode2, Search, Bot, Brain, Wrench, AlarmClock, X } from "lucide-react";
 import { parseUserRefs } from "../../lib/user-refs";
 import type { ParsedUserRefs } from "../../lib/user-refs";
 import { isImagePart } from "../../lib/prompt-images";
@@ -20,8 +20,11 @@ import { inputText } from "../../lib/input-text";
 import { reasoningDuration } from "../../lib/reasoning-duration";
 import { ItemView } from "./ItemView";
 
-export function QueuedMessageList({ entries, onOpenFile, onQuote, onDelete, onStart, onSave, onReorder, dragIndex, setDragIndex }: {
+export function QueuedMessageList({ entries, timers, onSetTimer, onOpenFile, onQuote, onDelete, onStart, onSave, onReorder, dragIndex, setDragIndex }: {
   entries: QueueItem[];
+  /** 定时发送表：`{[queuedSubmissionId]: runAt 毫秒}`（当前会话的；无定时的条目键缺失） */
+  timers: Record<string, number>;
+  onSetTimer: (entry: QueueItem, runAt: number | null) => void;
   onOpenFile: (path: string) => void;
   onQuote: (text: string) => void;
   onDelete: (id: string) => void;
@@ -53,19 +56,39 @@ export function QueuedMessageList({ entries, onOpenFile, onQuote, onDelete, onSt
           <span className="queued-collapse-hint">{expanded ? "收起" : `展开全部 ${n} 条（还有 ${hiddenCount} 条）`}</span>
         </button>
       )}
-      {visible.map((entry, displayIndex) => <QueuedMessageItem key={entry.id} entry={entry} index={displayIndex} total={entries.length} onOpenFile={onOpenFile} onQuote={onQuote} onDelete={onDelete} onStart={onStart} onSave={onSave} onReorder={(from, to) => onReorder(mapIndex(from), mapIndex(to))} dragIndex={dragIndex} setDragIndex={setDragIndex} />)}
+      {visible.map((entry, displayIndex) => <QueuedMessageItem key={entry.id} entry={entry} index={displayIndex} total={entries.length} timerRunAt={timers[entry.id]} onSetTimer={(runAt) => onSetTimer(entry, runAt)} onOpenFile={onOpenFile} onQuote={onQuote} onDelete={onDelete} onStart={onStart} onSave={onSave} onReorder={(from, to) => onReorder(mapIndex(from), mapIndex(to))} dragIndex={dragIndex} setDragIndex={setDragIndex} />)}
     </div>
   );
 }
 
-export function QueuedMessageItem({ entry, index, total, onOpenFile, onQuote, onDelete, onStart, onSave, onReorder, dragIndex, setDragIndex }: {
+/** 定时选项（分钟）：相对延迟 + 自定义。与「立即」并列的动作入口。 */
+const TIMER_PRESET_MINUTES = [5, 15, 30, 60];
+
+export function QueuedMessageItem({ entry, index, total, timerRunAt, onSetTimer, onOpenFile, onQuote, onDelete, onStart, onSave, onReorder, dragIndex, setDragIndex }: {
   entry: QueueItem; index: number; total: number;
+  timerRunAt?: number;
+  onSetTimer: (runAt: number | null) => void;
   onOpenFile: (path: string) => void; onQuote: (text: string) => void;
   onDelete: (id: string) => void; onStart: (id?: string) => void; onSave: (entry: QueueItem, text: string) => void;
   onReorder: (from: number, to: number) => void; dragIndex: number | null; setDragIndex: (index: number | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(() => inputText(entry.input));
+  const [timerMenuOpen, setTimerMenuOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
+  // 自定义时间的默认值：下一个整点的下一小时（datetime-local 需要 "YYYY-MM-DDTHH:mm"）
+  const [customValue, setCustomValue] = useState(() => {
+    const base = new Date(Date.now() + 60 * 60 * 1000);
+    base.setMinutes(0, 0, 0);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}T${pad(base.getHours())}:${pad(base.getMinutes())}`;
+  });
+  useEffect(() => {
+    if (!timerMenuOpen) return;
+    const close = () => { setTimerMenuOpen(false); setCustomOpen(false); };
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [timerMenuOpen]);
   const rawText = inputText(entry.input);
   const refs = useMemo<ParsedUserRefs>(() => parseUserRefs(rawText), [rawText]);
   const images = (entry.input ?? []).filter(isImagePart);
@@ -94,6 +117,11 @@ export function QueuedMessageItem({ entry, index, total, onOpenFile, onQuote, on
       <span className="queued-grip" aria-hidden="true"><GripVertical size={14} /></span>
       <div className="queued-main">
         <span className="queued-badge"><Clock3 size={11} />排队中{total > 1 ? ` ${index + 1}/${total}` : ""}</span>
+        {timerRunAt != null && (
+          <span className="queued-badge queued-timer-badge" title={`到点自动发送：${new Date(timerRunAt).toLocaleString()}`}>
+            <AlarmClock size={11} />{new Date(timerRunAt).toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 发送
+          </span>
+        )}
         <UserRefsRow refs={refs} onOpenFile={onOpenFile} onQuote={onQuote} />
         {refs.threadReferences.map((reference) => <ImportedRecordCard key={reference.id} note={reference.note} content={reference.content} kind="thread" />)}
         {refs.cleanText && <span className="queued-text">{refs.cleanText}</span>}
@@ -101,6 +129,26 @@ export function QueuedMessageItem({ entry, index, total, onOpenFile, onQuote, on
       </div>
       <div className="queued-actions">
         <button className="queued-action" title="立即注入思路（不打断当前任务）" onClick={() => onStart(entry.id)}><ArrowUp size={13} />立即</button>
+        <span className="queued-timer-wrap">
+          <button className={`queued-action ${timerRunAt != null ? "armed" : ""}`} title="定时发送：到点自动把这条消息发出" onClick={(event) => { event.stopPropagation(); setCustomOpen(false); setTimerMenuOpen((open) => !open); }}><AlarmClock size={13} />定时</button>
+          {timerMenuOpen && (
+            <span className="queued-timer-menu" onClick={(event) => event.stopPropagation()}>
+              {TIMER_PRESET_MINUTES.map((minutes) => (
+                <button type="button" key={minutes} onClick={() => { onSetTimer(Date.now() + minutes * 60 * 1000); setTimerMenuOpen(false); }}>{minutes < 60 ? `${minutes} 分钟后` : "1 小时后"}</button>
+              ))}
+              <button type="button" onClick={() => setCustomOpen((open) => !open)}>{customOpen ? "收起自定义" : "自定义时间…"}</button>
+              {customOpen && (
+                <span className="queued-timer-custom">
+                  <input type="datetime-local" value={customValue} onChange={(event) => setCustomValue(event.target.value)} />
+                  <button type="button" disabled={!customValue} onClick={() => { const runAt = new Date(customValue).getTime(); if (!Number.isFinite(runAt)) return; onSetTimer(runAt); setTimerMenuOpen(false); setCustomOpen(false); }}>确定</button>
+                </span>
+              )}
+              {timerRunAt != null && (
+                <button type="button" className="queued-timer-cancel" onClick={() => { onSetTimer(null); setTimerMenuOpen(false); }}><X size={12} />取消定时</button>
+              )}
+            </span>
+          )}
+        </span>
         <button className="queued-action" title="编辑排队消息" onClick={() => { setDraft(inputText(entry.input)); setEditing(true); }}><PenLine size={13} />编辑</button>
         <button className="queued-action danger" title="删除排队消息" onClick={() => onDelete(entry.id)}><Trash2 size={13} />删除</button>
       </div>
