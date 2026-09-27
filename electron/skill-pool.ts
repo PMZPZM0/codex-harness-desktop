@@ -14,6 +14,11 @@
  *
  * 迁移：首次 sync 发现 `<dir>/SKILL.md.disabled` 且目录不在任何配置里 ⇒ 记入全局停用集
  *   （保住用户已停用的技能不被误恢复）。
+ *
+ * ⛔⛔ 项目间独立性（09-27 用户拍板「A 项目启用禁用跟 B 项目没有毛关系」）：
+ *   每个项目的 `skill-pool.json` 是**该项目生效集的唯一真相源**，互相不可见。
+ *   `describeSkillPool(cwd)` 的 active 一律按 **cwd 自己的配置**算，禁止读磁盘改名态——
+ *   磁盘只是「最近一次 sync 的项目」的投影，读它必然把一个项目的状态泄漏进另一个项目。
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -122,7 +127,11 @@ export function syncSkillPool(cwd: string): void {
   } catch { /* 静默降级：与 ensureProjectAgentsMd 同一条启动链纪律 */ }
 }
 
-/** UI 数据：全局技能列表 + 全局停用态 + 当前项目禁用态。 */
+/** UI 数据：全局技能列表 + 全局停用态 + 当前项目禁用态。
+ *  ⛔ active 必须按**该项目自己的配置**算（!globalDisabled && !projectDisabled），
+ *     不能读磁盘改名态——磁盘是「最近一次 sync 的那个项目」的投影，读它会把这个
+ *     项目的状态泄漏进另一个项目的视图（实测：A 停用 → 切到 B 显示已停用 →
+ *     在 B 点开还会把 A 的状态写进 B 的配置，双向污染）。 */
 export function describeSkillPool(cwd: string): {
   skills: { name: string; globalDisabled: boolean; projectDisabled: boolean; active: boolean }[];
 } {
@@ -131,12 +140,16 @@ export function describeSkillPool(cwd: string): {
   const project = readSkillPool(cwd);
   return {
     skills: listGlobalSkillDirs(codexHome)
-      .map(({ name, enabled }) => ({
-        name,
-        globalDisabled: global.has(name),
-        projectDisabled: project.has(name),
-        active: enabled,
-      }))
+      .map(({ name }) => {
+        const globalDisabled = global.has(name);
+        const projectDisabled = project.has(name);
+        return {
+          name,
+          globalDisabled,
+          projectDisabled,
+          active: !globalDisabled && !projectDisabled,
+        };
+      })
       .sort((a, b) => a.name.localeCompare(b.name)),
   };
 }
