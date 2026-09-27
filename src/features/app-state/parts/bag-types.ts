@@ -549,6 +549,12 @@ export interface Bag {
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
   queue: import("../../../lib/queue-item.ts").QueueItem[];
   setQueue: React.Dispatch<React.SetStateAction<import("../../../lib/queue-item.ts").QueueItem[]>>;
+  queueTimers: Record<string, Record<string, number>>;
+  setQueueTimers: React.Dispatch<React.SetStateAction<Record<string, Record<string, number>>>>;
+  queueTimersLoadedRef: React.RefObject<boolean>;
+  persistQueueTimers: (next: Record<string, Record<string, number>>) => void;
+  setQueuedTimer: (threadId: string, id: string, runAt: number | null) => Promise<void>;
+  releaseQueuedTimerDue: (threadId: string, id: string) => Promise<void>;
   queueDragIndex: number | null;
   setQueueDragIndex: React.Dispatch<React.SetStateAction<number | null>>;
   mobileNav: boolean;

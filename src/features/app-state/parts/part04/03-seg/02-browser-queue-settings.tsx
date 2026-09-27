@@ -6,6 +6,7 @@
  * ⛔ 本段语句只引用「自己的局部声明」与 bag；跨段名字由组合根按入参转交。
  */
 import "@xterm/xterm/css/xterm.css";
+import { useEffect, useRef, useState } from "react";
 import { AUTO_CONTINUE_MAX_ATTEMPTS, AUTO_CONTINUE_WINDOW_MS, autoContinuePrompt, isTruncatedEmptyTurn, truncationNotice } from "../../../../../lib/turn-truncation.mjs";
 import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens, isImagePart, imagePartSrc, normalizeImagePartForSend } from "../../../../../lib/prompt-images";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "../../../../../lib/turn-fold";
@@ -15,6 +16,140 @@ import { inputText } from "../../../../../lib/input-text";
 import type { Bag } from "../../bag-types";
 
 export function usePart04c2(bag: Bag) {
+  /* ── 排队消息定时发送（09-28） ─────────────────────────────────────────────
+   * queueTimers：`{[threadId]: {[queuedSubmissionId]: runAt 毫秒}}`。UI 徽标与持久化都认它。
+   * 定时器本体在**主进程**（queue-timer-ipc）：窗口最小化/遮挡时渲染层 setTimeout 会被
+   * Chromium 节流，分钟级定时可能迟到；主进程到点广播 `queue-timer:due` 回来再启动。
+   * 本地 localStorage 只做「窗口 reload 后徽标与定时器恢复」（应用重启 = 引擎队列清空，
+   * 与排队消息生命周期一致，悬空条目由下方 effect 清理）。 */
+  const [queueTimers, setQueueTimers] = useState<Record<string, Record<string, number>>>({});
+  const queueTimersLoadedRef = useRef(false);
+
+  function persistQueueTimers(next: Record<string, Record<string, number>>) {
+    try { localStorage.setItem("queue-timers-v1", JSON.stringify(next)); } catch { /* 存不下就只留内存态 */ }
+  }
+
+  /** 设/取消某条排队消息的定时。runAt=null 表示取消。 */
+  async function setQueuedTimer(threadId: string, id: string, runAt: number | null) {
+    if (!threadId || !id) return;
+    try {
+      if (runAt == null) {
+        await window.codex.queueTimerCancel({ queuedSubmissionId: id });
+      } else {
+        await window.codex.queueTimerSet({ threadId, queuedSubmissionId: id, runAt });
+      }
+    } catch (error: any) {
+      bag.showToast("定时设置失败", String(error?.message ?? error), threadId);
+      return;
+    }
+    setQueueTimers((current) => {
+      const forThread = { ...(current[threadId] ?? {}) };
+      if (runAt == null) delete forThread[id];
+      else forThread[id] = runAt;
+      const next = { ...current, [threadId]: forThread };
+      persistQueueTimers(next);
+      return next;
+    });
+    if (runAt == null) bag.showToast("已取消定时", "这条排队消息恢复为普通排队", threadId);
+    else bag.showToast("定时已设置", `到点自动发送：${new Date(runAt).toLocaleString()}`, threadId);
+  }
+
+  /** 定时到点（主进程 due 广播）：把这条排队消息真正发出去。
+   *  落点语义与「立即」对齐但**不做 steer 插队**（那是手动「立即」的语义）：
+   *  · 会话空闲 → `thread/queue/start` 直接开新回合；
+   *  · 会话忙 → 把这条 reorder 到队头，交给既有的「回合结束自动启动队头」机制，
+   *    并 toast 告知（定时只改发送时机，不改变「排队不打断任务」的约定）。 */
+  async function releaseQueuedTimerDue(threadId: string, id: string) {
+    // 到点即消费：无论后面成败，本地定时态先清掉（引擎队列里这条还在不在由下面判定）
+    setQueueTimers((current) => {
+      const forThread = current[threadId];
+      if (!forThread || !(id in forThread)) return current;
+      const rest = { ...forThread };
+      delete rest[id];
+      const next = { ...current, [threadId]: rest };
+      persistQueueTimers(next);
+      return next;
+    });
+    void window.codex.queueTimerCancel({ queuedSubmissionId: id }).catch(() => undefined);
+    // 以**引擎**队列为准（due 的会话可能不是当前正在看的会话，bag.queue 不可信）
+    const list = await window.codex.request("thread/queue/list", { threadId, limit: 100 }).catch(() => null);
+    const entries: QueueItem[] = list?.data ?? [];
+    const entry = entries.find((item) => item.id === id);
+    if (!entry) return; // 消息已被删除/已被启动：定时自然失效
+    bag.armPinForReleasedQueue(threadId, "queue-timer");
+    // 与「立即」同款：定时释放的消息也要被 429 兜底覆盖
+    bag.armRetryForQueueRelease(threadId, entry.input);
+    const busy = bag.runningThreadIdsRef.current.has(threadId);
+    if (busy) {
+      try {
+        const rest = entries.filter((item) => item.id !== id).map((item) => item.id);
+        await window.codex.request("thread/queue/reorder", { threadId, queuedSubmissionIds: [id, ...rest] });
+        bag.showToast("定时已到", "该会话仍有任务在跑，这条消息已排到队头，任务结束后自动发送", threadId);
+        if (bag.threadRef.current?.id === threadId) void bag.refreshQueue(threadId);
+      } catch (error: any) {
+        bag.showToast("定时发送失败", String(error?.message ?? error), threadId);
+      }
+      return;
+    }
+    try {
+      await window.codex.request("thread/queue/start", { threadId, queuedSubmissionId: id });
+      if (bag.threadRef.current?.id === threadId) bag.setQueue((current) => current.filter((item) => item.id !== id));
+      void bag.refreshQueue(threadId);
+      bag.showToast("定时已发送", "排队消息已到设定时间，开始执行", threadId);
+    } catch (error: any) {
+      const message = String(error?.message ?? error);
+      if (isQueueAlreadyStartedError(message)) {
+        // 与引擎自动启动撞车：消息其实已发出（同「立即」的竞态口径），按成功处理
+        bag.dbg("queue-timer-raced-by-engine", { threadId, message });
+      } else if (/not found|no such|empty|找不到/i.test(message)) {
+        // 条目已被删/已被启动：静默
+      } else {
+        bag.showToast("定时发送失败", message, threadId);
+      }
+    }
+  }
+
+  // due 订阅：主进程定时器到点广播（应用生命周期内持续有效）
+  useEffect(() => {
+    const off = window.codex.onQueueTimerDue(({ threadId, queuedSubmissionId }) => {
+      void releaseQueuedTimerDue(threadId, queuedSubmissionId);
+    });
+    return off;
+  }, []);
+
+  // localStorage 恢复（窗口 reload 后徽标不丢；主进程定时器由下方 effect 幂等重设）
+  useEffect(() => {
+    if (queueTimersLoadedRef.current) return;
+    queueTimersLoadedRef.current = true;
+    try { setQueueTimers(JSON.parse(localStorage.getItem("queue-timers-v1") ?? "{}")); } catch { /* 损坏当空 */ }
+  }, []);
+
+  // 当前会话的定时对账：队列条目消失（已启动/被删）⇒ 悬空定时一并撤；
+  // 仍有效的定时 ⇒ 主进程定时器幂等重设（reload 恢复路径）。
+  useEffect(() => {
+    const threadId = bag.thread?.id;
+    if (!threadId) return;
+    const forThread = bag.queueTimers[threadId] ?? {};
+    const liveIds = new Set(bag.queue.map((item) => item.id));
+    const stale = Object.keys(forThread).filter((id) => !liveIds.has(id));
+    if (stale.length) {
+      for (const id of stale) void window.codex.queueTimerCancel({ queuedSubmissionId: id }).catch(() => undefined);
+      setQueueTimers((current) => {
+        const rest = { ...(current[threadId] ?? {}) };
+        for (const id of stale) delete rest[id];
+        const next = { ...current, [threadId]: rest };
+        persistQueueTimers(next);
+        return next;
+      });
+      return;
+    }
+    for (const [id, runAt] of Object.entries(forThread)) {
+      if (runAt > Date.now()) {
+        void window.codex.queueTimerSet({ threadId, queuedSubmissionId: id, runAt }).catch(() => undefined);
+      }
+    }
+  }, [bag.queue, bag.queueTimers, bag.thread?.id]);
+
   function openBrowser() {
     const raw = bag.browserDraft.trim();
     if (!raw) return;
@@ -64,6 +199,19 @@ bag.toggleBookmark = toggleBookmark as typeof bag.toggleBookmark;
 
   async function deleteQueued(id: string) {
     if (!bag.thread) return;
+    // ⛔ 衍生状态一起撤：消息删了，它的定时发送必须同时取消（否则到点 due 找不到条目才算兜底）
+    void window.codex.queueTimerCancel({ queuedSubmissionId: id }).catch(() => undefined);
+    if (bag.thread.id) {
+      setQueueTimers((current) => {
+        const forThread = current[bag.thread!.id];
+        if (!forThread || !(id in forThread)) return current;
+        const rest = { ...forThread };
+        delete rest[id];
+        const next = { ...current, [bag.thread!.id]: rest };
+        persistQueueTimers(next);
+        return next;
+      });
+    }
     try {
       await window.codex.request("thread/queue/delete", { threadId: bag.thread.id, queuedSubmissionId: id });
       bag.setQueue((current) => current.filter((entry) => entry.id !== id));
@@ -90,6 +238,10 @@ bag.reorderQueued = reorderQueued as typeof bag.reorderQueued;
 
   function editQueued(entry: QueueItem) {
     bag.setPrompt(inputText(entry.input));
+    // 编辑 = 删除旧条目 + 内容放回输入框；旧条目若设过定时，会随 deleteQueued 一并取消 —— 明确告知，别让定时静默消失
+    if (bag.thread && (bag.queueTimers[bag.thread.id]?.[entry.id] != null)) {
+      bag.showToast("定时已随编辑取消", "编辑会重新入队（新的排队条目），需要的话请重新设置定时", bag.thread.id);
+    }
     void bag.deleteQueued(entry.id);
   }
 bag.editQueued = editQueued as typeof bag.editQueued;
@@ -98,6 +250,8 @@ bag.editQueued = editQueued as typeof bag.editQueued;
     if (!bag.thread) return;
     const images = (entry.input ?? []).filter(isImagePart).map(normalizeImagePartForSend).filter(Boolean);
     const nextText = text.trim();
+    // 重存 = 删旧条目 + 加新条目（新 id）⇒ 旧定时必然失效，先查先告知
+    const hadTimer = bag.thread.id && (bag.queueTimers[bag.thread.id]?.[entry.id] != null);
     try {
       await bag.deleteQueued(entry.id);
       const input = [
@@ -105,6 +259,7 @@ bag.editQueued = editQueued as typeof bag.editQueued;
         ...images,
       ];
       if (input.length) await window.codex.request("thread/queue/add", { threadId: bag.thread.id, input, clientUserMessageId: crypto.randomUUID() });
+      if (hadTimer) bag.showToast("定时已随编辑取消", "重存后是新的排队条目，需要的话请重新设置定时", bag.thread.id);
       void bag.refreshQueue(bag.thread.id);
     } catch (error: any) {
       bag.setNotice(`保存排队消息失败：${error.message}`);
@@ -239,6 +394,8 @@ bag.maybeAutoContinueTruncated = maybeAutoContinueTruncated as typeof bag.maybeA
         });
         await bag.deleteQueued(entry.id);
         void bag.refreshQueue(bag.thread.id);
+        // 「立即」已经把这条发出去了 ⇒ 它的定时一并撤（否则到点 due 只能靠引擎对账静默兜底）
+        void bag.setQueuedTimer(bag.thread.id, entry.id, null);
         bag.showToast("已发送", "这条排队消息已并入当前任务");
         return;
       } catch (error: any) {
@@ -261,7 +418,10 @@ bag.maybeAutoContinueTruncated = maybeAutoContinueTruncated as typeof bag.maybeA
       // 它会作为**新回合**的用户消息出现 → 同样要先建立钉顶意图
       await window.codex.request("thread/queue/start", { threadId: bag.thread.id, ...(id ? { queuedSubmissionId: id } : {}) });
       // 同「回合结束自动启动」：先本地摘掉，避免与真实气泡并存（否则会短暂重复展示）
-      if (id) bag.setQueue((current) => current.filter((entry) => entry.id !== id));
+      if (id) {
+        bag.setQueue((current) => current.filter((entry) => entry.id !== id));
+        void bag.setQueuedTimer(bag.thread.id, id, null); // 已立即发出 ⇒ 定时一并撤
+      }
       void bag.refreshQueue(bag.thread.id);
       bag.showToast("已发送", "排队消息已开始执行");
     } catch (error: any) {
@@ -375,5 +535,5 @@ bag.setHookEnabled = setHookEnabled as typeof bag.setHookEnabled;
     finally { bag.setLinkedBusy(null); }
   }
 bag.setLinkedEnabled = setLinkedEnabled as typeof bag.setLinkedEnabled;
-  return { openBrowser, toggleBookmark, deleteQueued, reorderQueued, editQueued, saveQueued, armPinForReleasedQueue, disarmPinIntent, maybeAutoContinueTruncated, startQueued, refreshSettingsResources, trustAllHooks, setHookEnabled, setLinkedEnabled };
+  return { queueTimers, setQueueTimers, setQueuedTimer, openBrowser, toggleBookmark, deleteQueued, reorderQueued, editQueued, saveQueued, armPinForReleasedQueue, disarmPinIntent, maybeAutoContinueTruncated, startQueued, refreshSettingsResources, trustAllHooks, setHookEnabled, setLinkedEnabled };
 }

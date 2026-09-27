@@ -2410,6 +2410,59 @@ w.postMessage({id:1,op:"list",root});
       "【186】技能文档已更新为 5 型齐（诚实边界清零：dataflow/lifecycle/delta/visual-check 都已落地）"
     );
   }
+
+  /* ══ 【187】排队消息定时发送：主进程定时器 + due 落点 + UI 入口（09-28） ══ */
+  {
+    console.log(C.bold("\n【187】排队消息定时发送（queue-timer 域）"));
+    const timerIpc = codeOnly(readFileSync(join(ROOT, "electron", "features", "queue-timer-ipc.ts"), "utf8"));
+    // ① 主进程：定时器本体必须在主进程（渲染层 setTimeout 会被 Chromium 隐藏节流），set 前幂等清理
+    (/ipcMain\.handle\("queue-timer:set"/.test(timerIpc) && /ipcMain\.handle\("queue-timer:cancel"/.test(timerIpc) ? ok : fail)(
+      "【187】主进程注册 queue-timer:set / queue-timer:cancel 两个 handler"
+    );
+    (/broadcastToAll\("queue-timer:due", \{ threadId, queuedSubmissionId: id \}\)/.test(timerIpc) && /timers\.delete\(id\);/.test(timerIpc) ? ok : fail)(
+      "【187】到点只广播 queue-timer:due、不直接调引擎（启动/钉顶/429 兜底/toast 全在渲染层），广播前消费掉条目（一次性）"
+    );
+    (/clearTimer\(id\);\s*\n\s*const delay = Math\.max\(0, runAt - Date\.now\(\)\)/.test(timerIpc) ? ok : fail)(
+      "【187】set 前先 clearTimer（同一条重复设定时 = 覆盖而不是叠两个 setTimeout）"
+    );
+    // ② preload：due 订阅 + 类型面
+    const preload187 = codeOnly(readFileSync(join(ROOT, "electron", "preload.ts"), "utf8"));
+    (/__on\("queue-timer:due"/.test(preload187) ? ok : fail)("【187】preload 手写 onQueueTimerDue 订阅（事件不走 manifest）");
+    (/onQueueTimerDue\(listener: \(event: \{ threadId: string; queuedSubmissionId: string \}\) => void\): \(\) => void;/.test(typesSrc) ? ok : fail)(
+      "【187】vite-env.d.ts 声明 onQueueTimerDue（渲染层类型面）"
+    );
+    // ③ 渲染层落点：due 处理按 threadId 定位（⛔ 不认 bag.queue/bag.thread —— 到点的会话可能不是当前会话）
+    const appUi = readAppUi();
+    const part04c2 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part04", "03-seg", "02-browser-queue-settings.tsx"), "utf8");
+    (/const list = await window\.codex\.request\("thread\/queue\/list", \{ threadId, limit: 100 \}\)/.test(part04c2) && /if \(!entry\) return;/.test(part04c2) ? ok : fail)(
+      "【187】到点先以引擎队列为准确认条目还在（被删/已被启动 ⇒ 定时自然失效）"
+    );
+    (/const busy = bag\.runningThreadIdsRef\.current\.has\(threadId\);/.test(part04c2) && /queuedSubmissionIds: \[id, \.\.\.rest\]/.test(part04c2) ? ok : fail)(
+      "【187】会话忙 ⇒ 这条 reorder 到队头交给既有的回合结束 auto-start（定时只改时机，不改变排队不打断的约定）"
+    );
+    (/thread\/queue\/start", \{ threadId, queuedSubmissionId: id \}/.test(part04c2) && /isQueueAlreadyStartedError\(message\)/.test(part04c2) ? ok : fail)(
+      "【187】会话空闲 ⇒ thread/queue/start 直接启动 + 引擎竞态（already started）按成功静默"
+    );
+    (/bag\.armRetryForQueueRelease\(threadId, entry\.input\)/.test(part04c2) && /bag\.armPinForReleasedQueue\(threadId, "queue-timer"\)/.test(part04c2) ? ok : fail)(
+      "【187】定时释放与「立即」同待遇：钉顶意图 + 429 兜底都要挂上"
+    );
+    (/void window\.codex\.queueTimerCancel\(\{ queuedSubmissionId: id \}\)/.test(codeOnly(part04c2).split("async function deleteQueued")[1]?.split("async function reorderQueued")[0] ?? "") ? ok : fail)(
+      "【187】删除排队消息时同步取消它的定时（衍生状态一起撤，不能只靠到点 due 兜底）"
+    );
+    // ④ UI 入口
+    const queueUi = readFileSync(join(ROOT, "src", "features", "session-queue", "SessionQueue.tsx"), "utf8");
+    (/TIMER_PRESET_MINUTES = \[5, 15, 30, 60\]/.test(queueUi) && /取消定时/.test(queueUi) && /type="datetime-local"/.test(queueUi) ? ok : fail)(
+      "【187】条目有定时按钮：预设相对时间 + 自定义时间（datetime-local）+ 取消定时"
+    );
+    (queueUi.includes("window.prompt") ? fail("【187】定时输入不许用 window.prompt（Electron 不支持，实测抛错）") : ok)(
+      "【187】定时输入用自建弹层（window.prompt 在 Electron 不可用）"
+    );
+    const composer187 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "03-composer.tsx"), "utf8");
+    (composer187.includes("timers={queueTimers[thread.id] ?? {}}") && composer187.includes("void setQueuedTimer(thread.id, entry.id, runAt)") ? ok : fail)(
+      "【187】composer 把当前会话的定时表传进 QueuedMessageList（徽标渲染的数据面）"
+    );
+    (/\.queued-timer-menu \{/.test(readStyles()) ? ok : fail)("【187】定时弹层样式已接入（15-queued-messages.css）");
+  }
 }
 
 
