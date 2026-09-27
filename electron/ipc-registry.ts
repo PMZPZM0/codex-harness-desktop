@@ -30,6 +30,10 @@ export interface IpcDomainEntry {
 }
 
 export const IPC_DOMAINS: IpcDomainEntry[] = [
+  { prefix: "phone", count: 6, status: "in-features", file: "features/phone-harness-ipc.ts",
+    channels: ["phone:harness:status", "phone:harness:install", "phone:harness:uninstall", "phone:harness:doctor", "phone:harness:guides", "phone:harness:open-settings"],
+    note: "09-27 新增：手机控制（phone-harness）。不是 MCP 服务 ⇒ 走「pip 包 + 技能注册」，装完强制关上游遥测；iPhone 通道仅 darwin",
+  },
   { prefix: "team-runs", count: 1, status: "in-features", file: "features/teams-agents-ipc.ts",
     channels: ["team-runs:list"],
     note: "09-21 拆出：跨域符号经 main 导出的活绑定取用",

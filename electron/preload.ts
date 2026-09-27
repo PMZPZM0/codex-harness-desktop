@@ -454,6 +454,18 @@ contextBridge.exposeInMainWorld("codex", {
   touchFavorite: (id: string) => __ipc("favorites:touch", 1, [id]),
   /* 只追加到记忆层（先读后写，不抹既有内容）；单行限长 300 字 */
   favoritesToMemory: (input: { ids: string[]; scope?: "user" | "project" | "background" | "lessons"; workspace?: string }) => __ipc("favorites:to-memory", 0, [input]),
+  /* 手机控制状态（平台/pip 包/adb/技能/遥测） */
+  phoneHarnessStatus: () => __ipc("phone:harness:status", 0, []) as Promise<{platform:string;python:string;pythonOk:boolean;installed:boolean;version:string;adb:boolean;skill:boolean;telemetryOff:boolean;iphoneEligible:boolean}>,
+  /* 装 phone-harness + 关遥测 + 注册技能 */
+  phoneHarnessInstall: () => __ipc("phone:harness:install", 0, []) as Promise<{ok:boolean;log:string}>,
+  /* 卸载 phone-harness 与技能 */
+  phoneHarnessUninstall: () => __ipc("phone:harness:uninstall", 0, []) as Promise<{ok:boolean;log:string}>,
+  /* 跑上游 --doctor 体检 */
+  phoneHarnessDoctor: () => __ipc("phone:harness:doctor", 0, []) as Promise<{ok:boolean;log:string}>,
+  /* 按平台返回权限引导步骤 */
+  phoneHarnessGuides: () => __ipc("phone:harness:guides", 0, []) as Promise<{id:string;title:string;steps:string[]}[]>,
+  /* 打开系统权限设置页 */
+  phoneHarnessOpenSettings: () => __ipc("phone:harness:open-settings", 0, []) as Promise<void>,
   /* ═══ gen:end ═══ */
 
   // ⛔ mac 适配（09-16）：渲染层此前完全不知道自己跑在什么平台——窗口控制键让位、
