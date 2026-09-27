@@ -80,6 +80,7 @@ export function splitMarkdown(text) {
   const blocks = [];
   let buf = [];
   let fence = null;
+  let math = false;
   for (let i = 0; i < lines.length; i++) {
     const inFence = fence !== null;
     const line = inFence ? lines[i] : trimInvisibleSpace(lines[i]);
@@ -91,9 +92,15 @@ export function splitMarkdown(text) {
       if (!fence) fence = ch;
       else if (ch === fence) fence = null;
     }
+    // ⛔ math 块（$$ … $$）与代码围栏同理：**块内不切分**。否则跨空行的多行公式被切成两块、
+    //   两半各含落单的 `$$`，rehype-katex 认不出来，直接渲染成字面 `$$` 文本。
+    //   09-27 接入公式渲染时实测：四种形态里只有「多行 + 含空行」会坏，而模型输出多行公式
+    //   常带空行 ⇒ 必须处理。判据只认「整行恰好是 $$」：`$$E=mc^2$$` 这类单行完整公式自成
+    //   一对，不翻转状态（否则行内两个 $$ 会把后续内容整段吞掉）。
+    if (!fence && trimmed === "$$") math = !math;
     const nextLine = i + 1 < lines.length ? trimInvisibleSpace(lines[i + 1]) : "";
     const nextIsContent = i + 1 < lines.length && nextLine.trim() !== "";
-    if (!fence && trimmed === "" && nextIsContent) {
+    if (!fence && !math && trimmed === "" && nextIsContent) {
       if (buf.length) { blocks.push(buf.join("\n")); buf = []; }
       continue;
     }

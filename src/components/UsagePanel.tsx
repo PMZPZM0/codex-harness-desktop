@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Activity, Flame, Timer, Trash2, TrendingUp } from "lucide-react";
 import { currentStreak, formatDuration, formatTokens, lastDays, totalTokens, type UsageStats } from "../lib/usage-stats";
 
@@ -106,6 +106,49 @@ function ModelDonut({ models }: { models: Record<string, number> }) {
   </div>;
 }
 
+/** 账号级用量：引擎 `account/usage/read`（09-27 接的是 0.157 协议里的这份 RPC；它在 0.153 就有，
+ *  所以不是"新版新增"，只是我们一直没接）。
+ *
+ *  ⛔ 与上面那套 `stats` 是**两个来源**，界面上必须分清、**不许混算**：
+ *    · 上面的 stats = **本机**累计（本地记账，清空/换机即归零）；
+ *    · 这里的 summary/buckets = **Codex 服务端**记账（跨设备、权威），只有登录 OpenAI / ChatGPT
+ *      账号才拿得到 —— 用第三方 provider（自定义 base_url）时引擎侧没有账号态，请求会失败。
+ *  ⛔ 拿不到时**整块不渲染**：不留空占位、不报错打扰（实测本机 auth.json 为空 ⇒ 走的就是这条路）。
+ *  数值一律经 num() 归一：协议里是 u64（ts-rs 出 bigint），JSON 过桥后可能是 number 或字符串。 */
+function AccountUsageBlock() {
+  const [data, setData] = useState<any>(null);
+  useEffect(() => {
+    let alive = true;
+    void window.codex.request("account/usage/read", {})
+      .then((result: any) => { if (alive && result?.summary) setData(result); })
+      .catch(() => undefined); // 未登录 / 第三方 provider / 网络失败 ⇒ 静默降级
+    return () => { alive = false; };
+  }, []);
+  const summary = data?.summary;
+  if (!summary) return null;
+  const num = (value: unknown) => {
+    const parsed = Number(value ?? 0);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const buckets: { startDate: string; tokens: unknown }[] = Array.isArray(data.dailyUsageBuckets) ? data.dailyUsageBuckets.slice(-30) : [];
+  const bucketMax = Math.max(1, ...buckets.map((bucket) => num(bucket.tokens)));
+  return (
+    <div className="usage-block">
+      <header><h3>账号用量</h3><span>服务端记账（跨设备）· 需登录 OpenAI 账号</span></header>
+      <div className="usage-stats-row tight">
+        <div className="usage-stat"><span>账号累计 Token</span><strong>{summary.lifetimeTokens == null ? "—" : formatTokens(num(summary.lifetimeTokens))}</strong></div>
+        <div className="usage-stat"><span>单日峰值</span><strong>{summary.peakDailyTokens == null ? "—" : formatTokens(num(summary.peakDailyTokens))}</strong></div>
+        <div className="usage-stat"><span>连续活跃</span><strong>{summary.currentStreakDays == null ? "—" : `${num(summary.currentStreakDays)} 天`}</strong><small>{summary.longestStreakDays == null ? "" : `最长 ${num(summary.longestStreakDays)} 天`}</small></div>
+        <div className="usage-stat"><span>最长单回合</span><strong>{summary.longestRunningTurnSec == null ? "—" : formatDuration(num(summary.longestRunningTurnSec) * 1000)}</strong></div>
+      </div>
+      {buckets.length > 0 && <div className="usage-heatmap" role="img" aria-label="账号每日用量">
+        {buckets.map((bucket) => <i key={bucket.startDate} className={`usage-heat-cell level-${heatLevel(num(bucket.tokens), bucketMax)}`} title={`${bucket.startDate} · ${num(bucket.tokens).toLocaleString()} token`} />)}
+      </div>}
+      <p className="usage-foot">这块是 Codex 服务端的权威记账（含你在其它设备的消耗）；与上方「本机累计」是两套来源，不合并计算。</p>
+    </div>
+  );
+}
+
 export function UsagePanel({ stats, currentInput, currentOutput, contextWindow, onReset }: Props) {
   const streak = useMemo(() => currentStreak(stats), [stats]);
   const { cells, max } = useMemo(() => buildHeatmap(stats, HEATMAP_WEEKS), [stats]);
@@ -182,6 +225,8 @@ export function UsagePanel({ stats, currentInput, currentOutput, contextWindow, 
         </div>
         <p className="usage-foot"><Timer size={12} />清空本机会计的累计 token 与回合数（仅影响本机显示，不影响 Codex 服务端）。</p>
       </div>
+
+      <AccountUsageBlock />
     </section>
   );
 }

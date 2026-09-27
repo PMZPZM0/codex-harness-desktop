@@ -4541,6 +4541,20 @@ export async function run() {
     if (soft(fenced).join("\n") === fenced.join("\n")) ok("【149】围栏内（含流式未闭合）不注入空行 —— 否则会改动代码块内容");
     else fail("【149】围栏内被注入空行：" + JSON.stringify(soft(fenced)));
 
+    // ⛔ math 块同理（09-27 接入公式渲染时补）：`$$ … $$` 内的空行**不许切块** —— 否则跨空行的
+    //   多行公式被切成两块、两半各含落单的 `$$`，rehype-katex 认不出，直接渲染成字面 `$$` 文本。
+    //   实测当时四种形态里只有「多行 + 含空行」会坏，而模型输出多行公式常带空行 ⇒ 必须钉住。
+    const mathMulti = ["$$", "E = mc^2", "", "F = ma", "$$"];
+    const mathBlocks = soft(mathMulti);
+    if (mathBlocks.length === 1) ok("【149】多行公式（含空行）不切块（切了会各含落单 $$ ⇒ 渲染成字面文本）");
+    else fail("【149】多行公式被切成 " + mathBlocks.length + " 块：" + JSON.stringify(mathBlocks));
+    const inlineMath = ["$$E = mc^2$$ 前面的说明", "", "后一段"];
+    if (soft(inlineMath).length === 2) ok("【149】单行完整公式（$$…$$ 自成一对）不翻转 math 状态（否则会把后续内容整段吞掉）");
+    else fail("【149】单行公式被误判：" + JSON.stringify(soft(inlineMath)));
+    const dollarVars = ["echo $HOME 与 $PATH", "", "下一段"];
+    if (soft(dollarVars).length === 2) ok("【149】shell 变量（$VAR）不触发 math 状态");
+    else fail("【149】shell 变量被误当公式：" + JSON.stringify(soft(dollarVars)));
+
     // 09-24 二次反馈（截图里列表 → 空档 → **仍然缩进**的两行）⇒ 另一种成因：正文行首的
     // **全角空格 U+3000**。它在 HTML 里不被折叠（只有 ASCII 空格会被折叠），会实打实渲染成
     // 一块可见空白。行尾那种还会把长行挤折、多出一行，所以两端都去。

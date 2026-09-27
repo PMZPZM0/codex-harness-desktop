@@ -51,6 +51,11 @@ function reachableAssets(assetsDir, entryNames) {
     for (const m of body.matchAll(/["'`]assets\/([A-Za-z0-9_$.\-]+\.(?:js|css))["'`]/g)) if (existsIn(m[1])) queue.push(m[1]);
     // ③ 裸文件名（vite 的 preload deps 数组里可能不带 ./）—— 用 existsSync 兜住，避免把文案当文件名
     for (const m of body.matchAll(/["'`]([A-Za-z0-9_$.\-]+\.(?:js|css))["'`]/g)) if (existsIn(m[1])) queue.push(m[1]);
+    // ④ CSS 里的资源引用（字体 / 图片）：vite 输出的是**无引号**的 `url(./KaTeX_xxx.woff2)`。
+    //    ⛔ 09-27 实测踩到：接入 katex 后 59 个公式字体全靠这条被引用，而 ①②③ 只认 .js/.css
+    //    ⇒ 整批字体被判「陈旧」待删，**安全阀（阈值 30）也兜不住**（闭包 167 ≥ 30）——
+    //    与 v0.0.27 事故同型：判据不完整 ⇒ 删活文件，装出来的包里公式字体全 404。
+    for (const m of body.matchAll(/url\(\s*["']?\.?\/?([A-Za-z0-9_$.\-]+\.(?:woff2?|ttf|otf|eot|svg|png|jpe?g|gif|webp|avif|ico))["']?\s*\)/g)) if (existsIn(m[1])) queue.push(m[1]);
   }
   return live;
 }

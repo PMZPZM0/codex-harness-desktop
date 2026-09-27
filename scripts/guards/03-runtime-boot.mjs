@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  ALIGN_RESULT, C, CONTINUITY_TEXT, ROOT, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, mkdtempSync, planCompletedFold, readAppUi, readFileSync, readMainSource, readStyles, readVoiceCallFloatSrc, rmSync, shouldAlignProvider, spawnSync, statSync, tmpdir, warn,
+  ALIGN_RESULT, C, CONTINUITY_TEXT, ROOT, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, mkdtempSync, planCompletedFold, readAppUi, readFileSync, readMainSource, readStyles, readVoiceCallFloatSrc, rmSync, shouldAlignProvider, spawnSync, statSync, tmpdir, warn, writeFileSync,
 } from "./_ctx.mjs";
 
 export async function run() {
@@ -261,6 +261,31 @@ console.log(C.bold("\n【8】打包必备件：随包 automation-tools.zip（发
       const lazy = all.filter((n) => /^(ModelSettingsSection|MemoryCenterSection|GeneralSettingsSection|SkillsCenterSection)-/.test(n));
       (live.size >= all.length - 2 ? ok : fail)(`【151】真跑：可达闭包几乎覆盖全部产物（${live.size}/${all.length}）`);
       (lazy.length > 0 && lazy.every((n) => live.has(n)) ? ok : fail)(`【151】真跑：懒加载 chunk 未被判死重（抽样 ${lazy.length} 个）`);
+    }
+    // 【151】新（09-27）：CSS 的 url(...) 资源引用必须进闭包 —— 接入 katex 时实测踩到：
+    // 59 个公式字体全靠 `url(./KaTeX_xxx.woff2)` 引用，而闭包的 ①②③ 只认 .js/.css ⇒
+    // 整批字体被判「陈旧」，**安全阀（阈值 30）也兜不住**（闭包 167 ≥ 30）⇒ 装出来的包里
+    // 公式字体全 404 —— 与 v0.0.27「删活文件」同型。用**临时夹具**真跑，不依赖 dist 是否构建。
+    {
+      const probe = join(ROOT, ".workbuddy", "tmp", "closure-probe");
+      try {
+        if (bp?.reachableAssets) {
+          rmSync(probe, { recursive: true, force: true });
+          mkdirSync(probe, { recursive: true });
+          writeFileSync(join(probe, "entry.js"), 'import("./chunk.css");');
+          // vite 对 CSS 里的资源输出的是**无引号**的 url(./x.woff2) —— 夹具必须照这个形态写
+          writeFileSync(join(probe, "chunk.css"), ".katex{src:url(./KaTeX_AMS-x.woff2)}");
+          writeFileSync(join(probe, "KaTeX_AMS-x.woff2"), "font");
+          const live = bp.reachableAssets(probe, ["entry.js"]);
+          (live.has("chunk.css") && live.has("KaTeX_AMS-x.woff2") ? ok : fail)(
+            "【151】可达闭包必须跟随 CSS 的 url(...) 资源引用（⛔ 只认 js/css 会把字体整批判成陈旧删掉）"
+          );
+        }
+      } catch (error) {
+        fail(`【151】CSS 资源闭包探针失败：${error?.message ?? error}`);
+      } finally {
+        rmSync(probe, { recursive: true, force: true });
+      }
     }
   }
 
