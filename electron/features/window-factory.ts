@@ -67,6 +67,14 @@ export function createWindow() {
       webviewTag: true,
     },
   });
+  // ⛔ 任务栏图标重申（09-27 用户实测：自动重启后图标被顶成默认）：icon 选项在窗口构造期
+  //    应用，但 relaunch/快速重启场景下任务栏分组重建可能吞掉它。ready-to-show 后 setIcon
+  //    再申明一次——同一文件、幂等，成本为零；图标链路真相源见 main.ts AUMID 注释与附录 G。
+  if (process.platform === "win32" && existsSync(windowIcon)) {
+    mutableState.mainWindow.once("ready-to-show", () => {
+      try { mutableState.mainWindow?.setIcon(windowIcon); } catch { /* 图标重申失败不影响功能 */ }
+    });
+  }
   // Windows 11 原生圆角（仅 win32；其余平台函数内静默跳过）。
   applyRoundedCorners(mutableState.mainWindow);
   // 登记进窗口广播总线：主窗口 ⇒ sendToWindow 只发它，broadcast* 发全部窗口（见 features/window-bus）

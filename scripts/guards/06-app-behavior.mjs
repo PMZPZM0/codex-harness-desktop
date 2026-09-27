@@ -1382,27 +1382,49 @@ w.postMessage({id:1,op:"list",root});
     const cssEntry = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
     (cssEntry.includes("./styles/20-team-office") ? ok : fail)("【154】办公室样式已接入 styles.css（20-team-office）");
     const officeCss = existsSync(join(ROOT, "src", "styles", "20-team-office.css")) ? readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8") : "";
-    /* 形态守卫（v3）：单张 SVG 插画（统一描边）+ 三态 + 动画，⛔ 不许退回折线图/div 色块 */
+    /* 形态守卫（09-27 v8「PixiJS 渲染」）：v1 折线图 / v2 div 色块 / v3 单张 SVG 插画
+       三版都被用户否过（「歪歪扭扭」「不好看」「手绘人物和素材家具违和」）⇒ 断言钉死：
+       画布 = PixiJS Application + 逐帧 animateScene，⛔ 不许退回任何一种被否形态。 */
     const officePath = join(ROOT, "src", "features", "team-office", "OfficeScene.tsx");
     const officeSrc = existsSync(officePath) ? readFileSync(officePath, "utf8") : "";
-    (officeSrc.includes("ofc-worker") && officeSrc.includes('"never"') && officeSrc.includes("state-${state}") ? ok : fail)("【154】虚拟办公室场景存在（拟人化角色 + 三态：工作/空闲/空工位）");
-    (officeSrc.includes("<svg") && /stroke=\{OFC\.ink\}/.test(officeSrc) ? ok : fail)("【154】办公室为单张 SVG 插画（统一描边，⛔ 不许退回 div 纯色块）");
-    (/.ofc-desk/.test(officeCss) && /.ofc-bubble/.test(officeCss) ? ok : fail)("【154】办公室样式（工位/角色）齐全");
-    (/ofc-type-a|ofc-zzz|ofc-sip/.test(officeCss) ? ok : fail)("【154】角色动画（敲键盘/打盹/端咖啡）存在");
+    const officeCanvasPath = join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx");
+    const officeCanvasSrc = existsSync(officeCanvasPath) ? readFileSync(officeCanvasPath, "utf8") : "";
+    (officeSrc.includes("<OfficeCanvas") && officeSrc.includes("snapshot: DirectorSnapshot") ? ok : fail)(
+      "【154】虚拟办公室场景存在（OfficeScene 薄壳 → OfficeCanvas，快照单源入参）"
+    );
+    (/new Application\(/.test(officeCanvasSrc) && /function animateScene\(/.test(officeCanvasSrc) ? ok : fail)(
+      "【154】场景是 PixiJS 画布（new Application + 逐帧 animateScene，不是静态插画）"
+    );
+    (!codeOnly(officeSrc + officeCanvasSrc).includes("<svg") ? ok : fail)(
+      "【154】⛔ 不许退回 SVG 手绘插画（v8 定稿 PixiJS；手绘人物与素材家具违和是换掉的起因）"
+    );
+    (/const state: "running" \| "idle" \| "never"/.test(officeCanvasSrc) ? ok : fail)(
+      "【154】三态仍在画面上（运行 / 空闲 / 空工位 never —— 状态收敛在画布层）"
+    );
+    (officeCanvasSrc.includes("pointertap") && officeCanvasSrc.includes("onOpenThread") ? ok : fail)(
+      "【154】点工位真实跳该成员会话（画布层事件 → onOpenThread，⛔ 不是装饰插画）"
+    );
+    (/\.office-scene\s*\{/.test(officeCss) ? ok : fail)(
+      "【154】画布宿主容器样式齐全（.office-scene —— 类名是接口，accept 的 CDP 选择器依赖它）"
+    );
+    (!/\.ofc-(desk|bubble|type-a|zzz|sip)/.test(officeCss) ? ok : fail)(
+      "【154】⛔ 场景级 .ofc-* 旧样式已清干净（留着 = 死样式，CSS 覆盖告警会一直报）"
+    );
   }
 
-  /* ══ 【168】办公室动画体系（09-26 v4「活起来」）═══════════════════════════
+  /* ══ 【168】办公室动画体系（09-26 v4「活起来」→ 09-27 v8 换 PixiJS 渲染）═════
      用户要求：办公室要「好看 + 有动画 + 员工之间交接 + 预设动画和随机动画」。
      形态钉死三件事：① 动画与数据解耦（导演是纯逻辑，不认识 DOM/React）
                     ② 快照单源（弹窗持有导演，场景只画 → 右栏看板与画面必然一致）
-                    ③ 走路必须是真的过渡（写 SVG transform 属性 = 人闪现到终点）。 */
+                    ③ 走路必须是**逐帧插值**（v8 在 PixiJS ticker 里做；
+                       v3 那种"直接写终点坐标/属性 = 人闪现到终点"依旧禁止）。 */
   {
     console.log(C.bold("\n【168】办公室动画体系（导演 / 姿势 / 交接 / 走路）"));
     const directorPath = join(ROOT, "src", "features", "team-office", "office-director.ts");
     const directorSrc = existsSync(directorPath) ? readFileSync(directorPath, "utf8") : "";
     const sceneSrc2 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeScene.tsx"), "utf8");
     const previewSrc2 = readFileSync(join(ROOT, "src", "features", "team-office", "TeamOfficePreview.tsx"), "utf8");
-    const css2 = readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8");
+    const canvas2 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
 
     // ① 导演必须是纯逻辑：不认识 React / DOM（否则没法离线写断言，且渲染与决策会缠在一起）
     (directorSrc.length > 0 && !/from "react"|document\.|window\./.test(directorSrc) ? ok : fail)(
@@ -1424,47 +1446,52 @@ w.postMessage({id:1,op:"list",root});
     (previewSrc2.includes("new OfficeDirector()") && /snapshot=\{snapshot\}/.test(previewSrc2) && !sceneSrc2.includes("new OfficeDirector()") ? ok : fail)(
       "【168】快照单源：导演在弹窗、场景只画 prop（否则画面与右栏看板会不一致）"
     );
-    // ⑥ 走路是真的过渡：CSS transform + transition，⛔ 不是写 SVG transform 属性（那是闪现）
-    (/\.ofc-walker-slot \{[^}]*transition: transform/.test(css2) && /--wk-x/.test(sceneSrc2) ? ok : fail)(
-      "【168】走动小人用 CSS transform 过渡（写 SVG transform 属性会让人「闪现」到终点）"
+    // ⑥ 走路必须是**逐帧插值**（v8：PixiJS ticker）—— 写终点坐标/属性 = 人闪现到终点
+    (/const e = easeInOut\(w\.t\)/.test(canvas2) && /w\.container\.position\.set\(x, y\)/.test(canvas2) && !/--wk-x/.test(canvas2) ? ok : fail)(
+      "【168】走动小人逐帧插值（easeInOut(w.t) + position.set；⛔ 写终点坐标会让人「闪现」）"
     );
-    // ⑦ 交接特效齐备：飞行卡片 + 落点脉冲 + 接收者惊叹号
-    (["ofc-handoff-card", "ofc-handoff-pulse", "ofc-handoff-alert"].every((k) => css2.includes(k)) ? ok : fail)(
-      "【168】交接特效齐备（飞行卡片 / 落点脉冲 / 接收者惊叹号）"
+    // ⑦ 交接特效齐备：起点圆点 + 落点圆环 + 落点脉冲 + 飞行卡片 + 说明标签
+    (["view.pulse", "view.card", "handoff.label", "h.pulse.alpha", "Math.sin(Math.PI * e)"].every((k) => canvas2.includes(k)) ? ok : fail)(
+      "【168】交接特效齐备（起点圆点 / 落点圆环 / 脉冲 / 弧线飞行卡片 / 标签）"
     );
     // ⑧ 场景必须真的渲染交接与走动人（⛔ 防止退回「死插画」）
-    (sceneSrc2.includes("snapshot.handoffs.map") && sceneSrc2.includes("<Walker") ? ok : fail)(
+    (canvas2.includes("scene.handoffs.forEach") && canvas2.includes("scene.walkers.forEach") && canvas2.includes("createWalker(") ? ok : fail)(
       "【168】场景渲染交接飞行与走动小人（不许退回静止插画）"
     );
-    // ⑨ 家具动效：v7 换成 Kenney **静态图**后，动效改由 CSS 挂在素材节点上。
+    // ⑨ 家具动效：静态素材（Kenney PNG）的动效出口 = 挂在 sprite 上的轻微摇摆。
     //    ⛔ 只做轻微摆动：整图旋转会让桌腿/底座一起转，一眼就是"贴纸在转"。
-    (["ofc-fan-sway", "ofc-plant-sway"].every((k) => css2.includes(k)) ? ok : fail)(
+    (/scene\.swayers\.forEach\(\(s\) => \{/.test(canvas2) && /s\.obj\.rotation = /.test(canvas2) ? ok : fail)(
       "【168】素材件动效齐备（吊扇轻摆 / 绿植微摇 —— 静态素材的动效出口）"
     );
-    // ⑩ 动效宿主必须真的在场景里（⛔ 只有 CSS 规则没有宿主 = 恒真假绿）
-    (sceneSrc2.includes("<IsoCeilingFan") && sceneSrc2.includes("<IsoPlant") ? ok : fail)(
-      "【168】动效宿主存在（吊扇与绿植真的挂在场景里，不是只有 CSS 规则）"
+    // ⑩ 动效宿主必须真的在场景里（⛔ 只有动效函数没有宿主 = 恒真假绿）
+    (/scene\.swayers\.push\(\{ obj: fan, amp:/.test(canvas2) && /createSprite\("ceilingFan"/.test(canvas2) ? ok : fail)(
+      "【168】动效宿主存在（吊扇真的挂在场景里并注册了摇摆，不是只有动画函数）"
     );
-    // ⑩ 姿势动画齐备（每个姿势都要有自己的手臂/躯干姿态，否则「预设动画」是空话）
-    (["pose-work", "pose-coffee", "pose-stretch", "pose-phone", "pose-note", "pose-doze"].every((k) => css2.includes("." + k + " ")) ? ok : fail)(
-      "【168】六种坐姿各有自己的动画（工作 / 咖啡 / 伸懒腰 / 手机 / 翻资料 / 打盹）"
+    // ⑪ 姿势动画齐备（每个坐姿都要有自己的手臂/躯干姿态，否则「预设动画」是空话）
+    (["doze", "stretch", "coffee", "phone", "note"].every((k) => canvas2.includes('pose.kind === "' + k + '"')) && /const typing = /.test(canvas2) ? ok : fail)(
+      "【168】六种坐姿各有自己的动画（工作打字 / 咖啡 / 伸懒腰 / 手机 / 翻资料 / 打盹）"
+    );
+    // ⑫ 姿势必须**真的画在人身上**：抽公共函数，落座/走动同画风（⛔ 防止有状态没渲染）
+    (/function createWorkerGraphics\(/.test(canvas2) && /function createWalker\(/.test(canvas2) && /function buildHead\(/.test(canvas2) ? ok : fail)(
+      "【168】坐姿与走动小人各有绘制函数（状态 → 图形的映射真实存在）"
     );
   }
 
-  /* ══ 【169】办公室素材链路（09-26 v7「换成 Kenney 美术素材」）════════════════
-     用户看完参考实现（workbzw/ai-office-react = PixiJS + Spine + 预渲染大图）后指出
-     「人物还是好丑 / 场景也很丑」—— 它的观感来自**美术素材**，不是技术。
-     调研后采用 Kenney「Furniture Kit」（CC0 1.0，可商用免署名）的**等距渲染件**替换手绘家具；
-     角色仍自绘（素材包只有家居物件，没有等距人物）。
-     ⛔ 钉死三件事：
-       ① 素材必须走**静态 import** —— import.meta.glob 在本模块被 root 之外的入口加载时
-          实测匹配到 0 个文件，且失败**静默** ⇒ 整间办公室的家具「凭空消失」却零报错；
-       ② 尺寸表必须覆盖每个素材文件 —— 缺一条 ⇒ IsoSprite 拿不到尺寸直接 return null；
-       ③ 工位必须三段式渲染（显示器 → 椅子 → 人 → 桌子）：桌子最近才遮得住人的下半身。 */
+  /* ══ 【169】办公室素材链路（09-26 v7 Kenney CC0 → 09-27 v8 交给 PixiJS Sprite）═══
+     用户看完参考实现（workbzw/ai-office-react = PixiJS + Spine + 预渲染大图）后要求
+     「复刻过来」⇒ 家具仍是 Kenney CC0 等距渲染件（改成静态 import 的 Sprite），
+     人物改由 PixiJS Graphics 程序绘制（素材包只有家居物件，没有等距人物）。
+     ⛔ 钉死四件事：
+        ① 素材必须走**静态 import** —— import.meta.glob 在本模块被 root 之外的入口加载时
+           实测匹配到 0 个文件，且失败**静默** ⇒ 整间办公室的家具「凭空消失」却零报错；
+        ② 尺寸表必须覆盖每个素材文件 —— 缺一条 ⇒ createSprite 拿不到尺寸直接 return null；
+        ③ 工位纵深必须**按地面基线排序**（显示器 → 椅子 → 人 → 桌子）：桌子最前才遮得住
+           人的下半身 —— v8 用 sortableChildren + zIndex 表达，⛔ 不许退回"按 addChild 顺序"；
+        ④ 素材许可写在文件头（Kenney Furniture Kit / CC0 1.0）。 */
   {
-    console.log(C.bold("\n【169】办公室素材链路（静态素材 / 尺寸表 / 工位三段式）"));
-    const furnSrc = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeFurniture.tsx"), "utf8");
-    const sceneSrc3 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeScene.tsx"), "utf8");
+    console.log(C.bold("\n【169】办公室素材链路（静态素材 / 尺寸表 / 工位纵深排序）"));
+    const furnSrc = existsSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"))
+      ? readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8") : "";
 
     // ⛔ 判据带左括号：注释里会提到这个 API 的名字，只有**调用形式**才算违规
     (!furnSrc.includes("import.meta.glob(") ? ok : fail)(
@@ -1480,12 +1507,15 @@ w.postMessage({id:1,op:"list",root});
     );
 
     ((() => {
-      const back = sceneSrc3.indexOf("<IsoDeskBack");
-      const person = sceneSrc3.indexOf("<SeatedWorker");
-      const front = sceneSrc3.indexOf("<IsoDeskFront");
-      return back >= 0 && person >= 0 && front >= 0 && back < person && person < front;
+      const back = furnSrc.indexOf("back.zIndex = slot.y - 0.4");
+      const chair = furnSrc.indexOf("chair.zIndex = slot.y - 0.3");
+      const person = furnSrc.indexOf("view.container.zIndex = slot.y - 0.2");
+      const front = furnSrc.indexOf("front.zIndex = slot.y - 0.1");
+      return back >= 0 && chair >= 0 && person >= 0 && front >= 0
+        && back < chair && chair < person && person < front
+        && /world\.sortableChildren = true/.test(furnSrc);
     })() ? ok : fail)(
-      "【169】工位三段式渲染顺序（显示器 → 人 → 桌子；桌子在人之后画才遮得住下半身）"
+      "【169】工位纵深排序（显示器 → 椅子 → 人 → 桌子，按地面基线 zIndex + sortableChildren）"
     );
 
     (/Kenney/.test(furnSrc) && /CC0/.test(furnSrc) ? ok : fail)(
@@ -1645,6 +1675,13 @@ w.postMessage({id:1,op:"list",root});
     // ① 三件套齐全（sync 投影 / describe UI 数据 / set 动作）
     ((["syncSkillPool", "describeSkillPool", "setSkillPoolState"].every((fn) => poolSrc.includes("export function " + fn))) ? ok : fail)(
       "【173】skill-pool.ts 三件套齐全（sync 投影 / describe / set）"
+    );
+    // ①b 项目独立性（09-27 用户拍板「A 项目启用禁用跟 B 项目没有毛关系」）：describe 的
+    //    active 必须按 cwd 自己的配置算（!globalDisabled && !projectDisabled），
+    //    ⛔ 禁止读磁盘改名态（磁盘是「最近一次 sync 项目」的投影，读它会把 A 的状态泄漏进 B 的
+    //    视图，且在 B 点开还会反向写坏 B 的配置——双向污染，实测复现过）。
+    (/active:\s*!globalDisabled\s*&&\s*!projectDisabled/.test(poolSrc) && !/active:\s*enabled\b/.test(poolSrc) ? ok : fail)(
+      "【173】describe 的 active 按项目配置算（禁读磁盘投影态，保证项目间独立）"
     );
     // ② 接线：ensureProjectAgentsMd 里必须调用 syncSkillPool（thread/start 前生效的唯一通道）
     const pcPool = readFileSync(join(ROOT, "electron", "project-conventions.ts"), "utf8");
