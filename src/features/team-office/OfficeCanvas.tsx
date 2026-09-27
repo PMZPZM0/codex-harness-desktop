@@ -107,6 +107,8 @@ interface SeatedParts {
   armBack: Graphics;
   armFront: Graphics;
   headwrap: Container;
+  /** 左右耳各一支（pivot 在耳根）—— 动画层做"单边抽动"的抓手 */
+  ears: Graphics[];
   /** 打盹时头顶浮起的 z（平时不可见） */
   doze: Container;
   pose: OfficePose;
@@ -129,6 +131,8 @@ interface WalkerParts {
   armBack: Graphics;
   armFront: Graphics;
   headwrap: Container;
+  /** 左右耳（pivot 在耳根）—— 走路时耳朵跟着颠 */
+  ears: Graphics[];
   /** 0 = 还在工位，1 = 已走到目标 */
   t: number;
   from: { x: number; y: number; scale: number };
@@ -161,11 +165,13 @@ interface SceneRefs {
   handoffs: Map<string, HandoffView>;
   /** 设施动画部件（饮水机水泡 / 打印机吐纸 / 挂钟走针 / 隔间指示灯 / 咖啡蒸汽） */
   props: PropTicker[];
+  /** 每台显示器的屏幕动画（⛔ 工位重建时整批换掉，别和 props 混在一个数组里） */
+  screens: PropTicker[];
   clock: number;
 }
 
 function emptyScene(): SceneRefs {
-  return { statics: new Map(), staticsKey: "", seats: new Map(), walkers: new Map(), tags: new Map(), handoffs: new Map(), props: [], clock: 0 };
+  return { statics: new Map(), staticsKey: "", seats: new Map(), walkers: new Map(), tags: new Map(), handoffs: new Map(), props: [], screens: [], clock: 0 };
 }
 
 export type OfficeCanvasProps = {
@@ -340,16 +346,19 @@ function syncStatics(world: Container, slots: Slot[], scene: SceneRefs) {
     }
   }
   scene.statics.clear();
+  scene.screens = [];
 
   for (const slot of slots) {
     const screen = screenKindOf(slot.idx, slot.running, slot.pose?.kind === "doze");
 
     const desk = new Graphics();
-    drawDeskStation(desk, slot.u, slot.v, screen);
     const deskBox = new Container();
     // 桌面占地的**中心**地面 y —— 比人物容器更小 = 更靠后
     deskBox.zIndex = floorPoint(slot.u, slot.v - DESK_DV / 2).y;
+    // ⛔ 桌子先挂进 box，再让 drawDeskStation 把"会动的屏幕"挂上去 —— 顺序反了屏幕会被外壳盖住
     deskBox.addChild(desk);
+    const screenAnim = drawDeskStation(desk, slot.u, slot.v, screen, deskBox);
+    if (screenAnim) scene.screens.push(screenAnim);
 
     const chair = new Graphics();
     drawChair(chair, slot.u, slot.v);
@@ -405,7 +414,9 @@ function syncPeople(
         container.on("pointertap", () => openThreadRef.current?.(memberId));
       }
       world.addChild(container);
-      view = { container, sig: "", parts: null, clock: 0 };
+      // clock 用 key 播种：不同成员的动画相位错开（否则全员同步抽耳/呼吸，一眼假）
+      const seed = slot.key;
+      view = { container, sig: "", parts: null, clock: ((seed.length * 37 + seed.charCodeAt(seed.length - 1) * 13) % 628) / 100 };
       scene.seats.set(slot.key, view);
     }
     view.container.position.set(slot.x, slot.y - SEAT_LIFT * slot.scale);
@@ -642,98 +653,101 @@ function tri(g: Graphics, x1: number, y1: number, x2: number, y2: number, x3: nu
  *    ② **不许顶进显示器**：耳朵最高点 = HEAD_CY − ry − 34 就是上限；
  *    ③ **两个物种不许长得像**：熊猫被换成了绵羊，就因为"跟熊只差耳径 3px"。
  */
-function drawEars(g: Graphics, animal: AnimalKind, rx: number, ry: number): void {
+/**
+ * 头顶**对称**特征（羊毛圈 / 刺猬刺 / 狮鬃）—— 画在头**之前**，头再压上去。
+ * ⛔ 这些是整圈的东西，拆不成左右两支，所以不能参与"单边抽动"（见 drawEarSide）。
+ */
+function drawHeadBackdrop(g: Graphics, animal: AnimalKind, rx: number, ry: number): void {
+  const t = HEAD_CY - ry;
+  if (animal === "sheep") {
+    // 绵羊：一圈小球堆成的"羊毛头"，整个轮廓都是锯齿
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      g.circle(Math.cos(a) * (rx + 5), HEAD_CY + 1 + Math.sin(a) * (ry + 5), 8.5).fill(SILHOUETTE);
+    }
+    g.circle(0, t - 4, 10).fill(SILHOUETTE);
+  } else if (animal === "hedgehog") {
+    // 刺猬：一圈尖刺（半圆铺开）
+    const n = 11;
+    for (let i = 0; i < n; i++) {
+      const a = Math.PI + ((i + 0.5) / n) * Math.PI;
+      const b = Math.PI + ((i - 0.5) / n) * Math.PI;
+      tri(
+        g,
+        Math.cos(a) * rx * 0.96, HEAD_CY + Math.sin(a) * ry * 0.96,
+        Math.cos(b) * rx * 0.96, HEAD_CY + Math.sin(b) * ry * 0.96,
+        Math.cos(a) * (rx + 18), HEAD_CY + Math.sin(a) * (ry + 18),
+      );
+    }
+  } else if (animal === "lion") {
+    // 狮子：一圈大锯齿圆当鬃毛
+    const R = rx + 11;
+    for (let i = 0; i < 15; i++) {
+      const a = (i / 15) * Math.PI * 2;
+      g.circle(Math.cos(a) * R, HEAD_CY + 2 + Math.sin(a) * R, 9.5).fill(SILHOUETTE);
+    }
+    g.circle(0, HEAD_CY + 2, R).fill(SILHOUETTE);
+  }
+}
+
+/**
+ * **单侧**耳朵（side：-1 左 / +1 右）—— 拆成左右两支是为了**单边抽动**（动画的抓手）。
+ * 坐标以**左耳**为基准写，右耳用 `M()` 镜像（多边形 / 圆 / 椭圆 / 二次曲线镜像都成立）。
+ *
+ * ⛔ 三条硬约束（改之前先读）：
+ *    ① **缩到 30px 宽还要认得出来**：耳朵必须明显大于头（耳高 ≥ 头顶上方 25 局部单位），
+ *       小耳朵配大圆头 ⇒ 全场 11 个角色读成同一只熊（v10 第二版实测）；
+ *    ② **不许顶进显示器**：耳尖 = HEAD_CY − ry − 34 就是上限（见 TAG_LIFT 的算式）；
+ *    ③ **两个物种不许长得像**：熊猫被换成绵羊，就因为"跟熊只差耳径 3px"。
+ */
+function drawEarSide(g: Graphics, animal: AnimalKind, rx: number, ry: number, side: -1 | 1): void {
   const t = HEAD_CY - ry;                 // 头顶
+  const M = (v: number) => -side * v;     // 左耳坐标为基准，右耳镜像
   switch (animal) {
     case "cat":
-      tri(g, -rx + 2, HEAD_CY - 5, -rx + 19, HEAD_CY - 10, -rx - 2, t - 31);
-      tri(g, rx - 2, HEAD_CY - 5, rx - 19, HEAD_CY - 10, rx + 2, t - 31);
+      tri(g, M(-rx + 2), HEAD_CY - 5, M(-rx + 19), HEAD_CY - 10, M(-rx - 2), t - 31);
       break;
     case "fox":
-      tri(g, -rx + 2, HEAD_CY - 4, -rx + 20, HEAD_CY - 11, -rx - 6, t - 34);
-      tri(g, rx - 2, HEAD_CY - 4, rx - 20, HEAD_CY - 11, rx + 6, t - 34);
+      tri(g, M(-rx + 2), HEAD_CY - 4, M(-rx + 20), HEAD_CY - 11, M(-rx - 6), t - 34);
       break;
-    case "dog": {
+    case "dog":
       // 垂耳：从头顶两侧垂到接近头心高度（唯一"往下垂"的物种，最好认）
-      g.moveTo(-rx + 3, HEAD_CY - 12)
-        .quadraticCurveTo(-rx - 21, HEAD_CY - 4, -rx - 10, HEAD_CY + 27)
-        .quadraticCurveTo(-rx + 4, HEAD_CY + 6, -rx + 13, HEAD_CY - 9)
-        .closePath().fill(SILHOUETTE);
-      g.moveTo(rx - 3, HEAD_CY - 12)
-        .quadraticCurveTo(rx + 21, HEAD_CY - 4, rx + 10, HEAD_CY + 27)
-        .quadraticCurveTo(rx - 4, HEAD_CY + 6, rx - 13, HEAD_CY - 9)
+      g.moveTo(M(-rx + 3), HEAD_CY - 12)
+        .quadraticCurveTo(M(-rx - 21), HEAD_CY - 4, M(-rx - 10), HEAD_CY + 27)
+        .quadraticCurveTo(M(-rx + 4), HEAD_CY + 6, M(-rx + 13), HEAD_CY - 9)
         .closePath().fill(SILHOUETTE);
       break;
-    }
     case "rabbit":
       // ⛔ 兔耳不能按真比例画长：顶到显示器下沿会把屏幕糊掉（上限 = 头顶上方 34 局部单位）
-      g.ellipse(-8, t - 15, 6.5, 19).fill(SILHOUETTE);
-      g.ellipse(8, t - 15, 6.5, 19).fill(SILHOUETTE);
+      g.ellipse(M(-8), t - 15, 6.5, 19).fill(SILHOUETTE);
       break;
     case "bear":
-      // ⛔ 别做成"大圆耳"：r 超过 15 就会变成米老鼠，与考拉撞脸（实测）⇒ 熊耳小且居中，考拉耳大且外扩
-      g.circle(-18, t + 5, 13).fill(SILHOUETTE);
-      g.circle(18, t + 5, 13).fill(SILHOUETTE);
-      break;
-    case "sheep":
-      // 绵羊：一圈小球堆成的"羊毛头"，整个轮廓都是锯齿 —— 剪影里最好认的一种
-      for (let i = 0; i < 12; i++) {
-        const a = (i / 12) * Math.PI * 2;
-        g.circle(Math.cos(a) * (rx + 5), HEAD_CY + 1 + Math.sin(a) * (ry + 5), 8.5).fill(SILHOUETTE);
-      }
-      g.circle(0, t - 4, 10).fill(SILHOUETTE);
+      // ⛔ 别做成"大圆耳"：r 超过 15 就会变成米老鼠，与考拉撞脸（实测）
+      g.circle(M(-18), t + 5, 13).fill(SILHOUETTE);
       break;
     case "koala":
-      // 考拉：**大而外扩**的毛耳（与熊的小圆耳拉开距离），耳心再点一个浅色小环做"毛"的暗示
-      g.circle(-rx - 4, t + 20, 17).fill(SILHOUETTE);
-      g.circle(rx + 4, t + 20, 17).fill(SILHOUETTE);
+      // 考拉：**大而外扩**的毛耳（与熊的小圆耳拉开距离）
+      g.circle(M(-rx - 4), t + 20, 17).fill(SILHOUETTE);
       break;
     case "mouse":
-      g.circle(-21, t + 4, 13.5).fill(SILHOUETTE);
-      g.circle(21, t + 4, 13.5).fill(SILHOUETTE);
+      g.circle(M(-21), t + 4, 13.5).fill(SILHOUETTE);
       break;
-    case "deer": {
-      g.ellipse(-17, t + 7, 6, 12).fill(SILHOUETTE);
-      g.ellipse(17, t + 7, 6, 12).fill(SILHOUETTE);
-      // 分叉角：主干 + 两个分叉（往上长，与兔耳的区别是"细枝"而不是"叶子"）
-      [-1, 1].forEach((s) => {
-        g.moveTo(s * 10, t + 6).lineTo(s * 15, t - 20).stroke({ color: SILHOUETTE, width: 4.4 });
-        g.moveTo(s * 15, t - 20).lineTo(s * 24, t - 30).stroke({ color: SILHOUETTE, width: 3.6 });
-        g.moveTo(s * 14, t - 12).lineTo(s * 23, t - 16).stroke({ color: SILHOUETTE, width: 3.6 });
-      });
+    case "deer":
+      g.ellipse(M(-17), t + 7, 6, 12).fill(SILHOUETTE);
+      // 分叉角：往上长，与兔耳的区别是"细枝"而不是"叶子"
+      g.moveTo(M(-10), t + 6).lineTo(M(-15), t - 20).stroke({ color: SILHOUETTE, width: 4.4 });
+      g.moveTo(M(-15), t - 20).lineTo(M(-24), t - 30).stroke({ color: SILHOUETTE, width: 3.6 });
+      g.moveTo(M(-14), t - 12).lineTo(M(-23), t - 16).stroke({ color: SILHOUETTE, width: 3.6 });
       break;
-    }
-    case "hedgehog": {
-      // 一圈尖刺（半圆铺开）
-      const n = 11;
-      for (let i = 0; i < n; i++) {
-        const a = Math.PI + ((i + 0.5) / n) * Math.PI;
-        const b = Math.PI + ((i - 0.5) / n) * Math.PI;
-        tri(
-          g,
-          Math.cos(a) * rx * 0.96, HEAD_CY + Math.sin(a) * ry * 0.96,
-          Math.cos(b) * rx * 0.96, HEAD_CY + Math.sin(b) * ry * 0.96,
-          Math.cos(a) * (rx + 18), HEAD_CY + Math.sin(a) * (ry + 18),
-        );
-      }
-      break;
-    }
     case "pig":
-      tri(g, -rx + 1, HEAD_CY - 4, -rx + 16, t + 10, -rx - 7, t - 12);
-      tri(g, rx - 1, HEAD_CY - 4, rx - 16, t + 10, rx + 7, t - 12);
+      tri(g, M(-rx + 1), HEAD_CY - 4, M(-rx + 16), t + 10, M(-rx - 7), t - 12);
       break;
-    case "lion": {
-      // 鬃毛：一圈大锯齿圆（先画，头再压上去）+ 两只小圆耳
-      const R = rx + 11;
-      for (let i = 0; i < 15; i++) {
-        const a = (i / 15) * Math.PI * 2;
-        g.circle(Math.cos(a) * R, HEAD_CY + 2 + Math.sin(a) * R, 9.5).fill(SILHOUETTE);
-      }
-      g.circle(0, HEAD_CY + 2, R).fill(SILHOUETTE);
-      g.circle(-18, t + 10, 9).fill(SILHOUETTE);
-      g.circle(18, t + 10, 9).fill(SILHOUETTE);
+    case "lion":
+      // 鬃毛是整圈（在 drawHeadBackdrop），这里只补两只小圆耳
+      g.circle(M(-18), t + 10, 9).fill(SILHOUETTE);
       break;
-    }
+    default:
+      break;                              // sheep / hedgehog 没有单侧耳朵
   }
 }
 
@@ -759,16 +773,37 @@ const HEAD_SIZE: Record<AnimalKind, [number, number]> = {
   lion: [28, 22],
 };
 
-/** 脖子以上：头顶特征 + 头。⛔ 剪影是**平的纯黑**（参考就是这样）——
+/** 头部件：`ears` 单独暴露出来，动画层才能做**单边抽动**。 */
+type HeadParts = { wrap: Container; ears: Graphics[] };
+
+/** 脖子以上：对称特征 → 左右耳 → 头（头压在最上层）。⛔ 剪影是**平的纯黑**（参考就是这样）——
  *  不要给头加"高光/腮红"之类：在 40px 尺寸下会看着像一块洗不掉的污渍（实测过一版）。 */
-function buildAnimalHead(cosplay: Cosplay): Container {
+function buildAnimalHead(cosplay: Cosplay): HeadParts {
   const wrap = new Container();
   const [rx, ry] = HEAD_SIZE[cosplay.animal];
-  const g = new Graphics();
-  drawEars(g, cosplay.animal, rx, ry);
-  g.ellipse(0, HEAD_CY, rx, ry).fill(SILHOUETTE);
-  wrap.addChild(g);
-  return wrap;
+
+  const back = new Graphics();
+  drawHeadBackdrop(back, cosplay.animal, rx, ry);
+  wrap.addChild(back);
+
+  // 左右耳各自一支 Graphics：pivot = position = 耳根 ⇒ 抽动时绕耳根转、**不产生位移**
+  const ears: Graphics[] = [];
+  for (const side of [-1, 1] as const) {
+    const e = new Graphics();
+    drawEarSide(e, cosplay.animal, rx, ry, side);
+    const px = side * rx * 0.62;
+    const py = HEAD_CY - ry * 0.42;
+    e.pivot.set(px, py);
+    e.position.set(px, py);
+    wrap.addChild(e);
+    ears.push(e);
+  }
+
+  const head = new Graphics();
+  head.ellipse(0, HEAD_CY, rx, ry).fill(SILHOUETTE);
+  wrap.addChild(head);
+
+  return { wrap, ears };
 }
 
 /**
@@ -811,9 +846,10 @@ function createWorkerGraphics(pose: OfficePose, cosplay: Cosplay, back: boolean)
 
   c.addChild(body);
 
-  // 头（含耳朵）
+  // 头（含耳朵）—— ears 拿出来给动画层抽动
   const headwrap = new Container();
-  headwrap.addChild(buildAnimalHead(cosplay));
+  const { wrap: headWrap, ears } = buildAnimalHead(cosplay);
+  headwrap.addChild(headWrap);
   c.addChild(headwrap);
 
   // 项圈（脖子那一圈 —— 全身唯一的颜色）
@@ -860,7 +896,7 @@ function createWorkerGraphics(pose: OfficePose, cosplay: Cosplay, back: boolean)
 
   return {
     container: c,
-    parts: { body, armBack, armFront, headwrap, doze, pose },
+    parts: { body, armBack, armFront, headwrap, ears, doze, pose },
   };
 }
 
@@ -909,7 +945,8 @@ function createWalker(cosplay: Cosplay, ground: { x: number; y: number; scale: n
   const headwrap = new Container();
   headwrap.position.set(0, -76);
   headwrap.scale.set(0.94);
-  headwrap.addChild(buildAnimalHead(cosplay));
+  const { wrap: headWrap, ears: walkEars } = buildAnimalHead(cosplay);
+  headwrap.addChild(headWrap);
   body.addChild(headwrap);
 
   const shadow = new Graphics();
@@ -924,6 +961,7 @@ function createWalker(cosplay: Cosplay, ground: { x: number; y: number; scale: n
     armBack,
     armFront,
     headwrap,
+    ears: walkEars,
     t: 0,
     from: { ...ground },
     to: { ...ground },
@@ -939,6 +977,8 @@ function animateScene(scene: SceneRefs, delta: number) {
 
   // 设施动画（饮水机水泡 / 打印机吐纸 / 挂钟走针 / 隔间灯 / 咖啡蒸汽）
   scene.props.forEach((p) => p.update(scene.clock));
+  // ⛔ 屏幕动画单独一组（工位重建时整批换掉）—— 只挂不驱动的 ticker 是"看起来接好了"的假象
+  scene.screens.forEach((p) => p.update(scene.clock));
 
   scene.seats.forEach((view) => {
     if (!view.parts) return;
@@ -949,6 +989,13 @@ function animateScene(scene: SceneRefs, delta: number) {
     p.headwrap.rotation = 0;
     p.body.rotation = 0;
     p.body.scale.y = 1;
+    // 耳朵（单边抽动）：sin 的 24 次方让抽动只出现在一个很窄的窗口里（偶尔抽一下）；
+    // 打盹时整体耷拉（向外转 0.55 rad）。⛔ pivot 在耳根，转的是耳朵本身、不产生位移。
+    const flick = (i: number) => Math.pow(Math.max(0, Math.sin(t * 0.5 + i * 2.4)), 24);
+    const droop = p.pose.kind === "doze" ? 0.55 : 0;
+    p.ears.forEach((ear, i) => {
+      ear.rotation = (i === 0 ? -1 : 1) * (droop + flick(i) * 0.3);
+    });
     // 爪子姿势都是**相对基准张角**的增量（ARM_SPREAD 是"外张抱着桌沿"的静止姿态）
     const arms = (back: number, front: number) => {
       p.armBack.rotation = -ARM_SPREAD + back;
@@ -1025,6 +1072,11 @@ function animateScene(scene: SceneRefs, delta: number) {
     w.armFront.rotation = -ARM_SPREAD * 0.5 + swing * 0.3;
     w.body.y = walking ? -Math.abs(Math.sin(w.clock * 7)) * 2.6 : 0;
     w.headwrap.rotation = walking ? Math.sin(w.clock * 7) * 0.04 : 0;
+    // 走路时耳朵随步伐上下颠（左右反相，像真的在跑）
+    const bounce = walking ? Math.abs(Math.sin(w.clock * 7)) : 0;
+    w.ears.forEach((ear, i) => {
+      ear.rotation = (i === 0 ? -1 : 1) * bounce * 0.14;
+    });
   });
 
   scene.handoffs.forEach((h) => {

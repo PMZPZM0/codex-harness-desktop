@@ -381,47 +381,182 @@ export const CHAIR_BACK_TOP = 74;
 /** 屏幕内容变体（照参考：每个工位屏幕上是不同的东西，一眼能看出"在跑什么"）。 */
 export type ScreenKind = "code" | "sheet" | "chart" | "design" | "mail" | "sleep";
 
-function drawScreen(g: Graphics, kind: ScreenKind, x: number, y: number, w: number, h: number): void {
-  // ⛔ 屏幕一律**亮底**（只有打盹那台是暗的）：参考里屏幕是画面里最亮的东西，
-  //    上"深色代码编辑器"会让整排工位看着像显示器没开机（第一版实测）。
-  g.rect(x, y, w, h).fill(kind === "sleep" ? hex("#232a35") : hex("#f7fafd"));
-  const pad = w * 0.09;
-  const line = (row: number, len: number, color: number, lh = h * 0.09) => {
-    g.rect(x + pad, y + pad * 0.9 + row * lh, len, Math.max(1.4, h * 0.055)).fill(color);
+/** 屏幕底色（只有打盹那台是暗的）。 */
+function screenBg(kind: ScreenKind): number {
+  return kind === "sleep" ? hex("#232a35") : hex("#f8fafd");
+}
+
+/**
+ * 画一台显示器的**屏幕**（含逐帧动画），返回驱动它的 ticker。
+ *
+ * ⛔ 三条纪律：
+ *   ① 动的部件一律是**独立 Graphics + 每帧只改 transform / alpha**，⛔ 不许每帧 clear + 重画
+ *      （9 个工位 × 十几块图形，重建几何会把顶点缓冲刷爆；动画就该只动变换）。
+ *   ② 屏幕要挂在 host 上（**桌子那个 Graphics 之后**），否则被显示器外壳盖住。
+ *   ③ 每种屏的动画要和它"在干什么"对得上：代码在逐行敲、图表在长、表格有选中框在走、
+ *      邮件有未读点在闪、打盹的机器是暗屏 + 缓慢呼吸（见 OfficeCanvas 的 screenKindOf）。
+ */
+function drawScreen(host: Container, kind: ScreenKind, monX: number, shellTop: number, mw: number, mh: number): PropTicker {
+  const x = monX - mw * 0.45;
+  const y = shellTop + mh * 0.11;
+  const w = mw * 0.9;
+  const h = mh * 0.9;
+  const box = new Container();
+  host.addChild(box);
+
+  const bg = new Graphics();
+  bg.rect(x, y, w, h).fill(screenBg(kind));
+  box.addChild(bg);
+
+  const jobs: Array<(t: number) => void> = [];
+  /** 一块会动的图形：`draw` 只跑一次，`apply` 每帧只改 transform / alpha。 */
+  const part = (draw: (g: Graphics) => void, apply: (g: Graphics, t: number) => void): Graphics => {
+    const gg = new Graphics();
+    draw(gg);
+    box.addChild(gg);
+    jobs.push((t) => apply(gg, t));
+    return gg;
   };
+  const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+  const cyc = (t: number, period: number, offset = 0) => ((t / period + offset) % 1);
+  const pad = w * 0.09;
+
   if (kind === "code") {
-    // 左边一条工具栏 + 彩色"语法"行（亮底，但一眼看出是代码）
-    g.rect(x, y, w * 0.14, h).fill(hex("#e9eef5"));
+    const gut = new Graphics();
+    gut.rect(x, y, w * 0.14, h).fill(hex("#e9eef5"));
+    box.addChild(gut);
     const cols = [hex("#4f9e6b"), hex("#3f7fcf"), hex("#c9922f"), hex("#8a5fd0")];
-    for (let i = 0; i < 6; i++) line(i, w * (0.28 + ((i * 7) % 5) * 0.1), cols[i % 4]);
-  } else if (kind === "sheet") {
-    g.rect(x + pad * 0.6, y + pad * 0.7, w - pad * 1.2, h * 0.12).fill(hex("#4a86cf"));
-    for (let i = 0; i < 4; i++) {
-      g.rect(x + pad * 0.6, y + pad * 0.7 + h * 0.18 + i * h * 0.16, w - pad * 1.2, h * 0.11)
-        .fill(i % 2 ? hex("#dfe9f4") : hex("#eef3f9"));
+    const lh = h * 0.126;
+    const lens: number[] = [];
+    // 逐行"敲"出来：每行按进度把宽度从左边长出来（scale.x），⛔ 不改几何
+    for (let i = 0; i < 6; i++) {
+      const len = w * 0.62 * (0.5 + ((i * 7) % 5) * 0.12);
+      lens.push(len);
+      part(
+        (gg) => { gg.roundRect(0, 0, len, Math.max(1.6, h * 0.07), 1).fill(cols[i % 4]); },
+        (gg, t) => {
+          gg.position.set(x + w * 0.19, y + h * 0.085 + i * lh);
+          gg.scale.x = clamp01((cyc(t, 3.2) * 1.45 - i * 0.19) / 0.19);
+        },
+      );
     }
+    // 光标：跟在"最新一行"末尾闪
+    part(
+      (gg) => { gg.rect(0, 0, Math.max(1.8, w * 0.028), Math.max(3.4, h * 0.11)).fill(hex("#3f7fcf")); },
+      (gg, t) => {
+        const prog = cyc(t, 3.2) * 1.45;
+        const row = Math.min(5, Math.max(0, Math.floor(prog / 0.19)));
+        const grown = clamp01((prog - row * 0.19) / 0.19);
+        gg.position.set(x + w * 0.19 + lens[row] * grown + 1.5, y + h * 0.075 + row * lh);
+        gg.alpha = Math.sin(t * 7) > -0.2 ? 0.85 : 0.15;
+      },
+    );
+  } else if (kind === "sheet") {
+    const head = new Graphics();
+    head.rect(x + pad * 0.6, y + pad * 0.7, w - pad * 1.2, h * 0.12).fill(hex("#4a86cf"));
+    box.addChild(head);
+    for (let i = 0; i < 4; i++) {
+      const row = new Graphics();
+      row.rect(x + pad * 0.6, y + pad * 0.7 + h * 0.18 + i * h * 0.16, w - pad * 1.2, h * 0.11)
+        .fill(i % 2 ? hex("#dfe9f4") : hex("#eef3f9"));
+      box.addChild(row);
+    }
+    // 选中的行：一个浅蓝框在四行之间走一圈（"有人在翻表格"）
+    part(
+      (gg) => {
+        gg.roundRect(x + pad * 0.5, y + pad * 0.6 + h * 0.17, w - pad, h * 0.135, 1.5)
+          .stroke({ color: hex("#4a86cf"), width: 1.4 });
+      },
+      (gg, t) => {
+        gg.position.y = Math.floor(cyc(t, 4.6) * 4) * h * 0.16;
+        gg.alpha = 0.85;
+      },
+    );
+    // 单元格里一个闪烁的编辑光标
+    part(
+      (gg) => { gg.rect(0, 0, 1.4, Math.max(3, h * 0.095)).fill(hex("#2f6bdd")); },
+      (gg, t) => {
+        gg.position.set(x + w * 0.55, y + pad * 0.8 + h * 0.19 + Math.floor(cyc(t, 4.6) * 4) * h * 0.16);
+        gg.alpha = Math.sin(t * 6.5) > 0 ? 0.9 : 0.1;
+      },
+    );
   } else if (kind === "chart") {
-    const bars = [0.4, 0.72, 0.55, 0.9, 0.66];
-    bars.forEach((bh, i) => {
-      const bw = (w - pad * 2) / 6.2;
-      g.rect(x + pad + i * bw * 1.24, y + h - pad - bh * (h - pad * 2) * 0.9, bw, bh * (h - pad * 2) * 0.9)
-        .fill(i === 3 ? hex("#4a86cf") : hex("#9dc0e6"));
+    const base = new Graphics();
+    base.rect(x + pad, y + h - pad, w - pad * 2, 1.6).fill(hex("#b9c8d8"));
+    box.addChild(base);
+    const statics = [0.42, 0.72, 0.56, 0.9, 0.66];
+    const bw = (w - pad * 2) / 6.2;
+    statics.forEach((bh, i) => {
+      const full = Math.max(3, bh * (h - pad * 2) * 0.92);
+      part(
+        (gg) => { gg.roundRect(0, 0, bw, full, 1.2).fill(i === 3 ? hex("#4a86cf") : hex("#9dc0e6")); },
+        (gg, t) => {
+          gg.position.set(x + pad + i * bw * 1.24, y + h - pad - 1.6);
+          // 柱子上下"呼吸"（像实时数据在刷新）；中点对齐免得基线漂
+          gg.pivot.set(0, full);
+          gg.scale.y = 0.62 + 0.38 * (0.5 + 0.5 * Math.sin(t * 1.1 + i * 0.7));
+        },
+      );
     });
-    g.rect(x + pad, y + h - pad, w - pad * 2, 1.6).fill(hex("#b9c8d8"));
   } else if (kind === "design") {
-    g.rect(x + pad * 0.7, y + pad * 0.7, (w - pad * 1.8) * 0.52, (h - pad * 1.6) * 0.6).fill(hex("#cfd9e6"));
-    g.rect(x + w * 0.56, y + pad * 0.7, (w - pad * 1.8) * 0.36, (h - pad * 1.6) * 0.28).fill(hex("#e3c48b"));
-    g.rect(x + w * 0.56, y + pad * 0.7 + (h - pad * 1.6) * 0.36, (w - pad * 1.8) * 0.36, (h - pad * 1.6) * 0.24).fill(hex("#a9cfe0"));
+    part((gg) => { gg.roundRect(0, 0, w * 0.44, h * 0.56, 1.5).fill(hex("#cfd9e6")); },
+      (gg, t) => { gg.position.set(x + pad * 0.7 + Math.sin(t * 0.5) * w * 0.02, y + pad * 0.7); });
+    const blk2 = new Graphics();
+    blk2.roundRect(x + w * 0.56, y + pad * 0.7, w * 0.32, h * 0.26, 1.5).fill(hex("#e3c48b"));
+    const blk3 = new Graphics();
+    blk3.roundRect(x + w * 0.56, y + pad * 0.7 + h * 0.32, w * 0.32, h * 0.22, 1.5).fill(hex("#a9cfe0"));
+    box.addChild(blk2, blk3);
+    // 在画布上拖动的选区框
+    part((gg) => { gg.rect(0, 0, w * 0.30, h * 0.20).stroke({ color: hex("#2f6bdd"), width: 1.4 }); },
+      (gg, t) => {
+        const p = cyc(t, 6.5);
+        gg.position.set(x + pad * 0.7 + p * w * 0.36, y + pad * 0.8 + p * h * 0.34);
+        gg.alpha = p < 0.85 ? 0.9 : 0;
+      });
   } else if (kind === "mail") {
     for (let i = 0; i < 3; i++) {
-      g.rect(x + pad * 0.7, y + pad * 0.8 + i * h * 0.27, w - pad * 1.4, h * 0.21).fill(i === 0 ? hex("#e8eff8") : hex("#f1f5fa"));
-      g.circle(x + pad * 1.15, y + pad * 0.8 + i * h * 0.27 + h * 0.105, h * 0.055).fill(i === 0 ? hex("#4a86cf") : hex("#b6c3d2"));
+      const row = new Graphics();
+      row.rect(x + pad * 0.7, y + pad * 0.8 + i * h * 0.27, w - pad * 1.4, h * 0.21).fill(i === 0 ? hex("#e8eff8") : hex("#f1f5fa"));
+      row.circle(x + pad * 1.15, y + pad * 0.8 + i * h * 0.27 + h * 0.105, h * 0.055).fill(i === 0 ? hex("#4a86cf") : hex("#b6c3d2"));
+      box.addChild(row);
     }
+    // 未读点：呼吸式脉冲（"有新消息一直没点开"）
+    part((gg) => { gg.circle(0, 0, Math.max(1.8, h * 0.055)).fill(hex("#e0453c")); },
+      (gg, t) => {
+        gg.position.set(x + w * 0.90, y + pad * 0.8 + h * 0.105);
+        gg.alpha = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(t * 3.4));
+        const s = 1 + 0.35 * (0.5 + 0.5 * Math.sin(t * 3.4));
+        gg.scale.set(s);
+      });
   } else {
-    // 打盹：暗屏 + 两个大小不同的圆（屏幕保护）；底色已在函数开头铺过
-    g.circle(x + w * 0.32, y + h * 0.42, h * 0.075).stroke({ color: hex("#7f8ea3"), width: 1.4 });
-    g.circle(x + w * 0.62, y + h * 0.62, h * 0.095).stroke({ color: hex("#68758a"), width: 1.4 });
+    // 打盹：暗屏 + 两个大小不同的圆 + 极缓慢的亮度呼吸（像屏保）
+    const halo = new Graphics();
+    halo.rect(x, y, w, h).fill({ color: hex("#8fb6e8"), alpha: 0.06 });
+    box.addChild(halo);
+    part((gg) => { gg.circle(0, 0, Math.max(3, h * 0.09)).stroke({ color: hex("#7f8ea3"), width: 1.4 }); },
+      (gg, t) => {
+        const c = cyc(t, 3.6);
+        gg.position.set(x + w * 0.32, y + h * 0.40 - c * h * 0.18);
+        gg.alpha = c < 0.15 ? c / 0.15 : Math.max(0, 1 - (c - 0.15) / 0.85) * 0.9;
+      });
+    part((gg) => { gg.circle(0, 0, Math.max(4, h * 0.12)).stroke({ color: hex("#68758a"), width: 1.4 }); },
+      (gg, t) => {
+        const c = cyc(t, 3.6, 0.45);
+        gg.position.set(x + w * 0.62, y + h * 0.58 - c * h * 0.18);
+        gg.alpha = c < 0.15 ? c / 0.15 : Math.max(0, 1 - (c - 0.15) / 0.85) * 0.8;
+      });
+    jobs.push((t) => { halo.alpha = 0.35 + 0.35 * (0.5 + 0.5 * Math.sin(t * 0.8)); });
   }
+
+  // 玻璃反光（静态，斜着一条）—— 有它屏幕才"像一块玻璃"而不是一张贴纸
+  if (kind !== "sleep") {
+    const gl = new Graphics();
+    gl.poly([x + w * 0.08, y + h, x + w * 0.30, y, x + w * 0.46, y, x + w * 0.24, y + h])
+      .fill({ color: 0xffffff, alpha: 0.34 });
+    box.addChild(gl);
+  }
+
+  return { update: (t) => { for (const j of jobs) j(t); } };
 }
 
 /**
@@ -440,7 +575,7 @@ export function screenKindOf(index: number, running: boolean, dozing: boolean): 
  * ⛔ 桌子往**远侧**（v 减小）铺 —— 角色坐近侧、背对观众，桌椅才不会压在人身上。
  * ⛔ 椅子**不在这里**：它要盖在角色之上（见 drawChair），画进同一个 Graphics 会把人挡住。
  */
-export function drawDeskStation(g: Graphics, u: number, v: number, screen: ScreenKind): void {
+export function drawDeskStation(g: Graphics, u: number, v: number, screen: ScreenKind, host?: Container): PropTicker | null {
   const seat = floorPoint(u, v);
   const k = seat.scale;
   const cx = seat.x;
@@ -485,7 +620,7 @@ export function drawDeskStation(g: Graphics, u: number, v: number, screen: Scree
   g.rect(drawer.x - 9 * k, drawer.y - DESK_H * 0.68 * k, 18 * k, 2 * k).fill(SKIN.deskEdge);
   g.rect(drawer.x - 9 * k, drawer.y - DESK_H * 0.42 * k, 18 * k, 2 * k).fill(SKIN.deskEdge);
 
-  // ⑤ 显示器：浅色外壳 + 深色内圈（屏幕"嵌"进去）+ 大屏（屏幕朝观众）+ 支架 + 电源点
+  // ⑤ 显示器：屏后光晕 + 浅色外壳 + 深色内圈（屏幕"嵌"进去）+ 支架 + 亮唇 + 电源点
   const deskW = floorPoint(u1, v).x - floorPoint(u0, v).x;
   // ⛔ 宽度**封顶**：前排的桌宽是后排的 1.25 倍，不封顶的话前排显示器会长到上一排人的胸口，
   //    把上一排的项圈/椅子盖掉（实测过一次）。
@@ -494,21 +629,72 @@ export function drawDeskStation(g: Graphics, u: number, v: number, screen: Scree
   const mon = floorPoint(u, vFar + DESK_DV * 0.30);
   const baseY = mon.y - (DESK_H + MONITOR_LIFT) * k;
   const shellTop = baseY - mh * 1.14;
+  // 屏后一层很淡的光晕：屏幕是画面里最亮的东西，光会"洒"到显示器外的白墙上
+  const lit = screen !== "sleep";
+  if (lit) {
+    g.roundRect(mon.x - mw * 0.60, shellTop - mh * 0.08, mw * 1.20, mh * 1.30, mw * 0.10)
+      .fill({ color: hex("#cfe2f5"), alpha: 0.3 });
+  }
   g.ellipse(mon.x, baseY + MONITOR_LIFT * k, mw * 0.19, 3.6 * k).fill(SKIN.monitorStand);
   g.rect(mon.x - mw * 0.05, baseY, mw * 0.10, MONITOR_LIFT * k).fill(SKIN.monitorStand);
   g.roundRect(mon.x - mw / 2, shellTop, mw, mh * 1.14, mw * 0.035).fill(SKIN.monitorShell);
   g.roundRect(mon.x - mw * 0.47, shellTop + mh * 0.09, mw * 0.94, mh * 0.94, mw * 0.02).fill(hex("#3a4048"));
-  drawScreen(g, screen, mon.x - mw * 0.45, shellTop + mh * 0.11, mw * 0.90, mh * 0.90);
-  // 底部亮唇 + 电源指示灯（几像素的细节，但"像不像一台显示器"全在这）
+  // 屏幕本体（含逐帧动画）挂在 host 上 —— ⛔ 必须在桌子这个 Graphics **之后**，否则被外壳盖住
+  const screenAnim = host ? drawScreen(host, screen, mon.x, shellTop, mw, mh) : null;
+  // 底部亮唇 + 电源指示灯（几像素的细节，但"像不像一台显示器"全在这；熄屏时灯转灰）
   g.roundRect(mon.x - mw * 0.09, baseY - mh * 0.075, mw * 0.18, 2.2, 1.1).fill(hex("#cdd2d9"));
-  g.circle(mon.x + mw * 0.37, baseY - mh * 0.05, 1.5).fill(hex("#8fd6a4"));
+  g.circle(mon.x + mw * 0.37, baseY - mh * 0.05, 1.5).fill(lit ? hex("#8fd6a4") : hex("#a9b0b8"));
   g.roundRect(mon.x - mw / 2, shellTop, mw, mh * 1.14, mw * 0.035).stroke({ color: SKIN.monitorEdge, width: 1.3 });
 
-  // ⑥ 键鼠（贴桌沿，人侧）
-  const kb = floorPoint(u, v - 0.045);
+  // ⑥ 键鼠（贴桌沿）。⛔ 键盘**不居中**：人坐在正中、躯干会把居中的键盘整个挡住
+  //    （放大实测只剩两条白边），挪到人的左手侧才读得出来；鼠标垫贴键盘右侧。
+  const kb = floorPoint(u - 0.042, v - 0.045);
   const ky = kb.y - DESK_H * k;
-  g.roundRect(kb.x - deskW * 0.19, ky - deskW * 0.055, deskW * 0.38, deskW * 0.028, 2).fill(hex("#e2dfd9"));
-  g.ellipse(kb.x + deskW * 0.26, ky - deskW * 0.032, deskW * 0.026, deskW * 0.019).fill(hex("#e2dfd9"));
+  const kbW = deskW * 0.32;
+  const kbH = deskW * 0.05;
+  const kbX = kb.x - kbW / 2;
+  const kbY = ky - kbH;
+  // 键盘底盘（投影 + 底盘 + 键区）
+  g.ellipse(kb.x, ky + 1.2 * k, kbW * 0.56, 2.6 * k).fill({ color: SKIN.shadow, alpha: 0.07 });
+  g.roundRect(kbX, kbY, kbW, kbH, 2).fill(hex("#e8e5df"));
+  g.roundRect(kbX + 1.2, kbY + 1.2, kbW - 2.4, kbH - 2.4, 1.5).fill(hex("#f2efe9"));
+  // 三行键位：细暗线（放大能看出是按键行，缩小就是纹理）
+  for (let i = 1; i <= 3; i++) {
+    g.moveTo(kbX + kbW * 0.08, kbY + (kbH * i) / 4).lineTo(kbX + kbW * 0.92, kbY + (kbH * i) / 4)
+      .stroke({ color: hex("#cfcac2"), width: 0.8 });
+  }
+  // 空格键 + 回车键（两个"大键"，一眼是键盘）
+  g.roundRect(kbX + kbW * 0.26, kbY + kbH * 0.78, kbW * 0.4, kbH * 0.14, 1).fill(hex("#d8d3ca"));
+  g.roundRect(kbX + kbW * 0.78, kbY + kbH * 0.1, kbW * 0.12, kbH * 0.5, 1).fill(hex("#d8d3ca"));
+
+  // 鼠标垫 + 鼠标（滚轮 + 受光高光；⛔ 高光别太亮，浅灰就够）
+  const mpX = kbX + kbW + deskW * 0.045;
+  g.roundRect(mpX - deskW * 0.048, ky - deskW * 0.06, deskW * 0.096, deskW * 0.07, 2)
+    .fill(hex("#dfe3e8"));
+  g.ellipse(mpX, ky - deskW * 0.028, deskW * 0.021, deskW * 0.019).fill(hex("#f4f2ee"));
+  g.ellipse(mpX, ky - deskW * 0.028, deskW * 0.021, deskW * 0.019).stroke({ color: hex("#cfcbc3"), width: 0.9 });
+  g.moveTo(mpX, ky - deskW * 0.042).lineTo(mpX, ky - deskW * 0.021)
+    .stroke({ color: hex("#b9b3a9"), width: 0.9 });
+  g.circle(mpX - deskW * 0.007, ky - deskW * 0.034, deskW * 0.0038).fill({ color: 0xffffff, alpha: 0.8 });
+
+  // ⑦ 桌面小物：笔筒（右后角）+ 便签（左前角）+ 显示器线缆
+  const penBase = floorPoint(u + DESK_HALF_U * 0.72, vFar + DESK_DV * 0.16);
+  const penY = penBase.y - DESK_H * k;
+  g.roundRect(penBase.x - 4 * k, penY - 9 * k, 8 * k, 9 * k, 2).fill(SKIN.paper);
+  g.roundRect(penBase.x - 4 * k, penY - 9 * k, 8 * k, 9 * k, 2).stroke({ color: SKIN.deskEdge, width: 1 });
+  g.moveTo(penBase.x - 2 * k, penY - 9 * k).lineTo(penBase.x - 3.4 * k, penY - 16 * k)
+    .stroke({ color: hex("#4f9e6b"), width: 1.5 });
+  g.moveTo(penBase.x + 1 * k, penY - 9 * k).lineTo(penBase.x + 2.6 * k, penY - 15 * k)
+    .stroke({ color: hex("#3f7fcf"), width: 1.5 });
+  const note = floorPoint(u - DESK_HALF_U * 0.55, v - DESK_DV * 0.30);
+  const noteY = note.y - DESK_H * k;
+  g.roundRect(note.x - 5 * k, noteY - 7 * k, 10 * k, 7 * k, 1).fill(hex("#f3e08a"));
+  g.roundRect(note.x - 5 * k, noteY - 10 * k, 10 * k, 7 * k, 1).fill(hex("#f8ecab"));
+  // 显示器线缆：支架底 → 桌沿后侧垂下（一条细弧，别太抢）
+  g.moveTo(mon.x + mw * 0.06, baseY).quadraticCurveTo(mon.x + mw * 0.10, baseY + MONITOR_LIFT * k * 0.5, mon.x + mw * 0.05, baseY + MONITOR_LIFT * k)
+    .stroke({ color: hex("#b7bcc3"), width: 1.1 });
+
+  return screenAnim;
 }
 
 /**
@@ -527,24 +713,37 @@ export function drawChair(g: Graphics, u: number, v: number): void {
   // ⛔ 椅子是**白椅落在白地板上** —— 不给它柔阴影 + 一圈浅描边，画出来等于没画（第一版实测：
   //    整排工位看着"人悬在桌沿上"）。⛔ 描边用浅灰而不是黑：黑描边会退回卡通线稿风。
   softShadow(g, x, y + 2 * k, w * 0.92, 9 * k, 0.13);
-  // 五星脚 + 滚轮
+  // 五星脚 + 滚轮（滚轮加深色轮毂：全同色的小圆看着像"五个脚印"）
   for (let i = 0; i < 5; i++) {
     const a = -Math.PI / 2 + (i / 5) * Math.PI * 2;
     const px = x + Math.cos(a) * w * 0.46;
     const py = y + Math.sin(a) * w * 0.46 * 0.34 + 1 * k;
     g.moveTo(x, y - 4 * k).lineTo(px, py).stroke({ color: SKIN.chairLeg, width: 3.4 * k });
     g.circle(px, py, 2.8 * k).fill(SKIN.chairLeg);
+    g.circle(px, py, 1.2 * k).fill(hex("#b6b2ab"));
   }
-  // 气压杆 + 座
+  // 气压杆 + 座（座面加一条前缘亮线 + 一条缝线，"软垫"才读得出来）
   g.rect(x - 2.4 * k, y - 40 * k, 4.8 * k, 38 * k).fill(SKIN.chairLeg);
   g.roundRect(x - w / 2, y - 50 * k, w, 12 * k, 5).fill(SKIN.chairSeat);
   g.roundRect(x - w / 2, y - 50 * k, w, 12 * k, 5).stroke({ color: SKIN.chairBackDark, width: 1.2 });
+  g.moveTo(x - w * 0.38, y - 44 * k).lineTo(x + w * 0.38, y - 44 * k)
+    .stroke({ color: SKIN.chairBackDark, width: 1 });
+  // 扶手：左右各一支（立柱 + 端板），别高过座面太多
+  [-1, 1].forEach((s) => {
+    const ax = x + s * w * 0.52;
+    g.rect(ax - 1.6 * k, y - 42 * k, 3.2 * k, 14 * k).fill(SKIN.chairLeg);
+    g.roundRect(ax - 5 * k, y - 46 * k, 10 * k, 4 * k, 2).fill(SKIN.chairSeat);
+    g.roundRect(ax - 5 * k, y - 46 * k, 10 * k, 4 * k, 2).stroke({ color: SKIN.chairBackDark, width: 0.9 });
+  });
   // 靠背（圆角竖板 + 顶部暗边 + 腰托 + 浅描边，靠明暗分层而不是黑描边）
   const backH = CHAIR_BACK_TOP - 46;
   g.roundRect(x - w * 0.54, y - CHAIR_BACK_TOP * k, w * 1.08, backH * k, w * 0.2)
     .fill(SKIN.chairBack).stroke({ color: SKIN.chairBackDark, width: 1.4 });
   g.roundRect(x - w * 0.54, y - CHAIR_BACK_TOP * k, w * 1.08, 7 * k, w * 0.16).fill(SKIN.chairBackDark);
   g.roundRect(x - w * 0.4, y - (CHAIR_BACK_TOP - 13) * k, w * 0.8, 4 * k, 2).fill(SKIN.chairBackDark);
+  // 头枕（小一块、接在靠背顶上，与靠背之间留 1px 缝——"两件套"才看得出来）
+  g.roundRect(x - w * 0.34, y - (CHAIR_BACK_TOP + 13) * k, w * 0.68, 12 * k, w * 0.1)
+    .fill(SKIN.chairBack).stroke({ color: SKIN.chairBackDark, width: 1.2 });
 }
 
 /* ── 办公设施（饮水机 / 打印机 / 资料架 / 挂钟 / 洗手间 / 咖啡蒸汽）────────

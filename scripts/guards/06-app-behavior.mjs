@@ -1599,9 +1599,15 @@ w.postMessage({id:1,op:"list",root});
       "【176】物种池 ≥10 且无重复（每个成员一种动物；重复 = 两个人长得一样）"
     );
     const all = list.concat("lion");
-    const missing = all.filter(
-      (a) => !new RegExp('case "' + a + '":').test(canvas176) || !new RegExp("\\b" + a + ": \\[\\d").test(canvas176),
-    );
+    // 物种外形二选一：**单侧耳**（drawEarSide 的 case，可参与抽动）或**整圈对称特征**
+    // （drawHeadBackdrop 的 animal === "x"，如绵羊的羊毛圈 / 刺猬的刺 —— 拆不成左右两支）。
+    // ⛔ 只查单侧分支会把 sheep/hedgehog 误报成"缺耳朵"（它们的外形在 backdrop 里）。
+    const missing = all.filter((a) => {
+      const hasSize = new RegExp("\\b" + a + ": \\[\\d").test(canvas176);
+      const hasSideEar = new RegExp('case "' + a + '":').test(canvas176);
+      const hasBackdrop = new RegExp('animal === "' + a + '"').test(canvas176);
+      return !hasSize || (!hasSideEar && !hasBackdrop);
+    });
     (all.length >= 11 && missing.length === 0 ? ok : fail)(
       "【176】每个物种都有耳朵分支 + 头型尺寸（缺一个就退化成认不出的黑团）"
         + (missing.length ? "，缺：" + missing.join("/") : "")
@@ -1629,6 +1635,25 @@ w.postMessage({id:1,op:"list",root});
       return want.length === 4 && want.every((p) => got.includes(p));
     })() ? ok : fail)(
       "【176】跑腿目标与办公设施坐标同源（两边漂移 ⇒「去接水」的人走到空气里）"
+    );
+    // ⛔ screens ticker **只挂不驱动**的假象（09-27 实测）：syncStatics 把每台显示器的
+    //    动画 ticker 收进 scene.screens，animateScene 却只驱动 scene.props ⇒ 屏幕永远静止，
+    //    而"代码在逐行敲"的静态首帧看起来像在动（截图验收发现不了，必须锚驱动点）。
+    (/if \(screenAnim\) scene\.screens\.push\(screenAnim\);/.test(canvas176)
+      && /scene\.screens\.forEach\(\(p\) => p\.update\(scene\.clock\)\);/.test(canvas176) ? ok : fail)(
+      "【176】屏幕动画 ticker 被逐帧驱动（只 push 不 update = 永远静止的首帧）"
+    );
+    // 耳朵必须是**可动部件**：左右各一支、pivot 在耳根，坐姿/走姿的动画循环里都要碰它
+    // （物种识别全靠耳朵，耳朵焊死 = 退回"一坨黑"）。
+    ((canvas176.match(/ears: Graphics\[\];/g) || []).length >= 2
+      && /p\.ears\.forEach\(\(ear, i\) =>/.test(canvas176)
+      && /w\.ears\.forEach\(\(ear, i\) =>/.test(canvas176) ? ok : fail)(
+      "【176】耳朵接入坐姿 + 走姿两个动画循环（单边抽动 / 随步伐颠）"
+    );
+    // ⛔ 键盘**不许居中**：人坐在工位正中，居中键盘会被躯干整个挡住（09-27 放大实测只剩两条白边），
+    //    必须偏向人的左手侧 —— 锚定「u 减偏移」的写法，改回居中即红。
+    (/floorPoint\(u - 0\.04\d*, v - 0\.045\)/.test(render176) ? ok : fail)(
+      "【176】键盘偏向人的左手侧（居中 = 被躯干挡住，放大才看得见的假 blanks）"
     );
   }
 
