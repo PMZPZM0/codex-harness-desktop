@@ -77,6 +77,7 @@ function edgePath(a, b, i) {
 const KIND_CLASS = {
   entry: "k-entry", module: "k-module", store: "k-store", infra: "k-infra", external: "k-external",
   start: "k-start", end: "k-end", step: "k-step", decision: "k-decision", actor: "k-actor",
+  source: "k-source", process: "k-process", sink: "k-sink", state: "k-state",
 };
 
 function nodeSvg(n, p, kindLabels) {
@@ -156,6 +157,57 @@ ${msgs}
 </svg>`, w, h };
 }
 
+/* ══════════ lifecycle：状态机圆环布局（确定性：按输入序均匀上圆） ══════════ */
+
+function lifecycleSvg(diagram, kindLabels) {
+  const states = diagram.nodes;
+  const NW = 156, NH = 50;
+  const radius = Math.max(150, Math.min(300, 110 + states.length * 26));
+  const margin = 150;
+  const w = (radius + margin) * 2, h = (radius + margin) * 2;
+  const cx = w / 2, cy = h / 2;
+  const pos = new Map(states.map((s, i) => {
+    const angle = -Math.PI / 2 + (i * 2 * Math.PI) / Math.max(states.length, 1);
+    return [s.id, { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) }];
+  }));
+  const headers = states.map((s) => {
+    const p = pos.get(s.id);
+    return `<g class="node ${KIND_CLASS[s.kind] || "k-state"}" data-id="${esc(s.id)}" transform="translate(${p.x - NW / 2},${p.y - NH / 2})">
+      <title>${esc(s.label)}${s.evidence.length ? "\n证据：" + s.evidence.join("\n") : ""}</title>
+      <rect class="card" width="${NW}" height="${NH}" rx="${NH / 2}"/>
+      <text class="lbl" x="${NW / 2}" y="${NH / 2 + 4}" text-anchor="middle">${esc(clip(s.label, 14))}</text>
+      <text class="sub" x="${NW / 2}" y="${NH + 16}" text-anchor="middle">${esc(kindLabels[s.kind] + (s.evidence.length ? ` · 证据×${s.evidence.length}` : ""))}</text>
+    </g>`;
+  }).join("\n");
+  const transitions = diagram.edges.map((e, i) => {
+    const a = pos.get(e.from), b = pos.get(e.to);
+    if (!a || !b) return "";
+    const dashed = e.style === "dashed";
+    if (e.from === e.to) {
+      const top = a.y - NH / 2 - 4;
+      const d = `M ${a.x - 30} ${top} C ${a.x - 48} ${top - 46}, ${a.x + 48} ${top - 46}, ${a.x + 30} ${top}`;
+      const label = e.label ? `<text x="${a.x}" y="${top - 50}" text-anchor="middle">${esc(clip(e.label, 20))}</text>` : "";
+      return `<g class="edge${dashed ? " dashed" : ""}" data-from="${esc(e.from)}" data-to="${esc(e.to)}"><path class="wire" marker-end="url(#arw)" d="${d}"/>${label}</g>`;
+    }
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const dx = mx - cx, dy = my - cy;
+    const len = Math.hypot(dx, dy) || 1;
+    const side = i % 2 === 0 ? 1 : -1; // 来回两条转移错开，别叠在一条弧上
+    const ctrl = { x: mx + (dx / len) * 44 + (-dy / len) * 20 * side, y: my + (dy / len) * 44 + (dx / len) * 20 * side };
+    const lx = 0.25 * a.x + 0.5 * ctrl.x + 0.25 * b.x;
+    const ly = 0.25 * a.y + 0.5 * ctrl.y + 0.25 * b.y;
+    const label = e.label ? `<text x="${lx}" y="${ly}" text-anchor="middle">${esc(clip(e.label, 20))}</text>` : "";
+    return `<g class="edge${dashed ? " dashed" : ""}" data-from="${esc(e.from)}" data-to="${esc(e.to)}"><path class="wire" marker-end="url(#arw)" d="M ${a.x} ${a.y} Q ${ctrl.x} ${ctrl.y} ${b.x} ${b.y}"/>${label}</g>`;
+  }).join("\n");
+  return { svg: `<svg data-archkit="1" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--edge)"/></marker></defs>
+${headers}
+${transitions}
+</svg>`, w, h };
+}
+
+
+
 /* ══════════ 内嵌进 SVG 的样式（导出 PNG 必须随行，所以不放页面 CSS） ══════════ */
 
 const SVG_STYLE = `
@@ -176,6 +228,10 @@ text.sub { font-size:10.5px; opacity:.72; }
 .k-step    .card { fill:#e7edf4; stroke:#64748b; }  svg.dark .k-step    .card { fill:#1b2531; stroke:#8ba0b6; }
 .k-decision.card { fill:#fef9c3; stroke:#ca8a04; }  svg.dark .k-decision.card { fill:#3a3210; stroke:#eab308; }
 .k-actor   .card { fill:#e7edf4; stroke:#64748b; }  svg.dark .k-actor   .card { fill:#1b2531; stroke:#8ba0b6; }
+.k-source  .card { fill:#dbeafe; stroke:#2563eb; }  svg.dark .k-source  .card { fill:#172b4d; stroke:#60a5fa; }
+.k-process .card { fill:#e0f2fe; stroke:#0284c7; }  svg.dark .k-process .card { fill:#0c2a3f; stroke:#38bdf8; }
+.k-sink    .card { fill:#ffe4e6; stroke:#e11d48; }  svg.dark .k-sink    .card { fill:#3f1220; stroke:#fb7185; }
+.k-state   .card { fill:#d1fae5; stroke:#059669; }  svg.dark .k-state   .card { fill:#0c2f26; stroke:#34d399; }
 g.node { cursor:pointer; }
 g.node:hover .card { stroke-width:2.6; }
 .edge path.wire, .edge line.wire { fill:none; stroke:var(--edge); stroke-width:1.6; }
@@ -291,28 +347,55 @@ const PAGE_SCRIPT = `
 /**
  * 渲染为自包含 HTML。⛔ 确定性：不得引入时间/随机值。
  * @param diagram 已归一的图（archkitNormalizeDiagram().diagram）
+ * @param options.delta 可选，archkitDelta() 的结果 —— 渲染一张「差异摘要」面板（新图 + 增删改清单）
  */
-export function archkitRender(diagram) {
+export function archkitRender(diagram, options = {}) {
   const kindLabels = {
     entry: "入口", module: "模块", store: "存储", infra: "基础设施", external: "外部",
     start: "开始", end: "结束", step: "步骤", decision: "判断", actor: "参与者",
+    source: "数据源", process: "处理", sink: "出口", state: "状态",
   };
-  const built = diagram.type === "sequence" ? sequenceSvg(diagram, kindLabels) : flowSvg(diagram, kindLabels);
+  const built = diagram.type === "sequence" ? sequenceSvg(diagram, kindLabels)
+    : diagram.type === "lifecycle" ? lifecycleSvg(diagram, kindLabels)
+    : flowSvg(diagram, kindLabels);
   const withStyle = built.svg.replace("<defs>", "<style>" + SVG_STYLE + "</style><defs>");
   const evCount = diagram.nodes.reduce((a, n) => a + n.evidence.length, 0);
+  const delta = options.delta || null;
+  const deltaMeta = delta ? ` · Δ +${delta.added.length}/−${delta.removed.length}/~${delta.changed.length}` : "";
+  const deltaPanel = delta ? `
+<aside class="delta-panel" id="delta-panel">
+  <b>与上一版相比（Δ）</b>
+  <div class="delta-row is-added">＋ 新增 ${delta.added.length}：${esc(clip(delta.added.join("、"), 80)) || "—"}</div>
+  <div class="delta-row is-removed">－ 移除 ${delta.removed.length}：${esc(clip(delta.removed.join("、"), 80)) || "—"}</div>
+  <div class="delta-row is-changed">～ 修改 ${delta.changed.length}：${esc(clip(delta.changed.join("、"), 80)) || "—"}</div>
+  <div class="delta-row">连线：＋${delta.addedEdges.length} / −${delta.removedEdges.length}${diagram.type === "sequence" ? ` · 消息：＋${delta.addedMessages.length} / −${delta.removedMessages.length}` : ""}</div>
+</aside>` : "";
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(diagram.title)} · archkit</title>
-<style>${PAGE_STYLE}</style></head>
+<style>${PAGE_STYLE}${delta ? DELTA_STYLE : ""}</style></head>
 <body>
 <header class="bar"><strong>${esc(diagram.title)}</strong>
-  <span class="meta">${esc(diagram.type)} · ${diagram.nodes.length} 卡 / ${diagram.type === "sequence" ? diagram.messages.length + " 消息" : diagram.edges.length + " 线"} · 证据 ${evCount} 条 · archkit</span>
+  <span class="meta">${esc(diagram.type)} · ${diagram.nodes.length} 卡 / ${diagram.type === "sequence" ? diagram.messages.length + " 消息" : diagram.edges.length + " 线"} · 证据 ${evCount} 条 · archkit${deltaMeta}</span>
   <span class="btns"><button id="theme">深浅主题</button><button id="fit">适配</button><button id="png">导出 PNG</button></span>
 </header>
+${deltaPanel}
 <div class="viewport" id="vp"><div class="world" id="world">${withStyle.replace("<svg ", '<svg id="root-svg" data-title="' + esc(diagram.title) + '" ')}</div></div>
 <aside id="evidence" class="evidence" hidden></aside>
 <div class="hint">滚轮缩放 · 拖动平移 · Shift+滚轮横移 · 悬停高亮关联 · 点击卡片看证据 · 0 适配</div>
 <script>${PAGE_SCRIPT}</script>
 </body></html>`;
 }
+
+/** delta 摘要面板样式（只在 delta 渲染时拼接进页面，保持普通渲染的输出不变）。 */
+const DELTA_STYLE = `
+.delta-panel { position: fixed; left: 14px; top: 58px; z-index: 9; max-width: 340px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; font-size: 12px; display: grid; gap: 4px; }
+.delta-panel b { font-size: 12.5px; margin-bottom: 2px; }
+.delta-row { line-height: 1.55; word-break: break-all; }
+.delta-row.is-added { color: #16a34a; } html.dark .delta-row.is-added { color: #4ade80; }
+.delta-row.is-removed { color: #dc2626; } html.dark .delta-row.is-removed { color: #f87171; }
+.delta-row.is-changed { color: #d97706; } html.dark .delta-row.is-changed { color: #fbbf24; }
+`;

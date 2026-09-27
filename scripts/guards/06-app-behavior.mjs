@@ -2335,11 +2335,31 @@ w.postMessage({id:1,op:"list",root});
     (story184.includes("videoSubmit") && story184.includes("videoPoll") && story184.includes("videoDownload") ? ok : fail)(
       "【184】视频生成闭环三步都在（submit → poll → download 落工作区），不是只调了 submit"
     );
-    // 生图工作流变体：参考项目没有这个模块（已核实），是我们的画布复用形态——锚变体接线
+    // 生图工作流（09-27 二次修正）：⛔ 不做独立侧栏入口（用户点名：原来一个入口就别造重复入口）
+    // —— 同一画布 + 两种起手按钮；专家召唤在选择器里（会话选择 + 视频团/生图专家）。
     const model184 = readFileSync(join(ROOT, "src", "lib", "drama-canvas-model.mjs"), "utf8");
     const side184 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8");
-    (model184.includes("export function imageStarterWorkflow") && side184.includes('setDramaCanvasVariant("image")') && side184.includes("生图工作流") ? ok : fail)(
-      "【184】生图工作流：起手骨架存在 + 侧栏入口把 variant 设为 image"
+    const canvas184 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8");
+    (model184.includes("export function imageStarterWorkflow") ? ok : fail)(
+      "【184】生图起手骨架 imageStarterWorkflow 存在"
+    );
+    (/setDramaCanvasVariant/.test(side184) ? fail("【184】侧栏又出现了 variant 双入口（用户点名别造重复入口）") : ok)(
+      "【184】侧栏只有一个画布入口（无 variant 双入口回潮）"
+    );
+    (canvas184.includes('createStarter("drama")') && canvas184.includes('createStarter("image")') && canvas184.includes("新建生图工作流") ? ok : fail)(
+      "【184】画布头部有「短剧/生图」两个起手按钮（生图工作流在同入口内闭环）"
+    );
+    (canvas184.includes("onSummonTeam") && canvas184.includes('"video-production-team"') && canvas184.includes('"image-gen-expert"') ? ok : fail)(
+      "【184】交给 Agent 选择器里有专家召唤（视频制作专家团 / 生图专家——没这俩选项就没闭环）"
+    );
+    (readFileSync(join(ROOT, "src", "features", "app-view", "AppView.tsx"), "utf8").includes('startTeamSession({ teamId, task: text') ? ok : fail)(
+      "【184】召唤走 teams:start-session（task 直接进团队会话，不是塞输入框）"
+    );
+    (readFileSync(join(ROOT, "electron", "expert-teams", "07-team-default.ts"), "utf8").includes("imageGenExpert(mk)") ? ok : fail)(
+      "【184】生图专家已注册进默认专家团清单（清单里没有 = 选择器召唤会报未知 teamId）"
+    );
+    (canvas184.includes("? 0.62 : MIN_ZOOM") ? ok : fail)(
+      "【184】适配最小缩放 0.62（⛔ 0.38 会把 12.5px 卡片字缩成 ~5px——「卡片文字糊」的主因）"
     );
   }
 
@@ -2354,6 +2374,40 @@ w.postMessage({id:1,op:"list",root});
     );
     (/allVisiblePicked/.test(backup185) && /取消全选/.test(backup185) ? ok : fail)(
       "【185】全选只作用于当前可见集（搜索过滤后全选/取消全选不能误伤被过滤掉的勾选）"
+    );
+  }
+
+  /* ══ 【186】archkit 收尾：5 型图齐 + delta 对比 + visual-check 门禁（09-27） ══ */
+  {
+    const model186 = await import(pathToFileURL(join(ROOT, "src", "lib", "archkit-model.mjs")).href);
+    const render186 = await import(pathToFileURL(join(ROOT, "src", "lib", "archkit-render.mjs")).href);
+    // ① 5 型白名单真跑
+    (model186.archkitNormalizeDiagram({ type: "dataflow", nodes: [{ id: "p" }], edges: [] }).ok
+      && model186.archkitNormalizeDiagram({ type: "lifecycle", nodes: [{ id: "idle" }], edges: [{ from: "idle", to: "idle", label: "tick" }] }).ok ? ok : fail)(
+      "【186】真跑：dataflow / lifecycle 归一通过（5 型图齐；lifecycle 自环转移合法）"
+    );
+    // ② delta 真值表
+    const oldD = model186.archkitNormalizeDiagram({ type: "architecture", nodes: [{ id: "a", kind: "module", label: "A" }, { id: "b", kind: "module", label: "B" }], edges: [{ from: "a", to: "b" }] }).diagram;
+    const newD = model186.archkitNormalizeDiagram({ type: "architecture", nodes: [{ id: "a", kind: "module", label: "A2" }, { id: "c", kind: "entry", label: "C" }], edges: [{ from: "a", to: "c" }] }).diagram;
+    const d186 = model186.archkitDelta(oldD, newD);
+    (JSON.stringify(d186.added) === '["c"]' && JSON.stringify(d186.removed) === '["b"]' && JSON.stringify(d186.changed) === '["a"]' ? ok : fail)(
+      "【186】真跑：delta 增/删/改判定（按 id 对齐；changed = 同 id 内容变化）"
+    );
+    (() => { try { model186.archkitDelta(oldD, model186.archkitNormalizeDiagram({ type: "sequence", nodes: [], edges: [] }).diagram); fail("【186】跨 type delta 竟然没抛错"); } catch (e) { return /同型/.test(e.message) ? ok("【186】真跑：跨 type delta 抛错（架构图 vs 时序图没有可比性）") : fail("【186】跨 type 报错文案不对：" + e.message); } })();
+    // ③ 渲染：lifecycle 圆环 / delta 面板 / 无 delta 不带面板
+    (render186.archkitRender(model186.archkitNormalizeDiagram({ type: "lifecycle", nodes: [{ id: "idle" }, { id: "running" }], edges: [{ from: "idle", to: "running", label: "start" }] }).diagram).includes("k-state") ? ok : fail)(
+      "【186】lifecycle 渲染出状态卡（圆环布局 + 状态配色）"
+    );
+    (render186.archkitRender(newD, { delta: d186 }).includes("delta-panel") && !render186.archkitRender(newD).includes("delta-panel") ? ok : fail)(
+      "【186】delta 面板只在传 delta 时渲染（普通渲染输出必须保持逐字节稳定）"
+    );
+    // ④ visual-check 门禁：electron 启动前必须清 ELECTRON_RUN_AS_NODE / NODE_OPTIONS（宿主常带，不清=纯 Node 化）
+    const cli186 = readFileSync(join(ROOT, "scripts", "archkit.mjs"), "utf8");
+    (/visual-check/.test(cli186) && /delete env\.ELECTRON_RUN_AS_NODE/.test(cli186) && /delete env\.NODE_OPTIONS/.test(cli186) ? ok : fail)(
+      "【186】visual-check spawn 前清 ELECTRON_RUN_AS_NODE / NODE_OPTIONS（不清 = electron.exe 退化纯 Node，require('electron') 直接 MODULE_NOT_FOUND）"
+    );
+    (readFileSync(join(ROOT, ".codex", "skills", "arch-diagram", "SKILL.md"), "utf8").includes("5 型齐") ? ok : fail)(
+      "【186】技能文档已更新为 5 型齐（诚实边界清零：dataflow/lifecycle/delta/visual-check 都已落地）"
     );
   }
 }
