@@ -117,8 +117,8 @@ export function SkillPoolSection({ projects }: { projects?: [string, unknown][] 
         </div>
       </header>
       {!target && <p className="muted">从下方选一个项目，管理它的技能生效集；或在侧栏打开工作区后自动选中。</p>}
-      <div className="memory-project-context" style={{ marginBottom: 10 }}>
-        <div className="memory-project-context-copy"><FolderOpen size={14} /><div><strong>管理项目</strong><span>{!target ? "选择项目后即列出该项目的技能生效集" : managingOther ? "正在管理其他项目的技能生效集（不影响当前会话；该项目下次开会话时生效）" : "项目技能池随项目走；切换项目可分别管理各自生效集"}</span></div></div>
+      <div className="memory-project-context skill-pool-context">
+        <div className="memory-project-context-copy"><FolderOpen size={14} /><div><strong>管理项目</strong><span>{!target ? "选择项目后即列出其技能生效集" : managingOther ? "正在管理其他项目 · 该项目下次开会话时生效" : "切换项目可分别管理各自生效集"}</span></div></div>
         <div className={`memory-project-picker ${menuOpen ? "open" : ""}`} ref={pickerRef}>
           <button type="button" className="memory-project-picker-button" aria-haspopup="listbox" aria-expanded={menuOpen} onClick={() => setMenuOpen((v) => !v)}>
             <FolderOpen size={14} aria-hidden="true" />
