@@ -25,9 +25,9 @@ import { normalizeAutoCompactRatio, readAppSettings } from "../app-settings";
 import { broadcastCodexEvent, broadcastHarnessEvent } from "./window-bus";
 import { nuphusVisionEnvDrift } from "../nuphus-env";
 import { applyPersonalizationToAgentsMd, migrateGreetedForExistingUsers, readPersonalization } from "../personalization";
-import { ensurePonytailPlugin } from "../ponytail-plugin";
+
 import { repairSkillBomScan } from "../skills-market";
-import { augmentedPath, nuphusBinary, toolsRoot } from "../toolchain";
+import { augmentedPath, nuphusBinary } from "../toolchain";
 import { net, safeStorage, session } from "electron";
 import { pathToFileURL } from "node:url";
 
@@ -653,23 +653,14 @@ export async function bootApp() {
   // 启动时把已写坏的段清掉并修正档案，让这类用户升级后自动恢复（不必手动改文件）。
   void healReservedProviderConfig();
   // 血缘自愈已移到 `server.start()` **之前**（见上方：引擎起来后再改同一次运行内不生效）。
-  // ponytail 写代码模式插件随包直装（09-16 用户「直接内置，不用解压啥的」）：生产包必有
-  // tools/ponytail-plugin。只在 config.toml **完全没有** ponytail 注册段时自动种（全新安装）；
-  // 段已存在（已装/用户显式卸载置 false）就不再动 —— 否则卸载后下次启动又给装回来，卸载失效。
-  // 失败降级不阻塞启动，开发工具页按钮仍可手动种。必须在 server.start() 之后——要写 config.toml。
-  try {
-    const bundledPonytail = path.join(toolsRoot(), "ponytail-plugin");
-    const ponytailCache = path.join(codexHome, "plugins", "cache", "ponytail");
-    if (bundledPonytail && existsSync(bundledPonytail) && !existsSync(ponytailCache)) {
-      const configText = await fs.readFile(path.join(codexHome, "config.toml"), "utf8").catch(() => "");
-      if (!configText.includes('ponytail@ponytail')) {
-        // ensurePonytailPlugin 自己就把注册段（含 enabled = true）写进 config.toml，这里不再额外
-        // 走 config/value/write —— 引擎要求该请求必带 mergeStrategy，多于一次写只是多一个失败点。
-        void ensurePonytailPlugin(codexHome, bundledPonytail)
-          .catch((error) => console.warn("[boot] ponytail auto-seed failed (降级继续):", error));
-      }
-    }
-  } catch (error) { console.warn("[boot] ponytail auto-seed failed (降级继续):", error); }
+  // ponytail 写代码模式插件 —— ⛔ 09-27 起改为**默认不种**（用户：写代码模式写的很烂、
+  //   且「一切可下载的拓展都按需安装」是引擎初始化原则）：
+  //   旧逻辑 = 全新安装（config 里无 ponytail@ponytail 段）就自动种 enabled=true，导致每个
+  //   新会话都注入 ponytail 及其 6 个子技能（实测 ~640 token/次），与「按需安装」原则相悖。
+  //   现在的行为：**不自动种**。想用：开发工具页「ponytail 写代码模式插件」卡片手动安装
+  //   （runtime:install id=ponytail，见 04-dev-runtime-install.ts:149 —— 路径保留未动）；
+  //   已装用户不受影响（config 里的段还在就是还在，卸载语义同样不变）。
+  //   ⛔ 守卫【26】已同步：断言从「自动种被调用」改为「自动种不被调用」（见 06-app-behavior.mjs）。
   // 微信机器人网关：扫码登录 → 微信消息 → Codex 会话处理 → 回复发回微信
   const weixinGw = new WeixinGateway(path.join(app.getPath("userData"), "weixin-accounts"), {
     onMessage: (message) => void handleWeixinMessage(message),

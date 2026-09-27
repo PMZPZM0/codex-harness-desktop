@@ -65,7 +65,7 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   docker: { name: "Docker Desktop", description: "容器运行时，需要系统级安装（管理员权限 + 重启 + 登录）", size: "约 500 MB", marker: "docker\\docker.exe", kind: "guide" },
   mingw: { name: "MinGW-w64 (gcc/g++/make)", description: "C/C++ 编译器工具链，含 gcc、g++、make、gdb", size: "约 267 MB", marker: "mingw\\mingw64\\bin\\g++.exe", kind: "download" },
   openssl: { name: "OpenSSL", description: "加密/证书命令行工具（openssl 命令），系统级安装", size: "约 25 MB", marker: "openssl\\openssl.exe", kind: "guide" },
-  ponytail: { name: "ponytail 写代码模式插件", description: "Codex 写代码模式（会话钩子 + 6 个技能），随包启动时自动种入，开箱即用", size: "随包 2 MB", marker: "ponytail-plugin", kind: "plugin", bundled: true, noUninstall: true },
+  ponytail: { name: "ponytail 写代码模式插件", description: "Codex 写代码模式（会话钩子 + 6 个技能）。09-27 起默认不装（按需安装），用的人在开发工具页手动安装", size: "随包 2 MB", marker: "ponytail-plugin", kind: "plugin", bundled: true, noUninstall: true },
   // 文档转换（09-21 用户定稿：「这个 markitdown 有国内镜像源嘛，有的话，就不内置了，按需下载，
   //  codex 自己也可以下载」）⇒ **按需下载，不内置**：有清华 PyPI 镜像，装一次约 4~5 分钟，
   //  没必要让**每个**用户默认付约 120 MB。

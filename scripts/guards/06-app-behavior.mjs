@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  C, ROOT, createRequire, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readResponsesBridgeSource, readStyles, readdirSync, rmSync, spawnSync, statSync, typesSrc,
+  C, ROOT, codeOnly, createRequire, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readResponsesBridgeSource, readStyles, readdirSync, rmSync, spawnSync, statSync, typesSrc,
 } from "./_ctx.mjs";
 
 export async function run() {
@@ -434,12 +434,17 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   (installRuntimes.includes('case "mirror": attempts = mirror ? [["国内镜像 npmmirror", curlArgs.slice(), mirror], ...direct] : [...ghAccels, ...direct]') && installRuntimes.includes('case "ghproxy": attempts = isGh ? [ghAccels[0], ...direct]') && installRuntimes.includes('case "ghfast": attempts = isGh ? [ghAccels[1], ...direct]') && /case "auto":\s*\n\s*default: attempts = \[\s*\n\s*\.\.\.\(mirror \? \[\["国内镜像 npmmirror", curlArgs\.slice\(\), mirror\]\] : \[\]\),\s*\n\s*\.\.\.viaProxy,\s*\n\s*\.\.\.ghAccels,\s*\n\s*\.\.\.direct,/.test(installRuntimes) ? ok : fail)("install-runtimes：下载通道按所选源分派（auto = 国内优先：镜像 → (代理) → gh 加速 → 直连兜底）");
   // 09-16 下午：自动化包与 ponytail 改为「随包预解压直装」（用户「直接内置，不用解压啥的」）——
   // npm-global 必须进 extraResources（缺了等于回到「要点安装才解压」），zip 保留作修复备用；
-  // ponytail 启动自动种只在 config **没有**注册段时动手（否则用户卸载后下次启动又装回来，卸载失效）。
+  // ⛔ 09-27 起 ponytail **不再启动自动种**（用户：「ponytail 写的代码很烂、以后谁还写代码」；
+  //    且与引擎初始化原则「一切拓展按需安装」相悖——自动种让每个新会话多注入 ~640 token）。
+  //    改为开发工具页手动安装（runtime:install id=ponytail 保留）；已装用户不受影响。
   (extraFrom.includes("resources/tools/npm-global") ? ok : fail)("package.json extraResources 随包预解压 npm-global（自动化包开箱即用，不用点安装解压）");
   (extraFrom.includes("resources/tools/automation-tools.zip") ? ok : fail)("automation-tools.zip 仍随包（修复备用：重新解压即可恢复）");
-  (extraFrom.includes("resources/tools/ponytail-plugin") ? ok : fail)("ponytail-plugin 随包（启动自动种入引擎插件 cache）");
-  (mainTs26.includes('!configText.includes(\'ponytail@ponytail\')') ? ok : fail)("ponytail 自动种只在 config 无注册段时执行（不破坏「卸载后不再自动装回」语义）");
-  (mainTs26.includes("void ensurePonytailPlugin(codexHome, bundledPonytail)") ? ok : fail)("ponytail 启动自动种调 ensurePonytailPlugin（幂等，失败降级）");
+  (extraFrom.includes("resources/tools/ponytail-plugin") ? ok : fail)("ponytail-plugin 仍随包（手动安装源，开发工具页用）");
+  // ⛔ 负向断言（结构性，变异验证过）：boot.ts 里**任何形态**的 ensurePonytailPlugin 都不许出现
+  //    （import 与调用都算）——手动安装路径在 04-dev-runtime-install.ts，不在此文件。
+  //    ⛔ 必须过 codeOnly 剥注释：boot.ts 头注释里会提到这个符号，裸 includes 会被注释顶成假红。
+  const bootTs = codeOnly(readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8"));
+  (bootTs.includes("ensurePonytailPlugin") ? fail : ok)("ponytail 启动**不再自动种**（09-27 改按需安装：boot.ts 里不得出现任何形式的 ensurePonytailPlugin；自动种会让每会话多注入 ~640 token）");
   // ⛔ 09-16 实测教训：引擎对 config/value/write 要求**必填** mergeStrategy，缺了整条请求被拒
   //    （Invalid request: missing field `mergeStrategy`）。这些调用普遍带 .catch(() => undefined)
   //    静默吞掉 → 表现成「开关点了没生效」。这里按结构守：**只认真正的调用点**
