@@ -11,7 +11,6 @@ import { UserMessageView } from "../shared/UserMessageView";
 import { MessageFooter } from "../shared/MessageFooter";
 import { CommandExecutionCard } from "../terminal";
 import { diffStats } from "../../lib/diff-stats";
-import { useCardOpen } from "../../components/CardShell";
 import type { ActionStatus } from "../../components/CardShell";
 import { basename } from "../../lib/basename";
 import { ActionCard } from "../session-cards";
@@ -27,10 +26,8 @@ import { usePacketRevealText } from "../shared/use-packet-reveal-text";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { bufferedAgentRevealStarts } from "../../lib/buffered-agent-reveal-starts";
 import { bufferedToolRevealStarts } from "../../lib/buffered-tool-reveal-starts";
-import { useCallback, useRef, useMemo, useState, useEffect } from "react";
 import { ReasoningCard } from "../shared/ReasoningCard";
 import { skillOfItem, argSummary, pluginOfItem } from "../../lib/tool-display.mjs";
-import { Fold } from "../shared/Fold";
 
 export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWindow, hideFooter, waitingForApproval, onCopy, onQuote, onFork, onImageCopy, onEditSubmit, onOpenFile, onOpenThread, onApplyPlan, pending }: { item: ThreadItem; turn?: Turn; turnActive?: boolean; usage?: any; tokenUsage?: any; fallbackWindow?: number; hideFooter?: boolean; waitingForApproval?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void; onApplyPlan?: (markdown: string) => void; pending?: boolean }) {
   if (item.type === "userMessage") {
