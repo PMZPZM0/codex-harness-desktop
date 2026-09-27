@@ -1,36 +1,39 @@
 /**
- * 斜俯视（等距）投影几何（team-office 域 09-26 v6「复刻 ai-office-react」）。
+ * 办公室投影几何（team-office 域，09-27 v9「对齐 ai-office-react 白系 3D 观感」）。
  *
- * ⛔ 为什么要换投影：v3~v5 都是**正视平铺**（墙是背景、家具排成一行），用户看了
- *    workbzw/ai-office-react（PixiJS + Spine 的 Q 版办公室）后要求「复刻过来」。
- *    它那套画面的关键不是 3D —— 而是**斜俯视的房间**（地板是梯形、两侧墙向内收）
- *    + **人物近、桌子远**的工位朝向 + 头顶状态标签。这些用 SVG 的多边形完全能做。
+ * ⛔ 为什么又改：v6~v8 是「等距房间 + Kenney 卡通贴图家具」，用户实测画面
+ *    「家具散落一地、工位和桌椅对不上」（09-27 截图）。根因不是算法，是**素材风格**：
+ *    参考实现（workbzw/ai-office-react，MIT）的房间是一张**照片级 3D 渲染底图** +
+ *    纯白 3D 桌椅 + Spine 角色，而 Kenney 是**卡通描边风**，两套语言放一起必然违和。
+ *    ⛔ 用户 09-27 拍板：**不搬它的素材**（作者自己标注「注意素材版权问题」），
+ *       改为**程序化绘制同风格**（PixiJS Graphics 画白系等距房间/桌椅，无描边、靠面明暗分层）。
  *
- * 做法：把房间建模成「一个长方体从斜上方看」，地板是四边形（后窄前宽），
- * 家具用**双线性插值**按地面归一化坐标 (u, v) 落位（u 左→右、v 后→前），
- * 越靠前（v 越大）画得越大 ⇒ 自然形成纵深。所有家具/工位/角色都走这套坐标，
- * 就不会出现早先那种「家具各自漂移」的问题。
+ * 投影模型：房间 = 后墙正对观众 + 两侧墙向内收（地板后窄前宽），
+ * 家具/工位/角色统一走 `floorPoint(u, v)` 的归一化坐标 —— 越靠前（v 越大）越大，
+ * 天然有纵深，不会再出现「各自漂移」。
  */
 
 export const SCENE_W = 960;
 export const SCENE_H = 640;
 
 /** 地板四角（屏幕坐标）：后左、后右、前右、前左。
- *  ⛔ v7 收窄了 110px（后 604→456、前 856→652）：原来的房间太宽，工位只占中间一条，
- *    两侧留出两大片空地板（"大房间摆小桌"）。收窄后内容占满，房间也更像"一间办公室"。 */
+ *  ⛔ v9 按参考画面放宽：后墙 488 → 房间更"宽扁"（参考的办公室接近 2:1），
+ *    同时把纵深从 368 拉到 398，给后墙橱柜与三排工位都留出呼吸。
+ */
 export const FLOOR = {
-  bl: [252, 206] as const,
-  br: [708, 206] as const,
-  fr: [806, 574] as const,
-  fl: [154, 574] as const,
+  bl: [236, 152] as const,
+  br: [724, 152] as const,
+  fr: [832, 596] as const,
+  fl: [128, 596] as const,
 };
 
 /** 墙高（屏幕像素）——后墙从地板后边线向上抬这么多。 */
-export const WALL_H = 168;
+export const WALL_H = 136;
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 export type FloorSpot = { x: number; y: number; scale: number };
+export type Pt = { x: number; y: number };
 
 /**
  * 地面归一化坐标 → 屏幕坐标。
@@ -46,54 +49,58 @@ export function floorPoint(u: number, v: number): FloorSpot {
 }
 
 /**
- * 纵深缩放：后排 0.86 → 前排 1.16。
- * ⛔ 下限别调太小：0.74 时人物只有 ~78px 高，在 960×640 的画面里显得"人很小、屋很大"
- *    （v6 首版实测），整体抬到 0.86~1.16 才接近参考实现的人物占比。
+ * 纵深缩放：后排 0.88 → 前排 1.14。
+ * ⛔ 别调太小：0.74 时人物只有 ~78px 高，在 960×640 里显得"人很小、屋很大"（v6 实测）。
  */
 export function depthScale(v: number): number {
-  return 0.86 + 0.3 * Math.max(0, Math.min(1, v));
+  return 0.88 + 0.26 * Math.max(0, Math.min(1, v));
 }
 
-/** 地面一块矩形区域 → SVG polygon 的 points（家具"占地面积"用）。 */
-export function floorQuad(u0: number, v0: number, u1: number, v1: number): string {
-  const a = floorPoint(u0, v0);
-  const b = floorPoint(u1, v0);
-  const c = floorPoint(u1, v1);
-  const d = floorPoint(u0, v1);
-  return `${a.x.toFixed(1)},${a.y.toFixed(1)} ${b.x.toFixed(1)},${b.y.toFixed(1)} ${c.x.toFixed(1)},${c.y.toFixed(1)} ${d.x.toFixed(1)},${d.y.toFixed(1)}`;
+/** 地面一块矩形区域 → 屏幕四角（后左 / 后右 / 前右 / 前左）。家具"占地面积"用。 */
+export function floorCorners(u0: number, v0: number, u1: number, v1: number): [Pt, Pt, Pt, Pt] {
+  return [
+    floorPoint(u0, v0),
+    floorPoint(u1, v0),
+    floorPoint(u1, v1),
+    floorPoint(u0, v1),
+  ];
+}
+
+/** 地面一块矩形区域 → SVG/Graphics 多边形的扁平点数组。 */
+export function floorQuad(u0: number, v0: number, u1: number, v1: number): number[] {
+  const [a, b, c, d] = floorCorners(u0, v0, u1, v1);
+  return [a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y];
 }
 
 /** 后墙上的点（贴墙装饰用）：u 左→右，up 距地板后边线的高度。 */
-export function wallPoint(u: number, up: number): { x: number; y: number } {
+export function wallPoint(u: number, up: number): Pt {
   return { x: lerp(FLOOR.bl[0], FLOOR.br[0], u), y: FLOOR.bl[1] - up };
 }
 
-/** 两侧墙：左墙沿 v 的屏幕轨迹（贴侧墙的家具用）。 */
-export function sideWallPoint(side: "left" | "right", v: number, up: number): { x: number; y: number } {
+/** 两侧墙：沿 v 的屏幕轨迹（贴侧墙的家具用）。 */
+export function sideWallPoint(side: "left" | "right", v: number, up: number): Pt {
   const [backX, backY] = side === "left" ? FLOOR.bl : FLOOR.br;
   const [frontX, frontY] = side === "left" ? FLOOR.fl : FLOOR.fr;
   return { x: lerp(backX, frontX, v), y: lerp(backY, frontY, v) - up };
 }
 
 /**
- * 工位阵列：2 列 × 3 行（对齐参考实现的排布），返回每个工位的地面坐标。
- * @param count 实际成员数（最多 6，超出时按 3 列排布）
+ * 工位阵列：2 列 × 3 行（对齐参考画面），返回每个工位的地面坐标。
+ * ⛔ 只排**中下部**（v 0.30~0.80）：后墙要留给橱柜那条"地柜带"，
+ *    工位贴着墙会与柜子打架（v6 把工位铺到 v=0.14，实测家具全糊在墙上）。
+ * @param count 实际工位数（含 CEO；>6 时排 3 列）
  */
 export function deskSlots(count: number): Array<FloorSpot & { u: number; v: number }> {
-  const cols = count > 6 ? 3 : 2;
+  const cols: number = count > 6 ? 3 : 2;
   const rows = Math.max(1, Math.ceil(count / cols));
   const out: Array<FloorSpot & { u: number; v: number }> = [];
   for (let i = 0; i < count; i++) {
     const row = Math.floor(i / cols);
     const col = i % cols;
-    // u/v 在 [0.2, 0.8] 内均匀分布，行自上而下铺开（近处的行更靠前）
-    // ⛔ 列距别拉太开：0.27~0.73 会让两个人之间空出一大块（实测）。
-    // ⛔ v7 又收窄到 0.40~0.60：换 Kenney 素材后，桌子（等距 sprite 含**深度投影**，
-    //    高度 ≈88px×系数）会把同 v 的人整个盖住；间距收到 0.20（≈146px）+ 素材缩到 0.95，
-    //    桌子才只遮住人的下半身、露出头与肩（照参考实现的观感）。
-    const u = count === 1 ? 0.5 : 0.37 + (col / (cols - 1)) * 0.26;
-    // ⛔ v7 行距同时拉开到 0.14~0.86：0.18~0.82 时前排的人+桌会压住后排那位的身体与标签（实测）。
-    const v = rows === 1 ? 0.58 : 0.14 + (row / (rows - 1)) * 0.72;
+    // 列：0.35 / 0.65 —— 参考里两列间距约为房间宽的 30%
+    const u = cols === 1 ? 0.5 : 0.35 + (col / (cols - 1)) * 0.30;
+    // 行：单行落在中段；多行从 0.30 铺到 0.80
+    const v = rows === 1 ? 0.52 : 0.24 + (row / (rows - 1)) * 0.60;
     out.push({ ...floorPoint(u, v), u, v });
   }
   return out;

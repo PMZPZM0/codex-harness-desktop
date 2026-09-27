@@ -101,9 +101,9 @@ export const ISO = {
  * ⛔ 「卡通感」的第一杠杆：2.x 的细描边在这个尺寸下看着像线稿没画完，3.2 才是粗描边扁平插画。
  * ⛔ 只给**主轮廓**用它；眉毛/嘴/腰带/屏幕内容这些细节仍用 INK_W_THIN，否则一脸糊。
  */
-export const INK_W = 3.2;
+export const INK_W = 1.1;
 /** 细节线（眉/嘴/内衬/屏幕内容/书脊）。 */
-export const INK_W_THIN = 2.2;
+export const INK_W_THIN = 0.8;
 
 /** 肤色（三档，按成员稳定分配）。 */
 export const SKINS = ["#f6d3ad", "#ecc39a", "#d9a878"] as const;
