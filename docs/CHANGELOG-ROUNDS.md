@@ -2654,3 +2654,13 @@ tomllib / type-stripping 沙箱假红，本轮未碰 electron/）。
 `npm run check` build+5 脚本 OK，preflight 2488✓/19✗（全沙箱假红）。
 **定位手段存档**：先像素扫描（头底/项圈逐列 run）排除"中心也断"，再对照几何常量算理论值，才锁定
 是 walk 侧双重偏移 —— 别靠肉眼猜。
+
+## 🩹 2026-09-27 消息气泡：文件 chip 出现两次（用户截图「发一个文件，怎么出现两次 chip」）
+
+**根因**：用户消息渲染有两路 chip 来源 —— ① 命中原文注解时按 `splitAttachmentSegments` 把 chip
+内联回**原位置**；② `refs.files` 里没渲染过的追加到正文末尾。去重集合 `annotatedPaths` 却用
+**只认图片 token 的** `splitPromptSegments` 收集 ⇒ 文件 token 进不了集合：文件 chip「原位置一次 +
+末尾一次」，正好是截图里「chip 文字 chip」的形态（图片没这问题，因为收集器认图片）。
+**修法**：收集器与渲染用同一个拆分器（一行改动 + 注释钉死"为什么必须同源"）。
+**守卫**：【46】+1（annotatedPaths 禁用只认图片的收集器），变异回退即红。
+**排查**：全仓搜 `splitPromptSegments/promptImagePaths` 其余调用点都是纯图片场景，无同类隐患。
