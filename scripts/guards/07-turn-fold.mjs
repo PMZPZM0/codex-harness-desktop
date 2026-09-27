@@ -2111,6 +2111,20 @@ export async function run() {
   (/browserSkills: findCapabilitySkills\(skills, BROWSER_SKILL_IDS\)/.test(appSrc58b) ? ok : fail)(
     "【58】联动后复算也走同一份名单"
   );
+  // ⛔ 开机自愈的**方向**必须取自用户上次的选择（groupState !== "off"），
+  //    ⛔ 不许写死 planAction(snapshot, groupId, true) —— 一律 true = 每次开机把三个总闸
+  //      拉回开启，用户关掉的写代码模式重启就被重新打开（09-27 用户反馈，真缺陷）。
+  //      锚的是"传进去的不是常量 true"这个不变量（重构语句形态不影响它）。
+  ((() => {
+    const heal = /const plan = planAction\(snapshot, groupId, ([^)]+?)\);/.exec(appSrc58b);
+    if (!heal) return false;
+    const arg = heal[1].trim();
+    if (/^(true|false)$/.test(arg)) return false;               // 常量目标 = 每次开机覆盖用户的选择
+    // 目标变量必须由 groupState(...) 派生（锚"赋值来源"，不锚具体语句形态）
+    return new RegExp("const\\s+" + arg + "\\s*=\\s*groupState\\(snapshot, groupId\\)").test(appSrc58b);
+  })() ? ok : fail)(
+    "【58】开机自愈的方向取自总闸当前状态（写死 true = 用户关掉的开关重启又被打开）"
+  );
 }
 
 {

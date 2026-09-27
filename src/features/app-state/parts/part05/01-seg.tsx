@@ -12,7 +12,7 @@ import "@xterm/xterm/css/xterm.css";
 import { translateEngineNotice } from "../../../../lib/engine-notices-zh";
 import { performRelayLogin, resolveRelayAutoTarget, resolveRelayTarget, resolveRelayKeyTarget, writeRelayActive, readRelayActive, type RelayActive } from "../../../../lib/relay";
 import {
-  ponytailSubSkills, planAction, applyAction, isEmptyAction, describePartial, guardOffOwner,
+  ponytailSubSkills, planAction, applyAction, isEmptyAction, groupState, describePartial, guardOffOwner,
   findCapabilitySkill, findCapabilitySkills, syncedSnapshot, samePluginId,
   PONYTAIL_PLUGIN_ID, NUPHUS_MCP_ID, DESKTOP_SKILL_ID, BROWSER_SKILL_ID, BROWSER_SKILL_IDS, GROUP_LABELS,
   type CapabilityGroupId, type SubToggleSnapshot, type GroupIpc, type MemberKey,
@@ -207,7 +207,14 @@ bag.bootHealRef = bootHealRef as typeof bag.bootHealRef;
         };
         let healed = false;
         for (const groupId of ["writing-code", "desktop-automation", "browser-automation"] as CapabilityGroupId[]) {
-          const plan = planAction(snapshot, groupId, true);
+          // ⛔⛔ 自愈的**目标态必须取自用户上次的整体选择**，⛔ 不许一律 true ——
+          //    一律 true 的含义是"每次开机都把三个总闸拉回开启"：用户关掉写代码模式，
+          //    重启就被重新打开（09-27 用户反馈）。自愈的本职是**拉齐组内子项**（比如
+          //    总闸开了但某个子技能还关着），方向由总闸自己的状态决定：
+          //      · 整组 off（用户关的）⇒ 目标关，把没跟上关的子项补齐关；
+          //      · on / partial ⇒ 目标开（沿用"开箱即用"的装机默认，partial 拉齐成全开）。
+          const target = groupState(snapshot, groupId) !== "off";
+          const plan = planAction(snapshot, groupId, target);
           if (isEmptyAction(plan)) continue;
           await applyAction(plan, bag.groupIpc);
           healed = true;
