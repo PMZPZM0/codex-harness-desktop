@@ -1,137 +1,89 @@
 /**
- * 办公室插画色板（team-office 域 09-26 v5「造型升级」）。
+ * 办公室插画色板（team-office 域 09-27 v10「照参考：黑色剪影 + 彩色项圈」）。
  *
- * ⛔ 统一描边（OFC.ink）是「卡通感」的地基：纯填充色块永远像占位图（v2 教训）。
- * ⛔ v4 被评「人物丑 / 场景也丑」，去 GitHub 调研现成库（DiceBear / open-peeps /
- *    avataaars / notionists）后的结论：
- *      现成库全是半身或头像、且 SVG 扁平化（无部件分组）⇒ 不能直接用于工位动画；
- *      但它们共有的**造型规律**可以用：粗描边 + 大头 + 极简五官 + **饱和纯色（不用渐变/灰调）**。
- *    v4 的错在于配色一路往「淡」调（墙 #eef3f9 几乎白、地板 #f5ebdd 灰米），整屏像褪色照片。
- *    v5 转向：**明确的主色 + 明确的对比**，让每个面一眼能分辨。
- * ⛔ 场景是**固定浅色插画**（不跟随深色主题）—— 插画自带光感与阴影，跟主题反色会发脏。
+ * ⛔ v10 为什么又换：用户 09-27 贴了参考画面（Marvis 的办公室）并要求「照这个效果来」。
+ *    参考里的角色**不是有色人形**，而是：
+ *      · 一只**纯黑动物剪影**（圆头 + 两只尖耳 + 两侧伸出的爪子），背对观众、**没有五官**；
+ *      · 脖子上一圈**饱和彩色项圈**（绿/红/紫/蓝/黄/青…），这是全身唯一的颜色；
+ *      · 通体**没有描边**（是 3D 渲染观感，靠明暗分层，不是卡通线稿）。
+ *    ⇒ 之前那套「肤色 + 发色 + 上衣色」的人形色板（v4~v9）整体废弃：
+ *      认人改成**靠项圈色**，每个成员稳定派生一个（同一人每次进办公室都是同一个色）。
+ *
+ * ⛔ 场景是**固定浅色插画**（不跟随深色主题）—— 插画自带光感与阴影，跟主题反色会发脏
+ *    （DESIGN.md 的 Theming 节也钉了这条）。
+ */
+
+/** 剪影墨色：参考里是接近纯黑而非 #000（纯黑在小尺寸下会"糊成洞"，略抬一档更像渲染）。
+ *  ⛔ 角色剪影是**平的纯黑**：不给它加高光/渐变 —— 40px 尺寸下那道高光会像一块污渍（实测过）。 */
+export const SILHOUETTE = "#111116";
+
+/**
+ * 项圈色板（照参考：高饱和、彼此拉得开、在白底上一眼能分辨）。
+ * ⛔ 项圈是角色身上**唯一**的颜色 ⇒ 色相必须分得开（不要出现两个"都偏蓝"）。
+ */
+export const COLLARS = [
+  "#3fbf62", // 绿
+  "#e0453c", // 红
+  "#8b5cf6", // 紫
+  "#2f7fe0", // 蓝
+  "#f0c23c", // 黄
+  "#22c6c0", // 青
+  "#ef7d4e", // 橙
+  "#d94f9e", // 品红
+] as const;
+
+/** CEO 专属项圈色（金色，与员工色板不撞）。 */
+export const CEO_COLLAR = "#d8a02c";
+
+/** 项圈色：按成员序号稳定派生 —— ⛔ 不是每拍随机，否则同一人一会儿绿一会儿红。 */
+export function collarColor(index: number, isCeo = false): string {
+  if (isCeo) return CEO_COLLAR;
+  const n = ((index % COLLARS.length) + COLLARS.length) % COLLARS.length;
+  return COLLARS[n];
+}
+
+/** 项圈背面（略暗一档，给项圈一条厚度边）。 */
+export function collarDark(hex: string): string {
+  const n = parseInt(hex.replace("#", ""), 16);
+  const r = Math.round(((n >> 16) & 255) * 0.74);
+  const g = Math.round(((n >> 8) & 255) * 0.74);
+  const b = Math.round((n & 255) * 0.74);
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
+}
+
+/**
+ * 角色物种（09-27 v10，用户：「换一个动物，每个角色都是不同的动物」）。
+ * ⛔ 剪影**全是黑的、没有五官** ⇒ 物种只能靠**头部与耳朵的外形**区分，
+ *    所以每种动物的耳朵必须在小尺寸下也一眼分得开（尖三角 / 垂耳 / 长立耳 / 圆耳 /
+ *    大外扩圆耳 / 鬃毛 / 尖刺 / 分叉角 …）。⛔ 想加新物种先自问：缩到 30px 还认得出来吗？
+ * ⛔ 顺序即分配顺序（稳定）：同一成员每次进办公室都是同一种动物 + 同一个项圈色。
+ */
+export type AnimalKind =
+  | "cat" | "fox" | "dog" | "rabbit" | "bear" | "sheep"
+  | "koala" | "mouse" | "deer" | "hedgehog" | "pig" | "lion";
+
+/** 员工物种池（CEO 之外按序号轮转）。 */
+export const ANIMALS: AnimalKind[] = [
+  "cat", "fox", "dog", "rabbit", "bear", "sheep",
+  "koala", "mouse", "deer", "hedgehog", "pig",
+];
+
+/** CEO 物种（狮子 —— 鬃毛是全场最好认的一个剪影）。 */
+export const CEO_ANIMAL: AnimalKind = "lion";
+
+export function animalOf(index: number, isCeo = false): AnimalKind {
+  if (isCeo) return CEO_ANIMAL;
+  const n = ((index % ANIMALS.length) + ANIMALS.length) % ANIMALS.length;
+  return ANIMALS[n];
+}
+
+
+/**
+ * 覆层语义色（交接卡片 / 落点特效）。
+ * ⛔ 只留实际用到的两个键 —— 房间 / 家具 / 角色的颜色全在 office-render 的 SKIN 与上面的
+ *    剪影色板里，别再往这里加插画色（会分叉出第二套真相源）。
  */
 export const OFC = {
-  // 墨色（描边）：比 v4 深一档，粗描边才压得住画面
   ink: "#22303f",
-  inkSoft: "#5b6a7d",
-
-  // 墙：上浅下深（腰线分隔，给墙面做层次，不再是"一整片糊白"）
-  wall: "#e9eff8",
-  wallLower: "#d9e4f2",
-  skirt: "#bfcede",
-
-  // 地板：暖木色（v4 的灰米色是"脏"的主因之一）
-  floorA: "#f3e4c8",
-  floorB: "#e0c9a0",
-
-  // 地毯：明确的暖黄（v4 的 #e8d6c0 和地板几乎同色，等于白铺）
-  rug: "#f7d089",
-  rugEdge: "#dfa945",
-
-  // 木器
-  wood: "#b8863f",
-  woodLight: "#ecc79b",
-  woodDark: "#9c6f33",
-
-  // 金属 / 屏幕
-  metal: "#c2ccd8",
-  metalDark: "#8d9aab",
-  screen: "#e4eef8",
-  screenOn: "#b9e3cd",
-  screenOnDeep: "#86cfa8",
-  codeInk: "#2f7a53",
-  codeIdle: "#93a5b8",
-
-  // 纸与便签
-  paper: "#ffffff",
-  noteA: "#ffe08a",
-  noteB: "#a8d8f0",
-  noteC: "#f7b3c0",
-  noteD: "#b8e6b0",
-
-  // 植物 / 容器 / 水
-  plant: "#5cb85c",
-  plantDeep: "#3f9a4a",
-  pot: "#d98a52",
-  water: "#cbe6ff",
-  waterDeep: "#8fc4ee",
-
-  // 地面投影色（家具与人物脚下）
-  shadow: "#5b6a7d",
-
-  // 语义色
   ok: "#4aa96c",
-  warn: "#e8875f",
-  info: "#5b9bd5",
 } as const;
-
-/**
- * 斜俯视房间色板（09-26 v6「复刻 ai-office-react」）。
- * ⛔ 参考实现的观感 = **极简浅色现代办公室**（近白地板 + 灰白墙 + 纯白桌 + 深灰显示器背面
- *    + 木色柜 + 绿植点缀），与 v5 的「暖木地板 + 蓝灰墙」是两套语言 —— 换投影就得换色板，
- *    否则浅色等距房间配暖色家具会脏。
- */
-export const ISO = {
-  floor: "#f5f6f8",
-  floorTile: "#eaecf0",
-  wall: "#e9e7e2",
-  wallSide: "#dbd8d2",
-  wallTop: "#f2f0ec",
-  baseboard: "#cbc8c1",
-  ceiling: "#f8f7f5",
-  deskTop: "#ffffff",
-  deskEdge: "#e0ded8",
-  deskLeg: "#c9c7c1",
-  monitor: "#2f3033",
-  monitorBack: "#26272a",
-  monitorStand: "#a8a9ac",
-  chair: "#d7d5cf",
-  chairDark: "#bcbab4",
-  wood: "#c9a473",
-  woodDark: "#ab8552",
-  pot: "#d8dade",
-  plant: "#4f9f61",
-  plantDark: "#3d8a4d",
-  ink: "#2b2f36",
-  shadow: "#8d8f95",
-} as const;
-
-/**
- * 主轮廓描边宽度。
- * ⛔ 「卡通感」的第一杠杆：2.x 的细描边在这个尺寸下看着像线稿没画完，3.2 才是粗描边扁平插画。
- * ⛔ 只给**主轮廓**用它；眉毛/嘴/腰带/屏幕内容这些细节仍用 INK_W_THIN，否则一脸糊。
- */
-export const INK_W = 1.1;
-/** 细节线（眉/嘴/内衬/屏幕内容/书脊）。 */
-export const INK_W_THIN = 0.8;
-
-/** 肤色（三档，按成员稳定分配）。 */
-export const SKINS = ["#f6d3ad", "#ecc39a", "#d9a878"] as const;
-/** 发色。 */
-export const HAIRS = ["#3a4657", "#5a4632", "#2c2f3a", "#7a5a3a", "#8a6a4a"] as const;
-/** 上衣色（饱和度比 v4 高一档，且彼此拉开）。 */
-export const CLOTHES = ["#3d8fd6", "#6f6ce0", "#2fb3a3", "#ef7d4e", "#c95fae", "#5ebd68", "#e0a52c", "#7f6fe0"] as const;
-
-export type WorkerLook = {
-  skin: string;
-  hair: string;
-  /** 0 = 短圆头 / 1 = 中分长鬓 / 2 = 丸子头 */
-  hairStyle: 0 | 1 | 2;
-  glasses: boolean;
-  cloth: string;
-  /** 有领子（正装感） */
-  collar: boolean;
-};
-
-/** 按成员序号派生视觉特征 —— 同一成员每次进办公室都是同一张脸（不是每帧随机）。 */
-export function workerLook(index: number, seed = 0): WorkerLook {
-  const n = index + seed * 7;
-  return {
-    skin: SKINS[n % SKINS.length],
-    hair: HAIRS[(n * 3 + 1) % HAIRS.length],
-    hairStyle: ((n * 5) % 3) as 0 | 1 | 2,
-    glasses: (n * 7) % 3 === 0,
-    cloth: CLOTHES[n % CLOTHES.length],
-    collar: (n * 11) % 2 === 0,
-  };
-}

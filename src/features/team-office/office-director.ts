@@ -23,7 +23,7 @@ export type OfficePoseKind =
   | "errand"    // 去接水 / 翻资料架 / 看白板
   | "absent";   // 没有会话 = 空工位
 
-export type ErrandSpot = "water" | "shelf" | "printer";
+export type ErrandSpot = "water" | "shelf" | "printer" | "restroom";
 export type HandoffKind = "task" | "report" | "doc" | "chat";
 
 export type OfficePose = {
@@ -82,8 +82,9 @@ const ERRAND_LABEL: Record<ErrandSpot, string> = {
   water: "去接水",
   shelf: "去翻资料架",
   printer: "去打印",
+  restroom: "去洗手间",
 };
-const ERRAND_SPOTS: ErrandSpot[] = ["water", "shelf", "printer"];
+const ERRAND_SPOTS: ErrandSpot[] = ["water", "shelf", "printer", "restroom"];
 
 const HANDOFF_LABEL: Record<HandoffKind, string> = {
   task: "派任务",

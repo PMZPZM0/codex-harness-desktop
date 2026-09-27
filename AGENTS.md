@@ -124,6 +124,7 @@ node scripts/logs.mjs delete <id...> --confirm <id...|all> --reason "…"   # �
 - **搜索 = 当前会话内**（同上 →「搜索改为『当前会话内』」）：顶栏 🔍 只搜当前会话（跨会话实现保留但不接 UI）。⛔ 开关必须复用 `bag.chatSearchOpen` **单一真相源**（Ctrl+Shift+F 也走它）。⛔ `collectMessageTexts` 必须用 `itemText(item)` 按 type 取字段 —— **userMessage 的正文在 `content[]` 里、`item.text` 为空**，只看 `item.text` 会让用户自己发的消息搜不到。守卫【146】。
 - **更新检查的版本比较**（同上 →「审计报告遗漏项补修」）：`updates.ts` 用 `parseVersion`/`compareVersions`，⛔ 不许退回「字符串不等即更新」；stable 通道尊重 `prerelease`（**本地是预发布版时除外**，否则 beta 用户永远收不到更新）。守卫【144】。
 - **守卫的「行为断言」要跑真产物**（同上）：`accelerator.ts` 与收藏夹的判据跑 `dist-electron` 产物（sanitizeAccelerator / acceleratorLabel / 收藏夹 add·删·clear），收藏夹用 `mkdtempSync` 临时目录、**不碰用户真实数据**（守卫【145】）。
+- **办公室场景的遮挡顺序 = 显示器 → 桌 → 人 → 椅**（`docs/CHANGELOG-ROUNDS.md` →「办公室 v10」）：三件物体各按**自己的地面基线 y** 排 zIndex（桌 `v − DESK_DV/2`、椅 `v + CHAIR_DV`、人取座位点）；⛔ 合成一件 Graphics 必错（要么人只露头顶、要么椅子被整个人盖住）。地板纵深 / 行距必须满足 `行距 > 桌纵深 + 椅距`，否则**下排显示器会盖住上排的人**。角色是**纯黑动物剪影 + 彩色项圈**：物种靠耳朵外形（每个成员一种动物、CEO 狮子）、个体靠项圈色，两者都按序号**稳定派生**；⛔ 不加五官 / 描边 / 高光。跑腿目标坐标必须与 `drawAmenities` 的设施坐标**同源**。守卫【169】【176】。
 
 ## ⛔ 验收铁律（硬性要求，2026-09-11 起生效，先读这条）
 
