@@ -510,6 +510,17 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   (/const candidates[\s\S]{0,240}?orderedRegistries\(/.test(engineUpdSrc)
     ? ok("registry 与 tarball 共用同一份源排序（不各排一次，避免两边漂移）")
     : fail("tarball 候选地址又自己排了一遍源 —— 与 registry 的顺序会漂移"));
+  // ⛔ 引擎更新卡片必须**如实显示当前取源**：逻辑跟着 downloadSource 走了、界面却还写"默认镜像直连"，
+  //    等于把用户对「下载源」的选择藏起来（09-27 实测：改完逻辑没改 UI，文案停留在旧行为）。
+  {
+    const generalPath = join(ROOT, "src", "features", "settings-general", "GeneralSettingsSection.tsx");
+    const generalSrc = existsSync(generalPath) ? readFileSync(generalPath, "utf8") : "";
+    const registryPath = join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx");
+    const registrySrc = existsSync(registryPath) ? readFileSync(registryPath, "utf8") : "";
+    (/ENGINE_SOURCE_LABEL/.test(generalSrc) && /downloadSource/.test(generalSrc)
+      && /GeneralSettingsSection[^\n]*downloadSource=\{downloadSource\}/.test(registrySrc)
+      ? ok : fail)("引擎更新卡片显示当前取源（逻辑跟随下载源，界面也必须跟着说）");
+  }
 
   // ⑦ 渲染层入参校验层（09-13 审计 S5；09-19 用户拍板「隐私第一」后全面收紧 fs 通道）
   const mainForSec = readMainSource();
