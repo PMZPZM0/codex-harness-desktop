@@ -13,22 +13,28 @@
  * 天然有纵深，不会再出现「各自漂移」。
  */
 
-export const SCENE_W = 960;
-export const SCENE_H = 640;
+export const SCENE_W = 1000;
+export const SCENE_H = 740;
 
 /** 地板四角（屏幕坐标）：后左、后右、前右、前左。
- *  ⛔ v9 按参考画面放宽：后墙 488 → 房间更"宽扁"（参考的办公室接近 2:1），
- *    同时把纵深从 368 拉到 398，给后墙橱柜与三排工位都留出呼吸。
+ *  ⛔ v10 两条都是被工位逼出来的：
+ *    ① **横向放宽**（后 508 → 前 732）：3 列工位要求「列距 > 桌宽」，否则桌子互相压；
+ *    ② **纵深加深**（v9 的 450 → 540）：工位是"深"的（桌 0.235 + 椅 0.058 个 v），
+ *       行距必须大于它 —— 450 时实测**下一排的显示器会盖住上一排的人**（显示器比人高，
+ *       而且前排纵深缩放更大 ⇒ 显示器的顶比后排更靠上）。
  */
 export const FLOOR = {
-  bl: [236, 152] as const,
-  br: [724, 152] as const,
-  fr: [832, 596] as const,
-  fl: [128, 596] as const,
+  bl: [246, 150] as const,
+  br: [754, 150] as const,
+  fr: [866, 690] as const,
+  fl: [134, 690] as const,
 };
 
-/** 墙高（屏幕像素）——后墙从地板后边线向上抬这么多。 */
-export const WALL_H = 136;
+/** 墙高（屏幕像素）——后墙从地板后边线向上抬这么多。
+ *  ⛔ v10 从 136 收到 124：参考画面里房间几乎"退场"，画面主角是工位，
+ *    墙太高会把工位挤到下半屏（v9 实测上半屏全是空墙）。
+ */
+export const WALL_H = 124;
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
@@ -66,12 +72,6 @@ export function floorCorners(u0: number, v0: number, u1: number, v1: number): [P
   ];
 }
 
-/** 地面一块矩形区域 → SVG/Graphics 多边形的扁平点数组。 */
-export function floorQuad(u0: number, v0: number, u1: number, v1: number): number[] {
-  const [a, b, c, d] = floorCorners(u0, v0, u1, v1);
-  return [a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y];
-}
-
 /** 后墙上的点（贴墙装饰用）：u 左→右，up 距地板后边线的高度。 */
 export function wallPoint(u: number, up: number): Pt {
   return { x: lerp(FLOOR.bl[0], FLOOR.br[0], u), y: FLOOR.bl[1] - up };
@@ -85,22 +85,46 @@ export function sideWallPoint(side: "left" | "right", v: number, up: number): Pt
 }
 
 /**
- * 工位阵列：2 列 × 3 行（对齐参考画面），返回每个工位的地面坐标。
- * ⛔ 只排**中下部**（v 0.30~0.80）：后墙要留给橱柜那条"地柜带"，
- *    工位贴着墙会与柜子打架（v6 把工位铺到 v=0.14，实测家具全糊在墙上）。
- * @param count 实际工位数（含 CEO；>6 时排 3 列）
+ * 工位阵列：最多 3 列 × 3 行（照参考的「一格一个工位」）。
+ * ⛔ v10 为什么改：v9 用「2 列 × 3 行」，列距 0.30、桌宽 0.196 —— 看着够，实际
+ *    桌子的**屏幕宽**还要乘上 u→x 的横向伸缩（后 508 / 前 732），实测两张桌子压在一起。
+ *    现在列距 0.27 而桌半宽 0.115（桌宽 ≈ 0.23 个 u）⇒ 桌间必留缝。
+ * ⛔ 最后一行不满时**居中**，否则 4 个人会出现「右下角孤零零一个工位」。
+ */
+const COL_U: Record<number, number[]> = {
+  1: [0.5],
+  2: [0.34, 0.66],
+  3: [0.23, 0.5, 0.77],
+};
+/** 行位置（v）：0 = 贴后墙，1 = 贴观众。
+ *  ⛔ 行距必须 > 「桌纵深 0.235 + 椅 0.058」，而且还要留出**显示器的高度** ——
+ *     下一排的显示器顶会伸到上一排的人胸口高度，行距不够就直接把人盖住（实测）。 */
+const ROW_V: Record<number, number[]> = {
+  1: [0.56],
+  2: [0.36, 0.8],
+  3: [0.3, 0.61, 0.92],
+};
+
+/**
+ * @param count 实际工位数（含 CEO）
  */
 export function deskSlots(count: number): Array<FloorSpot & { u: number; v: number }> {
-  const cols: number = count > 6 ? 3 : 2;
-  const rows = Math.max(1, Math.ceil(count / cols));
+  const n = Math.max(1, Math.min(9, count));
+  const cols = Math.min(3, n);
+  const rows = Math.ceil(n / cols);
+  const xs = COL_U[cols];
+  const ys = ROW_V[rows];
+  const gap = cols > 1 ? xs[1] - xs[0] : 0;
   const out: Array<FloorSpot & { u: number; v: number }> = [];
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < n; i++) {
     const row = Math.floor(i / cols);
     const col = i % cols;
-    // 列：0.35 / 0.65 —— 参考里两列间距约为房间宽的 30%
-    const u = cols === 1 ? 0.5 : 0.35 + (col / (cols - 1)) * 0.30;
-    // 行：单行落在中段；多行从 0.30 铺到 0.80
-    const v = rows === 1 ? 0.52 : 0.20 + (row / (rows - 1)) * 0.66;
+    const inRow = Math.min(cols, n - row * cols);
+    // 不满的一行：整行按列距居中
+    const u = inRow === cols
+      ? xs[col]
+      : 0.5 - ((inRow - 1) * gap) / 2 + col * gap;
+    const v = ys[row];
     out.push({ ...floorPoint(u, v), u, v });
   }
   return out;

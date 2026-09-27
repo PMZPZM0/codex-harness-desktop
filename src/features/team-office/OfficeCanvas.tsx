@@ -1,15 +1,15 @@
 /**
- * PixiJS 渲染层（team-office 域 09-27 v8「PixiJS 替换 SVG」）。
+ * PixiJS 渲染层（team-office 域 09-27 v10「角色 = 黑色动物剪影」）。
  *
- * ⛔ 为什么换：用户看了 workbzw/ai-office-react（PixiJS + Spine）后要求「复刻过来」，
- *     SVG 手绘人物与 Kenney 3D 渲染家具放一起违和。现在：
- *     · 家具 = Kenney CC0 等距渲染件（Sprite，素材 URL 走**静态 import**）
- *     · 人物 = Graphics API 程序绘制（粗描边 + 大头 + 极简五官，与家具风格一致）
- *     · 动画 = ticker 逐帧驱动（坐姿 / 走动 / 交接卡片）
+ * ⛔ v10 为什么又改（用户 09-27：「看看这种布局效果」「每个角色都是不同的动物」）：
+ *    ① **构图**照参考 —— 镜头在工位正前方略高，自远而近 = 显示器 → 桌 → 人 → 椅子；
+ *       椅子必须在人物**之后**画（zIndex 更大），椅背正好挡住角色下半身。
+ *    ② **角色**照参考 —— 纯黑**动物剪影**（无描边、无五官）+ 脖子一圈饱和彩项圈；
+ *       每个成员一个**不同的物种**（猫 / 狐狸 / 狗 / 兔 / 熊 / 熊猫 / 考拉 / 鼠 / 鹿 / 刺猬 / 猪，
+ *       CEO 是狮子），物种靠耳朵外形认、个体靠项圈色认。
  *
  * ⛔ 深度用 zIndex，不靠「图层先后」：世界层 sortableChildren = true，每个对象按
- *     **地面基线 y** 排序 ⇒ 桌子遮得住坐在后面那个人的下半身、走动的人穿过房间时
- *     前后关系自动正确（SVG 时代靠手写「显示器 → 人 → 桌子」三段顺序，搬一层就错）。
+ *     **地面基线 y** 排序 ⇒ 桌子、椅子、人、走动的人前后关系自动正确。
  *
  * ⛔ 姿势变化才重建人物、同一姿势**不重建** —— 重建会把动画相位打回随机起点，
  *     表现成「打字打着突然跳一下」。
@@ -25,24 +25,28 @@ import { useEffect, useRef, useState } from "react";
 //    ⛔ 名字有误导性：它是「在没有 unsafe-eval 的环境里跑」的入口，不是「启用 eval」。
 import "pixi.js/unsafe-eval";
 import { Application, Container, Graphics, Text, TextStyle } from "pixi.js";
-import { OFC, INK_W, INK_W_THIN, workerLook, type WorkerLook } from "./office-palette";
+import {
+  OFC, SILHOUETTE,
+  animalOf, collarColor, collarDark, type AnimalKind,
+} from "./office-palette";
 import { deskSlots, floorPoint, SCENE_W, SCENE_H, type FloorSpot } from "./office-iso";
 import type { DirectorSnapshot, OfficePose, OfficeHandoff, ErrandSpot } from "./office-director";
 import type { OfficeMember } from "./OfficeScene";
 
-import { drawRoom as paintRoom, drawBackWall, drawSideProps, drawDeskStation, drawAmenities, type PropTicker } from "./office-render";
+import {
+  drawRoom as paintRoom, drawBackWall, drawSideProps, drawDeskStation, drawChair,
+  drawAmenities, screenKindOf, CHAIR_DV, DESK_DV, type PropTicker,
+} from "./office-render";
 
-/** 人物整体缩放：v5 的人物（头径 41px）相对工位桌椅过大，压过桌子 ⇒ 缩到 0.64。 */
-const PERSON_K = 0.72;
-const SEAT_LIFT = 90;
-const TAG_LIFT = 132;
-const HANDOFF_LIFT = 126;
-
-
-
-/** 世界层里房间永远垫底、吊扇永远在最上（都与地面物件不重叠）。 */
-const Z_ROOM = -1e6;
-const Z_FAN = 1e5;
+/**
+ * 人物整体缩放。⛔ 与工位几何是一组：把人放大会让耳朵顶到显示器上、
+ *    椅子盖不住下半身（两侧都实测过），改这里必须同时看 SEAT_LIFT。
+ */
+const PERSON_K = 0.76;
+/** 人物容器相对座位地面点的抬升（屏幕像素，再乘纵深缩放）。 */
+const SEAT_LIFT = 56;
+const TAG_LIFT = 124;
+const HANDOFF_LIFT = 120;
 
 const HANDOFF_TINT: Record<OfficeHandoff["kind"], number> = {
   task: 0xdbeafe,
@@ -51,15 +55,33 @@ const HANDOFF_TINT: Record<OfficeHandoff["kind"], number> = {
   chat: 0xeee0fb,
 };
 
-/** 跑腿目的地（地面归一化坐标）：接水 / 书架 / 打印，都落在工位区之外的空地。 */
+/**
+ * 跑腿目的地（地面归一化坐标）：**设施锚点**。
+ * ⛔ 必须与 office-render.drawAmenities 里画设施的那组坐标**逐字同源** ——
+ *    「去接水」的人要真的站在饮水机旁。改一处必须同时改另一处。
+ */
 const ERRAND_SPOT_UV: Record<ErrandSpot, { u: number; v: number }> = {
-  water: { u: 0.84, v: 0.62 },
-  shelf: { u: 0.18, v: 0.14 },
-  printer: { u: 0.8, v: 0.16 },
+  water: { u: 0.955, v: 0.62 },    // 饮水机
+  printer: { u: 0.90, v: 0.13 },   // 打印机
+  shelf: { u: 0.055, v: 0.21 },    // 资料架
+  restroom: { u: 0.055, v: 0.90 }, // 卫生间隔间
 };
+
+/** 小人**站**的位置：设施锚点往观众侧挪一点（站进设施里穿帮，站在设施前才对）。 */
+const ERRAND_STAND_UV: Record<ErrandSpot, { u: number; v: number }> = {
+  water: { u: 0.90, v: 0.68 },
+  printer: { u: 0.82, v: 0.20 },
+  shelf: { u: 0.08, v: 0.30 },
+  restroom: { u: 0.10, v: 0.96 },
+};
+
+/** 角色身份：物种（外形）+ 项圈色（颜色）—— ⛔ 两者都由序号稳定派生，不是每拍随机。 */
+type Cosplay = { animal: AnimalKind; collar: string };
 
 type Slot = FloorSpot & { u: number; v: number } & {
   key: string;
+  /** 稳定序号（0 = CEO）—— 屏幕内容变体也按它派生 */
+  idx: number;
   name: string;
   profession: string;
   running: boolean;
@@ -67,6 +89,7 @@ type Slot = FloorSpot & { u: number; v: number } & {
   pose: OfficePose | null;
   isCeo: boolean;
   memberId: string | null;
+  cosplay: Cosplay;
 };
 
 /** 落座人物的可动画部件（重建只在姿势/朝向变化时发生）。 */
@@ -75,8 +98,9 @@ interface SeatedParts {
   armBack: Graphics;
   armFront: Graphics;
   headwrap: Container;
+  /** 打盹时头顶浮起的 z（平时不可见） */
+  doze: Container;
   pose: OfficePose;
-  back: boolean;
 }
 
 /** 工位视图：容器 + 当前内容签名 + 动画相位（相位跨重建保留，动画才连贯）。 */
@@ -119,13 +143,6 @@ interface HandoffView {
   clock: number;
 }
 
-interface SwayPart {
-  obj: Graphics;
-  amp: number;
-  speed: number;
-  phase: number;
-}
-
 interface SceneRefs {
   statics: Map<string, Container[]>;
   staticsKey: string;
@@ -133,14 +150,13 @@ interface SceneRefs {
   walkers: Map<string, WalkerParts>;
   tags: Map<string, TagView>;
   handoffs: Map<string, HandoffView>;
-  swayers: SwayPart[];
-  /** 设施动画部件（饮水机水泡 / 打印机吐纸 / 挂钟走针），由 animateScene 驱动 */
+  /** 设施动画部件（饮水机水泡 / 打印机吐纸 / 挂钟走针 / 隔间指示灯 / 咖啡蒸汽） */
   props: PropTicker[];
   clock: number;
 }
 
 function emptyScene(): SceneRefs {
-  return { statics: new Map(), staticsKey: "", seats: new Map(), walkers: new Map(), tags: new Map(), handoffs: new Map(), swayers: [], props: [], clock: 0 };
+  return { statics: new Map(), staticsKey: "", seats: new Map(), walkers: new Map(), tags: new Map(), handoffs: new Map(), props: [], clock: 0 };
 }
 
 export type OfficeCanvasProps = {
@@ -150,10 +166,6 @@ export type OfficeCanvasProps = {
   snapshot: DirectorSnapshot;
   onOpenThread?: (memberId: string) => void;
 };
-
-function hexToNumber(hex: string): number {
-  return parseInt(hex.replace("#", ""), 16);
-}
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -187,7 +199,7 @@ export function OfficeCanvas({ ceoName, ceoProfession, members, snapshot, onOpen
       await app.init({
         width: SCENE_W,
         height: SCENE_H,
-        background: 0xeef1f5,
+        background: 0xf7f8fa,
         antialias: true,
         resolution: window.devicePixelRatio || 1,
         autoDensity: true,
@@ -242,12 +254,12 @@ export function OfficeCanvas({ ceoName, ceoProfession, members, snapshot, onOpen
 
     const slots = buildSlots(ceoName, ceoProfession, members, snapshot);
     syncStatics(layers.world, slots, sceneRef.current);
-    syncPeople(layers.world, slots, members, sceneRef.current, openThreadRef);
+    syncPeople(layers.world, slots, sceneRef.current, openThreadRef);
     syncTags(layers.tags, slots, sceneRef.current);
     syncHandoffs(layers.handoffs, slots, snapshot, sceneRef.current);
   }, [ready, ceoName, ceoProfession, members, snapshot]);
 
-  return <div ref={hostRef} className="office-scene" style={{ "--office-rows": 1 } as React.CSSProperties} />;
+  return <div ref={hostRef} className="office-scene" />;
 }
 
 /* ── 工位与人物 ─────────────────────────────────────────────────────────── */
@@ -264,6 +276,7 @@ function buildSlots(
   out.push({
     ...geo[0],
     key: "ceo",
+    idx: 0,
     name: ceoName || "CEO",
     profession: ceoProfession || "统筹",
     running: members.some((m) => m.running),
@@ -271,6 +284,7 @@ function buildSlots(
     pose: snapshot.ceo,
     isCeo: true,
     memberId: null,
+    cosplay: { animal: animalOf(0, true), collar: collarColor(0, true) },
   });
   members.forEach((member, i) => {
     const g = geo[i + 1];
@@ -278,6 +292,8 @@ function buildSlots(
     out.push({
       ...g,
       key: member.id,
+      /** 只给屏幕内容变体用（1..n，与物种池的序号是两套独立编号，别混用） */
+      idx: i + 1,
       name: member.name || "员工",
       profession: member.profession || "通用",
       running: member.running,
@@ -285,17 +301,27 @@ function buildSlots(
       pose: member.hasThread ? snapshot.poses[i] ?? null : null,
       isCeo: false,
       memberId: member.id,
+      // ⛔ 序号从 **0** 起（不是 i + 1）：物种池是 [cat, fox, …]，从 1 起会让**猫永远轮不到**
+      //    （≤10 人的团队里第一种动物根本不出场）。CEO 走 isCeo 分支，不占用池子。
+      cosplay: { animal: animalOf(i), collar: collarColor(i) },
     });
   });
   return out;
 }
 
 /**
- * 桌面三件组（显示器 → 椅子 → 桌子）+ 纵深排序里的落点。
- * ⛔ 只在工位布局变化时重建：桌椅是静态的，每拍重画纯属浪费。
+ * 每个工位画**两件**静态家具，各自按自己的地面基线排序（sortableChildren 自动排前后）：
+ *   · 桌子组（桌 + 显示器 + 侧柜）—— 在人物**之前**（人的头肩要叠在桌面上）
+ *   · 椅子组 —— 在人物**之后**（椅背挡住角色下半身，只留头 / 项圈 / 爪子）
+ * ⛔ 合成一件就会丢掉这个顺序：要么人被桌子挡住只露头顶，要么椅子被整个人盖住（两版都实测过）。
  */
 function syncStatics(world: Container, slots: Slot[], scene: SceneRefs) {
-  const key = slots.map((s) => `${s.key}@${s.x.toFixed(1)},${s.y.toFixed(1)}`).join("|");
+  // ⛔ key 必须覆盖**屏幕内容的全部输入**：成员序号（决定显示代码/表格/图表…）、运行态、是否打盹。
+  //    漏掉 running 的后果实测过：成员从「空闲」变成「工作中」，显示器还停在空闲时的画面
+  //    （syncStatics 提前 return，永不重画）。
+  const key = slots
+    .map((s) => `${s.key}@${s.x.toFixed(1)},${s.y.toFixed(1)}:${s.idx}:${s.running ? 1 : 0}:${s.pose?.kind === "doze" ? 1 : 0}`)
+    .join("|");
   if (key === scene.staticsKey) return;
   scene.staticsKey = key;
   for (const groups of scene.statics.values()) {
@@ -307,16 +333,24 @@ function syncStatics(world: Container, slots: Slot[], scene: SceneRefs) {
   scene.statics.clear();
 
   for (const slot of slots) {
-    // 整套工位家具（阴影 + 桌子 + 显示器 + 键盘 + 椅子）一次画在一个 Graphics 里。
-    // ⛔ zIndex = slot.y - 0.4：比人物容器（slot.y - 0.2）更靠后 —— 参考画面里桌子在
-    //    人的**远侧**（人背对观众、面向桌子），所以家具必须先于人物绘制。
-    const furniture = new Graphics();
-    drawDeskStation(furniture, slot.u, slot.v);
-    const box = new Container();
-    box.zIndex = slot.y - 0.4;
-    box.addChild(furniture);
-    world.addChild(box);
-    scene.statics.set(slot.key, [box]);
+    const screen = screenKindOf(slot.idx, slot.running, slot.pose?.kind === "doze");
+
+    const desk = new Graphics();
+    drawDeskStation(desk, slot.u, slot.v, screen);
+    const deskBox = new Container();
+    // 桌面占地的**中心**地面 y —— 比人物容器更小 = 更靠后
+    deskBox.zIndex = floorPoint(slot.u, slot.v - DESK_DV / 2).y;
+    deskBox.addChild(desk);
+
+    const chair = new Graphics();
+    drawChair(chair, slot.u, slot.v);
+    const chairBox = new Container();
+    // 椅子的地面 y 比座位点更靠观众 ⇒ 自动排在人物之后
+    chairBox.zIndex = floorPoint(slot.u, slot.v + CHAIR_DV).y;
+    chairBox.addChild(chair);
+
+    world.addChild(deskBox, chairBox);
+    scene.statics.set(slot.key, [deskBox, chairBox]);
   }
 }
 
@@ -327,7 +361,6 @@ function syncStatics(world: Container, slots: Slot[], scene: SceneRefs) {
 function syncPeople(
   world: Container,
   slots: Slot[],
-  members: OfficeMember[],
   scene: SceneRefs,
   openThreadRef: { current: ((memberId: string) => void) | undefined },
 ) {
@@ -349,9 +382,9 @@ function syncPeople(
     const state: "running" | "idle" | "never" = slot.running ? "running" : slot.hasThread ? "idle" : "never";
     const pose = slot.pose;
     const away = pose?.kind === "visit" || pose?.kind === "errand";
-    const back = slot.running && pose?.kind === "work";
-    const lookIdx = slot.isCeo ? members.length + 3 : Math.max(0, members.findIndex((m) => m.id === slot.memberId));
-    const look = workerLook(lookIdx, slot.isCeo ? 1 : 0);
+    // ⛔ 坐姿**一律背对观众**（09-27 用户定）：屏幕统一朝观众、人背对观众面向屏幕，
+    //    一眼能看出「谁在干活、屏幕上跑的是什么」。⛔ 只有走动的人朝行进方向。
+    const back = true;
 
     let view = scene.seats.get(slot.key);
     if (!view) {
@@ -368,13 +401,10 @@ function syncPeople(
     }
     view.container.position.set(slot.x, slot.y - SEAT_LIFT * slot.scale);
     view.container.scale.set(slot.scale * PERSON_K);
-    // ⛔ 人物在**家具之前**绘制（zIndex 更小 = 更靠后）⇒ 桌面/显示器/椅子挡住人的下半身。
-    //    09-27 用户要「身体展示全」：靠**抬高 + 缩小桌椅**让人露出头与整段躯干
-    //    （SEAT_LIFT / deskH / 显示器尺寸三处是联动的，改一处要一起看）。
-    //    ⛔ 反过来（人后画）会让人腿叠在显示器上 —— 实测截图确认过。
-    view.container.zIndex = slot.y - 0.55;
+    // ⛔ 人物排在自己的**座位地面 y** 上：桌子（更小的 y）自动在其后、椅子（更大的 y）在其前。
+    view.container.zIndex = slot.y;
 
-    const sig = state === "never" ? "never" : away ? "away" : `${pose?.kind}:${back ? 1 : 0}:${lookIdx}`;
+    const sig = state === "never" ? "never" : away ? "away" : `${pose?.kind}:${back ? 1 : 0}:${slot.cosplay.animal}`;
     if (view.sig !== sig) {
       view.container.removeChildren().forEach((c) => c.destroy({ children: true }));
       view.parts = null;
@@ -383,7 +413,7 @@ function syncPeople(
         view.container.addChild(buildVacant(slot.scale));
         view.container.eventMode = "none";
       } else if (!away && pose) {
-        const { container: person, parts } = createWorkerGraphics(pose, look, back);
+        const { container: person, parts } = createWorkerGraphics(pose, slot.cosplay, back);
         view.container.addChild(person);
         view.parts = parts;
         view.container.eventMode = slot.memberId ? "static" : "none";
@@ -391,11 +421,11 @@ function syncPeople(
     }
 
     /* 走动：visit/errand 时把人换成走动小人，位置由 ticker 插值 */
-    const ground = { x: slot.x, y: slot.y - 14, scale: slot.scale };
+    const ground = { x: slot.x, y: slot.y - 12, scale: slot.scale };
     let walker = scene.walkers.get(slot.key);
     if (away && pose) {
       if (!walker) {
-        walker = createWalker(look, ground);
+        walker = createWalker(slot.cosplay, ground);
         world.addChild(walker.container);
         scene.walkers.set(slot.key, walker);
       }
@@ -418,8 +448,8 @@ function syncPeople(
 function buildVacant(scale: number): Container {
   const c = new Container();
   const g = new Graphics();
-  g.roundRect(-42, -96 * scale - 15, 84, 30, 15).fill({ color: 0xffffff, alpha: 0.9 }).stroke({ color: 0xb9c6d6, width: 2.2 });
-  const text = new Text({ text: "空工位", style: new TextStyle({ fill: 0x7e8c9e, fontSize: 11.5 }) });
+  g.roundRect(-42, -96 * scale - 15, 84, 30, 15).fill({ color: 0xffffff, alpha: 0.92 }).stroke({ color: 0xc6d0dc, width: 2 });
+  const text = new Text({ text: "空工位", style: new TextStyle({ fill: 0x8a95a3, fontSize: 11.5 }) });
   text.anchor.set(0.5);
   text.position.set(0, -96 * scale);
   c.addChild(g, text);
@@ -430,12 +460,12 @@ function walkTarget(pose: OfficePose, slots: Slot[]): { x: number; y: number; sc
   if (pose.kind === "visit" && pose.visitIndex !== undefined) {
     const host = slots[pose.visitIndex + 1];
     if (host) {
-      const p = floorPoint(clamp01(host.u + 0.16), clamp01(host.v + 0.08));
+      const p = floorPoint(clamp01(host.u + 0.19), clamp01(host.v + 0.02));
       return { x: p.x, y: p.y, scale: p.scale };
     }
   }
   const spot: ErrandSpot = pose.kind === "errand" ? pose.spot ?? "water" : "water";
-  const uv = ERRAND_SPOT_UV[spot];
+  const uv = ERRAND_STAND_UV[spot];
   const p = floorPoint(uv.u, uv.v);
   return { x: p.x, y: p.y, scale: p.scale };
 }
@@ -485,8 +515,10 @@ function syncTags(layer: Container, slots: Slot[], scene: SceneRefs) {
     g.roundRect(-w / 2, -h / 2 + 2.5, w, h, h / 2).fill({ color: 0x2a3542, alpha: 0.1 });
     g.roundRect(-w / 2, -h / 2, w, h, h / 2).fill({ color: 0xffffff, alpha: 0.95 });
     const dotX = -w / 2 + padX + dotR;
-    g.circle(dotX, 0, dotR).fill(slot.running ? 0x2fb26a : 0xb9c0c8);
-    if (slot.running) g.circle(dotX, 0, dotR + 2.6).stroke({ color: 0x2fb26a, width: 1.3, alpha: 0.32 });
+    // 状态点用**该成员的项圈色**（画面里靠它认人，标签上也保持一致）
+    const tint = parseInt(slot.cosplay.collar.replace("#", ""), 16);
+    g.circle(dotX, 0, dotR).fill(slot.running ? tint : 0xb9c0c8);
+    if (slot.running) g.circle(dotX, 0, dotR + 2.6).stroke({ color: tint, width: 1.3, alpha: 0.32 });
     view.container.addChild(g);
     nameText.anchor.set(0, 0.5);
     nameText.position.set(dotX + dotR + 5, 0);
@@ -564,122 +596,252 @@ function headOf(index: number, slots: Slot[]): { x: number; y: number } {
   return { x: slot.x, y: slot.y - HANDOFF_LIFT * slot.scale };
 }
 
-/* ── 房间与家具 ─────────────────────────────────────────────────────────
-   ⛔ v9 起全部走 office-render 的**程序化绘制**（白系等距、无贴图、无描边）。
-      这里不再有 drawRoom / drawFurniture / createSprite：贴图路线已整体废弃。 */
+/* ── 角色绘制（黑色动物剪影 + 彩色项圈）───────────────────────────────────
+   ⛔ 参考画面的角色是**纯黑动物剪影**：圆头 + 两只耳朵 + 两侧伸出的爪子 +
+   脖子上一圈饱和彩项圈，**没有任何五官 / 描边**。所以：
+     · 物种只能靠**耳朵外形**区分（drawEars）；
+     · 个体只能靠**项圈颜色**区分（office-palette.collarColor）；
+     · ⛔ 不许给角色加眼睛 / 嘴 / 衣服色 —— 一加就退回 v4 那种"卡通小人"，与参考违和。 */
 
-/* ── 人物绘制 ───────────────────────────────────────────────────────────── */
+/** 局部坐标：脖子在 (0, 0)，头心 (0, HEAD_CY)，身体往下铺。 */
+const HEAD_CY = -44;
+/** 项圈矩形（脖子那一圈）。⛔ 宽度**必须明显窄于肩宽**（参考里项圈 ≈ 肩宽 × 0.57）——
+ *  项圈做宽了会把两只爪子整段盖住，角色就只剩"一个头 + 一条色带"（第三版实测）。 */
+const COLLAR = { x: -25, y: -17, w: 50, h: 21, r: 10.5 };
+/** 手臂基准张角（弧度）：左负右正 —— 爪子往外上方伸，像"抱在桌前"。 */
+const ARM_SPREAD = 0.3;
 
-/**
- * 头（脸 + 发型 + 眼睛），坐标系与旧 SVG 一致：头心 (0,-7)、脖颈枢轴 (0,12)。
- * 落座与走动共用同一份画法 ⇒ 同一个成员两张画风一致。
- */
-function buildHead(look: WorkerLook, back: boolean, sleeping: boolean): Graphics {
-  const head = new Graphics();
-  if (back) {
-    head.ellipse(0, 10, 9.5, 6).fill(look.skin).stroke({ color: OFC.ink, width: 2.4 });
-    head.circle(0, -7, 20.5).fill(look.hair).stroke({ color: OFC.ink, width: INK_W });
-    head.moveTo(-11, -14).quadraticCurveTo(0, -23, 11, -14).stroke({ color: 0xffffff, width: 2.8, alpha: 0.22 });
-    if (look.hairStyle === 2) head.circle(-2, -32, 11).fill(look.hair).stroke({ color: OFC.ink, width: INK_W });
-    return head;
-  }
-
-  head.circle(0, -7, 20.5).fill(look.skin).stroke({ color: OFC.ink, width: INK_W });
-  head.circle(-20, -4, 4.2).fill(look.skin).stroke({ color: OFC.ink, width: 2.6 });
-
-  if (look.hairStyle === 0) {
-    head.moveTo(-20.5, -12).quadraticCurveTo(0, -38, 20.5, -12).quadraticCurveTo(9, -20, 0, -18.5).quadraticCurveTo(-9, -20, -20.5, -12).fill(look.hair).stroke({ color: OFC.ink, width: INK_W });
-  } else if (look.hairStyle === 1) {
-    head.moveTo(-21, -9).quadraticCurveTo(-8, -41, 21, -10).quadraticCurveTo(16, -22, 7, -22).quadraticCurveTo(0, -13, -7, -22).quadraticCurveTo(-16, -22, -21, -9).fill(look.hair).stroke({ color: OFC.ink, width: INK_W });
-  } else {
-    head.moveTo(-20, -13).quadraticCurveTo(0, -34, 20, -13).quadraticCurveTo(7, -20, 0, -20).quadraticCurveTo(-7, -20, -20, -13).fill(look.hair).stroke({ color: OFC.ink, width: INK_W });
-    head.circle(-2, -34, 12).fill(look.hair).stroke({ color: OFC.ink, width: INK_W });
-  }
-
-  if (sleeping) {
-    head.moveTo(-12, -6).quadraticCurveTo(-8, -2, -4, -6).stroke({ color: OFC.ink, width: INK_W_THIN });
-    head.moveTo(4, -6).quadraticCurveTo(8, -2, 12, -6).stroke({ color: OFC.ink, width: INK_W_THIN });
-  } else {
-    head.moveTo(-12.5, -15.5).quadraticCurveTo(-8, -18.5, -3.6, -16.4).stroke({ color: OFC.ink, width: INK_W_THIN });
-    head.moveTo(3.6, -16.4).quadraticCurveTo(8, -18.5, 12.5, -15.5).stroke({ color: OFC.ink, width: INK_W_THIN });
-    head.circle(-7, -6, 3.1).fill(OFC.ink);
-    head.circle(7, -6, 3.1).fill(OFC.ink);
-    head.circle(-6, -7.3, 1.05).fill(0xffffff);
-    head.circle(8, -7.3, 1.05).fill(0xffffff);
-  }
-
-  if (look.glasses) {
-    head.roundRect(-15, -12, 13.6, 11, 4.6).stroke({ color: OFC.ink, width: 2.4 });
-    head.roundRect(1.4, -12, 13.6, 11, 4.6).stroke({ color: OFC.ink, width: 2.4 });
-    head.moveTo(-1.4, -7).lineTo(1.4, -7).stroke({ color: OFC.ink, width: 2.4 });
-  }
-  return head;
+function tri(g: Graphics, x1: number, y1: number, x2: number, y2: number, x3: number, y3: number): void {
+  g.poly([x1, y1, x2, y2, x3, y3]).fill(SILHOUETTE);
 }
 
-function createWorkerGraphics(pose: OfficePose, look: WorkerLook, back: boolean): { container: Container; parts: SeatedParts } {
+/**
+ * 耳朵 / 头顶特征 —— **物种唯一的外形差异**（剪影没有五官）。
+ * ⛔ 三条硬约束（改之前先读）：
+ *    ① **缩到 30px 宽还要认得出来**：耳朵必须比头明显大（耳高 ≥ 头顶上方 25 局部单位），
+ *       小耳朵配大圆头 ⇒ 全场 11 个角色读成同一只熊（v10 第二版实测）；
+ *    ② **不许顶进显示器**：耳朵最高点 = HEAD_CY − ry − 34 就是上限；
+ *    ③ **两个物种不许长得像**：熊猫被换成了绵羊，就因为"跟熊只差耳径 3px"。
+ */
+function drawEars(g: Graphics, animal: AnimalKind, rx: number, ry: number): void {
+  const t = HEAD_CY - ry;                 // 头顶
+  switch (animal) {
+    case "cat":
+      tri(g, -rx + 2, HEAD_CY - 5, -rx + 19, HEAD_CY - 10, -rx - 2, t - 31);
+      tri(g, rx - 2, HEAD_CY - 5, rx - 19, HEAD_CY - 10, rx + 2, t - 31);
+      break;
+    case "fox":
+      tri(g, -rx + 2, HEAD_CY - 4, -rx + 20, HEAD_CY - 11, -rx - 6, t - 34);
+      tri(g, rx - 2, HEAD_CY - 4, rx - 20, HEAD_CY - 11, rx + 6, t - 34);
+      break;
+    case "dog": {
+      // 垂耳：从头顶两侧垂到接近头心高度（唯一"往下垂"的物种，最好认）
+      g.moveTo(-rx + 3, HEAD_CY - 12)
+        .quadraticCurveTo(-rx - 21, HEAD_CY - 4, -rx - 10, HEAD_CY + 27)
+        .quadraticCurveTo(-rx + 4, HEAD_CY + 6, -rx + 13, HEAD_CY - 9)
+        .closePath().fill(SILHOUETTE);
+      g.moveTo(rx - 3, HEAD_CY - 12)
+        .quadraticCurveTo(rx + 21, HEAD_CY - 4, rx + 10, HEAD_CY + 27)
+        .quadraticCurveTo(rx - 4, HEAD_CY + 6, rx - 13, HEAD_CY - 9)
+        .closePath().fill(SILHOUETTE);
+      break;
+    }
+    case "rabbit":
+      // ⛔ 兔耳不能按真比例画长：顶到显示器下沿会把屏幕糊掉（上限 = 头顶上方 34 局部单位）
+      g.ellipse(-8, t - 15, 6.5, 19).fill(SILHOUETTE);
+      g.ellipse(8, t - 15, 6.5, 19).fill(SILHOUETTE);
+      break;
+    case "bear":
+      g.circle(-19, t + 4, 14).fill(SILHOUETTE);
+      g.circle(19, t + 4, 14).fill(SILHOUETTE);
+      break;
+    case "sheep":
+      // 绵羊：一圈小球堆成的"羊毛头"，整个轮廓都是锯齿 —— 剪影里最好认的一种
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        g.circle(Math.cos(a) * (rx + 5), HEAD_CY + 1 + Math.sin(a) * (ry + 5), 8.5).fill(SILHOUETTE);
+      }
+      g.circle(0, t - 4, 10).fill(SILHOUETTE);
+      break;
+    case "koala":
+      g.circle(-rx - 3, t + 19, 16).fill(SILHOUETTE);
+      g.circle(rx + 3, t + 19, 16).fill(SILHOUETTE);
+      break;
+    case "mouse":
+      g.circle(-21, t + 4, 13.5).fill(SILHOUETTE);
+      g.circle(21, t + 4, 13.5).fill(SILHOUETTE);
+      break;
+    case "deer": {
+      g.ellipse(-17, t + 7, 6, 12).fill(SILHOUETTE);
+      g.ellipse(17, t + 7, 6, 12).fill(SILHOUETTE);
+      // 分叉角：主干 + 两个分叉（往上长，与兔耳的区别是"细枝"而不是"叶子"）
+      [-1, 1].forEach((s) => {
+        g.moveTo(s * 10, t + 6).lineTo(s * 15, t - 20).stroke({ color: SILHOUETTE, width: 4.4 });
+        g.moveTo(s * 15, t - 20).lineTo(s * 24, t - 30).stroke({ color: SILHOUETTE, width: 3.6 });
+        g.moveTo(s * 14, t - 12).lineTo(s * 23, t - 16).stroke({ color: SILHOUETTE, width: 3.6 });
+      });
+      break;
+    }
+    case "hedgehog": {
+      // 一圈尖刺（半圆铺开）
+      const n = 11;
+      for (let i = 0; i < n; i++) {
+        const a = Math.PI + ((i + 0.5) / n) * Math.PI;
+        const b = Math.PI + ((i - 0.5) / n) * Math.PI;
+        tri(
+          g,
+          Math.cos(a) * rx * 0.96, HEAD_CY + Math.sin(a) * ry * 0.96,
+          Math.cos(b) * rx * 0.96, HEAD_CY + Math.sin(b) * ry * 0.96,
+          Math.cos(a) * (rx + 18), HEAD_CY + Math.sin(a) * (ry + 18),
+        );
+      }
+      break;
+    }
+    case "pig":
+      tri(g, -rx + 1, HEAD_CY - 4, -rx + 16, t + 10, -rx - 7, t - 12);
+      tri(g, rx - 1, HEAD_CY - 4, rx - 16, t + 10, rx + 7, t - 12);
+      break;
+    case "lion": {
+      // 鬃毛：一圈大锯齿圆（先画，头再压上去）+ 两只小圆耳
+      const R = rx + 11;
+      for (let i = 0; i < 15; i++) {
+        const a = (i / 15) * Math.PI * 2;
+        g.circle(Math.cos(a) * R, HEAD_CY + 2 + Math.sin(a) * R, 9.5).fill(SILHOUETTE);
+      }
+      g.circle(0, HEAD_CY + 2, R).fill(SILHOUETTE);
+      g.circle(-18, t + 10, 9).fill(SILHOUETTE);
+      g.circle(18, t + 10, 9).fill(SILHOUETTE);
+      break;
+    }
+  }
+}
+
+/**
+ * 头部尺寸（rx, ry）—— 物种之间也要有差别。
+ * ⛔ 两条实测约束：
+ *    ① **rx 明显大于 ry**（宽扁头）—— 正圆头配上小耳朵会读成"熊"，物种全糊成一个样；
+ *    ② 头 + 耳朵的总高不能顶进显示器里（顶进去就把屏幕内容糊掉了）。
+ *       算之前先量 seatY 到显示器下沿还剩多少像素（MONITOR_LIFT 就是为这条抬的）。
+ */
+const HEAD_SIZE: Record<AnimalKind, [number, number]> = {
+  cat: [27, 21],
+  fox: [26, 20],
+  dog: [28, 22],
+  rabbit: [23, 21],
+  bear: [30, 24],
+  sheep: [26, 21],
+  koala: [28, 22],
+  mouse: [25, 22],
+  deer: [26, 22],
+  hedgehog: [29, 23],
+  pig: [30, 21],
+  lion: [28, 22],
+};
+
+/** 脖子以上：头顶特征 + 头。⛔ 剪影是**平的纯黑**（参考就是这样）——
+ *  不要给头加"高光/腮红"之类：在 40px 尺寸下会看着像一块洗不掉的污渍（实测过一版）。 */
+function buildAnimalHead(cosplay: Cosplay): Container {
+  const wrap = new Container();
+  const [rx, ry] = HEAD_SIZE[cosplay.animal];
+  const g = new Graphics();
+  drawEars(g, cosplay.animal, rx, ry);
+  g.ellipse(0, HEAD_CY, rx, ry).fill(SILHOUETTE);
+  wrap.addChild(g);
+  return wrap;
+}
+
+/**
+ * 坐姿角色：黑色剪影（身体 + 两只爪子）+ 头 + 项圈。
+ * ⛔ 顺序固定：身体 → 头 → 项圈（项圈压在头 / 身交界上，脖子才不会"断"）。
+ */
+function createWorkerGraphics(pose: OfficePose, cosplay: Cosplay, back: boolean): { container: Container; parts: SeatedParts } {
   const c = new Container();
 
   const shadow = new Graphics();
-  shadow.ellipse(0, 82, 38, 8.5).fill({ color: 0x63707f, alpha: 0.16 });
+  shadow.ellipse(0, 76, 40, 9).fill({ color: 0x4a5260, alpha: 0.13 });
   c.addChild(shadow);
 
-  const legs = new Graphics();
-  legs.roundRect(-8, 58, 34, 14, 7).fill(0x4d5d72).stroke({ color: OFC.ink, width: INK_W });
-  legs.roundRect(16, 66, 14, 27, 7).fill(0x4d5d72).stroke({ color: OFC.ink, width: INK_W });
-  legs.ellipse(28, 94, 14, 7).fill(0x39424f).stroke({ color: OFC.ink, width: INK_W });
-  c.addChild(legs);
-
   const body = new Container();
-  body.pivot.set(0, 52);
 
+  // 躯干（黑一坨，下缘会被椅子挡住）。⛔ 比头**窄**：头必须比肩宽，剪影才有"大头动物"的比例
   const torso = new Graphics();
-  torso.roundRect(-21, 12, 42, 50, 16).fill(look.cloth).stroke({ color: OFC.ink, width: INK_W });
-  if (look.collar) torso.moveTo(-10, 13).lineTo(0, 23).lineTo(10, 13).stroke({ color: OFC.ink, width: 2.4 });
+  torso.roundRect(-23, -8, 46, 86, 20).fill(SILHOUETTE);
   body.addChild(torso);
 
+  // 两只爪子：从肩**往外上方**伸（ARM_SPREAD），末端一个圆爪。
+  // ⛔ 别画成两根竖直柱子 —— 参考里的爪子是外张的，竖直柱看着像"背了块黑板"（实测）。
   const armBack = new Graphics();
-  armBack.roundRect(-30, 15, 11, 31, 5.5).fill(look.cloth).stroke({ color: OFC.ink, width: INK_W });
-  armBack.circle(-24.5, 48, 6.2).fill(look.skin).stroke({ color: OFC.ink, width: INK_W });
-  armBack.pivot.set(-24.5, 15);
+  armBack.roundRect(-9.5, -28, 19, 42, 9.5).fill(SILHOUETTE);
+  armBack.circle(0, -28, 10.5).fill(SILHOUETTE);
+  armBack.pivot.set(0, 0);
+  armBack.position.set(-21, 4);
+  armBack.rotation = -ARM_SPREAD;
   body.addChild(armBack);
 
   const armFront = new Graphics();
-  armFront.roundRect(19, 15, 11, 31, 5.5).fill(look.cloth).stroke({ color: OFC.ink, width: INK_W });
-  armFront.circle(24.5, 48, 6.2).fill(look.skin).stroke({ color: OFC.ink, width: INK_W });
-  armFront.pivot.set(24.5, 15);
+  armFront.roundRect(-9.5, -28, 19, 42, 9.5).fill(SILHOUETTE);
+  armFront.circle(0, -28, 10.5).fill(SILHOUETTE);
+  armFront.pivot.set(0, 0);
+  armFront.position.set(21, 4);
+  armFront.rotation = ARM_SPREAD;
   body.addChild(armFront);
 
   c.addChild(body);
 
+  // 头（含耳朵）
   const headwrap = new Container();
-  headwrap.pivot.set(0, 12);
-  headwrap.addChild(buildHead(look, back, pose.kind === "doze"));
+  headwrap.addChild(buildAnimalHead(cosplay));
   c.addChild(headwrap);
 
-  if (pose.kind === "coffee" && !back) {
+  // 项圈（脖子那一圈 —— 全身唯一的颜色）
+  const collar = new Graphics();
+  collar.roundRect(COLLAR.x, COLLAR.y, COLLAR.w, COLLAR.h, COLLAR.r).fill(cosplay.collar);
+  collar.roundRect(COLLAR.x, COLLAR.y, COLLAR.w, 6, COLLAR.r * 0.6).fill({ color: 0xffffff, alpha: 0.24 });
+  collar.roundRect(COLLAR.x + 6, COLLAR.y + COLLAR.h - 5, COLLAR.w - 12, 5, 3).fill(collarDark(cosplay.collar));
+  c.addChild(collar);
+
+  // 姿势道具（咖啡杯 / 手机 / 资料），一律**白色 + 细描边**，在黑剪影上读得出来
+  if (pose.kind === "coffee") {
     const mug = new Graphics();
-    mug.roundRect(-7.5, -9.5, 15, 15, 3.4).fill(0xffffff).stroke({ color: OFC.ink, width: 2.6 });
-    mug.moveTo(7.5, -6.5).quadraticCurveTo(14, -2, 7.5, 3.5).stroke({ color: OFC.ink, width: 2.4 });
-    mug.position.set(24, 28);
+    mug.roundRect(-7, -9, 14, 14, 3.2).fill(0xffffff).stroke({ color: 0x2b3038, width: 2.2 });
+    mug.moveTo(7, -6).quadraticCurveTo(13.5, -2, 7, 3.5).stroke({ color: 0x2b3038, width: 2.2 });
+    mug.position.set(-30, -30);
     c.addChild(mug);
   }
-
-  if (pose.kind === "phone" && !back) {
+  if (pose.kind === "phone") {
     const phone = new Graphics();
-    phone.roundRect(-7.5, -12, 15, 24, 3.8).fill(0x39424f).stroke({ color: OFC.ink, width: 2.4 });
-    phone.roundRect(-4.8, -8.6, 9.6, 17.2, 2.2).fill({ color: 0xbfe0ff, alpha: 0.92 });
-    phone.position.set(21, 32);
+    phone.roundRect(-7, -11, 14, 22, 3.6).fill(0xffffff).stroke({ color: 0x2b3038, width: 2.2 });
+    phone.roundRect(-4.4, -7.8, 8.8, 15.6, 2).fill({ color: 0xbfe0ff, alpha: 0.95 });
+    phone.position.set(28, -28);
     c.addChild(phone);
   }
+  if (pose.kind === "note") {
+    const paper = new Graphics();
+    paper.roundRect(-10, -13, 20, 26, 2.4).fill(0xffffff).stroke({ color: 0x2b3038, width: 2.2 });
+    paper.rect(-6, -7, 12, 1.8).fill(0xc7d0da);
+    paper.rect(-6, -2, 9, 1.8).fill(0xc7d0da);
+    paper.position.set(-30, -26);
+    c.addChild(paper);
+  }
+
+  // 打盹：头顶浮起的 z（动画在 animateScene，平时不可见）
+  const doze = new Container();
+  const z1 = new Text({ text: "z", style: new TextStyle({ fill: 0x5b6a7d, fontSize: 15, fontWeight: "700" }) });
+  const z2 = new Text({ text: "Z", style: new TextStyle({ fill: 0x5b6a7d, fontSize: 20, fontWeight: "700" }) });
+  z1.position.set(17, -84);
+  z2.position.set(31, -104);
+  doze.addChild(z1, z2);
+  doze.visible = pose.kind === "doze";
+  c.addChild(doze);
 
   return {
     container: c,
-    parts: { body, armBack, armFront, headwrap, pose, back },
+    parts: { body, armBack, armFront, headwrap, doze, pose },
   };
 }
 
 /** 走动小人：站立姿势，脚底在 (0,0) —— zIndex 取脚底 y 才能跟地面纵深对齐。 */
-function createWalker(look: WorkerLook, ground: { x: number; y: number; scale: number }): WalkerParts {
+function createWalker(cosplay: Cosplay, ground: { x: number; y: number; scale: number }): WalkerParts {
   const container = new Container();
   container.position.set(ground.x, ground.y);
   container.scale.set(ground.scale * PERSON_K);
@@ -688,42 +850,46 @@ function createWalker(look: WorkerLook, ground: { x: number; y: number; scale: n
   const body = new Container();
 
   const legBack = new Graphics();
-  legBack.roundRect(-5.5, 0, 11, 36, 5.5).fill(0x4d5d72).stroke({ color: OFC.ink, width: INK_W });
-  legBack.ellipse(4, 33, 8.5, 4.5).fill(0x39424f).stroke({ color: OFC.ink, width: 2.4 });
-  legBack.position.set(-7, -38);
+  legBack.roundRect(-5.5, 0, 11, 34, 5.5).fill(SILHOUETTE);
+  legBack.ellipse(3, 32, 8, 4.2).fill(SILHOUETTE);
+  legBack.position.set(-7, -36);
   body.addChild(legBack);
 
   const legFront = new Graphics();
-  legFront.roundRect(-5.5, 0, 11, 36, 5.5).fill(0x4d5d72).stroke({ color: OFC.ink, width: INK_W });
-  legFront.ellipse(4, 33, 8.5, 4.5).fill(0x39424f).stroke({ color: OFC.ink, width: 2.4 });
-  legFront.position.set(7, -38);
+  legFront.roundRect(-5.5, 0, 11, 34, 5.5).fill(SILHOUETTE);
+  legFront.ellipse(3, 32, 8, 4.2).fill(SILHOUETTE);
+  legFront.position.set(7, -36);
   body.addChild(legFront);
 
   const torso = new Graphics();
-  torso.roundRect(-19, -80, 38, 44, 13).fill(look.cloth).stroke({ color: OFC.ink, width: INK_W });
-  if (look.collar) torso.moveTo(-9, -79).lineTo(0, -70).lineTo(9, -79).stroke({ color: OFC.ink, width: 2.4 });
+  torso.roundRect(-19, -78, 38, 44, 14).fill(SILHOUETTE);
   body.addChild(torso);
 
   const armBack = new Graphics();
-  armBack.roundRect(-5, 0, 10, 30, 5).fill(look.cloth).stroke({ color: OFC.ink, width: INK_W });
-  armBack.circle(0, 30, 6).fill(look.skin).stroke({ color: OFC.ink, width: INK_W });
-  armBack.position.set(-22, -74);
+  armBack.roundRect(-5, 0, 10, 28, 5).fill(SILHOUETTE);
+  armBack.circle(0, 28, 5.6).fill(SILHOUETTE);
+  armBack.position.set(-21, -72);
   body.addChild(armBack);
 
   const armFront = new Graphics();
-  armFront.roundRect(-5, 0, 10, 30, 5).fill(look.cloth).stroke({ color: OFC.ink, width: INK_W });
-  armFront.circle(0, 30, 6).fill(look.skin).stroke({ color: OFC.ink, width: INK_W });
-  armFront.position.set(22, -74);
+  armFront.roundRect(-5, 0, 10, 28, 5).fill(SILHOUETTE);
+  armFront.circle(0, 28, 5.6).fill(SILHOUETTE);
+  armFront.position.set(21, -72);
   body.addChild(armFront);
 
+  const collar = new Graphics();
+  collar.roundRect(-19, -80, 38, 15, 7).fill(cosplay.collar);
+  collar.roundRect(-19, -80, 38, 4, 2).fill({ color: 0xffffff, alpha: 0.24 });
+  body.addChild(collar);
+
   const headwrap = new Container();
-  headwrap.pivot.set(0, 12);
-  headwrap.position.set(0, -77);
-  headwrap.addChild(buildHead(look, false, false));
+  headwrap.position.set(0, -76);
+  headwrap.scale.set(0.94);
+  headwrap.addChild(buildAnimalHead(cosplay));
   body.addChild(headwrap);
 
   const shadow = new Graphics();
-  shadow.ellipse(0, 0, 30, 8).fill({ color: 0x63707f, alpha: 0.16 });
+  shadow.ellipse(0, 0, 28, 7.5).fill({ color: 0x4a5260, alpha: 0.13 });
   container.addChild(shadow, body);
 
   return {
@@ -747,11 +913,7 @@ function animateScene(scene: SceneRefs, delta: number) {
   const d2r = Math.PI / 180;
   scene.clock += delta * 0.06;
 
-  scene.swayers.forEach((s) => {
-    s.obj.rotation = Math.sin(scene.clock * s.speed + s.phase) * s.amp;
-  });
-
-  // 设施动画（饮水机水泡 / 打印机吐纸 / 挂钟走针）—— 与人物动画同一个 ticker
+  // 设施动画（饮水机水泡 / 打印机吐纸 / 挂钟走针 / 隔间灯 / 咖啡蒸汽）
   scene.props.forEach((p) => p.update(scene.clock));
 
   scene.seats.forEach((view) => {
@@ -763,43 +925,55 @@ function animateScene(scene: SceneRefs, delta: number) {
     p.headwrap.rotation = 0;
     p.body.rotation = 0;
     p.body.scale.y = 1;
+    // 爪子姿势都是**相对基准张角**的增量（ARM_SPREAD 是"外张抱着桌沿"的静止姿态）
+    const arms = (back: number, front: number) => {
+      p.armBack.rotation = -ARM_SPREAD + back;
+      p.armFront.rotation = ARM_SPREAD + front;
+    };
+    if (p.doze.visible) {
+      p.doze.y = -Math.abs(Math.sin(t * 0.9)) * 3;
+      p.doze.alpha = 0.55 + 0.45 * Math.abs(Math.sin(t * 0.9));
+    }
 
     if (p.pose.kind === "doze") {
-      p.headwrap.rotation = 7 * d2r;
-      p.armBack.rotation = 2 * d2r;
-      p.armFront.rotation = 2 * d2r;
+      // 打盹：头歪下去 + 整个人往下沉一点（配合头顶浮起的 z）。
+      // ⛔ 歪角别超过 12°：背对观众的剪影一歪过头就只剩一坨黑，连耳朵都看不出来（实测）。
+      p.headwrap.rotation = 10 * d2r;
+      p.headwrap.y = 3;
+      arms(7 * d2r, -7 * d2r);
+      p.body.scale.y = 0.97 + Math.sin(t * 1.1) * 0.02;
       return;
     }
+    p.headwrap.y = 0;
     if (p.pose.kind === "stretch") {
+      // 伸懒腰：两只爪子往外举高
       const cyc = (Math.sin(t * 2.2) + 1) / 2;
-      p.armBack.rotation = cyc * 148 * d2r;
-      p.armFront.rotation = -cyc * 148 * d2r;
-      p.body.rotation = -3.5 * d2r * cyc;
+      arms(-cyc * 62 * d2r, cyc * 62 * d2r);
+      p.body.rotation = -2.4 * d2r * cyc;
       return;
     }
     if (p.pose.kind === "coffee") {
+      // 喝咖啡：右爪抬到嘴边 + 小幅上下
       const cyc = (Math.sin(t * 1.6) + 1) / 2;
-      p.armFront.rotation = (-48 - cyc * 16) * d2r;
-      p.armBack.rotation = -16 * d2r;
+      arms(-6 * d2r, -(18 + cyc * 14) * d2r);
+      p.headwrap.rotation = 3 * d2r * cyc;
       return;
     }
     if (p.pose.kind === "phone") {
       const cyc = (Math.sin(t * 1.4) + 1) / 2;
-      p.armFront.rotation = (-62 - cyc * 8) * d2r;
-      p.armBack.rotation = -20 * d2r;
-      p.headwrap.rotation = 2.6 * d2r * cyc;
+      arms(-8 * d2r, -(24 + cyc * 8) * d2r);
+      p.headwrap.rotation = 3.4 * d2r * cyc;
       return;
     }
     if (p.pose.kind === "note") {
       const cyc = (Math.sin(t * 3.4) + 1) / 2;
-      p.armFront.rotation = (-34 + cyc * 7) * d2r;
-      p.armBack.rotation = -22 * d2r;
+      arms(-10 * d2r, -(12 + cyc * 4) * d2r);
       return;
     }
+    // 敲键盘（默认）：两只爪子交替小幅起落 + 躯干随呼吸起伏
     const typing = (Math.sin(t * 6) + 1) / 2;
-    p.armBack.rotation = (-8 - typing * 18) * d2r;
-    p.armFront.rotation = (8 + typing * 18) * d2r;
-    p.body.scale.y = 1 + Math.sin(t * 2.4) * 0.024;
+    arms(-(4 + typing * 9) * d2r, (4 + typing * 9) * d2r);
+    p.body.scale.y = 1 + Math.sin(t * 2.4) * 0.018;
   });
 
   scene.walkers.forEach((w) => {
@@ -822,8 +996,9 @@ function animateScene(scene: SceneRefs, delta: number) {
     const swing = walking ? Math.sin(w.clock * 7) : 0;
     w.legBack.rotation = swing * 0.45;
     w.legFront.rotation = -swing * 0.45;
-    w.armBack.rotation = -swing * 0.3;
-    w.armFront.rotation = swing * 0.3;
+    // 走动小人也带一点外张的基准张角（与坐姿同一套姿态语言）
+    w.armBack.rotation = ARM_SPREAD * 0.5 - swing * 0.3;
+    w.armFront.rotation = -ARM_SPREAD * 0.5 + swing * 0.3;
     w.body.y = walking ? -Math.abs(Math.sin(w.clock * 7)) * 2.6 : 0;
     w.headwrap.rotation = walking ? Math.sin(w.clock * 7) * 0.04 : 0;
   });

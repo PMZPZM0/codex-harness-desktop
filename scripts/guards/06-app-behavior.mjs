@@ -1498,46 +1498,126 @@ w.postMessage({id:1,op:"list",root});
       "【168】六种坐姿各有自己的动画（工作打字 / 咖啡 / 伸懒腰 / 手机 / 翻资料 / 打盹）"
     );
     // ⑫ 姿势必须**真的画在人身上**：抽公共函数，落座/走动同画风（⛔ 防止有状态没渲染）
-    (/function createWorkerGraphics\(/.test(canvas2) && /function createWalker\(/.test(canvas2) && /function buildHead\(/.test(canvas2) ? ok : fail)(
+    (/function createWorkerGraphics\(/.test(canvas2) && /function createWalker\(/.test(canvas2) && /function buildAnimalHead\(/.test(canvas2) ? ok : fail)(
       "【168】坐姿与走动小人各有绘制函数（状态 → 图形的映射真实存在）"
     );
   }
 
-  /* ══ 【169】办公室渲染纵深（09-27 v9 程序化绘制）══════════════════════════
+  /* ══ 【169】办公室渲染纵深（09-27 v9 程序化绘制 → v10 三层纵深）═══════════
      ⛔ v9 定稿（用户 09-27 拍板）：**不搬**参考实现的 3D 素材（作者自己标注「注意素材
         版权问题」），房间 / 后墙 / 两侧 / 工位桌椅全部用 PixiJS Graphics 程序化绘制
-        （src/features/team-office/office-render.ts）。钉死三件事：
-        ① 绘制模块四件套齐备（房间 / 后墙 / 两侧 / 工位）且**零贴图依赖**；
-        ② 工位家具先于人物绘制（家具 zIndex 更小）—— 参考画面里人只露头肩，
-           桌面与显示器必须清晰可见；反过来设会让人糊住整个桌面（09-27 实测）；
-        ③ 纵深一律靠 sortableChildren + 地面基线 zIndex，⛔ 不许退回 addChild 顺序。 */
+        （src/features/team-office/office-render.ts）。
+     ⛔ v10 修的是**遮挡顺序**（用户第二次贴参考图「看看这种布局效果」后实测）：
+        参考镜头在工位正前方略高，自远而近 = 显示器 → 桌 → 人 → 椅子。
+        三个对象必须**各按自己的地面基线 y 排 zIndex**（桌更靠后 / 椅子更靠观众），
+        合成一件 Graphics 一定会错：要么人被桌挡住只露头顶，要么椅子被整个人盖住。 */
   {
-    console.log(C.bold("\n【169】办公室渲染纵深（程序化绘制 / 家具遮挡关系）"));
+    console.log(C.bold("\n【169】办公室渲染纵深（程序化绘制 / 桌-人-椅三层遮挡）"));
     const renderPath = join(ROOT, "src", "features", "team-office", "office-render.ts");
     const renderSrc = existsSync(renderPath) ? readFileSync(renderPath, "utf8") : "";
+    const isoPath = join(ROOT, "src", "features", "team-office", "office-iso.ts");
+    const isoSrc = existsSync(isoPath) ? readFileSync(isoPath, "utf8") : "";
     const furnSrc = existsSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"))
       ? readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8") : "";
 
-    (["drawRoom", "drawBackWall", "drawSideProps", "drawDeskStation"].every((f) => renderSrc.includes("export function " + f)) ? ok : fail)(
-      "【169】office-render 四件套齐全（房间 / 后墙 / 两侧 / 工位）"
+    (["drawRoom", "drawBackWall", "drawSideProps", "drawDeskStation", "drawChair"].every((f) => renderSrc.includes("export function " + f)) ? ok : fail)(
+      "【169】office-render 五件套齐全（房间 / 后墙 / 两侧 / 工位 / 椅子）"
     );
     (!/assets\/office\/|\.png/.test(renderSrc) ? ok : fail)(
       "【169】绘制模块零贴图依赖（程序化路线：不引任何 PNG）"
     );
-    ((() => {
-      // ⛔ 比**数值大小**而不是出现位置：家具在 syncStatics、人物在 syncPeople，
-      //    按行号比会因为"人写在下面"而假红（v8 踩过）。
-      const off = (re) => { const m = furnSrc.match(re); return m ? Number(m[1].replace(/\s+/g, "")) : NaN; };
-      const furniture = off(/box\.zIndex = slot\.y ([+-] [\d.]+)/);
-      const person = off(/view\.container\.zIndex = slot\.y ([+-] [\d.]+)/);
-      return Number.isFinite(furniture) && Number.isFinite(person)
-        && furniture > person
-        && /world\.sortableChildren = true/.test(furnSrc);
-    })() ? ok : fail)(
-      "【169】工位家具（zIndex 比人物大）在人物**之后**绘制 ⇒ 家具挡人下半身、桌面不被糊住"
+    ((["drawDeskStation(desk", "drawChair(chair"]).every((k) => furnSrc.includes(k)) ? ok : fail)(
+      "【169】桌与椅分两个 Graphics（合成一件 ⇒ 要么人被桌挡、要么椅被人挡）"
     );
-    (furnSrc.includes("drawDeskStation(furniture") ? ok : fail)(
-      "【169】整套工位家具画在一个 Graphics 里（逐件贴图时代会散落，09-27 用户截图实测）"
+    // ⛔ 三层顺序靠**数值**判定：桌/椅各取自己的地面基线，人物取座位点 ⇒ 桌 < 人 < 椅。
+    //    桌面基线取「占地中心」= v − DESK_DV/2，椅子基线取 v + CHAIR_DV（都写在 syncStatics 里）。
+    ((() => {
+      const desk = /deskBox\.zIndex = floorPoint\(slot\.u, slot\.v - DESK_DV \/ 2\)\.y/.test(furnSrc);
+      const chair = /chairBox\.zIndex = floorPoint\(slot\.u, slot\.v \+ CHAIR_DV\)\.y/.test(furnSrc);
+      const person = /view\.container\.zIndex = slot\.y;/.test(furnSrc);
+      return desk && chair && person && /world\.sortableChildren = true/.test(furnSrc);
+    })() ? ok : fail)(
+      "【169】桌 / 人 / 椅各按自己的地面基线排 zIndex（桌最靠后、椅最靠观众）"
+    );
+    // ⛔ 行距 > 桌纵深 + 椅距：不够时后一排的**桌子会压住前一排的椅子、显示器会盖住前一排的人**
+    //    （450px 地板深 + 0.31 行距实测过；改 FLOOR/ROW_V/DESK_DV 任一都要过这条）。
+    const isoNum = (src, re) => { const m = src.match(re); return m ? Number(m[1]) : NaN; };
+    ((() => {
+      const deskDv = isoNum(renderSrc, /export const DESK_DV = ([\d.]+)/);
+      const chairDv = isoNum(renderSrc, /export const CHAIR_DV = ([\d.]+)/);
+      const rowsBlock = (isoSrc.match(/const ROW_V[\s\S]*?\n\};/) || [""])[0];
+      const rows = (rowsBlock.match(/\[[\d.,\s]+\]/g) || []).map((s) =>
+        s.replace(/[[\]]/g, "").split(",").map(Number).filter((n) => Number.isFinite(n)));
+      const gaps = rows.map((xs) => xs.slice(1).reduce((g, x, i) => Math.min(g, x - xs[i]), Infinity));
+      const minGap = Math.min(...gaps);
+      return Number.isFinite(deskDv) && Number.isFinite(chairDv) && gaps.length > 0
+        && minGap > deskDv + chairDv;
+    })() ? ok : fail)(
+      "【169】行距 > 桌纵深 + 椅距（不够时后排桌子会压住前排椅子 / 显示器会盖住前排的人）"
+    );
+    // 地板纵深与场景高度：工位是"深"的，地板太浅就塞不下多排（这里只钉两者同步缩放）
+    ((() => {
+      const floorY = (isoSrc.match(/export const FLOOR = \{[\s\S]*?\n\};/) || [""])[0].match(/-?\d+/g) || [];
+      const depth = Number(floorY[1]) === Number(floorY[3]) ? Number(floorY[5]) - Number(floorY[1]) : NaN;
+      const sceneH = isoNum(isoSrc, /export const SCENE_H = (\d+)/);
+      return Number.isFinite(depth) && depth >= 500 && sceneH >= depth + 120;
+    })() ? ok : fail)(
+      "【169】地板纵深 ≥ 500 且画布高度留够（容纳 3 排工位 + 墙）"
+    );
+  }
+
+  /* ══ 【176】办公室角色外形（09-27 用户：「每个角色都是不同的动物」）══════════
+     ⛔ 用户 09-27 拍板：角色 = **纯黑动物剪影**（无描边、无五官）+ 脖子一圈饱和彩项圈。
+        剪影没有五官 ⇒ 物种**只能靠耳朵外形区分**、个体**只能靠项圈色区分**，
+        所以这两件事都必须**按序号稳定派生**（同一成员每次进办公室都是同一种动物 + 同一个色）。
+     形态钉死四件事：
+       ① 物种池 ≥10 且互不相同（两个物种画成一个样 = 白做）；
+       ② 动物与项圈色只依赖序号（出现 Math.random/Date.now = 每次刷新换一张脸）；
+       ③ 每个物种的耳朵分支与头型尺寸都齐备（少一个 case 就退化成认不出的黑团）；
+       ④ 屏幕内容与姿势一致（人在打盹、屏幕上还跑着代码 = 一眼假）。 */
+  {
+    console.log(C.bold("\n【176】办公室角色外形（物种 / 项圈 / 屏幕内容）"));
+    const palPath = join(ROOT, "src", "features", "team-office", "office-palette.ts");
+    const palSrc = existsSync(palPath) ? readFileSync(palPath, "utf8") : "";
+    const canvas176 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
+    const render176 = readFileSync(join(ROOT, "src", "features", "team-office", "office-render.ts"), "utf8");
+
+    const animals = ((palSrc.match(/export const ANIMALS: AnimalKind\[\] = \[([\s\S]*?)\];/) || [])[1] || "");
+    const list = (animals.match(/"([a-z]+)"/g) || []).map((s) => s.replace(/"/g, ""));
+    (list.length >= 10 && new Set(list).size === list.length ? ok : fail)(
+      "【176】物种池 ≥10 且无重复（每个成员一种动物；重复 = 两个人长得一样）"
+    );
+    const all = list.concat("lion");
+    const missing = all.filter(
+      (a) => !new RegExp('case "' + a + '":').test(canvas176) || !new RegExp("\\b" + a + ": \\[\\d").test(canvas176),
+    );
+    (all.length >= 11 && missing.length === 0 ? ok : fail)(
+      "【176】每个物种都有耳朵分支 + 头型尺寸（缺一个就退化成认不出的黑团）"
+        + (missing.length ? "，缺：" + missing.join("/") : "")
+    );
+    (/export function animalOf\(index: number, isCeo = false\)/.test(palSrc)
+      && /export function collarColor\(index: number, isCeo = false\)/.test(palSrc)
+      && !/export function (animalOf|collarColor)[\s\S]{0,240}?(Math\.random|Date\.now)/.test(palSrc) ? ok : fail)(
+      "【176】物种与项圈色都按序号稳定派生（⛔ 不许随机 —— 同一个人每次进来都该是同一种动物）"
+    );
+    (canvas176.includes("animalOf(") && canvas176.includes("collarColor(") && canvas176.includes("SILHOUETTE") ? ok : fail)(
+      "【176】画布真的用上了物种 / 项圈色 / 剪影色（有常量没接线 = 恒真假绿）"
+    );
+    (/export function screenKindOf\(index: number, running: boolean, dozing: boolean\)/.test(render176)
+      && /if \(dozing\) return "sleep"/.test(render176)
+      && /screenKindOf\(slot\.idx, slot\.running, slot\.pose\?\.kind === "doze"\)/.test(canvas176) ? ok : fail)(
+      "【176】屏幕内容按成员稳定派生，且打盹时切到熄屏（人在睡 / 代码在跑 = 一眼假）"
+    );
+    // ⛔ 跑腿目标与设施坐标必须**同源**：drawAmenities 画设施用的每个 floorPoint(u, v)
+    //    都要出现在 OfficeCanvas 的 ERRAND_SPOT_UV 里 —— 两边漂移 ⇒「去接水」的人走到空气里。
+    ((() => {
+      const uvBlock = (canvas176.match(/const ERRAND_SPOT_UV[\s\S]*?\n\};/) || [""])[0];
+      const want = [...uvBlock.matchAll(/u: ([\d.]+), v: ([\d.]+)/g)].map((m) => m[1] + "," + m[2]);
+      const amenities = (render176.match(/export function drawAmenities[\s\S]*?\n\}/) || [""])[0];
+      const got = [...amenities.matchAll(/floorPoint\(([\d.]+), ([\d.]+)\)/g)].map((m) => m[1] + "," + m[2]);
+      return want.length === 4 && want.every((p) => got.includes(p));
+    })() ? ok : fail)(
+      "【176】跑腿目标与办公设施坐标同源（两边漂移 ⇒「去接水」的人走到空气里）"
     );
   }
 
