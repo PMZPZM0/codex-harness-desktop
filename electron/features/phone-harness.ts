@@ -131,13 +131,18 @@ export async function phoneHarnessStatus(): Promise<PhoneHarnessStatus> {
 }
 
 /**
- * 安装：pip 装包（清华镜像）→ 关掉上游遥测 → 注册技能。
- * ⛔ 顺序不能反：先关遥测再注册技能，避免技能刚生效的那一两次调用把内容发出去。
+ * 安装 / 更新：pip 装包（清华镜像）→ 关掉上游遥测 → 注册技能。
+ *
+ * ⛔ 两个"方便后续维护"的硬要求：
+ *   ① **必须带 `-U`**：不带升级参数时，pip 对已安装的包只会回一句 "Requirement already
+ *      satisfied" 然后什么都不做 —— 上游是 alpha、每周都在修（OCR 语言 #91、遥测内容 #100），
+ *      用户点「更新」却拿不到新版本，是看不见的假动作。
+ *   ② **顺序不能反**：先关遥测再注册技能，避免技能刚生效的那一两次调用把内容发出去。
  */
 export async function installPhoneHarness(): Promise<{ ok: boolean; log: string }> {
   const bin = pythonBin();
   const log: string[] = [];
-  const pip = await run(bin, ["-m", "pip", "install", "--no-input", "-i", PIP_INDEX, "phone-harness"], 900_000);
+  const pip = await run(bin, ["-m", "pip", "install", "-U", "--no-input", "-i", PIP_INDEX, "phone-harness"], 900_000);
   log.push(`pip install → exit ${pip.code}`);
   if (pip.code !== 0) return { ok: false, log: log.concat(pip.out.slice(-1500)).join("\n") };
 
