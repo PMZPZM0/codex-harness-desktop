@@ -377,6 +377,10 @@
 .drama-canvas-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .drama-canvas-btn.is-ghost { background: transparent; color: var(--muted); }
 .drama-canvas-btn.is-brand { border-color: transparent; background: var(--accent); color: var(--accent-text); }
+/* 确认弹层的破坏性操作（09-28）：与 is-brand 同规格，只是红色实心 —— 原生的
+   window.confirm 按钮没法配色也没法嵌在浮层里，所以只有应用内弹层能用这套。 */
+.drama-canvas-btn.is-danger { border-color: transparent; background: var(--red); color: var(--accent-text); }
+.drama-canvas-btn.is-danger:hover:not(:disabled) { border-color: transparent; color: var(--accent-text); filter: brightness(1.08); }
 .drama-canvas-btn:disabled { opacity: .45; cursor: default; }
 .drama-canvas-spin { animation: drama-canvas-spin 1s linear infinite; }
 @keyframes drama-canvas-spin { to { transform: rotate(360deg); } }
