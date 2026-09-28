@@ -59,6 +59,17 @@ export async function run() {
     "【195】不再使用早期那套 .vg-card 卡片类（已并入统一行 + 弹窗）"
   );
 
+  /* ⑦.5 ⛔ 内置插件的二级弹窗必须 createPortal 到 body（09-28 用户截图：弹窗被嵌在设置面板里，
+        左/上/下被面板裁掉、header 整个看不见）。面板祖先链上只要有**任何一级**创建了包含块
+        （transform / filter / contain / will-change —— 动画容器很常见），position:fixed 就退化成
+        相对该祖先定位。portal 到 body 后与 DOM 祖先彻底无关，是最稳的修法。 */
+  (builtin.includes("createPortal(") && builtin.includes(", document.body)") ? ok : fail)(
+    "【195】生图 / 视觉弹窗 createPortal 到 body（嵌在面板里会被祖先的包含块裁掉）"
+  );
+  (videoCard.includes("createPortal(") && videoCard.includes(", document.body)") ? ok : fail)(
+    "【195】视频接口弹窗 createPortal 到 body（同一坑，两个弹窗都不能例外）"
+  );
+
   /* ④ ⛔ 同一选择器只允许一份权威定义（追加式改样式的坑：后者覆盖前者，改了像没改） */
   for (const sel of [".bi-plugin-grid", ".bi-row", ".bi-row-icon", ".bi-modal-body", ".bi-modal-foot"]) {
     const n = (css.match(new RegExp(`^\\${sel} \\{`, "gm")) ?? []).length;
