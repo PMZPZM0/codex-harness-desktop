@@ -73,6 +73,7 @@ const MODULES = [
   "12-ui-dialogs",
   "13-drama-gen",
   "15-ipc-loader",
+  "16-settings-plugins",
 ];
 
 for (const name of MODULES) {

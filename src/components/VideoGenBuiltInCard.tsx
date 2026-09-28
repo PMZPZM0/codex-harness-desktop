@@ -65,34 +65,37 @@ export function VideoGenBuiltInCard() {
 
   return (
     <>
-      {/* ⛔ 09-28：这张卡原来借用市场卡的 `.skill-card-grid`（minmax(210px,1fr) 网格）——
-          它是**唯一一张自带卡**，被塞进网格后只有 210px 宽，标题折行、「0/8 已配置」被挤成
-          两行、描述被 line-clamp:2 截断（用户截图点名）。现在用独立的 .vg-card：整行宽、
-          标题与徽标一行放下、描述不截断、低对比度的次要信息单独一行。 */}
-      <article className="vg-card">
-        <div className="vg-card-main">
-          <span className="vg-card-icon"><Clapperboard size={20} /></span>
-          <div className="vg-card-text">
-            <div className="vg-card-title">
-              <b>视频生成接口</b>
-              <em className="vg-tag is-builtin">内置</em>
-              <em className="vg-tag">{providers.length ? `${providers.filter((p) => p.region === "cn").length} 家国内 · ${providers.filter((p) => p.region === "global").length} 家国外` : "加载中…"}</em>
-            </div>
-            <p className="vg-card-desc">
-              文生视频 / 图生视频走内置通道：可灵、通义万相、即梦 Seedance、智谱 CogVideoX、MiniMax 海螺、Runway、Luma、Google Veo。
-              画布的「生成视频」按钮直接消费这套接口 —— 提交后每 5 秒轮询，产物自动落到工作区。
-            </p>
-            <div className="vg-card-ready">
-              {configuredCount > 0
-                ? <>已配置：{providers.filter((p) => p.configured).map((p) => p.name).join("、")}</>
-                : <span className="is-empty">还没有配置任何厂商 —— 点右侧按钮填 API Key 后，画布的「生成视频」才可用</span>}
-            </div>
+      {/* ⛔ 09-28 二次改版（用户：「三个内置插件跟下面插件市场区分开，布局做好看一点」）：
+          这张卡从「插件市场页顶部的独立区块」搬进「内置插件」区块，与生图/视觉插件同构。
+          · 结构对齐 .bi-plugin（头 = 图标+标题+说明+状态 / 体 = 摘要 / 底 = 计数+动作）
+          · 它没有可内联的字段（8 家厂商凭证在弹层里），所以体部放「通道说明 + 已配置清单」
+          · ⛔ 不再自带底部虚线分隔之外的分区标题 —— 区块标题由 BuiltinPluginsSection 统一给 */}
+      <article className="bi-plugin is-summary">
+        <header className="bi-plugin-head">
+          <span className="bi-plugin-icon"><Clapperboard size={16} /></span>
+          <div className="bi-plugin-title">
+            <b>视频生成接口</b>
+            <small>文生视频 / 图生视频走内置通道：可灵、通义万相、即梦 Seedance、智谱 CogVideoX、MiniMax 海螺、Runway、Luma、Google Veo</small>
+          </div>
+          <span className="bi-plugin-state">{configuredCount > 0 ? <>{configuredCount} / {providers.length} 已配置</> : "未配置"}</span>
+        </header>
+        <div className="bi-plugin-form is-note">
+          <div className="bi-plugin-tags">
+            <em className="bi-tag is-builtin">内置</em>
+            <em className="bi-tag">{providers.length ? `${providers.filter((p) => p.region === "cn").length} 家国内 · ${providers.filter((p) => p.region === "global").length} 家国外` : "加载中…"}</em>
+            <em className="bi-tag">提交后每 5 秒轮询，产物自动落到工作区</em>
           </div>
         </div>
-        <div className="vg-card-foot">
-          <span className="vg-count"><b>{configuredCount}</b> / {providers.length} 已配置</span>
-          <button className="skill-card-btn" onClick={() => { void refresh(); setOpen(true); setEditing(null); }}><Video size={13} />配置厂商凭证</button>
-        </div>
+        <footer className="bi-plugin-foot">
+          {/* ⛔ 底部不再重复头部的「N / 8 已配置」（第一版两处都写，视觉上像双份状态）——
+              这里只放**具体是哪几家**，数量交给头部徽标。 */}
+          <span className="bi-plugin-line">
+            {configuredCount > 0
+              ? <>已配置：{providers.filter((p) => p.configured).map((p) => p.name).join("、")}</>
+              : <span className="is-empty">还没有配置任何厂商 —— 填 API Key 后，画布的「生成视频」才可用</span>}
+          </span>
+          <button className="primary-setting" onClick={() => { void refresh(); setOpen(true); setEditing(null); }}><Video size={13} />配置厂商凭证</button>
+        </footer>
       </article>
 
       {open ? (
