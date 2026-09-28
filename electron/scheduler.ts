@@ -732,8 +732,15 @@ export class Scheduler {
   }
 
   /** 完成时刻推进 nextRunAt（严格 > base；若原 nextRunAt 已晚于本次完成时刻则保持，如手动提前运行） */
-  private advanceNextRunAt(task: ScheduledTask, base: number) {    if (typeof task.nextRunAt === "number" && task.nextRunAt > base) return;
-    const next = computeNextRunAt(task, base);
+  private advanceNextRunAt(task: ScheduledTask, base: number) {
+    if (typeof task.nextRunAt === "number" && task.nextRunAt > base) return;
+    // ⛔ 09-28 修复：必须把 lastRunAt 传下去。`computeOnceNextRunAt` 判「这条一次性任务已经跑过」
+    //    的依据就是 `lastRunAt >= scheduledAt`；原实现漏传第三个参数 ⇒ 跑完仍返回 scheduledAt
+    //    （一个**过去时刻**）当「下一次运行」，任务永远不结束序列（离线冒烟实测：
+    //    once 任务跑完 nextRunAt=1790579381351 而不是 null）。
+    //    对周期任务是同值无害：hourly/daily 系列本就用 lastRunAt 或 base(=finishedAt) 作起点，
+    //    两者此刻相等。
+    const next = computeNextRunAt(task, base, task.lastRunAt);
     task.nextRunAt = next;
     this.log(`[Scheduler] 「${task.name}」下一次运行：${next ? new Date(next).toLocaleString("zh-CN") : "无（序列已结束）"}`);
   }

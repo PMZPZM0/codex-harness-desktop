@@ -74,6 +74,7 @@ const MODULES = [
   "13-drama-gen",
   "15-ipc-loader",
   "16-settings-plugins",
+  "17-scheduled-tasks",
 ];
 
 for (const name of MODULES) {
