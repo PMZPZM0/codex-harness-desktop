@@ -1,0 +1,148 @@
+name: Build WeKnora (知识库后端)
+
+# ⛔ 为什么知识库后端要在 CI 构建、而不是随安装包分发（用户 09-28 定稿）：
+#   ① 体积 —— WeKnora Lite 的 Go 依赖缓存实测 **836MB**，二进制 + 前端产物也要几十 MB；
+#      随包分发会让每个用户白下这些（绝大多数人不装知识库）。
+#   ② 本机构建代价高 —— 需要 Go + mingw(CGO) + 前端 Node 三套工具链，本机实测一次要 30+ 分钟。
+#   ⇒ 应用侧只留「按需下载 + 启动 + 打开界面」的接口面（electron/features/weknora-ipc.ts），
+#     产物由这里构建并作为 Release 资产发布；用户在「设置 → 知识库」点安装时才下载。
+#
+# 触发：推 `weknora-v<版本>` tag（如 weknora-v0.8.2）⇒ 建/更新同名 Release 并上传资产。
+#   ⛔ 资产名必须与 electron/features/weknora-ipc.ts 的 buildWeknoraAssetUrl 逐字一致：
+#      weknora-lite-v<版本>-windows-x64.zip（守卫【188】锚了应用的下载源约定）
+#   ⛔ zip 必须含四样：weknora-lite.exe + web/（前端产物）+ config/（启动硬依赖）+ VERSION
+#      （缺 config/config.yaml 时引擎进程会直接退出 —— 09-27 实测）。
+on:
+  push:
+    tags:
+      - "weknora-v*"
+  workflow_dispatch:
+    inputs:
+      weknora_ref:
+        description: "WeKnora 源码 ref（默认与应用内 WEKNORA_VERSION 对齐的 v0.8.2）"
+        required: false
+        default: "v0.8.2"
+
+permissions:
+  contents: write
+
+jobs:
+  build-weknora-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 解析版本与源码 ref
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          # tag 形如 weknora-v0.8.2 → VERSION=0.8.2；手工触发时从 ref 推
+          REF="${{ github.event.inputs.weknora_ref }}"
+          if [ -z "${REF}" ]; then REF="v0.8.2"; fi
+          case "${GITHUB_REF_TYPE}" in
+            tag)
+              VERSION="${GITHUB_REF_NAME#weknora-v}"
+              # tag 里的版本必须与输入 ref 一致，避免「打了个新 tag、内容还是旧源码」
+              if [ "v${VERSION}" != "${REF}" ]; then
+                echo "::error::tag ${GITHUB_REF_NAME} 与源码 ref ${REF} 不一致 —— 二者要指向同一个版本"
+                exit 1
+              fi
+              ;;
+            *) VERSION="${REF#v}" ;;
+          esac
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "ref=${REF}" >> "$GITHUB_OUTPUT"
+          echo "tag=weknora-v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "asset=weknora-lite-v${VERSION}-windows-x64.zip" >> "$GITHUB_OUTPUT"
+          echo "版本 ${VERSION} / 源码 ${REF}"
+
+      - name: 拉 WeKnora 源码
+        uses: actions/checkout@v4
+        with:
+          repository: Tencent/WeKnora
+          ref: ${{ steps.meta.outputs.ref }}
+          path: weknora-src
+
+      - uses: actions/setup-go@v5
+        with:
+          # 版本跟着上游 go.mod 走（写死会在上游升级时静默用错工具链）
+          go-version-file: weknora-src/go.mod
+          cache-dependency-path: weknora-src/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # CGO 要 gcc：sqlite_fts5 驱动的编译依赖它（纯 Go 的 sqlite 实现不支持 FTS5）
+      - name: 安装 mingw（CGO 工具链）
+        shell: pwsh
+        run: |
+          choco install mingw --no-progress -y
+          gcc --version
+
+      - name: 构建前端（产出 web/）
+        working-directory: weknora-src/frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          ls -la dist | head -20
+
+      - name: 构建后端（CGO + sqlite_fts5）
+        working-directory: weknora-src
+        shell: bash
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          set -euo pipefail
+          # ldflags 与应用内联调过的配方一致：conflictPolicy=warn 抑制 protobuf 注册冲突的硬失败
+          go build -tags "sqlite_fts5" \
+            -ldflags "-w -s -X 'google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn'" \
+            -o weknora-lite.exe ./cmd/server
+          ls -lh weknora-lite.exe
+
+      - name: 组装发布包
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="pkg/weknora"
+          rm -rf pkg && mkdir -p "$OUT"
+          cp weknora-src/weknora-lite.exe "$OUT/"
+          # ⛔ 前端产物放 web/（应用侧以 WEKNORA_WEB_DIR 指向它）
+          cp -r weknora-src/frontend/dist "$OUT/web"
+          # ⛔ config/ 是启动硬依赖（ReadInConfig 失败 → 进程直接退出）
+          cp -r weknora-src/config "$OUT/config"
+          echo "${{ steps.meta.outputs.version }}" > "$OUT/VERSION"
+          # 自检：四样缺一不可，缺了宁可这里红，也别发一个装了跑不起来的包
+          for required in weknora-lite.exe web/index.html config/config.yaml VERSION; do
+            if [ ! -e "$OUT/$required" ]; then
+              echo "::error::发布包缺少 $required —— 检查上游目录结构是否变了"
+              exit 1
+            fi
+          done
+          cd pkg && 7z a -tzip "../${{ steps.meta.outputs.asset }}" weknora >/dev/null
+          cd .. && ls -lh "${{ steps.meta.outputs.asset }}" && sha256sum "${{ steps.meta.outputs.asset }}"
+
+      - name: 建 Release 并上传资产
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          ASSET="${{ steps.meta.outputs.asset }}"
+          NOTES="知识库后端（WeKnora Lite v${{ steps.meta.outputs.version }}，Windows x64）
+
+          随应用「设置 → 知识库」按需下载安装；源码取自 Tencent/WeKnora 的 ${{ steps.meta.outputs.ref }}。
+          构建配方：前端 npm build → Go CGO(tags=sqlite_fts5) → 打包 exe + web/ + config/ + VERSION。
+          校验：$(sha256sum "$ASSET" | cut -d' ' -f1)"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release ${TAG} 已存在 → 更新资产（可重跑）"
+          else
+            gh release create "$TAG" --title "知识库后端 ${{ steps.meta.outputs.version }}" --notes "$NOTES"
+          fi
+          gh release upload "$TAG" "$ASSET" --clobber
+          gh release view "$TAG" --json tagName,url,assets \
+            --jq '.url, (.assets[] | "  \(.name)  \(.size) B")'
