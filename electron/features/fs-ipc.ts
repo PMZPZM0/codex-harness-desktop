@@ -14,7 +14,7 @@
  *   - fileStat / sizeLabel：来自 ./app-diagnostics（文件 stat 与体积可读化），不依赖 main.ts。
  * 注册时机不变：main.ts 模块加载期 import 本文件 ⇒ ipcMain.handle 立即执行（早于 whenReady）。
  */
-import { ipcMain } from "electron";
+import { ipcMain, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileStat, sizeLabel } from "./app-diagnostics";
@@ -53,4 +53,14 @@ ipcMain.handle("fs:exists", async (_event, input: { path: string }) => {
   } catch {
     return { exists: false };
   }
+});
+// 在系统资源管理器中定位文件（09-28 画布闭环：生成产物此前只有路径文本，用户找不到实体文件）。
+// 口径同 fs:read：可信根内的文件才允许定位（防把资源管理器当探测工具用）。
+ipcMain.handle("fs:reveal", async (_event, input: { path: string }) => {
+  const target = path.resolve(input.path);
+  if (!isInsideTrustedRoots(target)) throw new Error("仅允许定位会话工作区与应用数据目录内的文件");
+  const stat = await fs.stat(target).catch(() => null);
+  if (!stat || !stat.isFile()) throw new Error(`文件不存在：${input.path}`);
+  shell.showItemInFolder(target);
+  return { ok: true };
 });
