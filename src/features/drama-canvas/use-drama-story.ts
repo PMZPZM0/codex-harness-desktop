@@ -48,6 +48,8 @@ export interface DramaStoryApi {
   writeBack: (nodeId: string) => Promise<void>;
   busy: Set<string>;
   generate: (nodeId: string, what: DramaGenerationKind) => Promise<void>;
+  /** 上传本地图片当参考图（image 卡回 path / 角色·场景回 ref / 镜头回 first_frame） */
+  uploadRef: (nodeId: string) => Promise<void>;
   /** 两条生成通道的就绪状态与当前模型/厂商名（卡片上要显示，未配时按钮变「去配置」） */
   channels: DramaChannelState;
   /** 重新读一遍通道配置（用户去设置页配完回来，画布不用重开） */
@@ -225,6 +227,51 @@ export function useDramaStory(
   }, [imageConfig]);
   useEffect(() => { refreshChannels(); }, [refreshChannels]);
 
+  /** 沿**入边**收集上游卡片的提示词（prompt/text）—— 连线「这份输入喂给下一步」的兑现（09-28）。
+   *  起手工作流里出图 A/B 连着主提示词卡，此前生成只用自己的占位 prompt，主提示词从未参与。
+   *  多个上游按连线顺序拼接；去重；截 800 字防提示词爆长。 */
+  const upstreamPrompts = useCallback((targetId: string): string => {
+    const byId = new Map(board.nodes.map((n) => [n.id, n] as const));
+    const texts: string[] = [];
+    for (const edge of board.edges) {
+      if (String(edge.target || "") !== targetId) continue;
+      const src = byId.get(String(edge.source || ""));
+      if (!src) continue;
+      const p = (src.data?.payload || {}) as Record<string, any>;
+      const text = String(p.prompt || p.text || "").trim();
+      if (text && !texts.includes(text)) texts.push(text);
+    }
+    return texts.join("；").slice(0, 800);
+  }, [board.nodes, board.edges]);
+
+  /** 上传参考图（09-28 用户：「参考图没有上传功能」）：系统选图 → 落工作区 uploads/ → 回填卡片。
+   *  image 卡回 path（可直接当视频首帧）、角色/场景回 ref、镜头回 first_frame。 */
+  const uploadRef = useCallback(async (nodeId: string): Promise<void> => {
+    const node = board.nodes.find((n) => n.id === nodeId);
+    if (!node) return;
+    const kind = String(node.data?.kind || "");
+    if (!workspace) { notice("上传参考图要落盘到工作区，请先为会话选择工作文件夹", "err"); return; }
+    const picked = await window.codex.chooseImages().catch(() => [] as string[]);
+    if (!picked?.length) return;
+    for (const srcPath of picked) {
+      try {
+        const data = await window.codex.readFile(srcPath);
+        const base64 = String(data?.dataBase64 || "");
+        if (!base64) { notice(`读不到文件：${srcPath}`, "err"); continue; }
+        const written = await window.codex.dramaCanvasAssetWrite({ workspace, name: srcPath.split(/[\\/]/).pop() || "ref.png", base64, subdir: "uploads" });
+        const path = String(written?.path || "");
+        if (!path) continue;
+        if (kind === "shot") board.updatePayload(nodeId, { first_frame: path });
+        else if (kind === "character" || kind === "location") board.updatePayload(nodeId, { ref: path });
+        else board.updatePayload(nodeId, { path, url: path, title: node.data.payload?.title || "参考图" });
+        board.saveNow();
+        notice(`参考图已导入：${path.split(/[\\/]/).pop()}`, "ok");
+      } catch (error) {
+        notice(`导入失败：${error instanceof Error ? error.message : String(error)}`, "err");
+      }
+    }
+  }, [board.nodes, board.updatePayload, workspace, notice]);
+
   const generate = useCallback(async (nodeId: string, what: DramaGenerationKind) => {
     const node = board.nodes.find((n) => n.id === nodeId);
     if (!node) return;
@@ -247,10 +294,14 @@ export function useDramaStory(
       const provider = list.find((p) => p.id === providerId);
       if (!provider) { notice(`厂商 ${providerId} 不存在`, "err"); return; }
       if (!provider.configured) { notice(`${provider.name} 还没填 API Key（插件市场 → 视频生成接口（内置））`, "err"); return; }
-      const mode = payload.first_frame ? "i2v" : "t2v";
+      // ⛔ 09-28 闭环打磨：出图卡（kind=image）生图产物落在 payload.path（不是 first_frame）——
+      //    此前只认 first_frame ⇒ 出图卡点「视频 · 生成」白扔已出的图、退回 t2v。
+      //    现在：image 卡的 path 同样算「已有首帧」（上游联动见 upstreamPrompts）。
+      const firstFrame = String(payload.first_frame || (kind === "image" ? payload.path || "" : "")).trim();
+      const mode = firstFrame ? "i2v" : "t2v";
       const promptBase = String(payload.prompt || payload.motion || payload.description || "").trim();
       if (!promptBase) { notice("这一镜没有提示词（prompt/motion 都为空），没法生成视频", "err"); return; }
-      if (mode === "i2v" && provider.imageInput === "url" && !/^https?:\/\//i.test(String(payload.first_frame))) {
+      if (mode === "i2v" && provider.imageInput === "url" && !/^https?:\/\//i.test(firstFrame)) {
         notice(`${provider.name} 图生视频只吃公网图片 URL —— 本地首帧请改用可灵 / 智谱 / MiniMax / Runway / Veo（或选 t2v）`, "err");
         return;
       }
@@ -262,7 +313,7 @@ export function useDramaStory(
           providerId,
           mode,
           prompt,
-          image: mode === "i2v" ? String(payload.first_frame) : undefined,
+          image: mode === "i2v" ? firstFrame : undefined,
           model: String(payload.video_model || "") || provider.defaultModel,
           duration: Number(payload.duration) || 5,
         });
@@ -308,7 +359,13 @@ export function useDramaStory(
         const base = String(payload.prompt || payload.description || payload.look || "").trim();
         if (!base) { notice("这张卡还没有提示词，先写上再生成", "err"); return; }
         // 全片统一风格摆在提示词最前面 —— 否则镜与镜之间画风会飘
-        const prompt = style ? `${style}。${base}` : base;
+        let prompt = style ? `${style}。${base}` : base;
+        // ⛔ 09-28 闭环打磨：连线要真的「喂给下一步」—— 沿**入边**找上游卡片的提示词拼进来。
+        //    起手工作流里出图 A/B 连着主提示词卡，但此前生成只用自己的 prompt（预填的
+        //    「按主提示词生成（变体…）」占位文本），主提示词卡的内容从未参与 —— 改主提示词
+        //    不会影响出图，连线形同虚设。现在：上游 prompt（或 text）拼在最前，自身变体词在后。
+        const upstream = upstreamPrompts(nodeId);
+        if (upstream) prompt = `${upstream}。${prompt}`;
         const result = await window.codex.generateImage({ baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model: cfg.model, prompt });
         const path = String(result?.path || "");
         if (!path) { notice("生成回来了，但没有落盘路径，这张卡没更新", "err"); return; }
@@ -348,7 +405,7 @@ export function useDramaStory(
     } finally {
       mark(key, false);
     }
-  }, [board, busy, imageConfig, mark, notice, workspace, writeBack]);
+  }, [board, busy, imageConfig, mark, notice, upstreamPrompts, workspace, writeBack]);
 
   return useMemo<DramaStoryApi>(() => ({
     stories,
@@ -362,7 +419,8 @@ export function useDramaStory(
     writeBack,
     busy,
     generate,
+    uploadRef,
     channels,
     refreshChannels,
-  }), [stories, storyName, story, problems, switchStory, createStory, saveNow, expand, writeBack, busy, generate, channels, refreshChannels]);
+  }), [stories, storyName, story, problems, switchStory, createStory, saveNow, expand, writeBack, busy, generate, uploadRef, channels, refreshChannels]);
 }

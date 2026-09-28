@@ -196,11 +196,18 @@
 }
 .drama-canvas-viewport .react-flow__node-drama.dragging { cursor: grabbing; }
 .drama-canvas-viewport .react-flow__handle.drama-canvas-handle {
-  width: 9px;
-  height: 9px;
+  width: 11px;
+  height: 11px;
   border: 2px solid var(--panel);
-  background: var(--faint);
-  opacity: .55;
+  background: var(--accent);
+  opacity: .8;
+}
+/* ⛔ 09-28 用户反馈「没有手动接线」—— 连接点一直在，但 opacity .55 + 灰色几乎看不见。
+   现在默认高对比显示；卡片悬停时再放大一号，明确「这里能拖出线」。 */
+.drama-canvas-viewport .drama-canvas-card:hover .react-flow__handle.drama-canvas-handle {
+  width: 13px;
+  height: 13px;
+  opacity: 1;
 }
 .drama-canvas-viewport .react-flow__handle.drama-canvas-handle:hover { background: var(--accent); opacity: 1; }
 .drama-canvas-viewport .react-flow__edge-path { stroke-linecap: round; }

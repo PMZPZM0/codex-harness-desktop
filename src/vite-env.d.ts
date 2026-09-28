@@ -764,6 +764,8 @@ interface Window {
     queueTimerSet(input: { threadId: string; queuedSubmissionId: string; runAt: number }): Promise<{ ok: boolean; scheduled: boolean }>;
     /* 取消排队消息定时（删除消息/取消定时/到点清理时调） */
     queueTimerCancel(input: { queuedSubmissionId: string }): Promise<{ ok: boolean }>;
+    /* 在系统资源管理器中定位文件（可信根校验同 fs:read）；画布生成产物「打开文件夹」 */
+    revealInFolder(path: string): Promise<{ ok: boolean }>;
 /* ═══ gen:end ═══ */
 
 

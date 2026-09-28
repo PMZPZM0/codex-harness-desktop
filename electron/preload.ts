@@ -488,6 +488,8 @@ contextBridge.exposeInMainWorld("codex", {
   queueTimerSet: (input: { threadId: string; queuedSubmissionId: string; runAt: number }) => __ipc("queue-timer:set", 1, [input]) as Promise<{ ok: boolean; scheduled: boolean }>,
   /* 取消排队消息定时（删除消息/取消定时/到点清理时调） */
   queueTimerCancel: (input: { queuedSubmissionId: string }) => __ipc("queue-timer:cancel", 1, [input]) as Promise<{ ok: boolean }>,
+  /* 在系统资源管理器中定位文件（可信根校验同 fs:read）；画布生成产物「打开文件夹」 */
+  revealInFolder: (path: string) => __ipc("fs:reveal", 1, [{ path }]),
   /* ═══ gen:end ═══ */
 
   // ⛔ mac 适配（09-16）：渲染层此前完全不知道自己跑在什么平台——窗口控制键让位、

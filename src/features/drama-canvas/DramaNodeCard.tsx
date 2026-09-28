@@ -26,6 +26,7 @@ import {
   User,
   Video,
   X,
+  Upload,
   type LucideIcon,
 } from "lucide-react";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
@@ -97,16 +98,24 @@ function AudioPreview({ path }: { path: string }) {
    原来检查器不查这张表 ⇒ 选中笔记卡也能点「生成图片」，与卡面行为相反（09-28 code review 抓到）。 */
 
 function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; payload: Record<string, any>; busyKey: (what: string) => boolean }) {
+  const actions = useDramaActions();
   const allowed = GEN_CHANNELS[kind];
   if (!allowed) return null;
   /* ⛔ 按钮本体在 DramaChannelButton（09-28）—— 卡面与右侧检查器**共用同一颗按钮**。
      原来两处各写一份：卡面改成「生图 · 首帧」后，检查器里还叫「生成图片」、未配置也不给
-     引导（点了才报错）—— 同一个动作两套实现的必然结果。这里只决定「露出哪几条通道」。 */
+     引导（点了才报错）—— 同一个动作两套实现的必然结果。这里只决定「露出哪几条通道」。
+     09-28 闭环追加：素材类卡加「上传参考图」（此前只有拖拽一条路，用户不知道能传）。 */
+  const canUpload = ["image", "character", "location", "shot"].includes(kind);
   return (
     <div className="drama-canvas-card-actions nodrag">
       {allowed.map((what) => (
         <DramaChannelButton key={what} id={id} kind={kind} what={what} payload={payload} busyKey={busyKey} />
       ))}
+      {canUpload ? (
+        <button className="drama-canvas-btn is-ghost" title="从本机选一张图当参考图 / 首帧（也会存进工作区）" onClick={(e) => { e.stopPropagation(); void actions.story.uploadRef(id); }}>
+          <Upload size={12} />上传参考图
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -229,7 +238,6 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
         <>
           <div className="drama-canvas-empty">{payload.video ? <Video size={16} /> : <Sparkles size={16} />}<span>{payload.video ? String(payload.video).split(/[\\/]/).pop() : "生成结果会显示在这里"}</span></div>
           <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />
-          <p className="drama-canvas-hint">视频生成本项目尚未接入 —— 这里保留落点，接入后无需改结构。</p>
         </>
       );
     }

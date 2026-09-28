@@ -90,7 +90,11 @@ export function DramaResultsPanel({ onClose, onLocate }: {
                 <span title={asset.path}>{asset.label}</span>
                 <small title={asset.path}>{fileOf(asset.path)}</small>
               </figcaption>
-              <button className="drama-results-locate" title="定位到这张卡" onClick={() => { onLocate(asset.nodeId); onClose(); }}>定位</button>
+              <div style={{ display: "flex", gap: 4 }}>
+                <button className="drama-results-locate" style={{ flex: 1 }} title="定位到产生这条结果的卡片" onClick={() => { onLocate(asset.nodeId); onClose(); }}>定位</button>
+                {/* ⛔ 09-28 闭环：生成产物此前只有路径文本，用户找不到实体文件 —— 资源管理器直达 */}
+                <button className="drama-results-locate" style={{ flex: 1 }} title="在资源管理器中显示这个文件" onClick={() => { void window.codex.revealInFolder(asset.path).catch(() => {}); }}>打开文件夹</button>
+              </div>
             </figure>
           ))}
         </div>
