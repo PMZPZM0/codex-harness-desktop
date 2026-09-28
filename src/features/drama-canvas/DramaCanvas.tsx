@@ -42,12 +42,14 @@ import {
   ZoomIn,
   ZoomOut,
   Images,
+  FolderOpen,
 } from "lucide-react";
 import { DRAMA_GROUPS, DRAMA_NODE_DEFS, dramaNodeDef, dramaStarterWorkflow, imageStarterWorkflow } from "../../lib/drama-canvas-model.mjs";
 import { dramaAgentPrompt, dramaBoardRelativePath } from "../../lib/drama-agent-prompts.mjs";
 import { DramaActionsProvider, type DramaActions } from "./drama-actions";
 import { DramaInspector } from "./DramaInspector";
 import { DramaResultsPanel } from "./DramaResultsPanel";
+import { DramaProjectsPanel } from "./DramaProjectsPanel";
 import { DramaNodeCard } from "./DramaNodeCard";
 import { DramaTimeline } from "./DramaTimeline";
 import { useDramaBoard, type DramaRFEdge, type DramaRFNode } from "./use-drama-board";
@@ -105,6 +107,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
      没有一处能总览 —— 用户原话「相册也没有」。面板不扫盘，直接聚合当前画布各卡片的
      payload（image / video / audio / first_frame），点条目把视口飞到那张卡。 */
   const [resultsOpen, setResultsOpen] = useState(false);
+  const [projectsOpen, setProjectsOpen] = useState(false);
   const [marquee, setMarquee] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string | null } | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -385,6 +388,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             <button className="drama-canvas-head-btn" onClick={() => setNaming({ kind: "story", value: "未命名短剧" })}><Plus size={13} />新建分镜表</button>
             <button className="drama-canvas-head-btn is-brand" onClick={() => createStarter("drama")}>新建短剧工作流</button>
               <button className="drama-canvas-head-btn is-brand" onClick={() => createStarter("image")}>新建生图工作流</button>
+            <button className="drama-canvas-head-btn" title="管理所有画布项目：切换 / 重命名 / 删除 / 打开数据文件夹" onClick={() => { setProjectsOpen(true); setResultsOpen(false); }}><FolderOpen size={13} />项目管理</button>
             <button className="drama-canvas-head-btn" title="集中查看这张画布生成的图 / 视频 / 配音" onClick={() => { setResultsOpen(true); setInspectorOpen(false); }}><Images size={13} />生成结果</button>
             <button className="drama-canvas-head-btn" onClick={() => { board.saveNow(); void story.saveNow(); pushNotice("已保存到本机" + (workspace ? "（分镜表同时写到工作区）" : ""), "ok"); }}><Save size={13} />保存</button>
             <button className="drama-canvas-head-btn" onClick={onClose} title="退出画布"><X size={13} />退出</button>
@@ -501,6 +505,18 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             <DramaResultsPanel
               onClose={() => setResultsOpen(false)}
               onLocate={(nodeId: string) => { board.select([nodeId], nodeId); centerOn(nodeId); }}
+            />
+          ) : null}
+          {projectsOpen ? (
+            <DramaProjectsPanel
+              boards={board.boards}
+              current={board.board}
+              workspace={workspace}
+              onClose={() => setProjectsOpen(false)}
+              onSwitch={(name: string) => board.switchBoard(name)}
+              onRename={(name: string, title: string) => board.renameBoard(name, title)}
+              onDelete={(name: string) => board.deleteBoardByName(name)}
+              onNew={() => setNaming({ kind: "board", value: "新项目" })}
             />
           ) : null}
         </div>
