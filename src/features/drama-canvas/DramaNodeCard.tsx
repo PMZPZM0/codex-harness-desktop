@@ -17,9 +17,7 @@ import {
   FileText,
   Film,
   Image as ImageIcon,
-  Loader2,
   MapPin,
-  Mic,
   Music,
   NotebookPen,
   Sparkles,
@@ -28,11 +26,12 @@ import {
   Video,
   X,
   type LucideIcon,
-  Settings2,
 } from "lucide-react";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
 import { dramaIsKnownKind, dramaNodeDef, dramaNodeLabel } from "../../lib/drama-canvas-model.mjs";
 import { useDramaActions } from "./drama-actions";
+/* ⛔ 按钮本体共享（卡面 + 检查器同一颗）—— 见 DramaChannelButton.tsx 顶部注释。 */
+import { DramaChannelButton, GEN_CHANNELS } from "./DramaChannelButton";
 import { useLocalAudio } from "./use-local-audio";
 import type { DramaRFNode } from "./use-drama-board";
 
@@ -93,72 +92,20 @@ function AudioPreview({ path }: { path: string }) {
  *  · 声音类（镜头/声音）      → 配音（本地 TTS）
  *  · 策划类（笔记/剧本/Agent/分镜表/场次/时间线）→ **不给生成按钮**（它们的产物是文本，
  *    该用「交给 Agent」而不是生成媒体） */
-const GEN_CHANNELS: Record<string, Array<"image" | "video" | "audio">> = {
-  character: ["image"],
-  location: ["image"],
-  image: ["image", "video"],
-  shot: ["image", "video", "audio"],
-  video: ["video"],
-  audio: ["audio"],
-};
+/* ⛔ 通道映射表已提到 DramaChannelButton.tsx（导出 GEN_CHANNELS）—— 卡面与检查器共用一份。
+   原来检查器不查这张表 ⇒ 选中笔记卡也能点「生成图片」，与卡面行为相反（09-28 code review 抓到）。 */
 
 function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; payload: Record<string, any>; busyKey: (what: string) => boolean }) {
-  const actions = useDramaActions();
   const allowed = GEN_CHANNELS[kind];
   if (!allowed) return null;
-  const channels = actions.story.channels;
-  const hasImage = Boolean(payload.first_frame || payload.ref || payload.path);
-  const hasVideo = Boolean(payload.video);
-  const hasAudio = Boolean(payload.audio || (kind === "audio" && payload.path));
-  // 未配置就走「去配置」，不在卡片上画一个点了才报错的假按钮
-  const needConfig = (what: "image" | "video") => (what === "image" ? !channels.image.ready : !channels.video.ready);
-  /* 通道前缀（09-28 用户：「生图、生视频，你是搞不清楚吗」）：
-     类别词必须**放在按钮文案最前面**。原来叫「生成首帧 / 文生视频」—— 类别藏在词中间，
-     一眼扫过去分不出哪个出图、哪个出片。现在统一「生图 · X / 视频 · X / 配音 · X」，
-     配合图标配色（蓝/紫/橙）双重区分。 */
-  const CH_LABEL: Record<string, string> = { image: "生图", video: "视频", audio: "配音" };
-  const labelOf = (what: "image" | "video" | "audio") => {
-    const head = `${CH_LABEL[what]} · `;
-    if (what === "audio") return head + (hasAudio ? "重做" : "生成");
-    if (what === "video") return head + (hasVideo ? "重做" : "生成");
-    return head + (kind === "character" ? "定妆照" : kind === "location" ? "场景图" : hasImage ? "重出" : "首帧");
-  };
-  const configLabelOf = (what: "image" | "video") => `${CH_LABEL[what]} · 去配置`;
+  /* ⛔ 按钮本体在 DramaChannelButton（09-28）—— 卡面与右侧检查器**共用同一颗按钮**。
+     原来两处各写一份：卡面改成「生图 · 首帧」后，检查器里还叫「生成图片」、未配置也不给
+     引导（点了才报错）—— 同一个动作两套实现的必然结果。这里只决定「露出哪几条通道」。 */
   return (
     <div className="drama-canvas-card-actions nodrag">
-      {allowed.map((what) => {
-        if (what === "audio") {
-          const hasLine = Boolean(String(payload.line || payload.text || "").trim());
-          return (
-            <button key="audio" className="drama-canvas-btn is-ghost is-channel-audio" disabled={busyKey("audio") || !hasLine} onClick={(e) => { e.stopPropagation(); void actions.story.generate(id, "audio"); }} title={hasLine ? "配音通道：用本机语音模型合成这一句（离线，不出网）" : "这一镜没有台词，先在检查器里写上 line"}>
-              {busyKey("audio") ? <Loader2 size={12} className="drama-canvas-spin" /> : <Mic size={12} />}
-              {busyKey("audio") ? "合成中…" : labelOf("audio")}
-            </button>
-          );
-        }
-        const missing = needConfig(what);
-        const channelName = what === "image" ? channels.image.model : channels.video.provider;
-        return (
-          <button
-            key={what}
-            className={`drama-canvas-btn is-channel-${what} ${missing ? "is-ghost" : ""}`}
-            disabled={busyKey(what)}
-            title={missing
-              ? `还没配置${what === "image" ? "生图模型" : "视频接口"} —— 点这里去「设置 → 插件」配置`
-              : what === "image"
-                ? `生图通道：${channelName}（按提示词画，不保证角色跨镜一致）`
-                : `视频通道：${channelName}（有首帧走图生视频，否则文生视频）`}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (missing) { actions.openGenSettings(what); return; }
-              void actions.story.generate(id, what);
-            }}
-          >
-            {busyKey(what) ? <Loader2 size={12} className="drama-canvas-spin" /> : missing ? <Settings2 size={12} /> : what === "image" ? <Sparkles size={12} /> : <Video size={12} />}
-            {busyKey(what) ? "生成中…" : missing ? configLabelOf(what) : labelOf(what)}
-          </button>
-        );
-      })}
+      {allowed.map((what) => (
+        <DramaChannelButton key={what} id={id} kind={kind} what={what} payload={payload} busyKey={busyKey} />
+      ))}
     </div>
   );
 }
