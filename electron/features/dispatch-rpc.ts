@@ -13,8 +13,8 @@ import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
 import { DISPATCH_FIXED_PORT, dispatchMcpTools, dispatchProbes, dispatchToken, ensureDispatchToken, restrictedThreadRole, stableKey } from "../features/dispatch-core";
 import { runDelegatedTask } from "../features/delegation";
-import { delegateRegistry, server, threadRuntimeStore } from "../runtime-refs";
-import { mutableState } from "../main";
+import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
+import { mutableState, scheduler } from "../main";
 export async function dispatchRpcCall(name: unknown, args: Record<string, unknown>): Promise<{ ok: boolean; output?: string; error?: string }> {
   // ── 旁证：引擎把调用转发给 MCP 服务器的同一时刻会发 item/started 事件（含真实 threadId）。
   // 用「参数指纹」对上号，拿到的才是**引擎认定的调用者**——模型谎报身份也绕不过。
@@ -72,6 +72,52 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     broadcastHarnessEvent({ type: "delegates-changed" } as any);
     const hint = failed.length ? `（${failed.length} 个失败）` : remaining.length ? `（还有 ${remaining.length} 个未归档）` : "";
     return { ok: true, output: `已归档 ${archived} 个调度会话${hint}。` };
+  }
+  /* ── 定时任务四件套（09-28）：模型侧真入口 ──────────────────────────────────────
+     此前 scheduler 的 4 个通道只有界面 IPC（agent 没有桥）⇒ 用户在会话里说「每天给我
+     AI 早报」，模型只能引导去界面。现在走内置调度 MCP 暴露（引擎级注入，覆盖所有会话）。
+     安全：scheduler_save 走 restrictedThreadRole 同源闸（专家/被调度会话不许建 —— 防套娃：
+     专家安排任务、任务再调专家）；工作区缺省 = 调用者会话的 cwd（threadCwd）。 */
+  if (name === "scheduler_save") {
+    const restrict = await restrictedThreadRole(callerThreadId);
+    if (restrict.restricted) return { ok: false, error: `当前会话（${restrict.label}）不允许创建定时任务` };
+    const cwd = String(args.workspace ?? threadCwd.get(callerThreadId) ?? "");
+    if (!cwd.trim()) return { ok: false, error: "无法确定工作目录 —— 请在参数里传 workspace" };
+    if (args.scheduleType === "once" && !String(args.scheduledAt ?? "").trim()) return { ok: false, error: "一次性任务必须传 scheduledAt（ISO 8601 带时区）" };
+    if (args.scheduleType === "recurring" && !String(args.rrule ?? "").trim()) return { ok: false, error: "周期任务必须传 rrule（如 FREQ=DAILY;BYHOUR=9;BYMINUTE=0）" };
+    const task = await scheduler.save({
+      name: String(args.name ?? ""),
+      prompt: String(args.prompt ?? ""),
+      workspace: cwd,
+      model: args.model ? String(args.model) : undefined,
+      scheduleType: args.scheduleType === "recurring" ? "recurring" : "once",
+      scheduledAt: args.scheduledAt ? String(args.scheduledAt) : undefined,
+      rrule: args.rrule ? String(args.rrule) : undefined,
+      enabled: true,
+      deliver: args.deliverWeixin ? { channel: "weixin" } : undefined,
+    });
+    return { ok: true, output: `定时任务已创建：「${task.name}」（id=${task.id}）下次运行：${task.nextRunAt ? new Date(task.nextRunAt).toLocaleString("zh-CN") : "无"}。可在 设置 → 定时任务 里查看与管理。` };
+  }
+  if (name === "scheduler_list") {
+    const list = await scheduler.list();
+    if (!list.length) return { ok: true, output: "当前没有任何定时任务。" };
+    return {
+      ok: true,
+      output: list.map((t) => {
+        const plan = t.scheduleType === "once" ? `一次性 @ ${t.scheduledAt ?? ""}` : `RRULE ${t.rrule ?? ""}`;
+        const next = t.nextRunAt ? new Date(t.nextRunAt).toLocaleString("zh-CN") : "已结束";
+        const state = !t.enabled ? "已停用" : t.running ? "运行中" : "待运行";
+        return `${t.enabled ? "▶" : "⏸"} ${t.name} | ${plan} | 下次=${next} | ${state} | id=${t.id}${t.lastError ? ` | 上次错误：${t.lastError}` : ""}`;
+      }).join("\n"),
+    };
+  }
+  if (name === "scheduler_run") {
+    await scheduler.runNow(String(args.id ?? ""));
+    return { ok: true, output: "已手动触发 —— 任务的工作区会话里会出现真实回合，完成后按任务配置决定是否推送微信。" };
+  }
+  if (name === "scheduler_delete") {
+    await scheduler.remove(String(args.id ?? ""));
+    return { ok: true, output: "定时任务已删除。" };
   }
   return { ok: false, error: `未知工具：${String(name)}` };
 }

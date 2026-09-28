@@ -65,10 +65,22 @@ export async function run() {
 
   /* ⑤ 负向：调度 MCP 的工具面里**不许**混进 scheduler 通道 —— 要加必须同时把安全闸一起改 */
   {
-    const tools = [...dispatch.matchAll(/name:\s*"(agent_invoke|agent_archive_sessions|[a-z_]+)"/g)].map((m) => m[1]);
-    const leaked = tools.filter((t) => /scheduler/i.test(t));
-    (leaked.length === 0 ? ok : fail)(
-      `【196】调度 MCP 工具面不含 scheduler（模型侧没有建任务入口是**设计现状**；要放开得同步改安全闸）：多出 ${leaked.join(", ") || "无"}`
+  /* ⑤ 09-28 设计变更：模型侧**必须有** scheduler 四件套。
+     原话「codex 还是调用不了这个工具还没做好吗」——此前 scheduler 只有界面 IPC，agent 没有桥
+     ⇒ 会话里建不了定时任务，模型还引导用户「resume 刷新工具面」（工具不存在，resume 无用）。
+     现在：内置调度 MCP（覆盖所有会话，含老会话）暴露四件套，执行端在 dispatch-rpc.ts。
+     ⛔ schema（dispatch-core）与执行端（dispatch-rpc）**两边都要有** —— 只加 schema 不加
+     执行 case = 工具出现在清单里但调用报「未知工具」，比没有更糟。 */
+  {
+    const rpc = codeOnly(readFileSync(join(ROOT, "electron", "features", "dispatch-rpc.ts"), "utf8"));
+    for (const tool of ["scheduler_save", "scheduler_list", "scheduler_run", "scheduler_delete"]) {
+      (dispatch.includes(`name: "${tool}"`) && rpc.includes(`name === "${tool}"`) ? ok : fail)(
+        `【196】调度 MCP 含 ${tool}（schema + 执行端都要有 —— 分离 = 工具在清单里但调不动）`
+      );
+    }
+    (rpc.includes("不允许创建定时任务") ? ok : fail)(
+      "【196】scheduler_save 走 restrictedThreadRole 同源闸（专家/被调度会话不许建 —— 防套娃）"
     );
+  }
   }
 }
