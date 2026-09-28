@@ -203,7 +203,8 @@ console.log(C.bold("\n【工具下载源】设置持久化 + 三条下载通道�
     ? ok("主进程三条下载通道都接了 downloadSource（工具链 env / npm registry / 浏览器内核）")
     : fail("主进程没把下载源传下去 —— 选了源也只有部分通道生效");
   // ③ 页面选择器在位：六个选项 + 保存走 app-settings（选完下一次下载生效）
-  (/changeDownloadSource/.test(appS) && /value="ghfast"/.test(appS) && /saveAppSettings\(\{ downloadSource: next \}\)/.test(appS))
+  //    09-28 起选择器是 AppSelect（options 数组），不再有 <option> 标签形态
+  (/changeDownloadSource/.test(appS) && /value: "ghfast"/.test(appS) && /saveAppSettings\(\{ downloadSource: next \}\)/.test(appS))
     ? ok("开发工具页下载源选择器在位（六档选项，写入 app-settings 即时生效）")
     : fail("开发工具页的下载源选择器被摘 —— 用户没法换源");
 }

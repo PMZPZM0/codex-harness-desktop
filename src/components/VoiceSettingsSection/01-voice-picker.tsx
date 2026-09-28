@@ -3,6 +3,7 @@
  * ⛔ props 类型由 TypeChecker 从**原作用域**推断（不是 any）⇒ 静态检查强度不降。
  */
 import { Trash2, Upload, Headphones, Keyboard, Mic, Play, Radio, ShieldAlert, Sparkles, Square, Zap } from "lucide-react";
+import { AppSelect } from "../AppSelect";
 import { Settings } from "../VoiceSettingsSection";
 
 type Props = {
@@ -20,16 +21,14 @@ export function VoiceSettingsSectionVoicePicker({ apply, audition, auditionPhase
             <div className="voice-card-head"><Headphones size={15} /><span>音色</span></div>
             <div className="voice-card-body">
               <div className="voice-row">
-                <select
+                <AppSelect
                   className="voice-input"
-                  value={settings.tts.sid}
-                  onChange={(e) => apply({ tts: { ...settings.tts, sid: Number(e.target.value) } })}
+                  value={String(settings.tts.sid)}
+                  onChange={(v) => apply({ tts: { ...settings.tts, sid: Number(v) } })}
                   disabled={saving}
-                >
-                  {voiceOptions.map((v) => (
-                    <option key={v.value} value={v.value}>{v.label}</option>
-                  ))}
-                </select>
+                  ariaLabel="音色"
+                  options={voiceOptions.map((v) => ({ value: String(v.value), label: v.label }))}
+                />
                 <button className="secondary-setting voice-audition" onClick={() => void audition()} disabled={auditionPhase === "synth" || saving}>
                   {auditionPhase === "synth" ? <><Square size={13} />合成中…</> : auditionPhase === "playing" ? <><Square size={13} />停止</> : <><Play size={13} />试听</>}
                 </button>

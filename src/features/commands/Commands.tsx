@@ -1,4 +1,5 @@
 /** 内置命令与快捷键（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
+import { AppSelect } from "../../components/AppSelect";
 import { createPortal } from "react-dom";
 import { TerminalSquare, X, Info, Check } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
@@ -29,10 +30,7 @@ export function CommandEditorModal({ draft, saving, onChange, onClose, onSave }:
           <div className="settings-grid two command-editor-grid">
             <label><span>命令名 <em>必填</em> <small>不含斜杠</small></span><input autoFocus value={draft.name} onChange={(event) => onChange({ ...draft, name: event.target.value })} placeholder="例如：git:commit（冒号分层，如 frontend:build）" /></label>
             <label><span>存放位置</span>
-              <select value={draft.source} onChange={(event) => onChange({ ...draft, source: event.target.value as CommandSource })}>
-                <option value="project">项目级（当前工作区 .codex/commands/）</option>
-                <option value="global">个人全局（$CODEX_HOME/commands/）</option>
-              </select>
+              <AppSelect value={draft.source} onChange={(v) => onChange({ ...draft, source: v as CommandSource })} options={[{ value: "project", label: "项目级（当前工作区 .codex/commands/）" }, { value: "global", label: "个人全局（$CODEX_HOME/commands/）" }]} />
             </label>
           </div>
           <label><span>描述 <small>在命令列表与补全提示中展示</small></span><input value={draft.description} onChange={(event) => onChange({ ...draft, description: event.target.value })} placeholder="例如：创建 git 提交（自动收集状态与变更）" /></label>

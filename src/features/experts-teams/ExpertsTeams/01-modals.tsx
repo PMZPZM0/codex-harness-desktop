@@ -2,6 +2,7 @@
  * ExpertsTeams 的「modals」部分（09-22 从同目录 ExpertsTeams.tsx 按顶层声明分出，纯搬迁、零改写）。
  * ⛔ 逻辑与原地逐字一致，只补了顶部 import 与 `export`。
  */
+import { AppSelect } from "../../../components/AppSelect";
 import { createPortal } from "react-dom";
 import { Users, X, Plus, Trash2, Info, Check, Bot, Sparkles, LoaderCircle, Clock3 } from "lucide-react";
 import { ALL_EFFORTS } from "../../../lib/effort";
@@ -23,20 +24,20 @@ export function SubAgentEditorModal({ draft, onChange, onClose, onSave }: { draf
           <label><span>简介 <small>一句话说明它负责什么</small></span><input value={draft.description} onChange={(event) => onChange({ ...draft, description: event.target.value })} placeholder="例如：专门审查 PR 改动并列出潜在问题" /></label>
           <label><span>系统提示词 <em>必填</em></span><textarea rows={6} value={draft.systemPrompt} onChange={(event) => onChange({ ...draft, systemPrompt: event.target.value })} placeholder="例如：你是一名资深前端审查员，专注 React 性能、可访问性与安全问题。请基于用户给定的代码或需求给出结构化结论。" /></label>
           <div className="settings-grid three subagent-config-grid">
-            <label><span>推理强度</span><select value={draft.effort} onChange={(event) => onChange({ ...draft, effort: event.target.value })}>{ALL_EFFORTS.map((level) => <option key={level} value={level}>{effortLabels[level] ?? level}</option>)}</select></label>
+            <label><span>推理强度</span><AppSelect value={draft.effort} onChange={(v) => onChange({ ...draft, effort: v })} options={[...(ALL_EFFORTS).map((level) => ({ value: (level), label: (`${effortLabels[level] ?? level}`), }))]} /></label>
             <label><span>模型</span>
               <label className="subagent-toggle"><input type="checkbox" checked={draft.inheritModel} onChange={(event) => onChange({ ...draft, inheritModel: event.target.checked, model: event.target.checked ? undefined : draft.model })} />跟随主对话</label>
               {!draft.inheritModel && <input value={draft.model ?? ""} onChange={(event) => onChange({ ...draft, model: event.target.value })} placeholder="例如：claude-sonnet-4" />}
             </label>
             <label><span>沙箱</span>
               <label className="subagent-toggle"><input type="checkbox" checked={draft.inheritSandbox} onChange={(event) => onChange({ ...draft, inheritSandbox: event.target.checked, sandbox: event.target.checked ? undefined : draft.sandbox })} />跟随主对话</label>
-              {!draft.inheritSandbox && <select value={draft.sandbox ?? "workspace-write"} onChange={(event) => onChange({ ...draft, sandbox: event.target.value as any })}><option value="read-only">只读</option><option value="workspace-write">工作区写入</option><option value="danger-full-access">完全访问</option></select>}
+              {!draft.inheritSandbox && <AppSelect value={draft.sandbox ?? "workspace-write"} onChange={(v) => onChange({ ...draft, sandbox: v as any })} options={[{ value: "read-only", label: "只读" }, { value: "workspace-write", label: "工作区写入" }, { value: "danger-full-access", label: "完全访问" }]} />}
             </label>
           </div>
           <div className="settings-grid three subagent-config-grid">
             <label><span>审批策略</span>
               <label className="subagent-toggle"><input type="checkbox" checked={draft.inheritApproval} onChange={(event) => onChange({ ...draft, inheritApproval: event.target.checked, approvalPolicy: event.target.checked ? undefined : draft.approvalPolicy })} />跟随主对话</label>
-              {!draft.inheritApproval && <select value={draft.approvalPolicy ?? "on-request"} onChange={(event) => onChange({ ...draft, approvalPolicy: event.target.value as any })}><option value="never">从不</option><option value="on-request">按需</option><option value="on-failure">失败时</option><option value="untrusted">不可信</option></select>}
+              {!draft.inheritApproval && <AppSelect value={draft.approvalPolicy ?? "on-request"} onChange={(v) => onChange({ ...draft, approvalPolicy: v as any })} options={[{ value: "never", label: "从不" }, { value: "on-request", label: "按需" }, { value: "on-failure", label: "失败时" }, { value: "untrusted", label: "不可信" }]} />}
             </label>
             <label><span>状态</span>
               <label className="subagent-toggle"><input type="checkbox" checked={draft.enabled} onChange={(event) => onChange({ ...draft, enabled: event.target.checked })} />已启用</label>
@@ -85,7 +86,7 @@ export function ExpertTeamEditorModal({ draft, onChange, onClose, onSave }: { dr
             <label><span>团队名称（英文）</span><input value={draft.displayName.en} onChange={(event) => { const en = event.target.value; onChange({ ...draft, displayName: { ...draft.displayName, en }, profession: { ...draft.profession, en } }); }} placeholder="例如：Software Dev Team" /></label>
           </div>
           <div className="settings-grid three expert-team-grid">
-            <label><span>行业分类</span><select value={draft.category} onChange={(event) => onChange({ ...draft, category: event.target.value })}>{categoryOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+            <label><span>行业分类</span><AppSelect value={draft.category} onChange={(v) => onChange({ ...draft, category: v })} ariaLabel="行业分类" options={categoryOptions.map(([id, label]) => ({ value: id, label }))} /></label>
             <label><span>启用状态</span>
               <label className="subagent-toggle"><input type="checkbox" checked={draft.enabled} onChange={(event) => onChange({ ...draft, enabled: event.target.checked })} />已启用</label>
             </label>

@@ -2841,7 +2841,7 @@ export async function run() {
   );
   // ⑥ 界面入口
   (/<span>上游协议/.test(appSrc72) ? ok : fail)("【72】供应商配置界面有「上游协议」选项");
-  (/<option value="chat">Chat 兼容/.test(appSrc72) ? ok : fail)("【72】可手动选「Chat 兼容」");
+  (/\{ value: "chat", label: "Chat 兼容/.test(appSrc72) ? ok : fail)("【72】可手动选「Chat 兼容」");
   (/type UpstreamProtocol/.test(appSrc72) ? ok : fail)("【72】界面用类型约束（不是裸字符串）");
   // ⑦ 语义不许与 wireApi 混为一谈（wireApi 是写给引擎的，恒 responses）
   (/wireApi: "responses",/.test(hookSrc72) ? ok : fail)(
@@ -2917,7 +2917,7 @@ export async function run() {
   (/export type UpstreamProtocol = "auto" \| "chat" \| "responses" \| "anthropic";/.test(hook73) ? ok : fail)(
     "【73】渲染层类型含 anthropic"
   );
-  (/<option value="anthropic">Anthropic（Claude 原生 \/v1\/messages）<\/option>/.test(app73) ? ok : fail)(
+  (/\{ value: "anthropic", label: "Anthropic（Claude 原生 \/v1\/messages）" \}/.test(app73) ? ok : fail)(
     "【73】供应商配置的下拉里真有这一档（只加类型不加选项 = 用户选不到）"
   );
   // ⑤ 本地模型预设

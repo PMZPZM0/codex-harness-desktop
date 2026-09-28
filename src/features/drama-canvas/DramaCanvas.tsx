@@ -13,6 +13,7 @@
  *  · 缩放范围 0.12–1.8；节点 ≤10 个时「适配」的最小缩放取 0.62（⛔ 09-27 用户点名「卡片文字糊」：0.38 时 12.5px 字缩到 ~5px 再加分 数缩放栅格化必然糊；宁可出滚动条）。
  *  · 拖完立刻点不弹属性面板；删节点后提示里挂「撤销」；Cmd/Ctrl+Z / ⇧Z / Y、⌘A、Esc、Delete。
  */
+import { AppSelect } from "../../components/AppSelect";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
@@ -372,15 +373,11 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             </div>
             <label className="drama-canvas-select nodrag" title={workspace || "尚未选择工作文件夹"}>
               <span>画布</span>
-              <select value={board.board} onChange={(e) => board.switchBoard(e.target.value)}>
-                {board.boards.length ? board.boards.map((b) => <option key={b.name} value={b.name}>{b.title || b.name}</option>) : <option value="main">main</option>}
-              </select>
+              <AppSelect value={board.board} onChange={(v) => board.switchBoard(v)} ariaLabel="画布" options={board.boards.length ? board.boards.map((b) => ({ value: b.name, label: b.title || b.name })) : [{ value: "main", label: "main" }]} />
             </label>
             <label className="drama-canvas-select nodrag" title="分镜表是唯一真源，会同时存一份到工作区供引擎读取">
               <span>分镜表</span>
-              <select value={story.storyName} onChange={(e) => story.switchStory(e.target.value)}>
-                {story.stories.length ? story.stories.map((s) => <option key={s.name} value={s.name}>{s.title || s.name} · {s.shots} 镜</option>) : <option value="main">（尚无）</option>}
-              </select>
+              <AppSelect value={story.storyName} onChange={(v) => story.switchStory(v)} ariaLabel="分镜表" options={story.stories.length ? story.stories.map((s) => ({ value: s.name, label: `${s.title || s.name} · ${s.shots} 镜` })) : [{ value: "main", label: "（尚无）" }]} />
             </label>
           </div>
           <div className="drama-canvas-head-actions">

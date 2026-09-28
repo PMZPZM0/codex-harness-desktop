@@ -8,6 +8,7 @@
  *  ③ 尺寸由节点 style 定死（见 use-drama-board 的 rfNodesFrom），卡面必须 `height:100%`
  *     且 `overflow:hidden` —— 内容多出去就裁掉，不允许把卡片撑大（撑大会让排版和命中测试全错）。
  */
+import { AppSelect } from "../../components/AppSelect";
 import { memo, type ReactNode } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
@@ -173,14 +174,7 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
         <>
           <label className="drama-canvas-field nodrag">
             <span>选择分镜表</span>
-            <select
-              className="nodrag"
-              value={payload.board || ""}
-              onChange={(e) => { e.stopPropagation(); update({ board: e.target.value }); }}
-            >
-              <option value="">{options.length ? "（未绑定）" : "还没有分镜表 —— 先去右侧新建一份"}</option>
-              {options.map((s) => <option key={s.name} value={s.name}>{s.title || s.name} · {s.shots} 镜</option>)}
-            </select>
+            <AppSelect value={payload.board || ""} onChange={(v) => update({ board: v })} options={[{ value: "", label: `${options.length ? "（未绑定）" : "还没有分镜表 —— 先去右侧新建一份"}` }, ...(options).map((s) => ({ value: (s.name), label: (`${s.title || s.name} · ${s.shots} 镜`), }))]} className="nodrag" />
           </label>
           <div className="drama-canvas-card-actions nodrag">
             <button className="drama-canvas-btn" disabled={!payload.board || !actions.boardNodeId} onClick={(e) => { e.stopPropagation(); void actions.story.expand(id, String(payload.board)); }}><Clapperboard size={12} />展开场次与镜头</button>

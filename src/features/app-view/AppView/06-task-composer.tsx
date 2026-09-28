@@ -2,6 +2,7 @@
  * AppViewTaskComposer —— AppView 的 JSX 第 6 段（09-22 从 AppView.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
+import { AppSelect } from "../../../components/AppSelect";
 import { DEFAULT_EFFORT, pickDefaultEffort, normalizeEffort, ALL_EFFORTS, declaredModelEfforts } from "../../../lib/effort";
 import {
   AlertTriangle,
@@ -174,21 +175,13 @@ export function AppViewTaskComposer({ app }: { app: HarnessAppApi }) {
                       <label className="se-field"><span>执行提示词<i>*</i></span><textarea rows={3} value={scheduleDraft.prompt} onChange={(event) => setScheduleDraft({ ...scheduleDraft, prompt: event.target.value })} placeholder="描述这个任务每次运行时要做的事，例如：汇总本周 Git 提交与 CI 状态，生成周会话摘要并列出重要变更" /></label>
                       <div className="se-row">
                         <label className="se-field"><span>执行会话</span>
-                          <select value={scheduleDraft.threadId} onChange={(event) => setScheduleDraft({ ...scheduleDraft, threadId: event.target.value })}>
-                            <option value="">新建会话</option>
-                            {threads.filter((entry) => entry.cwd === scheduleDraft.workspace).map((entry) => <option key={entry.id} value={entry.id}>{cleanThreadDisplayTitle(entry.name, { preview: entry.preview })}</option>)}
-                          </select>
+                          <AppSelect value={scheduleDraft.threadId} onChange={(v) => setScheduleDraft({ ...scheduleDraft, threadId: v })} options={[{ value: "", label: "新建会话" }, ...(threads.filter((entry) => entry.cwd === scheduleDraft.workspace)).map((entry) => ({ value: (entry.id), label: (`${cleanThreadDisplayTitle(entry.name, { preview: entry.preview})}`), }))]} />
                         </label>
                         <label className="se-field"><span>执行模型</span>
-                          <select value={scheduleDraft.model} onChange={(event) => setScheduleDraft({ ...scheduleDraft, model: event.target.value })}>
-                            <option value="">跟随全局设置</option>
-                            {allModels.map((m) => <option key={m.id} value={m.model}>{m.displayName}</option>)}
-                          </select>
+                          <AppSelect value={scheduleDraft.model} onChange={(v) => setScheduleDraft({ ...scheduleDraft, model: v })} options={[{ value: "", label: "跟随全局设置" }, ...(allModels).map((m) => ({ value: (m.model), label: (`${m.displayName}`), }))]} />
                         </label>
                         <label className="se-field"><span>推理强度</span>
-                          <select value={scheduleDraft.effort} onChange={(event) => setScheduleDraft({ ...scheduleDraft, effort: event.target.value })}>
-                            {ALL_EFFORTS.map((level) => <option key={level} value={level}>{effortLabels[level] ?? level}</option>)}
-                          </select>
+                          <AppSelect value={scheduleDraft.effort} onChange={(v) => setScheduleDraft({ ...scheduleDraft, effort: v })} options={[...(ALL_EFFORTS).map((level) => ({ value: (level), label: (`${effortLabels[level] ?? level}`), }))]} />
                         </label>
                       </div>
                       <div className="se-field"><span>调度方式</span>
