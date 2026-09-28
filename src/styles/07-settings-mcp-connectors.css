@@ -1876,7 +1876,12 @@
 .bi-plugin-grid {
   display: grid;
   gap: 8px;
-  grid-template-columns: 1fr;
+  /* ⛔⛔ `minmax(0, 1fr)` 而不是 `1fr`（09-28 用户截图：三行右侧的「状态 + 配置」被面板右边界裁掉）。
+     grid 列的默认最小值是 `auto` = **min-content**；而行的描述文字是 `nowrap`
+     ⇒ 列的 min-content = 整句话的宽度（远大于面板）⇒ 列被撑宽、整行溢出容器、右侧被裁。
+     `minmax(0, …)` 把最小宽度钉到 0，列宽严格跟随容器 —— 这是「grid 子项溢出」的标准修法，
+     与 flex 里给子项 `min-width: 0` 是同一件事的两面。 */
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
 }
 
@@ -1890,7 +1895,14 @@
   border: 1px solid var(--line);
   border-radius: 11px;
   background: var(--bg);
+  /* grid 项本身也要允许收缩到容器宽度（否则内容仍会把行撑出去） */
+  min-width: 0;
+  box-sizing: border-box;
 }
+/* 右侧固定件一律不许被压扁：中文没有空格，flex item 的 min-content 只有「一个字」宽，
+   不写 flex:none 时状态胶囊与按钮会被挤成一条（同画布按钮那次事故）。 */
+.bi-row > .bi-row-state,
+.bi-row > .secondary-setting { flex: none; }
 .bi-row.is-ready { border-color: color-mix(in srgb, var(--ok) 34%, var(--line)); }
 .bi-row.is-off { border-color: color-mix(in srgb, var(--orange) 34%, var(--line)); }
 .bi-row-icon {
