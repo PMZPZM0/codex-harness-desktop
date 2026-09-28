@@ -158,7 +158,6 @@ import { AppViewTaskComposer } from "./AppView/06-task-composer";
 import { AppViewMemoryPanel } from "./AppView/07-memory-panel";
 import { TeamOfficePreview } from "../team-office/TeamOfficePreview";
 import { DramaCanvas } from "../drama-canvas";
-import { KnowledgePane } from "../knowledge/KnowledgePane";
 import { OfficeScene } from "../team-office/OfficeScene";
 import { AppViewSettingsSheet } from "./AppView/08-settings-sheet";
 import { AppViewFilePreviewEditor } from "./AppView/09-file-preview-editor";
@@ -202,7 +201,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     deleteMemoryGroup, deleteMemoryRecord, deleteQueued, deleteSchedule,
     deleteSubAgent, deleteThreadsByCwd, desktopAuto, devRuntimes,
     dictationBaseRef, diff, dismissEnhanceHint, dismissNotice,
-    doneExpanded, downloadSource, dramaCanvasOpen, duplicateSshEntry, earlierLoadingId, knowledgeOpen,
+    doneExpanded, downloadSource, dramaCanvasOpen, duplicateSshEntry, earlierLoadingId,
     editSchedule, editingProvider, effort, emptySshDraft,
     emptySshJump, engineCheck, engineUpdateLog, engineUpdatePercent,
     engineUpdateResult, engineUpdateStageText, engineUpdating, engineVersion,
@@ -291,7 +290,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     setConnectorDraft, setConnectorEditorOpen, setConnectorEnabled, setConnectorMenuOpen,
     setConnectorOAuth, setConnectorSearch, setConnectorSecret, setConnectorTemplateModal,
     setConnectorTemplateValues, setConnectorsManageOnly, setContextOpen, setCustomDraft,
-    setDelegatedPopupId, setDoneExpanded, setDramaCanvasOpen, setEditingProvider, setEnvCheckOpen, setKnowledgeOpen,
+    setDelegatedPopupId, setDoneExpanded, setDramaCanvasOpen, setEditingProvider, setEnvCheckOpen,
     setExpertQuery, setExpertTeamDraft, setExpertTeamEditorOpen, setFileDraft,
     setFileEditing, setFilePreview, setGoalText, setGoalsDocked,
     setGoalsExpanded, setGoalsOpen, setHelpKey, setHookEnabled,
@@ -492,13 +491,6 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         runningByMember={app.railRunningByMember}
         openThread={(threadId) => void openThread(threadId)}
       />
-      {/* 知识库（09-28）：整屏浮层内嵌 WeKnora Lite 管理界面；服务状态由 weknora IPC 管理。 */}
-      {knowledgeOpen && (
-        <KnowledgePane
-          onClose={() => setKnowledgeOpen(false)}
-          onOpenSettings={() => { setSettingsPage("knowledge"); setSettingsOpen(true); }}
-        />
-      )}
       {/* AI 短剧无限画布（09-27）：与「专家团办公室预览」同一个档位的整屏浮层 —— 画布需要
           一大片连续空间，塞进右栏或中央主区分栏都会被挤成缩略图。工作区传进去是因为
           分镜表副本与素材要落到 <workspace>/.drama-canvas/ 下（引擎读的就是那份）。 */}

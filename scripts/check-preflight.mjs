@@ -72,7 +72,6 @@ const MODULES = [
   "11-config-keys",
   "12-ui-dialogs",
   "13-drama-gen",
-  "14-weknora-publish",
   "15-ipc-loader",
 ];
 

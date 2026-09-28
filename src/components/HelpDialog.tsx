@@ -81,7 +81,6 @@ export const OVERVIEW_GROUPS: OverviewGroup[] = [
       { page: "使用统计", what: "token 用量与花费趋势", when: "想控制成本、看哪个模型烧得快时" },
       { page: "数据管理", what: "占用空间与清理", when: "磁盘紧张、想清旧数据时" },
       { page: "会话备份", what: "备份与恢复会话历史", when: "要换机器或怕丢历史时" },
-      { page: "知识库", what: "内置知识库服务（WeKnora Lite）的安装与启停", when: "想上传文档建知识库、问答检索时" },
       { page: "归档管理", what: "已归档会话的查看、恢复、删除", when: "侧栏看不到某个旧会话时来这儿找" },
     ],
   },

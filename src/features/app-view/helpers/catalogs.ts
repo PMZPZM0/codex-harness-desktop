@@ -6,7 +6,7 @@
  *
  * 代码与拆分前逐字一致；依赖边经 AST 依赖图核对，**不跨模块** ⇒ 本文件不 import 同目录其他模块。
  */
-import { Archive, Blocks, Bot, Camera, CircleGauge, Clock3, Download, Settings2, Sparkles, Star, Store, TerminalSquare, Sun, Wrench, Wifi, Zap, Server, UserRound, Users, Workflow, Wallet, Database, Headphones , LibraryBig } from "lucide-react";
+import { Archive, Blocks, Bot, Camera, CircleGauge, Clock3, Download, Settings2, Sparkles, Star, Store, TerminalSquare, Sun, Wrench, Wifi, Zap, Server, UserRound, Users, Workflow, Wallet, Database, Headphones } from "lucide-react";
 import { BuiltinCommandDef } from "../../../features/commands";
 import type { SettingsPage } from "../types";
 
@@ -80,7 +80,7 @@ export const settingsNav: { group: string; items: [SettingsPage, string, any][] 
   { group: "常用", items: [["general", "控制台", Settings2], ["appearance", "外观", Sun], ["personalization", "个性化", Sparkles], ["voice", "语音通话", Headphones], ["skills", "技能", Zap], ["plugins", "插件", Store], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare], ["screenshot", "截图", Camera], ["favorites", "收藏夹", Star]] },
   { group: "智能体", items: [["agentteam", "专家/专家团", Users]] },
   { group: "自动化与能力", items: [["automation", "自动化", Workflow], ["mcp", "MCP", Wifi], ["schedule", "定时任务", Clock3], ["hooks", "钩子", Wrench], ["ssh", "SSH 服务器", Server]] },
-  { group: "数据与统计", items: [["usage", "使用统计", CircleGauge], ["storage", "数据管理", Database], ["backup", "会话备份", Download], ["knowledge", "知识库", LibraryBig], ["archive", "归档管理", Archive]] },
+  { group: "数据与统计", items: [["usage", "使用统计", CircleGauge], ["storage", "数据管理", Database], ["backup", "会话备份", Download], ["archive", "归档管理", Archive]] },
   { group: "开发工具", items: [["devtools", "开发工具", TerminalSquare], ["extensibility", "拓展接口", Blocks]] },
 ];
 

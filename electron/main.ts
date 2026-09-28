@@ -34,7 +34,6 @@ import {
   allBusWindows, broadcastCodexEvent, broadcastHarnessEvent, isPopoutWindow,
   popoutBusWindows, registerBusWindow, sendToWindow, unregisterBusWindow,
 } from "./features/window-bus";
-import { shutdownWeknora } from "./features/weknora-ipc";
 import type { CustomModelFile, ProviderModel } from "./features/custom-model-types";
 import { bindCustomModelProbe } from "./features/custom-model-probe";
 import type { ConnectorOAuthKind, ConnectorOAuthSpec, ConnectorTemplate } from "./features/connector-templates";
@@ -1096,8 +1095,6 @@ app.on("before-quit", () => {
   sshSessions.closeAll();
   // 挂断后保活的语音工作线程：退出时彻底销毁（否则 90s 内进程里还挂着两份 ONNX 模型）
   voiceService.disposeIdleWorkers();
-  // 知识库服务（WeKnora Lite）是 spawn 的子进程：退出时一并杀掉，不留孤儿
-  shutdownWeknora();
 });
 
 app.on("activate", () => {
