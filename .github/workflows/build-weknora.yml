@@ -28,10 +28,19 @@ permissions:
 
 jobs:
   build-weknora-win:
-    runs-on: windows-latest
-    # ⛔ 防无限挂死（09-28 实测：首次构建卡在 Go 编译 65 分钟无进展，无法从外部判断
-    #    是"在啃 CGO"还是"挂住了"）。给 job 与关键步骤都设上限，超时即失败并留下日志。
-    timeout-minutes: 120
+    # ⛔⛔ 为什么是 ubuntu 交叉编译、而不是 windows-latest 原生构建（09-28 实测两次失败后改）：
+    #   · windows-latest 只有 **2 核 / 7GB**，而 WeKnora 是带 CGO 的大项目（sqlite-vec 等
+    #     C 依赖）——第一次构建「下载依赖」只花 2 分 19 秒，其余 **70 分钟全耗在编译**上，
+    #     最后以 exit 1 失败（GitHub 只给 `Process completed with exit code 1`，
+    #     看不到真实日志 ⇒ 无法定位是 OOM、磁盘爆还是编译错）。
+    #   · ubuntu-latest 是 **4 核 / 16GB**、IO 更快，且 mingw 交叉工具链 `apt` 秒装。
+    #     Go 官方支持 `GOOS=windows CC=x86_64-w64-mingw32-gcc` 交叉编译 CGO（go-sqlite3
+    #     是纯 C，交叉编译成熟）⇒ 产物仍是 Windows x64 exe，资产名不变。
+    #   ⚠️ 回退路径：若交叉编译在某天出问题，把 runs-on 换回 windows-latest、把
+    #     「安装 CGO 交叉工具链」换成 `choco install mingw`、去掉 CC/GOOS/GOARCH 即可
+    #     （原始配方见 git 历史 ae776fd 版）。
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -78,15 +87,17 @@ jobs:
           node-version: 22
 
       # CGO 要 gcc：sqlite_fts5 驱动的编译依赖它（纯 Go 的 sqlite 实现不支持 FTS5）
-      - name: 安装 mingw（CGO 工具链）
-        shell: pwsh
+      # ubuntu 上装 **mingw 交叉工具链**（不是本机 gcc）—— 目标是 Windows exe
+      - name: 安装 CGO 交叉工具链（mingw-w64）
+        timeout-minutes: 10
         run: |
-          choco install mingw --no-progress -y
-          gcc --version
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64 zip
+          x86_64-w64-mingw32-gcc --version | head -1
 
       - name: 构建前端（产出 web/）
         working-directory: weknora-src/frontend
-        shell: bash
+        timeout-minutes: 15
         run: |
           set -euo pipefail
           npm ci
@@ -97,33 +108,35 @@ jobs:
       # 卡在「拉依赖」还是「编译」——拆开后两步各有耗时，日志也能直接看出卡点。
       - name: 下载 Go 依赖
         working-directory: weknora-src
-        shell: bash
-        timeout-minutes: 30
+        timeout-minutes: 20
         env:
-          # GitHub runner 在境外，官方代理最快；保留 direct 兜底（个别模块不在代理上）
           GOPROXY: https://proxy.golang.org,direct
         run: |
           set -euo pipefail
           go mod download
           echo "依赖下载完成"
 
-      - name: 构建后端（CGO + sqlite_fts5）
+      - name: 构建后端（CGO 交叉编译 + sqlite_fts5）
         working-directory: weknora-src
-        shell: bash
-        timeout-minutes: 60
+        timeout-minutes: 45
         env:
           CGO_ENABLED: "1"
+          GOOS: windows
+          GOARCH: amd64
+          CC: x86_64-w64-mingw32-gcc
+          CGO_CFLAGS: "-Wno-deprecated-declarations"
           GOPROXY: https://proxy.golang.org,direct
         run: |
           set -euo pipefail
-          # ldflags 与应用内联调过的配方一致：conflictPolicy=warn 抑制 protobuf 注册冲突的硬失败
+          # ldflags 与官方 Makefile 的 build-lite 一致：
+          #   conflictPolicy=warn 抑制 protobuf 注册冲突的硬失败；-w -s 去符号表
           go build -tags "sqlite_fts5" \
             -ldflags "-w -s -X 'google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn'" \
             -o weknora-lite.exe ./cmd/server
-          ls -lh weknora-lite.exe
+          ls -lh weknora-lite.exe && file weknora-lite.exe
 
       - name: 组装发布包
-        shell: bash
+        timeout-minutes: 10
         run: |
           set -euo pipefail
           OUT="pkg/weknora"
@@ -141,8 +154,8 @@ jobs:
               exit 1
             fi
           done
-          cd pkg && 7z a -tzip "../${{ steps.meta.outputs.asset }}" weknora >/dev/null
-          cd .. && ls -lh "${{ steps.meta.outputs.asset }}" && sha256sum "${{ steps.meta.outputs.asset }}"
+          (cd pkg && zip -qr "../${{ steps.meta.outputs.asset }}" weknora)
+          ls -lh "${{ steps.meta.outputs.asset }}" && sha256sum "${{ steps.meta.outputs.asset }}"
 
       - name: 建 Release 并上传资产
         shell: bash
