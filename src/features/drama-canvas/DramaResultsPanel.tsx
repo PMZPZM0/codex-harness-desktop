@@ -75,7 +75,7 @@ export function DramaResultsPanel({ onClose, onLocate }: {
         <div className="drama-results-empty">
           <ImageIcon size={22} />
           <b>{assets.length === 0 ? "这张画布还没有生成结果" : "该类型下没有结果"}</b>
-          <small>在卡片上点「生成图」/「生成视频」/「生成配音」，产物会自动出现在这里。</small>
+          <small>在卡片上点「生图 · 首帧」/「视频 · 生成」/「配音 · 生成」，产物会自动出现在这里。</small>
         </div>
       ) : (
         <div className="drama-results-grid">

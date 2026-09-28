@@ -361,6 +361,12 @@
   font-size: 10.5px;
 }
 .drama-canvas-card-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: auto; }
+/* ⛔⛔ 09-28 事故：**必须** flex:none + white-space:nowrap。
+   中文没有空格 ⇒ flex item 的 min-content 宽度只有「一个字」大小 ⇒ 不写这两条时
+   flex-shrink 会把两个按钮压到几乎重叠（用户截图：出图卡的「生成首帧」被
+   「去配置视频接口」盖住），而 flex-wrap 因为总宽没超容器**永远不触发**。
+   写死之后：宽度够就横排，不够就整颗换行，绝不压缩、绝不重叠。 */
+.drama-canvas-card-actions > .drama-canvas-btn { flex: none; white-space: nowrap; }
 .drama-canvas-btn {
   display: inline-flex;
   align-items: center;
@@ -381,6 +387,14 @@
    window.confirm 按钮没法配色也没法嵌在浮层里，所以只有应用内弹层能用这套。 */
 .drama-canvas-btn.is-danger { border-color: transparent; background: var(--red); color: var(--accent-text); }
 .drama-canvas-btn.is-danger:hover:not(:disabled) { border-color: transparent; color: var(--accent-text); filter: brightness(1.08); }
+/* 生成通道的图标配色（09-28）：按钮文案已「类别前置」，图标再来一层颜色冗余 ——
+   生图蓝、视频紫、配音橙。用户原话「生图、生视频，你是搞不清楚吗」⇒ 一条通道一个色。 */
+.drama-canvas-btn.is-channel-image > svg { color: var(--accent); }
+.drama-canvas-btn.is-channel-video > svg { color: var(--purple); }
+.drama-canvas-btn.is-channel-audio > svg { color: var(--orange); }
+.drama-canvas-btn.is-channel-image:hover:not(:disabled) { border-color: var(--accent); }
+.drama-canvas-btn.is-channel-video:hover:not(:disabled) { border-color: var(--purple); color: var(--purple); }
+.drama-canvas-btn.is-channel-audio:hover:not(:disabled) { border-color: var(--orange); color: var(--orange); }
 .drama-canvas-btn:disabled { opacity: .45; cursor: default; }
 .drama-canvas-spin { animation: drama-canvas-spin 1s linear infinite; }
 @keyframes drama-canvas-spin { to { transform: rotate(360deg); } }

@@ -305,7 +305,11 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
     board.replaceAll(snapshot, { resetHistory: true });
     fittedRef.current = false;
     window.setTimeout(() => fitAll(), 30);
-    pushNotice(isImage ? "生图工作流骨架已建立：写好主提示词，A/B 两个出图卡点「生成」即可" : "短剧创作骨架已建立：先写剧本，再连角色、场景与分镜表", "ok");
+    // ⛔ 09-28：提示里的按钮名必须与卡片上的实际按钮**逐字一致** —— 原来写「点『生成』即可」，
+    //    而卡片上根本没有叫「生成」的按钮（用户照着找找不到）。现在按真实按钮名写。
+    pushNotice(isImage
+      ? "生图工作流已就绪：写好主提示词 → 在「出图 A / 出图 B」卡上点「生图 · 首帧」出图；要出片就点同一张卡的「视频」按钮（首次用需先在设置里配视频接口）"
+      : "短剧创作骨架已建立：先写剧本，再连角色、场景与分镜表", "ok");
   }, [board, fitAll, pushNotice]);
 
   const dropFiles = useCallback(async (evt: React.DragEvent) => {
