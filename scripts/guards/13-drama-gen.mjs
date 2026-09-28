@@ -93,7 +93,7 @@ export async function run() {
       readFileSync(join(ROOT, "src", "lib", "video-providers.mjs"), "utf8"),
     )?.[1] ?? "";
     const adapterFields = [...adapter.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-    const localCopy = readFileSync(join(ROOT, "src", "features", "settings-plugins", "video-optional-fields.ts"), "utf8");
+    const localCopy = readFileSync(join(ROOT, "src", "components", "video-optional-fields.ts"), "utf8");
     const localFields = [...(/export const OPTIONAL_FIELDS = \[([^\]]*)\]/.exec(localCopy)?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1]);
     (adapterFields.length > 0 && JSON.stringify(adapterFields) === JSON.stringify(localFields) ? ok : fail)(
       `【192】可选字段两份同源（适配层 [${adapterFields.join(",")}] vs 渲染层 [${localFields.join(",")}]）—— 不一致则用户填了保存不住`

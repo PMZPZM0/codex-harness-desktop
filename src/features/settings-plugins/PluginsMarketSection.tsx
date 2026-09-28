@@ -7,7 +7,6 @@
  * 09-27 追加（非搬迁部分）：顶部内置「视频生成接口」卡 + 各厂商凭证配置弹层 ——
  * 走内置 IPC `video:*`（国内外 8 家），不是市场里的可安装插件，所以独立成卡。
  */
-import { VideoGenBuiltInCard } from "./VideoGenBuiltInCard";
 import { PageInfo } from "../../components/SettingsHead";
 import { ArrowLeft, ArrowRight, ArrowUpRight, Check, CircleStop, Play, Plus, RefreshCw, Store, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
@@ -45,11 +44,9 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
   return <section className="settings-section stack plugin-center">
     <div className="settings-copy channel-heading"><div><h2>插件<PageInfo text={<>上方卡片来自 Codex Plugin Marketplace（codex-marketplace.com），一键安装写入本地插件目录，无需 ChatGPT 登录；下方为已安装插件管理，停用后 Codex 不再加载该插件提供的指令、技能与钩子。</>} helpKey="plugins" label="插件" /></h2></div><div className="settings-heading-actions"><button className="secondary-setting" title="打开 Codex Plugin Marketplace 在线市场" onClick={() => void window.codex.openExternal("https://www.codex-marketplace.com/plugins")}><ArrowUpRight size={14} />在线市场</button><button className="icon-button" title="刷新：已装插件 / 技能 / 钩子 / 记忆 / 任务 / MCP + 插件市场（沿用当前分类与搜索）" onClick={() => void refreshPluginsPage()}>{(resourceLoading || pluginMarketLoading) ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
-    <div className="plugin-market-block">
-      <div className="plugin-market-title">内置接口<small>随应用自带，无需安装</small></div>
-      <VideoGenBuiltInCard />
-    </div>
-
+    {/* ⛔ 09-28：「内置接口（视频生成接口）」块**搬走**了 —— 它属于「内置插件」那一组
+        （与生图/视觉插件并列，见 BuiltinPluginsSection）。本页只负责**插件市场**：
+        外部市场的可安装列表 + 已安装插件管理。两件事混在一页会让人分不清「自带」与「要装」。 */}
     <div className="plugin-market-block">
       <div className="plugin-market-title">插件市场<small>来自 Codex Plugin Marketplace · 一键安装无需登录</small></div>
       <div className="resource-toolbar">

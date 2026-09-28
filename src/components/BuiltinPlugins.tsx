@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ImagePlus, Eye, RefreshCw, Play, Save, CircleCheck, CircleOff } from "lucide-react";
 import { ModelIdInput } from "./ModelIdInput";
 import { imageSpecHint, matchImageSpec } from "../lib/image-model-specs";
+import { VideoGenBuiltInCard } from "./VideoGenBuiltInCard";
 
 /**
  * 内置插件配置（生图 / 视觉辅助）。
@@ -138,8 +139,16 @@ export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => v
   return <section className="settings-section stack builtin-plugins">
     <div className="settings-copy">
       <h2>内置插件</h2>
-      <p>生图 / 识图能力。填好地址、密钥、模型后点各自卡片上的「保存」，引擎会自动重载，所有会话（含已打开的）都能调用。</p>
+      <p>随应用自带、无需安装的能力：生图 / 识图 / 视频生成。填好配置后引擎自动重载，所有会话（含已打开的）都能调用。</p>
     </div>
-    <div className="bi-plugin-grid">{panel("image")}{panel("vision")}</div>
+    {/* ⛔ 09-28：三张内置卡**同一区块同构**（用户：「三个内置插件跟下面插件市场区分开」）。
+        视频生成接口原先挂在插件市场页顶部的「内置接口」块里，和市场的可安装插件混在一页 ——
+        现在搬过来与生图/视觉并列，三张卡共用 .bi-plugin 规格（图标+标题+状态 / 字段或摘要 / 底部动作）。
+        插件市场是另一件事（外部市场的可安装列表），在它自己的区块里。 */}
+    <div className="bi-plugin-grid">
+      {panel("image")}
+      {panel("vision")}
+      <VideoGenBuiltInCard />
+    </div>
   </section>;
 }

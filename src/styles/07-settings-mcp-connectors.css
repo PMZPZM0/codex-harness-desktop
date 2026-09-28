@@ -1874,16 +1874,10 @@
 .bi-plugin-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  /* ⛔ 09-28：单列整行（原来是 minmax(320px,1fr) 两列并排）—— 三张内置卡各有 2–3 个输入框，
+     并排时字段被压到 320px 以内、地址一行显示不全（用户「布局做好看一点」）。 */
+  grid-template-columns: 1fr;
   align-items: start;
-}
-.bi-plugin {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel-2, var(--panel));
-  padding: 12px 13px;
-  display: grid;
-  gap: 10px;
 }
 .bi-plugin.is-ready { border-color: color-mix(in srgb, var(--ok) 34%, var(--line)); }
 .bi-plugin.is-off { border-color: color-mix(in srgb, var(--orange) 34%, var(--line)); }
@@ -1913,7 +1907,7 @@
 }
 .bi-plugin.is-ready .bi-plugin-state { color: var(--ok); }
 .bi-plugin.is-off .bi-plugin-state { color: var(--orange); }
-.bi-plugin-form { display: grid; gap: 10px; }
+.bi-plugin-form { display: grid; gap: 11px; }
 .bi-field { display: grid; gap: 3px; }
 .bi-field > span { font-size: 11.5px; color: var(--text); }
 .bi-field > small { font-size: 10.5px; color: var(--muted); line-height: 1.5; }
@@ -1932,80 +1926,68 @@
 .bi-model-row { display: flex; gap: 6px; align-items: center; }
 .bi-model-row > *:first-child { flex: 1; min-width: 0; }
 .bi-spec { display: grid; gap: 2px; }
-.bi-plugin-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-top: 9px;
-  border-top: 1px dashed var(--line);
-}
 .bi-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); cursor: pointer; }
 
 /* ─────────────────────────────────────── 内置插件（生图/视觉）09-28 重做
    旧版是「两张卡片 + 一个弹层编辑器」，字段全藏在弹层里（用户以为没有填写功能）。
    现在字段直接摊在卡片上，样式与视频接口卡（.vg-*）同一套视觉语言。 */
-.bi-plugin-grid {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  align-items: start;
-}
-.bi-plugin {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel-2, var(--panel));
-  padding: 12px 13px;
-  display: grid;
-  gap: 10px;
-}
-.bi-plugin.is-ready { border-color: color-mix(in srgb, var(--ok) 34%, var(--line)); }
-.bi-plugin.is-off { border-color: color-mix(in srgb, var(--orange) 34%, var(--line)); }
-.bi-plugin-head { display: flex; align-items: center; gap: 9px; min-width: 0; }
+/* ─────────────────────────────── 内置插件三卡统一规格（09-28 二次改版）
+   用户：「这三个是内置插件，跟下面插件市场区分开，三个布局做好看一点」。
+   三张卡（生图 / 视觉辅助 / 视频生成接口）同构：
+     头部 = 图标 + 标题/一句话 + 右侧状态徽标
+     体部 = 输入字段（生图/视觉）或标签+摘要（视频，它的字段在弹层里）
+     底部 = 虚线分隔 + 左开关/计数 + 右动作按钮
+   ⛔ 只用 DESIGN.md 的变量（--panel/--line/--accent/--ok/--orange），不写死色值。 */
 .bi-plugin-icon {
-  flex: none;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 11%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
   color: var(--accent);
 }
-.bi-plugin-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-.bi-plugin-title > b { font-size: 13px; color: var(--text); }
-.bi-plugin-title > small { font-size: 11px; color: var(--muted); line-height: 1.5; }
 .bi-plugin-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
   font-size: 11px;
   color: var(--muted);
+  flex: none;
+}
+.bi-plugin.is-ready .bi-plugin-state { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 34%, var(--line)); }
+.bi-plugin.is-off .bi-plugin-state { color: var(--orange); border-color: color-mix(in srgb, var(--orange) 34%, var(--line)); }
+.bi-plugin-count { font-size: 11.5px; color: var(--muted); }
+.bi-plugin-count b { font-size: 13px; color: var(--text); }
+/* 字段区：单列（标签在上）——卡片整行后字段区有整行宽度，地址/密钥能一眼看全 */
+.bi-plugin-form.is-note { gap: 7px; }
+.bi-plugin-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.bi-tag {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
   white-space: nowrap;
 }
-.bi-plugin.is-ready .bi-plugin-state { color: var(--ok); }
-.bi-plugin.is-off .bi-plugin-state { color: var(--orange); }
-.bi-plugin-form { display: grid; gap: 10px; }
-.bi-field { display: grid; gap: 3px; }
-.bi-field > span { font-size: 11.5px; color: var(--text); }
-.bi-field > small { font-size: 10.5px; color: var(--muted); line-height: 1.5; }
-.bi-field > input {
-  width: 100%;
-  font: inherit;
-  font-size: 12px;
-  color: var(--text);
-  background: var(--bg);
+.bi-tag.is-builtin { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 34%, var(--line)); }
+.bi-plugin-line { margin: 0; font-size: 11.5px; line-height: 1.6; color: var(--muted); }
+.bi-plugin-line .is-empty { color: var(--orange); }
+.bi-plugin.is-summary .bi-plugin-foot { border-top-color: var(--line); }
+
+
+/* ⛔ 09-28 合并：.bi-plugin / -form / -foot 在历史上被追加过多次（后者覆盖前者），
+   导致「改了像没改」。下面这份是按 CSS「后者胜」语义合并出的**唯一权威定义** ——
+   以后改这三条只改这里，不要再在别处追加同名规则。 */
+.bi-plugin {
   border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 6px 9px;
-  min-height: 32px;
+  border-radius: 12px;
+  background: var(--bg);
+  padding: 13px 15px;
+  display: grid;
+  gap: 11px;
 }
-.bi-field > input:focus { outline: none; border-color: var(--accent); }
-.bi-model-row { display: flex; gap: 6px; align-items: center; }
-.bi-model-row > *:first-child { flex: 1; min-width: 0; }
-.bi-spec { display: grid; gap: 2px; }
+
 .bi-plugin-foot {
   display: flex;
   align-items: center;
@@ -2014,48 +1996,3 @@
   padding-top: 9px;
   border-top: 1px dashed var(--line);
 }
-.bi-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); cursor: pointer; }
-
-/* ─────────────── 内置「视频生成接口」卡（09-28 重做）
-   ⛔ 原来是蹭市场卡的 .skill-card-grid（minmax(210px,1fr)）：唯一一张自带卡被挤进网格后
-   标题折行、徽标折成两行、描述被 line-clamp:2 截断（用户截图圈出）。这里给独立布局：
-   整行宽 + 标题/徽标一行放下 + 描述完整显示。 */
-.vg-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--bg);
-  padding: 12px 14px;
-}
-.vg-card-main { display: flex; align-items: flex-start; gap: 11px; min-width: 0; }
-.vg-card-icon {
-  flex: none;
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
-  color: var(--accent);
-}
-.vg-card-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
-.vg-card-title { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
-.vg-card-title > b { font-size: 13px; color: var(--text); }
-.vg-tag.is-builtin { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 34%, var(--line)); }
-.vg-card-desc { margin: 0; font-size: 11.5px; line-height: 1.6; color: var(--muted); }
-.vg-card-ready { font-size: 11px; color: var(--muted); }
-.vg-card-ready .is-empty { color: var(--orange); }
-.vg-card-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding-top: 9px;
-  border-top: 1px dashed var(--line);
-}
-.vg-count { font-size: 11.5px; color: var(--muted); }
-.vg-count b { font-size: 13px; color: var(--text); }
