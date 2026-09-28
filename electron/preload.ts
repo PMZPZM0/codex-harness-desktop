@@ -488,6 +488,18 @@ contextBridge.exposeInMainWorld("codex", {
   queueTimerSet: (input: { threadId: string; queuedSubmissionId: string; runAt: number }) => __ipc("queue-timer:set", 1, [input]) as Promise<{ ok: boolean; scheduled: boolean }>,
   /* 取消排队消息定时（删除消息/取消定时/到点清理时调） */
   queueTimerCancel: (input: { queuedSubmissionId: string }) => __ipc("queue-timer:cancel", 1, [input]) as Promise<{ ok: boolean }>,
+  /* 知识库服务（WeKnora Lite）状态：安装/运行/端口/安装进度 */
+  weknoraStatus: () => __ipc("weknora:status", 0, []) as Promise<{ installed: boolean; version: string; running: boolean; port: number | null; pid: number | null; installing: boolean; progress: { phase: string; percent: number } | null; error: string | null }>,
+  /* 按需安装：探测公开库 Release 资产（404 明确报未发布）→ 镜像兜底下载 → 7z 解压落位 */
+  weknoraInstall: () => __ipc("weknora:install", 0, []) as Promise<{ installed: boolean; version: string; running: boolean; port: number | null; pid: number | null; installing: boolean; progress: { phase: string; percent: number } | null; error: string | null }>,
+  /* 卸载：先停服务再删安装目录（数据目录保留） */
+  weknoraUninstall: () => __ipc("weknora:uninstall", 0, []) as Promise<{ installed: boolean; version: string; running: boolean; port: number | null; pid: number | null; installing: boolean; progress: { phase: string; percent: number } | null; error: string | null }>,
+  /* 启动服务（spawn + /health 轮询至通过；只绑 127.0.0.1，端口空闲自动挑） */
+  weknoraStart: () => __ipc("weknora:start", 0, []) as Promise<{ installed: boolean; version: string; running: boolean; port: number | null; pid: number | null; installing: boolean; progress: { phase: string; percent: number } | null; error: string | null }>,
+  /* 停止服务（taskkill 进程树） */
+  weknoraStop: () => __ipc("weknora:stop", 0, []) as Promise<{ installed: boolean; version: string; running: boolean; port: number | null; pid: number | null; installing: boolean; progress: { phase: string; percent: number } | null; error: string | null }>,
+  /* 运行中的知识库管理界面地址（未运行返回 null） */
+  weknoraAddress: () => __ipc("weknora:address", 0, []) as Promise<string | null>,
   /* ═══ gen:end ═══ */
 
   // ⛔ mac 适配（09-16）：渲染层此前完全不知道自己跑在什么平台——窗口控制键让位、
@@ -548,6 +560,9 @@ voiceAudio: (samples: Float32Array) => ipcRenderer.send("voice:audio", samples),
   // 排队消息定时发送到点：主进程定时器广播（不受渲染层隐藏节流），渲染层据此启动那条排队消息
 onQueueTimerDue: (listener: (event: { threadId: string; queuedSubmissionId: string }) => void) =>
     __on("queue-timer:due", listener, (listener) => (_event: Electron.IpcRendererEvent, value: { threadId: string; queuedSubmissionId: string }) => listener(value)),
+  /* 知识库服务安装进度（下载/解压阶段由主进程 sendToWindow 推送） */
+onWeknoraProgress: (listener: (event: { phase: string; percent: number } | null) => void) =>
+    __on("weknora:progress", listener, (listener) => (_event: Electron.IpcRendererEvent, value: { phase: string; percent: number } | null) => listener(value)),
   // TTS 音频走 Base64 字符串跨 Electron IPC；避免 native/external ArrayBuffer 被 structured clone 拒绝。
 onVoiceEvent: (listener: (event: unknown) => void) =>
     __on("voice:event", listener, (listener) => (_event: Electron.IpcRendererEvent, value: unknown) => listener(value)),

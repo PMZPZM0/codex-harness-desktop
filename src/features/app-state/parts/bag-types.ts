@@ -677,6 +677,8 @@ export interface Bag {
   setCompanyPreviewTeamId: React.Dispatch<React.SetStateAction<string | null>>;
   dramaCanvasOpen: boolean;
   setDramaCanvasOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  knowledgeOpen: boolean;
+  setKnowledgeOpen: React.Dispatch<React.SetStateAction<boolean>>;
   pptokenCardOff: boolean;
   setPptokenCardOff: React.Dispatch<React.SetStateAction<boolean>>;
   settingsPage: import("../../app-view/types.ts").SettingsPage;

@@ -131,6 +131,10 @@ bag.companyPreviewTeamId = companyPreviewTeamId as typeof bag.companyPreviewTeam
   const [dramaCanvasOpen, setDramaCanvasOpen] = useState(false);
   bag.dramaCanvasOpen = dramaCanvasOpen as typeof bag.dramaCanvasOpen; bag.setDramaCanvasOpen = setDramaCanvasOpen as typeof bag.setDramaCanvasOpen;
 
+  // 知识库面板（09-28）：与画布同档位的整屏浮层开关；服务状态全在域内（weknora IPC）。
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  bag.knowledgeOpen = knowledgeOpen as typeof bag.knowledgeOpen; bag.setKnowledgeOpen = setKnowledgeOpen as typeof bag.setKnowledgeOpen;
+
   // 通知归属判定用的镜像（09-20）：setNotice 是 useCallback 稳定引用，闭包读 ref 拿最新开关状态
   bag.settingsOpenRef.current = bag.settingsOpen;
 
@@ -219,5 +223,5 @@ bag.runtimePercent = runtimePercent as typeof bag.runtimePercent; bag.setRuntime
 
   const [runtimeStage, setRuntimeStage] = useState<Record<string, string>>({});
 bag.runtimeStage = runtimeStage as typeof bag.runtimeStage; bag.setRuntimeStage = setRuntimeStage as typeof bag.setRuntimeStage;
-  return { runUpdateCheck, runUpdateDownload, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, showModelGuide, setShowModelGuide, quickSetupBusy, setQuickSetupBusy, quickSetupError, setQuickSetupError, relaySetupBusy, setRelaySetupBusy, relaySetupError, setRelaySetupError, modelGuideDoneRef, envCheckOpen, setEnvCheckOpen, envInstalling, setEnvInstalling, envCheckDoneRef, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
+  return { runUpdateCheck, runUpdateDownload, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, knowledgeOpen, setKnowledgeOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, showModelGuide, setShowModelGuide, quickSetupBusy, setQuickSetupBusy, quickSetupError, setQuickSetupError, relaySetupBusy, setRelaySetupBusy, relaySetupError, setRelaySetupError, modelGuideDoneRef, envCheckOpen, setEnvCheckOpen, envInstalling, setEnvInstalling, envCheckDoneRef, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
 }

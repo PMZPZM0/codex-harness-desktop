@@ -2463,6 +2463,55 @@ w.postMessage({id:1,op:"list",root});
     );
     (/\.queued-timer-menu \{/.test(readStyles()) ? ok : fail)("【187】定时弹层样式已接入（15-queued-messages.css）");
   }
+
+  /* ══ 【188】内置知识库（WeKnora Lite）：按需安装 + 进程管理 + 接口面（09-28） ══ */
+  {
+    console.log(C.bold("\n【188】知识库（WeKnora Lite，按需下载不随包）"));
+    const wk = codeOnly(readFileSync(join(ROOT, "electron", "features", "weknora-ipc.ts"), "utf8"));
+    // ① 服务只绑本机回环；数据落在 userData（不写仓库/系统目录）
+    (/SERVER_HOST: "127\.0\.0\.1"/.test(wk) && /DB_PATH: path\.join\(data, "weknora\.db"\)/.test(wk) ? ok : fail)(
+      "【188】spawn env 定死 127.0.0.1 + userData 数据目录（Lite 默认 0.0.0.0 不能直接用）"
+    );
+    // ② 下载源探测：Release 没发布资产时明确报错（不装空壳）
+    (/安装包尚未发布：公开库 Release 需有 weknora-v/.test(wk) && /await assetExists\(url\)/.test(wk) ? ok : fail)(
+      "【188】安装前先 HEAD 探测 Release 资产，全部 404 ⇒ 明确报「尚未发布」"
+    );
+    // ③ 镜像兜底（国内直连 GitHub release 大概率失败）
+    (/GITHUB_MIRROR_PREFIXES = \["https:\/\/ghfast\.top\/", "https:\/\/gh-proxy\.com\/"\]/.test(wk) ? ok : fail)(
+      "【188】下载带镜像兜底链（与 voice/model-store 同值同序）"
+    );
+    // ④ config.yaml 是 WeKnora 启动硬依赖（ReadInConfig 失败直接退出）⇒ 启动前校验安装完整性
+    (/缺少 config\/config\.yaml/.test(wk) && /path\.join\(appDir\(\), "config", "config\.yaml"\)/.test(wk) ? ok : fail)(
+      "【188】启动前校验 config/config.yaml 在位（安装包内容异常要拦在启动前）"
+    );
+    // ⑤ 退出清理：不留孤儿进程
+    (/export function shutdownWeknora/.test(wk) && /killTree\(proc!\.pid!\)/.test(wk) ? ok : fail)(
+      "【188】shutdownWeknora 杀进程树（导出给 main.ts before-quit 挂链）"
+    );
+    (readMainSource().includes('shutdownWeknora();') && readMainSource().includes('from "./features/weknora-ipc"') ? ok : fail)(
+      "【188】main.ts before-quit 已挂 shutdownWeknora"
+    );
+    // ⑥ 渲染层接口面：设置页（安装/启停/卸载确认/进度条）+ 面板（webview + 自动启动）+ 侧栏入口
+    const settingsPage = readFileSync(join(ROOT, "src", "features", "settings-knowledge", "KnowledgeSettingsSection.tsx"), "utf8");
+    (/window\.codex\.weknoraInstall\(\)/.test(settingsPage) && /knowledge-progress-bar/.test(settingsPage) && /确认卸载（服务本体；上传的文档保留）/.test(settingsPage) ? ok : fail)(
+      "【188】设置页有安装/启停/两段式卸载确认与进度条"
+    );
+    const pane = readFileSync(join(ROOT, "src", "features", "knowledge", "KnowledgePane.tsx"), "utf8");
+    (/WebviewTag key=\{address\} src=\{address\}/.test(pane) && /weknoraStart\(\)/.test(pane) ? ok : fail)(
+      "【188】知识库面板内嵌 webview 并自动尝试启动服务"
+    );
+    const sidebar = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8");
+    (sidebar.includes("setKnowledgeOpen(true)") && sidebar.includes("知识库") ? ok : fail)(
+      "【188】主侧栏有「知识库」入口"
+    );
+    (/    knowledge: \{ render: \(\) => <KnowledgeSettingsSection \/>\ },/.test(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8")) ? ok : fail)(
+      "【188】设置注册表已登记 knowledge 页"
+    );
+    (readFileSync(join(ROOT, "src", "features", "app-view", "types.ts"), "utf8").includes('| "knowledge" |') ? ok : fail)("【188】SettingsPage 类型面含 knowledge");
+    (readFileSync(join(ROOT, "electron", "preload.ts"), "utf8").includes('__on("weknora:progress"') ? ok : fail)(
+      "【188】preload 手写 onWeknoraProgress 订阅（安装进度推送）"
+    );
+  }
 }
 
 
