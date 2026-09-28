@@ -109,6 +109,18 @@ export function handleEventRouter7(bag: Bag, params: any): boolean {
           void window.codex.request("thread/queue/list", { threadId: params.threadId, limit: 1 }).then((result) => {
             const head = result?.data?.[0];
             if (!head) return undefined;
+            // ⛔⛔ 09-28 用户现场（原话「排队消息定时功能没有。agent 回复完成，排队消息就自动发出去了」）：
+            //   设了定时的排队消息只要正好在队头，就会被这里**无条件**启动 —— 定时形同虚设。
+            //   原先唯一拦截点是 wasManualStop（手动停止）；现在补上第二条：**未到点的定时消息跳过**，
+            //   让它留在队列里等主进程 `queue-timer:due` 到点广播（由 releaseQueuedTimerDue 启动；
+            //   那条路径启动前会先清掉本地定时态 ⇒ 不会与这里互相阻塞）。
+            //   ⛔ 不去启动「后面的消息」：引擎队列是 FIFO，跳过队头发第二条会乱序。
+            //   用户想立刻发就点卡片上的「立即」（手动路径不经过这里）。
+            const timerAt = bag.queueTimers?.[params.threadId]?.[head.id];
+            if (typeof timerAt === "number" && timerAt > Date.now()) {
+              bag.dbg("queue-autostart-skipped-timer", { threadId: params.threadId, id: head.id, runAt: timerAt });
+              return undefined;
+            }
             bag.setQueue((current) => current.filter((entry) => entry.id !== head.id));
             // 这条排队消息马上会变成真实回合的用户消息 → 先建立钉顶意图（否则它落进内容流，
             // 用户看到的就是「钉顶没生效」）。只对当前正在看的会话生效，见函数注释。
