@@ -60,4 +60,32 @@ export async function run() {
   ["actions/setup-go@", "actions/setup-node@", "gh release create", "gh release upload"].every((key) => ci.includes(key)) ? ok : fail(
     "【193】CI 步骤齐全（Go / Node / Release 创建与上传）"
   );
+
+  /* ⑥ 下载源：**镜像优先 + 收集全部候选**（09-28 用户「点安装转一下就没了」+ 要求国内加速）
+        ⛔ 旧实现撞到第一个可用源就 break ⇒ 候选恒为 1 个，「逐个退避」形同虚设；且顺序是
+        直连优先（对国内用户最慢）。判据锚「收集循环里没有 break」+「镜像排在直连前面」。 */
+  (function checkDownloadSources() {
+    // ⛔ 别用「两个进度上报点的区间」当窗口 —— 这些字面量在文件里可能先于目标代码出现，
+    //    slice 会得到空串（断言恒假/恒真）。直接锚那两行的**代码形态**。
+    const loopLine = ipc.match(/for \(const prefix of \[[^\]]*\]\)[^\n]*/)?.[0] ?? "";
+    (/GITHUB_MIRROR_PREFIXES/.test(loopLine) && /,\s*""\]/.test(loopLine) ? ok : fail)(
+      `【193】下载源探测按「镜像优先 → 直连兜底」排列（国内直连 GitHub 最慢）｜实际：${loopLine.trim().slice(0, 70) || "(未找到循环)"}`
+    );
+    // 收集循环体内不得有 break（撞到第一个可用源就停 ⇒ 候选恒 1 个，退避形同虚设）
+    const pushCtx = ipc.slice(Math.max(0, ipc.indexOf("candidates.push(url)") - 120), ipc.indexOf("candidates.push(url)") + 40);
+    (!/break;/.test(pushCtx) ? ok : fail)(
+      "【193】候选源收集**不 break**（撞到第一个就停 ⇒ 只有 1 个候选，下载失败没有退路）"
+    );
+    (/failures\.push/.test(ipc) ? ok : fail)(
+      "【193】下载失败汇总每个源的失败原因（只报最后一个会让用户以为没试镜像）"
+    );
+  })();
+
+  /* ⑦ 错误粘性：状态会被 refresh 重拉，错误必须存住（否则界面上只闪一帧 = 用户什么都没看到） */
+  (/if \(error\) lastError = error;/.test(ipc) ? ok : fail)(
+    "【193】失败原因粘在 lastError 上（状态被 refresh 重拉时不会把错误冲掉）"
+  );
+  ((ipc.match(/clearError\(\);/g) ?? []).length >= 4 ? ok : fail)(
+    `【193】各操作入口清错误（install/start/stop/uninstall ≥4 处，实测 ${(ipc.match(/clearError\(\);/g) ?? []).length}）`
+  );
 }
