@@ -71,6 +71,7 @@ const MODULES = [
   "10-memory-audit",
   "11-config-keys",
   "12-ui-dialogs",
+  "13-drama-gen",
 ];
 
 for (const name of MODULES) {

@@ -1,14 +1,15 @@
 /**
  * 短剧业务层（域内私有）：分镜表的读写、展开成卡片、回写，以及**生成**。
  *
- * ⛔ 生成能力的**真实边界**（写在这里，免得 UI 上撒谎）：
- *   · **首帧 / 定妆照 / 场景图 —— 能生成**：走 `builtin:generate-image`（OpenAI 兼容 `/images/generations`）。
- *     但它**只收 prompt，收不了参考图** ⇒ 目前做不到"拿定妆照当参考图，保证跨镜头同一张脸"。
- *     所以生成出来的首帧只保证「按提示词画」，不保证角色一致 —— 卡片上如实标注。
- *   · **配音 —— 能生成**：走本地 sherpa-onnx TTS（`voice:speak` 回 Float32 采样点 →
- *     自己封 WAV 头 → 新通道 `drama-canvas:asset-write` 按字节落盘）。完全离线，不需要联网。
- *   · **视频 —— 生成不了**：本项目没有任何视频模型接入。按钮保留但明确置灰并说明，
- *     不做"点了没反应"的假按钮，也不假装能跑。
+ * ⛔ 生成能力的**真实边界**（写在这里，免得 UI 上撒谎）—— 09-28 与代码逐条对齐过：
+ *   · **首帧 / 定妆照 / 场景图 —— 能生成**：走 `builtin:generate-image`（OpenAI 兼容 `/images/generations`），
+ *     配置在「设置 → 插件」页顶部的**生图插件**卡（userData/builtin-plugins.json 的 `image` 段）。
+ *     它只收 prompt、收不了参考图 ⇒ 生成的首帧只保证「按提示词画」，**不保证角色跨镜一致**。
+ *   · **配音 —— 能生成**：走本地 sherpa-onnx TTS（`voice:speak`），完全离线。
+ *   · **视频 —— 能生成**（09-27 接入）：走 `video:*` 通道的 8 家内置厂商，配置在
+ *     「设置 → 插件」页的**视频生成接口（内置）**卡。
+ *     ⛔ 旧注释此处曾写「视频生成不了」——那是 09-27 之前的实情，接入后未同步，属**过期注释**
+ *     （09-28 用户据此以为功能是假的，故留此说明）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { wavBase64FromFloat32Pcm, wavDurationSeconds } from "../../lib/wav-encode.mjs";
@@ -27,6 +28,14 @@ import type { DramaBoardApi } from "./use-drama-board";
 
 export type DramaGenerationKind = "image" | "audio" | "video";
 
+/** 生成通道的就绪状态（09-28）：卡片据此**前置**提示「去配置」，而不是点了才报错。 */
+export interface DramaChannelState {
+  /** 生图：配了 baseUrl + apiKey + model 才算就绪 */
+  image: { ready: boolean; model: string };
+  /** 视频：至少一家厂商填了 API Key 才算就绪 */
+  video: { ready: boolean; provider: string };
+}
+
 export interface DramaStoryApi {
   stories: store.StoryboardMeta[];
   storyName: string;
@@ -39,6 +48,10 @@ export interface DramaStoryApi {
   writeBack: (nodeId: string) => Promise<void>;
   busy: Set<string>;
   generate: (nodeId: string, what: DramaGenerationKind) => Promise<void>;
+  /** 两条生成通道的就绪状态与当前模型/厂商名（卡片上要显示，未配时按钮变「去配置」） */
+  channels: DramaChannelState;
+  /** 重新读一遍通道配置（用户去设置页配完回来，画布不用重开） */
+  refreshChannels: () => void;
 }
 
 const STORYBOARD_SAVE_MS = 900;
@@ -194,6 +207,24 @@ export function useDramaStory(
     return c as { baseUrl: string; apiKey: string; model: string };
   }, []);
 
+  /* ── 两条生成通道的就绪状态（09-28） ──────────────────────────────────
+     卡片上要**前置**显示「生图 · 模型名 / 视频 · 厂商名」，没配就直接是「去配置」按钮 ——
+     原来是点了才弹 notice 报错，用户根本不知道这功能需要先配东西（截图里的困惑来源）。
+     读一次缓存住；用户去设置页配完回来点「刷新」或重开画布即可更新（不轮询，省 IPC）。 */
+  const [channels, setChannels] = useState<DramaChannelState>({ image: { ready: false, model: "" }, video: { ready: false, provider: "" } });
+  const refreshChannels = useCallback(() => {
+    void (async () => {
+      const img = await imageConfig().catch(() => null);
+      const providers = (await window.codex.videoProviders?.().catch(() => [])) as Array<any> | undefined;
+      const configured = (providers ?? []).filter((p) => p?.configured);
+      setChannels({
+        image: { ready: Boolean(img), model: String(img?.model ?? "") },
+        video: { ready: configured.length > 0, provider: String(configured[0]?.name ?? "") },
+      });
+    })();
+  }, [imageConfig]);
+  useEffect(() => { refreshChannels(); }, [refreshChannels]);
+
   const generate = useCallback(async (nodeId: string, what: DramaGenerationKind) => {
     const node = board.nodes.find((n) => n.id === nodeId);
     if (!node) return;
@@ -331,5 +362,7 @@ export function useDramaStory(
     writeBack,
     busy,
     generate,
-  }), [stories, storyName, story, problems, switchStory, createStory, saveNow, expand, writeBack, busy, generate]);
+    channels,
+    refreshChannels,
+  }), [stories, storyName, story, problems, switchStory, createStory, saveNow, expand, writeBack, busy, generate, channels, refreshChannels]);
 }

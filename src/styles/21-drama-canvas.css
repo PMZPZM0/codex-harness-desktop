@@ -687,3 +687,375 @@
   border-top: 1px dashed var(--line);
 }
 .drama-canvas-expert-label { font-size: 11.5px; color: var(--muted); }
+
+/* ────────────────────────────────────────────── 生成结果面板（相册，09-28）
+   用户反馈「生成完的东西没有一处能总览」⇒ 与检查器同栏的抽屉，聚合当前画布各卡片的
+   已生成素材。样式沿用画布自己的变量（--panel/--line/--accent），不引入新体系。 */
+.drama-results {
+  flex: none;
+  width: 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  min-height: 0;
+}
+.drama-results-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.drama-results-head b { font-size: 12.5px; }
+.drama-results-head span { font-size: 11px; color: var(--muted); }
+.drama-results-head .icon-button { margin-left: auto; }
+.drama-results-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line-soft, var(--line));
+  flex: none;
+}
+.drama-results-tab {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.drama-results-tab:hover { border-color: var(--accent); color: var(--accent); }
+.drama-results-tab.active { border-color: transparent; background: var(--accent); color: var(--accent-text); }
+.drama-results-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+}
+.drama-results-empty b { font-size: 12.5px; color: var(--text); }
+.drama-results-empty small { font-size: 11px; line-height: 1.6; max-width: 240px; }
+.drama-results-grid {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
+  padding: 10px;
+  align-content: start;
+}
+.drama-results-item {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.drama-results-thumb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  background: var(--panel-2, var(--bg));
+  cursor: pointer;
+  overflow: hidden;
+}
+.drama-results-thumb img,
+.drama-results-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.drama-results-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(0, 0, 0, .28);
+  pointer-events: none;
+}
+.drama-results-audio { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; color: var(--muted); }
+.drama-results-item figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 6px;
+  min-width: 0;
+}
+.drama-results-item figcaption span {
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.drama-results-item figcaption small {
+  font-size: 10px;
+  color: var(--faint, var(--muted));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.drama-results-locate {
+  margin: 0 6px 6px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 10.5px;
+  padding: 2px 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.drama-results-locate:hover { border-color: var(--accent); color: var(--accent); }
+.drama-results-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  background: rgba(0, 0, 0, .62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.drama-results-preview-body {
+  max-width: min(90vw, 880px);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  overflow: hidden;
+}
+.drama-results-preview-body header { display: flex; align-items: center; gap: 8px; }
+.drama-results-preview-body header b { font-size: 12.5px; flex: 1; min-width: 0; }
+.drama-results-preview-body img,
+.drama-results-preview-body video { max-width: 100%; max-height: 72vh; object-fit: contain; border-radius: 6px; }
+.drama-results-preview-body footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+/* ────────────────────────────────────────────── 生成结果面板（相册，09-28）
+   用户反馈「生成完的东西没有一处能总览」⇒ 与检查器同栏的抽屉，聚合当前画布各卡片的
+   已生成素材。样式沿用画布自己的变量（--panel/--line/--accent），不引入新体系。 */
+.drama-results {
+  flex: none;
+  width: 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  min-height: 0;
+}
+.drama-results-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.drama-results-head b { font-size: 12.5px; }
+.drama-results-head span { font-size: 11px; color: var(--muted); }
+.drama-results-head .icon-button { margin-left: auto; }
+.drama-results-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line-soft, var(--line));
+  flex: none;
+}
+.drama-results-tab {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.drama-results-tab:hover { border-color: var(--accent); color: var(--accent); }
+.drama-results-tab.active { border-color: transparent; background: var(--accent); color: var(--accent-text); }
+.drama-results-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+}
+.drama-results-empty b { font-size: 12.5px; color: var(--text); }
+.drama-results-empty small { font-size: 11px; line-height: 1.6; max-width: 240px; }
+.drama-results-grid {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
+  padding: 10px;
+  align-content: start;
+}
+.drama-results-item {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.drama-results-thumb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  background: var(--panel-2, var(--bg));
+  cursor: pointer;
+  overflow: hidden;
+}
+.drama-results-thumb img,
+.drama-results-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.drama-results-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(0, 0, 0, .28);
+  pointer-events: none;
+}
+.drama-results-audio { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; color: var(--muted); }
+.drama-results-item figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 6px;
+  min-width: 0;
+}
+.drama-results-item figcaption span {
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.drama-results-item figcaption small {
+  font-size: 10px;
+  color: var(--faint, var(--muted));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.drama-results-locate {
+  margin: 0 6px 6px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 10.5px;
+  padding: 2px 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.drama-results-locate:hover { border-color: var(--accent); color: var(--accent); }
+.drama-results-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  background: rgba(0, 0, 0, .62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.drama-results-preview-body {
+  max-width: min(90vw, 880px);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  overflow: hidden;
+}
+.drama-results-preview-body header { display: flex; align-items: center; gap: 8px; }
+.drama-results-preview-body header b { font-size: 12.5px; flex: 1; min-width: 0; }
+.drama-results-preview-body img,
+.drama-results-preview-body video { max-width: 100%; max-height: 72vh; object-fit: contain; border-radius: 6px; }
+.drama-results-preview-body footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+/* 空画布引导（09-28）：空板时告诉用户「这块板是什么、两个起手按钮区别、下一步」
+   ⛔ pointer-events: none —— 提示不能挡住画布的拖拽/框选（空白处仍要能拖）。 */
+.drama-canvas-blank-guide {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 26px;
+  text-align: center;
+  color: var(--muted);
+  pointer-events: none;
+  z-index: 2;
+}
+.drama-canvas-blank-guide > svg { color: var(--faint, var(--muted)); }
+.drama-canvas-blank-guide > b { font-size: 14px; color: var(--text); }
+.drama-canvas-blank-guide ul {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  text-align: left;
+}
+.drama-canvas-blank-guide li {
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+.drama-canvas-blank-guide li strong { color: var(--text); font-weight: 600; }
+.drama-canvas-blank-guide > small { font-size: 11.5px; color: var(--faint, var(--muted)); }

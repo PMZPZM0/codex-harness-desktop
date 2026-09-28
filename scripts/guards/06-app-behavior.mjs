@@ -2327,9 +2327,11 @@ w.postMessage({id:1,op:"list",root});
       "【184】真跑：wanx 成功态取到 video_url（parsePoll 归一成 {status,url}）"
     );
     // 渲染层：shot 卡的生成按钮必须真接线（⛔ 禁止"生成视频（未接入）"这种假按钮回潮）
+    // 09-28：按钮改为按 GEN_CHANNELS 映射表逐通道渲染 ⇒ 锚点跟着改成「视频通道分支真的调
+    // generate(id, what)」（不再是写死的 `generate(id, "video")` 字面量，否则重构即假红）。
     const card184 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8");
-    (card184.includes('actions.story.generate(id, "video")') && !card184.includes("生成视频（未接入）") ? ok : fail)(
-      "【184】shot 卡「生成视频」真调 story.generate(id,'video')（未接入的置灰假按钮不许回潮）"
+    (card184.includes('void actions.story.generate(id, what)') && !card184.includes("生成视频（未接入）") ? ok : fail)(
+      "【184】shot 卡「生成视频」真调 story.generate（未接入的置灰假按钮不许回潮）"
     );
     const story184 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8");
     (story184.includes("videoSubmit") && story184.includes("videoPoll") && story184.includes("videoDownload") ? ok : fail)(

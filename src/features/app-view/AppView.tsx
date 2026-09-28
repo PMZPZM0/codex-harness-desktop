@@ -506,6 +506,9 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         <DramaCanvas
           onClose={() => setDramaCanvasOpen(false)}
           workspace={workspace}
+          /* 画布上「去配置生图/视频」→ 直接开「设置 → 插件」页（生图插件卡 + 视频接口卡都在这页）。
+             ⛔ 不关画布：配完关掉设置就回到画布，接着生成。 */
+          onOpenPluginSettings={() => { setSettingsPage("plugins"); setSettingsOpen(true); }}
           threads={threads}
           onAskAgent={(text, threadId) => {
             /* 闭环：画布选好目标会话 → 这里切过去（或新建）→ 用 pendingCommandTextRef 塞任务
