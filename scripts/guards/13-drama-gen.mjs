@@ -10,7 +10,7 @@
  *
  * 共享面由 ./_ctx.mjs 注入。
  */
-import { C, ROOT, join, ok, fail, readFileSync } from "./_ctx.mjs";
+import { C, ROOT, join, ok, fail, readFileSync, readdirSync, codeOnly } from "./_ctx.mjs";
 
 export async function run() {
   console.log(C.bold("\n【192】画布生成通道分流与结果面板"));
@@ -22,9 +22,14 @@ export async function run() {
 
   /* ① 生成按钮必须按节点类型分流 —— 判据锚「有映射表 + 无映射就 return null」，
         而不是锚某个 kind 字符串（那样改一个类型就假绿）。 */
-  (/const GEN_CHANNELS: Record<string, Array<"image" \| "video" \| "audio">> = \{/.test(card) ? ok : fail)(
-    "【192】卡片有「节点类型 → 可用生成通道」映射表（GEN_CHANNELS）"
-  );
+  (function checkChannelMap() {
+    const sharedSrc = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaChannelButton.tsx"), "utf8");
+    const hasMap = /export const GEN_CHANNELS: Record<string, DramaChannel\[\]> = \{/.test(sharedSrc);
+    const cardUses = /import \{ DramaChannelButton, GEN_CHANNELS \} from "\.\/DramaChannelButton"/.test(card);
+    (hasMap && cardUses ? ok : fail)(
+      "【192】卡面用共享的「节点类型 → 可用生成通道」映射表（09-28 提到 DramaChannelButton.tsx，卡面与检查器同一份）"
+    );
+  })();
   (/const allowed = GEN_CHANNELS\[kind\];\s*\n\s*if \(!allowed\) return null;/.test(card) ? ok : fail)(
     "【192】映射表外的节点类型**不渲染**生成按钮（策划卡不该有生成图/视频）"
   );
@@ -34,9 +39,12 @@ export async function run() {
   );
 
   /* ② 未配置 → 「去配置」而不是点了才报错 */
-  (/const missing = needConfig\(what\);/.test(card) && /if \(missing\) \{ actions\.openGenSettings\(what\); return; \}/.test(card) ? ok : fail)(
-    "【192】未配置通道时按钮改为跳「设置 → 插件」（不再点了才弹错）"
-  );
+  (function checkConfigShortcut() {
+    const sharedSrc = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaChannelButton.tsx"), "utf8");
+    (/if \(missing\) \{ actions\.openGenSettings\(what as "image" \| "video"\); return; \}/.test(sharedSrc) ? ok : fail)(
+      "【192】未配置通道时按钮改为跳「设置 → 插件」（不再点了才弹错）"
+    );
+  })();
   (/channels: DramaChannelState;/.test(story) && /refreshChannels/.test(story) ? ok : fail)(
     "【192】story 层暴露两条通道的就绪状态（卡片据此显示「去配置生图模型 / 去配置视频接口」）"
   );
@@ -100,40 +108,61 @@ export async function run() {
     );
   }
 
-  /* ── 生成按钮的布局与文案（09-28 二次返工：按钮重叠 + 生图/视频分不清） ──────────
-     ⛔ 两次踩坑都记在这里：
-     ① **重叠**：`.drama-canvas-btn` 缺 flex:none/nowrap 时，中文（无空格）flex item 的
-        min-content 只有「一个字」宽 ⇒ flex-shrink 把两个按钮压到互相覆盖，而 flex-wrap
-        因总宽没超容器**永远不触发**（用户截图：出图卡的「生成首帧」被「去配置视频接口」盖住）。
+  /* ── 生成按钮的布局 / 文案 / 唯一实现（09-28 三次返工，坑全记在这里） ────────────
+     ① **重叠**：按钮缺 flex:none/nowrap ⇒ 中文（无空格）flex item 的 min-content 只有
+        「一个字」宽 ⇒ flex-shrink 把两个按钮压到互相覆盖，而 flex-wrap 因总宽没超容器
+        **永远不触发**（用户截图：出图卡的「生成首帧」被「去配置视频接口」盖住）。
      ② **分不清**：文案「生成首帧 / 文生视频」把类别藏在词中间 ⇒ 扫一眼分不出出图还是出片。
-        判据锚**接线**（CH_LABEL 映射 + is-channel-<通道> 类被真正使用），不是锚某个字面量。 */
+     ③ **两处实现漂移**（code review 抓到）：卡面与右侧检查器各写一份生成按钮 ⇒ 卡面改了
+        文案，检查器里还叫「生成图片」、未配置不给引导、还不查节点类型（笔记卡上也能点）。
+        现在按钮本体与通道映射表都只有一份（DramaChannelButton.tsx）。
+     判据锚**接线与唯一性**（映射表份数 / generate 调用点份数），不锚某个字面量。 */
   {
     const css = readFileSync(join(ROOT, "src", "styles", "21-drama-canvas.css"), "utf8");
-    const actionsRule = /\.drama-canvas-card-actions > \.drama-canvas-btn \{([^}]*)\}/.exec(css)?.[1] ?? "";
-    (actionsRule.includes("flex: none") && actionsRule.includes("white-space: nowrap") ? ok : fail)(
-      "【192】卡片按钮 flex:none + white-space:nowrap（缺任一条 = 两个按钮被压到重叠，wrap 永不触发）"
+    const dir = join(ROOT, "src", "features", "drama-canvas");
+    const shared = readFileSync(join(dir, "DramaChannelButton.tsx"), "utf8");
+    const inspector = readFileSync(join(dir, "DramaInspector.tsx"), "utf8");
+    const allTsx = readdirSync(dir).filter((f) => f.endsWith(".tsx"));
+    const codeOf = (f) => codeOnly(readFileSync(join(dir, f), "utf8"));
+
+    const btnRule = /\.drama-canvas-card-actions > \.drama-canvas-btn,\s*\n\.drama-canvas-inspector-actions > \.drama-canvas-btn \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    (btnRule.includes("flex: none") && btnRule.includes("white-space: nowrap") ? ok : fail)(
+      "【192】卡面与检查器的按钮都 flex:none + white-space:nowrap（缺任一条 = 按钮被压到重叠，wrap 永不触发）"
     );
+
+    const genDefs = allTsx.filter((f) => /const GEN_CHANNELS\s*[:=]/.test(codeOf(f)));
+    (genDefs.length === 1 && genDefs[0] === "DramaChannelButton.tsx" ? ok : fail)(
+      `【192】通道映射表只有一份定义（实得：${genDefs.join(", ") || "无"}）—— 两处各一份必然漂移`
+    );
+
+    const genCallers = allTsx.filter((f) => /actions\.story\.generate\(/.test(codeOf(f)));
+    (genCallers.length === 1 && genCallers[0] === "DramaChannelButton.tsx" ? ok : fail)(
+      `【192】生成按钮只有一个实现（实得：${genCallers.join(", ") || "无"}）—— 检查器曾自写一份「生成图片」：文案漂移 + 无配置引导 + 不查节点类型`
+    );
+
+    (/import \{ DramaChannelButton, GEN_CHANNELS \} from "\.\/DramaChannelButton"/.test(inspector) && /GEN_CHANNELS\[kind\]/.test(inspector) ? ok : fail)(
+      "【192】检查器用共享按钮 + 同一张映射表（选中笔记卡不再冒出生成按钮）"
+    );
+
     const channelColors = ["image", "video", "audio"].filter((ch) => css.includes(`.drama-canvas-btn.is-channel-${ch} > svg`));
     (channelColors.length === 3 ? ok : fail)(
       `【192】三条生成通道各有图标配色（生图/视频/配音，缺 ${3 - channelColors.length} 条）`
     );
-    (/const CH_LABEL: Record<string, string> = \{ image: "生图", video: "视频", audio: "配音" \}/.test(card) ? ok : fail)(
+
+    (shared.includes("const head = `${CHANNEL_LABEL[what]} · `;") ? ok : fail)(
       "【192】通道类别标签前置（生图 · X / 视频 · X / 配音 · X —— 类别藏在词中间就分不清）"
     );
-    (/is-channel-\$\{what\}/.test(card) ? ok : fail)(
-      "【192】生图/视频按钮挂 is-channel-<通道> 类（配色靠这条接线；删掉类名 = 配色静默失效）"
+    (/className=\{`drama-canvas-btn is-channel-\$\{what\}/.test(shared) ? ok : fail)(
+      "【192】按钮挂 is-channel-<通道> 类（配色靠这条接线；删掉 = 配色静默失效）"
     );
-    (card.includes("is-channel-audio") ? ok : fail)(
-      "【192】配音按钮也挂通道类（三条通道一个都不能少）"
+    (/what === "audio" \|\| missing/.test(shared) ? ok : fail)(
+      "【192】未配置态按钮变 ghost（一眼看出「这条通道还没通」）"
     );
-    (/const configLabelOf = \(what: "image" \| "video"\) => `\$\{CH_LABEL\[what\]\} · 去配置`;/.test(card) ? ok : fail)(
-      "【192】未配置态同样带类别前缀（生图 · 去配置 / 视频 · 去配置）"
-    );
-    const notice = /pushNotice\(isImage[\s\S]{0,400}?\)/.exec(canvas)?.[0] ?? "";
-    (notice.includes("生图 · 首帧") ? ok : fail)(
+
+    (canvas.includes("生图工作流已就绪") && canvas.includes("生图 · 首帧") ? ok : fail)(
       "【192】工作流建立提示用真实按钮名（原来写「点『生成』」，卡片上根本没这个按钮，用户照着找不到）"
     );
-    (panel.includes("生图 · 首帧") ? ok : fail)(
+    (panel.includes("生图 · 首帧") && panel.includes("视频 · 生成") ? ok : fail)(
       "【192】结果面板空态同样用真实按钮名（提示与按钮名不一致 = 用户找不到入口）"
     );
   }

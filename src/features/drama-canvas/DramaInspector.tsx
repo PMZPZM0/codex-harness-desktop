@@ -4,10 +4,14 @@
  * 卡面只放最常用的三五个按钮 —— 完整字段全在这儿。这样卡片能保持固定尺寸
  * （尺寸一变，画布排版与命中测试全得跟着变），也避免卡面上堆二十个输入框。
  */
-import { Clapperboard, Link2, RefreshCw, Sparkles, X } from "lucide-react";
+import { Clapperboard, Link2, RefreshCw, X } from "lucide-react";
 import { dramaNodeDef, dramaNodeLabel, dramaRelationLabel, dramaRelationOptions } from "../../lib/drama-canvas-model.mjs";
 import { STORYBOARD_ASPECTS, STORYBOARD_SHOT_SIZES } from "../../lib/drama-storyboard.mjs";
 import { useDramaActions } from "./drama-actions";
+/* ⛔ 生成按钮与通道映射表都从 DramaChannelButton 取（卡面同源）—— 检查器原来自己写了一份
+   「生成图片」按钮：文案与卡面不一致、未配置不给引导、还不查节点类型（笔记卡上也能点），
+   三处都与卡面相反。同一个动作只能有一个实现。 */
+import { DramaChannelButton, GEN_CHANNELS } from "./DramaChannelButton";
 
 interface FieldSpec {
   key: string;
@@ -155,7 +159,18 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
         ))}
 
         <div className="drama-canvas-inspector-actions">
-          <button className="drama-canvas-btn" onClick={() => void actions.story.generate(id, "image")}><Sparkles size={12} />生成图片</button>
+          {/* 生成通道按钮：与卡面**同一颗组件、同一张映射表** —— 未配置会变「生图 · 去配置」
+              直达设置页；策划类节点（笔记/剧本…）这里也不给生成按钮（与卡面行为一致）。 */}
+          {(GEN_CHANNELS[kind] || []).map((what) => (
+            <DramaChannelButton
+              key={what}
+              id={id}
+              kind={kind}
+              what={what}
+              payload={payload}
+              busyKey={(ch) => actions.story.busy.has(`${id}:${ch}`)}
+            />
+          ))}
           <button className="drama-canvas-btn is-ghost" onClick={() => void actions.story.writeBack(id)}><RefreshCw size={12} />写回分镜表</button>
           {kind === "storyboard" ? (
             <button className="drama-canvas-btn is-brand" disabled={!payload.board || !actions.boardNodeId} onClick={() => void actions.story.expand(id, String(payload.board))}><Clapperboard size={12} />展开场次与镜头</button>
