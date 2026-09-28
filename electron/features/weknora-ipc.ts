@@ -49,6 +49,8 @@ let currentPort: number | null = null;
 let starting = false;
 let installing = false;
 let lastProgress: { phase: string; percent: number } | null = null;
+/** 粘性错误（见 state() 注释）：跨 refresh 保留，直到下一次操作开始 */
+let lastError: string | null = null;
 
 function appDir(): string {
   return path.join(app.getPath("userData"), "weknora", "app");
@@ -68,6 +70,10 @@ function isRunning(): boolean {
 
 function state(error: string | null = null): WeknoraState {
   const installed = fs.existsSync(binaryPath());
+  // ⛔ 粘性错误（09-28 用户现场「点安装转一下就没了」）：渲染层拿到失败结果后会立刻
+  //   `refresh()` 再拉一次状态，而状态默认 error=null ⇒ 错误只闪一帧就被覆盖，用户
+  //   什么都看不到。这里把错误存住，直到下一次**操作**开始才清（clearError）。
+  if (error) lastError = error;
   return {
     installed,
     version: installed ? WEKNORA_VERSION : "",
@@ -76,8 +82,13 @@ function state(error: string | null = null): WeknoraState {
     pid: isRunning() ? proc!.pid! : null,
     installing,
     progress: lastProgress,
-    error,
+    error: lastError,
   };
+}
+
+/** 清掉上一次的错误（每个操作入口调一次 —— 否则旧错误会一直挂在界面上）。 */
+function clearError() {
+  lastError = null;
 }
 
 function reportProgress(phase: string, percent: number) {
@@ -154,6 +165,7 @@ function extractZip(zipPath: string, destDir: string): Promise<{ ok: true } | { 
 }
 
 async function doInstall(): Promise<WeknoraState> {
+  clearError();
   if (process.platform !== "win32") return state("当前仅支持 Windows（macOS 构建随后提供）");
   if (fs.existsSync(binaryPath())) return state();
   if (installing) return state();
@@ -163,24 +175,34 @@ async function doInstall(): Promise<WeknoraState> {
   const zipPath = path.join(app.getPath("userData"), "weknora", `weknora-lite-v${WEKNORA_VERSION}-windows-x64.zip`);
   const staging = path.join(app.getPath("userData"), "weknora", "staging");
   try {
-    // ① 探测下载源：直连 + 镜像，全部 404 ⇒ 安装包还没发布（诚实报错，不装一个空壳）
+    // ① 探测下载源：**国内镜像优先**，直连兜底；收集**全部**可用源（不 break）
+    //    ⛔ 09-28 修正两处（用户点安装"转一下就没了"+ 要求国内加速）：
+    //      a) 旧实现撞到第一个可用源就 `break` ⇒ 候选恒为 1 个，注释里写的「直连 → 镜像
+    //         逐个退避」根本没发生；国内直连 GitHub Release 慢/断流时没有任何退路。
+    //      b) 顺序反了：原来是直连优先 —— 对国内用户来说直连最慢。改成镜像优先。
+    //    探测（HEAD）成功 ≠ 下载快，所以探测只用来筛「存在的源」，真正选择交给下载退避。
     reportProgress("探测下载源", 0);
     const candidates: string[] = [];
-    for (const prefix of ["", ...GITHUB_MIRROR_PREFIXES]) {
+    for (const prefix of [...GITHUB_MIRROR_PREFIXES, ""]) {
       const url = buildWeknoraAssetUrl(prefix);
-      if (await assetExists(url)) { candidates.push(url); break; }
+      if (await assetExists(url)) candidates.push(url);
     }
     if (!candidates.length) {
       return state(`安装包尚未发布：公开库 Release 需有 weknora-v${WEKNORA_VERSION} tag 及对应资产`);
     }
-    // ② 下载（直连 → 镜像逐个退避）
+    // ② 下载（镜像优先 → 直连兜底，逐个退避）
     reportProgress("下载安装包", 0);
     let downloaded: { ok: true } | { ok: false; error: string } = { ok: false, error: "未尝试" };
+    const failures: string[] = [];
     for (const url of candidates) {
       downloaded = await downloadToFile(url, zipPath);
       if (downloaded.ok) break;
+      // 记下每个源失败的原因：只报最后一个会让用户以为"没试镜像"
+      failures.push(`${new URL(url).host}：${downloaded.error}`);
     }
-    if (!downloaded.ok) return state(`下载失败：${downloaded.error}`);
+    if (!downloaded.ok) {
+      return state(`下载失败（已依次尝试 ${candidates.length} 个下载源）—— ${failures.join("；")}。可稍后重试，或检查网络/代理。`);
+    }
     // ③ 解压到暂存 → 校验 → 原子落位
     reportProgress("解压", 90);
     fs.rmSync(staging, { recursive: true, force: true });
@@ -205,6 +227,7 @@ async function doInstall(): Promise<WeknoraState> {
 }
 
 function doUninstall(): WeknoraState {
+  clearError();
   doStop();
   fs.rmSync(appDir(), { recursive: true, force: true });
   return state();
@@ -255,6 +278,7 @@ async function pickPort(): Promise<number> {
 }
 
 async function doStart(): Promise<WeknoraState> {
+  clearError();
   if (isRunning()) return state();
   if (starting) return { ...state(), error: "正在启动中" };
   const bin = binaryPath();
@@ -303,6 +327,7 @@ async function doStart(): Promise<WeknoraState> {
 }
 
 function doStop(): WeknoraState {
+  clearError();
   if (isRunning()) {
     killTree(proc!.pid!);
     proc = null;
