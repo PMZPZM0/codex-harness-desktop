@@ -548,9 +548,6 @@ voiceAudio: (samples: Float32Array) => ipcRenderer.send("voice:audio", samples),
   // 排队消息定时发送到点：主进程定时器广播（不受渲染层隐藏节流），渲染层据此启动那条排队消息
 onQueueTimerDue: (listener: (event: { threadId: string; queuedSubmissionId: string }) => void) =>
     __on("queue-timer:due", listener, (listener) => (_event: Electron.IpcRendererEvent, value: { threadId: string; queuedSubmissionId: string }) => listener(value)),
-  /* 知识库服务安装进度（下载/解压阶段由主进程 sendToWindow 推送） */
-onWeknoraProgress: (listener: (event: { phase: string; percent: number } | null) => void) =>
-    __on("weknora:progress", listener, (listener) => (_event: Electron.IpcRendererEvent, value: { phase: string; percent: number } | null) => listener(value)),
   // TTS 音频走 Base64 字符串跨 Electron IPC；避免 native/external ArrayBuffer 被 structured clone 拒绝。
 onVoiceEvent: (listener: (event: unknown) => void) =>
     __on("voice:event", listener, (listener) => (_event: Electron.IpcRendererEvent, value: unknown) => listener(value)),

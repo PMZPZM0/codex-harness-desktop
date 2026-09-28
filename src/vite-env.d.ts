@@ -769,8 +769,6 @@ interface Window {
 
     onQueueTimerDue(listener: (event: { threadId: string; queuedSubmissionId: string }) => void): () => void;
 
-    onWeknoraProgress(listener: (event: { phase: string; percent: number } | null) => void): () => void;
-
     onRemotePairRequest(handler: (request: { rid: string; deviceId: string; name: string }) => void): () => void;
 
     onBotPairRequest(handler: (request: { rid: string; channel: string; chatId: string; name: string }) => void): () => void;
