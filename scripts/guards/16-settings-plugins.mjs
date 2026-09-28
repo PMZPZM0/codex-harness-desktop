@@ -100,4 +100,28 @@ export async function run() {
   (/\.bi-row > \.bi-row-state,\s*\n\.bi-row > \.secondary-setting \{ flex: none; \}/.test(css) ? ok : fail)(
     "【195】行内状态胶囊与按钮 flex:none（中文 min-content 只有一个字宽，不写会被挤成一条）"
   );
+
+  /* ⑧ 视频配套技能（15-skill-video-generation）不得与厂商源码漂移（09-28 用户要求「配套的视频技能」）
+        ⛔ 技能教的矩阵若与 video-providers.mjs 不一致（改了厂商/模型没跟技能），模型会拿
+        过时的 defaultModel 与首帧规则去误导用户 —— 校验技能正文里的每个 defaultModel。 */
+  {
+    const skillTs = readFileSync(join(ROOT, "electron", "builtin-skills", "15-skill-video-generation.ts"), "utf8");
+    const registered = readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8");
+    (registered.includes('["video-generation", VIDEO_GENERATION_SKILL]') ? ok : fail)(
+      "【195】视频配套技能已注册进 builtin-skills（漏登记 = 引擎永远看不到）"
+    );
+    (skillTs.includes("模型**没有**视频生成工具") ? ok : fail)(
+      "【195】技能正文保留「模型没有视频生成工具」的负向声明（删掉 = 模型又开始假装能提交视频任务）"
+    );
+    const providersSrc = readFileSync(join(ROOT, "src", "lib", "video-providers.mjs"), "utf8");
+    const pairs = [...providersSrc.matchAll(/\{ id: "([a-z]+)",[^}]*?defaultModel: "([^"]+)"/g)];
+    (pairs.length >= 8 ? ok : fail)(`【195】从厂商源码解析出默认模型（实测 ${pairs.length} 家 —— 解析失配会让本断言静默恒真）`);
+    // ⛔ matchAll 元素 = [全文, 组1(id), 组2(defaultModel)]：解构必须跳过前两个。
+    //    （首版写成 ([, model]) 取到的是 id ⇒ 检查变成「正文有没有 wanx/minimax 这类英文 id」，
+    //     而正文用的是中文名 ⇒ 假红 4 家 —— 实测踩坑。）
+    const missing = pairs.filter(([, , model]) => !skillTs.includes(model));
+    (missing.length === 0 ? ok : fail)(
+      `【195】技能矩阵与厂商源码一致${missing.length ? "：缺 " + missing.map((m) => m[1]).join(", ") : "（8 家 defaultModel 全在正文中）"}`
+    );
+  }
 }
