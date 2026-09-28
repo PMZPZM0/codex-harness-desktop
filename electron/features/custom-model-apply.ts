@@ -211,12 +211,11 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
     //    顶层全局一份，值取当前生效供应商/模型；切供应商时 applyCustomModel 按新激活项重算。
     //    ⛔ 位置约束：必须在**第一个段头之前**（TOML 顶层键语义，同下方 preserved.topLevel）。
     `model_auto_compact_token_limit = ${Math.round(activeContext * compactRatio)}`,
-    'model_auto_compact_token_limit_scope = "model"',
-    ...((() => {
-      const activeMaxOut = Number(activeNormalized.models?.find((model) => model.id === activeNormalized.model)?.maxOutputTokens);
-      // 单次输出上限：用户在当前供应商模型上填的「最大输出 Token」。未填时不写（引擎按模型自身上限）。
-      return Number.isFinite(activeMaxOut) && activeMaxOut > 0 ? [`model_max_output_tokens = ${Math.floor(activeMaxOut)}`] : [];
-    })()),
+    // ⛔ 不写顶层 _scope：该键在 0.157.1 是枚举（total / body_after_prefix），写 "model"
+    //    会让**整份配置**解析失败（「Invalid configuration; using defaults」⇒ 供应商全丢，
+    //    10:34 用户现场实证）。不写 = 引擎用默认口径，压缩功能照常。
+    // ⛔ 09-28 二次实测：顶层 model_max_output_tokens 在 0.157.1 同样被忽略（引擎已无任何
+    //    落点）⇒ 不写。用户填的「最大输出 Token」仍存档案；引擎按模型自身上限兜底。
     ...(preserved.topLevel ? [preserved.topLevel] : []),
     ...connectorToml(connectors),
     ...stripHarnessTable(providerToml),
