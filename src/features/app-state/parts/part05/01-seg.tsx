@@ -8,6 +8,9 @@
  */
 import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+
+/** 引擎警告气泡同文去重（09-28）：initialize 与各 session 恢复会对同一 configWarning 各推一次。 */
+const warnDedupe = new Map<string, number>();
 import "@xterm/xterm/css/xterm.css";
 import { translateEngineNotice } from "../../../../lib/engine-notices-zh";
 import { performRelayLogin, resolveRelayAutoTarget, resolveRelayTarget, resolveRelayKeyTarget, writeRelayActive, readRelayActive, type RelayActive } from "../../../../lib/relay";
@@ -461,6 +464,12 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         bag.showToast("模型已切换", `${params.fromModel} → ${params.toModel}`);
       } else if (["warning", "guardianWarning", "deprecationNotice", "configWarning"].includes(event.method ?? "")) {
         const text = String(params.message ?? params.details ?? "");
+        // ⛔ 同文去重（09-28 用户截图：同一 configWarning 启动时弹两条一模一样）——引擎对
+        //    initialize 与各 session 恢复各推一次。60s 窗口内相同 summary+text 只弹第一条。
+        const dedupeKey = event.method + "|" + String(params.summary ?? "") + "|" + text;
+        const lastAt = warnDedupe.get(dedupeKey);
+        if (lastAt != null && Date.now() - lastAt < 60_000) return;
+        warnDedupe.set(dedupeKey, Date.now());
         // 已知无害的技术性提示不弹卡（模型元数据回退、压缩英文提示）：
         // - "Unknown model X is used. This will use fallback model metadata."
         //   "Model metadata for X not found. Defaulting to fallback metadata..."

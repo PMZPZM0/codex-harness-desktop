@@ -2638,8 +2638,8 @@ export async function run() {
   (/const expectedCompact = Math\.round\(compactWindow \* normalizeAutoCompactRatio\(/.test(mainSrc69) ? ok : fail)(
     "【159】启动自愈会算「期望压缩阈值」（与 applyCustomModel 同源算法）"
   );
-  (/\|\| dispatchMcpBad \|\| compactStale\)/.test(mainSrc69) ? ok : fail)(
-    "【159】压缩阈值漂移**接进了重写条件**（只算不接 = 恒不做，等于没有这条判据）"
+  (/\|\| dispatchMcpBad \|\| compactStale \|\| compactKeyResidue\)/.test(mainSrc69) ? ok : fail)(
+    "【159】压缩阈值漂移**接进了重写条件**（只算不接 = 恒不做，等于没有这条判据；09-28 追加 provider 段旧键残留判据 compactKeyResidue 一并挂链）"
   );
 }
 
