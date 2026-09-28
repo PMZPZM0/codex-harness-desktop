@@ -2462,6 +2462,19 @@ w.postMessage({id:1,op:"list",root});
       "【187】composer 把当前会话的定时表传进 QueuedMessageList（徽标渲染的数据面）"
     );
     (/\.queued-timer-menu \{/.test(readStyles()) ? ok : fail)("【187】定时弹层样式已接入（15-queued-messages.css）");
+    // ⛔⛔ 09-28 启动崩溃复盘：queueTimers 家族在 bag-types 有声明、tsc/check-bag-types 双绿，
+    //    但 part04c2 里 **bag.x = x 镜像赋值行整批漏写** ⇒ 运行时 bag.queueTimers undefined，
+    //    对账 effect 挂载即读 undefined[threadId]（uuid 正是 thread.id）⇒ 整个渲染层崩。
+    //    判据 = 每个 bag 家族名字的**赋值行**必须存在（类型声明在≠接线在）。
+    const part04c2b = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part04", "03-seg", "02-browser-queue-settings.tsx"), "utf8");
+    const updateUi = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "03-thread-switch-update", "02-update-ui-settings.tsx"), "utf8");
+    const bagBindings = ["bag.queueTimers =", "bag.setQueueTimers =", "bag.queueTimersLoadedRef =", "bag.persistQueueTimers =", "bag.setQueuedTimer =", "bag.releaseQueuedTimerDue ="];
+    (bagBindings.every((binding) => part04c2b.includes(binding)) ? ok : fail)(
+      "【187】queueTimers 家族 6 个名字的 bag 镜像赋值行全部在位（缺一个 = 运行时 undefined = 启动崩）"
+    );
+    (updateUi.includes("bag.knowledgeOpen =") && updateUi.includes("bag.setKnowledgeOpen =") ? ok : fail)(
+      "【187】knowledgeOpen 家族的 bag 镜像赋值行在位（同轮同坑，一并钉死）"
+    );
   }
 
   /* ══ 【188】内置知识库（WeKnora Lite）：按需安装 + 进程管理 + 接口面（09-28） ══ */

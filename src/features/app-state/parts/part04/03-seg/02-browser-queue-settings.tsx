@@ -23,13 +23,22 @@ export function usePart04c2(bag: Bag) {
    * 本地 localStorage 只做「窗口 reload 后徽标与定时器恢复」（应用重启 = 引擎队列清空，
    * 与排队消息生命周期一致，悬空条目由下方 effect 清理）。 */
   const [queueTimers, setQueueTimers] = useState<Record<string, Record<string, number>>>({});
+  bag.queueTimers = queueTimers as typeof bag.queueTimers; bag.setQueueTimers = setQueueTimers as typeof bag.setQueueTimers;
+  // ⛔⛔ 09-28 启动崩溃复盘：上面这行镜像赋值最初**漏写**——bag-types 有类型声明、tsc/bag 校验
+  //    双绿，但运行时 bag.queueTimers 是 undefined，对账 effect 挂载即读 `undefined[threadId]`
+  //    （读方在 composer/对账/deleteQueued 共 4 处）。教训：**bag 家族每个名字必须有赋值行**，
+  //    守卫【187】末条已按此钉死。
   const queueTimersLoadedRef = useRef(false);
+  bag.queueTimersLoadedRef = queueTimersLoadedRef as typeof bag.queueTimersLoadedRef;
 
   function persistQueueTimers(next: Record<string, Record<string, number>>) {
     try { localStorage.setItem("queue-timers-v1", JSON.stringify(next)); } catch { /* 存不下就只留内存态 */ }
   }
+  bag.persistQueueTimers = persistQueueTimers as typeof bag.persistQueueTimers;
 
   /** 设/取消某条排队消息的定时。runAt=null 表示取消。 */
+  bag.setQueuedTimer = setQueuedTimer as typeof bag.setQueuedTimer;
+
   async function setQueuedTimer(threadId: string, id: string, runAt: number | null) {
     if (!threadId || !id) return;
     try {
@@ -59,6 +68,8 @@ export function usePart04c2(bag: Bag) {
    *  · 会话空闲 → `thread/queue/start` 直接开新回合；
    *  · 会话忙 → 把这条 reorder 到队头，交给既有的「回合结束自动启动队头」机制，
    *    并 toast 告知（定时只改发送时机，不改变「排队不打断任务」的约定）。 */
+  bag.releaseQueuedTimerDue = releaseQueuedTimerDue as typeof bag.releaseQueuedTimerDue;
+
   async function releaseQueuedTimerDue(threadId: string, id: string) {
     // 到点即消费：无论后面成败，本地定时态先清掉（引擎队列里这条还在不在由下面判定）
     setQueueTimers((current) => {
