@@ -3132,3 +3132,28 @@ npm run check：本轮域全绿，余 ✗ 均为已知 19 条沙箱环境假红�
 main.ts 挂链 / 设置页三态 / webview 自启 / 侧栏入口 / registry / 类型面 / preload 事件），
 **4 项变异**（回环丢失 / config 校验被删 / 退出清理被删 / 侧栏入口消失）全抓。
 npm run check：本轮域全绿，余 ✗ 均为已知 19 条沙箱环境假红。
+
+## 🔕 2026-09-28 消除「Codex is ignoring 11 unrecognized configuration settings」启动警告
+
+**现象**（用户截图）：每次启动弹两条一模一样的警告——引擎（0.157.1）说 config.toml 里有
+11 个不认识的键（model_providers.custom430.model_auto_compact_token_limit / _scope /
+model_max_output_tokens …）。
+
+**根因**（二进制字段串 + 隔离 CODEX_HOME 实验双证）：引擎 0.157.1 把自动压缩阈值三键从
+`[model_providers.<id>]` 段**上移到 config.toml 顶层**（provider 段连 `auto_compact_token_limit`
+无前缀名也不认）；而本应用写入器还在往每个 provider 段写旧键 ⇒ 引擎每次加载都报。
+
+**修复**：
+- 写入器（custom-model-apply）：provider 段三处全部停止写旧键；顶层（第一个段头之前）写
+  `model_auto_compact_token_limit` + `_scope = "model"` + `model_max_output_tokens`（当前
+  生效供应商/模型的值，切供应商自动重算）。⚠️ TOML 顶层键必须在首个段头前。
+- 自愈（boot.ts）：新增 compactKeyResidue 判据——**逐行扫描**（段内出现旧键 或 顶层没有
+  auto_compact 行 ⇒ 触发整份重写一次收敛）。⛔ 第一版用「缩进区分顶层/段内」是错的：
+  写入器的段内键本就无缩进（真机 config 实测误判 0 残留），已改为 TOML 段位置判定，
+  真值表双验（存量=残留、迁移后=干净）。
+- 去重（part05）：configWarning 等引擎警告气泡按 summary+text 60s 窗口去重（引擎对
+  initialize 与各 session 恢复会重复推同一条）。
+- 守卫【159】重写条件锚同步（|| compactKeyResidue 挂链）。
+
+**验证**：0.157.1 二进制 + 隔离 CODEX_HOME 实测——旧键复现警告、新形态零警告；
+真值表确认自愈判据对存量触发、对迁移后收敛。

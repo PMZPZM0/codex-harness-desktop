@@ -127,17 +127,14 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
       'env_key = "CODEX_HARNESS_API_KEY"',
       `wire_api = "${wireApi}"`,
       "requires_openai_auth = false",
-      // ⛔⛔ 09-19：这里**不再写 request_max_retries / stream_max_retries /
+      // ⛔⛔ 09-28 键位迁移（0.157.1 实测，警告原文「is ignored」）：provider 段不再接受
+      //   model_auto_compact_token_limit / _scope / model_max_output_tokens —— 自动压缩阈值
+      //   已上移到 **config.toml 顶层**（见下方 compactTopLevel 一段），provider 段一律不写。
+      //   段内写旧键 = 每次启动引擎报 11 条「unrecognized settings」警告（用户截图实证）。
+      // ⛔ 09-19：这里**不再写 request_max_retries / stream_max_retries /
       //   stream_idle_timeout_ms**（曾写 10/10/600000，实测是 429 放大器：
       //   引擎默认 4/5/5min，调到 10 会让它在限流窗口内密集重打上游 ⇒ 越重试越限流。
       //   详见 electron/provider-retry.ts 的实测证据）。用引擎默认 = 与 WorkBuddy 行为对齐。
-      `model_auto_compact_token_limit = ${Math.round(context * compactRatio)}`,
-      'model_auto_compact_token_limit_scope = "model"',
-      // 单次输出上限：用户在该供应商模型上填的「最大输出 Token」真实生效（探针实证：
-      // model_max_output_tokens 是引擎认可的 provider 段顶层键，config/read 能读回；
-      // catalog JSON 里的 max_output_tokens 字段会被引擎忽略——写这里才生效）。
-      // 防止超长输出把上下文窗口撑爆卡死。未填时不写（引擎按模型自身上限）。
-      ...(Number.isFinite(maxOut) && maxOut > 0 ? [`model_max_output_tokens = ${Math.floor(maxOut)}`] : []),
     ];
   });
   // 已删除供应商 id 的别名段：名字沿用原名（不可考），其余与当前生效供应商完全一致
@@ -149,9 +146,7 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
     'env_key = "CODEX_HARNESS_API_KEY"',
     `wire_api = "${activeWireApi}"`,
     "requires_openai_auth = false",
-    // 重试键同样不写（见 providerToml 处的实测说明）
-    `model_auto_compact_token_limit = ${Math.round(activeContext * compactRatio)}`,
-    'model_auto_compact_token_limit_scope = "model"',
+    // 压缩阈值键已上移顶层（09-28，见 providerToml 处说明），段内不写
   ]);
   // 自动化三件套不再注册为 MCP 常驻服务器：35 个工具 schema 会把每轮 prompt 撑大十几 KB，
   // 拖慢所有对话。改为按需命令行调用（nuphus-call / playwright-cli / cloakbrowser，
@@ -168,9 +163,7 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
     'env_key = "CODEX_HARNESS_API_KEY"',
     `wire_api = "${activeWireApi}"`,
     "requires_openai_auth = false",
-    // 重试键同样不写（引擎默认 4/5/5min；写 10 会放大 429 —— 见 providerToml 处实测说明）
-    `model_auto_compact_token_limit = ${Math.round(activeContext * compactRatio)}`,
-    'model_auto_compact_token_limit_scope = "model"',
+    // 压缩阈值键已上移顶层（09-28，见 providerToml 处说明），段内不写
   ];
   // ⛔ 防重护栏（09-15 真实事故）：档案里若混入 id=harness 的供应商条目，providerToml 会
   //    再写一个 [model_providers.harness] 段，与下方 harnessToml 重复 → TOML duplicate key，
@@ -212,6 +205,18 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
     //    键，引擎根本读不到（实测 `approval_policy = "never"` 变成 `mcp_servers.nuphus.approval_policy`，
     //    顶层设置静默失效）。放在这里（developer_instructions 块字符串之后、第一个段头之前）才安全：
     //    再往前会被多行字符串吞掉，往后会被段落吞掉。
+    // ⛔⛔ 09-28 键位迁移（0.157.1 实测零警告）：自动压缩阈值 / scope / 最大输出上限从
+    //    model_providers.<id> 段**上移到顶层**——0.157.1 的 provider 段已不认这三个键，
+    //    段内残留 = 每次启动报 N 条「unrecognized configuration settings」（用户截图实证）。
+    //    顶层全局一份，值取当前生效供应商/模型；切供应商时 applyCustomModel 按新激活项重算。
+    //    ⛔ 位置约束：必须在**第一个段头之前**（TOML 顶层键语义，同下方 preserved.topLevel）。
+    `model_auto_compact_token_limit = ${Math.round(activeContext * compactRatio)}`,
+    'model_auto_compact_token_limit_scope = "model"',
+    ...((() => {
+      const activeMaxOut = Number(activeNormalized.models?.find((model) => model.id === activeNormalized.model)?.maxOutputTokens);
+      // 单次输出上限：用户在当前供应商模型上填的「最大输出 Token」。未填时不写（引擎按模型自身上限）。
+      return Number.isFinite(activeMaxOut) && activeMaxOut > 0 ? [`model_max_output_tokens = ${Math.floor(activeMaxOut)}`] : [];
+    })()),
     ...(preserved.topLevel ? [preserved.topLevel] : []),
     ...connectorToml(connectors),
     ...stripHarnessTable(providerToml),

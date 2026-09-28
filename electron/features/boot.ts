@@ -565,6 +565,27 @@ export async function bootApp() {
       const compactApplied = await readAppSettings(app.getPath("userData"));
       const expectedCompact = Math.round(compactWindow * normalizeAutoCompactRatio(compactApplied.autoCompactRatio));
       const compactStale = !new RegExp(`model_auto_compact_token_limit = ${expectedCompact}\\b`).test(configText);
+      // ⛔⛔ 09-28 键位迁移残留（0.157.1 实测）：旧写入器把 model_auto_compact_token_limit /
+      //    _scope / model_max_output_tokens 写在**各 provider 段内**，0.157.1 已不认
+      //    ⇒ 每次启动引擎报 N 条「unrecognized configuration settings」（用户截图：弹两条重复
+      //    警告）。⚠️ 判据不能用缩进区分（写入器的段内键本就无缩进）——按 TOML 语义逐行扫：
+      //    「段内出现旧键」或「顶层（首个 [table] 之前）没有 auto_compact 行」都算残留；
+      //    命中 ⇒ 整份重写一次即收敛（新写入器：顶层三行 + 段内零旧键）。
+      //    误判代价 = 多一次整份重写（幂等无害）；developer_instructions 多行串内恰有一行
+      //    以这些键开头的概率忽略不计。
+      const compactKeyResidue = (() => {
+        let inTable = false;
+        let topLevelCompactSeen = false;
+        for (const raw of configText.split(/\r?\n/)) {
+          const line = raw.trim();
+          if (/^\[/.test(line)) { inTable = true; continue; }
+          if (/^model_auto_compact_token_limit\s*=/.test(line)) {
+            if (inTable) return true;
+            topLevelCompactSeen = true;
+          }
+        }
+        return !topLevelCompactSeen;
+      })();
       // 供应商/模型漂移：custom-model.json（当前激活）与 config.toml 顶层 model / model_provider 不一致时重写。
       // 场景：UI 切换供应商只保存配置（延迟生效），用户没点「重启生效」就退出应用——下次启动必须
       // 按新配置生效，否则引擎继续跑旧供应商（self-heal 原只查 context_window，查不出这种漂移）。
@@ -610,8 +631,8 @@ export async function bootApp() {
         configText,
         escape: escapeToml,
       });
-      if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || nuphusVisionStale || disabledMissing || dispatchMcpBad || compactStale) {
-        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, envPathStale=${envPathStale}, instructions=${instructionsOutdated}, nuphusVision=${nuphusVisionStale}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}, compactStale=${compactStale}(期望 ${expectedCompact}); rewriting`);
+      if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || nuphusVisionStale || disabledMissing || dispatchMcpBad || compactStale || compactKeyResidue) {
+        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, envPathStale=${envPathStale}, instructions=${instructionsOutdated}, nuphusVision=${nuphusVisionStale}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}, compactStale=${compactStale}(期望 ${expectedCompact}), compactKeyResidue=${compactKeyResidue}; rewriting`);
         await applyCustomModel(custom);
       }
     } catch (error) {
