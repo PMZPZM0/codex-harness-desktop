@@ -1,18 +1,39 @@
 /**
- * 内置「视频生成接口」卡 + 凭证配置弹层（09-27）。
+ * 内置「视频生成接口」卡 + 凭证/自定义配置弹层（09-27 建，09-28 重做）。
+ *
  * 数据走 `video:*` 通道；厂商清单来自 src/lib/video-providers.mjs（纯适配层，与主进程同源）。
  * 放在插件市场页顶部：它是随应用自带的内置接口，不是市场里的可安装插件。
+ *
+ * ⛔ 09-28 重做（用户原话「太丑太老，没有 API 地址/密钥/模型这些自定义填写功能」）：
+ *   · 旧实现：大量内联 style + 复用不相关的 `phone-guide` 类拼版；字段名**直接显示英文 key**
+ *     （`apiKey` / `accessKey` / `secretKey` 没有任何中文说明）；**地址与模型都不给填**
+ *     （地址硬编码在各家适配层里，模型只有固定清单）。
+ *   · 现在：字段有中文标签与占位说明；每组凭证独立卡片；**新增「API 地址」「模型」两个可选
+ *     覆盖字段**（中转站/代理/自部署网关可用，留空走官方）；走 DESIGN.md 的字段与按钮体系，
+ *     不再写内联样式。
  */
 import { useCallback, useEffect, useState } from "react";
-import { Clapperboard, Video } from "lucide-react";
-import { VIDEO_PROVIDERS } from "../../lib/video-providers.mjs";
+import { Clapperboard, RefreshCw, Save, Sparkles, Video } from "lucide-react";
+import { VIDEO_PROVIDERS, VIDEO_OPTIONAL_FIELDS } from "../../lib/video-providers.mjs";
+
+/** 凭证字段的中文标签与填写提示（⛔ 别再直接渲染英文 key —— 用户不知道 accessKey 是啥）。 */
+const FIELD_META: Record<string, { label: string; hint: string; secret?: boolean }> = {
+  apiKey: { label: "API Key", hint: "厂商控制台里的密钥，形如 sk-…", secret: true },
+  accessKey: { label: "AccessKey", hint: "可灵控制台 → 密钥管理里的 AccessKey" },
+  secretKey: { label: "SecretKey", hint: "与 AccessKey 成对下发，只显示一次", secret: true },
+};
+
+const OPTIONAL_META: Record<string, { label: string; hint: string }> = {
+  baseUrl: { label: "API 地址（可选）", hint: "中转站 / 代理 / 自部署网关地址；留空走官方地址。只替换域名前缀，接口路径不变。" },
+  model: { label: "模型（可选）", hint: "覆盖内置模型；留空用默认模型。" },
+};
 
 export function VideoGenBuiltInCard() {
   const [open, setOpen] = useState(false);
   const [providers, setProviders] = useState<Array<any>>([]);
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
   const [editing, setEditing] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const list = (await window.codex.videoProviders?.().catch(() => [])) ?? [];
@@ -23,14 +44,17 @@ export function VideoGenBuiltInCard() {
   useEffect(() => { void refresh(); }, [refresh]);
 
   const configuredCount = providers.filter((p) => p.configured).length;
+  const setField = (providerId: string, field: string, value: string) =>
+    setDraft((current) => ({ ...current, [providerId]: { ...current?.[providerId], [field]: value } }));
 
   const save = async (providerId: string) => {
-    setSaving(true);
+    setSaving(providerId);
     try {
       await window.codex.videoConfigSave({ providerId, values: draft?.[providerId] ?? {} });
       await refresh();
+      setEditing(null);
     } finally {
-      setSaving(false);
+      setSaving(null);
     }
   };
 
@@ -47,52 +71,92 @@ export function VideoGenBuiltInCard() {
           Runway、Luma、Google Veo（国外）。短剧画布的「生成视频」按钮直接消费这套接口——提交后每 5 秒轮询，产物自动落到工作区。
         </p>
         <div className="skill-card-actions">
-          <button className="skill-card-btn" onClick={() => { void refresh(); setOpen(true); }}><Video size={13} />配置厂商凭证</button>
+          <button className="skill-card-btn" onClick={() => { void refresh(); setOpen(true); setEditing(null); }}><Video size={13} />配置厂商凭证</button>
         </div>
       </article>
 
       {open ? (
         <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
-          <div className="shortcuts-modal" role="dialog" aria-modal="true" aria-label="视频生成接口凭证" style={{ maxHeight: "82vh", overflow: "auto" }}>
+          <section className="connector-setup-modal vg-modal" role="dialog" aria-modal="true" aria-label="视频生成接口配置">
             <header>
-              <div><Video size={17} /><strong>视频生成接口 · 厂商凭证</strong></div>
-              <button className="icon-button relay-modal-close" title="关闭" onClick={() => setOpen(false)}>✕</button>
+              <div className="connector-setup-title">
+                <span><Video size={17} /></span>
+                <div><strong>视频生成接口</strong><p>按厂商填写凭证；国内厂商需可访问对应云服务</p></div>
+              </div>
+              <button className="icon-button" title="关闭" onClick={() => setOpen(false)}>✕</button>
             </header>
-            <div className="shortcuts-body" style={{ display: "grid", gap: 10 }}>
-              {providers.map((provider) => (
-                <div key={provider.id} className="phone-guide" style={{ borderStyle: "solid" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <b style={{ fontSize: 12.5 }}>{provider.name}</b>
-                    <span style={{ fontSize: 11, color: "var(--muted)" }}>
-                      {provider.region === "cn" ? "国内" : "国外"} · {provider.modes.join("/")}
-                      {provider.imageInput !== "both" ? ` · 图片需${provider.imageInput === "url" ? "公网URL" : "base64"}` : ""}
-                    </span>
-                    {provider.configured && <span style={{ fontSize: 11, color: "var(--ok)" }}>已配置</span>}
-                    <button className="secondary-setting" style={{ marginLeft: "auto", padding: "3px 10px" }} onClick={() => setEditing(editing === provider.id ? null : provider.id)}>
-                      {editing === provider.id ? "收起" : "填写"}
-                    </button>
-                  </div>
-                  {editing === provider.id ? (
-                    <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
-                      {provider.fields.map((field: string) => (
-                        <label key={field} style={{ display: "grid", gap: 2, fontSize: 11.5 }}>
-                          {field}
-                          <input
-                            className="drama-canvas-modal-input"
-                            value={draft?.[provider.id]?.[field] ?? ""}
-                            onChange={(event) => setDraft((current) => ({ ...current, [provider.id]: { ...current?.[provider.id], [field]: event.target.value } }))}
-                          />
-                        </label>
-                      ))}
-                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <button className="secondary-setting" disabled={saving} onClick={() => void save(provider.id)}>{saving ? "保存中…" : "保存"}</button>
+            <div className="vg-list">
+              {providers.map((provider) => {
+                const cfg = draft?.[provider.id] ?? {};
+                const isEditing = editing === provider.id;
+                return (
+                  <article key={provider.id} className={`vg-item ${provider.configured ? "is-ready" : ""} ${isEditing ? "is-open" : ""}`}>
+                    <div className="vg-item-head">
+                      <div className="vg-item-title">
+                        <b>{provider.name}</b>
+                        <small>
+                          <em className={`vg-tag ${provider.region === "cn" ? "is-cn" : "is-global"}`}>{provider.region === "cn" ? "国内" : "国外"}</em>
+                          <em className="vg-tag">{provider.modes.map((m: string) => (m === "t2v" ? "文生视频" : "图生视频")).join(" / ")}</em>
+                          {provider.imageInput !== "both" && (
+                            <em className="vg-tag is-warn" title={provider.imageInput === "url" ? "图生视频需要公网可访问的图片地址，本地首帧会被拒" : "图生视频需要图片字节（本地下发即可）"}>
+                              图片需{provider.imageInput === "url" ? "公网 URL" : "base64"}
+                            </em>
+                          )}
+                        </small>
                       </div>
+                      {provider.configured ? <span className="vg-state is-ok">已配置</span> : <span className="vg-state">未配置</span>}
+                      <button className="secondary-setting" onClick={() => setEditing(isEditing ? null : provider.id)}>{isEditing ? "收起" : provider.configured ? "修改" : "填写"}</button>
                     </div>
-                  ) : null}
-                </div>
-              ))}
+
+                    {isEditing ? (
+                      <div className="vg-form">
+                        {provider.fields.map((field: string) => {
+                          const meta = FIELD_META[field] ?? { label: field, hint: "" };
+                          return (
+                            <label key={field} className="vg-field">
+                              <span>{meta.label}</span>
+                              <input
+                                type={meta.secret ? "password" : "text"}
+                                value={cfg[field] ?? ""}
+                                placeholder={meta.hint}
+                                onChange={(event) => setField(provider.id, field, event.target.value)}
+                              />
+                              {meta.hint && <small>{meta.hint}</small>}
+                            </label>
+                          );
+                        })}
+                        {/* 可选覆盖（09-28 新增）：地址与模型 —— 中转站/代理/自部署用户需要 */}
+                        <details className="vg-advanced">
+                          <summary><Sparkles size={12} />高级：自定义 API 地址与模型（可选）</summary>
+                          {VIDEO_OPTIONAL_FIELDS.map((field: string) => {
+                            const meta = OPTIONAL_META[field] ?? { label: field, hint: "" };
+                            return (
+                              <label key={field} className="vg-field">
+                                <span>{meta.label}</span>
+                                <input
+                                  type="text"
+                                  value={cfg[field] ?? ""}
+                                  placeholder={field === "baseUrl" ? (provider.baseUrl || "https://…") : (provider.defaultModel || "默认模型")}
+                                  onChange={(event) => setField(provider.id, field, event.target.value)}
+                                />
+                                <small>{meta.hint}</small>
+                              </label>
+                            );
+                          })}
+                        </details>
+                        <div className="vg-form-foot">
+                          <span className="vg-defaults">官方地址 <code>{provider.baseUrl}</code> · 默认模型 <code>{provider.defaultModel}</code></span>
+                          <button className="primary-setting" disabled={saving === provider.id} onClick={() => void save(provider.id)}>
+                            {saving === provider.id ? <RefreshCw size={14} className="spin" /> : <Save size={14} />}保存
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
             </div>
-          </div>
+          </section>
         </div>
       ) : null}
     </div>

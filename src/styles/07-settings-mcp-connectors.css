@@ -1782,3 +1782,236 @@
   font-size: 11px;
   line-height: 1.6;
 }
+/* ─────────────────────────────────────── 视频生成接口配置（09-28 重做）
+   旧版是内联 style + 复用 phone-guide 拼出来的（用户：「太丑太老」）。现在走统一字段体系。 */
+.vg-modal { max-width: 640px; width: min(92vw, 640px); }
+.vg-list {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px 16px;
+  overflow: auto;
+  max-height: min(64vh, 560px);
+}
+.vg-item {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-2, var(--panel));
+  padding: 9px 11px;
+  display: grid;
+  gap: 8px;
+}
+.vg-item.is-ready { border-color: color-mix(in srgb, var(--ok) 38%, var(--line)); }
+.vg-item.is-open { border-color: color-mix(in srgb, var(--accent) 42%, var(--line)); }
+.vg-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.vg-item-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.vg-item-title > b { font-size: 12.5px; color: var(--text); }
+.vg-item-title > small { display: flex; flex-wrap: wrap; gap: 4px; }
+.vg-tag {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+.vg-tag.is-cn { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 34%, var(--line)); }
+.vg-tag.is-global { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 34%, var(--line)); }
+.vg-tag.is-warn { color: var(--red); border-color: color-mix(in srgb, var(--red) 32%, var(--line)); }
+.vg-state { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.vg-state.is-ok { color: var(--ok); }
+.vg-form {
+  display: grid;
+  gap: 9px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+.vg-field { display: grid; gap: 3px; }
+.vg-field > span { font-size: 11.5px; color: var(--text); }
+.vg-field > small { font-size: 10.5px; color: var(--muted); line-height: 1.5; }
+.vg-field > input {
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 9px;
+  min-height: 32px;
+}
+.vg-field > input:focus { outline: none; border-color: var(--accent); }
+.vg-advanced { border-top: 1px dashed var(--line); padding-top: 8px; display: grid; gap: 9px; }
+.vg-advanced > summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  list-style: none;
+}
+.vg-advanced > summary::-webkit-details-marker { display: none; }
+.vg-advanced[open] > summary { color: var(--accent); }
+.vg-form-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.vg-defaults { font-size: 10.5px; color: var(--muted); margin-right: auto; min-width: 0; }
+.vg-defaults code { font-size: 10.5px; color: var(--text); background: var(--panel-2, var(--bg)); padding: 1px 4px; border-radius: 4px; }
+
+/* ─────────────────────────────────────── 内置插件（生图/视觉）09-28 重做
+   旧版是「两张卡片 + 一个弹层编辑器」，字段全藏在弹层里（用户以为没有填写功能）。
+   现在字段直接摊在卡片上，样式与视频接口卡（.vg-*）同一套视觉语言。 */
+.bi-plugin-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: start;
+}
+.bi-plugin {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2, var(--panel));
+  padding: 12px 13px;
+  display: grid;
+  gap: 10px;
+}
+.bi-plugin.is-ready { border-color: color-mix(in srgb, var(--ok) 34%, var(--line)); }
+.bi-plugin.is-off { border-color: color-mix(in srgb, var(--orange) 34%, var(--line)); }
+.bi-plugin-head { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.bi-plugin-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--accent);
+}
+.bi-plugin-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.bi-plugin-title > b { font-size: 13px; color: var(--text); }
+.bi-plugin-title > small { font-size: 11px; color: var(--muted); line-height: 1.5; }
+.bi-plugin-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.bi-plugin.is-ready .bi-plugin-state { color: var(--ok); }
+.bi-plugin.is-off .bi-plugin-state { color: var(--orange); }
+.bi-plugin-form { display: grid; gap: 10px; }
+.bi-field { display: grid; gap: 3px; }
+.bi-field > span { font-size: 11.5px; color: var(--text); }
+.bi-field > small { font-size: 10.5px; color: var(--muted); line-height: 1.5; }
+.bi-field > input {
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 9px;
+  min-height: 32px;
+}
+.bi-field > input:focus { outline: none; border-color: var(--accent); }
+.bi-model-row { display: flex; gap: 6px; align-items: center; }
+.bi-model-row > *:first-child { flex: 1; min-width: 0; }
+.bi-spec { display: grid; gap: 2px; }
+.bi-plugin-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--line);
+}
+.bi-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); cursor: pointer; }
+
+/* ─────────────────────────────────────── 内置插件（生图/视觉）09-28 重做
+   旧版是「两张卡片 + 一个弹层编辑器」，字段全藏在弹层里（用户以为没有填写功能）。
+   现在字段直接摊在卡片上，样式与视频接口卡（.vg-*）同一套视觉语言。 */
+.bi-plugin-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: start;
+}
+.bi-plugin {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2, var(--panel));
+  padding: 12px 13px;
+  display: grid;
+  gap: 10px;
+}
+.bi-plugin.is-ready { border-color: color-mix(in srgb, var(--ok) 34%, var(--line)); }
+.bi-plugin.is-off { border-color: color-mix(in srgb, var(--orange) 34%, var(--line)); }
+.bi-plugin-head { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.bi-plugin-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--accent);
+}
+.bi-plugin-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.bi-plugin-title > b { font-size: 13px; color: var(--text); }
+.bi-plugin-title > small { font-size: 11px; color: var(--muted); line-height: 1.5; }
+.bi-plugin-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.bi-plugin.is-ready .bi-plugin-state { color: var(--ok); }
+.bi-plugin.is-off .bi-plugin-state { color: var(--orange); }
+.bi-plugin-form { display: grid; gap: 10px; }
+.bi-field { display: grid; gap: 3px; }
+.bi-field > span { font-size: 11.5px; color: var(--text); }
+.bi-field > small { font-size: 10.5px; color: var(--muted); line-height: 1.5; }
+.bi-field > input {
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 9px;
+  min-height: 32px;
+}
+.bi-field > input:focus { outline: none; border-color: var(--accent); }
+.bi-model-row { display: flex; gap: 6px; align-items: center; }
+.bi-model-row > *:first-child { flex: 1; min-width: 0; }
+.bi-spec { display: grid; gap: 2px; }
+.bi-plugin-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--line);
+}
+.bi-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); cursor: pointer; }

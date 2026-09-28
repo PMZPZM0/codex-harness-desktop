@@ -13,16 +13,22 @@
  */
 import { createHmac } from "node:crypto";
 
+/** 所有厂商通用的**可选覆盖**字段（09-28 用户要求「API 地址和模型要能自己填」）：
+ *  · baseUrl —— 中转站/代理地址（留空用官方）：只换 origin+前缀，路径不变
+ *  · model   —— 覆盖内置模型清单（留空用 defaultModel）
+ *  ⛔ 与 fields（必填凭证）分开：hasCredentials 只看 fields，可选字段不参与「已配置」判定。 */
+export const VIDEO_OPTIONAL_FIELDS = ["baseUrl", "model"];
+
 /** 厂商清单（渲染层下拉 / 设置表单都吃这一份）。 */
 export const VIDEO_PROVIDERS = [
-  { id: "kling", name: "可灵 Kling（快手）", region: "cn", modes: ["t2v", "i2v"], imageInput: "both", fields: ["accessKey", "secretKey"], models: ["kling-v1", "kling-v1-6"], defaultModel: "kling-v1" },
-  { id: "wanx", name: "通义万相（阿里百炼）", region: "cn", modes: ["t2v", "i2v"], imageInput: "url", fields: ["apiKey"], models: ["wan2.2-t2v-plus", "wan2.2-i2v-plus", "wanx2.1-t2v-turbo"], defaultModel: "wan2.2-t2v-plus" },
-  { id: "seedance", name: "即梦 Seedance（火山方舟）", region: "cn", modes: ["t2v", "i2v"], imageInput: "url", fields: ["apiKey"], models: ["doubao-seedance-1-0-lite-t2v-250428", "doubao-seedance-1-0-pro-250528"], defaultModel: "doubao-seedance-1-0-lite-t2v-250428" },
-  { id: "cogvideo", name: "智谱 CogVideoX", region: "cn", modes: ["t2v", "i2v"], imageInput: "both", fields: ["apiKey"], models: ["cogvideox-3", "cogvideox-2"], defaultModel: "cogvideox-3" },
-  { id: "minimax", name: "MiniMax 海螺视频", region: "cn", modes: ["t2v", "i2v"], imageInput: "both", fields: ["apiKey"], models: ["T2V-01", "I2V-01-live", "S2V-01"], defaultModel: "T2V-01" },
-  { id: "runway", name: "Runway Gen-4", region: "global", modes: ["i2v"], imageInput: "both", fields: ["apiKey"], models: ["gen4_turbo", "gen3a_turbo"], defaultModel: "gen4_turbo" },
-  { id: "luma", name: "Luma Dream Machine", region: "global", modes: ["t2v", "i2v"], imageInput: "url", fields: ["apiKey"], models: ["ray-2", "ray-flash-2"], defaultModel: "ray-2" },
-  { id: "veo", name: "Google Veo", region: "global", modes: ["t2v", "i2v"], imageInput: "base64", fields: ["apiKey"], models: ["veo-3.0-generate-001", "veo-3.0-fast-generate-001", "veo-2.0-generate-001"], defaultModel: "veo-3.0-generate-001" },
+  { id: "kling", name: "可灵 Kling（快手）", region: "cn", modes: ["t2v", "i2v"], imageInput: "both", baseUrl: "https://api.klingai.com", fields: ["accessKey", "secretKey"], models: ["kling-v1", "kling-v1-6"], defaultModel: "kling-v1" },
+  { id: "wanx", name: "通义万相（阿里百炼）", region: "cn", modes: ["t2v", "i2v"], imageInput: "url", baseUrl: "https://dashscope.aliyuncs.com", fields: ["apiKey"], models: ["wan2.2-t2v-plus", "wan2.2-i2v-plus", "wanx2.1-t2v-turbo"], defaultModel: "wan2.2-t2v-plus" },
+  { id: "seedance", name: "即梦 Seedance（火山方舟）", region: "cn", modes: ["t2v", "i2v"], imageInput: "url", baseUrl: "https://ark.cn-beijing.volces.com", fields: ["apiKey"], models: ["doubao-seedance-1-0-lite-t2v-250428", "doubao-seedance-1-0-pro-250528"], defaultModel: "doubao-seedance-1-0-lite-t2v-250428" },
+  { id: "cogvideo", name: "智谱 CogVideoX", region: "cn", modes: ["t2v", "i2v"], imageInput: "both", baseUrl: "https://open.bigmodel.cn", fields: ["apiKey"], models: ["cogvideox-3", "cogvideox-2"], defaultModel: "cogvideox-3" },
+  { id: "minimax", name: "MiniMax 海螺视频", region: "cn", modes: ["t2v", "i2v"], imageInput: "both", baseUrl: "https://api.minimaxi.com", fields: ["apiKey"], models: ["T2V-01", "I2V-01-live", "S2V-01"], defaultModel: "T2V-01" },
+  { id: "runway", name: "Runway Gen-4", region: "global", modes: ["i2v"], imageInput: "both", baseUrl: "https://api.dev.runwayml.com", fields: ["apiKey"], models: ["gen4_turbo", "gen3a_turbo"], defaultModel: "gen4_turbo" },
+  { id: "luma", name: "Luma Dream Machine", region: "global", modes: ["t2v", "i2v"], imageInput: "url", baseUrl: "https://api.lumalabs.ai", fields: ["apiKey"], models: ["ray-2", "ray-flash-2"], defaultModel: "ray-2" },
+  { id: "veo", name: "Google Veo", region: "global", modes: ["t2v", "i2v"], imageInput: "base64", baseUrl: "https://generativelanguage.googleapis.com", fields: ["apiKey"], models: ["veo-3.0-generate-001", "veo-3.0-fast-generate-001", "veo-2.0-generate-001"], defaultModel: "veo-3.0-generate-001" },
 ];
 
 const jsonHeaders = (extra = {}) => ({ "Content-Type": "application/json", ...extra });
@@ -57,7 +63,8 @@ export function videoAssertImageOk(providerId, mode, image) {
 /** 组装提交请求。input: {mode:"t2v"|"i2v", prompt, image?, model?, duration?} */
 export function videoBuildSubmit(providerId, cfg, input, nowMs) {
   const provider = assertProvider(providerId);
-  const model = input.model || provider.defaultModel;
+  // 模型优先级（09-28）：调用方（卡片上的 per-node 覆盖）> 用户在设置里填的自定义模型 > 内置默认
+  const model = input.model || String(cfg?.model ?? "").trim() || provider.defaultModel;
   const duration = Math.max(3, Math.min(20, Number(input.duration) || 5));
   const prompt = String(input.prompt || "").trim();
   const image = input.image ? String(input.image) : "";
@@ -215,4 +222,24 @@ export function videoParseFileRetrieve(respJson) {
   const url = String(respJson?.file?.download_url ?? "");
   if (!url) throw new Error(`拿不到视频下载地址：${JSON.stringify(respJson).slice(0, 140)}`);
   return url;
+}
+
+/* ── 自定义 API 地址（09-28 用户要求「API 地址要能自己填」） ──────────────────────
+   ⛔ 为什么只换 origin+前缀、不整条替换：路径是各家协议的一部分（`/v1/videos/image2video`
+   之类），用户填的应该是「中转站/代理的地址」，路径由我们按官方协议生成。整条替换意味着
+   用户得自己拼路径，填错就是整个不可用 —— 换前缀则中转站（同协议换域名）直接可用。 */
+export function videoApplyBaseUrl(request, providerId, cfg) {
+  const custom = String(cfg?.baseUrl ?? "").trim().replace(/\/+$/, "");
+  if (!custom || !request?.url) return request;
+  const provider = VIDEO_PROVIDERS.find((p) => p.id === providerId);
+  if (!provider?.baseUrl) return request;
+  try {
+    const official = new URL(provider.baseUrl);
+    const target = new URL(String(request.url));
+    // 只改这家官方域下的请求（MiniMax 换下载地址等跨域步骤原样保留）
+    if (target.origin !== official.origin) return request;
+    return { ...request, url: custom + target.pathname + target.search };
+  } catch {
+    return request;
+  }
 }

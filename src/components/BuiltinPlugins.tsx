@@ -1,26 +1,33 @@
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
-import { ImagePlus, Eye, RefreshCw, Play, Save, X, CircleCheck, CircleOff, ChevronRight } from "lucide-react";
+import { ImagePlus, Eye, RefreshCw, Play, Save, CircleCheck, CircleOff } from "lucide-react";
 import { ModelIdInput } from "./ModelIdInput";
 import { imageSpecHint, matchImageSpec } from "../lib/image-model-specs";
 
+/**
+ * 内置插件配置（生图 / 视觉辅助）。
+ *
+ * ⛔ 09-28 重做（用户原话「太丑太老，而且没有 API 地址、密钥啊、模型啊这些自定义的填写功能」）：
+ *   旧版把三个字段**全藏在一个弹层里** —— 页面上只看到两张卡片，不点开根本不知道去哪填，
+ *   用户据此认为「没有填写功能」。视觉上又是一套 09-18 的老排版（卡片 + 弹层 + 独立保存按钮）。
+ *   现在改成**字段直接摊在页面上**：进这页就能看到地址/密钥/模型的输入框，改完按各自「保存」。
+ *   ⛔ 没有删掉任何能力：启用开关、模型探测（拉取列表）、内置参数提示、保存后引擎重载全部保留。
+ */
 type PluginKind = "image" | "vision";
 type PluginConfig = { enabled?: boolean; baseUrl: string; apiKey: string; model: string };
 type BuiltinCfg = { image?: PluginConfig; vision?: PluginConfig };
 
 const emptyConfig = (): PluginConfig => ({ enabled: true, baseUrl: "", apiKey: "", model: "" });
 const meta = (kind: PluginKind) => kind === "image"
-  ? { title: "生图插件", desc: "配置图像生成 API，Codex 需要配图时调用", Icon: ImagePlus }
+  ? { title: "生图插件", desc: "配置图像生成 API；画布「生成图」与 Codex 需要配图时都调它", Icon: ImagePlus }
   : { title: "视觉辅助插件", desc: "主模型不支持图片时，用多模态模型识图", Icon: Eye };
 
 export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => void }) {
   const [cfg, setCfg] = useState<BuiltinCfg>({});
   const [savedCfg, setSavedCfg] = useState<BuiltinCfg>({});
-  const [active, setActive] = useState<PluginKind | null>(null);
   const [imageModels, setImageModels] = useState<string[]>([]);
   const [visionModels, setVisionModels] = useState<string[]>([]);
   const [probing, setProbing] = useState<PluginKind | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<PluginKind | null>(null);
 
   useEffect(() => {
     void window.codex.readBuiltinPlugins().then((value) => {
@@ -38,100 +45,101 @@ export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => v
     const value = savedCfg[kind];
     return Boolean(value?.baseUrl?.trim() && value?.apiKey?.trim() && value?.model?.trim());
   };
-  const closeEditor = () => {
-    if (active) setCfg((prev) => ({ ...prev, [active]: savedCfg[active] ? { ...savedCfg[active]! } : emptyConfig() }));
-    setActive(null);
-  };
-
-  useEffect(() => {
-    if (!active) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      closeEditor();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [active, savedCfg]);
+  /** 有未保存改动 ⇒ 该卡片的「保存」才可用（避免点了个没变化的按钮） */
+  const dirty = (kind: PluginKind) => JSON.stringify(current(kind)) !== JSON.stringify(savedCfg[kind] ?? emptyConfig());
 
   const probe = async (kind: PluginKind) => {
     const value = current(kind);
-    if (!value.baseUrl.trim() || !value.apiKey.trim()) { onNotice("请先填写地址和密钥"); return; }
+    if (!value.baseUrl.trim() || !value.apiKey.trim()) { onNotice("请先填写 API 地址和密钥"); return; }
     setProbing(kind);
     try {
       const result = await window.codex.probeBuiltinModels({ kind, baseUrl: value.baseUrl, apiKey: value.apiKey });
       const models = result?.models ?? [];
       if (kind === "image") setImageModels(models); else setVisionModels(models);
-      onNotice(`探测到 ${models.length} 个模型`);
+      onNotice(models.length ? `探测到 ${models.length} 个模型，可在模型框里下拉选择` : "探测成功，但该地址没有返回模型列表（可直接手填模型 ID）");
     } catch (error: any) { onNotice(`探测失败：${error.message}`); }
     finally { setProbing(null); }
   };
 
-  const save = async (closeAfter = false) => {
-    setBusy(true);
+  const save = async (kind: PluginKind) => {
+    setBusy(kind);
+    // ⛔ 写盘要带**两份配置**（另一份保持已保存值），否则保存生图会把视觉插件的配置清掉
+    const next: BuiltinCfg = { ...savedCfg, [kind]: current(kind) };
     try {
-      await window.codex.saveBuiltinPlugins(cfg);
-      setSavedCfg(cfg);
-      onNotice("内置插件配置已保存");
-      if (closeAfter) setActive(null);
+      await window.codex.saveBuiltinPlugins(next);
+      setSavedCfg(next);
+      setCfg(next);
+      onNotice(`${meta(kind).title}配置已保存，引擎会自动重载`);
     } catch (error: any) { onNotice(`保存失败：${error.message}`); }
-    finally { setBusy(false); }
+    finally { setBusy(null); }
   };
 
-  /** 能力卡（09-18 排版重做）：整张卡是按钮，图标 + 名称/一句话 + 右侧状态徽标 + 箭头。
-   *  ⛔ 旧版把「按钮」和「状态」挤在同一个 chip 里（`生图插件 | 已停用`），既像按钮又像徽标；
-   *  且与左侧 4 行长文案在同一 flex 行里垂直居中 → 段落末行飘到按钮下面（用户截图反馈）。 */
-  const pluginCard = (kind: PluginKind) => {
+  const panel = (kind: PluginKind) => {
     const { title, desc, Icon } = meta(kind);
+    const value = current(kind);
     const saved = savedCfg[kind];
     const ready = configured(kind);
-    // 三态可视化（09-17 用户反馈「启用跟禁用一个状态，没有颜色区分」）：
-    // 绿 = 已配置且启用；琥珀 = 已配置但被停用（enabled === false）；中性 = 未配置。
-    // 状态取 savedCfg（保存后的权威值），编辑中的改动保存后才反映到卡上。
     const off = ready && saved?.enabled === false;
-    const stateClass = !ready ? "" : off ? " off" : " configured";
-    const stateText = !ready ? "未配置" : off ? "已停用" : "已启用";
-    return <button type="button" className={`builtin-plugin-card${stateClass}`} onClick={() => setActive(kind)}>
-      <span className="builtin-plugin-icon"><Icon size={16} /></span>
-      <span className="builtin-plugin-title"><strong>{title}</strong><small>{desc}</small></span>
-      <em className="builtin-plugin-state">{ready ? (off ? <CircleOff size={12} /> : <CircleCheck size={12} />) : null}{stateText}</em>
-      <ChevronRight size={14} className="builtin-plugin-chevron" />
-    </button>;
-  };
-
-  const editor = active ? (() => {
-    const value = current(active);
-    const { title, desc, Icon } = meta(active);
-    const models = active === "image" ? imageModels : visionModels;
+    const models = kind === "image" ? imageModels : visionModels;
     // 生图模型的内置参数（尺寸 / 改图 / 质量档）：命中内置表就在字段下方摊开，
     // 免得用户选了模型却不知道它能出多大、能不能带参考图（09-18 用户要求的「内置参数」）。
-    const specHint = active === "image" ? imageSpecHint(matchImageSpec(value.model)) : [];
-    return createPortal(
-      <div className="modal-backdrop builtin-plugin-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) closeEditor(); }}>
-        <section className="connector-setup-modal builtin-plugin-modal" role="dialog" aria-modal="true" aria-label={`${title}配置`}>
-          <header><div className="connector-setup-title"><span><Icon size={17} /></span><div><strong>{title}</strong><p>{desc}</p></div></div><button className="icon-button" title="关闭（Esc）" onClick={closeEditor}><X size={16} /></button></header>
-          <div className="builtin-plugin-editor">
-            <div className="builtin-plugin-enable-row"><div><strong>启用插件</strong><small>停用后 Codex 不会调用该能力</small></div><label className="auto-switch"><input type="checkbox" checked={value.enabled !== false} onChange={(event) => setKind(active, { enabled: event.target.checked })} /><i /></label></div>
-            <label className="se-field"><span>API 地址</span><input autoFocus value={value.baseUrl} onChange={(event) => setKind(active, { baseUrl: event.target.value })} placeholder="https://api.example.com/v1" /></label>
-            <label className="se-field"><span>API 密钥</span><input type="password" value={value.apiKey} onChange={(event) => setKind(active, { apiKey: event.target.value })} placeholder="sk-..." /></label>
-            <label className="se-field"><span>模型</span><div className="builtin-model-row"><ModelIdInput value={value.model} onChange={(next) => setKind(active, { model: next })} extraIds={models} placeholder="选择或输入模型 ID" ariaLabel={`${title}模型`} variant={active === "image" ? "image" : "chat"} /><button className="secondary-setting" onClick={() => void probe(active)}>{probing === active ? <RefreshCw size={13} className="spin" /> : <Play size={13} />}检测</button></div></label>
-            {specHint.length > 0 && <div className="builtin-model-hint">{specHint.map((line) => <span key={line}>{line}</span>)}</div>}
+    const specHint = kind === "image" ? imageSpecHint(matchImageSpec(value.model)) : [];
+    return (
+      <article className={`bi-plugin ${ready ? (off ? "is-off" : "is-ready") : ""}`}>
+        <header className="bi-plugin-head">
+          <span className="bi-plugin-icon"><Icon size={16} /></span>
+          <div className="bi-plugin-title">
+            <b>{title}</b>
+            <small>{desc}</small>
           </div>
-          <footer><button className="secondary-setting" disabled={busy} onClick={closeEditor}>取消</button><button className="primary-setting" disabled={busy || !value.baseUrl.trim() || !value.apiKey.trim() || !value.model.trim()} onClick={() => void save(true)}>{busy ? <RefreshCw size={14} className="spin" /> : <Save size={14} />}保存配置</button></footer>
-        </section>
-      </div>, document.body,
+          <span className="bi-plugin-state">{ready ? (off ? <CircleOff size={12} /> : <CircleCheck size={12} />) : null}{!ready ? "未配置" : off ? "已停用" : "已启用"}</span>
+        </header>
+
+        {/* 字段直接摊开（09-28）：不再藏弹层 —— 进页面就能看到往哪填 */}
+        <div className="bi-plugin-form">
+          <label className="bi-field">
+            <span>API 地址</span>
+            <input value={value.baseUrl} onChange={(event) => setKind(kind, { baseUrl: event.target.value })} placeholder="https://api.example.com/v1" spellCheck={false} />
+            <small>兼容 OpenAI 协议的地址（含 /v1）；中转站/自部署网关也填这里</small>
+          </label>
+          <label className="bi-field">
+            <span>API 密钥</span>
+            <input type="password" value={value.apiKey} onChange={(event) => setKind(kind, { apiKey: event.target.value })} placeholder="sk-…" spellCheck={false} />
+            <small>只存在本机用户数据目录，不会上传</small>
+          </label>
+          <label className="bi-field">
+            <span>模型</span>
+            <div className="bi-model-row">
+              <ModelIdInput value={value.model} onChange={(next) => setKind(kind, { model: next })} extraIds={models} placeholder="选择或输入模型 ID" ariaLabel={`${title}模型`} variant={kind === "image" ? "image" : "chat"} />
+              <button className="secondary-setting" disabled={probing === kind} onClick={() => void probe(kind)} title="用上面的地址与密钥拉取可用模型列表">
+                {probing === kind ? <RefreshCw size={13} className="spin" /> : <Play size={13} />}检测
+              </button>
+            </div>
+            {specHint.length > 0
+              ? <small className="bi-spec">{specHint.map((line) => <span key={line}>{line}</span>)}</small>
+              : <small>模型 ID 可手填；点「检测」可拉取该地址支持的模型列表</small>}
+          </label>
+        </div>
+
+        <footer className="bi-plugin-foot">
+          <label className="bi-switch" title="停用后 Codex 不会调用该能力">
+            <input type="checkbox" checked={value.enabled !== false} onChange={(event) => setKind(kind, { enabled: event.target.checked })} />
+            <i />
+            <span>启用</span>
+          </label>
+          <button className="primary-setting" disabled={busy === kind || !dirty(kind)} onClick={() => void save(kind)}>
+            {busy === kind ? <RefreshCw size={14} className="spin" /> : <Save size={14} />}{dirty(kind) ? "保存" : "已保存"}
+          </button>
+        </footer>
+      </article>
     );
-  })() : null;
+  };
 
   return <section className="settings-section stack builtin-plugins">
-    <div className="builtin-plugins-head">
-      <div className="settings-copy">
-        <h2>内置插件</h2>
-        <p>生图 / 识图能力；保存后引擎自动重载，所有会话（含已打开的）都能调用。</p>
-      </div>
-      <button className="primary-setting" disabled={busy} onClick={() => void save()}>{busy ? <RefreshCw size={14} className="spin" /> : <Save size={14} />}保存配置</button>
+    <div className="settings-copy">
+      <h2>内置插件</h2>
+      <p>生图 / 识图能力。填好地址、密钥、模型后点各自卡片上的「保存」，引擎会自动重载，所有会话（含已打开的）都能调用。</p>
     </div>
-    <div className="builtin-plugin-grid">{pluginCard("image")}{pluginCard("vision")}</div>
-    {editor}
+    <div className="bi-plugin-grid">{panel("image")}{panel("vision")}</div>
   </section>;
 }

@@ -350,7 +350,9 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
       // ⛔ 不能用 `<ModelIdInput[^>]*` 这类正则：属性里的箭头函数 `=>` 会在第一个 `>` 处截断
       //   （09-18 实测：守卫因此假红）。分开断言「元件在位」与「variant 取值」。
       (/<ModelIdInput\b/.test(pluginsSrc)
-        && /variant=\{active === "image" \? "image" : "chat"\}/.test(pluginsSrc))
+        // 09-28：内置插件页改「字段直接摊开」后，区分口径的变量名从 active 变成 kind
+        // ⇒ 锚点同时接受两者（判据本意是「按生图/聊天取不同参数口径」，不是变量叫什么）
+        && /variant=\{(?:active|kind) === "image" \? "image" : "chat"\}/.test(pluginsSrc))
         ? ok("【41】插件模型字段按类型取参数口径（生图=尺寸/改图/质量档，视觉=上下文/图片）")
         : fail("【41】插件模型字段没接 ModelIdInput 或没区分生图/聊天口径");
       (/imageSpecHint\(matchImageSpec\(value\.model\)\)/.test(pluginsSrc))
