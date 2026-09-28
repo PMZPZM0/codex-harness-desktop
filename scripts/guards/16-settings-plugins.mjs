@@ -40,24 +40,35 @@ export async function run() {
     "【195】插件市场页不再有「内置接口」区块标题"
   );
 
-  /* ③ 三卡同构：视频卡的卡片也用 .bi-plugin 规格（不是另一套类名） */
-  (/className="bi-plugin is-summary"/.test(videoCard) ? ok : fail)(
-    "【195】视频生成接口卡复用 .bi-plugin 规格（三卡同构）"
+  /* ③ 三卡同构 = **同一颗紧凑行组件**（09-28 三次改版：卡面只留一行摘要 + 二级弹窗放字段）。
+        用户原话：「为啥这三个卡片要占这么多，不会做出二级弹窗吗」。 */
+  const rowComp = readFileSync(join(ROOT, "src", "components", "BuiltinPluginRow.tsx"), "utf8");
+  (builtin.includes("<BuiltinPluginRow") && videoCard.includes("<BuiltinPluginRow") ? ok : fail)(
+    "【195】三张内置卡都渲染 BuiltinPluginRow（行结构唯一实现 —— 各画一份必然漂移）"
+  );
+  ([builtin, videoCard].filter((s) => s.includes('className="bi-row"')).length === 0 ? ok : fail)(
+    "【195】卡面不再自绘 .bi-row（行结构只能来自 BuiltinPluginRow）"
+  );
+  (!/<input|textarea|select/.test(rowComp) ? ok : fail)(
+    "【195】紧凑行组件里没有任何输入字段（字段只能进二级弹窗 —— 摊在卡上就是用户嫌的『占这么多』）"
+  );
+  (builtin.includes('className="bi-modal-body"') && videoCard.includes('className="vg-list"') ? ok : fail)(
+    "【195】三卡各有二级弹窗承载字段（生图/视觉 .bi-modal-body，视频 .vg-list）"
   );
   (!/className="vg-card"/.test(videoCard) ? ok : fail)(
-    "【195】不再使用早期那套 .vg-card 卡片类（已并入 .bi-plugin）"
+    "【195】不再使用早期那套 .vg-card 卡片类（已并入统一行 + 弹窗）"
   );
 
   /* ④ ⛔ 同一选择器只允许一份权威定义（追加式改样式的坑：后者覆盖前者，改了像没改） */
-  for (const sel of [".bi-plugin-grid", ".bi-plugin", ".bi-plugin-head", ".bi-plugin-form", ".bi-plugin-foot"]) {
+  for (const sel of [".bi-plugin-grid", ".bi-row", ".bi-row-icon", ".bi-modal-body", ".bi-modal-foot"]) {
     const n = (css.match(new RegExp(`^\\${sel} \\{`, "gm")) ?? []).length;
     (n <= 1 ? ok : fail)(`【195】${sel} 只有一份定义（实测 ${n} 份 —— 重复追加会让前面的改动静默失效）`);
   }
 
-  /* ⑤ 主题合规：卡片样式不许写死色值（DESIGN.md 规则 1） */
-  const cardBlock = css.slice(css.indexOf(".bi-plugin-grid"), css.indexOf(".bi-plugin.is-summary .bi-plugin-foot"));
+  /* ⑤ 主题合规：卡片与弹窗样式不许写死色值（DESIGN.md 规则 1） */
+  const cardBlock = css.slice(css.indexOf(".bi-plugin-grid"));
   (!/#[0-9a-fA-F]{3,8}\b/.test(cardBlock) ? ok : fail)(
-    "【195】内置卡样式只用主题变量（无写死色值 —— 写死会在暗色主题下瞎掉）"
+    "【195】内置卡 / 弹窗样式只用主题变量（无写死色值 —— 写死会在暗色主题下瞎掉）"
   );
 
   /* ⑥ 淘汰的样式类不该留残印 */

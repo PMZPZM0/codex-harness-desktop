@@ -139,3 +139,14 @@ export function registerVideoGen(): void {
     return { path: dest, bytes: buffer.length };
   });
 }
+
+/* ⛔⛔ 09-28 事故（用户现场：「视频生成接口一直加载中…，根本配置不了」）：
+   上面把 6 个通道包在 `export function registerVideoGen()` 里，但**全仓库没有任何调用点**
+   ⇒ ipcMain.handle 从未执行 ⇒ 渲染层 `invoke("video:providers")` 抛
+   「No handler registered」⇒ 组件 catch 成空数组 ⇒ 卡片永远显示「加载中…」、
+   弹窗里一个厂商都没有（配都没法配）。
+   ⛔ 与本仓多数域不一致：其它域（fs-ipc / drama-canvas / im-channels-ipc…）都是
+   **模块顶层直接 ipcMain.handle**，import 即注册。这里补一次自调用对齐该语义，
+   守卫【194】同时钉死「每个 register* 导出都必须有调用点」。
+   ⛔ 只在此处调用一次：Electron 对同一 channel 重复 handle 会直接抛错。 */
+registerVideoGen();

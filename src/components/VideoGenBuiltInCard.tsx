@@ -20,6 +20,7 @@ import { Clapperboard, RefreshCw, Save, Sparkles, Video } from "lucide-react";
    厂商清单**全部走 IPC**（window.codex.videoProviders() 已返回 name/region/fields/baseUrl/
    defaultModel 等全部字段），渲染层不碰主进程逻辑模块。 */
 import { OPTIONAL_FIELDS } from "./video-optional-fields";
+import { BuiltinPluginRow } from "./BuiltinPluginRow";
 
 /** 凭证字段的中文标签与填写提示（⛔ 别再直接渲染英文 key —— 用户不知道 accessKey 是啥）。 */
 const FIELD_META: Record<string, { label: string; hint: string; secret?: boolean }> = {
@@ -39,11 +40,21 @@ export function VideoGenBuiltInCard() {
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
   const [editing, setEditing] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
+  /** 读取失败的原因（09-28：区分「还在加载」与「加载失败」—— 用户现场卡在「加载中…」
+      半天，而真相是主进程那 6 个通道压根没注册；没有这一层就永远看不出区别）。 */
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const list = (await window.codex.videoProviders?.().catch(() => [])) ?? [];
-    setProviders(list as Array<any>);
-    const cfg = (await window.codex.videoConfigRead?.().catch(() => ({}))) ?? {};
+    try {
+      const list = await window.codex.videoProviders();
+      setProviders(Array.isArray(list) ? list : []);
+      setLoadError(null);
+    } catch (error: any) {
+      setProviders([]);
+      setLoadError(String(error?.message ?? error ?? "读取厂商清单失败"));
+      return;
+    }
+    const cfg = await window.codex.videoConfigRead?.().catch(() => ({})) ?? {};
     setDraft(cfg as Record<string, Record<string, string>>);
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
@@ -70,33 +81,18 @@ export function VideoGenBuiltInCard() {
           · 结构对齐 .bi-plugin（头 = 图标+标题+说明+状态 / 体 = 摘要 / 底 = 计数+动作）
           · 它没有可内联的字段（8 家厂商凭证在弹层里），所以体部放「通道说明 + 已配置清单」
           · ⛔ 不再自带底部虚线分隔之外的分区标题 —— 区块标题由 BuiltinPluginsSection 统一给 */}
-      <article className="bi-plugin is-summary">
-        <header className="bi-plugin-head">
-          <span className="bi-plugin-icon"><Clapperboard size={16} /></span>
-          <div className="bi-plugin-title">
-            <b>视频生成接口</b>
-            <small>文生视频 / 图生视频走内置通道：可灵、通义万相、即梦 Seedance、智谱 CogVideoX、MiniMax 海螺、Runway、Luma、Google Veo</small>
-          </div>
-          <span className="bi-plugin-state">{configuredCount > 0 ? <>{configuredCount} / {providers.length} 已配置</> : "未配置"}</span>
-        </header>
-        <div className="bi-plugin-form is-note">
-          <div className="bi-plugin-tags">
-            <em className="bi-tag is-builtin">内置</em>
-            <em className="bi-tag">{providers.length ? `${providers.filter((p) => p.region === "cn").length} 家国内 · ${providers.filter((p) => p.region === "global").length} 家国外` : "加载中…"}</em>
-            <em className="bi-tag">提交后每 5 秒轮询，产物自动落到工作区</em>
-          </div>
-        </div>
-        <footer className="bi-plugin-foot">
-          {/* ⛔ 底部不再重复头部的「N / 8 已配置」（第一版两处都写，视觉上像双份状态）——
-              这里只放**具体是哪几家**，数量交给头部徽标。 */}
-          <span className="bi-plugin-line">
-            {configuredCount > 0
-              ? <>已配置：{providers.filter((p) => p.configured).map((p) => p.name).join("、")}</>
-              : <span className="is-empty">还没有配置任何厂商 —— 填 API Key 后，画布的「生成视频」才可用</span>}
-          </span>
-          <button className="primary-setting" onClick={() => { void refresh(); setOpen(true); setEditing(null); }}><Video size={13} />配置厂商凭证</button>
-        </footer>
-      </article>
+      {/* ⛔ 09-28 三次改版（用户：「为啥这三个卡片要占这么多，不会做出二级弹窗吗」）：
+          卡面收成一行（图标 + 名称 + 一句话 + 状态 + 入口），8 家厂商凭证全在二级弹窗里。
+          描述里的厂商名单保留（用户靠它判断"有没有我要的那家"），但只占一行、超出省略。 */}
+      <BuiltinPluginRow
+        icon={Clapperboard}
+        title="视频生成接口"
+        desc="文生 / 图生视频走内置通道：可灵、通义万相、即梦 Seedance、智谱 CogVideoX、MiniMax 海螺、Runway、Luma、Google Veo"
+        state={loadError ? "加载失败" : providers.length === 0 ? "加载中…" : configuredCount > 0 ? `${configuredCount} / ${providers.length} 已配置` : "未配置"}
+        tone={loadError ? "off" : configuredCount > 0 ? "ready" : "none"}
+        actionLabel={loadError ? "重试" : configuredCount > 0 ? "配置" : "去配置"}
+        onAction={() => { if (loadError) { void refresh(); return; } void refresh(); setOpen(true); setEditing(null); }}
+      />
 
       {open ? (
         <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
@@ -109,6 +105,13 @@ export function VideoGenBuiltInCard() {
               <button className="icon-button" title="关闭" onClick={() => setOpen(false)}>✕</button>
             </header>
             <div className="vg-list">
+              {providers.length === 0 ? (
+                <div className="vg-empty">
+                  <b>{loadError ? "厂商清单读取失败" : "正在读取厂商清单…"}</b>
+                  {loadError ? <small>{loadError}</small> : null}
+                  {loadError ? <button className="secondary-setting" onClick={() => void refresh()}>重试</button> : null}
+                </div>
+              ) : null}
               {providers.map((provider) => {
                 const cfg = draft?.[provider.id] ?? {};
                 const isEditing = editing === provider.id;
