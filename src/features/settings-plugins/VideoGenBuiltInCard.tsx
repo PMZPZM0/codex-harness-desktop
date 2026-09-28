@@ -14,7 +14,12 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Clapperboard, RefreshCw, Save, Sparkles, Video } from "lucide-react";
-import { VIDEO_PROVIDERS, VIDEO_OPTIONAL_FIELDS } from "../../lib/video-providers.mjs";
+/* ⛔⛔ 09-28：**不要** import "../../lib/video-providers.mjs" —— 那个模块顶部 import 了
+   node:crypto（可灵 JWT 签名用），渲染层没有该内置模块：vite dev 下解构导入会直接抛
+   「Module "node:crypto" has been externalized」，生产构建只是侥幸能跑。
+   厂商清单**全部走 IPC**（window.codex.videoProviders() 已返回 name/region/fields/baseUrl/
+   defaultModel 等全部字段），渲染层不碰主进程逻辑模块。 */
+import { OPTIONAL_FIELDS } from "./video-optional-fields";
 
 /** 凭证字段的中文标签与填写提示（⛔ 别再直接渲染英文 key —— 用户不知道 accessKey 是啥）。 */
 const FIELD_META: Record<string, { label: string; hint: string; secret?: boolean }> = {
@@ -59,18 +64,33 @@ export function VideoGenBuiltInCard() {
   };
 
   return (
-    <div className="skill-card-grid">
-      <article className="skill-card installed">
-        <div className="skill-card-head">
-          <span className="skill-card-logo"><Clapperboard size={20} /></span>
-          <div className="skill-card-name"><b>视频生成接口</b><small>内置 · 国内外 8 家</small></div>
-          <span className="skill-card-badge">{configuredCount}/{providers.length || VIDEO_PROVIDERS.length} 已配置</span>
+    <>
+      {/* ⛔ 09-28：这张卡原来借用市场卡的 `.skill-card-grid`（minmax(210px,1fr) 网格）——
+          它是**唯一一张自带卡**，被塞进网格后只有 210px 宽，标题折行、「0/8 已配置」被挤成
+          两行、描述被 line-clamp:2 截断（用户截图点名）。现在用独立的 .vg-card：整行宽、
+          标题与徽标一行放下、描述不截断、低对比度的次要信息单独一行。 */}
+      <article className="vg-card">
+        <div className="vg-card-main">
+          <span className="vg-card-icon"><Clapperboard size={20} /></span>
+          <div className="vg-card-text">
+            <div className="vg-card-title">
+              <b>视频生成接口</b>
+              <em className="vg-tag is-builtin">内置</em>
+              <em className="vg-tag">{providers.length ? `${providers.filter((p) => p.region === "cn").length} 家国内 · ${providers.filter((p) => p.region === "global").length} 家国外` : "加载中…"}</em>
+            </div>
+            <p className="vg-card-desc">
+              文生视频 / 图生视频走内置通道：可灵、通义万相、即梦 Seedance、智谱 CogVideoX、MiniMax 海螺、Runway、Luma、Google Veo。
+              画布的「生成视频」按钮直接消费这套接口 —— 提交后每 5 秒轮询，产物自动落到工作区。
+            </p>
+            <div className="vg-card-ready">
+              {configuredCount > 0
+                ? <>已配置：{providers.filter((p) => p.configured).map((p) => p.name).join("、")}</>
+                : <span className="is-empty">还没有配置任何厂商 —— 点右侧按钮填 API Key 后，画布的「生成视频」才可用</span>}
+            </div>
+          </div>
         </div>
-        <p className="skill-card-desc">
-          文生视频 / 图生视频统一走内置通道：可灵、通义万相、即梦 Seedance、智谱 CogVideoX、MiniMax 海螺（国内）；
-          Runway、Luma、Google Veo（国外）。短剧画布的「生成视频」按钮直接消费这套接口——提交后每 5 秒轮询，产物自动落到工作区。
-        </p>
-        <div className="skill-card-actions">
+        <div className="vg-card-foot">
+          <span className="vg-count"><b>{configuredCount}</b> / {providers.length} 已配置</span>
           <button className="skill-card-btn" onClick={() => { void refresh(); setOpen(true); setEditing(null); }}><Video size={13} />配置厂商凭证</button>
         </div>
       </article>
@@ -128,7 +148,7 @@ export function VideoGenBuiltInCard() {
                         {/* 可选覆盖（09-28 新增）：地址与模型 —— 中转站/代理/自部署用户需要 */}
                         <details className="vg-advanced">
                           <summary><Sparkles size={12} />高级：自定义 API 地址与模型（可选）</summary>
-                          {VIDEO_OPTIONAL_FIELDS.map((field: string) => {
+                          {OPTIONAL_FIELDS.map((field: string) => {
                             const meta = OPTIONAL_META[field] ?? { label: field, hint: "" };
                             return (
                               <label key={field} className="vg-field">
@@ -159,6 +179,6 @@ export function VideoGenBuiltInCard() {
           </section>
         </div>
       ) : null}
-    </div>
+    </>
   );
 }

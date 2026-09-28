@@ -2015,3 +2015,47 @@
   border-top: 1px dashed var(--line);
 }
 .bi-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); cursor: pointer; }
+
+/* ─────────────── 内置「视频生成接口」卡（09-28 重做）
+   ⛔ 原来是蹭市场卡的 .skill-card-grid（minmax(210px,1fr)）：唯一一张自带卡被挤进网格后
+   标题折行、徽标折成两行、描述被 line-clamp:2 截断（用户截图圈出）。这里给独立布局：
+   整行宽 + 标题/徽标一行放下 + 描述完整显示。 */
+.vg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  padding: 12px 14px;
+}
+.vg-card-main { display: flex; align-items: flex-start; gap: 11px; min-width: 0; }
+.vg-card-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  color: var(--accent);
+}
+.vg-card-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.vg-card-title { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.vg-card-title > b { font-size: 13px; color: var(--text); }
+.vg-tag.is-builtin { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 34%, var(--line)); }
+.vg-card-desc { margin: 0; font-size: 11.5px; line-height: 1.6; color: var(--muted); }
+.vg-card-ready { font-size: 11px; color: var(--muted); }
+.vg-card-ready .is-empty { color: var(--orange); }
+.vg-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--line);
+}
+.vg-count { font-size: 11.5px; color: var(--muted); }
+.vg-count b { font-size: 13px; color: var(--text); }
