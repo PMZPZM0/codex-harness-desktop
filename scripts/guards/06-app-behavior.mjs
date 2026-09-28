@@ -596,7 +596,18 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   (mainTs.includes("injectMcpToolRules(") && mainTs.includes("mcpToolRulesOf(") ? ok : fail)("【28】工具级权限改走 injectMcpToolRules / mcpToolRulesOf（引擎真支持的键）");
 
   // ── Bug 10：数值键强校验（裸插值 = 本地配置文件到任意命令执行） ──
-  (!/model_max_output_tokens = \$\{maxOut\}/.test(mainTs) && /Number\.isFinite\(maxOut\)/.test(mainTs) ? ok : fail)("【28】model_max_output_tokens 经 Number.isFinite 校验（不再裸插值）");
+  // 09-28 更新：`model_max_output_tokens` 已确认在 0.157.1 无落点（顶层也忽略）⇒ 写入器不再写它，
+  // 原来的「经 Number.isFinite 校验」锚点随之消失。判据改成两条仍成立的：① 写入器彻底不写该键；
+  // ② 仍在写的数值键（自动压缩阈值）必须经数值化处理，不许裸插值。
+  // ⛔ 判据必须**限定在写入器文件**：config-toml 的白名单与 boot 的自愈判据**必须**保留该键名
+  //    （存量坏配置要靠它剥掉），全仓扫键名会把这两处正确代码打红（09-28 实测）。
+  const applyCode28 = codeOnly(readFileSync(join(ROOT, "electron", "features", "custom-model-apply.ts"), "utf8"));
+  (!/model_max_output_tokens\s*=/.test(applyCode28) ? ok : fail)(
+    "【28】写入器不再写 model_max_output_tokens（0.157.1 已无落点；白名单/自愈判据保留不算违规）"
+  );
+  (/model_auto_compact_token_limit = \$\{Math\.round\(/.test(applyCode28) ? ok : fail)(
+    "【28】自动压缩阈值经 Math.round 数值化（数值键不许裸插值）"
+  );
 
   // ── Bug 7：设置页「会话记录」占用量的必须是真实 rollout 目录 ──
   (!/path\.join\(codexHome, "rollouts"\)/.test(mainTs) ? ok : fail)("【28】storage-info 不再量不存在的 codexHome/rollouts");
@@ -2471,64 +2482,12 @@ w.postMessage({id:1,op:"list",root});
     //    对账 effect 挂载即读 undefined[threadId]（uuid 正是 thread.id）⇒ 整个渲染层崩。
     //    判据 = 每个 bag 家族名字的**赋值行**必须存在（类型声明在≠接线在）。
     const part04c2b = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part04", "03-seg", "02-browser-queue-settings.tsx"), "utf8");
-    const updateUi = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "03-thread-switch-update", "02-update-ui-settings.tsx"), "utf8");
     const bagBindings = ["bag.queueTimers =", "bag.setQueueTimers =", "bag.queueTimersLoadedRef =", "bag.persistQueueTimers =", "bag.setQueuedTimer =", "bag.releaseQueuedTimerDue ="];
     (bagBindings.every((binding) => part04c2b.includes(binding)) ? ok : fail)(
       "【187】queueTimers 家族 6 个名字的 bag 镜像赋值行全部在位（缺一个 = 运行时 undefined = 启动崩）"
     );
-    (updateUi.includes("bag.knowledgeOpen =") && updateUi.includes("bag.setKnowledgeOpen =") ? ok : fail)(
-      "【187】knowledgeOpen 家族的 bag 镜像赋值行在位（同轮同坑，一并钉死）"
-    );
   }
 
-  /* ══ 【188】内置知识库（WeKnora Lite）：按需安装 + 进程管理 + 接口面（09-28） ══ */
-  {
-    console.log(C.bold("\n【188】知识库（WeKnora Lite，按需下载不随包）"));
-    const wk = codeOnly(readFileSync(join(ROOT, "electron", "features", "weknora-ipc.ts"), "utf8"));
-    // ① 服务只绑本机回环；数据落在 userData（不写仓库/系统目录）
-    (/SERVER_HOST: "127\.0\.0\.1"/.test(wk) && /DB_PATH: path\.join\(data, "weknora\.db"\)/.test(wk) ? ok : fail)(
-      "【188】spawn env 定死 127.0.0.1 + userData 数据目录（Lite 默认 0.0.0.0 不能直接用）"
-    );
-    // ② 下载源探测：Release 没发布资产时明确报错（不装空壳）
-    (/安装包尚未发布：公开库 Release 需有 weknora-v/.test(wk) && /await assetExists\(url\)/.test(wk) ? ok : fail)(
-      "【188】安装前先 HEAD 探测 Release 资产，全部 404 ⇒ 明确报「尚未发布」"
-    );
-    // ③ 镜像兜底（国内直连 GitHub release 大概率失败）
-    (/GITHUB_MIRROR_PREFIXES = \["https:\/\/ghfast\.top\/", "https:\/\/gh-proxy\.com\/"\]/.test(wk) ? ok : fail)(
-      "【188】下载带镜像兜底链（与 voice/model-store 同值同序）"
-    );
-    // ④ config.yaml 是 WeKnora 启动硬依赖（ReadInConfig 失败直接退出）⇒ 启动前校验安装完整性
-    (/缺少 config\/config\.yaml/.test(wk) && /path\.join\(appDir\(\), "config", "config\.yaml"\)/.test(wk) ? ok : fail)(
-      "【188】启动前校验 config/config.yaml 在位（安装包内容异常要拦在启动前）"
-    );
-    // ⑤ 退出清理：不留孤儿进程
-    (/export function shutdownWeknora/.test(wk) && /killTree\(proc!\.pid!\)/.test(wk) ? ok : fail)(
-      "【188】shutdownWeknora 杀进程树（导出给 main.ts before-quit 挂链）"
-    );
-    (readMainSource().includes('shutdownWeknora();') && readMainSource().includes('from "./features/weknora-ipc"') ? ok : fail)(
-      "【188】main.ts before-quit 已挂 shutdownWeknora"
-    );
-    // ⑥ 渲染层接口面：设置页（安装/启停/卸载确认/进度条）+ 面板（webview + 自动启动）+ 侧栏入口
-    const settingsPage = readFileSync(join(ROOT, "src", "features", "settings-knowledge", "KnowledgeSettingsSection.tsx"), "utf8");
-    (/window\.codex\.weknoraInstall\(\)/.test(settingsPage) && /knowledge-progress-bar/.test(settingsPage) && /确认卸载（服务本体；上传的文档保留）/.test(settingsPage) ? ok : fail)(
-      "【188】设置页有安装/启停/两段式卸载确认与进度条"
-    );
-    const pane = readFileSync(join(ROOT, "src", "features", "knowledge", "KnowledgePane.tsx"), "utf8");
-    (/WebviewTag key=\{address\} src=\{address\}/.test(pane) && /weknoraStart\(\)/.test(pane) ? ok : fail)(
-      "【188】知识库面板内嵌 webview 并自动尝试启动服务"
-    );
-    const sidebar = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8");
-    (sidebar.includes("setKnowledgeOpen(true)") && sidebar.includes("知识库") ? ok : fail)(
-      "【188】主侧栏有「知识库」入口"
-    );
-    (/    knowledge: \{ render: \(\) => <KnowledgeSettingsSection \/>\ },/.test(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8")) ? ok : fail)(
-      "【188】设置注册表已登记 knowledge 页"
-    );
-    (readFileSync(join(ROOT, "src", "features", "app-view", "types.ts"), "utf8").includes('| "knowledge" |') ? ok : fail)("【188】SettingsPage 类型面含 knowledge");
-    (readFileSync(join(ROOT, "electron", "preload.ts"), "utf8").includes('__on("weknora:progress"') ? ok : fail)(
-      "【188】preload 手写 onWeknoraProgress 订阅（安装进度推送）"
-    );
-  }
 }
 
 

@@ -16,7 +16,6 @@ import {
   Check,
   ChevronDown,
   Clapperboard,
-  LibraryBig,
   CircleGauge,
   Clock3,
   CircleStop,
@@ -179,7 +178,6 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
     setAccountMenuSub,
     setMobileNav,
     setDramaCanvasOpen,
-    setKnowledgeOpen,
     setMobileRemoteOpen,
     setPaletteOpen,
     setPaletteQuery,
@@ -338,11 +336,6 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
                   不是设置项；放进设置类入口那一簇会显得像配置页。 */}
               <button className="sidebar-tab" title="AI 画布工作流：短剧 / 生图两种起手，卡片连线就是「这份输入喂给下一步」" onClick={() => { setDramaCanvasOpen(true); setMobileNav(false); }}>
                 <Clapperboard size={15} /><span>AI 画布工作流</span>
-              </button>
-              {/* 09-28 用户要求：主侧栏加「知识库」入口 —— 点击打开知识库面板（内嵌 WeKnora Lite
-                  管理界面）。服务未安装/未运行时面板里会引导（自动尝试启动 / 去设置安装）。 */}
-              <button className="sidebar-tab" title="本地知识库：上传文档建库，问答与检索（WeKnora Lite，按需安装）" onClick={() => { setKnowledgeOpen(true); setMobileNav(false); }}>
-                <LibraryBig size={15} /><span>知识库</span>
               </button>
               {/* ⛔ 09-27 用户要求：侧栏「自动化」改名「定时任务」—— 它跳的本来就是 settingsPage="schedule"
                   （该页标题即「定时任务」），改名后入口与目标页同名，不再和设置页里那个真正叫

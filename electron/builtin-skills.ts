@@ -19,7 +19,6 @@ import { MEMORY_CLASSIFY_SKILL } from "./builtin-skills/11-skill-memory-classify
 import { SKILL_AUDIT_SKILL } from "./builtin-skills/12-skill-skill-audit";
 import { MEMORY_MCP_SKILL } from "./builtin-skills/13-skill-memory-mcp";
 import { HARNESS_API_SKILL } from "./builtin-skills/14-skill-harness-api";
-import { KNOWLEDGE_BASE_SKILL } from "./builtin-skills/15-skill-knowledge-base";
 import { effectiveMemoryBackend } from "./memory-backend";
 
 /** 已退役的内置技能：磁盘上的内容仍是**我们当初写的那份**时，随升级清掉目录 ——
@@ -60,10 +59,6 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     // 09-25：宿主接口清单与可拓展能力（生成器产物，用户：「不用一个个去扫」）——
     //  ⛔ 内容来自 scripts/gen-capability-skill.mjs，勿手改；加通道后重跑生成器（守卫【153】比对）
     ["harness-api", HARNESS_API_SKILL],
-    // 09-28：本机知识库（WeKnora Lite）的检索纪律 —— 装好服务并在「设置 → MCP」接入后，
-    //  模型才看得到 kb_* / search_chunks 等工具；本技能教它「先 kb_list 拿 kb_id、检索优先
-    //  search_chunks、回答必须给出处、没有这些工具就别假装能查」（用户 09-28 问「配套技能有吗」）。
-    ["knowledge-base", KNOWLEDGE_BASE_SKILL],
   ];
   for (const [name, content] of entries) {
     const dir = path.join(skillsDir, name);

@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-09-27",
-  "count": 362,
+  "count": 356,
   "channels": [
     {
       "name": "request",
@@ -3530,66 +3530,6 @@
       "invokeArgs": "input",
       "cast": "Promise<{ ok: boolean }>",
       "note": "取消排队消息定时（删除消息/取消定时/到点清理时调）"
-    },
-    {
-      "name": "weknoraStatus",
-      "channel": "weknora:status",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; version: string; running: boolean; port: number | null; pid: number | null; installing: boolean; progress: { phase: string; percent: number } | null; error: string | null }>",
-      "invokeArgs": "",
-      "cast": "Promise<{ installed: boolean; version: string; running: boolean; port: number | null; pid: number | null; installing: boolean; progress: { phase: string; percent: number } | null; error: string | null }>",
-      "note": "知识库服务（WeKnora Lite）状态：安装/运行/端口/安装进度"
-    },
-    {
-      "name": "weknoraInstall",
-      "channel": "weknora:install",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; version: string; running: boolean; port: number | null; pid: number | null; installing: boolean; progress: { phase: string; percent: number } | null; error: string | null }>",
-      "invokeArgs": "",
-      "cast": "Promise<{ installed: boolean; version: string; running: boolean; port: number | null; pid: number | null; installing: boolean; progress: { phase: string; percent: number } | null; error: string | null }>",
-      "note": "按需安装：探测公开库 Release 资产（404 明确报未发布）→ 镜像兜底下载 → 7z 解压落位"
-    },
-    {
-      "name": "weknoraUninstall",
-      "channel": "weknora:uninstall",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; version: string; running: boolean; port: number | null; pid: number | null; installing: boolean; progress: { phase: string; percent: number } | null; error: string | null }>",
-      "invokeArgs": "",
-      "cast": "Promise<{ installed: boolean; version: string; running: boolean; port: number | null; pid: number | null; installing: boolean; progress: { phase: string; percent: number } | null; error: string | null }>",
-      "note": "卸载：先停服务再删安装目录（数据目录保留）"
-    },
-    {
-      "name": "weknoraStart",
-      "channel": "weknora:start",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; version: string; running: boolean; port: number | null; pid: number | null; installing: boolean; progress: { phase: string; percent: number } | null; error: string | null }>",
-      "invokeArgs": "",
-      "cast": "Promise<{ installed: boolean; version: string; running: boolean; port: number | null; pid: number | null; installing: boolean; progress: { phase: string; percent: number } | null; error: string | null }>",
-      "note": "启动服务（spawn + /health 轮询至通过；只绑 127.0.0.1，端口空闲自动挑）"
-    },
-    {
-      "name": "weknoraStop",
-      "channel": "weknora:stop",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; version: string; running: boolean; port: number | null; pid: number | null; installing: boolean; progress: { phase: string; percent: number } | null; error: string | null }>",
-      "invokeArgs": "",
-      "cast": "Promise<{ installed: boolean; version: string; running: boolean; port: number | null; pid: number | null; installing: boolean; progress: { phase: string; percent: number } | null; error: string | null }>",
-      "note": "停止服务（taskkill 进程树）"
-    },
-    {
-      "name": "weknoraAddress",
-      "channel": "weknora:address",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<string | null>",
-      "invokeArgs": "",
-      "cast": "Promise<string | null>",
-      "note": "运行中的知识库管理界面地址（未运行返回 null）"
     }
   ]
 }
