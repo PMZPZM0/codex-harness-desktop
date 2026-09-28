@@ -14,6 +14,7 @@
  *    改这里 = 改用户看到的设置页 ⇒ 按红线（可见交互）先问用户。
  */
 import { lazy } from "react";
+import { KnowledgeSettingsSection } from "../../../../settings-knowledge/KnowledgeSettingsSection";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { ReactNode } from "react";
 import type { SettingsPage } from "../../../../app-view/types";
@@ -503,6 +504,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
                           onReset={() => { resetUsageStats(); setUsageStats(readUsageStats()); setNotice("使用统计已清空"); }}
                         /> },
     backup: { render: () => <BackupSettingsSection thread={thread} backupBusy={backupBusy} exportThreadsMarkdown={exportThreadsMarkdown} exportThreadsBackup={exportThreadsBackup} threads={threads} importThreadsBackup={importThreadsBackup} importConversationMarkdown={importConversationMarkdown} /> },
+    knowledge: { render: () => <KnowledgeSettingsSection /> },
     archive: { render: () => <ArchiveSettingsSection ArchivePage={ArchivePage} setNotice={setNotice} setSettingsOpen={setSettingsOpen} openThread={openThread} openAppConfirm={openAppConfirm} refreshThreads={refreshThreads} /> },
     storage: { render: () => <StorageSection
                           onNotice={setNotice}

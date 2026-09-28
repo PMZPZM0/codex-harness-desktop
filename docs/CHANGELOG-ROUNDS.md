@@ -3072,3 +3072,63 @@ env 清理锚 / 技能文档同步），**双向变异**（白名单砍 lifecycl
 类型面 / 引擎队列对账 / 忙时 reorder 队头 / 空闲 queue/start / 钉顶+429 / 删除撤定时 /
 UI 三态 / 不用 window.prompt / composer 数据面 / CSS 接入），**5 项变异**（改坏→红→还原）全抓。
 `npm run check`：本轮域全绿，余 ✗ 均为改动前已存在的 19 条沙箱环境假红。
+
+## 📚 2026-09-28 知识库（WeKnora Lite）：按需安装 + 设置页 + 侧栏入口
+
+**产品定稿（用户两轮收敛）**：先调研了「随包安装 WeKnora」——源码构建链验证到一半
+（Go 1.26 + mingw + 前端 Vue build 全通，Go module cache 实测 836MB）被用户叫停
+（「836m？算了算了」）⇒ 定稿**本体不随包**，改为按需下载；应用侧留好完整接口面。
+
+**落点**：
+- **主进程新域 `weknora`**（6 通道）：status / install / uninstall / start / stop / address。
+  install = HEAD 探测公开库 Release 资产（404 ⇒ 明确报「安装包尚未发布」，不装空壳）→
+  镜像兜底链（ghfast.top → gh-proxy.com，与 voice 域同值）下载 zip → 内置 7-Zip 解压 →
+  校验 weknora-lite.exe 落位 userData/weknora/app。start = spawn（viper 映射 SERVER_HOST/
+  SERVER_PORT 定死 127.0.0.1 + 空闲端口自动挑；DB/文件全在 userData/weknora/data）+
+  /health 轮询 30s；stop = taskkill 进程树；before-quit 挂 shutdownWeknora 不留孤儿。
+  ⛔ WeKnora 启动**硬依赖 config/config.yaml**（ReadInConfig 失败直接退出）⇒ 启动前校验安装完整性。
+- **设置页 `knowledge`**（registry + SettingsPage 类型 + settingsNav + 总览【32】同步）：
+  未安装 → 安装按钮 + 下载/解压进度条（weknora:progress 事件推送）；已安装 → 启动/停止/
+  打开管理界面/两段式卸载确认；MCP 接入说明（服务内建 MCP 端点 → 填进本应用 MCP 设置）。
+- **主侧栏「知识库」入口** → KnowledgePane 整屏浮层（与 AI 画布同档位）：webview 内嵌
+  WeKnora 管理界面，打开时自动尝试启动服务；失败显示错误卡 + 引导去设置。
+
+**诚实边界**：公开库 Release 的 `weknora-v0.8.2` tag 及构建产物**尚未上传**（本机构建链
+验证通过但产物未留存——工具链已按用户要求全清）。安装按钮此刻会报「尚未发布」；
+产物用 CI 构建上传后功能即闭环（资产名约定 weknora-lite-v0.8.2-windows-x64.zip，
+构建配方 = 前端 npm build → go build -tags sqlite_fts5（CGO）→ zip（exe+web/+config/））。
+
+**守卫**：【188】12 条（回环绑定 / Release 探测 / 镜像链 / config.yaml 校验 / 退出清理 /
+main.ts 挂链 / 设置页三态 / webview 自启 / 侧栏入口 / registry / 类型面 / preload 事件），
+**4 项变异**（回环丢失 / config 校验被删 / 退出清理被删 / 侧栏入口消失）全抓。
+npm run check：本轮域全绿，余 ✗ 均为已知 19 条沙箱环境假红。
+
+## 📚 2026-09-28 知识库（WeKnora Lite）：按需安装 + 设置页 + 侧栏入口
+
+**产品定稿（用户两轮收敛）**：先调研了「随包安装 WeKnora」——源码构建链验证到一半
+（Go 1.26 + mingw + 前端 Vue build 全通，Go module cache 实测 836MB）被用户叫停
+（「836m？算了算了」）⇒ 定稿**本体不随包**，改为按需下载；应用侧留好完整接口面。
+
+**落点**：
+- **主进程新域 `weknora`**（6 通道）：status / install / uninstall / start / stop / address。
+  install = HEAD 探测公开库 Release 资产（404 ⇒ 明确报「安装包尚未发布」，不装空壳）→
+  镜像兜底链（ghfast.top → gh-proxy.com，与 voice 域同值）下载 zip → 内置 7-Zip 解压 →
+  校验 weknora-lite.exe 落位 userData/weknora/app。start = spawn（viper 映射 SERVER_HOST/
+  SERVER_PORT 定死 127.0.0.1 + 空闲端口自动挑；DB/文件全在 userData/weknora/data）+
+  /health 轮询 30s；stop = taskkill 进程树；before-quit 挂 shutdownWeknora 不留孤儿。
+  ⛔ WeKnora 启动**硬依赖 config/config.yaml**（ReadInConfig 失败直接退出）⇒ 启动前校验安装完整性。
+- **设置页 `knowledge`**（registry + SettingsPage 类型 + settingsNav + 总览【32】同步）：
+  未安装 → 安装按钮 + 下载/解压进度条（weknora:progress 事件推送）；已安装 → 启动/停止/
+  打开管理界面/两段式卸载确认；MCP 接入说明（服务内建 MCP 端点 → 填进本应用 MCP 设置）。
+- **主侧栏「知识库」入口** → KnowledgePane 整屏浮层（与 AI 画布同档位）：webview 内嵌
+  WeKnora 管理界面，打开时自动尝试启动服务；失败显示错误卡 + 引导去设置。
+
+**诚实边界**：公开库 Release 的 `weknora-v0.8.2` tag 及构建产物**尚未上传**（本机构建链
+验证通过但产物未留存——工具链已按用户要求全清）。安装按钮此刻会报「尚未发布」；
+产物用 CI 构建上传后功能即闭环（资产名约定 weknora-lite-v0.8.2-windows-x64.zip，
+构建配方 = 前端 npm build → go build -tags sqlite_fts5（CGO）→ zip（exe+web/+config/））。
+
+**守卫**：【188】12 条（回环绑定 / Release 探测 / 镜像链 / config.yaml 校验 / 退出清理 /
+main.ts 挂链 / 设置页三态 / webview 自启 / 侧栏入口 / registry / 类型面 / preload 事件），
+**4 项变异**（回环丢失 / config 校验被删 / 退出清理被删 / 侧栏入口消失）全抓。
+npm run check：本轮域全绿，余 ✗ 均为已知 19 条沙箱环境假红。
