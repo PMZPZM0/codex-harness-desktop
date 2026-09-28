@@ -237,6 +237,26 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
     }
     setNaming(null);
   }, [naming, board, story, pushNotice]);
+  /* 工作流进度（09-28）：当前板「图 / 视频 / 配音」已完成数 + 素材·拍摄类卡中还没有产物的
+     「待生成」数。实时跟随 board.nodes —— 让用户随时知道这条工作流走到哪了。 */
+  const progress = useMemo(() => {
+    let images = 0, videos = 0, audios = 0, pending = 0;
+    for (const node of board.nodes) {
+      const kind = String(node.data?.kind || "");
+      const p = (node.data?.payload || {}) as Record<string, any>;
+      const hasImage = Boolean(p.first_frame || p.path || p.ref);
+      if (kind === "image" || kind === "character" || kind === "location") {
+        if (hasImage) images++; else pending++;
+      } else if (kind === "shot") {
+        if (p.video) videos++;
+        else if (p.audio) audios++;
+        else if (p.first_frame) { /* 有首帧还没出片，不算完成也不重复计图 */ }
+        else pending++;
+        if (p.first_frame) images++;
+      }
+    }
+    return { images, videos, audios, pending };
+  }, [board.nodes]);
   const actions = useMemo<DramaActions>(() => ({
     board,
     story,
@@ -382,6 +402,14 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
               <span>分镜表</span>
               <AppSelect value={story.storyName} onChange={(v) => story.switchStory(v)} ariaLabel="分镜表" options={story.stories.length ? story.stories.map((s) => ({ value: s.name, label: `${s.title || s.name} · ${s.shots} 镜` })) : [{ value: "main", label: "（尚无）" }]} />
             </label>
+            {/* ⛔ 09-28 工作流打磨：进度芯片 —— 当前板「图 / 视频 / 配音 / 待生成」实时计数，
+                让用户随时知道这条工作流走到哪了（此前生成状态只能逐卡点开看）。 */}
+            <div className="drama-canvas-progress nodrag" title="当前画布的生成进度（素材卡 / 拍摄卡计入待生成）">
+              <span className="is-ok">图 {progress.images}</span>
+              <span className="is-ok">视频 {progress.videos}</span>
+              <span className="is-ok">配音 {progress.audios}</span>
+              {progress.pending > 0 ? <span className="is-warn">待生成 {progress.pending}</span> : <span className="is-done">已完成 ✓</span>}
+            </div>
           </div>
           <div className="drama-canvas-head-actions">
             <button className="drama-canvas-head-btn" onClick={() => setNaming({ kind: "board", value: "新画布" })}><Plus size={13} />新建画布</button>

@@ -256,10 +256,11 @@ export function dramaStarterWorkflow(baseX = 120, baseY = 100) {
   const col = 430, row = 340;
   const node = (id, kind, payload, x, y) => ({ id, kind, payload: { ...dramaDefaultPayload(kind), ...payload }, position: { x, y }, size: { width: dramaNodeDef(kind).width, height: dramaNodeDef(kind).height } });
   const nodes = [
-    node("n-direction", "note", { title: "创作方向", text: "先写清受众、情绪、时长和发布平台。" }, baseX, baseY),
-    node("n-script", "script", { title: "短剧剧本", text: "一句话概念、人物关系、冲突、对白与结局。" }, baseX + col, baseY),
-    node("n-character", "character", { name: "主角", role: "主角", description: "外形、性格、目标与表演要求。" }, baseX + col, baseY + row),
-    node("n-location", "location", { name: "核心场景", description: "地点、时间、光线与空间连续性。" }, baseX + col * 2, baseY + row),
+    /* ⛔ 同上：payload 不预填引导文本（生成时会污染提示词），引导由卡片空态承担。 */
+    node("n-direction", "note", { title: "创作方向" }, baseX, baseY),
+    node("n-script", "script", { title: "短剧剧本" }, baseX + col, baseY),
+    node("n-character", "character", { name: "主角", role: "主角" }, baseX + col, baseY + row),
+    node("n-location", "location", { name: "核心场景" }, baseX + col * 2, baseY + row),
     node("n-storyboard", "storyboard", { board: "" }, baseX + col * 2, baseY),
     node("n-timeline", "timeline", {}, baseX + col * 3, baseY),
   ];
@@ -283,11 +284,15 @@ export function imageStarterWorkflow(baseX = 120, baseY = 100) {
   const col = 430, row = 340;
   const node = (id, kind, payload, x, y) => ({ id, kind, payload: { ...dramaDefaultPayload(kind), ...payload }, position: { x, y }, size: { width: dramaNodeDef(kind).width, height: dramaNodeDef(kind).height } });
   const nodes = [
-    node("n-brief", "note", { title: "需求说明", text: "主题、用途、尺寸比例、参考风格（贴链接或写描述）。" }, baseX, baseY),
-    node("n-prompt", "image", { title: "主提示词", prompt: "主体 + 环境 + 光线 + 风格 + 质量词，一句话写全。" }, baseX + col, baseY),
-    node("n-out-a", "image", { title: "出图 A", prompt: "按主提示词生成（变体：更亮 / 更暖的方案）" }, baseX + col * 2, baseY),
-    node("n-out-b", "image", { title: "出图 B", prompt: "按主提示词生成（变体：更冷 / 更暗的方案）" }, baseX + col * 2, baseY + row),
-    node("n-pick", "note", { title: "选图结论", text: "选哪张、为什么、还要改什么。" }, baseX + col * 3, baseY),
+    /* ⛔ 09-28 工作流打磨：payload 里**不预填引导文本** —— 此前「主体 + 环境 + 光线…」这类
+       引导词会被生成逻辑当真实提示词发给模型（污染），出图卡的「按主提示词生成…」也会和
+       上游拼接重复。引导语由卡片**空态文案**承担（DramaNodeCard 各分支），payload 留空 =
+       生成时自动沿用连入的上游提示词（upstreamPrompts）。 */
+    node("n-brief", "note", { title: "需求说明" }, baseX, baseY),
+    node("n-prompt", "image", { title: "主提示词" }, baseX + col, baseY),
+    node("n-out-a", "image", { title: "出图 A", variant: "更亮 / 更暖" }, baseX + col * 2, baseY),
+    node("n-out-b", "image", { title: "出图 B", variant: "更冷 / 更暗" }, baseX + col * 2, baseY + row),
+    node("n-pick", "note", { title: "选图结论" }, baseX + col * 3, baseY),
   ];
   const edges = [
     ["n-brief", "n-prompt", "input"],
