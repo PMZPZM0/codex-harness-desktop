@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { ImagePlus, Eye, RefreshCw, Play, Save } from "lucide-react";
 import { ModelIdInput } from "./ModelIdInput";
 import { BuiltinPluginRow } from "./BuiltinPluginRow";
@@ -104,7 +105,7 @@ export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => v
           onAction={() => setEditing(kind)}
         />
 
-        {editing === kind ? (
+        {editing === kind ? createPortal(
           <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditing(null); }}>
             <section className="connector-setup-modal vg-modal" role="dialog" aria-modal="true" aria-label={`${title}配置`}>
               <header>
@@ -149,8 +150,7 @@ export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => v
                 </div>
               </div>
             </section>
-          </div>
-        ) : null}
+          </div>, document.body) : null}
       </>
     );
   };

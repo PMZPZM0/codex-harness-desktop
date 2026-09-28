@@ -13,6 +13,7 @@
  *     不再写内联样式。
  */
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Clapperboard, RefreshCw, Save, Sparkles, Video } from "lucide-react";
 /* ⛔⛔ 09-28：**不要** import "../../lib/video-providers.mjs" —— 那个模块顶部 import 了
    node:crypto（可灵 JWT 签名用），渲染层没有该内置模块：vite dev 下解构导入会直接抛
@@ -94,7 +95,7 @@ export function VideoGenBuiltInCard() {
         onAction={() => { if (loadError) { void refresh(); return; } void refresh(); setOpen(true); setEditing(null); }}
       />
 
-      {open ? (
+      {open ? createPortal(
         <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
           <section className="connector-setup-modal vg-modal" role="dialog" aria-modal="true" aria-label="视频生成接口配置">
             <header>
@@ -183,8 +184,7 @@ export function VideoGenBuiltInCard() {
               })}
             </div>
           </section>
-        </div>
-      ) : null}
+        </div>, document.body) : null}
     </>
   );
 }
