@@ -16,6 +16,8 @@ import { isInsideTrustedRoots } from "../runtime-refs";
 import {
   videoAssertImageOk,
   videoBuildFileRetrieve,
+  VIDEO_OPTIONAL_FIELDS,
+  videoApplyBaseUrl,
   videoBuildPoll,
   videoBuildSubmit,
   videoParseFileRetrieve,
@@ -85,7 +87,9 @@ export function registerVideoGen(): void {
     if (!provider) throw new Error(`未知厂商：${input?.providerId}`);
     const config = readConfig();
     const values: ProviderConfig = {};
-    for (const field of provider.fields) values[field] = String(input?.values?.[field] ?? "").trim();
+    // ⛔ 09-28：凭证之外还允许用户覆盖「API 地址 / 模型」（中转站、代理、自部署网关）。
+    //    VIDEO_OPTIONAL_FIELDS 是这两项的唯一定义处 —— 白名单必须收它，否则用户填了保存不住。
+    for (const field of [...provider.fields, ...VIDEO_OPTIONAL_FIELDS]) values[field] = String(input?.values?.[field] ?? "").trim();
     config[provider.id] = values;
     await writeConfig(config);
     return { ok: true, configured: hasCredentials(provider.id, values) };
@@ -97,7 +101,8 @@ export function registerVideoGen(): void {
     const cfg = config[provider.id];
     if (!hasCredentials(provider.id, cfg)) throw new Error(`${provider.name} 还没配置凭证（设置 → 插件 → 视频生成接口）`);
     const image = input.mode === "i2v" ? await resolveImage(input.image) : undefined;
-    const request = videoBuildSubmit(provider.id, cfg ?? {}, { ...input, image }, Date.now());
+    // 自定义 API 地址在本层统一应用（submit / poll / retrieve 都经这里，适配层保持纯函数）
+    const request = videoApplyBaseUrl(videoBuildSubmit(provider.id, cfg ?? {}, { ...input, image }, Date.now()), provider.id, cfg);
     const response = await fetchJson(request.url, request);
     return { jobId: videoParseSubmit(provider.id, response) };
   });
@@ -108,12 +113,12 @@ export function registerVideoGen(): void {
     const provider = VIDEO_PROVIDERS.find((p) => p.id === providerId);
     if (!provider) throw new Error(`未知厂商：${providerId}`);
     const cfg = config[providerId] ?? {};
-    const request = videoBuildPoll(providerId, cfg, String(input?.jobId ?? ""), Date.now());
+    const request = videoApplyBaseUrl(videoBuildPoll(providerId, cfg, String(input?.jobId ?? ""), Date.now()), providerId, cfg);
     const response = await fetchJson(request.url, request);
     const result = videoParsePoll(providerId, response);
     if (result.status === "succeeded" && !result.url && result.fileId) {
       // MiniMax 两段式：file_id → 下载地址
-      const retrieve = videoBuildFileRetrieve(cfg, result.fileId);
+      const retrieve = videoApplyBaseUrl(videoBuildFileRetrieve(cfg, result.fileId), providerId, cfg);
       result.url = videoParseFileRetrieve(await fetchJson(retrieve.url, retrieve));
     }
     return result;
