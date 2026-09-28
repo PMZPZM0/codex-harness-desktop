@@ -69,6 +69,7 @@ const MODULES = [
   "08-app-regression",
   "09-structural",
   "10-memory-audit",
+  "11-config-keys",
 ];
 
 for (const name of MODULES) {

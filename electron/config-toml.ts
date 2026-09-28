@@ -13,7 +13,17 @@
  *  生效」，用户实测）。但**必须把它留在这个集合里**：本集合的作用正是「拼回用户段时丢弃
  *  harness 管的键」，留着才能把老版本写下的旧值一并清掉。一旦移出，旧值会被
  *  `preserveUserConfig` 原样拼回新配置 → bug 立刻复现。 */
-export const HARNESS_CONFIG_KEYS = new Set(["model", "model_context_window", "model_provider", "preferred_auth_method", "developer_instructions", "model_catalog_json", "model_reasoning_effort"]);
+/** ⛔⛔ 09-28 血的事故：**harness 自己会写的每一个顶层键都必须登记在这里**。漏登记的直接后果
+ *  不是「键不生效」，而是**整份配置废掉**：该旧值会被当用户键原样保留在顶层（L184），
+ *  同时写入器又写一份 → 同名键出现两次 → `duplicate key` → 引擎 `Invalid configuration;
+ *  using defaults` ⇒ 供应商/模型全丢 = 应用不可用（用户现场实证两次）。
+ *  ⇒ 新增顶层键时**同轮**加进本集合：写键的人与登记的人是同一个人。 */
+export const HARNESS_CONFIG_KEYS = new Set([
+  "model", "model_context_window", "model_provider", "preferred_auth_method",
+  "developer_instructions", "model_catalog_json", "model_reasoning_effort",
+  // 09-28：自动压缩阈值上移到顶层（0.157.1 起 provider 段不再接受）
+  "model_auto_compact_token_limit", "model_auto_compact_token_limit_scope", "model_max_output_tokens",
+]);
 
 /** harness 自己会**整段**重写的表；其余段落（用户手工配置的 projects / marketplaces /
  *  plugins / hooks / permissions / 自定义段）原样保留。
