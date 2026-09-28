@@ -85,18 +85,27 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     if (!cwd.trim()) return { ok: false, error: "无法确定工作目录 —— 请在参数里传 workspace" };
     if (args.scheduleType === "once" && !String(args.scheduledAt ?? "").trim()) return { ok: false, error: "一次性任务必须传 scheduledAt（ISO 8601 带时区）" };
     if (args.scheduleType === "recurring" && !String(args.rrule ?? "").trim()) return { ok: false, error: "周期任务必须传 rrule（如 FREQ=DAILY;BYHOUR=9;BYMINUTE=0）" };
+    // 会话目标：\"current\" = 调用者自己的会话（模型不用猜 id）；其它值原样交给引擎（到点 thread/resume，
+    // 失败降级新建并留 lastError）。缺省 = 新建会话。
+    const rawThreadId = String(args.threadId ?? "").trim();
+    const threadId = rawThreadId === "current" ? callerThreadId : rawThreadId || undefined;
+    if (rawThreadId === "current" && !threadId) return { ok: false, error: "无法确定当前会话 id —— 请改为新建会话（不传 threadId）" };
+    const deliverTo = String(args.deliverTo ?? "").trim();
     const task = await scheduler.save({
       name: String(args.name ?? ""),
       prompt: String(args.prompt ?? ""),
       workspace: cwd,
+      threadId,
       model: args.model ? String(args.model) : undefined,
       scheduleType: args.scheduleType === "recurring" ? "recurring" : "once",
       scheduledAt: args.scheduledAt ? String(args.scheduledAt) : undefined,
       rrule: args.rrule ? String(args.rrule) : undefined,
       enabled: true,
-      deliver: args.deliverWeixin ? { channel: "weixin" } : undefined,
+      deliver: args.deliverWeixin ? (deliverTo ? { channel: "weixin", to: deliverTo } : { channel: "weixin" }) : undefined,
     });
-    return { ok: true, output: `定时任务已创建：「${task.name}」（id=${task.id}）下次运行：${task.nextRunAt ? new Date(task.nextRunAt).toLocaleString("zh-CN") : "无"}。可在 设置 → 定时任务 里查看与管理。` };
+    const where = threadId ? `会话 ${threadId} 里续聊执行` : "新建会话执行";
+    const notify = args.deliverWeixin ? `；完成后微信推送给${deliverTo ? `「${deliverTo}」` : "最近对话用户"}` : "";
+    return { ok: true, output: `定时任务已创建：「${task.name}」（id=${task.id}）下次运行：${task.nextRunAt ? new Date(task.nextRunAt).toLocaleString("zh-CN") : "无"}，在${where}${notify}。可在 设置 → 定时任务 里查看与管理。` };
   }
   if (name === "scheduler_list") {
     const list = await scheduler.list();

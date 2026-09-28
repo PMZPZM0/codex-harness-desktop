@@ -116,18 +116,20 @@ function dispatchMcpTools(): unknown[] {
        该断言已改为「必须含四件套」，且 harness-api 的调用面说明已同步。 */
     {
       name: "scheduler_save",
-      description: "创建或更新一个定时任务：到点后在指定工作区自动执行提示词（一次性或周期）。结果落在任务自己的会话里，可选推送到微信。",
+      description: "创建或更新一个定时任务：到点后在指定工作区自动执行提示词（一次性或周期）。可选在已有会话里续聊执行，可选把回合结论推送到微信。不确定用户要在哪个会话执行时，先问用户再建。",
       inputSchema: {
         type: "object",
         properties: {
           name: { type: "string", description: "任务名（如「AI 新闻早报」）" },
           prompt: { type: "string", description: "到点执行的提示词（必须自包含：定时任务看不到本会话的任何上下文）" },
           workspace: { type: "string", description: "工作目录；缺省 = 当前会话的工作目录" },
+          threadId: { type: "string", description: "执行所在的会话：\"current\" = 就在当前这个对话里续聊执行（最常用）；或传具体会话 id；**缺省 = 新建会话**。用户说「就在这个对话里…」必须传 \"current\"；不确定用户要哪个会话就先问" },
           scheduleType: { type: "string", enum: ["once", "recurring"], description: "once=只跑一次；recurring=周期" },
           scheduledAt: { type: "string", description: "once 必填：执行时刻（ISO 8601 带时区，如 2026-09-29T09:00:00+08:00）" },
           rrule: { type: "string", description: "recurring 必填：RRULE（如 FREQ=DAILY;BYHOUR=9;BYMINUTE=0）" },
           model: { type: "string", description: "可选：指定模型档位" },
           deliverWeixin: { type: "boolean", description: "执行完成后把回合结论推送给微信用户（需已绑定机器人）" },
+          deliverTo: { type: "string", description: "可选：微信收信人（wxid 或绑定昵称）；缺省 = 最近对话的用户。仅在 deliverWeixin=true 时有效" },
         },
         required: ["name", "prompt"],
       },

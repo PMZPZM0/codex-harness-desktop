@@ -81,6 +81,21 @@ export async function run() {
     (rpc.includes("不允许创建定时任务") ? ok : fail)(
       "【196】scheduler_save 走 restrictedThreadRole 同源闸（专家/被调度会话不许建 —— 防套娃）"
     );
+    /* ⑤.1 会话目标 + 微信收信人（09-28 用户追加：「能不能再把会话选择也加上…机器人给用户发消息也加上」）。
+       schema 与执行端**两侧同步**断言：threadId 支持 "current"（调用者会话，模型不用猜 id）；
+       deliverTo 指定收信人（缺省 = 最近对话用户）。 */
+    for (const [label, inSchema, inExec] of [
+      ["threadId（会话目标，\"current\"=调用者会话）", 'threadId: { type: "string"', 'rawThreadId === "current" ? callerThreadId'],
+      ["deliverTo（微信收信人，缺省最近对话用户）", 'deliverTo: { type: "string"', 'to: deliverTo'],
+    ]) {
+      (dispatch.includes(inSchema) && rpc.includes(inExec) ? ok : fail)(
+        `【196】scheduler_save 含 ${label}（schema 与执行端都要在 —— 分离 = 参数被静默丢弃）`
+      );
+    }
+    // 执行端对 threadId 的安全语义：不认识原样透传可以，但 "current" 必须解析成调用者会话 id（不许让模型自报）
+    (rpc.includes('rawThreadId === "current" ? callerThreadId : rawThreadId || undefined') ? ok : fail)(
+      "【196】\"current\" 必须解析成引擎认定的调用者会话 id（模型自报 threadId 不可信）"
+    );
   }
   }
 }
