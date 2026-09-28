@@ -99,4 +99,42 @@ export async function run() {
       `【192】可选字段两份同源（适配层 [${adapterFields.join(",")}] vs 渲染层 [${localFields.join(",")}]）—— 不一致则用户填了保存不住`
     );
   }
+
+  /* ── 生成按钮的布局与文案（09-28 二次返工：按钮重叠 + 生图/视频分不清） ──────────
+     ⛔ 两次踩坑都记在这里：
+     ① **重叠**：`.drama-canvas-btn` 缺 flex:none/nowrap 时，中文（无空格）flex item 的
+        min-content 只有「一个字」宽 ⇒ flex-shrink 把两个按钮压到互相覆盖，而 flex-wrap
+        因总宽没超容器**永远不触发**（用户截图：出图卡的「生成首帧」被「去配置视频接口」盖住）。
+     ② **分不清**：文案「生成首帧 / 文生视频」把类别藏在词中间 ⇒ 扫一眼分不出出图还是出片。
+        判据锚**接线**（CH_LABEL 映射 + is-channel-<通道> 类被真正使用），不是锚某个字面量。 */
+  {
+    const css = readFileSync(join(ROOT, "src", "styles", "21-drama-canvas.css"), "utf8");
+    const actionsRule = /\.drama-canvas-card-actions > \.drama-canvas-btn \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    (actionsRule.includes("flex: none") && actionsRule.includes("white-space: nowrap") ? ok : fail)(
+      "【192】卡片按钮 flex:none + white-space:nowrap（缺任一条 = 两个按钮被压到重叠，wrap 永不触发）"
+    );
+    const channelColors = ["image", "video", "audio"].filter((ch) => css.includes(`.drama-canvas-btn.is-channel-${ch} > svg`));
+    (channelColors.length === 3 ? ok : fail)(
+      `【192】三条生成通道各有图标配色（生图/视频/配音，缺 ${3 - channelColors.length} 条）`
+    );
+    (/const CH_LABEL: Record<string, string> = \{ image: "生图", video: "视频", audio: "配音" \}/.test(card) ? ok : fail)(
+      "【192】通道类别标签前置（生图 · X / 视频 · X / 配音 · X —— 类别藏在词中间就分不清）"
+    );
+    (/is-channel-\$\{what\}/.test(card) ? ok : fail)(
+      "【192】生图/视频按钮挂 is-channel-<通道> 类（配色靠这条接线；删掉类名 = 配色静默失效）"
+    );
+    (card.includes("is-channel-audio") ? ok : fail)(
+      "【192】配音按钮也挂通道类（三条通道一个都不能少）"
+    );
+    (/const configLabelOf = \(what: "image" \| "video"\) => `\$\{CH_LABEL\[what\]\} · 去配置`;/.test(card) ? ok : fail)(
+      "【192】未配置态同样带类别前缀（生图 · 去配置 / 视频 · 去配置）"
+    );
+    const notice = /pushNotice\(isImage[\s\S]{0,400}?\)/.exec(canvas)?.[0] ?? "";
+    (notice.includes("生图 · 首帧") ? ok : fail)(
+      "【192】工作流建立提示用真实按钮名（原来写「点『生成』」，卡片上根本没这个按钮，用户照着找不到）"
+    );
+    (panel.includes("生图 · 首帧") ? ok : fail)(
+      "【192】结果面板空态同样用真实按钮名（提示与按钮名不一致 = 用户找不到入口）"
+    );
+  }
 }

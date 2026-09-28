@@ -112,19 +112,25 @@ function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; 
   const hasAudio = Boolean(payload.audio || (kind === "audio" && payload.path));
   // 未配置就走「去配置」，不在卡片上画一个点了才报错的假按钮
   const needConfig = (what: "image" | "video") => (what === "image" ? !channels.image.ready : !channels.video.ready);
+  /* 通道前缀（09-28 用户：「生图、生视频，你是搞不清楚吗」）：
+     类别词必须**放在按钮文案最前面**。原来叫「生成首帧 / 文生视频」—— 类别藏在词中间，
+     一眼扫过去分不出哪个出图、哪个出片。现在统一「生图 · X / 视频 · X / 配音 · X」，
+     配合图标配色（蓝/紫/橙）双重区分。 */
+  const CH_LABEL: Record<string, string> = { image: "生图", video: "视频", audio: "配音" };
   const labelOf = (what: "image" | "video" | "audio") => {
-    if (what === "audio") return hasAudio ? "重做配音" : "生成配音";
-    if (what === "video") return hasVideo ? "重做视频" : payload.first_frame ? "图生视频" : "文生视频";
-    return kind === "character" ? "生成定妆照" : kind === "location" ? "生成场景图" : hasImage ? "重跑首帧" : "生成首帧";
+    const head = `${CH_LABEL[what]} · `;
+    if (what === "audio") return head + (hasAudio ? "重做" : "生成");
+    if (what === "video") return head + (hasVideo ? "重做" : "生成");
+    return head + (kind === "character" ? "定妆照" : kind === "location" ? "场景图" : hasImage ? "重出" : "首帧");
   };
-  const configLabelOf = (what: "image" | "video") => (what === "image" ? "去配生图模型" : "去配视频接口");
+  const configLabelOf = (what: "image" | "video") => `${CH_LABEL[what]} · 去配置`;
   return (
     <div className="drama-canvas-card-actions nodrag">
       {allowed.map((what) => {
         if (what === "audio") {
           const hasLine = Boolean(String(payload.line || payload.text || "").trim());
           return (
-            <button key="audio" className="drama-canvas-btn is-ghost" disabled={busyKey("audio") || !hasLine} onClick={(e) => { e.stopPropagation(); void actions.story.generate(id, "audio"); }} title={hasLine ? "用本机语音模型合成这一句（离线）" : "这一镜没有台词，先在检查器里写上 line"}>
+            <button key="audio" className="drama-canvas-btn is-ghost is-channel-audio" disabled={busyKey("audio") || !hasLine} onClick={(e) => { e.stopPropagation(); void actions.story.generate(id, "audio"); }} title={hasLine ? "配音通道：用本机语音模型合成这一句（离线，不出网）" : "这一镜没有台词，先在检查器里写上 line"}>
               {busyKey("audio") ? <Loader2 size={12} className="drama-canvas-spin" /> : <Mic size={12} />}
               {busyKey("audio") ? "合成中…" : labelOf("audio")}
             </button>
@@ -135,7 +141,7 @@ function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; 
         return (
           <button
             key={what}
-            className={`drama-canvas-btn ${missing ? "is-ghost" : ""}`}
+            className={`drama-canvas-btn is-channel-${what} ${missing ? "is-ghost" : ""}`}
             disabled={busyKey(what)}
             title={missing
               ? `还没配置${what === "image" ? "生图模型" : "视频接口"} —— 点这里去「设置 → 插件」配置`
