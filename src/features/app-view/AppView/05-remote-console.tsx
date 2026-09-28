@@ -295,7 +295,14 @@ export function AppViewRemoteConsole({ app }: { app: HarnessAppApi }) {
                       // 删除必须同步断开渠道会话：网关凭据（微信 token/Telegram token）是主进程全局的，
                       // 只删 UI 记录的话同渠道新建会被判定「已连接」直接复用旧会话，扫码入口都不出现
                       // ⚠️ 清凭据不可逆（微信要重新扫码），必须二次确认——此前无确认，误点一下登录态就没了
-                      if (!window.confirm(`删除机器人「${activeBot.name}」？\n\n将同时断开${botChannelName(activeBot.channel) || "渠道"}连接并清除登录凭据（微信/Telegram 需重新扫码），机器人卡片不会自动恢复。`)) return;
+                      // ⛔ 09-28：不再用 window.confirm —— 原生模态框关闭后吞焦点（应用与输入框
+                      //   失焦，用户得再点一下才能继续打字）。改走宿主的应用内确认（异步 Promise）。
+                      const okDelete = await app.openAppConfirm(
+                        `删除机器人「${activeBot.name}」？`,
+                        `将同时断开${botChannelName(activeBot.channel) || "渠道"}连接并清除登录凭据（微信/Telegram 需重新扫码），机器人卡片不会自动恢复。`,
+                        "删除机器人",
+                      );
+                      if (!okDelete) return;
                       try {
                         if (activeBot.channel === "wechat") await window.codex.weixinLogout();
                         if (activeBot.channel === "telegram") await window.codex.telegramLogout();

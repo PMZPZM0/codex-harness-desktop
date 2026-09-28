@@ -35,8 +35,10 @@ export default function ArchivePage({
   onNotice: (msg: string) => void;
   onOpenThread?: (id: string) => void;
   onThreadRestored?: (id: string) => void;
-  /** 应用内确认弹窗（替代 window.confirm：Electron 原生模态框关闭后吞焦点，导致输入框无法输入） */
-  onConfirm?: (title: string, text: string, confirmLabel?: string) => Promise<boolean>;
+  /** ⛔ 应用内确认弹窗（替代 window.confirm：Electron 原生模态框关闭后**吞焦点**，输入框会打不了字）。
+   *  **必传**：原实现在缺失时回退 window.confirm —— 那正是导致失焦的元凶，守卫【191】已禁止
+   *  渲染层再出现原生弹窗，故不再留这条兜底（宿主唯一调用点已必传 openAppConfirm）。 */
+  onConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean>;
 }) {
   const [items, setItems] = useState<ArchiveThread[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,7 +107,7 @@ export default function ArchivePage({
   }
 
   async function remove(id: string) {
-    if (onConfirm ? !(await onConfirm("永久删除归档任务", "这条归档任务及其中的消息将被永久删除，此操作无法撤销。", "永久删除")) : !window.confirm("永久删除这条归档任务？此操作无法撤销。")) return;
+    if (!(await onConfirm("永久删除归档任务", "这条归档任务及其中的消息将被永久删除，此操作无法撤销。", "永久删除"))) return;
     setBusy(id);
     try {
       await verifyArchived([id]);
@@ -125,7 +127,7 @@ export default function ArchivePage({
 
   async function batch(mode: "restore" | "delete") {
     if (!checkedIds.length) return;
-    if (mode === "delete" && onConfirm ? !(await onConfirm("批量永久删除", `选中的 ${checkedIds.length} 条归档任务将被永久删除，此操作无法撤销。`, "永久删除")) : mode === "delete" && !window.confirm(`永久删除选中的 ${checkedIds.length} 条归档任务？此操作无法撤销。`)) return;
+    if (mode === "delete" && !(await onConfirm("批量永久删除", `选中的 ${checkedIds.length} 条归档任务将被永久删除，此操作无法撤销。`, "永久删除"))) return;
     setBatchBusy(mode);
     const succeeded: string[] = [];
     const restoredIds: string[] = [];

@@ -207,6 +207,11 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
      没反应」就是这个）+ 交给 Agent 的会话选择器 */
   const [naming, setNaming] = useState<null | { kind: "board" | "story"; value: string }>(null);
   const [agentPicker, setAgentPicker] = useState<null | { text: string; target: string | null }>(null);
+  /* 应用内确认弹层（09-28 用户要求）：⛔ 不用 window.confirm —— 原生弹窗会**抢走窗口焦点**，
+     关掉后 WebContents 与输入框不回焦（用户实测「应用和输入框失焦」，要再点一下才能打字）。
+     宿主已有 openAppConfirm，但它挂在设置面板那棵树里、画布浮层够不到 ⇒ 与 naming/agentPicker
+     同款在域内自建一个，样式复用 drama-canvas-modal。 */
+  const [confirmAsk, setConfirmAsk] = useState<null | { title: string; text: string; confirmLabel: string; onConfirm: () => void }>(null);
   const namingInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     if (naming) window.setTimeout(() => namingInputRef.current?.select(), 30);
@@ -265,6 +270,9 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
       return;
     }
     if (evt.key === "Escape") {
+      // ⛔ 有弹层时 Escape 先关弹层（09-28）：否则按了没反应，用户只能去点「取消」
+      if (confirmAsk) { setConfirmAsk(null); return; }
+      if (agentPicker) { setAgentPicker(null); return; }
       setMenu(null); setAddMenuOpen(false);
       if (selected.length || marquee) { setMarquee(false); board.select([]); }
       return;
@@ -275,7 +283,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
       board.removeNodes(selected);
       pushNotice(`已删除 ${count} 个节点`, "", () => board.undo());
     }
-  }, [board, marquee, pushNotice, selected]);
+  }, [agentPicker, board, confirmAsk, marquee, pushNotice, selected]);
 
   const createStarter = useCallback((kind: "drama" | "image" = "drama") => {
     const isImage = kind === "image";
@@ -399,7 +407,15 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             <button className="drama-canvas-tool" title="适配全部节点" onClick={fitAll}><LayoutGrid size={14} />适配</button>
             <button className="drama-canvas-tool" title="居中选中节点" onClick={() => (selected[0] ? centerOn(selected[0]) : fitAll())}><Crosshair size={14} />居中</button>
             <button className="drama-canvas-tool" title="缩放复位" onClick={resetView}><Maximize2 size={14} />复位</button>
-            <button className="drama-canvas-tool is-danger" title="清空这张画布（素材文件保留）" onClick={() => { if (board.nodes.length && !window.confirm(`清空这张画布？\n${board.nodes.length} 个节点和全部连线会被删除，素材文件保留。`)) return; board.clearBoard(); pushNotice("画布已清空", "", () => board.undo()); }}><Trash2 size={14} />清空</button>
+            <button className="drama-canvas-tool is-danger" title="清空这张画布（素材文件保留）" onClick={() => {
+              if (!board.nodes.length) return;
+              setConfirmAsk({
+                title: "清空这张画布？",
+                text: `${board.nodes.length} 个节点和全部连线会被删除，素材文件保留。`,
+                confirmLabel: "确定",
+                onConfirm: () => { board.clearBoard(); pushNotice("画布已清空", "", () => board.undo()); },
+              });
+            }}><Trash2 size={14} />清空</button>
           </div>
         </div>
 
@@ -474,6 +490,23 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
           <div className="drama-canvas-story-warn">
             {story.problems[0]}
             {story.problems.length > 1 ? `（共 ${story.problems.length} 条，详见检查器）` : ""}
+          </div>
+        ) : null}
+
+        {confirmAsk ? (
+          <div className="drama-canvas-modal-mask" onMouseDown={(e) => { if (e.target === e.currentTarget) setConfirmAsk(null); }}>
+            <div className="drama-canvas-modal" role="alertdialog" aria-label={confirmAsk.title}>
+              <b>{confirmAsk.title}</b>
+              <p className="drama-canvas-modal-note">{confirmAsk.text}</p>
+              <div className="drama-canvas-modal-row">
+                <button type="button" className="drama-canvas-btn is-ghost" autoFocus onClick={() => setConfirmAsk(null)}>取消</button>
+                <button
+                  type="button"
+                  className="drama-canvas-btn is-danger"
+                  onClick={() => { const run = confirmAsk.onConfirm; setConfirmAsk(null); run(); }}
+                >{confirmAsk.confirmLabel}</button>
+              </div>
+            </div>
           </div>
         ) : null}
 
