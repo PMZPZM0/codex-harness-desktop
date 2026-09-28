@@ -583,6 +583,10 @@ export async function bootApp() {
             if (inTable) return true;
             topLevelCompactSeen = true;
           }
+          // ⛔ 顶层 scope 非法值（09-28 用户现场）：scope 在 0.157.1 是枚举 total /
+          //    body_after_prefix，旧写入器写过 "model" ⇒ 整份配置解析失败（using defaults
+          //    ⇒ 供应商全丢）。出现即重写（新写入器已不写 scope）。
+          if (!inTable && (/^model_auto_compact_token_limit_scope\s*=\s*"model"/.test(line) || /^model_max_output_tokens\s*=/.test(line))) return true;
         }
         return !topLevelCompactSeen;
       })();
