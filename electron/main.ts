@@ -101,6 +101,11 @@ import "./features/phone-harness-ipc";
 import "./features/fs-ipc";
 import "./features/drama-canvas";
 import "./features/video-gen";
+/* 排队消息定时发送（09-28）：⛔ 本行曾经漏掉 ⇒ `queue-timer:set` 报
+   「No handler registered」（用户现场实测）。handler 文件、manifest、registry、
+   preload 四处都齐，唯一缺的就是这行引用 —— 缺它整条通道静默失效（不报编译错）。
+   守卫【194】按 ipc-registry 逐个比对「in-features 的 file 必须被 main 引用」。 */
+import "./features/queue-timer-ipc";
 import "./features/updates-ipc";
 import "./features/shell-misc-ipc";
 /* 截图（全屏/框选）+ 收藏夹：用户素材链的两端（截图可收藏、收藏可发送/进记忆） */
