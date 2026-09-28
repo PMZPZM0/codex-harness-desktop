@@ -95,12 +95,26 @@ export async function run() {
     const sources = files.map((f) => ({ file: f, code: codeOnly(readFileSync(f, "utf8")) }));
     const all = sources.map((s) => s.code).join("\n");
     const defined = [];
+    const definedNoArg = [];
     for (const s of sources) {
-      for (const m of s.code.matchAll(/export function (register[A-Za-z0-9]+)\s*\(/g)) defined.push({ name: m[1], file: s.file });
+      for (const m of s.code.matchAll(/export function (register[A-Za-z0-9]+)\s*\(([^)]*)\)/g)) {
+        defined.push({ name: m[1], file: s.file });
+        // 无参注册函数（如 registerVideoGen()）语义 = 「import 即注册」，只能调一次；
+        // 带参的（deps / 窗口对象）可能按模式或按窗口合法多次调用，不做次数约束。
+        if (m[2].trim() === "") definedNoArg.push({ name: m[1], file: s.file });
+      }
     }
-    const orphan = defined.filter((d) => [...all.matchAll(new RegExp(`\\b${d.name}\\s*\\(`, "g"))].length <= 1);
+    const countOf = (name) => [...all.matchAll(new RegExp(`\\b${name}\\s*\\(`, "g"))].length;
+    const orphan = defined.filter((d) => countOf(d.name) <= 1);
     (orphan.length === 0 ? ok : fail)(
       `【194】每个 export function register* 都有调用点（孤儿：${orphan.map((o) => `${o.name} @ ${path.relative(ROOT, o.file)}`).join("; ") || "无"}）—— 无调用点 ⇒ 该域所有通道静默全废`
+    );
+    // ⛔ 反向：**无参**注册函数只能有一处调用。Electron 对同一 channel 二次 `ipcMain.handle`
+    //    会直接抛「Attempted to register a second handler」⇒ 主进程起不来。
+    //    （带参的 registerBusWindow / registerRelayIpc 按窗口或按模式调用，不受此限。）
+    const multi = definedNoArg.filter((d) => countOf(d.name) > 2);
+    (multi.length === 0 ? ok : fail)(
+      `【194】无参 register* 至多一处调用点（多次 = 重复注册同一通道，Electron 直接抛错）：${multi.map((m) => m.name).join(", ") || "无"}`
     );
   }
 }
