@@ -73,4 +73,20 @@ export async function run() {
 
   /* ⑥ 淘汰的样式类不该留残印 */
   (!/\.vg-card/.test(css) ? ok : fail)("【195】.vg-card 系列样式已清（弹层的 .vg-* 保留）");
+
+  /* ⑦ 窄容器不许溢出（09-28 用户截图：三行右侧的「状态 + 配置」被面板边界裁掉）
+        ⛔ 病根是 **grid 列写成 `1fr`** —— grid 列的默认最小值是 `auto`(=min-content)，
+           而行内描述是 `nowrap` ⇒ 列的 min-content = 整句话宽（远大于面板）⇒ 列被撑宽、
+           整行溢出容器。必须 `minmax(0, 1fr)`。这是"grid 子项溢出"的标准修法，
+           与 flex 里给子项 `min-width: 0` 是同一件事的两面 —— 两处都要有。
+        ⛔ 上一次离线预览用 900px 宽容器 ⇒ 完全没暴露（面板实际 ~620px）。**验证必须用真实宽度**。 */
+  (/\.bi-plugin-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/.test(css) ? ok : fail)(
+    "【195】内置卡网格用 minmax(0,1fr) 而非 1fr（否则 nowrap 描述撑宽列 ⇒ 右侧状态/按钮被面板裁掉）"
+  );
+  (/\.bi-row\s*\{[^}]*min-width:\s*0/.test(css) ? ok : fail)(
+    "【195】.bi-row 作为 grid 项允许收缩（min-width:0，与上一条配套）"
+  );
+  (/\.bi-row > \.bi-row-state,\s*\n\.bi-row > \.secondary-setting \{ flex: none; \}/.test(css) ? ok : fail)(
+    "【195】行内状态胶囊与按钮 flex:none（中文 min-content 只有一个字宽，不写会被挤成一条）"
+  );
 }
