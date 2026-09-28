@@ -1133,3 +1133,21 @@
 .drama-projects-actions { display: flex; gap: 4px; flex: none; }
 .drama-projects-empty { padding: 22px; text-align: center; font-size: 12px; color: var(--muted); }
 .drama-projects-hint { font-size: 11px; color: var(--muted); margin-right: auto; }
+
+/* 工作流进度芯片（09-28）：当前板「图/视频/配音/待生成」实时计数。
+   放顶栏板选择旁，让用户随时知道这条工作流走到哪了。 */
+.drama-canvas-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  flex: none;
+}
+.drama-canvas-progress > span { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.drama-canvas-progress > span.is-ok { color: var(--ok); }
+.drama-canvas-progress > span.is-warn { color: var(--orange); }
+.drama-canvas-progress > span.is-done { color: var(--ok); }

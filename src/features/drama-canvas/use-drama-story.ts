@@ -356,16 +356,19 @@ export function useDramaStory(
           return;
         }
         const style = String(storyRef.current?.style || "").trim();
-        const base = String(payload.prompt || payload.description || payload.look || "").trim();
-        if (!base) { notice("这张卡还没有提示词，先写上再生成", "err"); return; }
+        let base = String(payload.prompt || payload.description || payload.look || "").trim();
+        // ⛔ 09-28 工作流打磨：自身提示词为空时**自动沿用连入的上游提示词**（此前直接报错
+        //    「先写上再生成」—— 出图 A/B 这类下游卡被迫先抄一遍主提示词，流程断在这里）。
+        //    模板的 payload 也已不预填引导文本（避免污染真实提示词）。
+        const upstream = upstreamPrompts(nodeId);
+        if (!base && upstream) base = upstream;
+        if (!base) { notice("这张卡还没有提示词 —— 写一句，或从上游卡片连线自动带入", "err"); return; }
         // 全片统一风格摆在提示词最前面 —— 否则镜与镜之间画风会飘
         let prompt = style ? `${style}。${base}` : base;
-        // ⛔ 09-28 闭环打磨：连线要真的「喂给下一步」—— 沿**入边**找上游卡片的提示词拼进来。
-        //    起手工作流里出图 A/B 连着主提示词卡，但此前生成只用自己的 prompt（预填的
-        //    「按主提示词生成（变体…）」占位文本），主提示词卡的内容从未参与 —— 改主提示词
-        //    不会影响出图，连线形同虚设。现在：上游 prompt（或 text）拼在最前，自身变体词在后。
-        const upstream = upstreamPrompts(nodeId);
-        if (upstream) prompt = `${upstream}。${prompt}`;
+        // 连线「喂给下一步」：上游提示词拼在最前，自身变体词在后（自身为空时上面已沿用）
+        if (upstream && base !== upstream) prompt = `${upstream}。${prompt}`;
+        const variant = String(payload.variant || "").trim();
+        if (variant && !base.includes(variant)) prompt = `${prompt}（变体：${variant}）`;
         const result = await window.codex.generateImage({ baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model: cfg.model, prompt });
         const path = String(result?.path || "");
         if (!path) { notice("生成回来了，但没有落盘路径，这张卡没更新", "err"); return; }
@@ -375,7 +378,13 @@ export function useDramaStory(
         else board.updatePayload(nodeId, { path, url: path, title: payload.title || "参考图" });
         board.saveNow();
         void writeBack(nodeId);
-        notice(`已生成并落盘：${path.split(/[\\/]/).pop()}`, "ok");
+        // 下一步指引（09-28 工作流打磨）：出图卡告知可直接转视频，镜头卡告知可继续出视频/配音
+        const next = kind === "image"
+          ? "—— 可点「视频 · 生成」让这张图动起来"
+          : kind === "shot"
+            ? "—— 可继续「视频 · 生成」或「配音 · 生成」"
+            : "";
+        notice(`已生成并落盘：${path.split(/[\\/]/).pop()}${next}`, "ok");
         return;
       }
 

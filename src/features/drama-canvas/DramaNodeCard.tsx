@@ -215,7 +215,7 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
       return (
         <>
           {payload.first_frame ? <MediaPreview path={String(payload.first_frame)} alt="首帧" kind="image" /> : <div className="drama-canvas-empty"><Sparkles size={16} /><span>还没有首帧</span></div>}
-          <div className="drama-canvas-card-text is-prompt">{String(payload.prompt || "还没有镜头提示词")}</div>
+          <div className="drama-canvas-card-text is-prompt">{String(payload.prompt || "（生成时自动沿用连入的剧本与场景描述，可直接生成）")}</div>
           <div className="drama-canvas-card-line">{String(payload.line || "无人声")}</div>
           {payload.audio ? <AudioPreview path={String(payload.audio)} /> : null}
           <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />
@@ -247,7 +247,7 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
         <>
           {kind === "image" && path ? <MediaPreview path={path} alt={String(payload.title || "参考图")} kind="image" /> : null}
           {kind === "audio" ? <AudioPreview path={path} /> : null}
-          <div className="drama-canvas-card-text">{String(payload.text || payload.prompt || "还没有素材或描述")}</div>
+          <div className="drama-canvas-card-text">{String(payload.text || payload.prompt || "（生成时自动沿用连入的上游提示词；点生成或在此写自己的）")}</div>
           <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />
         </>
       );
@@ -269,7 +269,7 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
     return (
       <>
         {embedded ? <MediaPreview path={embedded} alt={String(payload.name || def.label)} kind="image" /> : null}
-        <div className="drama-canvas-card-text">{String(payload.description || (embedded ? "" : kind === "character" ? "还没有人物设定" : "还没有场景设定"))}</div>
+        <div className="drama-canvas-card-text">{String(payload.description || (embedded ? "" : kind === "character" ? "（人物设定：生成定妆照时自动沿用连入的剧本内容，可在此改写）" : "（场景设定：生成场景图时自动沿用连入的剧本内容，可在此改写）"))}</div>
         <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />
       </>
     );
