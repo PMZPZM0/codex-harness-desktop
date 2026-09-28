@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { ImagePlus, Eye, RefreshCw, Play, Save, CircleCheck, CircleOff } from "lucide-react";
+import { ImagePlus, Eye, RefreshCw, Play, Save } from "lucide-react";
 import { ModelIdInput } from "./ModelIdInput";
+import { BuiltinPluginRow } from "./BuiltinPluginRow";
 import { imageSpecHint, matchImageSpec } from "../lib/image-model-specs";
 import { VideoGenBuiltInCard } from "./VideoGenBuiltInCard";
 
@@ -29,6 +30,8 @@ export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => v
   const [visionModels, setVisionModels] = useState<string[]>([]);
   const [probing, setProbing] = useState<PluginKind | null>(null);
   const [busy, setBusy] = useState<PluginKind | null>(null);
+  /** 二级弹窗当前编辑哪张卡（null = 全关）。09-28：字段从卡面收进弹窗 */
+  const [editing, setEditing] = useState<PluginKind | null>(null);
 
   useEffect(() => {
     void window.codex.readBuiltinPlugins().then((value) => {
@@ -85,54 +88,70 @@ export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => v
     // 生图模型的内置参数（尺寸 / 改图 / 质量档）：命中内置表就在字段下方摊开，
     // 免得用户选了模型却不知道它能出多大、能不能带参考图（09-18 用户要求的「内置参数」）。
     const specHint = kind === "image" ? imageSpecHint(matchImageSpec(value.model)) : [];
+    const state = ready ? (off ? "已停用" : "已启用") : "未配置";
     return (
-      <article className={`bi-plugin ${ready ? (off ? "is-off" : "is-ready") : ""}`}>
-        <header className="bi-plugin-head">
-          <span className="bi-plugin-icon"><Icon size={16} /></span>
-          <div className="bi-plugin-title">
-            <b>{title}</b>
-            <small>{desc}</small>
+      <>
+        {/* ⛔ 09-28 三次改版（用户：「为啥这三个卡片要占这么多，不会做出二级弹窗吗」）：
+            上一版把三个字段直接摊在卡面上，三张卡吃掉大半个设置页 ⇒ 现在卡面只留
+            **一行摘要 + 状态 + 一个入口**，字段全部收进点开的二级弹窗。 */}
+        <BuiltinPluginRow
+          icon={Icon}
+          title={title}
+          desc={desc}
+          state={state}
+          tone={ready ? (off ? "off" : "ready") : "none"}
+          actionLabel={ready ? "配置" : "去配置"}
+          onAction={() => setEditing(kind)}
+        />
+
+        {editing === kind ? (
+          <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditing(null); }}>
+            <section className="connector-setup-modal vg-modal" role="dialog" aria-modal="true" aria-label={`${title}配置`}>
+              <header>
+                <div className="connector-setup-title">
+                  <span><Icon size={17} /></span>
+                  <div><strong>{title}</strong><p>{desc}</p></div>
+                </div>
+                <button className="icon-button" title="关闭" onClick={() => setEditing(null)}>✕</button>
+              </header>
+              <div className="bi-modal-body">
+                <label className="vg-field">
+                  <span>API 地址</span>
+                  <input value={value.baseUrl} onChange={(event) => setKind(kind, { baseUrl: event.target.value })} placeholder="https://api.example.com/v1" spellCheck={false} />
+                  <small>兼容 OpenAI 协议的地址（含 /v1）；中转站 / 自部署网关也填这里</small>
+                </label>
+                <label className="vg-field">
+                  <span>API 密钥</span>
+                  <input type="password" value={value.apiKey} onChange={(event) => setKind(kind, { apiKey: event.target.value })} placeholder="sk-…" spellCheck={false} />
+                  <small>只存在本机用户数据目录，不会上传</small>
+                </label>
+                <label className="vg-field">
+                  <span>模型</span>
+                  <div className="bi-model-row">
+                    <ModelIdInput value={value.model} onChange={(next) => setKind(kind, { model: next })} extraIds={models} placeholder="选择或输入模型 ID" ariaLabel={`${title}模型`} variant={kind === "image" ? "image" : "chat"} />
+                    <button className="secondary-setting" disabled={probing === kind} onClick={() => void probe(kind)} title="用上面的地址与密钥拉取可用模型列表">
+                      {probing === kind ? <RefreshCw size={13} className="spin" /> : <Play size={13} />}检测
+                    </button>
+                  </div>
+                  {specHint.length > 0
+                    ? <small className="bi-spec">{specHint.map((line) => <span key={line}>{line}</span>)}</small>
+                    : <small>模型 ID 可手填；点「检测」可拉取该地址支持的模型列表</small>}
+                </label>
+                <div className="bi-modal-foot">
+                  <label className="bi-switch" title="停用后 Codex 不会调用该能力">
+                    <input type="checkbox" checked={value.enabled !== false} onChange={(event) => setKind(kind, { enabled: event.target.checked })} />
+                    <i />
+                    <span>启用</span>
+                  </label>
+                  <button className="primary-setting" disabled={busy === kind || !dirty(kind)} onClick={() => void save(kind)}>
+                    {busy === kind ? <RefreshCw size={14} className="spin" /> : <Save size={14} />}{dirty(kind) ? "保存" : "已保存"}
+                  </button>
+                </div>
+              </div>
+            </section>
           </div>
-          <span className="bi-plugin-state">{ready ? (off ? <CircleOff size={12} /> : <CircleCheck size={12} />) : null}{!ready ? "未配置" : off ? "已停用" : "已启用"}</span>
-        </header>
-
-        {/* 字段直接摊开（09-28）：不再藏弹层 —— 进页面就能看到往哪填 */}
-        <div className="bi-plugin-form">
-          <label className="bi-field">
-            <span>API 地址</span>
-            <input value={value.baseUrl} onChange={(event) => setKind(kind, { baseUrl: event.target.value })} placeholder="https://api.example.com/v1" spellCheck={false} />
-            <small>兼容 OpenAI 协议的地址（含 /v1）；中转站/自部署网关也填这里</small>
-          </label>
-          <label className="bi-field">
-            <span>API 密钥</span>
-            <input type="password" value={value.apiKey} onChange={(event) => setKind(kind, { apiKey: event.target.value })} placeholder="sk-…" spellCheck={false} />
-            <small>只存在本机用户数据目录，不会上传</small>
-          </label>
-          <label className="bi-field">
-            <span>模型</span>
-            <div className="bi-model-row">
-              <ModelIdInput value={value.model} onChange={(next) => setKind(kind, { model: next })} extraIds={models} placeholder="选择或输入模型 ID" ariaLabel={`${title}模型`} variant={kind === "image" ? "image" : "chat"} />
-              <button className="secondary-setting" disabled={probing === kind} onClick={() => void probe(kind)} title="用上面的地址与密钥拉取可用模型列表">
-                {probing === kind ? <RefreshCw size={13} className="spin" /> : <Play size={13} />}检测
-              </button>
-            </div>
-            {specHint.length > 0
-              ? <small className="bi-spec">{specHint.map((line) => <span key={line}>{line}</span>)}</small>
-              : <small>模型 ID 可手填；点「检测」可拉取该地址支持的模型列表</small>}
-          </label>
-        </div>
-
-        <footer className="bi-plugin-foot">
-          <label className="bi-switch" title="停用后 Codex 不会调用该能力">
-            <input type="checkbox" checked={value.enabled !== false} onChange={(event) => setKind(kind, { enabled: event.target.checked })} />
-            <i />
-            <span>启用</span>
-          </label>
-          <button className="primary-setting" disabled={busy === kind || !dirty(kind)} onClick={() => void save(kind)}>
-            {busy === kind ? <RefreshCw size={14} className="spin" /> : <Save size={14} />}{dirty(kind) ? "保存" : "已保存"}
-          </button>
-        </footer>
-      </article>
+        ) : null}
+      </>
     );
   };
 

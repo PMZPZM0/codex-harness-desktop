@@ -13,7 +13,7 @@
  *
  * 共享面由 ./_ctx.mjs 注入。
  */
-import { C, ROOT, join, ok, fail, readFileSync, existsSync } from "./_ctx.mjs";
+import { C, ROOT, join, ok, fail, readFileSync, existsSync, codeOnly } from "./_ctx.mjs";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -74,4 +74,33 @@ export async function run() {
   (missing.length === 0 ? ok : fail)(
     `【194】启动链引用到的 features 模块文件都存在${missing.length ? "：缺 " + missing.join(" / ") : ""}`
   );
+
+  /* ── ③ 导出式注册函数**必须有调用点** ──────────────────────────────────────────
+     ⛔ 09-28 二次事故（同一类病的变体）：`export function registerVideoGen()` 全仓库
+     **零调用点** ⇒ 6 个 video: 通道的 ipcMain.handle 从未执行 ⇒ 渲染层 invoke 抛
+     「No handler registered」⇒ 组件 catch 成空数组 ⇒ 用户现场「视频生成接口一直加载中…，
+     根本配置不了」（厂商列表空，弹窗里一个都配不了）。
+     ⛔ 上一版【194】只查「模块被 import」，接不住这一层：**模块进来了、里面的注册函数没人调**。
+     判据：每个 `export function register*` 的定义之外，至少还要有一次 `registerXxx(`。 */
+  {
+    const files = [];
+    const collect = (dir) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) { if (e.name !== "node_modules") collect(p); }
+        else if (e.name.endsWith(".ts")) files.push(p);
+      }
+    };
+    collect(join(ROOT, "electron"));
+    const sources = files.map((f) => ({ file: f, code: codeOnly(readFileSync(f, "utf8")) }));
+    const all = sources.map((s) => s.code).join("\n");
+    const defined = [];
+    for (const s of sources) {
+      for (const m of s.code.matchAll(/export function (register[A-Za-z0-9]+)\s*\(/g)) defined.push({ name: m[1], file: s.file });
+    }
+    const orphan = defined.filter((d) => [...all.matchAll(new RegExp(`\\b${d.name}\\s*\\(`, "g"))].length <= 1);
+    (orphan.length === 0 ? ok : fail)(
+      `【194】每个 export function register* 都有调用点（孤儿：${orphan.map((o) => `${o.name} @ ${path.relative(ROOT, o.file)}`).join("; ") || "无"}）—— 无调用点 ⇒ 该域所有通道静默全废`
+    );
+  }
 }
