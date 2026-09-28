@@ -924,6 +924,7 @@ w.postMessage({id:1,op:"list",root});
     "resources/tools/automation-tools.zip",
     "resources/tools/nuphus-call.mjs",
     "resources/tools/harness-media.mjs",
+    "resources/tools/harness-video.mjs",
     "resources/tools/cloak-open.mjs",
   ]);
   const uncovered = [];

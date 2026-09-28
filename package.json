@@ -86,6 +86,7 @@
     "files": [
       "dist/**",
       "dist-electron/**",
+      "src/lib/video-providers.mjs",
       "!dist-electron/**/*.tsbuildinfo",
       "build/tray.png",
       "build/trayTemplate.png",
@@ -117,6 +118,14 @@
       {
         "from": "resources/tools/harness-media.mjs",
         "to": "tools/harness-media.mjs"
+      },
+      {
+        "from": "resources/tools/harness-video.mjs",
+        "to": "tools/harness-video.mjs"
+      },
+      {
+        "from": "src/lib/video-providers.mjs",
+        "to": "tools/video-providers.mjs"
       },
       {
         "from": "resources/tools/cloak-open.mjs",
