@@ -2,6 +2,7 @@
  * AppViewRemoteConsole —— AppView 的 JSX 第 5 段（09-22 从 AppView.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
+import { AppSelect } from "../../../components/AppSelect";
 import {
   AlertTriangle,
   Archive,
@@ -248,27 +249,23 @@ export function AppViewRemoteConsole({ app }: { app: HarnessAppApi }) {
                       return (
                         <div className="bot-detail-row">
                           <div><strong>绑定会话</strong><small>{botBound ? "已绑定：仅可切回「自动新会话」，其他已有会话不可切换（若要换目录请选自动新会话后重新选）" : "下一条消息将自动开新会话并绑定"}</small></div>
-                          <select className="bot-select" value={bound?.threadId ?? ""} title={botBound ? "已绑定：可切回「自动新会话」（下次消息新建会话）；不支持切换到其他已有会话" : undefined} onChange={(event) => {
-                            const v = event.target.value || null;
+                          <AppSelect className="bot-select" value={bound?.threadId ?? ""} title={botBound ? "已绑定：可切回「自动新会话」（下次消息新建会话）；不支持切换到其他已有会话" : undefined} onChange={(event) => {
+                            const v = event || null;
                             const t = threads.find((x) => x.id === v);
                             void setBotBinding(ch as "wechat" | "telegram", v, t ? (t.name || t.preview || "").slice(0, 40) : undefined);
-                          }}>
-                            <option value="">自动新会话</option>
-                            {!boundInList && bound && <option value={bound.threadId}>{bound.title || `会话 ${bound.threadId.slice(0, 8)}`}</option>}
-                            {threads.map((t) => {
+                          }} ariaLabel="绑定会话" options={[
+                            { value: "", label: "自动新会话" },
+                            ...(!boundInList && bound ? [{ value: bound.threadId, label: bound.title || `会话 ${bound.threadId.slice(0, 8)}` }] : []),
+                            ...threads.map((t) => {
                               const taken = takenIds.has(t.id) && bound?.threadId !== t.id;
-                              return <option key={t.id} value={t.id} disabled={taken}>{`${(t.name || t.preview || t.id.slice(0, 12)).slice(0, 30)} · ${fmtTime(t.updatedAt)}${taken ? "（已被机器人绑定）" : ""}`}</option>;
-                            })}
-                          </select>
+                              return { value: t.id, label: `${(t.name || t.preview || t.id.slice(0, 12)).slice(0, 30)} · ${fmtTime(t.updatedAt)}${taken ? "（已被机器人绑定）" : ""}`, disabled: taken };
+                            }),
+                          ]} />
                         </div>
                       );
                     })()}                <div className="bot-detail-row">
                       <div><strong>机器人回复粒度</strong><small>回复助手正文和文件变更，隐藏工具调用过程。</small></div>
-                      <select className="bot-select" value={(activeBot as any).granularity ?? "standard"} onChange={(event) => setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, granularity: event.target.value } : b); return next; })}>
-                        <option value="standard">标准回复</option>
-                        <option value="concise">简洁回复</option>
-                        <option value="verbose">详细回复</option>
-                      </select>
+                      <AppSelect value={(activeBot as any).granularity ?? "standard"} onChange={(v) => setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, granularity: v } : b); return next; })} options={[{ value: "standard", label: "标准回复" }, { value: "concise", label: "简洁回复" }, { value: "verbose", label: "详细回复" }]} className="bot-select" />
                     </div>
                     <div className="bot-detail-row">
                       <div><strong>流式回复</strong><small>开启后机器人边生成边推送正文（微信逐段追加 / Telegram 实时改写），不用干等完整回复。微信受平台限制：单条消息触发的推送条数有限，长任务期间会以「对方正在输入…」提示进度。</small></div>
@@ -286,10 +283,7 @@ export function AppViewRemoteConsole({ app }: { app: HarnessAppApi }) {
                     </>)}
                     <div className="bot-detail-row">
                       <div><strong>工作区访问范围</strong><small>这个机器人可以使用所有已配置的工作区。</small></div>
-                      <select className="bot-select" value={(activeBot as any).scope ?? "all"} onChange={(event) => setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, scope: event.target.value } : b); return next; })}>
-                        <option value="all">所有工作区</option>
-                        <option value="current">仅当前工作区</option>
-                      </select>
+                      <AppSelect value={(activeBot as any).scope ?? "all"} onChange={(v) => setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, scope: v } : b); return next; })} options={[{ value: "all", label: "所有工作区" }, { value: "current", label: "仅当前工作区" }]} className="bot-select" />
                     </div>
                     <div className="bot-delete-row"><div><strong>删除机器人</strong><small>移除这个机器人，并断开其渠道连接（微信/Telegram 需重新扫码绑定）。</small></div><button className="bot-delete-btn" onClick={async () => {
                       // 删除必须同步断开渠道会话：网关凭据（微信 token/Telegram token）是主进程全局的，

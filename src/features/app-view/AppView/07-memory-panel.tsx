@@ -2,6 +2,7 @@
  * AppViewMemoryPanel —— AppView 的 JSX 第 7 段（09-22 从 AppView.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
+import { AppSelect } from "../../../components/AppSelect";
 import { MemoryFunnel, MemoryLayersEditor, MemoryConfigModal, MemoryHygienePanel, MemoryPyramid, MemoryInjectPreview } from "../../memory";
 import {
   AlertTriangle,
@@ -241,9 +242,7 @@ export function AppViewMemoryPanel({ app }: { app: HarnessAppApi }) {
                   <div className="memory-center-block">
                     <div className="memory-center-block-head"><div><strong>手动保存</strong><span>把临时约定或结论固化成可召回的记忆；对话里让引擎「记住」的内容也会带来源会话出现在下方记忆库（本地自动捕获只沉淀到常驻记忆的每日日志）。</span></div></div>
                     <div className="memory-editor">
-                      <select value={memorySaveCategory} onChange={(event) => setMemorySaveCategory(event.target.value)}>
-                        {MEMORY_CATEGORIES.map((entry) => <option key={entry.name} value={entry.name}>{entry.name}</option>)}
-                      </select>
+                      <AppSelect value={memorySaveCategory} onChange={(v) => setMemorySaveCategory(v)} options={[...(MEMORY_CATEGORIES).map((entry) => ({ value: (entry.name), label: (`${entry.name}`), }))]} />
                       <textarea value={memoryDraft} onChange={(event) => setMemoryDraft(event.target.value)} placeholder={`保存一条可复用的事实或约定（${memoryMode === "cloud" ? "云端" : "本地"}）`} />
                       <button className={`primary-setting ${memorySavedAt ? "memory-save-success" : ""}`} disabled={!memoryDraft.trim() || !memoryManagementWorkspace} title={memoryManagementWorkspace ? "保存到当前管理项目" : "先选择一个项目"} onClick={() => void saveMemoryRecord(memoryManagementWorkspace)}>{memorySavedAt ? <CircleCheck size={14} /> : <Check size={14} />}{memorySavedAt ? "已保存" : "保存记忆"}</button>
                     </div>

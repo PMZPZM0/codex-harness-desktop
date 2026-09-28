@@ -8,6 +8,7 @@
  * （默认目录下 data-dir.json），保存后经 app.relaunch 重启，迁移由主进程在
  * 引擎 spawn 之前完成（electron/data-dir.ts）。
  */
+import { AppSelect } from "../../components/AppSelect";
 import { useEffect, useState } from "react";
 import { Code2, Copy, FolderOpen, FolderTree, Globe2, Keyboard, Monitor, MonitorUp, PanelRightOpen, RefreshCw, Search, ShieldCheck, Zap } from "lucide-react";
 import { copyTextToClipboard } from "../../lib/clipboard";
@@ -222,11 +223,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                         <div className="settings-toggle-row">
                           <span className="settings-toggle-icon"><MonitorUp size={16} /></span>
                           <span className="settings-toggle-text"><strong>硬件加速</strong><small>控制应用渲染走 GPU 还是 CPU 软件渲染。<br />· 自动：由 Chromium 判断（健康显卡自动硬件加速，弱核显/旧显卡默认软件渲染）<br />· 强制开启：忽略显卡黑名单走 GPU——低配机/集成显卡上界面卡顿时建议选这个<br />· 关闭：完全用 CPU 渲染（个别显卡与 GPU 通道冲突导致花屏/闪烁时用）<br />修改后需重启应用生效。</small></span>
-                          <select className="accel-select" value={hardwareAccel} onChange={(event) => changeHardwareAccel(event.target.value as "auto" | "force" | "off")}>
-                            <option value="auto">自动</option>
-                            <option value="force">强制开启</option>
-                            <option value="off">关闭</option>
-                          </select>
+                          <AppSelect value={hardwareAccel} onChange={(v) => changeHardwareAccel(v as "auto" | "force" | "off")} options={[{ value: "auto", label: "自动" }, { value: "force", label: "强制开启" }, { value: "off", label: "关闭" }]} className="accel-select" />
                         </div>
                         {restartPending && <p className="settings-card-hint accel-restart-hint">⚡ 硬件加速设置已保存，重启应用后生效。</p>}
                       </div>

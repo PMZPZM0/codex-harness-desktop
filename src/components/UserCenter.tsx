@@ -1,3 +1,4 @@
+import { AppSelect } from "./AppSelect";
 import { useEffect, useRef, useState } from "react";
 import { Camera, UserRound, Briefcase, GraduationCap, Clock3, Heart, Languages, Lightbulb, Save, Wand2, LogOut, RotateCcw } from "lucide-react";
 import { DefaultCodexAvatar } from "./DefaultCodexAvatar";
@@ -191,9 +192,7 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
           <label className="se-field"><span><Clock3 size={12} />生活习惯</span><input value={profile.habit} onChange={(e) => setField("habit", e.target.value)} placeholder="如：早九晚六 / 夜猫子" /></label>
           <label className="se-field"><span><Languages size={12} />常用语言</span><input value={profile.language} onChange={(e) => setField("language", e.target.value)} placeholder="中文" /></label>
           <label className="se-field"><span><Wand2 size={12} />回复风格</span>
-            <select value={profile.style} onChange={(e) => setField("style", e.target.value)}>
-              {STYLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            <AppSelect value={profile.style} onChange={(v) => setField("style", v)} options={[...(STYLE_OPTIONS).map((o) => ({ value: (o.value), label: (`${o.label}`), }))]} />
           </label>
           <label className="se-field"><span><Lightbulb size={12} />自我介绍</span><textarea rows={2} value={profile.bio} onChange={(e) => setField("bio", e.target.value)} placeholder="一句话介绍自己，Codex 会记住" /></label>
         </div>

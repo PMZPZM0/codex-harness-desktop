@@ -4,6 +4,7 @@
  */
 import { AlertTriangle, ArrowUpRight, Bot, Check, ChevronDown, Clock3, Copy, Eye, EyeOff, FolderTree, Plus, Play, RefreshCw, Settings2, Sparkles, Trash2, X, Zap, CircleCheck, ChevronRight, Wallet, LogIn } from "lucide-react";
 import { Spinner } from "../../../components/CardShell";
+import { AppSelect } from "../../../components/AppSelect";
 import { copyTextToClipboard } from "../../../lib/clipboard";
 import { shortGroupName } from "../RelayCenterPage/01-balance-badge";
 
@@ -113,11 +114,11 @@ export function RelayCenterPageManageModal({ account, accounts, active, busy, cr
                   {showKeyForm && (
                     <div className="relay-key-form">
                       <input value={newKey.name} onChange={(event) => setNewKey({ ...newKey, name: event.target.value })} placeholder="密钥名称（如 Harness-主力）" />
-                      <select value={newKey.groupId} onChange={(event) => setNewKey({ ...newKey, groupId: event.target.value })}>
-                        <option value="">无分组（部分站点不支持）</option>
-                        {(overview?.groups ?? []).map((g: any) => <option key={g.group_id ?? g.id} value={String(g.group_id ?? g.id)}>{g.group_name ?? g.name ?? `分组 ${g.group_id ?? g.id}`}</option>)}
-                        {(overview?.subscriptions ?? []).filter((s: any) => !(overview?.groups ?? []).some((g: any) => Number(g.group_id ?? g.id) === Number(s.group_id))).map((s: any) => <option key={s.group_id} value={String(s.group_id)}>{s.group_name}（订阅分组）</option>)}
-                      </select>
+                      <AppSelect value={newKey.groupId} onChange={(v) => setNewKey({ ...newKey, groupId: v })} ariaLabel="密钥分组" options={[
+                        { value: "", label: "无分组（部分站点不支持）" },
+                        ...(overview?.groups ?? []).map((g: any) => ({ value: String(g.group_id ?? g.id), label: g.group_name ?? g.name ?? `分组 ${g.group_id ?? g.id}` })),
+                        ...(overview?.subscriptions ?? []).filter((s: any) => !(overview?.groups ?? []).some((g: any) => Number(g.group_id ?? g.id) === Number(s.group_id))).map((s: any) => ({ value: String(s.group_id), label: `${s.group_name}（订阅分组）` })),
+                      ]} />
                       <button className="primary-setting" disabled={creatingKey || !newKey.name.trim()} onClick={() => void createKey()}>{creatingKey ? <Spinner /> : <Plus size={13} />}创建</button>
                     </div>
                   )}
@@ -126,11 +127,11 @@ export function RelayCenterPageManageModal({ account, accounts, active, busy, cr
                   {showKeyForm && (
                     <div className="relay-key-form">
                       <input value={newKey.name} onChange={(event) => setNewKey({ ...newKey, name: event.target.value })} placeholder="密钥名称（如 Harness-主力）" />
-                      <select value={newKey.groupId} onChange={(event) => setNewKey({ ...newKey, groupId: event.target.value })}>
-                        <option value="">无分组（部分站点不支持）</option>
-                        {(overview?.groups ?? []).map((g: any) => <option key={g.group_id ?? g.id} value={String(g.group_id ?? g.id)}>{g.group_name ?? g.name ?? `分组 ${g.group_id ?? g.id}`}</option>)}
-                        {(overview?.subscriptions ?? []).filter((s: any) => !(overview?.groups ?? []).some((g: any) => Number(g.group_id ?? g.id) === Number(s.group_id))).map((s: any) => <option key={s.group_id} value={String(s.group_id)}>{s.group_name}（订阅分组）</option>)}
-                      </select>
+                      <AppSelect value={newKey.groupId} onChange={(v) => setNewKey({ ...newKey, groupId: v })} ariaLabel="密钥分组" options={[
+                        { value: "", label: "无分组（部分站点不支持）" },
+                        ...(overview?.groups ?? []).map((g: any) => ({ value: String(g.group_id ?? g.id), label: g.group_name ?? g.name ?? `分组 ${g.group_id ?? g.id}` })),
+                        ...(overview?.subscriptions ?? []).filter((s: any) => !(overview?.groups ?? []).some((g: any) => Number(g.group_id ?? g.id) === Number(s.group_id))).map((s: any) => ({ value: String(s.group_id), label: `${s.group_name}（订阅分组）` })),
+                      ]} />
                       <button className="primary-setting" disabled={creatingKey || !newKey.name.trim()} onClick={() => void createKey()}>{creatingKey ? <Spinner /> : <Plus size={13} />}创建</button>
                     </div>
                   )}

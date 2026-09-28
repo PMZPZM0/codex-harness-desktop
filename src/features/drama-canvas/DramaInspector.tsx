@@ -4,6 +4,7 @@
  * 卡面只放最常用的三五个按钮 —— 完整字段全在这儿。这样卡片能保持固定尺寸
  * （尺寸一变，画布排版与命中测试全得跟着变），也避免卡面上堆二十个输入框。
  */
+import { AppSelect } from "../../components/AppSelect";
 import { Clapperboard, Link2, RefreshCw, X } from "lucide-react";
 import { dramaNodeDef, dramaNodeLabel, dramaRelationLabel, dramaRelationOptions } from "../../lib/drama-canvas-model.mjs";
 import { STORYBOARD_ASPECTS, STORYBOARD_SHOT_SIZES } from "../../lib/drama-storyboard.mjs";
@@ -141,9 +142,7 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
                 onBlur={() => void actions.story.writeBack(id)}
               />
             ) : f.type === "select" ? (
-              <select className="nodrag" value={String(payload[f.key] ?? "")} onChange={(e) => { actions.board.updatePayload(id, { [f.key]: e.target.value }); void actions.story.writeBack(id); }}>
-                {(f.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
+              <AppSelect value={String(payload[f.key] ?? "")} onChange={(v) => { actions.board.updatePayload(id, { [f.key]: v }); void actions.story.writeBack(id); }} options={[...((f.options || [])).map((o) => ({ value: (o), label: (`${o}`), }))]} className="nodrag" />
             ) : (
               <input
                 className="nodrag"
@@ -184,11 +183,7 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
             <div className="drama-canvas-link-row" key={e.id}>
               <span className="drama-canvas-link-dir">→</span>
               <span title={label(e.target)}>{label(e.target)}</span>
-              <select className="nodrag" value={String(e.data?.relation || "input")} onChange={(ev) => actions.board.setRelation(e.id, ev.target.value)}>
-                {dramaRelationOptions(String(e.data?.relation || "input"), kind, String(actions.board.nodes.find((n) => n.id === e.target)?.data?.kind || "")).map(([key, text]) => (
-                  <option key={key} value={key}>{text}</option>
-                ))}
-              </select>
+              <AppSelect className="nodrag" value={String(e.data?.relation || "input")} onChange={(v) => actions.board.setRelation(e.id, v)} ariaLabel="连线关系" options={dramaRelationOptions(String(e.data?.relation || "input"), kind, String(actions.board.nodes.find((n) => n.id === e.target)?.data?.kind || "")).map(([key, text]) => ({ value: key, label: text }))} />
             </div>
           ))}
           {inEdges.map((e) => (

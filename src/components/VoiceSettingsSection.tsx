@@ -3,6 +3,7 @@
  * ⛔ 解构名与 hook 返回键同名 ⇒ JSX 与搬迁前逐字一致。
  */
 import { Trash2, Upload, Headphones, Keyboard, Mic, Play, Radio, ShieldAlert, Sparkles, Square, Zap } from "lucide-react";
+import { AppSelect } from "./AppSelect";
 import { PageInfo } from "./SettingsHead";
 import { hotkeyLabel } from "../lib/hotkey.mjs";
 import { useVoiceSettingsSectionState } from "./VoiceSettingsSection/use-voice-settings-section-state";
@@ -248,16 +249,14 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       <div className="voice-card">
         <div className="voice-card-head"><Zap size={15} /><span>模型下载镜像源</span></div>
         <div className="voice-card-body">
-          <select
+          <AppSelect
             className="voice-input"
             value={settings.modelHost}
-            onChange={(e) => apply({ modelHost: e.target.value as Settings["modelHost"] })}
+            onChange={(v) => apply({ modelHost: v as Settings["modelHost"] })}
             disabled={saving}
-          >
-            {Object.entries(meta.modelHosts).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
-            ))}
-          </select>
+            ariaLabel="模型下载镜像源"
+            options={Object.entries(meta.modelHosts).map(([k, v]) => ({ value: k, label: v }))}
+          />
           <div className="voice-card-hint">自动模式会先并发 HEAD 测速，按延迟排序选最快源；强制模式只走指定源。</div>
         </div>
       </div>

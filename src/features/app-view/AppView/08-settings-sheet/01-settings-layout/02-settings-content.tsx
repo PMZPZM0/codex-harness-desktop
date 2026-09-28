@@ -2,6 +2,7 @@
  * SettingsLayoutSettingsContent —— SettingsSheetSettingsLayout 的 JSX 第 2 段（09-22 从 01-settings-layout.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
+import { AppSelect } from "../../../../../components/AppSelect";
 import { createPortal } from "react-dom";
 import { lazy, Suspense } from "react";
 import { settingsPagesOf } from "./00-settings-registry";
@@ -586,10 +587,7 @@ export function SettingsLayoutSettingsContent({ app }: { app: HarnessAppApi }) {
                                     </div>
                                     <div className="settings-grid two">
                                       <label><span>跳板机认证</span>
-                                        <select value={sshDraft.jumpHost?.authType ?? "password"} onChange={(event) => setSshDraft({ ...sshDraft, jumpHost: { ...(sshDraft.jumpHost ?? emptySshJump()), authType: event.target.value as "password" | "key" } })}>
-                                          <option value="password">密码认证</option>
-                                          <option value="key">私钥认证</option>
-                                        </select>
+                                        <AppSelect value={sshDraft.jumpHost?.authType ?? "password"} onChange={(v) => setSshDraft({ ...sshDraft, jumpHost: { ...(sshDraft.jumpHost ?? emptySshJump()), authType: v as "password" | "key" } })} options={[{ value: "password", label: "密码认证" }, { value: "key", label: "私钥认证" }]} />
                                       </label>
                                       {(sshDraft.jumpHost?.authType ?? "password") === "password"
                                         ? <label><span>跳板机密码</span><input type="password" value={sshDraft.jumpHost?.password ?? ""} onChange={(event) => setSshDraft({ ...sshDraft, jumpHost: { ...(sshDraft.jumpHost ?? emptySshJump()), password: event.target.value } })} placeholder="跳板机登录密码" /></label>

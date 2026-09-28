@@ -4,6 +4,7 @@
  * 纯搬迁：返回的 JSX 与原块逐字一致（仅去掉外层缩进）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
+import { AppSelect } from "../../components/AppSelect";
 import { PageInfo } from "../../components/SettingsHead";
 import { ArrowDown, BookOpen, CircleCheck, Copy, Download, ExternalLink, Globe2, TerminalSquare, Wrench } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
@@ -22,14 +23,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
                         runtime:install 每次现读 app-settings —— 切完源下一次下载立即生效，无需重启。 */}
                     <div className="devtools-source-row" role="group" aria-label="下载源选择">
                       <span className="settings-subhead"><Download size={13} />下载源</span>
-                      <select className="accel-select" value={downloadSource} onChange={(event) => changeDownloadSource(event.target.value as typeof downloadSource)} aria-label="选择下载源">
-                        <option value="auto">自动（国内优先：镜像/加速在前，直连兜底）</option>
-                        <option value="mirror">国内镜像优先（npmmirror / gh 加速）</option>
-                        <option value="ghproxy">GitHub 加速 · gh-proxy</option>
-                        <option value="ghfast">GitHub 加速 · ghfast</option>
-                        <option value="direct">官方直连</option>
-                        <option value="proxy">本机代理优先</option>
-                      </select>
+                      <AppSelect value={downloadSource} onChange={(v) => changeDownloadSource(v as typeof downloadSource)} options={[{ value: "auto", label: "自动（国内优先：镜像/加速在前，直连兜底）" }, { value: "mirror", label: "国内镜像优先（npmmirror / gh 加速）" }, { value: "ghproxy", label: "GitHub 加速 · gh-proxy" }, { value: "ghfast", label: "GitHub 加速 · ghfast" }, { value: "direct", label: "官方直连" }, { value: "proxy", label: "本机代理优先" }]} className="accel-select" ariaLabel="选择下载源" />
                       <span className="settings-card-hint">下载慢就换个源，下一次下载立即生效；带「回落」的选项失败后会自动改走官方源。浏览器内核只认「自动 / 国内镜像 / 官方直连」，其余按自动处理。</span>
                     </div>
                     {/* 「当前能力链路」（09-21）：回答"现在实际走哪条" —— 原先这些规则散在技能文案与代码

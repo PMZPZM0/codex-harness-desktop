@@ -872,3 +872,71 @@ button.brand-mark.sidebar-toggle:hover {
   background: var(--accent);
 }
 /* 展开体里的主会话行：明确「主」的身份（左色条 + 深色标题） */
+/* ─────────────────────────────── AppSelect 统一下拉框（09-28）
+   替代原生 <select>：系统 option 弹层无法样式化（蓝块高亮/无圆角/长文本不截断）。
+   全仓 34 处原生 select 统一换本组件；弹层 portal 到 body（免疫祖先 transform）。
+   ⛔ 只用 DESIGN.md 变量，不写死色值。 */
+.app-select-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 9px;
+  min-height: 32px;
+  cursor: pointer;
+}
+.app-select-trigger:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.app-select-trigger:focus-visible { outline: none; border-color: var(--accent); }
+.app-select-trigger:disabled { opacity: .55; cursor: default; }
+.app-select-value {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.app-select-caret { flex: none; color: var(--muted); transition: transform .12s ease; }
+.app-select-caret.is-open { transform: rotate(180deg); }
+
+.app-select-overlay { position: fixed; inset: 0; z-index: 210; background: transparent; }
+.app-select-list {
+  position: fixed;
+  z-index: 211;
+  overflow: auto;
+  min-width: 120px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 4px;
+}
+.app-select-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.app-select-option.is-active { background: var(--accent-soft); }
+.app-select-option.is-selected { color: var(--accent); }
+.app-select-option.is-disabled { opacity: .45; cursor: default; }
+.app-select-option-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.app-select-option.is-selected .app-select-option-label { color: var(--accent); }
+.app-select-check { flex: none; color: var(--accent); }

@@ -4,6 +4,7 @@
  * 纯搬迁：返回的 JSX 与原块逐字一致（仅去掉外层缩进）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
+import { AppSelect } from "../../components/AppSelect";
 import { Check, ExternalLink, Eye, EyeOff, ListChecks, PenLine, Plus, RefreshCw, Rocket, Store, Trash2, X, Zap } from "lucide-react";
 import { PageInfo } from "../../components/SettingsHead";
 import { AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
@@ -23,9 +24,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                     <div className="model-global-bar">
                       <div className="model-global-item">
                         <span className="model-global-label"><Zap size={13} />自动压缩比例</span>
-                        <select value={autoCompactRatio} onChange={(event) => { const v = Number(event.target.value); setAutoCompactRatio(v); void window.codex.saveAppSettings({ autoCompactRatio: v }); setNotice('自动压缩比例已设为 ' + Math.round(v * 100) + '% ，达到该用量时自动压缩上下文'); }}>
-                          {[0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95].map((r) => <option key={r} value={r}>{Math.round(r * 100)}%</option>)}
-                        </select>
+                        <AppSelect value={String(autoCompactRatio)} onChange={(val) => { const v = Number(val); setAutoCompactRatio(v); void window.codex.saveAppSettings({ autoCompactRatio: v }); setNotice('自动压缩比例已设为 ' + Math.round(v * 100) + '% ，达到该用量时自动压缩上下文'); }} ariaLabel="自动压缩比例" options={[0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95].map((r) => ({ value: String(r), label: `${Math.round(r * 100)}%` }))} />
                         <small>上下文用量达到此比例时引擎自动压缩较早对话</small>
                       </div>
                     </div>
@@ -219,15 +218,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                           对应 electron/responses-bridge.ts 的 BridgeMode。 */}
                       <label className="provider-field">
                         <span>上游协议<FieldHelp text={"引擎固定按 Responses（/responses）请求；这里告诉本机协议桥「你的上游实际提供哪种接口」，由它决定转发方式。\n\n· 自动（推荐）：先按 Responses 试，网关明确表示「没这个接口」时自动改用 Chat 格式\n· Chat 兼容：直接按 Chat Completions 转换（绝大多数网关、中转站）\n· Responses（原生透传）：确认上游支持 Responses 时选它，省一次探测\n· Anthropic（Claude 原生）：走 /v1/messages，适用于 Anthropic 官方或只提供 Claude 原生协议的通道\n\n选了「自动」但对话报「不支持 / 找不到接口」却一直不切换时，手动改成对应协议即可。"} /></span>
-                        <select
-                          value={customDraft.upstreamProtocol ?? "auto"}
-                          onChange={(event) => setCustomDraft({ ...customDraft, upstreamProtocol: event.target.value as UpstreamProtocol })}
-                        >
-                          <option value="auto">自动（推荐）</option>
-                          <option value="chat">Chat 兼容（/v1/chat/completions）</option>
-                          <option value="responses">Responses（原生透传）</option>
-                          <option value="anthropic">Anthropic（Claude 原生 /v1/messages）</option>
-                        </select>
+                        <AppSelect value={customDraft.upstreamProtocol ?? "auto"} onChange={(v) => setCustomDraft({ ...customDraft, upstreamProtocol: v as UpstreamProtocol })} options={[{ value: "auto", label: "自动（推荐）" }, { value: "chat", label: "Chat 兼容（/v1/chat/completions）" }, { value: "responses", label: "Responses（原生透传）" }, { value: "anthropic", label: "Anthropic（Claude 原生 /v1/messages）" }]} />
                       </label>
                       {/* 「自动」的详细说明原本常驻在这里 —— 09-19 按用户要求收进上面的 ? 号。 */}
                       <div className="model-list-block">

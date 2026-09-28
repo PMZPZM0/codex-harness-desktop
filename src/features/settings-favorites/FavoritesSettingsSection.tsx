@@ -15,6 +15,7 @@
  *   · 清空全部是**二次确认**（第一次点变成「确认清空 N 条？」，第二次才执行）——
  *     收藏是用户手攒的、删了没法从会话复原。
  */
+import { AppSelect } from "../../components/AppSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Archive, Bookmark, Check, ClipboardCopy, FileText, Image, Link2, Pencil, Plus, Search, Send, Star, Trash2, TriangleAlert, X } from "lucide-react";
 
@@ -157,9 +158,7 @@ export function FavoritesSettingsSection(props: FavoritesSettingsSectionProps) {
       <div className="fav-batch">
         <label className="fav-check"><input type="checkbox" checked={list.length > 0 && activeSelection.length === list.length} onChange={toggleAll} /><span>全选（{list.length}）</span></label>
         <span className="fav-selected">已选 <b>{activeSelection.length}</b> 条</span>
-        <select value={scope} onChange={(event) => setScope(event.target.value as MemoryLayerScope)} title="加入记忆时写到哪一层">
-          {(Object.keys(SCOPE_LABEL) as MemoryLayerScope[]).map((value) => <option key={value} value={value}>{SCOPE_LABEL[value]}</option>)}
-        </select>
+        <AppSelect value={scope} onChange={(v) => setScope(v as MemoryLayerScope)} options={[...((Object.keys(SCOPE_LABEL) as MemoryLayerScope[])).map((value) => ({ value: (value), label: (`${SCOPE_LABEL[value]}`), }))]} ariaLabel="加入记忆时写到哪一层" title="加入记忆时写到哪一层" />
         <button type="button" disabled={!activeSelection.length || busy} onClick={() => void batchMemory()}><Archive size={13} />加入 Agent 记忆</button>
         <button type="button" className="danger" disabled={!activeSelection.length || busy} onClick={() => void batchRemove()}><Trash2 size={13} />删除选中</button>
         <span className="fav-spacer" />

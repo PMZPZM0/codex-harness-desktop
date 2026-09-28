@@ -75,6 +75,7 @@ const MODULES = [
   "15-ipc-loader",
   "16-settings-plugins",
   "17-scheduled-tasks",
+  "18-app-select",
 ];
 
 for (const name of MODULES) {

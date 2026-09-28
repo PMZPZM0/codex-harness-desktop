@@ -6,6 +6,7 @@
  *
  * 代码与拆分前逐字一致；依赖边经 AST 依赖图核对，**不跨模块** ⇒ 本文件不 import 同目录其他模块。
  */
+import { AppSelect } from "../../../components/AppSelect";
 import { useEffect, useState } from "react";
 import { Check, ChevronDown, Globe2, MessageSquarePlus, Monitor, Play, ShieldCheck, Wrench } from "lucide-react";
 import { ToolStatusEntry } from "../../../features/session-cards";
@@ -127,10 +128,7 @@ function RequestCard({ request, onDone }: { request: PendingRequest; onDone: () 
               <span>{question.header || question.question}</span>
               {question.header && <small>{question.question}</small>}
               {question.options ? (
-                <select value={answers[question.id] ?? ""} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })}>
-                  <option value="">请选择</option>
-                  {question.options.map((option: any) => <option key={option.label} value={option.label}>{option.label} - {option.description}</option>)}
-                </select>
+                <AppSelect value={answers[question.id] ?? ""} onChange={(v) => setAnswers({ ...answers, [question.id]: v })} ariaLabel={question.header || question.question} options={[{ value: "", label: "请选择" }, ...question.options.map((option: any) => ({ value: option.label, label: `${option.label} - ${option.description}` }))]} />
               ) : (
                 <input type={question.isSecret ? "password" : "text"} value={answers[question.id] ?? ""} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })} />
               )}
@@ -139,7 +137,7 @@ function RequestCard({ request, onDone }: { request: PendingRequest; onDone: () 
           {isElicitation && <>
             {params.message && <p>{params.message}</p>}
             {params.mode === "url" && <button onClick={() => void window.codex.openExternal(params.url)}>在浏览器中打开</button>}
-            {params.mode !== "url" && Object.entries(elicitationProperties).map(([key, schema]: [string, any]) => <label className="question" key={key}><span>{schema.title ?? key}</span>{schema.description && <small>{schema.description}</small>}{schema.enum ? <select value={answers[key] ?? ""} onChange={(event) => setAnswers({ ...answers, [key]: event.target.value })}><option value="">请选择</option>{schema.enum.map((value: string) => <option value={value} key={value}>{value}</option>)}</select> : <input type={schema.type === "number" || schema.type === "integer" ? "number" : "text"} value={answers[key] ?? ""} onChange={(event) => setAnswers({ ...answers, [key]: event.target.value })} />}</label>)}
+            {params.mode !== "url" && Object.entries(elicitationProperties).map(([key, schema]: [string, any]) => <label className="question" key={key}><span>{schema.title ?? key}</span>{schema.description && <small>{schema.description}</small>}{schema.enum ? <AppSelect value={answers[key] ?? ""} onChange={(v) => setAnswers({ ...answers, [key]: v })} ariaLabel={schema.title ?? key} options={[{ value: "", label: "请选择" }, ...schema.enum.map((value: string) => ({ value, label: value }))]} /> : <input type={schema.type === "number" || schema.type === "integer" ? "number" : "text"} value={answers[key] ?? ""} onChange={(event) => setAnswers({ ...answers, [key]: event.target.value })} />}</label>)}
           </>}
           {!isUserInput && !isElicitation && <>
             {params.reason && <p>{params.reason}</p>}

@@ -3,6 +3,7 @@
  * ⛔ props 类型由 TypeChecker 从**原作用域**推断（不是 any）⇒ 静态检查强度不降。
  */
 import { Trash2, Upload, Headphones, Keyboard, Mic, Play, Radio, ShieldAlert, Sparkles, Square, Zap } from "lucide-react";
+import { AppSelect } from "../AppSelect";
 import { Settings } from "../VoiceSettingsSection";
 
 type Props = {
@@ -20,18 +21,18 @@ export function VoiceSettingsSectionMicDevices({ apply, micLevel, micTesting, mi
     <div className="voice-card">
             <div className="voice-card-head"><Mic size={15} /><span>麦克风</span></div>
             <div className="voice-card-body">
-              <select
+              <AppSelect
                 className="voice-input"
                 value={settings.mic.deviceId}
-                onChange={(e) => apply({ mic: { ...settings.mic, deviceId: e.target.value } })}
+                onChange={(v) => apply({ mic: { ...settings.mic, deviceId: v } })}
                 disabled={saving}
-              >
-                <option value="">系统默认设备</option>
-                {mics.map((m) => (
-                  <option key={m.deviceId} value={m.deviceId}>{m.label}</option>
-                ))}
-                {!mics.length && <option value="" disabled>（未检测到麦克风设备）</option>}
-              </select>
+                ariaLabel="麦克风"
+                options={[
+                  { value: "", label: "系统默认设备" },
+                  ...mics.map((m) => ({ value: m.deviceId, label: m.label })),
+                  ...(!mics.length ? [{ value: "", label: "（未检测到麦克风设备）", disabled: true }] : []),
+                ]}
+              />
               <div className="voice-row">
                 <button className="secondary-setting" onClick={() => void toggleMicTest()}>
                   {micTesting ? <Square size={13} /> : <Mic size={13} />}{micTesting ? "停止测试" : "测试麦克风"}
