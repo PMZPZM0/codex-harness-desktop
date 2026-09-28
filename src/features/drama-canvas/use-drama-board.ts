@@ -121,6 +121,10 @@ export interface DramaBoardApi {
   switchBoard: (name: string) => void;
   createBoard: (title: string) => string;
   deleteBoard: () => void;
+  /** 改项目显示标题（项目管理面板用；name 标识不动） */
+  renameBoard: (name: string, title: string) => void;
+  /** 按名删除项目（当前板走 deleteBoard 的切换逻辑） */
+  deleteBoardByName: (name: string) => void;
   saveNow: () => void;
   savedAt: number;
   nextShotId: (sceneId?: string) => string;
@@ -500,6 +504,16 @@ export function useDramaBoard(onNotice: (text: string, tone?: "ok" | "err") => v
     setBoard(name);
   }, [board, saveNow]);
 
+  /** 改项目显示标题（09-28 项目管理）：name（文件名/标识）不动，只改 meta.title。
+   *  改的是当前板时本地 meta 立即同步（顶栏下拉即时显示新标题）。 */
+  const renameBoard = useCallback((name: string, title: string) => {
+    const clean = String(title || "").trim();
+    if (!clean) return;
+    const meta = store.listBoards().find((b) => b.name === name);
+    if (!meta) return;
+    setBoards(store.upsertBoard({ ...meta, title: clean }));
+  }, []);
+
   const deleteBoard = useCallback(() => {
     const removed = board;
     setBoards(store.removeBoard(removed));
@@ -508,6 +522,12 @@ export function useDramaBoard(onNotice: (text: string, tone?: "ok" | "err") => v
     setBoard(next);
     if (next === removed) load(next);
   }, [board, load]);
+
+  /** 按名删除项目（09-28 项目管理）：非当前板直接删（索引+快照）；当前板走 deleteBoard 的切换逻辑。 */
+  const deleteBoardByName = useCallback((name: string) => {
+    if (name === board) { deleteBoard(); return; }
+    setBoards(store.removeBoard(name));
+  }, [board, deleteBoard]);
 
   const nextShotId = useCallback((sceneId?: string) => {
     const shots = nodesRef.current.filter((n) => n.data?.kind === "shot").map((n) => n.data.payload);
@@ -551,6 +571,8 @@ export function useDramaBoard(onNotice: (text: string, tone?: "ok" | "err") => v
     switchBoard,
     createBoard,
     deleteBoard,
+    renameBoard,
+    deleteBoardByName,
     saveNow,
     savedAt,
     nextShotId,

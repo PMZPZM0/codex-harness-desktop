@@ -1083,3 +1083,53 @@
 }
 .drama-canvas-blank-guide li strong { color: var(--text); font-weight: 600; }
 .drama-canvas-blank-guide > small { font-size: 11.5px; color: var(--faint, var(--muted)); }
+
+/* ─────────────────────────────── 项目管理面板（09-28）
+   画布的「项目」= 一张板。此前只有下拉切换 + 只能删当前板，没有总览。 */
+.drama-projects-list {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  overflow: auto;
+  max-height: min(56vh, 480px);
+}
+.drama-projects-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+  padding: 9px 11px;
+  cursor: pointer;
+}
+.drama-projects-item:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.drama-projects-item.is-current { border-color: color-mix(in srgb, var(--accent) 46%, var(--line)); }
+.drama-projects-item.is-renaming,
+.drama-projects-item.is-confirm { cursor: default; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.drama-projects-item.is-renaming input {
+  flex: 1;
+  min-width: 160px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 9px;
+  min-height: 32px;
+}
+.drama-projects-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.drama-projects-main > b { font-size: 12.5px; color: var(--text); display: flex; align-items: center; gap: 6px; }
+.drama-projects-now {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--line));
+  border-radius: 999px;
+  padding: 0 7px;
+}
+.drama-projects-main > small { font-size: 11px; color: var(--muted); }
+.drama-projects-actions { display: flex; gap: 4px; flex: none; }
+.drama-projects-empty { padding: 22px; text-align: center; font-size: 12px; color: var(--muted); }
+.drama-projects-hint { font-size: 11px; color: var(--muted); margin-right: auto; }
