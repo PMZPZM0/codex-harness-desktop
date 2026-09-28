@@ -11,7 +11,7 @@
  *
  * 共享面由 ./_ctx.mjs 注入。
  */
-import { C, ROOT, join, ok, fail, readFileSync } from "./_ctx.mjs";
+import { C, ROOT, join, ok, fail, readFileSync, existsSync } from "./_ctx.mjs";
 
 export async function run() {
   console.log(C.bold("\n【195】设置·插件页的内置卡分区"));
@@ -122,6 +122,19 @@ export async function run() {
     const missing = pairs.filter(([, , model]) => !skillTs.includes(model));
     (missing.length === 0 ? ok : fail)(
       `【195】技能矩阵与厂商源码一致${missing.length ? "：缺 " + missing.map((m) => m[1]).join(", ") : "（8 家 defaultModel 全在正文中）"}`
+    );
+    /* ⑧.5 命令行执行路径：模型能真跑的唯一方式（IPC 只有界面能调）—— 缺任一环 = 技能是空中楼阁 */
+    const cli = join(ROOT, "resources", "tools", "harness-video.mjs");
+    (existsSync(cli) ? ok : fail)("【195】视频命令行助手存在（resources/tools/harness-video.mjs）");
+    const pkgJson = readFileSync(join(ROOT, "package.json"), "utf8");
+    (pkgJson.includes('"src/lib/video-providers.mjs"') ? ok : fail)(
+      "【195】打包 files 含 src/lib/video-providers.mjs（⛔ 缺了 = 安装版主进程顶层 require 失败 ⇒ 主进程起不来）"
+    );
+    (pkgJson.includes('"to": "tools/video-providers.mjs"') && pkgJson.includes('"to": "tools/harness-video.mjs"') ? ok : fail)(
+      "【195】extraResources 带 CLI 与适配层副本（asar 外 —— 模型的 node 读不了 asar）"
+    );
+    (skillTs.includes("harness-video.mjs") ? ok : fail)(
+      "【195】技能正文写明命令行路径（有真路径不写 = 模型只能引导用户手点）"
     );
   }
 }

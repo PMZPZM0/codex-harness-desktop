@@ -38,6 +38,20 @@ description: 视频生成的能力边界与操作手册。当用户要「生成�
    - 提交后每 5 秒轮询，产物自动落 \`<工作区>/.drama-canvas/assets/video/\`，
      画布右侧「生成结果」面板可预览。
 
+## 命令行路径（模型可真跑 —— 会话内直接生成视频的唯一执行路径）
+
+宿主自带命令行助手（09-28）：打包后位于 \`<安装目录>/resources/tools/harness-video.mjs\`，
+开发环境在 \`<仓库>/resources/tools/harness-video.mjs\`。它读取用户的真实厂商配置，
+适配层与应用同源。模型用 shell 就能真调：
+
+- 列厂商（含 configured 状态）：\`node harness-video.mjs providers\`
+- **一条龙**（提交 → 每 5s 轮询 / 上限 10 分钟 → 下载落盘，输出 JSON { path, bytes }）：
+  \`node harness-video.mjs all --provider kling --prompt "..." [--image 首帧.png] [--workspace 工作区] [--name out.mp4]\`
+- 分步：submit（→{jobId}）/ poll --provider x --job-id y / download --url u --workspace w
+
+⛔ 未配凭证时它会明确报错 —— 此时引导用户去配置，**不要**换着厂商重试硬闯。
+✅ 生成成功后把返回的 path 告诉用户（那就是视频文件）。
+
 ## 厂商矩阵（8 家，国内外都要支持）
 
 | 厂商 | 地区 | 凭证 | 本地首帧文件 | 默认模型 |
