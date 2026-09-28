@@ -39,9 +39,10 @@
 
 .drama-canvas-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px 12px;
   /* ⛔ 右侧留出原生窗口控制钮（— □ ✕ ≈140px）的地带：画布是整屏浮层，
      头部按钮贴到右上角会和窗控叠在一起（用户截图点名）。 */
   padding: 10px 158px 10px 14px;
@@ -49,7 +50,12 @@
   background: var(--panel);
   flex: none;
 }
-.drama-canvas-head-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.drama-canvas-head-left { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+/* ⛔ 09-28 顶栏溢出修复：按钮组 flex:none 不收缩，此前空间不够时**只有 head-left 被压**
+   ⇒ 标题竖排成一字宽、下拉框 1 字宽（用户截图）。左侧子元素一律禁止收缩，
+   放不下时整块换行而不是压扁。 */
+.drama-canvas-head-left > * { flex-shrink: 0; }
+.drama-canvas-head-left > div:first-of-type { min-width: 160px; }
 .drama-canvas-head-icon {
   display: inline-flex;
   align-items: center;
@@ -61,7 +67,7 @@
   color: var(--accent);
   flex: none;
 }
-.drama-canvas-head-left > div:first-of-type { display: flex; flex-direction: column; min-width: 0; }
+.drama-canvas-head-left > div:first-of-type { display: flex; flex-direction: column; min-width: 160px; }
 .drama-canvas-head-left b { font-size: 13px; }
 .drama-canvas-head-left small { font-size: 11px; color: var(--muted); }
 .drama-canvas-head-actions { display: flex; align-items: center; gap: 6px; flex: none; }
