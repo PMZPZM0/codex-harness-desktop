@@ -65,4 +65,38 @@ export async function run() {
   (/pointer-events: none/.test(readFileSync(join(ROOT, "src", "styles", "21-drama-canvas.css"), "utf8").split(".drama-canvas-blank-guide {")[1]?.slice(0, 700) ?? "") ? ok : fail)(
     "【192】引导层 pointer-events:none（不挡住画布的拖拽/框选）"
   );
+
+  /* ⑤ 渲染层**不得** import 主进程逻辑模块（09-28 实测踩到，不只是预览问题）
+        `src/lib/video-providers.mjs` 顶部 `import { createHmac } from "node:crypto"` ——
+        渲染层没有 node 内置模块：vite dev 下解构导入直接抛 externalized 错误，
+        生产构建只是侥幸不炸。视频配置卡需要的字段全部由 window.codex.videoProviders() 提供。 */
+  {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const walk = (dir, out = []) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p, out);
+        else if (/\.tsx?$/.test(e.name)) out.push(p);
+      }
+      return out;
+    };
+    const offenders = walk(join(ROOT, "src"))
+      .filter((f) => /video-providers\.mjs/.test(fs.readFileSync(f, "utf8")) && !/^\s*[*\/]/.test(fs.readFileSync(f, "utf8").split(/\r?\n/).find((l) => l.includes("video-providers.mjs")) ?? ""))
+      .map((f) => f.replace(ROOT, "").replace(/\\/g, "/"))
+      .filter((f) => fs.readFileSync(join(ROOT, f.slice(1)), "utf8").split(/\r?\n/).some((l) => /^\s*import[\s\S]*video-providers\.mjs/.test(l)));
+    (offenders.length === 0 ? ok : fail)(
+      `【192】渲染层不 import 含 node:crypto 的 video-providers.mjs（厂商数据走 IPC）${offenders.length ? "：" + offenders.join(" / ") : ""}`
+    );
+    // 两份可选字段清单必须一致（渲染层副本 vs 适配层真相源）
+    const adapter = /export const VIDEO_OPTIONAL_FIELDS = \[([^\]]*)\]/.exec(
+      readFileSync(join(ROOT, "src", "lib", "video-providers.mjs"), "utf8"),
+    )?.[1] ?? "";
+    const adapterFields = [...adapter.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    const localCopy = readFileSync(join(ROOT, "src", "features", "settings-plugins", "video-optional-fields.ts"), "utf8");
+    const localFields = [...(/export const OPTIONAL_FIELDS = \[([^\]]*)\]/.exec(localCopy)?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    (adapterFields.length > 0 && JSON.stringify(adapterFields) === JSON.stringify(localFields) ? ok : fail)(
+      `【192】可选字段两份同源（适配层 [${adapterFields.join(",")}] vs 渲染层 [${localFields.join(",")}]）—— 不一致则用户填了保存不住`
+    );
+  }
 }
