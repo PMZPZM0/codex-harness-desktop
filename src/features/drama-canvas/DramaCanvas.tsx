@@ -40,11 +40,13 @@ import {
   X,
   ZoomIn,
   ZoomOut,
+  Images,
 } from "lucide-react";
 import { DRAMA_GROUPS, DRAMA_NODE_DEFS, dramaNodeDef, dramaStarterWorkflow, imageStarterWorkflow } from "../../lib/drama-canvas-model.mjs";
 import { dramaAgentPrompt, dramaBoardRelativePath } from "../../lib/drama-agent-prompts.mjs";
 import { DramaActionsProvider, type DramaActions } from "./drama-actions";
 import { DramaInspector } from "./DramaInspector";
+import { DramaResultsPanel } from "./DramaResultsPanel";
 import { DramaNodeCard } from "./DramaNodeCard";
 import { DramaTimeline } from "./DramaTimeline";
 import { useDramaBoard, type DramaRFEdge, type DramaRFNode } from "./use-drama-board";
@@ -72,11 +74,14 @@ export interface DramaCanvasProps {
   threads?: Array<{ id: string; preview: string; name?: string | null; cwd: string; updatedAt: number }>;
   /** 打开时的画布名（侧栏入口带过来的） */
   initialBoard?: string;
+  /** 打开「设置 → 插件」页（画布上点「去配置生图/视频」时用）。
+   *  ⛔ 不传则画布只显示「未配置」文案、不显示跳转按钮（保持画布可独立渲染）。 */
+  onOpenPluginSettings?: () => void;
 }
 
 interface Notice { id: number; text: string; tone: "ok" | "err" | ""; undo?: () => void }
 
-export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, threads, initialBoard }: DramaCanvasProps) {
+export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, threads, initialBoard, onOpenPluginSettings }: DramaCanvasProps) {
   const shellRef = useRef<HTMLElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const rfRef = useRef<ReactFlowInstance<DramaRFNode, DramaRFEdge> | null>(null);
@@ -95,6 +100,10 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
   const story = useDramaStory(workspace, board, pushNotice);
 
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  /* 生成结果面板（09-28 用户要求）：原来生成完的图/视频只写在卡片里，散在工作区目录，
+     没有一处能总览 —— 用户原话「相册也没有」。面板不扫盘，直接聚合当前画布各卡片的
+     payload（image / video / audio / first_frame），点条目把视口飞到那张卡。 */
+  const [resultsOpen, setResultsOpen] = useState(false);
   const [marquee, setMarquee] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string | null } | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -248,7 +257,12 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
       .filter((n) => n && String(n.data?.kind) === "shot")
       .map((n) => (n as DramaRFNode).data.payload || {}),
     boardNodeId: board.nodes.find((n) => String(n.data?.kind) === "storyboard")?.id || null,
-  }), [board, story, onAskAgent, pushNotice]);
+    /* 09-28：未配置生成通道时卡片按钮直接跳「设置 → 插件」（原来点了才 notice 报错）。
+       ⛔ 跳转前先关画布？不关 —— 用户在设置里配完回来还能接着画（浮层在设置面板之下，
+       关掉设置就回到画布）。 */
+    openGenSettings: () => { onOpenPluginSettings?.(); },
+    openResults: () => setResultsOpen(true),
+  }), [board, story, onAskAgent, onOpenPluginSettings, pushNotice]);
 
   /* 键盘：与参考实现同一套（Space 平移交给 React Flow 自己的 panActivationKeyCode） */
   const onKeyDown = useCallback((evt: React.KeyboardEvent) => {
@@ -370,6 +384,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             <button className="drama-canvas-head-btn" onClick={() => setNaming({ kind: "story", value: "未命名短剧" })}><Plus size={13} />新建分镜表</button>
             <button className="drama-canvas-head-btn is-brand" onClick={() => createStarter("drama")}>新建短剧工作流</button>
               <button className="drama-canvas-head-btn is-brand" onClick={() => createStarter("image")}>新建生图工作流</button>
+            <button className="drama-canvas-head-btn" title="集中查看这张画布生成的图 / 视频 / 配音" onClick={() => { setResultsOpen(true); setInspectorOpen(false); }}><Images size={13} />生成结果</button>
             <button className="drama-canvas-head-btn" onClick={() => { board.saveNow(); void story.saveNow(); pushNotice("已保存到本机" + (workspace ? "（分镜表同时写到工作区）" : ""), "ok"); }}><Save size={13} />保存</button>
             <button className="drama-canvas-head-btn" onClick={onClose} title="退出画布"><X size={13} />退出</button>
           </div>
@@ -463,8 +478,30 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="var(--line)" />
               </ReactFlow>
             <div className="drama-canvas-vp-hint" aria-hidden>滚轮缩放 · 空白拖动平移 · Shift 框选 · 空格拖拽平移</div>
+            {/* 空画布引导（09-28 用户反馈「新建了然后呢，有什么用，完全看不懂」）：
+                原来空画布就是一片白，没人说明这块板干什么、两个起手按钮区别在哪。
+                ⛔ 只在真的空时显示（有节点就不该挡视野），纯提示不拦点击（pointer-events:none）。 */}
+            {board.nodes.length === 0 ? (
+              <div className="drama-canvas-blank-guide" aria-hidden>
+                <Clapperboard size={26} />
+                <b>这块画布还是空的</b>
+                <ul>
+                  <li><strong>新建短剧工作流</strong> —— 剧本 → 角色/场景 → 分镜表 → 出片，整条链路一次摆好</li>
+                  <li><strong>新建生图工作流</strong> —— 需求 → 主提示词 → 出图 A/B → 选图，专门出图</li>
+                  <li><strong>画布</strong> = 一个方案一张板（左上角可切换/新建）；<strong>分镜表</strong> = 镜头的唯一真源，交给 Agent 生成时读的就是它</li>
+                </ul>
+                <small>从上面两个按钮挑一个开始；也可以在左侧「+ 添加节点」自己摆卡。</small>
+              </div>
+            ) : null}
           </div>
           {inspectorOpen ? <DramaInspector onClose={() => setInspectorOpen(false)} /> : null}
+          {/* 生成结果（相册）：与检查器同一栏，互斥显示（同时开会把画布挤没） */}
+          {resultsOpen ? (
+            <DramaResultsPanel
+              onClose={() => setResultsOpen(false)}
+              onLocate={(nodeId: string) => { board.select([nodeId], nodeId); centerOn(nodeId); }}
+            />
+          ) : null}
         </div>
 
         <DramaTimeline onFocusNode={(id) => { board.select([id], id); setInspectorOpen(true); centerOn(id); }} />

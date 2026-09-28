@@ -20,6 +20,11 @@ export interface DramaActions {
   linkedShots: (nodeId: string) => Array<Record<string, any>>;
   /** 这张画布上的分镜表节点 id（没有就 null）；展开时要用它当连线起点 */
   boardNodeId: string | null;
+  /** 跳到「设置 → 插件」去配生图/视频模型（09-28）。
+   *  未配置时卡片按钮直接用这个 —— 原来点了才 notice 报错，用户不知道要先去配。 */
+  openGenSettings: (kind: "image" | "video") => void;
+  /** 打开「生成结果」面板（相册：这张画布上所有已生成的图/视频） */
+  openResults: () => void;
 }
 
 const DramaActionsContext = createContext<DramaActions | null>(null);

@@ -28,6 +28,7 @@ import {
   Video,
   X,
   type LucideIcon,
+  Settings2,
 } from "lucide-react";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
 import { dramaIsKnownKind, dramaNodeDef, dramaNodeLabel } from "../../lib/drama-canvas-model.mjs";
@@ -84,26 +85,74 @@ function AudioPreview({ path }: { path: string }) {
   return <audio className="drama-canvas-card-audio nodrag nowheel" controls preload="metadata" src={url} />;
 }
 
+/** 节点类型 → 可用生成通道（09-28 用户反馈「生图跟视频没区分开」）。
+ *  ⛔ 旧实现把「生成视频」按钮**无条件**渲染在所有卡片上（笔记卡、剧本卡上也有），
+ *  用户看不出这两条路各自干什么、也分不清点哪个。现在按节点职责给：
+ *  · 素材类（角色/场景/参考图）→ 生图通道（定妆照 / 场景图 / 首帧）
+ *  · 拍摄类（镜头/视频）      → 生图（首帧）+ 视频（图生视频 / 文生视频）两个通道
+ *  · 声音类（镜头/声音）      → 配音（本地 TTS）
+ *  · 策划类（笔记/剧本/Agent/分镜表/场次/时间线）→ **不给生成按钮**（它们的产物是文本，
+ *    该用「交给 Agent」而不是生成媒体） */
+const GEN_CHANNELS: Record<string, Array<"image" | "video" | "audio">> = {
+  character: ["image"],
+  location: ["image"],
+  image: ["image", "video"],
+  shot: ["image", "video", "audio"],
+  video: ["video"],
+  audio: ["audio"],
+};
+
 function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; payload: Record<string, any>; busyKey: (what: string) => boolean }) {
   const actions = useDramaActions();
+  const allowed = GEN_CHANNELS[kind];
+  if (!allowed) return null;
+  const channels = actions.story.channels;
   const hasImage = Boolean(payload.first_frame || payload.ref || payload.path);
-  const imageLabel = kind === "character" ? "生成定妆照" : kind === "location" ? "生成场景图" : hasImage ? "重跑首帧" : "生成首帧";
+  const hasVideo = Boolean(payload.video);
+  const hasAudio = Boolean(payload.audio || (kind === "audio" && payload.path));
+  // 未配置就走「去配置」，不在卡片上画一个点了才报错的假按钮
+  const needConfig = (what: "image" | "video") => (what === "image" ? !channels.image.ready : !channels.video.ready);
+  const labelOf = (what: "image" | "video" | "audio") => {
+    if (what === "audio") return hasAudio ? "重做配音" : "生成配音";
+    if (what === "video") return hasVideo ? "重做视频" : payload.first_frame ? "图生视频" : "文生视频";
+    return kind === "character" ? "生成定妆照" : kind === "location" ? "生成场景图" : hasImage ? "重跑首帧" : "生成首帧";
+  };
+  const configLabelOf = (what: "image" | "video") => (what === "image" ? "去配生图模型" : "去配视频接口");
   return (
     <div className="drama-canvas-card-actions nodrag">
-      <button className="drama-canvas-btn" disabled={busyKey("image")} onClick={(e) => { e.stopPropagation(); void actions.story.generate(id, "image"); }}>
-        {busyKey("image") ? <Loader2 size={12} className="drama-canvas-spin" /> : <Sparkles size={12} />}
-        {busyKey("image") ? "生成中…" : imageLabel}
-      </button>
-      {kind === "shot" || kind === "audio" ? (
-        <button className="drama-canvas-btn is-ghost" disabled={busyKey("audio") || !String(payload.line || payload.text || "").trim()} onClick={(e) => { e.stopPropagation(); void actions.story.generate(id, "audio"); }} title={String(payload.line || payload.text || "").trim() ? "用本机语音模型合成这一句" : "这一镜没有台词，先写上 line"}>
-          {busyKey("audio") ? <Loader2 size={12} className="drama-canvas-spin" /> : <Mic size={12} />}
-          {busyKey("audio") ? "合成中…" : payload.audio || payload.path ? "重做配音" : "生成配音"}
-        </button>
-      ) : null}
-      <button className="drama-canvas-btn" onClick={(e) => { e.stopPropagation(); void actions.story.generate(id, "video"); }} title={payload.first_frame ? "图生视频（用已生成的首帧）" : "文生视频（没有首帧时走 t2v）"}>
-        {busyKey("video") ? <Loader2 size={12} className="drama-canvas-spin" /> : <Video size={12} />}
-        {busyKey("video") ? "生成中…" : payload.video ? "重做视频" : "生成视频"}
-      </button>
+      {allowed.map((what) => {
+        if (what === "audio") {
+          const hasLine = Boolean(String(payload.line || payload.text || "").trim());
+          return (
+            <button key="audio" className="drama-canvas-btn is-ghost" disabled={busyKey("audio") || !hasLine} onClick={(e) => { e.stopPropagation(); void actions.story.generate(id, "audio"); }} title={hasLine ? "用本机语音模型合成这一句（离线）" : "这一镜没有台词，先在检查器里写上 line"}>
+              {busyKey("audio") ? <Loader2 size={12} className="drama-canvas-spin" /> : <Mic size={12} />}
+              {busyKey("audio") ? "合成中…" : labelOf("audio")}
+            </button>
+          );
+        }
+        const missing = needConfig(what);
+        const channelName = what === "image" ? channels.image.model : channels.video.provider;
+        return (
+          <button
+            key={what}
+            className={`drama-canvas-btn ${missing ? "is-ghost" : ""}`}
+            disabled={busyKey(what)}
+            title={missing
+              ? `还没配置${what === "image" ? "生图模型" : "视频接口"} —— 点这里去「设置 → 插件」配置`
+              : what === "image"
+                ? `生图通道：${channelName}（按提示词画，不保证角色跨镜一致）`
+                : `视频通道：${channelName}（有首帧走图生视频，否则文生视频）`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (missing) { actions.openGenSettings(what); return; }
+              void actions.story.generate(id, what);
+            }}
+          >
+            {busyKey(what) ? <Loader2 size={12} className="drama-canvas-spin" /> : missing ? <Settings2 size={12} /> : what === "image" ? <Sparkles size={12} /> : <Video size={12} />}
+            {busyKey(what) ? "生成中…" : missing ? configLabelOf(what) : labelOf(what)}
+          </button>
+        );
+      })}
     </div>
   );
 }
