@@ -29,6 +29,9 @@ permissions:
 jobs:
   build-weknora-win:
     runs-on: windows-latest
+    # ⛔ 防无限挂死（09-28 实测：首次构建卡在 Go 编译 65 分钟无进展，无法从外部判断
+    #    是"在啃 CGO"还是"挂住了"）。给 job 与关键步骤都设上限，超时即失败并留下日志。
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -90,11 +93,27 @@ jobs:
           npm run build
           ls -la dist | head -20
 
+      # 依赖下载单独一步（09-28）：原来与 go build 挤在同一步，卡住时无法从外部判断
+      # 卡在「拉依赖」还是「编译」——拆开后两步各有耗时，日志也能直接看出卡点。
+      - name: 下载 Go 依赖
+        working-directory: weknora-src
+        shell: bash
+        timeout-minutes: 30
+        env:
+          # GitHub runner 在境外，官方代理最快；保留 direct 兜底（个别模块不在代理上）
+          GOPROXY: https://proxy.golang.org,direct
+        run: |
+          set -euo pipefail
+          go mod download
+          echo "依赖下载完成"
+
       - name: 构建后端（CGO + sqlite_fts5）
         working-directory: weknora-src
         shell: bash
+        timeout-minutes: 60
         env:
           CGO_ENABLED: "1"
+          GOPROXY: https://proxy.golang.org,direct
         run: |
           set -euo pipefail
           # ldflags 与应用内联调过的配方一致：conflictPolicy=warn 抑制 protobuf 注册冲突的硬失败
