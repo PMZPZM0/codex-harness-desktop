@@ -19,6 +19,7 @@ import {
   Film,
   Image as ImageIcon,
   Images,
+  ListChecks,
   Lock,
   MapPin,
   Music,
@@ -122,13 +123,13 @@ function AudioPreview({ path }: { path: string }) {
 
 /* 各卡片的提示词字段 + 给人看的名字（「AI 润色」按钮写回的就是这个字段）。
    ⛔ 新增带提示词的卡片类型时**必须在这里登记**，否则那颗按钮不会出现（守卫【219】钉住）。 */
-const POLISH_FIELD: Record<string, string> = {
+export const POLISH_FIELD: Record<string, string> = {
   note: "text", script: "text", agent: "task",
   character: "look", location: "description",
   image: "text", imagegen: "prompt",
   shot: "prompt", video: "prompt", audio: "text",
 };
-const POLISH_LABEL: Record<string, string> = {
+export const POLISH_LABEL: Record<string, string> = {
   text: "文案", task: "任务描述", look: "外貌描写", description: "描述", prompt: "提示词",
 };
 
@@ -317,9 +318,20 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
     }
     if (kind === "scene") {
       const shots = actions.linkedShots(id);
+      const shotRefs = actions.linkedShotRefs(id);
+      /* 一致性检查（调研里的 continuity pass）：同一场的首帧并排看 ——
+         发型 / 服装 / 光线方向 / 色温 不一致，切镜就会"像换了个世界"。 */
+      const frames = shotRefs.filter((s) => s.payload.first_frame);
       return (
         <>
-          <div className="drama-canvas-count">{shots.length} 镜</div>
+          <div className="drama-canvas-count">{shots.length} 镜 · 首帧 {frames.length}/{shots.length}</div>
+          {frames.length ? (
+            <div className="drama-canvas-strip nowheel" title="本场已出的首帧并排看：检查发型 / 服装 / 光线方向 / 色温是否一致（切镜才不像换了个世界）">
+              {frames.slice(0, 6).map((s, i) => (
+                <img key={s.id} className="drama-canvas-strip-img" src={imageDisplaySrc(String(s.payload.first_frame))} alt={String(s.payload.id || `镜 ${i + 1}`)} loading="lazy" />
+              ))}
+            </div>
+          ) : null}
           <div className="drama-canvas-shotlist nowheel">
             {shots.length
               ? shots.slice(0, 6).map((s, i) => (
@@ -331,6 +343,19 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
               ))
               : <p className="drama-canvas-hint">这一场还没有镜头卡。展开分镜表，或直接拖一张镜头卡连过来。</p>}
           </div>
+          {/* 按场分批（调研：同类光照/场景的提示词连着跑更稳，也更快看出漂移）。
+              这里只做「选中本场镜头」，出图交给顶栏「批量生成 → 仅选中」——
+              ⛔ 不在这里偷偷替用户发请求（批量是花钱的，要用户自己按）。 */}
+          <div className="drama-canvas-card-actions nodrag">
+            <button
+              className="drama-canvas-btn is-ghost"
+              disabled={!shotRefs.length}
+              title="选中这一场的所有镜头卡；再用顶栏「批量生成 → 仅选中」按场出首帧（按场分批比逐镜跳场景更稳）"
+              onClick={(e) => { e.stopPropagation(); actions.board.select(shotRefs.map((s) => s.id), shotRefs[0].id); actions.openResults?.(); }}
+            >
+              <ListChecks size={12} />选中本场 {shotRefs.length} 镜
+            </button>
+          </div>
         </>
       );
     }
@@ -339,6 +364,24 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
         <>
           {payload.first_frame ? <MediaPreview path={String(payload.first_frame)} alt="首帧" kind="image" title={String(payload.title || "首帧")} nodeId={id} fields={["first_frame"]} channel="image" /> : <div className="drama-canvas-empty"><Sparkles size={16} /><span>还没有首帧</span></div>}
           <div className="drama-canvas-card-text is-prompt">{String(payload.prompt || "（生成时自动沿用连入的剧本与场景描述，可直接生成）")}</div>
+          {/* 上游摘要（09-29）：这张镜头吃谁 —— 本场 / 角色 / 场景，不用回头数线 */}
+          {(() => {
+            const ups = actions.board.edges
+              .filter((e) => e.target === id)
+              .map((e) => actions.board.nodes.find((n) => n.id === e.source))
+              .filter((n) => n && ["scene", "character", "location"].includes(String(n.data?.kind)));
+            if (!ups.length) return null;
+            const tag: Record<string, string> = { scene: "本场", character: "角色", location: "场景" };
+            return (
+              <div className="drama-canvas-chips">
+                {ups.slice(0, 4).map((n) => (
+                  <span className="drama-canvas-chip" key={n!.id} title={`${tag[String(n!.data?.kind)] || "输入"}：${String(n!.data?.payload?.name || n!.data?.payload?.place || n!.id)}`}>
+                    {tag[String(n!.data?.kind)] || "输入"} {String(n!.data?.payload?.name || n!.data?.payload?.place || "").slice(0, 6)}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
           <div className="drama-canvas-card-line">{String(payload.line || "无人声")}</div>
           {payload.audio ? <AudioPreview path={String(payload.audio)} /> : null}
           <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />
@@ -435,17 +478,29 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
         <>
           <p className="drama-canvas-card-text">{film ? `成片：${film.split(/[\\/]/).pop()}` : String(payload.description || "按分镜顺序逐镜合轨、拼接，全在本机跑。")}</p>
           <div className="drama-canvas-card-actions nodrag">
-            <button className="drama-canvas-btn is-brand" onClick={(e) => { e.stopPropagation(); actions.askAgent(id); }}><Bot size={12} />让 Agent 合成成片</button>
+            {/* ⛔ 09-29 纠错：这里原写「本项目不内置合成器」——**已经过期**，本机 ffmpeg 拼接
+                通道（video:concat）当天就接好了。卡面必须给真实能力，否则用户被文案骗去开会话。 */}
+            <button className="drama-canvas-btn is-brand" disabled={actions.story.exporting} title="把这一场/整片按分镜顺序拼接成一条成片（本机 ffmpeg；缺镜会自动跳过并告诉你）" onClick={(e) => { e.stopPropagation(); void actions.story.exportMovie(); }}>
+              {actions.story.exporting ? <Loader2 size={12} className="is-spin" /> : <Film size={12} />}拼接成片（本机）
+            </button>
+            <button className="drama-canvas-btn is-ghost" title="要加字幕 / 调色 / 精剪时再走会话 —— 本机拼接只做合轨与拼接" onClick={(e) => { e.stopPropagation(); actions.askAgent(id); }}><Bot size={12} />让 Agent 精修</button>
           </div>
-          <p className="drama-canvas-hint">合成要用 ffmpeg，由 Agent 在本机会话里跑（本项目不内置合成器）。</p>
+          <p className="drama-canvas-hint">本机拼接 = 按分镜顺序合轨 + 拼接（缺镜跳过）；字幕 / 调色 / 变速这些要进剪辑器或让 Agent 做。</p>
         </>
       );
     }
     // character / location
     const embedded = String(payload.ref || "");
+    /* 关联性（09-29 用户：「各个卡片之间应具有较高的关联性」）：角色 / 场景是**一致性锚点**，
+       用了多少镜必须一眼看见 —— 没有它，「定妆照改了要不要重出首帧」根本无从判断。 */
+    const usedBy = actions.board.edges
+      .filter((e) => e.target === id)
+      .map((e) => actions.board.nodes.find((n) => n.id === e.source))
+      .filter((n) => n && String(n.data?.kind) === "shot").length;
     return (
       <>
         {embedded ? <MediaPreview path={embedded} alt={String(payload.name || def.label)} kind="image" title={String(payload.name || def.label)} nodeId={id} fields={["ref"]} channel="image" /> : null}
+        {usedBy ? <div className="drama-canvas-card-line" title="有几张镜头卡连到了这张锚点卡 —— 改了它，这些镜头的首帧要重出才一致">{usedBy} 镜在用</div> : null}
         <div className="drama-canvas-card-text">{String(payload.description || (embedded ? "" : kind === "character" ? "（人物设定：生成定妆照时自动沿用连入的剧本内容，可在此改写）" : "（场景设定：生成场景图时自动沿用连入的剧本内容，可在此改写）"))}</div>
         <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />
       </>

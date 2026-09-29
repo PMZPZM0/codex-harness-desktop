@@ -81,3 +81,7 @@ export function imageKindOptions(): Array<{ value: string; label: string }>;
 export function detailPanelsOf(payload: Record<string, any> | null | undefined): string[];
 /** 电商出图工作流（白底母版 → 派生主图/SKU/场景/买家秀/详情图）：节点带 payload.flow = "ecom" */
 export function ecomImageStarterWorkflow(baseX?: number, baseY?: number): DramaSnapshot;
+/** 节点适用的工作流（"image" 生图族 / "drama" 视频族）。 */
+export function dramaNodeFlows(kind: string): string[];
+export function dramaNodeFitsFlow(kind: string, flowType: string): boolean;
+export function dramaGroupsFor(flowType: string): string[];

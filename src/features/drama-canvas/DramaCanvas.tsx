@@ -52,7 +52,7 @@ import { Box, Clapperboard,
   Images,
   ListChecks,
   FolderOpen, } from "lucide-react";
-import { DRAMA_GROUPS, DRAMA_NODE_DEFS, dramaNodeDef, dramaStarterWorkflow, ecomImageStarterWorkflow, imageStarterWorkflow, legacyStarterSignature, model3dStarterWorkflow, upgradeLegacyStarterSnapshot, whiteboxStarterWorkflow } from "../../lib/drama-canvas-model.mjs";
+import { DRAMA_GROUPS, DRAMA_NODE_DEFS, dramaGroupsFor, dramaNodeDef, dramaNodeFitsFlow, dramaStarterWorkflow, ecomImageStarterWorkflow, imageStarterWorkflow, legacyStarterSignature, model3dStarterWorkflow, upgradeLegacyStarterSnapshot, whiteboxStarterWorkflow } from "../../lib/drama-canvas-model.mjs";
 import { dramaAgentPrompt, dramaBoardRelativePath } from "../../lib/drama-agent-prompts.mjs";
 import { DramaActionsProvider, useDramaActions, type DramaActions, type ViewerTarget } from "./drama-actions";
 import { DramaInspector } from "./DramaInspector";
@@ -377,6 +377,11 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
       .map((e) => board.nodes.find((n) => n.id === e.target))
       .filter((n) => n && String(n.data?.kind) === "shot")
       .map((n) => (n as DramaRFNode).data.payload || {}),
+    linkedShotRefs: (nodeId: string) => board.edges
+      .filter((e) => e.source === nodeId)
+      .map((e) => board.nodes.find((n) => n.id === e.target))
+      .filter((n) => n && String(n.data?.kind) === "shot")
+      .map((n) => ({ id: (n as DramaRFNode).id, payload: (n as DramaRFNode).data.payload || {} })),
     boardNodeId: board.nodes.find((n) => String(n.data?.kind) === "storyboard")?.id || null,
     /* 09-28：未配置生成通道时卡片按钮直接跳「设置 → 插件」（原来点了才 notice 报错）。
        ⛔ 跳转前先关画布？不关 —— 用户在设置里配完回来还能接着画（浮层在设置面板之下，
@@ -709,10 +714,17 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             <button className="drama-canvas-tool" aria-expanded={addMenuOpen} title="添加节点" onClick={() => setAddMenuOpen((v) => !v)}><Plus size={14} /><span>添加节点</span></button>
             {addMenuOpen ? (
               <div className="drama-canvas-addmenu-body nowheel">
-                {DRAMA_GROUPS.map((group) => (
+                {/* ⛔ 按**当前工作流**分流（09-29 用户：「节点未按生图工作流和视频工作流独立区分」）：
+                    生图流只列生图用得上的（生图节点 / 参考图 / 笔记…），视频流才列剧本 / 角色 /
+                    场景 / 分镜表 / 镜头 / 场次 / 剪辑。通用卡（笔记 / Agent / 参考图）两边都有。 */}
+                <p className="drama-canvas-addmenu-note">
+                  当前：<b>{flow.type === "image" ? flowLabel : "短剧工作流"}</b> —— 只列这条工作流用得上的节点；
+                  换另一类工作流（顶栏 tab / 「+ 新建」）会看到另一套。
+                </p>
+                {dramaGroupsFor(flow.type).map((group) => (
                   <div className="drama-canvas-addmenu-group" key={group}>
                     <span className="drama-canvas-addmenu-label">{group}</span>
-                    {Object.entries(DRAMA_NODE_DEFS).filter(([, def]) => def.group === group).map(([kind, def]) => (
+                    {Object.entries(DRAMA_NODE_DEFS).filter(([kind, def]) => def.group === group && dramaNodeFitsFlow(kind, flow.type)).map(([kind, def]) => (
                       <button key={kind} className="drama-canvas-addmenu-item" title={def.subtitle} onClick={() => { board.addNode(kind); setAddMenuOpen(false); }}>
                         <Plus size={11} /><span>{def.label}</span>
                       </button>
