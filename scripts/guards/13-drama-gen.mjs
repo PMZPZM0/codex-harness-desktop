@@ -1029,4 +1029,96 @@ export async function run() {
       "【220】视频工作流同理：视频也落产物目录，且**先过可信根**（选了目录就登记，否则写了也白写）"
     );
   }
+  /* ══ 视频工作流：卡片关联性 + 按键按用途区分（09-29 用户：「视频工作流中各个卡片之间应具有较高的
+     关联性，且每张卡片的功能按键应根据其用途有所区分」）══
+     调研落成的四条：场次卡管本场一致性（首帧并排 + 按场选中）、剪辑卡接真实本机拼接、
+     角色/场景卡显示「N 镜在用」、镜头卡显示上游摘要。 */
+  {
+    const cardSrc221 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8"));
+    const canvasSrc221 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8");
+    const actionsSrc221 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "drama-actions.ts"), "utf8");
+    const cssSrc221 = readFileSync(join(ROOT, "src", "styles", "21-drama-canvas.css"), "utf8");
+    /* 按**分支切片**取各自卡片的渲染段（比固定字符窗口稳：插几行不会假红） */
+    /* ⛔ 必须带花括号找：subtitleOf / roleOf 里也有同名的无花括号分支，先命中的是它们（本轮踩到）。 */
+    const sceneAt221 = cardSrc221.indexOf('if (kind === "scene") {');
+    const shotAt221 = cardSrc221.indexOf('if (kind === "shot") {', sceneAt221);
+    const sceneBranch221 = sceneAt221 >= 0 && shotAt221 > sceneAt221 ? cardSrc221.slice(sceneAt221, shotAt221) : "";
+    const tlAt221 = cardSrc221.indexOf('if (kind === "timeline") {');
+    /* ⛔ 别拿注释当锚：codeOnly 会把注释剥掉（本轮实测踩到）⇒ 用「下一个分支起点」切尾。 */
+    const tlEnd221 = cardSrc221.indexOf("if (kind ===", tlAt221 + 12);
+    /* ⛔ 末尾这个分支后面**没有**下一个 if（character/location 是兜底），indexOf 回 -1 —— 要回落到串尾。 */
+    const timelineBranch221 = tlAt221 >= 0 ? cardSrc221.slice(tlAt221, tlEnd221 > tlAt221 ? tlEnd221 : cardSrc221.length) : "";
+
+    /* ① 每类卡按键按用途区分：四类「策划/结构」卡各有一颗**只属于自己**的按钮 */
+    const own221 = ["让 Agent 生成分镜表", "展开场次与镜头", "选中本场", "拼接成片（本机）", "让 Agent 精修"];
+    (own221.every((text) => cardSrc221.includes(text)) ? ok : fail)(
+      "【221】按键按用途区分：剧本 / 分镜表 / 场次 / 剪辑各有专属按键（不再只有镜头卡有按钮）"
+    );
+    (sceneBranch221.includes("选中本场") && timelineBranch221.includes("拼接成片") ? ok : fail)(
+      "【221】专属按键挂在**各自**分支里（不是随便找张卡挂上就算）"
+    );
+
+    /* ② 剪辑卡必须用真能力：本机 ffmpeg 拼接已存在，卡面不许再说「不内置合成器」 */
+    (/actions\.story\.exportMovie\(\)/.test(cardSrc221) && /actions\.story\.exporting/.test(cardSrc221) ? ok : fail)(
+      "【221】剪辑卡接**真实**本机拼接能力（exportMovie + 忙态），而不是只会把人推去开会话"
+    );
+    (!/不内置合成器/.test(cardSrc221) ? ok : fail)(
+      "【221】负向：卡面不许再写「本项目不内置合成器」（09-29 已接 video:concat，这句是过期文案 —— 文案骗人比没文案更糟）"
+    );
+
+    /* ③ 关联性：场次卡并排本场首帧（continuity pass）、角色/场景显示被引用数、镜头显示上游 */
+    (/drama-canvas-strip/.test(cardSrc221) && /\.drama-canvas-strip-img/.test(cssSrc221) ? ok : fail)(
+      "【221】场次卡有「本场首帧并排」一致性检查条（发型/服装/光线一眼比对）"
+    );
+    (/镜在用/.test(cardSrc221) ? ok : fail)(
+      "【221】角色 / 场景卡显示「N 镜在用」（一致性锚点用了多少镜必须看得见）"
+    );
+    (/drama-canvas-chips/.test(cardSrc221) && /\.drama-canvas-chip\b/.test(cssSrc221) ? ok : fail)(
+      "【221】镜头卡显示上游摘要 chips（本场 / 角色 / 场景 —— 这张卡吃谁）"
+    );
+    (/linkedShotRefs/.test(actionsSrc221) && /linkedShotRefs: \(nodeId: string\)/.test(canvasSrc221) ? ok : fail)(
+      "【221】按场操作要有节点 id（linkedShots 只回 payload ⇒ 补 linkedShotRefs；否则「选中本场」根本选不到）"
+    );
+  }
+  /* ══ 节点与检查器按工作流分流（09-29 用户：「节点未按生图工作流和视频工作流独立区分」
+     +「点击卡片弹出的侧边栏未按功能（最新逻辑）更新」）══
+     ⛔ 两条都是"看起来改了其实没改"的高发区：面板照旧列全部节点、检查器照旧一套外样。 */
+  {
+    const { pathToFileURL } = await import("node:url");
+    const model222 = await import(pathToFileURL(join(ROOT, "src", "lib", "drama-canvas-model.mjs")).href);
+    const canvasSrc222 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8");
+    const inspSrc222 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaInspector.tsx"), "utf8");
+    const cssSrc222 = readFileSync(join(ROOT, "src", "styles", "21-drama-canvas.css"), "utf8");
+
+    /* ① 分流真跑：生图节点不进视频流，视频节点不进生图流，通用卡两边都在 */
+    (model222.dramaNodeFitsFlow("imagegen", "image") === true
+      && model222.dramaNodeFitsFlow("imagegen", "drama") === false
+      && model222.dramaNodeFitsFlow("shot", "drama") === true
+      && model222.dramaNodeFitsFlow("shot", "image") === false
+      && model222.dramaNodeFitsFlow("script", "image") === false
+      && model222.dramaNodeFitsFlow("timeline", "image") === false ? ok : fail)(
+      "【222】节点按工作流分流（真跑）：生图节点只在生图流，剧本/镜头/剪辑只在视频流"
+    );
+    (model222.dramaNodeFitsFlow("note", "image") === true && model222.dramaNodeFitsFlow("note", "drama") === true
+      && model222.dramaNodeFitsFlow("image", "image") === true && model222.dramaNodeFitsFlow("image", "drama") === true ? ok : fail)(
+      "【222】通用卡两边都给（笔记 / 参考图 —— 别为了「分流」把通用节点也砍掉）"
+    );
+    (/dramaGroupsFor\(flow\.type\)/.test(canvasSrc222) && /dramaNodeFitsFlow\(kind, flow\.type\)/.test(canvasSrc222) ? ok : fail)(
+      "【222】添加节点面板按**当前**工作流过滤（且空分组不列）"
+    );
+
+    /* ② 检查器按功能更新：工作流 chip + 动作按 kind + 与卡面同源的润色 */
+    (/drama-canvas-flow-chip/.test(inspSrc222) && /is-family-\$\{imageKindFamily\}/.test(inspSrc222) && /\.drama-canvas-flow-chip/.test(cssSrc222) ? ok : fail)(
+      "【222】检查器头部标明「属于哪条工作流 + 这一步是什么」（生图族上蓝，一眼可辨）"
+    );
+    (/WRITEBACK_KINDS\.includes\(kind\)/.test(inspSrc222) ? ok : fail)(
+      "【222】「写回分镜表」只在分镜相关卡出现（原来每张卡都挂 = 旧统一外样残留，点了空转）"
+    );
+    (/POLISH_FIELD, POLISH_LABEL/.test(inspSrc222) && /story\.polishPrompt\(id/.test(inspSrc222) ? ok : fail)(
+      "【222】检查器也有「AI 润色」，且与卡面**同源**（同一张 POLISH_FIELD 表，不各写一份）"
+    );
+    (/imageKindMeta\(payload\.imageType\)\.purpose/.test(inspSrc222) ? ok : fail)(
+      "【222】生图节点在检查器里先讲清「是什么图 / 多大 / 几个图块」再列字段"
+    );
+  }
 }

@@ -6,8 +6,8 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { AppSelect } from "../../components/AppSelect";
-import { Clapperboard, FolderOpen, FolderSearch, Link2, RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
-import { dramaNodeDef, dramaNodeLabel, dramaRelationLabel, dramaRelationOptions, imageKindOptions } from "../../lib/drama-canvas-model.mjs";
+import { Clapperboard, FolderOpen, FolderSearch, Link2, Loader2, RefreshCw, RotateCcw, Sparkles, Trash2, X } from "lucide-react";
+import { detailPanelsOf, dramaNodeDef, dramaNodeLabel, dramaRelationLabel, dramaRelationOptions, imageKindMeta, imageKindOptions } from "../../lib/drama-canvas-model.mjs";
 import { STORYBOARD_ASPECTS, STORYBOARD_SHOT_SIZES } from "../../lib/drama-storyboard.mjs";
 import { VIDEO_ASPECTS } from "../../lib/media-aspects.mjs";
 import { useDramaActions } from "./drama-actions";
@@ -15,6 +15,7 @@ import { useDramaActions } from "./drama-actions";
    「生成图片」按钮：文案与卡面不一致、未配置不给引导、还不查节点类型（笔记卡上也能点），
    三处都与卡面相反。同一个动作只能有一个实现。 */
 import { DramaChannelButton, GEN_CHANNELS, visibleChannels } from "./DramaChannelButton";
+import { POLISH_FIELD, POLISH_LABEL } from "./DramaNodeCard";
 
 interface FieldSpec {
   key: string;
@@ -133,6 +134,9 @@ const FIELDS: Record<string, FieldSpec[]> = {
   ],
 };
 
+/** 「写回分镜表」只对这些 kind 有意义（分镜表里有它们的位置）。 */
+const WRITEBACK_KINDS = ["script", "character", "location", "storyboard", "scene", "shot"];
+
 export function DramaInspector({ onClose }: { onClose: () => void }) {
   const actions = useDramaActions();
   const id = actions.board.anchor || actions.board.selectedIds[0] || "";
@@ -142,6 +146,9 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
   const payload = node.data.payload || {};
   const def = dramaNodeDef(kind);
   const fields = FIELDS[kind] || [];
+  /* 这张卡属于哪条工作流（09-29）：生图族 = 生图 / 电商出图 / 3D 建模；其余归视频族。 */
+  const imageKindFamily = ["imagegen", "image"].includes(kind) ? "image" : "drama";
+  const polishField = POLISH_FIELD[kind] || "";
   const outEdges = actions.board.edges.filter((e) => e.source === id);
   const inEdges = actions.board.edges.filter((e) => e.target === id);
   const label = (nodeId: string) => {
@@ -150,11 +157,17 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <aside className="drama-canvas-inspector" aria-label="节点属性">
+    <aside className={`drama-canvas-inspector is-kind-${kind} is-family-${imageKindFamily}`} aria-label="节点属性">
       <header className="drama-canvas-inspector-head">
         <div>
           <b>{dramaNodeLabel(kind, payload)}</b>
-          <small>{def.label} · {selectedSummary(actions.board.selectedIds.length)}</small>
+          {/* 头部标明「属于哪条工作流 + 这一步是干什么的」（09-29 用户：「侧边栏未按功能更新」）：
+              ⛔ 不同工作流的卡片在检查器里必须**一眼可辨**，而不是统一外样让人以为都一样。 */}
+          <small>
+            <span className={`drama-canvas-flow-chip is-${imageKindFamily}`}>{imageKindFamily === "image" ? "生图工作流" : "视频工作流"}</span>
+            <span className="drama-canvas-flow-chip">{def.label}</span>
+            <span>{selectedSummary(actions.board.selectedIds.length)}</span>
+          </small>
         </div>
         <button className="drama-canvas-icon-btn nodrag" title="关闭属性面板" onClick={onClose}><X size={14} /></button>
       </header>
@@ -164,6 +177,14 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
       ) : null}
 
       <div className="drama-canvas-inspector-body nowheel">
+        {/* 生图节点：先把「这是什么图 / 多大 / 几个图块」讲清楚，再给字段（新手最需要这句） */}
+        {kind === "imagegen" ? (
+          <p className="drama-canvas-hint">
+            {imageKindMeta(payload.imageType).label}（{imageKindMeta(payload.imageType).ratio}）·
+            {imageKindMeta(payload.imageType).purpose}
+            {imageKindMeta(payload.imageType).key === "detail" ? ` · 图块 ${detailPanelsOf(payload).length} 个` : ""}
+          </p>
+        ) : null}
         {!fields.length ? <p className="drama-canvas-hint">这个类型的节点没有可编辑字段。</p> : null}
         {fields.map((f) => (
           <label className="drama-canvas-field" key={f.key}>
@@ -210,7 +231,26 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
               busyKey={(ch) => actions.story.busy.has(`${id}:${ch}`)}
             />
           ))}
-          <button className="drama-canvas-btn is-ghost" onClick={() => void actions.story.writeBack(id)}><RefreshCw size={12} />写回分镜表</button>
+          {/* ⛔ 只有**分镜相关**的卡才有「写回分镜表」这条动作（原来每张卡都挂 = 旧统一外样的残留）：
+              笔记 / 生图节点跟分镜表没有对应字段，点了也是空转。 */}
+          {WRITEBACK_KINDS.includes(kind) ? (
+            <button className="drama-canvas-btn is-ghost" title="把这张卡的字段同步进分镜表（镜头卡改台词/景别会真的回写）" onClick={() => void actions.story.writeBack(id)}><RefreshCw size={12} />写回分镜表</button>
+          ) : null}
+          {/* 与卡面**同源**的「AI 润色」（09-29 用户要求每张提示词卡都有）——
+              检查器里也给一颗，不必关掉面板回卡面点。素材位没有提示词可润色，不挂。 */}
+          {polishField && String(payload.act || "") !== "upload" && payload.hint !== "ref" ? (
+            <button
+              className="drama-canvas-btn is-ghost"
+              title={`用已配置的模型润色「${POLISH_LABEL[polishField] || "提示词"}」，结果就地写回这张卡（不开会话）`}
+              disabled={actions.story.busy.has(`${id}:polish`)}
+              onClick={async () => {
+                const polished = await actions.story.polishPrompt(id, String(payload[polishField] || "").trim());
+                if (polished) actions.board.updatePayload(id, { [polishField]: polished });
+              }}
+            >
+              {actions.story.busy.has(`${id}:polish`) ? <Loader2 size={12} className="is-spin" /> : <Sparkles size={12} />}AI 润色
+            </button>
+          ) : null}
           {kind === "storyboard" ? (
             <button className="drama-canvas-btn is-brand" disabled={!payload.board || !actions.boardNodeId} onClick={() => void actions.story.expand(id, String(payload.board))}><Clapperboard size={12} />展开场次与镜头</button>
           ) : null}

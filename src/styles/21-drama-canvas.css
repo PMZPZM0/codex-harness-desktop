@@ -1649,3 +1649,70 @@ button.drama-canvas-card-media:hover { color: var(--accent); }
   0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent), 0 0 14px color-mix(in srgb, var(--accent) 18%, transparent); }
   50% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent), 0 0 24px color-mix(in srgb, var(--accent) 34%, transparent); }
 }
+
+/* ─────────────── 关联性可视化（09-29 用户：「卡片之间应具有较高的关联性」）
+   · .drama-canvas-strip：同一场的首帧并排（continuity pass，一眼比对发型/服装/光线/色温）
+   · .drama-canvas-chips：镜头卡上的上游摘要（本场 / 角色 / 场景 —— 这张卡吃谁） */
+.drama-canvas-strip {
+  display: flex;
+  gap: 4px;
+  margin: 2px 0 6px;
+  overflow-x: auto;
+}
+.drama-canvas-strip-img {
+  height: 34px;
+  width: auto;
+  border-radius: 4px;
+  border: 1px solid var(--line-soft);
+  object-fit: cover;
+  flex: none;
+}
+.drama-canvas-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0;
+}
+.drama-canvas-chip {
+  font-size: 10px;
+  line-height: 1.6;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  background: var(--panel-2);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ─────────────── 工作流分流与检查器族标签（09-29 用户：「节点未按生图/视频工作流独立区分」+
+   「点击卡片弹出的侧边栏未按功能更新」）
+   · .drama-canvas-addmenu-note：添加节点面板顶部写明「当前是哪条工作流、只列它的节点」；
+   · .drama-canvas-flow-chip / .is-family-*：检查器头部标明这张卡属于哪条工作流（生图族上蓝）。 */
+.drama-canvas-addmenu-note {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.drama-canvas-addmenu-note b { color: var(--text); font-weight: 600; }
+.drama-canvas-flow-chip {
+  display: inline-block;
+  margin-right: 5px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.7;
+  white-space: nowrap;
+}
+.drama-canvas-flow-chip.is-image {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line-soft));
+  background: var(--accent-soft);
+}
+.drama-canvas-inspector.is-family-image .drama-canvas-inspector-head b { color: var(--accent); }

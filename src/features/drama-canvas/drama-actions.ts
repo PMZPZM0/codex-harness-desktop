@@ -37,6 +37,8 @@ export interface DramaActions {
   askAgent: (id: string) => void;
   /** 这一场挂出去的镜头（按连线算，**不读负载里的抄本**——抄本不跟着改删走） */
   linkedShots: (nodeId: string) => Array<Record<string, any>>;
+  /** 本场镜头的「节点 id + payload」—— linkedShots 只回 payload，而选中/批量出图都要 id。 */
+  linkedShotRefs: (nodeId: string) => Array<{ id: string; payload: Record<string, any> }>;
   /** 这张画布上的分镜表节点 id（没有就 null）；展开时要用它当连线起点 */
   boardNodeId: string | null;
   /** 跳到「设置 → 插件」去配生图/视频模型（09-28）。

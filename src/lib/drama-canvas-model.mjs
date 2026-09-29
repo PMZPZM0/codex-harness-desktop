@@ -42,6 +42,31 @@ export function dramaNodeDef(kind) {
   return DRAMA_NODE_DEFS[kind] || { label: String(kind || "节点"), icon: "square", width: 320, height: 200, subtitle: "当前版本不认识这个类型", group: "策划" };
 }
 
+/* 节点 → 适用工作流（09-29 用户：「节点未按生图工作流和视频工作流独立区分」）。
+   "image" = 生图族（生图 / 电商出图 / 3D 建模）；"drama" = 视频族（短剧 / 白模视频）。
+   ⛔ 没登记的默认**两边都给**（note / agent / 参考图这类通用卡）—— 别让用户在生图流里
+      找不到笔记卡，那比多列一个节点更烦人。 */
+const NODE_FLOWS = {
+  script: ["drama"], character: ["drama"], location: ["drama"], storyboard: ["drama"],
+  scene: ["drama"], shot: ["drama"], video: ["drama"], audio: ["drama"], timeline: ["drama"],
+  imagegen: ["image"],
+};
+
+export function dramaNodeFlows(kind) {
+  return NODE_FLOWS[String(kind || "")] || ["image", "drama"];
+}
+
+/** 这个节点在当前工作流里该不该出现（添加节点面板按它过滤）。 */
+export function dramaNodeFitsFlow(kind, flowType) {
+  return dramaNodeFlows(kind).includes(String(flowType || "drama"));
+}
+
+/** 当前工作流下**还有节点**的分组（空分组不显示 —— 免得点开一排全空）。 */
+export function dramaGroupsFor(flowType) {
+  return DRAMA_GROUPS.filter((group) =>
+    Object.entries(DRAMA_NODE_DEFS).some(([kind, def]) => def.group === group && dramaNodeFitsFlow(kind, flowType)));
+}
+
 export function dramaIsKnownKind(kind) {
   return Object.prototype.hasOwnProperty.call(DRAMA_NODE_DEFS, String(kind || ""));
 }
