@@ -32,18 +32,21 @@ import {
   ChevronDown,
   Sparkles,
   Loader2,
+  Zap,
   Maximize2,
   Move,
   Plus,
   Redo2,
   Save,
   SquareDashed,
+  MousePointerSquareDashed,
   Trash2,
   Undo2,
   X,
   ZoomIn,
   ZoomOut,
   Images,
+  ListChecks,
   FolderOpen,
 } from "lucide-react";
 import { DRAMA_GROUPS, DRAMA_NODE_DEFS, dramaNodeDef, dramaStarterWorkflow, imageStarterWorkflow } from "../../lib/drama-canvas-model.mjs";
@@ -111,6 +114,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
   const [resultsOpen, setResultsOpen] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [batchMenuOpen, setBatchMenuOpen] = useState(false);
   const [marquee, setMarquee] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string | null } | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -444,6 +448,39 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 </>
               ) : null}
             </div>
+            {/* 09-29 批量一键生成（用户：「批量一键生成…完善一下」）。
+                跑批中按钮就地变成进度 + 中止；空闲时是范围菜单（待生成 / 选中的）。
+                视频只提交不等待 —— 上面那句写进 title，别让用户以为点了要等几十分钟。 */}
+            {story.batch.running ? (
+              <button className="drama-canvas-head-btn is-busy" title={`正在生成：${story.batch.label || "准备中"}（点一下中止 —— 正在跑的这张不打断）`} onClick={() => story.stopBatch()}>
+                <Loader2 size={13} className="is-spin" />{story.batch.done}/{story.batch.total} 中止
+              </button>
+            ) : (
+              <div className="drama-canvas-headmenu-wrap">
+                <button className="drama-canvas-head-btn" aria-expanded={batchMenuOpen} title="批量一键生成：图片与配音真生成（并发 3），视频只提交任务不等结果" onClick={() => setBatchMenuOpen((v) => !v)}>
+                  <Zap size={13} />批量生成<ChevronDown size={12} />
+                </button>
+                {batchMenuOpen ? (
+                  <>
+                    <div className="drama-canvas-headmenu-backdrop" onClick={() => setBatchMenuOpen(false)} />
+                    <div className="drama-canvas-headmenu" role="menu">
+                      <button role="menuitem" onClick={() => { setBatchMenuOpen(false); void story.generateBatch("pending"); }}>
+                        <ListChecks size={13} />
+                        <span>跑完待生成的<small>画布上还没产物的卡片{progress.pending ? `（约 ${progress.pending} 张）` : ""}：先出图/配音，再提交视频</small></span>
+                      </button>
+                      <button
+                        role="menuitem"
+                        disabled={!board.selectedIds.length}
+                        onClick={() => { setBatchMenuOpen(false); void story.generateBatch("selected"); }}
+                      >
+                        <MousePointerSquareDashed size={13} />
+                        <span>只跑选中的{board.selectedIds.length ? ` ${board.selectedIds.length} 张` : ""}<small>{board.selectedIds.length ? "已有产物也重新生成（当作重跑）" : "先在画布上选中卡片（Ctrl/Cmd 点选或框选）"}</small></span>
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            )}
             <button className="drama-canvas-head-btn" title="管理所有画布项目：切换 / 重命名 / 删除 / 打开数据文件夹" onClick={() => { setProjectsOpen(true); setResultsOpen(false); }}><FolderOpen size={13} />项目</button>
             <button className="drama-canvas-head-btn" title="集中查看这张画布生成的图 / 视频 / 配音" onClick={() => { setResultsOpen(true); setInspectorOpen(false); }}><Images size={13} />结果</button>
             <button className="drama-canvas-head-btn" onClick={() => { board.saveNow(); void story.saveNow(); pushNotice("已保存到本机" + (workspace ? "（分镜表同时写到工作区）" : ""), "ok"); }}><Save size={13} />保存</button>

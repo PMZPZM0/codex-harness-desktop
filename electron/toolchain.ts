@@ -218,6 +218,50 @@ export function bundledGit() {
   return "";
 }
 
+/**
+ * FFmpeg 可执行文件（09-29 抽成共享解析 —— 此前只有 im-gateways 里一份私有实现，
+ * 视频合并要再用一次；两份必然漂移）。
+ *
+ * 三级回退：
+ *   ① 随包 / 开发工具页装的 `tools/ffmpeg/bin/ffmpeg[.exe]`；
+ *   ② 平铺布局 `tools/ffmpeg/ffmpeg[.exe]`（部分平台构建是单文件）；
+ *   ③ 系统 PATH 里的裸名 `ffmpeg`（返回裸名，交给 spawn 解析）。
+ * 找不到时返回空串 —— 由调用方给出**可操作**的报错（指引去开发工具页装），不要在这里抛。
+ *
+ * ⛔ mac 适配：darwin 侧 install-runtimes 放的是 `tools/ffmpeg/bin/ffmpeg`（evermeet 单文件构建，
+ *    **不带 .exe**）；只找 `.exe` 会让 mac 永远落空（同款坑 09-17 在 im-gateways 踩过）。
+ */
+export function bundledFfmpeg() {
+  const tools = toolsRoot();
+  const exe = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+  const candidates = tools
+    ? [path.join(tools, "ffmpeg", "bin", exe), path.join(tools, "ffmpeg", exe)]
+    : [];
+  for (const candidate of candidates) {
+    try { if (fs.existsSync(candidate)) return candidate; } catch { /* 不存在，试下一个 */ }
+  }
+  return "";
+}
+
+/** FFmpeg 可执行路径：内置可用就用内置，否则回落裸名（交给 spawn 走 PATH）。 */
+export function resolveFfmpegPath() {
+  return bundledFfmpeg() || "ffmpeg";
+}
+
+/** 同目录下的 ffprobe（探测片段编码参数用）。找不到时返回空串 —— 调用方按「探测不了」保守处理。 */
+export function bundledFfprobe() {
+  const ffmpeg = bundledFfmpeg();
+  if (!ffmpeg) return "";
+  const exe = process.platform === "win32" ? "ffprobe.exe" : "ffprobe";
+  const candidate = path.join(path.dirname(ffmpeg), exe);
+  try { return fs.existsSync(candidate) ? candidate : ""; } catch { return ""; }
+}
+
+/** 媒体合成的依赖报错（统一文案：告诉用户**去哪儿**解决，而不是只说「ffmpeg 不可用」）。 */
+export function ffmpegMissingMessage() {
+  return "需要 FFmpeg 才能合并视频。请到「设置 → 开发工具 → FFmpeg」点安装（约 300MB，装一次即可），或自行安装后确保 ffmpeg 在 PATH 上。";
+}
+
 /** 内置 Python 解释器；没有安装时返回空串。 */
 export function bundledPython() {
   const tools = toolsRoot();

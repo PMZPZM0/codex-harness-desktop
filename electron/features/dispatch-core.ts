@@ -201,6 +201,29 @@ function dispatchMcpTools(): unknown[] {
         },
       },
     },
+    {
+      name: "video_concat",
+      description:
+        "把多个视频片段合并成一条成片（整片导出）。内部用 ffmpeg：片段编码一致时**无损秒拼**，"
+        + "不一致时自动统一画布尺寸与帧率重编码。顺序完全按传入的 files 顺序 —— 要成片顺序对，就自己排好。"
+        + "产物落在 <workspace>/.drama-canvas/export/。需要 FFmpeg（设置 → 开发工具页可一键安装）。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          files: {
+            type: "array",
+            items: { type: "string" },
+            description: "要合并的片段路径列表，**按成片顺序**排列（通常是 video_status / image_generate 返回的本地 path）",
+          },
+          name: { type: "string", description: "成片文件名（默认「成片」，自动补 .mp4）" },
+          workspace: { type: "string", description: "输出到哪个工作目录（缺省用调用者会话的工作目录）" },
+          width: { type: "number", description: "需要重编码时的画布宽（默认 720）" },
+          height: { type: "number", description: "需要重编码时的画布高（默认 1280，竖屏短剧）" },
+          fps: { type: "number", description: "需要重编码时的帧率（默认 24）" },
+        },
+        required: ["files"],
+      },
+    },
   ];
 }
 

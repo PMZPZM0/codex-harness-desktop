@@ -496,6 +496,8 @@ contextBridge.exposeInMainWorld("codex", {
   codexLogsScan: () => __ipc("codex-logs:scan", 0, []),
   /* 删会话记录（销毁性）：只删 codex-home/sessions|archived_sessions 下的 rollout-*.jsonl 文件；级联剔除 session_index.jsonl 里的对应条目（否则会话列表留死条目） */
   codexLogsDelete: (input: { paths: string[] }) => __ipc("codex-logs:delete", 1, [input]),
+  /* 按顺序合并视频片段成一条成片（整片导出）：先 -c copy，失败回落统一重编码；输出 <workspace>/.drama-canvas/export/ */
+  videoConcat: (input: { workspace: string; name: string; files: string[]; width?: number; height?: number; fps?: number }) => __ipc("video:concat", 0, [input]) as Promise<{ path: string; bytes: number; mode: "copy" | "reencode"; parts: number }>,
   /* ═══ gen:end ═══ */
 
   // ⛔ mac 适配（09-16）：渲染层此前完全不知道自己跑在什么平台——窗口控制键让位、

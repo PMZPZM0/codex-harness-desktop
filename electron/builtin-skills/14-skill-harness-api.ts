@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（75 个能力域 / 361 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（75 个能力域 / 362 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -86,9 +86,9 @@ Bot 定义管理
 Bot 流式输出转发
 通道：bot-stream:get, bot-stream:set
 
-### video（6 通道）
+### video（7 通道）
 内置视频生成接口（国内外 8 家：可灵/万相/Seedance/CogVideoX/MiniMax/Runway/Luma/Veo）：submit 提交 → poll 轮询 → download 落工作区；凭证存 userData/video-providers.json
-通道：video:providers, video:config-read, video:config-save, video:submit, video:poll, video:download
+通道：video:providers, video:config-read, video:config-save, video:submit, video:poll, video:download, video:concat
 
 ### queue-timer（2 通道）
 排队消息的定时发送（主进程定时器；窗口最小化 / 被遮挡时不被 Chromium 节流）

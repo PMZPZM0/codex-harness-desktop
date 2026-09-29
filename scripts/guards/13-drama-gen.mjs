@@ -320,4 +320,113 @@ export async function run() {
   }
 
   }
+  /* ══ 批量生成 + 整片合并导出（09-29 用户：「批量一键生成和整片合并导出完善一下」）══
+     这两件事的失败模式都是**静默**的，所以断言锚「调用与键名」而不只锚「函数存在」：
+       · 产物存在性判据的键名与写回分支不一致 ⇒ 批量每次都认为「没生成过」，重复跑一遍（白花钱）；
+       · 视频混进图片层 ⇒ 提交时首帧还没落盘，i2v 悄悄退化成 t2v（用户以为「我的图没被用上」）；
+       · 合并顺序错 ⇒ 成片乱序，而画面上看不出哪一步错了。 */
+  {
+    const storySrc = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8"));
+    const canvasSrc = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8"));
+    const resultsSrc = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaResultsPanel.tsx"), "utf8"));
+    const videoGenSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "video-gen.ts"), "utf8"));
+    const rpcSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "dispatch-rpc.ts"), "utf8"));
+    const coreSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "dispatch-core.ts"), "utf8"));
+    const toolchainSrc = codeOnly(readFileSync(join(ROOT, "electron", "toolchain.ts"), "utf8"));
+
+    /* ── 批量生成 ── */
+    (storySrc.includes("const generateBatch = useCallback") ? ok : fail)("【203】画布有批量生成入口（generateBatch）");
+    // 两阶段：图片/配音先真生成，视频最后提交 —— 顺序反了视频就没有首帧
+    (/const firstStage: BatchTask\[\] = \[\];/.test(storySrc) && /const videoStage: BatchTask\[\] = \[\];/.test(storySrc)
+      && /\(what === "video" \? videoStage : firstStage\)\.push/.test(storySrc) ? ok : fail)(
+      "【203】批量分两阶段（图片/配音 → 视频）—— 视频混在图片层会拿不到刚生成的首帧"
+    );
+    (storySrc.includes("await runOne(task, true)") ? ok : fail)("【203】批量里视频走 submitOnly（只提交不等待）");
+    (/if \(options\.submitOnly\) \{/.test(storySrc) && storySrc.includes("video_job: submitted.jobId") ? ok : fail)(
+      "【203】submitOnly 在**记下 jobId 之后**才返回（先返回 = 任务丢了，没法续查）"
+    );
+    (/const pool = Math\.min\(3, firstStage\.length\)/.test(storySrc) ? ok : fail)("【203】图片/配音并发池（网络等待型动作串行跑纯属浪费）");
+    (storySrc.includes("batchStopped.current") && storySrc.includes("const stopBatch = useCallback") ? ok : fail)(
+      "【203】批量可中止（stopBatch 置标志，池里的 worker 检查后退出）"
+    );
+    // 失败不中断：收集器记账，不在第一个失败处整批返回
+    (/const report = \(text: string, tone\?: "ok" \| "err"\) => \{/.test(storySrc) && storySrc.includes("reasons.push(text)") ? ok : fail)(
+      "【203】单个动作失败不中断整批（失败进收集器，汇总报一次）"
+    );
+    // 产物存在性判据必须与写回键一一对应（不一致 = 静默重复生成）
+    (/const batchHasOutput = useCallback/.test(storySrc)
+      && /if \(what === "video"\) return filled\(p\.video\)/.test(storySrc)
+      && /if \(kind === "shot"\) return filled\(p\.first_frame\)/.test(storySrc)
+      && /if \(kind === "character" \|\| kind === "location"\) return filled\(p\.ref\)/.test(storySrc) ? ok : fail)(
+      "【203】batchHasOutput 键口径与 generate 写回一一对应（video/first_frame/ref/path）"
+    );
+    // 批量读的是**最新**节点快照，不是启动那刻的闭包
+    (/nodesRef\.current\.find\(\(n\) => n\.id === nodeId\)/.test(storySrc) ? ok : fail)(
+      "【203】generate 读 nodesRef 最新快照（读闭包 ⇒ 第二阶段的视频看不到刚写回的首帧）"
+    );
+    (/story\.generateBatch\("pending"\)/.test(canvasSrc) && /story\.generateBatch\("selected"\)/.test(canvasSrc) ? ok : fail)(
+      "【203】顶栏批量按钮接了两个范围（待生成 / 选中的）—— 不接线 = 按钮点了没反应"
+    );
+    (/story\.batch\.running \?/.test(canvasSrc) && /story\.stopBatch\(\)/.test(canvasSrc) ? ok : fail)(
+      "【203】跑批中按钮就地变成进度 + 中止"
+    );
+
+    /* ── 整片合并导出 ── */
+    (storySrc.includes("const exportMovie = useCallback") ? ok : fail)("【203】画布有整片导出入口（exportMovie）");
+    // 顺序的唯一真源是分镜表；表外散卡按画布位置兜底（否则没建表的板导不出东西）
+    (/for \(const scene of data\.scenes \|\| \[\]\)/.test(storySrc) && /for \(const shot of scene\.shots \|\| \[\]\)/.test(storySrc) ? ok : fail)(
+      "【203】成片顺序读分镜表的 场次→镜头（唯一真源）"
+    );
+    (/position\?\.y \?\? 0\) - \(\(b as any\)\.position\?\.y/.test(storySrc) ? ok : fail)(
+      "【203】表外散卡按画布位置补序（上→下、左→右）—— 只会按数组顺序 = 成片乱序"
+    );
+    (/output: \{ \.\.\.\(data\.output \|\| \{\}\), video: path/.test(storySrc) ? ok : fail)(
+      "【203】导出后回写分镜表 output.video（这个落点从设计起就留着，不回写等于成片失联）"
+    );
+    (storySrc.includes("window.codex.videoConcat") ? ok : fail)("【203】导出走 video:concat 通道（不是渲染层自己拼）");
+    (/void story\.exportMovie\(\)/.test(resultsSrc) ? ok : fail)("【203】结果面板接了「导出成片」按钮");
+
+    /* ── 主进程：ffmpeg 合并 ── */
+    (videoGenSrc.includes("export async function concatVideosCore") ? ok : fail)("【203】主进程有 concatVideosCore");
+    (videoGenSrc.includes('"-f", "concat"') && videoGenSrc.includes('"-c", "copy"') ? ok : fail)(
+      "【203】合并用 concat demuxer + 先试 -c copy（无损秒拼）"
+    );
+    (/libx264/.test(videoGenSrc) && /force_original_aspect_ratio=decrease/.test(videoGenSrc) ? ok : fail)(
+      "【203】签名不一致时统一重编码（不同厂商片段分辨率/帧率不一致，直接重编码是唯一正确路径）"
+    );
+    (/if \(!stat\.isFile\(\)\) throw/.test(videoGenSrc) ? ok : fail)("【203】片段必须是文件（目录混进来会让 ffmpeg 报奇怪的错）");
+    (/isInsideTrustedRoots\(workspace\)/.test(videoGenSrc) ? ok : fail)("【203】成片落盘前过可信根校验（与素材同口径）");
+    // ffmpeg 路径解析只有一份（在 toolchain.ts）：video-gen 自己拼候选 = 两份实现必然漂移
+    // ⛔ 锚「从 toolchain 取到解析函数」+ 负向「自己没拼 ffmpeg 候选路径」，**不锚精确 import 串**
+    //    （09-29 加了 bundledFfprobe 就把精确串锚红了 —— 固定字符串锚一改就假红）。
+    (/import \{[^}]*resolveFfmpegPath[^}]*\} from "\.\.\/toolchain"/.test(videoGenSrc)
+      && !/path\.join\([^)]*"ffmpeg"/.test(videoGenSrc) ? ok : fail)(
+      "【203】video-gen 复用 toolchain 的 ffmpeg 解析（不自己拼候选路径）"
+    );
+    (/export function bundledFfmpeg/.test(toolchainSrc) && /export function resolveFfmpegPath/.test(toolchainSrc) ? ok : fail)(
+      "【203】toolchain 提供 bundledFfmpeg / resolveFfmpegPath"
+    );
+    (/ffmpegMissingMessage[\s\S]{0,220}开发工具/.test(toolchainSrc) ? ok : fail)(
+      "【203】ffmpeg 缺失的报错是**可操作**的（指向开发工具页，而不是只说「不可用」）"
+    );
+    // 共用同一实现：IPC 薄壳与 MCP 执行端都调 core
+    (videoGenSrc.includes('ipcMain.handle("video:concat"') && videoGenSrc.includes("concatVideosCore(input)") ? ok : fail)(
+      "【203】video:concat 是薄壳（直接调 core，不在 handler 里重写一遍）"
+    );
+    (rpcSrc.includes('name === "video_concat"') && rpcSrc.includes("concatVideosCore({") ? ok : fail)(
+      "【203】MCP 的 video_concat 复用同一 core（两套实现 = 行为不一致）"
+    );
+    (coreSrc.includes('name: "video_concat"') ? ok : fail)("【203】video_concat 在工具清单里（schema 与执行端成对）");
+    // ⛔⛔ 实测抓到的真缺陷（09-29）：分辨率/帧率都不同的两段用 -c copy 拼接，ffmpeg **退出码 0**、
+    //    产物却是花屏 + 时基错乱的坏片。所以判据必须是「**先**比签名」，不是「copy 失败再回退」。
+    (/async function probeSignature/.test(videoGenSrc) && /bundledFfprobe/.test(videoGenSrc) ? ok : fail)(
+      "【203】concat 先比编码签名（ffprobe 探测分辨率/帧率/编码）"
+    );
+    (videoGenSrc.includes("const copySafe = signatures.every") ? ok : fail)(
+      "【203】全部签名一致才敢 copy（不一致时 copy 不报错但产出坏片）"
+    );
+    (/if \(copySafe\) \{[\s\S]{0,400}?"-c", "copy"/.test(videoGenSrc) ? ok : fail)(
+      "【203】copy 被 copySafe 包住（漏掉判断 = 静默坏片又回来了）"
+    );
+  }
 }
