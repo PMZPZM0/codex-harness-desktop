@@ -198,6 +198,7 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       model: args.model ? String(args.model) : undefined,
       duration: Number(args.duration) || undefined,
       aspect: args.aspect ? String(args.aspect) : undefined,
+      video: args.video ? String(args.video) : undefined,
     });
     // 提交即落盘：关画布 / 重启应用后仍可续查（模型与画布卡片共用这份记录）
     rememberVideoJob({
