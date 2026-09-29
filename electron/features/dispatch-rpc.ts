@@ -19,6 +19,7 @@ import { readConnectors } from "../main";
 import { voiceService } from "../main";
 import { encodeWav16 } from "../voice/voice-profiles";
 import { writeConnectors } from "./connectors-mcp-ipc/01-prompt-enhance";
+import { boardsFileOf, readWorkflowBoards, writeWorkflowBoards } from "./drama-workflow-boards";
 import { readSubAgents, writeSubAgents } from "../main/09-agents-plugins";
 import { runDelegatedTask } from "../features/delegation";
 import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
@@ -227,6 +228,52 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     await writeConnectors([...list.filter((entry) => entry.id !== id), config]);
     // ⛔ 不做热更新（用户明确：重启应用即可）——注册完提示用户重启，不中断当前回合
     return { ok: true, output: `连接器「${displayName}」（${id}）已注册。请提示用户**重启应用**；重启后的新会话里 tools/list 会带上它的工具，届时即可直接调用。` };
+  }
+  if (name === "workflow_read") {
+    const all = await readWorkflowBoards();
+    const names = Object.keys(all);
+    if (!names.length) return { ok: true, output: "（画布还没有镜像快照 —— 用户打开过画布并编辑后才有；请让用户打开一次 AI 画布工作流）" };
+    const parts: string[] = [];
+    for (const canvasName of names) {
+      const board = all[canvasName] as { flow?: string; nodes?: Array<Record<string, unknown>>; edges?: Array<Record<string, unknown>>; updatedAt?: string };
+      parts.push(`## 画布「${canvasName}」（${board.flow || "?"}，更新于 ${board.updatedAt ?? "?"}）`);
+      for (const nd of board.nodes ?? []) {
+        const p = (nd.payload ?? {}) as Record<string, unknown>;
+        const bits = [`id=${nd.id}`, `类型=${nd.kind}`, `标题=${String(p.title ?? "")}`];
+        for (const key of ["prompt", "size", "negative", "count", "imageType", "aspect", "duration", "variant", "act", "hint", "step"]) {
+          if (p[key] !== undefined && String(p[key]).trim()) bits.push(`${key}=${String(p[key]).slice(0, 120)}`);
+        }
+        if (p.path) bits.push(`已有产物=${String(p.path)}`);
+        if (p.ref) bits.push(`参考图=${String(p.ref)}`);
+        parts.push(`  · ${bits.join("｜")}`);
+      }
+      const edges = (board.edges ?? []).map((ed) => `${String(ed.source)}→${String(ed.target)}`).join("；");
+      if (edges) parts.push(`  连线：${edges}`);
+    }
+    return { ok: true, output: parts.join("\n") };
+  }
+  if (name === "workflow_writeback") {
+    const nodeId = String(args.nodeId ?? "").trim();
+    const updates = (args.updates && typeof args.updates === "object") ? args.updates as Record<string, unknown> : null;
+    if (!nodeId) return { ok: false, error: "nodeId 必填（从 workflow_read 输出里拿）" };
+    if (!updates) return { ok: false, error: "updates 必填（要写回的字段对象）" };
+    const clean: Record<string, string | number> = {};
+    for (const [key, value] of Object.entries(updates)) {
+      if (typeof value === "string" || typeof value === "number") clean[key] = value;
+    }
+    if (!Object.keys(clean).length) return { ok: false, error: "updates 的值必须是字符串或数字" };
+    const all = await readWorkflowBoards();
+    const names = Object.keys(all);
+    if (!names.length) return { ok: false, error: "没有画布镜像（用户打开过画布后才有）" };
+    const canvasName = String(args.canvas ?? "").trim() || names.slice().sort((x, y) => String((all[y] as Record<string, unknown> | undefined)?.updatedAt ?? "").localeCompare(String((all[x] as Record<string, unknown> | undefined)?.updatedAt ?? "")))[0];
+    const board = all[canvasName] as { nodes?: Array<Record<string, unknown>> } | undefined;
+    if (!board) return { ok: false, error: `画布「${canvasName}」不存在；可用：${names.join("、")}` };
+    const node = (board.nodes ?? []).find((nd) => String(nd.id) === nodeId || String((nd.payload as Record<string, unknown> | undefined)?.title ?? "") === nodeId);
+    if (!node) return { ok: false, error: `节点 ${nodeId} 不在画布「${canvasName}」上；用 workflow_read 看节点清单` };
+    node.payload = { ...((node.payload ?? {}) as Record<string, unknown>), ...clean };
+    await writeWorkflowBoards(all);
+    broadcastHarnessEvent({ type: "drama-canvas-writeback", name: canvasName, nodeId: String(node.id), updates: clean });
+    return { ok: true, output: `已写回画布「${canvasName}」节点 ${nodeId}：${JSON.stringify(clean)}。用户画布打开着会实时看到并弹提示。` };
   }
   if (name === "image_generate") {
     const prompt = String(args.prompt ?? "").trim();

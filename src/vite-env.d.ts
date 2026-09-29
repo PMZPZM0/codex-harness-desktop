@@ -752,6 +752,8 @@ interface Window {
     dramaCanvasOutputDir(): Promise<{ dir: string; isDefault: boolean }>;
     /* 设置产物目录：pick=true 弹系统目录选择框；dir 给绝对路径直接设；dir 为空串 = 恢复默认。目录不可用会明确报错（不静默回退）。 */
     dramaCanvasOutputDirSet(input: { dir?: string; pick?: boolean }): Promise<{ dir: string; isDefault: boolean }>;
+    /* 画布快照镜像（09-29「打通」）：渲染层把当前画布（名称/工作流类型/节点/连线）防抖推给主进程，存 userData/drama-canvas/boards.json —— workflow_read 工具的数据源 */
+    dramaCanvasBoardSync(input: { name: string; flow: string; nodes: unknown[]; edges: unknown[] }): Promise<{ ok: boolean }>;
     /* 把二进制素材（配音 WAV / 生成图）按字节写进工作区 .drama-canvas/assets/；工作区掉出可信根（会话已关/重启）时回退应用数据目录并置 fallback=true（09-29 修「参考图传不了」）。⛔ 渲染层唯一的写入通道 fs:write 是 utf8 字符串写，写不了二进制，WAV 必须走这里 */
     dramaCanvasAssetWrite(input: { workspace: string; name: string; base64: string; subdir?: string }): Promise<{ path: string; fallback?: boolean }>;
     /* 主动推送一条微信消息给用户（to 缺省=最近对话用户）。⛔ 正文气泡依赖 context_token，对方近期发过消息才最可靠；机器人未登录时抛错 */
