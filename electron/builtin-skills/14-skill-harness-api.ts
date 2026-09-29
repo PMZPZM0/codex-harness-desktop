@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（75 个能力域 / 363 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（75 个能力域 / 366 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -50,9 +50,9 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 ## 能力域
 
-### drama-canvas（3 通道）
+### drama-canvas（6 通道）
 AI 短剧无限画布：把一条短剧拆成卡片摆在无限画布上（剧本/角色/场景/分镜表/镜头/素材/成片），连线表示「这份输入喂给下一步」。这条通道专管素材的**二进制落盘**（本地 TTS 合成的配音 WAV 等）
-通道：drama-canvas:asset-write, drama-canvas:storyboard-file-remove, drama-canvas:polish-prompt
+通道：drama-canvas:asset-write, drama-canvas:storyboard-file-remove, drama-canvas:polish-prompt, drama-canvas:describe-image, drama-canvas:output-dir, drama-canvas:output-dir-set
 
 ### phone（7 通道）
 手机控制（phone-harness）：查状态 / 安装 / 卸载 / 体检 / 权限引导；Android 走 adb（全平台），iPhone 走 Mac 的 iPhone 镜像（仅 macOS）

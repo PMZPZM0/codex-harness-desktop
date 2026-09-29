@@ -72,6 +72,8 @@ export interface DramaStoryApi {
   saveNow: () => Promise<{ path: string | null; error?: string }>;
   /** 润色提示词（画布内直调模型，不开会话）；返回润色后的文本，失败返回空串。 */
   polishPrompt: (id: string, text: string) => Promise<string>;
+  /** 锁定主体（电商出图）：把商品参考图反推成固定主体描述；返回描述文本，失败返回空串。 */
+  describeSubject: (id: string) => Promise<string>;
   expand: (boardNodeId: string, boardName: string) => Promise<{ scenes: number; shots: number; characters: number; missing: string[] } | null>;
   writeBack: (nodeId: string) => Promise<void>;
   busy: Set<string>;
@@ -192,6 +194,46 @@ export function useDramaStory(
       setBusy((current) => { const next = new Set(current); next.delete(key); return next; });
     }
   }, [busy, notice]);
+
+  /** 沿入边找「商品参考图」：本卡自己的 ref 优先，其次上游卡的 ref / path / url。
+   *  画布语义就是「这张卡的输入来自上游」，所以锁主体不需要用户再手填路径。 */
+  const upstreamRefImage = useCallback((targetId: string): string => {
+    const self = board.nodes.find((n) => n.id === targetId);
+    const own = String((self?.data?.payload || {}).ref || "").trim();
+    if (own) return own;
+    const byId = new Map(board.nodes.map((n) => [n.id, n] as const));
+    for (const edge of board.edges) {
+      if (String(edge.target || "") !== targetId) continue;
+      const src = byId.get(String(edge.source || ""));
+      const p = (src?.data?.payload || {}) as Record<string, any>;
+      const hit = String(p.ref || p.path || p.url || "").trim();
+      if (hit) return hit;
+    }
+    return "";
+  }, [board.nodes, board.edges]);
+
+  /** 锁定主体（09-29 电商出图工作流）：把商品参考图交给**视觉模型**反推成一段固定主体描述，
+   *  写进 payload.subject ⇒ 六类图共用同一段前缀，一套图是同一件商品。
+   *  ⛔ 生图通道 builtin:generate-image 是纯文生图（无图输入）⇒ 这是「参考图锁主体」的可行替代，
+   *     不是图生图；不具备视觉能力的模型会明确报错（不猜、不静默降级）。 */
+  const describeSubject = useCallback(async (id: string): Promise<string> => {
+    const image = upstreamRefImage(id);
+    if (!image) { notice("这张卡没有参考图 —— 先把「商品参考图」卡连过来并在上面传一张，或在本卡上传", "err"); return ""; }
+    const key = `${id}:subject`;
+    if (busy.has(key)) return "";
+    setBusy((current) => new Set(current).add(key));
+    try {
+      const result = await window.codex.dramaCanvasDescribeImage({ image });
+      const text = String(result?.text || "").trim();
+      if (text) notice("主体已锁定 —— 主图 / SKU / 详情 / 场景 / 白底 / 买家秀 都会共用这段描述", "ok");
+      return text;
+    } catch (error) {
+      notice(`锁定主体失败：${error instanceof Error ? error.message : String(error)}`, "err");
+      return "";
+    } finally {
+      setBusy((current) => { const next = new Set(current); next.delete(key); return next; });
+    }
+  }, [busy, notice, upstreamRefImage]);
   const saveNow = useCallback(async () => {
     if (saveTimer.current) { window.clearTimeout(saveTimer.current); saveTimer.current = null; }
     return persist();
@@ -475,7 +517,9 @@ export function useDramaStory(
             say("视频已生成（未选工作区，只写 URL 进卡片）", "ok");
             return;
           }
-          const written = await window.codex.videoDownload({ url, workspace, name, subdir: "video" });
+          /* 产物目录（09-29「视频工作流同理」）：设了就落用户选的目录，没设仍落工作区（旧行为）。 */
+          const outDirForVideo = await window.codex.dramaCanvasOutputDir().catch(() => null);
+          const written = await window.codex.videoDownload({ url, workspace, name, subdir: "video", outputDir: String(outDirForVideo?.dir || "").trim() || undefined });
           const savedPath = String(written?.path || url);
           board.updatePayload(nodeId, { video: savedPath, video_job: "", video_job_provider: "" });
           board.saveNow();
@@ -546,28 +590,40 @@ export function useDramaStory(
         const upstream = upstreamPrompts(nodeId);
         if (!base && upstream) base = upstream;
         if (!base) { say("这张卡还没有提示词 —— 写一句，或从上游卡片连线自动带入", "err"); return; }
+        /* 锁定主体（09-29 电商出图工作流）：整套图共用的商品主体描述拼在最前
+           ⇒ 主图 / SKU / 详情 / 场景 / 白底 / 买家秀 是同一件商品，不跳戏。 */
+        const locked = String(payload.subject || "").trim();
+        if (locked && !base.includes(locked)) base = `${locked}。${base}`;
         // 全片统一风格摆在提示词最前面 —— 否则镜与镜之间画风会飘
         let prompt = style ? `${style}。${base}` : base;
         // 连线「喂给下一步」：上游提示词拼在最前，自身变体词在后（自身为空时上面已沿用）
         if (upstream && base !== upstream) prompt = `${upstream}。${prompt}`;
         const variant = String(payload.variant || "").trim();
         if (variant && !base.includes(variant)) prompt = `${prompt}（变体：${variant}）`;
+        /* 产物目录（09-29 用户要求）：默认应用数据目录下的 outputs；读不到就交给主进程用默认
+           —— 这一步失败不该挡住出图。 */
+        const outDir = await window.codex.dramaCanvasOutputDir().catch(() => null);
         const result = await window.codex.generateImage({
           baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model: cfg.model, prompt,
           // 尺寸与负面提示词：卡片上设了才传（不同网关接受度不同，默认不带 = 旧行为）
           size: String(payload.size || "").trim() || undefined,
           negative: String(payload.negative || "").trim() || undefined,
+          outputDir: String(outDir?.dir || "").trim() || undefined,
         });
         const path = String(result?.path || "");
         if (!path) { say("生成回来了，但没有落盘路径，这张卡没更新", "err"); return; }
         if (kind === "shot") board.updatePayload(nodeId, { first_frame: path });
         else if (kind === "character") board.updatePayload(nodeId, { ref: path });
         else if (kind === "location") board.updatePayload(nodeId, { ref: path });
+        /* ⛔ 独立生图节点的产物写 path/url（不回退成「参考图」标题 —— 它是产出位）。 */
+        else if (kind === "imagegen") board.updatePayload(nodeId, { path, url: path, title: payload.title || "生图" });
         else board.updatePayload(nodeId, { path, url: path, title: payload.title || "参考图" });
         board.saveNow();
         void writeBack(nodeId);
         // 下一步指引（09-28 工作流打磨）：出图卡告知可直接转视频，镜头卡告知可继续出视频/配音
-        const next = kind === "image"
+        const next = kind === "imagegen"
+          ? "—— 想再出一版点「重出」；换图类型 / 尺寸在右侧检查器改；要出片请走视频工作流的镜头卡"
+          : kind === "image"
           ? "—— 可点「视频 · 生成」让这张图动起来"
           : kind === "shot"
             ? "—— 可继续「视频 · 生成」或「配音 · 生成」"
@@ -844,5 +900,6 @@ export function useDramaStory(
     channels,
     refreshChannels,
     polishPrompt,
-  }), [stories, storyName, story, problems, switchStory, renameStory, deleteStory, createStory, saveNow, expand, writeBack, busy, generate, generateBatch, stopBatch, batch, exportMovie, exporting, uploadRef, channels, refreshChannels, polishPrompt]);
+    describeSubject,
+  }), [stories, storyName, story, problems, switchStory, renameStory, deleteStory, createStory, saveNow, expand, writeBack, busy, generate, generateBatch, stopBatch, batch, exportMovie, exporting, uploadRef, channels, refreshChannels, polishPrompt, describeSubject]);
 }

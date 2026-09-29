@@ -26,6 +26,10 @@ export const DRAMA_NODE_DEFS = {
   scene: { label: "场次", icon: "film", width: 380, height: 250, subtitle: "一场戏下的镜头集合", group: "分镜制作" },
   shot: { label: "镜头", icon: "video", width: 360, height: 265, subtitle: "可生成、可重跑的最小单元", group: "分镜制作" },
   image: { label: "参考图", icon: "image", width: 340, height: 330, subtitle: "定妆照 / 首帧 / 场景图", group: "素材与生成" },
+  /* ⛔ 独立生图节点（09-29 用户：「设计生图节点时，请将其独立出来，不要与视频节点共用同一套结构」）。
+     它与 image（参考图）是两回事：image 是**素材槽**（喂进去的图），imagegen 是**产出槽**
+     （按电商图类型出图，带类型 / 尺寸 / 张数 / 图块清单）。也**永不出现视频通道**。 */
+  imagegen: { label: "生图", icon: "imagegen", width: 360, height: 380, subtitle: "主图 / SKU / 详情 / 场景 / 白底 / 买家秀", group: "素材与生成" },
   video: { label: "视频片段", icon: "clapperboard", width: 380, height: 390, subtitle: "生成结果或本地素材", group: "素材与生成" },
   audio: { label: "声音", icon: "music", width: 320, height: 215, subtitle: "对白、配音或配乐", group: "素材与生成" },
   timeline: { label: "剪辑时间线", icon: "film", width: 380, height: 240, subtitle: "按分镜顺序拼成成片", group: "交付" },
@@ -106,6 +110,13 @@ export function dramaDefaultPayload(kind) {
     case "scene": return { id: "", place: "", time: "" };
     case "shot": return { id: "", shot_size: "中景", prompt: "", motion: "", line: "", speaker: "", duration: 4, first_frame: "", video: "", audio: "" };
     case "image": return { title: "参考图", role: "定妆照", url: "", path: "", text: "" };
+    /* 独立生图节点：imageType 决定这一张是什么图；subject 是**锁定的主体描述**（整套图共用，
+       保证六类图是同一件商品不跳戏）；panels 只对详情图有意义（图块清单）。 */
+    case "imagegen": return {
+      title: "生图", imageType: "main", size: "1024x1024", count: 1,
+      prompt: "", negative: "", subject: "", ref: "", panels: "",
+      path: "", url: "", text: "",
+    };
     case "video": return { title: "视频片段", prompt: "", model: "", aspect: "9:16", duration: 5, video: "", first_frame: "" };
     case "audio": return { title: "配音", text: "", path: "", url: "" };
     case "timeline": return { title: "最终剪辑", description: "按分镜顺序逐镜合轨、拼接，全在本机跑。", video: "" };
@@ -504,4 +515,120 @@ export function upgradeLegacyStarterSnapshot(snapshot) {
   if (nodes.some((node) => payloadHasContent(node?.payload))) return null;
   const sig = LEGACY_STARTER_SIGNATURES.find((item) => item.kind === hit.kind);
   return sig ? sig.build() : null;
+}
+
+/* ═══════════════════════════ 独立生图节点：六类图 ═══════════════════════════
+
+   调研依据（09-29，见回复）：主流电商素材包 = 白底母版（平台硬门槛）→ 派生主图 / 场景 /
+   详情 / 规格 / 买家秀；关键是**同一商品在整套图里不跳戏** ⇒ 两条机制落在本节点上：
+     ① subject（锁定主体描述）：用视觉模型把商品图反推成一段固定描述，整套图共用；
+     ② size 与构图约束按图类型给默认值（白底必须写死纯白背景，否则模型自己加渐变）。
+   ⛔ 为什么不做成「参考图直传生图接口」：当前生图通道（builtin:generate-image）是**纯文生图**，
+      没有图输入字段 —— 硬塞不存在的参数就是让模型调不存在的工具。图生图接入列为下一步。 */
+
+/** 六类图：key 存进 payload.imageType；size 是该类型的**默认**尺寸（用户可改）。 */
+export const IMAGE_KINDS = [
+  {
+    key: "main", label: "主图", size: "1024x1024", ratio: "1:1",
+    purpose: "平台首图（搜索页 / 详情页头图），一眼看清是什么",
+    skeleton: "主体描述 + 正面或 45° 机位 + 纯白/浅灰无缝背景 + 均匀柔光 + 商业产品摄影 + 商品占画面 85% 以上 + 无文字无水印",
+    note: "同一商品多拍几个角度（正面 / 侧面 / 45° / 特写）凑成轮播；主图不写促销文字",
+  },
+  {
+    key: "sku", label: "SKU 图", size: "1024x1024", ratio: "1:1",
+    purpose: "规格切换缩略图：颜色 / 款式 / 容量 各一张",
+    skeleton: "主体描述（只替换颜色或款式词）+ 与主图完全相同的机位与光线 + 纯白背景 + 商品居中",
+    note: "⛔ 一次只改「颜色 / 款式」这一个变量，机位光线照抄主图 —— 否则规格缩略图看着像不同商品",
+  },
+  {
+    key: "detail", label: "详情图", size: "1024x1365", ratio: "3:4",
+    purpose: "详情页纵向长图，由若干图块（tile）拼成 —— 见下方「图块清单」",
+    skeleton: "逐块生成：每块一个卖点，构图给文字留位置，风格与主图保持一致",
+    note: "⛔ 详情图不是一张图：本卡按「图块清单」逐块出图，**长图拼接需在外部完成**（本工作台暂无拼接通道）",
+  },
+  {
+    key: "scene", label: "场景图", size: "1024x1365", ratio: "3:4",
+    purpose: "生活情境图（详情页第二张起），让买家代入使用场景",
+    skeleton: "主体描述 + 具体环境（大理石台面 / 木质书桌 / 卧室床品）+ 光线方向 + 浅景深 + 生活化氛围",
+    note: "环境写具体比写形容词有用：模型认「大理石台面、晨光从左侧」，不认「温馨」",
+  },
+  {
+    key: "white", label: "白底图", size: "1024x1024", ratio: "1:1",
+    purpose: "平台硬门槛：纯白底（RGB 255,255,255），也是整套图的**母版**",
+    skeleton: "主体描述 + 纯白无缝背景（RGB 255,255,255）+ 顶光均匀照明 + 商品占画面 85–90% + 无阴影无反射无道具无文字",
+    note: "⛔「纯白背景」必须写死 —— 不写模型会自己加渐变或纹理；浅灰底会被平台审核判不合格",
+  },
+  {
+    key: "ugc", label: "买家秀", size: "1024x1365", ratio: "3:4",
+    purpose: "买家实拍感 / 上身试穿，拉近可信度",
+    skeleton: "主体描述 + 手持或上身 + 居家 / 街头随手拍感 + 手机直出质感 + 自然光 + 轻微噪点",
+    note: "⛔ 别写成影棚级商业摄影（那就不是买家秀了）；服装走试穿、非服装走手持场景",
+  },
+];
+
+/** 详情图的默认图块清单（纵向从上到下）。用户可在卡片上改。 */
+export const DETAIL_PANELS_DEFAULT = [
+  "1. 首屏主视觉：商品 + 一句核心主张",
+  "2. 卖点拆解：3 个卖点，每点配局部特写",
+  "3. 材质 / 工艺微距特写",
+  "4. 尺寸与参数：尺规参照或参数表底图",
+  "5. 使用场景：1–2 张生活情境",
+  "6. 包装与配件全家福",
+].join("\n");
+
+export function imageKindMeta(key) {
+  const found = IMAGE_KINDS.find((item) => item.key === String(key || ""));
+  return found || IMAGE_KINDS[0];
+}
+
+/** 检查器下拉用：{ value, label } 形态（FieldSpec.options 两种都支持）。 */
+export function imageKindOptions() {
+  return IMAGE_KINDS.map((item) => ({ value: item.key, label: item.label }));
+}
+
+/** 详情图按图块清单切成数组（一行一块）；空则给默认清单。 */
+export function detailPanelsOf(payload) {
+  const raw = String(payload?.panels || "").trim() || DETAIL_PANELS_DEFAULT;
+  return raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+/**
+ * 电商出图工作流（09-29 新模板）。
+ * 结构直接编码调研结论：**先出白底母版 → 再从母版派生**主图 / SKU / 场景 / 买家秀 / 详情图，
+ * 每一步共用同一段「锁定主体描述」，保证一套图是同一件商品。
+ * ⛔ 参考图卡（image，act=upload）只做素材槽：用户把商品图传/拖进来，再在生图卡点「锁定主体」。
+ */
+export function ecomImageStarterWorkflow(baseX = 120, baseY = 100) {
+  const col = 430, row = 430;
+  const node = (id, kind, payload, x, y) => ({ id, kind, payload: { ...dramaDefaultPayload(kind), ...payload }, position: { x, y }, size: { width: dramaNodeDef(kind).width, height: dramaNodeDef(kind).height } });
+  const gen = (id, type, step, x, y) => {
+    const meta = imageKindMeta(type);
+    return node(id, "imagegen", {
+      title: meta.label, imageType: meta.key, size: meta.size, count: 1,
+      /* act="produce"：产出位 —— 给「生图」但不给「上传参考图」（参考图在上游的「商品参考图」卡），
+         同时保留「AI 润色」（用户要求每张提示词卡都有）。 */
+      flow: "ecom", step, act: "produce",
+      panels: meta.key === "detail" ? DETAIL_PANELS_DEFAULT : "",
+    }, x, y);
+  };
+  const nodes = [
+    node("n-ref", "image", { title: "商品参考图", flow: "ecom", step: 1, act: "upload", hint: "ref" }, baseX, baseY),
+    gen("n-white", "white", 2, baseX + col, baseY),
+    gen("n-main", "main", 3, baseX + col * 2, baseY),
+    gen("n-scene", "scene", 4, baseX + col * 2, baseY + row),
+    gen("n-sku", "sku", 3, baseX + col * 3, baseY),
+    gen("n-ugc", "ugc", 4, baseX + col * 3, baseY + row),
+    gen("n-detail", "detail", 4, baseX + col * 4, baseY),
+    node("n-pack", "note", { title: "素材包清单", flow: "ecom", step: 5, text: "" }, baseX + col * 4, baseY + row),
+  ];
+  const edges = [
+    ["n-ref", "n-white", "input"],
+    ["n-white", "n-main", "generate"],
+    ["n-white", "n-sku", "generate"],
+    ["n-white", "n-scene", "generate"],
+    ["n-white", "n-ugc", "generate"],
+    ["n-white", "n-detail", "generate"],
+    ["n-ref", "n-pack", "input"],
+  ].map(([source, target, relation]) => ({ source: { id: source }, target: { id: target }, relation }));
+  return { version: DRAMA_SNAPSHOT_VERSION, nodes, edges, updatedAt: 0 };
 }

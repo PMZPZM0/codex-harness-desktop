@@ -322,7 +322,7 @@ contextBridge.exposeInMainWorld("codex", {
   saveBuiltinPlugins: (cfg: unknown) => __ipc("builtin:save", 1, [cfg]),
   probeBuiltinModels: (input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) => __ipc("builtin:probe", 1, [input]),
   /* ⛔ `path` 是落盘后的本地路径（网关只回 b64_json 时也有值）；`url` **仅在网关给了 * 真托管地址时**才有值 —— data URL 绝不会回传（会把 3 MB base64 带进对话历史）。 */
-  generateImage: (input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string }) => __ipc("builtin:generate-image", 0, [input]),
+  generateImage: (input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }) => __ipc("builtin:generate-image", 0, [input]),
   describeImage: (input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) => __ipc("builtin:describe-image", 0, [input]),
   relayLogin: (input: { baseUrl: string; email: string; password: string }) => __ipc("relay:login", 1, [input]),
   relayLoadAccount: () => __ipc("relay:load-account", 0, []),
@@ -470,6 +470,12 @@ contextBridge.exposeInMainWorld("codex", {
   phoneHarnessWireAdb: () => __ipc("phone:harness:wire-adb", 0, []) as Promise<{adb:string}>,
   /* 把一段生图提示词交给**用户已配置的模型**润色（一次性短请求，非流式，不开会话）：补主体细节/环境/光线/构图/风格，只回一行可直接用的提示词。⛔ 只支持 chat 协议供应商；官方订阅与 responses-only 网关明确报错 */
   dramaCanvasPolishPrompt: (input: { text: string; context?: string }) => __ipc("drama-canvas:polish-prompt", 0, [input]) as Promise<{ text: string }>,
+  /* 锁主体（09-29 电商出图工作流）：用已配置的**视觉模型**把商品参考图反推成一段固定主体描述，六类图（主图/SKU/详情/场景/白底/买家秀）共用，保证一套图是同一件商品。⛔ 当前生图通道 builtin:generate-image 是纯文生图（无图输入）⇒ 这是「参考图锁主体」的可行替代，不是图生图；模型须支持视觉输入，否则如实报错 */
+  dramaCanvasDescribeImage: (input: { image: string; context?: string }) => __ipc("drama-canvas:describe-image", 0, [input]) as Promise<{ text: string }>,
+  /* 产物目录（09-29 用户要求「在 codexharness 目录下面新增一个存的目录，也可以选择和修改目录」）：默认 <userData>/outputs，首次读取自动创建；返回当前目录与「是否为默认」。 */
+  dramaCanvasOutputDir: () => __ipc("drama-canvas:output-dir", 0, []) as Promise<{ dir: string; isDefault: boolean }>,
+  /* 设置产物目录：pick=true 弹系统目录选择框；dir 给绝对路径直接设；dir 为空串 = 恢复默认。目录不可用会明确报错（不静默回退）。 */
+  dramaCanvasOutputDirSet: (input: { dir?: string; pick?: boolean }) => __ipc("drama-canvas:output-dir-set", 0, [input]) as Promise<{ dir: string; isDefault: boolean }>,
   /* 把二进制素材（配音 WAV / 生成图）按字节写进工作区 .drama-canvas/assets/；工作区掉出可信根（会话已关/重启）时回退应用数据目录并置 fallback=true（09-29 修「参考图传不了」）。⛔ 渲染层唯一的写入通道 fs:write 是 utf8 字符串写，写不了二进制，WAV 必须走这里 */
   dramaCanvasAssetWrite: (input: { workspace: string; name: string; base64: string; subdir?: string }) => __ipc("drama-canvas:asset-write", 0, [input]) as Promise<{ path: string; fallback?: boolean }>,
   /* 主动推送一条微信消息给用户（to 缺省=最近对话用户）。⛔ 正文气泡依赖 context_token，对方近期发过消息才最可靠；机器人未登录时抛错 */
@@ -485,7 +491,7 @@ contextBridge.exposeInMainWorld("codex", {
   /* 轮询任务状态（MiniMax 成功后自动两段式换下载地址） */
   videoPoll: (input: { providerId: string; jobId: string }) => __ipc("video:poll", 1, [input]) as Promise<{ status: string; url?: string; error?: string }>,
   /* 把产物视频拉回本地落 <workspace>/.drama-canvas/assets/（可信根校验） */
-  videoDownload: (input: { url: string; workspace: string; name: string; subdir?: string }) => __ipc("video:download", 0, [input]) as Promise<{ path: string; bytes: number }>,
+  videoDownload: (input: { url: string; workspace: string; name: string; subdir?: string; outputDir?: string }) => __ipc("video:download", 0, [input]) as Promise<{ path: string; bytes: number }>,
   /* 排队消息定时发送：主进程登记定时器（不受渲染层隐藏节流），到点广播 queue-timer:due */
   queueTimerSet: (input: { threadId: string; queuedSubmissionId: string; runAt: number }) => __ipc("queue-timer:set", 1, [input]) as Promise<{ ok: boolean; scheduled: boolean }>,
   /* 取消排队消息定时（删除消息/取消定时/到点清理时调） */

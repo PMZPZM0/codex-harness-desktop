@@ -1594,3 +1594,58 @@ button.drama-canvas-card-media:hover { color: var(--accent); }
   border: 1px solid var(--line-soft);
   vertical-align: 1px;
 }
+
+/* ─────────────── 连线：亮起来 + 流动动画 + 删线键（09-29 用户：「用那条线就，那条线亮起来，动画」）
+   「在用」的判据：线被悬停 / 被选中 / **两端卡片任一被选中** —— 后者是主场景（点开一张卡，
+   它连着的那几根线同时亮，一眼看清这张卡吃了谁、喂给谁）。 */
+.drama-canvas-edge-flow {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3.4;
+  stroke-linecap: round;
+  stroke-dasharray: 7 7;
+  pointer-events: none;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 65%, transparent));
+  animation: drama-edge-flow .55s linear infinite;
+}
+@keyframes drama-edge-flow {
+  to { stroke-dashoffset: -14; }
+}
+/* 悬停任意一根线也点亮（不必先选中卡片） */
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke-width: 3.2;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 55%, transparent));
+}
+.drama-canvas-edge-kill {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: .5;
+  pointer-events: all;
+  transition: opacity .12s ease, color .12s ease, border-color .12s ease;
+}
+.drama-canvas-edge-kill:hover,
+.drama-canvas-edge-kill.is-hot {
+  opacity: 1;
+  color: var(--red);
+  border-color: currentColor;
+}
+
+/* ─────────────── 卡片「工作中」点亮（09-29 用户：「卡片那个在工作，那个就亮起来，这样方便区分」）
+   判据 = 这张卡有任一通道还在跑（busy 里存在 `${nodeId}:` 前缀的键）。脉动一圈，一眼看出是它。 */
+.drama-canvas-card.is-working {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line-soft));
+  animation: drama-card-working 1.15s ease-in-out infinite;
+}
+@keyframes drama-card-working {
+  0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent), 0 0 14px color-mix(in srgb, var(--accent) 18%, transparent); }
+  50% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent), 0 0 24px color-mix(in srgb, var(--accent) 34%, transparent); }
+}

@@ -3654,7 +3654,9 @@ export async function run() {
   const main84 = readMainSource();
   const app84 = readAppUi();
 
-  (/async function persistGeneratedImage\(url: string\)/.test(main84) ? ok : fail)(
+  /* 09-29：落盘函数多了可选产物目录参数（persistGeneratedImage(url, dirOverride?)），
+     断言锚到「有 url: string 形参」即可 —— 本条的意图是「生图结果落盘、不回传 base64」。 */
+  (/async function persistGeneratedImage\(url: string/.test(main84) ? ok : fail)(
     "【84】有 persistGeneratedImage（生图结果落盘，而不是把 base64 回传）"
   );
   (/persistGeneratedImage[\s\S]{0,700}?app\.getPath\("userData"\), "images"/.test(main84) ? ok : fail)(

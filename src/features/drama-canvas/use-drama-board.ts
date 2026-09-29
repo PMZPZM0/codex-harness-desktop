@@ -70,7 +70,7 @@ function rfEdgesFrom(snapshot: DramaSnapshot): DramaRFEdge[] {
       id: dramaEdgeId(e.source, e.target),
       source: e.source,
       target: e.target,
-      type: "smoothstep",
+      type: "drama-edge",
       data: { relation: String(e.relation || "input") },
     }));
 }
@@ -103,6 +103,8 @@ export interface DramaBoardApi {
   onNodesChange: (changes: NodeChange<DramaRFNode>[]) => void;
   onEdgesChange: (changes: EdgeChange<DramaRFEdge>[]) => void;
   onConnect: (connection: Connection) => void;
+  /** 拖线端点改接（09-29 用户：「手动牵线」）。 */
+  onReconnect: (oldEdge: DramaRFEdge, connection: Connection) => void;
   selectedIds: string[];
   anchor: string | null;
   select: (ids: string[], anchor?: string) => void;
@@ -110,6 +112,8 @@ export interface DramaBoardApi {
   updatePayload: (id: string, patch: Record<string, any>) => void;
   updateManyPayloads: (entries: Array<{ id: string; patch: Record<string, any> }>) => void;
   removeNodes: (ids: string[]) => void;
+  /** 删连线（09-29 用户：「线没办法删」—— 底层一直能删，只是没有任何入口）。 */
+  removeEdges: (ids: string[]) => void;
   setRelation: (edgeId: string, relation: string) => void;
   replaceAll: (snapshot: DramaSnapshot, options?: { resetHistory?: boolean }) => void;
   mergeNodes: (incomingNodes: DramaSnapshot["nodes"], incomingEdges: DramaSnapshot["edges"]) => number;
@@ -321,7 +325,8 @@ export function useDramaBoard(onNotice: (text: string, tone?: "ok" | "err") => v
       id: dramaEdgeId(source, target),
       source,
       target,
-      type: "smoothstep",
+      /* 统一成自定义边类型 —— 它带「亮起来 + 流动动画 + ✕ 删线」三件事。 */
+      type: "drama-edge",
       data: { relation: dramaDefaultRelation(sourceKind, targetKind) },
     }];
     edgesRef.current = next;
@@ -431,6 +436,34 @@ export function useDramaBoard(onNotice: (text: string, tone?: "ok" | "err") => v
   }, [applySnapshot, scheduleHistory, scheduleSave, serializeNow]);
 
   /** 把一批**新**节点/连线并进当前画布（展开分镜表用）。已存在的 id 不重复铺。 */
+  /** 删连线：从 edgesRef 直接算（不依赖 setState 更新时机 —— 否则历史快照会记成删之前那份）。 */
+  const removeEdges = useCallback((ids: string[]) => {
+    const kill = new Set((ids || []).filter(Boolean));
+    if (!kill.size) return;
+    const next = edgesRef.current.filter((e) => !kill.has(e.id));
+    if (next.length === edgesRef.current.length) return;
+    edgesRef.current = next;
+    setEdges(next);
+    scheduleHistory(serializeNow());
+    scheduleSave();
+  }, [scheduleHistory, scheduleSave, serializeNow]);
+
+  /** 改接连线端点（拖线两端的圆点换到别的卡）：只换端点，**保留**原关系（relation）。 */
+  const onReconnect = useCallback((oldEdge: DramaRFEdge, connection: Connection) => {
+    const source = String(connection?.source || "");
+    const target = String(connection?.target || "");
+    if (!source || !target || source === target) return;
+    const seen = new Set<string>();
+    const next = edgesRef.current
+      .map((e) => (e.id === oldEdge.id ? { ...e, source, target } : e))
+      /* 去重：同向的两根线只留一根（跟 onConnect 同一口径） */
+      .filter((e) => { const key = `${e.source}→${e.target}`; if (seen.has(key)) return false; seen.add(key); return true; });
+    edgesRef.current = next;
+    setEdges(next);
+    scheduleHistory(serializeNow());
+    scheduleSave();
+  }, [scheduleHistory, scheduleSave, serializeNow]);
+
   const mergeNodes = useCallback((incomingNodes: DramaSnapshot["nodes"], incomingEdges: DramaSnapshot["edges"]) => {
     const have = new Set(nodesRef.current.map((n) => n.id));
     const fresh = incomingNodes.filter((n) => !have.has(n.id));
@@ -585,6 +618,8 @@ export function useDramaBoard(onNotice: (text: string, tone?: "ok" | "err") => v
     updatePayload,
     updateManyPayloads,
     removeNodes,
+    removeEdges,
+    onReconnect,
     setRelation,
     replaceAll,
     mergeNodes,

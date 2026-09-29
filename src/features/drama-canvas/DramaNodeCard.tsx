@@ -18,6 +18,8 @@ import {
   FileText,
   Film,
   Image as ImageIcon,
+  Images,
+  Lock,
   MapPin,
   Music,
   NotebookPen,
@@ -31,7 +33,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
-import { dramaIsKnownKind, dramaNodeDef, dramaNodeLabel } from "../../lib/drama-canvas-model.mjs";
+import { detailPanelsOf, dramaIsKnownKind, dramaNodeDef, dramaNodeLabel, imageKindMeta } from "../../lib/drama-canvas-model.mjs";
 import { useDramaActions } from "./drama-actions";
 /* ⛔ 按钮本体共享（卡面 + 检查器同一颗）—— 见 DramaChannelButton.tsx 顶部注释。 */
 import { DramaChannelButton, GEN_CHANNELS, visibleChannels } from "./DramaChannelButton";
@@ -48,6 +50,7 @@ const ICONS: Record<string, LucideIcon> = {
   scene: Film,
   shot: Video,
   image: ImageIcon,
+  imagegen: Images,
   video: Clapperboard,
   audio: Music,
   timeline: Film,
@@ -117,6 +120,18 @@ function AudioPreview({ path }: { path: string }) {
 /* ⛔ 通道映射表已提到 DramaChannelButton.tsx（导出 GEN_CHANNELS）—— 卡面与检查器共用一份。
    原来检查器不查这张表 ⇒ 选中笔记卡也能点「生成图片」，与卡面行为相反（09-28 code review 抓到）。 */
 
+/* 各卡片的提示词字段 + 给人看的名字（「AI 润色」按钮写回的就是这个字段）。
+   ⛔ 新增带提示词的卡片类型时**必须在这里登记**，否则那颗按钮不会出现（守卫【219】钉住）。 */
+const POLISH_FIELD: Record<string, string> = {
+  note: "text", script: "text", agent: "task",
+  character: "look", location: "description",
+  image: "text", imagegen: "prompt",
+  shot: "prompt", video: "prompt", audio: "text",
+};
+const POLISH_LABEL: Record<string, string> = {
+  text: "文案", task: "任务描述", look: "外貌描写", description: "描述", prompt: "提示词",
+};
+
 function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; payload: Record<string, any>; busyKey: (what: string) => boolean }) {
   const actions = useDramaActions();
   if (!GEN_CHANNELS[kind]) return null;
@@ -135,9 +150,14 @@ function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; 
        · act: "prompt"（写提示词位）⇒ 「AI 润色」+「上传参考图」（生图入口在出图卡）
        · act: "output"（出图位）      ⇒ 「生图」（已有图时按钮自动叫「重出」）
        · act: "upload"（素材位）      ⇒ 「上传参考图」
+       · act: "produce"（产出位：素材从上游来）⇒ 生成按钮，**不给**上传（避免每张卡都挂上传）
        · act: "generate"（通用生成位）⇒ 生成按钮 + 上传参考图
        · 未标记（自由拖的卡）         ⇒ 走 kind + 状态规则 */
   const act = String(payload.act || "");
+  /* 每张提示词卡都有自己的提示词字段 —— 润色要认**它自己那个**（09-29 用户要求全局集成）。
+     ⛔ 但**素材位没有提示词可润色**（用户实测：「参考图卡片，还要什么AI润色啊」）：
+        上传位（act=upload）/ 参考图槽（hint=ref）一律不挂润色 —— 那是纯粹的上传入口。 */
+  const polishField = act === "upload" || payload.hint === "ref" ? "" : (POLISH_FIELD[kind] || "");
   const allowed = act === "upload" || act === "prompt" ? [] : visibleChannels(kind, payload);
   /* ⛔ 按钮本体在 DramaChannelButton（09-28）—— 卡面与右侧检查器**共用同一颗按钮**。
      原来两处各写一份：卡面改名后（09-29 定稿为「生图」），检查器里还叫「生成图片」、未配置也不给
@@ -147,8 +167,10 @@ function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; 
      都不再重复出现这颗按钮 —— 每张卡都挂全套按键正是用户吐槽的「重复按键」。 */
   const canUpload = act === "upload" ? true
     : act === "prompt" ? true
-    : act === "generate" ? (kind === "image" || kind === "shot")
+    : act === "generate" ? (kind === "image" || kind === "shot" || kind === "imagegen")
+    : act === "produce" ? false
     : act === "output" ? false
+    : kind === "imagegen" ? !payload.ref && !payload.path && !payload.url
     : kind === "image" ? !payload.path && !payload.url && payload.hint !== "output"
     : kind === "character" || kind === "location" ? !payload.ref
     : kind === "shot" ? !payload.first_frame
@@ -158,23 +180,38 @@ function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; 
       {allowed.map((what) => (
         <DramaChannelButton key={what} id={id} kind={kind} what={what} payload={payload} busyKey={busyKey} />
       ))}
-      {/* 「AI 润色」只在写提示词位（09-29）：⛔ **不开会话** —— 主进程用已配置的模型发一次短请求，
-          结果**就地写回**这张卡（用户明确要求「不要新开会话」）。 */}
-      {act === "prompt" ? (
+      {/* 「AI 润色」**每张提示词卡都给**（09-29 用户：「在每张提示词卡片中都要集成AI润色功能」）：
+          按 kind 找到这张卡**自己的**提示词字段，润色结果就地写回那个字段（不再只认 text）。
+          ⛔ 不开会话 —— 主进程用已配置的模型发一次短请求。 */}
+      {polishField && act !== "output" ? (
         <button
           className="drama-canvas-btn is-ghost"
-          title="用已配置的模型润色这张卡的提示词（补主体细节 / 环境 / 光线 / 构图 / 风格），结果直接写回卡片"
+          title={`用已配置的模型润色这张卡的「${POLISH_LABEL[polishField] || "提示词"}」（补主体细节 / 环境 / 光线 / 构图 / 风格），结果直接写回卡片`}
           disabled={busyKey("polish")}
           onClick={async (e) => {
             e.stopPropagation();
-            const current = String(payload.text || payload.prompt || "").trim();
-            try {
-              const polished = await actions.story.polishPrompt(id, current);
-              if (polished) actions.board.updatePayload(id, { text: polished });
-            } catch { /* 失败提示由 story.polishPrompt 内部弹出（带原因） */ }
+            const current = String(payload[polishField] || "").trim();
+            const polished = await actions.story.polishPrompt(id, current);
+            if (polished) actions.board.updatePayload(id, { [polishField]: polished });
           }}
         >
           {busyKey("polish") ? <Loader2 size={12} className="is-spin" /> : <Sparkles size={12} />}AI 润色
+        </button>
+      ) : null}
+      {/* 锁定主体（09-29 电商出图工作流）：把「商品参考图」反推成一段固定主体描述，六类图共用。
+          ⛔ 生图通道是纯文生图（无图输入）⇒ 这是「参考图锁主体」的可行替代：文本层面锁死同一件商品。 */}
+      {kind === "imagegen" ? (
+        <button
+          className="drama-canvas-btn is-ghost"
+          title="把上游「商品参考图」反推成一段固定主体描述 —— 主图 / SKU / 详情 / 场景 / 白底 / 买家秀 共用，保证一套图是同一件商品"
+          disabled={busyKey("subject")}
+          onClick={async (e) => {
+            e.stopPropagation();
+            const text = await actions.story.describeSubject(id);
+            if (text) actions.board.updatePayload(id, { subject: text });
+          }}
+        >
+          {busyKey("subject") ? <Loader2 size={12} className="is-spin" /> : <Lock size={12} />}锁定主体
         </button>
       ) : null}
       {canUpload ? (
@@ -192,19 +229,24 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
   const payload = (data?.payload || {}) as Record<string, any>;
   const def = dramaNodeDef(kind);
   const busyKey = (what: string) => actions.story.busy.has(`${id}:${what}`);
+  /* 这张卡正在干活吗（09-29 用户：「卡片那个在工作，那个就亮起来」）——
+     忙碌键形如 `${nodeId}:${通道}`，按前缀判即可，不用逐个通道去问。 */
+  const working = [...actions.story.busy].some((k) => k.startsWith(`${id}:`));
   const update = (patch: Record<string, any>) => actions.board.updatePayload(id, patch);
   const subtitleOf = () => {
     if (kind === "shot") return `${payload.shot_size || "镜头"} · ${payload.duration || 4}s`;
     if (kind === "scene") return `${payload.place || "未命名场次"}${payload.time ? ` · ${payload.time}` : ""}`;
     if (kind === "agent") return payload.role || def.subtitle;
     if (kind === "image" || kind === "audio") return payload.role || def.subtitle;
+    if (kind === "imagegen") { const meta = imageKindMeta(payload.imageType); return `${meta.label} · ${meta.ratio}`; }
     return def.subtitle;
   };
   /* 卡片角色（09-29 用户：「生图流程看不懂」—— 卡片角色分不清 / 图落在哪张卡不明）。
      ⛔ 按**状态**判定，不按 kind：同一张 image 卡，没出图时它是「提示词」（输入），出图后是「出图结果」（产物）。
      配色也按 input / output 两大类走（见 21-drama-canvas.css 的 .is-role-*），一眼分出喂进去的与吐出来的。 */
   const roleOf = (): { key: "input" | "output"; label: string } | null => {
-    if (kind === "image") return payload.path || payload.url ? { key: "output", label: "出图结果" } : { key: "input", label: "提示词" };
+    if (kind === "image") return payload.path || payload.url ? { key: "output", label: "出图结果" } : payload.hint === "ref" ? { key: "input", label: "参考图" } : { key: "input", label: "提示词" };
+    if (kind === "imagegen") return payload.path || payload.url ? { key: "output", label: "出图结果" } : { key: "input", label: "提示词" };
     if (kind === "shot") return payload.video ? { key: "output", label: "镜头成片" } : payload.first_frame ? { key: "output", label: "镜头首帧" } : { key: "input", label: "镜头提示词" };
     if (kind === "character") return payload.ref ? { key: "output", label: "角色定妆照" } : { key: "input", label: "角色设定" };
     if (kind === "location") return payload.ref ? { key: "output", label: "场景图" } : { key: "input", label: "场景设定" };
@@ -322,6 +364,42 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
         </>
       );
     }
+    if (kind === "imagegen") {
+      /* 独立生图节点的卡面（09-29）：图类型 + 尺寸 + 提示词 + 锁定主体 + 参考图 + 详情图块清单。
+         ⛔ 与 image 卡分开写 —— 两者语义不同（参考图是素材槽，这张是产出槽），共用一个分支
+            必然又要互相迁就。 */
+      const meta = imageKindMeta(payload.imageType);
+      const outPath = String(payload.path || payload.url || "");
+      const refPath = String(payload.ref || "");
+      const tiles = meta.key === "detail" ? detailPanelsOf(payload) : [];
+      return (
+        <>
+          {outPath
+            ? <MediaPreview path={outPath} alt={String(payload.title || meta.label)} kind="image" title={String(payload.title || meta.label)} nodeId={id} fields={["path", "url"]} channel="image" />
+            : <div className="drama-canvas-empty"><Sparkles size={16} /><span>{payload.hint === "output" ? "产物位：点上游那张卡的「生图」" : `还没有${meta.label} —— 写好提示词点下面的「生图」`}</span></div>}
+          <div className="drama-canvas-card-line">{meta.label} · {meta.ratio}{meta.key === "detail" && tiles.length ? ` · ${tiles.length} 图块` : ""}</div>
+          <div className="drama-canvas-card-text is-prompt">{String(payload.prompt || meta.skeleton)}</div>
+          {payload.subject ? (
+            <div className="drama-canvas-card-ref" title="整套图共用的主体描述（锁定同一件商品）">
+              <span className="drama-canvas-card-ref-tag">锁定主体</span>
+              <span>{String(payload.subject)}</span>
+            </div>
+          ) : null}
+          {meta.key === "detail" ? (
+            <ul className="drama-canvas-hint" style={{ margin: 0, paddingLeft: 16 }}>
+              {tiles.slice(0, 6).map((tile) => <li key={tile}>{tile}</li>)}
+            </ul>
+          ) : null}
+          {refPath ? (
+            <div className="drama-canvas-card-ref" title="商品参考图（与生成结果分开存，不会互相覆盖）">
+              <span className="drama-canvas-card-ref-tag">参考图</span>
+              <img className="drama-canvas-card-ref-img" src={imageDisplaySrc(refPath)} alt="参考图" loading="lazy" />
+            </div>
+          ) : null}
+          <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />
+        </>
+      );
+    }
     if (kind === "image" || kind === "audio") {
       const path = String(payload.path || payload.url || "");
       /* ⛔ 参考图（payload.ref）与生成产物（payload.path）**分开显示**（09-29 用户：上传的参考图
@@ -344,7 +422,9 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
             ? "这张已经出图了：想换一版点下面的「重出」；想微调就先改提示词再出。"
             : payload.hint === "output"
               ? "产物位：点左边「写提示词」卡上的「生图」，图会出在这里。（也可以在这张卡直接写提示词生成）"
-              : "在这里写你要什么，例：一只橘猫坐在窗台上，暖色午后光。写完点下面的「生图」。"))}</div>
+              : payload.hint === "ref"
+                ? "商品参考图：点下面的「上传参考图」把商品照片放进来；再到右边的生图卡点「锁定主体」，它就变成整套图共用的主体描述（六类图不再各拍各的）。"
+                : "在这里写你要什么，例：一只橘猫坐在窗台上，暖色午后光。写完点下面的「生图」。"))}</div>
           <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />
         </>
       );
@@ -373,7 +453,7 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
   })();
 
   return (
-    <article className={`drama-canvas-card is-${kind} ${role ? `is-role-${role.key}` : ""} ${selected ? "is-selected" : ""}`} data-kind={kind}>
+    <article className={`drama-canvas-card is-${kind} ${role ? `is-role-${role.key}` : ""} ${selected ? "is-selected" : ""} ${working ? "is-working" : ""}`} data-kind={kind}>
       <Head kind={kind} id={id} title={dramaNodeLabel(kind, payload)} subtitle={subtitleOf()} role={role} step={step} />
       <div className="drama-canvas-card-body">{body}</div>
       <Handle type="target" position={Position.Left} className="drama-canvas-handle" />
