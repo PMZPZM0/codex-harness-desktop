@@ -216,13 +216,19 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 会话动态工具（thread/start 已注册，可直接调用）
 
-| 工具 | 用途 |
-|---|---|
-| memory_recall / memory_save | 查询/保存分层记忆（用户偏好/项目背景/工作流/任务经验）；发送前应用会自动注入相关记忆 |
-| generate_image / describe_image | 生图与视觉识图（需在 设置→插件→内置插件 配置，未配置时调用会返回指引） |
-| rpa_save / rpa_run | 保存自动化流程为 RPA 配方 / 列出并执行已存配方（逐步复现） |
-| task_add / task_update | 维护用户任务清单（新增/改状态/列出/删除） |
-| agent_ask | 向用户展示选项卡等待选择（第一项为推荐），用于关键决策确认 |
+| 工具 | 来源 | 用途 |
+|---|---|---|
+| agent_invoke / agent_archive_sessions | **内置 MCP** harness-dispatch | 派一个干净上下文的自己 / 归档本次调度产生的临时会话 |
+| scheduler_save / scheduler_list / scheduler_run / scheduler_delete | **内置 MCP** harness-dispatch | 定时任务四件套（`threadId:"current"` = 就在当前会话里续聊执行；不确定用户要在哪个会话执行就先问） |
+| image_generate / video_generate / video_status / video_concat | **内置 MCP** harness-dispatch | **媒体四件套（09-29）**：生图（`count` 1–4 并发变体、落盘返回本地路径）/ 提交视频（**立即返回 jobId，不等待**）/ 查任务（成功自动下载落盘）/ 多镜拼成片（ffmpeg，缺 FFmpeg 时引导开发工具页装） |
+| memory_recall / memory_save | 引擎 dynamicTools | 查询/保存分层记忆（用户偏好/项目背景/工作流/任务经验）；发送前应用会自动注入相关记忆 |
+| 生图：首选 **MCP `image_generate`**，命令行 `harness-media.mjs image` 只作老会话兜底；识图：命令行 `harness-media.mjs vision` | 命令行 | 需在 设置→插件→内置插件 配置；未配置时调用会返回指引 |
+| rpa_save / rpa_run | — | 保存自动化流程为 RPA 配方 / 列出并执行已存配方（逐步复现） |
+| task_add / task_update | — | 维护用户任务清单（新增/改状态/列出/删除） |
+| agent_ask | — | 向用户展示选项卡等待选择（第一项为推荐），用于关键决策确认 |
+
+> ⛔ 上表的**权威来源是代码**：MCP 工具见 `electron/features/dispatch-core.ts` 的工具数组（改完跑 `npm run gen:ipc` 会同步进 `harness-api` 技能），命令行能力见 `electron/developer-instructions.ts`。表里对不上的名字以代码为准（09-29 发现本表长期把命令行能力 `generate_image` 写成"工具"，且漏了后来新增的调度/媒体工具）。
+> ⛔ **生图生视频的完整用法**读两个内置技能：`image-generation`（提示词五段结构 / 尺寸选择 / 变体策略 / 一致性）、`video-generation`（模式路由 / 8 家厂商矩阵 / 去漂移 / 失败修复 / 成片拼接）。
 
 ## 工具链清单
 
