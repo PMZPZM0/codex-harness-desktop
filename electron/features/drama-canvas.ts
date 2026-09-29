@@ -17,6 +17,7 @@ import { app, ipcMain } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isInsideTrustedRoots } from "../runtime-refs";
+import { polishPromptOnce } from "../prompt-polish";
 
 /** 画布域的工作区目录：与分镜表同一棵树，用户拷走工作区就带走了全部产物 */
 const ROOT_DIR = ".drama-canvas";
@@ -70,6 +71,14 @@ ipcMain.handle("drama-canvas:asset-write", async (_event, input: { workspace: st
  *  ⛔ 域内窄通道，不是通用文件删除：目标由主进程自己拼（<workspace>/.drama-canvas/storyboards/<name>.json），
  *  渲染层只给「哪个工作区 + 叫什么名」；只删这一个 .json **文件**（目录一律拒绝）；
  *  文件不存在时幂等返回 removed:false，不抛（删除按钮重跑不会报错）。 */
+/** 提示词润色（09-29 用户「写提示词加一个 AI 润色功能」+「不要新开会话」）：
+ *  主进程用**用户已配置的模型**发一次短请求，结果就地写回卡片 —— 不开会话、不弹选择器。
+ *  ⛔ 域内窄通道：渲染层只给「润色哪段文本」，模型与凭证全在主进程取（渲染层看不到 Key）。 */
+ipcMain.handle("drama-canvas:polish-prompt", async (_event, input: { text: string; context?: string }) => {
+  const text = String(input?.text || "").trim();
+  if (!text) throw new Error("这张卡还没有提示词 —— 先写一版再润色");
+  return { text: await polishPromptOnce(text, input?.context ? String(input.context) : undefined) };
+});
 ipcMain.handle("drama-canvas:storyboard-file-remove", async (_event, input: { workspace: string; name: string }) => {
   const workspace = path.resolve(String(input?.workspace || ""));
   if (!workspace) return { removed: false };

@@ -30,9 +30,9 @@ export interface IpcDomainEntry {
 }
 
 export const IPC_DOMAINS: IpcDomainEntry[] = [
-  { prefix: "drama-canvas", count: 2, status: "in-features", file: "features/drama-canvas.ts",
-    channels: ["drama-canvas:asset-write", "drama-canvas:storyboard-file-remove"],
-    note: "09-27 新增：AI 短剧无限画布。画布/分镜表本体走 localStorage + fs:write（文本即可），这条专管**二进制素材**（本地 TTS 合成的配音 WAV）",
+  { prefix: "drama-canvas", count: 3, status: "in-features", file: "features/drama-canvas.ts",
+    channels: ["drama-canvas:asset-write", "drama-canvas:storyboard-file-remove", "drama-canvas:polish-prompt"],
+    note: "09-27 新增：AI 短剧无限画布。画布/分镜表本体走 localStorage + fs:write（文本即可），这条专管**二进制素材**（本地 TTS 合成的配音 WAV）；09-29 加 polish-prompt（写提示词卡的「AI 润色」，主进程用已配置模型发一次短请求，不开会话）",
   },
   { prefix: "phone", count: 7, status: "in-features", file: "features/phone-harness-ipc.ts",
     channels: ["phone:harness:status", "phone:harness:install", "phone:harness:uninstall", "phone:harness:doctor", "phone:harness:guides", "phone:harness:open-settings", "phone:harness:wire-adb"],

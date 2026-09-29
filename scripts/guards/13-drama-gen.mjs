@@ -826,14 +826,47 @@ export async function run() {
       );
     }
     const card216 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8"));
-    (/act === "upload" \|\| act === "output" \? \[\] : visibleChannels/.test(card216) ? ok : fail)(
-      "【216】卡面按 act 分发通道（模板只声明不接线 = 白声明）"
+    (/act === "upload" \|\| act === "prompt" \? \[\] : visibleChannels/.test(card216) ? ok : fail)(
+      "【216】卡面按 act 分发通道（模板只声明不接线 = 白声明；upload/prompt 位不生图，生图在产物位）"
     );
     (/act === "upload" \? true/.test(card216) ? ok : fail)(
       "【216】素材位（upload）只给「上传参考图」—— 素材是从外部拖/传进来的，不该有生成按钮"
     );
     (/act === "output" \? false/.test(card216) ? ok : fail)(
       "【216】产物位（output）不出按钮（图落在这里，重出请回唯一入口那张卡）"
+    );
+  }
+  /* ══ AI 润色 + 卡片按键按角色（09-29 用户：「写提示词，就加一个 AI 润色文案功能，出图就生图按键…
+     出图现在没有生图按键，怎么行」+「那你就加一个，不要新开会话」）══
+     ⛔ 两处都容易做偏：① 润色若走 Agent 会话就是「为一句润色开一次对话」（用户明确否掉了）；
+     ② 为了「按键不重复」把产物位按钮删空，用户要的是**每张卡有自己该有的专属按键**。 */
+  {
+    const region = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
+    const dc = readFileSync(join(ROOT, "electron", "features", "drama-canvas.ts"), "utf8");
+    const polish = readFileSync(join(ROOT, "electron", "prompt-polish.ts"), "utf8");
+    const card217 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8"));
+    const story217 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8"));
+    const polishChainOk = /AI 润色/.test(card217) && /story\.polishPrompt\(id/.test(card217) && /dramaCanvasPolishPrompt/.test(story217);
+
+    (/drama-canvas:polish-prompt/.test(region) && /"drama-canvas:polish-prompt"/.test(dc) ? ok : fail)(
+      "【217】润色通道已登记（handler + ipc-registry 域表；漏域表 = 预检直接红）"
+    );
+    (/act === "upload" \|\| act === "prompt" \? \[\] : visibleChannels/.test(card217) ? ok : fail)(
+      "【217】写提示词位（act=prompt）不挂生图通道（生图入口在出图卡）"
+    );
+    /* ⛔ 分工：卡面按钮调 story.polishPrompt（story 层负责 busy/提示），
+       真正的 IPC 调用在 use-drama-story ⇒ 两处都要在（只写一处 = 断链）。 */
+    (polishChainOk ? ok : fail)(
+      "【217】「AI 润色」按钮 → story.polishPrompt → 润色通道（三段接线齐全，就地写回卡片）"
+    );
+    (!/askAgent\(id, "polish"\)/.test(card217) ? ok : fail)(
+      "【217】负向：润色不许走 Agent 会话（用户明确「不要新开会话」——那是为一句润色开一次对话）"
+    );
+    (/只支持 chat 协议|responses 协议/.test(polish) && /官方订阅账号不支持/.test(polish) ? ok : fail)(
+      "【217】润色通道写明能力边界（chat 协议 / 官方订阅报错）—— 不符合就明确报错，不猜、不静默"
+    );
+    (/AbortSignal\.timeout/.test(polish) ? ok : fail)(
+      "【217】润色请求带超时（网关慢要报错，不能挂住 UI）"
     );
   }
 }

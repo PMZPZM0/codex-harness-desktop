@@ -297,7 +297,7 @@ export function imageStarterWorkflow(baseX = 120, baseY = 100) {
      ⛔ payload 里**不预填引导文本**（09-28 教训：引导词会被当真实提示词发给模型 ⇒ 污染）；
      引导语由卡片空态文案承担。守卫【214】钉住「≤3 节点 / ≤2 连线」防复杂度回潮。 */
   const nodes = [
-    node("n-prompt", "image", { title: "写提示词", step: 1, act: "generate" }, baseX, baseY),
+    node("n-prompt", "image", { title: "写提示词", step: 1, act: "prompt" }, baseX, baseY),
     /* hint: "output" = 模板里的**产物位**（渲染层据此把空态写成「点左边卡的生图，图出在这里」，
        而不是普通的「在这里写提示词」——两张卡都教写提示词会让新手分不清哪张出图）。 */
     node("n-out", "image", { title: "出图", step: 2, hint: "output", act: "output" }, baseX + col, baseY),

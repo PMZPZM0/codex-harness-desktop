@@ -70,6 +70,8 @@ export interface DramaStoryApi {
   createStory: (title: string) => Promise<Storyboard>;
   /** 保存并返回结果（09-29）：调用方据此给**一条**准确提示 —— 写没写进工作区、失败原因是什么。 */
   saveNow: () => Promise<{ path: string | null; error?: string }>;
+  /** 润色提示词（画布内直调模型，不开会话）；返回润色后的文本，失败返回空串。 */
+  polishPrompt: (id: string, text: string) => Promise<string>;
   expand: (boardNodeId: string, boardName: string) => Promise<{ scenes: number; shots: number; characters: number; missing: string[] } | null>;
   writeBack: (nodeId: string) => Promise<void>;
   busy: Set<string>;
@@ -169,6 +171,27 @@ export function useDramaStory(
     }, STORYBOARD_SAVE_MS);
   }, [persist]);
 
+  /** 提示词润色（09-29 用户：「写提示词，就加一个 AI 润色文案功能」+「不要新开会话」）：
+   *  主进程用**已配置的模型**发一次短请求并直接返回润色结果 —— 不开会话、不弹选择器；
+   *  渲染层拿到结果就地写回卡片（调用方负责 updatePayload）。失败带原因弹提示。 */
+  const polishPrompt = useCallback(async (id: string, text: string): Promise<string> => {
+    const trimmed = String(text || "").trim();
+    if (!trimmed) { notice("这张卡还没有提示词 —— 先写一版再润色", "err"); return ""; }
+    const key = `${id}:polish`;
+    if (busy.has(key)) return "";
+    setBusy((current) => new Set(current).add(key));
+    try {
+      const result = await window.codex.dramaCanvasPolishPrompt({ text: trimmed });
+      const polished = String(result?.text || "").trim();
+      if (polished) notice("提示词已润色（不满意可以再点一次，或直接手改）", "ok");
+      return polished;
+    } catch (error) {
+      notice(`润色失败：${error instanceof Error ? error.message : String(error)}`, "err");
+      return "";
+    } finally {
+      setBusy((current) => { const next = new Set(current); next.delete(key); return next; });
+    }
+  }, [busy, notice]);
   const saveNow = useCallback(async () => {
     if (saveTimer.current) { window.clearTimeout(saveTimer.current); saveTimer.current = null; }
     return persist();
@@ -820,5 +843,6 @@ export function useDramaStory(
     uploadRef,
     channels,
     refreshChannels,
-  }), [stories, storyName, story, problems, switchStory, renameStory, deleteStory, createStory, saveNow, expand, writeBack, busy, generate, generateBatch, stopBatch, batch, exportMovie, exporting, uploadRef, channels, refreshChannels]);
+    polishPrompt,
+  }), [stories, storyName, story, problems, switchStory, renameStory, deleteStory, createStory, saveNow, expand, writeBack, busy, generate, generateBatch, stopBatch, batch, exportMovie, exporting, uploadRef, channels, refreshChannels, polishPrompt]);
 }
