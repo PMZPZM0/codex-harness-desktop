@@ -1259,7 +1259,10 @@
 /* ⛔ white-space: nowrap 是必须的：实测（09-29）不给就把「画布」压成「画/布」两行 ——
    标签一旦折行，反而是更难看的噪声。flex: none 保证它不被压缩。 */
 .drama-canvas-head .drama-canvas-select > span { color: var(--muted); font-size: 11px; white-space: nowrap; flex: none; }
-.drama-canvas-head-left { flex: 1 1 auto; flex-wrap: nowrap; min-width: 0; overflow: hidden; }
+/* ⛔⛔ 09-29：head-left **不能** overflow:hidden ——「待生成 N」的明细浮层挂在它内部，
+   父级一裁浮层就整块看不见（同款坑：上一轮工作流菜单被视口盖住）。
+   截断由**标题元素自己**负责（下一行仍在，它才是真正会超宽的那个）。 */
+.drama-canvas-head-left { flex: 1 1 auto; flex-wrap: nowrap; min-width: 0; }
 .drama-canvas-head-left > div:first-of-type { min-width: 0; overflow: hidden; }
 .drama-canvas-head-left > div:first-of-type > b,
 .drama-canvas-head-left > div:first-of-type > small {
@@ -1338,3 +1341,69 @@
 .drama-canvas-pending:hover { color: var(--accent); }
 /* 进度芯片里「图 2 / 待生成 3」挨太近会看成一体（实测截图）—— 拉开一点 */
 .drama-canvas-progress { gap: 10px; }
+/* ─────────────────────────────── 「待生成 N」明细展开条（09-29 二改）
+   ⛔ 为什么不是浮层：浮层挂在顶栏内，而 .drama-canvas-shell 有 overflow:hidden（圆角裁切，
+   必须保留）⇒ 实测展开后只剩一条 12px 白线、生成按钮 elementFromPoint 命中的是 #root（点不到）。
+   展开条是 shell 的直接子元素、不溢出 ⇒ 不被裁、也不遮挡画布。 */
+.drama-canvas-pendingbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--orange) 8%, var(--bg));
+  font-size: 12px;
+}
+.drama-canvas-pendingbar > b { flex: none; color: var(--text); font-weight: 600; }
+.drama-canvas-pendingbar-list {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  max-height: 60px;
+  overflow: auto;
+}
+.drama-canvas-pending-item {
+  font-size: 11.5px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: var(--bg);
+  white-space: nowrap;
+}
+.drama-canvas-pending-go {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 11px;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.drama-canvas-pending-go:hover { border-color: var(--accent); }
+.drama-canvas-pending-close {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.drama-canvas-pending-close:hover { color: var(--text); }
+/* ⛔ 实测（09-29）：浮层是 flex column，里面的按钮会被**压缩**（实测高度从应有 ~56px 压到 28px，
+   结果 elementFromPoint 命不中它 = 点不到）。菜单项一律不参与收缩。 */
+.drama-canvas-headmenu > button { flex: none; }
+.drama-canvas-headmenu > .drama-canvas-pending-item { flex: none; }

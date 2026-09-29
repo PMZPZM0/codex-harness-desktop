@@ -262,12 +262,7 @@ export async function run() {
       "【201】分镜表下拉只在短剧工作流渲染（生图流那个「（尚无）」没人看得懂）"
     );
     // 「待生成 N」= 入口而不是死数字：必须是 button（可点触发批量生成）且悬停列明细
-    (/<button\s+className="drama-canvas-pending"[\s\S]{0,400}?onClick=\{\(\) => void story\.generateBatch\("pending"\)\}/.test(canvasSrc2) ? ok : fail)(
-      "【201】「待生成 N」可点击直接批量生成（挂牌子不进门 = 还是死数字）"
-    );
-    (canvasSrc2.includes("progress.pendingCards") && canvasSrc2.includes("progress.pendingCards.join") ? ok : fail)(
-      "【201】「待生成 N」悬停列出是哪几张卡（数字必须有出处）"
-    );
+    /* 「待生成 N」的判据移到【204】（09-29 反转：单击不再直接开跑，改为先看明细再确认） */
     // ⛔ 实测坑：不给 nowrap 时「画布」标签被 flex 压成「画/布」两行，比隐藏还难看
     (/\.drama-canvas-head \.drama-canvas-select > span \{[^}]*white-space:\s*nowrap/.test(css) ? ok : fail)(
       "【201】下拉标签不折行（实测压成「画/布」两行）"
@@ -286,9 +281,21 @@ export async function run() {
     (/\.drama-canvas-head \{[^}]*flex-wrap: nowrap/.test(css) ? ok : fail)(
       "【201】顶栏 flex-wrap: nowrap（永不换行 —— 靠断点摘标签的方案在宽窗口会失效）"
     );
-    (/flex: 1 1 auto; flex-wrap: nowrap; min-width: 0; overflow: hidden/.test(css) ? ok : fail)(
+    /* ⛔ 09-29：这里原来要求 head-left 有 `overflow: hidden`。实测那个 hidden 会把挂在顶栏里的
+       明细浮层**整块裁掉**（只剩一条线、按钮 elementFromPoint 命中 #root）—— 裁切是**标题元素自己**
+       的职责。新判据：head-left 可收缩（flex:1 1 auto + min-width:0）但**自己不许裁切**，
+       同时标题元素必须仍然自己截断（两条一起才既单行又不裁弹层）。 */
+    (/\.drama-canvas-head-left \{[^}]*flex: 1 1 auto[^}]*min-width: 0/.test(css) ? ok : fail)(
       "【201】左侧可收缩（nowrap 下靠标题截断让位，而不是把按钮挤下去）"
     );
+    {
+      const hlRule = /\.drama-canvas-head-left \{([^}]*)\}/.exec(css);
+      const selfClips = Boolean(hlRule && /overflow:\s*hidden/.test(hlRule[1]));
+      const titleClips = /\.drama-canvas-head-left > div:first-of-type[^{]*\{[^}]*overflow:\s*hidden/.test(css);
+      (!selfClips && titleClips ? ok : fail)(
+        "【201】head-left 自己不裁切、由标题元素负责截断（head-left 裁切会把顶栏里的明细条/弹层切掉）"
+      );
+    }
   }
 
   /* ══ 媒体生成三件套（09-29 用户：「让 Codex 能够直接调用生图与视频工作流」）══
@@ -457,6 +464,46 @@ export async function run() {
     );
     (/if \(copySafe\) \{[\s\S]{0,400}?"-c", "copy"/.test(videoGenSrc) ? ok : fail)(
       "【203】copy 被 copySafe 包住（漏掉判断 = 静默坏片又回来了）"
+    );
+  }
+  /* ══ 批量生成的两个「静默」缺陷（09-29 用户：「我没有生成啊，怎么显示生成中」）══
+     ① 顶栏那个数字被做成了**单击直接开跑**的按钮 —— 一个长成标签样子的元素触发会调 API、
+        会花钱的动作，用户点它只是想看「这 3 是什么」。判据：那颗按钮的 onClick 里不许出现 generateBatch。
+     ② 批量此前**静默开始**（只在结束汇总），用户不知道开始了、也不知道去哪停。判据：开始必须报一次。
+     ⛔ 这类断言要锚**结构**（谁触发谁），不能只锚「按钮存在」—— 存在的东西照样能接错动作。 */
+  {
+    const canvasSrc204 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8"));
+    const storySrc204 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8"));
+    // ① 只取「待生成 N」那颗按钮自己的 JSX（到它自己的 </button> 为止），检查里面有没有开跑
+    const start = canvasSrc204.indexOf('className="drama-canvas-pending"');
+    const end = start >= 0 ? canvasSrc204.indexOf("</button>", start) : -1;
+    const pendingBtnJsx = start >= 0 && end > start ? canvasSrc204.slice(start, end) : "";
+    (pendingBtnJsx && !/generateBatch/.test(pendingBtnJsx) ? ok : fail)(
+      "【204】「待生成 N」单击只开明细浮层（不许直接开跑 —— 用户点它是想看这 3 是什么）"
+    );
+    // ⛔ 用「明细列表之后紧跟生成按钮」这个**方向**判，不用固定字符窗口串两句
+    //    （实测 1200 窗口不够 —— 中间插几行就假红；本仓踩过同款坑）
+    // ⛔ 明细做成**展开条**而不是浮层：实测浮层被 .drama-canvas-shell 的 overflow:hidden
+    //    （圆角裁切，必须保留）切成一条 12px 白线，生成按钮 elementFromPoint 命中 #root（点不到）。
+    //    而画布祖先链有 backdrop-filter（创建 containing block）⇒ position:fixed 也逃不掉。
+    (canvasSrc204.includes("drama-canvas-pendingbar") ? ok : fail)(
+      "【204】待生成明细用展开条（浮层会被 shell 的圆角裁切切掉 —— 实测只剩一条线）"
+    );
+    (/<\/header>[\s\S]{0,700}?drama-canvas-pendingbar/.test(canvasSrc204) ? ok : fail)(
+      "【204】展开条渲染在 header 之后（shell 直接子元素 —— 挂在顶栏里就会再次被裁）"
+    );
+    (canvasSrc204.includes("progress.pendingCards.slice") && canvasSrc204.includes("drama-canvas-pending-item") ? ok : fail)(
+      "【204】展开条真的列出是哪几张卡（只报数字 = 用户还是不知道这 3 是什么）"
+    );
+    (canvasSrc204.includes("批量生成这") ? ok : fail)(
+      "【204】展开条里有明确的「批量生成这 N 张」主按钮才开跑（先看明细，再动手）"
+    );
+    // ② 批量开始必须出声（含停止入口指引）
+    (/开始批量生成/.test(storySrc204) ? ok : fail)(
+      "【204】批量生成开始时报一次（此前静默开始 ⇒ 用户以为「我没生成」）"
+    );
+    (/点一下就停|可随时停止/.test(storySrc204) ? ok : fail)(
+      "【204】开始提示里写明停止入口（让人知道怎么收手）"
     );
   }
 }

@@ -624,6 +624,13 @@ export function useDramaStory(
       if (reasons.length < 3) reasons.push(text);
     };
     setBatch({ running: true, total: queued, done: 0, failed: 0, images: 0, videos: 0, label: "准备中…" });
+    // ⛔⛔ 09-29 用户：「我没有生成啊，怎么显示生成中」—— 批量此前是**静默开始**的
+    //    （只在结束时汇总一次）。用户既不知道它开始了、也不知道去哪儿停 ⇒ 开始就报一次，
+    //    并明确说清停止入口。这类"后台悄悄启动的花钱动作"必须自己出声。
+    notice(
+      `开始批量生成：${queued} 个动作（图片/配音真生成，视频只提交任务）—— 顶栏那颗转圈按钮点一下就停`,
+      "ok",
+    );
 
     /** 跑一个动作并推进进度。`submitOnly` 的动作（视频）提交成功即算这一轮完成。 */
     const runOne = async (task: BatchTask, submitOnly = false) => {
