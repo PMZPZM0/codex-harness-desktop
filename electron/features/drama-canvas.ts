@@ -57,3 +57,20 @@ ipcMain.handle("drama-canvas:asset-write", async (_event, input: { workspace: st
   await fs.writeFile(target, buffer);
   return { path: target };
 });
+
+/** 删分镜表的**工作区文件**（09-29 项目管理）。
+ *  ⛔ 域内窄通道，不是通用文件删除：目标由主进程自己拼（<workspace>/.drama-canvas/storyboards/<name>.json），
+ *  渲染层只给「哪个工作区 + 叫什么名」；只删这一个 .json **文件**（目录一律拒绝）；
+ *  文件不存在时幂等返回 removed:false，不抛（删除按钮重跑不会报错）。 */
+ipcMain.handle("drama-canvas:storyboard-file-remove", async (_event, input: { workspace: string; name: string }) => {
+  const workspace = path.resolve(String(input?.workspace || ""));
+  if (!workspace) return { removed: false };
+  if (!isInsideTrustedRoots(workspace)) throw new Error("只允许操作会话工作区或应用数据目录");
+  const safe = String(input?.name || "main").replace(/[\\/:*?"<>|]/g, "_").replace(/.json$/i, "") || "main";
+  const target = path.join(workspace, ROOT_DIR, "storyboards", `${safe}.json`);
+  const stat = await fs.stat(target).catch(() => null);
+  if (!stat) return { removed: false };
+  if (!stat.isFile()) throw new Error("目标不是文件，拒绝删除");
+  await fs.unlink(target);
+  return { removed: true };
+});

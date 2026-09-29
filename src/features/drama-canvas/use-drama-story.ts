@@ -42,6 +42,10 @@ export interface DramaStoryApi {
   story: Storyboard | null;
   problems: string[];
   switchStory: (name: string) => void;
+  /** 改分镜表显示标题（name 引用键不动） */
+  renameStory: (name: string, title: string) => void;
+  /** 删分镜表（级联：本机两份状态 + 工作区文件 + 画布卡与 meta 的引用解绑） */
+  deleteStory: (name: string) => Promise<void>;
   createStory: (title: string) => Promise<Storyboard>;
   saveNow: () => Promise<void>;
   expand: (boardNodeId: string, boardName: string) => Promise<{ scenes: number; shots: number; characters: number; missing: string[] } | null>;
@@ -143,6 +147,46 @@ export function useDramaStory(
     if (!name || name === storyName) return;
     void saveNow().then(() => setStoryName(name));
   }, [saveNow, storyName]);
+
+  /** 改分镜表显示标题（09-29 项目管理）：name（文件名/引用键）不动，只改 meta.title。
+   *  ⛔ name 不能改：画布卡片 payload.board、BoardMeta.board、工作区文件名都按它引用，
+   *  改名 = 全部引用一起换（高风险），本轮只支持改显示标题。 */
+  const renameStory = useCallback((name: string, title: string) => {
+    const clean = String(title || "").trim();
+    if (!clean) return;
+    const meta = store.listStoryboards().find((s) => s.name === name);
+    if (!meta) return;
+    setStories(store.upsertStoryboard({ ...meta, title: clean }));
+  }, []);
+
+  /** 删分镜表（09-29 项目管理）。⛔ 级联清干净 —— 「一个对象被删除时，衍生状态都要有去向」：
+   *  ① 本机索引 + 本地快照（store.removeStoryboard）
+   *  ② 工作区文件 `.drama-canvas/storyboards/<name>.json`（主进程窄通道，幂等）
+   *  ③ **画布卡片引用**：kind=storyboard 且 payload.board===name 的卡 → 解绑（board:""，
+   *     卡上会显示「（未绑定）」，用户可重选）—— 已展开的场景/镜头卡**保留**（数据在卡里，不丢）
+   *  ④ 画布 meta 上挂的 board 字段（BoardMeta.board === name）→ 清掉
+   *  ⑤ 删的是当前表 → 切到剩余第一张（没有就 "main"） */
+  const deleteStory = useCallback(async (name: string) => {
+    if (!name) return;
+    setStories(store.removeStoryboard(name));
+    // ③ 解绑画布卡片引用（已展开的场次/镜头卡保留 —— 它们是数据副本，不是索引）
+    const bound = board.nodes.filter((n) => String(n.data?.kind || "") === "storyboard" && String(n.data?.payload?.board || "") === name);
+    for (const node of bound) board.updatePayload(node.id, { board: "", style: "" });
+    // ④ 清画布 meta 上的挂表记录（BoardMeta.board === name）
+    board.unbindStoryboard(name);
+    // ② 工作区文件（不存在时幂等返回，不抛）
+    if (workspace) {
+      try { await window.codex.dramaCanvasStoryboardFileRemove({ workspace, name }); }
+      catch (error) { notice(`分镜表已从列表移除，但工作区文件没删掉：${error instanceof Error ? error.message : String(error)}`, "err"); }
+    }
+    // ⑤ 删的是当前表 → 换一张
+    if (storyName === name) {
+      const rest = store.listStoryboards();
+      setStoryName(rest[0]?.name || "main");
+    }
+    board.saveNow();
+    notice(`分镜表「${name}」已删除${bound.length ? `（${bound.length} 张画布卡已解绑，卡片内容保留）` : ""}`, "ok");
+  }, [board, notice, storyName, workspace]);
 
   /**
    * 「展开场次与镜头」：读分镜表 → 铺卡片 → 顺手把这一镜的 cast 连线也接上。
@@ -422,6 +466,8 @@ export function useDramaStory(
     story,
     problems,
     switchStory,
+    renameStory,
+    deleteStory,
     createStory,
     saveNow,
     expand,
@@ -431,5 +477,5 @@ export function useDramaStory(
     uploadRef,
     channels,
     refreshChannels,
-  }), [stories, storyName, story, problems, switchStory, createStory, saveNow, expand, writeBack, busy, generate, uploadRef, channels, refreshChannels]);
+  }), [stories, storyName, story, problems, switchStory, renameStory, deleteStory, createStory, saveNow, expand, writeBack, busy, generate, uploadRef, channels, refreshChannels]);
 }

@@ -30,8 +30,8 @@ export interface IpcDomainEntry {
 }
 
 export const IPC_DOMAINS: IpcDomainEntry[] = [
-  { prefix: "drama-canvas", count: 1, status: "in-features", file: "features/drama-canvas.ts",
-    channels: ["drama-canvas:asset-write"],
+  { prefix: "drama-canvas", count: 2, status: "in-features", file: "features/drama-canvas.ts",
+    channels: ["drama-canvas:asset-write", "drama-canvas:storyboard-file-remove"],
     note: "09-27 新增：AI 短剧无限画布。画布/分镜表本体走 localStorage + fs:write（文本即可），这条专管**二进制素材**（本地 TTS 合成的配音 WAV）",
   },
   { prefix: "phone", count: 7, status: "in-features", file: "features/phone-harness-ipc.ts",

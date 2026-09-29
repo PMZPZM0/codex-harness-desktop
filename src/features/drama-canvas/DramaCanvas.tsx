@@ -29,6 +29,8 @@ import {
   Crosshair,
   GitBranch,
   LayoutGrid,
+  ChevronDown,
+  Sparkles,
   Loader2,
   Maximize2,
   Move,
@@ -108,6 +110,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
      payload（image / video / audio / first_frame），点条目把视口飞到那张卡。 */
   const [resultsOpen, setResultsOpen] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(false);
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [marquee, setMarquee] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string | null } | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -412,10 +415,33 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             </div>
           </div>
           <div className="drama-canvas-head-actions">
-            <button className="drama-canvas-head-btn" onClick={() => setNaming({ kind: "board", value: "新画布" })}><Plus size={13} />新建画布</button>
-            <button className="drama-canvas-head-btn" onClick={() => setNaming({ kind: "story", value: "未命名短剧" })}><Plus size={13} />新建分镜表</button>
-            <button className="drama-canvas-head-btn is-brand" onClick={() => createStarter("drama")}>新建短剧工作流</button>
-              <button className="drama-canvas-head-btn is-brand" onClick={() => createStarter("image")}>新建生图工作流</button>
+            {/* 09-29 用户要求「按键布局调整一下，做好看一点」：四个「新建」此前各占一个按钮，
+                窄窗口下顶栏被撑成两行。收成一个下拉菜单 —— 主按钮区一行放得下，菜单里带一句说明。 */}
+            <div className="drama-canvas-headmenu-wrap">
+              <button className="drama-canvas-head-btn is-primary" aria-expanded={newMenuOpen} title="新建画布 / 分镜表 / 模板工作流" onClick={() => setNewMenuOpen((open) => !open)}>
+                <Plus size={13} />新建<ChevronDown size={12} />
+              </button>
+              {newMenuOpen ? (
+                <>
+                  <div className="drama-canvas-headmenu-backdrop" onClick={() => setNewMenuOpen(false)} />
+                  <div className="drama-canvas-headmenu" role="menu">
+                    <button role="menuitem" onClick={() => { setNewMenuOpen(false); setNaming({ kind: "board", value: "新画布" }); }}>
+                      <LayoutGrid size={13} /><span>新建画布<small>空白画布：自己拖卡与连线</small></span>
+                    </button>
+                    <button role="menuitem" onClick={() => { setNewMenuOpen(false); setNaming({ kind: "story", value: "未命名短剧" }); }}>
+                      <Clapperboard size={13} /><span>新建分镜表<small>唯一真源：剧本 / 角色 / 场次 / 镜头</small></span>
+                    </button>
+                    <div className="drama-canvas-headmenu-sep">从模板起手</div>
+                    <button role="menuitem" className="is-brand" onClick={() => { setNewMenuOpen(false); createStarter("drama"); }}>
+                      <Sparkles size={13} /><span>短剧工作流<small>剧本 → 角色 → 分镜 → 逐镜出片</small></span>
+                    </button>
+                    <button role="menuitem" className="is-brand" onClick={() => { setNewMenuOpen(false); createStarter("image"); }}>
+                      <Images size={13} /><span>生图工作流<small>需求 → 主提示词 → 出图 A/B → 选图</small></span>
+                    </button>
+                  </div>
+                </>
+              ) : null}
+            </div>
             <button className="drama-canvas-head-btn" title="管理所有画布项目：切换 / 重命名 / 删除 / 打开数据文件夹" onClick={() => { setProjectsOpen(true); setResultsOpen(false); }}><FolderOpen size={13} />项目管理</button>
             <button className="drama-canvas-head-btn" title="集中查看这张画布生成的图 / 视频 / 配音" onClick={() => { setResultsOpen(true); setInspectorOpen(false); }}><Images size={13} />生成结果</button>
             <button className="drama-canvas-head-btn" onClick={() => { board.saveNow(); void story.saveNow(); pushNotice("已保存到本机" + (workspace ? "（分镜表同时写到工作区）" : ""), "ok"); }}><Save size={13} />保存</button>
@@ -539,12 +565,18 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             <DramaProjectsPanel
               boards={board.boards}
               current={board.board}
+              stories={story.stories}
+              currentStory={story.storyName}
               workspace={workspace}
               onClose={() => setProjectsOpen(false)}
               onSwitch={(name: string) => board.switchBoard(name)}
               onRename={(name: string, title: string) => board.renameBoard(name, title)}
               onDelete={(name: string) => board.deleteBoardByName(name)}
               onNew={() => setNaming({ kind: "board", value: "新项目" })}
+              onStorySwitch={(name: string) => story.switchStory(name)}
+              onStoryRename={(name: string, title: string) => story.renameStory(name, title)}
+              onStoryDelete={(name: string) => void story.deleteStory(name)}
+              onStoryNew={() => setNaming({ kind: "story", value: "新分镜表" })}
             />
           ) : null}
         </div>

@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-09-27",
-  "count": 357,
+  "count": 358,
   "channels": [
     {
       "name": "request",
@@ -3541,6 +3541,16 @@
       "cast": null,
       "note": "在系统资源管理器中定位文件（可信根校验同 fs:read）；画布生成产物「打开文件夹」",
       "summary": "在系统资源管理器中定位工作区内的文件（画布生成产物「打开文件夹」）"
+    },
+    {
+      "name": "dramaCanvasStoryboardFileRemove",
+      "channel": "drama-canvas:storyboard-file-remove",
+      "paramsImpl": "input: { workspace: string; name: string }",
+      "paramsDecl": "input: { workspace: string; name: string }",
+      "returns": "Promise<{ removed: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "删分镜表的工作区文件（只删 .drama-canvas/storyboards/<name>.json 这一个文件；不存在时幂等返回 removed:false）"
     }
   ]
 }
