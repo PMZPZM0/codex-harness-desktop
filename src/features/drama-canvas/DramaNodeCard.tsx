@@ -52,7 +52,7 @@ const ICONS: Record<string, LucideIcon> = {
   timeline: Film,
 };
 
-function Head({ kind, id, title, subtitle, extra }: { kind: string; id: string; title: string; subtitle: string; extra?: ReactNode }) {
+function Head({ kind, id, title, subtitle, extra, role, step }: { kind: string; id: string; title: string; subtitle: string; extra?: ReactNode; role?: { key: "input" | "output"; label: string } | null; step?: number }) {
   const actions = useDramaActions();
   const def = dramaNodeDef(kind);
   const Icon = ICONS[kind] || NotebookPen;
@@ -60,7 +60,7 @@ function Head({ kind, id, title, subtitle, extra }: { kind: string; id: string; 
     <header className="drama-canvas-card-head">
       <span className="drama-canvas-card-glyph"><Icon size={14} /></span>
       <div className="drama-canvas-card-title">
-        <b>{title}</b>
+        <b>{step ? <span className="drama-canvas-card-step" title={`流程第 ${step} 步`}>{step}</span> : null}{title}{role ? <span className={`drama-canvas-card-role is-${role.key}`} title={role.key === "input" ? "这一步是「输入」——把提示词 / 参考喂进去" : "这一步是「产物」——生成结果落在这张卡上"}>{role.label}</span> : null}</b>
         <small>{subtitle || def.subtitle}</small>
       </div>
       {extra}
@@ -121,7 +121,7 @@ function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; 
   const allowed = GEN_CHANNELS[kind];
   if (!allowed) return null;
   /* ⛔ 按钮本体在 DramaChannelButton（09-28）—— 卡面与右侧检查器**共用同一颗按钮**。
-     原来两处各写一份：卡面改成「生图 · 首帧」后，检查器里还叫「生成图片」、未配置也不给
+     原来两处各写一份：卡面改名后（09-29 定稿为「生图」），检查器里还叫「生成图片」、未配置也不给
      引导（点了才报错）—— 同一个动作两套实现的必然结果。这里只决定「露出哪几条通道」。
      09-28 闭环追加：素材类卡加「上传参考图」（此前只有拖拽一条路，用户不知道能传）。 */
   const canUpload = ["image", "character", "location", "shot"].includes(kind);
@@ -153,6 +153,21 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
     if (kind === "image" || kind === "audio") return payload.role || def.subtitle;
     return def.subtitle;
   };
+  /* 卡片角色（09-29 用户：「生图流程看不懂」—— 卡片角色分不清 / 图落在哪张卡不明）。
+     ⛔ 按**状态**判定，不按 kind：同一张 image 卡，没出图时它是「提示词」（输入），出图后是「出图结果」（产物）。
+     配色也按 input / output 两大类走（见 21-drama-canvas.css 的 .is-role-*），一眼分出喂进去的与吐出来的。 */
+  const roleOf = (): { key: "input" | "output"; label: string } | null => {
+    if (kind === "image") return payload.path || payload.url ? { key: "output", label: "出图结果" } : { key: "input", label: "提示词" };
+    if (kind === "shot") return payload.video ? { key: "output", label: "镜头成片" } : payload.first_frame ? { key: "output", label: "镜头首帧" } : { key: "input", label: "镜头提示词" };
+    if (kind === "character") return payload.ref ? { key: "output", label: "角色定妆照" } : { key: "input", label: "角色设定" };
+    if (kind === "location") return payload.ref ? { key: "output", label: "场景图" } : { key: "input", label: "场景设定" };
+    if (kind === "script") return { key: "input", label: "剧本" };
+    if (kind === "storyboard") return { key: "input", label: "分镜表" };
+    if (kind === "timeline") return { key: "output", label: "成片" };
+    return null;
+  };
+  const role = roleOf();
+  const step = Number(payload.step) > 0 ? Number(payload.step) : 0;
 
   /* 认不出的类型：照原样显示、只读。⛔ 别画成可编辑的空白笔记 —— 用户一打字就把人家的
      payload 覆盖成 { text }，那是真丢数据。 */
@@ -306,8 +321,8 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
   })();
 
   return (
-    <article className={`drama-canvas-card is-${kind} ${selected ? "is-selected" : ""}`} data-kind={kind}>
-      <Head kind={kind} id={id} title={dramaNodeLabel(kind, payload)} subtitle={subtitleOf()} />
+    <article className={`drama-canvas-card is-${kind} ${role ? `is-role-${role.key}` : ""} ${selected ? "is-selected" : ""}`} data-kind={kind}>
+      <Head kind={kind} id={id} title={dramaNodeLabel(kind, payload)} subtitle={subtitleOf()} role={role} step={step} />
       <div className="drama-canvas-card-body">{body}</div>
       <Handle type="target" position={Position.Left} className="drama-canvas-handle" />
       <Handle type="source" position={Position.Right} className="drama-canvas-handle" />

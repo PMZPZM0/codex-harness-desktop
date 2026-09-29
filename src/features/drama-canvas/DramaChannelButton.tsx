@@ -3,7 +3,7 @@
  *
  * ⛔⛔ 09-28 立此文件的直接原因（code review 抓到的**配套漂移**）：
  *   卡面与右侧检查器**各自写了一份**生成按钮 ⇒
- *     ① 文案漂移：卡面已改成「生图 · 首帧」，检查器里还叫「生成图片」（一个动作两个名字）；
+ *     ① 文案漂移：卡面当年叫「生图 · 首帧」（09-29 已改回「生图」——「首帧」是视频术语），检查器里还叫「生成图片」（一个动作两个名字）；
  *     ② 未配置引导只做在卡面 —— 检查器里点了才 notice 报错，**正是用户最初抱怨的
  *        「生图模型都没有配置的地方」的旧病根残留**（我只修了卡面、漏了检查器）。
  *   ⇒ 同一个动作只能有一个实现：两处都渲染本组件，改文案/改引导只改一处。
@@ -66,7 +66,10 @@ export function DramaChannelButton({
     if (missing) return `${head}去配置`;
     if (what === "audio") return head + (hasAudio ? "重做" : "生成");
     if (what === "video") return head + (hasVideo ? "重做" : "生成");
-    return head + (kind === "character" ? "定妆照" : kind === "location" ? "场景图" : hasImage ? "重出" : "首帧");
+    /* ⛔ 09-29 用户：「生图流程看不懂 … 按钮文案费解」—— 「首帧」是**视频术语**（给镜头卡拍视频用的），
+       长在出图卡上让人不知道点下去干什么。现在只有 shot 卡叫「首帧」，出图/角色/场景卡首次就说「生图」。 */
+    const suffix = kind === "character" ? "定妆照" : kind === "location" ? "场景图" : hasImage ? "重出" : kind === "shot" ? "首帧" : "";
+    return suffix ? head + suffix : CHANNEL_LABEL[what];
   })();
 
   const title = (() => {
