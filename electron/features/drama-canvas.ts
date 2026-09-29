@@ -13,11 +13,11 @@
  *
  * 跨域取用：`isInsideTrustedRoots` 从 `../runtime-refs`（叶子模块）取，不在模块顶层求值任何路径。
  */
-import { app, ipcMain } from "electron";
+import { app, dialog, ipcMain } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { isInsideTrustedRoots } from "../runtime-refs";
-import { polishPromptOnce } from "../prompt-polish";
+import { isInsideTrustedRoots, mainWindow, trustPicked } from "../runtime-refs";
+import { describeProductOnce, polishPromptOnce } from "../prompt-polish";
 
 /** 画布域的工作区目录：与分镜表同一棵树，用户拷走工作区就带走了全部产物 */
 const ROOT_DIR = ".drama-canvas";
@@ -78,6 +78,71 @@ ipcMain.handle("drama-canvas:polish-prompt", async (_event, input: { text: strin
   const text = String(input?.text || "").trim();
   if (!text) throw new Error("这张卡还没有提示词 —— 先写一版再润色");
   return { text: await polishPromptOnce(text, input?.context ? String(input.context) : undefined) };
+});
+/* 锁主体（09-29）：把「商品参考图」反推成一段固定主体描述，六类图共用 ⇒ 一套图是同一件商品。
+   ⛔ 这是「参考图锁主体」在**纯文生图**通道下的可行替代（生图接口无图输入）—— 不假装能图生图。 */
+/* ── 产物目录（09-29 用户：「在 codexharness 目录下面新增一个存的目录，也可以选择和修改目录」）──
+   默认 <userData>/outputs：**跟着应用走**，不依赖会话工作区（画布没绑工作区时也能出图落盘）。
+   ⛔ 用户显式选过 / 改过的目录要持久化；空串 = 恢复默认。选目录用系统原生对话框。 */
+/* ⛔ 用**函数声明**而不是箭头 const：顶层 const 会被守卫【91】判成「模块体求值 userData」
+   （main.ts 的 app.setPath("userData", …) 是模块体语句，本模块先于它加载 ⇒ 顶层取值必然拿错）。 */
+function outputDirFile(): string {
+  return path.join(app.getPath("userData"), "canvas-output.json");
+}
+
+export function defaultOutputDir(): string {
+  return path.join(app.getPath("userData"), "outputs");
+}
+
+async function readOutputDir(): Promise<{ dir: string; isDefault: boolean }> {
+  const fallback = defaultOutputDir();
+  let saved = "";
+  try {
+    const raw = JSON.parse(await fs.readFile(outputDirFile(), "utf8"));
+    saved = String(raw?.dir || "").trim();
+  } catch { /* 没存过 / 文件坏了：用默认 */ }
+  const dir = saved || fallback;
+  await fs.mkdir(dir, { recursive: true }).catch(() => { /* 建不出来也不能让面板打不开 */ });
+  return { dir, isDefault: !saved };
+}
+
+ipcMain.handle("drama-canvas:output-dir", async () => readOutputDir());
+
+ipcMain.handle("drama-canvas:output-dir-set", async (_event, input: { dir?: string; pick?: boolean }) => {
+  const current = await readOutputDir();
+  let next = String(input?.dir ?? "").trim();
+  if (input?.pick) {
+    const picked = await dialog.showOpenDialog(mainWindow!, {
+      title: "选择产物目录",
+      defaultPath: current.dir,
+      properties: ["openDirectory", "createDirectory"],
+    }).catch(() => null);
+    if (!picked || picked.canceled || !picked.filePaths?.length) return current;
+    next = picked.filePaths[0];
+  }
+  if (!next) {
+    /* 空串 = 恢复默认目录 */
+    await fs.rm(outputDirFile(), { force: true }).catch(() => {});
+    return readOutputDir();
+  }
+  if (!path.isAbsolute(next)) throw new Error("产物目录要用绝对路径（点「选择目录」最省事）");
+  const resolved = path.resolve(next);
+  try {
+    await fs.mkdir(resolved, { recursive: true });
+  } catch (error) {
+    throw new Error(`这个目录不可用：${(error as Error)?.message || error}`);
+  }
+  /* ⛔ 必须登记为可信根：视频产物 / 其它落盘写入都要过 isInsideTrustedRoots，
+      不登记的话用户选了目录也写不进去（"选了却没用"比不让选更糟）。 */
+  trustPicked([resolved]);
+  await fs.writeFile(outputDirFile(), JSON.stringify({ dir: resolved }, null, 2), "utf8");
+  return { dir: resolved, isDefault: false };
+});
+
+ipcMain.handle("drama-canvas:describe-image", async (_event, input: { image: string; context?: string }) => {
+  const image = String(input?.image || "").trim();
+  if (!image) throw new Error("这张卡还没有参考图 —— 先在「商品参考图」卡上传一张");
+  return { text: await describeProductOnce(image, input?.context ? String(input.context) : undefined) };
 });
 ipcMain.handle("drama-canvas:storyboard-file-remove", async (_event, input: { workspace: string; name: string }) => {
   const workspace = path.resolve(String(input?.workspace || ""));

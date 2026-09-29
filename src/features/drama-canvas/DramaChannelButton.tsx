@@ -24,6 +24,8 @@ export const GEN_CHANNELS: Record<string, DramaChannel[]> = {
   character: ["image"],
   location: ["image"],
   image: ["image", "video"],
+  /* 独立生图节点（09-29）：**只有生图** —— 生图与视频不共用结构，天然不可能出现视频按钮。 */
+  imagegen: ["image"],
   shot: ["image", "video", "audio"],
   video: ["video"],
   audio: ["audio"],
@@ -54,7 +56,7 @@ export function visibleChannels(kind: string, payload: Record<string, any>): Dra
     const hasVideo = Boolean(payload.video);
     return allowed.filter((ch) => ch !== "video" || hasFrame || hasVideo);
   }
-  if (kind === "image" || kind === "character" || kind === "location") return allowed.filter((ch) => ch !== "video");
+  if (kind === "image" || kind === "imagegen" || kind === "character" || kind === "location") return allowed.filter((ch) => ch !== "video");
   return allowed;
 }
 

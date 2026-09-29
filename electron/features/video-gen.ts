@@ -196,12 +196,17 @@ export async function pollVideoCore(input: { providerId: string; jobId: string }
 }
 
 /** 产物 URL → 工作区 .drama-canvas/assets/<subdir>（09-29：加 1 次自动重试，网络抖动不再白跑） */
-export async function downloadVideoCore(input: { url: string; workspace: string; name: string; subdir?: string }): Promise<{ path: string; bytes: number }> {
+export async function downloadVideoCore(input: { url: string; workspace: string; name: string; subdir?: string; outputDir?: string }): Promise<{ path: string; bytes: number }> {
   const url = String(input?.url ?? "");
   if (!/^https?:\/\//i.test(url)) throw new Error(`产物地址不是 http(s)：${url.slice(0, 80)}`);
-  if (!input?.workspace || !isInsideTrustedRoots(String(input.workspace))) throw new Error("工作目录不在可信根内，拒绝写盘");
+  /* 产物目录（09-29 用户：「视频工作流同理」）：给了就落在用户选的目录（选它时已登记进可信根），
+     没给仍落工作区内的 .drama-canvas/assets —— 旧行为不变。 */
+  const outputDir = String(input?.outputDir || "").trim();
+  if (outputDir && !path.isAbsolute(outputDir)) throw new Error("产物目录要用绝对路径");
+  if (outputDir && !isInsideTrustedRoots(path.resolve(outputDir))) throw new Error("产物目录不在可信根内，拒绝写盘（重新在画布上选一次目录即可）");
+  if (!outputDir && (!input?.workspace || !isInsideTrustedRoots(String(input.workspace)))) throw new Error("工作目录不在可信根内，拒绝写盘");
   const safeName = String(input.name || "video.mp4").replace(/[\\/:*?"<>|]/g, "_").slice(0, 80);
-  const dir = path.join(String(input.workspace), ".drama-canvas", "assets", String(input.subdir || "video"));
+  const dir = outputDir ? path.resolve(outputDir) : path.join(String(input.workspace), ".drama-canvas", "assets", String(input.subdir || "video"));
   await fsp.mkdir(dir, { recursive: true });
   const dest = path.join(dir, safeName);
   let lastError: unknown = null;
@@ -423,7 +428,7 @@ export function registerVideoGen(): void {
     return result;
   });
 
-  ipcMain.handle("video:download", async (_event, input: { url: string; workspace: string; name: string; subdir?: string }) => downloadVideoCore(input));
+  ipcMain.handle("video:download", async (_event, input: { url: string; workspace: string; name: string; subdir?: string; outputDir?: string }) => downloadVideoCore(input));
 
   // 09-29 整片导出：把分镜的各镜片段按顺序合并成一条成片（copy 优先 + 失败重编码）
   ipcMain.handle("video:concat", async (_event, input: { workspace: string; name: string; files: string[]; width?: number; height?: number; fps?: number }) => concatVideosCore(input));

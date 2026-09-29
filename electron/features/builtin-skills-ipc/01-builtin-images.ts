@@ -30,9 +30,10 @@ async function probeBuiltinModels(input: { kind: "image" | "vision"; baseUrl: st
   return { models: [...new Set<string>(models)] };
 }
 
-async function persistGeneratedImage(url: string): Promise<string> {
+async function persistGeneratedImage(url: string, dirOverride?: string): Promise<string> {
   try {
-    const dir = path.join(app.getPath("userData"), "images");
+    /* 09-29：产物目录可由画布指定（不传时仍为 <userData>/images —— 会话里的 MCP 工具行为不变）。 */
+    const dir = dirOverride ? path.resolve(dirOverride) : path.join(app.getPath("userData"), "images");
     await fs.mkdir(dir, { recursive: true });
     const head = url.slice(0, 64);
     const ext = /jpe?g/i.test(head) ? ".jpg" : /webp/i.test(head) ? ".webp" : /gif/i.test(head) ? ".gif" : ".png";
@@ -54,7 +55,7 @@ async function persistGeneratedImage(url: string): Promise<string> {
   }
 }
 
-export async function generateImageWith(input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string }) {
+export async function generateImageWith(input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }) {
   const base = input.baseUrl.trim().replace(/\/$/, "");
   // 兼容 /images/generations（OpenAI 兼容）与 /v1/images/generations
   const endpoint = /\/images\/generations$/.test(base) ? base : base + "/images/generations";
@@ -90,13 +91,13 @@ export async function generateImageWith(input: { baseUrl: string; apiKey: string
   // ⛔ 回给渲染层的是**本地路径**，不是 data URL（理由见 persistGeneratedImage 注释：
   //   内联 base64 会被拼进工具返回文本 ⇒ 3 MB 文本进对话历史且每轮重发）。
   //   只有网关给的是真托管地址时才把 url 一并带出（它很短，且能直接当可点击链接用）。
-  const path = await persistGeneratedImage(url);
+  const path = await persistGeneratedImage(url, input.outputDir);
   return { path, url: /^https?:/i.test(url) ? url : "" };
 }
 
 /** 带重试的生图（09-29）：网络抖动 / 5xx / 429 自动再试一次；4xx 参数错不重试（重试也没用）。
  *  会话里的 MCP 工具与画布卡片共用这一个入口 —— 稳定性口径只有一份。 */
-export async function generateImageResilient(input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string }, attempts = 2): Promise<{ path: string; url: string }> {
+export async function generateImageResilient(input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }, attempts = 2): Promise<{ path: string; url: string }> {
   let lastError: unknown = null;
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
@@ -161,7 +162,7 @@ ipcMain.handle("builtin:save", async (_e, cfg: BuiltinPluginConfig) => {
 
 ipcMain.handle("builtin:probe", async (_e, input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) => probeBuiltinModels(input));
 
-ipcMain.handle("builtin:generate-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string }) => generateImageResilient(input));
+ipcMain.handle("builtin:generate-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }) => generateImageResilient(input));
 
 ipcMain.handle("builtin:describe-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) => describeImageWith(input));
 

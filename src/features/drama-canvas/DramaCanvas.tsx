@@ -18,8 +18,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
+  BaseEdge,
+  EdgeLabelRenderer,
   MarkerType,
   ReactFlow,
+  getSmoothStepPath,
+  type EdgeProps,
+  type EdgeTypes,
   type NodeTypes,
   type ReactFlowInstance,
 } from "@xyflow/react";
@@ -47,9 +52,9 @@ import { Box, Clapperboard,
   Images,
   ListChecks,
   FolderOpen, } from "lucide-react";
-import { DRAMA_GROUPS, DRAMA_NODE_DEFS, dramaNodeDef, dramaStarterWorkflow, imageStarterWorkflow, legacyStarterSignature, model3dStarterWorkflow, upgradeLegacyStarterSnapshot, whiteboxStarterWorkflow } from "../../lib/drama-canvas-model.mjs";
+import { DRAMA_GROUPS, DRAMA_NODE_DEFS, dramaNodeDef, dramaStarterWorkflow, ecomImageStarterWorkflow, imageStarterWorkflow, legacyStarterSignature, model3dStarterWorkflow, upgradeLegacyStarterSnapshot, whiteboxStarterWorkflow } from "../../lib/drama-canvas-model.mjs";
 import { dramaAgentPrompt, dramaBoardRelativePath } from "../../lib/drama-agent-prompts.mjs";
-import { DramaActionsProvider, type DramaActions, type ViewerTarget } from "./drama-actions";
+import { DramaActionsProvider, useDramaActions, type DramaActions, type ViewerTarget } from "./drama-actions";
 import { DramaInspector } from "./DramaInspector";
 import { readBoard } from "./drama-storage";
 import { DramaMediaViewer } from "./DramaMediaViewer";
@@ -61,6 +66,46 @@ import { useDramaBoard, type DramaRFEdge, type DramaRFNode } from "./use-drama-b
 import { useDramaStory } from "./use-drama-story";
 
 /** ⛔ 必须模块级常量：写成内联对象会让 React Flow 每帧重建节点类型 → 整图重挂。 */
+/**
+ * 自定义连线（09-29 用户：「用那条线就，那条线亮起来，动画」+「线没办法删」）。
+ *  · **亮起来**：悬停 / 选中 / 两端卡片任一被选中 ⇒ 覆盖一条发光流动虚线（一眼看出哪条线在用）；
+ *  · **能删**：线中点常驻一个小 ✕，点它删掉这根线；
+ *  · **能改接**：拖线两端的圆点换到别的卡（edgesReconnectable + onReconnect）。
+ *  ⛔ 不打开 Delete 键的全局删除：那会连**卡片**一起被键盘删掉，用户没要求且容易误删。
+ */
+function DramaEdgeLine({ id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected, markerEnd, style }: EdgeProps) {
+  const actions = useDramaActions();
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [path, labelX, labelY] = getSmoothStepPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  const picked = actions.board.selectedIds;
+  const busySet = actions.story.busy;
+  /* 「正在工作的那张卡」也点亮（09-29 用户：「卡片那个在工作，那个就亮起来」）——
+     忙碌键是 `${nodeId}:${通道}`，所以按前缀就能认出哪张卡在跑。 */
+  const working = [...busySet].some((k) => k.startsWith(`${source}:`) || k.startsWith(`${target}:`));
+  const hot = Boolean(selected) || working || picked.includes(source) || picked.includes(target) || activeId === id;
+  return (
+    <>
+      <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} />
+      {hot ? <path d={path} className="drama-canvas-edge-flow" /> : null}
+      {/* 线中点的删除键：常驻显示（用户此前完全找不到删线的入口），悬停/选中时更明显 */}
+      <EdgeLabelRenderer>
+        <button
+          className={`drama-canvas-edge-kill nodrag nopan${hot ? " is-hot" : ""}`}
+          style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
+          title="删掉这根连线（也可以拖线两端的圆点改接别处）"
+          onMouseEnter={() => setActiveId(id)}
+          onMouseLeave={() => setActiveId((current) => (current === id ? null : current))}
+          onClick={(e) => { e.stopPropagation(); actions.board.removeEdges([id]); }}
+        >
+          <X size={11} />
+        </button>
+      </EdgeLabelRenderer>
+    </>
+  );
+}
+
+const EDGE_TYPES: EdgeTypes = { "drama-edge": DramaEdgeLine };
+
 const NODE_TYPES: NodeTypes = { drama: DramaNodeCard };
 
 const MIN_ZOOM = 0.12;
@@ -278,6 +323,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
     const mark = board.nodes.find((nd) => nd.data?.payload?.flow)?.data?.payload?.flow;
     if (mark === "whitebox") return "白模视频工作流";
     if (mark === "model3d") return "3D 建模工作流";
+    if (mark === "ecom") return "电商出图工作流";
     return flow.type === "drama" ? "短剧工作流" : "生图工作流";
   }, [board.nodes, flow.type]);
 
@@ -293,7 +339,9 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
       const p = (node.data?.payload || {}) as Record<string, any>;
       const hasImage = Boolean(p.first_frame || p.path || p.ref);
       const label = String(p.title || p.name || node.id);
-      if (kind === "image" || kind === "character" || kind === "location") {
+      /* ⛔ 新增节点类型必须在这里登记（09-29 实测：漏了 imagegen ⇒ 电商工作流顶栏「待生成」只显示 1，
+         其余五张没出图的生图卡根本没被计数 —— 数字说少了比不显示更误导）。 */
+      if (kind === "image" || kind === "imagegen" || kind === "character" || kind === "location") {
         if (hasImage) images++; else pendingCards.push(label);
       } else if (kind === "shot") {
         if (p.video) videos++;
@@ -372,8 +420,9 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
     }
   }, [agentPicker, board, confirmAsk, marquee, pushNotice, selected]);
 
-  const createStarter = useCallback((kind: "drama" | "image" | "whitebox" | "model3d" = "drama") => {
+  const createStarter = useCallback((kind: "drama" | "image" | "ecom" | "whitebox" | "model3d" = "drama") => {
     const snapshot = kind === "image" ? imageStarterWorkflow()
+      : kind === "ecom" ? ecomImageStarterWorkflow()
       : kind === "whitebox" ? whiteboxStarterWorkflow()
       : kind === "model3d" ? model3dStarterWorkflow()
       : starterSnapshot();
@@ -389,6 +438,9 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
       image: "生图工作流已就绪（三步）：① 在「写提示词」卡写下你要什么，例：一只橘猫坐在窗台上，暖色午后光；② 点「生图」，图会出在右边的「出图」卡；③ 想多要几张就再点一次「重出」，或把「写提示词」卡复制一张换个说法做对比",
       whitebox: "白模视频工作流已就绪：① 在 Blender 用简单几何体搭场景、相机路径打 keyframe（官方建议主体只保留躯体，别带四肢细节）；② 低质量渲染导出关键帧，拖进「白模关键帧」卡；③ 在「AI 渲染镜头」卡点「视频」出片（Seedance 2.5 官方支持白模参考渲染）",
       model3d: "3D 建模工作流已就绪：参考图 → Aholo Lux3D 生成 3D 资产（导出 GLB 放到工作目录，路径记到「3D 资产清单」卡）→ Blender 组装渲染。3D 生成通道暂未接入，先按卡片指引在 Lux3D 侧完成生成",
+      /* ⛔ 提示里的动作名必须与卡片实际按钮逐字一致（守卫【192】口径）：
+         「锁定主体」「生图」「重出」都是卡面上真实存在的按钮名。 */
+      ecom: "电商出图工作流已就绪（素材包）：① 在「商品参考图」卡上传商品图；② 点各生图卡上的「锁定主体」，把商品图反推成一段固定主体描述（整套图共用 ⇒ 六类图是同一件商品）；③ 按顺序出图：白底图（母版）→ 主图 / SKU 图 / 场景图 / 买家秀 → 详情图（按「图块清单」逐块出，长图拼接需在外部完成）。额度够就点「重出」换一版",
     };
     pushNotice(hints[kind], "ok");
   }, [board, fitAll, pushNotice]);
@@ -566,6 +618,9 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                     <button role="menuitem" className="is-brand" onClick={() => { setNewMenuOpen(false); createStarter("image"); }}>
                       <Images size={13} /><span>生图工作流<small>写提示词 → 出图 → 备注</small></span>
                     </button>
+                    <button role="menuitem" className="is-brand" onClick={() => { setNewMenuOpen(false); createStarter("ecom"); }}>
+                      <Images size={13} /><span>电商出图工作流<small>白底母版 → 主图 / SKU / 详情 / 场景 / 买家秀 → 素材包</small></span>
+                    </button>
                     <button role="menuitem" onClick={() => { setNewMenuOpen(false); createStarter("whitebox"); }}>
                       <Clapperboard size={13} /><span>白模视频工作流<small>Blender 白模预演 → Seedance 2.5 渲染成片</small></span>
                     </button>
@@ -705,9 +760,12 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 nodes={board.nodes}
                 edges={board.edges}
                 nodeTypes={NODE_TYPES}
+                edgeTypes={EDGE_TYPES}
                 onNodesChange={board.onNodesChange}
                 onEdgesChange={board.onEdgesChange}
                 onConnect={board.onConnect}
+                onReconnect={board.onReconnect}
+                edgesReconnectable
                 onInit={(instance) => { rfRef.current = instance; }}
                 onMove={(_, viewport) => setZoomText(`${Math.round(viewport.zoom * 100)}%`)}
                 minZoom={MIN_ZOOM}
@@ -728,7 +786,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 onNodeDoubleClick={(_, node) => { board.select([node.id], node.id); setInspectorOpen(true); }}
                 onPaneClick={() => setMenu(null)}
                 defaultEdgeOptions={{
-                  type: "smoothstep",
+                  type: "drama-edge",
                   style: { stroke: "var(--accent)", strokeWidth: 2.25, strokeLinecap: "round" },
                   markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "var(--accent)" },
                 }}
@@ -747,6 +805,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 <ul>
                   <li><strong>新建短剧工作流</strong> —— 剧本 → 角色/场景 → 分镜表 → 出片，整条链路一次摆好</li>
                   <li><strong>新建生图工作流</strong> —— 写提示词 → 出图 → 备注，专门出图</li>
+                  <li><strong>新建电商出图工作流</strong> —— 商品参考图 → 白底母版 → 主图 / SKU / 详情 / 场景 / 买家秀 → 素材包清单</li>
                   <li><strong>画布</strong> = 一个方案一张板（左上角可切换/新建）；<strong>分镜表</strong> = 镜头的唯一真源，交给 Agent 生成时读的就是它</li>
                 </ul>
                 <small>从上面两个按钮挑一个开始；也可以在左侧「+ 添加节点」自己摆卡。</small>

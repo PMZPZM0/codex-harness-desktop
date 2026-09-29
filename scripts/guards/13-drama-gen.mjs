@@ -778,8 +778,8 @@ export async function run() {
     const card215 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8"));
     const insp215 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaInspector.tsx"), "utf8"));
 
-    (/export function visibleChannels/.test(shared215) && /kind === "image" \|\| kind === "character" \|\| kind === "location"\) return allowed\.filter\(\(ch\) => ch !== "video"\)/.test(shared215) ? ok : fail)(
-      "【215】visibleChannels 按状态过滤（没图/首帧不给「视频」—— 文生视频对生图流程是噪音）"
+    (/export function visibleChannels/.test(shared215) && /kind === "imagegen"[\s\S]{0,80}return allowed\.filter\(\(ch\) => ch !== "video"\)/.test(shared215) ? ok : fail)(
+      "【215】visibleChannels 按状态过滤（没图/首帧不给「视频」；生图族 image/imagegen/character/location 一律不透视频）"
     );
     (/visibleChannels\(kind, payload\)/.test(card215) && /visibleChannels\(kind, payload\)/.test(insp215) ? ok : fail)(
       "【215】卡面与检查器**共用同一份**状态过滤（各自 filter 必然漂移）"
@@ -906,6 +906,127 @@ export async function run() {
     );
     (/legacyStarterSignature/.test(canvasSrc218) ? ok : fail)(
       "【218】切到「有内容的旧模板」时说明原因（否则用户只看到「又是旧的」，不知道能怎么办）"
+    );
+  }
+  /* ══ 独立生图节点 + 六类图 + 电商出图工作流（09-29 用户：「设计生图节点时，请将其独立出来，
+     不要与视频节点共用同一套结构」+「生图节点需包含以下图片类型：主图、SKU图、详情图、场景图、
+     白底图、买家秀」+「规划详情图如何生成，并提供图片尺寸等可选配置项」+
+     「在每张提示词卡片中都要集成AI润色功能」）══
+     ⛔ 三条容易做偏：① 把六类图做成同一个节点换皮肤（那就还是共用结构）；
+     ② 生图节点留着视频通道（两类工作流又混在一张卡上）；③ 润色只在某一类卡上（用户要的是**每张**）。 */
+  {
+    const { pathToFileURL } = await import("node:url");
+    const model219 = await import(pathToFileURL(join(ROOT, "src", "lib", "drama-canvas-model.mjs")).href);
+    const channelSrc219 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaChannelButton.tsx"), "utf8");
+    const inspectorSrc219 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaInspector.tsx"), "utf8");
+    const cardSrc219 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8"));
+    const storySrc219 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8"));
+    const canvasSrc219 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8");
+    const registrySrc219 = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
+
+    const kinds219 = model219.IMAGE_KINDS.map((item) => item.label).join(" / ");
+    const wanted219 = ["主图", "SKU 图", "详情图", "场景图", "白底图", "买家秀"];
+    const ecom219 = model219.ecomImageStarterWorkflow();
+    const inIdx219 = inspectorSrc219.indexOf("imagegen: [");
+    const imagegenBlock219 = inIdx219 >= 0 ? inspectorSrc219.slice(inIdx219, inspectorSrc219.indexOf("\n  ],", inIdx219)) : "";
+
+    (wanted219.every((label) => kinds219.includes(label)) ? ok : fail)(
+      `【219】六类图齐全（主图 / SKU图 / 详情图 / 场景图 / 白底图 / 买家秀）—— 实测：${kinds219}`
+    );
+    (model219.dramaIsKnownKind("imagegen") && !String(model219.DRAMA_NODE_DEFS.imagegen.subtitle).includes("视频") ? ok : fail)(
+      "【219】imagegen 是**独立**节点类型（不复用 image / video），且定位里不含视频"
+    );
+    (/imagegen: \["image"\],/.test(channelSrc219) && /kind === "imagegen"/.test(channelSrc219) ? ok : fail)(
+      "【219】生图节点只挂生图通道 —— 结构上不可能出现视频按钮（「不与视频节点共用同一套结构」）"
+    );
+    (["imageType", "size", "count", "panels", "subject", "negative"].every((k) => imagegenBlock219.includes(`key: "${k}"`)) ? ok : fail)(
+      "【219】生图节点配置项齐全（图片类型 / 尺寸 / 张数 / 图块清单 / 锁定主体 / 负面提示词）"
+    );
+    (!/aspect:|duration:|ref_video/.test(imagegenBlock219) ? ok : fail)(
+      "【219】负向：生图节点的配置项**不含**视频那套（画幅 / 时长 / 参考视频）"
+    );
+    (cardSrc219.includes('imagegen: "prompt"') && cardSrc219.includes('character: "look"') && cardSrc219.includes('shot: "prompt"')
+      && /POLISH_FIELD\[kind\]/.test(cardSrc219) && /\[polishField\]: polished/.test(cardSrc219) ? ok : fail)(
+      "【219】每张提示词卡都集成「AI 润色」：按 kind 找到**它自己的**提示词字段并就地写回"
+    );
+    (cardSrc219.includes("锁定主体") && /describeSubject\(id\)/.test(cardSrc219) ? ok : fail)(
+      "【219】生图卡上有「锁定主体」按钮（接 story.describeSubject）"
+    );
+    (ecom219.nodes.length === 8 && ecom219.edges.length === 7 && ecom219.nodes.every((n) => n.payload.flow === "ecom") ? ok : fail)(
+      "【219】电商出图工作流：8 卡 7 线（参考图 → 白底母版 → 主图/SKU/场景/买家秀/详情图 → 素材包清单）"
+    );
+    (ecom219.nodes.filter((n) => n.kind === "imagegen").length === 6 ? ok : fail)(
+      "【219】电商工作流里六类图各占一张生图节点"
+    );
+    (model219.detailPanelsOf({}).length === 6 && model219.detailPanelsOf({ panels: "A\nB" }).length === 2 ? ok : fail)(
+      "【219】详情图按「图块清单」规划：默认 6 块，且清单可被用户改写（真跑）"
+    );
+    (/const locked = String\(payload\.subject/.test(storySrc219) && /\$\{locked\}/.test(storySrc219) ? ok : fail)(
+      "【219】锁定主体真正参与生成（拼成整套图共用前缀，不只是存在 payload 里）"
+    );
+    (/drama-canvas:describe-image/.test(registrySrc219) && /describeProductOnce/.test(readFileSync(join(ROOT, "electron", "prompt-polish.ts"), "utf8")) ? ok : fail)(
+      "【219】锁主体通道已登记域表 + 主进程有实现（视觉反推落盘在 prompt-polish）"
+    );
+    (/createStarter\("ecom"\)/.test(canvasSrc219) && /mark === "ecom"/.test(canvasSrc219) ? ok : fail)(
+      "【219】电商出图工作流有新建入口，且顶栏显示自己的名字"
+    );
+    (/act === "upload" \|\| payload\.hint === "ref" \? "" : \(POLISH_FIELD\[kind\] \|\| ""\)/.test(cardSrc219) ? ok : fail)(
+      "【219】负向：素材位（上传参考图 / 参考图槽）不挂「AI 润色」—— 那里没有提示词可润色"
+    );
+    (/kind === "image" \|\| kind === "imagegen"[\s\S]{0,140}pendingCards\.push\(label\)/.test(canvasSrc219) ? ok : fail)(
+      "【219】新节点计入「待生成」进度（漏登记 ⇒ 顶栏数字永远说少，比不显示更误导）"
+    );
+  }
+  /* ══ 连线可删 / 可改接 / 亮起动画 + 卡片工作态点亮 + 产物目录（09-29 用户：
+     「用那条线就，那条线亮起来，动画」+「工作流是死的，线没办法删，手动牵线」+
+     「我传了参考图，不想经过其他流程图」+「卡片那个在工作，那个就亮起来，这样方便区分」+
+     「产物路径，你就在 codexharness 目录下面新增一个存的目录，也可以选择和修改目录」）══
+     ⛔ 病根记录：连线删除的底层（onEdgesChange 处理 remove）**一直都在**，但 deleteKeyCode=null
+        且线上没有任何删除入口 ⇒ 用户永远删不掉。**"能力存在"不等于"用户够得着"**。 */
+  {
+    const boardSrc220 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-board.ts"), "utf8");
+    const canvasSrc220 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8");
+    const cardSrc220 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8");
+    const inspSrc220 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaInspector.tsx"), "utf8");
+    const storySrc220 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8"));
+    const cssSrc220 = readFileSync(join(ROOT, "src", "styles", "21-drama-canvas.css"), "utf8");
+    const registrySrc220 = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
+    const mainSrc220 = readFileSync(join(ROOT, "electron", "features", "drama-canvas.ts"), "utf8");
+
+    (/const removeEdges = useCallback/.test(boardSrc220) && /removeEdges: \(ids: string\[\]\) => void;/.test(boardSrc220) ? ok : fail)(
+      "【220】删连线：状态骨提供 removeEdges（含接口声明）"
+    );
+    (/actions\.board\.removeEdges\(\[id\]\)/.test(canvasSrc220) && /actions\.board\.removeEdges\(\[e\.id\]\)/.test(inspSrc220) ? ok : fail)(
+      "【220】删连线有**两个看得见的入口**：线上中点的 ✕ + 检查器连线行的删除键（能力存在 ≠ 用户够得着）"
+    );
+    (/const onReconnect = useCallback/.test(boardSrc220) && /edgesReconnectable/.test(canvasSrc220) && /onReconnect=\{board\.onReconnect\}/.test(canvasSrc220) ? ok : fail)(
+      "【220】改接线：拖线端点换卡片（onReconnect + edgesReconnectable + 三处接线齐全）"
+    );
+    (/\"drama-edge\"/.test(canvasSrc220) && /const EDGE_TYPES/.test(canvasSrc220) && /edgeTypes=\{EDGE_TYPES\}/.test(canvasSrc220)
+      && (boardSrc220.match(/type: "drama-edge"/g) || []).length >= 2 ? ok : fail)(
+      "【220】自定义边类型 drama-edge 挂到画布，且三条创建路径（读盘 / 手动连 / 默认）统一用它"
+    );
+    (/\.drama-canvas-edge-flow/.test(cssSrc220) && /@keyframes drama-edge-flow/.test(cssSrc220) ? ok : fail)(
+      "【220】连线**亮起来 + 流动动画**（悬停 / 选中 / 两端卡片任一在忙或选中）"
+    );
+    (/is-working/.test(cardSrc220) && /\.drama-canvas-card\.is-working/.test(cssSrc220) && /@keyframes drama-card-working/.test(cssSrc220) ? ok : fail)(
+      "【220】「哪张卡在工作，那张卡就点亮」（busy 前缀判定 + 脉动动画）"
+    );
+    (/deleteKeyCode=\{null\}/.test(canvasSrc220) ? ok : fail)(
+      "【220】负向：**不**打开 Delete 键的全局删除（那会连卡片一起被键盘删掉，用户没要求且易误删）"
+    );
+    (/defaultOutputDir|outputs/.test(mainSrc220) && /drama-canvas:output-dir/.test(registrySrc220) && /drama-canvas:output-dir-set/.test(registrySrc220) ? ok : fail)(
+      "【220】产物目录：默认 <userData>/outputs + 两个通道（读 / 选·改·恢复默认）已登记域表"
+    );
+    (/outputDir: String\(outDir\?\.dir \|\| ""\)\.trim\(\) \|\| undefined/.test(storySrc220) ? ok : fail)(
+      "【220】生成时把产物目录传给主进程（只登记通道不传 = 白做）"
+    );
+    (/persistGeneratedImage\(url: string, dirOverride\?: string\)/.test(readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "01-builtin-images.ts"), "utf8")) ? ok : fail)(
+      "【220】落盘真的落到指定目录（不传时仍走旧默认 —— 会话里的 MCP 工具行为不变）"
+    );
+    (/outputDir && !isInsideTrustedRoots/.test(readFileSync(join(ROOT, "electron", "features", "video-gen.ts"), "utf8"))
+      && /outputDir: String\(outDirForVideo\?\.dir \|\| ""\)/.test(storySrc220) ? ok : fail)(
+      "【220】视频工作流同理：视频也落产物目录，且**先过可信根**（选了目录就登记，否则写了也白写）"
     );
   }
 }

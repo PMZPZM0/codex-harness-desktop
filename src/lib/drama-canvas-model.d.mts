@@ -72,3 +72,12 @@ export function model3dStarterWorkflow(baseX?: number, baseY?: number): DramaSna
 export function legacyStarterSignature(snapshot: DramaSnapshot): { kind: string; ids: string[] } | null;
 /** 空壳旧模板 ⇒ 返回升级后的最新快照；有内容或非旧模板 ⇒ 返回 null（调用方保持原样）。 */
 export function upgradeLegacyStarterSnapshot(snapshot: DramaSnapshot): DramaSnapshot | null;
+/** 六类电商图元数据（主图 / SKU / 详情 / 场景 / 白底 / 买家秀）。 */
+export const IMAGE_KINDS: Array<{ key: string; label: string; size: string; ratio: string; purpose: string; skeleton: string; note: string }>;
+/** 详情图默认图块清单（纵向从上到下，一行一块）。 */
+export const DETAIL_PANELS_DEFAULT: string;
+export function imageKindMeta(key: string): { key: string; label: string; size: string; ratio: string; purpose: string; skeleton: string; note: string };
+export function imageKindOptions(): Array<{ value: string; label: string }>;
+export function detailPanelsOf(payload: Record<string, any> | null | undefined): string[];
+/** 电商出图工作流（白底母版 → 派生主图/SKU/场景/买家秀/详情图）：节点带 payload.flow = "ecom" */
+export function ecomImageStarterWorkflow(baseX?: number, baseY?: number): DramaSnapshot;

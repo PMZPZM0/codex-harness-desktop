@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-09-27",
-  "count": 362,
+  "count": 365,
   "channels": [
     {
       "name": "request",
@@ -2156,8 +2156,8 @@
     {
       "name": "generateImage",
       "channel": "builtin:generate-image",
-      "paramsImpl": "input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string }",
-      "paramsDecl": "input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string }",
+      "paramsImpl": "input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }",
+      "paramsDecl": "input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }",
       "returns": "Promise<{ path: string; url: string }>",
       "invokeArgs": "input",
       "cast": null,
@@ -3442,6 +3442,36 @@
       "note": "把一段生图提示词交给**用户已配置的模型**润色（一次性短请求，非流式，不开会话）：补主体细节/环境/光线/构图/风格，只回一行可直接用的提示词。⛔ 只支持 chat 协议供应商；官方订阅与 responses-only 网关明确报错"
     },
     {
+      "name": "dramaCanvasDescribeImage",
+      "channel": "drama-canvas:describe-image",
+      "paramsImpl": "input: { image: string; context?: string }",
+      "paramsDecl": "input: { image: string; context?: string }",
+      "returns": "Promise<{ text: string }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ text: string }>",
+      "note": "锁主体（09-29 电商出图工作流）：用已配置的**视觉模型**把商品参考图反推成一段固定主体描述，六类图（主图/SKU/详情/场景/白底/买家秀）共用，保证一套图是同一件商品。⛔ 当前生图通道 builtin:generate-image 是纯文生图（无图输入）⇒ 这是「参考图锁主体」的可行替代，不是图生图；模型须支持视觉输入，否则如实报错"
+    },
+    {
+      "name": "dramaCanvasOutputDir",
+      "channel": "drama-canvas:output-dir",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ dir: string; isDefault: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ dir: string; isDefault: boolean }>",
+      "note": "产物目录（09-29 用户要求「在 codexharness 目录下面新增一个存的目录，也可以选择和修改目录」）：默认 <userData>/outputs，首次读取自动创建；返回当前目录与「是否为默认」。"
+    },
+    {
+      "name": "dramaCanvasOutputDirSet",
+      "channel": "drama-canvas:output-dir-set",
+      "paramsImpl": "input: { dir?: string; pick?: boolean }",
+      "paramsDecl": "input: { dir?: string; pick?: boolean }",
+      "returns": "Promise<{ dir: string; isDefault: boolean }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ dir: string; isDefault: boolean }>",
+      "note": "设置产物目录：pick=true 弹系统目录选择框；dir 给绝对路径直接设；dir 为空串 = 恢复默认。目录不可用会明确报错（不静默回退）。"
+    },
+    {
       "name": "dramaCanvasAssetWrite",
       "channel": "drama-canvas:asset-write",
       "paramsImpl": "input: { workspace: string; name: string; base64: string; subdir?: string }",
@@ -3514,8 +3544,8 @@
     {
       "name": "videoDownload",
       "channel": "video:download",
-      "paramsImpl": "input: { url: string; workspace: string; name: string; subdir?: string }",
-      "paramsDecl": "input: { url: string; workspace: string; name: string; subdir?: string }",
+      "paramsImpl": "input: { url: string; workspace: string; name: string; subdir?: string; outputDir?: string }",
+      "paramsDecl": "input: { url: string; workspace: string; name: string; subdir?: string; outputDir?: string }",
       "returns": "Promise<{ path: string; bytes: number }>",
       "invokeArgs": "input",
       "cast": "Promise<{ path: string; bytes: number }>",
