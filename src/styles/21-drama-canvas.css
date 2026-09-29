@@ -19,7 +19,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: clamp(18px, 4.5vmin, 56px);
+  /* ⛔ 09-29：窗控避让从「右侧留白」改到「顶部留白」——窗控只占最顶 ~33px，
+     浮层整体下移就完全避开；右侧留白因此可以取消，顶栏按钮真正贴右。 */
+  padding: clamp(40px, 4.5vmin, 56px) clamp(18px, 4.5vmin, 56px);
 }
 
 .drama-canvas-shell {
@@ -47,10 +49,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px 12px;
-  /* ⛔ 右侧留出原生窗口控制钮（— □ ✕ ≈140px）的地带，防按钮与窗控叠在一起。
-     09-29 用户「右上角那么多空白」后由 158px 收到 116px：浮层已不再铺满整屏
-     （见 .drama-canvas-backdrop 的 padding clamp / shell max-width），116px 够避让。 */
-  padding: 10px 116px 10px 14px;
+  /* 顶栏左右对称留白。窗控避让已改由 .drama-canvas-backdrop 的**顶部留白**承担
+     （窗控只占窗口最顶 ~33px，浮层下移即可），右侧不再需要 116px 的空白。 */
+  padding: 10px 14px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   flex: none;
@@ -1240,9 +1241,9 @@
 }
 
 /* ─────────────────────────────── 顶栏单行化（09-29 用户：「右上角那么多空白，可以放按键了啊…
-   布局整洁，整齐一点，不要乱糟糟的」）
-   ⛔ 右侧 158px 留白是「画布铺满整屏」时代为避让窗控加的；浮层缩小后（padding clamp 18~56px）
-   只需避让 116px。腾出的空间给按钮，并让整个顶栏**一行排开**（左侧信息 + 右侧按钮组）。 */
+   布局整洁，整齐一点，不要乱糟糟的」；后又两轮：「往右靠啊」「还有一点空白」）
+   最终方案：窗控避让挪到浮层**顶部**留白（见 .drama-canvas-backdrop），顶栏左右对称 14px，
+   按钮真正贴右；顶栏 nowrap + 标签始终隐藏 + 左侧可收缩 ⇒ 任何宽度都单行。 */
 /* 画布 / 分镜表下拉：给最小宽度 —— 窄窗口下此前被压成「1」字宽（用户截图） */
 .drama-canvas-head .app-select-trigger { min-width: 106px; }
 /* ⛔⛔ 顶栏**永不换行**（用户 09-29 第二次反馈「右上角不还是空白这么多吗，往右靠啊」）：
@@ -1262,8 +1263,3 @@
 /* 按钮组不折行且贴右 */
 .drama-canvas-head-actions { flex-wrap: nowrap; margin-left: auto; }
 
-/* 超宽窗口（≥1600px）下浮层居中，两侧自然留白已 >190px —— 窗控避让不再需要，
-   收回到 14px 与左侧对称（否则宽屏右上角又会多出一块空白）。 */
-@media (min-width: 1600px) {
-  .drama-canvas-head { padding-right: 14px; }
-}
