@@ -766,6 +766,8 @@ interface Window {
     queueTimerCancel(input: { queuedSubmissionId: string }): Promise<{ ok: boolean }>;
     /* 在系统资源管理器中定位文件（可信根校验同 fs:read）；画布生成产物「打开文件夹」 */
     revealInFolder(path: string): Promise<{ ok: boolean }>;
+    /* 删分镜表的工作区文件（只删 .drama-canvas/storyboards/<name>.json 这一个文件；不存在时幂等返回 removed:false） */
+    dramaCanvasStoryboardFileRemove(input: { workspace: string; name: string }): Promise<{ removed: boolean }>;
 /* ═══ gen:end ═══ */
 
 

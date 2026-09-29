@@ -13,17 +13,21 @@
   position: fixed;
   inset: 0;
   z-index: 90;
+  /* 09-29 用户：整个弹窗小一点 —— 大屏上留白更大、限最大尺寸，不再铺满整窗 */
   background: color-mix(in srgb, var(--bg) 78%, transparent);
   backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 18px;
+  padding: clamp(18px, 4.5vmin, 56px);
 }
 
 .drama-canvas-shell {
   width: 100%;
   height: 100%;
+  max-width: 1320px;
+  max-height: 940px;
+  margin: auto;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -70,7 +74,7 @@
 .drama-canvas-head-left > div:first-of-type { display: flex; flex-direction: column; min-width: 160px; }
 .drama-canvas-head-left b { font-size: 13px; }
 .drama-canvas-head-left small { font-size: 11px; color: var(--muted); }
-.drama-canvas-head-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.drama-canvas-head-actions { display: flex; align-items: center; gap: 6px; flex: none; margin-left: auto; }
 
 .drama-canvas-head-btn,
 .drama-canvas-tool {
@@ -1157,3 +1161,82 @@
 .drama-canvas-progress > span.is-ok { color: var(--ok); }
 .drama-canvas-progress > span.is-warn { color: var(--orange); }
 .drama-canvas-progress > span.is-done { color: var(--ok); }
+
+/* ─────────────────────────────── 顶栏「新建」下拉（09-29 用户：按键布局调整 + 好看一点）
+   四个「新建」收成一个主按钮 + 菜单：窄窗口不再把顶栏撑成两行。 */
+.drama-canvas-headmenu-wrap { position: relative; display: inline-flex; z-index: 31; /* 抬到画布视口内容之上（实测：不抬则菜单被下面的视口元素盖住，点不到） */ }
+.drama-canvas-headmenu-backdrop { position: fixed; inset: 0; z-index: 1; }
+.drama-canvas-headmenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 2;
+  width: 272px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.drama-canvas-headmenu > button {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.drama-canvas-headmenu > button:hover { background: var(--accent-soft); }
+.drama-canvas-headmenu > button > svg { flex: none; margin-top: 1px; color: var(--muted); }
+.drama-canvas-headmenu > button.is-brand > svg { color: var(--accent); }
+.drama-canvas-headmenu > button > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 12.5px; }
+.drama-canvas-headmenu > button small { font-size: 11px; color: var(--muted); }
+.drama-canvas-headmenu-sep { padding: 7px 9px 2px; font-size: 10.5px; color: var(--muted); }
+/* 主按钮：新建是本页最常用动作，给它一点强调色 */
+.drama-canvas-head-btn.is-primary {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ─────────────────────────────── 项目管理：分区标签（画布 / 分镜表） */
+.drama-projects-tabs { display: flex; gap: 6px; padding: 0 14px; }
+.drama-projects-tabs > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.drama-projects-tabs > button.is-active { border-color: color-mix(in srgb, var(--accent) 46%, var(--line)); color: var(--accent); background: var(--accent-soft); }
+.drama-projects-tabnum {
+  font-size: 10.5px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 16%, transparent);
+}
+.drama-projects-tabs > button.is-active .drama-projects-tabnum { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+/* 项目管理面板控制在紧凑尺寸（用户：弹窗小一点） */
+.drama-projects { width: min(480px, 92vw) !important; max-height: min(76vh, 640px); }
+.drama-projects > header { display: flex; align-items: center; gap: 8px; }
+.drama-projects > header > span { flex: 1; font-size: 11px; color: var(--muted); }
+
+/* 顶栏窄窗口收敛（09-29）：副标题是引导文案，空间不足时先让位 —— 顶栏尽量保持一行 */
+@media (max-width: 1220px) {
+  .drama-canvas-head-left small { display: none; }
+}

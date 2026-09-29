@@ -490,6 +490,8 @@ contextBridge.exposeInMainWorld("codex", {
   queueTimerCancel: (input: { queuedSubmissionId: string }) => __ipc("queue-timer:cancel", 1, [input]) as Promise<{ ok: boolean }>,
   /* 在系统资源管理器中定位文件（可信根校验同 fs:read）；画布生成产物「打开文件夹」 */
   revealInFolder: (path: string) => __ipc("fs:reveal", 1, [{ path }]),
+  /* 删分镜表的工作区文件（只删 .drama-canvas/storyboards/<name>.json 这一个文件；不存在时幂等返回 removed:false） */
+  dramaCanvasStoryboardFileRemove: (input: { workspace: string; name: string }) => __ipc("drama-canvas:storyboard-file-remove", 1, [input]),
   /* ═══ gen:end ═══ */
 
   // ⛔ mac 适配（09-16）：渲染层此前完全不知道自己跑在什么平台——窗口控制键让位、

@@ -91,6 +91,16 @@ export function upsertStoryboard(meta: StoryboardMeta): StoryboardMeta[] {
   return list;
 }
 
+/** 删分镜表（09-29 项目管理）：索引 + 本机那份快照。⛔ **工作区文件不在这里删**
+ *  （那是主进程的事，走 `drama-canvas:storyboard-file-remove`）——
+ *  这里只清渲染层自己的两份状态，两件事在 `deleteStory` 里一起做。 */
+export function removeStoryboard(name: string): StoryboardMeta[] {
+  const list = listStoryboards().filter((b) => b.name !== name);
+  safeSet(STORY_INDEX_KEY, JSON.stringify(list));
+  try { window.localStorage.removeItem(storyKey(name)); } catch { /* 忽略 */ }
+  return list;
+}
+
 /* ------------------------------------------------------------------ 画布 */
 
 /** 读画布快照。**永不抛**：坏数据按空画布处理并把修复记录带出去。 */

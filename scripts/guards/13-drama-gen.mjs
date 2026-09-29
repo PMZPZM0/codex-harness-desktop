@@ -165,5 +165,57 @@ export async function run() {
     (panel.includes("生图 · 首帧") && panel.includes("视频 · 生成") ? ok : fail)(
       "【192】结果面板空态同样用真实按钮名（提示与按钮名不一致 = 用户找不到入口）"
     );
+  /* ══ 分镜表管理（09-29 用户：「分镜表也加一个在项目管理里面加一个管理功能」）══
+     分镜表是**唯一真源**：画布卡片 payload.board、BoardMeta.board、工作区文件都按 name 引用
+     ⇒ 删除必须级联清干净（缺一环就留悬垂引用），改名只允许改显示标题（改 name = 全引用失效）。 */
+  {
+    const storage = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "drama-storage.ts"), "utf8"));
+    const storySrc = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8"));
+    const boardSrc = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-board.ts"), "utf8"));
+    const panelSrc = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaProjectsPanel.tsx"), "utf8"));
+    const canvasSrc = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8"));
+    const electronSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "drama-canvas.ts"), "utf8"));
+
+    (storage.includes("export function removeStoryboard") ? ok : fail)(
+      "【199】store 有 removeStoryboard（本机索引 + 本地快照两份都清）"
+    );
+    (storage.includes("window.localStorage.removeItem(storyKey(name))") ? ok : fail)(
+      "【199】removeStoryboard 真删本地快照（只删索引 = 数据仍在 localStorage 里留尸）"
+    );
+    (electronSrc.includes('"drama-canvas:storyboard-file-remove"') && electronSrc.includes("stat.isFile()") ? ok : fail)(
+      "【199】工作区表文件有域内删除通道（且只删文件 —— 目录一律拒绝）"
+    );
+    (electronSrc.includes("isInsideTrustedRoots(workspace)") ? ok : fail)(
+      "【199】删除通道走可信根校验（同 asset-write 口径）"
+    );
+    // 级联四要素：本机两份 + 工作区文件 + 画布卡引用 + 画布 meta 引用
+    (storySrc.includes("store.removeStoryboard(name)") ? ok : fail)("【199】deleteStory 清本机索引与快照");
+    (storySrc.includes("dramaCanvasStoryboardFileRemove") ? ok : fail)("【199】deleteStory 删工作区文件");
+    (storySrc.includes('board.updatePayload(node.id, { board: "", style: "" })') ? ok : fail)(
+      "【199】deleteStory 解绑画布上的分镜表卡（否则卡片指向一张不存在的表）"
+    );
+    (storySrc.includes("board.unbindStoryboard(name)") ? ok : fail)(
+      "【199】deleteStory 清画布 meta 的挂表记录（BoardMeta.board 悬垂引用）"
+    );
+    (boardSrc.includes("const unbindStoryboard") ? ok : fail)("【199】board API 提供 unbindStoryboard");
+    (storySrc.includes("storyName === name") ? ok : fail)("【199】删的是当前表时切走（否则画布挂着一张已删的表）");
+    (storySrc.includes("const renameStory") && storySrc.includes("upsertStoryboard({ ...meta, title: clean })") ? ok : fail)(
+      "【199】renameStory 只改 meta.title（name 是引用键 —— 改了会断掉卡片/文件/meta 三处引用）"
+    );
+    (panelSrc.includes("onStoryDelete") && panelSrc.includes("onStoryRename") && panelSrc.includes("onStorySwitch") ? ok : fail)(
+      "【199】项目管理面板有分镜表分区（切换/重命名/删除三动作）"
+    );
+    (panelSrc.includes("storyboardFilePath") && panelSrc.includes("revealInFolder") ? ok : fail)(
+      "【199】分镜表条目可直达工作区文件（打开文件夹）"
+    );
+    (canvasSrc.includes("onStoryDelete={(name: string) => void story.deleteStory(name)}") ? ok : fail)(
+      "【199】画布把 deleteStory 接到面板（不接线 = 按钮点了没反应）"
+    );
+    // 顶栏布局（09-29 用户：按键布局调整）：四个「新建」收成一个下拉菜单
+    (canvasSrc.includes("drama-canvas-headmenu-wrap") && !canvasSrc.includes("新建短剧工作流</button>") ? ok : fail)(
+      "【199】顶栏「新建」合并为下拉菜单（四个按钮并排会把顶栏挤成两行）"
+    );
+  }
+
   }
 }

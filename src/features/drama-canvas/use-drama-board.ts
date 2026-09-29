@@ -125,6 +125,8 @@ export interface DramaBoardApi {
   renameBoard: (name: string, title: string) => void;
   /** 按名删除项目（当前板走 deleteBoard 的切换逻辑） */
   deleteBoardByName: (name: string) => void;
+  /** 解绑所有挂了这张分镜表的画布 meta（分镜表被删时调用 —— 卡片引用由调用方另行解绑） */
+  unbindStoryboard: (name: string) => void;
   saveNow: () => void;
   savedAt: number;
   nextShotId: (sceneId?: string) => string;
@@ -529,6 +531,16 @@ export function useDramaBoard(onNotice: (text: string, tone?: "ok" | "err") => v
     setBoards(store.removeBoard(name));
   }, [board, deleteBoard]);
 
+  /** 解绑分镜表引用（09-29 项目管理）：所有 meta.board === name 的画布清成空。
+   *  分镜表被删后必须调用 —— 否则画布 meta 还指着一张不存在的表（守卫显示「（未绑定）」但 meta 仍在骗人）。 */
+  const unbindStoryboard = useCallback((name: string) => {
+    const hits = store.listBoards().filter((b) => b.board === name);
+    if (!hits.length) return;
+    let list = store.listBoards();
+    for (const meta of hits) list = store.upsertBoard({ ...meta, board: "" });
+    setBoards(list);
+  }, []);
+
   const nextShotId = useCallback((sceneId?: string) => {
     const shots = nodesRef.current.filter((n) => n.data?.kind === "shot").map((n) => n.data.payload);
     return dramaNextShotId(shots, sceneId);
@@ -573,6 +585,7 @@ export function useDramaBoard(onNotice: (text: string, tone?: "ok" | "err") => v
     deleteBoard,
     renameBoard,
     deleteBoardByName,
+    unbindStoryboard,
     saveNow,
     savedAt,
     nextShotId,
