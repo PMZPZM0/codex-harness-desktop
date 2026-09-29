@@ -13,7 +13,7 @@ import { useDramaActions } from "./drama-actions";
 /* ⛔ 生成按钮与通道映射表都从 DramaChannelButton 取（卡面同源）—— 检查器原来自己写了一份
    「生成图片」按钮：文案与卡面不一致、未配置不给引导、还不查节点类型（笔记卡上也能点），
    三处都与卡面相反。同一个动作只能有一个实现。 */
-import { DramaChannelButton, GEN_CHANNELS } from "./DramaChannelButton";
+import { DramaChannelButton, GEN_CHANNELS, visibleChannels } from "./DramaChannelButton";
 
 interface FieldSpec {
   key: string;
@@ -178,7 +178,7 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
         <div className="drama-canvas-inspector-actions">
           {/* 生成通道按钮：与卡面**同一颗组件、同一张映射表** —— 未配置会变「生图 · 去配置」
               直达设置页；策划类节点（笔记/剧本…）这里也不给生成按钮（与卡面行为一致）。 */}
-          {(GEN_CHANNELS[kind] || []).map((what) => (
+          {visibleChannels(kind, payload).map((what) => (
             <DramaChannelButton
               key={what}
               id={id}

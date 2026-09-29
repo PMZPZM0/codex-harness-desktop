@@ -25,12 +25,12 @@ export async function run() {
   (function checkChannelMap() {
     const sharedSrc = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaChannelButton.tsx"), "utf8");
     const hasMap = /export const GEN_CHANNELS: Record<string, DramaChannel\[\]> = \{/.test(sharedSrc);
-    const cardUses = /import \{ DramaChannelButton, GEN_CHANNELS \} from "\.\/DramaChannelButton"/.test(card);
+    const cardUses = /import \{[^}]*GEN_CHANNELS[^}]*\} from "\.\/DramaChannelButton"/.test(card);
     (hasMap && cardUses ? ok : fail)(
       "【192】卡面用共享的「节点类型 → 可用生成通道」映射表（09-28 提到 DramaChannelButton.tsx，卡面与检查器同一份）"
     );
   })();
-  (/const allowed = GEN_CHANNELS\[kind\];\s*\n\s*if \(!allowed\) return null;/.test(card) ? ok : fail)(
+  (/if \(!GEN_CHANNELS\[kind\]\) return null;/.test(card) && /visibleChannels\(kind, payload\)/.test(card) ? ok : fail)(
     "【192】映射表外的节点类型**不渲染**生成按钮（策划卡不该有生成图/视频）"
   );
   // ⛔ 负向断言：视频按钮不得再无条件渲染（原病根）
@@ -140,7 +140,7 @@ export async function run() {
       `【192】生成按钮只有一个实现（实得：${genCallers.join(", ") || "无"}）—— 检查器曾自写一份「生成图片」：文案漂移 + 无配置引导 + 不查节点类型`
     );
 
-    (/import \{ DramaChannelButton, GEN_CHANNELS \} from "\.\/DramaChannelButton"/.test(inspector) && /GEN_CHANNELS\[kind\]/.test(inspector) ? ok : fail)(
+    (/import \{[^}]*GEN_CHANNELS[^}]*\} from "\.\/DramaChannelButton"/.test(inspector) && /visibleChannels\(kind, payload\)/.test(inspector) ? ok : fail)(
       "【192】检查器用共享按钮 + 同一张映射表（选中笔记卡不再冒出生成按钮）"
     );
 
@@ -716,8 +716,8 @@ export async function run() {
     (staleName ? ok : fail)(
       "【212】文案里的按钮名必须与卡面逐字一致（不许再出现裸「生图 · 首帧」—— 那是 shot 卡的叫法）"
     );
-    (((() => { const cnt = (model212.match(/step: [1-9]/g) || []).length; return cnt >= 15; })()) ? ok : fail)(
-      "【212】三个模板都标了流程步骤号（需求→提示词→出图→选图 / 白模 / 3D 建模各自的编号）"
+    (((() => { const cnt = (model212.match(/step: [1-9]/g) || []).length; return cnt >= 13; })()) ? ok : fail)(
+      "【212】三个模板都标了流程步骤号（生图 ①写提示词→②出图→③备注 / 白模 ①-⑤ / 3D 建模 ①-⑤）"
     );
   }
   /* ══ 保存提示一条、准确（09-29 用户实测：点保存同时看到「已保存（分镜表同时写到工作区）」
@@ -744,6 +744,96 @@ export async function run() {
     );
     (/saved\.path/.test(canvas213) && /saved\.error/.test(canvas213) ? ok : fail)(
       "【213】保存按钮按真实结果三态提示（成功 / 未绑工作区 / 失败带原因）"
+    );
+  }
+  /* ══ 生图工作流精简度（09-29 用户：「设计得更简单，节点数量要精简，减少不必要的复杂连接，
+     方便新手快速理解使用」）══
+     原版 5 卡 4 线 ⇒ 现在 **3 卡 2 线**（写提示词 → 出图 → 备注）。
+     ⛔ 断言要防的是**复杂度回潮**：后来人觉得"加张需求说明卡更完整"、"加个 A/B 对比更专业"，
+        一加就把新手向的默认路径又搞复杂了 —— 上限断言能拦住。 */
+  {
+    const { pathToFileURL } = await import("node:url");
+    const modelMod = await import(pathToFileURL(join(ROOT, "src", "lib", "drama-canvas-model.mjs")).href);
+    const img = modelMod.imageStarterWorkflow();
+    (img.nodes.length <= 3 && img.edges.length <= 2 ? ok : fail)(
+      `【214】生图入门模板 ≤3 节点 / ≤2 连线（实得 ${img.nodes.length} 节点 / ${img.edges.length} 连线）`
+    );
+    (img.nodes.some((nd) => nd.id === "n-prompt") && img.nodes.some((nd) => nd.id === "n-out") && img.edges.some((e) => e.relation === "generate") ? ok : fail)(
+      "【214】精简不许把核心砍掉：写提示词 → 出图（含 generate 关系）必须在"
+    );
+    (!img.nodes.some((nd) => /n-brief|n-pick|n-out-a|n-out-b/.test(nd.id)) ? ok : fail)(
+      "【214】负向：已删的入门卡（需求说明 / 出图A·B / 选图结论）不许回潮（要对比请用复制卡片）"
+    );
+    (img.nodes.every((nd) => !nd.payload.text && !nd.payload.prompt) ? ok : fail)(
+      "【214】模板 payload 不预填引导文本（09-28 教训：引导词会被当真实提示词发给模型）"
+    );
+  }
+  /* ══ 按钮按状态精简（09-29 用户：「卡片上的功能按键也要精简，不要每个卡片都有重复按键」）══
+     ⛔ 病根：image/shot 卡不分状态一律给「生图 + 视频 + 上传参考图」—— 没出图时「视频」是
+        文生视频（对生图流程纯噪音），三张卡按钮一模一样也看不出主次。
+     现在：visibleChannels(kind, payload) 按状态过滤（没图/首帧不给视频），
+     上传参考图只在**输入位**给（没图的出图卡 / 有定妆照的角色卡 / 有首帧的镜头卡都不再重复挂）。 */
+  {
+    const shared215 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaChannelButton.tsx"), "utf8"));
+    const card215 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8"));
+    const insp215 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaInspector.tsx"), "utf8"));
+
+    (/export function visibleChannels/.test(shared215) && /kind === "image" \|\| kind === "character" \|\| kind === "location"\) return allowed\.filter\(\(ch\) => ch !== "video"\)/.test(shared215) ? ok : fail)(
+      "【215】visibleChannels 按状态过滤（没图/首帧不给「视频」—— 文生视频对生图流程是噪音）"
+    );
+    (/visibleChannels\(kind, payload\)/.test(card215) && /visibleChannels\(kind, payload\)/.test(insp215) ? ok : fail)(
+      "【215】卡面与检查器**共用同一份**状态过滤（各自 filter 必然漂移）"
+    );
+    (/kind === "image" \? !payload\.path && !payload\.url && payload\.hint !== "output"/.test(card215) ? ok : fail)(
+      "【215】上传参考图只在输入位给（每张卡都挂全套按键 = 用户吐槽的「重复按键」）"
+    );
+    (!/canUpload = \["image", "character", "location", "shot"\]\.includes\(kind\)/.test(card215) ? ok : fail)(
+      "【215】负向：不许回到「按 kind 数组无条件给上传按钮」"
+    );
+    /* 用户 09-29：「区分两类工作流…按键与工作流类型一一对应、互不冲突」。 */
+    (/if \(kind === "shot"\) \{[\s\S]{0,260}?hasFrame \|\| hasVideo/.test(shared215) ? ok : fail)(
+      "【215】视频工作流的卡才给「视频」（镜头卡：没首帧先出首帧，有首帧才给视频）"
+    );
+    /* ⛔ 注意：GEN_CHANNELS 表里 image 仍写着 ["image","video"]（那是"该卡理论上可用通道"），
+       过滤在 visibleChannels 里做 —— 所以这里只查**旧实现特征**不许回潮，不查表内容。 */
+    (!/const hasStill =/.test(shared215) ? ok : fail)(
+      "【215】负向：不许回退到旧的 hasStill 过滤（那是「有图就给视频」的实现，与两类工作流分流冲突）"
+    );
+    (/payload\.hint === "output"/.test(card215) && /hint: "output"/.test(readFileSync(join(ROOT, "src", "lib", "drama-canvas-model.mjs"), "utf8")) ? ok : fail)(
+      "【215】出图卡（产物位）空态说清「点左边卡的生图，图出在这里」（两张卡都教写提示词 = 分不清哪张出图）"
+    );
+  }
+  /* ══ 工作流内按键唯一（09-29 用户：「检查并确保同一工作流中任意两张卡片的按键不存在同名冲突；
+     如发现重复需指出具体位置并给出消除重复的处理方案」）══
+     做法：模板卡声明角色 payload.act，按键按角色分发（generate=唯一生成入口 / upload=只有上传 /
+     output=不出按钮）。**真跑模板**统计 act 分布，断言每个工作流生成入口与素材位各 ≤1 ——
+     这就是「同名按键不冲突」的机器判据。
+     ⚠️ 口径（已向用户说明）：同**角色**的卡按键不同；同**类型**多张卡（短剧流多个角色卡）保有同类
+        按键是必要能力（否则第二个角色没法制图），不算重复 —— 所以断言按「每工作流 ≤1 个生成入口」而不是「全局唯一」。 */
+  {
+    const { pathToFileURL } = await import("node:url");
+    const modelMod = await import(pathToFileURL(join(ROOT, "src", "lib", "drama-canvas-model.mjs")).href);
+    const flows = {
+      生图: modelMod.imageStarterWorkflow(),
+      白模视频: modelMod.whiteboxStarterWorkflow(),
+      "3D 建模": modelMod.model3dStarterWorkflow(),
+    };
+    for (const [label, snap] of Object.entries(flows)) {
+      const gen = snap.nodes.filter((nd) => nd.payload?.act === "generate").length;
+      const up = snap.nodes.filter((nd) => nd.payload?.act === "upload").length;
+      (gen <= 1 && up <= 1 ? ok : fail)(
+        `【216】${label}工作流按键唯一（生成入口 ${gen} 张 / 素材位 ${up} 张，各需 ≤1 —— >1 就是同名按键冲突）`
+      );
+    }
+    const card216 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8"));
+    (/act === "upload" \|\| act === "output" \? \[\] : visibleChannels/.test(card216) ? ok : fail)(
+      "【216】卡面按 act 分发通道（模板只声明不接线 = 白声明）"
+    );
+    (/act === "upload" \? true/.test(card216) ? ok : fail)(
+      "【216】素材位（upload）只给「上传参考图」—— 素材是从外部拖/传进来的，不该有生成按钮"
+    );
+    (/act === "output" \? false/.test(card216) ? ok : fail)(
+      "【216】产物位（output）不出按钮（图落在这里，重出请回唯一入口那张卡）"
     );
   }
 }
