@@ -493,7 +493,8 @@
    初始无底色、hover 弱描边（02-sidebar-threads.css）、选中才有蓝底。 */
 .team-cluster > .thread-row,
 .team-cluster-head {
-  background: transparent;
+  /* ⛔ 不在这里设 background：(0,2,0) + 晚加载会压掉 .thread-row.active 的蓝底
+     （09-29 用户实测：选中专家团只剩蓝条没底色）。非选中无底 / active 蓝底都交给通用规则。 */
   border: 0;
   box-shadow: none;
 }
@@ -502,7 +503,7 @@
 .team-cluster-head .thread-cluster-toggle { margin-right: 2px; }
 /* ⛔ 09-29：hover 同步弱化（无底色 + 内描边）—— 本文件在 02-sidebar-threads 之后加载，
    不就地改的话这里的旧底色会反压 02 里的弱化规则（同优先级按源顺序取胜）。 */
-.team-cluster-head:hover {
+.team-cluster-head:not(.active):hover {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--line-soft);
 }
