@@ -64,12 +64,19 @@ export async function run() {
       : fail("【32】mac 产物校验没有 cloudflared 断言 —— 缺了要到用户那儿才发现");
   }
 
-  // ④ ffmpeg：渠道语音转码依赖它，mac 布局是 tools/ffmpeg/bin/ffmpeg（无后缀），旧实现只找 .exe + 用 cwd
+  // ④ ffmpeg：渠道语音转码与视频合并（整片导出）都依赖它。
+  //    ⛔ 09-29 解析已从 im-gateways 抽到 electron/toolchain.ts（视频合并要复用同一份）——
+  //    判据跟着实现走，否则守卫盯着一份**已经不存在的私有实现**（假绿）。
+  //    mac 布局是 tools/ffmpeg/bin/ffmpeg（evermeet 单文件，**无后缀**）—— 只找 .exe 会让 mac 永远落空。
   {
-    const fnBody = sliceFn(mainC, "function resolveFfmpegPath", 800);
-    (/process\.platform === "win32" \? \["ffmpeg", "ffmpeg\.exe"\] : \["ffmpeg", "bin", "ffmpeg"\]/.test(fnBody) && !/\.cwd\(\)/.test(fnBody))
-      ? ok("【32】ffmpeg 路径平台化（mac = tools/ffmpeg/bin/ffmpeg，不依赖 cwd）")
-      : fail("【32】resolveFfmpegPath 仍只找 ffmpeg.exe / 依赖 cwd —— mac 上渠道语音转码必失败");
+    const toolbox = readFileSync(join(ROOT, "electron", "toolchain.ts"), "utf8");
+    const fnBody = sliceFn(toolbox, "export function bundledFfmpeg", 900);
+    const shaped = /process\.platform === "win32" \? "ffmpeg\.exe" : "ffmpeg"/.test(fnBody)
+      && /path\.join\(tools, "ffmpeg", "bin", exe\)/.test(fnBody)
+      && /path\.join\(tools, "ffmpeg", exe\)/.test(fnBody);
+    (shaped && /toolsRoot\(\)/.test(fnBody) && !/\.cwd\(\)/.test(fnBody))
+      ? ok("【32】ffmpeg 路径平台化且两种布局都找（tools/ffmpeg/bin 与平铺，不依赖 cwd）")
+      : fail("【32】bundledFfmpeg 未覆盖平台差异 / 布局 —— mac 上渠道语音转码与整片合并必失败");
   }
 
   // ⑤ 系统级探测：mac 上 Docker Desktop 装在 /Applications，CLI 在 /usr/local|/opt/homebrew；PATH 分隔符也不能写死

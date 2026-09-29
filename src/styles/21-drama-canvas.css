@@ -1263,3 +1263,36 @@
 /* 按钮组不折行且贴右 */
 .drama-canvas-head-actions { flex-wrap: nowrap; margin-left: auto; }
 
+
+/* ─────────────────────────────── 批量生成按钮（09-29）
+   跑批中就地变成「进度 + 中止」——顶栏不新增第二颗按钮，也不弹打断式对话框。 */
+.drama-canvas-head-btn.is-busy {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--line));
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.drama-canvas-head-btn .is-spin { animation: drama-batch-spin 1s linear infinite; }
+@keyframes drama-batch-spin { to { transform: rotate(360deg); } }
+/* 范围菜单里不可用的项（没选中任何卡时的「只跑选中的」） */
+.drama-canvas-headmenu > button:disabled { opacity: .5; cursor: default; }
+.drama-canvas-headmenu > button:disabled:hover { background: transparent; }
+
+/* 结果面板的「导出成片」按钮（09-29）：产物看板上的收口动作 */
+.drama-results-export {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.drama-results-export:hover:not(:disabled) { border-color: var(--accent); }
+.drama-results-export:disabled { opacity: .5; cursor: default; }
+.drama-results-export .is-spin { animation: drama-batch-spin 1s linear infinite; }

@@ -9,7 +9,7 @@
  * ⛔ 只读：本面板不删文件、不改卡片（删除属于卡片/文件管理，不在这层的职责里）。
  */
 import { useMemo, useState } from "react";
-import { Film, Image as ImageIcon, Music, Play, X } from "lucide-react";
+import { Film, Image as ImageIcon, Loader2, Music, Play, X } from "lucide-react";
 import { useDramaActions } from "./drama-actions";
 
 type AssetKind = "image" | "video" | "audio";
@@ -46,7 +46,7 @@ export function DramaResultsPanel({ onClose, onLocate }: {
   /** 定位到产生这条结果的卡片（视口飞过去 + 选中） */
   onLocate: (nodeId: string) => void;
 }) {
-  const { board } = useDramaActions();
+  const { board, story } = useDramaActions();
   const [filter, setFilter] = useState<AssetKind | "all">("all");
   const [preview, setPreview] = useState<Asset | null>(null);
   const assets = useMemo(() => collectAssets(board.nodes as any), [board.nodes]);
@@ -64,6 +64,19 @@ export function DramaResultsPanel({ onClose, onLocate }: {
       <header className="drama-results-head">
         <b>生成结果</b>
         <span>{assets.length} 项</span>
+        {/* 09-29 整片导出：片段散在这里看，合并入口放这里最顺手（不必回顶栏找）。
+            合并顺序由分镜表决定（唯一真源），表外的散卡按画布位置补在末尾。 */}
+        <button
+          className="drama-results-export"
+          disabled={story.exporting || counts.video === 0}
+          title={counts.video === 0
+            ? "还没有视频片段 —— 先给镜头生成视频（顶栏「批量生成」可一键跑）"
+            : "按分镜表顺序把所有视频片段合并成一条成片，落到工作区 export/ 并回写分镜表的成片字段"}
+          onClick={() => void story.exportMovie()}
+        >
+          {story.exporting ? <Loader2 size={13} className="is-spin" /> : <Film size={13} />}
+          {story.exporting ? "导出中…" : "导出成片"}
+        </button>
         <button className="icon-button" title="关闭" onClick={onClose}><X size={15} /></button>
       </header>
       <div className="drama-results-tabs">

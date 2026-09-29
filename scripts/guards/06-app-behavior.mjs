@@ -2310,9 +2310,11 @@ w.postMessage({id:1,op:"list",root});
     const videoGen184 = readFileSync(join(ROOT, "electron", "features", "video-gen.ts"), "utf8");
     const manifest184 = JSON.parse(readFileSync(join(ROOT, "electron", "ipc-channels.manifest.json"), "utf8"));
     const videoChannels184 = (manifest184.channels || []).filter((c) => c.channel.startsWith("video:")).map((c) => c.channel);
-    const wantVideo184 = ["video:providers", "video:config-read", "video:config-save", "video:submit", "video:poll", "video:download"];
-    (wantVideo184.every((ch) => videoChannels184.includes(ch)) ? ok : fail)(
-      "【184】manifest 登记了 video 域全部 6 通道（providers/config-read/config-save/submit/poll/download）"
+    // ⛔ 期望清单要**穷举**：少写一个（如 09-29 新增的 video:concat）会让断言在域里加了通道后
+    //    仍然绿 —— 那就从「登记完整性」退化成了「这几个还在」。
+    const wantVideo184 = ["video:providers", "video:config-read", "video:config-save", "video:submit", "video:poll", "video:download", "video:concat"];
+    (wantVideo184.every((ch) => videoChannels184.includes(ch)) && videoChannels184.length === wantVideo184.length ? ok : fail)(
+      `【184】manifest 登记了 video 域全部 7 通道（providers/config-read/config-save/submit/poll/download/concat；实得 ${videoChannels184.length}）`
     );
     (/videoAssertImageOk\(/.test(videoGen184) ? ok : fail)(
       "【184】video:submit 提交前过 videoAssertImageOk（url-only 厂商吃本地首帧要当场报错，不许静默失败）"
@@ -2321,8 +2323,8 @@ w.postMessage({id:1,op:"list",root});
       "【184】video:download 落盘前过可信根校验（与 fs:write 同一口径）"
     );
     const registry184 = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
-    (/{ prefix: "video", count: 6,/.test(registry184) && /features\/video-gen\.ts/.test(registry184) ? ok : fail)(
-      "【184】ipc-registry 有 video 域条目（count 6，file 指向 video-gen.ts）"
+    (/{ prefix: "video", count: 7,/.test(registry184) && /features\/video-gen\.ts/.test(registry184) ? ok : fail)(
+      "【184】ipc-registry 有 video 域条目（count 7，file 指向 video-gen.ts）"
     );
     // 适配层真值表（纯 .mjs 直接 import 跑，不是读文本）
     const vp = await import(pathToFileURL(join(ROOT, "src", "lib", "video-providers.mjs")).href);

@@ -18,7 +18,7 @@ import { runDelegatedTask } from "../features/delegation";
 import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
 import { mutableState, readBuiltinPlugins, scheduler } from "../main";
 import { generateImageResilient } from "./builtin-skills-ipc/01-builtin-images";
-import { downloadVideoCore, findVideoJob, listVideoJobs, pollVideoCore, rememberVideoJob, submitVideoCore, updateVideoJob, videoProviderViews } from "./video-gen";
+import { concatVideosCore, downloadVideoCore, findVideoJob, listVideoJobs, pollVideoCore, rememberVideoJob, submitVideoCore, updateVideoJob, videoProviderViews } from "./video-gen";
 export async function dispatchRpcCall(name: unknown, args: Record<string, unknown>): Promise<{ ok: boolean; output?: string; error?: string }> {
   // ── 旁证：引擎把调用转发给 MCP 服务器的同一时刻会发 item/started 事件（含真实 threadId）。
   // 用「参数指纹」对上号，拿到的才是**引擎认定的调用者**——模型谎报身份也绕不过。
@@ -246,6 +246,31 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     }
     updateVideoJob(jobId, { status: "succeeded", url });
     return { ok: true, output: `视频已生成：${url}${workspace ? "" : "（没有工作目录，未落盘；把工作目录给我可以再下载）"}` };
+  }
+  if (name === "video_concat") {
+    // 整片合并（09-29）：把各镜片段按**参数给的顺序**拼成一条成片。
+    //   顺序由调用方决定（模型按分镜表排）—— 主进程不猜顺序，猜错比不拼更糟。
+    const files = (Array.isArray(args.files) ? args.files : []).map((item) => String(item || "").trim()).filter(Boolean);
+    if (!files.length) return { ok: false, error: "缺少 files：要合并的片段路径列表，**按成片顺序**排列" };
+    const workspace = String(args.workspace || threadCwd.get(callerThreadId) || "").trim();
+    if (!workspace) return { ok: false, error: "没有工作目录：把 workspace 传给我（成片要落盘）" };
+    try {
+      const result = await concatVideosCore({
+        workspace,
+        name: String(args.name || "成片"),
+        files,
+        width: Number(args.width) || undefined,
+        height: Number(args.height) || undefined,
+        fps: Number(args.fps) || undefined,
+      });
+      return {
+        ok: true,
+        output: `成片已导出：${result.path}（${result.parts} 段 · ${(result.bytes / 1048576).toFixed(1)} MB · `
+          + `${result.mode === "copy" ? "无损拼接（编码一致）" : "统一重编码（片段编码不一致，已统一画布与帧率）"}）`,
+      };
+    } catch (error) {
+      return { ok: false, error: String((error as Error)?.message ?? error) };
+    }
   }
   return { ok: false, error: `未知工具：${String(name)}` };
 }

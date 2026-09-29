@@ -24,11 +24,11 @@ import { QqGateway } from "../qq-gateway";
 import { TelegramGateway } from "../telegram-gateway";
 import { WecomWebhookGateway } from "../wecom-webhook-gateway";
 import { WeixinGateway } from "../weixin-gateway";
-import { toolsRoot } from "../toolchain";
+import { resolveFfmpegPath, toolsRoot } from "../toolchain";
 import { type BotStreamBudget, BotStreamSession, type BotStreamSink } from "../bot-stream";
 import { handleChannelMessage, handleTelegramMessage } from "./im-inbound";
 import { sendToWindow } from "./window-bus";
-import { appSourceRoot, channelLogs } from "../runtime-refs";
+import { channelLogs } from "../runtime-refs";
 import { channelBot, voiceService } from "../main";
 // ── 微信机器人：收消息 → Codex → 回复发回微信 ───────────────────
 let weixinGateway: WeixinGateway | null = null;
@@ -267,24 +267,8 @@ const feishuGateway = new FeishuGateway({
   log: channelLog,
 });
 
-/** ffmpeg 可执行文件：随包按需安装（开发工具页），装过就在 tools/ffmpeg 下；都没装则期望 PATH 里有。
- *  ⛔ mac 适配（09-17 审计）：darwin 侧 install-runtimes 把 ffmpeg/ffprobe 放在 `tools/ffmpeg/bin/`，
- *  文件名**不带 .exe**（evermeet 单文件构建）；旧实现只找 `ffmpeg.exe` ⇒ mac 上永远回落到裸名 "ffmpeg"，
- *  而 GUI 启动的进程 PATH 里通常没有它 ⇒ 渠道语音消息（飞书 opus 转 16k wav）在 mac 上必失败。 */
-function resolveFfmpegPath(): string {
-  const rel = process.platform === "win32" ? ["ffmpeg", "ffmpeg.exe"] : ["ffmpeg", "bin", "ffmpeg"];
-  const candidates = [
-    path.join(process.resourcesPath ?? "", "tools", ...rel),
-    path.join(appSourceRoot(), "resources", "tools", ...rel),
-    path.join(appSourceRoot(), "tools", ...rel),
-    // 内置工具目录里的 ffmpeg 直接可用（不论它是随包还是开发工具页装的）
-    ...(toolsRoot() ? [path.join(toolsRoot(), ...rel)] : []),
-  ];
-  for (const candidate of candidates) {
-    try { if (existsSync(candidate)) return candidate; } catch { /* 忽略路径异常，继续下一个 */ }
-  }
-  return "ffmpeg";
-}
+/* ffmpeg 路径解析已抽到 electron/toolchain.ts 的 resolveFfmpegPath（09-29：视频合并也要用，
+   两处私有实现必然漂移）。保留原 mac 适配结论的注记在那份实现里。 */
 
 /** 把渠道语音（飞书 opus / 其它）归一成 16k 单声道 PCM wav，供 sherpa ASR 直接吃。 */
 async function transcodeToWav16k(inputPath: string): Promise<string> {
