@@ -52,7 +52,7 @@ import { Box, Clapperboard,
   Images,
   ListChecks,
   FolderOpen, } from "lucide-react";
-import { DRAMA_GROUPS, DRAMA_NODE_DEFS, dramaGroupsFor, dramaNodeDef, dramaNodeFitsFlow, dramaStarterWorkflow, ecomImageStarterWorkflow, imageStarterWorkflow, legacyStarterSignature, model3dStarterWorkflow, upgradeLegacyStarterSnapshot, whiteboxStarterWorkflow } from "../../lib/drama-canvas-model.mjs";
+import { DRAMA_GROUPS, DRAMA_NODE_DEFS, IMAGE_KINDS, dramaGroupsFor, dramaNodeDef, dramaNodeFitsFlow, dramaStarterWorkflow, ecomImageStarterWorkflow, imageStarterWorkflow, legacyStarterSignature, model3dStarterWorkflow, upgradeLegacyStarterSnapshot, whiteboxStarterWorkflow } from "../../lib/drama-canvas-model.mjs";
 import { dramaAgentPrompt, dramaBoardRelativePath } from "../../lib/drama-agent-prompts.mjs";
 import { DramaActionsProvider, useDramaActions, type DramaActions, type ViewerTarget } from "./drama-actions";
 import { DramaInspector } from "./DramaInspector";
@@ -724,11 +724,23 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 {dramaGroupsFor(flow.type).map((group) => (
                   <div className="drama-canvas-addmenu-group" key={group}>
                     <span className="drama-canvas-addmenu-label">{group}</span>
-                    {Object.entries(DRAMA_NODE_DEFS).filter(([kind, def]) => def.group === group && dramaNodeFitsFlow(kind, flow.type)).map(([kind, def]) => (
-                      <button key={kind} className="drama-canvas-addmenu-item" title={def.subtitle} onClick={() => { board.addNode(kind); setAddMenuOpen(false); }}>
-                        <Plus size={11} /><span>{def.label}</span>
-                      </button>
-                    ))}
+                    {Object.entries(DRAMA_NODE_DEFS).filter(([kind, def]) => def.group === group && dramaNodeFitsFlow(kind, flow.type)).flatMap(([kind, def]) => {
+                      /* ⛔ 生图节点在菜单里**展开为六类图**（09-29 用户：「生图节点就这几个吗，明显不对」——
+                         六类图藏在节点内部的下拉里，菜单上根本看不见）。点「主图」直接建主图节点
+                         （带 imageType/标题/默认尺寸），不用建完再去检查器里翻类型。 */
+                      if (kind === "imagegen") {
+                        return IMAGE_KINDS.map((imgKind) => (
+                          <button key={"imagegen-" + imgKind.key} className="drama-canvas-addmenu-item" title={imgKind.label + "（" + imgKind.ratio + "）：" + imgKind.purpose} onClick={() => { board.addNode("imagegen", { imageType: imgKind.key, title: imgKind.label, size: imgKind.size }); setAddMenuOpen(false); }}>
+                            <Plus size={11} /><span>{imgKind.label}</span>
+                          </button>
+                        ));
+                      }
+                      return [
+                        <button key={kind} className="drama-canvas-addmenu-item" title={def.subtitle} onClick={() => { board.addNode(kind); setAddMenuOpen(false); }}>
+                          <Plus size={11} /><span>{def.label}</span>
+                        </button>,
+                      ];
+                    })}
                   </div>
                 ))}
               </div>
