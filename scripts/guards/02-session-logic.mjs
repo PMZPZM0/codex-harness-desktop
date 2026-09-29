@@ -1411,7 +1411,7 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
         少了 :not(.active)，后加载的 hover 规则会把 active 的蓝底覆盖掉（同优先级按源顺序取胜）。
      ② 来源标签：专家团主会话/专家团调度=「专家团」，成员/专家调度=「专家」，子智能体=「代理」，普通会话无标签。 */
   {
-    const css207 = ["01-base-and-chrome.css", "02-sidebar-threads.css"]
+    const css207 = ["01-base-and-chrome.css", "02-sidebar-threads.css", "19-misc-hints.css"]
       .map((f) => readFileSync(join(ROOT, "src", "styles", f), "utf8")).join("\n");
     const rowsSrc = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "02-goal-browser-notice", "01-goal-review-file-browser", "02-thread-attention-rows.tsx"), "utf8"));
 
@@ -1430,8 +1430,13 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/delegateKind === .subagent./.test(rowsSrc) && rowsSrc.includes(String.fromCharCode(20195,29702)) ? ok : fail)(
       "【207】子智能体调度 =「代理」标签（用户逐字点名）"
     );
+    /* ⛔ 09-29 用户实测：专家团簇行自带 09-14 的淡蓝底+描边+左色条（旧"团队条"装饰），
+       与新选中态撞车（看起来像被选中）。身份区分一律用「专家团」徽章，不用底色。 */
     (/thread-source-badge/.test(css207) && /tone-team/.test(css207) && /tone-expert/.test(css207) ? ok : fail)(
       "【207】标签样式与接线两侧都在（只写 CSS 不接线 = 永远不显示）"
+    );
+    (/(^|[\n])\.team-cluster > \.thread-row,\n\.team-cluster-head \{[^}]*background:\s*transparent/.test(css207) ? ok : fail)(
+      "【207】专家团簇行不许自带默认底色（身份用徽章区分，不用底色）"
     );
   }
 }
