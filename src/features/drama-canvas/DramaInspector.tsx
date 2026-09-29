@@ -54,13 +54,15 @@ const FIELDS: Record<string, FieldSpec[]> = {
     { key: "role", label: "定位" },
     { key: "look", label: "外貌描写", type: "textarea", hint: "写死一段，后面每镜照抄 —— 每镜现编会让脸一镜一个样" },
     { key: "description", label: "性格与目标", type: "textarea" },
-    { key: "ref", label: "定妆照路径", hint: "这是每一镜生首帧要参照的那张图" },
+    { key: "size", label: "尺寸 / 画幅", type: "select", options: IMAGE_SIZE_PRESETS.map((p) => p.value), hint: "按平台/用途选；网关不认这个尺寸会报错 —— 清空即走默认" },
+    { key: "negative", label: "负面提示词", type: "textarea", placeholder: "不要文字、不要畸形手指、不要水印、不要多余肢体…", hint: "写清楚不想要什么；不是每个网关都支持，无效时改回正面描述" },    { key: "ref", label: "定妆照路径", hint: "这是每一镜生首帧要参照的那张图" },
   ],
   location: [
     { key: "name", label: "场景名" },
     { key: "time", label: "时间 / 光线" },
     { key: "description", label: "场景描写", type: "textarea" },
-    { key: "ref", label: "场景图路径" },
+    { key: "size", label: "尺寸 / 画幅", type: "select", options: IMAGE_SIZE_PRESETS.map((p) => p.value), hint: "按平台/用途选；网关不认这个尺寸会报错 —— 清空即走默认" },
+    { key: "negative", label: "负面提示词", type: "textarea", placeholder: "不要文字、不要畸形手指、不要水印、不要多余肢体…", hint: "写清楚不想要什么；不是每个网关都支持，无效时改回正面描述" },    { key: "ref", label: "场景图路径" },
   ],
   storyboard: [
     { key: "board", label: "分镜表" },
