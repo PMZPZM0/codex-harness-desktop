@@ -116,6 +116,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [batchMenuOpen, setBatchMenuOpen] = useState(false);
   const [flowMenuOpen, setFlowMenuOpen] = useState(false);   // 工作流类型菜单（标题旁 ▾）
+  const [pendingMenuOpen, setPendingMenuOpen] = useState(false);   // 「待生成 N」的明细浮层（只看，不动手）
   const [marquee, setMarquee] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string | null } | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -475,11 +476,21 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
               {progress.images > 0 ? <span className="is-ok" title="已出图的卡片数">图 {progress.images}</span> : null}
               {progress.videos > 0 ? <span className="is-ok" title="已出片的镜头数">视频 {progress.videos}</span> : null}
               {progress.audios > 0 ? <span className="is-ok" title="已配音的镜头数">配音 {progress.audios}</span> : null}
+              {/* ⛔⛔ 09-29 用户：「我没有生成啊，怎么显示生成中」。
+                  根因是我上一版把这个数字**做成了单击直接开跑**的按钮 —— 一个长成标签样子的元素
+                  触发一个会调 API、会花钱的动作，用户点它只是想看"这 3 是什么"。
+                  改：点开只**展开明细**（纯查看），明细里再给一个明确的主按钮才开跑。
+                  ⛔ 明细做成**顶栏下方的展开条**而不是浮层：实测浮层会被 `.drama-canvas-shell`
+                  的 `overflow: hidden`（圆角裁切，必须保留）切到只剩一条线；而画布祖先链有
+                  backdrop-filter（创建 containing block），`position: fixed` 也逃不掉。
+                  展开条是 shell 的直接子元素、不溢出 ⇒ 不会被裁、也不遮挡画布。
+                  ⛔ 判据（守卫【204】）：这个按钮的 onClick 里**不许出现 generateBatch**。 */}
               {progress.pending > 0 ? (
                 <button
                   className="drama-canvas-pending"
-                  title={`还没生成产物的卡片（${progress.pending} 张）：\n· ${progress.pendingCards.join("\n· ")}\n\n点一下 = 批量生成（图片/配音真生成，视频只提交任务）`}
-                  onClick={() => void story.generateBatch("pending")}
+                  aria-expanded={pendingMenuOpen}
+                  title={`还没生成产物的卡片（${progress.pending} 张）—— 点开看是哪几张`}
+                  onClick={() => setPendingMenuOpen((v) => !v)}
                 >
                   待生成 {progress.pending}
                 </button>
@@ -518,8 +529,8 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 跑批中按钮就地变成进度 + 中止；空闲时是范围菜单（待生成 / 选中的）。
                 视频只提交不等待 —— 上面那句写进 title，别让用户以为点了要等几十分钟。 */}
             {story.batch.running ? (
-              <button className="drama-canvas-head-btn is-busy" title={`正在生成：${story.batch.label || "准备中"}（点一下中止 —— 正在跑的这张不打断）`} onClick={() => story.stopBatch()}>
-                <Loader2 size={13} className="is-spin" />{story.batch.done}/{story.batch.total} 中止
+              <button className="drama-canvas-head-btn is-busy" title={`正在批量生成：${story.batch.label || "准备中"}（${story.batch.done}/${story.batch.total}）—— 点一下停止：正在跑的这张不打断，已提交的视频任务会继续（可在卡片上续查）`} onClick={() => story.stopBatch()}>
+                <Loader2 size={13} className="is-spin" />{story.batch.done}/{story.batch.total} · 停止
               </button>
             ) : (
               <div className="drama-canvas-headmenu-wrap">
@@ -553,6 +564,31 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             <button className="drama-canvas-head-btn" onClick={onClose} title="退出画布"><X size={13} />退出</button>
           </div>
         </header>
+
+        {/* 「待生成 N」的明细展开条（09-29）：点数字才展开，列清是哪几张卡 + 一个明确的生成按钮。
+            ⛔ 刻意不是浮层：浮层会被 .drama-canvas-shell 的 overflow:hidden（圆角裁切）切掉
+            —— 实测展开后只剩一条 12px 的白线，且按钮中心点 elementFromPoint 命中的是 #root。 */}
+        {pendingMenuOpen && progress.pending > 0 ? (
+          <div className="drama-canvas-pendingbar">
+            <b>还没生成产物的卡片（{progress.pending} 张）</b>
+            <div className="drama-canvas-pendingbar-list">
+              {progress.pendingCards.slice(0, 12).map((label) => (
+                <span className="drama-canvas-pending-item" key={label}>{label}</span>
+              ))}
+              {progress.pendingCards.length > 12 ? (
+                <span className="drama-canvas-pending-item">…还有 {progress.pendingCards.length - 12} 张</span>
+              ) : null}
+            </div>
+            <button
+              className="drama-canvas-pending-go"
+              title="图片/配音真生成（并发 3 条），视频只提交任务不等待；开始后顶栏可随时停止"
+              onClick={() => { setPendingMenuOpen(false); void story.generateBatch("pending"); }}
+            >
+              <Zap size={13} />批量生成这 {progress.pending} 张
+            </button>
+            <button className="drama-canvas-pending-close" onClick={() => setPendingMenuOpen(false)}>收起</button>
+          </div>
+        ) : null}
 
         <div className="drama-canvas-toolbar">
           <div className="drama-canvas-addmenu">
