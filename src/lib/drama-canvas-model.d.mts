@@ -64,3 +64,7 @@ export function dramaAutoLayout(
   edges: DramaEdge[],
   options?: { gapX?: number; gapY?: number },
 ): Map<string, { x: number; y: number }>;
+/** 白模视频工作流（Blender 白模预演 → Seedance 2.5 渲染成片）：节点带 payload.flow = "whitebox" */
+export function whiteboxStarterWorkflow(baseX?: number, baseY?: number): DramaSnapshot;
+/** 3D 建模工作流（参考图 → Aholo Lux3D 生成资产 → Blender 组装）：节点带 payload.flow = "model3d" */
+export function model3dStarterWorkflow(baseX?: number, baseY?: number): DramaSnapshot;

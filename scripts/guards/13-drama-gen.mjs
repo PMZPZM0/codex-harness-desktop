@@ -609,4 +609,31 @@ export async function run() {
       "【206】视频技能写明画幅支持范围（含哪些厂商不支持）"
     );
   }
+  /* ══ 白模视频 / 3D 建模工作流（09-29 用户立项）══
+     两个模板必须**真跑有效**（节点/边结构完整）且带 payload.flow 身份标记（flowLabel 判定依据）；
+     createStarter 必须分发 4 种 kind；新建菜单必须有两项入口。
+     ⛔ 依据是查证过的官方事实：Seedance 2.5 官方支持白模参考输入；Aholo Lux3D = 图/文→3D（GLB/PBR）。
+     ⛔ 3D 生成通道尚未接入 —— 模板里是**指引卡**（note），不许假装有 3D 生成按钮。 */
+  {
+    const { pathToFileURL } = await import("node:url");
+    const canvasSrc208 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8"));
+    const modelMod = await import(pathToFileURL(join(ROOT, "src", "lib", "drama-canvas-model.mjs")).href);
+    const wb = modelMod.whiteboxStarterWorkflow();
+    const m3 = modelMod.model3dStarterWorkflow();
+    (wb.nodes.length >= 5 && wb.edges.length >= 4 && wb.nodes.some((nd) => nd.payload?.flow === "whitebox") && wb.nodes.some((nd) => nd.kind === "shot") ? ok : fail)(
+      "【208】白模视频模板有效（节点/边完整、含 shot 视频卡、带 whitebox 身份标记）"
+    );
+    (m3.nodes.length >= 5 && m3.edges.length >= 4 && m3.nodes.some((nd) => nd.payload?.flow === "model3d") && !m3.nodes.some((nd) => nd.kind === "shot") ? ok : fail)(
+      "【208】3D 建模模板有效（带 model3d 标记；⛔ 无 3D 生成通道就不许放生成类卡片 —— 只放指引）"
+    );
+    (/(kind: "drama" | "image" | "whitebox" | "model3d")/.test(canvasSrc208) && /kind === "whitebox" \? whiteboxStarterWorkflow/.test(canvasSrc208) ? ok : fail)(
+      "【208】createStarter 分发 4 种工作流（只加模板不接线 = 入口不存在）"
+    );
+    (canvasSrc208.includes("白模视频工作流") && canvasSrc208.includes("3D 建模工作流") && canvasSrc208.includes('createStarter("model3d")') ? ok : fail)(
+      "【208】新建菜单有两项模板入口（model3d 入口已接线）"
+    );
+    (/flowLabel/.test(canvasSrc208) && /payload\?\.flow/.test(canvasSrc208) ? ok : fail)(
+      "【208】工作流具体名由 payload.flow 判定（tab 显示“白模视频工作流”而非误归“短剧”）"
+    );
+  }
 }

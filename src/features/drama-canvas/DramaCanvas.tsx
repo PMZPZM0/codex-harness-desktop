@@ -24,8 +24,7 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import {
-  Clapperboard,
+import { Box, Clapperboard,
   Crosshair,
   GitBranch,
   LayoutGrid,
@@ -47,9 +46,8 @@ import {
   ZoomOut,
   Images,
   ListChecks,
-  FolderOpen,
-} from "lucide-react";
-import { DRAMA_GROUPS, DRAMA_NODE_DEFS, dramaNodeDef, dramaStarterWorkflow, imageStarterWorkflow } from "../../lib/drama-canvas-model.mjs";
+  FolderOpen, } from "lucide-react";
+import { DRAMA_GROUPS, DRAMA_NODE_DEFS, dramaNodeDef, dramaStarterWorkflow, imageStarterWorkflow, model3dStarterWorkflow, whiteboxStarterWorkflow } from "../../lib/drama-canvas-model.mjs";
 import { dramaAgentPrompt, dramaBoardRelativePath } from "../../lib/drama-agent-prompts.mjs";
 import { DramaActionsProvider, type DramaActions, type ViewerTarget } from "./drama-actions";
 import { DramaInspector } from "./DramaInspector";
@@ -273,6 +271,15 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
     type: detectFlowType(board.nodes),
     empty: board.nodes.length === 0,
   }), [board.nodes]);
+  /* 工作流具体名（09-29）：白模视频 / 3D 建模由**模板身份标记**（payload.flow）判定 ——
+     建模板时在首卡 payload 写 flow，判定零猜测。无标记回退大类（短剧/生图）。
+     tab 高亮仍用 flow.type（视频类 / 图像类两大类）：白模含 shot 卡 ⇒ 自动归视频类 ✓。 */
+  const flowLabel = useMemo(() => {
+    const mark = board.nodes.find((nd) => nd.data?.payload?.flow)?.data?.payload?.flow;
+    if (mark === "whitebox") return "白模视频工作流";
+    if (mark === "model3d") return "3D 建模工作流";
+    return flow.type === "drama" ? "短剧工作流" : "生图工作流";
+  }, [board.nodes, flow.type]);
 
   /* 工作流进度（09-28）：当前板「图 / 视频 / 配音」已完成数 + 素材·拍摄类卡中还没有产物的
      「待生成」数。实时跟随 board.nodes —— 让用户随时知道这条工作流走到哪了。
@@ -365,17 +372,21 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
     }
   }, [agentPicker, board, confirmAsk, marquee, pushNotice, selected]);
 
-  const createStarter = useCallback((kind: "drama" | "image" = "drama") => {
-    const isImage = kind === "image";
-    const snapshot = isImage ? imageStarterWorkflow() : starterSnapshot();
-    board.replaceAll(snapshot, { resetHistory: true });
+  const createStarter = useCallback((kind: "drama" | "image" | "whitebox" | "model3d" = "drama") => {
+    const snapshot = kind === "image" ? imageStarterWorkflow()
+      : kind === "whitebox" ? whiteboxStarterWorkflow()
+      : kind === "model3d" ? model3dStarterWorkflow()
+      : starterSnapshot();
     fittedRef.current = false;
     window.setTimeout(() => fitAll(), 30);
-    // ⛔ 09-28：提示里的按钮名必须与卡片上的实际按钮**逐字一致** —— 原来写「点『生成』即可」，
-    //    而卡片上根本没有叫「生成」的按钮（用户照着找找不到）。现在按真实按钮名写。
-    pushNotice(isImage
-      ? "生图工作流已就绪：写好主提示词 → 在「出图 A / 出图 B」卡上点「生图 · 首帧」出图；要出片就点同一张卡的「视频」按钮（首次用需先在设置里配视频接口）"
-      : "短剧创作骨架已建立：先写剧本，再连角色、场景与分镜表", "ok");
+    /* ⛔ 09-28 教训：提示里的动作名必须与卡片实际按钮一致（写「点生成」卡片上没有 = 用户找不到）。 */
+    const hints: Record<typeof kind, string> = {
+      drama: "短剧创作骨架已建立：先写剧本，再连角色、场景与分镜表",
+      image: "生图工作流已就绪：写好主提示词 → 在「出图 A / 出图 B」卡上点「生图 · 首帧」出图；要出片就点同一张卡的「视频」按钮（首次用需先在设置里配视频接口）",
+      whitebox: "白模视频工作流已就绪：① 在 Blender 用简单几何体搭场景、相机路径打 keyframe（官方建议主体只保留躯体，别带四肢细节）；② 低质量渲染导出关键帧，拖进「白模关键帧」卡；③ 在「AI 渲染镜头」卡点「视频」出片（Seedance 2.5 官方支持白模参考渲染）",
+      model3d: "3D 建模工作流已就绪：参考图 → Aholo Lux3D 生成 3D 资产（导出 GLB 放到工作目录，路径记到「3D 资产清单」卡）→ Blender 组装渲染。3D 生成通道暂未接入，先按卡片指引在 Lux3D 侧完成生成",
+    };
+    pushNotice(hints[kind], "ok");
   }, [board, fitAll, pushNotice]);
 
   /** 切到另一种工作流（09-29 用户：「没有生图和视频两个工作流切换入口啊」）。
@@ -464,7 +475,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                   className={flow.type === "image" ? "is-active" : ""}
                   title={flow.type === "image" ? "当前是生图工作流（按画布上的卡片自动判断）" : "切到生图工作流：已有该类型的画布就切过去，没有就新建一张"}
                   onClick={() => switchFlow("image")}
-                >生图工作流</button>
+                >{flow.type === "image" ? flowLabel : "生图工作流"}</button>
                 <button
                   type="button"
                   role="tab"
@@ -472,7 +483,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                   className={flow.type === "drama" ? "is-active" : ""}
                   title={flow.type === "drama" ? "当前是短剧工作流（按画布上的卡片自动判断）" : "切到短剧工作流（剧本→角色→分镜表→逐镜出片）：已有该类型的画布就切过去，没有就新建一张"}
                   onClick={() => switchFlow("drama")}
-                >短剧工作流</button>
+                >{flow.type === "drama" ? flowLabel : "短剧工作流"}</button>
               </div>
               <small>{flow.type === "drama" ? "剧本 → 角色 → 分镜表 → 逐镜出片" : "需求 → 主提示词 → 出图 A/B → 选图"}</small>
             </div>
@@ -541,6 +552,12 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                     </button>
                     <button role="menuitem" className="is-brand" onClick={() => { setNewMenuOpen(false); createStarter("image"); }}>
                       <Images size={13} /><span>生图工作流<small>需求 → 主提示词 → 出图 A/B → 选图</small></span>
+                    </button>
+                    <button role="menuitem" onClick={() => { setNewMenuOpen(false); createStarter("whitebox"); }}>
+                      <Clapperboard size={13} /><span>白模视频工作流<small>Blender 白模预演 → Seedance 2.5 渲染成片</small></span>
+                    </button>
+                    <button role="menuitem" onClick={() => { setNewMenuOpen(false); createStarter("model3d"); }}>
+                      <Box size={13} /><span>3D 建模工作流<small>参考图 → Aholo Lux3D 出 3D 资产 → Blender 组装</small></span>
                     </button>
                   </div>
                 </>
