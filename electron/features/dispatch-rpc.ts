@@ -15,6 +15,8 @@ import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
 import { DISPATCH_FIXED_PORT, dispatchMcpTools, dispatchProbes, dispatchToken, ensureDispatchToken, restrictedThreadRole, stableKey } from "../features/dispatch-core";
 import { normalizeTeamConfig, readExpertTeams, writeExpertTeams } from "../expert-teams";
+import { voiceService } from "../main";
+import { encodeWav16 } from "../voice/voice-profiles";
 import { readSubAgents, writeSubAgents } from "../main/09-agents-plugins";
 import { runDelegatedTask } from "../features/delegation";
 import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
@@ -185,6 +187,22 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     const next = existed ? list.map((entry) => (entry.id === agentName ? config : entry)) : [config, ...list];
     await writeSubAgents(next);
     return { ok: true, output: `已${existed ? "更新" : "创建"}子智能体「${agentName}」（id: ${agentName}）。列表在重启应用后可见。` };
+  }
+  if (name === "voice_generate") {
+    const text = String(args.text ?? "").trim();
+    if (!text) return { ok: false, error: "text 必填（要合成的台词）" };
+    const result = await voiceService.speak(text, {
+      sid: args.sid ? Number(args.sid) : undefined,
+      speed: args.speed ? Number(args.speed) : undefined,
+    });
+    if (!result.ok) return { ok: false, error: `${result.error ?? "语音合成失败"}（本地 TTS 模型未下载时到「设置 → 语音」下载）` };
+    const wav = encodeWav16(result.samples, result.sampleRate);
+    const dir = path.join(String(args.workspace || threadCwd.get(callerThreadId) || process.cwd()), "voice");
+    await fsp.mkdir(dir, { recursive: true });
+    const base = String(args.name ?? "").trim().replace(/[\\/:*?"<>|]/g, "_") || `voice-${Date.now()}`;
+    const file = path.join(dir, `${base}.wav`);
+    await fsp.writeFile(file, wav);
+    return { ok: true, output: `配音已生成：${file}（${result.sampleRate}Hz，${(wav.length / 1024).toFixed(0)} KB）` };
   }
   if (name === "image_generate") {
     const prompt = String(args.prompt ?? "").trim();

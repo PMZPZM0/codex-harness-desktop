@@ -150,7 +150,7 @@ lines.push("- ⛔⛔ **这些通道不是模型能直接调用的工具**（09-2
 //    改法：清单集中在一处、按域分组，新增 MCP 工具时改这里并重跑生成器（守卫【153】比对生成物）。
 lines.push("  **内置调度 MCP 当前暴露的工具**（09-29 现状；实际以 tools/list 返回为准）：");
 lines.push("  · 调度：`scheduler_save`（建定时任务，`threadId:\"current\"` = 就在当前会话里续聊执行）/ `scheduler_list` / `scheduler_run` / `scheduler_delete`");
-lines.push("  · 媒体：`image_generate`（生图，`count` 1–4 并发出变体，落盘返回本地路径）/ `video_generate`（提交视频任务，**立即返回 jobId，不等待**）/ `video_status`（查任务；成功会自动下载落盘）/ `video_concat`（把多镜片段按给定顺序拼成成片）");
+lines.push("  · 媒体：`image_generate`（生图，`count` 1–4 并发出变体，落盘返回本地路径）/ `video_generate`（提交视频任务，**立即返回 jobId，不等待**；`video` 参数可传白模预演参考片的公网 URL，配 Seedance 2.0/2.5 渲染）/ `video_status`（查任务；成功会自动下载落盘）/ `video_concat`（把多镜片段按给定顺序拼成成片）/ `voice_generate`（台词合成配音 WAV，落盘返回路径；语音模型未下载时报错并指路「设置 → 语音」）");
 lines.push("  · 子智能体：`agent_invoke`（派一个干净上下文的自己）/ `agent_archive_sessions` / `subagent_save`（新建子智能体代理，name+systemPrompt 必填）");
 lines.push("  · 专家：`expert_save`（创建/更新专家或专家团——displayNameZh + leadName + leadSystemPrompt 必填，多角色加 members；同 teamId 即更新）/ `expert_list`（列已有专家）。用户说「帮我建一个 XX 专家 / 专家团」时直接用它，建完复述 teamId；⛔ 内置六专家（知微/呈象/洞明/鲁班/画意/剪承团）有固定 teamId，别覆盖");
 lines.push("  ⇒ 生图生视频的**完整用法**在 `image-generation` 与 `video-generation` 两个技能里（提示词结构、模式路由、厂商矩阵、失败修复）—— 用户提到「画图 / 出图 / 生成视频 / 让这张图动起来」时先读它们。");
