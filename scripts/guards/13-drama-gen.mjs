@@ -720,4 +720,30 @@ export async function run() {
       "【212】三个模板都标了流程步骤号（需求→提示词→出图→选图 / 白模 / 3D 建模各自的编号）"
     );
   }
+  /* ══ 保存提示一条、准确（09-29 用户实测：点保存同时看到「已保存（分镜表同时写到工作区）」
+     与「⚠ 写工作区文件失败」两条**互相矛盾**的提示，问「啥意思」）══
+     ⛔ 病根两条：① 保存按钮盲目乐观（只要有 workspace 就说写进工作区，不管成没成）；
+     ② writeStoryboardFile 把 catch 里的错误吞掉 ⇒ 调用方只能说「失败」，用户不知道怎么办。
+     常见失败原因是**画布 workspace 掉出主进程可信根**（会话关掉/应用重启后就会掉）。 */
+  {
+    const storage213 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "drama-storage.ts"), "utf8"));
+    const story213 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8"));
+    const canvas213 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8");
+
+    (/catch \(error\) \{\s*return \{ path: null, error: error instanceof Error/.test(storage213) ? ok : fail)(
+      "【213】写工作区失败必须带回**真实原因**（catch 吞错误 = 用户只看到「失败」不知怎么办）"
+    );
+    (/const \{ path, meta, error \} = await store\.saveStoryboard/.test(story213) && /return \{ path, error \};/.test(story213) ? ok : fail)(
+      "【213】persist 把结果交回调用方（提示归调用方 ⇒ 不会出现两条自相矛盾）"
+    );
+    (/lastSaveErrorRef/.test(story213) ? ok : fail)(
+      "【213】自动保存的失败提示去重（同一原因只弹一次，别每敲一下字弹一遍）"
+    );
+    (!/已保存到本机" \+ \(workspace \? "（分镜表同时写到工作区）/.test(canvas213) ? ok : fail)(
+      "【213】负向：保存按钮不许再盲目乐观（曾按 workspace 有无就宣布写进工作区，与失败提示打架）"
+    );
+    (/saved\.path/.test(canvas213) && /saved\.error/.test(canvas213) ? ok : fail)(
+      "【213】保存按钮按真实结果三态提示（成功 / 未绑工作区 / 失败带原因）"
+    );
+  }
 }

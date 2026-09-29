@@ -152,14 +152,18 @@ export async function readStoryboardFile(workspace: string, name: string): Promi
   }
 }
 
-export async function writeStoryboardFile(workspace: string, name: string, data: Storyboard): Promise<string | null> {
-  if (!workspace) return null;
+/* ⛔⛔ 09-29 用户实测：点保存看到两条**互相矛盾**的提示（"已保存（分镜表同时写到工作区）" + "写工作区文件失败"）——
+   因为这里 `catch { return null }` 把原因吞了，调用方只能说"失败"。
+   失败的最常见原因是**画布 workspace 掉出了主进程可信根**（会话关掉/应用重启后就会掉），
+   而 fs:write 与文件写入同一条可信根校验 ⇒ 报错文本必须原样带回，用户才知道该干什么。 */
+export async function writeStoryboardFile(workspace: string, name: string, data: Storyboard): Promise<{ path: string | null; error?: string }> {
+  if (!workspace) return { path: null, error: "画布还没有绑定会话工作区" };
   try {
     const target = storyboardFilePath(workspace, name);
     await window.codex.writeFile(target, JSON.stringify(data, null, 2), workspace);
-    return target;
-  } catch {
-    return null;
+    return { path: target };
+  } catch (error) {
+    return { path: null, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -189,10 +193,10 @@ export async function loadStoryboard(workspace: string, name: string): Promise<{
 }
 
 /** 保存分镜表：本机那份立刻写，工作区文件副本尽力而为（失败不影响画布）。 */
-export async function saveStoryboard(workspace: string, name: string, data: Storyboard): Promise<{ path: string | null; meta: StoryboardMeta }> {
+export async function saveStoryboard(workspace: string, name: string, data: Storyboard): Promise<{ path: string | null; meta: StoryboardMeta; error?: string }> {
   const stamped = { ...data, updatedAt: Date.now() } as Storyboard & { updatedAt: number };
   writeStoryboardLocal(name, stamped);
-  const path = await writeStoryboardFile(workspace, name, stamped);
+  const { path, error } = await writeStoryboardFile(workspace, name, stamped);
   let shots = 0;
   for (const scene of stamped.scenes || []) shots += (scene.shots || []).length;
   const meta: StoryboardMeta = {
@@ -204,5 +208,5 @@ export async function saveStoryboard(workspace: string, name: string, data: Stor
     file: Boolean(path),
   };
   upsertStoryboard(meta);
-  return { path, meta };
+  return { path, meta, error };
 }
