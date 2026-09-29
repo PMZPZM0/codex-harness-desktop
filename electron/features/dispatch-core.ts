@@ -149,6 +149,49 @@ function dispatchMcpTools(): unknown[] {
       description: "删除一个定时任务（不可恢复）。",
       inputSchema: { type: "object", properties: { id: { type: "string", description: "任务 id（从 scheduler_list 拿）" } }, required: ["id"] },
     },
+    /* ── 专家 / 子智能体管理三件套（09-29 用户：「让用户可以通过 Codex 会话新建专家和专家团还有子智能体」）──
+       用户在会话里说「帮我建一个 XX 专家」⇒ 模型直接建，落盘 userData/expert-teams.json，
+       重启后专家列表可见。normalizeTeamConfig 负责字段缺省与 id 规范；同 teamId 即更新。
+       ⛔ 内置六专家（知微/呈象/洞明/鲁班/画意/剪承团）每次启动确保存在——提示模型用独有 teamId。 */
+    {
+      name: "expert_save",
+      description: "创建或更新一个专家 / 专家团（写进应用的专家列表，重启应用后可见）。displayNameZh 与 lead（name + systemPrompt）必填；多角色协作加 members。不确定用户要单人专家还是多人团队时先问一句。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          displayNameZh: { type: "string", description: "专家/团队显示名（如「SEO 专家」「三人文案团」）" },
+          displayNameEn: { type: "string", description: "可选：英文名" },
+          profession: { type: "string", description: "一句话职业定位（如「跨境电商 SEO 策略师」）" },
+          description: { type: "string", description: "两三句：擅长什么、怎么帮用户" },
+          category: { type: "string", description: "可选：分类 id（不确定就缺省）" },
+          sop: { type: "string", description: "标准工作流程（Markdown，分 Phase 描述怎么干活）" },
+          leadName: { type: "string", description: "主理人名字（如「鲁班」；单人专家 = 专家本人）" },
+          leadSystemPrompt: { type: "string", description: "主理人的系统提示词（角色、工作方式、输出规范、边界；必填）" },
+          members: { type: "array", description: "可选：团队成员（多角色协作时给），每项 {name, profession, description, systemPrompt}", items: { type: "object" } },
+          quickPrompts: { type: "array", description: "可选：3 条快速开始提示词", items: { type: "string" } },
+        },
+        required: ["displayNameZh", "leadName", "leadSystemPrompt"],
+      },
+    },
+    {
+      name: "expert_list",
+      description: "列出应用里已有的专家 / 专家团（teamId / 名称 / 定位 / 主理人 / 成员数），用于查重或给用户展示可选专家。",
+      inputSchema: { type: "object", properties: {} },
+    },
+    {
+      name: "subagent_save",
+      description: "创建或更新一个子智能体（轻量单人代理）。name 与 systemPrompt 必填；同 name 即更新。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "子智能体名（如「周报整理员」）" },
+          systemPrompt: { type: "string", description: "系统提示词（角色 + 工作方式 + 输出规范；必填）" },
+          description: { type: "string", description: "可选：一句话说明它负责什么（缺省自动生成）" },
+          effort: { type: "string", description: "可选：推理力度（缺省 high）" },
+        },
+        required: ["name", "systemPrompt"],
+      },
+    },
     /* ── 媒体生成三件套（09-29 用户：「让 Codex 能够直接调用生图工作流与视频工作流」）────────
        为什么是「生图一件 + 视频两件」：生图是同步 HTTP（几十秒，模型等着就行）；
        视频是**异步任务**（提交后要跑几分钟）—— 如果让工具一直等，会卡死整个回合，
