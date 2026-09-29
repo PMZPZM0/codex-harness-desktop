@@ -46,9 +46,8 @@ export function DramaResultsPanel({ onClose, onLocate }: {
   /** 定位到产生这条结果的卡片（视口飞过去 + 选中） */
   onLocate: (nodeId: string) => void;
 }) {
-  const { board, story } = useDramaActions();
+  const { board, story, openMedia } = useDramaActions();
   const [filter, setFilter] = useState<AssetKind | "all">("all");
-  const [preview, setPreview] = useState<Asset | null>(null);
   const assets = useMemo(() => collectAssets(board.nodes as any), [board.nodes]);
   const shown = filter === "all" ? assets : assets.filter((a) => a.kind === filter);
   const counts = {
@@ -94,7 +93,7 @@ export function DramaResultsPanel({ onClose, onLocate }: {
         <div className="drama-results-grid">
           {shown.map((asset) => (
             <figure key={asset.id} className={`drama-results-item is-${asset.kind}`}>
-              <button className="drama-results-thumb" title="预览" onClick={() => setPreview(asset)}>
+              <button className="drama-results-thumb" title="打开预览（大图/播放 + 打开文件夹、复制路径、重新生成等）" onClick={() => openMedia({ path: asset.path, kind: asset.kind, title: asset.label, nodeId: asset.nodeId })}>
                 {asset.kind === "image" ? <img src={srcOf(asset.path)} alt="" loading="lazy" />
                   : asset.kind === "video" ? <><video src={srcOf(asset.path)} preload="metadata" muted /><span className="drama-results-play"><Play size={16} /></span></>
                   : <span className="drama-results-audio"><Music size={18} /></span>}
@@ -112,20 +111,6 @@ export function DramaResultsPanel({ onClose, onLocate }: {
           ))}
         </div>
       )}
-      {preview ? (
-        <div className="drama-results-preview" onMouseDown={(e) => { if (e.target === e.currentTarget) setPreview(null); }}>
-          <div className="drama-results-preview-body">
-            <header>
-              <b>{preview.label}</b>
-              <button className="icon-button" title="关闭" onClick={() => setPreview(null)}><X size={15} /></button>
-            </header>
-            {preview.kind === "image" ? <img src={srcOf(preview.path)} alt={preview.label} />
-              : preview.kind === "video" ? <video src={srcOf(preview.path)} controls autoPlay />
-              : <audio src={srcOf(preview.path)} controls autoPlay />}
-            <footer><Film size={12} /><span>{preview.path}</span></footer>
-          </div>
-        </div>
-      ) : null}
     </aside>
   );
 }

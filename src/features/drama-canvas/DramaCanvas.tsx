@@ -51,8 +51,10 @@ import {
 } from "lucide-react";
 import { DRAMA_GROUPS, DRAMA_NODE_DEFS, dramaNodeDef, dramaStarterWorkflow, imageStarterWorkflow } from "../../lib/drama-canvas-model.mjs";
 import { dramaAgentPrompt, dramaBoardRelativePath } from "../../lib/drama-agent-prompts.mjs";
-import { DramaActionsProvider, type DramaActions } from "./drama-actions";
+import { DramaActionsProvider, type DramaActions, type ViewerTarget } from "./drama-actions";
 import { DramaInspector } from "./DramaInspector";
+import { readBoard } from "./drama-storage";
+import { DramaMediaViewer } from "./DramaMediaViewer";
 import { DramaResultsPanel } from "./DramaResultsPanel";
 import { DramaProjectsPanel } from "./DramaProjectsPanel";
 import { DramaNodeCard } from "./DramaNodeCard";
@@ -89,6 +91,21 @@ export interface DramaCanvasProps {
 
 interface Notice { id: number; text: string; tone: "ok" | "err" | ""; undo?: () => void }
 
+/** 工作流类型判据（**唯一一处**）：画布上有分镜表/镜头/角色/场景卡 ⇒ 短剧工作流，否则生图工作流。
+ *  ⛔ 抽成模块级函数而不是写两遍：顶部类型徽章与「切换」的查找逻辑必须同源，
+ *    两份判据漂移会导致「显示短剧流、切换却找不到短剧画布」这类自相矛盾。
+ */
+function detectFlowType(nodes: Array<{ data?: any; kind?: string }>): "drama" | "image" {
+  for (const node of nodes) {
+    // ⛔ 两种形态都要认（09-29 实测踩到）：画布运行时是 ReactFlow 的 `{ data: { kind } }`；
+    //    而 `readBoard().snapshot.nodes` 与分镜展开出来的是**扁平**的 `{ kind }`（没有 data 包装）
+    //    ⇒ 只读 data 会让"查找同类型画布"永远找不到（切不过去，还静默新建一张）。
+    const kind = String(node.data?.kind || node.kind || "");
+    if (kind === "storyboard" || kind === "shot" || kind === "character" || kind === "location") return "drama";
+  }
+  return "image";
+}
+
 export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, threads, initialBoard, onOpenPluginSettings }: DramaCanvasProps) {
   const shellRef = useRef<HTMLElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -115,8 +132,9 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [batchMenuOpen, setBatchMenuOpen] = useState(false);
-  const [flowMenuOpen, setFlowMenuOpen] = useState(false);   // 工作流类型菜单（标题旁 ▾）
   const [pendingMenuOpen, setPendingMenuOpen] = useState(false);   // 「待生成 N」的明细浮层（只看，不动手）
+  /* 产物查看器（09-29 用户：「卡片里的图片没有预览功能」）—— 卡片缩略图与结果面板共用同一个 */
+  const [viewer, setViewer] = useState<ViewerTarget | null>(null);
   const [marquee, setMarquee] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string | null } | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -251,15 +269,10 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
      好处：老画布自动适用（没有数据结构迁移）、用户手加了分镜表卡时类型自然跟着变
      （那一刻他确实在做短剧）。用户原话：「我现在新建的是生图工作流，没有生图和视频工作流切换」
      —— 病根是画布压根没有"这是什么工作流"这个概念，两种模板的 UI 全混在一起。 */
-  const flow = useMemo(() => {
-    let dramaNodes = 0;
-    for (const node of board.nodes) {
-      const kind = String(node.data?.kind || "");
-      if (kind === "storyboard" || kind === "shot" || kind === "character" || kind === "location") dramaNodes++;
-    }
-    const type: "drama" | "image" = dramaNodes > 0 ? "drama" : "image";
-    return { type, dramaNodes, empty: board.nodes.length === 0 };
-  }, [board.nodes]);
+  const flow = useMemo(() => ({
+    type: detectFlowType(board.nodes),
+    empty: board.nodes.length === 0,
+  }), [board.nodes]);
 
   /* 工作流进度（09-28）：当前板「图 / 视频 / 配音」已完成数 + 素材·拍摄类卡中还没有产物的
      「待生成」数。实时跟随 board.nodes —— 让用户随时知道这条工作流走到哪了。
@@ -289,6 +302,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
     board,
     story,
     openInspector: (id: string) => { board.select([id], id); setInspectorOpen(true); },
+    openMedia: (target: ViewerTarget) => setViewer(target),
     askAgent: (id: string) => {
       const node = board.nodes.find((n) => n.id === id);
       if (!node || !onAskAgent) { pushNotice("这个入口没接上 Agent（宿主未提供）", "err"); return; }
@@ -364,6 +378,24 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
       : "短剧创作骨架已建立：先写剧本，再连角色、场景与分镜表", "ok");
   }, [board, fitAll, pushNotice]);
 
+  /** 切到另一种工作流（09-29 用户：「没有生图和视频两个工作流切换入口啊」）。
+   *  一个画布 = 一种工作流 ⇒「切换」的真实语义是「换到那种工作流的画布」：
+   *  已有同类型的板就切过去，没有就新建一张。
+   *  ⛔ **原画布一定保留**（切走/新建都不动它）—— 用户的原话是"切换"，不是"替换"，
+   *    把当前画布换掉会让人以为工作白做了；提示里也要写明怎么切回。 */
+  const switchFlow = useCallback((type: "drama" | "image") => {
+    if (flow.type === type) return;
+    const label = type === "drama" ? "短剧工作流" : "生图工作流";
+    const existing = board.boards.find((b) => b.name !== board.board && detectFlowType(readBoard(b.name).snapshot.nodes) === type);
+    if (existing) {
+      board.switchBoard(existing.name);
+      pushNotice(`已切到${label}「${existing.title || existing.name}」`, "ok");
+      return;
+    }
+    createStarter(type);
+    pushNotice(`当前还没有${label}的画布，已新建一张（原画布保留 —— 用左侧「画布」下拉可切回）`, "ok");
+  }, [board, createStarter, flow.type, pushNotice]);
+
   const dropFiles = useCallback(async (evt: React.DragEvent) => {
     evt.preventDefault();
     const files = Array.from(evt.dataTransfer?.files || []).filter((f) => /^(image|video|audio)\//i.test(f.type));
@@ -422,39 +454,28 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 的共同病根：画布没有"这是什么工作流"的显式概念。现在标题直接显示**当前类型**
                 （按画布上的卡片自动判断），点一下就是新建另一种工作流的入口。 */}
             <div>
-              <b>
-                {flow.type === "drama" ? "短剧工作流" : "生图工作流"}
+              {/* ⛔ 09-29 用户：「没有生图和视频两个工作流切换入口啊」—— 上一版是个 15px 的小 ▾，
+                  等于没有入口。改成两个**并列 tab**：当前类型高亮，点另一个即切换。 */}
+              <div className="drama-canvas-flowtabs" role="tablist" aria-label="工作流类型">
                 <button
-                  className="drama-canvas-flowbtn"
-                  aria-expanded={flowMenuOpen}
-                  title="切换 / 新建工作流（当前类型按画布上的卡片自动判断）"
-                  onClick={() => setFlowMenuOpen((v) => !v)}
-                >
-                  <ChevronDown size={11} />
-                </button>
-              </b>
+                  type="button"
+                  role="tab"
+                  aria-selected={flow.type === "image"}
+                  className={flow.type === "image" ? "is-active" : ""}
+                  title={flow.type === "image" ? "当前是生图工作流（按画布上的卡片自动判断）" : "切到生图工作流：已有该类型的画布就切过去，没有就新建一张"}
+                  onClick={() => switchFlow("image")}
+                >生图工作流</button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={flow.type === "drama"}
+                  className={flow.type === "drama" ? "is-active" : ""}
+                  title={flow.type === "drama" ? "当前是短剧工作流（按画布上的卡片自动判断）" : "切到短剧工作流（剧本→角色→分镜表→逐镜出片）：已有该类型的画布就切过去，没有就新建一张"}
+                  onClick={() => switchFlow("drama")}
+                >短剧工作流</button>
+              </div>
               <small>{flow.type === "drama" ? "剧本 → 角色 → 分镜表 → 逐镜出片" : "需求 → 主提示词 → 出图 A/B → 选图"}</small>
             </div>
-            {flowMenuOpen ? (
-              <>
-                <div className="drama-canvas-headmenu-backdrop" onClick={() => setFlowMenuOpen(false)} />
-                <div className="drama-canvas-headmenu" role="menu">
-                  <div className="drama-canvas-headmenu-sep">
-                    当前：{flow.type === "drama" ? "短剧工作流" : "生图工作流"}{flow.empty ? "（空画布，按默认算）" : "（按画布上的卡片判断）"}
-                  </div>
-                  <button role="menuitem" onClick={() => { setFlowMenuOpen(false); createStarter("image"); }}>
-                    <Images size={13} /><span>生图工作流<small>需求 → 主提示词 → 出图 A/B → 选图（新建一张画布）</small></span>
-                  </button>
-                  <button role="menuitem" onClick={() => { setFlowMenuOpen(false); createStarter("drama"); }}>
-                    <Clapperboard size={13} /><span>短剧工作流<small>剧本 → 角色 → 分镜表 → 逐镜出片（新建一张画布）</small></span>
-                  </button>
-                  <div className="drama-canvas-headmenu-sep">其它</div>
-                  <button role="menuitem" onClick={() => { setFlowMenuOpen(false); setNaming({ kind: "board", value: "新画布" }); }}>
-                    <LayoutGrid size={13} /><span>空白画布<small>自己拖卡与连线</small></span>
-                  </button>
-                </div>
-              </>
-            ) : null}
             <label className="drama-canvas-select nodrag" title={`画布（项目）：一张画布 = 一个工作流。这里是切换/查看已有画布${workspace ? `\n工作文件夹：${workspace}` : "\n（还没选工作文件夹，生成产物不会落盘）"}`}>
               <span>画布</span>
               <AppSelect value={board.board} onChange={(v) => board.switchBoard(v)} ariaLabel="画布（项目）" options={board.boards.length ? board.boards.map((b) => ({ value: b.name, label: b.title || b.name })) : [{ value: "main", label: "main" }]} />
@@ -696,6 +717,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
           </div>
           {inspectorOpen ? <DramaInspector onClose={() => setInspectorOpen(false)} /> : null}
           {/* 生成结果（相册）：与检查器同一栏，互斥显示（同时开会把画布挤没） */}
+          {viewer ? <DramaMediaViewer target={viewer} onClose={() => setViewer(null)} /> : null}
           {resultsOpen ? (
             <DramaResultsPanel
               onClose={() => setResultsOpen(false)}

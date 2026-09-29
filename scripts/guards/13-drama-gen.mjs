@@ -251,8 +251,20 @@ export async function run() {
       );
     }
     // ③.5 工作流类型必须显式可见（病根：画布没有"这是什么工作流"的概念，两种模板 UI 混在一起）
-    (canvasSrc2.includes('{flow.type === "drama" ? "短剧工作流" : "生图工作流"}') ? ok : fail)(
-      "【201】顶栏标题显示当前工作流类型（按卡片推断，用户才不会问「我这是哪个工作流」）"
+    /* ③.5 ⛔ 09-29 再改：上一版把类型做成"标题文字 + 15px 的 ▾"，用户**根本看不见**
+       （原话「没有生图和视频两个工作流切换入口啊」）。现在是两个**并列 tab**。
+       判据：两个类型名各出现一次 + 有 tab 容器 + 点另一个会真的切（switchFlow）。 */
+    (canvasSrc2.includes('"生图工作流"') && canvasSrc2.includes('"短剧工作流"')
+      && canvasSrc2.includes('className="drama-canvas-flowtabs"') ? ok : fail)(
+      "【201】顶栏两个工作流并列成 tab（只标类型没有切换入口 = 等于没有入口）"
+    );
+    (/const switchFlow = useCallback/.test(canvasSrc2) && /onClick=\{\(\) => switchFlow\("image"\)\}/.test(canvasSrc2)
+      && /onClick=\{\(\) => switchFlow\("drama"\)\}/.test(canvasSrc2) ? ok : fail)(
+      "【201】两个 tab 都接了切换动作（只画不出 = 点了没反应）"
+    );
+    // ⛔ 切换必须**保留原画布**：用户说的是"切换/换一种"，不是"把当前画布换掉"
+    (/switchFlow[\s\S]{0,1200}?原画布保留/.test(canvasSrc2) ? ok : fail)(
+      "【201】切换时保留原画布并告知怎么切回（换掉它 = 用户以为白做了）"
     );
     // 按类型收敛无关 UI：生图工作流里挂分镜表下拉、镜头时间线 = 纯噪声（用户截图红框二）
     (/\{flow\.type === "drama" \? \([\s\S]{0,200}?<DramaTimeline/.test(canvasSrc2) ? ok : fail)(
@@ -504,6 +516,36 @@ export async function run() {
     );
     (/点一下就停|可随时停止/.test(storySrc204) ? ok : fail)(
       "【204】开始提示里写明停止入口（让人知道怎么收手）"
+    );
+  }
+  /* ══ 产物查看器（09-29 用户：「卡片里面的图片没有预览功能，不方便，预览图片里面的功能配套齐全一下」）══
+     三条设计约束：① 缩略图**可点开**（只显示不给点 = 没有预览）；② **只有一套**预览
+     （结果面板曾经自己有一套，配套动作必然漏一边）；③ 看得见的动作要齐全，
+     且「清除」只清卡片记录、不动磁盘文件 —— 可逆，所以不需要二次确认。 */
+  {
+    const cardSrc205 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8"));
+    const viewerSrc205 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaMediaViewer.tsx"), "utf8"));
+    const resultsSrc205 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaResultsPanel.tsx"), "utf8"));
+    const canvasSrc205 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8"));
+
+    (canvasSrc205.includes("<DramaMediaViewer") && /openMedia: \(target: ViewerTarget\)/.test(canvasSrc205) ? ok : fail)(
+      "【205】查看器已接进画布（openMedia 有落点 ⇒ 点缩略图真会打开）"
+    );
+    (/onClick=\{open\}/.test(cardSrc205) && /actions\.openMedia\(/.test(cardSrc205) ? ok : fail)(
+      "【205】卡片缩略图可点开（只显示不给点 = 用户说的「没有预览功能」）"
+    );
+    // 分层：画布内遮罩（不 portal —— portal 会被画布层盖住；也不做顶栏浮层 —— 会被 shell 裁）
+    (/className="drama-canvas-modal-mask"/.test(viewerSrc205) && !/createPortal/.test(viewerSrc205) ? ok : fail)(
+      "【205】查看器走画布内遮罩且不 portal（portal 被画布盖住、浮层被 shell 的 overflow 裁）"
+    );
+    (!/drama-results-preview/.test(resultsSrc205) && /openMedia\(\{ path: asset\.path/.test(resultsSrc205) ? ok : fail)(
+      "【205】结果面板复用同一个查看器（它自己那套已删 —— 两套预览必然行为不一致）"
+    );
+    (["revealInFolder", "clipboard.writeText", "uploadRef", "story.generate", "board.saveNow"].every((k) => viewerSrc205.includes(k)) ? ok : fail)(
+      "【205】查看器配套动作齐全（打开文件夹 / 复制路径 / 替换为新图 / 重新生成 / 清除记录）"
+    );
+    (/Object\.fromEntries\(target\.fields!\.map/.test(viewerSrc205) && !/\bunlink\b|\brmSync\b/.test(viewerSrc205) ? ok : fail)(
+      "【205】「清除」只清卡片记录的字段、不删磁盘文件（可逆 ⇒ 不需要二次确认）"
     );
   }
 }

@@ -72,7 +72,8 @@ export interface DramaStoryApi {
   expand: (boardNodeId: string, boardName: string) => Promise<{ scenes: number; shots: number; characters: number; missing: string[] } | null>;
   writeBack: (nodeId: string) => Promise<void>;
   busy: Set<string>;
-  generate: (nodeId: string, what: DramaGenerationKind) => Promise<void>;
+  /** options.report 把单条通知改道（批量用）；options.submitOnly = 视频只提交不等待 */
+  generate: (nodeId: string, what: DramaGenerationKind, options?: { report?: (text: string, tone?: "ok" | "err") => void; submitOnly?: boolean }) => Promise<void>;
   /** 批量生成（09-29）：一条命令跑完一条工作流。图片/配音真生成（层内并发），
    *  视频只**提交**（异步任务，等它跑完会把整批卡死几十分钟）。scope 见 DramaBatchScope。 */
   generateBatch: (scope: DramaBatchScope) => Promise<void>;
