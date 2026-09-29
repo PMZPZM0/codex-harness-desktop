@@ -406,11 +406,13 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
               <AppSelect value={story.storyName} onChange={(v) => story.switchStory(v)} ariaLabel="分镜表" options={story.stories.length ? story.stories.map((s) => ({ value: s.name, label: `${s.title || s.name} · ${s.shots} 镜` })) : [{ value: "main", label: "（尚无）" }]} />
             </label>
             {/* ⛔ 09-28 工作流打磨：进度芯片 —— 当前板「图 / 视频 / 配音 / 待生成」实时计数，
-                让用户随时知道这条工作流走到哪了（此前生成状态只能逐卡点开看）。 */}
+                让用户随时知道这条工作流走到哪了（此前生成状态只能逐卡点开看）。
+                ⛔ 09-29 顶栏窄：**0 值不渲染** —— 空画布只留「待生成 N」，宽窄随内容自适应，
+                不再用固定三项把顶栏撑出去（用户截图：右边空一大块、按钮被挤到第二行）。 */}
             <div className="drama-canvas-progress nodrag" title="当前画布的生成进度（素材卡 / 拍摄卡计入待生成）">
-              <span className="is-ok">图 {progress.images}</span>
-              <span className="is-ok">视频 {progress.videos}</span>
-              <span className="is-ok">配音 {progress.audios}</span>
+              {progress.images > 0 ? <span className="is-ok">图 {progress.images}</span> : null}
+              {progress.videos > 0 ? <span className="is-ok">视频 {progress.videos}</span> : null}
+              {progress.audios > 0 ? <span className="is-ok">配音 {progress.audios}</span> : null}
               {progress.pending > 0 ? <span className="is-warn">待生成 {progress.pending}</span> : <span className="is-done">已完成 ✓</span>}
             </div>
           </div>
@@ -442,8 +444,8 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 </>
               ) : null}
             </div>
-            <button className="drama-canvas-head-btn" title="管理所有画布项目：切换 / 重命名 / 删除 / 打开数据文件夹" onClick={() => { setProjectsOpen(true); setResultsOpen(false); }}><FolderOpen size={13} />项目管理</button>
-            <button className="drama-canvas-head-btn" title="集中查看这张画布生成的图 / 视频 / 配音" onClick={() => { setResultsOpen(true); setInspectorOpen(false); }}><Images size={13} />生成结果</button>
+            <button className="drama-canvas-head-btn" title="管理所有画布项目：切换 / 重命名 / 删除 / 打开数据文件夹" onClick={() => { setProjectsOpen(true); setResultsOpen(false); }}><FolderOpen size={13} />项目</button>
+            <button className="drama-canvas-head-btn" title="集中查看这张画布生成的图 / 视频 / 配音" onClick={() => { setResultsOpen(true); setInspectorOpen(false); }}><Images size={13} />结果</button>
             <button className="drama-canvas-head-btn" onClick={() => { board.saveNow(); void story.saveNow(); pushNotice("已保存到本机" + (workspace ? "（分镜表同时写到工作区）" : ""), "ok"); }}><Save size={13} />保存</button>
             <button className="drama-canvas-head-btn" onClick={onClose} title="退出画布"><X size={13} />退出</button>
           </div>
