@@ -596,6 +596,14 @@ export async function run() {
       "【206】检查器暴露画幅 / 尺寸 / 负面提示词（用户能看见才叫能用）"
     );
     (inspSrc.includes("IMAGE_SIZE_PRESETS") ? ok : fail)("【206】生图尺寸有平台预设（自媒体按平台选，不用手填像素）");
+    /* ⛔ 09-29 用户实测：上一版只给 image 卡加了，用户选**角色卡**就看不到（角色/场景同样走生图）。
+       判据：size / negative 字段必须覆盖**全部三种生图卡**（image / character / location）。 */
+    ((inspSrc.match(/\{ key: "size", label: "尺寸 \/ 画幅"/g) || []).length >= 3 ? ok : fail)(
+      "【206】尺寸/负面提示词覆盖全部三种生图卡（image/character/location —— 只加一种 = 其余看不到）"
+    );
+    ((inspSrc.match(/\{ key: "negative", label: "负面提示词"/g) || []).length >= 3 ? ok : fail)(
+      "【206】负面提示词同样覆盖三种生图卡"
+    );
     /* ⑥ 技能要说清「哪些厂商不支持画幅」—— 不说 = 模型会以为都能用 */
     (videoGenSkill206.includes("只有部分厂商支持指定画幅") && videoGenSkill206.includes("9:16") ? ok : fail)(
       "【206】视频技能写明画幅支持范围（含哪些厂商不支持）"
