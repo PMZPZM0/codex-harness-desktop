@@ -240,7 +240,7 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       for (const nd of board.nodes ?? []) {
         const p = (nd.payload ?? {}) as Record<string, unknown>;
         const bits = [`id=${nd.id}`, `类型=${nd.kind}`, `标题=${String(p.title ?? "")}`];
-        for (const key of ["prompt", "size", "negative", "count", "imageType", "aspect", "duration", "variant", "act", "hint", "step"]) {
+        for (const key of ["prompt", "size", "negative", "count", "imageType", "aspect", "duration", "variant", "act", "hint", "step", "shot_size", "motion", "line", "speaker", "first_frame", "video", "audio", "ref_video"]) {
           if (p[key] !== undefined && String(p[key]).trim()) bits.push(`${key}=${String(p[key]).slice(0, 120)}`);
         }
         if (p.path) bits.push(`已有产物=${String(p.path)}`);
