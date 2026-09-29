@@ -637,7 +637,7 @@ export function ecomImageStarterWorkflow(baseX = 120, baseY = 100) {
     }, x, y);
   };
   const nodes = [
-    node("n-ref", "image", { title: "商品参考图", flow: "ecom", step: 1, act: "upload", hint: "ref" }, baseX, baseY),
+    node("n-ref", "image", { title: "商品参考图", flow: "ecom", step: 1, act: "upload", hint: "ref", role: "参考图" }, baseX, baseY),
     gen("n-white", "white", 2, baseX + col, baseY),
     gen("n-main", "main", 3, baseX + col * 2, baseY),
     gen("n-scene", "scene", 4, baseX + col * 2, baseY + row),

@@ -195,6 +195,18 @@ export function useDramaStory(
     }
   }, [busy, notice]);
 
+  /** 沿入边找上游卡上「锁定的主体描述」（母版卡锁一次，整条链共用）。 */
+  const upstreamSubject = useCallback((targetId: string): string => {
+    const byId = new Map(board.nodes.map((n) => [n.id, n] as const));
+    for (const edge of board.edges) {
+      if (String(edge.target || "") !== targetId) continue;
+      const src = byId.get(String(edge.source || ""));
+      const hit = String((src?.data?.payload || {}).subject || "").trim();
+      if (hit) return hit;
+    }
+    return "";
+  }, [board.nodes, board.edges]);
+
   /** 沿入边找「商品参考图」：本卡自己的 ref 优先，其次上游卡的 ref / path / url。
    *  画布语义就是「这张卡的输入来自上游」，所以锁主体不需要用户再手填路径。 */
   const upstreamRefImage = useCallback((targetId: string): string => {
@@ -592,7 +604,9 @@ export function useDramaStory(
         if (!base) { say("这张卡还没有提示词 —— 写一句，或从上游卡片连线自动带入", "err"); return; }
         /* 锁定主体（09-29 电商出图工作流）：整套图共用的商品主体描述拼在最前
            ⇒ 主图 / SKU / 详情 / 场景 / 白底 / 买家秀 是同一件商品，不跳戏。 */
-        const locked = String(payload.subject || "").trim();
+        /* 锁定主体：本卡没填就**沿用上游**（母版卡上锁一次，全流程共用）——
+           否则每张生图卡都得自己锁一次，那是重复劳动（用户实测抱怨过功能重复）。 */
+        const locked = String(payload.subject || "").trim() || upstreamSubject(nodeId);
         if (locked && !base.includes(locked)) base = `${locked}。${base}`;
         // 全片统一风格摆在提示词最前面 —— 否则镜与镜之间画风会飘
         let prompt = style ? `${style}。${base}` : base;

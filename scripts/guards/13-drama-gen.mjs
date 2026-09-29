@@ -16,6 +16,7 @@ export async function run() {
   console.log(C.bold("\n【192】画布生成通道分流与结果面板"));
 
   const card = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8");
+    const chSrc = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaChannelButton.tsx"), "utf8");
   const canvas = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8");
   const panel = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaResultsPanel.tsx"), "utf8");
   const story = readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8");
@@ -30,7 +31,8 @@ export async function run() {
       "【192】卡面用共享的「节点类型 → 可用生成通道」映射表（09-28 提到 DramaChannelButton.tsx，卡面与检查器同一份）"
     );
   })();
-  (/if \(!GEN_CHANNELS\[kind\]\) return null;/.test(card) && /visibleChannels\(kind, payload\)/.test(card) ? ok : fail)(
+  /* 09-29：动作分发搬到共享模块 DramaChannelButton ⇒ 锚跟着搬（意图不变：映射表外的类型没有生成键）。 */
+  (/GEN_CHANNELS\[kind\] \|\| \[\]/.test(chSrc) && /dramaCardActions\(kind, payload\)/.test(card) ? ok : fail)(
     "【192】映射表外的节点类型**不渲染**生成按钮（策划卡不该有生成图/视频）"
   );
   // ⛔ 负向断言：视频按钮不得再无条件渲染（原病根）
@@ -140,7 +142,7 @@ export async function run() {
       `【192】生成按钮只有一个实现（实得：${genCallers.join(", ") || "无"}）—— 检查器曾自写一份「生成图片」：文案漂移 + 无配置引导 + 不查节点类型`
     );
 
-    (/import \{[^}]*GEN_CHANNELS[^}]*\} from "\.\/DramaChannelButton"/.test(inspector) && /visibleChannels\(kind, payload\)/.test(inspector) ? ok : fail)(
+    (/from "\.\/DramaChannelButton"/.test(inspector) && /cardActions\.channels\.map/.test(inspector) ? ok : fail)(
       "【192】检查器用共享按钮 + 同一张映射表（选中笔记卡不再冒出生成按钮）"
     );
 
@@ -776,15 +778,16 @@ export async function run() {
   {
     const shared215 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaChannelButton.tsx"), "utf8"));
     const card215 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8"));
+    const chSrc215 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaChannelButton.tsx"), "utf8");
     const insp215 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaInspector.tsx"), "utf8"));
 
     (/export function visibleChannels/.test(shared215) && /kind === "imagegen"[\s\S]{0,80}return allowed\.filter\(\(ch\) => ch !== "video"\)/.test(shared215) ? ok : fail)(
       "【215】visibleChannels 按状态过滤（没图/首帧不给「视频」；生图族 image/imagegen/character/location 一律不透视频）"
     );
-    (/visibleChannels\(kind, payload\)/.test(card215) && /visibleChannels\(kind, payload\)/.test(insp215) ? ok : fail)(
+    (/dramaCardActions\(kind, payload\)/.test(card215) && /dramaCardActions\(kind, payload\)/.test(insp215) && /visibleChannels\(kind, payload\)/.test(chSrc215) ? ok : fail)(
       "【215】卡面与检查器**共用同一份**状态过滤（各自 filter 必然漂移）"
     );
-    (/kind === "image" \? !payload\.path && !payload\.url && payload\.hint !== "output"/.test(card215) ? ok : fail)(
+    (/kind === "image" \? !payload\?\.path && !payload\?\.url && payload\?\.hint !== "output"/.test(chSrc215) ? ok : fail)(
       "【215】上传参考图只在输入位给（每张卡都挂全套按键 = 用户吐槽的「重复按键」）"
     );
     (!/canUpload = \["image", "character", "location", "shot"\]\.includes\(kind\)/.test(card215) ? ok : fail)(
@@ -826,13 +829,14 @@ export async function run() {
       );
     }
     const card216 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8"));
-    (/act === "upload" \|\| act === "prompt" \? \[\] : visibleChannels/.test(card216) ? ok : fail)(
+    const chSrc216 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaChannelButton.tsx"), "utf8");
+    (/act === "upload" \|\| act === "prompt" \? \[\] : visibleChannels/.test(chSrc216) ? ok : fail)(
       "【216】卡面按 act 分发通道（模板只声明不接线 = 白声明；upload/prompt 位不生图，生图在产物位）"
     );
-    (/act === "upload" \? true/.test(card216) ? ok : fail)(
+    (/act === "upload" \? true/.test(chSrc216) && /canUpload \?/.test(card216) ? ok : fail)(
       "【216】素材位（upload）只给「上传参考图」—— 素材是从外部拖/传进来的，不该有生成按钮"
     );
-    (/act === "output" \? false/.test(card216) ? ok : fail)(
+    (/act === "output" \? false/.test(chSrc216) ? ok : fail)(
       "【216】产物位（output）不出按钮（图落在这里，重出请回唯一入口那张卡）"
     );
   }
@@ -845,13 +849,14 @@ export async function run() {
     const dc = readFileSync(join(ROOT, "electron", "features", "drama-canvas.ts"), "utf8");
     const polish = readFileSync(join(ROOT, "electron", "prompt-polish.ts"), "utf8");
     const card217 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8"));
+    const chSrc217 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaChannelButton.tsx"), "utf8");
     const story217 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8"));
     const polishChainOk = /AI 润色/.test(card217) && /story\.polishPrompt\(id/.test(card217) && /dramaCanvasPolishPrompt/.test(story217);
 
     (/drama-canvas:polish-prompt/.test(region) && /"drama-canvas:polish-prompt"/.test(dc) ? ok : fail)(
       "【217】润色通道已登记（handler + ipc-registry 域表；漏域表 = 预检直接红）"
     );
-    (/act === "upload" \|\| act === "prompt" \? \[\] : visibleChannels/.test(card217) ? ok : fail)(
+    (/act === "upload" \|\| act === "prompt" \? \[\] : visibleChannels/.test(chSrc217) ? ok : fail)(
       "【217】写提示词位（act=prompt）不挂生图通道（生图入口在出图卡）"
     );
     /* ⛔ 分工：卡面按钮调 story.polishPrompt（story 层负责 busy/提示），
@@ -921,6 +926,7 @@ export async function run() {
     const inspectorSrc219 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaInspector.tsx"), "utf8");
     const cardSrc219 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8"));
     const storySrc219 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8"));
+    const chSrc219 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaChannelButton.tsx"), "utf8");
     const canvasSrc219 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8");
     const registrySrc219 = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
 
@@ -945,8 +951,9 @@ export async function run() {
     (!/aspect:|duration:|ref_video/.test(imagegenBlock219) ? ok : fail)(
       "【219】负向：生图节点的配置项**不含**视频那套（画幅 / 时长 / 参考视频）"
     );
-    (cardSrc219.includes('imagegen: "prompt"') && cardSrc219.includes('character: "look"') && cardSrc219.includes('shot: "prompt"')
-      && /POLISH_FIELD\[kind\]/.test(cardSrc219) && /\[polishField\]: polished/.test(cardSrc219) ? ok : fail)(
+    /* 09-29：润色字段表搬到共享模块 DramaChannelButton（卡面与检查器同一份）⇒ 锚跟着搬。 */
+    (chSrc219.includes('imagegen: "prompt"') && chSrc219.includes('character: "look"') && chSrc219.includes('shot: "prompt"')
+      && /POLISH_FIELD\[kind\]/.test(chSrc219) && /polishField/.test(cardSrc219) && /\[polishField\]: polished/.test(cardSrc219) ? ok : fail)(
       "【219】每张提示词卡都集成「AI 润色」：按 kind 找到**它自己的**提示词字段并就地写回"
     );
     (cardSrc219.includes("锁定主体") && /describeSubject\(id\)/.test(cardSrc219) ? ok : fail)(
@@ -970,7 +977,7 @@ export async function run() {
     (/createStarter\("ecom"\)/.test(canvasSrc219) && /mark === "ecom"/.test(canvasSrc219) ? ok : fail)(
       "【219】电商出图工作流有新建入口，且顶栏显示自己的名字"
     );
-    (/act === "upload" \|\| payload\.hint === "ref" \? "" : \(POLISH_FIELD\[kind\] \|\| ""\)/.test(cardSrc219) ? ok : fail)(
+    (/materialSlot \? "" : \(POLISH_FIELD\[kind\] \|\| ""\)/.test(chSrc219) ? ok : fail)(
       "【219】负向：素材位（上传参考图 / 参考图槽）不挂「AI 润色」—— 那里没有提示词可润色"
     );
     (/kind === "image" \|\| kind === "imagegen"[\s\S]{0,140}pendingCards\.push\(label\)/.test(canvasSrc219) ? ok : fail)(
@@ -1114,11 +1121,53 @@ export async function run() {
     (/WRITEBACK_KINDS\.includes\(kind\)/.test(inspSrc222) ? ok : fail)(
       "【222】「写回分镜表」只在分镜相关卡出现（原来每张卡都挂 = 旧统一外样残留，点了空转）"
     );
-    (/POLISH_FIELD, POLISH_LABEL/.test(inspSrc222) && /story\.polishPrompt\(id/.test(inspSrc222) ? ok : fail)(
+    (/from ".\/DramaChannelButton"/.test(inspSrc222) && /dramaCardActions/.test(inspSrc222) && /story\.polishPrompt\(id/.test(inspSrc222) ? ok : fail)(
       "【222】检查器也有「AI 润色」，且与卡面**同源**（同一张 POLISH_FIELD 表，不各写一份）"
     );
     (/imageKindMeta\(payload\.imageType\)\.purpose/.test(inspSrc222) ? ok : fail)(
       "【222】生图节点在检查器里先讲清「是什么图 / 多大 / 几个图块」再列字段"
+    );
+  }
+  /* ══ 每个卡片的侧边栏配置互不重复、一一对应、职责明确（09-29 用户实测：
+     参考图卡在检查器里冒出一堆无关字段、甚至还能「生图」—— 因为检查器不看卡角色）══
+     ⛔ 病根仍是**同一个动作/字段两套实现**：卡面按 act 分发，检查器直接 visibleChannels(kind)。 */
+  {
+    const chSrc223 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaChannelButton.tsx"), "utf8");
+    const inspSrc223 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaInspector.tsx"), "utf8");
+    const cardSrc223 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8"));
+    const cssSrc223 = readFileSync(join(ROOT, "src", "styles", "21-drama-canvas.css"), "utf8");
+    /* 按**分支切片**取角色字段段（避免固定窗口 + 不用 IIFE —— 两者本仓都踩过） */
+    const ffAt223 = inspSrc223.indexOf("export function fieldsFor");
+    const matAt223 = inspSrc223.indexOf('if (material && kind === "image")', ffAt223);
+    const prodAt223 = inspSrc223.indexOf('if (product && kind === "imagegen")', ffAt223);
+    const matBranch223 = matAt223 >= 0 && prodAt223 > matAt223 ? inspSrc223.slice(matAt223, prodAt223) : "";
+    const prodEnd223 = inspSrc223.indexOf("return FIELDS[kind]", prodAt223);
+    const prodBranch223 = prodAt223 >= 0 && prodEnd223 > prodAt223 ? inspSrc223.slice(prodAt223, prodEnd223) : "";
+
+    (/export function dramaCardActions/.test(chSrc223) && /export function dramaCardRole/.test(chSrc223) ? ok : fail)(
+      "【223】角色与动作分发是**共享函数**（卡面与检查器同一份判据，不各写一套）"
+    );
+    (/dramaCardActions\(kind, payload\)/.test(cardSrc223) && /dramaCardActions\(kind, payload\)/.test(inspSrc223) ? ok : fail)(
+      "【223】卡面与检查器**都**调共享分发（只搬一份、另一边不用 = 白做）"
+    );
+    (/cardActions\.channels\.map/.test(inspSrc223) ? ok : fail)(
+      "【223】检查器动作行改用共享通道（原来直接 visibleChannels(kind) ⇒ 素材位在检查器里还能点「生图」）"
+    );
+    (!/visibleChannels\(kind, payload\)\.map/.test(inspSrc223) ? ok : fail)(
+      "【223】负向：检查器不许再绕过角色直接按 kind 出通道"
+    );
+    /* 角色 → 字段：素材位不得出现尺寸 / 负面词（那套是出图位的字段） */
+    (matBranch223.includes("参考图路径") && !/key: "size"|key: "negative"/.test(matBranch223) ? ok : fail)(
+      "【223】素材位的字段只有标题 + 参考图路径（没有尺寸 / 负面词 —— 那是出图位的字段）"
+    );
+    (prodBranch223.includes("产物路径") ? ok : fail)(
+      "【223】产物位的字段是产物路径 + 备注（与素材位 / 出图位互不相同）"
+    );
+    (/drama-canvas-flow-chip is-role-/.test(inspSrc223) && /dramaCardRole\(kind, payload\)/.test(inspSrc223) && /\.is-role-produce/.test(cssSrc223) ? ok : fail)(
+      "【223】检查器头部显示卡**角色**（素材位/提示词位/出图位/产物位…），产出侧上蓝"
+    );
+    (/POLISH_FIELD\[kind\]/.test(chSrc223) && /polishField: materialSlot \? "" :/.test(chSrc223) && !/if \(!GEN_CHANNELS\[kind\]\) return null;/.test(cardSrc223) ? ok : fail)(
+      "【223】没有生成通道的卡（笔记 / 剧本）也有「AI 润色」—— 原来 return null 把润色一起吞了"
     );
   }
 }

@@ -37,7 +37,7 @@ import { imageDisplaySrc } from "../../lib/image-src.mjs";
 import { detailPanelsOf, dramaIsKnownKind, dramaNodeDef, dramaNodeLabel, imageKindMeta } from "../../lib/drama-canvas-model.mjs";
 import { useDramaActions } from "./drama-actions";
 /* ⛔ 按钮本体共享（卡面 + 检查器同一颗）—— 见 DramaChannelButton.tsx 顶部注释。 */
-import { DramaChannelButton, GEN_CHANNELS, visibleChannels } from "./DramaChannelButton";
+import { DramaChannelButton, dramaCardActions, GEN_CHANNELS, POLISH_LABEL, visibleChannels } from "./DramaChannelButton";
 import { useLocalAudio } from "./use-local-audio";
 import type { DramaRFNode } from "./use-drama-board";
 
@@ -121,21 +121,9 @@ function AudioPreview({ path }: { path: string }) {
 /* ⛔ 通道映射表已提到 DramaChannelButton.tsx（导出 GEN_CHANNELS）—— 卡面与检查器共用一份。
    原来检查器不查这张表 ⇒ 选中笔记卡也能点「生成图片」，与卡面行为相反（09-28 code review 抓到）。 */
 
-/* 各卡片的提示词字段 + 给人看的名字（「AI 润色」按钮写回的就是这个字段）。
-   ⛔ 新增带提示词的卡片类型时**必须在这里登记**，否则那颗按钮不会出现（守卫【219】钉住）。 */
-export const POLISH_FIELD: Record<string, string> = {
-  note: "text", script: "text", agent: "task",
-  character: "look", location: "description",
-  image: "text", imagegen: "prompt",
-  shot: "prompt", video: "prompt", audio: "text",
-};
-export const POLISH_LABEL: Record<string, string> = {
-  text: "文案", task: "任务描述", look: "外貌描写", description: "描述", prompt: "提示词",
-};
-
 function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; payload: Record<string, any>; busyKey: (what: string) => boolean }) {
   const actions = useDramaActions();
-  if (!GEN_CHANNELS[kind]) return null;
+  /* ⛔ 不再因为"没有生成通道"就整体不渲染：笔记 / 剧本卡没有通道，但「AI 润色」必须还在。 */
   /* ⛔ 按状态过滤通道（09-29 按钮精简）：没出图的卡不给「视频」—— 见 visibleChannels 注释。 */
   /* ⛔⛔ 卡角色（payload.act，09-29 用户：「每个工作流内所有卡片上的按键名称和功能必须唯一，不得重复」）：
      模板卡显式声明角色，按键按角色分发 ⇒ 同一工作流里**生成入口只有一张卡**：
@@ -154,28 +142,15 @@ function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; 
        · act: "produce"（产出位：素材从上游来）⇒ 生成按钮，**不给**上传（避免每张卡都挂上传）
        · act: "generate"（通用生成位）⇒ 生成按钮 + 上传参考图
        · 未标记（自由拖的卡）         ⇒ 走 kind + 状态规则 */
+  /* ⛔ 判据全部来自共享的 dramaCardActions —— 卡面与检查器必须同一份实现（两份必漂移）。 */
+  const { channels: allowed, canUpload, polishField } = dramaCardActions(kind, payload);
   const act = String(payload.act || "");
-  /* 每张提示词卡都有自己的提示词字段 —— 润色要认**它自己那个**（09-29 用户要求全局集成）。
-     ⛔ 但**素材位没有提示词可润色**（用户实测：「参考图卡片，还要什么AI润色啊」）：
-        上传位（act=upload）/ 参考图槽（hint=ref）一律不挂润色 —— 那是纯粹的上传入口。 */
-  const polishField = act === "upload" || payload.hint === "ref" ? "" : (POLISH_FIELD[kind] || "");
-  const allowed = act === "upload" || act === "prompt" ? [] : visibleChannels(kind, payload);
   /* ⛔ 按钮本体在 DramaChannelButton（09-28）—— 卡面与右侧检查器**共用同一颗按钮**。
      原来两处各写一份：卡面改名后（09-29 定稿为「生图」），检查器里还叫「生成图片」、未配置也不给
      引导（点了才报错）—— 同一个动作两套实现的必然结果。这里只决定「露出哪几条通道」。
      09-28 闭环追加：素材类卡加「上传参考图」（此前只有拖拽一条路，用户不知道能传）。 */
   /* ⛔ 上传参考图只在**输入位**给（09-29 精简）：没图的出图卡 / 已有定妆照的角色卡 / 已有首帧的镜头卡
      都不再重复出现这颗按钮 —— 每张卡都挂全套按键正是用户吐槽的「重复按键」。 */
-  const canUpload = act === "upload" ? true
-    : act === "prompt" ? true
-    : act === "generate" ? (kind === "image" || kind === "shot" || kind === "imagegen")
-    : act === "produce" ? false
-    : act === "output" ? false
-    : kind === "imagegen" ? !payload.ref && !payload.path && !payload.url
-    : kind === "image" ? !payload.path && !payload.url && payload.hint !== "output"
-    : kind === "character" || kind === "location" ? !payload.ref
-    : kind === "shot" ? !payload.first_frame
-    : false;
   return (
     <div className="drama-canvas-card-actions nodrag">
       {allowed.map((what) => (
@@ -201,10 +176,12 @@ function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; 
       ) : null}
       {/* 锁定主体（09-29 电商出图工作流）：把「商品参考图」反推成一段固定主体描述，六类图共用。
           ⛔ 生图通道是纯文生图（无图输入）⇒ 这是「参考图锁主体」的可行替代：文本层面锁死同一件商品。 */}
-      {kind === "imagegen" ? (
+      {/* 「锁定主体」只在**母版卡**（白底图）上给 —— 它是整套图的主体真相源；
+          其余卡生成时自动沿用上游那段描述 ⇒ 不必 6 张卡各挂一颗重复键（用户：「功能全是重复的」）。 */}
+      {kind === "imagegen" && (payload.imageType === "white" || payload.subject) ? (
         <button
           className="drama-canvas-btn is-ghost"
-          title="把上游「商品参考图」反推成一段固定主体描述 —— 主图 / SKU / 详情 / 场景 / 白底 / 买家秀 共用，保证一套图是同一件商品"
+          title={payload.subject ? "重新锁定主体（会覆盖当前这段主体描述）" : "把上游「商品参考图」反推成一段固定主体描述 —— 主图 / SKU / 详情 / 场景 / 白底 / 买家秀 共用，保证一套图是同一件商品"}
           disabled={busyKey("subject")}
           onClick={async (e) => {
             e.stopPropagation();

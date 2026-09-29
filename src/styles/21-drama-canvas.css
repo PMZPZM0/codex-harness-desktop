@@ -1716,3 +1716,14 @@ button.drama-canvas-card-media:hover { color: var(--accent); }
   background: var(--accent-soft);
 }
 .drama-canvas-inspector.is-family-image .drama-canvas-inspector-head b { color: var(--accent); }
+
+/* 角色 chip：素材位 / 提示词位 / 出图位 / 产物位 / 锚点 / 交付（09-29：一一对应、职责明确）
+   ⛔ 只给"产出侧"上蓝，"输入/素材侧"保持中性 —— 一眼能分出喂进去的和吐出来的。 */
+.drama-canvas-flow-chip.is-role-produce,
+.drama-canvas-flow-chip.is-role-output,
+.drama-canvas-flow-chip.is-role-deliver,
+.drama-canvas-flow-chip.is-role-shot {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line-soft));
+  background: var(--accent-soft);
+}

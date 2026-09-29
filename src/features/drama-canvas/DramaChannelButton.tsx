@@ -129,3 +129,61 @@ export function DramaChannelButton({
     </button>
   );
 }
+
+/* ─────────────────────── 卡动作分发（**唯一真相源**；09-29 用户实测逼出来的）
+
+   ⛔ 为什么必须只有一份：卡面与检查器原来各写一套判据 —— 卡面按 act 隐藏了素材位的生成键，
+      检查器没有 ⇒ 用户的**参考图卡在检查器里还能点「生图」**（截图实测）。
+      同一个动作两套实现 = 必然漂移，本项目已为此踩过多次（生成按钮文案、写回、上传范围…）。
+   ⛔ 也**不要**在没有生成通道时提前 return：笔记 / 剧本卡没有生成通道，但有「AI 润色」。 */
+export function dramaCardActions(kind: string, payload: Record<string, any>): {
+  channels: DramaChannel[];
+  canUpload: boolean;
+  polishField: string;
+} {
+  const act = String(payload?.act || "");
+  const materialSlot = act === "upload" || payload?.hint === "ref";   // 素材位：只负责把图传进来
+  const channels = act === "upload" || act === "prompt" ? [] : visibleChannels(kind, payload);
+  const canUpload = act === "upload" ? true
+    : act === "prompt" ? true
+    : act === "produce" ? false
+    : act === "output" ? false
+    : act === "generate" ? (kind === "image" || kind === "shot" || kind === "imagegen")
+    : kind === "imagegen" ? !payload?.ref && !payload?.path && !payload?.url
+    : kind === "image" ? !payload?.path && !payload?.url && payload?.hint !== "output"
+    : kind === "character" || kind === "location" ? !payload?.ref
+    : kind === "shot" ? !payload?.first_frame
+    : false;
+  return { channels, canUpload, polishField: materialSlot ? "" : (POLISH_FIELD[kind] || "") };
+}
+
+/* 各卡片的提示词字段 + 给人看的名字（「AI 润色」写回的就是这个字段）。
+   ⛔ 新增带提示词的卡片类型必须在这里登记，否则那颗按钮不会出现（守卫【219】钉住）。 */
+export const POLISH_FIELD: Record<string, string> = {
+  note: "text", script: "text", agent: "task",
+  character: "look", location: "description",
+  image: "text", imagegen: "prompt",
+  shot: "prompt", video: "prompt", audio: "text",
+};
+export const POLISH_LABEL: Record<string, string> = {
+  text: "文案", task: "任务描述", look: "外貌描写", description: "描述", prompt: "提示词",
+};
+
+/**
+ * 这张卡在工作流里的**角色**（09-29 用户：「每个卡片配独立侧边栏，功能互不重复，一一对应，职责明确」）。
+ * ⛔ 与 dramaCardActions / 字段表**同一套判据**：角色变了，字段与动作一起变 —— 三处各写一套必漂移。
+ * 角色是"这张卡负责什么"，与卡面那个按状态变的徽章（提示词/出图结果）不是一回事。
+ */
+export function dramaCardRole(kind: string, payload: Record<string, any>): { key: string; label: string; hint: string } {
+  const act = String(payload?.act || "");
+  if (act === "upload" || payload?.hint === "ref") return { key: "material", label: "素材位", hint: "只负责把图传进来；出图在出图位的卡上做" };
+  if (act === "prompt") return { key: "prompt", label: "提示词位", hint: "写你要什么，然后交给下游出图位" };
+  if (act === "produce") return { key: "produce", label: "出图位", hint: "按类型 / 尺寸出图；参考图从上游来" };
+  if (act === "generate") return { key: "produce", label: "出图位", hint: "按类型 / 尺寸出图" };
+  if (act === "output" || payload?.hint === "output") return { key: "output", label: "产物位", hint: "纯展示结果；再出一版在出图位点" };
+  if (kind === "shot") return { key: "shot", label: "镜头位", hint: "可生成、可重跑的最小单元：首帧 → 视频 → 配音" };
+  if (kind === "character" || kind === "location") return { key: "anchor", label: "一致性锚点", hint: "跨镜复用的参照：它变了，引用的镜头要重出首帧" };
+  if (kind === "timeline") return { key: "deliver", label: "交付位", hint: "把镜头按顺序拼成一条成片" };
+  if (kind === "storyboard" || kind === "scene") return { key: "structure", label: "结构位", hint: "分镜的唯一真源与场次组织" };
+  return { key: "plan", label: "策划位", hint: "想法、剧本与任务说明" };
+}

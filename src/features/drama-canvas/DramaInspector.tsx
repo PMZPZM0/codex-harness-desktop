@@ -14,8 +14,7 @@ import { useDramaActions } from "./drama-actions";
 /* ⛔ 生成按钮与通道映射表都从 DramaChannelButton 取（卡面同源）—— 检查器原来自己写了一份
    「生成图片」按钮：文案与卡面不一致、未配置不给引导、还不查节点类型（笔记卡上也能点），
    三处都与卡面相反。同一个动作只能有一个实现。 */
-import { DramaChannelButton, GEN_CHANNELS, visibleChannels } from "./DramaChannelButton";
-import { POLISH_FIELD, POLISH_LABEL } from "./DramaNodeCard";
+import { DramaChannelButton, dramaCardActions, dramaCardRole, GEN_CHANNELS, POLISH_LABEL, visibleChannels } from "./DramaChannelButton";
 
 interface FieldSpec {
   key: string;
@@ -134,6 +133,30 @@ const FIELDS: Record<string, FieldSpec[]> = {
   ],
 };
 
+/**
+ * 字段表按**卡角色**给（09-29 用户实测：参考图卡冒出「尺寸 / 负面词 / 用途 / 文件路径 / 说明」——
+ * 它只是个上传位）。角色的判据与动作分发同源（act / hint），别再各写一套。
+ */
+/* ⛔ 导出给守卫用：角色 → 字段是**结构契约**（素材位不许出现尺寸/负面词）。 */
+export function fieldsFor(kind: string, payload: Record<string, any>): FieldSpec[] {
+  const act = String(payload.act || "");
+  const material = act === "upload" || payload.hint === "ref";
+  const product = act === "output" || payload.hint === "output";
+  if (material && kind === "image") {
+    return [
+      { key: "title", label: "标题" },
+      { key: "ref", label: "参考图路径", hint: "点下面的「上传参考图」把商品图放进来 —— 这张卡只负责把图传进来，出图在生图卡上做" },
+    ];
+  }
+  if (product && kind === "imagegen") {
+    return [{ key: "title", label: "标题" }, { key: "path", label: "产物路径" }, { key: "text", label: "备注", type: "textarea" }];
+  }
+  if (product && kind === "image") {
+    return [{ key: "title", label: "标题" }, { key: "path", label: "文件路径" }, { key: "text", label: "说明", type: "textarea" }];
+  }
+  return FIELDS[kind] || [];
+}
+
 /** 「写回分镜表」只对这些 kind 有意义（分镜表里有它们的位置）。 */
 const WRITEBACK_KINDS = ["script", "character", "location", "storyboard", "scene", "shot"];
 
@@ -145,10 +168,13 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
   const kind = String(node.data?.kind || "note");
   const payload = node.data.payload || {};
   const def = dramaNodeDef(kind);
-  const fields = FIELDS[kind] || [];
+  const fields = fieldsFor(kind, payload);
+  /* 动作与字段都按**这张卡在工作流里的角色**给 —— 与卡面**同一份**判据。 */
+  const cardActions = dramaCardActions(kind, payload);
+  const cardRole = dramaCardRole(kind, payload);
   /* 这张卡属于哪条工作流（09-29）：生图族 = 生图 / 电商出图 / 3D 建模；其余归视频族。 */
   const imageKindFamily = ["imagegen", "image"].includes(kind) ? "image" : "drama";
-  const polishField = POLISH_FIELD[kind] || "";
+  const polishField = cardActions.polishField;
   const outEdges = actions.board.edges.filter((e) => e.source === id);
   const inEdges = actions.board.edges.filter((e) => e.target === id);
   const label = (nodeId: string) => {
@@ -166,6 +192,8 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
           <small>
             <span className={`drama-canvas-flow-chip is-${imageKindFamily}`}>{imageKindFamily === "image" ? "生图工作流" : "视频工作流"}</span>
             <span className="drama-canvas-flow-chip">{def.label}</span>
+            {/* 角色：这张卡在工作流里负责什么（一一对应、职责明确） */}
+            <span className={`drama-canvas-flow-chip is-role-${cardRole.key}`} title={cardRole.hint}>{cardRole.label}</span>
             <span>{selectedSummary(actions.board.selectedIds.length)}</span>
           </small>
         </div>
@@ -178,6 +206,8 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
 
       <div className="drama-canvas-inspector-body nowheel">
         {/* 生图节点：先把「这是什么图 / 多大 / 几个图块」讲清楚，再给字段（新手最需要这句） */}
+        {/* 角色说明（职责明确）：这张卡该干什么、不该干什么 */}
+        <p className="drama-canvas-hint">{cardRole.label}：{cardRole.hint}</p>
         {kind === "imagegen" ? (
           <p className="drama-canvas-hint">
             {imageKindMeta(payload.imageType).label}（{imageKindMeta(payload.imageType).ratio}）·
@@ -221,7 +251,7 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
         <div className="drama-canvas-inspector-actions">
           {/* 生成通道按钮：与卡面**同一颗组件、同一张映射表** —— 未配置会变「生图 · 去配置」
               直达设置页；策划类节点（笔记/剧本…）这里也不给生成按钮（与卡面行为一致）。 */}
-          {visibleChannels(kind, payload).map((what) => (
+          {cardActions.channels.map((what) => (
             <DramaChannelButton
               key={what}
               id={id}
@@ -238,7 +268,10 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
           ) : null}
           {/* 与卡面**同源**的「AI 润色」（09-29 用户要求每张提示词卡都有）——
               检查器里也给一颗，不必关掉面板回卡面点。素材位没有提示词可润色，不挂。 */}
-          {polishField && String(payload.act || "") !== "upload" && payload.hint !== "ref" ? (
+          {cardActions.canUpload ? (
+            <button className="drama-canvas-btn is-ghost" title="从本机选一张图当参考图 / 首帧（也会存进工作区）" onClick={() => void actions.story.uploadRef(id)}><Link2 size={12} />上传参考图</button>
+          ) : null}
+          {polishField ? (
             <button
               className="drama-canvas-btn is-ghost"
               title={`用已配置的模型润色「${POLISH_LABEL[polishField] || "提示词"}」，结果就地写回这张卡（不开会话）`}
