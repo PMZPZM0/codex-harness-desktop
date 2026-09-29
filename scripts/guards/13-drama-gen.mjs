@@ -359,7 +359,7 @@ export async function run() {
     (imageSrc.includes("export async function generateImageResilient") && /HTTP 4\\d\\d/.test(imageSrc) ? ok : fail)(
       "【202】生图带重试且 4xx 不重试（参数错重试没意义；网络/5xx/429 才值得再试）"
     );
-    (/builtin:generate-image[\s\S]{0,120}generateImageResilient/.test(imageSrc) ? ok : fail)(
+    (/builtin:generate-image[^\n]{0,400}generateImageResilient/.test(imageSrc) ? ok : fail)(
       "【202】IPC 生图也走重试版（稳定性口径只有一份）"
     );
     // ⑤ 下载重试（产物拉回本地）
@@ -546,6 +546,59 @@ export async function run() {
     );
     (/Object\.fromEntries\(target\.fields!\.map/.test(viewerSrc205) && !/\bunlink\b|\brmSync\b/.test(viewerSrc205) ? ok : fail)(
       "【205】「清除」只清卡片记录的字段、不删磁盘文件（可逆 ⇒ 不需要二次确认）"
+    );
+  }
+  /* ══ 画幅 / 尺寸 / 负面提示词（09-29 用户：「从专业设计师和自媒体重度需求者角度打磨生图和生视频」）══
+     最硬的判据是**真跑适配层真值表**（不是读文本）：
+     · 竖屏 9:16 必须真的进到各家请求体（此前**全部写死横屏** ⇒ 自媒体出不了竖屏）；
+     · 不支持画幅的厂商必须**报错**（静默按默认出片 = 用户以为设成功了）；
+     · 不指定画幅时**必须保持原默认**（不破坏现网调用）。 */
+  {
+    const { pathToFileURL } = await import("node:url");
+    const vp = await import(pathToFileURL(join(ROOT, "src", "lib", "video-providers.mjs")).href);
+    const videoGenSkill206 = readFileSync(join(ROOT, "electron", "builtin-skills", "15-skill-video-generation.ts"), "utf8");
+    const cfg = { apiKey: "k", model: "" };
+    const nowMs = 1700000000000;
+    (Array.isArray(vp.VIDEO_ASPECTS) && vp.VIDEO_ASPECTS.includes("9:16") ? ok : fail)(
+      "【206】画幅常量含 9:16 竖屏（短视频主流形态；此前适配层全部写死横屏）"
+    );
+    /* ① 四家支持画幅：9:16 必须真出现在它们的请求体里（按各家自己的格式） */
+    const supports = ["wanx", "seedance", "runway", "veo"];
+    const sent = supports.map((id) => {
+      const mode = id === "runway" || id === "veo" ? "i2v" : "t2v";
+      const req = vp.videoBuildSubmit(id, cfg, { mode, prompt: "p", image: "https://x/y.png", aspect: "9:16" }, nowMs);
+      return { id, hit: /9:16|720\*1280|720:1280/.test(JSON.stringify(req.body)) };
+    });
+    const missed = sent.filter((r) => !r.hit).map((r) => r.id);
+    (missed.length === 0 ? ok : fail)(
+      `【206】支持画幅的 4 家真把 9:16 传进请求体${missed.length ? "：缺 " + missed.join(", ") : "（万相/即梦/Runway/Veo 各自格式）"}`
+    );
+    /* ② 不支持画幅的 4 家：指定画幅必须**报错**（不许静默按默认出片） */
+    const rejects = ["kling", "cogvideo", "minimax", "luma"].map((id) => {
+      try { vp.videoBuildSubmit(id, { accessKey: "a", secretKey: "b", apiKey: "k" }, { prompt: "p", aspect: "9:16" }, nowMs); return id; }
+      catch { return null; }
+    }).filter(Boolean);
+    (rejects.length === 0 ? ok : fail)(
+      `【206】不支持画幅的 4 家都当场报错${rejects.length ? "：漏拦 " + rejects.join(", ") : "（可灵/智谱/MiniMax/Luma）"}`
+    );
+    /* ③ 不指定画幅 = 保持原默认（不破坏现网） */
+    (JSON.stringify(vp.videoBuildSubmit("wanx", cfg, { prompt: "p" }, nowMs).body).includes("1280*720") ? ok : fail)(
+      "【206】不指定画幅时保持原默认（默认路径不能被改坏）"
+    );
+    /* ④ 生图：size / negative 只在显式给时才带上（不同网关接受度差异大，默认不带 = 旧行为） */
+    const imgSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "01-builtin-images.ts"), "utf8"));
+    (/\.\.\.\(input\.size \? \{ size: input\.size \} : \{\}\)/.test(imgSrc) && /negative_prompt: input\.negative/.test(imgSrc) ? ok : fail)(
+      "【206】生图 size / negative 只在显式给时才传（默认不带 = 不把本来能用的网关弄挂）"
+    );
+    /* ⑤ 参数必须**看得见**：检查器字段表里有画幅 / 尺寸 / 负面提示词（藏在代码里等于没有） */
+    const inspSrc = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaInspector.tsx"), "utf8"));
+    (/\{ key: "aspect", label: "画幅"/.test(inspSrc) && /\{ key: "size", label: "尺寸 \/ 画幅"/.test(inspSrc) && /\{ key: "negative", label: "负面提示词"/.test(inspSrc) ? ok : fail)(
+      "【206】检查器暴露画幅 / 尺寸 / 负面提示词（用户能看见才叫能用）"
+    );
+    (inspSrc.includes("IMAGE_SIZE_PRESETS") ? ok : fail)("【206】生图尺寸有平台预设（自媒体按平台选，不用手填像素）");
+    /* ⑥ 技能要说清「哪些厂商不支持画幅」—— 不说 = 模型会以为都能用 */
+    (videoGenSkill206.includes("只有部分厂商支持指定画幅") && videoGenSkill206.includes("9:16") ? ok : fail)(
+      "【206】视频技能写明画幅支持范围（含哪些厂商不支持）"
     );
   }
 }

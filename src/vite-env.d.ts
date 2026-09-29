@@ -598,7 +598,7 @@ interface Window {
     saveBuiltinPlugins(cfg: unknown): Promise<unknown>;
     probeBuiltinModels(input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }): Promise<{ models: string[] }>;
     /* ⛔ `path` 是落盘后的本地路径（网关只回 b64_json 时也有值）；`url` **仅在网关给了 * 真托管地址时**才有值 —— data URL 绝不会回传（会把 3 MB base64 带进对话历史）。 */
-    generateImage(input: { baseUrl: string; apiKey: string; model: string; prompt: string }): Promise<{ path: string; url: string }>;
+    generateImage(input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string }): Promise<{ path: string; url: string }>;
     describeImage(input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }): Promise<{ text: string }>;
     relayLogin(input: { baseUrl: string; email: string; password: string }): Promise<{ email: string; baseUrl: string; balance: number }>;
     relayLoadAccount(): Promise<{ baseUrl: string; email: string; loggedIn: boolean; selectedMode: "balance" | "plan" | null; selectedGroupId: number | null; selectedKeyName: string | null } | null>;
@@ -755,7 +755,7 @@ interface Window {
     /* 保存某厂商的 API 凭证 */
     videoConfigSave(input: { providerId: string; values: Record<string,string> }): Promise<{ ok: boolean; configured: boolean }>;
     /* 提交视频生成异步任务（i2v 时 image 可为本地路径/URL，主进程转 base64） */
-    videoSubmit(input: { providerId: string; mode: string; prompt: string; image?: string; model?: string; duration?: number }): Promise<{ jobId: string }>;
+    videoSubmit(input: { providerId: string; mode: string; prompt: string; image?: string; model?: string; duration?: number; aspect?: string }): Promise<{ jobId: string }>;
     /* 轮询任务状态（MiniMax 成功后自动两段式换下载地址） */
     videoPoll(input: { providerId: string; jobId: string }): Promise<{ status: string; url?: string; error?: string }>;
     /* 把产物视频拉回本地落 <workspace>/.drama-canvas/assets/（可信根校验） */

@@ -322,7 +322,7 @@ contextBridge.exposeInMainWorld("codex", {
   saveBuiltinPlugins: (cfg: unknown) => __ipc("builtin:save", 1, [cfg]),
   probeBuiltinModels: (input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) => __ipc("builtin:probe", 1, [input]),
   /* ⛔ `path` 是落盘后的本地路径（网关只回 b64_json 时也有值）；`url` **仅在网关给了 * 真托管地址时**才有值 —— data URL 绝不会回传（会把 3 MB base64 带进对话历史）。 */
-  generateImage: (input: { baseUrl: string; apiKey: string; model: string; prompt: string }) => __ipc("builtin:generate-image", 1, [input]),
+  generateImage: (input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string }) => __ipc("builtin:generate-image", 0, [input]),
   describeImage: (input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) => __ipc("builtin:describe-image", 0, [input]),
   relayLogin: (input: { baseUrl: string; email: string; password: string }) => __ipc("relay:login", 1, [input]),
   relayLoadAccount: () => __ipc("relay:load-account", 0, []),
@@ -479,7 +479,7 @@ contextBridge.exposeInMainWorld("codex", {
   /* 保存某厂商的 API 凭证 */
   videoConfigSave: (input: { providerId: string; values: Record<string,string> }) => __ipc("video:config-save", 1, [input]) as Promise<{ ok: boolean; configured: boolean }>,
   /* 提交视频生成异步任务（i2v 时 image 可为本地路径/URL，主进程转 base64） */
-  videoSubmit: (input: { providerId: string; mode: string; prompt: string; image?: string; model?: string; duration?: number }) => __ipc("video:submit", 0, [input]) as Promise<{ jobId: string }>,
+  videoSubmit: (input: { providerId: string; mode: string; prompt: string; image?: string; model?: string; duration?: number; aspect?: string }) => __ipc("video:submit", 0, [input]) as Promise<{ jobId: string }>,
   /* 轮询任务状态（MiniMax 成功后自动两段式换下载地址） */
   videoPoll: (input: { providerId: string; jobId: string }) => __ipc("video:poll", 1, [input]) as Promise<{ status: string; url?: string; error?: string }>,
   /* 把产物视频拉回本地落 <workspace>/.drama-canvas/assets/（可信根校验） */
