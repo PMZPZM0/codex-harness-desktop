@@ -224,4 +224,38 @@ export async function run() {
   }
 
   }
+  /* ══ 3D 建模 / 白模视频技能包（09-29 用户立项：「把 3D 建模和白模视频和视频生成配备好对应技能包」）══
+     ⛔ 技能是模型的行动手册：**手册说有而实际没有 = 模型调不存在的工具而失败；手册只字不提 =
+        模型退化去让用户自己点**。所以两条都要钉：技能存在且注册 + 边界如实（3D 通道没接入就写没接入）。 */
+  {
+    const reg = readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8");
+    const m3d = readFileSync(join(ROOT, "electron", "builtin-skills", "17-skill-3d-modeling.ts"), "utf8");
+    const wb = readFileSync(join(ROOT, "electron", "builtin-skills", "18-skill-whitebox-video.ts"), "utf8");
+    const vg = readFileSync(join(ROOT, "electron", "builtin-skills", "15-skill-video-generation.ts"), "utf8");
+
+    (/\["3d-modeling", MODELING_3D_SKILL\]/.test(reg) && /\["whitebox-video", WHITEBOX_VIDEO_SKILL\]/.test(reg) ? ok : fail)(
+      "【209】两份新技能已注册（只写文件不注册 = 引擎永远发现不了）"
+    );
+    /* 用户 09-29：「只要让 Codex 清楚这个 3D建模→白模视频→视频生成 的完整流程，并说明 Blender 与 AHOLO
+       之间如何搭配」⇒ 三份技能必须**互相点名**，且 3D 技能里要有分工表（Aholo 管零件 / Blender 管空间与运镜 /
+       Seedance 管质感），否则模型只知道单个工具、拼不出链路。 */
+    (m3d.includes("whitebox-video") && wb.includes("3d-modeling") && wb.includes("video-generation") && vg.includes("whitebox-video") ? ok : fail)(
+      "【209】三技能互相点名（3D建模 ↔ 白模视频 ↔ 视频生成；各说各的 = 模型拼不出链路）"
+    );
+    (m3d.includes("Aholo 管「一件东西长什么样」") && m3d.includes("Blender 管「东西放在哪、镜头怎么走」") ? ok : fail)(
+      "【209】3D 技能写清 Blender 与 Aholo 的分工（用户点名要说明的部分）"
+    );
+    (m3d.includes("没有内置 3D 生成通道") && m3d.includes("不加 Bearer 前缀") && m3d.includes("G1-Turbo") ? ok : fail)(
+      "【209】3D 技能写明现状边界（通道未接入）+ 官方 API 要点（无 Bearer / G1 双档）—— 不许假装有工具"
+    );
+    (wb.includes("reference_video") && wb.includes("公网") && wb.includes("只保留躯体") && wb.includes("2.0/2.5") ? ok : fail)(
+      "【209】白模技能写明参考视频路径（公网 URL / 仅 2.x）+ 官方「只保留躯体」注意事项"
+    );
+    (vg.includes("doubao-seedance-2-5-260628") && vg.includes("白模视频参考") ? ok : fail)(
+      "【209】视频技能已同步 Seedance 2.5（模型 ID 与白模参考能力）"
+    );
+    (!/3D 生成工具|image_to_3d|\.3d:submit/.test(m3d) ? ok : fail)(
+      "【209】3D 技能里不许出现不存在的能力名（说了有工具而实际没有 = 更糟）"
+    );
+  }
 }

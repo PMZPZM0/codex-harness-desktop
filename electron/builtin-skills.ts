@@ -8,6 +8,8 @@ import { existsSync } from "node:fs";
 import { DESKTOP_SKILL } from "./builtin-skills/01-skill-desktop";
 import { VIDEO_GENERATION_SKILL } from "./builtin-skills/15-skill-video-generation";
 import { IMAGE_GENERATION_SKILL } from "./builtin-skills/16-skill-image-generation";
+import { MODELING_3D_SKILL } from "./builtin-skills/17-skill-3d-modeling";
+import { WHITEBOX_VIDEO_SKILL } from "./builtin-skills/18-skill-whitebox-video";
 import { RETIRED_BROWSER_SKILL, BROWSER_SKILL } from "./builtin-skills/02-skill-browser";
 import { HUMANIZER_SKILL } from "./builtin-skills/03-skill-humanizer";
 import { NO_AI_SLOP_SKILL } from "./builtin-skills/04-skill-no-ai-slop";
@@ -38,6 +40,10 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     // 09-29：生图配套技能（用户「去 GitHub 找热门生图 skills 内置好」）——
     //  方法论吸收热门生图 skill，执行路径指向本应用的 image_generate 与内置生图插件。
     ["image-generation", IMAGE_GENERATION_SKILL],
+    // 09-29 用户立项：3D 建模与白模预演各出一份技能包（他判断画布工作流不实用 —— 实际都走 Codex 对话）。
+    //  ⛔ 诚实边界写进正文：3D 生成通道尚未接入（不许假装有工具）；白模参考视频已接线（仅 Seedance 2.x）。
+    ["3d-modeling", MODELING_3D_SKILL],
+    ["whitebox-video", WHITEBOX_VIDEO_SKILL],
     ["browser-skill", BROWSER_SKILL],
     // 写作/输出风格类内置技能（09-21 用户：「对我们有帮助的都内置安装好」）。
     //  ⛔ 内容与上游**逐字一致**（MIT 许可，来源见 THIRD_PARTY_NOTICES.md）—— 别在常量里手改，
