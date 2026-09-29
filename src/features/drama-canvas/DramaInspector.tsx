@@ -8,6 +8,7 @@ import { AppSelect } from "../../components/AppSelect";
 import { Clapperboard, Link2, RefreshCw, X } from "lucide-react";
 import { dramaNodeDef, dramaNodeLabel, dramaRelationLabel, dramaRelationOptions } from "../../lib/drama-canvas-model.mjs";
 import { STORYBOARD_ASPECTS, STORYBOARD_SHOT_SIZES } from "../../lib/drama-storyboard.mjs";
+import { VIDEO_ASPECTS } from "../../lib/media-aspects.mjs";
 import { useDramaActions } from "./drama-actions";
 /* ⛔ 生成按钮与通道映射表都从 DramaChannelButton 取（卡面同源）—— 检查器原来自己写了一份
    「生成图片」按钮：文案与卡面不一致、未配置不给引导、还不查节点类型（笔记卡上也能点），
@@ -24,6 +25,16 @@ interface FieldSpec {
 }
 
 /** 每种卡在检查器里露哪些字段。**只列会被用到、会被回写的**，不做万能表单。 */
+/** 生图尺寸预设（09-29 自媒体刚需：平台画幅各不相同，手填容易错）。
+ *  ⛔ 网关接受的尺寸各不相同 —— 报错就把这项清空走默认，不要硬试。 */
+const IMAGE_SIZE_PRESETS = [
+  { value: "1024x1024", label: "方图 1:1 · 1024×1024（头像 / 图标 / 方版配图）" },
+  { value: "1024x1536", label: "竖图 2:3 · 1024×1536（小红书 / 竖版海报）" },
+  { value: "1536x1024", label: "横图 3:2 · 1536×1024（公众号封面 / 横版配图）" },
+  { value: "768x1365", label: "竖屏 9:16 · 768×1365（抖音 / 视频号封面）" },
+  { value: "1365x768", label: "宽屏 16:9 · 1365×768（B 站 / 横屏封面）" },
+];
+
 const FIELDS: Record<string, FieldSpec[]> = {
   note: [{ key: "title", label: "标题" }, { key: "text", label: "内容", type: "textarea" }],
   script: [
@@ -74,6 +85,8 @@ const FIELDS: Record<string, FieldSpec[]> = {
   ],
   image: [
     { key: "title", label: "标题" },
+    { key: "size", label: "尺寸 / 画幅", type: "select", options: IMAGE_SIZE_PRESETS.map((p) => p.value), hint: "按平台选：小红书 2:3、抖音 9:16、公众号/B站横版。网关不认这个尺寸会报错 —— 清空即走默认" },
+    { key: "negative", label: "负面提示词", type: "textarea", placeholder: "不要文字、不要畸形手指、不要水印、不要多余肢体…", hint: "写清楚**不想要什么**，比在正面词里绕半天有效；不是每个网关都支持，无效时改回正面描述" },
     { key: "role", label: "用途" },
     { key: "path", label: "文件路径" },
     { key: "text", label: "说明", type: "textarea" },

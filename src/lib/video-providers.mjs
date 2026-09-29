@@ -12,6 +12,7 @@
  * 确定性：klingToken 接收 nowMs 参数（JWT 里不能有隐藏的 Date.now，守卫要能真跑真值表）。
  */
 import { createHmac } from "node:crypto";
+import { VIDEO_ASPECTS } from "./media-aspects.mjs";
 
 /** 所有厂商通用的**可选覆盖**字段（09-28 用户要求「API 地址和模型要能自己填」）：
  *  · baseUrl —— 中转站/代理地址（留空用官方）：只换 origin+前缀，路径不变
@@ -22,13 +23,13 @@ export const VIDEO_OPTIONAL_FIELDS = ["baseUrl", "model"];
 /** 厂商清单（渲染层下拉 / 设置表单都吃这一份）。 */
 export const VIDEO_PROVIDERS = [
   { id: "kling", name: "可灵 Kling（快手）", region: "cn", modes: ["t2v", "i2v"], imageInput: "both", baseUrl: "https://api.klingai.com", fields: ["accessKey", "secretKey"], models: ["kling-v1", "kling-v1-6"], defaultModel: "kling-v1" },
-  { id: "wanx", name: "通义万相（阿里百炼）", region: "cn", modes: ["t2v", "i2v"], imageInput: "url", baseUrl: "https://dashscope.aliyuncs.com", fields: ["apiKey"], models: ["wan2.2-t2v-plus", "wan2.2-i2v-plus", "wanx2.1-t2v-turbo"], defaultModel: "wan2.2-t2v-plus" },
-  { id: "seedance", name: "即梦 Seedance（火山方舟）", region: "cn", modes: ["t2v", "i2v"], imageInput: "url", baseUrl: "https://ark.cn-beijing.volces.com", fields: ["apiKey"], models: ["doubao-seedance-1-0-lite-t2v-250428", "doubao-seedance-1-0-pro-250528"], defaultModel: "doubao-seedance-1-0-lite-t2v-250428" },
+  { id: "wanx", name: "通义万相（阿里百炼）", region: "cn", modes: ["t2v", "i2v"], imageInput: "url", baseUrl: "https://dashscope.aliyuncs.com", fields: ["apiKey"], models: ["wan2.2-t2v-plus", "wan2.2-i2v-plus", "wanx2.1-t2v-turbo"], defaultModel: "wan2.2-t2v-plus", aspects: ["16:9", "9:16", "1:1"] },
+  { id: "seedance", name: "即梦 Seedance（火山方舟）", region: "cn", modes: ["t2v", "i2v"], imageInput: "url", baseUrl: "https://ark.cn-beijing.volces.com", fields: ["apiKey"], models: ["doubao-seedance-1-0-lite-t2v-250428", "doubao-seedance-1-0-pro-250528"], defaultModel: "doubao-seedance-1-0-lite-t2v-250428", aspects: ["16:9", "9:16", "1:1"] },
   { id: "cogvideo", name: "智谱 CogVideoX", region: "cn", modes: ["t2v", "i2v"], imageInput: "both", baseUrl: "https://open.bigmodel.cn", fields: ["apiKey"], models: ["cogvideox-3", "cogvideox-2"], defaultModel: "cogvideox-3" },
   { id: "minimax", name: "MiniMax 海螺视频", region: "cn", modes: ["t2v", "i2v"], imageInput: "both", baseUrl: "https://api.minimaxi.com", fields: ["apiKey"], models: ["T2V-01", "I2V-01-live", "S2V-01"], defaultModel: "T2V-01" },
-  { id: "runway", name: "Runway Gen-4", region: "global", modes: ["i2v"], imageInput: "both", baseUrl: "https://api.dev.runwayml.com", fields: ["apiKey"], models: ["gen4_turbo", "gen3a_turbo"], defaultModel: "gen4_turbo" },
+  { id: "runway", name: "Runway Gen-4", region: "global", modes: ["i2v"], imageInput: "both", baseUrl: "https://api.dev.runwayml.com", fields: ["apiKey"], models: ["gen4_turbo", "gen3a_turbo"], defaultModel: "gen4_turbo", aspects: ["16:9", "9:16", "1:1"] },
   { id: "luma", name: "Luma Dream Machine", region: "global", modes: ["t2v", "i2v"], imageInput: "url", baseUrl: "https://api.lumalabs.ai", fields: ["apiKey"], models: ["ray-2", "ray-flash-2"], defaultModel: "ray-2" },
-  { id: "veo", name: "Google Veo", region: "global", modes: ["t2v", "i2v"], imageInput: "base64", baseUrl: "https://generativelanguage.googleapis.com", fields: ["apiKey"], models: ["veo-3.0-generate-001", "veo-3.0-fast-generate-001", "veo-2.0-generate-001"], defaultModel: "veo-3.0-generate-001" },
+  { id: "veo", name: "Google Veo", region: "global", modes: ["t2v", "i2v"], imageInput: "base64", baseUrl: "https://generativelanguage.googleapis.com", fields: ["apiKey"], models: ["veo-3.0-generate-001", "veo-3.0-fast-generate-001", "veo-2.0-generate-001"], defaultModel: "veo-3.0-generate-001", aspects: ["16:9", "9:16", "1:1"] },
 ];
 
 const jsonHeaders = (extra = {}) => ({ "Content-Type": "application/json", ...extra });
@@ -40,6 +41,35 @@ export function klingToken(cfg, nowMs) {
   const payload = b64url(JSON.stringify({ iss: cfg.accessKey, exp: nowMs + 1800_000, nbf: nowMs - 5000 }));
   const sig = b64url(createHmac("sha256", cfg.secretKey).update(`${header}.${payload}`).digest());
   return `${header}.${payload}.${sig}`;
+}
+
+/** 画幅（09-29 自媒体刚需：抖音 / 小红书 / 视频号的默认形态是 **9:16 竖屏**）。
+ *  ⛔ 为什么必须显式化：此前各家把画幅**写死成横屏**（`size:"1280*720"` / `ratio:"1280:720"` /
+ *     `aspectRatio:"16:9"`）⇒ 用户**根本出不了竖屏**，而这恰恰是短视频最主流的形态。
+ *  ⛔ 各家接受的**格式不同**，且**不是每家都支持** —— `VIDEO_PROVIDERS[].aspects` 是唯一真相源，
+ *     不支持的厂商一律**明确报错**（与 url-only 首帧同一纪律：不许静默按默认画幅出片）。 */
+export { VIDEO_ASPECTS };
+
+/** 各家画幅取值映射（同一画幅在不同厂商是不同写法）。没有条目的厂商 = 不支持定制画幅。 */
+const ASPECT_VALUES = {
+  wanx: { "16:9": "1280*720", "9:16": "720*1280", "1:1": "960*960" },
+  seedance: { "16:9": "16:9", "9:16": "9:16", "1:1": "1:1" },
+  runway: { "16:9": "1280:720", "9:16": "720:1280", "1:1": "960:960" },
+  veo: { "16:9": "16:9", "9:16": "9:16", "1:1": "1:1" },
+};
+
+/** 提交前校验画幅：厂商不支持而我们被要求指定 ⇒ 当场报错（换厂商或去掉画幅）。 */
+export function videoAssertAspectOk(providerId, aspect) {
+  if (!aspect) return;
+  const provider = assertProvider(providerId);
+  const supported = provider.aspects || [];
+  if (!supported.length) {
+    throw new Error(`${provider.name} 不支持指定画幅（按它的模型默认画幅输出）—— 要定画幅请改用：`
+      + VIDEO_PROVIDERS.filter((p) => p.aspects?.length).map((p) => p.name.replace(/（.*/, "")).join(" / "));
+  }
+  if (!supported.includes(aspect)) {
+    throw new Error(`${provider.name} 不支持 ${aspect} 画幅（支持：${supported.join(" / ")}）`);
+  }
 }
 
 function assertProvider(providerId) {
@@ -66,6 +96,8 @@ export function videoBuildSubmit(providerId, cfg, input, nowMs) {
   // 模型优先级（09-28）：调用方（卡片上的 per-node 覆盖）> 用户在设置里填的自定义模型 > 内置默认
   const model = input.model || String(cfg?.model ?? "").trim() || provider.defaultModel;
   const duration = Math.max(3, Math.min(20, Number(input.duration) || 5));
+  const aspect = String(input.aspect || "").trim();
+  videoAssertAspectOk(providerId, aspect);
   const prompt = String(input.prompt || "").trim();
   const image = input.image ? String(input.image) : "";
   if (!prompt) throw new Error("提示词为空");
@@ -79,11 +111,11 @@ export function videoBuildSubmit(providerId, cfg, input, nowMs) {
       return { url: `https://api.klingai.com/v1/videos/${kind}`, headers: jsonHeaders({ Authorization: `Bearer ${token}` }), body };
     }
     case "wanx": {
-      const body = { model, input: { prompt, ...(kind === "image2video" ? { img_url: image } : {}) }, parameters: { size: "1280*720", duration } };
+      const body = { model, input: { prompt, ...(kind === "image2video" ? { img_url: image } : {}) }, parameters: { size: (aspect && ASPECT_VALUES.wanx[aspect]) || "1280*720", duration } };
       return { url: "https://dashscope.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis", headers: jsonHeaders({ Authorization: `Bearer ${cfg.apiKey}`, "X-DashScope-Async": "enable" }), body };
     }
     case "seedance": {
-      const content = [{ type: "text", text: `${prompt} --resolution 720p --duration ${duration}` }];
+      const content = [{ type: "text", text: `${prompt} --resolution 720p --duration ${duration}${aspect ? ` --ratio ${ASPECT_VALUES.seedance[aspect]}` : ""}` }];
       if (kind === "image2video") content.push({ type: "image_url", image_url: { url: image } });
       return { url: "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks", headers: jsonHeaders({ Authorization: `Bearer ${cfg.apiKey}` }), body: { model, content } };
     }
@@ -97,7 +129,7 @@ export function videoBuildSubmit(providerId, cfg, input, nowMs) {
     }
     case "runway": {
       if (kind !== "image2video") throw new Error("Runway Gen-4 当前只支持图生视频（先在该镜头卡上生成首帧）");
-      const body = { model, promptImage: image, promptText: prompt, ratio: "1280:720", duration };
+      const body = { model, promptImage: image, promptText: prompt, ratio: (aspect && ASPECT_VALUES.runway[aspect]) || "1280:720", duration };
       return { url: "https://api.dev.runwayml.com/v1/image_to_video", headers: jsonHeaders({ Authorization: `Bearer ${cfg.apiKey}`, "X-Runway-Version": "2024-11-06" }), body };
     }
     case "luma": {
@@ -108,7 +140,7 @@ export function videoBuildSubmit(providerId, cfg, input, nowMs) {
       if (!cfg.apiKey) throw new Error("Veo 需要 API Key（Google AI Studio）");
       const instance = { prompt };
       if (kind === "image2video") instance.image = { bytesBase64Encoded: image.replace(/^data:[^;]+;base64,/, "") };
-      return { url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:predictLongRunning?key=${encodeURIComponent(cfg.apiKey)}`, headers: jsonHeaders(), body: { instances: [instance], parameters: { aspectRatio: "16:9", durationSeconds: Math.min(8, duration) } } };
+      return { url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:predictLongRunning?key=${encodeURIComponent(cfg.apiKey)}`, headers: jsonHeaders(), body: { instances: [instance], parameters: { aspectRatio: (aspect && ASPECT_VALUES.veo[aspect]) || "16:9", durationSeconds: Math.min(8, duration) } } };
     }
     default:
       throw new Error(`未知的视频生成厂商：${providerId}`);

@@ -2156,8 +2156,8 @@
     {
       "name": "generateImage",
       "channel": "builtin:generate-image",
-      "paramsImpl": "input: { baseUrl: string; apiKey: string; model: string; prompt: string }",
-      "paramsDecl": "input: { baseUrl: string; apiKey: string; model: string; prompt: string }",
+      "paramsImpl": "input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string }",
+      "paramsDecl": "input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string }",
       "returns": "Promise<{ path: string; url: string }>",
       "invokeArgs": "input",
       "cast": null,
@@ -3484,8 +3484,8 @@
     {
       "name": "videoSubmit",
       "channel": "video:submit",
-      "paramsImpl": "input: { providerId: string; mode: string; prompt: string; image?: string; model?: string; duration?: number }",
-      "paramsDecl": "input: { providerId: string; mode: string; prompt: string; image?: string; model?: string; duration?: number }",
+      "paramsImpl": "input: { providerId: string; mode: string; prompt: string; image?: string; model?: string; duration?: number; aspect?: string }",
+      "paramsDecl": "input: { providerId: string; mode: string; prompt: string; image?: string; model?: string; duration?: number; aspect?: string }",
       "returns": "Promise<{ jobId: string }>",
       "invokeArgs": "input",
       "cast": "Promise<{ jobId: string }>",

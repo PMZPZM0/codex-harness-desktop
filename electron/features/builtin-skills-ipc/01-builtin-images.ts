@@ -54,7 +54,7 @@ async function persistGeneratedImage(url: string): Promise<string> {
   }
 }
 
-export async function generateImageWith(input: { baseUrl: string; apiKey: string; model: string; prompt: string }) {
+export async function generateImageWith(input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string }) {
   const base = input.baseUrl.trim().replace(/\/$/, "");
   // 兼容 /images/generations（OpenAI 兼容）与 /v1/images/generations
   const endpoint = /\/images\/generations$/.test(base) ? base : base + "/images/generations";
@@ -63,7 +63,13 @@ export async function generateImageWith(input: { baseUrl: string; apiKey: string
     response = await fetch(endpoint, {
       method: "POST",
       headers: { Authorization: "Bearer " + input.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: input.model, prompt: input.prompt, n: 1 }),
+      // ⛔ size / negative_prompt 只在**显式给了**才带上：不同网关接受的字段名与取值差异很大，
+      //    默认不带 = 保持旧行为，不会因为多传一个字段就把本来能用的网关弄挂。
+      body: JSON.stringify({
+        model: input.model, prompt: input.prompt, n: 1,
+        ...(input.size ? { size: input.size } : {}),
+        ...(input.negative ? { negative_prompt: input.negative } : {}),
+      }),
       signal: AbortSignal.timeout(300_000),
     });
   } catch (error) {
@@ -90,7 +96,7 @@ export async function generateImageWith(input: { baseUrl: string; apiKey: string
 
 /** 带重试的生图（09-29）：网络抖动 / 5xx / 429 自动再试一次；4xx 参数错不重试（重试也没用）。
  *  会话里的 MCP 工具与画布卡片共用这一个入口 —— 稳定性口径只有一份。 */
-export async function generateImageResilient(input: { baseUrl: string; apiKey: string; model: string; prompt: string }, attempts = 2): Promise<{ path: string; url: string }> {
+export async function generateImageResilient(input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string }, attempts = 2): Promise<{ path: string; url: string }> {
   let lastError: unknown = null;
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
@@ -155,7 +161,7 @@ ipcMain.handle("builtin:save", async (_e, cfg: BuiltinPluginConfig) => {
 
 ipcMain.handle("builtin:probe", async (_e, input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) => probeBuiltinModels(input));
 
-ipcMain.handle("builtin:generate-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; prompt: string }) => generateImageResilient(input));
+ipcMain.handle("builtin:generate-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string }) => generateImageResilient(input));
 
 ipcMain.handle("builtin:describe-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) => describeImageWith(input));
 

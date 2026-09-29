@@ -148,7 +148,11 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     const count = Math.min(4, Math.max(1, Math.floor(Number(args.count) || 1)));
     const cwd = String(args.workspace || threadCwd.get(callerThreadId) || "").trim();
     const results = await Promise.allSettled(
-      Array.from({ length: count }, () => generateImageResilient({ baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model, prompt })),
+      Array.from({ length: count }, () => generateImageResilient({
+        baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model, prompt,
+        size: args.size ? String(args.size) : undefined,
+        negative: args.negative ? String(args.negative) : undefined,
+      })),
     );
     const saved: string[] = [];
     const errors: string[] = [];
@@ -193,6 +197,7 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       image: args.image ? String(args.image) : undefined,
       model: args.model ? String(args.model) : undefined,
       duration: Number(args.duration) || undefined,
+      aspect: args.aspect ? String(args.aspect) : undefined,
     });
     // 提交即落盘：关画布 / 重启应用后仍可续查（模型与画布卡片共用这份记录）
     rememberVideoJob({

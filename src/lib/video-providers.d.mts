@@ -10,12 +10,17 @@ export interface VideoProviderMeta {
   baseUrl?: string;
   models: string[];
   defaultModel: string;
+  /** 支持指定的画幅；**没有这个字段 = 不支持定制画幅**（按模型默认输出） */
+  aspects?: string[];
 }
 export interface VideoProviderConfig { [key: string]: string }
-export interface VideoSubmitInput { mode: "t2v" | "i2v"; prompt: string; image?: string; model?: string; duration?: number }
+export interface VideoSubmitInput { mode: "t2v" | "i2v"; prompt: string; image?: string; model?: string; duration?: number; aspect?: string }
 export interface HttpRequest { url: string; headers: Record<string, string>; body?: unknown }
 export interface VideoPollResult { status: "queued" | "running" | "succeeded" | "failed"; url?: string; fileId?: string; error?: string }
 export const VIDEO_PROVIDERS: VideoProviderMeta[];
+export { VIDEO_ASPECTS } from "./media-aspects.mjs";
+/** 提交前校验画幅：厂商不支持而我们被要求指定 ⇒ 当场报错（与 url-only 首帧同一纪律） */
+export function videoAssertAspectOk(providerId: string, aspect: string): void;
 export function klingToken(cfg: VideoProviderConfig, nowMs: number): string;
 export function videoAssertImageOk(providerId: string, mode: "t2v" | "i2v", image?: string): VideoProviderMeta;
 export function videoBuildSubmit(providerId: string, cfg: VideoProviderConfig, input: VideoSubmitInput, nowMs: number): HttpRequest;

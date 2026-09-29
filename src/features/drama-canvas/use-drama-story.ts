@@ -464,6 +464,8 @@ export function useDramaStory(
           image: mode === "i2v" ? firstFrame : undefined,
           model: String(payload.video_model || "") || provider.defaultModel,
           duration: Number(payload.duration) || 5,
+          // 画幅：卡片上选了才传。⛔ 不支持画幅的厂商由适配层**当场报错**（不静默按默认出片）
+          aspect: String(payload.aspect || "").trim() || undefined,
         });
         // 提交即记进卡片（主进程另有一份落盘）：超时 / 关画布 / 重启后都能续查
         board.updatePayload(nodeId, { video_job: submitted.jobId, video_job_provider: providerId });
@@ -508,7 +510,12 @@ export function useDramaStory(
         if (upstream && base !== upstream) prompt = `${upstream}。${prompt}`;
         const variant = String(payload.variant || "").trim();
         if (variant && !base.includes(variant)) prompt = `${prompt}（变体：${variant}）`;
-        const result = await window.codex.generateImage({ baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model: cfg.model, prompt });
+        const result = await window.codex.generateImage({
+          baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model: cfg.model, prompt,
+          // 尺寸与负面提示词：卡片上设了才传（不同网关接受度不同，默认不带 = 旧行为）
+          size: String(payload.size || "").trim() || undefined,
+          negative: String(payload.negative || "").trim() || undefined,
+        });
         const path = String(result?.path || "");
         if (!path) { say("生成回来了，但没有落盘路径，这张卡没更新", "err"); return; }
         if (kind === "shot") board.updatePayload(nodeId, { first_frame: path });
