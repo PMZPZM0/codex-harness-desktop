@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-09-27",
-  "count": 361,
+  "count": 362,
   "channels": [
     {
       "name": "request",
@@ -3430,6 +3430,16 @@
       "invokeArgs": "",
       "cast": "Promise<{adb:string}>",
       "note": "把工具链里的 adb 写进 phone-harness 配置（android.adb，不改系统 PATH）"
+    },
+    {
+      "name": "dramaCanvasPolishPrompt",
+      "channel": "drama-canvas:polish-prompt",
+      "paramsImpl": "input: { text: string; context?: string }",
+      "paramsDecl": "input: { text: string; context?: string }",
+      "returns": "Promise<{ text: string }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ text: string }>",
+      "note": "把一段生图提示词交给**用户已配置的模型**润色（一次性短请求，非流式，不开会话）：补主体细节/环境/光线/构图/风格，只回一行可直接用的提示词。⛔ 只支持 chat 协议供应商；官方订阅与 responses-only 网关明确报错"
     },
     {
       "name": "dramaCanvasAssetWrite",

@@ -28,6 +28,7 @@ import {
   X,
   Upload,
   type LucideIcon,
+  Loader2,
 } from "lucide-react";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
 import { dramaIsKnownKind, dramaNodeDef, dramaNodeLabel } from "../../lib/drama-canvas-model.mjs";
@@ -128,8 +129,16 @@ function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; 
        · 未标记（用户自由拖的卡）⇒ 走 kind + 状态规则（自由编排不受限）
      ⚠️ 口径：**不同角色**的卡按键不重复；**同一角色多张卡**（短剧流里多个角色卡）保有同类按键是
         必要能力（否则第二个角色没法制图），不算重复。 */
+  /* ⛔⛔ 卡角色按键（09-29 用户纠正：「写提示词，就加一个 AI 润色文案功能，出图就生图按键…
+     出图现在没有生图按键，怎么行」—— 上轮我把产物位按钮删空了，理解偏了）：
+       每张卡按角色给**专属**按键，名字不重复、功能各自齐备：
+       · act: "prompt"（写提示词位）⇒ 「AI 润色」+「上传参考图」（生图入口在出图卡）
+       · act: "output"（出图位）      ⇒ 「生图」（已有图时按钮自动叫「重出」）
+       · act: "upload"（素材位）      ⇒ 「上传参考图」
+       · act: "generate"（通用生成位）⇒ 生成按钮 + 上传参考图
+       · 未标记（自由拖的卡）         ⇒ 走 kind + 状态规则 */
   const act = String(payload.act || "");
-  const allowed = act === "upload" || act === "output" ? [] : visibleChannels(kind, payload);
+  const allowed = act === "upload" || act === "prompt" ? [] : visibleChannels(kind, payload);
   /* ⛔ 按钮本体在 DramaChannelButton（09-28）—— 卡面与右侧检查器**共用同一颗按钮**。
      原来两处各写一份：卡面改名后（09-29 定稿为「生图」），检查器里还叫「生成图片」、未配置也不给
      引导（点了才报错）—— 同一个动作两套实现的必然结果。这里只决定「露出哪几条通道」。
@@ -137,6 +146,7 @@ function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; 
   /* ⛔ 上传参考图只在**输入位**给（09-29 精简）：没图的出图卡 / 已有定妆照的角色卡 / 已有首帧的镜头卡
      都不再重复出现这颗按钮 —— 每张卡都挂全套按键正是用户吐槽的「重复按键」。 */
   const canUpload = act === "upload" ? true
+    : act === "prompt" ? true
     : act === "generate" ? (kind === "image" || kind === "shot")
     : act === "output" ? false
     : kind === "image" ? !payload.path && !payload.url && payload.hint !== "output"
@@ -148,6 +158,25 @@ function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; 
       {allowed.map((what) => (
         <DramaChannelButton key={what} id={id} kind={kind} what={what} payload={payload} busyKey={busyKey} />
       ))}
+      {/* 「AI 润色」只在写提示词位（09-29）：⛔ **不开会话** —— 主进程用已配置的模型发一次短请求，
+          结果**就地写回**这张卡（用户明确要求「不要新开会话」）。 */}
+      {act === "prompt" ? (
+        <button
+          className="drama-canvas-btn is-ghost"
+          title="用已配置的模型润色这张卡的提示词（补主体细节 / 环境 / 光线 / 构图 / 风格），结果直接写回卡片"
+          disabled={busyKey("polish")}
+          onClick={async (e) => {
+            e.stopPropagation();
+            const current = String(payload.text || payload.prompt || "").trim();
+            try {
+              const polished = await actions.story.polishPrompt(id, current);
+              if (polished) actions.board.updatePayload(id, { text: polished });
+            } catch { /* 失败提示由 story.polishPrompt 内部弹出（带原因） */ }
+          }}
+        >
+          {busyKey("polish") ? <Loader2 size={12} className="is-spin" /> : <Sparkles size={12} />}AI 润色
+        </button>
+      ) : null}
       {canUpload ? (
         <button className="drama-canvas-btn is-ghost" title="从本机选一张图当参考图 / 首帧（也会存进工作区）" onClick={(e) => { e.stopPropagation(); void actions.story.uploadRef(id); }}>
           <Upload size={12} />上传参考图
