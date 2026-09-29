@@ -1251,7 +1251,14 @@
    于是按钮又掉到第二行。改成：标签**始终隐藏**（值本身可读 + 控件 title 显示当前值），
    顶栏 nowrap，左侧允许收缩（标题截断），按钮组固定贴右。任何窗口宽度都单行。 */
 .drama-canvas-head { flex-wrap: nowrap; }
-.drama-canvas-head .drama-canvas-select > span { display: none; }
+/* ⛔⛔ 09-29 二改：**恢复下拉标签**。上一轮为换单行把 `.drama-canvas-select > span` 永久隐藏，
+   结果用户看到两个没有任何说明的裸值（截图原话「上面两个下拉框也不知道是什么东西」）——
+   省空间省错了地方：标签是「这个控件是什么」，值才知道「当前选的哪个」。
+   现在靠另外三条换单行：① 标题就是工作流类型（比原来"Ai 画布工作流+副标题"短）；
+   ② 生图工作流下不渲染分镜表下拉（少一个控件）；③ 副标题窄屏让位（见文件末尾 @media）。 */
+/* ⛔ white-space: nowrap 是必须的：实测（09-29）不给就把「画布」压成「画/布」两行 ——
+   标签一旦折行，反而是更难看的噪声。flex: none 保证它不被压缩。 */
+.drama-canvas-head .drama-canvas-select > span { color: var(--muted); font-size: 11px; white-space: nowrap; flex: none; }
 .drama-canvas-head-left { flex: 1 1 auto; flex-wrap: nowrap; min-width: 0; overflow: hidden; }
 .drama-canvas-head-left > div:first-of-type { min-width: 0; overflow: hidden; }
 .drama-canvas-head-left > div:first-of-type > b,
@@ -1296,3 +1303,38 @@
 .drama-results-export:hover:not(:disabled) { border-color: var(--accent); }
 .drama-results-export:disabled { opacity: .5; cursor: default; }
 .drama-results-export .is-spin { animation: drama-batch-spin 1s linear infinite; }
+
+/* ─────────────────────────────── 工作流类型按钮 + 可点击的「待生成」（09-29 二改）
+   病根：画布没有「这是什么工作流」的显式概念，两种模板的 UI 全混在一起。
+   现在标题就是当前类型，旁边一个小 ▾ 是"换另一种"的入口。 */
+.drama-canvas-flowbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  vertical-align: -1px;
+}
+.drama-canvas-flowbtn:hover { background: var(--accent-soft); color: var(--accent); }
+/* 「待生成 N」= 入口而不是死数字：悬停列明细，点一下跑批量生成 */
+.drama-canvas-pending {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  color: var(--orange);
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.drama-canvas-pending:hover { color: var(--accent); }
+/* 进度芯片里「图 2 / 待生成 3」挨太近会看成一体（实测截图）—— 拉开一点 */
+.drama-canvas-progress { gap: 10px; }
