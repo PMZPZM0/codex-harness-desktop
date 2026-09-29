@@ -666,4 +666,27 @@ export async function run() {
       "【210】IPC 类型面同步 fallback（类型不同步 = 渲染层拿不到标记）"
     );
   }
+  /* ══ 参考图 ≠ 生成产物（09-29 用户实测：「上传的参考图会直接把已生成的图顶替掉展示」）══
+     ⛔ 事故：image 卡上传参考图时写进 path/url —— 那是**生成产物的显示字段** ⇒ 一上传就覆盖。
+     现在：参考图走独立 ref 字段；卡片上产物在主位、参考图退到缩略条。
+     ⛔ 负向断言是关键：光锚「ref: path 存在」挡不住有人再加回一条写 path 的分支。 */
+  {
+    const story211 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8"));
+    const card211 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8"));
+    const css211 = readFileSync(join(ROOT, "src", "styles", "21-drama-canvas.css"), "utf8");
+
+    (/board\.updatePayload\(nodeId, \{ ref: path \}\)/.test(story211) ? ok : fail)(
+      "【211】上传参考图落 ref 字段（与生成产物分开）"
+    );
+    (((() => { const i = story211.indexOf("const uploadRef"); const seg = i >= 0 ? story211.slice(i, i + 2400) : "";
+      return seg.includes("ref: path") && !/updatePayload\(nodeId, \{ path, url: path/.test(seg); })()) ? ok : fail)(
+      "【211】负向：不许再把上传的参考图写进 path/url（一写就把已生成的图顶掉）"
+    );
+    (/const refPath = String\(payload\.ref \|\| ""\)/.test(card211) && /drama-canvas-card-ref-tag/.test(card211) ? ok : fail)(
+      "【211】image 卡把参考图与产物分开显示（产物主位 + 参考图缩略条）"
+    );
+    (/drama-canvas-card-ref-img/.test(css211) ? ok : fail)(
+      "【211】参考图缩略条样式在位（只接线不写样式 = 图撑满整卡，与产物还是分不清）"
+    );
+  }
 }
