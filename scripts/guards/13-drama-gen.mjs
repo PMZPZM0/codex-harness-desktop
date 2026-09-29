@@ -261,5 +261,63 @@ export async function run() {
     );
   }
 
+  /* ══ 媒体生成三件套（09-29 用户：「让 Codex 能够直接调用生图与视频工作流」）══
+     模型侧工具 = image_generate（同步）/ video_generate（提交即返回）/ video_status（查询）。
+     判据盯三件事：① 与画布**共用同一套 core**（不许在 rpc 里另写一份 HTTP 调用）；
+     ② 视频必须两段式（提交里不许有轮询循环 —— 会把整个回合卡死）；
+     ③ 任务不丢（提交即落盘 + 画布卡片留 jobId 可续查）。 */
+  {
+    const coreSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "dispatch-core.ts"), "utf8"));
+    const rpcSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "dispatch-rpc.ts"), "utf8"));
+    const videoSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "video-gen.ts"), "utf8"));
+    const imageSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "01-builtin-images.ts"), "utf8"));
+    const storySrc = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8"));
+
+    for (const tool of ["image_generate", "video_generate", "video_status"]) {
+      (coreSrc.includes(`name: "${tool}"`) && rpcSrc.includes(`name === "${tool}"`) ? ok : fail)(
+        `【202】媒体工具 ${tool} 的 schema 与执行端都在（只加 schema = 工具在清单里但调不动）`
+      );
+    }
+    // ① 共用 core
+    (rpcSrc.includes("generateImageResilient") && rpcSrc.includes("submitVideoCore") && rpcSrc.includes("pollVideoCore") ? ok : fail)(
+      "【202】执行端调 core（生图/视频逻辑只有一份 —— 与画布卡片共用）"
+    );
+    (!/await fetch\(/.test(rpcSrc) ? ok : fail)(
+      "【202】执行端不自己发 HTTP（发现 fetch 调用 = 有人另写了一份实现，两条路径必然漂移）"
+    );
+    // ② 视频两段式：video_generate 段不许有轮询循环
+    const submitCase = rpcSrc.slice(rpcSrc.indexOf('name === "video_generate"'), rpcSrc.indexOf('name === "video_status"'));
+    (!/for \(;;\)|while \(/.test(submitCase) ? ok : fail)(
+      "【202】video_generate 里没有轮询循环（提交必须立刻返回 —— 循环会把整个模型回合卡死几分钟）"
+    );
+    (submitCase.includes("rememberVideoJob") ? ok : fail)(
+      "【202】提交后立刻落盘任务记录（jobId 只在内存 = 关画布/重启就查不到，产物白跑）"
+    );
+    // ③ 任务持久化 + 画布置信
+    (videoSrc.includes("export function rememberVideoJob") && videoSrc.includes("video-jobs.json") ? ok : fail)(
+      "【202】任务记录持久化到 userData/video-jobs.json（含 30 天裁剪，防无限增长）"
+    );
+    (videoSrc.includes("listVideoJobs") && videoSrc.includes("updateVideoJob") ? ok : fail)(
+      "【202】任务可续查可回写（查询后状态/产物路径要落盘）"
+    );
+    (storySrc.includes("video_job_provider") && storySrc.includes("继续等待上一次提交的任务") ? ok : fail)(
+      "【202】画布卡片留 jobId 并优先续查（超时/重启后再点不重复提交、不多花钱）"
+    );
+    (!/setTimeout\(r, 5000\)/.test(storySrc) ? ok : fail)(
+      "【202】画布轮询已改自适应（固定 5s 已废 —— 短任务白等、长任务查太频）"
+    );
+    // ④ 生图重试
+    (imageSrc.includes("export async function generateImageResilient") && /HTTP 4\\d\\d/.test(imageSrc) ? ok : fail)(
+      "【202】生图带重试且 4xx 不重试（参数错重试没意义；网络/5xx/429 才值得再试）"
+    );
+    (/builtin:generate-image[\s\S]{0,120}generateImageResilient/.test(imageSrc) ? ok : fail)(
+      "【202】IPC 生图也走重试版（稳定性口径只有一份）"
+    );
+    // ⑤ 下载重试（产物拉回本地）
+    (/export async function downloadVideoCore[\s\S]{0,2000}attempt < 2/.test(videoSrc) ? ok : fail)(
+      "【202】视频下载带 1 次自动重试（网络抖动不至于白跑几分钟的生成）"
+    );
+  }
+
   }
 }

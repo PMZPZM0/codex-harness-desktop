@@ -7,6 +7,12 @@
  *  - video:submit      提交异步任务 → jobId（⛔ 首帧文件在主进程读成 base64 再进适配层）
  *  - video:poll        查询任务（MiniMax 成功后还要拿 file_id 换下载地址，两层都在这处理）
  *  - video:download    把产物 URL 拉回本地落到工作区（复用 drama-canvas 的可信根校验）
+ *
+ * ⛔⛔ 09-29 抽 core：提交 / 查询 / 下载三段的**逻辑**抽成导出函数（handler 只是薄壳），
+ *   好让会话里的 MCP 工具（image_generate / video_generate / video_status）直接复用同一实现 ——
+ *   同一动作两套实现是本仓反复踩过的坑（文案漂移、行为不一致）。
+ * ⛔ 09-29 加**任务持久化**（userData/video-jobs.json）：此前 jobId 只活在渲染层内存里，
+ *   关掉画布或重启应用 = 任务丢失、产物白跑；现在提交即落盘，随时可续查（模型也能查）。
  */
 import fs from "node:fs";
 import fsp from "node:fs/promises";
@@ -74,7 +80,149 @@ async function resolveImage(image?: string): Promise<string | undefined> {
   return buffer.toString("base64");
 }
 
+/* ────────────────────────────── 任务持久化（09-29）────────────────────────────── */
+
+export type VideoJob = {
+  jobId: string;
+  providerId: string;
+  prompt: string;
+  mode: "t2v" | "i2v";
+  image?: string;
+  /** 期望的落盘位置（查询成功时若给了 workspace 就自动下载） */
+  workspace?: string;
+  name?: string;
+  submittedAt: number;
+  updatedAt: number;
+  status: "pending" | "succeeded" | "failed";
+  url?: string;
+  path?: string;
+  error?: string;
+};
+
+function jobsPath(): string {
+  return path.join(app.getPath("userData"), "video-jobs.json");
+}
+
+/** 读全部任务记录（按提交时间倒序；顺带裁掉 30 天前的旧记录，防文件无限增长） */
+export function listVideoJobs(): VideoJob[] {
+  let list: VideoJob[] = [];
+  try {
+    const raw = JSON.parse(fs.readFileSync(jobsPath(), "utf8"));
+    list = Array.isArray(raw) ? raw.filter((j) => j && j.jobId) : [];
+  } catch { list = []; }
+  const cutoff = Date.now() - 30 * 86_400_000;
+  const kept = list.filter((j) => (j.submittedAt || 0) >= cutoff);
+  if (kept.length !== list.length) writeVideoJobs(kept);
+  return kept.sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0));
+}
+
+/** ⛔ 同步写（09-29 离线验证抓到竞态）：原来 `void fs.writeFile(...)` 异步落盘且不等待 ——
+ *  「提交后立刻查询」会读到还没写完的旧文件，任务看起来"没记录"。文件很小、调用低频，
+ *  同步写换来确定性（宁可阻塞 1ms，也不要"查不到刚提交的任务"）。 */
+function writeVideoJobs(list: VideoJob[]): void {
+  try {
+    fs.mkdirSync(path.dirname(jobsPath()), { recursive: true });
+    fs.writeFileSync(jobsPath(), JSON.stringify(list, null, 2) + "\n", "utf8");
+  } catch { /* 落盘失败不影响生成本身 */ }
+}
+
+/** 记一条任务（提交成功即调用） */
+export function rememberVideoJob(record: Omit<VideoJob, "updatedAt" | "status"> & { status?: VideoJob["status"] }): VideoJob {
+  const full: VideoJob = { ...record, status: record.status ?? "pending", updatedAt: Date.now() };
+  const list = listVideoJobs().filter((j) => j.jobId !== full.jobId);
+  list.unshift(full);
+  writeVideoJobs(list.slice(0, 200));
+  return full;
+}
+
+/** 更新一条任务（查询后回写状态/产物路径） */
+export function updateVideoJob(jobId: string, patch: Partial<VideoJob>): VideoJob | null {
+  const list = listVideoJobs();
+  const hit = list.find((j) => j.jobId === jobId);
+  if (!hit) return null;
+  Object.assign(hit, patch, { updatedAt: Date.now() });
+  writeVideoJobs(list);
+  return hit;
+}
+
+export function findVideoJob(jobId: string): VideoJob | null {
+  return listVideoJobs().find((j) => j.jobId === jobId) ?? null;
+}
+
+/* ────────────────────────────── core（IPC 与 MCP 共用）────────────────────────────── */
+
+export type VideoProviderView = { id: string; name: string; configured: boolean; imageInput?: string; defaultModel?: string; note?: string };
+
+export function videoProviderViews(): VideoProviderView[] {
+  const config = readConfig();
+  return VIDEO_PROVIDERS.map((p) => ({
+    id: p.id, name: p.name, configured: Boolean(hasCredentials(p.id, config[p.id])),
+    imageInput: (p as any).imageInput, defaultModel: (p as any).defaultModel, note: (p as any).note,
+  }));
+}
+
+/** 提交任务（含 i2v 首帧解析、自定义 baseUrl 应用） */
+export async function submitVideoCore(input: { providerId: string; mode: "t2v" | "i2v"; prompt: string; image?: string; model?: string; duration?: number }): Promise<{ jobId: string }> {
+  const config = readConfig();
+  const provider = videoAssertImageOk(String(input?.providerId ?? ""), input?.mode === "i2v" ? "i2v" : "t2v", input?.image);
+  const cfg = config[provider.id];
+  if (!hasCredentials(provider.id, cfg)) throw new Error(`${provider.name} 还没配置凭证（设置 → 插件 → 视频生成接口）`);
+  const image = input.mode === "i2v" ? await resolveImage(input.image) : undefined;
+  // 自定义 API 地址在本层统一应用（submit / poll / retrieve 都经这里，适配层保持纯函数）
+  const request = videoApplyBaseUrl(videoBuildSubmit(provider.id, cfg ?? {}, { ...input, image }, Date.now()), provider.id, cfg);
+  const response = await fetchJson(request.url, request);
+  return { jobId: videoParseSubmit(provider.id, response) };
+}
+
+/** 查询任务状态（succeeded 时带 url；MiniMax 两段式在内部完成二次取址） */
+export async function pollVideoCore(input: { providerId: string; jobId: string }): Promise<{ status: "queued" | "running" | "pending" | "succeeded" | "failed"; url?: string; error?: string; fileId?: string }> {
+  const config = readConfig();
+  const providerId = String(input?.providerId ?? "");
+  const provider = VIDEO_PROVIDERS.find((p) => p.id === providerId);
+  if (!provider) throw new Error(`未知厂商：${providerId}`);
+  const cfg = config[providerId] ?? {};
+  const request = videoApplyBaseUrl(videoBuildPoll(providerId, cfg, String(input?.jobId ?? ""), Date.now()), providerId, cfg);
+  const response = await fetchJson(request.url, request);
+  const result = videoParsePoll(providerId, response);
+  if (result.status === "succeeded" && !result.url && result.fileId) {
+    // MiniMax 两段式：file_id → 下载地址
+    const retrieve = videoApplyBaseUrl(videoBuildFileRetrieve(cfg, result.fileId), providerId, cfg);
+    result.url = videoParseFileRetrieve(await fetchJson(retrieve.url, retrieve));
+  }
+  return result;
+}
+
+/** 产物 URL → 工作区 .drama-canvas/assets/<subdir>（09-29：加 1 次自动重试，网络抖动不再白跑） */
+export async function downloadVideoCore(input: { url: string; workspace: string; name: string; subdir?: string }): Promise<{ path: string; bytes: number }> {
+  const url = String(input?.url ?? "");
+  if (!/^https?:\/\//i.test(url)) throw new Error(`产物地址不是 http(s)：${url.slice(0, 80)}`);
+  if (!input?.workspace || !isInsideTrustedRoots(String(input.workspace))) throw new Error("工作目录不在可信根内，拒绝写盘");
+  const safeName = String(input.name || "video.mp4").replace(/[\\/:*?"<>|]/g, "_").slice(0, 80);
+  const dir = path.join(String(input.workspace), ".drama-canvas", "assets", String(input.subdir || "video"));
+  await fsp.mkdir(dir, { recursive: true });
+  const dest = path.join(dir, safeName);
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(300_000) });
+      if (!response.ok) throw new Error(`下载失败 HTTP ${response.status}`);
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (!buffer.length) throw new Error("下载到 0 字节");
+      await fsp.writeFile(dest, buffer);
+      return { path: dest, bytes: buffer.length };
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+/* ────────────────────────────── IPC 通道（薄壳）────────────────────────────── */
+
 export function registerVideoGen(): void {
+  // ⛔ 返回面是**整个 provider 对象** + configured（渲染层的配置表单要读 fields / imageInput /
+  //    defaultModel 等 —— 只回 5 个字段会让配置界面变成空白，09-29 重写时踩过又改回）
   ipcMain.handle("video:providers", async () => {
     const config = readConfig();
     return VIDEO_PROVIDERS.map((provider) => ({ ...provider, configured: hasCredentials(provider.id, config[provider.id]) }));
@@ -89,6 +237,7 @@ export function registerVideoGen(): void {
     const values: ProviderConfig = {};
     // ⛔ 09-28：凭证之外还允许用户覆盖「API 地址 / 模型」（中转站、代理、自部署网关）。
     //    VIDEO_OPTIONAL_FIELDS 是这两项的唯一定义处 —— 白名单必须收它，否则用户填了保存不住。
+    //    ⛔ 必填凭证（provider.fields）同样要收 —— 只存 OPTIONAL 会让密钥保存不上（09-29 踩过）。
     for (const field of [...provider.fields, ...VIDEO_OPTIONAL_FIELDS]) values[field] = String(input?.values?.[field] ?? "").trim();
     config[provider.id] = values;
     await writeConfig(config);
@@ -96,48 +245,25 @@ export function registerVideoGen(): void {
   });
 
   ipcMain.handle("video:submit", async (_event, input: { providerId: string; mode: "t2v" | "i2v"; prompt: string; image?: string; model?: string; duration?: number }) => {
-    const config = readConfig();
-    const provider = videoAssertImageOk(String(input?.providerId ?? ""), input?.mode === "i2v" ? "i2v" : "t2v", input?.image);
-    const cfg = config[provider.id];
-    if (!hasCredentials(provider.id, cfg)) throw new Error(`${provider.name} 还没配置凭证（设置 → 插件 → 视频生成接口）`);
-    const image = input.mode === "i2v" ? await resolveImage(input.image) : undefined;
-    // 自定义 API 地址在本层统一应用（submit / poll / retrieve 都经这里，适配层保持纯函数）
-    const request = videoApplyBaseUrl(videoBuildSubmit(provider.id, cfg ?? {}, { ...input, image }, Date.now()), provider.id, cfg);
-    const response = await fetchJson(request.url, request);
-    return { jobId: videoParseSubmit(provider.id, response) };
+    const { jobId } = await submitVideoCore(input);
+    // 09-29：提交即落盘 —— 关掉画布/重启应用后任务不丢，可随时续查
+    rememberVideoJob({
+      jobId, providerId: String(input?.providerId ?? ""), prompt: String(input?.prompt ?? ""),
+      mode: input?.mode === "i2v" ? "i2v" : "t2v", image: input?.image ? String(input.image) : undefined,
+      submittedAt: Date.now(),
+    });
+    return { jobId };
   });
 
   ipcMain.handle("video:poll", async (_event, input: { providerId: string; jobId: string }) => {
-    const config = readConfig();
-    const providerId = String(input?.providerId ?? "");
-    const provider = VIDEO_PROVIDERS.find((p) => p.id === providerId);
-    if (!provider) throw new Error(`未知厂商：${providerId}`);
-    const cfg = config[providerId] ?? {};
-    const request = videoApplyBaseUrl(videoBuildPoll(providerId, cfg, String(input?.jobId ?? ""), Date.now()), providerId, cfg);
-    const response = await fetchJson(request.url, request);
-    const result = videoParsePoll(providerId, response);
-    if (result.status === "succeeded" && !result.url && result.fileId) {
-      // MiniMax 两段式：file_id → 下载地址
-      const retrieve = videoApplyBaseUrl(videoBuildFileRetrieve(cfg, result.fileId), providerId, cfg);
-      result.url = videoParseFileRetrieve(await fetchJson(retrieve.url, retrieve));
+    const result = await pollVideoCore(input);
+    if (result.status === "succeeded" || result.status === "failed") {
+      updateVideoJob(String(input?.jobId ?? ""), { status: result.status, url: result.url, error: result.error });
     }
     return result;
   });
 
-  ipcMain.handle("video:download", async (_event, input: { url: string; workspace: string; name: string; subdir?: string }) => {
-    const url = String(input?.url ?? "");
-    if (!/^https?:\/\//i.test(url)) throw new Error(`产物地址不是 http(s)：${url.slice(0, 80)}`);
-    if (!input?.workspace || !isInsideTrustedRoots(String(input.workspace))) throw new Error("工作目录不在可信根内，拒绝写盘");
-    const safeName = String(input.name || "video.mp4").replace(/[\\/:*?"<>|]/g, "_").slice(0, 80);
-    const dir = path.join(String(input.workspace), ".drama-canvas", "assets", String(input.subdir || "video"));
-    await fsp.mkdir(dir, { recursive: true });
-    const dest = path.join(dir, safeName);
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`下载失败 HTTP ${response.status}`);
-    const buffer = Buffer.from(await response.arrayBuffer());
-    await fsp.writeFile(dest, buffer);
-    return { path: dest, bytes: buffer.length };
-  });
+  ipcMain.handle("video:download", async (_event, input: { url: string; workspace: string; name: string; subdir?: string }) => downloadVideoCore(input));
 }
 
 /* ⛔⛔ 09-28 事故（用户现场：「视频生成接口一直加载中…，根本配置不了」）：
