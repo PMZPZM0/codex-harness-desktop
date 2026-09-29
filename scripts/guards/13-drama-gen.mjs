@@ -233,9 +233,9 @@ export async function run() {
     (/\.drama-canvas-head \.app-select-trigger \{[^}]*min-width:\s*\d+px/.test(css) ? ok : fail)(
       "【201】顶栏下拉有 min-width（不给就被 flex 压成一字宽，选中值读不出来）"
     );
-    // ③ 窄窗口瘦身：摘下拉标签 + 收窄标题块（不摘就会把按钮挤到第二行）
-    (/@media \(max-width: 1260px\)[\s\S]{0,220}\.drama-canvas-select > span \{ display: none/.test(css) ? ok : fail)(
-      "【201】窄窗口摘掉下拉标签（「画布」「分镜表」是导航词，值本身可读且 title/aria-label 仍在）"
+    // ③ 下拉标签**始终**隐藏（曾用 @media 断点摘 —— 窗口比断点宽时标签又回来把按钮挤下去）
+    (/^\.drama-canvas-head \.drama-canvas-select > span \{ display: none; \}/m.test(css) ? ok : fail)(
+      "【201】下拉标签始终隐藏（值本身可读；断点式隐藏会在宽窗口失效）"
     );
     // ④ 进度芯片 0 值不渲染（空画布只剩「待生成 N」，否则固定三项把顶栏撑出去）
     (/progress\.images > 0 \?/.test(canvasSrc2) && /progress\.videos > 0 \?/.test(canvasSrc2) ? ok : fail)(
@@ -244,6 +244,18 @@ export async function run() {
     // ⑤ 按钮组不折行（内部折行 = 一排按钮断成两截，最难看）
     (/\.drama-canvas-head-actions \{[^}]*flex-wrap: nowrap/.test(css) ? ok : fail)(
       "【201】按钮组内部不折行（整体换行由顶栏兜底）"
+    );
+    /* ⑥⛔ 用户 09-29 第二次反馈「右上角不还是空白这么多吗，往右靠啊」的根治：
+       顶栏必须 nowrap（断点式的「窄屏才摘标签」在窗口比断点宽时失效 → 按钮又掉第二行），
+       且超宽窗口要收回避让留白（浮层 max-width 1320px 居中后两侧自然留白够，再留 116px 就是白占）。 */
+    (/\.drama-canvas-head \{[^}]*flex-wrap: nowrap/.test(css) ? ok : fail)(
+      "【201】顶栏 flex-wrap: nowrap（永不换行 —— 靠断点摘标签的方案在宽窗口会失效）"
+    );
+    (/@media \(min-width: 1600px\)[\s\S]{0,160}padding-right: 14px/.test(css) ? ok : fail)(
+      "【201】超宽窗口收回避让留白（浮层居中后 116px 避让就是白占）"
+    );
+    (/flex: 1 1 auto; flex-wrap: nowrap; min-width: 0; overflow: hidden/.test(css) ? ok : fail)(
+      "【201】左侧可收缩（nowrap 下靠标题截断让位，而不是把按钮挤下去）"
     );
   }
 
