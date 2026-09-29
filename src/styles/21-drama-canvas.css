@@ -56,12 +56,9 @@
   flex: none;
 }
 .drama-canvas-head-left { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
-/* ⛔ 09-28 顶栏溢出修复：按钮组 flex:none 不收缩，此前空间不够时**只有 head-left 被压**
-   ⇒ 标题竖排成一字宽、下拉框 1 字宽（用户截图）。左侧子元素一律禁止收缩，
-   放不下时整块换行而不是压扁。 */
-.drama-canvas-head-left > * { flex-shrink: 0; }
 .drama-canvas-head-left > div:first-of-type { min-width: 160px; }
 .drama-canvas-head-icon {
+  flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -100,7 +97,7 @@
 }
 .drama-canvas-head-btn.is-brand:hover { filter: brightness(1.06); }
 
-.drama-canvas-select { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
+.drama-canvas-select { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
 .drama-canvas-select select {
   height: 26px;
   max-width: 170px;
@@ -1248,10 +1245,25 @@
    只需避让 116px。腾出的空间给按钮，并让整个顶栏**一行排开**（左侧信息 + 右侧按钮组）。 */
 /* 画布 / 分镜表下拉：给最小宽度 —— 窄窗口下此前被压成「1」字宽（用户截图） */
 .drama-canvas-head .app-select-trigger { min-width: 106px; }
-/* 按钮组不折行（整体换行由 head 兜底） */
-.drama-canvas-head-actions { flex-wrap: nowrap; }
-/* 窄窗口瘦身：先摘下拉标签（值本身可读，配合 title/aria-label），标题块收窄 */
-@media (max-width: 1260px) {
-  .drama-canvas-head .drama-canvas-select > span { display: none; }
-  .drama-canvas-head-left > div:first-of-type { min-width: 118px; }
+/* ⛔⛔ 顶栏**永不换行**（用户 09-29 第二次反馈「右上角不还是空白这么多吗，往右靠啊」）：
+   上一次用 @media(max-width:1260px) 摘标签 —— 但窗口比断点宽时标签又回来、内容重新撑爆，
+   于是按钮又掉到第二行。改成：标签**始终隐藏**（值本身可读 + 控件 title 显示当前值），
+   顶栏 nowrap，左侧允许收缩（标题截断），按钮组固定贴右。任何窗口宽度都单行。 */
+.drama-canvas-head { flex-wrap: nowrap; }
+.drama-canvas-head .drama-canvas-select > span { display: none; }
+.drama-canvas-head-left { flex: 1 1 auto; flex-wrap: nowrap; min-width: 0; overflow: hidden; }
+.drama-canvas-head-left > div:first-of-type { min-width: 0; overflow: hidden; }
+.drama-canvas-head-left > div:first-of-type > b,
+.drama-canvas-head-left > div:first-of-type > small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 按钮组不折行且贴右 */
+.drama-canvas-head-actions { flex-wrap: nowrap; margin-left: auto; }
+
+/* 超宽窗口（≥1600px）下浮层居中，两侧自然留白已 >190px —— 窗控避让不再需要，
+   收回到 14px 与左侧对称（否则宽屏右上角又会多出一块空白）。 */
+@media (min-width: 1600px) {
+  .drama-canvas-head { padding-right: 14px; }
 }
