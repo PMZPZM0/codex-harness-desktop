@@ -1127,6 +1127,14 @@ export async function run() {
     (/imageKindMeta\(payload\.imageType\)\.purpose/.test(inspSrc222) ? ok : fail)(
       "【222】生图节点在检查器里先讲清「是什么图 / 多大 / 几个图块」再列字段"
     );
+    /* 09-29 用户：「生图节点就这几个吗，明显不对」—— 六类图曾藏在节点内部下拉里，
+       菜单上只有一个泛「生图」。现在菜单把 imagegen **展开为六类图入口**（点「主图」
+       直接建主图节点，带 imageType/标题/默认尺寸）。锚：flatMap + IMAGE_KINDS + addNode 带 payload。 */
+    const menuAt222 = canvasSrc222.indexOf('if (kind === "imagegen")');
+    const menuSeg222 = menuAt222 >= 0 ? canvasSrc222.slice(menuAt222, menuAt222 + 600) : "";
+    (/flatMap/.test(canvasSrc222) && menuSeg222.includes("IMAGE_KINDS.map") && menuSeg222.includes('imageType: imgKind.key') && menuSeg222.includes("size: imgKind.size") ? ok : fail)(
+      "【222】添加节点菜单把生图节点**展开为六类图入口**（主图/SKU/详情/场景/白底/买家秀，点哪个建哪个，带默认尺寸）"
+    );
   }
   /* ══ 每个卡片的侧边栏配置互不重复、一一对应、职责明确（09-29 用户实测：
      参考图卡在检查器里冒出一堆无关字段、甚至还能「生图」—— 因为检查器不看卡角色）══
