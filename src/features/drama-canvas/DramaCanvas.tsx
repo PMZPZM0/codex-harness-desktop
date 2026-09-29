@@ -115,6 +115,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [batchMenuOpen, setBatchMenuOpen] = useState(false);
+  const [flowMenuOpen, setFlowMenuOpen] = useState(false);   // 工作流类型菜单（标题旁 ▾）
   const [marquee, setMarquee] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string | null } | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -244,25 +245,44 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
     }
     setNaming(null);
   }, [naming, board, story, pushNotice]);
+  /* 工作流类型（09-29）：按**节点构成**推断，刻意不持久化。
+     判据：有分镜表 / 镜头 / 角色 / 场景卡 ⇒ 短剧工作流；否则生图工作流。
+     好处：老画布自动适用（没有数据结构迁移）、用户手加了分镜表卡时类型自然跟着变
+     （那一刻他确实在做短剧）。用户原话：「我现在新建的是生图工作流，没有生图和视频工作流切换」
+     —— 病根是画布压根没有"这是什么工作流"这个概念，两种模板的 UI 全混在一起。 */
+  const flow = useMemo(() => {
+    let dramaNodes = 0;
+    for (const node of board.nodes) {
+      const kind = String(node.data?.kind || "");
+      if (kind === "storyboard" || kind === "shot" || kind === "character" || kind === "location") dramaNodes++;
+    }
+    const type: "drama" | "image" = dramaNodes > 0 ? "drama" : "image";
+    return { type, dramaNodes, empty: board.nodes.length === 0 };
+  }, [board.nodes]);
+
   /* 工作流进度（09-28）：当前板「图 / 视频 / 配音」已完成数 + 素材·拍摄类卡中还没有产物的
-     「待生成」数。实时跟随 board.nodes —— 让用户随时知道这条工作流走到哪了。 */
+     「待生成」数。实时跟随 board.nodes —— 让用户随时知道这条工作流走到哪了。
+     ⛔ 09-29：pending 同时留一份**明细**（哪几张卡），顶栏那个数字要能说清自己从哪来
+     （用户原话：「那个待生成 3 又是什么啊」—— 数字没有出处就是噪声）。 */
   const progress = useMemo(() => {
-    let images = 0, videos = 0, audios = 0, pending = 0;
+    let images = 0, videos = 0, audios = 0;
+    const pendingCards: string[] = [];
     for (const node of board.nodes) {
       const kind = String(node.data?.kind || "");
       const p = (node.data?.payload || {}) as Record<string, any>;
       const hasImage = Boolean(p.first_frame || p.path || p.ref);
+      const label = String(p.title || p.name || node.id);
       if (kind === "image" || kind === "character" || kind === "location") {
-        if (hasImage) images++; else pending++;
+        if (hasImage) images++; else pendingCards.push(label);
       } else if (kind === "shot") {
         if (p.video) videos++;
         else if (p.audio) audios++;
         else if (p.first_frame) { /* 有首帧还没出片，不算完成也不重复计图 */ }
-        else pending++;
+        else pendingCards.push(label);
         if (p.first_frame) images++;
       }
     }
-    return { images, videos, audios, pending };
+    return { images, videos, audios, pending: pendingCards.length, pendingCards };
   }, [board.nodes]);
   const actions = useMemo<DramaActions>(() => ({
     board,
@@ -397,27 +417,73 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
         <header className="drama-canvas-head">
           <div className="drama-canvas-head-left">
             <span className="drama-canvas-head-icon"><Clapperboard size={17} /></span>
+            {/* 09-29 用户三个问题（「两个下拉框不知道是什么」「没有生图和视频工作流切换」「待生成 3 是什么」）
+                的共同病根：画布没有"这是什么工作流"的显式概念。现在标题直接显示**当前类型**
+                （按画布上的卡片自动判断），点一下就是新建另一种工作流的入口。 */}
             <div>
-              <b>AI 画布工作流</b>
-              <small>短剧：剧本拆卡逐镜出片；生图：需求 → 提示词 → 出图 A/B → 选图</small>
+              <b>
+                {flow.type === "drama" ? "短剧工作流" : "生图工作流"}
+                <button
+                  className="drama-canvas-flowbtn"
+                  aria-expanded={flowMenuOpen}
+                  title="切换 / 新建工作流（当前类型按画布上的卡片自动判断）"
+                  onClick={() => setFlowMenuOpen((v) => !v)}
+                >
+                  <ChevronDown size={11} />
+                </button>
+              </b>
+              <small>{flow.type === "drama" ? "剧本 → 角色 → 分镜表 → 逐镜出片" : "需求 → 主提示词 → 出图 A/B → 选图"}</small>
             </div>
-            <label className="drama-canvas-select nodrag" title={workspace || "尚未选择工作文件夹"}>
+            {flowMenuOpen ? (
+              <>
+                <div className="drama-canvas-headmenu-backdrop" onClick={() => setFlowMenuOpen(false)} />
+                <div className="drama-canvas-headmenu" role="menu">
+                  <div className="drama-canvas-headmenu-sep">
+                    当前：{flow.type === "drama" ? "短剧工作流" : "生图工作流"}{flow.empty ? "（空画布，按默认算）" : "（按画布上的卡片判断）"}
+                  </div>
+                  <button role="menuitem" onClick={() => { setFlowMenuOpen(false); createStarter("image"); }}>
+                    <Images size={13} /><span>生图工作流<small>需求 → 主提示词 → 出图 A/B → 选图（新建一张画布）</small></span>
+                  </button>
+                  <button role="menuitem" onClick={() => { setFlowMenuOpen(false); createStarter("drama"); }}>
+                    <Clapperboard size={13} /><span>短剧工作流<small>剧本 → 角色 → 分镜表 → 逐镜出片（新建一张画布）</small></span>
+                  </button>
+                  <div className="drama-canvas-headmenu-sep">其它</div>
+                  <button role="menuitem" onClick={() => { setFlowMenuOpen(false); setNaming({ kind: "board", value: "新画布" }); }}>
+                    <LayoutGrid size={13} /><span>空白画布<small>自己拖卡与连线</small></span>
+                  </button>
+                </div>
+              </>
+            ) : null}
+            <label className="drama-canvas-select nodrag" title={`画布（项目）：一张画布 = 一个工作流。这里是切换/查看已有画布${workspace ? `\n工作文件夹：${workspace}` : "\n（还没选工作文件夹，生成产物不会落盘）"}`}>
               <span>画布</span>
-              <AppSelect value={board.board} onChange={(v) => board.switchBoard(v)} ariaLabel="画布" options={board.boards.length ? board.boards.map((b) => ({ value: b.name, label: b.title || b.name })) : [{ value: "main", label: "main" }]} />
+              <AppSelect value={board.board} onChange={(v) => board.switchBoard(v)} ariaLabel="画布（项目）" options={board.boards.length ? board.boards.map((b) => ({ value: b.name, label: b.title || b.name })) : [{ value: "main", label: "main" }]} />
             </label>
-            <label className="drama-canvas-select nodrag" title="分镜表是唯一真源，会同时存一份到工作区供引擎读取">
-              <span>分镜表</span>
-              <AppSelect value={story.storyName} onChange={(v) => story.switchStory(v)} ariaLabel="分镜表" options={story.stories.length ? story.stories.map((s) => ({ value: s.name, label: `${s.title || s.name} · ${s.shots} 镜` })) : [{ value: "main", label: "（尚无）" }]} />
-            </label>
+            {/* 分镜表只属于短剧工作流 —— 生图流显示它是纯噪声（用户截图里那个「（尚无）」） */}
+            {flow.type === "drama" ? (
+              <label className="drama-canvas-select nodrag" title="分镜表：短剧的唯一真源（剧本/角色/场次/镜头），会同时存一份到工作区供引擎读取">
+                <span>分镜表</span>
+                <AppSelect value={story.storyName} onChange={(v) => story.switchStory(v)} ariaLabel="分镜表" options={story.stories.length ? story.stories.map((s) => ({ value: s.name, label: `${s.title || s.name} · ${s.shots} 镜` })) : [{ value: "main", label: "（尚无）" }]} />
+              </label>
+            ) : null}
             {/* ⛔ 09-28 工作流打磨：进度芯片 —— 当前板「图 / 视频 / 配音 / 待生成」实时计数，
                 让用户随时知道这条工作流走到哪了（此前生成状态只能逐卡点开看）。
                 ⛔ 09-29 顶栏窄：**0 值不渲染** —— 空画布只留「待生成 N」，宽窄随内容自适应，
-                不再用固定三项把顶栏撑出去（用户截图：右边空一大块、按钮被挤到第二行）。 */}
-            <div className="drama-canvas-progress nodrag" title="当前画布的生成进度（素材卡 / 拍摄卡计入待生成）">
-              {progress.images > 0 ? <span className="is-ok">图 {progress.images}</span> : null}
-              {progress.videos > 0 ? <span className="is-ok">视频 {progress.videos}</span> : null}
-              {progress.audios > 0 ? <span className="is-ok">配音 {progress.audios}</span> : null}
-              {progress.pending > 0 ? <span className="is-warn">待生成 {progress.pending}</span> : <span className="is-done">已完成 ✓</span>}
+                不再用固定三项把顶栏撑出去（用户截图：右边空一大块、按钮被挤到第二行）。
+                ⛔ 09-29 二改（用户：「那个待生成 3 又是什么啊」）：数字必须有出处 —— 悬停列出
+                是哪几张卡，点一下直接跑批量生成。悬空的一个数字就是噪声。 */}
+            <div className="drama-canvas-progress nodrag">
+              {progress.images > 0 ? <span className="is-ok" title="已出图的卡片数">图 {progress.images}</span> : null}
+              {progress.videos > 0 ? <span className="is-ok" title="已出片的镜头数">视频 {progress.videos}</span> : null}
+              {progress.audios > 0 ? <span className="is-ok" title="已配音的镜头数">配音 {progress.audios}</span> : null}
+              {progress.pending > 0 ? (
+                <button
+                  className="drama-canvas-pending"
+                  title={`还没生成产物的卡片（${progress.pending} 张）：\n· ${progress.pendingCards.join("\n· ")}\n\n点一下 = 批量生成（图片/配音真生成，视频只提交任务）`}
+                  onClick={() => void story.generateBatch("pending")}
+                >
+                  待生成 {progress.pending}
+                </button>
+              ) : <span className="is-done" title="这张画布上的卡片都有产物了">已完成 ✓</span>}
             </div>
           </div>
           <div className="drama-canvas-head-actions">
@@ -620,7 +686,12 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
           ) : null}
         </div>
 
-        <DramaTimeline onFocusNode={(id) => { board.select([id], id); setInspectorOpen(true); centerOn(id); }} />
+        {/* 镜头时间线只属于短剧工作流（它读的是分镜表的场次/镜头）。
+            09-29：生图工作流下这条会显示「未绑定分镜表 0 镜 · 合计 0s / 还没有镜头…」
+            —— 全是噪声（用户截图红框二）。按类型收敛掉。 */}
+        {flow.type === "drama" ? (
+          <DramaTimeline onFocusNode={(id) => { board.select([id], id); setInspectorOpen(true); centerOn(id); }} />
+        ) : null}
 
         {menu ? (
           <div className="drama-canvas-context" style={{ left: menu.x, top: menu.y }} role="menu">

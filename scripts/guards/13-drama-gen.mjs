@@ -238,9 +238,39 @@ export async function run() {
     (/\.drama-canvas-head \.app-select-trigger \{[^}]*min-width:\s*\d+px/.test(css) ? ok : fail)(
       "【201】顶栏下拉有 min-width（不给就被 flex 压成一字宽，选中值读不出来）"
     );
-    // ③ 下拉标签**始终**隐藏（曾用 @media 断点摘 —— 窗口比断点宽时标签又回来把按钮挤下去）
-    (/^\.drama-canvas-head \.drama-canvas-select > span \{ display: none; \}/m.test(css) ? ok : fail)(
-      "【201】下拉标签始终隐藏（值本身可读；断点式隐藏会在宽窗口失效）"
+    /* ③ ⛔⛔ 09-29 **反转**：上一版这条要求「标签**始终**隐藏」（当时为了换单行）。
+       结果用户看到两个没有任何说明的裸值 —— 原话「上面两个下拉框也不知道是什么东西」。
+       省空间省错了地方：标签回答「这个控件是什么」，值才回答「当前选的是哪个」。
+       新判据：标签**必须可见**，且不许再用断点式隐藏（断点会让宽窗口翻车，这是上一轮的教训）。 */
+    {
+      const spanRule = /\.drama-canvas-head \.drama-canvas-select > span \{([^}]*)\}/.exec(css);
+      const hiddenByRule = Boolean(spanRule && /display:\s*none/.test(spanRule[1]));
+      const hiddenByMedia = /@media[^{]*\{[\s\S]{0,500}?drama-canvas-select\s*>\s*span\s*\{[^}]*display:\s*none/.test(css);
+      (!hiddenByRule && !hiddenByMedia ? ok : fail)(
+        "【201】下拉标签可见（上一版为单行把它藏了，用户看不懂裸值；也不许用断点式隐藏）"
+      );
+    }
+    // ③.5 工作流类型必须显式可见（病根：画布没有"这是什么工作流"的概念，两种模板 UI 混在一起）
+    (canvasSrc2.includes('{flow.type === "drama" ? "短剧工作流" : "生图工作流"}') ? ok : fail)(
+      "【201】顶栏标题显示当前工作流类型（按卡片推断，用户才不会问「我这是哪个工作流」）"
+    );
+    // 按类型收敛无关 UI：生图工作流里挂分镜表下拉、镜头时间线 = 纯噪声（用户截图红框二）
+    (/\{flow\.type === "drama" \? \([\s\S]{0,200}?<DramaTimeline/.test(canvasSrc2) ? ok : fail)(
+      "【201】时间线只在短剧工作流渲染（生图流显示「未绑定分镜表 0 镜」是噪声）"
+    );
+    (canvasSrc2.includes("flow.type === \"drama\" ? (") && /\{flow\.type === "drama" \? \(\s*<label className="drama-canvas-select nodrag" title="分镜表/.test(canvasSrc2) ? ok : fail)(
+      "【201】分镜表下拉只在短剧工作流渲染（生图流那个「（尚无）」没人看得懂）"
+    );
+    // 「待生成 N」= 入口而不是死数字：必须是 button（可点触发批量生成）且悬停列明细
+    (/<button\s+className="drama-canvas-pending"[\s\S]{0,400}?onClick=\{\(\) => void story\.generateBatch\("pending"\)\}/.test(canvasSrc2) ? ok : fail)(
+      "【201】「待生成 N」可点击直接批量生成（挂牌子不进门 = 还是死数字）"
+    );
+    (canvasSrc2.includes("progress.pendingCards") && canvasSrc2.includes("progress.pendingCards.join") ? ok : fail)(
+      "【201】「待生成 N」悬停列出是哪几张卡（数字必须有出处）"
+    );
+    // ⛔ 实测坑：不给 nowrap 时「画布」标签被 flex 压成「画/布」两行，比隐藏还难看
+    (/\.drama-canvas-head \.drama-canvas-select > span \{[^}]*white-space:\s*nowrap/.test(css) ? ok : fail)(
+      "【201】下拉标签不折行（实测压成「画/布」两行）"
     );
     // ④ 进度芯片 0 值不渲染（空画布只剩「待生成 N」，否则固定三项把顶栏撑出去）
     (/progress\.images > 0 \?/.test(canvasSrc2) && /progress\.videos > 0 \?/.test(canvasSrc2) ? ok : fail)(
