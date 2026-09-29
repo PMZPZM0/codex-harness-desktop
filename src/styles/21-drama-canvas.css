@@ -1549,3 +1549,48 @@ button.drama-canvas-card-media:hover { color: var(--accent); }
   border-radius: 4px;
   display: block;
 }
+
+/* ───────────────── 卡片角色标识 + 流程步骤号（09-29 用户「生图流程看不懂」四个困惑全选）
+   设计：角色按**状态**判定（同一张 image 卡：没出图=「提示词」、出图=「出图结果」）。
+   · 输入卡（提示词/设定/说明）→ 中性灰徽章，无额外装饰；
+   · 产物卡（出图结果/成片/定妆照）→ 蓝色 accent 徽章 + **卡头微染蓝** —— 一眼分出"喂进去的"与"吐出来的"；
+   · 步骤号（①②③，来自模板 payload.step）→ 圆形小数字，标出"先干什么后干什么"。
+   ⛔ 用卡头背景微染而不是整卡 box-shadow/border：选中态已经用了 box-shadow，整卡叠加会打架。 */
+.drama-canvas-card-role {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+.drama-canvas-card-role.is-input {
+  color: var(--muted);
+  border: 1px solid var(--line-soft);
+  background: var(--panel-2);
+}
+.drama-canvas-card-role.is-output {
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line-soft));
+  background: var(--accent-soft);
+}
+.drama-canvas-card.is-role-output > .drama-canvas-card-head {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.drama-canvas-card-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin-right: 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  vertical-align: 1px;
+}

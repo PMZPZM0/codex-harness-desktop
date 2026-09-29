@@ -159,10 +159,10 @@ export async function run() {
       "【192】未配置态按钮变 ghost（一眼看出「这条通道还没通」）"
     );
 
-    (canvas.includes("生图工作流已就绪") && canvas.includes("生图 · 首帧") ? ok : fail)(
-      "【192】工作流建立提示用真实按钮名（原来写「点『生成』」，卡片上根本没这个按钮，用户照着找不到）"
+    (canvas.includes("生图工作流已就绪") && canvas.includes("点「生图」") ? ok : fail)(
+      "【192】工作流建立提示用真实按钮名（image 卡按钮是「生图」—— 提示里的名字必须与卡面逐字同源；09-29 按钮从「生图 · 首帧」改名后这里同步）"
     );
-    (panel.includes("生图 · 首帧") && panel.includes("视频 · 生成") ? ok : fail)(
+    (panel.includes("点「生图」") && panel.includes("「视频」") && panel.includes("「配音」") ? ok : fail)(
       "【192】结果面板空态同样用真实按钮名（提示与按钮名不一致 = 用户找不到入口）"
     );
   /* ══ 分镜表管理（09-29 用户：「分镜表也加一个在项目管理里面加一个管理功能」）══
@@ -687,6 +687,37 @@ export async function run() {
     );
     (/drama-canvas-card-ref-img/.test(css211) ? ok : fail)(
       "【211】参考图缩略条样式在位（只接线不写样式 = 图撑满整卡，与产物还是分不清）"
+    );
+  }
+  /* ══ 生图流程可读性（09-29 用户：「生图流程我有点看不懂」）══
+     用户在四个困惑里全选：按钮文案费解 / 卡片角色分不清 / 图落在哪张卡不明 / 流程顺序乱，
+     改进方向选「卡片加角色标签 + 配色」。四条断言各对应一处：
+     ⛔ 角色必须**按状态**判定（同一张 image 卡没出图=提示词、出图=出图结果）—— 按 kind 判就分不出。 */
+  {
+    const card212 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8"));
+    const btn212 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaChannelButton.tsx"), "utf8"));
+    const css212 = readFileSync(join(ROOT, "src", "styles", "21-drama-canvas.css"), "utf8");
+    const staleName = !readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8").includes("「生图 · 首帧」")
+      && !readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaResultsPanel.tsx"), "utf8").includes("「生图 · 首帧」");
+    const model212 = readFileSync(join(ROOT, "src", "lib", "drama-canvas-model.mjs"), "utf8");
+
+    (/payload\.path \|\| payload\.url \? \{ key: "output", label: "出图结果" \} : \{ key: "input", label: "提示词" \}/.test(card212) ? ok : fail)(
+      "【212】卡片角色按状态判定（image 卡：有产物=出图结果、无产物=提示词）"
+    );
+    (/drama-canvas-card-role is-\$\{role\.key\}/.test(card212) && /drama-canvas-card-step/.test(card212) ? ok : fail)(
+      "【212】卡头渲染角色徽章 + 步骤号（算了 role 不渲染 = 白算）"
+    );
+    (/\.drama-canvas-card-role\.is-output/.test(css212) && /\.drama-canvas-card\.is-role-output > \.drama-canvas-card-head/.test(css212) ? ok : fail)(
+      "【212】产物卡配色在位（⛔ 卡头微染而非整卡 box-shadow —— 选中态已占用 box-shadow）"
+    );
+    (/hasImage \? "重出" : kind === "shot" \? "首帧" : ""/.test(btn212) ? ok : fail)(
+      "【212】「首帧」只留给 shot 卡（视频术语长在出图卡上 = 用户不知道点下去干什么）"
+    );
+    (staleName ? ok : fail)(
+      "【212】文案里的按钮名必须与卡面逐字一致（不许再出现裸「生图 · 首帧」—— 那是 shot 卡的叫法）"
+    );
+    (((() => { const cnt = (model212.match(/step: [1-9]/g) || []).length; return cnt >= 15; })()) ? ok : fail)(
+      "【212】三个模板都标了流程步骤号（需求→提示词→出图→选图 / 白模 / 3D 建模各自的编号）"
     );
   }
 }

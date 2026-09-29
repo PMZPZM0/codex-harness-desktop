@@ -288,11 +288,11 @@ export function imageStarterWorkflow(baseX = 120, baseY = 100) {
        引导词会被生成逻辑当真实提示词发给模型（污染），出图卡的「按主提示词生成…」也会和
        上游拼接重复。引导语由卡片**空态文案**承担（DramaNodeCard 各分支），payload 留空 =
        生成时自动沿用连入的上游提示词（upstreamPrompts）。 */
-    node("n-brief", "note", { title: "需求说明" }, baseX, baseY),
-    node("n-prompt", "image", { title: "主提示词" }, baseX + col, baseY),
-    node("n-out-a", "image", { title: "出图 A", variant: "更亮 / 更暖" }, baseX + col * 2, baseY),
-    node("n-out-b", "image", { title: "出图 B", variant: "更冷 / 更暗" }, baseX + col * 2, baseY + row),
-    node("n-pick", "note", { title: "选图结论" }, baseX + col * 3, baseY),
+    node("n-brief", "note", { title: "需求说明", step: 1 }, baseX, baseY),
+    node("n-prompt", "image", { title: "主提示词", step: 2 }, baseX + col, baseY),
+    node("n-out-a", "image", { title: "出图 A", variant: "更亮 / 更暖", step: 3 }, baseX + col * 2, baseY),
+    node("n-out-b", "image", { title: "出图 B", variant: "更冷 / 更暗", step: 3 }, baseX + col * 2, baseY + row),
+    node("n-pick", "note", { title: "选图结论", step: 4 }, baseX + col * 3, baseY),
   ];
   const edges = [
     ["n-brief", "n-prompt", "input"],
@@ -392,15 +392,15 @@ export function whiteboxStarterWorkflow(baseX = 120, baseY = 100) {
   const col = 430, row = 340;
   const node = (id, kind, payload, x, y) => ({ id, kind, payload: { ...dramaDefaultPayload(kind), ...payload }, position: { x, y }, size: { width: dramaNodeDef(kind).width, height: dramaNodeDef(kind).height } });
   const nodes = [
-    node("n-brief", "note", { title: "需求说明", flow: "whitebox", text: "要拍什么、给谁看、时长与画幅（9:16 竖屏 / 16:9 横屏）。白模管构图与运镜，AI 管渲染。" }, baseX, baseY),
-    node("n-blockout", "note", { title: "白模预演（在 Blender 里做）", flow: "whitebox", text: [
+    node("n-brief", "note", { title: "需求说明", flow: "whitebox", step: 1, text: "要拍什么、给谁看、时长与画幅（9:16 竖屏 / 16:9 横屏）。白模管构图与运镜，AI 管渲染。" }, baseX, baseY),
+    node("n-blockout", "note", { title: "白模预演（在 Blender 里做）", flow: "whitebox", step: 2, text: [
       "① 用简单几何体搭场景：方块=建筑，圆柱=柱子，人只用简单人偶 —— 官方建议主体仅保留躯体，别带四肢细节（否则渲染会四肢僵化）；",
       "② 相机路径打 keyframe 锁死运镜：推拉摇移、一镜到底都靠这一步控制；",
       "③ 低质量快速渲染导出参考片/关键帧 —— 小尺寸低帧率就够，细节由 AI 补。",
     ].join("\n") }, baseX + col, baseY),
-    node("n-ref", "image", { title: "白模关键帧", flow: "whitebox" }, baseX + col * 2, baseY),
-    node("n-shot", "shot", { title: "AI 渲染镜头", flow: "whitebox" }, baseX + col * 3, baseY),
-    node("n-final", "note", { title: "成片结论", flow: "whitebox" }, baseX + col * 4, baseY),
+    node("n-ref", "image", { title: "白模关键帧", flow: "whitebox", step: 3 }, baseX + col * 2, baseY),
+    node("n-shot", "shot", { title: "AI 渲染镜头", flow: "whitebox", step: 4 }, baseX + col * 3, baseY),
+    node("n-final", "note", { title: "成片结论", flow: "whitebox", step: 5 }, baseX + col * 4, baseY),
   ];
   const edges = [
     ["n-brief", "n-blockout", "input"],
@@ -423,15 +423,15 @@ export function model3dStarterWorkflow(baseX = 120, baseY = 100) {
   const col = 430, row = 340;
   const node = (id, kind, payload, x, y) => ({ id, kind, payload: { ...dramaDefaultPayload(kind), ...payload }, position: { x, y }, size: { width: dramaNodeDef(kind).width, height: dramaNodeDef(kind).height } });
   const nodes = [
-    node("n-brief", "note", { title: "建模需求", flow: "model3d", text: "要什么资产、用途（电商展示/场景组装/游戏道具）、精度要求：重点资产走 Standard（质量优先），批量筛选走 Turbo（极速）。" }, baseX, baseY),
-    node("n-ref", "image", { title: "参考图 / 商品图", flow: "model3d" }, baseX + col, baseY),
-    node("n-gen3d", "note", { title: "3D 资产生成（Aholo Lux3D）", flow: "model3d", text: [
+    node("n-brief", "note", { title: "建模需求", flow: "model3d", step: 1, text: "要什么资产、用途（电商展示/场景组装/游戏道具）、精度要求：重点资产走 Standard（质量优先），批量筛选走 Turbo（极速）。" }, baseX, baseY),
+    node("n-ref", "image", { title: "参考图 / 商品图", flow: "model3d", step: 2 }, baseX + col, baseY),
+    node("n-gen3d", "note", { title: "3D 资产生成（Aholo Lux3D）", flow: "model3d", step: 3, text: [
       "① 拿参考图（或一句话描述）到 Aholo Lux3D 生成 3D 模型；",
       "② 先出高斯预览确认外观，再生成 PBR 材质网格；",
       "③ 导出 GLB，放到当前工作目录，把文件路径记在下面的卡片上。",
     ].join("\n") }, baseX + col * 2, baseY),
-    node("n-model", "note", { title: "3D 资产清单（GLB 路径）", flow: "model3d" }, baseX + col * 3, baseY),
-    node("n-render", "note", { title: "Blender 组装 / 渲染", flow: "model3d", text: "把生成的资产按布局组装进场景（可逐件调整位置、加道具），打光渲染出效果图 / 白模预演视频。" }, baseX + col * 4, baseY),
+    node("n-model", "note", { title: "3D 资产清单（GLB 路径）", flow: "model3d", step: 4 }, baseX + col * 3, baseY),
+    node("n-render", "note", { title: "Blender 组装 / 渲染", flow: "model3d", step: 5, text: "把生成的资产按布局组装进场景（可逐件调整位置、加道具），打光渲染出效果图 / 白模预演视频。" }, baseX + col * 4, baseY),
   ];
   const edges = [
     ["n-brief", "n-ref", "input"],
