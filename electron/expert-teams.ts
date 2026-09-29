@@ -5,7 +5,9 @@
 export type { ExpertTeamMember, ExpertTeamConfig } from "./expert-teams/01-team-types";
 export { setExpertTeamsFile, getExpertTeamsFile, readExpertTeams, writeExpertTeams } from "./expert-teams/02-team-file-io";
 export { normalizeTeamConfig } from "./expert-teams/03-team-id-normalize";
-export { buildChengxiangExpertTeam, buildZhiweiExpertTeam, buildDongmingExpertTeam } from "./expert-teams/04-team-builders";
+export { buildChengxiangExpertTeam, buildZhiweiExpertTeam, buildDongmingExpertTeam, buildModel3dExpertTeam } from "./expert-teams/04-team-builders";
+export { videoProductionTeam } from "./expert-teams/14-video-production-team";
+export { imageGenExpert } from "./expert-teams/15-image-gen-expert";
 export { SKILLS_PATH_MARK, skillsPathBlock, readSkillsPath, syncSkillsPath, syncSkillsPathInTeam } from "./expert-teams/05-skills-path";
 export { buildTeamSystemPrompt, buildTeamTools, buildTeamPhaseTool } from "./expert-teams/06-team-tools";
 export { buildDefaultExpertTeams } from "./expert-teams/07-team-default";

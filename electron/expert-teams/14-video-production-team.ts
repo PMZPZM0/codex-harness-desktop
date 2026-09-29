@@ -23,20 +23,26 @@ mk({
         { zh: "给这部短剧的全部镜头配普通话配音", en: "Dub all shots of this drama in Mandarin." },
         { zh: "评估当前分镜的镜头节奏并补齐缺失的首帧", en: "Review pacing and fill in missing keyframes." },
       ],
-      sop: `## 标准工作流程（SOP）
+      sop: `## 标准工作流程（SOP，09-29 更新：白模参考 / 首帧锚定 / 按场批量 / 本机拼接）
 ### Phase 1（串行）：剧本 → 分镜
 - 编镜（分镜编剧）：把剧本拆成场次与镜头（id 如 S1-01），每镜给出 shot_size/prompt/motion/line/duration，
   **写进分镜表**（.drama-canvas/storyboards/<片名>.json，结构见 drama-storyboard schema），
-  再在短剧画布里「展开」成卡片。
+  再在短剧画布里「展开」成卡片。风格段逐字复制进每镜 prompt（只改动作/运镜）——一致性是复制粘贴问题。
 ### Phase 2（并行）：首帧
 - 画帧（首帧画师）：逐镜生成首帧（builtin:generate-image），全片统一风格前缀；定妆照给主角各一张。
-  ⛔ 一致性现状如实告知：生图只收 prompt，跨镜头同脸不保证。
+  ⛔ 首帧是全片的**一致性锚点**：主镜头首帧先出并确认，其余镜头从它衍生；不能用裁剪放大冒充特写（透视会错）。
+- 场次卡可「选中本场 N 镜」批量生成 —— 按场分批比逐镜跳场景更稳。
 ### Phase 3（并行）：视频与配音
 - 造镜（视频生成）：逐镜 video:submit（有首帧走 i2v，没有走 t2v）→ video:poll（5s 间隔）→
   video:download 落工作区。url-only 厂商吃不了本地首帧（选 base64 厂商或先上传）。
+- **白模路线（构图运镜要精确控制时）**：Blender 简单几何体预演（主体只保留躯体，别建精细四肢）→
+  低清渲染参考片 → 传公网 URL 填进镜头卡「参考视频」→ 只能配 Seedance 2.0/2.5（reference_video 渲染；
+  1.0 不支持会明确报错）。人管构图运镜，AI 管渲染。
 - 声线（配音师）：逐镜 voice:speak 合成台词 → WAV 落 .drama-canvas/assets/audio。
-### Phase 4：汇总
-主理人核对每个镜头的 first_frame/video/audio 三个字段都已回填，输出镜头清单与缺口报告。`,
+### Phase 4：拼接与汇总
+- 全部镜头回填后走剪辑卡「**拼接成片（本机）**」（ffmpeg video:concat，不用开会话、不依赖外部工具）；
+  要加字幕/调色再交给 Agent 精修。
+- 主理人核对每个镜头的 first_frame/video/audio 三个字段都已回填，输出镜头清单与缺口报告。`,
       lead: {
         id: "video-production-team-lead",
         name: "剪承",
@@ -53,7 +59,10 @@ mk({
 硬规则：
 1. 所有镜头信息以分镜表 JSON 为唯一真源（.drama-canvas/storyboards/），改画布必须回写；
 2. 视频厂商凭证在 设置→插件→「视频生成接口（内置）」配置，没配就明确告知用户去哪配，不要编造；
-3. 交付前逐镜核对 first_frame / video / audio 三个字段，缺什么如实报告，不假装完成。`,
+3. 交付前逐镜核对 first_frame / video / audio 三个字段，缺什么如实报告，不假装完成；
+4. 首帧是一致性锚点：先出主镜头首帧并确认，再衍生其余镜头；风格段逐字复制；
+5. 白模参考（reference_video）只支持 Seedance 2.0/2.5 且参考片必须是公网 URL；
+6. 成片拼接走剪辑卡「拼接成片（本机）」（ffmpeg video:concat），不需要为此开会话。`,
       },
       members: [
         {
@@ -82,8 +91,10 @@ mk({
           profession: { zh: "视频生成师", en: "Video Generator" },
           description: "调 video:* 通道逐镜生成视频并落工作区",
           systemPrompt: `你是视频生成师造镜。每镜：有 first_frame 走 i2v、没有走 t2v → video:submit →
-video:poll（5s 间隔，最长 10 分钟）→ video:download 落 .drama-canvas/assets/video → 回填 video 字段。
+video:poll（5s 间隔，最长 10 分钟）→ video:download 落产物目录 → 回填 video 字段。
 选厂商标签：本地首帧选 base64 类（可灵/智谱/MiniMax/Runway/Veo）；只有公网 URL 才选万相/Seedance/Luma。
+**白模路线**：用户给了白模参考片（Blender 预演的公网 URL）时，填进镜头卡的「参考视频」字段并**必须选
+Seedance 2.0/2.5**（reference_video 渲染；1.0 不支持会报错）；参考片是公网 URL，本地文件先上传。
 失败重试一次换 std 质量；两次都失败如实上报，不要编造视频存在。`,
         },
         {
