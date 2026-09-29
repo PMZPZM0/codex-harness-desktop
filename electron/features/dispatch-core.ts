@@ -209,6 +209,26 @@ function dispatchMcpTools(): unknown[] {
         required: ["text"],
       },
     },
+    /* ── 自造工具（09-29 用户：「Codex 有没有办法给自己新增工具能力」）────────────
+       没有现成工具时，模型可以自己写一个 stdio MCP server 脚本（工作区或 userData 下），
+       再用 connector_register 注册成本地连接器 —— 用户重启应用后，新会话的 tools/list
+       就带上新工具。这是模型「给自己造工具」的持久化通道；一次性需求直接写工作区脚本跑即可。
+       ⛔ 不做热更新（用户明确：重启应用即可）——注册完提示用户重启，不中断当前回合。 */
+    {
+      name: "connector_register",
+      description: "注册一个本地 stdio MCP 连接器（给自己新增持久化工具）：先用工作区脚本写好一个 MCP server（node 脚本，stdin/stdout 行分隔 JSON-RPC，零依赖），再把它的启动命令注册进来。**注册后提示用户重启应用**；重启完成后新会话的 tools/list 会带上新工具。脚本的 node 依赖必须自包含（优先零依赖）。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "连接器 id（字母/数字/连字符，如 my-tools）" },
+          name: { type: "string", description: "显示名（如「我的自造工具」）" },
+          command: { type: "string", description: "启动命令（绝对路径更稳，如 node 或自带的 node 完整路径）" },
+          args: { type: "array", description: "启动参数（如「C:/path/my-tool-server.mjs」这样的脚本路径数组）", items: { type: "string" } },
+          env: { type: "object", description: "可选：注入脚本的环境变量", additionalProperties: { type: "string" } },
+        },
+        required: ["id", "name", "command"],
+      },
+    },
     /* ── 媒体生成三件套（09-29 用户：「让 Codex 能够直接调用生图工作流与视频工作流」）────────
        为什么是「生图一件 + 视频两件」：生图是同步 HTTP（几十秒，模型等着就行）；
        视频是**异步任务**（提交后要跑几分钟）—— 如果让工具一直等，会卡死整个回合，
