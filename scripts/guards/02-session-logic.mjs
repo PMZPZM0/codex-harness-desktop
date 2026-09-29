@@ -1404,4 +1404,34 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     }
   }
   }
+  /* ══ 侧栏选中态 + 会话来源标签（09-29 用户两连）══
+     ① 选中态：「初始全部无底色，只有点击选中的那项有高亮底色；hover 用边框/文字弱区分」。
+        ⛔ 此前 hover 给整卡底色与 active 的蓝底肉眼难分 ⇒ 用户截图里两张卡同时像被选中。
+        判据：hover 规则必须 **:not(.active)** 且无底色（transparent + 内描边）——
+        少了 :not(.active)，后加载的 hover 规则会把 active 的蓝底覆盖掉（同优先级按源顺序取胜）。
+     ② 来源标签：专家团主会话/专家团调度=「专家团」，成员/专家调度=「专家」，子智能体=「代理」，普通会话无标签。 */
+  {
+    const css207 = ["01-base-and-chrome.css", "02-sidebar-threads.css"]
+      .map((f) => readFileSync(join(ROOT, "src", "styles", f), "utf8")).join("\n");
+    const rowsSrc = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "02-goal-browser-notice", "01-goal-review-file-browser", "02-thread-attention-rows.tsx"), "utf8"));
+
+    (/(^|[\n])\.thread-row:not\(\.active\):hover \{[^}]*background:\s*transparent/.test(css207) ? ok : fail)(
+      "【207】hover = 无底色 + 弱区分且不作用于选中行（缺 :not(.active) = hover 覆盖选中蓝底）"
+    );
+    (/\.thread-row:not\(\.active\):hover \{[^}]*box-shadow:\s*inset 0 0 0 1px/.test(css207) ? ok : fail)(
+      "【207】hover 弱区分 = 1px 内描边（用户点名：文字颜色或边框，避免与选中态冲突）"
+    );
+    (/\.team-cluster-head:hover \{[^}]*background:\s*transparent/.test(css207) ? ok : fail)(
+      "【207】专家团簇头的 hover 同样弱化（两处表现必须一致）"
+    );
+    (/thread-source-badge/.test(rowsSrc) && /tone-\$\{sourceBadge\.tone\}/.test(rowsSrc) && /tone: "team"/.test(rowsSrc) && /tone: "expert"/.test(rowsSrc) && /tone: "agent"/.test(rowsSrc) ? ok : fail)(
+      "【207】来源标签已接线（专家团/专家/代理三种映射齐备）"
+    );
+    (/delegateKind === .subagent./.test(rowsSrc) && rowsSrc.includes(String.fromCharCode(20195,29702)) ? ok : fail)(
+      "【207】子智能体调度 =「代理」标签（用户逐字点名）"
+    );
+    (/thread-source-badge/.test(css207) && /tone-team/.test(css207) && /tone-expert/.test(css207) ? ok : fail)(
+      "【207】标签样式与接线两侧都在（只写 CSS 不接线 = 永远不显示）"
+    );
+  }
 }

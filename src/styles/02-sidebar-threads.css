@@ -1267,3 +1267,45 @@ html[data-ui-font="large"] .action-content pre {
 }
 .dispatch-children-label:hover { color: var(--text); }
 .dispatch-children.collapsed { padding-bottom: 0; border-left-color: transparent; }
+
+/* ─────────────────────────────── 选中态改造（09-29 用户）：
+   「初始状态下所有选项都无底色，只有用户点击选中的那一项才显示高亮底色，切换选中时底色同步
+   移到新选项，其余项恢复无底色（未选中可用文字颜色或边框做弱区分，避免与 hover 态冲突）」。
+   ⛔ 此前 hover 给整卡底色（--panel-2），与 active 的蓝底肉眼难分 ⇒ 用户截图里两张卡同时像被选中。
+   现在：hover = **无底色 + 1px 内描边**（弱区分，不与选中冲突）；选中 = 蓝底 + 3px 竖条（唯一高亮）。
+   ⛔ :not(.active) 必须加 —— 否则这条在后面加载会覆盖 active 的蓝底（同优先级按源顺序取胜）。 */
+.thread-row:not(.active):hover {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+}
+.thread-row:not(.active):hover > button:first-child { color: var(--text); }
+
+/* 专家团簇头（分组条）同样弱化 hover —— 与会话行同一交互语言 */
+.team-cluster-head:hover {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+}
+
+/* 会话来源标签（09-29）：专家团 / 专家 / 代理 —— 普通会话无标签。
+   放标题前一眼可辨；配色：专家团=accent（蓝）、专家=ok（绿）、代理=muted（灰）。 */
+.thread-source-badge {
+  flex: none;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--line-soft);
+  color: var(--muted);
+  background: var(--panel-2);
+  white-space: nowrap;
+}
+.thread-source-badge.tone-team {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line-soft));
+  background: var(--accent-soft);
+}
+.thread-source-badge.tone-expert {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--line-soft));
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+}
