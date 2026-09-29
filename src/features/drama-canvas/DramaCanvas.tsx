@@ -377,6 +377,10 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
       : kind === "whitebox" ? whiteboxStarterWorkflow()
       : kind === "model3d" ? model3dStarterWorkflow()
       : starterSnapshot();
+    /* ⛔⛔ 这一行是**唯一**把快照写进画布的地方 —— 09-29 它被上一轮改 createStarter 时整行吞掉，
+       症状是「tab 切换不过来 / 新建菜单点了没反应」但 notice 照弹（快照算了、提示弹了、画布空）。
+       守卫【208】已补断言盯死这条接线：算了快照必须写进画布。 */
+    board.replaceAll(snapshot, { resetHistory: true });
     fittedRef.current = false;
     window.setTimeout(() => fitAll(), 30);
     /* ⛔ 09-28 教训：提示里的动作名必须与卡片实际按钮一致（写「点生成」卡片上没有 = 用户找不到）。 */

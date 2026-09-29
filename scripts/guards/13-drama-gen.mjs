@@ -632,6 +632,14 @@ export async function run() {
     (canvasSrc208.includes("白模视频工作流") && canvasSrc208.includes("3D 建模工作流") && canvasSrc208.includes('createStarter("model3d")') ? ok : fail)(
       "【208】新建菜单有两项模板入口（model3d 入口已接线）"
     );
+    /* ⛔⛔ 09-29 事故：改 createStarter 时把 board.replaceAll 整行吞掉 —— 快照算了、notice 弹了、
+       **画布永远空**（用户报「切换不过去 / 新建菜单点了没反应」）。这条断言盯的就是「算了要写」。 */
+    (/const snapshot = kind === "image" \? imageStarterWorkflow\(\)[\s\S]{0,400}?board\.replaceAll\(snapshot/.test(canvasSrc208) ? ok : fail)(
+      "【208】createStarter 算了快照必须写进画布（board.replaceAll 紧跟 snapshot）—— 被吞掉则切换/新建全失效"
+    );
+    (!/kind === "image" \? imageStarterWorkflow\(\)[\s\S]{0,600}?pushNotice[\s\S]{0,200}?board\.replaceAll/.test(canvasSrc208) ? ok : fail)(
+      "【208】顺序必须「先写画布再弹提示」（顺序反了 = 提示说成功而画布没变）"
+    );
     (/flowLabel/.test(canvasSrc208) && /payload\?\.flow/.test(canvasSrc208) ? ok : fail)(
       "【208】工作流具体名由 payload.flow 判定（tab 显示“白模视频工作流”而非误归“短剧”）"
     );
