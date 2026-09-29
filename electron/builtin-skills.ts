@@ -7,6 +7,7 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import { DESKTOP_SKILL } from "./builtin-skills/01-skill-desktop";
 import { VIDEO_GENERATION_SKILL } from "./builtin-skills/15-skill-video-generation";
+import { IMAGE_GENERATION_SKILL } from "./builtin-skills/16-skill-image-generation";
 import { RETIRED_BROWSER_SKILL, BROWSER_SKILL } from "./builtin-skills/02-skill-browser";
 import { HUMANIZER_SKILL } from "./builtin-skills/03-skill-humanizer";
 import { NO_AI_SLOP_SKILL } from "./builtin-skills/04-skill-no-ai-slop";
@@ -31,8 +32,12 @@ const RETIRED_SKILLS: [string, string][] = [["browser-automation", RETIRED_BROWS
 export async function ensureBuiltinSkills(skillsDir: string) {
   const entries: [string, string][] = [
     ["desktop-automation", DESKTOP_SKILL],
-    // 09-28：视频生成的配套技能 —— 模型没有 video 工具，技能教「入口在画布 + 厂商矩阵 + 提示词」
+    // 09-28：视频生成的配套技能；09-29 重写 —— 上一版写的是「模型没有视频工具」（当时属实），
+    //  加了 MCP 三件套后过期了，改为「工具优先 + 命令行兜底 + 模式路由 + 失败修复」手册。
     ["video-generation", VIDEO_GENERATION_SKILL],
+    // 09-29：生图配套技能（用户「去 GitHub 找热门生图 skills 内置好」）——
+    //  方法论吸收热门生图 skill，执行路径指向本应用的 image_generate 与内置生图插件。
+    ["image-generation", IMAGE_GENERATION_SKILL],
     ["browser-skill", BROWSER_SKILL],
     // 写作/输出风格类内置技能（09-21 用户：「对我们有帮助的都内置安装好」）。
     //  ⛔ 内容与上游**逐字一致**（MIT 许可，来源见 THIRD_PARTY_NOTICES.md）—— 别在常量里手改，

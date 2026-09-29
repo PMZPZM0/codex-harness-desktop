@@ -47,7 +47,7 @@ export type CapabilityProbe = {
   nuphusVisionEnv: boolean;
   /** 内置「视觉辅助插件」是否已配置（describe_image 用） */
   visionPlugin: boolean;
-  /** 内置「生图插件」是否已配置（generate_image 用） */
+  /** 内置「生图插件」是否已配置（MCP 工具 image_generate 与命令行 generate_image **共用**这份配置） */
   imagePlugin: boolean;
   /** 命令行兜底 playwright-cli 是否已安装 */
   playwrightCli: boolean;
@@ -103,7 +103,9 @@ export const CAPABILITIES: readonly CapabilityDefinition[] = [
     label: "生图",
     purpose: "按描述生成图片",
     backends: [
-      { id: "image-plugin", label: "内置工具 generate_image（生图插件）", why: "图片一律落盘到应用数据目录、只把路径给模型（避免几 MB 的 base64 进对话历史）" },
+      // 09-29：首选路径已是 MCP 工具 image_generate（09-29 加），命令行 generate_image 降为
+      // 老会话兜底 —— 两者**共用同一份插件配置**，所以只有一个能力条目。
+      { id: "image-plugin", label: "内置生图（MCP 工具 image_generate；命令行兜底）", why: "首选 image_generate：带自动重试、一次可出 1–4 张变体、落盘到会话工作区；老会话没有 MCP 工具时走命令行 harness-media.mjs。图片一律只把路径给模型（避免几 MB 的 base64 进对话历史）" },
     ],
   },
   {

@@ -110,8 +110,19 @@ export async function run() {
     (registered.includes('["video-generation", VIDEO_GENERATION_SKILL]') ? ok : fail)(
       "【195】视频配套技能已注册进 builtin-skills（漏登记 = 引擎永远看不到）"
     );
-    (skillTs.includes("模型**没有**视频生成工具") ? ok : fail)(
-      "【195】技能正文保留「模型没有视频生成工具」的负向声明（删掉 = 模型又开始假装能提交视频任务）"
+    /* ⛔⛔ 09-29 反转（用户：「替换掉之前老的技能」）：上一版这条断言要求正文写
+       「模型没有视频生成工具」—— 那在 09-28 是事实（视频只有渲染层 IPC）。09-29 加了
+       MCP 三件套后，那句话成了**过期内容**：技能是模型的行动手册，手册说"你没这工具"
+       会让它在有工具时也不敢用、退回"让用户自己去点"。新判据锚**两条路径都在**：
+       工具（首选）+ 命令行（老会话兜底）—— 只留一条都会出问题。 */
+    (/video_generate/.test(skillTs) && /video_status/.test(skillTs) && /video_concat/.test(skillTs) ? ok : fail)(
+      "【195】视频技能教的是 MCP 三件套（缺任一 = 模型不知道有这条路径，又退回让用户手点）"
+    );
+    (!/模型\*\*没有\*\*视频生成工具/.test(skillTs) ? ok : fail)(
+      "【195】不再宣称「模型没有视频生成工具」（09-29 起有 MCP 工具；过期声明会让模型不敢用）"
+    );
+    (/循环里 sleep 轮询|绝不要在循环里/.test(skillTs) ? ok : fail)(
+      "【195】技能写明禁止循环轮询等视频（一条视频几分钟，循环 = 整个回合卡死）"
     );
     const providersSrc = readFileSync(join(ROOT, "src", "lib", "video-providers.mjs"), "utf8");
     const pairs = [...providersSrc.matchAll(/\{ id: "([a-z]+)",[^}]*?defaultModel: "([^"]+)"/g)];
@@ -136,6 +147,26 @@ export async function run() {
     (skillTs.includes("harness-video.mjs") ? ok : fail)(
       "【195】技能正文写明命令行路径（有真路径不写 = 模型只能引导用户手点）"
     );
+
+    /* ⑨ 生图配套技能（16-skill-image-generation，09-29 用户：「去 GitHub 找热门生图 skills 内置好」）
+       ⛔ 方法论可以借鉴外部（提示词结构 / 尺寸选择 / 变体策略），但**执行路径必须指向本应用的能力** ——
+       那些热门 skill 本体都要求装第三方 CLI 并另配海外密钥，与本应用「用户自带密钥 + 内置通道」重复。 */
+    {
+      const imgSkill = readFileSync(join(ROOT, "electron", "builtin-skills", "16-skill-image-generation.ts"), "utf8");
+      (registered.includes('["image-generation", IMAGE_GENERATION_SKILL]') ? ok : fail)(
+        "【195】生图配套技能已注册进 builtin-skills（漏登记 = 引擎永远看不到）"
+      );
+      (/image_generate/.test(imgSkill) && /harness-media\.mjs/.test(imgSkill) ? ok : fail)(
+        "【195】生图技能两条路径都在（工具首选 + 命令行兜底）"
+      );
+      // ⛔ 负向：教模型自己拼 HTTP 请求 = 绕过用户配置（读不到密钥）且行为不受控
+      (/不要自己写脚本|不要自己拼请求|不要自己写脚本直接请求/.test(imgSkill) ? ok : fail)(
+        "【195】生图技能明确禁止「自己写脚本调生图接口」"
+      );
+      (/count/.test(imgSkill) && /变体/.test(imgSkill) ? ok : fail)(
+        "【195】生图技能写了多变体策略（热门 skill 的共性做法：一次出多张让用户挑）"
+      );
+    }
   /* ══ Codex 日志管理（09-29 用户：「加一个 Codex 日志管理功能，在数据管理里面…按项目分类，
         项目里面再按时间分类，可以批量删除和清空」）══
      ⛔ 这是**销毁性**功能：删的 rollout 是对话全文原档，引擎不会重建。判据盯三件事：
