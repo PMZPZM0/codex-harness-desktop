@@ -353,7 +353,7 @@ export function useDramaStory(
   useEffect(() => { refreshChannels(); }, [refreshChannels]);
 
   /** 沿**入边**收集上游卡片的提示词（prompt/text）—— 连线「这份输入喂给下一步」的兑现（09-28）。
-   *  起手工作流里出图 A/B 连着主提示词卡，此前生成只用自己的占位 prompt，主提示词从未参与。
+   *  起手工作流里「出图」卡连着「写提示词」卡，此前生成只用自己的占位 prompt，主提示词从未参与。
    *  多个上游按连线顺序拼接；去重；截 800 字防提示词爆长。 */
   const upstreamPrompts = useCallback((targetId: string): string => {
     const byId = new Map(board.nodes.map((n) => [n.id, n] as const));
@@ -541,7 +541,7 @@ export function useDramaStory(
         const style = String(storyRef.current?.style || "").trim();
         let base = String(payload.prompt || payload.description || payload.look || "").trim();
         // ⛔ 09-28 工作流打磨：自身提示词为空时**自动沿用连入的上游提示词**（此前直接报错
-        //    「先写上再生成」—— 出图 A/B 这类下游卡被迫先抄一遍主提示词，流程断在这里）。
+        //    「先写上再生成」—— 「出图」这类下游卡被迫先抄一遍主提示词，流程断在这里）。
         //    模板的 payload 也已不预填引导文本（避免污染真实提示词）。
         const upstream = upstreamPrompts(nodeId);
         if (!base && upstream) base = upstream;

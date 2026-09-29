@@ -869,4 +869,43 @@ export async function run() {
       "【217】润色请求带超时（网关慢要报错，不能挂住 UI）"
     );
   }
+  /* ══ 旧版模板自动升级（09-29 用户：「我这怎么又是旧的了」）══
+     ⛔ 病根是**模板只影响新建**：存量画布在 localStorage 里，切 tab 时被原样读回
+     ⇒ 模板改了也永远看到旧卡。所以这条断言必须钉在**读盘那一刻**（load），
+     只钉 createStarter 是没用的（用户并没有点新建）。 */
+  {
+    const boardSrc218 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-board.ts"), "utf8");
+    const canvasSrc218 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8");
+    const { pathToFileURL } = await import("node:url");
+    const model218 = await import(pathToFileURL(join(ROOT, "src", "lib", "drama-canvas-model.mjs")).href);
+    const LEGACY218 = { version: 2, nodes: [
+      { id: "n-brief", kind: "note", payload: { title: "需求说明", step: 1 } },
+      { id: "n-prompt", kind: "image", payload: { title: "主提示词", step: 2 } },
+      { id: "n-out-a", kind: "image", payload: { title: "出图 A", step: 3 } },
+      { id: "n-out-b", kind: "image", payload: { title: "出图 B", step: 3 } },
+      { id: "n-pick", kind: "note", payload: { title: "选图结论", step: 4 } },
+    ], edges: [] };
+    const up218 = model218.upgradeLegacyStarterSnapshot(LEGACY218);
+    const withText218 = JSON.parse(JSON.stringify(LEGACY218)); withText218.nodes[0].payload.text = "我的需求";
+    const withImage218 = JSON.parse(JSON.stringify(LEGACY218)); withImage218.nodes[2].payload.path = "C:/a.png";
+
+    (/upgradeLegacyStarterSnapshot\(snapshot\)/.test(boardSrc218) && /store\.writeBoard\(name, upgraded\)/.test(boardSrc218) ? ok : fail)(
+      "【218】画布**读盘时**自动升级空壳旧模板并立刻写回（只改 createStarter = 切 tab 永远看到旧卡）"
+    );
+    (up218 && up218.nodes.length === 3 && up218.edges.length === 2 ? ok : fail)(
+      "【218】空壳旧模板（5 卡）升级为最新 3 步精简版（真跑，不是查关键字）"
+    );
+    (model218.upgradeLegacyStarterSnapshot(withText218) === null && model218.upgradeLegacyStarterSnapshot(withImage218) === null ? ok : fail)(
+      "【218】负向：有用户内容（文字 / 生成图）的旧画布**绝不动**（不替用户做决定）"
+    );
+    (model218.upgradeLegacyStarterSnapshot(model218.imageStarterWorkflow()) === null ? ok : fail)(
+      "【218】负向：已是最新模板不重复升级（幂等，免每次打开都写盘）"
+    );
+    (/写提示词 → 出图 → 备注/.test(canvasSrc218) && !/出图 A\/B/.test(canvasSrc218) ? ok : fail)(
+      "【218】顶栏/菜单/说明里的流程描述同步为最新 3 步（模板改了文案没改 = 用户又看到「旧流程」）"
+    );
+    (/legacyStarterSignature/.test(canvasSrc218) ? ok : fail)(
+      "【218】切到「有内容的旧模板」时说明原因（否则用户只看到「又是旧的」，不知道能怎么办）"
+    );
+  }
 }
