@@ -47,9 +47,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px 12px;
-  /* ⛔ 右侧留出原生窗口控制钮（— □ ✕ ≈140px）的地带：画布是整屏浮层，
-     头部按钮贴到右上角会和窗控叠在一起（用户截图点名）。 */
-  padding: 10px 158px 10px 14px;
+  /* ⛔ 右侧留出原生窗口控制钮（— □ ✕ ≈140px）的地带，防按钮与窗控叠在一起。
+     09-29 用户「右上角那么多空白」后由 158px 收到 116px：浮层已不再铺满整屏
+     （见 .drama-canvas-backdrop 的 padding clamp / shell max-width），116px 够避让。 */
+  padding: 10px 116px 10px 14px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   flex: none;
@@ -1239,4 +1240,18 @@
 /* 顶栏窄窗口收敛（09-29）：副标题是引导文案，空间不足时先让位 —— 顶栏尽量保持一行 */
 @media (max-width: 1220px) {
   .drama-canvas-head-left small { display: none; }
+}
+
+/* ─────────────────────────────── 顶栏单行化（09-29 用户：「右上角那么多空白，可以放按键了啊…
+   布局整洁，整齐一点，不要乱糟糟的」）
+   ⛔ 右侧 158px 留白是「画布铺满整屏」时代为避让窗控加的；浮层缩小后（padding clamp 18~56px）
+   只需避让 116px。腾出的空间给按钮，并让整个顶栏**一行排开**（左侧信息 + 右侧按钮组）。 */
+/* 画布 / 分镜表下拉：给最小宽度 —— 窄窗口下此前被压成「1」字宽（用户截图） */
+.drama-canvas-head .app-select-trigger { min-width: 106px; }
+/* 按钮组不折行（整体换行由 head 兜底） */
+.drama-canvas-head-actions { flex-wrap: nowrap; }
+/* 窄窗口瘦身：先摘下拉标签（值本身可读，配合 title/aria-label），标题块收窄 */
+@media (max-width: 1260px) {
+  .drama-canvas-head .drama-canvas-select > span { display: none; }
+  .drama-canvas-head-left > div:first-of-type { min-width: 118px; }
 }

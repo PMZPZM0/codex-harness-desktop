@@ -217,5 +217,35 @@ export async function run() {
     );
   }
 
+  /* ══ 顶栏单行布局（09-29 用户：「右上角那么多空白，可以放按键了啊…布局整洁，整齐一点」）══
+     三个已踩过的坑各钉一条：留白过大（按钮被挤到第二行）、下拉被压成「1」字宽、
+     进度芯片 0 值仍占位把顶栏撑出去。 */
+  {
+    const css = readFileSync(join(ROOT, "src", "styles", "21-drama-canvas.css"), "utf8");
+    const canvasSrc2 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8"));
+
+    // ① 窗控避让留白：浮层缩小后不再需要 158px（过大 = 右上角一大块空白）
+    const pad = /(\.drama-canvas-head \{[^}]*padding:\s*10px\s+)(\d+)px/.exec(css);
+    (pad && Number(pad[2]) <= 120 ? ok : fail)(
+      `【201】顶栏右侧窗控避让留白 ≤120px（实得 ${pad ? pad[2] + "px" : "未找到"} —— 158px 是整屏浮层时代的值，浮层缩小后过大）`
+    );
+    // ② 画布 / 分镜表下拉有最小宽度（窄窗口被压成「1」字宽 = 用户截图）
+    (/\.drama-canvas-head \.app-select-trigger \{[^}]*min-width:\s*\d+px/.test(css) ? ok : fail)(
+      "【201】顶栏下拉有 min-width（不给就被 flex 压成一字宽，选中值读不出来）"
+    );
+    // ③ 窄窗口瘦身：摘下拉标签 + 收窄标题块（不摘就会把按钮挤到第二行）
+    (/@media \(max-width: 1260px\)[\s\S]{0,220}\.drama-canvas-select > span \{ display: none/.test(css) ? ok : fail)(
+      "【201】窄窗口摘掉下拉标签（「画布」「分镜表」是导航词，值本身可读且 title/aria-label 仍在）"
+    );
+    // ④ 进度芯片 0 值不渲染（空画布只剩「待生成 N」，否则固定三项把顶栏撑出去）
+    (/progress\.images > 0 \?/.test(canvasSrc2) && /progress\.videos > 0 \?/.test(canvasSrc2) ? ok : fail)(
+      "【201】进度芯片 0 值不渲染（有内容才显示计数，宽度随内容自适应）"
+    );
+    // ⑤ 按钮组不折行（内部折行 = 一排按钮断成两截，最难看）
+    (/\.drama-canvas-head-actions \{[^}]*flex-wrap: nowrap/.test(css) ? ok : fail)(
+      "【201】按钮组内部不折行（整体换行由顶栏兜底）"
+    );
+  }
+
   }
 }
