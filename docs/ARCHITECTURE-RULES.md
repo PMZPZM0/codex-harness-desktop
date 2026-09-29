@@ -16,23 +16,24 @@
 
 ## 0. 现状数字（每轮收尾必须同步，滞后即视为违规）
 
-⛔ **口径与漂移**：数字是**某次提交的快照**（本次 = `395a8f2`，本次校准，§10 有并发写入纪律）；并发期数字会漂移，**以最新一次提交为准**，由最后收尾的那一路同步。
+⛔ **口径与漂移**：数字是**某次提交的快照**（本次 = `ca5a0ff`，本次校准，§10 有并发写入纪律）；并发期数字会漂移，**以最新一次提交为准**，由最后收尾的那一路同步。
 （校准依据：`docs/AUDIT-ARCH-2026-09-23.html` 的实测口径 —— 入口行数用 `wc -l`、IPC 面直接 require `dist-electron/ipc-registry.js`、业务文件分档排除 `scripts/` 与生成物。）
 
 | 位置 | 实测 | 说明 |
 |---|---:|---|
 | `src/App.tsx` | **12 行** | 只剩 `useHarnessApp()` + earlyView 短路 + `<AppView/>`，**不再吸收任何逻辑**（底部 60 行死 re-export 面 09-22 已删） |
 | `src/features/app-view/AppView.tsx` | 472 行 | 视图装配壳：编号段 `01-sidebar-shell` … `09-file-preview-editor` + 子目录 |
-| `src/features/` | **51 个域目录**（09-24 实测） | 其中 `settings-*` **26 个**（设置页**按页同构**拆分，粒度稳定） |
+| `src/features/` | **53 个域目录**（09-29 实测） | 其中 `settings-*` **26 个**（设置页**按页同构**拆分，粒度稳定） |
 | `src/features/app-state/useHarnessApp.tsx` | 39 行 | 组合根：建 `bag` → 按序调 9 个 part → 合并 return |
 | `src/features/app-state/parts/` | 9 组合根 + 30 子 hook + `types.ts` + `bag-types.ts` | `bag-types.ts` **自动生成，禁手改**（守卫【93】） |
 | `electron/main.ts` | **1219 行**（09-24 实测；⛔ 行数随 P2-9 下沉变动，改动后请重测本节） | 余 5 handler（`theme:apply` + `window:popout-*`×4，已证搬不动）+ 系统托盘（`electron/tray.ts` 接线）+ 启动链 + 模块级单例 |
-| `electron/features/` | **35 个 `.ts` 模块 + 5 个子目录**（40 个条目） | IPC handler 实现 |
+| `electron/features/` | **49 个条目**（09-29 实测；含 `builtin-skills-ipc/` 等子目录） | IPC handler 实现 |
 | `electron/ipc-registry.ts` | 账本 | `prefix / count / status(in-main\|in-features\|shell) / file / channels` |
-| `electron/ipc-channels.manifest.json` | **315 个通道**（IPC 桥单一真相源） | `preload.ts` gen 段 + `vite-env.d.ts` gen 段由它生成：`npm run gen:ipc`（**自动**同步 `count` 并**体检账本登记**，缺了直接打印可粘贴条目）；**生成物禁手改**（守卫【2】22 条）。09-24 起所有 invoke 走 `__ipc`：参数个数校验 + 错误归一化（`[ERR_*]` 消息前缀）+ 通道级超时表 |
+| `electron/ipc-channels.manifest.json` | **361 个通道**（IPC 桥单一真相源） | `preload.ts` gen 段 + `vite-env.d.ts` gen 段由它生成：`npm run gen:ipc`（**自动**同步 `count` 并**体检账本登记**，缺了直接打印可粘贴条目）；**生成物禁手改**（守卫【2】22 条）。09-24 起所有 invoke 走 `__ipc`：参数个数校验 + 错误归一化（`[ERR_*]` 消息前缀）+ 通道级超时表 |
 | `src/styles/` | 19 分节（`styles.css` 31 行 barrel） | 界面区域样式 |
 | 跨域活绑定 | **22 个** `electron/features/*` 从 `../main` 取值 | 架构层真残留，纪律 +【91】守着（见 §8） |
-| `electron/builtin-skills/` | **12 个内置技能**（含元技能 `skill-authoring` / `memory-distill` / `self-review` / `memory-hygiene` / `memory-classify` / `skill-audit`） | 启动时 `ensureBuiltinSkills` 落盘到 `$CODEX_HOME/skills`（守卫【103】） |
+| `electron/builtin-skills/` | **16 个内置技能**（含元技能 `skill-authoring` / `memory-distill` / `self-review` / `memory-hygiene` / `memory-classify` / `skill-audit`，09-29 新增 `image-generation` 与重写后的 `video-generation`） | 启动时 `ensureBuiltinSkills` 落盘到 `$CODEX_HOME/skills`（守卫【103】） |
+| **AI 画布工作流板块**（09-29 立，见 §2.1） | 渲染层 `src/features/drama-canvas/` 14 文件 / 3737 行；IPC 域 `drama-canvas` **2** + `video` **7** + `builtin`（生图）；CSS `src/styles/21-drama-canvas.css` **1519 行**；内置技能 `image-generation` / `video-generation`；MCP 工具 `image_generate` / `video_generate` / `video_status` / `video_concat` | **五层全占的独立功能板块**：界面 + 状态 + 存储 + IPC + 引擎工具/技能 |
 | 记忆金字塔 | **L0–L7 八层，90% 蒸馏线** | 层表/阈值单一真相源 = `electron/memory-layers.ts`（守卫【104】） |
 | 记忆目录布局 | `<workspace>/.codex-harness/memory/` 下 `project/` `lessons/` `logs/` `rollups/` `archive/` | v2 分类分文件夹；v1 散文件由 `migrateLayout()` 搬（守卫【106】） |
 | 记忆分类 | `lessons/` 内一个分类一个文件（**用户纠错单独一类**，永不淘汰） | 分类名与判定 = `electron/memory-lessons.ts`（守卫【105】） |
@@ -86,8 +87,49 @@
 | 状态层 | `app-state/`（part 组合根 + bag） |
 | 视图装配 | `app-view/`（AppView + 编号段） |
 | 设置页 | `settings-*`（23 个，每页一个，同构） |
-| 功能域 | `relay` `openai` `ssh` `memory` `dispatch` `session-queue` `session-cards` `session-turn` `composer` `experts-teams` `terminal` `markdown` `connectors` `storage-settings` `auth` |
+| 功能域 | `relay` `openai` `ssh` `memory` `dispatch` `session-queue` `session-cards` `session-turn` `composer` `experts-teams` `terminal` `markdown` `connectors` `storage-settings` `auth` **`drama-canvas`（AI 画布工作流，09-29 立，见 §2.1）** |
 | 共享 | `shared/`（跨域复用的域级件）、`src/components/`（跨域通用件） |
+
+### 2.1 AI 画布工作流 = 独立功能板块（09-29 用户点名立，后续新功能的**样板**）
+
+用户原话：「这个 AI 画布工作流是单独功能板块吧，记一下**后续新增功能都要单独板块、留好拓展接口，方便后续维护和功能拓展**」。
+⇒ 这条从 09-29 起是**通用纪律**：**新功能一律按独立板块做**，不往既有域里塞（"顺手加在别处"是后期维护成本的主要来源）。
+
+它为什么够格当一个板块（对照 §2 的四条判据）：
+
+| 判据 | 画布的实情 |
+|---|---|
+| ① 用户可感知 | 侧栏「AI 画布工作流」入口 → 全屏浮层工作台；用户能说清"这是画布" |
+| ② 独立契约面 | IPC 域 `drama-canvas`（素材写盘 / 分镜表文件删除）+ `video`（7 通道：厂商/凭证/提交/查询/下载/合并）；状态走域内 `use-drama-board` / `use-drama-story` |
+| ③ 边界内聚 | 只经自己的 barrel `index.ts` 与 `drama-actions` context 对外；不 import 别的域的内部件 |
+| ④ 命名同源 | 目录 `drama-canvas` = IPC 前缀 `drama-canvas:` = CSS 前缀 `.drama-canvas-*` |
+
+**五层落地（新增能力的接入点都在这里，别另起炉灶）**：
+
+| 层 | 落点 | 拓展时动哪里 |
+|---|---|---|
+| 界面 | `src/features/drama-canvas/Drama*.tsx` | 新面板/新弹层用**画布内全屏遮罩**（`.drama-canvas-modal-mask`），⛔ 不 portal、不做顶栏浮层（会被 shell 的 `overflow:hidden` 裁，实测踩过两次） |
+| 状态 | `use-drama-board.ts`（画布/节点/历史）、`use-drama-story.ts`（分镜表/生成/导出） | 新能力挂到各自 API 接口上，**同轮补进 `DramaStoryApi` / `DramaBoardApi` 的 return 面与依赖数组** |
+| 存储 | `drama-storage.ts`（板与分镜表：本机索引/快照/工作区文件） | 新增持久化必须同时想清**级联**（删对象时它被引用的每一处，见分镜表删除的四级联） |
+| IPC | `electron/features/drama-canvas.ts`、`video-gen.ts` + manifest/registry（跑 `npm run gen:ipc`） | 通道**先抽 core 函数**（`*Core`），handler 与 MCP 执行端共用同一份 |
+| 引擎/模型 | 内置技能 `image-generation` / `video-generation`；MCP 工具 `image_generate`/`video_generate`/`video_status`/`video_concat`；`developer-instructions.ts` | **加工具/通道必须同轮改三处**：技能正文、`gen-capability-skill.mjs` 的工具清单（重跑生成器）、`AGENTS.md` 的能力表 —— 少改一处模型就用错工具（09-29 实测抓到） |
+
+**已留的拓展接口**（后续直接接，不用改结构）：
+- 生图/视频**厂商**：`src/lib/video-providers.mjs` 加一家即生效（渲染层/技能/CLI 同源）。
+- **工作流类型**：`detectFlowType()`（判据唯一一处）；新增模板 = `resources/tools/…` 的 `*StarterWorkflow()` + tab 一项。
+- **节点类型**：`DRAMA_NODE_DEFS` + `GEN_CHANNELS`（卡面与检查器共用同一张表）。
+- **MCP 工具**：`dispatch-core.ts`（schema）+ `dispatch-rpc.ts`（执行端，调 core）。
+- **产物查看**：`actions.openMedia(...)`（卡片与结果面板共用一套查看器）。
+
+### 2.2 新增功能的三条硬要求（09-29 起）
+
+1. **单独板块**：新功能独立成域目录（界面 + 状态 + 后端 + 样式分节），不在别人的域里"借住"。
+   ⛔ 例外需用户点头（同 §2 的「新增域目录需用户点头」）。
+2. **留好拓展接口**：能力表/厂商表/类型表**单一真相源**并抽成纯函数，新增同类项只加数据不改结构；
+   IPC 先抽 core，让 handler 与 MCP 共用；跨层能力（模型能用）要同时给"工具 + 技能 + 文档"三处。
+3. **方便后续维护与拓展**：新增/修改时**同轮**同步它的每一处引用（守卫锚点、文档表、生成器、
+   能力清单、记忆），并加**结构守卫**（读代码真值，不锚固定字符串）钉住关键不变量 ——
+   "跑绿"只证明没写坏，不证明配套完整（09-29 反复验证过）。
 
 ---
 
