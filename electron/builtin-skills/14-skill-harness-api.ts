@@ -22,7 +22,8 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
   · 媒体：\`image_generate\`（生图，\`count\` 1–4 并发出变体，落盘返回本地路径）/ \`video_generate\`（提交视频任务，**立即返回 jobId，不等待**；\`video\` 参数可传白模预演参考片的公网 URL，配 Seedance 2.0/2.5 渲染）/ \`video_status\`（查任务；成功会自动下载落盘）/ \`video_concat\`（把多镜片段按给定顺序拼成成片）/ \`voice_generate\`（台词合成配音 WAV，落盘返回路径；语音模型未下载时报错并指路「设置 → 语音」）
   · 子智能体：\`agent_invoke\`（派一个干净上下文的自己）/ \`agent_archive_sessions\` / \`subagent_save\`（新建子智能体代理，name+systemPrompt 必填）
   · 专家：\`expert_save\`（创建/更新专家或专家团——displayNameZh + leadName + leadSystemPrompt 必填，多角色加 members；同 teamId 即更新）/ \`expert_list\`（列已有专家）。用户说「帮我建一个 XX 专家 / 专家团」时直接用它，建完复述 teamId；⛔ 内置六专家（知微/呈象/洞明/鲁班/画意/剪承团）有固定 teamId，别覆盖
-  ⇒ 生图生视频的**完整用法**在 \`image-generation\` 与 \`video-generation\` 两个技能里（提示词结构、模式路由、厂商矩阵、失败修复）—— 用户提到「画图 / 出图 / 生成视频 / 让这张图动起来」时先读它们。
+  · 专家：\`expert_save\`（创建/更新专家或专家团——displayNameZh + leadName + leadSystemPrompt 必填，多角色加 members；同 teamId 即更新）/ \`expert_list\`（列已有专家）。用户说「帮我建一个 XX 专家 / 专家团」时直接用它，建完复述 teamId；⛔ 内置六专家（知微/呈象/洞明/鲁班/画意/剪承团）有固定 teamId，别覆盖
+  · 自造工具：\`connector_register\`（把一个本地 stdio MCP server 脚本注册成持久连接器 —— 重启应用后新会话的 tools/list 带上它的工具）。**没有现成工具时先读 \`self-tools\` 技能**：路线① 工作区脚本立即用（一次性）；路线② 自建 MCP server + connector_register（持久）；路线③ 改宿主源码要重新构建（交给用户）
   ⇒ 当用户要「建定时任务 / 加待办 / 存 RPA 配方 / 改设置」这类**界面动作**时，**说明该去哪个界面点**（例如 设置 → 定时任务），**不要**声称自己调用了某个 \`域:动作\` 通道、也不要凭空发明工具名（如 \`task_add\`）—— 没有的工具就是没有。
 - 引擎**直接可用**的自动化能力另有专技能：\`desktop-automation\`（键鼠/窗口/OCR，nuphus MCP）、\`browser-skill\`（浏览器，playwright-cli）、\`ssh\`（远程执行）。MCP 连接器是动态的，以 tools/list 实际返回为准。
 

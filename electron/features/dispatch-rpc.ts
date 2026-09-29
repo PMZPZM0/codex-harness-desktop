@@ -15,8 +15,10 @@ import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
 import { DISPATCH_FIXED_PORT, dispatchMcpTools, dispatchProbes, dispatchToken, ensureDispatchToken, restrictedThreadRole, stableKey } from "../features/dispatch-core";
 import { normalizeTeamConfig, readExpertTeams, writeExpertTeams } from "../expert-teams";
+import { readConnectors } from "../main";
 import { voiceService } from "../main";
 import { encodeWav16 } from "../voice/voice-profiles";
+import { writeConnectors } from "./connectors-mcp-ipc/01-prompt-enhance";
 import { readSubAgents, writeSubAgents } from "../main/09-agents-plugins";
 import { runDelegatedTask } from "../features/delegation";
 import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
@@ -203,6 +205,28 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     const file = path.join(dir, `${base}.wav`);
     await fsp.writeFile(file, wav);
     return { ok: true, output: `配音已生成：${file}（${result.sampleRate}Hz，${(wav.length / 1024).toFixed(0)} KB）` };
+  }
+  if (name === "connector_register") {
+    const id = String(args.id ?? "").trim().replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
+    const displayName = String(args.name ?? "").trim();
+    const command = String(args.command ?? "").trim();
+    if (!id || !displayName) return { ok: false, error: "id 与 name 必填" };
+    if (!command) return { ok: false, error: "command 必填（MCP server 的启动命令）" };
+    const list = await readConnectors();
+    const previous = list.find((entry) => entry.id === id);
+    const now = new Date().toISOString();
+    const config = {
+      id, name: displayName, transport: "stdio" as const,
+      command,
+      args: Array.isArray(args.args) ? args.args.map((value: unknown) => String(value).trim()).filter(Boolean) : [],
+      env: args.env && typeof args.env === "object" ? Object.fromEntries(Object.entries(args.env as Record<string, unknown>).map(([key, value]) => [String(key).trim(), String(value ?? "")]).filter(([key]) => key)) : undefined,
+      enabled: true,
+      createdAt: previous?.createdAt ?? now,
+      updatedAt: now,
+    };
+    await writeConnectors([...list.filter((entry) => entry.id !== id), config]);
+    // ⛔ 不做热更新（用户明确：重启应用即可）——注册完提示用户重启，不中断当前回合
+    return { ok: true, output: `连接器「${displayName}」（${id}）已注册。请提示用户**重启应用**；重启后的新会话里 tools/list 会带上它的工具，届时即可直接调用。` };
   }
   if (name === "image_generate") {
     const prompt = String(args.prompt ?? "").trim();
