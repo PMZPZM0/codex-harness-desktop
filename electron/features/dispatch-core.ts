@@ -149,6 +149,58 @@ function dispatchMcpTools(): unknown[] {
       description: "删除一个定时任务（不可恢复）。",
       inputSchema: { type: "object", properties: { id: { type: "string", description: "任务 id（从 scheduler_list 拿）" } }, required: ["id"] },
     },
+    /* ── 媒体生成三件套（09-29 用户：「让 Codex 能够直接调用生图工作流与视频工作流」）────────
+       为什么是「生图一件 + 视频两件」：生图是同步 HTTP（几十秒，模型等着就行）；
+       视频是**异步任务**（提交后要跑几分钟）—— 如果让工具一直等，会卡死整个回合，
+       所以拆成「提交（立刻拿 jobId）」+「查询（稍后问一次）」。jobId 由主进程落盘
+       （userData/video-jobs.json），关掉画布 / 重启应用都不丢，模型随时能续查。
+       ⛔ 与画布卡片共用同一套 core（video-gen.ts / builtin-images），不另写一份实现。 */
+    {
+      name: "image_generate",
+      description: "用内置生图插件生成图片并落盘，返回本地文件路径（可直接用于回答里的引用、或作为视频首帧）。可一次生成多张（count）。用户说「画一张/生成图片/出图」时用这个，不要用脚本自己调 HTTP。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "画面描述（主体 + 环境 + 光线 + 风格 + 质量词，越具体越好）" },
+          count: { type: "number", description: "生成张数 1-4（默认 1）。多张会并发，适合同一提示词的多个变体" },
+          model: { type: "string", description: "覆盖默认模型（一般不用填，留空走「设置 → 插件」里配的模型）" },
+          workspace: { type: "string", description: "落盘到哪个工作目录的 .drama-canvas/assets/image（缺省 = 调用者会话的工作目录）" },
+          name: { type: "string", description: "文件名前缀（缺省 img）" },
+        },
+        required: ["prompt"],
+      },
+    },
+    {
+      name: "video_generate",
+      description: "提交一个视频生成任务（异步），**立即**返回 jobId；随后用 video_status 查询进度。图生视频传 image（本地路径或公网 URL）。不要把本工具当同步接口反复等待 —— 提交完可以先做别的事，隔一会儿再查。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "画面/运镜描述" },
+          mode: { type: "string", enum: ["t2v", "i2v"], description: "t2v=文生视频（默认）；i2v=图生视频（要给 image）" },
+          image: { type: "string", description: "i2v 的首帧：本地图片路径或公网 URL" },
+          providerId: { type: "string", description: "厂商 id（缺省用第一个已配置凭证的厂商；id 见设置 → 插件 → 视频生成接口）" },
+          model: { type: "string", description: "覆盖厂商默认模型" },
+          duration: { type: "number", description: "时长（秒），缺省 5" },
+          workspace: { type: "string", description: "产物落盘的工作目录（缺省 = 调用者会话的工作目录）" },
+          name: { type: "string", description: "产物文件名（缺省 视频.mp4）" },
+        },
+        required: ["prompt"],
+      },
+    },
+    {
+      name: "video_status",
+      description: "查询 video_generate 提交的任务：pending（还在跑，稍后再查）/ succeeded（已好，会自动下载落盘并返回本地路径）/ failed（失败原因）。也可以不带参数查最近的任务列表。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          jobId: { type: "string", description: "video_generate 返回的 jobId；不给则列出最近 10 个任务的状态" },
+          providerId: { type: "string", description: "厂商 id（缺省用该任务提交时记下的厂商）" },
+          workspace: { type: "string", description: "成功时下载到哪个工作目录（缺省用提交时记下的工作目录）" },
+          name: { type: "string", description: "成功时产物的文件名" },
+        },
+      },
+    },
   ];
 }
 

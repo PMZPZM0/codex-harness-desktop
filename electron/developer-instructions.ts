@@ -55,7 +55,13 @@ const BROWSER_INSTRUCTIONS =
  * mediaCommand 由 main.ts 组装（内置 node 绝对路径 + helper 脚本绝对路径）。
  */
 const IMAGE_INSTRUCTIONS = (mediaCommand: string) =>
-  `\n4) generate_image — text-to-image via the configured image plugin. Invoke: ${mediaCommand} image "<detailed prompt>". On success stdout is JSON {"path":"<local file>","url":"<gateway-hosted URL>"}: path is the DURABLE local copy — prefer it (view it with view_image(path), or reference the path); url is a temporary gateway-hosted link that may expire within hours (observed: dead next day), so NEVER present url as a permanent link to the user. Use whenever the user asks to draw/generate/illustrate an image.`;
+  `\n4) generate_image — text-to-image via the configured image plugin. ⛔ FIRST CHOICE: if the MCP tool \`image_generate\` is in your tool list, call it directly — it is the same plugin, with automatic retry, batch support (count 1-4, generated in parallel) and it lands files in the session workspace; do NOT write your own HTTP calls or shell scripts for image generation. CLI fallback: ${mediaCommand} image "<detailed prompt>". Either way the result is a DURABLE local file path — prefer it (view it with view_image(path), or reference the path); any gateway-hosted url is temporary (may expire within hours), so NEVER present url as a permanent link to the user. Use whenever the user asks to draw/generate/illustrate an image.`;
+
+/** 视频生成（09-29 用户：「让 Codex 能够直接调用这两个工作流」）。
+ *  ⛔ 写成**条件式**（同 BROWSER / REVIEW 的纪律）：工具是全局 MCP 段，没配厂商的机器上
+ *     调了也只会拿到"没有配置"的报错 —— 先看工具在不在表里，再决定走工具还是引导用户去配。
+ *  ⛔ 关键是"两段式"：提交立刻返回 jobId，**绝不能**自己循环轮询（会把回合卡几分钟）。 */
+const VIDEO_INSTRUCTIONS = `\n\nVIDEO GENERATION (async MCP tools; only if \`video_generate\` is in your tool list): the user's built-in video providers (可灵/智谱/MiniMax/Runway/Veo 等) are exposed as three tools. Flow: (1) \`video_generate\` submits and returns a jobId IMMEDIATELY — it does not wait; (2) tell the user it is rendering and continue with other work; (3) call \`video_status\` with that jobId when you need the result (it auto-downloads into the workspace and returns the local path on success). NEVER sleep/poll in a loop to wait for a video — that blocks the whole turn for minutes; a status of queued/running/pending just means "check again later". For image-to-video pass the local image path in \`image\` with mode="i2v". If the tool is missing or reports "没有配置", tell the user to set it up in Settings → Plugins → 视频生成接口 and stop.`;
 
 const VISION_INSTRUCTIONS = (mediaCommand: string) =>
   `\n5) describe_image — let a vision model describe an image you cannot parse directly. Invoke: ${mediaCommand} vision "<image>" [focus question] where <image> can be a LOCAL FILE PATH (fastest — pass it as-is, the helper reads and encodes it for you), a remote http(s) URL, or a data URL. Do NOT base64-encode local files yourself before calling — pass the path directly. Stdout is JSON {"text":"..."}; treat the text as the image content and continue the task.`;
@@ -176,6 +182,8 @@ export function buildDevInstructions(input: { desktop?: boolean; browser?: boole
   const mediaCommand = input.mediaCommand || "node harness-media.mjs";
   if (input.imagePlugin) text += IMAGE_INSTRUCTIONS(mediaCommand);
   if (input.visionPlugin) text += VISION_INSTRUCTIONS(mediaCommand);
+  // 视频生成三件套（无条件下发，内容自带条件式判断：先看 video_generate 在不在工具表里）
+  text += VIDEO_INSTRUCTIONS;
   // 复审指引无条件下发（内容自带条件式判断：先看 agent_invoke 在不在工具表里）
   text += REVIEW_INSTRUCTIONS;
   // 记忆分层与踩坑留痕：无条件下发（用户 09-22 点名的痛点：坑不记 ⇒ 反复踩）

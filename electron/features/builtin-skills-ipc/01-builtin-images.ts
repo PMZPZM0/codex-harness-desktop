@@ -54,7 +54,7 @@ async function persistGeneratedImage(url: string): Promise<string> {
   }
 }
 
-async function generateImageWith(input: { baseUrl: string; apiKey: string; model: string; prompt: string }) {
+export async function generateImageWith(input: { baseUrl: string; apiKey: string; model: string; prompt: string }) {
   const base = input.baseUrl.trim().replace(/\/$/, "");
   // 兼容 /images/generations（OpenAI 兼容）与 /v1/images/generations
   const endpoint = /\/images\/generations$/.test(base) ? base : base + "/images/generations";
@@ -86,6 +86,24 @@ async function generateImageWith(input: { baseUrl: string; apiKey: string; model
   //   只有网关给的是真托管地址时才把 url 一并带出（它很短，且能直接当可点击链接用）。
   const path = await persistGeneratedImage(url);
   return { path, url: /^https?:/i.test(url) ? url : "" };
+}
+
+/** 带重试的生图（09-29）：网络抖动 / 5xx / 429 自动再试一次；4xx 参数错不重试（重试也没用）。
+ *  会话里的 MCP 工具与画布卡片共用这一个入口 —— 稳定性口径只有一份。 */
+export async function generateImageResilient(input: { baseUrl: string; apiKey: string; model: string; prompt: string }, attempts = 2): Promise<{ path: string; url: string }> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      return await generateImageWith(input);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      // 参数类错误（除限流）重试无意义
+      if (/HTTP 4\d\d/.test(message) && !/HTTP 429/.test(message)) break;
+      if (attempt < attempts - 1) await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 async function toImageSource(ref: string): Promise<string> {
@@ -137,7 +155,7 @@ ipcMain.handle("builtin:save", async (_e, cfg: BuiltinPluginConfig) => {
 
 ipcMain.handle("builtin:probe", async (_e, input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) => probeBuiltinModels(input));
 
-ipcMain.handle("builtin:generate-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; prompt: string }) => generateImageWith(input));
+ipcMain.handle("builtin:generate-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; prompt: string }) => generateImageResilient(input));
 
 ipcMain.handle("builtin:describe-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) => describeImageWith(input));
 

@@ -8,13 +8,17 @@
  * 会被重新赋值的符号经 `mutableState` 访问器读写（ESM 里 import 的绑定不可赋值）。
  */
 import http from "node:http";
+import fsp from "node:fs/promises";
+import path from "node:path";
 import { canDispatchFrom } from "../dispatch";
 import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
 import { DISPATCH_FIXED_PORT, dispatchMcpTools, dispatchProbes, dispatchToken, ensureDispatchToken, restrictedThreadRole, stableKey } from "../features/dispatch-core";
 import { runDelegatedTask } from "../features/delegation";
 import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
-import { mutableState, scheduler } from "../main";
+import { mutableState, readBuiltinPlugins, scheduler } from "../main";
+import { generateImageResilient } from "./builtin-skills-ipc/01-builtin-images";
+import { downloadVideoCore, findVideoJob, listVideoJobs, pollVideoCore, rememberVideoJob, submitVideoCore, updateVideoJob, videoProviderViews } from "./video-gen";
 export async function dispatchRpcCall(name: unknown, args: Record<string, unknown>): Promise<{ ok: boolean; output?: string; error?: string }> {
   // ── 旁证：引擎把调用转发给 MCP 服务器的同一时刻会发 item/started 事件（含真实 threadId）。
   // 用「参数指纹」对上号，拿到的才是**引擎认定的调用者**——模型谎报身份也绕不过。
@@ -127,6 +131,121 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
   if (name === "scheduler_delete") {
     await scheduler.remove(String(args.id ?? ""));
     return { ok: true, output: "定时任务已删除。" };
+  }
+  /* ── 媒体生成三件套（09-29 用户：「让 Codex 能够直接调用这两个工作流」）────────────────
+     ⛔ 执行端与画布卡片**共用同一套 core**（generateImageResilient / video-gen 的 submit·poll·download）
+        —— 同一动作两套实现是本仓反复踩过的坑（文案漂移、行为不一致、修一处漏一处）。
+     ⛔ 视频必须两段式：提交立刻返回 jobId（不能阻塞回合），查询另一次调用；jobId 由主进程落盘，
+        关画布 / 重启应用都能续查。 */
+  if (name === "image_generate") {
+    const prompt = String(args.prompt ?? "").trim();
+    if (!prompt) return { ok: false, error: "缺少 prompt（要画什么）" };
+    const plugins = (await readBuiltinPlugins().catch(() => null)) as any;
+    const cfg = plugins?.image;
+    if (!cfg?.baseUrl || !cfg?.apiKey) return { ok: false, error: "生图插件还没配置：到「设置 → 插件 → 内置插件」填 API 地址、密钥与模型" };
+    const model = String(args.model || cfg.model || "").trim();
+    if (!model) return { ok: false, error: "生图模型没配（设置 → 插件 → 内置插件 的模型字段）" };
+    const count = Math.min(4, Math.max(1, Math.floor(Number(args.count) || 1)));
+    const cwd = String(args.workspace || threadCwd.get(callerThreadId) || "").trim();
+    const results = await Promise.allSettled(
+      Array.from({ length: count }, () => generateImageResilient({ baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model, prompt })),
+    );
+    const saved: string[] = [];
+    const errors: string[] = [];
+    for (const [index, result] of results.entries()) {
+      if (result.status !== "fulfilled") { errors.push(String((result.reason as Error)?.message ?? result.reason).slice(0, 140)); continue; }
+      let filePath = String(result.value?.path || "");
+      // 落进工作区（与画布同一棵树 .drama-canvas/assets/image）；没有工作目录就用 userData/images 那份
+      if (cwd && filePath) {
+        try {
+          const dir = path.join(cwd, ".drama-canvas", "assets", "image");
+          await fsp.mkdir(dir, { recursive: true });
+          const ext = path.extname(filePath) || ".png";
+          const base = String(args.name || "img").replace(/[\\/:*?"<>|]/g, "_").slice(0, 40) || "img";
+          const dest = path.join(dir, `${base}-${Date.now()}-${index + 1}${ext}`);
+          await fsp.copyFile(filePath, dest);
+          filePath = dest;
+        } catch { /* 复制失败退回原路径，不影响"图已生成"这个事实 */ }
+      }
+      if (filePath) saved.push(filePath);
+    }
+    if (!saved.length) return { ok: false, error: `生成失败：${errors[0] ?? "未知错误"}` };
+    const lines = saved.map((file, i) => `${i + 1}. ${file}`).join("\n");
+    const tail = errors.length ? `\n（另有 ${errors.length} 张失败：${errors[0]}）` : "";
+    const where = cwd ? "" : "\n（未指定工作目录，文件在应用数据目录的 images/ 下）";
+    return { ok: true, output: `已生成 ${saved.length}/${count} 张：\n${lines}${tail}${where}` };
+  }
+  if (name === "video_generate") {
+    const prompt = String(args.prompt ?? "").trim();
+    if (!prompt) return { ok: false, error: "缺少 prompt（要拍什么）" };
+    const providers = videoProviderViews().filter((view) => view.configured);
+    if (!providers.length) return { ok: false, error: "还没有配置任何视频生成接口 —— 到「设置 → 插件 → 视频生成接口」填 API Key" };
+    const providerId = String(args.providerId || providers[0].id);
+    if (!providers.some((view) => view.id === providerId)) {
+      return { ok: false, error: `厂商 ${providerId} 没配凭证。已配置的：${providers.map((v) => `${v.id}（${v.name}）`).join("、")}` };
+    }
+    const mode = args.mode === "i2v" ? "i2v" : "t2v";
+    if (mode === "i2v" && !args.image) return { ok: false, error: "i2v（图生视频）要给 image：本地图片路径或公网 URL" };
+    const cwd = String(args.workspace || threadCwd.get(callerThreadId) || "").trim();
+    const name = String(args.name || "").trim();
+    const { jobId } = await submitVideoCore({
+      providerId, mode, prompt,
+      image: args.image ? String(args.image) : undefined,
+      model: args.model ? String(args.model) : undefined,
+      duration: Number(args.duration) || undefined,
+    });
+    // 提交即落盘：关画布 / 重启应用后仍可续查（模型与画布卡片共用这份记录）
+    rememberVideoJob({
+      jobId, providerId, prompt, mode,
+      image: args.image ? String(args.image) : undefined,
+      workspace: cwd || undefined, name: name || undefined,
+      submittedAt: Date.now(),
+    });
+    const providerName = providers.find((view) => view.id === providerId)?.name ?? providerId;
+    return { ok: true, output: `已提交给 ${providerName}（${mode === "i2v" ? "图生视频" : "文生视频"}），jobId=${jobId}。\n这是异步任务，通常要几分钟 —— 你可以先做别的事，之后用 video_status 查进度（给这个 jobId）。` };
+  }
+  if (name === "video_status") {
+    const jobId = String(args.jobId ?? "").trim();
+    if (!jobId) {
+      const jobs = listVideoJobs().slice(0, 10);
+      if (!jobs.length) return { ok: true, output: "最近没有任何视频任务。" };
+      return {
+        ok: true,
+        output: jobs.map((job) => {
+          const when = new Date(job.submittedAt).toLocaleString("zh-CN", { hour12: false });
+          const extra = job.path || job.url || job.error || "";
+          const mark = job.status === "succeeded" ? "✅" : job.status === "failed" ? "❌" : "⏳";
+          return `${mark} ${job.jobId} | ${job.mode} | ${job.providerId} | ${when}${extra ? ` | ${String(extra).slice(0, 120)}` : ""}`;
+        }).join("\n"),
+      };
+    }
+    const job = findVideoJob(jobId);
+    const providerId = String(args.providerId || job?.providerId || "");
+    if (!providerId) return { ok: false, error: `找不到任务 ${jobId} 的厂商记录 —— 请带上 providerId 参数` };
+    const result = await pollVideoCore({ providerId, jobId });
+    // ⛔ queued / running / pending 都算"还在跑" —— 只有终态才往下走（源里状态枚举比 pending 多）
+    if (result.status !== "succeeded" && result.status !== "failed") {
+      return { ok: true, output: `任务 ${jobId} 还在生成中（${providerId}）—— 过一会儿再查一次。` };
+    }
+    if (result.status === "failed") {
+      updateVideoJob(jobId, { status: "failed", error: result.error });
+      return { ok: false, error: `生成失败：${result.error ?? "厂商未给原因"}` };
+    }
+    const url = String(result.url || "");
+    const workspace = String(args.workspace || job?.workspace || threadCwd.get(callerThreadId) || "").trim();
+    if (url && workspace) {
+      try {
+        const name = String(args.name || job?.name || `video-${jobId.slice(0, 8)}.mp4`);
+        const saved = await downloadVideoCore({ url, workspace, name });
+        updateVideoJob(jobId, { status: "succeeded", url, path: saved.path });
+        return { ok: true, output: `已生成并落盘：${saved.path}（${(saved.bytes / 1048576).toFixed(1)} MB）` };
+      } catch (error) {
+        updateVideoJob(jobId, { status: "succeeded", url });
+        return { ok: true, output: `视频已生成，但下载落盘失败（${(error as Error)?.message ?? error}）。原始地址：${url}` };
+      }
+    }
+    updateVideoJob(jobId, { status: "succeeded", url });
+    return { ok: true, output: `视频已生成：${url}${workspace ? "" : "（没有工作目录，未落盘；把工作目录给我可以再下载）"}` };
   }
   return { ok: false, error: `未知工具：${String(name)}` };
 }

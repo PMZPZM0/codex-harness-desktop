@@ -353,6 +353,53 @@ export function useDramaStory(
       try {
         const style = String(storyRef.current?.style || "").trim();
         const prompt = style ? `${style}。${promptBase}` : promptBase;
+        const name = `${String(payload.id || nodeId.replace(/[^\w-]/g, "")).slice(0, 40)}_视频.mp4`;
+
+        /** 轮询到终态：自适应间隔（前 60s 每 3s 快查，之后每 8s）；10 分钟还没好就交还给用户续查。 */
+        const waitForVideo = async (jobId: string, pollProvider: string): Promise<{ url?: string } | "timeout"> => {
+          const startedAt = Date.now();
+          const deadline = startedAt + 10 * 60_000;
+          for (;;) {
+            if (Date.now() > deadline) return "timeout";
+            await new Promise((r) => setTimeout(r, Date.now() - startedAt < 60_000 ? 3000 : 8000));
+            const status = await window.codex.videoPoll({ providerId: pollProvider, jobId });
+            if (status.status === "succeeded") return { url: String(status.url || "") };
+            if (status.status === "failed") throw new Error(String(status.error || "视频生成失败"));
+          }
+        };
+        /** 产物落盘 → 回填卡片 → 清掉未完成任务标记 */
+        const finishVideo = async (url: string) => {
+          if (!url) throw new Error("任务成功但没有返回视频地址");
+          if (!workspace) {
+            board.updatePayload(nodeId, { video: url, video_job: "", video_job_provider: "" });
+            board.saveNow();
+            notice("视频已生成（未选工作区，只写 URL 进卡片）", "ok");
+            return;
+          }
+          const written = await window.codex.videoDownload({ url, workspace, name, subdir: "video" });
+          const savedPath = String(written?.path || url);
+          board.updatePayload(nodeId, { video: savedPath, video_job: "", video_job_provider: "" });
+          board.saveNow();
+          void writeBack(nodeId);
+          notice(`视频已生成并落盘：${savedPath.split(/[\\/]/).pop()}（${((written?.bytes || 0) / 1048576).toFixed(1)} MB）`, "ok");
+        };
+
+        // ⛔ 09-29 续查优先：卡片上留着未完成任务（上次超时没等完 / 重启前提交的）⇒ **先查它**，
+        //    不重复提交 —— 重复提交 = 白花一次钱、同一张卡出两版视频。
+        //    任务记录同时由主进程落盘（userData/video-jobs.json），会话里的 MCP 工具也能查同一个。
+        const pendingJob = String(payload.video_job || "").trim();
+        const pendingProvider = String(payload.video_job_provider || payload.video_provider || "").trim();
+        if (pendingJob && pendingProvider) {
+          notice(`继续等待上一次提交的任务 …${pendingJob.slice(-8)}（不重复提交）`, "ok");
+          const outcome = await waitForVideo(pendingJob, pendingProvider);
+          if (outcome === "timeout") {
+            notice(`任务 …${pendingJob.slice(-8)} 还在跑 —— 稍后再点一次「视频 · 生成」即可继续等待，任务不会丢`, "err");
+            return;
+          }
+          await finishVideo(outcome.url || "");
+          return;
+        }
+
         const submitted = await window.codex.videoSubmit({
           providerId,
           mode,
@@ -361,30 +408,16 @@ export function useDramaStory(
           model: String(payload.video_model || "") || provider.defaultModel,
           duration: Number(payload.duration) || 5,
         });
-        notice(`${provider.name} 已提交（任务 …${String(submitted.jobId).slice(-8)}），每 5 秒查询一次，最长等 10 分钟`, "ok");
-        const deadline = Date.now() + 10 * 60_000;
-        let url = "";
-        for (;;) {
-          if (Date.now() > deadline) throw new Error("查询超时（10 分钟）—— 任务可能仍在跑，稍后重试即可");
-          await new Promise((r) => setTimeout(r, 5000));
-          const status = await window.codex.videoPoll({ providerId, jobId: submitted.jobId });
-          if (status.status === "succeeded") { url = String(status.url || ""); break; }
-          if (status.status === "failed") throw new Error(String(status.error || "视频生成失败"));
-        }
-        if (!url) throw new Error("任务成功但没有返回视频地址");
-        if (!workspace) {
-          board.updatePayload(nodeId, { video: url });
-          board.saveNow();
-          notice("视频已生成（未选工作区，只写 URL 进卡片）", "ok");
+        // 提交即记进卡片（主进程另有一份落盘）：超时 / 关画布 / 重启后都能续查
+        board.updatePayload(nodeId, { video_job: submitted.jobId, video_job_provider: providerId });
+        board.saveNow();
+        notice(`${provider.name} 已提交（任务 …${String(submitted.jobId).slice(-8)}）—— 前 1 分钟每 3 秒查一次，之后每 8 秒`, "ok");
+        const outcome = await waitForVideo(submitted.jobId, providerId);
+        if (outcome === "timeout") {
+          notice(`任务 …${String(submitted.jobId).slice(-8)} 已跑 10 分钟还没好 —— 稍后再点一次「视频 · 生成」继续等待（不会重复提交）`, "err");
           return;
         }
-        const name = `${String(payload.id || nodeId.replace(/[^\w-]/g, "")).slice(0, 40)}_视频.mp4`;
-        const written = await window.codex.videoDownload({ url, workspace, name, subdir: "video" });
-        const savedPath = String(written?.path || url);
-        board.updatePayload(nodeId, { video: savedPath });
-        board.saveNow();
-        void writeBack(nodeId);
-        notice(`视频已生成并落盘：${savedPath.split(/[\\/]/).pop()}（${((written?.bytes || 0) / 1048576).toFixed(1)} MB）`, "ok");
+        await finishVideo(outcome.url || "");
       } finally {
         mark(key, false);
       }
