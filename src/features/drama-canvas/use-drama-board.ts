@@ -29,6 +29,7 @@ import {
   dramaSnapshotKey,
   type DramaEdge,
   type DramaSnapshot,
+  upgradeLegacyStarterSnapshot,
 } from "../../lib/drama-canvas-model.mjs";
 import * as store from "./drama-storage";
 
@@ -243,21 +244,34 @@ export function useDramaBoard(onNotice: (text: string, tone?: "ok" | "err") => v
   /** 载入一张画布：铺快照 + **重置撤销栈**（新画布不该能撤销回上一张的内容）。 */
   const load = useCallback((name: string) => {
     const { snapshot, repaired } = store.readBoard(name);
-    const rf = rfNodesFrom(snapshot);
-    const rfE = rfEdgesFrom(snapshot);
+    /* ── 旧版 starter 模板**自动升级**（09-29 用户「我这怎么又是旧的了」）
+       病根：工作流模板只影响**新建**；存量画布在 localStorage 里，切 tab 时被原样读回
+       ⇒ 模板改了也永远看到旧卡片。这里在**读盘那一刻**把「空壳旧模板」原地重建为最新模板。
+       ⛔ 判据全在 upgradeLegacyStarterSnapshot：id 集合逐字相同 **且** 每个 payload 无任何
+          用户内容（文字/图/视频/参考图/提示词）—— 有内容的画布绝不自动改。
+       ⛔ 升级后立刻写回存储：否则每次打开都要重算，且用户手动保存前看到的仍是旧卡。 */
+    const upgraded = upgradeLegacyStarterSnapshot(snapshot);
+    const snap = upgraded || snapshot;
+    const rf = rfNodesFrom(snap);
+    const rfE = rfEdgesFrom(snap);
     nodesRef.current = rf;
     edgesRef.current = rfE;
     setNodes(rf);
     setEdges(rfE);
     setSelectedIds([]);
     anchorRef.current = null;
-    historyRef.current = [snapshot];
+    historyRef.current = [snap];
     indexRef.current = 0;
-    setHistory([snapshot]);
+    setHistory([snap]);
     setHistoryIndex(0);
-    setSavedAt(snapshot.updatedAt || Date.now());
+    setSavedAt(snap.updatedAt || Date.now());
     loadedBoard.current = name;
-    if (repaired.length) onNotice(`这张画布有 ${repaired.length} 处数据问题，已按可用的部分打开`);
+    if (upgraded) {
+      store.writeBoard(name, upgraded);
+      const meta = store.listBoards().find((b) => b.name === name);
+      if (meta) setBoards(store.upsertBoard({ ...meta, nodes: upgraded.nodes.length, updatedAt: Date.now() }));
+      onNotice("这张画布是旧版「生图工作流」模板（5 张卡），已自动升级为最新的 3 步精简版 —— 你原来没往里写过内容，所以没有损失");
+    } else if (repaired.length) onNotice(`这张画布有 ${repaired.length} 处数据问题，已按可用的部分打开`);
   }, [onNotice]);
 
   useEffect(() => {

@@ -448,3 +448,60 @@ export function model3dStarterWorkflow(baseX = 120, baseY = 100) {
   ].map(([source, target, relation]) => ({ source: { id: source }, target: { id: target }, relation }));
   return { version: DRAMA_SNAPSHOT_VERSION, nodes, edges, updatedAt: 0 };
 }
+
+/* --------------------------------------------------- 旧模板自动升级（09-29）
+
+   问题：工作流模板只在**新建**时生效，而存量画布存在 localStorage；切 tab 时优先读回旧板
+   ⇒ 模板改了也永远看到旧卡片（用户：「我这怎么又是旧的了」）。
+   做法：结构级识别「空壳旧模板」并原地重建为最新模板。
+   ⛔ 判据必须**同时**满足：① 节点 id 集合与某份历史模板逐字相同 ② 每个 payload 都没有内容
+      （文字 / 图 / 视频 / 参考图 / 提示词）—— 有内容的画布绝不自动改（不替用户做决定）。
+   ⛔ 别用「快照版本号」当判据：dramaNormalizeSnapshot 会重写版本号，且用户只要拖动过卡片
+      位置就会变 —— 结构性探测更稳。 */
+
+/** payload 里哪些字段算「用户内容」：任一非空就不算空壳。 */
+const STARTER_CONTENT_KEYS = ["text", "path", "url", "ref", "image", "video", "audio", "prompt", "note", "content"];
+
+/** 历史 starter 模板指纹（按 id 集合识别）。新增简化时必须**追加**一条，别改旧的。 */
+const LEGACY_STARTER_SIGNATURES = [
+  // 旧「生图工作流」：5 卡（需求说明 / 主提示词 / 出图 A / 出图 B / 选图结论）
+  { kind: "image", ids: ["n-brief", "n-prompt", "n-out-a", "n-out-b", "n-pick"], build: () => imageStarterWorkflow() },
+];
+
+function payloadHasContent(payload) {
+  const p = payload && typeof payload === "object" ? payload : {};
+  return STARTER_CONTENT_KEYS.some((key) => {
+    const value = p[key];
+    if (typeof value === "string") return value.trim().length > 0;
+    return value !== undefined && value !== null;
+  });
+}
+
+/**
+ * 识别这张快照是不是某份历史 starter 模板（**不看内容**，只看结构）。
+ * @returns {{ kind: string; ids: string[] } | null}
+ */
+export function legacyStarterSignature(snapshot) {
+  const nodes = Array.isArray(snapshot?.nodes) ? snapshot.nodes : [];
+  if (!nodes.length) return null;
+  /* 已知历史模板最多 5 个节点；数量差太远直接否掉，省得误判超大画布 */
+  const ids = nodes.map((n) => String(n?.id || "")).sort();
+  for (const sig of LEGACY_STARTER_SIGNATURES) {
+    const want = [...sig.ids].sort();
+    if (ids.length === want.length && ids.every((id, index) => id === want[index])) return { kind: sig.kind, ids: [...sig.ids] };
+  }
+  return null;
+}
+
+/**
+ * 若是「空壳旧模板」⇒ 返回升级后的最新快照；否则返回 null（调用方保持原样）。
+ * ⛔ 这是**唯一的自动改写入口**，内容判据写在这里；调用方只负责"非 null 就替换 + 写回"。
+ */
+export function upgradeLegacyStarterSnapshot(snapshot) {
+  const hit = legacyStarterSignature(snapshot);
+  if (!hit) return null;
+  const nodes = Array.isArray(snapshot?.nodes) ? snapshot.nodes : [];
+  if (nodes.some((node) => payloadHasContent(node?.payload))) return null;
+  const sig = LEGACY_STARTER_SIGNATURES.find((item) => item.kind === hit.kind);
+  return sig ? sig.build() : null;
+}

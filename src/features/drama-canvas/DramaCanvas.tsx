@@ -47,7 +47,7 @@ import { Box, Clapperboard,
   Images,
   ListChecks,
   FolderOpen, } from "lucide-react";
-import { DRAMA_GROUPS, DRAMA_NODE_DEFS, dramaNodeDef, dramaStarterWorkflow, imageStarterWorkflow, model3dStarterWorkflow, whiteboxStarterWorkflow } from "../../lib/drama-canvas-model.mjs";
+import { DRAMA_GROUPS, DRAMA_NODE_DEFS, dramaNodeDef, dramaStarterWorkflow, imageStarterWorkflow, legacyStarterSignature, model3dStarterWorkflow, upgradeLegacyStarterSnapshot, whiteboxStarterWorkflow } from "../../lib/drama-canvas-model.mjs";
 import { dramaAgentPrompt, dramaBoardRelativePath } from "../../lib/drama-agent-prompts.mjs";
 import { DramaActionsProvider, type DramaActions, type ViewerTarget } from "./drama-actions";
 import { DramaInspector } from "./DramaInspector";
@@ -403,8 +403,17 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
     const label = type === "drama" ? "短剧工作流" : "生图工作流";
     const existing = board.boards.find((b) => b.name !== board.board && detectFlowType(readBoard(b.name).snapshot.nodes) === type);
     if (existing) {
+      /* 09-29 用户「我这怎么又是旧的了」：切过去的那张若是**旧版模板**要说明白为什么它不一样。
+         · 空壳旧模板：load() 会**自动升级**（这里不重复提示，让 load() 那条说话）；
+         · 有内容的旧模板：绝不自动改 ⇒ 这里必须告诉用户"为什么没变 + 怎么要最新版"。 */
+      const existingSnap = readBoard(existing.name).snapshot;
+      const legacyWithContent = !upgradeLegacyStarterSnapshot(existingSnap) && !!legacyStarterSignature(existingSnap);
       board.switchBoard(existing.name);
-      pushNotice(`已切到${label}「${existing.title || existing.name}」`, "ok");
+      if (legacyWithContent) {
+        pushNotice(`已切到${label}「${existing.title || existing.name}」—— 这张是旧版 5 卡模板，且里面已有你的内容，没有自动改；想要最新精简版就「+ 新建 ▾ → ${label}」`, "err");
+      } else {
+        pushNotice(`已切到${label}「${existing.title || existing.name}」`, "ok");
+      }
       return;
     }
     createStarter(type);
@@ -489,7 +498,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                   onClick={() => switchFlow("drama")}
                 >{flow.type === "drama" ? flowLabel : "短剧工作流"}</button>
               </div>
-              <small>{flow.type === "drama" ? "剧本 → 角色 → 分镜表 → 逐镜出片" : "需求 → 主提示词 → 出图 A/B → 选图"}</small>
+              <small>{flow.type === "drama" ? "剧本 → 角色 → 分镜表 → 逐镜出片" : "写提示词 → 出图 → 备注"}</small>
             </div>
             <label className="drama-canvas-select nodrag" title={`画布（项目）：一张画布 = 一个工作流。这里是切换/查看已有画布${workspace ? `\n工作文件夹：${workspace}` : "\n（还没选工作文件夹，生成产物不会落盘）"}`}>
               <span>画布</span>
@@ -555,7 +564,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                       <Sparkles size={13} /><span>短剧工作流<small>剧本 → 角色 → 分镜 → 逐镜出片</small></span>
                     </button>
                     <button role="menuitem" className="is-brand" onClick={() => { setNewMenuOpen(false); createStarter("image"); }}>
-                      <Images size={13} /><span>生图工作流<small>需求 → 主提示词 → 出图 A/B → 选图</small></span>
+                      <Images size={13} /><span>生图工作流<small>写提示词 → 出图 → 备注</small></span>
                     </button>
                     <button role="menuitem" onClick={() => { setNewMenuOpen(false); createStarter("whitebox"); }}>
                       <Clapperboard size={13} /><span>白模视频工作流<small>Blender 白模预演 → Seedance 2.5 渲染成片</small></span>
@@ -737,7 +746,7 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
                 <b>这块画布还是空的</b>
                 <ul>
                   <li><strong>新建短剧工作流</strong> —— 剧本 → 角色/场景 → 分镜表 → 出片，整条链路一次摆好</li>
-                  <li><strong>新建生图工作流</strong> —— 需求 → 主提示词 → 出图 A/B → 选图，专门出图</li>
+                  <li><strong>新建生图工作流</strong> —— 写提示词 → 出图 → 备注，专门出图</li>
                   <li><strong>画布</strong> = 一个方案一张板（左上角可切换/新建）；<strong>分镜表</strong> = 镜头的唯一真源，交给 Agent 生成时读的就是它</li>
                 </ul>
                 <small>从上面两个按钮挑一个开始；也可以在左侧「+ 添加节点」自己摆卡。</small>

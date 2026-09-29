@@ -57,7 +57,7 @@ export function dramaEndpointId(endpoint: unknown): string;
 export function dramaMergeSnapshot(incoming: unknown, current: unknown): DramaNormalizedSnapshot;
 export function dramaSnapshotKey(snapshot: unknown): string;
 export function dramaStarterWorkflow(baseX?: number, baseY?: number): DramaSnapshot;
-/** 生图工作流起手（09-27）：需求 → 主提示词 → 出图 A/B → 选图。 */
+/** 生图工作流起手（09-29 精简为 3 步）：写提示词 → 出图 → 备注（可选）。 */
 export function imageStarterWorkflow(baseX?: number, baseY?: number): DramaSnapshot;
 export function dramaAutoLayout(
   nodes: DramaNode[],
@@ -68,3 +68,7 @@ export function dramaAutoLayout(
 export function whiteboxStarterWorkflow(baseX?: number, baseY?: number): DramaSnapshot;
 /** 3D 建模工作流（参考图 → Aholo Lux3D 生成资产 → Blender 组装）：节点带 payload.flow = "model3d" */
 export function model3dStarterWorkflow(baseX?: number, baseY?: number): DramaSnapshot;
+/** 识别历史 starter 模板（只看结构，不看内容）：命中返回 { kind, ids }，否则 null。 */
+export function legacyStarterSignature(snapshot: DramaSnapshot): { kind: string; ids: string[] } | null;
+/** 空壳旧模板 ⇒ 返回升级后的最新快照；有内容或非旧模板 ⇒ 返回 null（调用方保持原样）。 */
+export function upgradeLegacyStarterSnapshot(snapshot: DramaSnapshot): DramaSnapshot | null;
