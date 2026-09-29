@@ -353,7 +353,9 @@ export function useDramaStory(
         else if (kind === "character" || kind === "location") board.updatePayload(nodeId, { ref: path });
         else board.updatePayload(nodeId, { path, url: path, title: node.data.payload?.title || "参考图" });
         board.saveNow();
-        notice(`参考图已导入：${path.split(/[\\/]/).pop()}`, "ok");
+        notice(written?.fallback
+          ? `参考图已暂存到应用数据目录：${path.split(/[\\/]/).pop()}（当前画布未绑定会话工作区；想存进工作区就先为会话选工作文件夹）`
+          : `参考图已导入：${path.split(/[\\/]/).pop()}`, "ok");
       } catch (error) {
         notice(`导入失败：${error instanceof Error ? error.message : String(error)}`, "err");
       }

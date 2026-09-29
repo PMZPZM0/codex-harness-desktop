@@ -3436,10 +3436,10 @@
       "channel": "drama-canvas:asset-write",
       "paramsImpl": "input: { workspace: string; name: string; base64: string; subdir?: string }",
       "paramsDecl": "input: { workspace: string; name: string; base64: string; subdir?: string }",
-      "returns": "Promise<{ path: string }>",
+      "returns": "Promise<{ path: string; fallback?: boolean }>",
       "invokeArgs": "input",
-      "cast": "Promise<{ path: string }>",
-      "note": "把二进制素材（配音 WAV / 生成图）按字节写进工作区 .drama-canvas/assets/。⛔ 渲染层唯一的写入通道 fs:write 是 utf8 字符串写，写不了二进制，WAV 必须走这里"
+      "cast": "Promise<{ path: string; fallback?: boolean }>",
+      "note": "把二进制素材（配音 WAV / 生成图）按字节写进工作区 .drama-canvas/assets/；工作区掉出可信根（会话已关/重启）时回退应用数据目录并置 fallback=true（09-29 修「参考图传不了」）。⛔ 渲染层唯一的写入通道 fs:write 是 utf8 字符串写，写不了二进制，WAV 必须走这里"
     },
     {
       "name": "weixinSend",

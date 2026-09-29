@@ -644,4 +644,26 @@ export async function run() {
       "【208】工作流具体名由 payload.flow 判定（tab 显示“白模视频工作流”而非误归“短剧”）"
     );
   }
+  /* ══ 画布素材写入：可信根失效的回退（09-29 用户「参考图传不了」）══
+     ⛔ 事故本质：可信根 = userData + **活着的会话 cwd** + 用户选过的路径 ⇒ 会话一关/应用一重启，
+        画布 workspace 就掉出白名单，上传**必然**被拒（用户看到的原文：只允许把素材写进会话工作区或应用数据目录）。
+     修法两条缺一不可：① 不通过时**回退应用数据目录**（错误文案本来就写着「或应用数据目录」）；
+     ② 回退必须**带标记**让 UI 说清落点 —— 静默回退比报错更糟（用户以为进了工作区，事后找不到文件）。 */
+  {
+    const dc = codeOnly(readFileSync(join(ROOT, "electron", "features", "drama-canvas.ts"), "utf8"));
+    (/const trusted = Boolean\(resolved\) && isInsideTrustedRoots\(resolved\)/.test(dc) && /path\.join\(app\.getPath\("userData"\), "drama-canvas-assets"\)/.test(dc) ? ok : fail)(
+      "【210】素材写入：可信根不通过时回退应用数据目录（不许直接抛 —— 画布脱离活会话时上传必失败）"
+    );
+    (/fallback: !trusted/.test(dc) ? ok : fail)(
+      "【210】回退必须带 fallback 标记（静默回退 = 用户以为写进了工作区）"
+    );
+    const story = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8"));
+    (/written\?\.fallback/.test(story) && story.includes("已暂存到应用数据目录") ? ok : fail)(
+      "【210】渲染层把回退说清楚（提示里写明落点与怎么改回工作区）"
+    );
+    const manifest = readFileSync(join(ROOT, "electron", "ipc-channels.manifest.json"), "utf8");
+    (/Promise<\{ path: string; fallback\?: boolean \}>/.test(manifest) ? ok : fail)(
+      "【210】IPC 类型面同步 fallback（类型不同步 = 渲染层拿不到标记）"
+    );
+  }
 }
