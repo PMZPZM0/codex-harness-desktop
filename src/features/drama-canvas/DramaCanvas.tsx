@@ -602,7 +602,15 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
             )}
             <button className="drama-canvas-head-btn" title="管理所有画布项目：切换 / 重命名 / 删除 / 打开数据文件夹" onClick={() => { setProjectsOpen(true); setResultsOpen(false); }}><FolderOpen size={13} />项目</button>
             <button className="drama-canvas-head-btn" title="集中查看这张画布生成的图 / 视频 / 配音" onClick={() => { setResultsOpen(true); setInspectorOpen(false); }}><Images size={13} />结果</button>
-            <button className="drama-canvas-head-btn" onClick={() => { board.saveNow(); void story.saveNow(); pushNotice("已保存到本机" + (workspace ? "（分镜表同时写到工作区）" : ""), "ok"); }}><Save size={13} />保存</button>
+            <button className="drama-canvas-head-btn" onClick={async () => {
+              board.saveNow();
+              /* ⛔ 三态、一条提示（09-29 用户：「我点击保存，提示这个，啥意思」——
+                 此前按钮盲目乐观说"分镜表同时写到工作区"，写失败时再弹一条红错，两条自相矛盾）。 */
+              const saved = await story.saveNow();
+              if (saved.path) pushNotice("已保存：本机 + 工作区文件（Codex 会话读得到这份分镜表）", "ok");
+              else if (!workspace) pushNotice("已保存到本机（分镜表只在本机）—— 给会话选个工作文件夹后，Codex 会话才读得到它", "");
+              else pushNotice(`已保存到本机，但工作区文件写失败：${saved.error || "未知原因"} —— 确认那个工作文件夹还在，再保存一次`, "err");
+            }}><Save size={13} />保存</button>
             <button className="drama-canvas-head-btn" onClick={onClose} title="退出画布"><X size={13} />退出</button>
           </div>
         </header>

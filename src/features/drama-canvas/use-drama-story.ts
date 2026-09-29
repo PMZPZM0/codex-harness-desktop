@@ -68,7 +68,8 @@ export interface DramaStoryApi {
   /** 删分镜表（级联：本机两份状态 + 工作区文件 + 画布卡与 meta 的引用解绑） */
   deleteStory: (name: string) => Promise<void>;
   createStory: (title: string) => Promise<Storyboard>;
-  saveNow: () => Promise<void>;
+  /** 保存并返回结果（09-29）：调用方据此给**一条**准确提示 —— 写没写进工作区、失败原因是什么。 */
+  saveNow: () => Promise<{ path: string | null; error?: string }>;
   expand: (boardNodeId: string, boardName: string) => Promise<{ scenes: number; shots: number; characters: number; missing: string[] } | null>;
   writeBack: (nodeId: string) => Promise<void>;
   busy: Set<string>;
@@ -107,6 +108,8 @@ export function useDramaStory(
   const [busy, setBusy] = useState<Set<string>>(() => new Set());
 
   const storyRef = useRef<Storyboard | null>(null);
+  /* 自动保存的失败提示去重（同一原因只弹一次，别每敲一下字就弹一遍）。 */
+  const lastSaveErrorRef = useRef<string>("");
   const saveTimer = useRef<number | null>(null);
   storyRef.current = story;
 
@@ -138,26 +141,37 @@ export function useDramaStory(
     return () => { alive = false; };
   }, [workspace, storyName, notice]);
 
-  const persist = useCallback(async () => {
+  /* ⛔ 返回结果而不是在这里提示（09-29）：保存按钮要按结果给**一条**准确提示 ——
+     此前按钮盲目乐观说"已保存（分镜表同时写到工作区）"，persist 又补一条失败，两条并存自相矛盾。 */
+  const persist = useCallback(async (): Promise<{ path: string | null; error?: string }> => {
     const data = storyRef.current;
-    if (!data) return;
-    const { path, meta } = await store.saveStoryboard(workspace, storyName, data);
+    if (!data) return { path: null };
+    const { path, meta, error } = await store.saveStoryboard(workspace, storyName, data);
     setStories((current) => {
       const next = current.filter((s) => s.name !== meta.name);
       next.unshift(meta);
       return next;
     });
-    if (!path && workspace) notice("分镜表已存到本机，但写工作区文件失败 —— 引擎那侧读不到这份", "err");
-  }, [notice, storyName, workspace]);
+    return { path, error };
+  }, [storyName, workspace]);
 
   const scheduleSave = useCallback(() => {
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => { saveTimer.current = null; void persist(); }, STORYBOARD_SAVE_MS);
+    saveTimer.current = window.setTimeout(() => {
+      saveTimer.current = null;
+      void persist().then((r) => {
+        /* 自动保存：只在**写工作区失败**时提示，且同一原因只提示一次（去重）。 */
+        if (r.path) { lastSaveErrorRef.current = ""; return; }
+        if (!workspace || !r.error || r.error === lastSaveErrorRef.current) return;
+        lastSaveErrorRef.current = r.error;
+        notice(`分镜表已存到本机，但写工作区文件失败：${r.error} —— 那个工作文件夹可能已不在（或会话已关），给会话选个新文件夹再保存一次`, "err");
+      });
+    }, STORYBOARD_SAVE_MS);
   }, [persist]);
 
   const saveNow = useCallback(async () => {
     if (saveTimer.current) { window.clearTimeout(saveTimer.current); saveTimer.current = null; }
-    await persist();
+    return persist();
   }, [persist]);
 
   useEffect(() => () => {
