@@ -191,6 +191,17 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
     const displayTitle = variant === "member"
       ? (parsedMember?.profession || rawTitle.match(/^.*?·\s*(.+)$/)?.[1]?.trim() || rawTitle)
       : rawTitle;
+    /* 会话来源标签（09-29 用户：「专家团在主代理会话加上专家团标签字样…专家就专家标签，
+       普通会话无标签，代理加上代理标签」）。
+       判定优先级：显式 variant（簇头=lead、成员=member，由调用方权威传入）> 调度记录 kind。
+       ⛔ 用户语义映射：专家团主会话与专家团调度 =「专家团」；成员与专家调度 =「专家」；
+       子智能体调度 =「代理」；普通会话（main）**无标签**。 */
+    const delegateKind = bag.delegateRecords[entry.id]?.kind;
+    const sourceBadge = variant === "lead" || delegateKind === "team"
+      ? { tone: "team", label: "专家团" }
+      : variant === "member" || delegateKind === "expert"
+        ? { tone: "expert", label: "专家" }
+        : delegateKind === "subagent" ? { tone: "agent", label: "代理" } : null;
     return (
     <div
       className={`thread-row ${bag.thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${bag.threadRowMenu?.id === entry.id ? "menu-open" : ""} ${poppedOut ? "popped-out" : ""}${variant === "member" ? " is-member-row" : ""}${bag.delegateRecords[entry.id] ? " is-delegated-row" : ""}`}
@@ -198,7 +209,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
       data-thread-id={entry.id}
     >
       <button title={entry.rolloutMissing ? "该会话的历史记录文件已丢失，无法打开" : poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : bag.runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : bag.unreadDoneIds.has(entry.id) ? "任务已完成，点击查看" : "双击修改任务名称"} onClick={() => { bag.clearThreadDoneUnread(entry.id); if (poppedOut) { bag.showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } if (entry.rolloutMissing) { bag.showToast("会话记录已丢失", "该会话的历史记录文件（rollout）已不在磁盘上，引擎无法恢复内容。可归档该会话，或新建会话继续。"); return; } void bag.openThread(entry.id); }}>
-        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void bag.openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void bag.renameThread(entry.id, next); }); }}><span title={rawTitle}>{displayTitle}</span>{bag.delegateRecords[entry.id] ? <DispatchBadge record={bag.delegateRecords[entry.id]} /> : null}{extras?.badge}{entry.rolloutMissing && <span className="thread-attention-badge tone-confirm" title="会话的历史记录文件已丢失，点开只能看到提示">记录丢失</span>}{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
+        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void bag.openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void bag.renameThread(entry.id, next); }); }}>{sourceBadge && <span className={`thread-source-badge tone-${sourceBadge.tone}`} title={`来源：${sourceBadge.label}`}>{sourceBadge.label}</span>}<span title={rawTitle}>{displayTitle}</span>{bag.delegateRecords[entry.id] ? <DispatchBadge record={bag.delegateRecords[entry.id]} /> : null}{extras?.badge}{entry.rolloutMissing && <span className="thread-attention-badge tone-confirm" title="会话的历史记录文件已丢失，点开只能看到提示">记录丢失</span>}{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
       </button>
       <div className="thread-actions">
         <button className={`thread-pin-button ${bag.pinnedThreads.includes(entry.id) ? "pinned" : ""}`} title={bag.pinnedThreads.includes(entry.id) ? "取消置顶" : "置顶会话"} onClick={(event) => { event.stopPropagation(); bag.togglePinThread(entry.id); }}><Pin size={13} /></button>
