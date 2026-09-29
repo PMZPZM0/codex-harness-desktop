@@ -19,7 +19,7 @@ interface FieldSpec {
   key: string;
   label: string;
   type?: "text" | "textarea" | "number" | "select";
-  options?: string[];
+  options?: Array<string | { value: string; label: string }>;   // 字符串 = 值即显示；对象 = value 存 payload、label 给人看
   placeholder?: string;
   hint?: string;
 }
@@ -28,11 +28,12 @@ interface FieldSpec {
 /** 生图尺寸预设（09-29 自媒体刚需：平台画幅各不相同，手填容易错）。
  *  ⛔ 网关接受的尺寸各不相同 —— 报错就把这项清空走默认，不要硬试。 */
 const IMAGE_SIZE_PRESETS = [
-  { value: "1024x1024", label: "方图 1:1 · 1024×1024（头像 / 图标 / 方版配图）" },
-  { value: "1024x1536", label: "竖图 2:3 · 1024×1536（小红书 / 竖版海报）" },
-  { value: "1536x1024", label: "横图 3:2 · 1536×1024（公众号封面 / 横版配图）" },
-  { value: "768x1365", label: "竖屏 9:16 · 768×1365（抖音 / 视频号封面）" },
-  { value: "1365x768", label: "宽屏 16:9 · 1365×768（B 站 / 横屏封面）" },
+  { value: "1024x1024", label: "1:1 · 1024×1024（电商主图 / 头像 / 方图）" },
+  { value: "1024x1365", label: "3:4 · 1024×1365（电商详情 / 小红书）" },
+  { value: "768x1365", label: "9:16 · 768×1365（抖音 / 视频号封面）" },
+  { value: "1024x1536", label: "2:3 · 1024×1536（竖版海报 / 手机壁纸）" },
+  { value: "1536x1024", label: "3:2 · 1536×1024（横版配图 / 公众号封面）" },
+  { value: "1365x768", label: "16:9 · 1365×768（B 站 / 宽屏封面）" },
 ];
 
 const FIELDS: Record<string, FieldSpec[]> = {
@@ -87,7 +88,7 @@ const FIELDS: Record<string, FieldSpec[]> = {
   ],
   image: [
     { key: "title", label: "标题" },
-    { key: "size", label: "尺寸 / 画幅", type: "select", options: IMAGE_SIZE_PRESETS.map((p) => p.value), hint: "按平台选：小红书 2:3、抖音 9:16、公众号/B站横版。网关不认这个尺寸会报错 —— 清空即走默认" },
+    { key: "size", label: "尺寸 / 画幅", type: "select", options: [{ value: "", label: "默认（由生图接口决定）" }, ...IMAGE_SIZE_PRESETS.map((p) => ({ value: p.value, label: p.label }))], hint: "按用途选比例：电商主图 1:1、详情 3:4、抖音 9:16、B站 16:9。个别接口不认该尺寸会报错 —— 选回「默认」即可" },
     { key: "negative", label: "负面提示词", type: "textarea", placeholder: "不要文字、不要畸形手指、不要水印、不要多余肢体…", hint: "写清楚**不想要什么**，比在正面词里绕半天有效；不是每个网关都支持，无效时改回正面描述" },
     { key: "role", label: "用途" },
     { key: "path", label: "文件路径" },
@@ -157,7 +158,7 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
                 onBlur={() => void actions.story.writeBack(id)}
               />
             ) : f.type === "select" ? (
-              <AppSelect value={String(payload[f.key] ?? "")} onChange={(v) => { actions.board.updatePayload(id, { [f.key]: v }); void actions.story.writeBack(id); }} options={[...((f.options || [])).map((o) => ({ value: (o), label: (`${o}`), }))]} className="nodrag" />
+              <AppSelect value={String(payload[f.key] ?? "")} onChange={(v) => { actions.board.updatePayload(id, { [f.key]: v }); void actions.story.writeBack(id); }} options={(f.options || []).map((o) => typeof o === "string" ? { value: o, label: o } : { value: o.value, label: o.label })} className="nodrag" />
             ) : (
               <input
                 className="nodrag"
