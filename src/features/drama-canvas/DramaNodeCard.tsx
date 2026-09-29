@@ -70,13 +70,32 @@ function Head({ kind, id, title, subtitle, extra }: { kind: string; id: string; 
   );
 }
 
-function MediaPreview({ path, alt, kind }: { path: string; alt: string; kind: "image" | "video" }) {
+/** 卡片上的媒体缩略图（09-29 用户：「工作流卡片里面的图片没有预览功能，不方便」）。
+ *  ⛔ 包成 button 是为了**可点开** —— 缩略图本身就是看产物的入口，只显示不给点等于没有预览。
+ *    stopPropagation 必须有：否则点图片会连带选中/拖动卡片。 */
+function MediaPreview({ path, alt, kind, title, nodeId, fields, channel }: {
+  path: string; alt: string; kind: "image" | "video";
+  title?: string; nodeId?: string; fields?: string[]; channel?: "image" | "video" | "audio";
+}) {
+  const actions = useDramaActions();
   if (!path) return null;
   const name = path.split(/[\\/]/).pop() || path;
+  const open = (event: { stopPropagation: () => void }) => {
+    event.stopPropagation();
+    actions.openMedia({ path, kind, title: title ? `${title} · ${name}` : name, nodeId, fields, channel });
+  };
   if (kind === "video") {
-    return <div className="drama-canvas-card-media nodrag nowheel"><Video size={16} /><span title={path}>{name}</span></div>;
+    return (
+      <button className="drama-canvas-card-media nodrag nowheel" title={`点开预览/操作：${path}`} onClick={open}>
+        <Video size={16} /><span>{name}</span>
+      </button>
+    );
   }
-  return <img className="drama-canvas-card-shot nodrag" src={imageDisplaySrc(path)} alt={alt} loading="lazy" title={name} />;
+  return (
+    <button className="drama-canvas-card-shotbtn nodrag" title={`点开预览大图：${name}`} onClick={open}>
+      <img className="drama-canvas-card-shot" src={imageDisplaySrc(path)} alt={alt} loading="lazy" />
+    </button>
+  );
 }
 
 function AudioPreview({ path }: { path: string }) {
@@ -214,7 +233,7 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
     if (kind === "shot") {
       return (
         <>
-          {payload.first_frame ? <MediaPreview path={String(payload.first_frame)} alt="首帧" kind="image" /> : <div className="drama-canvas-empty"><Sparkles size={16} /><span>还没有首帧</span></div>}
+          {payload.first_frame ? <MediaPreview path={String(payload.first_frame)} alt="首帧" kind="image" title={String(payload.title || "首帧")} nodeId={id} fields={["first_frame"]} channel="image" /> : <div className="drama-canvas-empty"><Sparkles size={16} /><span>还没有首帧</span></div>}
           <div className="drama-canvas-card-text is-prompt">{String(payload.prompt || "（生成时自动沿用连入的剧本与场景描述，可直接生成）")}</div>
           <div className="drama-canvas-card-line">{String(payload.line || "无人声")}</div>
           {payload.audio ? <AudioPreview path={String(payload.audio)} /> : null}
@@ -245,7 +264,7 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
       const path = String(payload.path || payload.url || "");
       return (
         <>
-          {kind === "image" && path ? <MediaPreview path={path} alt={String(payload.title || "参考图")} kind="image" /> : null}
+          {kind === "image" && path ? <MediaPreview path={path} alt={String(payload.title || "参考图")} kind="image" title={String(payload.title || "参考图")} nodeId={id} fields={["path", "url"]} channel="image" /> : null}
           {kind === "audio" ? <AudioPreview path={path} /> : null}
           <div className="drama-canvas-card-text">{String(payload.text || payload.prompt || "（生成时自动沿用连入的上游提示词；点生成或在此写自己的）")}</div>
           <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />
@@ -268,7 +287,7 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
     const embedded = String(payload.ref || "");
     return (
       <>
-        {embedded ? <MediaPreview path={embedded} alt={String(payload.name || def.label)} kind="image" /> : null}
+        {embedded ? <MediaPreview path={embedded} alt={String(payload.name || def.label)} kind="image" title={String(payload.name || def.label)} nodeId={id} fields={["ref"]} channel="image" /> : null}
         <div className="drama-canvas-card-text">{String(payload.description || (embedded ? "" : kind === "character" ? "（人物设定：生成定妆照时自动沿用连入的剧本内容，可在此改写）" : "（场景设定：生成场景图时自动沿用连入的剧本内容，可在此改写）"))}</div>
         <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />
       </>
