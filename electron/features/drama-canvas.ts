@@ -13,7 +13,7 @@
  *
  * 跨域取用：`isInsideTrustedRoots` 从 `../runtime-refs`（叶子模块）取，不在模块顶层求值任何路径。
  */
-import { ipcMain } from "electron";
+import { app, ipcMain } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isInsideTrustedRoots } from "../runtime-refs";
@@ -40,9 +40,17 @@ export function safeSubdir(raw: string): string {
 }
 
 ipcMain.handle("drama-canvas:asset-write", async (_event, input: { workspace: string; name: string; base64: string; subdir?: string }) => {
-  const workspace = path.resolve(String(input?.workspace || ""));
-  if (!workspace) throw new Error("请先为会话选择工作文件夹，再保存素材");
-  if (!isInsideTrustedRoots(workspace)) throw new Error("只允许把素材写进会话工作区或应用数据目录");
+  const requested = String(input?.workspace || "").trim();
+  const resolved = requested ? path.resolve(requested) : "";
+  /* ⛔⛔ 09-29 用户实测「参考图传不了」（报错：只允许把素材写进会话工作区或应用数据目录）：
+     可信根 = userData + **活着的会话 workdir** + 用户亲自选过的路径 ⇒ 画布一旦脱离活会话
+     （重启应用 / 会话已关），它的 workspace 就掉出可信根，上传**必然**被拒。
+     素材是暂存物、不是用户工作产物 ⇒ 白名单不通过时**回退应用数据目录**（错误文案本来就写着
+     「或应用数据目录」，说明这是设计意图），并返回 fallback 标记 —— ⛔ 不许静默回退：
+     静默会让人以为写进了工作区，之后找不到文件。 */
+  const trusted = Boolean(resolved) && isInsideTrustedRoots(resolved);
+  const base = trusted ? resolved : path.join(app.getPath("userData"), "drama-canvas-assets");
+  const sub = safeSubdir(input?.subdir || "");
 
   const name = safeAssetName(input?.name);
   if (!ASSET_EXT.test(name)) throw new Error(`不支持的素材格式：${path.extname(name) || "（无扩展名）"}。只支持音频、图片与视频文件。`);
@@ -51,11 +59,11 @@ ipcMain.handle("drama-canvas:asset-write", async (_event, input: { workspace: st
   if (!buffer.length) throw new Error("素材内容为空，没有写入");
   if (buffer.length > MAX_ASSET_BYTES) throw new Error(`素材过大（${(buffer.length / 1048576).toFixed(1)}MB），单文件上限 ${MAX_ASSET_BYTES / 1048576}MB`);
 
-  const dir = path.join(workspace, ROOT_DIR, ASSET_DIR, safeSubdir(input?.subdir || ""));
+  const dir = trusted ? path.join(base, ROOT_DIR, ASSET_DIR, sub) : path.join(base, sub);
   await fs.mkdir(dir, { recursive: true });
   const target = path.join(dir, name);
   await fs.writeFile(target, buffer);
-  return { path: target };
+  return { path: target, fallback: !trusted };
 });
 
 /** 删分镜表的**工作区文件**（09-29 项目管理）。

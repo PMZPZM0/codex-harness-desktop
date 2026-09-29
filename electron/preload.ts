@@ -468,8 +468,8 @@ contextBridge.exposeInMainWorld("codex", {
   phoneHarnessOpenSettings: () => __ipc("phone:harness:open-settings", 0, []) as Promise<void>,
   /* 把工具链里的 adb 写进 phone-harness 配置（android.adb，不改系统 PATH） */
   phoneHarnessWireAdb: () => __ipc("phone:harness:wire-adb", 0, []) as Promise<{adb:string}>,
-  /* 把二进制素材（配音 WAV / 生成图）按字节写进工作区 .drama-canvas/assets/。⛔ 渲染层唯一的写入通道 fs:write 是 utf8 字符串写，写不了二进制，WAV 必须走这里 */
-  dramaCanvasAssetWrite: (input: { workspace: string; name: string; base64: string; subdir?: string }) => __ipc("drama-canvas:asset-write", 0, [input]) as Promise<{ path: string }>,
+  /* 把二进制素材（配音 WAV / 生成图）按字节写进工作区 .drama-canvas/assets/；工作区掉出可信根（会话已关/重启）时回退应用数据目录并置 fallback=true（09-29 修「参考图传不了」）。⛔ 渲染层唯一的写入通道 fs:write 是 utf8 字符串写，写不了二进制，WAV 必须走这里 */
+  dramaCanvasAssetWrite: (input: { workspace: string; name: string; base64: string; subdir?: string }) => __ipc("drama-canvas:asset-write", 0, [input]) as Promise<{ path: string; fallback?: boolean }>,
   /* 主动推送一条微信消息给用户（to 缺省=最近对话用户）。⛔ 正文气泡依赖 context_token，对方近期发过消息才最可靠；机器人未登录时抛错 */
   weixinSend: (input: { to?: string; text: string }) => __ipc("weixin:send", 0, [input]) as Promise<{ ok: boolean }>,
   /* 内置视频生成接口：国内外 8 家厂商清单 + 是否已配凭证（可灵/万相/Seedance/CogVideoX/MiniMax/Runway/Luma/Veo） */
