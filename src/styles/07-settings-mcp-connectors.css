@@ -1153,7 +1153,7 @@
   animation: 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) both working-appear;
 }
 .modal-backdrop {
-  z-index: 30;
+  z-index: 400;
   background: #1e1e1a61;
   place-items: center;
   padding: 24px;

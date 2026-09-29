@@ -495,7 +495,7 @@
 /* ⛔ position:fixed（不是 absolute）：设置内容是滚动容器，absolute 浮层会被裁掉下半截 */
 .page-info-pop {
   position: fixed;
-  z-index: 300;
+  z-index: 1000;
   padding: 10px 12px 9px;
   border: 1px solid var(--line);
   border-radius: 10px;

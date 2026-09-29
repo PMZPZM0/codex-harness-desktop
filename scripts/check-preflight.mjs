@@ -76,6 +76,7 @@ const MODULES = [
   "16-settings-plugins",
   "17-scheduled-tasks",
   "18-app-select",
+  "19-z-layers",
 ];
 
 for (const name of MODULES) {

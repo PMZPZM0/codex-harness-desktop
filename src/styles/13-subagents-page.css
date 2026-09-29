@@ -912,7 +912,7 @@
 }
 .effort-picker-pop {
   position: fixed;
-  z-index: 220;
+  z-index: 1000;
   width: min(340px, calc(100vw - 24px));
   padding: 13px 14px 9px;
   border: 1px solid var(--line);
