@@ -187,6 +187,7 @@ function dispatchMcpTools(): unknown[] {
           workspace: { type: "string", description: "产物落盘的工作目录（缺省 = 调用者会话的工作目录）" },
           name: { type: "string", description: "产物文件名（缺省 视频.mp4）" },
           aspect: { type: "string", enum: ["16:9", "9:16", "1:1"], description: "画幅。⚠️ 只有部分厂商支持指定（通义万相 / 即梦Seedance / Runway / Veo）；不支持的会明确报错并告诉你改用哪几家" },
+          video: { type: "string", description: "参考视频（白模预演）的公网 URL。⚠️ 仅 Seedance 2.0/2.5 支持；role=reference_video 传给模型。本地视频请先传到可公网访问的位置" },
         },
         required: ["prompt"],
       },

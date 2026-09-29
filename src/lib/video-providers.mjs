@@ -1,7 +1,7 @@
 /**
  * video-providers —— 视频生成接口的**纯适配层**（无副作用，可被守卫真跑）。
  *
- * 覆盖：国内 5 家（可灵 / 通义万相 / 即梦Seedance / 智谱CogVideoX / MiniMax海螺）
+ * 覆盖：国内 5 家（可灵 / 通义万相 / 即梦Seedance〔1.0 文本参数协议 + 2.0/2.5 body 参数协议与视频参考〕/ 智谱CogVideoX / MiniMax海螺）
  *      国外 3 家（Runway / Luma / Google Veo）。
  * 每家四个纯函数语义：buildSubmit（组装提交请求）→ parseSubmit（拿 jobId）→
  * buildPoll（组装查询请求）→ parsePoll（归一成 queued/running/succeeded/failed + 产物 url）。
@@ -24,7 +24,7 @@ export const VIDEO_OPTIONAL_FIELDS = ["baseUrl", "model"];
 export const VIDEO_PROVIDERS = [
   { id: "kling", name: "可灵 Kling（快手）", region: "cn", modes: ["t2v", "i2v"], imageInput: "both", baseUrl: "https://api.klingai.com", fields: ["accessKey", "secretKey"], models: ["kling-v1", "kling-v1-6"], defaultModel: "kling-v1" },
   { id: "wanx", name: "通义万相（阿里百炼）", region: "cn", modes: ["t2v", "i2v"], imageInput: "url", baseUrl: "https://dashscope.aliyuncs.com", fields: ["apiKey"], models: ["wan2.2-t2v-plus", "wan2.2-i2v-plus", "wanx2.1-t2v-turbo"], defaultModel: "wan2.2-t2v-plus", aspects: ["16:9", "9:16", "1:1"] },
-  { id: "seedance", name: "即梦 Seedance（火山方舟）", region: "cn", modes: ["t2v", "i2v"], imageInput: "url", baseUrl: "https://ark.cn-beijing.volces.com", fields: ["apiKey"], models: ["doubao-seedance-1-0-lite-t2v-250428", "doubao-seedance-1-0-pro-250528"], defaultModel: "doubao-seedance-1-0-lite-t2v-250428", aspects: ["16:9", "9:16", "1:1"] },
+  { id: "seedance", name: "即梦 Seedance（火山方舟）", region: "cn", modes: ["t2v", "i2v"], imageInput: "url", baseUrl: "https://ark.cn-beijing.volces.com", fields: ["apiKey"], models: ["doubao-seedance-2-5-260628", "doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-1-0-lite-t2v-250428", "doubao-seedance-1-0-pro-250528"], defaultModel: "doubao-seedance-2-5-260628", aspects: ["16:9", "9:16", "1:1"] },
   { id: "cogvideo", name: "智谱 CogVideoX", region: "cn", modes: ["t2v", "i2v"], imageInput: "both", baseUrl: "https://open.bigmodel.cn", fields: ["apiKey"], models: ["cogvideox-3", "cogvideox-2"], defaultModel: "cogvideox-3" },
   { id: "minimax", name: "MiniMax 海螺视频", region: "cn", modes: ["t2v", "i2v"], imageInput: "both", baseUrl: "https://api.minimaxi.com", fields: ["apiKey"], models: ["T2V-01", "I2V-01-live", "S2V-01"], defaultModel: "T2V-01" },
   { id: "runway", name: "Runway Gen-4", region: "global", modes: ["i2v"], imageInput: "both", baseUrl: "https://api.dev.runwayml.com", fields: ["apiKey"], models: ["gen4_turbo", "gen3a_turbo"], defaultModel: "gen4_turbo", aspects: ["16:9", "9:16", "1:1"] },
@@ -115,7 +115,26 @@ export function videoBuildSubmit(providerId, cfg, input, nowMs) {
       return { url: "https://dashscope.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis", headers: jsonHeaders({ Authorization: `Bearer ${cfg.apiKey}`, "X-DashScope-Async": "enable" }), body };
     }
     case "seedance": {
-      const content = [{ type: "text", text: `${prompt} --resolution 720p --duration ${duration}${aspect ? ` --ratio ${ASPECT_VALUES.seedance[aspect]}` : ""}` }];
+      /* ⛔ 双协议（09-29）：1.0 走「--文本参数」旧协议；2.0/2.5 走 **body 参数**新协议
+         （resolution / ratio / duration / generate_audio 是顶层字段，content 只放素材）。
+         ⛔ 2.x 才支持 video_url 参考视频（白模预演管线的核心输入）—— 1.0 + video 明确报错。 */
+      const isV2 = /-2-(0|5)-/.test(model);
+      const content = [];
+      if (isV2) {
+        content.push({ type: "text", text: prompt });
+        if (kind === "image2video") content.push({ type: "image_url", image_url: { url: image }, role: "first_frame" });
+        if (input.video) content.push({ type: "video_url", video_url: { url: input.video }, role: "reference_video" });
+        const body = {
+          model, content,
+          resolution: "720p",
+          duration,
+          ratio: aspect ? (ASPECT_VALUES.seedance[aspect] || "adaptive") : "adaptive",
+          generate_audio: true,
+        };
+        return { url: "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks", headers: jsonHeaders({ Authorization: `Bearer ${cfg.apiKey}` }), body };
+      }
+      if (input.video) throw new Error("参考视频（白模预演）需要 Seedance 2.0/2.5 —— 请在镜头卡把模型切到 doubao-seedance-2-5 系列后再提交");
+      content.push({ type: "text", text: `${prompt} --resolution 720p --duration ${duration}${aspect ? ` --ratio ${ASPECT_VALUES.seedance[aspect]}` : ""}` });
       if (kind === "image2video") content.push({ type: "image_url", image_url: { url: image } });
       return { url: "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks", headers: jsonHeaders({ Authorization: `Bearer ${cfg.apiKey}` }), body: { model, content } };
     }

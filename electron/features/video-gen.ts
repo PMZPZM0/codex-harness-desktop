@@ -165,7 +165,7 @@ export function videoProviderViews(): VideoProviderView[] {
 }
 
 /** 提交任务（含 i2v 首帧解析、自定义 baseUrl 应用） */
-export async function submitVideoCore(input: { providerId: string; mode: "t2v" | "i2v"; prompt: string; image?: string; model?: string; duration?: number; aspect?: string }): Promise<{ jobId: string }> {
+export async function submitVideoCore(input: { providerId: string; mode: "t2v" | "i2v"; prompt: string; image?: string; model?: string; duration?: number; aspect?: string; video?: string }): Promise<{ jobId: string }> {
   const config = readConfig();
   const provider = videoAssertImageOk(String(input?.providerId ?? ""), input?.mode === "i2v" ? "i2v" : "t2v", input?.image);
   const cfg = config[provider.id];

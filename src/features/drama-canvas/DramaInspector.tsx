@@ -78,6 +78,8 @@ const FIELDS: Record<string, FieldSpec[]> = {
     { key: "id", label: "镜头号" },
     { key: "shot_size", label: "景别", type: "select", options: STORYBOARD_SHOT_SIZES },
     { key: "duration", label: "时长（秒）", type: "number" },
+    { key: "aspect", label: "画幅", type: "select", options: VIDEO_ASPECTS, hint: "只有通义万相 / 即梦Seedance / Runway / Veo 支持指定画幅；其余厂商按模型默认输出（选了会明确报错）" },
+    { key: "ref_video", label: "参考视频（白模预演）", placeholder: "白模参考片的公网 URL —— 仅 Seedance 2.0/2.5 支持", hint: "白模工作流：把 Blender 渲染的参考片传到可公网访问的位置，URL 粘到这里；用 Seedance 2.5 时 AI 跟着白模的构图与运镜渲染" },
     { key: "prompt", label: "首帧提示词", type: "textarea", placeholder: "景别 + 场景 + 姿态 + 光线" },
     { key: "motion", label: "动作与运镜", type: "textarea", placeholder: "只写动作和运镜，画面内容已经在首帧里" },
     { key: "line", label: "台词 / 旁白", placeholder: "空着就是无人声镜头" },
