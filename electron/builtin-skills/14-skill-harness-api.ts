@@ -19,7 +19,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 - ⛔⛔ **这些通道不是模型能直接调用的工具**（09-28 加：用户问「你会不会定时任务 / 为什么建不了」，模型据此误解过）。它们只有**应用界面**（按钮 / 设置页）会调。模型在会话里能用的只有三类：① 内置调度 MCP 暴露的**真工具**（下一段的清单）；② 各技能正文教的流程；③ 命令行（node 脚本 / \`codex\` 子命令）。
   **内置调度 MCP 当前暴露的工具**（09-29 现状；实际以 tools/list 返回为准）：
   · 调度：\`scheduler_save\`（建定时任务，\`threadId:"current"\` = 就在当前会话里续聊执行）/ \`scheduler_list\` / \`scheduler_run\` / \`scheduler_delete\`
-  · 媒体：\`image_generate\`（生图，\`count\` 1–4 并发出变体，落盘返回本地路径）/ \`video_generate\`（提交视频任务，**立即返回 jobId，不等待**）/ \`video_status\`（查任务；成功会自动下载落盘）/ \`video_concat\`（把多镜片段按给定顺序拼成成片）
+  · 媒体：\`image_generate\`（生图，\`count\` 1–4 并发出变体，落盘返回本地路径）/ \`video_generate\`（提交视频任务，**立即返回 jobId，不等待**；\`video\` 参数可传白模预演参考片的公网 URL，配 Seedance 2.0/2.5 渲染）/ \`video_status\`（查任务；成功会自动下载落盘）/ \`video_concat\`（把多镜片段按给定顺序拼成成片）/ \`voice_generate\`（台词合成配音 WAV，落盘返回路径；语音模型未下载时报错并指路「设置 → 语音」）
   · 子智能体：\`agent_invoke\`（派一个干净上下文的自己）/ \`agent_archive_sessions\` / \`subagent_save\`（新建子智能体代理，name+systemPrompt 必填）
   · 专家：\`expert_save\`（创建/更新专家或专家团——displayNameZh + leadName + leadSystemPrompt 必填，多角色加 members；同 teamId 即更新）/ \`expert_list\`（列已有专家）。用户说「帮我建一个 XX 专家 / 专家团」时直接用它，建完复述 teamId；⛔ 内置六专家（知微/呈象/洞明/鲁班/画意/剪承团）有固定 teamId，别覆盖
   ⇒ 生图生视频的**完整用法**在 \`image-generation\` 与 \`video-generation\` 两个技能里（提示词结构、模式路由、厂商矩阵、失败修复）—— 用户提到「画图 / 出图 / 生成视频 / 让这张图动起来」时先读它们。

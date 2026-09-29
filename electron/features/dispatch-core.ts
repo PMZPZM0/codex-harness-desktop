@@ -192,6 +192,23 @@ function dispatchMcpTools(): unknown[] {
         required: ["name", "systemPrompt"],
       },
     },
+    /* ── 配音（09-29 排查：视频工作流的配音环节模型侧没有工具 —— 声线 SOP 指望的 voice:speak
+       是渲染层通道。本地 TTS 同步合成（几秒级），落盘返回路径。模型未下载时报错并指路设置页。 */
+    {
+      name: "voice_generate",
+      description: "把一段台词合成为配音 WAV（本地 TTS，落盘返回文件路径）。视频工作流给镜头配台词、或任何需要配音的场景。语音模型未下载时会报错并提示去「设置 → 语音」下载。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "要合成的台词" },
+          name: { type: "string", description: "输出文件名（不含扩展名；缺省按时间戳）" },
+          workspace: { type: "string", description: "落盘目录；缺省 = 当前会话的工作目录（写到其下 voice/ 子目录）" },
+          sid: { type: "number", description: "可选：音色 id（缺省 = 设置 → 语音 里选的默认音色）" },
+          speed: { type: "number", description: "可选：语速（1 = 正常）" },
+        },
+        required: ["text"],
+      },
+    },
     /* ── 媒体生成三件套（09-29 用户：「让 Codex 能够直接调用生图工作流与视频工作流」）────────
        为什么是「生图一件 + 视频两件」：生图是同步 HTTP（几十秒，模型等着就行）；
        视频是**异步任务**（提交后要跑几分钟）—— 如果让工具一直等，会卡死整个回合，
