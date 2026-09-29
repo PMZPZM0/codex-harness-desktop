@@ -118,6 +118,8 @@ node scripts/logs.mjs delete <id...> --confirm <id...|all> --reason "…"   # �
 
 > 09-26 拆骨时从各轮变更小节提炼。**⛔ 每条都有守卫钉着，改坏会红**；这里是「为什么」与「别踩的坑」。
 
+- **Codex 日志管理（09-29）**：设置 → 数据管理里的「Codex 日志」管的是引擎写的**会话记录原档**（`codex-home/sessions|archived_sessions/rollout-*.jsonl`，含对话全文），按项目（文件首行 `cwd`）→ 日期两级分组，可勾选批量删除 / 整库清空。⛔ **销毁性功能**：域内通道只认 `rollout-*.jsonl` 且必须落在那两个根目录内（越界/目录一律拒绝、不存在幂等）；删除时**级联剔除 `session_index.jsonl` 对应条目** —— 不剔就是会话列表里一堆打不开的死条目。守卫【200】12 条。
+
 - **记忆后端二选一**（`docs/CHANGELOG-ROUNDS.md` →「记忆后端二选一」）：内置金字塔 ⇄ MCP 记忆**互斥**，同一时刻只用一个。⛔ 判定一律用 `effectiveMemoryBackend()`（**不是** `memoryBackend()`）：选了 mcp 但服务起不来 ⇒ **回退内置**（宁可回退也不能"一处都不写 = 丢记忆"）。`electron/memory-backend.ts` 是叶子模块，不许进 `runtime-refs.ts`。守卫【150】。
 - **`electron/main/**` 零反向依赖**（同上 →「断环收尾」）：所有 `electron/main/*.ts` 不得 `import ... from "../main"`。路径常量走 `electron/runtime-paths.ts`（叶子）、单例走 `electron/runtime-refs.ts`；`from "../main"` 的**白名单**（守卫【132】，9 符号）与 `main/**` 历史引用上限（守卫【143】）都不许扩大。⛔ 新增守卫 **【147】** 用剥注释后的 import 图求 SCC，`runtime-refs` 与三个叶子不得在任何环里。**注释里写 `from "…"` 会被裸正则当成真 import** ⇒ 环检测器必须剥注释。
 - **正文 Markdown：列表尾部的「结语行」**（同上 →「正文 Markdown 渲染」）：列表最后一项后紧跟顶格结语会被 CommonMark 判成 lazy 续行 ⇒ 渲染歪成 `<li>…<br/>结语</li>`。修法是 `softenListTailLazyContinuation`（`src/lib/markdown-blocks.mjs`，纯函数可跑真值表）。⛔ **围栏感知是必须的**：代码块（含流式未闭合 ```）内绝不能注入空行。另：行首/行尾的**全角空格 U+3000 不参与 HTML 空白折叠** ⇒ 会渲染出可见空白，由 `trimInvisibleSpace` 处理（只对非围栏行、不动行中间）。守卫【149】。

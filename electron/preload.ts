@@ -492,6 +492,10 @@ contextBridge.exposeInMainWorld("codex", {
   revealInFolder: (path: string) => __ipc("fs:reveal", 1, [{ path }]),
   /* 删分镜表的工作区文件（只删 .drama-canvas/storyboards/<name>.json 这一个文件；不存在时幂等返回 removed:false） */
   dramaCanvasStoryboardFileRemove: (input: { workspace: string; name: string }) => __ipc("drama-canvas:storyboard-file-remove", 1, [input]),
+  /* 扫 Codex 会话记录（rollout 原档）：读每个文件首行的 cwd 做项目归属、stat 拿体积。按项目 + 日期分组展示用，不删任何东西 */
+  codexLogsScan: () => __ipc("codex-logs:scan", 0, []),
+  /* 删会话记录（销毁性）：只删 codex-home/sessions|archived_sessions 下的 rollout-*.jsonl 文件；级联剔除 session_index.jsonl 里的对应条目（否则会话列表留死条目） */
+  codexLogsDelete: (input: { paths: string[] }) => __ipc("codex-logs:delete", 1, [input]),
   /* ═══ gen:end ═══ */
 
   // ⛔ mac 适配（09-16）：渲染层此前完全不知道自己跑在什么平台——窗口控制键让位、

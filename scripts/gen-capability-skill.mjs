@@ -25,6 +25,7 @@ const OUT = path.join(ROOT, "electron", "builtin-skills", "14-skill-harness-api.
 /* ── 每域的「用户可感知能力」描述（人工维护；新域必须补，缺了生成器报错）──
    口径：写给引擎看 —— 用户提什么需求时该想到这个域、能力边界在哪。一句话。 */
 const DOMAIN_DESCRIPTIONS = {
+  "codex-logs": "Codex 会话记录（rollout 原档）管理：扫描 sessions/archived_sessions 下每个会话文件的**项目归属（cwd）与时间**，供「设置 → 数据管理 → Codex 日志」按项目/日期分组展示与批量删除、清空。⚠️ 删除是销毁性的（对话记录不可恢复），且会级联剔除 session_index.jsonl 条目",
   "video": "内置视频生成接口（国内外 8 家：可灵/万相/Seedance/CogVideoX/MiniMax/Runway/Luma/Veo）：submit 提交 → poll 轮询 → download 落工作区；凭证存 userData/video-providers.json",
   "drama-canvas": "AI 短剧无限画布：把一条短剧拆成卡片摆在无限画布上（剧本/角色/场景/分镜表/镜头/素材/成片），连线表示「这份输入喂给下一步」。这条通道专管素材的**二进制落盘**（本地 TTS 合成的配音 WAV 等）",
   "phone": "手机控制（phone-harness）：查状态 / 安装 / 卸载 / 体检 / 权限引导；Android 走 adb（全平台），iPhone 走 Mac 的 iPhone 镜像（仅 macOS）",
