@@ -906,10 +906,10 @@ button.brand-mark.sidebar-toggle:hover {
 .app-select-caret { flex: none; color: var(--muted); transition: transform .12s ease; }
 .app-select-caret.is-open { transform: rotate(180deg); }
 
-.app-select-overlay { position: fixed; inset: 0; z-index: 210; background: transparent; }
+.app-select-overlay { position: fixed; inset: 0; z-index: 1000; background: transparent; }
 .app-select-list {
   position: fixed;
-  z-index: 211;
+  z-index: 1001;
   overflow: auto;
   min-width: 120px;
   background: var(--panel);

@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { createPortal } from "react-dom";
 import { Check, FolderOpen, Pencil, Plus, Trash2, X } from "lucide-react";
 import { readBoard, type BoardMeta } from "./drama-storage";
 
@@ -10,7 +9,12 @@ import { readBoard, type BoardMeta } from "./drama-storage";
  * 没有总览 —— 这个面板把项目管理聚成一屏：
  *   · 列表：标题 / 卡片数 / 产物统计（图·视频·音频，从各板快照统计）/ 更新时间 / 当前标记
  *   · 动作：点击切换、重命名（改显示标题）、删除（非当前板）、打开工作区文件夹
- * 弹层 portal 到 body —— 面板在画布整屏浮层内，祖先链有 transform（fixed 退化坑）。
+ *
+ * ⛔⛔ 必须是**画布内渲染**，不能 portal 到 body（09-29 用户截图：「项目管理弹窗在 AI 画布
+ *   弹窗下面」—— 画布根 `.drama-canvas-backdrop` 是 z-index:90 的整屏浮层，portal 到 body 的
+ *   节点 z-index 缺省 = 0，必然被画布盖住。同类坑：画布根还有 backdrop-filter，会额外创建
+ *   containing block）。画布内弹层一律用 `.drama-canvas-modal-mask`（fixed + z-index 30，
+ *   在画布的 stacking context 内）—— 与命名弹窗 / 确认弹窗完全一致。
  */
 
 type Stats = { images: number; videos: number; audios: number };
@@ -61,11 +65,10 @@ export function DramaProjectsPanel({ boards, current, workspace, onClose, onSwit
 
   const rows = useMemo(() => boards.map((b) => ({ ...b, stats: statsOf(b.name) })), [boards]);
 
-  const folder = workspace ? `${workspace.replace(/[\\/]+$/, "")}\\.drama-canvas` : "";
 
-  return createPortal(
+  return (
     <div className="drama-canvas-modal-mask" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="info-modal vg-modal drama-projects" role="dialog" aria-label="项目管理" onClick={(event) => event.stopPropagation()}>
+      <div className="drama-canvas-modal is-wide drama-projects" role="dialog" aria-label="项目管理" onClick={(event) => event.stopPropagation()}>
         <header>
           <b>项目管理</b>
           <span>{boards.length} 个项目 · 点击进入</span>
@@ -127,7 +130,6 @@ export function DramaProjectsPanel({ boards, current, workspace, onClose, onSwit
             : <small className="drama-projects-hint">未选择工作文件夹 —— 生成产物不会落盘，先在会话里选好工作目录</small>}
         </footer>
       </div>
-    </div>,
-    document.body,
+    </div>
   );
 }
