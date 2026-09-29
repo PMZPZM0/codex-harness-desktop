@@ -40,6 +40,25 @@ export function safeSubdir(raw: string): string {
   return cleaned.slice(0, 40);
 }
 
+/* 画布快照镜像（09-29「打通」第一步）：渲染层防抖推 {name, flow, nodes, edges}，
+     主进程存 userData/drama-canvas/boards.json ⇒ workflow_read 工具能读到画布内容。 */
+  ipcMain.handle("drama-canvas:board-sync", async (_event, input: { name?: unknown; flow?: unknown; nodes?: unknown; edges?: unknown }) => {
+    const name = String(input?.name ?? "").trim();
+    if (!name || !Array.isArray(input?.nodes)) return { ok: false };
+    const root = path.join(app.getPath("userData"), "drama-canvas");
+    await fs.mkdir(root, { recursive: true });
+    const file = path.join(root, "boards.json");
+    let all: Record<string, unknown> = {};
+    try { all = JSON.parse(await fs.readFile(file, "utf8")); } catch { /* 首次 */ }
+    all[name] = {
+      flow: String(input?.flow ?? ""),
+      nodes: input?.nodes,
+      edges: input?.edges,
+      updatedAt: new Date().toISOString(),
+    };
+    await fs.writeFile(file, JSON.stringify(all, null, 2), "utf8");
+    return { ok: true };
+  });
 ipcMain.handle("drama-canvas:asset-write", async (_event, input: { workspace: string; name: string; base64: string; subdir?: string }) => {
   const requested = String(input?.workspace || "").trim();
   const resolved = requested ? path.resolve(requested) : "";

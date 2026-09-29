@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-09-27",
-  "count": 365,
+  "count": 366,
   "channels": [
     {
       "name": "request",
@@ -3470,6 +3470,16 @@
       "invokeArgs": "input",
       "cast": "Promise<{ dir: string; isDefault: boolean }>",
       "note": "设置产物目录：pick=true 弹系统目录选择框；dir 给绝对路径直接设；dir 为空串 = 恢复默认。目录不可用会明确报错（不静默回退）。"
+    },
+    {
+      "name": "dramaCanvasBoardSync",
+      "channel": "drama-canvas:board-sync",
+      "paramsImpl": "input: { name: string; flow: string; nodes: unknown[]; edges: unknown[] }",
+      "paramsDecl": "input: { name: string; flow: string; nodes: unknown[]; edges: unknown[] }",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ ok: boolean }>",
+      "note": "画布快照镜像（09-29「打通」）：渲染层把当前画布（名称/工作流类型/节点/连线）防抖推给主进程，存 userData/drama-canvas/boards.json —— workflow_read 工具的数据源"
     },
     {
       "name": "dramaCanvasAssetWrite",

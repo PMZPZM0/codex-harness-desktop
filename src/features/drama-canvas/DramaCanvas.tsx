@@ -327,6 +327,38 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
     return flow.type === "drama" ? "短剧工作流" : "生图工作流";
   }, [board.nodes, flow.type]);
 
+  /* ── 画布快照镜像（09-29「打通」第一步）：防抖推给主进程存 userData/drama-canvas/boards.json，
+     workflow_read 工具的数据源 —— 没有这一步，模型隔着玻璃看画布（它读不到 localStorage）。 */
+  useEffect(() => {
+    if (flow.empty || !board.board) return;
+    const timer = setTimeout(() => {
+      void window.codex.dramaCanvasBoardSync({
+        name: board.board,
+        flow: flowLabel,
+        nodes: board.nodes.map((nd) => ({ id: nd.id, kind: nd.data?.kind, position: nd.position, payload: nd.data?.payload || {} })),
+        edges: board.edges.map((ed) => ({ source: ed.source, target: ed.target, relation: (ed as unknown as { relation?: string }).relation || "input" })),
+      }).catch(() => { /* 镜像失败不影响画布本身 */ });
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [board.board, board.nodes, board.edges, flowLabel, flow.empty]);
+
+  /* ── 模型回填（09-29「打通」第三步）：workflow_writeback 工具更新镜像并广播，
+     这里收到后写进真实画布（updatePayload 会落 localStorage，卡片即时显示）。 */
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      const data: any = event.data;
+      if (data?.channel === "harness:event" && data?.event?.type === "drama-canvas-writeback") {
+        const { nodeId, updates } = data.event;
+        if (nodeId && updates && typeof updates === "object") {
+          board.updatePayload(nodeId, updates);
+          pushNotice("模型已把结果写回画布节点（" + nodeId + "）", "ok");
+        }
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [board]);
+
   /* 工作流进度（09-28）：当前板「图 / 视频 / 配音」已完成数 + 素材·拍摄类卡中还没有产物的
      「待生成」数。实时跟随 board.nodes —— 让用户随时知道这条工作流走到哪了。
      ⛔ 09-29：pending 同时留一份**明细**（哪几张卡），顶栏那个数字要能说清自己从哪来

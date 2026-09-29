@@ -1177,5 +1177,31 @@ export async function run() {
     (/POLISH_FIELD\[kind\]/.test(chSrc223) && /polishField: materialSlot \? "" :/.test(chSrc223) && !/if \(!GEN_CHANNELS\[kind\]\) return null;/.test(cardSrc223) ? ok : fail)(
       "【223】没有生成通道的卡（笔记 / 剧本）也有「AI 润色」—— 原来 return null 把润色一起吞了"
     );
+  {
+    /* 【224】画布工作流打通（09-29 用户看 Codex 回答「我没法调用你画布上的工作流」）：
+       链路 = 渲染层 board-sync 镜像 → workflow_read 读 → 模型用现有生成工具跑 →
+       workflow_writeback 写回 + 广播 → 渲染层 updatePayload。四段缺一即断。 */
+    const core224 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8"));
+    const rawCanvas224 = readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8");
+    const coreRpc224 = codeOnly(readFileSync(join(ROOT, "electron", "features", "dispatch-rpc.ts"), "utf8"));
+    const coreDc224 = codeOnly(readFileSync(join(ROOT, "electron", "features", "dispatch-core.ts"), "utf8"));
+    const dc224 = codeOnly(readFileSync(join(ROOT, "electron", "features", "drama-canvas.ts"), "utf8"));
+    const gen224 = readFileSync(join(ROOT, "scripts", "gen-capability-skill.mjs"), "utf8");
+    (dc224.includes("drama-canvas:board-sync") ? ok : fail)(
+      "【224】① 主进程有 board-sync handler（快照镜像入口——没有它 workflow_read 读不到画布）"
+    );
+    (/dramaCanvasBoardSync/.test(rawCanvas224) && /drama-canvas-writeback/.test(rawCanvas224) ? ok : fail)(
+      "②② 渲染层两段都在：防抖推快照（dramaCanvasBoardSync）+ 监听回填广播（drama-canvas-writeback → updatePayload）"
+    );
+    (coreDc224.includes('"workflow_read"') && coreDc224.includes('"workflow_writeback"') && coreRpc224.includes('name === "workflow_read"') && coreRpc224.includes('name === "workflow_writeback"') ? ok : fail)(
+      "【224】③ workflow_read / workflow_writeback 声明与执行端都接上（只声明不执行 = 空工具）"
+    );
+    (coreRpc224.includes("broadcastHarnessEvent") && /drama-canvas-writeback/.test(coreRpc224) ? ok : fail)(
+      "【224】④ writeback 执行端有 broadcastHarnessEvent 广播（不广播 = 渲染层收不到 = 写回无效）"
+    );
+    (gen224.includes("workflow_read") && gen224.includes("workflow_writeback") && gen224.includes("按画布那套跑") ? ok : fail)(
+      "【224】⑤ 能力清单的 MCP 工具段写了 workflow 两工具用法（清单不写 = 模型不知道能这么干）"
+    );
+  }
   }
 }

@@ -30,9 +30,9 @@ export interface IpcDomainEntry {
 }
 
 export const IPC_DOMAINS: IpcDomainEntry[] = [
-  { prefix: "drama-canvas", count: 6, status: "in-features", file: "features/drama-canvas.ts",
-    channels: ["drama-canvas:asset-write", "drama-canvas:storyboard-file-remove", "drama-canvas:polish-prompt", "drama-canvas:describe-image", "drama-canvas:output-dir", "drama-canvas:output-dir-set"],
-    note: "09-27 新增：AI 短剧无限画布。画布/分镜表本体走 localStorage + fs:write（文本即可），这条专管**二进制素材**（本地 TTS 合成的配音 WAV）；09-29 加 polish-prompt（「AI 润色」，主进程用已配置模型发一次短请求，不开会话）与 describe-image（「锁主体」：视觉模型把商品图反推成固定主体描述，六类图共用）",
+  { prefix: "drama-canvas", count: 7, status: "in-features", file: "features/drama-canvas.ts",
+    channels: ["drama-canvas:asset-write", "drama-canvas:storyboard-file-remove", "drama-canvas:polish-prompt", "drama-canvas:describe-image", "drama-canvas:output-dir", "drama-canvas:output-dir-set", "drama-canvas:board-sync"],
+    note: "09-27 新增：AI 短剧无限画布。画布/分镜表本体走 localStorage + fs:write（文本即可），这条专管**二进制素材**（本地 TTS 合成的配音 WAV）；09-29 加 polish-prompt（「AI 润色」，主进程用已配置模型发一次短请求，不开会话）与 describe-image（「锁主体」：视觉模型把商品图反推成固定主体描述，六类图共用）与 board-sync（画布快照镜像：渲染层防抖推 {name,flow,nodes,edges} 存 userData/drama-canvas/boards.json，workflow_read 工具的数据源）",
   },
   { prefix: "phone", count: 7, status: "in-features", file: "features/phone-harness-ipc.ts",
     channels: ["phone:harness:status", "phone:harness:install", "phone:harness:uninstall", "phone:harness:doctor", "phone:harness:guides", "phone:harness:open-settings", "phone:harness:wire-adb"],

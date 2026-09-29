@@ -229,6 +229,29 @@ function dispatchMcpTools(): unknown[] {
         required: ["id", "name", "command"],
       },
     },
+    /* ── 画布工作流打通（09-29 用户看 Codex 回答「我没法调用你画布上的那个工作流」）────────
+       画布快照由渲染层防抖镜像到 userData/drama-canvas/boards.json（drama-canvas:board-sync）。
+       workflow_read 读它 ⇒ 模型知道画布上有什么、要跑什么；模型用 image_generate 等现有工具
+       按链路执行；workflow_writeback 把产物路径写回节点并广播，渲染层收到后 updatePayload
+       （卡片即时显示并落 localStorage）。 */
+    {
+      name: "workflow_read",
+      description: "读取 AI 画布上工作流的内容（每个画布的工作流类型、节点清单、连线、各节点的提示词/尺寸/产物现状）。用户说「按画布那套跑 / 画布里搭好的流程执行一下」时先用它看清要跑什么，再用 image_generate / video_generate / voice_generate 按连线顺序逐节点执行。",
+      inputSchema: { type: "object", properties: {} },
+    },
+    {
+      name: "workflow_writeback",
+      description: "把执行结果写回画布节点（用户重启前画布打开着就能实时看到；重启应用也不丢——镜像与画布存储同源）。updates 里给节点 payload 字段：path=产物图片/视频路径、text=文本结论等。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          canvas: { type: "string", description: "画布名（从 workflow_read 的输出拿；缺省 = 最近更新的画布）" },
+          nodeId: { type: "string", description: "节点 id（workflow_read 输出里的 id）" },
+          updates: { type: "object", description: "要写回的字段（值必须是字符串或数字），如「path = 产物图片的完整路径」或「text = 结论文本」", additionalProperties: true },
+        },
+        required: ["nodeId", "updates"],
+      },
+    },
     /* ── 媒体生成三件套（09-29 用户：「让 Codex 能够直接调用生图工作流与视频工作流」）────────
        为什么是「生图一件 + 视频两件」：生图是同步 HTTP（几十秒，模型等着就行）；
        视频是**异步任务**（提交后要跑几分钟）—— 如果让工具一直等，会卡死整个回合，
