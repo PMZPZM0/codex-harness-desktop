@@ -224,10 +224,15 @@ export async function run() {
     const css = readFileSync(join(ROOT, "src", "styles", "21-drama-canvas.css"), "utf8");
     const canvasSrc2 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaCanvas.tsx"), "utf8"));
 
-    // ① 窗控避让留白：浮层缩小后不再需要 158px（过大 = 右上角一大块空白）
-    const pad = /(\.drama-canvas-head \{[^}]*padding:\s*10px\s+)(\d+)px/.exec(css);
-    (pad && Number(pad[2]) <= 120 ? ok : fail)(
-      `【201】顶栏右侧窗控避让留白 ≤120px（实得 ${pad ? pad[2] + "px" : "未找到"} —— 158px 是整屏浮层时代的值，浮层缩小后过大）`
+    // ① 窗控避让：**已挪到浮层顶部留白**（窗控只占窗口最顶 ~33px）。
+    //    顶栏右侧必须左右对称（≤20px）—— 之前右侧留 116px 是为了避让，用户三次点名「还有空白」。
+    const headPad = /\.drama-canvas-head \{[\s\S]{0,400}?padding:\s*10px\s+(\d+)px/.exec(css);
+    (headPad && Number(headPad[1]) <= 20 ? ok : fail)(
+      `【201】顶栏右侧不留窗控避让（实得 ${headPad ? headPad[1] + "px" : "未找到"}，应 ≤20px —— 避让已挪到浮层顶部）`
+    );
+    const topPad = /\.drama-canvas-backdrop \{[\s\S]{0,500}?padding:\s*clamp\((\d+)px/.exec(css);
+    (topPad && Number(topPad[1]) >= 36 ? ok : fail)(
+      `【201】浮层顶部留白 ≥36px 承担窗控避让（实得 ${topPad ? topPad[1] + "px" : "未找到"} —— 窗控高约 33px，顶栏才不会与它重叠）`
     );
     // ② 画布 / 分镜表下拉有最小宽度（窄窗口被压成「1」字宽 = 用户截图）
     (/\.drama-canvas-head \.app-select-trigger \{[^}]*min-width:\s*\d+px/.test(css) ? ok : fail)(
@@ -250,9 +255,6 @@ export async function run() {
        且超宽窗口要收回避让留白（浮层 max-width 1320px 居中后两侧自然留白够，再留 116px 就是白占）。 */
     (/\.drama-canvas-head \{[^}]*flex-wrap: nowrap/.test(css) ? ok : fail)(
       "【201】顶栏 flex-wrap: nowrap（永不换行 —— 靠断点摘标签的方案在宽窗口会失效）"
-    );
-    (/@media \(min-width: 1600px\)[\s\S]{0,160}padding-right: 14px/.test(css) ? ok : fail)(
-      "【201】超宽窗口收回避让留白（浮层居中后 116px 避让就是白占）"
     );
     (/flex: 1 1 auto; flex-wrap: nowrap; min-width: 0; overflow: hidden/.test(css) ? ok : fail)(
       "【201】左侧可收缩（nowrap 下靠标题截断让位，而不是把按钮挤下去）"
