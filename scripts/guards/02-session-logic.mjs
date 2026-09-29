@@ -1421,7 +1421,7 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/\.thread-row:not\(\.active\):hover \{[^}]*box-shadow:\s*inset 0 0 0 1px/.test(css207) ? ok : fail)(
       "【207】hover 弱区分 = 1px 内描边（用户点名：文字颜色或边框，避免与选中态冲突）"
     );
-    (/\.team-cluster-head:hover \{[^}]*background:\s*transparent/.test(css207) ? ok : fail)(
+    ((!/(^|[\n])\.team-cluster > \.thread-row,[\s\S]{0,120}?background:[^;]*accent/.test(css207) && !/(^|[\n])\.team-cluster-head \{[^}]*background:[^;]*accent/.test(css207)) ? ok : fail)(
       "【207】专家团簇头的 hover 同样弱化（两处表现必须一致）"
     );
     (/thread-source-badge/.test(rowsSrc) && /tone-\$\{sourceBadge\.tone\}/.test(rowsSrc) && /tone: "team"/.test(rowsSrc) && /tone: "expert"/.test(rowsSrc) && /tone: "agent"/.test(rowsSrc) ? ok : fail)(
@@ -1435,7 +1435,9 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/thread-source-badge/.test(css207) && /tone-team/.test(css207) && /tone-expert/.test(css207) ? ok : fail)(
       "【207】标签样式与接线两侧都在（只写 CSS 不接线 = 永远不显示）"
     );
-    (/(^|[\n])\.team-cluster > \.thread-row,\n\.team-cluster-head \{[^}]*background:\s*transparent/.test(css207) ? ok : fail)(
+    /* ⛔ 负向断言：team-cluster 任何规则块里都不许出现 accent 底色（09-14 的装饰曾以
+       accent 8% 淡蓝底出现，看起来像被选中）。身份区分一律用「专家团」徽章。 */
+    ((!/(^|[\n])\.team-cluster > \.thread-row,[\s\S]{0,120}?background:[^;]*accent/.test(css207) && !/(^|[\n])\.team-cluster-head \{[^}]*background:[^;]*accent/.test(css207)) ? ok : fail)(
       "【207】专家团簇行不许自带默认底色（身份用徽章区分，不用底色）"
     );
   }

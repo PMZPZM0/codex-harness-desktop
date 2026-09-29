@@ -1281,7 +1281,7 @@ html[data-ui-font="large"] .action-content pre {
 .thread-row:not(.active):hover > button:first-child { color: var(--text); }
 
 /* 专家团簇头（分组条）同样弱化 hover —— 与会话行同一交互语言 */
-.team-cluster-head:hover {
+.team-cluster-head:not(.active):hover {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--line-soft);
 }
