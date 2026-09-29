@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-09-27",
-  "count": 358,
+  "count": 360,
   "channels": [
     {
       "name": "request",
@@ -3551,6 +3551,26 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "删分镜表的工作区文件（只删 .drama-canvas/storyboards/<name>.json 这一个文件；不存在时幂等返回 removed:false）"
+    },
+    {
+      "name": "codexLogsScan",
+      "channel": "codex-logs:scan",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ files: Array<{ path: string; rel: string; bytes: number; mtime: number; cwd: string; project: string; id: string; archived: boolean }>; sessionsDir: string; archivedDir: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "扫 Codex 会话记录（rollout 原档）：读每个文件首行的 cwd 做项目归属、stat 拿体积。按项目 + 日期分组展示用，不删任何东西"
+    },
+    {
+      "name": "codexLogsDelete",
+      "channel": "codex-logs:delete",
+      "paramsImpl": "input: { paths: string[] }",
+      "paramsDecl": "input: { paths: string[] }",
+      "returns": "Promise<{ deleted: number; bytes: number; failed: string[]; indexCleaned: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "删会话记录（销毁性）：只删 codex-home/sessions|archived_sessions 下的 rollout-*.jsonl 文件；级联剔除 session_index.jsonl 里的对应条目（否则会话列表留死条目）"
     }
   ]
 }

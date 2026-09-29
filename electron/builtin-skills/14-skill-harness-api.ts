@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（74 个能力域 / 359 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（75 个能力域 / 361 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -137,6 +137,10 @@ QQ 通道
 ### app（8 通道）
 应用级杂项（版本、存储用量、缓存清理、重启、加载目录）
 通道：app:doctor, app:engine-info, app:home-dir, app:perf-counters, app:relaunch, app:storage-clear, app:storage-info, app:userData
+
+### codex-logs（2 通道）
+Codex 会话记录（rollout 原档）管理：扫描 sessions/archived_sessions 下每个会话文件的**项目归属（cwd）与时间**，供「设置 → 数据管理 → Codex 日志」按项目/日期分组展示与批量删除、清空。⚠️ 删除是销毁性的（对话记录不可恢复），且会级联剔除 session_index.jsonl 条目
+通道：codex-logs:scan, codex-logs:delete
 
 ### capabilities（1 通道）
 宿主能力快照（当前环境支持什么，一次性拉取）

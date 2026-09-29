@@ -11,7 +11,7 @@
  *
  * 共享面由 ./_ctx.mjs 注入。
  */
-import { C, ROOT, join, ok, fail, readFileSync, existsSync } from "./_ctx.mjs";
+import { C, ROOT, join, ok, fail, readFileSync, existsSync, codeOnly } from "./_ctx.mjs";
 
 export async function run() {
   console.log(C.bold("\n【195】设置·插件页的内置卡分区"));
@@ -136,5 +136,61 @@ export async function run() {
     (skillTs.includes("harness-video.mjs") ? ok : fail)(
       "【195】技能正文写明命令行路径（有真路径不写 = 模型只能引导用户手点）"
     );
+  /* ══ Codex 日志管理（09-29 用户：「加一个 Codex 日志管理功能，在数据管理里面…按项目分类，
+        项目里面再按时间分类，可以批量删除和清空」）══
+     ⛔ 这是**销毁性**功能：删的 rollout 是对话全文原档，引擎不会重建。判据盯三件事：
+     域接线完整、删除范围收得住（越界/目录一律拒绝）、级联清索引（否则会话列表留死条目）。 */
+  {
+    const logs = codeOnly(readFileSync(join(ROOT, "electron", "features", "codex-logs.ts"), "utf8"));
+    const mainSrc = codeOnly(readFileSync(join(ROOT, "electron", "main.ts"), "utf8"));
+    const registry = codeOnly(readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8"));
+    const panel = codeOnly(readFileSync(join(ROOT, "src", "features", "storage-settings", "CodexLogsSection.tsx"), "utf8"));
+    const settingsSrc = codeOnly(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8"));
+
+    // ① 域接线（缺一处 = 页面点了没反应 / 通道不存在）
+    (mainSrc.includes('import "./features/codex-logs"') ? ok : fail)(
+      "【200】main.ts 加载期 import 新域（handler 注册时机 —— 漏了通道根本不存在）"
+    );
+    (registry.includes('prefix: "codex-logs"') && registry.includes('"codex-logs:scan"') && registry.includes('"codex-logs:delete"') ? ok : fail)(
+      "【200】ipc-registry 登记 codex-logs 域两通道（不改被【107】/【90】报红）"
+    );
+    (settingsSrc.includes("<CodexLogsSection") && settingsSrc.includes("storage:") ? ok : fail)(
+      "【200】挂在「数据管理」页（storage）—— 用户指定的位置"
+    );
+
+    // ② 删除范围收得住
+    (logs.includes("ROLLOUT_RE.test(path.basename(target))") ? ok : fail)(
+      "【200】只认 rollout-*.jsonl（别的文件一律不动 —— 通道是销毁性的，范围必须窄）"
+    );
+    (logs.includes("const inside = roots.some") ? ok : fail)(
+      "【200】越界拒绝：目标必须落在 codex-home 的 sessions / archived_sessions 之内"
+    );
+    (logs.includes("stat.isFile()") && logs.includes("failed.push(target)") ? ok : fail)(
+      "【200】目录/异常目标一律拒绝并记进 failed（不是静默跳过）"
+    );
+    (logs.includes("if (!stat) { continue; }") ? ok : fail)(
+      "【200】文件已不存在时幂等跳过（删除按钮重跑不报错）"
+    );
+
+    // ③ 级联：索引里的死条目
+    (logs.includes("session_index.jsonl") && logs.includes("indexCleaned") ? ok : fail)(
+      "【200】级联剔除 session_index.jsonl 条目（不剔 = 会话列表留打不开的死条目）"
+    );
+
+    // ④ 扫描：项目归属来自 rollout 首行 cwd（按项目分类的判据）
+    (logs.includes("payload?.cwd") || logs.includes("payload.cwd") ? ok : fail)(
+      "【200】项目归属读 rollout 首行 session_meta 的 cwd（不然分不出项目）"
+    );
+    (logs.includes("archived_sessions") ? ok : fail)(
+      "【200】归档目录同样纳入管理（archived_sessions 也是 Codex 写的日志）"
+    );
+
+    // ⑤ 危险护栏：删除必须过二次确认，且文案说清不可恢复
+    (panel.includes("openAppConfirm") && panel.includes("不可恢复") ? ok : fail)(
+      "【200】删除前二次确认且明说「不可恢复」（对话原档删了没有回收站）"
+    );
+    (panel.includes("清空全部") ? ok : fail)("【200】提供整库清空入口（用户点名要「清空」）");
+  }
+
   }
 }

@@ -58,6 +58,7 @@ const OpenaiSubscriptionPage = lazy(() => import("../../../../openai").then((m) 
 const SshTerminalModal = lazy(() => import("../../../../ssh").then((m) => ({ default: m.SshTerminalModal })));
 const SshExecModal = lazy(() => import("../../../../ssh").then((m) => ({ default: m.SshExecModal })));
 const StorageSection = lazy(() => import("../../../../storage-settings").then((m) => ({ default: m.StorageSection })));
+const CodexLogsSection = lazy(() => import("../../../../storage-settings").then((m) => ({ default: m.CodexLogsSection })));
 /* 拓展接口页：按需加载（清单在 src/lib/extensibility-catalog.mjs，页面只做渲染） */
 const ExtensibilitySettingsSection = lazy(() => import("../../../../settings-extensibility").then((m) => ({ default: m.ExtensibilitySettingsSection })));
 /* 截图页：快捷键绑定 + 截图行为（入口只有快捷键与「试试截图」，输入框不另加图标按钮） */
@@ -504,11 +505,14 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
                         /> },
     backup: { render: () => <BackupSettingsSection thread={thread} backupBusy={backupBusy} exportThreadsMarkdown={exportThreadsMarkdown} exportThreadsBackup={exportThreadsBackup} threads={threads} importThreadsBackup={importThreadsBackup} importConversationMarkdown={importConversationMarkdown} /> },
     archive: { render: () => <ArchiveSettingsSection ArchivePage={ArchivePage} setNotice={setNotice} setSettingsOpen={setSettingsOpen} openThread={openThread} openAppConfirm={openAppConfirm} refreshThreads={refreshThreads} /> },
-    storage: { render: () => <StorageSection
+    storage: { render: () => <>
+                  <StorageSection
                           onNotice={setNotice}
                           openAppConfirm={openAppConfirm}
                           onClearMemoryCache={() => { threadCacheRef.current.clear(); void refreshThreads().catch(() => undefined); }}
-                        /> },
+                        />
+                  <CodexLogsSection onNotice={setNotice} openAppConfirm={openAppConfirm} />
+                </> },
     computer: { back: { to: "automation", label: "返回自动化" }, render: () => <ComputerSettingsSection approvalPolicy={approvalPolicy} sandbox={sandbox} changeApproval={changeApproval} changeSandbox={changeSandbox} personality={personality} changePersonality={changePersonality} toolsStatus={toolsStatus} ToolCard={ToolCard} /> },
   };
 }
