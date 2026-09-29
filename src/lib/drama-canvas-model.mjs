@@ -281,24 +281,31 @@ export function dramaStarterWorkflow(baseX = 120, baseY = 100) {
  * 侧栏单独给一个入口。用户问过"参考项目是不是也有一个"——答案如上，别声称"照搬了它的生图工作流"。
  */
 export function imageStarterWorkflow(baseX = 120, baseY = 100) {
-  const col = 430, row = 340;
+  const col = 430;
   const node = (id, kind, payload, x, y) => ({ id, kind, payload: { ...dramaDefaultPayload(kind), ...payload }, position: { x, y }, size: { width: dramaNodeDef(kind).width, height: dramaNodeDef(kind).height } });
+  /* ⛔⛔ 09-29 用户：「生图工作流请设计得更简单一些，节点数量要精简，减少不必要的复杂连接，
+     方便新手快速理解使用」—— 原版是 5 卡 4 线（需求说明 → 主提示词 → 出图 A/B → 选图结论）。
+     砍成 **3 卡 2 线一条直线**，每一步只做一件事：
+       ① 写提示词（image 卡：既写提示词、也是点「生图」的地方）
+       ② 出图（image 卡：产物落这里；想多要几张就再点一次「重出」）
+       ③ 备注（note 卡：记下用了哪张、为什么 —— 可留空）
+     砍掉的东西与理由：
+       · 「需求说明」笔记卡 —— 新手要写两遍文本（需求 + 提示词），重复；需求直接写进提示词。
+       · 「出图 A / 出图 B」双产物 —— 对比变体是进阶玩法，默认路径不该先教这个；
+         想对比就**复制卡片**或再拖一张出图卡（自由编排仍在，只是不默认摆出来）。
+       · 「选图结论」与备注合并为一张卡。
+     ⛔ payload 里**不预填引导文本**（09-28 教训：引导词会被当真实提示词发给模型 ⇒ 污染）；
+     引导语由卡片空态文案承担。守卫【214】钉住「≤3 节点 / ≤2 连线」防复杂度回潮。 */
   const nodes = [
-    /* ⛔ 09-28 工作流打磨：payload 里**不预填引导文本** —— 此前「主体 + 环境 + 光线…」这类
-       引导词会被生成逻辑当真实提示词发给模型（污染），出图卡的「按主提示词生成…」也会和
-       上游拼接重复。引导语由卡片**空态文案**承担（DramaNodeCard 各分支），payload 留空 =
-       生成时自动沿用连入的上游提示词（upstreamPrompts）。 */
-    node("n-brief", "note", { title: "需求说明", step: 1 }, baseX, baseY),
-    node("n-prompt", "image", { title: "主提示词", step: 2 }, baseX + col, baseY),
-    node("n-out-a", "image", { title: "出图 A", variant: "更亮 / 更暖", step: 3 }, baseX + col * 2, baseY),
-    node("n-out-b", "image", { title: "出图 B", variant: "更冷 / 更暗", step: 3 }, baseX + col * 2, baseY + row),
-    node("n-pick", "note", { title: "选图结论", step: 4 }, baseX + col * 3, baseY),
+    node("n-prompt", "image", { title: "写提示词", step: 1, act: "generate" }, baseX, baseY),
+    /* hint: "output" = 模板里的**产物位**（渲染层据此把空态写成「点左边卡的生图，图出在这里」，
+       而不是普通的「在这里写提示词」——两张卡都教写提示词会让新手分不清哪张出图）。 */
+    node("n-out", "image", { title: "出图", step: 2, hint: "output", act: "output" }, baseX + col, baseY),
+    node("n-note", "note", { title: "备注（可选）", step: 3 }, baseX + col * 2, baseY),
   ];
   const edges = [
-    ["n-brief", "n-prompt", "input"],
-    ["n-prompt", "n-out-a", "generate"],
-    ["n-prompt", "n-out-b", "generate"],
-    ["n-out-a", "n-pick", "input"],
+    ["n-prompt", "n-out", "generate"],
+    ["n-out", "n-note", "input"],
   ].map(([source, target, relation]) => ({ source: { id: source }, target: { id: target }, relation }));
   return { version: DRAMA_SNAPSHOT_VERSION, nodes, edges, updatedAt: 0 };
 }
@@ -398,8 +405,8 @@ export function whiteboxStarterWorkflow(baseX = 120, baseY = 100) {
       "② 相机路径打 keyframe 锁死运镜：推拉摇移、一镜到底都靠这一步控制；",
       "③ 低质量快速渲染导出参考片/关键帧 —— 小尺寸低帧率就够，细节由 AI 补。",
     ].join("\n") }, baseX + col, baseY),
-    node("n-ref", "image", { title: "白模关键帧", flow: "whitebox", step: 3 }, baseX + col * 2, baseY),
-    node("n-shot", "shot", { title: "AI 渲染镜头", flow: "whitebox", step: 4 }, baseX + col * 3, baseY),
+    node("n-ref", "image", { title: "白模关键帧", flow: "whitebox", step: 3, act: "upload" }, baseX + col * 2, baseY),
+    node("n-shot", "shot", { title: "AI 渲染镜头", flow: "whitebox", step: 4, act: "generate" }, baseX + col * 3, baseY),
     node("n-final", "note", { title: "成片结论", flow: "whitebox", step: 5 }, baseX + col * 4, baseY),
   ];
   const edges = [
@@ -424,7 +431,7 @@ export function model3dStarterWorkflow(baseX = 120, baseY = 100) {
   const node = (id, kind, payload, x, y) => ({ id, kind, payload: { ...dramaDefaultPayload(kind), ...payload }, position: { x, y }, size: { width: dramaNodeDef(kind).width, height: dramaNodeDef(kind).height } });
   const nodes = [
     node("n-brief", "note", { title: "建模需求", flow: "model3d", step: 1, text: "要什么资产、用途（电商展示/场景组装/游戏道具）、精度要求：重点资产走 Standard（质量优先），批量筛选走 Turbo（极速）。" }, baseX, baseY),
-    node("n-ref", "image", { title: "参考图 / 商品图", flow: "model3d", step: 2 }, baseX + col, baseY),
+    node("n-ref", "image", { title: "参考图 / 商品图", flow: "model3d", step: 2, act: "upload" }, baseX + col, baseY),
     node("n-gen3d", "note", { title: "3D 资产生成（Aholo Lux3D）", flow: "model3d", step: 3, text: [
       "① 拿参考图（或一句话描述）到 Aholo Lux3D 生成 3D 模型；",
       "② 先出高斯预览确认外观，再生成 PBR 材质网格；",

@@ -32,6 +32,32 @@ export const GEN_CHANNELS: Record<string, DramaChannel[]> = {
 /** 通道类别词（按钮文案前缀 + 图标配色都按它取）。 */
 export const CHANNEL_LABEL: Record<DramaChannel, string> = { image: "生图", video: "视频", audio: "配音" };
 
+/* ⛔⛔ 按**卡片状态**决定露出哪几条通道（09-29 用户：「卡片上的功能按键也要精简，
+   不要每个卡片都有重复按键」）。原来 image/shot 卡不分状态一律给「生图 + 视频 + 上传参考图」，
+   没出图时「视频」是文生视频（对生图流程纯噪音），三张卡按钮一模一样也看不出主次。
+   规则：
+     · 「视频」只在**已经有图/首帧**时给 —— 那才是「把这张图动起来」的有意义动作；
+     · 「生图」始终给（产物卡上按钮会自动叫「重出」，允许再出一版）。
+   ⛔ 卡面与检查器**共用这一份**（原来各自 filter，必然漂移）。 */
+export function visibleChannels(kind: string, payload: Record<string, any>): DramaChannel[] {
+  const allowed = GEN_CHANNELS[kind] || [];
+  /* ⛔⛔ 两类工作流的按键**互不冲突**（09-29 用户：「根据卡片类型区分两类工作流：视频工作流和生图工作流，
+     确保按键配置与工作流类型一一对应、互不冲突」）：
+     · **生图工作流**的卡（image / character / location）**只给「生图」** —— 不再冒出「视频」；
+       此前 image 卡有图时会多出一颗视频按钮，把两类工作流混在同一张卡上，用户分不清点哪个；
+     · **视频工作流**的卡（shot / video）才给「视频」；shot 卡保留「生图 · 首帧」当输入位；
+     · 镜头卡内部再按状态分：没首帧先出首帧，有首帧才有「视频」；
+     · 「配音」只在镜头有台词时给（DramaChannelButton 内部按 hasLine 管）。
+     ⇒ 出片请走视频工作流（白模视频 / 短剧工作流的镜头卡）；生图工作流只管出图。 */
+  if (kind === "shot") {
+    const hasFrame = Boolean(payload.first_frame);
+    const hasVideo = Boolean(payload.video);
+    return allowed.filter((ch) => ch !== "video" || hasFrame || hasVideo);
+  }
+  if (kind === "image" || kind === "character" || kind === "location") return allowed.filter((ch) => ch !== "video");
+  return allowed;
+}
+
 const CHANNEL_ICON: Record<DramaChannel, LucideIcon> = { image: Sparkles, video: Video, audio: Mic };
 
 /**

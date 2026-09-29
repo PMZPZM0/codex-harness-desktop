@@ -33,7 +33,7 @@ import { imageDisplaySrc } from "../../lib/image-src.mjs";
 import { dramaIsKnownKind, dramaNodeDef, dramaNodeLabel } from "../../lib/drama-canvas-model.mjs";
 import { useDramaActions } from "./drama-actions";
 /* ⛔ 按钮本体共享（卡面 + 检查器同一颗）—— 见 DramaChannelButton.tsx 顶部注释。 */
-import { DramaChannelButton, GEN_CHANNELS } from "./DramaChannelButton";
+import { DramaChannelButton, GEN_CHANNELS, visibleChannels } from "./DramaChannelButton";
 import { useLocalAudio } from "./use-local-audio";
 import type { DramaRFNode } from "./use-drama-board";
 
@@ -118,13 +118,31 @@ function AudioPreview({ path }: { path: string }) {
 
 function GenButtons({ id, kind, payload, busyKey }: { id: string; kind: string; payload: Record<string, any>; busyKey: (what: string) => boolean }) {
   const actions = useDramaActions();
-  const allowed = GEN_CHANNELS[kind];
-  if (!allowed) return null;
+  if (!GEN_CHANNELS[kind]) return null;
+  /* ⛔ 按状态过滤通道（09-29 按钮精简）：没出图的卡不给「视频」—— 见 visibleChannels 注释。 */
+  /* ⛔⛔ 卡角色（payload.act，09-29 用户：「每个工作流内所有卡片上的按键名称和功能必须唯一，不得重复」）：
+     模板卡显式声明角色，按键按角色分发 ⇒ 同一工作流里**生成入口只有一张卡**：
+       · act: "generate" ⇒ 生成按钮（按通道表与状态）+ 上传参考图（唯一的动作入口）
+       · act: "upload"   ⇒ **只有**「上传参考图」（素材位：从外部拖/传进来，不在本工作台生成）
+       · act: "output"   ⇒ **不出按钮**（产物位：纯展示结果，空态已写明「点左边的生图，图出在这里」）
+       · 未标记（用户自由拖的卡）⇒ 走 kind + 状态规则（自由编排不受限）
+     ⚠️ 口径：**不同角色**的卡按键不重复；**同一角色多张卡**（短剧流里多个角色卡）保有同类按键是
+        必要能力（否则第二个角色没法制图），不算重复。 */
+  const act = String(payload.act || "");
+  const allowed = act === "upload" || act === "output" ? [] : visibleChannels(kind, payload);
   /* ⛔ 按钮本体在 DramaChannelButton（09-28）—— 卡面与右侧检查器**共用同一颗按钮**。
      原来两处各写一份：卡面改名后（09-29 定稿为「生图」），检查器里还叫「生成图片」、未配置也不给
      引导（点了才报错）—— 同一个动作两套实现的必然结果。这里只决定「露出哪几条通道」。
      09-28 闭环追加：素材类卡加「上传参考图」（此前只有拖拽一条路，用户不知道能传）。 */
-  const canUpload = ["image", "character", "location", "shot"].includes(kind);
+  /* ⛔ 上传参考图只在**输入位**给（09-29 精简）：没图的出图卡 / 已有定妆照的角色卡 / 已有首帧的镜头卡
+     都不再重复出现这颗按钮 —— 每张卡都挂全套按键正是用户吐槽的「重复按键」。 */
+  const canUpload = act === "upload" ? true
+    : act === "generate" ? (kind === "image" || kind === "shot")
+    : act === "output" ? false
+    : kind === "image" ? !payload.path && !payload.url && payload.hint !== "output"
+    : kind === "character" || kind === "location" ? !payload.ref
+    : kind === "shot" ? !payload.first_frame
+    : false;
   return (
     <div className="drama-canvas-card-actions nodrag">
       {allowed.map((what) => (
@@ -292,7 +310,12 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
             </div>
           ) : null}
           {kind === "audio" ? <AudioPreview path={path} /> : null}
-          <div className="drama-canvas-card-text">{String(payload.text || payload.prompt || "（生成时自动沿用连入的上游提示词；点生成或在此写自己的）")}</div>
+          {/* ⛔ 空态文案要让人**照做**（09-29 用户要新手向）：说清"在这写什么 + 写完点哪 + 图去哪"。 */}
+          <div className="drama-canvas-card-text">{String(payload.text || payload.prompt || (path
+            ? "这张已经出图了：想换一版点下面的「重出」；想微调就先改提示词再出。"
+            : payload.hint === "output"
+              ? "产物位：点左边「写提示词」卡上的「生图」，图会出在这里。（也可以在这张卡直接写提示词生成）"
+              : "在这里写你要什么，例：一只橘猫坐在窗台上，暖色午后光。写完点下面的「生图」。"))}</div>
           <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />
         </>
       );
