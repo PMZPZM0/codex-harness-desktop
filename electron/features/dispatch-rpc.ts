@@ -14,6 +14,8 @@ import { canDispatchFrom } from "../dispatch";
 import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
 import { DISPATCH_FIXED_PORT, dispatchMcpTools, dispatchProbes, dispatchToken, ensureDispatchToken, restrictedThreadRole, stableKey } from "../features/dispatch-core";
+import { normalizeTeamConfig, readExpertTeams, writeExpertTeams } from "../expert-teams";
+import { readSubAgents, writeSubAgents } from "../main/09-agents-plugins";
 import { runDelegatedTask } from "../features/delegation";
 import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
 import { mutableState, readBuiltinPlugins, scheduler } from "../main";
@@ -137,6 +139,53 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
         —— 同一动作两套实现是本仓反复踩过的坑（文案漂移、行为不一致、修一处漏一处）。
      ⛔ 视频必须两段式：提交立刻返回 jobId（不能阻塞回合），查询另一次调用；jobId 由主进程落盘，
         关画布 / 重启应用都能续查。 */
+  if (name === "expert_save") {
+    const team = normalizeTeamConfig({
+      displayName: { zh: String(args.displayNameZh ?? ""), en: String(args.displayNameEn ?? "") },
+      profession: { zh: String(args.profession ?? "") },
+      description: { zh: String(args.description ?? "") },
+      category: args.category ? String(args.category) : undefined,
+      sop: String(args.sop ?? ""),
+      lead: { name: String(args.leadName ?? ""), systemPrompt: String(args.leadSystemPrompt ?? "") },
+      members: Array.isArray(args.members) ? args.members : [],
+      quickPrompts: Array.isArray(args.quickPrompts) ? args.quickPrompts.map((q: unknown) => ({ zh: String(q) })) : [],
+    });
+    if (!team.lead?.name || !String(team.lead?.systemPrompt ?? "").trim()) {
+      return { ok: false, error: "lead 的 name 与 systemPrompt 必填（专家没有系统提示词就无法工作）" };
+    }
+    const list = await readExpertTeams();
+    const existed = list.some((entry) => entry.teamId === team.teamId);
+    const next = existed ? list.map((entry) => (entry.teamId === team.teamId ? team : entry)) : [team, ...list];
+    await writeExpertTeams(next);
+    const memberCount = Array.isArray(team.members) ? team.members.length : 0;
+    return { ok: true, output: `已${existed ? "更新" : "创建"}专家「${team.displayName?.zh}」（teamId: ${team.teamId}，主理人: ${team.lead?.name}${memberCount ? `，成员 ${memberCount} 名` : ""}）。专家列表在重启应用后可见；用相同 teamId 再次调用即更新。` };
+  }
+  if (name === "expert_list") {
+    const list = await readExpertTeams();
+    if (!list.length) return { ok: true, output: "（还没有任何专家/专家团）" };
+    const lines = list.map((t) => `- ${t.teamId}｜${t.displayName?.zh ?? "?"}｜${t.profession?.zh ?? ""}｜主理人 ${t.lead?.name ?? "?"}${Array.isArray(t.members) && t.members.length ? `（+${t.members.length} 成员）` : ""}`);
+    return { ok: true, output: lines.join("\n") };
+  }
+  if (name === "subagent_save") {
+    const list = await readSubAgents();
+    const now = new Date().toISOString();
+    const agentName = String(args.name ?? "").trim();
+    if (!agentName) return { ok: false, error: "name 必填" };
+    const config = {
+      id: agentName, name: agentName,
+      description: String(args.description ?? "").trim() || `由「${agentName}」负责的子任务`,
+      systemPrompt: String(args.systemPrompt ?? "").trim(),
+      effort: String(args.effort ?? "high"),
+      inheritModel: true, inheritSandbox: true, inheritApproval: true,
+      enabled: true,
+      createdAt: list.find((entry) => entry.id === agentName)?.createdAt ?? now,
+      updatedAt: now,
+    };
+    const existed = list.some((entry) => entry.id === agentName);
+    const next = existed ? list.map((entry) => (entry.id === agentName ? config : entry)) : [config, ...list];
+    await writeSubAgents(next);
+    return { ok: true, output: `已${existed ? "更新" : "创建"}子智能体「${agentName}」（id: ${agentName}）。列表在重启应用后可见。` };
+  }
   if (name === "image_generate") {
     const prompt = String(args.prompt ?? "").trim();
     if (!prompt) return { ok: false, error: "缺少 prompt（要画什么）" };

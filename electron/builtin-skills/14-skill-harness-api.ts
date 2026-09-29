@@ -20,7 +20,8 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
   **内置调度 MCP 当前暴露的工具**（09-29 现状；实际以 tools/list 返回为准）：
   · 调度：\`scheduler_save\`（建定时任务，\`threadId:"current"\` = 就在当前会话里续聊执行）/ \`scheduler_list\` / \`scheduler_run\` / \`scheduler_delete\`
   · 媒体：\`image_generate\`（生图，\`count\` 1–4 并发出变体，落盘返回本地路径）/ \`video_generate\`（提交视频任务，**立即返回 jobId，不等待**）/ \`video_status\`（查任务；成功会自动下载落盘）/ \`video_concat\`（把多镜片段按给定顺序拼成成片）
-  · 子智能体：\`agent_invoke\`（派一个干净上下文的自己）/ \`agent_archive_sessions\`
+  · 子智能体：\`agent_invoke\`（派一个干净上下文的自己）/ \`agent_archive_sessions\` / \`subagent_save\`（新建子智能体代理，name+systemPrompt 必填）
+  · 专家：\`expert_save\`（创建/更新专家或专家团——displayNameZh + leadName + leadSystemPrompt 必填，多角色加 members；同 teamId 即更新）/ \`expert_list\`（列已有专家）。用户说「帮我建一个 XX 专家 / 专家团」时直接用它，建完复述 teamId；⛔ 内置六专家（知微/呈象/洞明/鲁班/画意/剪承团）有固定 teamId，别覆盖
   ⇒ 生图生视频的**完整用法**在 \`image-generation\` 与 \`video-generation\` 两个技能里（提示词结构、模式路由、厂商矩阵、失败修复）—— 用户提到「画图 / 出图 / 生成视频 / 让这张图动起来」时先读它们。
   ⇒ 当用户要「建定时任务 / 加待办 / 存 RPA 配方 / 改设置」这类**界面动作**时，**说明该去哪个界面点**（例如 设置 → 定时任务），**不要**声称自己调用了某个 \`域:动作\` 通道、也不要凭空发明工具名（如 \`task_add\`）—— 没有的工具就是没有。
 - 引擎**直接可用**的自动化能力另有专技能：\`desktop-automation\`（键鼠/窗口/OCR，nuphus MCP）、\`browser-skill\`（浏览器，playwright-cli）、\`ssh\`（远程执行）。MCP 连接器是动态的，以 tools/list 实际返回为准。
@@ -279,11 +280,11 @@ SSH 服务器库（保存/执行远程命令/导入导出/会话终端）
 通道：commands:delete, commands:expand, commands:list, commands:read, commands:save
 
 ### subagents（4 通道）
-子智能体——**可创建**：用户要「新建一个子智能体/代理」时 subagents:save（name 必填；description/systemPrompt 缺省自动生成；effort 默认 high；模型/沙箱/审批默认继承主会话，inherit*=false 才需要显式给；id 缺省由 name 生成，同 id 即覆盖更新）→ subagents:invoke 直接委派任务；subagents:list 查重
+子智能体——**可创建**：用户要「新建一个子智能体/代理」时，**直接用真工具 \`subagent_save\`**（name+systemPrompt 必填；同 name 即更新）→ \`agent_invoke\` 派活
 通道：subagents:invoke, subagents:list, subagents:remove, subagents:save
 
 ### teams（9 通道）
-专家团/专家的定义与成员管理——**可创建**：用户要「新建一个专家/专家团」时，先 teams:list 查重，再 teams:save 落盘（normalizeTeamConfig 自动补默认与 id 规范；teamId 相同即覆盖更新）。字段：displayName/profession/description（zh+en）/category/tags(≤3)/quickPrompts(≤3)/sop；lead 必带 name+systemPrompt；多角色协作加 members[]（每人 name+profession+description+systemPrompt）。⛔ 内置专家（知微/呈象/洞明/鲁班/画意/剪承团）每次启动确保存在——不要用与内置相同的 teamId 去覆盖内置定义，新建用独有 teamId；建完向用户复述 teamId 与成员名单
+专家团/专家的定义与成员管理——**可创建**：用户要「新建一个专家/专家团」时，**直接用真工具 \`expert_save\`**（先 \`expert_list\` 查重；normalize 自动补默认与 id 规范；teamId 相同即覆盖更新）。字段：displayName/profession/description（zh+en）/category/tags(≤3)/quickPrompts(≤3)/sop；lead 必带 name+systemPrompt；多角色协作加 members[]（每人 name+profession+description+systemPrompt）。⛔ 内置专家（知微/呈象/洞明/鲁班/画意/剪承团）每次启动确保存在——不要用与内置相同的 teamId 去覆盖内置定义，新建用独有 teamId；建完向用户复述 teamId 与成员名单
 通道：teams:invoke-member, teams:list, teams:member-session, teams:remove, teams:reset-defaults, teams:save, teams:session-config, teams:start-session, teams:tools
 
 ### clipboard（4 通道）
