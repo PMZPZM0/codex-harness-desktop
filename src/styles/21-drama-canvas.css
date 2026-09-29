@@ -1517,3 +1517,35 @@ button.drama-canvas-card-media:hover { color: var(--accent); }
 }
 .drama-media-viewer-btn.is-danger:hover:not(:disabled) { border-color: var(--red); color: var(--red); }
 .drama-media-viewer-btn .is-spin { animation: drama-batch-spin 1s linear infinite; }
+
+/* ───────────────────────── 参考图缩略条（09-29 用户：「上传的参考图会把已生成的图顶替掉」）
+   ⛔ 参考图（payload.ref）与生成产物（payload.path）**分开显示**：产物在主位，参考图退到这条
+   小缩略条里，一眼能看出「哪个是喂给模型的参考、哪个是生成结果」，上传参考图也不再覆盖产物。 */
+.drama-canvas-card-ref {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+.drama-canvas-card-ref-tag {
+  flex: none;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: var(--muted);
+  border: 1px solid var(--line-soft);
+  white-space: nowrap;
+}
+.drama-canvas-card-ref-img {
+  height: 34px;
+  width: auto;
+  max-width: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+}

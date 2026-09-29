@@ -351,7 +351,10 @@ export function useDramaStory(
         if (!path) continue;
         if (kind === "shot") board.updatePayload(nodeId, { first_frame: path });
         else if (kind === "character" || kind === "location") board.updatePayload(nodeId, { ref: path });
-        else board.updatePayload(nodeId, { path, url: path, title: node.data.payload?.title || "参考图" });
+        /* ⛔⛔ 09-29 用户实测：「上传的参考图会直接把已生成的图顶替掉展示」—— 此前 image 卡把参考图写进
+           path/url（**生成产物的显示字段**）⇒ 一上传就把已生成的图覆盖了。参考图必须走独立字段 ref，
+           与生成产物分开（character/location 卡一直用的就是 ref ✓）。守卫【211】有负向断言防回潮。 */
+        else board.updatePayload(nodeId, { ref: path });
         board.saveNow();
         notice(written?.fallback
           ? `参考图已暂存到应用数据目录：${path.split(/[\\/]/).pop()}（当前画布未绑定会话工作区；想存进工作区就先为会话选工作文件夹）`

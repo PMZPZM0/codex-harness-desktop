@@ -262,9 +262,20 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
     }
     if (kind === "image" || kind === "audio") {
       const path = String(payload.path || payload.url || "");
+      /* ⛔ 参考图（payload.ref）与生成产物（payload.path）**分开显示**（09-29 用户：上传的参考图
+         会把已生成的图顶掉）。规则：有产物时主位给产物、参考图退到下方缩略条；只有参考图还没出图时，
+         主位显示参考图并在标题里写明是它（免得用户以为已经出图了）。 */
+      const refPath = String(payload.ref || "");
       return (
         <>
-          {kind === "image" && path ? <MediaPreview path={path} alt={String(payload.title || "参考图")} kind="image" title={String(payload.title || "参考图")} nodeId={id} fields={["path", "url"]} channel="image" /> : null}
+          {kind === "image" && refPath && !path ? <MediaPreview path={refPath} alt="参考图" kind="image" title="参考图（还没出图）" nodeId={id} fields={["ref"]} channel="image" /> : null}
+          {kind === "image" && path ? <MediaPreview path={path} alt={String(payload.title || "出图")} kind="image" title={String(payload.title || "出图")} nodeId={id} fields={["path", "url"]} channel="image" /> : null}
+          {kind === "image" && path && refPath ? (
+            <div className="drama-canvas-card-ref" title="生成时一并喂给模型的参考图（与生成结果分开存，不会互相覆盖）">
+              <span className="drama-canvas-card-ref-tag">参考图</span>
+              <img className="drama-canvas-card-ref-img" src={imageDisplaySrc(refPath)} alt="参考图" loading="lazy" />
+            </div>
+          ) : null}
           {kind === "audio" ? <AudioPreview path={path} /> : null}
           <div className="drama-canvas-card-text">{String(payload.text || payload.prompt || "（生成时自动沿用连入的上游提示词；点生成或在此写自己的）")}</div>
           <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />
