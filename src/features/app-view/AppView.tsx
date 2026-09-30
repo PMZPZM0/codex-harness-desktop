@@ -156,11 +156,27 @@ import { AppViewRemoteApproval } from "./AppView/04-remote-approval";
 import { AppViewRemoteConsole } from "./AppView/05-remote-console";
 import { AppViewTaskComposer } from "./AppView/06-task-composer";
 import { AppViewMemoryPanel } from "./AppView/07-memory-panel";
+import { TeamOfficePreview } from "../team-office";
 import { DramaCanvas } from "../drama-canvas";
 import { AppViewSettingsSheet } from "./AppView/08-settings-sheet";
 import { AppViewFilePreviewEditor } from "./AppView/09-file-preview-editor";
 
 
+
+/* ⛔ 诊断探针（09-30）：localStorage.officeProbe = "1" 时用**内置假团队**打开像素办公室 ——
+   e2e profile 里没有活动专家团（办公室按钮只在选中团队时渲染），真机断言全靠它复现。
+   默认关闭、只读、不碰业务数据。 */
+const OFFICE_PROBE_TEAM = {
+  teamId: "__office-probe__",
+  displayName: { zh: "诊断用团队", en: "Probe Team" },
+  profession: { zh: "诊断", en: "Probe" },
+  lead: { id: "probe-lead", name: "执舵", profession: { zh: "统筹", en: "Lead" } },
+  members: [0, 1, 2, 3].map((i) => ({
+    id: `probe-m${i}`,
+    name: ["观澜", "察本", "衡值", "执绳"][i],
+    profession: { zh: ["工程", "风控", "行情", "文档"][i], en: "-" },
+  })),
+} as unknown as ExpertTeamConfig;
 
 export function AppView({ app }: { app: HarnessAppApi }) {
 
@@ -459,6 +475,26 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {/* 记忆中心：设置页「记忆」只做总览，条目浏览 / 常驻记忆编辑 / 存储切换都在这个大弹窗里完成 */}
       <AppViewMemoryPanel app={app} />
       <AppViewSettingsSheet app={app} />
+      {/* 专家团像素办公室（v19）：成员流转轨「办公室」按钮进入。数据面 = teams + railRuns 的
+          运行态（引擎事件流归约），无新 IPC；交互只有「点角色 → 打开该成员会话」。 */}
+      <TeamOfficePreview
+        teamId={app.companyPreviewTeamId}
+        onClose={() => app.setCompanyPreviewTeamId(null)}
+        teams={app.expertTeams}
+        runningByMember={app.railRunningByMember}
+        lastByMember={app.railLastByMember}
+        openThread={(threadId) => void openThread(threadId)}
+      />
+      {typeof localStorage !== "undefined" && localStorage.getItem("officeProbe") === "1" && (
+        <TeamOfficePreview
+          teamId="__office-probe__"
+          onClose={() => { try { localStorage.removeItem("officeProbe"); } catch { /* 忽略 */ } }}
+          teams={[OFFICE_PROBE_TEAM]}
+          runningByMember={{ "probe-m1": { runId: "p1", leadThreadId: "", teamId: "__office-probe__", memberId: "probe-m1", memberName: "察本", profession: "风控", role: "member", memberThreadId: "", query: "", output: "", status: "running", startedAt: 0 } }}
+          lastByMember={{}}
+          openThread={() => { /* 探针不跳会话 */ }}
+        />
+      )}
       {/* AI 短剧无限画布（09-27）：与「专家团办公室预览」同一个档位的整屏浮层 —— 画布需要
           一大片连续空间，塞进右栏或中央主区分栏都会被挤成缩略图。工作区传进去是因为
           分镜表副本与素材要落到 <workspace>/.drama-canvas/ 下（引擎读的就是那份）。 */}

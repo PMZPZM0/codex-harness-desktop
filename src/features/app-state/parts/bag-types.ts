@@ -1382,6 +1382,8 @@ export interface Bag {
   railTeamId: string;
   railTeam: ExpertTeamConfig | null;
   railRuns: TeamMemberRunRecord[];
+  companyPreviewTeamId: string | null;
+  setCompanyPreviewTeamId: React.Dispatch<React.SetStateAction<string | null>>;
   railRunningByMember: Record<string, TeamMemberRunRecord>;
   railLastByMember: Record<string, TeamMemberRunRecord>;
   popupRun: TeamMemberRunRecord | null;

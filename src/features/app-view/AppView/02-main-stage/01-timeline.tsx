@@ -245,6 +245,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     setSettingsOpen,
     setSettingsPage,
     setShowModelGuide,
+    setCompanyPreviewTeamId,
     setTeamHistoryMember,
     setTeamPopupRunId,
     showLogin,
@@ -514,7 +515,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       onOpenMember={(memberId) => { setTeamPopupRunId(""); setTeamHistoryMember(memberId); }}
                       /* ⛔ 办公室预览**接口保留位**（09-30 用户：「太丑了，直接删了这个功能；接口可以保留，
                          按键保留」）。实现（team-office 域）已整体删除；重做时在这里接回预览浮层。 */
-                      onOpenOffice={() => { /* TODO(office-preview): 待重做，接回位置就在这一行 */ }}
+                      onOpenOffice={() => setCompanyPreviewTeamId(railTeam.teamId)}
                     />
                   )}
                   {railTeam && popupRun && (
