@@ -32,6 +32,7 @@ import {
 import { animalArtOf, artTexture, preloadArt, propArtOf, personPresetOn, sceneBgArt } from "./office-art";
 import { personArtOf } from "./office-art-person";
 import { animatePerson, buildPerson, personLookOfKey, type PersonParts } from "./office-person";
+import { buildRig, setState, updateRig, playOnce, paintPart, emitRigEvent, type RigActor, type RigState } from "./rig";
 import { poseArtOf, walkArtOf } from "./office-art-pose";
 import { deskSlots, floorPoint, SCENE_W, SCENE_H, type FloorSpot } from "./office-iso";
 // 走动人寻路（09-27）：BFS 网格路径，⛔ 别再退回"直线插值"（那会让人穿过别人的桌子）。
@@ -135,6 +136,8 @@ interface SeatedParts {
   ears: Graphics[] | null;
   /** 程序化人物部件（09-30 v16「真渲染的小人物」）：非 null 时动画走 animatePerson */
   person: PersonParts | null;
+  /** 骨骼装配（09-30 v17「Spine 式多轨道」）：非 null 时动画走 updateRig */
+  rig: RigActor | null;
   /** 打盹时头顶浮起的 z（平时不可见） */
   doze: Container;
   pose: OfficePose;
@@ -146,6 +149,8 @@ interface SeatView {
   sig: string;
   parts: SeatedParts | null;
   clock: number;
+  /** 上一帧的运行态（迁移检测：running→idle 触发 handup 举手） */
+  lastRunning?: boolean;
 }
 
 /** 走动小人：位置由 ticker **沿 BFS 路径**插值（09-27 v12 起不再是直线），⛔ 不是瞬移。 */
@@ -167,6 +172,8 @@ interface WalkerParts {
   /** 程序化人物（09-30 v16）：走路部件 + 到达后的使用姿势部件（visible 切换） */
   personWalk: PersonParts | null;
   personUsing: PersonParts | null;
+  /** 骨骼装配（09-30 v17）：站姿骨架，走路摆臂摆腿 / 到达切 interact 全由 updateRig 驱动 */
+  rig: RigActor | null;
   /** 到达设施后的**使用姿势**（drink / operate / run / chat / stand）—— t≥1 时切换 texture */
   usingTex: Texture | null;
   /** 回程端杯走（tea/coffee/vending 返程专用姿势图）—— away=false 时切换 */
@@ -268,12 +275,29 @@ export function OfficeCanvas({ ceoName, ceoProfession, members, snapshot, onOpen
 
     const scene = sceneRef.current;
     scene.draft = Boolean(draftMode);
+    /* 视差状态（far 层目标位移）+ 鼠标跟随 */
+    const parallax = { x: 0, y: 0, tx: 0, ty: 0 };
+    let bgLayer: Sprite | null = null;
+    const onPointerMove = (e: PointerEvent) => {
+      const r = host.getBoundingClientRect();
+      parallax.tx = ((e.clientX - r.left) / r.width - 0.5) * 2;
+      parallax.ty = ((e.clientY - r.top) / r.height - 0.5) * 2;
+    };
+    host.addEventListener("pointermove", onPointerMove);
     const app = new Application();
     appRef.current = app;
     let cleaned = false;
     let inited = false;
 
     const tick = (ticker: { deltaTime: number }) => {
+      /* 视差（约束 3）：far 背景层随鼠标反向轻移（±6px），前层不动 —— 位移差造纵深。
+         lerp 缓动，别硬跟（硬跟 = 眼晕）。 */
+      parallax.x += (parallax.tx - parallax.x) * 0.04;
+      parallax.y += (parallax.ty - parallax.y) * 0.04;
+      if (bgLayer) {
+        bgLayer.x = -8 + parallax.x * 6;
+        bgLayer.y = -6 + parallax.y * 4;
+      }
       animateScene(scene, ticker.deltaTime);
     };
 
@@ -332,6 +356,7 @@ export function OfficeCanvas({ ceoName, ceoProfession, members, snapshot, onOpen
           bg.width = SCENE_W + 16;
           bg.height = SCENE_H + 12;
           world.addChild(bg);
+          bgLayer = bg;   // 视差层（far）
         }
       }
       if (!bgUrl) {
@@ -362,6 +387,7 @@ export function OfficeCanvas({ ceoName, ceoProfession, members, snapshot, onOpen
 
     return () => {
       cleaned = true;
+      host.removeEventListener("pointermove", onPointerMove);
       if (inited) {
         try { app.ticker.remove(tick); } catch { /* ticker 已停 */ }
         try { app.destroy(true, { children: true, texture: true }); } catch { /* 已销毁 */ }
@@ -600,11 +626,22 @@ function syncPeople(
         if (!scene.draft) view.container.addChild(buildVacant(slot.scale));
         view.container.eventMode = "none";
       } else if (!away && pose) {
-        const { container: person, parts } = createWorkerGraphics(pose, slot.cosplay, back, slot.person);
+        const { container: person, parts } = createWorkerGraphics(pose, slot.cosplay, back, slot.person, state === "running");
         view.container.addChild(person);
         view.parts = parts;
         view.container.eventMode = slot.memberId ? "static" : "none";
       }
+    }
+    /* ── 骨骼状态跟随（约束 2：业务快照 → rig 状态，经 setState 幂等切换）+ 任务完成举手
+          （running → idle 迁移 ⇒ track1 播 handup，业务侧零感知）。 ── */
+    if (view.parts?.rig) {
+      const wasRunning = view.lastRunning;
+      setState(view.parts.rig, state === "running" ? "typing" : "idle");
+      if (wasRunning === true && state !== "running") {
+        playOnce(view.parts.rig, "handup");
+        emitRigEvent({ type: "agent:taskDone", key: slot.key });
+      }
+      view.lastRunning = state === "running";
     }
 
     /* 走动：visit/errand 时把人换成走动小人，位置由 ticker **沿 BFS 路径**推进（09-27 v12） */
@@ -1200,14 +1237,28 @@ const PERSON_SIT_ALIAS: Record<string, string> = {
  *  ⛔ 09-30 v16：person 预设走**程序化可动人物**（分层部件 + 实时变换 —— 用户：「都是截图
  *     在动，你不会渲染一个小人物吗」）；切片贴图只在 person 素材命中且非默认时用（可切回的
  *     预设），再回落动物绒毛 / 手画。返回 box 供挂载，person 非空 = 动画层走 animatePerson。 */
-function buildSpriteBody(cosplay: Cosplay, pose?: OfficePose, person?: string): { box: Container; person: PersonParts | null } | null {
+function buildSpriteBody(cosplay: Cosplay, pose?: OfficePose, person?: string, running?: boolean): { box: Container; person: PersonParts | null; rig: RigActor | null } | null {
   if (person && personPresetOn()) {
     const look = personLookOfKey(person);
-    const built = buildPerson(look, "sit", cosplay.face);
-    /* ⛔ 下沉 30（与 office-person 坐姿比例配对）：太少=人浮在桌面上，太多=头藏进显示器
-       后面只剩一坨色块（09-30 两个方向都实测过）。程序化与素材两路统一在这里沉。 */
-    built.container.position.y = 30;
-    return { box: built.container, person: built };
+    /* ① 切片优先（09-30 第三版人物表：纯 magenta 背景 + **无椅无桌**，坐姿=隐形椅姿势
+          —— 椅子由程序化椅承担，构图才可控）；② 缺图回落骨骼装配。 */
+    const url = personArtOf(person, "sit-back");
+    const tex = url ? artTexture(url) : null;
+    if (tex) {
+      const sp = new Sprite(tex);
+      sp.anchor.set(0.5, 1);
+      sp.scale.set(SPRITE_LOCAL_H / tex.height);
+      /* 下沉：坐姿图的鞋底 ≈ 椅座下方的地面 —— 鞋底落在座位点略下（实测校准）。 */
+      sp.position.set(0, 6);
+      const box = new Container();
+      box.addChild(sp);
+      return { box, person: null, rig: null };
+    }
+    /* ② 骨骼装配（Spine 式多轨道）：初始状态按真实运行态（工作=typing / 空闲=idle）。 */
+    const rig = buildRig((bone, lk) => paintPart(bone, lk, true), true, person);
+    setState(rig, running ? "typing" : "idle");
+    rig.container.position.y = 30;
+    return { box: rig.container, person: null, rig };
   }
   const poseUrl = pose ? poseArtOf(pose.kind, cosplay.animal) : null;
   const url = poseUrl ?? animalArtOf(cosplay.animal);
@@ -1219,14 +1270,14 @@ function buildSpriteBody(cosplay: Cosplay, pose?: OfficePose, person?: string): 
   const box = new Container();
   box.position.y = 30;
   box.addChild(sp);
-  return { box, person: null };
+  return { box, person: null, rig: null };
 }
 
 /**
  * 坐姿角色：素材路线 = 生图精灵 + 项圈；保底路线 = 手画（身体 + 两只爪子 + 头 + 项圈）。
  * ⛔ 顺序固定：身体 → 头 → 项圈（项圈压在头 / 身交界上，脖子才不会"断"）。
  */
-function createWorkerGraphics(pose: OfficePose, cosplay: Cosplay, back: boolean, person?: string): { container: Container; parts: SeatedParts } {
+function createWorkerGraphics(pose: OfficePose, cosplay: Cosplay, back: boolean, person?: string, slotRunningHint?: boolean): { container: Container; parts: SeatedParts } {
   const c = new Container();
 
   const shadow = new Graphics();
@@ -1239,12 +1290,14 @@ function createWorkerGraphics(pose: OfficePose, cosplay: Cosplay, back: boolean,
   let headwrap: Container | null = null;
   let ears: Graphics[] | null = null;
 
-  const spriteBody = buildSpriteBody(cosplay, pose, person);
+  const spriteBody = buildSpriteBody(cosplay, pose, person, slotRunningHint);
   let spritePerson: PersonParts | null = null;
+  let spriteRig: RigActor | null = null;
   if (spriteBody) {
     // 素材路线：躯干 / 四肢 / 头 / 耳都在图里，⛔ 不再叠手画的部件（会"双头"）
     body.addChild(spriteBody.box);
     spritePerson = spriteBody.person;
+    spriteRig = spriteBody.rig;
   } else {
     // 躯干（黑一坨，下缘会被椅子挡住）。⛔ 比头**窄**：头必须比肩宽，剪影才有"大头动物"的比例。
     //    ⛔ 长度也有上限：躯干画到 +78 时下缘会从**椅座下面漏出来**，看着像"人挂在椅子下面"
@@ -1354,7 +1407,7 @@ function createWorkerGraphics(pose: OfficePose, cosplay: Cosplay, back: boolean,
 
   return {
     container: c,
-    parts: { body, armBack, armFront, headwrap, ears, person: spritePerson, doze, pose },
+    parts: { body, armBack, armFront, headwrap, ears, person: spritePerson, rig: spriteRig, doze, pose },
   };
 }
 
@@ -1385,21 +1438,36 @@ function createWalker(cosplay: Cosplay, ground: { x: number; y: number; scale: n
   let runInPlace = false;
   let personWalk: PersonParts | null = null;
   let personUsing: PersonParts | null = null;
+  let rig: RigActor | null = null;
   if (person && personPresetOn()) {
     const look = personLookOfKey(person);
-    personWalk = buildPerson(look, "stand", 1);
+    /* 切片优先：走路两帧 + 到达使用姿势（第三版人物表 = 无椅无背景，叠场景干净）；
+       缺图 → 程序化可动小人兜底。 */
+    const wa = personArtOf(person, "walk-a");
+    const wb = personArtOf(person, "walk-b");
+    if (wa && wb && artTexture(wa) && artTexture(wb)) walkFrames = [wa, wb];
     if (spot) {
-      const USING: Record<ErrandSpot, Parameters<typeof buildPerson>[1]> = {
+      const USING_SLICE: Record<ErrandSpot, string> = {
+        water: "drink", vending: "drink", tea: "drink",
+        printer: "operate", shelf: "operate",
+        restroom: "stand-side", treadmill: "run",
+      };
+      const USING_RIG: Record<ErrandSpot, Parameters<typeof buildPerson>[1]> = {
         water: "drink", vending: "drink", tea: "drink",
         printer: "operate", shelf: "operate",
         restroom: "stand", treadmill: "run",
       };
-      personUsing = buildPerson(look, USING[spot], 1);
+      const u2 = artTexture(personArtOf(person, USING_SLICE[spot]) ?? "");
+      if (u2) usingTex = u2;
+      else personUsing = buildPerson(look, USING_RIG[spot], 1);
       runInPlace = spot === "treadmill";
     }
-    walkFrames = null;
+    if (!walkFrames) {
+      /* 切片缺图 → **骨骼装配**（站姿骨架：walk/interact 全由 updateRig 驱动） */
+      rig = buildRig((bone, lk) => paintPart(bone, lk, false), false, person);
+    }
   }
-  const walkSprite = walkFrames ? new Sprite(artTexture(walkFrames[0])!) : (personWalk ? null : buildSpriteBody(cosplay)?.box ?? null);
+  const walkSprite = walkFrames ? new Sprite(artTexture(walkFrames[0])!) : (rig ? null : buildSpriteBody(cosplay)?.box ?? null);
   if (walkSprite) {
     // ⛔ 与坐姿同一套归一化（SPRITE_LOCAL_H）：切片是 ~312px 的原始出图，
     //    不归一就是「原始纹理尺寸直接贴上去」（09-30 用户截图：狐狸占半个办公室）。
@@ -1407,9 +1475,9 @@ function createWalker(cosplay: Cosplay, ground: { x: number; y: number; scale: n
     if (rawTex && walkSprite instanceof Sprite) walkSprite.scale.set((SPRITE_LOCAL_H * 0.96) / rawTex.height);
     walkSprite.position.set(0, 2);
     body.addChild(walkSprite);
-  } else if (personWalk) {
-    if (personUsing) { personUsing.container.visible = false; body.addChild(personUsing.container); }
-    body.addChild(personWalk.container);
+  } else if (rig) {
+    setState(rig, "walk");
+    body.addChild(rig.container);
   } else {
     legBack = new Graphics();
     legBack.roundRect(-5.5, 0, 11, 34, 5.5).fill(FUR_SHADE);
@@ -1489,6 +1557,7 @@ function createWalker(cosplay: Cosplay, ground: { x: number; y: number; scale: n
     walkFrames,
     personWalk,
     personUsing,
+    rig,
     usingTex,
     cupTex,
     runInPlace,
@@ -1519,6 +1588,9 @@ function animateScene(scene: SceneRefs, delta: number) {
     view.clock += delta * 0.06;
     const p = view.parts;
     const t = view.clock;
+
+    /* ── 骨骼装配（09-30 v17）：typing/idle 切换已在 syncPeople 做过（幂等），这里只驱动 ── */
+    if (p.rig) { updateRig(p.rig, delta / 60); return; }
 
     /* ── 程序化人物（09-30 v16）：打字微动 / 呼吸 / 点头全在 animatePerson 里，
           动物那套呼吸/耳朵分支不适用（部件为 null 且比例不同）—— 早退。 ── */
@@ -1620,9 +1692,18 @@ function animateScene(scene: SceneRefs, delta: number) {
     /* 09-30 人物化：到达设施后**原地使用**（跑步机原地跑 = 继续颠），回程端杯走 */
     const arrived = w.t >= 1;
     const inPlace = (arrived && w.away) || (arrived && w.runInPlace);
-    /* ── 程序化人物（09-30 v16）：走路摆臂摆腿 / 到达切使用姿势，全交 animatePerson；
-          ⛔ 与下面动物分支互斥（body.y 会被双方写 —— person 分支早退前处理完朝向）。 ── */
-    if (w.personWalk) {
+    /* ── 骨骼装配（09-30 v17）：走路=walk clip，到达=interact clip，回程切回 walk ——
+          全由 updateRig 多轨道驱动；朝向用 body.scale.x 镜像（与切片路径同一套）。 ── */
+    if (w.rig) {
+      if (arrived && w.away) setState(w.rig, "interact");
+      else setState(w.rig, "walk");
+      updateRig(w.rig, delta / 60);
+      if (w.path.length > 1) {
+        const ahead = pointOnPath(w, easeInOut(Math.min(1, w.t + 0.02 * dir)));
+        const dx = ahead.x - at.x;
+        if (Math.abs(dx) > 0.5) w.body.scale.x = dx < 0 ? -1 : 1;
+      }
+    } else if (w.personWalk) {
       const using = arrived && w.away && w.personUsing;
       w.personWalk.container.visible = !using;
       if (w.personUsing) w.personUsing.container.visible = Boolean(using);
