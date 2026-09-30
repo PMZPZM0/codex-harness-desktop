@@ -8,7 +8,7 @@
 
 /* ── 模型配置引导弹窗（09-17）：只在没有生效模型时出现 ── */
 .model-guide-backdrop {
-  z-index: 97;
+  z-index: 900;
 }
 .model-guide {
   border: 1px solid var(--line);
@@ -560,7 +560,7 @@
 /* 标题旁排（模型/专家中心/开发工具这类没有 actions 容器的页面）：跟在 h2 后、间距 10px */
 /* .settings-copy > .help-entry 已随各页「帮助」按钮退休（09-17：并进标题旁的 ?） */
 .help-backdrop {
-  z-index: 96;
+  z-index: 900;
 }
 .help-modal {
   border: 1px solid var(--line);

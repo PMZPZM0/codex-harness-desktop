@@ -1229,7 +1229,7 @@
    7 项（必备：模型 / 工作区 / Git / ripgrep；常用：Python / jq / 7-Zip），缺项可一键补齐。
    视觉与 .help-modal、模型引导同族（圆角 16 / 面板底 / 同一套阴影），避免"三套弹窗三种长相"。 */
 .env-check-backdrop {
-  z-index: 260;
+  z-index: 900;
 }
 .env-check-modal {
   display: flex;

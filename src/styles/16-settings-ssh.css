@@ -1345,7 +1345,7 @@
 @media (max-width: 720px) { .builtin-plugin-grid { grid-template-columns: 1fr; } }
 
 /* 定时任务弹窗 */
-.schedule-backdrop { z-index: 80; }
+.schedule-backdrop { z-index: 900; }
 .schedule-modal { width: min(680px, calc(100vw - 40px)); max-height: calc(100vh - 60px); overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 20px 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); box-shadow: var(--shadow); animation: login-rise .3s cubic-bezier(.22,.61,.36,1) both; }
 .schedule-modal .se-head { display: flex; align-items: center; justify-content: space-between; }
 .schedule-modal .se-body { display: flex; flex-direction: column; gap: 12px; }
