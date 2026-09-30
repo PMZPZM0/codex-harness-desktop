@@ -262,12 +262,13 @@ bag.commandMatches = commandMatches as typeof bag.commandMatches;
       };
       out.push(item);
     };
+    /* ⛔ 保底透出必须**先于** localSkills/引擎清单合并（09-30 用户：「就透了12个技能」）：
+       后合并的同名条目会被去重跳过 —— 保底放后面时，本地目录扫描里的同名内置技能会把
+       source 盖成 "local"，「引擎内置」分组永远为空。保底先占位（source=engine，note 来自中文注释表），
+       目录/引擎清单里的同名条目被跳过，市场/导入技能（不重名）照常并入。 */
+    for (const name of BUILTIN_DISTRIBUTED_SKILLS) push({ name });
     for (const entry of bag.localSkills) push(entry);
     for (const entry of bag.settingsResources.skills) push(entry);
-    /* ⛔ 保底透出（09-30 用户：「就算是内置，也要在#面板里面透出来」）：随应用分发的内置技能
-       **启动时必然落盘**，但引擎清单要等重扫、目录扫描有时机差 —— 内置技能不许在 # 面板缺席。
-       去重逻辑保证：已在 localSkills / 引擎清单里的（信息更全）保留，缺席的由这份名单补上。 */
-    for (const name of BUILTIN_DISTRIBUTED_SKILLS) push({ name });
     return out;
   }, [bag.localSkills, bag.settingsResources.skills]);
 bag.mergedSkillCatalog = mergedSkillCatalog as typeof bag.mergedSkillCatalog;
@@ -287,7 +288,7 @@ bag.mergedSkillCatalog = mergedSkillCatalog as typeof bag.mergedSkillCatalog;
   /** 输入框「#」技能面板：与「/」命令面板同款触发条件（以 # 开头且未输入空格）与同款展示效果
    *  （#技能名 + 中文注释），让技能可以直接在输入流里被看见和引用。 */
   const skillCommandMatches = useMemo(
-    () => (bag.prompt.startsWith("#") && !bag.prompt.includes(" ") ? matchSkillCatalog(bag.mergedSkillCatalog, bag.prompt.slice(1)) : []),
+    () => (bag.prompt.startsWith("#") && !bag.prompt.includes(" ") ? matchSkillCatalog(bag.mergedSkillCatalog, bag.prompt.slice(1), Infinity) : []),
     [bag.prompt, bag.mergedSkillCatalog],
   );
 bag.skillCommandMatches = skillCommandMatches as typeof bag.skillCommandMatches;
