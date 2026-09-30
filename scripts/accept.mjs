@@ -22,7 +22,7 @@
 // ⛔ 新增验收项**必须**登记进 ROUND_OF（否则默认轮跑不到它 —— 09-24 踩过）。
 // 被测 profile：`.e2e-profile/<name>/`（已 gitignore，含真实对话内容，勿入库）
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ElectronHarness } from "./e2e/lib/harness.mjs";
@@ -82,42 +82,6 @@ const globalArchiveOf = (h) => {
 // 本轮验收项（**每次改动只改这一段**；不再对应的旧项直接删掉，别攒着）
 // ─────────────────────────────────────────────────────────────────────────────
 const CHECKS = [
-  {
-    // 09-30 办公室预览 v18 重做轮（Kenney CC0 资产 + 入口链路）。
-    // 为什么这样测：观感只能人看（已出截图），但**链路的硬前提**可机器断言：
-    //   ① 资产随包且索引与磁盘一致（缺一张 = 运行时静默缺件）；
-    //   ② 资产被内联进主 bundle（打包版 file:// 读不到散图 —— 0.0.27 白屏同型坑）；
-    //   ③ 真机：点成员轨的「办公室」按钮 → 浮层 canvas 真渲染出来（入口断链 = 全白费）。
-    id: "office-kenney",
-    name: "㉒ 办公室预览 v18（Kenney CC0 资产 + 入口链路）",
-    run: async (h) => {
-      const taDir = join(ROOT, "src/features/team-office");
-      const fDir = join(taDir, "assets/kenney/furniture");
-      const pDir = join(taDir, "assets/kenney/persons");
-      const fN = existsSync(fDir) ? readdirSync(fDir).filter((x) => x.endsWith(".png")).length : 0;
-      const pN = existsSync(pDir) ? readdirSync(pDir).filter((x) => x.endsWith(".png")).length : 0;
-      h.check("① Kenney 资产随包（家具 ≥60 / 角色 = 3×45）", fN >= 60 && pN === 135, `家具 ${fN} / 角色 ${pN}`);
-      const assetsSrc = readFileSync(join(taDir, "office-assets.ts"), "utf8");
-      const fRows = (assetsSrc.match(/^  "\S+": f_\S+,$/gm) || []).length;
-      h.check("② 索引与磁盘一致（漂移 = 运行时缺件）", fRows === fN, `索引 ${fRows} / 磁盘 ${fN}`);
-      const indexHtml = readFileSync(join(ROOT, "dist", "index.html"), "utf8");
-      const mainJs = indexHtml.match(/assets\/(index-[A-Za-z0-9_-]+\.js)/);
-      const big = mainJs ? readFileSync(join(ROOT, "dist", "assets", mainJs[1])).length : 0;
-      h.check("③ 资产已内联进主 bundle（>1.5MB；独立文件 = 打包版读不到）", big > 1_500_000, `${(big / 1e6).toFixed(2)}MB`);
-      // ④ 真机渲染：accept profile 里不一定有专家团会话 —— 没有时跳过（不算失败）
-      const opened = await h.eval(`(function(){
-        const rows = [...document.querySelectorAll(".thread-row")];
-        const hit = rows.find((r) => /专家团/.test(r.textContent || ""));
-        if (!hit) return "no-team";
-        hit.querySelector("button")?.click();
-        return "clicked";
-      })()`);
-      if (opened === "no-team") { h.check("④ 真机：无专家团会话，跳过渲染断言", true, "skip"); return; }
-      await wait(2500);
-      const canvasOk = await h.eval(`(function(){ return !!document.querySelector(".office-scene canvas"); })()`);
-      h.check("④ 办公室浮层的 Pixi 画布渲染出来", Boolean(canvasOk), String(canvasOk));
-    },
-  },
   {
     id: "file-card-edit",
     name: "⑱ 文件卡片右键菜单 + md 表格弹窗编辑（09-26「像 WorkBuddy 那样」轮）",
@@ -370,10 +334,9 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "09-30";
+const LATEST_ROUND = "09-26";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
-  "office-kenney": "09-30",
   "file-card-edit": "09-26",
   "settings-pages": "09-25",
   "shot-editor": "09-24",

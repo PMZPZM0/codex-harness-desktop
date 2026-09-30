@@ -2528,6 +2528,8 @@ w.postMessage({id:1,op:"list",root});
      ⛔ 这版推翻了两条旧路线：AI 生图切片（用户「都是截图在动」）与程序化绘制家具
      （用户「摆放丑死了」），改用 **Kenney CC0 资产**（Furniture Kit + Toon Characters，
      官方声明可商用免署名）。本组断言钉的是"再次被否掉的坑"与资产授权。 */
+  /* ⛔ 办公室预览 09-30 整体删除（用户：「太丑了，直接删了这个功能」）；按钮与接口保留 ⇒ 实现不在就不跑这组断言 */
+  if (!existsSync(join(ROOT, "src", "features", "team-office"))) { /* 实现已删 */ } else
   {
     const taDir = join(ROOT, "src", "features", "team-office");
     /* ① 资产授权声明：CC0 + 可商用（⛔ 资产来源换成人人无许可的包时必须在这里显红） */

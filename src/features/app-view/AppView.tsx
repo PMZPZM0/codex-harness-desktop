@@ -156,10 +156,11 @@ import { AppViewRemoteApproval } from "./AppView/04-remote-approval";
 import { AppViewRemoteConsole } from "./AppView/05-remote-console";
 import { AppViewTaskComposer } from "./AppView/06-task-composer";
 import { AppViewMemoryPanel } from "./AppView/07-memory-panel";
-import { TeamOfficePreview } from "../team-office/TeamOfficePreview";
 import { DramaCanvas } from "../drama-canvas";
 import { AppViewSettingsSheet } from "./AppView/08-settings-sheet";
 import { AppViewFilePreviewEditor } from "./AppView/09-file-preview-editor";
+
+
 
 export function AppView({ app }: { app: HarnessAppApi }) {
 
@@ -458,17 +459,6 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {/* 记忆中心：设置页「记忆」只做总览，条目浏览 / 常驻记忆编辑 / 存储切换都在这个大弹窗里完成 */}
       <AppViewMemoryPanel app={app} />
       <AppViewSettingsSheet app={app} />
-      {/* 专家团办公室预览（09-30 v18：Kenney CC0 资产重做版）—— 从成员流转轨末位的「办公室」进入。
-          ⛔ 域组件只收显式 props（禁收 app）；数据仍是既有的 teams / threads / runningThreadIds，无新 IPC。 */}
-      <TeamOfficePreview
-        teamId={app.companyPreviewTeamId}
-        onClose={() => app.setCompanyPreviewTeamId(null)}
-        teams={app.expertTeams}
-        threads={app.threads}
-        runningThreadIds={app.runningThreadIds}
-        runningByMember={app.railRunningByMember}
-        openThread={(threadId) => void openThread(threadId)}
-      />
       {/* AI 短剧无限画布（09-27）：与「专家团办公室预览」同一个档位的整屏浮层 —— 画布需要
           一大片连续空间，塞进右栏或中央主区分栏都会被挤成缩略图。工作区传进去是因为
           分镜表副本与素材要落到 <workspace>/.drama-canvas/ 下（引擎读的就是那份）。 */}
