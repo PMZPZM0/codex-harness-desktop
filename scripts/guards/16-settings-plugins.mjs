@@ -167,60 +167,36 @@ export async function run() {
         "【195】生图技能写了多变体策略（热门 skill 的共性做法：一次出多张让用户挑）"
       );
     }
-  /* ══ Codex 日志管理（09-29 用户：「加一个 Codex 日志管理功能，在数据管理里面…按项目分类，
-        项目里面再按时间分类，可以批量删除和清空」）══
-     ⛔ 这是**销毁性**功能：删的 rollout 是对话全文原档，引擎不会重建。判据盯三件事：
-     域接线完整、删除范围收得住（越界/目录一律拒绝）、级联清索引（否则会话列表留死条目）。 */
+  /* ══ 【228】会话原档管理已**回滚**（09-30 用户：「归档会话你就放归档界面啊，你放数据管理这里
+     干嘛啊」「什么叫搬，回滚不会吗」）══
+     ⛔ 事故背景：09-29 我在数据管理页加了一套「引擎会话原档」（扫 rollout 文件 + 按项目/日期
+     批量删除 / 整库清空）。可「会话的归档 / 删除」在「归档管理」页早就有权威入口
+     （ArchivePage：恢复 / 永久删除 + 二次确认 + 归档态双重门禁）—— 多出来的这个入口等于让
+     同一个销毁动作有两套说法不同的 UI，用户看完直接要求回滚（**不是搬迁**）。
+     ⛔ 本组是**负向断言**：文件 / IPC 域 / 通道 / 挂载点 / 导出面，任一复活即报红。 */
   {
-    const logs = codeOnly(readFileSync(join(ROOT, "electron", "features", "codex-logs.ts"), "utf8"));
-    const mainSrc = codeOnly(readFileSync(join(ROOT, "electron", "main.ts"), "utf8"));
-    const registry = codeOnly(readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8"));
-    const panel = codeOnly(readFileSync(join(ROOT, "src", "features", "storage-settings", "CodexLogsSection.tsx"), "utf8"));
-    const settingsSrc = codeOnly(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8"));
+    const mainSrc228 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+    const registry228 = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
+    const manifest228 = readFileSync(join(ROOT, "electron", "ipc-channels.manifest.json"), "utf8");
+    const regSrc228 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
+    const idx228 = readFileSync(join(ROOT, "src", "features", "storage-settings", "index.ts"), "utf8");
 
-    // ① 域接线（缺一处 = 页面点了没反应 / 通道不存在）
-    (mainSrc.includes('import "./features/codex-logs"') ? ok : fail)(
-      "【200】main.ts 加载期 import 新域（handler 注册时机 —— 漏了通道根本不存在）"
+    (!existsSync(join(ROOT, "electron", "features", "codex-logs.ts")) ? ok : fail)(
+      "【228】codex-logs 域实现已删除（会话原档的扫描 / 删除整套回滚）"
     );
-    (registry.includes('prefix: "codex-logs"') && registry.includes('"codex-logs:scan"') && registry.includes('"codex-logs:delete"') ? ok : fail)(
-      "【200】ipc-registry 登记 codex-logs 域两通道（不改被【107】/【90】报红）"
+    (!existsSync(join(ROOT, "src", "features", "storage-settings", "CodexLogsSection.tsx")) ? ok : fail)(
+      "【228】CodexLogsSection 组件已删除（回复滚一半 = 死代码）"
     );
-    (settingsSrc.includes("<CodexLogsSection") && settingsSrc.includes("storage:") ? ok : fail)(
-      "【200】挂在「数据管理」页（storage）—— 用户指定的位置"
+    (!/codex-logs/.test(mainSrc228) && !/codex-logs/.test(registry228) && !/codex-logs/.test(manifest228) ? ok : fail)(
+      "【228】main / ipc-registry / manifest 零 codex-logs 残留（域登记与两通道都要清干净，否则预检按「未登记域」报红）"
     );
-
-    // ② 删除范围收得住
-    (logs.includes("ROLLOUT_RE.test(path.basename(target))") ? ok : fail)(
-      "【200】只认 rollout-*.jsonl（别的文件一律不动 —— 通道是销毁性的，范围必须窄）"
+    (!/CodexLogsSection/.test(regSrc228) && !/CodexLogsSection/.test(idx228) ? ok : fail)(
+      "【228】挂载面与导出面零残留（漏一处 = tsc 直接报错）"
     );
-    (logs.includes("const inside = roots.some") ? ok : fail)(
-      "【200】越界拒绝：目标必须落在 codex-home 的 sessions / archived_sessions 之内"
+    /* 方向唯一性：会话的归档 / 删除只走「归档管理」页；数据管理页只留「存储占用」+「工作日志」。 */
+    (/archive: \{ render: \(\) => <ArchiveSettingsSection/.test(regSrc228) && /storage: \{ render: \(\) => <>/.test(regSrc228) ? ok : fail)(
+      "【228】会话销毁入口唯一 = 归档管理页；数据管理页只剩存储占用 + 工作日志"
     );
-    (logs.includes("stat.isFile()") && logs.includes("failed.push(target)") ? ok : fail)(
-      "【200】目录/异常目标一律拒绝并记进 failed（不是静默跳过）"
-    );
-    (logs.includes("if (!stat) { continue; }") ? ok : fail)(
-      "【200】文件已不存在时幂等跳过（删除按钮重跑不报错）"
-    );
-
-    // ③ 级联：索引里的死条目
-    (logs.includes("session_index.jsonl") && logs.includes("indexCleaned") ? ok : fail)(
-      "【200】级联剔除 session_index.jsonl 条目（不剔 = 会话列表留打不开的死条目）"
-    );
-
-    // ④ 扫描：项目归属来自 rollout 首行 cwd（按项目分类的判据）
-    (logs.includes("payload?.cwd") || logs.includes("payload.cwd") ? ok : fail)(
-      "【200】项目归属读 rollout 首行 session_meta 的 cwd（不然分不出项目）"
-    );
-    (logs.includes("archived_sessions") ? ok : fail)(
-      "【200】归档目录同样纳入管理（archived_sessions 也是 Codex 写的日志）"
-    );
-
-    // ⑤ 危险护栏：删除必须过二次确认，且文案说清不可恢复
-    (panel.includes("openAppConfirm") && panel.includes("不可恢复") ? ok : fail)(
-      "【200】删除前二次确认且明说「不可恢复」（对话原档删了没有回收站）"
-    );
-    (panel.includes("清空全部") ? ok : fail)("【200】提供整库清空入口（用户点名要「清空」）");
   }
 
   }
@@ -260,50 +236,49 @@ export async function run() {
   }
 
   {
-    /* 【225】设置页区块不许重复挂载（09-30 实测事故）：CodexLogsSection 早已挂在
-       设置页注册表的 storage 页，我这轮误判「没挂载」又在 StorageSettings 里挂了一遍
-       ⇒ 同一页渲染两次（用户截图铁证）。
-       ⛔ 判据：注册表里挂一次；StorageSettings.tsx 里**零次**（它只负责自己的那部分）。 */
-    const regSrc225 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
+    /* 【225】设置页区块挂载唯一性（09-30 实测事故）：同一 Section 挂两处 = 同一页渲染两遍
+       （用户截图铁证）。⛔ 判据：区块只允许挂在设置页注册表里；StorageSettings.tsx **零次**
+       （它只负责「存储占用 / 会话恢复缓存」那部分）。
+       ⚠️ 会话原档那块（CodexLogsSection）已于 09-30 回滚，见【228】；本节只钉仍在的 WorkLogsSection。 */
     const storeSrc225 = readFileSync(join(ROOT, "src", "features", "storage-settings", "StorageSettings.tsx"), "utf8");
-    const regCount225 = (regSrc225.match(/<CodexLogsSection/g) || []).length;
-    (regCount225 === 1 ? ok : fail)(
-      "【225】设置页注册表里 CodexLogsSection 恰好挂一次（挂两次 = 同一页渲染两遍）"
+    (!/CodexLogsSection|WorkLogsSection/.test(storeSrc225) ? ok : fail)(
+      "【225】StorageSettings.tsx 里不许挂任何日志区块（注册表才是唯一挂载点）"
     );
-    (!/CodexLogsSection/.test(storeSrc225) ? ok : fail)(
-      "【225】StorageSettings.tsx 里不许再挂 CodexLogsSection（注册表才是唯一挂载点）"
+    /* 附带：项目归属靠 rollout 首行的 cwd，而首行含 base_instructions 会远超 16KB ——
+       固定小缓冲读必失败（实测 15 个文件只认出 3 个）。锚「分块读到行尾 + JSON/正则双路」的实现形态。 */
+    const logsSrc225 = readFileSync(join(ROOT, "electron", "features", "work-logs.ts"), "utf8");
+    (/const CHUNK = 64 \* 1024/.test(logsSrc225) && /indexOf\("\\n"\)/.test(logsSrc225) && /\?\.payload\?\.cwd/.test(logsSrc225) ? ok : fail)(
+      "【225】work-logs 读 rollout 首行：分块读到行尾 + JSON/正则双路（固定 16KB 缓冲会让项目分组全变「未知项目」）"
     );
-    /* 附带：Codex 日志的项目归属靠首行 cwd，首行含 base_instructions 会远超 16KB ——
-       固定小缓冲读必失败（实测 15 个文件只认出 3 个）。锚「分块读到行尾」的实现形态。 */
-    const logsSrc225 = readFileSync(join(ROOT, "electron", "features", "codex-logs.ts"), "utf8");
-    (/const CHUNK = 64 \* 1024/.test(logsSrc225) && /indexOf\("\\n"\)/.test(logsSrc225) && /grab\("cwd"\)/.test(logsSrc225) ? ok : fail)(
-      "【225】codex-logs 首行解析：分块读到行尾 + 正则兜底（固定 16KB 缓冲会让项目分组全变「未知项目」）"
-    );
-    /* 09-30 用户实测三连（空白 / 取消全选无用 / 打开日志目录无用）—— 三条都钉住： */
-    const logsComp225 = readFileSync(join(ROOT, "src", "features", "storage-settings", "CodexLogsSection.tsx"), "utf8");
-    /* ⛔ 正确形态只有一个：toggle(allPaths, !allPicked) —— 第一个参数恒为全集、第二个决定 add/delete。
-       两个错误形态都要禁：`toggle([], …)`（取消方向空循环）与 `toggle(allPicked ? …)`
-       （把三元塞进第一个参数 ⇒ 总有一个方向变成空循环；09-30 我修这个 bug 时正好写反成交替失效）。 */
-    (/toggle\(allPaths, !allPicked\)/.test(logsComp225) && !/toggle\(\[\],/.test(logsComp225) && !/toggle\(allPicked \?/.test(logsComp225) ? ok : fail)(
-      "【225】全选/取消全选用 toggle(allPaths, !allPicked)（传空数组或把三元塞进第一个参数 = 总有一个方向点了没反应）"
-    );
-    (!/\.revealInFolder\(/.test(logsComp225) && /shellReveal\(data\.sessionsDir\)/.test(logsComp225) ? ok : fail)(
-      "【225】「打开日志目录」用 shellReveal（fs:reveal 只收**文件**，传目录必抛错被 catch 吞掉 = 点了没反应）"
-    );
+    /* 布局三钉：多段流式页不撑满一屏 + 子块必须横向 stretch（否则右侧留白）+ 归档页不卡窄栏。 */
     const cssFlow225 = readFileSync(join(ROOT, "src", "styles", "07-settings-mcp-connectors.css"), "utf8");
-    const storeFlow225 = readFileSync(join(ROOT, "src", "features", "storage-settings", "StorageSettings.tsx"), "utf8");
-    (/is-settings-flow[\s\S]{0,120}min-height: auto/.test(cssFlow225) && storeFlow225.includes("is-settings-flow") && logsComp225.includes("is-settings-flow") ? ok : fail)(
-      "【225】数据管理页两段用 is-settings-flow 放开 min-height（.settings-section 默认 100% ⇒ 两段叠加中间空一整屏）"
+    const cssArchive225 = readFileSync(join(ROOT, "src", "styles", "08-settings-engine-update.css"), "utf8");
+    (/\n\.settings-section\.is-settings-flow \{[^}]*min-height: auto;/.test(cssFlow225) ? ok : fail)(
+      "【225】流式页用 is-settings-flow 放开 min-height（.settings-section 默认 100% ⇒ 多段叠加时中间空一整屏）"
+    );
+    /* ⛔ 09-30 用户：「自适应啊」。基类 .settings-section 带 align-items: flex-start（那是给
+       「左说明 + 右控件」两栏页用的）—— 本类转成 flex column 后它**仍然生效** ⇒ 交叉轴按内容
+       宽度收缩，宽屏下每个子块右侧各留一大片空白（实测 1280 视口：section 716，内部工具条 552、
+       列表树 353）。必须显式 stretch。 */
+    (/\n\.settings-section\.is-settings-flow \{[^}]*align-items: stretch;/.test(cssFlow225) ? ok : fail)(
+      "【225】is-settings-flow 必须 align-items: stretch（不然子块按内容宽度收缩，右侧留白 —— 用户点名「自适应」）"
+    );
+    (!/\.archive-page \{[\s\S]{0,200}?max-width/.test(cssArchive225) ? ok : fail)(
+      "【225】归档管理页不卡 max-width（用户要自适应；原来写死 720px 窄栏）"
+    );
+    /* 撑满宽度后暴露的配套问题：基类 .settings-actions 是 space-between（给「左说明 + 右按钮」
+       两栏页用的），卡片里只有一组按钮时会被拉到两端、中间空一大片。 */
+    (/\.settings-section\.is-settings-flow > \.settings-actions \{[^}]*justify-content: flex-start;/.test(cssFlow225) ? ok : fail)(
+      "【225】卡片内按钮行靠左排（.settings-actions 默认 space-between 会把纯按钮组拆到两端）"
     );
   }
 
   {
     /* 【226】工作日志管理（09-30 用户：「记忆有记忆管理，会话有归档管理，现在就是工作日志这个
-       没有地方管理」）—— 三块各管各的，⛔ 不许把「项目工作日志」和「引擎会话原档」混成一个东西。 */
+       没有地方管理」）—— 各块各管各的，⛔ 不许把「项目工作日志」和「会话本身」混成一个东西。 */
     const wlSrc226 = readFileSync(join(ROOT, "electron", "features", "work-logs.ts"), "utf8");
     const regSrc226 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
     const wlComp226 = readFileSync(join(ROOT, "src", "features", "storage-settings", "WorkLogsSection.tsx"), "utf8");
-    const oldBlock226 = readFileSync(join(ROOT, "src", "features", "storage-settings", "CodexLogsSection.tsx"), "utf8");
     (/work-logs:scan/.test(wlSrc226) && /work-logs:read/.test(wlSrc226) && /work-logs:delete/.test(wlSrc226) ? ok : fail)(
       "【226】work-logs 三通道齐（scan 扫各项目 memory / read 看正文 / delete 删文件）"
     );
@@ -313,8 +288,10 @@ export async function run() {
     ((regSrc226.match(/<WorkLogsSection/g) || []).length === 1 && !/WorkLogsSection/.test(readFileSync(join(ROOT, "src", "features", "storage-settings", "StorageSettings.tsx"), "utf8")) ? ok : fail)(
       "【226】WorkLogsSection 只挂在设置页注册表一次（同【225】的重复挂载坑）"
     );
-    (!/Codex 工作日志/.test(oldBlock226) && /引擎会话原档/.test(oldBlock226) ? ok : fail)(
-      "【226】会话原档那块不许自称「工作日志」（两个概念混淆正是用户三次纠正的点）"
+    /* ⛔ 会话原档那块已回滚（见【228】），但「工作日志 ≠ 对话记录」这条界线仍要写在 UI 上：
+       用户为这个概念连纠了三次。 */
+    (/不是对话记录/.test(wlComp226) && /归档管理/.test(wlComp226) ? ok : fail)(
+      "【226】工作日志面板写明「这不是对话记录」并指向「归档管理」页（用户三次纠正的概念混淆）"
     );
     (/toggle\(allPaths, !allPicked\)/.test(wlComp226) ? ok : fail)(
       "【226】工作日志的全选/取消全选也用 toggle(allPaths, !allPicked)（别重犯空循环）"
@@ -327,11 +304,16 @@ export async function run() {
        ⛔ 事故形态：确认框同时带 .modal-backdrop(400) 与 .agent-ask-backdrop，
        而后者写了 z-index:90 ⇒ 按源顺序把 400 压回 90 ⇒ 在设置页里被页面内的层盖住。 */
     const visualCss = readFileSync(join(ROOT, "src", "styles", "17-visual-cards.css"), "utf8");
+    const settingsCss227 = readFileSync(join(ROOT, "src", "styles", "07-settings-mcp-connectors.css"), "utf8");
     const askRule = /\.agent-ask-backdrop\s*\{[^}]*z-index:\s*(\d+)/.exec(visualCss);
-    (askRule && Number(askRule[1]) >= 400 ? ok : fail)(
-      `【227】确认框遮罩是全局模态层（.agent-ask-backdrop 当前 z-index = ${askRule ? askRule[1] : "缺失"}，须 ≥ 400 —— 写成 90 会被设置页内部层盖住）`
+    const baseRule = /\.modal-backdrop\s*\{[^}]*z-index:\s*(\d+)/.exec(settingsCss227);
+    /* ⛔ 判据用**取值比较**、而不是"是否大于某个常量"：真正的约束是「确认框 > 设置弹窗」。
+       09-30 实测踩了两次 —— 90（被同元素上 .modal-backdrop 的 400 压回）→ 400（与设置弹窗
+       **同级**，而确认框渲染在设置弹窗之前，同级按 DOM 顺序仍然输）⇒ 写成等于基准值同样是 bug。 */
+    (askRule && baseRule && Number(askRule[1]) > Number(baseRule[1]) ? ok : fail)(
+      `【227】确认框必须严格高于设置弹窗层级（.agent-ask-backdrop = ${askRule ? askRule[1] : "缺失"} vs .modal-backdrop = ${baseRule ? baseRule[1] : "缺失"}）—— 同级或更低，设置页里的确认框就会被设置面板压住（用户现场截图）`
     );
-    (/\.modal-backdrop\s*\{[^}]*z-index:\s*400/.test(readFileSync(join(ROOT, "src", "styles", "07-settings-mcp-connectors.css"), "utf8")) ? ok : fail)(
+    (baseRule && Number(baseRule[1]) === 400 ? ok : fail)(
       "【227】.modal-backdrop 保持 400（全局模态基线，别被局部样式覆盖）"
     );
   }

@@ -1960,8 +1960,9 @@
 .vg-empty b { font-size: 12.5px; color: var(--text); }
 .vg-empty small { font-size: 11px; word-break: break-all; }
 
-/* ─────────────────────────────── Codex 日志管理（09-29 数据管理页）
-   按项目 → 日期两级分组 + 勾选批量删除。删除是销毁性的，危险按钮用 danger 色。 */
+/* ─────────────────────────────── 树状分组列表（项目 → 类型/日期 两级 + 勾选批量删除）
+   现由「工作日志」在用（09-30 那套「引擎会话原档」已整体回滚 —— 样式本体留着复用，
+   别再以为它属于某个已删面板）。删除是销毁性的，危险按钮用 danger 色。 */
 .codex-logs-bar {
   display: flex;
   align-items: center;
@@ -2024,14 +2025,6 @@
 .codex-logs-del:hover:not(:disabled) { border-color: var(--red); color: var(--red); }
 .codex-logs-del:disabled { opacity: .4; cursor: default; }
 
-/* 数据管理页（09-30 用户：「中间这么大空白」）：该页是「存储占用 + Codex 日志」两个区块
-   顺序排布，而 .settings-section 默认 min-height:100%（单区块页撑满一屏用）——两段叠加时
-   第一段内容少就白撑一整屏，中间出现大片空白。流式页统一放开高度。 */
-.settings-section.is-settings-flow {
-  min-height: auto;
-}
-
-
 /* 工作日志管理（09-30）：点文件名看正文 + 内联预览块 */
 .work-logs-open {
   background: none;
@@ -2068,16 +2061,30 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* ⛔⛔ align-items 必须显式写 stretch。基类 .settings-section 带 align-items: flex-start
+     （那是给「左说明 + 右控件」两栏页用的），本类改成 flex column 后它**仍然生效** ⇒ 交叉轴
+     按内容宽度收缩：宽屏下每个子块（工具条 / 列表树）各自被内容顶出宽度，右侧留一大片空白，
+     而且两块留白还不一样多（09-30 用户：「自适应啊」）。
+     实测证据（1280 视口）：section 宽 716，内部 .codex-logs-bar 只有 552、.codex-logs-tree 353。 */
+  align-items: stretch;
+  /* 单区块页用 min-height:100% 撑满一屏；流式页是多块顺序排布，撑满会让第一块白占一整屏、
+     中间出现大片空白 ⇒ 放开高度。 */
+  min-height: auto;
+}
+
+/* 卡片内的按钮行：基类 .settings-actions 是 justify-content: space-between（那是给
+   「左说明 + 右按钮」两栏页用的）。卡片一旦撑满宽度，一组纯按钮就会被推到两端、中间空一大片
+   （09-30 实测：`清理会话恢复缓存` 与 `打开数据目录` 被拉开 ~360px）。卡片内一律靠左排。 */
+.settings-section.is-settings-flow > .settings-actions {
+  justify-content: flex-start;
 }
 
 /* 卡头：小标题与说明收紧，与工具条形成"标题带" */
-.codex-rollout-card > .settings-subhead,
 .work-logs-card > .settings-subhead {
   margin: 0;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--line-soft);
 }
-.codex-rollout-card > p.muted,
 .work-logs-card > p.muted {
   margin: 0;
   max-width: 92ch;
@@ -2085,7 +2092,6 @@
 }
 
 /* 工具条：统计在左、操作在右，整条落在 --panel-2 上 */
-.codex-rollout-card .codex-logs-bar,
 .work-logs-card .codex-logs-bar {
   margin: 0;
   padding: 8px 10px;
@@ -2094,19 +2100,15 @@
   background: var(--panel-2);
   gap: 12px;
 }
-.codex-rollout-card .codex-logs-bar > span,
 .work-logs-card .codex-logs-bar > span {
   color: var(--muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
-.codex-rollout-card .codex-logs-bar b,
 .work-logs-card .codex-logs-bar b { color: var(--text); }
-.codex-rollout-card .codex-logs-bar .settings-actions,
 .work-logs-card .codex-logs-bar .settings-actions { gap: 6px; }
 
 /* 列表：整块成为一个可滚动的面板（长列表不再把页面撑长） */
-.codex-rollout-card .codex-logs-tree,
 .work-logs-card .codex-logs-tree {
   border: 1px solid var(--line-soft);
   border-radius: 10px;
@@ -2117,7 +2119,6 @@
 }
 
 /* 行：统一 4px 栅格与高度，hover 只提一层（--panel-2） */
-.codex-rollout-card .codex-logs-row,
 .work-logs-card .codex-logs-row {
   display: flex;
   align-items: center;
@@ -2126,61 +2127,50 @@
   padding: 3px 8px;
   border-radius: 6px;
 }
-.codex-rollout-card .codex-logs-row.is-project,
 .work-logs-card .codex-logs-row.is-project {
   background: var(--panel-2);
   border: 1px solid var(--line-soft);
   margin: 2px 2px 4px;
   min-height: 34px;
 }
-.codex-rollout-card .codex-logs-row.is-project .codex-logs-name,
 .work-logs-card .codex-logs-row.is-project .codex-logs-name {
   font-weight: 600;
   color: var(--text);
 }
-.codex-rollout-card .codex-logs-row.is-day,
 .work-logs-card .codex-logs-row.is-day {
   margin: 0 2px 0 18px;
   min-height: 26px;
 }
-.codex-rollout-card .codex-logs-row.is-day .codex-logs-name,
 .work-logs-card .codex-logs-row.is-day .codex-logs-name {
   color: var(--muted);
   font-size: 12px;
 }
-.codex-rollout-card .codex-logs-row.is-file,
 .work-logs-card .codex-logs-row.is-file {
   margin: 0 2px 0 34px;
   min-height: 28px;
 }
-.codex-rollout-card .codex-logs-row.is-file:hover,
 .work-logs-card .codex-logs-row.is-file:hover,
-.codex-rollout-card .codex-logs-row.is-day:hover,
 .work-logs-card .codex-logs-row.is-day:hover { background: var(--panel-2); }
 
 /* 路径与体积：等宽 + tabular（DESIGN.md：路径/代码一律 --mono） */
-.codex-rollout-card .codex-logs-file,
 .work-logs-card .codex-logs-file {
   font-family: var(--mono);
   font-size: 12px;
   color: var(--text);
 }
-.codex-rollout-card .codex-logs-row small,
 .work-logs-card .codex-logs-row small {
   color: var(--faint);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.codex-rollout-card .codex-logs-name,
 .work-logs-card .codex-logs-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* 卡片语义色：会话原档 = 中性灰；工作日志 = 主色点缀（一眼分清两块，不引第二主色） */
+/* 卡片语义色：工作日志 = 主色点缀（不引第二主色） */
 .work-logs-card > .settings-subhead .lucide,
 .work-logs-card > .settings-subhead svg { color: var(--accent); }
 .work-logs-card .codex-logs-row.is-project { border-color: color-mix(in srgb, var(--accent) 22%, var(--line-soft)); }
 
 /* 危险操作行：与工具条分开，落在卡片底部 */
-.codex-rollout-card > .settings-actions:last-child,
 .work-logs-card > .settings-actions:last-child {
   margin: 0;
   padding-top: 2px;

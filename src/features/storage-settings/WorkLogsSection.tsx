@@ -8,7 +8,7 @@ import { ChevronDown, ChevronRight, FileText, FolderOpen, RotateCw, Trash2 } fro
  *   · logs/YYYY-MM-DD.md   每日工作日志（需求 → 结论，记忆捕获链写入）
  *   · MEMORY.md / LESSONS.md / lessons/  长期记忆与坑
  *   · archive/ project/    归档与项目资料
- * ⛔ 与会话原档（数据管理页上方那块 / 归档管理页）**不是一回事**：这里是 Codex 在项目里
+ * ⛔ 与会话本身（归档 / 删除，在「归档管理」页）**不是一回事**：这里是 Codex 在项目里
  *   写下的工作记录，不是对话记录。
  */
 
