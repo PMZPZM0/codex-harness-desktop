@@ -6,6 +6,7 @@ import { Spinner } from "../../components/CardShell";
 import { basename } from "../../lib/basename";
 import { Markdown } from "../markdown";
 import { ReviewScope } from "../../lib/review-scope";
+import { CodexLogsSection } from "./CodexLogsSection";
 
 function formatBytes(bytes: number): string {
   if (!bytes || bytes < 0) return "0 B";
@@ -42,7 +43,7 @@ export function StorageSection({ onNotice, onClearMemoryCache, openAppConfirm }:
   };
   return (
     <section className="settings-section stack">
-      <div className="settings-copy"><h2>数据管理<PageInfo text={<>查看各数据目录占用，并清理可安全的缓存。会话历史（rollout 原档）是你的全部对话记录，<strong>不在清理范围内</strong>，请通过归档 / 备份管理。</>} /></h2></div>
+      <div className="settings-copy"><h2>数据管理<PageInfo text={<>查看各数据目录占用，并清理可安全的缓存。会话历史（rollout 原档）<strong>不随缓存清理</strong>；要按项目 / 日期翻看与删除会话记录，用页面底部的「Codex 日志」。</>} /></h2></div>
       <div className="storage-list">
         {info?.items.map((item) => (
           <div className="storage-row" key={item.key}>
@@ -60,6 +61,11 @@ export function StorageSection({ onNotice, onClearMemoryCache, openAppConfirm }:
         <button className="secondary-setting" disabled={busy !== null} onClick={() => { onClearMemoryCache(); onNotice("已清理会话恢复缓存"); }}>清理会话恢复缓存</button>
         <button className="secondary-setting" onClick={() => { window.codex.getUserData().then((p: string) => window.codex.shellReveal(p)).catch(() => undefined); }}>打开数据目录</button>
       </div>
+      {/* Codex 日志管理（09-29 用户立案；组件 214 行写好但一直没挂上来 —— 09-30 接上）：
+          管引擎写的会话记录（rollout 原档），按项目 / 日期分组，可勾选批量删除与清空。
+          ⛔ 与上方「会话记录（rollout 原档）保留」不冲突：那里说的是**不随缓存清理**，
+          这里是有意为之的销毁性删除（二次确认说清不可恢复 + 级联清索引）。 */}
+      <CodexLogsSection onNotice={onNotice} openAppConfirm={openAppConfirm} />
     </section>
   );
 }
