@@ -1075,8 +1075,8 @@ export interface Bag {
   CONTENT_TAIL_GAP_PX: 0;
   COMMON_COMMAND_ORDER: string[];
   commandMatches: (readonly [string, string])[];
-  mergedSkillCatalog: { name: string; description: string; note: string; path: string; }[];
-  skillCommandMatches: { name: string; description: string; note: string; path: string; }[];
+  mergedSkillCatalog: { name: string; description: string; note: string; path: string; source: string; }[];
+  skillCommandMatches: { name: string; description: string; note: string; path: string; source: string; }[];
   threadMemoKey: string;
   availableContextItems: { id: string; role: "用户" | "Codex"; text: any; }[];
   threadFileCandidates: { path: string; source: string; }[];

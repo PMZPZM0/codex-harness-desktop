@@ -765,6 +765,26 @@
   color: var(--text);
   outline: 0;
 }
+/* # 技能面板的来源分组标题（09-30 用户：「已安装技能，和本地技能，和市场技能都进行分类一下」）：
+   引擎内置 / 市场安装 / 本地导入 三组，组间留一条弱分隔标题行。 */
+.command-palette .skill-palette-group-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.command-palette .skill-palette-group-label small {
+  color: var(--faint);
+  font-size: 10px;
+}
+.command-palette .skill-palette-group-label::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
+}
 /* 命令中文注释：弱化二列文字，与命令名区分层级 */
 .command-palette .command-desc {
   color: var(--faint);

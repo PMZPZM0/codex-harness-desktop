@@ -445,7 +445,19 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                       已删除，别再恢复。 */}
                   {commandMatches.length > 0 && <div className="command-palette" role="listbox" aria-label="Codex 指令">{commandMatches.map(([name, description]) => <button type="button" role="option" key={name} onClick={() => { if (["rename", "review", "goal", "plan", "effort", "personality", "sandbox", "approval", "fork"].includes(name)) setPrompt(`/${name} `); else void runSlashCommand(`/${name}`); }}><code>/{name}</code><span className="command-desc">{description}</span></button>)}</div>}
                   {/* 「#」技能面板：与「/」命令面板同款展示（等宽技能名 + 中文注释列），点击即引用该技能 */}
-                  {skillCommandMatches.length > 0 && <div className="command-palette skill-palette" role="listbox" aria-label="可用技能">{skillCommandMatches.map((skill) => <button type="button" role="option" key={skill.name} title={`${skill.name}：${skill.note}`} onClick={() => addSkillReference(skill)}><code>#{skill.name}</code><span className="command-desc">{skill.note}</span></button>)}</div>}
+                  {skillCommandMatches.length > 0 && <div className="command-palette skill-palette" role="listbox" aria-label="可用技能">{(() => {
+                    /* 来源分组（09-30 用户：「已安装技能，和本地技能，和市场技能都进行分类一下」）：
+                       引擎内置 → 市场安装 → 本地导入，空组不显示；组内仍按 matchSkillCatalog 的相关度排序。 */
+                    const groupLabels: [string, string][] = [["engine", "引擎内置"], ["market", "市场安装"], ["local", "本地导入"]];
+                    return groupLabels.map(([key, label]) => {
+                      const group = skillCommandMatches.filter((skill: any) => (skill.source ?? "engine") === key);
+                      if (!group.length) return null;
+                      return <div key={key} className="skill-palette-group">
+                        <div className="skill-palette-group-label">{label}<small>{group.length}</small></div>
+                        {group.map((skill: any) => <button type="button" role="option" key={skill.name} title={`${skill.name}：${skill.note}`} onClick={() => addSkillReference(skill)}><code>#{skill.name}</code><span className="command-desc">{skill.note}</span></button>)}
+                      </div>;
+                    });
+                  })()}</div>}
                   {contextOpen && <div className="context-picker" role="listbox" aria-label="引用本次对话上下文">
                     <div className="context-picker-head"><span>引用本次对话</span><small>选择后会随本条消息发送</small></div>
                     {availableContextItems.length ? availableContextItems.map((item) => <button type="button" role="option" key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => addContextItem(item)}><b>{item.role}</b><span>{item.text}</span></button>) : <p>没有匹配的历史消息</p>}

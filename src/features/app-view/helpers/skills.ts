@@ -25,9 +25,11 @@ function shortSkillName(raw: string): string {
   return index >= 0 ? name.slice(index + 1) : name;
 }
 
-export /** 技能的中文注释：高优先级中文注释表 → 安装时存下的市场中文简介 → 技能自带的中文描述 → 技能类别 → 通用兜底。
- *  使命是「每个技能都有一句中文说明」——市场技能装到本地后 frontmatter 描述多为英文，
- *  靠安装时写入来源清单的 descriptionZh 兜住「后续新装的技能」。英文描述不会再原样铺给用户。 */
+export /** 技能的中文注释：高优先级中文注释表 → 安装时存下的市场中文简介 → 技能自带描述（中英文都可）→ 技能类别 → 通用兜底。
+ *  使命是「每个技能都有一句看得懂的说明」—— 市场技能装到本地后 frontmatter 描述多为英文，
+ *  靠安装时写入来源清单的 descriptionZh 兜住「后续新装的技能」。
+ *  ⛔ 09-30 用户拿「已安装技能」四个字当反面教材：宁可显示英文原文，也不显示一句没有信息的空话
+ *     —— description 非空时不再要求必须含中文（09-25 的「英文不铺给用户」口径由此放宽）。 */
 function skillZhNote(entry: { name: string; description?: string; descriptionZh?: string; category?: string }): string {
   const key = normSkillName(entry.name);
   const note = SKILL_ZH_NOTES[key];
@@ -35,7 +37,7 @@ function skillZhNote(entry: { name: string; description?: string; descriptionZh?
   const marketZh = String(entry.descriptionZh ?? "").replace(/\s+/g, " ").trim();
   if (marketZh && CJK_TEXT_RE.test(marketZh)) return marketZh.length > 72 ? `${marketZh.slice(0, 72)}…` : marketZh;
   const description = String(entry.description ?? "").replace(/^\s*>\s*/, "").replace(/\s+/g, " ").trim();
-  if (description && CJK_TEXT_RE.test(description)) return description.length > 64 ? `${description.slice(0, 64)}…` : description;
+  if (description && description.toLowerCase() !== "local imported skill") return description.length > 72 ? `${description.slice(0, 72)}…` : description;
   const byCategory: Record<string, string> = {
     "ai-agent": "AI 智能体技能",
     "数据可视化": "数据可视化技能",
@@ -58,6 +60,16 @@ function matchSkillCatalog<T extends { name: string; description: string; note: 
 }
 
 export function categoryLabel(id: string) { return EXPERT_CATEGORY_LABELS[id] ?? (id || "未分类"); }
+
+/** # 面板技能清单的重拉节流（09-30「列表不实时」）：30 秒内只放行一次，放行即记时间戳。
+ *  ⛔ 放本模块而不是 part 文件：【93】按 parts 的顶层声明清单比对 Bag 成员，
+ *     纯局部节流变量放 part 会报「推断有、Bag 没有」（实测踩到）。 */
+let lastSkillListRefreshAt = 0;
+export function shouldRefreshSkillList(): boolean {
+  if (Date.now() - lastSkillListRefreshAt < 30_000) return false;
+  lastSkillListRefreshAt = Date.now();
+  return true;
+}
 
 export /** 把启用的子智能体登记成 Codex 可直接调用的 dynamicTool。 */
 function subAgentTools(agents: SubAgentEntry[]) {

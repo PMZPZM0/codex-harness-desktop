@@ -14,7 +14,7 @@ import { currentStreak, dayKey, formatTokens, lastDays, readUsageStats, recordTu
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../lib/user-refs";
 import { isImagePath } from "../../../../lib/is-image-path";
 import { itemText } from "../../../../lib/item-text";
-import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, subAgentTools, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
+import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, shouldRefreshSkillList, slashCommands, subAgentTools, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import type { Bag } from "../bag-types";
 
@@ -240,21 +240,44 @@ const commandMatches = useMemo(() => {
 bag.commandMatches = commandMatches as typeof bag.commandMatches;
 
   /** 技能目录（本地 + 引擎，规范化去重）：技能子面板与输入框「#」技能面板共用同一份数据源，
-   *  避免两处各自去重导致同一技能在一处显示、另一处重复。每条都带一句中文注释。 */
+   *  避免两处各自去重导致同一技能在一处显示、另一处重复。每条都带一句中文注释与来源分组
+   *  （engine = 引擎内置 / market = 市场安装 / local = 本地导入 —— # 面板按它分组显示）。 */
   const mergedSkillCatalog = useMemo(() => {
     const seen = new Set<string>();
-    const out: { name: string; description: string; note: string; path: string }[] = [];
-    const push = (entry: { name: string; description?: string; descriptionZh?: string; path?: string; category?: string }) => {
+    const out: { name: string; description: string; note: string; path: string; source: string }[] = [];
+    const push = (entry: { name: string; description?: string; descriptionZh?: string; path?: string; category?: string; source?: string }) => {
       const key = normSkillName(entry.name);
       if (!key || seen.has(key)) return; // 同名（含插件限定名）只保留第一条（本地优先）
       seen.add(key);
-      out.push({ name: shortSkillName(entry.name), description: entry.description ?? "", note: skillZhNote(entry), path: entry.path ?? "" });
+      /* ⛔ source 用 string 而不是字面量联合：【93】的归一化按「|」切段排序（只适配顶层联合），
+         对象**内部**的 "engine" | "market" | "local" 会被切碎重排成乱串，bag-types 永远对不齐。
+         分组消费端（composer 的 # 面板）按字符串比较，类型收紧收益为零。 */
+      const item: { name: string; description: string; note: string; path: string; source: string } = {
+        name: shortSkillName(entry.name),
+        description: entry.description ?? "",
+        note: skillZhNote(entry),
+        path: entry.path ?? "",
+        source: entry.source === "cocoloop" || entry.source === "skillhub" ? "market" : entry.source === "local" ? "local" : "engine",
+      };
+      out.push(item);
     };
     for (const entry of bag.localSkills) push(entry);
     for (const entry of bag.settingsResources.skills) push(entry);
     return out;
   }, [bag.localSkills, bag.settingsResources.skills]);
 bag.mergedSkillCatalog = mergedSkillCatalog as typeof bag.mergedSkillCatalog;
+
+  /** ⛔ # 面板实时性（09-30 用户：「这里的技能列表怎么没有实时更新啊，很多技能都没有」）：
+   *  localSkills 只在挂载 / 切会话 / 技能中心操作时刷新 —— 刚装完技能回来打 #，面板还是旧目录。
+   *  修复：打开 # 面板的瞬间重拉一次本地技能清单（轻量 IPC，30 秒节流防连打）。引擎侧清单
+   *  （settingsResources.skills）在会话启动时已定，不在此刷新（重拉整个 settingsResources 不值得）。 */
+  /* 节流函数在技能域 helper（shouldRefreshSkillList）—— 纯局部节流变量放 part 文件会被【93】判「推断有、Bag 没有」。 */
+  useEffect(() => {
+    if (!bag.prompt.startsWith("#") || bag.prompt.includes(" ")) return;
+    if (!shouldRefreshSkillList()) return;
+    window.codex.listLocalSkills().then(bag.setLocalSkills).catch(() => undefined);
+  }, [bag.prompt]);
+
 
   /** 输入框「#」技能面板：与「/」命令面板同款触发条件（以 # 开头且未输入空格）与同款展示效果
    *  （#技能名 + 中文注释），让技能可以直接在输入流里被看见和引用。 */
