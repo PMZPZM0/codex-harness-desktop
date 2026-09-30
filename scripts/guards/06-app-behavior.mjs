@@ -1370,7 +1370,7 @@ w.postMessage({id:1,op:"list",root});
      数据零新 IPC（复用 teams / team-threads:map / runningThreadIds）—— 若有人给它加新通道，
      说明在重复造已有能力，打红。 */
   /* ⛔ 办公室预览（team-office 域）09-30 用户要求整体下线、待重做 ⇒ 目录不在就不跑这组断言 */
-  if (!existsSync(join(ROOT, "src", "features", "team-office"))) { /* 已下线 */ } else
+  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts"))) { /* v18 起改为 Kenney CC0 资产版（office-render.ts 已删），这组旧断言作废 */ } else
   {
     console.log(C.bold("\n【154】专家团办公室预览（team-office 域）"));
     /* 不得再有独立侧栏入口 */
@@ -1435,7 +1435,7 @@ w.postMessage({id:1,op:"list",root});
                     ③ 走路必须是**逐帧插值**（v8 在 PixiJS ticker 里做；
                        v3 那种"直接写终点坐标/属性 = 人闪现到终点"依旧禁止）。 */
   /* ⛔ 办公室预览（team-office 域）09-30 用户要求整体下线、待重做 ⇒ 目录不在就不跑这组断言 */
-  if (!existsSync(join(ROOT, "src", "features", "team-office"))) { /* 已下线 */ } else
+  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts"))) { /* v18 起改为 Kenney CC0 资产版（office-render.ts 已删），这组旧断言作废 */ } else
   {
     console.log(C.bold("\n【168】办公室动画体系（导演 / 姿势 / 交接 / 走路）"));
     const directorPath = join(ROOT, "src", "features", "team-office", "office-director.ts");
@@ -1538,7 +1538,7 @@ w.postMessage({id:1,op:"list",root});
         三个对象必须**各按自己的地面基线 y 排 zIndex**（桌更靠后 / 椅子更靠观众），
         合成一件 Graphics 一定会错：要么人被桌挡住只露头顶，要么椅子被整个人盖住。 */
   /* ⛔ 办公室预览（team-office 域）09-30 用户要求整体下线、待重做 ⇒ 目录不在就不跑这组断言 */
-  if (!existsSync(join(ROOT, "src", "features", "team-office"))) { /* 已下线 */ } else
+  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts"))) { /* v18 起改为 Kenney CC0 资产版（office-render.ts 已删），这组旧断言作废 */ } else
   {
     console.log(C.bold("\n【169】办公室渲染纵深（程序化绘制 / 桌-人-椅三层遮挡）"));
     const renderPath = join(ROOT, "src", "features", "team-office", "office-render.ts");
@@ -1615,7 +1615,7 @@ w.postMessage({id:1,op:"list",root});
        ③ 每个物种的耳朵分支与头型尺寸都齐备（少一个 case 就退化成认不出的黑团）；
        ④ 屏幕内容与姿势一致（人在打盹、屏幕上还跑着代码 = 一眼假）。 */
   /* ⛔ 办公室预览（team-office 域）09-30 用户要求整体下线、待重做 ⇒ 目录不在就不跑这组断言 */
-  if (!existsSync(join(ROOT, "src", "features", "team-office"))) { /* 已下线 */ } else
+  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts"))) { /* v18 起改为 Kenney CC0 资产版（office-render.ts 已删），这组旧断言作废 */ } else
   {
     console.log(C.bold("\n【176】办公室角色外形（物种 / 项圈 / 屏幕内容）"));
     const palPath = join(ROOT, "src", "features", "team-office", "office-palette.ts");
@@ -2197,7 +2197,7 @@ w.postMessage({id:1,op:"list",root});
 // 背景：走动人原来是 from→to **直线插值**，从自己工位走到饮水机会直接穿过别人的桌子。
 // 参照 munder-difflin 的做法（作者博客：BFS 四方向寻路，明确说这规模不需要 A*）改成网格寻路。
   /* ⛔ 办公室预览（team-office 域）09-30 用户要求整体下线、待重做 ⇒ 目录不在就不跑这组断言 */
-  if (!existsSync(join(ROOT, "src", "features", "team-office"))) { /* 已下线 */ } else
+  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts"))) { /* v18 起改为 Kenney CC0 资产版（office-render.ts 已删），这组旧断言作废 */ } else
 {
   const canvas181 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
   const navPath181 = join(ROOT, "src", "features", "team-office", "office-nav.mjs");
@@ -2524,4 +2524,66 @@ w.postMessage({id:1,op:"list",root});
 
 
   }
+  /* ══ 【231】办公室预览 v18（Kenney CC0 资产版，09-30 用户「用免费的现成的」）════════
+     ⛔ 这版推翻了两条旧路线：AI 生图切片（用户「都是截图在动」）与程序化绘制家具
+     （用户「摆放丑死了」），改用 **Kenney CC0 资产**（Furniture Kit + Toon Characters，
+     官方声明可商用免署名）。本组断言钉的是"再次被否掉的坑"与资产授权。 */
+  {
+    const taDir = join(ROOT, "src", "features", "team-office");
+    /* ① 资产授权声明：CC0 + 可商用（⛔ 资产来源换成人人无许可的包时必须在这里显红） */
+    const assetsSrc = readFileSync(join(taDir, "office-assets.ts"), "utf8");
+    (assetsSrc.includes("CC0") && /(commercial|可商用)/.test(assetsSrc) ? ok : fail)(
+      "【231】资产索引声明 CC0 + 可商用（换源必须同步声明）"
+    );
+    /* ② 索引与磁盘**逐个数对账**（索引漂移 = 运行时静默缺件） */
+    const fDir = join(taDir, "assets", "kenney", "furniture");
+    const pDir = join(taDir, "assets", "kenney", "persons");
+    const fCount = readdirSync(fDir).filter((x) => x.endsWith(".png")).length;
+    const pCount = readdirSync(pDir).filter((x) => x.endsWith(".png")).length;
+    const fRows = (assetsSrc.match(/^  "\S+": f_\S+,$/gm) || []).length;
+    const pRows = (assetsSrc.match(/^  "\S+": p_\S+,$/gm) || []).length;
+    (fRows === fCount ? ok : fail)(`【231】家具索引数与磁盘一致（${fRows}/${fCount}）`);
+    (pRows === pCount ? ok : fail)(`【231】角色索引数与磁盘一致（${pRows}/${pCount}）`);
+    /* ③ 资产索引**由生成器产出**（手改会被覆盖；缺生成器 = 下一个人不知道怎么加件） */
+    (existsSync(join(ROOT, ".workbuddy", "tmp", "gen-art-kenney.mjs")) ? ok : warn)(
+      "【231】资产索引生成器在位（.workbuddy/tmp/gen-art-kenney.mjs）"
+    );
+    /* ④ 布局单一真相源：格坐标只在 office-scene.ts（渲染层出现 isoPoint(数字) 就是漂移） */
+    const sceneSrc = readFileSync(join(taDir, "office-scene.ts"), "utf8");
+    const canvasSrc = readFileSync(join(taDir, "OfficeCanvas.tsx"), "utf8");
+    (sceneSrc.includes("export const DESKS") && sceneSrc.includes("export const PROPS") ? ok : fail)(
+      "【231】工位与静物清单收在 office-scene.ts（单一真相源）"
+    );
+    (!/\{\s*u:\s*[\d.]+,\s*v:\s*[\d.]+/.test(canvasSrc) ? ok : fail)(
+      "【231】渲染层不内联工位/静物布局字面量（一律从 office-scene 取）"
+    );
+    /* ⑤ 等距资产**不做纵深缩放**（⛔ 缩了桌腿与地板格子就错位 —— v9~v17 的 depthScale 必须不在） */
+    (!canvasSrc.includes("depthScale") ? ok : fail)("【231】等距渲染不含 depthScale（缩放会破坏格对齐）");
+    /* ⑥ 角色必须在桌子**近端**（v + 正值）：放远端会被桌+显示器整块盖住（实测全看不见） */
+    (/isoPoint\(d\.u[^)]*d\.v \+ [\d.]+/.test(canvasSrc) ? ok : fail)(
+      "【231】角色/椅子放桌子近端（v + 正值；远端会被桌子挡住）"
+    );
+    /* ⑦ Pixi v8 必须先 Assets.load 再建场景（⛔ Texture.from(未加载 url) 返回空纹理 = 一片白点） */
+    (canvasSrc.includes("await preloadOfficeArt()") ? ok : fail)(
+      "【231】资产先预加载再建场景（v8 的 Texture.from 对未加载 URL 返回空纹理）"
+    );
+    /* ⑧ 入口链路 + bag 镜像赋值（⛔ 09-28 启动崩的形态：类型声明在、赋值行缺） */
+    const tlSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "01-timeline.tsx"), "utf8");
+    const appViewSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView.tsx"), "utf8");
+    const part02Src = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "03-thread-switch-update", "02-update-ui-settings.tsx"), "utf8");
+    (tlSrc.includes("onOpenOffice={() => setCompanyPreviewTeamId(railTeam.teamId)}") ? ok : fail)(
+      "【231】成员流转轨的「办公室」按钮接到预览状态"
+    );
+    (appViewSrc.includes("<TeamOfficePreview") && appViewSrc.includes("teamId={app.companyPreviewTeamId}") ? ok : fail)(
+      "【231】预览浮层挂在 AppView（显式 props）"
+    );
+    (part02Src.includes("bag.companyPreviewTeamId =") && part02Src.includes("bag.setCompanyPreviewTeamId =") ? ok : fail)(
+      "【231】bag 镜像赋值两行齐（缺一行 = 运行时 undefined）"
+    );
+    /* ⑨ CSS 三前缀同源 + 入口引用 */
+    (existsSync(join(ROOT, "src", "styles", "20-team-office.css")) && readFileSync(join(ROOT, "src", "styles.css"), "utf8").includes("./styles/20-team-office") ? ok : fail)(
+      "【231】办公室样式接入 styles.css（20-team-office.css）"
+    );
+  }
+
 }

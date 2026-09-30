@@ -673,6 +673,8 @@ export interface Bag {
   setUiFont: React.Dispatch<React.SetStateAction<string>>;
   settingsOpen: boolean;
   setSettingsOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  companyPreviewTeamId: string | null;
+  setCompanyPreviewTeamId: React.Dispatch<React.SetStateAction<string | null>>;
   dramaCanvasOpen: boolean;
   setDramaCanvasOpen: React.Dispatch<React.SetStateAction<boolean>>;
   pptokenCardOff: boolean;
