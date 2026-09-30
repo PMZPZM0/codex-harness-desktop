@@ -31,6 +31,7 @@ import {
 } from "./office-palette";
 import { animalArtOf, artTexture, preloadArt, propArtOf, personPresetOn, sceneBgArt } from "./office-art";
 import { personArtOf } from "./office-art-person";
+import { animatePerson, buildPerson, personLookOfKey, type PersonParts } from "./office-person";
 import { poseArtOf, walkArtOf } from "./office-art-pose";
 import { deskSlots, floorPoint, SCENE_W, SCENE_H, type FloorSpot } from "./office-iso";
 // 走动人寻路（09-27）：BFS 网格路径，⛔ 别再退回"直线插值"（那会让人穿过别人的桌子）。
@@ -132,6 +133,8 @@ interface SeatedParts {
   headwrap: Container | null;
   /** 左右耳各一支（pivot 在耳根）—— 动画层做"单边抽动"的抓手 */
   ears: Graphics[] | null;
+  /** 程序化人物部件（09-30 v16「真渲染的小人物」）：非 null 时动画走 animatePerson */
+  person: PersonParts | null;
   /** 打盹时头顶浮起的 z（平时不可见） */
   doze: Container;
   pose: OfficePose;
@@ -161,6 +164,9 @@ interface WalkerParts {
   walkSprite: Sprite | null;
   /** [触地帧, 过渡帧] 的 **URL**（换帧 = artTexture(url) 查表，不走 Assets.load） */
   walkFrames: [string, string] | null;
+  /** 程序化人物（09-30 v16）：走路部件 + 到达后的使用姿势部件（visible 切换） */
+  personWalk: PersonParts | null;
+  personUsing: PersonParts | null;
   /** 到达设施后的**使用姿势**（drink / operate / run / chat / stand）—— t≥1 时切换 texture */
   usingTex: Texture | null;
   /** 回程端杯走（tea/coffee/vending 返程专用姿势图）—— away=false 时切换 */
@@ -481,35 +487,20 @@ function syncStatics(world: Container, slots: Slot[], scene: SceneRefs) {
       if (screenAnim) scene.screens.push(screenAnim);
       scene.statics.set(slot.key, [box]);
       if (!scene.draft) {
-        /* 独立空椅（away 时亮出）：素材椅命中用精灵；缺图（生图失败等）降级程序化椅子
-           —— ⛔ 人物坐姿图自带椅子，人在位时隐藏（双椅穿帮），只有人离开才显示空椅。 */
+        /* 独立椅子（⛔ 程序化人物**不带椅子** ⇒ 椅子必须常驻显示——人在位时人坐在椅上，
+           人离开（away）时转开挪位（animateScene lerp）。
+           ⛔ 弃用 gen-chair 素材图：那张是 638×341 的宽扁特写（正面视角），落进等距坐标
+           就是地上一个白色碎片（09-30 实测）—— 直接程序化画（纯白扁平风与卡通背景兼容）。 */
         const cp = floorPoint(slot.u, slot.v + CHAIR_DV);
-        const art = propArtOf("chair");
-        const tex = art ? artTexture(art.url) : null;
-        if (art && tex) {
-          const sp = new Sprite(tex);
-          sp.anchor.set(0.5, 1);
-          sp.width = art.w * cp.scale;
-          sp.height = (tex.height / tex.width) * sp.width;
-          sp.position.set(cp.x, cp.y);
-          sp.zIndex = cp.y;
-          sp.visible = false;
-          world.addChild(sp);
-          scene.chairs.set(slot.key, { sp, baseX: cp.x, away: false });
-        } else {
-          /* 程序化降级：host 定位在椅子落点（rotation 绕它 = 转椅效果），g 反向偏移
-             抵消 drawChair 内部的绝对坐标（它按 floorPoint 绝对定位画）。 */
-          const chairG = new Graphics();
-          const chairHost = new Container();
-          chairHost.zIndex = cp.y;
-          chairHost.position.set(cp.x, cp.y);
-          chairG.position.set(-cp.x, -cp.y);
-          drawChair(chairG, slot.u, slot.v);
-          chairHost.addChild(chairG);
-          chairHost.visible = false;
-          world.addChild(chairHost);
-          scene.chairs.set(slot.key, { sp: chairHost as unknown as Sprite, baseX: cp.x, away: false });
-        }
+        const chairG = new Graphics();
+        const chairHost = new Container();
+        chairHost.zIndex = cp.y;
+        chairHost.position.set(cp.x, cp.y);
+        chairG.position.set(-cp.x, -cp.y);
+        drawChair(chairG, slot.u, slot.v);
+        chairHost.addChild(chairG);
+        world.addChild(chairHost);
+        scene.chairs.set(slot.key, { sp: chairHost as unknown as Sprite, baseX: cp.x, away: false });
       }
       continue;
     }
@@ -592,7 +583,10 @@ function syncPeople(
       view = { container, sig: "", parts: null, clock: ((seed.length * 37 + seed.charCodeAt(seed.length - 1) * 13) % 628) / 100 };
       scene.seats.set(slot.key, view);
     }
-    view.container.position.set(slot.x, slot.y - SEAT_LIFT * slot.scale);
+    /* ⛔ 抬升只给**素材/手画动物**用（它们的构图锚点偏高）；程序化人物锚底=座位点
+       （内部已含下沉 30 的构图），再抬就会悬空错位、头钻进显示器后（09-30 实测）。 */
+    const lift = slot.person && personPresetOn() ? 0 : SEAT_LIFT;
+    view.container.position.set(slot.x, slot.y - lift * slot.scale);
     view.container.scale.set(slot.scale * PERSON_K);
     // ⛔ 人物排在自己的**座位地面 y** 上：桌子（更小的 y）自动在其后、椅子（更大的 y）在其前。
     view.container.zIndex = slot.y;
@@ -615,9 +609,9 @@ function syncPeople(
 
     /* 走动：visit/errand 时把人换成走动小人，位置由 ticker **沿 BFS 路径**推进（09-27 v12） */
     const ground = { x: slot.x, y: slot.y - 12, scale: slot.scale };
-    /* 独立椅子跟随：人离开 ⇒ 空椅亮出 + 转开挪位（animateScene lerp）；回位 ⇒ 椅子隐藏 */
+    /* 独立椅子跟随：人离开 ⇒ 转开挪位（animateScene lerp）；回位 ⇒ 归位。椅子常驻。 */
     const chairRef = scene.chairs.get(slot.key);
-    if (chairRef) { chairRef.away = away; chairRef.sp.visible = away; }
+    if (chairRef) chairRef.away = away;
     let walker = scene.walkers.get(slot.key);
     if (away && pose) {
       if (!walker) {
@@ -1202,29 +1196,30 @@ const PERSON_SIT_ALIAS: Record<string, string> = {
   work: "sit-back", gaming: "sit-back", coffee: "sit-back", doze: "sit-back",
   phone: "sit-back", note: "sit-back", slack: "sit-back", stretch: "sit-back",
 };
-function buildSpriteBody(cosplay: Cosplay, pose?: OfficePose, person?: string): Container | null {
-  /* ⛔ 09-30 人物化优先：person 预设 + 该角色姿势图命中 → 用职场小人（Marvis 式）。
-     缺图（未出/被删）→ 回落动物绒毛 → 再回落手画。⛔ 绝不画白方块。 */
-  let url: string | null = null;
+/** 画坐姿 / 站姿的身体。
+ *  ⛔ 09-30 v16：person 预设走**程序化可动人物**（分层部件 + 实时变换 —— 用户：「都是截图
+ *     在动，你不会渲染一个小人物吗」）；切片贴图只在 person 素材命中且非默认时用（可切回的
+ *     预设），再回落动物绒毛 / 手画。返回 box 供挂载，person 非空 = 动画层走 animatePerson。 */
+function buildSpriteBody(cosplay: Cosplay, pose?: OfficePose, person?: string): { box: Container; person: PersonParts | null } | null {
   if (person && personPresetOn()) {
-    const alias = pose ? PERSON_SIT_ALIAS[pose.kind] ?? null : null;
-    if (alias) url = personArtOf(person, alias);
+    const look = personLookOfKey(person);
+    const built = buildPerson(look, "sit", cosplay.face);
+    /* ⛔ 下沉 30（与 office-person 坐姿比例配对）：太少=人浮在桌面上，太多=头藏进显示器
+       后面只剩一坨色块（09-30 两个方向都实测过）。程序化与素材两路统一在这里沉。 */
+    built.container.position.y = 30;
+    return { box: built.container, person: built };
   }
-  if (!url) {
-    const poseUrl = pose ? poseArtOf(pose.kind, cosplay.animal) : null;
-    url = poseUrl ?? animalArtOf(cosplay.animal);
-  }
+  const poseUrl = pose ? poseArtOf(pose.kind, cosplay.animal) : null;
+  const url = poseUrl ?? animalArtOf(cosplay.animal);
   const tex = url ? artTexture(url) : null;
   if (!tex) return null;
   const sp = new Sprite(tex);
   sp.anchor.set(0.5, 1);
   sp.scale.set(SPRITE_LOCAL_H / tex.height);
-  /* ⛔ 下沉 38：坐姿人物图是**含椅子全高**的立绘（头顶到椅脚），锚底在座位点会把整个人
-     浮在桌面上方（09-30 实测「一眼假」）—— 下沉后臀部正好落进桌沿，上半身露出桌面。 */
-  sp.position.set(0, 38);
   const box = new Container();
+  box.position.y = 30;
   box.addChild(sp);
-  return box;
+  return { box, person: null };
 }
 
 /**
@@ -1245,9 +1240,11 @@ function createWorkerGraphics(pose: OfficePose, cosplay: Cosplay, back: boolean,
   let ears: Graphics[] | null = null;
 
   const spriteBody = buildSpriteBody(cosplay, pose, person);
+  let spritePerson: PersonParts | null = null;
   if (spriteBody) {
     // 素材路线：躯干 / 四肢 / 头 / 耳都在图里，⛔ 不再叠手画的部件（会"双头"）
-    body.addChild(spriteBody);
+    body.addChild(spriteBody.box);
+    spritePerson = spriteBody.person;
   } else {
     // 躯干（黑一坨，下缘会被椅子挡住）。⛔ 比头**窄**：头必须比肩宽，剪影才有"大头动物"的比例。
     //    ⛔ 长度也有上限：躯干画到 +78 时下缘会从**椅座下面漏出来**，看着像"人挂在椅子下面"
@@ -1357,7 +1354,7 @@ function createWorkerGraphics(pose: OfficePose, cosplay: Cosplay, back: boolean,
 
   return {
     container: c,
-    parts: { body, armBack, armFront, headwrap, ears, doze, pose },
+    parts: { body, armBack, armFront, headwrap, ears, person: spritePerson, doze, pose },
   };
 }
 
@@ -1380,29 +1377,29 @@ function createWalker(cosplay: Cosplay, ground: { x: number; y: number; scale: n
 
   // 素材路线：走动也用同一只精灵（脚下带阴影 + 上下颠）—— 与坐姿同一套画风，
   // ⛔ 只是没有可动的腿/手/耳（图里是整体的）。
-  // ⛔ 09-30 升级：走路帧命中 → 用**侧面行走两帧**（交替换 texture 即成步态循环）；
-  //    帧图是侧面视角，走路时按行进方向水平翻转（body.scale.x = ±1）。
+  // ⛔ 09-30 v16：person 预设走**程序化可动人物**（走路 = 摆臂摆腿，到达 = 切使用姿势
+  //    的第二套部件）；切片两帧机制保留给 plush 回退路径。
   let walkFrames: [string, string] | null = walkArtOf(cosplay.animal);
   let usingTex: Texture | null = null;
   let cupTex: Texture | null = null;
   let runInPlace = false;
+  let personWalk: PersonParts | null = null;
+  let personUsing: PersonParts | null = null;
   if (person && personPresetOn()) {
-    const wa = personArtOf(person, "walk-a");
-    const wb = personArtOf(person, "walk-b");
-    if (wa && wb) walkFrames = [wa, wb];
-    /* 到达后的使用姿势（spot → 姿势图映射；缺图 → null = 保持走路帧站立） */
-    const USING_POSE: Record<ErrandSpot, string> = {
-      water: "drink", vending: "drink", tea: "drink",
-      printer: "operate", shelf: "operate",
-      restroom: "stand-side", treadmill: "run",
-    };
+    const look = personLookOfKey(person);
+    personWalk = buildPerson(look, "stand", 1);
     if (spot) {
-      usingTex = artTexture(personArtOf(person, USING_POSE[spot]) ?? "");
+      const USING: Record<ErrandSpot, Parameters<typeof buildPerson>[1]> = {
+        water: "drink", vending: "drink", tea: "drink",
+        printer: "operate", shelf: "operate",
+        restroom: "stand", treadmill: "run",
+      };
+      personUsing = buildPerson(look, USING[spot], 1);
       runInPlace = spot === "treadmill";
-      if (spot === "tea" || spot === "vending" || spot === "water") cupTex = artTexture(personArtOf(person, "walk-cup") ?? "");
     }
+    walkFrames = null;
   }
-  const walkSprite = walkFrames ? new Sprite(artTexture(walkFrames[0])!) : buildSpriteBody(cosplay);
+  const walkSprite = walkFrames ? new Sprite(artTexture(walkFrames[0])!) : (personWalk ? null : buildSpriteBody(cosplay)?.box ?? null);
   if (walkSprite) {
     // ⛔ 与坐姿同一套归一化（SPRITE_LOCAL_H）：切片是 ~312px 的原始出图，
     //    不归一就是「原始纹理尺寸直接贴上去」（09-30 用户截图：狐狸占半个办公室）。
@@ -1410,6 +1407,9 @@ function createWalker(cosplay: Cosplay, ground: { x: number; y: number; scale: n
     if (rawTex && walkSprite instanceof Sprite) walkSprite.scale.set((SPRITE_LOCAL_H * 0.96) / rawTex.height);
     walkSprite.position.set(0, 2);
     body.addChild(walkSprite);
+  } else if (personWalk) {
+    if (personUsing) { personUsing.container.visible = false; body.addChild(personUsing.container); }
+    body.addChild(personWalk.container);
   } else {
     legBack = new Graphics();
     legBack.roundRect(-5.5, 0, 11, 34, 5.5).fill(FUR_SHADE);
@@ -1487,6 +1487,8 @@ function createWalker(cosplay: Cosplay, ground: { x: number; y: number; scale: n
     ears: walkEars,
     walkSprite: walkSprite instanceof Sprite ? walkSprite : null,
     walkFrames,
+    personWalk,
+    personUsing,
     usingTex,
     cupTex,
     runInPlace,
@@ -1517,6 +1519,10 @@ function animateScene(scene: SceneRefs, delta: number) {
     view.clock += delta * 0.06;
     const p = view.parts;
     const t = view.clock;
+
+    /* ── 程序化人物（09-30 v16）：打字微动 / 呼吸 / 点头全在 animatePerson 里，
+          动物那套呼吸/耳朵分支不适用（部件为 null 且比例不同）—— 早退。 ── */
+    if (p.person) { animatePerson(p.person, view.clock, false); return; }
 
     // ⛔ 素材路线（生图精灵）没有独立头/耳/手 ⇒ 这些部件为 null：
     //    统一走"整体微动"（呼吸起伏 + 轻微左右摆），别让判空散落成一堆 if（漏一处就崩）。
@@ -1614,40 +1620,54 @@ function animateScene(scene: SceneRefs, delta: number) {
     /* 09-30 人物化：到达设施后**原地使用**（跑步机原地跑 = 继续颠），回程端杯走 */
     const arrived = w.t >= 1;
     const inPlace = (arrived && w.away) || (arrived && w.runInPlace);
-    w.body.y = (walking || (inPlace && w.runInPlace)) ? -Math.abs(Math.sin(w.clock * 7)) * (w.legBack ? 2.6 : 3.6) : 0;
-    if (w.headwrap) w.headwrap.rotation = walking ? Math.sin(w.clock * 7) * 0.04 : 0;
-    const bounce = walking ? Math.abs(Math.sin(w.clock * 7)) : 0;
-    if (w.ears) w.ears.forEach((ear, i) => { ear.rotation = (i === 0 ? -1 : 1) * bounce * 0.14; });
+    /* ── 程序化人物（09-30 v16）：走路摆臂摆腿 / 到达切使用姿势，全交 animatePerson；
+          ⛔ 与下面动物分支互斥（body.y 会被双方写 —— person 分支早退前处理完朝向）。 ── */
+    if (w.personWalk) {
+      const using = arrived && w.away && w.personUsing;
+      w.personWalk.container.visible = !using;
+      if (w.personUsing) w.personUsing.container.visible = Boolean(using);
+      animatePerson(w.personWalk, w.clock, walking);
+      if (using && w.personUsing) animatePerson(w.personUsing, w.clock, false);
+      if (walking && w.path.length > 1) {
+        const ahead = pointOnPath(w, easeInOut(Math.min(1, w.t + 0.02 * dir)));
+        const dx = ahead.x - at.x;
+        if (Math.abs(dx) > 0.5) w.body.scale.x = dx < 0 ? -1 : 1;
+      }
+    } else {
+      w.body.y = (walking || (inPlace && w.runInPlace)) ? -Math.abs(Math.sin(w.clock * 7)) * (w.legBack ? 2.6 : 3.6) : 0;
+      if (w.headwrap) w.headwrap.rotation = walking ? Math.sin(w.clock * 7) * 0.04 : 0;
+      const bounce = walking ? Math.abs(Math.sin(w.clock * 7)) : 0;
+      if (w.ears) w.ears.forEach((ear, i) => { ear.rotation = (i === 0 ? -1 : 1) * bounce * 0.14; });
 
-    /* ── 09-30 走路两帧 + 朝向翻转（侧面行走图集）──
-       帧频 = 步频（clock * 7 / π，与上下颠同拍）：交替换 texture，⛔ 不重建 Sprite（重建会把相位打回起点）。
-       朝向 = 路径在当前进度处的行进方向：取"当前点 vs 往前一点"的 x 差，向左走时水平翻转。
-       09-30 人物化扩展：到达 → 使用姿势（举杯/操作/原地跑）；回程 → 端杯走。 */
-    if (w.walkSprite) {
-      if (arrived && w.away && w.usingTex) {
-        // 使用中：固定姿势（scale 按各姿势图高度重算 —— 不同姿势的出图高度不一）
-        if (w.walkSprite.texture !== w.usingTex) {
-          w.walkSprite.texture = w.usingTex;
-          w.walkSprite.scale.set((SPRITE_LOCAL_H * 0.96) / w.usingTex.height);
-        }
-      } else if (!w.away && w.t > 0 && w.cupTex) {
-        // 回程端杯：固定端杯行走帧 + 步频上下颠
-        if (w.walkSprite.texture !== w.cupTex) {
-          w.walkSprite.texture = w.cupTex;
-          w.walkSprite.scale.set((SPRITE_LOCAL_H * 0.96) / w.cupTex.height);
-        }
-      } else if (w.walkFrames) {
-        const frame = Math.floor((w.clock * 7) / Math.PI) % 2;
-        const tex = artTexture(w.walkFrames[frame]);
-        if (tex) {
-          if (w.walkSprite.texture !== tex) {
-            w.walkSprite.texture = tex;
-            w.walkSprite.scale.set((SPRITE_LOCAL_H * 0.96) / tex.height);
+      /* ── 09-30 走路两帧 + 朝向翻转（侧面行走图集）──
+         帧频 = 步频（clock * 7 / π，与上下颠同拍）：交替换 texture，⛔ 不重建 Sprite（重建会把相位打回起点）。
+         朝向 = 路径在当前进度处的行进方向：取"当前点 vs 往前一点"的 x 差，向左走时水平翻转。 */
+      if (w.walkSprite) {
+        if (arrived && w.away && w.usingTex) {
+          // 使用中：固定姿势（scale 按各姿势图高度重算 —— 不同姿势的出图高度不一）
+          if (w.walkSprite.texture !== w.usingTex) {
+            w.walkSprite.texture = w.usingTex;
+            w.walkSprite.scale.set((SPRITE_LOCAL_H * 0.96) / w.usingTex.height);
           }
-          if (walking && w.path.length > 1) {
-            const ahead = pointOnPath(w, easeInOut(Math.min(1, w.t + 0.02 * dir)));
-            const dx = ahead.x - at.x;
-            if (Math.abs(dx) > 0.5) w.body.scale.x = dx < 0 ? -1 : 1;
+        } else if (!w.away && w.t > 0 && w.cupTex) {
+          // 回程端杯：固定端杯行走帧 + 步频上下颠
+          if (w.walkSprite.texture !== w.cupTex) {
+            w.walkSprite.texture = w.cupTex;
+            w.walkSprite.scale.set((SPRITE_LOCAL_H * 0.96) / w.cupTex.height);
+          }
+        } else if (w.walkFrames) {
+          const frame = Math.floor((w.clock * 7) / Math.PI) % 2;
+          const tex = artTexture(w.walkFrames[frame]);
+          if (tex) {
+            if (w.walkSprite.texture !== tex) {
+              w.walkSprite.texture = tex;
+              w.walkSprite.scale.set((SPRITE_LOCAL_H * 0.96) / tex.height);
+            }
+            if (walking && w.path.length > 1) {
+              const ahead = pointOnPath(w, easeInOut(Math.min(1, w.t + 0.02 * dir)));
+              const dx = ahead.x - at.x;
+              if (Math.abs(dx) > 0.5) w.body.scale.x = dx < 0 ? -1 : 1;
+            }
           }
         }
       }
