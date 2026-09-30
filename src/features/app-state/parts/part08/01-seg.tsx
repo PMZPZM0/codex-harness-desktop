@@ -36,7 +36,18 @@ bag.openThread = openThread as typeof bag.openThread;
         await window.codex.request(action === "archive" ? "thread/archive" : "thread/delete", { threadId: member.id });
         bag.threadCacheRef.current.delete(member.id);
         done += 1;
-      } catch { /* 单个失败不阻塞其余 */ }
+      } catch (error: any) {
+        /* 单个失败不阻塞其余。⛔ 幽灵成员分流（09-30 用户归档「交易分析专家团」弹「归档失败」）：
+           4 个成员的 rollout 文件已不存在（09-29 在数据管理页删过原档，引擎 sqlite 里的线程记录还在
+           ⇒ thread/list 仍返回 ⇒ 侧栏仍显示），引擎原话 `rollout path '<路径>'`。归不了档也删不了，
+           但用户意图是**整簇消失** ⇒ 本地移除，否则 done=0 时成员行永不消失。 */
+        const msg = String(error?.message ?? error);
+        if (/no rollout found|thread[^.]{0,40}not found|failed to read session metadata|rollout path|canonical rollout/i.test(msg)) {
+          bag.threadCacheRef.current.delete(member.id);
+          bag.setThreads((current) => current.filter((entry) => entry.id !== member.id));
+          done += 1;
+        }
+      }
     }
     if (done) bag.setThreads((current) => current.filter((entry) => !cluster.members.some((m) => m.id === entry.id)));
     return done;
@@ -73,7 +84,7 @@ bag.cascadeTeamCluster = cascadeTeamCluster as typeof bag.cascadeTeamCluster;
       //    archived_sessions/ 双份残留时，引擎已不认这条线程，thread/archive 报
       //    `no rollout found`。用户点归档的意图 = 让它从侧栏消失 ⇒ 本地移除即达成意图，
       //    而不是弹「归档失败」让用户反复点。其余错误（瞬态/引擎重启）才按失败提示。
-      if (/no rollout found|thread[^.]{0,40}not found|failed to read session metadata/i.test(msg)) {
+      if (/no rollout found|thread[^.]{0,40}not found|failed to read session metadata|rollout path|canonical rollout/i.test(msg)) {
         bag.setThreads((current) => current.filter((entry) => entry.id !== id));
         bag.threadCacheRef.current.delete(id);
         bag.showToast("已从列表清理", "该会话在引擎中已不存在（可能已归档过或记录丢失），已从侧栏移除");
