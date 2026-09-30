@@ -2528,8 +2528,9 @@ w.postMessage({id:1,op:"list",root});
      ⛔ 这版推翻了两条旧路线：AI 生图切片（用户「都是截图在动」）与程序化绘制家具
      （用户「摆放丑死了」），改用 **Kenney CC0 资产**（Furniture Kit + Toon Characters，
      官方声明可商用免署名）。本组断言钉的是"再次被否掉的坑"与资产授权。 */
-  /* ⛔ 办公室预览 09-30 整体删除（用户：「太丑了，直接删了这个功能」）；按钮与接口保留 ⇒ 实现不在就不跑这组断言 */
-  if (!existsSync(join(ROOT, "src", "features", "team-office"))) { /* 实现已删 */ } else
+  /* ⛔ 这组断言校验的是 v18（Kenney 版）的实现文件 office-assets.ts —— 09-30 晚该域已重做为
+     v19 像素版（office-format.ts），v18 文件不在 ⇒ 跳过（⛔ 别只查目录：目录在、实现换代照样会炸） */
+  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-assets.ts"))) { /* v18 实现不在 */ } else
   {
     const taDir = join(ROOT, "src", "features", "team-office");
     /* ① 资产授权声明：CC0 + 可商用（⛔ 资产来源换成人人无许可的包时必须在这里显红） */
@@ -2625,13 +2626,20 @@ w.postMessage({id:1,op:"list",root});
     (genSrc.includes("官方九态缺一不可") && genSrc.includes("ROW_ANIMATION") ? ok : fail)(
       "【232】生成器缺行即抛（不静默出残图）"
     );
-    /* ③ 内置宠物：几何自描述 + 图集尺寸 = 8 列 × 9 行 × (192×208) */
+    /* ③ 内置宠物：几何自描述 + 图集尺寸 = 8 列 × 9 行 × (192×208)。
+       ⛔ 图集现在可能是 WebP（AI 美术管线产出，比 PNG 小 60%）：PNG 读 IHDR、WebP 读 VP8X。 */
     const petSlugs = ["harness-blob", "harness-cat", "harness-bot"];
-    const pngSize = (file) => {
+    const spriteSize = (file) => {
       try {
-        const head = readFileSync(file).subarray(0, 24);
-        if (head.length < 24) return null;
-        return { width: head.readUInt32BE(16), height: head.readUInt32BE(20) };
+        const head = readFileSync(file).subarray(0, 33);
+        if (head.length < 30) return null;
+        if (head[0] === 0x89 && head.subarray(1, 4).toString() === "PNG") {
+          return { width: head.readUInt32BE(16), height: head.readUInt32BE(20) };
+        }
+        if (head.subarray(0, 4).toString() === "RIFF" && head.subarray(8, 12).toString() === "WEBP" && head.subarray(12, 16).toString() === "VP8X") {
+          return { width: head.readUIntLE(24, 3) + 1, height: head.readUIntLE(27, 3) + 1 };
+        }
+        return null;
       } catch { return null; }
     };
     let builtinOk = 0;
@@ -2641,13 +2649,13 @@ w.postMessage({id:1,op:"list",root});
       try {
         const meta = JSON.parse(readFileSync(join(dir, "pet.json"), "utf8"));
         const sheet = join(dir, String(meta.spritesheetPath || ""));
-        const size = pngSize(sheet);
+        const size = spriteSize(sheet);
         const statesOk = JSON.stringify(meta.states) === JSON.stringify(OFFICIAL_STATES);
         const geomOk = meta.columns === 8 && meta.rows === 9
           && meta.frameSize?.width === 192 && meta.frameSize?.height === 208;
         const sheetOk = size && size.width === 8 * 192 && size.height === 9 * 208;
         if (statesOk && geomOk && sheetOk) builtinOk += 1;
-        else builtinProblems.push(`${slug}: states=${statesOk} geom=${geomOk} sheet=${size ? `${size.width}x${size.height}` : "缺失"}`);
+        else builtinProblems.push(`${slug}: states=${statesOk} geom=${geomOk} sheet=${size ? `${size.width}x${size.height}` : "缺失/非PNG非WebP"}`);
       } catch (error) {
         builtinProblems.push(`${slug}: ${error.message}`);
       }
@@ -2722,6 +2730,79 @@ w.postMessage({id:1,op:"list",root});
     /* ⑮ 样式接入（浮窗 + 设置页同一文件，前缀 pet-） */
     (readFileSync(join(ROOT, "src", "styles.css"), "utf8").includes("./styles/22-pet") ? ok : fail)(
       "【232】宠物样式接入 styles.css（22-pet.css）"
+    );
+  }
+
+
+  /* ══ 【233】像素办公室（team-office v19）═════════════════════════════
+     实现整体删除过一次（用户「太丑了」），重做后按「目录存在才跑」守卫；
+     ⛔ 断言钉的都是这轮实测踩过的坑，别删。 */
+  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-format.ts"))) {
+    /* v19 实现不在（再次下线）⇒ 跳过 */
+  } else {
+    const fmtSrc = readFileSync(join(ROOT, "src", "features", "team-office", "office-format.ts"), "utf8");
+    const simSrc = readFileSync(join(ROOT, "src", "features", "team-office", "office-sim.ts"), "utf8");
+    const canvasSrc = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
+
+    /* ① 精灵格式常量与 MetroCity 图集一致（16×32，7 列；列 6 = 坐姿） */
+    (fmtSrc.includes("FRAME_W = 16") && fmtSrc.includes("FRAME_H = 32") ? ok : fail)(
+      "【233】精灵帧 16×32（MetroCity CC0 图集网格）"
+    );
+    (fmtSrc.includes("COL_SIT = 6") ? ok : fail)("【233】坐姿列号 = 6（图集第 7 列）");
+
+    /* ② ⛔ 座位格必须在碰撞图的可走行：桌矩形 y1 只到 8/13（椅行 9/14 留空）。
+       座位被挡 ⇒ findPath 返回 null ⇒ 成员永远走不到工位（实测全员困在门口） */
+    (/\{ x0: 6, y0: 6, x1: 10, y1: 8 \}/.test(simSrc) && /\{ x0: 19, y0: 11, x1: 23, y1: 13 \}/.test(simSrc) ? ok : fail)(
+      "【233】桌碰撞矩形不含椅子行（椅行 9/14 可走）"
+    );
+
+    /* ③ ⛔ 门凹龛必须连通房间（col 5 也要开）—— 只开 2-4 会被左墙封死 */
+    (simSrc.includes("for (const x of [2, 3, 4, 5]) g[at(x, y)] = 0;") ? ok : fail)(
+      "【233】门凹龛连通房间（cols 2-5 × rows 15-18）"
+    );
+
+    /* ③b ⛔ 行为模型 = 人人有工位、坐班是常态（09-30 用户纠错：别把没任务的人映射成永久闲逛） */
+    (simSrc.includes("坐班是常态") && simSrc.includes("onBreak") ? ok : fail)(
+      "【233】坐班常态模型（非 running 也坐工位，闲逛只是短暂休息）"
+    );
+
+    /* ③c 坐姿打字微动画 = 图集两个坐姿变体交替（cols 5/6） */
+    (fmtSrc.includes("SIT_FRAMES = [5, 6]") && canvasSrc.includes("SIT_FRAMES[") ? ok : fail)(
+      "【233】坐姿用双帧变体交替（打字微动画）"
+    );
+
+    /* ③d ⛔ 坐姿锚点抬高 + 椅背重贴：人不抬高看不清谁坐在哪、不重贴就是人物挡住椅子 */
+    (canvasSrc.includes('a.action === "sit" ? 28 : 26') ? ok : fail)(
+      "【233】坐姿锚点抬高（头+肩露在椅背上方）"
+    );
+    (canvasSrc.includes("CHAIR_BACKREST") && canvasSrc.includes("ctx.drawImage(bg, a.x + r.dx") ? ok : fail)(
+      "【233】坐姿画完重贴椅背矩形（人坐进椅子，不是挡住椅子）"
+    );
+
+    /* ⑤ 渲染必须关平滑（像素风最近邻放大）+ 资产走 Vite import（可达闭包，别回 public/） */
+    (canvasSrc.includes("imageSmoothingEnabled = false") ? ok : fail)(
+      "【233】canvas 关像素平滑（否则像素被拉糊）"
+    );
+    (canvasSrc.includes('from "./assets/bg.webp"') && canvasSrc.includes("assets/chars/char_0.png") ? ok : fail)(
+      "【233】办公室资产走 Vite import（打包可达闭包内）"
+    );
+
+    /* ⑥ 事件驱动边界：域不订阅引擎、不开 IPC —— 状态只从 props 进（架构规则 §2.2） */
+    (!/ipcRenderer|window\.codex\./.test(simSrc) ? ok : fail)(
+      "【233】sim 不碰 IPC（状态一律由宿主 props 传入）"
+    );
+    (canvasSrc.includes("membersRef") ? ok : fail)(
+      "【233】成员状态经 ref 进渲染循环（props 变化即画面变化 = 事件驱动落点）"
+    );
+
+    /* ⑦ 入口三件套：按钮回调接通 / bag 状态在 / AppView 挂载 */
+    const timelineSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "01-timeline.tsx"), "utf8");
+    (timelineSrc.includes("onOpenOffice={() => setCompanyPreviewTeamId(railTeam.teamId)}") ? ok : fail)(
+      "【233】办公室按钮接通（不再留 TODO 空实现）"
+    );
+    const appViewSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView.tsx"), "utf8");
+    (appViewSrc.includes("from \"../team-office\"") && appViewSrc.includes("<TeamOfficePreview") ? ok : fail)(
+      "【233】AppView 挂载办公室浮层"
     );
   }
 
