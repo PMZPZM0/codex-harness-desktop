@@ -121,6 +121,10 @@ bag.uiFont = uiFont as typeof bag.uiFont; bag.setUiFont = setUiFont as typeof ba
   const [settingsOpen, setSettingsOpen] = useState(false);
 bag.settingsOpen = settingsOpen as typeof bag.settingsOpen; bag.setSettingsOpen = setSettingsOpen as typeof bag.setSettingsOpen;
 
+  // 专家团办公室预览（09-30 v18 Kenney CC0 版）：从成员流转轨末位的「办公室」按钮进入
+  const [companyPreviewTeamId, setCompanyPreviewTeamId] = useState<string | null>(null);
+bag.companyPreviewTeamId = companyPreviewTeamId as typeof bag.companyPreviewTeamId; bag.setCompanyPreviewTeamId = setCompanyPreviewTeamId as typeof bag.setCompanyPreviewTeamId;
+
   // AI 短剧无限画布（09-27）：侧栏入口的整体开关。画布自己的状态全在域内（localStorage 持久化），
   // 挂 bag 的只有「开没开」这一位 —— 宿主只需要知道要不要渲染它。
   const [dramaCanvasOpen, setDramaCanvasOpen] = useState(false);
@@ -214,5 +218,5 @@ bag.runtimePercent = runtimePercent as typeof bag.runtimePercent; bag.setRuntime
 
   const [runtimeStage, setRuntimeStage] = useState<Record<string, string>>({});
 bag.runtimeStage = runtimeStage as typeof bag.runtimeStage; bag.setRuntimeStage = setRuntimeStage as typeof bag.setRuntimeStage;
-  return { runUpdateCheck, runUpdateDownload, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, dramaCanvasOpen, setDramaCanvasOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, showModelGuide, setShowModelGuide, quickSetupBusy, setQuickSetupBusy, quickSetupError, setQuickSetupError, relaySetupBusy, setRelaySetupBusy, relaySetupError, setRelaySetupError, modelGuideDoneRef, envCheckOpen, setEnvCheckOpen, envInstalling, setEnvInstalling, envCheckDoneRef, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
+  return { runUpdateCheck, companyPreviewTeamId, setCompanyPreviewTeamId, runUpdateDownload, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, dramaCanvasOpen, setDramaCanvasOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, showModelGuide, setShowModelGuide, quickSetupBusy, setQuickSetupBusy, quickSetupError, setQuickSetupError, relaySetupBusy, setRelaySetupBusy, relaySetupError, setRelaySetupError, modelGuideDoneRef, envCheckOpen, setEnvCheckOpen, envInstalling, setEnvInstalling, envCheckDoneRef, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
 }
