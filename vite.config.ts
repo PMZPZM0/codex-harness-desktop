@@ -1,4 +1,7 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 
 // 仅在 development + SSH_MOCK 存在时注入 mock，让 React 应用能脱离 Electron 渲染 SSH 设置页
@@ -76,6 +79,10 @@ const mockCodex = `
 </script>
 `;
 
+/** 本次构建的产物文件名清单（generateBundle 记录 → closeBundle 消费）。
+ *  ⛔ 不能挂在插件 this 上：本仓的 vite 是 rolldown 内核，两个 hook 的 this 不保证是同一对象。 */
+let keepFiles: Set<string> | null = null;
+
 export default defineConfig({
   base: "./",
   /* 构建指纹（09-23 用户点名的第一个改进项）：
@@ -92,6 +99,30 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    {
+      /* 收尾清理陈旧产物（09-30 加，取代「每次 build 前手动清 dist」）：
+         emptyOutDir:false（上方 build.outDir 的理由，保运行中实例）的代价是旧 hash 文件无限累积
+         —— 实测一轮 build 就攒出 103 个陈旧 chunk，【151】的可达闭包真跑把整批算成 dead（228/434）。
+         时序：generateBundle 记下**本次**输出的文件名 → closeBundle（全部已写盘后）删掉 assets 里
+         不在清单内的陈旧文件。构建**过程中**一个文件都不删（运行中实例不受影响）；收尾瞬间的
+         旧 chunk 404 由 main.tsx 的 vite:preloadError 自愈兜底。 */
+      name: "prune-stale-dist-assets",
+      apply: "build",
+      generateBundle(_options, bundle) {
+        keepFiles = new Set(Object.keys(bundle).map((k) => k.split("/").pop() as string));
+      },
+      closeBundle() {
+        try {
+          const assetsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "dist", "assets");
+          if (!keepFiles || !fs.existsSync(assetsDir)) return;
+          let removed = 0;
+          for (const name of fs.readdirSync(assetsDir)) {
+            if (!keepFiles.has(name)) { fs.rmSync(path.join(assetsDir, name)); removed += 1; }
+          }
+          if (removed) console.log(`[prune-stale-assets] 已清理 ${removed} 个陈旧产物（emptyOutDir:false 的累积代价）`);
+        } catch { /* 清不掉不阻塞构建 */ } finally { keepFiles = null; }
+      },
+    },
     {
       name: "mock-codex-for-dev",
       transformIndexHtml: {

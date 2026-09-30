@@ -18,6 +18,11 @@
       "name": "dongming-code-review",
       "source": "./dongming-code-review",
       "description": "代码审查方法论与规则集：52 份语言级规则 + 去误报协议 + 六步闭环（洞明专家专用，源自 alibaba/open-code-review）"
+    },
+    {
+      "name": "zy-cinematic-realism",
+      "source": "./zy-cinematic-realism",
+      "description": "造梦师电影视觉工作流：Scene Master 锁定人物/机位/光线 → 按目标模型编译原生 Prompt → Prompt Doctor 修结果 → 参考图解梦与多帧连续性（画意 / 剪承团共用，CC BY-NC 4.0，源自 popopo-99/zy-cinematic-realism）"
     }
   ]
 }

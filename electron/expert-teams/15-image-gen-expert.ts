@@ -3,9 +3,13 @@
    与视频制作专家团同机制；生图走 builtin:generate-image（OpenAI 兼容 /images/generations），
    ⛔ 接口只收 prompt —— 跨图主体一致性靠「锁定主体描述 + 参考图锁主体」，如实告知用户边界。 */
 import type { ExpertTeamConfig } from "./01-team-types";
+import { normalizeSkillsDir } from "./05-skills-path";
 
-export const imageGenExpert = (mk: (partial: any) => ExpertTeamConfig): ExpertTeamConfig =>
-mk({
+/* skillsRoot：专家技能包根目录（resources/expert-skills；生产由 main.ts 传 expertSkillsSourceDir()，
+   守卫传假路径做变异测试 —— 与 buildDongmingExpertTeam 同款）。 */
+export const imageGenExpert = (mk: (partial: any) => ExpertTeamConfig, skillsRoot?: string): ExpertTeamConfig => {
+  const zyDir = skillsRoot ? `${normalizeSkillsDir(skillsRoot)}/zy-cinematic-realism` : "";
+  return mk({
       teamId: "image-gen-expert",
       displayName: { zh: "生图专家", en: "Image Gen Expert" },
       profession: { zh: "电商生图设计", en: "E-commerce Image Design" },
@@ -58,8 +62,19 @@ mk({
 4. 出图走画布生图卡（尺寸/张数在检查器里配；产物落盘后给路径清单）；改提示词用卡上的「AI 润色」（直调模型，不开会话）。
 
 ⛔ 边界如实告知：生成接口只收 prompt，锁主体靠"固定主体描述"缓解而非像素级保证；长图拼接暂不支持。
-⛔ 白底图绝不加促销文字/水印；主图不建议堆文字（平台规则）。`,
+⛔ 白底图绝不加促销文字/水印；主图不建议堆文字（平台规则）。
+
+## 电影感 / 叙事单帧（非电商场景）
+- 用户要「电影感 / 剧照感 / 有故事的单帧」，或给了参考图想迁移画面风格（而非电商商品图）时，改走 **zy-cinematic-realism（造梦师）** 工作流：
+  先读技能包里的 SKILL.md（路由器）—— Scene Master 先锁人物 / 瞬间 / 动作 / 机位 / 构图 / 光线 / 道具 / 时间 / 天气 / 限制，
+  再按 references/model-routing.md 选目标模型并编译**原生 Prompt**；结果跑偏时用它的 Prompt Doctor 只修机位 / 姿态 / 光线层级，
+  不动身份与主体；一组连续画面（多帧）用它的 Base Lock + Shot Delta 保连续性；有参考图时先走它的解梦流程判断每张图的职责。
+- 电商六类图**不套**这套（白底图要的是干净，不是电影感）；两类都要时分开出两版提示词，别混。
+
+⛔ 技能包在本机的绝对路径：\`${zyDir}\`
+（SKILL.md 与 references/* 都在这个目录下；引擎技能列表里没有 zy-cinematic-realism 时，用文件工具直接读这个目录 —— 不要把「技能没装」当成跳过工作流的理由。）`,
       },
       members: [],
       enabled: true,
-});
+  });
+};

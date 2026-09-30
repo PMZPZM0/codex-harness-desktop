@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  C, ROOT, createRequire, existsSync, fail, join, mainSrc, ok, pathToFileURL, readAppUi, readFileSync, readMainSource, readStyles, readdirSync, relative,
+  C, ROOT, createRequire, existsSync, fail, join, mainSrc, ok, pathToFileURL, readAppUi, readFileSync, readMainSource, readStyles, readdirSync, relative, warn,
 } from "./_ctx.mjs";
 
 export async function run() {
@@ -340,6 +340,49 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     /syncSkillsPathInTeam\(stored, solo\)/.test(mainSrc6)
       ? ok("启动 ensure 已接入路径同步（已存在 ≠ 已最新）")
       : fail("main.ts 没接入 syncSkillsPathInTeam —— 安装位置一变，洞明静默读不到技能包");
+  }
+
+  /* ══ 【230】造梦师技能内置（09-30 用户：「zy-cinematic-realism 这个技能很火，给专家安排上 +
+     顺便做成内置技能」）══ 技能树随包分发（resources/expert-skills/，CC BY-NC 4.0），
+     画意 / 剪承团按场景点名 + 绝对路径兜底；引擎侧整树复制进 codexHome/skills。 */
+  {
+    const skillMd230 = join(ROOT, "resources", "expert-skills", "zy-cinematic-realism", "SKILL.md");
+    (existsSync(skillMd230) && /^name:\s*zy-cinematic-realism/m.test(readFileSync(skillMd230, "utf8")) ? ok : fail)(
+      "【230】造梦师技能树随包分发（resources/expert-skills/…/SKILL.md 存在且 frontmatter name 正确）"
+    );
+    const market230 = JSON.parse(readFileSync(join(ROOT, "resources", "expert-skills", ".claude-plugin", "marketplace.json"), "utf8"));
+    (Array.isArray(market230.plugins) && market230.plugins.some((p) => p.name === "zy-cinematic-realism") ? ok : fail)(
+      "【230】expert-skills 市场清单已登记（漏登记 = 引擎发现不了这个技能包）"
+    );
+    (/zy-cinematic-realism/.test(readFileSync(join(ROOT, "THIRD_PARTY_NOTICES.md"), "utf8")) ? ok : fail)(
+      "【230】THIRD_PARTY_NOTICES 已登记（CC BY-NC 4.0 —— NC 许可不署名 = 违约）"
+    );
+    if (et && typeof et.imageGenExpert === "function" && typeof et.videoProductionTeam === "function") {
+      const fake230 = "D:/fake-root/resources/expert-skills";
+      const gen230 = et.imageGenExpert((p) => p, fake230);
+      (gen230.lead.systemPrompt.includes(fake230 + "/zy-cinematic-realism") && /造梦师/.test(gen230.lead.systemPrompt) ? ok : fail)(
+        "【230】画意按场景点名造梦师且绝对路径从参数拼出（写死 = 搬家后静默读不到）"
+      );
+      const vid230 = et.videoProductionTeam((p) => p, fake230);
+      (vid230.lead.systemPrompt.includes(fake230 + "/zy-cinematic-realism") && /Base Lock/.test(vid230.lead.systemPrompt) ? ok : fail)(
+        "【230】剪承团首帧链路点名造梦师（Base Lock + Shot Delta 接首帧锚定规则）"
+      );
+    } else {
+      warn("【230】dist-electron 未构建 ⇒ 跳过专家接线真行为断言");
+    }
+    const bs230 = readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8");
+    (/ensureBuiltinSkillDirs\(skillsDir\)/.test(bs230) && bs230.includes("zy-cinematic-realism") ? ok : fail)(
+      "【230】builtin-skills 接入目录型内置（ensureBuiltinSkillDirs 未接线 = codexHome/skills 里永远没有造梦师）"
+    );
+    /* 【229】内置技能中文导读全覆盖（09-30 用户：「内置技能都加上中文注释」）：
+       entries 名单与 00-skill-zh-notes.ts 的 keys 一一对应 —— 漏一个 = 那个技能没有中文导读。
+       ⛔ 抽名只在 entries 数组块内做（RETIRED_SKILLS 也是 [name, *_SKILL] 形状，但退役技能不落盘、不需要导读）。 */
+    const entriesBlock230 = /const entries: \[string, string\]\[\] = \[([\s\S]*?)\n  \];/.exec(bs230)?.[1] ?? "";
+    const entryNames230 = [...entriesBlock230.matchAll(/\["([a-z0-9-]+)",\s*[A-Z0-9_]+_SKILL\]/g)].map((m) => m[1]);
+    const noteKeys230 = [...readFileSync(join(ROOT, "electron", "builtin-skills", "00-skill-zh-notes.ts"), "utf8").matchAll(/^  "([a-z0-9-]+)":/gm)].map((m) => m[1]);
+    (entryNames230.length > 0 && entryNames230.every((n) => noteKeys230.includes(n)) ? ok : fail)(
+      `【229】内置技能中文导读全覆盖（entries ${entryNames230.length} 个 / notes ${noteKeys230.length} 个；缺：${entryNames230.filter((n) => !noteKeys230.includes(n)).join(",") || "无"}）`
+    );
   }
 }
 

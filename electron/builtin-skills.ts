@@ -25,6 +25,7 @@ import { SKILL_AUDIT_SKILL } from "./builtin-skills/12-skill-skill-audit";
 import { MEMORY_MCP_SKILL } from "./builtin-skills/13-skill-memory-mcp";
 import { HARNESS_API_SKILL } from "./builtin-skills/14-skill-harness-api";
 import { effectiveMemoryBackend } from "./memory-backend";
+import { BUILTIN_SKILL_ZH_NOTES } from "./builtin-skills/00-skill-zh-notes";
 
 /** 已退役的内置技能：磁盘上的内容仍是**我们当初写的那份**时，随升级清掉目录 ——
  *  否则引擎会同时加载两套浏览器说明（新的实操手册 + 旧的通道说明），模型读到自相矛盾的指引。
@@ -95,6 +96,18 @@ export async function ensureBuiltinSkills(skillsDir: string) {
         await fs.mkdir(dir, { recursive: true });
         await fs.writeFile(target, content, "utf8");
       }
+      /* 中文导读（09-30 用户：「内置技能都加上中文注释」）：旁挂 README.zh-CN.md，
+         不碰 SKILL.md 原文 —— MIT 技能逐字保留（预检【82】按 sha 比对），中文说明放新文件。
+         ⛔ 停用态同样要更新导读（导读不参与启停语义，永远保持最新）。 */
+      const zhNote = BUILTIN_SKILL_ZH_NOTES[name];
+      if (zhNote) {
+        const zhPath = path.join(dir, "README.zh-CN.md");
+        const zhExisting = await fs.readFile(zhPath, "utf8").catch(() => "");
+        if (zhExisting.replace(/\r\n/g, "\n") !== zhNote) {
+          await fs.mkdir(dir, { recursive: true });
+          await fs.writeFile(zhPath, zhNote, "utf8");
+        }
+      }
     } catch { /* 写不进不阻塞启动 */ }
   }
 
@@ -118,6 +131,9 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     await setEnabled("memory-mcp-backend", backend === "mcp");
     await setEnabled("memory-classify", backend === "builtin");
   } catch { /* 不阻塞启动 */ }
+
+  /* 目录型内置技能（造梦师技能树，见上方函数说明）。 */
+  await ensureBuiltinSkillDirs(skillsDir);
 
   // 退役清理：只删「内容仍是我们写的那份」的旧内置技能目录（browser-automation → browser-skill）。
   //  ⛔ 内建写入是只增不删的：不清理的话，老用户磁盘上那份旧技能会继续被引擎加载，
@@ -144,6 +160,47 @@ export async function ensureBuiltinSkills(skillsDir: string) {
         break;
       }
     } catch { /* 删不掉不阻塞启动 */ }
+  }
+}
+
+/**
+ * 目录型内置技能（09-30 用户：「顺便也做成内置技能，codex 也可以直接调用」）：
+ * zy-cinematic-realism（造梦师，CC BY-NC 4.0，源自 popopo-99/zy-cinematic-realism）是
+ * 603K 的多文件技能树（SKILL.md + references/ 22 篇路由文档）—— 单文件常量塞不下也不该拆，
+ * 整树从 resources/expert-skills/ 复制到 codexHome/skills/，引擎即按普通技能发现与调用。
+ *
+ * ⛔ 语义约定：
+ *  - 文件级覆盖同步：源与目标内容相同则跳过，不同则覆盖 —— 应用升级时技能版本跟着走
+ *    （与单文件技能「逐字比对跳过」不同：这里没有可比对的常量，版本随应用走，CHANGELOG 在包内）；
+ *  - 尊重停用态：目标 SKILL.md.disabled 存在 ⇒ 更新写进 disabled 文件，不复活 SKILL.md；
+ *  - 只增不删：上游删掉的旧文件留在 codexHome（宁留死重，不冒险删用户目录里的东西）；
+ *  - 中文导读 README.zh-CN.md 随源树一起同步（在 resources 侧维护，不在这里写死）。
+ */
+export async function ensureBuiltinSkillDirs(skillsDir: string): Promise<void> {
+  const source = path.join(expertSkillsSourceDir(), "zy-cinematic-realism");
+  const target = path.join(skillsDir, "zy-cinematic-realism");
+  try {
+    if (!existsSync(path.join(source, "SKILL.md"))) return; // 源缺失（异常打包）时静默跳过
+    const walk = async (dir: string): Promise<string[]> => {
+      const out: string[] = [];
+      for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+        const child = path.join(dir, entry.name);
+        if (entry.isDirectory()) out.push(...(await walk(child)));
+        else if (entry.isFile()) out.push(path.relative(source, child).replaceAll("\\", "/"));
+      }
+      return out;
+    };
+    for (const rel of await walk(source)) {
+      const content = await fs.readFile(path.join(source, rel));
+      const disabled = rel === "SKILL.md" && existsSync(path.join(target, "SKILL.md.disabled"));
+      const dest = disabled ? path.join(target, "SKILL.md.disabled") : path.join(target, rel);
+      const existing = await fs.readFile(dest).catch(() => null);
+      if (existing && existing.equals(content)) continue;
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      await fs.writeFile(dest, content);
+    }
+  } catch (error) {
+    console.warn("[skills] 目录型内置技能同步失败（不阻塞启动）:", error);
   }
 }
 
