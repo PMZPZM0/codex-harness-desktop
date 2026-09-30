@@ -1,0 +1,25 @@
+{
+  "id": "harness-cat",
+  "displayName": "阿弦",
+  "description": "原型猫：耳朵尖、尾巴会摆，等指令时会左右张望。",
+  "spritesheetPath": "spritesheet.webp",
+  "frameSize": {
+    "width": 192,
+    "height": 208
+  },
+  "columns": 8,
+  "rows": 9,
+  "states": [
+    "idle",
+    "running-right",
+    "running-left",
+    "waving",
+    "jumping",
+    "failed",
+    "waiting",
+    "running",
+    "review"
+  ],
+  "spriteVersionNumber": 1,
+  "builtin": true
+}

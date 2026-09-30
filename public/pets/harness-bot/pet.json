@@ -1,0 +1,25 @@
+{
+  "id": "harness-bot",
+  "displayName": "小枢",
+  "description": "原型机器人：头顶天线，工作时双眼与天线的灯会加速闪动。",
+  "spritesheetPath": "spritesheet.webp",
+  "frameSize": {
+    "width": 192,
+    "height": 208
+  },
+  "columns": 8,
+  "rows": 9,
+  "states": [
+    "idle",
+    "running-right",
+    "running-left",
+    "waving",
+    "jumping",
+    "failed",
+    "waiting",
+    "running",
+    "review"
+  ],
+  "spriteVersionNumber": 1,
+  "builtin": true
+}

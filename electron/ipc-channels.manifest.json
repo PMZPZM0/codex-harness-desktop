@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
-  "generatedAt": "2026-09-27",
-  "count": 367,
+  "generatedAt": "2026-09-30T12:05:18.765Z",
+  "count": 377,
   "channels": [
     {
       "name": "request",
@@ -3641,6 +3641,106 @@
       "invokeArgs": "input",
       "cast": "Promise<{ path: string; bytes: number; mode: \"copy\" | \"reencode\"; parts: number }>",
       "note": "按顺序合并视频片段成一条成片（整片导出）：先 -c copy，失败回落统一重编码；输出 <workspace>/.drama-canvas/export/"
+    },
+    {
+      "name": "petList",
+      "channel": "pet:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<PetPackage[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "扫描宠物目录（内置 dist/pets + userData/pets + ~/.codex/pets + ~/.petdex/pets）；同名 id 先到先得，内置优先"
+    },
+    {
+      "name": "petSettingsGet",
+      "channel": "pet:settings-get",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<PetStatus>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "宠物设置 + 当前生效的宠物包（active 无效时回落第一只可用的）"
+    },
+    {
+      "name": "petSettingsSet",
+      "channel": "pet:settings-set",
+      "paramsImpl": "patch: unknown",
+      "paramsDecl": "patch: Partial<PetSettings>",
+      "returns": "Promise<PetStatus>",
+      "invokeArgs": "patch",
+      "cast": null,
+      "note": "改完立刻应用（显隐 / 位置 / 缩放 / 透明度）；取值一律归一化后再落盘"
+    },
+    {
+      "name": "petState",
+      "channel": "pet:state",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ signal: PetSignal; open: boolean; bounds: PetBounds | null }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "浮窗首帧补水（推送可能发生在窗口创建之前）+ 诊断"
+    },
+    {
+      "name": "petRoots",
+      "channel": "pet:roots",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<PetRootInfo[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "宠物目录清单：设置页显示「官方宠物包放哪儿」，writable 只对用户目录为真"
+    },
+    {
+      "name": "petOpenDir",
+      "channel": "pet:open-dir",
+      "paramsImpl": "which?: string",
+      "paramsDecl": "which?: string",
+      "returns": "Promise<{ ok: boolean; error?: string; dir: string }>",
+      "invokeArgs": "which",
+      "cast": null,
+      "note": "在系统文件管理器打开宠物目录（缺省 = 用户目录；不存在则先建，否则 Windows 上静默无反应）"
+    },
+    {
+      "name": "petImport",
+      "channel": "pet:import",
+      "paramsImpl": "dir: string",
+      "paramsDecl": "dir: string",
+      "returns": "Promise<{ ok: boolean; error?: string; id?: string }>",
+      "invokeArgs": "dir",
+      "cast": null,
+      "note": "把外部宠物包**复制**进 userData/pets（只允许从已登记的宠物目录导入；不移动、不覆盖同名）"
+    },
+    {
+      "name": "petToggle",
+      "channel": "pet:toggle",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ settings: PetSettings; open: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "显示/隐藏切换（走独立通道，避免为了开关宠物而整份重写设置）"
+    },
+    {
+      "name": "petShow",
+      "channel": "pet:show",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ settings: PetSettings; open: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "显示宠物（置 enabled=true）"
+    },
+    {
+      "name": "petHide",
+      "channel": "pet:hide",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ settings: PetSettings; open: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "隐藏宠物（置 enabled=false；下次启动不自动恢复）"
     }
   ]
 }

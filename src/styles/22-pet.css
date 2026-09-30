@@ -1,0 +1,218 @@
+/* 22-pet.css —— 桌面宠物浮窗（独立 BrowserWindow，`?pet=1`）
+   ⛔ 本文件**刻意不跟随应用主题**：宠物浮在任意桌面内容之上（壁纸、别的应用窗口），
+      跟随主题（亮/暗）会让气泡在某些桌面上直接读不出来。参照 DESIGN.md 对
+      「固定插画不跟随主题」的既有例外（原办公室场景同款理由）。
+   ⛔ 也不写死"品牌色"：只用中性黑白灰 + 透明度，保证在任何背景上都可读。 */
+
+/* 浮窗根：整窗透明 + 铺满 + 可拖动（无边框窗靠 -webkit-app-region 拖） */
+html[data-pet-window="1"],
+html[data-pet-window="1"] body,
+html[data-pet-window="1"] #root {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+.pet-float {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  height: 100%;
+  /* 整片都是拖动区：桌宠没有按钮，不需要 no-drag 例外 */
+  -webkit-app-region: drag;
+  user-select: none;
+  cursor: grab;
+  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+}
+.pet-float:active { cursor: grabbing; }
+
+/* 宠物舞台：占满余下空间，精灵**贴底居中**（脚踩窗口底边，缩放时向上长） */
+.pet-stage {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding-bottom: 2%;
+  box-sizing: border-box;
+}
+
+/* 精灵：一张图集靠 background-position 切帧（⛔ 不逐帧建 <img>，也不 canvas） */
+.pet-sprite {
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  /* 等距/矢量风格素材，默认平滑缩放即可；不用 pixelated（会破坏抗锯齿边缘） */
+  image-rendering: auto;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.22));
+}
+
+/* 气泡：窗口顶部居中，淡出 */
+.pet-bubble {
+  position: absolute;
+  top: 2%;
+  left: 50%;
+  transform: translate(-50%, -4px);
+  max-width: 92%;
+  padding: 4px 9px;
+  border-radius: 10px;
+  background: rgba(252, 252, 251, 0.96);
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.16);
+  color: #23231f;
+  font-size: 11.5px;
+  line-height: 1.35;
+  text-align: center;
+  white-space: normal;
+  word-break: break-word;
+  opacity: 0;
+  transition: opacity 180ms ease, transform 180ms ease;
+  pointer-events: none;
+}
+/* 小三角，指向宠物 */
+.pet-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background: rgba(252, 252, 251, 0.96);
+  border-right: 1px solid rgba(0, 0, 0, 0.10);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.10);
+}
+.pet-bubble.is-visible { opacity: 1; transform: translate(-50%, 0); }
+
+/* 并行任务数（busy > 1 时才渲染） */
+.pet-bubble-busy {
+  margin-left: 5px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: rgba(47, 107, 221, 0.14);
+  color: #2f6bdd;
+  font-size: 10.5px;
+}
+
+/* 没有可用宠物包时的提示（画在窗口里，比"窗口空白"可诊断得多 —— 09-30 办公室那次教训） */
+.pet-missing {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(252, 252, 251, 0.96);
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  color: #6f6f69;
+  font-size: 11px;
+  text-align: center;
+}
+.pet-missing span:last-child { color: #9b9b95; font-size: 10.5px; }
+
+/* ═══════════ 设置页 · 桌面宠物（回到应用主题；只有浮窗那一段不跟主题） ═══════════ */
+
+.pet-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pet-card h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+.pet-count { margin-left: auto; color: var(--faint); font-weight: 400; font-size: 11px; }
+
+.pet-line { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--text); }
+.pet-line > span { display: flex; flex-direction: column; gap: 2px; }
+.pet-line small { color: var(--muted); font-size: 11px; line-height: 1.4; }
+.pet-slider { align-items: center; }
+.pet-slider > span { flex-direction: row; gap: 6px; min-width: 96px; }
+.pet-slider > span small { color: var(--faint); }
+.pet-slider input[type="range"] { flex: 1; accent-color: var(--accent); }
+
+/* 宠物网格：一行一只，缩略图 + 名字 + 来源 */
+.pet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.pet-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "thumb name" "thumb source" "desc desc";
+  align-items: center;
+  gap: 2px 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 12px;
+}
+.pet-item:hover { border-color: var(--muted); }
+.pet-item.is-active { border-color: var(--accent); background: var(--accent-soft); }
+.pet-item:disabled { opacity: 0.6; cursor: default; }
+.pet-thumb {
+  grid-area: thumb;
+  display: block;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  flex: none;
+}
+.pet-item-name { grid-area: name; font-weight: 600; }
+.pet-item-source {
+  grid-area: source;
+  justify-self: start;
+  padding: 0 5px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+.pet-item-source.source-builtin { background: var(--accent-soft); color: var(--accent); }
+.pet-item-desc { grid-area: desc; color: var(--muted); font-size: 11px; line-height: 1.4; }
+
+.pet-warn, .pet-broken p {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0; color: var(--orange); font-size: 11.5px;
+}
+.pet-broken { display: flex; flex-direction: column; gap: 4px; }
+.pet-broken p { color: var(--muted); }
+
+.pet-roots { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pet-roots li { display: flex; align-items: center; gap: 8px; font-size: 11.5px; }
+.pet-root-flag {
+  flex: none; width: 34px; text-align: center;
+  padding: 1px 0; border-radius: 6px;
+  background: var(--panel-2); color: var(--muted); font-size: 10.5px;
+}
+.pet-roots code {
+  flex: 1; min-width: 0;
+  font-family: var(--mono); font-size: 11px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.pet-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pet-actions button, .pet-import-row button {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  font-size: 12px; cursor: pointer;
+}
+.pet-actions button:hover, .pet-import-row button:hover { border-color: var(--muted); }
+.pet-actions button:disabled, .pet-import-row button:disabled { opacity: 0.5; cursor: default; }
+
+.pet-import { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line-soft); padding-top: 8px; }
+.pet-import-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.pet-import-row > span { display: flex; flex-direction: column; flex: 1; }
+.pet-import-row small { color: var(--faint); font-size: 10.5px; }
+.pet-import .muted { margin: 0; font-size: 11.5px; }
+.pet-tip { margin: 0; font-size: 11.5px; line-height: 1.5; }
+.pet-tip code, .pet-warn code { font-family: var(--mono); font-size: 11px; }

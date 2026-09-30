@@ -397,7 +397,12 @@ export class ElectronHarness {
       try {
         const list = await (await fetch(`http://127.0.0.1:${this.port}/json`)).json();
         lastTypes = list.map((t) => t.type);
-        page = list.find((t) => t.type === "page");
+        /* ⛔ 排除桌面宠物浮窗（09-30）：宠物浮窗同样是 page target，URL 带 `?pet=1`。
+           直接取 `list[0]` 会**随机**连到宠物窗 —— 之后所有 eval/click/screenshot 全部打空
+           （实测：连到宠物窗时设置导航读到 0 项，看起来像"设置页坏了"，其实是连错了窗口）。
+           主窗口 URL 永远不含 `pet=1`，据此排除；真没有主窗口时再退回第一个。 */
+        page = list.find((t) => t.type === "page" && !(t.url || "").includes("pet=1"))
+          ?? list.find((t) => t.type === "page");
       } catch { /* 端口还没稳，继续等 */ }
       if (!page) await sleep(300);
     }

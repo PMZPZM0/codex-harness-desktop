@@ -17,8 +17,14 @@
          ⛔ dev 下不复现的原因：dev 贴图走 http://localhost:5173，被已有的 http://localhost:* 放行
          ⇒ **只在打包/构建产物里才暴露**，改完必须用构建产物 + 真实 CSP 验证（见守卫【175】）。
          data: 是本页自身内联内容、无外联能力，放行风险可忽略。 -->
+    <!-- ⛔ `pet:` 必须显式列进 img-src（09-30 桌面宠物踩到）：
+         CSP 里 `*` 只匹配**网络协议**（http/https/ws…），**不覆盖自定义协议** ——
+         它不会自动放行 `pet:`，于是宠物图集被拦成空白（浮窗截图全透明 0% 不透明像素）。
+         同类前科：`connect-src` 不放行 `data:` 导致 PixiJS 贴图全变白方块。
+         ⛔ 这类问题**只在构建产物 + 真实 CSP 下暴露**，改完必须用构建产物验证（探针已钉）。
+         口径与 `harness-image:` 一致：都是本进程注册、内容来自本机可信目录的只读图片协议。 -->
     <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src * data: blob: file: harness-image:; media-src * data: blob:; font-src 'self' data:; connect-src 'self' data: blob: https: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; frame-src *; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'" />
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src * data: blob: file: harness-image: pet:; media-src * data: blob:; font-src 'self' data:; connect-src 'self' data: blob: https: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; frame-src *; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="/icon.png" />
     <meta name="theme-color" content="#171916" />
@@ -33,9 +39,25 @@
         } catch (e) {
           document.documentElement.setAttribute("data-theme", "light");
         }
+        /* ⛔ 桌面宠物浮窗（?pet=1）必须在**首帧之前**就打上这个标记：
+           下面 body 里的启动页是**静态 HTML**，若等到 React 挂载再隐藏，
+           透明浮窗上会先闪一整块不透明白底（渲染层判定太晚）。 */
+        try {
+          if (new URLSearchParams(location.search).get("pet") === "1") {
+            document.documentElement.setAttribute("data-pet-window", "1");
+          }
+        } catch (e) { /* 忽略 */ }
       })();
     </script>
     <style>
+      /* 桌面宠物浮窗：整窗透明 + 不出启动页（启动页是不透明白底，会盖住透明窗口） */
+      html[data-pet-window="1"],
+      html[data-pet-window="1"] body {
+        background: transparent;
+      }
+      html[data-pet-window="1"] .boot-splash {
+        display: none;
+      }
       /* 启动加载页：JS/CSS 还没加载时也要能显示，所以样式必须内联在这里。
          React 挂载后由 src/components/BootSplash.tsx 用**同一套类名**接手，
          直到首屏会话数据到达才淡出（实测启动到有内容 3.0~3.8s，大半时间在这之后）。 */

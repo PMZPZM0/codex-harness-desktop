@@ -51,6 +51,33 @@
   不再各自新开项目地址）。守卫【156】**真跑**该模块断言分类判定与五条归属边界。
 - 新增/改动 part 结构后，预检【92】会守住「子模块 return 面自洽 + 三者顺序一致」；跳过它的红 = 静默丢值。
 
+### 🐾 桌面宠物（`src/features/pet/` + `electron/features/pet-*.ts`，2026-09-30 立）
+
+一只浮在桌面的小宠物，状态跟着引擎事件走。接入的是 **Codex 官方宠物格式**（实测自引擎二进制
+`tui/src/pets/*.rs` + petdex 公开规范，两者逐字吻合）：
+
+- **宠物包 = `pet.json` + 图集**；图集 **8 列 × 9 行**、每帧 **192×208**。
+- **九态行名（顺序即行序，⛔ 不可重排/增删）**：`idle / running-right / running-left / waving / jumping / failed / waiting / running / review`。
+- **四个宠物目录**（扫描面 = 协议白名单，单一真相源 `features/pet-ipc.ts` 的 `petRoots()`）：
+  `dist/pets`（内置，随包）· `public/pets`（dev）· `<userData>/pets`（用户，可写）· `~/.codex/pets` + `~/.petdex/pets`（官方/Petdex 装的，只读展示、点「导入」才复制）。
+- **内置三只自产**：`scripts/gen-pet-spritesheets.mjs`（零依赖 SDF 光栅化 + 自写 PNG 编码）→ `public/pets/<slug>/`。
+  ⛔ **必须落 `public/`（→ `dist/pets`），不能放 `src/` 让 JS import**：`before-pack` 的可达闭包只认 js/css 与 CSS 里的 `url()`，
+  JS import 的位图会被判成陈旧死块删掉（v0.0.27 事故同型）；`dist/pets` 不在裁剪面内。
+- **两个必须记住的坑（都踩过、守卫【232】钉住）**：
+  1. ⛔⛔ **CSP 里 `*` 不覆盖自定义协议** —— `img-src * data: blob: file: harness-image:` **不够**，必须显式加 `pet:`，
+     否则图集被拦成空白（症状：浮窗截图**全透明 0% 不透明像素**，而 computed style 里 url 好端端的 = 典型假绿）。
+     与当年 `connect-src` 不放行 `data:` 导致 Pixi 贴图变白方块同型；**只在构建产物 + 真实 CSP 下暴露**。
+  2. 浮窗（`?pet=1`）必须在**首帧前**摘掉启动页（`index.html` 内联脚本判定 + 内联 CSS `display:none`）——
+     启动页是不透明白底，晚一步就在桌面上闪一块白。
+- **架构落点**：主进程归约（`pet-state.ts`：引擎事件 → 九态，旁听不改流向）→ 透明置顶浮窗（`pet-window.ts`，
+  **不登记 window-bus**，主窗口关时由 window-factory 显式关掉）→ `pet://` **窄口径**协议供图（只放行宠物目录 + 图片扩展名；
+  ⛔ 不放宽 `harness-image` 的可信根，那是安全回归）→ 渲染层 `src/features/pet/`（`main.tsx` 按 `?pet=1` 分流，
+  ⛔ 不能进 `App()` 条件调用 `useHarnessApp` —— hook 调用序）。
+- ⛔ **e2e 必须排除宠物浮窗 target**：它也是 page target，`harness._connect()` 取 `list[0]` 会随机连错窗口
+  （实测症状：设置导航读到 0 项，看着像"设置页坏了"）。已在 `scripts/e2e/lib/harness.mjs` 里排除 `pet=1`。
+- 设置页 = 注册表一行一页（`pet` 页）+ `settingsNav` + `HelpDialog.OVERVIEW_GROUPS` **三处都要加**
+  —— 少总览那处会被守卫【32】打红。
+
 ## 🎨 视觉规范（2026-09-26 立，守卫【170】）
 
 > **改 UI 前先读根目录 `DESIGN.md`**（色板 / 字体 / 组件约定 / 主题机制，全部实测自 `src/styles/`）。

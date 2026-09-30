@@ -510,7 +510,36 @@ contextBridge.exposeInMainWorld("codex", {
   workLogsDelete: (input: { paths: string[] }) => __ipc("work-logs:delete", 1, [input]),
   /* 按顺序合并视频片段成一条成片（整片导出）：先 -c copy，失败回落统一重编码；输出 <workspace>/.drama-canvas/export/ */
   videoConcat: (input: { workspace: string; name: string; files: string[]; width?: number; height?: number; fps?: number }) => __ipc("video:concat", 0, [input]) as Promise<{ path: string; bytes: number; mode: "copy" | "reencode"; parts: number }>,
+  /* 扫描宠物目录（内置 dist/pets + userData/pets + ~/.codex/pets + ~/.petdex/pets）；同名 id 先到先得，内置优先 */
+  petList: () => __ipc("pet:list", 0, []),
+  /* 宠物设置 + 当前生效的宠物包（active 无效时回落第一只可用的） */
+  petSettingsGet: () => __ipc("pet:settings-get", 0, []),
+  /* 改完立刻应用（显隐 / 位置 / 缩放 / 透明度）；取值一律归一化后再落盘 */
+  petSettingsSet: (patch: unknown) => __ipc("pet:settings-set", 1, [patch]),
+  /* 浮窗首帧补水（推送可能发生在窗口创建之前）+ 诊断 */
+  petState: () => __ipc("pet:state", 0, []),
+  /* 宠物目录清单：设置页显示「官方宠物包放哪儿」，writable 只对用户目录为真 */
+  petRoots: () => __ipc("pet:roots", 0, []),
+  /* 在系统文件管理器打开宠物目录（缺省 = 用户目录；不存在则先建，否则 Windows 上静默无反应） */
+  petOpenDir: (which?: string) => __ipc("pet:open-dir", 0, [which]),
+  /* 把外部宠物包**复制**进 userData/pets（只允许从已登记的宠物目录导入；不移动、不覆盖同名） */
+  petImport: (dir: string) => __ipc("pet:import", 1, [dir]),
+  /* 显示/隐藏切换（走独立通道，避免为了开关宠物而整份重写设置） */
+  petToggle: () => __ipc("pet:toggle", 0, []),
+  /* 显示宠物（置 enabled=true） */
+  petShow: () => __ipc("pet:show", 0, []),
+  /* 隐藏宠物（置 enabled=false；下次启动不自动恢复） */
+  petHide: () => __ipc("pet:hide", 0, []),
   /* ═══ gen:end ═══ */
+
+  /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。
+     ⛔ 走 __on 而不是裸 ipcRenderer.on：退订按函数引用精确移除，重复挂载幂等。 */
+  onPetSignal: (listener: (signal: unknown) => void) =>
+    __on("pet:signal", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload)),
+  /* 桌面宠物：**配置**推送（当前宠物包 + 设置）。换宠物 / 改缩放时主进程推它，
+     否则已开着的浮窗还画着旧宠物（它只在挂载时读一次设置）。 */
+  onPetConfig: (listener: (config: unknown) => void) =>
+    __on("pet:config", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload)),
 
   // ⛔ mac 适配（09-16）：渲染层此前完全不知道自己跑在什么平台——窗口控制键让位、
   // 平台差异 UI 全靠这个字段。sandboxed preload 里 process.platform 可用。

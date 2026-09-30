@@ -305,6 +305,91 @@ const CHECKS = [
       h.check(`② ${list.length} 个设置页逐页打开无 ErrorBoundary`, bad.length === 0, bad.slice(0, 4).join(" ∣ "));
     },
   },
+  {
+    id: "pet-float",
+    name: "⑲ 桌面宠物（官方九态格式 / 透明浮窗 / 图集真加载 / 设置页）",
+    run: async (h) => {
+      // 为什么断言这一条：宠物图集走**自定义协议 `pet://`**，而 CSP 的 `img-src *` **不覆盖自定义协议**
+      // —— 不放行 `pet:` 时图集被静默拦掉，页面看着"有元素、有 url"，实际浮窗**全透明 0% 像素**
+      // （只读 computed style 是彻底的假绿）。这类问题**只在构建产物 + 真实 CSP 下暴露**，
+      // 所以必须在这里真加载一次并读原始尺寸。
+      await h.eval(`window.codex.petShow()`);
+      await wait(800);
+
+      // ① 浮窗 target 真的出现（主进程建窗 + main.tsx 按 ?pet=1 分流）
+      const search = await h.evalInTarget("pet=1", "location.search", { timeoutMs: 25000 });
+      h.check("① 浮窗 target 出现（?pet=1）", String(search).includes("pet=1"), String(search));
+      if (!String(search).includes("pet=1")) return;
+
+      // ② 精灵挂的是 pet:// 且尺寸非零（帧换算生效）
+      const sprite = await h.evalInTarget("pet=1", `
+        new Promise((resolve) => {
+          const started = Date.now();
+          const look = () => {
+            const el = document.querySelector('.pet-sprite');
+            if (el) { const cs = getComputedStyle(el); resolve({ bg: cs.backgroundImage, size: cs.backgroundSize,
+              w: el.clientWidth, h: el.clientHeight, splash: Boolean(document.querySelector('.boot-splash')) }); return; }
+            if (Date.now() - started > 15000) { resolve({ missing: true }); return; }
+            setTimeout(look, 200);
+          };
+          look();
+        })
+      `, { timeoutMs: 25000 });
+      h.check("② 精灵走 pet:// 协议且尺寸非零", !sprite?.missing && /pet:\/\/asset\/\?path=/.test(sprite?.bg ?? "") && (sprite?.w ?? 0) > 40 && (sprite?.h ?? 0) > 40,
+        `bg=${String(sprite?.bg).slice(0, 46)} ${sprite?.w}x${sprite?.h} size=${sprite?.size}`);
+      // ③ 浮窗不出启动页（启动页是不透明白底：透明窗上会闪一块白）
+      h.check("③ 浮窗不出启动页（无白底闪烁）", sprite?.splash === false, `boot-splash=${sprite?.splash}`);
+
+      // ④ 图集**真能被加载解码**（CSP 放行 pet:// 的铁证；被拦时这里必然是 error）
+      const image = await h.evalInTarget("pet=1", `
+        new Promise((resolve) => {
+          const el = document.querySelector('.pet-sprite');
+          const url = (el?.style.backgroundImage || '').match(/url\\("?(.+?)"?\\)/)?.[1] || "";
+          const img = new Image();
+          let phase = "pending";
+          img.onload = () => resolve({ phase: "load", nw: img.naturalWidth, nh: img.naturalHeight });
+          img.onerror = () => resolve({ phase: "error", nw: 0, nh: 0 });
+          img.src = url;
+          setTimeout(() => { if (phase === "pending") resolve({ phase: "timeout", nw: 0, nh: 0 }); }, 6000);
+        })
+      `, { timeoutMs: 20000 });
+      h.check("④ 图集真加载解码（CSP 放行 pet:// / 8 列 × 9 行 × 192×208）",
+        image?.phase === "load" && image?.nw === 1536 && image?.nh === 1872, JSON.stringify(image));
+
+      // ⑤ 帧循环在推进（背景位移两次采样必须不同 —— 只 push 不 update 会永远停在首帧）
+      const pos1 = await h.evalInTarget("pet=1", `getComputedStyle(document.querySelector('.pet-sprite')).backgroundPosition`, { timeoutMs: 8000 });
+      await wait(700);
+      const pos2 = await h.evalInTarget("pet=1", `getComputedStyle(document.querySelector('.pet-sprite')).backgroundPosition`, { timeoutMs: 8000 });
+      h.check("⑤ 帧循环在推进（背景位移变化）", pos1 !== pos2, `${pos1} → ${pos2}`);
+
+      // ⑥ 内置宠物包：数量 + 官方几何
+      const pets = await h.eval(`window.codex.petList().then((l) => l.map((p) => ({ id: p.id, source: p.source, cols: p.columns, rows: p.rows, fw: p.frameWidth, fh: p.frameHeight, states: (p.states || []).length, problem: p.problem || null })))`);
+      const builtin = (Array.isArray(pets) ? pets : []).filter((p) => p.source === "builtin" && !p.problem);
+      h.check("⑥ 内置宠物 ≥3 且几何合规（8 列 × 9 行 / 192×208 / 九态）",
+        builtin.length >= 3 && builtin.every((p) => p.cols === 8 && p.rows === 9 && p.fw === 192 && p.fh === 208 && p.states === 9),
+        JSON.stringify(builtin).slice(0, 260));
+
+      // ⑦ 设置页真渲染 + 目录清单（导航自洽由【32】/【101】另管，这里看的是"点开真有东西"）
+      await h.eval(`(function(){ document.querySelector('.sidebar-settings')?.click(); return 1; })()`);
+      await wait(1500);
+      const nav = await h.eval(`(function(){ const items=[...document.querySelectorAll('.settings-nav button')];
+        const i=items.findIndex((b)=>(b.textContent||'').trim().startsWith('桌面宠物')); if(i>=0) items[i].click(); return { idx:i }; })()`);
+      await wait(1200);
+      const page = await h.eval(`(function(){ const m=document.querySelector('.settings-modal');
+        return { count: document.querySelectorAll('.pet-item').length, roots: document.querySelectorAll('.pet-roots li').length,
+          thumbs: [...document.querySelectorAll('.pet-thumb')].filter((e)=>/pet:\\/\\/asset/.test(getComputedStyle(e).backgroundImage)).length,
+          err: m && /重试加载应用|Failed to fetch dynamically/.test(m.innerText||'') ? 'ErrorBoundary' : '' }; })()`);
+      h.check("⑦ 设置页打开且渲染宠物卡片 + 目录清单", (nav?.idx ?? -1) >= 0 && (page?.count ?? 0) >= 3 && (page?.roots ?? 0) >= 3 && !page?.err,
+        `navIdx=${nav?.idx} ${JSON.stringify(page)}`);
+      const shot = await h.screenshot("pet-settings-page");
+      h.check("⑧ 设置页截图产出", existsSync(shot) && readFileSync(shot).length > 20000, `${shot}`);
+
+      // ⑨ 开关闭环：hide 后 open=false（⛔ 判"可见性"而不是"窗口是否存在" —— hide 不销毁窗口）
+      const hidden = await h.eval(`window.codex.petHide().then(() => window.codex.petState()).then((s) => s.open)`);
+      h.check("⑨ petHide 后 open=false（可见性语义）", hidden === false, `open=${hidden}`);
+      await h.eval(`window.codex.petShow()`);   // 收尾还原，别把浮窗留给后续项
+    },
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -334,9 +419,10 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "09-26";
+const LATEST_ROUND = "09-30";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
+  "pet-float": "09-30",
   "file-card-edit": "09-26",
   "settings-pages": "09-25",
   "shot-editor": "09-24",

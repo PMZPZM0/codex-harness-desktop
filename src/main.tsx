@@ -2,7 +2,20 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { PetFloat } from "./features/pet";
 import "./styles.css";
+
+/* 桌面宠物浮窗：`?pet=1` 时**只**渲染宠物本体（见 features/pet/PetFloat.tsx 头注释）。
+   ⛔ 分流必须在这里做，不能塞进 App()：`useHarnessApp()` 是 hook，
+      条件调用会破坏 hook 调用序（规则层面就不允许）。 */
+const isPetWindow = (() => {
+  try { return new URLSearchParams(window.location.search).get("pet") === "1"; } catch { return false; }
+})();
+/* 浮窗要**整窗透明**（否则透明窗口上会盖一块不透明底）；用 html 属性做开关，
+   样式集中在 22-pet.css 里，别在这写内联 style。 */
+if (isPetWindow) {
+  try { document.documentElement.dataset.petWindow = "1"; } catch { /* 忽略 */ }
+}
 
 /* chunk 加载失败自愈（09-23 崩溃修复）：产物重建后旧 hash 的 chunk 被清掉，
    运行中的实例点开 lazy 页面会报 "Failed to fetch dynamically imported module"。
@@ -19,7 +32,7 @@ window.addEventListener("vite:preloadError", (event) => {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      {isPetWindow ? <PetFloat /> : <App />}
     </ErrorBoundary>
   </StrictMode>,
 );
