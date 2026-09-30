@@ -21,8 +21,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, FolderKanban, FolderOpen, RefreshCw, X } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { SearchField, ToggleSwitch } from "../../components/SettingsWidgets";
+import { CJK_TEXT_RE, SKILL_ZH_NOTES } from "../app-view/constants";
 
 type PoolSkill = { name: string; globalDisabled: boolean; projectDisabled: boolean; active: boolean };
+
+/** 技能的中文注释（09-30 用户：「注释呢」—— 共享技能池的卡片此前只有名字没有说明）：
+ *  注释表命中优先；描述里带中文就直接用；都没有再走通用兜底。 */
+function poolZhNote(name: string): string {
+  const key = String(name ?? "").toLowerCase().trim();
+  const note = SKILL_ZH_NOTES[key];
+  if (note) return note;
+  return "已安装技能（在「我的技能」卡片看完整说明）";
+}
 
 function readWorkspace(): string {
   try { return localStorage.getItem("workspace") ?? ""; } catch { return ""; }
@@ -167,6 +177,7 @@ export function SkillPoolSection({ projects }: { projects?: [string, unknown][] 
                     />
                   </div>
                   <strong>{s.name}</strong>
+                  <p className="skill-card-zh-note">{CJK_TEXT_RE.test(poolZhNote(s.name)) ? poolZhNote(s.name) : ""}</p>
                   <div className="skill-card-compact-foot">
                     <span className="skill-card-path" title={active ? "该项目会话清单会注入该技能" : "引擎清单不注入该技能（该项目）"}>
                       {active ? "该项目生效" : "该项目不生效"}
