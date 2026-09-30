@@ -16,7 +16,8 @@ export function TeamMemberRail({ team, containerRef, runningByMember, lastByMemb
   lastByMember: Record<string, TeamMemberRunRecord>;
   activeMemberId: string;
   onOpenMember: (memberId: string) => void;
-  /** 办公室预览入口（09-25 用户要求：加在这列流转图标的末位，映射真实成员状态）。 */
+  /** ⛔ 办公室预览入口 —— **接口保留位**（09-30 用户：「直接删了这个办公室预览，留上这个接口就行，
+      后续我有思路了再拓展」）。按钮与回调链留在原地，重做时只需在父级实现这个回调。 */
   onOpenOffice?: () => void;
 }) {
   const [mode, setMode] = useState<"full" | "compact" | "hidden">("full");
@@ -58,9 +59,10 @@ export function TeamMemberRail({ team, containerRef, runningByMember, lastByMemb
             </button>
           );
         })}
-        {/* 办公室预览：轨道末位的独立节点（用户 09-25：加在这列流转图标里，不进设置页卡片） */}
+        {/* ⛔ 办公室预览**接口保留位**（09-30 用户要求整体下线重做）：按钮与回调链留着，
+            点下去由父级决定（当前是空实现 + 提示）。重做时实现 onOpenOffice 即可。 */}
         {onOpenOffice && (
-          <button type="button" className="team-rail-node team-rail-office" title="办公室预览：把成员状态映射成虚拟办公室（工作中敲键盘 / 空闲打盹 / 未开工空位）" onClick={onOpenOffice}>
+          <button type="button" className="team-rail-node team-rail-office" title="办公室预览（重做中）：成员状态将映射成虚拟办公室" onClick={onOpenOffice}>
             <span className="team-rail-avatar team-rail-office-avatar"><Building2 size={14} /></span>
             <span className="team-rail-name">办公室</span>
           </button>

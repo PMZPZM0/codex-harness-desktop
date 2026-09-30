@@ -597,7 +597,7 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
     : fail("index.html 的 CSP 被摘了 —— 渲染层渲染模型输出/渠道消息时注入脚本可加载外部代码"));
   /* 【175】connect-src 必须放行 data:（09-27 白方块事故，⛔ 只在构建产物里暴露）
      PixiJS 用 fetch 加载贴图 ⇒ 受 connect-src 管（不是 img-src）。Vite 构建会把 <4KB 的
-     小图内联成 data: URI（team-office 的 23 张家具贴图全部命中），不放行 data: ⇒ 贴图全被
+     小图内联成 data: URI（生图素材全部命中），不放行 data: ⇒ 贴图全被
      CSP 拦下、渲染成白方块（位置对、贴图空，极易误判为渲染 bug）。dev 下贴图走
      http://localhost:* 被放行，所以**dev 不复现**。 */
   (/connect-src[^;]*\bdata:/.test(indexHtml)

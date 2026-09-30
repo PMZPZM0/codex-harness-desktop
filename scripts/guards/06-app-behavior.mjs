@@ -1369,6 +1369,8 @@ w.postMessage({id:1,op:"list",root});
         v1 折线组织图被否「歪歪扭扭」；v2 div 纯色块被否「不好看」⇒ 断言钉死 SVG 插画形态。
      数据零新 IPC（复用 teams / team-threads:map / runningThreadIds）—— 若有人给它加新通道，
      说明在重复造已有能力，打红。 */
+  /* ⛔ 办公室预览（team-office 域）09-30 用户要求整体下线、待重做 ⇒ 目录不在就不跑这组断言 */
+  if (!existsSync(join(ROOT, "src", "features", "team-office"))) { /* 已下线 */ } else
   {
     console.log(C.bold("\n【154】专家团办公室预览（team-office 域）"));
     /* 不得再有独立侧栏入口 */
@@ -1432,6 +1434,8 @@ w.postMessage({id:1,op:"list",root});
                     ② 快照单源（弹窗持有导演，场景只画 → 右栏看板与画面必然一致）
                     ③ 走路必须是**逐帧插值**（v8 在 PixiJS ticker 里做；
                        v3 那种"直接写终点坐标/属性 = 人闪现到终点"依旧禁止）。 */
+  /* ⛔ 办公室预览（team-office 域）09-30 用户要求整体下线、待重做 ⇒ 目录不在就不跑这组断言 */
+  if (!existsSync(join(ROOT, "src", "features", "team-office"))) { /* 已下线 */ } else
   {
     console.log(C.bold("\n【168】办公室动画体系（导演 / 姿势 / 交接 / 走路）"));
     const directorPath = join(ROOT, "src", "features", "team-office", "office-director.ts");
@@ -1533,6 +1537,8 @@ w.postMessage({id:1,op:"list",root});
         参考镜头在工位正前方略高，自远而近 = 显示器 → 桌 → 人 → 椅子。
         三个对象必须**各按自己的地面基线 y 排 zIndex**（桌更靠后 / 椅子更靠观众），
         合成一件 Graphics 一定会错：要么人被桌挡住只露头顶，要么椅子被整个人盖住。 */
+  /* ⛔ 办公室预览（team-office 域）09-30 用户要求整体下线、待重做 ⇒ 目录不在就不跑这组断言 */
+  if (!existsSync(join(ROOT, "src", "features", "team-office"))) { /* 已下线 */ } else
   {
     console.log(C.bold("\n【169】办公室渲染纵深（程序化绘制 / 桌-人-椅三层遮挡）"));
     const renderPath = join(ROOT, "src", "features", "team-office", "office-render.ts");
@@ -1608,6 +1614,8 @@ w.postMessage({id:1,op:"list",root});
        ② 动物与项圈色只依赖序号（出现 Math.random/Date.now = 每次刷新换一张脸）；
        ③ 每个物种的耳朵分支与头型尺寸都齐备（少一个 case 就退化成认不出的黑团）；
        ④ 屏幕内容与姿势一致（人在打盹、屏幕上还跑着代码 = 一眼假）。 */
+  /* ⛔ 办公室预览（team-office 域）09-30 用户要求整体下线、待重做 ⇒ 目录不在就不跑这组断言 */
+  if (!existsSync(join(ROOT, "src", "features", "team-office"))) { /* 已下线 */ } else
   {
     console.log(C.bold("\n【176】办公室角色外形（物种 / 项圈 / 屏幕内容）"));
     const palPath = join(ROOT, "src", "features", "team-office", "office-palette.ts");
@@ -2188,6 +2196,8 @@ w.postMessage({id:1,op:"list",root});
 // ── 25. 办公室走动人寻路（09-27 用户「按建议顺序」第 3 项）──
 // 背景：走动人原来是 from→to **直线插值**，从自己工位走到饮水机会直接穿过别人的桌子。
 // 参照 munder-difflin 的做法（作者博客：BFS 四方向寻路，明确说这规模不需要 A*）改成网格寻路。
+  /* ⛔ 办公室预览（team-office 域）09-30 用户要求整体下线、待重做 ⇒ 目录不在就不跑这组断言 */
+  if (!existsSync(join(ROOT, "src", "features", "team-office"))) { /* 已下线 */ } else
 {
   const canvas181 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
   const navPath181 = join(ROOT, "src", "features", "team-office", "office-nav.mjs");
