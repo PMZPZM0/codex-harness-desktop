@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-09-27",
-  "count": 366,
+  "count": 369,
   "channels": [
     {
       "name": "request",
@@ -3621,6 +3621,36 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "删会话记录（销毁性）：只删 codex-home/sessions|archived_sessions 下的 rollout-*.jsonl 文件；级联剔除 session_index.jsonl 里的对应条目（否则会话列表留死条目）"
+    },
+    {
+      "name": "workLogsScan",
+      "channel": "work-logs:scan",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ projects: Array<{ cwd: string; name: string; memoryDir: string; exists: boolean; bytes: number; files: Array<{ path: string; rel: string; kind: string; bytes: number; mtime: number }> }> }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 与会话原档（codex-logs）是两回事"
+    },
+    {
+      "name": "workLogsRead",
+      "channel": "work-logs:read",
+      "paramsImpl": "input: { path: string }",
+      "paramsDecl": "input: { path: string }",
+      "returns": "Promise<{ path: string; text: string; bytes: number; mtime: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "读一份工作日志/记忆文件的正文（UI 内查看）。路径必须落在某个项目的 .codex-harness/memory 之下；>512KB 拒绝（提示去文件管理器打开）"
+    },
+    {
+      "name": "workLogsDelete",
+      "channel": "work-logs:delete",
+      "paramsImpl": "input: { paths: string[] }",
+      "paramsDecl": "input: { paths: string[] }",
+      "returns": "Promise<{ deleted: number; bytes: number; failed: string[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "删工作日志文件（销毁性，不会重建）：只删 .codex-harness/memory 之下的普通文件；目录、越界路径一律拒绝"
     },
     {
       "name": "videoConcat",

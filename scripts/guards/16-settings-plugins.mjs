@@ -279,5 +279,45 @@ export async function run() {
     (/const CHUNK = 64 \* 1024/.test(logsSrc225) && /indexOf\("\\n"\)/.test(logsSrc225) && /grab\("cwd"\)/.test(logsSrc225) ? ok : fail)(
       "【225】codex-logs 首行解析：分块读到行尾 + 正则兜底（固定 16KB 缓冲会让项目分组全变「未知项目」）"
     );
+    /* 09-30 用户实测三连（空白 / 取消全选无用 / 打开日志目录无用）—— 三条都钉住： */
+    const logsComp225 = readFileSync(join(ROOT, "src", "features", "storage-settings", "CodexLogsSection.tsx"), "utf8");
+    /* ⛔ 正确形态只有一个：toggle(allPaths, !allPicked) —— 第一个参数恒为全集、第二个决定 add/delete。
+       两个错误形态都要禁：`toggle([], …)`（取消方向空循环）与 `toggle(allPicked ? …)`
+       （把三元塞进第一个参数 ⇒ 总有一个方向变成空循环；09-30 我修这个 bug 时正好写反成交替失效）。 */
+    (/toggle\(allPaths, !allPicked\)/.test(logsComp225) && !/toggle\(\[\],/.test(logsComp225) && !/toggle\(allPicked \?/.test(logsComp225) ? ok : fail)(
+      "【225】全选/取消全选用 toggle(allPaths, !allPicked)（传空数组或把三元塞进第一个参数 = 总有一个方向点了没反应）"
+    );
+    (!/\.revealInFolder\(/.test(logsComp225) && /shellReveal\(data\.sessionsDir\)/.test(logsComp225) ? ok : fail)(
+      "【225】「打开日志目录」用 shellReveal（fs:reveal 只收**文件**，传目录必抛错被 catch 吞掉 = 点了没反应）"
+    );
+    const cssFlow225 = readFileSync(join(ROOT, "src", "styles", "07-settings-mcp-connectors.css"), "utf8");
+    const storeFlow225 = readFileSync(join(ROOT, "src", "features", "storage-settings", "StorageSettings.tsx"), "utf8");
+    (/is-settings-flow[\s\S]{0,120}min-height: auto/.test(cssFlow225) && storeFlow225.includes("is-settings-flow") && logsComp225.includes("is-settings-flow") ? ok : fail)(
+      "【225】数据管理页两段用 is-settings-flow 放开 min-height（.settings-section 默认 100% ⇒ 两段叠加中间空一整屏）"
+    );
+  }
+
+  {
+    /* 【226】工作日志管理（09-30 用户：「记忆有记忆管理，会话有归档管理，现在就是工作日志这个
+       没有地方管理」）—— 三块各管各的，⛔ 不许把「项目工作日志」和「引擎会话原档」混成一个东西。 */
+    const wlSrc226 = readFileSync(join(ROOT, "electron", "features", "work-logs.ts"), "utf8");
+    const regSrc226 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
+    const wlComp226 = readFileSync(join(ROOT, "src", "features", "storage-settings", "WorkLogsSection.tsx"), "utf8");
+    const oldBlock226 = readFileSync(join(ROOT, "src", "features", "storage-settings", "CodexLogsSection.tsx"), "utf8");
+    (/work-logs:scan/.test(wlSrc226) && /work-logs:read/.test(wlSrc226) && /work-logs:delete/.test(wlSrc226) ? ok : fail)(
+      "【226】work-logs 三通道齐（scan 扫各项目 memory / read 看正文 / delete 删文件）"
+    );
+    (wlSrc226.includes(".codex-harness") && /MEMORY\.md/.test(wlSrc226) && /logs/.test(wlSrc226) ? ok : fail)(
+      "【226】数据源是**项目里的工作日志**（<项目>/.codex-harness/memory/**）—— 不是引擎会话原档"
+    );
+    ((regSrc226.match(/<WorkLogsSection/g) || []).length === 1 && !/WorkLogsSection/.test(readFileSync(join(ROOT, "src", "features", "storage-settings", "StorageSettings.tsx"), "utf8")) ? ok : fail)(
+      "【226】WorkLogsSection 只挂在设置页注册表一次（同【225】的重复挂载坑）"
+    );
+    (!/Codex 工作日志/.test(oldBlock226) && /引擎会话原档/.test(oldBlock226) ? ok : fail)(
+      "【226】会话原档那块不许自称「工作日志」（两个概念混淆正是用户三次纠正的点）"
+    );
+    (/toggle\(allPaths, !allPicked\)/.test(wlComp226) ? ok : fail)(
+      "【226】工作日志的全选/取消全选也用 toggle(allPaths, !allPicked)（别重犯空循环）"
+    );
   }
 }
