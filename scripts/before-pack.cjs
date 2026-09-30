@@ -56,6 +56,11 @@ function reachableAssets(assetsDir, entryNames) {
     //    ⇒ 整批字体被判「陈旧」待删，**安全阀（阈值 30）也兜不住**（闭包 167 ≥ 30）——
     //    与 v0.0.27 事故同型：判据不完整 ⇒ 删活文件，装出来的包里公式字体全 404。
     for (const m of body.matchAll(/url\(\s*["']?\.?\/?([A-Za-z0-9_$.\-]+\.(?:woff2?|ttf|otf|eot|svg|png|jpe?g|gif|webp|avif|ico))["']?\s*\)/g)) if (existsIn(m[1])) queue.push(m[1]);
+    // ⑤ Vite 的 `?url` 资产导入：编译成 new URL(`xxx.ext`, import.meta.url)（**不带 assets/ 前缀**）。
+    //    ⛔ 09-30 实测踩到：ui-skin 组件库的 8 个 .gz 与办公室 bg.webp 全靠这条被引用，
+    //    ①②③④ 都不认这种形态 ⇒ 被判「陈旧」待删（装出来的包里换肤/办公室背景全 404）。
+    //    import.meta.url 相对资产自身目录（= assets/），basename 直解即可。
+    for (const m of body.matchAll(/new URL\(\s*[`'"]([A-Za-z0-9_$.\-]+\.(?:gz|webp|png|jpe?g|gif|svg|avif|ico|woff2?|ttf|otf|mp3|mp4|json|html))[`'"]\s*,\s*import\.meta\.url\s*\)/g)) if (existsIn(m[1])) queue.push(m[1]);
   }
   return live;
 }

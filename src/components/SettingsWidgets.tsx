@@ -1,3 +1,5 @@
+import { useSkinBinding } from "../hooks/use-skin-binding";
+import { SkinHost } from "./SkinHost";
 import type { ReactNode } from "react";
 import { Search, X } from "lucide-react";
 
@@ -190,6 +192,21 @@ export function ToggleSwitch({
   title?: string;
   onChange: (next: boolean) => void;
 }) {
+  /* 控件皮肤（用户可换）：绑定了 Uiverse 元素 ⇒ 用皮肤宿主渲染（Shadow DOM 隔离），
+     点击/勾选语义不变；未绑定走默认开关。 */
+  const skin = useSkinBinding("toggle-switch");
+  if (skin) {
+    return (
+      <SkinHost
+        elementId={skin}
+        label={label}
+        checked={checked}
+        disabled={disabled}
+        onToggle={(next) => { if (!disabled) onChange(next); }}
+        className="ui-skin-toggle"
+      />
+    );
+  }
   return (
     <button
       type="button"

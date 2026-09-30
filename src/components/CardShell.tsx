@@ -1,4 +1,6 @@
 import { CircleCheck, X } from "lucide-react";
+import { useSkinBinding } from "../hooks/use-skin-binding";
+import { SkinHost } from "./SkinHost";
 import { useCallback, useState } from "react";
 
 /** 卡片状态：pending=等待批准，running=执行中，done=成功，error=失败，interrupted=被中断 */
@@ -6,6 +8,9 @@ export type ActionStatus = "pending" | "running" | "done" | "error" | "interrupt
 
 /** 加载中转圈（全局复用；原先定义在 App.tsx，迁到这里供卡片壳与页面共用） */
 export function Spinner() {
+  // 控件皮肤（用户可换）：绑定了 Uiverse 加载器 ⇒ 皮肤宿主渲染；未绑定走默认转圈。
+  const skin = useSkinBinding("loader");
+  if (skin) return <SkinHost elementId={skin} className="ui-skin-loader" aria-label="加载中" />;
   return <span className="spinner" aria-label="加载中" />;
 }
 

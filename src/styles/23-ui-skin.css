@@ -1,0 +1,146 @@
+/* 控件皮肤（Uiverse 工坊）：设置页 + 皮肤宿主的容器样式。
+   ⛔ 社区元素自身的样式都在各自 Shadow DOM 里，这里只管「工坊页面」与宿主占位。 */
+
+/* ── 设置页骨架 ── */
+.ui-skin-page { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.ui-skin-page-head h3 { margin: 0 0 4px; font-size: 14px; }
+.ui-skin-page-head p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+.ui-skin-workshop {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 12px;
+  min-height: 420px;
+  align-items: start;
+}
+
+/* ── 左列：原型清单 ── */
+.ui-skin-slots { display: flex; flex-direction: column; gap: 8px; }
+.ui-skin-hint { margin: 0; color: var(--muted); font-size: 11.5px; }
+
+.ui-skin-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text);
+}
+.ui-skin-slot:hover { border-color: var(--muted); }
+.ui-skin-slot.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+
+.ui-skin-slot-label { font-size: 12.5px; font-weight: 600; }
+.ui-skin-slot-sub { font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-skin-slot-bound { font-size: 10.5px; color: var(--ok); display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ui-skin-slot-bound span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-skin-slot-clear { cursor: pointer; font-style: normal; color: var(--muted); padding: 0 3px; border-radius: 4px; }
+.ui-skin-slot-clear:hover { color: var(--red, #d94f43); background: rgba(0, 0, 0, 0.06); }
+.ui-skin-slot-unbound { font-size: 10.5px; color: var(--muted); }
+
+.ui-skin-note { margin: 4px 0 0; color: var(--muted); font-size: 10.5px; line-height: 1.6; }
+
+/* ── 右侧：库浏览器 ── */
+.ui-skin-browser { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ui-skin-cats { display: flex; gap: 6px; flex-wrap: wrap; }
+.ui-skin-cat {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+}
+.ui-skin-cat.active { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
+.ui-skin-cat i { font-style: normal; opacity: 0.6; margin-left: 3px; }
+
+.ui-skin-search {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+.ui-skin-search:focus { border-color: var(--accent); }
+
+.ui-skin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 8px;
+  max-height: 430px;
+  overflow: auto;
+  padding: 2px;
+}
+
+.ui-skin-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+.ui-skin-cell:hover { border-color: var(--accent); }
+.ui-skin-cell.bound { border-color: var(--ok); box-shadow: 0 0 0 1px var(--ok) inset; }
+
+.ui-skin-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 86px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: repeating-conic-gradient(#8882 0% 25%, transparent 0% 50%) 50% / 14px 14px; /* 透明底棋盘格 */
+}
+
+.ui-skin-cell-name {
+  font-size: 10.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-skin-cell-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 9.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--ok);
+  color: #fff;
+}
+
+.ui-skin-more {
+  align-self: center;
+  padding: 6px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+.ui-skin-more:hover { border-color: var(--accent); }
+.ui-skin-empty { color: var(--muted); font-size: 12px; margin: 8px 0; }
+
+/* ── 皮肤宿主（应用内实例）── */
+.skin-host { display: inline-flex; align-items: center; justify-content: center; }
+.skin-host.ui-skin-loader { display: inline-flex; }
+.skin-host.ui-skin-toggle { display: inline-flex; }

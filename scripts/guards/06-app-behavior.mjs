@@ -2806,4 +2806,59 @@ w.postMessage({id:1,op:"list",root});
     );
   }
 
+
+  /* ══ 【234】控件皮肤（Uiverse Galaxy，MIT；09-30 深夜）═══════════════
+     机制沉基座（lib/ui-skin + components/SkinHost），域只做工坊 UI。
+     ⛔ 数据在 src/lib/ui-skin/data/*.gz（2.3MB）；正文懒解压，别把 34MB 原文打进包。 */
+  if (!existsSync(join(ROOT, "src", "lib", "ui-skin", "data"))) {
+    /* 库数据不在（未 ingest）⇒ 跳过 */
+  } else {
+    const skinLib = join(ROOT, "src", "lib", "ui-skin");
+    const catalogSrc = readFileSync(join(ROOT, "src", "features", "ui-skin", "catalog.gen.ts"), "utf8");
+
+    /* ① 目录规模：11 类 3802 项（源变化后重跑 ingest 并同步这两个数） */
+    ((catalogSrc.match(/"id":/g) || []).length === 3802 ? ok : fail)(
+      "【234】库目录 3802 项（重跑 ingest 后同步）"
+    );
+    (readdirSync(join(skinLib, "data")).filter((x) => x.endsWith(".html.gz")).length === 11 ? ok : fail)(
+      "【234】11 个类目 gzip 数据在位"
+    );
+
+    /* ② ⛔ 皮肤渲染必须走 Shadow DOM（3800 个社区类名会与应用/互相撞车；不隔离必炸） */
+    const skinHostSrc = readFileSync(join(ROOT, "src", "components", "SkinHost.tsx"), "utf8");
+    (skinHostSrc.includes("attachShadow") && skinHostSrc.includes("innerHTML") ? ok : fail)(
+      "【234】皮肤宿主用 Shadow DOM 渲染（类名隔离）"
+    );
+
+    /* ③ ⛔ 分层：基座原语（SettingsWidgets/CardShell）只经 useSkinBinding 读绑定，
+       绝不 import 域层（ui-skin 工坊）——架构红线 */
+    const widgetsSrc = readFileSync(join(ROOT, "src", "components", "SettingsWidgets.tsx"), "utf8");
+    const cardShellSrc = readFileSync(join(ROOT, "src", "components", "CardShell.tsx"), "utf8");
+    (!widgetsSrc.includes("features/ui-skin") && !cardShellSrc.includes("features/ui-skin") ? ok : fail)(
+      "【233→234】基座原语不 import 域层（皮肤机制在 lib，工坊在 features）"
+    );
+
+    /* ④ 两个真实接线点在位（绑定存了没人消费 = 骗人） */
+    (widgetsSrc.includes('useSkinBinding("toggle-switch")') && widgetsSrc.includes("SkinHost") ? ok : fail)(
+      "【234】ToggleSwitch 接线（绑定即换肤）"
+    );
+    (cardShellSrc.includes('useSkinBinding("loader")') && cardShellSrc.includes("SkinHost") ? ok : fail)(
+      "【234】Spinner 接线（绑定即换肤）"
+    );
+
+    /* ⑤ 设置页三件套（类型 / 导航 / 注册表 + 帮助总览） */
+    const typesSrc234 = readFileSync(join(ROOT, "src", "features", "app-view", "types.ts"), "utf8");
+    const catalogsSrc234 = readFileSync(join(ROOT, "src", "features", "app-view", "helpers", "catalogs.ts"), "utf8");
+    const registrySrc234 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
+    const helpSrc = readFileSync(join(ROOT, "src", "components", "HelpDialog.tsx"), "utf8");
+    (typesSrc234.includes('"ui-skin"') ? ok : fail)("【234】SettingsPage 类型含 ui-skin");
+    (catalogsSrc234.includes('"ui-skin", "控件皮肤"') ? ok : fail)("【234】设置导航含「控件皮肤」");
+    (registrySrc234.includes("UiSkinSettingsSection") ? ok : fail)("【234】设置注册表含控件皮肤页");
+    (helpSrc.includes("控件皮肤") ? ok : fail)("【234】帮助总览含控件皮肤（守卫【32】同款义务）");
+
+    /* ⑥ ingest 脚本可复现：剥 script 兜底在位 */
+    const ingestSrc = readFileSync(join(ROOT, "scripts", "gen-ui-skin-library.mjs"), "utf8");
+    (ingestSrc.includes("stripScript") ? ok : fail)("【234】ingest 剥 script 兜底（当前源 0 script，防未来换源）");
+  }
+
 }
