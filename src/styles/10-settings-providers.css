@@ -325,7 +325,7 @@
   color: var(--red);
 }
 .model-editor-backdrop {
-  z-index: 40;
+  z-index: 900;
 }
 .model-editor-modal {
   border: 1px solid var(--line);

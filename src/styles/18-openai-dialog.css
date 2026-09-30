@@ -1119,7 +1119,7 @@
 }
 
 /* ── 套餐市场二级弹窗 ── */
-.relay-plans-backdrop { z-index: 40; }
+.relay-plans-backdrop { z-index: 900; }
 .relay-plans-modal {
   background: var(--panel);
   border: 1px solid var(--line-soft);

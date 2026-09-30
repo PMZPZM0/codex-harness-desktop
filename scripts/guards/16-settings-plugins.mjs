@@ -11,7 +11,7 @@
  *
  * 共享面由 ./_ctx.mjs 注入。
  */
-import { C, ROOT, join, ok, fail, readFileSync, existsSync, codeOnly } from "./_ctx.mjs";
+import { C, ROOT, join, ok, fail, readFileSync, existsSync, codeOnly, walk } from "./_ctx.mjs";
 
 export async function run() {
   console.log(C.bold("\n【195】设置·插件页的内置卡分区"));
@@ -312,6 +312,38 @@ export async function run() {
        **同级**，而确认框渲染在设置弹窗之前，同级按 DOM 顺序仍然输）⇒ 写成等于基准值同样是 bug。 */
     (askRule && baseRule && Number(askRule[1]) > Number(baseRule[1]) ? ok : fail)(
       `【227】确认框必须严格高于设置弹窗层级（.agent-ask-backdrop = ${askRule ? askRule[1] : "缺失"} vs .modal-backdrop = ${baseRule ? baseRule[1] : "缺失"}）—— 同级或更低，设置页里的确认框就会被设置面板压住（用户现场截图）`
+    );
+    /* ⛔ 09-30 第三次实测（隔离实例 + elementFromPoint）：确认框 900 与模型引导 / 帮助**同值**，
+       又回到「比 DOM 顺序」的老坑 —— 设置页里点「清理」，elementFromPoint 命中的是
+       model-guide-lines，确认框整个被压。判据仍是取值比较：确认框必须严格高于所有 900 系弹层。 */
+    const css14 = readFileSync(join(ROOT, "src", "styles", "14-model-onboarding.css"), "utf8");
+    const guideRule227 = /\.model-guide-backdrop\s*\{[^}]*z-index:\s*(\d+)/.exec(css14);
+    const helpRule227 = /\.help-backdrop\s*\{[^}]*z-index:\s*(\d+)/.exec(css14);
+    (askRule && (!guideRule227 || Number(askRule[1]) > Number(guideRule227[1])) && (!helpRule227 || Number(askRule[1]) > Number(helpRule227[1])) ? ok : fail)(
+      `【227】确认框必须严格高于引导/帮助弹层（.agent-ask-backdrop = ${askRule ? askRule[1] : "缺失"} vs .model-guide-backdrop = ${guideRule227 ? guideRule227[1] : "缺失"} / .help-backdrop = ${helpRule227 ? helpRule227[1] : "缺失"}）—— 同值又比 DOM 顺序，确认框照样被压`
+    );
+    /* ⛔⛔ 同类问题不止确认框（09-30 用户第二次报「弹窗全在设置界面弹窗下面」）：
+       `.<X>-backdrop` 与 .modal-backdrop 写在同一元素上时**特异性相同** ⇒ 按**源顺序**决定，
+       后加载的 CSS 文件赢 ⇒ 实际生效值 = 那个类自己的 z-index（实测 40~260，它们的本意是
+       「设置内遮罩」的语义）⇒ 二级弹窗被设置弹窗整个盖住。
+       判据：**动态扫源码**里所有 `modal-backdrop <X>` 的组合，逐个查 CSS 里的 z-index，必须 ≥ 900。
+       ⛔ 不写成固定清单 —— 以后新加同类弹窗必须被这条自动抓到（否则就是第三次踩）。 */
+    const cssAll227 = walk(join(ROOT, "src", "styles"), [".css"]).map((f) => readFileSync(f.path, "utf8")).join("\n");
+    const stacked = new Set();
+    for (const f of walk(join(ROOT, "src"), [".tsx", ".ts"])) {
+      const text = readFileSync(f.path, "utf8");
+      const re = /className=(?:"|`)([^"`]*modal-backdrop[^"`]*)(?:"|`)/g;
+      let m;
+      while ((m = re.exec(text))) {
+        for (const c of m[1].split(/\s+/)) if (c && c !== "modal-backdrop" && !c.includes("{")) stacked.add(c);
+      }
+    }
+    const lowStacked = [...stacked].filter((cls) => {
+      const m = new RegExp(`\\.${cls.replace(/-/g, "\\-")}\\b[^{}]*\\{[^}]*?z-index:\\s*(\\d+)`).exec(cssAll227);
+      return m && Number(m[1]) < 900;
+    });
+    (lowStacked.length === 0 ? ok : fail)(
+      `【227】与 .modal-backdrop 叠用的弹窗遮罩必须 ≥ 900（同特异性按源顺序，后加载的类会把 400 压回去 ⇒ 弹窗被设置弹窗盖住）；实测 ${stacked.size} 个叠加弹窗${lowStacked.length ? "，偏低：" + lowStacked.join(" / ") : "全部达标"}`
     );
     (baseRule && Number(baseRule[1]) === 400 ? ok : fail)(
       "【227】.modal-backdrop 保持 400（全局模态基线，别被局部样式覆盖）"
