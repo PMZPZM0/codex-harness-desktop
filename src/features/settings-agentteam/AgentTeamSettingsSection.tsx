@@ -13,7 +13,6 @@ export function AgentTeamSettingsSection(props: AgentTeamSettingsSectionProps) {
   const { setSettingsPage } = props;
   return (
     <>
-      (
                     <section className="settings-section stack">
                       <div className="settings-copy"><h2>专家和专家团<PageInfo text={<>单体专家与多角色团队的总入口。</>} helpKey="agentteam" label="专家/专家团" /></h2></div>
                       <div className="hub-card-grid hub-card-grid-3">
@@ -34,7 +33,6 @@ export function AgentTeamSettingsSection(props: AgentTeamSettingsSectionProps) {
                         </button>
                       </div>
                     </section>
-                  )
     </>
   );
 }

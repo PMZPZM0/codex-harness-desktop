@@ -12,7 +12,6 @@ export function AutomationSettingsSection(props: AutomationSettingsSectionProps)
   const { setSettingsPage } = props;
   return (
     <>
-      (
                     <section className="settings-section stack">
                       <div className="settings-copy"><h2>自动化</h2><p>浏览器、桌面与 RPA 三类自动化能力的总入口。</p></div>
                       <div className="hub-card-grid">
@@ -33,7 +32,6 @@ export function AutomationSettingsSection(props: AutomationSettingsSectionProps)
                         </button>
                       </div>
                     </section>
-                  )
     </>
   );
 }
