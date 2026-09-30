@@ -258,4 +258,26 @@ export async function run() {
       "【209】3D 技能里不许出现不存在的能力名（说了有工具而实际没有 = 更糟）"
     );
   }
+
+  {
+    /* 【225】设置页区块不许重复挂载（09-30 实测事故）：CodexLogsSection 早已挂在
+       设置页注册表的 storage 页，我这轮误判「没挂载」又在 StorageSettings 里挂了一遍
+       ⇒ 同一页渲染两次（用户截图铁证）。
+       ⛔ 判据：注册表里挂一次；StorageSettings.tsx 里**零次**（它只负责自己的那部分）。 */
+    const regSrc225 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
+    const storeSrc225 = readFileSync(join(ROOT, "src", "features", "storage-settings", "StorageSettings.tsx"), "utf8");
+    const regCount225 = (regSrc225.match(/<CodexLogsSection/g) || []).length;
+    (regCount225 === 1 ? ok : fail)(
+      "【225】设置页注册表里 CodexLogsSection 恰好挂一次（挂两次 = 同一页渲染两遍）"
+    );
+    (!/CodexLogsSection/.test(storeSrc225) ? ok : fail)(
+      "【225】StorageSettings.tsx 里不许再挂 CodexLogsSection（注册表才是唯一挂载点）"
+    );
+    /* 附带：Codex 日志的项目归属靠首行 cwd，首行含 base_instructions 会远超 16KB ——
+       固定小缓冲读必失败（实测 15 个文件只认出 3 个）。锚「分块读到行尾」的实现形态。 */
+    const logsSrc225 = readFileSync(join(ROOT, "electron", "features", "codex-logs.ts"), "utf8");
+    (/const CHUNK = 64 \* 1024/.test(logsSrc225) && /indexOf\("\\n"\)/.test(logsSrc225) && /grab\("cwd"\)/.test(logsSrc225) ? ok : fail)(
+      "【225】codex-logs 首行解析：分块读到行尾 + 正则兜底（固定 16KB 缓冲会让项目分组全变「未知项目」）"
+    );
+  }
 }
