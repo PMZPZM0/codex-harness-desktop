@@ -42,7 +42,7 @@ export function StorageSection({ onNotice, onClearMemoryCache, openAppConfirm }:
   };
   return (
     <section className="settings-section stack is-settings-flow">
-      <div className="settings-copy"><h2>数据管理<PageInfo text={<>查看各数据目录占用，并清理可安全的缓存。会话历史（rollout 原档）<strong>不随缓存清理</strong>；要按项目 / 日期翻看与删除会话记录，用页面底部的「Codex 日志」。</>} /></h2></div>
+      <div className="settings-copy"><h2>数据管理<PageInfo text={<>查看各数据目录占用，并清理可安全的缓存。会话历史（rollout 原档）<strong>不随缓存清理</strong>；要归档或永久删除会话，去「归档管理」页。</>} /></h2></div>
       <div className="storage-list">
         {info?.items.map((item) => (
           <div className="storage-row" key={item.key}>

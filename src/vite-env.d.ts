@@ -778,11 +778,7 @@ interface Window {
     revealInFolder(path: string): Promise<{ ok: boolean }>;
     /* 删分镜表的工作区文件（只删 .drama-canvas/storyboards/<name>.json 这一个文件；不存在时幂等返回 removed:false） */
     dramaCanvasStoryboardFileRemove(input: { workspace: string; name: string }): Promise<{ removed: boolean }>;
-    /* 扫 Codex 会话记录（rollout 原档）：读每个文件首行的 cwd 做项目归属、stat 拿体积。按项目 + 日期分组展示用，不删任何东西 */
-    codexLogsScan(): Promise<{ files: Array<{ path: string; rel: string; bytes: number; mtime: number; cwd: string; project: string; id: string; archived: boolean }>; sessionsDir: string; archivedDir: string }>;
-    /* 删会话记录（销毁性）：只删 codex-home/sessions|archived_sessions 下的 rollout-*.jsonl 文件；级联剔除 session_index.jsonl 里的对应条目（否则会话列表留死条目） */
-    codexLogsDelete(input: { paths: string[] }): Promise<{ deleted: number; bytes: number; failed: string[]; indexCleaned: number }>;
-    /* 扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 与会话原档（codex-logs）是两回事 */
+    /* 扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事 */
     workLogsScan(): Promise<{ projects: Array<{ cwd: string; name: string; memoryDir: string; exists: boolean; bytes: number; files: Array<{ path: string; rel: string; kind: string; bytes: number; mtime: number }> }> }>;
     /* 读一份工作日志/记忆文件的正文（UI 内查看）。路径必须落在某个项目的 .codex-harness/memory 之下；>512KB 拒绝（提示去文件管理器打开） */
     workLogsRead(input: { path: string }): Promise<{ path: string; text: string; bytes: number; mtime: number }>;

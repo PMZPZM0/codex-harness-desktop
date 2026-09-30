@@ -2,7 +2,7 @@
  * work-logs 域的 IPC handler（09-30 用户立案：「记忆，有记忆管理，会话有归档管理，现在就是
  * 工作日志这个没有地方管理懂吗」）。
  *
- * 管的**不是**会话原档（那是 codex-logs 域 / 归档管理页的事），而是 **Codex 在每个项目里
+ * 管的**不是**会话本身（会话的归档 / 删除在「归档管理」页），而是 **Codex 在每个项目里
  * 写下的工作日志与项目记忆**：`<项目>/.codex-harness/memory/**`
  *   · MEMORY.md          项目长期记忆
  *   · LESSONS.md         坑与纪律
@@ -11,7 +11,7 @@
  *   · archive/ project/  归档与项目资料
  *
  * 项目清单来源：rollout 首行扫出的 cwd 集合（曾跑过会话的目录）+ 当前活跃会话的工作目录。
- * 安全口径与 codex-logs 同源：目标由主进程自己拼、必须落在该项目的 `.codex-harness/memory`
+ * 安全口径：目标由主进程自己拼、必须落在该项目的 `.codex-harness/memory`
  * 之下、必须是 `.md`/`.txt` **文件**（目录拒绝）。
  * ⛔ 删除是销毁性的（工作日志删了不重建），UI 侧必须二次确认。
  */
@@ -46,7 +46,7 @@ async function listRolloutFiles(dir: string, depth = 0, out: string[] = []): Pro
   return out;
 }
 
-/** 读 rollout 首行拿 cwd（与 codex-logs 同口径：分块读到行尾 + 正则兜底 —— 首行含
+/** 读 rollout 首行拿 cwd（分块读到行尾 + 正则兜底 —— 首行含
     base_instructions，实测 22K 字符，固定小缓冲必失败）。 */
 async function cwdOfRollout(file: string): Promise<string> {
   try {
