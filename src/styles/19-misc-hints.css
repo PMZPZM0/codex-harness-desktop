@@ -619,13 +619,6 @@
   transition: color 0.22s ease, transform 0.22s ease;
 }
 .team-rail-node:hover { color: var(--text); }
-/* 办公室预览入口（09-30 整体下线待重做，**接口保留位**）——虚线弱化观感，与成员节点区分 */
-.team-rail-office .team-rail-office-avatar {
-  background: var(--panel-2);
-  color: var(--muted);
-  border: 1px dashed var(--line);
-}
-.team-rail-office:hover .team-rail-office-avatar { color: var(--text); border-color: var(--muted); }
 .team-rail-avatar {
   position: relative;
   width: 34px;
@@ -1947,7 +1940,9 @@
 .history-search-snippet mark { background: color-mix(in srgb, var(--accent, #4b7be5) 22%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
 .history-search-more { margin-top: 2px; color: var(--muted); font-size: 10.5px; opacity: 0.8; }
 
-/* 办公室预览节点（09-25）：成员流转轨末位的独立入口，与成员节点同尺寸但用中性色区分 */
+/* 办公室预览节点（09-25 立）：成员流转轨末位的独立入口。
+   ⛔ 09-30 实现整体删除（用户「太丑了，直接删了这个功能」），但**按钮与接口按要求保留**
+   （用户：「接口可以保留，按键保留」）—— 重做时只需实现 onOpenOffice 回调。 */
 .team-rail-node.team-rail-office {
   margin-top: 6px;
   padding-top: 10px;
