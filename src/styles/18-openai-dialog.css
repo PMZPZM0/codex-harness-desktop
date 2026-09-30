@@ -101,8 +101,14 @@
   font-size: 13px;
   cursor: pointer;
   flex: none;
+  /* ⛔ 必须给显式宽度：AppSelect 根无宽度约束时，内部 .app-select-trigger 的 width:100%
+     会把根撑满整个 flex 行 ⇒ 同行的 .settings-toggle-text 被挤到 0 宽、说明文字竖排
+     （09-30 用户截图：一行一个字）。 */
+  width: 190px;
 }
 .accel-select:hover { border-color: var(--muted); }
+.accel-help-btn { margin-left: auto; color: var(--muted); }
+.accel-help-detail { line-height: 1.7; }
 .accel-restart-hint { color: #f59e0b; margin-top: 8px; }
 
 /* Telegram Bot Token 连接面板 */

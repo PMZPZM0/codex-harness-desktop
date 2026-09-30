@@ -10,7 +10,7 @@
  */
 import { AppSelect } from "../../components/AppSelect";
 import { useEffect, useState } from "react";
-import { Code2, Copy, FolderOpen, FolderTree, Globe2, Keyboard, Monitor, MonitorUp, PanelRightOpen, RefreshCw, Search, ShieldCheck, Zap } from "lucide-react";
+import { Code2, Copy, FolderOpen, FolderTree, Globe2, HelpCircle, Keyboard, Monitor, MonitorUp, PanelRightOpen, RefreshCw, Search, ShieldCheck, Zap } from "lucide-react";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { Spinner } from "../../components/CardShell";
@@ -148,6 +148,7 @@ function DataDirEditor({ currentPath, setNotice }: { currentPath: string; setNot
 
 export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
   const { globalPermApproval, applyGlobalPermissionMode, workspace, chooseWorkspace, userDataPath, setNotice, rightOpen, setRightOpen, capabilityHint, desktopAuto, groupBusy, toggleDesktopAuto, browserAuto, toggleBrowserAuto, ponytailOn, applyGroup, hardwareAccel, changeHardwareAccel, restartPending, SHORTCUT_GROUPS, setShortcutsOpen, engineVersion, engineCheck, engineUpdating, checkEngineUpdateNow, performEngineUpdateNow, engineUpdatePercent, engineUpdateStageText, engineUpdateLog, engineUpdateResult, relaunchCountdown, downloadSource } = props;
+  const [showAccelHelp, setShowAccelHelp] = useState(false);
   /** 引擎更新的实际取源（供卡片如实显示；口径见 ENGINE_SOURCE_LABEL）。 */
   const engineSourceLabel = ENGINE_SOURCE_LABEL[String(downloadSource ?? "auto")] ?? ENGINE_SOURCE_LABEL.auto;
   return (
@@ -218,13 +219,18 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                     </div>
 
                     <div className="settings-card">
-                      <div className="settings-card-head"><Zap size={15} /><strong>显示与性能</strong></div>
+                      <div className="settings-card-head"><Zap size={15} /><strong>显示与性能</strong><button type="button" className="icon-button accel-help-btn" title="渲染模式说明" aria-expanded={showAccelHelp} onClick={() => setShowAccelHelp((v) => !v)}><HelpCircle size={13} /></button></div>
                       <div className="settings-card-body">
                         <div className="settings-toggle-row">
                           <span className="settings-toggle-icon"><MonitorUp size={16} /></span>
-                          <span className="settings-toggle-text"><strong>硬件加速</strong><small>控制应用渲染走 GPU 还是 CPU 软件渲染。<br />· 自动：由 Chromium 判断（健康显卡自动硬件加速，弱核显/旧显卡默认软件渲染）<br />· 强制开启：忽略显卡黑名单走 GPU——低配机/集成显卡上界面卡顿时建议选这个<br />· 关闭：完全用 CPU 渲染（个别显卡与 GPU 通道冲突导致花屏/闪烁时用）<br />修改后需重启应用生效。</small></span>
+                          <span className="settings-toggle-text"><strong>硬件加速</strong><small>控制渲染走 GPU 还是 CPU 软件渲染；三种模式的详细差异点卡头「?」查看。修改后需重启应用。</small></span>
                           <AppSelect value={hardwareAccel} onChange={(v) => changeHardwareAccel(v as "auto" | "force" | "off")} options={[{ value: "auto", label: "自动" }, { value: "force", label: "强制开启" }, { value: "off", label: "关闭" }]} className="accel-select" />
                         </div>
+                        {showAccelHelp && <div className="settings-card-hint accel-help-detail">
+                          · <strong>自动</strong>：由 Chromium 判断（健康显卡自动硬件加速，弱核显/旧显卡默认软件渲染）<br />
+                          · <strong>强制开启</strong>：忽略显卡黑名单走 GPU——低配机/集成显卡上界面卡顿时建议选这个<br />
+                          · <strong>关闭</strong>：完全用 CPU 渲染（个别显卡与 GPU 通道冲突导致花屏/闪烁时用）
+                        </div>}
                         {restartPending && <p className="settings-card-hint accel-restart-hint">⚡ 硬件加速设置已保存，重启应用后生效。</p>}
                       </div>
                     </div>
