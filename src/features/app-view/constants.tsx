@@ -8,7 +8,7 @@ import "./constants/02-identity-onboarding";
 import "./constants/03-ui-options";
 import "./constants/04-run-phrases-thresholds";
 
-export { NOTICE_TTL_MS, NOTICE_MAX, HOOK_EVENT_LABELS, CJK_TEXT_RE, SKILL_ZH_NOTES } from "./constants/01-notices-labels";
+export { NOTICE_TTL_MS, NOTICE_MAX, HOOK_EVENT_LABELS, CJK_TEXT_RE, SKILL_ZH_NOTES, BUILTIN_DISTRIBUTED_SKILLS } from "./constants/01-notices-labels";
 export { IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, EXPERT_CATEGORY_LABELS, EXPERT_CATEGORY_DEFS, MEMORY_CATEGORIES, MEMBER_LABELS } from "./constants/02-identity-onboarding";
 export { LOCAL_MODEL_PRESETS, SHORTCUT_GROUPS, QUICK_SITES, RRULE_DAY_NAMES, CHANNEL_STATUS_KEY, SANDBOX_MODES, APPROVAL_MODES, COMPOSER_FILE_CHIP_ICON } from "./constants/03-ui-options";
 export { RUN_PHRASES, RUN_PHRASES_BY_ACTIVITY, DIFF_VIRTUAL_THRESHOLD, DELEGATE_RAIL_LINGER_MS } from "./constants/04-run-phrases-thresholds";

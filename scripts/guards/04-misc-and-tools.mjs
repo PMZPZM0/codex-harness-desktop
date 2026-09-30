@@ -383,6 +383,19 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (entryNames230.length > 0 && entryNames230.every((n) => noteKeys230.includes(n)) ? ok : fail)(
       `【229】内置技能中文导读全覆盖（entries ${entryNames230.length} 个 / notes ${noteKeys230.length} 个；缺：${entryNames230.filter((n) => !noteKeys230.includes(n)).join(",") || "无"}）`
     );
+    /* ⛔ # 面板保底名单同步（09-30 用户：「就算是内置，也要在#面板里面透出来」）：
+       constants 的 BUILTIN_DISTRIBUTED_SKILLS 必须 = 00-skill-zh-notes keys + 目录型内置（zy）——
+       名单漏一个 = 那个内置技能在 # 面板缺席（引擎清单要等重扫，保底是唯一无条件透出的通道）。 */
+    const fallback230src = readFileSync(join(ROOT, "src", "features", "app-view", "constants", "01-notices-labels.tsx"), "utf8");
+    const fbBlock230 = /export const BUILTIN_DISTRIBUTED_SKILLS: string\[\] = \[([\s\S]*?)\];/.exec(fallback230src)?.[1] ?? "";
+    const fbNames230 = [...fbBlock230.matchAll(/"([a-z0-9-]+)"/g)].map((m) => m[1]);
+    const expected230set = new Set([...noteKeys230, "zy-cinematic-realism"]);
+    (fbNames230.length === expected230set.size && fbNames230.every((n) => expected230set.has(n)) ? ok : fail)(
+      `【229】# 面板保底名单与内置技能一一对应（名单 ${fbNames230.length} 个 / 应为 ${expected230set.size} 个；缺：${[...expected230set].filter((n) => !fbNames230.includes(n)).join(",") || "无"}）`
+    );
+    (/BUILTIN_DISTRIBUTED_SKILLS\] push\(\{ name \}\)|for \(const name of BUILTIN_DISTRIBUTED_SKILLS\) push/.test(readAppUi()) ? ok : fail)(
+      "【229】mergedSkillCatalog 已接保底透出（名单加了但没合并 = 白搭）"
+    );
   }
 }
 

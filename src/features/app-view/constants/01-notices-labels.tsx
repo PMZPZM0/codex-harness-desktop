@@ -88,3 +88,32 @@ const SKILL_ZH_NOTES: Record<string, string> = {
   "dongming-code-review": "代码审查：52 份语言规则 + 去误报协议 + 六步闭环（洞明专用）",
   "find-skills-find-skills": "技能发现：按需求在技能市场检索并安装合适的技能（市场插件形态）",
 };
+
+/** ⛔ 随应用分发的内置技能名单（09-30 用户：「就算是内置，也要在#面板里面透出来」）：
+ *  这些技能**启动时必然落盘** codexHome/skills（单文件常量 + zy 目录树），# 面板把它们作为
+ *  **保底来源**无条件透出 —— 引擎 skills/list 要等引擎重扫、目录扫描有时机差，都不该让
+ *  内置技能在 # 面板缺席。名单必须与 electron/builtin-skills.ts 的 entries + 目录型内置
+ *  （zy-cinematic-realism）一一对应（守卫【229】双向比对 electron/builtin-skills/00-skill-zh-notes.ts）。
+ *  市场安装的技能（cheat-on-content 等专家包）不在此列 —— 用户没装就不透出，免得引用落空。 */
+export const BUILTIN_DISTRIBUTED_SKILLS: string[] = [
+  "desktop-automation",
+  "video-generation",
+  "image-generation",
+  "3d-modeling",
+  "whitebox-video",
+  "self-tools",
+  "browser-skill",
+  "humanizer",
+  "no-ai-slop",
+  "i-have-adhd",
+  "document-convert",
+  "skill-authoring",
+  "memory-distill",
+  "self-review",
+  "memory-hygiene",
+  "memory-classify",
+  "skill-audit",
+  "memory-mcp-backend",
+  "harness-api",
+  "zy-cinematic-realism",
+];

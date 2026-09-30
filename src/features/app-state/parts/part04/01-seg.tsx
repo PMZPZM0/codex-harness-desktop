@@ -16,6 +16,7 @@ import { isImagePath } from "../../../../lib/is-image-path";
 import { itemText } from "../../../../lib/item-text";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, shouldRefreshSkillList, slashCommands, subAgentTools, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
+import { BUILTIN_DISTRIBUTED_SKILLS } from "../../../app-view/constants";
 import type { Bag } from "../bag-types";
 
 export function usePart04a(bag: Bag) {
@@ -263,6 +264,10 @@ bag.commandMatches = commandMatches as typeof bag.commandMatches;
     };
     for (const entry of bag.localSkills) push(entry);
     for (const entry of bag.settingsResources.skills) push(entry);
+    /* ⛔ 保底透出（09-30 用户：「就算是内置，也要在#面板里面透出来」）：随应用分发的内置技能
+       **启动时必然落盘**，但引擎清单要等重扫、目录扫描有时机差 —— 内置技能不许在 # 面板缺席。
+       去重逻辑保证：已在 localSkills / 引擎清单里的（信息更全）保留，缺席的由这份名单补上。 */
+    for (const name of BUILTIN_DISTRIBUTED_SKILLS) push({ name });
     return out;
   }, [bag.localSkills, bag.settingsResources.skills]);
 bag.mergedSkillCatalog = mergedSkillCatalog as typeof bag.mergedSkillCatalog;
