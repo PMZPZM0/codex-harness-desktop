@@ -19,11 +19,13 @@ export type OfficePoseKind =
   | "phone"     // 看手机
   | "doze"      // 打盹
   | "note"      // 翻资料 / 记笔记
+  | "gaming"    // 玩游戏（姿势复用 work：打字姿势 + 屏幕切游戏；09-30 用户点名）
+  | "slack"     // 摸鱼刷视频（姿势复用 phone；屏幕切短视频流）
   | "visit"     // 走到同事工位旁
   | "errand"    // 去接水 / 翻资料架 / 看白板
   | "absent";   // 没有会话 = 空工位
 
-export type ErrandSpot = "water" | "shelf" | "printer" | "restroom";
+export type ErrandSpot = "water" | "shelf" | "printer" | "restroom" | "treadmill" | "vending" | "tea";
 export type HandoffKind = "task" | "report" | "doc" | "chat";
 
 export type OfficePose = {
@@ -62,11 +64,12 @@ export const OFFICE_TICK_MS = 1200;
 
 type ActionSpec = { kind: OfficePoseKind; label: string; min: number; max: number };
 
-/** 工作中的短动作：绝大多数时间在敲键盘，偶尔抬头查点东西。 */
+/** 工作中的短动作：绝大多数时间在敲键盘，偶尔抬头查点东西 / 摸一下游戏。 */
 const BUSY_ACTIONS: ActionSpec[] = [
   { kind: "work", label: "编码中", min: 5, max: 9 },
   { kind: "note", label: "查资料", min: 2, max: 4 },
   { kind: "phone", label: "看消息", min: 2, max: 3 },
+  { kind: "gaming", label: "玩游戏中", min: 3, max: 5 },
 ];
 
 /** 空闲动作池（随机抽）。 */
@@ -76,6 +79,7 @@ const IDLE_ACTIONS: ActionSpec[] = [
   { kind: "phone", label: "看手机", min: 3, max: 5 },
   { kind: "doze", label: "打盹", min: 4, max: 7 },
   { kind: "note", label: "翻资料", min: 3, max: 5 },
+  { kind: "slack", label: "摸鱼刷视频", min: 3, max: 5 },
 ];
 
 const ERRAND_LABEL: Record<ErrandSpot, string> = {
@@ -83,8 +87,11 @@ const ERRAND_LABEL: Record<ErrandSpot, string> = {
   shelf: "去翻资料架",
   printer: "去打印",
   restroom: "去洗手间",
+  treadmill: "去跑步机",
+  vending: "去贩卖机",
+  tea: "去茶水台",
 };
-const ERRAND_SPOTS: ErrandSpot[] = ["water", "shelf", "printer", "restroom"];
+const ERRAND_SPOTS: ErrandSpot[] = ["water", "shelf", "printer", "restroom", "treadmill", "vending", "tea"];
 
 const HANDOFF_LABEL: Record<HandoffKind, string> = {
   task: "派任务",
@@ -138,9 +145,10 @@ export class OfficeDirector {
       if (roll < 0.1 && mates.length) {
         const to = this.pick(mates);
         this.roamCooldown = 4;
-        // 串门顺带递一份资料 —— 「员工之间交接」最自然的形态
-        this.pushHandoff(index, to, "doc");
-        return { kind: "visit", visitIndex: to, hold: this.span(4, 6), label: "去同事工位", variant };
+        // 串门：一半是递资料（飞卡），一半是纯聊天（气泡）—— 两种形态都出现才像真办公室
+        const kind: HandoffKind = this.rand() < 0.5 ? "doc" : "chat";
+        this.pushHandoff(index, to, kind);
+        return { kind: "visit", visitIndex: to, hold: this.span(4, 6), label: kind === "chat" ? "找同事聊天" : "去同事工位", variant };
       }
       if (roll < 0.2) {
         const spot = this.pick(ERRAND_SPOTS);
@@ -186,6 +194,24 @@ export class OfficeDirector {
     }
     this.prevRunning = running.slice();
     this.prevHas = hasThread.slice();
+  }
+
+  /**
+   * 交互（09-30 用户：「Marvis 那种，交互很重要」）：点设施派一个成员过去。
+   * 选人口径：优先**空闲**成员（不打断工作），没有空闲才打断一个在岗的；
+   * 已经在途中（visit/errand）的不选 —— 拉回来换目标会走出诡异折线。
+   * 返回是否派出成功（全屋无人 = false，调用方提示）。
+   */
+  dispatchErrand(spot: ErrandSpot, hasThread: boolean[]): boolean {
+    const candidates = this.poses
+      .map((pose, i) => ({ pose, i }))
+      .filter(({ pose, i }) => hasThread[i] && pose.kind !== "absent" && pose.kind !== "visit" && pose.kind !== "errand");
+    if (!candidates.length) return false;
+    const idle = candidates.filter(({ i }) => this.prevRunning[i] !== true);
+    const chosen = (idle.length ? idle : candidates)[0];
+    this.poses[chosen.i] = { kind: "errand", spot, hold: this.span(4, 6), label: ERRAND_LABEL[spot], variant: this.span(0, 2) };
+    this.roamCooldown = 3;
+    return true;
   }
 
   /** 推进一拍，返回快照（调用方拿去 setState）。 */

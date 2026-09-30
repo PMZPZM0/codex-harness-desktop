@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Building2, X, MessageSquare, Loader2, CircleDot, Users, Coffee, Footprints } from "lucide-react";
 import { OfficeScene, type OfficeMember } from "./OfficeScene";
-import { OfficeDirector, emptySnapshot, OFFICE_TICK_MS, type DirectorSnapshot } from "./office-director";
+import { OfficeDirector, emptySnapshot, OFFICE_TICK_MS, type DirectorSnapshot, type ErrandSpot } from "./office-director";
 
 type TeamMember = { id: string; name: string; profession: { zh: string; en: string }; description: string };
 type Team = { teamId: string; displayName: { zh: string; en: string }; profession: { zh: string; en: string }; description: { zh: string; en: string }; lead: TeamMember; members: TeamMember[]; enabled: boolean };
@@ -109,6 +109,24 @@ export function TeamOfficePreview({ teamId, onClose, teams, threads, runningThre
   const runningCount = memberStates.filter((m) => m.running).length;
   const activeCount = memberStates.filter((m) => m.threadId).length;
 
+  /* ── 交互（09-30 用户：「Marvis 那种，交互很重要」）：点设施 → 派一个成员过去。
+     全屋没有可派的成员时给出轻提示（不弹窗）。 */
+  const [facilityHint, setFacilityHint] = useState("");
+  const hintTimer = useRef<number | null>(null);
+  const handleFacilityClick = (spot: ErrandSpot) => {
+    const director = directorRef.current;
+    if (!director) return;
+    const has = sceneMembers.map((m) => m.hasThread);
+    if (director.dispatchErrand(spot, has)) {
+      setSnapshot(director.step(has, has));
+      setFacilityHint("");
+    } else {
+      setFacilityHint("办公室里没有可以派过去的成员（都还没开工）");
+      if (hintTimer.current) window.clearTimeout(hintTimer.current);
+      hintTimer.current = window.setTimeout(() => setFacilityHint(""), 2600);
+    }
+  };
+
   if (!teamId || !team) return null;
 
   /** 当前动作标签（visit 用被访者名字，比「去同事工位」具体）。 */
@@ -151,7 +169,9 @@ export function TeamOfficePreview({ teamId, onClose, teams, threads, runningThre
               members={sceneMembers}
               snapshot={snapshot}
               onOpenThread={(memberId) => { const target = memberStates.find((s) => s.member.id === memberId); if (target?.threadId) { onClose(); void openThread(target.threadId); } }}
+              onFacilityClick={handleFacilityClick}
             />
+            {facilityHint && <p className="team-office-org-caption" style={{ color: "#b45309" }}>{facilityHint}</p>}
             <p className="team-office-org-caption">CEO {team.lead?.name || "—"} 统筹 {team.members.length} 名成员；成员会话由 CEO 委派任务时创建并长期复用。</p>
           </div>
           <aside className="team-office-staff">

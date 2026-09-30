@@ -9,7 +9,7 @@
  * ⛔ 域组件收显式 props（规则第 4 条，禁收 app / 禁深链 useHarnessApp）。
  */
 import { OfficeCanvas } from "./OfficeCanvas";
-import type { DirectorSnapshot } from "./office-director";
+import type { DirectorSnapshot, ErrandSpot } from "./office-director";
 
 export type OfficeMember = { id: string; name: string; profession: string; running: boolean; hasThread: boolean };
 export type OfficeSceneProps = {
@@ -19,6 +19,10 @@ export type OfficeSceneProps = {
   /** 姿势快照 —— ⛔ 由调用方（弹窗）持有的**唯一**导演产出，场景只负责画（右栏看板同源）。 */
   snapshot: DirectorSnapshot;
   onOpenThread?: (memberId: string) => void;
+  /** 点设施派人过去（09-30 交互：点饮水机 → 有人去接水）。 */
+  onFacilityClick?: (spot: ErrandSpot) => void;
+  /** 底稿模式（预览页出背景图用）：跳过椅子/设施/空位牌。 */
+  draftMode?: boolean;
 };
 
 export function OfficeScene(props: OfficeSceneProps) {

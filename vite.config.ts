@@ -139,5 +139,16 @@ export default defineConfig({
      ⇒ 正在运行、加载 dist 的实例点开 lazy 页面就 Failed to fetch dynamically imported module。
      保留旧产物 + main.tsx 的 vite:preloadError 自愈 = 运行中实例不会被打断腿。
      （代价：dist 会累积，可手动清或定期删 dist/assets 里的旧文件。） */
-  build: { outDir: "dist", emptyOutDir: false },
+  build: {
+    outDir: "dist",
+    emptyOutDir: false,
+    /* ⛔ 素材必须**内联成 data: URI**（09-30 立，与守卫【175】的 CSP 那条同源）：
+       打包版用 file:// 载入 dist/index.html，而 PixiJS 读贴图走的是 **fetch** ——
+       Chromium 拒绝 file:// 上的 fetch（协议层的 opaque origin，不是 CSP 配置问题）。
+       素材一旦被写成独立文件，画布上就是**白方块**，且只在构建/打包版复现（dev 不复现）。
+       阈值抬到 64KB：本域全部素材（动物 36 张 + 界面 6 张 + 家具若干）都在这条线以内，
+       于是它们随 JS 内联进 data:，由 CSP 的 `connect-src data:` 放行。
+       代价：base64 比原始文件大约 33%（当前全套 ≈ 300KB），换"打包版不白屏"。 */
+    assetsInlineLimit: 65536,
+  },
 });
