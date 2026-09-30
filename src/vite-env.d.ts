@@ -782,6 +782,12 @@ interface Window {
     codexLogsScan(): Promise<{ files: Array<{ path: string; rel: string; bytes: number; mtime: number; cwd: string; project: string; id: string; archived: boolean }>; sessionsDir: string; archivedDir: string }>;
     /* 删会话记录（销毁性）：只删 codex-home/sessions|archived_sessions 下的 rollout-*.jsonl 文件；级联剔除 session_index.jsonl 里的对应条目（否则会话列表留死条目） */
     codexLogsDelete(input: { paths: string[] }): Promise<{ deleted: number; bytes: number; failed: string[]; indexCleaned: number }>;
+    /* 扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 与会话原档（codex-logs）是两回事 */
+    workLogsScan(): Promise<{ projects: Array<{ cwd: string; name: string; memoryDir: string; exists: boolean; bytes: number; files: Array<{ path: string; rel: string; kind: string; bytes: number; mtime: number }> }> }>;
+    /* 读一份工作日志/记忆文件的正文（UI 内查看）。路径必须落在某个项目的 .codex-harness/memory 之下；>512KB 拒绝（提示去文件管理器打开） */
+    workLogsRead(input: { path: string }): Promise<{ path: string; text: string; bytes: number; mtime: number }>;
+    /* 删工作日志文件（销毁性，不会重建）：只删 .codex-harness/memory 之下的普通文件；目录、越界路径一律拒绝 */
+    workLogsDelete(input: { paths: string[] }): Promise<{ deleted: number; bytes: number; failed: string[] }>;
     /* 按顺序合并视频片段成一条成片（整片导出）：先 -c copy，失败回落统一重编码；输出 <workspace>/.drama-canvas/export/ */
     videoConcat(input: { workspace: string; name: string; files: string[]; width?: number; height?: number; fps?: number }): Promise<{ path: string; bytes: number; mode: "copy" | "reencode"; parts: number }>;
 /* ═══ gen:end ═══ */

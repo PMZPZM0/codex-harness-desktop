@@ -2023,3 +2023,37 @@
 }
 .codex-logs-del:hover:not(:disabled) { border-color: var(--red); color: var(--red); }
 .codex-logs-del:disabled { opacity: .4; cursor: default; }
+
+/* 数据管理页（09-30 用户：「中间这么大空白」）：该页是「存储占用 + Codex 日志」两个区块
+   顺序排布，而 .settings-section 默认 min-height:100%（单区块页撑满一屏用）——两段叠加时
+   第一段内容少就白撑一整屏，中间出现大片空白。流式页统一放开高度。 */
+.settings-section.is-settings-flow {
+  min-height: auto;
+}
+
+
+/* 工作日志管理（09-30）：点文件名看正文 + 内联预览块 */
+.work-logs-open {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+  flex: 1;
+}
+.work-logs-open:hover .codex-logs-file { color: var(--accent); }
+.work-logs-preview {
+  margin: 4px 0 10px 26px;
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+}

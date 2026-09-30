@@ -84,6 +84,7 @@ import { readCustomModel, readCustomModels, writeCustomModels, healReservedProvi
 import { distillSummarize, turnOutputText, waitForTurnCompletion } from "./main/03-turn-summary";
 import { connectorEnv, readChannelBot, connectorToml, mcpToolRulesOf } from "./main/04-connector-config";
 import "./features/codex-logs";
+import "./features/work-logs";
 import "./features/dialog-ipc";
 import "./features/clipboard-ipc";
 import "./features/im-channels-ipc";

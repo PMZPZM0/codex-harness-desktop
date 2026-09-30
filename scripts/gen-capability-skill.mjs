@@ -26,6 +26,7 @@ const OUT = path.join(ROOT, "electron", "builtin-skills", "14-skill-harness-api.
    口径：写给引擎看 —— 用户提什么需求时该想到这个域、能力边界在哪。一句话。 */
 const DOMAIN_DESCRIPTIONS = {
   "codex-logs": "Codex 会话记录（rollout 原档）管理：扫描 sessions/archived_sessions 下每个会话文件的**项目归属（cwd）与时间**，供「设置 → 数据管理 → Codex 日志」按项目/日期分组展示与批量删除、清空。⚠️ 删除是销毁性的（对话记录不可恢复），且会级联剔除 session_index.jsonl 条目",
+  "work-logs": "各项目的**工作日志与项目记忆**管理（<项目>/.codex-harness/memory/**：长期记忆 MEMORY.md / 坑与纪律 LESSONS.md+lessons/ / 每日工作日志 logs/YYYY-MM-DD.md / archive / project）——设置 → 数据管理 → 工作日志。可看正文、按项目与类型分组、批量删除。⛔ 与会话原档（codex-logs，归档管理页）不是一回事；删除是销毁性的（工作日志删了不会重建）",
   "video": "内置视频生成接口（国内外 8 家：可灵/万相/Seedance/CogVideoX/MiniMax/Runway/Luma/Veo）：submit 提交 → poll 轮询 → download 落工作区；凭证存 userData/video-providers.json",
   "drama-canvas": "AI 短剧无限画布：把工作流拆成卡片摆在无限画布上（生图/短剧/白模/3D 建模/电商出图各类模板），连线表示「这份输入喂给下一步」。**画布可被模型读写**：board-sync 由画布自动镜像快照，模型用真工具 workflow_read 读内容、workflow_writeback 把产物写回节点（卡片实时显示）——「按画布搭的流程跑」是可行请求",
   "phone": "手机控制（phone-harness）：查状态 / 安装 / 卸载 / 体检 / 权限引导；Android 走 adb（全平台），iPhone 走 Mac 的 iPhone 镜像（仅 macOS）",
