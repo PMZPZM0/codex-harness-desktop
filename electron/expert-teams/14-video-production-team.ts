@@ -2,9 +2,12 @@
    成员的操作手册全部基于内置 video:* 通道与短剧画布技能（.codex/skills/drama-video），流程闭环：
    分镜（画布/分镜表）→ 首帧（builtin:generate-image）→ 视频（video:submit/poll/download）→ 配音（voice:speak）。 */
 import type { ExpertTeamConfig } from "./01-team-types";
+import { normalizeSkillsDir } from "./05-skills-path";
 
-export const videoProductionTeam = (mk: (partial: any) => ExpertTeamConfig): ExpertTeamConfig =>
-mk({
+/* skillsRoot：专家技能包根目录（同 15-image-gen-expert 的约定）。 */
+export const videoProductionTeam = (mk: (partial: any) => ExpertTeamConfig, skillsRoot?: string): ExpertTeamConfig => {
+  const zyDir = skillsRoot ? `${normalizeSkillsDir(skillsRoot)}/zy-cinematic-realism` : "";
+  return mk({
       teamId: "video-production-team",
       displayName: { zh: "视频制作专家团", en: "Video Production Team" },
       profession: { zh: "视频制作专家团", en: "Video Production Team" },
@@ -62,7 +65,17 @@ mk({
 3. 交付前逐镜核对 first_frame / video / audio 三个字段，缺什么如实报告，不假装完成；
 4. 首帧是一致性锚点：先出主镜头首帧并确认，再衍生其余镜头；风格段逐字复制；
 5. 白模参考（reference_video）只支持 Seedance 2.0/2.5 且参考片必须是公网 URL；
-6. 成片拼接走剪辑卡「拼接成片（本机）」（ffmpeg video:concat），不需要为此开会话。`,
+6. 成片拼接走剪辑卡「拼接成片（本机）」（ffmpeg video:concat），不需要为此开会话。
+
+电影感首帧（可选工作流）：
+- 剧本要「电影感画面 / 剧照质感」，或参考片风格化强、普通风格前缀压不住时，读下方路径里的
+  zy-cinematic-realism（造梦师）SKILL.md：Scene Master 锁人物 / 瞬间 / 机位 / 光线 → 编译目标模型原生 Prompt；
+  **多帧连续性用它的 Base Lock + Shot Delta**（主镜头锁 Base，逐镜只改 Shot Delta）——正好接我们的
+  「主镜头首帧先出并确认、其余镜头从它衍生」规则；风格段就换成它产出的 Scene Master 描述，逐字复制不变。
+- 普通短视频 / 白底商品类镜头不套（别为了电影感牺牲一致性交付节奏）；拿不准就问用户一句。
+
+⛔ 技能包在本机的绝对路径：\`${zyDir}\`
+（SKILL.md 与 references/* 都在这个目录下；引擎技能列表里没有 zy-cinematic-realism 时用文件工具直接读；读不到就用现有三段式风格前缀出图，不要卡住交付。）`,
       },
       members: [
         {
@@ -108,4 +121,5 @@ wav 封头 → drama-canvas:asset-write 落 .drama-canvas/assets/audio → 回�
         },
       ],
       enabled: true,
-});
+  });
+};

@@ -86,5 +86,6 @@
 | CMake / Ninja | BSD-3-Clause / Apache-2.0 | 构建工具 |
 | Node.js / Python | MIT / PSF-2.0 | 内置运行时 |
 | Nuphus MCP | MIT | 桌面 / 浏览器自动化 MCP（`resources/tools/npm-global`） |
+| zy-cinematic-realism（造梦师） | CC BY-NC 4.0 | 电影视觉 Prompt 工作流技能包（`resources/expert-skills/zy-cinematic-realism`，源自 <https://github.com/popopo-99/zy-cinematic-realism>，SKILL.md 与 references/ 逐字未改；中文导读为旁挂 README.zh-CN.md）。⛔ NC = 仅限非商业用途，署名见包内 NOTICE.md |
 
 （本表只列「我们主动引入且有明确上游」的组件；上述工具各自的完整许可文本随其自身目录分发。）
