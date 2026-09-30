@@ -1481,10 +1481,16 @@ w.postMessage({id:1,op:"list",root});
     (canvas2.includes("drawDeskStation(") && canvas2.includes("drawBackWall(") && canvas2.includes("drawSideProps(") ? ok : fail)(
       "【168】房间与工位走程序化绘制（office-render 三件套已接线）"
     );
-    // ⑩ 零贴图：画布层不得再出现素材 import / 尺寸表 —— 素材路线整体废弃
-    //    （⛔ 这条是**负向**断言：谁把 Kenney PNG 拼装加回来，这里必须红。）
-    (!/assets\/office\//.test(canvas2) && !canvas2.includes("SPRITE_SIZE") && !canvas2.includes("preloadSpriteTextures") ? ok : fail)(
-      "【168】画布层零贴图素材（程序化绘制路线，不许退回 PNG 拼装）"
+    // 素材路线（09-30 用户改口径：动物与显示内容都改由生图模型出）
+    // ① 素材 import 只允许出现在 office-art.ts 这一个注册表里（画布层直接 import 图片 = 红）
+    // ② 程序化路线必须保留：贴图缺失要回落手画、预设可整体退回 procedural
+    // ⛔ 本块注释里不许出现反引号（本文件是模板字符串拼装的，反引号会提前闭合）
+    const art168 = existsSync(join(ROOT, "src", "features", "team-office", "office-art.ts"))
+      ? readFileSync(join(ROOT, "src", "features", "team-office", "office-art.ts"), "utf8") : "";
+    (canvas2.indexOf("assets/") < 0 && art168.indexOf("assets/") >= 0
+      && art168.indexOf("procedural") >= 0 && art168.indexOf("artTexture(") >= 0
+      && canvas2.indexOf("preloadArt()") >= 0 ? ok : fail)(
+      "【168】素材集中在 office-art 注册表（画布层不许直接 import 图片）+ 保留程序化回退"
     );
     // ⑬ 办公设施与它们的动画（09-27 用户「饮水机、啥都配置动画，都做全」）：
     //    设施位置必须挂在 director 的跑腿目标点上（人真能走到它旁边），
@@ -1636,10 +1642,12 @@ w.postMessage({id:1,op:"list",root});
     (canvas176.includes("animalOf(") && canvas176.includes("collarColor(") && canvas176.includes("SILHOUETTE") ? ok : fail)(
       "【176】画布真的用上了物种 / 项圈色 / 剪影色（有常量没接线 = 恒真假绿）"
     );
-    (/export function screenKindOf\(index: number, running: boolean, dozing: boolean\)/.test(render176)
+    (/export function screenKindOf\(index: number, running: boolean, dozing: boolean, role = ""\)/.test(render176)
       && /if \(dozing\) return "sleep"/.test(render176)
-      && /screenKindOf\(slot\.idx, slot\.running, slot\.pose\?\.kind === "doze"\)/.test(canvas176) ? ok : fail)(
-      "【176】屏幕内容按成员稳定派生，且打盹时切到熄屏（人在睡 / 代码在跑 = 一眼假）"
+      && /资金\|流向\|行情/.test(render176) && /return "risk"/.test(render176)
+      && /screenKindOf\(slot\.idx, slot\.running, slot\.pose\?\.kind === "doze", slot\.profession\)/.test(canvas176)
+      && /:\$\{s\.profession\}/.test(canvas176) ? ok : fail)(
+      "【176】屏幕内容按成员稳定派生（09-30 加职业映射：资金看行情 / 风控看仪表盘）+ 打盹切熄屏 + key 含职业"
     );
     // ⛔ 跑腿目标与设施坐标必须**同源**：drawAmenities 画设施用的每个 floorPoint(u, v)
     //    都要出现在 OfficeCanvas 的 ERRAND_SPOT_UV 里 —— 两边漂移 ⇒「去接水」的人走到空气里。
@@ -1648,7 +1656,11 @@ w.postMessage({id:1,op:"list",root});
       const want = [...uvBlock.matchAll(/u: ([\d.]+), v: ([\d.]+)/g)].map((m) => m[1] + "," + m[2]);
       const amenities = (render176.match(/export function drawAmenities[\s\S]*?\n\}/) || [""])[0];
       const got = [...amenities.matchAll(/floorPoint\(([\d.]+), ([\d.]+)\)/g)].map((m) => m[1] + "," + m[2]);
-      return want.length === 4 && want.every((p) => got.includes(p));
+            /* 09-30 加了 3 个跑腿点（treadmill / vending / tea）+ 素材模式的新设施：
+         ERRAND_SPOT_UV 的每个点都必须能在 drawAmenities 里找到（素材数组的 [id,u,v,k] 或程序化 floorPoint）。 */
+      const amenSprites = (render176.match(/\["[a-z0-9]+", ([\d.]+), ([\d.]+), [\d]+\]/g) || [])
+        .map((s) => { const m = s.match(/([\d.]+), ([\d.]+),/); return m ? m[1] + "," + m[2] : ""; });
+      return want.length === 7 && want.every((p) => got.includes(p) || amenSprites.includes(p));
     })() ? ok : fail)(
       "【176】跑腿目标与办公设施坐标同源（两边漂移 ⇒「去接水」的人走到空气里）"
     );
@@ -1661,14 +1673,18 @@ w.postMessage({id:1,op:"list",root});
     );
     // 耳朵必须是**可动部件**：左右各一支、pivot 在耳根，坐姿/走姿的动画循环里都要碰它
     // （物种识别全靠耳朵，耳朵焊死 = 退回"一坨黑"）。
-    ((canvas176.match(/ears: Graphics\[\];/g) || []).length >= 2
-      && /p\.ears\.forEach\(\(ear, i\) =>/.test(canvas176)
-      && /w\.ears\.forEach\(\(ear, i\) =>/.test(canvas176) ? ok : fail)(
-      "【176】耳朵接入坐姿 + 走姿两个动画循环（单边抽动 / 随步伐颠）"
+    // ⛔ 09-30 素材路线：部件类型变成可空（生图精灵没有独立耳朵），所以断言改成**判空后的驱动**
+    //    —— 既保住"接入两个动画循环"，又钉死"素材模式下不许崩"。
+    ((canvas176.match(/ears: Graphics\[\] \| null;/g) || []).length >= 2
+      && /if \(p\.ears\) p\.ears\.forEach\(\(ear, i\) =>/.test(canvas176)
+      && /if \(w\.ears\) w\.ears\.forEach\(\(ear, i\) =>/.test(canvas176) ? ok : fail)(
+      "【176】耳朵接入坐姿 + 走姿两个动画循环（且素材模式下判空驱动，不崩）"
     );
     // ⛔ 键盘**不许居中**：人坐在工位正中，居中键盘会被躯干整个挡住（09-27 放大实测只剩两条白边），
     //    必须偏向人的左手侧 —— 锚定「u 减偏移」的写法，改回居中即红。
-    (/floorPoint\(u - 0\.04\d*, v - 0\.045\)/.test(render176) ? ok : fail)(
+    //    （09-30：桌深从 0.235 收到 0.17，键盘跟着往左前挪到 0.056/0.052 —— 只放宽数值区间，
+    //      「必须减 offset」这条不变；居中写法 `floorPoint(u, v ...)` 仍然判红。）
+    (/floorPoint\(u - 0\.0[3-9]\d*, v - 0\.0[3-9]\d*\)/.test(render176) ? ok : fail)(
       "【176】键盘偏向人的左手侧（居中 = 被躯干挡住，放大才看得见的假 blanks）"
     );
     // ⛔ 走动小人的头部 wrap 偏移**必须补偿 HEAD_CY**：buildAnimalHead 把头画在 wrap 内部
