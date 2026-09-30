@@ -98,7 +98,7 @@ export function WorkLogsSection({ onNotice, openAppConfirm }: {
   };
 
   return (
-    <section className="settings-section stack is-settings-flow">
+    <section className="settings-section stack is-settings-flow work-logs-card">
       <div className="settings-subhead"><FileText size={13} />工作日志（项目工作记录）</div>
       <p className="muted">
         Codex 在每个项目里写下的工作日志与项目记忆（<code>&lt;项目&gt;/.codex-harness/memory/</code>）：每日日志、长期记忆、坑与纪律。

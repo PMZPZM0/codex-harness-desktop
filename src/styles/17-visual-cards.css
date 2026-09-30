@@ -209,7 +209,10 @@
 }
 .widget-frame-head button:hover { color: var(--text); }
 /* ── Agent 询问卡 ── */
-.agent-ask-backdrop { z-index: 90; }
+/* ⛔ 层级带（DESIGN.md）：全局模态 = 400 > 画布 90 > 设置内遮罩 80~97。
+   这里原来写 90 —— 它把同元素上 .modal-backdrop 的 400 **压回 90**（同类选择器按源顺序，17 号晚于 07 号），
+   于是「删除确认框」在设置页里会被页面内的层盖住（用户实测：「别在弹窗下面了」）。 */
+.agent-ask-backdrop { z-index: 400; }
 /* Agent 提问卡的流内形态：贴在输入框上方、与输入框同宽（composer-wrap 是同一宽度容器） */
 .agent-ask-inline {
   width: 100%;

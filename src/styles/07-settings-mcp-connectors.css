@@ -2057,3 +2057,132 @@
   border: 1px solid var(--line-soft);
   border-radius: 6px;
 }
+
+
+/* ══════════ 数据管理页重布局（09-30 用户：「按项目规则来，现在有点不好看」）══════════
+   规范依据 DESIGN.md：层级靠 --panel / --panel-2 / --line-soft 递进；不写死色值；不叠阴影
+   （用边框表达层次）；间距 4px 栅格；圆角 6–14；路径/体积用等宽字体 tabular 数字。
+   结构统一为「管理卡」：卡头（图标 + 标题）→ 说明 → 工具条（统计 + 操作）→ 列表 → 危险操作行。 */
+
+.settings-section.is-settings-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 卡头：小标题与说明收紧，与工具条形成"标题带" */
+.codex-rollout-card > .settings-subhead,
+.work-logs-card > .settings-subhead {
+  margin: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.codex-rollout-card > p.muted,
+.work-logs-card > p.muted {
+  margin: 0;
+  max-width: 92ch;
+  line-height: 1.65;
+}
+
+/* 工具条：统计在左、操作在右，整条落在 --panel-2 上 */
+.codex-rollout-card .codex-logs-bar,
+.work-logs-card .codex-logs-bar {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--panel-2);
+  gap: 12px;
+}
+.codex-rollout-card .codex-logs-bar > span,
+.work-logs-card .codex-logs-bar > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.codex-rollout-card .codex-logs-bar b,
+.work-logs-card .codex-logs-bar b { color: var(--text); }
+.codex-rollout-card .codex-logs-bar .settings-actions,
+.work-logs-card .codex-logs-bar .settings-actions { gap: 6px; }
+
+/* 列表：整块成为一个可滚动的面板（长列表不再把页面撑长） */
+.codex-rollout-card .codex-logs-tree,
+.work-logs-card .codex-logs-tree {
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--panel);
+  max-height: 460px;
+  overflow: auto;
+  padding: 4px;
+}
+
+/* 行：统一 4px 栅格与高度，hover 只提一层（--panel-2） */
+.codex-rollout-card .codex-logs-row,
+.work-logs-card .codex-logs-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.codex-rollout-card .codex-logs-row.is-project,
+.work-logs-card .codex-logs-row.is-project {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  margin: 2px 2px 4px;
+  min-height: 34px;
+}
+.codex-rollout-card .codex-logs-row.is-project .codex-logs-name,
+.work-logs-card .codex-logs-row.is-project .codex-logs-name {
+  font-weight: 600;
+  color: var(--text);
+}
+.codex-rollout-card .codex-logs-row.is-day,
+.work-logs-card .codex-logs-row.is-day {
+  margin: 0 2px 0 18px;
+  min-height: 26px;
+}
+.codex-rollout-card .codex-logs-row.is-day .codex-logs-name,
+.work-logs-card .codex-logs-row.is-day .codex-logs-name {
+  color: var(--muted);
+  font-size: 12px;
+}
+.codex-rollout-card .codex-logs-row.is-file,
+.work-logs-card .codex-logs-row.is-file {
+  margin: 0 2px 0 34px;
+  min-height: 28px;
+}
+.codex-rollout-card .codex-logs-row.is-file:hover,
+.work-logs-card .codex-logs-row.is-file:hover,
+.codex-rollout-card .codex-logs-row.is-day:hover,
+.work-logs-card .codex-logs-row.is-day:hover { background: var(--panel-2); }
+
+/* 路径与体积：等宽 + tabular（DESIGN.md：路径/代码一律 --mono） */
+.codex-rollout-card .codex-logs-file,
+.work-logs-card .codex-logs-file {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+.codex-rollout-card .codex-logs-row small,
+.work-logs-card .codex-logs-row small {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.codex-rollout-card .codex-logs-name,
+.work-logs-card .codex-logs-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 卡片语义色：会话原档 = 中性灰；工作日志 = 主色点缀（一眼分清两块，不引第二主色） */
+.work-logs-card > .settings-subhead .lucide,
+.work-logs-card > .settings-subhead svg { color: var(--accent); }
+.work-logs-card .codex-logs-row.is-project { border-color: color-mix(in srgb, var(--accent) 22%, var(--line-soft)); }
+
+/* 危险操作行：与工具条分开，落在卡片底部 */
+.codex-rollout-card > .settings-actions:last-child,
+.work-logs-card > .settings-actions:last-child {
+  margin: 0;
+  padding-top: 2px;
+  gap: 8px;
+}

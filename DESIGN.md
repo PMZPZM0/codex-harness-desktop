@@ -95,6 +95,7 @@
 | `.composer-menu-pop` | 输入框浮层（`#` / `@` / 命令面板） |
 | `.team-cluster-body` | 专家团聚类块 |
 | `.team-office-*` / `.office-scene` | 专家团办公室（外壳 + 右栏看板 + 画布宿主；场景本体是 PixiJS 画布，⛔ 无 DOM 子节点） |
+| `.is-settings-flow` + `.codex-rollout-card` / `.work-logs-card` | 数据管理页的「管理卡」：卡头（图标 + 标题）/ 说明 / 工具条（`.codex-logs-bar`，统计在左、操作在右）/ 列表（`.codex-logs-tree`，圆角 10、最大高 460 可滚动）/ 危险操作行。会话原档 = 中性灰，工作日志 = 主色点缀 |
 
 **命令面板**（`.command-palette`）：两列，左列命令名（`code`，12px 等宽）、右列注释（11px）；
 ⛔ 两列必须**按文字基线对齐**（`align-items: baseline`）—— 按盒子居中会让两种字号的字形错开约 2px，肉眼就是"歪了"（实测过）。
