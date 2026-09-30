@@ -78,6 +78,16 @@
 - 设置页 = 注册表一行一页（`pet` 页）+ `settingsNav` + `HelpDialog.OVERVIEW_GROUPS` **三处都要加**
   —— 少总览那处会被守卫【32】打红。
 
+### 🎨 控件皮肤工坊（`src/features/ui-skin/` + `src/lib/ui-skin/` + `components/SkinHost`，2026-09-30 深夜）
+
+把 **Uiverse.io Galaxy**（3802 个社区 UI 元素，MIT）内置进应用，用户在设置 →「控件皮肤」里给控件原型挑效果、全局生效。分层（⛔ 别混）：
+
+- **基座**：`src/lib/ui-skin/`（绑定存储 + 分类 gzip 懒解压加载）+ `src/components/SkinHost.tsx`（**Shadow DOM** 渲染器——3800 个社区类名只有 shadow root 能隔离）+ `src/hooks/use-skin-binding.ts`；数据 = `src/lib/ui-skin/data/*.html.gz`（**2.3MB**，`scripts/gen-ui-skin-library.mjs` 从 galaxy 镜像 ingest）。
+- **域**：`src/features/ui-skin/`（工坊 UI + 原型表）+ 设置页 `settings-ui-skin/`。
+- **已接线原型**（守卫【234】钉住）：开关（`ToggleSwitch`，7+ 处）、加载器（`Spinner`，36 处）。加新原型 = `skin-slots.ts` 加一行 + 在共享原语里 `useSkinBinding`。
+- ⛔ **`?url` 资产导入编译成 `new URL("x.gz", import.meta.url)`（不带 assets/ 前缀）**——before-pack 闭包扫描已认这种形态（⑤号模式），新资产类型要同步扩那个正则；⛔ 严禁换回 `import.meta.glob`（同坑）。
+- ⛔ 基座原语经 `useSkinBinding` 读绑定，**不得 import 域层**（架构红线，守卫钉）。
+
 ## 🎨 视觉规范（2026-09-26 立，守卫【170】）
 
 > **改 UI 前先读根目录 `DESIGN.md`**（色板 / 字体 / 组件约定 / 主题机制，全部实测自 `src/styles/`）。
