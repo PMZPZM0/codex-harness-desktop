@@ -52,15 +52,42 @@ async function metaOfFile(file: string): Promise<{ cwd: string; id: string; at: 
   try {
     const handle = await fs.open(file, "r");
     try {
-      const buf = Buffer.alloc(16 * 1024);
-      const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
-      const first = buf.subarray(0, bytesRead).toString("utf8").split("\n")[0];
-      const parsed = JSON.parse(first) as { type?: string; payload?: { cwd?: string; id?: string; timestamp?: string } };
-      return {
-        cwd: String(parsed?.payload?.cwd || ""),
-        id: String(parsed?.payload?.id || ""),
-        at: String(parsed?.payload?.timestamp || ""),
-      };
+      /* ⛔⛔ 首行不是 16KB 能装下的（09-30 实测：session_meta 里带 base_instructions，
+         首行 22181 字符）—— 原来只读 16KB ⇒ JSON.parse 必失败 ⇒ **所有记录都落「未知项目」**
+         （用户实测：「怎么没有按项目分类呢」）。改成**分块读到行尾**（上限 512KB 保底）。 */
+      const CHUNK = 64 * 1024;
+      const LIMIT = 512 * 1024;
+      let text = "";
+      let pos = 0;
+      let found = false;
+      while (pos < LIMIT) {
+        const buf = Buffer.alloc(CHUNK);
+        const { bytesRead } = await handle.read(buf, 0, buf.length, pos);
+        if (!bytesRead) break;
+        text += buf.subarray(0, bytesRead).toString("utf8");
+        pos += bytesRead;
+        const nl = text.indexOf("\n");
+        if (nl >= 0) { text = text.slice(0, nl); found = true; break; }
+      }
+      if (!found) text = text.slice(0, LIMIT);
+      const first = text;
+      try {
+        const parsed = JSON.parse(first) as { type?: string; payload?: { cwd?: string; id?: string; timestamp?: string } };
+        return {
+          cwd: String(parsed?.payload?.cwd || ""),
+          id: String(parsed?.payload?.id || ""),
+          at: String(parsed?.payload?.timestamp || ""),
+        };
+      } catch {
+        /* 首行仍解析不了（超长 / 截断在半个 UTF-8 字符上）时的**正则兜底**：
+           直接抓 cwd / id 字段本身，不做整体解析（首行里这两个键都在靠前位置）。 */
+        const grab = (key: string): string => {
+          const m = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`).exec(first);
+          if (!m) return "";
+          try { return JSON.parse(`"${m[1]}"`) as string; } catch { return m[1]; }
+        };
+        return { cwd: grab("cwd"), id: grab("id") || idOfFile(file), at: grab("timestamp") };
+      }
     } finally { await handle.close(); }
   } catch {
     return { cwd: "", id: idOfFile(file), at: "" };
