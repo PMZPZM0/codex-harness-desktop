@@ -19,7 +19,7 @@
  *
  * 坐标：全部走 office-iso 的归一化地面坐标（u/v），家具自带纵深缩放，不会各自漂移。
  */
-import { Container, Graphics, Sprite } from "pixi.js";
+import { Container, Graphics, Sprite, Texture } from "pixi.js";
 import { FLOOR, WALL_H, floorCorners, floorPoint, sideWallPoint, wallPoint, type Pt } from "./office-iso";
 import { artTexture, propArtOf, screenArtOf, type PropId } from "./office-art";
 import type { ErrandSpot } from "./office-director";
@@ -517,8 +517,10 @@ function drawScreen(host: Container, kind: ScreenKind, monX: number, shellTop: n
 
   /* ── 素材路线（09-30）：屏幕内容 = 生图出的**真实界面截图**（代码/表格/行情/邮件/设计/锁屏
      及 09-30 新增的游戏/网页/短视频/文件/应用网格/风控盘）──
-     ⛔ 与角色同一套规矩：贴图取不到就回落下面的程序化版本（绝不画白方块）。 */
-  const shot = artTexture(screenArtOf(kind));
+     ⛔⛔ 09-30 晚被用户否掉：「显示器就跟假的一样，贴图？？」—— 界面截图叠在程序化显示器
+     上就是一张贴纸（亮度/透视/像素密度全都对不上）。现在**强制走下面的程序化版本**
+     （代码打字机 / K 线生长 / 表格滚动……全是活的），素材贴图代码保留、随时可切回。 */
+  const shot: Texture | null = null; // = artTexture(screenArtOf(kind));
   if (shot) {
     const sp = new Sprite(shot);
     sp.position.set(x, y);
@@ -1149,14 +1151,15 @@ export const AMEN_LAYOUT: AmenItem[] = [
   { id: "printer", u: 0.90, v: 0.13, spot: "printer", anim: "blink" },
   { id: "shelf", u: 0.055, v: 0.21, spot: "shelf" },
   { id: "door", u: 0.055, v: 0.90 },
-  { id: "plantbig", u: 0.955, v: 0.34, anim: "sway" },
-  { id: "plantbig", u: 0.035, v: 0.55, anim: "sway" },
-  /* 跑步机（右下空地）/ 贩卖机（上墙右）/ 茶水杯台（上墙中）—— 与跑腿点同源 */
+  /* ⛔ 摆放纪律（09-30 用户圈图骂「摆放丑死了」）：**不与背景烙死的物件重叠、不扎堆一条线**。
+     ① 右侧原 plantbig(0.955,0.34) 与背景绿植完全重叠 → 删（背景的绿植就是那棵）；
+     ② shelf2(0.22,0.09) 与背景储物柜重叠 → 删；
+     ③ cup(0.655,0.115) 与背景茶水台重叠 → 删（tea 跑腿点保留，人走到背景的台前）；
+     ④ 会摇摆的绿植挪到**左下空地**（原位重叠，挪过来动画才看得见）。 */
+  { id: "plantbig", u: 0.13, v: 0.74, anim: "sway" },
+  /* 跑步机（右下空地）/ 贩卖机（上墙右）—— 与跑腿点同源 */
   { id: "treadmill", u: 0.94, v: 0.84, spot: "treadmill", anim: "belt" },
   { id: "vending", u: 0.76, v: 0.115, spot: "vending", anim: "blink" },
-  { id: "cup", u: 0.655, v: 0.115, spot: "tea", anim: "steam" },
-  /* 纯装饰件（不参与跑腿）。⛔ whiteboard 不叠 —— 背景图已烙了软木板，精灵盖上去是重影。 */
-  { id: "shelf2", u: 0.22, v: 0.09 },
 ];
 
 /** 设施的逐帧微动画（item.anim 驱动；busy = 有人正在使用 ⇒ 动画明显加速，物体↔人物互动）。 */

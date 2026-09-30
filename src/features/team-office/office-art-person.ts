@@ -2,10 +2,12 @@
  * 人物姿势素材表（09-30 人物化改造：宠物 → 人物，9 角色 × 12 姿势）。
  *
  * ⛔ 由 .workbuddy/tmp/gen-art-person.mjs 生成，手改会在下次生成时被覆盖。
- *    格位契约 = gen-person-batch.sh 的 ROW1/ROW2/ROW3 与 slice-sheet.py 的 PERSON_POSES：
+ *    格位契约 = gen-person3.sh 的 ROW1/ROW2/ROW3 与 slice-sheet.py 的 PERSON_POSES：
  *    stand-front / stand-side / stand-back / walk-a / walk-b / sit-back / sit-side /
  *    drink（站侧举杯）/ operate（站侧操作机器）/ chat（正面手势）/ walk-cup（端杯走）/ run（侧跑）。
- * ⛔ 素材取不到（未出图 / 被删）→ 调用方逐处回落动物绒毛素材，绝不画白方块。
+ * ⛔ 第三版（09-30 晚）：**纯 magenta 背景 + 无椅无桌无场景** —— 上一版人物图自带办公椅与
+ *    办公室背景，叠进场景双椅 + 重影（用户点名「丑」），椅子改由程序化椅承担。
+ * ⛔ 素材取不到（未出图 / 被删）→ 调用方逐处回落程序化小人，绝不画白方块。
  */
 import person0_standfront from "./assets/persons/person0-stand-front.webp";
 import person0_standside from "./assets/persons/person0-stand-side.webp";
