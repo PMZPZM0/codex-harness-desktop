@@ -320,4 +320,19 @@ export async function run() {
       "【226】工作日志的全选/取消全选也用 toggle(allPaths, !allPicked)（别重犯空循环）"
     );
   }
+
+  {
+    /* 【227】确认框必须是**全局模态层**（09-30 用户：「删除记得加上弹窗确认提醒，别在弹窗下面了哦」）。
+       DESIGN.md 层级带：全局模态 400 > 画布 90 > 设置内遮罩 80~97。
+       ⛔ 事故形态：确认框同时带 .modal-backdrop(400) 与 .agent-ask-backdrop，
+       而后者写了 z-index:90 ⇒ 按源顺序把 400 压回 90 ⇒ 在设置页里被页面内的层盖住。 */
+    const visualCss = readFileSync(join(ROOT, "src", "styles", "17-visual-cards.css"), "utf8");
+    const askRule = /\.agent-ask-backdrop\s*\{[^}]*z-index:\s*(\d+)/.exec(visualCss);
+    (askRule && Number(askRule[1]) >= 400 ? ok : fail)(
+      `【227】确认框遮罩是全局模态层（.agent-ask-backdrop 当前 z-index = ${askRule ? askRule[1] : "缺失"}，须 ≥ 400 —— 写成 90 会被设置页内部层盖住）`
+    );
+    (/\.modal-backdrop\s*\{[^}]*z-index:\s*400/.test(readFileSync(join(ROOT, "src", "styles", "07-settings-mcp-connectors.css"), "utf8")) ? ok : fail)(
+      "【227】.modal-backdrop 保持 400（全局模态基线，别被局部样式覆盖）"
+    );
+  }
 }

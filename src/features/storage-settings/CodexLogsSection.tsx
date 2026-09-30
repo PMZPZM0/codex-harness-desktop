@@ -119,7 +119,7 @@ export function CodexLogsSection({ onNotice, openAppConfirm }: {
   };
 
   return (
-    <section className="settings-section stack is-settings-flow">
+    <section className="settings-section stack is-settings-flow codex-rollout-card">
       <div className="settings-subhead"><Database size={13} />引擎会话原档</div>
       <p className="muted">
         引擎每次会话都会写一份原档（<code>codex-home/sessions/日期/rollout-*.jsonl</code>），按项目分组、项目内按日期分组，可勾选批量删除或整库清空。
