@@ -116,6 +116,10 @@ export function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction
         <div className="ctx-pop" role="dialog" aria-label="上下文容量明细" onMouseLeave={() => setOpen(false)}>
           <div className="ctx-pop-head"><strong>上下文容量</strong></div>
           <div className="ctx-pop-sub">{used != null ? (used / 10000).toLocaleString(undefined, { maximumFractionDigits: 1 }) : "0.0"}万/{(contextWindow / 10000).toLocaleString()}万（{used != null ? Math.round(percent * 10) / 10 : "—"}%{summaryCacheRate != null ? ` · 累计 ${summaryCacheRate}% 缓存` : ""}）</div>
+          {/* ⛔ 分子超过配置窗口时必须解释，不能只显示一个封顶的 100%：09-30 用户看到
+             「125.9万/104.8万」直接懵了（上游对超窗口请求照样放行，用量是上游原话）。
+             说明三件事：数字是上游原话、引擎自动压缩在回合结束后执行（回合内不中断）、可手动立即压。 */}
+          {used != null && used > contextWindow && <p className="ctx-pop-cache-note">本轮上游返回的输入量（{Number(used).toLocaleString()} Token）已超过配置的模型窗口（{Number(contextWindow).toLocaleString()}）—— 部分供应商会放宽窗口或把缓存命中计入用量，请求仍会执行。引擎的自动压缩在回合结束后进行（回合中不会打断）；也可以点下方按钮立即压缩。</p>}
           <div className="ctx-pop-bar"><i style={{ width: `${Math.max(2, percent)}%` }} /></div>
           <div className="ctx-pop-grid">
             {rows.map((entry) => (
