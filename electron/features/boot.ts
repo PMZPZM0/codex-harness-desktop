@@ -30,6 +30,9 @@ import { repairSkillBomScan } from "../skills-market";
 import { augmentedPath, nuphusBinary } from "../toolchain";
 import { net, safeStorage, session } from "electron";
 import { pathToFileURL } from "node:url";
+import { petAssetRoots, readPetSettings } from "./pet-ipc";
+import { feedPetEvent } from "./pet-state";
+import { applyPetSettings } from "./pet-window";
 
 // ── 由 main.ts 注入的顶层依赖（同名声明 ⇒ 块体保持逐字不变）──
 let codexHome!: any;
@@ -297,6 +300,36 @@ export async function bootApp() {
       return placeholderPngResponse();
     }
   });
+  /* `pet://`：只服务**宠物目录下的图集**（09-30 加）。
+     ⛔ 为什么不用 harness-image：宠物包可能装在 `~/.codex/pets`、`~/.petdex/pets`，
+        它们**不在可信根**里（可信根 = userData + 会话工作目录 + 用户手选的路径）。
+        放宽 harness-image 的可信根 = 把「任意文件读取」的面扩大，属安全回归（红线）。
+        ⇒ 另开窄口径协议：目录白名单（pet-ipc 的 petRoots）+ 图片扩展名，两个条件同时满足。
+     路径形态：`pet://asset/?path=<绝对路径>`（与 harness-image 的 `?path=` 同构）。 */
+  protocol.handle("pet", async (request) => {
+    let assetPath = new URL(request.url).searchParams.get("path");
+    if (!assetPath) return new Response("Missing path", { status: 400 });
+    if (!/^[a-zA-Z]:[\\/]/.test(assetPath) && !assetPath.startsWith("/")) {
+      try { assetPath = decodeURIComponent(assetPath); } catch { /* 原样使用 */ }
+    }
+    if (!/\.(png|webp|jpe?g|gif|avif)$/i.test(assetPath)) {
+      return new Response("Unsupported media type", { status: 415 });
+    }
+    const resolved = path.resolve(assetPath);
+    const roots = petAssetRoots().map((root) => path.resolve(root));
+    const inside = roots.some((root) => {
+      const rel = path.relative(root, resolved);
+      return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+    });
+    if (!inside) return new Response("Forbidden", { status: 403 });
+    if (!existsSync(resolved)) return new Response("Not found", { status: 404 });
+    try {
+      return net.fetch(pathToFileURL(resolved).toString());
+    } catch {
+      return new Response("Read failed", { status: 500 });
+    }
+  });
+
   // 语音通话：授予麦克风权限。此前全项目没有任何权限处理，getUserMedia 会被直接拒绝。
   // 只放行 media，其余权限一律沿用 Electron 默认（不放大授权面）。
   // macOS 上还需要 Info.plist 的 NSMicrophoneUsageDescription（见 build/entitlements 与文档），
@@ -314,7 +347,20 @@ export async function bootApp() {
   markBoot("pre-create-window");
   createWindow();
   markBoot("window-created");
+  /* 桌面宠物：上次是开着的话恢复出来（设置里 enabled=true）。
+     ⛔ 必须排在 createWindow 之后 —— 浮窗是 alwaysOnTop，先建它会被主窗口盖住、
+     用户以为"没生效"；而且拿不到主窗口的屏位做默认定位。失败一律降级，不阻断启动链。 */
+  try {
+    const petSettings = readPetSettings();
+    if (petSettings.enabled) applyPetSettings(petSettings);
+  } catch (error) {
+    console.warn("[pet] 恢复桌面宠物失败:", (error as Error)?.message ?? error);
+  }
   server.on("event", (event: any) => {
+    // 桌面宠物：旁听同一份事件流归约成九态（不改事件流向、也不消费正文内容）。
+    // ⛔ 无条件喂：状态要一直维护着，用户中途打开宠物时才能立刻是对的状态（窗口关着时
+    //    归约只写一个对象、不产生任何推送，成本可忽略）。
+    feedPetEvent(event);
     // 裁剪后可能为 null（09-14 启用按会话过滤）——null 绝不能进 broadcastCodexEvent，
     // 否则渲染层收到一条空事件。channelBot / voiceService 拿的是未裁剪的原始事件。
     const forwarded = filterForRenderer(event);

@@ -2588,4 +2588,141 @@ w.postMessage({id:1,op:"list",root});
     );
   }
 
+  /* ══ 【232】桌面宠物（09-30）：官方九态格式 / 内置包几何 / CSP 放行 / 接线 ══ */
+  {
+    const fmtSrc = readFileSync(join(ROOT, "src", "features", "pet", "pet-format.ts"), "utf8");
+    const ipcSrc = readFileSync(join(ROOT, "electron", "features", "pet-ipc.ts"), "utf8");
+    const winSrc = readFileSync(join(ROOT, "electron", "features", "pet-window.ts"), "utf8");
+    const stateSrc = readFileSync(join(ROOT, "electron", "features", "pet-state.ts"), "utf8");
+    const genSrc = readFileSync(join(ROOT, "scripts", "gen-pet-spritesheets.mjs"), "utf8");
+    const bootSrc = readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8");
+    const mainEntrySrc = readFileSync(join(ROOT, "src", "main.tsx"), "utf8");
+    const htmlSrc = readFileSync(join(ROOT, "index.html"), "utf8");
+    const harnessSrc = readFileSync(join(ROOT, "scripts", "e2e", "lib", "harness.mjs"), "utf8");
+
+    /** 官方九态行名（顺序即行序）—— 引擎二进制与 petdex 文档逐字一致的规范。 */
+    const OFFICIAL_STATES = ["idle", "running-right", "running-left", "waving", "jumping", "failed", "waiting", "running", "review"];
+    const arrayLiteral = (src, name) => {
+      const m = src.match(new RegExp(name + "[\\s\\S]{0,40}?=\\s*\\[([\\s\\S]*?)\\]"));
+      return m ? (m[1].match(/"([^"]+)"/g) || []).map((s) => s.replace(/"/g, "")) : [];
+    };
+
+    /* ① 九态行名与顺序：渲染层 / 主进程 / 生成器 **三处同源**，且都等于官方规范。
+       ⛔ 行序就是行号，错一位 = 所有动作错乱（官方按行号取图）。 */
+    const renderRows = arrayLiteral(fmtSrc, "PET_STATES");
+    const mainRows = arrayLiteral(ipcSrc, "PET_STATE_ROWS");
+    const genRows = arrayLiteral(genSrc, "STATE_ROWS");
+    (JSON.stringify(renderRows) === JSON.stringify(OFFICIAL_STATES) ? ok : fail)(
+      `【232】渲染层九态行名与顺序 = 官方规范（实得 ${renderRows.join("/")}）`
+    );
+    (JSON.stringify(mainRows) === JSON.stringify(OFFICIAL_STATES) ? ok : fail)(
+      `【232】主进程九态行名与顺序 = 官方规范（与渲染层同源；实得 ${mainRows.join("/")}）`
+    );
+    (JSON.stringify(genRows) === JSON.stringify(OFFICIAL_STATES) ? ok : fail)(
+      `【232】生成器九态行名与顺序 = 官方规范（实得 ${genRows.join("/")}）`
+    );
+    /* ② 生成器必须「缺一行就抛」，否则新格式少一行会静默出一张残图 */
+    (genSrc.includes("官方九态缺一不可") && genSrc.includes("ROW_ANIMATION") ? ok : fail)(
+      "【232】生成器缺行即抛（不静默出残图）"
+    );
+    /* ③ 内置宠物：几何自描述 + 图集尺寸 = 8 列 × 9 行 × (192×208) */
+    const petSlugs = ["harness-blob", "harness-cat", "harness-bot"];
+    const pngSize = (file) => {
+      try {
+        const head = readFileSync(file).subarray(0, 24);
+        if (head.length < 24) return null;
+        return { width: head.readUInt32BE(16), height: head.readUInt32BE(20) };
+      } catch { return null; }
+    };
+    let builtinOk = 0;
+    const builtinProblems = [];
+    for (const slug of petSlugs) {
+      const dir = join(ROOT, "public", "pets", slug);
+      try {
+        const meta = JSON.parse(readFileSync(join(dir, "pet.json"), "utf8"));
+        const sheet = join(dir, String(meta.spritesheetPath || ""));
+        const size = pngSize(sheet);
+        const statesOk = JSON.stringify(meta.states) === JSON.stringify(OFFICIAL_STATES);
+        const geomOk = meta.columns === 8 && meta.rows === 9
+          && meta.frameSize?.width === 192 && meta.frameSize?.height === 208;
+        const sheetOk = size && size.width === 8 * 192 && size.height === 9 * 208;
+        if (statesOk && geomOk && sheetOk) builtinOk += 1;
+        else builtinProblems.push(`${slug}: states=${statesOk} geom=${geomOk} sheet=${size ? `${size.width}x${size.height}` : "缺失"}`);
+      } catch (error) {
+        builtinProblems.push(`${slug}: ${error.message}`);
+      }
+    }
+    (builtinOk === petSlugs.length ? ok : fail)(
+      `【232】内置宠物包几何全部合规（8 列 × 9 行 / 192×208 / 九态；问题：${builtinProblems.join(" | ") || "无"}）`
+    );
+    /* ④ ⛔ 内置宠物必须落在 public/pets（→ dist/pets），**不能**放 src/：
+       before-pack 的可达闭包只认 js/css 与 CSS 里的 url()，JS import 的位图会被判成陈旧死块删掉
+       （v0.0.27 事故同型）。dist/pets 不在裁剪面（裁剪只走 dist/assets）。 */
+    (genSrc.includes('path.join(ROOT, "public", "pets")') ? ok : fail)(
+      "【232】生成物落 public/pets（→ dist/pets，不在 dist/assets 裁剪面内）"
+    );
+    /* ⑤ ⛔ CSP 必须放行 pet://（09-30 实测踩到：`*` 只覆盖网络协议，自定义协议要显式列，
+       不放行 ⇒ 图集被拦、浮窗全透明 0% 不透明像素；与当年 connect-src data: 事故同型） */
+    (/img-src[^;]*\bpet:/.test(htmlSrc) ? ok : fail)(
+      "【232】CSP 的 img-src 显式放行 pet:（否则图集被拦成空白）"
+    );
+    /* ⑥ 浮窗必须在**首帧前**摘掉启动页：启动页是不透明白底，晚一步就在桌面上闪一块白 */
+    (/data-pet-window[\s\S]{0,24}\.boot-splash[\s\S]{0,60}?display:\s*none/.test(htmlSrc) ? ok : fail)(
+      "【232】浮窗首帧前隐藏启动页（防透明窗上的白底闪烁）"
+    );
+    (htmlSrc.includes('get("pet") === "1"') && htmlSrc.includes("data-pet-window") ? ok : fail)(
+      "【232】index.html 内联脚本在首帧前判定 ?pet=1"
+    );
+    /* ⑦ 入口分流必须在 main.tsx（App() 里条件调用 useHarnessApp 会破坏 hook 调用序） */
+    (mainEntrySrc.includes("isPetWindow ? <PetFloat /> : <App />") ? ok : fail)(
+      "【232】渲染入口按 ?pet=1 分流（不在 App() 里条件调用 hook）"
+    );
+    /* ⑧ 浮窗**不登记 window-bus**：登记进去会白收 codex:event 广播，还会被卷进弹窗语义 */
+    (!winSrc.includes("registerBusWindow") ? ok : fail)(
+      "【232】宠物浮窗不登记 window-bus（它是独立浮层，不是独立会话弹窗）"
+    );
+    /* ⑨ 对外「open」必须是**可见性**而非「窗口存在」：hide() 不销毁窗口，
+       用 isPetWindowOpen 会让设置页在隐藏后仍显示"已显示"（09-30 实测） */
+    (winSrc.includes("export function isPetVisible") && ipcSrc.includes("open: isPetVisible()") ? ok : fail)(
+      "【232】IPC 的 open 用可见性语义（hide() 后不能仍报已显示）"
+    );
+    /* ⑩ 图集协议白名单必须**复用 petRoots**（不许另写一份目录 = 真相源分裂） */
+    (ipcSrc.includes("export function petAssetRoots") && ipcSrc.includes("petRoots().map") && bootSrc.includes("petAssetRoots()") ? ok : fail)(
+      "【232】pet:// 协议白名单来自 petRoots（单一真相源，不另写目录）"
+    );
+    /* ⑪ 启动恢复 + 事件归约接线（都断了功能就是"开了没反应/宠物不动"） */
+    (bootSrc.includes("if (petSettings.enabled) applyPetSettings(petSettings)") ? ok : fail)(
+      "【232】启动时按设置恢复宠物窗口"
+    );
+    (bootSrc.includes("feedPetEvent(event)") ? ok : fail)(
+      "【232】引擎事件流喂给宠物归约（不改事件流向、只旁听）"
+    );
+    /* ⑫ 归约侧：九态全在类型里 + 一次性状态必须回落（庆祝/失败不能永久停住） */
+    const stateNames = (stateSrc.match(/export type PetStateName =([\s\S]*?);/) || [, ""])[1];
+    (OFFICIAL_STATES.every((s) => stateNames.includes(`"${s}"`)) ? ok : fail)(
+      "【232】归约侧九态类型齐全"
+    );
+    (stateSrc.includes("holdUntil") && stateSrc.includes("pulse(") ? ok : fail)(
+      "【232】一次性状态（庆祝/失败）到点回落，不永久停住"
+    );
+    /* ⑬ ⛔ e2e 必须排除宠物浮窗 target：它也是 page target，
+       取 list[0] 会随机连到宠物窗 ⇒ 之后所有 eval/click 全打空（实测设置导航读到 0 项） */
+    (harnessSrc.includes('!((t.url || "").includes("pet=1"))') || harnessSrc.includes('!(t.url || "").includes("pet=1")') ? ok : fail)(
+      "【232】e2e 连接排除宠物浮窗（否则会随机连错窗口）"
+    );
+    /* ⑭ 设置页三处注册齐全（类型 / 导航 / 渲染注册表）—— 少一处就是"导航里有、点开空白" */
+    const settingsTypesSrc = readFileSync(join(ROOT, "src", "features", "app-view", "types.ts"), "utf8");
+    const catalogsSrc = readFileSync(join(ROOT, "src", "features", "app-view", "helpers", "catalogs.ts"), "utf8");
+    const registrySrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
+    (settingsTypesSrc.includes('| "pet"') ? ok : fail)("【232】SettingsPage 类型含 pet");
+    (catalogsSrc.includes('["pet", "桌面宠物"') ? ok : fail)("【232】设置导航含「桌面宠物」入口");
+    (registrySrc.includes("PetSettingsSection") && /pet:\s*\{\s*render/.test(registrySrc) ? ok : fail)(
+      "【232】设置注册表登记 pet 页"
+    );
+    /* ⑮ 样式接入（浮窗 + 设置页同一文件，前缀 pet-） */
+    (readFileSync(join(ROOT, "src", "styles.css"), "utf8").includes("./styles/22-pet") ? ok : fail)(
+      "【232】宠物样式接入 styles.css（22-pet.css）"
+    );
+  }
+
 }

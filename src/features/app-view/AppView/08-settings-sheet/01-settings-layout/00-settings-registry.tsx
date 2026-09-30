@@ -65,6 +65,8 @@ const ExtensibilitySettingsSection = lazy(() => import("../../../../settings-ext
 const ScreenshotSettingsSection = lazy(() => import("../../../../settings-screenshot").then((m) => ({ default: m.ScreenshotSettingsSection })));
 /* 收藏夹页：批量管理 + 加入 Agent 记忆（与输入框加号菜单共用 app 层同一对动作） */
 const FavoritesSettingsSection = lazy(() => import("../../../../settings-favorites").then((m) => ({ default: m.FavoritesSettingsSection })));
+/* 桌面宠物页（09-30）：官方 Codex 宠物格式的开关 / 选择 / 目录管理 */
+const PetSettingsSection = lazy(() => import("../../../../settings-pet/PetSettingsSection").then((m) => ({ default: m.PetSettingsSection })));
 
 export interface SettingsPageEntry {
   /** 二级入口页的「返回条」（一级页不填） */
@@ -464,6 +466,8 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     devtools: { render: () => <DevtoolsSettingsSection downloadSource={downloadSource} changeDownloadSource={changeDownloadSource} capabilityRows={capabilityRows} capabilityError={capabilityError} VoiceDevToolsSection={VoiceDevToolsSection} setNotice={setNotice} devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} /> },
     extensibility: { render: () => <ExtensibilitySettingsSection onNotice={setNotice} /> },
     screenshot: { render: () => <ScreenshotSettingsSection onNotice={setNotice} /> },
+    /* 桌面宠物（09-30）：域只收显式 props（onNotice），状态全走自己的 IPC（pet:*），不占 app 字段面 */
+    pet: { render: () => <PetSettingsSection onNotice={setNotice} /> },
     favorites: { render: () => <FavoritesSettingsSection
       favorites={favorites}
       busy={favoritesBusy}

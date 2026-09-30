@@ -99,6 +99,9 @@ import "./features/remote-ipc";
 import "./features/memory-rpa-ipc";
 import "./features/phone-harness-ipc";
 import "./features/fs-ipc";
+/* 桌面宠物（09-30）：IPC 域 + 浮窗。侧效应 import ⇒ handler 立即注册（早于 whenReady）。 */
+import "./features/pet-ipc";
+import { closePetWindow } from "./features/pet-window";
 import "./features/drama-canvas";
 import "./features/video-gen";
 /* 排队消息定时发送（09-28）：⛔ 本行曾经漏掉 ⇒ `queue-timer:set` 报
@@ -160,7 +163,16 @@ function enrichScanCountSnapshot() {
   };
 }
 
-protocol.registerSchemesAsPrivileged([{ scheme: "harness-image", privileges: { secure: true, supportFetchAPI: true } }]);
+/* ⛔ 自定义协议必须在 app ready **之前**登记特权，否则 supportFetchAPI 不生效。
+   · `harness-image`：通用图片（严格收敛在可信根内，见 boot.ts 的注释）
+   · `pet`（09-30 加）：**只服务宠物目录下的图集**。宠物包可能躺在 `~/.codex/pets`、`~/.petdex/pets`
+     这些**不在可信根**的目录里，而把 harness-image 的可信根放宽 = 安全回归（红线）。
+     所以另开一条**窄口径**协议：白名单目录（唯一定义在 features/pet-ipc.ts 的 petRoots）+
+     图片扩展名，两者同时满足才放行。 */
+protocol.registerSchemesAsPrivileged([
+  { scheme: "harness-image", privileges: { secure: true, supportFetchAPI: true } },
+  { scheme: "pet", privileges: { secure: true, supportFetchAPI: true } },
+]);
 
 app.setName("Codex Harness Desktop");
 

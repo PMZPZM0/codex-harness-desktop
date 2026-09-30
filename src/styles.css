@@ -32,3 +32,4 @@
 /* 20-team-office.css 已随办公室预览实现删除（用户 09-30「太丑了，直接删了这个功能」；
    按钮与接口保留 —— 重做时恢复该文件并在 styles.css 重新 @import） */
 @import "./styles/21-drama-canvas";
+@import "./styles/22-pet";

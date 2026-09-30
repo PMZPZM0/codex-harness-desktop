@@ -353,6 +353,49 @@ type FavoriteDeleteResult = { items: FavoriteItem[]; removed: number };
 type MemoryLayerScope = "user" | "project" | "background" | "lessons";
 type FavoritesToMemoryResult = { ok: boolean; written: number; error?: string };
 
+/* ── 桌面宠物（09-30）：官方 Codex 宠物格式 ────────────────────────────────────
+   宠物包 = pet.json + 图集（8 列 × N 行、默认每帧 192×208）；
+   九态行名（顺序即行序）：idle / running-right / running-left / waving / jumping /
+   failed / waiting / running / review。⛔ 行名与行序是**官方格式**，别重排。 */
+type PetStateName = "idle" | "running-right" | "running-left" | "waving" | "jumping" | "failed" | "waiting" | "running" | "review";
+type PetPackage = {
+  id: string;
+  name: string;
+  description: string;
+  /** 宠物包目录（内置的在 dist/pets 下，用户的在 userData/pets 下） */
+  dir: string;
+  /** 图集绝对路径（渲染层经 pet:// 协议取用；校验失败时为空串） */
+  spritesheet: string;
+  columns: number;
+  rows: number;
+  frameWidth: number;
+  frameHeight: number;
+  states: string[];
+  source: "builtin" | "user" | "codex" | "petdex";
+  /** 校验不通过的原因（渲染层灰显并照实显示） */
+  problem?: string;
+};
+type PetSettings = {
+  /** 是否在桌面显示宠物 */
+  enabled: boolean;
+  /** 当前生效的宠物 id（null = 第一只可用的） */
+  active: string | null;
+  scale: number;
+  opacity: number;
+  x: number | null;
+  y: number | null;
+};
+type PetSignal = {
+  state: PetStateName;
+  bubble: string;
+  busy: number;
+  tool: string | null;
+  ts: number;
+};
+type PetRootInfo = { dir: string; source: string; exists: boolean; writable: boolean };
+type PetBounds = { x: number; y: number; width: number; height: number };
+type PetStatus = { settings: PetSettings; active: PetPackage | null };
+
 interface Window {
   codex: {
     /* ⛔ invoke 方法签名由 scripts/gen-ipc-bridge.mjs 生成（两标记之间勿手改）。 */
@@ -786,8 +829,33 @@ interface Window {
     workLogsDelete(input: { paths: string[] }): Promise<{ deleted: number; bytes: number; failed: string[] }>;
     /* 按顺序合并视频片段成一条成片（整片导出）：先 -c copy，失败回落统一重编码；输出 <workspace>/.drama-canvas/export/ */
     videoConcat(input: { workspace: string; name: string; files: string[]; width?: number; height?: number; fps?: number }): Promise<{ path: string; bytes: number; mode: "copy" | "reencode"; parts: number }>;
+    /* 扫描宠物目录（内置 dist/pets + userData/pets + ~/.codex/pets + ~/.petdex/pets）；同名 id 先到先得，内置优先 */
+    petList(): Promise<PetPackage[]>;
+    /* 宠物设置 + 当前生效的宠物包（active 无效时回落第一只可用的） */
+    petSettingsGet(): Promise<PetStatus>;
+    /* 改完立刻应用（显隐 / 位置 / 缩放 / 透明度）；取值一律归一化后再落盘 */
+    petSettingsSet(patch: Partial<PetSettings>): Promise<PetStatus>;
+    /* 浮窗首帧补水（推送可能发生在窗口创建之前）+ 诊断 */
+    petState(): Promise<{ signal: PetSignal; open: boolean; bounds: PetBounds | null }>;
+    /* 宠物目录清单：设置页显示「官方宠物包放哪儿」，writable 只对用户目录为真 */
+    petRoots(): Promise<PetRootInfo[]>;
+    /* 在系统文件管理器打开宠物目录（缺省 = 用户目录；不存在则先建，否则 Windows 上静默无反应） */
+    petOpenDir(which?: string): Promise<{ ok: boolean; error?: string; dir: string }>;
+    /* 把外部宠物包**复制**进 userData/pets（只允许从已登记的宠物目录导入；不移动、不覆盖同名） */
+    petImport(dir: string): Promise<{ ok: boolean; error?: string; id?: string }>;
+    /* 显示/隐藏切换（走独立通道，避免为了开关宠物而整份重写设置） */
+    petToggle(): Promise<{ settings: PetSettings; open: boolean }>;
+    /* 显示宠物（置 enabled=true） */
+    petShow(): Promise<{ settings: PetSettings; open: boolean }>;
+    /* 隐藏宠物（置 enabled=false；下次启动不自动恢复） */
+    petHide(): Promise<{ settings: PetSettings; open: boolean }>;
 /* ═══ gen:end ═══ */
 
+    /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */
+    onPetSignal(listener: (signal: PetSignal) => void): () => void;
+
+    /** 桌面宠物配置推送（当前宠物包 + 设置）：换宠物 / 改缩放时用它让已开着的浮窗立刻跟上 */
+    onPetConfig(listener: (config: PetStatus) => void): () => void;
 
     onQueueTimerDue(listener: (event: { threadId: string; queuedSubmissionId: string }) => void): () => void;
 

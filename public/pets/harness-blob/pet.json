@@ -1,0 +1,25 @@
+{
+  "id": "harness-blob",
+  "displayName": "小墨",
+  "description": "工程助手墨滴：安静、专注，任务完成会蹦一下。",
+  "spritesheetPath": "spritesheet.webp",
+  "frameSize": {
+    "width": 192,
+    "height": 208
+  },
+  "columns": 8,
+  "rows": 9,
+  "states": [
+    "idle",
+    "running-right",
+    "running-left",
+    "waving",
+    "jumping",
+    "failed",
+    "waiting",
+    "running",
+    "review"
+  ],
+  "spriteVersionNumber": 1,
+  "builtin": true
+}

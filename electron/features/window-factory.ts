@@ -15,6 +15,7 @@ import { popoutBusWindows, registerBusWindow, unregisterBusWindow } from "../fea
 import { flushBootTiming, markBoot } from "../boot-timing";
 import { installContextMenu } from "../main/10-window-menu";
 import { closeToTrayEnabled, engineActiveTurnIds, notifyPopoutClosed, popoutThreadIds, titleBarOverlayOptions } from "../runtime-refs";
+import { closePetWindow } from "./pet-window";
 import { mutableState } from "../main";
 export function createWindow() {
   // Windows 任务栏图标必须用 .ico 才可靠（PNG 会被 electron.exe 默认图标顶掉）；
@@ -149,6 +150,9 @@ export function createWindow() {
   // 主窗口真正关闭后，独立会话弹窗跟着一起关（用户 09-13 明确要求「跟着主应用关闭」）。
   mutableState.mainWindow.on("closed", () => {
     for (const win of popoutBusWindows()) { if (!win.isDestroyed()) win.close(); }
+    // 桌面宠物同理：它是**不登记进 window-bus** 的独立浮窗（见 features/pet-window.ts 头注释），
+    // 不显式关掉的话它会在主窗口消失后继续孤零零飘在桌面上。
+    try { closePetWindow(); } catch { /* 已关，忽略 */ }
   });
   const contents = mutableState.mainWindow.webContents;
   contents.on("did-start-loading", () => markBoot("page-start-loading"));
