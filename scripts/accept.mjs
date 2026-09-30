@@ -83,59 +83,6 @@ const globalArchiveOf = (h) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const CHECKS = [
   {
-    // 09-30 办公室预览动画改造轮（姿势图集 / 走路两帧 / 场景背景 / 职业化屏幕 / 新行为）。
-    id: "office-anim",
-    name: "㉑ 办公室预览动画改造（姿势图集 + 走路两帧 + 场景背景 + 资产随包）",
-    run: async (h) => {
-      // 为什么这样测：姿势/走路的「动起来」只能真机看（CDP 截图验不了逐帧），但**链路的
-      // 硬前提**可以机器断言：① 资产 84 张切片 + 场景背景随包（缺一张 = 该物种/姿势回落主图，
-      // 动画退化）；② 资产被**内联进 bundle**（打包版 file:// fetch 被拒 —— 0.0.27 白屏同型坑）；
-      // ③ 真机：点专家团头像轨的「办公室」按钮 → 浮层 canvas 真渲染出来（入口断链 = 全白费）。
-      const animalsDir = join(ROOT, "src/features/team-office/assets/animals");
-      const need = [];
-      for (const p of ["work", "coffee", "doze", "phone", "note"]) {
-        for (const a of ["cat", "fox", "dog", "rabbit", "bear", "sheep", "koala", "mouse", "deer", "hedgehog", "pig", "lion"]) {
-          need.push(`pose-${p}-${a}.webp`);
-        }
-      }
-      for (const a of ["cat", "fox", "dog", "rabbit", "bear", "sheep", "koala", "mouse", "deer", "hedgehog", "pig", "lion"]) {
-        need.push(`walk-a-${a}.webp`, `walk-b-${a}.webp`);
-      }
-      const missing = need.filter((f) => !existsSync(join(animalsDir, f)));
-      h.check("① 姿势/走路资产 84 张切片随包", missing.length === 0, missing.length ? `缺 ${missing.slice(0, 4).join(",")} 等 ${missing.length} 张` : "84/84");
-      h.check("② 场景背景图随包", existsSync(join(ROOT, "src/features/team-office/assets/scene-bg.webp")), "scene-bg.webp");
-      const bundleFiles = (await h.eval(`(function(){ return window.__BUNDLE_SNIFF__ || null; })()`)) ?? null;
-      // 资产内联（data:）判据改走 bundle 体积：内联后 index js 远大于 2MB（84 张 + 场景图 base64）
-      const indexHtml = readFileSync(join(ROOT, "dist", "index.html"), "utf8");
-      const mainJs = indexHtml.match(/assets\/(index-[A-Za-z0-9_-]+\.js)/);
-      const big = mainJs ? readFileSync(join(ROOT, "dist", "assets", mainJs[1])).length : 0;
-      h.check("③ 素材已内联进主 bundle（>2.5MB；独立文件 = 打包版白方块）", big > 2_500_000, `${mainJs ? mainJs[1] : "?"} = ${(big / 1e6).toFixed(2)}MB`);
-      // ④ 真机渲染断言需要一个**专家团会话**（办公室入口挂在专家团头像轨上）。
-      //    ⛔ accept profile 里不一定有（独立数据，非用户机器）——没有时**跳过渲染断言**
-      //       （渲染本身由 look.mjs 预览截图 + 守卫结构断言覆盖），不算失败。
-      const rows = await h.eval(`(function(){
-        const list = [...document.querySelectorAll(".thread-row")];
-        const hit = list.find((r) => /专家团/.test(r.textContent || ""));
-        if (!hit) return null;
-        hit.querySelector("button")?.click();
-        return true;
-      })()`);
-      if (!rows) { console.log("  · profile 无专家团会话 ⇒ 跳过 ④⑤⑥ 渲染断言（入口链路已由守卫 + 预览截图覆盖）"); return; }
-      h.check("④ 找得到专家团会话", true, "ok");
-      await wait(1800);
-      const opened = await h.eval(`(function(){
-        const btn = document.querySelector(".team-rail-office");
-        if (!btn) return "no-btn";
-        btn.click();
-        return "clicked";
-      })()`);
-      h.check("⑤ 头像轨上有「办公室」按钮", opened === "clicked", String(opened));
-      await wait(2500);
-      const canvasOk = await h.eval(`(function(){ return !!document.querySelector(".office-scene canvas"); })()`);
-      h.check("⑥ 办公室浮层的 Pixi 画布渲染出来", Boolean(canvasOk), String(canvasOk));
-    },
-  },
-  {
     id: "file-card-edit",
     name: "⑱ 文件卡片右键菜单 + md 表格弹窗编辑（09-26「像 WorkBuddy 那样」轮）",
     run: async (h) => {
@@ -387,10 +334,9 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "09-30";
+const LATEST_ROUND = "09-26";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
-  "office-anim": "09-30",
   "file-card-edit": "09-26",
   "settings-pages": "09-25",
   "shot-editor": "09-24",

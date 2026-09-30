@@ -619,6 +619,13 @@
   transition: color 0.22s ease, transform 0.22s ease;
 }
 .team-rail-node:hover { color: var(--text); }
+/* 办公室预览入口（09-30 整体下线待重做，**接口保留位**）——虚线弱化观感，与成员节点区分 */
+.team-rail-office .team-rail-office-avatar {
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px dashed var(--line);
+}
+.team-rail-office:hover .team-rail-office-avatar { color: var(--text); border-color: var(--muted); }
 .team-rail-avatar {
   position: relative;
   width: 34px;

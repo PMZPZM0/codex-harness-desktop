@@ -29,5 +29,5 @@
 @import "./styles/17-visual-cards";
 @import "./styles/18-openai-dialog";
 @import "./styles/19-misc-hints";
-@import "./styles/20-team-office";
+/* 20-team-office（专家团办公室预览样式）已随该功能整体下线（09-30 用户要求重做） */
 @import "./styles/21-drama-canvas";

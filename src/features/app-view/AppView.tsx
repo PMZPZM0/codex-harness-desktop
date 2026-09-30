@@ -156,9 +156,7 @@ import { AppViewRemoteApproval } from "./AppView/04-remote-approval";
 import { AppViewRemoteConsole } from "./AppView/05-remote-console";
 import { AppViewTaskComposer } from "./AppView/06-task-composer";
 import { AppViewMemoryPanel } from "./AppView/07-memory-panel";
-import { TeamOfficePreview } from "../team-office/TeamOfficePreview";
 import { DramaCanvas } from "../drama-canvas";
-import { OfficeScene } from "../team-office/OfficeScene";
 import { AppViewSettingsSheet } from "./AppView/08-settings-sheet";
 import { AppViewFilePreviewEditor } from "./AppView/09-file-preview-editor";
 
@@ -459,38 +457,6 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {/* 记忆中心：设置页「记忆」只做总览，条目浏览 / 常驻记忆编辑 / 存储切换都在这个大弹窗里完成 */}
       <AppViewMemoryPanel app={app} />
       <AppViewSettingsSheet app={app} />
-      {/* 公司模式（09-25）：专家团的公司化组织架构可视化 —— 中间对话框保持正常，这里只是「第三只眼」 */}
-      {typeof localStorage !== "undefined" && localStorage.getItem("probeOffice") === "1" && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 99999, background: "#eef1f5", padding: 24 }}>
-          <OfficeScene
-            ceoName="CEO"
-            ceoProfession="统筹"
-            members={[
-              { id: "m1", name: "阿离", profession: "工程", running: true, hasThread: true },
-              { id: "m2", name: "小七", profession: "设计", running: false, hasThread: true },
-              { id: "m3", name: "老周", profession: "测试", running: false, hasThread: false },
-            ]}
-            snapshot={{
-              ceo: { kind: "work", hold: 6, label: "统筹中", variant: 0 },
-              poses: [
-                { kind: "work", hold: 6, label: "写代码", variant: 0 },
-                { kind: "coffee", hold: 6, label: "喝咖啡", variant: 1 },
-                { kind: "doze", hold: 6, label: "打盹", variant: 2 },
-              ],
-              handoffs: [{ id: "probe-h1", from: -1, to: 0, kind: "task", label: "派任务", ttl: 120 }],
-            }}
-          />
-        </div>
-      )}
-      <TeamOfficePreview
-        teamId={app.companyPreviewTeamId}
-        onClose={() => app.setCompanyPreviewTeamId(null)}
-        teams={app.expertTeams}
-        threads={app.threads}
-        runningThreadIds={app.runningThreadIds}
-        runningByMember={app.railRunningByMember}
-        openThread={(threadId) => void openThread(threadId)}
-      />
       {/* AI 短剧无限画布（09-27）：与「专家团办公室预览」同一个档位的整屏浮层 —— 画布需要
           一大片连续空间，塞进右栏或中央主区分栏都会被挤成缩略图。工作区传进去是因为
           分镜表副本与素材要落到 <workspace>/.drama-canvas/ 下（引擎读的就是那份）。 */}
