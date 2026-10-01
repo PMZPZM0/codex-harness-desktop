@@ -442,6 +442,9 @@ export interface Bag {
   openAppConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean>;
   expertTeams: ExpertTeamConfig[];
   setExpertTeams: React.Dispatch<React.SetStateAction<ExpertTeamConfig[]>>;
+  expertMarketOpen: boolean;
+  setExpertMarketOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  refreshExpertCenterData: () => Promise<void>;
   expertTeamDraft: ExpertTeamConfig | null;
   setExpertTeamDraft: React.Dispatch<React.SetStateAction<ExpertTeamConfig | null>>;
   expertTeamEditorOpen: boolean;
@@ -1241,6 +1244,11 @@ export interface Bag {
   changeSandbox: (value: string) => void;
   applyEffort: (value: string) => void;
   changeEffort: (value: string) => void;
+  effortAuto: boolean;
+  changeEffortAuto: (on: boolean) => void;
+  resolveAutoEffort: (text: string) => Promise<string | null>;
+  layaInstalled: boolean;
+  layaReady: boolean;
   changePersonality: (value: string) => void;
   copyMessage: (text: string) => Promise<void>;
   copyThreadReferenceId: (target: { id: string; }) => Promise<void>;

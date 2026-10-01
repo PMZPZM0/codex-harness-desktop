@@ -242,6 +242,9 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     projectGroups,
     providersList,
     readMood,
+    expertMarketOpen,
+    setExpertMarketOpen,
+    refreshExpertCenterData,
     refreshActive,
     refreshCommands,
     refreshExpertTeams,
@@ -447,7 +450,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
   return {
     automation: { render: () => <AutomationSettingsSection setSettingsPage={setSettingsPage} /> },
     agentteam: { render: () => <AgentTeamSettingsSection setSettingsPage={setSettingsPage} /> },
-    "expert-center": { back: { to: "agentteam", label: "返回智能体团队" }, render: () => <><ExpertCenterSection expertTeams={expertTeams} EXPERT_CATEGORY_DEFS={EXPERT_CATEGORY_DEFS} expertTeamMemberDirect={expertTeamMemberDirect} startMemberDirectSession={startMemberDirectSession} /><ExpertMarketSection onInstalled={() => void refreshExpertTeams()} onNotice={(m) => setNotice(m)} /></> },
+    "expert-center": { back: { to: "agentteam", label: "返回智能体团队" }, render: () => expertMarketOpen ? <ExpertMarketSection localSkills={localSkills} onBack={() => setExpertMarketOpen(false)} onInstalled={() => void refreshExpertCenterData()} onNotice={(m) => setNotice(m)} /> : <><ExpertCenterSection expertTeams={expertTeams} EXPERT_CATEGORY_DEFS={EXPERT_CATEGORY_DEFS} expertTeamMemberDirect={expertTeamMemberDirect} startMemberDirectSession={startMemberDirectSession} onOpenMarket={() => setExpertMarketOpen(true)} /></> },
     user: { render: () => <UserCenterSection
                           username={username}
                           onUsernameChange={(name) => { setUsername(name); }}
@@ -474,7 +477,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     /* 桌面宠物（09-30）：域只收显式 props（onNotice），状态全走自己的 IPC（pet:*），不占 app 字段面 */
     pet: { render: () => <PetSettingsSection onNotice={setNotice} /> },
     "component-library": { render: () => <ComponentLibrarySection /> },
-    "soul-market": { render: () => <SoulMarketSection /> },
+    "soul-market": { render: () => <SoulMarketSection onNotice={(m) => setNotice(m)} /> },
     favorites: { render: () => <FavoritesSettingsSection
       favorites={favorites}
       busy={favoritesBusy}
