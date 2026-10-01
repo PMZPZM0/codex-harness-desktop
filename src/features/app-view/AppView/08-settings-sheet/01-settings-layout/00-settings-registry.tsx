@@ -66,7 +66,6 @@ const ScreenshotSettingsSection = lazy(() => import("../../../../settings-screen
 /* 收藏夹页：批量管理 + 加入 Agent 记忆（与输入框加号菜单共用 app 层同一对动作） */
 const FavoritesSettingsSection = lazy(() => import("../../../../settings-favorites").then((m) => ({ default: m.FavoritesSettingsSection })));
 /* 桌面宠物页（09-30）：官方 Codex 宠物格式的开关 / 选择 / 目录管理 */
-const UiSkinSettingsSection = lazy(() => import("../../../../settings-ui-skin/UiSkinSettingsSection").then((m) => ({ default: m.UiSkinSettingsSection })));
 const ComponentLibrarySection = lazy(() => import("../../../../component-library").then((m) => ({ default: m.ComponentLibraryPage })));
 const PetSettingsSection = lazy(() => import("../../../../settings-pet/PetSettingsSection").then((m) => ({ default: m.PetSettingsSection })));
 
@@ -470,7 +469,6 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     screenshot: { render: () => <ScreenshotSettingsSection onNotice={setNotice} /> },
     /* 桌面宠物（09-30）：域只收显式 props（onNotice），状态全走自己的 IPC（pet:*），不占 app 字段面 */
     pet: { render: () => <PetSettingsSection onNotice={setNotice} /> },
-    "ui-skin": { render: () => <UiSkinSettingsSection /> },
     "component-library": { render: () => <ComponentLibrarySection /> },
     favorites: { render: () => <FavoritesSettingsSection
       favorites={favorites}

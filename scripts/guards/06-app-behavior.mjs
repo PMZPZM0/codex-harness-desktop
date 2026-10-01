@@ -2807,71 +2807,23 @@ w.postMessage({id:1,op:"list",root});
   }
 
 
-  /* ══ 【234】控件皮肤（Uiverse Galaxy，MIT；09-30 深夜）═══════════════
-     机制沉基座（lib/ui-skin + components/SkinHost），域只做工坊 UI。
-     ⛔ 数据在 src/lib/ui-skin/data/*.gz（2.3MB）；正文懒解压，别把 34MB 原文打进包。 */
-  if (!existsSync(join(ROOT, "src", "lib", "ui-skin", "data"))) {
-    /* 库数据不在（未 ingest）⇒ 跳过 */
-  } else {
-    const skinLib = join(ROOT, "src", "lib", "ui-skin");
-    const catalogSrc = readFileSync(join(ROOT, "src", "features", "ui-skin", "catalog.gen.ts"), "utf8");
+  /* ══ 【234】个性化皮肤已删（10-01 用户：「把这个个性化皮肤删了，保留组件库」）═════════
+     09-30 深夜首版（单品散绑）→ 10-01 套装化 → 当天用户要求整体删除。组件库（【235】）
+     保留并继承全部数据面（gz / catalog.gen / SkinHost / ingest）。本块 = 负向断言防复活：
+     ⛔ 这些文件不许回来；换肤接线点（ToggleSwitch/Spinner 的 skin 分支）不许回来。 */
+  {
+    const skinGone = ["src/features/ui-skin", "src/features/settings-ui-skin", "src/lib/ui-skin/store.ts", "src/lib/ui-skin/packs.gen.ts", "src/hooks/use-skin-binding.ts"];
+    const leftovers = skinGone.filter((rel) => existsSync(join(ROOT, rel)));
+    (leftovers.length === 0 ? ok : fail)(`【234】皮肤文件已删净（残留：${leftovers.join(", ") || "无"}）`);
 
-    /* ① 目录规模：11 类 3802 项（源变化后重跑 ingest 并同步这两个数） */
-    ((catalogSrc.match(/"id":/g) || []).length === 3802 ? ok : fail)(
-      "【234】库目录 3802 项（重跑 ingest 后同步）"
-    );
-    (readdirSync(join(skinLib, "data")).filter((x) => x.endsWith(".html.gz")).length === 11 ? ok : fail)(
-      "【234】11 个类目 gzip 数据在位"
-    );
-
-    /* ② ⛔ 皮肤渲染必须走 Shadow DOM（3800 个社区类名会与应用/互相撞车；不隔离必炸） */
-    const skinHostSrc = readFileSync(join(ROOT, "src", "components", "SkinHost.tsx"), "utf8");
-    (skinHostSrc.includes("attachShadow") && skinHostSrc.includes("innerHTML") ? ok : fail)(
-      "【234】皮肤宿主用 Shadow DOM 渲染（类名隔离）"
-    );
-
-    /* ③ ⛔ 分层：基座原语（SettingsWidgets/CardShell）只经 useSkinBinding 读绑定，
-       绝不 import 域层（ui-skin 工坊）——架构红线 */
-    const widgetsSrc = readFileSync(join(ROOT, "src", "components", "SettingsWidgets.tsx"), "utf8");
+    const widgetsSrc234 = readFileSync(join(ROOT, "src", "components", "SettingsWidgets.tsx"), "utf8");
     const cardShellSrc = readFileSync(join(ROOT, "src", "components", "CardShell.tsx"), "utf8");
-    (!widgetsSrc.includes("features/ui-skin") && !cardShellSrc.includes("features/ui-skin") ? ok : fail)(
-      "【233→234】基座原语不 import 域层（皮肤机制在 lib，工坊在 features）"
+    (!widgetsSrc234.includes("useSkinBinding") && !cardShellSrc.includes("useSkinBinding") && !widgetsSrc234.includes("SkinHost") && !cardShellSrc.includes("SkinHost") ? ok : fail)(
+      "【234】开关 / 加载器恢复默认渲染（无换肤分支残留）"
     );
 
-    /* ④ 两个真实接线点在位（绑定存了没人消费 = 骗人） */
-    (widgetsSrc.includes('useSkinBinding("toggle-switch")') && widgetsSrc.includes("SkinHost") ? ok : fail)(
-      "【234】ToggleSwitch 接线（绑定即换肤）"
-    );
-    (cardShellSrc.includes('useSkinBinding("loader")') && cardShellSrc.includes("SkinHost") ? ok : fail)(
-      "【234】Spinner 接线（绑定即换肤）"
-    );
-
-    /* ⑤ 设置页三件套（类型 / 导航 / 注册表 + 帮助总览） */
-    const typesSrc234 = readFileSync(join(ROOT, "src", "features", "app-view", "types.ts"), "utf8");
-    const catalogsSrc234 = readFileSync(join(ROOT, "src", "features", "app-view", "helpers", "catalogs.ts"), "utf8");
-    const registrySrc234 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
-    const helpSrc = readFileSync(join(ROOT, "src", "components", "HelpDialog.tsx"), "utf8");
-    (typesSrc234.includes('"ui-skin"') ? ok : fail)("【234】SettingsPage 类型含 ui-skin");
-    (catalogsSrc234.includes('"ui-skin", "控件皮肤"') ? ok : fail)("【234】设置导航含「控件皮肤」");
-    (registrySrc234.includes("UiSkinSettingsSection") ? ok : fail)("【234】设置注册表含控件皮肤页");
-    (helpSrc.includes("控件皮肤") ? ok : fail)("【234】帮助总览含控件皮肤（守卫【32】同款义务）");
-
-    /* ⑥ ingest 脚本可复现：剥 script 兜底在位 */
-    const ingestSrc = readFileSync(join(ROOT, "scripts", "gen-ui-skin-library.mjs"), "utf8");
-    (ingestSrc.includes("stripScript") ? ok : fail)("【234】ingest 剥 script 兜底（当前源 0 script，防未来换源）");
-
-    /* ⑦ ⛔ 套装统一层（10-01）：单品散绑 = 同屏五花八门；换肤必须走套装 */
-    const packsSrc = readFileSync(join(ROOT, "src", "lib", "ui-skin", "packs.gen.ts"), "utf8");
-    const packsGenSrc = readFileSync(join(ROOT, "scripts", "gen-ui-skin-packs.mjs"), "utf8");
-    ((packsSrc.match(/"id":/g) || []).length >= 60 ? ok : fail)("【234】套装 ≥60 个（作者聚类；重跑 gen-ui-skin-packs 后同步）");
-    (packsGenSrc.includes("packs.gen.ts") && packsGenSrc.includes("catalog.gen.ts") ? ok : fail)("【234】套装生成器可复现（catalog → packs）");
-    (packsSrc.includes('toggle-switch') && packsSrc.includes('loader') ? ok : fail)("【234】套装覆盖两个接线槽位");
-    const storeSrc234 = readFileSync(join(ROOT, "src", "lib", "ui-skin", "store.ts"), "utf8");
-    (storeSrc234.includes("ui-skin-state-v2") && storeSrc234.includes('from "./packs.gen"') ? ok : fail)("【234】store v2（套装激活 + 覆盖两级）；packs 数据沉基座");
-    (!storeSrc234.includes("features/ui-skin") ? ok : fail)("【234】⛔ 基座 store 不 import 域层");
-
-    /* ⑧ ⛔ 开关全仓统一渲染路径：胶囊开关只许走共享 ToggleSwitch（皮肤全局生效的前提）。
-       出现新的散装实现（label+checkbox 胶囊）= 换肤时它不变 = 又「不统一」。 */
+    /* ⑧ 开关全仓统一渲染路径（从皮肤块继承，与皮肤无关、独立成立）：
+       胶囊开关只许走共享 ToggleSwitch——出现散装实现（label+checkbox 胶囊）= 同类控件两套长相。 */
     const switchScatter = [];
     const scanDirs238 = [join(ROOT, "src", "features"), join(ROOT, "src", "components")];
     const walk238 = (dir) => {

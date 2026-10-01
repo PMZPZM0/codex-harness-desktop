@@ -396,6 +396,28 @@ const CHECKS = [
       const hit = items.filter((it) => it.author.toLowerCase().includes("andrew"));
       h.check("⑧ 库数据面可搜（Toggle-switches 解压后按作者 andrew 过滤非空）",
         items.length > 200 && hit.length > 0, `Toggle-switches ${items.length} 项，andrew 命中 ${hit.length}`);
+
+      // ⑨ ⛔ 开关类预览必须可交互（10-01 用户：「开关点不动，那样不就看不到效果了」）——
+      //    SkinHost 禁 input 的旧实现已删；这条防止它回来。翻前 5 张卡找含 checkbox 的开关。
+      await h.eval(`(function(){ const cats=[...document.querySelectorAll('.comp-lib .ui-skin-cat')];
+        const i=cats.findIndex((b)=>(b.textContent||'').includes('开关')); if(i>=0) cats[i].click(); return i; })()`);
+      await wait(1100);
+      let t = null;
+      for (let k = 0; k < 5 && !(t && t.has); k++) {
+        await h.eval(`(function(){ const cells=[...document.querySelectorAll('.comp-lib .ui-skin-cell')];
+          cells[${k}]?.click(); return 1; })()`);
+        await wait(900);
+        t = await h.eval(`(function(){
+          const host=document.querySelector('.comp-lib-preview-row .skin-host');
+          const input=host?.shadowRoot?.querySelector('input[type="checkbox"]');
+          if (!input) return { has:false, k:${k} };
+          const before=input.checked; input.click();
+          return { has:true, before, after:input.checked, disabled:input.disabled };
+        })()`);
+      }
+      h.check("⑨ 开关预览可交互（checkbox 未禁用、点击可切换）",
+        t?.has === true && t?.disabled === false && t?.before !== t?.after, JSON.stringify(t));
+      await h.eval(`(function(){ document.querySelector('.comp-lib-detail-backdrop')?.click(); return 1; })()`);
     },
   },];
 
