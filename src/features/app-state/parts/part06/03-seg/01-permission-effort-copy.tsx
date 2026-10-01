@@ -96,6 +96,11 @@ bag.applyEffort = applyEffort as typeof bag.applyEffort;
     // 档位声明（models[].efforts）已随模型配置里的勾选区一起删除（09-18）——
     // 这里不再 upsert 补声明：档位是纯会话级选择，不被支持时由发送失败自动降档兜底。
     bag.applyEffort(value);
+    // 自动模式下手选 = 一次性覆盖判定（下一条消息直接生效，芯片立即透出）
+    if (bag.effortAuto) {
+      bag.manualEffortOverride.current = true;
+      bag.setAutoEffortApplied?.(value);
+    }
   }
 bag.changeEffort = changeEffort as typeof bag.changeEffort;
 
@@ -112,6 +117,11 @@ bag.effortAuto = effortAuto as typeof bag.effortAuto;
   const [autoEffortApplied, setAutoEffortApplied] = useState<string | null>(null);
 bag.autoEffortApplied = autoEffortApplied as typeof bag.autoEffortApplied;
 bag.setAutoEffortApplied = setAutoEffortApplied as typeof bag.setAutoEffortApplied;
+
+  /* 手动选档一次性覆盖（10-01 用户：「所有思考等级要立刻能选择生效」）：自动模式下手选
+     档 ⇒ 下一条消息直接用手选档（跳过判定），发完自动恢复逐条判定。 */
+  const manualEffortOverride = useRef(false);
+bag.manualEffortOverride = manualEffortOverride as typeof bag.manualEffortOverride;
 
   function changeEffortAuto(on: boolean) {
     setEffortAuto(on);
@@ -152,12 +162,18 @@ bag.changeEffortAuto = changeEffortAuto as typeof bag.changeEffortAuto;
 bag.resolveAutoEffort = resolveAutoEffort as typeof bag.resolveAutoEffort;
 
   /* 预判：effortAuto 开着时，输入停顿 700ms 就把当前草稿的档位判好（打字期间零成本，
-     发送时大概率命中缓存）。判定是纯读操作，改了草稿自然失效，不需要失效逻辑。 */
+     发送时大概率命中缓存）。判定是纯读操作，改了草稿自然失效，不需要失效逻辑。
+     ⛔ 判完立刻透出到芯片（10-01 用户：「要立刻能选择生效」）——打字时就能看到档位
+     实时变化，不用等发送。 */
   useEffect(() => {
     if (!bag.effortAuto) return;
     const draft = bag.prompt.trim();
     if (draft.length < 2 || autoEffortCache.current.has(draft)) return;
-    const timer = setTimeout(() => { void resolveAutoEffort(draft); }, 700);
+    const timer = setTimeout(() => {
+      void resolveAutoEffort(draft).then((chosen) => {
+        if (chosen && !bag.manualEffortOverride?.current) bag.setAutoEffortApplied?.(chosen);
+      });
+    }, 700);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bag.prompt, bag.effortAuto]);

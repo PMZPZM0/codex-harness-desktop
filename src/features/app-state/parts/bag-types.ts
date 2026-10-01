@@ -1248,6 +1248,7 @@ export interface Bag {
   changeEffortAuto: (on: boolean) => void;
   autoEffortApplied: string | null;
   setAutoEffortApplied: (v: string | null) => void;
+  manualEffortOverride: { current: boolean };
   resolveAutoEffort: (text: string) => Promise<string | null>;
   layaInstalled: boolean;
   layaReady: boolean;

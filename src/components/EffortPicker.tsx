@@ -165,12 +165,14 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, autoMod
                 onClick={() => { onAutoToggle(!autoMode); if (!autoMode) setOpen(false); }}
               >
                 <Zap size={13} />
-                <span><b>自动（Laya 智能判断）</b><small>{autoMode ? "已开启：每条消息发送前自动判档" : autoAvailable ? "发送前自动选 低/中/高/极高" : autoHint ?? "未安装"}</small></span>
+                <span><b>自动（Laya 智能判断）</b><small>{autoMode ? "已开启：发送前自动判档；拖下方滑块可手动指定下一条" : autoAvailable ? "发送前自动选 低/中/高/极高" : autoHint ?? "未安装"}</small></span>
                 <span className={`effort-picker-auto-state${autoMode ? " on" : ""}`}>{autoMode ? "开" : "关"}</span>
               </button>
             </div>
           )}
-          <div className={`effort-picker-bar${isMax ? " burn" : ""}${autoMode ? " disabled" : ""}`} aria-hidden={autoMode}>
+          {/* ⛔ 自动模式下滑块保持可用（10-01 用户：「所有思考等级要立刻能选择生效」）——
+              拖动 = 手动指定下一条消息的档位（一次性覆盖自动判定），芯片立即透出 */}
+          <div className={`effort-picker-bar${isMax ? " burn" : ""}`}>
             {/* 未选段 = 一条线 */}
             <div className="effort-picker-track" aria-hidden />
             {/* 已选段 = 液体 + 灯带（宽度=已选比例；渐变铺满整条再裁，颜色对齐档位） */}
@@ -199,7 +201,6 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, autoMod
               max={levels.length - 1}
               step={1}
               value={draft}
-              disabled={autoMode}
               aria-label="思考强度"
               aria-valuetext={labels[shown] ?? shown}
               onChange={(event) => setDraft(Number(event.target.value))}

@@ -2800,6 +2800,10 @@ w.postMessage({id:1,op:"list",root});
     (capabilitySrc237.includes('"laya":') ? ok : fail)(
       "【237】能力清单含 laya 域描述（漏了模型就不知道这个能力存在——【153】教训）"
     );
+    // 10-01 二补：手动档立即生效 + 升档锚点（模型对「中以上」系统性压缩的实测对策）
+    (sendSrc237.includes("manualEffortOverride") && layaSrc.includes("ruleEscalate") ? ok : fail)(
+      "【237】手动档一次性覆盖 + 升档锚点（自动模式下手选立即生效；规则命中 0ms 跳过模型）"
+    );
 
     /* ③c 坐姿打字微动画 = 图集两个坐姿变体交替（cols 5/6） */
     (fmtSrc.includes("SIT_FRAMES = [5, 6]") && canvasSrc.includes("SIT_FRAMES[") ? ok : fail)(
