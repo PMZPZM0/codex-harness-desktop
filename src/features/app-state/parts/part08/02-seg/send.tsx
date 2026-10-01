@@ -322,11 +322,25 @@ export async function send(bag: Bag, event?: FormEvent) {
     // （fastArm 路径的乐观气泡已在上方上屏；两种路径都只 arm 一次，之后不改 content）
     let createdThreadId: string | null = null;
     try {
+      /* Laya 思考等级自动切换（10-01）：effortAuto 开启时发送前用 laya 判一档
+         （33ms 本地决策，置信 <0.45 或服务未装 ⇒ null ⇒ 回落 bag.effort 手选档）。
+         判定档要过 pickEffortFallback（模型已知不支持的档自动降邻档）。 */
+      let effectiveEffort = bag.effort || null;
+      if (bag.effortAuto && messageText.trim()) {
+        const decided = await bag.resolveAutoEffort?.(messageText);
+        if (decided) {
+          effectiveEffort = decided;
+          const supported = (bag.selectedModel as any)?.supportedReasoningEfforts as string[] | undefined;
+          if (supported?.length && !supported.includes(decided)) {
+            effectiveEffort = pickEffortFallback(decided, supported) ?? decided;
+          }
+        }
+      }
       const startTurn = async (target: Thread) => window.codex.request("turn/start", {
         threadId: target.id,
         input: sendInput,
         model: bag.selectedModel?.model ?? modelName(bag.modelId),
-        effort: bag.effort || null,
+        effort: effectiveEffort,
         personality: bag.selectedModel?.supportsPersonality ? bag.personality : null,
         // 审批档位逐回合下发（TurnStartParams.approvalPolicy，协议 schema 实证 09-06）：
         // 权限胶囊切「完全访问/never」后即使 resume 未及时生效，本条回合也按新档位审批
@@ -337,7 +351,7 @@ export async function send(bag: Bag, event?: FormEvent) {
         // 工作区外、权限总是掉」），每轮按 UI 当前权限下发是唯一稳的做法。
         sandboxPolicy: sandboxPolicy(bag.sandbox, target.cwd ?? bag.workspace ?? ""),
         // 协作模式的 settings 优先于顶层 effort；漏传时计划模式会回落 medium。
-        ...(bag.planOnceRef.current ? { collaborationMode: { mode: "plan", settings: { model: bag.selectedModel?.model ?? modelName(bag.modelId), reasoning_effort: bag.effort || null } } } : {}),
+        ...(bag.planOnceRef.current ? { collaborationMode: { mode: "plan", settings: { model: bag.selectedModel?.model ?? modelName(bag.modelId), reasoning_effort: effectiveEffort } } } : {}),
       });
       let active = bag.thread;
       if (!active) {

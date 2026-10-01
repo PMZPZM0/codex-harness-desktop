@@ -2776,6 +2776,31 @@ w.postMessage({id:1,op:"list",root});
       "【233】休息活动（tea/water/book）在 mode 沿清空 + 清在途路径"
     );
 
+    /* ══ 【237】Laya 智能判断（10-01 用户立项）═══════════════════════════
+       GitHub NandhaKishorM/laya（Apache-2.0，33ms 非自回归决策引擎）。数据端
+       electron/features/laya-service.ts（laya-serve HTTP，Python laya[serve]）。
+       首个消费方 = 思考等级「自动」档。⛔ 判断失败必须降级手选档（增强不是依赖）。 */
+    const layaSrc = existsSync(join(ROOT, "electron", "features", "laya-service.ts"))
+      ? readFileSync(join(ROOT, "electron", "features", "laya-service.ts"), "utf8") : "";
+    (layaSrc.includes("127.0.0.1") && layaSrc.includes("LAYA_API_KEY") && layaSrc.includes("hf-mirror.com") && layaSrc.includes("IDLE_EXIT_MS") ? ok : fail)(
+      "【237】服务安全与经济性（只绑 127.0.0.1 + API key 鉴权 + 权重走 hf-mirror + 闲置自动退出）"
+    );
+    (layaSrc.includes('["low", "medium", "high", "xhigh"].includes(choice)') && layaSrc.includes("confidence >= 0.45") ? ok : fail)(
+      "【237】effort 判定收口（档位白名单 + 校准置信 <0.45 弃权——低置信硬判不如不判）"
+    );
+    const sendSrc237 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part08", "02-seg", "send.tsx"), "utf8");
+    (sendSrc237.includes("bag.effortAuto") && sendSrc237.includes("resolveAutoEffort") && sendSrc237.includes("effectiveEffort") ? ok : fail)(
+      "【237】发送链接入（effortAuto → resolveAutoEffort → effectiveEffort，手选档不被覆盖）"
+    );
+    const pickerSrc237 = readFileSync(join(ROOT, "src", "components", "EffortPicker.tsx"), "utf8");
+    (pickerSrc237.includes("onAutoToggle") && pickerSrc237.includes("自动（Laya 智能判断）") ? ok : fail)(
+      "【237】EffortPicker 自动档开关在位（⛔ auto 不进滑块 levels——不污染 effort 值域）"
+    );
+    const capabilitySrc237 = readFileSync(join(ROOT, "scripts", "gen-capability-skill.mjs"), "utf8");
+    (capabilitySrc237.includes('"laya":') ? ok : fail)(
+      "【237】能力清单含 laya 域描述（漏了模型就不知道这个能力存在——【153】教训）"
+    );
+
     /* ③c 坐姿打字微动画 = 图集两个坐姿变体交替（cols 5/6） */
     (fmtSrc.includes("SIT_FRAMES = [5, 6]") && canvasSrc.includes("SIT_FRAMES[") ? ok : fail)(
       "【233】坐姿用双帧变体交替（打字微动画）"

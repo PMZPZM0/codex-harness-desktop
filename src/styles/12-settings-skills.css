@@ -1397,3 +1397,42 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 .skill-pool-context > .memory-project-context-copy { flex: 1 1 auto; min-width: 0; }
 .skill-pool-context > .memory-project-picker { flex: 0 0 min(360px, 46%); min-width: 0; }
+
+/* ── EffortPicker 的 Laya 自动档（10-01）── */
+.effort-picker-auto { margin: 0 10px 8px; }
+.effort-picker-auto-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-2, transparent);
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+.effort-picker-auto-btn:hover { border-color: #14b8a6; }
+.effort-picker-auto.on .effort-picker-auto-btn { border-color: #14b8a6; background: color-mix(in srgb, #14b8a6 10%, var(--panel)); }
+.effort-picker-auto-btn span { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.effort-picker-auto-btn b { font-size: 12px; }
+.effort-picker-auto-btn small { font-size: 10px; color: var(--muted); }
+.effort-picker-auto.unavailable .effort-picker-auto-btn { opacity: 0.55; }
+.effort-picker-auto-state {
+  flex: none !important;
+  font-size: 10.5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.effort-picker-auto-state.on { background: #14b8a6; border-color: #14b8a6; color: #fff; }
+.effort-picker-bar.disabled { opacity: 0.4; pointer-events: none; }
+
+/* ── Laya 智能判断卡（10-01，runtime-row 变体）── */
+.laya-card { flex-wrap: wrap; }
+.laya-card .laya-install-log { width: 100%; }
+.laya-card .laya-install-log summary { cursor: pointer; color: var(--muted); font-size: 11px; display: flex; align-items: center; gap: 5px; }
+.laya-card .laya-install-log pre { max-height: 200px; overflow: auto; font-size: 10.5px; background: var(--panel-2, rgba(0,0,0,0.04)); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin: 6px 0 0; white-space: pre-wrap; word-break: break-all; }

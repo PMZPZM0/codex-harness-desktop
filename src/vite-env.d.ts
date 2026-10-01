@@ -194,7 +194,7 @@ type PluginMarketEntry = {
   categoryZh?: string; fullName?: string; owner?: string; defaultBranch?: string; license?: string; installability?: string;
 };
 type PluginMarketInstallResult = { id: string; name: string; path: string; version: string; description: string; marketId: string; sourceUrl: string; engineRegistered?: boolean; engineCheckMessage?: string };
-type LocalSkillEntry = { name: string; folder?: string; path: string; description: string; descriptionZh?: string; marketId?: string; pluginId?: string; sourceUrl?: string; installedAt?: string; engineRegistered?: boolean; engineCheckMessage?: string; source?: "cocoloop" | "skillhub" | "local"; enabled?: boolean; allowedTools?: string[]; icon?: string; category?: string };
+type LocalSkillEntry = { name: string; folder?: string; path: string; description: string; descriptionZh?: string; marketId?: string; pluginId?: string; sourceUrl?: string; installedAt?: string; engineRegistered?: boolean; engineCheckMessage?: string; source?: "cocoloop" | "skillhub" | "local"; enabled?: boolean; allowedTools?: string[]; icon?: string; category?: string; /** 专家市场包元技能（.skillhub.json kind=skillset） */ skillset?: boolean };
 type PersonalizationConfig = { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean; greeted?: boolean };
 
 /** SSH 跳板机（ProxyJump）配置 */
@@ -863,6 +863,12 @@ interface Window {
     currentSoulMarket(): Promise<{ soulSlug: string; persona: string }>;
     /* 应用人格（slug=null 还原默认）：写 personalization.persona + 同步 $CODEX_HOME/AGENTS.md，新会话即生效 */
     applySoulMarket(input: { slug: string | null }): Promise<{ slug: string; displayName: string }>;
+    /* Laya 智能判断：服务/安装状态（pip 包 + laya-serve 进程 + 权重就绪） */
+    layaStatus(): Promise<{ installed: boolean; version: string; running: boolean; ready: boolean; port: number; installing: boolean; starting: boolean; lastError: string }>;
+    /* 安装/更新 laya[serve]（pip 清华镜像；torch 大，20 分钟超时）；权重由服务首启时经 hf-mirror 拉取 */
+    layaInstall(): Promise<{ ok: boolean; log: string }>;
+    /* 思考等级自动判断（choice: low/medium/high/xhigh + 校准置信度；置信 <0.45 弃权返回 null，调用方回落手选档） */
+    layaDecideEffort(text: string): Promise<{ effort: string; confidence: number } | null>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

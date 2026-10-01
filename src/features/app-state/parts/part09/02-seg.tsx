@@ -444,5 +444,12 @@ bag.earlyView = earlyView as typeof bag.earlyView;
     </>
   );
 bag.topbarActionsNode = topbarActionsNode as typeof bag.topbarActionsNode;
-  return { activeThreadMemberRunning, activeMemberTeam, activeMember, activityLabel, railTeamId, railTeam, railRuns, railRunningByMember, railLastByMember, popupRun, historyMemberRuns, delegatedRailRuns, delegatedPopupRun, recentCompaction, saveInlineRename, earlyView, topbarActionsNode };
+  /* Laya 自动档（10-01）：状态在 part06 挂 bag（⛔ part06 先跑），这里镜像出本地名进 return 面
+     ——【92】要求 return 的每个名字要么本地声明要么 bag 镜像，直接写 bag.x 会打红。 */
+  const effortAuto = bag.effortAuto;
+  const changeEffortAuto = bag.changeEffortAuto;
+  const resolveAutoEffort = bag.resolveAutoEffort;
+  const layaInstalled = bag.layaInstalled;
+  const layaReady = bag.layaReady;
+  return { activeThreadMemberRunning, activeMemberTeam, activeMember, activityLabel, railTeamId, railTeam, railRuns, railRunningByMember, railLastByMember, popupRun, historyMemberRuns, delegatedRailRuns, delegatedPopupRun, recentCompaction, saveInlineRename, earlyView, topbarActionsNode, effortAuto, changeEffortAuto, resolveAutoEffort, layaInstalled, layaReady };
 }
