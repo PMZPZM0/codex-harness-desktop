@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（79 个能力域 / 387 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（79 个能力域 / 388 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -61,9 +61,9 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 AI 短剧无限画布：把工作流拆成卡片摆在无限画布上（生图/短剧/白模/3D 建模/电商出图各类模板），连线表示「这份输入喂给下一步」。**画布可被模型读写**：board-sync 由画布自动镜像快照，模型用真工具 workflow_read 读内容、workflow_writeback 把产物写回节点（卡片实时显示）——「按画布搭的流程跑」是可行请求
 通道：drama-canvas:asset-write, drama-canvas:storyboard-file-remove, drama-canvas:polish-prompt, drama-canvas:describe-image, drama-canvas:output-dir, drama-canvas:output-dir-set, drama-canvas:board-sync
 
-### laya（3 通道）
+### laya（4 通道）
 Laya 智能判断（GitHub NandhaKishorM/laya，Apache-2.0，非自回归决策引擎 33ms）：status 安装与服务状态 / install 安装更新（pip 清华镜像 + 权重走 hf-mirror）/ decide-effort 思考等级自动判断（choice: low/medium/high/xhigh + 校准置信度，<0.45 弃权）——渲染层思考档「自动」开关的数据端；失败一律降级手选档，不是硬依赖
-通道：laya:status, laya:install, laya:decide-effort
+通道：laya:status, laya:install, laya:uninstall, laya:decide-effort
 
 ### phone（7 通道）
 手机控制（phone-harness）：查状态 / 安装 / 卸载 / 体检 / 权限引导；Android 走 adb（全平台），iPhone 走 Mac 的 iPhone 镜像（仅 macOS）

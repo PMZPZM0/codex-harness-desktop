@@ -24,16 +24,24 @@ const PS7_URL = IS_MAC
   : `https://github.com/PowerShell/PowerShell/releases/download/v${PS7_VERSION}/PowerShell-${PS7_VERSION}-win-x64.zip`;
 // Portable runtimes: no registry changes and no dependency on a system-wide install.
 // MinGit is the official Git for Windows command-line bundle. Python uses the
-// embeddable distribution plus the matching official Tcl/Tk components so GUI
-// scripts can import tkinter without relying on a system Python installation.
+// python-build-standalone (PBS) install_only full build: python + Tkinter + ensurepip
+// in one package, so GUI scripts and pip work without any system Python.
 // GitHub does not expose a stable "latest asset" URL for MinGit; pin the
 // verified release so a fresh install cannot receive a 404 from a renamed asset.
 const MINGIT_VERSION = "2.55.0.5";
 const MINGIT_URL = `https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/MinGit-${MINGIT_VERSION}-64-bit.zip`;
-const PYTHON_VERSION = "3.13.13";
-const PYTHON_URL = `https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-embed-amd64.zip`;
-const PYTHON_FULL_URL = `https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64.exe`;
-const GET_PIP_URL = "https://bootstrap.pypa.io/get-pip.py";
+// Python = python-build-standalone（uv 官方构建）install_only 完整版：python + Tkinter 全家
+// + ensurepip 一个包全带（约 45MB）。
+// ⛔⛔ 10-01 用户机器实录，旧链路（embeddable zip + 官方 exe 安装器补 Tk + get-pip 补 pip）两处断裂：
+//   ① 官方 exe 安装器 /quiet 在部分机器**静默空转**（exit 0 但 TargetDir 为空，两台机器复现）；
+//   ② exe 半路抛错连坐整条安装链 → pip 引导根本没跑 → Laya/手机控制 `python -m pip` 直接
+//      `No module named pip` exit 1。
+//   现换 PBS 整包 + 本地 ensurepip（离线确定性，不再下载 get-pip.py），并带健康检查：
+//   旧的不完整安装判「未装」→ 用户在「开发工具」点「下载」即整目录换装修复。
+// 资产名含 `+`，URL 里写 %2B；npmmirror 有该构建的镜像（chinaMirrorUrl 映射，国内优先）。
+const PYTHON_VERSION = "3.13.15";
+const PBS_TAG = "20260929";
+const PYTHON_PBS_URL = `https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}/cpython-${PYTHON_VERSION}%2B${PBS_TAG}-x86_64-pc-windows-msvc-install_only.tar.gz`;
 const FFMPEG_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
 const VSCODE_CLI_URL = "https://update.code.visualstudio.com/latest/cli-win32-x64/stable";
 // Android 平台工具（adb）：手机控制（phone-harness）的 Android 通道。
@@ -119,6 +127,8 @@ function chinaMirrorUrl(url) {
   if (url.startsWith("https://nodejs.org/dist/")) return url.replace("https://nodejs.org/dist/", "https://cdn.npmmirror.com/binaries/node/");
   if (url.startsWith("https://www.python.org/ftp/python/")) return url.replace("https://www.python.org/ftp/python/", "https://cdn.npmmirror.com/binaries/python/");
   if (url.startsWith("https://github.com/git-for-windows/git/releases/download/")) return url.replace("https://github.com/git-for-windows/git/releases/download/", "https://cdn.npmmirror.com/binaries/git-for-windows/");
+  // python-build-standalone（PBS）：npmmirror 同步了该构建的全部 release 资产（实测 302 → CDN）
+  if (url.startsWith("https://github.com/astral-sh/python-build-standalone/releases/download/")) return url.replace("https://github.com/astral-sh/python-build-standalone/releases/download/", "https://registry.npmmirror.com/-/binary/python-build-standalone/");
   return null;
 }
 
@@ -394,43 +404,26 @@ async function installConda(destDir) {
   console.log("[miniconda] installed to " + destDir);
 }
 
-function enablePythonSite(dir) {
-  const pth = path.join(dir, `python313._pth`);
-  if (!fs.existsSync(pth)) return;
-  const raw = fs.readFileSync(pth, "utf8");
-  const lines = raw.split(/\r?\n/).filter(Boolean);
-  if (!lines.includes("Lib")) lines.splice(Math.max(0, lines.findIndex((line) => line.startsWith("#"))), 0, "Lib");
-  if (!lines.includes("Lib\\site-packages")) lines.push("Lib\\site-packages");
-  const importIndex = lines.findIndex((line) => line === "#import site" || line === "import site");
-  if (importIndex >= 0) lines[importIndex] = "import site";
-  else lines.push("import site");
-  fs.writeFileSync(pth, `${lines.join("\n")}\n`, "utf8");
-}
-
-/** 补齐官方 Python 同版本 Tcl/Tk：embeddable zip 默认没有 tkinter。 */
-async function ensureTkinter(pythonDir) {
-  const markerFiles = ["_tkinter.pyd", "tcl86t.dll", "tk86t.dll", "zlib1.dll", path.join("Lib", "tkinter", "__init__.py"), path.join("tcl", "tcl8.6", "init.tcl")];
-  if (markerFiles.every((entry) => fs.existsSync(path.join(pythonDir, entry)))) {
-    console.log("[python-tk] tkinter already bundled");
-    return;
-  }
-  const installer = path.join(TMP, `python-${PYTHON_VERSION}-amd64-full.exe`);
-  const extractDir = path.join(TMP, `codex-harness-python-${PYTHON_VERSION}-full`);
-  if (!fs.existsSync(installer) || fs.statSync(installer).size < 20 * 1024 * 1024) {
-    console.log(`[python-tk] downloading ${PYTHON_FULL_URL}`);
-    await download(PYTHON_FULL_URL, installer);
-  }
-  fs.rmSync(extractDir, { recursive: true, force: true });
-  fs.mkdirSync(extractDir, { recursive: true });
-  console.log("[python-tk] extracting official Tcl/Tk components");
-  runCommand(`"${installer}" /quiet InstallAllUsers=0 TargetDir="${extractDir}" Include_tcltk=1 Include_pip=0 Include_test=0 Include_doc=0 Include_launcher=0 SimpleInstall=0`, { timeout: 900000 });
-  const copyFiles = ["_tkinter.pyd", "tcl86t.dll", "tk86t.dll", "zlib1.dll"];
-  fs.mkdirSync(pythonDir, { recursive: true });
-  for (const file of copyFiles) fs.copyFileSync(path.join(extractDir, "DLLs", file), path.join(pythonDir, file));
-  fs.cpSync(path.join(extractDir, "Lib", "tkinter"), path.join(pythonDir, "Lib", "tkinter"), { recursive: true, force: true });
-  fs.cpSync(path.join(extractDir, "tcl"), path.join(pythonDir, "tcl"), { recursive: true, force: true });
-  enablePythonSite(pythonDir);
-  console.log("[python-tk] tkinter bundled");
+/** Windows Python 健康判据（安装侧口径，与 electron/features/dev-runtimes.ts 的
+ *  runtimeInstalled python 分支**同一套清单**，改一处必须同步另一处）：
+ *  python.exe + pip + Tkinter 全家 + tcl 库全在才算健康。
+ *  旧 embeddable 安装缺 pip/tkinter ⇒ 不健康 ⇒ 整目录换装完整版
+ *  （10-01 用户机器上 Laya 报 `No module named pip` 的修复入口）。 */
+function winPythonHealthy(pythonDir) {
+  const markers = [
+    "python.exe",
+    // ⛔ 判 pip 用**模块目录**而不是 Scripts/pip.exe：PBS 的 install_only 已自带 pip 包
+    //   （Lib/site-packages/pip，实测 26.2.1），但不带 Scripts/ 下的 .exe 外壳 ——
+    //   而本项目所有消费方走的都是 `python -m pip`（laya / 手机控制 / 文档转换），
+    //   按 pip.exe 判会误判成「没装」。
+    path.join("Lib", "site-packages", "pip", "__init__.py"),
+    path.join("DLLs", "_tkinter.pyd"),
+    path.join("DLLs", "tcl86t.dll"),
+    path.join("DLLs", "tk86t.dll"),
+    path.join("tcl", "tcl8.6", "init.tcl"),
+    path.join("Lib", "tkinter", "__init__.py"),
+  ];
+  return markers.every((entry) => fs.existsSync(path.join(pythonDir, entry)));
 }
 
 function copyAlias(dir, source, alias) {
@@ -439,13 +432,40 @@ function copyAlias(dir, source, alias) {
   if (fs.existsSync(from) && !fs.existsSync(to)) fs.copyFileSync(from, to);
 }
 
-async function installPip(pythonDir) {
-  const marker = path.join(pythonDir, "Scripts", "pip.exe");
-  if (fs.existsSync(marker)) { console.log(`[skip] pip already at ${marker}`); return; }
-  const script = path.join(TMP, "codex-harness-get-pip.py");
-  if (!fs.existsSync(script) || fs.statSync(script).size < 10 * 1024) await download(GET_PIP_URL, script);
-  await runStreaming(`"${path.join(pythonDir, "python.exe")}" "${script}" --no-warn-script-location`, { label: "pip 引导", quiet: true, timeout: 900000, env: { ...process.env, PYTHONHOME: pythonDir } });
-  console.log(`[pip] installed to ${pythonDir}`);
+/** 删除待换装的 Python 目录（只给「旧的不完整安装」换装用）。⛔ 两条硬要求：
+ *  ① 链接（junction / symlink）**只删链接本身**，绝不递归进入 —— 本项目早年踩过
+ *     递归删除顺着链接把目标目录掏空（连带删掉主仓库 123 个文件）；
+ *  ② Python 可能正被占用（引擎里的 python MCP、Laya 服务）⇒ Windows 上删运行中的 exe 会 EBUSY，
+ *     此时抛出**可行动**的提示，而不是把裸 errno 丢给用户。 */
+function removePythonDir(pythonDir) {
+  let stat = null;
+  try { stat = fs.lstatSync(pythonDir); } catch { return; }
+  if (stat.isSymbolicLink()) {
+    console.log("[python] 目标目录是链接（junction/symlink），只删链接本身、不进入目标");
+    try { fs.unlinkSync(pythonDir); }
+    catch (error) { throw new Error(`删除链接失败（${pythonDir}）：${String(error.message).split("\n")[0]}`); }
+    return;
+  }
+  try { fs.rmSync(pythonDir, { recursive: true, force: true }); }
+  catch (error) {
+    throw new Error(`删除旧 Python 失败（多半是正被占用：请先关掉用到 Python 的会话/服务再重试）：${String(error.message).split("\n")[0]}`);
+  }
+}
+/** pip 引导：**功能判据**（`python -m pip --version` 能不能跑），不是看文件。
+ *  ⛔ PBS 的 install_only 自带 pip 包（Lib/site-packages/pip，实测 26.2.1）但**没有**
+ *  Scripts/pip.exe（Windows）/ bin/pip3（mac）外壳 ⇒ 任何文件判据都会误报；
+ *  而本项目所有消费方走的都是 `python -m pip`（laya / 手机控制 / 文档转换）。
+ *  真缺 pip（旧 embeddable 连模块都没有）时用 PBS 自带的 ensurepip 离线补装
+ *  ——不下载 get-pip.py（bootstrap.pypa.io 国内不稳，那就是 10-01 用户机器上断掉的一环）。
+ *  @param py 解释器绝对路径（Windows: <dir>/python.exe；mac: <dir>/bin/python3） */
+async function ensurePip(py) {
+  const usable = () => { try { runCommand(`"${py}" -m pip --version`, { timeout: 120000 }); return true; } catch { return false; } };
+  if (usable()) { console.log("[skip] pip already usable"); return; }
+  process.stdout.write("@@STAGE 安装 pip\n");
+  await runStreaming(`"${py}" -m ensurepip --default-pip`, { label: "pip 引导", quiet: true, timeout: 600000 });
+  // ⛔ 不能只看 exit 0：ensurepip 静默没装上时脚本会显示「安装完成」而 pip 其实没有（09-21 同款 UX 缺口）
+  if (!usable()) throw new Error("ensurepip 之后 `python -m pip --version` 仍不可用——Python 安装不完整，请重试「下载」换装");
+  console.log(`[pip] ready (${py})`);
 }
 
 /** 预装 Python 常用依赖（requests/httpx/flask/fastapi/playwright），走清华镜像免代理。
@@ -508,12 +528,20 @@ async function main() {
   if (want("pwsh")) await install("ps7", PS7_URL, psDir, { marker: "pwsh.exe", strip: false });
   if (want("git")) await install("mingit", MINGIT_URL, gitDir, { marker: "cmd\\git.exe", strip: false });
   if (want("python")) {
-    await install("python", PYTHON_URL, pythonDir, { marker: "python.exe", strip: false });
-    await ensureTkinter(pythonDir);
-    enablePythonSite(pythonDir);
+    // 健康检查前置：旧版不完整安装（有 python.exe 但缺 pip/tkinter）先整目录换装，
+    // 否则 install() 看 marker 直接 skip、坏安装永远修不好（10-01 用户机器实录）。
+    if (!winPythonHealthy(pythonDir)) {
+      if (fs.existsSync(pythonDir)) {
+        console.log("[python] 现有 Python 不完整（缺 pip 或 Tkinter），换装完整版（python-build-standalone）…");
+        removePythonDir(pythonDir);
+      }
+      await install("python", PYTHON_PBS_URL, pythonDir, { marker: "python.exe", strip: true, archiveName: `pbs-cpython-${PYTHON_VERSION}-install_only.tar.gz` });
+    } else {
+      console.log(`[skip] python already healthy at ${pythonDir}`);
+    }
     copyAlias(pythonDir, "python.exe", "python3.exe");
     copyAlias(pythonDir, "python.exe", "py.exe");
-    await installPip(pythonDir);
+    await ensurePip(path.join(pythonDir, "python.exe"));
     await installPipPackages(pythonDir);
   }
   // 文档转换依赖（按需安装，不并入 PIP_PACKAGES）：用户点「开发工具 → 文档转换」卡片才走这里。
@@ -626,6 +654,9 @@ async function mainMac() {
     }
     const python = path.join(TOOLS, "python", "bin", "python3");
     if (want("python") && fs.existsSync(python)) {
+      // PBS（含 mac 构建）不预装 pip 的**脚本外壳**，先走同一个功能判据 + ensurepip 兜底
+      try { await ensurePip(python); }
+      catch (error) { console.log("[pip] ensurepip failed (optional): " + String(error.message).split("\n")[0]); }
       try {
         runCommand(`"${python}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${PIP_PACKAGES}`, { timeout: 900000 });
       } catch (error) { console.log("[pip-packages] failed (optional): " + String(error.message).split("\n")[0]); }

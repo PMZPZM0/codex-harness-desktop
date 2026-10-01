@@ -132,6 +132,42 @@
         "to": "tools/cloak-open.mjs"
       },
       {
+        "from": "resources/tools/python",
+        "to": "tools/python"
+      },
+            {
+              "from": "resources/tools/rg",
+              "to": "tools/rg"
+            },
+            {
+              "from": "resources/tools/uv",
+              "to": "tools/uv"
+            },
+            {
+              "from": "resources/tools/jq",
+              "to": "tools/jq"
+            },
+            {
+              "from": "resources/tools/ninja",
+              "to": "tools/ninja"
+            },
+            {
+              "from": "resources/tools/sevenzip",
+              "to": "tools/sevenzip"
+            },
+            {
+              "from": "resources/tools/yt-dlp",
+              "to": "tools/yt-dlp"
+            },
+            {
+              "from": "resources/tools/cmake",
+              "to": "tools/cmake"
+            },
+            {
+              "from": "resources/tools/platform-tools",
+              "to": "tools/platform-tools"
+            },
+      {
         "from": "resources/tools/automation-tools.zip",
         "to": "tools/automation-tools.zip"
       },

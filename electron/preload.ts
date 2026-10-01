@@ -546,6 +546,8 @@ contextBridge.exposeInMainWorld("codex", {
   layaStatus: () => __ipc("laya:status", 0, []),
   /* 安装/更新 laya[serve]（pip 清华镜像；torch 大，20 分钟超时）；权重由服务首启时经 hf-mirror 拉取 */
   layaInstall: () => __ipc("laya:install", 0, []),
+  /* 卸载 Laya（先停服务进程，再 pip uninstall -y laya）；模型权重缓存在用户 HF 缓存目录，不随卸载删除（其他工具可能共用） */
+  layaUninstall: () => __ipc("laya:uninstall", 0, []),
   /* 思考等级自动判断（choice: low/medium/high/xhigh + 校准置信度；置信 <0.45 弃权返回 null，调用方回落手选档） */
   layaDecideEffort: (text: string) => __ipc("laya:decide-effort", 1, [text]),
   /* ═══ gen:end ═══ */

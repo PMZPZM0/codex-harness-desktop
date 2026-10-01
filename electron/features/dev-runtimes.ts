@@ -23,10 +23,12 @@ import { codexHome, engineActiveTurnIds, server } from "../runtime-refs";
 // 自动化工具链状态：nuphus-mcp（桌面）/ playwright-cli（浏览器）/ cloakbrowser（指纹浏览器）。
 // 静态检测安装目录与缓存，不 spawn 进程，打开设置页即时返回。
 
-type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "playwright-cli" | "cloakbrowser" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools";
+type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "playwright-cli" | "cloakbrowser" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness";
 // bundled：随包内置（zip / 预解压目录是来源，不是联网下载）。界面显示「内置」徽标；
 // 缺失时允许「修复安装」（从随包 zip 重新解压），但不允许卸载（删了没有可靠重取途径）。
-type DevRuntimeSpec = { name: string; description: string; size: string; marker: string; builtIn?: boolean; bundled?: boolean; kind?: "download" | "browsers" | "guide" | "plugin"; noUninstall?: boolean };
+// hidden：**不在「开发工具」页出卡**（它有自己的专用卡片），但注册成正式工具项 ⇒
+//  首启体检 / 安装队列 / 状态刷新 / 卸载都能复用同一条链（否则又要各写一份）。
+type DevRuntimeSpec = { name: string; description: string; size: string; marker: string; builtIn?: boolean; bundled?: boolean; kind?: "download" | "browsers" | "guide" | "plugin"; noUninstall?: boolean; hidden?: boolean };
 // 09-16 打包瘦身：凡是有国内加速下载源的运行时一律不随包（Windows 包从 ~3.2GB 原始降到 ~1.9GB），
 // 由「开发工具」页按需下载（install-runtimes.cjs：npmmirror/gh-proxy 镜像优先，失败回落官方源）。
 // 例外（用户明确要求内置）：
@@ -36,7 +38,10 @@ type DevRuntimeSpec = { name: string; description: string; size: string; marker:
 //     国内没有独立的"加速直链"（详见下方 bundled 注释与 package.json 的 filter）。
 // ⛔ CloakBrowser 不在此列：09-16 起剥离出包，按需下载（开发工具页 → npm 国内镜像）。
 const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
-  python: { name: "Python + Tkinter + pip", description: "Python 项目、数据处理、GUI 脚本和 Python MCP（含 Tkinter、requests/httpx/flask/fastapi/playwright）；npmmirror 镜像下载 + 清华 pip 源", size: "约 40 MB + 依赖", marker: "python\\python.exe" },
+  // ⛔ 10-01 用户定稿：「把那些 50m 以内的工具都内置」—— 下载体积 ≤50MB 的一律随包（builtIn），
+  //    用户在开发工具页看到「内置」徽标、不需要再等下载；>50MB 的大件仍走按需下载。
+  //    随包产物由 scripts/prepare-windows-tools.cjs 的 6.5 步统一拉取（复用 install-runtimes.cjs）。
+  python: { name: "Python + Tkinter + pip", description: "Python 项目、数据处理、GUI 脚本和 Python MCP（完整版运行时：自带 Tkinter 与 pip，requests/httpx/flask/fastapi/playwright 已随包装好）；随包内置", size: "随包 45 MB", marker: "python\\python.exe", builtIn: true },
   node: { name: "Node.js + npm", description: "JavaScript / TypeScript 项目和 npm 工具（安装器引导运行时，随应用内置）", size: "约 101 MB", marker: "node\\node.exe", builtIn: true },
   pwsh: { name: "PowerShell 7", description: "现代 PowerShell 脚本与跨平台命令；gh 加速下载", size: "约 282 MB", marker: "pwsh\\pwsh.exe" },
   git: { name: "Git", description: "Diff、分支、提交、历史和仓库操作；引擎执行 shell 命令依赖它，建议装机后首先安装；npmmirror 镜像下载", size: "约 90 MB", marker: "git\\cmd\\git.exe" },
@@ -52,13 +57,15 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   nuphus: { name: "Nuphus 桌面自动化", description: "35 个桌面自动化工具（屏幕截取、窗口控制、键鼠输入、剪贴板、OCR 感知），经 nuphus-call 按需调用，不占模型上下文；随包内置，开箱即用", size: "随包 30 MB", marker: "npm-global\\node_modules\\@nuphus\\nuphus-mcp\\package.json", bundled: true, noUninstall: true },
   "playwright-cli": { name: "Playwright 浏览器自动化", description: "命令行浏览器自动化 CLI（open / snapshot / click / type / screenshot），浏览器内核单独按需下载；随包内置，开箱即用", size: "随包 18 MB", marker: "npm-global\\node_modules\\@playwright\\cli\\package.json", bundled: true, noUninstall: true },
   cloakbrowser: { name: "CloakBrowser 指纹浏览器", description: "反检测指纹浏览器 npm 包（过 Cloudflare Turnstile / reCAPTCHA / FingerprintJS），默认不用、需要时再装；npm 国内镜像下载，失败自动回落官方源", size: "约 4 MB", marker: "npm-global\\node_modules\\cloakbrowser\\package.json" },
-  jq: { name: "jq", description: "命令行查询、筛选和转换 JSON；gh 加速下载", size: "约 1 MB", marker: "jq\\jq.exe" },
-  ninja: { name: "Ninja", description: "高速构建工具，常与 CMake 配合；gh 加速下载", size: "约 1 MB", marker: "ninja\\ninja.exe" },
-  sevenzip: { name: "7-Zip CLI", description: "解压和创建 7z、zip、tar 等归档；gh 加速下载", size: "约 1 MB", marker: "sevenzip\\7z.exe" },
-  "yt-dlp": { name: "yt-dlp", description: "下载和分析在线视频与音频资源", size: "约 20 MB", marker: "yt-dlp\\yt-dlp.exe" },
-  rg: { name: "ripgrep (rg)", description: "极速代码搜索，Codex 检索代码库的主力工具；gh 加速下载", size: "约 5 MB", marker: "rg\\rg.exe" },
-  uv: { name: "uv", description: "极速 Python 包管理器（pip/venv 替代）；gh 加速下载", size: "约 12 MB", marker: "uv\\uv.exe" },
-  cmake: { name: "CMake", description: "C/C++ 构建系统生成器（配合 Ninja）；gh 加速下载", size: "约 45 MB", marker: "cmake\\bin\\cmake.exe" },
+  // ⛔ 10-01 用户定稿：「50m 以内的工具都内置」—— 以下 7 项下载体积 ≤50MB，随包内置（builtIn），
+  //    用户开箱即用、卡片显示「内置」徽标，不再进首启引导的下载清单。
+  jq: { name: "jq", description: "命令行查询、筛选和转换 JSON；随包内置，开箱即用", size: "随包 1 MB", marker: "jq\\jq.exe", builtIn: true },
+  ninja: { name: "Ninja", description: "高速构建工具，常与 CMake 配合；随包内置，开箱即用", size: "随包 1 MB", marker: "ninja\\ninja.exe", builtIn: true },
+  sevenzip: { name: "7-Zip CLI", description: "解压和创建 7z、zip、tar 等归档；随包内置，开箱即用", size: "随包 1 MB", marker: "sevenzip\\7z.exe", builtIn: true },
+  "yt-dlp": { name: "yt-dlp", description: "下载和分析在线视频与音频资源；随包内置，开箱即用", size: "随包 20 MB", marker: "yt-dlp\\yt-dlp.exe", builtIn: true },
+  rg: { name: "ripgrep (rg)", description: "极速代码搜索，Codex 检索代码库的主力工具；随包内置，开箱即用", size: "随包 5 MB", marker: "rg\\rg.exe", builtIn: true },
+  uv: { name: "uv", description: "极速 Python 包管理器（pip/venv 替代）；随包内置，开箱即用", size: "随包 12 MB", marker: "uv\\uv.exe", builtIn: true },
+  cmake: { name: "CMake", description: "C/C++ 构建系统生成器（配合 Ninja）；随包内置，开箱即用", size: "随包 45 MB", marker: "cmake\\bin\\cmake.exe", builtIn: true },
   "playwright-browsers": { name: "Playwright 浏览器内核", description: "Chromium 等浏览器内核，浏览器自动化 CLI 首次运行所需；按需下载（国内镜像优先，失败自动回落官方源）", size: "约 170 MB", marker: "pw-browsers", kind: "browsers" },
   "cloak-browsers": { name: "Cloak 指纹浏览器内核", description: "反检测 Chromium 内核（Cloudflare/reCAPTCHA 站点用），CloakBrowser 运行所需；按需下载（国内镜像优先，失败自动回落官方源）", size: "约 200 MB", marker: "cloak-cache" },
   conda: { name: "Miniconda", description: "Python 环境管理器（conda 命令，科学计算/环境隔离）", size: "约 100 MB", marker: "miniconda\\Scripts\\conda.exe", kind: "download" },
@@ -75,10 +82,15 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   //  ⚠️ 已知取舍（09-21 代码审查确认）：卸载只删 markitdown 包目录（0.4 MB），依赖会留下 ——
   //     这是 pip 包的固有特点；卸载的语义是「移除这个能力」而不是「释放全部空间」。
   markitdown: { name: "文档转换（markitdown）", description: "让 Codex 能读 PDF / Word / Excel / PowerPoint 附件：先把文档转成 Markdown 再交给模型（Microsoft markitdown，MIT 许可）。默认不装，需要时点这里装一次（约 120 MB，走清华 pip 镜像）；也可以让 Codex 自己装", size: "约 120 MB", marker: "markitdown" },
+  // ⛔ 10-01 用户定稿：Laya 与手机控制**也注册成正式工具项**，才能进首启推荐/一键安装队列。
+  //    hidden: true ⇒ 不在「开发工具」页重复出卡（它们各有专用卡片：LayaCard / PhoneHarnessCard）。
+  //    安装/卸载走各自的专用通道（见 04-dev-runtime-install.ts 的分派与 laya-service/phone-harness）。
+  laya: { name: "Laya 智能判断", description: "本地决策模型（33ms）：思考等级「自动」档的判断端——发送前自动选 低/中/高/极高（含 PyTorch，约 800 MB，走清华 pip 镜像）", size: "约 800 MB", marker: "laya", hidden: true },
+  "phone-harness": { name: "手机控制（phone-harness）", description: "让 Codex 直接操作真机：看屏幕、点、打字、滑、读结果（MIT 许可的 Python CLI，装机后注册为技能；约 3 MB）", size: "约 3 MB", marker: "phone-harness", hidden: true },
   // Android 平台工具（adb）：手机控制（phone-harness）的 Android 通道必需。⛔ 官方源 dl.google.com
   //  **没有国内镜像**（npmmirror 的 binaries 目录下没有该包，实测 404）⇒ 下载慢/失败时只能回落手动安装，
   //  卡片里如实说明，不假装有镜像。装到 tools/platform-tools/adb.exe，phone-harness 用 android.adb 指过去。
-  "platform-tools": { name: "Android 平台工具（adb）", description: "让 Codex 通过 adb 控制 Android 手机（USB 或无线调试）：截图、点击、输入、读界面。官方源 dl.google.com（暂无国内镜像，网络慢时可手动装到 tools/platform-tools）", size: "约 8 MB", marker: "platform-tools\\adb.exe" },
+  "platform-tools": { name: "Android 平台工具（adb）", description: "让 Codex 通过 adb 控制 Android 手机（USB 或无线调试）：截图、点击、输入、读界面；随包内置，开箱即用", size: "随包 8 MB", marker: "platform-tools\\adb.exe", builtIn: true },
 };
 const runtimeInstalls = new Map<DevRuntimeId, Promise<void>>();
 
@@ -145,6 +157,14 @@ function pythonSiteDir(pythonDir: string): string | null {
   return null;
 }
 
+/** pip 包类工具 → site-packages 下的**包目录名**（判定「装没装」+ 卸载只删包目录，绝不碰整个 Python）。
+ *  ⛔ 单一真相源：runtimeInstalled、卸载落点、以及守卫都读它，别在别处再写一份包名。 */
+const PIP_PACKAGE_DIRS: Partial<Record<DevRuntimeId, string>> = {
+  markitdown: "markitdown",
+  laya: "laya",
+  "phone-harness": "phone_harness",
+};
+
 /** 「装没装」的唯一判定（runtimeList 与「修复安装」幂等早退共用，别各写一份）：
  *  ponytail 装在引擎侧 codex-home/plugins/cache，不走 tools 目录 marker；
  *  其余按 tools 目录里的 marker 文件判断。 */
@@ -152,13 +172,26 @@ function runtimeInstalled(id: DevRuntimeId, spec: DevRuntimeSpec): boolean {
   if (id === "ponytail") return existsSync(path.join(codexHome, "plugins", "cache", "ponytail"));
   const root = toolsRoot();
   if (!root) return false;
-  // pip 包（markitdown）装在 Python 的 site-packages 里，路径含版本号 ⇒ 不走 marker。
+  // ⛔⛔ python：只有 `python.exe` 不算装好 —— 旧版 embeddable 安装就是「有 exe、无 pip 无 Tkinter」，
+  //  按 marker 判会让坏安装显示「已安装」（卡片不给安装按钮）⇒ 用户连修复入口都没有
+  //  （10-01 用户机器：Laya 报 `No module named pip`，而开发工具页 Python 显示已装）。
+  //  判据三件齐：python.exe + pip + _tkinter；缺一即「未装」→ 点「下载」走 install-runtimes 换装完整版。
+  //  ⛔ 与 scripts/install-runtimes.cjs 的 winPythonHealthy() 是同一套清单，改一处必须同步另一处。
+  if (id === "python" && !IS_MAC) {
+    const dir = path.join(root, "python");
+    // pip 判**模块目录**而不是 Scripts/pip.exe：PBS install_only 自带 pip 包但无 .exe 外壳，
+    // 而所有消费方走的都是 `python -m pip`（laya / 手机控制 / 文档转换）。
+    return existsSync(path.join(dir, "python.exe"))
+      && existsSync(path.join(dir, "Lib", "site-packages", "pip", "__init__.py"))
+      && existsSync(path.join(dir, "DLLs", "_tkinter.pyd"));
+  }
+  // pip 包（markitdown / laya / phone-harness）装在 Python 的 site-packages 里，路径含版本号 ⇒ 不走 marker。
   //  判定「包目录在不在」：目录在就等于 import 拿得到（比查 dist-info 更抗 pip 元数据差异）。
-  if (id === "markitdown") {
+  if (PIP_PACKAGE_DIRS[id]) {
     const site = pythonSiteDir(path.join(root, "python"));
     // ⛔ 用 `site !== null` 而不是 `Boolean(site)`：后者不构成类型守卫，TS 不会收窄掉 null
     //    （`Boolean(site) && …path.join(site…` 会报 TS2345，构建直接失败）。
-    return site !== null && existsSync(path.join(site, "markitdown"));
+    return site !== null && existsSync(path.join(site, PIP_PACKAGE_DIRS[id]!));
   }
   return existsSync(path.join(root, markerRel(id, spec)));
 }
@@ -293,5 +326,5 @@ async function autoInstallGitIfNeeded(): Promise<void> {
   }
 }
 
-export { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, autoInstallGitIfNeeded, devRuntimeSpecs, emitRuntimeProgress, markerRel, pythonSiteDir, readDownloadSource, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, toolsWatchDebounce };
+export { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, autoInstallGitIfNeeded, devRuntimeSpecs, emitRuntimeProgress, markerRel, pythonSiteDir, readDownloadSource, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, toolsWatchDebounce };
 export type { DevRuntimeId, DevRuntimeSpec };

@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-01",
-  "count": 386,
+  "count": 387,
   "channels": [
     {
       "name": "request",
@@ -3821,6 +3821,16 @@
       "invokeArgs": "",
       "cast": null,
       "note": "安装/更新 laya[serve]（pip 清华镜像；torch 大，20 分钟超时）；权重由服务首启时经 hf-mirror 拉取"
+    },
+    {
+      "name": "layaUninstall",
+      "channel": "laya:uninstall",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; log: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "卸载 Laya（先停服务进程，再 pip uninstall -y laya）；模型权重缓存在用户 HF 缓存目录，不随卸载删除（其他工具可能共用）"
     },
     {
       "name": "layaDecideEffort",

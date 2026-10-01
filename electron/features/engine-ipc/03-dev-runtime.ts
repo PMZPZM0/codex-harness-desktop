@@ -7,7 +7,7 @@ import path from "node:path";
 import { app, dialog, ipcMain, safeStorage, shell } from "electron";
 import { CHINA_NPM_REGISTRY, bundledNode, downloadEnv, npmGlobalRoot, toolchainEnv, toolsRoot } from "../../toolchain";
 import { existsSync } from "node:fs";
-import { DARWIN_HIDDEN, DARWIN_SPEC_TEXT, IS_MAC, devRuntimeSpecs, emitRuntimeProgress, pythonSiteDir, readDownloadSource, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls } from "../dev-runtimes";
+import { DARWIN_HIDDEN, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, devRuntimeSpecs, emitRuntimeProgress, pythonSiteDir, readDownloadSource, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls } from "../dev-runtimes";
 import { bridgeDial, readCustomModel, responsesBridge, restrictedThreadRole } from "../../main";
 import { codexHome, engineActiveTurnIds, mainWindow, server, threadCwd, threadRuntimeStore } from "../../runtime-refs";
 import type { DevRuntimeId, DevRuntimeSpec } from "../dev-runtimes";
@@ -46,38 +46,57 @@ export function runtimeList() {
 
 ipcMain.handle("runtime:list", () => runtimeList());
 
-/** 运行时卸载：删除安装根目录（不是单个 marker），状态回退为"未下载" */
-function runtimeUninstallPath(id: DevRuntimeId, spec: DevRuntimeSpec): string {
+/** npm 包（nuphus / playwright-cli / cloakbrowser）的卸载落点：**包体目录 + 它自己的 shim**。
+ *  ⛔⛔ 为什么不能按 marker 首段推导：marker 是 `npm-global\node_modules\@nuphus\nuphus-mcp\package.json`，
+ *    首段推导会得到 `tools/npm-global` —— 那是几个 npm 能力的**共同家目录**，卸载一个会把其它一起删光。
+ *  ⛔ 10-01 用户报「卸载不真」的根因：旧实现只删 `npm-global/<pkg>`（那是 **shim 文件**），
+ *    真正的包体 `npm-global/node_modules/<pkg>` 原地不动 ⇒ 卡片显示「未安装」但包还在，
+ *    再点安装又被 marker 判成已装 —— 卸载/安装两头都不可信。 */
+const NPM_PACKAGE_ARTIFACTS: Partial<Record<DevRuntimeId, { dirs: string[]; shims: string[] }>> = {
+  nuphus: { dirs: ["node_modules/@nuphus"], shims: ["nuphus-mcp", "nuphus-call"] },
+  "playwright-cli": { dirs: ["node_modules/@playwright/cli"], shims: ["playwright-cli"] },
+  cloakbrowser: { dirs: ["node_modules/cloakbrowser"], shims: ["cloakbrowser"] },
+};
+
+/** 卸载落点（**全部**要删的路径；调用方逐条做安全校验后再删）。 */
+function runtimeUninstallTargets(id: DevRuntimeId, spec: DevRuntimeSpec): string[] {
   // 引擎侧安装：ponytail 在 codex-home/plugins/cache/ponytail
-  if (id === "ponytail") return path.join(codexHome, "plugins", "cache", "ponytail");
-  // ⛔ npm 包（cloakbrowser）：只能删**包体目录本身**。按 marker 首段推导会得到 npm-global ——
-  //    那是 nuphus / playwright-cli 的共同家目录，卸载 CloakBrowser 会把两个内置能力一起删光。
-  if (id === "cloakbrowser") return path.join(npmGlobalRoot(), "cloakbrowser");
-  // ⛔ pip 包（markitdown）：只能删**包目录本身**。按 marker 首段推导会得到 `tools/python` ——
-  //    那是整个 Python 运行时（含 pip 与引擎依赖），卸载一个文档转换会把 Python 一起删光。
-  if (id === "markitdown") {
+  if (id === "ponytail") return [path.join(codexHome, "plugins", "cache", "ponytail")];
+  const pkg = NPM_PACKAGE_ARTIFACTS[id];
+  if (pkg) {
+    const global = npmGlobalRoot();
+    return [...pkg.dirs.map((dir) => path.join(global, dir)), ...npmShimPaths(...pkg.shims)];
+  }
+  // ⛔ pip 包（markitdown / laya / phone-harness）：只能删**包目录本身**。按 marker 首段推导会得到
+  //    `tools/python` —— 那是整个 Python 运行时（含 pip 与引擎依赖），卸载一个包会把 Python 一起删光。
+  const pipDir = PIP_PACKAGE_DIRS[id];
+  if (pipDir) {
     const site = pythonSiteDir(path.join(toolsRoot(), "python"));
-    return site ? path.join(site, "markitdown") : path.join(toolsRoot(), "markitdown");
+    return [site ? path.join(site, pipDir) : path.join(toolsRoot(), pipDir)];
   }
   // 工具侧：安装根 = marker 路径的第一段（playwright-browsers -> pw-browsers / git -> git / …）
-  return path.join(toolsRoot(), spec.marker.split(/[\\/]/)[0]);
+  return [path.join(toolsRoot(), spec.marker.split(/[\\/]/)[0])];
 }
 
-/** npm 包在 npm-global 根与 node_modules/.bin 下留的 shim（cloakbrowser / .cmd / .ps1） */
-function npmShimPaths(pkg: string): string[] {
+/** npm 包在 npm-global 根与 node_modules/.bin 下留的 shim（不是包体，删完包体要顺手清掉）。 */
+function npmShimPaths(...pkgs: string[]): string[] {
   const globalDir = path.join(toolsRoot(), "npm-global");
-  return [
-    path.join(globalDir, pkg),
-    // ⛔ mac 适配（09-17 审计）：POSIX 的 npm 全局 shim 落在 `<prefix>/bin/<pkg>`（不带后缀、
-    //    symlink 到包内 bin），prepare-mac-tools 正是这么写的（npm-global/bin/nuphus-call）。
-    //    旧清单只有 Windows 的 .cmd/.ps1 ⇒ mac 上卸载包后 shim 残留，PATH 里继续指向空目录。
-    path.join(globalDir, "bin", pkg),
-    path.join(globalDir, `${pkg}.cmd`),
-    path.join(globalDir, `${pkg}.ps1`),
-    path.join(globalDir, "node_modules", ".bin", pkg),
-    path.join(globalDir, "node_modules", ".bin", `${pkg}.cmd`),
-    path.join(globalDir, "node_modules", ".bin", `${pkg}.ps1`),
-  ];
+  const out: string[] = [];
+  for (const pkg of pkgs) {
+    out.push(
+      path.join(globalDir, pkg),
+      // ⛔ mac 适配（09-17 审计）：POSIX 的 npm 全局 shim 落在 `<prefix>/bin/<pkg>`（不带后缀、
+      //    symlink 到包内 bin），prepare-mac-tools 正是这么写的（npm-global/bin/nuphus-call）。
+      //    旧清单只有 Windows 的 .cmd/.ps1 ⇒ mac 上卸载包后 shim 残留，PATH 里继续指向空目录。
+      path.join(globalDir, "bin", pkg),
+      path.join(globalDir, `${pkg}.cmd`),
+      path.join(globalDir, `${pkg}.ps1`),
+      path.join(globalDir, "node_modules", ".bin", pkg),
+      path.join(globalDir, "node_modules", ".bin", `${pkg}.cmd`),
+      path.join(globalDir, "node_modules", ".bin", `${pkg}.ps1`),
+    );
+  }
+  return out;
 }
 
 ipcMain.handle("runtime:uninstall", async (_event, idValue: string) => {
@@ -90,22 +109,19 @@ ipcMain.handle("runtime:uninstall", async (_event, idValue: string) => {
   if (spec.bundled) throw new Error("该工具随应用内置，删除后只能从随包资源恢复，因此不支持卸载");
   // 随包内置资源（zip / 插件目录），不是联网下载 —— 删了没有可靠的重取途径，直接拒绝
   if (spec.noUninstall) throw new Error("该工具来自随包内置资源，删除后难以恢复，因此不支持卸载");
-  const target = runtimeUninstallPath(id, spec);
+  const targets = runtimeUninstallTargets(id, spec);
   // 防御：marker 解析异常时 target 可能退化成某个根目录 —— 那会把**所有**工具/插件删光。
-  // 要求 target 必须落在 toolsRoot 或 codexHome 之内（ponytail 走引擎侧 codexHome），
+  // 要求每个 target 必须落在 toolsRoot 或 codexHome 之内（ponytail 走引擎侧 codexHome），
   // 且不等于这两者本身；宁可失败也不能误删全局。
   const allowedRoots = [toolsRoot(), codexHome].filter(Boolean).map((r) => path.resolve(r));
-  const resolvedTarget = path.resolve(target);
-  const underAllowed = allowedRoots.some((r) => resolvedTarget.startsWith(r + path.sep));
-  if (!resolvedTarget || allowedRoots.includes(resolvedTarget) || !underAllowed) {
-    throw new Error("安装路径解析异常，已取消卸载");
-  }
-  // 一些 marker 是文件而不是目录（如 npm-global/.../package.json）—— 删父目录的安装根即可
-  await fs.rm(target, { recursive: true, force: true });
-  // npm 包卸载后清掉残留 shim：不清的话卡片显示「未安装」，但 PATH 上还留着指向已删目录的
-  // cloakbrowser.cmd，引擎调用会报模块找不到（比「没装」更难诊断）。
-  if (id === "cloakbrowser") {
-    await Promise.all(npmShimPaths("cloakbrowser").map((file) => fs.rm(file, { force: true }).catch(() => undefined)));
+  for (const target of targets) {
+    const resolvedTarget = path.resolve(target);
+    const underAllowed = allowedRoots.some((r) => resolvedTarget.startsWith(r + path.sep));
+    if (!resolvedTarget || allowedRoots.includes(resolvedTarget) || !underAllowed) {
+      throw new Error("安装路径解析异常，已取消卸载");
+    }
+    // 一些 marker 是文件而不是目录（如 npm-global 下的 shim）—— 逐个删：先包体、再 shim
+    await fs.rm(resolvedTarget, { recursive: true, force: true });
   }
 // ponytail 卸载后要显式关掉 config.toml 里的注册段（否则引擎重启找不到已删的 cache）：
 // 插件 key 是 **"ponytail@ponytail"**（见 ponytail-plugin.ts 的 MARKETPLACE_SECTION），

@@ -19,7 +19,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { app } from "electron";
-import { bundledPython } from "../toolchain";
+import { bundledPython, pythonPipReady } from "../toolchain";
 import { codexHome } from "../runtime-paths";
 import { toolsRoot } from "../toolchain";
 
@@ -162,6 +162,10 @@ export async function phoneHarnessStatus(): Promise<PhoneHarnessStatus> {
 export async function installPhoneHarness(): Promise<{ ok: boolean; log: string }> {
   const bin = pythonBin();
   const log: string[] = [];
+  // ⛔ 前置体检（与 Laya 同款，10-01 用户机器实录）：旧版 Python 无 pip 时 pip install 只会回
+  //  `No module named pip` exit 1 —— 先把原因翻成人话并给出唯一有效动作，别让用户对着裸报错猜。
+  const pipReady = pythonPipReady(bin);
+  if (!pipReady.ok) return { ok: false, log: pipReady.reason };
   const pip = await run(bin, ["-m", "pip", "install", "-U", "--no-input", "-i", PIP_INDEX, "phone-harness"], 900_000);
   log.push(`pip install → exit ${pip.code}`);
   if (pip.code !== 0) return { ok: false, log: log.concat(pip.out.slice(-1500)).join("\n") };
