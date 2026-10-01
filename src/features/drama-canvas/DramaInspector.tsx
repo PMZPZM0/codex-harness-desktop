@@ -15,6 +15,8 @@ import { useDramaActions } from "./drama-actions";
    「生成图片」按钮：文案与卡面不一致、未配置不给引导、还不查节点类型（笔记卡上也能点），
    三处都与卡面相反。同一个动作只能有一个实现。 */
 import { DramaChannelButton, dramaCardActions, dramaCardRole, GEN_CHANNELS, POLISH_LABEL, visibleChannels } from "./DramaChannelButton";
+/* 参考图九宫格与卡面**共用同一颗**（展示/删除逻辑单点，免得两处不一致）。 */
+import { DramaRefGrid, refsOf } from "./DramaNodeCard";
 
 interface FieldSpec {
   key: string;
@@ -248,6 +250,14 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
             也可以选择和修改目录」）—— 只给生图节点（它才是产出位）。 */}
         {kind === "imagegen" || kind === "shot" || kind === "video" ? <OutputDirField /> : null}
 
+        {/* 已传参考图（10-01 用户：「侧边栏没有同步展示已传的参考图，相当于我可以重复传」）：
+            与卡面**同一颗九宫格**（含 × 删除），面板里就看得见传过哪几张、几张。 */}
+        {cardActions.canUpload ? (
+          refsOf(payload).length
+            ? <DramaRefGrid refs={refsOf(payload)} onRemove={(refItem) => void actions.story.removeRef(id, refItem)} title="已传的参考图（可多张；生成时用第一张）" />
+            : <p className="drama-canvas-hint">还没有参考图 —— 点下面的「上传参考图（可多选）」，传过的图会列在这。</p>
+        ) : null}
+
         <div className="drama-canvas-inspector-actions">
           {/* 生成通道按钮：与卡面**同一颗组件、同一张映射表** —— 未配置会变「生图 · 去配置」
               直达设置页；策划类节点（笔记/剧本…）这里也不给生成按钮（与卡面行为一致）。 */}
@@ -268,8 +278,10 @@ export function DramaInspector({ onClose }: { onClose: () => void }) {
           ) : null}
           {/* 与卡面**同源**的「AI 润色」（09-29 用户要求每张提示词卡都有）——
               检查器里也给一颗，不必关掉面板回卡面点。素材位没有提示词可润色，不挂。 */}
+          {/* 上传参考图（**可多选**，10-01 用户：「要能支持传多个参考图 + 侧边栏同步展示已传的」）：
+              已传的图就在下面九宫格里列着（带 × 可删）⇒ 一眼看到传过什么，不会重复传。 */}
           {cardActions.canUpload ? (
-            <button className="drama-canvas-btn is-ghost" title="从本机选一张图当参考图 / 首帧（也会存进工作区）" onClick={() => void actions.story.uploadRef(id)}><Link2 size={12} />上传参考图</button>
+            <button className="drama-canvas-btn is-ghost" title="从本机选图当参考图 / 首帧（可一次选多张；也会存进工作区）" onClick={() => void actions.story.uploadRef(id)}><Link2 size={12} />上传参考图（可多选）</button>
           ) : null}
           {polishField ? (
             <button

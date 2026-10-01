@@ -41,6 +41,36 @@ import { DramaChannelButton, dramaCardActions, GEN_CHANNELS, POLISH_LABEL, visib
 import { useLocalAudio } from "./use-local-audio";
 import type { DramaRFNode } from "./use-drama-board";
 
+/** 参考图列表：新格式 payload.refs（多张）；旧画布只有单值 payload.ref ⇒ 兼容读取。 */
+export function refsOf(payload: Record<string, any> | undefined): string[] {
+  const list = Array.isArray(payload?.refs) ? (payload!.refs as unknown[]).filter((entry) => typeof entry === "string" && entry) as string[] : [];
+  if (list.length) return list;
+  const single = String(payload?.ref || "").trim();
+  return single ? [single] : [];
+}
+
+/**
+ * 参考图九宫格（10-01 用户：「参考图要能传多个 + 九宫格展示 + 可删除」）：
+ * 卡面与检查器**共用这一颗**（同一份展示与删除逻辑，免得两处长得不一样）。
+ * 缩略图按三列网格排、统一裁切成同高方块 —— 原图再大也不会把卡片撑爆（用户实测「参考图太大了」）。
+ */
+export function DramaRefGrid({ refs, onRemove, title }: { refs: string[]; onRemove?: (path: string) => void; title?: string }) {
+  if (!refs.length) return null;
+  return (
+    <div className="drama-canvas-card-ref" title={title ?? `参考图 ${refs.length} 张（生成时用第一张；点右上角 × 可删除单张）`}>
+      <span className="drama-canvas-card-ref-tag">参考图 · {refs.length}</span>
+      <div className="drama-ref-grid">
+        {refs.map((ref) => (
+          <span className="drama-ref-cell" key={ref} title={String(ref).split(/[\\/]/).pop()}>
+            <img className="drama-ref-thumb" src={imageDisplaySrc(ref)} alt="参考图" loading="lazy" />
+            {onRemove ? <button type="button" className="drama-ref-remove" title="移除这张参考图" onClick={(event) => { event.stopPropagation(); onRemove(ref); }}><X size={10} /></button> : null}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const ICONS: Record<string, LucideIcon> = {
   note: NotebookPen,
   script: FileText,
@@ -410,12 +440,7 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
               {tiles.slice(0, 6).map((tile) => <li key={tile}>{tile}</li>)}
             </ul>
           ) : null}
-          {refPath ? (
-            <div className="drama-canvas-card-ref" title="商品参考图（与生成结果分开存，不会互相覆盖）">
-              <span className="drama-canvas-card-ref-tag">参考图</span>
-              <img className="drama-canvas-card-ref-img" src={imageDisplaySrc(refPath)} alt="参考图" loading="lazy" />
-            </div>
-          ) : null}
+          {refsOf(payload).length ? <DramaRefGrid refs={refsOf(payload)} onRemove={(refPath) => void actions.story.removeRef(id, refPath)} title="商品参考图（可多张，与生成结果分开存；生成时用第一张）" /> : null}
           <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />
         </>
       );
@@ -426,16 +451,14 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
          会把已生成的图顶掉）。规则：有产物时主位给产物、参考图退到下方缩略条；只有参考图还没出图时，
          主位显示参考图并在标题里写明是它（免得用户以为已经出图了）。 */
       const refPath = String(payload.ref || "");
+      const imageRefs = refsOf(payload);
       return (
         <>
-          {kind === "image" && refPath && !path ? <MediaPreview path={refPath} alt="参考图" kind="image" title="参考图（还没出图）" nodeId={id} fields={["ref"]} channel="image" /> : null}
+          {/* ⛔ 参考图统一走九宫格（10-01 用户：多张 + 九宫格 + 可删；「参考图太大了」——
+              原先是整张大图直接铺满卡片）。产物位（path）仍用大预览。 */}
+          {kind === "image" && refPath && !path && imageRefs.length === 1 ? <MediaPreview path={refPath} alt="参考图" kind="image" title="参考图（还没出图）" nodeId={id} fields={["ref"]} channel="image" /> : null}
           {kind === "image" && path ? <MediaPreview path={path} alt={String(payload.title || "出图")} kind="image" title={String(payload.title || "出图")} nodeId={id} fields={["path", "url"]} channel="image" /> : null}
-          {kind === "image" && path && refPath ? (
-            <div className="drama-canvas-card-ref" title="生成时一并喂给模型的参考图（与生成结果分开存，不会互相覆盖）">
-              <span className="drama-canvas-card-ref-tag">参考图</span>
-              <img className="drama-canvas-card-ref-img" src={imageDisplaySrc(refPath)} alt="参考图" loading="lazy" />
-            </div>
-          ) : null}
+          {kind === "image" && imageRefs.length ? <DramaRefGrid refs={imageRefs} onRemove={(refItem) => void actions.story.removeRef(id, refItem)} /> : null}
           {kind === "audio" ? <AudioPreview path={path} /> : null}
           {/* ⛔ 空态文案要让人**照做**（09-29 用户要新手向）：说清"在这写什么 + 写完点哪 + 图去哪"。 */}
           <div className="drama-canvas-card-text">{String(payload.text || payload.prompt || (path
@@ -476,7 +499,10 @@ function DramaNodeCardInner({ id, data, selected }: NodeProps<DramaRFNode>) {
       .filter((n) => n && String(n.data?.kind) === "shot").length;
     return (
       <>
+        {/* 角色/场景锚点：定妆照/场景图是**产出**（大预览），上传的参考图另走九宫格
+            （10-01：可多张、可删除；与产物分开存，互不覆盖）。 */}
         {embedded ? <MediaPreview path={embedded} alt={String(payload.name || def.label)} kind="image" title={String(payload.name || def.label)} nodeId={id} fields={["ref"]} channel="image" /> : null}
+        {refsOf(payload).length && refsOf(payload)[0] !== embedded ? <DramaRefGrid refs={refsOf(payload)} onRemove={(refItem) => void actions.story.removeRef(id, refItem)} title="参考图（可多张；生成时用第一张）" /> : null}
         {usedBy ? <div className="drama-canvas-card-line" title="有几张镜头卡连到了这张锚点卡 —— 改了它，这些镜头的首帧要重出才一致">{usedBy} 镜在用</div> : null}
         <div className="drama-canvas-card-text">{String(payload.description || (embedded ? "" : kind === "character" ? "（人物设定：生成定妆照时自动沿用连入的剧本内容，可在此改写）" : "（场景设定：生成场景图时自动沿用连入的剧本内容，可在此改写）"))}</div>
         <GenButtons id={id} kind={kind} payload={payload} busyKey={busyKey} />

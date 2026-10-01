@@ -90,8 +90,12 @@ export interface DramaStoryApi {
   exportMovie: () => Promise<void>;
   /** 正在导出成片（按钮显示「导出中…」并禁用） */
   exporting: boolean;
-  /** 上传本地图片当参考图（image 卡回 path / 角色·场景回 ref / 镜头回 first_frame） */
+  /** 上传本地图片当参考图（**可多选**，10-01 用户：「参考图要能传多个 + 九宫格」）：落工作区
+   *  uploads/，追加进 payload.refs（按路径去重），payload.ref 始终 = refs[0]
+   *  （生成与上游查找沿用单值字段）；镜头卡 first_frame 仍取第一张（视频首帧通道只吃一张）。 */
   uploadRef: (nodeId: string) => Promise<void>;
+  /** 删掉一张已传参考图（九宫格里的 ×）；refs 空了 ref 一并清空 */
+  removeRef: (nodeId: string, path: string) => Promise<void>;
   /** 两条生成通道的就绪状态与当前模型/厂商名（卡片上要显示，未配时按钮变「去配置」） */
   channels: DramaChannelState;
   /** 重新读一遍通道配置（用户去设置页配完回来，画布不用重开） */
@@ -432,29 +436,60 @@ export function useDramaStory(
     if (!workspace) { notice("上传参考图要落盘到工作区，请先为会话选择工作文件夹", "err"); return; }
     const picked = await window.codex.chooseImages().catch(() => [] as string[]);
     if (!picked?.length) return;
+    /* 多选：这一批里所有图都收，追加到该卡已有的 refs 后面（按路径去重 ⇒ 重复选同一张不会进两次）。
+       ⛔ ref 单值字段必须跟着 refs[0] 走：生成通道与「上游找参考图」都读 ref。 */
+    const existing = Array.isArray((node.data.payload as any)?.refs) ? [...(node.data.payload as any).refs as string[]] : [];
+    const added: string[] = [];
+    const failures: string[] = [];
+    /* 回退标记（守卫【210】）：素材没写进工作区而是回退了应用数据目录时必须说出来 */
+    let fallbackUsed = false;
     for (const srcPath of picked) {
       try {
         const data = await window.codex.readFile(srcPath);
         const base64 = String(data?.dataBase64 || "");
-        if (!base64) { notice(`读不到文件：${srcPath}`, "err"); continue; }
+        if (!base64) { failures.push(`${srcPath}（读不到文件）`); continue; }
         const written = await window.codex.dramaCanvasAssetWrite({ workspace, name: srcPath.split(/[\\/]/).pop() || "ref.png", base64, subdir: "uploads" });
         const path = String(written?.path || "");
-        if (!path) continue;
-        if (kind === "shot") board.updatePayload(nodeId, { first_frame: path });
-        else if (kind === "character" || kind === "location") board.updatePayload(nodeId, { ref: path });
-        /* ⛔⛔ 09-29 用户实测：「上传的参考图会直接把已生成的图顶替掉展示」—— 此前 image 卡把参考图写进
-           path/url（**生成产物的显示字段**）⇒ 一上传就把已生成的图覆盖了。参考图必须走独立字段 ref，
-           与生成产物分开（character/location 卡一直用的就是 ref ✓）。守卫【211】有负向断言防回潮。 */
-        else board.updatePayload(nodeId, { ref: path });
-        board.saveNow();
-        notice(written?.fallback
-          ? `参考图已暂存到应用数据目录：${path.split(/[\\/]/).pop()}（当前画布未绑定会话工作区；想存进工作区就先为会话选工作文件夹）`
-          : `参考图已导入：${path.split(/[\\/]/).pop()}`, "ok");
+        if (!path) { failures.push(`${srcPath}（落盘失败）`); continue; }
+        if (written?.fallback) fallbackUsed = true;
+        if (!existing.includes(path) && !added.includes(path)) added.push(path);
       } catch (error) {
-        notice(`导入失败：${error instanceof Error ? error.message : String(error)}`, "err");
+        failures.push(`${srcPath}（${error instanceof Error ? error.message : String(error)}）`);
       }
     }
-  }, [board.nodes, board.updatePayload, workspace, notice]);
+    if (added.length) {
+      const refs = [...existing, ...added];
+      /* ⛔ 参考图必须走独立字段（refs/ref），不许写 path/url（那是生成产物的显示位，
+         09-29 实测「上传的参考图会把已生成的图顶替掉」）。守卫【211】有负向断言防回潮。 */
+      const patch: Record<string, any> = { refs, ref: refs[0] };
+      if (kind === "shot" && !String(node.data.payload?.first_frame || "").trim()) patch.first_frame = refs[0];
+      board.updatePayload(nodeId, patch);
+      board.saveNow();
+      /* ⛔ 回退必须说清楚（守卫【210】）：静默回退 = 用户以为写进了工作区。 */
+      const where = fallbackUsed ? "（当前画布未绑定会话工作区，已暂存到应用数据目录；想存进工作区就先为会话选工作文件夹）" : "";
+      notice(failures.length
+        ? `参考图已导入 ${added.length} 张${where}（${failures.length} 张失败：${failures.slice(0, 2).join("；")}）`
+        : `参考图已导入 ${added.length} 张${where}，当前共 ${refs.length} 张`, "ok");
+    } else if (failures.length) {
+      notice(`导入失败：${failures.slice(0, 2).join("；")}`, "err");
+    } else if (picked.length) {
+      notice("这些图已经在参考图列表里了（没有重复添加）", "ok");
+    }
+  }, [board.nodes, board.updatePayload, board.saveNow, workspace, notice]);
+
+  /** 删掉一张已传参考图（九宫格 × 按钮）。 */
+  const removeRef = useCallback(async (nodeId: string, refPath: string): Promise<void> => {
+    const node = board.nodes.find((n) => n.id === nodeId);
+    if (!node) return;
+    const payload = (node.data?.payload || {}) as Record<string, any>;
+    const existing: string[] = Array.isArray(payload.refs) ? [...payload.refs as string[]] : [];
+    const refs = existing.filter((entry) => entry !== refPath);
+    const patch: Record<string, any> = { refs, ref: refs[0] || "" };
+    if (String(payload.first_frame || "") === refPath) patch.first_frame = refs[0] || "";
+    board.updatePayload(nodeId, patch);
+    board.saveNow();
+    notice(refs.length ? `已移除一张参考图，还剩 ${refs.length} 张` : "参考图已清空", "ok");
+  }, [board.nodes, board.updatePayload, board.saveNow, notice]);
 
   /** 生成一张卡的一个通道。
    *  `report` 供批量调用：把单条通知改道到批量自己的收集器（一批 20 个动作会刷屏；
@@ -911,9 +946,10 @@ export function useDramaStory(
     exportMovie,
     exporting,
     uploadRef,
+    removeRef,
     channels,
     refreshChannels,
     polishPrompt,
     describeSubject,
-  }), [stories, storyName, story, problems, switchStory, renameStory, deleteStory, createStory, saveNow, expand, writeBack, busy, generate, generateBatch, stopBatch, batch, exportMovie, exporting, uploadRef, channels, refreshChannels, polishPrompt, describeSubject]);
+  }), [stories, storyName, story, problems, switchStory, renameStory, deleteStory, createStory, saveNow, expand, writeBack, busy, generate, generateBatch, stopBatch, batch, exportMovie, exporting, uploadRef, removeRef, channels, refreshChannels, polishPrompt, describeSubject]);
 }

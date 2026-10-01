@@ -144,15 +144,19 @@ export function dramaCardActions(kind: string, payload: Record<string, any>): {
   const act = String(payload?.act || "");
   const materialSlot = act === "upload" || payload?.hint === "ref";   // 素材位：只负责把图传进来
   const channels = act === "upload" || act === "prompt" ? [] : visibleChannels(kind, payload);
+  /* ⛔ 10-01 用户令：「参考图要能支持传多个」——上传位**不再一传就消失**：
+     旧逻辑（已有 ref/path 就 false）会让第二张根本传不进来（用户实测）。现在只按**角色**判：
+     产物位不给上传；素材位 / 提示词位 / 生图族（image·imagegen·character·location·shot）
+     一律保留上传入口（可追加、可更换）。「按键精简」由 visibleChannels 管生成通道，与此无关。 */
   const canUpload = act === "upload" ? true
     : act === "prompt" ? true
     : act === "produce" ? false
     : act === "output" ? false
     : act === "generate" ? (kind === "image" || kind === "shot" || kind === "imagegen")
-    : kind === "imagegen" ? !payload?.ref && !payload?.path && !payload?.url
-    : kind === "image" ? !payload?.path && !payload?.url && payload?.hint !== "output"
-    : kind === "character" || kind === "location" ? !payload?.ref
-    : kind === "shot" ? !payload?.first_frame
+    : kind === "imagegen" ? payload?.hint !== "output"
+    : kind === "image" ? payload?.hint !== "output" && payload?.act !== "output"
+    : kind === "character" || kind === "location" ? true
+    : kind === "shot" ? true
     : false;
   return { channels, canUpload, polishField: materialSlot ? "" : (POLISH_FIELD[kind] || "") };
 }
