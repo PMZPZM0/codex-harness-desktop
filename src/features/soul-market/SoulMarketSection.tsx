@@ -9,6 +9,7 @@
  *   ⇒ 页头加「当前生效」状态卡：当前人格名 + persona 是否已写入档案 + 生效时点说明。
  */
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, RefreshCw, UserRound, X } from "lucide-react";
 import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
@@ -125,8 +126,10 @@ export function SoulMarketSection({ onNotice }: SoulMarketSectionProps) {
         </div>
       )}
 
-      {/* 人设全文弹窗（info-modal 体系，与侧栏弹窗同款；⛔ 不是页面内嵌——用户截图反馈内嵌看不见） */}
-      {preview && (
+      {/* 人设全文三级弹窗：⛔ 必须 portal 到 body——设置页容器带 transform，会把 position:fixed
+          劫持成相对设置页定位（用户截图：弹窗贴在设置页下半截）。portal 出去后 info-modal-mask
+          的全屏 fixed 才成立，盖在设置页之上（遮罩点击关闭 / header 带关闭键，与侧栏弹窗同款）。 */}
+      {preview && createPortal(
         <div className="info-modal-mask" onClick={() => setPreview(null)}>
           <div className="info-modal soul-market-modal" role="dialog" aria-label={`${preview.displayName} 人设预览`} onClick={(event) => event.stopPropagation()}>
             <header>
@@ -141,7 +144,8 @@ export function SoulMarketSection({ onNotice }: SoulMarketSectionProps) {
               <button className="secondary-setting" disabled={Boolean(busy)} onClick={() => void apply(preview.slug)}>{busy === preview.slug ? <Spinner /> : <Check size={13} />}{preview.slug === activeSlug ? "重新应用" : "应用此人格"}</button>
             </footer>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </section>
   );
