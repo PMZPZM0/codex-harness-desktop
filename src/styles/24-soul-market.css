@@ -22,6 +22,20 @@
 .soul-market-error { color: var(--red); font-size: 12px; margin: 0; }
 .soul-market-applied { display: flex; align-items: center; gap: 4px; color: var(--ok); font-size: 12px; margin: 0; }
 
+/* 当前生效状态卡（10-01 用户：「怎么检查我的人格是否生效」） */
+.soul-market-status { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 10px 12px; }
+.soul-market-status.active { border-color: var(--accent); background: var(--accent-soft); }
+.soul-market-status-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.soul-market-status-main strong { font-size: 13px; color: var(--text); }
+.soul-market-status-main small { font-size: 11px; color: var(--muted); }
+
+/* 人设全文弹窗（info-modal 体系内的正文区） */
+.soul-market-modal { width: min(720px, 92vw); }
+.soul-market-modal header .soul-market-badge { margin-left: 8px; }
+.soul-market-modal .soul-market-content { margin: 10px 0; max-height: 52vh; }
+.soul-market-modal-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.soul-market-modal-actions .muted { font-size: 11px; }
+
 /* ── 专家市场包（expert-center 页内区块）──────────────────────────────── */
 .expert-market { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .expert-market-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
