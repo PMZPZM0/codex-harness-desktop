@@ -139,9 +139,8 @@ export function AppViewMainStage({ app }: { app: HarnessAppApi }) {
     quickMenuFlipUp,
     quickMenuPanelRef,
     quickMenuRef,
-    quickSetup,
-    quickSetupBusy,
-    quickSetupError,
+
+
     quoteItem,
     railLastByMember,
     railRunningByMember,
@@ -149,9 +148,8 @@ export function AppViewMainStage({ app }: { app: HarnessAppApi }) {
     rateLimitRetries,
     recentCompaction,
     relayActive,
-    relayQuickLogin,
-    relaySetupBusy,
-    relaySetupError,
+
+
     releaseToUserRef,
     removeContextItem,
     reorderQueued,
@@ -201,7 +199,7 @@ export function AppViewMainStage({ app }: { app: HarnessAppApi }) {
     setSelectedSkills,
     setSettingsOpen,
     setSettingsPage,
-    setShowModelGuide,
+
     setSkillMenuOpen,
     setSkillQuery,
     setTaskList,
@@ -212,7 +210,7 @@ export function AppViewMainStage({ app }: { app: HarnessAppApi }) {
     setWelcomeCwdMenuOpen,
     setWelcomeScratchDir,
     showLogin,
-    showModelGuide,
+
     showToast,
     skillCommandMatches,
     skillQuery,

@@ -144,7 +144,6 @@ import {
 import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../../../components/CardShell";
 import { BootSplash, type BootStage } from "../../../../components/BootSplash";
 import { HelpDialog, type HelpTopic } from "../../../../components/HelpDialog";
-import { ModelSetupGuide } from "../../../../components/ModelSetupGuide";
 import { EnvCheckDialog, ENV_CHECK_SPEC, ENV_CHECK_OPTOUT_KEY, type EnvCheckState } from "../../../../components/EnvCheckDialog";
 import { CodexAvatar, useCodexName } from "../../../../components/CodexAvatar";
 import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant } from "../../../../components/scroll-utils";
@@ -196,6 +195,10 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     envCheckOpen,
     envInstalling,
     envItems,
+    envQueueDone,
+    envQueueTotal,
+    envSkipped,
+    skipEnvItem,
     envPercent,
     envProgress,
     envSpeed,
@@ -221,15 +224,9 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     pastedText,
     pendingImportThreads,
     popupRun,
-    quickSetup,
-    quickSetupBusy,
-    quickSetupError,
     railLastByMember,
     railRunningByMember,
     railTeam,
-    relayQuickLogin,
-    relaySetupBusy,
-    relaySetupError,
     releaseToUserRef,
     runActivity,
     runPhrase,
@@ -244,12 +241,10 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     setPastedText,
     setSettingsOpen,
     setSettingsPage,
-    setShowModelGuide,
     setCompanyPreviewTeamId,
     setTeamHistoryMember,
     setTeamPopupRunId,
     showLogin,
-    showModelGuide,
     stickToBottomRef,
     stoppedElapsed,
     subAgentRunning,
@@ -367,25 +362,6 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                   )}
                   {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
                   {pastedText && <PastedTextEditor path={pastedText.path} name={pastedText.name} onClose={() => setPastedText(null)} transport={pastedText.kind === "file" ? fileEditTransport : undefined} />}
-                  {/* 设置页使用帮助（09-17 用户要求）：模型/插件/技能/MCP/专家团/语音/开发工具 + 设置总览 */}
-                  {/* 模型配置引导（09-17，09-19 升级为「小白快速上手」）：
-                      只在没有生效模型时出现，配好即不再弹。⛔ 弹窗里内嵌「粘 Key 一键配好」快路——
-                      原先只给两个跳转按钮，新手跳过去还是要填完整供应商表单（用户反馈「联动性差」）。 */}
-                  {showModelGuide && (
-                    <ModelSetupGuide
-                      lines={PPTokenEndpoints}
-                      busy={quickSetupBusy}
-                      error={quickSetupError}
-                      onQuickSetup={(info) => void quickSetup(info)}
-                      relayBusy={relaySetupBusy}
-                      relayError={relaySetupError}
-                      onRelayLogin={(info) => void relayQuickLogin(info)}
-                      onGoManual={() => { setShowModelGuide(false); setSettingsPage("model"); setSettingsOpen(true); }}
-                      onGoSubscription={() => { setShowModelGuide(false); setSettingsPage("openai"); setSettingsOpen(true); }}
-                      onRegister={() => void window.codex.openExternal("https://api.pptoken.cc/register?aff=X82JSNVC3W3S").catch(() => undefined)}
-                      onClose={() => setShowModelGuide(false)}
-                    />
-                  )}
                   {/* 首次启动「环境体检」（09-17 用户要求）：必备项缺失时列出「缺什么 / 为什么 / 多大」并一键补齐 */}
                   {envCheckOpen && (
                     <EnvCheckDialog
@@ -396,12 +372,9 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       stage={envStage}
                       speed={envSpeed}
                       onInstall={(ids) => void installEnvMissing(ids)}
-                      onGo={() => {
-                        // 只剩模型一项会跳转（09-20 工作区已移出体检）；去模型页配置
-                        setEnvCheckOpen(false);
-                        setSettingsPage("model");
-                        setSettingsOpen(true);
-                      }}
+                      onSkip={(id) => skipEnvItem(id)}
+                      queueDone={envQueueDone ?? undefined}
+                      queueTotal={envQueueTotal ?? undefined}
                       onClose={(dontAsk) => {
                         if (dontAsk) { try { localStorage.setItem(ENV_CHECK_OPTOUT_KEY, "1"); } catch { /* 隐私模式等写入失败不影响关闭 */ } }
                         setEnvCheckOpen(false);

@@ -16,7 +16,7 @@ import path from "node:path";
 import { existsSync, readdirSync, watch as watchFs } from "node:fs";
 import { spawn } from "node:child_process";
 import { app } from "electron";
-import { readAppSettings, type AppSettings } from "../app-settings";
+import type { AppSettings } from "../app-settings";
 import { toolsRoot } from "../toolchain";
 import { sendToWindow } from "./window-bus";
 import { codexHome, engineActiveTurnIds, server } from "../runtime-refs";
@@ -181,12 +181,12 @@ function runtimeInstaller(name: string) {
   return packaged || fallback;
 }
 
-/** 开发工具下载源（09-20 用户：「下载太慢了，所有工具下载加下载源选择」）。
- *  每次安装现读 app-settings.downloadSource —— 用户在「开发工具」页切完源，下一次下载立即生效，无需重启。
- *  合法值见 AppSettings.downloadSource；非法值一律回落 auto（镜像优先、逐通道回落）。 */
+/** 开发工具下载源（10-01 用户定稿：**统一国内镜像源，不暴露切换选项**）。
+ *  ⛔ 恒返 auto（install-runtimes.cjs 的 auto = npmmirror/gh 加速打头、逐通道回落官方源）——
+ *  旧版允许用户自选 direct/proxy 等（app-settings.downloadSource），现读到的非 auto 值
+ *  一律作废：老用户存过「官方直连」也不能再让它生效。 */
 async function readDownloadSource(): Promise<NonNullable<AppSettings["downloadSource"]>> {
-  const source = (await readAppSettings(app.getPath("userData"))).downloadSource;
-  return source === "mirror" || source === "ghproxy" || source === "ghfast" || source === "direct" || source === "proxy" ? source : "auto";
+  return "auto";
 }
 
 /** 安装进度的结构化上报（09-19 用户要求「不要弹窗，全部进度条展示，方便新手」）。

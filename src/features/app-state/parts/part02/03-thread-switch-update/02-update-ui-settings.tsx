@@ -158,27 +158,8 @@ bag.helpKey = helpKey as typeof bag.helpKey; bag.setHelpKey = setHelpKey as type
   const [archiveToast, setArchiveToast] = useState<{ name: string; token: number } | null>(null);
 bag.archiveToast = archiveToast as typeof bag.archiveToast; bag.setArchiveToast = setArchiveToast as typeof bag.setArchiveToast;
 
-  /** 模型配置引导（09-17 用户要求）：只在**没有生效模型**时弹，配好后永不再弹。
-   *  scope 是本次启动（关掉后本次不再弹；重启仍未配置则再提示一次）。 */
-  const [showModelGuide, setShowModelGuide] = useState(false);
-bag.showModelGuide = showModelGuide as typeof bag.showModelGuide; bag.setShowModelGuide = setShowModelGuide as typeof bag.setShowModelGuide;
-
-  /** 引导弹窗里「一键配好」的忙碌/错误态（就地反馈，不再只给一句全局 notice） */
-  const [quickSetupBusy, setQuickSetupBusy] = useState(false);
-bag.quickSetupBusy = quickSetupBusy as typeof bag.quickSetupBusy; bag.setQuickSetupBusy = setQuickSetupBusy as typeof bag.setQuickSetupBusy;
-
-  const [quickSetupError, setQuickSetupError] = useState("");
-bag.quickSetupError = quickSetupError as typeof bag.quickSetupError; bag.setQuickSetupError = setQuickSetupError as typeof bag.setQuickSetupError;
-
-  /** 引导弹窗里「中转站账户登录」的忙碌/错误态（与 Key 路径各一份，互不干扰） */
-  const [relaySetupBusy, setRelaySetupBusy] = useState(false);
-bag.relaySetupBusy = relaySetupBusy as typeof bag.relaySetupBusy; bag.setRelaySetupBusy = setRelaySetupBusy as typeof bag.setRelaySetupBusy;
-
-  const [relaySetupError, setRelaySetupError] = useState("");
-bag.relaySetupError = relaySetupError as typeof bag.relaySetupError; bag.setRelaySetupError = setRelaySetupError as typeof bag.setRelaySetupError;
-
-  const modelGuideDoneRef = useRef(false);
-bag.modelGuideDoneRef = modelGuideDoneRef as typeof bag.modelGuideDoneRef;
+  // ⛔ 模型配置引导（09-17）已随弹窗整体删除（10-01 用户定稿：首启只弹「开发工具」引导）。
+  //    登录页快捷配置链路保留（part08 的 handleLogin/markModelConfigured）。
 
   /** 首次启动「环境体检」（09-17 用户：「新用户不知道该装什么，不装 Codex 啥也干不了」）。
    *  必备 4 项（模型 / 工作区 / Git / ripgrep）缺任一项就弹；装了或用户关掉都算本次完事。 */
@@ -218,5 +199,5 @@ bag.runtimePercent = runtimePercent as typeof bag.runtimePercent; bag.setRuntime
 
   const [runtimeStage, setRuntimeStage] = useState<Record<string, string>>({});
 bag.runtimeStage = runtimeStage as typeof bag.runtimeStage; bag.setRuntimeStage = setRuntimeStage as typeof bag.setRuntimeStage;
-  return { runUpdateCheck, runUpdateDownload, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, showModelGuide, setShowModelGuide, quickSetupBusy, setQuickSetupBusy, quickSetupError, setQuickSetupError, relaySetupBusy, setRelaySetupBusy, relaySetupError, setRelaySetupError, modelGuideDoneRef, envCheckOpen, setEnvCheckOpen, envInstalling, setEnvInstalling, envCheckDoneRef, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
+  return { runUpdateCheck, runUpdateDownload, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, envCheckOpen, setEnvCheckOpen, envInstalling, setEnvInstalling, envCheckDoneRef, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
 }
