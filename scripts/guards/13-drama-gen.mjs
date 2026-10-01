@@ -677,18 +677,30 @@ export async function run() {
     const card211 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaNodeCard.tsx"), "utf8"));
     const css211 = readFileSync(join(ROOT, "src", "styles", "21-drama-canvas.css"), "utf8");
 
-    (/board\.updatePayload\(nodeId, \{ ref: path \}\)/.test(story211) ? ok : fail)(
-      "【211】上传参考图落 ref 字段（与生成产物分开）"
+    // 10-01 改版：参考图从单值 ref 升级成**多张 refs**（ref 恒 = refs[0]，生成/上游查找沿用单值）。
+    (/patch: Record<string, any> = \{ refs, ref: refs\[0\] \}/.test(story211) && /const refs = \[\.\.\.existing, \.\.\.added\]/.test(story211) ? ok : fail)(
+      "【211】上传参考图落 refs 多值数组（ref 恒 = refs[0]；追加且按路径去重 ⇒ 重复选同一张不会进两次）"
     );
-    (((() => { const i = story211.indexOf("const uploadRef"); const seg = i >= 0 ? story211.slice(i, i + 2400) : "";
-      return seg.includes("ref: path") && !/updatePayload\(nodeId, \{ path, url: path/.test(seg); })()) ? ok : fail)(
+    (((() => { const i = story211.indexOf("const uploadRef"); const seg = i >= 0 ? story211.slice(i, i + 3200) : "";
+      return seg.includes("refs, ref: refs[0]") && !/updatePayload\(nodeId, \{ path, url: path/.test(seg); })()) ? ok : fail)(
       "【211】负向：不许再把上传的参考图写进 path/url（一写就把已生成的图顶掉）"
+    );
+    /* ⛔ 10-01 用户令：「参考图也要支持删除」——能力三处齐备：story 实现 / 卡面入口 / 侧栏入口。 */
+    (/const removeRef = useCallback/.test(story211) ? ok : fail)(
+      "【211】参考图可删除（story.removeRef：refs 过滤 + ref 回落到 refs[0]）"
+    );
+    (/story\.removeRef\(id, refPath\)/.test(card211) ? ok : fail)(
+      "【211】卡面九宫格带删除入口（点 × 移除单张）"
+    );
+    const inspector211 = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "DramaInspector.tsx"), "utf8"));
+    (/DramaRefGrid/.test(card211) && /import \{ DramaRefGrid, refsOf \} from "\.\/DramaNodeCard"/.test(inspector211) && /story\.removeRef/.test(inspector211) ? ok : fail)(
+      "【211】侧栏同步展示已传参考图（与卡面共用同一颗九宫格 ⇒ 传过什么一目了然，不会重复传）"
     );
     (/const refPath = String\(payload\.ref \|\| ""\)/.test(card211) && /drama-canvas-card-ref-tag/.test(card211) ? ok : fail)(
       "【211】image 卡把参考图与产物分开显示（产物主位 + 参考图缩略条）"
     );
-    (/drama-canvas-card-ref-img/.test(css211) ? ok : fail)(
-      "【211】参考图缩略条样式在位（只接线不写样式 = 图撑满整卡，与产物还是分不清）"
+    (/drama-canvas-card-ref-img/.test(css211) && /\.drama-ref-grid \{/.test(css211) && /\.drama-ref-thumb \{[\s\S]{0,120}?object-fit: cover/.test(css211) ? ok : fail)(
+      "【211】参考图样式在位（缩略条 + 九宫格限高裁切 —— 只接线不写样式 = 图撑满整卡）"
     );
   }
   /* ══ 生图流程可读性（09-29 用户：「生图流程我有点看不懂」）══
@@ -787,8 +799,8 @@ export async function run() {
     (/dramaCardActions\(kind, payload\)/.test(card215) && /dramaCardActions\(kind, payload\)/.test(insp215) && /visibleChannels\(kind, payload\)/.test(chSrc215) ? ok : fail)(
       "【215】卡面与检查器**共用同一份**状态过滤（各自 filter 必然漂移）"
     );
-    (/kind === "image" \? !payload\?\.path && !payload\?\.url && payload\?\.hint !== "output"/.test(chSrc215) ? ok : fail)(
-      "【215】上传参考图只在输入位给（每张卡都挂全套按键 = 用户吐槽的「重复按键」）"
+    (/kind === "image" \? payload\?\.hint !== "output" && payload\?\.act !== "output"/.test(chSrc215) ? ok : fail)(
+      "【215】上传参考图只在**非产物位**给（每张卡都挂全套按键 = 用户吐槽的「重复按键」；10-01 起上传位不再一传就消失——多张参考图要能继续追加）"
     );
     (!/canUpload = \["image", "character", "location", "shot"\]\.includes\(kind\)/.test(card215) ? ok : fail)(
       "【215】负向：不许回到「按 kind 数组无条件给上传按钮」"
@@ -867,8 +879,16 @@ export async function run() {
     (!/askAgent\(id, "polish"\)/.test(card217) ? ok : fail)(
       "【217】负向：润色不许走 Agent 会话（用户明确「不要新开会话」——那是为一句润色开一次对话）"
     );
-    (/只支持 chat 协议|responses 协议/.test(polish) && /官方订阅账号不支持/.test(polish) ? ok : fail)(
-      "【217】润色通道写明能力边界（chat 协议 / 官方订阅报错）—— 不符合就明确报错，不猜、不静默"
+    (/官方订阅账号不支持/.test(polish) ? ok : fail)(
+      "【217】润色通道写明能力边界（官方订阅报错）—— 不符合就明确报错，不猜、不静默"
+    );
+    /* ⛔ 10-01 用户实测「AI 润色用不了」：旧实现只认 chat 协议，他的供应商走 responses ⇒ 直接报错。
+       现在两种协议都必须有真分支（不是把错误文案删掉就算支持）。 */
+    (/cfg\.wireApi === "responses"[\s\S]{0,400}?\/responses`/.test(polish) && /chat\/completions/.test(polish) ? ok : fail)(
+      "【217】润色同时支持 responses 与 chat 两种协议（只认 chat = 用 responses 供应商的用户点不动）"
+    );
+    (!/responses 协议，润色暂时只支持/.test(polish) ? ok : fail)(
+      "【217】负向：那条「只支持 chat 协议」的拒绝不再存在（能力已补齐，别回潮）"
     );
     (/AbortSignal\.timeout/.test(polish) ? ok : fail)(
       "【217】润色请求带超时（网关慢要报错，不能挂住 UI）"

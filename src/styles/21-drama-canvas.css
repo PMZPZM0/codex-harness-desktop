@@ -1541,6 +1541,48 @@ button.drama-canvas-card-media:hover { color: var(--accent); }
   border: 1px solid var(--line-soft);
   white-space: nowrap;
 }
+/* 参考图九宫格（10-01 用户：「要能传多个 + 九宫格 + 可删除」；「参考图太大了」——
+   缩略图统一切成同高方块，三列网格，原图多大都不撑卡片）。 */
+.drama-ref-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+}
+.drama-ref-cell {
+  position: relative;
+  display: block;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  background: var(--panel-2);
+}
+.drama-ref-thumb {
+  display: block;
+  width: 100%;
+  height: 64px;
+  object-fit: cover;
+}
+.drama-ref-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .62);
+  color: #fff;
+  cursor: pointer;
+  opacity: .86;
+}
+.drama-ref-remove:hover { opacity: 1; }
+/* 九宫格在「参考图」行内时占满整行（标签在上、网格在下）。 */
+.drama-canvas-card-ref:has(.drama-ref-grid) { flex-direction: column; align-items: stretch; }
+
 .drama-canvas-card-ref-img {
   height: 34px;
   width: auto;

@@ -31,15 +31,40 @@ export async function polishPromptOnce(text: string, context?: string): Promise<
   if (cfg.provider === "openai-official") {
     throw new Error("官方订阅账号不支持这条润色调用 —— 请另配一个「自定义 API Key」的供应商来润色");
   }
-  if (cfg.wireApi === "responses") {
-    throw new Error("当前供应商用的是 responses 协议，润色暂时只支持 chat 协议的供应商（换一个再试）");
-  }
   const key = cfg.encryptedKey && safeStorage.isEncryptionAvailable()
     ? safeStorage.decryptString(Buffer.from(cfg.encryptedKey, "base64"))
     : "";
   if (!key) throw new Error("这个供应商没有可用的 API Key —— 到「设置 → 模型」补上再试");
 
   const base = cfg.baseUrl.replace(/\/$/, "");
+  const userText = context ? `${context}\n\n原提示词：${text}` : text;
+  /* ⛔ 两种协议都支持（10-01 用户实测「AI 润色用不了」）：他的供应商走 responses 协议，
+      旧实现只认 chat ⇒ 直接报错不给用。两个分支都返回一段纯文本，调用方不感知协议差异。 */
+  if (cfg.wireApi === "responses") {
+    const response = await fetch(`${base}/responses`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: cfg.model,
+        stream: false,
+        instructions: SYSTEM,
+        input: [{ role: "user", content: [{ type: "input_text", text: userText }] }],
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) {
+      const raw = await response.text().catch(() => "");
+      throw new Error(`润色请求失败（HTTP ${response.status}）${raw ? "：" + raw.slice(0, 160) : ""}`);
+    }
+    const payload: any = await response.json().catch(() => null);
+    const out = String(
+      payload?.output_text
+      ?? (Array.isArray(payload?.output) ? payload.output.flatMap((item: any) => item?.content ?? []).map((part: any) => part?.text ?? "").join("") : ""),
+    ).trim();
+    if (!out) throw new Error("模型没有返回内容（换一个模型再试）");
+    return out;
+  }
+
   const response = await fetch(`${base}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
@@ -48,7 +73,7 @@ export async function polishPromptOnce(text: string, context?: string): Promise<
       stream: false,
       messages: [
         { role: "system", content: SYSTEM },
-        { role: "user", content: context ? `${context}\n\n原提示词：${text}` : text },
+        { role: "user", content: userText },
       ],
     }),
     signal: AbortSignal.timeout(30_000),
