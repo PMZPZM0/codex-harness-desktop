@@ -86,7 +86,7 @@
     "files": [
       "dist/**",
       "dist-electron/**",
-      "src/lib/video-providers.mjs",
+      "src/lib/*.mjs",
       "!dist-electron/**/*.tsbuildinfo",
       "build/tray.png",
       "build/trayTemplate.png",
