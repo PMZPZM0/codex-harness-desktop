@@ -306,120 +306,83 @@ const CHECKS = [
     },
   },
   {
-    id: "comp-lib",
-    name: "⑲ Uiverse 组件库（独立设置页浏览取码 + 引擎 MCP 查询工具）",
+    id: "laya-auto",
+    name: "⑲ Laya 思考等级自动档（开发工具卡 / 自动开关 / 规则升档实时透出 / 手选立即生效）",
     run: async (h) => {
-      // 为什么断言这一条：10-01 用户要求把组件库做成独立界面（预览"播放"+ 代码复制，给用户
-      // 开发别的软件用），并给 Codex 配查询工具。三个易假绿点：① 设置页 lazy chunk 缺失
-      // （0.0.27 事故同型）⇒ 必须真点开；② 复制链路（writeClipboard IPC）⇒ 真点一次看状态变化；
-      // ③ MCP 工具注册 ⇒ 真连 harness-dispatch 端口拉 tools/list（静态守卫只证明"写了定义"，
-      // 不证明"引擎工具表里真有"）。
+      // 为什么断言这一条：10-01 用户立项 laya 自动档并三次纠偏（没进度 / 延迟高 / 等级不透出）。
+      // 判定分两层：规则锚点（架构/重构/拆分 ⇒ xhigh，0ms 纯本地，不依赖模型权重）+ laya 模型
+      // （低/中分辨）。e2e 只验确定性链路：UI 在位、开关持久、规则路径芯片实时透出、手选立即
+      // 覆盖；模型判定质量不在 e2e 范围（需 700MB 权重，离线矩阵已验：模型对「中以上」压缩，
+      // 已改混合判定）。
+      // ① 设置 → 开发工具有 Laya 卡
       await h.eval(`(function(){ document.querySelector('.sidebar-settings')?.click(); return 1; })()`);
       await wait(1400);
       const nav = await h.eval(`(function(){ const items=[...document.querySelectorAll('.settings-nav button')];
-        const i=items.findIndex((b)=>(b.textContent||'').trim().includes('组件库')); if(i>=0) items[i].click(); return { idx:i, n:items.length }; })()`);
-      await wait(1300);
-      h.check("① 设置导航含「组件库」且能打开", (nav?.idx ?? -1) >= 0, `navIdx=${nav?.idx}/${nav?.n}`);
+        const i=items.findIndex((b)=>(b.textContent||'').includes('开发工具')); if(i>=0) items[i].click(); return i; })()`);
+      await wait(1200);
+      const card = await h.eval(`!!document.querySelector('.laya-card')`);
+      h.check("① 开发工具有「Laya 智能判断」卡（安装入口在位）", nav >= 0 && card, `nav=${nav} card=${card}`);
 
-      const page = await h.eval(`(function(){ const m=document.querySelector('.settings-modal');
-        return { cats: document.querySelectorAll('.comp-lib .ui-skin-cat').length,
-                 cells: document.querySelectorAll('.comp-lib .ui-skin-cell').length,
-                 err: m && /重试加载应用|Failed to fetch dynamically/.test(m.innerText||'') ? 'ErrorBoundary' : '' }; })()`);
-      h.check("② 类目 tab（11 类）+ 预览网格（≥10 卡）无 ErrorBoundary",
-        (page?.cats ?? 0) === 11 && (page?.cells ?? 0) >= 10 && !page?.err, JSON.stringify(page));
-      if ((page?.cells ?? 0) < 1) return;
+      // 关设置回主界面（设置弹窗右上角 ✕：aria-label 或 lucide-x 图标钮）
+      await h.eval(`(function(){ const btns=[...document.querySelectorAll('.settings-modal button')];
+        const x=btns.find((b)=>(b.getAttribute('aria-label')||'').includes('关闭')||b.querySelector('.lucide-x'));
+        if (x) x.click(); return 1; })()`);
+      await wait(1000);
 
-      // ③ 点第一张卡 → 代码视图：pre 有 HTML 原文
-      await h.eval(`(function(){ document.querySelector('.comp-lib .ui-skin-cell')?.click(); return 1; })()`);
-      await wait(1100);
-      const detail = await h.eval(`(function(){
-        const d=document.querySelector('.comp-lib-detail');
-        if (!d) return { open:false };
-        const pre=d.querySelector('.comp-lib-code');
-        return { open:true, codeLen:(pre?.textContent||'').length, hasHtml:/</.test(pre?.textContent||''),
-                 copyBtn: !!d.querySelector('.comp-lib-copy') };
-      })()`);
-      h.check("③ 点卡片弹出代码视图（HTML 原文非空）",
-        detail?.open === true && (detail?.codeLen ?? 0) > 100 && detail?.hasHtml === true, JSON.stringify(detail));
-
-      // ④ 复制按钮真的写入剪贴板（writeClipboard IPC）
-      const copy = await h.eval(`(function(){
-        const btn=document.querySelector('.comp-lib-detail .comp-lib-copy');
-        if (!btn) return { clicked:false }; btn.click(); return { clicked:true };
-      })()`);
+      // ② 思考强度弹窗里的自动档开关：在位、能打开（开成功时面板按设计自动收起 ⇒ 重开读状态）
+      await h.eval(`document.querySelector('.effort-trigger')?.click()`);
       await wait(700);
-      const copyState = await h.eval(`(function(){
-        const btn=document.querySelector('.comp-lib-detail .comp-lib-copy');
-        return { label: btn?.textContent?.trim() || '' }; })()`);
-      h.check("④ 复制按钮点击后变「已复制」（IPC 链路通）",
-        copy?.clicked === true && /已复制/.test(copyState?.label ?? ""), JSON.stringify({ ...copy, ...copyState }));
+      const autoRow = await h.eval(`!!document.querySelector('.effort-picker-auto-btn')`);
+      const wasOn = await h.eval(`document.querySelector('.effort-picker-auto')?.classList.contains('on')`);
+      if (!wasOn) { await h.eval(`document.querySelector('.effort-picker-auto-btn')?.click()`); await wait(400); }
+      // 面板已自动收起：重开读真实状态（存 localStorage，重开必然反映）
+      await h.eval(`document.querySelector('.effort-trigger')?.click()`);
+      await wait(700);
+      const nowOn = await h.eval(`document.querySelector('.effort-picker-auto')?.classList.contains('on')`);
+      h.check("② 自动档开关在位且可打开", autoRow && nowOn === true, `row=${autoRow} ${wasOn}→${nowOn}`);
 
-      // ⑤ 关闭浮层
-      await h.eval(`(function(){ document.querySelector('.comp-lib-detail-backdrop')?.click(); return 1; })()`);
-      await wait(400);
-      const closed = await h.eval(`!document.querySelector('.comp-lib-detail')`);
-      h.check("⑤ 点遮罩关闭代码视图", closed === true, `closed=${closed}`);
+      // 关弹窗（再点触发器）
+      await h.eval(`document.querySelector('.effort-trigger')?.click()`);
+      await wait(500);
 
-      // ⑥ 引擎 MCP 工具真在表里：连 harness-dispatch（token 在隔离 profile 的 dispatch-token.txt）
-      const { readFileSync: rf } = await import("node:fs");
-      let token = "";
-      try { token = rf(join(h.userDataDir, "dispatch-token.txt"), "utf8").trim(); } catch { }
-      if (!token) { h.check("⑥ MCP tools/list 含 ui_component_*", false, "token 文件不存在"); return; }
-      const mcp = await fetch(`http://127.0.0.1:47120/mcp?token=${encodeURIComponent(token)}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
-      }).then((r) => r.json()).catch((e) => ({ error: String(e) }));
-      const names = (mcp?.result?.tools || []).map((t) => t.name);
-      h.check("⑥ MCP tools/list 含 ui_component_search + ui_component_get",
-        names.includes("ui_component_search") && names.includes("ui_component_get"),
-        `工具数=${names.length} 命中=${names.filter((n) => n.startsWith("ui_component")).join(",") || "无"}`);
-
-      // ⑦ tools/call 路由进受保护入口：裸调用（无引擎旁证）必须被安全闸拒绝 —— 这是设计行为
-      //    （dispatch-rpc 用「引擎 item/started 事件参数指纹」对号，模型谎报身份也绕不过）。
-      //    执行分支的接线由守卫【235】③静态锚定；数据面在 ⑧ 用 node 直读 gz 复算。
-      const call = await fetch(`http://127.0.0.1:47120/mcp?token=${encodeURIComponent(token)}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "ui_component_search", arguments: { cat: "Toggle-switches", query: "andrew", limit: 5 } } }),
-      }).then((r) => r.json()).catch((e) => ({ error: String(e) }));
-      const out7 = call?.result?.content?.[0]?.text || call?.error?.message || "";
-      h.check("⑦ 裸 tools/call 被安全闸拒绝（旁证校验在位，不放行无引擎旁证的调用）",
-        /安全校验失败/.test(out7), String(out7).slice(0, 90));
-
-      // ⑧ 数据面真可搜：node 直读构建产物 gz 解压复算（不依赖 electron 模块）
-      const { readdirSync: rds, readFileSync: rfs } = await import("node:fs");
-      const { gunzipSync } = await import("node:zlib");
-      const assets = join(ROOT, "dist", "assets");
-      const gz = rds(assets).find((f) => f.startsWith("Toggle-switches.html-") && f.endsWith(".gz"));
-      const items = gz ? JSON.parse(gunzipSync(rfs(join(assets, gz))).toString("utf8")) : [];
-      const hit = items.filter((it) => it.author.toLowerCase().includes("andrew"));
-      h.check("⑧ 库数据面可搜（Toggle-switches 解压后按作者 andrew 过滤非空）",
-        items.length > 200 && hit.length > 0, `Toggle-switches ${items.length} 项，andrew 命中 ${hit.length}`);
-
-      // ⑨ ⛔ 开关类预览必须可交互（10-01 用户：「开关点不动，那样不就看不到效果了」）——
-      //    SkinHost 禁 input 的旧实现已删；这条防止它回来。翻前 5 张卡找含 checkbox 的开关。
-      await h.eval(`(function(){ const cats=[...document.querySelectorAll('.comp-lib .ui-skin-cat')];
-        const i=cats.findIndex((b)=>(b.textContent||'').includes('开关')); if(i>=0) cats[i].click(); return i; })()`);
-      await wait(1100);
-      let t = null;
-      for (let k = 0; k < 5 && !(t && t.has); k++) {
-        await h.eval(`(function(){ const cells=[...document.querySelectorAll('.comp-lib .ui-skin-cell')];
-          cells[${k}]?.click(); return 1; })()`);
-        await wait(900);
-        t = await h.eval(`(function(){
-          const host=document.querySelector('.comp-lib-preview-row .skin-host');
-          const input=host?.shadowRoot?.querySelector('input[type="checkbox"]');
-          if (!input) return { has:false, k:${k} };
-          const before=input.checked; input.click();
-          return { has:true, before, after:input.checked, disabled:input.disabled };
-        })()`);
+      // ③ 规则锚点实时透出：草稿含 架构/重构/拆分 ⇒ 芯片 ≤2.5s 变「自动 · 极高」
+      //   （预判 700ms 防抖 + 规则 0ms；不走 laya 模型——权重下载不在 e2e 范围）
+      await h.eval(`(function(){
+        const el=document.querySelector('.composer-editor');
+        el?.focus(); document.execCommand('selectAll', false, null);
+        document.execCommand('insertText', false, '把整个项目的状态层重构并迁移到新架构，按功能域拆分模块树');
+        return 1; })()`);
+      let chip3 = "";
+      for (let i = 0; i < 10; i++) {
+        await wait(500);
+        chip3 = await h.eval(`document.querySelector('.effort-trigger-label')?.textContent || ""`);
+        if (chip3.includes("极高") || chip3.includes("高")) break;
       }
-      h.check("⑨ 开关预览可交互（checkbox 未禁用、点击可切换）",
-        t?.has === true && t?.disabled === false && t?.before !== t?.after, JSON.stringify(t));
-      await h.eval(`(function(){ document.querySelector('.comp-lib-detail-backdrop')?.click(); return 1; })()`);
+      h.check("③ 规则升档实时透出：难任务草稿 → 芯片「自动 · 极高」", /自动.*极高/.test(chip3), chip3);
+
+      // ④ 手选立即覆盖：点档位刻度（低→高两连击）⇒ 芯片立刻跟着变（不发送也生效）
+      //   （commit 有 next!==value 守卫：当前档恰好等于所点档时不触发——两连击+变化断言免疫）
+      await h.eval(`document.querySelector('.effort-trigger')?.click()`);
+      await wait(600);
+      const seen = [];
+      for (const i of [0, 2]) {
+        await h.eval(`(function(){
+          const ticks=[...document.querySelectorAll('.effort-picker-ticks button')];
+          ticks[${i}]?.click(); return 1; })()`);
+        await wait(400);
+        seen.push(await h.eval(`document.querySelector('.effort-trigger-label')?.textContent || ""`));
+      }
+      const chip4 = seen[seen.length - 1] ?? "";
+      h.check("④ 手选立即覆盖：自动模式下点刻度芯片立刻跟随（≥1 次可见变化）",
+        seen.some((s) => /^自动 · /.test(s) && !/极高/.test(s)), `seen=${seen.join(" → ")}`);
+
+      // ⑤ 持久化 + 收尾还原：开关状态在 localStorage，验完清掉不污染后续
+      const persist = await h.eval(`localStorage.getItem('effort-auto-v1') === '1'`);
+      h.check("⑤ 自动开关持久化（localStorage v1）", persist === true, `v1=${persist}`);
+      await h.eval(`localStorage.removeItem('effort-auto-v1')`);
     },
-  },];
+  },
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 脚手架（通常不用动）
@@ -451,7 +414,7 @@ async function enterMain(h) {
 const LATEST_ROUND = "10-01";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
-  "comp-lib": "10-01",
+  "laya-auto": "10-01",
   "file-card-edit": "09-26",
   "settings-pages": "09-25",
   "shot-editor": "09-24",

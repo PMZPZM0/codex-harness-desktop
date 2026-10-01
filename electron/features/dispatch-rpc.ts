@@ -10,6 +10,7 @@
 import http from "node:http";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { app } from "electron";
 import { canDispatchFrom } from "../dispatch";
 import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
@@ -500,6 +501,7 @@ export async function ensureDispatchHttp(): Promise<void> {
     });
     server.listen(DISPATCH_FIXED_PORT, "127.0.0.1", () => {
       mutableState.dispatchHttpPort = DISPATCH_FIXED_PORT;
+      void writeDispatchPortFile(DISPATCH_FIXED_PORT);
       resolve();
     });
     // 端口被占（可能另一个实例/残留进程）：退回相邻端口并记录，config 会用实际端口重写
@@ -507,7 +509,12 @@ export async function ensureDispatchHttp(): Promise<void> {
       const fallback = http.createServer(server.listeners("request")[0] as any);
       fallback.listen(0, "127.0.0.1", () => {
         const addr = fallback.address();
-        if (addr && typeof addr === "object") mutableState.dispatchHttpPort = addr.port;
+        if (addr && typeof addr === "object") {
+          mutableState.dispatchHttpPort = addr.port;
+          // ⛔ 实际端口落盘（10-01 e2e 实测：用户真实应用占 47120 ⇒ e2e 实例退到随机端口，
+          // 验收脚本写死 47120 会打到真实应用上 token 不匹配假红）。与 dispatch-token.txt 同目录。
+          void writeDispatchPortFile(addr.port);
+        }
         resolve();
       });
     });
@@ -515,4 +522,11 @@ export async function ensureDispatchHttp(): Promise<void> {
     setTimeout(resolve, 2000);
   });
   return mutableState.dispatchHttpReady;
+}
+
+/** 实际 MCP 端口落盘（验收脚本读它，不再写死 47120——真实应用占口时 e2e 不假红）。 */
+async function writeDispatchPortFile(port: number): Promise<void> {
+  try {
+    await fsp.writeFile(path.join(app.getPath("userData"), "dispatch-port.txt"), String(port), "utf8");
+  } catch { /* 写失败不影响服务 */ }
 }

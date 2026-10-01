@@ -319,11 +319,33 @@ export async function layaDecide(state: string, questions: Record<string, unknow
  *   ② 3 秒硬超时兜底（服务就绪时判定 ~200ms，3s 都到不了说明环境有病，弃权）；
  *   发送链**永远不等模型**。
  */
+/* ── 混合判定：升档锚点（确定性规则，0ms）────────────────────────
+ * 10-01 实测定标（6 档难度 × 4 种问法：中文四选/英文四选/score 列表/noul 阶梯）：
+ * multilingual checkpoint 对「中以上」**系统性压缩**——极难任务在各种问法下都输出
+ * medium（score 甚至给极难打的分低于难）。它的可靠区间 = 极易(low，置信 0.8+) vs
+ * 其余(medium)。因此分工：**laya 只判低端**（33ms 强项），升到 high/xhigh 由确定性
+ * 规则锚点负责（0ms，宁高档不低档——用户明确要求难任务必须升上去）。
+ * 规则命中 ⇒ 直接返回，连 laya 都不调；未命中才问 laya（low/medium 分辨）。 */
+const TRIVIAL_RE = /错别字|拼写|typo|格式化|注释|文案|翻译/i;
+const XHIGH_SIGNALS = [/重构/, /架构/, /模块树/, /拆分|拆成/, /迁移/, /全仓/, /整个项目/, /大规模/, /系统性/, /系统设计|设计.{0,12}系统|调度系统/, /从零(实现|搭建)/, /上千行|上万行/];
+const HIGH_SIGNALS = [/多文件/, /多个文件/, /跨模块/, /几个文件/, /原因不明/, /根因/, /排查/, /历史.{0,4}(数据|链路)/, /联调/, /竞态/, /并发.{0,6}(问题|bug|冲突)/];
+
+function ruleEscalate(text: string): string | null {
+  if (TRIVIAL_RE.test(text) && text.length <= 40) return null; // 一目了然的小修永不升档
+  if (XHIGH_SIGNALS.some((r) => r.test(text))) return "xhigh";
+  // 灵敏度拉满（10-01 用户定标）：单个高危信号即升 high——宁高档不低档
+  if (HIGH_SIGNALS.some((r) => r.test(text))) return "high";
+  return null;
+}
+
 const DECIDE_EFFORT_TIMEOUT_MS = 3_000;
 
 export async function layaDecideEffort(text: string): Promise<{ effort: string; confidence: number } | null> {
+  // ① 规则锚点先行（0ms；命中即连模型都不调）
+  const rule = ruleEscalate(text);
+  if (rule) return { effort: rule, confidence: 0.6 };
+  // ② laya 判低端：只用已就绪服务（⛔ 不为挑档拉起 1.7GB 服务），未就绪弃权 + 后台预热
   if (!proc || !ready) {
-    // 后台预热（不阻塞发送；权重下载进度在 设置 → 开发工具 的 Laya 卡片可见）
     void ensureService().catch((err) => log(`预热失败: ${String(err).slice(0, 120)}`));
     return null;
   }

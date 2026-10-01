@@ -327,18 +327,25 @@ export async function send(bag: Bag, event?: FormEvent) {
          判定档要过 pickEffortFallback（模型已知不支持的档自动降邻档）。 */
       let effectiveEffort = bag.effort || null;
       if (bag.effortAuto && messageText.trim()) {
-        // ⛔ 判定是增强不是闸门：主进程侧 3s 硬超时 + 这里再兜异常——任何失败都弃权回落
-        // 手选档，发送永不被 laya 阻塞/打断（10-01 实测：首启等权重下载把消息卡没）。
-        const decided = await bag.resolveAutoEffort?.(messageText).catch(() => null);
-        if (decided) {
-          effectiveEffort = decided;
-          const supported = (bag.selectedModel as any)?.supportedReasoningEfforts as string[] | undefined;
-          if (supported?.length && !supported.includes(decided)) {
-            effectiveEffort = pickEffortFallback(decided, supported) ?? decided;
+        if (bag.manualEffortOverride?.current) {
+          // 手动选档一次性覆盖（10-01 用户：所有等级要立刻能选择生效）——跳过判定直接用手选档
+          bag.manualEffortOverride.current = false;
+          effectiveEffort = bag.effort || null;
+          bag.setAutoEffortApplied?.(effectiveEffort);
+        } else {
+          // ⛔ 判定是增强不是闸门：主进程侧 3s 硬超时 + 这里再兜异常——任何失败都弃权回落
+          // 手选档，发送永不被 laya 阻塞/打断（10-01 实测：首启等权重下载把消息卡没）。
+          const decided = await bag.resolveAutoEffort?.(messageText).catch(() => null);
+          if (decided) {
+            effectiveEffort = decided;
+            const supported = (bag.selectedModel as any)?.supportedReasoningEfforts as string[] | undefined;
+            if (supported?.length && !supported.includes(decided)) {
+              effectiveEffort = pickEffortFallback(decided, supported) ?? decided;
+            }
           }
+          // 透出生效档（10-01 用户要求）：判定档或回落的手选档，显示在思考强度芯片上
+          bag.setAutoEffortApplied?.(effectiveEffort);
         }
-        // 透出生效档（10-01 用户要求）：判定档或回落的手选档，显示在思考强度芯片上
-        bag.setAutoEffortApplied?.(effectiveEffort);
       }
       const startTurn = async (target: Thread) => window.codex.request("turn/start", {
         threadId: target.id,
