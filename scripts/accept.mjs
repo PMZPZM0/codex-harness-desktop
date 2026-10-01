@@ -306,92 +306,98 @@ const CHECKS = [
     },
   },
   {
-    id: "skin-pack",
-    name: "⑲ 控件皮肤套装（激活全局统一生效 / 尺寸归一 / 持久化 / 开关渲染路径统一）",
+    id: "comp-lib",
+    name: "⑲ Uiverse 组件库（独立设置页浏览取码 + 引擎 MCP 查询工具）",
     run: async (h) => {
-      // 为什么断言这一条：10-01 用户看到「同一个弹窗里三个开关三种长相」（单品散绑的必然结果），
-      // 拍板改套装制——激活一套全局统一。三个假绿高发点必须真机验：
-      //   a) 套装激活只写 localStorage 不触发订阅 ⇒ 界面不变（订阅链断）；
-      //   b) 全局生效只覆盖共享 ToggleSwitch 的调用点 ⇒ 机器人弹窗等散装开关不变（已全仓清零，守卫【234】⑧）；
-      //   c) fit 归一失效 ⇒ 社区元素原尺寸混进来，还是「一颗大圆球混在胶囊里」。
+      // 为什么断言这一条：10-01 用户要求把组件库做成独立界面（预览"播放"+ 代码复制，给用户
+      // 开发别的软件用），并给 Codex 配查询工具。三个易假绿点：① 设置页 lazy chunk 缺失
+      // （0.0.27 事故同型）⇒ 必须真点开；② 复制链路（writeClipboard IPC）⇒ 真点一次看状态变化；
+      // ③ MCP 工具注册 ⇒ 真连 harness-dispatch 端口拉 tools/list（静态守卫只证明"写了定义"，
+      // 不证明"引擎工具表里真有"）。
       await h.eval(`(function(){ document.querySelector('.sidebar-settings')?.click(); return 1; })()`);
       await wait(1400);
       const nav = await h.eval(`(function(){ const items=[...document.querySelectorAll('.settings-nav button')];
-        const i=items.findIndex((b)=>(b.textContent||'').trim().includes('控件皮肤')); if(i>=0) items[i].click(); return { idx:i, n:items.length }; })()`);
-      await wait(1200);
-      h.check("① 设置导航含「控件皮肤」且能打开", (nav?.idx ?? -1) >= 0, `navIdx=${nav?.idx}/${nav?.n}`);
+        const i=items.findIndex((b)=>(b.textContent||'').trim().includes('组件库')); if(i>=0) items[i].click(); return { idx:i, n:items.length }; })()`);
+      await wait(1300);
+      h.check("① 设置导航含「组件库」且能打开", (nav?.idx ?? -1) >= 0, `navIdx=${nav?.idx}/${nav?.n}`);
 
-      // ② 套装画廊：默认卡 + ≥1 套装卡（卡片 = button[title*=套装]）
-      const gallery = await h.eval(`(function(){
-        return { packs: document.querySelectorAll('.ui-skin-grid .ui-skin-cell').length,
-                 err: /重试加载应用|Failed to fetch dynamically/.test(document.querySelector('.settings-modal')?.innerText||'') ? 'ErrorBoundary' : '' }; })()`);
-      h.check("② 套装画廊渲染（默认卡 + 套装卡 ≥2，无 ErrorBoundary）",
-        (gallery?.packs ?? 0) >= 2 && !gallery?.err, JSON.stringify(gallery));
-      if ((gallery?.packs ?? 0) < 2) return;
+      const page = await h.eval(`(function(){ const m=document.querySelector('.settings-modal');
+        return { cats: document.querySelectorAll('.comp-lib .ui-skin-cat').length,
+                 cells: document.querySelectorAll('.comp-lib .ui-skin-cell').length,
+                 err: m && /重试加载应用|Failed to fetch dynamically/.test(m.innerText||'') ? 'ErrorBoundary' : '' }; })()`);
+      h.check("② 类目 tab（11 类）+ 预览网格（≥10 卡）无 ErrorBoundary",
+        (page?.cats ?? 0) === 11 && (page?.cells ?? 0) >= 10 && !page?.err, JSON.stringify(page));
+      if ((page?.cells ?? 0) < 1) return;
 
-      // ③ 找一个真开关：遍历设置页取第一个含 .toggle-switch 的页（记录页号，后续同页对比）
-      let probePage = -1;
-      for (let i = 0; i < (nav?.n ?? 0) && probePage < 0; i++) {
-        await h.eval(`(function(){ document.querySelectorAll('.settings-nav button')[${i}]?.click(); return 1; })()`);
-        await wait(700);
-        const has = await h.eval(`!!document.querySelector('.settings-modal .toggle-switch')`);
-        if (has) probePage = i;
-      }
-      h.check("③ 找到含默认开关的设置页（probe）", probePage >= 0, `probePage=${probePage}`);
-      if (probePage < 0) return;
-
-      // ④ 激活第一个套装（回皮肤页点套装卡）⇒ 订阅链即时生效：同页开关变 .skin-host
-      await h.eval(`(function(){ document.querySelectorAll('.settings-nav button')[${nav.idx}]?.click(); return 1; })()`);
-      await wait(1000);
-      const act = await h.eval(`(function(){
-        const cells=[...document.querySelectorAll('.ui-skin-grid .ui-skin-cell')];
-        const pack=cells.find((b)=>(b.title||'').includes('的套装'));
-        if (!pack) return { hit:false };
-        pack.click(); return { hit:true, title: pack.title.slice(0, 40) };
+      // ③ 点第一张卡 → 代码视图：pre 有 HTML 原文
+      await h.eval(`(function(){ document.querySelector('.comp-lib .ui-skin-cell')?.click(); return 1; })()`);
+      await wait(1100);
+      const detail = await h.eval(`(function(){
+        const d=document.querySelector('.comp-lib-detail');
+        if (!d) return { open:false };
+        const pre=d.querySelector('.comp-lib-code');
+        return { open:true, codeLen:(pre?.textContent||'').length, hasHtml:/</.test(pre?.textContent||''),
+                 copyBtn: !!d.querySelector('.comp-lib-copy') };
       })()`);
-      h.check("④ 点第一个套装卡激活", act?.hit === true, JSON.stringify(act));
-      await wait(900);
-      await h.eval(`(function(){ document.querySelectorAll('.settings-nav button')[${probePage}]?.click(); return 1; })()`);
-      await wait(900);
-      const after = await h.eval(`(function(){
-        const el=document.querySelector('.settings-modal .skin-host.ui-skin-toggle');
-        if (!el) return { host:false };
-        return { host:true, skin: el.dataset.skin || '', h: el.offsetHeight };
-      })()`);
-      h.check("⑤ 全局生效：开关渲染为皮肤宿主（Shadow DOM）", after?.host === true, JSON.stringify(after));
-      // ⑥ 尺寸归一：fit 34×21 生效（社区元素超了被缩小；高了就是没走 fit）
-      h.check("⑥ fit 归一：皮肤开关占位 ≤26px（不再出现大圆球）",
-        (after?.h ?? 99) > 0 && after.h <= 26, `h=${after?.h}`);
-      const skinId = after?.skin ?? "";
+      h.check("③ 点卡片弹出代码视图（HTML 原文非空）",
+        detail?.open === true && (detail?.codeLen ?? 0) > 100 && detail?.hasHtml === true, JSON.stringify(detail));
 
-      // ⑦ 持久化：reload 后仍生效（localStorage v2 真的存了）
-      await h.reload({ waitMs: 2500 });
-      await wait(1200);
-      await h.eval(`(function(){ document.querySelector('.sidebar-settings')?.click(); return 1; })()`);
-      await wait(1200);
-      await h.eval(`(function(){ document.querySelectorAll('.settings-nav button')[${probePage}]?.click(); return 1; })()`);
-      await wait(900);
-      const persist = await h.eval(`!!document.querySelector('.settings-modal .skin-host.ui-skin-toggle')`);
-      h.check("⑦ 持久化：reload 后套装仍生效", persist === true, `skin=${skinId}`);
-
-      // ⑧ 回默认：默认卡清除套装 ⇒ 开关回 .toggle-switch
-      await h.eval(`(function(){ document.querySelectorAll('.settings-nav button')[${nav.idx}]?.click(); return 1; })()`);
-      await wait(1000);
-      await h.eval(`(function(){
-        const cells=[...document.querySelectorAll('.ui-skin-grid .ui-skin-cell')];
-        cells.find((b)=>(b.title||'').includes('恢复所有控件默认样式'))?.click(); return 1;
+      // ④ 复制按钮真的写入剪贴板（writeClipboard IPC）
+      const copy = await h.eval(`(function(){
+        const btn=document.querySelector('.comp-lib-detail .comp-lib-copy');
+        if (!btn) return { clicked:false }; btn.click(); return { clicked:true };
       })()`);
       await wait(700);
-      await h.eval(`(function(){ document.querySelectorAll('.settings-nav button')[${probePage}]?.click(); return 1; })()`);
-      await wait(800);
-      const reset = await h.eval(`(function(){
-        return { def: !!document.querySelector('.settings-modal .toggle-switch'),
-                 skin: !!document.querySelector('.settings-modal .skin-host') }; })()`);
-      h.check("⑧ 回默认：套装清除后开关恢复默认样式", reset?.def === true && reset?.skin === false, JSON.stringify(reset));
-      await h.eval(`(function(){ document.querySelectorAll('.settings-nav button')[0]?.click(); return 1; })()`);
+      const copyState = await h.eval(`(function(){
+        const btn=document.querySelector('.comp-lib-detail .comp-lib-copy');
+        return { label: btn?.textContent?.trim() || '' }; })()`);
+      h.check("④ 复制按钮点击后变「已复制」（IPC 链路通）",
+        copy?.clicked === true && /已复制/.test(copyState?.label ?? ""), JSON.stringify({ ...copy, ...copyState }));
+
+      // ⑤ 关闭浮层
+      await h.eval(`(function(){ document.querySelector('.comp-lib-detail-backdrop')?.click(); return 1; })()`);
+      await wait(400);
+      const closed = await h.eval(`!document.querySelector('.comp-lib-detail')`);
+      h.check("⑤ 点遮罩关闭代码视图", closed === true, `closed=${closed}`);
+
+      // ⑥ 引擎 MCP 工具真在表里：连 harness-dispatch（token 在隔离 profile 的 dispatch-token.txt）
+      const { readFileSync: rf } = await import("node:fs");
+      let token = "";
+      try { token = rf(join(h.userDataDir, "dispatch-token.txt"), "utf8").trim(); } catch { }
+      if (!token) { h.check("⑥ MCP tools/list 含 ui_component_*", false, "token 文件不存在"); return; }
+      const mcp = await fetch(`http://127.0.0.1:47120/mcp?token=${encodeURIComponent(token)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      }).then((r) => r.json()).catch((e) => ({ error: String(e) }));
+      const names = (mcp?.result?.tools || []).map((t) => t.name);
+      h.check("⑥ MCP tools/list 含 ui_component_search + ui_component_get",
+        names.includes("ui_component_search") && names.includes("ui_component_get"),
+        `工具数=${names.length} 命中=${names.filter((n) => n.startsWith("ui_component")).join(",") || "无"}`);
+
+      // ⑦ tools/call 路由进受保护入口：裸调用（无引擎旁证）必须被安全闸拒绝 —— 这是设计行为
+      //    （dispatch-rpc 用「引擎 item/started 事件参数指纹」对号，模型谎报身份也绕不过）。
+      //    执行分支的接线由守卫【235】③静态锚定；数据面在 ⑧ 用 node 直读 gz 复算。
+      const call = await fetch(`http://127.0.0.1:47120/mcp?token=${encodeURIComponent(token)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "ui_component_search", arguments: { cat: "Toggle-switches", query: "andrew", limit: 5 } } }),
+      }).then((r) => r.json()).catch((e) => ({ error: String(e) }));
+      const out7 = call?.result?.content?.[0]?.text || call?.error?.message || "";
+      h.check("⑦ 裸 tools/call 被安全闸拒绝（旁证校验在位，不放行无引擎旁证的调用）",
+        /安全校验失败/.test(out7), String(out7).slice(0, 90));
+
+      // ⑧ 数据面真可搜：node 直读构建产物 gz 解压复算（不依赖 electron 模块）
+      const { readdirSync: rds, readFileSync: rfs } = await import("node:fs");
+      const { gunzipSync } = await import("node:zlib");
+      const assets = join(ROOT, "dist", "assets");
+      const gz = rds(assets).find((f) => f.startsWith("Toggle-switches.html-") && f.endsWith(".gz"));
+      const items = gz ? JSON.parse(gunzipSync(rfs(join(assets, gz))).toString("utf8")) : [];
+      const hit = items.filter((it) => it.author.toLowerCase().includes("andrew"));
+      h.check("⑧ 库数据面可搜（Toggle-switches 解压后按作者 andrew 过滤非空）",
+        items.length > 200 && hit.length > 0, `Toggle-switches ${items.length} 项，andrew 命中 ${hit.length}`);
     },
-  },
-];
+  },];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 脚手架（通常不用动）
@@ -423,7 +429,7 @@ async function enterMain(h) {
 const LATEST_ROUND = "10-01";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
-  "skin-pack": "10-01",
+  "comp-lib": "10-01",
   "file-card-edit": "09-26",
   "settings-pages": "09-25",
   "shot-editor": "09-24",

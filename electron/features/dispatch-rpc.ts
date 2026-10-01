@@ -25,6 +25,7 @@ import { runDelegatedTask } from "../features/delegation";
 import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
 import { mutableState, readBuiltinPlugins, scheduler } from "../main";
 import { generateImageResilient } from "./builtin-skills-ipc/01-builtin-images";
+import { uiverseSearch, uiverseGet } from "./uiverse-library";
 import { concatVideosCore, downloadVideoCore, findVideoJob, listVideoJobs, pollVideoCore, rememberVideoJob, submitVideoCore, updateVideoJob, videoProviderViews } from "./video-gen";
 export async function dispatchRpcCall(name: unknown, args: Record<string, unknown>): Promise<{ ok: boolean; output?: string; error?: string }> {
   // ── 旁证：引擎把调用转发给 MCP 服务器的同一时刻会发 item/started 事件（含真实 threadId）。
@@ -138,6 +139,20 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
   if (name === "scheduler_delete") {
     await scheduler.remove(String(args.id ?? ""));
     return { ok: true, output: "定时任务已删除。" };
+  }
+  /* ── Uiverse 组件库两件套（10-01）：数据端 uiverse-library.ts（与控件皮肤库同一份 gzip）── */
+  if (name === "ui_component_search") {
+    const limit = args.limit ? Number(args.limit) : undefined;
+    const r = uiverseSearch({ cat: args.cat ? String(args.cat) : undefined, query: args.query ? String(args.query) : undefined, limit });
+    const lines = r.items.map((it) => `${it.cat}/${it.id} — ${it.name}（by ${it.author}）`);
+    const head = `共 ${r.total} 个匹配${limit && r.items.length < r.total ? `（显示前 ${r.items.length} 条，可加 limit 或收紧关键词）` : ""}。要代码就用 ui_component_get 传 cat/id。`;
+    return { ok: true, output: [head, r.error ? `⚠ ${r.error}` : "", ...lines].filter(Boolean).join("\n") || "没有匹配的组件。" };
+  }
+  if (name === "ui_component_get") {
+    const r = uiverseGet({ cat: String(args.cat ?? ""), id: String(args.id ?? "") });
+    if (r.error || !r.item) return { ok: false, error: r.error ?? "组件不存在" };
+    const body = r.item.html.length > 32_000 ? `${r.item.html.slice(0, 32_000)}\n<!-- ⚠ 已截断（原文 ${r.item.html.length} 字符，异常超大） -->` : r.item.html;
+    return { ok: true, output: `<!-- Uiverse "${r.item.name}" by ${r.item.author}（MIT）cat=${r.item.cat} id=${r.item.id} -->\n${body}` };
   }
   /* ── 媒体生成三件套（09-29 用户：「让 Codex 能够直接调用这两个工作流」）────────────────
      ⛔ 执行端与画布卡片**共用同一套 core**（generateImageResilient / video-gen 的 submit·poll·download）

@@ -2891,4 +2891,47 @@ w.postMessage({id:1,op:"list",root});
     );
   }
 
+  /* ══ 【235】Uiverse 组件库（10-01：独立设置页 + 引擎查询工具）═══════════════
+     与【234】同数据源（src/lib/ui-skin/data/*.gz，单一真相源）：皮肤管换肤，这里管浏览取码。
+     引擎侧 = 内置 MCP（harness-dispatch）的 ui_component_search / ui_component_get 两工具。 */
+  {
+    const libSrc = existsSync(join(ROOT, "electron", "features", "uiverse-library.ts"))
+      ? readFileSync(join(ROOT, "electron", "features", "uiverse-library.ts"), "utf8") : "";
+    (libSrc.includes('path.join(appPath, "dist", "assets")') && libSrc.includes('path.join(appPath, "src", "lib", "ui-skin", "data"') ? ok : fail)(
+      "【235】数据端双路定位（构建产物 dist/assets 前缀匹配 + dev 源文件回落；单一真相源不复制第二份）"
+    );
+
+    /* ① MCP 工具定义 + 执行端接线（⛔ 各自锚定，不串固定窗口） */
+    const dispatchCoreSrc = readFileSync(join(ROOT, "electron", "features", "dispatch-core.ts"), "utf8");
+    (dispatchCoreSrc.includes('"ui_component_search"') && dispatchCoreSrc.includes('"ui_component_get"') ? ok : fail)(
+      "【235】MCP 工具定义在位（dispatchMcpTools 含 search + get 两件）"
+    );
+    const dispatchRpcSrc = readFileSync(join(ROOT, "electron", "features", "dispatch-rpc.ts"), "utf8");
+    (dispatchRpcSrc.includes('from "./uiverse-library"') && dispatchRpcSrc.includes('name === "ui_component_search"') && dispatchRpcSrc.includes('name === "ui_component_get"') ? ok : fail)(
+      "【235】执行端接线（dispatch-rpc 两分支真调 uiverseSearch/uiverseGet）"
+    );
+
+    /* ② 指令常驻（⛔ 锚 text += 接线；模型不知道工具存在 = 白配） */
+    const devInstrSrc = readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8");
+    (devInstrSrc.includes("UI_COMPONENT_INSTRUCTIONS") && /text \+= UI_COMPONENT_INSTRUCTIONS;/.test(devInstrSrc) ? ok : fail)(
+      "【235】developer_instructions 常驻第 12 条（写前端先查库；接线在 buildDevInstructions）"
+    );
+
+    /* ③ 独立设置页三件套（注册表 / 类型 / 导航）+ 帮助总览 + 域页面在位 */
+    const registrySrc235 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
+    const typesSrc235 = readFileSync(join(ROOT, "src", "features", "app-view", "types.ts"), "utf8");
+    const catalogsSrc235 = readFileSync(join(ROOT, "src", "features", "app-view", "helpers", "catalogs.ts"), "utf8");
+    const helpSrc235 = readFileSync(join(ROOT, "src", "components", "HelpDialog.tsx"), "utf8");
+    (registrySrc235.includes('"component-library"') && typesSrc235.includes('"component-library"') ? ok : fail)(
+      "【235】设置注册表 + 类型含 component-library"
+    );
+    (catalogsSrc235.includes('"component-library", "组件库"') && helpSrc235.includes("组件库") ? ok : fail)(
+      "【235】设置导航含「组件库」+ 帮助总览有该页（守卫【32】同款义务）"
+    );
+    const compLibSrc = readFileSync(join(ROOT, "src", "features", "component-library", "ComponentLibrary.tsx"), "utf8");
+    (compLibSrc.includes("writeClipboard") && compLibSrc.includes("comp-lib-error") && compLibSrc.includes("loadCategory") ? ok : fail)(
+      "【235】组件库页：复制走 writeClipboard、加载失败可见（⛔ 不许静默空白）、数据走基座 loadCategory"
+    );
+  }
+
 }
