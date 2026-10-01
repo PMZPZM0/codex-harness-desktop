@@ -50,7 +50,7 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
     <div className="plugin-market-block">
       <div className="plugin-market-title">插件市场<small>来自 Codex Plugin Marketplace · 一键安装无需登录</small></div>
       <div className="resource-toolbar">
-        <div className="skill-tabs">{pluginMarketCategoryTabs.map(([label, value]: any) => <button key={value} className={pluginMarketCategory === value ? "active" : ""} onClick={() => { setPluginMarketCategory(value); setPluginMarketPage(1); }}>{label}</button>)}: any</div>
+        <div className="skill-tabs">{pluginMarketCategoryTabs.map(([label, value]: any) => <button key={value} className={pluginMarketCategory === value ? "active" : ""} onClick={() => { setPluginMarketCategory(value); setPluginMarketPage(1); }}>{label}</button>)}</div>
         <SearchField value={pluginMarketSearch} onChange={(next) => { setPluginMarketSearch(next); setPluginMarketPage(1); }} placeholder="搜索插件名称、简介或作者" />
       </div>
       {pluginMarketItems.length > 0 ? <div className="skill-card-grid">

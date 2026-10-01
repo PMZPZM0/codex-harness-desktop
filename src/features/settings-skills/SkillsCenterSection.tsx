@@ -28,7 +28,7 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                       />
                     </div>
                     {!skillsManageOnly && <div className="resource-toolbar secondary skill-filter-row">
-                      <div className="skill-tabs">{skillHubCategoryTabs.map(([label, value]: any) => <button key={label} className={skillHubFilterCategory === value ? "active" : ""} onClick={() => { setSkillHubFilterCategory(value); setMarketPage(1); }}>{label}</button>)}: any</div>
+                      <div className="skill-tabs">{skillHubCategoryTabs.map(([label, value]: any) => <button key={label} className={skillHubFilterCategory === value ? "active" : ""} onClick={() => { setSkillHubFilterCategory(value); setMarketPage(1); }}>{label}</button>)}</div>
                       {marketSkills.length > 0 && <span className="skill-filter-count">当前榜单 {marketSkills.length} 个技能 · 分类 <b>{skillHubFilterCategory ? skillHubCategoryName(skillHubFilterCategory) : "全部"}</b></span>}
                     </div>}
                     {skillsManageOnly ? (() => {
