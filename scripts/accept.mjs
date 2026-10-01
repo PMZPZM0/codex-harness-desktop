@@ -306,32 +306,33 @@ const CHECKS = [
     },
   },
   {
-    id: "onboarding-2",
-    name: "⑲ 首启引导 2.0（只弹开发工具 / 无模型引导 / 无镜像切换 / 行内安装与跳过）",
+    id: "plugin-market-gitee",
+    name: "⑲ 插件市场换源（Gitee 官方镜像 / 48 个 Codex 兼容插件 / 分类与文案）",
     run: async (h) => {
-      // 为什么断言这一条：10-01 用户定稿首启引导收敛——① 删模型配置引导（只弹开发工具）；
-      // ② 镜像源统一国内、不暴露切换选项；③ 每工具状态机（待装/下载中/安装中/成功/失败重试/跳过）。
-      // 弹窗本身由「缺推荐项」触发，e2e profile 工具齐全不弹——这里验的是**结构与反面**：
-      // ① 组件库/开发工具设置页不再有「下载源」选择器（镜像切换不暴露给用户）
+      // 为什么断言这一条：10-01 用户发现 SkillHub 插件源几乎全为 DeepSeek Harness（DSH）生态
+      // 装不上，令换国内兼容源。新源 = Gitee 上的 Claude Code 官方插件市场镜像（48 个，
+      // 100% .claude-plugin 兼容）。安装链路已在换源时用真实下载探针验证（10/10 文件成功）。
+      // ① 市场清单真拉到：走真实 IPC（Gitee API），条目 ≥40 且全部带 pluginPath（=兼容）
+      const list = await h.eval(`window.codex.listMarketPlugins({ page: 1, pageSize: 30 }).then((r) => ({
+        total: r.total, first: r.items[0] ? { name: r.items[0].name, path: r.items[0].pluginPath, src: r.items[0].source } : null,
+      })).catch((e) => ({ error: String(e) }))`);
+      h.check("① 市场清单真拉到（Gitee 源 ≥40 个插件）",
+        (list?.total ?? 0) >= 40 && list?.first?.path, JSON.stringify(list).slice(0, 140));
+      // ② 条目指向 Gitee 镜像源（不再是 SkillHub / DSH）
+      h.check("② 条目标注 Gitee 官方镜像且带兼容插件路径",
+        list?.first?.src === "Gitee 官方镜像" && String(list?.first?.path ?? "").startsWith("plugins/"), JSON.stringify(list?.first));
+      // ③ UI：打开插件设置页，市场标题换源文案 + 无 DSH 报错文案残留
       await h.eval(`(function(){ document.querySelector('.sidebar-settings')?.click(); return 1; })()`);
       await wait(1400);
       const nav = await h.eval(`(function(){ const items=[...document.querySelectorAll('.settings-nav button')];
-        const i=items.findIndex((b)=>(b.textContent||'').includes('开发工具')); if(i>=0) items[i].click(); return i; })()`);
-      await wait(1100);
-      const noSelector = await h.eval(`!document.querySelector('.devtools-source-row')`);
-      h.check("① 开发工具页无「下载源」切换器（统一国内镜像，不暴露选项）", nav >= 0 && noSelector, `nav=${nav} noSelector=${noSelector}`);
-
-      // ② 模型引导不复活：渲染树无 .model-guide（组件已删；老 profile 配过模型更不该弹）
-      const noGuide = await h.eval(`!document.querySelector('.model-guide')`);
-      h.check("② 无模型配置引导弹窗（渲染树清零）", noGuide, `noGuide=${noGuide}`);
-
-      // ③ 关设置，回主界面确认体检弹窗没有误弹（profile 工具齐全 ⇒ 不该弹）
-      await h.eval(`(function(){ const btns=[...document.querySelectorAll('.settings-modal button')];
-        const x=btns.find((b)=>(b.getAttribute('aria-label')||'').includes('关闭')||b.querySelector('.lucide-x'));
-        if (x) x.click(); return 1; })()`);
-      await wait(900);
-      const noEnv = await h.eval(`!document.querySelector('.env-check-modal')`);
-      h.check("③ 工具齐全时体检弹窗不弹（缺推荐项才弹）", noEnv, `noEnv=${noEnv}`);
+        const i=items.findIndex((b)=>(b.textContent||'').trim()==='插件'); if(i>=0) items[i].click(); return i; })()`);
+      await wait(1600);
+      const ui = await h.eval(`(function(){
+        const t=document.querySelector('.settings-modal')?.innerText||'';
+        return { hasGitee: t.includes('Gitee 官方镜像'), noSkillhub: !t.includes('skillhub.cn/plugins'),
+          cards: document.querySelectorAll('.plugin-market-card, .settings-modal [class*=market] [class*=card]').length }; })()`);
+      h.check("③ 插件页文案已换源（Gitee 标注 + 无 skillhub 残留）",
+        nav >= 0 && ui?.hasGitee && ui?.noSkillhub, JSON.stringify(ui).slice(0, 120));
     },
   },
 ];
@@ -366,7 +367,7 @@ async function enterMain(h) {
 const LATEST_ROUND = "10-01";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
-  "onboarding-2": "10-01",
+  "plugin-market-gitee": "10-01",
   "file-card-edit": "09-26",
   "settings-pages": "09-25",
   "shot-editor": "09-24",

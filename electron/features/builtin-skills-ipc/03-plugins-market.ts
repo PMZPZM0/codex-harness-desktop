@@ -7,28 +7,19 @@ import fs from "node:fs/promises";
 import { app, dialog, ipcMain } from "electron";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { sendToWindow } from "../../features/window-bus";
-import { ensureCodexMarketplaceSection, installCodexMarketPlugin, listSkillHubPlugins, resolveCodexPluginPath } from "../../codex-market";
+import { ensureCodexMarketplaceSection, installCodexMarketPlugin, listMarketPlugins } from "../../codex-market";
 import type { InstalledMarketSkill, MarketSkill } from "../../skills-market";
 import type { CodexMarketPlugin } from "../../codex-market";
 import { applyCustomModel, builtinPluginsFile, describeNetworkError, dirEntries, readBuiltinPlugins, readCustomModel, refreshSkillDiscipline, skillsRegistryFile, userSkillsDir } from "../../main";
 import { codexHome, mainWindow, server } from "../../runtime-refs";
 import { removeFromSkillRegistry } from "./02-skills-registry";
 import { describeSkillPool, setSkillPoolState } from "../../skill-pool";
-// 插件市场清单：SkillHub 源（2026-10-01 换源，服务端分页；原 codex-marketplace.com 已删）
-ipcMain.handle("plugins:market-list", (_event, input: { category?: string; query?: string; page?: number; pageSize?: number } = {}) => listSkillHubPlugins(input));
+// 插件市场清单：Gitee 官方镜像源（2026-10-01 二次换源；SkillHub 源插件几乎全为 DSH 生态已弃）
+ipcMain.handle("plugins:market-list", (_event, input: { category?: string; query?: string; page?: number; pageSize?: number } = {}) => listMarketPlugins(input));
 
 ipcMain.handle("plugins:market-install", async (_event, plugin: CodexMarketPlugin) => {
   const emit = (stage: string, message: string) => sendToWindow("harness:event", { type: "plugin-install", pluginId: plugin.slug, stage, message, at: Date.now() });
-  // ⛔ SkillHub 插件多数面向 DeepSeek Harness（DSH）：先探仓库里有没有 Codex 兼容 manifest，
-  //   没有就明确报错——不把装不上的插件静默落盘（用户会以为装好了其实引擎永远挂不上）。
-  if (plugin.pluginPath == null || plugin.pluginPath === "") {
-    emit("resolve", "正在探测 Codex 兼容插件入口");
-    const resolved = await resolveCodexPluginPath(plugin);
-    if (resolved == null) {
-      throw new Error("该插件面向 DeepSeek Harness（DSH）生态，本应用是 Codex 引擎装不上——仓库里没有 .claude-plugin/plugin.json。请在市场里选择标注支持 Claude Code / Codex 的插件。");
-    }
-    plugin.pluginPath = resolved;
-  }
+  // ⛔ Gitee 镜像源的插件全部自带 .claude-plugin/plugin.json（清单里 pluginPath 已定位），无需再探。
   // 幂等注册本地 marketplace 段（缺才写），返回插件落盘目录
   const destinationRoot = await ensureCodexMarketplaceSection(codexHome);
   const installed = await installCodexMarketPlugin({

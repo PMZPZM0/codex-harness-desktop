@@ -116,5 +116,5 @@ export /** GitHub raw logo → jsDelivr CDN 镜像（raw.githubusercontent.com �
  *  加载失败再切 jsDelivr 镜像（部分网络下 raw 不可达），再失败隐藏图片露字母。 */
 
 /** 市场卡片点击预览（技能/插件/MCP 通用） */
-// 插件市场（SkillHub，10-01 换源）分类 tab：中文标签 → api/v1/plugins 的 category key
-const pluginMarketCategoryTabs: [string, string][] = [["全部", "全部"], ["趣味换装", "fun-dressup"], ["联网工具", "web-tools"], ["记忆", "memory"], ["工作流", "agent-workflow"], ["模型推理", "model-inference"], ["客户端", "client"], ["安全管理", "admin-security"]];
+// 插件市场（Gitee 官方镜像，10-01 二次换源）分类 tab：中文标签 → marketplace.json 的 category key
+const pluginMarketCategoryTabs: [string, string][] = [["全部", "全部"], ["开发", "development"], ["效率", "productivity"], ["安全", "security"], ["学习", "learning"], ["数据库", "database"], ["数学", "math"], ["测试", "testing"]];
