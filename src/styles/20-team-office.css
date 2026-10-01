@@ -10,6 +10,12 @@
   backdrop-filter: blur(6px);
 }
 
+/* ⛔ Windows titleBarOverlay：右上 145×43 是原生窗口钮（最小化/最大化/关闭）的
+   **系统层命中区**，浮层 ✕ 若落在里面会被原生关闭钮截获（10-01 用户实测「叉掉
+   点不到，优先点的是应用的」——还会误关整窗）。bar 内容整体下移到原生带之下；
+   背景仍全屏铺满。darwin 红绿灯在左上，右上无钮，不必让。 */
+[data-os="win32"] .office-overlay { padding-top: 43px; }
+
 .office-overlay-bar {
   display: flex;
   align-items: center;

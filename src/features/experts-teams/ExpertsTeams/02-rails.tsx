@@ -62,7 +62,7 @@ export function TeamMemberRail({ team, containerRef, runningByMember, lastByMemb
         {/* ⛔ 办公室预览**接口保留位**（09-30 用户要求整体下线重做）：按钮与回调链留着，
             点下去由父级决定（当前是空实现 + 提示）。重做时实现 onOpenOffice 即可。 */}
         {onOpenOffice && (
-          <button type="button" className="team-rail-node team-rail-office" title="办公室预览（重做中）：成员状态将映射成虚拟办公室" onClick={onOpenOffice}>
+          <button type="button" className="team-rail-node team-rail-office" title="办公室预览：成员状态实时映射成像素办公室，点角色打开会话" onClick={onOpenOffice}>
             <span className="team-rail-avatar team-rail-office-avatar"><Building2 size={14} /></span>
             <span className="team-rail-name">办公室</span>
           </button>

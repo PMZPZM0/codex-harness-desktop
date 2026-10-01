@@ -2771,12 +2771,14 @@ w.postMessage({id:1,op:"list",root});
       "【233】坐姿用双帧变体交替（打字微动画）"
     );
 
-    /* ③d ⛔ 坐姿锚点抬高 + 椅背重贴：人不抬高看不清谁坐在哪、不重贴就是人物挡住椅子 */
-    (canvasSrc.includes('a.action === "sit" ? 28 : 26') ? ok : fail)(
-      "【233】坐姿锚点抬高（头+肩露在椅背上方）"
+    /* ③d ⛔ 坐姿锚点从椅背顶推导 + 椅背重贴：人不抬高看不清谁坐在哪、不重贴就是人物挡住椅子。
+       ⛔ 锚**per-seat backrest**（10-01 实测：两排椅子相对座位高度差 25px，统一公式/常量
+       必然弄错一排——上排人物整个被盖掉「头都没了」）。 */
+    (canvasSrc.includes('a.action === "sit" ? Math.round(a.y + r.dy - 31)') ? ok : fail)(
+      "【233】坐姿锚点从椅背顶推导（人物顶 = 椅背顶 - 31，两排自适应）"
     );
-    (canvasSrc.includes("CHAIR_BACKREST") && canvasSrc.includes("ctx.drawImage(bg, a.x + r.dx") ? ok : fail)(
-      "【233】坐姿画完重贴椅背矩形（人坐进椅子，不是挡住椅子）"
+    (canvasSrc.includes("SEATS[a.seatIndex]?.backrest") && canvasSrc.includes("ctx.drawImage(bg, a.x + r.dx") ? ok : fail)(
+      "【233】坐姿画完重贴椅背矩形（人坐进椅子，不是挡住椅子；矩形按座位实测值）"
     );
 
     /* ⑤ 渲染必须关平滑（像素风最近邻放大）+ 资产走 Vite import（可达闭包，别回 public/） */
