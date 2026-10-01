@@ -337,6 +337,8 @@ export async function send(bag: Bag, event?: FormEvent) {
             effectiveEffort = pickEffortFallback(decided, supported) ?? decided;
           }
         }
+        // 透出生效档（10-01 用户要求）：判定档或回落的手选档，显示在思考强度芯片上
+        bag.setAutoEffortApplied?.(effectiveEffort);
       }
       const startTurn = async (target: Thread) => window.codex.request("turn/start", {
         threadId: target.id,

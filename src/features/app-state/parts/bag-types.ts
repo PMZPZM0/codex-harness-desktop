@@ -1246,6 +1246,8 @@ export interface Bag {
   changeEffort: (value: string) => void;
   effortAuto: boolean;
   changeEffortAuto: (on: boolean) => void;
+  autoEffortApplied: string | null;
+  setAutoEffortApplied: (v: string | null) => void;
   resolveAutoEffort: (text: string) => Promise<string | null>;
   layaInstalled: boolean;
   layaReady: boolean;
