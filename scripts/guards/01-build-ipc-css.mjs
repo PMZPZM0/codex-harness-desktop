@@ -385,3 +385,54 @@ if (!existsSync(stylesEntry)) {
 }
   }
 }
+
+/* ══ 【240】asar files 覆盖 dist-electron 的跨目录 require（10-01 v0.0.29 启动即炸事故）══
+ * electron/features/video-gen.ts（v0.0.29 新增）require("../../src/lib/video-providers.mjs")，
+ * 它又 import "./media-aspects.mjs" —— build.files 白名单只有旧的单文件条目 ⇒ asar 缺模块，
+ * 装出来的包**启动即崩**（ERR_MODULE_NOT_FOUND，主进程死，更新器也一起死）。
+ * 守卫：dist-electron 编译产物里所有 ../../src/lib/*.mjs 的 require 目标，
+ * 必须真实存在**且**被 build.files 覆盖；files 必须用目录通配（单文件白名单 = 下一个新 .mjs 再炸一次）。 */
+{
+  const pkgJson = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+  const filesList = pkgJson.build?.files ?? [];
+  const covers = (rel) => filesList.some((f) => {
+    if (f.startsWith("!")) return false;
+    if (f === rel) return true;
+    const m = /^(\S*?)\*\.(\w+)$/.exec(f);
+    if (m) return rel.startsWith(m[1]) && rel.endsWith("." + m[2]);
+    return false;
+  });
+  const bad240 = [];
+  const walkJs240 = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) walkJs240(p);
+      else if (e.name.endsWith(".js")) {
+        const body = readFileSync(p, "utf8");
+        for (const m of body.matchAll(/require\("\.\.\/\.\.\/(src\/lib\/[^"]+\.mjs)"\)/g)) {
+          const rel = m[1];
+          if (!existsSync(join(ROOT, rel))) bad240.push(rel + "（文件不存在）");
+          else if (!covers(rel)) bad240.push(rel + "（不在 build.files 覆盖内）");
+        }
+      }
+    }
+  };
+  walkJs240(join(ROOT, "dist-electron"));
+  /* 链式 import（⛔ v0.0.29 的 media-aspects.mjs 正是这种形态漏扫的）：
+     src/lib/*.mjs 里 `from "./xxx.mjs"` 的目标也要存在且被覆盖。 */
+  for (const e of readdirSync(join(ROOT, "src", "lib"), { withFileTypes: true })) {
+    if (!e.name.endsWith(".mjs")) continue;
+    const body = readFileSync(join(ROOT, "src", "lib", e.name), "utf8");
+    for (const m of body.matchAll(/from\s+"\.(\/[^"]+\.mjs)"/g)) {
+      const rel = "src/lib" + m[1];
+      if (!existsSync(join(ROOT, rel))) bad240.push(rel + "（文件不存在）");
+      else if (!covers(rel)) bad240.push(rel + "（不在 build.files 覆盖内）");
+    }
+  }
+  (bad240.length === 0 ? ok : fail)(
+    "【240】asar files 覆盖 dist-electron 的 src/lib require（未覆盖：" + (bad240.slice(0, 3).join("; ") || "无") + "）"
+  );
+  (filesList.includes("src/lib/*.mjs") ? ok : fail)(
+    "【240】build.files 用 src/lib/*.mjs 目录通配（⛔ 单文件白名单 = 新增 .mjs 必再炸启动；新 .mjs 一律放 src/lib/ 即自动随包）"
+  );
+}
