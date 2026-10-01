@@ -14,9 +14,12 @@
  *   cloudflared.exe   ← cloudflare/cloudflared release
  *   ponytail-plugin/  ← ponytail v4.9.0 源码包（strip 1）
  *   pwsh-headless/    ← 由随包源码 pwsh-headless/PwshHeadless.cs 现场编译（无窗口 pwsh 转发壳）
+ *   python/ rg/ uv/ jq/ ninja/ sevenzip/ yt-dlp/ cmake/ platform-tools/
+ *                     ← 6.5 步：**下载体积 ≤50MB 的小工具一律随包内置**（10-01 用户定稿），
+ *                        复用应用内 install-runtimes.cjs 拉取，保证与按需安装同布局同版本
  *
- * 不产出 **是设计**（09-16 安装包瘦身：有国内加速源的一律改「开发工具」页按需下载）：
- *   pwsh / python / git / rg / uv / cmake / ninja / sevenzip / jq / ffmpeg / miniconda / mingw
+ * 不产出 **是设计**（大件仍走「开发工具」页按需下载，体积门槛 = 下载体积 >50MB）：
+ *   pwsh(282MB) / git(90MB) / ffmpeg(307MB) / miniconda(100MB) / mingw(267MB)
  *   —— 它们由应用内 install-runtimes.cjs 在用户机器上下载，不进安装包。
  *   CloakBrowser 同样不在这里装（09-16 起从随包剥离，改为按需 npm 下载）。
  *
@@ -210,6 +213,16 @@ async function main() {
   writeNuphusCallShim(prefix);
   buildHeadlessBridge();
 
+  // 6.5) 内置小工具（10-01 用户定稿：「把那些 50m 以内的工具都内置，不然安装麻烦」）。
+  //  纳入判据 = **下载体积 ≤50MB**（python 45 / cmake 45 / yt-dlp 20 / uv 12 / adb 8 / rg 5 / jq·ninja·7zip 各 1）。
+  //  ⛔ 单一真相源：URL、国内镜像链、解压布局全在 `install-runtimes.cjs` —— 这里只负责**在构建期**
+  //    把它们拉进随包目录，绝不另写一份下载逻辑（否则两头版本/路径必然漂移）。
+  //  ⛔ python 走它自己的安装分支：PBS 完整版 + pip + Tkinter + PIP_PACKAGES（约 200MB 解压后），
+  //    用户在开发工具页点「安装」不会再等这 45MB + 依赖。
+  const BUNDLED_SMALL = ["python", "rg", "uv", "jq", "ninja", "sevenzip", "yt-dlp", "cmake", "platform-tools"];
+  console.log("[bundled-small] 构建期内置：" + BUNDLED_SMALL.join(" "));
+  run(process.execPath, [path.join(repoSource, "scripts", "install-runtimes.cjs"), ...BUNDLED_SMALL], { TOOLS_ROOT: tools });
+
   // 7) 硬校验：缺任何一项都等于发坏包（electron-builder 对缺失的 extraResources 源是**静默跳过**）
   const required = [
     ["node/node.exe", "随包 Node"],
@@ -220,6 +233,18 @@ async function main() {
     ["cloudflared.exe", "cloudflared"],
     ["ponytail-plugin/.codex-plugin", "ponytail 插件源"],
     ["pwsh-headless/pwsh.exe", "pwsh 无窗口桥"],
+    // 6.5 内置小工具：逐个钉死（少一个 = 用户端卡片显示未安装却下不动，因为它是内置口径）
+    ["python/python.exe", "随包 Python"],
+    ["python/Lib/site-packages/pip/__init__.py", "Python pip"],
+    ["python/DLLs/_tkinter.pyd", "Python Tkinter"],
+    ["rg/rg.exe", "ripgrep"],
+    ["uv/uv.exe", "uv"],
+    ["jq/jq.exe", "jq"],
+    ["ninja/ninja.exe", "Ninja"],
+    ["sevenzip/7z.exe", "7-Zip CLI"],
+    ["yt-dlp/yt-dlp.exe", "yt-dlp"],
+    ["cmake/bin/cmake.exe", "CMake"],
+    ["platform-tools/adb.exe", "Android 平台工具（adb）"],
   ];
   const missing = required.filter(([rel]) => !fs.existsSync(path.join(tools, rel)));
   if (missing.length) throw new Error("工具链不齐：" + missing.map(([rel, label]) => `${label}(${rel})`).join(" / "));
@@ -227,7 +252,7 @@ async function main() {
   fs.writeFileSync(path.join(tools, "win-runtime-manifest.json"), JSON.stringify({
     platform: process.platform, arch: process.arch, node: NODE_VERSION,
     nuphus: NUPHUS_VERSION, playwrightCli: PLAYWRIGHT_CLI_VERSION, playwrightCore: PLAYWRIGHT_CORE_VERSION,
-    ponytail: PONYTAIL_VERSION, source: process.env.GITHUB_SHA || "",
+    ponytail: PONYTAIL_VERSION, bundledSmall: BUNDLED_SMALL, source: process.env.GITHUB_SHA || "",
     // cloakbrowser 09-16 起不随包（按需下载），故不记入随包清单
   }, null, 2));
 

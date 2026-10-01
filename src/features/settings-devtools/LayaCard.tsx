@@ -29,6 +29,9 @@ export function LayaCard({ setNotice }: { setNotice: (text: string) => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState("");
+  // 失败时自动展开日志（10-01 用户：「安装失败，点开安装日志也展示有问题」——
+  //  失败信息要主动摊开，不该等用户想起来去点三角）
+  const [logOpen, setLogOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     try { setStatus(await window.codex.layaStatus()); } catch { setStatus(null); }
@@ -46,14 +49,35 @@ export function LayaCard({ setNotice }: { setNotice: (text: string) => void }) {
 
   const install = async () => {
     setBusy(true);
+    setLogOpen(false);
     setLog("正在通过清华镜像安装 laya[serve]（含 PyTorch，约 800MB，可能需要 10-20 分钟）…");
     try {
       const r = await window.codex.layaInstall();
       setLog(r.log ?? "");
+      setLogOpen(!r.ok);
       setNotice(r.ok ? "Laya 安装完成。首次使用时会自动下载判断模型权重（约 700MB，走国内镜像）" : "Laya 安装失败，详见下方日志");
     } catch (error: any) {
       setLog(String(error?.message ?? error));
+      setLogOpen(true);
       setNotice("Laya 安装失败");
+    }
+    await refresh();
+    setBusy(false);
+  };
+
+  const uninstall = async () => {
+    setBusy(true);
+    setLogOpen(false);
+    setLog("正在卸载 laya（先停服务，再 pip uninstall）…");
+    try {
+      const r = await window.codex.layaUninstall();
+      setLog(r.log ?? "");
+      setLogOpen(!r.ok);
+      setNotice(r.ok ? "Laya 已卸载（模型权重缓存在用户 HF 目录，未随之删除）" : "Laya 卸载失败，详见下方日志");
+    } catch (error: any) {
+      setLog(String(error?.message ?? error));
+      setLogOpen(true);
+      setNotice("Laya 卸载失败");
     }
     await refresh();
     setBusy(false);
@@ -95,9 +119,13 @@ export function LayaCard({ setNotice }: { setNotice: (text: string) => void }) {
         {status?.ready ? <span className="runtime-badge installed">就绪</span>
           : status?.installed ? <button className="secondary-setting" onClick={() => void refresh()}><RefreshCw size={13} />刷新</button>
           : <button className="primary-setting runtime-install" disabled={busy || Boolean(status?.installing)} onClick={() => void install()}>{busy ? <Spinner /> : <Download size={14} />}安装</button>}
+        {/* 10-01 用户：「Laya 的卸载按键呢」—— 装上就必须能真卸载（先停服务再 pip uninstall） */}
+        {status?.installed && (
+          <button className="secondary-setting runtime-uninstall" disabled={busy || Boolean(status?.installing)} onClick={() => void uninstall()}>卸载</button>
+        )}
       </div>
       {log && (
-        <details className="laya-install-log">
+        <details className="laya-install-log" open={logOpen || undefined}>
           <summary><AlertTriangle size={12} />安装日志</summary>
           <pre>{log}</pre>
         </details>

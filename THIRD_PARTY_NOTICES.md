@@ -85,6 +85,7 @@
 | jq | MIT | JSON 处理 |
 | CMake / Ninja | BSD-3-Clause / Apache-2.0 | 构建工具 |
 | Node.js / Python | MIT / PSF-2.0 | 内置运行时 |
+| python-build-standalone（内置 Python 运行时本体，2026-10-01 起） | PSF-2.0（构建自 CPython；随附 Tcl/Tk 等组件，许可文本见包内 `LICENSE.txt`） | 「设置 → 开发工具 → Python + Tkinter + pip」按需下载（约 45 MB），一个包自带 pip 与 Tkinter；上游 <https://github.com/astral-sh/python-build-standalone>。**替代**了此前的官方 embeddable 包 + Tcl/Tk 安装器方案（后者在部分机器上静默失败，导致 pip 缺失） |
 | Nuphus MCP | MIT | 桌面 / 浏览器自动化 MCP（`resources/tools/npm-global`） |
 | zy-cinematic-realism（造梦师） | CC BY-NC 4.0 | 电影视觉 Prompt 工作流技能包（`resources/expert-skills/zy-cinematic-realism`，源自 <https://github.com/popopo-99/zy-cinematic-realism>，SKILL.md 与 references/ 逐字未改；中文导读为旁挂 README.zh-CN.md）。⛔ NC = 仅限非商业用途，署名见包内 NOTICE.md |
 

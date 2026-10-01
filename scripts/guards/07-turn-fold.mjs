@@ -622,15 +622,29 @@ export async function run() {
   {
     const envC = readFileSync(join(ROOT, "src", "components", "EnvCheckDialog.tsx"), "utf8");
     const appEnv = readAppUi();
-    const specCount = (envC.match(/\{ id: "(?:model|workspace|git|rg|pwsh|python|jq|sevenzip)"/g) || []).length;
-    // 09-20 用户定稿「工作区不要必选，就保留工具下载」：工作区移出体检 ⇒ 7 项（必备 4 + 常用 3）
-    (specCount === 6 && !envC.includes('id: "workspace"') && !envC.includes('id: "model"'))
-      ? ok("【32】环境体检 6 项齐全且无工作区/模型（Git/ripgrep/PowerShell 7 + Python/jq/7-Zip）")
-      : fail(`【32】体检项异常（${specCount} 项或含工作区/模型）—— 10-01 定稿：模型移出、推荐 3 + 按需 3`);
+    const specIds = [...envC.matchAll(/\{ id: "([a-z-]+)"/g)].map((m) => m[1]);
+    // 09-20 用户定稿「工作区不要必选，就保留工具下载」：工作区/模型移出体检。
+    // ⛔ 10-01 用户定稿：首启推荐 = **Laya / 手机控制 / 文档转换 / PowerShell 7 / FFmpeg**；
+    //   随包内置的小件（rg/python/jq/ninja/7zip/yt-dlp/uv/cmake/adb）**一律不得进引导**
+    //   —— 让用户"下载"一个已经随包的东西 = 白等一遍。
+    const BUNDLED_IDS = ["rg", "python", "jq", "ninja", "sevenzip", "yt-dlp", "uv", "cmake", "platform-tools"];
+    const leakedBuiltin = specIds.filter((id) => BUNDLED_IDS.includes(id));
+    const wantIds = ["laya", "phone-harness", "markitdown", "pwsh", "ffmpeg"];
+    (specIds.length === wantIds.length && !envC.includes('id: "workspace"') && !envC.includes('id: "model"')
+      && leakedBuiltin.length === 0 && wantIds.every((id) => specIds.includes(id)))
+      ? ok("【32】首启推荐 5 项：Laya / 手机控制 / 文档转换 / PowerShell 7 / FFmpeg —— 内置项一项都没漏进引导")
+      : fail(`【32】首启推荐不对（${specIds.length} 项：${specIds.join("/")}；漏进引导的内置项：${leakedBuiltin.join("/") || "无"}）—— 10-01 定稿：Laya/手机控制/文档转换/pwsh/ffmpeg`);
     const coreCount = (envC.match(/core: true/g) || []).length;
-    (coreCount === 3)
-      ? ok("【32】推荐项 3 项（Git/ripgrep/PowerShell 7；模型已按 10-01 口径移出）")
+    // ⛔ 五项全是「装上立刻多一项能力」，都进推荐组（弹窗一键安装的目标 = 缺的 core 项）。
+    (coreCount === 5)
+      ? ok("【32】推荐项 5 项（Laya / 手机控制 / 文档转换 / PowerShell 7 / FFmpeg）")
       : fail(`【32】推荐项变成 ${coreCount} 项 —— 弹窗触发条件会跟着偏`);
+    // Laya / 手机控制是 pip 包（不在 install-runtimes 里）⇒ runtime:install 必须分派到各自的安装器，
+    // 否则引导里点「一键安装」会静默什么都不装（用户看到"装好了"但功能还是缺）。
+    const instDispatch = readFileSync(join(ROOT, "electron", "features", "engine-ipc", "04-dev-runtime-install.ts"), "utf8");
+    (/if \(id === "laya" \|\| id === "phone-harness"\)[\s\S]{0,400}?layaInstall\(\)[\s\S]{0,200}?installPhoneHarness\(\)/.test(instDispatch))
+      ? ok("【32】runtime:install 对 Laya / 手机控制分派到各自的 pip 安装器（否则引导里的「一键安装」是空转）")
+      : fail("【32】runtime:install 没分派 laya / phone-harness —— 引导点一键安装会静默什么都不装");
     (/id: "pwsh", fallbackName: "PowerShell 7", core: true/.test(envC))
       ? ok("【32】PowerShell 7 在体检必备组（终端默认 shell，缺失会退回 5.1）")
       : fail("【32】PowerShell 7 不在体检必备组 —— 新用户终端会静默退回 PowerShell 5.1");
@@ -3584,12 +3598,17 @@ export async function run() {
   (/markitdown: \{ name: "文档转换（markitdown）"/.test(main83) ? ok : fail)(
     "【83】「开发工具」页有「文档转换（markitdown）」卡片"
   );
-  (/if \(id === "markitdown"\) \{[\s\S]{0,140}?pythonSiteDir\(path\.join\(root, "python"\)\)/.test(main83) ? ok : fail)(
-    "【83】标记 markitdown 有专属「装没装」判定（pip 包路径含 Python 版本号，不能走 marker）"
+  // ⛔ 10-01：markitdown 的专有分支已泛化为**pip 包通用表** PIP_PACKAGE_DIRS
+  //    （markitdown / laya / phone-harness 同一套：判定看 site-packages 下的包目录，卸载只删包目录）。
+  (/const PIP_PACKAGE_DIRS[\s\S]{0,300}?markitdown: "markitdown"/.test(main83) ? ok : fail)(
+    "【83】pip 包类工具走 PIP_PACKAGE_DIRS 通用表（包名单一真相源，不再一处一写）"
+  );
+  (/PIP_PACKAGE_DIRS\[id\][\s\S]{0,200}?pythonSiteDir\(path\.join\(root, "python"\)\)/.test(main83) ? ok : fail)(
+    "【83】pip 包的「装没装」判定看 site-packages 下的包目录（路径含 Python 版本号，不能走 marker）"
   );
   // ⛔ 最危险的一条：卸载路径。marker 首段推导会得到 tools/python —— 卸载文档转换会把整个 Python 删光
-  (/if \(id === "markitdown"\) \{[\s\S]{0,160}?pythonSiteDir\(path\.join\(toolsRoot\(\), "python"\)\)/.test(main83) ? ok : fail)(
-    "【83】卸载只删 markitdown 包目录（不按 marker 首段推 → 否则会删掉整个 Python 运行时）"
+  (/if \(pipDir\) \{[\s\S]{0,200}?pythonSiteDir\(path\.join\(toolsRoot\(\), "python"\)\)/.test(main83) ? ok : fail)(
+    "【83】卸载只删 pip 包目录（不按 marker 首段推 → 否则会删掉整个 Python 运行时）"
   );
   // 卡片的体积提示必须与实测同量级（写小了会误导用户点）
   (/markitdown[\s\S]{0,400}?size: "约 \d+ MB"/.test(main83) ? ok : fail)(

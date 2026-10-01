@@ -45,13 +45,16 @@ export const ENV_CHECK_OPTOUT_KEY = "env-check-optout";
 /** 体检项的顺序与文案（运行时项的体积/名称从 devRuntimes 补全，避免与「开发工具」页两处不一致）。
  *  ⛔ 10-01 用户定稿：模型项已移出（首次启动只弹「开发工具」引导，模型配置走设置 → 模型）；
  *  分组语义从「必备/常用」改为「推荐安装/按需安装」。 */
+// ⛔ 10-01 用户定稿「首次安装推荐」= **Laya 智能判断 / 手机控制 / 文档转换 / PowerShell 7 / FFmpeg**。
+//   安装体积 ≤50MB 的小件（python/rg/jq/ninja/7zip/yt-dlp/uv/cmake/adb）已随包内置，不再进引导；
+//   这几项都是「装上就能立刻多一项能力」的，所以列进推荐（core），一键安装走并行队列。
+//   pwsh 在 mac 上被过滤掉（mac 终端用系统 shell，装了也用不到）。
 export const ENV_CHECK_SPEC: { id: string; why: string; core: boolean; fallbackName: string }[] = [
-  { id: "git", fallbackName: "Git", core: true, why: "引擎执行命令、看 diff、提交、读历史都依赖它" },
-  { id: "rg", fallbackName: "ripgrep 代码检索", core: true, why: "Codex 搜代码库的主力工具——缺它检索会慢一个数量级" },
+  { id: "laya", fallbackName: "Laya 智能判断", core: true, why: "思考等级「自动」档的本地判断端：发消息前按难度自动选档（含 PyTorch，约 800 MB）" },
+  { id: "phone-harness", fallbackName: "手机控制（phone-harness）", core: true, why: "让 Codex 直接操作真机：看屏幕、点、打字、滑、读结果（约 3 MB，另需 adb 已随包）" },
+  { id: "markitdown", fallbackName: "文档转换（markitdown）", core: true, why: "让 Codex 直接读 PDF / Word / Excel / PPT 附件（约 120 MB，走清华 pip 镜像）" },
   { id: "pwsh", fallbackName: "PowerShell 7", core: true, why: "内置终端的默认 shell——缺了终端只能退回老旧的 PowerShell 5.1" },
-  { id: "python", fallbackName: "Python", core: false, why: "跑 Python 项目、脚本，以及部分 Python 类 MCP" },
-  { id: "jq", fallbackName: "jq", core: false, why: "命令行查询、筛选、转换 JSON" },
-  { id: "sevenzip", fallbackName: "7-Zip CLI", core: false, why: "解压 zip / 7z / tar 等归档" },
+  { id: "ffmpeg", fallbackName: "FFmpeg", core: true, why: "音视频转码、抽帧、媒体处理（约 307 MB，Codex 处理视频/音频时要用）" },
 ];
 
 /** 推荐项（一键安装的目标）：core=true 的缺项。跳过项不进。 */

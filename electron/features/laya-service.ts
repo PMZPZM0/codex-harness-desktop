@@ -22,7 +22,7 @@ import net from "node:net";
 import path from "node:path";
 import crypto from "node:crypto";
 import { app } from "electron";
-import { bundledPython } from "../toolchain";
+import { bundledPython, pythonPipReady } from "../toolchain";
 
 const PIP_INDEX = process.env.LAYA_PIP_INDEX ?? "https://pypi.tuna.tsinghua.edu.cn/simple";
 const HF_ENDPOINT = process.env.LAYA_HF_ENDPOINT ?? "https://hf-mirror.com";
@@ -161,9 +161,18 @@ function parseProgress(line: string, into: LayaProgress): void {
 /** 安装 / 更新 laya[serve]（清华 pip 镜像；torch 体积大，超时放宽 20 分钟）。 */
 export function layaInstall(): Promise<{ ok: boolean; log: string }> {
   if (installing) return Promise.resolve({ ok: false, log: "已有安装任务在进行中" });
+  const bin = bundledPython();
+  // ⛔ 前置体检（10-01 用户机器实录）：旧版 Python 缺 pip 时 `python -m pip` 直接
+  //  `No module named pip` exit 1，日志只剩一行裸路径报错、用户无从下手。
+  //  拦在前面并给出可执行指引（同时写进 lastError，卡片状态行也能看到）。
+  const pip = pythonPipReady(bin);
+  if (!pip.ok) {
+    lastError = pip.reason;
+    log(pip.reason);
+    return Promise.resolve({ ok: false, log: pip.reason });
+  }
   installing = true;
   installProgress = { phase: "download", current: "", percent: 0, speed: "", detail: "" };
-  const bin = bundledPython();
   const lines: string[] = [];
   return new Promise((resolve) => {
     const child = spawn(bin, ["-m", "pip", "install", "-U", "--no-input", "--progress-bar", "on", "-i", PIP_INDEX, "laya[serve]"], {
@@ -201,6 +210,60 @@ export function layaInstall(): Promise<{ ok: boolean; log: string }> {
       // 等用户真发消息时服务已就绪——发送链的判定才配得上「立刻透出来」。
       if (installed) void ensureService().catch((err) => log(`安装后预热失败: ${String(err).slice(0, 120)}`));
       resolve({ ok: code === 0 && installed, log: lines.join("\n") });
+    });
+  });
+}
+
+/**
+ * 卸载 Laya（10-01 用户：「layade 卸载按键呢」——内置/按需工具都要能真卸载）。
+ * 顺序：先停服务进程（否则 Windows 上文件被占用删不干净）→ pip uninstall -y laya。
+ * ⛔ 模型权重缓存在用户级 HF 缓存目录（~/.cache/huggingface），**不随卸载删除**：
+ *   那是共享缓存，别的工具也可能用同一份；要彻底清空间由用户自己删该目录即可。
+ */
+export function layaUninstall(): Promise<{ ok: boolean; log: string }> {
+  killService("卸载 Laya");
+  const bin = bundledPython();
+  const pip = pythonPipReady(bin);
+  if (!pip.ok) {
+    lastError = pip.reason;
+    log(pip.reason);
+    return Promise.resolve({ ok: false, log: pip.reason });
+  }
+  const lines: string[] = [];
+  log("开始卸载 laya");
+  return new Promise((resolve) => {
+    const child = spawn(bin, ["-m", "pip", "uninstall", "-y", "laya"], {
+      env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+      windowsHide: true,
+    });
+    let buffered = "";
+    const pump = (chunk: string) => {
+      buffered += chunk;
+      const parts = buffered.split(/\r\n|\r|\n/);
+      buffered = parts.pop() ?? "";
+      for (const raw of parts) {
+        const line = raw.trim();
+        if (!line) continue;
+        lines.push(line);
+        log(`pip(uninstall): ${line.slice(0, 160)}`);
+      }
+    };
+    child.stdout?.on("data", (d) => pump(String(d)));
+    child.stderr?.on("data", (d) => pump(String(d)));
+    const timer = setTimeout(() => child.kill(), 5 * 60 * 1000);
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      lastError = String(err);
+      resolve({ ok: false, log: lines.concat(String(err)).join("\n") });
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      lines.push(`pip uninstall → exit ${code}`);
+      const { installed } = pipShow();
+      // ⛔ 只看退出码会假绿：pip 有时 exit 0 但包还在（多环境/被占用）。以**复核结果**为准。
+      const ok = !installed;
+      if (ok) lastError = "";
+      resolve({ ok, log: lines.join("\n") });
     });
   });
 }
@@ -385,6 +448,7 @@ import { ipcMain } from "electron";
 
 ipcMain.handle("laya:status", () => layaStatus());
 ipcMain.handle("laya:install", () => layaInstall());
+ipcMain.handle("laya:uninstall", () => layaUninstall());
 ipcMain.handle("laya:decide-effort", (_event, text: unknown) => layaDecideEffort(String(text ?? "")));
 
 app.on("will-quit", () => layaShutdown());

@@ -3,6 +3,7 @@
 // 子进程环境里优先命中内置 node/pwsh，应用自包含可移植。
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { app } from "electron";
 
@@ -267,6 +268,33 @@ export function bundledPython() {
   const tools = toolsRoot();
   const candidate = process.platform === "win32" ? path.join(tools, "python", "python.exe") : path.join(tools, "python", "bin", "python3");
   try { return tools && fs.existsSync(candidate) ? candidate : ""; } catch { return ""; }
+}
+
+/**
+ * 内置 Python 的 pip 体检（Laya / 手机控制等所有「python -m pip」入口的前置闸）。
+ *
+ * ⛔⛔ 10-01 用户机器实录：旧版 Python 工具是 embeddable 包（无 pip），点安装 Laya 时
+ *   `python.exe -m pip install ...` 直接 `No module named pip` 然后 exit 1 —— 界面日志里
+ *   只剩一行裸路径报错，用户无从下手。这里把原因翻成人话 + 给出唯一有效动作
+ *   （开发工具页对 Python 点「下载」→ 安装脚本换装完整版）。
+ * ⛔ 判定只看「pip 能不能跑」，不猜文件：体检失败一律 ok=false + 可展示的 reason。
+ */
+export function pythonPipReady(bin: string): { ok: boolean; reason: string } {
+  if (!bin) return { ok: false, reason: "未找到内置 Python —— 请先到 设置 → 开发工具 安装「Python + Tkinter + pip」" };
+  try {
+    execFileSync(bin, ["-m", "pip", "--version"], { encoding: "utf8", timeout: 20_000, windowsHide: true });
+    return { ok: true, reason: "" };
+  } catch (error) {
+    const text = `${(error as any)?.stderr ?? ""}${(error as any)?.stdout ?? ""}${String((error as any)?.message ?? error)}`;
+    if (/No module named pip/i.test(text)) {
+      return {
+        ok: false,
+        reason: "内置 Python 缺少 pip（旧版 Python 工具安装不完整，常见于早前版本装的 embeddable 运行时）。"
+          + "修法：设置 → 开发工具 → 找到「Python + Tkinter + pip」点「下载」，会自动换装完整版（约 45MB，自带 pip 与 Tkinter），完成后再回来重试安装。",
+      };
+    }
+    return { ok: false, reason: `内置 Python 的 pip 不可用：${text.split("\n").find((line) => line.trim())?.slice(0, 200) ?? "未知原因"}` };
+  }
 }
 
 // CloakBrowser 常驻助手脚本（stdin 喂 URL，驱动指纹浏览器窗口）。

@@ -405,11 +405,13 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
 {
   const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
   const extraFrom = (pkg.build?.extraResources ?? []).map((entry) => entry.from ?? entry);
+  // ⛔ 体积口径（10-01 用户定稿）：**下载体积 >50MB 的一律不随包**，≤50MB 的一律随包。
+  //   这份「不该随包」清单 = 大件（pwsh 282 / git 90 / ffmpeg 307 / miniconda 100 / mingw 267）
+  //   + 两个浏览器内核（170 / 200）。小件随包由下面的 positive 断言盯（少一条 = 空壳包）。
   const unbundled = [
     "resources/tools/pw-browsers", "resources/tools/cloak-cache",
-    "resources/tools/pwsh", "resources/tools/git", "resources/tools/python",
-    "resources/tools/rg", "resources/tools/uv", "resources/tools/cmake",
-    "resources/tools/ninja", "resources/tools/sevenzip", "resources/tools/jq",
+    "resources/tools/pwsh", "resources/tools/git", "resources/tools/ffmpeg",
+    "resources/tools/miniconda", "resources/tools/mingw",
   ];
   for (const source of unbundled) {
     (!extraFrom.includes(source) ? ok : fail)(`package.json extraResources 不随包内置 ${source.replace("resources/tools/", "")}（体积回潮守卫）`);
@@ -427,13 +429,66 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   (mainTs26.includes('const attempts = source === "direct" || !mirrorKeys.length') && mainTs26.includes('{ env: mirrored, via: "国内镜像" }, { env: official, via: "官方源" }') ? ok : fail)("main.ts：内核下载按所选源组装（direct 只走官方，其余镜像优先 + 官方源回落）");
   (mainTs26.includes('await runBrowserDownload(id, node, cli, ["install", "chromium"], "浏览器内核", downloadSource)') ? ok : fail)("main.ts：Playwright 内核下载走 runBrowserDownload（不直接 spawn 官方源）");
   (mainTs26.includes('await runBrowserDownload(id, node, cli, ["install"], "Cloak 内核", downloadSource)') ? ok : fail)("main.ts：Cloak 内核下载走 runBrowserDownload（不直接 spawn 官方源）");
-  (mainTs26.includes("devRuntimeSpecs") && !/pwsh: \{[^}]*builtIn: true/.test(mainTs26) && !/git: \{[^}]*builtIn: true/.test(mainTs26) && !/python: \{[^}]*builtIn: true/.test(mainTs26) ? ok : fail)("main.ts：pwsh/git/python 已转为按需下载（不再是 builtIn）");
+  // ⛔ 09-16 安装包瘦身：大件工具转按需下载；10-01 用户改口径「50m 以内的都内置」⇒
+  //    pwsh/git/ffmpeg/conda/mingw 这些**大件**仍不得 builtIn（否则安装包暴涨），
+  //    而 ≤50MB 的小件（python/rg/jq/ninja/7zip/yt-dlp/uv/cmake/adb）**必须** builtIn。
+  (mainTs26.includes("devRuntimeSpecs")
+    && !/pwsh: \{[^}]*builtIn: true/.test(mainTs26)
+    && !/git: \{[^}]*builtIn: true/.test(mainTs26)
+    && !/ffmpeg: \{[^}]*builtIn: true/.test(mainTs26)
+    && !/conda: \{[^}]*builtIn: true/.test(mainTs26)
+    && !/mingw: \{[^}]*builtIn: true/.test(mainTs26)
+    && /python: \{[^}]*builtIn: true/.test(mainTs26)
+    && /rg: \{[^}]*builtIn: true/.test(mainTs26)
+    && /"platform-tools": \{[^}]*builtIn: true/.test(mainTs26) ? ok : fail)(
+    "main.ts：大件（pwsh/git/ffmpeg/conda/mingw）按需下载，小件（python/rg/adb…）随包内置 —— 50MB 口径");
+  // ⛔ 内置项必须真的随包：extraResources 少一条 = 用户端卡片显示「内置」却找不到文件（electron-builder 静默跳过）
+  const erTo = (pkg.build?.extraResources ?? []).map((entry) => entry.to);
+  (["tools/python", "tools/rg", "tools/uv", "tools/jq", "tools/ninja", "tools/sevenzip", "tools/yt-dlp", "tools/cmake", "tools/platform-tools"]
+    .every((to) => erTo.includes(to)) ? ok : fail)(
+    "package.json：内置小工具的 extraResources 一条不少（漏了 = 发出去是空壳包）");
   (mainTs26.includes("watchFs(toolsRoot(), { recursive: true }") && mainTs26.includes('message: "开发工具目录已更新", auto: true') ? ok : fail)("main.ts：tools 目录监视 → 引擎自己装工具后界面自动刷新");
   const installRuntimes = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
   (installRuntimes.includes("https://cdn.npmmirror.com/binaries/node/") && installRuntimes.includes("https://cdn.npmmirror.com/binaries/python/") && installRuntimes.includes("https://cdn.npmmirror.com/binaries/git-for-windows/") ? ok : fail)("install-runtimes：node/python/git 走 npmmirror 国内镜像（有镜像源的不该是龟速官方源）");
+  // 【242】开发工具的**卸载要真删**（10-01 用户报「卸载不真」：点了卸载还显示已装）。
+  //   根因：npm 类工具（nuphus / playwright-cli / cloakbrowser）的 marker 形如
+  //   `npm-global\node_modules\@nuphus\nuphus-mcp\package.json`，旧实现只删 `npm-global/nuphus-mcp`
+  //   —— 那是个**shim 文件**，包体 `node_modules/@nuphus` 原地不动，于是卸载后 marker 依然命中。
+  //   反证：把包体路径改回 marker 首段推导 → 断言必须红。
+  {
+    const rt = codeOnly(readFileSync(join(ROOT, "electron", "features", "engine-ipc", "03-dev-runtime.ts"), "utf8"));
+    const hasMap = /NPM_PACKAGE_ARTIFACTS[^=]*=\s*\{[\s\S]*?nuphus:\s*\{[^}]*node_modules\/@nuphus[\s\S]*?"playwright-cli":\s*\{[^}]*node_modules\/@playwright\/cli[\s\S]*?cloakbrowser:\s*\{[^}]*node_modules\/cloakbrowser/.test(rt);
+    hasMap
+      ? ok("【242】npm 类工具的卸载落点是**包体目录**（node_modules/@nuphus、@playwright/cli、cloakbrowser），不是 marker 首段")
+      : fail("【242】npm 类工具的卸载落点又退回 marker 首段推导 —— 删的是 shim 文件，包体还在 ⇒ 卸载后仍显示已装");
+    (/for \(const target of targets\)[\s\S]{0,400}?fs\.rm\(resolvedTarget, \{ recursive: true, force: true \}\)/.test(rt) && /allowedRoots\.includes\(resolvedTarget\)/.test(rt))
+      ? ok("【242】卸载逐个 target 删除，且每个都做「必须落在 tools/codexHome 之内、不得等于根」的安全校验")
+      : fail("【242】卸载没走「逐个 target + 逐个安全校验」—— 少校验会把 tools 根或 codexHome 整个删掉");
+  }
   // 09-20 下载源选择：auto 通道序保持「镜像 → (代理) → 直连 → gh-proxy」，六种源在 switch 里分派
   // 09-20 下载源选择：auto = 国内优先（镜像 → (代理) → gh 加速 → 直连兜底），六种源在 switch 里分派
   (installRuntimes.includes('case "mirror": attempts = mirror ? [["国内镜像 npmmirror", curlArgs.slice(), mirror], ...direct] : [...ghAccels, ...direct]') && installRuntimes.includes('case "ghproxy": attempts = isGh ? [ghAccels[0], ...direct]') && installRuntimes.includes('case "ghfast": attempts = isGh ? [ghAccels[1], ...direct]') && /case "auto":\s*\n\s*default: attempts = \[\s*\n\s*\.\.\.\(mirror \? \[\["国内镜像 npmmirror", curlArgs\.slice\(\), mirror\]\] : \[\]\),\s*\n\s*\.\.\.viaProxy,\s*\n\s*\.\.\.ghAccels,\s*\n\s*\.\.\.direct,/.test(installRuntimes) ? ok : fail)("install-runtimes：下载通道按所选源分派（auto = 国内优先：镜像 → (代理) → gh 加速 → 直连兜底）");
+  // 【241】内置 Python 必须是**完整版**（10-01 用户机器实录：装 Laya 报 `No module named pip`）。
+  //   旧链两处断裂：① 官方 python-3.13.x-amd64.exe /quiet 在部分机器**静默空转**
+  //   （exit 0 但 TargetDir 为空 ⇒ 复制 Tk 组件抛错 ⇒ 连坐整条安装链，pip 引导根本没跑）；
+  //   ② get-pip.py 走 bootstrap.pypa.io（国内不稳）。现换 python-build-standalone 整包
+  //   （自带 pip 模块 + Tkinter 全家）+ 本地 ensurepip；判定按结构锚（不看固定字符窗口）。
+  {
+    const irNoComment = codeOnly(installRuntimes);
+    (irNoComment.includes("python-build-standalone") && irNoComment.includes("winPythonHealthy") && /ensurepip --default-pip/.test(irNoComment) ? ok : fail)(
+      "【241】内置 Python 走 python-build-standalone 完整版 + ensurepip 离线补 pip（自带 Tkinter，不再靠 exe 安装器补）"
+    );
+    (!/PYTHON_FULL_URL|get-pip\.py|embed-amd64\.zip/.test(irNoComment) ? ok : fail)(
+      "【241】旧的 embeddable zip / 官方 exe 安装器 / 联网 get-pip 三条链不许复活（exe 静默空转＝用户机器上 pip 装不上的根因）"
+    );
+    const dr241 = codeOnly(readFileSync(join(ROOT, "electron", "features", "dev-runtimes.ts"), "utf8"));
+    const pyBranchStart = dr241.indexOf('if (id === "python" && !IS_MAC)');
+    const pyBranchEnd = dr241.indexOf("if (PIP_PACKAGE_DIRS[id])");
+    const pyBranch = pyBranchStart >= 0 && pyBranchEnd > pyBranchStart ? dr241.slice(pyBranchStart, pyBranchEnd) : "";
+    (pyBranch.includes('"site-packages", "pip"') && pyBranch.includes("_tkinter.pyd") && pyBranch.includes("python.exe") ? ok : fail)(
+      "【241】「Python 装没装」必须含 pip 模块 + _tkinter（只看 python.exe ⇒ 坏安装显示「已安装」、卡片连修复入口都没有）"
+    );
+  }
   // 09-16 下午：自动化包与 ponytail 改为「随包预解压直装」（用户「直接内置，不用解压啥的」）——
   // npm-global 必须进 extraResources（缺了等于回到「要点安装才解压」），zip 保留作修复备用；
   // ⛔ 09-27 起 ponytail **不再启动自动种**（用户：「ponytail 写的代码很烂、以后谁还写代码」；
@@ -529,8 +584,10 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   (mainTs27.includes("async function runNpmInstall(") && mainTs27.includes('await runNpmInstall(id, "cloakbrowser", "CloakBrowser", downloadSource)') ? ok : fail)("main.ts：CloakBrowser 走 runNpmInstall（用内置 node 自带 npm，不依赖用户环境）");
   // 09-20 下载源选择：direct 只走官方源，其余（auto/mirror/gh 加速/proxy）保持镜像优先+官方回落
   (mainTs27.includes('const registries = userRegistry ? [userRegistry] : source === "direct" ? [""] : [CHINA_NPM_REGISTRY, ""];') ? ok : fail)("main.ts：npm 安装按所选源组装（direct 只走官方，其余镜像优先 + 官方源回落，用户自设源时不覆盖）");
-  (mainTs27.includes('if (id === "cloakbrowser") return path.join(npmGlobalRoot(), "cloakbrowser");') ? ok : fail)("main.ts：卸载 CloakBrowser 只删包体目录（按 marker 首段删会连 nuphus/playwright-cli 一起删光）");
-  (mainTs27.includes('npmShimPaths("cloakbrowser")') ? ok : fail)("main.ts：卸载后清掉 npm shim（否则 PATH 留着指向空目录的 cloakbrowser.cmd）");
+  // ⛔ 10-01 改：卸载落点从「单条 if (id === "cloakbrowser")」升级为 NPM_PACKAGE_ARTIFACTS 映射
+  //    （npm 包的包体在 node_modules/<pkg>，而 npm-global/<pkg> 那层是 shim 文件 —— 只删 shim 等于没卸干净）。
+  (mainTs27.includes("NPM_PACKAGE_ARTIFACTS") && mainTs27.includes('cloakbrowser: { dirs: ["node_modules/cloakbrowser"]') ? ok : fail)("main.ts：卸载 CloakBrowser 删的是**包体目录** node_modules/cloakbrowser（按 marker 首段删会连 nuphus/playwright-cli 一起删光）");
+  (mainTs27.includes("shims: [\"cloakbrowser\"]") && mainTs27.includes("...npmShimPaths(...pkg.shims)") ? ok : fail)("main.ts：卸载时把该包的 shim 一起清掉（否则 PATH 留着指向空目录的 cloakbrowser.cmd）");
   (mainTs27.includes('if (spec.bundled) throw new Error("该工具随应用内置') ? ok : fail)("main.ts：bundled 条目拒绝卸载（删了没有可靠重取途径）");
   (mainTs27.includes("if (spec.bundled && runtimeInstalled(id, spec)) return { ok: true, runtimes: runtimeList() };") ? ok : fail)("main.ts：bundled 条目已就位时「修复安装」是幂等空操作（判定与清单同源 runtimeInstalled）");
   const toolchainTs27 = readFileSync(join(ROOT, "electron", "toolchain.ts"), "utf8");

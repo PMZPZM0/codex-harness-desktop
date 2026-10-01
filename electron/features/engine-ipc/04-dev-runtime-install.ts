@@ -13,6 +13,8 @@ import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import type { AppSettings } from "../../app-settings";
 import { DARWIN_HIDDEN, DARWIN_SPEC_TEXT, IS_MAC, devRuntimeSpecs, emitRuntimeProgress, pythonSiteDir, readDownloadSource, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls } from "../dev-runtimes";
+import { layaInstall } from "../laya-service";
+import { installPhoneHarness } from "../phone-harness";
 import { bridgeDial, readCustomModel, responsesBridge, restrictedThreadRole } from "../../main";
 import { codexHome, engineActiveTurnIds, mainWindow, server, threadCwd, threadRuntimeStore } from "../../runtime-refs";
 import type { DevRuntimeId, DevRuntimeSpec } from "../dev-runtimes";
@@ -145,6 +147,20 @@ ipcMain.handle("runtime:install", async (_event, idValue: string) => {
   // 随包内置且已就位：无需「修复」。再解压/重种一遍只会覆盖同名文件（无收益，还多一次引擎重启）。
   // 判定用 runtimeInstalled（与清单同一份逻辑）——ponytail 的 marker 在引擎侧 cache，不在 tools 目录。
   if (spec.bundled && runtimeInstalled(id, spec)) return { ok: true, runtimes: runtimeList() };
+  // ⛔ 10-01：Laya / 手机控制是 pip 包（各有专用卡片与专用安装器）——引导弹窗点「一键安装」时
+  //   必须走它们自己的安装链（含 pip 前置体检、清华镜像、装完关遥测/注册技能等），
+  //   绝不能落到 install-runtimes.cjs（那里没有这两个 id，会静默什么也不做）。
+  if (id === "laya" || id === "phone-harness") {
+    const task = (async () => {
+      const result = id === "laya" ? await layaInstall() : await installPhoneHarness();
+      if (!result.ok) throw new Error(result.log.split("\n").filter(Boolean).slice(-1)[0] || `${spec.name} 安装失败`);
+      // 状态刷新走调用方：installRuntime 的返回值里带 runtimes（体检队列与开发工具页都用它回填），
+      // 不额外发明事件通道（渲染层没有订阅它 = 假接线）。
+    })();
+    runtimeInstalls.set(id, task.finally(() => runtimeInstalls.delete(id)) as Promise<void>);
+    await task.catch((error) => { throw error instanceof Error ? error : new Error(String(error)); });
+    return { ok: true, runtimes: runtimeList() };
+  }
   const task = (async () => {
     if (id === "ponytail") {
       // ponytail 写代码模式插件（bundled）：从随包安装源种到引擎（plugins cache + config 注册段），技能随 cache 自动列出。

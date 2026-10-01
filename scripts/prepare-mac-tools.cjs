@@ -120,8 +120,17 @@ async function main() {
   console.log(`[cloudflared] ${cfRelease.tag_name} → ${cfBinary}`);
   tar(`https://github.com/DietrichGebert/ponytail/archive/refs/tags/${TOOLS_VERSIONS.ponytail}.tar.gz`,
     "ponytail.tar.gz", path.join(tools, "ponytail-plugin"), true);
+
+  // ⛔ 10-01 用户定稿「50m 以内的工具都内置」：与 Windows 侧**同一份清单**（下载体积 ≤50MB），
+  //    复用应用内 install-runtimes.cjs 的 **darwin 分支**（mac 资产名/解压器/执行位都在那边统一处理）。
+  //    幂等：已就位的条目脚本自己会 skip（python 上一段已装好，这里只会走 pip 依赖的 skip 分支）。
+  const BUNDLED_SMALL = ["python", "rg", "uv", "jq", "ninja", "sevenzip", "yt-dlp", "cmake", "platform-tools"];
+  console.log("[bundled-small] 构建期内置：" + BUNDLED_SMALL.join(" "));
+  run(process.execPath, [path.resolve(__dirname, "install-runtimes.cjs"), ...BUNDLED_SMALL], { TOOLS_ROOT: tools });
+
   fs.writeFileSync(path.join(tools, "mac-runtime-manifest.json"), JSON.stringify({
     platform: process.platform, arch, node: nodeVersion, nuphus: TOOLS_VERSIONS.nuphus,
+    bundledSmall: BUNDLED_SMALL,
     // cloakbrowser 09-16 起不随包（按需下载），故不再记入随包清单
     playwrightCli: TOOLS_VERSIONS.playwrightCli, python: pythonAsset.name, cloudflared: cfRelease.tag_name, source: process.env.GITHUB_SHA || "",
     helperSha256: crypto.createHash("sha256").update(fs.readFileSync(path.join(tools, "nuphus-call.mjs"))).digest("hex"),

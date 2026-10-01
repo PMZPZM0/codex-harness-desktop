@@ -61,7 +61,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
                         return <div className="devtools-group" key={g.key}>
                           <div className="settings-subhead">{g.icon}{g.title}<span className="settings-subhead-hint">{g.hint}</span></div>
                           <div className="runtime-list">
-                            {items.map((runtime: any) => {
+                            {items.filter((runtime: any) => !runtime.hidden).map((runtime: any) => {
                               const busy = runtimeInstalling === runtime.id || runtime.installing;
                               const isDone = runtime.installed || runtime.installedBySystem;
                               const isGuide = runtime.kind === "guide";
@@ -92,8 +92,10 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
                                       ? <button className="primary-setting runtime-install" disabled={Boolean(runtimeInstalling)} onClick={() => void installDevRuntime(runtime.id)}>{busy ? <Spinner /> : <ArrowDown size={14} />}修复安装</button>
                                       : isDone ? <>
                                           <span className="runtime-badge installed">{runtime.installedBySystem ? "系统已装" : "已安装"}</span>
-                                          {/* 随包内置资源（zip / 插件目录）不支持卸载——删了没有可靠重取途径 */}
-                                          {!runtime.installedBySystem && !runtime.noUninstall && (
+                                          {/* 10-01 用户规则：**只有「内置」的不能卸载**，其余一律可真卸载
+                                              （下载类工具 + npm 包 + pip 包都走 runtime:uninstall 真删；
+                                               内置项走上面的 builtinBadge 分支，显示「内置」不给卸载键） */}
+                                          {!runtime.installedBySystem && (
                                             <button className="secondary-setting runtime-uninstall" disabled={Boolean(runtimeInstalling)} onClick={() => void uninstallDevRuntime(runtime.id)}>卸载</button>
                                           )}
                                         </>
@@ -115,7 +117,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
                         <button className="secondary-setting" onClick={() => { void copyTextToClipboard(devRuntimes.map((r: any) => `# ${r.name}\n${r.description}\n${r.installed || r.builtIn ? "状态：已就绪" : "状态：未安装"}\n`).join("\n")); setNotice("工具清单已复制"); }}><Copy size={13} />复制清单</button>
                       </div>
                     </details>
-                    <p className="settings-card-hint">随应用内置：引擎、Node、VS Code CLI、Nuphus 桌面自动化、Playwright 浏览器自动化（CLI）、ponytail 写代码模式插件；按需下载：CloakBrowser 指纹浏览器（npm 国内镜像）、Playwright / Cloak 两类浏览器内核，以及 Python、Git、PowerShell、ripgrep、uv、CMake、7-Zip、jq、Ninja（npmmirror / gh 加速，失败自动回落官方源），首次启动检测到缺 Git 会自动补装；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。日常浏览用内置浏览器视图，CloakBrowser 只在需要过反爬站点时按需下载。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）；引擎在会话里自行安装工具时，此页状态也会自动刷新。</p>
+                    <p className="settings-card-hint">随应用内置（安装包自带、离线可用）：引擎、Node、VS Code CLI、Nuphus 桌面自动化、Playwright 浏览器自动化（CLI）、ponytail 写代码模式插件，以及下载体积 50MB 以内的小工具 —— Python（完整版，含 pip 与 Tkinter）、ripgrep、uv、CMake、7-Zip、jq、Ninja、yt-dlp、Android 平台工具（adb）；按需下载：Git、PowerShell 7（npmmirror / gh 加速，失败自动回落官方源，首次启动检测到缺 Git 会自动补装）、FFmpeg、Miniconda、MinGW、CloakBrowser 指纹浏览器（npm 国内镜像）、Playwright / Cloak 两类浏览器内核、文档转换（markitdown，pip 清华镜像）；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。除内置项外都可卸载（卸载是真删）。日常浏览用内置浏览器视图，CloakBrowser 只在需要过反爬站点时按需下载。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）；引擎在会话里自行安装工具时，此页状态也会自动刷新。</p>
                     {/* 手机控制（09-27）：上游 phone-harness 是 Python CLI 不是 MCP 服务，
                         所以不做连接器模板，做成工具卡：装机 + 关遥测 + 注册技能 + 权限引导。 */}
                     <PhoneHarnessCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} />
