@@ -107,6 +107,12 @@ bag.changeEffort = changeEffort as typeof bag.changeEffort;
   const [effortAuto, setEffortAuto] = useState(() => localStorage.getItem("effort-auto-v1") === "1");
 bag.effortAuto = effortAuto as typeof bag.effortAuto;
 
+  /* 自动档「实际生效的档位」透出（10-01 用户：「光选一个自动，不知道生效的是哪个」）：
+     发送链（send.tsx）每次判定后写入；null = 尚未判定过（芯片只显示「自动」）。 */
+  const [autoEffortApplied, setAutoEffortApplied] = useState<string | null>(null);
+bag.autoEffortApplied = autoEffortApplied as typeof bag.autoEffortApplied;
+bag.setAutoEffortApplied = setAutoEffortApplied as typeof bag.setAutoEffortApplied;
+
   function changeEffortAuto(on: boolean) {
     setEffortAuto(on);
     localStorage.setItem("effort-auto-v1", on ? "1" : "0");

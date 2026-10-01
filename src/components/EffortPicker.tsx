@@ -54,7 +54,7 @@ export function effortColor(level: string, index = 0): string {
  *  · **拖动中绝不提交**：释放（pointerup/keyup）才 onCommit —— 提交会落库（IPC），拖动经过
  *    中间档位会反复触发、还会把选中的档位覆盖回去（09-16 真机踩过）；点标签则立即提交。
  *  · 弹窗 createPortal + fixed：底栏在滚动容器里，absolute 浮层会被裁掉（09-17 踩过）。 */
-export function EffortPicker({ levels, value, labels, disabled, modelId, autoMode, autoAvailable, autoHint, onAutoToggle, onCommit }: {
+export function EffortPicker({ levels, value, labels, disabled, modelId, autoMode, autoAvailable, autoApplied, autoHint, onAutoToggle, onCommit }: {
   levels: string[];
   value: string;
   labels: Record<string, string>;
@@ -66,6 +66,8 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, autoMod
   /** Laya 自动档（10-01）：开启后发送前由 laya 本地判断档位，滑块不参与 */
   autoMode?: boolean;
   autoAvailable?: boolean;
+  /** 自动档最近一次实际生效的档位（判定档或回落的手选档）——透出给用户看（10-01 用户要求） */
+  autoApplied?: string | null;
   /** 自动档不可用时的原因提示（未安装等） */
   autoHint?: string;
   onAutoToggle?: (on: boolean) => void;
@@ -130,13 +132,15 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, autoMod
         className="effort-trigger"
         disabled={disabled}
         onClick={() => (open ? setOpen(false) : openPanel())}
-        title={autoMode ? "思考强度：自动（Laya 智能判断，点开调整）" : `思考强度：${labels[value] ?? value}（点开调整）`}
+        title={autoMode
+          ? `思考强度：自动（Laya 智能判断）${autoApplied ? ` · 当前生效：${labels[autoApplied] ?? autoApplied}` : " · 发送时判定"}（点开调整）`
+          : `思考强度：${labels[value] ?? value}（点开调整）`}
         style={{ "--effort-color": autoMode ? "#14b8a6" : triggerColor } as CSSProperties}
         aria-haspopup="dialog"
         aria-expanded={open}
       >
         <Zap size={12} className="effort-trigger-icon" aria-hidden />
-        <span className="effort-trigger-label">{autoMode ? "自动" : labels[value] ?? value}</span>
+        <span className="effort-trigger-label">{autoMode ? `自动${autoApplied ? ` · ${labels[autoApplied] ?? autoApplied}` : ""}` : labels[value] ?? value}</span>
         <ChevronDown size={11} className="effort-trigger-caret" aria-hidden />
       </button>
       {open && anchor ? createPortal(

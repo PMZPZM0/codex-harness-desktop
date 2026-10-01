@@ -187,6 +187,7 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
     changeEffortAuto,
     layaInstalled,
     layaReady,
+    autoEffortApplied,
     enhanceBusy,
     enhanceHint,
     expertQuery,
@@ -482,6 +483,7 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                                 modelId={currentModelId}
                                 autoMode={effortAuto}
                                 autoAvailable={layaReady}
+                                autoApplied={autoEffortApplied}
                                 autoHint={layaInstalled ? "Laya 服务未就绪（首次启动要下载权重，见设置 → 开发工具）" : "未安装 —— 设置 → 开发工具 里安装 Laya"}
                                 onAutoToggle={changeEffortAuto}
                                 onCommit={changeEffort}
