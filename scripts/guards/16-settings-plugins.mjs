@@ -368,8 +368,8 @@ export async function run() {
       "【236】技能市场刷新 effect 的 deps 不含 marketPage（翻页是本地切片，不碰远端；监听它 = 每次翻页拉一遍再按回 page 1）"
     );
     const cm = readFileSync(join(ROOT, "electron", "codex-market.ts"), "utf8");
-    (/const response = await fetchWithRetry\(`\$\{SKILLHUB_API\}\/api\/v1\/plugins\?/.test(cm) ? ok : fail)(
-      "【236】插件市场清单请求走 fetchWithRetry（10-01 换源 SkillHub 后锚新源；单发 fetch 一抖整个市场 AbortError，列表不许裸奔）"
+    (/fetchWithRetry\(url, 15_000, 3\)/.test(cm) && !/SKILLHUB_API/.test(cm) ? ok : fail)(
+      "【236】插件市场清单请求走 fetchWithRetry（10-01 二次换源 Gitee 后同步锚新源；单发 fetch 一抖整个市场 AbortError，列表不许裸奔）"
     );
     // ④ 界面上渲染出「: any」字样（10-01 用户截图，技能/插件两个市场都在分类 tab 尾部）：
     //    map(...) 收尾多打了 `: any`，JSX 文本节点合法 ⇒ tsc 不报、直接画到界面上。

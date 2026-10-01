@@ -2820,6 +2820,11 @@ w.postMessage({id:1,op:"list",root});
       (/Gitee 镜像源的插件全部自带 \.claude-plugin\/plugin\.json/.test(plugIpcSrc) ? ok : fail)(
         "【239】DSH 探测分支已删（镜像源 100% 兼容，无需逐仓库探测）"
       );
+      /* 10-01 用户：「能不能翻译成中文，英文看不懂」——名称/简介走静态翻译表，
+         ⛔ 必须同时锚「表存在」与「映射时真的套用」，只锚表存在会变成恒真。 */
+      (/(?:^|\n)\s+"?[\w.-]+"?: \{ name:/.test(marketSrc) && /PLUGIN_ZH\[slug\]/.test(marketSrc) && /zh\?\.name \|\| slug/.test(marketSrc) ? ok : fail)(
+        "【239】插件名称/简介中文翻译表在位且映射时套用（PLUGIN_ZH → displayName/description）"
+      );
     }
 
     /* ③c 坐姿打字微动画 = 图集两个坐姿变体交替（cols 5/6） */
