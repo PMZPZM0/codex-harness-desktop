@@ -92,8 +92,9 @@ bag.identityGreeted = identityGreeted as typeof bag.identityGreeted; bag.setIden
       .catch(() => bag.setIdentityGreeted(true)); // 读不到档案就按「已问候」处理：宁可不引导，也不打扰
   }, []);
 
-  // 写代码模式（ponytail）开关状态：默认开启，与「常规」页的总闸联动
-  const [ponytailOn, setPonytailOn] = useState(true);
+  // 写代码模式（ponytail）开关状态：默认关闭（10-01 用户令；真实落盘状态由 useEffect 读回对齐），
+  // 与「常规」页的总闸联动
+  const [ponytailOn, setPonytailOn] = useState(false);
 bag.ponytailOn = ponytailOn as typeof bag.ponytailOn; bag.setPonytailOn = setPonytailOn as typeof bag.setPonytailOn;
 
   // 各渠道真实连接状态（微信/Telegram 网关是否在线）

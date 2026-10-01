@@ -95,10 +95,12 @@ export function findPath(grid: Uint8Array, from: Pt, to: Pt): Pt[] | null {
 
 type AgentMode = "work" | "idle";
 
-/** 休息活动 POI（⛔ 坐标是 POI 旁的**可走站立点**，PIL 对着 bg.webp 校过格可走性）：
- *  water = 右上饮水机旁；book = 左上书架旁。 */
-const WATER_POI = { x: 786, y: 230, label: "接杯水 💧" };
-const BOOK_POI = { x: 300, y: 190, label: "查点资料 📖" };
+/** 休息活动 POI（⛔ 坐标是 POI 旁的**可走站立点**，PIL 实测贴到物件跟前：
+ *  water = 饮水机（机身 x767-812 / 底 y≈127）**右侧贴身** (832,170)，格 25 可走；
+ *  book = 书架（底 y≈140，正下方紧贴显示器顶——空间窄站不下）**右侧** (352,178)。
+ *  之前定 (786,230)/(300,190) 离物件 50-100px，用户实测「没有到跟前」。 */
+const WATER_POI = { x: 832, y: 170, label: "接杯水 💧" };
+const BOOK_POI = { x: 352, y: 178, label: "查点资料 📖" };
 
 /** 一个在办公室里的人的运行时状态（sim 内部）。 */
 export type Agent = {
@@ -277,6 +279,9 @@ export class OfficeSim {
         if (poi) {
           a.activity = poi === WATER_POI ? "water" : "book";
           a.bubble = { text: poi.label, until: Date.now() + 2600 };
+          // ⛔ 终点追加 POI 精确点（路径原生终点是**格中心**，最多偏 16px——
+          //    不追加就是「走到附近但没到跟前」，10-01 用户实测）
+          out.push({ x: target.x, y: target.y });
         }
         a.path = out;
         a.homePath = [...out].reverse();
