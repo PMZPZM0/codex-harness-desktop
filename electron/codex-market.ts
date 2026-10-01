@@ -68,6 +68,62 @@ const CATEGORY_ZH: Record<string, string> = {
   testing: "测试",
 };
 
+/**
+ * 插件名称/简介的中文翻译表（10-01 用户：「能不能翻译成中文，英文看不懂」）。
+ * ⛔ 上游 marketplace.json 是英文文案；这里按 slug 静态翻译，清单加载时覆盖 displayName/description。
+ * 上游新增插件不在表里时自动回落英文原文（宁可显示英文也不显示乱翻）——补条目时同步这张表即可。
+ */
+const PLUGIN_ZH: Record<string, { name: string; description: string }> = {
+  "agent-sdk-dev": { name: "Agent SDK 开发套件", description: "开发 Claude Agent SDK 应用的工具箱" },
+  asana: { name: "Asana 项目管理", description: "Asana 项目管理集成：创建/管理任务、搜索项目、更新负责人、跟踪进度，把开发流程接进 Asana" },
+  "autofix-bot": { name: "自动修复机器人", description: "代码审查智能体：检测安全漏洞、质量问题与硬编码密钥；整合 5000+ 静态分析器扫描代码与依赖里的 CVE" },
+  "clangd-lsp": { name: "C/C++ 语言服务", description: "C/C++ 语言服务器（clangd），提供代码智能" },
+  "claude-code-setup": { name: "环境配置顾问", description: "分析你的代码库，推荐量身定制的自动化方案：钩子、技能、MCP 服务、子智能体" },
+  "claude-md-management": { name: "项目记忆管理", description: "维护和改进 CLAUDE.md 文件的工具——审计质量、沉淀会话经验、保持项目记忆常新" },
+  "code-review": { name: "代码审查", description: "多专用智能体自动审查 PR，带置信度评分过滤误报" },
+  "code-simplifier": { name: "代码精简", description: "在保持功能不变的前提下简化和精炼代码，提升清晰度、一致性与可维护性，重点关注最近修改的代码" },
+  "commit-commands": { name: "Git 提交助手", description: "git 提交流程命令集：提交、推送、创建 PR" },
+  context7: { name: "Context7 文档查询", description: "Upstash Context7 MCP 服务：拉取最新版本的官方文档与代码示例，直接注入模型上下文" },
+  "csharp-lsp": { name: "C# 语言服务", description: "C# 语言服务器，提供代码智能" },
+  discord: { name: "Discord 消息桥", description: "Discord 消息桥（内置访问控制）：配对、白名单与策略管理走 /discord:access" },
+  "explanatory-output-style": { name: "教学讲解风格", description: "回复里补充实现选择与代码库模式的讲解说明（复刻已停用的 Explanatory 输出风格）" },
+  fakechat: { name: "本地测试聊天", description: "本地网页聊天，用来测试通知链路：无令牌、无访问控制、不连第三方服务" },
+  "feature-dev": { name: "功能开发工作流", description: "完整的功能开发工作流：代码库探查、架构设计、质量审查各有专用智能体" },
+  firebase: { name: "Firebase 集成", description: "Google Firebase MCP 集成：管理 Firestore 数据库、认证、云函数、托管与存储，在开发流程里直接搭后端" },
+  "frontend-design": { name: "前端设计", description: "产出有设计感、可上线的前端界面：生成有创意、打磨过的高质量代码，避免千篇一律的 AI 味" },
+  github: { name: "GitHub 官方集成", description: "GitHub 官方 MCP 服务：建 Issue、管 PR、审代码、搜仓库，直接操作 GitHub 全量 API" },
+  gitlab: { name: "GitLab 集成", description: "GitLab DevOps 平台集成：管理仓库、合并请求、CI/CD 流水线、Issue 与 Wiki" },
+  "gopls-lsp": { name: "Go 语言服务", description: "Go 语言服务器，代码智能与重构" },
+  greptile: { name: "语义代码搜索", description: "AI 驱动的代码库搜索与理解：用自然语言查仓库、理清依赖、获得关于代码架构的答案" },
+  hookify: { name: "钩子生成器", description: "轻松创建自定义钩子防止不良行为：从对话模式或显式指令提炼规则，用简单 markdown 文件定义" },
+  imessage: { name: "iMessage 消息桥", description: "iMessage 消息桥（内置访问控制）：直读 chat.db、AppleScript 发送，管理走 /imessage:access（仅 macOS）" },
+  "jdtls-lsp": { name: "Java 语言服务", description: "Java 语言服务器（Eclipse JDT.LS），提供代码智能" },
+  "kotlin-lsp": { name: "Kotlin 语言服务", description: "Kotlin 语言服务器，提供代码智能" },
+  "laravel-boost": { name: "Laravel 工具箱", description: "Laravel 开发工具箱 MCP 服务：Artisan 命令、Eloquent 查询、路由、迁移与框架专属代码生成" },
+  "learning-output-style": { name: "互动学习风格", description: "互动学习模式：在关键决策点请你亲手写代码（复刻未上线的 Learning 输出风格）" },
+  linear: { name: "Linear 事务跟踪", description: "Linear 事务跟踪集成：建 Issue、管项目、更新状态、跨工作区搜索" },
+  "lua-lsp": { name: "Lua 语言服务", description: "Lua 语言服务器，提供代码智能" },
+  "math-olympiad": { name: "竞赛数学", description: "解竞赛数学题（IMO、Putnam、USAMO）：对抗式验证抓住自我验证漏掉的问题，宁可承认不会也不硬编" },
+  "mcp-server-dev": { name: "MCP 服务开发", description: "设计并构建 MCP 服务器的技能集：部署模式（远程 HTTP/MCPB/本地）、工具设计模式、鉴权与交互式 MCP 应用" },
+  "php-lsp": { name: "PHP 语言服务", description: "PHP 语言服务器（Intelephense），提供代码智能" },
+  playground: { name: "交互式演示页", description: "生成交互式 HTML 演示页——单文件自包含、带可视控件、实时预览与复制按钮；含设计原型、数据浏览器、概念图等模板" },
+  playwright: { name: "浏览器自动化", description: "微软 Playwright MCP：操作网页、截图、填表、点击，跑端到端自动化测试" },
+  "plugin-dev": { name: "插件开发套件", description: "开发插件的完整工具箱：7 个专家技能覆盖钩子、MCP、命令、智能体与最佳实践，AI 辅助创建与校验" },
+  "pr-review-toolkit": { name: "PR 审查套件", description: "PR 审查智能体全家桶：专注评论、测试、错误处理、类型设计、代码质量与代码精简" },
+  "pyright-lsp": { name: "Python 类型检查", description: "Python 语言服务器（Pyright），类型检查与代码智能" },
+  "ralph-loop": { name: "自循环迭代", description: "交互式自引用 AI 循环（Ralph 技法）：反复做同一任务、看见自己上一轮的成果，直到完成" },
+  "ruby-lsp": { name: "Ruby 语言服务", description: "Ruby 语言服务器，代码智能与分析" },
+  "rust-analyzer-lsp": { name: "Rust 语言服务", description: "Rust 语言服务器（rust-analyzer），代码智能与分析" },
+  "security-guidance": { name: "安全提醒", description: "编辑文件时的安全提醒钩子：命令注入、XSS、不安全代码模式都会预警" },
+  serena: { name: "语义代码分析", description: "语义级代码分析 MCP 服务：智能代码理解、重构建议、跨代码库导航（基于语言服务协议）" },
+  "session-report": { name: "会话用量报告", description: "从本地会话记录生成可交互的 HTML 用量报告：令牌、缓存效率、子智能体、技能与最贵的提示词" },
+  "skill-creator": { name: "技能创建器", description: "创建新技能、改进现有技能、评估技能表现：从零创建、更新优化、跑评估、做基准对比" },
+  "swift-lsp": { name: "Swift 语言服务", description: "Swift 语言服务器（SourceKit-LSP），提供代码智能" },
+  telegram: { name: "Telegram 消息桥", description: "Telegram 消息桥（内置访问控制）：配对、白名单与策略管理走 /telegram:access" },
+  terraform: { name: "Terraform 集成", description: "Terraform MCP 服务：与 Terraform 生态无缝集成，基础设施即代码（IaC）的高级自动化" },
+  "typescript-lsp": { name: "TypeScript 语言服务", description: "TypeScript/JavaScript 语言服务器，增强代码智能" },
+};
+
 export type MarketCategory = { key: string; displayName: string };
 
 let marketCache: { at: number; plugins: CodexMarketPlugin[] } | null = null;
@@ -92,12 +148,15 @@ async function loadMarketPlugins(): Promise<CodexMarketPlugin[]> {
       const src = entry?.source;
       // source 支持 "./plugins/x" 字符串形态（镜像仓库全部是这种）；对象形态（外部 GitHub 源）镜像里已剔除
       const pluginPath = text(typeof src === "string" ? src : src?.path).replace(/^\.\//, "");
+      const slug = text(entry.name);
+      const zh = PLUGIN_ZH[slug];
       const category = text(entry.category) || "development";
       return {
-        slug: text(entry.name),
-        name: text(entry.name),
-        displayName: text(entry.name),
-        description: text(entry.description) || "暂无插件简介",
+        slug,
+        name: slug,
+        // 名称/简介：翻译表命中显示中文，未收录的回落英文原文（上游新增插件自动兜底）
+        displayName: zh?.name || slug,
+        description: zh?.description || (text(entry.description) || "暂无插件简介"),
         category,
         categoryZh: CATEGORY_ZH[category] ?? category,
         logo: "",
@@ -143,6 +202,7 @@ export async function listMarketPlugins(input: { category?: string; query?: stri
   if (q) {
     items = items.filter((entry) =>
       entry.name.toLowerCase().includes(q)
+      || entry.displayName.toLowerCase().includes(q)
       || entry.description.toLowerCase().includes(q)
       || entry.author.toLowerCase().includes(q)
       || (entry.categoryZh ?? "").includes(input.query!.trim()));
