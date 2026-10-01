@@ -126,7 +126,22 @@ bag.dispatchBlockKeys = dispatchBlockKeys as typeof bag.dispatchBlockKeys;
         if (lead) { cluster.lead = lead; cluster.members = cluster.members.filter((m) => m.id !== lead.id); }
       }
     }
-    return { memberIds, clusters: [...clusters.values()] };
+    /* ⛔⛔ 10-01 用户令：「专家不要归类到一起——老子都是单独创建的专家会话」。
+       只有**配置了成员**的专家团才聚类；专家（单人/专家包，members 为空）的一对一会话
+       一律平铺——它们被 setThreadTeam 挂上 teamId 只是为了继承 cwd/记忆，
+       不代表这些会话之间有任何从属关系，聚成可展开的簇是错的。
+       被剔除的簇：其成员会话从 memberIds 里撤出 ⇒ 回落到 singles 平铺（徽标由角色登记给「专家」）。 */
+    const clusterableTeams = new Map(
+      bag.expertTeams
+        .filter((team) => (team.members?.length ?? 0) > 0)
+        .map((team) => [team.teamId, team]),
+    );
+    const keptClusters = new Map<string, { teamId: string; lead: Thread | null; members: Thread[] }>();
+    for (const [teamId, cluster] of clusters) {
+      if (clusterableTeams.has(teamId)) { keptClusters.set(teamId, cluster); continue; }
+      for (const member of cluster.members) memberIds.delete(member.id);
+    }
+    return { memberIds, clusters: [...keptClusters.values()] };
   }, [bag.listThreads, bag.teamThreadsIndex, bag.teamMemberThreadIds, bag.expertTeams]);
 bag.clusteredSidebar = clusteredSidebar as typeof bag.clusteredSidebar;
 

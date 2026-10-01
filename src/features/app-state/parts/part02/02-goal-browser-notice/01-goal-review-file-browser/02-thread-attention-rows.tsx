@@ -199,20 +199,28 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
     const delegateKind = bag.delegateRecords[entry.id]?.kind;
     // 团队成员数（10-01 用户反馈）：专家市场包装出来的是**只有主理人的团队**（members 空），
     // 它的会话应该挂「专家」徽标，不该跟多成员专家团混用「专家团」。
-    const entryTeamId = bag.teamThreadsIndex[entry.id];
+    // ⛔ teamId 三路取证（10-01 二改，用户：「新建专家又没有标签了」——新建会话进不了启动时
+    // 加载的 teamThreadsIndex，必须用**创建会话当刻就写入**的两张表兜底）：
+    //   ① teamThreadMapRef（发起会话时立即 set）② teamThreadsIndex（IPC 回读，可能滞后）
+    const entryTeamId = bag.teamThreadMapRef?.current?.get(entry.id) ?? bag.teamThreadsIndex[entry.id];
     const entryTeamMemberCount = entryTeamId
       ? (bag.expertTeams.find((team) => team.teamId === entryTeamId)?.members?.length ?? 0)
       : -1;
     const leadBadge = entryTeamMemberCount === 0 ? { tone: "expert", label: "专家" } : { tone: "team", label: "专家团" };
-    const sourceBadge = variant === "lead" || delegateKind === "team"
+    /* 角色登记（10-01）：startTeamSession / startMemberDirectSession 建会话当刻就 rememberExpertRole，
+       是「新建会话」唯一**同步可得**的身份来源（上面两张表都可能还没跟上）。 */
+    const expertRole = bag.readStoredExpertRole?.(entry.id);
+    const sourceBadge = variant === "lead" || delegateKind === "team" || expertRole?.kind === "team"
       ? leadBadge
-      : variant === "member" || delegateKind === "expert"
+      : variant === "member" || delegateKind === "expert" || expertRole?.kind === "member"
         ? { tone: "expert", label: "专家" }
         : delegateKind === "subagent" ? { tone: "agent", label: "代理" } : null;
     /* 兜底（10-01）：分类视图里主理人会话是**普通行**渲染（variant/调度记录都没有），
-       但 teamThreadsIndex 知道它属于哪个团队 ⇒ 同样按成员数给「专家/专家团」徽标，
+       但 teamThreadsIndex / 角色登记知道它属于哪个团队 ⇒ 同样按成员数给「专家/专家团」徽标，
        不然专家团主理人会在分类视图里光溜溜地混进普通会话。成员行（variant=member）不适用。 */
-    const fallbackTeamBadge = !sourceBadge && variant !== "member" && entryTeamId ? leadBadge : null;
+    const fallbackTeamBadge = !sourceBadge && variant !== "member" && (entryTeamId || expertRole)
+      ? (expertRole?.kind === "member" ? { tone: "expert", label: "专家" } : leadBadge)
+      : null;
     return (
     <div
       className={`thread-row ${bag.thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${bag.threadRowMenu?.id === entry.id ? "menu-open" : ""} ${poppedOut ? "popped-out" : ""}${variant === "member" ? " is-member-row" : ""}${bag.delegateRecords[entry.id] ? " is-delegated-row" : ""}`}

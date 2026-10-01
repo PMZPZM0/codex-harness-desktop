@@ -1430,6 +1430,17 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/delegateKind === .subagent./.test(rowsSrc) && rowsSrc.includes(String.fromCharCode(20195,29702)) ? ok : fail)(
       "【207】子智能体调度 =「代理」标签（用户逐字点名）"
     );
+    // ⛔ 10-01 用户实测「新建专家又没有标签了」：新建会话进不了启动时加载的 teamThreadsIndex，
+    //    徽标必须同时认「创建当刻就写入」的两条即时来源（角色登记 + teamThreadMapRef）。
+    (/readStoredExpertRole/.test(rowsSrc) && /teamThreadMapRef/.test(rowsSrc) ? ok : fail)(
+      "【207】新建会话的专家徽标即时可得（三路取证：角色登记 / teamThreadMapRef / teamThreadsIndex——只查最后一项 ⇒ 刚建的会话没标签）"
+    );
+    // ⛔⛔ 10-01 用户令：「专家不要归类到一起」——只有**配置了成员**的专家团才聚类；
+    //    专家（单人/专家包，members 为空）的一对一会话一律平铺，不许聚成可展开的簇。
+    const part04Src = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part04", "01-seg.tsx"), "utf8"));
+    (/clusterableTeams\.has\(teamId\)[\s\S]{0,90}?continue;/.test(part04Src) && /members\?\.length \?\? 0\) > 0/.test(part04Src) ? ok : fail)(
+      "【207】只有配置了成员的专家团才聚类（专家/专家包会话平铺——把零成员团队聚成簇 = 用户点名的「专家归类到一起」）"
+    );
     /* ⛔ 09-29 用户实测：专家团簇行自带 09-14 的淡蓝底+描边+左色条（旧"团队条"装饰），
        与新选中态撞车（看起来像被选中）。身份区分一律用「专家团」徽章，不用底色。 */
     (/thread-source-badge/.test(css207) && /tone-team/.test(css207) && /tone-expert/.test(css207) ? ok : fail)(
