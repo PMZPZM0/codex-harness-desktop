@@ -2766,6 +2766,16 @@ w.postMessage({id:1,op:"list",root});
       "【233】坐班常态模型（非 running 也坐工位，闲逛只是短暂休息）"
     );
 
+    /* ③c ⛔ 休息回工位终点必须**精确到座位像素**（10-01 用户实测「第二次坐上去就偏右了」：
+       homePath 的终点是起身时所在**格中心**，比 seat.x 偏 ~8px）+ 休息活动（喝茶/倒水/查资料）
+       在 mode 变 work 的沿必须清干净（否则成员走到饮水机旁坐下）。 */
+    (simSrc.includes("[...a.homePath, { x: seat.x, y: seat.y }]") ? ok : fail)(
+      "【233】休息回工位路径终点强制精确到座位像素（不许停在格中心）"
+    );
+    (simSrc.includes('activity: null | "tea" | "water" | "book"') && simSrc.includes("agent.activity = null") && simSrc.includes("agent.path = []") ? ok : fail)(
+      "【233】休息活动（tea/water/book）在 mode 沿清空 + 清在途路径"
+    );
+
     /* ③c 坐姿打字微动画 = 图集两个坐姿变体交替（cols 5/6） */
     (fmtSrc.includes("SIT_FRAMES = [5, 6]") && canvasSrc.includes("SIT_FRAMES[") ? ok : fail)(
       "【233】坐姿用双帧变体交替（打字微动画）"

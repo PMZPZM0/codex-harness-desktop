@@ -95,6 +95,11 @@ export function findPath(grid: Uint8Array, from: Pt, to: Pt): Pt[] | null {
 
 type AgentMode = "work" | "idle";
 
+/** 休息活动 POI（⛔ 坐标是 POI 旁的**可走站立点**，PIL 对着 bg.webp 校过格可走性）：
+ *  water = 右上饮水机旁；book = 左上书架旁。 */
+const WATER_POI = { x: 786, y: 230, label: "接杯水 💧" };
+const BOOK_POI = { x: 300, y: 190, label: "查点资料 📖" };
+
 /** 一个在办公室里的人的运行时状态（sim 内部）。 */
 export type Agent = {
   id: string;
@@ -115,6 +120,11 @@ export type Agent = {
   /** 休息倒计时（tick）；work 成员永不离席 */
   breakCooldown: number;
   onBreak: boolean;
+  /** 休息活动（10-01 用户：「加一点喝茶，倒水，查资料」）：
+   *  tea = 原地举杯（不起身）；water/book = 走到 POI 站立片刻；null = 普通走动 */
+  activity: null | "tea" | "water" | "book";
+  /** 活动进行中的站立截止时刻（到点回工位） */
+  activityUntil: number;
   bubble: { text: string; until: number } | null;
 };
 
@@ -148,13 +158,18 @@ export class OfficeSim {
         frameClock: Math.random() * 4,
         breakCooldown: 600 + Math.floor(Math.random() * 900),
         onBreak: false,
+        activity: null,
+        activityUntil: 0,
         bubble: null,
       };
       // 状态迁移沿 ⇒ 气泡（⛔ 只在变化沿发，不刷屏）
       if (prev && prev.mode !== mode) {
         agent.bubble = mode === "work" ? { text: `开工：${m.profession || "干活"}`, until: now + 2600 } : { text: "任务完成 ✓", until: now + 2600 };
-        // 从休息状态拉回工位
+        // 从休息/POI 状态拉回工位（⛔ 清 path：在途的可能是去饮水机的路，走完会坐在没椅子的地上）
         agent.onBreak = false;
+        agent.activity = null;
+        agent.activityUntil = 0;
+        agent.path = [];
       }
       agent.mode = mode;
       if (agent.seatIndex !== seatIndex) {
@@ -185,6 +200,17 @@ export class OfficeSim {
   }
 
   private step(a: Agent) {
+    // ⓪ POI 活动站立中：站着不动到点（⛔ 提前 return，别让路径处理把人拽走）
+    if (a.activityUntil > 0) {
+      if (Date.now() < a.activityUntil) return;
+      a.activityUntil = 0;
+      a.activity = null;
+      // ⛔ 回工位终点必须**精确到座位像素**——homePath 的终点是「起身时所在格中心」，
+      //    比实测 seat.x 偏 ~8px（10-01 用户实测「第二次坐上去就偏右了」的根因）。
+      const seat = SEATS[a.seatIndex];
+      a.path = [...a.homePath, { x: seat.x, y: seat.y }];
+      return;
+    }
     // ① 沿当前路径走（去工位 / 休息走动 / 回工位共用一条 path）
     if (a.path.length > 0) {
       a.action = "walk";
@@ -197,14 +223,23 @@ export class OfficeSim {
         a.y = target.y;
         a.path.shift();
         if (a.path.length === 0) {
-          // 走完了：回工位 ⇒ 坐下；休息中途 ⇒ 站一会儿再回去
+          // 走完了：三种归宿
           if (!a.onBreak) {
+            // 回工位 ⇒ 坐下（⛔ 同步清活动——mode 变 work 的沿已清，这里兜住 idle 直接坐）
             a.action = "sit";
+            a.activity = null;
+          } else if (a.activity) {
+            // 到了饮水机 / 书架：站一会儿（bubble 已在起身时发过，这里再提示一次动作中）
+            a.action = "stand";
+            a.bubble = { text: a.activity === "water" ? WATER_POI.label : BOOK_POI.label, until: Date.now() + 2800 };
+            a.activityUntil = Date.now() + 3000;
           } else {
+            // 休息走动完毕：站一会儿再回去
             a.action = "stand";
             a.onBreak = false;
             a.breakCooldown = 1500 + Math.floor(Math.random() * 2400);
-            a.path = [...a.homePath];
+            const seat = SEATS[a.seatIndex];
+            a.path = [...a.homePath, { x: seat.x, y: seat.y }];
           }
         }
       } else {
@@ -220,15 +255,29 @@ export class OfficeSim {
       }
       return;
     }
-    // ② 已在工位：坐班；work 不离席，idle 到点起身休息一小圈
+    // ② 已在工位：坐班；work 不离席，idle 到点起身休息
     if (a.action === "walk") a.action = "sit";
     if (a.mode === "work" || a.onBreak) return;
     a.breakCooldown -= 1;
     if (a.breakCooldown <= 0) {
       a.onBreak = true;
-      const spot = this.randomFloorPointNear(a);
-      const out = findPath(this.grid, a, spot) ?? [];
+      const roll = Math.random();
+      if (roll < 0.22) {
+        // 原地喝茶（不起身）：手部动画切举杯（Canvas 按 activity==="tea" 渲染）
+        a.activity = "tea";
+        a.activityUntil = Date.now() + 2800;
+        a.bubble = { text: "喝口水 ☕", until: Date.now() + 2600 };
+        a.breakCooldown = 1800 + Math.floor(Math.random() * 2400);
+        return;
+      }
+      const poi = roll < 0.48 ? WATER_POI : roll < 0.74 ? BOOK_POI : null;
+      const target = poi ?? this.randomFloorPointNear(a);
+      const out = findPath(this.grid, a, target) ?? [];
       if (out.length > 1) {
+        if (poi) {
+          a.activity = poi === WATER_POI ? "water" : "book";
+          a.bubble = { text: poi.label, until: Date.now() + 2600 };
+        }
         a.path = out;
         a.homePath = [...out].reverse();
       } else {

@@ -114,23 +114,38 @@ export function OfficeCanvas({ members, onOpenMember }: OfficeCanvasProps) {
             ctx.drawImage(bg, a.x + r.dx, a.y + r.dy, r.w, r.h, a.x + r.dx, a.y + r.dy, r.w, r.h);
           }
 
-          /* ⛔ 手部打字动画（10-01 用户：「干坐着挺尴尬，加上去，要看到人物在用双手操作
-             键盘和鼠标的效果」）：素材坐姿两帧只差 1-2px 手臂位移，3× 放大后不可感知 ——
-             在键盘位置叠两只交替起落的肤色手块。work（任务中）= 快速交替敲击；待机 = 双手
-             静放键盘。⛔ 画在椅背重贴**之后**（手在桌面最上层）；手 y = 椅背顶 - 28
-             （键盘面，从 backrest 推导——两排桌椅相对位置一致，这一偏移对两排都成立）。 */
+          /* ⛔ 手部动画（10-01 用户：「干坐着挺尴尬」→「加一点喝茶倒水查资料」「没有点鼠标
+             跟键盘」）：素材坐姿帧差异 1-2px 不可感知 ⇒ canvas 叠手。
+             · work：左手快速敲键盘 + 右手慢节奏点鼠标（桌上有鼠标块，下压有行程）
+             · idle：双手静放键盘
+             · activity==="tea"：右手举杯到嘴边（杯子 + 握持手），左手放键盘
+             手 y = 椅背顶 - 28（键盘面，从 backrest 推导）；⛔ 画在椅背重贴之后（桌面最上层）。 */
           if (a.action === "sit") {
-            const typing = a.mode === "work";
-            const t = a.frameClock * (typing ? 9 : 0);
-            const lb = typing ? (Math.sin(t) > 0 ? -2 : 0) : 0;
-            const rb = typing ? (Math.sin(t) > 0 ? 0 : -2) : 0;
-            const handY = a.y + r.dy - 28;
-            ctx.fillStyle = "#c98d63"; // 手腕/袖口阴影层（稍大，当轮廓）
-            ctx.fillRect(a.x - 18, handY + lb - 1, 5, 6);
-            ctx.fillRect(a.x + 13, handY + rb - 1, 5, 6);
-            ctx.fillStyle = "#e8b08a"; // 手
-            ctx.fillRect(a.x - 17, handY + lb, 4, 5);
-            ctx.fillRect(a.x + 14, handY + rb, 4, 5);
+            const work = a.mode === "work";
+            const backTop = a.y + r.dy;
+            if (a.activity === "tea") {
+              // 举杯喝水：杯举到头侧（人物顶+20 处），右手托杯，左手仍在键盘上
+              const cupY = dy + 18;
+              ctx.fillStyle = "#dfe8f2"; ctx.fillRect(a.x + 11, cupY, 6, 8); // 杯身
+              ctx.fillStyle = "#7fb5d6"; ctx.fillRect(a.x + 11, cupY + 1, 6, 3); // 水面
+              ctx.fillStyle = "#c98d63"; ctx.fillRect(a.x + 11, cupY + 8, 6, 2); // 杯底影
+              ctx.fillStyle = "#e8b08a"; ctx.fillRect(a.x + 10, cupY + 10, 5, 5); // 托杯的手
+              ctx.fillStyle = "#e8b08a"; ctx.fillRect(a.x - 17, backTop - 28, 4, 5); // 左手放键盘
+            } else {
+              const t = a.frameClock * (work ? 9 : 0);
+              const lb = work ? (Math.sin(t) > 0 ? -2 : 0) : 0;
+              // 右手点鼠标：低频（约 0.35Hz）且短促下压，与左手错开
+              const rb = work ? (Math.sin(t * 0.24) > 0.82 ? -2 : 0) : 0;
+              const handY = backTop - 28;
+              ctx.fillStyle = "#3a3f47"; // 鼠标（右手边桌面上）
+              ctx.fillRect(a.x + 23, handY + 1, 4, 6);
+              ctx.fillStyle = "#c98d63"; // 手腕/袖口阴影层
+              ctx.fillRect(a.x - 18, handY + lb - 1, 5, 6);
+              ctx.fillRect(a.x + 14, handY + rb - 1, 5, 6);
+              ctx.fillStyle = "#e8b08a"; // 手
+              ctx.fillRect(a.x - 17, handY + lb, 4, 5);
+              ctx.fillRect(a.x + 15, handY + rb, 4, 5);
+            }
           }
         }
         // ── 第二遍：名字牌 + 气泡（UI 层，永远在最上）──
