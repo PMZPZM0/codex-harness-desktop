@@ -7,16 +7,30 @@
 .ui-skin-page-head p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 
 .ui-skin-workshop {
-  display: grid;
-  grid-template-columns: 240px 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   min-height: 420px;
-  align-items: start;
+  align-items: stretch;
 }
 
-/* ── 左列：原型清单 ── */
+/* ── 原型清单（单品覆盖区，横向一行） ── */
 .ui-skin-slots { display: flex; flex-direction: column; gap: 8px; }
+.ui-skin-slots-row { flex-direction: row; flex-wrap: wrap; }
+.ui-skin-slots-row .ui-skin-slot { flex: 1 1 240px; }
 .ui-skin-hint { margin: 0; color: var(--muted); font-size: 11.5px; }
+
+.ui-skin-custom-toggle {
+  align-self: flex-start;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.ui-skin-custom-toggle:hover { color: var(--text); }
 
 .ui-skin-slot {
   display: flex;
@@ -125,6 +139,18 @@
   background: var(--ok);
   color: #fff;
 }
+.ui-skin-cell-pack {
+  font-size: 9.5px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 6px;
+  align-self: flex-start;
+}
+
+/* 默认样式卡的预览小样（无棋盘格，用面板底） */
+.ui-skin-preview-default { background: var(--panel-2, var(--panel)); }
+.ui-skin-default-sample { display: inline-flex; transform: scale(1.6); }
 
 .ui-skin-more {
   align-self: center;

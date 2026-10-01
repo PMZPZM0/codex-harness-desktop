@@ -3,6 +3,7 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { AppSelect } from "../../../components/AppSelect";
+import { ToggleSwitch } from "../../../components/SettingsWidgets";
 import {
   AlertTriangle,
   Archive,
@@ -214,7 +215,7 @@ export function AppViewRemoteConsole({ app }: { app: HarnessAppApi }) {
                   {(() => { const activeBot = bots.find((b) => b.id === activeBotId); if (!activeBot) return <div className="bot-empty"><p className="muted">从左侧选择一个机器人，或新建一个。</p></div>; return (<>
                     <div className="bot-detail-head">
                       <div><strong>{activeBot.name}</strong></div>
-                      <label className="bot-switch"><input type="checkbox" checked={activeBot.enabled} onChange={() => setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, enabled: !b.enabled } : b); return next; })} /><span /></label>
+                      <ToggleSwitch checked={activeBot.enabled} onChange={() => setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, enabled: !b.enabled } : b); return next; })} />
                     </div>
                     {(() => { const online = Boolean(activeBot.channel) && botOnlineOf(activeBot, channelOnline); return (<>
                     <p className={"bot-status-line" + (online ? " online" : "")}>{online ? "● 已连接" : activeBot.enabled ? "● 已启用" : "○ 未启用"}</p>
@@ -269,16 +270,16 @@ export function AppViewRemoteConsole({ app }: { app: HarnessAppApi }) {
                     </div>
                     <div className="bot-detail-row">
                       <div><strong>流式回复</strong><small>开启后机器人边生成边推送正文（微信逐段追加 / Telegram 实时改写），不用干等完整回复。微信受平台限制：单条消息触发的推送条数有限，长任务期间会以「对方正在输入…」提示进度。</small></div>
-                      <label className="bot-switch"><input type="checkbox" checked={botStream.enabled} onChange={(event) => updateBotStream({ ...botStream, enabled: event.target.checked })} /><span /></label>
+                      <ToggleSwitch checked={botStream.enabled} onChange={(next) => updateBotStream({ ...botStream, enabled: next })} />
                     </div>
                     {botStream.enabled && (<>
                       <div className="bot-detail-row">
                         <div><strong>同步思考内容</strong><small>开启：模型的思考摘要实时推送到聊天端；关闭：不推送思考过程。</small></div>
-                        <label className="bot-switch"><input type="checkbox" checked={botStream.thinking} onChange={(event) => updateBotStream({ ...botStream, thinking: event.target.checked })} /><span /></label>
+                        <ToggleSwitch checked={botStream.thinking} onChange={(next) => updateBotStream({ ...botStream, thinking: next })} />
                       </div>
                       <div className="bot-detail-row">
                         <div><strong>同步工具内容</strong><small>开启：命令执行 / 工具调用过程实时推送；关闭：只推送正文。</small></div>
-                        <label className="bot-switch"><input type="checkbox" checked={botStream.tools} onChange={(event) => updateBotStream({ ...botStream, tools: event.target.checked })} /><span /></label>
+                        <ToggleSwitch checked={botStream.tools} onChange={(next) => updateBotStream({ ...botStream, tools: next })} />
                       </div>
                     </>)}
                     <div className="bot-detail-row">

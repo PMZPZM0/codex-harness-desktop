@@ -1,6 +1,7 @@
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { Check, ListOrdered, Palette, Type, WrapText } from "lucide-react";
 import { codeFonts, codePreviewSnippet, codeThemes } from "../lib/code-themes";
+import { ToggleSwitch } from "./SettingsWidgets";
 import { setCodeSettings, useCodeSettings, type CodeFontScale } from "../lib/code-settings";
 
 /** 预览用的极简渲染：不引 highlighter 之外的新依赖，10 张卡片同时渲染也够快 */
@@ -100,12 +101,12 @@ export function CodeAppearanceSection() {
         <label className="appearance-row">
           <span className="appearance-row-icon"><ListOrdered size={14} /></span>
           <span className="appearance-row-text"><strong>显示行号</strong><small>长代码块更好定位，讨论代码时更方便</small></span>
-          <span className="switch"><input type="checkbox" checked={settings.lineNumbers} onChange={(event) => setCodeSettings({ lineNumbers: event.target.checked })} /><i /></span>
+          <ToggleSwitch checked={settings.lineNumbers} onChange={(next) => setCodeSettings({ lineNumbers: next })} />
         </label>
         <label className="appearance-row">
           <span className="appearance-row-icon"><WrapText size={14} /></span>
           <span className="appearance-row-text"><strong>长行自动换行</strong><small>关闭时超长代码横向滚动，保留原始缩进</small></span>
-          <span className="switch"><input type="checkbox" checked={settings.wrap} onChange={(event) => setCodeSettings({ wrap: event.target.checked })} /><i /></span>
+          <ToggleSwitch checked={settings.wrap} onChange={(next) => setCodeSettings({ wrap: next })} />
         </label>
       </div>
     </>

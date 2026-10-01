@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  C, ROOT, codeOnly, createRequire, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readResponsesBridgeSource, readStyles, readdirSync, rmSync, spawnSync, statSync, typesSrc,
+  C, ROOT, codeOnly, createRequire, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readResponsesBridgeSource, readStyles, readdirSync, relative, rmSync, spawnSync, statSync, typesSrc,
 } from "./_ctx.mjs";
 
 export async function run() {
@@ -2859,6 +2859,36 @@ w.postMessage({id:1,op:"list",root});
     /* ⑥ ingest 脚本可复现：剥 script 兜底在位 */
     const ingestSrc = readFileSync(join(ROOT, "scripts", "gen-ui-skin-library.mjs"), "utf8");
     (ingestSrc.includes("stripScript") ? ok : fail)("【234】ingest 剥 script 兜底（当前源 0 script，防未来换源）");
+
+    /* ⑦ ⛔ 套装统一层（10-01）：单品散绑 = 同屏五花八门；换肤必须走套装 */
+    const packsSrc = readFileSync(join(ROOT, "src", "lib", "ui-skin", "packs.gen.ts"), "utf8");
+    const packsGenSrc = readFileSync(join(ROOT, "scripts", "gen-ui-skin-packs.mjs"), "utf8");
+    ((packsSrc.match(/"id":/g) || []).length >= 60 ? ok : fail)("【234】套装 ≥60 个（作者聚类；重跑 gen-ui-skin-packs 后同步）");
+    (packsGenSrc.includes("packs.gen.ts") && packsGenSrc.includes("catalog.gen.ts") ? ok : fail)("【234】套装生成器可复现（catalog → packs）");
+    (packsSrc.includes('toggle-switch') && packsSrc.includes('loader') ? ok : fail)("【234】套装覆盖两个接线槽位");
+    const storeSrc234 = readFileSync(join(ROOT, "src", "lib", "ui-skin", "store.ts"), "utf8");
+    (storeSrc234.includes("ui-skin-state-v2") && storeSrc234.includes('from "./packs.gen"') ? ok : fail)("【234】store v2（套装激活 + 覆盖两级）；packs 数据沉基座");
+    (!storeSrc234.includes("features/ui-skin") ? ok : fail)("【234】⛔ 基座 store 不 import 域层");
+
+    /* ⑧ ⛔ 开关全仓统一渲染路径：胶囊开关只许走共享 ToggleSwitch（皮肤全局生效的前提）。
+       出现新的散装实现（label+checkbox 胶囊）= 换肤时它不变 = 又「不统一」。 */
+    const switchScatter = [];
+    const scanDirs238 = [join(ROOT, "src", "features"), join(ROOT, "src", "components")];
+    const walk238 = (dir) => {
+      for (const ent of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, ent.name);
+        if (ent.isDirectory()) { walk238(p); continue; }
+        if (!ent.name.endsWith(".tsx") && !ent.name.endsWith(".ts")) continue;
+        const t = readFileSync(p, "utf8");
+        if (t.includes('className="bot-switch') || t.includes('className="auto-switch') || t.includes('className="switch"')) {
+          switchScatter.push(relative(ROOT, p));
+        }
+      }
+    };
+    for (const d of scanDirs238) walk238(d);
+    (switchScatter.length === 0 ? ok : fail)(
+      `【234】胶囊开关统一走 ToggleSwitch（散装实现清零；命中：${switchScatter.join(", ") || "无"}）`
+    );
   }
 
 }

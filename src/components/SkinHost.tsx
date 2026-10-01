@@ -25,6 +25,11 @@ export type SkinHostProps = {
   /** 预览模式：禁用交互（工坊网格里防误触） */
   preview?: boolean;
   className?: string;
+  /**
+   * 占位归一（全局统一的关键）：宿主锁定到该宽高（px），社区元素超出时等比缩小
+   * （只缩不放）。同屏控件因此等高，不再出现「一颗大圆球混在胶囊里」。
+   */
+  fit?: { w: number; h: number };
 };
 
 /** 取元素里「最深的有字节点」的宿主元素（document 序里最后一个带直接文本的最深元素）。 */
@@ -50,7 +55,7 @@ function labelTarget(root: ShadowRoot): HTMLElement | null {
   return best;
 }
 
-export function SkinHost({ elementId, label, checked, disabled, onToggle, preview, className }: SkinHostProps) {
+export function SkinHost({ elementId, label, checked, disabled, onToggle, preview, className, fit }: SkinHostProps) {
   const hostRef = useRef<HTMLSpanElement>(null);
   const toggleRef = useRef(onToggle);
   toggleRef.current = onToggle;
@@ -58,6 +63,10 @@ export function SkinHost({ elementId, label, checked, disabled, onToggle, previe
   stateRef.current = { checked: Boolean(checked), disabled: Boolean(disabled), preview: Boolean(preview) };
 
   const [cat, id] = elementId.includes("/") ? [elementId.slice(0, elementId.indexOf("/")), elementId.slice(elementId.indexOf("/") + 1)] : ["", elementId];
+  // fit 以稳定字符串进依赖（调用点常写内联字面量，对象引用每次渲染都变 ⇒ 不稳定）
+  const fitKey = fit ? `${fit.w}x${fit.h}` : "";
+  const fitRef = useRef(fit);
+  fitRef.current = fit;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -76,6 +85,22 @@ export function SkinHost({ elementId, label, checked, disabled, onToggle, previe
       const mount = document.createElement("div");
       mount.innerHTML = item.html;
       root.appendChild(mount);
+      // ⓪ 占位归一：宿主锁 fit 尺寸，内容超了等比缩小（只缩不放；transform 不影响布局）
+      const fit = fitRef.current;
+      if (fit) {
+        host.style.width = `${fit.w}px`;
+        host.style.height = `${fit.h}px`;
+        host.style.display = "inline-flex";
+        host.style.alignItems = "center";
+        host.style.justifyContent = "center";
+        host.style.overflow = "visible";
+        const inner = mount.firstElementChild as HTMLElement | null;
+        const w = inner?.offsetWidth ?? 0;
+        const h = inner?.offsetHeight ?? 0;
+        const s = Math.min(1, w > 0 ? fit.w / w : 1, h > 0 ? fit.h / h : 1);
+        mount.style.transform = s < 1 ? `scale(${s})` : "";
+        mount.style.transformOrigin = "center center";
+      }
       // ① label 替换
       if (label != null && label !== "") {
         const target = labelTarget(root);
@@ -108,7 +133,7 @@ export function SkinHost({ elementId, label, checked, disabled, onToggle, previe
     return () => {
       disposed = true;
     };
-  }, [cat, id, label]);
+  }, [cat, id, label, fitKey]);
 
   // checked / disabled 变化 → 同步已有实例
   useEffect(() => {

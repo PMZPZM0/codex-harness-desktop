@@ -6,6 +6,7 @@ import { CircleGauge, Clock3, AlertTriangle, Bot, Check, Play, LogIn, Trash2, Pl
 import { OFFICIAL_MODELS } from "../../lib/official-models";
 import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
+import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { parseOpenaiUsagePanel, openaiResetText, extractQuotaBars } from "./OpenaiSubscriptionPage/01-usage-parsers";
 export { OpenaiBalanceBadge } from "./OpenaiSubscriptionPage/02-official-cards";
@@ -233,9 +234,7 @@ export function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, o
                 {a.planType ? <span className="openai-plan-badge">{a.planType.toUpperCase()}</span> : null}
                 {live && <span className="relay-plan-live"><Check size={11} />使用中</span>}
                 {a.disabled && <span className="acct-disabled-badge">已停用</span>}
-                <label className="bot-switch acct-switch" title={a.disabled ? (activeProvider && !a.active ? `已有供应商生效（一次只能启用一个），先停用再启用这个账号` : "已停用，点击启用") : "启用中，点击停用"} onClick={(event) => event.stopPropagation()}>
-                  <input type="checkbox" checked={!a.disabled} disabled={working === "tg" + a.id || (a.disabled && Boolean(activeProvider) && !a.active)} onChange={(event) => void toggleAccount(a.id, event.target.checked)} /><span />
-                </label>
+                <ToggleSwitch className="acct-switch" checked={!a.disabled} disabled={working === "tg" + a.id || (a.disabled && Boolean(activeProvider) && !a.active)} title={a.disabled ? (activeProvider && !a.active ? `已有供应商生效（一次只能启用一个），先停用再启用这个账号` : "已停用，点击启用") : "启用中，点击停用"} onChange={(next) => void toggleAccount(a.id, next)} />
               </div>
               <p className="openai-sub-line">订阅{a.subscriptionUntil ? "至 " + a.subscriptionUntil.slice(0, 10) : "生效中"} · {new Date(a.savedAt).toLocaleString()} 登录</p>
               {primary ? (

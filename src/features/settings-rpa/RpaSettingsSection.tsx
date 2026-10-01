@@ -7,6 +7,7 @@
 import { PageInfo } from "../../components/SettingsHead";
 import { Bot, Play, Trash2 } from "lucide-react";
 import { basename } from "../../lib/basename";
+import { ToggleSwitch } from "../../components/SettingsWidgets";
 
 export type RpaSettingsSectionProps = { rpaRecipes: any; rpaRunning: any; thread: any; setNotice: any; setRpaRunning: any; selectedModel: any; modelName: any; modelId: any; sandboxPolicy: any; sandbox: any; workspace: any; openAppConfirm: any; setRpaRecipes: any; taskList: any; setTaskList: any };
 
@@ -50,7 +51,7 @@ export function RpaSettingsSection(props: RpaSettingsSectionProps) {
                           {taskList.length === 0 && <li className="muted">清单为空。让 Codex 跑通流程时自主安排待办，无需手动添加。</li>}
                           {taskList.map((task: any) => (
                             <li key={task.id} className={task.status}>
-                              <label className="auto-switch" title={task.status === "done" ? "标记待办" : "标记完成"}><input type="checkbox" checked={task.status === "done"} onChange={() => { const next = task.status === "done" ? "todo" : "done"; void window.codex.updateTask({ id: task.id, patch: { status: next } }).then((updated: any) => setTaskList((current: any) => current.map((entry: any) => entry.id === updated.id ? updated : entry))).catch(() => undefined); }} /><i /></label>
+                              <ToggleSwitch checked={task.status === "done"} title={task.status === "done" ? "标记待办" : "标记完成"} onChange={() => { const next = task.status === "done" ? "todo" : "done"; void window.codex.updateTask({ id: task.id, patch: { status: next } }).then((updated: any) => setTaskList((current: any) => current.map((entry: any) => entry.id === updated.id ? updated : entry))).catch(() => undefined); }} />
                               <span className="rpa-task-text">{task.text}</span>
                               <span className={`rpa-task-priority ${task.priority}`}>{task.priority === "high" ? "高" : task.priority === "low" ? "低" : "中"}</span>
                               <button className="icon-button" title="删除" onClick={() => { void window.codex.deleteTask(task.id).then(() => { setTaskList((current: any) => current.filter((entry: any) => entry.id !== task.id)); setNotice(`任务「${task.name || task.id}」已删除`); }).catch((error: any) => setNotice(`删除任务失败：${error?.message ?? error}`)); }}><Trash2 size={13} /></button>
