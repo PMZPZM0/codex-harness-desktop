@@ -211,7 +211,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                         </div>
                         <div className="settings-toggle-row">
                           <span className="settings-toggle-icon"><Code2 size={16} /></span>
-                          <span className="settings-toggle-text"><strong>写代码模式（代码钩子）</strong><small>{capabilityHint("writing-code") ?? "开启时启用 ponytail 注入开关、ponytail 插件及其 6 个子技能（audit / debt / gain / help / review 等），钩子生效、注入精简工程规则；关闭后钩子静默跳过，回复更快。日常聊天建议关闭。默认开启。"}</small></span>
+                          <span className="settings-toggle-text"><strong>写代码模式（代码钩子）</strong><small>{capabilityHint("writing-code") ?? "开启时启用 ponytail 注入开关、ponytail 插件及其 6 个子技能（audit / debt / gain / help / review 等），钩子生效、注入精简工程规则；关闭后钩子静默跳过，回复更快。日常聊天建议关闭。默认关闭，开关状态重启后保持不变。"}</small></span>
                           <ToggleSwitch checked={ponytailOn} disabled={groupBusy === "writing-code"} label="写代码模式（代码钩子）" onChange={(next) => void applyGroup("writing-code", next)} />
                         </div>
                         <p className="settings-card-hint">这两个是能力总闸：开关直接决定 Codex 引擎能不能用对应能力，并联动其下的 MCP、技能与插件（例如桌面自动化会一并启停 nuphus MCP 与 desktop-automation 技能）。在技能 / MCP / 插件页点关这些子项时会提示你回到这里操作，保证状态一致。</p>

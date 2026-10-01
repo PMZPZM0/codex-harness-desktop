@@ -15,7 +15,7 @@ import "@xterm/xterm/css/xterm.css";
 import { translateEngineNotice } from "../../../../lib/engine-notices-zh";
 import { performRelayLogin, resolveRelayAutoTarget, resolveRelayTarget, resolveRelayKeyTarget, writeRelayActive, readRelayActive, type RelayActive } from "../../../../lib/relay";
 import {
-  ponytailSubSkills, planAction, applyAction, isEmptyAction, groupState, describePartial, guardOffOwner,
+  ponytailSubSkills, planAction, applyAction, isEmptyAction, describePartial, guardOffOwner,
   findCapabilitySkill, findCapabilitySkills, syncedSnapshot, samePluginId,
   PONYTAIL_PLUGIN_ID, NUPHUS_MCP_ID, DESKTOP_SKILL_ID, BROWSER_SKILL_ID, BROWSER_SKILL_IDS, GROUP_LABELS,
   type CapabilityGroupId, type SubToggleSnapshot, type GroupIpc, type MemberKey,
@@ -192,7 +192,8 @@ bag.bootHealRef = bootHealRef as typeof bag.bootHealRef;
           window.codex.readAppSettings().catch(() => ({}) as Record<string, unknown>),
           // 写代码模式真实落盘状态：~/.config/ponytail/config.json:defaultMode。
           // 不能拿 ponytailOn 的 useState 默认值当真——那只是 UI 初始值，不是落盘状态。
-          (window.codex.ponytailModeGet?.() ?? Promise.resolve("full")).catch(() => "full"),
+          // ⛔ 兜底一律 "off"（10-01 用户令：写代码模式默认关），不许 "full"。
+          (window.codex.ponytailModeGet?.() ?? Promise.resolve("off")).catch(() => "off"),
           window.codex.request("plugin/list", { cwds: bag.workspace ? [bag.workspace] : [], forceRefetch: false }).catch(() => ({ marketplaces: [] })),
         ]);
         const ponytailPluginEntry = ((pluginResult.marketplaces ?? []) as any[])
@@ -200,7 +201,10 @@ bag.bootHealRef = bootHealRef as typeof bag.bootHealRef;
           .find((plugin: any) => plugin.installed && samePluginId(plugin.id, PONYTAIL_PLUGIN_ID));
         const snapshot: SubToggleSnapshot = {
           ponytailOn: pluginMode !== "off",
-          ponytailPluginOn: ponytailPluginEntry?.enabled !== false,
+          // ⛔ 未安装 ≠ 启用：entry 为 undefined 时这里必须是 false —— 曾经写
+          // `entry?.enabled !== false`，未装时算出 true，把整组判成 partial，
+          // 启动自愈顺着 partial 就把用户关掉的写代码模式拉回开启（10-01 用户反馈）。
+          ponytailPluginOn: ponytailPluginEntry ? ponytailPluginEntry.enabled !== false : false,
           ponytailSkills: ponytailSubSkills(skills as any[]),
           desktopAuto: settings.desktopAutomation !== false,
           browserAuto: settings.browserAutomation !== false,
@@ -209,21 +213,24 @@ bag.bootHealRef = bootHealRef as typeof bag.bootHealRef;
           browserSkills: findCapabilitySkills(skills, BROWSER_SKILL_IDS),
         };
         let healed = false;
+        // ⛔⛔ 自愈只**拉齐子项**，方向必须取自各总闸自己的**落盘状态**
+        //    （写代码模式 = config.json 的 defaultMode；桌面/浏览器 = app-settings 总闸），
+        //    ⛔ 不许由 groupState 的 partial 反推方向 —— partial 里混进一个假 on
+        //    （如上面插件未装误判启用）就会把用户关掉的总闸重新打开。
+        const healTargets: Record<CapabilityGroupId, boolean> = {
+          "writing-code": snapshot.ponytailOn,
+          "desktop-automation": snapshot.desktopAuto,
+          "browser-automation": snapshot.browserAuto,
+        };
         for (const groupId of ["writing-code", "desktop-automation", "browser-automation"] as CapabilityGroupId[]) {
-          // ⛔⛔ 自愈的**目标态必须取自用户上次的整体选择**，⛔ 不许一律 true ——
-          //    一律 true 的含义是"每次开机都把三个总闸拉回开启"：用户关掉写代码模式，
-          //    重启就被重新打开（09-27 用户反馈）。自愈的本职是**拉齐组内子项**（比如
-          //    总闸开了但某个子技能还关着），方向由总闸自己的状态决定：
-          //      · 整组 off（用户关的）⇒ 目标关，把没跟上关的子项补齐关；
-          //      · on / partial ⇒ 目标开（沿用"开箱即用"的装机默认，partial 拉齐成全开）。
-          const target = groupState(snapshot, groupId) !== "off";
+          const target = healTargets[groupId];
           const plan = planAction(snapshot, groupId, target);
           if (isEmptyAction(plan)) continue;
           await applyAction(plan, bag.groupIpc);
           healed = true;
         }
         if (!healed) return;
-        bag.setPonytailOn(await window.codex.ponytailModeGet?.().catch(() => "full") !== "off");
+        bag.setPonytailOn(await window.codex.ponytailModeGet?.().catch(() => "off") !== "off");
         bag.setMcpOverrides(await window.codex.readMcpServerOverrides().catch(() => ({}) as Record<string, boolean>));
         bag.setLocalSkills(await window.codex.listLocalSkills());
         await bag.refreshSettingsResources();
