@@ -197,6 +197,9 @@ export function layaInstall(): Promise<{ ok: boolean; log: string }> {
       clearTimeout(timer); installing = false;
       lines.push(`pip install → exit ${code}`);
       const { installed } = pipShow();
+      // 装成即后台预热（拉起 laya-serve + 下载权重 ~700MB）：进度在设置页 Laya 卡片实时可见，
+      // 等用户真发消息时服务已就绪——发送链的判定才配得上「立刻透出来」。
+      if (installed) void ensureService().catch((err) => log(`安装后预热失败: ${String(err).slice(0, 120)}`));
       resolve({ ok: code === 0 && installed, log: lines.join("\n") });
     });
   });
@@ -309,26 +312,45 @@ export async function layaDecide(state: string, questions: Record<string, unknow
  * state = 用户消息（截 4000 字），输出 low/medium/high/xhigh + confidence。
  * 置信度 < 0.45 ⇒ abstain（返回 null，调用方回落手选档）——Laya 的置信度是校准过的，
  * 低置信硬判不如不判（README 的 gating 惯例：≥0.85 自动执行，这里放宽到「低于就弃权」）。
+ *
+ * ⛔⛔ 延迟纪律（10-01 用户实测教训：「自动档要立刻透出来，延迟高就没用了」）：
+ *   ① **只用已就绪的服务，绝不为了挑一档去拉起服务**（首启要下 700MB 权重）——
+ *     未就绪就弃权 null，同时后台预热（下次发消息就能真判）；
+ *   ② 3 秒硬超时兜底（服务就绪时判定 ~200ms，3s 都到不了说明环境有病，弃权）；
+ *   发送链**永远不等模型**。
  */
+const DECIDE_EFFORT_TIMEOUT_MS = 3_000;
+
 export async function layaDecideEffort(text: string): Promise<{ effort: string; confidence: number } | null> {
-  const answers = await layaDecide(text.slice(0, 4000), {
-    effort: {
-      type: "choice",
-      instructions: "用户即将给 AI 编程助手发这条消息。按完成它需要的推理深度选一档思考强度。",
-      criteria: {
-        low: "改错别字、格式化、一句话小修、简单问答，几乎不动脑",
-        medium: "日常开发、改一个函数、排查一个明确的小问题",
-        high: "多文件改动、原因不明的 bug、需要仔细分析的任务",
-        xhigh: "大型重构、架构设计、极难的问题、长链路多步任务",
+  if (!proc || !ready) {
+    // 后台预热（不阻塞发送；权重下载进度在 设置 → 开发工具 的 Laya 卡片可见）
+    void ensureService().catch((err) => log(`预热失败: ${String(err).slice(0, 120)}`));
+    return null;
+  }
+  const run = (async () => {
+    const answers = await layaDecide(text.slice(0, 4000), {
+      effort: {
+        type: "choice",
+        instructions: "用户即将给 AI 编程助手发这条消息。按完成它需要的推理深度选一档思考强度。",
+        criteria: {
+          low: "改错别字、格式化、一句话小修、简单问答，几乎不动脑",
+          medium: "日常开发、改一个函数、排查一个明确的小问题",
+          high: "多文件改动、原因不明的 bug、需要仔细分析的任务",
+          xhigh: "大型重构、架构设计、极难的问题、长链路多步任务",
+        },
       },
-    },
-  });
-  const ans = answers.effort as { choice?: string; confidence?: number } | undefined;
-  const choice = String(ans?.choice ?? "").toLowerCase();
-  const confidence = Number(ans?.confidence ?? 0);
-  if (!["low", "medium", "high", "xhigh"].includes(choice)) return null;
-  if (!(confidence >= 0.45)) return null;
-  return { effort: choice, confidence };
+    });
+    const ans = answers.effort as { choice?: string; confidence?: number } | undefined;
+    const choice = String(ans?.choice ?? "").toLowerCase();
+    const confidence = Number(ans?.confidence ?? 0);
+    if (!["low", "medium", "high", "xhigh"].includes(choice)) return null;
+    if (!(confidence >= 0.45)) return null;
+    return { effort: choice, confidence };
+  })();
+  return Promise.race([
+    run,
+    new Promise<null>((resolve) => setTimeout(() => { log("effort 判定超时（3s），弃权回落手选档"); resolve(null); }, DECIDE_EFFORT_TIMEOUT_MS)),
+  ]);
 }
 
 /** 应用退出时收服务进程。 */
