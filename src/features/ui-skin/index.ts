@@ -5,3 +5,5 @@
 export { UiSkinWorkshop } from "./SkinPicker";
 export { SKIN_SLOTS, type SkinSlotId } from "./skin-slots";
 export { UI_SKIN_CATALOG, UI_SKIN_CATS, type UiSkinCatalogEntry } from "./catalog.gen";
+export type { UiSkinPack } from "../../lib/ui-skin/packs.gen";
+export { UI_SKIN_PACKS } from "../../lib/ui-skin/packs.gen";

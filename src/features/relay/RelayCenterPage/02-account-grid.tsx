@@ -4,6 +4,7 @@
  */
 import { AlertTriangle, ArrowUpRight, Bot, Check, ChevronDown, Clock3, Copy, Eye, EyeOff, FolderTree, Plus, Play, RefreshCw, Settings2, Sparkles, Trash2, X, Zap, CircleCheck, ChevronRight, Wallet, LogIn } from "lucide-react";
 import { Spinner } from "../../../components/CardShell";
+import { ToggleSwitch } from "../../../components/SettingsWidgets";
 
 type Props = {
   accounts: any[];
@@ -35,9 +36,7 @@ export function RelayCenterPageAccountGrid({ accounts, activeProvider, isActiveP
                     <strong title={a.email}>{a.email}</strong>
                     {live && <span className="relay-plan-live"><Check size={11} />使用中</span>}
                     {a.disabled && <span className="acct-disabled-badge">已停用</span>}
-                    <label className="bot-switch acct-switch" title={a.disabled ? (activeProvider && !a.active ? `已有供应商生效（一次只能启用一个），先停用再启用这个账号` : "已停用，点击启用") : "启用中，点击停用"} onClick={(event) => event.stopPropagation()}>
-                      <input type="checkbox" checked={!a.disabled} disabled={working === `tg${a.id}` || (a.disabled && Boolean(activeProvider) && !a.active)} onChange={(event) => void toggleAccount(a.id, event.target.checked)} /><span />
-                    </label>
+                    <ToggleSwitch className="acct-switch" checked={!a.disabled} disabled={working === `tg${a.id}` || (a.disabled && Boolean(activeProvider) && !a.active)} title={a.disabled ? (activeProvider && !a.active ? `已有供应商生效（一次只能启用一个），先停用再启用这个账号` : "已停用，点击启用") : "启用中，点击停用"} onChange={(next) => void toggleAccount(a.id, next)} />
                   </div>
                   <p>{String(a.baseUrl || "").replace(/^https?:\/\//, "")}</p>
                   <p>{keyCount == null ? "密钥未读取" : `${keyCount} 把密钥`}{a.selectedKeyName ? ` · 当前 ${a.selectedKeyName}` : ""}</p>

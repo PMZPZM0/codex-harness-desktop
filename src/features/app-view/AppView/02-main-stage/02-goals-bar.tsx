@@ -138,6 +138,7 @@ import {
   CheckCheck,
 } from "lucide-react";
 import { FlowDiagram } from "../../../../components/FlowDiagram";
+import { ToggleSwitch } from "../../../../components/SettingsWidgets";
 import type { HarnessAppApi } from "../../../app-state/useHarnessApp";
 
 export function MainStageGoalsBar({ app }: { app: HarnessAppApi }) {
@@ -207,9 +208,7 @@ export function MainStageGoalsBar({ app }: { app: HarnessAppApi }) {
                             <ul className="rpa-task-list goals-task-list">
                               {taskList.map((task: any) => (
                                 <li key={task.id} className={task.status === "done" ? "done" : ""}>
-                                  <label className="auto-switch" title={task.status === "done" ? "标记待办" : "标记完成"}>
-                                    <input type="checkbox" checked={task.status === "done"} onChange={() => { const next = task.status === "done" ? "todo" : "done"; void window.codex.updateTask({ id: task.id, patch: { status: next } }).then(() => setTaskList((current: any[]) => current.map((t: any) => (t.id === task.id ? { ...t, status: next } : t)))); }} />
-                                  </label>
+                                  <ToggleSwitch checked={task.status === "done"} title={task.status === "done" ? "标记待办" : "标记完成"} onChange={() => { const next = task.status === "done" ? "todo" : "done"; void window.codex.updateTask({ id: task.id, patch: { status: next } }).then(() => setTaskList((current: any[]) => current.map((t: any) => (t.id === task.id ? { ...t, status: next } : t)))); }} />
                                   <span className="rpa-task-text">{task.text}</span>
                                   <button className="icon-button" title="删除" onClick={() => { void window.codex.deleteTask(task.id).then(() => setTaskList((current: any[]) => current.filter((t: any) => t.id !== task.id))); }}><X size={12} /></button>
                                 </li>

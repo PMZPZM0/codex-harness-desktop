@@ -10,7 +10,7 @@ export type ActionStatus = "pending" | "running" | "done" | "error" | "interrupt
 export function Spinner() {
   // 控件皮肤（用户可换）：绑定了 Uiverse 加载器 ⇒ 皮肤宿主渲染；未绑定走默认转圈。
   const skin = useSkinBinding("loader");
-  if (skin) return <SkinHost elementId={skin} className="ui-skin-loader" aria-label="加载中" />;
+  if (skin) return <SkinHost elementId={skin} fit={{ w: 18, h: 18 }} className="ui-skin-loader" aria-label="加载中" />;
   return <span className="spinner" aria-label="加载中" />;
 }
 

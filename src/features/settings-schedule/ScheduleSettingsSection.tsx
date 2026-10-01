@@ -7,6 +7,7 @@
 import { emptyScheduleDraft } from "../../hooks/useScheduler";
 import { Clock3, Info, ListFilter, MessageSquare, PenLine, Play, Plus, Trash2 } from "lucide-react";
 import { basename } from "../../lib/basename";
+import { ToggleSwitch } from "../../components/SettingsWidgets";
 
 export type ScheduleSettingsSectionProps = { setScheduleDraft: any; workspace: any; setAutoFormVisible: any; scheduledTasks: any; toggleSchedule: any; describeSchedule: any; runSchedule: any; editSchedule: any; deleteSchedule: any; keepAwake: any; setKeepAwake: any; idleTemplates: any; cronTemplates: any; setScheduledTasks: any; setNotice: any };
 
@@ -29,7 +30,7 @@ export function ScheduleSettingsSection(props: ScheduleSettingsSectionProps) {
                               <div className="auto-card-head">
                                 <strong title={task.name}>{task.name}</strong>
                                 <span className="auto-card-tag">{task.kind === "once" || task.scheduleType === "once" ? "一次性任务" : (task.kind === "interval" || task.kind === undefined && !task.rrule ? "循环任务" : "周期任务")}</span>
-                                <label className="auto-switch" title={task.enabled ? "停用" : "启用"}><input type="checkbox" checked={task.enabled} onChange={() => void toggleSchedule(task)} /><i /></label>
+                                <ToggleSwitch checked={task.enabled} title={task.enabled ? "停用" : "启用"} onChange={() => void toggleSchedule(task)} />
                               </div>
                               <p className="auto-card-desc" title={task.prompt}>{task.prompt}</p>
                               <div className="auto-card-meta"><Clock3 size={13} /><span>运行计划</span><b>{describeSchedule(task)}</b></div>

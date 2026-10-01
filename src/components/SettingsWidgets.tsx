@@ -184,12 +184,15 @@ export function ToggleSwitch({
   disabled,
   label,
   title,
+  className,
   onChange,
 }: {
   checked: boolean;
   disabled?: boolean;
   label?: string;
   title?: string;
+  /** 附加类（布局钩子，如 acct-switch 的 margin-left:auto） */
+  className?: string;
   onChange: (next: boolean) => void;
 }) {
   /* 控件皮肤（用户可换）：绑定了 Uiverse 元素 ⇒ 用皮肤宿主渲染（Shadow DOM 隔离），
@@ -203,6 +206,7 @@ export function ToggleSwitch({
         checked={checked}
         disabled={disabled}
         onToggle={(next) => { if (!disabled) onChange(next); }}
+        fit={{ w: 34, h: 21 }}
         className="ui-skin-toggle"
       />
     );
@@ -214,7 +218,7 @@ export function ToggleSwitch({
       aria-checked={checked}
       aria-label={label ?? (checked ? "停用" : "启用")}
       title={title ?? (checked ? "点击停用" : "点击启用")}
-      className={`toggle-switch ${checked ? "on" : "off"} ${disabled ? "disabled" : ""}`}
+      className={`toggle-switch ${checked ? "on" : "off"} ${disabled ? "disabled" : ""} ${className ?? ""}`}
       disabled={disabled}
       onClick={(event) => {
         event.stopPropagation();
