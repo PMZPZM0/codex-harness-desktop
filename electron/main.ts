@@ -99,6 +99,7 @@ import "./features/user-ipc";
 import "./features/remote-ipc";
 import "./features/memory-rpa-ipc";
 import "./features/phone-harness-ipc";
+import "./features/laya-service";
 import "./features/fs-ipc";
 /* 桌面宠物（09-30）：IPC 域 + 浮窗。侧效应 import ⇒ handler 立即注册（早于 whenReady）。 */
 import "./features/pet-ipc";

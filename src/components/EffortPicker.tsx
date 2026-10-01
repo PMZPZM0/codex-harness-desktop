@@ -54,7 +54,7 @@ export function effortColor(level: string, index = 0): string {
  *  · **拖动中绝不提交**：释放（pointerup/keyup）才 onCommit —— 提交会落库（IPC），拖动经过
  *    中间档位会反复触发、还会把选中的档位覆盖回去（09-16 真机踩过）；点标签则立即提交。
  *  · 弹窗 createPortal + fixed：底栏在滚动容器里，absolute 浮层会被裁掉（09-17 踩过）。 */
-export function EffortPicker({ levels, value, labels, disabled, modelId, onCommit }: {
+export function EffortPicker({ levels, value, labels, disabled, modelId, autoMode, autoAvailable, autoHint, onAutoToggle, onCommit }: {
   levels: string[];
   value: string;
   labels: Record<string, string>;
@@ -63,6 +63,12 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, onCommi
    *  见 src/lib/effort-support.ts）。⚠️ 每次**打开弹窗时重读**一次而不是靠父组件 state：
    *  降档可能发生在别的窗口、也可能刚被记下，打开时读才一定是最新的。 */
   modelId?: string;
+  /** Laya 自动档（10-01）：开启后发送前由 laya 本地判断档位，滑块不参与 */
+  autoMode?: boolean;
+  autoAvailable?: boolean;
+  /** 自动档不可用时的原因提示（未安装等） */
+  autoHint?: string;
+  onAutoToggle?: (on: boolean) => void;
   onCommit: (next: string) => void;
 }) {
   const index = Math.max(0, levels.indexOf(value));
@@ -124,13 +130,13 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, onCommi
         className="effort-trigger"
         disabled={disabled}
         onClick={() => (open ? setOpen(false) : openPanel())}
-        title={`思考强度：${labels[value] ?? value}（点开调整）`}
-        style={{ "--effort-color": triggerColor } as CSSProperties}
+        title={autoMode ? "思考强度：自动（Laya 智能判断，点开调整）" : `思考强度：${labels[value] ?? value}（点开调整）`}
+        style={{ "--effort-color": autoMode ? "#14b8a6" : triggerColor } as CSSProperties}
         aria-haspopup="dialog"
         aria-expanded={open}
       >
         <Zap size={12} className="effort-trigger-icon" aria-hidden />
-        <span className="effort-trigger-label">{labels[value] ?? value}</span>
+        <span className="effort-trigger-label">{autoMode ? "自动" : labels[value] ?? value}</span>
         <ChevronDown size={11} className="effort-trigger-caret" aria-hidden />
       </button>
       {open && anchor ? createPortal(
@@ -145,7 +151,22 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, onCommi
             <strong>思考强度</strong>
             <span>越往右，Codex 想得越久、越细</span>
           </div>
-          <div className={`effort-picker-bar${isMax ? " burn" : ""}`}>
+          {/* Laya 自动档（10-01）：开启后发送前由本地 laya 模型判档，滑块让位 */}
+          {onAutoToggle && (
+            <div className={`effort-picker-auto${autoMode ? " on" : ""}${autoAvailable ? "" : " unavailable"}`}>
+              <button
+                type="button"
+                className="effort-picker-auto-btn"
+                title={autoAvailable ? "发送前由本地 Laya 模型（33ms）判断该用哪档：小改动自动降、大任务自动升，省时省钱" : autoHint}
+                onClick={() => { onAutoToggle(!autoMode); if (!autoMode) setOpen(false); }}
+              >
+                <Zap size={13} />
+                <span><b>自动（Laya 智能判断）</b><small>{autoMode ? "已开启：每条消息发送前自动判档" : autoAvailable ? "发送前自动选 低/中/高/极高" : autoHint ?? "未安装"}</small></span>
+                <span className={`effort-picker-auto-state${autoMode ? " on" : ""}`}>{autoMode ? "开" : "关"}</span>
+              </button>
+            </div>
+          )}
+          <div className={`effort-picker-bar${isMax ? " burn" : ""}${autoMode ? " disabled" : ""}`} aria-hidden={autoMode}>
             {/* 未选段 = 一条线 */}
             <div className="effort-picker-track" aria-hidden />
             {/* 已选段 = 液体 + 灯带（宽度=已选比例；渐变铺满整条再裁，颜色对齐档位） */}
@@ -174,6 +195,7 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, onCommi
               max={levels.length - 1}
               step={1}
               value={draft}
+              disabled={autoMode}
               aria-label="思考强度"
               aria-valuetext={labels[shown] ?? shown}
               onChange={(event) => setDraft(Number(event.target.value))}

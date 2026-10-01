@@ -542,6 +542,12 @@ contextBridge.exposeInMainWorld("codex", {
   currentSoulMarket: () => __ipc("soul-market:current", 0, []),
   /* 应用人格（slug=null 还原默认）：写 personalization.persona + 同步 $CODEX_HOME/AGENTS.md，新会话即生效 */
   applySoulMarket: (input: { slug: string | null }) => __ipc("soul-market:apply", 1, [input]),
+  /* Laya 智能判断：服务/安装状态（pip 包 + laya-serve 进程 + 权重就绪） */
+  layaStatus: () => __ipc("laya:status", 0, []),
+  /* 安装/更新 laya[serve]（pip 清华镜像；torch 大，20 分钟超时）；权重由服务首启时经 hf-mirror 拉取 */
+  layaInstall: () => __ipc("laya:install", 0, []),
+  /* 思考等级自动判断（choice: low/medium/high/xhigh + 校准置信度；置信 <0.45 弃权返回 null，调用方回落手选档） */
+  layaDecideEffort: (text: string) => __ipc("laya:decide-effort", 1, [text]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

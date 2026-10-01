@@ -6,6 +6,7 @@
  * ⛔ 本段语句只引用「自己的局部声明」与 bag；跨段名字由组合根按入参转交。
  */
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { declaredModelEfforts } from "../../../../../lib/effort";
 import "@xterm/xterm/css/xterm.css";
 import { copyTextToClipboard } from "../../../../../lib/clipboard";
 import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens, isImagePart, imagePartSrc, normalizeImagePartForSend } from "../../../../../lib/prompt-images";
@@ -97,6 +98,61 @@ bag.applyEffort = applyEffort as typeof bag.applyEffort;
     bag.applyEffort(value);
   }
 bag.changeEffort = changeEffort as typeof bag.changeEffort;
+
+  /* ── Laya 思考等级自动切换（10-01 用户立项：「内置一个 laya 判断模型，自动切换思考等级」）──
+     effortAuto 是**全局开关**（localStorage），不进 effort 值域（⛔ normalizeEffort 会把非白名单
+     值洗成 high——auto 走独立布尔就零侵入）。发送链（send.tsx）在 effortAuto 开启时先调
+     resolveAutoEffort 拿判定档：laya 33ms choice（低/中/高/极高）+ 校准置信度；置信 <0.45 或
+     服务未装/失败 ⇒ null ⇒ 回落 bag.effort（手选档），判断器是增强不是依赖。 */
+  const [effortAuto, setEffortAuto] = useState(() => localStorage.getItem("effort-auto-v1") === "1");
+bag.effortAuto = effortAuto as typeof bag.effortAuto;
+
+  function changeEffortAuto(on: boolean) {
+    setEffortAuto(on);
+    localStorage.setItem("effort-auto-v1", on ? "1" : "0");
+  }
+bag.changeEffortAuto = changeEffortAuto as typeof bag.changeEffortAuto;
+
+  async function resolveAutoEffort(text: string): Promise<string | null> {
+    try {
+      const result = await window.codex.layaDecideEffort(text);
+      if (!result?.effort) return null;
+      // ⛔ 模型实际声明档过滤：判定档不被支持时降到相邻可用档（发送失败自动降档是兜底，别主动踩）
+      const supported = declaredModelEfforts((bag.selectedModel as any)?.supportedReasoningEfforts ?? undefined);
+      if (supported.length && !supported.includes(result.effort)) {
+        const order = ["low", "medium", "high", "xhigh"];
+        const idx = order.indexOf(result.effort);
+        const near = [order[idx - 1], order[idx + 1]].filter((x): x is string => Boolean(x) && supported.includes(x));
+        if (!near.length) return null;
+        return near[0];
+      }
+      return result.effort;
+    } catch {
+      return null; // laya 未装/未就绪/超时 —— 判断器是增强，静默降级到手选档
+    }
+  }
+bag.resolveAutoEffort = resolveAutoEffort as typeof bag.resolveAutoEffort;
+
+  // Laya 安装/就绪状态（供 EffortPicker 自动档的可用性展示；15s 轮询够——状态变化低频）
+  const [layaInstalled, setLayaInstalled] = useState(false);
+  const [layaReady, setLayaReady] = useState(false);
+bag.layaInstalled = layaInstalled as typeof bag.layaInstalled;
+bag.layaReady = layaReady as typeof bag.layaReady;
+
+  useEffect(() => {
+    let alive = true;
+    const poll = async () => {
+      try {
+        const s = await window.codex.layaStatus();
+        if (!alive) return;
+        setLayaInstalled(Boolean(s?.installed));
+        setLayaReady(Boolean(s?.ready));
+      } catch { /* 未装时 IPC 也返回结构化状态，不该炸 */ }
+    };
+    void poll();
+    const timer = setInterval(poll, 15000);
+    return () => { alive = false; clearInterval(timer); };
+  }, []);
 
   // ⛔「声明被取消后回落」的补正 effect 已删除（09-18）：模型档位声明不存在了，
   //   菜单恒为全集，任何档位都是合法选择 —— 不支持的档位交给发送时的自动降档兜底。

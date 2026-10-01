@@ -10,6 +10,7 @@ import { ArrowDown, BookOpen, CircleCheck, Copy, Download, ExternalLink, Globe2,
 import { Spinner } from "../../components/CardShell";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { PhoneHarnessCard } from "./PhoneHarnessCard";
+import { LayaCard } from "./LayaCard";
 
 export type DevtoolsSettingsSectionProps = { downloadSource: any; changeDownloadSource: any; capabilityRows: any; capabilityError: any; VoiceDevToolsSection: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any };
 
@@ -125,6 +126,8 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
                     {/* 手机控制（09-27）：上游 phone-harness 是 Python CLI 不是 MCP 服务，
                         所以不做连接器模板，做成工具卡：装机 + 关遥测 + 注册技能 + 权限引导。 */}
                     <PhoneHarnessCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} />
+                    {/* Laya 智能判断（10-01）：思考等级「自动」档的本地决策端（Python laya-serve）。 */}
+                    <LayaCard setNotice={setNotice} />
                   </section>
     </>
   );
