@@ -197,11 +197,22 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
        ⛔ 用户语义映射：专家团主会话与专家团调度 =「专家团」；成员与专家调度 =「专家」；
        子智能体调度 =「代理」；普通会话（main）**无标签**。 */
     const delegateKind = bag.delegateRecords[entry.id]?.kind;
+    // 团队成员数（10-01 用户反馈）：专家市场包装出来的是**只有主理人的团队**（members 空），
+    // 它的会话应该挂「专家」徽标，不该跟多成员专家团混用「专家团」。
+    const entryTeamId = bag.teamThreadsIndex[entry.id];
+    const entryTeamMemberCount = entryTeamId
+      ? (bag.expertTeams.find((team) => team.teamId === entryTeamId)?.members?.length ?? 0)
+      : -1;
+    const leadBadge = entryTeamMemberCount === 0 ? { tone: "expert", label: "专家" } : { tone: "team", label: "专家团" };
     const sourceBadge = variant === "lead" || delegateKind === "team"
-      ? { tone: "team", label: "专家团" }
+      ? leadBadge
       : variant === "member" || delegateKind === "expert"
         ? { tone: "expert", label: "专家" }
         : delegateKind === "subagent" ? { tone: "agent", label: "代理" } : null;
+    /* 兜底（10-01）：分类视图里主理人会话是**普通行**渲染（variant/调度记录都没有），
+       但 teamThreadsIndex 知道它属于哪个团队 ⇒ 同样按成员数给「专家/专家团」徽标，
+       不然专家团主理人会在分类视图里光溜溜地混进普通会话。成员行（variant=member）不适用。 */
+    const fallbackTeamBadge = !sourceBadge && variant !== "member" && entryTeamId ? leadBadge : null;
     return (
     <div
       className={`thread-row ${bag.thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${bag.threadRowMenu?.id === entry.id ? "menu-open" : ""} ${poppedOut ? "popped-out" : ""}${variant === "member" ? " is-member-row" : ""}${bag.delegateRecords[entry.id] ? " is-delegated-row" : ""}`}
@@ -209,7 +220,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
       data-thread-id={entry.id}
     >
       <button title={entry.rolloutMissing ? "该会话的历史记录文件已丢失，无法打开" : poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : bag.runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : bag.unreadDoneIds.has(entry.id) ? "任务已完成，点击查看" : "双击修改任务名称"} onClick={() => { bag.clearThreadDoneUnread(entry.id); if (poppedOut) { bag.showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } if (entry.rolloutMissing) { bag.showToast("会话记录已丢失", "该会话的历史记录文件（rollout）已不在磁盘上，引擎无法恢复内容。可归档该会话，或新建会话继续。"); return; } void bag.openThread(entry.id); }}>
-        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void bag.openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void bag.renameThread(entry.id, next); }); }}>{sourceBadge && <span className={`thread-source-badge tone-${sourceBadge.tone}`} title={`来源：${sourceBadge.label}`}>{sourceBadge.label}</span>}<span title={rawTitle}>{displayTitle}</span>{bag.delegateRecords[entry.id] ? <DispatchBadge record={bag.delegateRecords[entry.id]} /> : null}{extras?.badge}{entry.rolloutMissing && <span className="thread-attention-badge tone-confirm" title="会话的历史记录文件已丢失，点开只能看到提示">记录丢失</span>}{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
+        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void bag.openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void bag.renameThread(entry.id, next); }); }}>{sourceBadge && <span className={`thread-source-badge tone-${sourceBadge.tone}`} title={`来源：${sourceBadge.label}`}>{sourceBadge.label}</span>}{!sourceBadge && fallbackTeamBadge && <span className={`thread-source-badge tone-${fallbackTeamBadge.tone}`} title={`来源：${fallbackTeamBadge.label}`}>{fallbackTeamBadge.label}</span>}<span title={rawTitle}>{displayTitle}</span>{bag.delegateRecords[entry.id] ? <DispatchBadge record={bag.delegateRecords[entry.id]} /> : null}{extras?.badge}{entry.rolloutMissing && <span className="thread-attention-badge tone-confirm" title="会话的历史记录文件已丢失，点开只能看到提示">记录丢失</span>}{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
       </button>
       <div className="thread-actions">
         <button className={`thread-pin-button ${bag.pinnedThreads.includes(entry.id) ? "pinned" : ""}`} title={bag.pinnedThreads.includes(entry.id) ? "取消置顶" : "置顶会话"} onClick={(event) => { event.stopPropagation(); bag.togglePinThread(entry.id); }}><Pin size={13} /></button>
@@ -269,8 +280,11 @@ bag.clusterSplit = clusterSplit as typeof bag.clusterSplit;
         {/* 折叠态显示的就是**主会话行**（用户 09-14：「默认折叠状态，只展示一个专家团的主会话就行」
             +「归档和三个点是在主会话上，子会话不用」）。
             直接复用 renderThreadRow，主会话自带归档/更多/菜单；额外挂一个展开箭头；
-            展开体只补成员会话，不重复主会话。 */}
-        {cluster.lead ? bag.renderThreadRow(cluster.lead, "lead", {
+            展开体只补成员会话，不重复主会话。
+            ⛔ 10-01 用户反馈「专家团怎么还有展开按键」：专家市场包装出来的是**只有主理人的团队**
+            （members 空）——展开体里什么都没有，展开键是死的 ⇒ 零成员团队退化为普通主会话行，
+            不挂展开键、不做聚簇（徽标由 renderThreadRow 按成员数判成「专家」）。 */}
+        {cluster.lead && cluster.members.length === 0 ? bag.renderThreadRow(cluster.lead, "lead") : cluster.lead ? bag.renderThreadRow(cluster.lead, "lead", {
           actions: (
             <button className="thread-cluster-toggle" title={expanded ? "收起成员会话" : `展开 ${clusterTotal} 个会话`} onClick={(event) => { event.stopPropagation(); bag.toggleTeamCluster(cluster.teamId); }}>
               <ChevronDown size={14} className={expanded ? "open" : ""} />
