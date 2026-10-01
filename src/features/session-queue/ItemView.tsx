@@ -6,6 +6,7 @@
 /** ItemView（从 src/App.tsx 原样搬来）。多处共用 ⇒ 单独成模块，不复制一份。 */
 import { isCompactionItem } from "../../lib/compaction-item.mjs";
 import { ThreadItem } from "../../lib/thread-item";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Turn } from "../../lib/turn";
 import { UserMessageView } from "../shared/UserMessageView";
 import { MessageFooter } from "../shared/MessageFooter";
@@ -68,21 +69,7 @@ export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWi
     return <CommandExecutionCard item={item} waitingForApproval={waitingForApproval} turnActive={turnActive} />;
   }
   if (item.type === "fileChange") {
-    const changes = item.changes ?? [];
-    const stats = changes.reduce((sum: { added: number; deleted: number }, change: any) => { const next = diffStats(change.diff ?? ""); return { added: sum.added + next.added, deleted: sum.deleted + next.deleted }; }, { added: 0, deleted: 0 });
-    const editing = item.status === "inProgress" || item.status === "running";
-    const status: ActionStatus = editing ? "running" : "done";
-    const fileNames = changes.map((change: any) => basename(change.path ?? change.filePath ?? "文件")).join("、") || "文件";
-    return (
-      <ActionCard icon={<FileCode2 size={13} />} verb={editing ? "正在编辑" : "已编辑"} info={fileNames ? <code>{fileNames}</code> : undefined} status={status} statusText={<><b>+{stats.added}</b> <i>-{stats.deleted}</i></>}>
-        {changes.length > 0 && changes.map((change: any, idx: number) => (
-          <div key={idx} className="action-diff">
-            <strong>{change.path ?? change.filePath ?? "文件"}</strong>
-            <ProgressiveToolPayload itemId={`${item.id}-diff-${idx}`} text={String(change.diff ?? "")} active={turnActive} language="diff" />
-          </div>
-        ))}
-      </ActionCard>
-    );
+    return <FileChangeCard item={item} turnActive={turnActive} />;
   }
   if (item.type === "mcpToolCall" || item.type === "dynamicToolCall") {
     const title = item.type === "mcpToolCall" ? `${item.server} / ${item.tool}` : item.tool;
@@ -195,6 +182,45 @@ function payloadLanguage(text: string): string {
 export function ProgressiveAgentBody({ itemId, text, active, footer, onOpenFile }: { itemId: string; text: string; active?: boolean; footer?: React.ReactNode; onOpenFile?: (path: string) => void }) {
   const { displayed, revealing } = usePacketRevealText(itemId, text, Boolean(active), bufferedAgentRevealStarts, 24);
   return <div className={`message-body markdown ${revealing ? "packet-revealing" : ""}`}><Markdown>{displayed}</Markdown>{!revealing ? <InlineFileCards text={text} onOpenFile={onOpenFile} /> : null}{!revealing ? footer : null}</div>;
+}
+
+/** fileChange 卡（10-01 从 ItemView 主链抽出：diff 的流式揭示是 hook，不能挂在条件分支里）。
+ *  ⛔ 数字动态变化（用户点名，对标「✏ codex-market.ts +88 -56」）：stats 基于**已揭示的 diff**
+ *  实时累计——编辑流式进行中头部 +N -N 逐行跳，揭示完 = 全量（与展开体一致）；
+ *  切会话回来重挂载时 hook 一次性补齐存量 ⇒ 数字直接是全量（不假播）。 */
+function ChangeDiffRow({ id, path, diff, active, onStats }: { id: string; path: string; diff: string; active?: boolean; onStats: (id: string, s: { added: number; deleted: number }) => void }) {
+  const { displayed, revealing } = usePacketRevealText(id, diff, Boolean(active), bufferedToolRevealStarts, 48);
+  const stats = useMemo(() => diffStats(displayed), [displayed]);
+  useEffect(() => { onStats(id, stats); }, [id, stats.added, stats.deleted]);
+  return (
+    <div className="action-diff">
+      <strong>{path}</strong>
+      <ToolCodeBlock language="diff" text={displayed} revealing={revealing} />
+    </div>
+  );
+}
+
+function FileChangeCard({ item, turnActive }: { item: ThreadItem; turnActive?: boolean }) {
+  const changes = (item.changes ?? []) as any[];
+  const full = useMemo(() => changes.reduce((sum: { added: number; deleted: number }, change: any) => { const next = diffStats(String(change.diff ?? "")); return { added: sum.added + next.added, deleted: sum.deleted + next.deleted }; }, { added: 0, deleted: 0 }), [item.id]);
+  const liveRef = useRef<Record<string, { added: number; deleted: number }>>({});
+  const [live, setLive] = useState<{ added: number; deleted: number }>({ added: 0, deleted: 0 });
+  const onStats = useCallback((id: string, s: { added: number; deleted: number }) => {
+    liveRef.current[id] = s;
+    setLive(Object.values(liveRef.current).reduce((sum, x) => ({ added: sum.added + x.added, deleted: sum.deleted + x.deleted }), { added: 0, deleted: 0 }));
+  }, []);
+  const editing = item.status === "inProgress" || item.status === "running";
+  const status: ActionStatus = editing ? "running" : "done";
+  const fileNames = changes.map((change: any) => basename(change.path ?? change.filePath ?? "文件")).join("、") || "文件";
+  // 头部数字：揭示进行中用实时累计（live）；未挂载/已完成用全量（full）——两态数值揭示完一致
+  const shown = live.added || live.deleted ? live : full;
+  return (
+    <ActionCard icon={<FileCode2 size={13} />} verb={editing ? "正在编辑" : "已编辑"} info={fileNames ? <code>{fileNames}</code> : undefined} status={status} statusText={<><b>+{shown.added}</b> <i>-{shown.deleted}</i></>}>
+      {changes.map((change: any, idx: number) => (
+        <ChangeDiffRow key={idx} id={`${item.id}-diff-${idx}`} path={change.path ?? change.filePath ?? "文件"} diff={String(change.diff ?? "")} active={turnActive} onStats={onStats} />
+      ))}
+    </ActionCard>
+  );
 }
 
 export function ProgressiveToolPayload({ itemId, text, active, className, language }: { itemId: string; text: string; active?: boolean; className?: string; language?: string }) {
