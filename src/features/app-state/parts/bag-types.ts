@@ -688,7 +688,6 @@ export interface Bag {
   setHelpKey: React.Dispatch<React.SetStateAction<import("../../../components/HelpDialog.tsx").HelpTopic | null>>;
   archiveToast: { name: string; token: number; } | null;
   setArchiveToast: React.Dispatch<React.SetStateAction<{ name: string; token: number; } | null>>;
-  showModelGuide: boolean;
   setShowModelGuide: React.Dispatch<React.SetStateAction<boolean>>;
   quickSetupBusy: boolean;
   setQuickSetupBusy: React.Dispatch<React.SetStateAction<boolean>>;
@@ -698,7 +697,6 @@ export interface Bag {
   setRelaySetupBusy: React.Dispatch<React.SetStateAction<boolean>>;
   relaySetupError: string;
   setRelaySetupError: React.Dispatch<React.SetStateAction<string>>;
-  modelGuideDoneRef: React.RefObject<boolean>;
   envCheckOpen: boolean;
   setEnvCheckOpen: React.Dispatch<React.SetStateAction<boolean>>;
   envInstalling: boolean;
@@ -1164,6 +1162,10 @@ export interface Bag {
   envSpecs: { id: string; why: string; core: boolean; go?: "model" | undefined; fallbackName: string; }[];
   envItems: import("../../../components/EnvCheckDialog.tsx").EnvCheckState[];
   installEnvMissing: (ids: string[]) => Promise<void>;
+  envSkipped: string[];
+  skipEnvItem: (id: string) => void;
+  envFailures: Record<string, string>;
+  setEnvFailures: (v: Record<string, string>) => void;
   envProgress: string;
   envPercent: number | undefined;
   envStage: string | undefined;

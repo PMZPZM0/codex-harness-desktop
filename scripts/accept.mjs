@@ -306,80 +306,32 @@ const CHECKS = [
     },
   },
   {
-    id: "laya-auto",
-    name: "⑲ Laya 思考等级自动档（开发工具卡 / 自动开关 / 规则升档实时透出 / 手选立即生效）",
+    id: "onboarding-2",
+    name: "⑲ 首启引导 2.0（只弹开发工具 / 无模型引导 / 无镜像切换 / 行内安装与跳过）",
     run: async (h) => {
-      // 为什么断言这一条：10-01 用户立项 laya 自动档并三次纠偏（没进度 / 延迟高 / 等级不透出）。
-      // 判定分两层：规则锚点（架构/重构/拆分 ⇒ xhigh，0ms 纯本地，不依赖模型权重）+ laya 模型
-      // （低/中分辨）。e2e 只验确定性链路：UI 在位、开关持久、规则路径芯片实时透出、手选立即
-      // 覆盖；模型判定质量不在 e2e 范围（需 700MB 权重，离线矩阵已验：模型对「中以上」压缩，
-      // 已改混合判定）。
-      // ① 设置 → 开发工具有 Laya 卡
+      // 为什么断言这一条：10-01 用户定稿首启引导收敛——① 删模型配置引导（只弹开发工具）；
+      // ② 镜像源统一国内、不暴露切换选项；③ 每工具状态机（待装/下载中/安装中/成功/失败重试/跳过）。
+      // 弹窗本身由「缺推荐项」触发，e2e profile 工具齐全不弹——这里验的是**结构与反面**：
+      // ① 组件库/开发工具设置页不再有「下载源」选择器（镜像切换不暴露给用户）
       await h.eval(`(function(){ document.querySelector('.sidebar-settings')?.click(); return 1; })()`);
       await wait(1400);
       const nav = await h.eval(`(function(){ const items=[...document.querySelectorAll('.settings-nav button')];
         const i=items.findIndex((b)=>(b.textContent||'').includes('开发工具')); if(i>=0) items[i].click(); return i; })()`);
-      await wait(1200);
-      const card = await h.eval(`!!document.querySelector('.laya-card')`);
-      h.check("① 开发工具有「Laya 智能判断」卡（安装入口在位）", nav >= 0 && card, `nav=${nav} card=${card}`);
+      await wait(1100);
+      const noSelector = await h.eval(`!document.querySelector('.devtools-source-row')`);
+      h.check("① 开发工具页无「下载源」切换器（统一国内镜像，不暴露选项）", nav >= 0 && noSelector, `nav=${nav} noSelector=${noSelector}`);
 
-      // 关设置回主界面（设置弹窗右上角 ✕：aria-label 或 lucide-x 图标钮）
+      // ② 模型引导不复活：渲染树无 .model-guide（组件已删；老 profile 配过模型更不该弹）
+      const noGuide = await h.eval(`!document.querySelector('.model-guide')`);
+      h.check("② 无模型配置引导弹窗（渲染树清零）", noGuide, `noGuide=${noGuide}`);
+
+      // ③ 关设置，回主界面确认体检弹窗没有误弹（profile 工具齐全 ⇒ 不该弹）
       await h.eval(`(function(){ const btns=[...document.querySelectorAll('.settings-modal button')];
         const x=btns.find((b)=>(b.getAttribute('aria-label')||'').includes('关闭')||b.querySelector('.lucide-x'));
         if (x) x.click(); return 1; })()`);
-      await wait(1000);
-
-      // ② 思考强度弹窗里的自动档开关：在位、能打开（开成功时面板按设计自动收起 ⇒ 重开读状态）
-      await h.eval(`document.querySelector('.effort-trigger')?.click()`);
-      await wait(700);
-      const autoRow = await h.eval(`!!document.querySelector('.effort-picker-auto-btn')`);
-      const wasOn = await h.eval(`document.querySelector('.effort-picker-auto')?.classList.contains('on')`);
-      if (!wasOn) { await h.eval(`document.querySelector('.effort-picker-auto-btn')?.click()`); await wait(400); }
-      // 面板已自动收起：重开读真实状态（存 localStorage，重开必然反映）
-      await h.eval(`document.querySelector('.effort-trigger')?.click()`);
-      await wait(700);
-      const nowOn = await h.eval(`document.querySelector('.effort-picker-auto')?.classList.contains('on')`);
-      h.check("② 自动档开关在位且可打开", autoRow && nowOn === true, `row=${autoRow} ${wasOn}→${nowOn}`);
-
-      // 关弹窗（再点触发器）
-      await h.eval(`document.querySelector('.effort-trigger')?.click()`);
-      await wait(500);
-
-      // ③ 规则锚点实时透出：草稿含 架构/重构/拆分 ⇒ 芯片 ≤2.5s 变「自动 · 极高」
-      //   （预判 700ms 防抖 + 规则 0ms；不走 laya 模型——权重下载不在 e2e 范围）
-      await h.eval(`(function(){
-        const el=document.querySelector('.composer-editor');
-        el?.focus(); document.execCommand('selectAll', false, null);
-        document.execCommand('insertText', false, '把整个项目的状态层重构并迁移到新架构，按功能域拆分模块树');
-        return 1; })()`);
-      let chip3 = "";
-      for (let i = 0; i < 10; i++) {
-        await wait(500);
-        chip3 = await h.eval(`document.querySelector('.effort-trigger-label')?.textContent || ""`);
-        if (chip3.includes("极高") || chip3.includes("高")) break;
-      }
-      h.check("③ 规则升档实时透出：难任务草稿 → 芯片「自动 · 极高」", /自动.*极高/.test(chip3), chip3);
-
-      // ④ 手选立即覆盖：点档位刻度（低→高两连击）⇒ 芯片立刻跟着变（不发送也生效）
-      //   （commit 有 next!==value 守卫：当前档恰好等于所点档时不触发——两连击+变化断言免疫）
-      await h.eval(`document.querySelector('.effort-trigger')?.click()`);
-      await wait(600);
-      const seen = [];
-      for (const i of [0, 2]) {
-        await h.eval(`(function(){
-          const ticks=[...document.querySelectorAll('.effort-picker-ticks button')];
-          ticks[${i}]?.click(); return 1; })()`);
-        await wait(400);
-        seen.push(await h.eval(`document.querySelector('.effort-trigger-label')?.textContent || ""`));
-      }
-      const chip4 = seen[seen.length - 1] ?? "";
-      h.check("④ 手选立即覆盖：自动模式下点刻度芯片立刻跟随（≥1 次可见变化）",
-        seen.some((s) => /^自动 · /.test(s) && !/极高/.test(s)), `seen=${seen.join(" → ")}`);
-
-      // ⑤ 持久化 + 收尾还原：开关状态在 localStorage，验完清掉不污染后续
-      const persist = await h.eval(`localStorage.getItem('effort-auto-v1') === '1'`);
-      h.check("⑤ 自动开关持久化（localStorage v1）", persist === true, `v1=${persist}`);
-      await h.eval(`localStorage.removeItem('effort-auto-v1')`);
+      await wait(900);
+      const noEnv = await h.eval(`!document.querySelector('.env-check-modal')`);
+      h.check("③ 工具齐全时体检弹窗不弹（缺推荐项才弹）", noEnv, `noEnv=${noEnv}`);
     },
   },
 ];
@@ -414,7 +366,7 @@ async function enterMain(h) {
 const LATEST_ROUND = "10-01";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
-  "laya-auto": "10-01",
+  "onboarding-2": "10-01",
   "file-card-edit": "09-26",
   "settings-pages": "09-25",
   "shot-editor": "09-24",

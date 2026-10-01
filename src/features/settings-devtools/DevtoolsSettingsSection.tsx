@@ -12,21 +12,14 @@ import { copyTextToClipboard } from "../../lib/clipboard";
 import { PhoneHarnessCard } from "./PhoneHarnessCard";
 import { LayaCard } from "./LayaCard";
 
-export type DevtoolsSettingsSectionProps = { downloadSource: any; changeDownloadSource: any; capabilityRows: any; capabilityError: any; VoiceDevToolsSection: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any };
+export type DevtoolsSettingsSectionProps = { downloadSource?: any; capabilityRows: any; capabilityError: any; VoiceDevToolsSection: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any };
 
 export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
-  const { downloadSource, changeDownloadSource, capabilityRows, capabilityError, VoiceDevToolsSection, setNotice, devRuntimes, runtimeInstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime } = props;
+  const { capabilityRows, capabilityError, VoiceDevToolsSection, setNotice, devRuntimes, runtimeInstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime } = props;
   return (
     <>
       <section className="settings-section stack">
-                    <div className="settings-copy"><h2>开发工具<PageInfo text={<>桌面与浏览器自动化（Nuphus / Playwright CLI）与写代码模式插件随应用内置、开箱即用；CloakBrowser 指纹浏览器、两类浏览器内核与其余工具链按需下载（下载源可自选，失败自动回落官方源），安装后自动加入 Codex 环境（不改系统 PATH）。</>} helpKey="devtools" label="开发工具" /></h2></div>
-                    {/* 下载源选择（09-20 用户「下载太慢，所有工具下载加下载源选择」）：对本页所有按需下载生效，
-                        runtime:install 每次现读 app-settings —— 切完源下一次下载立即生效，无需重启。 */}
-                    <div className="devtools-source-row" role="group" aria-label="下载源选择">
-                      <span className="settings-subhead"><Download size={13} />下载源</span>
-                      <AppSelect value={downloadSource} onChange={(v) => changeDownloadSource(v as typeof downloadSource)} options={[{ value: "auto", label: "自动（国内优先：镜像/加速在前，直连兜底）" }, { value: "mirror", label: "国内镜像优先（npmmirror / gh 加速）" }, { value: "ghproxy", label: "GitHub 加速 · gh-proxy" }, { value: "ghfast", label: "GitHub 加速 · ghfast" }, { value: "direct", label: "官方直连" }, { value: "proxy", label: "本机代理优先" }]} className="accel-select" ariaLabel="选择下载源" />
-                      <span className="settings-card-hint">下载慢就换个源，下一次下载立即生效；带「回落」的选项失败后会自动改走官方源。浏览器内核只认「自动 / 国内镜像 / 官方直连」，其余按自动处理。</span>
-                    </div>
+                    <div className="settings-copy"><h2>开发工具<PageInfo text={<>桌面与浏览器自动化（Nuphus / Playwright CLI）与写代码模式插件随应用内置、开箱即用；CloakBrowser 指纹浏览器、两类浏览器内核与其余工具链按需下载（国内镜像优先，失败自动回落官方源），安装后自动加入 Codex 环境（不改系统 PATH）。</>} helpKey="devtools" label="开发工具" /></h2></div>
                     {/* 「当前能力链路」（09-21）：回答"现在实际走哪条" —— 原先这些规则散在技能文案与代码
                         注释里，用户只能看到零散的安装状态，出问题无法判断走的是哪条。判据的唯一来源见
                         electron/capability-registry.ts（⛔ 前端只渲染，不自己算）。 */}

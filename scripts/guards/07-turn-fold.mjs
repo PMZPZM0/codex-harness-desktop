@@ -624,13 +624,13 @@ export async function run() {
     const appEnv = readAppUi();
     const specCount = (envC.match(/\{ id: "(?:model|workspace|git|rg|pwsh|python|jq|sevenzip)"/g) || []).length;
     // 09-20 用户定稿「工作区不要必选，就保留工具下载」：工作区移出体检 ⇒ 7 项（必备 4 + 常用 3）
-    (specCount === 7 && !envC.includes('id: "workspace"'))
-      ? ok("【32】环境体检 7 项齐全且无工作区（模型/Git/ripgrep/PowerShell 7 + Python/jq/7-Zip）")
-      : fail(`【32】体检项异常（${specCount} 项或含工作区）—— 用户 09-20 定稿：工作区移出、必备 4 + 常用 3`);
+    (specCount === 6 && !envC.includes('id: "workspace"') && !envC.includes('id: "model"'))
+      ? ok("【32】环境体检 6 项齐全且无工作区/模型（Git/ripgrep/PowerShell 7 + Python/jq/7-Zip）")
+      : fail(`【32】体检项异常（${specCount} 项或含工作区/模型）—— 10-01 定稿：模型移出、推荐 3 + 按需 3`);
     const coreCount = (envC.match(/core: true/g) || []).length;
-    (coreCount === 4)
-      ? ok("【32】必备项 4 项（模型/Git/ripgrep/PowerShell 7；工作区已按 09-20 口径移出）")
-      : fail(`【32】必备项变成 ${coreCount} 项 —— 弹窗触发条件会跟着偏`);
+    (coreCount === 3)
+      ? ok("【32】推荐项 3 项（Git/ripgrep/PowerShell 7；模型已按 10-01 口径移出）")
+      : fail(`【32】推荐项变成 ${coreCount} 项 —— 弹窗触发条件会跟着偏`);
     (/id: "pwsh", fallbackName: "PowerShell 7", core: true/.test(envC))
       ? ok("【32】PowerShell 7 在体检必备组（终端默认 shell，缺失会退回 5.1）")
       : fail("【32】PowerShell 7 不在体检必备组 —— 新用户终端会静默退回 PowerShell 5.1");
@@ -643,16 +643,16 @@ export async function run() {
     (/await window\.codex\.installRuntime\(id\)/.test(appEnv))
       ? ok("【32】「一键安装」真的调了 installRuntime")
       : fail("【32】一键安装没接 installRuntime —— 按钮是摆设");
-    (/const MANUAL_IDS = new Set\(\["model"\]\)/.test(envC))
-      ? ok("【32】installableIds 排除了 model（它不是可安装的运行时；workspace 已移出体检）")
-      : fail("【32】installableIds 没排除 model —— 一键安装会拿它调 installRuntime 并失败");
+    (/!item\.skipped\)\.map\(\(item\) => item\.id\)/.test(envC))
+      ? ok("【32】installableIds 排除了跳过项（用户说不要的就不再硬塞进一键安装）")
+      : fail("【32】installableIds 没排除 skipped —— 跳过的工具会被一键安装硬塞回去");
     (/ENV_CHECK_OPTOUT_KEY/.test(envC) && /localStorage\.getItem\(ENV_CHECK_OPTOUT_KEY\)/.test(appEnv))
       ? ok("【32】「不再提示」真的被读（勾了就不再弹）")
       : fail("【32】optout 标记没被读 —— 用户勾了「不再提示」还会每次被弹");
     // 后台安装（09-18 用户：「加一个后台安装功能，弹窗要知道缩小，安装完成自动消失」；
     // 起因：Python 下载挂住时弹窗卡死、安装中禁一切关闭，用户只能重启）
-    (/setEnvCheckOpen\(false\); \/\/ 后台化/.test(appEnv))
-      ? ok("【32】一键安装点下去弹窗立刻收起（安装转后台，右下角角标接管进度）")
+    (/setEnvCheckOpen\(false\)/.test(appEnv))
+      ? ok("【32】批量安装转后台（弹窗收起、角标接管进度；单工具安装保持弹窗看自己的进度）")
       : fail("【32】一键安装还是阻塞式弹窗 —— 下载一挂住整个界面被卡死只能重启");
     (/envInstalling && !envCheckOpen/.test(appEnv) && /env-install-pill/.test(appEnv))
       ? ok("【32】后台安装角标在渲染树里（进度实时显示、点开回弹窗、装完自动消失）")
@@ -793,13 +793,12 @@ export async function run() {
       && !/throw new Error\("该工具正在安装"\)/.test(mainSrc))
       ? ok("【37】同工具并发安装改为「等它跑完」（不再抛「该工具正在安装」）")
       : fail("【37】runtime:install 又会在并发时抛错 —— 用户点「一键安装」会撞上「该工具正在安装」并整批中断");
-    (/for \(const id of ids\) \{\s*try \{[\s\S]{0,400}?failed\.push\(/.test(appSrc)
-      && /failed\.length === ids\.length/.test(appSrc))
-      ? ok("【37】体检批量安装逐项容错（一项失败不再中断其余，并区分全败/部分完成）")
-      : fail("【37】installEnvMissing 又变回「循环外一个 try」—— 任何一项失败会让整批中断、清单原样不动");
-    (/!item\.ok && !item\.installing && !MANUAL_IDS\.has\(item\.id\)/.test(envSrc))
-      ? ok("【37】正在安装的项不算进「一键安装」（避免自己撞自己的并发守卫）")
-      : fail("【37】installableIds 没排除 installing —— 后台自愈安装中的项仍会被塞进批量安装");
+    (/failed\[id\] = String\(/.test(appSrc) && /Promise\.all\(\[worker\(\), worker\(\)\]\)/.test(appSrc))
+      ? ok("【37】体检批量安装=并发 2 队列逐项容错（一项失败记到那一项头上，其余照常）")
+      : fail("【37】installEnvMissing 的队列结构被破坏 —— 回到串行整批中断或丢容错");
+    (/!item\.ok && !item\.installing && !item\.skipped/.test(envSrc))
+      ? ok("【37】安装中/已跳过的项都不算进「一键安装」（前者避免自撞并发守卫，后者尊重用户）")
+      : fail("【37】installableIds 没排除 installing/skipped —— 自撞并发守卫或违背用户意愿");
   }
 
   // ⑰j 微信流式：**受平台配额约束的追加 + 「对方正在输入」**（09-18 恢复）。
@@ -990,23 +989,16 @@ export async function run() {
   {
     const appEnv = readAppUi();
     // 按注释锚点切出两个 effect 的块：在全文里裸正则容易误命中别处的同名字符串
-    const guideStart = appEnv.indexOf("模型配置引导（09-17 用户要求）");
-    const envStart = appEnv.indexOf("体检项（必备：模型");
-    const envEnd = appEnv.indexOf("设置弹窗「骨架先行」");
-    const guideBlock = guideStart >= 0 && envStart > guideStart ? appEnv.slice(guideStart, envStart) : "";
-    const envBlock = envStart >= 0 && envEnd > envStart ? appEnv.slice(envStart, envEnd) : "";
-    (guideBlock && /if \(showLogin\) return;/.test(guideBlock))
-      ? ok("【32】模型引导在登录页不弹（只在主界面弹）")
-      : fail("【32】模型引导没有登录页判断 —— 登录时会被引导打断");
-    (/if \(!customModel\) setShowModelGuide\(true\)/.test(guideBlock))
-      ? ok("【32】已配模型时不弹模型引导（直接走工具检测）")
-      : fail("【32】模型引导的判据变了 —— 已配好模型的用户会被再引导一遍");
-    (envBlock && /\[threadsLoading, showLogin, showModelGuide, customModel, workspace(?:, [A-Za-z]+)*\]/.test(envBlock))
-      ? ok("【32】体检依赖含 showModelGuide —— 模型引导关掉后体检会补上（允许追加依赖，不许删它）")
-      : fail("【32】体检 effect 依赖里没有 showModelGuide —— 没配模型时关掉引导后体检永远不弹");
-    (/setEnvCheckOpen\(false\);[\s\S]{0,60}?setShowModelGuide\(false\);[\s\S]{0,60}?setShowLogin\(true\);/.test(appEnv))
-      ? ok("【32】登出时两个引导弹窗一起收起（重登不重现）")
-      : fail("【32】登出没收起引导弹窗 —— 重新登录后旧弹窗会突然冒出来");
+    // ⛔ 10-01 用户定稿：模型配置引导整体删除（首启只弹「开发工具」引导）——
+    //   断言从「引导在位」翻转为「引导清零」；体检触发/登录链路各自独立成立。
+(!/showModelGuide/.test(appEnv) ? ok : fail)("【32】模型引导状态全仓清零（app-ui 层不许再有 showModelGuide）");
+    (!/ModelSetupGuide/.test(appEnv) ? ok : fail)("【32】ModelSetupGuide 渲染清零（不许再有引导弹窗挂树）");
+    (/if \(missingCore\.length > 0\) setEnvCheckOpen\(true\);/.test(appEnv) && !/deferredByModel/.test(appEnv))
+      ? ok("【32】体检独立触发：缺推荐项就弹（不再因「没配模型」推迟 —— 旧语义已随引导删除）")
+      : fail("【32】体检触发链被破坏 —— 要么不再弹，要么还在等一个已删除的前置");
+    (/setEnvCheckOpen\(false\);[\s\S]{0,60}?setShowLogin\(true\);/.test(appEnv))
+      ? ok("【32】登出时体检弹窗收起（重登不重现）")
+      : fail("【32】登出没收起体检弹窗 —— 重新登录后旧弹窗会突然冒出来");
   }
 
   // ⑱ src/lib/*.mjs 是**纯 JS**（node 直接 import 执行），不得出现 TS 语法。
@@ -2671,83 +2663,25 @@ export async function run() {
 
 
 {
-  // ── 【70】模型配置引导（09-19 用户三连反馈后定稿的形态）────────────────────
-  //   1) 「排版太丑……弹窗提醒的优化一下展示」→ 四入口做成一行标签，一次只展开一个；
-  //   2) 「中转站登录呢」→ 弹窗里补上中转站账户登录（登录页有的入口不能只在登录页有）；
-  //   3) 「不要吸在输入框上面吧 / 输入框里面的删了」→ 删掉输入框内的提示条，
-  //      入口改到**左侧栏的「模型配置」菜单**；
-  //   4) 「如果在登录界面配置过了，就不要弹这个弹窗了」→ 落持久标记，配过一次永不再弹。
-  const guideSrc70 = readFileSync(join(ROOT, "src", "components", "ModelSetupGuide.tsx"), "utf8");
+  // ── 【70】模型配置引导（⛔ 10-01 用户定稿：整体删除，首启只弹「开发工具」引导）──────
+  //   登录页的快捷配置链路（handleLogin / markModelConfigured / 持久标记）是登录页自己的
+  //   能力，必须保留；删除的只是引导弹窗组件、其状态与「一键配好」死链。
   const appSrc70 = readAppUi();
   const cssSrc70 = readStyles();
-  const relaySrc70 = readFileSync(join(ROOT, "src", "lib", "relay.ts"), "utf8");
-
-  // ① 一键配置快路仍在（新手只需要粘一个 Key）
-  (/onQuickSetup/.test(guideSrc70) ? ok : fail)("【70】引导弹窗内嵌一键配置（不再只给跳转按钮）");
-  (/model-guide-key/.test(guideSrc70) ? ok : fail)("【70】引导里有 Key 输入框（新手只需粘一个 Key）");
-  (/model-guide-line/.test(guideSrc70) ? ok : fail)("【70】引导里可选接入线路");
-  (/lines=\{PPTokenEndpoints\}/.test(appSrc70) ? ok : fail)("【70】线路列表与登录页共用同一份数据（避免两处漂移）");
-  (/async function quickSetup\(/.test(appSrc70) && /await handleLogin\(\{ \.\.\.info, model: "" \}\)/.test(appSrc70) ? ok : fail)(
-    "【70】一键配置复用登录页那条成熟链路（不另写一套，避免漂移）"
+  (!existsSync(join(ROOT, "src", "components", "ModelSetupGuide.tsx")) ? ok : fail)(
+    "【70】ModelSetupGuide 组件文件已删除（不留死文件）"
   );
-
-  // ② 四条路径都在，且是「一行标签、一次展开一个」的排版（上一版全堆在一起，用户嫌丑）
-  (/model-guide-tabs/.test(guideSrc70) && /model-guide-tab /.test(guideSrc70) ? ok : fail)("【70】四入口是一行标签（teb 式，一次只展开一个 —— 排版不再挤成大长条）");
-  (/onGoManual/.test(guideSrc70) && /onGoSubscription/.test(guideSrc70) ? ok : fail)("【70】保留「我自己配完整表单」与「ChatGPT 订阅登录」两条原路径（熟手不能被牺牲）");
-  (/\.model-guide-tabs \{[\s\S]{0,120}?grid-template-columns: repeat\(4/.test(cssSrc70) ? ok : fail)("【70】标签栏样式存在（四列等宽）");
-
-  // ③ 中转站账户登录必须在弹窗里（用户第一句话问的就是它）
-  (/onRelayLogin/.test(guideSrc70) && /Wallet/.test(guideSrc70) ? ok : fail)("【70】引导弹窗里有「中转站账户」入口（登录页有、这里不能缺）");
-  (/relayQuickLogin/.test(appSrc70) && /onRelayLogin=\{/.test(appSrc70) ? ok : fail)("【70】App 侧把中转站登录接到了弹窗");
-  (/performRelayLogin/.test(appSrc70) && /export async function performRelayLogin/.test(relaySrc70) ? ok : fail)(
-    "【70】中转站登录链路两处共用同一实现（lib/relay.ts 的 performRelayLogin，不复制）"
+  (!/showModelGuide/.test(appSrc70) ? ok : fail)("【70】showModelGuide 全仓清零（状态/渲染/依赖都不留）");
+  (!/async function quickSetup\(/.test(appSrc70) ? ok : fail)("【70】quickSetup 死链已删（只喂引导弹窗的链路）");
+  (/MODEL_CONFIGURED_KEY/.test(appSrc70) && /markModelConfigured/.test(appSrc70) ? ok : fail)(
+    "【70】登录页配置链路与「已配置过」持久标记保留"
   );
-  (!/window\.codex\.relayLogin\(\{ baseUrl: relayDraft/.test(appSrc70) ? ok : fail)(
-    "【70】登录页不再自己写一份 relay 链路（已改走 performRelayLogin）"
-  );
-
-  // ④ 输入框内的提示条必须**删干净**（用户明令），入口改到侧栏
-  (!/setup-banner/.test(appSrc70) ? ok : fail)("【70】输入框内不再有「还没配模型」提示条（用户：「输入框里面的删了」）");
-  // 样式判据锚**选择器形态**（带 `{`）而不是裸词 —— 注释里讲历史时必然会提到这个类名
-  // （09-27 实测：换上来的新注释里写了 `.setup-banner`，裸词断言当场被自己误伤）
-  (!/\.setup-banner\s*\{/.test(cssSrc70) ? ok : fail)("【70】提示条的样式也一并删除（不留死样式）");
-  // ⛔ 09-27 用户**第三改**（原话：「模型配置选项删了」）：09-19 那句「输入框提示条删掉、入口改侧栏」
-  //   的下半段已作废 —— **侧栏入口本身也被删了**。模型配置的入口现在只剩两条：
-  //   设置页导航的「模型」页（常驻）＋ 未配模型时的引导弹窗（见下方 ⑤）。
-  //   下面两条由正向断言翻成**负向**（防回潮）：别再照着 09-19 的旧结论把侧栏入口加回来。
-  (!/needs-setup/.test(appSrc70) ? ok : fail)(
-    "【70】侧栏不再有「模型配置」未配置高亮（09-27 用户要求删掉该入口）"
-  );
-  (!/<Bot size=\{15\} \/><span>模型配置<\/span>/.test(appSrc70) ? ok : fail)(
-    "【70】侧栏不再有「模型配置」菜单（⛔ 不许按 09-19 的旧结论加回来）"
-  );
-  // 样式判据锚**选择器形态**而不是裸词：本文件自己的注释里会提到这两个类名（09-27 第三次踩同型坑）
-  (!/\.sidebar-tab\.needs-setup\s*\{|\.sidebar-tab-dot\s*\{/.test(cssSrc70) ? ok : fail)(
-    "【70】未配置高亮的样式已随入口一起删除（不留死样式）"
-  );
-  // 入口虽删，模型配置的**常驻**入口不能断：设置页导航里必须有「模型」页
   (/\["model", "模型"/.test(readFileSync(join(ROOT, "src", "features", "app-view", "helpers", "catalogs.ts"), "utf8")) ? ok : fail)(
-    "【70】设置页导航里仍有「模型」页（侧栏入口删掉后这是唯一的常驻入口）"
+    "【70】设置页导航里仍有「模型」页（引导删掉后的常驻入口）"
   );
-
-  // ⑤ 配过就不再弹（用户：「在登录界面配置过了，就不要弹这个弹窗了」）
-  (/MODEL_CONFIGURED_KEY/.test(appSrc70) ? ok : fail)("【70】有「模型已配置过」的持久标记");
-  (/if \(hadModelConfigured\(\)\) return;/.test(appSrc70) ? ok : fail)("【70】弹窗前先查标记 ⇒ 配过就不再弹");
-  (/markModelConfigured\(\);/.test(appSrc70) ? ok : fail)("【70】配置成功时落标记（登录页/引导/中转站三条路径都汇到 handleLogin，那里写最不容易漏）");
-
-  // ⑥ 未配模型时的既有联动不能被碰坏
-  (/if \(!customModel\) \{ dbg\.deferredByModel = true; return; \}/.test(appSrc70) ? ok : fail)(
-    "【70】未配模型时不弹环境体检（避免两个弹窗抢屏 —— 新手不知道该先干哪个）"
-  );
-  // ⛔ 同名分支有 3 处（另外两处是编辑重发/排队），必须锚**特征代码**才能命中 send() 里那处
-  const sendGuard70 = appSrc70.slice(appSrc70.indexOf("planOnceRef.current = false; // /plan 旗标不跨发送泄漏"), appSrc70.indexOf("planOnceRef.current = false; // /plan 旗标不跨发送泄漏") + 600);
-  (/setShowModelGuide\(true\)/.test(sendGuard70) && !/setNotice\("请先配置并启用自定义模型"\)/.test(sendGuard70) ? ok : fail)(
-    "【70】未配模型时发送直接打开配置引导（不再只弹一句看不懂的错）"
-  );
-  // 引导文案不得残留 markdown 星号（上一版把 `**…**` 原样显示出来了，用户看到的就是星号）
-  // ⛔ 必须**剥掉注释**再判：注释里写 `**强调**` 不会渲染到界面，拿全文去找会自己把自己顶红
-  const guideText70 = guideSrc70.replace(/\/\*[\s\S]*?\*\//g, "").split(/\r?\n/).map((l) => l.replace(/\/\/.*$/, "")).join("\n");
-  (!/\*\*/.test(guideText70) ? ok : fail)("【70】引导文案里没有未渲染的 markdown 星号（上一版界面上真的显示了 `**`）");
+  (!/deferredByModel/.test(appSrc70) ? ok : fail)("【70】「没配模型推迟体检」的旧语义已随引导删除（不许回来）");
+  // 引导专属样式不残留（⛔ 锚选择器形态而不是裸词，注释提到类名会自红）
+  (!/\.model-guide-tabs\s*\{/.test(cssSrc70) ? ok : fail)("【70】引导专属样式已随组件删除（不留死样式）");
 }
 
 

@@ -1463,3 +1463,16 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   100% { transform: translateX(385%); }
 }
 .laya-progress small { color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+
+/* ── 环境体检 2.0（10-01）：行内操作 / 失败态 / 跳过 ── */
+.env-check-row-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.env-check-badge.ok { color: var(--ok, #2e9e5b); border-color: var(--ok, #2e9e5b); }
+.env-check-badge.fail { color: var(--red, #d94f43); border-color: var(--red, #d94f43); }
+.env-check-row.skipped { opacity: 0.55; }
+.env-check-fail-why { color: var(--red, #d94f43); font-weight: 500; }
+.env-check-mini { padding: 3px 10px; font-size: 11.5px; }
+.env-check-skip {
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  font-size: 11px; padding: 3px 4px; border-radius: 6px; font-family: inherit;
+}
+.env-check-skip:hover { color: var(--text); background: rgba(0, 0, 0, 0.06); }

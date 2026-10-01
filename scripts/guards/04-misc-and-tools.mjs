@@ -202,11 +202,16 @@ console.log(C.bold("\n【工具下载源】设置持久化 + 三条下载通道�
     && /runBrowserDownload\(id, node, cli, \["install", "chromium"\], "浏览器内核", downloadSource\)/.test(mainSrc2))
     ? ok("主进程三条下载通道都接了 downloadSource（工具链 env / npm registry / 浏览器内核）")
     : fail("主进程没把下载源传下去 —— 选了源也只有部分通道生效");
-  // ③ 页面选择器在位：六个选项 + 保存走 app-settings（选完下一次下载生效）
-  //    09-28 起选择器是 AppSelect（options 数组），不再有 <option> 标签形态
-  (/changeDownloadSource/.test(appS) && /value: "ghfast"/.test(appS) && /saveAppSettings\(\{ downloadSource: next \}\)/.test(appS))
-    ? ok("开发工具页下载源选择器在位（六档选项，写入 app-settings 即时生效）")
-    : fail("开发工具页的下载源选择器被摘 —— 用户没法换源");
+  // ③ ⛔ 10-01 用户定稿：镜像切换不暴露给用户 —— 选择器必须被摘；主进程恒走国内优先 auto
+  //    （老用户存过的 direct/proxy 一律作废；general 页的源标签是只读展示，不算切换入口）
+  const devtoolsSrc = readFileSync(join(ROOT, "src", "features", "settings-devtools", "DevtoolsSettingsSection.tsx"), "utf8");
+  (!/changeDownloadSource/.test(devtoolsSrc) && !/下载源选择/.test(devtoolsSrc) && !/value: "ghfast"/.test(devtoolsSrc))
+    ? ok("开发工具页不再暴露下载源选择（统一国内镜像优先，失败自动回落官方源）")
+    : fail("下载源选择器还在 —— 用户不该看到镜像切换选项");
+  const drSrc = readFileSync(join(ROOT, "electron", "features", "dev-runtimes.ts"), "utf8");
+  (/return "auto";/.test(drSrc) && !/source === "proxy"/.test(drSrc))
+    ? ok("主进程 readDownloadSource 恒返 auto（旧存储的非国内源一律作废）")
+    : fail("readDownloadSource 还在读旧存储值 —— 老用户存过的官方直连会继续生效");
 }
   }
 

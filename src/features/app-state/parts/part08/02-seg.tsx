@@ -10,7 +10,7 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import "@xterm/xterm/css/xterm.css";
 import { matchModelSpec, loadExternalSpecs, formatTokenCount } from "../../../../lib/model-specs";
 import { ALL_EFFORTS } from "../../../../lib/effort";
-import { performRelayLogin, resolveRelayAutoTarget, resolveRelayTarget, resolveRelayKeyTarget, writeRelayActive, readRelayActive, type RelayActive } from "../../../../lib/relay";
+
 import { OFFICIAL_MODELS } from "../../../../lib/official-models";
 import { requestVoiceDictation, setVoiceDictationSendHandler, setVoiceOpenSettingsHandler, subscribeVoiceStage } from "../../../../voice/wave-level";
 import type { Bag } from "../bag-types";
@@ -105,56 +105,6 @@ bag.markModelConfigured = markModelConfigured as typeof bag.markModelConfigured;
   function hadModelConfigured() { try { return localStorage.getItem(bag.MODEL_CONFIGURED_KEY) === "1"; } catch { return false; } }
 bag.hadModelConfigured = hadModelConfigured as typeof bag.hadModelConfigured;
 
-  /**
-   * 引导弹窗里的「粘 Key 一键配好」（09-19 用户要求：让小白快速上手）。
-   *
-   * ⛔ 直接复用 handleLogin 的成熟链路（探测端点 → 导入全部模型 → 勾选生效模型 →
-   *   写入档案 → 进主界面 → toast 反馈），**不另写一套**：
-   *   两套链路必然漂移，且这条链路走过「探测失败不许进主界面」等一堆边界。
-   * ⛔ 与登录页的区别只在于**入口位置**：新手点了「暂时不登录直接进入」之后，
-   *   仍然能在引导弹窗里走同一条快路（原先这条快路只存在于登录页，跳过登录就再也找不到）。
-   */
-  async function quickSetup(info: { provider: string; name: string; baseUrl: string; apiKey: string }) {
-    bag.setQuickSetupBusy(true);
-    bag.setQuickSetupError("");
-    try {
-      const ok = await bag.handleLogin({ ...info, model: "" });
-      if (ok) {
-        bag.setShowModelGuide(false);
-        bag.markModelConfigured();   // ⛔ 配好即「永不再弹」（用户 09-19：「配置过了就不要弹这个弹窗了」）
-        bag.showToast("配置完成，可以开始了", `已启用 ${info.name} —— 直接在下面输入你的任务试试`);
-      } else {
-        bag.setQuickSetupError("没探测到可用模型。请确认：① Key 复制完整（末尾无空格）；② 线路选对了；③ 该账号有可用额度。");
-      }
-    } catch (error: any) {
-      bag.setQuickSetupError(String(error?.message ?? error));
-    } finally {
-      bag.setQuickSetupBusy(false);
-    }
-  }
-bag.quickSetup = quickSetup as typeof bag.quickSetup;
-
-  /** 引导弹窗里的中转站登录：走与登录页**同一条链路**（lib/relay.ts 的 performRelayLogin，
-   *  含"无分组 key 被网关 403 时改绑套餐分组重试"的兜底），不另写一份以免两处漂移。 */
-  async function relayQuickLogin(info: { baseUrl: string; email: string; password: string }) {
-    bag.setRelaySetupBusy(true);
-    bag.setRelaySetupError("");
-    try {
-      const result = await performRelayLogin({ ...info, onLogin: (payload) => bag.handleLogin(payload) });
-      if (result.ok) {
-        bag.setShowModelGuide(false);
-        bag.markModelConfigured();
-        bag.showToast("中转站登录成功", `已启用 ${result.active?.label ?? "中转站账户"} —— 直接在下面输入你的任务试试`);
-      } else {
-        bag.setRelaySetupError(result.message ?? "中转站登录未完成");
-      }
-    } catch (error: any) {
-      bag.setRelaySetupError(String(error?.message ?? error));
-    } finally {
-      bag.setRelaySetupBusy(false);
-    }
-  }
-bag.relayQuickLogin = relayQuickLogin as typeof bag.relayQuickLogin;
 
   async function handleLogout() {
     if (!(await bag.openAppConfirm("退出登录", "将回到登录界面，本机模型与会话配置都会保留。", "退出登录"))) return;
@@ -165,9 +115,8 @@ bag.relayQuickLogin = relayQuickLogin as typeof bag.relayQuickLogin;
     // 弹窗留在打开状态时登录页看不到，等重新登录回到主界面又突然冒出来 —— 用户会以为是新弹的。
     // ⛔ 但**不复位** done 标记：工具装没装跟账号无关，复位会让「刚点过稍后再说」的体检再弹一次。
     bag.setEnvCheckOpen(false);
-    bag.setShowModelGuide(false);
     bag.setShowLogin(true);
   }
 bag.handleLogout = handleLogout as typeof bag.handleLogout;
-  return { send, handleLogin, handleSkip, MODEL_CONFIGURED_KEY, markModelConfigured, hadModelConfigured, quickSetup, relayQuickLogin, handleLogout };
+  return { send, handleLogin, handleSkip, MODEL_CONFIGURED_KEY, markModelConfigured, hadModelConfigured, handleLogout };
 }
