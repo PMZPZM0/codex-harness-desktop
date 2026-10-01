@@ -2805,6 +2805,23 @@ w.postMessage({id:1,op:"list",root});
       "【237】手动档一次性覆盖 + 升档锚点（自动模式下手选立即生效；规则命中 0ms 跳过模型）"
     );
 
+    /* ── 【239】插件市场源 = Gitee 官方镜像（10-01 用户定稿：SkillHub 源几乎全为 DSH 生态装不上）──
+       三条硬不变量：源指向 Gitee 镜像仓库、旧 SkillHub 插件 API 清零、镜像源插件全兼容
+       （清单条目必须有 pluginPath——DSH 探测分支已随换源删除，不许回来）。 */
+    {
+      const marketSrc = readFileSync(join(ROOT, "electron", "codex-market.ts"), "utf8");
+      const plugIpcSrc = readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "03-plugins-market.ts"), "utf8");
+      (marketSrc.includes("claude-plugins-official-gitee") && marketSrc.includes("gitee.com/api/v5") ? ok : fail)(
+        "【239】插件市场源 = Gitee 官方镜像（claude-plugins-official-gitee，48 个 .claude-plugin 兼容插件）"
+      );
+      (!/api\.skillhub\.cn\/api\/v1\/plugins/.test(marketSrc) && !/listSkillHubPlugins/.test(plugIpcSrc) ? ok : fail)(
+        "【239】SkillHub 插件源清零（API 调用与旧函数名不许回来）"
+      );
+      (/Gitee 镜像源的插件全部自带 \.claude-plugin\/plugin\.json/.test(plugIpcSrc) ? ok : fail)(
+        "【239】DSH 探测分支已删（镜像源 100% 兼容，无需逐仓库探测）"
+      );
+    }
+
     /* ③c 坐姿打字微动画 = 图集两个坐姿变体交替（cols 5/6） */
     (fmtSrc.includes("SIT_FRAMES = [5, 6]") && canvasSrc.includes("SIT_FRAMES[") ? ok : fail)(
       "【233】坐姿用双帧变体交替（打字微动画）"

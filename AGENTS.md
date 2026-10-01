@@ -78,6 +78,18 @@
 - 设置页 = 注册表一行一页（`pet` 页）+ `settingsNav` + `HelpDialog.OVERVIEW_GROUPS` **三处都要加**
   —— 少总览那处会被守卫【32】打红。
 
+### 🧩 插件市场（`electron/codex-market.ts`，2026-10-01 二次换源）
+
+数据源 = **Gitee 官方镜像**（`gitee.com/yuqiaodi/claude-plugins-official-gitee`，Claude Code
+官方插件市场的国内镜像，48 个插件 100% `.claude-plugin` 兼容）。换源史：codex-marketplace.com
+（国内访问不稳）→ SkillHub（9600+ 条，实测几乎全为 DeepSeek Harness 生态装不上，用户令换）→ 本源。
+- list = `.claude-plugin/marketplace.json`（Gitee contents API base64，5 分钟缓存，客户端过滤分页）；
+  install = git trees API（recursive）+ `gitee.com/{owner}/{repo}/raw/{branch}/{path}`（302 跳转，
+  electron net 自动跟随）→ 写本地 marketplace → `plugin/install` + `plugin/list` 注册。
+- ⛔ 守卫【239】：源锚定 Gitee 镜像、SkillHub 插件 API 与 DSH 探测分支不许复活。
+- 分类中文名映射在 codex-market.ts 的 `CATEGORY_ZH`；UI 分类 tab 在 `helpers/catalogs.ts` 的
+  `pluginMarketCategoryTabs`（两处要与 marketplace.json 的 category key 对齐）。
+
 ### 📚 Uiverse 组件库（`electron/features/uiverse-library.ts` + `src/features/component-library/`，2026-10-01）
 
 组件库的唯一数据源 = `src/lib/ui-skin/data/*.gz` + `src/lib/ui-skin/catalog.gen.ts`（ingest：`scripts/gen-ui-skin-library.mjs`；⛔ 不复制第二份）：
