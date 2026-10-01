@@ -38,4 +38,4 @@ export type SystemEvent = { id: string; title: string; text: string; tone?: "inf
 /** 导入记录卡上的备注行（发送包装与未发送预览共用同一文案，保证前后一致） */
 export type TreeEntry = { fileName: string; isDirectory: boolean; isFile: boolean };
 
-export type SettingsPage = "user" | "general" | "devtools" | "extensibility" | "appearance" | "personalization" | "model" | "relay" | "openai" | "browser" | "computer" | "memory" | "agents" | "teams" | "expert-center" | "plugins" | "mcp" | "ssh" | "skills" | "commands" | "hooks" | "usage" | "channel" | "schedule" | "rpa" | "archive" | "backup" | "storage" | "automation" | "agentteam" | "voice" | "screenshot" | "favorites" | "pet" | "component-library";
+export type SettingsPage = "user" | "general" | "devtools" | "extensibility" | "appearance" | "personalization" | "model" | "relay" | "openai" | "browser" | "computer" | "memory" | "agents" | "teams" | "expert-center" | "plugins" | "mcp" | "ssh" | "skills" | "commands" | "hooks" | "usage" | "channel" | "schedule" | "rpa" | "archive" | "backup" | "storage" | "automation" | "agentteam" | "voice" | "screenshot" | "favorites" | "pet" | "component-library" | "soul-market";

@@ -190,6 +190,8 @@ type PluginMarketEntry = {
   slug: string; name: string; displayName: string; description: string; category: string; logo: string;
   author: string; repository: string; pluginPath: string; version: string; githubStars: number;
   installs: number; homepage: string; source: string; featured: boolean; hasSkills: boolean; hasMcpServers: boolean;
+  /** SkillHub 源（2026-10-01 换源）：分类中文名 + GitHub 定位（安装时主进程探 .claude-plugin 入口） */
+  categoryZh?: string; fullName?: string; owner?: string; defaultBranch?: string; license?: string; installability?: string;
 };
 type PluginMarketInstallResult = { id: string; name: string; path: string; version: string; description: string; marketId: string; sourceUrl: string; engineRegistered?: boolean; engineCheckMessage?: string };
 type LocalSkillEntry = { name: string; folder?: string; path: string; description: string; descriptionZh?: string; marketId?: string; pluginId?: string; sourceUrl?: string; installedAt?: string; engineRegistered?: boolean; engineCheckMessage?: string; source?: "cocoloop" | "skillhub" | "local"; enabled?: boolean; allowedTools?: string[]; icon?: string; category?: string };
@@ -849,6 +851,18 @@ interface Window {
     petShow(): Promise<{ settings: PetSettings; open: boolean }>;
     /* 隐藏宠物（置 enabled=false；下次启动不自动恢复） */
     petHide(): Promise<{ settings: PetSettings; open: boolean }>;
+    /* SkillHub 专家市场包（skillhub.cn/skillspackage，总 55 包） */
+    listExpertMarketPackages(input?: { page?: number; pageSize?: number; query?: string }): Promise<{ items: { slug: string; displayName: string; summary: string; scene: string; subScene: string; children: string[] }[]; total: number; page: number; pageSize: number }>;
+    /* 装包 = 元技能 + 子技能 + 专家中心新增对应专家卡片 */
+    installExpertMarketPackage(input: { slug: string }): Promise<{ slug: string; teamId: string; displayName: string; installedChildren: string[]; childFailures: string[]; expertCreated: boolean; expertUpdated: boolean }>;
+    /* SkillHub 人格市场（skillhub.cn/soul，16 套全量） */
+    listSoulMarket(): Promise<{ items: { slug: string; displayName: string; summary: string; version: string }[]; total: number }>;
+    /* 人格详情（content = 完整中文人设） */
+    getSoulMarket(input: { slug: string }): Promise<{ slug: string; displayName: string; summary: string; version: string; content: string }>;
+    /* 当前生效人格（soulSlug 空 = 默认人格） */
+    currentSoulMarket(): Promise<{ soulSlug: string; persona: string }>;
+    /* 应用人格（slug=null 还原默认）：写 personalization.persona + 同步 $CODEX_HOME/AGENTS.md，新会话即生效 */
+    applySoulMarket(input: { slug: string | null }): Promise<{ slug: string; displayName: string }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

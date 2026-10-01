@@ -29,6 +29,10 @@ export type PersonalizationConfig = {
   habits?: string;
   /** 用户补充的自我介绍（引导对话收集，写进 About the user 段） */
   userContext?: string;
+  /** 人格市场安装的人设全文（人格市场 soul-market 应用；为空 = 默认人格） */
+  persona?: string;
+  /** 当前生效的人格包 slug（人格市场「还原默认」时清空） */
+  soulSlug?: string;
   /** 首次对话身份引导是否已完成：完成后新会话不再注入引导指令 */
   onboarded?: boolean;
   /** 引导**是否已经打过招呼**（09-12 用户反馈「怎么每次新会话都强制引导」）。
@@ -63,6 +67,8 @@ export async function readPersonalization(): Promise<PersonalizationConfig> {
       interests: str(stored?.interests),
       habits: str(stored?.habits),
       userContext: str(stored?.userContext),
+      persona: str(stored?.persona),
+      soulSlug: str(stored?.soulSlug),
       onboarded: stored?.onboarded === true,
       greeted: stored?.greeted === true,
     };
@@ -89,6 +95,8 @@ export async function writePersonalization(input: Record<string, unknown>): Prom
     interests: pick("interests", 600),
     habits: pick("habits", 600),
     userContext: pick("userContext", 2000),
+    persona: pick("persona", 12000),
+    soulSlug: pick("soulSlug", 120),
     onboarded: input.onboarded === undefined ? current.onboarded : input.onboarded === true,
     greeted: input.greeted === undefined ? current.greeted : input.greeted === true,
   };
@@ -187,6 +195,11 @@ export function buildAgentsMd(personalization: PersonalizationConfig): string {
   if (personalization.interests) lines.push(`- Interests (nice small-talk anchors): ${personalization.interests}.`);
   if (personalization.habits) lines.push(`- Long-term habits/preferences: ${personalization.habits}.`);
   if (personalization.userContext) lines.push(`- About the user: ${personalization.userContext}`);
+  if (personalization.persona) {
+    lines.push("- Persona (installed from the persona market; follow it for character, speech style, and behavior):");
+    lines.push("");
+    lines.push(personalization.persona.replace(/\r\n?/g, "\n"));
+  }
   if (personalization.customInstructions) {
     lines.push("- User custom instructions (always apply, they take precedence over stylistic defaults):");
     lines.push("");

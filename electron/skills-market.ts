@@ -11,6 +11,8 @@ const MARKET_HOME = "https://hub.cocoloop.cn";
 // SkillHub（skillhub.cn）国内 Skill 商店：showcase/搜索 JSON API + COS zip 直链，
 // 与官方 CLI（skills_store_cli.py）走同一套后端接口，无需 python3/bash 依赖。
 const SKILLHUB_COS = "https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com";
+/** SkillHub 技能 zip 的 COS 直链基址（skillset 子技能安装复用；404 时安装器回退 download API） */
+export const SKILLHUB_COS_BASE = SKILLHUB_COS;
 const SKILLHUB_API = "https://api.skillhub.cn";
 export type SkillHubSection = "hot" | "trending" | "newest" | "featured";
 const skillHubShowcasePaths: Record<SkillHubSection, string> = {

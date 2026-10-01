@@ -11,7 +11,6 @@ import { PageInfo } from "../../components/SettingsHead";
 import { ArrowLeft, ArrowRight, ArrowUpRight, Check, CircleStop, Play, Plus, RefreshCw, Store, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { BatchActions, CheckCard, SearchField, SegmentedTabs, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
-import { CODEX_MARKET_ZH, zhCategory } from "../../lib/codex-market-zh";
 import { MarketLogo } from "../../features/skills-market";
 import { avatarToneOf } from "../../lib/entity-avatar";
 
@@ -42,13 +41,13 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
   };
   const togglePluginChecked = (id: string) => setPluginChecked((current: any) => current.includes(id) ? current.filter((entry: any) => entry !== id) : [...current, id]);
   return <section className="settings-section stack plugin-center">
-    <div className="settings-copy channel-heading"><div><h2>插件<PageInfo text={<>上方卡片来自 Codex Plugin Marketplace（codex-marketplace.com），一键安装写入本地插件目录，无需 ChatGPT 登录；下方为已安装插件管理，停用后 Codex 不再加载该插件提供的指令、技能与钩子。</>} helpKey="plugins" label="插件" /></h2></div><div className="settings-heading-actions"><button className="secondary-setting" title="打开 Codex Plugin Marketplace 在线市场" onClick={() => void window.codex.openExternal("https://www.codex-marketplace.com/plugins")}><ArrowUpRight size={14} />在线市场</button><button className="icon-button" title="刷新：已装插件 / 技能 / 钩子 / 记忆 / 任务 / MCP + 插件市场（沿用当前分类与搜索）" onClick={() => void refreshPluginsPage()}>{(resourceLoading || pluginMarketLoading) ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+    <div className="settings-copy channel-heading"><div><h2>插件<PageInfo text={<>上方卡片来自 SkillHub 插件市场（skillhub.cn/plugins，国内源），一键安装写入本地插件目录，无需 ChatGPT 登录；⛔ 插件多数面向 DeepSeek Harness 生态，安装时主进程会自动探测仓库里的 Codex 兼容 manifest（.claude-plugin/plugin.json），不兼容的会明确报错。下方为已安装插件管理，停用后 Codex 不再加载该插件提供的指令、技能与钩子。</>} helpKey="plugins" label="插件" /></h2></div><div className="settings-heading-actions"><button className="secondary-setting" title="打开 SkillHub 插件市场" onClick={() => void window.codex.openExternal("https://skillhub.cn/plugins")}><ArrowUpRight size={14} />在线市场</button><button className="icon-button" title="刷新：已装插件 / 技能 / 钩子 / 记忆 / 任务 / MCP + 插件市场（沿用当前分类与搜索）" onClick={() => void refreshPluginsPage()}>{(resourceLoading || pluginMarketLoading) ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
     {/* ⛔ 09-28：「内置接口（视频生成接口）」块**搬走**了 —— 它属于「内置插件」那一组
         （与生图/视觉插件并列，见 BuiltinPluginsSection）。本页只负责**插件市场**：
         外部市场的可安装列表 + 已安装插件管理。两件事混在一页会让人分不清「自带」与「要装」。 */}
     <div className="plugin-market-block">
-      <div className="plugin-market-title">插件市场<small>来自 Codex Plugin Marketplace · 一键安装无需登录</small></div>
+      <div className="plugin-market-title">插件市场<small>来自 SkillHub（skillhub.cn/plugins）· 一键安装无需登录</small></div>
       <div className="resource-toolbar">
         <div className="skill-tabs">{pluginMarketCategoryTabs.map(([label, value]: any) => <button key={value} className={pluginMarketCategory === value ? "active" : ""} onClick={() => { setPluginMarketCategory(value); setPluginMarketPage(1); }}>{label}</button>)}</div>
         <SearchField value={pluginMarketSearch} onChange={(next) => { setPluginMarketSearch(next); setPluginMarketPage(1); }} placeholder="搜索插件名称、简介或作者" />
@@ -57,28 +56,28 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
         {pluginMarketItems.map((plugin: any) => {
           const installedMarket = installedMarketPluginSlugs.has(plugin.slug);
           const busy = installingMarketPlugin === plugin.slug;
-          return <article className={`skill-card ${installedMarket ? "installed" : ""}`} key={plugin.slug} onClick={() => setMarketPreview({
+          return <article className={`skill-card ${installedMarket ? "installed" : ""}`} key={plugin.fullName ?? plugin.slug} onClick={() => setMarketPreview({
             kind: "plugin",
             title: plugin.displayName,
-            subtitle: `${zhCategory(plugin.category)} · codex-marketplace.com`,
+            subtitle: `${plugin.categoryZh ?? plugin.category} · skillhub.cn/plugins`,
             icon: plugin.logo,
             iconChar: plugin.displayName,
-            description: CODEX_MARKET_ZH[plugin.slug] ?? plugin.description,
-            meta: [zhCategory(plugin.category), ...(plugin.githubStars > 0 ? [`★ ${plugin.githubStars}`] : [])],
+            description: plugin.description,
+            meta: [plugin.categoryZh ?? plugin.category, ...(plugin.githubStars > 0 ? [`★ ${plugin.githubStars}`] : []), ...(plugin.license ? [plugin.license] : [])],
             installed: Boolean(installedMarket),
             installLabel: "一键安装",
             onInstall: installedMarket ? undefined : () => void installMarketPlugin(plugin),
             externalUrl: plugin.repository,
             externalLabel: "查看来源",
-            note2: installedMarket ? undefined : "下载插件目录到本地并注册进引擎，无需 ChatGPT 登录",
+            note2: installedMarket ? undefined : "探测到 Codex 兼容 manifest 才可安装（DSH 专属插件会明确报错）",
           })}>
             <div className="skill-card-head">
               <MarketLogo url={plugin.logo} label={plugin.displayName} size={30} />
               <button className="skill-add" title={installedMarket ? "已安装" : "一键安装到本地插件目录"} disabled={Boolean(installingMarketPlugin) || installedMarket} onClick={(event) => { event.stopPropagation(); if (!installedMarket) void installMarketPlugin(plugin); }}>{installedMarket ? <Check size={14} /> : busy ? <Spinner /> : <Plus size={14} />}</button>
             </div>
-            <strong title={plugin.displayName}>{plugin.displayName}</strong>
-            <p>{CODEX_MARKET_ZH[plugin.slug] ?? plugin.description}</p>
-            <footer><span>{zhCategory(plugin.category)}</span>{plugin.githubStars > 0 && <span title="GitHub Stars">★ {plugin.githubStars}</span>}<a href={plugin.repository} onClick={(event) => { event.preventDefault(); void window.codex.openExternal(plugin.repository); }}>查看来源</a></footer>
+            <strong title={plugin.fullName ?? plugin.displayName}>{plugin.displayName}</strong>
+            <p>{plugin.description}</p>
+            <footer><span>{plugin.categoryZh ?? plugin.category}</span>{plugin.githubStars > 0 && <span title="GitHub Stars">★ {plugin.githubStars}</span>}<a href={plugin.repository} onClick={(event) => { event.preventDefault(); void window.codex.openExternal(plugin.repository); }}>查看来源</a></footer>
           </article>;
         })}
       </div> : <p className="muted">{pluginMarketLoading ? "正在加载插件市场…" : "没有匹配的插件，换个关键词试试。"}</p>}

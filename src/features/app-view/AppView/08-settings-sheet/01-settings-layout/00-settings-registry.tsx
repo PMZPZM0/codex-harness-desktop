@@ -68,6 +68,10 @@ const FavoritesSettingsSection = lazy(() => import("../../../../settings-favorit
 /* 桌面宠物页（09-30）：官方 Codex 宠物格式的开关 / 选择 / 目录管理 */
 const ComponentLibrarySection = lazy(() => import("../../../../component-library").then((m) => ({ default: m.ComponentLibraryPage })));
 const PetSettingsSection = lazy(() => import("../../../../settings-pet/PetSettingsSection").then((m) => ({ default: m.PetSettingsSection })));
+/* 人格市场页（10-01）：SkillHub 人格（skillhub.cn/soul），应用后下一个新会话生效 */
+const SoulMarketSection = lazy(() => import("../../../../soul-market/SoulMarketSection").then((m) => ({ default: m.SoulMarketSection })));
+/* 专家市场包（10-01）：SkillHub 技能包，装完在专家中心新增对应专家卡片 */
+const ExpertMarketSection = lazy(() => import("../../../../expert-market/ExpertMarketSection").then((m) => ({ default: m.ExpertMarketSection })));
 
 export interface SettingsPageEntry {
   /** 二级入口页的「返回条」（一级页不填） */
@@ -443,7 +447,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
   return {
     automation: { render: () => <AutomationSettingsSection setSettingsPage={setSettingsPage} /> },
     agentteam: { render: () => <AgentTeamSettingsSection setSettingsPage={setSettingsPage} /> },
-    "expert-center": { back: { to: "agentteam", label: "返回智能体团队" }, render: () => <ExpertCenterSection expertTeams={expertTeams} EXPERT_CATEGORY_DEFS={EXPERT_CATEGORY_DEFS} expertTeamMemberDirect={expertTeamMemberDirect} startMemberDirectSession={startMemberDirectSession} /> },
+    "expert-center": { back: { to: "agentteam", label: "返回智能体团队" }, render: () => <><ExpertCenterSection expertTeams={expertTeams} EXPERT_CATEGORY_DEFS={EXPERT_CATEGORY_DEFS} expertTeamMemberDirect={expertTeamMemberDirect} startMemberDirectSession={startMemberDirectSession} /><ExpertMarketSection onInstalled={() => void refreshExpertTeams()} onNotice={(m) => setNotice(m)} /></> },
     user: { render: () => <UserCenterSection
                           username={username}
                           onUsernameChange={(name) => { setUsername(name); }}
@@ -470,6 +474,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     /* 桌面宠物（09-30）：域只收显式 props（onNotice），状态全走自己的 IPC（pet:*），不占 app 字段面 */
     pet: { render: () => <PetSettingsSection onNotice={setNotice} /> },
     "component-library": { render: () => <ComponentLibrarySection /> },
+    "soul-market": { render: () => <SoulMarketSection /> },
     favorites: { render: () => <FavoritesSettingsSection
       favorites={favorites}
       busy={favoritesBusy}

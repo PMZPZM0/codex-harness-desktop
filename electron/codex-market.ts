@@ -1,17 +1,19 @@
-// Codex 插件市场（codex-marketplace.com）——展示 + 一键安装。
+// 插件市场（SkillHub 插件源，2026-10-01 换源）——展示 + 一键安装。
 //
-// 数据源：https://www.codex-marketplace.com/api/plugins（公开 JSON API，聚合
-//   OpenAI 官方 openai/plugins 仓库 + 社区插件，419+ 条，支持 q= 搜索、limit/offset 分页）。
-// 安装原理：与技能市场「下载→落盘→重启引擎验证」同款，但下载源是 GitHub——
-//   按 repository + pluginPath 枚举仓库内文件（trees API，truncated 回退 contents
-//   逐目录走），逐文件 raw.githubusercontent.com 拉取，原样写入本地 marketplace
-//   目录，再注册 [marketplaces.codex-market] 让引擎 plugin/list 直接发现。
-//   不再依赖 ChatGPT 账号登录（官方精选市场的老路）。
+// 数据源：https://api.skillhub.cn/api/v1/plugins（skillhub.cn/plugins，公开 JSON API，
+//   9600+ 条，支持 q= 搜索、category= 分类、page/page_size 分页）。原 codex-marketplace.com
+//   源已整体删除（用户令；且该站国内访问不稳，市场页整面 AbortError）。
+// ⛔ 生态事实（2026-10-01 实测 install-plan 接口）：SkillHub 插件多数面向 DeepSeek Harness
+//   （DSH，安装命令 `dsh plugin add`），与 Codex 插件格式不通用。因此安装前先探仓库里
+//   有没有 Codex 兼容 manifest（.claude-plugin/plugin.json）——没有就明确报错，不装废件。
+// 安装原理：仓库（repositoryUrl + defaultBranch）按 trees API 枚举文件，逐文件
+//   raw.githubusercontent.com 拉取，原样写入本地 marketplace 目录，再注册
+//   [marketplaces.codex-market] 让引擎 plugin/list 直接发现 + plugin/install 注册。
 import { net } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const MARKETPLACE_API = "https://www.codex-marketplace.com/api/plugins";
+const SKILLHUB_API = "https://api.skillhub.cn";
 const GITHUB_API = "https://api.github.com";
 const RAW_GITHUB = "https://raw.githubusercontent.com";
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
@@ -24,6 +26,8 @@ export type CodexMarketPlugin = {
   displayName: string;
   description: string;
   category: string;
+  /** 分类中文名（SkillHub categories API 的 displayName，列表时已映射好） */
+  categoryZh?: string;
   logo: string;
   author: string;
   repository: string;
@@ -36,6 +40,12 @@ export type CodexMarketPlugin = {
   featured: boolean;
   hasSkills: boolean;
   hasMcpServers: boolean;
+  /** SkillHub 源专属：GitHub 仓库全名（owner/name）与默认分支，安装时定位文件树 */
+  fullName?: string;
+  owner?: string;
+  defaultBranch?: string;
+  license?: string;
+  installability?: string;
 };
 
 export type CodexMarketInstallProgress = { stage: "resolve" | "download" | "install" | "register"; message: string };
@@ -43,59 +53,81 @@ export type CodexMarketInstallProgress = { stage: "resolve" | "download" | "inst
 function text(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 function num(value: unknown) { const n = Number(value); return Number.isFinite(n) ? n : 0; }
 
-function mapEntry(entry: any): CodexMarketPlugin {
-  const repo = text(entry.repository);
-  const pluginPath = text(entry.pluginPath);
-  return {
-    slug: text(entry.slug),
-    name: text(entry.name),
-    displayName: text(entry.displayName) || text(entry.name) || text(entry.slug),
-    description: text(entry.description) || "暂无插件简介",
-    category: text(entry.category) || "Utilities",
-    logo: text(entry.logo),
-    author: text(entry.author?.name) || "Unknown",
-    repository: repo,
-    pluginPath,
-    version: text(entry.version) || "0.1.0",
-    githubStars: num(entry.githubStars),
-    installs: num(entry.installs),
-    homepage: text(entry.homepage),
-    source: text(entry.source),
-    featured: Boolean(entry.featured),
-    hasSkills: Boolean(entry.hasSkills),
-    hasMcpServers: Boolean(entry.hasMcpServers),
-  };
+export type SkillHubPluginCategory = { key: string; displayName: string };
+let categoryCache: { at: number; items: SkillHubPluginCategory[] } | null = null;
+
+/** SkillHub 插件分类（10 分钟缓存） */
+export async function listSkillHubPluginCategories(): Promise<SkillHubPluginCategory[]> {
+  if (categoryCache && Date.now() - categoryCache.at < 600_000) return categoryCache.items;
+  const response = await fetchWithRetry(`${SKILLHUB_API}/api/v1/plugins/categories`, 15_000, 3);
+  const payload: any = await response.json();
+  const items: SkillHubPluginCategory[] = (Array.isArray(payload?.items) ? payload.items : [])
+    .map((entry: any) => ({ key: text(entry.key), displayName: text(entry.displayName) || text(entry.key) }))
+    .filter((entry: SkillHubPluginCategory) => entry.key);
+  categoryCache = { at: Date.now(), items };
+  return items;
+}
+
+/** SkillHub 插件市场清单：服务端分页（page/page_size/q/category 实测有效，total 9600+） */
+export async function listSkillHubPlugins(input: { category?: string; query?: string; page?: number; pageSize?: number } = {}) {
+  const page = Math.max(1, Math.floor(Number(input.page) || 1));
+  const pageSize = Math.min(30, Math.max(1, Math.floor(Number(input.pageSize) || 18)));
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  if (input.query?.trim()) params.set("q", input.query.trim());
+  if (input.category && input.category !== "全部") params.set("category", input.category);
+  const response = await fetchWithRetry(`${SKILLHUB_API}/api/v1/plugins?${params}`, 15_000, 3).catch((error: unknown) => {
+    throw new Error(`SkillHub 插件市场连接失败（已重试 3 次，请检查网络后重试）：${error instanceof Error ? error.message : String(error)}`);
+  });
+  if (!response.ok) throw new Error(`SkillHub 插件市场请求失败（HTTP ${response.status}）`);
+  const payload: any = await response.json();
+  const raw: any[] = Array.isArray(payload?.items) ? payload.items : [];
+  let categories: SkillHubPluginCategory[] = [];
+  try { categories = await listSkillHubPluginCategories(); } catch { /* 分类映射失败就展示英文 key */ }
+  const zhByKey = new Map(categories.map((entry) => [entry.key, entry.displayName]));
+  const items: CodexMarketPlugin[] = raw
+    .filter((entry: any) => text(entry.fullName) && text(entry.name))
+    .map((entry: any) => ({
+      slug: text(entry.name),
+      name: text(entry.name),
+      displayName: text(entry.name),
+      description: text(entry.description) || "暂无插件简介",
+      category: text(entry.categoryKey) || "client",
+      categoryZh: zhByKey.get(text(entry.categoryKey)) ?? text(entry.categoryKey),
+      logo: text(entry.avatarUrl),
+      author: text(entry.owner) || "Unknown",
+      repository: text(entry.repositoryUrl),
+      pluginPath: "",
+      version: "",
+      githubStars: num(entry.stars),
+      installs: 0,
+      homepage: text(entry.homepage),
+      source: "skillhub",
+      featured: false,
+      hasSkills: false,
+      hasMcpServers: false,
+      fullName: text(entry.fullName),
+      owner: text(entry.owner),
+      defaultBranch: text(entry.defaultBranch) || "main",
+      license: text(entry.license),
+      installability: text(entry.installability),
+    }));
+  return { items, total: num(payload?.total) || items.length, page, pageSize };
 }
 
 /**
- * 市场清单：一次拉全量（limit=500），主进程内做分类/搜索/排序/分页。
- * 只收 type=plugin 且有 repository+pluginPath 的条目（skill/hook 类型走技能中心语义，不在这里）。
- * 排序：featured 优先，其余按 githubStars 降序，保证官方精选排最前、社区热门次之。
+ * 在仓库文件树里找 Codex 兼容插件入口（.claude-plugin/plugin.json）。
+ * 返回其所在目录（在根目录时为 ""）；找不到 = 不是 Codex 插件（多为 DSH 插件），返回 null。
  */
-export async function listCodexMarketPlugins(input: { category?: string; query?: string; page?: number; pageSize?: number } = {}) {
-  const page = Math.max(1, Math.floor(Number(input.page) || 1));
-  const pageSize = Math.min(24, Math.max(1, Math.floor(Number(input.pageSize) || 18)));
-  const params = new URLSearchParams({ limit: "500" });
-  if (input.query?.trim()) params.set("q", input.query.trim());
-  // ⛔ 复用 fetchWithRetry（10-01 用户截图 AbortError）：codex-marketplace.com 国内访问
-  //    间歇性超时，单发 fetch 一抖整个市场就白屏报错；装插件路径早就有重试，列表不能裸奔。
-  const response = await fetchWithRetry(`${MARKETPLACE_API}?${params}`, 15_000, 3).catch((error: unknown) => {
-    throw new Error(`Codex 插件市场连接失败（已重试 3 次，请检查网络后重试）：${error instanceof Error ? error.message : String(error)}`);
-  });
-  if (!response.ok) throw new Error(`Codex 插件市场请求失败（HTTP ${response.status}）`);
-  const payload: any = await response.json();
-  const raw: any[] = Array.isArray(payload?.plugins) ? payload.plugins : [];
-  let items: CodexMarketPlugin[] = raw
-    .filter((entry: any) => entry?.type === "plugin" && text(entry.slug) && text(entry.repository) && text(entry.pluginPath))
-    .map(mapEntry);
-  const category = text(input.category);
-  if (category && category !== "全部") items = items.filter((plugin) => plugin.category === category);
-  const query = input.query?.trim().toLowerCase();
-  if (query) items = items.filter((plugin) => `${plugin.displayName} ${plugin.name} ${plugin.slug} ${plugin.description} ${plugin.category}`.toLowerCase().includes(query));
-  items.sort((a, b) => (Number(b.featured) - Number(a.featured)) || (b.githubStars - a.githubStars));
-  const total = items.length;
-  const start = (page - 1) * pageSize;
-  return { items: items.slice(start, start + pageSize), total, page, pageSize };
+export async function resolveCodexPluginPath(plugin: { repository: string; fullName?: string; defaultBranch?: string }): Promise<string | null> {
+  const ref = plugin.fullName
+    ? (() => { const [owner, repo] = plugin.fullName.split("/"); return { owner, repo }; })()
+    : parseRepo(plugin.repository);
+  if (!ref) throw new Error(`插件仓库地址无法解析：${plugin.repository || plugin.fullName}`);
+  const branch = plugin.defaultBranch || "main";
+  const files = await listPluginFiles(ref.owner, ref.repo, branch, "");
+  const hit = files.find((file) => file.path === ".claude-plugin/plugin.json" || file.path.endsWith("/.claude-plugin/plugin.json"));
+  if (!hit) return null;
+  return hit.path === ".claude-plugin/plugin.json" ? "" : hit.path.slice(0, -"/.claude-plugin/plugin.json".length);
 }
 
 type RepoRef = { owner: string; repo: string };
@@ -134,7 +166,8 @@ async function fetchWithRetry(url: string, timeoutMs: number, tries = 4): Promis
 async function listPluginFiles(owner: string, repo: string, branch: string, pluginPath: string): Promise<FileEntry[]> {
   const tree = await fetchJson(`${GITHUB_API}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`);
   if (tree?.tree && !tree.truncated) {
-    const prefix = `${pluginPath}/`;
+    // pluginPath 为 ""（仓库根）时前缀也必须是空串——"/" 前缀会一个文件都匹配不上
+    const prefix = pluginPath ? `${pluginPath}/` : "";
     return tree.tree
       .filter((t: any) => t.type === "blob" && t.path.startsWith(prefix))
       .map((t: any) => ({ path: t.path, size: num(t.size) }));
@@ -192,7 +225,7 @@ async function downloadFiles(owner: string, repo: string, branch: string, files:
 export async function installCodexMarketPlugin(input: { plugin: CodexMarketPlugin; destinationRoot: string; onProgress?: (progress: CodexMarketInstallProgress) => void }) {
   const plugin = input.plugin;
   const progress: ProgressFn = (stage, message) => input.onProgress?.({ stage, message });
-  if (!plugin?.slug || !plugin?.pluginPath) throw new Error("无效的插件条目");
+  if (!plugin?.slug || plugin.pluginPath == null) throw new Error("无效的插件条目");
   const repoRef = parseRepo(plugin.repository);
   if (!repoRef) throw new Error(`插件仓库地址无法解析：${plugin.repository}`);
   progress("resolve", "正在解析插件仓库与版本");

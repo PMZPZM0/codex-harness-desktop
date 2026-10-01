@@ -38,6 +38,8 @@ const DOMAIN_DESCRIPTIONS = {
   "bridge": "引擎桥连接状态",
   "prompt": "提示词增强（把用户草稿改写为更完整的 prompt）",
   "pet": "桌面宠物（官方 Codex 宠物格式：pet.json + 8×9 图集）：list 发现四目录宠物 / settings-get·set 开关与选择 / roots 目录清单 / open-dir / import 从只读目录导入用户区 / toggle·show·hide 显示控制。宠物本体渲染在独立透明置顶浮窗，宿主侧只做发现与设置",
+  "expert-market": "SkillHub **专家市场包**（skillhub.cn/skillspackage，55 包）：list 浏览/搜索、install 一键安装——元技能 + orchestration.children 子技能落盘技能目录 + **专家中心自动新增对应专家卡片**（卡片 systemPrompt = 包元技能正文）。用户要「装个专家/装套工作流」时用它",
+  "soul-market": "SkillHub **人格市场**（skillhub.cn/soul，16 套现成人格）：list 浏览 / get 看人设全文 / current 当前生效 / apply 应用人格（写 personalization.persona + 同步 AGENTS.md，**下一个新会话生效**，slug=null 还原默认）。用户想「换个性格/语气」时用它",
   "history": "跨会话历史搜索（全文检索会话与消息，命中按会话分组）",
   "external": "用系统默认浏览器打开外部链接",
   "agents": "子智能体库（创建/归档/委派/目录；成员会话与角色）",

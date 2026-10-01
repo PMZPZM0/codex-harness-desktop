@@ -88,6 +88,7 @@ import "./features/dialog-ipc";
 import "./features/clipboard-ipc";
 import "./features/im-channels-ipc";
 import "./features/teams-agents-ipc";
+import "./features/skillhub-markets-ipc";
 import "./features/engine-ipc";
 import "./features/builtin-skills-ipc";
 import "./features/connectors-mcp-ipc";

@@ -10,7 +10,7 @@ import { X, BookOpen } from "lucide-react";
  *  内容只描述**当前应用真实有的入口与字段**（写之前逐页核过控件名），
  *  不写「未来可以」这类承诺——新手照着做走不通会直接失去信任。
  */
-export type HelpKey = "model" | "plugins" | "skills" | "mcp" | "agentteam" | "voice" | "devtools";
+export type HelpKey = "model" | "plugins" | "skills" | "mcp" | "agentteam" | "voice" | "devtools" | "soul-market";
 
 type HelpSection = { title: string; steps: string[] };
 export type HelpContent = { title: string; intro: string; sections: HelpSection[]; tips: string[] };
@@ -94,6 +94,7 @@ export const OVERVIEW_GROUPS: OverviewGroup[] = [
       { page: "拓展接口", what: "本项目所有可扩展点（IPC/主题/技能/守卫…）的用途、改法、生效方式与配套守卫，可一键复制说明", when: "想自己加一个接口、主题或技能，或接手这份代码想知道从哪下手时" },
       { page: "截图", what: "两种截图（全屏 / 框选）的全局快捷键绑定、是否隐藏窗口、保存目录", when: "想改截图快捷键，或截图没反应（键被别的程序占用时这里会明说）" },
       { page: "组件库", what: "浏览 Uiverse 社区组件库（3800+ 个 HTML+CSS 组件，MIT）：点开看代码、一键复制，写自己的网页/软件时直接用；Codex 写前端时也会自动来这里查现成组件", when: "想找个现成的按钮/卡片/加载器效果，或让 Codex 做界面时想让它用上好组件" },
+      { page: "人格市场", what: "SkillHub 现成人格（16 套）：一键应用，Codex 的性格与说话风格就换成 TA；写进全局个性化（AGENTS.md），下一个新会话生效，随时还原默认", when: "想让 Codex 换个性格/语气（比如更毒舌、更温柔的助手）时" },
       { page: "收藏夹", what: "收藏的片段/截图/文件/链接的批量管理与「加入 Agent 记忆」", when: "想整理收藏、清理旧条目，或把某条收藏固化进记忆时" },
     ],
   },
@@ -297,6 +298,25 @@ export const HELP_CONTENT: Record<HelpKey, HelpContent> = {
     tips: [
       "macOS 上用系统自带的 Git / OpenSSL 即可，列表里会显示为「系统已装」",
       "装了却显示未安装？点一次刷新；仍不对就重启应用（工具目录是启动时扫描的）",
+    ],
+  },
+  "soul-market": {
+    title: "人格市场 · 新手帮助",
+    intro: "SkillHub 的 16 套现成人格：一键应用，Codex 的性格、语气、说话风格就换成 TA。",
+    sections: [
+      {
+        title: "怎么用",
+        steps: [
+          "点人格卡片看人设全文",
+          "点「应用此人格」——写入全局个性化并同步引擎 AGENTS.md",
+          "**下一个新会话开始生效**（不用重启应用；正开着的会话保持原样）",
+          "想换回来：点顶部「还原默认人格」",
+        ],
+      },
+    ],
+    tips: [
+      "人格只改性格与说话风格，不改模型与能力",
+      "一次只生效一个人格；应用新的人格会替换旧的",
     ],
   },
 };

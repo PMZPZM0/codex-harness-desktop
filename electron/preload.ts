@@ -530,6 +530,18 @@ contextBridge.exposeInMainWorld("codex", {
   petShow: () => __ipc("pet:show", 0, []),
   /* 隐藏宠物（置 enabled=false；下次启动不自动恢复） */
   petHide: () => __ipc("pet:hide", 0, []),
+  /* SkillHub 专家市场包（skillhub.cn/skillspackage，总 55 包） */
+  listExpertMarketPackages: (input: { page?: number; pageSize?: number; query?: string } = {}) => __ipc("expert-market:list", 0, [input]),
+  /* 装包 = 元技能 + 子技能 + 专家中心新增对应专家卡片 */
+  installExpertMarketPackage: (input: { slug: string }) => __ipc("expert-market:install", 1, [input]),
+  /* SkillHub 人格市场（skillhub.cn/soul，16 套全量） */
+  listSoulMarket: () => __ipc("soul-market:list", 0, []),
+  /* 人格详情（content = 完整中文人设） */
+  getSoulMarket: (input: { slug: string }) => __ipc("soul-market:get", 1, [input]),
+  /* 当前生效人格（soulSlug 空 = 默认人格） */
+  currentSoulMarket: () => __ipc("soul-market:current", 0, []),
+  /* 应用人格（slug=null 还原默认）：写 personalization.persona + 同步 $CODEX_HOME/AGENTS.md，新会话即生效 */
+  applySoulMarket: (input: { slug: string | null }) => __ipc("soul-market:apply", 1, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。
