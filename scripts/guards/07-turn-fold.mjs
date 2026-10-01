@@ -2118,19 +2118,38 @@ export async function run() {
   (/browserSkills: findCapabilitySkills\(skills, BROWSER_SKILL_IDS\)/.test(appSrc58b) ? ok : fail)(
     "【58】联动后复算也走同一份名单"
   );
-  // ⛔ 开机自愈的**方向**必须取自用户上次的选择（groupState !== "off"），
-  //    ⛔ 不许写死 planAction(snapshot, groupId, true) —— 一律 true = 每次开机把三个总闸
-  //      拉回开启，用户关掉的写代码模式重启就被重新打开（09-27 用户反馈，真缺陷）。
-  //      锚的是"传进去的不是常量 true"这个不变量（重构语句形态不影响它）。
+  // ⛔ 开机自愈只**拉齐子项**，方向必须取自各总闸**自己的落盘状态**（写代码模式 =
+  //    config.json 的 defaultMode；桌面/浏览器 = app-settings 总闸布尔）——
+  //    ⛔ 不许写死常量、也不许由 groupState 的 partial 反推方向：
+  //    · 写死 true = 每次开机把总闸拉回开启（09-27 用户反馈，真缺陷）；
+  //    · groupState partial 反推 = 10-01 用户反馈真缺陷：插件未装时 ponytailPluginOn
+  //      误判 true → 整组 partial → 目标定为开 → 用户关掉的写代码模式重启被拉回 full。
+  //      锚「targets 表逐项取自 snapshot 总闸字段 + target 从表取值」这个不变量。
   ((() => {
     const heal = /const plan = planAction\(snapshot, groupId, ([^)]+?)\);/.exec(appSrc58b);
     if (!heal) return false;
     const arg = heal[1].trim();
     if (/^(true|false)$/.test(arg)) return false;               // 常量目标 = 每次开机覆盖用户的选择
-    // 目标变量必须由 groupState(...) 派生（锚"赋值来源"，不锚具体语句形态）
-    return new RegExp("const\\s+" + arg + "\\s*=\\s*groupState\\(snapshot, groupId\\)").test(appSrc58b);
+    return new RegExp("const\\s+" + arg + "\\s*=\\s*healTargets\\[groupId\\]").test(appSrc58b)
+      && /"writing-code": snapshot\.ponytailOn/.test(appSrc58b)
+      && /"desktop-automation": snapshot\.desktopAuto/.test(appSrc58b)
+      && /"browser-automation": snapshot\.browserAuto/.test(appSrc58b);
   })() ? ok : fail)(
-    "【58】开机自愈的方向取自总闸当前状态（写死 true = 用户关掉的开关重启又被打开）"
+    "【58】开机自愈的方向取自总闸落盘状态（写死 true 或 partial 反推 = 用户关掉的开关重启又被打开）"
+  );
+  // ⛔ 插件未安装 ≠ 启用：ponytailPluginOn 必须先判 entry 存在（未装判 true 会把整组
+  //    顶成 partial，见上条）。
+  (/ponytailPluginOn:\s*ponytailPluginEntry\s*\?\s*ponytailPluginEntry\.enabled !== false\s*:\s*false/.test(appSrc58b) ? ok : fail)(
+    "【58】未安装的 ponytail 插件不算「启用」（entry?.enabled !== false 会在未装时算出 true，把整组顶成 partial 触发自愈误开）"
+  );
+  // ⛔ 写代码模式缺省一律 off（10-01 用户令：默认关、关了就是关了）——主进程读档与
+  //    渲染层自愈兜底两处都不许回退 full。
+  const pmSrc58 = readFileSync(join(ROOT, "electron", "ponytail-mode.ts"), "utf8");
+  (/String\(raw\.defaultMode \?\? "off"\)/.test(pmSrc58) && /catch \{[\s\S]{0,60}?return "off";/.test(pmSrc58) ? ok : fail)(
+    "【58】写代码模式落盘缺省 = off（config.json 缺失/读不了时回退 full = 关掉的开关重启被拉开）"
+  );
+  (appSrc58b.includes('?? Promise.resolve("off")).catch(() => "off")') ? ok : fail)(
+    "【58】渲染层自愈读总闸的兜底也是 off（兜底 full 会让读档失败的用户被默认开启）"
   );
 }
 

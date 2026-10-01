@@ -37,6 +37,7 @@ const DOMAIN_DESCRIPTIONS = {
   "capabilities": "宿主能力快照（当前环境支持什么，一次性拉取）",
   "bridge": "引擎桥连接状态",
   "prompt": "提示词增强（把用户草稿改写为更完整的 prompt）",
+  "pet": "桌面宠物（官方 Codex 宠物格式：pet.json + 8×9 图集）：list 发现四目录宠物 / settings-get·set 开关与选择 / roots 目录清单 / open-dir / import 从只读目录导入用户区 / toggle·show·hide 显示控制。宠物本体渲染在独立透明置顶浮窗，宿主侧只做发现与设置",
   "history": "跨会话历史搜索（全文检索会话与消息，命中按会话分组）",
   "external": "用系统默认浏览器打开外部链接",
   "agents": "子智能体库（创建/归档/委派/目录；成员会话与角色）",
