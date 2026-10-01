@@ -44,13 +44,17 @@ bag.clearTeamCwd = clearTeamCwd as typeof bag.clearTeamCwd;
       });
       bag.teamThreadMapRef.current.set(result.thread.id, team.teamId);
       if (result.role) bag.rememberExpertRole(result.thread.id, result.role);
+      // 会话名自动同步角色名（10-01 用户令）：专家（单人/主理人直连）会话 = 专家名，
+      // 不让首条消息顶掉。member 行显示本就剥团队前缀只留职能名，这里对齐。
+      const memberSessionName = String(member.name ?? "").trim() || String(member.profession?.zh ?? "").trim();
+      if (memberSessionName && result.thread?.name !== memberSessionName) void bag.renameThread(result.thread.id, memberSessionName);
       bag.setSettingsOpen(false);
       await bag.openThread(result.thread.id, result.thread);
       // 空线程是主进程 thread/start 直接建的，openThread 只切视图不更新左侧列表，
       // 必须显式刷新一次列表，让新会话立即出现在左侧
       void bag.refreshThreads();
       requestAnimationFrame(() => bag.composerInputRef.current?.focus());
-      bag.setNotice(`已进入「${result.thread?.name ?? expertRoleLabel(member)}」会话：直接输入内容即可向该角色提问`);
+      bag.setNotice(`已进入「${memberSessionName || expertRoleLabel(member)}」会话：直接输入内容即可向该角色提问`);
     } catch (error: any) { bag.setNotice(`发起成员会话失败：${error.message}`); }
     finally { bag.setExpertTeamMemberDirect(null); }
   }
@@ -85,6 +89,9 @@ bag.startMemberDirectSession = startMemberDirectSession as typeof bag.startMembe
         approvalPolicy: bag.approvalPolicy,
       });
       if (result.role) bag.rememberExpertRole(result.thread.id, result.role);
+      // 会话名自动同步团队名（10-01 用户令）：否则引擎拿首条消息当会话名（「哈喽」「你好」），
+      // 侧栏里分不清哪个会话是哪个团。renameThread 走本地覆盖表，能顶住引擎的首条消息改名。
+      if (result.thread?.name !== team.displayName.zh) void bag.renameThread(result.thread.id, team.displayName.zh);
       bag.setSettingsOpen(false);
       await bag.openThread(result.thread.id, result.thread);
       // 新线程是主进程 thread/start 直接建的，openThread 只切视图不更新左侧列表，
