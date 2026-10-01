@@ -30,11 +30,12 @@ bag.chooseFiles = chooseFiles as typeof bag.chooseFiles;
   async function refreshMarketSkills(category = bag.skillHubCategory, query = bag.skillHubSearch, page = bag.marketPage) {
     bag.setMarketLoading(true);
     try {
-      // category 直接传 SkillHub 榜单名（总排行/近期最热/最新上传/官方精选），主进程映射 section
+      // category 直接传 SkillHub 榜单名（总排行/近期最热/最新上传/官方精选），主进程映射 section。
+      // ⛔ 不许 setMarketPage(result.page)（10-01 用户反馈「翻页自动回弹」）：榜单接口不分页、
+      // 恒回 page:1，页码的 owner 是 UI（本地切片翻页），回包覆盖它 = 把用户按回第一页。
       const result = await window.codex.listMarketSkills({ category, page, pageSize: bag.marketPageSize, query });
       bag.setMarketSkills(result.items);
       bag.setMarketTotal(result.total);
-      bag.setMarketPage(result.page);
     } catch (error: any) { bag.setNotice(`技能市场读取失败：${error.message}`); }
     finally { bag.setMarketLoading(false); }
   }

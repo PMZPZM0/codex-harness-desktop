@@ -349,4 +349,27 @@ export async function run() {
       "【227】.modal-backdrop 保持 400（全局模态基线，别被局部样式覆盖）"
     );
   }
+
+  // ── 【236】两个市场的「翻页 / 拉取」接线（10-01 用户反馈双缺陷）──
+  //    ① 技能页翻第二页自动回弹第一页：SkillHub 榜单接口不分页（恒回 page:1），渲染层本地切片
+  //       翻页，但 refreshMarketSkills 用 result.page 覆写 marketPage + effect 监听 marketPage
+  //       refetch ⇒ 用户刚点的页码被按回去。
+  //    ② 插件市场整面 AbortError：codex-marketplace.com 国内访问间歇超时，市场清单单发 fetch
+  //       无重试（同文件装插件路径早有 fetchWithRetry，唯独列表裸奔）。
+  {
+    // ⛔ 负向断言先过 codeOnly：part07 的修复注释里就写着「不许 setMarketPage(result.page)」，
+    //    不剥注释会被自己的说明注释顶成假红。
+    const seg07 = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part07", "01-seg", "02-files-market-connectors.tsx"), "utf8"));
+    (!seg07.includes("setMarketPage(result.page)") ? ok : fail)(
+      "【236】技能市场刷新不许用 result.page 覆写 marketPage（榜单接口恒回 page:1，覆盖 = 翻页自动回弹第一页）"
+    );
+    const seg06 = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part06", "01-seg", "01-ui-ready-mood-refs.tsx"), "utf8"));
+    (!/, bag\.marketPage\]/.test(seg06) ? ok : fail)(
+      "【236】技能市场刷新 effect 的 deps 不含 marketPage（翻页是本地切片，不碰远端；监听它 = 每次翻页拉一遍再按回 page 1）"
+    );
+    const cm = readFileSync(join(ROOT, "electron", "codex-market.ts"), "utf8");
+    (/const response = await fetchWithRetry\(`\$\{MARKETPLACE_API\}/.test(cm) ? ok : fail)(
+      "【236】插件市场清单请求走 fetchWithRetry（单发 fetch 一抖整个市场 AbortError；装插件路径已有重试，列表不许裸奔）"
+    );
+  }
 }

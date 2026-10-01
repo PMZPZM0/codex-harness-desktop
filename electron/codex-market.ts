@@ -77,7 +77,11 @@ export async function listCodexMarketPlugins(input: { category?: string; query?:
   const pageSize = Math.min(24, Math.max(1, Math.floor(Number(input.pageSize) || 18)));
   const params = new URLSearchParams({ limit: "500" });
   if (input.query?.trim()) params.set("q", input.query.trim());
-  const response = await net.fetch(`${MARKETPLACE_API}?${params}`, { signal: AbortSignal.timeout(20_000) });
+  // ⛔ 复用 fetchWithRetry（10-01 用户截图 AbortError）：codex-marketplace.com 国内访问
+  //    间歇性超时，单发 fetch 一抖整个市场就白屏报错；装插件路径早就有重试，列表不能裸奔。
+  const response = await fetchWithRetry(`${MARKETPLACE_API}?${params}`, 15_000, 3).catch((error: unknown) => {
+    throw new Error(`Codex 插件市场连接失败（已重试 3 次，请检查网络后重试）：${error instanceof Error ? error.message : String(error)}`);
+  });
   if (!response.ok) throw new Error(`Codex 插件市场请求失败（HTTP ${response.status}）`);
   const payload: any = await response.json();
   const raw: any[] = Array.isArray(payload?.plugins) ? payload.plugins : [];

@@ -120,10 +120,13 @@ bag.pluginMarketSearchDebounced = pluginMarketSearchDebounced as typeof bag.plug
   useEffect(() => { const t = setTimeout(() => bag.setPluginMarketSearchDebounced(bag.pluginMarketSearch), 350); return () => clearTimeout(t); }, [bag.pluginMarketSearch]);
 
 
+  // ⛔ deps 不含 marketPage（10-01 用户反馈「翻到第二页自动回弹第一页」）：SkillHub 榜单是
+  //    一次性全量、渲染层本地切片翻页 —— 监听 marketPage 再 refetch，回来 setMarketPage(1)
+  //    就是把用户刚点的页码按回去。翻页纯本地，不碰远端。
   useEffect(() => {
     if (!bag.settingsOpen || bag.settingsPage !== "skills" || bag.skillsManageOnly) return;
     void bag.refreshMarketSkills(bag.skillHubCategory, bag.skillHubSearchDebounced, bag.marketPage);
-  }, [bag.settingsOpen, bag.settingsPage, bag.skillHubCategory, bag.skillHubSearchDebounced, bag.skillsManageOnly, bag.marketPage]);
+  }, [bag.settingsOpen, bag.settingsPage, bag.skillHubCategory, bag.skillHubSearchDebounced, bag.skillsManageOnly]);
 
 
   useEffect(() => {
