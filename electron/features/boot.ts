@@ -207,6 +207,22 @@ export function bindBoot(deps: Record<string, any>) {
 export async function bootApp() {
   markBoot("app-ready");   // 启动耗时测量（见 electron/boot-timing.ts）
   await fs.mkdir(codexHome, { recursive: true });
+  /* 启动自报（10-01，排查「改了没生效」）：把本次启动加载的产物路径 + 渲染层 bundle 文件名 +
+     时间写进 userData/startup-report.json。排查脚本读它即可确定用户启动的是哪份产物，不必互相猜。
+     ⛔ 只写自己的报告文件、只读 dist/index.html，不碰任何业务状态；失败不影响启动。 */
+  void (async () => {
+    try {
+      const appPath = app.getAppPath();
+      const html = await fs.readFile(path.join(appPath, "dist", "index.html"), "utf8").catch(() => "");
+      const bundleFile = /assets\/(index-[\w.-]+\.js)/.exec(html)?.[1] ?? "";
+      await fs.writeFile(path.join(app.getPath("userData"), "startup-report.json"), JSON.stringify({
+        at: new Date().toISOString(),
+        appPath,
+        execPath: process.execPath,
+        bundleFile,
+      }, null, 2), "utf8");
+    } catch { /* 自报失败不阻塞启动 */ }
+  })();
   // 已删除会话的墓碑必须在**第一次 thread/list 之前**载入：渲染层启动就会拉列表，靠懒加载
   // 会让首屏短暂出现幽灵会话（见 purgeDeletedThread 注释）。失败不阻塞启动。
   try { await loadDeletedThreads(); } catch (error) { console.warn("deleted-threads 载入失败：", error); }
