@@ -371,5 +371,14 @@ export async function run() {
     (/const response = await fetchWithRetry\(`\$\{MARKETPLACE_API\}/.test(cm) ? ok : fail)(
       "【236】插件市场清单请求走 fetchWithRetry（单发 fetch 一抖整个市场 AbortError；装插件路径已有重试，列表不许裸奔）"
     );
+    // ④ 界面上渲染出「: any」字样（10-01 用户截图，技能/插件两个市场都在分类 tab 尾部）：
+    //    map(...) 收尾多打了 `: any`，JSX 文本节点合法 ⇒ tsc 不报、直接画到界面上。
+    //    全仓扫「) }: any<」形态（先剥注释，防说明注释顶成假红）。
+    const strayAny = walk(join(ROOT, "src"), [".tsx"])
+      .map(({ path: p }) => ({ p, src: codeOnly(readFileSync(p, "utf8")) }))
+      .filter(({ src }) => /[\)}]\s*:\s*any\s*</.test(src));
+    (strayAny.length === 0 ? ok : fail)(
+      `【236】JSX 里不许渲染出残留的类型标注「: any」（实测 ${strayAny.length} 处：${strayAny.map((x) => x.p).slice(0, 3).join("、")}）`
+    );
   }
 }
