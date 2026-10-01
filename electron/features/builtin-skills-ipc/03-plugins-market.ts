@@ -90,7 +90,8 @@ ipcMain.handle("skills:local-list", async () => {
         // allowed-tools：SKILL.md frontmatter 里声明的工具白名单（复刻 WorkBuddy 的 allowed-tools）。
         // 引擎不做强制（引擎技能对象只有 enabled），这里是给 UI 展示声明的工具范围；不声明则为空。
         const allowedTools = parseSkillAllowedTools(content);
-        return { name: declaredName || entry.name, folder: entry.name, path: target, description, descriptionZh: market?.descriptionZh, enabled: active, pluginId, marketId: market?.marketId, sourceUrl: market?.sourceUrl, installedAt: market?.installedAt, source: marketSource ?? "local", allowedTools, icon: market?.icon, category: market?.category, skillset: (market as any)?.kind === "skillset" };
+        const marketKind = String((market as any)?.kind ?? "");
+        return { name: declaredName || entry.name, folder: entry.name, path: target, description, descriptionZh: market?.descriptionZh, enabled: active, pluginId, marketId: market?.marketId, sourceUrl: market?.sourceUrl, installedAt: market?.installedAt, source: marketSource ?? "local", allowedTools, icon: market?.icon, category: market?.category, skillset: marketKind === "skillset", skillsetSlug: marketKind === "skillset-child" ? String((market as any)?.skillset ?? "") : undefined };
       } catch { return null; }
     }));
     return results.filter(Boolean);

@@ -103,8 +103,17 @@ async function fetchSkillsetDetail(slug: string): Promise<{ displayName: string;
   return { displayName: text(entry.displayName) || slug, summary: text(entry.summary), content };
 }
 
-async function writeSkillFolder(destinationRoot: string, folder: string, content: string) {
-  const target = path.join(destinationRoot, folder);
+/** 标记一个技能目录为「专家包子技能」（幂等；.skillhub.json 不存在则新建一个最小档） */
+export async function markSkillsetChild(folderPath: string, skillsetSlug: string) {
+  const file = path.join(folderPath, ".skillhub.json");
+  let raw: any = {};
+  try { raw = JSON.parse(await fs.readFile(file, "utf8")); } catch { /* 首建 */ }
+  raw.kind = "skillset-child";
+  raw.skillset = skillsetSlug;
+  await fs.writeFile(file, JSON.stringify(raw, null, 2), "utf8");
+}
+
+async function writeSkillFolder(destinationRoot: string, folder: string, content: string) {  const target = path.join(destinationRoot, folder);
   await fs.mkdir(target, { recursive: true });
   const file = path.join(target, "SKILL.md");
   await fs.writeFile(file, content.replace(/^﻿/, ""), "utf8");
@@ -149,7 +158,10 @@ export async function installSkillHubSkillset(input: { slug: string; destination
         downloadUrl: `${SKILLHUB_COS_BASE}/skills/${encodeURIComponent(child)}.zip`,
         detailUrl: `${API}/skills/${encodeURIComponent(child)}`,
       };
-      await installCocoLoopSkill({ skill, destinationRoot: input.destinationRoot });
+      const installed = await installCocoLoopSkill({ skill, destinationRoot: input.destinationRoot });
+      // 给子技能打「专家包专属」标记（10-01 用户：「# 面板里区分不出来哪些是专家专属技能」）：
+      // 子技能目录的 .skillhub.json 补 kind/skillset，渲染层据此分组到「专家专属」。
+      await markSkillsetChild(path.dirname(installed.path), slug).catch(() => undefined);
       installedChildren.push(child);
     } catch { childFailures.push(child); }
   }

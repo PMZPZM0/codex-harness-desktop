@@ -394,5 +394,20 @@ export async function run() {
     (packs.includes("writeExpertTeams(next)") && packs.includes("normalizeTeamConfig") ? ok : fail)(
       "【236】专家包装完必须落专家卡片（writeExpertTeams）——用户令「安装后在专家中心新增对应专家卡片」"
     );
+    // ⑥ 专家专属技能分组（10-01 用户令：「# 面板里区分不出来哪些技能是专家专属技能」）：
+    //    子技能落盘时必须打 kind=skillset-child 标记 → local-list 透出 skillsetSlug →
+    //    mergedSkillCatalog 映射 source=expert → # 面板「专家专属」组。缺一环 = 分组永远为空。
+    (packs.includes("markSkillsetChild") && packs.includes('raw.kind = "skillset-child"') ? ok : fail)(
+      "【236】专家包子技能落盘时打 kind=skillset-child 标记（没标记 ⇒ # 面板分不出专家专属技能）"
+    );
+    const listSrc = readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "03-plugins-market.ts"), "utf8");
+    (listSrc.includes('skillsetSlug: marketKind === "skillset-child"') ? ok : fail)(
+      "【236】skills:local-list 透出 skillsetSlug（渲染层判专家专属的唯一依据）"
+    );
+    const part04 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part04", "01-seg.tsx"), "utf8");
+    const composerSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "03-composer.tsx"), "utf8");
+    (part04.includes('? "expert"') && /\["expert", "专家专属"\]/.test(composerSrc) ? ok : fail)(
+      "【236】# 面板「专家专属」分组已接线（part04 映射 source=expert + composer 组标签）"
+    );
   }
 }

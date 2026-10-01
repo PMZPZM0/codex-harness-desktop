@@ -246,7 +246,7 @@ bag.commandMatches = commandMatches as typeof bag.commandMatches;
   const mergedSkillCatalog = useMemo(() => {
     const seen = new Set<string>();
     const out: { name: string; description: string; note: string; path: string; source: string }[] = [];
-    const push = (entry: { name: string; description?: string; descriptionZh?: string; path?: string; category?: string; source?: string }) => {
+    const push = (entry: { name: string; description?: string; descriptionZh?: string; path?: string; category?: string; source?: string; skillset?: boolean; skillsetSlug?: string }) => {
       const key = normSkillName(entry.name);
       if (!key || seen.has(key)) return; // 同名（含插件限定名）只保留第一条（本地优先）
       seen.add(key);
@@ -258,7 +258,12 @@ bag.commandMatches = commandMatches as typeof bag.commandMatches;
         description: entry.description ?? "",
         note: skillZhNote(entry),
         path: entry.path ?? "",
-        source: entry.source === "cocoloop" || entry.source === "skillhub" ? "market" : entry.source === "local" ? "local" : "engine",
+        // 专家专属（10-01 用户：「# 面板里区分不出来哪些是专家专属技能」）：专家市场包的元技能
+        // 与它编排的子技能（.skillhub.json: kind=skillset / skillset-child）单独成组，
+        // 不再混进「市场安装」——混着看根本认不出哪些是某个专家包带来的。
+        source: (entry as any).skillset || (entry as any).skillsetSlug
+          ? "expert"
+          : entry.source === "cocoloop" || entry.source === "skillhub" ? "market" : entry.source === "local" ? "local" : "engine",
       };
       out.push(item);
     };

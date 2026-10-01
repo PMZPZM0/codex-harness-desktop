@@ -446,9 +446,10 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                   {commandMatches.length > 0 && <div className="command-palette" role="listbox" aria-label="Codex 指令">{commandMatches.map(([name, description]) => <button type="button" role="option" key={name} onClick={() => { if (["rename", "review", "goal", "plan", "effort", "personality", "sandbox", "approval", "fork"].includes(name)) setPrompt(`/${name} `); else void runSlashCommand(`/${name}`); }}><code>/{name}</code><span className="command-desc">{description}</span></button>)}</div>}
                   {/* 「#」技能面板：与「/」命令面板同款展示（等宽技能名 + 中文注释列），点击即引用该技能 */}
                   {skillCommandMatches.length > 0 && <div className="command-palette skill-palette" role="listbox" aria-label="可用技能">{(() => {
-                    /* 来源分组（09-30 用户：「已安装技能，和本地技能，和市场技能都进行分类一下」）：
-                       引擎内置 → 市场安装 → 本地导入，空组不显示；组内仍按 matchSkillCatalog 的相关度排序。 */
-                    const groupLabels: [string, string][] = [["engine", "引擎内置"], ["market", "市场安装"], ["local", "本地导入"]];
+                    /* 来源分组（09-30 用户：「已安装技能，和本地技能，和市场技能都进行分类一下」；
+                       10-01 补「专家专属」组：专家市场包带来的元技能与子技能单列，别混进市场安装）：
+                       专家专属 → 引擎内置 → 市场安装 → 本地导入，空组不显示；组内仍按 matchSkillCatalog 的相关度排序。 */
+                    const groupLabels: [string, string][] = [["expert", "专家专属"], ["engine", "引擎内置"], ["market", "市场安装"], ["local", "本地导入"]];
                     return groupLabels.map(([key, label]) => {
                       const group = skillCommandMatches.filter((skill: any) => (skill.source ?? "engine") === key);
                       if (!group.length) return null;
