@@ -13,7 +13,9 @@ import { Spinner } from "../../components/CardShell";
 type SoulEntry = { slug: string; displayName: string; summary: string; version: string };
 type SoulDetail = SoulEntry & { content: string };
 
-export function SoulMarketSection() {
+export type SoulMarketSectionProps = { onNotice: (message: string) => void };
+
+export function SoulMarketSection({ onNotice }: SoulMarketSectionProps) {
   const [items, setItems] = useState<SoulEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -26,15 +28,17 @@ export function SoulMarketSection() {
   const load = async () => {
     setLoading(true);
     setError("");
-    try {
-      const [list, current] = await Promise.all([
-        window.codex.listSoulMarket(),
-        window.codex.currentSoulMarket(),
-      ]);
-      setItems(list.items);
-      setActiveSlug(current.soulSlug ?? "");
-    } catch (err: any) { setError(err?.message ?? String(err)); }
-    finally { setLoading(false); }
+      try {
+        const [list, current] = await Promise.all([
+          window.codex.listSoulMarket(),
+          window.codex.currentSoulMarket(),
+        ]);
+        setItems(list.items);
+        setActiveSlug(current.soulSlug ?? "");
+      } catch (err: any) {
+        setError(err?.message ?? String(err));
+        onNotice(`人格市场读取失败：${err?.message ?? err}`);
+      } finally { setLoading(false); }
   };
 
   useEffect(() => { void load(); }, []);
@@ -55,8 +59,12 @@ export function SoulMarketSection() {
       const result = await window.codex.applySoulMarket({ slug });
       setActiveSlug(result.slug ?? "");
       setApplied(slug == null ? "已还原默认人格，下一个新会话生效" : `已应用「${result.displayName}」，下一个新会话生效`);
+      onNotice(slug == null ? "已还原默认人格，下一个新会话生效" : `✅ 已应用人格「${result.displayName}」——下一个新会话生效`);
       setSelected(null);
-    } catch (err: any) { setError(`应用失败：${err?.message ?? err}`); }
+    } catch (err: any) {
+      onNotice(`❌ 人格应用失败：${err?.message ?? err}`);
+      setError(`应用失败：${err?.message ?? err}`);
+    }
     finally { setBusy(""); }
   };
 
@@ -88,7 +96,10 @@ export function SoulMarketSection() {
                 <p>{entry.summary}</p>
                 <footer>
                   <span>v{entry.version || "1.0.0"}</span>
-                  {detailLoading === entry.slug ? <Spinner /> : <em>{selected?.slug === entry.slug ? "收起" : "看人设详情"}</em>}
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    {detailLoading === entry.slug ? <Spinner /> : <em onClick={(event) => { event.stopPropagation(); void openDetail(entry); }} style={{ cursor: "pointer" }}>{selected?.slug === entry.slug ? "收起" : "看人设详情"}</em>}
+                    <button className="secondary-setting soul-market-apply" disabled={Boolean(busy)} title={active ? "重新应用此人格" : "应用此人格（下一个新会话生效）"} onClick={(event) => { event.stopPropagation(); void apply(entry.slug); }}>{busy === entry.slug ? <Spinner /> : <Check size={12} />}{active ? "重新应用" : "应用"}</button>
+                  </span>
                 </footer>
               </article>
             );

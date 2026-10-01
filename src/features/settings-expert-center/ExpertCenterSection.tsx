@@ -4,16 +4,16 @@
  * 纯搬迁：返回的 JSX / 体内语句与原块逐字一致（仅去掉外层缩进与 IIFE 包装）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
-import { ArrowRight, Users } from "lucide-react";
+import { ArrowRight, Package, Users } from "lucide-react";
 import { PageInfo } from "../../components/SettingsHead";
 import { expertIconOf } from "../../lib/expert-icon-of";
 import { AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
 import { Spinner } from "../../components/CardShell";
 
-export type ExpertCenterSectionProps = { expertTeams: any; EXPERT_CATEGORY_DEFS: any; expertTeamMemberDirect: any; startMemberDirectSession: any };
+export type ExpertCenterSectionProps = { expertTeams: any; EXPERT_CATEGORY_DEFS: any; expertTeamMemberDirect: any; startMemberDirectSession: any; onOpenMarket?: () => void };
 
 export function ExpertCenterSection(props: ExpertCenterSectionProps) {
-  const { expertTeams, EXPERT_CATEGORY_DEFS, expertTeamMemberDirect, startMemberDirectSession } = props;
+  const { expertTeams, EXPERT_CATEGORY_DEFS, expertTeamMemberDirect, startMemberDirectSession, onOpenMarket } = props;
   // 专家中心：全部专家按领域分类陈列，点卡直达单人会话；
   // 内置团队按 EXPERT_CATEGORY_DEFS 归类，自定义团队落「更多专家」。
   const expertCards = expertTeams.flatMap((team: any) => [team.lead, ...team.members].map((member) => ({ team, member, isLead: member.id === team.lead.id })));
@@ -23,7 +23,7 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
   if (rest.length) groups.push({ title: "更多专家", blurb: "自定义团队与外部导入的专家", icon: Users, cards: rest });
   return (
   <section className="settings-section stack expert-center-page">
-    <div className="settings-copy"><h2>专家中心<PageInfo text={<>按领域分类的全部专家——点击任意专家卡片，直接进入与 TA 的一对一会话。</>} helpKey="agentteam" label="专家中心" /></h2></div>
+    <div className="settings-copy"><h2>专家中心<PageInfo text={<>按领域分类的全部专家——点击任意专家卡片，直接进入与 TA 的一对一会话。</>} helpKey="agentteam" label="专家中心" /></h2><div className="settings-heading-actions">{onOpenMarket && <button className="secondary-setting" title="SkillHub 专家市场包：一键安装整套专家工作流，装完自动出现在这里" onClick={onOpenMarket}><Package size={14} />专家市场</button>}</div></div>
     {groups.map((g: any) => (
       <div className="expert-category" key={g.title}>
         <div className="expert-category-head">

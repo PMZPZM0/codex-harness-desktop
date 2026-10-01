@@ -142,6 +142,18 @@ bag.openAppConfirm = openAppConfirm as typeof bag.openAppConfirm;
   const [expertTeams, setExpertTeams] = useState<ExpertTeamConfig[]>([]);
 bag.expertTeams = expertTeams as typeof bag.expertTeams; bag.setExpertTeams = setExpertTeams as typeof bag.setExpertTeams;
 
+  // 专家中心页视图切换：true = 渲染专家市场包（10-01 用户：「市场块埋在最下面容易忽视，
+  // 顶部加专家市场按键，展示逻辑跟技能市场/我的技能一样」）
+  const [expertMarketOpen, setExpertMarketOpen] = useState(false);
+bag.expertMarketOpen = expertMarketOpen as typeof bag.expertMarketOpen; bag.setExpertMarketOpen = setExpertMarketOpen as typeof bag.setExpertMarketOpen;
+
+  /** 专家包装完的统一刷新：专家列表（新卡片）+ 本地技能（已装包徽标），一次回调两个数据面 */
+  async function refreshExpertCenterData() {
+    try { bag.setExpertTeams(await window.codex.listExpertTeams()); } catch { /* 刷新失败保留旧列表 */ }
+    try { bag.setLocalSkills(await window.codex.listLocalSkills()); } catch { /* 同上 */ }
+  }
+bag.refreshExpertCenterData = refreshExpertCenterData as typeof bag.refreshExpertCenterData;
+
   const [expertTeamDraft, setExpertTeamDraft] = useState<ExpertTeamConfig | null>(null);
 bag.expertTeamDraft = expertTeamDraft as typeof bag.expertTeamDraft; bag.setExpertTeamDraft = setExpertTeamDraft as typeof bag.setExpertTeamDraft;
 
@@ -189,5 +201,5 @@ bag.teamFlushRef = teamFlushRef as typeof bag.teamFlushRef;
   /** 正在跑的成员委托数（并行阶段会 >1）：活动指示器按计数收敛，不能在单个任务结束时清空 */
   const teamRunningCountRef = useRef(0);
 bag.teamRunningCountRef = teamRunningCountRef as typeof bag.teamRunningCountRef;
-  return { mcpOverrides, setMcpOverrides, mcpToolPermissions, setMcpToolPermissions, mcpServerChecked, setMcpServerChecked, mcpServerStatusBusy, setMcpServerStatusBusy, mcpServerBatchBusy, setMcpServerBatchBusy, mcpServerSearch, setMcpServerSearch, subAgents, setSubAgents, subAgentDraft, setSubAgentDraft, subAgentEditorOpen, setSubAgentEditorOpen, subAgentRunning, setSubAgentRunning, rpaRunning, setRpaRunning, agentAsk, setAgentAsk, rpaRecipes, setRpaRecipes, taskList, setTaskList, threadPermPushAtRef, appPromptInputRef, appConfirm, setAppConfirm, appPrompt, setAppPrompt, memoryPreview, setMemoryPreview, searchPreview, setSearchPreview, memoryCenterOpen, setMemoryCenterOpen, memoryCenterTab, setMemoryCenterTab, memoryProjectWorkspace, setMemoryProjectWorkspace, memoryProjectEnabled, setMemoryProjectEnabled, memoryProjectMenuOpen, setMemoryProjectMenuOpen, memoryProjectPickerRef, openAppPrompt, openAppConfirm, expertTeams, setExpertTeams, expertTeamDraft, setExpertTeamDraft, expertTeamEditorOpen, setExpertTeamEditorOpen, expertTeamRunning, setExpertTeamRunning, expertTeamMemberRunning, setExpertTeamMemberRunning, teamRuns, setTeamRuns, teamPopupRunId, setTeamPopupRunId, teamHistoryMember, setTeamHistoryMember, threadTeamId, setThreadTeamId, teamHistoryRuns, setTeamHistoryRuns, teamRunsRef, teamDeltaRef, teamFlushRef, teamRunningCountRef };
+  return { mcpOverrides, setMcpOverrides, mcpToolPermissions, setMcpToolPermissions, mcpServerChecked, setMcpServerChecked, mcpServerStatusBusy, setMcpServerStatusBusy, mcpServerBatchBusy, setMcpServerBatchBusy, mcpServerSearch, setMcpServerSearch, subAgents, setSubAgents, subAgentDraft, setSubAgentDraft, subAgentEditorOpen, setSubAgentEditorOpen, subAgentRunning, setSubAgentRunning, rpaRunning, setRpaRunning, agentAsk, setAgentAsk, rpaRecipes, setRpaRecipes, taskList, setTaskList, threadPermPushAtRef, appPromptInputRef, appConfirm, setAppConfirm, appPrompt, setAppPrompt, memoryPreview, setMemoryPreview, searchPreview, setSearchPreview, memoryCenterOpen, setMemoryCenterOpen, memoryCenterTab, setMemoryCenterTab, memoryProjectWorkspace, setMemoryProjectWorkspace, memoryProjectEnabled, setMemoryProjectEnabled, memoryProjectMenuOpen, setMemoryProjectMenuOpen, memoryProjectPickerRef, openAppPrompt, openAppConfirm, expertTeams, setExpertTeams, expertMarketOpen, setExpertMarketOpen, refreshExpertCenterData, expertTeamDraft, setExpertTeamDraft, expertTeamEditorOpen, setExpertTeamEditorOpen, expertTeamRunning, setExpertTeamRunning, expertTeamMemberRunning, setExpertTeamMemberRunning, teamRuns, setTeamRuns, teamPopupRunId, setTeamPopupRunId, teamHistoryMember, setTeamHistoryMember, threadTeamId, setThreadTeamId, teamHistoryRuns, setTeamHistoryRuns, teamRunsRef, teamDeltaRef, teamFlushRef, teamRunningCountRef };
 }
