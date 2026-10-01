@@ -386,6 +386,17 @@ export async function run() {
     (mkts.includes('"expert-market:list"') && mkts.includes('"expert-market:install"') && mkts.includes('"soul-market:apply"') && mkts.includes('"soul-market:current"') ? ok : fail)(
       "【236】expert-market / soul-market 两域 handler 全部挂载（缺 = 市场白配，桥接面有但主进程没人接）"
     );
+    // ⑧ 数据目录跟随（10-01 用户令：「不要写死目录位置，目录我随时要改，要自动跟随数据目录」）：
+    //    市场 handler 的技能落点必须从 codexHome 派生（codexHome ← userData ← data-dir.json），
+    //    模块里**不许出现绝对盘符路径**（写死某个盘的目录 = 改数据目录后装到错地方）。
+    ((() => {
+      const code = codeOnly(mkts);
+      const follows = /path\.join\(codexHome, "skills"\)/.test(code);
+      const hardAbs = /["'`][A-Za-z]:[\\/]/.test(code);
+      return follows && !hardAbs;
+    })() ? ok : fail)(
+      "【236】市场技能落点跟随数据目录（从 codexHome 派生、模块内零绝对盘符路径——写死目录 = 用户改数据目录就装错地方）"
+    );
     const pers = readFileSync(join(ROOT, "electron", "personalization.ts"), "utf8");
     (/persona: pick\("persona"/.test(pers) && /- Persona \(installed from the persona market/.test(pers) ? ok : fail)(
       "【236】人格生效链完整：persona 字段落 personalization.json 且 buildAgentsMd 真渲染进 AGENTS.md（只存不渲染 = 装了不生效）"
