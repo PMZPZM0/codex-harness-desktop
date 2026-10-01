@@ -864,7 +864,7 @@ interface Window {
     /* 应用人格（slug=null 还原默认）：写 personalization.persona + 同步 $CODEX_HOME/AGENTS.md，新会话即生效 */
     applySoulMarket(input: { slug: string | null }): Promise<{ slug: string; displayName: string }>;
     /* Laya 智能判断：服务/安装状态（pip 包 + laya-serve 进程 + 权重就绪） */
-    layaStatus(): Promise<{ installed: boolean; version: string; running: boolean; ready: boolean; port: number; installing: boolean; starting: boolean; lastError: string }>;
+    layaStatus(): Promise<{ installed: boolean; version: string; running: boolean; ready: boolean; port: number; installing: boolean; starting: boolean; lastError: string; installProgress: { phase: string; current: string; percent: number; speed: string; detail: string } | null; startProgress: { phase: string; current: string; percent: number; speed: string; detail: string } | null }>;
     /* 安装/更新 laya[serve]（pip 清华镜像；torch 大，20 分钟超时）；权重由服务首启时经 hf-mirror 拉取 */
     layaInstall(): Promise<{ ok: boolean; log: string }>;
     /* 思考等级自动判断（choice: low/medium/high/xhigh + 校准置信度；置信 <0.45 弃权返回 null，调用方回落手选档） */

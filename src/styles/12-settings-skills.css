@@ -1436,3 +1436,30 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .laya-card .laya-install-log { width: 100%; }
 .laya-card .laya-install-log summary { cursor: pointer; color: var(--muted); font-size: 11px; display: flex; align-items: center; gap: 5px; }
 .laya-card .laya-install-log pre { max-height: 200px; overflow: auto; font-size: 10.5px; background: var(--panel-2, rgba(0,0,0,0.04)); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin: 6px 0 0; white-space: pre-wrap; word-break: break-all; }
+
+/* ── Laya 安装/权重下载进度条（10-01：用户实测「安装进度没有」）── */
+.laya-progress { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.laya-progress-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+  display: block;
+  width: 100%;
+}
+.laya-progress-track i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.5s ease;
+}
+.laya-progress-track i.indeterminate {
+  width: 35% !important;
+  animation: laya-indet 1.4s ease-in-out infinite;
+}
+@keyframes laya-indet {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(385%); }
+}
+.laya-progress small { color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }

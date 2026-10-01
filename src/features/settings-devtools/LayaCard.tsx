@@ -10,6 +10,8 @@ import { useCallback, useEffect, useState } from "react";
 import { BrainCircuit, Download, CircleCheck, AlertTriangle, RefreshCw } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 
+type Progress = { phase: string; current: string; percent: number; speed: string; detail: string } | null;
+
 type Status = {
   installed: boolean;
   version: string;
@@ -19,6 +21,8 @@ type Status = {
   installing: boolean;
   starting: boolean;
   lastError: string;
+  installProgress: Progress;
+  startProgress: Progress;
 };
 
 export function LayaCard({ setNotice }: { setNotice: (text: string) => void }) {
@@ -31,6 +35,14 @@ export function LayaCard({ setNotice }: { setNotice: (text: string) => void }) {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  /* 安装/首启期间每秒轮询状态（进度条的数据源）；空闲时停掉。 */
+  const lively = busy || Boolean(status?.installing) || Boolean(status?.starting) || (Boolean(status?.running) && !status?.ready);
+  useEffect(() => {
+    if (!lively) return;
+    const t = setInterval(() => void refresh(), 1000);
+    return () => clearInterval(t);
+  }, [lively, refresh]);
 
   const install = async () => {
     setBusy(true);
@@ -47,10 +59,17 @@ export function LayaCard({ setNotice }: { setNotice: (text: string) => void }) {
     setBusy(false);
   };
 
+  const prog = status?.installProgress ?? status?.startProgress ?? null;
+  const progLabel = status?.installing
+    ? `安装 ${prog?.current || "laya[serve]"}${prog?.detail ? ` · ${prog.detail}` : ""}${prog?.speed ? ` · ${prog.speed}` : ""}`
+    : status?.starting
+      ? `下载权重 ${prog?.current || "…"}${prog?.detail ? ` · ${prog.detail}` : ""}${prog?.speed ? ` · ${prog.speed}` : ""}`
+      : "";
+
   const stateText = !status ? "读取中…"
     : status.ready ? "就绪（权重已加载，可以判断）"
-    : status.running || status.starting ? "服务启动中（首次会下载权重 ~700MB，走国内镜像）"
     : status.installing ? "正在安装…"
+    : status.starting ? "服务启动中（首次会下载权重 ~700MB）"
     : status.installed ? "已安装 · 服务未启动（首次使用时自动拉起并下载权重）"
     : "未安装";
 
@@ -62,6 +81,15 @@ export function LayaCard({ setNotice }: { setNotice: (text: string) => void }) {
         <small>本地决策模型（33ms）：思考等级「自动」档的判断端——发送前自动选 低/中/高/极高。
           不装也能用：自动档会回落到你手选的档位。</small>
         <em className="runtime-hint">{stateText}{status?.lastError ? ` · ${status.lastError}` : ""}</em>
+        {/* 实时进度条（pip 安装 / 权重下载共用）：无百分比时显示不定条 */}
+        {progLabel && (
+          <span className="laya-progress">
+            <span className="laya-progress-track">
+              <i style={{ width: prog?.percent ? `${Math.max(3, Math.min(100, prog.percent))}%` : "35%" }} className={prog?.percent ? "" : "indeterminate"} />
+            </span>
+            <small>{progLabel}</small>
+          </span>
+        )}
       </span>
       <div className="runtime-actions">
         {status?.ready ? <span className="runtime-badge installed">就绪</span>

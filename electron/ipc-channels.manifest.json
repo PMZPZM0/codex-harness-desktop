@@ -3807,7 +3807,7 @@
       "channel": "laya:status",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; version: string; running: boolean; ready: boolean; port: number; installing: boolean; starting: boolean; lastError: string }>",
+      "returns": "Promise<{ installed: boolean; version: string; running: boolean; ready: boolean; port: number; installing: boolean; starting: boolean; lastError: string; installProgress: { phase: string; current: string; percent: number; speed: string; detail: string } | null; startProgress: { phase: string; current: string; percent: number; speed: string; detail: string } | null }>",
       "invokeArgs": "",
       "cast": null,
       "note": "Laya 智能判断：服务/安装状态（pip 包 + laya-serve 进程 + 权重就绪）"

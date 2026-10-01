@@ -30,6 +30,14 @@ const IDLE_EXIT_MS = 10 * 60 * 1000; // 闲置 10 分钟自动退出（省 ~1GB 
 const START_TIMEOUT_MS = 30 * 60 * 1000; // 首启含权重下载，放宽到 30 分钟
 const DECIDE_TIMEOUT_MS = 15_000;
 
+export type LayaProgress = {
+  phase: string;     // download（下载包/权重）/ install（pip 落盘）
+  current: string;   // 当前包名或权重文件名
+  percent: number;   // 0-100（当前这一项的进度）
+  speed: string;     // 如 "3.4MB/s"（pip/下载器原始输出）
+  detail: string;    // 如 "45.2 MB / 78.0 MB"
+};
+
 export type LayaServiceState = {
   installed: boolean;      // pip 包 laya[serve] 已装
   version: string;         // laya 版本号（未装为空）
@@ -39,6 +47,8 @@ export type LayaServiceState = {
   installing: boolean;
   starting: boolean;
   lastError: string;
+  installProgress: LayaProgress | null;  // pip 安装实时进度（下载百分比/速度）
+  startProgress: LayaProgress | null;    // 首启权重下载实时进度（~700MB）
 };
 
 let proc: ChildProcess | null = null;
@@ -51,6 +61,8 @@ let lastUsedAt = 0;
 let idleTimer: NodeJS.Timeout | null = null;
 let lastError = "";
 let serviceLog: string[] = [];
+let installProgress: LayaProgress | null = null;
+let startProgress: LayaProgress | null = null;
 
 function userDataDir(): string {
   return app?.getPath?.("userData") ?? process.cwd();
@@ -113,6 +125,8 @@ export function layaStatus(): LayaServiceState {
     installing,
     starting,
     lastError,
+    installProgress: installing ? installProgress : null,
+    startProgress: starting ? startProgress : null,
   };
 }
 
@@ -121,23 +135,55 @@ export function layaLog(): string {
   return serviceLog.slice(-40).join("\n");
 }
 
+/** 从 pip / huggingface 下载器的一行输出里提取进度（解析失败静默忽略——进度条只是增强）。 */
+function parseProgress(line: string, into: LayaProgress): void {
+  const collecting = /Collecting\s+(\S+)/.exec(line);
+  if (collecting) { into.phase = "download"; into.current = collecting[1].replace(/\[.*/, ""); into.percent = 0; into.speed = ""; into.detail = ""; return; }
+  const downloading = /Downloading\s+(\S+?)\s*\(([\d.]+)\s*([KM]B)\)/.exec(line);
+  if (downloading) { into.phase = "download"; into.current = downloading[1].split("-")[0]; into.percent = 0; into.speed = ""; into.detail = `${downloading[2]} ${downloading[3]}`; return; }
+  if (/Installing collected packages|To update pip|Successfully installed/.test(line)) { into.phase = "install"; into.percent = 100; into.speed = ""; return; }
+  // 进度条行：` 45%|████ | 45.2/78.0 MB [00:12<00:20, 3.4MB/s]` 或 hf 的 `model.safetensors:  45%|...`
+  const bar = /(\d{1,3}(?:\.\d+)?)%/.exec(line);
+  if (!bar) return;
+  const pct = Number(bar[1]);
+  if (pct < 0 || pct > 100) return;
+  const frac = /([\d.]+)\s*\/\s*([\d.]+)\s*([KM]?B)/.exec(line);
+  const speed = /([\d.]+\s*[KM]?B\/s)/.exec(line)?.[1] ?? "";
+  // 文件名线索：hf 下载条形如 `model.safetensors:  45%|...`；pip 是裸条
+  const file = /^\s*([\w.\-]+\.(?:safetensors|bin|whl|json|model))\s*:\s*/.exec(line)?.[1];
+  into.phase = "download";
+  into.percent = pct;
+  into.speed = speed;
+  if (file) into.current = file;
+  if (frac) into.detail = `${frac[1]} / ${frac[2]} ${frac[3]}`;
+}
+
 /** 安装 / 更新 laya[serve]（清华 pip 镜像；torch 体积大，超时放宽 20 分钟）。 */
 export function layaInstall(): Promise<{ ok: boolean; log: string }> {
   if (installing) return Promise.resolve({ ok: false, log: "已有安装任务在进行中" });
   installing = true;
+  installProgress = { phase: "download", current: "", percent: 0, speed: "", detail: "" };
   const bin = bundledPython();
   const lines: string[] = [];
   return new Promise((resolve) => {
-    const child = spawn(bin, ["-m", "pip", "install", "-U", "--no-input", "-i", PIP_INDEX, "laya[serve]"], {
+    const child = spawn(bin, ["-m", "pip", "install", "-U", "--no-input", "--progress-bar", "on", "-i", PIP_INDEX, "laya[serve]"], {
       env: { ...process.env },
       windowsHide: true,
     });
+    // ⛔ pip 的进度条写在 stderr 且用 \r 原地刷新（不换行）——按 \r 与 \n 一起切行，
+    //   否则整段进度被吞进 buffer 永远不出来（10-01 用户实测「安装进度没有」的根因）。
     let buffered = "";
     const pump = (chunk: string) => {
       buffered += chunk;
-      const parts = buffered.split("\n");
+      const parts = buffered.split(/\r\n|\r|\n/);
       buffered = parts.pop() ?? "";
-      for (const line of parts) if (line.trim()) { lines.push(line); log(`pip: ${line.trim().slice(0, 160)}`); }
+      for (const raw of parts) {
+        const line = raw.trim();
+        if (!line) continue;
+        lines.push(line);
+        if (!/^\s*\d{1,3}%/.test(raw)) log(`pip: ${line.slice(0, 160)}`); // 进度条刷屏行不进日志
+        if (installProgress) parseProgress(line, installProgress);
+      }
     };
     child.stdout.on("data", (d) => pump(String(d)));
     child.stderr.on("data", (d) => pump(String(d)));
@@ -163,7 +209,21 @@ function killService(reason: string) {
     proc = null;
   }
   ready = false;
+  startProgress = null;
   if (idleTimer) { clearInterval(idleTimer); idleTimer = null; }
+}
+
+/** serve 日志泵：进日志 + 解析权重下载进度（hf 下载条在 stderr，同样 \r 刷新）。 */
+function pumpServe(chunk: string) {
+  for (const raw of String(chunk).split(/\r\n|\r|\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (!/^\s*\d{1,3}%/.test(raw)) log(`serve: ${line.slice(0, 160)}`);
+    if (!startProgress) return;
+    const bar = /(\d{1,3}(?:\.\d+)?)%/.exec(line);
+    if (bar) parseProgress(line, startProgress);
+    else if (/Downloading|Fetching \d+ files/.test(line)) startProgress.current = "模型权重（~700MB，走 hf-mirror）";
+  }
 }
 
 /** 懒启动 laya-serve（127.0.0.1 + API key + 只预载 multilingual + hf-mirror 拉权重）。 */
@@ -174,6 +234,7 @@ async function ensureService(): Promise<number> {
   if (!installed) throw new Error("laya 未安装——请先在 设置 → 开发工具 里安装");
   starting = true;
   ready = false;
+  startProgress = { phase: "download", current: "", percent: 0, speed: "", detail: "" };
   try {
     port = await pickPort();
     const key = ensureApiKey();
@@ -194,8 +255,8 @@ async function ensureService(): Promise<number> {
       },
       windowsHide: true,
     });
-    proc.stdout?.on("data", (d) => log(`serve: ${String(d).trim().slice(0, 160)}`));
-    proc.stderr?.on("data", (d) => log(`serve: ${String(d).trim().slice(0, 160)}`));
+    proc.stdout?.on("data", (d) => pumpServe(String(d)));
+    proc.stderr?.on("data", (d) => pumpServe(String(d)));
     proc.on("exit", (code) => {
       log(`服务进程退出（code=${code}）`);
       proc = null;
