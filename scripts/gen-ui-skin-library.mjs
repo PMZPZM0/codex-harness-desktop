@@ -1,11 +1,13 @@
 /**
- * Uiverse Galaxy 组件库 · 预处理（ingest）
+ * Uiverse 组件库 · 预处理（ingest）
  *
  * 输入：`D:/临时1/galaxy/<Cat>/*.html`（Uiverse.io Galaxy 镜像，MIT 许可）
  * 输出（进仓库）：
- *   src/lib/ui-skin/data/<Cat>.html.gz   —— 每类一个 gzip（运行时 DecompressionStream 解压）
- *   src/features/ui-skin/catalog.gen.ts  —— 轻量目录（全量 id/author/name，搜索用；不含正文）
+ *   src/lib/ui-skin/data/<Cat>.html.gz          —— 每类一个 gzip（运行时 DecompressionStream 解压）
+ *   src/lib/ui-skin/catalog.gen.ts              —— 轻量目录（全量 id/author/name，搜索用；不含正文）
  *
+ * 消费方（10-01 个性化皮肤已删，只剩组件库）：渲染层组件库设置页 + SkinHost 预览、
+ * 主进程 uiverse-library.ts（引擎 MCP 工具 ui_component_*）。
  * 设计要点：
  *   ⛔ 全量正文 ≈ 34MB，进 git/dist 都太大 ⇒ gzip 后 ~2.3MB，且按类**懒加载**（点开才解压那一类）。
  *   ⛔ 元素是 HTML+CSS 纯静态（实测 0 script / 0 内联事件），无需消毒；但 ingest 仍剥 <script> 兜底。
@@ -21,7 +23,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const SRC = path.resolve(process.argv[2] || "D:/临时1/galaxy");
 const DATA_DIR = path.join(ROOT, "src", "lib", "ui-skin", "data");
-const CATALOG = path.join(ROOT, "src", "features", "ui-skin", "catalog.gen.ts");
+const CATALOG = path.join(ROOT, "src", "lib", "ui-skin", "catalog.gen.ts");
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(path.dirname(CATALOG), { recursive: true });
 
@@ -96,7 +98,7 @@ for (const c of cats) {
 }
 
 const ts = `/**
- * Uiverse Galaxy 组件库目录（自动生成，勿手改 —— scripts/gen-ui-skin-library.mjs）
+ * Uiverse 组件库目录（自动生成，勿手改 —— scripts/gen-ui-skin-library.mjs）
  * 来源：Uiverse.io Galaxy（MIT）。正文按类目 gzip 存于 src/lib/ui-skin/data/<cat>.html.gz，运行时懒解压。
  */
 export type UiSkinCatalogEntry = { id: string; cat: string; name: string; author: string };

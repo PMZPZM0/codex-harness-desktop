@@ -8,11 +8,20 @@
  * ⛔ 代码来自库原文（ingest 时已剥 <script>），展示用 <pre> 文本节点、不用 innerHTML —— 防注入。
  */
 import { useEffect, useMemo, useState } from "react";
-import { UI_SKIN_CATALOG, UI_SKIN_CATS, SKIN_LIB_LABELS } from "../ui-skin";
+import { UI_SKIN_CATALOG, UI_SKIN_CATS } from "../../lib/ui-skin/catalog.gen";
 import { loadCategory } from "../../lib/ui-skin/load";
 import { SkinHost } from "../../components/SkinHost";
 
 const PAGE = 24;
+
+/** 类目 → 展示名（UI_SKIN_CATS 生成物自带 label；旧 key 清理见下方模块体）。 */
+const catLabel = (cat: string) => UI_SKIN_CATS.find((c) => c.cat === cat)?.label ?? cat;
+
+// 个性化皮肤（2026-09-30/10-01 一版）已按用户要求删除：清掉它留在 localStorage 的状态，别成孤儿。
+try {
+  localStorage.removeItem("ui-skin-state-v2");
+  localStorage.removeItem("ui-skin-bindings-v1");
+} catch { /* 无 localStorage 环境忽略 */ }
 
 export function ComponentLibraryPage() {
   const [cat, setCat] = useState<string>(UI_SKIN_CATS[0]?.cat ?? "Buttons");
@@ -73,7 +82,7 @@ export function ComponentLibraryPage() {
       <div className="ui-skin-cats">
         {UI_SKIN_CATS.map((c) => (
           <button key={c.cat} type="button" className={`ui-skin-cat ${c.cat === cat ? "active" : ""}`} onClick={() => setCat(c.cat)}>
-            {SKIN_LIB_LABELS[c.cat] ?? c.cat} <i>{c.count}</i>
+            {catLabel(c.cat)} <i>{c.count}</i>
           </button>
         ))}
       </div>
@@ -94,7 +103,7 @@ export function ComponentLibraryPage() {
             onClick={() => void openDetail(e.cat, e.id, e.name, e.author)}
           >
             <span className="ui-skin-preview">
-              <SkinHost elementId={`${e.cat}/${e.id}`} preview />
+              <SkinHost elementId={`${e.cat}/${e.id}`} />
             </span>
             <span className="ui-skin-cell-name">{e.name}</span>
             <span className="comp-lib-copy-hint">复制代码</span>
@@ -114,7 +123,7 @@ export function ComponentLibraryPage() {
             <div className="comp-lib-detail-head">
               <div>
                 <strong>{detail.name}</strong>
-                <span className="comp-lib-by">by {detail.author} · {SKIN_LIB_LABELS[detail.cat] ?? detail.cat} · MIT</span>
+                <span className="comp-lib-by">by {detail.author} · {catLabel(detail.cat)} · MIT</span>
               </div>
               <div className="comp-lib-detail-actions">
                 <button type="button" className="comp-lib-copy" onClick={() => void copyCode()}>
@@ -124,7 +133,7 @@ export function ComponentLibraryPage() {
               </div>
             </div>
             <div className="comp-lib-preview-row">
-              <SkinHost elementId={`${detail.cat}/${detail.id}`} preview />
+              <SkinHost elementId={`${detail.cat}/${detail.id}`} />
             </div>
             <pre className="comp-lib-code">{detail.html}</pre>
           </div>

@@ -80,21 +80,12 @@
 
 ### 📚 Uiverse 组件库（`electron/features/uiverse-library.ts` + `src/features/component-library/`，2026-10-01）
 
-组件库的两个消费面共用**同一份 gzip 数据**（`src/lib/ui-skin/data/*.gz`，单一真相源，⛔ 不复制第二份）：
+组件库的唯一数据源 = `src/lib/ui-skin/data/*.gz` + `src/lib/ui-skin/catalog.gen.ts`（ingest：`scripts/gen-ui-skin-library.mjs`；⛔ 不复制第二份）：
 
-- **独立设置页「组件库」**（`component-library` 域，与「控件皮肤」并立）：浏览全部 11 类 3802 个组件，点卡片看 HTML+CSS 原文、一键复制（`writeClipboard`），给用户开发别的软件用。加载失败必须可见（`comp-lib-error`，⛔ 不许静默空白）；代码视图用 `<pre>` 文本节点（⛔ 不用 innerHTML）。
+- **独立设置页「组件库」**（`component-library` 域）：浏览全部 11 类 3802 个组件，点卡片看 HTML+CSS 原文、一键复制（`writeClipboard`），给用户开发别的软件用。加载失败必须可见（`comp-lib-error`，⛔ 不许静默空白）；代码视图用 `<pre>` 文本节点（⛔ 不用 innerHTML）；预览走 `components/SkinHost`（Shadow DOM 隔离，只 preview 禁交互）。
 - **Codex 引擎查询工具**：内置 MCP（harness-dispatch）的 `ui_component_search` / `ui_component_get`（定义在 `dispatch-core.ts`，执行端 `dispatch-rpc.ts`，数据端 `uiverse-library.ts` 从 `dist/assets/<Cat>.html-*.gz` 前缀匹配定位、dev 回落 `src/lib/ui-skin/data/`）。⛔ 模型侧常驻指令第 12 条（`UI_COMPONENT_INSTRUCTIONS`）必须与工具同在——工具在表里模型不知道 = 白配。
-- 守卫【235】7 条钉住以上全部接线。
-
-### 🎨 控件皮肤工坊（`src/features/ui-skin/` + `src/lib/ui-skin/` + `components/SkinHost`，2026-09-30 深夜；10-01 套装化重做）
-
-把 **Uiverse.io Galaxy**（3802 个社区 UI 元素，MIT）内置进应用。10-01 起以**风格套装**为单位换肤：按作者聚类（同作者开关+加载器风格连贯，60 套，`scripts/gen-ui-skin-packs.mjs` 从 catalog 生成 `src/lib/ui-skin/packs.gen.ts`），一次激活一套、**全局所有接线点统一生效**；单品手选降级为「高级覆盖」，激活套装会清空覆盖。分层（⛔ 别混）：
-
-- **基座**：`src/lib/ui-skin/`（store v2：`ui-skin-state-v2` = activePack + overrides，两级解析；分类 gzip 懒解压加载 + packs.gen）+ `src/components/SkinHost.tsx`（**Shadow DOM** 渲染器 + `fit` 占位归一——社区元素超宿主占位等比缩小，同屏控件等高）+ `src/hooks/use-skin-binding.ts`；数据 = `src/lib/ui-skin/data/*.html.gz`（**2.3MB**，`scripts/gen-ui-skin-library.mjs` 从 galaxy 镜像 ingest）。
-- **域**：`src/features/ui-skin/`（工坊 UI：套装画廊 + 折叠的单品覆盖区）+ 设置页 `settings-ui-skin/`。
-- **已接线原型**（守卫【234】钉住）：开关（`ToggleSwitch`）、加载器（`Spinner`）。⛔ **胶囊开关全仓只许走共享 `ToggleSwitch` 一条渲染路径**（bot-switch/auto-switch/switch 三种散装实现已于 10-01 清零并入，守卫【234】⑧扫全仓防回归）；加新原型 = `skin-slots.ts` 加一行 + 在共享原语里 `useSkinBinding`。
-- ⛔ **`?url` 资产导入编译成 `new URL("x.gz", import.meta.url)`（不带 assets/ 前缀）**——before-pack 闭包扫描已认这种形态（⑤号模式），新资产类型要同步扩那个正则；⛔ 严禁换回 `import.meta.glob`（同坑）。
-- ⛔ 基座原语经 `useSkinBinding` 读绑定，**不得 import 域层**（架构红线，守卫钉；packs.gen 数据沉在基座就是为了这条）。
+- ⛔ **个性化皮肤已整体删除**（10-01 用户令；09-30 首版单品散绑 → 10-01 套装化 → 当天删）。守卫【234】是负向断言防复活（皮肤文件 / 换肤分支不许回来）；其中「胶囊开关全仓统一走共享 ToggleSwitch」一条与皮肤无关，**独立有效**（新开关不许写散装实现）。localStorage 旧状态由组件库页模块体清理（`ui-skin-state-v2` / `ui-skin-bindings-v1`）。
+- 守卫【235】7 条钉住组件库全部接线。
 
 ## 🎨 视觉规范（2026-09-26 立，守卫【170】）
 
