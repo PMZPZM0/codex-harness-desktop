@@ -6,7 +6,7 @@
  *
  * 代码与拆分前逐字一致；依赖边经 AST 依赖图核对，**不跨模块** ⇒ 本文件不 import 同目录其他模块。
  */
-import { Archive, Blocks, Bot, Camera, CircleGauge, Clock3, Download, PawPrint, Settings2, Sparkles, Star, Store, TerminalSquare, Sun, Wand2, Wrench, Wifi, Zap, Server, UserRound, Users, Workflow, Wallet, Database, Headphones } from "lucide-react";
+import { Archive, Blocks, Bot, Camera, CircleGauge, Clock3, Download, LayoutGrid, PawPrint, Settings2, Sparkles, Star, Store, TerminalSquare, Sun, Wand2, Wrench, Wifi, Zap, Server, UserRound, Users, Workflow, Wallet, Database, Headphones } from "lucide-react";
 import { BuiltinCommandDef } from "../../../features/commands";
 import type { SettingsPage } from "../types";
 
@@ -77,7 +77,7 @@ export const cronTemplates = [
 
 export const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
   { group: "账户", items: [["user", "用户中心", UserRound], ["model", "模型", Bot], ["relay", "中转站", Wallet], ["openai", "OpenAI 订阅", CircleGauge]] },
-  { group: "常用", items: [["general", "控制台", Settings2], ["appearance", "外观", Sun], ["ui-skin", "控件皮肤", Wand2], ["personalization", "个性化", Sparkles], ["pet", "桌面宠物", PawPrint], ["voice", "语音通话", Headphones], ["skills", "技能", Zap], ["plugins", "插件", Store], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare], ["screenshot", "截图", Camera], ["favorites", "收藏夹", Star]] },
+  { group: "常用", items: [["general", "控制台", Settings2], ["appearance", "外观", Sun], ["ui-skin", "控件皮肤", Wand2], ["component-library", "组件库", LayoutGrid], ["personalization", "个性化", Sparkles], ["pet", "桌面宠物", PawPrint], ["voice", "语音通话", Headphones], ["skills", "技能", Zap], ["plugins", "插件", Store], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare], ["screenshot", "截图", Camera], ["favorites", "收藏夹", Star]] },
   { group: "智能体", items: [["agentteam", "专家/专家团", Users]] },
   { group: "自动化与能力", items: [["automation", "自动化", Workflow], ["mcp", "MCP", Wifi], ["schedule", "定时任务", Clock3], ["hooks", "钩子", Wrench], ["ssh", "SSH 服务器", Server]] },
   { group: "数据与统计", items: [["usage", "使用统计", CircleGauge], ["storage", "数据管理", Database], ["backup", "会话备份", Download], ["archive", "归档管理", Archive]] },

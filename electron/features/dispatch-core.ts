@@ -149,6 +149,33 @@ function dispatchMcpTools(): unknown[] {
       description: "删除一个定时任务（不可恢复）。",
       inputSchema: { type: "object", properties: { id: { type: "string", description: "任务 id（从 scheduler_list 拿）" } }, required: ["id"] },
     },
+    /* ── Uiverse 组件库两件套（10-01 用户：「Codex 开发软件的时候，可以查这个组件库，调用组件代码」）──
+       数据端 electron/features/uiverse-library.ts（与渲染层控件皮肤库同一份 gzip，单一真相源）。
+       用户开发前端界面时模型可直接搜组件、取代码粘进用户项目（MIT）。 */
+    {
+      name: "ui_component_search",
+      description: "搜索 Uiverse 社区组件库（3802 个 HTML+CSS 现成组件，MIT）：按钮/卡片/复选框/表单/输入框/通知/图案/单选/开关/工具提示/加载器。给用户写前端界面时先来这里找现成组件，别从零手写。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          cat: { type: "string", description: "类目（可省略=全部）：Buttons/Cards/Checkboxes/Forms/Inputs/Notifications/Patterns/Radio-buttons/Toggle-switches/Tooltips/loaders" },
+          query: { type: "string", description: "关键词（匹配组件名/作者，可省略）" },
+          limit: { type: "number", description: "最多返回几条（默认 20，上限 100）" },
+        },
+      },
+    },
+    {
+      name: "ui_component_get",
+      description: "取一个 Uiverse 组件的完整代码（HTML+CSS 内联，可直接写入用户项目文件）。先用 ui_component_search 拿到 cat/id。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          cat: { type: "string", description: "类目（search 结果里的）" },
+          id: { type: "string", description: "组件 id（search 结果里的）" },
+        },
+        required: ["cat", "id"],
+      },
+    },
     /* ── 专家 / 子智能体管理三件套（09-29 用户：「让用户可以通过 Codex 会话新建专家和专家团还有子智能体」）──
        用户在会话里说「帮我建一个 XX 专家」⇒ 模型直接建，落盘 userData/expert-teams.json，
        重启后专家列表可见。normalizeTeamConfig 负责字段缺省与 id 规范；同 teamId 即更新。

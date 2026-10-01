@@ -78,6 +78,14 @@
 - 设置页 = 注册表一行一页（`pet` 页）+ `settingsNav` + `HelpDialog.OVERVIEW_GROUPS` **三处都要加**
   —— 少总览那处会被守卫【32】打红。
 
+### 📚 Uiverse 组件库（`electron/features/uiverse-library.ts` + `src/features/component-library/`，2026-10-01）
+
+组件库的两个消费面共用**同一份 gzip 数据**（`src/lib/ui-skin/data/*.gz`，单一真相源，⛔ 不复制第二份）：
+
+- **独立设置页「组件库」**（`component-library` 域，与「控件皮肤」并立）：浏览全部 11 类 3802 个组件，点卡片看 HTML+CSS 原文、一键复制（`writeClipboard`），给用户开发别的软件用。加载失败必须可见（`comp-lib-error`，⛔ 不许静默空白）；代码视图用 `<pre>` 文本节点（⛔ 不用 innerHTML）。
+- **Codex 引擎查询工具**：内置 MCP（harness-dispatch）的 `ui_component_search` / `ui_component_get`（定义在 `dispatch-core.ts`，执行端 `dispatch-rpc.ts`，数据端 `uiverse-library.ts` 从 `dist/assets/<Cat>.html-*.gz` 前缀匹配定位、dev 回落 `src/lib/ui-skin/data/`）。⛔ 模型侧常驻指令第 12 条（`UI_COMPONENT_INSTRUCTIONS`）必须与工具同在——工具在表里模型不知道 = 白配。
+- 守卫【235】7 条钉住以上全部接线。
+
 ### 🎨 控件皮肤工坊（`src/features/ui-skin/` + `src/lib/ui-skin/` + `components/SkinHost`，2026-09-30 深夜；10-01 套装化重做）
 
 把 **Uiverse.io Galaxy**（3802 个社区 UI 元素，MIT）内置进应用。10-01 起以**风格套装**为单位换肤：按作者聚类（同作者开关+加载器风格连贯，60 套，`scripts/gen-ui-skin-packs.mjs` 从 catalog 生成 `src/lib/ui-skin/packs.gen.ts`），一次激活一套、**全局所有接线点统一生效**；单品手选降级为「高级覆盖」，激活套装会清空覆盖。分层（⛔ 别混）：

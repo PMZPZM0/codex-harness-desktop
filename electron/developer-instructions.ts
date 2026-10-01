@@ -160,6 +160,13 @@ const CAPABILITY_INSTRUCTIONS =
   `   HOW TO EXTEND: new host capability = a channel in \`electron/ipc-channels.manifest.json\` → \`npm run gen:ipc\` (then re-run the skill generator); reusable procedure = a **skill**; external service = an **MCP connector**; a lasting role that works in its own session = an **expert / expert team**; periodic work = the **scheduler**; a recorded desktop flow = an **RPA recipe**; hardware/clipboard/screenshot/voice = existing domains in the catalogue (reuse them).\n` +
   `   ⛔ SCOPE: on an installed (packaged) build there is no source tree ⇒ only the *configuration* extension paths exist (skill / MCP connector / expert / scheduler / RPA / IM channel). Say that plainly instead of promising a source patch you cannot make. After extending the host in a source tree, re-run the generator so the catalogue matches the code again.`;
 
+/* ── 第 12 条：Uiverse 组件库（10-01 用户：「Codex 开发软件的时候，可以查这个组件库，调用组件代码」）──
+   ⛔ 常驻的原因与第 11 条同款：工具在不在表里模型未必看得全，写前端时"从零手写按钮"是默认习惯，
+   不提醒就不会去查库。判据式写法（前端任务才相关），不占太多预算。 */
+const UI_COMPONENT_INSTRUCTIONS =
+  `\n12) UI COMPONENT LIBRARY — when building ANY frontend UI (web page / component / settings panel), search the built-in Uiverse library FIRST:\n` +
+  `   \`ui_component_search\` (by category/keyword) + \`ui_component_get\` (fetch full HTML+CSS, MIT) — 3,800+ ready-made components (buttons, cards, checkboxes, forms, inputs, notifications, loaders, …). Prefer adapting one of these over hand-writing from scratch; paste the fetched code into the user's project and adjust to their theme. If the tools are absent from your tool table, say so instead of inventing component code.`;
+
 function gateAndReviewInstructions(): string {
   const mcpBackend = effectiveMemoryBackend() === "mcp";
   const memorySkill = mcpBackend ? MEMORY_MCP_BACKEND_SKILL : MEMORY_CLASSIFY_SKILL;
@@ -196,6 +203,8 @@ export function buildDevInstructions(input: { desktop?: boolean; browser?: boole
   text += gateAndReviewInstructions();
   // 宿主能力与可拓展性（09-25：用户问「能拓展什么」时模型去 grep 源码，扫半天没答案）
   text += CAPABILITY_INSTRUCTIONS;
+  // Uiverse 组件库（10-01：写前端先查库、取代码直接用）
+  text += UI_COMPONENT_INSTRUCTIONS;
   // 深层联动软约束：自动化能力被关闭时，在基础指令里明确告诉模型不要调用这些工具。
   // 09-20：MCP 工具（`desktop_*` / `browser_*`）现在会被 disabled_tools **硬移除**，所以这里
   // 重点变成「别用命令行兜底绕过总闸」—— nuphus-call / playwright-cli 仍在 PATH 上，
