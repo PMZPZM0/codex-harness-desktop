@@ -42,24 +42,32 @@ export const WALK_CYCLE = [1, 2, 3, 4] as const;
 export type SeatSpot = { x: number; y: number; facing: "up" | "down" | "left" | "right" };
 
 /**
- * 六个工位 —— ⛔ 用 PIL 从 bg.webp 里**实测量出**的椅子中心（09-30，别目测）：
+ * 六个工位 —— ⛔ 用 PIL 从 bg.webp 里**实测量出**（10-01 逐列采样颜色精测，别目测）：
  * 上排 (264,300) (490,300) (705,300)；下排 (266,470) (491,470) (707,470)。
- * 角色坐进去 = 朝上（ROW_UP）的坐姿列，锚点=椅面。
+ * 角色坐进去 = 朝上（ROW_UP）的坐姿列。
+ *
+ * backrest = 该座位**椅背在背景里的实测矩形**（绝对 y 由 seat.y+dy 推出）：
+ *   上排椅背 y≈238-312（顶 = seat.y-62）；下排 y≈433-508（顶 = seat.y-37）。
+ *   ⛔⛔ 两排椅子相对座位**高度不同**（差 25px）——共用一个矩形/锚点公式必然弄错一排
+ *   （10-01 用户报「上排不自然」的真因：椅背重贴偏下 25px，人物被「拦腰截断」）。
+ *   渲染端从 backrest 推导一切：人物顶 = 椅背顶 - 31（露头肩 31px，与下排自然态一致）；
+ *   手部动画 y = 椅背顶 - 28（键盘面，两排一致）。
  */
-export const SEATS: SeatSpot[] = [
-  { x: 264, y: 300, facing: "up" },
-  { x: 490, y: 300, facing: "up" },
-  { x: 705, y: 300, facing: "up" },
-  { x: 266, y: 470, facing: "up" },
-  { x: 491, y: 470, facing: "up" },
-  { x: 707, y: 470, facing: "up" },
+export const SEATS: (SeatSpot & { backrest: { dx: number; dy: number; w: number; h: number } })[] = [
+  { x: 264, y: 300, facing: "up", backrest: { dx: -30, dy: -62, w: 60, h: 74 } },
+  { x: 490, y: 300, facing: "up", backrest: { dx: -30, dy: -62, w: 60, h: 74 } },
+  { x: 705, y: 300, facing: "up", backrest: { dx: -30, dy: -62, w: 60, h: 74 } },
+  { x: 266, y: 470, facing: "up", backrest: { dx: -30, dy: -37, w: 60, h: 75 } },
+  { x: 491, y: 470, facing: "up", backrest: { dx: -30, dy: -37, w: 60, h: 75 } },
+  { x: 707, y: 470, facing: "up", backrest: { dx: -30, dy: -37, w: 60, h: 75 } },
 ];
 
 /** 大门落点（新成员从这进）——左下角玻璃门内侧。 */
 export const DOOR_SPOT = { x: 64, y: 596 };
 
 /**
- * 椅背重贴矩形（相对席位中心的偏移；PIL 实测整椅 ≈ 60×64，含扶手）。
+ * 椅背重贴矩形（兼容导出：Canvas 里按**每个座位自己的 backrest** 重贴 —— 见 SEATS 注释。
+ * 这个常量只保留给「重贴逻辑的默认形状」参考，⛔ 渲染路径读 seat.backrest。）
  * ⛔ 坐姿成员画完后要把它从**背景图**再贴一遍盖回人物身上 —— 人是坐在椅子里的，
  *   椅背必须挡住下半身、椅子要完整凸显出来；不贴就是"人物把椅子挡住"（09-30 用户实测）。
  *   ⛔ 宽度必须 ≥ 人物宽（3× 时 48px），否则人比椅子宽、两侧盖住椅扶手。

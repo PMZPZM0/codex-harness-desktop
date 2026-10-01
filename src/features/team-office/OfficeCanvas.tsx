@@ -14,7 +14,7 @@ import char3 from "./assets/chars/char_3.png";
 import char4 from "./assets/chars/char_4.png";
 import char5 from "./assets/chars/char_5.png";
 import {
-  CANVAS_H, CANVAS_W, CHAIR_BACKREST, COL_IDLE, FRAME_H, FRAME_W, SIT_FRAMES, SPRITE_SCALE, WALK_CYCLE,
+  CANVAS_H, CANVAS_W, COL_IDLE, FRAME_H, FRAME_W, SEATS, SIT_FRAMES, SPRITE_SCALE, WALK_CYCLE,
   type OfficeMemberState,
 } from "./office-format";
 import { OfficeSim } from "./office-sim";
@@ -92,9 +92,11 @@ export function OfficeCanvas({ members, onOpenMember }: OfficeCanvasProps) {
           const dw = FRAME_W * SPRITE_SCALE;
           const dh = FRAME_H * SPRITE_SCALE;
           const dx = Math.round(a.x - dw / 2);
-          // 锚点分动作（dh=96）：走路/站立 = 脚底 y+26；坐姿 = 坐姿图形底(y-68 处)落进椅面，
-          // 头+肩露在椅背上方（用户 09-30：不露头认不出谁坐在哪）
-          const dy = Math.round(a.y - dh + (a.action === "sit" ? 28 : 26));
+          /* ⛔ 坐姿锚点从**该座位椅背顶**推导（10-01 实测：两排椅子相对座位高度差 25px，
+             统一公式必然弄错一排——上排人物整个被椅背重贴盖掉「头都没了」）：
+             人物顶 = 椅背顶 - 31（露头肩 31px，与下排自然态一致）；走路/站立 = 脚底 y+26。 */
+          const r = SEATS[a.seatIndex]?.backrest ?? { dx: -30, dy: -30, w: 60, h: 64 };
+          const dy = a.action === "sit" ? Math.round(a.y + r.dy - 31) : Math.round(a.y - dh + 26);
           ctx.save();
           if (a.flip) {
             ctx.translate(dx + dw, dy);
@@ -106,10 +108,29 @@ export function OfficeCanvas({ members, onOpenMember }: OfficeCanvasProps) {
           ctx.restore();
 
           /* ⛔ 坐进椅子：人画完立刻把椅背矩形从背景图**重贴**上来盖住下半身 ——
-             背景是烙死的整图，人物永远画在它上面，不重贴就是"人物挡住椅子"（09-30 实测）。 */
+             背景是烙死的整图，人物永远画在它上面，不重贴就是"人物挡住椅子"（09-30 实测）。
+             ⛔ 矩形用**该座位自己的 backrest**（实测值，见 SEATS 注释）。 */
           if (a.action === "sit" && bg) {
-            const r = CHAIR_BACKREST;
             ctx.drawImage(bg, a.x + r.dx, a.y + r.dy, r.w, r.h, a.x + r.dx, a.y + r.dy, r.w, r.h);
+          }
+
+          /* ⛔ 手部打字动画（10-01 用户：「干坐着挺尴尬，加上去，要看到人物在用双手操作
+             键盘和鼠标的效果」）：素材坐姿两帧只差 1-2px 手臂位移，3× 放大后不可感知 ——
+             在键盘位置叠两只交替起落的肤色手块。work（任务中）= 快速交替敲击；待机 = 双手
+             静放键盘。⛔ 画在椅背重贴**之后**（手在桌面最上层）；手 y = 椅背顶 - 28
+             （键盘面，从 backrest 推导——两排桌椅相对位置一致，这一偏移对两排都成立）。 */
+          if (a.action === "sit") {
+            const typing = a.mode === "work";
+            const t = a.frameClock * (typing ? 9 : 0);
+            const lb = typing ? (Math.sin(t) > 0 ? -2 : 0) : 0;
+            const rb = typing ? (Math.sin(t) > 0 ? 0 : -2) : 0;
+            const handY = a.y + r.dy - 28;
+            ctx.fillStyle = "#c98d63"; // 手腕/袖口阴影层（稍大，当轮廓）
+            ctx.fillRect(a.x - 18, handY + lb - 1, 5, 6);
+            ctx.fillRect(a.x + 13, handY + rb - 1, 5, 6);
+            ctx.fillStyle = "#e8b08a"; // 手
+            ctx.fillRect(a.x - 17, handY + lb, 4, 5);
+            ctx.fillRect(a.x + 14, handY + rb, 4, 5);
           }
         }
         // ── 第二遍：名字牌 + 气泡（UI 层，永远在最上）──
