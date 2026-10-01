@@ -113,25 +113,48 @@ bag.effortAuto = effortAuto as typeof bag.effortAuto;
   }
 bag.changeEffortAuto = changeEffortAuto as typeof bag.changeEffortAuto;
 
+  /* ⛔ 自动档延迟纪律（10-01 用户实测后定标：「判定要 50ms 内透出来，做不到就是废物」）：
+     本机实测 laya-serve 单次判定 ~200ms（PyTorch CPU + HTTP），发anything送时现场判都超标 ——
+     所以判定**前移到输入停顿**：打字停 700ms 就预先判好进缓存，发送时命中缓存 0ms 透出；
+     只有最后 700ms 内还在改字才现场判（~200ms，仍在 3s 硬上限内且不阻塞上屏——乐观气泡
+     先上、判定在 turn/start 之前完成）。 */
+  const autoEffortCache = useRef(new Map<string, string>()); // 消息原文 → 判定档（已过支持档过滤）
+
   async function resolveAutoEffort(text: string): Promise<string | null> {
+    const cached = autoEffortCache.current.get(text);
+    if (cached) return cached; // 命中预判缓存：0ms
     try {
       const result = await window.codex.layaDecideEffort(text);
       if (!result?.effort) return null;
       // ⛔ 模型实际声明档过滤：判定档不被支持时降到相邻可用档（发送失败自动降档是兜底，别主动踩）
       const supported = declaredModelEfforts((bag.selectedModel as any)?.supportedReasoningEfforts ?? undefined);
+      let chosen = result.effort;
       if (supported.length && !supported.includes(result.effort)) {
         const order = ["low", "medium", "high", "xhigh"];
         const idx = order.indexOf(result.effort);
         const near = [order[idx - 1], order[idx + 1]].filter((x): x is string => Boolean(x) && supported.includes(x));
         if (!near.length) return null;
-        return near[0];
+        chosen = near[0];
       }
-      return result.effort;
+      if (autoEffortCache.current.size > 50) autoEffortCache.current.clear();
+      autoEffortCache.current.set(text, chosen);
+      return chosen;
     } catch {
       return null; // laya 未装/未就绪/超时 —— 判断器是增强，静默降级到手选档
     }
   }
 bag.resolveAutoEffort = resolveAutoEffort as typeof bag.resolveAutoEffort;
+
+  /* 预判：effortAuto 开着时，输入停顿 700ms 就把当前草稿的档位判好（打字期间零成本，
+     发送时大概率命中缓存）。判定是纯读操作，改了草稿自然失效，不需要失效逻辑。 */
+  useEffect(() => {
+    if (!bag.effortAuto) return;
+    const draft = bag.prompt.trim();
+    if (draft.length < 2 || autoEffortCache.current.has(draft)) return;
+    const timer = setTimeout(() => { void resolveAutoEffort(draft); }, 700);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bag.prompt, bag.effortAuto]);
 
   // Laya 安装/就绪状态（供 EffortPicker 自动档的可用性展示；15s 轮询够——状态变化低频）
   const [layaInstalled, setLayaInstalled] = useState(false);

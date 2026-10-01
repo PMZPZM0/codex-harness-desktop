@@ -327,7 +327,9 @@ export async function send(bag: Bag, event?: FormEvent) {
          判定档要过 pickEffortFallback（模型已知不支持的档自动降邻档）。 */
       let effectiveEffort = bag.effort || null;
       if (bag.effortAuto && messageText.trim()) {
-        const decided = await bag.resolveAutoEffort?.(messageText);
+        // ⛔ 判定是增强不是闸门：主进程侧 3s 硬超时 + 这里再兜异常——任何失败都弃权回落
+        // 手选档，发送永不被 laya 阻塞/打断（10-01 实测：首启等权重下载把消息卡没）。
+        const decided = await bag.resolveAutoEffort?.(messageText).catch(() => null);
         if (decided) {
           effectiveEffort = decided;
           const supported = (bag.selectedModel as any)?.supportedReasoningEfforts as string[] | undefined;
