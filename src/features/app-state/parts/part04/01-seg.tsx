@@ -246,6 +246,17 @@ bag.commandMatches = commandMatches as typeof bag.commandMatches;
   const mergedSkillCatalog = useMemo(() => {
     const seen = new Set<string>();
     const out: { name: string; description: string; note: string; path: string; source: string }[] = [];
+    /* 专家标记的**名称/路径索引**（10-01：引擎清单与本地清单可能同名不同名/不同序）：
+       先把本地清单里带标记的技能按「规范化名 + 路径」建索引，push 任意来源的条目时都查一次——
+       这样即使引擎清单先到、或条目来自引擎（不带标记字段），专家专属分组也不会丢。 */
+    const expertByKey = new Map<string, string>();
+    for (const entry of bag.localSkills as any[]) {
+      const slug = entry?.skillsetSlug ? String(entry.skillsetSlug) : entry?.skillset ? "1" : "";
+      if (!slug) continue;
+      expertByKey.set(normSkillName(entry.name), slug);
+      if (entry.path) expertByKey.set(String(entry.path).toLowerCase(), slug);
+      if (entry.folder) expertByKey.set(String(entry.folder).toLowerCase(), slug);
+    }
     const push = (entry: { name: string; description?: string; descriptionZh?: string; path?: string; category?: string; source?: string; skillset?: boolean; skillsetSlug?: string }) => {
       const key = normSkillName(entry.name);
       if (!key || seen.has(key)) return; // 同名（含插件限定名）只保留第一条（本地优先）
@@ -253,15 +264,17 @@ bag.commandMatches = commandMatches as typeof bag.commandMatches;
       /* ⛔ source 用 string 而不是字面量联合：【93】的归一化按「|」切段排序（只适配顶层联合），
          对象**内部**的 "engine" | "market" | "local" 会被切碎重排成乱串，bag-types 永远对不齐。
          分组消费端（composer 的 # 面板）按字符串比较，类型收紧收益为零。 */
+      // 专家专属（10-01 用户：「# 面板里区分不出来哪些是专家专属技能」）：三种取证都认——
+      // 条目自带标记 / 本地索引按名命中 / 本地索引按路径命中。
+      const expertHit = (entry as any).skillset || (entry as any).skillsetSlug
+        || expertByKey.get(key)
+        || (entry.path ? expertByKey.get(String(entry.path).toLowerCase()) : undefined);
       const item: { name: string; description: string; note: string; path: string; source: string } = {
         name: shortSkillName(entry.name),
         description: entry.description ?? "",
         note: skillZhNote(entry),
         path: entry.path ?? "",
-        // 专家专属（10-01 用户：「# 面板里区分不出来哪些是专家专属技能」）：专家市场包的元技能
-        // 与它编排的子技能（.skillhub.json: kind=skillset / skillset-child）单独成组，
-        // 不再混进「市场安装」——混着看根本认不出哪些是某个专家包带来的。
-        source: (entry as any).skillset || (entry as any).skillsetSlug
+        source: expertHit
           ? "expert"
           : entry.source === "cocoloop" || entry.source === "skillhub" ? "market" : entry.source === "local" ? "local" : "engine",
       };
