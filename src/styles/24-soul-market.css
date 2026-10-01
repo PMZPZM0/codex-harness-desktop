@@ -1,0 +1,32 @@
+/* 24-soul-market.css —— SkillHub 人格市场设置页（soul-market 域，10-01 立）+ 专家市场包块（expert-market 域）
+   视觉基调遵循 DESIGN.md：--panel/--line/--text 递进，唯一主色 --accent，不写死色值。 */
+
+/* ── 人格市场（soul-market）────────────────────────────────────────────── */
+.soul-market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.soul-market-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.soul-market-card:hover { border-color: var(--accent); }
+.soul-market-card.active { border-color: var(--accent); background: var(--accent-soft); }
+.soul-market-card-head { display: flex; align-items: center; gap: 8px; }
+.soul-market-card-head strong { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.soul-market-avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--panel-2); color: var(--muted); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.soul-market-badge { font-style: normal; font-size: 10px; color: var(--accent-text); background: var(--accent); border-radius: 999px; padding: 1px 8px; flex: none; }
+.soul-market-card p { font-size: 12px; color: var(--muted); margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.soul-market-card footer { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--faint); }
+.soul-market-card footer em { font-style: normal; color: var(--accent); }
+.soul-market-detail { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.soul-market-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.soul-market-detail-head strong { font-size: 13px; color: var(--text); }
+.soul-market-content { margin: 0; max-height: 300px; overflow: auto; font-size: 12px; line-height: 1.7; color: var(--text); white-space: pre-wrap; font-family: var(--mono); background: var(--panel-2); border-radius: 8px; padding: 10px; }
+.soul-market-error { color: var(--red); font-size: 12px; margin: 0; }
+.soul-market-applied { display: flex; align-items: center; gap: 4px; color: var(--ok); font-size: 12px; margin: 0; }
+
+/* ── 专家市场包（expert-center 页内区块）──────────────────────────────── */
+.expert-market { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.expert-market-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.expert-market-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); }
+.expert-market-title small { font-weight: 400; font-size: 11px; color: var(--muted); }
+.expert-market-tools { display: flex; align-items: center; gap: 8px; }
+.expert-market-search { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; background: var(--panel-2); color: var(--muted); }
+.expert-market-search input { border: none; outline: none; background: transparent; color: var(--text); font-size: 12px; width: 150px; }
+.expert-market-pack { font-size: 13px; }
+.expert-market-note { display: flex; align-items: center; gap: 4px; margin: 0; font-size: 11px; }

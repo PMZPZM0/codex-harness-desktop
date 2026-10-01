@@ -6,7 +6,7 @@
  *
  * 代码与拆分前逐字一致；依赖边经 AST 依赖图核对，**不跨模块** ⇒ 本文件不 import 同目录其他模块。
  */
-import { Archive, Blocks, Bot, Camera, CircleGauge, Clock3, Download, LayoutGrid, PawPrint, Settings2, Sparkles, Star, Store, TerminalSquare, Sun, Wrench, Wifi, Zap, Server, UserRound, Users, Workflow, Wallet, Database, Headphones } from "lucide-react";
+import { Archive, Blocks, Bot, Camera, CircleGauge, Clock3, Download, Heart, LayoutGrid, PawPrint, Settings2, Sparkles, Star, Store, TerminalSquare, Sun, Wrench, Wifi, Zap, Server, UserRound, Users, Workflow, Wallet, Database, Headphones } from "lucide-react";
 import { BuiltinCommandDef } from "../../../features/commands";
 import type { SettingsPage } from "../types";
 
@@ -77,7 +77,7 @@ export const cronTemplates = [
 
 export const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
   { group: "账户", items: [["user", "用户中心", UserRound], ["model", "模型", Bot], ["relay", "中转站", Wallet], ["openai", "OpenAI 订阅", CircleGauge]] },
-  { group: "常用", items: [["general", "控制台", Settings2], ["appearance", "外观", Sun], ["component-library", "组件库", LayoutGrid], ["personalization", "个性化", Sparkles], ["pet", "桌面宠物", PawPrint], ["voice", "语音通话", Headphones], ["skills", "技能", Zap], ["plugins", "插件", Store], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare], ["screenshot", "截图", Camera], ["favorites", "收藏夹", Star]] },
+  { group: "常用", items: [["general", "控制台", Settings2], ["appearance", "外观", Sun], ["component-library", "组件库", LayoutGrid], ["personalization", "个性化", Sparkles], ["soul-market", "人格市场", Heart], ["pet", "桌面宠物", PawPrint], ["voice", "语音通话", Headphones], ["skills", "技能", Zap], ["plugins", "插件", Store], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare], ["screenshot", "截图", Camera], ["favorites", "收藏夹", Star]] },
   { group: "智能体", items: [["agentteam", "专家/专家团", Users]] },
   { group: "自动化与能力", items: [["automation", "自动化", Workflow], ["mcp", "MCP", Wifi], ["schedule", "定时任务", Clock3], ["hooks", "钩子", Wrench], ["ssh", "SSH 服务器", Server]] },
   { group: "数据与统计", items: [["usage", "使用统计", CircleGauge], ["storage", "数据管理", Database], ["backup", "会话备份", Download], ["archive", "归档管理", Archive]] },
@@ -116,5 +116,5 @@ export /** GitHub raw logo → jsDelivr CDN 镜像（raw.githubusercontent.com �
  *  加载失败再切 jsDelivr 镜像（部分网络下 raw 不可达），再失败隐藏图片露字母。 */
 
 /** 市场卡片点击预览（技能/插件/MCP 通用） */
-// 插件市场（codex-marketplace.com）分类 tab：中文标签 → API 英文分类值
-const pluginMarketCategoryTabs: [string, string][] = [["全部", "全部"], ["编码", "Coding"], ["效率", "Productivity"], ["实用工具", "Utilities"], ["AI 与智能体", "AI & Agents"], ["设计", "Design"], ["数据", "Data"], ["开发", "Development"]];
+// 插件市场（SkillHub，10-01 换源）分类 tab：中文标签 → api/v1/plugins 的 category key
+const pluginMarketCategoryTabs: [string, string][] = [["全部", "全部"], ["趣味换装", "fun-dressup"], ["联网工具", "web-tools"], ["记忆", "memory"], ["工作流", "agent-workflow"], ["模型推理", "model-inference"], ["客户端", "client"], ["安全管理", "admin-security"]];

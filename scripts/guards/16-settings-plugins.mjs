@@ -368,8 +368,8 @@ export async function run() {
       "【236】技能市场刷新 effect 的 deps 不含 marketPage（翻页是本地切片，不碰远端；监听它 = 每次翻页拉一遍再按回 page 1）"
     );
     const cm = readFileSync(join(ROOT, "electron", "codex-market.ts"), "utf8");
-    (/const response = await fetchWithRetry\(`\$\{MARKETPLACE_API\}/.test(cm) ? ok : fail)(
-      "【236】插件市场清单请求走 fetchWithRetry（单发 fetch 一抖整个市场 AbortError；装插件路径已有重试，列表不许裸奔）"
+    (/const response = await fetchWithRetry\(`\$\{SKILLHUB_API\}\/api\/v1\/plugins\?/.test(cm) ? ok : fail)(
+      "【236】插件市场清单请求走 fetchWithRetry（10-01 换源 SkillHub 后锚新源；单发 fetch 一抖整个市场 AbortError，列表不许裸奔）"
     );
     // ④ 界面上渲染出「: any」字样（10-01 用户截图，技能/插件两个市场都在分类 tab 尾部）：
     //    map(...) 收尾多打了 `: any`，JSX 文本节点合法 ⇒ tsc 不报、直接画到界面上。
@@ -379,6 +379,20 @@ export async function run() {
       .filter(({ src }) => /[\)}]\s*:\s*any\s*</.test(src));
     (strayAny.length === 0 ? ok : fail)(
       `【236】JSX 里不许渲染出残留的类型标注「: any」（实测 ${strayAny.length} 处：${strayAny.map((x) => x.p).slice(0, 3).join("、")}）`
+    );
+    // ⑤ 新市场域接线（10-01 立项 expert-market / soul-market）：handler 挂载 + 人格生效链 +
+    //    专家卡落地，缺一环 = 功能白配。
+    const mkts = readFileSync(join(ROOT, "electron", "features", "skillhub-markets-ipc.ts"), "utf8");
+    (mkts.includes('"expert-market:list"') && mkts.includes('"expert-market:install"') && mkts.includes('"soul-market:apply"') && mkts.includes('"soul-market:current"') ? ok : fail)(
+      "【236】expert-market / soul-market 两域 handler 全部挂载（缺 = 市场白配，桥接面有但主进程没人接）"
+    );
+    const pers = readFileSync(join(ROOT, "electron", "personalization.ts"), "utf8");
+    (/persona: pick\("persona"/.test(pers) && /- Persona \(installed from the persona market/.test(pers) ? ok : fail)(
+      "【236】人格生效链完整：persona 字段落 personalization.json 且 buildAgentsMd 真渲染进 AGENTS.md（只存不渲染 = 装了不生效）"
+    );
+    const packs = readFileSync(join(ROOT, "electron", "skillhub-packages.ts"), "utf8");
+    (packs.includes("writeExpertTeams(next)") && packs.includes("normalizeTeamConfig") ? ok : fail)(
+      "【236】专家包装完必须落专家卡片（writeExpertTeams）——用户令「安装后在专家中心新增对应专家卡片」"
     );
   }
 }
