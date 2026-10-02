@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-01",
-  "count": 387,
+  "count": 388,
   "channels": [
     {
       "name": "request",
@@ -2642,6 +2642,16 @@
       "invokeArgs": "id",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "runtimeHealth",
+      "channel": "runtime:health",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ id: string; name: string; installed: boolean; ok: boolean; detail: string }[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "工具自检（10-02 用户要的「检查」）：逐个探测已装工具**能不能真跑**（跑一次版本命令/可执行性），返回逐项结果，界面直接列给人看"
     },
     {
       "name": "weixinStartLogin",

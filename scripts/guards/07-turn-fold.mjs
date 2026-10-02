@@ -3541,8 +3541,11 @@ export async function run() {
     "【82】document-convert 在 entries 里（教模型用内置 markitdown 读 PDF/Word/Excel/PPT 附件）"
   );
   // 用户明确要求「codex 自己也可以下载」⇒ 技能里必须给出**带国内镜像**的 pip 命令
-  (/pypi\.tuna\.tsinghua\.edu\.cn\/simple "markitdown\[pdf,docx,pptx\]" openpyxl/.test(bs82) ? ok : fail)(
-    "【82】document-convert 技能给出「Codex 自己装」的清华镜像命令（用户要求 codex 也能自己下载）"
+  // 用户明确要求「codex 自己也可以下载」⇒ 技能里必须给出**可用的 pip 命令 + 换源指引**。
+  // ⛔ 10-02：不能再钉「清华源」——清华的索引页 200 但 wheel 直链 403，单源命令会让引擎
+  //    卡在同一个 403 上反复重试（用户实测三处报障）。命令要指向可用镜像，并写明 403 时怎么换源。
+  (/pip install[^\n]*"markitdown\[pdf,docx,pptx\]"[^\n]*\n/.test(bs82) && /403/.test(bs82) && /pypi\.org\/simple/.test(bs82) ? ok : fail)(
+    "【82】document-convert 技能给出「Codex 自己装」的命令 + 403 换源指引（单源命令会让引擎卡死在同一个 403）"
   );
   // ⛔ 安全约束：i-have-adhd 会重塑**全部**输出的写法 ⇒ 必须保持「只有用户显式调用才生效」。
   //    引擎认这个字段（二进制里有 disable-model-invocation / disable_model_invocation 两个名字），别删。

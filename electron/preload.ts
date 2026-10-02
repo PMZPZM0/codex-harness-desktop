@@ -371,6 +371,8 @@ contextBridge.exposeInMainWorld("codex", {
   voiceKwsStatus: () => __ipc("voice:kws-status", 0, []) as Promise<{ ready: boolean }>,
   installRuntime: (id: string) => __ipc("runtime:install", 1, [id]),
   uninstallRuntime: (id: string) => __ipc("runtime:uninstall", 1, [id]),
+  /* 工具自检（10-02 用户要的「检查」）：逐个探测已装工具**能不能真跑**（跑一次版本命令/可执行性），返回逐项结果，界面直接列给人看 */
+  runtimeHealth: () => __ipc("runtime:health", 0, []),
   weixinStartLogin: () => __ipc("weixin:start-login", 0, []),
   weixinPollLogin: () => __ipc("weixin:poll-login", 0, []),
   feishuConnect: (appId: string, appSecret: string) => __ipc("feishu:connect", 2, [appId, appSecret]),

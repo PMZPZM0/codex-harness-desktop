@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（79 个能力域 / 388 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（79 个能力域 / 389 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -217,9 +217,9 @@ Bot 会话（Bot 与会话的绑定与消息注入）
 引擎工具面状态（动态工具是否注册）
 通道：tools:status
 
-### runtime（3 通道）
+### runtime（4 通道）
 随包运行时管理（node/python 等的安装/卸载/列表）
-通道：runtime:install, runtime:list, runtime:uninstall
+通道：runtime:health, runtime:install, runtime:list, runtime:uninstall
 
 ### browser（3 通道）
 浏览器自动化开关（cloak 状态/打开/弹窗）

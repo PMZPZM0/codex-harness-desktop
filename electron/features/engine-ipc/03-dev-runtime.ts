@@ -4,10 +4,11 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { app, dialog, ipcMain, safeStorage, shell } from "electron";
-import { CHINA_NPM_REGISTRY, bundledNode, downloadEnv, npmGlobalRoot, toolchainEnv, toolsRoot } from "../../toolchain";
+import { CHINA_NPM_REGISTRY, bundledNode, downloadEnv, npmGlobalRoot, pythonPipReady, toolchainEnv, toolsRoot } from "../../toolchain";
 import { existsSync } from "node:fs";
-import { DARWIN_HIDDEN, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, devRuntimeSpecs, emitRuntimeProgress, pythonSiteDir, readDownloadSource, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls } from "../dev-runtimes";
+import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, devRuntimeSpecs, emitRuntimeProgress, pythonSiteDir, readDownloadSource, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls } from "../dev-runtimes";
 import { bridgeDial, readCustomModel, responsesBridge, restrictedThreadRole } from "../../main";
 import { codexHome, engineActiveTurnIds, mainWindow, server, threadCwd, threadRuntimeStore } from "../../runtime-refs";
 import type { DevRuntimeId, DevRuntimeSpec } from "../dev-runtimes";
@@ -140,3 +141,113 @@ if (id === "ponytail") {
 }
   return { ok: true, runtimes: runtimeList() };
 });
+
+/**
+ * 工具自检（10-02 用户：「工具给老子一个检查，有一个报错，下载按不了」）。
+ *
+ * 卡片上的「已安装」只证明**文件在**，不证明**能跑** —— 用户要的是后者。
+ * 本函数对每个开发工具：① 用与卡片同一份 `runtimeInstalled` 判装没装；
+ * ② 装了就**真跑一次**（可执行类跑版本命令；Python 额外查 pip 能不能用）。
+ *
+ * ⛔ 单项失败绝不抛出：一个工具探不通不能让整页自检崩掉（那正是用户最烦的「检查也坏了」）。
+ * ⛔ 探测必须带超时（8s）——工具卡住不能把设置页拖死。
+ * ⛔ hidden 项（Laya / 手机控制）也要查：它们不出卡片，但用户照样会问「装了没、能不能用」。
+ */
+export type DevRuntimeHealth = {
+  id: string;
+  name: string;
+  /** 文件在不在（与卡片同一份判定）。 */
+  installed: boolean;
+  /** 装了的能不能真跑起来。 */
+  ok: boolean;
+  /** 给人看的一行结论（版本串 / 失败原因）。 */
+  detail: string;
+};
+
+/** 自检时让工具自报版本的参数（只列**可执行文件型**；其余只验存在性）。 */
+const HEALTH_ARGS: Partial<Record<DevRuntimeId, string[]>> = {
+  node: ["-v"],
+  python: ["--version"],
+  git: ["--version"],
+  rg: ["--version"],
+  uv: ["--version"],
+  jq: ["--version"],
+  ninja: ["--version"],
+  // 7-Zip 无参即打印版本横幅
+  sevenzip: [],
+  "yt-dlp": ["--version"],
+  cmake: ["--version"],
+  ffmpeg: ["-version"],
+  "platform-tools": ["version"],
+  pwsh: ["-NoLogo", "-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"],
+  "vscode-cli": ["--version"],
+  conda: ["--version"],
+  mingw: ["--version"],
+};
+
+/** 跑一次命令拿首行输出；**任何异常都收敛成一行文字**，不抛。 */
+function probeTool(file: string, args: string[]): Promise<{ ok: boolean; detail: string }> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (ok: boolean, detail: string) => {
+      if (settled) return;
+      settled = true;
+      resolve({ ok, detail });
+    };
+    if (!existsSync(file)) return done(false, "已安装但找不到可执行文件（目录可能被手动删过，点「修复安装」）");
+    try {
+      const child = spawn(file, args, { windowsHide: true, env: toolchainEnv(), timeout: 8000 });
+      let out = "";
+      const grab = (chunk: unknown) => { out += String(chunk); };
+      child.stdout?.on("data", grab);
+      child.stderr?.on("data", grab);
+      child.on("error", (error) => done(false, `无法启动：${String((error as Error).message || error).slice(0, 140)}`));
+      child.on("close", (code) => {
+        const first = out.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0] ?? "";
+        if (code === 0) done(true, first.slice(0, 120) || "可运行");
+        else done(false, `退出码 ${code}${first ? `：${first.slice(0, 100)}` : ""}`);
+      });
+    } catch (error) {
+      done(false, String(error).slice(0, 140));
+    }
+  });
+}
+
+/** 可执行文件的落点：Windows 用 spec.marker，mac 走 DARWIN_MARKERS 覆盖。 */
+function healthExecPath(id: DevRuntimeId, spec: DevRuntimeSpec): string {
+  const rel = IS_MAC ? (DARWIN_MARKERS[id] ?? spec.marker) : spec.marker;
+  return path.join(toolsRoot(), rel);
+}
+
+export async function devRuntimeHealth(): Promise<DevRuntimeHealth[]> {
+  const specs = devRuntimeSpecs;
+  const rows: DevRuntimeHealth[] = [];
+  for (const [rawId, spec] of Object.entries(specs) as [DevRuntimeId, DevRuntimeSpec][]) {
+    // 系统级安装项（Docker / OpenSSL，点按钮去官网）不参与自检 —— 我们没装它、也无从探测
+    if (spec.kind === "guide") continue;
+    const installed = runtimeInstalled(rawId, spec);
+    if (!installed) {
+      rows.push({ id: rawId, name: spec.name, installed: false, ok: false, detail: "未安装" });
+      continue;
+    }
+    const args = HEALTH_ARGS[rawId];
+    if (!args) {
+      rows.push({ id: rawId, name: spec.name, installed: true, ok: true, detail: "已安装（无需可执行探测）" });
+      continue;
+    }
+    const file = healthExecPath(rawId, spec);
+    const probe = await probeTool(file, args);
+    let ok = probe.ok;
+    let detail = probe.detail;
+    // Python 是最容易「在但不好用」的一个：装得上全看 pip（历史踩过 embeddable 版无 pip）。
+    if (rawId === "python" && probe.ok) {
+      const pip = pythonPipReady(file);
+      if (!pip.ok) { ok = false; detail = pip.reason; }
+      else detail = `${detail}｜pip 可用`;
+    }
+    rows.push({ id: rawId, name: spec.name, installed: true, ok, detail });
+  }
+  return rows;
+}
+
+ipcMain.handle("runtime:health", () => devRuntimeHealth());

@@ -692,6 +692,8 @@ interface Window {
     voiceKwsStatus(): Promise<{ ready: boolean }>;
     installRuntime(id: string): Promise<{ ok: boolean; runtimes: DevRuntimeEntry[] }>;
     uninstallRuntime(id: string): Promise<{ ok: boolean; runtimes: DevRuntimeEntry[] }>;
+    /* 工具自检（10-02 用户要的「检查」）：逐个探测已装工具**能不能真跑**（跑一次版本命令/可执行性），返回逐项结果，界面直接列给人看 */
+    runtimeHealth(): Promise<{ id: string; name: string; installed: boolean; ok: boolean; detail: string }[]>;
     weixinStartLogin(): Promise<{ qrcodeImg: string; qrcode: string } | null | undefined>;
     weixinPollLogin(): Promise<{ status: string; verifyCodeRequired?: boolean; connected?: boolean } | null | undefined>;
     feishuConnect(appId: string, appSecret: string): Promise<{ ok: boolean; name?: string; error?: string }>;

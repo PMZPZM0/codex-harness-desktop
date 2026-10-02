@@ -670,15 +670,51 @@ async function ensurePip(py) {
   console.log(`[pip] ready (${py})`);
 }
 
-/** 预装 Python 常用依赖（requests/httpx/flask/fastapi/playwright），走清华镜像免代理。
+/** pip 索引源：国内镜像优先、官方兜底（顺序即优先级）。 */
+const PIP_INDEXES = [
+  "https://pypi.tuna.tsinghua.edu.cn/simple",
+  "https://mirrors.cloud.tencent.com/pypi/simple",
+  "https://mirrors.aliyun.com/pypi/simple/",
+  "https://pypi.mirrors.ustc.edu.cn/simple/",
+  "https://pypi.org/simple/",
+];
+
+/**
+ * 带多源兜底的 pip install（流式）。
+ * ⛔⛔ 10-02 用户报障实录：清华源的**索引页正常（200）但具体 wheel 直链 403/404**
+ *   （镜像侧文件失效或限流）⇒ 单源模式下就是一个包下不下来、整条安装全挂。
+ * ⛔ pip 下载 wheel 失败**不会**自动换 index（`--extra-index-url` 同样不救），
+ *   它选定 URL 后失败即报错 ⇒ 只能整个命令换源重跑。
+ *   本函数按 PIP_INDEXES 顺序重试，全部失败才抛错，并把每个源的原因汇总给用户。
+ */
+async function pipInstall(py, packages, label, env, timeout = 1800000) {
+  const tried = [];
+  for (let i = 0; i < PIP_INDEXES.length; i++) {
+    const index = PIP_INDEXES[i];
+    if (i > 0) {
+      console.log(`[${label}] 换源重试（${i + 1}/${PIP_INDEXES.length}）：${index}`);
+      process.stdout.write(`@@STAGE ${label}（换源 ${i + 1}/${PIP_INDEXES.length}）\n`);
+    }
+    try {
+      await runStreaming(`"${py}" -m pip install -U --no-input --retries 3 --timeout 30 -i ${index} ${packages}`, { label, timeout, env });
+      if (i > 0) console.log(`[${label}] 成功（改用源：${index}）`);
+      return;
+    } catch (error) {
+      tried.push(`  · ${index}\n    ${keyLine(error)}`);
+    }
+  }
+  throw new Error(`${label} 失败：试过 ${PIP_INDEXES.length} 个源都不成功。\n${tried.join("\n")}`);
+}
+
+/** 预装 Python 常用依赖（requests/httpx/flask/fastapi/playwright），走国内镜像免代理。
  *  ⛔ 文档转换（markitdown）**不在这里** —— 它是按需下载项，见 DOC_PACKAGES 处的说明。 */
 async function installPipPackages(pythonDir) {
   const marker = path.join(pythonDir, "Lib", "site-packages", "fastapi");
   if (fs.existsSync(marker)) { console.log("[skip] python packages already installed"); return; }
-  console.log("[pip-packages] installing " + PIP_PACKAGES + " (tsinghua mirror, no proxy)");
+  console.log("[pip-packages] installing " + PIP_PACKAGES + " (mirror chain, no proxy)");
   process.stdout.write("@@STAGE 安装 Python 依赖\n");
   // pip 下载/安装有天然的分步输出：流式转发给界面（进度区能看到 Collecting / Installing）
-  await runStreaming(`"${path.join(pythonDir, "python.exe")}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${PIP_PACKAGES}`, { label: "Python 依赖安装", timeout: 900000, env: { ...process.env, PYTHONHOME: pythonDir } });
+  await pipInstall(path.join(pythonDir, "python.exe"), PIP_PACKAGES, "Python 依赖安装", { ...process.env, PYTHONHOME: pythonDir }, 900000);
   console.log("[pip-packages] done");
 }
 
@@ -706,12 +742,12 @@ async function installDocTools(pythonDir) {
   if (!fs.existsSync(py)) {
     throw new Error("需要先安装「Python + Tkinter + pip」（在「基础运行时」分组里），再安装文档转换");
   }
-  console.log("[markitdown] installing " + DOC_PACKAGES.join(" ") + " (tsinghua mirror)");
+  console.log("[markitdown] installing " + DOC_PACKAGES.join(" ") + " (mirror chain)");
   process.stdout.write("@@STAGE 安装文档转换依赖\n");
   const env = { ...process.env };
   // mac 的 python-build-standalone 不需要 PYTHONHOME（装了反而会打乱 sys.path）
   if (process.platform !== "darwin") env.PYTHONHOME = pythonDir;
-  await runStreaming(`"${py}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${DOC_PACKAGES.join(" ")}`, { label: "文档转换依赖安装", timeout: 1800000, env });
+  await pipInstall(py, DOC_PACKAGES.join(" "), "文档转换依赖安装", env);
   console.log("[markitdown] done");
 }
 
@@ -884,8 +920,8 @@ async function mainMac() {
       try { await ensurePip(python); }
       catch (error) { console.log("[pip] ensurepip failed (optional): " + String(error.message).split("\n")[0]); }
       try {
-        runCommand(`"${python}" -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple ${PIP_PACKAGES}`, { timeout: 900000 });
-      } catch (error) { console.log("[pip-packages] failed (optional): " + String(error.message).split("\n")[0]); }
+        await pipInstall(python, PIP_PACKAGES, "Python 依赖安装", undefined, 900000);
+      } catch (error) { console.log("[pip-packages] failed (optional): " + keyLine(error)); }
     }
   }
   // 文档转换依赖：mac 侧的按需补装入口（默认已随上面的 pip 安装装好，这里给老用户补装/修复）。
