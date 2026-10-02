@@ -255,6 +255,20 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 
 ## 内置能力（引擎可直接用，无需额外安装）
 
+> ⛔ **50MB 口径（10-01 用户定稿）**：**下载体积 ≤50MB 的工具一律随包内置**（装机即用）；
+> 只有大件与浏览器内核留在「开发工具」页按需下载。改内置清单必须三处同步：
+> ① `package.json` 的 `build.extraResources` ② `scripts/prepare-windows-tools.cjs`（win 构建期现造）
+> ③ `scripts/prepare-mac-tools.cjs`（mac 构建期现造）。守卫【29】按 extraResources 逐条比对。
+
+**内置（builtIn=true，11 项）**：引擎本体 · Node.js · VS Code CLI · Nuphus 桌面自动化 ·
+Playwright 浏览器自动化（CLI）· ponytail 写代码模式插件 · **Python（完整版，自带 pip + Tkinter）** ·
+**ripgrep** · **uv** · **CMake** · **7-Zip CLI** · **jq** · **Ninja** · **yt-dlp** · **Android 平台工具（adb）**
+（后 9 件为本次按 50MB 口径新纳入；打包靠上面两个 prepare 脚本现造，CI 干净检出必然命中）。
+
+**按需下载（>50MB / 内核）**：PowerShell 7（282MB）· Git（90MB，缺了首启自动补装）·
+FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核（170MB）· Cloak 内核（200MB）。
+全部走国内镜像优先、失败自动回落官方源。
+
 | 能力 | 入口 | 说明 |
 |---|---|---|
 | 引擎本体 | `app-server --listen stdio://` | 会话、工具、插件、钩子、技能全部走它 |
