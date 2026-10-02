@@ -489,6 +489,39 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
       "【241】「Python 装没装」必须含 pip 模块 + _tkinter（只看 python.exe ⇒ 坏安装显示「已安装」、卡片连修复入口都没有）"
     );
   }
+  /* 【243】工具安装的两条硬不变量（10-02 外部用户报障：所有工具都卡在 `@STAGE 解压 [fail] "tar"`）。
+     ⛔ 事故 ①（解压器）：解压器原来硬编码 `C:\Windows\System32\tar.exe`，系统盘不是 C: 或精简版
+        Windows 取不到就回落到裸 `tar`，而多数机器 PATH 上没有 tar ⇒ 走归档的工具**全部**失败，
+        报错还被截成两个字的 `"tar"`。
+     ⛔ 事故 ②（坏缓存）：`archiveReady()` 判出缓存坏了，却直接 `download()`，而它用
+        `curl --continue-at -` **续传** —— 续传只补尾巴，「体积对、内容坏」的文件永远修不好，
+        用户点多少次都是「续传 0 字节 → 进度瞬间 100% → 用同一个坏包解压 → 失败」。
+     ⛔ 事故 ③（随包 7-Zip 是空壳）：主通道下的是 `7zr.exe`（**精简版，只认 7z 格式**）并改名成
+        7z.exe ⇒ 随包「7-Zip CLI」对有效 zip / tar.gz 一律返回 2（实测格式表里没有 zip/gzip/tar）。
+     三条都只在真机 + 真网络下才暴露，必须靠守卫钉住结构（锚「接线形态」，不锚注释）。 */
+  {
+    const ir = codeOnly(installRuntimes);
+    // ① 解压器解析要跟随真实系统盘 + 扫 PATH，且报错要能说清现状
+    (ir.includes("SystemRoot") && ir.includes("function findOnPath") && ir.includes("function extractorHint") ? ok : fail)(
+      "【243】解压器按 %SystemRoot%/System32 → C:/Windows/System32 → 扫 PATH 解析（不再硬编码 C:、不再裸 `tar`）"
+    );
+    // ② 三级降级：bsdtar → 7z → PowerShell Expand-Archive（零依赖兜底，仅 zip）
+    (ir.includes("function extractArchive") && ir.includes("Expand-Archive") && ir.includes("-NoProfile -NonInteractive") ? ok : fail)(
+      "【243】解压有三级降级：系统 tar → 7-Zip → Windows 自带 PowerShell Expand-Archive（零依赖兜底）"
+    );
+    // ③ 坏缓存必须**先删再下**，且下载完再校验一次（不许对坏文件续传）
+    (/archiveReady\(zip\)[\s\S]{0,220}?fs\.rmSync\(zip/.test(ir) && ir.includes("下载完成的压缩包校验不通过") ? ok : fail)(
+      "【243】缓存校验不过先删再完整重下 + 下载后再校验一次（对坏文件续传会让用户永远装不上）"
+    );
+    // ④ 随包 7-Zip 必须是完整版（7za.exe），不许退回只认 7z 的 7zr
+    (ir.includes("x64") && ir.includes('"7za.exe"') && !ir.includes("7zr.exe") ? ok : fail)(
+      "【243】7-Zip 取 extra 包的 x64/7za.exe 完整版（旧链下的是 7zr 精简版，读不了 zip/tar.gz）"
+    );
+    const prep = codeOnly(readFileSync(join(ROOT, "scripts", "prepare-windows-tools.cjs"), "utf8"));
+    (prep.includes("sevenzip/7za.exe") ? ok : fail)(
+      "【243】构建期必备件清单盯 sevenzip/7za.exe（盯 7z.exe 会把只认 7z 的空壳 7-Zip 发出去）"
+    );
+  }
   // 09-16 下午：自动化包与 ponytail 改为「随包预解压直装」（用户「直接内置，不用解压啥的」）——
   // npm-global 必须进 extraResources（缺了等于回到「要点安装才解压」），zip 保留作修复备用；
   // ⛔ 09-27 起 ponytail **不再启动自动种**（用户：「ponytail 写的代码很烂、以后谁还写代码」；

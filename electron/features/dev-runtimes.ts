@@ -61,7 +61,9 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   //    用户开箱即用、卡片显示「内置」徽标，不再进首启引导的下载清单。
   jq: { name: "jq", description: "命令行查询、筛选和转换 JSON；随包内置，开箱即用", size: "随包 1 MB", marker: "jq\\jq.exe", builtIn: true },
   ninja: { name: "Ninja", description: "高速构建工具，常与 CMake 配合；随包内置，开箱即用", size: "随包 1 MB", marker: "ninja\\ninja.exe", builtIn: true },
-  sevenzip: { name: "7-Zip CLI", description: "解压和创建 7z、zip、tar 等归档；随包内置，开箱即用", size: "随包 1 MB", marker: "sevenzip\\7z.exe", builtIn: true },
+  // ⛔ marker 用 7za.exe（**完整版**）：旧的 7zr 精简版读不了 zip / tar.gz，属于坏安装 ——
+  //   盯 7za.exe 才能让旧安装如实显示「未安装」并走修复安装（盯 7z.exe 会一直显示已安装却打不开归档）。
+  sevenzip: { name: "7-Zip CLI", description: "解压和创建 7z、zip、tar.gz、tar 等归档（完整版，非只认 7z 的精简版）；随包内置，开箱即用", size: "随包 3 MB", marker: "sevenzip\\7za.exe", builtIn: true },
   "yt-dlp": { name: "yt-dlp", description: "下载和分析在线视频与音频资源；随包内置，开箱即用", size: "随包 20 MB", marker: "yt-dlp\\yt-dlp.exe", builtIn: true },
   rg: { name: "ripgrep (rg)", description: "极速代码搜索，Codex 检索代码库的主力工具；随包内置，开箱即用", size: "随包 5 MB", marker: "rg\\rg.exe", builtIn: true },
   uv: { name: "uv", description: "极速 Python 包管理器（pip/venv 替代）；随包内置，开箱即用", size: "随包 12 MB", marker: "uv\\uv.exe", builtIn: true },

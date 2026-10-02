@@ -52,7 +52,10 @@ const PLATFORM_TOOLS_URL = IS_MAC
   : "https://dl.google.com/android/repository/platform-tools-latest-windows.zip";
 const JQ_URL = "https://github.com/jqlang/jq/releases/latest/download/jq-windows-amd64.exe";
 const NINJA_URL = "https://github.com/ninja-build/ninja/releases/latest/download/ninja-win.zip";
-const SEVENZIP_URL = "https://www.7-zip.org/a/7zr.exe";
+// ⛔ 10-02：不再用 `https://www.7-zip.org/a/7zr.exe`。`7zr` 是**精简版，只认 7z 格式**，
+//   被当成「7-Zip CLI」随包会让用户拿到一个打不开 zip/tar.gz 的命令行（实测 l 返回 2）。
+//   统一走下面这个 extra 包，取其中的 `x64/7za.exe`（独立完整版）。
+const SEVENZIP_VERSION = "25.01";
 const YTDLP_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
 // GitHub 直连在国内经常不可达；gh-proxy.com / ghfast.top 加速前缀实测稳定（rg/cmake/uv/7zip 均可 206 分段续传）。
 // 自动模式（默认）= 国内优先：镜像 → 本机代理（PROXY 环境变量，默认空）→ gh 加速 → 直连兜底。
@@ -420,11 +423,14 @@ const keyLine = (error) => {
 };
 
 /**
- * 归档「能不能用」的唯一判据。校验手段按可用性降级：
- *   ① 系统 bsdtar `-tf`（列目录，zip/tar.gz 通吃）；
- *   ② 没有 bsdtar 时，zip 用随包 7-Zip `l`；
- *   ③ 两者都没有 ⇒ **不能谎报"坏"**。返回 true 表示"无法校验、按体积信任"，
- *      否则会把好包删掉、重下完再报一句误导性的「包已损坏」。
+ * 归档「能不能用」的判据：**逐个解压器试「列目录」，只要有一个能列出就算完好**。
+ * ⛔⛔ 不能因为某一个解压器失败就断定坏包 —— 各解压器能力不同（10-02 实测）：
+ *   · Windows bsdtar **读不了 .7z**（`-tf` 返回 1）；
+ *   · 旧的 7zr 精简版读不了 zip / tar.gz；extra 包缺 dll 的 7z.exe 同样读不了。
+ *   按「一失败即坏」会把好包删掉、重下、再报一句误导性的「包已损坏」（自测当场踩到，
+ *   7-Zip 的 extra 包就被误删了两次）。
+ * 只有当**能读该格式的手段全都失败**时才判定损坏；zip 三种手段都能读，故 zip 三连失败＝真坏；
+ * 其它格式若没有任何手段可读 ⇒ 无法判断，按体积信任（交给解压阶段报错，不误删）。
  */
 function archiveReady(file) {
   try {
@@ -432,22 +438,18 @@ function archiveReady(file) {
   } catch { return false; }
   if (BSDTAR_OK) {
     try { runCommand(`"${BSDTAR}" -tf "${file}"`, { quiet: true, timeout: 120000 }); return true; }
-    catch { return false; }
+    catch { /* 这个解压器读不了该格式，换下一个 */ }
   }
   const seven = sevenZipCli();
-  // ⛔ 只有确认**这个 7z 真能读**才敢用它判"坏包"：extra 包的 7z.exe 缺 dll 时对有效 zip 也返回 2，
-  //    用它校验会把好包判成坏的、删掉重下、再报「包损坏」（实测踩过一次）。
-  if (seven && /\.(zip|tar\.gz|tgz|7z)$/i.test(file)) {
+  if (seven) {
     try { runCommand(`"${seven}" l "${file}"`, { quiet: true, timeout: 120000 }); return true; }
-    catch { /* 换 PowerShell 兜底判一次（仅 zip） */ }
-    if (!/\.zip$/i.test(file)) return true;
+    catch { /* 同上 */ }
   }
-  // Windows 自带 PowerShell：`Test-Path` 判不出完整性，改用 .NET 打开 zip 中央目录
   if (/\.zip$/i.test(file) && !IS_MAC) {
     try {
       runCommand(`"${powershellExe()}" -NoProfile -NonInteractive -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::OpenRead('${file}').Dispose()"`, { quiet: true, timeout: 120000 });
       return true;
-    } catch { return false; }
+    } catch { return false; } // zip 三种手段都读不了 ⇒ 确实是坏包
   }
   return true;
 }
@@ -474,6 +476,9 @@ function liftUp(dir) {
 async function extractArchive(archive, destDir, strip, label) {
   const isZip = /\.zip$/i.test(archive);
   const isTarGz = /\.(tar\.gz|tgz)$/i.test(archive);
+  // `.7z` 只有 7-Zip 系能解（系统 bsdtar **读不了 7z**，实测 -tf 返回 1）——
+  // 这条链路自己要用来装 7-Zip 本体，必须留着（旧的 7zr 精简版也能解 .7z，故新装不会死锁）。
+  const isSeven = /\.7z$/i.test(archive);
   const tried = [];
   // ① 系统 bsdtar（最快，且是 .tar.gz 的首选）
   if (BSDTAR_OK) {
@@ -488,9 +493,9 @@ async function extractArchive(archive, destDir, strip, label) {
   }
   // ② 随包 7-Zip
   const seven = sevenZipCli();
-  if (seven && (isZip || isTarGz)) {
+  if (seven && (isZip || isTarGz || isSeven)) {
     try {
-      if (isZip) {
+      if (isZip || isSeven) {
         // ⛔ 7z 的 -o 与其后路径之间**不能有空格**（写成 `-o "dir"` 会被当成两个参数）
         await runStreaming(`"${seven}" x "${archive}" -o"${destDir}" -y`, { label: `${label} 解压(7z)`, quiet: true, timeout: 900000 });
       } else {
@@ -744,9 +749,33 @@ async function main() {
   if (want("jq")) await installFile("jq", JQ_URL, jqDir, "jq.exe");
   if (want("ninja")) await install("ninja", NINJA_URL, ninjaDir, { marker: "ninja.exe", strip: false, archiveName: "ninja-win.zip" });
   if (want("sevenzip")) {
-    // 官网 7-zip.org 国内不稳定；先试官网，失败走 github release（gh-proxy 兜底在 download 内）
-    try { await installFile("7zip", SEVENZIP_URL, sevenzipDir, "7z.exe"); }
-    catch { await install("7zip-gh", SEVENZIP_GH_URL, sevenzipDir, { marker: "7z.exe", strip: false, archiveName: "7z2501-extra.7z" }); }
+    // ⛔⛔ 10-02 用户报障挖出的真缺陷：主通道原来下的是 `https://www.7-zip.org/a/7zr.exe`
+    //   —— **7zr 是 7-Zip 的精简版，只支持 7z 格式**，还被改名成 `7z.exe` 存下来。
+    //   实测随包那个「7-Zip CLI」对有效 zip / tar.gz 一律 `l` 返回 2（自带格式表里没有 zip/gzip/tar）
+    //   ⇒ 既不能当解压兜底，用户拿它当命令行工具也打不开压缩包。
+    //   现在统一取 extra 包里的 **`x64/7za.exe`（独立完整版，zip/gzip/tar/7z 全内置）**，
+    //   并复制一份为 `7z.exe`（用户敲 `7z` 照常可用）。
+    //   ⛔ 判据必须是 `7za.exe`：旧安装只有 7z.exe ⇒ 属坏安装，必须重装（否则永远 skip、永远打不开 zip）。
+    const za = path.join(sevenzipDir, "7za.exe");
+    if (!fs.existsSync(za)) {
+      // ⛔⛔ 顺序不能反：先把 extra 包解到**临时目录**，成功之后再替换 sevenzip 目录。
+      //   反过来（先删旧目录）会踩死局：那台缺 tar 的机器上，唯一能解 .7z 的恰恰是待删的这个
+      //   7zr（解 .7z 是它的本职格式），删完就再也解不开自己了。
+      const stage = fs.mkdtempSync(path.join(os.tmpdir(), "ch-7zip-"));
+      try {
+        await install("7zip-gh", SEVENZIP_GH_URL, stage, { marker: "x64\\7za.exe", strip: false, archiveName: "7z2501-extra.7z" });
+        const from = path.join(stage, "x64", "7za.exe");
+        if (!fs.existsSync(from)) throw new Error("7-Zip extra 包里没有 x64/7za.exe");
+        // 落地前才动旧目录（只有确认新二进制已就位才清理）
+        if (fs.existsSync(sevenzipDir)) fs.rmSync(sevenzipDir, { recursive: true, force: true });
+        fs.mkdirSync(sevenzipDir, { recursive: true });
+        fs.copyFileSync(from, za);
+        fs.copyFileSync(from, path.join(sevenzipDir, "7z.exe"));
+        console.log("[7zip] 已安装完整版 7za.exe（支持 zip / gzip / tar / 7z；旧的 7zr 精简版已替换）");
+      } finally {
+        try { fs.rmSync(stage, { recursive: true, force: true }); } catch { /* 临时目录清不掉不影响安装 */ }
+      }
+    }
   }
   if (want("yt-dlp")) await installFile("yt-dlp", YTDLP_URL, ytdlpDir, "yt-dlp.exe");
   if (want("rg")) await install("rg", RG_URL, path.join(TOOLS, "rg"), { marker: "rg.exe", strip: true, archiveName: `ripgrep-${RG_VERSION}-x86_64-pc-windows-msvc.zip` });
