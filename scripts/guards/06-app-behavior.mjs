@@ -521,6 +521,12 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
     (prep.includes("sevenzip/7za.exe") ? ok : fail)(
       "【243】构建期必备件清单盯 sevenzip/7za.exe（盯 7z.exe 会把只认 7z 的空壳 7-Zip 发出去）"
     );
+    // ⑤ 归档校验不许再用体积当完整性判据：ninja 的 zip 只有 **285KB**，旧判据「小于 1MB 即坏包」
+    //    会让它「删缓存 → 重下 → 还是坏 → 失败」，10-02 CI 的 win/mac 两个 job 同时挂在这。
+    const arBody = ir.slice(ir.indexOf("function archiveReady"), ir.indexOf("function liftUp"));
+    (arBody.length > 0 && !/1024 \* 1024/.test(arBody) ? ok : fail)(
+      "【243】归档校验不拿「>1MB」当完整性判据（小体积归档会被误杀成坏包）"
+    );
   }
   // 09-16 下午：自动化包与 ponytail 改为「随包预解压直装」（用户「直接内置，不用解压啥的」）——
   // npm-global 必须进 extraResources（缺了等于回到「要点安装才解压」），zip 保留作修复备用；
