@@ -241,7 +241,9 @@ async function main() {
     ["uv/uv.exe", "uv"],
     ["jq/jq.exe", "jq"],
     ["ninja/ninja.exe", "Ninja"],
-    ["sevenzip/7z.exe", "7-Zip CLI"],
+    // ⛔ 必须是 7za.exe：旧的主通道下的是 7zr.exe（**精简版，只认 7z 格式**）并改名成 7z.exe，
+    //    随包后连 zip / tar.gz 都打不开（10-02 用户报障实录）。
+    ["sevenzip/7za.exe", "7-Zip 完整版 CLI"],
     ["yt-dlp/yt-dlp.exe", "yt-dlp"],
     ["cmake/bin/cmake.exe", "CMake"],
     ["platform-tools/adb.exe", "Android 平台工具（adb）"],
