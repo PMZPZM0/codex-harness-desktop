@@ -95,8 +95,68 @@ const requested = new Set(process.argv.slice(2).filter((arg) => !arg.startsWith(
 const want = (id) => requested.size === 0 || requested.has(id);
 const DIRECT = process.argv.includes("--direct");
 
-// 解压器：Windows 用 System32 bsdtar；mac 系统自带 bsdtar（/usr/bin/tar，zip/tar.gz/tar.xz 通吃）
-const BSDTAR = IS_MAC ? "/usr/bin/tar" : (fs.existsSync("C:\\Windows\\System32\\tar.exe") ? "C:\\Windows\\System32\\tar.exe" : "tar");
+// 解压器：Windows 用系统自带 bsdtar（zip / tar.gz / tar.xz 通吃）；mac 自带 bsdtar。
+// ⛔⛔ 10-02 外部用户报障修的坑：这里原来**硬编码** `C:\Windows\System32\tar.exe`：
+//   ① Windows 装在 D:\ 之类「系统盘不是 C:」的机器取不到 ⇒ 回落到裸 `tar`，而多数机器的
+//      PATH 上并没有 tar ⇒ **下载明明成功、解压必定失败**，报错还只剩 `"tar"` 两个字
+//      （cmd 找不到命令的输出被截断），用户点多少次都一样、也看不出是「缺解压器」；
+//   ② 即使系统盘是 C:，走 `shell: true` 让 cmd 去解析 `tar` 也依赖调用方的 PATH 环境。
+//   现在：按 %SystemRoot%/System32 → C:/Windows/System32 → **显式扫 PATH** 三级解析成**绝对路径**，
+//   解析不到就地报清楚（见 extractorHint），而不是把一句 `"tar"` 丢给用户。
+const WINDIR = process.env.SystemRoot || process.env.windir || "C:\\Windows";
+
+/** 在 PATH 上显式找一个可执行文件（拿到绝对路径，不依赖子 shell 的 PATH 解析）。 */
+function findOnPath(name) {
+  const exts = String(process.env.PATHEXT || ".EXE;.CMD;.BAT").split(";").filter(Boolean);
+  for (const dir of String(process.env.PATH || "").split(path.delimiter)) {
+    if (!dir) continue;
+    for (const ext of ["", ...exts]) {
+      try {
+        const p = path.join(dir, name + ext);
+        if (fs.existsSync(p)) return p;
+      } catch { /* 忽略非法路径段 */ }
+    }
+  }
+  return "";
+}
+
+function tarCandidates() {
+  if (IS_MAC) return ["/usr/bin/tar"];
+  return [path.join(WINDIR, "System32", "tar.exe"), "C:\\Windows\\System32\\tar.exe"];
+}
+const BSDTAR = (() => {
+  for (const p of tarCandidates()) { try { if (fs.existsSync(p)) return p; } catch { /* ignore */ } }
+  return findOnPath("tar") || "tar";
+})();
+const BSDTAR_OK = BSDTAR !== "tar";
+
+/** 随包 7-Zip 的命令行。
+ *  ⛔⛔ 10-02 实测：优先 `7za.exe`（**独立版**，zip/gzip/tar/7z 全内置）。
+ *    原来只认 `7z.exe` —— extra 包里的 `7z.exe` **依赖同目录的 `7z.dll`**，而我们只落了一个 exe，
+ *    于是它连普通 zip 都打不开（`7z l` 对有效 zip 返回 2「Cannot open the file as archive」，
+ *    自带格式表里根本没有 zip/gzip/tar）⇒ 「内置 7-Zip」实际是个空壳，既救不了解压、本身也不好用。 */
+function sevenZipCli() {
+  try {
+    for (const name of ["7za.exe", "7z.exe"]) {
+      const p = path.join(TOOLS, "sevenzip", name);
+      if (fs.existsSync(p)) return p;
+    }
+  } catch { /* ignore */ }
+  return "";
+}
+
+/** Windows 自带 PowerShell（解压兜底用；零依赖，Win7 起就带）。 */
+function powershellExe() {
+  if (IS_MAC) return "";
+  return findOnPath("powershell") || path.join(WINDIR, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+}
+
+/** 解压失败时给用户看的「解压器现状」——别再让他对着 `"tar"` 猜。 */
+function extractorHint() {
+  if (BSDTAR_OK) return `解压器 ${BSDTAR}`;
+  const seven = sevenZipCli();
+  return `系统解压器不可用（已找：${tarCandidates().join(" / ")} 与 PATH）${seven ? `；随包 7-Zip：${seven}` : "；随包 7-Zip 也没找到"}；另有 Windows 自带 PowerShell 兜底（仅 zip）`;
+}
 
 // ⛔ mac：无执行位 = permission denied。解压/单文件落地后统一补 +x（zip 不保 Unix 位）。
 function chmodExec(target) {
@@ -351,27 +411,157 @@ async function download(url, file) {
   throw lastError ?? new Error("download failed: " + url);
 }
 
+/** 从子进程输出里挑**最能说明问题**的一行：优先含 Error/Cannot/fail/「不是内部或外部命令」的行。
+ *  ⛔ 不能只取第一行也不能只取最后一行 —— 7z 的第一行是版本横幅、tar 的末行是
+ *  「Error exit delayed from previous errors」，都不是用户需要看到的原因（10-02 实测）。 */
+const keyLine = (error) => {
+  const lines = String((error && error.message) || error).split("\n").map((l) => l.trim()).filter(Boolean);
+  return lines.find((l) => /error|cannot|fail|错误|失败|不是内部或外部命令/i.test(l)) || lines[lines.length - 1] || "（无输出）";
+};
+
+/**
+ * 归档「能不能用」的唯一判据。校验手段按可用性降级：
+ *   ① 系统 bsdtar `-tf`（列目录，zip/tar.gz 通吃）；
+ *   ② 没有 bsdtar 时，zip 用随包 7-Zip `l`；
+ *   ③ 两者都没有 ⇒ **不能谎报"坏"**。返回 true 表示"无法校验、按体积信任"，
+ *      否则会把好包删掉、重下完再报一句误导性的「包已损坏」。
+ */
 function archiveReady(file) {
-  if (!fs.existsSync(file) || fs.statSync(file).size < 1024 * 1024) return false;
-  try { runCommand(`"${BSDTAR}" -tf "${file}"`, { quiet: true, timeout: 120000 }); return true; }
-  catch { return false; }
+  try {
+    if (!fs.existsSync(file) || fs.statSync(file).size < 1024 * 1024) return false;
+  } catch { return false; }
+  if (BSDTAR_OK) {
+    try { runCommand(`"${BSDTAR}" -tf "${file}"`, { quiet: true, timeout: 120000 }); return true; }
+    catch { return false; }
+  }
+  const seven = sevenZipCli();
+  // ⛔ 只有确认**这个 7z 真能读**才敢用它判"坏包"：extra 包的 7z.exe 缺 dll 时对有效 zip 也返回 2，
+  //    用它校验会把好包判成坏的、删掉重下、再报「包损坏」（实测踩过一次）。
+  if (seven && /\.(zip|tar\.gz|tgz|7z)$/i.test(file)) {
+    try { runCommand(`"${seven}" l "${file}"`, { quiet: true, timeout: 120000 }); return true; }
+    catch { /* 换 PowerShell 兜底判一次（仅 zip） */ }
+    if (!/\.zip$/i.test(file)) return true;
+  }
+  // Windows 自带 PowerShell：`Test-Path` 判不出完整性，改用 .NET 打开 zip 中央目录
+  if (/\.zip$/i.test(file) && !IS_MAC) {
+    try {
+      runCommand(`"${powershellExe()}" -NoProfile -NonInteractive -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::OpenRead('${file}').Dispose()"`, { quiet: true, timeout: 120000 });
+      return true;
+    } catch { return false; }
+  }
+  return true;
+}
+
+/** 7z 没有 --strip-components：目标目录下只有一层顶层目录时，把它的内容抬上来（等效 strip=1）。 */
+function liftUp(dir) {
+  const entries = fs.readdirSync(dir);
+  if (entries.length !== 1 || !fs.statSync(path.join(dir, entries[0])).isDirectory()) return;
+  const only = path.join(dir, entries[0]);
+  for (const item of fs.readdirSync(only)) fs.renameSync(path.join(only, item), path.join(dir, item));
+  fs.rmdirSync(only);
+}
+
+/**
+ * 解压归档到 destDir。三级降级，任何一级成功即返回：
+ *   ① 系统 bsdtar（`%SystemRoot%\System32\tar.exe`，zip/tar.gz 通吃）；
+ *   ② 随包 7-Zip（优先独立版 `7za.exe`；zip 一次解完，.tar.gz 两步：先解 .tar 再解 tar）；
+ *   ③ **Windows 自带 PowerShell 的 `Expand-Archive`**（零依赖、Win7 起就有，仅 zip）——
+ *      10-02 实测这条能把 MinGit 完整解出来并跑起 `git version 2.55.0.windows.5`。
+ * ⛔⛔ 10-02 外部用户报障：那台机器**系统没有可用的 tar**（`System32\tar.exe` 取不到、PATH 上也没有），
+ *   旧代码只能回落到裸 `tar` ⇒ **所有**走归档的工具（git / pwsh / ffmpeg / rg / cmake / python…）
+ *   全部报同一句 `[fail] "tar"`，用户完全看不出是缺解压器、点多少次都一样。
+ */
+async function extractArchive(archive, destDir, strip, label) {
+  const isZip = /\.zip$/i.test(archive);
+  const isTarGz = /\.(tar\.gz|tgz)$/i.test(archive);
+  const tried = [];
+  // ① 系统 bsdtar（最快，且是 .tar.gz 的首选）
+  if (BSDTAR_OK) {
+    const stripArg = strip ? " --strip-components=1" : "";
+    try {
+      await runStreaming(`"${BSDTAR}" -xf "${archive}" -C "${destDir}"${stripArg}`, { label: `${label} 解压`, quiet: true, timeout: 900000 });
+      return;
+    } catch (error) {
+      tried.push(`系统 tar：${keyLine(error)}`);
+      console.log(`[${label}] 系统 tar 解压失败（${keyLine(error)}），改用兜底解压器`);
+    }
+  }
+  // ② 随包 7-Zip
+  const seven = sevenZipCli();
+  if (seven && (isZip || isTarGz)) {
+    try {
+      if (isZip) {
+        // ⛔ 7z 的 -o 与其后路径之间**不能有空格**（写成 `-o "dir"` 会被当成两个参数）
+        await runStreaming(`"${seven}" x "${archive}" -o"${destDir}" -y`, { label: `${label} 解压(7z)`, quiet: true, timeout: 900000 });
+      } else {
+        const stage = fs.mkdtempSync(path.join(os.tmpdir(), "ch-targz-"));
+        try {
+          await runStreaming(`"${seven}" x "${archive}" -o"${stage}" -y`, { label: `${label} 解压(7z gz)`, quiet: true, timeout: 900000 });
+          const inner = fs.readdirSync(stage).map((n) => path.join(stage, n)).find((p) => /\.tar$/i.test(p));
+          if (!inner) throw new Error(`${path.basename(archive)} 里没找到内层 .tar`);
+          await runStreaming(`"${seven}" x "${inner}" -o"${destDir}" -y`, { label: `${label} 解压(7z tar)`, quiet: true, timeout: 900000 });
+        } finally {
+          try { fs.rmSync(stage, { recursive: true, force: true }); } catch { /* 临时目录清不掉不影响安装 */ }
+        }
+      }
+      if (strip) liftUp(destDir);
+      return;
+    } catch (error) {
+      tried.push(`随包 7-Zip：${keyLine(error)}`);
+      // 解了一半的残骸必须清掉，否则下一个兜底解压器会与之混在一起（半新半旧最难查）
+      try { fs.rmSync(destDir, { recursive: true, force: true }); fs.mkdirSync(destDir, { recursive: true }); } catch { /* ignore */ }
+      console.log(`[${label}] 随包 7-Zip 解压失败（${keyLine(error)}），改用下一个兜底`);
+    }
+  }
+  // ③ Windows 自带 PowerShell 的 Expand-Archive（仅 zip）
+  if (isZip && !IS_MAC) {
+    try {
+      await runStreaming(`"${powershellExe()}" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '${archive}' -DestinationPath '${destDir}' -Force"`, { label: `${label} 解压(Expand-Archive)`, quiet: true, timeout: 900000 });
+      if (strip) liftUp(destDir);
+      return;
+    } catch (error) {
+      tried.push(`PowerShell Expand-Archive：${keyLine(error)}`);
+    }
+  } else if (isTarGz) {
+    tried.push(".tar.gz 没有 PowerShell 兜底（它只覆盖 zip）");
+  }
+  throw new Error(`${label} 解压失败：${tried.join("；") || "没有可用解压器"} ｜ ${extractorHint()}`);
 }
 
 async function install(label, url, destDir, opts = {}) {
   const marker = path.join(destDir, opts.marker || "node.exe");
   if (fs.existsSync(marker)) { console.log(`[skip] ${label} already at ${marker}`); return; }
   const zip = path.join(TMP, opts.archiveName || path.basename(url));
-  // 复用已下载的 zip（>1MB 视为完整）
+  // ⛔⛔ 10-02 用户报障的**根因**：缓存校验不过时原来直接调 download()，而 download 用的是
+  //   `curl --continue-at -`（断点续传）—— **续传只补尾巴，坏文件永远修不好**。用户机器上那份
+  //   MinGit 体积已等于线上大小（第一趟就下坏了），于是每次点安装都是
+  //   「续传 0 字节 → 进度瞬间 100% → 解压失败」，重试一万次都一模一样，用户只能来报障。
+  //   ⇒ 校验不过必须先删掉，让这次下载从 0 字节开始。
+  if (fs.existsSync(zip) && !archiveReady(zip)) {
+    console.log(`[${label}] 本地缓存的压缩包校验不通过（${formatBytes(fs.statSync(zip).size)}），已删除，改为完整重新下载`);
+    fs.rmSync(zip, { force: true });
+  }
+  // 复用已下载的 zip（通过 archiveReady 才算完整）
   if (!archiveReady(zip)) {
     console.log(`[${label}] downloading ${url}`);
     await download(url, zip);
   } else {
     console.log(`[${label}] reuse cached ${zip}`);
   }
+  // ⛔ 下载完**必须再校验一次**：代理劫持 / 中途断流会落下一个「体积对、内容坏」的包，
+  //   当场发现并重下一次，好过等到解压阶段报一句看不懂的错。只重下一次（两次都坏=源/网络问题）。
+  if (!archiveReady(zip)) {
+    console.log(`[${label}] 下载完成的压缩包校验不通过，删除后重下一次`);
+    fs.rmSync(zip, { force: true });
+    await download(url, zip);
+    if (!archiveReady(zip)) {
+      const size = fs.existsSync(zip) ? formatBytes(fs.statSync(zip).size) : "文件缺失";
+      throw new Error(`${label}：下载的压缩包校验不通过（${size}）—— 多半是网络或代理把响应换成了错误页面（校园网 / 公司网关最常见）。请到「设置 → 开发工具」换一个下载源，或稍后重试`);
+    }
+  }
   fs.mkdirSync(destDir, { recursive: true });
   process.stdout.write("@@STAGE 解压\n");
-  const stripArg = opts.strip ? " --strip-components=1" : "";
-  await runStreaming(`"${BSDTAR}" -xf "${zip}" -C "${destDir}"${stripArg}`, { label: `${label} 解压`, quiet: true, timeout: 900000 });
+  await extractArchive(zip, destDir, Boolean(opts.strip), label);
   chmodExec(destDir);
   console.log(`[${label}] extracted to ${destDir}`);
 }
