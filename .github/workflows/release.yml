@@ -89,11 +89,21 @@ jobs:
             exit 1
           fi
           if gh release view "v${VERSION}" >/dev/null 2>&1; then
-            echo "release v${VERSION} 已存在 → 更新资产（可重跑）"
+            echo "release v${VERSION} 已存在 → 更新资产与说明（可重跑）"
+            # ⛔ 已存在时 gh release upload 只换**资产**，说明正文不会跟着变 ⇒ 必须显式重写，
+            #    否则覆盖重发后发布页永远停在首次创建时那版旧正文（10-02 实测踩过）。
+            gh release edit "v${VERSION}" --notes-file "${NOTES}"
           else
             gh release create "v${VERSION}" --title "v${VERSION}" --notes-file "${NOTES}"
           fi
           gh release upload "v${VERSION}" dist-assets/* --clobber
+          # ⛔⛔ 转正兜底：**删 tag 重建会让同名 release 退回草稿态**（GitHub 的行为），
+          #    而 gh release upload / edit(notes) 都不会把它转正。草稿对匿名 API 不可见 ⇒
+          #    /releases/latest 回落到上一版、应用内「发现新版本」永远收不到这一版（10-02 全量实测）。
+          if [ "$(gh release view "v${VERSION}" --json isDraft --jq '.isDraft')" = "true" ]; then
+            echo "release v${VERSION} 处于草稿态 → 转为正式发布"
+            gh release edit "v${VERSION}" --draft=false
+          fi
           echo "=== 线上资产核对（size 应与上面 sha256sum 那步的 ls 一致；digest 是 GitHub 侧实算） ==="
           gh release view "v${VERSION}" --json tagName,url,assets \
             --jq '.url, (.assets[] | "  \(.name)  \(.size) B  \(.digest // "(digest 待生成)")")'
