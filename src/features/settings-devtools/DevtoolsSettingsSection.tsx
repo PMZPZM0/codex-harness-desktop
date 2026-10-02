@@ -4,8 +4,9 @@
  * 纯搬迁：返回的 JSX 与原块逐字一致（仅去掉外层缩进）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
+import { useState } from "react";
 import { PageInfo } from "../../components/SettingsHead";
-import { ArrowDown, BookOpen, CircleCheck, Copy, Download, ExternalLink, Globe2, TerminalSquare, Wrench } from "lucide-react";
+import { Activity, AlertTriangle, ArrowDown, BookOpen, CircleCheck, Copy, Download, ExternalLink, Globe2, TerminalSquare, Wrench } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { PhoneHarnessCard } from "./PhoneHarnessCard";
@@ -15,6 +16,26 @@ export type DevtoolsSettingsSectionProps = { downloadSource?: any; capabilityRow
 
 export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
   const { capabilityRows, capabilityError, VoiceDevToolsSection, setNotice, devRuntimes, runtimeInstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime } = props;
+  // 「检查工具」（10-02 用户要的）：卡片上的「已安装」只证明**文件在**，不证明**能跑**。
+  // 点一次让主进程逐个真跑版本命令，把不可用的挑出来显示 —— 结果只存本组件（打开页面即清空）。
+  const [health, setHealth] = useState<any[] | null>(null);
+  const [healthBusy, setHealthBusy] = useState(false);
+  const [healthError, setHealthError] = useState("");
+  const runHealth = async () => {
+    setHealthBusy(true);
+    setHealthError("");
+    try {
+      const rows = await (window as any).codex.runtimeHealth();
+      setHealth(Array.isArray(rows) ? rows : []);
+    } catch (error) {
+      setHealthError(`自检失败：${String((error as any)?.message ?? error).slice(0, 200)}`);
+    } finally {
+      setHealthBusy(false);
+    }
+  };
+  const healthInstalled = health ? health.filter((row: any) => row.installed) : [];
+  const healthBad = healthInstalled.filter((row: any) => !row.ok);
+  const healthMissing = health ? health.filter((row: any) => !row.installed).length : 0;
   return (
     <>
       <section className="settings-section stack">
@@ -109,6 +130,25 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
                       });
                     })()}
                     {!devRuntimes.length && <div className="runtime-loading"><Spinner />正在读取开发工具状态…</div>}
+                    {/* 「检查工具」（10-02 用户要的）：卡片上的「已安装」只证明文件在，不证明能跑。
+                        点一次让主进程**真的跑一遍**（版本命令 / pip 可用性），把不可用的挑出来。 */}
+                    <div className="devtools-health">
+                      <button className="secondary-setting runtime-check" disabled={healthBusy} onClick={() => void runHealth()}><Activity size={13} />{healthBusy ? "检查中…" : "检查工具"}</button>
+                      {health
+                        ? <span className="settings-card-hint">{healthBad.length === 0 ? "已安装的工具全部可运行" : `发现 ${healthBad.length} 项不可用`}（另有 {healthMissing} 项未安装）</span>
+                        : <span className="settings-card-hint">点一下，逐个验证已装的工具能不能真跑起来</span>}
+                    </div>
+                    {healthError ? <div className="runtime-loading">{healthError}</div> : null}
+                    {healthBad.length > 0 && (
+                      <div className="runtime-list" data-health-bad={healthBad.length}>
+                        {healthBad.map((row: any) => (
+                          <div className="runtime-row missing" key={`health-${row.id}`}>
+                            <span className="runtime-icon"><AlertTriangle size={16} /></span>
+                            <span className="runtime-copy"><strong>{row.name}</strong><small>{row.detail}</small></span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <details className="devtools-manifest">
                       <summary><BookOpen size={13} />工具清单说明（Codex 引擎安装参考）<span className="settings-subhead-hint">点击展开 / 复制</span></summary>
                       <div className="devtools-manifest-body">

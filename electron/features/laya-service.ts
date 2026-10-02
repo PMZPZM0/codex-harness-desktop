@@ -23,8 +23,13 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { app } from "electron";
 import { bundledPython, pythonPipReady } from "../toolchain";
+import { PIP_COMMON_ARGS, PIP_INDEXES } from "./pip-sources";
 
-const PIP_INDEX = process.env.LAYA_PIP_INDEX ?? "https://pypi.tuna.tsinghua.edu.cn/simple";
+/** 首选源可被环境变量覆盖（自测/代理场景）；其后按共享兜底表顺序（去重）。 */
+const PIP_INDEX = process.env.LAYA_PIP_INDEX ?? "";
+const LAYA_PIP_SOURCES: readonly string[] = PIP_INDEX
+  ? [PIP_INDEX, ...PIP_INDEXES.filter((s) => s !== PIP_INDEX)]
+  : PIP_INDEXES;
 const HF_ENDPOINT = process.env.LAYA_HF_ENDPOINT ?? "https://hf-mirror.com";
 const IDLE_EXIT_MS = 10 * 60 * 1000; // 闲置 10 分钟自动退出（省 ~1GB 内存）
 const START_TIMEOUT_MS = 30 * 60 * 1000; // 首启含权重下载，放宽到 30 分钟
@@ -172,10 +177,16 @@ export function layaInstall(): Promise<{ ok: boolean; log: string }> {
     return Promise.resolve({ ok: false, log: pip.reason });
   }
   installing = true;
-  installProgress = { phase: "download", current: "", percent: 0, speed: "", detail: "" };
   const lines: string[] = [];
-  return new Promise((resolve) => {
-    const child = spawn(bin, ["-m", "pip", "install", "-U", "--no-input", "--progress-bar", "on", "-i", PIP_INDEX, "laya[serve]"], {
+  /**
+   * 跑一次 pip（单个源），返回退出码与「是否真装成」。
+   * ⛔⛔ 10-02 用户报障：清华源的索引页正常但 wheel 直链 403 ⇒ 单源必挂；
+   *   pip 不会自己换 index（`--extra-index-url` 也不救），只能整个命令换源重跑。
+   *   进度状态在每轮开始时重置，界面看到的是「当前这轮」的进度。
+   */
+  const runPip = (index: string) => new Promise<{ code: number; installed: boolean }>((done) => {
+    installProgress = { phase: "download", current: "", percent: 0, speed: "", detail: "" };
+    const child = spawn(bin, ["-m", "pip", "install", "-U", ...PIP_COMMON_ARGS, "--progress-bar", "on", "-i", index, "laya[serve]"], {
       env: { ...process.env },
       windowsHide: true,
     });
@@ -198,20 +209,40 @@ export function layaInstall(): Promise<{ ok: boolean; log: string }> {
     child.stderr.on("data", (d) => pump(String(d)));
     const timer = setTimeout(() => child.kill(), 20 * 60 * 1000);
     child.on("error", (err) => {
-      clearTimeout(timer); installing = false;
-      lastError = String(err);
-      resolve({ ok: false, log: lines.concat(String(err)).join("\n") });
+      clearTimeout(timer);
+      lines.push(String(err));
+      done({ code: -1, installed: false });
     });
     child.on("close", (code) => {
-      clearTimeout(timer); installing = false;
+      clearTimeout(timer);
       lines.push(`pip install → exit ${code}`);
-      const { installed } = pipShow();
-      // 装成即后台预热（拉起 laya-serve + 下载权重 ~700MB）：进度在设置页 Laya 卡片实时可见，
-      // 等用户真发消息时服务已就绪——发送链的判定才配得上「立刻透出来」。
-      if (installed) void ensureService().catch((err) => log(`安装后预热失败: ${String(err).slice(0, 120)}`));
-      resolve({ ok: code === 0 && installed, log: lines.join("\n") });
+      done({ code: typeof code === "number" ? code : -1, installed: pipShow().installed });
     });
   });
+  return (async () => {
+    const tried: string[] = [];
+    for (let i = 0; i < LAYA_PIP_SOURCES.length; i++) {
+      const index = LAYA_PIP_SOURCES[i];
+      if (i > 0) log(`换个源再试（${i + 1}/${LAYA_PIP_SOURCES.length}）：${index}`);
+      const { code, installed } = await runPip(index);
+      if (code === 0 && installed) {
+        installing = false;
+        if (i > 0) log(`pip 改用源成功：${index}`);
+        // 装成即后台预热（拉起 laya-serve + 下载权重 ~700MB）：进度在设置页 Laya 卡片实时可见，
+        // 等用户真发消息时服务已就绪——发送链的判定才配得上「立刻透出来」。
+        void ensureService().catch((err) => log(`安装后预热失败: ${String(err).slice(0, 120)}`));
+        return { ok: true, log: lines.join("\n") };
+      }
+      tried.push(`${index} → exit ${code}`);
+      // 走到最后一个源仍失败：把**每个源**的结果都写出来（别让用户对着一个 403 猜）
+      if (i === LAYA_PIP_SOURCES.length - 1) {
+        lastError = `pip 源都不通（共试 ${LAYA_PIP_SOURCES.length} 个）：\n${tried.join("\n")}`;
+        lines.push(lastError);
+      }
+    }
+    installing = false;
+    return { ok: false, log: lines.join("\n") };
+  })();
 }
 
 /**

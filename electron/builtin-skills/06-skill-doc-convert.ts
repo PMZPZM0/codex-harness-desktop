@@ -25,8 +25,12 @@ python -c "import markitdown, openpyxl; print(markitdown.__version__)"
 - 报 \`ModuleNotFoundError\` ⇒ 本机没装 —— **自己装上即可**（有国内镜像，约 4~5 分钟）：
 
 \`\`\`bash
-python -m pip install --no-input -i https://pypi.tuna.tsinghua.edu.cn/simple "markitdown[pdf,docx,pptx]" openpyxl
+python -m pip install --no-input --retries 3 --timeout 30 -i https://mirrors.cloud.tencent.com/pypi/simple "markitdown[pdf,docx,pptx]" openpyxl
 \`\`\`
+
+  ⛔ 镜像会挂：单源报 \`HTTP error 403\`/\`404\` 时**不要重试同一个源**，依次换下面的源再跑一遍
+  （任一个能下就行）：\`https://mirrors.aliyun.com/pypi/simple/\` →
+  \`https://pypi.mirrors.ustc.edu.cn/simple/\` → \`https://pypi.org/simple/\`。
 
   装完继续干活，**不必打断用户**。若这一步失败（无网 / 没权限 / 镜像不可用），再告诉用户：
   「去『设置 → 开发工具 → 文档转换（markitdown）』点一次安装」。

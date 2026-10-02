@@ -22,9 +22,13 @@ import { app } from "electron";
 import { bundledPython, pythonPipReady } from "../toolchain";
 import { codexHome } from "../runtime-paths";
 import { toolsRoot } from "../toolchain";
+import { PIP_COMMON_ARGS, PIP_INDEXES } from "./pip-sources";
 
-/** 清华 PyPI 镜像（与 markitdown / install-runtimes 同一套口径：国内先走镜像）。 */
-const PIP_INDEX = process.env.PHONE_HARNESS_PIP_INDEX ?? "https://pypi.tuna.tsinghua.edu.cn/simple";
+/** 首选源可被环境变量覆盖；其后按共享兜底表顺序（去重）。 */
+const PIP_INDEX = process.env.PHONE_HARNESS_PIP_INDEX ?? "";
+const PHONE_PIP_SOURCES: readonly string[] = PIP_INDEX
+  ? [PIP_INDEX, ...PIP_INDEXES.filter((s) => s !== PIP_INDEX)]
+  : PIP_INDEXES;
 const SKILL_DIR_NAME = "phone-harness";
 
 export interface PhoneHarnessStatus {
@@ -166,8 +170,16 @@ export async function installPhoneHarness(): Promise<{ ok: boolean; log: string 
   //  `No module named pip` exit 1 —— 先把原因翻成人话并给出唯一有效动作，别让用户对着裸报错猜。
   const pipReady = pythonPipReady(bin);
   if (!pipReady.ok) return { ok: false, log: pipReady.reason };
-  const pip = await run(bin, ["-m", "pip", "install", "-U", "--no-input", "-i", PIP_INDEX, "phone-harness"], 900_000);
-  log.push(`pip install → exit ${pip.code}`);
+  // ⛔⛔ 10-02 用户报障：清华源的索引页正常（200）但 wheel 直链 403 ⇒ 单源必挂。
+  //   pip 下载失败不会自己换 index，只能整个命令换源重跑；全失败才回报（附每个源的结果）。
+  const runPip = (index: string) => run(bin, ["-m", "pip", "install", "-U", ...PIP_COMMON_ARGS, "-i", index, "phone-harness"], 900_000);
+  let pip = await runPip(PHONE_PIP_SOURCES[0]);
+  log.push(`pip install（${PHONE_PIP_SOURCES[0]}）→ exit ${pip.code}`);
+  for (let i = 1; i < PHONE_PIP_SOURCES.length && pip.code !== 0; i++) {
+    log.push(`换源重试（${i + 1}/${PHONE_PIP_SOURCES.length}）：${PHONE_PIP_SOURCES[i]}`);
+    pip = await runPip(PHONE_PIP_SOURCES[i]);
+    log.push(`pip install（${PHONE_PIP_SOURCES[i]}）→ exit ${pip.code}`);
+  }
   if (pip.code !== 0) return { ok: false, log: log.concat(pip.out.slice(-1500)).join("\n") };
 
   const off = await harness(["config", "set", "telemetry", "false"], bin);

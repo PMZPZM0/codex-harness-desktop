@@ -528,6 +528,32 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
       "【243】归档校验不拿「>1MB」当完整性判据（小体积归档会被误杀成坏包）"
     );
   }
+
+  /* 【244】pip 多源兜底 + 工具自检（10-02 用户报障：清华镜像的 wheel 直链 403 ⇒ 文档转换 / 手机控制 /
+   *   Laya 三处全挂，用户看到的是「HTTP error 403」这种跟他操作无关的报错）。
+   *   ⛔ 根因不是「源挂了」而是**只有一个源**：pip 下载 wheel 失败**不会**自动换 index
+   *     （`--extra-index-url` 也不救），必须整个命令换源重跑 ⇒ 必须有兜底表 + 逐源重试。
+   *   ⛔ 任何一处退回「写死单源」都等于那个工具永远只试清华 —— 所以逐文件钉住。 */
+  {
+    const psSrc = readFileSync(join(ROOT, "electron", "features", "pip-sources.ts"), "utf8");
+    const srcCount = (psSrc.match(/https:\/\/[^"'`\s]+/g) || []).length;
+    (srcCount >= 3 ? ok : fail)(`【244】pip 源兜底表 ≥3 个源（实 ${srcCount} 个；单源必被镜像抖动打死）`);
+    const inst = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
+    (inst.includes("async function pipInstall(") ? ok : fail)("【244】install-runtimes 有 pipInstall 多源兜底函数");
+    (inst.includes("PIP_INDEXES.length") ? ok : fail)("【244】安装器按兜底表长度逐源重试（不是只试一个就报错）");
+    // ⛔ 负向：不许再出现「写死单源」的 pip install —— 漏一处就等于那个工具永远只试清华
+    const soloPip = (inst.match(/pip install[^\n]*pypi\.tuna\.tsinghua\.edu\.cn/g) || []).length;
+    (soloPip === 0 ? ok : fail)(`【244】install-runtimes 无写死单源的 pip install（实 ${soloPip} 处）`);
+    const laya = readFileSync(join(ROOT, "electron", "features", "laya-service.ts"), "utf8");
+    const phone = readFileSync(join(ROOT, "electron", "features", "phone-harness.ts"), "utf8");
+    (laya.includes("LAYA_PIP_SOURCES") && phone.includes("PHONE_PIP_SOURCES") ? ok : fail)("【244】Laya / 手机控制都走多源兜底表");
+    (laya.includes("runPip(") && phone.includes("runPip(") ? ok : fail)("【244】Laya 与手机控制的失败路径都会换源重跑（不是单源硬失败）");
+    // 工具自检：用户明确要的「检查」——必须是**真跑**，不能只查文件在不在
+    const rt = readFileSync(join(ROOT, "electron", "features", "engine-ipc", "03-dev-runtime.ts"), "utf8");
+    (rt.includes('ipcMain.handle("runtime:health"') ? ok : fail)("【244】存在工具自检 IPC（runtime:health）");
+    (rt.includes("function probeTool(") && rt.includes("child.on(\"close\"") ? ok : fail)("【244】自检是真跑版本命令（不是只查文件在不在）");
+    (rt.includes('if (spec.kind === "guide") continue;') ? ok : fail)("【244】自检跳过系统级安装项（Docker / OpenSSL 我们没装，无从探测）");
+  }
   // 09-16 下午：自动化包与 ponytail 改为「随包预解压直装」（用户「直接内置，不用解压啥的」）——
   // npm-global 必须进 extraResources（缺了等于回到「要点安装才解压」），zip 保留作修复备用；
   // ⛔ 09-27 起 ponytail **不再启动自动种**（用户：「ponytail 写的代码很烂、以后谁还写代码」；
@@ -1845,8 +1871,11 @@ w.postMessage({id:1,op:"list",root});
     })() ? ok : fail)(
       "【177】装机后先关上游遥测再注册技能（上游默认开且会上报任务文本与调用参数）"
     );
-    (/const PIP_INDEX[\s\S]{0,120}pypi\.tuna/.test(phSrc) ? ok : fail)(
-      "【177】pip 安装走国内镜像（清华源，与 markitdown 同一套口径）"
+    // ⛔ 10-02：单源口径已废 —— 清华源的索引页 200 但 wheel 直链 403，单源必挂
+    //    （用户实测：文档转换 / 手机控制 / Laya 三处同时报同一个 403）。现在走共享源表逐源重试；
+    //    环境变量仍可覆盖**首选源**（自测/代理场景）。
+    (phSrc.includes("PHONE_PIP_SOURCES") && phSrc.includes("PIP_INDEXES") && phSrc.includes("pip-sources") ? ok : fail)(
+      "【177】pip 安装走**多源兜底**（共享源表 pip-sources.ts；单源必被镜像抖动打死 —— 10-02 三处报障的根因）"
     );
     // ⛔ 必须带 `-U`：不带升级参数时 pip 对已装的包只回 "Requirement already satisfied" 就结束，
     //    用户点「检查更新」什么也没发生（上游 alpha 周更，拿不到修复 = 假动作）。
