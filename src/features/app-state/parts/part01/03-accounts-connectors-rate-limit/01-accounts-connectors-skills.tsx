@@ -98,7 +98,7 @@ bag.sendInFlightRef = sendInFlightRef as typeof bag.sendInFlightRef;
 
   // ── 429 限流自动重试（应用层兜底，**按会话独立**）──
   // 引擎侧 request_max_retries/stream_max_retries 耗尽后 turn 仍以限流失败结束时，
-  // 把原输入自动重发，最多 RATE_LIMIT_MAX_ATTEMPTS 次，退避 5s→120s 逐次放长。
+  // 把原输入自动重发，最多 RATE_LIMIT_MAX_ATTEMPTS 次（10-02 用户定稿 3 次封顶），退避 15s/30s/60s 逐次放长。
   // 不区分模型/供应商——任何模型限流都走这条兜底；用户可停止或立即重试。
   // ⛔⛔ 09-19 用户实测「多会话同时跑，只有当前看的那个会自动重试，后台的会话直接断」：
   //   · 旧实现 retryContextRef / rateLimitAttemptRef / rateLimitTimerRef 全是**单槽**，

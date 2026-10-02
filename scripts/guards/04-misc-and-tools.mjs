@@ -33,9 +33,9 @@ console.log(C.bold("\n【输入框草稿 + 通知会话名前缀】切会话/关
   (/function threadNameOf\(threadId: string\)/.test(appD) && /const prefix = name \? `【\$\{name\}】` : "";/.test(appD))
     ? ok("会话通知前缀会话名（showToast 带 threadId 参数 + 【会话名】前缀）")
     : fail("通知前缀会话名的实现被摘 —— 在别的会话看不到通知是哪个会话发的");
-  (/showToast\("已停止限流重试", "不再自动重发该消息", threadId\)/.test(appD) && /showToast\("限流重试放弃"/.test(appD))
-    ? ok("会话级通知调用点已带 threadId（限流重试等后台会话通知能看出归属）")
-    : fail("会话级通知调用点丢了 threadId —— 后台会话的通知又不带会话名了");
+  (/showToast\("已停止限流重试", "不再自动重发该消息", threadId\)/.test(appD) && /showToast\("上游余额或订阅额度已用完"/.test(appD))
+    ? ok("会话级通知调用点已带 threadId（限流等后台会话通知能看出归属；放弃文案 = 余额/额度提示，10-02 口径）")
+    : fail("会话级通知调用点丢了 threadId 或余额提示文案被摘 —— 后台会话的通知看不出归属/不知道该查余额");
 }
   }
 
