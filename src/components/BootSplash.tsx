@@ -51,8 +51,8 @@ export function BootSplash({ stage, done }: { stage: BootStage; done: boolean })
   if (!visible) return null;
 
   return <div className={`boot-splash${leaving ? " boot-splash-leaving" : ""}`} role="status" aria-live="polite">
+    {/* 大 logo 启动页（10-01 复刻 ZCode）：呼吸动画在 index.html 的样式里，这里只管阶段文案。 */}
     <img className="boot-splash-logo" src={`${import.meta.env.BASE_URL}icon.png`} alt="" />
-    <div className="boot-splash-spinner" />
     <p>{text}</p>
   </div>;
 }
