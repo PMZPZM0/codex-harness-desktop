@@ -865,6 +865,17 @@ w.postMessage({id:1,op:"list",root});
   (release.includes("-win-x64.exe") && release.includes("-arm64-mac.zip") && release.includes("-x64-mac.zip") ? ok : fail)("【29】三个资产名同时满足更新器（mac x64 强制带架构名 —— electron-builder 原生产物不带 x64）");
   (release.includes("--clobber") ? ok : fail)("【29】资产上传用 --clobber（重跑失败 job 不会因子资产重名而失败）");
 
+  // ⛔⛔ 10-02 实测事故：**删 tag 重建会让同名 release 退回草稿态**，而 gh release upload / edit(notes)
+  //    都不会把它转正 ⇒ 草稿对匿名 API 不可见、/releases/latest 回落上一版、应用内更新器永远收不到
+  //    这一版（当时 CI 全绿、资产也 clobber 覆盖了，看着像发布成功，实则用户拿不到）。
+  //    锚定「拿 isDraft 去判 + 命中就 --draft=false」这一对动作，而不是只看有没有 --draft 字样。
+  (/gh release view "v\$\{VERSION\}" --json isDraft[\s\S]{0,120}?gh release edit "v\$\{VERSION\}" --draft=false/.test(release) ? ok : fail)(
+    "【29】release.yml 有草稿态转正兜底（删 tag 重建会让同名 release 退回草稿 ⇒ 用户永远收不到更新）"
+  );
+  (release.includes('gh release edit "v${VERSION}" --notes-file "${NOTES}"') ? ok : fail)(
+    "【29】release 已存在时也重写说明正文（只 upload 资产会让发布页停在首建时的旧正文）"
+  );
+
   // 更新说明：应用内「发现新版本」弹窗的内容来源，缺了必须直接失败
   (release.includes("docs/releases/v${VERSION}.md") && release.includes("缺少更新说明") ? ok : fail)("【29】release.yml 强制要求 docs/releases/v<版本>.md（缺则发布失败，不当静默无说明发布）");
   const currentNotes = join(ROOT, "docs", "releases", `v${pkg29.version}.md`);

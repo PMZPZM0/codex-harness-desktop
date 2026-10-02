@@ -1005,7 +1005,10 @@ export async function run() {
     // 按注释锚点切出两个 effect 的块：在全文里裸正则容易误命中别处的同名字符串
     // ⛔ 10-01 用户定稿：模型配置引导整体删除（首启只弹「开发工具」引导）——
     //   断言从「引导在位」翻转为「引导清零」；体检触发/登录链路各自独立成立。
-(!/showModelGuide/.test(appEnv) ? ok : fail)("【32】模型引导状态全仓清零（app-ui 层不许再有 showModelGuide）");
+    // ⛔ 10-02：① 匹配前必须过 codeOnly —— 本仓的注释里会原样写出这个字符串来解释隐患
+    //    （我刚在为这次事故补注释时就撞成假红）；② 必须**大小写不敏感** —— `setShowModelGuide`
+    //    的大写 S 会让小写正则恒真，正是这个恒真放过了 send.tsx 里那句悬空调用（真 bug）。
+    (!/showModelGuide/i.test(codeOnly(appEnv)) ? ok : fail)("【32】模型引导状态全仓清零（app-ui 层不许再有 showModelGuide，含 setter）");
     (!/ModelSetupGuide/.test(appEnv) ? ok : fail)("【32】ModelSetupGuide 渲染清零（不许再有引导弹窗挂树）");
     (/if \(missingCore\.length > 0\) setEnvCheckOpen\(true\);/.test(appEnv) && !/deferredByModel/.test(appEnv))
       ? ok("【32】体检独立触发：缺推荐项就弹（不再因「没配模型」推迟 —— 旧语义已随引导删除）")
@@ -2685,7 +2688,10 @@ export async function run() {
   (!existsSync(join(ROOT, "src", "components", "ModelSetupGuide.tsx")) ? ok : fail)(
     "【70】ModelSetupGuide 组件文件已删除（不留死文件）"
   );
-  (!/showModelGuide/.test(appSrc70) ? ok : fail)("【70】showModelGuide 全仓清零（状态/渲染/依赖都不留）");
+  // ⛔ 10-02：必须**大小写不敏感** + 先过 codeOnly。原写法 `/showModelGuide/`（小写、不过滤注释）
+  //    会因 setter 的大写 S 而恒真 —— 正是它放过了 send.tsx 里那句「声明已删、调用还在」的悬空调用
+  //    （真 bug，未配模型时点发送直接抛错；调用落点检查见 scripts/check-bag-types.mjs）。
+  (!/showModelGuide/i.test(codeOnly(appSrc70)) ? ok : fail)("【70】showModelGuide 全仓清零（含 setter；大小写不敏感 + 剥注释）");
   (!/async function quickSetup\(/.test(appSrc70) ? ok : fail)("【70】quickSetup 死链已删（只喂引导弹窗的链路）");
   (/MODEL_CONFIGURED_KEY/.test(appSrc70) && /markModelConfigured/.test(appSrc70) ? ok : fail)(
     "【70】登录页配置链路与「已配置过」持久标记保留"

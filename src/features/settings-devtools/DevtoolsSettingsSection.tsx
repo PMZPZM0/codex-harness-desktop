@@ -4,7 +4,6 @@
  * 纯搬迁：返回的 JSX 与原块逐字一致（仅去掉外层缩进）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
-import { AppSelect } from "../../components/AppSelect";
 import { PageInfo } from "../../components/SettingsHead";
 import { ArrowDown, BookOpen, CircleCheck, Copy, Download, ExternalLink, Globe2, TerminalSquare, Wrench } from "lucide-react";
 import { Spinner } from "../../components/CardShell";

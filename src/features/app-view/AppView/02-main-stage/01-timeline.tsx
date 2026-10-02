@@ -3,7 +3,6 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
-import { PPTokenEndpoints } from "../../../../lib/pptoken-endpoints";
 import { Fragment, type ReactNode } from "react";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../lib/entity-avatar";
 import {

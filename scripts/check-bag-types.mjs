@@ -208,6 +208,56 @@ if (mismatch.length) {
   ok("类型串逐项一致（0 mismatch）");
 }
 
+/* ---------- 调用落点：不许调用 Bag 上不存在的成员 ----------
+   ⛔⛔ 10-02 实测事故（真 bug，躲过两个守卫）：aff905c 按用户定稿删掉「模型配置引导」时，
+   把 `showModelGuide` / `setShowModelGuide` 从声明里删了，但 `send.tsx` 里那句
+   `bag.setShowModelGuide(true)` **漏改** ⇒ 未配模型时点发送会拿到 undefined 直接抛错。
+   当时为什么两个守卫都没兜住：
+     ① 【93】的 extra 检查能发现「Bag 里有、没人声明」，但它只比对**声明集合**，看不见调用；
+        而上游 `check-preflight` 先失败会让 `&&` 链根本不执行到这里（环境假红期一直是这个状态）。
+     ② 【70】的负向断言写的是 `/showModelGuide/` —— **大小写**之差让 `setShowModelGuide`
+        （大写 S）绕过匹配，恒真。
+   本条与 extra 检查互补：extra 逼你把死声明删掉，删完这里就会因「还有人在调」而报红，
+   ⇒ 只剩「去把调用点改对」这一条路，不可能再默默带病发布。 */
+const callFiles = [];
+const walkAll = (dir) => {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) { walkAll(p); continue; }
+    if (/\.tsx?$/.test(e.name) && basename(p) !== "bag-types.ts") callFiles.push(p);
+  }
+};
+/* ⛔ 扫**整棵 parts 树**（含组合根 `partNN.tsx` 与 `types.ts`）——只扫 `partNN/` 子目录会漏掉
+   它们里的 `bag.Xxx()` 调用，那就等于把守卫开在半个缺口上。 */
+walkAll(PARTS);
+/* ⛔ 匹配前必须剥注释：解释这个隐患时往往会把 `bag.Xxx()` 原样写进注释（我自己第一版就因此
+   报了假红 —— 那条注释正好在讲这次事故）。与 scripts/guards/_ctx.mjs 的 codeOnly 同一套口径，
+   这里内联一份：本脚本是独立入口，不引 guard 上下文（那会连带跑一遍重活）。 */
+const codeOnly = (source) => String(source)
+  .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .split(/\r?\n/)
+  .filter((line) => !/^\s*\/\//.test(line))
+  .map((line) => line.replace(/\s\/\/[^'"`]*$/, ""))
+  .join("\n");
+
+const badCalls = new Map();
+for (const f of callFiles) {
+  const t = codeOnly(readFileSync(f, "utf8"));
+  for (const m of t.matchAll(/\bbag\.([A-Za-z_$][\w$]*)\s*\(/g)) {
+    if (existing.has(m[1])) continue;
+    const rel = relative(ROOT, f).replace(/\\/g, "/");
+    if (!badCalls.has(m[1])) badCalls.set(m[1], new Set());
+    badCalls.get(m[1]).add(rel);
+  }
+}
+if (badCalls.size) {
+  fail(`调用了 Bag 上不存在的成员（${badCalls.size}）—— 声明被删但调用点还在，运行时会抛 undefined：`);
+  for (const [nm, files] of [...badCalls].slice(0, 8)) console.log("      bag." + nm + "()  ← " + [...files].join(", "));
+} else {
+  ok(`调用落点全部有声明（扫 ${callFiles.length} 个 part 文件，0 处悬空调用）`);
+}
+
 console.log("");
 console.log(hardFails === 0
   ? `【93】bag-types 防漂移守卫通过（Bag ${existing.size} 项 / 推断 ${inferred.size} 项 / ${((Date.now() - t0) / 1000).toFixed(1)}s）`

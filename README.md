@@ -88,7 +88,7 @@
 - **桌面自动化**：截屏/键鼠/窗口控制/OCR（Nuphus 随包预装），视觉识图已接通
 - **浏览器自动化**：Playwright CLI + 反检测指纹浏览器（随包预装），内核按需下载
 - **RPA 流程自动化**：跑通的流程一键存为配方随时复现
-- **基础运行时**：Node/VS Code CLI 随包；Python/Git/PowerShell 等「开发工具」按需下载（国内镜像优先，缺 Git 首启自动补装）
+- **基础运行时**：Node / VS Code CLI / **Python（完整版，自带 pip + Tkinter）** / ripgrep / uv / CMake / 7-Zip / jq / Ninja / yt-dlp / adb **随包内置**；PowerShell 7 / Git / FFmpeg / Miniconda / MinGW 与两类浏览器内核按需下载（国内镜像优先，缺 Git 首启自动补装）
 - **终端**：xterm 内置终端，会话级持久化
 
 ### ⚙️ 工程化细节

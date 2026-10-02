@@ -74,10 +74,15 @@ export async function send(bag: Bag, event?: FormEvent) {
     if (!bag.customModel || !bag.selectedModel) {
       bag.planOnceRef.current = false; // /plan 旗标不跨发送泄漏：发送失败即复位
       bag.setPlanArmed(false);
-      // ⛔ 09-19：不再只是弹一句「请先配置并启用自定义模型」+ 跳设置页（新手看不懂那张完整表单）。
-      //   直接打开**一键配置向导**（粘 Key 即可），并且**保留用户刚输入的内容**——
+      // ⛔ 10-01 用户定稿「模型配置引导整体删除，首启只弹开发工具引导」⇒ 这里原来调的
+      //   bag.setShowModelGuide(true) 已随引导一起删掉，但**调用点当时漏改**：未配模型时点
+      //   发送会拿到 undefined 直接抛错（两个守卫都没兜住：【93】只比对"声明集合"、看不到调用，
+      //   而【70】的负向断言写的是 /showModelGuide/，被 setter 的大写 S 绕过了）。
+      //   现在的行为 = 人话提示 + 直达设置里的「模型」页，并且**保留用户刚输入的内容**——
       //   send() 在更靠前的位置才清空输入框，这里 return 时 prompt 还在，配完回来不用重打。
-      bag.setShowModelGuide(true);
+      bag.setNotice("请先在「设置 → 模型」里配置并启用一个模型");
+      bag.setSettingsPage("model");
+      bag.setSettingsOpen(true);
       return;
     }
     // ⛔ 09-17 mac 实测（用户报「不使用项目地址功能用不了」）：只有「**既没有项目地址、
