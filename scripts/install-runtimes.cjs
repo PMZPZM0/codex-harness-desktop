@@ -433,9 +433,15 @@ const keyLine = (error) => {
  * 其它格式若没有任何手段可读 ⇒ 无法判断，按体积信任（交给解压阶段报错，不误删）。
  */
 function archiveReady(file) {
+  let size = 0;
   try {
-    if (!fs.existsSync(file) || fs.statSync(file).size < 1024 * 1024) return false;
+    if (!fs.existsSync(file)) return false;
+    size = fs.statSync(file).size;
   } catch { return false; }
+  // ⛔⛔ 不能拿「>1MB」当完整性判据（10-02 CI 全红就死在这）：ninja 的 zip 只有 **285KB**，
+  //   原来的「小于 1MB 一律视为不可用」把它判成坏包 ⇒ 删缓存 → 重下 → 还是"坏" → 直接失败，
+  //   Windows 与 mac 两个 job 同时挂。体积只配用来挡空文件/半截文件，真判据是**能否列目录**。
+  if (size <= 0) return false;
   if (BSDTAR_OK) {
     try { runCommand(`"${BSDTAR}" -tf "${file}"`, { quiet: true, timeout: 120000 }); return true; }
     catch { /* 这个解压器读不了该格式，换下一个 */ }
@@ -451,7 +457,8 @@ function archiveReady(file) {
       return true;
     } catch { return false; } // zip 三种手段都读不了 ⇒ 确实是坏包
   }
-  return true;
+  // 没有能读该格式的解压器 ⇒ 无从判断：按体积信任（这里才需要下限，挡住空文件/半截文件）
+  return size >= 64 * 1024;
 }
 
 /** 7z 没有 --strip-components：目标目录下只有一层顶层目录时，把它的内容抬上来（等效 strip=1）。 */
