@@ -79,28 +79,33 @@
         background: #171916;
         color: #e8e8e8;
       }
+      /* 大 logo 启动页（10-01 复刻 ZCode）：居中一张与桌面图标一致的大 logo，
+         呼吸动画给出「活着」的反馈；不放旋转 spinner（ZCode 风格就是干净的 logo）。 */
       .boot-splash-logo {
-        width: 46px;
-        height: 46px;
-        border-radius: 12px;
+        width: 136px;
+        height: 136px;
+        border-radius: 32px;
         object-fit: cover;
         display: block;
+        box-shadow: 0 18px 48px rgba(20, 20, 15, 0.16), 0 2px 8px rgba(20, 20, 15, 0.08);
+        animation: boot-breathe 1.7s ease-in-out infinite;
       }
-      .boot-splash-spinner {
-        width: 22px;
-        height: 22px;
-        border: 2.5px solid rgba(128, 128, 128, 0.28);
-        border-top-color: #2f6bdd;
-        border-radius: 50%;
-        animation: boot-spin 0.8s linear infinite;
+      html[data-theme="dark"] .boot-splash-logo {
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.4);
       }
-      html[data-theme="dark"] .boot-splash-spinner {
-        border-color: rgba(255, 255, 255, 0.16);
-        border-top-color: #7cabf8;
+      @keyframes boot-breathe {
+        0%, 100% {
+          transform: scale(1);
+          opacity: 0.92;
+        }
+        50% {
+          transform: scale(1.045);
+          opacity: 1;
+        }
       }
-      @keyframes boot-spin {
-        to {
-          transform: rotate(360deg);
+      @media (prefers-reduced-motion: reduce) {
+        .boot-splash-logo {
+          animation: none;
         }
       }
       .boot-splash p {
@@ -127,7 +132,6 @@
     <div id="root">
       <div class="boot-splash" aria-hidden="true">
         <img class="boot-splash-logo" src="./icon.png" alt="" />
-        <div class="boot-splash-spinner"></div>
         <p>正在启动 Codex Harness…</p>
       </div>
     </div>

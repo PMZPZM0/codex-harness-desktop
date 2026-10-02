@@ -224,8 +224,10 @@ bag.executeEffortFallbackRetry = executeEffortFallbackRetry as typeof bag.execut
       const wasFocused = bag.threadRef.current?.id === threadId;
       bag.markThreadStopped(threadId);
       if (wasFocused) { bag.setSending(false); bag.setInterrupting(false); bag.setActiveTurnId(null); bag.setWorkStartedAt(null); }
+      // ⛔⛔ 10-02 用户定稿：「重试 3 次自动停止，然后提示『请检查上游余额或者订阅额度』」。
+      //   不再说"请稍后手动重发"这类把责任推给用户的话 —— 直接给出最可能的原因与动作。
       bag.cancelRateLimitRetry(threadId, true);
-      bag.showToast("限流重试放弃", `已连续重试 ${RATE_LIMIT_MAX_ATTEMPTS} 次仍被限流，请稍后手动重发`, threadId);
+      bag.showToast("上游余额或订阅额度已用完", `自动重试 ${RATE_LIMIT_MAX_ATTEMPTS} 次仍被限流（429）；请检查上游余额或者订阅额度，或更换供应商/模型后重发`, threadId);
       return;
     }
     bag.rateLimitAttemptsRef.current.set(threadId, attempt);

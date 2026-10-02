@@ -5,7 +5,7 @@
  */
 import "@xterm/xterm/css/xterm.css";
 import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "../../../../../lib/provider-continuity.mjs";
-import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "../../../../../lib/rate-limit-retry";
+import { isRateLimitError } from "../../../../../lib/rate-limit-retry";
 import type { Bag } from "../../bag-types";
 
 export function handleEventRouter8(bag: Bag, params: any): boolean {
