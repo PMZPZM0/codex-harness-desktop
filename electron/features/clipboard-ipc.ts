@@ -17,7 +17,7 @@
  * ── 10-03 插件化（P2 批次 1）────────────────────────────────────────────────
  *   · 依赖经 `inject: ["ipc"]` 声明，⛔ 不再直接 import `ipcMain`（宿主能力走容器注入）；
  *   · 四个通道名 / 参数 / 返回值 / 全部业务逻辑**逐字保留**；`copyImageFileToClipboard`
- *     仍**原样导出**（`screenshot-favorites-ipc` 复用它，改动会波及那个域）；
+ *     仍**原样导出**（`screenshot-ipc` 复用它，改动会波及那个域）；
  *   · `ctx.effect` 卸载时摘掉本域 4 个 handler（插件必须能干净卸载）；
  *   · 挂载由 `electron/composition.gen.ts` 负责（壳经组合表挂载），本域**不自挂载**。
  *   · 注册时机不变：生成物在主进程模块加载期被 import ⇒ handler 立即注册（早于 whenReady）。

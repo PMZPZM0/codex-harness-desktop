@@ -1,7 +1,7 @@
 /**
  * 收藏夹（harness 自持，不入 config.toml）。
  *
- * 形态与 ssh-servers.ts 一致：**纯数据层**，不碰 ipcMain（IPC 在 features/screenshot-favorites-ipc.ts）。
+ * 形态与 ssh-servers.ts 一致：**纯数据层**，不碰 ipcMain（IPC 在 features/favorites-ipc.ts）。
  * 持久化 = `userData/favorites.json`（读盘归一化 + 临时文件原子替换）。
  *
  * 为什么单独一份文件而不是塞进某个已有 store：
